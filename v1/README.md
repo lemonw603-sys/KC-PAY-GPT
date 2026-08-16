@@ -23,6 +23,14 @@ npm test
 npm audit --omit=dev
 ```
 
+有独立 MySQL 8 测试库时运行集成测试：
+
+```bash
+TEST_DATABASE_URL='mysql://user:password@127.0.0.1:3306/pojia_v1_test' npm test
+```
+
+没有设置 `TEST_DATABASE_URL` 时，三个数据库集成用例会明确跳过，其余单元测试继续执行。
+
 ## 配置
 
 复制 `.env.example` 中的字段到进程环境。程序不会主动读取 `.env` 文件，部署环境应显式注入变量。
