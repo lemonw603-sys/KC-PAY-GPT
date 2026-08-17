@@ -35,8 +35,8 @@ if (config.trustProxy) {
   app.set('trust proxy', 1);
 }
 
-const server = app.listen(config.port, () => {
-  console.log(`pojia-v1 listening on port ${config.port}`);
+const server = app.listen(config.port, config.host, () => {
+  console.log(`pojia-v1 listening on ${config.host}:${config.port}`);
 });
 
 let shuttingDown = false;

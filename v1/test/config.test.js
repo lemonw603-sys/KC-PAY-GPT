@@ -21,10 +21,29 @@ function validEnvironment() {
 
 test('loads a valid explicit configuration', () => {
   const config = loadConfig(validEnvironment());
+  assert.equal(config.host, '127.0.0.1');
   assert.equal(config.port, 3200);
   assert.equal(config.trustProxy, false);
   assert.equal(config.database.tls.enabled, false);
   assert.equal(config.sessionEncryptionKey.length, 32);
+});
+
+test('production web server only binds an explicit loopback address', () => {
+  const production = {
+    ...validEnvironment(),
+    NODE_ENV: 'production'
+  };
+
+  assert.equal(loadConfig(production).host, '127.0.0.1');
+  assert.equal(loadConfig({ ...production, HOST: '::1' }).host, '::1');
+  assert.throws(
+    () => loadConfig({ ...production, HOST: '0.0.0.0' }),
+    /must use a loopback address in production/
+  );
+  assert.throws(
+    () => loadConfig({ ...production, HOST: 'localhost' }),
+    /must be an explicit IPv4 or IPv6 address/
+  );
 });
 
 test('requires verified TLS for remote production databases', () => {

@@ -44,6 +44,7 @@ TEST_DATABASE_URL='mysql://user:password@127.0.0.1:3306/pojia_v1_test' npm test
 
 复制 `.env.example` 中的字段到进程环境。程序不会主动读取 `.env` 文件，部署环境应显式注入变量。
 
+- `HOST` 在生产环境只能使用 `127.0.0.1` 或 `::1`；公网入口必须经过 Caddy 等反向代理。
 - `DATABASE_URL` 只给 Web、worker 和 CDK 工具使用，生产账号不得拥有 DDL 权限。
 - `MIGRATION_DATABASE_URL` 只在执行迁移时注入，必须使用独立迁移账号。
 - 生产环境连接非本机 MySQL 时，`DATABASE_TLS=true` / `MIGRATION_DATABASE_TLS=true` 为强制项；URL 必须使用证书覆盖的 DNS 主机名，并始终校验证书链和主机名。

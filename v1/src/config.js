@@ -13,6 +13,7 @@ const databaseFields = {
 
 const baseSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+  HOST: z.string().trim().min(1).default('127.0.0.1'),
   PORT: z.coerce.number().int().min(1).max(65535).default(3100),
   TRUST_PROXY: booleanString.default(false),
   ...databaseFields,
@@ -189,6 +190,23 @@ function validateDatabaseConfig(value, context, { urlKey, tlsKey, caKey }) {
 
 function validateBaseConfig(value, context) {
   validateAdminConfig(value, context);
+  if (net.isIP(value.HOST) === 0) {
+    context.addIssue({
+      code: 'custom',
+      path: ['HOST'],
+      message: 'must be an explicit IPv4 or IPv6 address'
+    });
+  } else if (
+    value.NODE_ENV === 'production'
+    && value.HOST !== '127.0.0.1'
+    && value.HOST !== '::1'
+  ) {
+    context.addIssue({
+      code: 'custom',
+      path: ['HOST'],
+      message: 'must use a loopback address in production; expose the service through the reverse proxy'
+    });
+  }
   validateDatabaseConfig(value, context, {
     urlKey: 'DATABASE_URL',
     tlsKey: 'DATABASE_TLS',
@@ -236,6 +254,7 @@ export function loadConfig(env = process.env) {
 
   return {
     nodeEnv: result.data.NODE_ENV,
+    host: result.data.HOST,
     port: result.data.PORT,
     trustProxy: result.data.TRUST_PROXY,
     database: databaseConfig(result.data, {
