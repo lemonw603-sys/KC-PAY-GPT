@@ -23,14 +23,14 @@ const STATUS = Object.freeze({
   SUCCESS: {
     label: '已成功',
     title: 'Plus 已开通',
-    description: '订单已经返回最终成功。',
+    description: '本次订单已经处理完成。',
     terminal: true,
     pollAfter: null
   },
   FAILED: {
     label: '未成功',
     title: '订单未能完成',
-    description: '订单结果已确认为失败，请保留查询码等待后续处理。',
+    description: '本次订单未能完成，请保留查询码等待人工处理。',
     terminal: true,
     pollAfter: null
   }
@@ -38,21 +38,21 @@ const STATUS = Object.freeze({
 
 const ERROR_MESSAGES = Object.freeze({
   invalid_order_request: '请检查提交内容。',
-  incomplete_session: 'Session JSON 不完整，请重新复制完整内容。',
-  invalid_access_token: 'Session 中的 accessToken 格式无效。',
-  invalid_access_token_claims: 'Session 中的 accessToken 信息无效。',
-  access_token_expired: 'Session 中的 accessToken 已过期，请重新获取。',
-  access_token_near_expiry: 'Session 即将过期，请重新获取后提交。',
-  invalid_session_token: 'Session 中的 sessionToken 格式无效。',
-  invalid_session_expiry: 'Session 过期时间格式无效。',
-  session_expired: 'Session 已经过期，请重新获取。',
+  incomplete_session: '账号 Session 不完整，请重新复制完整内容。',
+  invalid_access_token: '账号 Session 无效，请重新获取完整内容。',
+  invalid_access_token_claims: '账号 Session 无效，请重新获取完整内容。',
+  access_token_expired: '账号 Session 已过期，请重新获取后提交。',
+  access_token_near_expiry: '账号 Session 即将过期，请重新获取后提交。',
+  invalid_session_token: '账号 Session 无效，请重新获取完整内容。',
+  invalid_session_expiry: '账号 Session 的有效期信息无效，请重新获取。',
+  session_expired: '账号 Session 已过期，请重新获取。',
   cdk_unavailable: 'CDK 不可用或已绑定订单，可切换到“查询进度”找回原订单。',
   ordering_paused: '当前暂停接收新订单，请稍后再试。',
   ordering_not_configured: '当前暂时无法创建订单，请稍后再试。',
   invalid_order_query: '请输入有效的订单查询码或原 CDK。',
   order_not_found: '没有找到对应订单，请检查输入。',
   rate_limited: '操作过于频繁，请稍后再试。',
-  body_too_large: 'Session JSON 过大，请检查是否粘贴了多余内容。',
+  body_too_large: '账号 Session 内容过大，请检查是否粘贴了多余内容。',
   invalid_json: '请求内容不是有效 JSON。'
 });
 
@@ -87,6 +87,7 @@ function switchTab(panelId) {
     const active = tab.dataset.tab === panelId;
     tab.classList.toggle('is-active', active);
     tab.setAttribute('aria-selected', String(active));
+    tab.tabIndex = active ? 0 : -1;
   }
   for (const panel of elements.panels) panel.hidden = panel.id !== panelId;
   hideNotice();
@@ -201,23 +202,37 @@ function schedulePoll(publicNo, meta) {
   }, meta.pollAfter);
 }
 
-elements.tabs.forEach((tab) => tab.addEventListener('click', () => switchTab(tab.dataset.tab)));
+elements.tabs.forEach((tab, index) => {
+  tab.addEventListener('click', () => switchTab(tab.dataset.tab));
+  tab.addEventListener('keydown', (event) => {
+    let nextIndex = null;
+    if (event.key === 'ArrowRight') nextIndex = (index + 1) % elements.tabs.length;
+    if (event.key === 'ArrowLeft') nextIndex = (index - 1 + elements.tabs.length) % elements.tabs.length;
+    if (event.key === 'Home') nextIndex = 0;
+    if (event.key === 'End') nextIndex = elements.tabs.length - 1;
+    if (nextIndex === null) return;
+    event.preventDefault();
+    const nextTab = elements.tabs[nextIndex];
+    switchTab(nextTab.dataset.tab);
+    nextTab.focus();
+  });
+});
 
 elements.submitForm.addEventListener('submit', async (event) => {
   event.preventDefault();
   hideNotice();
   const cdk = elements.cdkInput.value.trim();
   if (cdk.length < 8) return showNotice('请输入有效 CDK。');
-  if (!elements.confirmInput.checked) return showNotice('请先确认 CDK 与 Session 属于目标账号。');
+  if (!elements.confirmInput.checked) return showNotice('请先核对充值码和账号信息。');
 
   let session;
   try {
     session = JSON.parse(elements.sessionInput.value);
   } catch {
-    return showNotice('Session 不是有效 JSON，请检查后重试。');
+    return showNotice('账号 Session 格式不正确，请检查后重试。');
   }
   if (!session || typeof session !== 'object' || Array.isArray(session)) {
-    return showNotice('Session 必须是完整 JSON 对象。');
+    return showNotice('请粘贴完整的账号 Session。');
   }
 
   setBusy(elements.submitButton, true, '正在安全提交…');
