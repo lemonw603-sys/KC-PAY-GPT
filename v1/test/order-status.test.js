@@ -11,6 +11,7 @@ test('accepts the intended happy-path order transitions', () => {
   const path = [
     OrderStatus.CREATED,
     OrderStatus.CARD_PURCHASING,
+    OrderStatus.CARD_PROVISIONING,
     OrderStatus.CARD_READY,
     OrderStatus.SUBMITTING,
     OrderStatus.RECHARGE_PROCESSING,

@@ -40,6 +40,7 @@ const handlers = createWorkflowHandlers({
   rechargeProvider,
   recordCall: (input) => recordProviderCall({ pool, ...input }),
   mapPurchasedCard: unavailable('card purchase response mapping'),
+  mapCardProvisioning: unavailable('card readiness mapping'),
   mapCardCredentials: unavailable('card credentials mapping')
 });
 

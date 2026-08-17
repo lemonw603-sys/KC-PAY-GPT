@@ -3,7 +3,9 @@ import { PublicApiError } from '../domain/public-api-error.js';
 const ORDER_STATUSES = new Set([
   'CREATED',
   'CARD_PURCHASING',
+  'CARD_PROVISIONING',
   'CARD_READY',
+  'CARD_FAILED',
   'SUBMITTING',
   'SUBMIT_UNKNOWN',
   'RECHARGE_PROCESSING',
@@ -12,7 +14,7 @@ const ORDER_STATUSES = new Set([
   'RECONCILIATION_REQUIRED',
   'CLOSED'
 ]);
-const REVIEW_STATUSES = ['SUBMIT_UNKNOWN', 'RECHARGE_FAILED', 'RECONCILIATION_REQUIRED'];
+const REVIEW_STATUSES = ['CARD_FAILED', 'SUBMIT_UNKNOWN', 'RECHARGE_FAILED', 'RECONCILIATION_REQUIRED'];
 
 function iso(value) {
   return value instanceof Date ? value.toISOString() : value || null;
@@ -52,8 +54,8 @@ export function createAdminReadService({ pool }) {
           SELECT 1 FROM order_events oe
           WHERE oe.order_id = o.id AND oe.to_status = 'RECHARGE_SUCCESS'
         ))) AS successful,
-        SUM(o.status IN ('CREATED','CARD_PURCHASING','CARD_READY','SUBMITTING','RECHARGE_PROCESSING')) AS processing,
-        SUM(o.status IN ('SUBMIT_UNKNOWN','RECHARGE_FAILED','RECONCILIATION_REQUIRED')) AS reviewing
+        SUM(o.status IN ('CREATED','CARD_PURCHASING','CARD_PROVISIONING','CARD_READY','SUBMITTING','RECHARGE_PROCESSING')) AS processing,
+        SUM(o.status IN ('CARD_FAILED','SUBMIT_UNKNOWN','RECHARGE_FAILED','RECONCILIATION_REQUIRED')) AS reviewing
         FROM orders o`),
       pool.query('SELECT status, COUNT(*) AS count FROM orders GROUP BY status ORDER BY status'),
       pool.query('SELECT status, COUNT(*) AS count FROM cdks GROUP BY status ORDER BY status'),

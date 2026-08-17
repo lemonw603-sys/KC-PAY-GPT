@@ -1,7 +1,9 @@
 export const OrderStatus = Object.freeze({
   CREATED: 'CREATED',
   CARD_PURCHASING: 'CARD_PURCHASING',
+  CARD_PROVISIONING: 'CARD_PROVISIONING',
   CARD_READY: 'CARD_READY',
+  CARD_FAILED: 'CARD_FAILED',
   SUBMITTING: 'SUBMITTING',
   SUBMIT_UNKNOWN: 'SUBMIT_UNKNOWN',
   RECHARGE_PROCESSING: 'RECHARGE_PROCESSING',
@@ -13,7 +15,13 @@ export const OrderStatus = Object.freeze({
 
 const transitions = new Map([
   [OrderStatus.CREATED, new Set([OrderStatus.CARD_PURCHASING, OrderStatus.RECONCILIATION_REQUIRED])],
-  [OrderStatus.CARD_PURCHASING, new Set([OrderStatus.CARD_READY, OrderStatus.RECONCILIATION_REQUIRED])],
+  [OrderStatus.CARD_PURCHASING, new Set([OrderStatus.CARD_PROVISIONING, OrderStatus.RECONCILIATION_REQUIRED])],
+  [OrderStatus.CARD_PROVISIONING, new Set([
+    OrderStatus.CARD_READY,
+    OrderStatus.CARD_FAILED,
+    OrderStatus.RECONCILIATION_REQUIRED
+  ])],
+  [OrderStatus.CARD_FAILED, new Set([OrderStatus.CLOSED, OrderStatus.RECONCILIATION_REQUIRED])],
   [OrderStatus.CARD_READY, new Set([OrderStatus.SUBMITTING, OrderStatus.RECONCILIATION_REQUIRED])],
   [OrderStatus.SUBMITTING, new Set([
     OrderStatus.RECHARGE_PROCESSING,

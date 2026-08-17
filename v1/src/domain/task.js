@@ -7,6 +7,7 @@ export const TaskStatus = Object.freeze({
 
 export const TaskType = Object.freeze({
   PURCHASE_CARD: 'PURCHASE_CARD',
+  VERIFY_CARD: 'VERIFY_CARD',
   SUBMIT_RECHARGE: 'SUBMIT_RECHARGE',
   POLL_RECHARGE: 'POLL_RECHARGE',
   SYNC_CARD_TRANSACTIONS: 'SYNC_CARD_TRANSACTIONS',

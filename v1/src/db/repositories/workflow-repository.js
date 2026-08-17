@@ -1,6 +1,6 @@
 import { transitionOrder } from './order-repository.js';
 import { OrderStatus } from '../../domain/order-status.js';
-import { decryptSecret } from '../../security/secret-box.js';
+import { decryptSecret, encryptSecret } from '../../security/secret-box.js';
 
 function parseSession(ciphertext, key) {
   const text = decryptSecret(ciphertext, key);
@@ -50,7 +50,8 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey }) {
                 c.provider_card_id,
                 c.card_type_id AS stored_card_type_id,
                 c.last4,
-                c.status AS card_status
+                c.status AS card_status,
+                c.card_credentials_ciphertext
          FROM orders o
          LEFT JOIN cards c ON c.order_id = o.id
          WHERE o.id = ?`,
@@ -69,7 +70,10 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey }) {
           provider_card_id: row.provider_card_id,
           card_type_id: row.stored_card_type_id,
           last4: row.last4,
-          status: row.card_status
+          status: row.card_status,
+          credentials: row.card_credentials_ciphertext
+            ? JSON.parse(decryptSecret(row.card_credentials_ciphertext, sessionEncryptionKey))
+            : null
         } : null,
         session: parseSession(row.session_ciphertext, sessionEncryptionKey)
       };
@@ -107,7 +111,7 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey }) {
             String(card.providerCardId),
             String(card.cardTypeId),
             card.last4 || null,
-            card.status || 'ACTIVE',
+            card.status || 'PROVISIONING',
             String(card.fundedAmount),
             card.currentBalance == null ? null : String(card.currentBalance),
             card.currency || 'USD'
@@ -117,7 +121,7 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey }) {
           `UPDATE orders SET status = ?, version = version + 1,
              updated_at = CURRENT_TIMESTAMP(3)
            WHERE id = ? AND version = ?`,
-          [OrderStatus.CARD_READY, orderId, order.version]
+          [OrderStatus.CARD_PROVISIONING, orderId, order.version]
         );
         if (updateResult.affectedRows !== 1) {
           throw new Error(`Concurrent card commit detected: ${orderId}`);
@@ -125,17 +129,89 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey }) {
         await insertEvent(connection, {
           orderId,
           fromStatus: OrderStatus.CARD_PURCHASING,
-          toStatus: OrderStatus.CARD_READY,
-          reason: 'card purchase committed',
+          toStatus: OrderStatus.CARD_PROVISIONING,
+          reason: 'card purchase committed; awaiting final card readiness',
           metadata: { providerCardId: String(card.providerCardId), last4: card.last4 || null }
         });
         await connection.query(
           `INSERT INTO tasks
            (order_id, task_type, status, dedupe_key, max_attempts)
+           VALUES (?, 'VERIFY_CARD', 'PENDING', ?, 240)`,
+          [orderId, `verify-card:${orderId}`]
+        );
+      });
+    },
+
+    async commitCardReady(orderId, snapshot, credentials) {
+      return inTransaction(pool, async (connection) => {
+        const [rows] = await connection.query(
+          'SELECT status, version FROM orders WHERE id = ? FOR UPDATE', [orderId]
+        );
+        if (rows.length !== 1) throw new Error(`Order not found: ${orderId}`);
+        const order = rows[0];
+        if (order.status !== OrderStatus.CARD_PROVISIONING) {
+          throw new Error(`Cannot commit ready card from ${order.status}`);
+        }
+        await connection.query(
+          `UPDATE cards SET status = ?, last4 = COALESCE(?, last4),
+             current_balance = ?, currency = ?, last_synced_at = CURRENT_TIMESTAMP(3),
+             card_credentials_ciphertext = ?, updated_at = CURRENT_TIMESTAMP(3) WHERE order_id = ?`,
+          [snapshot.status, snapshot.last4 || null, String(snapshot.currentBalance),
+            snapshot.currency || 'USD', encryptSecret(JSON.stringify(credentials), sessionEncryptionKey), orderId]
+        );
+        const [result] = await connection.query(
+          `UPDATE orders SET status = ?, version = version + 1,
+             updated_at = CURRENT_TIMESTAMP(3) WHERE id = ? AND version = ?`,
+          [OrderStatus.CARD_READY, orderId, order.version]
+        );
+        if (result.affectedRows !== 1) throw new Error(`Concurrent card readiness commit detected: ${orderId}`);
+        await insertEvent(connection, {
+          orderId, fromStatus: OrderStatus.CARD_PROVISIONING, toStatus: OrderStatus.CARD_READY,
+          reason: 'card status, balance and credentials confirmed',
+          metadata: { last4: snapshot.last4 || null, currentBalance: String(snapshot.currentBalance) }
+        });
+        await connection.query(
+          `INSERT INTO tasks (order_id, task_type, status, dedupe_key, max_attempts)
            VALUES (?, 'SUBMIT_RECHARGE', 'PENDING', ?, 5)`,
           [orderId, `submit-recharge:${orderId}`]
         );
       });
+    },
+
+    async failCardProvisioning(orderId, snapshot) {
+      return inTransaction(pool, async (connection) => {
+        const [rows] = await connection.query(
+          'SELECT status, version FROM orders WHERE id = ? FOR UPDATE', [orderId]
+        );
+        if (rows.length !== 1) throw new Error(`Order not found: ${orderId}`);
+        const order = rows[0];
+        if (order.status !== OrderStatus.CARD_PROVISIONING) {
+          throw new Error(`Cannot fail card from ${order.status}`);
+        }
+        await connection.query(
+          `UPDATE cards SET status = ?, current_balance = COALESCE(?, current_balance),
+             last_synced_at = CURRENT_TIMESTAMP(3), updated_at = CURRENT_TIMESTAMP(3)
+           WHERE order_id = ?`,
+          [snapshot.status || 'FAILED', snapshot.currentBalance == null ? null : String(snapshot.currentBalance), orderId]
+        );
+        const [result] = await connection.query(
+          `UPDATE orders SET status = ?, failure_code = ?, failure_reason = ?,
+             version = version + 1, updated_at = CURRENT_TIMESTAMP(3)
+           WHERE id = ? AND version = ?`,
+          [OrderStatus.CARD_FAILED, snapshot.failureCode || 'CARD_PROVISIONING_FAILED',
+            snapshot.failureReason || 'Card provisioning failed', orderId, order.version]
+        );
+        if (result.affectedRows !== 1) throw new Error(`Concurrent card failure detected: ${orderId}`);
+        await insertEvent(connection, {
+          orderId, fromStatus: OrderStatus.CARD_PROVISIONING, toStatus: OrderStatus.CARD_FAILED,
+          reason: snapshot.failureReason || 'card provisioning failed',
+          metadata: { cardStatus: snapshot.status || 'FAILED' }
+        });
+      });
+    },
+
+    async reviewCardProvisioning(orderId, reason = 'card provisioning timed out') {
+      return this.transition(orderId, OrderStatus.RECONCILIATION_REQUIRED, reason);
     },
 
     async commitRechargeSubmission(orderId, submission) {
@@ -166,6 +242,10 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey }) {
         if (updateResult.affectedRows !== 1) {
           throw new Error(`Concurrent recharge commit detected: ${orderId}`);
         }
+        await connection.query(
+          `UPDATE cards SET card_credentials_ciphertext = NULL, updated_at = CURRENT_TIMESTAMP(3)
+           WHERE order_id = ?`, [orderId]
+        );
         await insertEvent(connection, {
           orderId,
           fromStatus: OrderStatus.SUBMITTING,

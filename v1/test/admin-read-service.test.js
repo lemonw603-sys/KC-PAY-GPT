@@ -47,8 +47,8 @@ test('admin order list validates filters and maps only card summaries', async ()
   assert.deepEqual(result.orders[0].card, {
     last4: '4242', currentBalance: '25.000000', currency: 'USD', refundStatus: 'MONITORING'
   });
-  assert.deepEqual(pool.queries[0].values.slice(0, 3), [
-    'SUBMIT_UNKNOWN', 'RECHARGE_FAILED', 'RECONCILIATION_REQUIRED'
+  assert.deepEqual(pool.queries[0].values.slice(0, 4), [
+    'CARD_FAILED', 'SUBMIT_UNKNOWN', 'RECHARGE_FAILED', 'RECONCILIATION_REQUIRED'
   ]);
   assert.equal(pool.queries.some(({ sql }) => /session_ciphertext|recharge_card_key/i.test(sql)), false);
 

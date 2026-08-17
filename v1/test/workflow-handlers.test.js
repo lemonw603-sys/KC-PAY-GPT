@@ -23,6 +23,9 @@ function setup({ status = OrderStatus.CARD_READY, rechargeStatuses = [] } = {}) 
     loadOrderContext: async () => context,
     transition: async (...args) => calls.push(['transition', ...args]),
     commitPurchasedCard: async (...args) => calls.push(['card', ...args]),
+    commitCardReady: async (...args) => calls.push(['ready', ...args]),
+    failCardProvisioning: async (...args) => calls.push(['failed-card', ...args]),
+    reviewCardProvisioning: async (...args) => calls.push(['review-card', ...args]),
     commitRechargeSubmission: async (...args) => calls.push(['submission', ...args])
   };
   const cardProvider = {
@@ -43,12 +46,17 @@ function setup({ status = OrderStatus.CARD_READY, rechargeStatuses = [] } = {}) 
     rechargeProvider,
     recordCall,
     mapPurchasedCard: (value) => ({ providerCardId: value.data.card.id, cardTypeId: 7, fundedAmount: '25.000000' }),
+    mapCardProvisioning: (value) => value.data.status === 'failed'
+      ? { state: 'failed', status: 'failed', failureReason: 'provider failed' }
+      : value.data.status === 'pending'
+        ? { state: 'pending', status: 'active', currentBalance: 0 }
+        : { state: 'ready', status: 'active', currentBalance: 25, currency: 'USD', last4: '4242' },
     mapCardCredentials: () => ({ cardNumber: '4242424242424242', expMonth: 12, expYear: 2032, cvv: '123' }),
     wait: async () => {},
     pollDelayMs: 1,
     failureConfirmDelayMs: 1
   });
-  return { calls, providerCalls, context, workflow, rechargeProvider, handlers };
+  return { calls, providerCalls, context, workflow, cardProvider, rechargeProvider, handlers };
 }
 
 test('submits one direct recharge and commits external identifiers', async () => {
@@ -63,6 +71,17 @@ test('submits one direct recharge and commits external identifiers', async () =>
   ]);
 });
 
+test('submits with encrypted cached card credentials without rereading the provider', async () => {
+  const state = setup();
+  state.context.card.credentials = {
+    cardNumber: '4242424242424242', expMonth: 12, expYear: 2032, cvv: '123'
+  };
+  state.cardProvider.card = async () => { throw new Error('must not reread card credentials'); };
+  await state.handlers.SUBMIT_RECHARGE({ id: 1, order_id: 'order-1', attempts: 1 });
+  assert.equal(state.calls.at(-1)[0], 'submission');
+  assert.equal(state.providerCalls.some((call) => call.operation === 'card_details'), false);
+});
+
 test('purchases a card with the persisted idempotency key and commits one binding', async () => {
   const state = setup({ status: OrderStatus.CREATED });
   await state.handlers.PURCHASE_CARD({ id: 1, order_id: 'order-1', attempts: 1 });
@@ -72,6 +91,32 @@ test('purchases a card with the persisted idempotency key and commits one bindin
     'order-1',
     { providerCardId: 'card-1', cardTypeId: 7, fundedAmount: '25.000000' }
   ]);
+});
+
+test('keeps a slow card in provisioning without submitting recharge', async () => {
+  const state = setup({ status: OrderStatus.CARD_PROVISIONING });
+  state.cardProvider.card = async () => ({ data: { status: 'pending' } });
+  await assert.rejects(
+    state.handlers.VERIFY_CARD({ id: 1, order_id: 'order-1', attempts: 1, max_attempts: 240 }),
+    (error) => error.code === 'CARD_PROVISIONING_PENDING' && error.retryable === true
+  );
+  assert.equal(state.calls.some(([name]) => name === 'ready' || name === 'failed-card'), false);
+});
+
+test('isolates a terminal card failure from the rest of the batch', async () => {
+  const state = setup({ status: OrderStatus.CARD_PROVISIONING });
+  state.cardProvider.card = async () => ({ data: { status: 'failed', cardBalance: '0.000000' } });
+  await state.handlers.VERIFY_CARD({ id: 1, order_id: 'order-1', attempts: 1, max_attempts: 240 });
+  assert.equal(state.calls.at(-1)[0], 'failed-card');
+  assert.equal(state.calls.some(([name]) => name === 'submission'), false);
+});
+
+test('moves an overlong card provisioning wait to manual review', async () => {
+  const state = setup({ status: OrderStatus.CARD_PROVISIONING });
+  state.cardProvider.card = async () => ({ data: { status: 'pending' } });
+  await state.handlers.VERIFY_CARD({ id: 1, order_id: 'order-1', attempts: 240, max_attempts: 240 });
+  assert.equal(state.calls.at(-1)[0], 'review-card');
+  assert.equal(state.calls.some(([name]) => name === 'submission'), false);
 });
 
 test('maps an ambiguous create failure to SUBMIT_UNKNOWN', async () => {

@@ -119,6 +119,39 @@ function validateData(envelope, schema, operation) {
   return { ...envelope, data: result.data };
 }
 
+const CARD_FAILURE_STATUSES = new Set(['failed', 'failure', 'invalid', 'inactive', 'closed', 'cancelled', 'canceled']);
+
+export function mapCardProvisioning(envelope, expectedAmount, now = new Date()) {
+  const data = envelope?.data?.card ?? envelope?.data ?? {};
+  const status = String(data.status || '').trim().toLowerCase();
+  const currentBalance = Number(data.cardBalance ?? data.currentBalance ?? data.current_balance);
+  const expected = Number(expectedAmount);
+  const cardNumber = String(data.cardNumber ?? data.card_number ?? data.number ?? data.pan ?? '').trim();
+  const cvv = String(data.cvv ?? data.cvc ?? '').trim();
+  const expMonth = Number(data.expiryMonth ?? data.expiry_month ?? data.expMonth ?? data.exp_month);
+  const expYear = Number(data.expiryYear ?? data.expiry_year ?? data.expYear ?? data.exp_year);
+  const expiryIndex = expYear * 12 + expMonth;
+  const currentIndex = now.getUTCFullYear() * 12 + now.getUTCMonth() + 1;
+  const credentialsReady = /^[0-9]{12,19}$/.test(cardNumber)
+    && /^[0-9]{3,4}$/.test(cvv)
+    && Number.isInteger(expMonth) && expMonth >= 1 && expMonth <= 12
+    && Number.isInteger(expYear) && expiryIndex >= currentIndex;
+  const safe = {
+    state: 'pending',
+    status: status || 'unknown',
+    currentBalance: Number.isFinite(currentBalance) ? currentBalance : null,
+    currency: String(data.currency || 'USD'),
+    last4: credentialsReady ? cardNumber.slice(-4) : null
+  };
+  if (CARD_FAILURE_STATUSES.has(status)) {
+    return { ...safe, state: 'failed', failureCode: 'CARD_PROVISIONING_FAILED', failureReason: `Provider card status: ${status}` };
+  }
+  if (status === 'active' && credentialsReady && Number.isFinite(currentBalance) && currentBalance >= expected) {
+    return { ...safe, state: 'ready' };
+  }
+  return safe;
+}
+
 export class HnskjCardProvider {
   constructor({ baseUrl, apiKey, fetchImpl = globalThis.fetch, timeoutMs = 30_000 }) {
     this.baseUrl = normalizeBaseUrl(baseUrl);

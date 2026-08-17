@@ -10,7 +10,9 @@ export function allowedTaskTypesFor(settings, {
   if (settings.dispatchNewRecharges && providerWritesEnabled) {
     types.push(TaskType.PURCHASE_CARD, TaskType.SUBMIT_RECHARGE);
   }
-  if (settings.pollExistingOrders && providerReadsEnabled) types.push(TaskType.POLL_RECHARGE);
+  if (settings.pollExistingOrders && providerReadsEnabled) {
+    types.push(TaskType.VERIFY_CARD, TaskType.POLL_RECHARGE);
+  }
   return types;
 }
 

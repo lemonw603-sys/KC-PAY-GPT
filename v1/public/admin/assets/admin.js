@@ -1,7 +1,9 @@
 const STATUS_META = Object.freeze({
   CREATED: ['已创建', 'blue'],
   CARD_PURCHASING: ['开卡中', 'blue'],
+  CARD_PROVISIONING: ['等待卡片到账', 'blue'],
   CARD_READY: ['卡片就绪', 'blue'],
+  CARD_FAILED: ['开卡失败', 'red'],
   SUBMITTING: ['提交中', 'blue'],
   SUBMIT_UNKNOWN: ['提交待确认', 'orange'],
   RECHARGE_PROCESSING: ['充值处理中', 'blue'],

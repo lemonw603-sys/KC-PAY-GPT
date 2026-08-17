@@ -150,8 +150,8 @@ test('workflow repository commits card and recharge handoffs atomically', {
 
     await pool.query(
       `INSERT INTO tasks (order_id, task_type, status, dedupe_key)
-       VALUES (?, 'SUBMIT_RECHARGE', 'PENDING', ?)`,
-      [fixture.orderId, `submit-recharge:${fixture.orderId}`]
+       VALUES (?, 'VERIFY_CARD', 'PENDING', ?)`,
+      [fixture.orderId, `verify-card:${fixture.orderId}`]
     );
     await assert.rejects(
       workflow.commitPurchasedCard(fixture.orderId, {
@@ -173,7 +173,7 @@ test('workflow repository commits card and recharge handoffs atomically', {
     assert.equal(rolledBackPurchase.status, OrderStatus.CARD_PURCHASING);
     assert.equal(rolledBackPurchase.card_count, 0);
     await pool.query('DELETE FROM tasks WHERE dedupe_key = ?', [
-      `submit-recharge:${fixture.orderId}`
+      `verify-card:${fixture.orderId}`
     ]);
 
     await workflow.commitPurchasedCard(fixture.orderId, {
@@ -186,8 +186,17 @@ test('workflow repository commits card and recharge handoffs atomically', {
     });
 
     const afterCard = await workflow.loadOrderContext(fixture.orderId);
-    assert.equal(afterCard.order.status, OrderStatus.CARD_READY);
+    assert.equal(afterCard.order.status, OrderStatus.CARD_PROVISIONING);
     assert.equal(afterCard.card.provider_card_id, 'provider-card-fixture');
+
+    await workflow.commitCardReady(fixture.orderId, {
+      status: 'active', last4: '4242', currentBalance: '25.000000', currency: 'USD'
+    }, {
+      cardNumber: '4242424242424242', expMonth: 12, expYear: 2032, cvv: '123'
+    });
+    const readyCard = await workflow.loadOrderContext(fixture.orderId);
+    assert.equal(readyCard.order.status, OrderStatus.CARD_READY);
+    assert.equal(readyCard.card.credentials.cardNumber, '4242424242424242');
 
     await workflow.transition(
       fixture.orderId,
@@ -241,6 +250,7 @@ test('workflow repository commits card and recharge handoffs atomically', {
       [fixture.orderId]
     );
     assert.deepEqual(tasks, [
+      { task_type: 'VERIFY_CARD', status: 'PENDING' },
       { task_type: 'SUBMIT_RECHARGE', status: 'PENDING' },
       { task_type: 'POLL_RECHARGE', status: 'PENDING' }
     ]);
@@ -488,6 +498,9 @@ test('worker runs a full fake-provider workflow while enforcing runtime gates', 
       currentBalance: '25.000000',
       currency: 'USD'
     }),
+    mapCardProvisioning: () => ({
+      state: 'ready', status: 'active', currentBalance: 25, currency: 'USD', last4: '4242'
+    }),
     mapCardCredentials: () => ({
       cardNumber: '4242424242424242',
       expMonth: 12,
@@ -522,6 +535,7 @@ test('worker runs a full fake-provider workflow while enforcing runtime gates', 
     );
     assert.equal((await iteration()).status, 'COMPLETED');
     assert.equal((await iteration()).status, 'COMPLETED');
+    assert.equal((await iteration()).status, 'COMPLETED');
 
     await pool.query(
       `UPDATE app_settings SET setting_value = 'false'
@@ -550,6 +564,7 @@ test('worker runs a full fake-provider workflow while enforcing runtime gates', 
     );
     assert.deepEqual(tasks, [
       { task_type: 'PURCHASE_CARD', status: 'COMPLETED' },
+      { task_type: 'VERIFY_CARD', status: 'COMPLETED' },
       { task_type: 'SUBMIT_RECHARGE', status: 'COMPLETED' },
       { task_type: 'POLL_RECHARGE', status: 'COMPLETED' }
     ]);

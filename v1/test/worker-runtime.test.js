@@ -16,21 +16,21 @@ test('runtime settings and process gates jointly control task eligibility', () =
   assert.deepEqual(allowedTaskTypesFor(allSettings), []);
   assert.deepEqual(
     allowedTaskTypesFor(allSettings, { providerReadsEnabled: true }),
-    [TaskType.POLL_RECHARGE]
+    [TaskType.VERIFY_CARD, TaskType.POLL_RECHARGE]
   );
   assert.deepEqual(
     allowedTaskTypesFor(allSettings, {
       providerReadsEnabled: true,
       providerWritesEnabled: true
     }),
-    [TaskType.PURCHASE_CARD, TaskType.SUBMIT_RECHARGE, TaskType.POLL_RECHARGE]
+    [TaskType.PURCHASE_CARD, TaskType.SUBMIT_RECHARGE, TaskType.VERIFY_CARD, TaskType.POLL_RECHARGE]
   );
   assert.deepEqual(
     allowedTaskTypesFor({ ...allSettings, dispatchNewRecharges: false }, {
       providerReadsEnabled: true,
       providerWritesEnabled: true
     }),
-    [TaskType.POLL_RECHARGE]
+    [TaskType.VERIFY_CARD, TaskType.POLL_RECHARGE]
   );
 });
 
@@ -49,5 +49,5 @@ test('one worker iteration passes only eligible task types to the runner', async
     }
   });
   assert.equal(result.handled, false);
-  assert.deepEqual(input.allowedTaskTypes, [TaskType.POLL_RECHARGE]);
+  assert.deepEqual(input.allowedTaskTypes, [TaskType.VERIFY_CARD, TaskType.POLL_RECHARGE]);
 });

@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { HnskjCardProvider } from '../src/providers/hnskj-card.js';
+import { HnskjCardProvider, mapCardProvisioning } from '../src/providers/hnskj-card.js';
 import { ProviderError, ProviderSchemaError } from '../src/providers/http-client.js';
 import { ZzshuRechargeProvider } from '../src/providers/zzshu-recharge.js';
 
@@ -131,6 +131,24 @@ test('Hnskj rejects amount type drift instead of accepting JavaScript numbers', 
     provider.accountBalance(),
     (error) => error instanceof ProviderSchemaError && error.uncertain === false
   );
+});
+
+test('Hnskj card readiness requires terminal status, funded balance and credentials', () => {
+  const ready = mapCardProvisioning({ data: {
+    status: 'active', cardBalance: '25.000000', cardNumber: '4242424242424242',
+    cvv: '123', expiryMonth: 12, expiryYear: 2032
+  } }, 25);
+  assert.deepEqual(ready, {
+    state: 'ready', status: 'active', currentBalance: 25, currency: 'USD', last4: '4242'
+  });
+
+  const pending = mapCardProvisioning({ data: {
+    status: 'active', cardBalance: '0.000000', cardNumber: '', cvv: ''
+  } }, 25);
+  assert.equal(pending.state, 'pending');
+
+  const failed = mapCardProvisioning({ data: { status: 'failed', cardBalance: '0.000000' } }, 25);
+  assert.equal(failed.state, 'failed');
 });
 
 test('Zzshu direct creation uses X-API-Key and strips secrets from the result', async () => {

@@ -15,6 +15,7 @@ export function createWorkflowHandlers({
   rechargeProvider,
   recordCall,
   mapPurchasedCard,
+  mapCardProvisioning,
   mapCardCredentials,
   pollDelayMs = 5_000,
   failureConfirmDelayMs = 2_500,
@@ -59,15 +60,18 @@ export function createWorkflowHandlers({
       });
     }
 
-    const cardEnvelope = await recordCall({
-      orderId: task.order_id,
-      provider: 'hnskj',
-      operation: 'card_details',
-      attemptNo: task.attempts,
-      action: () => cardProvider.card(context.card.provider_card_id),
-      summarize: () => ({ cardId: context.card.provider_card_id })
-    });
-    const credentials = mapCardCredentials(cardEnvelope);
+    let credentials = context.card.credentials;
+    if (!credentials) {
+      const cardEnvelope = await recordCall({
+        orderId: task.order_id,
+        provider: 'hnskj',
+        operation: 'card_details',
+        attemptNo: task.attempts,
+        action: () => cardProvider.card(context.card.provider_card_id),
+        summarize: () => ({ cardId: context.card.provider_card_id })
+      });
+      credentials = mapCardCredentials(cardEnvelope);
+    }
 
     try {
       const submission = await recordCall({
@@ -93,6 +97,41 @@ export function createWorkflowHandlers({
       );
       throw error;
     }
+  }
+
+  async function verifyCard(task) {
+    const context = await workflow.loadOrderContext(task.order_id);
+    if (context.order.status !== OrderStatus.CARD_PROVISIONING) {
+      throw new TaskExecutionError(`Order cannot verify card from ${context.order.status}`, {
+        code: 'ORDER_STATE_MISMATCH'
+      });
+    }
+    const envelope = await recordCall({
+      orderId: task.order_id,
+      provider: 'hnskj',
+      operation: 'card_readiness',
+      requestKey: `card-readiness:${task.order_id}`,
+      attemptNo: task.attempts,
+      action: () => cardProvider.card(context.card.provider_card_id),
+      summarize: (value) => mapCardProvisioning(value, context.order.open_card_amount)
+    });
+    const snapshot = mapCardProvisioning(envelope, context.order.open_card_amount);
+    if (snapshot.state === 'ready') {
+      const credentials = mapCardCredentials(envelope);
+      await workflow.commitCardReady(task.order_id, snapshot, credentials);
+      return;
+    }
+    if (snapshot.state === 'failed') {
+      await workflow.failCardProvisioning(task.order_id, snapshot);
+      return;
+    }
+    if (task.attempts >= task.max_attempts) {
+      await workflow.reviewCardProvisioning(task.order_id, 'card readiness timed out; manual review required');
+      return;
+    }
+    throw new TaskExecutionError('Card is still provisioning', {
+      code: 'CARD_PROVISIONING_PENDING', retryable: true, delayMs: pollDelayMs
+    });
   }
 
   async function queryRecharge(task, attemptNo) {
@@ -139,6 +178,7 @@ export function createWorkflowHandlers({
 
   return {
     PURCHASE_CARD: purchaseCard,
+    VERIFY_CARD: verifyCard,
     SUBMIT_RECHARGE: submitRecharge,
     POLL_RECHARGE: pollRecharge
   };
