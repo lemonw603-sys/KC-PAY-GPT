@@ -1,0 +1,35 @@
+[Unit]
+Description=破甲 v1 Web
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=simple
+User=pojia
+Group=pojia
+WorkingDirectory=/opt/pojia/current/v1
+EnvironmentFile=/etc/pojia/runtime.env
+EnvironmentFile=/etc/pojia/admin.env
+ExecStart=/usr/bin/node src/server.js
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=15
+UMask=0077
+NoNewPrivileges=true
+PrivateDevices=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+LockPersonality=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+CapabilityBoundingSet=
+AmbientCapabilities=
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,21 @@
+plus.vibebridge.top {
+	encode zstd gzip
+
+	header {
+		Content-Security-Policy "default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+		Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=()"
+		X-Frame-Options "DENY"
+	}
+
+	log {
+		output file /var/log/caddy/pojia-access.log {
+			roll_size 20MiB
+			roll_keep 3
+		}
+		format json
+	}
+
+	reverse_proxy 127.0.0.1:3100
+}
