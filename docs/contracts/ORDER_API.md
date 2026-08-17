@@ -63,3 +63,48 @@ HTTP/1.1 201 Created
 5. 写入创建事件和唯一 `PURCHASE_CARD` 任务。
 
 任一步失败则整体回滚。同一 CDK 并发提交时只有一个请求能成功。
+
+## 订单状态查询
+
+路径：`POST /api/v1/orders/status`
+
+客户可使用创建响应中的 `publicNo`：
+
+```json
+{ "publicNo": "PJV1-..." }
+```
+
+或使用原 CDK 找回已绑定订单：
+
+```json
+{ "cdk": "PJ-..." }
+```
+
+两者必须且只能提交一个。CDK 在查询服务内转换为 SHA-256，不会传入数据库查询日志或响应。
+
+成功响应：
+
+```json
+{
+  "order": {
+    "publicNo": "PJV1-...",
+    "status": "PROCESSING",
+    "updatedAt": "2026-08-17T10:00:00.000Z"
+  }
+}
+```
+
+客户状态只有：
+
+| 客户状态 | 含义 |
+| --- | --- |
+| `QUEUED` | 订单已建立，等待执行 |
+| `PROCESSING` | 开卡、提交或轮询中 |
+| `REVIEWING` | 提交结果不明、对账异常或未知内部状态，需要复核 |
+| `SUCCESS` | 直充已返回最终成功 |
+| `FAILED` | 失败已经延迟复查确认 |
+
+- 查询不返回内部状态、失败原因、卡信息、Session、Provider 或退款信息。
+- 已关闭订单根据关闭前最后一个业务状态返回成功、失败或复核，不把 `CLOSED` 暴露给客户。
+- 成功和失败响应均带 `Cache-Control: no-store`。
+- 默认单 IP 每分钟 30 次；不存在返回 `404 order_not_found`，请求同时包含两种凭证或均缺失返回 `400 invalid_order_query`。

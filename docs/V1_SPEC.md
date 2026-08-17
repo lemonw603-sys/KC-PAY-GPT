@@ -266,6 +266,8 @@ v1 MySQL 只保存 CDK 的 SHA-256。系统生成的明文仅一次写入运营�
 - 提交结果。
 - 使用 CDK或订单查询码查看充值状态。
 
+状态查询接口同时支持创建时返回的 `publicNo` 和原 CDK。客户仅看到 `QUEUED | PROCESSING | REVIEWING | SUCCESS | FAILED`，不看到卡片、Provider、退款或内部异常细节。
+
 失败提示应可行动，但不暴露供应商内部细节、卡资料或退款信息。
 
 ### 内部后台

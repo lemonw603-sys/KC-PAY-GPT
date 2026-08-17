@@ -14,6 +14,7 @@ import { createOrderIntakeService } from '../src/services/order-intake-service.j
 import { decryptSecret } from '../src/security/secret-box.js';
 import { sessionFixture } from '../test-support/session-fixture.js';
 import { storeCdkBatch } from '../src/services/cdk-service.js';
+import { createOrderStatusService } from '../src/services/order-status-service.js';
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
 const integrationSessionKey = Buffer.alloc(32, 7);
@@ -411,6 +412,36 @@ test('CDK batches store only hashes and report input and existing duplicates', {
     );
   } finally {
     await pool.query('DELETE FROM cdks WHERE batch_no IN (?, ?)', [batchNo, collisionBatchNo]);
+    await pool.end();
+  }
+});
+
+test('customer status lookup recovers the same order by public number or CDK', {
+  skip: !databaseUrl
+}, async () => {
+  const pool = mysql.createPool({ uri: databaseUrl, connectionLimit: 3, timezone: 'Z' });
+  const publicNo = 'PJV1-ABCDEFGHIJKLMNOPQRST';
+  const fixture = await createOrder(pool, { publicNo });
+  const queryStatus = createOrderStatusService({ pool });
+  try {
+    const byPublicNo = await queryStatus({ publicNo });
+    const byCdk = await queryStatus({ cdk: fixture.cdkId });
+    assert.equal(byPublicNo.status, 'QUEUED');
+    assert.deepEqual(byCdk, byPublicNo);
+
+    await transitionOrder(pool, {
+      orderId: fixture.orderId,
+      toStatus: OrderStatus.CARD_PURCHASING,
+      actorType: 'TEST',
+      reason: 'verify customer processing mapping'
+    });
+    assert.equal((await queryStatus({ publicNo })).status, 'PROCESSING');
+    await assert.rejects(
+      queryStatus({ publicNo: publicNo.toLowerCase() }),
+      (error) => error.code === 'INVALID_ORDER_QUERY' || error.code === 'ORDER_NOT_FOUND'
+    );
+  } finally {
+    await removeOrder(pool, fixture);
     await pool.end();
   }
 });

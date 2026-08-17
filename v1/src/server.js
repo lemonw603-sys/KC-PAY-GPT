@@ -2,6 +2,7 @@ import { createApp } from './app/create-app.js';
 import { loadConfig } from './config.js';
 import { checkDatabaseReady, createDatabasePool } from './db/pool.js';
 import { createOrderIntakeService } from './services/order-intake-service.js';
+import { createOrderStatusService } from './services/order-status-service.js';
 
 const config = loadConfig();
 const pool = createDatabasePool(config.databaseUrl);
@@ -9,9 +10,11 @@ const createCustomerOrder = createOrderIntakeService({
   pool,
   sessionEncryptionKey: config.sessionEncryptionKey
 });
+const getCustomerOrderStatus = createOrderStatusService({ pool });
 const app = createApp({
   readiness: () => checkDatabaseReady(pool),
-  createCustomerOrder
+  createCustomerOrder,
+  getCustomerOrderStatus
 });
 
 if (config.trustProxy) {

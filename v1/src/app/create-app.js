@@ -1,6 +1,6 @@
 import express from 'express';
 import helmet from 'helmet';
-import { OrderIntakeError } from '../domain/order-intake-error.js';
+import { PublicApiError } from '../domain/public-api-error.js';
 import { createFixedWindowRateLimit } from './fixed-window-rate-limit.js';
 
 const DEFAULT_BODY_LIMIT = '256kb';
@@ -8,7 +8,9 @@ const DEFAULT_BODY_LIMIT = '256kb';
 export function createApp({
   readiness = async () => ({ ready: true }),
   createCustomerOrder = null,
-  orderRateLimit = createFixedWindowRateLimit()
+  getCustomerOrderStatus = null,
+  orderRateLimit = createFixedWindowRateLimit(),
+  orderStatusRateLimit = createFixedWindowRateLimit({ limit: 30 })
 } = {}) {
   const app = express();
 
@@ -44,12 +46,22 @@ export function createApp({
     });
   }
 
+  if (typeof getCustomerOrderStatus === 'function') {
+    app.post('/api/v1/orders/status', (_req, res, next) => {
+      res.setHeader('Cache-Control', 'no-store');
+      next();
+    }, orderStatusRateLimit, async (req, res) => {
+      const order = await getCustomerOrderStatus(req.body);
+      return res.json({ order });
+    });
+  }
+
   app.use((_req, res) => {
     res.status(404).json({ error: 'not_found' });
   });
 
   app.use((error, _req, res, _next) => {
-    if (error instanceof OrderIntakeError) {
+    if (error instanceof PublicApiError) {
       return res.status(error.status).json({ error: error.code.toLowerCase() });
     }
     if (error?.type === 'entity.too.large') {

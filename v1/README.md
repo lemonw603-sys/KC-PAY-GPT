@@ -37,7 +37,7 @@ npm audit --omit=dev
 TEST_DATABASE_URL='mysql://user:password@127.0.0.1:3306/pojia_v1_test' npm test
 ```
 
-没有设置 `TEST_DATABASE_URL` 时，八个数据库集成用例会明确跳过，其余单元测试继续执行。
+没有设置 `TEST_DATABASE_URL` 时，九个数据库集成用例会明确跳过，其余单元测试继续执行。
 
 ## 配置
 
@@ -70,6 +70,7 @@ npm start
 - `GET /health/live`：进程存活。
 - `GET /health/ready`：数据库可查询时返回 200，否则返回 503。
 - `POST /api/v1/orders`：提交 `{ cdk, session }`，成功返回客户查询用 `publicNo` 和 `CREATED`。
+- `POST /api/v1/orders/status`：提交 `{ publicNo }` 或 `{ cdk }`，返回客户可见状态和最后更新时间。
 
 数据库业务开关默认禁止新订单和新充值，保留已有订单轮询。进程级 Provider 读写权限又默认全部关闭，因此仅启动 worker 不会访问外部系统。
 

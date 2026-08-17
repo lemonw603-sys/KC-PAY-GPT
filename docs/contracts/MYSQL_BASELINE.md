@@ -53,6 +53,7 @@ migration 004_cdk_batch_index already applied
 - 同一 CDK 并发提交两次时仅有一次成功；CDK 兑换、Session 密文、订单、创建事件和首任务原子落库。
 - CDK 批次导入只写入 64 位 SHA-256；文件内重复和数据库已存重复分开计数，重复导入不新增记录。
 - 生成模式发现任一历史哈希冲突时，本批已插入的其余新码也会回滚，不会产生无法完整交付的半批次。
+- 客户可用大小写精确匹配的 `publicNo` 或原 CDK 哈希找回同一订单；状态迁移后客户查询结果会从 `QUEUED` 更新为 `PROCESSING`。
 
 ### HTTP 就绪
 
@@ -68,8 +69,8 @@ GET /health/ready -> 200 {"status":"ready"}
 设置 `TEST_DATABASE_URL` 后执行 `npm test`：
 
 ```text
-tests 61
-pass 61
+tests 67
+pass 67
 fail 0
 skipped 0
 ```
@@ -81,7 +82,7 @@ skipped 0
 - 增加 `provider_calls` 真实落库用例。
 - 验证嵌套 API Key、Token、PAN 和 CVV 进入 JSON 列前会被替换为 `[REDACTED]`。
 - 增加任务 runner 的成功、重试、模糊提交 dead-letter 和未知 handler 隔离测试。
-- 加入 CDK 生成/导入、批次追踪、哈希存储和重复分类后，v1 共 61 个测试；其中 8 个数据库集成用例已在 MySQL 8.4.11 上通过。
+- 加入 `publicNo`/CDK 订单恢复、客户状态映射和无缓存查询后，v1 共 67 个测试；其中 9 个数据库集成用例已在 MySQL 8.4.11 上通过。
 
 ## 环境收尾
 

@@ -3,6 +3,7 @@ import test from 'node:test';
 import { createApp } from '../src/app/create-app.js';
 import { createFixedWindowRateLimit } from '../src/app/fixed-window-rate-limit.js';
 import { OrderIntakeError } from '../src/domain/order-intake-error.js';
+import { PublicApiError } from '../src/domain/public-api-error.js';
 
 async function withServer(app, run) {
   const server = app.listen(0, '127.0.0.1');
@@ -94,5 +95,52 @@ test('maps intake failures safely and rate-limits repeated submissions', async (
     assert.equal(response.status, 429);
     assert.deepEqual(await response.json(), { error: 'rate_limited' });
     assert.equal(response.headers.has('retry-after'), true);
+  });
+});
+
+test('queries customer order status without caching or exposing internal state', async () => {
+  const app = createApp({
+    getCustomerOrderStatus: async () => ({
+      publicNo: 'PJV1-ABCDEFGHIJKLMNOPQRST',
+      status: 'REVIEWING',
+      updatedAt: '2026-08-17T10:00:00.000Z'
+    })
+  });
+  await withServer(app, async (baseUrl) => {
+    const response = await fetch(`${baseUrl}/api/v1/orders/status`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cdk: 'PJ-ABCDEFGH' })
+    });
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get('cache-control'), 'no-store');
+    assert.deepEqual(await response.json(), {
+      order: {
+        publicNo: 'PJV1-ABCDEFGHIJKLMNOPQRST',
+        status: 'REVIEWING',
+        updatedAt: '2026-08-17T10:00:00.000Z'
+      }
+    });
+  });
+});
+
+test('does not cache missing-order responses', async () => {
+  const app = createApp({
+    getCustomerOrderStatus: async () => {
+      throw new PublicApiError('not found detail', {
+        code: 'ORDER_NOT_FOUND',
+        status: 404
+      });
+    }
+  });
+  await withServer(app, async (baseUrl) => {
+    const response = await fetch(`${baseUrl}/api/v1/orders/status`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ publicNo: 'PJV1-ABCDEFGHIJKLMNOPQRST' })
+    });
+    assert.equal(response.status, 404);
+    assert.equal(response.headers.get('cache-control'), 'no-store');
+    assert.deepEqual(await response.json(), { error: 'order_not_found' });
   });
 });
