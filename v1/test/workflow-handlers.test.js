@@ -26,7 +26,9 @@ function setup({ status = OrderStatus.CARD_READY, rechargeStatuses = [] } = {}) 
     commitCardReady: async (...args) => calls.push(['ready', ...args]),
     failCardProvisioning: async (...args) => calls.push(['failed-card', ...args]),
     reviewCardProvisioning: async (...args) => calls.push(['review-card', ...args]),
-    commitRechargeSubmission: async (...args) => calls.push(['submission', ...args])
+    commitRechargeSubmission: async (...args) => calls.push(['submission', ...args]),
+    commitRechargeSuccess: async (...args) => calls.push(['success', ...args]),
+    commitCancellationStatus: async (...args) => calls.push(['cancellation', ...args])
   };
   const cardProvider = {
     purchaseCard: async () => ({ data: { card: { id: 'card-1' } } }),
@@ -161,7 +163,8 @@ test('marks success immediately and never guesses unknown states', async () => {
     rechargeStatuses: [{ status: 'success', isSubscriptionCancelled: 0 }]
   });
   await success.handlers.POLL_RECHARGE({ id: 2, order_id: 'order-1', attempts: 2 });
-  assert.equal(success.calls.at(-1)[2], OrderStatus.RECHARGE_SUCCESS);
+  assert.equal(success.calls.at(-1)[0], 'success');
+  assert.equal(success.calls.at(-1)[2].isSubscriptionCancelled, 0);
 
   const unknown = setup({
     status: OrderStatus.RECHARGE_PROCESSING,
@@ -171,6 +174,36 @@ test('marks success immediately and never guesses unknown states', async () => {
     unknown.handlers.POLL_RECHARGE({ id: 2, order_id: 'order-1', attempts: 2 }),
     /Unsupported recharge status/
   );
+});
+
+test('persists the latest Session and rechecks cancellation independently', async () => {
+  const state = setup({
+    status: OrderStatus.RECHARGE_SUCCESS,
+    rechargeStatuses: [{
+      status: 'success', isSubscriptionCancelled: 1,
+      latestSession: { accessToken: 'latest', sessionToken: 'latest-session' }
+    }]
+  });
+  state.rechargeProvider.queryStatusWithSession = state.rechargeProvider.queryStatus;
+  await state.handlers.RECHECK_CANCELLATION({
+    id: 3, order_id: 'order-1', attempts: 2, max_attempts: 60
+  });
+  assert.equal(state.calls.at(-1)[0], 'cancellation');
+  assert.equal(state.calls.at(-1)[3].accessToken, 'latest');
+  assert.equal(JSON.stringify(state.providerCalls.at(-1).summarize({ latestSession: { accessToken: 'secret' }, status: 'success' })).includes('secret'), false);
+});
+
+test('requeues an unconfirmed cancellation without changing recharge success', async () => {
+  const state = setup({
+    status: OrderStatus.RECHARGE_SUCCESS,
+    rechargeStatuses: [{ status: 'success', isSubscriptionCancelled: 0 }]
+  });
+  await assert.rejects(
+    state.handlers.RECHECK_CANCELLATION({ id: 3, order_id: 'order-1', attempts: 1, max_attempts: 60 }),
+    (error) => error.code === 'CANCELLATION_PENDING' && error.retryable === true
+  );
+  assert.equal(state.calls.at(-1)[0], 'cancellation');
+  assert.equal(state.calls.some((call) => call[0] === 'transition'), false);
 });
 
 test('uses a local audit key instead of persisting the recharge card key', async () => {

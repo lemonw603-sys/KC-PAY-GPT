@@ -220,9 +220,10 @@ v1 MySQL 只保存 CDK 的 SHA-256。系统生成的明文仅一次写入运营�
 - `id`、`public_no`、`status`
 - `customer_email`、`chatgpt_account_id`
 - `plan_type`，v1 固定 `plus`
-- `session_encrypted`
+- `session_ciphertext`；直充成功后使用状态接口返回的最新完整 Session 加密覆盖
 - `card_purchase_idempotency_key`
 - `recharge_order_no`、`recharge_card_key`
+- `subscription_cancelled`、`cancellation_checked_at`、`cancellation_review_required`
 - `failure_code`、`failure_reason`
 - `created_at`、`updated_at`、`finished_at`
 
@@ -232,8 +233,9 @@ v1 MySQL 只保存 CDK 的 SHA-256。系统生成的明文仅一次写入运营�
 - `card_type_id`、`last4`、`status`
 - `funded_amount`、`current_balance`、`currency`
 - `refund_status`、`last_synced_at`
+- `card_credentials_ciphertext`：仅在卡片就绪到直充创建成功之间加密暂存，随后清除
 
-完整卡资料优先按需从卡台读取并直接发送给直充适配器，不作为日常查询数据重复保存。
+完整卡资料在就绪检查时读取一次并加密暂存，保证 worker 重启后仍可恢复；直充创建成功后立即清除，不进入日常查询、日志或前端。
 
 ### `provider_calls`
 

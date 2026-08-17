@@ -231,6 +231,29 @@ test('Zzshu status query never returns full token or PAN', async () => {
   assert.equal('bankCardNo' in status, false);
 });
 
+test('Zzshu trusted workflow status returns the latest Session but still drops PAN', async () => {
+  const provider = new ZzshuRechargeProvider({
+    baseUrl: 'https://card.example/api/v1',
+    apiKey: 'stable-recharge-key',
+    fetchImpl: async () => response({
+      code: 0,
+      message: 'success',
+      data: {
+        order_no: '12', card_key: 'DIRECT-abc', status: 'success',
+        token: {
+          accessToken: 'latest', sessionToken: 'latest-session', expires: '2032-01-01T00:00:00Z',
+          user: { id: 'user-1' }, account: { id: 'account-1' }
+        },
+        bank_card_no: '4242424242424242', is_subscription_cancelled: 1
+      }
+    })
+  });
+  const status = await provider.queryStatusWithSession('DIRECT-abc');
+  assert.equal(status.latestSession.accessToken, 'latest');
+  assert.equal(status.isSubscriptionCancelled, 1);
+  assert.equal('bankCardNo' in status, false);
+});
+
 test('Zzshu distinguishes safe capacity retry from ambiguous server failure', async () => {
   const capacity = new ZzshuRechargeProvider({
     baseUrl: 'https://card.example/api/v1',

@@ -29,7 +29,8 @@ const rechargeProvider = config.providerReadsEnabled
     })
   : {
       createDirectOrder: unavailable('recharge creation'),
-      queryStatus: unavailable('recharge status query')
+      queryStatus: unavailable('recharge status query'),
+      queryStatusWithSession: unavailable('recharge status and Session query')
     };
 const workflow = createWorkflowRepository(pool, {
   sessionEncryptionKey: config.sessionEncryptionKey

@@ -480,9 +480,14 @@ test('worker runs a full fake-provider workflow while enforcing runtime gates', 
       providerActions.push('create-recharge');
       return { orderNo: 'fake-order-e2e', cardKey: 'DIRECT-fake-e2e' };
     },
-    queryStatus: async () => {
-      providerActions.push('poll-recharge');
-      return { status: 'success', isSubscriptionCancelled: 0 };
+    queryStatus: async () => ({ status: 'success', isSubscriptionCancelled: 0 }),
+    queryStatusWithSession: async () => {
+      const recheck = providerActions.includes('poll-recharge');
+      providerActions.push(recheck ? 'recheck-cancellation' : 'poll-recharge');
+      return {
+        status: 'success', isSubscriptionCancelled: recheck ? 1 : 0,
+        latestSession: { accessToken: recheck ? 'latest-token-2' : 'latest-token-1', account: { id: 'acct-1' } }
+      };
     }
   };
   const handlers = createWorkflowHandlers({
@@ -547,17 +552,27 @@ test('worker runs a full fake-provider workflow while enforcing runtime gates', 
       [fixture.orderId]
     );
     assert.equal((await iteration({ providerWritesEnabled: false })).status, 'COMPLETED');
+    await pool.query(
+      `UPDATE tasks SET available_at = CURRENT_TIMESTAMP(3)
+       WHERE order_id = ? AND task_type = 'RECHECK_CANCELLATION'`,
+      [fixture.orderId]
+    );
+    assert.equal((await iteration({ providerWritesEnabled: false })).status, 'COMPLETED');
 
     const [[order]] = await pool.query(
-      `SELECT status, recharge_order_no, recharge_card_key
+      `SELECT status, recharge_order_no, recharge_card_key, subscription_cancelled,
+              cancellation_review_required
        FROM orders WHERE id = ?`,
       [fixture.orderId]
     );
     assert.deepEqual(order, {
       status: OrderStatus.RECHARGE_SUCCESS,
       recharge_order_no: 'fake-order-e2e',
-      recharge_card_key: 'DIRECT-fake-e2e'
+      recharge_card_key: 'DIRECT-fake-e2e',
+      subscription_cancelled: 1,
+      cancellation_review_required: 0
     });
+    assert.equal((await workflow.loadOrderContext(fixture.orderId)).session.accessToken, 'latest-token-2');
     const [tasks] = await pool.query(
       'SELECT task_type, status FROM tasks WHERE order_id = ? ORDER BY id',
       [fixture.orderId]
@@ -566,13 +581,15 @@ test('worker runs a full fake-provider workflow while enforcing runtime gates', 
       { task_type: 'PURCHASE_CARD', status: 'COMPLETED' },
       { task_type: 'VERIFY_CARD', status: 'COMPLETED' },
       { task_type: 'SUBMIT_RECHARGE', status: 'COMPLETED' },
-      { task_type: 'POLL_RECHARGE', status: 'COMPLETED' }
+      { task_type: 'POLL_RECHARGE', status: 'COMPLETED' },
+      { task_type: 'RECHECK_CANCELLATION', status: 'COMPLETED' }
     ]);
     assert.deepEqual(providerActions, [
       'purchase',
       'card-details',
       'create-recharge',
-      'poll-recharge'
+      'poll-recharge',
+      'recheck-cancellation'
     ]);
   } finally {
     await pool.query(

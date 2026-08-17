@@ -8,7 +8,7 @@
 
 未发现已经造成真实资金损失或数据泄露的证据；真实开卡和直充尚未执行。
 
-发现 4 个实现缺口和 1 个流程缺口。其中，真实 JWE Session 兼容、一次性 PoC 的孤儿订单恢复和错误输出脱敏问题已在真实调用前修复；生产 worker 的维护状态分类、成功后 Token/取消续费闭环仍待修复。
+发现 4 个实现缺口和 1 个流程缺口。真实 JWE Session、PoC 孤儿订单恢复、错误脱敏、维护状态分类、异步卡片最终确认以及成功后的 Token/取消续费闭环均已修复；真实 Provider 仍保持硬关闭，等待最终上线验证。
 
 ## CR-00 高：真实 ChatGPT JWE 被错误拒绝（已修复）
 
@@ -34,11 +34,11 @@
 - 影响：上游维护会把本可恢复订单错误终结为失败，需要人工重建任务；不是重复扣费风险，但会造成可用性和订单状态错误。
 - 最小修复：把 HTTP 403 + `40305` 标记为明确的创建前拒绝、可延迟重试；保留原订单和相同业务边界。
 
-## CR-03 中：成功后的最新 Token 和取消续费没有正式闭环（待修复）
+## CR-03 中：成功后的最新 Token 和取消续费没有正式闭环（已修复）
 
 - 位置：`v1/src/providers/zzshu-recharge.js:23`、`v1/src/providers/zzshu-recharge.js:78`、`v1/src/workers/workflow-handlers.js:127`、`v1/src/domain/task.js:13`
 - 合同证据：对接文档第 51–52、454–455、912–914、1105 行说明成功后旧 accessToken 会失效，状态返回最新 Token，并应读取取消续费状态。
-- 当前实现：状态 Schema 不读取 `token`；`normalizeStatus()` 丢弃最新 Token；worker 看到 `success` 后立即完成任务。虽然定义了 `RECHECK_CANCELLATION`，但没有 handler，也不会创建该任务。
+- 修复结果：普通状态查询仍丢弃 Token；受信任的 worker 查询只接受字段完整的最新 Session，并在成功事务中加密覆盖旧 Session。充值成功独立于取消续费，未确认时创建 `RECHECK_CANCELLATION` 延迟任务；耗尽后在内部后台标记人工处理。
 - 影响：系统无法证明续费已经取消，也无法用更新后的 Token 做后续核验。不会把 Token 暴露给客户，但运营后台可能把“充值成功”误当成“充值与取消续费均完成”。
 - 最小修复：最新 Session 继续加密保存；成功状态与取消续费状态分开记录；成功后创建一次延迟复查任务，直到 `is_subscription_cancelled=1` 或进入人工处理。
 

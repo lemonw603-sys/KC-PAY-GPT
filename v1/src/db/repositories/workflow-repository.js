@@ -263,6 +263,74 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey }) {
           [orderId, `poll-recharge:${orderId}`]
         );
       });
+    },
+
+    async commitRechargeSuccess(orderId, status, latestSession = null) {
+      return inTransaction(pool, async (connection) => {
+        const [rows] = await connection.query(
+          'SELECT status, version FROM orders WHERE id = ? FOR UPDATE', [orderId]
+        );
+        if (rows.length !== 1) throw new Error(`Order not found: ${orderId}`);
+        const order = rows[0];
+        if (![OrderStatus.RECHARGE_PROCESSING, OrderStatus.SUBMIT_UNKNOWN].includes(order.status)) {
+          throw new Error(`Cannot commit recharge success from ${order.status}`);
+        }
+        const encryptedSession = latestSession
+          ? encryptSecret(JSON.stringify(latestSession), sessionEncryptionKey)
+          : null;
+        const cancelled = status.isSubscriptionCancelled === 1 ? 1 : 0;
+        const [result] = await connection.query(
+          `UPDATE orders SET status = ?,
+             session_ciphertext = COALESCE(?, session_ciphertext),
+             subscription_cancelled = ?, cancellation_checked_at = CURRENT_TIMESTAMP(3),
+             cancellation_review_required = 0, version = version + 1,
+             updated_at = CURRENT_TIMESTAMP(3), finished_at = CURRENT_TIMESTAMP(3)
+           WHERE id = ? AND version = ?`,
+          [OrderStatus.RECHARGE_SUCCESS, encryptedSession, cancelled, orderId, order.version]
+        );
+        if (result.affectedRows !== 1) throw new Error(`Concurrent recharge success detected: ${orderId}`);
+        await insertEvent(connection, {
+          orderId, fromStatus: order.status, toStatus: OrderStatus.RECHARGE_SUCCESS,
+          reason: 'provider confirmed success',
+          metadata: { subscriptionCancelled: cancelled }
+        });
+        if (cancelled !== 1) {
+          await connection.query(
+            `INSERT INTO tasks
+             (order_id, task_type, status, dedupe_key, max_attempts, available_at)
+             VALUES (?, 'RECHECK_CANCELLATION', 'PENDING', ?, 60,
+                     DATE_ADD(CURRENT_TIMESTAMP(3), INTERVAL 60 SECOND))`,
+            [orderId, `recheck-cancellation:${orderId}`]
+          );
+        }
+      });
+    },
+
+    async commitCancellationStatus(orderId, status, latestSession = null, { exhausted = false } = {}) {
+      return inTransaction(pool, async (connection) => {
+        const [rows] = await connection.query(
+          'SELECT status, version FROM orders WHERE id = ? FOR UPDATE', [orderId]
+        );
+        if (rows.length !== 1) throw new Error(`Order not found: ${orderId}`);
+        const order = rows[0];
+        if (order.status !== OrderStatus.RECHARGE_SUCCESS) {
+          throw new Error(`Cannot commit cancellation check from ${order.status}`);
+        }
+        const encryptedSession = latestSession
+          ? encryptSecret(JSON.stringify(latestSession), sessionEncryptionKey)
+          : null;
+        const cancelled = status.isSubscriptionCancelled === 1 ? 1 : 0;
+        const reviewRequired = cancelled === 1 ? 0 : (exhausted ? 1 : 0);
+        const [result] = await connection.query(
+          `UPDATE orders SET session_ciphertext = COALESCE(?, session_ciphertext),
+             subscription_cancelled = ?, cancellation_checked_at = CURRENT_TIMESTAMP(3),
+             cancellation_review_required = ?, version = version + 1,
+             updated_at = CURRENT_TIMESTAMP(3)
+           WHERE id = ? AND version = ?`,
+          [encryptedSession, cancelled, reviewRequired, orderId, order.version]
+        );
+        if (result.affectedRows !== 1) throw new Error(`Concurrent cancellation check detected: ${orderId}`);
+      });
     }
   };
 }

@@ -18,9 +18,16 @@ export function createWorkflowHandlers({
   mapCardProvisioning,
   mapCardCredentials,
   pollDelayMs = 5_000,
+  cancellationDelayMs = 60_000,
   failureConfirmDelayMs = 2_500,
   wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 }) {
+  function withoutLatestSession(value) {
+    if (Array.isArray(value)) return value.map(withoutLatestSession);
+    if (!value || typeof value !== 'object') return value;
+    const { latestSession, ...safe } = value;
+    return safe;
+  }
   async function purchaseCard(task) {
     const context = await workflow.loadOrderContext(task.order_id);
     if (context.order.status === OrderStatus.CREATED) {
@@ -134,21 +141,27 @@ export function createWorkflowHandlers({
     });
   }
 
-  async function queryRecharge(task, attemptNo) {
+  async function queryRecharge(task, attemptNo, {
+    includeSession = false,
+    operation = 'query_status',
+    requestKey = `recharge-status:${task.order_id}`
+  } = {}) {
     const context = await workflow.loadOrderContext(task.order_id);
     return recordCall({
       orderId: task.order_id,
       provider: 'zzshu',
-      operation: 'query_status',
-      requestKey: `recharge-status:${task.order_id}`,
+      operation,
+      requestKey,
       attemptNo,
-      action: () => rechargeProvider.queryStatus(context.order.recharge_card_key),
-      summarize: (value) => value
+      action: () => includeSession && typeof rechargeProvider.queryStatusWithSession === 'function'
+        ? rechargeProvider.queryStatusWithSession(context.order.recharge_card_key)
+        : rechargeProvider.queryStatus(context.order.recharge_card_key),
+      summarize: withoutLatestSession
     });
   }
 
   async function pollRecharge(task) {
-    let status = await queryRecharge(task, task.attempts);
+    let status = await queryRecharge(task, task.attempts, { includeSession: true });
     if (Array.isArray(status)) [status] = status;
     if (status.status === 'pending' || status.status === 'processing') {
       throw pendingError(pollDelayMs);
@@ -164,7 +177,7 @@ export function createWorkflowHandlers({
     }
 
     if (status.status === 'success') {
-      await workflow.transition(task.order_id, OrderStatus.RECHARGE_SUCCESS, 'provider confirmed success', status);
+      await workflow.commitRechargeSuccess(task.order_id, withoutLatestSession(status), status.latestSession);
       return;
     }
     if (status.status === 'failed') {
@@ -176,10 +189,46 @@ export function createWorkflowHandlers({
     });
   }
 
+  async function recheckCancellation(task) {
+    const context = await workflow.loadOrderContext(task.order_id);
+    if (context.order.status !== OrderStatus.RECHARGE_SUCCESS) {
+      throw new TaskExecutionError(`Order cannot recheck cancellation from ${context.order.status}`, {
+        code: 'ORDER_STATE_MISMATCH'
+      });
+    }
+    let status = await queryRecharge(task, task.attempts, {
+      includeSession: true,
+      operation: 'recheck_cancellation',
+      requestKey: `cancellation-status:${task.order_id}`
+    });
+    if (Array.isArray(status)) [status] = status;
+    if (status.status !== 'success') {
+      await workflow.transition(
+        task.order_id,
+        OrderStatus.RECONCILIATION_REQUIRED,
+        'provider status changed after confirmed success',
+        withoutLatestSession(status)
+      );
+      return;
+    }
+    const exhausted = status.isSubscriptionCancelled !== 1 && task.attempts >= task.max_attempts;
+    await workflow.commitCancellationStatus(
+      task.order_id,
+      withoutLatestSession(status),
+      status.latestSession,
+      { exhausted }
+    );
+    if (status.isSubscriptionCancelled === 1 || exhausted) return;
+    throw new TaskExecutionError('Subscription cancellation is not confirmed yet', {
+      code: 'CANCELLATION_PENDING', retryable: true, delayMs: cancellationDelayMs
+    });
+  }
+
   return {
     PURCHASE_CARD: purchaseCard,
     VERIFY_CARD: verifyCard,
     SUBMIT_RECHARGE: submitRecharge,
-    POLL_RECHARGE: pollRecharge
+    POLL_RECHARGE: pollRecharge,
+    RECHECK_CANCELLATION: recheckCancellation
   };
 }

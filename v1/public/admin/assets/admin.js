@@ -91,7 +91,7 @@ function orderRow(order) {
   return `<tr data-order="${escapeHtml(order.publicNo)}" tabindex="0">
     <td><strong class="order-link">${escapeHtml(order.publicNo)}</strong></td>
     <td><span class="cell-main">${escapeHtml(account)}</span>${order.rechargeOrderNo ? `<small>${escapeHtml(order.rechargeOrderNo)}</small>` : ''}</td>
-    <td>${statusChip(order.status)}</td>
+    <td>${statusChip(order.status)}${order.cancellationReviewRequired ? '<small>续费需处理</small>' : ''}</td>
     <td>${card}</td>
     <td>${order.card?.refundStatus ? escapeHtml(order.card.refundStatus) : '—'}</td>
     <td>${formatTime(order.createdAt)}</td>
@@ -161,7 +161,10 @@ async function openOrder(publicNo) {
       <section class="detail-section"><div class="detail-status">${statusChip(order.status)}<span>${formatTime(order.updatedAt)}</span></div>${renderKeyValues([
         ['客户邮箱', order.customerEmail], ['ChatGPT 账号 ID', order.chatgptAccountId],
         ['直充订单号', order.rechargeOrderNo], ['卡段 ID', order.cardTypeId],
-        ['开卡金额', order.openCardAmount], ['失败代码', order.failureCode], ['失败原因', order.failureReason]
+        ['开卡金额', order.openCardAmount],
+        ['自动续费', order.subscriptionCancelled === 1 ? '已取消' : order.cancellationReviewRequired ? '需要人工处理' : order.subscriptionCancelled === 0 ? '等待确认' : '未开始'],
+        ['续费复查时间', formatTime(order.cancellationCheckedAt)],
+        ['失败代码', order.failureCode], ['失败原因', order.failureReason]
       ])}</section>
       <section class="detail-section"><h3>卡片与退款</h3>${data.card ? renderKeyValues([
         ['卡台卡片 ID', data.card.providerCardId], ['卡号后四位', data.card.last4],

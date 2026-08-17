@@ -11,7 +11,7 @@ export function allowedTaskTypesFor(settings, {
     types.push(TaskType.PURCHASE_CARD, TaskType.SUBMIT_RECHARGE);
   }
   if (settings.pollExistingOrders && providerReadsEnabled) {
-    types.push(TaskType.VERIFY_CARD, TaskType.POLL_RECHARGE);
+    types.push(TaskType.VERIFY_CARD, TaskType.POLL_RECHARGE, TaskType.RECHECK_CANCELLATION);
   }
   return types;
 }

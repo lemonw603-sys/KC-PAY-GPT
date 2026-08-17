@@ -55,7 +55,8 @@ export function createAdminReadService({ pool }) {
           WHERE oe.order_id = o.id AND oe.to_status = 'RECHARGE_SUCCESS'
         ))) AS successful,
         SUM(o.status IN ('CREATED','CARD_PURCHASING','CARD_PROVISIONING','CARD_READY','SUBMITTING','RECHARGE_PROCESSING')) AS processing,
-        SUM(o.status IN ('CARD_FAILED','SUBMIT_UNKNOWN','RECHARGE_FAILED','RECONCILIATION_REQUIRED')) AS reviewing
+        SUM(o.status IN ('CARD_FAILED','SUBMIT_UNKNOWN','RECHARGE_FAILED','RECONCILIATION_REQUIRED')
+            OR o.cancellation_review_required = 1) AS reviewing
         FROM orders o`),
       pool.query('SELECT status, COUNT(*) AS count FROM orders GROUP BY status ORDER BY status'),
       pool.query('SELECT status, COUNT(*) AS count FROM cdks GROUP BY status ORDER BY status'),
@@ -93,7 +94,8 @@ export function createAdminReadService({ pool }) {
     const conditions = [];
     const values = [];
     if (status === 'REVIEW_REQUIRED') {
-      conditions.push(`o.status IN (${REVIEW_STATUSES.map(() => '?').join(', ')})`);
+      conditions.push(`(o.status IN (${REVIEW_STATUSES.map(() => '?').join(', ')})
+        OR o.cancellation_review_required = 1)`);
       values.push(...REVIEW_STATUSES);
     } else if (status) {
       conditions.push('o.status = ?');
@@ -110,6 +112,7 @@ export function createAdminReadService({ pool }) {
       pool.query(`SELECT COUNT(*) AS total FROM orders o ${where}`, values),
       pool.query(`SELECT o.public_no, o.status, o.customer_email, o.chatgpt_account_id,
           o.recharge_order_no, o.failure_code, o.created_at, o.updated_at, o.finished_at,
+          o.subscription_cancelled, o.cancellation_checked_at, o.cancellation_review_required,
           c.last4, c.current_balance, c.currency, c.refund_status
         FROM orders o LEFT JOIN cards c ON c.order_id = o.id
         ${where}
@@ -127,6 +130,9 @@ export function createAdminReadService({ pool }) {
         chatgptAccountId: row.chatgpt_account_id,
         rechargeOrderNo: row.recharge_order_no,
         failureCode: row.failure_code,
+        subscriptionCancelled: row.subscription_cancelled == null ? null : Number(row.subscription_cancelled),
+        cancellationCheckedAt: iso(row.cancellation_checked_at),
+        cancellationReviewRequired: Boolean(row.cancellation_review_required),
         card: row.last4 ? {
           last4: row.last4,
           currentBalance: decimal(row.current_balance),
@@ -148,6 +154,7 @@ export function createAdminReadService({ pool }) {
       pool.query(`SELECT o.id, o.public_no, o.status, o.plan_type, o.customer_email,
           o.chatgpt_account_id, o.card_type_id, o.open_card_amount,
           o.recharge_order_no, o.failure_code, o.failure_reason,
+          o.subscription_cancelled, o.cancellation_checked_at, o.cancellation_review_required,
           o.created_at, o.updated_at, o.finished_at,
           c.provider_card_id, c.last4, c.status AS card_status, c.funded_amount,
           c.current_balance, c.currency, c.refund_status, c.last_synced_at
@@ -185,6 +192,9 @@ export function createAdminReadService({ pool }) {
         rechargeOrderNo: row.recharge_order_no,
         failureCode: row.failure_code,
         failureReason: row.failure_reason,
+        subscriptionCancelled: row.subscription_cancelled == null ? null : Number(row.subscription_cancelled),
+        cancellationCheckedAt: iso(row.cancellation_checked_at),
+        cancellationReviewRequired: Boolean(row.cancellation_review_required),
         createdAt: iso(row.created_at),
         updatedAt: iso(row.updated_at),
         finishedAt: iso(row.finished_at)

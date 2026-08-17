@@ -27,6 +27,7 @@ const statusDataSchema = z.object({
   status: z.enum(['pending', 'processing', 'success', 'failed']),
   failure_reason: z.string().nullable().optional(),
   payment_result: z.unknown().nullable().optional(),
+  token: z.record(z.string(), z.unknown()).nullable().optional(),
   is_subscription_cancelled: z.union([z.literal(0), z.literal(1)]).optional(),
   finished_at: z.string().nullable().optional(),
   updated_at: z.string().optional()
@@ -97,6 +98,22 @@ function normalizeStatus(value) {
     isSubscriptionCancelled: data.is_subscription_cancelled ?? null,
     finishedAt: data.finished_at ?? null,
     updatedAt: data.updated_at ?? null
+  };
+}
+
+function normalizeWorkflowStatus(value) {
+  const safe = normalizeStatus(value);
+  const parsed = statusDataSchema.safeParse(value);
+  const token = parsed.success ? parsed.data.token : null;
+  const complete = token
+    && typeof token.accessToken === 'string' && token.accessToken.length > 0
+    && typeof token.sessionToken === 'string' && token.sessionToken.length > 0
+    && typeof token.expires === 'string' && token.expires.length > 0
+    && token.user && typeof token.user === 'object' && typeof token.user.id === 'string'
+    && token.account && typeof token.account === 'object';
+  return {
+    ...safe,
+    latestSession: complete ? token : null
   };
 }
 
@@ -177,7 +194,7 @@ export class ZzshuRechargeProvider {
     };
   }
 
-  async queryStatus(cardKey) {
+  async queryStatusInternal(cardKey, includeSession) {
     const key = String(cardKey || '').trim();
     if (!key || key.length > 128) throw new Error('Zzshu cardKey must contain 1-128 characters');
     const response = await this.request('/third-party/orders/status', {
@@ -196,9 +213,18 @@ export class ZzshuRechargeProvider {
         uncertain: false
       });
     }
+    const normalize = includeSession ? normalizeWorkflowStatus : normalizeStatus;
     const data = Array.isArray(envelope.data)
-      ? envelope.data.map(normalizeStatus)
-      : normalizeStatus(envelope.data);
+      ? envelope.data.map(normalize)
+      : normalize(envelope.data);
     return data;
+  }
+
+  queryStatus(cardKey) {
+    return this.queryStatusInternal(cardKey, false);
+  }
+
+  queryStatusWithSession(cardKey) {
+    return this.queryStatusInternal(cardKey, true);
   }
 }
