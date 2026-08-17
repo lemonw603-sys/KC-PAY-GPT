@@ -75,7 +75,8 @@ export async function failTask(pool, {
   workerId,
   errorCode,
   errorMessage,
-  retryAt = null
+  retryAt = null,
+  forceDead = false
 }) {
   const connection = await pool.getConnection();
   try {
@@ -89,7 +90,8 @@ export async function failTask(pool, {
       throw new Error(`Task lease lost before failure handling: ${taskId}`);
     }
 
-    const exhausted = Number(rows[0].attempts) >= Number(rows[0].max_attempts);
+    const exhausted = forceDead
+      || Number(rows[0].attempts) >= Number(rows[0].max_attempts);
     const nextStatus = exhausted ? TaskStatus.DEAD : TaskStatus.PENDING;
     const availableAt = exhausted ? null : (retryAt || new Date());
 

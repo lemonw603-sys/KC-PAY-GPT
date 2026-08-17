@@ -12,8 +12,10 @@
 - Session AES-256-GCM 加密工具。
 - v1 首版 MySQL 数据结构。
 - `HnskjCardProvider` 和 `ZzshuRechargeProvider` 纯 fixture 合同适配器。
+- Provider 调用开始/结束审计、递归敏感字段脱敏和真实 MySQL 落库验证。
+- 单任务执行骨架：成功完成、可重试回队、非重试错误进入 dead-letter，单个失败不阻塞其他任务。
 
-尚未接入客户页面、后台和持久化 Provider 调用记录；Provider 目前只在 fixture 测试中运行，不连接真实卡台或直充 API。
+尚未接入客户页面和后台；两个 Provider 的具体业务 handler 还没有接入订单状态机。卡台读取结构已经完成一次获批的真实只读验证，写接口仍未调用。
 
 ## 本地检查
 

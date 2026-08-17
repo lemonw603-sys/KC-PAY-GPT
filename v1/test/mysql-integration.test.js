@@ -5,6 +5,7 @@ import mysql from 'mysql2/promise';
 import { transitionOrder } from '../src/db/repositories/order-repository.js';
 import { claimNextTask } from '../src/db/repositories/task-repository.js';
 import { OrderStatus } from '../src/domain/order-status.js';
+import { recordProviderCall } from '../src/providers/provider-call-recorder.js';
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
 
@@ -40,6 +41,7 @@ async function createOrder(pool, overrides = {}) {
 async function removeOrder(pool, { cdkId, orderId }) {
   await pool.query('DELETE FROM tasks WHERE order_id = ?', [orderId]);
   await pool.query('DELETE FROM order_events WHERE order_id = ?', [orderId]);
+  await pool.query('DELETE FROM provider_calls WHERE order_id = ?', [orderId]);
   await pool.query('DELETE FROM orders WHERE id = ?', [orderId]);
   await pool.query('DELETE FROM cdks WHERE id = ?', [cdkId]);
 }
@@ -101,6 +103,46 @@ test('MySQL enforces one CDK per order and records transitions atomically', {
       ),
       (error) => error?.code === 'ER_DUP_ENTRY'
     );
+  } finally {
+    await removeOrder(pool, fixture);
+    await pool.end();
+  }
+});
+
+test('provider call audit persists only a redacted summary', {
+  skip: !databaseUrl
+}, async () => {
+  const pool = mysql.createPool({ uri: databaseUrl, connectionLimit: 2, timezone: 'Z' });
+  const fixture = await createOrder(pool);
+  try {
+    await recordProviderCall({
+      pool,
+      orderId: fixture.orderId,
+      provider: 'hnskj',
+      operation: 'fixture_read',
+      requestKey: `fixture-${fixture.orderId}`,
+      action: async () => ({
+        ok: true,
+        apiKey: 'nhs_must-not-persist',
+        cardNumber: '4242424242424242'
+      }),
+      summarize: (value) => value
+    });
+
+    const [[row]] = await pool.query(
+      `SELECT outcome, response_summary_json
+       FROM provider_calls WHERE order_id = ?`,
+      [fixture.orderId]
+    );
+    const summary = typeof row.response_summary_json === 'string'
+      ? JSON.parse(row.response_summary_json)
+      : row.response_summary_json;
+    assert.equal(row.outcome, 'SUCCESS');
+    assert.deepEqual(summary, {
+      ok: true,
+      apiKey: '[REDACTED]',
+      cardNumber: '[REDACTED]'
+    });
   } finally {
     await removeOrder(pool, fixture);
     await pool.end();

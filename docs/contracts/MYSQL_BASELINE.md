@@ -59,6 +59,13 @@ skipped 0
 
 测试覆盖：HTTP、安全响应头、配置失败关闭、旧模块隔离、MySQL约束、订单事务、任务并发、租约恢复、状态机和 Session 加密。
 
+### 2026-08-17 后续复验
+
+- 增加 `provider_calls` 真实落库用例。
+- 验证嵌套 API Key、Token、PAN 和 CVV 进入 JSON 列前会被替换为 `[REDACTED]`。
+- 增加任务 runner 的成功、重试、模糊提交 dead-letter 和未知 handler 隔离测试。
+- 复验结果：加入后续单元用例后 v1 共 38 个测试；MySQL 集成复验覆盖其中 4 个数据库用例，均已通过。
+
 ## 环境收尾
 
 - 测试数据库已删除。
