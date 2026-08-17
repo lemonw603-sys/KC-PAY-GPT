@@ -11,8 +11,9 @@
 - 订单状态变更与事件同事务写入。
 - Session AES-256-GCM 加密工具。
 - v1 首版 MySQL 数据结构。
+- `HnskjCardProvider` 和 `ZzshuRechargeProvider` 纯 fixture 合同适配器。
 
-尚未接入客户页面、后台、卡台或直充 API。
+尚未接入客户页面、后台和持久化 Provider 调用记录；Provider 目前只在 fixture 测试中运行，不连接真实卡台或直充 API。
 
 ## 本地检查
 

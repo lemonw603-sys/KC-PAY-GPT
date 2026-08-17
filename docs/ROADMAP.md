@@ -33,14 +33,15 @@
 
 ## 阶段 2：供应商适配器与合同测试
 
-状态：未开始
+状态：进行中
 
-- 实现 `HnskjCardProvider`。
-- 实现 `ZzshuRechargeProvider`。
-- 为请求和响应建立运行时 Schema。
-- 建立脱敏 HTTP 记录、fixture 和合同测试。
-- 验证卡台相同幂等键重复调用行为。
-- 验证直充错误映射与 `SUBMIT_UNKNOWN` 路径。
+- [x] 实现 `HnskjCardProvider`。
+- [x] 实现 `ZzshuRechargeProvider`。
+- [x] 为请求和响应建立运行时 Schema。
+- [x] 建立脱敏 fixture 和合同测试。
+- [ ] 用卡台真实响应验证相同幂等键重复调用行为。
+- [ ] 用直充真实响应验证错误映射与 `SUBMIT_UNKNOWN` 路径。
+- [ ] 将 Provider 调用接入持久化 `provider_calls` 记录。
 
 退出条件：适配器在已知成功、业务失败、超时、5xx、未知字段和未知状态下都有确定结果。
 
