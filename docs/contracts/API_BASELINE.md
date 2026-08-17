@@ -19,6 +19,7 @@
 - 已在登录后的 `/developer` 页面确认接口入口和认证方式。
 - 2026-08-17 经用户单次审批，使用新建 Key 完成 `/account/profile`、`/account/balance`、`/card-types`、`/cards` 四个只读接口验证，均返回 HTTP 200 与 `success=true`。Key 未落盘，审批已用完。
 - 2026-08-18 更换已暴露 Key 后，后台将新 Key 显示为“有效”，服务器保存值与创建时完整值的 SHA-256 一致，但 `/api/open/v1/account/profile` 仍返回 HTTP 401、`API Key 无效`。在运营方解释或修复前，生产 `PROVIDER_READS_ENABLED` 保持关闭，不把后台“有效”标签视为 API 可用证据。
+- 同日经单独批准，使用同一 Key 从本地网络出口复测也返回相同的 HTTP 401，已排除仅服务器出口 IP 被限制；故障收敛为该 Key 未进入实际 API 鉴权数据源，或鉴权端对新 Key 的全局校验异常。
 
 ### 直充平台
 
