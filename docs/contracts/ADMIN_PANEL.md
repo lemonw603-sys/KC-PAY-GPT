@@ -33,6 +33,14 @@ openssl rand -base64 32
 
 输出值应只保存到部署环境的秘密配置，不提交 Git。
 
+本地配置也可以将密码复制到剪贴板后执行：
+
+```bash
+pbpaste | npm --prefix v1 run admin:configure-local
+```
+
+命令只写入被 Git 忽略的 `v1/.env.admin.local`，文件权限为 `0600`；若文件已存在会拒绝覆盖。
+
 ## 只读 API
 
 - `GET /api/v1/admin/session`
