@@ -4,9 +4,17 @@ function redactText(value) {
   return String(value)
     .replace(/nhs_[A-Za-z0-9._-]+/g, '[REDACTED_API_KEY]')
     .replace(/Bearer\s+[^\s]+/gi, 'Bearer [REDACTED]')
-    .replace(/\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g, '[REDACTED_JWT]')
+    .replace(/\beyJ[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+){2,4}\b/g, '[REDACTED_TOKEN]')
     .replace(/\b\d{12,19}\b/g, (match) => `****${match.slice(-4)}`)
+    .replace(
+      /\b(api[\s_-]?key|authorization|password|secret|access[\s_-]?token|session[\s_-]?token|cvv|cvc|card[\s_-]?(?:number|no)|pan)\b(\s*[:=]\s*)("[^"]*"|'[^']*'|[^\s,;}]+)/gi,
+      (_match, name, separator) => `${name}${separator}[REDACTED]`
+    )
     .slice(0, 1_000);
+}
+
+export function redactSensitiveText(value) {
+  return redactText(value);
 }
 
 export function redactSensitiveFields(value, key = '') {

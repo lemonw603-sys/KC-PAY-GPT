@@ -172,8 +172,7 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey }) {
           toStatus: OrderStatus.RECHARGE_PROCESSING,
           reason: 'recharge submission committed',
           metadata: {
-            orderNo: String(submission.orderNo),
-            cardKey: String(submission.cardKey)
+            orderNo: String(submission.orderNo)
           }
         });
         await connection.query(

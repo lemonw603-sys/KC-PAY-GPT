@@ -101,7 +101,7 @@ export function createWorkflowHandlers({
       orderId: task.order_id,
       provider: 'zzshu',
       operation: 'query_status',
-      requestKey: context.order.recharge_card_key,
+      requestKey: `recharge-status:${task.order_id}`,
       attemptNo,
       action: () => rechargeProvider.queryStatus(context.order.recharge_card_key),
       summarize: (value) => value

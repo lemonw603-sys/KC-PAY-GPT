@@ -3,6 +3,7 @@ import {
   completeTask,
   failTask
 } from '../db/repositories/task-repository.js';
+import { redactSensitiveText } from '../security/redaction.js';
 
 export class TaskExecutionError extends Error {
   constructor(message, { code = 'TASK_FAILED', retryable = false, delayMs = 5_000, cause } = {}) {
@@ -17,10 +18,15 @@ export class TaskExecutionError extends Error {
 function normalizeTaskError(error) {
   if (error instanceof TaskExecutionError) return error;
   return new TaskExecutionError(error?.message || 'Task failed', {
-    code: error?.businessCode || error?.kind || 'TASK_FAILED',
+    code: normalizeErrorCode(error?.businessCode || error?.kind),
     retryable: Boolean(error?.retryable),
     cause: error
   });
+}
+
+function normalizeErrorCode(value) {
+  const code = String(value || '').trim().toUpperCase();
+  return /^[A-Z0-9_.:-]{1,64}$/.test(code) ? code : 'TASK_FAILED';
 }
 
 export async function runOneTask({
@@ -47,7 +53,7 @@ export async function runOneTask({
     await repository.failTask(pool, {
       taskId: task.id,
       workerId,
-      errorCode: error.code,
+      errorCode: normalizeErrorCode(error.code),
       errorMessage: error.message,
       forceDead: true
     });
@@ -64,7 +70,7 @@ export async function runOneTask({
       taskId: task.id,
       workerId,
       errorCode: error.code,
-      errorMessage: error.message,
+      errorMessage: redactSensitiveText(error.message),
       retryAt: error.retryable ? new Date(Date.now() + error.delayMs) : null,
       forceDead: !error.retryable
     });

@@ -73,6 +73,33 @@ test('dead-letters an ambiguous non-retryable recharge submission', async () => 
   assert.equal(calls[0].input.retryAt, null);
 });
 
+test('redacts provider-controlled secrets before persisting task failures', async () => {
+  const calls = [];
+  const task = { id: 5, task_type: 'SUBMIT_RECHARGE' };
+  const error = new ProviderError(
+    'rejected accessToken=eyJheader.payload.signature cardNumber=4242424242424242 cvv=123',
+    {
+      provider: 'zzshu',
+      kind: 'provider',
+      businessCode: 'invalid code with spaces',
+      retryable: false
+    }
+  );
+  await runOneTask({
+    pool: {},
+    workerId: 'worker-a',
+    handlers: { SUBMIT_RECHARGE: async () => { throw error; } },
+    repository: repositoryFor(task, calls)
+  });
+
+  const persisted = calls[0].input;
+  assert.equal(persisted.errorCode, 'TASK_FAILED');
+  assert.equal(persisted.errorMessage.includes('eyJheader.payload.signature'), false);
+  assert.equal(persisted.errorMessage.includes('4242424242424242'), false);
+  assert.equal(persisted.errorMessage.includes('cvv=123'), false);
+  assert.match(persisted.errorMessage, /accessToken=\[REDACTED\]/);
+});
+
 test('dead-letters an unknown task type', async () => {
   const calls = [];
   const result = await runOneTask({

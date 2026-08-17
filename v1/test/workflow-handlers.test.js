@@ -6,6 +6,7 @@ import { createWorkflowHandlers } from '../src/workers/workflow-handlers.js';
 
 function setup({ status = OrderStatus.CARD_READY, rechargeStatuses = [] } = {}) {
   const calls = [];
+  const providerCalls = [];
   const context = {
     order: {
       status,
@@ -32,7 +33,10 @@ function setup({ status = OrderStatus.CARD_READY, rechargeStatuses = [] } = {}) 
     createDirectOrder: async () => ({ orderNo: '12', cardKey: 'DIRECT-fixture', status: 'processing' }),
     queryStatus: async () => rechargeStatuses.shift()
   };
-  const recordCall = async (input) => input.action();
+  const recordCall = async (input) => {
+    providerCalls.push(input);
+    return input.action();
+  };
   const handlers = createWorkflowHandlers({
     workflow,
     cardProvider,
@@ -44,7 +48,7 @@ function setup({ status = OrderStatus.CARD_READY, rechargeStatuses = [] } = {}) 
     pollDelayMs: 1,
     failureConfirmDelayMs: 1
   });
-  return { calls, context, workflow, rechargeProvider, handlers };
+  return { calls, providerCalls, context, workflow, rechargeProvider, handlers };
 }
 
 test('submits one direct recharge and commits external identifiers', async () => {
@@ -122,4 +126,16 @@ test('marks success immediately and never guesses unknown states', async () => {
     unknown.handlers.POLL_RECHARGE({ id: 2, order_id: 'order-1', attempts: 2 }),
     /Unsupported recharge status/
   );
+});
+
+test('uses a local audit key instead of persisting the recharge card key', async () => {
+  const state = setup({
+    status: OrderStatus.RECHARGE_PROCESSING,
+    rechargeStatuses: [{ status: 'success' }]
+  });
+  await state.handlers.POLL_RECHARGE({ id: 2, order_id: 'order-1', attempts: 2 });
+
+  const queryCall = state.providerCalls.find((call) => call.operation === 'query_status');
+  assert.equal(queryCall.requestKey, 'recharge-status:order-1');
+  assert.equal(queryCall.requestKey.includes(state.context.order.recharge_card_key), false);
 });

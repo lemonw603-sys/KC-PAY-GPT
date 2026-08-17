@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { ProviderError } from '../src/providers/http-client.js';
 import { recordProviderCall } from '../src/providers/provider-call-recorder.js';
-import { redactSensitiveFields } from '../src/security/redaction.js';
+import { redactSensitiveFields, redactSensitiveText } from '../src/security/redaction.js';
 
 function fakePool(calls) {
   return {
@@ -34,6 +34,25 @@ test('redaction removes API keys, tokens, PAN and CVV recursively', () => {
       message: 'Bearer [REDACTED] ****4444'
     }
   });
+});
+
+test('redaction removes labelled secrets from untrusted error text', () => {
+  const unsafe = [
+    'accessToken=eyJheader.payload.signature',
+    'sessionToken: eyJone.two.three.four.five',
+    'cardNumber="4242424242424242"',
+    'cvv: 123',
+    'api_key=stable-provider-secret',
+    'Authorization: Bearer bearer-secret'
+  ].join(' ');
+  const safe = redactSensitiveText(unsafe);
+
+  assert.equal(safe.includes('eyJheader.payload.signature'), false);
+  assert.equal(safe.includes('eyJone.two.three.four.five'), false);
+  assert.equal(safe.includes('4242424242424242'), false);
+  assert.equal(safe.includes('stable-provider-secret'), false);
+  assert.equal(safe.includes('bearer-secret'), false);
+  assert.match(safe, /accessToken=\[REDACTED\]/);
 });
 
 test('records a successful provider call with a sanitized summary', async () => {
