@@ -45,3 +45,13 @@
 - 新增四个回归测试；完整结果为 82 个测试、73 通过、9 个 MySQL 用例跳过、0 失败。
 - 生产依赖审计继续为 0 个已知漏洞。
 - 仍未连接 MySQL、供应商或读取任何真实密钥。
+
+## 生产 MySQL 合同实现
+
+- Web、worker、CDK 工具改为统一消费受校验的运行数据库配置。
+- 生产远程 MySQL 未启用证书校验时会在连接前失败关闭。
+- 迁移脚本改用独立迁移 URL；生产环境显式复用同一用户名会被拒绝。
+- 增加公共 CA/私有 CA 两种 TLS 配置，并始终保持 `rejectUnauthorized=true` 与 `verifyIdentity=true`；远程生产连接禁止直接使用 IP。
+- 依赖源码核对确认 `mysql2` 默认不会因 `rejectUnauthorized=true` 自动开启主机名校验；该坑点已沉淀到 `analysis/experience-candidates/`。
+- 新增四项配置测试；完整结果为 86 个测试、77 通过、9 个 MySQL 用例跳过、0 失败。
+- 尚未验证实际防火墙、MySQL GRANT、TLS 握手或备份恢复，F-02 仍等待服务器侧证据。

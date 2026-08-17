@@ -2,16 +2,16 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import mysql from 'mysql2/promise';
-import { loadConfig } from '../src/config.js';
+import { loadMigrationConfig } from '../src/config.js';
+import { createDatabaseConnectionOptions } from '../src/db/pool.js';
 
-const config = loadConfig();
+const config = loadMigrationConfig();
 const here = path.dirname(fileURLToPath(import.meta.url));
 const migrationsDirectory = path.join(here, '..', 'migrations');
-const connection = await mysql.createConnection({
-  uri: config.databaseUrl,
+const connection = await mysql.createConnection(createDatabaseConnectionOptions(config.database, {
   multipleStatements: true,
   timezone: 'Z'
-});
+}));
 
 try {
   await connection.query(`

@@ -44,6 +44,12 @@ TEST_DATABASE_URL='mysql://user:password@127.0.0.1:3306/pojia_v1_test' npm test
 
 复制 `.env.example` 中的字段到进程环境。程序不会主动读取 `.env` 文件，部署环境应显式注入变量。
 
+- `DATABASE_URL` 只给 Web、worker 和 CDK 工具使用，生产账号不得拥有 DDL 权限。
+- `MIGRATION_DATABASE_URL` 只在执行迁移时注入，必须使用独立迁移账号。
+- 生产环境连接非本机 MySQL 时，`DATABASE_TLS=true` / `MIGRATION_DATABASE_TLS=true` 为强制项；URL 必须使用证书覆盖的 DNS 主机名，并始终校验证书链和主机名。
+- 私有 CA 以 base64 PEM 放入对应的 `*_TLS_CA_BASE64`；公共 CA 签发的证书不需要额外填写。
+- 完整权限、网络、备份和验收合同见 `docs/contracts/MYSQL_PRODUCTION_SECURITY.md`。
+
 生成 Session 加密密钥：
 
 ```bash
@@ -54,11 +60,13 @@ openssl rand -base64 32
 
 ## 数据库迁移
 
-要求 MySQL 8，配置好环境变量后执行：
+要求 MySQL 8。迁移命令只使用迁移专用 URL 建立连接，不需要 Session 或后台密钥：
 
 ```bash
 npm run migrate
 ```
+
+`NODE_ENV`、`MIGRATION_DATABASE_URL` 和 TLS 字段应由部署密钥存储预先注入，不要把带密码的 URL 直接写进 shell 历史。
 
 迁移版本写入 `schema_migrations`，已执行的版本不会重复运行。
 
@@ -85,7 +93,7 @@ npm run cdk -- generate --count 100 --batch BATCH_20260817 --output /absolute/pr
 npm run cdk -- import --input /absolute/private/cdks.txt --batch IMPORT_20260817
 ```
 
-两条命令都必须显式注入 `DATABASE_URL`。完整参数、输出摘要和明文文件边界见 `docs/contracts/CDK_CLI.md`。
+两条命令都必须显式注入运行账号的 `DATABASE_URL`；远程生产数据库还必须注入 TLS 配置。完整参数、输出摘要和明文文件边界见 `docs/contracts/CDK_CLI.md`。
 
 ## Worker
 

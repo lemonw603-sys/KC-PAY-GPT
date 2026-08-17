@@ -8,7 +8,6 @@
 
 ```bash
 cd v1
-DATABASE_URL='mysql://user:password@127.0.0.1:3306/pojia' \
 npm run cdk -- generate \
   --count 100 \
   --batch BATCH_20260817_A \
@@ -27,11 +26,12 @@ npm run cdk -- generate \
 
 ```bash
 cd v1
-DATABASE_URL='mysql://user:password@127.0.0.1:3306/pojia' \
 npm run cdk -- import \
   --input /absolute/private/path/existing-cdks.txt \
   --batch IMPORT_20260817_A
 ```
+
+运行前由部署密钥存储注入 `NODE_ENV`、`DATABASE_URL` 和 TLS 字段，不要把带密码的 URL 写进 shell 历史。生产远程数据库缺少 `DATABASE_TLS=true` 时，工具会在连接前失败关闭。
 
 - UTF-8 文本，每行一枚 CDK；忽略空行和首个 BOM。
 - 最多 10000 个非空行，文件最大 2 MiB。

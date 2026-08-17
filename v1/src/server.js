@@ -7,7 +7,7 @@ import { createAdminReadService } from './services/admin-read-service.js';
 import { createAdminSessionAuth } from './security/admin-session.js';
 
 const config = loadConfig();
-const pool = createDatabasePool(config.databaseUrl);
+const pool = createDatabasePool(config.database);
 const createCustomerOrder = createOrderIntakeService({
   pool,
   sessionEncryptionKey: config.sessionEncryptionKey

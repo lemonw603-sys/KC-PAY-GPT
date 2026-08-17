@@ -1,7 +1,8 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import mysql from 'mysql2/promise';
-import { z } from 'zod';
+import { loadRuntimeDatabaseConfig } from '../src/config.js';
+import { createDatabaseConnectionOptions } from '../src/db/pool.js';
 import {
   CdkBatchError,
   generateCdks,
@@ -37,14 +38,6 @@ function requireOption(options, key) {
   return value;
 }
 
-function databaseUrl() {
-  const result = z.string().url().startsWith('mysql://').safeParse(process.env.DATABASE_URL);
-  if (!result.success) {
-    throw new CdkBatchError('DATABASE_URL must be a valid mysql:// URL', 'INVALID_DATABASE_URL');
-  }
-  return result.data;
-}
-
 async function writeNewPrivateFile(filePath, codes) {
   const absolutePath = path.resolve(filePath);
   await fs.writeFile(absolutePath, `${codes.join('\n')}\n`, {
@@ -78,7 +71,12 @@ async function main() {
       throw new CdkBatchError(`unsupported option for ${command}: --${key}`, 'INVALID_ARGUMENT');
     }
   }
-  const dbUrl = databaseUrl();
+  let database;
+  try {
+    database = loadRuntimeDatabaseConfig();
+  } catch {
+    throw new CdkBatchError('database configuration is invalid', 'INVALID_DATABASE_CONFIG');
+  }
   const batchNo = normalizeBatchNo(options.batch);
   let codes;
   let outputPath = null;
@@ -93,11 +91,10 @@ async function main() {
     codes = inputSummary.codes;
   }
 
-  const pool = mysql.createPool({
-    uri: dbUrl,
+  const pool = mysql.createPool(createDatabaseConnectionOptions(database, {
     connectionLimit: 2,
     timezone: 'Z'
-  });
+  }));
   try {
     const result = await storeCdkBatch(pool, codes, {
       batchNo,

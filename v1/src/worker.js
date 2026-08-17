@@ -8,7 +8,7 @@ import { createWorkflowHandlers } from './workers/workflow-handlers.js';
 import { runWorkerLoop } from './workers/worker-runtime.js';
 
 const config = loadWorkerConfig();
-const pool = createDatabasePool(config.databaseUrl);
+const pool = createDatabasePool(config.database);
 const workerId = config.workerId || `${os.hostname()}-${process.pid}`;
 const abortController = new AbortController();
 
