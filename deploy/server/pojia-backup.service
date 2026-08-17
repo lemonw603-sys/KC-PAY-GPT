@@ -1,0 +1,10 @@
+[Unit]
+Description=破甲 v1 encrypted MySQL backup
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/pojia-backup.sh
+User=root
+UMask=0077

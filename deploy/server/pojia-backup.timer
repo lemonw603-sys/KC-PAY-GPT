@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily 破甲 v1 encrypted MySQL backup
+
+[Timer]
+OnCalendar=*-*-* 03:17:00 UTC
+RandomizedDelaySec=15m
+Persistent=true
+Unit=pojia-backup.service
+
+[Install]
+WantedBy=timers.target
