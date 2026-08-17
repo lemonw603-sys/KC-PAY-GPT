@@ -8,7 +8,15 @@
 
 未发现已经造成真实资金损失或数据泄露的证据；真实开卡和直充尚未执行。
 
-发现 3 个实现缺口和 1 个流程缺口。其中，一次性 PoC 的孤儿订单恢复问题和错误输出脱敏问题已在真实调用前修复；生产 worker 的维护状态分类、成功后 Token/取消续费闭环仍待修复。
+发现 4 个实现缺口和 1 个流程缺口。其中，真实 JWE Session 兼容、一次性 PoC 的孤儿订单恢复和错误输出脱敏问题已在真实调用前修复；生产 worker 的维护状态分类、成功后 Token/取消续费闭环仍待修复。
+
+## CR-00 高：真实 ChatGPT JWE 被错误拒绝（已修复）
+
+- 位置：`v1/src/domain/session-validation.js:51`、`v1/test-support/session-fixture.js:24`
+- 合同证据：对接文档第 298 行要求五段 JWE，但没有要求五段全部非空。JWE 使用直接密钥算法时 encrypted-key 段允许为空，真实形状为 `protected-header..iv.ciphertext.tag`。
+- 原实现：要求五段全部非空；测试 fixture 也使用了不真实的五段全非空字符串。
+- 影响：真实客户 Session 会在创建订单前被统一误判为 `INVALID_SESSION_TOKEN`，导致系统无法接单。
+- 修复：保持五段要求，只允许第二段为空；protected header、IV、ciphertext 和 tag 仍必须非空。fixture 和反例测试同步更新。
 
 ## CR-01 高：PoC 创建成功后未立即持久化恢复标识（已修复）
 

@@ -49,4 +49,11 @@ test('requires a three-part access token and five-part session token', () => {
     () => validateChatGptSession(badSession, { now: () => nowMs }),
     (error) => error.code === 'INVALID_SESSION_TOKEN'
   );
+
+  const missingCiphertext = sessionFixture({ nowMs });
+  missingCiphertext.sessionToken = 'header..iv..tag';
+  assert.throws(
+    () => validateChatGptSession(missingCiphertext, { now: () => nowMs }),
+    (error) => error.code === 'INVALID_SESSION_TOKEN'
+  );
 });

@@ -21,7 +21,7 @@ export function sessionFixture({ nowMs = Date.now(), lifetimeSeconds = 3_600 } =
       encode({ iat: nowSeconds - 60, exp: nowSeconds + lifetimeSeconds }),
       'fixture-signature'
     ].join('.'),
-    sessionToken: 'one.two.three.four.five',
+    sessionToken: 'one..three.four.five',
     extension: { preserved: true }
   };
 }

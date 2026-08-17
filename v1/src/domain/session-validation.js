@@ -49,7 +49,11 @@ export function validateChatGptSession(value, {
   if (sessionExpiresAt <= now()) fail('SESSION_EXPIRED');
 
   const sessionTokenParts = session.sessionToken.split('.');
-  if (sessionTokenParts.length !== 5 || sessionTokenParts.some((part) => !part)) {
+  const requiredJweParts = [0, 2, 3, 4];
+  if (
+    sessionTokenParts.length !== 5
+    || requiredJweParts.some((index) => !sessionTokenParts[index])
+  ) {
     fail('INVALID_SESSION_TOKEN');
   }
 
