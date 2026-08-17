@@ -25,7 +25,7 @@
 
 ## 测试结果
 
-当前 v1 测试共 29 个：26 个通过、3 个数据库测试因未设置 `TEST_DATABASE_URL` 跳过；Provider 相关 14 个全部通过。
+Provider 纯合同用例 14 个全部通过。随着调用审计、任务 runner 与 workflow handler 加入，当前 v1 测试总数为 44 个；本文件所述 Provider 合同结论保持不变。
 
 测试覆盖：
 

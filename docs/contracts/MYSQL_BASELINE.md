@@ -64,7 +64,7 @@ skipped 0
 - 增加 `provider_calls` 真实落库用例。
 - 验证嵌套 API Key、Token、PAN 和 CVV 进入 JSON 列前会被替换为 `[REDACTED]`。
 - 增加任务 runner 的成功、重试、模糊提交 dead-letter 和未知 handler 隔离测试。
-- 复验结果：加入后续单元用例后 v1 共 38 个测试；MySQL 集成复验覆盖其中 4 个数据库用例，均已通过。
+- 后续加入调用审计、任务 runner 和 workflow handler 后，v1 共 44 个测试；其中 4 个数据库集成用例已在 MySQL 8.4.11 上通过。
 
 ## 环境收尾
 

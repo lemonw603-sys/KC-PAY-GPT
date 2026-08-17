@@ -46,7 +46,8 @@
 - [ ] 用直充真实响应验证错误映射与 `SUBMIT_UNKNOWN` 路径。
 - [x] 建立持久化 `provider_calls` 记录与递归脱敏，并通过真实 MySQL 落库验证。
 - [x] 建立通用任务执行骨架：单任务隔离、可重试回队、非重试错误进入 dead-letter。
-- [ ] 将两个 Provider 的具体业务 handler 接入订单状态机与任务执行骨架。
+- [x] 实现开卡、直充提交和状态轮询 handler 规则，并接入任务 runner 的错误分类。
+- [ ] 实现 handler 所需的 MySQL workflow repository，将卡片绑定和外部订单号与状态迁移做成原子事务。
 
 退出条件：适配器在已知成功、业务失败、超时、5xx、未知字段和未知状态下都有确定结果。
 
