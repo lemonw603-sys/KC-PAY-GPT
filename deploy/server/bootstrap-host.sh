@@ -9,9 +9,11 @@ fi
 MYSQL_IMAGE='mysql:8.4.11'
 MYSQL_CONTAINER='pojia-mysql'
 MYSQL_GATEWAY='172.17.0.1'
+MYSQL_UID='999'
+MYSQL_GID='999'
 
 dnf -y module enable nodejs:22
-dnf -y install nodejs
+dnf -y install nodejs npm
 
 if ! id pojia >/dev/null 2>&1; then
   useradd --system --home-dir /opt/pojia --shell /sbin/nologin pojia
@@ -20,7 +22,8 @@ fi
 install -d -m 0750 -o root -g pojia /etc/pojia
 install -d -m 0755 -o root -g root /opt/pojia /opt/pojia/releases
 install -d -m 0700 -o root -g root /var/lib/pojia
-install -d -m 0700 -o root -g root /var/lib/pojia/mysql
+install -d -m 0700 -o "${MYSQL_UID}" -g "${MYSQL_GID}" /var/lib/pojia/mysql
+chown -R "${MYSQL_UID}:${MYSQL_GID}" /var/lib/pojia/mysql
 
 create_secret() {
   local path=$1
