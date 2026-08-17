@@ -46,10 +46,10 @@ const ERROR_MESSAGES = Object.freeze({
   invalid_session_token: '账号 Session 无效，请重新获取完整内容。',
   invalid_session_expiry: '账号 Session 的有效期信息无效，请重新获取。',
   session_expired: '账号 Session 已过期，请重新获取。',
-  cdk_unavailable: 'CDK 不可用或已绑定订单，可切换到“查询进度”找回原订单。',
+  cdk_unavailable: 'CDK卡密不可用或已绑定订单，可切换到“查询进度”找回原订单。',
   ordering_paused: '当前暂停接收新订单，请稍后再试。',
   ordering_not_configured: '当前暂时无法创建订单，请稍后再试。',
-  invalid_order_query: '请输入有效的订单查询码或原 CDK。',
+  invalid_order_query: '请输入有效的订单查询码或原 CDK卡密。',
   order_not_found: '没有找到对应订单，请检查输入。',
   rate_limited: '操作过于频繁，请稍后再试。',
   body_too_large: '账号 Session 内容过大，请检查是否粘贴了多余内容。',
@@ -222,8 +222,8 @@ elements.submitForm.addEventListener('submit', async (event) => {
   event.preventDefault();
   hideNotice();
   const cdk = elements.cdkInput.value.trim();
-  if (cdk.length < 8) return showNotice('请输入有效 CDK。');
-  if (!elements.confirmInput.checked) return showNotice('请先核对 CDK 和账号信息。');
+  if (cdk.length < 8) return showNotice('请输入有效的 CDK卡密。');
+  if (!elements.confirmInput.checked) return showNotice('请先核对 CDK卡密和账号信息。');
 
   let session;
   try {
@@ -260,7 +260,7 @@ elements.queryForm.addEventListener('submit', async (event) => {
   hideNotice();
   stopPolling();
   const value = elements.queryInput.value.trim();
-  if (!value) return showNotice('请输入订单查询码或原 CDK。');
+  if (!value) return showNotice('请输入订单查询码或原 CDK卡密。');
   const query = value.startsWith('PJV1-') ? { publicNo: value } : { cdk: value };
   setBusy(elements.queryButton, true, '正在查询…');
   try {
