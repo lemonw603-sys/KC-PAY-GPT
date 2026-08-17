@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createApp } from '../src/app/create-app.js';
+import { createFixedWindowRateLimit } from '../src/app/fixed-window-rate-limit.js';
+import { OrderIntakeError } from '../src/domain/order-intake-error.js';
 
 async function withServer(app, run) {
   const server = app.listen(0, '127.0.0.1');
@@ -33,5 +35,64 @@ test('readiness fails closed and errors do not expose details', async () => {
     const response = await fetch(`${baseUrl}/health/ready`);
     assert.equal(response.status, 503);
     assert.deepEqual(await response.json(), { status: 'not_ready' });
+  });
+});
+
+test('creates a customer order without exposing internal identifiers', async () => {
+  let received;
+  const app = createApp({
+    createCustomerOrder: async (body) => {
+      received = body;
+      return { orderId: 'internal-id', publicNo: 'PJV1-public', status: 'CREATED' };
+    }
+  });
+  await withServer(app, async (baseUrl) => {
+    const response = await fetch(`${baseUrl}/api/v1/orders`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cdk: 'fixture-cdk', session: { fixture: true } })
+    });
+    assert.equal(response.status, 201);
+    assert.deepEqual(await response.json(), {
+      order: { publicNo: 'PJV1-public', status: 'CREATED' }
+    });
+    assert.deepEqual(received, { cdk: 'fixture-cdk', session: { fixture: true } });
+  });
+});
+
+test('maps intake failures safely and rate-limits repeated submissions', async () => {
+  const paused = createApp({
+    createCustomerOrder: async () => {
+      throw new OrderIntakeError('internal setting detail', {
+        code: 'ORDERING_PAUSED',
+        status: 503
+      });
+    }
+  });
+  await withServer(paused, async (baseUrl) => {
+    const response = await fetch(`${baseUrl}/api/v1/orders`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}'
+    });
+    assert.equal(response.status, 503);
+    assert.deepEqual(await response.json(), { error: 'ordering_paused' });
+  });
+
+  const limited = createApp({
+    createCustomerOrder: async () => ({ publicNo: 'PJV1-public', status: 'CREATED' }),
+    orderRateLimit: createFixedWindowRateLimit({ limit: 1, windowMs: 60_000 })
+  });
+  await withServer(limited, async (baseUrl) => {
+    const request = () => fetch(`${baseUrl}/api/v1/orders`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}'
+    });
+    assert.equal((await request()).status, 201);
+    const response = await request();
+    assert.equal(response.status, 429);
+    assert.deepEqual(await response.json(), { error: 'rate_limited' });
+    assert.equal(response.headers.has('retry-after'), true);
   });
 });

@@ -10,6 +10,9 @@ import { createWorkflowRepository } from '../src/db/repositories/workflow-reposi
 import { encryptSecret } from '../src/security/secret-box.js';
 import { createWorkflowHandlers } from '../src/workers/workflow-handlers.js';
 import { runWorkerIteration } from '../src/workers/worker-runtime.js';
+import { createOrderIntakeService } from '../src/services/order-intake-service.js';
+import { decryptSecret } from '../src/security/secret-box.js';
+import { sessionFixture } from '../test-support/session-fixture.js';
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
 const integrationSessionKey = Buffer.alloc(32, 7);
@@ -241,6 +244,115 @@ test('workflow repository commits card and recharge handoffs atomically', {
     ]);
   } finally {
     await removeOrder(pool, fixture);
+    await pool.end();
+  }
+});
+
+test('order intake atomically redeems one CDK and creates an encrypted queued order', {
+  skip: !databaseUrl
+}, async () => {
+  const pool = mysql.createPool({ uri: databaseUrl, connectionLimit: 4, timezone: 'Z' });
+  const cdkId = id();
+  const cdk = `CDK-${id()}`;
+  const cdkHash = crypto.createHash('sha256').update(cdk).digest('hex');
+  const nowMs = Date.parse('2026-08-17T00:00:00.000Z');
+  const session = sessionFixture({ nowMs });
+  const createCustomerOrder = createOrderIntakeService({
+    pool,
+    sessionEncryptionKey: integrationSessionKey,
+    now: () => nowMs
+  });
+  let created;
+  await pool.query(
+    `INSERT INTO cdks (id, code_hash, status) VALUES (?, ?, 'AVAILABLE')`,
+    [cdkId, cdkHash]
+  );
+  try {
+    await assert.rejects(
+      createCustomerOrder({ cdk, session }),
+      (error) => error.code === 'ORDERING_PAUSED'
+    );
+    await pool.query(
+      `UPDATE app_settings SET setting_value = 'true'
+       WHERE setting_key = 'accept_new_orders'`
+    );
+    await assert.rejects(
+      createCustomerOrder({ cdk, session }),
+      (error) => error.code === 'ORDERING_NOT_CONFIGURED'
+    );
+    await pool.query(
+      `UPDATE app_settings SET setting_value = CASE setting_key
+         WHEN 'default_card_type_id' THEN '7'
+         WHEN 'default_open_card_amount' THEN '25'
+         ELSE setting_value END
+       WHERE setting_key IN ('default_card_type_id', 'default_open_card_amount')`
+    );
+
+    const concurrent = await Promise.allSettled([
+      createCustomerOrder({ cdk, session }),
+      createCustomerOrder({ cdk, session })
+    ]);
+    assert.equal(concurrent.filter((result) => result.status === 'fulfilled').length, 1);
+    assert.equal(concurrent.filter((result) => (
+      result.status === 'rejected' && result.reason?.code === 'CDK_UNAVAILABLE'
+    )).length, 1);
+    created = concurrent.find((result) => result.status === 'fulfilled').value;
+    assert.equal(created.status, OrderStatus.CREATED);
+    assert.match(created.publicNo, /^PJV1-[A-Za-z0-9_-]{20}$/);
+
+    const [[order]] = await pool.query(
+      `SELECT status, customer_email, chatgpt_account_id, card_type_id,
+              open_card_amount, session_ciphertext
+       FROM orders WHERE id = ?`,
+      [created.orderId]
+    );
+    assert.equal(order.status, OrderStatus.CREATED);
+    assert.equal(order.customer_email, 'fixture@example.com');
+    assert.equal(order.chatgpt_account_id, 'account-fixture');
+    assert.equal(order.card_type_id, '7');
+    assert.equal(order.open_card_amount, '25.000000');
+    assert.deepEqual(
+      JSON.parse(decryptSecret(order.session_ciphertext, integrationSessionKey)),
+      session
+    );
+    const [[redeemed]] = await pool.query(
+      'SELECT status, order_id, code_hash FROM cdks WHERE id = ?',
+      [cdkId]
+    );
+    assert.deepEqual(redeemed, {
+      status: 'REDEEMED',
+      order_id: created.orderId,
+      code_hash: cdkHash
+    });
+    const [tasks] = await pool.query(
+      'SELECT task_type, status FROM tasks WHERE order_id = ?',
+      [created.orderId]
+    );
+    assert.deepEqual(tasks, [{ task_type: 'PURCHASE_CARD', status: 'PENDING' }]);
+    const [events] = await pool.query(
+      `SELECT from_status, to_status, actor_type
+       FROM order_events WHERE order_id = ?`,
+      [created.orderId]
+    );
+    assert.deepEqual(events, [{
+      from_status: null,
+      to_status: OrderStatus.CREATED,
+      actor_type: 'CUSTOMER'
+    }]);
+  } finally {
+    await pool.query(
+      `UPDATE app_settings SET setting_value = CASE setting_key
+         WHEN 'accept_new_orders' THEN 'false'
+         ELSE '' END
+       WHERE setting_key IN (
+         'accept_new_orders', 'default_card_type_id', 'default_open_card_amount'
+       )`
+    );
+    if (created) {
+      await removeOrder(pool, { cdkId, orderId: created.orderId });
+    } else {
+      await pool.query('DELETE FROM cdks WHERE id = ?', [cdkId]);
+    }
     await pool.end();
   }
 });
