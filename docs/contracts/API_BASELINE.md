@@ -18,6 +18,7 @@
 - API Base：`https://card.hnskj.vip/api/open/v1`
 - 已在登录后的 `/developer` 页面确认接口入口和认证方式。
 - 2026-08-17 经用户单次审批，使用新建 Key 完成 `/account/profile`、`/account/balance`、`/card-types`、`/cards` 四个只读接口验证，均返回 HTTP 200 与 `success=true`。Key 未落盘，审批已用完。
+- 2026-08-18 更换已暴露 Key 后，后台将新 Key 显示为“有效”，服务器保存值与创建时完整值的 SHA-256 一致，但 `/api/open/v1/account/profile` 仍返回 HTTP 401、`API Key 无效`。在运营方解释或修复前，生产 `PROVIDER_READS_ENABLED` 保持关闭，不把后台“有效”标签视为 API 可用证据。
 
 ### 直充平台
 
