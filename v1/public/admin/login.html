@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="theme-color" content="#f5f8fc">
+  <title>登录 · Plus 运营后台</title>
+  <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/admin/assets/admin.css?v=2">
+  <script src="/admin/assets/login.js?v=2" defer></script>
+</head>
+<body class="login-body">
+  <main class="login-shell">
+    <section class="login-brand" aria-labelledby="login-title">
+      <span class="brand-label">OPERATIONS</span>
+      <h1 id="login-title">Plus 运营后台</h1>
+      <p>订单、异常与运行状态集中管理。</p>
+      <div class="login-points">
+        <span><i aria-hidden="true"></i>服务端会话保护</span>
+        <span><i aria-hidden="true"></i>内部数据只读起步</span>
+      </div>
+    </section>
+    <section class="login-card" aria-label="后台登录">
+      <p class="section-kicker">内部访问</p>
+      <h2>登录运营后台</h2>
+      <p>请输入后台密码继续。</p>
+      <form id="login-form" novalidate>
+        <label for="password">后台密码</label>
+        <input id="password" name="password" type="password" minlength="12" maxlength="256" autocomplete="current-password" required autofocus>
+        <button class="primary-button" id="login-button" type="submit">登录后台 <span aria-hidden="true">→</span></button>
+      </form>
+      <div class="notice" id="login-notice" role="status" aria-live="polite" tabindex="-1" hidden></div>
+    </section>
+  </main>
+</body>
+</html>

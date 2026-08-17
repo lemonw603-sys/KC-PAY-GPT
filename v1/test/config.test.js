@@ -27,6 +27,26 @@ test('rejects missing database and invalid encryption key', () => {
   assert.throws(() => loadConfig(env), /Invalid v1 configuration/);
 });
 
+test('admin authentication is optional but requires a complete credential pair', () => {
+  const disabled = loadConfig(validEnvironment());
+  assert.equal(disabled.adminPasswordHash, null);
+  assert.equal(disabled.adminSessionSecret, null);
+
+  const passwordHash = `scrypt-v1$${Buffer.alloc(16, 2).toString('base64url')}$${Buffer.alloc(64, 3).toString('base64url')}`;
+  const enabled = loadConfig({
+    ...validEnvironment(),
+    ADMIN_PASSWORD_HASH: passwordHash,
+    ADMIN_SESSION_SECRET_BASE64: crypto.randomBytes(32).toString('base64')
+  });
+  assert.equal(enabled.adminPasswordHash, passwordHash);
+  assert.equal(enabled.adminSessionSecret.length, 32);
+
+  assert.throws(() => loadConfig({
+    ...validEnvironment(),
+    ADMIN_PASSWORD_HASH: 'configured-alone'
+  }), /configured together/);
+});
+
 test('worker defaults to no provider access and keeps writes hard-locked', () => {
   const config = loadWorkerConfig(validEnvironment());
   assert.equal(config.providerReadsEnabled, false);

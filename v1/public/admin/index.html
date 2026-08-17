@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="theme-color" content="#f5f8fc">
+  <title>Plus 运营后台</title>
+  <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/admin/assets/admin.css?v=2">
+  <script src="/admin/assets/admin.js?v=2" defer></script>
+</head>
+<body>
+  <div class="admin-shell">
+    <aside class="sidebar">
+      <a class="admin-brand" href="/admin" aria-label="Plus 运营后台首页">
+        <span class="brand-label">OPERATIONS</span>
+        <strong>Plus 运营后台 <span aria-hidden="true">✦</span></strong>
+        <small>内部管理中心</small>
+      </a>
+      <nav aria-label="后台导航">
+        <button class="nav-item is-active" type="button" data-view="overview"><span aria-hidden="true">⌂</span>总览</button>
+        <button class="nav-item" type="button" data-view="orders"><span aria-hidden="true">≡</span>订单</button>
+        <button class="nav-item" type="button" data-view="exceptions"><span aria-hidden="true">!</span>异常队列</button>
+      </nav>
+      <div class="sidebar-foot">
+        <span><i aria-hidden="true"></i>只读运营模式</span>
+        <button id="logout-button" type="button">退出登录</button>
+      </div>
+    </aside>
+
+    <main class="main-area">
+      <header class="topbar">
+        <div>
+          <p class="section-kicker" id="view-kicker">运营概览</p>
+          <h1 id="view-title">今天的运行情况</h1>
+        </div>
+        <div class="topbar-actions">
+          <span class="sync-time" id="sync-time">正在读取数据…</span>
+          <button class="ghost-button" id="refresh-button" type="button">刷新</button>
+        </div>
+      </header>
+
+      <section id="overview-view" class="view" aria-labelledby="view-title">
+        <div class="metrics-grid" id="metrics-grid" aria-label="关键指标"></div>
+        <div class="dashboard-grid">
+          <section class="card status-card">
+            <div class="card-heading"><div><p class="section-kicker">订单分布</p><h2>处理状态</h2></div><button class="text-button" type="button" data-open-orders>查看全部</button></div>
+            <div class="status-list" id="status-list"></div>
+          </section>
+          <section class="card settings-card">
+            <div class="card-heading"><div><p class="section-kicker">运行控制</p><h2>系统开关</h2></div><span class="readonly-badge">只读</span></div>
+            <div class="setting-list" id="setting-list"></div>
+          </section>
+        </div>
+        <section class="card recent-card">
+          <div class="card-heading"><div><p class="section-kicker">最新动态</p><h2>最近订单</h2></div><button class="text-button" type="button" data-open-orders>进入订单中心</button></div>
+          <div class="table-wrap"><table><thead><tr><th>订单查询码</th><th>账号</th><th>状态</th><th>卡片</th><th>退款观察</th><th>更新时间</th></tr></thead><tbody id="recent-orders"></tbody></table></div>
+        </section>
+      </section>
+
+      <section id="orders-view" class="view" hidden>
+        <section class="card orders-card">
+          <form class="filters" id="order-filters">
+            <label class="search-field"><span class="sr-only">搜索订单</span><input id="order-search" type="search" maxlength="191" placeholder="搜索查询码、邮箱或外部订单号"></label>
+            <label><span class="sr-only">订单状态</span><select id="status-filter"><option value="">全部状态</option></select></label>
+            <button class="primary-small" type="submit">查询</button>
+          </form>
+          <div class="table-wrap"><table><thead><tr><th>订单查询码</th><th>账号</th><th>状态</th><th>卡片</th><th>退款观察</th><th>创建时间</th></tr></thead><tbody id="orders-table"></tbody></table></div>
+          <div class="pagination"><span id="order-count">0 条订单</span><div><button id="prev-page" type="button">上一页</button><span id="page-label">第 1 页</span><button id="next-page" type="button">下一页</button></div></div>
+        </section>
+      </section>
+
+      <div class="page-notice" id="page-notice" role="status" aria-live="polite" hidden></div>
+    </main>
+  </div>
+
+  <dialog class="detail-drawer" id="detail-drawer" aria-labelledby="detail-title">
+    <div class="drawer-heading"><div><p class="section-kicker">订单详情</p><h2 id="detail-title">—</h2></div><button class="close-button" id="close-detail" type="button" aria-label="关闭详情">×</button></div>
+    <div id="detail-content"></div>
+  </dialog>
+</body>
+</html>

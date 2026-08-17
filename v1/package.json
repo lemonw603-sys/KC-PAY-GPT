@@ -9,6 +9,7 @@
   "scripts": {
     "start": "node src/server.js",
     "start:worker": "node src/worker.js",
+    "admin:hash-password": "node scripts/hash-admin-password.js",
     "cdk": "node scripts/cdk.js",
     "migrate": "node scripts/migrate.js",
     "test": "node --test"

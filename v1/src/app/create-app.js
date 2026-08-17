@@ -17,8 +17,13 @@ export function createApp({
   readiness = async () => ({ ready: true }),
   createCustomerOrder = null,
   getCustomerOrderStatus = null,
+  adminAuth = null,
+  getAdminOverview = null,
+  listAdminOrders = null,
+  getAdminOrder = null,
   orderRateLimit = createFixedWindowRateLimit(),
-  orderStatusRateLimit = createFixedWindowRateLimit({ limit: 30 })
+  orderStatusRateLimit = createFixedWindowRateLimit({ limit: 30 }),
+  adminLoginRateLimit = createFixedWindowRateLimit({ limit: 5, windowMs: 15 * 60 * 1000 })
 } = {}) {
   const app = express();
 
@@ -63,6 +68,67 @@ export function createApp({
       return res.json({ order });
     });
   }
+
+  const noStore = (_req, res, next) => {
+    res.setHeader('Cache-Control', 'no-store');
+    next();
+  };
+  const requireAdminApi = (req, res, next) => {
+    if (!adminAuth?.authenticateRequest(req)) {
+      return res.status(401).json({ error: 'admin_auth_required' });
+    }
+    return next();
+  };
+
+  app.get('/admin/login', noStore, (req, res) => {
+    if (adminAuth?.authenticateRequest(req)) return res.redirect(302, '/admin');
+    return res.sendFile(path.join(publicDirectory, 'admin', 'login.html'));
+  });
+
+  app.post('/api/v1/admin/session', noStore, adminLoginRateLimit, async (req, res) => {
+    if (!adminAuth) return res.status(503).json({ error: 'admin_not_configured' });
+    const password = req.body?.password;
+    if (!await adminAuth.verifyPassword(password)) {
+      return res.status(401).json({ error: 'invalid_admin_credentials' });
+    }
+    adminAuth.setSessionCookie(res, adminAuth.issueSession());
+    return res.status(204).end();
+  });
+
+  app.get('/api/v1/admin/session', noStore, requireAdminApi, (_req, res) => {
+    res.json({ authenticated: true });
+  });
+
+  app.delete('/api/v1/admin/session', noStore, (req, res) => {
+    if (adminAuth) adminAuth.clearSessionCookie(res);
+    return res.status(204).end();
+  });
+
+  if (typeof getAdminOverview === 'function') {
+    app.get('/api/v1/admin/overview', noStore, requireAdminApi, async (_req, res) => {
+      res.json(await getAdminOverview());
+    });
+  }
+  if (typeof listAdminOrders === 'function') {
+    app.get('/api/v1/admin/orders', noStore, requireAdminApi, async (req, res) => {
+      res.json(await listAdminOrders(req.query));
+    });
+  }
+  if (typeof getAdminOrder === 'function') {
+    app.get('/api/v1/admin/orders/:publicNo', noStore, requireAdminApi, async (req, res) => {
+      res.json(await getAdminOrder(req.params.publicNo));
+    });
+  }
+
+  app.get('/admin', noStore, (req, res) => {
+    if (!adminAuth?.authenticateRequest(req)) return res.redirect(302, '/admin/login');
+    return res.sendFile(path.join(publicDirectory, 'admin', 'index.html'));
+  });
+  app.use('/admin/assets', express.static(path.join(publicDirectory, 'admin', 'assets'), {
+    etag: true,
+    maxAge: 0,
+    fallthrough: true
+  }));
 
   app.get('/', (_req, res) => {
     res.setHeader('Cache-Control', 'no-store');

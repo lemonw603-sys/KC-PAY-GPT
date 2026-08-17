@@ -4,6 +4,7 @@ import { createApp } from '../src/app/create-app.js';
 import { createFixedWindowRateLimit } from '../src/app/fixed-window-rate-limit.js';
 import { OrderIntakeError } from '../src/domain/order-intake-error.js';
 import { PublicApiError } from '../src/domain/public-api-error.js';
+import { createAdminSessionAuth, hashAdminPassword } from '../src/security/admin-session.js';
 
 async function withServer(app, run) {
   const server = app.listen(0, '127.0.0.1');
@@ -160,5 +161,81 @@ test('does not cache missing-order responses', async () => {
     assert.equal(response.status, 404);
     assert.equal(response.headers.get('cache-control'), 'no-store');
     assert.deepEqual(await response.json(), { error: 'order_not_found' });
+  });
+});
+
+test('protects the admin page and read APIs with a server-side signed session', async () => {
+  const adminAuth = createAdminSessionAuth({
+    passwordHash: await hashAdminPassword('fixture admin password', { salt: Buffer.alloc(16, 4) }),
+    sessionSecret: Buffer.alloc(32, 6),
+    secureCookies: true
+  });
+  const app = createApp({
+    adminAuth,
+    getAdminOverview: async () => ({ metrics: { totalOrders: 2 } }),
+    listAdminOrders: async (query) => ({ query, orders: [], total: 0 }),
+    getAdminOrder: async (publicNo) => ({
+      order: { publicNo },
+      card: { last4: '4242' }
+    })
+  });
+
+  await withServer(app, async (baseUrl) => {
+    const page = await fetch(`${baseUrl}/admin`, { redirect: 'manual' });
+    assert.equal(page.status, 302);
+    assert.equal(page.headers.get('location'), '/admin/login');
+
+    const denied = await fetch(`${baseUrl}/api/v1/admin/overview`);
+    assert.equal(denied.status, 401);
+    assert.deepEqual(await denied.json(), { error: 'admin_auth_required' });
+
+    const badLogin = await fetch(`${baseUrl}/api/v1/admin/session`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: 'wrong password' })
+    });
+    assert.equal(badLogin.status, 401);
+    assert.equal(badLogin.headers.has('set-cookie'), false);
+
+    const login = await fetch(`${baseUrl}/api/v1/admin/session`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: 'fixture admin password' })
+    });
+    assert.equal(login.status, 204);
+    const cookie = login.headers.get('set-cookie');
+    assert.match(cookie, /pojia_admin_session=/);
+    assert.match(cookie, /HttpOnly/);
+    assert.match(cookie, /SameSite=Strict/);
+    assert.match(cookie, /Secure/);
+
+    const sessionCookie = cookie.split(';')[0];
+    const overview = await fetch(`${baseUrl}/api/v1/admin/overview`, {
+      headers: { Cookie: sessionCookie }
+    });
+    assert.equal(overview.status, 200);
+    assert.deepEqual(await overview.json(), { metrics: { totalOrders: 2 } });
+
+    const detail = await fetch(`${baseUrl}/api/v1/admin/orders/PJV1-fixture`, {
+      headers: { Cookie: sessionCookie }
+    });
+    assert.deepEqual(await detail.json(), {
+      order: { publicNo: 'PJV1-fixture' },
+      card: { last4: '4242' }
+    });
+  });
+});
+
+test('keeps the admin closed when login credentials are not configured', async () => {
+  const app = createApp({ getAdminOverview: async () => ({}) });
+  await withServer(app, async (baseUrl) => {
+    const login = await fetch(`${baseUrl}/api/v1/admin/session`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: 'anything at all' })
+    });
+    assert.equal(login.status, 503);
+    assert.deepEqual(await login.json(), { error: 'admin_not_configured' });
+    assert.equal((await fetch(`${baseUrl}/api/v1/admin/overview`)).status, 401);
   });
 });
