@@ -121,8 +121,32 @@ function validateData(envelope, schema, operation) {
 
 const CARD_FAILURE_STATUSES = new Set(['failed', 'failure', 'invalid', 'inactive', 'closed', 'cancelled', 'canceled']);
 
+function cardData(envelope) {
+  return envelope?.data?.card ?? envelope?.data ?? {};
+}
+
+export function mapCardCredentials(envelope) {
+  const data = cardData(envelope);
+  const cardNumber = String(data.cardNumber ?? data.card_number ?? data.number ?? data.pan ?? '').trim();
+  const cvv = String(data.cvv ?? data.cvc ?? data.securityCode ?? data.security_code ?? '').trim();
+  const expMonth = Number(data.expiryMonth ?? data.expiry_month ?? data.expMonth ?? data.exp_month);
+  const expYear = Number(data.expiryYear ?? data.expiry_year ?? data.expYear ?? data.exp_year);
+  if (
+    !/^[0-9]{12,19}$/.test(cardNumber)
+    || !/^[0-9]{3,4}$/.test(cvv)
+    || !Number.isInteger(expMonth) || expMonth < 1 || expMonth > 12
+    || !Number.isInteger(expYear) || expYear < new Date().getUTCFullYear()
+  ) {
+    throw new ProviderSchemaError('Invalid Hnskj card credentials data', {
+      provider: 'hnskj',
+      uncertain: false
+    });
+  }
+  return { cardNumber, expMonth, expYear, cvv };
+}
+
 export function mapCardProvisioning(envelope, expectedAmount, now = new Date()) {
-  const data = envelope?.data?.card ?? envelope?.data ?? {};
+  const data = cardData(envelope);
   const status = String(data.status || '').trim().toLowerCase();
   const currentBalance = Number(data.cardBalance ?? data.currentBalance ?? data.current_balance);
   const expected = Number(expectedAmount);

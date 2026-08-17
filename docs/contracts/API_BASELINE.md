@@ -94,6 +94,8 @@ X-Idempotency-Key: <16-128 chars>
 - 查询旧订单必须使用创建时的相同 Key。
 - v1 仍将该值作为服务端秘密配置，保持稳定且不进入前端或日志。
 
+部署约定：Provider 密钥只注入 worker 的 provider 环境文件；Web 进程不加载这些密钥。`npm run provider:read-check` 仅执行只读连通性和响应 Schema 检查，并在资金写入开关开启时拒绝运行。
+
 ### 创建
 
 ```http

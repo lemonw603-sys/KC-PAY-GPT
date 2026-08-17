@@ -1,4 +1,8 @@
-export { HnskjCardProvider } from './hnskj-card.js';
+export {
+  HnskjCardProvider,
+  mapCardCredentials,
+  mapCardProvisioning
+} from './hnskj-card.js';
 export { ZzshuRechargeProvider } from './zzshu-recharge.js';
 export {
   ProviderError,

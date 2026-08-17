@@ -3,7 +3,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { HnskjCardProvider, mapCardProvisioning } from '../src/providers/hnskj-card.js';
+import {
+  HnskjCardProvider,
+  mapCardCredentials,
+  mapCardProvisioning
+} from '../src/providers/hnskj-card.js';
+import { runReadOnlyChecks } from '../scripts/provider-read-check.js';
 import { ProviderError, ProviderSchemaError } from '../src/providers/http-client.js';
 import { ZzshuRechargeProvider } from '../src/providers/zzshu-recharge.js';
 
@@ -149,6 +154,33 @@ test('Hnskj card readiness requires terminal status, funded balance and credenti
 
   const failed = mapCardProvisioning({ data: { status: 'failed', cardBalance: '0.000000' } }, 25);
   assert.equal(failed.state, 'failed');
+});
+
+test('Hnskj card credentials mapper accepts known read response fields and rejects drift', () => {
+  assert.deepEqual(mapCardCredentials({
+    data: { number: '4242424242424242', expMonth: 12, expYear: 2032, cvv: '123' }
+  }), {
+    cardNumber: '4242424242424242', expMonth: 12, expYear: 2032, cvv: '123'
+  });
+  assert.throws(
+    () => mapCardCredentials({ data: { number: 'not-a-card' } }),
+    /Invalid Hnskj card credentials data/
+  );
+});
+
+test('read-only deployment check calls only provider read operations', async () => {
+  const calls = [];
+  const result = await runReadOnlyChecks({
+    hnskj: {
+      accountProfile: async () => { calls.push('profile'); return { data: { id: 7 } }; },
+      accountBalance: async () => { calls.push('balance'); return { data: { currency: 'USD' } }; },
+      cardTypes: async () => { calls.push('card-types'); return { data: { cardTypes: [] } }; },
+      cards: async () => { calls.push('cards'); return { data: { total: 0 } }; }
+    },
+    zzshu: { checkConnection: async () => { calls.push('zzshu-connection'); } }
+  });
+  assert.deepEqual(calls, ['profile', 'balance', 'card-types', 'cards', 'zzshu-connection']);
+  assert.equal(result.hnskj.accountId, 7);
 });
 
 test('Zzshu direct creation uses X-API-Key and strips secrets from the result', async () => {

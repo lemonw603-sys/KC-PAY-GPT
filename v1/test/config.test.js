@@ -184,6 +184,14 @@ test('worker defaults to no provider access and keeps writes hard-locked', () =>
   assert.throws(
     () => loadWorkerConfig({
       ...validEnvironment(),
+      PROVIDER_READS_ENABLED: 'true',
+      ZZSHU_API_KEY: 'test-key'
+    }),
+    /HNSKJ_API_KEY is required/
+  );
+  assert.throws(
+    () => loadWorkerConfig({
+      ...validEnvironment(),
       PROVIDER_WRITES_ENABLED: 'true'
     }),
     /Provider writes remain locked/

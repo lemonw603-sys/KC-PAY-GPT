@@ -103,7 +103,8 @@ npm run start:worker
 ```
 
 - `PROVIDER_READS_ENABLED=false` 和 `PROVIDER_WRITES_ENABLED=false` 是默认值；两者均为关闭时，worker 可启动但不领取任何外部调用任务。
-- 读权限开启时才要求 `ZZSHU_API_KEY`，用于轮询已有订单。
+- 读权限开启时要求 `HNSKJ_API_KEY` 与 `ZZSHU_API_KEY`，分别用于卡台只读查询和直充订单查询；密钥只注入 worker 的 provider 环境文件，Web 进程不需要读取。
+- 部署后可运行 `npm run provider:read-check`，它只调用 HNSKJ 的账户、余额、卡段、卡列表和 ZZSHU 连接检查接口；脚本在 `PROVIDER_WRITES_ENABLED=true` 时拒绝启动，也不会输出密钥、完整卡资料或 Session。
 - `WORKER_CONCURRENCY` 控制每个 worker 进程同时领取的任务数，范围 `1–32`，默认 `1`。提高它只会增加任务处理吞吐，不会绕过卡台限流或状态确认。
 - 正式接通 Provider 前保持 `1`；完成单笔和小批量验证后再按 `1 → 2 → 4` 逐级提高，并观察 429、失败率、余额和 `SUBMIT_UNKNOWN`。
 - 写权限在当前代码中硬锁；卡台开卡与卡详情真实 Schema 未经单笔 PoC 验证前，即使配置 `PROVIDER_WRITES_ENABLED=true` 也会在启动阶段拒绝运行。

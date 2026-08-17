@@ -10,6 +10,7 @@ User=pojia
 Group=pojia
 WorkingDirectory=/opt/pojia/current/v1
 EnvironmentFile=/etc/pojia/runtime.env
+EnvironmentFile=-/etc/pojia/provider.env
 ExecStart=/usr/bin/node src/worker.js
 Restart=on-failure
 RestartSec=3

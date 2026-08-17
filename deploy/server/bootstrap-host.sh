@@ -107,10 +107,22 @@ WORKER_POLL_INTERVAL_MS=1000
 WORKER_LEASE_SECONDS=60
 PROVIDER_READS_ENABLED=false
 PROVIDER_WRITES_ENABLED=false
-ZZSHU_API_BASE_URL=https://card.zzshu.pro/api/v1
 EOF
 chown root:pojia /etc/pojia/runtime.env
 chmod 0640 /etc/pojia/runtime.env
+
+if [[ ! -e /etc/pojia/provider.env ]]; then
+  umask 027
+  cat >/etc/pojia/provider.env <<'EOF'
+PROVIDER_READS_ENABLED=false
+PROVIDER_WRITES_ENABLED=false
+HNSKJ_API_BASE_URL=https://card.hnskj.vip/api/open/v1
+ZZSHU_API_BASE_URL=https://card.zzshu.pro/api/v1
+# Add API keys here only when a read-only verification window is approved.
+EOF
+  chown root:pojia /etc/pojia/provider.env
+  chmod 0640 /etc/pojia/provider.env
+fi
 
 cat >/etc/pojia/migration.env <<EOF
 NODE_ENV=production
