@@ -4,6 +4,7 @@ import { pathToFileURL } from 'node:url';
 import { validateChatGptSession } from '../src/domain/session-validation.js';
 import { HnskjCardProvider } from '../src/providers/hnskj-card.js';
 import { ZzshuRechargeProvider } from '../src/providers/zzshu-recharge.js';
+import { redactSensitiveText } from '../src/security/redaction.js';
 
 function valueAt(object, paths) {
   for (const path of paths) {
@@ -56,10 +57,16 @@ function safeError(error) {
     businessCode: error?.businessCode || null,
     retryable: Boolean(error?.retryable),
     uncertain: Boolean(error?.uncertain),
-    message: String(error?.message || 'unknown error')
-      .replace(/\b\d{12,19}\b/g, '[REDACTED]')
-      .replace(/\b(?:cvv|cvc|token|session|api.?key)\b\s*[:=]\s*\S+/gi, '$1=[REDACTED]')
+    message: redactSensitiveText(error?.message || 'unknown error')
   };
+}
+
+function writeState(file, state) {
+  const temporary = `${file}.${process.pid}.tmp`;
+  fs.writeFileSync(temporary, `${JSON.stringify(state, null, 2)}\n`, { mode: 0o600 });
+  fs.chmodSync(temporary, 0o600);
+  fs.renameSync(temporary, file);
+  fs.chmodSync(file, 0o600);
 }
 
 export async function runProviderPoc({
@@ -68,7 +75,12 @@ export async function runProviderPoc({
   session,
   cardTypeId,
   amount,
-  idempotencyKey = `pojia-poc-${crypto.randomUUID()}`
+  idempotencyKey = `pojia-poc-${crypto.randomUUID()}`,
+  checkpoint = () => {},
+  wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+  pollDelayMs = 5_000,
+  cancellationDelayMs = 60_000,
+  maxPolls = 240
 }) {
   validateChatGptSession(session);
   const cardTypes = await hnskj.cardTypes();
@@ -83,6 +95,13 @@ export async function runProviderPoc({
   }
 
   const balanceBefore = await hnskj.accountBalance();
+  await checkpoint({
+    phase: 'PURCHASE_STARTING',
+    idempotencyKey,
+    cardTypeId: Number(cardTypeId),
+    amount: numericAmount,
+    cardPlatformBalanceBefore: balanceBefore.data.balance
+  });
   const purchase = await hnskj.purchaseCard({
     cardTypeId: Number(cardTypeId),
     openCardAmount: numericAmount,
@@ -90,6 +109,14 @@ export async function runProviderPoc({
     remark: `POC-${new Date().toISOString().slice(0, 10)}`
   });
   const providerCardId = mapPurchasedCard(purchase);
+  await checkpoint({
+    phase: 'CARD_PURCHASED',
+    idempotencyKey,
+    providerCardId,
+    cardTypeId: Number(cardTypeId),
+    amount: numericAmount,
+    cardPlatformBalanceBefore: balanceBefore.data.balance
+  });
   const details = await hnskj.card(providerCardId);
   const credentials = mapCardCredentials(details);
   const recharge = await zzshu.createDirectOrder({
@@ -97,8 +124,48 @@ export async function runProviderPoc({
     token: session,
     planType: 'plus'
   });
-  const status = await zzshu.queryStatus(recharge.cardKey);
+  const durable = {
+    phase: 'RECHARGE_CREATED',
+    idempotencyKey,
+    providerCardId,
+    cardTypeId: Number(cardTypeId),
+    amount: numericAmount,
+    cardLast4: credentials.cardNumber.slice(-4),
+    rechargeOrderNo: recharge.orderNo,
+    rechargeCardKey: recharge.cardKey,
+    cardPlatformBalanceBefore: balanceBefore.data.balance
+  };
+  await checkpoint(durable);
+
+  let status = null;
+  for (let attempt = 1; attempt <= maxPolls; attempt += 1) {
+    status = await zzshu.queryStatus(recharge.cardKey);
+    if (Array.isArray(status)) [status] = status;
+    await checkpoint({ ...durable, phase: 'RECHARGE_POLLING', pollAttempt: attempt, status });
+    if (status.status === 'success' || status.status === 'failed') break;
+    await wait(pollDelayMs);
+  }
+  if (!status || !['success', 'failed'].includes(status.status)) {
+    throw new Error('直充在限定时间内没有最终状态；已保存查询凭据，禁止重新创建订单');
+  }
+  if (status.status === 'failed') {
+    await wait(2_500);
+    let confirmed = await zzshu.queryStatus(recharge.cardKey);
+    if (Array.isArray(confirmed)) [confirmed] = confirmed;
+    status = confirmed;
+  } else if (status.isSubscriptionCancelled !== 1) {
+    await wait(cancellationDelayMs);
+    let cancellation = await zzshu.queryStatus(recharge.cardKey);
+    if (Array.isArray(cancellation)) [cancellation] = cancellation;
+    status = cancellation;
+  }
   const balanceAfter = await hnskj.accountBalance();
+  await checkpoint({
+    ...durable,
+    phase: 'FINISHED',
+    status,
+    cardPlatformBalanceAfter: balanceAfter.data.balance
+  });
 
   return {
     idempotencyKey,
@@ -109,20 +176,19 @@ export async function runProviderPoc({
     cardPlatformBalanceBefore: balanceBefore.data.balance,
     cardPlatformBalanceAfter: balanceAfter.data.balance,
     rechargeOrderNo: recharge.orderNo,
-    rechargeStatus: Array.isArray(status) ? status[0]?.status ?? null : status.status,
-    subscriptionCancelled: Array.isArray(status)
-      ? status[0]?.isSubscriptionCancelled ?? null
-      : status.isSubscriptionCancelled
+    rechargeStatus: status.status,
+    subscriptionCancelled: status.isSubscriptionCancelled ?? null
   };
 }
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const sessionFile = args.get('session-file');
+  const stateFile = args.get('state-file');
   const cardTypeId = args.get('card-type-id');
   const amount = args.get('amount');
-  if (!sessionFile || !cardTypeId || !amount) {
-    throw new Error('必须提供 --session-file、--card-type-id 和 --amount');
+  if (!sessionFile || !stateFile || !cardTypeId || !amount) {
+    throw new Error('必须提供 --session-file、--state-file、--card-type-id 和 --amount');
   }
   const session = JSON.parse(fs.readFileSync(sessionFile, 'utf8'));
   const hnskj = new HnskjCardProvider({
@@ -133,7 +199,14 @@ async function main() {
     baseUrl: process.env.ZZSHU_API_BASE_URL || 'https://card.zzshu.pro/api/v1',
     apiKey: process.env.ZZSHU_API_KEY
   });
-  const result = await runProviderPoc({ hnskj, zzshu, session, cardTypeId, amount });
+  const result = await runProviderPoc({
+    hnskj,
+    zzshu,
+    session,
+    cardTypeId,
+    amount,
+    checkpoint: (state) => writeState(stateFile, state)
+  });
   console.log(JSON.stringify(result, null, 2));
 }
 

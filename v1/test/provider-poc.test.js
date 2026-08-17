@@ -17,6 +17,8 @@ test('provider PoC maps known card response shapes', () => {
 
 test('provider PoC performs exactly one purchase and one recharge submission', async () => {
   const calls = [];
+  const checkpoints = [];
+  let statusQueries = 0;
   const hnskj = {
     cardTypes: async () => ({
       data: {
@@ -41,7 +43,10 @@ test('provider PoC performs exactly one purchase and one recharge submission', a
     },
     queryStatus: async (cardKey) => {
       calls.push(['status', cardKey]);
-      return { status: 'processing', isSubscriptionCancelled: 0 };
+      statusQueries += 1;
+      return statusQueries === 1
+        ? { status: 'processing', isSubscriptionCancelled: 0 }
+        : { status: 'success', isSubscriptionCancelled: 1 };
     }
   };
 
@@ -51,16 +56,26 @@ test('provider PoC performs exactly one purchase and one recharge submission', a
     session: sessionFixture(),
     cardTypeId: 7,
     amount: 25,
-    idempotencyKey: 'pojia-poc-fixed-key'
+    idempotencyKey: 'pojia-poc-fixed-key',
+    checkpoint: async (state) => checkpoints.push(state),
+    wait: async () => {},
+    pollDelayMs: 0,
+    cancellationDelayMs: 0,
+    maxPolls: 2
   });
 
   assert.equal(calls.filter(([name]) => name === 'purchase').length, 1);
   assert.equal(calls.filter(([name]) => name === 'recharge').length, 1);
   assert.equal(result.cardLast4, '4242');
   assert.equal(result.rechargeOrderNo, 'order-1');
-  assert.equal(result.rechargeStatus, 'processing');
+  assert.equal(result.rechargeStatus, 'success');
   assert.equal(JSON.stringify(result).includes('4242424242424242'), false);
   assert.equal(JSON.stringify(result).includes('123'), false);
+  assert.equal(checkpoints.some((state) => state.phase === 'CARD_PURCHASED'), true);
+  const created = checkpoints.find((state) => state.phase === 'RECHARGE_CREATED');
+  assert.equal(created.rechargeOrderNo, 'order-1');
+  assert.equal(created.rechargeCardKey, 'DIRECT-1');
+  assert.equal(JSON.stringify(checkpoints).includes('4242424242424242'), false);
 });
 
 test('provider PoC stops before purchase when amount is outside the live card range', async () => {
