@@ -1,8 +1,18 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
 import test from 'node:test';
+import { fileURLToPath } from 'node:url';
 import { HnskjCardProvider } from '../src/providers/hnskj-card.js';
 import { ProviderError, ProviderSchemaError } from '../src/providers/http-client.js';
 import { ZzshuRechargeProvider } from '../src/providers/zzshu-recharge.js';
+
+const fixturePath = path.join(
+  path.dirname(fileURLToPath(import.meta.url)),
+  'fixtures',
+  'hnskj-read-responses.json'
+);
+const hnskjReadFixtures = JSON.parse(fs.readFileSync(fixturePath, 'utf8'));
 
 function response(body, status = 200) {
   return {
@@ -81,6 +91,46 @@ test('Hnskj rejects an invalid idempotency key before network access', async () 
     /16-128/
   );
   assert.equal(called, false);
+});
+
+test('Hnskj read schemas match the one-time live response shapes', async () => {
+  const calls = [];
+  const provider = new HnskjCardProvider({
+    baseUrl: 'https://card.example/api/open/v1',
+    apiKey: 'nhs_test_key',
+    fetchImpl: fetchQueue([
+      response(hnskjReadFixtures.profile),
+      response(hnskjReadFixtures.balance),
+      response(hnskjReadFixtures.cardTypes),
+      response(hnskjReadFixtures.cards)
+    ], calls)
+  });
+
+  const profile = await provider.accountProfile();
+  const balance = await provider.accountBalance();
+  const cardTypes = await provider.cardTypes();
+  const cards = await provider.cards({ page: 1, pageSize: 20 });
+
+  assert.equal(profile.data.balance, '0.000000');
+  assert.equal(balance.data.exchangeRate, '1.000000');
+  assert.equal(cardTypes.data.cardTypes.length, 1);
+  assert.equal(cards.data.cards.length, 0);
+  assert.equal(calls.length, 4);
+});
+
+test('Hnskj rejects amount type drift instead of accepting JavaScript numbers', async () => {
+  const invalidBalance = structuredClone(hnskjReadFixtures.balance);
+  invalidBalance.data.balance = 0;
+  const provider = new HnskjCardProvider({
+    baseUrl: 'https://card.example/api/open/v1',
+    apiKey: 'nhs_test_key',
+    fetchImpl: async () => response(invalidBalance)
+  });
+
+  await assert.rejects(
+    provider.accountBalance(),
+    (error) => error instanceof ProviderSchemaError && error.uncertain === false
+  );
 });
 
 test('Zzshu direct creation uses X-API-Key and strips secrets from the result', async () => {

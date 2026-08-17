@@ -39,6 +39,7 @@
 - [x] 实现 `ZzshuRechargeProvider`。
 - [x] 为请求和响应建立运行时 Schema。
 - [x] 建立脱敏 fixture 和合同测试。
+- [x] 用单次审批完成卡台账户、余额、卡段和空卡片列表的真实只读验证。
 - [ ] 用卡台真实响应验证相同幂等键重复调用行为。
 - [ ] 用直充真实响应验证错误映射与 `SUBMIT_UNKNOWN` 路径。
 - [ ] 将 Provider 调用接入持久化 `provider_calls` 记录。

@@ -1,0 +1,75 @@
+{
+  "profile": {
+    "success": true,
+    "message": "成功",
+    "data": {
+      "id": 1,
+      "username": "fixture-user",
+      "email": "fixture@example.invalid",
+      "balance": "0.000000",
+      "currency": "USD",
+      "activeCards": 0,
+      "levelName": "fixture-level",
+      "createdAt": "2026-08-17T00:00:00.000Z"
+    }
+  },
+  "balance": {
+    "success": true,
+    "message": "成功",
+    "data": {
+      "balance": "0.000000",
+      "currency": "USD",
+      "exchangeRate": "1.000000"
+    }
+  },
+  "cardTypes": {
+    "success": true,
+    "message": "成功",
+    "data": {
+      "cardTypes": [
+        {
+          "id": 1,
+          "cardType": "fixture-card",
+          "cardCountry": "US",
+          "binPrefix": "000000",
+          "baseCardFeeUsdt": "1.000000",
+          "effectiveCardFeeUsdt": "1.000000",
+          "feeRate": "0.010000",
+          "effectiveFeeRate": "0.010000",
+          "minServiceFeeUsdt": "0.000000",
+          "minAmount": "5.000000",
+          "maxAmount": "200.000000",
+          "minRechargeAmount": "1.000000",
+          "chargebackFee": "0.400000",
+          "consumeRate": "0.000000",
+          "description": "fixture",
+          "requireMinBalance": 1,
+          "minBalanceUsdt": "25.000000",
+          "isFeatured": 0,
+          "allowUserInvalid": 1
+        }
+      ],
+      "purchaseEnabled": true,
+      "exchangeRate": 1,
+      "discount": {
+        "levelName": "fixture-level"
+      },
+      "cardLimit": {
+        "currentCount": 0,
+        "maxLimit": 300,
+        "remaining": 300
+      }
+    }
+  },
+  "cards": {
+    "success": true,
+    "message": "成功",
+    "data": {
+      "cards": [],
+      "total": 0,
+      "page": 1,
+      "pageSize": 20,
+      "source": "fixture"
+    }
+  }
+}

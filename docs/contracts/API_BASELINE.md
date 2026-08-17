@@ -17,6 +17,7 @@
 - 官方文档：`https://card.hnskj.vip/docs/open-api.md`
 - API Base：`https://card.hnskj.vip/api/open/v1`
 - 已在登录后的 `/developer` 页面确认接口入口和认证方式。
+- 2026-08-17 经用户单次审批，使用新建 Key 完成 `/account/profile`、`/account/balance`、`/card-types`、`/cards` 四个只读接口验证，均返回 HTTP 200 与 `success=true`。Key 未落盘，审批已用完。
 
 ### 直充平台
 
@@ -36,6 +37,14 @@
 - 失败：HTTP 4xx/5xx 且 `success=false`。
 - 金额以 USD 计，平台声明 `1 USDT = 1 USD`。
 - 每个 Key 存在每分钟限流，但具体上限未写入文档。
+- 本次真实响应未返回 `X-RateLimit-Limit`、`X-RateLimit-Remaining` 或 `Retry-After` 响应头。
+
+### 已验证读取结构
+
+- `/account/profile`：`id` 为 number；`balance` 为 string；包含 `username`、`email`、`currency`、`activeCards`、`levelName`、`createdAt`。
+- `/account/balance`：`balance` 与 `exchangeRate` 均为 string，`currency` 为 string。
+- `/card-types`：`data.cardTypes` 为数组；本次返回 8 个卡段。费用、金额和费率字段均为 string；`exchangeRate` 为 number。
+- `/cards`：返回分页对象 `{cards,total,page,pageSize,source}`；本次账户无卡，尚不能确定卡片条目结构。
 
 ### 开卡
 

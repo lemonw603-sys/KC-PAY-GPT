@@ -12,6 +12,65 @@ const envelopeSchema = z.object({
   data: z.unknown().optional()
 }).passthrough();
 
+const profileDataSchema = z.object({
+  id: z.number(),
+  username: z.string(),
+  email: z.string(),
+  balance: z.string(),
+  currency: z.string(),
+  activeCards: z.number(),
+  levelName: z.string(),
+  createdAt: z.string()
+}).passthrough();
+
+const balanceDataSchema = z.object({
+  balance: z.string(),
+  currency: z.string(),
+  exchangeRate: z.string()
+}).passthrough();
+
+const cardTypeSchema = z.object({
+  id: z.number(),
+  cardType: z.string(),
+  cardCountry: z.string(),
+  binPrefix: z.string(),
+  baseCardFeeUsdt: z.string(),
+  effectiveCardFeeUsdt: z.string(),
+  feeRate: z.string(),
+  effectiveFeeRate: z.string(),
+  minServiceFeeUsdt: z.string(),
+  minAmount: z.string(),
+  maxAmount: z.string(),
+  minRechargeAmount: z.string(),
+  chargebackFee: z.string(),
+  consumeRate: z.string(),
+  description: z.string(),
+  requireMinBalance: z.number(),
+  minBalanceUsdt: z.string(),
+  isFeatured: z.number(),
+  allowUserInvalid: z.number()
+}).passthrough();
+
+const cardTypesDataSchema = z.object({
+  cardTypes: z.array(cardTypeSchema),
+  purchaseEnabled: z.boolean(),
+  exchangeRate: z.number(),
+  discount: z.object({ levelName: z.string() }).passthrough(),
+  cardLimit: z.object({
+    currentCount: z.number(),
+    maxLimit: z.number(),
+    remaining: z.number()
+  }).passthrough()
+}).passthrough();
+
+const cardsDataSchema = z.object({
+  cards: z.array(z.record(z.string(), z.unknown())),
+  total: z.number(),
+  page: z.number(),
+  pageSize: z.number(),
+  source: z.string()
+}).passthrough();
+
 function normalizeBaseUrl(value) {
   const url = String(value || '').trim().replace(/\/+$/, '');
   if (!url) throw new Error('Hnskj card API base URL is required');
@@ -47,6 +106,17 @@ function parseEnvelope(response, { uncertainOnSchema = false, retryableOnSchema 
     });
   }
   return result.data;
+}
+
+function validateData(envelope, schema, operation) {
+  const result = schema.safeParse(envelope.data);
+  if (!result.success) {
+    throw new ProviderSchemaError(`Invalid Hnskj ${operation} data`, {
+      provider: 'hnskj',
+      uncertain: false
+    });
+  }
+  return { ...envelope, data: result.data };
 }
 
 export class HnskjCardProvider {
@@ -85,16 +155,26 @@ export class HnskjCardProvider {
     }
   }
 
-  accountProfile() { return this.request('/account/profile'); }
+  async accountProfile() {
+    return validateData(await this.request('/account/profile'), profileDataSchema, 'profile');
+  }
 
-  accountBalance() { return this.request('/account/balance'); }
+  async accountBalance() {
+    return validateData(await this.request('/account/balance'), balanceDataSchema, 'balance');
+  }
 
-  cardTypes() { return this.request('/card-types'); }
+  async cardTypes() {
+    return validateData(await this.request('/card-types'), cardTypesDataSchema, 'card-types');
+  }
 
-  cards({ status, page = 1, pageSize = 50 } = {}) {
+  async cards({ status, page = 1, pageSize = 50 } = {}) {
     const query = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
     if (status) query.set('status', String(status));
-    return this.request(`/cards?${query}`);
+    return validateData(
+      await this.request(`/cards?${query}`),
+      cardsDataSchema,
+      'cards list'
+    );
   }
 
   card(cardId) {
