@@ -13,6 +13,7 @@ import { runWorkerIteration } from '../src/workers/worker-runtime.js';
 import { createOrderIntakeService } from '../src/services/order-intake-service.js';
 import { decryptSecret } from '../src/security/secret-box.js';
 import { sessionFixture } from '../test-support/session-fixture.js';
+import { storeCdkBatch } from '../src/services/cdk-service.js';
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
 const integrationSessionKey = Buffer.alloc(32, 7);
@@ -353,6 +354,63 @@ test('order intake atomically redeems one CDK and creates an encrypted queued or
     } else {
       await pool.query('DELETE FROM cdks WHERE id = ?', [cdkId]);
     }
+    await pool.end();
+  }
+});
+
+test('CDK batches store only hashes and report input and existing duplicates', {
+  skip: !databaseUrl
+}, async () => {
+  const pool = mysql.createPool({ uri: databaseUrl, connectionLimit: 3, timezone: 'Z' });
+  const batchNo = `TEST-CDK-${id()}`;
+  const collisionBatchNo = `TEST-CDK-COLLISION-${id()}`;
+  const codes = ['PJ-ABCDEFGH', 'PJ-abcdefgh', 'PJ-ABCDEFGH'];
+  try {
+    const first = await storeCdkBatch(pool, codes, { batchNo });
+    assert.deepEqual(first, {
+      batchNo,
+      inputCount: 3,
+      duplicateInputCount: 1,
+      insertedCount: 2,
+      duplicateExistingCount: 0
+    });
+    const second = await storeCdkBatch(pool, codes, { batchNo });
+    assert.deepEqual(second, {
+      batchNo,
+      inputCount: 3,
+      duplicateInputCount: 1,
+      insertedCount: 0,
+      duplicateExistingCount: 2
+    });
+    await assert.rejects(
+      storeCdkBatch(pool, ['PJ-ABCDEFGH', 'PJ-NEWCODEX'], {
+        batchNo: collisionBatchNo,
+        requireAllInserted: true
+      }),
+      (error) => error.code === 'GENERATED_COLLISION'
+    );
+    const [[rolledBack]] = await pool.query(
+      'SELECT COUNT(*) AS count FROM cdks WHERE batch_no = ?',
+      [collisionBatchNo]
+    );
+    assert.equal(rolledBack.count, 0);
+
+    const [rows] = await pool.query(
+      `SELECT code_hash, status, batch_no FROM cdks
+       WHERE batch_no = ? ORDER BY code_hash`,
+      [batchNo]
+    );
+    assert.equal(rows.length, 2);
+    assert.equal(rows.every((row) => row.status === 'AVAILABLE'), true);
+    assert.equal(rows.every((row) => row.batch_no === batchNo), true);
+    assert.deepEqual(
+      rows.map((row) => row.code_hash).sort(),
+      ['PJ-ABCDEFGH', 'PJ-abcdefgh']
+        .map((code) => crypto.createHash('sha256').update(code).digest('hex'))
+        .sort()
+    );
+  } finally {
+    await pool.query('DELETE FROM cdks WHERE batch_no IN (?, ?)', [batchNo, collisionBatchNo]);
     await pool.end();
   }
 });

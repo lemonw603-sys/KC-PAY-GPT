@@ -18,6 +18,7 @@
 - MySQL workflow repository：仅在 worker 边界解密 Session，并原子提交卡片绑定、外部订单标识、状态事件和后续任务。
 - 独立 worker 入口：按数据库开关和进程级 Provider 权限双重过滤可领取的任务类型，支持空转、租约恢复和优雅停止。
 - 客户订单入口：验证 CDK 与完整 Session，原子创建加密订单、创建事件和 `PURCHASE_CARD` 任务。
+- v1 CDK CLI：批量生成、按行导入、批次追踪和哈希去重；生成明文只写入新建的 `0600` 文件。
 
 尚未接入客户页面和后台。卡台读取结构已经完成一次获批的真实只读验证，开卡与直充写接口仍未调用，因此真实写响应的字段映射仍待单笔 PoC 确认。
 
@@ -36,7 +37,7 @@ npm audit --omit=dev
 TEST_DATABASE_URL='mysql://user:password@127.0.0.1:3306/pojia_v1_test' npm test
 ```
 
-没有设置 `TEST_DATABASE_URL` 时，七个数据库集成用例会明确跳过，其余单元测试继续执行。
+没有设置 `TEST_DATABASE_URL` 时，八个数据库集成用例会明确跳过，其余单元测试继续执行。
 
 ## 配置
 
@@ -73,6 +74,15 @@ npm start
 数据库业务开关默认禁止新订单和新充值，保留已有订单轮询。进程级 Provider 读写权限又默认全部关闭，因此仅启动 worker 不会访问外部系统。
 
 开放接单前必须在 `app_settings` 同时配置 `default_card_type_id`、`default_open_card_amount`，再将 `accept_new_orders` 改为 `true`。只开启接单不会触发真实开卡，worker 写权限仍有独立硬锁。
+
+## CDK 批次
+
+```bash
+npm run cdk -- generate --count 100 --batch BATCH_20260817 --output /absolute/private/cdks.txt
+npm run cdk -- import --input /absolute/private/cdks.txt --batch IMPORT_20260817
+```
+
+两条命令都必须显式注入 `DATABASE_URL`。完整参数、输出摘要和明文文件边界见 `docs/contracts/CDK_CLI.md`。
 
 ## Worker
 

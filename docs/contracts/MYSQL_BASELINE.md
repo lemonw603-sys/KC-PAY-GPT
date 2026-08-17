@@ -15,6 +15,7 @@
 applied migration 001_initial
 applied migration 002_workflow_fields
 applied migration 003_order_intake_settings
+applied migration 004_cdk_batch_index
 ```
 
 第二次执行：
@@ -23,10 +24,11 @@ applied migration 003_order_intake_settings
 migration 001_initial already applied
 migration 002_workflow_fields already applied
 migration 003_order_intake_settings already applied
+migration 004_cdk_batch_index already applied
 ```
 
-- 数据库共创建 10 张 v1 表；`002_workflow_fields` 为订单增加卡段和开卡金额字段，`003_order_intake_settings` 增加默认卡配置。
-- `schema_migrations` 准确记录三条迁移。
+- 数据库共创建 10 张 v1 表；`002_workflow_fields` 为订单增加卡段和开卡金额字段，`003_order_intake_settings` 增加默认卡配置，`004_cdk_batch_index` 增加 CDK 批次查询索引。
+- `schema_migrations` 准确记录四条迁移。
 - 第二次执行没有重复建表、重复约束或报错。
 
 ### 业务约束
@@ -49,6 +51,8 @@ migration 003_order_intake_settings already applied
 - 用本地假供应商完成 `CREATED -> RECHARGE_SUCCESS` 全链路，三个持久化任务均最终为 `COMPLETED`。
 - 订单入口默认停单；只开启 `accept_new_orders` 但未配置卡段/金额时仍拒绝建单。
 - 同一 CDK 并发提交两次时仅有一次成功；CDK 兑换、Session 密文、订单、创建事件和首任务原子落库。
+- CDK 批次导入只写入 64 位 SHA-256；文件内重复和数据库已存重复分开计数，重复导入不新增记录。
+- 生成模式发现任一历史哈希冲突时，本批已插入的其余新码也会回滚，不会产生无法完整交付的半批次。
 
 ### HTTP 就绪
 
@@ -64,8 +68,8 @@ GET /health/ready -> 200 {"status":"ready"}
 设置 `TEST_DATABASE_URL` 后执行 `npm test`：
 
 ```text
-tests 57
-pass 57
+tests 61
+pass 61
 fail 0
 skipped 0
 ```
@@ -77,7 +81,7 @@ skipped 0
 - 增加 `provider_calls` 真实落库用例。
 - 验证嵌套 API Key、Token、PAN 和 CVV 进入 JSON 列前会被替换为 `[REDACTED]`。
 - 增加任务 runner 的成功、重试、模糊提交 dead-letter 和未知 handler 隔离测试。
-- 加入客户订单入口、Session 预检、CDK 并发兑换和提交限流后，v1 共 57 个测试；其中 7 个数据库集成用例已在 MySQL 8.4.11 上通过。
+- 加入 CDK 生成/导入、批次追踪、哈希存储和重复分类后，v1 共 61 个测试；其中 8 个数据库集成用例已在 MySQL 8.4.11 上通过。
 
 ## 环境收尾
 
