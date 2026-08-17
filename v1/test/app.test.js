@@ -30,6 +30,24 @@ test('exposes liveness and readiness without legacy automation', async () => {
   });
 });
 
+test('serves the isolated v1 customer page and local assets', async () => {
+  const app = createApp();
+  await withServer(app, async (baseUrl) => {
+    const page = await fetch(`${baseUrl}/`);
+    const html = await page.text();
+    assert.equal(page.status, 200);
+    assert.equal(page.headers.get('cache-control'), 'no-store');
+    assert.match(page.headers.get('content-security-policy'), /script-src 'self'/);
+    assert.match(html, /id="submit-form"/);
+    assert.match(html, /id="query-form"/);
+
+    const script = await fetch(`${baseUrl}/assets/customer.js`);
+    assert.equal(script.status, 200);
+    assert.match(script.headers.get('content-type'), /javascript/);
+    assert.match(await script.text(), /\/api\/v1\/orders\/status/);
+  });
+});
+
 test('readiness fails closed and errors do not expose details', async () => {
   const app = createApp({ readiness: async () => { throw new Error('database password leaked'); } });
   await withServer(app, async (baseUrl) => {

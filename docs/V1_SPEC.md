@@ -268,6 +268,8 @@ v1 MySQL 只保存 CDK 的 SHA-256。系统生成的明文仅一次写入运营�
 
 状态查询接口同时支持创建时返回的 `publicNo` 和原 CDK。客户仅看到 `QUEUED | PROCESSING | REVIEWING | SUCCESS | FAILED`，不看到卡片、Provider、退款或内部异常细节。
 
+页面不持久化 Session JSON，创建成功后立即清空输入框；仅在当前标签页保留最后一个 `publicNo`。页面对处理中订单有界自动轮询，进入终态后停止。
+
 失败提示应可行动，但不暴露供应商内部细节、卡资料或退款信息。
 
 ### 内部后台

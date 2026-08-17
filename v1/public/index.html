@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#08111f">
+  <meta name="description" content="ChatGPT Plus CDK 提交与订单进度查询">
+  <title>Plus 充值中心</title>
+  <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/customer.css">
+  <script src="/assets/customer.js" defer></script>
+</head>
+<body>
+  <div class="page-shell">
+    <header class="site-header" aria-label="页面标题">
+      <a class="brand" href="/" aria-label="Plus 充值中心首页">
+        <span class="brand-mark" aria-hidden="true">P</span>
+        <span>
+          <strong>Plus 充值中心</strong>
+          <small>仅支持 ChatGPT Plus</small>
+        </span>
+      </a>
+      <span class="safety-pill"><span aria-hidden="true"></span>安全提交</span>
+    </header>
+
+    <main>
+      <section class="hero" aria-labelledby="hero-title">
+        <p class="eyebrow">CDK SELF SERVICE</p>
+        <h1 id="hero-title">提交一次，进度随时可查</h1>
+        <p class="hero-copy">使用未兑换的 CDK 和完整 Session JSON 创建订单。页面不会展示银行卡、供应商或退款信息。</p>
+        <ol class="steps" aria-label="处理步骤">
+          <li><span>1</span>提交资料</li>
+          <li><span>2</span>等待处理</li>
+          <li><span>3</span>查询结果</li>
+        </ol>
+      </section>
+
+      <section class="workspace" aria-label="充值操作区">
+        <div class="tab-list" role="tablist" aria-label="选择操作">
+          <button class="tab is-active" id="submit-tab" type="button" role="tab" aria-selected="true" aria-controls="submit-panel" data-tab="submit-panel">提交 Plus</button>
+          <button class="tab" id="query-tab" type="button" role="tab" aria-selected="false" aria-controls="query-panel" data-tab="query-panel">查询进度</button>
+        </div>
+
+        <div class="panel" id="submit-panel" role="tabpanel" aria-labelledby="submit-tab">
+          <div class="panel-heading">
+            <div>
+              <p class="panel-kicker">CREATE ORDER</p>
+              <h2>创建 Plus 订单</h2>
+            </div>
+            <span class="plan-badge">PLUS</span>
+          </div>
+
+          <form id="submit-form" novalidate>
+            <div class="field">
+              <label for="cdk-input">充值 CDK</label>
+              <input id="cdk-input" name="cdk" type="text" minlength="8" maxlength="256" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="例如 PJ-••••••••••••••••••••" required>
+              <p class="field-help">一枚 CDK 只能绑定一个订单，提交后不会释放给其他账号。</p>
+            </div>
+
+            <div class="field">
+              <div class="label-row">
+                <label for="session-input">完整 Session JSON</label>
+                <span>不会写入浏览器存储</span>
+              </div>
+              <textarea id="session-input" name="session" rows="10" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder='请粘贴完整 JSON，需包含 user、account、accessToken、sessionToken 和 expires' required></textarea>
+              <p class="field-help">请直接粘贴完整内容，不要只填写邮箱或 accessToken。提交成功后输入框会立即清空。</p>
+            </div>
+
+            <label class="confirmation">
+              <input id="confirm-input" type="checkbox" required>
+              <span>我已确认 CDK 与 Session 属于本次需要开通 Plus 的账号。</span>
+            </label>
+
+            <button class="primary-button" id="submit-button" type="submit">
+              <span>提交 Plus 订单</span>
+              <span class="button-arrow" aria-hidden="true">→</span>
+            </button>
+          </form>
+        </div>
+
+        <div class="panel" id="query-panel" role="tabpanel" aria-labelledby="query-tab" hidden>
+          <div class="panel-heading">
+            <div>
+              <p class="panel-kicker">TRACK ORDER</p>
+              <h2>查询订单进度</h2>
+            </div>
+          </div>
+
+          <form id="query-form" novalidate>
+            <div class="field">
+              <label for="query-input">订单查询码或原 CDK</label>
+              <input id="query-input" name="query" type="text" maxlength="256" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="PJV1-... 或 PJ-..." required>
+              <p class="field-help">如果创建订单时页面中断，可直接用原 CDK 找回已经建立的订单。</p>
+            </div>
+            <button class="primary-button" id="query-button" type="submit">
+              <span>查询当前状态</span>
+              <span class="button-arrow" aria-hidden="true">→</span>
+            </button>
+          </form>
+        </div>
+
+        <section class="result-card" id="result-card" aria-labelledby="result-title" hidden>
+          <div class="result-topline">
+            <span class="status-chip" id="status-chip"><span aria-hidden="true"></span><span id="status-label">等待处理</span></span>
+            <span id="updated-at"></span>
+          </div>
+          <h2 id="result-title">订单已建立</h2>
+          <p id="result-description">系统已收到订单，请稍后查询进度。</p>
+          <div class="order-number">
+            <span>订单查询码</span>
+            <div>
+              <code id="public-no">—</code>
+              <button class="copy-button" id="copy-button" type="button">复制</button>
+            </div>
+          </div>
+          <p class="polling-note" id="polling-note"></p>
+        </section>
+
+        <div class="notice" id="notice" role="status" aria-live="polite" hidden></div>
+      </section>
+
+      <section class="trust-grid" aria-label="服务说明">
+        <article>
+          <span aria-hidden="true">01</span>
+          <h2>一卡一单</h2>
+          <p>CDK 与订单永久绑定，异常时找回原订单，不会重新创建第二笔。</p>
+        </article>
+        <article>
+          <span aria-hidden="true">02</span>
+          <h2>敏感信息加密</h2>
+          <p>Session 只在提交时传输并加密保存，客户页面不会再次返回其内容。</p>
+        </article>
+        <article>
+          <span aria-hidden="true">03</span>
+          <h2>异常人工复核</h2>
+          <p>结果不明确时显示“复核中”，不会静默重复提交或重复扣款。</p>
+        </article>
+      </section>
+    </main>
+
+    <footer>
+      <p>本页面仅用于 Plus 订单提交与进度查询。</p>
+      <p>请勿在聊天、截图或工单中公开 Session JSON。</p>
+    </footer>
+  </div>
+  <noscript><p class="noscript">需要启用 JavaScript 才能提交或查询订单。</p></noscript>
+</body>
+</html>

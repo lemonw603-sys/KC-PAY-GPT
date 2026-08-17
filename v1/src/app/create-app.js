@@ -1,9 +1,17 @@
 import express from 'express';
 import helmet from 'helmet';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { PublicApiError } from '../domain/public-api-error.js';
 import { createFixedWindowRateLimit } from './fixed-window-rate-limit.js';
 
 const DEFAULT_BODY_LIMIT = '256kb';
+const publicDirectory = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  '..',
+  '..',
+  'public'
+);
 
 export function createApp({
   readiness = async () => ({ ready: true }),
@@ -55,6 +63,16 @@ export function createApp({
       return res.json({ order });
     });
   }
+
+  app.get('/', (_req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
+    res.sendFile(path.join(publicDirectory, 'index.html'));
+  });
+  app.use('/assets', express.static(path.join(publicDirectory, 'assets'), {
+    etag: true,
+    maxAge: 0,
+    fallthrough: true
+  }));
 
   app.use((_req, res) => {
     res.status(404).json({ error: 'not_found' });

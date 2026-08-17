@@ -69,8 +69,8 @@ GET /health/ready -> 200 {"status":"ready"}
 设置 `TEST_DATABASE_URL` 后执行 `npm test`：
 
 ```text
-tests 67
-pass 67
+tests 69
+pass 69
 fail 0
 skipped 0
 ```
@@ -82,7 +82,7 @@ skipped 0
 - 增加 `provider_calls` 真实落库用例。
 - 验证嵌套 API Key、Token、PAN 和 CVV 进入 JSON 列前会被替换为 `[REDACTED]`。
 - 增加任务 runner 的成功、重试、模糊提交 dead-letter 和未知 handler 隔离测试。
-- 加入 `publicNo`/CDK 订单恢复、客户状态映射和无缓存查询后，v1 共 67 个测试；其中 9 个数据库集成用例已在 MySQL 8.4.11 上通过。
+- 加入独立客户页、本地静态资源和旧运行时隔离断言后，v1 共 69 个测试；其中 9 个数据库集成用例已在 MySQL 8.4.11 上通过。
 
 ## 环境收尾
 
