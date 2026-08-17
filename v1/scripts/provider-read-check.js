@@ -1,4 +1,6 @@
 import { HnskjCardProvider, ZzshuRechargeProvider } from '../src/providers/index.js';
+import { resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 function required(name) {
   const value = String(process.env[name] || '').trim();
@@ -33,7 +35,7 @@ export async function runReadOnlyChecks({ hnskj, zzshu }) {
   };
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   if (process.env.PROVIDER_WRITES_ENABLED === 'true') {
     throw new Error('Read-only check refuses to run while PROVIDER_WRITES_ENABLED=true');
   }
