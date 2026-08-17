@@ -1,3 +1,11 @@
+if (process.env.ALLOW_LEGACY_RUNTIME !== 'I_UNDERSTAND') {
+    console.error(
+        'Legacy runtime is locked. Use the isolated v1 service. '
+        + 'To deliberately run legacy code, set ALLOW_LEGACY_RUNTIME=I_UNDERSTAND.'
+    );
+    process.exit(78);
+}
+
 const express = require('express');
 const { spawn, execFileSync } = require('child_process');
 const path = require('path');
