@@ -61,7 +61,7 @@ fi
 
 for _ in $(seq 1 90); do
   if docker exec "${MYSQL_CONTAINER}" sh -c \
-    'MYSQL_PWD="$(cat /run/secrets/mysql_root_password)" mysqladmin -uroot ping --silent' \
+    'MYSQL_PWD="$(cat /run/secrets/mysql_root_password)" mysql -uroot -Nse "SELECT 1"' \
     >/dev/null 2>&1; then
     break
   fi
@@ -69,7 +69,7 @@ for _ in $(seq 1 90); do
 done
 
 if ! docker exec "${MYSQL_CONTAINER}" sh -c \
-  'MYSQL_PWD="$(cat /run/secrets/mysql_root_password)" mysqladmin -uroot ping --silent' \
+  'MYSQL_PWD="$(cat /run/secrets/mysql_root_password)" mysql -uroot -Nse "SELECT 1"' \
   >/dev/null 2>&1; then
   echo "MySQL did not become ready" >&2
   exit 1
