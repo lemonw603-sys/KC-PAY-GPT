@@ -7,10 +7,10 @@ if [[ ${EUID} -ne 0 ]]; then
 fi
 
 backup_dir='/var/backups/pojia'
+install -d -m 0700 -o root -g root "${backup_dir}"
 work_dir=$(mktemp -d "${backup_dir}/.work.XXXXXX")
 trap 'find "${work_dir}" -type f -delete; rmdir "${work_dir}" 2>/dev/null || true' EXIT
 
-install -d -m 0700 -o root -g root "${backup_dir}"
 backup_password=$(tr -d '\n' </etc/pojia/mysql-backup-password)
 
 docker exec -e MYSQL_PWD="${backup_password}" pojia-mysql \
