@@ -223,7 +223,7 @@ elements.submitForm.addEventListener('submit', async (event) => {
   hideNotice();
   const cdk = elements.cdkInput.value.trim();
   if (cdk.length < 8) return showNotice('请输入有效 CDK。');
-  if (!elements.confirmInput.checked) return showNotice('请先核对充值码和账号信息。');
+  if (!elements.confirmInput.checked) return showNotice('请先核对 CDK 和账号信息。');
 
   let session;
   try {

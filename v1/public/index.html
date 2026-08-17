@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light">
   <meta name="theme-color" content="#f6f9fd">
-  <meta name="description" content="ChatGPT Plus 充值码提交与订单进度查询">
+  <meta name="description" content="ChatGPT Plus CDK 提交与订单进度查询">
   <title>Plus 充值中心</title>
   <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/assets/customer.css">
@@ -26,7 +26,7 @@
       <div class="tab-list" role="tablist" aria-label="选择服务">
         <button class="tab is-active" id="submit-tab" type="button" role="tab" aria-selected="true" aria-controls="submit-panel" data-tab="submit-panel">
           <span class="tab-icon" aria-hidden="true">✓</span>
-          <span><strong>提交充值</strong><small>使用充值码创建订单</small></span>
+          <span><strong>提交充值</strong><small>使用 CDK 创建订单</small></span>
         </button>
         <button class="tab" id="query-tab" type="button" role="tab" aria-selected="false" aria-controls="query-panel" data-tab="query-panel" tabindex="-1">
           <span class="tab-icon" aria-hidden="true">⌕</span>
@@ -39,7 +39,7 @@
           <div>
             <p class="eyebrow"><span aria-hidden="true"></span>Plus 自助开通</p>
             <h1 id="hero-title">会员订阅，<br><em>自助充值更简单</em></h1>
-            <p class="hero-copy">填写充值码和账号资料即可创建订单，提交后可随时回来查询进度。</p>
+            <p class="hero-copy">填写 CDK 和账号资料即可创建订单，提交后可随时回来查询进度。</p>
           </div>
 
           <div class="trust-grid" aria-label="服务说明">
@@ -51,7 +51,7 @@
           <div class="flow-note" aria-label="使用流程">
             <div class="flow-note-heading"><strong>三步完成提交</strong><span>进度全程可查</span></div>
             <ol>
-              <li><span>01</span>填写充值码与账号资料</li>
+              <li><span>01</span>填写 CDK 与账号资料</li>
               <li><span>02</span>确认信息并创建订单</li>
               <li><span>03</span>保存查询码，等待处理结果</li>
             </ol>
@@ -66,9 +66,9 @@
             </div>
             <form id="submit-form" novalidate>
               <div class="field">
-                <label for="cdk-input">充值码</label>
-                <input id="cdk-input" name="cdk" type="text" minlength="8" maxlength="256" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="请输入充值码" required>
-                <p class="field-help">每个充值码仅可使用一次；已提交的充值码可直接查询原订单。</p>
+                <label for="cdk-input">CDK</label>
+                <input id="cdk-input" name="cdk" type="text" minlength="8" maxlength="256" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="请输入 CDK" required>
+                <p class="field-help">每个 CDK 仅可使用一次；已提交的 CDK 可直接查询原订单。</p>
               </div>
               <div class="field">
                 <div class="label-row"><label for="session-input">账号 Session</label><span>仅用于本次开通</span></div>
@@ -77,7 +77,7 @@
               </div>
               <label class="confirmation">
                 <input id="confirm-input" type="checkbox" required>
-                <span>我已核对充值码和账号信息，确认提交本次开通。</span>
+                <span>我已核对 CDK 和账号信息，确认提交本次开通。</span>
               </label>
               <button class="primary-button" id="submit-button" type="submit"><span>确认提交</span><span class="button-arrow" aria-hidden="true">→</span></button>
             </form>
@@ -85,12 +85,12 @@
           </section>
 
           <section class="panel" id="query-panel" role="tabpanel" aria-labelledby="query-tab" hidden>
-            <div class="panel-heading"><div><h2>查询订单进度</h2><p>输入查询码或原充值码</p></div></div>
+            <div class="panel-heading"><div><h2>查询订单进度</h2><p>输入查询码或原 CDK</p></div></div>
             <form id="query-form" novalidate>
               <div class="field">
-                <label for="query-input">订单查询码或原充值码</label>
-                <input id="query-input" name="query" type="text" maxlength="256" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="请输入订单查询码或充值码" required>
-                <p class="field-help">页面中断或忘记保存查询码时，也可以使用原充值码找回订单。</p>
+                <label for="query-input">订单查询码或原 CDK</label>
+                <input id="query-input" name="query" type="text" maxlength="256" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="请输入订单查询码或 CDK" required>
+                <p class="field-help">页面中断或忘记保存查询码时，也可以使用原 CDK 找回订单。</p>
               </div>
               <button class="primary-button" id="query-button" type="submit"><span>查询当前状态</span><span class="button-arrow" aria-hidden="true">→</span></button>
             </form>
@@ -108,7 +108,7 @@
         </div>
       </section>
     </main>
-    <footer><p>请妥善保管充值码和订单查询码。</p></footer>
+    <footer><p>请妥善保管 CDK 和订单查询码。</p></footer>
   </div>
   <noscript><p class="noscript">需要启用 JavaScript 才能提交或查询订单。</p></noscript>
 </body>
