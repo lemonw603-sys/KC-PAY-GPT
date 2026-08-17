@@ -1,5 +1,8 @@
 # 部署指南
 
+> [!CAUTION]
+> 这是上游 legacy 浏览器自动化系统的部署文档，不是破甲 v1 部署方案。默认 Docker 入口已经停用并改名；不要直接执行本文的 `docker compose up`。如需研究旧版，必须显式使用 `docker compose -f docker-compose.legacy.yml up`。v1 目前只支持本地开发和验证，正式部署文件将在上线阶段单独建立。
+
 ## 系统要求
 
 | 组件 | 最低要求 |

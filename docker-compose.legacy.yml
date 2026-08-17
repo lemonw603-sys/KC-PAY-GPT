@@ -31,7 +31,9 @@ services:
       start_period: 30s
 
   app:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile.legacy
     container_name: kc-gpt-pay2-app
     restart: unless-stopped
     depends_on:

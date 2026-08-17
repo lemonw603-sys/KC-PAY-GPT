@@ -1,5 +1,8 @@
 # KC GPT 自动充值系统
 
+> [!IMPORTANT]
+> 本文件以下内容是 Fork 上游保留的 **legacy 浏览器自动化系统说明**，不代表破甲 v1 的生产架构。根目录 `npm start` 已改为启动隔离的 `v1/`；旧浏览器、Stripe、hCaptcha 和代理链只能通过 `npm run start:legacy` 显式启动。旧 Docker 文件已改名为 `Dockerfile.legacy` 与 `docker-compose.legacy.yml`，不得用于 v1 部署。v1 说明见 [`v1/README.md`](v1/README.md)，当前规格见 [`docs/V1_SPEC.md`](docs/V1_SPEC.md)。
+
 > **KC ChatGPT PLUS 訂閱開通平台**  
 > 使用者貼上 Session 與兌換 CDK 後，可使用本地 Stripe 自動化流程，或啟用第三方代充 API 建立並輪詢代充訂單。  
 > 配套管理後台：卡池管理、CDK 管理、任務監控、帳單稽核、第三方代充積分與套餐狀態、並發控制。

@@ -5,10 +5,13 @@
   "license": "MIT",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js",
-    "start:headful": "cross-env HEADFUL=1 node server.js",
-    "test": "vitest --run",
-    "test:watch": "vitest"
+    "start": "npm --prefix v1 start",
+    "start:legacy": "node server.js",
+    "start:legacy:headful": "cross-env HEADFUL=1 node server.js",
+    "test": "npm run test:legacy && npm run test:v1",
+    "test:legacy": "vitest --run",
+    "test:v1": "npm --prefix v1 test",
+    "test:watch:legacy": "vitest"
   },
   "engines": {
     "node": ">=20"
