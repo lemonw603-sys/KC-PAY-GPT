@@ -16,6 +16,7 @@
 - 单任务执行骨架：成功完成、可重试回队、非重试错误进入 dead-letter，单个失败不阻塞其他任务。
 - 开卡、直充提交和状态轮询 handler：固定幂等键、`SUBMIT_UNKNOWN`、429 安全重试和失败二次确认。
 - MySQL workflow repository：仅在 worker 边界解密 Session，并原子提交卡片绑定、外部订单标识、状态事件和后续任务。
+- 独立 worker 入口：按数据库开关和进程级 Provider 权限双重过滤可领取的任务类型，支持空转、租约恢复和优雅停止。
 
 尚未接入客户页面和后台。卡台读取结构已经完成一次获批的真实只读验证，开卡与直充写接口仍未调用，因此真实写响应的字段映射仍待单笔 PoC 确认。
 
@@ -34,7 +35,7 @@ npm audit --omit=dev
 TEST_DATABASE_URL='mysql://user:password@127.0.0.1:3306/pojia_v1_test' npm test
 ```
 
-没有设置 `TEST_DATABASE_URL` 时，五个数据库集成用例会明确跳过，其余单元测试继续执行。
+没有设置 `TEST_DATABASE_URL` 时，六个数据库集成用例会明确跳过，其余单元测试继续执行。
 
 ## 配置
 
@@ -67,4 +68,15 @@ npm start
 - `GET /health/live`：进程存活。
 - `GET /health/ready`：数据库可查询时返回 200，否则返回 503。
 
-当前所有业务开关默认禁止新订单和新充值，只允许已有订单轮询与交易同步。真实 Provider 接入前不会产生资金动作。
+数据库业务开关默认禁止新订单和新充值，保留已有订单轮询。进程级 Provider 读写权限又默认全部关闭，因此仅启动 worker 不会访问外部系统。
+
+## Worker
+
+```bash
+npm run start:worker
+```
+
+- `PROVIDER_READS_ENABLED=false` 和 `PROVIDER_WRITES_ENABLED=false` 是默认值；两者均为关闭时，worker 可启动但不领取任何外部调用任务。
+- 读权限开启时才要求 `ZZSHU_API_KEY`，用于轮询已有订单。
+- 写权限在当前代码中硬锁；卡台开卡与卡详情真实 Schema 未经单笔 PoC 验证前，即使配置 `PROVIDER_WRITES_ENABLED=true` 也会在启动阶段拒绝运行。
+- 数据库的 `dispatch_new_recharges` 和进程写权限必须同时开启，worker 才可领取开卡或直充提交任务。

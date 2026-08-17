@@ -42,6 +42,9 @@ migration 002_workflow_fields already applied
 - 开卡结果、订单状态、状态事件和下一任务在同一事务中提交。
 - 直充外部订单号、`card_key`、状态事件和轮询任务在同一事务中提交。
 - 人为制造后续任务唯一键冲突后，上述两组事务均整体回滚，不会留下“有卡无任务”或“有外部单号无轮询”的半状态。
+- worker 领取 SQL 按运行开关过滤任务类型，被禁止的开卡/直充任务保持 `PENDING`，不会被领取后再判断。
+- 关闭新充值后，已提交订单的 `POLL_RECHARGE` 仍可独立继续，不会被停单开关连带停止。
+- 用本地假供应商完成 `CREATED -> RECHARGE_SUCCESS` 全链路，三个持久化任务均最终为 `COMPLETED`。
 
 ### HTTP 就绪
 
@@ -57,8 +60,8 @@ GET /health/ready -> 200 {"status":"ready"}
 设置 `TEST_DATABASE_URL` 后执行 `npm test`：
 
 ```text
-tests 45
-pass 45
+tests 50
+pass 50
 fail 0
 skipped 0
 ```
@@ -70,7 +73,7 @@ skipped 0
 - 增加 `provider_calls` 真实落库用例。
 - 验证嵌套 API Key、Token、PAN 和 CVV 进入 JSON 列前会被替换为 `[REDACTED]`。
 - 增加任务 runner 的成功、重试、模糊提交 dead-letter 和未知 handler 隔离测试。
-- 加入调用审计、任务 runner、workflow handler 和真实 workflow repository 后，v1 共 45 个测试；其中 5 个数据库集成用例已在 MySQL 8.4.11 上通过。
+- 加入 worker 运行开关、任务类型过滤和无资金全链路后，v1 共 50 个测试；其中 6 个数据库集成用例已在 MySQL 8.4.11 上通过。
 
 ## 环境收尾
 

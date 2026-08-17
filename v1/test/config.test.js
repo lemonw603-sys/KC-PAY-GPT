@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import test from 'node:test';
-import { loadConfig } from '../src/config.js';
+import { loadConfig, loadWorkerConfig } from '../src/config.js';
 
 function validEnvironment() {
   return {
@@ -25,4 +25,26 @@ test('rejects missing database and invalid encryption key', () => {
   delete env.DATABASE_URL;
   env.SESSION_ENCRYPTION_KEY_BASE64 = 'bad';
   assert.throws(() => loadConfig(env), /Invalid v1 configuration/);
+});
+
+test('worker defaults to no provider access and keeps writes hard-locked', () => {
+  const config = loadWorkerConfig(validEnvironment());
+  assert.equal(config.providerReadsEnabled, false);
+  assert.equal(config.providerWritesEnabled, false);
+  assert.equal(config.zzshuApiKey, null);
+
+  assert.throws(
+    () => loadWorkerConfig({
+      ...validEnvironment(),
+      PROVIDER_READS_ENABLED: 'true'
+    }),
+    /ZZSHU_API_KEY is required/
+  );
+  assert.throws(
+    () => loadWorkerConfig({
+      ...validEnvironment(),
+      PROVIDER_WRITES_ENABLED: 'true'
+    }),
+    /Provider writes remain locked/
+  );
 });

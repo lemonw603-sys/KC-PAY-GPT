@@ -28,9 +28,14 @@ export async function runOneTask({
   workerId,
   handlers,
   leaseSeconds = 60,
+  allowedTaskTypes = null,
   repository = { claimNextTask, completeTask, failTask }
 }) {
-  const task = await repository.claimNextTask(pool, { workerId, leaseSeconds });
+  const task = await repository.claimNextTask(pool, {
+    workerId,
+    leaseSeconds,
+    allowedTaskTypes
+  });
   if (!task) return { handled: false };
 
   const handler = handlers[task.task_type];

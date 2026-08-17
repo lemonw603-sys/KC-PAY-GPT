@@ -8,6 +8,8 @@ import { OrderStatus } from '../src/domain/order-status.js';
 import { recordProviderCall } from '../src/providers/provider-call-recorder.js';
 import { createWorkflowRepository } from '../src/db/repositories/workflow-repository.js';
 import { encryptSecret } from '../src/security/secret-box.js';
+import { createWorkflowHandlers } from '../src/workers/workflow-handlers.js';
+import { runWorkerIteration } from '../src/workers/worker-runtime.js';
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
 const integrationSessionKey = Buffer.alloc(32, 7);
@@ -238,6 +240,129 @@ test('workflow repository commits card and recharge handoffs atomically', {
       { task_type: 'POLL_RECHARGE', status: 'PENDING' }
     ]);
   } finally {
+    await removeOrder(pool, fixture);
+    await pool.end();
+  }
+});
+
+test('worker runs a full fake-provider workflow while enforcing runtime gates', {
+  skip: !databaseUrl
+}, async () => {
+  const pool = mysql.createPool({ uri: databaseUrl, connectionLimit: 4, timezone: 'Z' });
+  const fixture = await createOrder(pool);
+  const providerActions = [];
+  const workflow = createWorkflowRepository(pool, {
+    sessionEncryptionKey: integrationSessionKey
+  });
+  const cardProvider = {
+    purchaseCard: async () => {
+      providerActions.push('purchase');
+      return { data: { card: { id: 'fake-card-e2e' } } };
+    },
+    card: async () => {
+      providerActions.push('card-details');
+      return { data: { number: '4242424242424242', cvv: '123' } };
+    }
+  };
+  const rechargeProvider = {
+    createDirectOrder: async () => {
+      providerActions.push('create-recharge');
+      return { orderNo: 'fake-order-e2e', cardKey: 'DIRECT-fake-e2e' };
+    },
+    queryStatus: async () => {
+      providerActions.push('poll-recharge');
+      return { status: 'success', isSubscriptionCancelled: 0 };
+    }
+  };
+  const handlers = createWorkflowHandlers({
+    workflow,
+    cardProvider,
+    rechargeProvider,
+    recordCall: (input) => recordProviderCall({ pool, ...input }),
+    mapPurchasedCard: () => ({
+      providerCardId: 'fake-card-e2e',
+      cardTypeId: 7,
+      last4: '4242',
+      fundedAmount: '25.000000',
+      currentBalance: '25.000000',
+      currency: 'USD'
+    }),
+    mapCardCredentials: () => ({
+      cardNumber: '4242424242424242',
+      expMonth: 12,
+      expYear: 2032,
+      cvv: '123'
+    }),
+    wait: async () => {}
+  });
+  const iteration = (overrides = {}) => runWorkerIteration({
+    pool,
+    workerId: 'fake-e2e-worker',
+    handlers,
+    providerReadsEnabled: true,
+    providerWritesEnabled: true,
+    ...overrides
+  });
+
+  try {
+    await pool.query(
+      `INSERT INTO tasks (order_id, task_type, status, dedupe_key)
+       VALUES (?, 'PURCHASE_CARD', 'PENDING', ?)`,
+      [fixture.orderId, `purchase-card:${fixture.orderId}`]
+    );
+
+    const blocked = await iteration({ providerWritesEnabled: false });
+    assert.equal(blocked.handled, false);
+    assert.deepEqual(providerActions, []);
+
+    await pool.query(
+      `UPDATE app_settings SET setting_value = 'true'
+       WHERE setting_key = 'dispatch_new_recharges'`
+    );
+    assert.equal((await iteration()).status, 'COMPLETED');
+    assert.equal((await iteration()).status, 'COMPLETED');
+
+    await pool.query(
+      `UPDATE app_settings SET setting_value = 'false'
+       WHERE setting_key = 'dispatch_new_recharges'`
+    );
+    await pool.query(
+      `UPDATE tasks SET available_at = CURRENT_TIMESTAMP(3)
+       WHERE order_id = ? AND task_type = 'POLL_RECHARGE'`,
+      [fixture.orderId]
+    );
+    assert.equal((await iteration({ providerWritesEnabled: false })).status, 'COMPLETED');
+
+    const [[order]] = await pool.query(
+      `SELECT status, recharge_order_no, recharge_card_key
+       FROM orders WHERE id = ?`,
+      [fixture.orderId]
+    );
+    assert.deepEqual(order, {
+      status: OrderStatus.RECHARGE_SUCCESS,
+      recharge_order_no: 'fake-order-e2e',
+      recharge_card_key: 'DIRECT-fake-e2e'
+    });
+    const [tasks] = await pool.query(
+      'SELECT task_type, status FROM tasks WHERE order_id = ? ORDER BY id',
+      [fixture.orderId]
+    );
+    assert.deepEqual(tasks, [
+      { task_type: 'PURCHASE_CARD', status: 'COMPLETED' },
+      { task_type: 'SUBMIT_RECHARGE', status: 'COMPLETED' },
+      { task_type: 'POLL_RECHARGE', status: 'COMPLETED' }
+    ]);
+    assert.deepEqual(providerActions, [
+      'purchase',
+      'card-details',
+      'create-recharge',
+      'poll-recharge'
+    ]);
+  } finally {
+    await pool.query(
+      `UPDATE app_settings SET setting_value = 'false'
+       WHERE setting_key = 'dispatch_new_recharges'`
+    );
     await removeOrder(pool, fixture);
     await pool.end();
   }

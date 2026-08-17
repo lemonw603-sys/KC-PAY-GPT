@@ -1,6 +1,14 @@
 import { TaskStatus } from '../../domain/task.js';
 
-export async function claimNextTask(pool, { workerId, leaseSeconds = 60 }) {
+export async function claimNextTask(pool, {
+  workerId,
+  leaseSeconds = 60,
+  allowedTaskTypes = null
+}) {
+  if (Array.isArray(allowedTaskTypes) && allowedTaskTypes.length === 0) return null;
+  const typeFilter = Array.isArray(allowedTaskTypes)
+    ? `AND task_type IN (${allowedTaskTypes.map(() => '?').join(', ')})`
+    : '';
   const connection = await pool.getConnection();
   try {
     await connection.beginTransaction();
@@ -12,10 +20,11 @@ export async function claimNextTask(pool, { workerId, leaseSeconds = 60 }) {
            status = ?
            OR (status = ? AND leased_until < CURRENT_TIMESTAMP(3))
          )
+         ${typeFilter}
        ORDER BY available_at ASC, id ASC
        LIMIT 1
        FOR UPDATE SKIP LOCKED`,
-      [TaskStatus.PENDING, TaskStatus.RUNNING]
+      [TaskStatus.PENDING, TaskStatus.RUNNING, ...(allowedTaskTypes || [])]
     );
 
     if (rows.length === 0) {

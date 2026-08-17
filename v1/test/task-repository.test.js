@@ -60,3 +60,32 @@ test('expired running tasks remain reclaimable after a worker crash', async () =
   assert.equal(task, null);
   assert.match(queries[0], /status = \? AND leased_until < CURRENT_TIMESTAMP\(3\)/);
 });
+
+test('task claiming honors the allowed task-type boundary', async () => {
+  const calls = [];
+  const connection = {
+    beginTransaction: async () => {},
+    query: async (sql, parameters) => {
+      calls.push([sql, parameters]);
+      if (sql.includes('SELECT id, order_id')) return [[]];
+      return [{ affectedRows: 0 }];
+    },
+    commit: async () => {},
+    rollback: async () => {},
+    release: () => {}
+  };
+  const pool = { getConnection: async () => connection };
+
+  assert.equal(await claimNextTask(pool, {
+    workerId: 'worker-filtered',
+    allowedTaskTypes: []
+  }), null);
+  assert.equal(calls.length, 0);
+
+  await claimNextTask(pool, {
+    workerId: 'worker-filtered',
+    allowedTaskTypes: ['POLL_RECHARGE']
+  });
+  assert.match(calls[0][0], /task_type IN \(\?\)/);
+  assert.deepEqual(calls[0][1], ['PENDING', 'RUNNING', 'POLL_RECHARGE']);
+});
