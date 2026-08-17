@@ -12,6 +12,7 @@
     "admin:hash-password": "node scripts/hash-admin-password.js",
     "admin:configure-local": "node scripts/configure-admin-local.js",
     "cdk": "node scripts/cdk.js",
+    "provider:poc": "node scripts/provider-poc.js",
     "migrate": "node scripts/migrate.js",
     "test": "node --test"
   },
