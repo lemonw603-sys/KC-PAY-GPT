@@ -60,6 +60,7 @@ await runWorkerLoop({
   workerId,
   handlers,
   leaseSeconds: config.workerLeaseSeconds,
+  workerConcurrency: config.workerConcurrency,
   idleDelayMs: config.workerPollIntervalMs,
   providerReadsEnabled: config.providerReadsEnabled,
   providerWritesEnabled: config.providerWritesEnabled,

@@ -3,7 +3,8 @@ import test from 'node:test';
 import { TaskType } from '../src/domain/task.js';
 import {
   allowedTaskTypesFor,
-  runWorkerIteration
+  runWorkerIteration,
+  runWorkerLoop
 } from '../src/workers/worker-runtime.js';
 
 const allSettings = Object.freeze({
@@ -50,4 +51,50 @@ test('one worker iteration passes only eligible task types to the runner', async
   });
   assert.equal(result.handled, false);
   assert.deepEqual(input.allowedTaskTypes, [TaskType.VERIFY_CARD, TaskType.POLL_RECHARGE, TaskType.RECHECK_CANCELLATION]);
+});
+
+test('worker loop runs at most the configured number of iterations concurrently', async () => {
+  const controller = new AbortController();
+  let active = 0;
+  let peak = 0;
+  let calls = 0;
+  await runWorkerLoop({
+    signal: controller.signal,
+    workerConcurrency: 3,
+    idleDelayMs: 0,
+    iteration: async () => {
+      active += 1;
+      peak = Math.max(peak, active);
+      calls += 1;
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      active -= 1;
+      if (calls >= 3) controller.abort();
+      return { handled: true };
+    }
+  });
+  assert.equal(peak, 3);
+});
+
+test('one failed concurrent iteration is reported without cancelling siblings', async () => {
+  const controller = new AbortController();
+  const errors = [];
+  let completed = 0;
+  await runWorkerLoop({
+    signal: controller.signal,
+    workerConcurrency: 2,
+    idleDelayMs: 0,
+    onError: (error) => errors.push(error),
+    iteration: async ({ marker }) => {
+      if (marker === undefined) {
+        // The first wave deliberately has one failure and one success.
+        marker = completed;
+      }
+      completed += 1;
+      if (completed === 1) throw new Error('expected test failure');
+      controller.abort();
+      return { handled: true };
+    }
+  });
+  assert.equal(errors.length, 1);
+  assert.equal(completed, 2);
 });

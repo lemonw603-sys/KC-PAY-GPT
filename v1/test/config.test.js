@@ -169,6 +169,7 @@ test('admin authentication is optional but requires a complete credential pair',
 
 test('worker defaults to no provider access and keeps writes hard-locked', () => {
   const config = loadWorkerConfig(validEnvironment());
+  assert.equal(config.workerConcurrency, 1);
   assert.equal(config.providerReadsEnabled, false);
   assert.equal(config.providerWritesEnabled, false);
   assert.equal(config.zzshuApiKey, null);
@@ -187,4 +188,14 @@ test('worker defaults to no provider access and keeps writes hard-locked', () =>
     }),
     /Provider writes remain locked/
   );
+});
+
+test('worker concurrency is bounded and must be an integer', () => {
+  assert.equal(loadWorkerConfig({ ...validEnvironment(), WORKER_CONCURRENCY: '8' }).workerConcurrency, 8);
+  for (const value of ['0', '-1', '33', '1.5', 'not-a-number']) {
+    assert.throws(
+      () => loadWorkerConfig({ ...validEnvironment(), WORKER_CONCURRENCY: value }),
+      /Invalid v1 worker configuration/
+    );
+  }
 });

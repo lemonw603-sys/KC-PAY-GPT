@@ -56,15 +56,22 @@ function abortableDelay(ms, signal) {
 export async function runWorkerLoop({
   signal,
   idleDelayMs = 1_000,
+  workerConcurrency = 1,
   onError = () => {},
+  iteration = runWorkerIteration,
   ...iterationOptions
 }) {
+  const concurrency = Math.max(1, Math.min(32, Math.trunc(workerConcurrency)));
   while (!signal?.aborted) {
-    try {
-      const result = await runWorkerIteration(iterationOptions);
-      if (!result.handled) await abortableDelay(idleDelayMs, signal);
-    } catch (error) {
-      onError(error);
+    const results = await Promise.all(Array.from({ length: concurrency }, async () => {
+      try {
+        return await iteration(iterationOptions);
+      } catch (error) {
+        onError(error);
+        return { handled: false, error };
+      }
+    }));
+    if (results.every((result) => !result?.handled)) {
       await abortableDelay(idleDelayMs, signal);
     }
   }
