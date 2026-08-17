@@ -210,7 +210,9 @@ async function main() {
   console.log(JSON.stringify(result, null, 2));
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1]).href) {
+// process.argv[1] is absent when this module is loaded through `node --input-type=module`.
+// The guard must remain safe in both direct CLI and imported/interactive execution.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   main().catch((error) => {
     console.error(JSON.stringify(safeError(error), null, 2));
     process.exitCode = 1;

@@ -58,11 +58,14 @@ function throwApiError(response, envelope, {
   const error = extractBusinessError(response);
   const code = error.code || String(envelope?.code ?? '');
   const capacity = allowCapacityRetry && response.status === 429 && code === '42902';
+  const maintenance = response.status === 403 && code === '40305';
   throw new ProviderError(`Zzshu ${operation} error: ${error.message}`, {
     provider: 'zzshu',
     status: response.status,
     businessCode: code || null,
-    retryable: capacity || (readOnly && response.status >= 500),
+    // 40305 is a creation-time maintenance gate: no order is created,
+    // so retrying later is safe and required by the upstream contract.
+    retryable: capacity || maintenance || (readOnly && response.status >= 500),
     uncertain: readOnly ? false : (response.status >= 500 || response.status === 0)
   });
 }
