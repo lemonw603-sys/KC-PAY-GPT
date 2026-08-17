@@ -15,8 +15,9 @@
 - Provider 调用开始/结束审计、递归敏感字段脱敏和真实 MySQL 落库验证。
 - 单任务执行骨架：成功完成、可重试回队、非重试错误进入 dead-letter，单个失败不阻塞其他任务。
 - 开卡、直充提交和状态轮询 handler：固定幂等键、`SUBMIT_UNKNOWN`、429 安全重试和失败二次确认。
+- MySQL workflow repository：仅在 worker 边界解密 Session，并原子提交卡片绑定、外部订单标识、状态事件和后续任务。
 
-尚未接入客户页面和后台；handler 所需的 MySQL workflow repository 仍待实现。卡台读取结构已经完成一次获批的真实只读验证，写接口仍未调用。
+尚未接入客户页面和后台。卡台读取结构已经完成一次获批的真实只读验证，开卡与直充写接口仍未调用，因此真实写响应的字段映射仍待单笔 PoC 确认。
 
 ## 本地检查
 
@@ -33,7 +34,7 @@ npm audit --omit=dev
 TEST_DATABASE_URL='mysql://user:password@127.0.0.1:3306/pojia_v1_test' npm test
 ```
 
-没有设置 `TEST_DATABASE_URL` 时，三个数据库集成用例会明确跳过，其余单元测试继续执行。
+没有设置 `TEST_DATABASE_URL` 时，五个数据库集成用例会明确跳过，其余单元测试继续执行。
 
 ## 配置
 

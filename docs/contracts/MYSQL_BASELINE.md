@@ -13,16 +13,18 @@
 
 ```text
 applied migration 001_initial
+applied migration 002_workflow_fields
 ```
 
 第二次执行：
 
 ```text
 migration 001_initial already applied
+migration 002_workflow_fields already applied
 ```
 
-- 数据库共创建 10 张 v1 表。
-- `schema_migrations` 中只有一条 `001_initial`。
+- 数据库共创建 10 张 v1 表，`002_workflow_fields` 为订单增加卡段和开卡金额字段。
+- `schema_migrations` 准确记录 `001_initial` 和 `002_workflow_fields`。
 - 第二次执行没有重复建表、重复约束或报错。
 
 ### 业务约束
@@ -36,6 +38,10 @@ migration 001_initial already applied
 - worker 崩溃后，过期的 `RUNNING` 租约可以被新 worker 领取。
 - 租约恢复会增加尝试次数并记录新的 `leased_by`。
 - `accept_new_orders` 和 `dispatch_new_recharges` 默认均为 `false`。
+- Session 密文可在 worker 数据边界内正确解密，不需要明文落库。
+- 开卡结果、订单状态、状态事件和下一任务在同一事务中提交。
+- 直充外部订单号、`card_key`、状态事件和轮询任务在同一事务中提交。
+- 人为制造后续任务唯一键冲突后，上述两组事务均整体回滚，不会留下“有卡无任务”或“有外部单号无轮询”的半状态。
 
 ### HTTP 就绪
 
@@ -51,8 +57,8 @@ GET /health/ready -> 200 {"status":"ready"}
 设置 `TEST_DATABASE_URL` 后执行 `npm test`：
 
 ```text
-tests 15
-pass 15
+tests 45
+pass 45
 fail 0
 skipped 0
 ```
@@ -64,7 +70,7 @@ skipped 0
 - 增加 `provider_calls` 真实落库用例。
 - 验证嵌套 API Key、Token、PAN 和 CVV 进入 JSON 列前会被替换为 `[REDACTED]`。
 - 增加任务 runner 的成功、重试、模糊提交 dead-letter 和未知 handler 隔离测试。
-- 后续加入调用审计、任务 runner 和 workflow handler 后，v1 共 44 个测试；其中 4 个数据库集成用例已在 MySQL 8.4.11 上通过。
+- 加入调用审计、任务 runner、workflow handler 和真实 workflow repository 后，v1 共 45 个测试；其中 5 个数据库集成用例已在 MySQL 8.4.11 上通过。
 
 ## 环境收尾
 

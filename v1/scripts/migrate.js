@@ -6,8 +6,7 @@ import { loadConfig } from '../src/config.js';
 
 const config = loadConfig();
 const here = path.dirname(fileURLToPath(import.meta.url));
-const migrationPath = path.join(here, '..', 'migrations', '001_initial.sql');
-const sql = await fs.readFile(migrationPath, 'utf8');
+const migrationsDirectory = path.join(here, '..', 'migrations');
 const connection = await mysql.createConnection({
   uri: config.databaseUrl,
   multipleStatements: true,
@@ -21,20 +20,26 @@ try {
       applied_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   `);
-  const [rows] = await connection.query(
-    'SELECT version FROM schema_migrations WHERE version = ?',
-    ['001_initial']
-  );
-  if (rows.length > 0) {
-    console.log('migration 001_initial already applied');
-    process.exitCode = 0;
-  } else {
+  const files = (await fs.readdir(migrationsDirectory))
+    .filter((name) => /^\d+_[a-z0-9_-]+\.sql$/i.test(name))
+    .sort();
+  for (const file of files) {
+    const version = file.replace(/\.sql$/i, '');
+    const [rows] = await connection.query(
+      'SELECT version FROM schema_migrations WHERE version = ?',
+      [version]
+    );
+    if (rows.length > 0) {
+      console.log(`migration ${version} already applied`);
+      continue;
+    }
+    const sql = await fs.readFile(path.join(migrationsDirectory, file), 'utf8');
     await connection.query(sql);
     await connection.query(
-      `INSERT IGNORE INTO schema_migrations (version) VALUES (?)`,
-      ['001_initial']
+      `INSERT INTO schema_migrations (version) VALUES (?)`,
+      [version]
     );
-    console.log('applied migration 001_initial');
+    console.log(`applied migration ${version}`);
   }
 } finally {
   await connection.end();

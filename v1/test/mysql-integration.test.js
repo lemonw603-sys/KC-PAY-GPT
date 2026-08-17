@@ -6,8 +6,11 @@ import { transitionOrder } from '../src/db/repositories/order-repository.js';
 import { claimNextTask } from '../src/db/repositories/task-repository.js';
 import { OrderStatus } from '../src/domain/order-status.js';
 import { recordProviderCall } from '../src/providers/provider-call-recorder.js';
+import { createWorkflowRepository } from '../src/db/repositories/workflow-repository.js';
+import { encryptSecret } from '../src/security/secret-box.js';
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
+const integrationSessionKey = Buffer.alloc(32, 7);
 
 function id() {
   return crypto.randomUUID();
@@ -23,14 +26,17 @@ async function createOrder(pool, overrides = {}) {
   );
   await pool.query(
     `INSERT INTO orders
-     (id, public_no, cdk_id, status, session_ciphertext, card_purchase_idempotency_key)
-     VALUES (?, ?, ?, ?, ?, ?)`,
+     (id, public_no, cdk_id, status, card_type_id, open_card_amount,
+      session_ciphertext, card_purchase_idempotency_key)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       orderId,
       overrides.publicNo || `TEST-${orderId}`,
       cdkId,
       overrides.status || OrderStatus.CREATED,
-      Buffer.from('encrypted-test-session'),
+      '7',
+      '25.000000',
+      encryptSecret(JSON.stringify({ accessToken: 'fixture-token', account: { id: 'acct-1' } }), integrationSessionKey),
       overrides.purchaseKey || `purchase-${orderId}`
     ]
   );
@@ -42,6 +48,12 @@ async function removeOrder(pool, { cdkId, orderId }) {
   await pool.query('DELETE FROM tasks WHERE order_id = ?', [orderId]);
   await pool.query('DELETE FROM order_events WHERE order_id = ?', [orderId]);
   await pool.query('DELETE FROM provider_calls WHERE order_id = ?', [orderId]);
+  await pool.query('DELETE FROM refund_cases WHERE order_id = ?', [orderId]);
+  const [cards] = await pool.query('SELECT id FROM cards WHERE order_id = ?', [orderId]);
+  for (const card of cards) {
+    await pool.query('DELETE FROM card_transactions WHERE card_id = ?', [card.id]);
+  }
+  await pool.query('DELETE FROM cards WHERE order_id = ?', [orderId]);
   await pool.query('DELETE FROM orders WHERE id = ?', [orderId]);
   await pool.query('DELETE FROM cdks WHERE id = ?', [cdkId]);
 }
@@ -103,6 +115,128 @@ test('MySQL enforces one CDK per order and records transitions atomically', {
       ),
       (error) => error?.code === 'ER_DUP_ENTRY'
     );
+  } finally {
+    await removeOrder(pool, fixture);
+    await pool.end();
+  }
+});
+
+test('workflow repository commits card and recharge handoffs atomically', {
+  skip: !databaseUrl
+}, async () => {
+  const pool = mysql.createPool({ uri: databaseUrl, connectionLimit: 4, timezone: 'Z' });
+  const fixture = await createOrder(pool);
+  const workflow = createWorkflowRepository(pool, {
+    sessionEncryptionKey: integrationSessionKey
+  });
+  try {
+    const initial = await workflow.loadOrderContext(fixture.orderId);
+    assert.equal(initial.session.accessToken, 'fixture-token');
+    assert.equal(initial.order.card_type_id, '7');
+    assert.equal(initial.card, null);
+
+    await workflow.transition(
+      fixture.orderId,
+      OrderStatus.CARD_PURCHASING,
+      'integration test purchase start'
+    );
+
+    await pool.query(
+      `INSERT INTO tasks (order_id, task_type, status, dedupe_key)
+       VALUES (?, 'SUBMIT_RECHARGE', 'PENDING', ?)`,
+      [fixture.orderId, `submit-recharge:${fixture.orderId}`]
+    );
+    await assert.rejects(
+      workflow.commitPurchasedCard(fixture.orderId, {
+        providerCardId: 'provider-card-fixture',
+        cardTypeId: 7,
+        last4: '4242',
+        fundedAmount: '25.000000',
+        currentBalance: '25.000000',
+        currency: 'USD'
+      }),
+      /Duplicate entry/
+    );
+    const [[rolledBackPurchase]] = await pool.query(
+      `SELECT o.status, COUNT(c.id) AS card_count
+       FROM orders o LEFT JOIN cards c ON c.order_id = o.id
+       WHERE o.id = ? GROUP BY o.id`,
+      [fixture.orderId]
+    );
+    assert.equal(rolledBackPurchase.status, OrderStatus.CARD_PURCHASING);
+    assert.equal(rolledBackPurchase.card_count, 0);
+    await pool.query('DELETE FROM tasks WHERE dedupe_key = ?', [
+      `submit-recharge:${fixture.orderId}`
+    ]);
+
+    await workflow.commitPurchasedCard(fixture.orderId, {
+      providerCardId: 'provider-card-fixture',
+      cardTypeId: 7,
+      last4: '4242',
+      fundedAmount: '25.000000',
+      currentBalance: '25.000000',
+      currency: 'USD'
+    });
+
+    const afterCard = await workflow.loadOrderContext(fixture.orderId);
+    assert.equal(afterCard.order.status, OrderStatus.CARD_READY);
+    assert.equal(afterCard.card.provider_card_id, 'provider-card-fixture');
+
+    await workflow.transition(
+      fixture.orderId,
+      OrderStatus.SUBMITTING,
+      'integration test submit start'
+    );
+
+    await pool.query(
+      `INSERT INTO tasks (order_id, task_type, status, dedupe_key)
+       VALUES (?, 'POLL_RECHARGE', 'PENDING', ?)`,
+      [fixture.orderId, `poll-recharge:${fixture.orderId}`]
+    );
+    await assert.rejects(
+      workflow.commitRechargeSubmission(fixture.orderId, {
+        orderNo: 'fixture-order-12',
+        cardKey: 'DIRECT-fixture'
+      }),
+      /Duplicate entry/
+    );
+    const [[rolledBackSubmission]] = await pool.query(
+      `SELECT status, recharge_order_no, recharge_card_key
+       FROM orders WHERE id = ?`,
+      [fixture.orderId]
+    );
+    assert.deepEqual(rolledBackSubmission, {
+      status: OrderStatus.SUBMITTING,
+      recharge_order_no: null,
+      recharge_card_key: null
+    });
+    await pool.query('DELETE FROM tasks WHERE dedupe_key = ?', [
+      `poll-recharge:${fixture.orderId}`
+    ]);
+
+    await workflow.commitRechargeSubmission(fixture.orderId, {
+      orderNo: 'fixture-order-12',
+      cardKey: 'DIRECT-fixture'
+    });
+
+    const [[stored]] = await pool.query(
+      `SELECT status, recharge_order_no, recharge_card_key
+       FROM orders WHERE id = ?`,
+      [fixture.orderId]
+    );
+    assert.deepEqual(stored, {
+      status: OrderStatus.RECHARGE_PROCESSING,
+      recharge_order_no: 'fixture-order-12',
+      recharge_card_key: 'DIRECT-fixture'
+    });
+    const [tasks] = await pool.query(
+      'SELECT task_type, status FROM tasks WHERE order_id = ? ORDER BY id',
+      [fixture.orderId]
+    );
+    assert.deepEqual(tasks, [
+      { task_type: 'SUBMIT_RECHARGE', status: 'PENDING' },
+      { task_type: 'POLL_RECHARGE', status: 'PENDING' }
+    ]);
   } finally {
     await removeOrder(pool, fixture);
     await pool.end();
