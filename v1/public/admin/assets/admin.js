@@ -227,6 +227,8 @@ function updateStockEstimate() {
   const minimumBalance = selected?.requireMinimumAccountBalance
     ? Number(selected.minimumAccountBalance || 0) : 0;
   const perCard = amount + cardFee + rateFee;
+  const validAmount = Boolean(selected) && Number.isInteger(amount)
+    && amount >= Number(selected.minimumAmount) && amount <= Number(selected.maximumAmount);
   let projected = balance;
   let affordable = 0;
   while (
@@ -238,14 +240,15 @@ function updateStockEstimate() {
   }
   const valid = Boolean(provider?.rulesFresh && provider?.purchaseEnabled && selected)
     && Number.isInteger(count) && count >= 1 && count <= Number(provider.maxBatch || 10)
-    && Number.isInteger(amount) && amount >= Number(selected.minimumAmount)
-    && amount <= Number(selected.maximumAmount) && count <= affordable;
+    && validAmount && count <= affordable;
   elements.stockCost.classList.toggle('stock-cost-warning', !valid);
   elements.stockCost.dataset.total = total.toFixed(2);
   elements.stockCost.innerHTML = `
     <strong>预计总扣款：$${total.toFixed(2)}</strong>
     <small>本金 $${principal.toFixed(2)} + 开卡费 $${openingFees.toFixed(2)} + 充值费 $${rateFees.toFixed(2)}</small>
-    <small>当前余额 $${Number.isFinite(balance) ? balance.toFixed(2) : '—'} · 按实时规则最多安全开 ${affordable} 张</small>`;
+    <small>${validAmount
+      ? `当前余额 $${Number.isFinite(balance) ? balance.toFixed(2) : '—'} · 按实时规则最多安全开 ${affordable} 张`
+      : `当前卡段金额必须为 $${escapeHtml(selected?.minimumAmount || '—')}–$${escapeHtml(selected?.maximumAmount || '—')} 的整数`}</small>`;
   elements.stockConfirmHint.textContent = `开${count}张`;
   const submit = elements.stockOpenForm.querySelector('button[type="submit"]');
   submit.disabled = !valid;
