@@ -48,14 +48,15 @@ button { cursor: pointer; }
 .ghost-button { padding: 8px 13px; border: 1px solid var(--line); border-radius: 9px; background: white; color: #405873; }
 .view { min-width: 0; display: grid; gap: 18px; }
 .metrics-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 14px; }
-.metric-card { min-height: 118px; position: relative; overflow: hidden; padding: 19px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); box-shadow: 0 12px 30px rgba(50,78,112,.05); }
+.metric-card { min-height: 118px; position: relative; overflow: hidden; padding: 19px; border: 1px solid var(--line); border-radius: 16px; color: inherit; background: var(--surface); box-shadow: 0 12px 30px rgba(50,78,112,.05); text-align: left; }
+.metric-card:hover, .metric-card:focus-visible { border-color: #9cb9df; box-shadow: 0 15px 34px rgba(50,78,112,.1); outline: none; }
 .metric-card::after { content: ""; position: absolute; width: 75px; height: 75px; right: -24px; top: -28px; border-radius: 50%; background: var(--metric-color, #eaf2ff); }
 .metric-card > span { display: block; color: var(--muted); font-size: 11px; }
 .metric-card strong { display: block; margin-top: 9px; font-size: 27px; letter-spacing: -.03em; }
 .metric-card small { display: block; margin-top: 6px; color: #8998a9; font-size: 9px; }
 .stock-grid { display: grid; grid-template-columns: minmax(0, .8fr) minmax(0, 1.2fr); gap: 18px; }
 .stock-card { padding: 21px; }
-.stock-summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 18px 0; }
+.stock-summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 18px 0; }
 .stock-summary div { padding: 14px; border-radius: 12px; background: var(--surface-soft); }
 .stock-summary span { display: block; color: var(--muted); font-size: 10px; }
 .stock-summary strong { display: block; margin-top: 5px; font-size: 24px; }
@@ -124,6 +125,7 @@ td { padding: 12px 11px; border-top: 1px solid #edf1f5; color: #53677d; white-sp
 tbody tr[data-order] { cursor: pointer; outline: none; }
 tbody tr[data-order]:hover, tbody tr[data-order]:focus { background: #f7faff; }
 .order-link { color: #245bb8; font-size: 10px; }
+.attention-note { margin-top: 5px !important; color: #b42318 !important; font-weight: 800; }
 .cell-main, td small { display: block; }.cell-main { color: #30465d; }.cell-main + small { margin-top: 4px; color: #93a0af; font-size: 8px; }
 .empty-cell, .empty-state, .loading-state { padding: 26px 10px; color: #8c9aaa; text-align: center; font-size: 11px; }
 

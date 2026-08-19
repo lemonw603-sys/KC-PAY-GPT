@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createAdminReadService } from '../src/services/admin-read-service.js';
 import { encryptSecret } from '../src/security/secret-box.js';
+import { sessionFixture } from '../test-support/session-fixture.js';
 
 const adminCardKey = Buffer.alloc(32, 19);
 
@@ -19,21 +20,23 @@ function queuedPool(results) {
 
 test('admin overview maps aggregate values without exposing raw records', async () => {
   const pool = queuedPool([
-    [{ total: 10, today: 2, successful: 8, processing: 1, reviewing: 1 }],
+    [{ total: 10, today: 2, successful: 8, completed_failed: 2, processing: 1,
+      awaiting_confirmation: 1, reviewing: 1 }],
     [{ status: 'RECHARGE_SUCCESS', count: 8 }],
     [{ status: 'AVAILABLE', count: 20 }],
     [{ setting_key: 'accept_new_orders', setting_value: 'false', updated_at: new Date('2026-08-17T00:00:00Z') }],
     [{ status: 'REFUND_DETECTED', count: 1 }],
     [{ count: 1 }],
-    [{ available: 7, provisioning: 1, assigned: 2 }],
+    [{ available: 7, provisioning: 1, assigned: 2, depleted: 1 }],
     [{ setting_value: '5' }]
   ]);
   const result = await createAdminReadService({ pool }).getOverview();
   assert.equal(result.metrics.successRate, 80);
   assert.equal(result.metrics.todayOrders, 2);
+  assert.equal(result.metrics.awaitingConfirmationOrders, 1);
   assert.deepEqual(result.orderStatuses, [{ status: 'RECHARGE_SUCCESS', count: 8 }]);
   assert.deepEqual(result.cardStock, {
-    available: 7, provisioning: 1, assigned: 2, lowThreshold: 5, low: false
+    available: 7, provisioning: 1, assigned: 2, depleted: 1, lowThreshold: 5, low: false
   });
   assert.equal(pool.queries.some(({ sql }) => /session_ciphertext|recharge_card_key/i.test(sql)), false);
 });
@@ -73,14 +76,21 @@ test('admin order list validates filters and maps only card summaries', async ()
 });
 
 test('admin order detail exposes the full PAN but not CVV or Session', async () => {
+  const nowMs = Date.parse('2026-08-19T08:00:00.000Z');
   const pool = queuedPool([
     [{
-      id: 'order-1', public_no: 'PJV1-DEMO', status: 'CREATED', plan_type: 'plus',
+      id: 'order-1', public_no: 'PJV1-DEMO', status: 'CARD_READY', plan_type: 'plus',
       open_card_amount: '16.000000', minimum_required_card_balance: '15.500000',
       actual_payment_amount: null, actual_payment_currency: null,
       provider_card_id: 'card-1', last4: '4242', card_status: 'active',
+      current_balance: '16.000000',
+      session_ciphertext: encryptSecret(JSON.stringify(sessionFixture({ nowMs })), adminCardKey),
+      card_credentials_ciphertext: encryptSecret(JSON.stringify({
+        cardNumber: '4242424242424242', expMonth: 12, expYear: 2032, cvv: '123'
+      }), adminCardKey),
       card_number_ciphertext: encryptSecret('4242424242424242', adminCardKey),
-      created_at: new Date(), updated_at: new Date()
+      last_synced_at: new Date(nowMs - 60_000),
+      created_at: new Date(nowMs), updated_at: new Date(nowMs)
     }],
     [], [{
       task_type: 'PREPARE_RECHARGE', status: 'COMPLETED', attempts: 1, max_attempts: 5,
@@ -91,7 +101,7 @@ test('admin order detail exposes the full PAN but not CVV or Session', async () 
     }], [], [], []
   ]);
   const result = await createAdminReadService({
-    pool, sessionEncryptionKey: adminCardKey
+    pool, sessionEncryptionKey: adminCardKey, now: () => nowMs
   }).getOrder('PJV1-DEMO');
   assert.equal(result.order.publicNo, 'PJV1-DEMO');
   assert.equal(result.order.minimumRequiredCardBalance, '15.500000');
@@ -103,10 +113,17 @@ test('admin order detail exposes the full PAN but not CVV or Session', async () 
     permitStatus: 'LOCKED',
     permitExpiresAt: null,
     submissionTaskStatus: 'PENDING',
-    submissionAttempts: 0
+    submissionAttempts: 0,
+    sessionValid: true,
+    sessionCode: null,
+    sessionExpiresAt: '2026-08-19T09:00:00.000Z',
+    accessTokenExpiresAt: '2026-08-19T09:00:00.000Z',
+    cardReady: true,
+    cardCheckFresh: true
   });
   assert.deepEqual(result.transactions, []);
-  assert.equal(pool.queries.some(({ sql }) => /session_ciphertext|recharge_card_key/i.test(sql)), false);
+  assert.equal(JSON.stringify(result).includes('fixture-signature'), false);
+  assert.equal(JSON.stringify(result).includes('sessionToken'), false);
   assert.equal(pool.queries.some(({ sql }) => /\bcvv\b/i.test(sql)), false);
 });
 

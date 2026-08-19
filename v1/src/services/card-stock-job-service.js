@@ -7,6 +7,7 @@ import {
   readProviderSnapshot,
   snapshotIsFresh
 } from './card-provider-snapshot-service.js';
+import { cardCatalogIsFresh, readCardCatalogSnapshot } from './card-catalog-snapshot-service.js';
 
 function integer(value, { min, max, name }) {
   const number = Number(value);
@@ -70,6 +71,17 @@ export function createCardStockJobService({ pool }) {
       if (!snapshotIsFresh(snapshot)) {
         throw new PublicApiError('Card provider rules are stale', {
           code: 'CARD_STOCK_RULES_STALE', status: 409
+        });
+      }
+      const catalog = await readCardCatalogSnapshot(connection);
+      if (!cardCatalogIsFresh(catalog)) {
+        throw new PublicApiError('Card catalog reconciliation is stale', {
+          code: 'CARD_CATALOG_STALE', status: 409
+        });
+      }
+      if (Number(catalog.unresolvedActive || 0) > 0) {
+        throw new PublicApiError('Card catalog has unresolved active cards', {
+          code: 'CARD_CATALOG_UNRESOLVED', status: 409
         });
       }
       const evaluation = evaluateCardStockRequest(snapshot, {

@@ -209,6 +209,12 @@ test('card stock jobs require confirmation and move durably through the runner s
       [JSON.stringify(snapshot)]
     );
     await pool.query(
+      `INSERT INTO card_catalog_snapshots (provider, payload_json, synced_at)
+       VALUES ('hnskj', ?, CURRENT_TIMESTAMP(3))
+       ON DUPLICATE KEY UPDATE payload_json = VALUES(payload_json), synced_at = VALUES(synced_at)`,
+      [JSON.stringify({ providerActive: 0, unresolvedActive: 0 })]
+    );
+    await pool.query(
       `INSERT INTO app_settings (setting_key, setting_value) VALUES ('default_card_type_id','7')
        ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)`
     );
@@ -744,7 +750,18 @@ test('worker runs a full fake-provider workflow while enforcing runtime gates', 
     assert.equal((await iteration()).status, 'COMPLETED');
     assert.equal((await iteration()).status, 'COMPLETED');
     assert.equal((await iteration()).status, 'COMPLETED');
-    await armRechargePermit(pool, { publicNo: `TEST-${fixture.orderId}` });
+    await pool.query(
+      `UPDATE orders SET session_ciphertext = ? WHERE id = ?`,
+      [encryptSecret(JSON.stringify(sessionFixture()), integrationSessionKey), fixture.orderId]
+    );
+    await pool.query(
+      `UPDATE cards SET last_synced_at = CURRENT_TIMESTAMP(3) WHERE order_id = ?`,
+      [fixture.orderId]
+    );
+    await armRechargePermit(pool, {
+      publicNo: `TEST-${fixture.orderId}`,
+      sessionEncryptionKey: integrationSessionKey
+    });
     assert.equal((await iteration()).status, 'COMPLETED');
 
     await pool.query(

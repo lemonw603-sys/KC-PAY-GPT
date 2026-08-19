@@ -26,8 +26,19 @@ test('maps a ready provider card into safe assignable stock', () => {
       cardNumber: '4242424242424242', expMonth: 12, expYear: 2032, cvv: '123'
     },
     ready: true,
+    depleted: false,
     failed: false
   });
+});
+
+test('classifies an active underfunded card as depleted instead of available', () => {
+  const card = mapStockCard({ data: {
+    id: 'low-1', cardTypeId: '7', status: 'active', cardBalance: '0.02',
+    cardNumber: '4242424242424242', cvv: '123', expiryMonth: 12, expiryYear: 2032
+  } }, { minimumRequiredBalance: 15.5 });
+  assert.equal(card.ready, false);
+  assert.equal(card.depleted, true);
+  assert.equal(card.failed, false);
 });
 
 test('keeps a newly opened but unreadable card in provisioning stock', () => {

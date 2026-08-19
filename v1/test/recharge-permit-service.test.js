@@ -2,8 +2,11 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   armRechargePermit,
-  getRechargePermitStatus
+  getRechargePermitStatus,
+  validateRechargePreflight
 } from '../src/services/recharge-permit-service.js';
+import { encryptSecret } from '../src/security/secret-box.js';
+import { sessionFixture } from '../test-support/session-fixture.js';
 
 function transactionalPool(responses) {
   const queries = [];
@@ -37,7 +40,8 @@ test('arms only one untouched CARD_READY submit task with a short expiry', async
   const result = await armRechargePermit(pool, {
     publicNo: 'PJV1-DEMO',
     ttlMinutes: 10,
-    now: new Date('2026-08-19T08:00:00.000Z')
+    now: new Date('2026-08-19T08:00:00.000Z'),
+    preflight() {}
   });
   assert.deepEqual(result, {
     publicNo: 'PJV1-DEMO', status: 'ARMED', expiresAt: '2026-08-19T08:10:00.000Z'
@@ -56,8 +60,32 @@ test('refuses to arm after any ZZSHU create attempt', async () => {
     [[{ id: 1 }], []]
   ]);
   await assert.rejects(
-    armRechargePermit(pool, { publicNo: 'PJV1-DEMO' }),
+    armRechargePermit(pool, { publicNo: 'PJV1-DEMO', preflight() {} }),
     (error) => error.code === 'CREATE_ALREADY_ATTEMPTED'
+  );
+});
+
+test('recharge preflight requires a live Session and a freshly verified funded card', () => {
+  const now = new Date('2026-08-19T08:00:00.000Z');
+  const key = Buffer.alloc(32, 23);
+  const valid = {
+    session_ciphertext: encryptSecret(JSON.stringify(sessionFixture({ nowMs: now.getTime() })), key),
+    card_last_synced_at: new Date(now.getTime() - 60_000),
+    card_status: 'active',
+    card_balance: '16.000000',
+    minimum_required_card_balance: '15.500000',
+    card_credentials_ciphertext: Buffer.from('encrypted-card')
+  };
+  assert.doesNotThrow(() => validateRechargePreflight(valid, { sessionEncryptionKey: key, now }));
+  assert.throws(
+    () => validateRechargePreflight({ ...valid, card_last_synced_at: new Date(now.getTime() - 16 * 60_000) }, {
+      sessionEncryptionKey: key, now
+    }),
+    (error) => error.code === 'CARD_CHECK_STALE'
+  );
+  assert.throws(
+    () => validateRechargePreflight({ ...valid, card_balance: '1.00' }, { sessionEncryptionKey: key, now }),
+    (error) => error.code === 'CARD_NOT_READY'
   );
 });
 

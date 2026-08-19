@@ -20,9 +20,19 @@ const SETTING_META = Object.freeze({
   sync_card_transactions: '同步卡片交易（只读）'
 });
 
+const PERMIT_LABELS = Object.freeze({ LOCKED: '未放行', ARMED: '已放行', CONSUMED: '已使用', REVOKED: '已撤销' });
+const TASK_LABELS = Object.freeze({
+  ASSIGN_CARD: '分配库存卡', PURCHASE_CARD: '开卡', VERIFY_CARD: '核对卡片',
+  PREPARE_RECHARGE: '付款前准备', SUBMIT_RECHARGE: '提交充值', POLL_RECHARGE: '查询充值结果',
+  RECHECK_CANCELLATION: '复查续费取消', SYNC_CARD_TRANSACTIONS: '同步卡片交易'
+});
+const TASK_STATUS_LABELS = Object.freeze({ PENDING: '等待执行', RUNNING: '执行中', COMPLETED: '已完成', DEAD: '需要人工处理' });
+const REFUND_LABELS = Object.freeze({ MONITORING: '观察中', DETECTED: '疑似退款', CONFIRMED: '已确认退款', WITHDRAWN: '已提取' });
+const INVENTORY_LABELS = Object.freeze({ AVAILABLE: '可分配', ASSIGNED: '已分配', DEPLETED: '已耗尽', PROVISIONING: '核对中', FAILED: '已失效' });
+
 const state = {
   view: 'overview', page: 1, pageSize: 20, total: 0, status: '', query: '',
-  stockProvider: null, acceptingOrders: false
+  stockProvider: null, stockCatalog: null, acceptingOrders: false
 };
 const elements = {
   navItems: [...document.querySelectorAll('.nav-item')],
@@ -73,6 +83,15 @@ function formatTime(value) {
     : '—';
 }
 
+function waitingText(value) {
+  const timestamp = Date.parse(value || '');
+  if (!Number.isFinite(timestamp)) return '等待你确认充值';
+  const minutes = Math.max(0, Math.floor((Date.now() - timestamp) / 60_000));
+  if (minutes < 1) return '刚刚就绪，等待你确认充值';
+  if (minutes < 60) return `已等待 ${minutes} 分钟，请确认充值`;
+  return `已等待 ${Math.floor(minutes / 60)} 小时，请立即处理`;
+}
+
 function statusChip(status) {
   const [label, tone] = STATUS_META[status] || [status || '未知', 'gray'];
   return `<span class="status-chip status-${tone}"><i></i>${escapeHtml(label)}</span>`;
@@ -107,9 +126,9 @@ function orderRow(order) {
   return `<tr data-order="${escapeHtml(order.publicNo)}" tabindex="0">
     <td><strong class="order-link">${escapeHtml(order.publicNo)}</strong></td>
     <td><span class="cell-main">${escapeHtml(account)}</span>${order.rechargeOrderNo ? `<small>${escapeHtml(order.rechargeOrderNo)}</small>` : ''}</td>
-    <td>${statusChip(order.status)}${order.cancellationReviewRequired ? '<small>续费需处理</small>' : ''}</td>
+    <td>${statusChip(order.status)}${order.requiresRechargeConfirmation ? `<small class="attention-note">${escapeHtml(waitingText(order.confirmationReadyAt))}</small>` : order.cancellationReviewRequired ? '<small class="attention-note">续费需处理</small>' : ''}</td>
     <td>${card}</td>
-    <td>${order.card?.refundStatus ? escapeHtml(order.card.refundStatus) : '—'}</td>
+    <td>${order.card?.refundStatus ? escapeHtml(REFUND_LABELS[order.card.refundStatus] || order.card.refundStatus) : '—'}</td>
     <td>${formatTime(order.createdAt)}</td>
   </tr>`;
 }
@@ -121,16 +140,17 @@ async function loadOverview() {
     api('/api/v1/admin/alerts?limit=10')
   ]);
   const metrics = [
-    ['今日订单', overview.metrics.todayOrders, '今天新创建'],
-    ['处理中', overview.metrics.processingOrders, '正在自动流转'],
-    ['需要关注', overview.metrics.reviewingOrders, '等待人工确认'],
-    ['可用库存卡', overview.cardStock?.available ?? 0,
-      overview.cardStock?.low ? `低于阈值 ${overview.cardStock?.lowThreshold ?? 5}` : `补卡阈值 ${overview.cardStock?.lowThreshold ?? 5}`],
-    ['成功率', overview.metrics.successRate == null ? '—' : `${overview.metrics.successRate}%`, `累计 ${overview.metrics.totalOrders} 单`]
+    { label: '今日订单', value: overview.metrics.todayOrders, note: '点击查看今天新订单', filter: 'TODAY' },
+    { label: '自动处理中', value: overview.metrics.processingOrders, note: '系统正在自动流转', filter: 'PROCESSING' },
+    { label: '待确认充值', value: overview.metrics.awaitingConfirmationOrders, note: '需要你逐单确认', filter: 'AWAITING_CONFIRMATION' },
+    { label: '需要关注', value: overview.metrics.reviewingOrders, note: '失败、未知或对账订单', filter: 'REVIEW_REQUIRED' },
+    { label: '本地可分配卡', value: overview.cardStock?.available ?? 0,
+      note: overview.cardStock?.low ? `已到低库存线：${overview.cardStock?.lowThreshold ?? 5}` : `低库存线：${overview.cardStock?.lowThreshold ?? 5}`, view: 'stock' },
+    { label: '已完成订单成功率', value: overview.metrics.successRate == null ? '—' : `${overview.metrics.successRate}%`, note: '不计未完成订单', filter: 'RECHARGE_SUCCESS' }
   ];
-  elements.metrics.innerHTML = metrics.map(([label, value, note], index) => `<article class="metric-card metric-${index + 1}">
-    <span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong><small>${escapeHtml(note)}</small>
-  </article>`).join('');
+  elements.metrics.innerHTML = metrics.map((item, index) => `<button type="button" class="metric-card metric-${index + 1}" ${item.filter ? `data-order-filter="${item.filter}"` : `data-target-view="${item.view}"`}>
+    <span>${escapeHtml(item.label)}</span><strong>${escapeHtml(item.value)}</strong><small>${escapeHtml(item.note)}</small>
+  </button>`).join('');
   const maxCount = Math.max(1, ...overview.orderStatuses.map((item) => item.count));
   elements.statusList.innerHTML = overview.orderStatuses.length
     ? overview.orderStatuses.map((item) => `<button type="button" data-status="${escapeHtml(item.status)}">
@@ -179,16 +199,19 @@ const STOCK_JOB_LABELS = Object.freeze({
 async function loadStock() {
   const payload = await api('/api/v1/admin/card-stock');
   state.stockProvider = payload.provider || null;
+  state.stockCatalog = payload.catalog || null;
   const totals = (payload.cardTypes || []).reduce((sum, item) => ({
     available: sum.available + item.available,
     provisioning: sum.provisioning + item.provisioning,
-    assigned: sum.assigned + item.assigned
-  }), { available: 0, provisioning: 0, assigned: 0 });
+    assigned: sum.assigned + item.assigned,
+    depleted: sum.depleted + item.depleted
+  }), { available: 0, provisioning: 0, assigned: 0, depleted: 0 });
   elements.stockSummary.innerHTML = [
-    ['可用', totals.available], ['处理中', totals.provisioning], ['已分配', totals.assigned]
+    ['可分配', totals.available], ['已分配', totals.assigned], ['已耗尽', totals.depleted], ['核对中', totals.provisioning]
   ].map(([label, value]) => `<div><span>${label}</span><strong>${value}</strong></div>`).join('');
   elements.stockThreshold.value = payload.threshold;
   const provider = state.stockProvider;
+  const catalog = state.stockCatalog || {};
   const selected = provider?.selectedCardType;
   const providerRemaining = Number(provider?.cardLimit?.remaining);
   if (Number.isInteger(providerRemaining) && providerRemaining > 0) {
@@ -196,9 +219,13 @@ async function loadStock() {
   }
   elements.providerSummary.innerHTML = provider?.syncedAt ? `
     <div><span>卡台余额</span><strong>$${escapeHtml(provider.accountBalance || '—')}</strong></div>
-    <div><span>剩余卡片额度</span><strong>${escapeHtml(provider.cardLimit?.remaining ?? '—')}</strong></div>
-    <small class="${provider.rulesFresh && provider.purchaseEnabled ? '' : 'provider-warning'}">
+    <div><span>卡台 active 卡</span><strong>${escapeHtml(catalog.providerActive ?? '—')}</strong></div>
+    <div><span>卡台历史总卡数</span><strong>${escapeHtml(catalog.providerTotal ?? '—')}</strong></div>
+    <div><span>剩余开卡额度</span><strong>${escapeHtml(provider.cardLimit?.remaining ?? '—')}</strong></div>
+    <small class="${provider.rulesFresh && provider.purchaseEnabled && catalog.fresh && !catalog.openingBlocked ? '' : 'provider-warning'}">
       ${provider.rulesFresh ? `规则更新于 ${formatTime(provider.syncedAt)}` : '卡台规则已过期，禁止开卡'}
+      ${catalog.fresh ? ` · 卡片对账 ${formatTime(catalog.syncedAt)}` : ' · 卡片对账已过期'}
+      ${catalog.openingBlocked ? ' · 对账未完成，禁止新开卡' : ''}
       ${provider.purchaseEnabled ? '' : ' · 卡台当前禁止开卡'}
     </small>` : '<p class="provider-warning">尚未取得卡台规则，禁止开卡。</p>';
   if (selected) {
@@ -213,7 +240,7 @@ async function loadStock() {
     ? payload.jobs.map((job) => `<div><span><strong>${escapeHtml(STOCK_JOB_LABELS[job.status] || job.status)} · ${job.openedCount}/${job.requestedCount} 张</strong><small>${escapeHtml(job.cardTypeName || `卡段 ${job.cardTypeId}`)} · $${escapeHtml(job.amount)} / 张 · 预计总扣款 $${escapeHtml(job.estimatedTotal || '—')} · ${formatTime(job.createdAt)}${job.errorMessage ? ` · ${escapeHtml(job.errorMessage)}` : ''}</small></span><em>${escapeHtml(job.status)}</em></div>`).join('')
     : '<p class="empty-state">还没有后台补卡任务</p>';
   elements.stockCards.innerHTML = payload.cards?.length
-    ? payload.cards.map((card) => `<div><span><strong>${escapeHtml(card.cardNumber || card.last4 || '卡号未就绪')}</strong><small>卡台 ID ${escapeHtml(card.providerCardId)} · 余额 $${escapeHtml(card.currentBalance || '0')} · ${card.assigned ? '已分配' : '未分配'}</small></span><em>${escapeHtml(card.inventoryStatus)}</em></div>`).join('')
+    ? payload.cards.map((card) => `<div><span><strong>${escapeHtml(card.cardNumber || card.last4 || '卡号未就绪')}</strong><small>卡台 ID ${escapeHtml(card.providerCardId)} · 余额 $${escapeHtml(card.currentBalance || '0')} · ${card.assigned ? '已分配' : '未分配'}</small></span><em>${escapeHtml(INVENTORY_LABELS[card.inventoryStatus] || card.inventoryStatus)}</em></div>`).join('')
     : '<p class="empty-state">还没有后台卡片</p>';
   updateStockEstimate();
   elements.syncTime.textContent = `更新于 ${new Date().toLocaleTimeString('zh-CN', { hour12: false })}`;
@@ -223,6 +250,7 @@ function updateStockEstimate() {
   const count = Math.max(0, Number(elements.stockOpenCount.value) || 0);
   const amount = Math.max(0, Number(elements.stockOpenAmount.value) || 0);
   const provider = state.stockProvider;
+  const catalog = state.stockCatalog || {};
   const selected = provider?.selectedCardType;
   const cardFee = Number(selected?.effectiveCardFee || 0);
   const feeRate = Number(selected?.effectiveFeeRate || 0);
@@ -246,7 +274,8 @@ function updateStockEstimate() {
     affordable += 1;
     projected -= perCard;
   }
-  const valid = Boolean(provider?.rulesFresh && provider?.purchaseEnabled && selected)
+  const valid = Boolean(provider?.rulesFresh && provider?.purchaseEnabled && selected
+    && catalog.fresh && !catalog.openingBlocked)
     && Number.isSafeInteger(count) && count >= 1
     && validAmount && count <= affordable;
   elements.stockCost.classList.toggle('stock-cost-warning', !valid);
@@ -311,8 +340,12 @@ async function setOrderAcceptance(button) {
 async function setRechargePermit(publicNo, action, button) {
   const arming = action === 'arm';
   const confirmation = `${arming ? '确认充值' : '撤销充值'} ${publicNo}`;
+  const customer = button.dataset.customer || '—';
+  const card = button.dataset.card || '—';
+  const balance = button.dataset.balance || '—';
+  const tokenExpiry = button.dataset.tokenExpiry || '—';
   const message = arming
-    ? `确认允许订单 ${publicNo} 发起一次真实充值？\n\n凭证 10 分钟内有效，一旦调用上游就不会自动第二次提交。该操作可能产生真实费用。`
+    ? `确认允许订单 ${publicNo} 发起一次真实充值？\n\n客户：${customer}\n卡片：${card}\n当前余额：$${balance}\nAccess Token 有效至：${tokenExpiry}\n\n凭证 10 分钟内有效，一旦调用上游就不会自动第二次提交。该操作可能产生真实费用。`
     : `确认撤销订单 ${publicNo} 未使用的充值凭证？`;
   if (!window.confirm(message)) return;
   button.disabled = true;
@@ -328,7 +361,10 @@ async function setRechargePermit(publicNo, action, button) {
     const messages = {
       order_not_eligible: '该订单当前不能放行充值。',
       create_already_attempted: '该订单已调用过充值接口，禁止再次提交。',
-      another_permit_active: '另一个订单已在放行中，请等它完成后再试。'
+      another_permit_active: '另一个订单已在放行中，请等它完成后再试。',
+      session_invalid: '客户 Session 已失效或即将过期，请让客户重新提交后再充值。',
+      card_check_stale: '卡片状态超过 15 分钟未核对，等待自动同步后再试。',
+      card_not_ready: '卡片已失效、余额不足或资料不完整，未发起充值。'
     };
     showNotice(messages[error.message] || '充值凭证操作失败，未发起新的充值请求。');
     button.disabled = false;
@@ -347,10 +383,17 @@ async function openOrder(publicNo) {
     const canArmRecharge = paymentGate.prepaymentReady
       && paymentGate.submissionTaskStatus === 'PENDING'
       && Number(paymentGate.submissionAttempts || 0) === 0
+      && paymentGate.sessionValid
+      && paymentGate.cardReady
+      && paymentGate.cardCheckFresh
       && permitStatus !== 'ARMED';
     const permitButton = permitStatus === 'ARMED'
       ? '<button type="button" class="danger-small" id="revoke-recharge-permit">撤销充值放行</button>'
-      : canArmRecharge ? '<button type="button" class="danger-small" id="arm-recharge-permit">确认充值</button>' : '';
+      : canArmRecharge ? `<button type="button" class="danger-small" id="arm-recharge-permit"
+          data-customer="${escapeHtml(order.customerEmail || order.chatgptAccountId || '—')}"
+          data-card="${escapeHtml(data.card?.cardNumber || data.card?.last4 || '—')}"
+          data-balance="${escapeHtml(data.card?.currentBalance || '—')}"
+          data-token-expiry="${escapeHtml(formatTime(paymentGate.accessTokenExpiresAt))}">确认充值</button>` : '';
     elements.detailContent.innerHTML = `
       <section class="detail-section"><div class="detail-section-heading"><h3>付款执行门</h3>${permitButton}</div>${renderKeyValues([
         ['付款前检查', paymentGate.prepaymentReady ? '已就绪' : '未就绪'],
@@ -358,7 +401,12 @@ async function openOrder(publicNo) {
         ['放行凭证', paymentGate.permitStatus || 'LOCKED'],
         ['直充任务', paymentGate.submissionTaskStatus],
         ['直充执行次数', paymentGate.submissionAttempts ?? 0],
-        ['放行过期时间', formatTime(paymentGate.permitExpiresAt)]
+        ['放行过期时间', formatTime(paymentGate.permitExpiresAt)],
+        ['Session 检查', paymentGate.sessionValid ? '有效' : `不可用（${paymentGate.sessionCode || '未知原因'}）`],
+        ['Session 过期时间', formatTime(paymentGate.sessionExpiresAt)],
+        ['Access Token 过期时间', formatTime(paymentGate.accessTokenExpiresAt)],
+        ['卡片资格', paymentGate.cardReady ? '状态、余额和资料均正常' : '不可用'],
+        ['卡片核对', paymentGate.cardCheckFresh ? '15 分钟内已更新' : '数据已过期']
       ])}</section>
       <section class="detail-section"><div class="detail-status">${statusChip(order.status)}<span>${formatTime(order.updatedAt)}</span></div>${renderKeyValues([
         ['客户邮箱', order.customerEmail], ['ChatGPT 账号 ID', order.chatgptAccountId],
@@ -371,13 +419,13 @@ async function openOrder(publicNo) {
       ])}</section>
       <section class="detail-section"><div class="detail-section-heading"><h3>卡片与退款</h3>${data.card ? '<button type="button" class="primary-small" id="sync-transactions">同步交易</button>' : ''}</div>${data.card ? renderKeyValues([
         ['卡台卡片 ID', data.card.providerCardId], ['完整卡号', data.card.cardNumber || data.card.last4],
-        ['卡片状态', data.card.status], ['开卡金额', `${data.card.fundedAmount || '—'} ${data.card.currency || ''}`],
-        ['当前余额', `${data.card.currentBalance || '—'} ${data.card.currency || ''}`], ['退款观察', data.card.refundStatus],
+        ['卡片状态', INVENTORY_LABELS[data.card.status] || data.card.status], ['开卡金额', `${data.card.fundedAmount || '—'} ${data.card.currency || ''}`],
+        ['当前余额', `${data.card.currentBalance || '—'} ${data.card.currency || ''}`], ['退款观察', REFUND_LABELS[data.card.refundStatus] || data.card.refundStatus],
         ['最后同步', formatTime(data.card.lastSyncedAt)]
       ]) : '<p class="empty-state">尚未绑定卡片</p>'}</section>
       <section class="detail-section"><h3>卡片交易</h3><div class="mini-list">${data.transactions?.length ? data.transactions.map((transaction) => `<div><span><strong>${escapeHtml(transaction.type)} · ${escapeHtml(transaction.amount)} ${escapeHtml(transaction.currency)}</strong><small>${escapeHtml(transaction.merchantName || transaction.relatedTransactionId || transaction.providerTransactionId)} · ${escapeHtml(transaction.tradeTimeRaw || formatTime(transaction.firstSeenAt))}</small></span><em>${escapeHtml(transaction.status)}</em></div>`).join('') : '<p class="empty-state">暂无已同步交易</p>'}</div></section>
       <section class="detail-section"><h3>订单时间线</h3><div class="timeline">${data.events.length ? data.events.map((event) => `<article><i></i><div><strong>${escapeHtml(STATUS_META[event.toStatus]?.[0] || event.toStatus)}</strong><p>${escapeHtml(event.reason)}</p><small>${formatTime(event.createdAt)} · ${escapeHtml(event.actorType)}</small></div></article>`).join('') : '<p class="empty-state">暂无事件</p>'}</div></section>
-      <section class="detail-section"><h3>后台任务</h3><div class="mini-list">${data.tasks.length ? data.tasks.map((task) => `<div><span><strong>${escapeHtml(task.type)}</strong><small>${task.attempts}/${task.maxAttempts} 次尝试</small></span><em>${escapeHtml(task.status)}</em></div>`).join('') : '<p class="empty-state">暂无任务</p>'}</div></section>`;
+      <section class="detail-section"><h3>后台任务</h3><div class="mini-list">${data.tasks.length ? data.tasks.map((task) => `<div><span><strong>${escapeHtml(TASK_LABELS[task.type] || task.type)}</strong><small>${task.attempts}/${task.maxAttempts} 次尝试</small></span><em>${escapeHtml(TASK_STATUS_LABELS[task.status] || task.status)}</em></div>`).join('') : '<p class="empty-state">暂无任务</p>'}</div></section>`;
     document.querySelector('#sync-transactions')?.addEventListener('click', (event) => requestTransactionSync(publicNo, event.currentTarget));
     document.querySelector('#arm-recharge-permit')?.addEventListener('click', (event) => setRechargePermit(publicNo, 'arm', event.currentTarget));
     document.querySelector('#revoke-recharge-permit')?.addEventListener('click', (event) => setRechargePermit(publicNo, 'revoke', event.currentTarget));
@@ -407,7 +455,7 @@ async function switchView(view, { status = '' } = {}) {
   } else {
     elements.viewKicker.textContent = view === 'exceptions' ? '人工处理' : '订单中心';
     elements.viewTitle.textContent = view === 'exceptions' ? '需要关注的订单' : '全部订单';
-    elements.statusFilter.value = state.status === 'REVIEW_REQUIRED' ? '' : state.status;
+    elements.statusFilter.value = state.status;
     await loadOrders();
   }
 }
@@ -421,6 +469,12 @@ document.querySelectorAll('[data-open-orders]').forEach((button) => button.addEv
 elements.statusList.addEventListener('click', (event) => {
   const button = event.target.closest('[data-status]');
   if (button) switchView('orders', { status: button.dataset.status });
+});
+elements.metrics.addEventListener('click', (event) => {
+  const filterButton = event.target.closest('[data-order-filter]');
+  const viewButton = event.target.closest('[data-target-view]');
+  if (filterButton) switchView('orders', { status: filterButton.dataset.orderFilter });
+  else if (viewButton) switchView(viewButton.dataset.targetView);
 });
 elements.filters.addEventListener('submit', (event) => {
   event.preventDefault();
@@ -486,7 +540,9 @@ elements.stockOpenForm?.addEventListener('submit', async (event) => {
       card_stock_limit_insufficient: '卡台剩余卡片额度不足。',
       card_stock_card_type_unavailable: '默认卡段不可用或已变更。',
       card_stock_purchase_disabled: '卡台当前禁止开卡。',
-      card_stock_job_active: '已有补卡任务正在执行。'
+      card_stock_job_active: '已有补卡任务正在执行。',
+      card_catalog_stale: '卡台卡片对账已过期，等待自动同步后再试。',
+      card_catalog_unresolved: '卡台存在未核对的有效卡，已禁止新开卡。'
     };
     showNotice(messages[error.message] || '任务创建失败，未产生新的开卡请求。');
   }
@@ -499,8 +555,13 @@ document.querySelector('#logout-button').addEventListener('click', async () => {
 document.querySelector('#close-detail').addEventListener('click', () => elements.detail.close());
 elements.detail.addEventListener('click', (event) => { if (event.target === elements.detail) elements.detail.close(); });
 window.setInterval(() => {
-  if (state.view === 'stock' && !document.hidden) loadStock().catch(() => {});
-}, 5000);
+  const editing = document.activeElement?.matches?.('input, textarea, select') || elements.detail.open;
+  if (document.hidden || editing) return;
+  const refresh = state.view === 'overview' ? loadOverview
+    : state.view === 'orders' ? loadOrders
+      : state.view === 'stock' ? loadStock : null;
+  refresh?.().catch(() => {});
+}, 10_000);
 elements.cdkForm.addEventListener('submit', async (event) => {
   event.preventDefault();
   hideNotice();

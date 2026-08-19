@@ -61,7 +61,12 @@ const app = createApp({
       if (confirmation !== `确认充值 ${publicNo}`) {
         throw new RechargePermitError('Recharge confirmation mismatch', 'RECHARGE_CONFIRMATION_REQUIRED');
       }
-      return armRechargePermit(pool, { publicNo, approvedBy: 'admin', ttlMinutes: 10 });
+      return armRechargePermit(pool, {
+        publicNo,
+        approvedBy: 'admin',
+        ttlMinutes: 10,
+        sessionEncryptionKey: config.sessionEncryptionKey
+      });
     }
     if (action === 'revoke') {
       if (confirmation !== `撤销充值 ${publicNo}`) {

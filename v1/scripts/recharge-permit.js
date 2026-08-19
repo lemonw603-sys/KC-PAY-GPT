@@ -1,5 +1,5 @@
 import mysql from 'mysql2/promise';
-import { loadRuntimeDatabaseConfig } from '../src/config.js';
+import { loadConfig } from '../src/config.js';
 import { createDatabaseConnectionOptions } from '../src/db/pool.js';
 import {
   RechargePermitError,
@@ -25,12 +25,16 @@ async function main() {
   if (!['arm', 'revoke', 'status'].includes(command) || !publicNo) {
     throw new RechargePermitError('usage: recharge-permit <arm|revoke|status> <public-no> [--ttl-minutes 10]', 'INVALID_ARGUMENT');
   }
-  const database = loadRuntimeDatabaseConfig();
-  const pool = mysql.createPool(createDatabaseConnectionOptions(database, { connectionLimit: 2, timezone: 'Z' }));
+  const config = loadConfig();
+  const pool = mysql.createPool(createDatabaseConnectionOptions(config.database, { connectionLimit: 2, timezone: 'Z' }));
   try {
     const input = { publicNo };
     const result = command === 'arm'
-      ? await armRechargePermit(pool, { ...input, ttlMinutes: options['ttl-minutes'] || 10 })
+      ? await armRechargePermit(pool, {
+        ...input,
+        ttlMinutes: options['ttl-minutes'] || 10,
+        sessionEncryptionKey: config.sessionEncryptionKey
+      })
       : command === 'revoke'
         ? await revokeRechargePermit(pool, input)
         : await getRechargePermitStatus(pool, input);

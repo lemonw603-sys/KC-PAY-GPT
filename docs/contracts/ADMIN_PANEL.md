@@ -68,5 +68,5 @@ pbpaste | npm --prefix v1 run admin:configure-local
 
 - 自有运营后台的订单和卡片列表显示完整卡号，不做后四位掩码。
 - 详情可显示卡台卡片 ID、外部订单号、开卡金额、最低所需卡余额、上游返回的实际支付金额/币种、失败原因、任务、事件和调用结果。
-- API 查询只向已认证的自有后台返回解密后的完整卡号；不读取也不返回 Session 密文、CVV、API Key 或直充 `card_key`。
+- API 只向已认证的自有后台返回解密后的完整卡号。订单详情会在服务端读取并验证 Session 密文，但只返回是否有效及过期时间；不返回 Session、Access Token、Session Token、CVV、API Key 或直充 `card_key`。
 - 退款提醒的文案固定使用“疑似退款，需要核对”；提醒会关联客户邮箱、本地订单号、直充订单号和交易 ID，但不代表官方已经确认退款。

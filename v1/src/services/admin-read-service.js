@@ -1,6 +1,7 @@
 import { PublicApiError } from '../domain/public-api-error.js';
 import crypto from 'node:crypto';
 import { decryptSecret } from '../security/secret-box.js';
+import { validateChatGptSession } from '../domain/session-validation.js';
 
 const ORDER_STATUSES = new Set([
   'CREATED',
@@ -17,6 +18,8 @@ const ORDER_STATUSES = new Set([
   'CLOSED'
 ]);
 const REVIEW_STATUSES = ['CARD_FAILED', 'SUBMIT_UNKNOWN', 'RECHARGE_FAILED', 'RECONCILIATION_REQUIRED'];
+const PROCESSING_STATUSES = ['CREATED', 'CARD_PURCHASING', 'CARD_PROVISIONING', 'SUBMITTING', 'RECHARGE_PROCESSING'];
+const VIRTUAL_FILTERS = new Set(['TODAY', 'PROCESSING', 'AWAITING_CONFIRMATION', 'REVIEW_REQUIRED']);
 
 function iso(value) {
   return value instanceof Date ? value.toISOString() : value || null;
@@ -37,13 +40,31 @@ function parseListQuery(input = {}) {
   if (!Number.isInteger(pageSize) || pageSize < 1 || pageSize > 100) {
     throw new PublicApiError('Invalid page size', { code: 'INVALID_ADMIN_QUERY', status: 400 });
   }
-  if (status && status !== 'REVIEW_REQUIRED' && !ORDER_STATUSES.has(status)) {
+  if (status && !VIRTUAL_FILTERS.has(status) && !ORDER_STATUSES.has(status)) {
     throw new PublicApiError('Invalid status', { code: 'INVALID_ADMIN_QUERY', status: 400 });
   }
   if (query.length > 191) {
     throw new PublicApiError('Query too long', { code: 'INVALID_ADMIN_QUERY', status: 400 });
   }
   return { page, pageSize, status, query };
+}
+
+function sessionSafety(row, key, now) {
+  if (!Buffer.isBuffer(key) || !row.session_ciphertext) {
+    return { valid: false, code: 'SESSION_UNAVAILABLE', sessionExpiresAt: null, accessTokenExpiresAt: null };
+  }
+  try {
+    const session = JSON.parse(decryptSecret(row.session_ciphertext, key));
+    const validated = validateChatGptSession(session, { now, minimumAccessTokenLifetimeSeconds: 300 });
+    return {
+      valid: true,
+      code: null,
+      sessionExpiresAt: session.expires,
+      accessTokenExpiresAt: validated.accessTokenExpiresAt.toISOString()
+    };
+  } catch (error) {
+    return { valid: false, code: error?.code || 'SESSION_INVALID', sessionExpiresAt: null, accessTokenExpiresAt: null };
+  }
 }
 
 function cardNumber(row, key) {
@@ -57,7 +78,7 @@ function cardNumber(row, key) {
   }
 }
 
-export function createAdminReadService({ pool, sessionEncryptionKey = null }) {
+export function createAdminReadService({ pool, sessionEncryptionKey = null, now = () => Date.now() }) {
   async function requestCardTransactionSync(publicNo) {
     if (typeof publicNo !== 'string' || publicNo.length < 8 || publicNo.length > 64) {
       throw new PublicApiError('Invalid public number', { code: 'INVALID_ADMIN_QUERY', status: 400 });
@@ -108,7 +129,18 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null }) {
           SELECT 1 FROM order_events oe
           WHERE oe.order_id = o.id AND oe.to_status = 'RECHARGE_SUCCESS'
         ))) AS successful,
-        SUM(o.status IN ('CREATED','CARD_PURCHASING','CARD_PROVISIONING','CARD_READY','SUBMITTING','RECHARGE_PROCESSING')) AS processing,
+        SUM(o.status IN ('CARD_FAILED','RECHARGE_FAILED') OR (o.status = 'CLOSED' AND NOT EXISTS (
+          SELECT 1 FROM order_events oe
+          WHERE oe.order_id = o.id AND oe.to_status = 'RECHARGE_SUCCESS'
+        ))) AS completed_failed,
+        SUM(o.status IN ('CREATED','CARD_PURCHASING','CARD_PROVISIONING','SUBMITTING','RECHARGE_PROCESSING')) AS processing,
+        SUM(o.status = 'CARD_READY' AND EXISTS (
+          SELECT 1 FROM tasks pt WHERE pt.order_id = o.id
+            AND pt.task_type = 'PREPARE_RECHARGE' AND pt.status = 'COMPLETED'
+        ) AND EXISTS (
+          SELECT 1 FROM tasks st WHERE st.order_id = o.id
+            AND st.task_type = 'SUBMIT_RECHARGE' AND st.status = 'PENDING' AND st.attempts = 0
+        )) AS awaiting_confirmation,
         SUM(o.status IN ('CARD_FAILED','SUBMIT_UNKNOWN','RECHARGE_FAILED','RECONCILIATION_REQUIRED')
             OR o.cancellation_review_required = 1) AS reviewing
         FROM orders o`),
@@ -121,9 +153,14 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null }) {
         WHERE status <> 'WITHDRAWN' GROUP BY status ORDER BY status`)
       ,pool.query(`SELECT COUNT(*) AS count FROM operator_alerts WHERE status = 'OPEN'`)
       ,pool.query(`SELECT
-          SUM(order_id IS NULL AND inventory_status = 'AVAILABLE') AS available,
+          SUM(order_id IS NULL AND inventory_status = 'AVAILABLE'
+            AND LOWER(status) IN ('active','available','usable','ready')
+            AND card_credentials_ciphertext IS NOT NULL
+            AND current_balance >= COALESCE((SELECT CAST(setting_value AS DECIMAL(18,6))
+              FROM app_settings WHERE setting_key = 'default_minimum_required_card_balance' LIMIT 1), 999999999)) AS available,
           SUM(order_id IS NULL AND inventory_status = 'PROVISIONING') AS provisioning,
-          SUM(order_id IS NOT NULL OR inventory_status = 'ASSIGNED') AS assigned
+          SUM(order_id IS NOT NULL OR inventory_status = 'ASSIGNED') AS assigned,
+          SUM(order_id IS NULL AND inventory_status = 'DEPLETED') AS depleted
         FROM cards`)
       ,pool.query(`SELECT setting_value FROM app_settings
         WHERE setting_key = 'card_stock_low_threshold' LIMIT 1`)
@@ -131,14 +168,16 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null }) {
     const count = (value) => Number(value || 0);
     const total = count(orderCounts[0]?.total);
     const successful = count(orderCounts[0]?.successful);
+    const completed = successful + count(orderCounts[0]?.completed_failed);
     return {
       metrics: {
         totalOrders: total,
         todayOrders: count(orderCounts[0]?.today),
         successfulOrders: successful,
         processingOrders: count(orderCounts[0]?.processing),
+        awaitingConfirmationOrders: count(orderCounts[0]?.awaiting_confirmation),
         reviewingOrders: count(orderCounts[0]?.reviewing),
-        successRate: total === 0 ? null : Number(((successful / total) * 100).toFixed(1))
+        successRate: completed === 0 ? null : Number(((successful / completed) * 100).toFixed(1))
       },
       orderStatuses: statusRows.map((row) => ({ status: row.status, count: count(row.count) })),
       cdkStatuses: cdkRows.map((row) => ({ status: row.status, count: count(row.count) })),
@@ -148,6 +187,7 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null }) {
         available: count(stockRows[0]?.available),
         provisioning: count(stockRows[0]?.provisioning),
         assigned: count(stockRows[0]?.assigned),
+        depleted: count(stockRows[0]?.depleted),
         lowThreshold: count(stockSettingRows[0]?.setting_value || 5),
         low: count(stockRows[0]?.available) <= count(stockSettingRows[0]?.setting_value || 5)
       },
@@ -184,6 +224,19 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null }) {
       conditions.push(`(o.status IN (${REVIEW_STATUSES.map(() => '?').join(', ')})
         OR o.cancellation_review_required = 1)`);
       values.push(...REVIEW_STATUSES);
+    } else if (status === 'PROCESSING') {
+      conditions.push(`o.status IN (${PROCESSING_STATUSES.map(() => '?').join(', ')})`);
+      values.push(...PROCESSING_STATUSES);
+    } else if (status === 'AWAITING_CONFIRMATION') {
+      conditions.push(`o.status = 'CARD_READY' AND EXISTS (
+        SELECT 1 FROM tasks pt WHERE pt.order_id = o.id
+          AND pt.task_type = 'PREPARE_RECHARGE' AND pt.status = 'COMPLETED'
+      ) AND EXISTS (
+        SELECT 1 FROM tasks st WHERE st.order_id = o.id
+          AND st.task_type = 'SUBMIT_RECHARGE' AND st.status = 'PENDING' AND st.attempts = 0
+      )`);
+    } else if (status === 'TODAY') {
+      conditions.push(`o.created_at >= TIMESTAMP(DATE(CONVERT_TZ(UTC_TIMESTAMP(), '+00:00', '+08:00'))) - INTERVAL 8 HOUR`);
     } else if (status) {
       conditions.push('o.status = ?');
       values.push(status);
@@ -202,7 +255,16 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null }) {
           o.actual_payment_amount, o.actual_payment_currency,
           o.subscription_cancelled, o.cancellation_checked_at, o.cancellation_review_required,
           c.last4, c.current_balance, c.currency, c.refund_status,
-          c.card_number_ciphertext, c.card_credentials_ciphertext
+          c.card_number_ciphertext, c.card_credentials_ciphertext,
+          (o.status = 'CARD_READY' AND EXISTS (
+            SELECT 1 FROM tasks pt WHERE pt.order_id = o.id
+              AND pt.task_type = 'PREPARE_RECHARGE' AND pt.status = 'COMPLETED'
+          ) AND EXISTS (
+            SELECT 1 FROM tasks st WHERE st.order_id = o.id
+              AND st.task_type = 'SUBMIT_RECHARGE' AND st.status = 'PENDING' AND st.attempts = 0
+          )) AS requires_recharge_confirmation,
+          (SELECT pt.completed_at FROM tasks pt WHERE pt.order_id = o.id
+            AND pt.task_type = 'PREPARE_RECHARGE' ORDER BY pt.id DESC LIMIT 1) AS confirmation_ready_at
         FROM orders o LEFT JOIN cards c ON c.order_id = o.id
         ${where}
         ORDER BY o.created_at DESC, o.id DESC
@@ -224,6 +286,8 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null }) {
         subscriptionCancelled: row.subscription_cancelled == null ? null : Number(row.subscription_cancelled),
         cancellationCheckedAt: iso(row.cancellation_checked_at),
         cancellationReviewRequired: Boolean(row.cancellation_review_required),
+        requiresRechargeConfirmation: Boolean(row.requires_recharge_confirmation),
+        confirmationReadyAt: iso(row.confirmation_ready_at),
         card: row.last4 ? {
           cardNumber: cardNumber(row, sessionEncryptionKey),
           last4: row.last4,
@@ -248,7 +312,7 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null }) {
           o.minimum_required_card_balance, o.actual_payment_amount, o.actual_payment_currency,
           o.recharge_order_no, o.failure_code, o.failure_reason,
           o.subscription_cancelled, o.cancellation_checked_at, o.cancellation_review_required,
-          o.created_at, o.updated_at, o.finished_at,
+          o.created_at, o.updated_at, o.finished_at, o.session_ciphertext,
           c.provider_card_id, c.last4, c.status AS card_status, c.funded_amount,
           c.current_balance, c.currency, c.refund_status, c.last_synced_at,
           c.card_number_ciphertext, c.card_credentials_ciphertext
@@ -288,6 +352,12 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null }) {
     if (!row) throw new PublicApiError('Order not found', { code: 'ADMIN_ORDER_NOT_FOUND', status: 404 });
     const prepareTask = taskRows.find((task) => task.task_type === 'PREPARE_RECHARGE');
     const submitTask = taskRows.find((task) => task.task_type === 'SUBMIT_RECHARGE');
+    const session = sessionSafety(row, sessionEncryptionKey, now);
+    const lastCardSync = row.last_synced_at ? new Date(row.last_synced_at).getTime() : NaN;
+    const cardCheckFresh = Number.isFinite(lastCardSync) && now() - lastCardSync <= 15 * 60_000;
+    const cardReady = ['active', 'available', 'usable', 'ready'].includes(String(row.card_status || '').toLowerCase())
+      && Number(row.current_balance) >= Number(row.minimum_required_card_balance)
+      && Boolean(row.card_credentials_ciphertext);
     return {
       order: {
         publicNo: row.public_no,
@@ -327,7 +397,13 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null }) {
         permitStatus: submitTask?.permit_status || 'LOCKED',
         permitExpiresAt: submitTask?.permit_expires_at || null,
         submissionTaskStatus: submitTask?.status || null,
-        submissionAttempts: submitTask ? Number(submitTask.attempts) : 0
+        submissionAttempts: submitTask ? Number(submitTask.attempts) : 0,
+        sessionValid: session.valid,
+        sessionCode: session.code,
+        sessionExpiresAt: session.sessionExpiresAt,
+        accessTokenExpiresAt: session.accessTokenExpiresAt,
+        cardReady,
+        cardCheckFresh
       },
       events: eventRows.map((event) => ({
         fromStatus: event.from_status,

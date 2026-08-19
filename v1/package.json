@@ -17,6 +17,7 @@
     "provider:poc": "node scripts/provider-poc.js",
     "recharge:permit": "node scripts/recharge-permit.js",
     "card:stock": "node scripts/card-stock.js",
+    "card:catalog-sync": "node scripts/card-catalog-sync.js",
     "card:stock-runner": "node scripts/card-stock-job-runner.js",
     "migrate": "node scripts/migrate.js",
     "test": "node --test"

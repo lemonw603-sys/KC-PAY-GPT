@@ -1,4 +1,6 @@
 import { OrderStatus } from '../domain/order-status.js';
+import { validateChatGptSession } from '../domain/session-validation.js';
+import { decryptSecret } from '../security/secret-box.js';
 
 export class RechargePermitError extends Error {
   constructor(message, code) {
@@ -36,12 +38,35 @@ async function inTransaction(pool, action) {
   }
 }
 
+export function validateRechargePreflight(row, { sessionEncryptionKey, now }) {
+  if (!Buffer.isBuffer(sessionEncryptionKey) || !row.session_ciphertext) {
+    throw new RechargePermitError('Session cannot be verified', 'SESSION_INVALID');
+  }
+  try {
+    const session = JSON.parse(decryptSecret(row.session_ciphertext, sessionEncryptionKey));
+    validateChatGptSession(session, { now: () => now.getTime(), minimumAccessTokenLifetimeSeconds: 300 });
+  } catch {
+    throw new RechargePermitError('Session is expired or invalid', 'SESSION_INVALID');
+  }
+  const syncedAt = row.card_last_synced_at ? new Date(row.card_last_synced_at).getTime() : NaN;
+  if (!Number.isFinite(syncedAt) || now.getTime() - syncedAt > 15 * 60_000) {
+    throw new RechargePermitError('Card verification is stale', 'CARD_CHECK_STALE');
+  }
+  const active = ['active', 'available', 'usable', 'ready'].includes(String(row.card_status || '').toLowerCase());
+  if (!active || Number(row.card_balance) < Number(row.minimum_required_card_balance)
+    || !row.card_credentials_ciphertext) {
+    throw new RechargePermitError('Card is not ready for recharge', 'CARD_NOT_READY');
+  }
+}
+
 export async function armRechargePermit(pool, {
   publicNo,
   ttlMinutes = 10,
   approvedBy = 'root',
   enableDispatch = true,
-  now = new Date()
+  now = new Date(),
+  sessionEncryptionKey = null,
+  preflight = validateRechargePreflight
 }) {
   const orderNumber = validatePublicNo(publicNo);
   const ttl = Number(ttlMinutes);
@@ -50,9 +75,13 @@ export async function armRechargePermit(pool, {
   }
   return inTransaction(pool, async (connection) => {
     const [rows] = await connection.query(
-      `SELECT o.id AS order_id, o.status AS order_status, t.id AS task_id,
-              t.status AS task_status, t.attempts, t.payload_json
+      `SELECT o.id AS order_id, o.status AS order_status, o.session_ciphertext,
+              o.minimum_required_card_balance, t.id AS task_id,
+              t.status AS task_status, t.attempts, t.payload_json,
+              c.status AS card_status, c.current_balance AS card_balance,
+              c.card_credentials_ciphertext, c.last_synced_at AS card_last_synced_at
        FROM orders o INNER JOIN tasks t ON t.order_id = o.id
+       LEFT JOIN cards c ON c.order_id = o.id
        WHERE BINARY o.public_no = ? AND t.task_type = 'SUBMIT_RECHARGE'
        LIMIT 1 FOR UPDATE`,
       [orderNumber]
@@ -62,6 +91,7 @@ export async function armRechargePermit(pool, {
     if (row.order_status !== OrderStatus.CARD_READY || row.task_status !== 'PENDING' || Number(row.attempts) !== 0) {
       throw new RechargePermitError('order is not eligible for one-time recharge', 'ORDER_NOT_ELIGIBLE');
     }
+    preflight(row, { sessionEncryptionKey, now });
     const [priorCalls] = await connection.query(
       `SELECT id FROM provider_calls
        WHERE order_id = ? AND provider = 'zzshu' AND operation = 'create_direct'

@@ -5,6 +5,7 @@ import {
   readProviderSnapshot,
   snapshotIsFresh
 } from './card-provider-snapshot-service.js';
+import { cardCatalogIsFresh, readCardCatalogSnapshot } from './card-catalog-snapshot-service.js';
 
 const ACTIVE = new Set(['active', 'available', 'usable', 'ready']);
 const FAILED = new Set(['failed', 'failure', 'invalid', 'inactive', 'closed', 'cancelled', 'canceled']);
@@ -21,7 +22,12 @@ function firstValue(object, keys) {
   return null;
 }
 
-export function mapStockCard(envelope, { providerCardId, cardTypeId = null, fundedAmount = null } = {}) {
+export function mapStockCard(envelope, {
+  providerCardId,
+  cardTypeId = null,
+  fundedAmount = null,
+  minimumRequiredBalance = null
+} = {}) {
   const data = cardData(envelope);
   const id = firstValue(data, ['id', 'cardId', 'card_id']) ?? providerCardId;
   const typeId = firstValue(data, ['cardTypeId', 'card_type_id', 'cardBinId', 'card_bin_id']) ?? cardTypeId;
@@ -38,6 +44,12 @@ export function mapStockCard(envelope, { providerCardId, cardTypeId = null, fund
   } catch {
     credentials = null;
   }
+  const requiredBalance = minimumRequiredBalance == null
+    ? Math.max(0, Number(fundedAmount) || 0)
+    : Math.max(0, Number(minimumRequiredBalance) || 0);
+  const active = ACTIVE.has(status);
+  const ready = active && credentials !== null && currentBalance != null
+    && currentBalance >= requiredBalance;
   return {
     providerCardId: String(id),
     cardTypeId: String(typeId),
@@ -47,8 +59,9 @@ export function mapStockCard(envelope, { providerCardId, cardTypeId = null, fund
     currency: String(firstValue(data, ['currency', 'cardCurrency', 'card_currency']) || 'USD').toUpperCase(),
     last4: credentials?.cardNumber.slice(-4) || null,
     credentials,
-    ready: ACTIVE.has(status) && credentials !== null && currentBalance != null
-      && currentBalance >= Math.max(0, Number(fundedAmount) || 0),
+    ready,
+    depleted: active && credentials !== null && currentBalance != null
+      && requiredBalance > 0 && currentBalance < requiredBalance,
     failed: FAILED.has(status)
   };
 }
@@ -108,10 +121,27 @@ export function createCardStockService({ pool, sessionEncryptionKey }) {
         [card.providerCardId]
       );
       if (existing[0]?.order_id) {
+        const credentialsCiphertext = card.credentials
+          ? encryptSecret(JSON.stringify(card.credentials), sessionEncryptionKey)
+          : null;
+        const cardNumberCiphertext = card.credentials?.cardNumber
+          ? encryptSecret(card.credentials.cardNumber, sessionEncryptionKey)
+          : null;
+        await connection.query(
+          `UPDATE cards SET last4 = COALESCE(?, last4), status = ?, current_balance = ?, currency = ?,
+             card_credentials_ciphertext = COALESCE(?, card_credentials_ciphertext),
+             card_number_ciphertext = COALESCE(?, card_number_ciphertext),
+             last_synced_at = CURRENT_TIMESTAMP(3), updated_at = CURRENT_TIMESTAMP(3)
+           WHERE id = ?`,
+          [card.last4, card.status, card.currentBalance, card.currency,
+            credentialsCiphertext, cardNumberCiphertext, existing[0].id]
+        );
         await connection.commit();
         return { providerCardId: card.providerCardId, inventoryStatus: 'ASSIGNED', alreadyAssigned: true };
       }
-      const inventoryStatus = card.failed ? 'FAILED' : card.ready ? 'AVAILABLE' : 'PROVISIONING';
+      const inventoryStatus = card.failed ? 'FAILED'
+        : card.depleted ? 'DEPLETED'
+          : card.ready ? 'AVAILABLE' : 'PROVISIONING';
       const credentialsCiphertext = card.credentials
         ? encryptSecret(JSON.stringify(card.credentials), sessionEncryptionKey)
         : null;
@@ -153,16 +183,19 @@ export function createCardStockService({ pool, sessionEncryptionKey }) {
   }
 
   async function status() {
-    const [[thresholdRows], [rows], [settings], [cards], providerSnapshot] = await Promise.all([
+    const [[thresholdRows], [rows], [settings], [cards], providerSnapshot, catalogSnapshot] = await Promise.all([
       pool.query(
         `SELECT setting_value FROM app_settings
          WHERE setting_key = 'card_stock_low_threshold' LIMIT 1`
       ),
       pool.query(
         `SELECT card_type_id,
-                SUM(order_id IS NULL AND inventory_status = 'AVAILABLE') AS available,
+                SUM(order_id IS NULL AND inventory_status = 'AVAILABLE'
+                  AND LOWER(status) IN ('active','available','usable','ready')
+                  AND card_credentials_ciphertext IS NOT NULL) AS available,
                 SUM(order_id IS NULL AND inventory_status = 'PROVISIONING') AS provisioning,
-                SUM(order_id IS NOT NULL OR inventory_status = 'ASSIGNED') AS assigned
+                SUM(order_id IS NOT NULL OR inventory_status = 'ASSIGNED') AS assigned,
+                SUM(order_id IS NULL AND inventory_status = 'DEPLETED') AS depleted
          FROM cards GROUP BY card_type_id ORDER BY card_type_id`
       ),
       pool.query(`SELECT setting_key, setting_value FROM app_settings
@@ -171,7 +204,8 @@ export function createCardStockService({ pool, sessionEncryptionKey }) {
           funded_amount, current_balance, currency, order_id,
           card_credentials_ciphertext, card_number_ciphertext, last_synced_at
         FROM cards ORDER BY created_at DESC LIMIT 200`),
-      readProviderSnapshot(pool)
+      readProviderSnapshot(pool),
+      readCardCatalogSnapshot(pool)
     ]);
     const threshold = Math.max(0, Number(thresholdRows[0]?.setting_value || 5));
     const settingMap = new Map(settings.map((row) => [row.setting_key, row.setting_value]));
@@ -193,11 +227,28 @@ export function createCardStockService({ pool, sessionEncryptionKey }) {
         selectedCardType,
         riskConfirmThreshold: CARD_STOCK_RISK_CONFIRM_THRESHOLD
       },
+      catalog: catalogSnapshot ? {
+        ...catalogSnapshot,
+        fresh: cardCatalogIsFresh(catalogSnapshot),
+        openingBlocked: !cardCatalogIsFresh(catalogSnapshot)
+          || Number(catalogSnapshot.unresolvedActive || 0) > 0
+      } : {
+        fresh: false,
+        openingBlocked: true,
+        providerTotal: 0,
+        providerActive: 0,
+        available: 0,
+        assigned: 0,
+        depleted: 0,
+        unresolvedActive: 0,
+        syncedAt: null
+      },
       cardTypes: rows.map((row) => ({
         cardTypeId: String(row.card_type_id),
         available: Number(row.available || 0),
         provisioning: Number(row.provisioning || 0),
         assigned: Number(row.assigned || 0),
+        depleted: Number(row.depleted || 0),
         low: Number(row.available || 0) <= threshold
       })),
       cards: cards.map((row) => ({
