@@ -312,9 +312,9 @@ test('creates paid card stock jobs only through an authenticated admin route', a
     assert.deepEqual(await stock.json(), { threshold: 1, cardTypes: [], jobs: [] });
     const created = await fetch(`${baseUrl}/api/v1/admin/card-stock/jobs`, {
       method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cookie },
-      body: JSON.stringify({ count: 2, amount: 16, cardTypeId: '1', confirmation: '开2张' })
+      body: JSON.stringify({ count: 2, amount: 16, cardTypeId: '1', confirmation: '开2张', largeBatchConfirmed: false })
     });
     assert.equal(created.status, 202);
-    assert.deepEqual(received, { count: 2, amount: 16, cardTypeId: '1', confirmation: '开2张' });
+    assert.deepEqual(received, { count: 2, amount: 16, cardTypeId: '1', confirmation: '开2张', largeBatchConfirmed: false });
   });
 });

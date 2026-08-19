@@ -33,6 +33,14 @@ test('uses live card rules and includes all provider fees', () => {
   assert.equal(result.cardType.name, 'Z-43612081');
 });
 
+test('allows more than ten cards when live quota and balance permit it', () => {
+  const result = evaluateCardStockRequest(snapshot({ balance: '1000', remaining: 30 }), {
+    cardTypeId: '1', amount: 5, count: 12
+  });
+  assert.equal(result.count, 12);
+  assert.equal(result.estimatedTotal, '66.3');
+});
+
 test('rejects amount, card type, quota and balance before a paid call', () => {
   assert.throws(() => evaluateCardStockRequest(snapshot(), {
     cardTypeId: '1', amount: 4, count: 1

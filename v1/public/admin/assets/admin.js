@@ -186,6 +186,10 @@ async function loadStock() {
   elements.stockThreshold.value = payload.threshold;
   const provider = state.stockProvider;
   const selected = provider?.selectedCardType;
+  const providerRemaining = Number(provider?.cardLimit?.remaining);
+  if (Number.isInteger(providerRemaining) && providerRemaining > 0) {
+    elements.stockOpenCount.max = String(providerRemaining);
+  }
   elements.providerSummary.innerHTML = provider?.syncedAt ? `
     <div><span>卡台余额</span><strong>$${escapeHtml(provider.accountBalance || '—')}</strong></div>
     <div><span>剩余卡片额度</span><strong>${escapeHtml(provider.cardLimit?.remaining ?? '—')}</strong></div>
@@ -232,14 +236,14 @@ function updateStockEstimate() {
   let projected = balance;
   let affordable = 0;
   while (
-    affordable < Math.min(Number(provider?.cardLimit?.remaining || 0), Number(provider?.maxBatch || 10))
+    affordable < Number(provider?.cardLimit?.remaining || 0)
     && projected >= perCard && projected >= minimumBalance
   ) {
     affordable += 1;
     projected -= perCard;
   }
   const valid = Boolean(provider?.rulesFresh && provider?.purchaseEnabled && selected)
-    && Number.isInteger(count) && count >= 1 && count <= Number(provider.maxBatch || 10)
+    && Number.isSafeInteger(count) && count >= 1
     && validAmount && count <= affordable;
   elements.stockCost.classList.toggle('stock-cost-warning', !valid);
   elements.stockCost.dataset.total = total.toFixed(2);
@@ -395,13 +399,18 @@ elements.stockOpenForm?.addEventListener('submit', async (event) => {
     showNotice(`请输入确认词“${expected}”。`);
     return;
   }
-  if (!window.confirm(`确认创建 ${count} 张、每张充值 $${amount} 的开卡任务？预计总扣款 $${elements.stockCost.dataset.total}。`)) return;
+  const riskThreshold = Number(state.stockProvider?.riskConfirmThreshold || 10);
+  const largeBatchConfirmed = count > riskThreshold;
+  const confirmationMessage = largeBatchConfirmed
+    ? `此次将一次性创建 ${count} 张卡，超过 ${riskThreshold} 张风险提示阈值。\n\n每张充值 $${amount}，预计总扣款 $${elements.stockCost.dataset.total}。\n\n确认继续吗？`
+    : `确认创建 ${count} 张、每张充值 $${amount} 的开卡任务？预计总扣款 $${elements.stockCost.dataset.total}。`;
+  if (!window.confirm(confirmationMessage)) return;
   const button = elements.stockOpenForm.querySelector('button[type="submit"]');
   button.disabled = true;
   try {
     await api('/api/v1/admin/card-stock/jobs', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ count, amount, confirmation: expected })
+      body: JSON.stringify({ count, amount, confirmation: expected, largeBatchConfirmed })
     });
     elements.stockConfirmation.value = '';
     showNotice('开卡任务已创建，服务器将在约 10 秒内开始执行。');

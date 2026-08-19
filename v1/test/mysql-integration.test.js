@@ -216,7 +216,13 @@ test('card stock jobs require confirmation and move durably through the runner s
       service.createJob({ count: 2, amount: 16, cardTypeId: '1', confirmation: 'wrong' }),
       (error) => error.code === 'CARD_STOCK_CONFIRMATION_REQUIRED'
     );
-    job = await service.createJob({ count: 2, amount: 16, cardTypeId: '1', confirmation: '开2张' });
+    await assert.rejects(
+      service.createJob({ count: 11, amount: 5, confirmation: '开11张' }),
+      (error) => error.code === 'CARD_STOCK_LARGE_BATCH_CONFIRMATION_REQUIRED'
+    );
+    job = await service.createJob({
+      count: 11, amount: 5, cardTypeId: '1', confirmation: '开11张', largeBatchConfirmed: true
+    });
     await assert.rejects(
       service.createJob({ count: 1, amount: 16, cardTypeId: '1', confirmation: '开1张' }),
       (error) => error.code === 'CARD_STOCK_JOB_ACTIVE'
@@ -225,13 +231,13 @@ test('card stock jobs require confirmation and move durably through the runner s
     assert.equal(claimed.id, job.id);
     assert.equal(claimed.status, 'RUNNING');
     await updateCardStockJobProgress(pool, { jobId: job.id, workerId: 'stock-worker-test', openedCount: 1 });
-    await completeCardStockJob(pool, { jobId: job.id, workerId: 'stock-worker-test', openedCount: 2 });
+    await completeCardStockJob(pool, { jobId: job.id, workerId: 'stock-worker-test', openedCount: 11 });
     const { jobs } = await service.listJobs();
     const completed = jobs.find((item) => item.id === job.id);
     assert.equal(completed.status, 'COMPLETED');
-    assert.equal(completed.openedCount, 2);
+    assert.equal(completed.openedCount, 11);
     assert.equal(completed.cardTypeId, '7');
-    assert.equal(completed.estimatedTotal, '33.160000');
+    assert.equal(completed.estimatedTotal, '60.775000');
   } finally {
     if (job) await pool.query('DELETE FROM card_stock_jobs WHERE id = ?', [job.id]);
     await pool.end();

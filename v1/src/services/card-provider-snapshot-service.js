@@ -1,6 +1,6 @@
 import { PublicApiError } from '../domain/public-api-error.js';
 
-export const CARD_STOCK_MAX_BATCH = 10;
+export const CARD_STOCK_RISK_CONFIRM_THRESHOLD = 10;
 export const CARD_PROVIDER_SNAPSHOT_MAX_AGE_MS = 2 * 60 * 1000;
 
 function finite(value, name) {
@@ -73,8 +73,8 @@ export function evaluateCardStockRequest(snapshot, {
       code: 'CARD_STOCK_AMOUNT_OUT_OF_RANGE', status: 400
     });
   }
-  if (!Number.isInteger(numericCount) || numericCount < 1 || numericCount > CARD_STOCK_MAX_BATCH) {
-    throw new PublicApiError(`Card stock batch must contain 1-${CARD_STOCK_MAX_BATCH} cards`, {
+  if (!Number.isSafeInteger(numericCount) || numericCount < 1) {
+    throw new PublicApiError('Card stock count must be a positive integer', {
       code: 'CARD_STOCK_COUNT_OUT_OF_RANGE', status: 400
     });
   }
@@ -94,7 +94,7 @@ export function evaluateCardStockRequest(snapshot, {
   let projectedBalance = balance;
   let affordableCount = 0;
   while (
-    affordableCount < Math.min(remaining, CARD_STOCK_MAX_BATCH)
+    affordableCount < remaining
     && projectedBalance >= totalPerCard
     && projectedBalance >= minimumAccountBalance
   ) {

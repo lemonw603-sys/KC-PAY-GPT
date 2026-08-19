@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import { PublicApiError } from '../domain/public-api-error.js';
 import { redactSensitiveText } from '../security/redaction.js';
 import {
-  CARD_STOCK_MAX_BATCH,
+  CARD_STOCK_RISK_CONFIRM_THRESHOLD,
   evaluateCardStockRequest,
   readProviderSnapshot,
   snapshotIsFresh
@@ -43,10 +43,15 @@ function mapJob(row) {
 
 export function createCardStockJobService({ pool }) {
   async function createJob(input = {}) {
-    const requestedCount = integer(input.count, { min: 1, max: CARD_STOCK_MAX_BATCH, name: 'count' });
+    const requestedCount = integer(input.count, { min: 1, max: Number.MAX_SAFE_INTEGER, name: 'count' });
     const amount = integer(input.amount, { min: 1, max: 100_000, name: 'amount' });
     if (input.confirmation !== `开${requestedCount}张`) {
       throw new PublicApiError('Confirmation mismatch', { code: 'CARD_STOCK_CONFIRMATION_REQUIRED', status: 400 });
+    }
+    if (requestedCount > CARD_STOCK_RISK_CONFIRM_THRESHOLD && input.largeBatchConfirmed !== true) {
+      throw new PublicApiError('Large card stock job requires an additional confirmation', {
+        code: 'CARD_STOCK_LARGE_BATCH_CONFIRMATION_REQUIRED', status: 400
+      });
     }
     const connection = await pool.getConnection();
     try {

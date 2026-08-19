@@ -1,7 +1,7 @@
 import { decryptSecret, encryptSecret } from '../security/secret-box.js';
 import { mapCardCredentials } from '../providers/hnskj-card.js';
 import {
-  CARD_STOCK_MAX_BATCH,
+  CARD_STOCK_RISK_CONFIRM_THRESHOLD,
   readProviderSnapshot,
   snapshotIsFresh
 } from './card-provider-snapshot-service.js';
@@ -191,7 +191,7 @@ export function createCardStockService({ pool, sessionEncryptionKey }) {
         defaultCardTypeId,
         defaultAmount: String(settingMap.get('default_open_card_amount') || ''),
         selectedCardType,
-        maxBatch: CARD_STOCK_MAX_BATCH
+        riskConfirmThreshold: CARD_STOCK_RISK_CONFIRM_THRESHOLD
       },
       cardTypes: rows.map((row) => ({
         cardTypeId: String(row.card_type_id),
