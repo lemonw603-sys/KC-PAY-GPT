@@ -1,5 +1,6 @@
 export {
   HnskjCardProvider,
+  mapPurchasedCard,
   mapCardCredentials,
   mapCardProvisioning
 } from './hnskj-card.js';

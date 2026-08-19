@@ -14,24 +14,32 @@ const allSettings = Object.freeze({
 });
 
 test('runtime settings and process gates jointly control task eligibility', () => {
-  assert.deepEqual(allowedTaskTypesFor(allSettings), []);
+  assert.deepEqual(allowedTaskTypesFor(allSettings), [TaskType.PREPARE_RECHARGE]);
   assert.deepEqual(
     allowedTaskTypesFor(allSettings, { providerReadsEnabled: true }),
-    [TaskType.VERIFY_CARD, TaskType.POLL_RECHARGE, TaskType.RECHECK_CANCELLATION]
+    [TaskType.PREPARE_RECHARGE, TaskType.VERIFY_CARD, TaskType.POLL_RECHARGE, TaskType.RECHECK_CANCELLATION, TaskType.SYNC_CARD_TRANSACTIONS]
   );
   assert.deepEqual(
     allowedTaskTypesFor(allSettings, {
       providerReadsEnabled: true,
       providerWritesEnabled: true
     }),
-    [TaskType.PURCHASE_CARD, TaskType.SUBMIT_RECHARGE, TaskType.VERIFY_CARD, TaskType.POLL_RECHARGE, TaskType.RECHECK_CANCELLATION]
+    [TaskType.PURCHASE_CARD, TaskType.PREPARE_RECHARGE, TaskType.SUBMIT_RECHARGE, TaskType.VERIFY_CARD, TaskType.POLL_RECHARGE, TaskType.RECHECK_CANCELLATION, TaskType.SYNC_CARD_TRANSACTIONS]
   );
   assert.deepEqual(
     allowedTaskTypesFor({ ...allSettings, dispatchNewRecharges: false }, {
       providerReadsEnabled: true,
       providerWritesEnabled: true
     }),
-    [TaskType.VERIFY_CARD, TaskType.POLL_RECHARGE, TaskType.RECHECK_CANCELLATION]
+    [TaskType.VERIFY_CARD, TaskType.POLL_RECHARGE, TaskType.RECHECK_CANCELLATION, TaskType.SYNC_CARD_TRANSACTIONS]
+  );
+  assert.deepEqual(
+    allowedTaskTypesFor(allSettings, { providerReadsEnabled: true, providerCardWritesEnabled: true }),
+    [TaskType.PURCHASE_CARD, TaskType.PREPARE_RECHARGE, TaskType.VERIFY_CARD, TaskType.POLL_RECHARGE, TaskType.RECHECK_CANCELLATION, TaskType.SYNC_CARD_TRANSACTIONS]
+  );
+  assert.equal(
+    allowedTaskTypesFor(allSettings, { providerReadsEnabled: true, providerRechargeWritesEnabled: true }).includes(TaskType.SUBMIT_RECHARGE),
+    true
   );
 });
 
@@ -50,7 +58,7 @@ test('one worker iteration passes only eligible task types to the runner', async
     }
   });
   assert.equal(result.handled, false);
-  assert.deepEqual(input.allowedTaskTypes, [TaskType.VERIFY_CARD, TaskType.POLL_RECHARGE, TaskType.RECHECK_CANCELLATION]);
+  assert.deepEqual(input.allowedTaskTypes, [TaskType.PREPARE_RECHARGE, TaskType.VERIFY_CARD, TaskType.POLL_RECHARGE, TaskType.RECHECK_CANCELLATION, TaskType.SYNC_CARD_TRANSACTIONS]);
 });
 
 test('worker loop runs at most the configured number of iterations concurrently', async () => {

@@ -6,7 +6,8 @@ import { fileURLToPath } from 'node:url';
 import {
   HnskjCardProvider,
   mapCardCredentials,
-  mapCardProvisioning
+  mapCardProvisioning,
+  mapPurchasedCard
 } from '../src/providers/hnskj-card.js';
 import { runReadOnlyChecks } from '../scripts/provider-read-check.js';
 import { ProviderError, ProviderSchemaError } from '../src/providers/http-client.js';
@@ -98,6 +99,18 @@ test('Hnskj rejects an invalid idempotency key before network access', async () 
   assert.equal(called, false);
 });
 
+test('Hnskj purchase mapper accepts known card ID variants and marks a missing ID uncertain', () => {
+  assert.equal(mapPurchasedCard({ data: { card: { id: 451 } } }), '451');
+  assert.equal(mapPurchasedCard({ data: { card_id: 'card-1' } }), 'card-1');
+  assert.throws(
+    () => mapPurchasedCard({ data: { accepted: true } }),
+    (error) => error instanceof ProviderSchemaError
+      && error.provider === 'hnskj'
+      && error.uncertain === true
+      && error.retryable === false
+  );
+});
+
 test('Hnskj read schemas match the one-time live response shapes', async () => {
   const calls = [];
   const provider = new HnskjCardProvider({
@@ -107,7 +120,8 @@ test('Hnskj read schemas match the one-time live response shapes', async () => {
       response(hnskjReadFixtures.profile),
       response(hnskjReadFixtures.balance),
       response(hnskjReadFixtures.cardTypes),
-      response(hnskjReadFixtures.cards)
+      response(hnskjReadFixtures.cards),
+      response(hnskjReadFixtures.transactions)
     ], calls)
   });
 
@@ -115,12 +129,45 @@ test('Hnskj read schemas match the one-time live response shapes', async () => {
   const balance = await provider.accountBalance();
   const cardTypes = await provider.cardTypes();
   const cards = await provider.cards({ page: 1, pageSize: 20 });
+  const transactions = await provider.transactions('fixture-card-id');
 
   assert.equal(profile.data.balance, '0.000000');
   assert.equal(balance.data.exchangeRate, '1.000000');
   assert.equal(cardTypes.data.cardTypes.length, 1);
   assert.equal(cards.data.cards.length, 0);
-  assert.equal(calls.length, 4);
+  assert.equal(transactions.data.transactions[0].type, 'card_balance_return');
+  assert.equal(transactions.data.transactions[1].originalCurrency, 'PHP');
+  assert.equal(calls.length, 5);
+});
+
+test('Hnskj transaction schema rejects missing stable transaction identity', async () => {
+  const invalid = structuredClone(hnskjReadFixtures.transactions);
+  delete invalid.data.transactions[0].id;
+  const provider = new HnskjCardProvider({
+    baseUrl: 'https://card.example/api/open/v1',
+    apiKey: 'nhs_test_key',
+    fetchImpl: async () => response(invalid)
+  });
+
+  await assert.rejects(
+    provider.transactions('fixture-card-id'),
+    (error) => error instanceof ProviderSchemaError && error.uncertain === false
+  );
+});
+
+test('Hnskj accepts the observed complete transaction response without page metadata', async () => {
+  const observed = structuredClone(hnskjReadFixtures.transactions);
+  delete observed.data.page;
+  delete observed.data.pageSize;
+  delete observed.data.cardNo;
+  const provider = new HnskjCardProvider({
+    baseUrl: 'https://card.example/api/open/v1',
+    apiKey: 'nhs_test_key',
+    fetchImpl: async () => response(observed)
+  });
+  const result = await provider.transactions('fixture-card-id');
+  assert.equal(result.data.total, result.data.transactions.length);
+  assert.equal(result.data.page, undefined);
 });
 
 test('Hnskj rejects amount type drift instead of accepting JavaScript numbers', async () => {
@@ -154,6 +201,21 @@ test('Hnskj card readiness requires terminal status, funded balance and credenti
 
   const failed = mapCardProvisioning({ data: { status: 'failed', cardBalance: '0.000000' } }, 25);
   assert.equal(failed.state, 'failed');
+});
+
+test('Hnskj card readiness uses the independent minimum balance instead of funded amount', () => {
+  const envelope = {
+    data: {
+      status: 'active',
+      cardBalance: '15.75',
+      cardNumber: '4242424242424242',
+      cvv: '123',
+      expiryMonth: 12,
+      expiryYear: 2032
+    }
+  };
+  assert.equal(mapCardProvisioning(envelope, 15.5).state, 'ready');
+  assert.equal(mapCardProvisioning(envelope, 16).state, 'pending');
 });
 
 test('Hnskj card credentials mapper accepts known read response fields and rejects drift', () => {
@@ -242,6 +304,8 @@ test('Zzshu status query never returns full token or PAN', async () => {
         token: { accessToken: 'secret' },
         bank_card_no: '4242424242424242',
         payment_result: { success: true, status: 'paid', proxy: 'secret' },
+        payment_amount: '1150.00',
+        payment_currency: 'php',
         is_subscription_cancelled: 0
       }
     })
@@ -255,12 +319,32 @@ test('Zzshu status query never returns full token or PAN', async () => {
     status: 'success',
     failureReason: null,
     paymentResult: { success: true, status: 'paid' },
+    paymentAmount: '1150.00',
+    paymentCurrency: 'PHP',
+    paymentDetailsStatus: 'valid',
     isSubscriptionCancelled: 0,
     finishedAt: null,
     updatedAt: null
   });
   assert.equal('token' in status, false);
   assert.equal('bankCardNo' in status, false);
+});
+
+test('Zzshu keeps a confirmed status while refusing malformed settlement fields', async () => {
+  const provider = new ZzshuRechargeProvider({
+    baseUrl: 'https://card.example/api/v1',
+    apiKey: 'stable-recharge-key',
+    fetchImpl: async () => response({
+      code: 0,
+      message: 'success',
+      data: { status: 'success', payment_amount: '1,150.00', payment_currency: 'PHP' }
+    })
+  });
+  const status = await provider.queryStatus('DIRECT-abc');
+  assert.equal(status.status, 'success');
+  assert.equal(status.paymentAmount, null);
+  assert.equal(status.paymentCurrency, null);
+  assert.equal(status.paymentDetailsStatus, 'invalid');
 });
 
 test('Zzshu trusted workflow status returns the latest Session but still drops PAN', async () => {

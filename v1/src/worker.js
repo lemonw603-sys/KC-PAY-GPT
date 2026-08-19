@@ -5,9 +5,11 @@ import { createWorkflowRepository } from './db/repositories/workflow-repository.
 import {
   HnskjCardProvider,
   ZzshuRechargeProvider,
+  mapPurchasedCard,
   mapCardCredentials,
   mapCardProvisioning
 } from './providers/index.js';
+import { buildDirectOrderRequest } from './providers/zzshu-recharge.js';
 import { recordProviderCall } from './providers/provider-call-recorder.js';
 import { createWorkflowHandlers } from './workers/workflow-handlers.js';
 import { runWorkerLoop } from './workers/worker-runtime.js';
@@ -23,19 +25,30 @@ function unavailable(operation) {
   };
 }
 
-const hnskjReadProvider = config.providerReadsEnabled
+const hnskjReadProvider = (config.providerReadsEnabled || config.providerCardWritesEnabled)
   ? new HnskjCardProvider({
       baseUrl: config.hnskjApiBaseUrl,
       apiKey: config.hnskjApiKey
     })
   : null;
 const cardProvider = {
-  purchaseCard: unavailable('card purchase'),
+  cardTypes: hnskjReadProvider
+    ? hnskjReadProvider.cardTypes.bind(hnskjReadProvider)
+    : unavailable('card types'),
+  cards: hnskjReadProvider
+    ? hnskjReadProvider.cards.bind(hnskjReadProvider)
+    : unavailable('cards list'),
+  purchaseCard: config.providerCardWritesEnabled
+    ? hnskjReadProvider?.purchaseCard.bind(hnskjReadProvider) || unavailable('card purchase provider')
+    : unavailable('card purchase'),
   card: hnskjReadProvider
     ? hnskjReadProvider.card.bind(hnskjReadProvider)
-    : unavailable('card details')
+    : unavailable('card details'),
+  transactions: hnskjReadProvider
+    ? hnskjReadProvider.transactions.bind(hnskjReadProvider)
+    : unavailable('card transactions')
 };
-const rechargeProvider = config.providerReadsEnabled
+const rechargeProvider = (config.providerReadsEnabled || config.providerRechargeWritesEnabled)
   ? new ZzshuRechargeProvider({
       baseUrl: config.zzshuApiBaseUrl,
       apiKey: config.zzshuApiKey
@@ -53,9 +66,11 @@ const handlers = createWorkflowHandlers({
   cardProvider,
   rechargeProvider,
   recordCall: (input) => recordProviderCall({ pool, ...input }),
-  mapPurchasedCard: unavailable('card purchase response mapping'),
+  mapPurchasedCard,
   mapCardProvisioning,
-  mapCardCredentials
+  mapCardCredentials,
+  buildDirectOrderRequest,
+  rechargeWritesEnabled: config.providerRechargeWritesEnabled
 });
 
 function requestShutdown(signal) {
@@ -77,6 +92,8 @@ await runWorkerLoop({
   idleDelayMs: config.workerPollIntervalMs,
   providerReadsEnabled: config.providerReadsEnabled,
   providerWritesEnabled: config.providerWritesEnabled,
+  providerCardWritesEnabled: config.providerCardWritesEnabled,
+  providerRechargeWritesEnabled: config.providerRechargeWritesEnabled,
   signal: abortController.signal,
   onError: (error) => {
     console.error('worker iteration failed', {

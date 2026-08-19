@@ -63,7 +63,8 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey }) {
         order: {
           ...row,
           card_type_id: row.card_type_id,
-          open_card_amount: row.open_card_amount
+          open_card_amount: row.open_card_amount,
+          minimum_required_card_balance: row.minimum_required_card_balance
         },
         card: row.provider_card_id ? {
           id: row.local_card_id,
@@ -87,6 +88,52 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey }) {
         reason,
         metadata
       });
+    },
+
+    async beginCardPurchase(orderId, taskId, baseline) {
+      return inTransaction(pool, async (connection) => {
+        const [rows] = await connection.query(
+          'SELECT status, version FROM orders WHERE id = ? FOR UPDATE', [orderId]
+        );
+        if (rows.length !== 1) throw new Error(`Order not found: ${orderId}`);
+        const order = rows[0];
+        if (order.status !== OrderStatus.CREATED) {
+          throw new Error(`Cannot begin card purchase from ${order.status}`);
+        }
+        const [result] = await connection.query(
+          `UPDATE orders SET status = ?, version = version + 1,
+             updated_at = CURRENT_TIMESTAMP(3) WHERE id = ? AND version = ?`,
+          [OrderStatus.CARD_PURCHASING, orderId, order.version]
+        );
+        if (result.affectedRows !== 1) throw new Error(`Concurrent card purchase detected: ${orderId}`);
+        await connection.query(
+          `UPDATE tasks SET payload_json = ?, updated_at = CURRENT_TIMESTAMP(3)
+           WHERE id = ? AND order_id = ? AND task_type = 'PURCHASE_CARD'`,
+          [JSON.stringify({ ...baseline, phase: 'PURCHASE_STARTING' }), taskId, orderId]
+        );
+        await insertEvent(connection, {
+          orderId,
+          fromStatus: OrderStatus.CREATED,
+          toStatus: OrderStatus.CARD_PURCHASING,
+          reason: 'card purchase baseline persisted before provider write',
+          metadata: {
+            cardTypeId: String(baseline.cardTypeId),
+            existingCardCount: baseline.existingCardIds.length
+          }
+        });
+      });
+    },
+
+    async markCardPurchaseAccepted(orderId, taskId, baseline) {
+      await pool.query(
+        `UPDATE tasks SET payload_json = ?, updated_at = CURRENT_TIMESTAMP(3)
+         WHERE id = ? AND order_id = ? AND task_type = 'PURCHASE_CARD'`,
+        [JSON.stringify({ ...baseline, phase: 'PURCHASE_ACCEPTED' }), taskId, orderId]
+      );
+    },
+
+    reviewCardPurchase(orderId, reason, metadata = null) {
+      return this.transition(orderId, OrderStatus.RECONCILIATION_REQUIRED, reason, metadata);
     },
 
     async commitPurchasedCard(orderId, card) {
@@ -172,9 +219,76 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey }) {
         });
         await connection.query(
           `INSERT INTO tasks (order_id, task_type, status, dedupe_key, max_attempts)
+           VALUES (?, 'PREPARE_RECHARGE', 'PENDING', ?, 5)`,
+          [orderId, `prepare-recharge:${orderId}`]
+        );
+        await connection.query(
+          `INSERT INTO tasks (order_id, task_type, status, dedupe_key, max_attempts)
            VALUES (?, 'SUBMIT_RECHARGE', 'PENDING', ?, 5)`,
           [orderId, `submit-recharge:${orderId}`]
         );
+      });
+    },
+
+    async recordPrepaymentReady(orderId, summary) {
+      return inTransaction(pool, async (connection) => {
+        const [rows] = await connection.query(
+          'SELECT status FROM orders WHERE id = ? FOR UPDATE', [orderId]
+        );
+        if (rows.length !== 1) throw new Error(`Order not found: ${orderId}`);
+        if (rows[0].status !== OrderStatus.CARD_READY) {
+          throw new Error(`Cannot prepare recharge from ${rows[0].status}`);
+        }
+        await insertEvent(connection, {
+          orderId,
+          fromStatus: OrderStatus.CARD_READY,
+          toStatus: OrderStatus.CARD_READY,
+          reason: 'prepayment request validated; recharge not submitted',
+          metadata: summary
+        });
+      });
+    },
+
+    async consumeRechargePermit(orderId, taskId, now = new Date()) {
+      return inTransaction(pool, async (connection) => {
+        const [rows] = await connection.query(
+          `SELECT t.payload_json, t.status AS task_status, o.status AS order_status
+           FROM tasks t INNER JOIN orders o ON o.id = t.order_id
+           WHERE t.id = ? AND t.order_id = ? AND t.task_type = 'SUBMIT_RECHARGE'
+           FOR UPDATE`,
+          [taskId, orderId]
+        );
+        if (rows.length !== 1) return { allowed: false, reason: 'TASK_NOT_FOUND' };
+        const row = rows[0];
+        if (row.task_status !== 'RUNNING' || row.order_status !== OrderStatus.CARD_READY) {
+          return { allowed: false, reason: 'STATE_MISMATCH' };
+        }
+        const payload = typeof row.payload_json === 'string'
+          ? JSON.parse(row.payload_json) : (row.payload_json || {});
+        const permit = payload.rechargePermit;
+        const expiresAt = Date.parse(permit?.expiresAt || '');
+        if (permit?.status !== 'ARMED' || !Number.isFinite(expiresAt) || expiresAt <= now.getTime()) {
+          return { allowed: false, reason: 'PERMIT_NOT_ARMED' };
+        }
+        const [calls] = await connection.query(
+          `SELECT id FROM provider_calls
+           WHERE order_id = ? AND provider = 'zzshu' AND operation = 'create_direct'
+           LIMIT 1 FOR UPDATE`,
+          [orderId]
+        );
+        if (calls.length) return { allowed: false, reason: 'CREATE_ALREADY_ATTEMPTED' };
+        payload.rechargePermit = {
+          ...permit,
+          status: 'CONSUMED',
+          consumedAt: now.toISOString()
+        };
+        const [result] = await connection.query(
+          `UPDATE tasks SET payload_json = ?, updated_at = CURRENT_TIMESTAMP(3)
+           WHERE id = ? AND order_id = ? AND status = 'RUNNING'`,
+          [JSON.stringify(payload), taskId, orderId]
+        );
+        if (result.affectedRows !== 1) return { allowed: false, reason: 'LEASE_LOST' };
+        return { allowed: true };
       });
     },
 
@@ -282,17 +396,26 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey }) {
         const [result] = await connection.query(
           `UPDATE orders SET status = ?,
              session_ciphertext = COALESCE(?, session_ciphertext),
+             actual_payment_amount = COALESCE(?, actual_payment_amount),
+             actual_payment_currency = COALESCE(?, actual_payment_currency),
              subscription_cancelled = ?, cancellation_checked_at = CURRENT_TIMESTAMP(3),
              cancellation_review_required = 0, version = version + 1,
              updated_at = CURRENT_TIMESTAMP(3), finished_at = CURRENT_TIMESTAMP(3)
            WHERE id = ? AND version = ?`,
-          [OrderStatus.RECHARGE_SUCCESS, encryptedSession, cancelled, orderId, order.version]
+          [OrderStatus.RECHARGE_SUCCESS, encryptedSession,
+            status.paymentAmount ?? null, status.paymentCurrency ?? null,
+            cancelled, orderId, order.version]
         );
         if (result.affectedRows !== 1) throw new Error(`Concurrent recharge success detected: ${orderId}`);
         await insertEvent(connection, {
           orderId, fromStatus: order.status, toStatus: OrderStatus.RECHARGE_SUCCESS,
           reason: 'provider confirmed success',
-          metadata: { subscriptionCancelled: cancelled }
+          metadata: {
+            subscriptionCancelled: cancelled,
+            paymentAmount: status.paymentAmount ?? null,
+            paymentCurrency: status.paymentCurrency ?? null,
+            paymentDetailsStatus: status.paymentDetailsStatus || 'missing'
+          }
         });
         if (cancelled !== 1) {
           await connection.query(
@@ -323,13 +446,127 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey }) {
         const reviewRequired = cancelled === 1 ? 0 : (exhausted ? 1 : 0);
         const [result] = await connection.query(
           `UPDATE orders SET session_ciphertext = COALESCE(?, session_ciphertext),
+             actual_payment_amount = COALESCE(actual_payment_amount, ?),
+             actual_payment_currency = COALESCE(actual_payment_currency, ?),
              subscription_cancelled = ?, cancellation_checked_at = CURRENT_TIMESTAMP(3),
              cancellation_review_required = ?, version = version + 1,
              updated_at = CURRENT_TIMESTAMP(3)
            WHERE id = ? AND version = ?`,
-          [encryptedSession, cancelled, reviewRequired, orderId, order.version]
+          [encryptedSession, status.paymentAmount ?? null, status.paymentCurrency ?? null,
+            cancelled, reviewRequired, orderId, order.version]
         );
         if (result.affectedRows !== 1) throw new Error(`Concurrent cancellation check detected: ${orderId}`);
+      });
+    },
+
+    async commitCardTransactions(orderId, transactions, cardSnapshot = null) {
+      return inTransaction(pool, async (connection) => {
+        const [cards] = await connection.query(
+          'SELECT id FROM cards WHERE order_id = ? FOR UPDATE', [orderId]
+        );
+        if (cards.length !== 1) throw new Error(`Card not found for order: ${orderId}`);
+        for (const transaction of transactions) {
+          await connection.query(
+            `INSERT INTO card_transactions
+             (card_id, provider_transaction_id, transaction_type, status,
+              amount, currency, fee, trade_time_raw, related_txn_id,
+              settlement_status, original_amount, original_currency,
+              merchant_name, merchant_country, merchant_mcc, occurred_at, raw_hash)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)
+             ON DUPLICATE KEY UPDATE
+               transaction_type = VALUES(transaction_type), status = VALUES(status),
+               amount = VALUES(amount), currency = VALUES(currency),
+               fee = VALUES(fee), trade_time_raw = VALUES(trade_time_raw),
+               related_txn_id = VALUES(related_txn_id), settlement_status = VALUES(settlement_status),
+               original_amount = VALUES(original_amount), original_currency = VALUES(original_currency),
+               merchant_name = VALUES(merchant_name), merchant_country = VALUES(merchant_country),
+               merchant_mcc = VALUES(merchant_mcc),
+               raw_hash = VALUES(raw_hash), last_seen_at = CURRENT_TIMESTAMP(3)`,
+            [cards[0].id, transaction.id, transaction.type, transaction.status,
+              transaction.amount, transaction.currency, transaction.fee ?? null,
+              transaction.tradeTime ?? null, transaction.relatedTxnId || null,
+              transaction.settlementStatus || null, transaction.originalAmount ?? null,
+              transaction.originalCurrency || null, transaction.merchantName || null,
+              transaction.merchantCountry || null, transaction.merchantMcc || null,
+              transaction.rawHash]
+          );
+        }
+        for (const transaction of transactions) {
+          if (transaction.classification !== 'REFUND_CANDIDATE' || String(transaction.status).toLowerCase() !== 'success') continue;
+          const [refundRows] = await connection.query(
+            `SELECT id FROM card_transactions
+             WHERE card_id = ? AND provider_transaction_id = ? LIMIT 1`,
+            [cards[0].id, transaction.id]
+          );
+          let originalId = null;
+          let expectedAmount = null;
+          if (transaction.relatedTxnId) {
+            const [originalRows] = await connection.query(
+              `SELECT id, ABS(amount) AS expected_amount FROM card_transactions
+               WHERE card_id = ? AND provider_transaction_id = ? LIMIT 1`,
+              [cards[0].id, transaction.relatedTxnId]
+            );
+            originalId = originalRows[0]?.id ?? null;
+            expectedAmount = originalRows[0]?.expected_amount ?? null;
+          }
+          await connection.query(
+            `INSERT INTO refund_cases
+             (id, order_id, card_id, status, original_transaction_id,
+              refund_transaction_id, expected_amount, currency, detected_at)
+             VALUES (UUID(), ?, ?, 'REFUND_DETECTED', ?, ?, ?, ?, CURRENT_TIMESTAMP(3))
+             ON DUPLICATE KEY UPDATE
+               status = IF(status = 'MONITORING', 'REFUND_DETECTED', status),
+               original_transaction_id = COALESCE(original_transaction_id, VALUES(original_transaction_id)),
+               refund_transaction_id = COALESCE(refund_transaction_id, VALUES(refund_transaction_id)),
+               expected_amount = COALESCE(expected_amount, VALUES(expected_amount)),
+              detected_at = COALESCE(detected_at, CURRENT_TIMESTAMP(3))`,
+            [orderId, cards[0].id, originalId, refundRows[0]?.id ?? null,
+              expectedAmount, transaction.currency]
+          );
+          const [caseRows] = await connection.query(
+            'SELECT id FROM refund_cases WHERE order_id = ? LIMIT 1', [orderId]
+          );
+          const [orderRows] = await connection.query(
+            'SELECT public_no, customer_email, recharge_order_no FROM orders WHERE id = ? LIMIT 1', [orderId]
+          );
+          const order = orderRows[0] || {};
+          const refundCaseId = caseRows[0]?.id || null;
+          await connection.query(
+            `INSERT INTO operator_alerts
+             (id, alert_type, dedupe_key, order_id, refund_case_id, severity, title, message)
+             VALUES (UUID(), 'REFUND_CANDIDATE', ?, ?, ?, 'warning', ?, ?)
+             ON DUPLICATE KEY UPDATE
+               title = VALUES(title), message = VALUES(message)`,
+            [
+              `refund-candidate:${orderId}:${transaction.id}`,
+              orderId,
+              refundCaseId,
+              '发现疑似退款，需要核对',
+              `订单 ${order.public_no || orderId}（${order.customer_email || '无邮箱'}）发现疑似退款；` +
+              `退款交易 ${transaction.id}，金额 ${transaction.amount} ${transaction.currency}` +
+              `${order.recharge_order_no ? `，直充单号 ${order.recharge_order_no}` : ''}。` +
+              '系统未自动确认退款。'
+            ]
+          );
+          await connection.query(
+            `UPDATE cards SET refund_status = 'REFUND_DETECTED' WHERE id = ?`, [cards[0].id]
+          );
+        }
+        const balance = cardSnapshot?.currentBalance;
+        const currency = cardSnapshot?.currency;
+        if (balance != null && Number.isFinite(Number(balance))) {
+          await connection.query(
+            `UPDATE cards SET current_balance = ?, currency = COALESCE(?, currency),
+               last_synced_at = CURRENT_TIMESTAMP(3), updated_at = CURRENT_TIMESTAMP(3) WHERE id = ?`,
+            [String(balance), currency || null, cards[0].id]
+          );
+        } else {
+          await connection.query(
+            `UPDATE cards SET last_synced_at = CURRENT_TIMESTAMP(3),
+               updated_at = CURRENT_TIMESTAMP(3) WHERE id = ?`,
+            [cards[0].id]
+          );
+        }
       });
     }
   };

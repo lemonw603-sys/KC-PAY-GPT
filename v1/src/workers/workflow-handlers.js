@@ -1,5 +1,7 @@
 import { OrderStatus } from '../domain/order-status.js';
 import { TaskExecutionError } from './task-runner.js';
+import crypto from 'node:crypto';
+import { classifyCardTransaction } from '../domain/card-transaction-classification.js';
 
 function pendingError(delayMs) {
   return new TaskExecutionError('Recharge is still processing', {
@@ -17,9 +19,11 @@ export function createWorkflowHandlers({
   mapPurchasedCard,
   mapCardProvisioning,
   mapCardCredentials,
+  buildDirectOrderRequest,
   pollDelayMs = 5_000,
   cancellationDelayMs = 60_000,
   failureConfirmDelayMs = 2_500,
+  rechargeWritesEnabled = true,
   wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 }) {
   function withoutLatestSession(value) {
@@ -28,16 +32,104 @@ export function createWorkflowHandlers({
     const { latestSession, ...safe } = value;
     return safe;
   }
+
+  function cardIdFromListRecord(record) {
+    const value = record?.id ?? record?.cardId ?? record?.card_id;
+    return value == null || String(value).trim() === '' ? null : String(value).trim();
+  }
+
+  function cardTypeMatches(record, baseline) {
+    const typeId = record?.cardTypeId ?? record?.card_type_id;
+    const typeName = record?.cardType ?? record?.card_type;
+    return (typeId != null && String(typeId) === String(baseline.cardTypeId))
+      || (typeName != null && String(typeName) === String(baseline.cardTypeName));
+  }
+
+  async function loadAllCards() {
+    const first = await cardProvider.cards({ page: 1, pageSize: 50 });
+    const cards = [...first.data.cards];
+    const pages = Math.ceil(first.data.total / first.data.pageSize);
+    for (let page = 2; page <= pages; page += 1) {
+      const next = await cardProvider.cards({ page, pageSize: first.data.pageSize });
+      cards.push(...next.data.cards);
+    }
+    return cards;
+  }
+
+  async function identifyPurchasedCard(task, baseline) {
+    const existing = new Set((baseline.existingCardIds || []).map(String));
+    const candidates = (await loadAllCards())
+      .filter((record) => cardTypeMatches(record, baseline))
+      .map(cardIdFromListRecord)
+      .filter((id) => id && !existing.has(id));
+    const unique = [...new Set(candidates)];
+    if (unique.length === 1) {
+      await workflow.commitPurchasedCard(task.order_id, {
+        providerCardId: unique[0],
+        cardTypeId: baseline.cardTypeId,
+        fundedAmount: baseline.fundedAmount
+      });
+      return;
+    }
+    if (unique.length > 1) {
+      await workflow.reviewCardPurchase(
+        task.order_id,
+        'multiple new cards matched purchase baseline; automatic rebuy forbidden',
+        { candidateCount: unique.length }
+      );
+      return;
+    }
+    if (task.attempts >= task.max_attempts) {
+      await workflow.reviewCardPurchase(
+        task.order_id,
+        'purchased card could not be identified before recovery timeout; automatic rebuy forbidden'
+      );
+      return;
+    }
+    throw new TaskExecutionError('Purchased card is not visible in card list yet', {
+      code: 'CARD_IDENTIFICATION_PENDING', retryable: true, delayMs: pollDelayMs
+    });
+  }
+
   async function purchaseCard(task) {
     const context = await workflow.loadOrderContext(task.order_id);
     if (context.order.status === OrderStatus.CREATED) {
-      await workflow.transition(task.order_id, OrderStatus.CARD_PURCHASING, 'begin card purchase');
+      const cardTypes = await cardProvider.cardTypes();
+      const selected = cardTypes.data.cardTypes.find(
+        (item) => String(item.id) === String(context.order.card_type_id)
+      );
+      if (!selected || !cardTypes.data.purchaseEnabled) {
+        throw new TaskExecutionError('Configured card type is unavailable for purchase', {
+          code: 'CARD_TYPE_UNAVAILABLE'
+        });
+      }
+      const baseline = {
+        cardTypeId: String(context.order.card_type_id),
+        cardTypeName: selected.cardType,
+        fundedAmount: String(context.order.open_card_amount),
+        existingCardIds: (await loadAllCards()).map(cardIdFromListRecord).filter(Boolean)
+      };
+      await workflow.beginCardPurchase(task.order_id, task.id, baseline);
+      task.payload_json = { ...baseline, phase: 'PURCHASE_STARTING' };
     } else if (context.order.status !== OrderStatus.CARD_PURCHASING) {
       throw new TaskExecutionError(`Order cannot purchase card from ${context.order.status}`, {
         code: 'ORDER_STATE_MISMATCH'
       });
+    } else {
+      const baseline = typeof task.payload_json === 'string'
+        ? JSON.parse(task.payload_json) : task.payload_json;
+      if (!baseline?.existingCardIds || !baseline?.cardTypeId) {
+        await workflow.reviewCardPurchase(
+          task.order_id,
+          'card purchase state lacks recovery baseline; automatic rebuy forbidden'
+        );
+        return;
+      }
+      await identifyPurchasedCard(task, baseline);
+      return;
     }
 
+    const baseline = task.payload_json;
     const result = await recordCall({
       orderId: task.order_id,
       provider: 'hnskj',
@@ -51,14 +143,74 @@ export function createWorkflowHandlers({
         idempotencyKey: context.order.card_purchase_idempotency_key,
         remark: context.order.public_no
       }),
-      summarize: (value) => mapPurchasedCard(value)
+      summarize: (value) => {
+        try {
+          return { accepted: true, providerCardId: mapPurchasedCard(value) };
+        } catch {
+          return { accepted: true, providerCardId: null, recoveryRequired: true };
+        }
+      }
     });
-    const card = mapPurchasedCard(result);
-    await workflow.commitPurchasedCard(task.order_id, card);
+    let providerCardId;
+    try {
+      providerCardId = mapPurchasedCard(result);
+    } catch (error) {
+      if (!error?.uncertain || error?.provider !== 'hnskj') throw error;
+      await workflow.markCardPurchaseAccepted(task.order_id, task.id, baseline);
+      await identifyPurchasedCard(task, { ...baseline, phase: 'PURCHASE_ACCEPTED' });
+      return;
+    }
+    await workflow.commitPurchasedCard(task.order_id, {
+      providerCardId,
+      cardTypeId: context.order.card_type_id,
+      fundedAmount: context.order.open_card_amount
+    });
+  }
+
+  async function prepareRecharge(task) {
+    const context = await workflow.loadOrderContext(task.order_id);
+    if (context.order.status !== OrderStatus.CARD_READY) {
+      throw new TaskExecutionError(`Order cannot prepare recharge from ${context.order.status}`, {
+        code: 'ORDER_STATE_MISMATCH'
+      });
+    }
+    if (!context.card?.credentials) {
+      throw new TaskExecutionError('Cached card credentials are missing', {
+        code: 'CARD_CREDENTIALS_MISSING'
+      });
+    }
+    const request = buildDirectOrderRequest({
+      ...context.card.credentials,
+      token: context.session,
+      planType: context.order.plan_type || 'plus'
+    });
+    if (request.method !== 'POST' || request.path !== '/third-party/orders/direct') {
+      throw new TaskExecutionError('Recharge request contract is invalid', {
+        code: 'RECHARGE_REQUEST_INVALID'
+      });
+    }
+    await workflow.recordPrepaymentReady(task.order_id, {
+      requestMethod: request.method,
+      requestPath: request.path,
+      planType: String(request.body.planType),
+      cardLast4: String(context.card.credentials.cardNumber).slice(-4),
+      submitted: false
+    });
   }
 
   async function submitRecharge(task) {
+    if (!rechargeWritesEnabled) {
+      throw new TaskExecutionError('Recharge submission is hard-disabled', {
+        code: 'RECHARGE_WRITES_DISABLED', retryable: false
+      });
+    }
     const context = await workflow.loadOrderContext(task.order_id);
+    const permit = await workflow.consumeRechargePermit(task.order_id, task.id);
+    if (!permit.allowed) {
+      throw new TaskExecutionError(`Recharge permit rejected: ${permit.reason}`, {
+        code: 'RECHARGE_PERMIT_REQUIRED', retryable: false
+      });
+    }
     if (context.order.status === OrderStatus.CARD_READY) {
       await workflow.transition(task.order_id, OrderStatus.SUBMITTING, 'begin recharge submission');
     } else if (context.order.status !== OrderStatus.SUBMITTING) {
@@ -96,13 +248,16 @@ export function createWorkflowHandlers({
       });
       await workflow.commitRechargeSubmission(task.order_id, submission);
     } catch (error) {
-      if (error.retryable) throw error;
       await workflow.transition(
         task.order_id,
         error.uncertain ? OrderStatus.SUBMIT_UNKNOWN : OrderStatus.RECHARGE_FAILED,
         error.uncertain ? 'recharge submission result unknown' : 'recharge submission rejected'
       );
-      throw error;
+      throw new TaskExecutionError(error.message || 'Recharge submission failed', {
+        code: error.uncertain ? 'RECHARGE_SUBMIT_UNKNOWN' : 'RECHARGE_SUBMIT_REJECTED',
+        retryable: false,
+        cause: error
+      });
     }
   }
 
@@ -120,9 +275,9 @@ export function createWorkflowHandlers({
       requestKey: `card-readiness:${task.order_id}`,
       attemptNo: task.attempts,
       action: () => cardProvider.card(context.card.provider_card_id),
-      summarize: (value) => mapCardProvisioning(value, context.order.open_card_amount)
+      summarize: (value) => mapCardProvisioning(value, context.order.minimum_required_card_balance)
     });
-    const snapshot = mapCardProvisioning(envelope, context.order.open_card_amount);
+    const snapshot = mapCardProvisioning(envelope, context.order.minimum_required_card_balance);
     if (snapshot.state === 'ready') {
       const credentials = mapCardCredentials(envelope);
       await workflow.commitCardReady(task.order_id, snapshot, credentials);
@@ -224,11 +379,102 @@ export function createWorkflowHandlers({
     });
   }
 
+  async function syncCardTransactions(task) {
+    const context = await workflow.loadOrderContext(task.order_id);
+    if (!context.card?.provider_card_id) {
+      throw new TaskExecutionError('Order has no provider card', { code: 'CARD_NOT_BOUND' });
+    }
+    const pageSize = 50;
+    const maxPages = 1000;
+    const transactions = [];
+    let page = 1;
+    let total = null;
+    while (total == null || transactions.length < total) {
+      const envelope = await recordCall({
+        orderId: task.order_id,
+        provider: 'hnskj',
+        operation: 'card_transactions',
+        requestKey: `card-transactions:${task.order_id}:task:${task.id}:page:${page}`,
+        attemptNo: task.attempts,
+        action: () => cardProvider.transactions(context.card.provider_card_id, { page, pageSize }),
+        summarize: (value) => ({
+          page: value.data.page,
+          count: value.data.transactions.length,
+          total: value.data.total,
+          types: [...new Set(value.data.transactions.map((item) => item.type))],
+          statuses: [...new Set(value.data.transactions.map((item) => item.status))]
+        })
+      });
+      const hasPage = envelope.data.page != null || envelope.data.pageSize != null;
+      if (!Number.isInteger(envelope.data.total) || envelope.data.total < 0 || (
+        hasPage && (
+          !Number.isInteger(envelope.data.page) || envelope.data.page !== page
+          || !Number.isInteger(envelope.data.pageSize) || envelope.data.pageSize <= 0
+        )
+      )) {
+        throw new TaskExecutionError('Invalid transaction pagination metadata', {
+          code: 'TRANSACTION_PAGINATION_INVALID'
+        });
+      }
+      total = envelope.data.total;
+      transactions.push(...envelope.data.transactions.map((item) => ({
+      id: item.id,
+      type: item.type,
+      status: item.status,
+      amount: String(item.amount),
+      currency: item.currency,
+      fee: item.fee == null ? null : String(item.fee),
+      tradeTime: item.tradeTime || null,
+      relatedTxnId: item.relatedTxnId || null,
+      settlementStatus: item.settlementStatus || null,
+      originalAmount: item.originalAmount == null ? null : String(item.originalAmount),
+      originalCurrency: item.originalCurrency || null,
+      merchantName: item.merchantName || null,
+      merchantCountry: item.merchantCountry || null,
+      merchantMcc: item.merchantMcc || null,
+      classification: classifyCardTransaction(item),
+      rawHash: crypto.createHash('sha256').update(JSON.stringify(item)).digest('hex')
+      })));
+      if (envelope.data.transactions.length === 0 || transactions.length >= total) break;
+      if (!hasPage) {
+        throw new TaskExecutionError('Provider returned an incomplete transaction collection without pagination metadata', {
+          code: 'TRANSACTION_PAGINATION_UNSUPPORTED'
+        });
+      }
+      if (page >= maxPages) {
+        throw new TaskExecutionError('Transaction pagination exceeded safety limit', {
+          code: 'TRANSACTION_PAGINATION_LIMIT'
+        });
+      }
+      page += 1;
+    }
+    let cardSnapshot = null;
+    if (typeof cardProvider.card === 'function') {
+      const cardEnvelope = await recordCall({
+        orderId: task.order_id,
+        provider: 'hnskj',
+        operation: 'card_details_after_transaction_sync',
+        requestKey: `card-details:${task.order_id}:task:${task.id}`,
+        attemptNo: task.attempts,
+        action: () => cardProvider.card(context.card.provider_card_id),
+        summarize: (value) => {
+          const data = value?.data?.card ?? value?.data ?? {};
+          return { status: data.status || null, currentBalance: data.cardBalance ?? data.currentBalance ?? null, currency: data.currency || null };
+        }
+      });
+      const data = cardEnvelope?.data?.card ?? cardEnvelope?.data ?? {};
+      cardSnapshot = { currentBalance: data.cardBalance ?? data.currentBalance ?? null, currency: data.currency || null };
+    }
+    await workflow.commitCardTransactions(task.order_id, transactions, cardSnapshot);
+  }
+
   return {
     PURCHASE_CARD: purchaseCard,
     VERIFY_CARD: verifyCard,
+    PREPARE_RECHARGE: prepareRecharge,
     SUBMIT_RECHARGE: submitRecharge,
     POLL_RECHARGE: pollRecharge,
-    RECHECK_CANCELLATION: recheckCancellation
+    RECHECK_CANCELLATION: recheckCancellation,
+    SYNC_CARD_TRANSACTIONS: syncCardTransactions
   };
 }

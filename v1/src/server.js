@@ -4,6 +4,7 @@ import { checkDatabaseReady, createDatabasePool } from './db/pool.js';
 import { createOrderIntakeService } from './services/order-intake-service.js';
 import { createOrderStatusService } from './services/order-status-service.js';
 import { createAdminReadService } from './services/admin-read-service.js';
+import { createAdminCdkService, revokeCdkBatch } from './services/cdk-service.js';
 import { createAdminSessionAuth } from './security/admin-session.js';
 
 const config = loadConfig();
@@ -14,6 +15,7 @@ const createCustomerOrder = createOrderIntakeService({
 });
 const getCustomerOrderStatus = createOrderStatusService({ pool });
 const adminReadService = createAdminReadService({ pool });
+const createAdminCdkBatch = createAdminCdkService({ pool });
 const adminAuth = config.adminPasswordHash
   ? createAdminSessionAuth({
     passwordHash: config.adminPasswordHash,
@@ -28,7 +30,11 @@ const app = createApp({
   adminAuth,
   getAdminOverview: adminReadService.getOverview,
   listAdminOrders: adminReadService.listOrders,
-  getAdminOrder: adminReadService.getOrder
+  getAdminOrder: adminReadService.getOrder,
+  listAdminAlerts: adminReadService.listAlerts,
+  requestCardTransactionSync: adminReadService.requestCardTransactionSync
+  ,createAdminCdkBatch
+  ,revokeAdminCdkBatch: (batchNo, reason) => revokeCdkBatch(pool, batchNo, reason)
 });
 
 if (config.trustProxy) {

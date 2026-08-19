@@ -1,6 +1,6 @@
 # 外部 API 合同基线
 
-- 日期：2026-08-17
+- 日期：2026-08-19
 - 性质：文档与只读运行证据基线，不代表真实写链路已验证
 
 ## 1. 证据来源
@@ -68,6 +68,7 @@ X-Idempotency-Key: <16-128 chars>
 - 超时、502、503 使用相同幂等键重试，平台声明不会重复扣费。
 - 更换幂等键会被视为新开卡。
 - 开卡最低账户余额由 `/card-types` 的 `minBalanceUsdt` 决定；它不是每张卡必须充值的额度。
+- 2026-08-18 单笔开卡实测：`POST /cards/purchase` 的成功外壳未返回卡片 ID；新增卡先出现在 `/cards`，状态为 `processing`，后转为 `failed`。账户余额先暂扣，再在失败后全额恢复。结论：成功外壳仅表示请求受理，不能表示卡片已创建成功；收到响应后必须恢复卡片 ID，并等待 `active + 余额到账 + 完整卡资料` 才能进入直充。
 
 ### 已公开接口
 
@@ -172,7 +173,22 @@ POST /third-party/orders/status
 5. 核对卡台消费交易、实际金额、币种、手续费和余额。
 6. 成功约一分钟后补查取消续费状态。
 
-### C4：退款合同
+### C4：交易与退款合同
+
+2026-08-19 通过 HNSKJ `GET /cards/{id}/transactions` 对真实卡片做只读核对，确认返回外壳为 `success/message/data`，当前现场 `data` 的键为 `transactions/total/source`；此前样本曾出现 `page/pageSize/cardNo`，不能把它们当成稳定字段。当前真实卡片 493 返回 0 条交易，因此本次没有新增真实交易条目样本。适配器采用两种兼容策略：有合法分页元数据时按页同步；无分页元数据且返回条数等于 `total` 时接受为完整响应；无分页元数据但条数小于 `total` 时以 `TRANSACTION_PAGINATION_UNSUPPORTED` 失败关闭，避免漏账。交易项已确认字段（来自已保存样本/fixture，当前现场未重新出现）：
+
+- `id`、`type`、`status`、`amount`、`currency`、`fee`、`tradeTime`。
+- `originalAmount`、`originalCurrency`、`relatedTxnId`、`settlementStatus`、`platformCardId`。
+- 已观察到的类型：`CARD_RECHARGE`、`PURCHASE`、`CARD_BALANCE_RETURN`。
+- `CARD_RECHARGE`（再次向卡内存款）永远不能判定为退款；金额正负和余额变化不能覆盖这条规则。
+- `CARD_BALANCE_RETURN` 不能仅凭类型判定为退款，也不能仅凭类型排除退款；必须结合原始 `PURCHASE`、商户、关联交易和状态继续核对。
+- `PURCHASE` 可能先返回 `processing`，不能直接视作最终扣款完成。
+- `relatedTxnId` 在当前样本为空，不能假设退款一定带原交易关联 ID。
+- `cardNo` 仍属于敏感字段，后台和日志不得展示或持久化明文。
+
+当前 Provider 已对这些字段做运行时 Schema 校验；交易同步已接入后台只读任务，退款只生成“疑似退款”候选，不自动确认或提取余额。没有真实退款样本前，候选不能表述为官方已退款。
+
+退款合同仍需继续核对：
 
 获得真实退款样本后记录：
 
@@ -182,13 +198,44 @@ POST /third-party/orders/status
 - 余额和交易各自的同步延迟。
 - 提取退款余额的费用和幂等响应。
 
+### C5：2026-08-18 真实 Plus 完整 PoC
+
+- 参数：卡段 `1`（`Z-43612081`）、开卡金额 `$16`、最低就绪余额 `$16`、`planType=plus`。
+- 卡台账户余额：`102.420000 → 85.840000 USD`。
+- 卡片最终：Provider 卡 ID `493`、状态 `active`；敏感卡资料未写入本文件。
+- 直充订单：已获得 `order_no` / `card_key`，最终状态 `success`。
+- 实际支付：`982.14 PHP`。
+- 取消续费补查：`is_subscription_cancelled=1`。
+- 直充后卡片只读核对：余额约 `$0.03`；交易摘要显示一笔 `$16` 卡充值和一笔约 `$15.97` 的支付处理记录，符合开卡余额扣除后保留少量余额的现象。
+- 结果：供应商独立 PoC 从开卡、异步识别、卡资料就绪、直充创建、最终成功到取消续费补查通过；它没有进入当前正式订单库，因此不能宣称“正式系统完整订单链路已验证”。未执行自动重开或重复直充。
+- 2026-08-19 只读复核：原始 `provider-poc-state.json` 为 `FINISHED`，且 ZZSHU 当前查询仍返回 `success / 982.14 PHP / is_subscription_cancelled=1`；HNSKJ 卡 `493` 当前余额 `$0.02`，原始成功交易仍为 `$16` 入金和 `$15.97`（`982.14 PHP`）已结算支付。
+- 同次只读复核还发现 2026-08-19 13:43:31 一笔 `OPENAI *CHATGPT SUBSCR`、`$78.24` 的失败支付尝试。它没有扣款；现有证据不足以判定是续费还是后续人工操作，因此取消标记不能被表述为“上游绝不会再次发起授权”。
+
 ## 5. 当前阻塞与处理
 
 | 未知项 | 实现前处理 |
 | --- | --- |
-| 卡台开卡响应 Schema | C1 获取真实样本后冻结 |
-| 相同幂等键是否返回原卡信息 | C1 验证 |
-| 卡片状态枚举和可用时点 | 真实开卡后读取详情和列表 |
+| 卡台开卡成功外壳不含卡 ID | 正式 Worker 已在写入前持久化卡片基线；响应缺 ID 或进程中断后只做列表差异恢复，禁止自动重开 |
+| 相同幂等键是否返回原卡信息 | 仍需单独验证，结果未知时不得更换幂等键重开 |
+| 卡片状态枚举和可用时点 | 已观测 `processing → failed` 与 `processing → active`；只有 `active + 余额达标 + 完整凭据` 可继续 |
 | 交易类型、状态和退款关联 | 真实消费及退款样本验证 |
 | 实际 Plus 所需卡内金额 | C3 计算，不在代码中先写死 |
 | 直充创建响应丢失后的恢复 | 上游增加幂等/业务单号查询；此前进入人工队列 |
+
+## 6. 2026-08-18 全文合同复核补充
+
+本次复核完整阅读了两份上游资料：
+
+- `对接api.md`（GPT-KCCatk / HNSKJ 的完整账户、卡片和 `/pay` API）
+- `/Users/lemon/Downloads/开放API对接文档.md`（ZZSHU 三方正价开通 API）
+
+两份资料不是同一套接口，不能混用认证方式或状态含义：
+
+1. HNSKJ 的卡台 Open API 使用 `X-API-Key`，当前项目只使用其账户、卡段、开卡、卡详情、余额和交易接口；其完整 `/pay` API 使用另一套 Bearer/API Key + Scope 合同，不是当前项目的直充 Provider。
+2. ZZSHU 三方 API 使用非空 `X-API-Key` 作为订单归属标识，创建路径为 `/third-party/orders/direct`，且没有调用方幂等键。当前项目继续使用 HNSKJ 提供卡片、ZZSHU 执行直充的双 Provider 架构。
+3. ZZSHU 请求没有金额字段。`planType=plus` 决定套餐和上游实际扣款，创建响应中的 `payment_amount` / `payment_currency` 当前可能为空；实际金额只能以最终订单/交易记录为准。HNSKJ 的 `openCardAmount` 仅是卡片预存金额，不是直充扣款金额。
+4. ZZSHU 状态接口支持单个或数组 `cardKey`；v1 每个本地订单只查询一个 `cardKey`，因此使用单值是有意的范围限制，不是遗漏批量协议。
+5. ZZSHU 文档允许状态响应携带最新 Session、完整卡号和 `payment_result`；适配器已在业务层只保留必要字段并在审计层脱敏，不能把原始响应直接写日志或返回前端。
+6. `failed` 首次出现后延迟 2–3 秒复查、`is_subscription_cancelled=0` 不否定充值成功、`50001`/超时不得自动重建等规则已纳入 Worker；创建成功只视为入队，必须等最终 `success`。直充创建现由指定订单、短时、一次性 Permit 控制；Permit 消耗后任何失败都禁止自动再次创建。
+
+金额设计已拆分：订单分别保存 `open_card_amount` 和 `minimum_required_card_balance`，后者在接单时从运营配置生成不可变快照。直充成功状态返回的 `payment_amount` / `payment_currency` 另存为实际支付结果；上游为空时保持为空，不用余额差额猜测。默认最低余额配置保持空值并使接单失败关闭，待真实成功订单确认后再填写。

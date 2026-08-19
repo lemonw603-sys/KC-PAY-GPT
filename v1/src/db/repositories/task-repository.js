@@ -17,6 +17,16 @@ export async function claimNextTask(pool, {
        FROM tasks
        WHERE available_at <= CURRENT_TIMESTAMP(3)
          AND (
+           task_type <> 'SUBMIT_RECHARGE'
+           OR (
+             JSON_UNQUOTE(JSON_EXTRACT(payload_json, '$.rechargePermit.status')) = 'ARMED'
+             AND STR_TO_DATE(
+               JSON_UNQUOTE(JSON_EXTRACT(payload_json, '$.rechargePermit.expiresAt')),
+               '%Y-%m-%dT%H:%i:%s.%fZ'
+             ) > UTC_TIMESTAMP(3)
+           )
+         )
+         AND (
            status = ?
            OR (status = ? AND leased_until < CURRENT_TIMESTAMP(3))
          )

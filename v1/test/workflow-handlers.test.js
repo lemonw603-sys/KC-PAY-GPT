@@ -13,6 +13,7 @@ function setup({ status = OrderStatus.CARD_READY, rechargeStatuses = [] } = {}) 
       public_no: 'ORD-1',
       card_type_id: 7,
       open_card_amount: 25,
+      minimum_required_card_balance: 16,
       card_purchase_idempotency_key: 'purchase-order-0001',
       recharge_card_key: 'DIRECT-fixture'
     },
@@ -22,17 +23,31 @@ function setup({ status = OrderStatus.CARD_READY, rechargeStatuses = [] } = {}) 
   const workflow = {
     loadOrderContext: async () => context,
     transition: async (...args) => calls.push(['transition', ...args]),
+    beginCardPurchase: async (...args) => calls.push(['begin-card', ...args]),
+    markCardPurchaseAccepted: async (...args) => calls.push(['purchase-accepted', ...args]),
+    reviewCardPurchase: async (...args) => calls.push(['review-purchase', ...args]),
     commitPurchasedCard: async (...args) => calls.push(['card', ...args]),
     commitCardReady: async (...args) => calls.push(['ready', ...args]),
     failCardProvisioning: async (...args) => calls.push(['failed-card', ...args]),
     reviewCardProvisioning: async (...args) => calls.push(['review-card', ...args]),
     commitRechargeSubmission: async (...args) => calls.push(['submission', ...args]),
     commitRechargeSuccess: async (...args) => calls.push(['success', ...args]),
-    commitCancellationStatus: async (...args) => calls.push(['cancellation', ...args])
+    commitCancellationStatus: async (...args) => calls.push(['cancellation', ...args]),
+    commitCardTransactions: async (...args) => calls.push(['transactions', ...args]),
+    recordPrepaymentReady: async (...args) => calls.push(['prepayment', ...args]),
+    consumeRechargePermit: async (...args) => {
+      calls.push(['permit', ...args]);
+      return { allowed: true };
+    }
   };
   const cardProvider = {
+    cardTypes: async () => ({ data: { purchaseEnabled: true, cardTypes: [{ id: 7, cardType: 'Z-TEST' }] } }),
+    cards: async ({ page = 1, pageSize = 50 } = {}) => ({ data: { cards: [], total: 0, page, pageSize } }),
     purchaseCard: async () => ({ data: { card: { id: 'card-1' } } }),
-    card: async () => ({ data: { number: '4242424242424242', cvv: '123' } })
+    card: async () => ({ data: { number: '4242424242424242', cvv: '123' } }),
+    transactions: async (_cardId, { page = 1, pageSize = 50 } = {}) => ({
+      data: { transactions: [], total: 0, page, pageSize }
+    })
   };
   const rechargeProvider = {
     createDirectOrder: async () => ({ orderNo: '12', cardKey: 'DIRECT-fixture', status: 'processing' }),
@@ -47,13 +62,17 @@ function setup({ status = OrderStatus.CARD_READY, rechargeStatuses = [] } = {}) 
     cardProvider,
     rechargeProvider,
     recordCall,
-    mapPurchasedCard: (value) => ({ providerCardId: value.data.card.id, cardTypeId: 7, fundedAmount: '25.000000' }),
+    mapPurchasedCard: (value) => value.data.card.id,
     mapCardProvisioning: (value) => value.data.status === 'failed'
       ? { state: 'failed', status: 'failed', failureReason: 'provider failed' }
       : value.data.status === 'pending'
         ? { state: 'pending', status: 'active', currentBalance: 0 }
         : { state: 'ready', status: 'active', currentBalance: 25, currency: 'USD', last4: '4242' },
     mapCardCredentials: () => ({ cardNumber: '4242424242424242', expMonth: 12, expYear: 2032, cvv: '123' }),
+    buildDirectOrderRequest: (input) => ({
+      method: 'POST', path: '/third-party/orders/direct',
+      body: { ...input, planType: input.planType || 'plus' }
+    }),
     wait: async () => {},
     pollDelayMs: 1,
     failureConfirmDelayMs: 1
@@ -64,13 +83,27 @@ function setup({ status = OrderStatus.CARD_READY, rechargeStatuses = [] } = {}) 
 test('submits one direct recharge and commits external identifiers', async () => {
   const { handlers, calls } = setup();
   await handlers.SUBMIT_RECHARGE({ id: 1, order_id: 'order-1', attempts: 1 });
-  assert.equal(calls[0][0], 'transition');
-  assert.equal(calls[0][2], OrderStatus.SUBMITTING);
-  assert.deepEqual(calls[1], [
+  assert.equal(calls[0][0], 'permit');
+  assert.equal(calls[1][0], 'transition');
+  assert.equal(calls[1][2], OrderStatus.SUBMITTING);
+  assert.deepEqual(calls[2], [
     'submission',
     'order-1',
     { orderNo: '12', cardKey: 'DIRECT-fixture', status: 'processing' }
   ]);
+});
+
+test('refuses a recharge without consuming a one-order permit and never calls the provider', async () => {
+  const state = setup();
+  state.workflow.consumeRechargePermit = async () => ({ allowed: false, reason: 'PERMIT_NOT_ARMED' });
+  let submissions = 0;
+  state.rechargeProvider.createDirectOrder = async () => { submissions += 1; };
+  await assert.rejects(
+    state.handlers.SUBMIT_RECHARGE({ id: 7, order_id: 'order-1', attempts: 1 }),
+    (error) => error.code === 'RECHARGE_PERMIT_REQUIRED'
+  );
+  assert.equal(submissions, 0);
+  assert.equal(state.calls.some(([name]) => name === 'transition'), false);
 });
 
 test('submits with encrypted cached card credentials without rereading the provider', async () => {
@@ -87,11 +120,62 @@ test('submits with encrypted cached card credentials without rereading the provi
 test('purchases a card with the persisted idempotency key and commits one binding', async () => {
   const state = setup({ status: OrderStatus.CREATED });
   await state.handlers.PURCHASE_CARD({ id: 1, order_id: 'order-1', attempts: 1 });
-  assert.equal(state.calls[0][2], OrderStatus.CARD_PURCHASING);
+  assert.equal(state.calls[0][0], 'begin-card');
   assert.deepEqual(state.calls[1], [
     'card',
     'order-1',
-    { providerCardId: 'card-1', cardTypeId: 7, fundedAmount: '25.000000' }
+    { providerCardId: 'card-1', cardTypeId: 7, fundedAmount: 25 }
+  ]);
+});
+
+test('recovers a missing purchase response ID from the persisted before-list without repurchasing', async () => {
+  const state = setup({ status: OrderStatus.CARD_PURCHASING });
+  let purchaseCalls = 0;
+  state.cardProvider.purchaseCard = async () => { purchaseCalls += 1; };
+  state.cardProvider.cards = async ({ page = 1, pageSize = 50 } = {}) => ({
+    data: {
+      cards: [{ id: 'old-card', cardType: 'Z-TEST' }, { id: 'new-card', cardType: 'Z-TEST' }],
+      total: 2, page, pageSize
+    }
+  });
+  await state.handlers.PURCHASE_CARD({
+    id: 1,
+    order_id: 'order-1',
+    attempts: 2,
+    max_attempts: 240,
+    payload_json: {
+      phase: 'PURCHASE_ACCEPTED',
+      cardTypeId: '7',
+      cardTypeName: 'Z-TEST',
+      fundedAmount: '25',
+      existingCardIds: ['old-card']
+    }
+  });
+  assert.equal(purchaseCalls, 0);
+  assert.deepEqual(state.calls.at(-1), [
+    'card', 'order-1',
+    { providerCardId: 'new-card', cardTypeId: '7', fundedAmount: '25' }
+  ]);
+});
+
+test('prepares and records a redacted recharge request without submitting it', async () => {
+  const state = setup({ status: OrderStatus.CARD_READY });
+  state.context.order.plan_type = 'plus';
+  state.context.card.credentials = {
+    cardNumber: '4242424242424242', expMonth: 12, expYear: 2032, cvv: '123'
+  };
+  let submissions = 0;
+  state.rechargeProvider.createDirectOrder = async () => { submissions += 1; };
+  await state.handlers.PREPARE_RECHARGE({ id: 9, order_id: 'order-1', attempts: 1 });
+  assert.equal(submissions, 0);
+  assert.deepEqual(state.calls.at(-1), [
+    'prepayment', 'order-1', {
+      requestMethod: 'POST',
+      requestPath: '/third-party/orders/direct',
+      planType: 'plus',
+      cardLast4: '4242',
+      submitted: false
+    }
   ]);
 });
 
@@ -132,7 +216,7 @@ test('maps an ambiguous create failure to SUBMIT_UNKNOWN', async () => {
   assert.equal(state.calls.at(-1)[2], OrderStatus.SUBMIT_UNKNOWN);
 });
 
-test('does not change order state for a safe capacity retry', async () => {
+test('does not automatically retry even a definite pre-create rejection after consuming a permit', async () => {
   const state = setup();
   state.rechargeProvider.createDirectOrder = async () => {
     throw new ProviderError('capacity', { provider: 'zzshu', uncertain: false, retryable: true });
@@ -140,8 +224,7 @@ test('does not change order state for a safe capacity retry', async () => {
   await assert.rejects(
     state.handlers.SUBMIT_RECHARGE({ id: 1, order_id: 'order-1', attempts: 1 })
   );
-  assert.equal(state.calls.length, 1);
-  assert.equal(state.calls[0][2], OrderStatus.SUBMITTING);
+  assert.equal(state.calls.at(-1)[2], OrderStatus.RECHARGE_FAILED);
 });
 
 test('confirms a failed status twice before marking the order failed', async () => {
@@ -160,11 +243,17 @@ test('confirms a failed status twice before marking the order failed', async () 
 test('marks success immediately and never guesses unknown states', async () => {
   const success = setup({
     status: OrderStatus.RECHARGE_PROCESSING,
-    rechargeStatuses: [{ status: 'success', isSubscriptionCancelled: 0 }]
+    rechargeStatuses: [{
+      status: 'success',
+      isSubscriptionCancelled: 0,
+      paymentAmount: '1150.00',
+      paymentCurrency: 'PHP'
+    }]
   });
   await success.handlers.POLL_RECHARGE({ id: 2, order_id: 'order-1', attempts: 2 });
   assert.equal(success.calls.at(-1)[0], 'success');
   assert.equal(success.calls.at(-1)[2].isSubscriptionCancelled, 0);
+  assert.equal(success.calls.at(-1)[2].paymentAmount, '1150.00');
 
   const unknown = setup({
     status: OrderStatus.RECHARGE_PROCESSING,
@@ -216,4 +305,103 @@ test('uses a local audit key instead of persisting the recharge card key', async
   const queryCall = state.providerCalls.find((call) => call.operation === 'query_status');
   assert.equal(queryCall.requestKey, 'recharge-status:order-1');
   assert.equal(queryCall.requestKey.includes(state.context.order.recharge_card_key), false);
+});
+
+test('syncs card transactions without treating a card recharge as a refund', async () => {
+  const state = setup({ status: OrderStatus.RECHARGE_SUCCESS });
+  state.cardProvider.transactions = async (_cardId, { page = 1, pageSize = 50 } = {}) => ({ data: { cardNo: '4242424242424242', total: 1, page, pageSize, transactions: [{
+    id: 'txn-recharge-1', type: 'CARD_RECHARGE', status: 'success', amount: 16, currency: 'USD',
+    platformCardId: 'provider-card-secret', merchantName: 'provider-controlled-value'
+  }] } });
+  await state.handlers.SYNC_CARD_TRANSACTIONS({ id: 4, order_id: 'order-1', attempts: 1 });
+  const stored = state.calls.at(-1);
+  assert.equal(stored[0], 'transactions');
+  assert.equal(stored[1], 'order-1');
+  assert.deepEqual(stored[2].map(({ rawHash, ...transaction }) => transaction), [{
+    id: 'txn-recharge-1', type: 'CARD_RECHARGE', status: 'success', amount: '16', currency: 'USD',
+    fee: null, tradeTime: null, relatedTxnId: null, settlementStatus: null,
+    originalAmount: null, originalCurrency: null,
+    merchantName: 'provider-controlled-value', merchantCountry: null, merchantMcc: null,
+    classification: 'NOT_REFUND'
+  }]);
+  assert.match(stored[2][0].rawHash, /^[a-f0-9]{64}$/);
+  assert.equal(state.calls.some(([name]) => name === 'refund'), false);
+  const providerCall = state.providerCalls.find((call) => call.operation === 'card_transactions');
+  assert.equal(providerCall.requestKey, 'card-transactions:order-1:task:4:page:1');
+  const summary = providerCall.summarize(await state.cardProvider.transactions('card-1', { page: 1, pageSize: 50 }));
+  assert.deepEqual(summary, { page: 1, count: 1, total: 1, types: ['CARD_RECHARGE'], statuses: ['success'] });
+  assert.equal(JSON.stringify(summary).includes('4242424242424242'), false);
+  assert.equal(JSON.stringify(summary).includes('provider-controlled-value'), false);
+});
+
+test('syncs every transaction page and preserves matching evidence fields', async () => {
+  const state = setup({ status: OrderStatus.RECHARGE_SUCCESS });
+  const requestedPages = [];
+  state.cardProvider.transactions = async (_cardId, query) => {
+    requestedPages.push(query.page);
+    const items = query.page === 1 ? [{
+      id: 'purchase-1', type: 'PURCHASE', status: 'success', amount: -15.97, currency: 'USD',
+      fee: 0, tradeTime: '2026-08-18 21:02:08', relatedTxnId: '', settlementStatus: 'settled',
+      originalAmount: 982.14, originalCurrency: 'PHP'
+    }] : [{
+      id: 'refund-candidate-1', type: 'REFUND', status: 'success', amount: 15.97, currency: 'USD',
+      relatedTxnId: 'purchase-1'
+    }];
+    return { data: { transactions: items, total: 2, page: query.page, pageSize: query.pageSize } };
+  };
+  state.cardProvider.card = async () => ({ data: { status: 'active', cardBalance: '15.99', currency: 'USD' } });
+
+  await state.handlers.SYNC_CARD_TRANSACTIONS({ id: 9, order_id: 'order-1', attempts: 1 });
+
+  assert.deepEqual(requestedPages, [1, 2]);
+  const stored = state.calls.at(-1);
+  assert.equal(stored[0], 'transactions');
+  assert.equal(stored[2].length, 2);
+  assert.equal(stored[2][0].tradeTime, '2026-08-18 21:02:08');
+  assert.equal(stored[2][0].originalAmount, '982.14');
+  assert.equal(stored[2][1].relatedTxnId, 'purchase-1');
+  assert.equal(stored[2][1].classification, 'REFUND_CANDIDATE');
+  assert.deepEqual(stored[3], { currentBalance: '15.99', currency: 'USD' });
+});
+
+test('fails closed when transaction pagination metadata is inconsistent', async () => {
+  const state = setup();
+  state.cardProvider.transactions = async () => ({
+    data: { transactions: [], total: 1, page: 99, pageSize: 50 }
+  });
+  await assert.rejects(
+    state.handlers.SYNC_CARD_TRANSACTIONS({ id: 10, order_id: 'order-1', attempts: 1 }),
+    (error) => error.code === 'TRANSACTION_PAGINATION_INVALID'
+  );
+  assert.equal(state.calls.some(([name]) => name === 'transactions'), false);
+});
+
+test('accepts a complete unpaginated transaction response but rejects an incomplete one', async () => {
+  const complete = setup();
+  complete.cardProvider.transactions = async () => ({
+    data: { transactions: [{ id: 'tx-1', type: 'PURCHASE', status: 'success', amount: -1, currency: 'USD' }], total: 1 }
+  });
+  await complete.handlers.SYNC_CARD_TRANSACTIONS({ id: 11, order_id: 'order-1', attempts: 1 });
+  assert.equal(complete.calls.at(-1)[2].length, 1);
+
+  const incomplete = setup();
+  incomplete.cardProvider.transactions = complete.cardProvider.transactions;
+  incomplete.cardProvider.transactions = async () => ({
+    data: { transactions: [{ id: 'tx-1', type: 'PURCHASE', status: 'success', amount: -1, currency: 'USD' }], total: 2 }
+  });
+  await assert.rejects(
+    incomplete.handlers.SYNC_CARD_TRANSACTIONS({ id: 12, order_id: 'order-1', attempts: 1 }),
+    (error) => error.code === 'TRANSACTION_PAGINATION_UNSUPPORTED'
+  );
+});
+
+test('rejects transaction sync when the order has no bound card', async () => {
+  const state = setup();
+  state.context.card = null;
+  await assert.rejects(
+    state.handlers.SYNC_CARD_TRANSACTIONS({ id: 4, order_id: 'order-1', attempts: 1 }),
+    (error) => error.code === 'CARD_NOT_BOUND'
+  );
+  assert.equal(state.providerCalls.length, 0);
+  assert.equal(state.calls.length, 0);
 });

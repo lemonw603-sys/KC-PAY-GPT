@@ -1,4 +1,5 @@
 import { PublicApiError } from '../domain/public-api-error.js';
+import crypto from 'node:crypto';
 
 const ORDER_STATUSES = new Set([
   'CREATED',
@@ -45,8 +46,49 @@ function parseListQuery(input = {}) {
 }
 
 export function createAdminReadService({ pool }) {
+  async function requestCardTransactionSync(publicNo) {
+    if (typeof publicNo !== 'string' || publicNo.length < 8 || publicNo.length > 64) {
+      throw new PublicApiError('Invalid public number', { code: 'INVALID_ADMIN_QUERY', status: 400 });
+    }
+    const connection = await pool.getConnection();
+    try {
+      await connection.beginTransaction();
+      const [settings] = await connection.query(
+        `SELECT setting_value FROM app_settings WHERE setting_key = 'sync_card_transactions' LIMIT 1`
+      );
+      if (settings.length !== 1 || settings[0].setting_value !== 'true') {
+        throw new PublicApiError('Transaction sync is disabled', { code: 'ADMIN_SYNC_DISABLED', status: 409 });
+      }
+      const [rows] = await connection.query(
+        `SELECT o.id, c.id AS card_id FROM orders o LEFT JOIN cards c ON c.order_id = o.id
+         WHERE BINARY o.public_no = ? LIMIT 1 FOR UPDATE`, [publicNo]
+      );
+      if (rows.length !== 1) throw new PublicApiError('Order not found', { code: 'ADMIN_ORDER_NOT_FOUND', status: 404 });
+      if (!rows[0].card_id) throw new PublicApiError('Order has no bound card', { code: 'ADMIN_CARD_NOT_BOUND', status: 409 });
+      const [active] = await connection.query(
+        `SELECT status FROM tasks WHERE order_id = ? AND task_type = 'SYNC_CARD_TRANSACTIONS'
+         AND status IN ('PENDING', 'RUNNING') ORDER BY id DESC LIMIT 1`, [rows[0].id]
+      );
+      if (active.length) {
+        await connection.commit();
+        return { queued: false, taskStatus: active[0].status };
+      }
+      await connection.query(
+        `INSERT INTO tasks (order_id, task_type, status, dedupe_key, max_attempts)
+         VALUES (?, 'SYNC_CARD_TRANSACTIONS', 'PENDING', ?, 5)`,
+        [rows[0].id, `manual-sync:${rows[0].id}:${crypto.randomUUID()}`]
+      );
+      await connection.commit();
+      return { queued: true, taskStatus: 'PENDING' };
+    } catch (error) {
+      await connection.rollback();
+      throw error;
+    } finally {
+      connection.release();
+    }
+  }
   async function getOverview() {
-    const [[orderCounts], [statusRows], [cdkRows], [settingsRows], [refundRows]] = await Promise.all([
+    const [[orderCounts], [statusRows], [cdkRows], [settingsRows], [refundRows], [alertRows]] = await Promise.all([
       pool.query(`SELECT
         COUNT(*) AS total,
         SUM(o.created_at >= TIMESTAMP(DATE(CONVERT_TZ(UTC_TIMESTAMP(), '+00:00', '+08:00'))) - INTERVAL 8 HOUR) AS today,
@@ -65,6 +107,7 @@ export function createAdminReadService({ pool }) {
         ORDER BY setting_key`),
       pool.query(`SELECT status, COUNT(*) AS count FROM refund_cases
         WHERE status <> 'WITHDRAWN' GROUP BY status ORDER BY status`)
+      ,pool.query(`SELECT COUNT(*) AS count FROM operator_alerts WHERE status = 'OPEN'`)
     ]);
     const count = (value) => Number(value || 0);
     const total = count(orderCounts[0]?.total);
@@ -81,12 +124,30 @@ export function createAdminReadService({ pool }) {
       orderStatuses: statusRows.map((row) => ({ status: row.status, count: count(row.count) })),
       cdkStatuses: cdkRows.map((row) => ({ status: row.status, count: count(row.count) })),
       refundStatuses: refundRows.map((row) => ({ status: row.status, count: count(row.count) })),
+      openAlertCount: count(alertRows[0]?.count),
       settings: settingsRows.map((row) => ({
         key: row.setting_key,
         value: row.setting_value,
         updatedAt: iso(row.updated_at)
       }))
     };
+  }
+
+  async function listAlerts(input = {}) {
+    const limit = Math.min(100, Math.max(1, Number(input.limit || 50)));
+    const [rows] = await pool.query(
+      `SELECT a.id, a.alert_type, a.severity, a.title, a.message, a.status,
+              a.created_at, a.acknowledged_at, o.public_no, o.customer_email,
+              o.recharge_order_no
+       FROM operator_alerts a LEFT JOIN orders o ON o.id = a.order_id
+       WHERE a.status = 'OPEN' ORDER BY a.created_at DESC LIMIT ?`, [limit]
+    );
+    return { alerts: rows.map((row) => ({
+      id: row.id, type: row.alert_type, severity: row.severity, title: row.title,
+      message: row.message, status: row.status, publicNo: row.public_no,
+      customerEmail: row.customer_email, rechargeOrderNo: row.recharge_order_no,
+      createdAt: iso(row.created_at), acknowledgedAt: iso(row.acknowledged_at)
+    })) };
   }
 
   async function listOrders(input) {
@@ -112,6 +173,7 @@ export function createAdminReadService({ pool }) {
       pool.query(`SELECT COUNT(*) AS total FROM orders o ${where}`, values),
       pool.query(`SELECT o.public_no, o.status, o.customer_email, o.chatgpt_account_id,
           o.recharge_order_no, o.failure_code, o.created_at, o.updated_at, o.finished_at,
+          o.actual_payment_amount, o.actual_payment_currency,
           o.subscription_cancelled, o.cancellation_checked_at, o.cancellation_review_required,
           c.last4, c.current_balance, c.currency, c.refund_status
         FROM orders o LEFT JOIN cards c ON c.order_id = o.id
@@ -129,6 +191,8 @@ export function createAdminReadService({ pool }) {
         customerEmail: row.customer_email,
         chatgptAccountId: row.chatgpt_account_id,
         rechargeOrderNo: row.recharge_order_no,
+        actualPaymentAmount: decimal(row.actual_payment_amount),
+        actualPaymentCurrency: row.actual_payment_currency,
         failureCode: row.failure_code,
         subscriptionCancelled: row.subscription_cancelled == null ? null : Number(row.subscription_cancelled),
         cancellationCheckedAt: iso(row.cancellation_checked_at),
@@ -150,9 +214,10 @@ export function createAdminReadService({ pool }) {
     if (typeof publicNo !== 'string' || publicNo.length < 8 || publicNo.length > 64) {
       throw new PublicApiError('Invalid public number', { code: 'INVALID_ADMIN_QUERY', status: 400 });
     }
-    const [[orderRows], [eventRows], [taskRows], [callRows], [refundRows]] = await Promise.all([
+    const [[orderRows], [eventRows], [taskRows], [callRows], [refundRows], [transactionRows]] = await Promise.all([
       pool.query(`SELECT o.id, o.public_no, o.status, o.plan_type, o.customer_email,
           o.chatgpt_account_id, o.card_type_id, o.open_card_amount,
+          o.minimum_required_card_balance, o.actual_payment_amount, o.actual_payment_currency,
           o.recharge_order_no, o.failure_code, o.failure_reason,
           o.subscription_cancelled, o.cancellation_checked_at, o.cancellation_review_required,
           o.created_at, o.updated_at, o.finished_at,
@@ -166,7 +231,10 @@ export function createAdminReadService({ pool }) {
         WHERE BINARY o.public_no = ? ORDER BY oe.id DESC LIMIT 100`, [publicNo]),
       pool.query(`SELECT t.task_type, t.status, t.attempts, t.max_attempts,
           t.available_at, t.leased_until, t.last_error_code, t.last_error_message,
-          t.created_at, t.updated_at, t.completed_at FROM tasks t
+          t.created_at, t.updated_at, t.completed_at,
+          JSON_UNQUOTE(JSON_EXTRACT(t.payload_json, '$.rechargePermit.status')) AS permit_status,
+          JSON_UNQUOTE(JSON_EXTRACT(t.payload_json, '$.rechargePermit.expiresAt')) AS permit_expires_at
+        FROM tasks t
         INNER JOIN orders o ON o.id = t.order_id
         WHERE BINARY o.public_no = ? ORDER BY t.id DESC LIMIT 100`, [publicNo]),
       pool.query(`SELECT pc.provider, pc.operation, pc.attempt_no, pc.http_status,
@@ -176,10 +244,21 @@ export function createAdminReadService({ pool }) {
       pool.query(`SELECT r.status, r.expected_amount, r.confirmed_amount, r.currency,
           r.detected_at, r.confirmed_at, r.withdrawn_at, r.operator_note, r.updated_at
         FROM refund_cases r INNER JOIN orders o ON o.id = r.order_id
-        WHERE BINARY o.public_no = ? LIMIT 1`, [publicNo])
+        WHERE BINARY o.public_no = ? LIMIT 1`, [publicNo]),
+      pool.query(`SELECT ct.provider_transaction_id, ct.transaction_type, ct.status,
+          ct.amount, ct.currency, ct.fee, ct.trade_time_raw, ct.related_txn_id,
+          ct.settlement_status, ct.original_amount, ct.original_currency,
+          ct.merchant_name, ct.merchant_country, ct.merchant_mcc,
+          ct.first_seen_at, ct.last_seen_at
+        FROM card_transactions ct
+        INNER JOIN cards c ON c.id = ct.card_id
+        INNER JOIN orders o ON o.id = c.order_id
+        WHERE BINARY o.public_no = ? ORDER BY ct.id DESC LIMIT 200`, [publicNo])
     ]);
     const row = orderRows[0];
     if (!row) throw new PublicApiError('Order not found', { code: 'ADMIN_ORDER_NOT_FOUND', status: 404 });
+    const prepareTask = taskRows.find((task) => task.task_type === 'PREPARE_RECHARGE');
+    const submitTask = taskRows.find((task) => task.task_type === 'SUBMIT_RECHARGE');
     return {
       order: {
         publicNo: row.public_no,
@@ -189,6 +268,9 @@ export function createAdminReadService({ pool }) {
         chatgptAccountId: row.chatgpt_account_id,
         cardTypeId: row.card_type_id,
         openCardAmount: decimal(row.open_card_amount),
+        minimumRequiredCardBalance: decimal(row.minimum_required_card_balance),
+        actualPaymentAmount: decimal(row.actual_payment_amount),
+        actualPaymentCurrency: row.actual_payment_currency,
         rechargeOrderNo: row.recharge_order_no,
         failureCode: row.failure_code,
         failureReason: row.failure_reason,
@@ -209,6 +291,14 @@ export function createAdminReadService({ pool }) {
         refundStatus: row.refund_status,
         lastSyncedAt: iso(row.last_synced_at)
       } : null,
+      paymentGate: {
+        prepaymentReady: prepareTask?.status === 'COMPLETED',
+        submissionLocked: submitTask?.permit_status !== 'ARMED',
+        permitStatus: submitTask?.permit_status || 'LOCKED',
+        permitExpiresAt: submitTask?.permit_expires_at || null,
+        submissionTaskStatus: submitTask?.status || null,
+        submissionAttempts: submitTask ? Number(submitTask.attempts) : 0
+      },
       events: eventRows.map((event) => ({
         fromStatus: event.from_status,
         toStatus: event.to_status,
@@ -241,6 +331,24 @@ export function createAdminReadService({ pool }) {
         finishedAt: iso(call.finished_at),
         durationMs: call.duration_ms == null ? null : Number(call.duration_ms)
       })),
+      transactions: transactionRows.map((transaction) => ({
+        providerTransactionId: transaction.provider_transaction_id,
+        type: transaction.transaction_type,
+        status: transaction.status,
+        amount: decimal(transaction.amount),
+        currency: transaction.currency,
+        fee: decimal(transaction.fee),
+        tradeTimeRaw: transaction.trade_time_raw,
+        relatedTransactionId: transaction.related_txn_id,
+        settlementStatus: transaction.settlement_status,
+        originalAmount: decimal(transaction.original_amount),
+        originalCurrency: transaction.original_currency,
+        merchantName: transaction.merchant_name,
+        merchantCountry: transaction.merchant_country,
+        merchantMcc: transaction.merchant_mcc,
+        firstSeenAt: iso(transaction.first_seen_at),
+        lastSeenAt: iso(transaction.last_seen_at)
+      })),
       refund: refundRows[0] ? {
         status: refundRows[0].status,
         expectedAmount: decimal(refundRows[0].expected_amount),
@@ -255,5 +363,5 @@ export function createAdminReadService({ pool }) {
     };
   }
 
-  return { getOrder, getOverview, listOrders };
+  return { getOrder, getOverview, listOrders, listAlerts, requestCardTransactionSync };
 }

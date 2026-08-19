@@ -4,14 +4,19 @@ import { runOneTask } from './task-runner.js';
 
 export function allowedTaskTypesFor(settings, {
   providerReadsEnabled = false,
-  providerWritesEnabled = false
+  providerWritesEnabled = false,
+  providerCardWritesEnabled = false,
+  providerRechargeWritesEnabled = false
 } = {}) {
   const types = [];
-  if (settings.dispatchNewRecharges && providerWritesEnabled) {
-    types.push(TaskType.PURCHASE_CARD, TaskType.SUBMIT_RECHARGE);
-  }
+  if (settings.dispatchNewRecharges && (providerWritesEnabled || providerCardWritesEnabled)) types.push(TaskType.PURCHASE_CARD);
+  if (settings.dispatchNewRecharges) types.push(TaskType.PREPARE_RECHARGE);
+  if (settings.dispatchNewRecharges && (providerWritesEnabled || providerRechargeWritesEnabled)) types.push(TaskType.SUBMIT_RECHARGE);
   if (settings.pollExistingOrders && providerReadsEnabled) {
     types.push(TaskType.VERIFY_CARD, TaskType.POLL_RECHARGE, TaskType.RECHECK_CANCELLATION);
+  }
+  if (settings.syncCardTransactions && providerReadsEnabled) {
+    types.push(TaskType.SYNC_CARD_TRANSACTIONS);
   }
   return types;
 }
@@ -23,13 +28,17 @@ export async function runWorkerIteration({
   leaseSeconds = 60,
   providerReadsEnabled = false,
   providerWritesEnabled = false,
+  providerCardWritesEnabled = false,
+  providerRechargeWritesEnabled = false,
   settingsRepository = { loadRuntimeSettings },
   taskRunner = runOneTask
 }) {
   const settings = await settingsRepository.loadRuntimeSettings(pool);
   const allowedTaskTypes = allowedTaskTypesFor(settings, {
     providerReadsEnabled,
-    providerWritesEnabled
+    providerWritesEnabled,
+    providerCardWritesEnabled,
+    providerRechargeWritesEnabled
   });
   return taskRunner({
     pool,

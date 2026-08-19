@@ -18,4 +18,20 @@
 6. DNS 生效后再导入 `pojia.caddy`，先校验后 reload，不能覆盖现有 Caddyfile。
 7. 运行账号权限、回环监听、恢复测试和公网不可达验证全部留存证据。
 
+日常运维统一使用 `pojia-ops.sh`，安装到服务器后可执行：
+
+- `pojia-ops status`：查看 Web、worker、MySQL、备份定时器和最新备份。
+- `pojia-ops backup`：立即创建并校验一份加密备份。
+- `pojia-ops verify`：校验最新备份的哈希、解密和压缩完整性。
+- `pojia-ops restore-test`：在无网络的临时 MySQL 容器中做真实恢复演练，不接触生产库。
+- `pojia-ops check`：一次完成状态检查和最新备份校验。
+
 `bootstrap-host.sh` 不删除或改名任何现有容器，不修改 firewalld 和现有 Caddyfile。
+
+真实直充写入统一使用 `pojia-recharge-gate.sh`，安装为 `/usr/local/sbin/pojia-recharge-gate`：
+
+- `status [订单查询码]`：显示三个 Provider 写开关、Worker 和指定订单 Permit 状态。
+- `arm <订单查询码> [分钟]`：先签发唯一、短时、一次性 Permit，再开启 ZZSHU 写入并重启 Worker。
+- `close [订单查询码]`：先关闭 ZZSHU 写入并重启 Worker，再撤销未消费的 Permit。
+
+不得直接编辑环境文件绕过 Permit。Permit 消费后任何失败都进入终态或人工核对，不自动再次创建直充订单。

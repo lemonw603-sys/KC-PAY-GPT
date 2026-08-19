@@ -4,6 +4,7 @@ import {
   generateCdks,
   normalizeBatchNo,
   normalizeImportedCdks,
+  normalizePlanType,
   validateBatchCount
 } from '../src/services/cdk-service.js';
 
@@ -35,4 +36,10 @@ test('validates count and creates traceable bounded batch identifiers', () => {
     now: () => new Date('2026-08-17T10:20:30.123Z'),
     randomSuffix: () => 'A1B2C3'
   }), 'B-20260817102030123-A1B2C3');
+});
+
+test('keeps the first release explicitly Plus-only', () => {
+  assert.equal(normalizePlanType(), 'plus');
+  assert.equal(normalizePlanType('PLUS'), 'plus');
+  assert.throws(() => normalizePlanType('pro_5x'), (error) => error.code === 'INVALID_PLAN_TYPE');
 });

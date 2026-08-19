@@ -3,7 +3,8 @@ import crypto from 'node:crypto';
 const CDK_PREFIX = 'PJ-';
 const CDK_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
 const CDK_RANDOM_LENGTH = 20;
-const MAX_BATCH_SIZE = 10_000;
+const MAX_BATCH_SIZE = 1_000;
+const PLAN_TYPES = new Set(['plus']);
 const CDK_PATTERN = /^[A-Za-z0-9_-]{8,128}$/;
 
 export class CdkBatchError extends Error {
@@ -12,6 +13,14 @@ export class CdkBatchError extends Error {
     this.name = 'CdkBatchError';
     this.code = code;
   }
+}
+
+export function normalizePlanType(value = 'plus') {
+  const planType = String(value || '').trim().toLowerCase();
+  if (!PLAN_TYPES.has(planType)) {
+    throw new CdkBatchError('unsupported plan type', 'INVALID_PLAN_TYPE');
+  }
+  return planType;
 }
 
 export function validateBatchCount(value) {
@@ -90,9 +99,11 @@ function hashCdk(code) {
 
 export async function storeCdkBatch(pool, codes, {
   batchNo,
+  planType = 'plus',
   requireAllInserted = false
 }) {
   const normalizedBatchNo = normalizeBatchNo(batchNo);
+  const normalizedPlanType = normalizePlanType(planType);
   const normalized = normalizeImportedCdks(codes.join('\n'));
   const connection = await pool.getConnection();
   try {
@@ -103,9 +114,9 @@ export async function storeCdkBatch(pool, codes, {
       normalizedBatchNo
     ]);
     const [result] = await connection.query(
-      `INSERT IGNORE INTO cdks (id, code_hash, status, batch_no)
+      `INSERT IGNORE INTO cdks (id, code_hash, status, batch_no, plan_type)
        VALUES ?`,
-      [values.map(([id, codeHash, batch]) => [id, codeHash, 'AVAILABLE', batch])]
+      [values.map(([id, codeHash, batch]) => [id, codeHash, 'AVAILABLE', batch, normalizedPlanType])]
     );
     const insertedCount = Number(result.affectedRows);
     if (requireAllInserted && insertedCount !== normalized.codes.length) {
@@ -117,11 +128,53 @@ export async function storeCdkBatch(pool, codes, {
     await connection.commit();
     return {
       batchNo: normalizedBatchNo,
+      planType: normalizedPlanType,
       inputCount: normalized.inputCount,
       duplicateInputCount: normalized.duplicateInputCount,
       insertedCount,
       duplicateExistingCount: normalized.codes.length - insertedCount
     };
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
+}
+
+export function createAdminCdkService({ pool }) {
+  if (!pool) throw new TypeError('pool is required');
+
+  return async function createBatch(input = {}) {
+    const count = validateBatchCount(input.count);
+    const codes = generateCdks(count);
+    const stored = await storeCdkBatch(pool, codes, {
+      batchNo: input.batchNo,
+      planType: input.planType,
+      requireAllInserted: true
+    });
+    return {
+      batchNo: stored.batchNo,
+      planType: stored.planType,
+      count: stored.insertedCount,
+      codes
+    };
+  };
+}
+
+export async function revokeCdkBatch(pool, batchNo, reason = 'operator revoked') {
+  const normalizedBatchNo = normalizeBatchNo(batchNo);
+  const connection = await pool.getConnection();
+  try {
+    await connection.beginTransaction();
+    const [result] = await connection.query(
+      `UPDATE cdks
+       SET status = 'REVOKED', revoked_at = CURRENT_TIMESTAMP(3), revoke_reason = ?
+       WHERE batch_no = ? AND status = 'AVAILABLE'`,
+      [String(reason).slice(0, 500), normalizedBatchNo]
+    );
+    await connection.commit();
+    return { batchNo: normalizedBatchNo, revokedCount: Number(result.affectedRows) };
   } catch (error) {
     await connection.rollback();
     throw error;

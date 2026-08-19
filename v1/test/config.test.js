@@ -172,6 +172,8 @@ test('worker defaults to no provider access and keeps writes hard-locked', () =>
   assert.equal(config.workerConcurrency, 1);
   assert.equal(config.providerReadsEnabled, false);
   assert.equal(config.providerWritesEnabled, false);
+  assert.equal(config.providerCardWritesEnabled, false);
+  assert.equal(config.providerRechargeWritesEnabled, false);
   assert.equal(config.zzshuApiKey, null);
 
   assert.throws(

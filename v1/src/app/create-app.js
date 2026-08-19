@@ -3,6 +3,7 @@ import helmet from 'helmet';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PublicApiError } from '../domain/public-api-error.js';
+import { CdkBatchError } from '../services/cdk-service.js';
 import { createFixedWindowRateLimit } from './fixed-window-rate-limit.js';
 
 const DEFAULT_BODY_LIMIT = '256kb';
@@ -21,6 +22,10 @@ export function createApp({
   getAdminOverview = null,
   listAdminOrders = null,
   getAdminOrder = null,
+  listAdminAlerts = null,
+  requestCardTransactionSync = null,
+  createAdminCdkBatch = null,
+  revokeAdminCdkBatch = null,
   orderRateLimit = createFixedWindowRateLimit(),
   orderStatusRateLimit = createFixedWindowRateLimit({ limit: 30 }),
   adminLoginRateLimit = createFixedWindowRateLimit({ limit: 5, windowMs: 15 * 60 * 1000 })
@@ -117,6 +122,43 @@ export function createApp({
   if (typeof getAdminOrder === 'function') {
     app.get('/api/v1/admin/orders/:publicNo', noStore, requireAdminApi, async (req, res) => {
       res.json(await getAdminOrder(req.params.publicNo));
+    });
+  }
+  if (typeof listAdminAlerts === 'function') {
+    app.get('/api/v1/admin/alerts', noStore, requireAdminApi, async (req, res) => {
+      res.json(await listAdminAlerts(req.query));
+    });
+  }
+  if (typeof requestCardTransactionSync === 'function') {
+    app.post('/api/v1/admin/orders/:publicNo/sync-transactions', noStore, requireAdminApi, async (req, res) => {
+      const result = await requestCardTransactionSync(req.params.publicNo);
+      return res.status(result.queued ? 202 : 200).json(result);
+    });
+  }
+  if (typeof createAdminCdkBatch === 'function') {
+    app.post('/api/v1/admin/cdks/generate', noStore, requireAdminApi, async (req, res) => {
+      try {
+        const result = await createAdminCdkBatch(req.body);
+        return res.status(201).json(result);
+      } catch (error) {
+        if (error instanceof CdkBatchError) {
+          return res.status(400).json({ error: error.code.toLowerCase() });
+        }
+        throw error;
+      }
+    });
+  }
+  if (typeof revokeAdminCdkBatch === 'function') {
+    app.post('/api/v1/admin/cdks/:batchNo/revoke', noStore, requireAdminApi, async (req, res) => {
+      try {
+        const result = await revokeAdminCdkBatch(req.params.batchNo, req.body?.reason);
+        return res.json(result);
+      } catch (error) {
+        if (error instanceof CdkBatchError) {
+          return res.status(400).json({ error: error.code.toLowerCase() });
+        }
+        throw error;
+      }
     });
   }
 

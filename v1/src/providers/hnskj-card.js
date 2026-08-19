@@ -71,6 +71,35 @@ const cardsDataSchema = z.object({
   source: z.string()
 }).passthrough();
 
+const transactionSchema = z.object({
+  id: z.string().min(1),
+  type: z.string().min(1),
+  status: z.string().min(1),
+  typeText: z.string().optional(),
+  statusText: z.string().optional(),
+  amount: z.number(),
+  currency: z.string().length(3),
+  fee: z.number().optional(),
+  tradeTime: z.string().optional(),
+  relatedTxnId: z.string().optional(),
+  settlementStatus: z.string().optional(),
+  originalAmount: z.number().optional(),
+  originalCurrency: z.string().length(3).optional(),
+  merchantName: z.string().optional(),
+  merchantCountry: z.string().optional(),
+  merchantMcc: z.string().optional(),
+  platformCardId: z.string().optional()
+}).passthrough();
+
+const transactionsDataSchema = z.object({
+  transactions: z.array(transactionSchema),
+  total: z.number(),
+  page: z.number().optional(),
+  pageSize: z.number().optional(),
+  source: z.string().optional(),
+  cardNo: z.string().optional()
+}).passthrough();
+
 function normalizeBaseUrl(value) {
   const url = String(value || '').trim().replace(/\/+$/, '');
   if (!url) throw new Error('Hnskj card API base URL is required');
@@ -125,6 +154,31 @@ function cardData(envelope) {
   return envelope?.data?.card ?? envelope?.data ?? {};
 }
 
+function valueAt(object, paths) {
+  for (const path of paths) {
+    let value = object;
+    for (const key of path) value = value?.[key];
+    if (value !== undefined && value !== null && String(value).trim() !== '') return value;
+  }
+  return null;
+}
+
+export function mapPurchasedCard(envelope) {
+  const data = envelope?.data;
+  const providerCardId = valueAt(data, [
+    ['card', 'id'], ['card', 'cardId'], ['card', 'card_id'],
+    ['id'], ['cardId'], ['card_id']
+  ]);
+  if (providerCardId === null) {
+    throw new ProviderSchemaError('Hnskj accepted the card purchase but returned no recognizable card ID', {
+      provider: 'hnskj',
+      retryable: false,
+      uncertain: true
+    });
+  }
+  return String(providerCardId);
+}
+
 export function mapCardCredentials(envelope) {
   const data = cardData(envelope);
   const cardNumber = String(data.cardNumber ?? data.card_number ?? data.number ?? data.pan ?? '').trim();
@@ -145,11 +199,11 @@ export function mapCardCredentials(envelope) {
   return { cardNumber, expMonth, expYear, cvv };
 }
 
-export function mapCardProvisioning(envelope, expectedAmount, now = new Date()) {
+export function mapCardProvisioning(envelope, minimumRequiredBalance, now = new Date()) {
   const data = cardData(envelope);
   const status = String(data.status || '').trim().toLowerCase();
   const currentBalance = Number(data.cardBalance ?? data.currentBalance ?? data.current_balance);
-  const expected = Number(expectedAmount);
+  const minimum = Number(minimumRequiredBalance);
   const cardNumber = String(data.cardNumber ?? data.card_number ?? data.number ?? data.pan ?? '').trim();
   const cvv = String(data.cvv ?? data.cvc ?? '').trim();
   const expMonth = Number(data.expiryMonth ?? data.expiry_month ?? data.expMonth ?? data.exp_month);
@@ -170,7 +224,12 @@ export function mapCardProvisioning(envelope, expectedAmount, now = new Date()) 
   if (CARD_FAILURE_STATUSES.has(status)) {
     return { ...safe, state: 'failed', failureCode: 'CARD_PROVISIONING_FAILED', failureReason: `Provider card status: ${status}` };
   }
-  if (status === 'active' && credentialsReady && Number.isFinite(currentBalance) && currentBalance >= expected) {
+  if (
+    status === 'active'
+    && credentialsReady
+    && Number.isFinite(minimum) && minimum > 0
+    && Number.isFinite(currentBalance) && currentBalance >= minimum
+  ) {
     return { ...safe, state: 'ready' };
   }
   return safe;
@@ -263,13 +322,17 @@ export class HnskjCardProvider {
     });
   }
 
-  transactions(cardId, query = {}) {
+  async transactions(cardId, query = {}) {
     const params = new URLSearchParams();
     for (const [key, value] of Object.entries(query)) {
       if (value != null && value !== '') params.set(key, String(value));
     }
     const suffix = params.toString() ? `?${params}` : '';
-    return this.request(`/cards/${encodeURIComponent(String(cardId))}/transactions${suffix}`);
+    return validateData(
+      await this.request(`/cards/${encodeURIComponent(String(cardId))}/transactions${suffix}`),
+      transactionsDataSchema,
+      'card transactions'
+    );
   }
 
   withdraw(cardId, idempotencyKey) {

@@ -32,6 +32,8 @@ test('claims a pending task with a durable lease', async () => {
   assert.equal(task.attempts, 1);
   const selectCall = calls.find(([sql]) => typeof sql === 'string' && sql.includes('SELECT id'));
   assert.match(selectCall[0], /FOR UPDATE SKIP LOCKED/);
+  assert.match(selectCall[0], /rechargePermit\.status/);
+  assert.match(selectCall[0], /rechargePermit\.expiresAt/);
   const updateCall = calls.find(([sql]) => typeof sql === 'string' && sql.includes('UPDATE tasks'));
   assert.deepEqual(updateCall[1].slice(0, 3), ['RUNNING', 'worker-a', 90]);
   assert.equal(calls.some(([name]) => name === 'commit'), true);

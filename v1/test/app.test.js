@@ -239,3 +239,48 @@ test('keeps the admin closed when login credentials are not configured', async (
     assert.equal((await fetch(`${baseUrl}/api/v1/admin/overview`)).status, 401);
   });
 });
+
+test('generates CDKs only for an authenticated administrator', async () => {
+  const adminAuth = createAdminSessionAuth({
+    passwordHash: await hashAdminPassword('fixture admin password', { salt: Buffer.alloc(16, 7) }),
+    sessionSecret: Buffer.alloc(32, 8),
+    secureCookies: false
+  });
+  let received;
+  const app = createApp({
+    adminAuth,
+    createAdminCdkBatch: async (input) => {
+      received = input;
+      return { batchNo: 'B-TEST', count: 1, codes: ['PJ-ABCDEFGHJKMNPQRST234'] };
+    }
+  });
+
+  await withServer(app, async (baseUrl) => {
+    const denied = await fetch(`${baseUrl}/api/v1/admin/cdks/generate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'Idempotency-Key': 'fixture-idempotency-001' },
+      body: JSON.stringify({ count: 1 })
+    });
+    assert.equal(denied.status, 401);
+
+    const login = await fetch(`${baseUrl}/api/v1/admin/session`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: 'fixture admin password' })
+    });
+    const sessionCookie = login.headers.get('set-cookie').split(';')[0];
+    const generated = await fetch(`${baseUrl}/api/v1/admin/cdks/generate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Cookie: sessionCookie },
+      headers: { 'Content-Type': 'application/json', Cookie: sessionCookie, 'Idempotency-Key': 'fixture-idempotency-001' },
+      body: JSON.stringify({ count: 1 })
+    });
+    assert.equal(generated.status, 201);
+    assert.equal(generated.headers.get('cache-control'), 'no-store');
+    assert.deepEqual(received, { count: 1 });
+    assert.deepEqual(await generated.json(), {
+      batchNo: 'B-TEST', count: 1, codes: ['PJ-ABCDEFGHJKMNPQRST234']
+    });
+  });
+});

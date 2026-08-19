@@ -15,6 +15,7 @@ import { decryptSecret } from '../src/security/secret-box.js';
 import { sessionFixture } from '../test-support/session-fixture.js';
 import { storeCdkBatch } from '../src/services/cdk-service.js';
 import { createOrderStatusService } from '../src/services/order-status-service.js';
+import { armRechargePermit } from '../src/services/recharge-permit-service.js';
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
 const integrationSessionKey = Buffer.alloc(32, 7);
@@ -53,6 +54,7 @@ async function createOrder(pool, overrides = {}) {
 
 async function removeOrder(pool, { cdkId, orderId }) {
   await pool.query('DELETE FROM tasks WHERE order_id = ?', [orderId]);
+  await pool.query('DELETE FROM operator_alerts WHERE order_id = ?', [orderId]);
   await pool.query('DELETE FROM order_events WHERE order_id = ?', [orderId]);
   await pool.query('DELETE FROM provider_calls WHERE order_id = ?', [orderId]);
   await pool.query('DELETE FROM refund_cases WHERE order_id = ?', [orderId]);
@@ -198,6 +200,80 @@ test('workflow repository commits card and recharge handoffs atomically', {
     assert.equal(readyCard.order.status, OrderStatus.CARD_READY);
     assert.equal(readyCard.card.credentials.cardNumber, '4242424242424242');
 
+    const firstTransaction = {
+      id: 'provider-txn-1', type: 'CARD_RECHARGE', status: 'success', amount: '16', currency: 'USD',
+      fee: '0', tradeTime: '2026-08-18 21:02:08', relatedTxnId: null,
+      settlementStatus: 'settled', originalAmount: '982.14', originalCurrency: 'PHP',
+      rawHash: crypto.createHash('sha256').update('first').digest('hex')
+    };
+    await workflow.commitCardTransactions(fixture.orderId, [firstTransaction], {
+      currentBalance: '0.03', currency: 'USD'
+    });
+    await workflow.commitCardTransactions(fixture.orderId, [{
+      ...firstTransaction,
+      status: 'completed',
+      rawHash: crypto.createHash('sha256').update('second').digest('hex')
+    }]);
+    const [transactions] = await pool.query(
+      `SELECT provider_transaction_id, transaction_type, status, amount, currency,
+              fee, trade_time_raw, related_txn_id, settlement_status,
+              original_amount, original_currency
+       FROM card_transactions WHERE card_id = ?`,
+      [readyCard.card.id]
+    );
+    assert.deepEqual(transactions.filter((row) => row.provider_transaction_id === 'provider-txn-1'), [{
+      provider_transaction_id: 'provider-txn-1', transaction_type: 'CARD_RECHARGE',
+      status: 'completed', amount: '16.000000', currency: 'USD', fee: '0.000000',
+      trade_time_raw: '2026-08-18 21:02:08', related_txn_id: null,
+      settlement_status: 'settled', original_amount: '982.140000', original_currency: 'PHP'
+    }]);
+    const [[syncedCard]] = await pool.query(
+      'SELECT current_balance, currency, last_synced_at FROM cards WHERE id = ?', [readyCard.card.id]
+    );
+    assert.equal(syncedCard.current_balance, '0.030000');
+    assert.equal(syncedCard.currency, 'USD');
+    assert.ok(syncedCard.last_synced_at instanceof Date);
+
+    await workflow.commitCardTransactions(fixture.orderId, [{
+      id: 'provider-purchase-for-refund', type: 'PURCHASE', status: 'success',
+      amount: '-15.97', currency: 'USD', classification: 'UNKNOWN',
+      rawHash: crypto.createHash('sha256').update('purchase-for-refund').digest('hex')
+    }, {
+      id: 'provider-refund-processing', type: 'REFUND', status: 'processing',
+      amount: '15.97', currency: 'USD', relatedTxnId: 'provider-purchase-for-refund',
+      classification: 'REFUND_CANDIDATE',
+      rawHash: crypto.createHash('sha256').update('refund-processing').digest('hex')
+    }]);
+    const [[beforeConfirmedCandidate]] = await pool.query(
+      'SELECT COUNT(*) AS count FROM refund_cases WHERE order_id = ?', [fixture.orderId]
+    );
+    assert.equal(beforeConfirmedCandidate.count, 0);
+    await workflow.commitCardTransactions(fixture.orderId, [{
+      id: 'provider-refund-success', type: 'REFUND', status: 'success',
+      amount: '15.97', currency: 'USD', relatedTxnId: 'provider-purchase-for-refund',
+      classification: 'REFUND_CANDIDATE',
+      rawHash: crypto.createHash('sha256').update('refund-success').digest('hex')
+    }]);
+    const [[refundCandidate]] = await pool.query(
+      `SELECT r.status, original.provider_transaction_id AS original_id,
+              refund.provider_transaction_id AS refund_id
+       FROM refund_cases r
+       LEFT JOIN card_transactions original ON original.id = r.original_transaction_id
+       LEFT JOIN card_transactions refund ON refund.id = r.refund_transaction_id
+       WHERE r.order_id = ?`, [fixture.orderId]
+    );
+    assert.deepEqual(refundCandidate, {
+      status: 'REFUND_DETECTED',
+      original_id: 'provider-purchase-for-refund',
+      refund_id: 'provider-refund-success'
+    });
+    const [[alert]] = await pool.query(
+      'SELECT alert_type, status, message FROM operator_alerts WHERE order_id = ?', [fixture.orderId]
+    );
+    assert.equal(alert.alert_type, 'REFUND_CANDIDATE');
+    assert.equal(alert.status, 'OPEN');
+    assert.match(alert.message, /疑似退款/);
+
     await workflow.transition(
       fixture.orderId,
       OrderStatus.SUBMITTING,
@@ -251,6 +327,7 @@ test('workflow repository commits card and recharge handoffs atomically', {
     );
     assert.deepEqual(tasks, [
       { task_type: 'VERIFY_CARD', status: 'PENDING' },
+      { task_type: 'PREPARE_RECHARGE', status: 'PENDING' },
       { task_type: 'SUBMIT_RECHARGE', status: 'PENDING' },
       { task_type: 'POLL_RECHARGE', status: 'PENDING' }
     ]);
@@ -296,8 +373,12 @@ test('order intake atomically redeems one CDK and creates an encrypted queued or
       `UPDATE app_settings SET setting_value = CASE setting_key
          WHEN 'default_card_type_id' THEN '7'
          WHEN 'default_open_card_amount' THEN '25'
+         WHEN 'default_minimum_required_card_balance' THEN '16'
          ELSE setting_value END
-       WHERE setting_key IN ('default_card_type_id', 'default_open_card_amount')`
+       WHERE setting_key IN (
+         'default_card_type_id', 'default_open_card_amount',
+         'default_minimum_required_card_balance'
+       )`
     );
 
     const concurrent = await Promise.allSettled([
@@ -314,7 +395,7 @@ test('order intake atomically redeems one CDK and creates an encrypted queued or
 
     const [[order]] = await pool.query(
       `SELECT status, customer_email, chatgpt_account_id, card_type_id,
-              open_card_amount, session_ciphertext
+              open_card_amount, minimum_required_card_balance, session_ciphertext
        FROM orders WHERE id = ?`,
       [created.orderId]
     );
@@ -323,6 +404,7 @@ test('order intake atomically redeems one CDK and creates an encrypted queued or
     assert.equal(order.chatgpt_account_id, 'account-fixture');
     assert.equal(order.card_type_id, '7');
     assert.equal(order.open_card_amount, '25.000000');
+    assert.equal(order.minimum_required_card_balance, '16.000000');
     assert.deepEqual(
       JSON.parse(decryptSecret(order.session_ciphertext, integrationSessionKey)),
       session
@@ -357,7 +439,8 @@ test('order intake atomically redeems one CDK and creates an encrypted queued or
          WHEN 'accept_new_orders' THEN 'false'
          ELSE '' END
        WHERE setting_key IN (
-         'accept_new_orders', 'default_card_type_id', 'default_open_card_amount'
+         'accept_new_orders', 'default_card_type_id', 'default_open_card_amount',
+         'default_minimum_required_card_balance'
        )`
     );
     if (created) {
@@ -380,6 +463,7 @@ test('CDK batches store only hashes and report input and existing duplicates', {
     const first = await storeCdkBatch(pool, codes, { batchNo });
     assert.deepEqual(first, {
       batchNo,
+      planType: 'plus',
       inputCount: 3,
       duplicateInputCount: 1,
       insertedCount: 2,
@@ -388,6 +472,7 @@ test('CDK batches store only hashes and report input and existing duplicates', {
     const second = await storeCdkBatch(pool, codes, { batchNo });
     assert.deepEqual(second, {
       batchNo,
+      planType: 'plus',
       inputCount: 3,
       duplicateInputCount: 1,
       insertedCount: 0,
@@ -466,6 +551,12 @@ test('worker runs a full fake-provider workflow while enforcing runtime gates', 
     sessionEncryptionKey: integrationSessionKey
   });
   const cardProvider = {
+    cardTypes: async () => ({
+      data: { purchaseEnabled: true, cardTypes: [{ id: 7, cardType: 'Z-TEST' }] }
+    }),
+    cards: async ({ page = 1, pageSize = 50 } = {}) => ({
+      data: { cards: [], total: 0, page, pageSize }
+    }),
     purchaseCard: async () => {
       providerActions.push('purchase');
       return { data: { card: { id: 'fake-card-e2e' } } };
@@ -495,14 +586,7 @@ test('worker runs a full fake-provider workflow while enforcing runtime gates', 
     cardProvider,
     rechargeProvider,
     recordCall: (input) => recordProviderCall({ pool, ...input }),
-    mapPurchasedCard: () => ({
-      providerCardId: 'fake-card-e2e',
-      cardTypeId: 7,
-      last4: '4242',
-      fundedAmount: '25.000000',
-      currentBalance: '25.000000',
-      currency: 'USD'
-    }),
+    mapPurchasedCard: () => 'fake-card-e2e',
     mapCardProvisioning: () => ({
       state: 'ready', status: 'active', currentBalance: 25, currency: 'USD', last4: '4242'
     }),
@@ -511,6 +595,11 @@ test('worker runs a full fake-provider workflow while enforcing runtime gates', 
       expMonth: 12,
       expYear: 2032,
       cvv: '123'
+    }),
+    buildDirectOrderRequest: (input) => ({
+      method: 'POST',
+      path: '/third-party/orders/direct',
+      body: { ...input, planType: input.planType || 'plus' }
     }),
     wait: async () => {}
   });
@@ -540,6 +629,8 @@ test('worker runs a full fake-provider workflow while enforcing runtime gates', 
     );
     assert.equal((await iteration()).status, 'COMPLETED');
     assert.equal((await iteration()).status, 'COMPLETED');
+    assert.equal((await iteration()).status, 'COMPLETED');
+    await armRechargePermit(pool, { publicNo: `TEST-${fixture.orderId}` });
     assert.equal((await iteration()).status, 'COMPLETED');
 
     await pool.query(
@@ -580,6 +671,7 @@ test('worker runs a full fake-provider workflow while enforcing runtime gates', 
     assert.deepEqual(tasks, [
       { task_type: 'PURCHASE_CARD', status: 'COMPLETED' },
       { task_type: 'VERIFY_CARD', status: 'COMPLETED' },
+      { task_type: 'PREPARE_RECHARGE', status: 'COMPLETED' },
       { task_type: 'SUBMIT_RECHARGE', status: 'COMPLETED' },
       { task_type: 'POLL_RECHARGE', status: 'COMPLETED' },
       { task_type: 'RECHECK_CANCELLATION', status: 'COMPLETED' }
@@ -591,6 +683,18 @@ test('worker runs a full fake-provider workflow while enforcing runtime gates', 
       'poll-recharge',
       'recheck-cancellation'
     ]);
+    const [[permit]] = await pool.query(
+      `SELECT JSON_UNQUOTE(JSON_EXTRACT(payload_json, '$.rechargePermit.status')) AS status
+       FROM tasks WHERE order_id = ? AND task_type = 'SUBMIT_RECHARGE'`,
+      [fixture.orderId]
+    );
+    assert.equal(permit.status, 'CONSUMED');
+    const [[createCalls]] = await pool.query(
+      `SELECT COUNT(*) AS count FROM provider_calls
+       WHERE order_id = ? AND provider = 'zzshu' AND operation = 'create_direct'`,
+      [fixture.orderId]
+    );
+    assert.equal(createCalls.count, 1);
   } finally {
     await pool.query(
       `UPDATE app_settings SET setting_value = 'false'

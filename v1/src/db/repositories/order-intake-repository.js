@@ -4,10 +4,11 @@ import { OrderStatus } from '../../domain/order-status.js';
 const REQUIRED_SETTINGS = Object.freeze([
   'accept_new_orders',
   'default_card_type_id',
-  'default_open_card_amount'
+  'default_open_card_amount',
+  'default_minimum_required_card_balance'
 ]);
 
-function parseSettings(rows) {
+export function parseOrderIntakeSettings(rows) {
   const values = new Map(rows.map((row) => [row.setting_key, row.setting_value]));
   for (const key of REQUIRED_SETTINGS) {
     if (!values.has(key)) {
@@ -25,7 +26,9 @@ function parseSettings(rows) {
   }
   const cardTypeId = String(values.get('default_card_type_id') || '').trim();
   const amountText = String(values.get('default_open_card_amount') || '').trim();
+  const minimumBalanceText = String(values.get('default_minimum_required_card_balance') || '').trim();
   const amount = Number(amountText);
+  const minimumBalance = Number(minimumBalanceText);
   if (
     !cardTypeId
     || cardTypeId.length > 128
@@ -33,13 +36,21 @@ function parseSettings(rows) {
     || !Number.isSafeInteger(amount)
     || amount <= 0
     || amount > 999_999_999_999
+    || !/^\d+(?:\.\d{1,6})?$/.test(minimumBalanceText)
+    || !Number.isFinite(minimumBalance)
+    || minimumBalance <= 0
+    || minimumBalance > amount
   ) {
     throw new OrderIntakeError('Order intake is not configured', {
       code: 'ORDERING_NOT_CONFIGURED',
       status: 503
     });
   }
-  return { cardTypeId, openCardAmount: amountText };
+  return {
+    cardTypeId,
+    openCardAmount: amountText,
+    minimumRequiredCardBalance: minimumBalanceText
+  };
 }
 
 export async function createOrderFromCdk(pool, input) {
@@ -52,10 +63,10 @@ export async function createOrderFromCdk(pool, input) {
        WHERE setting_key IN (${placeholders}) FOR UPDATE`,
       REQUIRED_SETTINGS
     );
-    const settings = parseSettings(settingRows);
+    const settings = parseOrderIntakeSettings(settingRows);
 
     const [cdkRows] = await connection.query(
-      'SELECT id, status FROM cdks WHERE code_hash = ? FOR UPDATE',
+      'SELECT id, status, plan_type FROM cdks WHERE code_hash = ? FOR UPDATE',
       [input.cdkHash]
     );
     if (cdkRows.length !== 1 || cdkRows[0].status !== 'AVAILABLE') {
@@ -68,19 +79,21 @@ export async function createOrderFromCdk(pool, input) {
 
     await connection.query(
       `INSERT INTO orders
-       (id, public_no, cdk_id, status, plan_type, customer_email,
-        chatgpt_account_id, card_type_id, open_card_amount,
+        (id, public_no, cdk_id, status, plan_type, customer_email,
+        chatgpt_account_id, card_type_id, open_card_amount, minimum_required_card_balance,
         session_ciphertext, card_purchase_idempotency_key)
-       VALUES (?, ?, ?, ?, 'plus', ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         input.orderId,
         input.publicNo,
         cdkId,
         OrderStatus.CREATED,
+        cdkRows[0].plan_type || 'plus',
         input.customerEmail,
         input.chatgptAccountId,
         settings.cardTypeId,
         settings.openCardAmount,
+        settings.minimumRequiredCardBalance,
         input.sessionCiphertext,
         input.cardPurchaseIdempotencyKey
       ]
@@ -106,7 +119,7 @@ export async function createOrderFromCdk(pool, input) {
     await connection.query(
       `INSERT INTO tasks
        (order_id, task_type, status, dedupe_key, max_attempts)
-       VALUES (?, 'PURCHASE_CARD', 'PENDING', ?, 5)`,
+       VALUES (?, 'PURCHASE_CARD', 'PENDING', ?, 240)`,
       [input.orderId, `purchase-card:${input.orderId}`]
     );
     await connection.commit();

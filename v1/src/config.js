@@ -223,6 +223,8 @@ const workerSchema = baseSchema.extend({
   WORKER_CONCURRENCY: z.coerce.number().int().min(1).max(32).default(1),
   PROVIDER_READS_ENABLED: booleanString.default(false),
   PROVIDER_WRITES_ENABLED: booleanString.default(false),
+  PROVIDER_CARD_WRITES_ENABLED: booleanString.default(false),
+  PROVIDER_RECHARGE_WRITES_ENABLED: booleanString.default(false),
   HNSKJ_API_BASE_URL: z.string().url().default('https://card.hnskj.vip/api/open/v1'),
   HNSKJ_API_KEY: z.string().trim().min(1).optional(),
   ZZSHU_API_BASE_URL: z.string().url().default('https://card.zzshu.pro/api/v1'),
@@ -319,10 +321,10 @@ export function loadWorkerConfig(env = process.env) {
       'Provider writes remain locked until the Hnskj purchase/card response contract is verified'
     );
   }
-  if (result.data.PROVIDER_READS_ENABLED && !result.data.ZZSHU_API_KEY) {
+  if ((result.data.PROVIDER_READS_ENABLED || result.data.PROVIDER_RECHARGE_WRITES_ENABLED) && !result.data.ZZSHU_API_KEY) {
     throw new Error('ZZSHU_API_KEY is required when PROVIDER_READS_ENABLED=true');
   }
-  if (result.data.PROVIDER_READS_ENABLED && !result.data.HNSKJ_API_KEY) {
+  if ((result.data.PROVIDER_READS_ENABLED || result.data.PROVIDER_CARD_WRITES_ENABLED) && !result.data.HNSKJ_API_KEY) {
     throw new Error('HNSKJ_API_KEY is required when PROVIDER_READS_ENABLED=true');
   }
 
@@ -334,6 +336,8 @@ export function loadWorkerConfig(env = process.env) {
     workerConcurrency: result.data.WORKER_CONCURRENCY,
     providerReadsEnabled: result.data.PROVIDER_READS_ENABLED,
     providerWritesEnabled: false,
+    providerCardWritesEnabled: result.data.PROVIDER_CARD_WRITES_ENABLED,
+    providerRechargeWritesEnabled: result.data.PROVIDER_RECHARGE_WRITES_ENABLED,
     hnskjApiBaseUrl: result.data.HNSKJ_API_BASE_URL,
     hnskjApiKey: result.data.HNSKJ_API_KEY || null,
     zzshuApiBaseUrl: result.data.ZZSHU_API_BASE_URL,

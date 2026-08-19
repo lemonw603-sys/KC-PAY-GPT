@@ -17,7 +17,7 @@ const SETTING_META = Object.freeze({
   accept_new_orders: '接收新订单',
   dispatch_new_recharges: '派发新充值',
   poll_existing_orders: '追踪已有订单',
-  sync_card_transactions: '同步交易与退款'
+  sync_card_transactions: '同步卡片交易（只读）'
 });
 
 const state = { view: 'overview', page: 1, pageSize: 20, total: 0, status: '', query: '' };
@@ -43,6 +43,10 @@ const elements = {
   detailTitle: document.querySelector('#detail-title'),
   detailContent: document.querySelector('#detail-content'),
   notice: document.querySelector('#page-notice')
+  ,alertsCard: document.querySelector('#alerts-card'), alertsList: document.querySelector('#alerts-list'),
+  cdkForm: document.querySelector('#cdk-form'), cdkCount: document.querySelector('#cdk-count'),
+  cdkResult: document.querySelector('#cdk-result'), generatedCdks: document.querySelector('#generated-cdks'),
+  cdkBatchLabel: document.querySelector('#cdk-batch-label'), copyCdks: document.querySelector('#copy-cdks')
 };
 
 function escapeHtml(value) {
@@ -99,9 +103,10 @@ function orderRow(order) {
 }
 
 async function loadOverview() {
-  const [overview, recent] = await Promise.all([
+  const [overview, recent, alertData] = await Promise.all([
     api('/api/v1/admin/overview'),
-    api('/api/v1/admin/orders?page=1&pageSize=6')
+    api('/api/v1/admin/orders?page=1&pageSize=6'),
+    api('/api/v1/admin/alerts?limit=10')
   ]);
   const metrics = [
     ['今日订单', overview.metrics.todayOrders, '今天新创建'],
@@ -123,6 +128,9 @@ async function loadOverview() {
     const enabled = setting.value === 'true';
     return `<div><span><strong>${escapeHtml(SETTING_META[setting.key] || setting.key)}</strong><small>${formatTime(setting.updatedAt)} 更新</small></span><em class="switch-state ${enabled ? 'is-on' : ''}">${enabled ? '开启' : '关闭'}</em></div>`;
   }).join('');
+  const alerts = alertData.alerts || [];
+  elements.alertsCard.hidden = alerts.length === 0;
+  elements.alertsList.innerHTML = alerts.map((alert) => `<div><span><strong>${escapeHtml(alert.title)}</strong><small>${escapeHtml(alert.message)}</small></span><em>${formatTime(alert.createdAt)}</em></div>`).join('');
   elements.recentOrders.innerHTML = recent.orders.length
     ? recent.orders.map(orderRow).join('')
     : '<tr><td colspan="6" class="empty-cell">还没有订单</td></tr>';
@@ -150,6 +158,21 @@ function renderKeyValues(items) {
   return `<dl class="key-values">${items.map(([key, value]) => `<div><dt>${escapeHtml(key)}</dt><dd>${escapeHtml(value ?? '—')}</dd></div>`).join('')}</dl>`;
 }
 
+async function requestTransactionSync(publicNo, button) {
+  button.disabled = true;
+  const original = button.textContent;
+  button.textContent = '提交中…';
+  try {
+    const result = await api(`/api/v1/admin/orders/${encodeURIComponent(publicNo)}/sync-transactions`, { method: 'POST' });
+    showNotice(result.queued ? '交易同步任务已加入队列。' : '该订单已有交易同步任务在处理。');
+    button.textContent = result.queued ? '已加入队列' : '已有任务';
+  } catch {
+    showNotice('交易同步任务提交失败，请稍后重试。');
+    button.disabled = false;
+    button.textContent = original;
+  }
+}
+
 async function openOrder(publicNo) {
   elements.detailTitle.textContent = publicNo;
   elements.detailContent.innerHTML = '<p class="loading-state">正在读取订单详情…</p>';
@@ -157,23 +180,35 @@ async function openOrder(publicNo) {
   try {
     const data = await api(`/api/v1/admin/orders/${encodeURIComponent(publicNo)}`);
     const order = data.order;
+    const paymentGate = data.paymentGate || {};
     elements.detailContent.innerHTML = `
+      <section class="detail-section"><h3>付款执行门</h3>${renderKeyValues([
+        ['付款前检查', paymentGate.prepaymentReady ? '已就绪' : '未就绪'],
+        ['直充状态', paymentGate.submissionLocked ? '已锁定' : '已针对本订单一次性放行'],
+        ['放行凭证', paymentGate.permitStatus || 'LOCKED'],
+        ['直充任务', paymentGate.submissionTaskStatus],
+        ['直充执行次数', paymentGate.submissionAttempts ?? 0],
+        ['放行过期时间', formatTime(paymentGate.permitExpiresAt)]
+      ])}</section>
       <section class="detail-section"><div class="detail-status">${statusChip(order.status)}<span>${formatTime(order.updatedAt)}</span></div>${renderKeyValues([
         ['客户邮箱', order.customerEmail], ['ChatGPT 账号 ID', order.chatgptAccountId],
         ['直充订单号', order.rechargeOrderNo], ['卡段 ID', order.cardTypeId],
-        ['开卡金额', order.openCardAmount],
+        ['开卡金额', order.openCardAmount], ['最低所需卡余额', order.minimumRequiredCardBalance],
+        ['实际支付', order.actualPaymentAmount ? `${order.actualPaymentAmount} ${order.actualPaymentCurrency || ''}` : null],
         ['自动续费', order.subscriptionCancelled === 1 ? '已取消' : order.cancellationReviewRequired ? '需要人工处理' : order.subscriptionCancelled === 0 ? '等待确认' : '未开始'],
         ['续费复查时间', formatTime(order.cancellationCheckedAt)],
         ['失败代码', order.failureCode], ['失败原因', order.failureReason]
       ])}</section>
-      <section class="detail-section"><h3>卡片与退款</h3>${data.card ? renderKeyValues([
+      <section class="detail-section"><div class="detail-section-heading"><h3>卡片与退款</h3>${data.card ? '<button type="button" class="primary-small" id="sync-transactions">同步交易</button>' : ''}</div>${data.card ? renderKeyValues([
         ['卡台卡片 ID', data.card.providerCardId], ['卡号后四位', data.card.last4],
         ['卡片状态', data.card.status], ['开卡金额', `${data.card.fundedAmount || '—'} ${data.card.currency || ''}`],
         ['当前余额', `${data.card.currentBalance || '—'} ${data.card.currency || ''}`], ['退款观察', data.card.refundStatus],
         ['最后同步', formatTime(data.card.lastSyncedAt)]
       ]) : '<p class="empty-state">尚未绑定卡片</p>'}</section>
+      <section class="detail-section"><h3>卡片交易</h3><div class="mini-list">${data.transactions?.length ? data.transactions.map((transaction) => `<div><span><strong>${escapeHtml(transaction.type)} · ${escapeHtml(transaction.amount)} ${escapeHtml(transaction.currency)}</strong><small>${escapeHtml(transaction.merchantName || transaction.relatedTransactionId || transaction.providerTransactionId)} · ${escapeHtml(transaction.tradeTimeRaw || formatTime(transaction.firstSeenAt))}</small></span><em>${escapeHtml(transaction.status)}</em></div>`).join('') : '<p class="empty-state">暂无已同步交易</p>'}</div></section>
       <section class="detail-section"><h3>订单时间线</h3><div class="timeline">${data.events.length ? data.events.map((event) => `<article><i></i><div><strong>${escapeHtml(STATUS_META[event.toStatus]?.[0] || event.toStatus)}</strong><p>${escapeHtml(event.reason)}</p><small>${formatTime(event.createdAt)} · ${escapeHtml(event.actorType)}</small></div></article>`).join('') : '<p class="empty-state">暂无事件</p>'}</div></section>
       <section class="detail-section"><h3>后台任务</h3><div class="mini-list">${data.tasks.length ? data.tasks.map((task) => `<div><span><strong>${escapeHtml(task.type)}</strong><small>${task.attempts}/${task.maxAttempts} 次尝试</small></span><em>${escapeHtml(task.status)}</em></div>`).join('') : '<p class="empty-state">暂无任务</p>'}</div></section>`;
+    document.querySelector('#sync-transactions')?.addEventListener('click', (event) => requestTransactionSync(publicNo, event.currentTarget));
   } catch {
     elements.detailContent.innerHTML = '<p class="empty-state">订单详情读取失败，请稍后重试。</p>';
   }
@@ -189,6 +224,10 @@ async function switchView(view, { status = '' } = {}) {
     elements.viewKicker.textContent = '运营概览';
     elements.viewTitle.textContent = '今天的运行情况';
     await loadOverview();
+  } else if (view === 'cdks') {
+    elements.viewKicker.textContent = '卡密管理';
+    elements.viewTitle.textContent = '生成客户兑换码';
+    elements.syncTime.textContent = '仅内部管理员可操作';
   } else {
     elements.viewKicker.textContent = view === 'exceptions' ? '人工处理' : '订单中心';
     elements.viewTitle.textContent = view === 'exceptions' ? '需要关注的订单' : '全部订单';
@@ -226,6 +265,39 @@ document.querySelector('#logout-button').addEventListener('click', async () => {
 });
 document.querySelector('#close-detail').addEventListener('click', () => elements.detail.close());
 elements.detail.addEventListener('click', (event) => { if (event.target === elements.detail) elements.detail.close(); });
+elements.cdkForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  hideNotice();
+  const button = elements.cdkForm.querySelector('button[type="submit"]');
+  button.disabled = true;
+  button.textContent = '生成中…';
+  try {
+    const payload = await api('/api/v1/admin/cdks/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ count: Number(elements.cdkCount.value) })
+    });
+    elements.generatedCdks.value = payload.codes.join('\n');
+    elements.generatedCdks.rows = Math.min(Math.max(payload.codes.length, 3), 18);
+    elements.cdkBatchLabel.textContent = `批次 ${payload.batchNo} · ${payload.count} 个`;
+    elements.cdkResult.hidden = false;
+  } catch (error) {
+    showNotice(error.message === 'invalid_count' ? '生成数量必须为 1–1000 之间的整数。' : 'CDK 生成失败，请稍后重试。');
+  } finally {
+    button.disabled = false;
+    button.textContent = '生成 CDK';
+  }
+});
+elements.copyCdks.addEventListener('click', async () => {
+  try {
+    await navigator.clipboard.writeText(elements.generatedCdks.value);
+    elements.copyCdks.textContent = '已复制';
+    setTimeout(() => { elements.copyCdks.textContent = '复制全部'; }, 1500);
+  } catch {
+    elements.generatedCdks.select();
+    showNotice('自动复制失败，已选中卡密，请手动复制。');
+  }
+});
 document.addEventListener('click', (event) => {
   const row = event.target.closest('tr[data-order]');
   if (row) openOrder(row.dataset.order);

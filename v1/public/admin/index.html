@@ -22,6 +22,7 @@
         <button class="nav-item is-active" type="button" data-view="overview"><span aria-hidden="true">⌂</span>总览</button>
         <button class="nav-item" type="button" data-view="orders"><span aria-hidden="true">≡</span>订单</button>
         <button class="nav-item" type="button" data-view="exceptions"><span aria-hidden="true">!</span>异常队列</button>
+        <button class="nav-item" type="button" data-view="cdks"><span aria-hidden="true">#</span>CDK 管理</button>
       </nav>
       <div class="sidebar-foot">
         <span><i aria-hidden="true"></i>只读运营模式</span>
@@ -43,6 +44,10 @@
 
       <section id="overview-view" class="view" aria-labelledby="view-title">
         <div class="metrics-grid" id="metrics-grid" aria-label="关键指标"></div>
+        <section class="card alerts-card" id="alerts-card" hidden>
+          <div class="card-heading"><div><p class="section-kicker">需要核对</p><h2>内部提醒</h2></div><span class="readonly-badge">只读</span></div>
+          <div class="mini-list" id="alerts-list"></div>
+        </section>
         <div class="dashboard-grid">
           <section class="card status-card">
             <div class="card-heading"><div><p class="section-kicker">订单分布</p><h2>处理状态</h2></div><button class="text-button" type="button" data-open-orders>查看全部</button></div>
@@ -68,6 +73,28 @@
           </form>
           <div class="table-wrap"><table><thead><tr><th>订单查询码</th><th>账号</th><th>状态</th><th>卡片</th><th>退款观察</th><th>创建时间</th></tr></thead><tbody id="orders-table"></tbody></table></div>
           <div class="pagination"><span id="order-count">0 条订单</span><div><button id="prev-page" type="button">上一页</button><span id="page-label">第 1 页</span><button id="next-page" type="button">下一页</button></div></div>
+        </section>
+      </section>
+
+      <section id="cdks-view" class="view" hidden>
+        <section class="card cdk-card">
+          <div class="card-heading">
+            <div><p class="section-kicker">订单入口</p><h2>生成 CDK 卡密</h2></div>
+            <span class="write-badge">内部写入</span>
+          </div>
+          <p class="card-description">当前仅支持 Plus。生成的卡密只显示一次，数据库仅保存 SHA-256 哈希。卡密仅用于创建订单，不会触发开卡或充值。</p>
+          <form class="cdk-form" id="cdk-form">
+            <label for="cdk-count">生成数量</label>
+            <div>
+              <input id="cdk-count" name="count" type="number" min="1" max="1000" value="1" required>
+              <button class="primary-button" type="submit">生成 CDK</button>
+            </div>
+          </form>
+          <div class="cdk-result" id="cdk-result" hidden>
+            <div><span id="cdk-batch-label">批次</span><button class="text-button" id="copy-cdks" type="button">复制全部</button></div>
+            <textarea id="generated-cdks" readonly spellcheck="false" aria-label="刚生成的 CDK 卡密"></textarea>
+            <p>请立即复制保存；离开页面后无法从数据库还原明文。</p>
+          </div>
         </section>
       </section>
 
