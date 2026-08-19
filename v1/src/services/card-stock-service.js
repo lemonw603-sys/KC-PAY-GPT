@@ -167,6 +167,12 @@ export function createCardStockService({ pool, sessionEncryptionKey }) {
          updated_at = CURRENT_TIMESTAMP(3)`,
       [String(threshold)]
     );
+    const [cardTypes] = await pool.query(
+      `SELECT DISTINCT card_type_id FROM cards WHERE card_type_id IS NOT NULL`
+    );
+    for (const row of cardTypes) {
+      await refreshLowStockAlert(pool, row.card_type_id);
+    }
     return { threshold };
   }
 
