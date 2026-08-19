@@ -9,6 +9,7 @@ export function allowedTaskTypesFor(settings, {
   providerRechargeWritesEnabled = false
 } = {}) {
   const types = [];
+  if (settings.dispatchNewRecharges) types.push(TaskType.ASSIGN_CARD);
   if (settings.dispatchNewRecharges && (providerWritesEnabled || providerCardWritesEnabled)) types.push(TaskType.PURCHASE_CARD);
   if (settings.dispatchNewRecharges) types.push(TaskType.PREPARE_RECHARGE);
   if (settings.dispatchNewRecharges && (providerWritesEnabled || providerRechargeWritesEnabled)) types.push(TaskType.SUBMIT_RECHARGE);

@@ -119,8 +119,8 @@ export async function createOrderFromCdk(pool, input) {
     await connection.query(
       `INSERT INTO tasks
        (order_id, task_type, status, dedupe_key, max_attempts)
-       VALUES (?, 'PURCHASE_CARD', 'PENDING', ?, 240)`,
-      [input.orderId, `purchase-card:${input.orderId}`]
+       VALUES (?, 'ASSIGN_CARD', 'PENDING', ?, 10080)`,
+      [input.orderId, `assign-card:${input.orderId}`]
     );
     await connection.commit();
     return {

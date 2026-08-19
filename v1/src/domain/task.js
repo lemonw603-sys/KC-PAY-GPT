@@ -6,6 +6,7 @@ export const TaskStatus = Object.freeze({
 });
 
 export const TaskType = Object.freeze({
+  ASSIGN_CARD: 'ASSIGN_CARD',
   PURCHASE_CARD: 'PURCHASE_CARD',
   VERIFY_CARD: 'VERIFY_CARD',
   PREPARE_RECHARGE: 'PREPARE_RECHARGE',

@@ -88,7 +88,7 @@ export function createAdminReadService({ pool }) {
     }
   }
   async function getOverview() {
-    const [[orderCounts], [statusRows], [cdkRows], [settingsRows], [refundRows], [alertRows]] = await Promise.all([
+    const [[orderCounts], [statusRows], [cdkRows], [settingsRows], [refundRows], [alertRows], [stockRows], [stockSettingRows]] = await Promise.all([
       pool.query(`SELECT
         COUNT(*) AS total,
         SUM(o.created_at >= TIMESTAMP(DATE(CONVERT_TZ(UTC_TIMESTAMP(), '+00:00', '+08:00'))) - INTERVAL 8 HOUR) AS today,
@@ -108,6 +108,13 @@ export function createAdminReadService({ pool }) {
       pool.query(`SELECT status, COUNT(*) AS count FROM refund_cases
         WHERE status <> 'WITHDRAWN' GROUP BY status ORDER BY status`)
       ,pool.query(`SELECT COUNT(*) AS count FROM operator_alerts WHERE status = 'OPEN'`)
+      ,pool.query(`SELECT
+          SUM(order_id IS NULL AND inventory_status = 'AVAILABLE') AS available,
+          SUM(order_id IS NULL AND inventory_status = 'PROVISIONING') AS provisioning,
+          SUM(order_id IS NOT NULL OR inventory_status = 'ASSIGNED') AS assigned
+        FROM cards`)
+      ,pool.query(`SELECT setting_value FROM app_settings
+        WHERE setting_key = 'card_stock_low_threshold' LIMIT 1`)
     ]);
     const count = (value) => Number(value || 0);
     const total = count(orderCounts[0]?.total);
@@ -125,6 +132,13 @@ export function createAdminReadService({ pool }) {
       cdkStatuses: cdkRows.map((row) => ({ status: row.status, count: count(row.count) })),
       refundStatuses: refundRows.map((row) => ({ status: row.status, count: count(row.count) })),
       openAlertCount: count(alertRows[0]?.count),
+      cardStock: {
+        available: count(stockRows[0]?.available),
+        provisioning: count(stockRows[0]?.provisioning),
+        assigned: count(stockRows[0]?.assigned),
+        lowThreshold: count(stockSettingRows[0]?.setting_value || 5),
+        low: count(stockRows[0]?.available) <= count(stockSettingRows[0]?.setting_value || 5)
+      },
       settings: settingsRows.map((row) => ({
         key: row.setting_key,
         value: row.setting_value,

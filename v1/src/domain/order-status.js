@@ -14,7 +14,11 @@ export const OrderStatus = Object.freeze({
 });
 
 const transitions = new Map([
-  [OrderStatus.CREATED, new Set([OrderStatus.CARD_PURCHASING, OrderStatus.RECONCILIATION_REQUIRED])],
+  [OrderStatus.CREATED, new Set([
+    OrderStatus.CARD_PURCHASING,
+    OrderStatus.CARD_READY,
+    OrderStatus.RECONCILIATION_REQUIRED
+  ])],
   [OrderStatus.CARD_PURCHASING, new Set([OrderStatus.CARD_PROVISIONING, OrderStatus.RECONCILIATION_REQUIRED])],
   [OrderStatus.CARD_PROVISIONING, new Set([
     OrderStatus.CARD_READY,

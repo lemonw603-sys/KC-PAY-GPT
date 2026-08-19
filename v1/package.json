@@ -16,6 +16,7 @@
     "audit:cards": "node scripts/card-consistency-audit.js",
     "provider:poc": "node scripts/provider-poc.js",
     "recharge:permit": "node scripts/recharge-permit.js",
+    "card:stock": "node scripts/card-stock.js",
     "migrate": "node scripts/migrate.js",
     "test": "node --test"
   },

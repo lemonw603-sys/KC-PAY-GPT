@@ -111,6 +111,20 @@ npm run start:worker
 - 数据库的 `dispatch_new_recharges` 和对应的分离写权限必须同时开启，worker 才可领取开卡或直充提交任务。
 - `SUBMIT_RECHARGE` 还必须带指定订单、短时有效的 `rechargePermit`；Permit 在网络请求前原子消费，任何结果都不能自动第二次创建。
 
+## 库存卡
+
+新订单只领取已经登记且余额足够的库存卡；库存为空时订单安全等待并产生后台告警，不会触发自动开卡。
+
+```bash
+pojia-card-stock status
+pojia-card-stock threshold --count 5
+pojia-card-stock register --card-id 123 --card-type-id 1
+pojia-card-stock sync
+pojia-card-stock open --count 10 --card-type-id 1 --amount 16 --execute OPEN-CARDS
+```
+
+只有最后一条命令会产生真实开卡费用，且必须同时提供明确数量、卡段、金额和执行确认词。批量命令逐张使用独立幂等键；中途失败会保留已经登记成功的卡并停止，不会从头重开。生产 Worker 的开卡写权限始终保持关闭。
+
 生产只通过 root 运维脚本操作直充执行门：
 
 ```bash

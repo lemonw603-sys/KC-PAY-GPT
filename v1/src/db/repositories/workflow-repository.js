@@ -90,6 +90,105 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey }) {
       });
     },
 
+    async assignAvailableCard(orderId) {
+      return inTransaction(pool, async (connection) => {
+        const [orders] = await connection.query(
+          `SELECT status, version, card_type_id, minimum_required_card_balance
+           FROM orders WHERE id = ? FOR UPDATE`,
+          [orderId]
+        );
+        if (orders.length !== 1) throw new Error(`Order not found: ${orderId}`);
+        const order = orders[0];
+        if (order.status !== OrderStatus.CREATED) {
+          throw new Error(`Cannot assign inventory card from ${order.status}`);
+        }
+        const [cards] = await connection.query(
+          `SELECT id, provider_card_id, current_balance
+           FROM cards
+           WHERE order_id IS NULL
+             AND inventory_status = 'AVAILABLE'
+             AND BINARY card_type_id = BINARY ?
+             AND LOWER(status) IN ('active','available','usable','ready')
+             AND current_balance >= ?
+             AND card_credentials_ciphertext IS NOT NULL
+           ORDER BY current_balance ASC, created_at ASC
+           LIMIT 1 FOR UPDATE SKIP LOCKED`,
+          [String(order.card_type_id), String(order.minimum_required_card_balance)]
+        );
+        const alertKey = `card-stock-low:${order.card_type_id}`;
+        if (cards.length === 0) {
+          await connection.query(
+            `INSERT INTO operator_alerts
+             (id, alert_type, dedupe_key, severity, title, message, status)
+             VALUES (UUID(), 'CARD_STOCK_LOW', ?, 'critical', '可用卡库存不足', ?, 'OPEN')
+             ON DUPLICATE KEY UPDATE severity = VALUES(severity), title = VALUES(title),
+               message = VALUES(message), status = 'OPEN', acknowledged_at = NULL`,
+            [alertKey, `卡段 ${order.card_type_id} 没有满足余额要求的可用库存卡，订单正在安全等待。`]
+          );
+          return null;
+        }
+        const card = cards[0];
+        const [cardUpdate] = await connection.query(
+          `UPDATE cards SET order_id = ?, inventory_status = 'ASSIGNED',
+             assigned_at = CURRENT_TIMESTAMP(3), updated_at = CURRENT_TIMESTAMP(3)
+           WHERE id = ? AND order_id IS NULL AND inventory_status = 'AVAILABLE'`,
+          [orderId, card.id]
+        );
+        if (cardUpdate.affectedRows !== 1) throw new Error(`Concurrent card assignment detected: ${card.id}`);
+        const [orderUpdate] = await connection.query(
+          `UPDATE orders SET status = ?, version = version + 1,
+             updated_at = CURRENT_TIMESTAMP(3) WHERE id = ? AND version = ?`,
+          [OrderStatus.CARD_READY, orderId, order.version]
+        );
+        if (orderUpdate.affectedRows !== 1) throw new Error(`Concurrent order assignment detected: ${orderId}`);
+        await insertEvent(connection, {
+          orderId,
+          fromStatus: OrderStatus.CREATED,
+          toStatus: OrderStatus.CARD_READY,
+          reason: 'available inventory card assigned',
+          metadata: {
+            providerCardId: String(card.provider_card_id),
+            currentBalance: String(card.current_balance)
+          }
+        });
+        await connection.query(
+          `INSERT INTO tasks (order_id, task_type, status, dedupe_key, max_attempts)
+           VALUES (?, 'PREPARE_RECHARGE', 'PENDING', ?, 5),
+                  (?, 'SUBMIT_RECHARGE', 'PENDING', ?, 5)`,
+          [orderId, `prepare-recharge:${orderId}`, orderId, `submit-recharge:${orderId}`]
+        );
+        const [thresholdRows] = await connection.query(
+          `SELECT setting_value FROM app_settings
+           WHERE setting_key = 'card_stock_low_threshold' LIMIT 1`
+        );
+        const [stockRows] = await connection.query(
+          `SELECT COUNT(*) AS count FROM cards
+           WHERE order_id IS NULL AND inventory_status = 'AVAILABLE'
+             AND BINARY card_type_id = BINARY ?
+             AND LOWER(status) IN ('active','available','usable','ready')
+             AND card_credentials_ciphertext IS NOT NULL`,
+          [String(order.card_type_id)]
+        );
+        const threshold = Math.max(0, Number(thresholdRows[0]?.setting_value || 5));
+        const remaining = Number(stockRows[0]?.count || 0);
+        if (remaining <= threshold) {
+          await connection.query(
+            `INSERT INTO operator_alerts
+             (id, alert_type, dedupe_key, severity, title, message, status)
+             VALUES (UUID(), 'CARD_STOCK_LOW', ?, 'warning', '可用卡库存偏低', ?, 'OPEN')
+             ON DUPLICATE KEY UPDATE severity = VALUES(severity), title = VALUES(title),
+               message = VALUES(message), status = 'OPEN', acknowledged_at = NULL`,
+            [alertKey, `卡段 ${order.card_type_id} 剩余 ${remaining} 张可用库存卡，阈值为 ${threshold}。`]
+          );
+        }
+        return {
+          providerCardId: String(card.provider_card_id),
+          currentBalance: String(card.current_balance),
+          remaining
+        };
+      });
+    },
+
     async beginCardPurchase(orderId, taskId, baseline) {
       return inTransaction(pool, async (connection) => {
         const [rows] = await connection.query(
@@ -150,9 +249,9 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey }) {
 
         await connection.query(
           `INSERT INTO cards
-           (id, order_id, provider_card_id, card_type_id, last4, status,
+           (id, order_id, inventory_status, assigned_at, provider_card_id, card_type_id, last4, status,
             funded_amount, current_balance, currency, refund_status)
-           VALUES (UUID(), ?, ?, ?, ?, ?, ?, ?, ?, 'MONITORING')`,
+           VALUES (UUID(), ?, 'ASSIGNED', CURRENT_TIMESTAMP(3), ?, ?, ?, ?, ?, ?, ?, 'MONITORING')`,
           [
             orderId,
             String(card.providerCardId),

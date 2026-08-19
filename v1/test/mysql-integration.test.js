@@ -34,9 +34,9 @@ async function createOrder(pool, overrides = {}) {
   );
   await pool.query(
     `INSERT INTO orders
-     (id, public_no, cdk_id, status, card_type_id, open_card_amount,
+     (id, public_no, cdk_id, status, card_type_id, open_card_amount, minimum_required_card_balance,
       session_ciphertext, card_purchase_idempotency_key)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       orderId,
       overrides.publicNo || `TEST-${orderId}`,
@@ -44,6 +44,7 @@ async function createOrder(pool, overrides = {}) {
       overrides.status || OrderStatus.CREATED,
       '7',
       '25.000000',
+      '16.000000',
       encryptSecret(JSON.stringify({ accessToken: 'fixture-token', account: { id: 'acct-1' } }), integrationSessionKey),
       overrides.purchaseKey || `purchase-${orderId}`
     ]
@@ -126,6 +127,53 @@ test('MySQL enforces one CDK per order and records transitions atomically', {
     );
   } finally {
     await removeOrder(pool, fixture);
+    await pool.end();
+  }
+});
+
+test('inventory assignment atomically gives one ready card to only one order', {
+  skip: !databaseUrl
+}, async () => {
+  const pool = mysql.createPool({ uri: databaseUrl, connectionLimit: 4, timezone: 'Z' });
+  const first = await createOrder(pool);
+  const second = await createOrder(pool);
+  const stockCardId = id();
+  await pool.query(
+    `INSERT INTO cards
+     (id, order_id, inventory_status, provider_card_id, card_type_id, last4, status,
+      funded_amount, current_balance, currency, refund_status, card_credentials_ciphertext)
+     VALUES (?, NULL, 'AVAILABLE', 'stock-provider-1', '7', '4242', 'active',
+       '16.000000', '16.000000', 'USD', 'MONITORING', ?)`,
+    [stockCardId, encryptSecret(JSON.stringify({
+      cardNumber: '4242424242424242', expMonth: 12, expYear: 2032, cvv: '123'
+    }), integrationSessionKey)]
+  );
+  const workflow = createWorkflowRepository(pool, { sessionEncryptionKey: integrationSessionKey });
+  try {
+    const results = await Promise.all([
+      workflow.assignAvailableCard(first.orderId),
+      workflow.assignAvailableCard(second.orderId)
+    ]);
+    assert.equal(results.filter(Boolean).length, 1);
+    const [orders] = await pool.query(
+      `SELECT id, status FROM orders WHERE id IN (?, ?) ORDER BY id`,
+      [first.orderId, second.orderId]
+    );
+    assert.deepEqual(orders.map((row) => row.status).sort(), [OrderStatus.CARD_READY, OrderStatus.CREATED].sort());
+    const [[card]] = await pool.query(
+      `SELECT order_id, inventory_status FROM cards WHERE id = ?`, [stockCardId]
+    );
+    assert.ok([first.orderId, second.orderId].includes(card.order_id));
+    assert.equal(card.inventory_status, 'ASSIGNED');
+    const [tasks] = await pool.query(
+      `SELECT task_type FROM tasks WHERE order_id = ? ORDER BY task_type`, [card.order_id]
+    );
+    assert.deepEqual(tasks.map((row) => row.task_type), ['PREPARE_RECHARGE', 'SUBMIT_RECHARGE']);
+  } finally {
+    await pool.query(`DELETE FROM operator_alerts WHERE dedupe_key = 'card-stock-low:7'`);
+    await removeOrder(pool, first);
+    await removeOrder(pool, second);
+    await pool.query('DELETE FROM cards WHERE id = ?', [stockCardId]);
     await pool.end();
   }
 });
@@ -422,7 +470,7 @@ test('order intake atomically redeems one CDK and creates an encrypted queued or
       'SELECT task_type, status FROM tasks WHERE order_id = ?',
       [created.orderId]
     );
-    assert.deepEqual(tasks, [{ task_type: 'PURCHASE_CARD', status: 'PENDING' }]);
+    assert.deepEqual(tasks, [{ task_type: 'ASSIGN_CARD', status: 'PENDING' }]);
     const [events] = await pool.query(
       `SELECT from_status, to_status, actor_type
        FROM order_events WHERE order_id = ?`,

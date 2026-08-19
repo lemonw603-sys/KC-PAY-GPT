@@ -167,6 +167,21 @@ export function createWorkflowHandlers({
     });
   }
 
+  async function assignCard(task) {
+    const context = await workflow.loadOrderContext(task.order_id);
+    if (context.order.status !== OrderStatus.CREATED) {
+      throw new TaskExecutionError(`Order cannot receive inventory card from ${context.order.status}`, {
+        code: 'ORDER_STATE_MISMATCH'
+      });
+    }
+    const assigned = await workflow.assignAvailableCard(task.order_id);
+    if (!assigned) {
+      throw new TaskExecutionError('No suitable inventory card is available', {
+        code: 'CARD_STOCK_EMPTY', retryable: true, delayMs: 60_000
+      });
+    }
+  }
+
   async function prepareRecharge(task) {
     const context = await workflow.loadOrderContext(task.order_id);
     if (context.order.status !== OrderStatus.CARD_READY) {
@@ -469,6 +484,7 @@ export function createWorkflowHandlers({
   }
 
   return {
+    ASSIGN_CARD: assignCard,
     PURCHASE_CARD: purchaseCard,
     VERIFY_CARD: verifyCard,
     PREPARE_RECHARGE: prepareRecharge,

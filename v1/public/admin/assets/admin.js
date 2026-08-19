@@ -112,6 +112,8 @@ async function loadOverview() {
     ['今日订单', overview.metrics.todayOrders, '今天新创建'],
     ['处理中', overview.metrics.processingOrders, '正在自动流转'],
     ['需要关注', overview.metrics.reviewingOrders, '等待人工确认'],
+    ['可用库存卡', overview.cardStock?.available ?? 0,
+      overview.cardStock?.low ? `低于阈值 ${overview.cardStock?.lowThreshold ?? 5}` : `补卡阈值 ${overview.cardStock?.lowThreshold ?? 5}`],
     ['成功率', overview.metrics.successRate == null ? '—' : `${overview.metrics.successRate}%`, `累计 ${overview.metrics.totalOrders} 单`]
   ];
   elements.metrics.innerHTML = metrics.map(([label, value, note], index) => `<article class="metric-card metric-${index + 1}">

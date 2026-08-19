@@ -22,6 +22,10 @@ function setup({ status = OrderStatus.CARD_READY, rechargeStatuses = [] } = {}) 
   };
   const workflow = {
     loadOrderContext: async () => context,
+    assignAvailableCard: async (...args) => {
+      calls.push(['assign-card', ...args]);
+      return { providerCardId: 'stock-card-1', remaining: 4 };
+    },
     transition: async (...args) => calls.push(['transition', ...args]),
     beginCardPurchase: async (...args) => calls.push(['begin-card', ...args]),
     markCardPurchaseAccepted: async (...args) => calls.push(['purchase-accepted', ...args]),
@@ -126,6 +130,25 @@ test('purchases a card with the persisted idempotency key and commits one bindin
     'order-1',
     { providerCardId: 'card-1', cardTypeId: 7, fundedAmount: 25 }
   ]);
+});
+
+test('assigns an existing inventory card without calling a paid provider operation', async () => {
+  const state = setup({ status: OrderStatus.CREATED });
+  await state.handlers.ASSIGN_CARD({ id: 8, order_id: 'order-1', attempts: 1 });
+  assert.deepEqual(state.calls, [['assign-card', 'order-1']]);
+  assert.equal(state.providerCalls.length, 0);
+});
+
+test('waits safely when inventory is empty and never opens a card', async () => {
+  const state = setup({ status: OrderStatus.CREATED });
+  state.workflow.assignAvailableCard = async () => null;
+  let purchases = 0;
+  state.cardProvider.purchaseCard = async () => { purchases += 1; };
+  await assert.rejects(
+    state.handlers.ASSIGN_CARD({ id: 8, order_id: 'order-1', attempts: 1 }),
+    (error) => error.code === 'CARD_STOCK_EMPTY' && error.retryable === true
+  );
+  assert.equal(purchases, 0);
 });
 
 test('recovers a missing purchase response ID from the persisted before-list without repurchasing', async () => {

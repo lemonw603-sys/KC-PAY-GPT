@@ -21,12 +21,17 @@ test('admin overview maps aggregate values without exposing raw records', async 
     [{ status: 'AVAILABLE', count: 20 }],
     [{ setting_key: 'accept_new_orders', setting_value: 'false', updated_at: new Date('2026-08-17T00:00:00Z') }],
     [{ status: 'REFUND_DETECTED', count: 1 }],
-    [{ count: 1 }]
+    [{ count: 1 }],
+    [{ available: 7, provisioning: 1, assigned: 2 }],
+    [{ setting_value: '5' }]
   ]);
   const result = await createAdminReadService({ pool }).getOverview();
   assert.equal(result.metrics.successRate, 80);
   assert.equal(result.metrics.todayOrders, 2);
   assert.deepEqual(result.orderStatuses, [{ status: 'RECHARGE_SUCCESS', count: 8 }]);
+  assert.deepEqual(result.cardStock, {
+    available: 7, provisioning: 1, assigned: 2, lowThreshold: 5, low: false
+  });
   assert.equal(pool.queries.some(({ sql }) => /session_ciphertext|recharge_card_key/i.test(sql)), false);
 });
 
