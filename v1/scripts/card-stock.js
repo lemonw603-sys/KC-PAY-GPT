@@ -60,8 +60,8 @@ export async function runCardStockCli({ env = process.env } = {}) {
     apiKey: String(env.HNSKJ_API_KEY || '')
   });
   try {
-    if (command === 'status') return stock.status();
-    if (command === 'threshold') return stock.setThreshold(option('count'));
+    if (command === 'status') return await stock.status();
+    if (command === 'threshold') return await stock.setThreshold(option('count'));
     if (command === 'register') {
       const providerCardId = option('card-id');
       if (!providerCardId) throw new Error('--card-id is required');
