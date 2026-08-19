@@ -47,7 +47,15 @@ async function resolvePurchasedId(provider, response, knownIds) {
   }
 }
 
-export async function openStockCards({ provider, stock, count, amount, cardTypeId, randomUUID = crypto.randomUUID }) {
+export async function openStockCards({
+  provider,
+  stock,
+  count,
+  amount,
+  cardTypeId,
+  randomUUID = crypto.randomUUID,
+  onCardOpened = async () => {}
+}) {
   const knownIds = await allCardIds(provider);
   const results = [];
   for (let index = 0; index < count; index += 1) {
@@ -73,6 +81,7 @@ export async function openStockCards({ provider, stock, count, amount, cardTypeI
     let registered = await stock.register(mapStockCard({
       data: { id: providerCardId, cardTypeId, status: 'provisioning' }
     }, { providerCardId, cardTypeId, fundedAmount: amount }));
+    await onCardOpened({ index: index + 1, providerCardId, registered });
     try {
       const details = await provider.card(providerCardId);
       registered = await stock.register(mapStockCard(details, {

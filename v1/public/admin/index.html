@@ -7,8 +7,8 @@
   <meta name="theme-color" content="#f5f8fc">
   <title>Plus 运营后台</title>
   <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/admin/assets/admin.css?v=2">
-  <script src="/admin/assets/admin.js?v=2" defer></script>
+  <link rel="stylesheet" href="/admin/assets/admin.css?v=3">
+  <script src="/admin/assets/admin.js?v=3" defer></script>
 </head>
 <body>
   <div class="admin-shell">
@@ -22,6 +22,7 @@
         <button class="nav-item is-active" type="button" data-view="overview"><span aria-hidden="true">⌂</span>总览</button>
         <button class="nav-item" type="button" data-view="orders"><span aria-hidden="true">≡</span>订单</button>
         <button class="nav-item" type="button" data-view="exceptions"><span aria-hidden="true">!</span>异常队列</button>
+        <button class="nav-item" type="button" data-view="stock"><span aria-hidden="true">▣</span>卡片库存</button>
         <button class="nav-item" type="button" data-view="cdks"><span aria-hidden="true">#</span>CDK 管理</button>
       </nav>
       <div class="sidebar-foot">
@@ -95,6 +96,35 @@
             <textarea id="generated-cdks" readonly spellcheck="false" aria-label="刚生成的 CDK 卡密"></textarea>
             <p>请立即复制保存；离开页面后无法从数据库还原明文。</p>
           </div>
+        </section>
+      </section>
+
+      <section id="stock-view" class="view" hidden>
+        <div class="stock-grid">
+          <section class="card stock-card">
+            <div class="card-heading"><div><p class="section-kicker">库存状态</p><h2>可用卡片</h2></div><span class="write-badge">实时</span></div>
+            <div class="stock-summary" id="stock-summary"></div>
+            <form class="threshold-form" id="stock-threshold-form">
+              <label for="stock-threshold">剩余多少张时提醒</label>
+              <div><input id="stock-threshold" type="number" min="0" max="10000" required><button class="primary-small" type="submit">保存阈值</button></div>
+            </form>
+          </section>
+          <section class="card stock-card">
+            <div class="card-heading"><div><p class="section-kicker">人工补卡</p><h2>创建开卡任务</h2></div><span class="write-badge">产生费用</span></div>
+            <p class="card-description">提交后由服务器安全执行。每张卡使用独立幂等键；任务异常时停止并等待人工核对。</p>
+            <form class="stock-open-form" id="stock-open-form">
+              <label>数量<input id="stock-open-count" type="number" min="1" max="500" value="2" required></label>
+              <label>单卡金额（USD）<input id="stock-open-amount" type="number" min="1" max="100000" value="16" required></label>
+              <label>卡段 ID<input id="stock-card-type" type="text" maxlength="128" value="1" required></label>
+              <div class="stock-cost" id="stock-cost">预计卡内本金：$32</div>
+              <label class="stock-confirm-label">输入确认词 <strong id="stock-confirm-hint">开2张</strong><input id="stock-confirmation" type="text" autocomplete="off" required></label>
+              <button class="danger-button" type="submit">确认并创建开卡任务</button>
+            </form>
+          </section>
+        </div>
+        <section class="card stock-card">
+          <div class="card-heading"><div><p class="section-kicker">执行记录</p><h2>最近补卡任务</h2></div><button class="text-button" id="refresh-stock" type="button">刷新</button></div>
+          <div class="mini-list" id="stock-jobs"></div>
         </section>
       </section>
 

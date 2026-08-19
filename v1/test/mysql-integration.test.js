@@ -16,6 +16,12 @@ import { sessionFixture } from '../test-support/session-fixture.js';
 import { storeCdkBatch } from '../src/services/cdk-service.js';
 import { createOrderStatusService } from '../src/services/order-status-service.js';
 import { armRechargePermit } from '../src/services/recharge-permit-service.js';
+import {
+  createCardStockJobService,
+  claimCardStockJob,
+  updateCardStockJobProgress,
+  completeCardStockJob
+} from '../src/services/card-stock-job-service.js';
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
 const integrationSessionKey = Buffer.alloc(32, 7);
@@ -174,6 +180,37 @@ test('inventory assignment atomically gives one ready card to only one order', {
     await removeOrder(pool, first);
     await removeOrder(pool, second);
     await pool.query('DELETE FROM cards WHERE id = ?', [stockCardId]);
+    await pool.end();
+  }
+});
+
+test('card stock jobs require confirmation and move durably through the runner states', {
+  skip: !databaseUrl
+}, async () => {
+  const pool = mysql.createPool({ uri: databaseUrl, connectionLimit: 4, timezone: 'Z' });
+  const service = createCardStockJobService({ pool });
+  let job;
+  try {
+    await assert.rejects(
+      service.createJob({ count: 2, amount: 16, cardTypeId: '1', confirmation: 'wrong' }),
+      (error) => error.code === 'CARD_STOCK_CONFIRMATION_REQUIRED'
+    );
+    job = await service.createJob({ count: 2, amount: 16, cardTypeId: '1', confirmation: '开2张' });
+    await assert.rejects(
+      service.createJob({ count: 1, amount: 16, cardTypeId: '1', confirmation: '开1张' }),
+      (error) => error.code === 'CARD_STOCK_JOB_ACTIVE'
+    );
+    const claimed = await claimCardStockJob(pool, { workerId: 'stock-worker-test' });
+    assert.equal(claimed.id, job.id);
+    assert.equal(claimed.status, 'RUNNING');
+    await updateCardStockJobProgress(pool, { jobId: job.id, workerId: 'stock-worker-test', openedCount: 1 });
+    await completeCardStockJob(pool, { jobId: job.id, workerId: 'stock-worker-test', openedCount: 2 });
+    const { jobs } = await service.listJobs();
+    const completed = jobs.find((item) => item.id === job.id);
+    assert.equal(completed.status, 'COMPLETED');
+    assert.equal(completed.openedCount, 2);
+  } finally {
+    if (job) await pool.query('DELETE FROM card_stock_jobs WHERE id = ?', [job.id]);
     await pool.end();
   }
 });

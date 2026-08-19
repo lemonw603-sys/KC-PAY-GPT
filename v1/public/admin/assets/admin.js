@@ -46,7 +46,13 @@ const elements = {
   ,alertsCard: document.querySelector('#alerts-card'), alertsList: document.querySelector('#alerts-list'),
   cdkForm: document.querySelector('#cdk-form'), cdkCount: document.querySelector('#cdk-count'),
   cdkResult: document.querySelector('#cdk-result'), generatedCdks: document.querySelector('#generated-cdks'),
-  cdkBatchLabel: document.querySelector('#cdk-batch-label'), copyCdks: document.querySelector('#copy-cdks')
+  cdkBatchLabel: document.querySelector('#cdk-batch-label'), copyCdks: document.querySelector('#copy-cdks'),
+  stockSummary: document.querySelector('#stock-summary'), stockJobs: document.querySelector('#stock-jobs'),
+  stockThresholdForm: document.querySelector('#stock-threshold-form'), stockThreshold: document.querySelector('#stock-threshold'),
+  stockOpenForm: document.querySelector('#stock-open-form'), stockOpenCount: document.querySelector('#stock-open-count'),
+  stockOpenAmount: document.querySelector('#stock-open-amount'), stockCardType: document.querySelector('#stock-card-type'),
+  stockConfirmation: document.querySelector('#stock-confirmation'), stockConfirmHint: document.querySelector('#stock-confirm-hint'),
+  stockCost: document.querySelector('#stock-cost')
 };
 
 function escapeHtml(value) {
@@ -156,6 +162,34 @@ async function loadOrders() {
   elements.syncTime.textContent = `更新于 ${new Date().toLocaleTimeString('zh-CN', { hour12: false })}`;
 }
 
+const STOCK_JOB_LABELS = Object.freeze({
+  PENDING: '等待执行', RUNNING: '执行中', COMPLETED: '已完成', REVIEW_REQUIRED: '需要核对'
+});
+
+async function loadStock() {
+  const payload = await api('/api/v1/admin/card-stock');
+  const totals = (payload.cardTypes || []).reduce((sum, item) => ({
+    available: sum.available + item.available,
+    provisioning: sum.provisioning + item.provisioning,
+    assigned: sum.assigned + item.assigned
+  }), { available: 0, provisioning: 0, assigned: 0 });
+  elements.stockSummary.innerHTML = [
+    ['可用', totals.available], ['处理中', totals.provisioning], ['已分配', totals.assigned]
+  ].map(([label, value]) => `<div><span>${label}</span><strong>${value}</strong></div>`).join('');
+  elements.stockThreshold.value = payload.threshold;
+  elements.stockJobs.innerHTML = payload.jobs?.length
+    ? payload.jobs.map((job) => `<div><span><strong>${escapeHtml(STOCK_JOB_LABELS[job.status] || job.status)} · ${job.openedCount}/${job.requestedCount} 张</strong><small>卡段 ${escapeHtml(job.cardTypeId)} · $${escapeHtml(job.amount)} / 张 · ${formatTime(job.createdAt)}${job.errorMessage ? ` · ${escapeHtml(job.errorMessage)}` : ''}</small></span><em>${escapeHtml(job.status)}</em></div>`).join('')
+    : '<p class="empty-state">还没有后台补卡任务</p>';
+  elements.syncTime.textContent = `更新于 ${new Date().toLocaleTimeString('zh-CN', { hour12: false })}`;
+}
+
+function updateStockEstimate() {
+  const count = Math.max(0, Number(elements.stockOpenCount.value) || 0);
+  const amount = Math.max(0, Number(elements.stockOpenAmount.value) || 0);
+  elements.stockCost.textContent = `预计卡内本金：$${count * amount}`;
+  elements.stockConfirmHint.textContent = `开${count}张`;
+}
+
 function renderKeyValues(items) {
   return `<dl class="key-values">${items.map(([key, value]) => `<div><dt>${escapeHtml(key)}</dt><dd>${escapeHtml(value ?? '—')}</dd></div>`).join('')}</dl>`;
 }
@@ -230,6 +264,10 @@ async function switchView(view, { status = '' } = {}) {
     elements.viewKicker.textContent = '卡密管理';
     elements.viewTitle.textContent = '生成客户兑换码';
     elements.syncTime.textContent = '仅内部管理员可操作';
+  } else if (view === 'stock') {
+    elements.viewKicker.textContent = '资金与库存';
+    elements.viewTitle.textContent = '卡片库存与人工补卡';
+    await loadStock();
   } else {
     elements.viewKicker.textContent = view === 'exceptions' ? '人工处理' : '订单中心';
     elements.viewTitle.textContent = view === 'exceptions' ? '需要关注的订单' : '全部订单';
@@ -259,7 +297,44 @@ elements.prevPage.addEventListener('click', () => { if (state.page > 1) { state.
 elements.nextPage.addEventListener('click', () => { if (state.page * state.pageSize < state.total) { state.page += 1; loadOrders(); } });
 document.querySelector('#refresh-button').addEventListener('click', () => {
   hideNotice();
-  (state.view === 'overview' ? loadOverview() : loadOrders()).catch(() => showNotice('刷新失败，请稍后重试。'));
+  (state.view === 'overview' ? loadOverview() : state.view === 'stock' ? loadStock() : loadOrders()).catch(() => showNotice('刷新失败，请稍后重试。'));
+});
+document.querySelector('#refresh-stock')?.addEventListener('click', () => loadStock().catch(() => showNotice('库存读取失败。')));
+elements.stockOpenCount?.addEventListener('input', updateStockEstimate);
+elements.stockOpenAmount?.addEventListener('input', updateStockEstimate);
+elements.stockThresholdForm?.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  try {
+    await api('/api/v1/admin/card-stock/threshold', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ count: Number(elements.stockThreshold.value) })
+    });
+    showNotice('补卡提醒阈值已保存。');
+    await loadStock();
+  } catch { showNotice('阈值保存失败。'); }
+});
+elements.stockOpenForm?.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const count = Number(elements.stockOpenCount.value);
+  const amount = Number(elements.stockOpenAmount.value);
+  const expected = `开${count}张`;
+  if (elements.stockConfirmation.value.trim() !== expected) {
+    showNotice(`请输入确认词“${expected}”。`);
+    return;
+  }
+  if (!window.confirm(`确认创建 ${count} 张、每张 $${amount} 的开卡任务？预计卡内本金 $${count * amount}。`)) return;
+  const button = elements.stockOpenForm.querySelector('button[type="submit"]');
+  button.disabled = true;
+  try {
+    await api('/api/v1/admin/card-stock/jobs', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ count, amount, cardTypeId: elements.stockCardType.value.trim(), confirmation: expected })
+    });
+    elements.stockConfirmation.value = '';
+    showNotice('开卡任务已创建，服务器将在约 10 秒内开始执行。');
+    await loadStock();
+  } catch { showNotice('任务创建失败；可能已有任务正在执行。'); }
+  finally { button.disabled = false; }
 });
 document.querySelector('#logout-button').addEventListener('click', async () => {
   await fetch('/api/v1/admin/session', { method: 'DELETE' }).catch(() => {});
@@ -267,6 +342,9 @@ document.querySelector('#logout-button').addEventListener('click', async () => {
 });
 document.querySelector('#close-detail').addEventListener('click', () => elements.detail.close());
 elements.detail.addEventListener('click', (event) => { if (event.target === elements.detail) elements.detail.close(); });
+window.setInterval(() => {
+  if (state.view === 'stock' && !document.hidden) loadStock().catch(() => {});
+}, 5000);
 elements.cdkForm.addEventListener('submit', async (event) => {
   event.preventDefault();
   hideNotice();

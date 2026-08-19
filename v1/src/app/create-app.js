@@ -24,6 +24,9 @@ export function createApp({
   getAdminOrder = null,
   listAdminAlerts = null,
   requestCardTransactionSync = null,
+  getAdminCardStock = null,
+  setAdminCardStockThreshold = null,
+  createAdminCardStockJob = null,
   createAdminCdkBatch = null,
   revokeAdminCdkBatch = null,
   orderRateLimit = createFixedWindowRateLimit(),
@@ -133,6 +136,22 @@ export function createApp({
     app.post('/api/v1/admin/orders/:publicNo/sync-transactions', noStore, requireAdminApi, async (req, res) => {
       const result = await requestCardTransactionSync(req.params.publicNo);
       return res.status(result.queued ? 202 : 200).json(result);
+    });
+  }
+  if (typeof getAdminCardStock === 'function') {
+    app.get('/api/v1/admin/card-stock', noStore, requireAdminApi, async (_req, res) => {
+      res.json(await getAdminCardStock());
+    });
+  }
+  if (typeof setAdminCardStockThreshold === 'function') {
+    app.post('/api/v1/admin/card-stock/threshold', noStore, requireAdminApi, async (req, res) => {
+      res.json(await setAdminCardStockThreshold(req.body?.count));
+    });
+  }
+  if (typeof createAdminCardStockJob === 'function') {
+    app.post('/api/v1/admin/card-stock/jobs', noStore, requireAdminApi, async (req, res) => {
+      const job = await createAdminCardStockJob(req.body);
+      return res.status(202).json({ job });
     });
   }
   if (typeof createAdminCdkBatch === 'function') {

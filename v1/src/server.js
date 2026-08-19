@@ -6,6 +6,8 @@ import { createOrderStatusService } from './services/order-status-service.js';
 import { createAdminReadService } from './services/admin-read-service.js';
 import { createAdminCdkService, revokeCdkBatch } from './services/cdk-service.js';
 import { createAdminSessionAuth } from './security/admin-session.js';
+import { createCardStockService } from './services/card-stock-service.js';
+import { createCardStockJobService } from './services/card-stock-job-service.js';
 
 const config = loadConfig();
 const pool = createDatabasePool(config.database);
@@ -15,6 +17,8 @@ const createCustomerOrder = createOrderIntakeService({
 });
 const getCustomerOrderStatus = createOrderStatusService({ pool });
 const adminReadService = createAdminReadService({ pool });
+const cardStockService = createCardStockService({ pool, sessionEncryptionKey: config.sessionEncryptionKey });
+const cardStockJobService = createCardStockJobService({ pool });
 const createAdminCdkBatch = createAdminCdkService({ pool });
 const adminAuth = config.adminPasswordHash
   ? createAdminSessionAuth({
@@ -33,6 +37,12 @@ const app = createApp({
   getAdminOrder: adminReadService.getOrder,
   listAdminAlerts: adminReadService.listAlerts,
   requestCardTransactionSync: adminReadService.requestCardTransactionSync
+  ,getAdminCardStock: async () => ({
+    ...await cardStockService.status(),
+    ...await cardStockJobService.listJobs({ limit: 20 })
+  })
+  ,setAdminCardStockThreshold: (value) => cardStockService.setThreshold(value)
+  ,createAdminCardStockJob: cardStockJobService.createJob
   ,createAdminCdkBatch
   ,revokeAdminCdkBatch: (batchNo, reason) => revokeCdkBatch(pool, batchNo, reason)
 });

@@ -284,3 +284,37 @@ test('generates CDKs only for an authenticated administrator', async () => {
     });
   });
 });
+
+test('creates paid card stock jobs only through an authenticated admin route', async () => {
+  const adminAuth = createAdminSessionAuth({
+    passwordHash: await hashAdminPassword('fixture admin password', { salt: Buffer.alloc(16, 9) }),
+    sessionSecret: Buffer.alloc(32, 10),
+    secureCookies: false
+  });
+  let received;
+  const app = createApp({
+    adminAuth,
+    getAdminCardStock: async () => ({ threshold: 1, cardTypes: [], jobs: [] }),
+    setAdminCardStockThreshold: async (count) => ({ threshold: Number(count) }),
+    createAdminCardStockJob: async (input) => {
+      received = input;
+      return { id: 'job-1', status: 'PENDING' };
+    }
+  });
+  await withServer(app, async (baseUrl) => {
+    assert.equal((await fetch(`${baseUrl}/api/v1/admin/card-stock`)).status, 401);
+    const login = await fetch(`${baseUrl}/api/v1/admin/session`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: 'fixture admin password' })
+    });
+    const cookie = login.headers.get('set-cookie').split(';')[0];
+    const stock = await fetch(`${baseUrl}/api/v1/admin/card-stock`, { headers: { Cookie: cookie } });
+    assert.deepEqual(await stock.json(), { threshold: 1, cardTypes: [], jobs: [] });
+    const created = await fetch(`${baseUrl}/api/v1/admin/card-stock/jobs`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cookie },
+      body: JSON.stringify({ count: 2, amount: 16, cardTypeId: '1', confirmation: '开2张' })
+    });
+    assert.equal(created.status, 202);
+    assert.deepEqual(received, { count: 2, amount: 16, cardTypeId: '1', confirmation: '开2张' });
+  });
+});
