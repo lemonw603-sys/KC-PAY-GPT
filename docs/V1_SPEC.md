@@ -209,11 +209,11 @@ v1 至少包含以下实体：
 
 ### `cdks`
 
-- `id`、`code_hash`、`status`、`plan_type`
+- `id`、`code_hash`、`hash_version`、`status`、`plan_type`
 - `batch_no`、`created_at`、`redeemed_at`、`revoked_at`、`revoke_reason`
 - `order_id`
 
-v1 MySQL 只保存 CDK 的 SHA-256。系统生成的明文仅一次写入运营人员指定的 `0600` 私有文件；导入文件由运营人员自行保管。
+v1 MySQL 对新 CDK 只保存带独立服务端密钥的 HMAC-SHA-256；迁移前 SHA-256 记录继续兼容。后台生成批次的恢复副本使用另一枚独立密钥加密，最后一枚未使用 CDK 被兑换或作废后销毁恢复密文；CLI 明文仅写入运营人员指定的 `0600` 私有文件。
 
 ### `orders`
 

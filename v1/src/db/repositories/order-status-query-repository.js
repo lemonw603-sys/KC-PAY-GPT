@@ -24,9 +24,14 @@ export async function findCustomerOrder(pool, lookup) {
   } else {
     sql = `${SELECT_ORDER}
       INNER JOIN cdks c ON c.id = o.cdk_id
-      WHERE c.code_hash = ? LIMIT 1`;
-    parameter = lookup.cdkHash;
+      WHERE (c.hash_version = ? AND c.code_hash = ?)
+         OR (c.hash_version = ? AND c.code_hash = ?)
+      LIMIT 1`;
+    parameter = [
+      lookup.cdkLookup.current.version, lookup.cdkLookup.current.hash,
+      lookup.cdkLookup.legacy.version, lookup.cdkLookup.legacy.hash
+    ];
   }
-  const [rows] = await pool.query(sql, [parameter]);
+  const [rows] = await pool.query(sql, Array.isArray(parameter) ? parameter : [parameter]);
   return rows[0] || null;
 }

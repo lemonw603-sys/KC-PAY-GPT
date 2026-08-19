@@ -27,6 +27,9 @@ const baseSchema = z.object({
         return false;
       }
     }, 'SESSION_ENCRYPTION_KEY_BASE64 must decode to exactly 32 bytes'),
+  CDK_HASH_KEY_V1_BASE64: z.string().trim().min(1),
+  CDK_RECOVERY_KEY_BASE64: z.string().trim().min(1),
+  ADMIN_HOST: z.string().trim().min(1).max(253).optional(),
   ADMIN_PASSWORD_HASH: z.string().trim()
     .regex(/^scrypt-v1\$[A-Za-z0-9_-]{22}\$[A-Za-z0-9_-]{86}$/)
     .optional(),
@@ -41,6 +44,11 @@ const runtimeDatabaseSchema = z.object({
   tlsKey: 'DATABASE_TLS',
   caKey: 'DATABASE_TLS_CA_BASE64'
 }));
+
+const cdkSecuritySchema = z.object({
+  CDK_HASH_KEY_V1_BASE64: z.string().trim().min(1),
+  CDK_RECOVERY_KEY_BASE64: z.string().trim().min(1)
+}).superRefine((value, context) => validateCdkSecurityConfig(value, context));
 
 const migrationSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
@@ -104,6 +112,34 @@ function validateAdminConfig(value, context) {
         message: 'must decode to exactly 32 bytes'
       });
     }
+  }
+}
+
+function validateCdkSecurityConfig(value, context) {
+  for (const key of ['CDK_HASH_KEY_V1_BASE64', 'CDK_RECOVERY_KEY_BASE64']) {
+    try {
+      if (Buffer.from(value[key], 'base64').length !== 32) throw new Error();
+    } catch {
+      context.addIssue({
+        code: 'custom',
+        path: [key],
+        message: 'must decode to exactly 32 bytes'
+      });
+    }
+  }
+  if (
+    value.CDK_HASH_KEY_V1_BASE64
+    && value.CDK_RECOVERY_KEY_BASE64
+    && value.CDK_HASH_KEY_V1_BASE64 === value.CDK_RECOVERY_KEY_BASE64
+  ) {
+    context.addIssue({
+      code: 'custom',
+      path: ['CDK_RECOVERY_KEY_BASE64'],
+      message: 'must be independent from CDK_HASH_KEY_V1_BASE64'
+    });
+  }
+  if (value.ADMIN_HOST && !/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)*[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/i.test(value.ADMIN_HOST)) {
+    context.addIssue({ code: 'custom', path: ['ADMIN_HOST'], message: 'must be a valid hostname' });
   }
 }
 
@@ -190,6 +226,7 @@ function validateDatabaseConfig(value, context, { urlKey, tlsKey, caKey }) {
 
 function validateBaseConfig(value, context) {
   validateAdminConfig(value, context);
+  validateCdkSecurityConfig(value, context);
   if (net.isIP(value.HOST) === 0) {
     context.addIssue({
       code: 'custom',
@@ -268,6 +305,9 @@ export function loadConfig(env = process.env) {
       caKey: 'DATABASE_TLS_CA_BASE64'
     }),
     sessionEncryptionKey: Buffer.from(result.data.SESSION_ENCRYPTION_KEY_BASE64, 'base64'),
+    cdkHashKey: Buffer.from(result.data.CDK_HASH_KEY_V1_BASE64, 'base64'),
+    cdkRecoveryKey: Buffer.from(result.data.CDK_RECOVERY_KEY_BASE64, 'base64'),
+    adminHost: result.data.ADMIN_HOST || null,
     adminPasswordHash: result.data.ADMIN_PASSWORD_HASH || null,
     adminSessionSecret: result.data.ADMIN_SESSION_SECRET_BASE64
       ? Buffer.from(result.data.ADMIN_SESSION_SECRET_BASE64, 'base64')
@@ -306,6 +346,20 @@ export function loadRuntimeDatabaseConfig(env = process.env) {
     tlsKey: 'DATABASE_TLS',
     caKey: 'DATABASE_TLS_CA_BASE64'
   });
+}
+
+export function loadCdkSecurityConfig(env = process.env) {
+  const result = cdkSecuritySchema.safeParse(env);
+  if (!result.success) {
+    const detail = result.error.issues
+      .map((issue) => `${issue.path.join('.')}: ${issue.message}`)
+      .join('; ');
+    throw new Error(`Invalid CDK security configuration: ${detail}`);
+  }
+  return {
+    cdkHashKey: Buffer.from(result.data.CDK_HASH_KEY_V1_BASE64, 'base64'),
+    cdkRecoveryKey: Buffer.from(result.data.CDK_RECOVERY_KEY_BASE64, 'base64')
+  };
 }
 
 export function loadWorkerConfig(env = process.env) {

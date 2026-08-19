@@ -26,9 +26,10 @@ const config = loadConfig();
 const pool = createDatabasePool(config.database);
 const createCustomerOrder = createOrderIntakeService({
   pool,
-  sessionEncryptionKey: config.sessionEncryptionKey
+  sessionEncryptionKey: config.sessionEncryptionKey,
+  cdkHashKey: config.cdkHashKey
 });
-const getCustomerOrderStatus = createOrderStatusService({ pool });
+const getCustomerOrderStatus = createOrderStatusService({ pool, cdkHashKey: config.cdkHashKey });
 const adminReadService = createAdminReadService({
   pool,
   sessionEncryptionKey: config.sessionEncryptionKey
@@ -37,19 +38,22 @@ const cardStockService = createCardStockService({ pool, sessionEncryptionKey: co
 const cardStockJobService = createCardStockJobService({ pool });
 const createAdminCdkBatch = createAdminCdkService({
   pool,
-  sessionEncryptionKey: config.sessionEncryptionKey
+  cdkHashKey: config.cdkHashKey,
+  cdkRecoveryKey: config.cdkRecoveryKey
 });
 const adminOperationsService = createAdminOperationsService({ pool });
 const compensateAdminOrder = createOrderCompensationService({
   pool,
-  sessionEncryptionKey: config.sessionEncryptionKey
+  cdkHashKey: config.cdkHashKey,
+  cdkRecoveryKey: config.cdkRecoveryKey
 });
 const cancelAdminOrder = createOrderCancellationService({ pool });
 const adminAuth = config.adminPasswordHash
   ? createAdminSessionAuth({
     passwordHash: config.adminPasswordHash,
     sessionSecret: config.adminSessionSecret,
-    secureCookies: config.nodeEnv === 'production'
+    secureCookies: config.nodeEnv === 'production',
+    pool
   })
   : null;
 const app = createApp({
@@ -57,6 +61,7 @@ const app = createApp({
   createCustomerOrder,
   getCustomerOrderStatus,
   adminAuth,
+  adminHost: config.adminHost,
   getAdminOverview: adminReadService.getOverview,
   listAdminOrders: adminReadService.listOrders,
   getAdminOrder: adminReadService.getOrder,
@@ -95,7 +100,7 @@ const app = createApp({
   ,cancelAdminOrder
   ,createAdminCdkBatch
   ,listAdminCdkBatches: (input) => listCdkBatches(pool, input)
-  ,downloadAdminCdkBatch: (batchNo) => downloadCdkBatch(pool, batchNo, config.sessionEncryptionKey)
+  ,downloadAdminCdkBatch: (batchNo) => downloadCdkBatch(pool, batchNo, config.cdkRecoveryKey)
   ,revokeAdminCdkBatch: (batchNo, reason) => revokeCdkBatch(pool, batchNo, reason)
 });
 

@@ -57,7 +57,7 @@ HTTP/1.1 201 Created
 一次成功请求在同一 MySQL 事务中：
 
 1. 锁定接单开关和默认卡配置。
-2. 按 SHA-256 哈希锁定一枚 `AVAILABLE` CDK。
+2. 新 CDK 按 HMAC-SHA-256 锁定；迁移前 CDK 同时用版本化 SHA-256 查询，且必须唯一命中一枚 `AVAILABLE` CDK。
 3. 创建 `CREATED` 订单，Session 以 AES-256-GCM 密文保存。
 4. 将 CDK 改为 `REDEEMED` 并绑定订单。
 5. 写入创建事件和唯一 `PURCHASE_CARD` 任务。
@@ -80,7 +80,7 @@ HTTP/1.1 201 Created
 { "cdk": "PJ-..." }
 ```
 
-两者必须且只能提交一个。CDK 在查询服务内转换为 SHA-256，不会传入数据库查询日志或响应。
+两者必须且只能提交一个。CDK 在查询服务内转换为版本化 HMAC/SHA-256 双查值，不会传入数据库查询日志或响应。
 
 成功响应：
 

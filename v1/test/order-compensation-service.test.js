@@ -4,6 +4,7 @@ import { createOrderCompensationService } from '../src/services/order-compensati
 import { encryptSecret } from '../src/security/secret-box.js';
 
 const key = Buffer.alloc(32, 23);
+const hashKey = Buffer.alloc(32, 24);
 
 function fakePool(responses) {
   const queries = [];
@@ -27,7 +28,7 @@ test('compensation creates one replacement and closes only a no-side-effect fail
     [{ affectedRows: 1 }, []], [{ affectedRows: 1 }, []], [{ affectedRows: 1 }, []],
     [{ affectedRows: 1 }, []], [{ affectedRows: 1 }, []]
   ]);
-  const result = await createOrderCompensationService({ pool, sessionEncryptionKey: key })(
+  const result = await createOrderCompensationService({ pool, cdkHashKey: hashKey, cdkRecoveryKey: key })(
     'PJV1-DEMO', { confirmation: '补发 PJV1-DEMO' }
   );
   assert.match(result.code, /^PJ-[A-Z2-9]{20}$/);
@@ -44,7 +45,7 @@ test('compensation returns the same encrypted replacement on retry', async () =>
       code_ciphertext: encryptSecret(code, key), compensated_at: new Date('2026-08-20T00:00:00Z'),
       card_count: 0, provider_call_count: 0, active_task_count: 0, dead_task_count: 1 }], []]
   ]);
-  const result = await createOrderCompensationService({ pool, sessionEncryptionKey: key })(
+  const result = await createOrderCompensationService({ pool, cdkHashKey: hashKey, cdkRecoveryKey: key })(
     'PJV1-DEMO', { confirmation: '补发 PJV1-DEMO' }
   );
   assert.equal(result.code, code);
@@ -59,7 +60,7 @@ test('compensation refuses an order that may have provider side effects', async 
       active_task_count: 0, dead_task_count: 1 }], []]
   ]);
   await assert.rejects(
-    createOrderCompensationService({ pool, sessionEncryptionKey: key })(
+    createOrderCompensationService({ pool, cdkHashKey: hashKey, cdkRecoveryKey: key })(
       'PJV1-DEMO', { confirmation: '补发 PJV1-DEMO' }
     ),
     (error) => error.code === 'COMPENSATION_SIDE_EFFECT_RISK'

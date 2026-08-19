@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import mysql from 'mysql2/promise';
-import { loadRuntimeDatabaseConfig } from '../src/config.js';
+import { loadCdkSecurityConfig, loadRuntimeDatabaseConfig } from '../src/config.js';
 import { createDatabaseConnectionOptions } from '../src/db/pool.js';
 import {
   CdkBatchError,
@@ -72,8 +72,10 @@ async function main() {
     }
   }
   let database;
+  let cdkSecurity;
   try {
     database = loadRuntimeDatabaseConfig();
+    cdkSecurity = loadCdkSecurityConfig();
   } catch {
     throw new CdkBatchError('database configuration is invalid', 'INVALID_DATABASE_CONFIG');
   }
@@ -98,7 +100,8 @@ async function main() {
   try {
     const result = await storeCdkBatch(pool, codes, {
       batchNo,
-      requireAllInserted: command === 'generate'
+      requireAllInserted: command === 'generate',
+      cdkHashKey: cdkSecurity.cdkHashKey
     });
     const summary = {
       command,

@@ -8,7 +8,9 @@ import { promisify } from 'node:util';
 
 const scrypt = promisify(scryptCallback);
 const COOKIE_NAME = 'pojia_admin_session';
+const STEP_UP_COOKIE_NAME = 'pojia_admin_step_up';
 const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
+const STEP_UP_TTL_MS = 5 * 60 * 1000;
 const HASH_PREFIX = 'scrypt-v1';
 
 function encode(value) {
@@ -56,6 +58,8 @@ export function createAdminSessionAuth({
   passwordHash,
   sessionSecret,
   secureCookies = false,
+  pool = null,
+  sessionVersionStore = null,
   now = () => Date.now()
 }) {
   const parsedHash = parsePasswordHash(passwordHash);
@@ -64,16 +68,43 @@ export function createAdminSessionAuth({
     throw new Error('ADMIN_SESSION_SECRET_BASE64 must decode to exactly 32 bytes');
   }
 
+  const versionStore = sessionVersionStore || {
+    async get() {
+      if (!pool) return 1;
+      const [rows] = await pool.query(
+        `SELECT setting_value FROM app_settings
+         WHERE setting_key = 'admin_session_version' LIMIT 1`
+      );
+      const version = Number(rows[0]?.setting_value);
+      if (!Number.isSafeInteger(version) || version < 1) throw new Error('Invalid admin session version');
+      return version;
+    },
+    async revokeAll() {
+      if (!pool) return 2;
+      await pool.query(
+        `UPDATE app_settings
+         SET setting_value = CAST(CAST(setting_value AS UNSIGNED) + 1 AS CHAR)
+         WHERE setting_key = 'admin_session_version'`
+      );
+      return this.get();
+    }
+  };
+
   function signature(payload) {
     return createHmac('sha256', sessionSecret).update(payload).digest('base64url');
   }
 
-  function issueSession() {
-    const payload = encode(JSON.stringify({ version: 1, expiresAt: now() + SESSION_TTL_MS }));
+  async function issueSession() {
+    const payload = encode(JSON.stringify({
+      kind: 'admin',
+      sessionId: randomBytes(18).toString('base64url'),
+      version: await versionStore.get(),
+      expiresAt: now() + SESSION_TTL_MS
+    }));
     return `${payload}.${signature(payload)}`;
   }
 
-  function verifySession(token) {
+  function verifySignedToken(token, kind) {
     if (typeof token !== 'string') return false;
     const [payload, receivedSignature, extra] = token.split('.');
     if (!payload || !receivedSignature || extra) return false;
@@ -82,7 +113,10 @@ export function createAdminSessionAuth({
     if (expected.length !== received.length || !timingSafeEqual(expected, received)) return false;
     try {
       const data = JSON.parse(decode(payload).toString('utf8'));
-      return data.version === 1 && Number.isFinite(data.expiresAt) && data.expiresAt > now();
+      if (data.kind !== kind || typeof data.sessionId !== 'string' || data.sessionId.length < 16) return false;
+      if (!Number.isSafeInteger(data.version) || data.version < 1) return false;
+      if (!Number.isFinite(data.expiresAt) || data.expiresAt <= now()) return false;
+      return data;
     } catch {
       return false;
     }
@@ -94,8 +128,34 @@ export function createAdminSessionAuth({
     return timingSafeEqual(received, parsedHash.digest);
   }
 
-  function authenticateRequest(req) {
-    return verifySession(parseCookies(req.headers.cookie).get(COOKIE_NAME));
+  async function authenticatedPayload(req) {
+    const data = verifySignedToken(parseCookies(req.headers.cookie).get(COOKIE_NAME), 'admin');
+    if (!data || data.version !== await versionStore.get()) return false;
+    return data;
+  }
+
+  async function authenticateRequest(req) {
+    return Boolean(await authenticatedPayload(req));
+  }
+
+  async function issueStepUp(req, password) {
+    const session = await authenticatedPayload(req);
+    if (!session || !await verifyPassword(password)) return null;
+    const payload = encode(JSON.stringify({
+      kind: 'step-up',
+      sessionId: session.sessionId,
+      version: session.version,
+      expiresAt: now() + STEP_UP_TTL_MS
+    }));
+    return `${payload}.${signature(payload)}`;
+  }
+
+  async function hasStepUp(req) {
+    const session = await authenticatedPayload(req);
+    const stepUp = verifySignedToken(parseCookies(req.headers.cookie).get(STEP_UP_COOKIE_NAME), 'step-up');
+    return Boolean(session && stepUp
+      && stepUp.sessionId === session.sessionId
+      && stepUp.version === session.version);
   }
 
   function setSessionCookie(res, token) {
@@ -110,23 +170,49 @@ export function createAdminSessionAuth({
     res.setHeader('Set-Cookie', parts.join('; '));
   }
 
-  function clearSessionCookie(res) {
+  function setStepUpCookie(res, token) {
     const parts = [
+      `${STEP_UP_COOKIE_NAME}=${token}`,
+      'Path=/api/v1/admin',
+      `Max-Age=${Math.floor(STEP_UP_TTL_MS / 1000)}`,
+      'HttpOnly',
+      'SameSite=Strict'
+    ];
+    if (secureCookies) parts.push('Secure');
+    res.append('Set-Cookie', parts.join('; '));
+  }
+
+  function clearSessionCookie(res) {
+    const sessionParts = [
       `${COOKIE_NAME}=`,
       'Path=/',
       'Max-Age=0',
       'HttpOnly',
       'SameSite=Strict'
     ];
-    if (secureCookies) parts.push('Secure');
-    res.setHeader('Set-Cookie', parts.join('; '));
+    const stepUpParts = [
+      `${STEP_UP_COOKIE_NAME}=`,
+      'Path=/api/v1/admin',
+      'Max-Age=0',
+      'HttpOnly',
+      'SameSite=Strict'
+    ];
+    if (secureCookies) {
+      sessionParts.push('Secure');
+      stepUpParts.push('Secure');
+    }
+    res.setHeader('Set-Cookie', [sessionParts.join('; '), stepUpParts.join('; ')]);
   }
 
   return {
     authenticateRequest,
     clearSessionCookie,
+    hasStepUp,
     issueSession,
+    issueStepUp,
+    revokeAllSessions: () => versionStore.revokeAll(),
     setSessionCookie,
+    setStepUpCookie,
     verifyPassword
   };
 }

@@ -15,7 +15,9 @@ function validEnvironment() {
     PORT: '3200',
     TRUST_PROXY: 'false',
     DATABASE_URL: 'mysql://user:pass@127.0.0.1:3306/pojia_test',
-    SESSION_ENCRYPTION_KEY_BASE64: crypto.randomBytes(32).toString('base64')
+    SESSION_ENCRYPTION_KEY_BASE64: crypto.randomBytes(32).toString('base64'),
+    CDK_HASH_KEY_V1_BASE64: crypto.randomBytes(32).toString('base64'),
+    CDK_RECOVERY_KEY_BASE64: crypto.randomBytes(32).toString('base64')
   };
 }
 
@@ -145,6 +147,15 @@ test('rejects missing database and invalid encryption key', () => {
   delete env.DATABASE_URL;
   env.SESSION_ENCRYPTION_KEY_BASE64 = 'bad';
   assert.throws(() => loadConfig(env), /Invalid v1 configuration/);
+});
+
+test('requires independent CDK hashing and recovery keys', () => {
+  const shared = crypto.randomBytes(32).toString('base64');
+  assert.throws(() => loadConfig({
+    ...validEnvironment(),
+    CDK_HASH_KEY_V1_BASE64: shared,
+    CDK_RECOVERY_KEY_BASE64: shared
+  }), /must be independent/);
 });
 
 test('admin authentication is optional but requires a complete credential pair', () => {

@@ -66,8 +66,14 @@ export async function createOrderFromCdk(pool, input) {
     const settings = parseOrderIntakeSettings(settingRows);
 
     const [cdkRows] = await connection.query(
-      'SELECT id, status, plan_type FROM cdks WHERE code_hash = ? FOR UPDATE',
-      [input.cdkHash]
+      `SELECT id, status, plan_type, batch_no FROM cdks
+       WHERE (hash_version = ? AND code_hash = ?)
+          OR (hash_version = ? AND code_hash = ?)
+       LIMIT 2 FOR UPDATE`,
+      [
+        input.cdkLookup.current.version, input.cdkLookup.current.hash,
+        input.cdkLookup.legacy.version, input.cdkLookup.legacy.hash
+      ]
     );
     if (cdkRows.length !== 1 || cdkRows[0].status !== 'AVAILABLE') {
       throw new OrderIntakeError('CDK is invalid or unavailable', {
@@ -109,6 +115,17 @@ export async function createOrderFromCdk(pool, input) {
         code: 'CDK_UNAVAILABLE',
         status: 409
       });
+    }
+    if (cdkRows[0].batch_no) {
+      await connection.query(
+        `UPDATE cdk_batches b SET codes_ciphertext = NULL
+         WHERE BINARY b.batch_no = BINARY ?
+           AND NOT EXISTS (
+             SELECT 1 FROM cdks c
+             WHERE BINARY c.batch_no = BINARY b.batch_no AND c.status = 'AVAILABLE'
+           )`,
+        [cdkRows[0].batch_no]
+      );
     }
     await connection.query(
       `INSERT INTO order_events

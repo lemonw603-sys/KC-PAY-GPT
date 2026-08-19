@@ -33,6 +33,8 @@ import { createOrderCancellationService } from '../src/services/order-cancellati
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
 const integrationSessionKey = Buffer.alloc(32, 7);
+const integrationCdkHashKey = Buffer.alloc(32, 8);
+const integrationCdkRecoveryKey = Buffer.alloc(32, 9);
 
 function id() {
   return crypto.randomUUID();
@@ -96,7 +98,11 @@ test('order compensation is one-time and recoverable after a verified no-side-ef
 }, async () => {
   const pool = mysql.createPool({ uri: databaseUrl, connectionLimit: 4, timezone: 'Z' });
   const fixture = await createOrder(pool, { publicNo: `PJV1-COMP-${Date.now()}` });
-  const service = createOrderCompensationService({ pool, sessionEncryptionKey: integrationSessionKey });
+  const service = createOrderCompensationService({
+    pool,
+    cdkHashKey: integrationCdkHashKey,
+    cdkRecoveryKey: integrationCdkRecoveryKey
+  });
   try {
     await pool.query(
       `INSERT INTO tasks (order_id, task_type, status, dedupe_key, max_attempts)
@@ -567,6 +573,7 @@ test('order intake atomically redeems one CDK and creates an encrypted queued or
   const createCustomerOrder = createOrderIntakeService({
     pool,
     sessionEncryptionKey: integrationSessionKey,
+    cdkHashKey: integrationCdkHashKey,
     now: () => nowMs
   });
   let created;
@@ -676,9 +683,9 @@ test('CDK batches store only hashes and report input and existing duplicates', {
   const pool = mysql.createPool({ uri: databaseUrl, connectionLimit: 3, timezone: 'Z' });
   const batchNo = `TEST-CDK-${id()}`;
   const collisionBatchNo = `TEST-CDK-COLLISION-${id()}`;
-  const codes = ['PJ-ABCDEFGH', 'PJ-abcdefgh', 'PJ-ABCDEFGH'];
+  const codes = ['PJ-ABCDEFGHJKMNPQRST234', 'PJ-23456789ABCDEFGHJKMN', 'PJ-ABCDEFGHJKMNPQRST234'];
   try {
-    const first = await storeCdkBatch(pool, codes, { batchNo });
+    const first = await storeCdkBatch(pool, codes, { batchNo, cdkHashKey: integrationCdkHashKey });
     assert.deepEqual(first, {
       batchNo,
       planType: 'plus',
@@ -687,7 +694,7 @@ test('CDK batches store only hashes and report input and existing duplicates', {
       insertedCount: 2,
       duplicateExistingCount: 0
     });
-    const second = await storeCdkBatch(pool, codes, { batchNo });
+    const second = await storeCdkBatch(pool, codes, { batchNo, cdkHashKey: integrationCdkHashKey });
     assert.deepEqual(second, {
       batchNo,
       planType: 'plus',
@@ -697,9 +704,10 @@ test('CDK batches store only hashes and report input and existing duplicates', {
       duplicateExistingCount: 2
     });
     await assert.rejects(
-      storeCdkBatch(pool, ['PJ-ABCDEFGH', 'PJ-NEWCODEX'], {
+      storeCdkBatch(pool, ['PJ-ABCDEFGHJKMNPQRST234', 'PJ-ZYXWVUTSRQ98765432AH'], {
         batchNo: collisionBatchNo,
-        requireAllInserted: true
+        requireAllInserted: true,
+        cdkHashKey: integrationCdkHashKey
       }),
       (error) => error.code === 'GENERATED_COLLISION'
     );
@@ -719,8 +727,8 @@ test('CDK batches store only hashes and report input and existing duplicates', {
     assert.equal(rows.every((row) => row.batch_no === batchNo), true);
     assert.deepEqual(
       rows.map((row) => row.code_hash).sort(),
-      ['PJ-ABCDEFGH', 'PJ-abcdefgh']
-        .map((code) => crypto.createHash('sha256').update(code).digest('hex'))
+      ['PJ-ABCDEFGHJKMNPQRST234', 'PJ-23456789ABCDEFGHJKMN']
+        .map((code) => crypto.createHmac('sha256', integrationCdkHashKey).update(code).digest('hex'))
         .sort()
     );
   } finally {
@@ -736,7 +744,8 @@ test('admin CDK generation is idempotent, recoverable, listable and revocable', 
   const requestKey = `test-cdk-request-${id()}`;
   const createBatch = createAdminCdkService({
     pool,
-    sessionEncryptionKey: integrationSessionKey
+    cdkHashKey: integrationCdkHashKey,
+    cdkRecoveryKey: integrationCdkRecoveryKey
   });
   let batchNo;
   try {
@@ -764,7 +773,7 @@ test('admin CDK generation is idempotent, recoverable, listable and revocable', 
       (error) => error.code === 'IDEMPOTENCY_MISMATCH'
     );
 
-    const downloaded = await downloadCdkBatch(pool, batchNo, integrationSessionKey);
+    const downloaded = await downloadCdkBatch(pool, batchNo, integrationCdkRecoveryKey);
     assert.deepEqual(downloaded.codes, created.codes);
     const listed = await listCdkBatches(pool, { limit: 100 });
     assert.equal(listed.batches.find((batch) => batch.batchNo === batchNo)?.availableCount, 3);
@@ -777,6 +786,7 @@ test('admin CDK generation is idempotent, recoverable, listable and revocable', 
     assert.equal(afterRevoke.batches.find((batch) => batch.batchNo === batchNo)?.revokedCount, 3);
   } finally {
     if (batchNo) {
+      await pool.query('DELETE FROM cdk_admin_events WHERE batch_no = ?', [batchNo]);
       await pool.query('DELETE FROM cdks WHERE batch_no = ?', [batchNo]);
       await pool.query('DELETE FROM cdk_batches WHERE batch_no = ?', [batchNo]);
     }
@@ -790,7 +800,7 @@ test('customer status lookup recovers the same order by public number or CDK', {
   const pool = mysql.createPool({ uri: databaseUrl, connectionLimit: 3, timezone: 'Z' });
   const publicNo = 'PJV1-ABCDEFGHIJKLMNOPQRST';
   const fixture = await createOrder(pool, { publicNo });
-  const queryStatus = createOrderStatusService({ pool });
+  const queryStatus = createOrderStatusService({ pool, cdkHashKey: integrationCdkHashKey });
   try {
     const byPublicNo = await queryStatus({ publicNo });
     const byCdk = await queryStatus({ cdk: fixture.cdkId });

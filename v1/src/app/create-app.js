@@ -38,16 +38,32 @@ export function createApp({
   listAdminCdkBatches = null,
   downloadAdminCdkBatch = null,
   revokeAdminCdkBatch = null,
+  adminHost = null,
   orderRateLimit = createFixedWindowRateLimit(),
   orderStatusRateLimit = createFixedWindowRateLimit({ limit: 30 }),
   adminLoginRateLimit = createFixedWindowRateLimit({ limit: 5, windowMs: 15 * 60 * 1000 }),
-  adminWriteRateLimit = createFixedWindowRateLimit({ limit: 60, windowMs: 15 * 60 * 1000 })
+  adminWriteRateLimit = createFixedWindowRateLimit({ limit: 60, windowMs: 15 * 60 * 1000 }),
+  adminStepUpRateLimit = createFixedWindowRateLimit({ limit: 5, windowMs: 15 * 60 * 1000 })
 } = {}) {
   const app = express();
 
   app.disable('x-powered-by');
   app.use(helmet());
   app.use(express.json({ limit: DEFAULT_BODY_LIMIT, strict: true }));
+  app.use((req, res, next) => {
+    if (!adminHost) return next();
+    const host = String(req.hostname || '').toLowerCase();
+    const expected = String(adminHost).toLowerCase();
+    const adminPath = req.path === '/admin' || req.path.startsWith('/admin/')
+      || req.path === '/api/v1/admin' || req.path.startsWith('/api/v1/admin/');
+    if (adminPath && host !== expected) return res.status(404).json({ error: 'not_found' });
+    if (host === expected && req.path === '/') return res.redirect(302, '/admin');
+    if (host === expected && (req.path === '/api/v1/orders' || req.path.startsWith('/api/v1/orders/')
+      || req.path === '/assets' || req.path.startsWith('/assets/'))) {
+      return res.status(404).json({ error: 'not_found' });
+    }
+    return next();
+  });
 
   app.get('/health/live', (_req, res) => {
     res.json({ status: 'ok' });
@@ -91,8 +107,8 @@ export function createApp({
     res.setHeader('Cache-Control', 'no-store');
     next();
   };
-  const requireAdminApi = (req, res, next) => {
-    if (!adminAuth?.authenticateRequest(req)) {
+  const requireAdminApi = async (req, res, next) => {
+    if (!adminAuth || !await adminAuth.authenticateRequest(req)) {
       return res.status(401).json({ error: 'admin_auth_required' });
     }
     return next();
@@ -105,10 +121,17 @@ export function createApp({
     }
     return next();
   };
+  const requireAdminStepUp = async (req, res, next) => {
+    if (!adminAuth || !await adminAuth.hasStepUp(req)) {
+      return res.status(403).json({ error: 'admin_step_up_required' });
+    }
+    return next();
+  };
   const adminWriteGuards = [noStore, requireAdminApi, requireAdminOrigin, adminWriteRateLimit];
+  const sensitiveAdminGuards = [...adminWriteGuards, requireAdminStepUp];
 
-  app.get('/admin/login', noStore, (req, res) => {
-    if (adminAuth?.authenticateRequest(req)) return res.redirect(302, '/admin');
+  app.get('/admin/login', noStore, async (req, res) => {
+    if (adminAuth && await adminAuth.authenticateRequest(req)) return res.redirect(302, '/admin');
     return res.sendFile(path.join(publicDirectory, 'admin', 'login.html'));
   });
 
@@ -118,16 +141,25 @@ export function createApp({
     if (!await adminAuth.verifyPassword(password)) {
       return res.status(401).json({ error: 'invalid_admin_credentials' });
     }
-    adminAuth.setSessionCookie(res, adminAuth.issueSession());
+    adminAuth.setSessionCookie(res, await adminAuth.issueSession());
     return res.status(204).end();
   });
+
+  app.post('/api/v1/admin/step-up', noStore, requireAdminApi, requireAdminOrigin,
+    adminStepUpRateLimit, async (req, res) => {
+      const token = await adminAuth.issueStepUp(req, req.body?.password);
+      if (!token) return res.status(401).json({ error: 'invalid_admin_credentials' });
+      adminAuth.setStepUpCookie(res, token);
+      return res.status(204).end();
+    });
 
   app.get('/api/v1/admin/session', noStore, requireAdminApi, (_req, res) => {
     res.json({ authenticated: true });
   });
 
-  app.delete('/api/v1/admin/session', noStore, (req, res) => {
-    if (adminAuth) adminAuth.clearSessionCookie(res);
+  app.delete('/api/v1/admin/session', ...adminWriteGuards, async (_req, res) => {
+    await adminAuth.revokeAllSessions();
+    adminAuth.clearSessionCookie(res);
     return res.status(204).end();
   });
 
@@ -168,7 +200,7 @@ export function createApp({
     });
   }
   if (typeof createAdminCardStockJob === 'function') {
-    app.post('/api/v1/admin/card-stock/jobs', ...adminWriteGuards, async (req, res) => {
+    app.post('/api/v1/admin/card-stock/jobs', ...sensitiveAdminGuards, async (req, res) => {
       const job = await createAdminCardStockJob(req.body);
       return res.status(202).json({ job });
     });
@@ -179,7 +211,7 @@ export function createApp({
     });
   }
   if (typeof setAdminRechargePermit === 'function') {
-    app.post('/api/v1/admin/orders/:publicNo/recharge-permit', ...adminWriteGuards, async (req, res) => {
+    app.post('/api/v1/admin/orders/:publicNo/recharge-permit', ...sensitiveAdminGuards, async (req, res) => {
       try {
         const result = await setAdminRechargePermit(req.params.publicNo, req.body);
         return res.status(req.body?.action === 'arm' ? 202 : 200).json(result);
@@ -194,7 +226,7 @@ export function createApp({
     });
   }
   if (typeof compensateAdminOrder === 'function') {
-    app.post('/api/v1/admin/orders/:publicNo/compensation', ...adminWriteGuards, async (req, res) => {
+    app.post('/api/v1/admin/orders/:publicNo/compensation', ...sensitiveAdminGuards, async (req, res) => {
       try {
         res.json(await compensateAdminOrder(req.params.publicNo, req.body));
       } catch (error) {
@@ -206,7 +238,7 @@ export function createApp({
     });
   }
   if (typeof cancelAdminOrder === 'function') {
-    app.post('/api/v1/admin/orders/:publicNo/cancellation', ...adminWriteGuards, async (req, res) => {
+    app.post('/api/v1/admin/orders/:publicNo/cancellation', ...sensitiveAdminGuards, async (req, res) => {
       try {
         res.json(await cancelAdminOrder(req.params.publicNo, req.body));
       } catch (error) {
@@ -218,7 +250,7 @@ export function createApp({
     });
   }
   if (typeof createAdminCdkBatch === 'function') {
-    app.post('/api/v1/admin/cdks/generate', ...adminWriteGuards, async (req, res) => {
+    app.post('/api/v1/admin/cdks/generate', ...sensitiveAdminGuards, async (req, res) => {
       try {
         const result = await createAdminCdkBatch({
           ...req.body,
@@ -239,7 +271,7 @@ export function createApp({
     });
   }
   if (typeof downloadAdminCdkBatch === 'function') {
-    app.get('/api/v1/admin/cdks/:batchNo/download', noStore, requireAdminApi, async (req, res) => {
+    app.post('/api/v1/admin/cdks/:batchNo/download', ...sensitiveAdminGuards, async (req, res) => {
       try {
         res.json(await downloadAdminCdkBatch(req.params.batchNo));
       } catch (error) {
@@ -251,7 +283,7 @@ export function createApp({
     });
   }
   if (typeof revokeAdminCdkBatch === 'function') {
-    app.post('/api/v1/admin/cdks/:batchNo/revoke', ...adminWriteGuards, async (req, res) => {
+    app.post('/api/v1/admin/cdks/:batchNo/revoke', ...sensitiveAdminGuards, async (req, res) => {
       try {
         const result = await revokeAdminCdkBatch(req.params.batchNo, req.body?.reason);
         return res.json(result);
@@ -264,8 +296,8 @@ export function createApp({
     });
   }
 
-  app.get('/admin', noStore, (req, res) => {
-    if (!adminAuth?.authenticateRequest(req)) return res.redirect(302, '/admin/login');
+  app.get('/admin', noStore, async (req, res) => {
+    if (!adminAuth || !await adminAuth.authenticateRequest(req)) return res.redirect(302, '/admin/login');
     return res.sendFile(path.join(publicDirectory, 'admin', 'index.html'));
   });
   app.use('/admin/assets', express.static(path.join(publicDirectory, 'admin', 'assets'), {

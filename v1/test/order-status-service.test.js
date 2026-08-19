@@ -18,8 +18,10 @@ test('maps internal states to the limited customer status vocabulary', () => {
 
 test('looks up by public number or hashed CDK without passing CDK plaintext', async () => {
   const calls = [];
+  const cdkHashKey = crypto.randomBytes(32);
   const service = createOrderStatusService({
     pool: {},
+    cdkHashKey,
     repository: {
       findCustomerOrder: async (_pool, lookup) => {
         calls.push(lookup);
@@ -40,7 +42,16 @@ test('looks up by public number or hashed CDK without passing CDK plaintext', as
   });
   assert.deepEqual(calls[0], { publicNo: 'PJV1-ABCDEFGHIJKLMNOPQRST' });
   assert.deepEqual(calls[1], {
-    cdkHash: crypto.createHash('sha256').update('PJ-ABCDEFGH').digest('hex')
+    cdkLookup: {
+      current: {
+        version: 'hmac-sha256-v1',
+        hash: crypto.createHmac('sha256', cdkHashKey).update('PJ-ABCDEFGH').digest('hex')
+      },
+      legacy: {
+        version: 'sha256-v1',
+        hash: crypto.createHash('sha256').update('PJ-ABCDEFGH').digest('hex')
+      }
+    }
   });
   assert.equal(JSON.stringify(calls).includes('PJ-ABCDEFGH'), false);
   assert.equal(byCdk.publicNo, byPublicNo.publicNo);
@@ -63,6 +74,7 @@ test('closed compensated orders are resolved from the compensation record before
 test('rejects ambiguous query bodies and hides missing lookup details', async () => {
   const service = createOrderStatusService({
     pool: {},
+    cdkHashKey: crypto.randomBytes(32),
     repository: { findCustomerOrder: async () => null }
   });
   await assert.rejects(service({}), (error) => error.code === 'INVALID_ORDER_QUERY');

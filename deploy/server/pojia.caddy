@@ -16,18 +16,26 @@
 		}
 		format json
 	}
-
-	reverse_proxy 127.0.0.1:3100
 }
 
 plus.vibebridge.top {
 	import pojia_security
+	@admin path /admin /admin/* /api/v1/admin /api/v1/admin/*
+	respond @admin 404
+	reverse_proxy 127.0.0.1:3100
 }
 
 pay.vibebridge.top {
 	import pojia_security
+	@admin path /admin /admin/* /api/v1/admin /api/v1/admin/*
+	respond @admin 404
+	reverse_proxy 127.0.0.1:3100
 }
 
 ops.vibebridge.top {
 	import pojia_security
+	@customer path /api/v1/orders /api/v1/orders/* /assets /assets/*
+	respond @customer 404
+	redir / /admin 302
+	reverse_proxy 127.0.0.1:3100
 }

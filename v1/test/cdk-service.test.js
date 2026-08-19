@@ -18,9 +18,11 @@ test('generates unique high-entropy-shaped CDKs without ambiguous characters', (
 });
 
 test('normalizes line imports and reports duplicates without changing case', () => {
-  const result = normalizeImportedCdks('\uFEFFPJ-ABCDEFGH\r\nPJ-abcdefgh\nPJ-ABCDEFGH\n\n');
+  const first = 'PJ-ABCDEFGHJKMNPQRST234';
+  const second = 'PJ-23456789ABCDEFGHJKMN';
+  const result = normalizeImportedCdks(`\uFEFF${first}\r\n${second}\n${first}\n\n`);
   assert.deepEqual(result, {
-    codes: ['PJ-ABCDEFGH', 'PJ-abcdefgh'],
+    codes: [first, second],
     inputCount: 3,
     duplicateInputCount: 1
   });

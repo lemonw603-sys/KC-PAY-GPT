@@ -1,6 +1,6 @@
-import crypto from 'node:crypto';
 import { findCustomerOrder } from '../db/repositories/order-status-query-repository.js';
 import { PublicApiError } from '../domain/public-api-error.js';
+import { createCdkLookup } from '../security/cdk-code.js';
 
 const PUBLIC_NO_PATTERN = /^PJV1-[A-Za-z0-9_-]{20}$/;
 
@@ -25,7 +25,7 @@ function invalidQuery() {
   });
 }
 
-function normalizeLookup(input) {
+function normalizeLookup(input, cdkHashKey) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) invalidQuery();
   const hasPublicNo = typeof input.publicNo === 'string' && input.publicNo.trim() !== '';
   const hasCdk = typeof input.cdk === 'string' && input.cdk.trim() !== '';
@@ -38,7 +38,7 @@ function normalizeLookup(input) {
   const cdk = input.cdk.trim();
   if (cdk.length < 8 || cdk.length > 256) invalidQuery();
   return {
-    cdkHash: crypto.createHash('sha256').update(cdk, 'utf8').digest('hex')
+    cdkLookup: createCdkLookup(cdk, cdkHashKey)
   };
 }
 
@@ -54,10 +54,11 @@ export function mapCustomerOrderStatus(internalStatus) {
 
 export function createOrderStatusService({
   pool,
+  cdkHashKey,
   repository = { findCustomerOrder }
 }) {
   return async function getCustomerOrderStatus(input) {
-    const lookup = normalizeLookup(input);
+    const lookup = normalizeLookup(input, cdkHashKey);
     const order = await repository.findCustomerOrder(pool, lookup);
     if (!order) {
       throw new PublicApiError('Order was not found', {

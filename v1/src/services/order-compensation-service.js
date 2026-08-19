@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import { generateCdks } from './cdk-service.js';
 import { decryptSecret, encryptSecret } from '../security/secret-box.js';
+import { CURRENT_CDK_HASH_VERSION, hashCurrentCdk } from '../security/cdk-code.js';
 
 export class OrderCompensationError extends Error {
   constructor(message, code, status = 409) {
@@ -9,10 +10,6 @@ export class OrderCompensationError extends Error {
     this.code = code;
     this.status = status;
   }
-}
-
-function hashCdk(code) {
-  return crypto.createHash('sha256').update(code, 'utf8').digest('hex');
 }
 
 function recover(row, key) {
@@ -25,9 +22,10 @@ function recover(row, key) {
   };
 }
 
-export function createOrderCompensationService({ pool, sessionEncryptionKey }) {
+export function createOrderCompensationService({ pool, cdkHashKey, cdkRecoveryKey }) {
   if (!pool) throw new TypeError('pool is required');
-  if (!Buffer.isBuffer(sessionEncryptionKey)) throw new TypeError('sessionEncryptionKey is required');
+  if (!Buffer.isBuffer(cdkHashKey)) throw new TypeError('cdkHashKey is required');
+  if (!Buffer.isBuffer(cdkRecoveryKey)) throw new TypeError('cdkRecoveryKey is required');
 
   return async function compensateOrder(publicNo, input = {}) {
     if (typeof publicNo !== 'string' || publicNo.length < 8 || publicNo.length > 64) {
@@ -59,7 +57,7 @@ export function createOrderCompensationService({ pool, sessionEncryptionKey }) {
       if (!order) throw new OrderCompensationError('Order not found', 'ADMIN_ORDER_NOT_FOUND', 404);
       if (order.code_ciphertext) {
         await connection.commit();
-        return recover(order, sessionEncryptionKey);
+        return recover(order, cdkRecoveryKey);
       }
       if (order.status !== 'CREATED') {
         throw new OrderCompensationError('Order has entered the card or recharge workflow', 'COMPENSATION_SIDE_EFFECT_RISK');
@@ -76,8 +74,8 @@ export function createOrderCompensationService({ pool, sessionEncryptionKey }) {
       const compensationId = crypto.randomUUID();
       const batchNo = `COMP-${order.id}`;
       const requestKey = `compensation-${order.id}`;
-      const codeCiphertext = encryptSecret(code, sessionEncryptionKey);
-      const batchCiphertext = encryptSecret(JSON.stringify([code]), sessionEncryptionKey);
+      const codeCiphertext = encryptSecret(code, cdkRecoveryKey);
+      const batchCiphertext = encryptSecret(JSON.stringify([code]), cdkRecoveryKey);
       await connection.query(
         `INSERT INTO cdk_batches
          (batch_no, request_key, plan_type, requested_count, codes_ciphertext, created_by)
@@ -85,9 +83,9 @@ export function createOrderCompensationService({ pool, sessionEncryptionKey }) {
         [batchNo, requestKey, order.plan_type, batchCiphertext]
       );
       await connection.query(
-        `INSERT INTO cdks (id, code_hash, status, batch_no, plan_type)
-         VALUES (?, ?, 'AVAILABLE', ?, ?)`,
-        [cdkId, hashCdk(code), batchNo, order.plan_type]
+        `INSERT INTO cdks (id, code_hash, hash_version, status, batch_no, plan_type)
+         VALUES (?, ?, ?, 'AVAILABLE', ?, ?)`,
+        [cdkId, hashCurrentCdk(code, cdkHashKey), CURRENT_CDK_HASH_VERSION, batchNo, order.plan_type]
       );
       await connection.query(
         `INSERT INTO order_compensations
@@ -129,7 +127,7 @@ export function createOrderCompensationService({ pool, sessionEncryptionKey }) {
            FROM orders o INNER JOIN order_compensations oc ON oc.original_order_id = o.id
            WHERE BINARY o.public_no = ? LIMIT 1`, [publicNo]
         );
-        if (existing[0]) return recover(existing[0], sessionEncryptionKey);
+        if (existing[0]) return recover(existing[0], cdkRecoveryKey);
         throw new OrderCompensationError('Compensation state requires review', 'COMPENSATION_RETRY_REQUIRED');
       }
       throw error;

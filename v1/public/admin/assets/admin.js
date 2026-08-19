@@ -32,7 +32,7 @@ const INVENTORY_LABELS = Object.freeze({ AVAILABLE: '可分配', ASSIGNED: '已�
 
 const state = {
   view: 'overview', page: 1, pageSize: 20, total: 0, status: '', query: '',
-  stockProvider: null, stockCatalog: null, acceptingOrders: false
+  stockProvider: null, stockCatalog: null, acceptingOrders: false, cdkClearTimer: null
 };
 const elements = {
   navItems: [...document.querySelectorAll('.nav-item')],
@@ -117,6 +117,28 @@ async function api(url, options) {
   const payload = await response.json().catch(() => null);
   if (!response.ok) throw new Error(payload?.error || 'request_failed');
   return payload;
+}
+
+async function requestSensitiveAccess() {
+  const password = window.prompt('请输入后台密码确认敏感操作：');
+  if (!password) throw new Error('admin_step_up_cancelled');
+  const response = await fetch('/api/v1/admin/step-up', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password })
+  });
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) throw new Error(payload?.error || 'admin_step_up_failed');
+}
+
+async function sensitiveApi(url, options) {
+  try {
+    return await api(url, options);
+  } catch (error) {
+    if (error.message !== 'admin_step_up_required') throw error;
+    await requestSensitiveAccess();
+    return api(url, options);
+  }
 }
 
 function orderRow(order) {
@@ -205,6 +227,13 @@ function downloadCodes(batchNo, codes) {
   URL.revokeObjectURL(url);
 }
 
+function clearGeneratedCdks() {
+  window.clearTimeout(state.cdkClearTimer);
+  state.cdkClearTimer = null;
+  elements.generatedCdks.value = '';
+  elements.cdkResult.hidden = true;
+}
+
 async function loadCdkBatches() {
   const payload = await api('/api/v1/admin/cdks/batches?limit=50');
   elements.cdkBatches.innerHTML = payload.batches.length
@@ -222,7 +251,9 @@ async function loadCdkBatches() {
 async function downloadStoredBatch(batchNo, button) {
   button.disabled = true;
   try {
-    const payload = await api(`/api/v1/admin/cdks/${encodeURIComponent(batchNo)}/download`);
+    const payload = await sensitiveApi(`/api/v1/admin/cdks/${encodeURIComponent(batchNo)}/download`, {
+      method: 'POST'
+    });
     downloadCodes(payload.batchNo, payload.codes);
     showNotice(`已下载批次 ${payload.batchNo}。`);
   } catch {
@@ -234,7 +265,7 @@ async function revokeStoredBatch(batchNo, button) {
   if (!window.confirm(`确认作废批次 ${batchNo} 中所有未使用 CDK？\n\n已兑换的订单不会受影响。`)) return;
   button.disabled = true;
   try {
-    const result = await api(`/api/v1/admin/cdks/${encodeURIComponent(batchNo)}/revoke`, {
+    const result = await sensitiveApi(`/api/v1/admin/cdks/${encodeURIComponent(batchNo)}/revoke`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ reason: '后台批次作废' })
     });
@@ -375,7 +406,7 @@ async function issueCompensation(publicNo, button) {
   button.disabled = true;
   button.textContent = '核对并补发中…';
   try {
-    const result = await api(`/api/v1/admin/orders/${encodeURIComponent(publicNo)}/compensation`, {
+    const result = await sensitiveApi(`/api/v1/admin/orders/${encodeURIComponent(publicNo)}/compensation`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ confirmation })
@@ -401,7 +432,7 @@ async function cancelOrder(publicNo, button) {
   button.disabled = true;
   button.textContent = '核对并取消中…';
   try {
-    const result = await api(`/api/v1/admin/orders/${encodeURIComponent(publicNo)}/cancellation`, {
+    const result = await sensitiveApi(`/api/v1/admin/orders/${encodeURIComponent(publicNo)}/cancellation`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ confirmation: `取消订单 ${publicNo}` })
     });
@@ -456,7 +487,7 @@ async function setRechargePermit(publicNo, action, button) {
   if (!window.confirm(message)) return;
   button.disabled = true;
   try {
-    await api(`/api/v1/admin/orders/${encodeURIComponent(publicNo)}/recharge-permit`, {
+    await sensitiveApi(`/api/v1/admin/orders/${encodeURIComponent(publicNo)}/recharge-permit`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action, confirmation })
     });
@@ -566,6 +597,7 @@ async function openOrder(publicNo) {
 }
 
 async function switchView(view, { status = '' } = {}) {
+  if (state.view === 'cdks' && view !== 'cdks') clearGeneratedCdks();
   state.view = view === 'exceptions' ? 'orders' : view;
   state.status = view === 'exceptions' ? 'REVIEW_REQUIRED' : status;
   state.page = 1;
@@ -659,7 +691,7 @@ elements.stockOpenForm?.addEventListener('submit', async (event) => {
   const button = elements.stockOpenForm.querySelector('button[type="submit"]');
   button.disabled = true;
   try {
-    await api('/api/v1/admin/card-stock/jobs', {
+    await sensitiveApi('/api/v1/admin/card-stock/jobs', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ count, amount, confirmation: expected, largeBatchConfirmed })
     });
@@ -714,7 +746,7 @@ elements.cdkForm.addEventListener('submit', async (event) => {
     ? storedRequest.key : crypto.randomUUID();
   sessionStorage.setItem('cdk-generation-request', JSON.stringify({ count, key: requestKey }));
   try {
-    const payload = await api('/api/v1/admin/cdks/generate', {
+    const payload = await sensitiveApi('/api/v1/admin/cdks/generate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Idempotency-Key': requestKey },
       body: JSON.stringify({ count })
@@ -724,7 +756,11 @@ elements.cdkForm.addEventListener('submit', async (event) => {
     elements.cdkBatchLabel.textContent = `批次 ${payload.batchNo} · ${payload.count} 个`;
     elements.cdkResult.hidden = false;
     sessionStorage.removeItem('cdk-generation-request');
-    downloadCodes(payload.batchNo, payload.codes);
+    window.clearTimeout(state.cdkClearTimer);
+    state.cdkClearTimer = window.setTimeout(() => {
+      clearGeneratedCdks();
+      showNotice('CDK 明文已从页面自动清除；需要时可从批次记录重新下载。');
+    }, 10 * 60 * 1000);
     await loadCdkBatches();
   } catch (error) {
     showNotice(error.message === 'invalid_count' ? '生成数量必须为 1–1000 之间的整数。' : 'CDK 生成失败，请稍后重试。');

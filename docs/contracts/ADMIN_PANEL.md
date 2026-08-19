@@ -2,10 +2,10 @@
 
 ## 范围
 
-- 页面入口：`GET /admin`。
+- 页面入口：仅后台域名 `ops.vibebridge.top` 的 `GET /admin`；客户域名上的后台路径返回 404。
 - 登录入口：`GET /admin/login`。
 - 第一版提供总览、订单、异常、卡片库存、任务、事件、交易和退款观察数据，以及受控的 CDK、补卡、接单和单订单充值写操作。
-- 后台允许管理员生成 Plus CDK，查看批次状态，下载新版批次，并作废尚未兑换的 CDK。单个 CDK 记录只保存 SHA-256 哈希；新批次为幂等恢复额外保存 AES-256-GCM 加密的明文集合。
+- 后台允许管理员生成 Plus CDK，查看批次状态，下载新版批次，并作废尚未兑换的 CDK。新 CDK 记录只保存 HMAC-SHA-256；历史 SHA-256 记录保持只读兼容。新批次为幂等恢复额外使用独立密钥保存 AES-256-GCM 密文。
 - 人工补卡会产生真实费用；后台必须显示卡段实时规则、预计总扣款和可承担数量，超过 10 张出现额外风险确认。
 - 开始接单同时允许已创建订单完成非付费准备；停止接单不取消已有订单。真实充值必须在订单详情逐单二次确认，每次只签发一个短时一次性 Permit。
 - 普通页面只读本地 MySQL；手动同步只写入受控的 `SYNC_CARD_TRANSACTIONS` 任务，由 worker 调用卡台交易 GET 接口。
@@ -18,8 +18,10 @@
 - 两项必须同时配置；会话密钥必须是 32 字节 Base64。
 - 密码使用 scrypt 派生值保存，不保存明文密码。
 - 登录成功后使用 12 小时签名 Cookie；Cookie 为 `HttpOnly`、`SameSite=Strict`，生产环境额外设置 `Secure`。
+- 会话包含随机会话 ID 和数据库版本；退出会递增版本，使已经签发的全部后台会话立即失效。
 - 登录接口按来源限流；错误密码不建立 Cookie。
 - 所有已认证后台写接口必须通过同源 `Origin` 校验和独立写操作限流。
+- 开卡、充值放行、补发/取消、CDK 生成/下载/作废等敏感操作还要求重新输入后台密码；一次复核只在当前会话中有效 5 分钟。
 
 生成密码派生值：
 
@@ -56,7 +58,7 @@ pbpaste | npm --prefix v1 run admin:configure-local
 - `POST /api/v1/admin/orders/:publicNo/sync-transactions`（只读同步任务，需已绑定卡片）
 - `POST /api/v1/admin/cdks/generate` （管理员写入，必须带 `Idempotency-Key`；当前 `planType` 仅接受 `plus`）
 - `GET /api/v1/admin/cdks/batches`
-- `GET /api/v1/admin/cdks/:batchNo/download`
+- `POST /api/v1/admin/cdks/:batchNo/download`
 - `POST /api/v1/admin/cdks/:batchNo/revoke` （管理员写入；仅作废该批次仍为 `AVAILABLE` 的 CDK）
 - `GET /api/v1/admin/card-stock`
 - `POST /api/v1/admin/card-stock/threshold`
@@ -66,6 +68,7 @@ pbpaste | npm --prefix v1 run admin:configure-local
 
 全部响应设置 `Cache-Control: no-store`，未登录统一返回 `401 admin_auth_required`。
 手动同步若已有运行中任务则不重复入队；成功入队返回 `202`。
+生成结果不自动下载或写入剪贴板；明文离开 CDK 页面或显示满 10 分钟后清除。
 
 ## 数据边界
 

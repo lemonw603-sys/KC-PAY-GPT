@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { request as httpRequest } from 'node:http';
 import test from 'node:test';
 import { createApp } from '../src/app/create-app.js';
 import { createFixedWindowRateLimit } from '../src/app/fixed-window-rate-limit.js';
@@ -15,6 +16,33 @@ async function withServer(app, run) {
   } finally {
     await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
   }
+}
+
+async function stepUp(baseUrl, sessionCookie, password = 'fixture admin password') {
+  const response = await fetch(`${baseUrl}/api/v1/admin/step-up`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Cookie: sessionCookie, Origin: baseUrl },
+    body: JSON.stringify({ password })
+  });
+  assert.equal(response.status, 204);
+  return `${sessionCookie}; ${response.headers.get('set-cookie').split(';')[0]}`;
+}
+
+async function requestWithHost(baseUrl, path, host) {
+  const target = new URL(baseUrl);
+  return new Promise((resolve, reject) => {
+    const request = httpRequest({
+      hostname: target.hostname,
+      port: target.port,
+      path,
+      headers: { Host: host }
+    }, (response) => {
+      response.resume();
+      response.once('end', () => resolve(response));
+    });
+    request.once('error', reject);
+    request.end();
+  });
 }
 
 test('exposes liveness and readiness without legacy automation', async () => {
@@ -240,6 +268,19 @@ test('keeps the admin closed when login credentials are not configured', async (
   });
 });
 
+test('isolates admin and customer routes by hostname', async () => {
+  const app = createApp({ adminHost: 'ops.vibebridge.top' });
+  await withServer(app, async (baseUrl) => {
+    const publicAdmin = await requestWithHost(baseUrl, '/admin', 'plus.vibebridge.top');
+    assert.equal(publicAdmin.statusCode, 404);
+    const adminRoot = await requestWithHost(baseUrl, '/', 'ops.vibebridge.top');
+    assert.equal(adminRoot.statusCode, 302);
+    assert.equal(adminRoot.headers.location, '/admin');
+    const adminCustomerApi = await requestWithHost(baseUrl, '/api/v1/orders/status', 'ops.vibebridge.top');
+    assert.equal(adminCustomerApi.statusCode, 404);
+  });
+});
+
 test('generates CDKs only for an authenticated administrator', async () => {
   const adminAuth = createAdminSessionAuth({
     passwordHash: await hashAdminPassword('fixture admin password', { salt: Buffer.alloc(16, 7) }),
@@ -276,9 +317,18 @@ test('generates CDKs only for an authenticated administrator', async () => {
       body: JSON.stringify({ password: 'fixture admin password' })
     });
     const sessionCookie = login.headers.get('set-cookie').split(';')[0];
-    const generated = await fetch(`${baseUrl}/api/v1/admin/cdks/generate`, {
+    const stepUpRequired = await fetch(`${baseUrl}/api/v1/admin/cdks/generate`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Cookie: sessionCookie,
+        Origin: baseUrl, 'Idempotency-Key': 'fixture-idempotency-001' },
+      body: JSON.stringify({ count: 1 })
+    });
+    assert.equal(stepUpRequired.status, 403);
+    assert.deepEqual(await stepUpRequired.json(), { error: 'admin_step_up_required' });
+    const sensitiveCookie = await stepUp(baseUrl, sessionCookie);
+    const generated = await fetch(`${baseUrl}/api/v1/admin/cdks/generate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Cookie: sensitiveCookie,
         Origin: baseUrl, 'Idempotency-Key': 'fixture-idempotency-001' },
       body: JSON.stringify({ count: 1 })
     });
@@ -293,14 +343,14 @@ test('generates CDKs only for an authenticated administrator', async () => {
     });
     assert.deepEqual(await batches.json(), { batches: [{ batchNo: 'B-TEST', totalCount: 1 }] });
     const download = await fetch(`${baseUrl}/api/v1/admin/cdks/B-TEST/download`, {
-      headers: { Cookie: sessionCookie }
+      method: 'POST', headers: { Cookie: sensitiveCookie, Origin: baseUrl }
     });
     assert.deepEqual(await download.json(), {
       batchNo: 'B-TEST', codes: ['PJ-ABCDEFGHJKMNPQRST234']
     });
     const revoke = await fetch(`${baseUrl}/api/v1/admin/cdks/B-TEST/revoke`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Cookie: sessionCookie, Origin: baseUrl },
+      headers: { 'Content-Type': 'application/json', Cookie: sensitiveCookie, Origin: baseUrl },
       body: JSON.stringify({ reason: 'fixture revoke' })
     });
     assert.deepEqual(await revoke.json(), { batchNo: 'B-TEST', revokedCount: 1 });
@@ -333,8 +383,9 @@ test('creates paid card stock jobs only through an authenticated admin route', a
     const cookie = login.headers.get('set-cookie').split(';')[0];
     const stock = await fetch(`${baseUrl}/api/v1/admin/card-stock`, { headers: { Cookie: cookie } });
     assert.deepEqual(await stock.json(), { threshold: 1, cardTypes: [], jobs: [] });
+    const sensitiveCookie = await stepUp(baseUrl, cookie);
     const created = await fetch(`${baseUrl}/api/v1/admin/card-stock/jobs`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cookie, Origin: baseUrl },
+      method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: sensitiveCookie, Origin: baseUrl },
       body: JSON.stringify({ count: 2, amount: 16, cardTypeId: '1', confirmation: '开2张', largeBatchConfirmed: false })
     });
     assert.equal(created.status, 202);
@@ -374,8 +425,9 @@ test('changes intake and one-order recharge permits only through authenticated a
       body: JSON.stringify({ enabled: true, confirmation: '开始接单' })
     });
     assert.equal(intake.status, 200);
+    const sensitiveCookie = await stepUp(baseUrl, cookie);
     const permit = await fetch(`${baseUrl}/api/v1/admin/orders/PJV1-DEMO/recharge-permit`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cookie, Origin: baseUrl },
+      method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: sensitiveCookie, Origin: baseUrl },
       body: JSON.stringify({ action: 'arm', confirmation: '确认充值 PJV1-DEMO' })
     });
     assert.equal(permit.status, 202);
@@ -408,8 +460,9 @@ test('issues an order compensation only through the guarded admin route', async 
       body: JSON.stringify({ password: 'fixture admin password' })
     });
     const cookie = login.headers.get('set-cookie').split(';')[0];
+    const sensitiveCookie = await stepUp(baseUrl, cookie);
     const response = await fetch(`${baseUrl}/api/v1/admin/orders/PJV1-DEMO/compensation`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cookie, Origin: baseUrl },
+      method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: sensitiveCookie, Origin: baseUrl },
       body: JSON.stringify({ confirmation: '补发 PJV1-DEMO' })
     });
     assert.equal(response.status, 200);
@@ -442,8 +495,9 @@ test('cancels an unsubmitted order only through the guarded admin route', async 
       body: JSON.stringify({ password: 'fixture admin password' })
     });
     const cookie = login.headers.get('set-cookie').split(';')[0];
+    const sensitiveCookie = await stepUp(baseUrl, cookie);
     const response = await fetch(`${baseUrl}/api/v1/admin/orders/PJV1-DEMO/cancellation`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cookie, Origin: baseUrl },
+      method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: sensitiveCookie, Origin: baseUrl },
       body: JSON.stringify({ confirmation: '取消订单 PJV1-DEMO' })
     });
     assert.equal(response.status, 200);
