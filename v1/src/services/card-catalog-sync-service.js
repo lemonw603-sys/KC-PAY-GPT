@@ -58,6 +58,16 @@ export async function syncCardCatalog({ pool, provider, stock, checkedAt = new D
        SUM(order_id IS NULL AND inventory_status = 'PROVISIONING') AS provisioning
      FROM cards`
   );
+  const [localCards] = await pool.query(
+    `SELECT provider_card_id, status FROM cards ORDER BY provider_card_id`
+  );
+  const listedById = new Map(listed.map((record) => [cardId(record), cardStatus(record)]).filter(([id]) => id));
+  const localById = new Map(localCards.map((record) => [String(record.provider_card_id), String(record.status || '').toLowerCase()]));
+  const providerOnlyActiveIds = active.map(cardId).filter((id) => !localById.has(id));
+  const localMissingProviderIds = [...localById.keys()].filter((id) => !listedById.has(id));
+  const statusConflictIds = [...localById.entries()]
+    .filter(([id, status]) => listedById.has(id) && ACTIVE.has(status) !== ACTIVE.has(listedById.get(id)))
+    .map(([id]) => id);
   const snapshot = {
     providerTotal: listed.length,
     providerActive: active.length,
@@ -67,7 +77,13 @@ export async function syncCardCatalog({ pool, provider, stock, checkedAt = new D
     depleted: Number(counts[0]?.depleted || 0),
     provisioning: Number(counts[0]?.provisioning || 0),
     unresolvedActive: unresolved.length,
-    unresolved
+    unresolved,
+    providerOnlyActiveCount: providerOnlyActiveIds.length,
+    providerOnlyActiveIds,
+    localMissingProviderCount: localMissingProviderIds.length,
+    localMissingProviderIds,
+    statusConflictCount: statusConflictIds.length,
+    statusConflictIds
   };
   await pool.query(
     `INSERT INTO card_catalog_snapshots (provider, payload_json, synced_at)

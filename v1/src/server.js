@@ -13,6 +13,7 @@ import {
 import { createAdminSessionAuth } from './security/admin-session.js';
 import { createCardStockService } from './services/card-stock-service.js';
 import { createCardStockJobService } from './services/card-stock-job-service.js';
+import { createCardSyncJobService } from './services/card-sync-job-service.js';
 import { createAdminOperationsService } from './services/admin-operations-service.js';
 import {
   RechargePermitError,
@@ -36,6 +37,7 @@ const adminReadService = createAdminReadService({
 });
 const cardStockService = createCardStockService({ pool, sessionEncryptionKey: config.sessionEncryptionKey });
 const cardStockJobService = createCardStockJobService({ pool });
+const cardSyncJobService = createCardSyncJobService({ pool });
 const createAdminCdkBatch = createAdminCdkService({
   pool,
   cdkHashKey: config.cdkHashKey,
@@ -67,6 +69,8 @@ const app = createApp({
   getAdminOrder: adminReadService.getOrder,
   listAdminAlerts: adminReadService.listAlerts,
   requestCardTransactionSync: adminReadService.requestCardTransactionSync
+  ,getAdminCard: adminReadService.getCard
+  ,requestAdminCardSync: cardSyncJobService.createJobs
   ,getAdminCardStock: async () => ({
     ...await cardStockService.status(),
     ...await cardStockJobService.listJobs({ limit: 20 })

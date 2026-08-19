@@ -29,6 +29,7 @@ const TASK_LABELS = Object.freeze({
 const TASK_STATUS_LABELS = Object.freeze({ PENDING: '等待执行', RUNNING: '执行中', COMPLETED: '已完成', DEAD: '需要人工处理' });
 const REFUND_LABELS = Object.freeze({ MONITORING: '观察中', DETECTED: '疑似退款', CONFIRMED: '已确认退款', WITHDRAWN: '已提取' });
 const INVENTORY_LABELS = Object.freeze({ AVAILABLE: '可分配', ASSIGNED: '已分配', DEPLETED: '已耗尽', PROVISIONING: '核对中', FAILED: '已失效' });
+const RECONCILIATION_LABELS = Object.freeze({ OK: '已对账', STALE: '待同步', SYNCING: '同步中', REVIEW_REQUIRED: '需核对', MISMATCH: '不一致' });
 
 const state = {
   view: 'overview', page: 1, pageSize: 20, total: 0, status: '', query: '',
@@ -53,6 +54,7 @@ const elements = {
   prevPage: document.querySelector('#prev-page'),
   nextPage: document.querySelector('#next-page'),
   detail: document.querySelector('#detail-drawer'),
+  detailKicker: document.querySelector('#detail-kicker'),
   detailTitle: document.querySelector('#detail-title'),
   detailContent: document.querySelector('#detail-content'),
   notice: document.querySelector('#page-notice')
@@ -325,10 +327,63 @@ async function loadStock() {
     ? payload.jobs.map((job) => `<div><span><strong>${escapeHtml(STOCK_JOB_LABELS[job.status] || job.status)} · ${job.openedCount}/${job.requestedCount} 张</strong><small>${escapeHtml(job.cardTypeName || `卡段 ${job.cardTypeId}`)} · $${escapeHtml(job.amount)} / 张 · 预计总扣款 $${escapeHtml(job.estimatedTotal || '—')} · ${formatTime(job.createdAt)}${job.errorMessage ? ` · ${escapeHtml(job.errorMessage)}` : ''}</small></span><em>${escapeHtml(job.status)}</em></div>`).join('')
     : '<p class="empty-state">还没有后台补卡任务</p>';
   elements.stockCards.innerHTML = payload.cards?.length
-    ? payload.cards.map((card) => `<div><span><strong>${escapeHtml(card.cardNumber || card.last4 || '卡号未就绪')}</strong><small>卡台 ID ${escapeHtml(card.providerCardId)} · 余额 $${escapeHtml(card.currentBalance || '0')} · ${card.assigned ? '已分配' : '未分配'}</small></span><em>${escapeHtml(INVENTORY_LABELS[card.inventoryStatus] || card.inventoryStatus)}</em></div>`).join('')
+    ? payload.cards.map((card) => `<div data-card="${escapeHtml(card.providerCardId)}" role="button" tabindex="0"><span><strong>${escapeHtml(card.cardNumber || card.last4 || '卡号未就绪')}</strong><small>卡台 ID ${escapeHtml(card.providerCardId)} · 余额 $${escapeHtml(card.currentBalance || '0')} · ${card.publicNo ? `订单 ${escapeHtml(card.publicNo)}` : '未分配'} · 交易 ${escapeHtml(card.transactionCount)} 笔 · ${formatTime(card.lastTransactionSyncedAt)}</small></span><em>${escapeHtml(RECONCILIATION_LABELS[card.reconciliationStatus] || card.reconciliationStatus)} / ${escapeHtml(INVENTORY_LABELS[card.inventoryStatus] || card.inventoryStatus)}</em></div>`).join('')
     : '<p class="empty-state">还没有后台卡片</p>';
   updateStockEstimate();
   elements.syncTime.textContent = `更新于 ${new Date().toLocaleTimeString('zh-CN', { hour12: false })}`;
+}
+
+async function requestCardSync(providerCardId = null, button = null) {
+  if (button) button.disabled = true;
+  try {
+    const result = await api('/api/v1/admin/cards/sync', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(providerCardId ? { providerCardId } : {})
+    });
+    showNotice(`已加入 ${result.queued} 张卡的只读同步队列${result.alreadyActive ? `，${result.alreadyActive} 张正在同步` : ''}。`);
+    await loadStock();
+    return result;
+  } catch {
+    showNotice('只读同步请求失败，未修改卡片数据。');
+    return null;
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+async function openCard(providerCardId) {
+  elements.detailKicker.textContent = '卡片详情';
+  elements.detailTitle.textContent = providerCardId;
+  elements.detailContent.innerHTML = '<p class="loading-state">正在读取卡片详情…</p>';
+  if (!elements.detail.open) elements.detail.showModal();
+  try {
+    const data = await api(`/api/v1/admin/cards/${encodeURIComponent(providerCardId)}`);
+    const card = data.card;
+    elements.detailContent.innerHTML = `
+      <section class="detail-section"><div class="detail-section-heading"><h3>卡片状态</h3><button type="button" class="primary-small" id="sync-one-card">只读同步</button></div>${renderKeyValues([
+        ['完整卡号', card.cardNumber || card.last4], ['卡台卡片 ID', card.providerCardId],
+        ['卡段 ID', card.cardTypeId], ['卡片状态', card.status],
+        ['库存状态', INVENTORY_LABELS[card.inventoryStatus] || card.inventoryStatus],
+        ['开卡金额', `${card.fundedAmount || '—'} ${card.currency || ''}`],
+        ['当前余额', `${card.currentBalance || '—'} ${card.currency || ''}`],
+        ['退款观察', REFUND_LABELS[card.refundStatus] || card.refundStatus],
+        ['卡片资料同步', formatTime(card.lastSyncedAt)],
+        ['交易同步', formatTime(card.lastTransactionSyncedAt)]
+      ])}</section>
+      <section class="detail-section"><div class="detail-section-heading"><h3>关联订单</h3>${data.order ? '<button type="button" class="text-button" id="open-linked-order">打开订单</button>' : ''}</div>${data.order ? renderKeyValues([
+        ['订单号', data.order.publicNo], ['订单状态', STATUS_META[data.order.status]?.[0] || data.order.status],
+        ['客户邮箱', data.order.customerEmail]
+      ]) : '<p class="empty-state">这张卡尚未分配给订单</p>'}</section>
+      <section class="detail-section"><h3>卡片交易</h3><div class="mini-list">${data.transactions.length ? data.transactions.map((transaction) => `<div><span><strong>${escapeHtml(transaction.type)} · ${escapeHtml(transaction.amount)} ${escapeHtml(transaction.currency)}</strong><small>${escapeHtml(transaction.merchantName || transaction.relatedTransactionId || transaction.providerTransactionId)} · ${escapeHtml(transaction.tradeTimeRaw || formatTime(transaction.firstSeenAt))}</small></span><em>${escapeHtml(transaction.status)}</em></div>`).join('') : '<p class="empty-state">暂无已同步交易</p>'}</div></section>
+      <section class="detail-section"><h3>同步记录</h3><div class="mini-list">${data.syncJobs.length ? data.syncJobs.map((job) => `<div><span><strong>${escapeHtml(STOCK_JOB_LABELS[job.status] || job.status)}</strong><small>${job.attempts}/${job.maxAttempts} 次 · ${formatTime(job.createdAt)}${job.errorMessage ? ` · ${escapeHtml(job.errorMessage)}` : ''}</small></span><em>${escapeHtml(job.status)}</em></div>`).join('') : '<p class="empty-state">尚未手动同步</p>'}</div></section>
+      <section class="detail-section"><h3>状态变化</h3><div class="mini-list">${data.events.length ? data.events.map((event) => `<div><span><strong>${escapeHtml(event.type)}</strong><small>${formatTime(event.createdAt)} · ${escapeHtml(event.source)}</small></span></div>`).join('') : '<p class="empty-state">暂无状态变化记录</p>'}</div></section>`;
+    document.querySelector('#sync-one-card')?.addEventListener('click', async (event) => {
+      if (await requestCardSync(providerCardId, event.currentTarget)) await openCard(providerCardId);
+    });
+    document.querySelector('#open-linked-order')?.addEventListener('click', () => openOrder(data.order.publicNo));
+  } catch {
+    elements.detailContent.innerHTML = '<p class="empty-state">卡片详情读取失败，请稍后重试。</p>';
+  }
 }
 
 function updateStockEstimate() {
@@ -509,6 +564,7 @@ async function setRechargePermit(publicNo, action, button) {
 }
 
 async function openOrder(publicNo) {
+  elements.detailKicker.textContent = '订单详情';
   elements.detailTitle.textContent = publicNo;
   elements.detailContent.innerHTML = '<p class="loading-state">正在读取订单详情…</p>';
   if (!elements.detail.open) elements.detail.showModal();
@@ -656,6 +712,7 @@ document.querySelector('#refresh-button').addEventListener('click', () => {
     .catch(() => showNotice('刷新失败，请稍后重试。'));
 });
 document.querySelector('#refresh-stock')?.addEventListener('click', () => loadStock().catch(() => showNotice('库存读取失败。')));
+document.querySelector('#sync-all-cards')?.addEventListener('click', (event) => requestCardSync(null, event.currentTarget));
 document.querySelectorAll('.stock-preset').forEach((button) => button.addEventListener('click', () => {
   elements.stockOpenCount.value = button.dataset.count;
   updateStockEstimate();
@@ -799,12 +856,19 @@ document.addEventListener('click', (event) => {
   }
   const row = event.target.closest('tr[data-order]');
   if (row) openOrder(row.dataset.order);
+  const card = event.target.closest('[data-card]');
+  if (card) openCard(card.dataset.card);
 });
 document.addEventListener('keydown', (event) => {
   const row = event.target.closest?.('tr[data-order]');
   if (row && (event.key === 'Enter' || event.key === ' ')) {
     event.preventDefault();
     openOrder(row.dataset.order);
+  }
+  const card = event.target.closest?.('[data-card]');
+  if (card && (event.key === 'Enter' || event.key === ' ')) {
+    event.preventDefault();
+    openCard(card.dataset.card);
   }
 });
 

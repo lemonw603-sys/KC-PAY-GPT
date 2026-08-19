@@ -1,0 +1,25 @@
+[Unit]
+Description=破甲卡片详情与交易只读同步
+After=network-online.target mysql.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=pojia
+Group=pojia
+WorkingDirectory=/opt/pojia/current/v1
+EnvironmentFile=/etc/pojia/runtime.env
+EnvironmentFile=/etc/pojia/provider.env
+ExecStart=/usr/bin/env PROVIDER_WRITES_ENABLED=false PROVIDER_CARD_WRITES_ENABLED=false PROVIDER_RECHARGE_WRITES_ENABLED=false /usr/bin/node scripts/card-read-sync-runner.js
+NoNewPrivileges=true
+PrivateDevices=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+UMask=0077
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+LockPersonality=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+CapabilityBoundingSet=
+AmbientCapabilities=

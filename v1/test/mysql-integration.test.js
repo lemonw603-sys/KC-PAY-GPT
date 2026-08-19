@@ -30,6 +30,12 @@ import {
 } from '../src/services/card-stock-job-service.js';
 import { createOrderCompensationService } from '../src/services/order-compensation-service.js';
 import { createOrderCancellationService } from '../src/services/order-cancellation-service.js';
+import {
+  claimCardSyncJob,
+  completeCardSyncJob,
+  createCardSyncJobService
+} from '../src/services/card-sync-job-service.js';
+import { commitCardTransactionsForCard } from '../src/db/repositories/card-transaction-repository.js';
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
 const integrationSessionKey = Buffer.alloc(32, 7);
@@ -86,12 +92,61 @@ async function removeOrder(pool, { cdkId, orderId }) {
   await pool.query('DELETE FROM refund_cases WHERE order_id = ?', [orderId]);
   const [cards] = await pool.query('SELECT id FROM cards WHERE order_id = ?', [orderId]);
   for (const card of cards) {
+    await pool.query('DELETE FROM card_sync_jobs WHERE card_id = ?', [card.id]);
+    await pool.query('DELETE FROM card_state_events WHERE card_id = ?', [card.id]);
     await pool.query('DELETE FROM card_transactions WHERE card_id = ?', [card.id]);
   }
   await pool.query('DELETE FROM cards WHERE order_id = ?', [orderId]);
   await pool.query('DELETE FROM orders WHERE id = ?', [orderId]);
   await pool.query('DELETE FROM cdks WHERE id = ?', [cdkId]);
 }
+
+test('inventory-only card sync is durable and persists transactions without an order', {
+  skip: !databaseUrl
+}, async () => {
+  const pool = mysql.createPool({ uri: databaseUrl, connectionLimit: 4, timezone: 'Z' });
+  const cardId = id();
+  const providerCardId = `sync-card-${cardId}`;
+  try {
+    await pool.query(
+      `INSERT INTO cards
+       (id, order_id, inventory_status, provider_card_id, card_type_id, last4, status,
+        funded_amount, current_balance, currency, refund_status)
+       VALUES (?, NULL, 'AVAILABLE', ?, '7', '4242', 'active',
+         '16.000000', '16.000000', 'USD', 'MONITORING')`,
+      [cardId, providerCardId]
+    );
+    const queued = await createCardSyncJobService({ pool }).createJobs({ providerCardId });
+    assert.deepEqual(queued, { requested: 1, queued: 1, alreadyActive: 0 });
+    const job = await claimCardSyncJob(pool, { workerId: 'mysql-card-sync-test' });
+    assert.equal(job.card_id, cardId);
+    await commitCardTransactionsForCard(pool, {
+      cardId,
+      transactions: [{
+        id: 'provider-txn-1', type: 'CARD_RECHARGE', status: 'success',
+        amount: '16', currency: 'USD', classification: 'NOT_REFUND', rawHash: 'a'.repeat(64)
+      }],
+      cardSnapshot: { currentBalance: '16', currency: 'USD' }
+    });
+    await completeCardSyncJob(pool, { jobId: job.id, workerId: 'mysql-card-sync-test' });
+    const [[stored]] = await pool.query(
+      `SELECT c.last_transaction_synced_at, COUNT(ct.id) AS transaction_count,
+          MAX(csj.status) AS sync_status
+       FROM cards c LEFT JOIN card_transactions ct ON ct.card_id = c.id
+       LEFT JOIN card_sync_jobs csj ON csj.card_id = c.id
+       WHERE c.id = ? GROUP BY c.id`, [cardId]
+    );
+    assert.ok(stored.last_transaction_synced_at);
+    assert.equal(Number(stored.transaction_count), 1);
+    assert.equal(stored.sync_status, 'COMPLETED');
+  } finally {
+    await pool.query('DELETE FROM card_sync_jobs WHERE card_id = ?', [cardId]);
+    await pool.query('DELETE FROM card_state_events WHERE card_id = ?', [cardId]);
+    await pool.query('DELETE FROM card_transactions WHERE card_id = ?', [cardId]);
+    await pool.query('DELETE FROM cards WHERE id = ?', [cardId]);
+    await pool.end();
+  }
+});
 
 test('order compensation is one-time and recoverable after a verified no-side-effect failure', {
   skip: !databaseUrl

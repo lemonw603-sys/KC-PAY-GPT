@@ -77,6 +77,22 @@ function decryptCardNumber(row, key) {
 }
 
 export function createCardStockService({ pool, sessionEncryptionKey }) {
+  async function recordStateEvent(connection, { cardId, previous, current, source = 'provider_sync' }) {
+    const changed = !previous
+      || previous.status !== current.status
+      || previous.inventoryStatus !== current.inventoryStatus
+      || String(previous.currentBalance ?? '') !== String(current.currentBalance ?? '')
+      || previous.currency !== current.currency;
+    if (!changed) return;
+    await connection.query(
+      `INSERT INTO card_state_events
+       (card_id, event_type, source, previous_json, current_json)
+       VALUES (?, ?, ?, ?, ?)`,
+      [cardId, previous ? 'CARD_STATE_CHANGED' : 'CARD_DISCOVERED', source,
+        previous ? JSON.stringify(previous) : null, JSON.stringify(current)]
+    );
+  }
+
   async function refreshLowStockAlert(connection, cardTypeId) {
     const [thresholdRows] = await connection.query(
       `SELECT setting_value FROM app_settings
@@ -117,9 +133,16 @@ export function createCardStockService({ pool, sessionEncryptionKey }) {
     try {
       await connection.beginTransaction();
       const [existing] = await connection.query(
-        `SELECT id, order_id FROM cards WHERE BINARY provider_card_id = BINARY ? FOR UPDATE`,
+        `SELECT id, order_id, status, inventory_status, current_balance, currency
+         FROM cards WHERE BINARY provider_card_id = BINARY ? FOR UPDATE`,
         [card.providerCardId]
       );
+      const previous = existing[0] ? {
+        status: existing[0].status,
+        inventoryStatus: existing[0].inventory_status,
+        currentBalance: existing[0].current_balance == null ? null : String(existing[0].current_balance),
+        currency: existing[0].currency
+      } : null;
       if (existing[0]?.order_id) {
         const credentialsCiphertext = card.credentials
           ? encryptSecret(JSON.stringify(card.credentials), sessionEncryptionKey)
@@ -129,6 +152,7 @@ export function createCardStockService({ pool, sessionEncryptionKey }) {
           : null;
         await connection.query(
           `UPDATE cards SET last4 = COALESCE(?, last4), status = ?, current_balance = ?, currency = ?,
+             inventory_status = 'ASSIGNED',
              card_credentials_ciphertext = COALESCE(?, card_credentials_ciphertext),
              card_number_ciphertext = COALESCE(?, card_number_ciphertext),
              last_synced_at = CURRENT_TIMESTAMP(3), updated_at = CURRENT_TIMESTAMP(3)
@@ -136,6 +160,14 @@ export function createCardStockService({ pool, sessionEncryptionKey }) {
           [card.last4, card.status, card.currentBalance, card.currency,
             credentialsCiphertext, cardNumberCiphertext, existing[0].id]
         );
+        await recordStateEvent(connection, {
+          cardId: existing[0].id,
+          previous,
+          current: {
+            status: card.status, inventoryStatus: 'ASSIGNED',
+            currentBalance: card.currentBalance, currency: card.currency
+          }
+        });
         await connection.commit();
         return { providerCardId: card.providerCardId, inventoryStatus: 'ASSIGNED', alreadyAssigned: true };
       }
@@ -171,6 +203,18 @@ export function createCardStockService({ pool, sessionEncryptionKey }) {
             card.fundedAmount, card.currentBalance, card.currency, credentialsCiphertext, cardNumberCiphertext]
         );
       }
+      const cardId = existing[0]?.id || (await connection.query(
+        `SELECT id FROM cards WHERE BINARY provider_card_id = BINARY ? LIMIT 1`,
+        [card.providerCardId]
+      ))[0][0].id;
+      await recordStateEvent(connection, {
+        cardId,
+        previous,
+        current: {
+          status: card.status, inventoryStatus,
+          currentBalance: card.currentBalance, currency: card.currency
+        }
+      });
       const stock = await refreshLowStockAlert(connection, card.cardTypeId);
       await connection.commit();
       return { providerCardId: card.providerCardId, inventoryStatus, ...stock };
@@ -200,10 +244,18 @@ export function createCardStockService({ pool, sessionEncryptionKey }) {
       ),
       pool.query(`SELECT setting_key, setting_value FROM app_settings
         WHERE setting_key IN ('default_card_type_id','default_open_card_amount')`),
-      pool.query(`SELECT provider_card_id, card_type_id, last4, status, inventory_status,
-          funded_amount, current_balance, currency, order_id,
-          card_credentials_ciphertext, card_number_ciphertext, last_synced_at
-        FROM cards ORDER BY created_at DESC LIMIT 200`),
+      pool.query(`SELECT c.provider_card_id, c.card_type_id, c.last4, c.status, c.inventory_status,
+          c.funded_amount, c.current_balance, c.currency, c.order_id,
+          c.card_credentials_ciphertext, c.card_number_ciphertext, c.last_synced_at,
+          c.last_transaction_synced_at, o.public_no,
+          (SELECT COUNT(*) FROM card_transactions ct WHERE ct.card_id = c.id) AS transaction_count,
+          (SELECT MAX(ct.last_seen_at) FROM card_transactions ct WHERE ct.card_id = c.id) AS latest_transaction_at,
+          (SELECT csj.status FROM card_sync_jobs csj WHERE csj.card_id = c.id
+            ORDER BY csj.created_at DESC LIMIT 1) AS sync_status,
+          (SELECT csj.error_message FROM card_sync_jobs csj WHERE csj.card_id = c.id
+            ORDER BY csj.created_at DESC LIMIT 1) AS sync_error
+        FROM cards c LEFT JOIN orders o ON o.id = c.order_id
+        ORDER BY c.created_at DESC LIMIT 200`),
       readProviderSnapshot(pool),
       readCardCatalogSnapshot(pool)
     ]);
@@ -213,6 +265,11 @@ export function createCardStockService({ pool, sessionEncryptionKey }) {
     const selectedCardType = providerSnapshot?.cardTypes?.find(
       (item) => String(item.id) === defaultCardTypeId
     ) || null;
+    const mismatchIds = new Set([
+      ...(catalogSnapshot?.providerOnlyActiveIds || []),
+      ...(catalogSnapshot?.localMissingProviderIds || []),
+      ...(catalogSnapshot?.statusConflictIds || [])
+    ].map(String));
     return {
       threshold,
       provider: {
@@ -232,6 +289,9 @@ export function createCardStockService({ pool, sessionEncryptionKey }) {
         fresh: cardCatalogIsFresh(catalogSnapshot),
         openingBlocked: !cardCatalogIsFresh(catalogSnapshot)
           || Number(catalogSnapshot.unresolvedActive || 0) > 0
+          || Number(catalogSnapshot.providerOnlyActiveCount || 0) > 0
+          || Number(catalogSnapshot.localMissingProviderCount || 0) > 0
+          || Number(catalogSnapshot.statusConflictCount || 0) > 0
       } : {
         fresh: false,
         openingBlocked: true,
@@ -262,6 +322,18 @@ export function createCardStockService({ pool, sessionEncryptionKey }) {
         currentBalance: row.current_balance == null ? null : String(row.current_balance),
         currency: row.currency,
         assigned: Boolean(row.order_id),
+        publicNo: row.public_no || null,
+        transactionCount: Number(row.transaction_count || 0),
+        latestTransactionAt: row.latest_transaction_at instanceof Date
+          ? row.latest_transaction_at.toISOString() : row.latest_transaction_at || null,
+        lastTransactionSyncedAt: row.last_transaction_synced_at instanceof Date
+          ? row.last_transaction_synced_at.toISOString() : row.last_transaction_synced_at || null,
+        syncStatus: row.sync_status || null,
+        syncError: row.sync_error || null,
+        reconciliationStatus: mismatchIds.has(String(row.provider_card_id)) ? 'MISMATCH'
+          : ['PENDING', 'RUNNING'].includes(row.sync_status) ? 'SYNCING'
+          : row.sync_status === 'REVIEW_REQUIRED' ? 'REVIEW_REQUIRED'
+            : !row.last_transaction_synced_at ? 'STALE' : 'OK',
         lastSyncedAt: row.last_synced_at instanceof Date
           ? row.last_synced_at.toISOString() : row.last_synced_at || null
       }))

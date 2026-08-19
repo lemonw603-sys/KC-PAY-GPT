@@ -27,6 +27,8 @@ export function createApp({
   getAdminOrder = null,
   listAdminAlerts = null,
   requestCardTransactionSync = null,
+  getAdminCard = null,
+  requestAdminCardSync = null,
   getAdminCardStock = null,
   setAdminCardStockThreshold = null,
   createAdminCardStockJob = null,
@@ -186,6 +188,17 @@ export function createApp({
   if (typeof requestCardTransactionSync === 'function') {
     app.post('/api/v1/admin/orders/:publicNo/sync-transactions', ...adminWriteGuards, async (req, res) => {
       const result = await requestCardTransactionSync(req.params.publicNo);
+      return res.status(result.queued ? 202 : 200).json(result);
+    });
+  }
+  if (typeof getAdminCard === 'function') {
+    app.get('/api/v1/admin/cards/:providerCardId', noStore, requireAdminApi, async (req, res) => {
+      res.json(await getAdminCard(req.params.providerCardId));
+    });
+  }
+  if (typeof requestAdminCardSync === 'function') {
+    app.post('/api/v1/admin/cards/sync', ...adminWriteGuards, async (req, res) => {
+      const result = await requestAdminCardSync(req.body || {});
       return res.status(result.queued ? 202 : 200).json(result);
     });
   }

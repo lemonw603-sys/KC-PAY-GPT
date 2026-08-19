@@ -1,7 +1,6 @@
 import { OrderStatus } from '../domain/order-status.js';
 import { TaskExecutionError } from './task-runner.js';
-import crypto from 'node:crypto';
-import { classifyCardTransaction } from '../domain/card-transaction-classification.js';
+import { readAllCardTransactions } from '../services/card-transaction-reader.js';
 
 function pendingError(delayMs) {
   return new TaskExecutionError('Recharge is still processing', {
@@ -399,13 +398,8 @@ export function createWorkflowHandlers({
     if (!context.card?.provider_card_id) {
       throw new TaskExecutionError('Order has no provider card', { code: 'CARD_NOT_BOUND' });
     }
-    const pageSize = 50;
-    const maxPages = 1000;
-    const transactions = [];
-    let page = 1;
-    let total = null;
-    while (total == null || transactions.length < total) {
-      const envelope = await recordCall({
+    const transactions = await readAllCardTransactions({
+      fetchPage: (page, pageSize) => recordCall({
         orderId: task.order_id,
         provider: 'hnskj',
         operation: 'card_transactions',
@@ -419,50 +413,8 @@ export function createWorkflowHandlers({
           types: [...new Set(value.data.transactions.map((item) => item.type))],
           statuses: [...new Set(value.data.transactions.map((item) => item.status))]
         })
-      });
-      const hasPage = envelope.data.page != null || envelope.data.pageSize != null;
-      if (!Number.isInteger(envelope.data.total) || envelope.data.total < 0 || (
-        hasPage && (
-          !Number.isInteger(envelope.data.page) || envelope.data.page !== page
-          || !Number.isInteger(envelope.data.pageSize) || envelope.data.pageSize <= 0
-        )
-      )) {
-        throw new TaskExecutionError('Invalid transaction pagination metadata', {
-          code: 'TRANSACTION_PAGINATION_INVALID'
-        });
-      }
-      total = envelope.data.total;
-      transactions.push(...envelope.data.transactions.map((item) => ({
-      id: item.id,
-      type: item.type,
-      status: item.status,
-      amount: String(item.amount),
-      currency: item.currency,
-      fee: item.fee == null ? null : String(item.fee),
-      tradeTime: item.tradeTime || null,
-      relatedTxnId: item.relatedTxnId || null,
-      settlementStatus: item.settlementStatus || null,
-      originalAmount: item.originalAmount == null ? null : String(item.originalAmount),
-      originalCurrency: item.originalCurrency || null,
-      merchantName: item.merchantName || null,
-      merchantCountry: item.merchantCountry || null,
-      merchantMcc: item.merchantMcc || null,
-      classification: classifyCardTransaction(item),
-      rawHash: crypto.createHash('sha256').update(JSON.stringify(item)).digest('hex')
-      })));
-      if (envelope.data.transactions.length === 0 || transactions.length >= total) break;
-      if (!hasPage) {
-        throw new TaskExecutionError('Provider returned an incomplete transaction collection without pagination metadata', {
-          code: 'TRANSACTION_PAGINATION_UNSUPPORTED'
-        });
-      }
-      if (page >= maxPages) {
-        throw new TaskExecutionError('Transaction pagination exceeded safety limit', {
-          code: 'TRANSACTION_PAGINATION_LIMIT'
-        });
-      }
-      page += 1;
-    }
+      })
+    });
     let cardSnapshot = null;
     if (typeof cardProvider.card === 'function') {
       const cardEnvelope = await recordCall({

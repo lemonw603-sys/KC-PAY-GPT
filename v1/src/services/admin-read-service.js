@@ -79,6 +79,85 @@ function cardNumber(row, key) {
 }
 
 export function createAdminReadService({ pool, sessionEncryptionKey = null, now = () => Date.now() }) {
+  async function getCard(providerCardId) {
+    const cardId = String(providerCardId || '').trim();
+    if (!cardId || cardId.length > 128) {
+      throw new PublicApiError('Invalid card ID', { code: 'INVALID_ADMIN_QUERY', status: 400 });
+    }
+    const [[cardRows], [transactionRows], [eventRows], [jobRows]] = await Promise.all([
+      pool.query(`SELECT c.id, c.provider_card_id, c.card_type_id, c.last4, c.status,
+          c.inventory_status, c.funded_amount, c.current_balance, c.currency,
+          c.refund_status, c.last_synced_at, c.last_transaction_synced_at,
+          c.card_number_ciphertext, c.card_credentials_ciphertext,
+          o.public_no, o.status AS order_status, o.customer_email
+        FROM cards c LEFT JOIN orders o ON o.id = c.order_id
+        WHERE BINARY c.provider_card_id = BINARY ? LIMIT 1`, [cardId]),
+      pool.query(`SELECT ct.provider_transaction_id, ct.transaction_type, ct.status,
+          ct.amount, ct.currency, ct.fee, ct.trade_time_raw, ct.related_txn_id,
+          ct.settlement_status, ct.merchant_name, ct.merchant_country,
+          ct.first_seen_at, ct.last_seen_at
+        FROM card_transactions ct INNER JOIN cards c ON c.id = ct.card_id
+        WHERE BINARY c.provider_card_id = BINARY ? ORDER BY ct.id DESC LIMIT 200`, [cardId]),
+      pool.query(`SELECT cse.event_type, cse.source, cse.previous_json,
+          cse.current_json, cse.created_at
+        FROM card_state_events cse INNER JOIN cards c ON c.id = cse.card_id
+        WHERE BINARY c.provider_card_id = BINARY ? ORDER BY cse.id DESC LIMIT 100`, [cardId]),
+      pool.query(`SELECT csj.status, csj.attempts, csj.max_attempts,
+          csj.error_code, csj.error_message, csj.created_at,
+          csj.updated_at, csj.completed_at
+        FROM card_sync_jobs csj INNER JOIN cards c ON c.id = csj.card_id
+        WHERE BINARY c.provider_card_id = BINARY ? ORDER BY csj.created_at DESC LIMIT 20`, [cardId])
+    ]);
+    const row = cardRows[0];
+    if (!row) throw new PublicApiError('Card not found', { code: 'ADMIN_CARD_NOT_FOUND', status: 404 });
+    return {
+      card: {
+        providerCardId: row.provider_card_id,
+        cardTypeId: row.card_type_id,
+        cardNumber: cardNumber(row, sessionEncryptionKey),
+        last4: row.last4,
+        status: row.status,
+        inventoryStatus: row.inventory_status,
+        fundedAmount: decimal(row.funded_amount),
+        currentBalance: decimal(row.current_balance),
+        currency: row.currency,
+        refundStatus: row.refund_status,
+        lastSyncedAt: iso(row.last_synced_at),
+        lastTransactionSyncedAt: iso(row.last_transaction_synced_at)
+      },
+      order: row.public_no ? {
+        publicNo: row.public_no, status: row.order_status,
+        customerEmail: row.customer_email
+      } : null,
+      transactions: transactionRows.map((transaction) => ({
+        providerTransactionId: transaction.provider_transaction_id,
+        type: transaction.transaction_type,
+        status: transaction.status,
+        amount: decimal(transaction.amount),
+        currency: transaction.currency,
+        fee: decimal(transaction.fee),
+        tradeTimeRaw: transaction.trade_time_raw,
+        relatedTransactionId: transaction.related_txn_id,
+        settlementStatus: transaction.settlement_status,
+        merchantName: transaction.merchant_name,
+        merchantCountry: transaction.merchant_country,
+        firstSeenAt: iso(transaction.first_seen_at),
+        lastSeenAt: iso(transaction.last_seen_at)
+      })),
+      events: eventRows.map((event) => ({
+        type: event.event_type, source: event.source,
+        previous: event.previous_json, current: event.current_json,
+        createdAt: iso(event.created_at)
+      })),
+      syncJobs: jobRows.map((job) => ({
+        status: job.status, attempts: Number(job.attempts), maxAttempts: Number(job.max_attempts),
+        errorCode: job.error_code, errorMessage: job.error_message,
+        createdAt: iso(job.created_at), updatedAt: iso(job.updated_at),
+        completedAt: iso(job.completed_at)
+      }))
+    };
+  }
+
   async function requestCardTransactionSync(publicNo) {
     if (typeof publicNo !== 'string' || publicNo.length < 8 || publicNo.length > 64) {
       throw new PublicApiError('Invalid public number', { code: 'INVALID_ADMIN_QUERY', status: 400 });
@@ -518,5 +597,5 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, now 
     };
   }
 
-  return { getOrder, getOverview, listOrders, listAlerts, requestCardTransactionSync };
+  return { getCard, getOrder, getOverview, listOrders, listAlerts, requestCardTransactionSync };
 }

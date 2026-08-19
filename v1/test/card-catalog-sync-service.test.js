@@ -24,6 +24,9 @@ test('catalog sync imports every active provider card and records reconciliation
         { setting_key: 'default_card_type_id', setting_value: '7' },
         { setting_key: 'default_minimum_required_card_balance', setting_value: '15.5' }
       ], []];
+      if (/SELECT provider_card_id, status FROM cards/.test(sql)) return [listed
+        .filter((card) => card.status === 'active')
+        .map((card) => ({ provider_card_id: String(card.id), status: card.status })), []];
       if (/FROM cards/.test(sql)) return [[{
         available: 3, assigned: 1, depleted: 1, provisioning: 0
       }], []];
@@ -51,6 +54,9 @@ test('catalog sync imports every active provider card and records reconciliation
   assert.equal(result.assigned, 1);
   assert.equal(result.depleted, 1);
   assert.equal(result.unresolvedActive, 0);
+  assert.equal(result.providerOnlyActiveCount, 0);
+  assert.equal(result.localMissingProviderCount, 0);
+  assert.equal(result.statusConflictCount, 0);
   assert.equal(writes.length, 1);
 });
 
@@ -62,6 +68,7 @@ test('catalog sync blocks opening when an active provider card cannot be resolve
         { setting_key: 'default_card_type_id', setting_value: '7' },
         { setting_key: 'default_minimum_required_card_balance', setting_value: '15.5' }
       ], []];
+      if (/SELECT provider_card_id, status FROM cards/.test(sql)) return [[], []];
       if (/FROM cards/.test(sql)) return [[{}], []];
       if (/INSERT INTO card_catalog_snapshots/.test(sql)) {
         snapshot = JSON.parse(values[0]);

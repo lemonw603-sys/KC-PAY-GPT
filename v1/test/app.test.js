@@ -393,6 +393,44 @@ test('creates paid card stock jobs only through an authenticated admin route', a
   });
 });
 
+test('reads card detail and queues inventory sync without step-up or paid actions', async () => {
+  const adminAuth = createAdminSessionAuth({
+    passwordHash: await hashAdminPassword('fixture admin password', { salt: Buffer.alloc(16, 14) }),
+    sessionSecret: Buffer.alloc(32, 15),
+    secureCookies: false
+  });
+  let received;
+  const app = createApp({
+    adminAuth,
+    getAdminCard: async (providerCardId) => ({ card: { providerCardId }, transactions: [] }),
+    requestAdminCardSync: async (input) => {
+      received = input;
+      return { requested: 1, queued: 1, alreadyActive: 0 };
+    }
+  });
+  await withServer(app, async (baseUrl) => {
+    const login = await fetch(`${baseUrl}/api/v1/admin/session`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: 'fixture admin password' })
+    });
+    const sessionCookie = login.headers.get('set-cookie').split(';')[0];
+    const detail = await fetch(`${baseUrl}/api/v1/admin/cards/card-617`, {
+      headers: { Cookie: sessionCookie }
+    });
+    assert.equal(detail.status, 200);
+    assert.deepEqual(await detail.json(), {
+      card: { providerCardId: 'card-617' }, transactions: []
+    });
+    const queued = await fetch(`${baseUrl}/api/v1/admin/cards/sync`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: sessionCookie, Origin: baseUrl },
+      body: JSON.stringify({ providerCardId: 'card-617' })
+    });
+    assert.equal(queued.status, 202);
+    assert.deepEqual(received, { providerCardId: 'card-617' });
+    assert.deepEqual(await queued.json(), { requested: 1, queued: 1, alreadyActive: 0 });
+  });
+});
+
 test('changes intake and one-order recharge permits only through authenticated admin routes', async () => {
   const adminAuth = createAdminSessionAuth({
     passwordHash: await hashAdminPassword('fixture admin password', { salt: Buffer.alloc(16, 11) }),

@@ -149,7 +149,7 @@
           <div class="mini-list" id="stock-jobs"></div>
         </section>
         <section class="card stock-card">
-          <div class="card-heading"><div><p class="section-kicker">卡片明细</p><h2>后台卡片</h2></div><span class="write-badge">完整卡号</span></div>
+          <div class="card-heading"><div><p class="section-kicker">卡片明细</p><h2>后台卡片</h2></div><div><button class="text-button" id="sync-all-cards" type="button">只读同步全部</button> <span class="write-badge">完整卡号</span></div></div>
           <div class="mini-list stock-card-list" id="stock-cards"></div>
         </section>
       </section>
@@ -159,7 +159,7 @@
   </div>
 
   <dialog class="detail-drawer" id="detail-drawer" aria-labelledby="detail-title">
-    <div class="drawer-heading"><div><p class="section-kicker">订单详情</p><h2 id="detail-title">—</h2></div><button class="close-button" id="close-detail" type="button" aria-label="关闭详情">×</button></div>
+    <div class="drawer-heading"><div><p class="section-kicker" id="detail-kicker">订单详情</p><h2 id="detail-title">—</h2></div><button class="close-button" id="close-detail" type="button" aria-label="关闭详情">×</button></div>
     <div id="detail-content"></div>
   </dialog>
 </body>
