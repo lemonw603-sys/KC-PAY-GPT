@@ -396,6 +396,31 @@ async function issueCompensation(publicNo, button) {
   }
 }
 
+async function cancelOrder(publicNo, button) {
+  if (!window.confirm(`确认取消订单 ${publicNo}？\n\n服务器会再次确认充值从未提交。订单关闭后，卡片将释放回可用库存。此操作不可撤销。`)) return;
+  button.disabled = true;
+  button.textContent = '核对并取消中…';
+  try {
+    const result = await api(`/api/v1/admin/orders/${encodeURIComponent(publicNo)}/cancellation`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ confirmation: `取消订单 ${publicNo}` })
+    });
+    showNotice(result.replayed ? '该订单此前已经取消。' : '订单已取消，卡片已释放回库存。');
+    await openOrder(publicNo);
+    await loadOrders();
+  } catch (error) {
+    const messages = {
+      order_cancellation_submission_risk: '充值可能已经开始，禁止取消。',
+      order_cancellation_card_not_reusable: '卡片状态、余额或同步时间不符合释放条件。',
+      order_cancellation_not_eligible: '该订单当前不能取消。',
+      order_cancellation_order_changed: '订单或卡片状态刚刚发生变化，请刷新后重试。'
+    };
+    showNotice(messages[error.message] || '取消被服务器拒绝，订单和卡片均未改变。');
+    button.disabled = false;
+    button.textContent = '取消并释放卡片';
+  }
+}
+
 async function setOrderAcceptance(button) {
   const currentlyEnabled = button.dataset.enabled === 'true';
   const enabled = !currentlyEnabled;
@@ -486,6 +511,16 @@ async function openOrder(publicNo) {
       COMPENSATION_NOT_TERMINALLY_FAILED: '订单未明确失败，禁止补发',
       COMPENSATION_SIDE_EFFECT_RISK: '已进入开卡或充值链路，禁止补发'
     };
+    const cancellation = data.cancellation || {};
+    const cancellationButton = cancellation.eligible
+      ? '<button type="button" class="danger-small" id="cancel-order">取消并释放卡片</button>' : '';
+    const cancellationLabels = {
+      ORDER_CANCELLATION_ELIGIBLE: '可以安全取消：充值未提交，卡片将返回可用库存',
+      ORDER_CANCELLATION_ALREADY_COMPLETED: '订单已经取消，卡片已经释放',
+      ORDER_CANCELLATION_CARD_NOT_REUSABLE: '卡片状态、余额或同步时间不满足释放条件',
+      ORDER_CANCELLATION_SUBMISSION_RISK: '充值可能已经开始，禁止取消',
+      ORDER_CANCELLATION_NOT_ELIGIBLE: '当前订单状态不能取消'
+    };
     elements.detailContent.innerHTML = `
       <section class="detail-section"><div class="detail-section-heading"><h3>付款执行门</h3>${permitButton}</div>${renderKeyValues([
         ['付款前检查', paymentGate.prepaymentReady ? '已就绪' : '未就绪'],
@@ -500,6 +535,7 @@ async function openOrder(publicNo) {
         ['卡片资格', paymentGate.cardReady ? '状态、余额和资料均正常' : '不可用'],
         ['卡片核对', paymentGate.cardCheckFresh ? '15 分钟内已更新' : '数据已过期']
       ])}</section>
+      <section class="detail-section"><div class="detail-section-heading"><h3>取消未充值订单</h3>${cancellationButton}</div><p class="empty-state">${escapeHtml(cancellationLabels[cancellation.code] || '当前不可取消')}</p></section>
       <section class="detail-section"><div class="detail-section-heading"><h3>失败补偿</h3>${compensationButton}</div><p class="empty-state">${escapeHtml(compensationLabels[compensation.code] || '当前不可补发')}</p></section>
       <section class="detail-section"><div class="detail-status">${statusChip(order.status)}<span>${formatTime(order.updatedAt)}</span></div>${renderKeyValues([
         ['客户邮箱', order.customerEmail], ['ChatGPT 账号 ID', order.chatgptAccountId],
@@ -523,6 +559,7 @@ async function openOrder(publicNo) {
     document.querySelector('#arm-recharge-permit')?.addEventListener('click', (event) => setRechargePermit(publicNo, 'arm', event.currentTarget));
     document.querySelector('#revoke-recharge-permit')?.addEventListener('click', (event) => setRechargePermit(publicNo, 'revoke', event.currentTarget));
     document.querySelector('#issue-compensation')?.addEventListener('click', (event) => issueCompensation(publicNo, event.currentTarget));
+    document.querySelector('#cancel-order')?.addEventListener('click', (event) => cancelOrder(publicNo, event.currentTarget));
   } catch {
     elements.detailContent.innerHTML = '<p class="empty-state">订单详情读取失败，请稍后重试。</p>';
   }

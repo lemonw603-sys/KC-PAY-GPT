@@ -2,7 +2,8 @@ const SELECT_ORDER = `
   SELECT o.public_no, o.status, o.updated_at,
          COALESCE(
            CASE WHEN o.status = 'CLOSED' THEN (
-             CASE WHEN EXISTS (
+             CASE WHEN o.failure_code = 'CANCELLED_PRE_SUBMISSION' THEN 'CARD_FAILED'
+             WHEN EXISTS (
                SELECT 1 FROM order_compensations oc WHERE oc.original_order_id = o.id
              ) THEN 'CARD_FAILED' ELSE (
                SELECT oe.to_status FROM order_events oe

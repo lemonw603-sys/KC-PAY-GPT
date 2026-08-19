@@ -56,6 +56,7 @@ migration 004_cdk_batch_index already applied
 - 生成模式发现任一历史哈希冲突时，本批已插入的其余新码也会回滚，不会产生无法完整交付的半批次。
 - 客户可用大小写精确匹配的 `publicNo` 或原 CDK 哈希找回同一订单；状态迁移后客户查询结果会从 `QUEUED` 更新为 `PROCESSING`。
 - 只有无卡片、无供应商调用、无活动任务且存在 `DEAD` 任务的 `CREATED` 订单可以补发；并发或重复操作只能得到同一张加密保存的替换 CDK。
+- 只有直充任务仍为 `PENDING / attempts=0`、没有 `create_direct` 调用或外部充值单号、卡片状态与余额合格且 15 分钟内已同步的 `CARD_READY` 订单可以取消并释放卡片。
 
 ### HTTP 就绪
 
@@ -77,7 +78,7 @@ fail 0
 skipped 0
 ```
 
-最新本地无数据库测试为 `156 pass / 0 fail / 13 skipped`；生产机隔离临时 MySQL 中完整重跑为 `169 pass / 0 fail / 0 skipped`。隔离验收不连接真实 Provider 写接口。
+最新本地无数据库测试为 `160 pass / 0 fail / 14 skipped`；生产机隔离临时 MySQL 完整测试结果在本次发布验收后更新。隔离验收不连接真实 Provider 写接口。
 
 ### 2026-08-17 后续复验
 

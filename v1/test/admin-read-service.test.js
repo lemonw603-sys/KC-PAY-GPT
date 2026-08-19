@@ -125,6 +125,10 @@ test('admin order detail exposes the full PAN but not CVV or Session', async () 
     eligible: false, alreadyIssued: false, code: 'COMPENSATION_SIDE_EFFECT_RISK',
     issuedAt: null, replacementStatus: null
   });
+  assert.deepEqual(result.cancellation, {
+    eligible: true, alreadyCancelled: false, code: 'ORDER_CANCELLATION_ELIGIBLE',
+    cardWillBeReleased: true
+  });
   assert.deepEqual(result.transactions, []);
   assert.equal(JSON.stringify(result).includes('fixture-signature'), false);
   assert.equal(JSON.stringify(result).includes('sessionToken'), false);

@@ -420,6 +420,40 @@ test('issues an order compensation only through the guarded admin route', async 
   });
 });
 
+test('cancels an unsubmitted order only through the guarded admin route', async () => {
+  const adminAuth = createAdminSessionAuth({
+    passwordHash: await hashAdminPassword('fixture admin password', { salt: Buffer.alloc(16, 17) }),
+    sessionSecret: Buffer.alloc(32, 18), secureCookies: false
+  });
+  let received;
+  const app = createApp({
+    adminAuth,
+    cancelAdminOrder: async (publicNo, input) => {
+      received = { publicNo, input };
+      return { publicNo, status: 'CLOSED', cardReleased: true, replayed: false };
+    }
+  });
+  await withServer(app, async (baseUrl) => {
+    assert.equal((await fetch(`${baseUrl}/api/v1/admin/orders/PJV1-DEMO/cancellation`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}'
+    })).status, 401);
+    const login = await fetch(`${baseUrl}/api/v1/admin/session`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: 'fixture admin password' })
+    });
+    const cookie = login.headers.get('set-cookie').split(';')[0];
+    const response = await fetch(`${baseUrl}/api/v1/admin/orders/PJV1-DEMO/cancellation`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cookie, Origin: baseUrl },
+      body: JSON.stringify({ confirmation: '取消订单 PJV1-DEMO' })
+    });
+    assert.equal(response.status, 200);
+    assert.equal((await response.json()).cardReleased, true);
+    assert.deepEqual(received, {
+      publicNo: 'PJV1-DEMO', input: { confirmation: '取消订单 PJV1-DEMO' }
+    });
+  });
+});
+
 test('rejects authenticated admin writes from a different origin', async () => {
   const adminAuth = createAdminSessionAuth({
     passwordHash: await hashAdminPassword('fixture admin password', { salt: Buffer.alloc(16, 13) }),

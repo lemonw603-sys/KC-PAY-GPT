@@ -375,6 +375,25 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, now 
     } else if (row.status === 'CREATED' && !row.provider_card_id && callRows.length === 0 && hasDeadTask) {
       compensationCode = 'COMPENSATION_ELIGIBLE';
     }
+    const rechargeCallExists = callRows.some(
+      (call) => call.provider === 'zzshu' && call.operation === 'create_direct'
+    );
+    let cancellationCode = 'ORDER_CANCELLATION_NOT_ELIGIBLE';
+    if (row.status === 'CLOSED' && row.failure_code === 'CANCELLED_PRE_SUBMISSION') {
+      cancellationCode = 'ORDER_CANCELLATION_ALREADY_COMPLETED';
+    } else if (row.status === 'CARD_READY'
+      && submitTask?.status === 'PENDING'
+      && Number(submitTask.attempts) === 0
+      && submitTask.permit_status !== 'CONSUMED'
+      && !row.recharge_order_no
+      && !rechargeCallExists) {
+      cancellationCode = cardReady && cardCheckFresh
+        ? 'ORDER_CANCELLATION_ELIGIBLE'
+        : 'ORDER_CANCELLATION_CARD_NOT_REUSABLE';
+    } else if (rechargeCallExists || row.recharge_order_no || Number(submitTask?.attempts || 0) > 0
+      || submitTask?.permit_status === 'CONSUMED') {
+      cancellationCode = 'ORDER_CANCELLATION_SUBMISSION_RISK';
+    }
     return {
       order: {
         publicNo: row.public_no,
@@ -428,6 +447,12 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, now 
         code: compensationCode,
         issuedAt: iso(compensationRecord?.created_at),
         replacementStatus: compensationRecord?.replacement_status || null
+      },
+      cancellation: {
+        eligible: cancellationCode === 'ORDER_CANCELLATION_ELIGIBLE',
+        alreadyCancelled: cancellationCode === 'ORDER_CANCELLATION_ALREADY_COMPLETED',
+        code: cancellationCode,
+        cardWillBeReleased: cancellationCode === 'ORDER_CANCELLATION_ELIGIBLE'
       },
       events: eventRows.map((event) => ({
         fromStatus: event.from_status,

@@ -29,6 +29,7 @@ import {
   completeCardStockJob
 } from '../src/services/card-stock-job-service.js';
 import { createOrderCompensationService } from '../src/services/order-compensation-service.js';
+import { createOrderCancellationService } from '../src/services/order-cancellation-service.js';
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
 const integrationSessionKey = Buffer.alloc(32, 7);
@@ -120,6 +121,52 @@ test('order compensation is one-time and recoverable after a verified no-side-ef
       availableReplacements: Number(stored.available_replacements) },
     { status: 'CLOSED', compensationCount: 1, availableReplacements: 1 });
   } finally {
+    await removeOrder(pool, fixture);
+    await pool.end();
+  }
+});
+
+test('pre-submission cancellation closes the order and returns its funded card to inventory', {
+  skip: !databaseUrl
+}, async () => {
+  const pool = mysql.createPool({ uri: databaseUrl, connectionLimit: 4, timezone: 'Z' });
+  const fixture = await createOrder(pool, {
+    publicNo: `PJV1-CANCEL-${Date.now()}`, status: OrderStatus.CARD_READY
+  });
+  const cardId = id();
+  try {
+    await pool.query(
+      `INSERT INTO cards
+       (id, order_id, inventory_status, assigned_at, provider_card_id, card_type_id,
+        last4, status, funded_amount, current_balance, currency, refund_status,
+        card_credentials_ciphertext, last_synced_at)
+       VALUES (?, ?, 'ASSIGNED', CURRENT_TIMESTAMP(3), ?, '1', '4242', 'active',
+        '16.000000', '16.000000', 'USD', 'MONITORING', ?, CURRENT_TIMESTAMP(3))`,
+      [cardId, fixture.orderId, `cancel-card-${cardId}`, encryptSecret(JSON.stringify({
+        cardNumber: '4242424242424242', expMonth: 12, expYear: 2032, cvv: '123'
+      }), integrationSessionKey)]
+    );
+    await pool.query(
+      `INSERT INTO tasks (order_id, task_type, status, dedupe_key, max_attempts)
+       VALUES (?, 'SUBMIT_RECHARGE', 'PENDING', ?, 5)`,
+      [fixture.orderId, `cancel-submit-${fixture.orderId}`]
+    );
+    const [[order]] = await pool.query('SELECT public_no FROM orders WHERE id = ?', [fixture.orderId]);
+    const service = createOrderCancellationService({ pool });
+    const result = await service(order.public_no, { confirmation: `取消订单 ${order.public_no}` });
+    assert.equal(result.cardReleased, true);
+    const [[stored]] = await pool.query(
+      `SELECT o.status, o.failure_code, c.order_id, c.inventory_status, t.status AS task_status
+       FROM orders o INNER JOIN cards c ON c.id = ?
+       INNER JOIN tasks t ON t.order_id = o.id AND t.task_type = 'SUBMIT_RECHARGE'
+       WHERE o.id = ?`, [cardId, fixture.orderId]
+    );
+    assert.deepEqual(stored, {
+      status: 'CLOSED', failure_code: 'CANCELLED_PRE_SUBMISSION', order_id: null,
+      inventory_status: 'AVAILABLE', task_status: 'DEAD'
+    });
+  } finally {
+    await pool.query('DELETE FROM cards WHERE id = ?', [cardId]);
     await removeOrder(pool, fixture);
     await pool.end();
   }
