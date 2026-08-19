@@ -188,6 +188,11 @@ function updateStockEstimate() {
   const amount = Math.max(0, Number(elements.stockOpenAmount.value) || 0);
   elements.stockCost.textContent = `预计卡内本金：$${count * amount}`;
   elements.stockConfirmHint.textContent = `开${count}张`;
+  document.querySelectorAll('.stock-preset').forEach((button) => {
+    const selected = Number(button.dataset.count) === count;
+    button.classList.toggle('is-active', selected);
+    button.setAttribute('aria-pressed', String(selected));
+  });
 }
 
 function renderKeyValues(items) {
@@ -300,6 +305,10 @@ document.querySelector('#refresh-button').addEventListener('click', () => {
   (state.view === 'overview' ? loadOverview() : state.view === 'stock' ? loadStock() : loadOrders()).catch(() => showNotice('刷新失败，请稍后重试。'));
 });
 document.querySelector('#refresh-stock')?.addEventListener('click', () => loadStock().catch(() => showNotice('库存读取失败。')));
+document.querySelectorAll('.stock-preset').forEach((button) => button.addEventListener('click', () => {
+  elements.stockOpenCount.value = button.dataset.count;
+  updateStockEstimate();
+}));
 elements.stockOpenCount?.addEventListener('input', updateStockEstimate);
 elements.stockOpenAmount?.addEventListener('input', updateStockEstimate);
 elements.stockThresholdForm?.addEventListener('submit', async (event) => {

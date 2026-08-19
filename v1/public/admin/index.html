@@ -113,9 +113,17 @@
             <div class="card-heading"><div><p class="section-kicker">人工补卡</p><h2>创建开卡任务</h2></div><span class="write-badge">产生费用</span></div>
             <p class="card-description">提交后由服务器安全执行。每张卡使用独立幂等键；任务异常时停止并等待人工核对。</p>
             <form class="stock-open-form" id="stock-open-form">
-              <label>数量<input id="stock-open-count" type="number" min="1" max="500" value="2" required></label>
+              <div class="stock-presets" role="group" aria-label="快捷选择开卡数量">
+                <span>快捷选择</span>
+                <button class="stock-preset is-active" type="button" data-count="2" aria-pressed="true">2 张</button>
+                <button class="stock-preset" type="button" data-count="5" aria-pressed="false">5 张</button>
+                <button class="stock-preset" type="button" data-count="10" aria-pressed="false">10 张</button>
+                <button class="stock-preset" type="button" data-count="20" aria-pressed="false">20 张</button>
+              </div>
+              <label>数量（可自定义）<input id="stock-open-count" type="number" min="1" max="500" value="2" required></label>
               <label>单卡金额（USD）<input id="stock-open-amount" type="number" min="1" max="100000" value="16" required></label>
-              <label>卡段 ID<input id="stock-card-type" type="text" maxlength="128" value="1" required></label>
+              <div class="stock-card-profile"><span>卡片类型</span><strong>默认已验证卡段</strong><small>无需选择</small></div>
+              <input id="stock-card-type" type="hidden" value="1">
               <div class="stock-cost" id="stock-cost">预计卡内本金：$32</div>
               <label class="stock-confirm-label">输入确认词 <strong id="stock-confirm-hint">开2张</strong><input id="stock-confirmation" type="text" autocomplete="off" required></label>
               <button class="danger-button" type="submit">确认并创建开卡任务</button>
