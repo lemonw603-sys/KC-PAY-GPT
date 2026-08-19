@@ -47,6 +47,51 @@ async function resolvePurchasedId(provider, response, knownIds) {
   }
 }
 
+export async function openStockCards({ provider, stock, count, amount, cardTypeId, randomUUID = crypto.randomUUID }) {
+  const knownIds = await allCardIds(provider);
+  const results = [];
+  for (let index = 0; index < count; index += 1) {
+    let providerCardId;
+    try {
+      const response = await provider.purchaseCard({
+        cardTypeId,
+        openCardAmount: amount,
+        idempotencyKey: `stock-${randomUUID()}`,
+        remark: `stock ${index + 1}/${count}`
+      });
+      providerCardId = await resolvePurchasedId(provider, response, knownIds);
+    } catch (error) {
+      if (!error?.uncertain) throw error;
+      const currentIds = await allCardIds(provider);
+      const candidates = [...currentIds].filter((id) => !knownIds.has(id));
+      if (candidates.length !== 1) {
+        throw new Error(`Purchase result is uncertain and ${candidates.length} new cards were found; manual reconciliation required`);
+      }
+      [providerCardId] = candidates;
+    }
+    knownIds.add(providerCardId);
+    let registered = await stock.register(mapStockCard({
+      data: { id: providerCardId, cardTypeId, status: 'provisioning' }
+    }, { providerCardId, cardTypeId, fundedAmount: amount }));
+    try {
+      const details = await provider.card(providerCardId);
+      registered = await stock.register(mapStockCard(details, {
+        providerCardId, cardTypeId, fundedAmount: amount
+      }));
+    } catch (error) {
+      registered = { ...registered, detailSyncPending: true, detailError: error?.code || error?.kind || 'READ_FAILED' };
+    }
+    results.push(registered);
+  }
+  return {
+    requested: count,
+    opened: results.length,
+    amount: String(amount),
+    cardTypeId: String(cardTypeId),
+    cards: results
+  };
+}
+
 export async function runCardStockCli({ env = process.env } = {}) {
   const command = process.argv[2];
   if (!['status', 'threshold', 'register', 'sync', 'open'].includes(command)) {
@@ -97,42 +142,7 @@ export async function runCardStockCli({ env = process.env } = {}) {
     const amount = positiveInteger(option('amount'), 'amount', { max: 100000 });
     const cardTypeId = option('card-type-id');
     if (!cardTypeId) throw new Error('--card-type-id is required');
-    const knownIds = await allCardIds(provider);
-    const results = [];
-    for (let index = 0; index < count; index += 1) {
-      let providerCardId;
-      try {
-        const response = await provider.purchaseCard({
-          cardTypeId,
-          openCardAmount: amount,
-          idempotencyKey: `stock-${crypto.randomUUID()}`,
-          remark: `stock ${index + 1}/${count}`
-        });
-        providerCardId = await resolvePurchasedId(provider, response, knownIds);
-      } catch (error) {
-        if (!error?.uncertain) throw error;
-        const currentIds = await allCardIds(provider);
-        const candidates = [...currentIds].filter((id) => !knownIds.has(id));
-        if (candidates.length !== 1) {
-          throw new Error(`Purchase result is uncertain and ${candidates.length} new cards were found; manual reconciliation required`);
-        }
-        [providerCardId] = candidates;
-      }
-      knownIds.add(providerCardId);
-      let registered = await stock.register(mapStockCard({
-        data: { id: providerCardId, cardTypeId, status: 'provisioning' }
-      }, { providerCardId, cardTypeId, fundedAmount: amount }));
-      try {
-        const details = await provider.card(providerCardId);
-        registered = await stock.register(mapStockCard(details, {
-          providerCardId, cardTypeId, fundedAmount: amount
-        }));
-      } catch (error) {
-        registered = { ...registered, detailSyncPending: true, detailError: error?.code || error?.kind || 'READ_FAILED' };
-      }
-      results.push(registered);
-    }
-    return { requested: count, opened: results.length, amount: String(amount), cardTypeId: String(cardTypeId), cards: results };
+    return await openStockCards({ provider, stock, count, amount, cardTypeId });
   } finally {
     await pool.end();
   }
