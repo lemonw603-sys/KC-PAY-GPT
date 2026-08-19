@@ -31,6 +31,7 @@ test('arms only one untouched CARD_READY submit task with a short expiry', async
     [[], []],
     [[], []],
     [{ affectedRows: 1 }, []],
+    [{ affectedRows: 1 }, []],
     [{ affectedRows: 1 }, []]
   ]);
   const result = await armRechargePermit(pool, {
@@ -43,6 +44,7 @@ test('arms only one untouched CARD_READY submit task with a short expiry', async
   });
   const payload = JSON.parse(pool.queries[3].values[0]);
   assert.equal(payload.rechargePermit.status, 'ARMED');
+  assert.match(pool.queries[5].sql, /dispatch_new_recharges/);
 });
 
 test('refuses to arm after any ZZSHU create attempt', async () => {

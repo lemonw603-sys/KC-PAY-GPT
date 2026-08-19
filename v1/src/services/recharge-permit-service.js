@@ -40,6 +40,7 @@ export async function armRechargePermit(pool, {
   publicNo,
   ttlMinutes = 10,
   approvedBy = 'root',
+  enableDispatch = true,
   now = new Date()
 }) {
   const orderNumber = validatePublicNo(publicNo);
@@ -104,6 +105,13 @@ export async function armRechargePermit(pool, {
       [row.order_id, OrderStatus.CARD_READY, OrderStatus.CARD_READY,
         String(approvedBy).slice(0, 128), JSON.stringify({ expiresAt: expiresAt.toISOString() })]
     );
+    if (enableDispatch) {
+      const [dispatch] = await connection.query(
+        `UPDATE app_settings SET setting_value = 'true', updated_at = CURRENT_TIMESTAMP(3)
+         WHERE setting_key = 'dispatch_new_recharges'`
+      );
+      if (dispatch.affectedRows !== 1) throw new Error('Recharge dispatch setting is missing');
+    }
     return { publicNo: orderNumber, status: 'ARMED', expiresAt: expiresAt.toISOString() };
   });
 }

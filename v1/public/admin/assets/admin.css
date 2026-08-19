@@ -130,6 +130,8 @@ tbody tr[data-order]:hover, tbody tr[data-order]:focus { background: #f7faff; }
 .filters input:focus, .filters select:focus, .login-card input:focus { border-color: #4f86de; box-shadow: 0 0 0 3px rgba(53,111,208,.1); background: white; }
 .primary-small, .primary-button { border: 0; border-radius: 10px; color: white; background: linear-gradient(135deg,#2f7aeb,#2256cb); font-weight: 800; }
 .primary-small { padding: 0 20px; }
+.danger-small { min-height: 36px; padding: 0 14px; border: 1px solid #efb8bd; border-radius: 10px; color: #a8323e; background: #fff2f3; font-weight: 800; }
+.danger-small:disabled, .primary-small:disabled { cursor: default; opacity: .55; }
 .pagination { display: flex; justify-content: space-between; align-items: center; gap: 20px; margin-top: 16px; color: var(--muted); font-size: 10px; }
 .pagination > div { display: flex; align-items: center; gap: 10px; }
 .pagination button { padding: 6px 9px; border: 1px solid var(--line); border-radius: 8px; color: #53677d; background: white; font-size: 10px; }

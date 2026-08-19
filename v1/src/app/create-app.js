@@ -4,6 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PublicApiError } from '../domain/public-api-error.js';
 import { CdkBatchError } from '../services/cdk-service.js';
+import { RechargePermitError } from '../services/recharge-permit-service.js';
 import { createFixedWindowRateLimit } from './fixed-window-rate-limit.js';
 
 const DEFAULT_BODY_LIMIT = '256kb';
@@ -27,6 +28,8 @@ export function createApp({
   getAdminCardStock = null,
   setAdminCardStockThreshold = null,
   createAdminCardStockJob = null,
+  setAdminOrderAcceptance = null,
+  setAdminRechargePermit = null,
   createAdminCdkBatch = null,
   revokeAdminCdkBatch = null,
   orderRateLimit = createFixedWindowRateLimit(),
@@ -152,6 +155,26 @@ export function createApp({
     app.post('/api/v1/admin/card-stock/jobs', noStore, requireAdminApi, async (req, res) => {
       const job = await createAdminCardStockJob(req.body);
       return res.status(202).json({ job });
+    });
+  }
+  if (typeof setAdminOrderAcceptance === 'function') {
+    app.post('/api/v1/admin/operations/order-acceptance', noStore, requireAdminApi, async (req, res) => {
+      res.json(await setAdminOrderAcceptance(req.body));
+    });
+  }
+  if (typeof setAdminRechargePermit === 'function') {
+    app.post('/api/v1/admin/orders/:publicNo/recharge-permit', noStore, requireAdminApi, async (req, res) => {
+      try {
+        const result = await setAdminRechargePermit(req.params.publicNo, req.body);
+        return res.status(req.body?.action === 'arm' ? 202 : 200).json(result);
+      } catch (error) {
+        if (error instanceof RechargePermitError || [
+          'RECHARGE_CONFIRMATION_REQUIRED', 'INVALID_RECHARGE_PERMIT_ACTION'
+        ].includes(error?.code)) {
+          return res.status(400).json({ error: String(error.code).toLowerCase() });
+        }
+        throw error;
+      }
     });
   }
   if (typeof createAdminCdkBatch === 'function') {

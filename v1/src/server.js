@@ -8,6 +8,12 @@ import { createAdminCdkService, revokeCdkBatch } from './services/cdk-service.js
 import { createAdminSessionAuth } from './security/admin-session.js';
 import { createCardStockService } from './services/card-stock-service.js';
 import { createCardStockJobService } from './services/card-stock-job-service.js';
+import { createAdminOperationsService } from './services/admin-operations-service.js';
+import {
+  RechargePermitError,
+  armRechargePermit,
+  revokeRechargePermit
+} from './services/recharge-permit-service.js';
 
 const config = loadConfig();
 const pool = createDatabasePool(config.database);
@@ -23,6 +29,7 @@ const adminReadService = createAdminReadService({
 const cardStockService = createCardStockService({ pool, sessionEncryptionKey: config.sessionEncryptionKey });
 const cardStockJobService = createCardStockJobService({ pool });
 const createAdminCdkBatch = createAdminCdkService({ pool });
+const adminOperationsService = createAdminOperationsService({ pool });
 const adminAuth = config.adminPasswordHash
   ? createAdminSessionAuth({
     passwordHash: config.adminPasswordHash,
@@ -46,6 +53,24 @@ const app = createApp({
   })
   ,setAdminCardStockThreshold: (value) => cardStockService.setThreshold(value)
   ,createAdminCardStockJob: cardStockJobService.createJob
+  ,setAdminOrderAcceptance: adminOperationsService.setOrderAcceptance
+  ,setAdminRechargePermit: async (publicNo, input = {}) => {
+    const action = String(input.action || '');
+    const confirmation = String(input.confirmation || '');
+    if (action === 'arm') {
+      if (confirmation !== `确认充值 ${publicNo}`) {
+        throw new RechargePermitError('Recharge confirmation mismatch', 'RECHARGE_CONFIRMATION_REQUIRED');
+      }
+      return armRechargePermit(pool, { publicNo, approvedBy: 'admin', ttlMinutes: 10 });
+    }
+    if (action === 'revoke') {
+      if (confirmation !== `撤销充值 ${publicNo}`) {
+        throw new RechargePermitError('Recharge revocation confirmation mismatch', 'RECHARGE_CONFIRMATION_REQUIRED');
+      }
+      return revokeRechargePermit(pool, { publicNo, revokedBy: 'admin' });
+    }
+    throw new RechargePermitError('Invalid recharge permit action', 'INVALID_RECHARGE_PERMIT_ACTION');
+  }
   ,createAdminCdkBatch
   ,revokeAdminCdkBatch: (batchNo, reason) => revokeCdkBatch(pool, batchNo, reason)
 });

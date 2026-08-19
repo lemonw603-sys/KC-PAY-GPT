@@ -22,7 +22,7 @@ const SETTING_META = Object.freeze({
 
 const state = {
   view: 'overview', page: 1, pageSize: 20, total: 0, status: '', query: '',
-  stockProvider: null
+  stockProvider: null, acceptingOrders: false
 };
 const elements = {
   navItems: [...document.querySelectorAll('.nav-item')],
@@ -140,7 +140,11 @@ async function loadOverview() {
     : '<p class="empty-state">还没有订单数据</p>';
   elements.settingList.innerHTML = overview.settings.map((setting) => {
     const enabled = setting.value === 'true';
-    return `<div><span><strong>${escapeHtml(SETTING_META[setting.key] || setting.key)}</strong><small>${formatTime(setting.updatedAt)} 更新</small></span><em class="switch-state ${enabled ? 'is-on' : ''}">${enabled ? '开启' : '关闭'}</em></div>`;
+    if (setting.key === 'accept_new_orders') state.acceptingOrders = enabled;
+    const control = setting.key === 'accept_new_orders'
+      ? `<button class="${enabled ? 'danger-small' : 'primary-small'}" type="button" id="toggle-order-acceptance" data-enabled="${enabled}">${enabled ? '停止接单' : '开始接单'}</button>`
+      : `<em class="switch-state ${enabled ? 'is-on' : ''}">${enabled ? '开启' : '关闭'}</em>`;
+    return `<div><span><strong>${escapeHtml(SETTING_META[setting.key] || setting.key)}</strong><small>${setting.key === 'accept_new_orders' ? (enabled ? '新订单可以提交；已有订单仍需逐单确认充值' : '已停止新订单；已有订单仍可继续处理') : `${formatTime(setting.updatedAt)} 更新`}</small></span>${control}</div>`;
   }).join('');
   const alerts = alertData.alerts || [];
   elements.alertsCard.hidden = alerts.length === 0;
@@ -282,6 +286,55 @@ async function requestTransactionSync(publicNo, button) {
   }
 }
 
+async function setOrderAcceptance(button) {
+  const currentlyEnabled = button.dataset.enabled === 'true';
+  const enabled = !currentlyEnabled;
+  const confirmation = enabled ? '开始接单' : '停止接单';
+  const message = enabled
+    ? '确认开始接收新订单？\n\n新订单会自动分配库存卡并完成付款前准备，真实充值仍需在订单详情中逐单确认。'
+    : '确认停止接收新订单？\n\n已创建的订单不会被取消，仍可继续处理。';
+  if (!window.confirm(message)) return;
+  button.disabled = true;
+  try {
+    await api('/api/v1/admin/operations/order-acceptance', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled, confirmation })
+    });
+    showNotice(enabled ? '已开始接收新订单。' : '已停止接收新订单，已有订单仍可继续处理。');
+    await loadOverview();
+  } catch {
+    showNotice('接单状态修改失败，原状态未改变。');
+    button.disabled = false;
+  }
+}
+
+async function setRechargePermit(publicNo, action, button) {
+  const arming = action === 'arm';
+  const confirmation = `${arming ? '确认充值' : '撤销充值'} ${publicNo}`;
+  const message = arming
+    ? `确认允许订单 ${publicNo} 发起一次真实充值？\n\n凭证 10 分钟内有效，一旦调用上游就不会自动第二次提交。该操作可能产生真实费用。`
+    : `确认撤销订单 ${publicNo} 未使用的充值凭证？`;
+  if (!window.confirm(message)) return;
+  button.disabled = true;
+  try {
+    await api(`/api/v1/admin/orders/${encodeURIComponent(publicNo)}/recharge-permit`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action, confirmation })
+    });
+    showNotice(arming ? '该订单已一次性放行，服务器将在数秒内执行。' : '未使用的充值凭证已撤销。');
+    elements.detail.close();
+    await openOrder(publicNo);
+  } catch (error) {
+    const messages = {
+      order_not_eligible: '该订单当前不能放行充值。',
+      create_already_attempted: '该订单已调用过充值接口，禁止再次提交。',
+      another_permit_active: '另一个订单已在放行中，请等它完成后再试。'
+    };
+    showNotice(messages[error.message] || '充值凭证操作失败，未发起新的充值请求。');
+    button.disabled = false;
+  }
+}
+
 async function openOrder(publicNo) {
   elements.detailTitle.textContent = publicNo;
   elements.detailContent.innerHTML = '<p class="loading-state">正在读取订单详情…</p>';
@@ -290,8 +343,16 @@ async function openOrder(publicNo) {
     const data = await api(`/api/v1/admin/orders/${encodeURIComponent(publicNo)}`);
     const order = data.order;
     const paymentGate = data.paymentGate || {};
+    const permitStatus = paymentGate.permitStatus || 'LOCKED';
+    const canArmRecharge = paymentGate.prepaymentReady
+      && paymentGate.submissionTaskStatus === 'PENDING'
+      && Number(paymentGate.submissionAttempts || 0) === 0
+      && permitStatus !== 'ARMED';
+    const permitButton = permitStatus === 'ARMED'
+      ? '<button type="button" class="danger-small" id="revoke-recharge-permit">撤销充值放行</button>'
+      : canArmRecharge ? '<button type="button" class="danger-small" id="arm-recharge-permit">确认充值</button>' : '';
     elements.detailContent.innerHTML = `
-      <section class="detail-section"><h3>付款执行门</h3>${renderKeyValues([
+      <section class="detail-section"><div class="detail-section-heading"><h3>付款执行门</h3>${permitButton}</div>${renderKeyValues([
         ['付款前检查', paymentGate.prepaymentReady ? '已就绪' : '未就绪'],
         ['直充状态', paymentGate.submissionLocked ? '已锁定' : '已针对本订单一次性放行'],
         ['放行凭证', paymentGate.permitStatus || 'LOCKED'],
@@ -318,6 +379,8 @@ async function openOrder(publicNo) {
       <section class="detail-section"><h3>订单时间线</h3><div class="timeline">${data.events.length ? data.events.map((event) => `<article><i></i><div><strong>${escapeHtml(STATUS_META[event.toStatus]?.[0] || event.toStatus)}</strong><p>${escapeHtml(event.reason)}</p><small>${formatTime(event.createdAt)} · ${escapeHtml(event.actorType)}</small></div></article>`).join('') : '<p class="empty-state">暂无事件</p>'}</div></section>
       <section class="detail-section"><h3>后台任务</h3><div class="mini-list">${data.tasks.length ? data.tasks.map((task) => `<div><span><strong>${escapeHtml(task.type)}</strong><small>${task.attempts}/${task.maxAttempts} 次尝试</small></span><em>${escapeHtml(task.status)}</em></div>`).join('') : '<p class="empty-state">暂无任务</p>'}</div></section>`;
     document.querySelector('#sync-transactions')?.addEventListener('click', (event) => requestTransactionSync(publicNo, event.currentTarget));
+    document.querySelector('#arm-recharge-permit')?.addEventListener('click', (event) => setRechargePermit(publicNo, 'arm', event.currentTarget));
+    document.querySelector('#revoke-recharge-permit')?.addEventListener('click', (event) => setRechargePermit(publicNo, 'revoke', event.currentTarget));
   } catch {
     elements.detailContent.innerHTML = '<p class="empty-state">订单详情读取失败，请稍后重试。</p>';
   }
@@ -472,6 +535,11 @@ elements.copyCdks.addEventListener('click', async () => {
   }
 });
 document.addEventListener('click', (event) => {
+  const intakeButton = event.target.closest('#toggle-order-acceptance');
+  if (intakeButton) {
+    setOrderAcceptance(intakeButton);
+    return;
+  }
   const row = event.target.closest('tr[data-order]');
   if (row) openOrder(row.dataset.order);
 });

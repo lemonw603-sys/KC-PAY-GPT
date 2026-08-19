@@ -318,3 +318,47 @@ test('creates paid card stock jobs only through an authenticated admin route', a
     assert.deepEqual(received, { count: 2, amount: 16, cardTypeId: '1', confirmation: '开2张', largeBatchConfirmed: false });
   });
 });
+
+test('changes intake and one-order recharge permits only through authenticated admin routes', async () => {
+  const adminAuth = createAdminSessionAuth({
+    passwordHash: await hashAdminPassword('fixture admin password', { salt: Buffer.alloc(16, 11) }),
+    sessionSecret: Buffer.alloc(32, 12),
+    secureCookies: false
+  });
+  const received = [];
+  const app = createApp({
+    adminAuth,
+    setAdminOrderAcceptance: async (input) => {
+      received.push(['intake', input]);
+      return { acceptNewOrders: input.enabled, dispatchExistingOrders: true };
+    },
+    setAdminRechargePermit: async (publicNo, input) => {
+      received.push(['permit', publicNo, input]);
+      return { publicNo, status: 'ARMED', expiresAt: '2026-08-19T12:00:00.000Z' };
+    }
+  });
+  await withServer(app, async (baseUrl) => {
+    assert.equal((await fetch(`${baseUrl}/api/v1/admin/operations/order-acceptance`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}'
+    })).status, 401);
+    const login = await fetch(`${baseUrl}/api/v1/admin/session`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: 'fixture admin password' })
+    });
+    const cookie = login.headers.get('set-cookie').split(';')[0];
+    const intake = await fetch(`${baseUrl}/api/v1/admin/operations/order-acceptance`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cookie },
+      body: JSON.stringify({ enabled: true, confirmation: '开始接单' })
+    });
+    assert.equal(intake.status, 200);
+    const permit = await fetch(`${baseUrl}/api/v1/admin/orders/PJV1-DEMO/recharge-permit`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cookie },
+      body: JSON.stringify({ action: 'arm', confirmation: '确认充值 PJV1-DEMO' })
+    });
+    assert.equal(permit.status, 202);
+    assert.deepEqual(received, [
+      ['intake', { enabled: true, confirmation: '开始接单' }],
+      ['permit', 'PJV1-DEMO', { action: 'arm', confirmation: '确认充值 PJV1-DEMO' }]
+    ]);
+  });
+});
