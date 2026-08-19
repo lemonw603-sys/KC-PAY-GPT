@@ -135,7 +135,7 @@ async function loadOverview() {
   elements.statusList.innerHTML = overview.orderStatuses.length
     ? overview.orderStatuses.map((item) => `<button type="button" data-status="${escapeHtml(item.status)}">
       <span>${statusChip(item.status)}<strong>${item.count}</strong></span>
-      <i class="status-bar"><b style="width:${Math.max(5, (item.count / maxCount) * 100)}%"></b></i>
+      <progress class="status-bar" max="${maxCount}" value="${item.count}" aria-label="${escapeHtml(item.status)} ${item.count} 单"></progress>
     </button>`).join('')
     : '<p class="empty-state">还没有订单数据</p>';
   elements.settingList.innerHTML = overview.settings.map((setting) => {

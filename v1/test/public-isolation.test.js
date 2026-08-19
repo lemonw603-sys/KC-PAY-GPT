@@ -52,7 +52,8 @@ test('admin assets contain no remote, legacy, or secret-bearing dependencies', (
   const forbidden = [
     'src="http://', 'src="https://', 'href="http://', 'href="https://',
     'url(http://', 'url(https://', 'playwright', 'stripe', 'hcaptcha',
-    'session_ciphertext', 'recharge_card_key', 'card_credentials_ciphertext', 'api key', 'cvv'
+    'session_ciphertext', 'recharge_card_key', 'card_credentials_ciphertext', 'api key', 'cvv',
+    'style="'
   ];
   for (const file of files) {
     const source = fs.readFileSync(file, 'utf8').toLowerCase();

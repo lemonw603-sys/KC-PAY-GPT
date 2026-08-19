@@ -102,8 +102,10 @@ button { cursor: pointer; }
 .status-list > button { display: grid; gap: 6px; padding: 0; border: 0; background: none; text-align: left; }
 .status-list > button > span { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
 .status-list strong { font-size: 11px; }
-.status-bar { height: 4px; overflow: hidden; border-radius: 999px; background: #edf2f7; }
-.status-bar b { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg,#4b8dea,#32b594); }
+.status-bar { width: 100%; height: 4px; overflow: hidden; border: 0; border-radius: 999px; background: #edf2f7; appearance: none; }
+.status-bar::-webkit-progress-bar { border-radius: inherit; background: #edf2f7; }
+.status-bar::-webkit-progress-value { border-radius: inherit; background: linear-gradient(90deg,#4b8dea,#32b594); }
+.status-bar::-moz-progress-bar { border-radius: inherit; background: linear-gradient(90deg,#4b8dea,#32b594); }
 .status-chip { width: max-content; display: inline-flex; align-items: center; gap: 6px; padding: 5px 8px; border-radius: 999px; font-size: 9px; font-weight: 800; white-space: nowrap; }
 .status-chip i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
 .status-blue { color: #2863c8; background: #edf4ff; }.status-green { color: #168368; background: #e9f8f3; }.status-orange { color: #aa691c; background: #fff4e5; }.status-red { color: #b23b47; background: #fff0f1; }.status-gray { color: #66798d; background: #eef2f6; }
