@@ -9,6 +9,8 @@ yarn-error.log*
 .env.*
 !.env.example
 *.env
+/private/
+/.playwright-cli/
 
 # Runtime artefacts
 _server.out.log

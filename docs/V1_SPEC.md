@@ -22,7 +22,7 @@ v1 建设一条可运营的最小充值链路：客户凭 CDK 提交完整 Sessi
 
 ### 运营人员
 
-- 创建、导入、禁用和查询 CDK。
+- 创建、导入、禁用和查询 CDK；当前第一版仅允许 Plus。
 - 查询订单、卡片绑定、充值状态和失败原因。
 - 处理不明确订单。
 - 查询银行卡交易与退款。
@@ -209,8 +209,8 @@ v1 至少包含以下实体：
 
 ### `cdks`
 
-- `id`、`code_hash`、`status`
-- `batch_no`、`created_at`、`redeemed_at`
+- `id`、`code_hash`、`status`、`plan_type`
+- `batch_no`、`created_at`、`redeemed_at`、`revoked_at`、`revoke_reason`
 - `order_id`
 
 v1 MySQL 只保存 CDK 的 SHA-256。系统生成的明文仅一次写入运营人员指定的 `0600` 私有文件；导入文件由运营人员自行保管。
@@ -220,9 +220,12 @@ v1 MySQL 只保存 CDK 的 SHA-256。系统生成的明文仅一次写入运营�
 - `id`、`public_no`、`status`
 - `customer_email`、`chatgpt_account_id`
 - `plan_type`，v1 固定 `plus`
+- `open_card_amount`：本单开卡预存金额
+- `minimum_required_card_balance`：本单提交直充前的最低余额快照，与开卡金额独立
 - `session_ciphertext`；直充成功后使用状态接口返回的最新完整 Session 加密覆盖
 - `card_purchase_idempotency_key`
 - `recharge_order_no`、`recharge_card_key`
+- `actual_payment_amount`、`actual_payment_currency`：只保存直充上游最终状态返回的实际值；上游为空时保持空，不用余额差额猜测
 - `subscription_cancelled`、`cancellation_checked_at`、`cancellation_review_required`
 - `failure_code`、`failure_reason`
 - `created_at`、`updated_at`、`finished_at`
@@ -289,9 +292,13 @@ v1 MySQL 只保存 CDK 的 SHA-256。系统生成的明文仅一次写入运营�
 6. 异常队列：`SUBMIT_UNKNOWN`、Schema 错误、长期处理中、对账矛盾。
 7. 设置：维护开关、并发、轮询频率、卡段和开卡金额。
 
+卡池与补货入口必须与卡台目录联动，不要求运营人员手填卡段 ID：后台服务端通过卡台 `GET /card-types` 同步可用卡段、金额范围、费率、账户最低余额条件和剩余卡数量，保存带同步时间的本地快照并提供下拉选择。卡段旁提供“在卡台查看”外链，新标签页打开卡台页面；若卡台未提供可回跳的选择协议，不使用浏览器扩展或跨站页面抓取模拟选择。补货批次保存当时的卡段与费率快照，后续目录变化不得改写历史批次。
+
+订单、卡片、补货批次、Provider 调用、交易和退款必须通过内部 ID 互相关联。后台详情页应提供相互跳转，不能把卡池、补货或退款做成彼此孤立的工具。
+
 Worker 并发是服务端配置项 `WORKER_CONCURRENCY`（每个进程 `1–32`，默认 `1`），不是客户或后台随意输入的数值。任务仍由 MySQL 租约保证“一单一 worker”；提高并发前必须先确认供应商限流、余额阈值和未知结果处理，按小批量逐级放量。
 
-普通列表不显示完整卡号、CVV 或 Session。确有排障需要时，卡号采用按需读取；CVV 和 Session 不进入日常后台页面。
+自有运营后台的订单和卡片列表直接显示完整卡号，不做后四位掩码。CVV、API Key 和 Session 仍不进入日常后台页面或日志。
 
 ## 13. 最小安全基线
 
@@ -310,9 +317,11 @@ Worker 并发是服务端配置项 `WORKER_CONCURRENCY`（每个进程 `1–32`�
 ### 独立开关
 
 - `accept_new_orders`：客户是否可以创建新订单。
-- `dispatch_new_recharges`：是否开卡和提交新直充。
+- `dispatch_new_recharges`：是否继续处理已创建订单的卡片分配、付款前准备和已逐单放行的直充；它不能代替单订单 Permit。
 - `poll_existing_orders`：是否查询已提交订单，正常情况下始终开启。
 - `sync_card_transactions`：是否同步余额、交易和退款。
+
+后台“开始接单”同时开启 `accept_new_orders` 和 `dispatch_new_recharges`；“停止接单”只关闭新订单入口，已有订单继续处理。真实直充必须另外签发仅对一个订单有效的 1–30 分钟 Permit；Worker 在外部请求前原子消费 Permit，任何已尝试 `create_direct` 的订单不得再次放行。
 
 ### Telegram 告警
 

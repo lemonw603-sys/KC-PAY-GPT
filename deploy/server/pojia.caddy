@@ -1,4 +1,4 @@
-plus.vibebridge.top {
+(pojia_security) {
 	encode zstd gzip
 
 	header {
@@ -18,4 +18,16 @@ plus.vibebridge.top {
 	}
 
 	reverse_proxy 127.0.0.1:3100
+}
+
+plus.vibebridge.top {
+	import pojia_security
+}
+
+pay.vibebridge.top {
+	import pojia_security
+}
+
+ops.vibebridge.top {
+	import pojia_security
 }

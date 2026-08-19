@@ -1,8 +1,8 @@
 # MySQL 8 数据层验证基线
 
-- 日期：2026-08-17
+- 日期：2026-08-19
 - 运行版本：MySQL 8.4.11
-- 测试数据库：`pojia_v1_test_20260817`，验证后已删除
+- 测试数据库：每次使用隔离临时库，验证后删除
 - 外部资金接口：未调用
 
 ## 结果
@@ -27,8 +27,9 @@ migration 003_order_intake_settings already applied
 migration 004_cdk_batch_index already applied
 ```
 
-- 数据库共创建 10 张 v1 表；`002_workflow_fields` 为订单增加卡段和开卡金额字段，`003_order_intake_settings` 增加默认卡配置，`004_cdk_batch_index` 增加 CDK 批次查询索引。
-- `schema_migrations` 准确记录四条迁移。
+- 生产数据库共 13 张 v1 表；已按顺序应用 `001_initial`–`014_card_provider_snapshot` 共 14 个迁移。
+- 后续迁移补齐了卡片异步就绪、取消续费复查、卡余额与实际支付金额、交易证据、内部提醒、CDK 套餐/作废、卡池、补卡任务和卡台规则快照。
+- `schema_migrations` 准确记录所有已部署迁移；新增迁移必须按文件名顺序执行且不可重复。
 - 第二次执行没有重复建表、重复约束或报错。
 
 ### 业务约束
@@ -75,7 +76,7 @@ fail 0
 skipped 0
 ```
 
-测试覆盖：HTTP、安全响应头、配置失败关闭、旧模块隔离、MySQL约束、订单事务、任务并发、租约恢复、状态机和 Session 加密。
+最新本地无数据库测试为 `146 pass / 0 fail / 11 skipped`；生产机隔离临时 MySQL 中完整重跑为 `157 pass / 0 fail / 0 skipped`。隔离验收不连接真实 Provider 写接口。
 
 ### 2026-08-17 后续复验
 
