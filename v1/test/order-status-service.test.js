@@ -46,6 +46,20 @@ test('looks up by public number or hashed CDK without passing CDK plaintext', as
   assert.equal(byCdk.publicNo, byPublicNo.publicNo);
 });
 
+test('closed compensated orders are resolved from the compensation record before public mapping', async () => {
+  const queries = [];
+  const pool = {
+    async query(sql, values) {
+      queries.push({ sql, values });
+      return [[{ public_no: 'PJV1-ABCDEFGHIJKLMNOPQRST', status: 'CLOSED',
+        effective_status: 'CARD_FAILED', updated_at: new Date('2026-08-20T00:00:00Z') }], []];
+    }
+  };
+  const result = await createOrderStatusService({ pool })({ publicNo: 'PJV1-ABCDEFGHIJKLMNOPQRST' });
+  assert.equal(result.status, 'FAILED');
+  assert.match(queries[0].sql, /order_compensations/);
+});
+
 test('rejects ambiguous query bodies and hides missing lookup details', async () => {
   const service = createOrderStatusService({
     pool: {},

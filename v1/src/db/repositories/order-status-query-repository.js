@@ -2,9 +2,13 @@ const SELECT_ORDER = `
   SELECT o.public_no, o.status, o.updated_at,
          COALESCE(
            CASE WHEN o.status = 'CLOSED' THEN (
-             SELECT oe.to_status FROM order_events oe
-             WHERE oe.order_id = o.id AND oe.to_status <> 'CLOSED'
-             ORDER BY oe.id DESC LIMIT 1
+             CASE WHEN EXISTS (
+               SELECT 1 FROM order_compensations oc WHERE oc.original_order_id = o.id
+             ) THEN 'CARD_FAILED' ELSE (
+               SELECT oe.to_status FROM order_events oe
+               WHERE oe.order_id = o.id AND oe.to_status <> 'CLOSED'
+               ORDER BY oe.id DESC LIMIT 1
+             ) END
            ) END,
            o.status
          ) AS effective_status
