@@ -7,8 +7,8 @@
   <meta name="theme-color" content="#f5f8fc">
   <title>Plus 运营后台</title>
   <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/admin/assets/admin.css?v=5">
-  <script src="/admin/assets/admin.js?v=5" defer></script>
+  <link rel="stylesheet" href="/admin/assets/admin.css?v=6">
+  <script src="/admin/assets/admin.js?v=6" defer></script>
 </head>
 <body>
   <div class="admin-shell">
@@ -89,7 +89,7 @@
             <div><p class="section-kicker">订单入口</p><h2>生成 CDK 卡密</h2></div>
             <span class="write-badge">内部写入</span>
           </div>
-          <p class="card-description">当前仅支持 Plus。生成的卡密只显示一次，数据库仅保存 SHA-256 哈希。卡密仅用于创建订单，不会触发开卡或充值。</p>
+          <p class="card-description">当前仅支持 Plus。生成后会自动下载 TXT，新批次也可在下方重新下载。单个卡密仅保存 SHA-256 哈希，批次恢复副本加密保存。生成卡密不会触发开卡或充值。</p>
           <form class="cdk-form" id="cdk-form">
             <label for="cdk-count">生成数量</label>
             <div>
@@ -100,7 +100,7 @@
           <div class="cdk-result" id="cdk-result" hidden>
             <div><span id="cdk-batch-label">批次</span><span class="cdk-result-actions"><button class="text-button" id="download-cdks" type="button">下载 TXT</button><button class="text-button" id="copy-cdks" type="button">复制全部</button></span></div>
             <textarea id="generated-cdks" readonly spellcheck="false" aria-label="刚生成的 CDK 卡密"></textarea>
-            <p>请立即复制保存；离开页面后无法从数据库还原明文。</p>
+            <p>已自动下载 TXT；也可复制或在批次记录中重新下载。</p>
           </div>
         </section>
         <section class="card cdk-card cdk-batches-card">

@@ -216,6 +216,7 @@ async function loadCdkBatches() {
         ${batch.availableCount > 0 ? '<button type="button" class="danger-small" data-revoke-batch>作废未使用</button>' : ''}
       </span></div>`).join('')
     : '<p class="empty-state">还没有 CDK 批次</p>';
+  elements.syncTime.textContent = `更新于 ${new Date().toLocaleTimeString('zh-CN', { hour12: false })}`;
 }
 
 async function downloadStoredBatch(batchNo, button) {
@@ -540,7 +541,10 @@ elements.prevPage.addEventListener('click', () => { if (state.page > 1) { state.
 elements.nextPage.addEventListener('click', () => { if (state.page * state.pageSize < state.total) { state.page += 1; loadOrders(); } });
 document.querySelector('#refresh-button').addEventListener('click', () => {
   hideNotice();
-  (state.view === 'overview' ? loadOverview() : state.view === 'stock' ? loadStock() : loadOrders()).catch(() => showNotice('刷新失败，请稍后重试。'));
+  (state.view === 'overview' ? loadOverview()
+    : state.view === 'stock' ? loadStock()
+      : state.view === 'cdks' ? loadCdkBatches() : loadOrders())
+    .catch(() => showNotice('刷新失败，请稍后重试。'));
 });
 document.querySelector('#refresh-stock')?.addEventListener('click', () => loadStock().catch(() => showNotice('库存读取失败。')));
 document.querySelectorAll('.stock-preset').forEach((button) => button.addEventListener('click', () => {
@@ -612,7 +616,8 @@ window.setInterval(() => {
   if (document.hidden || editing) return;
   const refresh = state.view === 'overview' ? loadOverview
     : state.view === 'orders' ? loadOrders
-      : state.view === 'stock' ? loadStock : null;
+      : state.view === 'stock' ? loadStock
+        : state.view === 'cdks' ? loadCdkBatches : null;
   refresh?.().catch(() => {});
 }, 10_000);
 elements.cdkForm.addEventListener('submit', async (event) => {
