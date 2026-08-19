@@ -306,7 +306,7 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, now 
     if (typeof publicNo !== 'string' || publicNo.length < 8 || publicNo.length > 64) {
       throw new PublicApiError('Invalid public number', { code: 'INVALID_ADMIN_QUERY', status: 400 });
     }
-    const [[orderRows], [eventRows], [taskRows], [callRows], [refundRows], [transactionRows]] = await Promise.all([
+    const [[orderRows], [eventRows], [taskRows], [callRows], [refundRows], [transactionRows], [compensationRows]] = await Promise.all([
       pool.query(`SELECT o.id, o.public_no, o.status, o.plan_type, o.customer_email,
           o.chatgpt_account_id, o.card_type_id, o.open_card_amount,
           o.minimum_required_card_balance, o.actual_payment_amount, o.actual_payment_currency,
@@ -346,7 +346,12 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, now 
         FROM card_transactions ct
         INNER JOIN cards c ON c.id = ct.card_id
         INNER JOIN orders o ON o.id = c.order_id
-        WHERE BINARY o.public_no = ? ORDER BY ct.id DESC LIMIT 200`, [publicNo])
+        WHERE BINARY o.public_no = ? ORDER BY ct.id DESC LIMIT 200`, [publicNo]),
+      pool.query(`SELECT oc.created_at, c.status AS replacement_status
+        FROM order_compensations oc
+        INNER JOIN orders o ON o.id = oc.original_order_id
+        INNER JOIN cdks c ON c.id = oc.replacement_cdk_id
+        WHERE BINARY o.public_no = ? LIMIT 1`, [publicNo])
     ]);
     const row = orderRows[0];
     if (!row) throw new PublicApiError('Order not found', { code: 'ADMIN_ORDER_NOT_FOUND', status: 404 });
@@ -358,6 +363,18 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, now 
     const cardReady = ['active', 'available', 'usable', 'ready'].includes(String(row.card_status || '').toLowerCase())
       && Number(row.current_balance) >= Number(row.minimum_required_card_balance)
       && Boolean(row.card_credentials_ciphertext);
+    const compensationRecord = compensationRows[0];
+    const hasActiveTask = taskRows.some((task) => ['PENDING', 'RUNNING'].includes(task.status));
+    const hasDeadTask = taskRows.some((task) => task.status === 'DEAD');
+    let compensationCode = 'COMPENSATION_SIDE_EFFECT_RISK';
+    if (compensationRecord) compensationCode = 'COMPENSATION_ALREADY_ISSUED';
+    else if (row.status === 'CREATED' && !row.provider_card_id && callRows.length === 0 && hasActiveTask) {
+      compensationCode = 'COMPENSATION_ORDER_STILL_ACTIVE';
+    } else if (row.status === 'CREATED' && !row.provider_card_id && callRows.length === 0 && !hasDeadTask) {
+      compensationCode = 'COMPENSATION_NOT_TERMINALLY_FAILED';
+    } else if (row.status === 'CREATED' && !row.provider_card_id && callRows.length === 0 && hasDeadTask) {
+      compensationCode = 'COMPENSATION_ELIGIBLE';
+    }
     return {
       order: {
         publicNo: row.public_no,
@@ -404,6 +421,13 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, now 
         accessTokenExpiresAt: session.accessTokenExpiresAt,
         cardReady,
         cardCheckFresh
+      },
+      compensation: {
+        eligible: compensationCode === 'COMPENSATION_ELIGIBLE',
+        alreadyIssued: Boolean(compensationRecord),
+        code: compensationCode,
+        issuedAt: iso(compensationRecord?.created_at),
+        replacementStatus: compensationRecord?.replacement_status || null
       },
       events: eventRows.map((event) => ({
         fromStatus: event.from_status,

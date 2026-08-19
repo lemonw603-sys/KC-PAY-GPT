@@ -369,6 +369,33 @@ async function requestTransactionSync(publicNo, button) {
   }
 }
 
+async function issueCompensation(publicNo, button) {
+  const confirmation = `补发 ${publicNo}`;
+  if (!window.confirm(`确认给订单 ${publicNo} 补发 1 个同套餐 CDK？\n\n系统将再次核对：没有卡片、没有供应商调用、任务已明确失败。原订单会关闭，且只能补发一次。`)) return;
+  button.disabled = true;
+  button.textContent = '核对并补发中…';
+  try {
+    const result = await api(`/api/v1/admin/orders/${encodeURIComponent(publicNo)}/compensation`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ confirmation })
+    });
+    downloadCodes(`补发-${publicNo}`, [result.code]);
+    await navigator.clipboard?.writeText(result.code).catch(() => {});
+    showNotice(result.replayed ? '已取回此前补发的 CDK，并重新下载。' : '补发成功，CDK 已下载并尝试复制。');
+    await openOrder(publicNo);
+  } catch (error) {
+    const messages = {
+      compensation_side_effect_risk: '订单已经进入开卡或充值链路，禁止补发。',
+      compensation_not_eligible: '订单尚未明确失败，禁止补发。',
+      compensation_order_changed: '订单状态刚刚发生变化，请刷新后重新核对。'
+    };
+    showNotice(messages[error.message] || '补发被服务器拒绝，未生成新 CDK。');
+    button.disabled = false;
+    button.textContent = '补发 CDK';
+  }
+}
+
 async function setOrderAcceptance(button) {
   const currentlyEnabled = button.dataset.enabled === 'true';
   const enabled = !currentlyEnabled;
@@ -428,7 +455,7 @@ async function setRechargePermit(publicNo, action, button) {
 async function openOrder(publicNo) {
   elements.detailTitle.textContent = publicNo;
   elements.detailContent.innerHTML = '<p class="loading-state">正在读取订单详情…</p>';
-  elements.detail.showModal();
+  if (!elements.detail.open) elements.detail.showModal();
   try {
     const data = await api(`/api/v1/admin/orders/${encodeURIComponent(publicNo)}`);
     const order = data.order;
@@ -448,6 +475,17 @@ async function openOrder(publicNo) {
           data-card="${escapeHtml(data.card?.cardNumber || data.card?.last4 || '—')}"
           data-balance="${escapeHtml(data.card?.currentBalance || '—')}"
           data-token-expiry="${escapeHtml(formatTime(paymentGate.accessTokenExpiresAt))}">确认充值</button>` : '';
+    const compensation = data.compensation || {};
+    const compensationButton = compensation.eligible || compensation.alreadyIssued
+      ? `<button type="button" class="danger-small" id="issue-compensation">${compensation.alreadyIssued ? '重新下载补发 CDK' : '补发 CDK'}</button>`
+      : '';
+    const compensationLabels = {
+      COMPENSATION_ELIGIBLE: '符合条件：无卡片、无供应商调用、任务已明确失败',
+      COMPENSATION_ALREADY_ISSUED: `已经补发 · ${formatTime(compensation.issuedAt)} · 新 CDK ${compensation.replacementStatus || '—'}`,
+      COMPENSATION_ORDER_STILL_ACTIVE: '订单仍在处理，禁止补发',
+      COMPENSATION_NOT_TERMINALLY_FAILED: '订单未明确失败，禁止补发',
+      COMPENSATION_SIDE_EFFECT_RISK: '已进入开卡或充值链路，禁止补发'
+    };
     elements.detailContent.innerHTML = `
       <section class="detail-section"><div class="detail-section-heading"><h3>付款执行门</h3>${permitButton}</div>${renderKeyValues([
         ['付款前检查', paymentGate.prepaymentReady ? '已就绪' : '未就绪'],
@@ -462,6 +500,7 @@ async function openOrder(publicNo) {
         ['卡片资格', paymentGate.cardReady ? '状态、余额和资料均正常' : '不可用'],
         ['卡片核对', paymentGate.cardCheckFresh ? '15 分钟内已更新' : '数据已过期']
       ])}</section>
+      <section class="detail-section"><div class="detail-section-heading"><h3>失败补偿</h3>${compensationButton}</div><p class="empty-state">${escapeHtml(compensationLabels[compensation.code] || '当前不可补发')}</p></section>
       <section class="detail-section"><div class="detail-status">${statusChip(order.status)}<span>${formatTime(order.updatedAt)}</span></div>${renderKeyValues([
         ['客户邮箱', order.customerEmail], ['ChatGPT 账号 ID', order.chatgptAccountId],
         ['直充订单号', order.rechargeOrderNo], ['卡段 ID', order.cardTypeId],
@@ -483,6 +522,7 @@ async function openOrder(publicNo) {
     document.querySelector('#sync-transactions')?.addEventListener('click', (event) => requestTransactionSync(publicNo, event.currentTarget));
     document.querySelector('#arm-recharge-permit')?.addEventListener('click', (event) => setRechargePermit(publicNo, 'arm', event.currentTarget));
     document.querySelector('#revoke-recharge-permit')?.addEventListener('click', (event) => setRechargePermit(publicNo, 'revoke', event.currentTarget));
+    document.querySelector('#issue-compensation')?.addEventListener('click', (event) => issueCompensation(publicNo, event.currentTarget));
   } catch {
     elements.detailContent.innerHTML = '<p class="empty-state">订单详情读取失败，请稍后重试。</p>';
   }

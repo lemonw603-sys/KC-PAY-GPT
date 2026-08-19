@@ -98,7 +98,7 @@ test('admin order detail exposes the full PAN but not CVV or Session', async () 
     }, {
       task_type: 'SUBMIT_RECHARGE', status: 'PENDING', attempts: 0, max_attempts: 5,
       permit_status: null, permit_expires_at: null
-    }], [], [], []
+    }], [], [], [], []
   ]);
   const result = await createAdminReadService({
     pool, sessionEncryptionKey: adminCardKey, now: () => nowMs
@@ -120,6 +120,10 @@ test('admin order detail exposes the full PAN but not CVV or Session', async () 
     accessTokenExpiresAt: '2026-08-19T09:00:00.000Z',
     cardReady: true,
     cardCheckFresh: true
+  });
+  assert.deepEqual(result.compensation, {
+    eligible: false, alreadyIssued: false, code: 'COMPENSATION_SIDE_EFFECT_RISK',
+    issuedAt: null, replacementStatus: null
   });
   assert.deepEqual(result.transactions, []);
   assert.equal(JSON.stringify(result).includes('fixture-signature'), false);

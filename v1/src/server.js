@@ -19,6 +19,7 @@ import {
   armRechargePermit,
   revokeRechargePermit
 } from './services/recharge-permit-service.js';
+import { createOrderCompensationService } from './services/order-compensation-service.js';
 
 const config = loadConfig();
 const pool = createDatabasePool(config.database);
@@ -38,6 +39,10 @@ const createAdminCdkBatch = createAdminCdkService({
   sessionEncryptionKey: config.sessionEncryptionKey
 });
 const adminOperationsService = createAdminOperationsService({ pool });
+const compensateAdminOrder = createOrderCompensationService({
+  pool,
+  sessionEncryptionKey: config.sessionEncryptionKey
+});
 const adminAuth = config.adminPasswordHash
   ? createAdminSessionAuth({
     passwordHash: config.adminPasswordHash,
@@ -84,6 +89,7 @@ const app = createApp({
     }
     throw new RechargePermitError('Invalid recharge permit action', 'INVALID_RECHARGE_PERMIT_ACTION');
   }
+  ,compensateAdminOrder
   ,createAdminCdkBatch
   ,listAdminCdkBatches: (input) => listCdkBatches(pool, input)
   ,downloadAdminCdkBatch: (batchNo) => downloadCdkBatch(pool, batchNo, config.sessionEncryptionKey)

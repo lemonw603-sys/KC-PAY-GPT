@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { PublicApiError } from '../domain/public-api-error.js';
 import { CdkBatchError } from '../services/cdk-service.js';
 import { RechargePermitError } from '../services/recharge-permit-service.js';
+import { OrderCompensationError } from '../services/order-compensation-service.js';
 import { createFixedWindowRateLimit } from './fixed-window-rate-limit.js';
 
 const DEFAULT_BODY_LIMIT = '256kb';
@@ -30,6 +31,7 @@ export function createApp({
   createAdminCardStockJob = null,
   setAdminOrderAcceptance = null,
   setAdminRechargePermit = null,
+  compensateAdminOrder = null,
   createAdminCdkBatch = null,
   listAdminCdkBatches = null,
   downloadAdminCdkBatch = null,
@@ -184,6 +186,18 @@ export function createApp({
           'RECHARGE_CONFIRMATION_REQUIRED', 'INVALID_RECHARGE_PERMIT_ACTION'
         ].includes(error?.code)) {
           return res.status(400).json({ error: String(error.code).toLowerCase() });
+        }
+        throw error;
+      }
+    });
+  }
+  if (typeof compensateAdminOrder === 'function') {
+    app.post('/api/v1/admin/orders/:publicNo/compensation', ...adminWriteGuards, async (req, res) => {
+      try {
+        res.json(await compensateAdminOrder(req.params.publicNo, req.body));
+      } catch (error) {
+        if (error instanceof OrderCompensationError) {
+          return res.status(error.status).json({ error: error.code.toLowerCase() });
         }
         throw error;
       }

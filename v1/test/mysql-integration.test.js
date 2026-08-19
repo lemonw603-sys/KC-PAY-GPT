@@ -28,6 +28,7 @@ import {
   updateCardStockJobProgress,
   completeCardStockJob
 } from '../src/services/card-stock-job-service.js';
+import { createOrderCompensationService } from '../src/services/order-compensation-service.js';
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
 const integrationSessionKey = Buffer.alloc(32, 7);
@@ -66,6 +67,15 @@ async function createOrder(pool, overrides = {}) {
 }
 
 async function removeOrder(pool, { cdkId, orderId }) {
+  const [compensations] = await pool.query(
+    `SELECT oc.replacement_cdk_id, c.batch_no FROM order_compensations oc
+     INNER JOIN cdks c ON c.id = oc.replacement_cdk_id WHERE oc.original_order_id = ?`, [orderId]
+  );
+  await pool.query('DELETE FROM order_compensations WHERE original_order_id = ?', [orderId]);
+  for (const compensation of compensations) {
+    await pool.query('DELETE FROM cdks WHERE id = ?', [compensation.replacement_cdk_id]);
+    await pool.query('DELETE FROM cdk_batches WHERE batch_no = ?', [compensation.batch_no]);
+  }
   await pool.query('DELETE FROM tasks WHERE order_id = ?', [orderId]);
   await pool.query('DELETE FROM operator_alerts WHERE order_id = ?', [orderId]);
   await pool.query('DELETE FROM order_events WHERE order_id = ?', [orderId]);
@@ -79,6 +89,41 @@ async function removeOrder(pool, { cdkId, orderId }) {
   await pool.query('DELETE FROM orders WHERE id = ?', [orderId]);
   await pool.query('DELETE FROM cdks WHERE id = ?', [cdkId]);
 }
+
+test('order compensation is one-time and recoverable after a verified no-side-effect failure', {
+  skip: !databaseUrl
+}, async () => {
+  const pool = mysql.createPool({ uri: databaseUrl, connectionLimit: 4, timezone: 'Z' });
+  const fixture = await createOrder(pool, { publicNo: `PJV1-COMP-${Date.now()}` });
+  const service = createOrderCompensationService({ pool, sessionEncryptionKey: integrationSessionKey });
+  try {
+    await pool.query(
+      `INSERT INTO tasks (order_id, task_type, status, dedupe_key, max_attempts)
+       VALUES (?, 'ASSIGN_CARD', 'DEAD', ?, 1)`,
+      [fixture.orderId, `comp-dead-${fixture.orderId}`]
+    );
+    const [[order]] = await pool.query('SELECT public_no FROM orders WHERE id = ?', [fixture.orderId]);
+    const input = { confirmation: `补发 ${order.public_no}` };
+    const first = await service(order.public_no, input);
+    const second = await service(order.public_no, input);
+    assert.equal(second.code, first.code);
+    assert.equal(second.replayed, true);
+    const [[stored]] = await pool.query(
+      `SELECT o.status, COUNT(oc.id) AS compensation_count,
+              SUM(c.status = 'AVAILABLE') AS available_replacements
+       FROM orders o LEFT JOIN order_compensations oc ON oc.original_order_id = o.id
+       LEFT JOIN cdks c ON c.id = oc.replacement_cdk_id
+       WHERE o.id = ? GROUP BY o.id`, [fixture.orderId]
+    );
+    assert.deepEqual({ status: stored.status,
+      compensationCount: Number(stored.compensation_count),
+      availableReplacements: Number(stored.available_replacements) },
+    { status: 'CLOSED', compensationCount: 1, availableReplacements: 1 });
+  } finally {
+    await removeOrder(pool, fixture);
+    await pool.end();
+  }
+});
 
 test('MySQL enforces one CDK per order and records transitions atomically', {
   skip: !databaseUrl
