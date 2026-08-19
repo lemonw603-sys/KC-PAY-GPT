@@ -23,6 +23,10 @@ function cardId(record) {
   return value == null ? null : String(value);
 }
 
+function wait(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 async function allCardIds(provider) {
   const ids = [];
   for (let page = 1; page <= 100; page += 1) {
@@ -54,11 +58,18 @@ export async function openStockCards({
   amount,
   cardTypeId,
   randomUUID = crypto.randomUUID,
-  onCardOpened = async () => {}
+  onCardOpened = async () => {},
+  beforeCard = async () => {},
+  pollDelayMs = 5_000,
+  maxDetailPolls = 24,
+  interCardDelayMs = 10_000,
+  waitFn = wait
 }) {
   const knownIds = await allCardIds(provider);
   const results = [];
   for (let index = 0; index < count; index += 1) {
+    await beforeCard({ index: index + 1, remaining: count - index });
+    if (index > 0 && interCardDelayMs > 0) await waitFn(interCardDelayMs);
     let providerCardId;
     try {
       const response = await provider.purchaseCard({
@@ -82,13 +93,34 @@ export async function openStockCards({
       data: { id: providerCardId, cardTypeId, status: 'provisioning' }
     }, { providerCardId, cardTypeId, fundedAmount: amount }));
     await onCardOpened({ index: index + 1, providerCardId, registered });
-    try {
-      const details = await provider.card(providerCardId);
-      registered = await stock.register(mapStockCard(details, {
-        providerCardId, cardTypeId, fundedAmount: amount
-      }));
-    } catch (error) {
-      registered = { ...registered, detailSyncPending: true, detailError: error?.code || error?.kind || 'READ_FAILED' };
+    let ready = false;
+    let lastReadError = null;
+    for (let poll = 0; poll < maxDetailPolls; poll += 1) {
+      try {
+        const mapped = mapStockCard(await provider.card(providerCardId), {
+          providerCardId, cardTypeId, fundedAmount: amount
+        });
+        registered = await stock.register(mapped);
+        if (mapped.failed) {
+          const error = new Error(`Provider card ${providerCardId} entered terminal status ${mapped.status}`);
+          error.code = 'CARD_STOCK_CARD_FAILED';
+          throw error;
+        }
+        if (mapped.ready) {
+          ready = true;
+          break;
+        }
+        lastReadError = null;
+      } catch (error) {
+        if (error?.code === 'CARD_STOCK_CARD_FAILED') throw error;
+        lastReadError = error;
+      }
+      if (poll + 1 < maxDetailPolls) await waitFn(pollDelayMs);
+    }
+    if (!ready) {
+      const error = new Error(`Provider card ${providerCardId} did not become ready before timeout`);
+      error.code = lastReadError?.code || lastReadError?.kind || 'CARD_STOCK_PROVISIONING_TIMEOUT';
+      throw error;
     }
     results.push(registered);
   }
@@ -99,6 +131,34 @@ export async function openStockCards({
     cardTypeId: String(cardTypeId),
     cards: results
   };
+}
+
+export async function syncProvisioningStock({ pool, provider, stock, limit = 50 }) {
+  const [rows] = await pool.query(
+    `SELECT provider_card_id, card_type_id, funded_amount FROM cards
+     WHERE order_id IS NULL AND inventory_status = 'PROVISIONING'
+       AND (last_synced_at IS NULL OR last_synced_at < DATE_SUB(CURRENT_TIMESTAMP(3), INTERVAL 30 SECOND))
+     ORDER BY updated_at ASC LIMIT ?`,
+    [Math.min(200, Math.max(1, Number(limit) || 50))]
+  );
+  let synced = 0;
+  let failed = 0;
+  for (const row of rows) {
+    try {
+      const details = await provider.card(row.provider_card_id);
+      const mapped = mapStockCard(details, {
+        providerCardId: row.provider_card_id,
+        cardTypeId: row.card_type_id,
+        fundedAmount: row.funded_amount
+      });
+      await stock.register(mapped);
+      synced += 1;
+      if (mapped.failed) failed += 1;
+    } catch {
+      // Read-only synchronization is retried on the next timer cycle.
+    }
+  }
+  return { checked: rows.length, synced, failed };
 }
 
 export async function runCardStockCli({ env = process.env } = {}) {

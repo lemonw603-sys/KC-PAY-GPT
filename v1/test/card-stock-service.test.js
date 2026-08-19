@@ -25,7 +25,8 @@ test('maps a ready provider card into safe assignable stock', () => {
     credentials: {
       cardNumber: '4242424242424242', expMonth: 12, expYear: 2032, cvv: '123'
     },
-    ready: true
+    ready: true,
+    failed: false
   });
 });
 
@@ -34,9 +35,18 @@ test('keeps a newly opened but unreadable card in provisioning stock', () => {
     id: 'pending-1', cardTypeId: '7', status: 'provisioning'
   } }, { fundedAmount: 16 });
   assert.equal(card.ready, false);
+  assert.equal(card.failed, false);
   assert.equal(card.credentials, null);
   assert.equal(card.currentBalance, null);
   assert.equal(card.fundedAmount, '16');
+});
+
+test('classifies a terminal provider card as failed stock', () => {
+  const card = mapStockCard({ data: {
+    id: 'failed-1', cardTypeId: '7', status: 'failed', cardBalance: '0'
+  } }, { fundedAmount: 16 });
+  assert.equal(card.ready, false);
+  assert.equal(card.failed, true);
 });
 
 test('rejects stock without stable card identity and type', () => {

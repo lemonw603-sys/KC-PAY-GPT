@@ -9,7 +9,13 @@ import {
   failCardStockJob,
   updateCardStockJobProgress
 } from '../src/services/card-stock-job-service.js';
-import { openStockCards } from './card-stock.js';
+import {
+  evaluateCardStockRequest,
+  readProviderSnapshot,
+  refreshProviderSnapshot,
+  snapshotIsFresh
+} from '../src/services/card-provider-snapshot-service.js';
+import { openStockCards, syncProvisioningStock } from './card-stock.js';
 
 if (process.env.PROVIDER_WRITES_ENABLED === 'true' || process.env.PROVIDER_CARD_WRITES_ENABLED !== 'true') {
   throw new Error('Card stock runner requires only PROVIDER_CARD_WRITES_ENABLED=true');
@@ -25,18 +31,41 @@ const provider = new HnskjCardProvider({
 const stock = createCardStockService({ pool, sessionEncryptionKey: config.sessionEncryptionKey });
 
 try {
+  let snapshot = await readProviderSnapshot(pool);
+  if (!snapshotIsFresh(snapshot, { maxAgeMs: 60_000 })) {
+    snapshot = await refreshProviderSnapshot(pool, provider);
+  }
   const job = await claimCardStockJob(pool, { workerId });
   if (!job) {
-    console.log(JSON.stringify({ handled: false }));
+    const sync = await syncProvisioningStock({ pool, provider, stock });
+    console.log(JSON.stringify({ handled: false, providerRulesSynced: true, stockSync: sync }));
   } else {
     try {
       const remaining = job.requestedCount - job.openedCount;
+      const rules = typeof job.rulesSnapshot === 'string'
+        ? JSON.parse(job.rulesSnapshot) : job.rulesSnapshot;
+      snapshot = await refreshProviderSnapshot(pool, provider);
+      evaluateCardStockRequest(snapshot, {
+        cardTypeId: job.cardTypeId,
+        amount: Number(job.amount),
+        count: remaining,
+        expectedCardTypeName: rules?.cardType?.name || null
+      });
       const result = await openStockCards({
         provider,
         stock,
         count: remaining,
         amount: Number(job.amount),
         cardTypeId: job.cardTypeId,
+        beforeCard: async ({ remaining: cardsRemaining }) => {
+          const live = await refreshProviderSnapshot(pool, provider);
+          evaluateCardStockRequest(live, {
+            cardTypeId: job.cardTypeId,
+            amount: Number(job.amount),
+            count: cardsRemaining,
+            expectedCardTypeName: rules?.cardType?.name || null
+          });
+        },
         onCardOpened: ({ index }) => updateCardStockJobProgress(pool, {
           jobId: job.id,
           workerId,

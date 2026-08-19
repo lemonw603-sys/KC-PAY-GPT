@@ -1,7 +1,13 @@
-import { encryptSecret } from '../security/secret-box.js';
+import { decryptSecret, encryptSecret } from '../security/secret-box.js';
 import { mapCardCredentials } from '../providers/hnskj-card.js';
+import {
+  CARD_STOCK_MAX_BATCH,
+  readProviderSnapshot,
+  snapshotIsFresh
+} from './card-provider-snapshot-service.js';
 
 const ACTIVE = new Set(['active', 'available', 'usable', 'ready']);
+const FAILED = new Set(['failed', 'failure', 'invalid', 'inactive', 'closed', 'cancelled', 'canceled']);
 
 function cardData(envelope) {
   return envelope?.data?.card ?? envelope?.data ?? {};
@@ -41,8 +47,20 @@ export function mapStockCard(envelope, { providerCardId, cardTypeId = null, fund
     currency: String(firstValue(data, ['currency', 'cardCurrency', 'card_currency']) || 'USD').toUpperCase(),
     last4: credentials?.cardNumber.slice(-4) || null,
     credentials,
-    ready: ACTIVE.has(status) && credentials !== null && currentBalance != null && currentBalance > 0
+    ready: ACTIVE.has(status) && credentials !== null && currentBalance != null
+      && currentBalance >= Math.max(0, Number(fundedAmount) || 0),
+    failed: FAILED.has(status)
   };
+}
+
+function decryptCardNumber(row, key) {
+  try {
+    if (row.card_number_ciphertext) return decryptSecret(row.card_number_ciphertext, key);
+    if (!row.card_credentials_ciphertext) return null;
+    return JSON.parse(decryptSecret(row.card_credentials_ciphertext, key)).cardNumber || null;
+  } catch {
+    return null;
+  }
 }
 
 export function createCardStockService({ pool, sessionEncryptionKey }) {
@@ -93,28 +111,34 @@ export function createCardStockService({ pool, sessionEncryptionKey }) {
         await connection.commit();
         return { providerCardId: card.providerCardId, inventoryStatus: 'ASSIGNED', alreadyAssigned: true };
       }
-      const inventoryStatus = card.ready ? 'AVAILABLE' : 'PROVISIONING';
+      const inventoryStatus = card.failed ? 'FAILED' : card.ready ? 'AVAILABLE' : 'PROVISIONING';
       const credentialsCiphertext = card.credentials
         ? encryptSecret(JSON.stringify(card.credentials), sessionEncryptionKey)
+        : null;
+      const cardNumberCiphertext = card.credentials?.cardNumber
+        ? encryptSecret(card.credentials.cardNumber, sessionEncryptionKey)
         : null;
       if (existing.length) {
         await connection.query(
           `UPDATE cards SET card_type_id = ?, last4 = ?, status = ?, funded_amount = COALESCE(?, funded_amount),
-             current_balance = ?, currency = ?, inventory_status = ?, card_credentials_ciphertext = ?,
+             current_balance = ?, currency = ?, inventory_status = ?,
+             card_credentials_ciphertext = COALESCE(?, card_credentials_ciphertext),
+             card_number_ciphertext = COALESCE(?, card_number_ciphertext),
              last_synced_at = CURRENT_TIMESTAMP(3), updated_at = CURRENT_TIMESTAMP(3)
            WHERE id = ? AND order_id IS NULL`,
           [card.cardTypeId, card.last4, card.status, card.fundedAmount, card.currentBalance,
-            card.currency, inventoryStatus, credentialsCiphertext, existing[0].id]
+            card.currency, inventoryStatus, credentialsCiphertext, cardNumberCiphertext, existing[0].id]
         );
       } else {
         await connection.query(
           `INSERT INTO cards
            (id, order_id, inventory_status, provider_card_id, card_type_id, last4, status,
             funded_amount, current_balance, currency, refund_status, card_credentials_ciphertext,
+            card_number_ciphertext,
             last_synced_at)
-           VALUES (UUID(), NULL, ?, ?, ?, ?, ?, ?, ?, ?, 'MONITORING', ?, CURRENT_TIMESTAMP(3))`,
+           VALUES (UUID(), NULL, ?, ?, ?, ?, ?, ?, ?, ?, 'MONITORING', ?, ?, CURRENT_TIMESTAMP(3))`,
           [inventoryStatus, card.providerCardId, card.cardTypeId, card.last4, card.status,
-            card.fundedAmount, card.currentBalance, card.currency, credentialsCiphertext]
+            card.fundedAmount, card.currentBalance, card.currency, credentialsCiphertext, cardNumberCiphertext]
         );
       }
       const stock = await refreshLowStockAlert(connection, card.cardTypeId);
@@ -129,7 +153,7 @@ export function createCardStockService({ pool, sessionEncryptionKey }) {
   }
 
   async function status() {
-    const [[thresholdRows], [rows]] = await Promise.all([
+    const [[thresholdRows], [rows], [settings], [cards], providerSnapshot] = await Promise.all([
       pool.query(
         `SELECT setting_value FROM app_settings
          WHERE setting_key = 'card_stock_low_threshold' LIMIT 1`
@@ -140,17 +164,55 @@ export function createCardStockService({ pool, sessionEncryptionKey }) {
                 SUM(order_id IS NULL AND inventory_status = 'PROVISIONING') AS provisioning,
                 SUM(order_id IS NOT NULL OR inventory_status = 'ASSIGNED') AS assigned
          FROM cards GROUP BY card_type_id ORDER BY card_type_id`
-      )
+      ),
+      pool.query(`SELECT setting_key, setting_value FROM app_settings
+        WHERE setting_key IN ('default_card_type_id','default_open_card_amount')`),
+      pool.query(`SELECT provider_card_id, card_type_id, last4, status, inventory_status,
+          funded_amount, current_balance, currency, order_id,
+          card_credentials_ciphertext, card_number_ciphertext, last_synced_at
+        FROM cards ORDER BY created_at DESC LIMIT 200`),
+      readProviderSnapshot(pool)
     ]);
     const threshold = Math.max(0, Number(thresholdRows[0]?.setting_value || 5));
+    const settingMap = new Map(settings.map((row) => [row.setting_key, row.setting_value]));
+    const defaultCardTypeId = String(settingMap.get('default_card_type_id') || '');
+    const selectedCardType = providerSnapshot?.cardTypes?.find(
+      (item) => String(item.id) === defaultCardTypeId
+    ) || null;
     return {
       threshold,
+      provider: {
+        syncedAt: providerSnapshot?.syncedAt || null,
+        rulesFresh: snapshotIsFresh(providerSnapshot),
+        purchaseEnabled: Boolean(providerSnapshot?.purchaseEnabled),
+        accountBalance: providerSnapshot?.accountBalance || null,
+        currency: providerSnapshot?.currency || 'USD',
+        cardLimit: providerSnapshot?.cardLimit || null,
+        defaultCardTypeId,
+        defaultAmount: String(settingMap.get('default_open_card_amount') || ''),
+        selectedCardType,
+        maxBatch: CARD_STOCK_MAX_BATCH
+      },
       cardTypes: rows.map((row) => ({
         cardTypeId: String(row.card_type_id),
         available: Number(row.available || 0),
         provisioning: Number(row.provisioning || 0),
         assigned: Number(row.assigned || 0),
         low: Number(row.available || 0) <= threshold
+      })),
+      cards: cards.map((row) => ({
+        providerCardId: String(row.provider_card_id),
+        cardTypeId: String(row.card_type_id),
+        cardNumber: decryptCardNumber(row, sessionEncryptionKey),
+        last4: row.last4,
+        status: row.status,
+        inventoryStatus: row.inventory_status,
+        fundedAmount: row.funded_amount == null ? null : String(row.funded_amount),
+        currentBalance: row.current_balance == null ? null : String(row.current_balance),
+        currency: row.currency,
+        assigned: Boolean(row.order_id),
+        lastSyncedAt: row.last_synced_at instanceof Date
+          ? row.last_synced_at.toISOString() : row.last_synced_at || null
       }))
     };
   }

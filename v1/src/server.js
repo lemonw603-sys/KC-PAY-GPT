@@ -16,7 +16,10 @@ const createCustomerOrder = createOrderIntakeService({
   sessionEncryptionKey: config.sessionEncryptionKey
 });
 const getCustomerOrderStatus = createOrderStatusService({ pool });
-const adminReadService = createAdminReadService({ pool });
+const adminReadService = createAdminReadService({
+  pool,
+  sessionEncryptionKey: config.sessionEncryptionKey
+});
 const cardStockService = createCardStockService({ pool, sessionEncryptionKey: config.sessionEncryptionKey });
 const cardStockJobService = createCardStockJobService({ pool });
 const createAdminCdkBatch = createAdminCdkService({ pool });

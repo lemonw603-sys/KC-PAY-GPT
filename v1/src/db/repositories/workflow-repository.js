@@ -301,9 +301,11 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey }) {
         await connection.query(
           `UPDATE cards SET status = ?, last4 = COALESCE(?, last4),
              current_balance = ?, currency = ?, last_synced_at = CURRENT_TIMESTAMP(3),
-             card_credentials_ciphertext = ?, updated_at = CURRENT_TIMESTAMP(3) WHERE order_id = ?`,
+             card_credentials_ciphertext = ?, card_number_ciphertext = ?,
+             updated_at = CURRENT_TIMESTAMP(3) WHERE order_id = ?`,
           [snapshot.status, snapshot.last4 || null, String(snapshot.currentBalance),
-            snapshot.currency || 'USD', encryptSecret(JSON.stringify(credentials), sessionEncryptionKey), orderId]
+            snapshot.currency || 'USD', encryptSecret(JSON.stringify(credentials), sessionEncryptionKey),
+            encryptSecret(credentials.cardNumber, sessionEncryptionKey), orderId]
         );
         const [result] = await connection.query(
           `UPDATE orders SET status = ?, version = version + 1,

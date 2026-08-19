@@ -1,5 +1,6 @@
 import { PublicApiError } from '../domain/public-api-error.js';
 import crypto from 'node:crypto';
+import { decryptSecret } from '../security/secret-box.js';
 
 const ORDER_STATUSES = new Set([
   'CREATED',
@@ -45,7 +46,18 @@ function parseListQuery(input = {}) {
   return { page, pageSize, status, query };
 }
 
-export function createAdminReadService({ pool }) {
+function cardNumber(row, key) {
+  if (!Buffer.isBuffer(key)) return null;
+  try {
+    if (row.card_number_ciphertext) return decryptSecret(row.card_number_ciphertext, key);
+    if (!row.card_credentials_ciphertext) return null;
+    return JSON.parse(decryptSecret(row.card_credentials_ciphertext, key)).cardNumber || null;
+  } catch {
+    return null;
+  }
+}
+
+export function createAdminReadService({ pool, sessionEncryptionKey = null }) {
   async function requestCardTransactionSync(publicNo) {
     if (typeof publicNo !== 'string' || publicNo.length < 8 || publicNo.length > 64) {
       throw new PublicApiError('Invalid public number', { code: 'INVALID_ADMIN_QUERY', status: 400 });
@@ -189,7 +201,8 @@ export function createAdminReadService({ pool }) {
           o.recharge_order_no, o.failure_code, o.created_at, o.updated_at, o.finished_at,
           o.actual_payment_amount, o.actual_payment_currency,
           o.subscription_cancelled, o.cancellation_checked_at, o.cancellation_review_required,
-          c.last4, c.current_balance, c.currency, c.refund_status
+          c.last4, c.current_balance, c.currency, c.refund_status,
+          c.card_number_ciphertext, c.card_credentials_ciphertext
         FROM orders o LEFT JOIN cards c ON c.order_id = o.id
         ${where}
         ORDER BY o.created_at DESC, o.id DESC
@@ -212,6 +225,7 @@ export function createAdminReadService({ pool }) {
         cancellationCheckedAt: iso(row.cancellation_checked_at),
         cancellationReviewRequired: Boolean(row.cancellation_review_required),
         card: row.last4 ? {
+          cardNumber: cardNumber(row, sessionEncryptionKey),
           last4: row.last4,
           currentBalance: decimal(row.current_balance),
           currency: row.currency,
@@ -236,7 +250,8 @@ export function createAdminReadService({ pool }) {
           o.subscription_cancelled, o.cancellation_checked_at, o.cancellation_review_required,
           o.created_at, o.updated_at, o.finished_at,
           c.provider_card_id, c.last4, c.status AS card_status, c.funded_amount,
-          c.current_balance, c.currency, c.refund_status, c.last_synced_at
+          c.current_balance, c.currency, c.refund_status, c.last_synced_at,
+          c.card_number_ciphertext, c.card_credentials_ciphertext
         FROM orders o LEFT JOIN cards c ON c.order_id = o.id
         WHERE BINARY o.public_no = ? LIMIT 1`, [publicNo]),
       pool.query(`SELECT oe.from_status, oe.to_status, oe.actor_type, oe.actor_id,
@@ -297,6 +312,7 @@ export function createAdminReadService({ pool }) {
       },
       card: row.provider_card_id ? {
         providerCardId: row.provider_card_id,
+        cardNumber: cardNumber(row, sessionEncryptionKey),
         last4: row.last4,
         status: row.card_status,
         fundedAmount: decimal(row.funded_amount),

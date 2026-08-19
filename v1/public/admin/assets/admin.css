@@ -59,6 +59,10 @@ button { cursor: pointer; }
 .stock-summary div { padding: 14px; border-radius: 12px; background: var(--surface-soft); }
 .stock-summary span { display: block; color: var(--muted); font-size: 10px; }
 .stock-summary strong { display: block; margin-top: 5px; font-size: 24px; }
+.provider-summary { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; margin: 0 0 16px; }
+.provider-summary > div { padding: 11px 12px; border: 1px solid var(--line); border-radius: 10px; background: white; }
+.provider-summary span, .provider-summary small { color: var(--muted); font-size: 9px; }.provider-summary strong { display: block; margin-top: 3px; font-size: 15px; }
+.provider-summary > small, .provider-summary > p { grid-column: 1 / -1; margin: 0; }.provider-warning { color: #b42318 !important; font-weight: 800; }
 .threshold-form > div { display: flex; gap: 8px; margin-top: 7px; }.threshold-form input { width: 110px; }
 .stock-open-form { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 16px; }
 .stock-open-form label { display: grid; gap: 6px; font-size: 10px; color: var(--muted); }
@@ -70,8 +74,11 @@ button { cursor: pointer; }
 .stock-card-profile { min-height: 40px; display: grid; grid-template-columns: 1fr auto; align-content: center; gap: 2px 8px; padding: 7px 11px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface-soft); }
 .stock-card-profile span { grid-column: 1 / -1; color: var(--muted); font-size: 10px; }.stock-card-profile strong { font-size: 11px; }.stock-card-profile small { color: var(--muted); font-size: 9px; }
 .stock-confirm-label, .stock-cost, .danger-button { grid-column: 1 / -1; }
-.stock-cost { padding: 10px 12px; border-radius: 9px; background: #fff7e8; color: #9a5b00; font-weight: 800; }
+.stock-cost { display: grid; gap: 4px; padding: 10px 12px; border-radius: 9px; background: #fff7e8; color: #9a5b00; font-weight: 800; }
+.stock-cost strong { font-size: 13px; }.stock-cost small { font-size: 9px; font-weight: 600; }.stock-cost-warning { background: #fff0ef; color: #b42318; }
 .danger-button { min-height: 44px; border: 0; border-radius: 10px; background: #b42318; color: white; font-weight: 800; }
+.danger-button:disabled { cursor: not-allowed; opacity: .45; }
+.stock-card-list strong { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .04em; }
 .metric-1 { --metric-color: #fff1de; }.metric-2 { --metric-color: #eaf2ff; }.metric-3 { --metric-color: #fff0e7; }.metric-4 { --metric-color: #e5f7f2; }
 .dashboard-grid { min-width: 0; display: grid; grid-template-columns: 1.25fr .75fr; gap: 18px; }
 .card { min-width: 0; border: 1px solid var(--line); border-radius: 17px; background: rgba(255,255,255,.92); box-shadow: 0 14px 36px rgba(50,78,112,.05); }

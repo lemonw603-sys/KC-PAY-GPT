@@ -191,6 +191,27 @@ test('card stock jobs require confirmation and move durably through the runner s
   const service = createCardStockJobService({ pool });
   let job;
   try {
+    const snapshot = {
+      provider: 'hnskj', syncedAt: new Date().toISOString(), purchaseEnabled: true,
+      accountBalance: '100', currency: 'USD', exchangeRate: '1',
+      cardLimit: { current: 0, maximum: 300, remaining: 300 },
+      cardTypes: [{
+        id: '7', name: 'Z-TEST', country: 'US', binPrefix: '40041606',
+        effectiveCardFee: '0.5', effectiveFeeRate: '0.005',
+        minimumAmount: '5', maximumAmount: '200', minimumAccountBalance: '25',
+        requireMinimumAccountBalance: true, consumeRate: '0', chargebackFee: '0.4'
+      }]
+    };
+    await pool.query(
+      `INSERT INTO card_provider_snapshots (provider, payload_json, synced_at)
+       VALUES ('hnskj', ?, CURRENT_TIMESTAMP(3))
+       ON DUPLICATE KEY UPDATE payload_json = VALUES(payload_json), synced_at = VALUES(synced_at)`,
+      [JSON.stringify(snapshot)]
+    );
+    await pool.query(
+      `INSERT INTO app_settings (setting_key, setting_value) VALUES ('default_card_type_id','7')
+       ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)`
+    );
     await assert.rejects(
       service.createJob({ count: 2, amount: 16, cardTypeId: '1', confirmation: 'wrong' }),
       (error) => error.code === 'CARD_STOCK_CONFIRMATION_REQUIRED'
@@ -209,6 +230,8 @@ test('card stock jobs require confirmation and move durably through the runner s
     const completed = jobs.find((item) => item.id === job.id);
     assert.equal(completed.status, 'COMPLETED');
     assert.equal(completed.openedCount, 2);
+    assert.equal(completed.cardTypeId, '7');
+    assert.equal(completed.estimatedTotal, '33.160000');
   } finally {
     if (job) await pool.query('DELETE FROM card_stock_jobs WHERE id = ?', [job.id]);
     await pool.end();

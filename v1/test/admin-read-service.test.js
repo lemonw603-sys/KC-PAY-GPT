@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createAdminReadService } from '../src/services/admin-read-service.js';
+import { encryptSecret } from '../src/security/secret-box.js';
+
+const adminCardKey = Buffer.alloc(32, 19);
 
 function queuedPool(results) {
   const queries = [];
@@ -44,15 +47,17 @@ test('admin order list validates filters and maps only card summaries', async ()
       actual_payment_amount: '1150.000000', actual_payment_currency: 'PHP',
       created_at: new Date('2026-08-17T00:00:00Z'), updated_at: new Date('2026-08-17T00:01:00Z'),
       finished_at: null, last4: '4242', current_balance: '25.000000', currency: 'USD',
-      refund_status: 'MONITORING'
+      refund_status: 'MONITORING',
+      card_number_ciphertext: encryptSecret('4242424242424242', adminCardKey)
     }]
   ]);
-  const result = await createAdminReadService({ pool }).listOrders({
+  const result = await createAdminReadService({ pool, sessionEncryptionKey: adminCardKey }).listOrders({
     page: '1', pageSize: '20', status: 'REVIEW_REQUIRED', q: 'PJV1'
   });
   assert.equal(result.total, 1);
   assert.deepEqual(result.orders[0].card, {
-    last4: '4242', currentBalance: '25.000000', currency: 'USD', refundStatus: 'MONITORING'
+    cardNumber: '4242424242424242', last4: '4242', currentBalance: '25.000000',
+    currency: 'USD', refundStatus: 'MONITORING'
   });
   assert.equal(result.orders[0].actualPaymentAmount, '1150.000000');
   assert.equal(result.orders[0].actualPaymentCurrency, 'PHP');
@@ -67,12 +72,14 @@ test('admin order list validates filters and maps only card summaries', async ()
   );
 });
 
-test('admin order detail excludes session and card secrets from its queries', async () => {
+test('admin order detail exposes the full PAN but not CVV or Session', async () => {
   const pool = queuedPool([
     [{
       id: 'order-1', public_no: 'PJV1-DEMO', status: 'CREATED', plan_type: 'plus',
       open_card_amount: '16.000000', minimum_required_card_balance: '15.500000',
       actual_payment_amount: null, actual_payment_currency: null,
+      provider_card_id: 'card-1', last4: '4242', card_status: 'active',
+      card_number_ciphertext: encryptSecret('4242424242424242', adminCardKey),
       created_at: new Date(), updated_at: new Date()
     }],
     [], [{
@@ -83,10 +90,13 @@ test('admin order detail excludes session and card secrets from its queries', as
       permit_status: null, permit_expires_at: null
     }], [], [], []
   ]);
-  const result = await createAdminReadService({ pool }).getOrder('PJV1-DEMO');
+  const result = await createAdminReadService({
+    pool, sessionEncryptionKey: adminCardKey
+  }).getOrder('PJV1-DEMO');
   assert.equal(result.order.publicNo, 'PJV1-DEMO');
   assert.equal(result.order.minimumRequiredCardBalance, '15.500000');
-  assert.equal(result.card, null);
+  assert.equal(result.card.cardNumber, '4242424242424242');
+  assert.equal(Object.hasOwn(result.card, 'cvv'), false);
   assert.deepEqual(result.paymentGate, {
     prepaymentReady: true,
     submissionLocked: true,
@@ -97,6 +107,7 @@ test('admin order detail excludes session and card secrets from its queries', as
   });
   assert.deepEqual(result.transactions, []);
   assert.equal(pool.queries.some(({ sql }) => /session_ciphertext|recharge_card_key/i.test(sql)), false);
+  assert.equal(pool.queries.some(({ sql }) => /\bcvv\b/i.test(sql)), false);
 });
 
 test('manual transaction sync queues only a read task and deduplicates active work', async () => {

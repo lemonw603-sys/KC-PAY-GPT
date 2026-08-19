@@ -1,6 +1,12 @@
 import crypto from 'node:crypto';
 import { PublicApiError } from '../domain/public-api-error.js';
 import { redactSensitiveText } from '../security/redaction.js';
+import {
+  CARD_STOCK_MAX_BATCH,
+  evaluateCardStockRequest,
+  readProviderSnapshot,
+  snapshotIsFresh
+} from './card-provider-snapshot-service.js';
 
 function integer(value, { min, max, name }) {
   const number = Number(value);
@@ -15,11 +21,16 @@ function iso(value) {
 }
 
 function mapJob(row) {
+  const rules = typeof row.rules_snapshot_json === 'string'
+    ? JSON.parse(row.rules_snapshot_json) : row.rules_snapshot_json;
   return {
     id: row.id,
     status: row.status,
     cardTypeId: String(row.card_type_id),
     amount: String(row.amount),
+    estimatedTotal: row.estimated_total == null ? null : String(row.estimated_total),
+    cardTypeName: rules?.cardType?.name || null,
+    rulesSnapshot: rules || null,
     requestedCount: Number(row.requested_count),
     openedCount: Number(row.opened_count),
     errorCode: row.error_code,
@@ -32,18 +43,33 @@ function mapJob(row) {
 
 export function createCardStockJobService({ pool }) {
   async function createJob(input = {}) {
-    const requestedCount = integer(input.count, { min: 1, max: 500, name: 'count' });
+    const requestedCount = integer(input.count, { min: 1, max: CARD_STOCK_MAX_BATCH, name: 'count' });
     const amount = integer(input.amount, { min: 1, max: 100_000, name: 'amount' });
-    const cardTypeId = String(input.cardTypeId || '').trim();
-    if (!/^[A-Za-z0-9_-]{1,128}$/.test(cardTypeId)) {
-      throw new PublicApiError('Invalid card type', { code: 'INVALID_CARD_STOCK_JOB', status: 400 });
-    }
     if (input.confirmation !== `开${requestedCount}张`) {
       throw new PublicApiError('Confirmation mismatch', { code: 'CARD_STOCK_CONFIRMATION_REQUIRED', status: 400 });
     }
     const connection = await pool.getConnection();
     try {
       await connection.beginTransaction();
+      const [settings] = await connection.query(
+        `SELECT setting_value FROM app_settings
+         WHERE setting_key = 'default_card_type_id' LIMIT 1 FOR SHARE`
+      );
+      const cardTypeId = String(settings[0]?.setting_value || '').trim();
+      if (!cardTypeId) {
+        throw new PublicApiError('Default card type is not configured', {
+          code: 'CARD_STOCK_CARD_TYPE_UNAVAILABLE', status: 409
+        });
+      }
+      const snapshot = await readProviderSnapshot(connection);
+      if (!snapshotIsFresh(snapshot)) {
+        throw new PublicApiError('Card provider rules are stale', {
+          code: 'CARD_STOCK_RULES_STALE', status: 409
+        });
+      }
+      const evaluation = evaluateCardStockRequest(snapshot, {
+        cardTypeId, amount, count: requestedCount
+      });
       const [active] = await connection.query(
         `SELECT id FROM card_stock_jobs WHERE status IN ('PENDING','RUNNING') LIMIT 1 FOR UPDATE`
       );
@@ -53,14 +79,27 @@ export function createCardStockJobService({ pool }) {
         });
       }
       const id = crypto.randomUUID();
+      const rulesSnapshot = {
+        providerSyncedAt: snapshot.syncedAt,
+        purchaseEnabled: snapshot.purchaseEnabled,
+        accountBalance: snapshot.accountBalance,
+        cardLimit: snapshot.cardLimit,
+        cardType: evaluation.cardType,
+        evaluation
+      };
       await connection.query(
         `INSERT INTO card_stock_jobs
-         (id, status, card_type_id, amount, requested_count)
-         VALUES (?, 'PENDING', ?, ?, ?)`,
-        [id, cardTypeId, String(amount), requestedCount]
+         (id, status, card_type_id, amount, estimated_total, rules_snapshot_json, requested_count)
+         VALUES (?, 'PENDING', ?, ?, ?, ?, ?)`,
+        [id, cardTypeId, String(amount), evaluation.estimatedTotal,
+          JSON.stringify(rulesSnapshot), requestedCount]
       );
       await connection.commit();
-      return { id, status: 'PENDING', cardTypeId, amount: String(amount), requestedCount, openedCount: 0 };
+      return {
+        id, status: 'PENDING', cardTypeId, cardTypeName: evaluation.cardType.name,
+        amount: String(amount), estimatedTotal: evaluation.estimatedTotal,
+        requestedCount, openedCount: 0
+      };
     } catch (error) {
       await connection.rollback();
       throw error;
@@ -73,7 +112,8 @@ export function createCardStockJobService({ pool }) {
     const safeLimit = Math.min(100, Math.max(1, Number(limit) || 20));
     const [rows] = await pool.query(
       `SELECT id, status, card_type_id, amount, requested_count, opened_count,
-              error_code, error_message, created_at, started_at, finished_at
+              estimated_total, rules_snapshot_json, error_code, error_message,
+              created_at, started_at, finished_at
        FROM card_stock_jobs ORDER BY created_at DESC LIMIT ?`,
       [safeLimit]
     );
@@ -95,6 +135,7 @@ export async function claimCardStockJob(pool, { workerId, leaseSeconds = 1800 })
     );
     const [rows] = await connection.query(
       `SELECT id, card_type_id, amount, requested_count, opened_count
+              ,estimated_total, rules_snapshot_json
        FROM card_stock_jobs WHERE status = 'PENDING'
        ORDER BY created_at ASC LIMIT 1 FOR UPDATE SKIP LOCKED`
     );
