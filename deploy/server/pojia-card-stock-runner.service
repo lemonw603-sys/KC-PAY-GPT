@@ -10,9 +10,7 @@ Group=pojia
 WorkingDirectory=/opt/pojia/current/v1
 EnvironmentFile=/etc/pojia/runtime.env
 EnvironmentFile=/etc/pojia/provider.env
-Environment=PROVIDER_WRITES_ENABLED=false
-Environment=PROVIDER_CARD_WRITES_ENABLED=true
-ExecStart=/usr/bin/node scripts/card-stock-job-runner.js
+ExecStart=/usr/bin/env PROVIDER_WRITES_ENABLED=false PROVIDER_CARD_WRITES_ENABLED=true /usr/bin/node scripts/card-stock-job-runner.js
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectHome=true
