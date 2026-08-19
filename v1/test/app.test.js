@@ -247,18 +247,24 @@ test('generates CDKs only for an authenticated administrator', async () => {
     secureCookies: false
   });
   let received;
+  let revoked;
   const app = createApp({
     adminAuth,
     createAdminCdkBatch: async (input) => {
       received = input;
       return { batchNo: 'B-TEST', count: 1, codes: ['PJ-ABCDEFGHJKMNPQRST234'] };
+    },
+    listAdminCdkBatches: async () => ({ batches: [{ batchNo: 'B-TEST', totalCount: 1 }] }),
+    downloadAdminCdkBatch: async (batchNo) => ({ batchNo, codes: ['PJ-ABCDEFGHJKMNPQRST234'] }),
+    revokeAdminCdkBatch: async (batchNo, reason) => {
+      revoked = { batchNo, reason };
+      return { batchNo, revokedCount: 1 };
     }
   });
 
   await withServer(app, async (baseUrl) => {
     const denied = await fetch(`${baseUrl}/api/v1/admin/cdks/generate`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       headers: { 'Content-Type': 'application/json', 'Idempotency-Key': 'fixture-idempotency-001' },
       body: JSON.stringify({ count: 1 })
     });
@@ -272,16 +278,33 @@ test('generates CDKs only for an authenticated administrator', async () => {
     const sessionCookie = login.headers.get('set-cookie').split(';')[0];
     const generated = await fetch(`${baseUrl}/api/v1/admin/cdks/generate`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Cookie: sessionCookie },
-      headers: { 'Content-Type': 'application/json', Cookie: sessionCookie, 'Idempotency-Key': 'fixture-idempotency-001' },
+      headers: { 'Content-Type': 'application/json', Cookie: sessionCookie,
+        Origin: baseUrl, 'Idempotency-Key': 'fixture-idempotency-001' },
       body: JSON.stringify({ count: 1 })
     });
     assert.equal(generated.status, 201);
     assert.equal(generated.headers.get('cache-control'), 'no-store');
-    assert.deepEqual(received, { count: 1 });
+    assert.deepEqual(received, { count: 1, requestKey: 'fixture-idempotency-001' });
     assert.deepEqual(await generated.json(), {
       batchNo: 'B-TEST', count: 1, codes: ['PJ-ABCDEFGHJKMNPQRST234']
     });
+    const batches = await fetch(`${baseUrl}/api/v1/admin/cdks/batches`, {
+      headers: { Cookie: sessionCookie }
+    });
+    assert.deepEqual(await batches.json(), { batches: [{ batchNo: 'B-TEST', totalCount: 1 }] });
+    const download = await fetch(`${baseUrl}/api/v1/admin/cdks/B-TEST/download`, {
+      headers: { Cookie: sessionCookie }
+    });
+    assert.deepEqual(await download.json(), {
+      batchNo: 'B-TEST', codes: ['PJ-ABCDEFGHJKMNPQRST234']
+    });
+    const revoke = await fetch(`${baseUrl}/api/v1/admin/cdks/B-TEST/revoke`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Cookie: sessionCookie, Origin: baseUrl },
+      body: JSON.stringify({ reason: 'fixture revoke' })
+    });
+    assert.deepEqual(await revoke.json(), { batchNo: 'B-TEST', revokedCount: 1 });
+    assert.deepEqual(revoked, { batchNo: 'B-TEST', reason: 'fixture revoke' });
   });
 });
 
@@ -311,7 +334,7 @@ test('creates paid card stock jobs only through an authenticated admin route', a
     const stock = await fetch(`${baseUrl}/api/v1/admin/card-stock`, { headers: { Cookie: cookie } });
     assert.deepEqual(await stock.json(), { threshold: 1, cardTypes: [], jobs: [] });
     const created = await fetch(`${baseUrl}/api/v1/admin/card-stock/jobs`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cookie },
+      method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cookie, Origin: baseUrl },
       body: JSON.stringify({ count: 2, amount: 16, cardTypeId: '1', confirmation: '开2张', largeBatchConfirmed: false })
     });
     assert.equal(created.status, 202);
@@ -347,12 +370,12 @@ test('changes intake and one-order recharge permits only through authenticated a
     });
     const cookie = login.headers.get('set-cookie').split(';')[0];
     const intake = await fetch(`${baseUrl}/api/v1/admin/operations/order-acceptance`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cookie },
+      method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cookie, Origin: baseUrl },
       body: JSON.stringify({ enabled: true, confirmation: '开始接单' })
     });
     assert.equal(intake.status, 200);
     const permit = await fetch(`${baseUrl}/api/v1/admin/orders/PJV1-DEMO/recharge-permit`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cookie },
+      method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cookie, Origin: baseUrl },
       body: JSON.stringify({ action: 'arm', confirmation: '确认充值 PJV1-DEMO' })
     });
     assert.equal(permit.status, 202);
@@ -360,5 +383,33 @@ test('changes intake and one-order recharge permits only through authenticated a
       ['intake', { enabled: true, confirmation: '开始接单' }],
       ['permit', 'PJV1-DEMO', { action: 'arm', confirmation: '确认充值 PJV1-DEMO' }]
     ]);
+  });
+});
+
+test('rejects authenticated admin writes from a different origin', async () => {
+  const adminAuth = createAdminSessionAuth({
+    passwordHash: await hashAdminPassword('fixture admin password', { salt: Buffer.alloc(16, 13) }),
+    sessionSecret: Buffer.alloc(32, 14),
+    secureCookies: false
+  });
+  let called = false;
+  const app = createApp({
+    adminAuth,
+    setAdminOrderAcceptance: async () => { called = true; return {}; }
+  });
+  await withServer(app, async (baseUrl) => {
+    const login = await fetch(`${baseUrl}/api/v1/admin/session`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: 'fixture admin password' })
+    });
+    const cookie = login.headers.get('set-cookie').split(';')[0];
+    const response = await fetch(`${baseUrl}/api/v1/admin/operations/order-acceptance`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cookie,
+        Origin: 'https://attacker.example' },
+      body: JSON.stringify({ enabled: false, confirmation: '停止接单' })
+    });
+    assert.equal(response.status, 403);
+    assert.deepEqual(await response.json(), { error: 'admin_origin_required' });
+    assert.equal(called, false);
   });
 });

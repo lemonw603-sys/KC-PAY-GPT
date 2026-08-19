@@ -13,7 +13,13 @@ import { runWorkerIteration } from '../src/workers/worker-runtime.js';
 import { createOrderIntakeService } from '../src/services/order-intake-service.js';
 import { decryptSecret } from '../src/security/secret-box.js';
 import { sessionFixture } from '../test-support/session-fixture.js';
-import { storeCdkBatch } from '../src/services/cdk-service.js';
+import {
+  createAdminCdkService,
+  downloadCdkBatch,
+  listCdkBatches,
+  revokeCdkBatch,
+  storeCdkBatch
+} from '../src/services/cdk-service.js';
 import { createOrderStatusService } from '../src/services/order-status-service.js';
 import { armRechargePermit } from '../src/services/recharge-permit-service.js';
 import {
@@ -627,6 +633,61 @@ test('CDK batches store only hashes and report input and existing duplicates', {
     );
   } finally {
     await pool.query('DELETE FROM cdks WHERE batch_no IN (?, ?)', [batchNo, collisionBatchNo]);
+    await pool.end();
+  }
+});
+
+test('admin CDK generation is idempotent, recoverable, listable and revocable', {
+  skip: !databaseUrl
+}, async () => {
+  const pool = mysql.createPool({ uri: databaseUrl, connectionLimit: 3, timezone: 'Z' });
+  const requestKey = `test-cdk-request-${id()}`;
+  const createBatch = createAdminCdkService({
+    pool,
+    sessionEncryptionKey: integrationSessionKey
+  });
+  let batchNo;
+  try {
+    const concurrent = await Promise.all([
+      createBatch({ count: 3, requestKey }),
+      createBatch({ count: 3, requestKey })
+    ]);
+    const created = concurrent.find((result) => !result.replayed);
+    batchNo = created.batchNo;
+    assert.equal(concurrent.filter((result) => !result.replayed).length, 1);
+    assert.deepEqual(concurrent[0].codes, concurrent[1].codes);
+    assert.equal(created.codes.length, 3);
+
+    const [[storedBatch]] = await pool.query(
+      'SELECT codes_ciphertext FROM cdk_batches WHERE batch_no = ?', [batchNo]
+    );
+    assert.equal(Buffer.isBuffer(storedBatch.codes_ciphertext), true);
+    assert.equal(storedBatch.codes_ciphertext.includes(Buffer.from(created.codes[0])), false);
+
+    const replayed = await createBatch({ count: 3, requestKey });
+    assert.equal(replayed.replayed, true);
+    assert.deepEqual(replayed.codes, created.codes);
+    await assert.rejects(
+      createBatch({ count: 2, requestKey }),
+      (error) => error.code === 'IDEMPOTENCY_MISMATCH'
+    );
+
+    const downloaded = await downloadCdkBatch(pool, batchNo, integrationSessionKey);
+    assert.deepEqual(downloaded.codes, created.codes);
+    const listed = await listCdkBatches(pool, { limit: 100 });
+    assert.equal(listed.batches.find((batch) => batch.batchNo === batchNo)?.availableCount, 3);
+    assert.equal(listed.batches.find((batch) => batch.batchNo === batchNo)?.downloadable, true);
+
+    assert.deepEqual(await revokeCdkBatch(pool, batchNo, 'integration test'), {
+      batchNo, revokedCount: 3
+    });
+    const afterRevoke = await listCdkBatches(pool, { limit: 100 });
+    assert.equal(afterRevoke.batches.find((batch) => batch.batchNo === batchNo)?.revokedCount, 3);
+  } finally {
+    if (batchNo) {
+      await pool.query('DELETE FROM cdks WHERE batch_no = ?', [batchNo]);
+      await pool.query('DELETE FROM cdk_batches WHERE batch_no = ?', [batchNo]);
+    }
     await pool.end();
   }
 });

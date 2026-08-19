@@ -19,6 +19,7 @@
 - 独立 worker 入口：按数据库开关和进程级 Provider 权限双重过滤可领取的任务类型，支持空转、租约恢复和优雅停止。
 - 客户订单入口：验证 CDK 与完整 Session，原子创建加密订单、创建事件和 `PURCHASE_CARD` 任务。
 - v1 CDK CLI：批量生成、按行导入、批次追踪和哈希去重；生成明文只写入新建的 `0600` 文件。
+- 后台 CDK 批次：幂等生成、加密明文恢复/下载、状态统计和仅作废未兑换卡密。
 - 独立 v1 客户页：提交 CDK + Session、通过 `publicNo`/CDK 查询、有界自动轮询和稳定客户状态展示。
 - 自有运营后台：订单指标跳转、待确认充值队列、完整卡号库存、人工补卡和单订单一次性充值放行。
 - 卡台目录每 5 分钟只读对账；有效但余额不足的卡标记为 `DEPLETED`，未解析卡片会禁止新开卡。
@@ -40,7 +41,7 @@ npm audit --omit=dev
 TEST_DATABASE_URL='mysql://user:password@127.0.0.1:3306/pojia_v1_test' npm test
 ```
 
-没有设置 `TEST_DATABASE_URL` 时，11 个数据库集成用例会明确跳过，其余单元测试继续执行。
+没有设置 `TEST_DATABASE_URL` 时，12 个数据库集成用例会明确跳过，其余单元测试继续执行。
 
 ## 配置
 
@@ -90,6 +91,8 @@ npm start
 开放接单前必须在 `app_settings` 同时配置 `default_card_type_id`、`default_open_card_amount`，再将 `accept_new_orders` 改为 `true`。只开启接单不会触发真实开卡，worker 写权限仍有独立硬锁。
 
 ## CDK 批次
+
+后台生成请求必须带幂等键；断网后用同一键重试会返回原批次，不会新增卡密。单个 CDK 在 `cdks` 表仍只保存 SHA-256 哈希；为了处理响应丢失，新批次的明文集合使用 AES-256-GCM 加密保存，仅已认证自有后台可重新下载。旧批次没有明文副本，不能恢复。
 
 ```bash
 npm run cdk -- generate --count 100 --batch BATCH_20260817 --output /absolute/private/cdks.txt

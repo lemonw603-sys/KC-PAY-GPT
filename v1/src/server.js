@@ -4,7 +4,12 @@ import { checkDatabaseReady, createDatabasePool } from './db/pool.js';
 import { createOrderIntakeService } from './services/order-intake-service.js';
 import { createOrderStatusService } from './services/order-status-service.js';
 import { createAdminReadService } from './services/admin-read-service.js';
-import { createAdminCdkService, revokeCdkBatch } from './services/cdk-service.js';
+import {
+  createAdminCdkService,
+  downloadCdkBatch,
+  listCdkBatches,
+  revokeCdkBatch
+} from './services/cdk-service.js';
 import { createAdminSessionAuth } from './security/admin-session.js';
 import { createCardStockService } from './services/card-stock-service.js';
 import { createCardStockJobService } from './services/card-stock-job-service.js';
@@ -28,7 +33,10 @@ const adminReadService = createAdminReadService({
 });
 const cardStockService = createCardStockService({ pool, sessionEncryptionKey: config.sessionEncryptionKey });
 const cardStockJobService = createCardStockJobService({ pool });
-const createAdminCdkBatch = createAdminCdkService({ pool });
+const createAdminCdkBatch = createAdminCdkService({
+  pool,
+  sessionEncryptionKey: config.sessionEncryptionKey
+});
 const adminOperationsService = createAdminOperationsService({ pool });
 const adminAuth = config.adminPasswordHash
   ? createAdminSessionAuth({
@@ -77,6 +85,8 @@ const app = createApp({
     throw new RechargePermitError('Invalid recharge permit action', 'INVALID_RECHARGE_PERMIT_ACTION');
   }
   ,createAdminCdkBatch
+  ,listAdminCdkBatches: (input) => listCdkBatches(pool, input)
+  ,downloadAdminCdkBatch: (batchNo) => downloadCdkBatch(pool, batchNo, config.sessionEncryptionKey)
   ,revokeAdminCdkBatch: (batchNo, reason) => revokeCdkBatch(pool, batchNo, reason)
 });
 

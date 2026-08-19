@@ -99,6 +99,10 @@ button { cursor: pointer; }
 .cdk-result > div { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; color: #52677d; font-size: 10px; font-weight: 800; }
 .cdk-result textarea { width: 100%; min-height: 88px; padding: 12px; resize: vertical; border: 1px solid #c9d6e4; border-radius: 9px; color: #173154; background: white; font: 600 12px/1.7 ui-monospace, SFMono-Regular, Menlo, monospace; }
 .cdk-result p { margin: 8px 0 0; color: #9a611a; font-size: 9px; }
+.cdk-result-actions, .cdk-batch-actions { display: flex; align-items: center; gap: 10px; }
+.cdk-batches-card { margin-top: 16px; }
+.cdk-batch-list > div { align-items: flex-start; }
+.cdk-batch-actions { flex: 0 0 auto; }
 .status-list { display: grid; gap: 10px; }
 .status-list > button { display: grid; gap: 6px; padding: 0; border: 0; background: none; text-align: left; }
 .status-list > button > span { display: flex; justify-content: space-between; align-items: center; gap: 12px; }

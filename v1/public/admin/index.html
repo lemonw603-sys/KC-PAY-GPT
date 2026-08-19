@@ -7,8 +7,8 @@
   <meta name="theme-color" content="#f5f8fc">
   <title>Plus 运营后台</title>
   <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/admin/assets/admin.css?v=4">
-  <script src="/admin/assets/admin.js?v=4" defer></script>
+  <link rel="stylesheet" href="/admin/assets/admin.css?v=5">
+  <script src="/admin/assets/admin.js?v=5" defer></script>
 </head>
 <body>
   <div class="admin-shell">
@@ -98,10 +98,18 @@
             </div>
           </form>
           <div class="cdk-result" id="cdk-result" hidden>
-            <div><span id="cdk-batch-label">批次</span><button class="text-button" id="copy-cdks" type="button">复制全部</button></div>
+            <div><span id="cdk-batch-label">批次</span><span class="cdk-result-actions"><button class="text-button" id="download-cdks" type="button">下载 TXT</button><button class="text-button" id="copy-cdks" type="button">复制全部</button></span></div>
             <textarea id="generated-cdks" readonly spellcheck="false" aria-label="刚生成的 CDK 卡密"></textarea>
             <p>请立即复制保存；离开页面后无法从数据库还原明文。</p>
           </div>
+        </section>
+        <section class="card cdk-card cdk-batches-card">
+          <div class="card-heading">
+            <div><p class="section-kicker">批次记录</p><h2>最近 CDK 批次</h2></div>
+            <button class="text-button" id="refresh-cdk-batches" type="button">刷新</button>
+          </div>
+          <p class="card-description">可重新下载新版批次；作废只影响尚未兑换的卡密，不会修改已创建的订单。</p>
+          <div class="mini-list cdk-batch-list" id="cdk-batches"></div>
         </section>
       </section>
 

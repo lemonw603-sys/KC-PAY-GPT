@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { decryptSecret, encryptSecret } from '../security/secret-box.js';
 
 const CDK_PREFIX = 'PJ-';
 const CDK_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
@@ -97,6 +98,39 @@ function hashCdk(code) {
   return crypto.createHash('sha256').update(code, 'utf8').digest('hex');
 }
 
+function normalizeRequestKey(value) {
+  const requestKey = String(value || '').trim();
+  if (!/^[A-Za-z0-9_-]{16,128}$/.test(requestKey)) {
+    throw new CdkBatchError('a 16-128 character idempotency key is required', 'IDEMPOTENCY_KEY_REQUIRED');
+  }
+  return requestKey;
+}
+
+function iso(value) {
+  return value instanceof Date ? value.toISOString() : value || null;
+}
+
+function decodeStoredBatch(row, key, expected = null) {
+  if (!row) return null;
+  if (expected && (
+    Number(row.requested_count) !== expected.count
+    || String(row.plan_type) !== expected.planType
+  )) {
+    throw new CdkBatchError('idempotency key was already used for a different request', 'IDEMPOTENCY_MISMATCH');
+  }
+  const codes = JSON.parse(decryptSecret(row.codes_ciphertext, key));
+  if (!Array.isArray(codes) || codes.length !== Number(row.requested_count)) {
+    throw new CdkBatchError('stored CDK batch cannot be recovered', 'BATCH_RECOVERY_FAILED');
+  }
+  return {
+    batchNo: row.batch_no,
+    planType: row.plan_type,
+    count: Number(row.requested_count),
+    codes,
+    replayed: true
+  };
+}
+
 export async function storeCdkBatch(pool, codes, {
   batchNo,
   planType = 'plus',
@@ -142,24 +176,103 @@ export async function storeCdkBatch(pool, codes, {
   }
 }
 
-export function createAdminCdkService({ pool }) {
+export function createAdminCdkService({ pool, sessionEncryptionKey }) {
   if (!pool) throw new TypeError('pool is required');
+  if (!Buffer.isBuffer(sessionEncryptionKey)) throw new TypeError('sessionEncryptionKey is required');
 
   return async function createBatch(input = {}) {
     const count = validateBatchCount(input.count);
+    const planType = normalizePlanType(input.planType);
+    const requestKey = normalizeRequestKey(input.requestKey);
+    const [existing] = await pool.query(
+      `SELECT batch_no, plan_type, requested_count, codes_ciphertext
+       FROM cdk_batches WHERE BINARY request_key = BINARY ? LIMIT 1`,
+      [requestKey]
+    );
+    const recovered = decodeStoredBatch(existing[0], sessionEncryptionKey, { count, planType });
+    if (recovered) return recovered;
+
     const codes = generateCdks(count);
-    const stored = await storeCdkBatch(pool, codes, {
-      batchNo: input.batchNo,
-      planType: input.planType,
-      requireAllInserted: true
-    });
-    return {
-      batchNo: stored.batchNo,
-      planType: stored.planType,
-      count: stored.insertedCount,
-      codes
-    };
+    const batchNo = normalizeBatchNo(input.batchNo);
+    const ciphertext = encryptSecret(JSON.stringify(codes), sessionEncryptionKey);
+    const connection = await pool.getConnection();
+    try {
+      await connection.beginTransaction();
+      await connection.query(
+        `INSERT INTO cdk_batches
+         (batch_no, request_key, plan_type, requested_count, codes_ciphertext, created_by)
+         VALUES (?, ?, ?, ?, ?, 'admin')`,
+        [batchNo, requestKey, planType, count, ciphertext]
+      );
+      const values = codes.map((code) => [
+        crypto.randomUUID(), hashCdk(code), 'AVAILABLE', batchNo, planType
+      ]);
+      const [result] = await connection.query(
+        `INSERT INTO cdks (id, code_hash, status, batch_no, plan_type) VALUES ?`,
+        [values]
+      );
+      if (Number(result.affectedRows) !== count) {
+        throw new CdkBatchError('generated CDK collision detected', 'GENERATED_COLLISION');
+      }
+      await connection.commit();
+      return { batchNo, planType, count, codes, replayed: false };
+    } catch (error) {
+      await connection.rollback();
+      if (error?.code === 'ER_DUP_ENTRY') {
+        const [duplicate] = await connection.query(
+          `SELECT batch_no, plan_type, requested_count, codes_ciphertext
+           FROM cdk_batches WHERE BINARY request_key = BINARY ? LIMIT 1`,
+          [requestKey]
+        );
+        const duplicateBatch = decodeStoredBatch(duplicate[0], sessionEncryptionKey, { count, planType });
+        if (duplicateBatch) return duplicateBatch;
+        throw new CdkBatchError('batch number already exists', 'BATCH_EXISTS');
+      }
+      throw error;
+    } finally {
+      connection.release();
+    }
   };
+}
+
+export async function listCdkBatches(pool, { limit = 50 } = {}) {
+  const safeLimit = Math.min(100, Math.max(1, Number(limit) || 50));
+  const [rows] = await pool.query(
+    `SELECT c.batch_no, MIN(c.plan_type) AS plan_type, COUNT(*) AS total_count,
+            SUM(c.status = 'AVAILABLE') AS available_count,
+            SUM(c.status = 'REDEEMED') AS redeemed_count,
+            SUM(c.status = 'REVOKED') AS revoked_count,
+            MIN(c.created_at) AS created_at,
+            MAX(b.codes_ciphertext IS NOT NULL) AS downloadable,
+            MAX(b.revoked_at) AS revoked_at
+     FROM cdks c LEFT JOIN cdk_batches b ON BINARY b.batch_no = BINARY c.batch_no
+     WHERE c.batch_no IS NOT NULL
+     GROUP BY c.batch_no
+     ORDER BY MIN(c.created_at) DESC LIMIT ?`,
+    [safeLimit]
+  );
+  return { batches: rows.map((row) => ({
+    batchNo: row.batch_no,
+    planType: row.plan_type,
+    totalCount: Number(row.total_count),
+    availableCount: Number(row.available_count || 0),
+    redeemedCount: Number(row.redeemed_count || 0),
+    revokedCount: Number(row.revoked_count || 0),
+    downloadable: Boolean(row.downloadable),
+    createdAt: iso(row.created_at),
+    revokedAt: iso(row.revoked_at)
+  })) };
+}
+
+export async function downloadCdkBatch(pool, batchNo, sessionEncryptionKey) {
+  const normalizedBatchNo = normalizeBatchNo(batchNo);
+  const [rows] = await pool.query(
+    `SELECT batch_no, plan_type, requested_count, codes_ciphertext
+     FROM cdk_batches WHERE BINARY batch_no = BINARY ? LIMIT 1`,
+    [normalizedBatchNo]
+  );
+  if (!rows.length) throw new CdkBatchError('batch plaintext is not available', 'BATCH_DOWNLOAD_UNAVAILABLE');
+  return decodeStoredBatch(rows[0], sessionEncryptionKey);
 }
 
 export async function revokeCdkBatch(pool, batchNo, reason = 'operator revoked') {
@@ -171,6 +284,11 @@ export async function revokeCdkBatch(pool, batchNo, reason = 'operator revoked')
       `UPDATE cdks
        SET status = 'REVOKED', revoked_at = CURRENT_TIMESTAMP(3), revoke_reason = ?
        WHERE batch_no = ? AND status = 'AVAILABLE'`,
+      [String(reason).slice(0, 500), normalizedBatchNo]
+    );
+    await connection.query(
+      `UPDATE cdk_batches SET revoked_at = CURRENT_TIMESTAMP(3), revoke_reason = ?
+       WHERE BINARY batch_no = BINARY ?`,
       [String(reason).slice(0, 500), normalizedBatchNo]
     );
     await connection.commit();

@@ -31,10 +31,13 @@ export function createApp({
   setAdminOrderAcceptance = null,
   setAdminRechargePermit = null,
   createAdminCdkBatch = null,
+  listAdminCdkBatches = null,
+  downloadAdminCdkBatch = null,
   revokeAdminCdkBatch = null,
   orderRateLimit = createFixedWindowRateLimit(),
   orderStatusRateLimit = createFixedWindowRateLimit({ limit: 30 }),
-  adminLoginRateLimit = createFixedWindowRateLimit({ limit: 5, windowMs: 15 * 60 * 1000 })
+  adminLoginRateLimit = createFixedWindowRateLimit({ limit: 5, windowMs: 15 * 60 * 1000 }),
+  adminWriteRateLimit = createFixedWindowRateLimit({ limit: 60, windowMs: 15 * 60 * 1000 })
 } = {}) {
   const app = express();
 
@@ -90,6 +93,15 @@ export function createApp({
     }
     return next();
   };
+  const requireAdminOrigin = (req, res, next) => {
+    const origin = String(req.get('origin') || '');
+    const expectedOrigin = `${req.protocol}://${req.get('host')}`;
+    if (origin !== expectedOrigin) {
+      return res.status(403).json({ error: 'admin_origin_required' });
+    }
+    return next();
+  };
+  const adminWriteGuards = [noStore, requireAdminApi, requireAdminOrigin, adminWriteRateLimit];
 
   app.get('/admin/login', noStore, (req, res) => {
     if (adminAuth?.authenticateRequest(req)) return res.redirect(302, '/admin');
@@ -136,7 +148,7 @@ export function createApp({
     });
   }
   if (typeof requestCardTransactionSync === 'function') {
-    app.post('/api/v1/admin/orders/:publicNo/sync-transactions', noStore, requireAdminApi, async (req, res) => {
+    app.post('/api/v1/admin/orders/:publicNo/sync-transactions', ...adminWriteGuards, async (req, res) => {
       const result = await requestCardTransactionSync(req.params.publicNo);
       return res.status(result.queued ? 202 : 200).json(result);
     });
@@ -147,23 +159,23 @@ export function createApp({
     });
   }
   if (typeof setAdminCardStockThreshold === 'function') {
-    app.post('/api/v1/admin/card-stock/threshold', noStore, requireAdminApi, async (req, res) => {
+    app.post('/api/v1/admin/card-stock/threshold', ...adminWriteGuards, async (req, res) => {
       res.json(await setAdminCardStockThreshold(req.body?.count));
     });
   }
   if (typeof createAdminCardStockJob === 'function') {
-    app.post('/api/v1/admin/card-stock/jobs', noStore, requireAdminApi, async (req, res) => {
+    app.post('/api/v1/admin/card-stock/jobs', ...adminWriteGuards, async (req, res) => {
       const job = await createAdminCardStockJob(req.body);
       return res.status(202).json({ job });
     });
   }
   if (typeof setAdminOrderAcceptance === 'function') {
-    app.post('/api/v1/admin/operations/order-acceptance', noStore, requireAdminApi, async (req, res) => {
+    app.post('/api/v1/admin/operations/order-acceptance', ...adminWriteGuards, async (req, res) => {
       res.json(await setAdminOrderAcceptance(req.body));
     });
   }
   if (typeof setAdminRechargePermit === 'function') {
-    app.post('/api/v1/admin/orders/:publicNo/recharge-permit', noStore, requireAdminApi, async (req, res) => {
+    app.post('/api/v1/admin/orders/:publicNo/recharge-permit', ...adminWriteGuards, async (req, res) => {
       try {
         const result = await setAdminRechargePermit(req.params.publicNo, req.body);
         return res.status(req.body?.action === 'arm' ? 202 : 200).json(result);
@@ -178,9 +190,12 @@ export function createApp({
     });
   }
   if (typeof createAdminCdkBatch === 'function') {
-    app.post('/api/v1/admin/cdks/generate', noStore, requireAdminApi, async (req, res) => {
+    app.post('/api/v1/admin/cdks/generate', ...adminWriteGuards, async (req, res) => {
       try {
-        const result = await createAdminCdkBatch(req.body);
+        const result = await createAdminCdkBatch({
+          ...req.body,
+          requestKey: req.get('idempotency-key')
+        });
         return res.status(201).json(result);
       } catch (error) {
         if (error instanceof CdkBatchError) {
@@ -190,8 +205,25 @@ export function createApp({
       }
     });
   }
+  if (typeof listAdminCdkBatches === 'function') {
+    app.get('/api/v1/admin/cdks/batches', noStore, requireAdminApi, async (req, res) => {
+      res.json(await listAdminCdkBatches(req.query));
+    });
+  }
+  if (typeof downloadAdminCdkBatch === 'function') {
+    app.get('/api/v1/admin/cdks/:batchNo/download', noStore, requireAdminApi, async (req, res) => {
+      try {
+        res.json(await downloadAdminCdkBatch(req.params.batchNo));
+      } catch (error) {
+        if (error instanceof CdkBatchError) {
+          return res.status(404).json({ error: error.code.toLowerCase() });
+        }
+        throw error;
+      }
+    });
+  }
   if (typeof revokeAdminCdkBatch === 'function') {
-    app.post('/api/v1/admin/cdks/:batchNo/revoke', noStore, requireAdminApi, async (req, res) => {
+    app.post('/api/v1/admin/cdks/:batchNo/revoke', ...adminWriteGuards, async (req, res) => {
       try {
         const result = await revokeAdminCdkBatch(req.params.batchNo, req.body?.reason);
         return res.json(result);
