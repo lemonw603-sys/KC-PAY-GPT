@@ -78,7 +78,7 @@ fail 0
 skipped 0
 ```
 
-最新本地无数据库测试为 `160 pass / 0 fail / 14 skipped`；生产机隔离临时 MySQL 完整测试结果在本次发布验收后更新。隔离验收不连接真实 Provider 写接口。
+最新本地无数据库测试为 `160 pass / 0 fail / 14 skipped`；生产机隔离临时 MySQL 中完整重跑为 `174 pass / 0 fail / 0 skipped`。隔离验收不连接真实 Provider 写接口。
 
 ### 2026-08-17 后续复验
 
