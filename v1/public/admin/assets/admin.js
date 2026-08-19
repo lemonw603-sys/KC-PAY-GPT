@@ -30,6 +30,25 @@ const TASK_STATUS_LABELS = Object.freeze({ PENDING: '等待执行', RUNNING: '�
 const REFUND_LABELS = Object.freeze({ MONITORING: '观察中', DETECTED: '疑似退款', CONFIRMED: '已确认退款', WITHDRAWN: '已提取' });
 const INVENTORY_LABELS = Object.freeze({ AVAILABLE: '可分配', ASSIGNED: '已分配', DEPLETED: '已耗尽', PROVISIONING: '核对中', FAILED: '已失效' });
 const RECONCILIATION_LABELS = Object.freeze({ OK: '已对账', STALE: '待同步', SYNCING: '同步中', REVIEW_REQUIRED: '需核对', MISMATCH: '不一致' });
+const ORDER_RECONCILIATION_LABELS = Object.freeze({
+  MATCHED: '三方一致', NOT_SUBMITTED: '尚未提交', IN_PROGRESS: '对账进行中',
+  EVIDENCE_PENDING: '等待卡片证据', CONSISTENT_FAILURE: '失败结果一致', REVIEW_REQUIRED: '三方对账异常'
+});
+const ORDER_RECONCILIATION_CODES = Object.freeze({
+  THREE_WAY_MATCHED: '充值平台金额与卡片支付交易一致，且交易已结算',
+  RECHARGE_NOT_SUBMITTED: '没有充值平台创建调用，也没有成功扣款',
+  SUBMISSION_IN_PROGRESS: '充值请求正在提交', RECHARGE_IN_PROGRESS: '充值平台仍在处理',
+  ORDER_NOT_TERMINAL: '订单尚未进入最终状态', CARD_TRANSACTIONS_NOT_SYNCED: '等待同步卡片交易',
+  CARD_PAYMENT_UNSETTLED: '卡片支付金额一致，等待结算',
+  PROVIDER_PAYMENT_EVIDENCE_MISSING: '充值成功，但充值平台缺少支付金额或币种',
+  PAYMENT_AMOUNT_MISMATCH: '充值平台支付金额与卡片成功交易不一致',
+  CARD_PAYMENT_NOT_FOUND: '充值成功，但已同步的卡片交易中没有对应成功支付',
+  CARD_CHARGED_WITHOUT_RECHARGE: '充值未提交，但关联卡片出现成功支付',
+  FAILED_ORDER_HAS_SUCCESSFUL_CHARGE: '订单失败，但关联卡片出现成功支付',
+  RECHARGE_ORDER_ID_MISSING: '已调用充值平台，但本地缺少外部订单号',
+  SUBMIT_UNKNOWN: '充值提交结果未知', RECONCILIATION_REQUIRED: '订单状态要求人工对账',
+  NO_SUCCESSFUL_CARD_CHARGE: '订单失败，卡片侧没有成功支付'
+});
 
 const state = {
   view: 'overview', page: 1, pageSize: 20, total: 0, status: '', query: '',
@@ -151,7 +170,7 @@ function orderRow(order) {
   return `<tr data-order="${escapeHtml(order.publicNo)}" tabindex="0">
     <td><strong class="order-link">${escapeHtml(order.publicNo)}</strong></td>
     <td><span class="cell-main">${escapeHtml(account)}</span>${order.rechargeOrderNo ? `<small>${escapeHtml(order.rechargeOrderNo)}</small>` : ''}</td>
-    <td>${statusChip(order.status)}${order.requiresRechargeConfirmation ? `<small class="attention-note">${escapeHtml(waitingText(order.confirmationReadyAt))}</small>` : order.cancellationReviewRequired ? '<small class="attention-note">续费需处理</small>' : ''}</td>
+    <td>${statusChip(order.status)}${order.requiresRechargeConfirmation ? `<small class="attention-note">${escapeHtml(waitingText(order.confirmationReadyAt))}</small>` : order.cancellationReviewRequired ? '<small class="attention-note">续费需处理</small>' : ''}<small class="${order.reconciliation?.issue ? 'attention-note' : ''}">${escapeHtml(ORDER_RECONCILIATION_LABELS[order.reconciliation?.status] || order.reconciliation?.status || '—')}</small></td>
     <td>${card}</td>
     <td>${order.card?.refundStatus ? escapeHtml(REFUND_LABELS[order.card.refundStatus] || order.card.refundStatus) : '—'}</td>
     <td>${formatTime(order.createdAt)}</td>
@@ -169,6 +188,7 @@ async function loadOverview() {
     { label: '自动处理中', value: overview.metrics.processingOrders, note: '系统正在自动流转', filter: 'PROCESSING' },
     { label: '待确认充值', value: overview.metrics.awaitingConfirmationOrders, note: '需要你逐单确认', filter: 'AWAITING_CONFIRMATION' },
     { label: '需要关注', value: overview.metrics.reviewingOrders, note: '失败、未知或对账订单', filter: 'REVIEW_REQUIRED' },
+    { label: '三方对账异常', value: overview.metrics.reconciliationIssues, note: '订单、充值平台、卡片证据冲突', filter: 'RECONCILIATION_ISSUES' },
     { label: '本地可分配卡', value: overview.cardStock?.available ?? 0,
       note: overview.cardStock?.low ? `已到低库存线：${overview.cardStock?.lowThreshold ?? 5}` : `低库存线：${overview.cardStock?.lowThreshold ?? 5}`, view: 'stock' },
     { label: '已完成订单成功率', value: overview.metrics.successRate == null ? '—' : `${overview.metrics.successRate}%`, note: '不计未完成订单', filter: 'RECHARGE_SUCCESS' }
@@ -608,6 +628,7 @@ async function openOrder(publicNo) {
       ORDER_CANCELLATION_SUBMISSION_RISK: '充值可能已经开始，禁止取消',
       ORDER_CANCELLATION_NOT_ELIGIBLE: '当前订单状态不能取消'
     };
+    const reconciliation = data.reconciliation || {};
     elements.detailContent.innerHTML = `
       <section class="detail-section"><div class="detail-section-heading"><h3>付款执行门</h3>${permitButton}</div>${renderKeyValues([
         ['付款前检查', paymentGate.prepaymentReady ? '已就绪' : '未就绪'],
@@ -624,6 +645,13 @@ async function openOrder(publicNo) {
       ])}</section>
       <section class="detail-section"><div class="detail-section-heading"><h3>取消未充值订单</h3>${cancellationButton}</div><p class="empty-state">${escapeHtml(cancellationLabels[cancellation.code] || '当前不可取消')}</p></section>
       <section class="detail-section"><div class="detail-section-heading"><h3>失败补偿</h3>${compensationButton}</div><p class="empty-state">${escapeHtml(compensationLabels[compensation.code] || '当前不可补发')}</p></section>
+      <section class="detail-section"><h3>三方对账</h3>${renderKeyValues([
+        ['对账结果', ORDER_RECONCILIATION_LABELS[reconciliation.status] || reconciliation.status],
+        ['判定依据', ORDER_RECONCILIATION_CODES[reconciliation.code] || reconciliation.code],
+        ['充值平台订单号', order.rechargeOrderNo],
+        ['充值平台确认金额', order.actualPaymentAmount ? `${order.actualPaymentAmount} ${order.actualPaymentCurrency || ''}` : null],
+        ['卡片交易同步', formatTime(data.card?.lastTransactionSyncedAt)]
+      ])}</section>
       <section class="detail-section"><div class="detail-status">${statusChip(order.status)}<span>${formatTime(order.updatedAt)}</span></div>${renderKeyValues([
         ['客户邮箱', order.customerEmail], ['ChatGPT 账号 ID', order.chatgptAccountId],
         ['直充订单号', order.rechargeOrderNo], ['卡段 ID', order.cardTypeId],

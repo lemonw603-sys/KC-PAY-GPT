@@ -36,6 +36,7 @@ import {
   createCardSyncJobService
 } from '../src/services/card-sync-job-service.js';
 import { commitCardTransactionsForCard } from '../src/db/repositories/card-transaction-repository.js';
+import { createAdminReadService } from '../src/services/admin-read-service.js';
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
 const integrationSessionKey = Buffer.alloc(32, 7);
@@ -144,6 +145,38 @@ test('inventory-only card sync is durable and persists transactions without an o
     await pool.query('DELETE FROM card_state_events WHERE card_id = ?', [cardId]);
     await pool.query('DELETE FROM card_transactions WHERE card_id = ?', [cardId]);
     await pool.query('DELETE FROM cards WHERE id = ?', [cardId]);
+    await pool.end();
+  }
+});
+
+test('three-way reconciliation queries run on MySQL and ignore a cancelled pre-submission order', {
+  skip: !databaseUrl
+}, async () => {
+  const pool = mysql.createPool({ uri: databaseUrl, connectionLimit: 4, timezone: 'Z' });
+  const fixture = await createOrder(pool, {
+    publicNo: `PJV1-RECON-${Date.now()}`, status: OrderStatus.CLOSED
+  });
+  try {
+    await pool.query(
+      `UPDATE orders SET failure_code = 'CANCELLED_PRE_SUBMISSION',
+         finished_at = CURRENT_TIMESTAMP(3) WHERE id = ?`, [fixture.orderId]
+    );
+    const service = createAdminReadService({ pool, sessionEncryptionKey: integrationSessionKey });
+    const overview = await service.getOverview();
+    assert.equal(overview.metrics.reconciliationIssues, 0);
+    const all = await service.listOrders({ q: `PJV1-RECON-`, pageSize: 10 });
+    assert.equal(all.orders.length, 1);
+    assert.equal(all.orders[0].reconciliation.status, 'NOT_SUBMITTED');
+    const issues = await service.listOrders({
+      q: `PJV1-RECON-`, status: 'RECONCILIATION_ISSUES', pageSize: 10
+    });
+    assert.equal(issues.total, 0);
+    const detail = await service.getOrder(all.orders[0].publicNo);
+    assert.deepEqual(detail.reconciliation, {
+      status: 'NOT_SUBMITTED', code: 'RECHARGE_NOT_SUBMITTED', issue: false
+    });
+  } finally {
+    await removeOrder(pool, fixture);
     await pool.end();
   }
 });

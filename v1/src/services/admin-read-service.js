@@ -2,6 +2,7 @@ import { PublicApiError } from '../domain/public-api-error.js';
 import crypto from 'node:crypto';
 import { decryptSecret } from '../security/secret-box.js';
 import { validateChatGptSession } from '../domain/session-validation.js';
+import { reconcileOrderEvidence } from '../domain/order-reconciliation.js';
 
 const ORDER_STATUSES = new Set([
   'CREATED',
@@ -19,7 +20,61 @@ const ORDER_STATUSES = new Set([
 ]);
 const REVIEW_STATUSES = ['CARD_FAILED', 'SUBMIT_UNKNOWN', 'RECHARGE_FAILED', 'RECONCILIATION_REQUIRED'];
 const PROCESSING_STATUSES = ['CREATED', 'CARD_PURCHASING', 'CARD_PROVISIONING', 'SUBMITTING', 'RECHARGE_PROCESSING'];
-const VIRTUAL_FILTERS = new Set(['TODAY', 'PROCESSING', 'AWAITING_CONFIRMATION', 'REVIEW_REQUIRED']);
+const VIRTUAL_FILTERS = new Set([
+  'TODAY', 'PROCESSING', 'AWAITING_CONFIRMATION', 'REVIEW_REQUIRED', 'RECONCILIATION_ISSUES'
+]);
+
+const CREATE_ATTEMPTED_SQL = `EXISTS (SELECT 1 FROM provider_calls rpc
+  WHERE rpc.order_id = o.id AND rpc.provider = 'zzshu' AND rpc.operation = 'create_direct')`;
+const SUCCESS_EVENT_SQL = `EXISTS (SELECT 1 FROM order_events roe
+  WHERE roe.order_id = o.id AND roe.to_status = 'RECHARGE_SUCCESS')`;
+const TRANSACTION_SYNCED_SQL = `EXISTS (SELECT 1 FROM cards rsc
+  WHERE rsc.order_id = o.id AND rsc.last_transaction_synced_at IS NOT NULL)`;
+const SUCCESSFUL_PURCHASE_SQL = `EXISTS (SELECT 1 FROM cards rpcard
+  INNER JOIN card_transactions rpt ON rpt.card_id = rpcard.id
+  WHERE rpcard.order_id = o.id AND LOWER(rpt.transaction_type) = 'purchase'
+    AND LOWER(rpt.status) = 'success')`;
+const PAYMENT_MATCH_SQL = `EXISTS (SELECT 1 FROM cards rmcard
+  INNER JOIN card_transactions rmt ON rmt.card_id = rmcard.id
+  WHERE rmcard.order_id = o.id AND LOWER(rmt.transaction_type) = 'purchase'
+    AND LOWER(rmt.status) = 'success' AND (
+      (UPPER(rmt.original_currency) = UPPER(o.actual_payment_currency)
+        AND ABS(ABS(rmt.original_amount) - o.actual_payment_amount) <= 0.01)
+      OR (UPPER(rmt.currency) = UPPER(o.actual_payment_currency)
+        AND ABS(ABS(rmt.amount) - o.actual_payment_amount) <= 0.01)
+    ))`;
+const PAYMENT_SETTLED_SQL = `EXISTS (SELECT 1 FROM cards rsetcard
+  INNER JOIN card_transactions rsett ON rsett.card_id = rsetcard.id
+  WHERE rsetcard.order_id = o.id AND LOWER(rsett.transaction_type) = 'purchase'
+    AND LOWER(rsett.status) = 'success' AND LOWER(COALESCE(rsett.settlement_status, '')) = 'settled'
+    AND ((UPPER(rsett.original_currency) = UPPER(o.actual_payment_currency)
+      AND ABS(ABS(rsett.original_amount) - o.actual_payment_amount) <= 0.01)
+      OR (UPPER(rsett.currency) = UPPER(o.actual_payment_currency)
+      AND ABS(ABS(rsett.amount) - o.actual_payment_amount) <= 0.01)))`;
+const RECONCILIATION_ISSUE_SQL = `(o.status IN ('SUBMIT_UNKNOWN','RECONCILIATION_REQUIRED')
+  OR ((${CREATE_ATTEMPTED_SQL}) AND o.recharge_order_no IS NULL AND o.status <> 'SUBMITTING')
+  OR (NOT (${CREATE_ATTEMPTED_SQL}) AND o.recharge_order_no IS NULL AND (${SUCCESSFUL_PURCHASE_SQL}))
+  OR ((o.status = 'RECHARGE_SUCCESS' OR (${SUCCESS_EVENT_SQL})) AND (
+    o.recharge_order_no IS NULL OR o.actual_payment_amount IS NULL OR o.actual_payment_currency IS NULL
+    OR ((${TRANSACTION_SYNCED_SQL}) AND NOT (${PAYMENT_MATCH_SQL}))
+  ))
+  OR ((o.status = 'RECHARGE_FAILED' OR (o.status = 'CLOSED' AND NOT (${SUCCESS_EVENT_SQL})))
+    AND (${SUCCESSFUL_PURCHASE_SQL})))`;
+
+function reconciliationFromRow(row) {
+  return reconcileOrderEvidence({
+    orderStatus: row.status,
+    rechargeOrderNo: row.recharge_order_no,
+    createAttempted: Boolean(row.create_attempted),
+    hasRechargeSuccessEvent: Boolean(row.has_recharge_success_event),
+    actualPaymentAmount: row.actual_payment_amount,
+    actualPaymentCurrency: row.actual_payment_currency,
+    transactionEvidenceSynced: Boolean(row.transaction_evidence_synced),
+    successfulPurchaseExists: Boolean(row.successful_purchase_exists),
+    paymentMatched: Boolean(row.payment_matched),
+    paymentSettled: Boolean(row.payment_settled)
+  });
+}
 
 function iso(value) {
   return value instanceof Date ? value.toISOString() : value || null;
@@ -27,6 +82,20 @@ function iso(value) {
 
 function decimal(value) {
   return value == null ? null : String(value);
+}
+
+function transactionMatchesPayment(transaction, amount, currency) {
+  const expected = Number(amount);
+  const expectedCurrency = String(currency || '').toUpperCase();
+  if (!Number.isFinite(expected) || !expectedCurrency) return false;
+  const candidates = [
+    [transaction.original_amount, transaction.original_currency],
+    [transaction.amount, transaction.currency]
+  ];
+  return candidates.some(([candidateAmount, candidateCurrency]) =>
+    String(candidateCurrency || '').toUpperCase() === expectedCurrency
+      && Number.isFinite(Number(candidateAmount))
+      && Math.abs(Math.abs(Number(candidateAmount)) - expected) <= 0.01);
 }
 
 function parseListQuery(input = {}) {
@@ -222,6 +291,7 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, now 
         )) AS awaiting_confirmation,
         SUM(o.status IN ('CARD_FAILED','SUBMIT_UNKNOWN','RECHARGE_FAILED','RECONCILIATION_REQUIRED')
             OR o.cancellation_review_required = 1) AS reviewing
+        ,SUM(${RECONCILIATION_ISSUE_SQL}) AS reconciliation_issues
         FROM orders o`),
       pool.query('SELECT status, COUNT(*) AS count FROM orders GROUP BY status ORDER BY status'),
       pool.query('SELECT status, COUNT(*) AS count FROM cdks GROUP BY status ORDER BY status'),
@@ -256,6 +326,7 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, now 
         processingOrders: count(orderCounts[0]?.processing),
         awaitingConfirmationOrders: count(orderCounts[0]?.awaiting_confirmation),
         reviewingOrders: count(orderCounts[0]?.reviewing),
+        reconciliationIssues: count(orderCounts[0]?.reconciliation_issues),
         successRate: completed === 0 ? null : Number(((successful / completed) * 100).toFixed(1))
       },
       orderStatuses: statusRows.map((row) => ({ status: row.status, count: count(row.count) })),
@@ -303,6 +374,8 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, now 
       conditions.push(`(o.status IN (${REVIEW_STATUSES.map(() => '?').join(', ')})
         OR o.cancellation_review_required = 1)`);
       values.push(...REVIEW_STATUSES);
+    } else if (status === 'RECONCILIATION_ISSUES') {
+      conditions.push(RECONCILIATION_ISSUE_SQL);
     } else if (status === 'PROCESSING') {
       conditions.push(`o.status IN (${PROCESSING_STATUSES.map(() => '?').join(', ')})`);
       values.push(...PROCESSING_STATUSES);
@@ -343,7 +416,13 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, now 
               AND st.task_type = 'SUBMIT_RECHARGE' AND st.status = 'PENDING' AND st.attempts = 0
           )) AS requires_recharge_confirmation,
           (SELECT pt.completed_at FROM tasks pt WHERE pt.order_id = o.id
-            AND pt.task_type = 'PREPARE_RECHARGE' ORDER BY pt.id DESC LIMIT 1) AS confirmation_ready_at
+            AND pt.task_type = 'PREPARE_RECHARGE' ORDER BY pt.id DESC LIMIT 1) AS confirmation_ready_at,
+          (${CREATE_ATTEMPTED_SQL}) AS create_attempted,
+          (${SUCCESS_EVENT_SQL}) AS has_recharge_success_event,
+          (${TRANSACTION_SYNCED_SQL}) AS transaction_evidence_synced,
+          (${SUCCESSFUL_PURCHASE_SQL}) AS successful_purchase_exists,
+          (${PAYMENT_MATCH_SQL}) AS payment_matched,
+          (${PAYMENT_SETTLED_SQL}) AS payment_settled
         FROM orders o LEFT JOIN cards c ON c.order_id = o.id
         ${where}
         ORDER BY o.created_at DESC, o.id DESC
@@ -367,6 +446,7 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, now 
         cancellationReviewRequired: Boolean(row.cancellation_review_required),
         requiresRechargeConfirmation: Boolean(row.requires_recharge_confirmation),
         confirmationReadyAt: iso(row.confirmation_ready_at),
+        reconciliation: reconciliationFromRow(row),
         card: row.last4 ? {
           cardNumber: cardNumber(row, sessionEncryptionKey),
           last4: row.last4,
@@ -394,6 +474,7 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, now 
           o.created_at, o.updated_at, o.finished_at, o.session_ciphertext,
           c.provider_card_id, c.last4, c.status AS card_status, c.funded_amount,
           c.current_balance, c.currency, c.refund_status, c.last_synced_at,
+          c.last_transaction_synced_at,
           c.card_number_ciphertext, c.card_credentials_ciphertext
         FROM orders o LEFT JOIN cards c ON c.order_id = o.id
         WHERE BINARY o.public_no = ? LIMIT 1`, [publicNo]),
@@ -457,6 +538,26 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, now 
     const rechargeCallExists = callRows.some(
       (call) => call.provider === 'zzshu' && call.operation === 'create_direct'
     );
+    const successfulPurchases = transactionRows.filter((transaction) =>
+      String(transaction.transaction_type).toLowerCase() === 'purchase'
+        && String(transaction.status).toLowerCase() === 'success');
+    const matchingPurchases = successfulPurchases.filter((transaction) =>
+      transactionMatchesPayment(
+        transaction, row.actual_payment_amount, row.actual_payment_currency
+      ));
+    const reconciliation = reconcileOrderEvidence({
+      orderStatus: row.status,
+      rechargeOrderNo: row.recharge_order_no,
+      createAttempted: rechargeCallExists,
+      hasRechargeSuccessEvent: eventRows.some((event) => event.to_status === 'RECHARGE_SUCCESS'),
+      actualPaymentAmount: row.actual_payment_amount,
+      actualPaymentCurrency: row.actual_payment_currency,
+      transactionEvidenceSynced: Boolean(row.last_transaction_synced_at),
+      successfulPurchaseExists: successfulPurchases.length > 0,
+      paymentMatched: matchingPurchases.length > 0,
+      paymentSettled: matchingPurchases.some((transaction) =>
+        String(transaction.settlement_status || '').toLowerCase() === 'settled')
+    });
     let cancellationCode = 'ORDER_CANCELLATION_NOT_ELIGIBLE';
     if (row.status === 'CLOSED' && row.failure_code === 'CANCELLED_PRE_SUBMISSION') {
       cancellationCode = 'ORDER_CANCELLATION_ALREADY_COMPLETED';
@@ -504,8 +605,10 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, now 
         currentBalance: decimal(row.current_balance),
         currency: row.currency,
         refundStatus: row.refund_status,
-        lastSyncedAt: iso(row.last_synced_at)
+        lastSyncedAt: iso(row.last_synced_at),
+        lastTransactionSyncedAt: iso(row.last_transaction_synced_at)
       } : null,
+      reconciliation,
       paymentGate: {
         prepaymentReady: prepareTask?.status === 'COMPLETED',
         submissionLocked: submitTask?.permit_status !== 'ARMED',
