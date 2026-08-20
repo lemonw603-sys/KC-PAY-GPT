@@ -10,7 +10,7 @@ const scrypt = promisify(scryptCallback);
 const COOKIE_NAME = 'pojia_admin_session';
 const STEP_UP_COOKIE_NAME = 'pojia_admin_step_up';
 const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
-const STEP_UP_TTL_MS = 5 * 60 * 1000;
+const STEP_UP_TTL_MS = 30 * 60 * 1000;
 const HASH_PREFIX = 'scrypt-v1';
 
 function encode(value) {

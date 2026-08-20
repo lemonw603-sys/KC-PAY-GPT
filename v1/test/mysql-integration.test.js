@@ -872,8 +872,16 @@ test('admin CDK generation is idempotent, recoverable, listable and revocable', 
     assert.equal(listed.batches.find((batch) => batch.batchNo === batchNo)?.availableCount, 3);
     assert.equal(listed.batches.find((batch) => batch.batchNo === batchNo)?.downloadable, true);
 
+    await assert.rejects(
+      revokeCdkBatch(pool, batchNo.toLowerCase(), 'wrong-case batch'),
+      (error) => error.code === 'BATCH_NOT_FOUND'
+    );
+
     assert.deepEqual(await revokeCdkBatch(pool, batchNo, 'integration test'), {
       batchNo, revokedCount: 3
+    });
+    assert.deepEqual(await revokeCdkBatch(pool, batchNo, 'replayed integration test'), {
+      batchNo, revokedCount: 0
     });
     const afterRevoke = await listCdkBatches(pool, { limit: 100 });
     assert.equal(afterRevoke.batches.find((batch) => batch.batchNo === batchNo)?.revokedCount, 3);

@@ -52,7 +52,8 @@ const ORDER_RECONCILIATION_CODES = Object.freeze({
 
 const state = {
   view: 'overview', page: 1, pageSize: 20, total: 0, status: '', query: '',
-  stockProvider: null, stockCatalog: null, stockCardTypeId: '', acceptingOrders: false, cdkClearTimer: null
+  stockProvider: null, stockCatalog: null, stockCardTypeId: '', acceptingOrders: false,
+  cdkClearTimer: null, cdkLoadSequence: 0
 };
 const elements = {
   navItems: [...document.querySelectorAll('.nav-item')],
@@ -126,14 +127,16 @@ function statusChip(status) {
   return `<span class="status-chip status-${tone}"><i></i>${escapeHtml(label)}</span>`;
 }
 
-function showNotice(message) {
+function showNotice(message, tone = 'error') {
   elements.notice.textContent = message;
+  elements.notice.dataset.tone = tone;
   elements.notice.hidden = false;
 }
 
 function hideNotice() {
   elements.notice.hidden = true;
   elements.notice.textContent = '';
+  delete elements.notice.dataset.tone;
 }
 
 async function api(url, options) {
@@ -148,7 +151,7 @@ async function api(url, options) {
 }
 
 async function requestSensitiveAccess() {
-  const password = window.prompt('请输入后台密码确认敏感操作：');
+  const password = window.prompt('请输入后台密码确认敏感操作：\n\n验证后 30 分钟内生成、导出和作废 CDK 不再重复询问。');
   if (!password) throw new Error('admin_step_up_cancelled');
   const response = await fetch('/api/v1/admin/step-up', {
     method: 'POST',
@@ -157,6 +160,22 @@ async function requestSensitiveAccess() {
   });
   const payload = await response.json().catch(() => null);
   if (!response.ok) throw new Error(payload?.error || 'admin_step_up_failed');
+}
+
+function cdkErrorMessage(error, action) {
+  const messages = {
+    admin_step_up_cancelled: '已取消操作，没有修改任何 CDK。',
+    invalid_admin_credentials: '后台密码错误，没有执行操作。',
+    admin_step_up_failed: '敏感操作验证失败，请重新登录后再试。',
+    admin_step_up_required: '敏感操作验证已过期，请重试。',
+    batch_download_unavailable: '该批次没有可恢复的明文，无法导出。',
+    batch_recovery_failed: '该批次恢复数据异常，已停止导出。',
+    invalid_batch: '批次编号无效，没有执行操作。',
+    batch_not_found: '没有找到该批次，可能已被删除或页面数据已过期。',
+    invalid_count: '生成数量必须为 1–1000 之间的整数。',
+    idempotency_mismatch: '上次生成请求的参数不一致，请刷新页面后再试。'
+  };
+  return messages[error?.message] || `${action}失败，服务器未确认操作结果；请先刷新批次列表，不要重复点击。`;
 }
 
 async function sensitiveApi(url, options) {
@@ -264,13 +283,15 @@ function clearGeneratedCdks() {
 }
 
 async function loadCdkBatches() {
+  const sequence = ++state.cdkLoadSequence;
   const payload = await api('/api/v1/admin/cdks/batches?limit=50');
+  if (sequence !== state.cdkLoadSequence) return;
   elements.cdkBatches.innerHTML = payload.batches.length
     ? payload.batches.map((batch) => `<div data-cdk-batch="${escapeHtml(batch.batchNo)}">
       <span><strong>${escapeHtml(batch.batchNo)} · ${escapeHtml(batch.planType.toUpperCase())}</strong>
       <small>总数 ${batch.totalCount} · 未使用 ${batch.availableCount} · 已兑换 ${batch.redeemedCount} · 已作废 ${batch.revokedCount} · ${formatTime(batch.createdAt)}</small></span>
       <span class="cdk-batch-actions">
-        ${batch.downloadable ? '<button type="button" class="text-button" data-download-batch>导出整批 TXT</button>' : '<em>旧批次无明文</em>'}
+        ${batch.downloadable ? `<button type="button" class="text-button" data-download-batch data-redeemed-count="${batch.redeemedCount}" data-revoked-count="${batch.revokedCount}">${batch.redeemedCount || batch.revokedCount ? '导出原始整批' : '导出整批 TXT'}</button>` : '<em>旧批次无明文</em>'}
         ${batch.availableCount > 0 ? '<button type="button" class="danger-small" data-revoke-batch>作废未使用</button>' : ''}
       </span></div>`).join('')
     : '<p class="empty-state">还没有 CDK 批次</p>';
@@ -278,31 +299,45 @@ async function loadCdkBatches() {
 }
 
 async function downloadStoredBatch(batchNo, button) {
+  const redeemedCount = Number(button.dataset.redeemedCount || 0);
+  const revokedCount = Number(button.dataset.revokedCount || 0);
+  if ((redeemedCount || revokedCount) && !window.confirm(
+    `批次 ${batchNo} 的原始文件包含 ${redeemedCount} 个已兑换、${revokedCount} 个已作废 CDK。\n\n仅用于核对和留档，禁止把文件中的码重新发放。确认继续导出？`
+  )) return;
   button.disabled = true;
   try {
     const payload = await sensitiveApi(`/api/v1/admin/cdks/${encodeURIComponent(batchNo)}/download`, {
       method: 'POST'
     });
     downloadCodes(payload.batchNo, payload.codes);
-    showNotice(`已下载批次 ${payload.batchNo}。`);
-  } catch {
-    showNotice('该批次明文不可恢复。');
+    showNotice(`已导出批次 ${payload.batchNo}。`, 'success');
+  } catch (error) {
+    showNotice(cdkErrorMessage(error, '批次导出'));
   } finally { button.disabled = false; }
 }
 
 async function revokeStoredBatch(batchNo, button) {
   if (!window.confirm(`确认作废批次 ${batchNo} 中所有未使用 CDK？\n\n已兑换的订单不会受影响。`)) return;
   button.disabled = true;
+  let result;
   try {
-    const result = await sensitiveApi(`/api/v1/admin/cdks/${encodeURIComponent(batchNo)}/revoke`, {
+    result = await sensitiveApi(`/api/v1/admin/cdks/${encodeURIComponent(batchNo)}/revoke`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ reason: '后台批次作废' })
     });
-    showNotice(`已作废 ${result.revokedCount} 个未使用 CDK。`);
+  } catch (error) {
+    showNotice(cdkErrorMessage(error, '批次作废'));
+    button.disabled = false;
+    return;
+  }
+  button.textContent = '已作废';
+  showNotice(result.revokedCount
+    ? `已作废 ${result.revokedCount} 个未使用 CDK。`
+    : '该批次已没有未使用 CDK，无需重复作废。', 'success');
+  try {
     await loadCdkBatches();
   } catch {
-    showNotice('批次作废失败，原状态未改变。');
-    button.disabled = false;
+    showNotice(`已作废 ${result.revokedCount} 个未使用 CDK，但批次列表刷新失败；请点“刷新”核对。`, 'warning');
   }
 }
 
@@ -876,8 +911,9 @@ elements.cdkForm.addEventListener('submit', async (event) => {
   const requestKey = storedRequest?.count === count
     ? storedRequest.key : crypto.randomUUID();
   sessionStorage.setItem('cdk-generation-request', JSON.stringify({ count, key: requestKey }));
+  let payload;
   try {
-    const payload = await sensitiveApi('/api/v1/admin/cdks/generate', {
+    payload = await sensitiveApi('/api/v1/admin/cdks/generate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Idempotency-Key': requestKey },
       body: JSON.stringify({ count })
@@ -891,11 +927,19 @@ elements.cdkForm.addEventListener('submit', async (event) => {
     window.clearTimeout(state.cdkClearTimer);
     state.cdkClearTimer = window.setTimeout(() => {
       clearGeneratedCdks();
-      showNotice('CDK 明文已从页面自动清除；需要时可从批次记录重新下载。');
+      showNotice('CDK 明文已从页面自动清除；需要时可从批次记录重新下载。', 'warning');
     }, 10 * 60 * 1000);
-    await loadCdkBatches();
   } catch (error) {
-    showNotice(error.message === 'invalid_count' ? '生成数量必须为 1–1000 之间的整数。' : 'CDK 生成失败，请稍后重试。');
+    showNotice(cdkErrorMessage(error, 'CDK 生成'));
+    button.disabled = false;
+    button.textContent = '生成并导出整批 TXT';
+    return;
+  }
+  showNotice(`已生成并导出批次 ${payload.batchNo}，共 ${payload.count} 个 CDK。`, 'success');
+  try {
+    await loadCdkBatches();
+  } catch {
+    showNotice(`批次 ${payload.batchNo} 已生成并导出，但列表刷新失败；请点“刷新”核对，不要再次生成。`, 'warning');
   } finally {
     button.disabled = false;
     button.textContent = '生成并导出整批 TXT';

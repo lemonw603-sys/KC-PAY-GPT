@@ -297,10 +297,18 @@ export async function revokeCdkBatch(pool, batchNo, reason = 'operator revoked')
   const connection = await pool.getConnection();
   try {
     await connection.beginTransaction();
+    const [batchRows] = await connection.query(
+      `SELECT id FROM cdks
+       WHERE BINARY batch_no = BINARY ? LIMIT 1 FOR UPDATE`,
+      [normalizedBatchNo]
+    );
+    if (!batchRows.length) {
+      throw new CdkBatchError('batch was not found', 'BATCH_NOT_FOUND');
+    }
     const [result] = await connection.query(
       `UPDATE cdks
        SET status = 'REVOKED', revoked_at = CURRENT_TIMESTAMP(3), revoke_reason = ?
-       WHERE batch_no = ? AND status = 'AVAILABLE'`,
+       WHERE BINARY batch_no = BINARY ? AND status = 'AVAILABLE'`,
       [String(reason).slice(0, 500), normalizedBatchNo]
     );
     await connection.query(

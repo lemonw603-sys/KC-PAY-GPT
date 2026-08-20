@@ -158,6 +158,8 @@ tbody tr[data-order]:hover, tbody tr[data-order]:focus { background: #f7faff; }
 .pagination button { padding: 6px 9px; border: 1px solid var(--line); border-radius: 8px; color: #53677d; background: white; font-size: 12px; }
 .pagination button:disabled { cursor: default; opacity: .45; }
 .page-notice { position: fixed; right: 24px; bottom: 24px; max-width: 360px; padding: 12px 15px; border: 1px solid #efb8bd; border-radius: 11px; color: #a8323e; background: #fff2f3; box-shadow: 0 14px 35px rgba(80,40,45,.12); font-size: 11px; }
+.page-notice[data-tone="success"] { border-color: #9bd9bd; color: #176943; background: #effbf5; }
+.page-notice[data-tone="warning"] { border-color: #eccb8e; color: #85530b; background: #fff9eb; }
 
 .detail-drawer { width: min(560px, 100%); height: 100vh; max-height: none; margin: 0 0 0 auto; padding: 0; border: 0; border-left: 1px solid var(--line); background: white; box-shadow: -24px 0 60px rgba(32,55,82,.16); }
 .detail-drawer::backdrop { background: rgba(23,40,62,.28); }

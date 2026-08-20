@@ -70,4 +70,8 @@ test('admin batch generation exports the complete CDK batch and labels recovery 
   assert.match(html, /再次导出整批 TXT/);
   assert.match(script, /downloadCodes\(payload\.batchNo, payload\.codes\)/);
   assert.match(script, /导出整批 TXT/);
+  assert.match(script, /导出原始整批/);
+  assert.match(script, /禁止把文件中的码重新发放/);
+  assert.match(script, /已生成并导出，但列表刷新失败/);
+  assert.match(script, /已作废.*但批次列表刷新失败/);
 });
