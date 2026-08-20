@@ -103,7 +103,7 @@ async function removeOrder(pool, { cdkId, orderId }) {
 }
 
 test('inventory-only card sync is durable and persists transactions without an order', {
-  skip: !databaseUrl
+  skip: !databaseUrl && 'TEST_DATABASE_URL 未配置；完整 MySQL 套件在服务器隔离数据库运行'
 }, async () => {
   const pool = mysql.createPool({ uri: databaseUrl, connectionLimit: 4, timezone: 'Z' });
   const cardId = id();
@@ -150,7 +150,7 @@ test('inventory-only card sync is durable and persists transactions without an o
 });
 
 test('three-way reconciliation queries run on MySQL and ignore a cancelled pre-submission order', {
-  skip: !databaseUrl
+  skip: !databaseUrl && 'TEST_DATABASE_URL 未配置；完整 MySQL 套件在服务器隔离数据库运行'
 }, async () => {
   const pool = mysql.createPool({ uri: databaseUrl, connectionLimit: 4, timezone: 'Z' });
   const fixture = await createOrder(pool, {
@@ -182,7 +182,7 @@ test('three-way reconciliation queries run on MySQL and ignore a cancelled pre-s
 });
 
 test('order compensation is one-time and recoverable after a verified no-side-effect failure', {
-  skip: !databaseUrl
+  skip: !databaseUrl && 'TEST_DATABASE_URL 未配置；完整 MySQL 套件在服务器隔离数据库运行'
 }, async () => {
   const pool = mysql.createPool({ uri: databaseUrl, connectionLimit: 4, timezone: 'Z' });
   const fixture = await createOrder(pool, { publicNo: `PJV1-COMP-${Date.now()}` });
@@ -221,7 +221,7 @@ test('order compensation is one-time and recoverable after a verified no-side-ef
 });
 
 test('pre-submission cancellation closes the order and returns its funded card to inventory', {
-  skip: !databaseUrl
+  skip: !databaseUrl && 'TEST_DATABASE_URL 未配置；完整 MySQL 套件在服务器隔离数据库运行'
 }, async () => {
   const pool = mysql.createPool({ uri: databaseUrl, connectionLimit: 4, timezone: 'Z' });
   const fixture = await createOrder(pool, {
@@ -267,7 +267,7 @@ test('pre-submission cancellation closes the order and returns its funded card t
 });
 
 test('MySQL enforces one CDK per order and records transitions atomically', {
-  skip: !databaseUrl
+  skip: !databaseUrl && 'TEST_DATABASE_URL 未配置；完整 MySQL 套件在服务器隔离数据库运行'
 }, async () => {
   const pool = mysql.createPool({ uri: databaseUrl, connectionLimit: 4, timezone: 'Z' });
   const fixture = await createOrder(pool);
@@ -330,7 +330,7 @@ test('MySQL enforces one CDK per order and records transitions atomically', {
 });
 
 test('inventory assignment atomically gives one ready card to only one order', {
-  skip: !databaseUrl
+  skip: !databaseUrl && 'TEST_DATABASE_URL 未配置；完整 MySQL 套件在服务器隔离数据库运行'
 }, async () => {
   const pool = mysql.createPool({ uri: databaseUrl, connectionLimit: 4, timezone: 'Z' });
   const first = await createOrder(pool);
@@ -377,7 +377,7 @@ test('inventory assignment atomically gives one ready card to only one order', {
 });
 
 test('card stock jobs require confirmation and move durably through the runner states', {
-  skip: !databaseUrl
+  skip: !databaseUrl && 'TEST_DATABASE_URL 未配置；完整 MySQL 套件在服务器隔离数据库运行'
 }, async () => {
   const pool = mysql.createPool({ uri: databaseUrl, connectionLimit: 4, timezone: 'Z' });
   const service = createCardStockJobService({ pool });
@@ -448,7 +448,7 @@ test('card stock jobs require confirmation and move durably through the runner s
 });
 
 test('workflow repository commits card and recharge handoffs atomically', {
-  skip: !databaseUrl
+  skip: !databaseUrl && 'TEST_DATABASE_URL 未配置；完整 MySQL 套件在服务器隔离数据库运行'
 }, async () => {
   const pool = mysql.createPool({ uri: databaseUrl, connectionLimit: 4, timezone: 'Z' });
   const fixture = await createOrder(pool);
@@ -655,7 +655,7 @@ test('workflow repository commits card and recharge handoffs atomically', {
 });
 
 test('order intake atomically redeems one CDK and creates an encrypted queued order', {
-  skip: !databaseUrl
+  skip: !databaseUrl && 'TEST_DATABASE_URL 未配置；完整 MySQL 套件在服务器隔离数据库运行'
 }, async () => {
   const pool = mysql.createPool({ uri: databaseUrl, connectionLimit: 4, timezone: 'Z' });
   const cdkId = id();
@@ -771,7 +771,7 @@ test('order intake atomically redeems one CDK and creates an encrypted queued or
 });
 
 test('CDK batches store only hashes and report input and existing duplicates', {
-  skip: !databaseUrl
+  skip: !databaseUrl && 'TEST_DATABASE_URL 未配置；完整 MySQL 套件在服务器隔离数据库运行'
 }, async () => {
   const pool = mysql.createPool({ uri: databaseUrl, connectionLimit: 3, timezone: 'Z' });
   const batchNo = `TEST-CDK-${id()}`;
@@ -831,7 +831,7 @@ test('CDK batches store only hashes and report input and existing duplicates', {
 });
 
 test('admin CDK generation is idempotent, recoverable, listable and revocable', {
-  skip: !databaseUrl
+  skip: !databaseUrl && 'TEST_DATABASE_URL 未配置；完整 MySQL 套件在服务器隔离数据库运行'
 }, async () => {
   const pool = mysql.createPool({ uri: databaseUrl, connectionLimit: 3, timezone: 'Z' });
   const requestKey = `test-cdk-request-${id()}`;
@@ -888,7 +888,7 @@ test('admin CDK generation is idempotent, recoverable, listable and revocable', 
 });
 
 test('customer status lookup recovers the same order by public number or CDK', {
-  skip: !databaseUrl
+  skip: !databaseUrl && 'TEST_DATABASE_URL 未配置；完整 MySQL 套件在服务器隔离数据库运行'
 }, async () => {
   const pool = mysql.createPool({ uri: databaseUrl, connectionLimit: 3, timezone: 'Z' });
   const publicNo = 'PJV1-ABCDEFGHIJKLMNOPQRST';
@@ -918,7 +918,7 @@ test('customer status lookup recovers the same order by public number or CDK', {
 });
 
 test('worker runs a full fake-provider workflow while enforcing runtime gates', {
-  skip: !databaseUrl
+  skip: !databaseUrl && 'TEST_DATABASE_URL 未配置；完整 MySQL 套件在服务器隔离数据库运行'
 }, async () => {
   const pool = mysql.createPool({ uri: databaseUrl, connectionLimit: 4, timezone: 'Z' });
   const fixture = await createOrder(pool);
@@ -1093,7 +1093,7 @@ test('worker runs a full fake-provider workflow while enforcing runtime gates', 
 });
 
 test('provider call audit persists only a redacted summary', {
-  skip: !databaseUrl
+  skip: !databaseUrl && 'TEST_DATABASE_URL 未配置；完整 MySQL 套件在服务器隔离数据库运行'
 }, async () => {
   const pool = mysql.createPool({ uri: databaseUrl, connectionLimit: 2, timezone: 'Z' });
   const fixture = await createOrder(pool);
@@ -1133,7 +1133,7 @@ test('provider call audit persists only a redacted summary', {
 });
 
 test('only one worker claims a task and an expired lease is recoverable', {
-  skip: !databaseUrl
+  skip: !databaseUrl && 'TEST_DATABASE_URL 未配置；完整 MySQL 套件在服务器隔离数据库运行'
 }, async () => {
   const pool = mysql.createPool({ uri: databaseUrl, connectionLimit: 6, timezone: 'Z' });
   const fixture = await createOrder(pool);
@@ -1181,7 +1181,7 @@ test('only one worker claims a task and an expired lease is recoverable', {
 });
 
 test('new-order and new-recharge switches default to disabled', {
-  skip: !databaseUrl
+  skip: !databaseUrl && 'TEST_DATABASE_URL 未配置；完整 MySQL 套件在服务器隔离数据库运行'
 }, async () => {
   const pool = mysql.createPool({ uri: databaseUrl, connectionLimit: 2, timezone: 'Z' });
   try {

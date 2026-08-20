@@ -106,6 +106,12 @@ function formatTime(value) {
     : '—';
 }
 
+function formatMoney(value) {
+  if (value == null || value === '') return '—';
+  const number = Number(value);
+  return Number.isFinite(number) ? number.toFixed(2) : '—';
+}
+
 function waitingText(value) {
   const timestamp = Date.parse(value || '');
   if (!Number.isFinite(timestamp)) return '等待你确认充值';
@@ -264,7 +270,7 @@ async function loadCdkBatches() {
       <span><strong>${escapeHtml(batch.batchNo)} · ${escapeHtml(batch.planType.toUpperCase())}</strong>
       <small>总数 ${batch.totalCount} · 未使用 ${batch.availableCount} · 已兑换 ${batch.redeemedCount} · 已作废 ${batch.revokedCount} · ${formatTime(batch.createdAt)}</small></span>
       <span class="cdk-batch-actions">
-        ${batch.downloadable ? '<button type="button" class="text-button" data-download-batch>下载</button>' : '<em>旧批次无明文</em>'}
+        ${batch.downloadable ? '<button type="button" class="text-button" data-download-batch>导出整批 TXT</button>' : '<em>旧批次无明文</em>'}
         ${batch.availableCount > 0 ? '<button type="button" class="danger-small" data-revoke-batch>作废未使用</button>' : ''}
       </span></div>`).join('')
     : '<p class="empty-state">还没有 CDK 批次</p>';
@@ -314,7 +320,7 @@ function renderSelectedStockCardType({ resetInvalidAmount = false } = {}) {
   const selected = selectedStockCardType();
   elements.stockCardType.disabled = !selected;
   if (!selected) {
-    elements.stockCardProfile.innerHTML = '<span>所选卡段规则</span><strong>没有可用卡段</strong><small>禁止开卡</small>';
+    elements.stockCardProfile.innerHTML = '<div><span>卡段名称</span><strong>没有可用卡段</strong></div><div><span>卡段 ID / BIN</span><strong>—</strong></div><div><span>允许金额</span><strong>—</strong></div><p class="provider-warning">禁止开卡</p>';
     updateStockEstimate();
     return;
   }
@@ -330,7 +336,11 @@ function renderSelectedStockCardType({ resetInvalidAmount = false } = {}) {
       && configuredAmount <= Number(selected.maximumAmount)
       ? String(configuredAmount) : String(selected.minimumAmount);
   }
-  elements.stockCardProfile.innerHTML = `<span>所选卡段规则</span><strong>${escapeHtml(selected.name)} · ID ${escapeHtml(selected.id)} · BIN ${escapeHtml(selected.binPrefix)}</strong><small>$${escapeHtml(selected.minimumAmount)}–$${escapeHtml(selected.maximumAmount)} · 提交时服务器再次校验</small>`;
+  elements.stockCardProfile.innerHTML = `
+    <div><span>卡段名称</span><strong>${escapeHtml(selected.name)}</strong></div>
+    <div><span>卡段 ID / BIN</span><strong>${escapeHtml(selected.id)} / ${escapeHtml(selected.binPrefix)}</strong></div>
+    <div><span>允许金额</span><strong>$${formatMoney(selected.minimumAmount)}–$${formatMoney(selected.maximumAmount)}</strong></div>
+    <p>提交时服务器会再次校验卡段 ID 和实时规则</p>`;
   updateStockEstimate();
 }
 
@@ -363,7 +373,7 @@ async function loadStock() {
     elements.stockOpenCount.max = String(providerRemaining);
   }
   elements.providerSummary.innerHTML = provider?.syncedAt ? `
-    <div><span>卡台余额</span><strong>$${escapeHtml(provider.accountBalance || '—')}</strong></div>
+    <div><span>卡台余额</span><strong>$${formatMoney(provider.accountBalance)}</strong></div>
     <div><span>卡台 active 卡</span><strong>${escapeHtml(catalog.providerActive ?? '—')}</strong></div>
     <div><span>卡台历史总卡数</span><strong>${escapeHtml(catalog.providerTotal ?? '—')}</strong></div>
     <div><span>剩余开卡额度</span><strong>${escapeHtml(provider.cardLimit?.remaining ?? '—')}</strong></div>
@@ -375,10 +385,10 @@ async function loadStock() {
     </small>` : '<p class="provider-warning">尚未取得卡台规则，禁止开卡。</p>';
   renderSelectedStockCardType({ resetInvalidAmount: true });
   elements.stockJobs.innerHTML = payload.jobs?.length
-    ? payload.jobs.map((job) => `<div><span><strong>${escapeHtml(STOCK_JOB_LABELS[job.status] || job.status)} · ${job.openedCount}/${job.requestedCount} 张</strong><small>${escapeHtml(job.cardTypeName || `卡段 ${job.cardTypeId}`)} · $${escapeHtml(job.amount)} / 张 · 预计总扣款 $${escapeHtml(job.estimatedTotal || '—')} · ${formatTime(job.createdAt)}${job.errorMessage ? ` · ${escapeHtml(job.errorMessage)}` : ''}</small></span><em>${escapeHtml(job.status)}</em></div>`).join('')
+    ? payload.jobs.map((job) => `<div><span><strong>${escapeHtml(STOCK_JOB_LABELS[job.status] || job.status)} · ${job.openedCount}/${job.requestedCount} 张</strong><small>${escapeHtml(job.cardTypeName || `卡段 ${job.cardTypeId}`)} · $${formatMoney(job.amount)} / 张 · 预计总扣款 $${formatMoney(job.estimatedTotal)} · ${formatTime(job.createdAt)}${job.errorMessage ? ` · ${escapeHtml(job.errorMessage)}` : ''}</small></span><em>${escapeHtml(job.status)}</em></div>`).join('')
     : '<p class="empty-state">还没有后台补卡任务</p>';
   elements.stockCards.innerHTML = payload.cards?.length
-    ? payload.cards.map((card) => `<div data-card="${escapeHtml(card.providerCardId)}" role="button" tabindex="0"><span><strong>${escapeHtml(card.cardNumber || card.last4 || '卡号未就绪')}</strong><small>卡台 ID ${escapeHtml(card.providerCardId)} · 余额 $${escapeHtml(card.currentBalance || '0')} · ${card.publicNo ? `订单 ${escapeHtml(card.publicNo)}` : '未分配'} · 交易 ${escapeHtml(card.transactionCount)} 笔 · ${formatTime(card.lastTransactionSyncedAt)}</small></span><em>${escapeHtml(RECONCILIATION_LABELS[card.reconciliationStatus] || card.reconciliationStatus)} / ${escapeHtml(INVENTORY_LABELS[card.inventoryStatus] || card.inventoryStatus)}</em></div>`).join('')
+    ? payload.cards.map((card) => `<div data-card="${escapeHtml(card.providerCardId)}" role="button" tabindex="0"><span><strong>${escapeHtml(card.cardNumber || card.last4 || '卡号未就绪')}</strong><small>卡台 ID ${escapeHtml(card.providerCardId)} · 余额 $${formatMoney(card.currentBalance || '0')} · ${card.publicNo ? `订单 ${escapeHtml(card.publicNo)}` : '未分配'} · 交易 ${escapeHtml(card.transactionCount)} 笔 · ${formatTime(card.lastTransactionSyncedAt)}</small></span><em>${escapeHtml(RECONCILIATION_LABELS[card.reconciliationStatus] || card.reconciliationStatus)} / ${escapeHtml(INVENTORY_LABELS[card.inventoryStatus] || card.inventoryStatus)}</em></div>`).join('')
     : '<p class="empty-state">还没有后台卡片</p>';
   elements.syncTime.textContent = `更新于 ${new Date().toLocaleTimeString('zh-CN', { hour12: false })}`;
 }
@@ -414,8 +424,8 @@ async function openCard(providerCardId) {
         ['完整卡号', card.cardNumber || card.last4], ['卡台卡片 ID', card.providerCardId],
         ['卡段 ID', card.cardTypeId], ['卡片状态', card.status],
         ['库存状态', INVENTORY_LABELS[card.inventoryStatus] || card.inventoryStatus],
-        ['开卡金额', `${card.fundedAmount || '—'} ${card.currency || ''}`],
-        ['当前余额', `${card.currentBalance || '—'} ${card.currency || ''}`],
+        ['开卡金额', `${formatMoney(card.fundedAmount)} ${card.currency || ''}`],
+        ['当前余额', `${formatMoney(card.currentBalance)} ${card.currency || ''}`],
         ['退款观察', REFUND_LABELS[card.refundStatus] || card.refundStatus],
         ['卡片资料同步', formatTime(card.lastSyncedAt)],
         ['交易同步', formatTime(card.lastTransactionSyncedAt)]
@@ -475,7 +485,7 @@ function updateStockEstimate() {
     <small>本金 $${principal.toFixed(2)} + 开卡费 $${openingFees.toFixed(2)} + 充值费 $${rateFees.toFixed(2)}</small>
     <small>${validAmount
       ? `当前余额 $${Number.isFinite(balance) ? balance.toFixed(2) : '—'} · 按实时规则最多安全开 ${affordable} 张`
-      : `当前卡段金额必须为 $${escapeHtml(selected?.minimumAmount || '—')}–$${escapeHtml(selected?.maximumAmount || '—')} 的整数`}</small>`;
+      : `当前卡段金额必须为 $${formatMoney(selected?.minimumAmount)}–$${formatMoney(selected?.maximumAmount)} 的整数`}</small>`;
   elements.stockConfirmHint.textContent = `开${count}张`;
   const submit = elements.stockOpenForm.querySelector('button[type="submit"]');
   submit.disabled = !valid;
@@ -635,7 +645,7 @@ async function openOrder(publicNo) {
       : canArmRecharge ? `<button type="button" class="danger-small" id="arm-recharge-permit"
           data-customer="${escapeHtml(order.customerEmail || order.chatgptAccountId || '—')}"
           data-card="${escapeHtml(data.card?.cardNumber || data.card?.last4 || '—')}"
-          data-balance="${escapeHtml(data.card?.currentBalance || '—')}"
+          data-balance="${formatMoney(data.card?.currentBalance)}"
           data-token-expiry="${escapeHtml(formatTime(paymentGate.accessTokenExpiresAt))}">确认充值</button>` : '';
     const compensation = data.compensation || {};
     const compensationButton = compensation.eligible || compensation.alreadyIssued
@@ -693,8 +703,8 @@ async function openOrder(publicNo) {
       ])}</section>
       <section class="detail-section"><div class="detail-section-heading"><h3>卡片与退款</h3>${data.card ? '<button type="button" class="primary-small" id="sync-transactions">同步交易</button>' : ''}</div>${data.card ? renderKeyValues([
         ['卡台卡片 ID', data.card.providerCardId], ['完整卡号', data.card.cardNumber || data.card.last4],
-        ['卡片状态', INVENTORY_LABELS[data.card.status] || data.card.status], ['开卡金额', `${data.card.fundedAmount || '—'} ${data.card.currency || ''}`],
-        ['当前余额', `${data.card.currentBalance || '—'} ${data.card.currency || ''}`], ['退款观察', REFUND_LABELS[data.card.refundStatus] || data.card.refundStatus],
+        ['卡片状态', INVENTORY_LABELS[data.card.status] || data.card.status], ['开卡金额', `${formatMoney(data.card.fundedAmount)} ${data.card.currency || ''}`],
+        ['当前余额', `${formatMoney(data.card.currentBalance)} ${data.card.currency || ''}`], ['退款观察', REFUND_LABELS[data.card.refundStatus] || data.card.refundStatus],
         ['最后同步', formatTime(data.card.lastSyncedAt)]
       ]) : '<p class="empty-state">尚未绑定卡片</p>'}</section>
       <section class="detail-section"><h3>卡片交易</h3><div class="mini-list">${data.transactions?.length ? data.transactions.map((transaction) => `<div><span><strong>${escapeHtml(transaction.type)} · ${escapeHtml(transaction.amount)} ${escapeHtml(transaction.currency)}</strong><small>${escapeHtml(transaction.merchantName || transaction.relatedTransactionId || transaction.providerTransactionId)} · ${escapeHtml(transaction.tradeTimeRaw || formatTime(transaction.firstSeenAt))}</small></span><em>${escapeHtml(transaction.status)}</em></div>`).join('') : '<p class="empty-state">暂无已同步交易</p>'}</div></section>
@@ -859,7 +869,7 @@ elements.cdkForm.addEventListener('submit', async (event) => {
   const count = Number(elements.cdkCount.value);
   if (count > 10 && !window.confirm(`确认一次生成 ${count} 个 CDK？\n\n生成后请下载并妥善保存。`)) {
     button.disabled = false;
-    button.textContent = '生成 CDK';
+    button.textContent = '生成并导出整批 TXT';
     return;
   }
   const storedRequest = JSON.parse(sessionStorage.getItem('cdk-generation-request') || 'null');
@@ -876,6 +886,7 @@ elements.cdkForm.addEventListener('submit', async (event) => {
     elements.generatedCdks.rows = Math.min(Math.max(payload.codes.length, 3), 18);
     elements.cdkBatchLabel.textContent = `批次 ${payload.batchNo} · ${payload.count} 个`;
     elements.cdkResult.hidden = false;
+    downloadCodes(payload.batchNo, payload.codes);
     sessionStorage.removeItem('cdk-generation-request');
     window.clearTimeout(state.cdkClearTimer);
     state.cdkClearTimer = window.setTimeout(() => {
@@ -887,7 +898,7 @@ elements.cdkForm.addEventListener('submit', async (event) => {
     showNotice(error.message === 'invalid_count' ? '生成数量必须为 1–1000 之间的整数。' : 'CDK 生成失败，请稍后重试。');
   } finally {
     button.disabled = false;
-    button.textContent = '生成 CDK';
+    button.textContent = '生成并导出整批 TXT';
   }
 });
 elements.downloadCdks.addEventListener('click', () => {

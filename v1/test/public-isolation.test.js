@@ -62,3 +62,12 @@ test('admin assets contain no remote, legacy, or secret-bearing dependencies', (
     }
   }
 });
+
+test('admin batch generation exports the complete CDK batch and labels recovery exports clearly', () => {
+  const html = fs.readFileSync(path.join(directory, 'admin', 'index.html'), 'utf8');
+  const script = fs.readFileSync(path.join(directory, 'admin', 'assets', 'admin.js'), 'utf8');
+  assert.match(html, /生成并导出整批 TXT/);
+  assert.match(html, /再次导出整批 TXT/);
+  assert.match(script, /downloadCodes\(payload\.batchNo, payload\.codes\)/);
+  assert.match(script, /导出整批 TXT/);
+});
