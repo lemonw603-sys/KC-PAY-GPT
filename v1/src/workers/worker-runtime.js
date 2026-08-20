@@ -68,11 +68,23 @@ export async function runWorkerLoop({
   idleDelayMs = 1_000,
   workerConcurrency = 1,
   onError = () => {},
+  heartbeat = null,
+  heartbeatIntervalMs = 15_000,
+  now = () => Date.now(),
   iteration = runWorkerIteration,
   ...iterationOptions
 }) {
   const concurrency = Math.max(1, Math.min(32, Math.trunc(workerConcurrency)));
+  let nextHeartbeatAt = 0;
   while (!signal?.aborted) {
+    if (typeof heartbeat === 'function' && now() >= nextHeartbeatAt) {
+      try {
+        await heartbeat();
+      } catch (error) {
+        onError(error);
+      }
+      nextHeartbeatAt = now() + heartbeatIntervalMs;
+    }
     const results = await Promise.all(Array.from({ length: concurrency }, async () => {
       try {
         return await iteration(iterationOptions);

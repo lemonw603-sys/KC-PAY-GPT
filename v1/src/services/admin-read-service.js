@@ -26,6 +26,9 @@ const VIRTUAL_FILTERS = new Set([
 
 const CREATE_ATTEMPTED_SQL = `EXISTS (SELECT 1 FROM provider_calls rpc
   WHERE rpc.order_id = o.id AND rpc.provider = 'zzshu' AND rpc.operation = 'create_direct')`;
+const STALE_CREATE_ATTEMPT_SQL = `EXISTS (SELECT 1 FROM provider_calls rpcs
+  WHERE rpcs.order_id = o.id AND rpcs.provider = 'zzshu' AND rpcs.operation = 'create_direct'
+    AND rpcs.outcome = 'STARTED' AND rpcs.started_at < UTC_TIMESTAMP(3) - INTERVAL 2 MINUTE)`;
 const SUCCESS_EVENT_SQL = `EXISTS (SELECT 1 FROM order_events roe
   WHERE roe.order_id = o.id AND roe.to_status = 'RECHARGE_SUCCESS')`;
 const TRANSACTION_SYNCED_SQL = `EXISTS (SELECT 1 FROM cards rsc
@@ -52,6 +55,7 @@ const PAYMENT_SETTLED_SQL = `EXISTS (SELECT 1 FROM cards rsetcard
       OR (UPPER(rsett.currency) = UPPER(o.actual_payment_currency)
       AND ABS(ABS(rsett.amount) - o.actual_payment_amount) <= 0.01)))`;
 const RECONCILIATION_ISSUE_SQL = `(o.status IN ('SUBMIT_UNKNOWN','RECONCILIATION_REQUIRED')
+  OR (${STALE_CREATE_ATTEMPT_SQL})
   OR ((${CREATE_ATTEMPTED_SQL}) AND o.recharge_order_no IS NULL AND o.status <> 'SUBMITTING')
   OR (NOT (${CREATE_ATTEMPTED_SQL}) AND o.recharge_order_no IS NULL AND (${SUCCESSFUL_PURCHASE_SQL}))
   OR ((o.status = 'RECHARGE_SUCCESS' OR (${SUCCESS_EVENT_SQL})) AND (
@@ -66,6 +70,7 @@ function reconciliationFromRow(row) {
     orderStatus: row.status,
     rechargeOrderNo: row.recharge_order_no,
     createAttempted: Boolean(row.create_attempted),
+    createAttemptStalled: Boolean(row.create_attempt_stalled),
     hasRechargeSuccessEvent: Boolean(row.has_recharge_success_event),
     actualPaymentAmount: row.actual_payment_amount,
     actualPaymentCurrency: row.actual_payment_currency,
@@ -282,6 +287,10 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, now 
           WHERE oe.order_id = o.id AND oe.to_status = 'RECHARGE_SUCCESS'
         ))) AS completed_failed,
         SUM(o.status IN ('CREATED','CARD_PURCHASING','CARD_PROVISIONING','SUBMITTING','RECHARGE_PROCESSING')) AS processing,
+        (SELECT COUNT(*) FROM tasks rt
+          WHERE rt.status = 'RUNNING' AND rt.leased_until < UTC_TIMESTAMP(3)) AS expired_task_leases,
+        (SELECT COUNT(*) FROM provider_calls rp
+          WHERE rp.outcome = 'STARTED' AND rp.started_at < UTC_TIMESTAMP(3) - INTERVAL 2 MINUTE) AS stalled_provider_calls,
         SUM(o.status = 'CARD_READY' AND EXISTS (
           SELECT 1 FROM tasks pt WHERE pt.order_id = o.id
             AND pt.task_type = 'PREPARE_RECHARGE' AND pt.status = 'COMPLETED'
@@ -290,13 +299,13 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, now 
             AND st.task_type = 'SUBMIT_RECHARGE' AND st.status = 'PENDING' AND st.attempts = 0
         )) AS awaiting_confirmation,
         SUM(o.status IN ('CARD_FAILED','SUBMIT_UNKNOWN','RECHARGE_FAILED','RECONCILIATION_REQUIRED')
-            OR o.cancellation_review_required = 1) AS reviewing
+            OR o.cancellation_review_required = 1 OR (${STALE_CREATE_ATTEMPT_SQL})) AS reviewing
         ,SUM(${RECONCILIATION_ISSUE_SQL}) AS reconciliation_issues
         FROM orders o`),
       pool.query('SELECT status, COUNT(*) AS count FROM orders GROUP BY status ORDER BY status'),
       pool.query('SELECT status, COUNT(*) AS count FROM cdks GROUP BY status ORDER BY status'),
       pool.query(`SELECT setting_key, setting_value, updated_at FROM app_settings
-        WHERE setting_key IN ('accept_new_orders','dispatch_new_recharges','poll_existing_orders','sync_card_transactions')
+        WHERE setting_key IN ('accept_new_orders','dispatch_new_recharges','poll_existing_orders','sync_card_transactions','worker_heartbeat_at')
         ORDER BY setting_key`),
       pool.query(`SELECT status, COUNT(*) AS count FROM refund_cases
         WHERE status <> 'WITHDRAWN' GROUP BY status ORDER BY status`)
@@ -318,6 +327,9 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, now 
     const total = count(orderCounts[0]?.total);
     const successful = count(orderCounts[0]?.successful);
     const completed = successful + count(orderCounts[0]?.completed_failed);
+    const heartbeatRow = settingsRows.find((row) => row.setting_key === 'worker_heartbeat_at');
+    const heartbeatAt = Date.parse(heartbeatRow?.setting_value || '');
+    const workerHealthy = Number.isFinite(heartbeatAt) && now() - heartbeatAt <= 60_000;
     return {
       metrics: {
         totalOrders: total,
@@ -333,6 +345,12 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, now 
       cdkStatuses: cdkRows.map((row) => ({ status: row.status, count: count(row.count) })),
       refundStatuses: refundRows.map((row) => ({ status: row.status, count: count(row.count) })),
       openAlertCount: count(alertRows[0]?.count),
+      runtimeHealth: {
+        workerHealthy,
+        workerHeartbeatAt: Number.isFinite(heartbeatAt) ? new Date(heartbeatAt).toISOString() : null,
+        expiredTaskLeases: count(orderCounts[0]?.expired_task_leases),
+        stalledProviderCalls: count(orderCounts[0]?.stalled_provider_calls)
+      },
       cardStock: {
         available: count(stockRows[0]?.available),
         provisioning: count(stockRows[0]?.provisioning),
@@ -341,7 +359,7 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, now 
         lowThreshold: count(stockSettingRows[0]?.setting_value || 5),
         low: count(stockRows[0]?.available) <= count(stockSettingRows[0]?.setting_value || 5)
       },
-      settings: settingsRows.map((row) => ({
+      settings: settingsRows.filter((row) => row.setting_key !== 'worker_heartbeat_at').map((row) => ({
         key: row.setting_key,
         value: row.setting_value,
         updatedAt: iso(row.updated_at)
@@ -372,7 +390,7 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, now 
     const values = [];
     if (status === 'REVIEW_REQUIRED') {
       conditions.push(`(o.status IN (${REVIEW_STATUSES.map(() => '?').join(', ')})
-        OR o.cancellation_review_required = 1)`);
+        OR o.cancellation_review_required = 1 OR (${STALE_CREATE_ATTEMPT_SQL}))`);
       values.push(...REVIEW_STATUSES);
     } else if (status === 'RECONCILIATION_ISSUES') {
       conditions.push(RECONCILIATION_ISSUE_SQL);
@@ -418,6 +436,7 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, now 
           (SELECT pt.completed_at FROM tasks pt WHERE pt.order_id = o.id
             AND pt.task_type = 'PREPARE_RECHARGE' ORDER BY pt.id DESC LIMIT 1) AS confirmation_ready_at,
           (${CREATE_ATTEMPTED_SQL}) AS create_attempted,
+          (${STALE_CREATE_ATTEMPT_SQL}) AS create_attempt_stalled,
           (${SUCCESS_EVENT_SQL}) AS has_recharge_success_event,
           (${TRANSACTION_SYNCED_SQL}) AS transaction_evidence_synced,
           (${SUCCESSFUL_PURCHASE_SQL}) AS successful_purchase_exists,
@@ -538,6 +557,10 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, now 
     const rechargeCallExists = callRows.some(
       (call) => call.provider === 'zzshu' && call.operation === 'create_direct'
     );
+    const rechargeCallStalled = callRows.some((call) =>
+      call.provider === 'zzshu' && call.operation === 'create_direct'
+        && call.outcome === 'STARTED'
+        && now() - new Date(call.started_at).getTime() > 2 * 60_000);
     const successfulPurchases = transactionRows.filter((transaction) =>
       String(transaction.transaction_type).toLowerCase() === 'purchase'
         && String(transaction.status).toLowerCase() === 'success');
@@ -549,6 +572,7 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, now 
       orderStatus: row.status,
       rechargeOrderNo: row.recharge_order_no,
       createAttempted: rechargeCallExists,
+      createAttemptStalled: rechargeCallStalled,
       hasRechargeSuccessEvent: eventRows.some((event) => event.to_status === 'RECHARGE_SUCCESS'),
       actualPaymentAmount: row.actual_payment_amount,
       actualPaymentCurrency: row.actual_payment_currency,

@@ -1,7 +1,8 @@
 [Unit]
 Description=破甲库存卡后台任务执行器
-After=network-online.target mysql.service
+After=network-online.target docker.service
 Wants=network-online.target
+Requires=docker.service
 
 [Service]
 Type=oneshot

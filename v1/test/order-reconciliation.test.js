@@ -41,3 +41,9 @@ test('flags successful card charges on failed or never-submitted orders', () => 
     orderStatus: 'CARD_READY', successfulPurchaseExists: true
   }).code, 'CARD_CHARGED_WITHOUT_RECHARGE');
 });
+
+test('flags a persisted recharge call intent that never reached a final outcome', () => {
+  assert.deepEqual(reconcileOrderEvidence({
+    orderStatus: 'SUBMITTING', createAttempted: true, createAttemptStalled: true
+  }), { status: 'REVIEW_REQUIRED', code: 'RECHARGE_CREATE_STALLED', issue: true });
+});

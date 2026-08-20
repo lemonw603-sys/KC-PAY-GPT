@@ -94,6 +94,11 @@ await runWorkerLoop({
   providerWritesEnabled: config.providerWritesEnabled,
   providerCardWritesEnabled: config.providerCardWritesEnabled,
   providerRechargeWritesEnabled: config.providerRechargeWritesEnabled,
+  heartbeat: () => pool.query(
+    `UPDATE app_settings SET setting_value = ?, updated_at = CURRENT_TIMESTAMP(3)
+     WHERE setting_key = 'worker_heartbeat_at'`,
+    [new Date().toISOString()]
+  ),
   signal: abortController.signal,
   onError: (error) => {
     console.error('worker iteration failed', {

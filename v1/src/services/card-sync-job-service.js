@@ -69,6 +69,59 @@ export function createCardSyncJobService({ pool }) {
   return { createJobs };
 }
 
+export async function scheduleDueCardSyncJobs(pool, {
+  staleMinutes = 60,
+  limit = 100,
+  now = new Date()
+} = {}) {
+  const interval = Number(staleMinutes);
+  const safeLimit = Math.min(500, Math.max(1, Number(limit) || 100));
+  if (!Number.isInteger(interval) || interval < 15 || interval > 24 * 60) {
+    throw new TypeError('staleMinutes must be an integer from 15 to 1440');
+  }
+  const cutoff = new Date(now.getTime() - interval * 60_000);
+  const connection = await pool.getConnection();
+  try {
+    await connection.beginTransaction();
+    const [settings] = await connection.query(
+      `SELECT setting_value FROM app_settings
+       WHERE setting_key = 'sync_card_transactions' LIMIT 1 FOR SHARE`
+    );
+    if (settings[0]?.setting_value !== 'true') {
+      await connection.commit();
+      return { enabled: false, queued: 0 };
+    }
+    const [cards] = await connection.query(
+      `SELECT c.id FROM cards c
+       WHERE c.order_id IS NOT NULL
+         AND (c.last_transaction_synced_at IS NULL OR c.last_transaction_synced_at < ?)
+         AND NOT EXISTS (
+           SELECT 1 FROM card_sync_jobs j
+           WHERE j.card_id = c.id AND j.status IN ('PENDING','RUNNING')
+         )
+       ORDER BY COALESCE(c.last_transaction_synced_at, c.created_at) ASC
+       LIMIT ? FOR UPDATE SKIP LOCKED`,
+      [cutoff, safeLimit]
+    );
+    const bucket = Math.floor(now.getTime() / (interval * 60_000));
+    for (const card of cards) {
+      await connection.query(
+        `INSERT INTO card_sync_jobs
+         (id, card_id, status, requested_by, dedupe_key)
+         VALUES (?, ?, 'PENDING', 'scheduler', ?)`,
+        [crypto.randomUUID(), card.id, `scheduled-card-sync:${card.id}:${bucket}`]
+      );
+    }
+    await connection.commit();
+    return { enabled: true, queued: cards.length };
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
+}
+
 export async function claimCardSyncJob(pool, { workerId, leaseSeconds = 120 }) {
   const connection = await pool.getConnection();
   try {

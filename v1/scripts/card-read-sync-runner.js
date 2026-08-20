@@ -9,7 +9,8 @@ import { readAllCardTransactions } from '../src/services/card-transaction-reader
 import {
   claimCardSyncJob,
   completeCardSyncJob,
-  failCardSyncJob
+  failCardSyncJob,
+  scheduleDueCardSyncJobs
 } from '../src/services/card-sync-job-service.js';
 
 if (process.env.PROVIDER_WRITES_ENABLED === 'true'
@@ -28,9 +29,10 @@ const provider = new HnskjCardProvider({
 const stock = createCardStockService({ pool, sessionEncryptionKey: config.sessionEncryptionKey });
 
 try {
+  const scheduled = await scheduleDueCardSyncJobs(pool);
   const job = await claimCardSyncJob(pool, { workerId });
   if (!job) {
-    console.log(JSON.stringify({ handled: false }));
+    console.log(JSON.stringify({ handled: false, scheduled: scheduled.queued }));
   } else {
     try {
       const detail = await recordProviderCall({
@@ -88,6 +90,7 @@ try {
         jobId: job.id,
         providerCardId: job.provider_card_id,
         transactionCount: transactions.length,
+        scheduled: scheduled.queued,
         status: 'COMPLETED'
       }));
     } catch (error) {

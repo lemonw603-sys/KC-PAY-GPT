@@ -106,3 +106,24 @@ test('one failed concurrent iteration is reported without cancelling siblings', 
   assert.equal(errors.length, 1);
   assert.equal(completed, 2);
 });
+
+test('worker loop emits a bounded heartbeat without blocking task iterations', async () => {
+  const controller = new AbortController();
+  let heartbeats = 0;
+  let clock = 0;
+  let iterations = 0;
+  await runWorkerLoop({
+    signal: controller.signal,
+    idleDelayMs: 0,
+    heartbeatIntervalMs: 15,
+    now: () => clock,
+    heartbeat: async () => { heartbeats += 1; },
+    iteration: async () => {
+      iterations += 1;
+      clock += 10;
+      if (iterations >= 4) controller.abort();
+      return { handled: true };
+    }
+  });
+  assert.equal(heartbeats, 2);
+});

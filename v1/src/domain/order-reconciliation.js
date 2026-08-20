@@ -5,6 +5,7 @@ export function reconcileOrderEvidence({
   orderStatus,
   rechargeOrderNo = null,
   createAttempted = false,
+  createAttemptStalled = false,
   hasRechargeSuccessEvent = false,
   actualPaymentAmount = null,
   actualPaymentCurrency = null,
@@ -16,6 +17,10 @@ export function reconcileOrderEvidence({
   const status = String(orderStatus || '');
   const effectiveSuccess = status === 'RECHARGE_SUCCESS' || hasRechargeSuccessEvent;
   const hasPaymentResult = actualPaymentAmount != null && Boolean(actualPaymentCurrency);
+
+  if (createAttemptStalled) {
+    return { status: 'REVIEW_REQUIRED', code: 'RECHARGE_CREATE_STALLED', issue: true };
+  }
 
   if (status === 'RECONCILIATION_REQUIRED' || status === 'SUBMIT_UNKNOWN') {
     return { status: 'REVIEW_REQUIRED', code: status, issue: true };

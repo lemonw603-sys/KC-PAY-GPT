@@ -351,10 +351,11 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey }) {
       });
     },
 
-    async consumeRechargePermit(orderId, taskId, now = new Date()) {
+    async consumeRechargePermit(orderId, taskId, attemptNo = 1, now = new Date()) {
       return inTransaction(pool, async (connection) => {
         const [rows] = await connection.query(
-          `SELECT t.payload_json, t.status AS task_status, o.status AS order_status
+          `SELECT t.payload_json, t.status AS task_status,
+                  o.status AS order_status, o.version AS order_version
            FROM tasks t INNER JOIN orders o ON o.id = t.order_id
            WHERE t.id = ? AND t.order_id = ? AND t.task_type = 'SUBMIT_RECHARGE'
            FOR UPDATE`,
@@ -390,7 +391,31 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey }) {
           [JSON.stringify(payload), taskId, orderId]
         );
         if (result.affectedRows !== 1) return { allowed: false, reason: 'LEASE_LOST' };
-        return { allowed: true };
+        const [orderUpdate] = await connection.query(
+          `UPDATE orders SET status = ?, version = version + 1,
+             updated_at = CURRENT_TIMESTAMP(3)
+           WHERE id = ? AND status = ? AND version = ?`,
+          [OrderStatus.SUBMITTING, orderId, OrderStatus.CARD_READY, row.order_version]
+        );
+        if (orderUpdate.affectedRows !== 1) {
+          throw new Error(`Concurrent recharge start detected: ${orderId}`);
+        }
+        await insertEvent(connection, {
+          orderId,
+          fromStatus: OrderStatus.CARD_READY,
+          toStatus: OrderStatus.SUBMITTING,
+          reason: 'recharge permit consumed; provider call intent persisted'
+        });
+        const [call] = await connection.query(
+          `INSERT INTO provider_calls
+           (order_id, provider, operation, request_key, attempt_no, outcome, started_at)
+           VALUES (?, 'zzshu', 'create_direct', NULL, ?, 'STARTED', ?)`,
+          [orderId, Math.max(1, Number(attemptNo) || 1), now]
+        );
+        return {
+          allowed: true,
+          providerCall: { id: call.insertId, startedAt: now }
+        };
       });
     },
 
@@ -519,6 +544,23 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey }) {
             paymentDetailsStatus: status.paymentDetailsStatus || 'missing'
           }
         });
+        await connection.query(
+          `INSERT INTO card_sync_jobs
+           (id, card_id, status, requested_by, dedupe_key)
+           SELECT UUID(), c.id, 'PENDING', 'workflow', CONCAT('post-recharge:', ?)
+           FROM cards c
+           WHERE c.order_id = ?
+             AND EXISTS (
+               SELECT 1 FROM app_settings s
+               WHERE s.setting_key = 'sync_card_transactions' AND s.setting_value = 'true'
+             )
+             AND NOT EXISTS (
+               SELECT 1 FROM card_sync_jobs j
+               WHERE j.card_id = c.id AND j.status IN ('PENDING','RUNNING')
+             )
+           ON DUPLICATE KEY UPDATE dedupe_key = VALUES(dedupe_key)`,
+          [orderId, orderId]
+        );
         if (cancelled !== 1) {
           await connection.query(
             `INSERT INTO tasks

@@ -32,18 +32,17 @@ export async function recordProviderCall({
   requestKey = null,
   attemptNo = 1,
   sideEffecting = false,
+  existingCall = null,
   action,
   summarize = () => ({ ok: true })
 }) {
-  const started = Date.now();
-  const call = await startProviderCall(pool, {
-    orderId,
-    provider,
-    operation,
-    requestKey,
-    attemptNo,
-    startedAt: new Date(started)
+  const existingStartedAt = existingCall?.startedAt == null
+    ? NaN : new Date(existingCall.startedAt).getTime();
+  const started = Number.isFinite(existingStartedAt) ? existingStartedAt : Date.now();
+  const call = existingCall || await startProviderCall(pool, {
+    orderId, provider, operation, requestKey, attemptNo, startedAt: new Date(started)
   });
+  if (!call?.id) throw new Error('Provider call intent is missing');
 
   try {
     const result = await action();

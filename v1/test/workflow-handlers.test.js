@@ -41,7 +41,7 @@ function setup({ status = OrderStatus.CARD_READY, rechargeStatuses = [] } = {}) 
     recordPrepaymentReady: async (...args) => calls.push(['prepayment', ...args]),
     consumeRechargePermit: async (...args) => {
       calls.push(['permit', ...args]);
-      return { allowed: true };
+      return { allowed: true, providerCall: { id: 99, startedAt: new Date() } };
     }
   };
   const cardProvider = {
@@ -85,15 +85,28 @@ function setup({ status = OrderStatus.CARD_READY, rechargeStatuses = [] } = {}) 
 }
 
 test('submits one direct recharge and commits external identifiers', async () => {
-  const { handlers, calls } = setup();
-  await handlers.SUBMIT_RECHARGE({ id: 1, order_id: 'order-1', attempts: 1 });
-  assert.equal(calls[0][0], 'permit');
-  assert.equal(calls[1][0], 'transition');
-  assert.equal(calls[1][2], OrderStatus.SUBMITTING);
-  assert.deepEqual(calls[2], [
+  const state = setup();
+  await state.handlers.SUBMIT_RECHARGE({ id: 1, order_id: 'order-1', attempts: 1 });
+  assert.equal(state.calls[0][0], 'permit');
+  assert.deepEqual(state.calls[1], [
     'submission',
     'order-1',
     { orderNo: '12', cardKey: 'DIRECT-fixture', status: 'processing' }
+  ]);
+  assert.equal(state.providerCalls.find((call) => call.operation === 'create_direct').existingCall.id, 99);
+});
+
+test('marks a successful provider call unknown when the local submission commit fails', async () => {
+  const state = setup();
+  state.workflow.commitRechargeSubmission = async () => {
+    throw new Error('database commit failed');
+  };
+  await assert.rejects(
+    state.handlers.SUBMIT_RECHARGE({ id: 1, order_id: 'order-1', attempts: 1 }),
+    (error) => error.code === 'RECHARGE_COMMIT_UNKNOWN'
+  );
+  assert.deepEqual(state.calls.at(-1).slice(0, 3), [
+    'transition', 'order-1', OrderStatus.SUBMIT_UNKNOWN
   ]);
 });
 

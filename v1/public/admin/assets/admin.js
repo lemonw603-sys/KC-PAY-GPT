@@ -47,6 +47,7 @@ const ORDER_RECONCILIATION_CODES = Object.freeze({
   FAILED_ORDER_HAS_SUCCESSFUL_CHARGE: '订单失败，但关联卡片出现成功支付',
   RECHARGE_ORDER_ID_MISSING: '已调用充值平台，但本地缺少外部订单号',
   SUBMIT_UNKNOWN: '充值提交结果未知', RECONCILIATION_REQUIRED: '订单状态要求人工对账',
+  RECHARGE_CREATE_STALLED: '充值调用启动后超过 2 分钟没有确定结果',
   NO_SUCCESSFUL_CARD_CHARGE: '订单失败，卡片侧没有成功支付'
 });
 
@@ -217,6 +218,14 @@ async function loadOverview() {
     { label: '三方对账异常', value: overview.metrics.reconciliationIssues, note: '订单、充值平台、卡片证据冲突', filter: 'RECONCILIATION_ISSUES' },
     { label: '本地可分配卡', value: overview.cardStock?.available ?? 0,
       note: overview.cardStock?.low ? `已到低库存线：${overview.cardStock?.lowThreshold ?? 5}` : `低库存线：${overview.cardStock?.lowThreshold ?? 5}`, view: 'stock' },
+    { label: '订单 Worker',
+      value: overview.runtimeHealth?.workerHealthy && !(overview.runtimeHealth?.expiredTaskLeases || overview.runtimeHealth?.stalledProviderCalls) ? '正常' : '需检查',
+      note: overview.runtimeHealth?.stalledProviderCalls
+        ? `${overview.runtimeHealth.stalledProviderCalls} 个外部调用超时未决`
+        : overview.runtimeHealth?.expiredTaskLeases
+          ? `${overview.runtimeHealth.expiredTaskLeases} 个任务租约已过期`
+          : overview.runtimeHealth?.workerHealthy ? 'Worker 心跳正常' : 'Worker 心跳超过 1 分钟',
+      filter: 'RECONCILIATION_ISSUES' },
     { label: '已完成订单成功率', value: overview.metrics.successRate == null ? '—' : `${overview.metrics.successRate}%`, note: '不计未完成订单', filter: 'RECHARGE_SUCCESS' }
   ];
   elements.metrics.innerHTML = metrics.map((item, index) => `<button type="button" class="metric-card metric-${index + 1}" ${item.filter ? `data-order-filter="${item.filter}"` : `data-target-view="${item.view}"`}>
