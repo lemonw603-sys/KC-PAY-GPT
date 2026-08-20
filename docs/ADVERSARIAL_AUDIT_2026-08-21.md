@@ -28,6 +28,18 @@ v1 定向测试：59 passed / 0 failed
 
 本轮没有执行任何供应商付费写调用；Bark 测试使用 fake fetch，体检使用 fake pool。
 
+## 二次审查（阶段性完结后）
+
+本次针对已归档提交重新检查了 handoff 文档、迁移、Bark Repository、只读门禁脚本和部署单元，发现并修复：
+
+- `operator_alerts.updated_at` 在旧表上不存在，导致告警重开逻辑在真实 MySQL 失败；023 已加入 guarded `ALTER TABLE`，并用 MySQL 8.4 集成测试覆盖。
+- 辅助卡片巡检/同步/库存脚本仍使用大小写敏感的 Provider 写开关判断；已统一使用规范化布尔判断。
+- 只读体检之前没有把活动 `card_stock_jobs` 纳入资金前置阻塞项；已加入检查和报告计数。
+- Bark systemd 描述仍使用旧英文品牌；已改为 AI充值业务。
+- `markFailed()` 的 MySQL 参数化 `INTERVAL ? SECOND` 已通过临时 MySQL 8.4.11 集成测试。
+
+二次审查仍未发现 P0。
+
 ## 仍需在真实部署前完成
 
 1. 两个独立 runner 进程在 `SENDING` 后退出，5 分钟后可重领的恢复验证。

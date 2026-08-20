@@ -15,7 +15,7 @@ export async function runReadinessAudit(pool, { now = new Date() } = {}) {
   const settings = Object.fromEntries(settingsRows.map((row) => [row.setting_key, row.setting_value]));
 
   const [activeTasks, expiredLeases, uncertainCalls, activeAuthorizations,
-    riskyAttempts, openReconciliation, deadNotifications, migrationRows] = await Promise.all([
+    riskyAttempts, activeCardStockJobs, openReconciliation, deadNotifications, migrationRows] = await Promise.all([
     scalar(pool, `SELECT COUNT(*) AS count FROM tasks WHERE status IN ('PENDING', 'RUNNING')`),
     scalar(pool, `SELECT COUNT(*) AS count FROM tasks
       WHERE status = 'RUNNING' AND leased_until < CURRENT_TIMESTAMP(3)`),
@@ -26,6 +26,8 @@ export async function runReadinessAudit(pool, { now = new Date() } = {}) {
       WHERE status = 'ACTIVE' AND expires_at > CURRENT_TIMESTAMP(3)`),
     scalar(pool, `SELECT COUNT(*) AS count FROM recharge_attempts
       WHERE funds_risk_state IN ('ACTIVE', 'UNKNOWN')`),
+    scalar(pool, `SELECT COUNT(*) AS count FROM card_stock_jobs
+      WHERE status IN ('PENDING', 'RUNNING')`),
     scalar(pool, `SELECT COUNT(*) AS count FROM reconciliation_cases
       WHERE status = 'OPEN' AND severity IN ('critical', 'warning')`),
     scalar(pool, `SELECT COUNT(*) AS count FROM alert_notifications
@@ -44,6 +46,7 @@ export async function runReadinessAudit(pool, { now = new Date() } = {}) {
   if (uncertainCalls > 0) blockers.push('uncertain_provider_calls');
   if (activeAuthorizations > 0) blockers.push('active_recharge_authorizations');
   if (riskyAttempts > 0) blockers.push('active_or_unknown_funds_risk');
+  if (activeCardStockJobs > 0) blockers.push('active_card_stock_jobs');
   if (openReconciliation > 0) blockers.push('open_reconciliation_cases');
   if (deadNotifications > 0) blockers.push('dead_bark_notifications');
   if (heartbeatAgeSeconds == null || heartbeatAgeSeconds > 120) blockers.push('worker_heartbeat_stale');
@@ -63,6 +66,7 @@ export async function runReadinessAudit(pool, { now = new Date() } = {}) {
       uncertainProviderCalls: uncertainCalls,
       activeRechargeAuthorizations: activeAuthorizations,
       activeOrUnknownFundsRisk: riskyAttempts,
+      activeCardStockJobs,
       openReconciliationCases: openReconciliation,
       deadBarkNotifications: deadNotifications
     },

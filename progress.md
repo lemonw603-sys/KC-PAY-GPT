@@ -87,3 +87,9 @@
 ### Next gate
 - 有生产访问条件时先做迁移、Bark 服务、只读体检和重启恢复演练。
 - 有真实订单时再按 `docs/SMALL_BATCH_RUNBOOK.md` 进入单笔资金验证。
+
+## 2026-08-21 - Task: 阶段性完结后的二次对抗审查
+### Result
+- 发现并修复旧 `operator_alerts` 表缺少 `updated_at`、辅助 Provider 写开关判断不统一、活动开卡任务未纳入只读体检、Bark systemd 旧品牌描述和重试 SQL 未实测五项问题。
+- 临时 MySQL 8.4.11 集成验证通过：迁移、并发领取、告警重开和指数退避重试。
+- 未发现 P0；生产进程重启恢复和真实生产 Bark 仍是部署条件下的待办。

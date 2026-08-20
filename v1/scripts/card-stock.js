@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import { pathToFileURL } from 'node:url';
-import { loadConfig } from '../src/config.js';
+import { isEnvTrue, loadConfig } from '../src/config.js';
 import { createDatabasePool } from '../src/db/pool.js';
 import { HnskjCardProvider, mapPurchasedCard } from '../src/providers/index.js';
 import { createCardStockService, mapStockCard } from '../src/services/card-stock-service.js';
@@ -204,7 +204,7 @@ export async function runCardStockCli({ env = process.env } = {}) {
     if (option('execute') !== 'OPEN-CARDS') {
       throw new Error('Paid opening requires --execute OPEN-CARDS');
     }
-    if (env.PROVIDER_CARD_WRITES_ENABLED !== 'true' || env.PROVIDER_WRITES_ENABLED === 'true') {
+    if (!isEnvTrue(env.PROVIDER_CARD_WRITES_ENABLED) || isEnvTrue(env.PROVIDER_WRITES_ENABLED)) {
       throw new Error('Paid opening requires only PROVIDER_CARD_WRITES_ENABLED=true');
     }
     const count = positiveInteger(option('count'), 'count', { max: 500 });

@@ -1,4 +1,4 @@
-import { loadRuntimeDatabaseConfig } from '../src/config.js';
+import { isEnvTrue, loadRuntimeDatabaseConfig } from '../src/config.js';
 import { createDatabasePool } from '../src/db/pool.js';
 import { HnskjCardProvider } from '../src/providers/index.js';
 import { buildCardConsistencyReport } from '../src/diagnostics/card-consistency.js';
@@ -30,7 +30,7 @@ export async function runCardConsistencyAudit({ pool, provider }) {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  if (process.env.PROVIDER_WRITES_ENABLED === 'true') {
+  if (isEnvTrue(process.env.PROVIDER_WRITES_ENABLED)) {
     throw new Error('Card consistency audit refuses to run while provider writes are enabled');
   }
   const pool = createDatabasePool(loadRuntimeDatabaseConfig());

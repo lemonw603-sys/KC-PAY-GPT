@@ -1,5 +1,5 @@
 [Unit]
-Description=PoJia Bark notification dispatcher
+Description=AI充值业务 Bark notification dispatcher
 After=network-online.target
 Wants=network-online.target
 

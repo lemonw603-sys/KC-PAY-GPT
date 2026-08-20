@@ -60,10 +60,11 @@
 
 ### 3.5 只读上线体检与审查
 
-- `v1/scripts/preflight-readiness.js` 只查询 MySQL，检查租约、UNKNOWN、授权、资金风险、对账、Bark 死信、Worker 心跳和迁移版本。
+- `v1/scripts/preflight-readiness.js` 只查询 MySQL，检查租约、UNKNOWN、授权、资金风险、活动开卡任务、对账、Bark 死信、Worker 心跳和迁移版本。
 - Provider 只读脚本会拒绝任一大小写/空白规范化后为 true 的 Provider 写开关。
 - 独立对抗式审查已完成；报告见 `docs/ADVERSARIAL_AUDIT_2026-08-21.md`。
 - 审查发现的 3 个 P1（告警重开不推送、写开关绕过、未来迁移误报）均已修复。
+- 阶段性完结后的二次审查又补强了旧告警表迁移、辅助脚本写开关规范化、活动开卡任务体检和 Bark 重试 SQL；详见 `docs/ADVERSARIAL_AUDIT_2026-08-21.md`。
 
 ### 3.6 文件夹改名与影响排查
 

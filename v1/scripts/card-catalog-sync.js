@@ -1,11 +1,11 @@
-import { loadConfig } from '../src/config.js';
+import { isEnvTrue, loadConfig } from '../src/config.js';
 import { createDatabasePool } from '../src/db/pool.js';
 import { HnskjCardProvider } from '../src/providers/index.js';
 import { syncCardCatalog } from '../src/services/card-catalog-sync-service.js';
 import { createCardIntakeService } from '../src/services/card-intake-service.js';
 import { createCardIntakeRepository } from '../src/db/repositories/card-intake-repository.js';
 
-if (process.env.PROVIDER_WRITES_ENABLED === 'true' || process.env.PROVIDER_CARD_WRITES_ENABLED === 'true') {
+if (isEnvTrue(process.env.PROVIDER_WRITES_ENABLED) || isEnvTrue(process.env.PROVIDER_CARD_WRITES_ENABLED)) {
   throw new Error('Card catalog sync refuses to run with provider writes enabled');
 }
 

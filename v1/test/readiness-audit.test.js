@@ -17,6 +17,7 @@ function fakePool({ counts = {}, heartbeat = '2026-08-21T00:00:00.000Z', migrati
         ['FROM provider_calls', 'uncertainProviderCalls'],
         ['FROM recharge_authorizations', 'activeRechargeAuthorizations'],
         ['FROM recharge_attempts', 'activeOrUnknownFundsRisk'],
+        ['FROM card_stock_jobs', 'activeCardStockJobs'],
         ['FROM reconciliation_cases', 'openReconciliationCases'],
         ['FROM alert_notifications', 'deadBarkNotifications']
       ].find(([needle]) => sql.includes(needle));

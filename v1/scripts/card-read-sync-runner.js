@@ -1,5 +1,5 @@
 import os from 'node:os';
-import { loadConfig } from '../src/config.js';
+import { isEnvTrue, loadConfig } from '../src/config.js';
 import { createDatabasePool } from '../src/db/pool.js';
 import { commitCardTransactionsForCard } from '../src/db/repositories/card-transaction-repository.js';
 import { HnskjCardProvider } from '../src/providers/index.js';
@@ -13,9 +13,9 @@ import {
   scheduleDueCardSyncJobs
 } from '../src/services/card-sync-job-service.js';
 
-if (process.env.PROVIDER_WRITES_ENABLED === 'true'
-  || process.env.PROVIDER_CARD_WRITES_ENABLED === 'true'
-  || process.env.PROVIDER_RECHARGE_WRITES_ENABLED === 'true') {
+if (isEnvTrue(process.env.PROVIDER_WRITES_ENABLED)
+  || isEnvTrue(process.env.PROVIDER_CARD_WRITES_ENABLED)
+  || isEnvTrue(process.env.PROVIDER_RECHARGE_WRITES_ENABLED)) {
   throw new Error('Card read sync runner refuses to start with provider writes enabled');
 }
 

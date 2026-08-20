@@ -1,5 +1,5 @@
 import os from 'node:os';
-import { loadConfig } from '../src/config.js';
+import { isEnvTrue, loadConfig } from '../src/config.js';
 import { createDatabasePool } from '../src/db/pool.js';
 import { HnskjCardProvider } from '../src/providers/index.js';
 import { createCardStockService } from '../src/services/card-stock-service.js';
@@ -18,7 +18,7 @@ import {
 import { createProviderBalanceSnapshotService } from '../src/services/provider-balance-snapshot-service.js';
 import { openStockCards, syncProvisioningStock } from './card-stock.js';
 
-if (process.env.PROVIDER_WRITES_ENABLED === 'true' || process.env.PROVIDER_CARD_WRITES_ENABLED !== 'true') {
+if (isEnvTrue(process.env.PROVIDER_WRITES_ENABLED) || !isEnvTrue(process.env.PROVIDER_CARD_WRITES_ENABLED)) {
   throw new Error('Card stock runner requires only PROVIDER_CARD_WRITES_ENABLED=true');
 }
 

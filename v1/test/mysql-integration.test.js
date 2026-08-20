@@ -158,7 +158,21 @@ test('Bark notification claims are concurrency-safe and reopen after resolution'
     await new Promise((resolve) => setTimeout(resolve, 10));
     await pool.query('UPDATE operator_alerts SET status = \'OPEN\' WHERE id = ?', [alertId]);
     await repository.enqueueOpenAlerts();
-    assert.ok(await repository.claimNext());
+    const reopened = await repository.claimNext();
+    assert.ok(reopened);
+    const retry = await repository.markFailed(reopened.id, {
+      error: new Error('temporary Bark test failure'),
+      retryable: true,
+      attemptCount: reopened.attemptCount,
+      maxAttempts: 8
+    });
+    assert.equal(retry.exhausted, false);
+    const [[retryRow]] = await pool.query(
+      'SELECT status, next_attempt_at FROM alert_notifications WHERE id = ?',
+      [reopened.id]
+    );
+    assert.equal(retryRow.status, 'RETRY');
+    assert.ok(retryRow.next_attempt_at);
   } finally {
     await pool.query('DELETE FROM alert_notifications WHERE alert_id = ?', [alertId]);
     await pool.query('DELETE FROM operator_alerts WHERE id = ?', [alertId]);
