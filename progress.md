@@ -106,3 +106,17 @@
 ### Verification
 - `v1/npm test`：260 passed / 21 skipped / 0 failed。
 - 未调用开卡、充值、退款、余额提取或其他 Provider 资金写接口。
+
+## 2026-08-21 - Task: 生产 P0 安全准备与 Bark 上线
+### What was done
+- 生产接单与新充值派发开关从 `true` 事务化关闭为 `false`；执行前后活动 Permit、开卡任务、不确定 Provider 调用和资金风险尝试均为 0。
+- 创建加密备份 `pojia-20260820T195421Z.sql.gz.enc`，哈希/解密/gzip 校验通过；在无网络 MySQL 8.4.11 容器恢复成功，共 30 张表。
+- 发布 `/opt/pojia/releases/20260821-bark-prep-1`，执行迁移 `023_bark_notifications`；第二次执行全部为 `already applied`。
+- Bark 服务已安装并启用；普通实推、`SENDING` 超时重领和 `DEAD` 显式恢复均达到 `SENT`。
+- Provider 严格只读检查通过：HNSKJ 账户/余额/卡段/卡片读取正常，ZZSHU 连接检查正常；历史 401 阻塞已解除。
+- 最终只读体检 `ok=true`：活动任务、过期租约、UNKNOWN、活动授权、资金风险、活动开卡任务、开放对账和 Bark 死信均为 0。
+### Evidence and corrections
+- 当前 release manifest 共 481 个非依赖文件，逐项 SHA-256 校验通过。
+- 外部 TCP 探测受本地测试网络代理影响产生 3306 假阳性；服务器自身公网 IP:3306 明确 `Connection refused`，Docker 只绑定 `127.0.0.1:3306`，firewalld 未开放 3306。
+- 准备新 release 时曾因 `cp -a` 复制 symlink 而覆盖旧 `535fe2b` 目录；当前 release 已修复为真实目录。精确 Git 提交 `535fe2b` 已重建为 `/opt/pojia/releases/20260820-foundation-v2-535fe2b-restored`，259 个非依赖文件清单校验通过；被覆盖目录已标记禁止回滚。
+- 本轮没有开卡、直充、退款、余额提取或其他 Provider 写调用。
