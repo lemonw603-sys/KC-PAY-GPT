@@ -1,4 +1,5 @@
 import { HnskjCardProvider, ZzshuRechargeProvider } from '../src/providers/index.js';
+import { isEnvTrue } from '../src/config.js';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -35,10 +36,20 @@ export async function runReadOnlyChecks({ hnskj, zzshu }) {
   };
 }
 
-if (import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
-  if (process.env.PROVIDER_WRITES_ENABLED === 'true') {
-    throw new Error('Read-only check refuses to run while PROVIDER_WRITES_ENABLED=true');
+export function assertProviderWritesDisabled(env = process.env) {
+  for (const key of [
+    'PROVIDER_WRITES_ENABLED',
+    'PROVIDER_CARD_WRITES_ENABLED',
+    'PROVIDER_RECHARGE_WRITES_ENABLED'
+  ]) {
+    if (isEnvTrue(env[key])) {
+      throw new Error(`Read-only check refuses to run while ${key}=true`);
+    }
   }
+}
+
+if (import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+  assertProviderWritesDisabled();
   const hnskj = new HnskjCardProvider({
     baseUrl: process.env.HNSKJ_API_BASE_URL || 'https://card.hnskj.vip/api/open/v1',
     apiKey: required('HNSKJ_API_KEY')

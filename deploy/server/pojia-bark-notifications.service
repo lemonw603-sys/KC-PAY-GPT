@@ -1,19 +1,19 @@
 [Unit]
-Description=AI充值业务卡片一致性只读巡检
-After=network-online.target pojia-worker.service
+Description=PoJia Bark notification dispatcher
+After=network-online.target
 Wants=network-online.target
 
 [Service]
-Type=oneshot
+Type=simple
 User=pojia
 Group=pojia
 WorkingDirectory=/opt/pojia/current/v1
 EnvironmentFile=/etc/pojia/runtime.env
-EnvironmentFile=/etc/pojia/provider.env
-ExecStart=/usr/bin/node scripts/card-consistency-audit.js
-UMask=0077
+EnvironmentFile=/etc/pojia/bark.env
+ExecStart=/usr/bin/node scripts/bark-notification-runner.js
+Restart=on-failure
+RestartSec=5
 NoNewPrivileges=true
-PrivateDevices=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
@@ -26,3 +26,6 @@ LockPersonality=true
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 CapabilityBoundingSet=
 AmbientCapabilities=
+
+[Install]
+WantedBy=multi-user.target

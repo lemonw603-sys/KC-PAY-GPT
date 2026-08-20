@@ -5,6 +5,15 @@ const booleanString = z
   .enum(['true', 'false'])
   .transform((value) => value === 'true');
 
+export function isEnvTrue(value) {
+  return String(value ?? '').trim().toLowerCase() === 'true';
+}
+
+const optionalNonEmptyString = z.preprocess(
+  (value) => String(value ?? '').trim() || undefined,
+  z.string().min(1).optional()
+);
+
 const databaseFields = {
   DATABASE_URL: z.string().url().startsWith('mysql://'),
   DATABASE_TLS: booleanString.default(false),
@@ -48,6 +57,24 @@ const runtimeDatabaseSchema = z.object({
   tlsKey: 'DATABASE_TLS',
   caKey: 'DATABASE_TLS_CA_BASE64'
 }));
+
+const barkNotificationSchema = runtimeDatabaseSchema.extend({
+  BARK_ENABLED: booleanString.default(false),
+  BARK_SERVER_URL: z.string().url().default('https://api.day.app'),
+  BARK_DEVICE_KEY: optionalNonEmptyString,
+  BARK_GROUP: z.string().trim().min(1).max(64).default('AI充值业务'),
+  BARK_POLL_INTERVAL_MS: z.coerce.number().int().min(500).max(60_000).default(5_000),
+  BARK_REQUEST_TIMEOUT_MS: z.coerce.number().int().min(1_000).max(60_000).default(10_000),
+  BARK_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(20).default(8)
+}).superRefine((value, context) => {
+  if (value.BARK_ENABLED && !value.BARK_DEVICE_KEY) {
+    context.addIssue({
+      code: 'custom',
+      path: ['BARK_DEVICE_KEY'],
+      message: 'is required when BARK_ENABLED=true'
+    });
+  }
+});
 
 const cdkSecuritySchema = z.object({
   CDK_HASH_KEY_V1_BASE64: z.string().trim().min(1),
@@ -383,6 +410,30 @@ export function loadRuntimeDatabaseConfig(env = process.env) {
     tlsKey: 'DATABASE_TLS',
     caKey: 'DATABASE_TLS_CA_BASE64'
   });
+}
+
+export function loadBarkNotificationConfig(env = process.env) {
+  const result = barkNotificationSchema.safeParse(env);
+  if (!result.success) {
+    const detail = result.error.issues
+      .map((issue) => `${issue.path.join('.')}: ${issue.message}`)
+      .join('; ');
+    throw new Error(`Invalid Bark notification configuration: ${detail}`);
+  }
+  return {
+    database: databaseConfig(result.data, {
+      urlKey: 'DATABASE_URL',
+      tlsKey: 'DATABASE_TLS',
+      caKey: 'DATABASE_TLS_CA_BASE64'
+    }),
+    enabled: result.data.BARK_ENABLED,
+    serverUrl: result.data.BARK_SERVER_URL.replace(/\/+$/, ''),
+    deviceKey: result.data.BARK_DEVICE_KEY || null,
+    group: result.data.BARK_GROUP,
+    pollIntervalMs: result.data.BARK_POLL_INTERVAL_MS,
+    requestTimeoutMs: result.data.BARK_REQUEST_TIMEOUT_MS,
+    maxAttempts: result.data.BARK_MAX_ATTEMPTS
+  };
 }
 
 export function loadCdkSecurityConfig(env = process.env) {

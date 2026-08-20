@@ -1,10 +1,10 @@
-# 破甲 v1 生产部署
+# AI充值业务 v1 生产部署
 
 当前首版部署目标是与现有服务共用一台 AlmaLinux 9 主机，但保持独立运行边界：
 
 - MySQL `mysql:8.4.11` 容器只发布到 `127.0.0.1:3306`。
 - Web 只监听 `127.0.0.1:3100`，公网入口由 Caddy 提供。
-- Web 与 worker 使用无登录权限的 `pojia` 系统账号。
+- Web、worker 与 Bark 通知进程使用无登录权限的 `pojia` 系统账号。
 - `/etc/pojia/` 保存 root 管理的生产环境文件，不进入 Git 或发布包。
 - Web 只通过 `/etc/pojia/card-read.env` 取得 HNSKJ 只读接管凭据，不加载包含充值供应商密钥的 `provider.env`。
 - 供应商读写开关初始均为关闭；部署与数据库验证不会调用外部充值接口。
@@ -15,7 +15,7 @@
 2. 执行 `bootstrap-host.sh`，创建独立目录、账号、密钥和 MySQL 容器。
 3. 上传已有的 `admin.env`，权限设为 `root:pojia 0640`。
 4. 使用迁移环境执行数据库迁移，随后锁定迁移账号。
-5. 安装并启动两个 systemd 单元，验证回环健康检查。
+5. 安装并启动 Web、worker；配置 Bark Device Key 后再启用 `pojia-bark-notifications.service`。
 6. DNS 生效后再导入 `pojia.caddy`，先校验后 reload，不能覆盖现有 Caddyfile。
 7. 运行账号权限、回环监听、恢复测试和公网不可达验证全部留存证据。
 
@@ -28,6 +28,14 @@
 - `pojia-ops check`：一次完成状态检查和最新备份校验。
 
 `bootstrap-host.sh` 不删除或改名任何现有容器，不修改 firewalld 和现有 Caddyfile。
+
+Bark 配置保存在 `/etc/pojia/bark.env`，初始为 `BARK_ENABLED=false`。填入 Device Key 后安装并启动：
+
+```bash
+install -m 0644 deploy/server/pojia-bark-notifications.service /etc/systemd/system/
+systemctl daemon-reload
+systemctl enable --now pojia-bark-notifications.service
+```
 
 真实直充写入统一使用 `pojia-recharge-gate.sh`，安装为 `/usr/local/sbin/pojia-recharge-gate`：
 

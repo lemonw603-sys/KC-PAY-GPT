@@ -59,7 +59,7 @@
 
 - 当前不可变发布：`/opt/pojia/releases/20260820-foundation-v2-535fe2b`。
 - Web、Worker、MySQL、备份定时器以及库存/卡片只读同步定时器正常；`/health/live` 和 `/health/ready` 均为 200。
-- 生产迁移为 22 条，最新版本 `022_foundation_v2_operations`；新表及 `reconciliation_cases.last_seen_at` 均存在。
+- 生产迁移基线为 22 条，后续通知能力追加迁移 `023_bark_notifications`；Foundation v2 新表及 `reconciliation_cases.last_seen_at` 均存在。
 - 历史回填后为订单 1、卡 5、CDK 4；5 张卡均归入旧 HNSKJ 账户，未映射卡 0，未解析订单 0。
 - 发布后备份：`/var/backups/pojia/pojia-20260820T155512Z.sql.gz.enc`，哈希、解密和 gzip 完整性通过；无网络临时 MySQL 8.4 恢复成功，共 30 张表。
 - 恢复演练暴露了一个运维竞态：官方 MySQL 镜像的临时初始化服务可能被 `mysqladmin ping` 误认为最终就绪。运维脚本已改为先等待镜像初始化完成标记，再探测最终 MySQL，修复后恢复实测通过。

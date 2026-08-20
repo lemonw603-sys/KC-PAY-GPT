@@ -1,4 +1,4 @@
-# 破甲 v1 运行骨架
+# AI充值业务 v1 运行骨架
 
 本目录是独立的 v1 生产边界。它不导入仓库根目录的浏览器、Stripe、hCaptcha、代理或旧充值模块。
 
@@ -115,6 +115,33 @@ npm run start:worker
 - 正式 Worker 会在开卡写入前持久化卡片列表基线；响应缺 ID 或进程中断后只做列表差异恢复，不能自动重开。
 - 数据库的 `dispatch_new_recharges` 和对应的分离写权限必须同时开启，worker 才可领取开卡或直充提交任务。
 - `SUBMIT_RECHARGE` 还必须带指定订单、短时有效的 `rechargePermit`；Permit 在网络请求前原子消费，任何结果都不能自动第二次创建。
+
+## Bark 异常通知
+
+内部 `operator_alerts` 可通过独立 Bark 进程推送到手机。通知进程与资金 Worker 分离，不加载供应商密钥，也不调用开卡或充值接口。设备 Key 只保存在 `/etc/pojia/bark.env`，请求使用 JSON `POST /push`，不会把 Key 放进 URL 或日志。
+
+```bash
+BARK_ENABLED=true \
+BARK_SERVER_URL=https://api.day.app \
+BARK_DEVICE_KEY='replace-with-device-key' \
+npm run notifications:bark
+```
+
+- 默认关闭；启用时缺少 `BARK_DEVICE_KEY` 会拒绝启动。
+- 相同内部告警只创建一个 Bark 投递记录。
+- 429、5xx、超时和断网按指数退避重试；永久失败或达到上限后进入 `DEAD`，由只读体检报告提示。
+- 告警标题和正文发送前再次脱敏，PAN、Token、Session、API Key 和 CDK 不会原样推送。
+
+## 上线前只读体检
+
+```bash
+PROVIDER_WRITES_ENABLED=false \
+PROVIDER_CARD_WRITES_ENABLED=false \
+PROVIDER_RECHARGE_WRITES_ENABLED=false \
+npm run preflight:readiness
+```
+
+脚本只查询 MySQL，不调用 Provider。任何写开关为 `true` 时拒绝启动；报告仅输出计数、Worker 心跳、最新迁移和阻塞项，不输出 Session、卡资料或供应商密钥。
 
 ## 库存卡
 

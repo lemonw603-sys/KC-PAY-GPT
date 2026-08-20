@@ -5,6 +5,7 @@ backup_dir='/var/backups/pojia'
 backup_key='/etc/pojia/backup-key'
 backup_service='pojia-backup.service'
 backup_timer='pojia-backup.timer'
+bark_service='pojia-bark-notifications.service'
 mysql_image='mysql:8.4.11'
 
 die() {
@@ -54,6 +55,7 @@ status() {
   printf 'release=%s\n' "$(readlink -f /opt/pojia/current 2>/dev/null || printf 'missing')"
   printf 'web=%s\n' "$(systemctl is-active pojia-web.service 2>/dev/null || true)"
   printf 'worker=%s\n' "$(systemctl is-active pojia-worker.service 2>/dev/null || true)"
+  printf 'bark_notifications=%s\n' "$(systemctl is-active "${bark_service}" 2>/dev/null || true)"
   printf 'mysql=%s\n' "$(docker inspect --format '{{.State.Status}}' pojia-mysql 2>/dev/null || printf 'missing')"
   printf 'backup_timer=%s\n' "$(systemctl is-active "${backup_timer}" 2>/dev/null || true)"
   printf 'latest_backup=%s\n' "${backup}"

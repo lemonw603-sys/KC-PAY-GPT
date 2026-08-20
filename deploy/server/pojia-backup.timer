@@ -1,5 +1,5 @@
 [Unit]
-Description=Daily 破甲 v1 encrypted MySQL backup
+Description=Daily AI充值业务 v1 encrypted MySQL backup
 
 [Timer]
 OnCalendar=*-*-* 03:17:00 UTC

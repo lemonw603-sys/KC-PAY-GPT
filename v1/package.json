@@ -19,6 +19,9 @@
     "card:stock": "node scripts/card-stock.js",
     "card:catalog-sync": "node scripts/card-catalog-sync.js",
     "card:stock-runner": "node scripts/card-stock-job-runner.js",
+    "notifications:bark": "node scripts/bark-notification-runner.js",
+    "notifications:bark:retry-dead": "node scripts/bark-notification-admin.js retry-dead",
+    "preflight:readiness": "node scripts/preflight-readiness.js",
     "migrate": "node scripts/migrate.js",
     "test": "node --test"
   },

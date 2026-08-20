@@ -29,9 +29,10 @@ test('Foundation v2 migrations are correctly ordered after 020', () => {
   const names = fs.readdirSync(migrationsDir)
     .filter((name) => /^\d+_[a-z0-9_-]+\.sql$/i.test(name))
     .sort();
-  assert.equal(names.at(-1), '022_foundation_v2_operations.sql');
-  assert.equal(names.at(-2), migrationName);
-  assert.equal(names.at(-3), '020_runtime_health.sql');
+  assert.equal(names.at(-1), '023_bark_notifications.sql');
+  assert.equal(names.at(-2), '022_foundation_v2_operations.sql');
+  assert.equal(names.at(-3), migrationName);
+  assert.equal(names.at(-4), '020_runtime_health.sql');
   assert.equal(new Set(names).size, names.length);
 });
 
@@ -152,4 +153,12 @@ test('schema-only migration contains no provider execution or production operati
   assert.doesNotMatch(sql, /https?:\/\//i);
   assert.doesNotMatch(sql, /CALL\s+(purchase|recharge|provider)/i);
   assert.doesNotMatch(sql, /INTO\s+OUTFILE|LOAD\s+DATA|DROP\s+DATABASE|TRUNCATE\s+TABLE/i);
+});
+
+test('Bark notification migration tracks the source alert revision for safe re-open delivery', () => {
+  const barkSql = fs.readFileSync(path.join(migrationsDir, '023_bark_notifications.sql'), 'utf8');
+  assert.match(barkSql, /source_updated_at TIMESTAMP\(3\)/i);
+  assert.match(barkSql, /FOREIGN KEY \(alert_id\) REFERENCES operator_alerts\(id\)/i);
+  assert.match(barkSql, /ALTER TABLE operator_alerts ADD COLUMN updated_at TIMESTAMP\(3\)/i);
+  assert.match(barkSql, /information_schema\.COLUMNS/i);
 });

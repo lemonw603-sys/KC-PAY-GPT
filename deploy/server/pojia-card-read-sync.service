@@ -1,5 +1,5 @@
 [Unit]
-Description=破甲卡片详情与交易只读同步
+Description=AI充值业务卡片详情与交易只读同步
 After=network-online.target docker.service
 Wants=network-online.target
 Requires=docker.service

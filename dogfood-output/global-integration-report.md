@@ -1,6 +1,6 @@
 # 全局对抗式与系统联动审查报告
 
-**目标：** `https://ops.vibebridge.top/admin`、`https://plus.vibebridge.top/` 及破甲 v1 生产底座  
+**目标：** `https://ops.vibebridge.top/admin`、`https://plus.vibebridge.top/` 及 AI充值业务 v1 生产底座
 **日期：** 2026-08-20  
 **范围：** 客户提交 → CDK 核销 → 订单/任务 → 卡池/开卡 → 单订单充值放行 → 直充提交/回查 → 卡片交易/退款观察 → 后台告警/备份恢复
 

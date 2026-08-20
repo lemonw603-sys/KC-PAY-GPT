@@ -1,5 +1,5 @@
 [Unit]
-Description=破甲卡台库存只读对账
+Description=AI充值业务卡台库存只读对账
 After=network-online.target pojia-worker.service
 Wants=network-online.target
 

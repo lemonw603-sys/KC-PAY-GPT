@@ -1,6 +1,6 @@
 # 上线前对抗式审查报告
 
-**目标：** https://ops.vibebridge.top/admin 及破甲 v1 运营底座
+**目标：** https://ops.vibebridge.top/admin 及AI充值业务 v1 运营底座
 
 **日期：** 2026-08-20
 

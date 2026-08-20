@@ -9,7 +9,7 @@ import {
   mapCardProvisioning,
   mapPurchasedCard
 } from '../src/providers/hnskj-card.js';
-import { runReadOnlyChecks } from '../scripts/provider-read-check.js';
+import { assertProviderWritesDisabled, runReadOnlyChecks } from '../scripts/provider-read-check.js';
 import { ProviderError, ProviderSchemaError } from '../src/providers/http-client.js';
 import { ZzshuRechargeProvider } from '../src/providers/zzshu-recharge.js';
 
@@ -243,6 +243,21 @@ test('read-only deployment check calls only provider read operations', async () 
   });
   assert.deepEqual(calls, ['profile', 'balance', 'card-types', 'cards', 'zzshu-connection']);
   assert.equal(result.hnskj.accountId, 7);
+});
+
+test('read-only deployment check refuses every split write switch', () => {
+  assert.doesNotThrow(() => assertProviderWritesDisabled({
+    PROVIDER_WRITES_ENABLED: 'false',
+    PROVIDER_CARD_WRITES_ENABLED: 'false',
+    PROVIDER_RECHARGE_WRITES_ENABLED: 'false'
+  }));
+  for (const key of [
+    'PROVIDER_WRITES_ENABLED',
+    'PROVIDER_CARD_WRITES_ENABLED',
+    'PROVIDER_RECHARGE_WRITES_ENABLED'
+  ]) {
+    assert.throws(() => assertProviderWritesDisabled({ [key]: 'true' }), new RegExp(key));
+  }
 });
 
 test('Zzshu direct creation uses X-API-Key and strips secrets from the result', async () => {

@@ -1,7 +1,7 @@
-# KC GPT 自动充值系统
+# AI充值业务
 
 > [!IMPORTANT]
-> 本文件以下内容是 Fork 上游保留的 **legacy 浏览器自动化系统说明**，不代表破甲 v1 的生产架构。根目录 `npm start` 已改为启动隔离的 `v1/`；旧浏览器、Stripe、hCaptcha 和代理链即使运行 `npm run start:legacy` 也会被环境锁拒绝，只有显式设置 `ALLOW_LEGACY_RUNTIME=I_UNDERSTAND` 才能启动。旧 Docker 文件已改名为 `Dockerfile.legacy` 与 `docker-compose.legacy.yml`，不得用于 v1 部署。v1 说明见 [`v1/README.md`](v1/README.md)，当前规格见 [`docs/V1_SPEC.md`](docs/V1_SPEC.md)。
+> 本文件以下内容是 Fork 上游保留的 **legacy 浏览器自动化系统说明**，不代表 AI充值业务 v1 的生产架构。根目录 `npm start` 已改为启动隔离的 `v1/`；旧浏览器、Stripe、hCaptcha 和代理链即使运行 `npm run start:legacy` 也会被环境锁拒绝，只有显式设置 `ALLOW_LEGACY_RUNTIME=I_UNDERSTAND` 才能启动。旧 Docker 文件已改名为 `Dockerfile.legacy` 与 `docker-compose.legacy.yml`，不得用于 v1 部署。v1 说明见 [`v1/README.md`](v1/README.md)，当前规格见 [`docs/V1_SPEC.md`](docs/V1_SPEC.md)。
 
 > **KC ChatGPT PLUS 訂閱開通平台**  
 > 使用者貼上 Session 與兌換 CDK 後，可使用本地 Stripe 自動化流程，或啟用第三方代充 API 建立並輪詢代充訂單。  
@@ -28,6 +28,8 @@
 - **第三方代充 API**：支援套餐／積分查詢、Session 預檢、代充建單、訂單輪詢，以及失敗訂單的供應商卡密前綴顯示
 
 啟用第三方代充 API 後，前台兌換會完全改走供應商代充流程，不再使用本地開通。
+
+阶段性接手与当前进度归档见 [`docs/PROJECT_HANDOFF_2026-08-21.md`](docs/PROJECT_HANDOFF_2026-08-21.md)。
 
 > ⚠️ **仅供学习与研究**。使用前请确保符合目标平台 ToS 与所在地法律法规。**开发者不对任何滥用导致的封号、扣款、法律纠纷负责。**
 

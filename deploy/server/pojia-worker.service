@@ -1,5 +1,5 @@
 [Unit]
-Description=破甲 v1 Worker
+Description=AI充值业务 v1 Worker
 After=network-online.target docker.service
 Wants=network-online.target
 Requires=docker.service

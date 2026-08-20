@@ -53,3 +53,37 @@
 - `test/gpt-api-client.test.js`：新增 queue done 與業務終態回歸測試。
 - `progress.md`：追加本輪記錄。
 - 回滾方式：還原上述檔案並重建 app；回滾會再次把失敗任務誤報成功。
+
+## 2026-08-21 - Task: 补齐无订单阶段上线前能力
+### What was done
+- 新增独立 Bark 告警投递进程，消费 `operator_alerts`，支持数据库去重、并发领取、超时恢复、指数退避和失败终态。
+- Bark 使用 JSON `POST /push`，Device Key 不进入 URL；标题和正文发送前再次脱敏。
+- 新增只读上线体检，检查任务租约、模糊 Provider 调用、活动充值授权、资金风险尝试、对账案例、Bark 死信、Worker 心跳和迁移版本。
+- 加固 Provider 只读检查：任一拆分写开关开启时均拒绝运行。
+- 新增 3–5 单灰度运行检查表；当前无订单阶段不执行开卡、充值或其他资金写入。
+### Verification
+- Bark、配置、体检和迁移顺序定向测试通过。
+- 所有新增运行路径默认关闭；未配置 Bark Device Key 时不会发送通知。
+### Notes
+- 新迁移：`023_bark_notifications.sql`。
+- Bark 生产启用仍需 Device Key 和一次非资金测试推送。
+- 真实 Provider 写入边界与 3–5 单资金链路继续等待出现订单后按逐单检查表执行。
+
+## 2026-08-21 - Task: Bark 与上线前能力对抗式审查
+### What was done
+- 由独立 Agent 对照路线图、验收基线和本轮交付执行对抗式审查。
+- 发现并修复告警重开不重复推送、环境变量大小写/空白绕过门禁、未来迁移版本误报三项 P1。
+- 审查报告保存于 `docs/ADVERSARIAL_AUDIT_2026-08-21.md`。
+### Remaining
+- MySQL 8.4 迁移/并发领取实测、Bark Device Key 手机推送、DEAD 恢复演练仍待真实部署条件；均不需要也不会自动触发资金写入。
+- 已在临时 MySQL 8.4.11 容器完成迁移 `001–023` 首次执行、重放和 `alert_notifications` 表结构检查；未连接生产库。
+- 发现 `operator_alerts` 原表缺少 `updated_at` 后已补充 guarded migration；临时 MySQL 8.4.11 已通过 Bark 并发领取与 RESOLVED→OPEN 重推集成测试。
+
+## 2026-08-21 - Task: AI充值业务阶段性完结
+### Status
+- 当前阶段冻结，等待真实订单；不再主动扩展功能。
+- 完成项、待办项、共识、证据和后续 AI 接手规则统一归档于 `docs/PROJECT_HANDOFF_2026-08-21.md`。
+- 当前工作目录已从 `破甲` 改为 `AI充值业务`；`pojia` 生产技术标识有意保留。
+### Next gate
+- 有生产访问条件时先做迁移、Bark 服务、只读体检和重启恢复演练。
+- 有真实订单时再按 `docs/SMALL_BATCH_RUNBOOK.md` 进入单笔资金验证。

@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import test from 'node:test';
 import {
+  isEnvTrue,
+  loadBarkNotificationConfig,
   loadConfig,
   loadMigrationConfig,
   loadRuntimeDatabaseConfig,
@@ -234,4 +236,32 @@ test('worker concurrency is bounded and must be an integer', () => {
       /Invalid v1 worker configuration/
     );
   }
+});
+
+test('Bark notifications are fail-closed and require a device key only when enabled', () => {
+  const disabled = loadBarkNotificationConfig({ ...validEnvironment(), BARK_DEVICE_KEY: '' });
+  assert.equal(disabled.enabled, false);
+  assert.equal(disabled.deviceKey, null);
+  assert.equal(disabled.serverUrl, 'https://api.day.app');
+
+  assert.throws(() => loadBarkNotificationConfig({
+    ...validEnvironment(), BARK_ENABLED: 'true'
+  }), /BARK_DEVICE_KEY: is required/);
+
+  const enabled = loadBarkNotificationConfig({
+    ...validEnvironment(),
+    BARK_ENABLED: 'true',
+    BARK_DEVICE_KEY: 'fixture-key',
+    BARK_SERVER_URL: 'https://bark.example.test/'
+  });
+  assert.equal(enabled.enabled, true);
+  assert.equal(enabled.serverUrl, 'https://bark.example.test');
+  assert.equal(enabled.deviceKey, 'fixture-key');
+});
+
+test('write gates normalize case and surrounding whitespace', () => {
+  assert.equal(isEnvTrue(' TRUE '), true);
+  assert.equal(isEnvTrue('True'), true);
+  assert.equal(isEnvTrue(' false '), false);
+  assert.equal(isEnvTrue(undefined), false);
 });

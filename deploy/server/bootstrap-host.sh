@@ -143,6 +143,21 @@ EOF
   chmod 0640 /etc/pojia/card-read.env
 fi
 
+if [[ ! -e /etc/pojia/bark.env ]]; then
+  umask 027
+  cat >/etc/pojia/bark.env <<'EOF'
+BARK_ENABLED=false
+BARK_SERVER_URL=https://api.day.app
+BARK_DEVICE_KEY=
+BARK_GROUP=AI充值业务
+BARK_POLL_INTERVAL_MS=5000
+BARK_REQUEST_TIMEOUT_MS=10000
+BARK_MAX_ATTEMPTS=8
+EOF
+  chown root:pojia /etc/pojia/bark.env
+  chmod 0640 /etc/pojia/bark.env
+fi
+
 cat >/etc/pojia/migration.env <<EOF
 NODE_ENV=production
 DATABASE_URL=mysql://pojia_app:${app_password}@127.0.0.1:3306/pojia

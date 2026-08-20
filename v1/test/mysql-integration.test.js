@@ -43,6 +43,7 @@ import { createRechargeAttemptRepository } from '../src/db/repositories/recharge
 import { createProviderBalanceSnapshotService } from '../src/services/provider-balance-snapshot-service.js';
 import { createReconciliationCaseService } from '../src/services/reconciliation-case-service.js';
 import { createOperationsCsvExportService } from '../src/services/operations-csv-export-service.js';
+import { createAlertNotificationRepository } from '../src/db/repositories/alert-notification-repository.js';
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
 const integrationSessionKey = Buffer.alloc(32, 7);
@@ -99,6 +100,11 @@ async function removeOrder(pool, { cdkId, orderId }) {
     await pool.query('DELETE FROM cdk_batches WHERE batch_no = ?', [compensation.batch_no]);
   }
   await pool.query('DELETE FROM tasks WHERE order_id = ?', [orderId]);
+  await pool.query(
+    `DELETE n FROM alert_notifications n
+     INNER JOIN operator_alerts a ON a.id = n.alert_id WHERE a.order_id = ?`,
+    [orderId]
+  );
   await pool.query('DELETE FROM operator_alerts WHERE order_id = ?', [orderId]);
   await pool.query('DELETE FROM order_events WHERE order_id = ?', [orderId]);
   await pool.query('DELETE FROM reconciliation_cases WHERE order_id = ?', [orderId]);
@@ -127,6 +133,38 @@ async function removeOrder(pool, { cdkId, orderId }) {
   await pool.query('DELETE FROM orders WHERE id = ?', [orderId]);
   await pool.query('DELETE FROM cdks WHERE id = ?', [cdkId]);
 }
+
+test('Bark notification claims are concurrency-safe and reopen after resolution', {
+  skip: !databaseUrl && 'TEST_DATABASE_URL 未配置；完整 MySQL 套件在服务器隔离数据库运行'
+}, async () => {
+  const pool = mysql.createPool({ uri: databaseUrl, connectionLimit: 4, timezone: 'Z' });
+  const alertId = id();
+  const dedupeKey = `bark-integration-${alertId}`;
+  try {
+    await pool.query(
+      `INSERT INTO operator_alerts
+       (id, alert_type, dedupe_key, severity, title, message, status)
+       VALUES (?, 'BARK_TEST', ?, 'warning', 'Bark 集成测试', '不含资金操作', 'OPEN')`,
+      [alertId, dedupeKey]
+    );
+    const repository = createAlertNotificationRepository(pool);
+    await repository.enqueueOpenAlerts();
+    const claimed = await Promise.all([repository.claimNext(), repository.claimNext()]);
+    assert.equal(claimed.filter(Boolean).length, 1);
+    await repository.markSent(claimed.find(Boolean).id);
+
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    await pool.query('UPDATE operator_alerts SET status = \'RESOLVED\' WHERE id = ?', [alertId]);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    await pool.query('UPDATE operator_alerts SET status = \'OPEN\' WHERE id = ?', [alertId]);
+    await repository.enqueueOpenAlerts();
+    assert.ok(await repository.claimNext());
+  } finally {
+    await pool.query('DELETE FROM alert_notifications WHERE alert_id = ?', [alertId]);
+    await pool.query('DELETE FROM operator_alerts WHERE id = ?', [alertId]);
+    await pool.end();
+  }
+});
 
 test('inventory-only card sync is durable and persists transactions without an order', {
   skip: !databaseUrl && 'TEST_DATABASE_URL 未配置；完整 MySQL 套件在服务器隔离数据库运行'

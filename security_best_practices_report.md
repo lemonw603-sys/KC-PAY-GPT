@@ -2,7 +2,7 @@
 
 ## 执行摘要
 
-破甲 v1 的 Web 安全基线整体可用：严格 CSP、后台域名隔离、`HttpOnly + Secure + SameSite=Strict` 会话、同源写入校验、敏感操作二次验证、请求边界 Zod 校验、参数化 SQL、密文落库和递归脱敏均已存在。`npm audit --omit=dev` 报告 0 个已知生产依赖漏洞。
+AI充值业务 v1 的 Web 安全基线整体可用：严格 CSP、后台域名隔离、`HttpOnly + Secure + SameSite=Strict` 会话、同源写入校验、敏感操作二次验证、请求边界 Zod 校验、参数化 SQL、密文落库和递归脱敏均已存在。`npm audit --omit=dev` 报告 0 个已知生产依赖漏洞。
 
 审查找到一个项目外的高危凭证残留，需要账号所有者操作；代码内发现的限流内存增长问题已修复。
 
