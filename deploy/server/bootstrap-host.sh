@@ -134,6 +134,15 @@ EOF
   chmod 0640 /etc/pojia/provider.env
 fi
 
+if [[ ! -e /etc/pojia/card-read.env ]]; then
+  cat >/etc/pojia/card-read.env <<'EOF'
+HNSKJ_API_BASE_URL=https://card.hnskj.vip/api/open/v1
+HNSKJ_API_KEY=
+EOF
+  chown root:pojia /etc/pojia/card-read.env
+  chmod 0640 /etc/pojia/card-read.env
+fi
+
 cat >/etc/pojia/migration.env <<EOF
 NODE_ENV=production
 DATABASE_URL=mysql://pojia_app:${app_password}@127.0.0.1:3306/pojia

@@ -6,6 +6,7 @@
 - Web 只监听 `127.0.0.1:3100`，公网入口由 Caddy 提供。
 - Web 与 worker 使用无登录权限的 `pojia` 系统账号。
 - `/etc/pojia/` 保存 root 管理的生产环境文件，不进入 Git 或发布包。
+- Web 只通过 `/etc/pojia/card-read.env` 取得 HNSKJ 只读接管凭据，不加载包含充值供应商密钥的 `provider.env`。
 - 供应商读写开关初始均为关闭；部署与数据库验证不会调用外部充值接口。
 
 部署顺序：
