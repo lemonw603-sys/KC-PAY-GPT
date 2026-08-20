@@ -75,3 +75,17 @@ test('admin batch generation keeps generation and downloads separate and exposes
   assert.match(script, /已生成，但列表刷新失败/);
   assert.match(script, /已作废.*但批次列表刷新失败/);
 });
+
+test('admin refresh feedback and inset dropdown arrows remain visible', () => {
+  const html = fs.readFileSync(path.join(directory, 'admin', 'index.html'), 'utf8');
+  const script = fs.readFileSync(path.join(directory, 'admin', 'assets', 'admin.js'), 'utf8');
+  const styles = fs.readFileSync(path.join(directory, 'admin', 'assets', 'admin.css'), 'utf8');
+  assert.match(html, /admin\.css\?v=13/);
+  assert.match(script, /button\.textContent = '刷新中…'/);
+  assert.match(script, /showNotice\('刷新完成。', 'success'\)/);
+  assert.match(script, /showNotice\('刷新失败，请稍后重试。'\)/);
+  assert.match(styles, /select\s*\{[\s\S]*appearance:\s*none/);
+  assert.match(styles, /padding-right:\s*40px\s*!important/);
+  assert.match(styles, /background-image:[^;]+!important/);
+  assert.match(styles, /background-position:\s*calc\(100% - 19px\) 50%, calc\(100% - 14px\) 50%\s*!important/);
+});
