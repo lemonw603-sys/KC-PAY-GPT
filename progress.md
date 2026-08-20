@@ -111,6 +111,7 @@
 ### What was done
 - 生产接单与新充值派发开关从 `true` 事务化关闭为 `false`；执行前后活动 Permit、开卡任务、不确定 Provider 调用和资金风险尝试均为 0。
 - 创建加密备份 `pojia-20260820T195421Z.sql.gz.enc`，哈希/解密/gzip 校验通过；在无网络 MySQL 8.4.11 容器恢复成功，共 30 张表。
+- 加密备份及校验文件已复制到服务器外的 `/Users/lemon/backups/AI充值业务/production/2026-08-21/`，本地 SHA-256 与服务器校验值一致；恢复密钥的长期异地托管仍待确定。
 - 发布 `/opt/pojia/releases/20260821-bark-prep-1`，执行迁移 `023_bark_notifications`；第二次执行全部为 `already applied`。
 - Bark 服务已安装并启用；普通实推、`SENDING` 超时重领和 `DEAD` 显式恢复均达到 `SENT`。
 - Provider 严格只读检查通过：HNSKJ 账户/余额/卡段/卡片读取正常，ZZSHU 连接检查正常；历史 401 阻塞已解除。

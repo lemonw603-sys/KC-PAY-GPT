@@ -164,7 +164,7 @@
 
 - 当前发布：`/opt/pojia/releases/20260821-bark-prep-1`。
 - 生产迁移已到 `023_bark_notifications`；重复执行验证通过。
-- 新加密备份及无网络隔离恢复通过，恢复 30 张表；异地加密副本仍未完成。
+- 新加密备份及无网络隔离恢复通过，恢复 30 张表；加密文件已复制到服务器外并校验一致，恢复密钥的长期异地托管仍未完成。
 - Bark 已在生产启用，普通实推、超时重领和 DEAD 恢复通过。
 - HNSKJ/ZZSHU 严格只读检查通过；历史 HNSKJ 401 已解除。
 - 最终只读体检无 blocker；`accept_new_orders=false`、`dispatch_new_recharges=false`。
