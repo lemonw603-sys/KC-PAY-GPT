@@ -33,6 +33,14 @@ const TASK_STATUS_LABELS = Object.freeze({ PENDING: '等待执行', RUNNING: '�
 const REFUND_LABELS = Object.freeze({ MONITORING: '观察中', DETECTED: '疑似退款', CONFIRMED: '已确认退款', WITHDRAWN: '已提取' });
 const INVENTORY_LABELS = Object.freeze({ AVAILABLE: '可分配', ASSIGNED: '已分配', DEPLETED: '已耗尽', PROVISIONING: '核对中', FAILED: '已失效' });
 const RECONCILIATION_LABELS = Object.freeze({ OK: '已对账', STALE: '待同步', SYNCING: '同步中', REVIEW_REQUIRED: '需核对', MISMATCH: '不一致' });
+const CARD_INTAKE_LABELS = Object.freeze({
+  QUARANTINED: '待第二次稳定读取', VALIDATED: '验证通过，待接管',
+  REVIEW_REQUIRED: '需人工核对', ACCEPTED: '已接管', EXISTING: '已在库存', FAILED: '验证失败'
+});
+const CARD_INTAKE_BATCH_LABELS = Object.freeze({
+  DISCOVERED: '已发现', VALIDATING: '验证中', VALIDATED: '已验证',
+  REVIEW_REQUIRED: '需人工核对', ACCEPTED: '已接管', COMPLETED: '已完成', FAILED: '失败'
+});
 const ORDER_RECONCILIATION_LABELS = Object.freeze({
   MATCHED: '三方一致', NOT_SUBMITTED: '尚未提交', IN_PROGRESS: '对账进行中',
   EVIDENCE_PENDING: '等待卡片证据', CONSISTENT_FAILURE: '失败结果一致', REVIEW_REQUIRED: '三方对账异常'
@@ -236,8 +244,8 @@ async function loadOverview() {
     { label: '三方对账异常', value: overview.metrics.reconciliationIssues, note: '订单、充值平台、卡片证据冲突', filter: 'RECONCILIATION_ISSUES' },
     { label: '资金结果未决', value: overview.operationalBacklog?.fundsRiskPending ?? 0,
       note: '禁止自动重试或切换充值路线', filter: 'RECONCILIATION_ISSUES' },
-    { label: '隔离中新卡', value: overview.operationalBacklog?.cardIntakePending ?? 0,
-      note: '尚未通过稳定快照验证', view: 'stock' },
+    { label: '待验证新卡', value: overview.operationalBacklog?.cardIntakePending ?? 0,
+      note: '本地接管队列；同步接管后更新，不会分配给订单', view: 'stock' },
     { label: '本地可分配卡', value: overview.cardStock?.available ?? 0,
       note: overview.cardStock?.low ? `已到低库存线：${overview.cardStock?.lowThreshold ?? 5}` : `低库存线：${overview.cardStock?.lowThreshold ?? 5}`, view: 'stock' },
     { label: '订单 Worker',
@@ -415,6 +423,30 @@ function downloadCodes(batchNo, codes) {
   URL.revokeObjectURL(url);
 }
 
+function csvCell(value) {
+  const text = String(value ?? '');
+  return /[",\r\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
+}
+
+function downloadCdkStatusCsv(payload) {
+  const labels = { AVAILABLE: '未使用', REDEEMED: '已兑换', REVOKED: '已作废' };
+  const rows = [['CDK', '状态', '订单查询码', '兑换时间', '作废时间', '作废原因']];
+  for (const item of payload.codes) rows.push([
+    item.code, labels[item.status] || item.status, item.orderPublicNo,
+    item.redeemedAt, item.revokedAt, item.revokeReason
+  ]);
+  const blob = new Blob([`\uFEFF${rows.map((row) => row.map(csvCell).join(',')).join('\r\n')}\r\n`],
+    { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = `${payload.batchNo}-状态清单.csv`;
+  document.body.append(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+}
+
 function clearGeneratedCdks() {
   window.clearTimeout(state.cdkClearTimer);
   state.cdkClearTimer = null;
@@ -431,13 +463,21 @@ async function loadCdkBatches() {
     ? '交付记录接口已启用；只有明确的“记录交付”动作才算交付。'
     : '当前尚未启用客户交付记录；下载、复制均不会被记为已交付。';
   elements.cdkBatches.innerHTML = payload.batches.length
-    ? payload.batches.map((batch) => `<div data-cdk-batch="${escapeHtml(batch.batchNo)}">
-      <span><strong>${escapeHtml(batch.batchNo)} · ${escapeHtml(batch.planType.toUpperCase())}</strong>
+    ? payload.batches.map((batch) => {
+      const fullyRevoked = batch.revokedCount > 0 && batch.revokedCount === batch.totalCount;
+      const partlyRevoked = batch.revokedCount > 0 && !fullyRevoked;
+      const batchClass = fullyRevoked ? 'cdk-batch-revoked' : partlyRevoked ? 'cdk-batch-partial' : '';
+      const badge = fullyRevoked ? '<b class="cdk-state-badge is-revoked">已全部作废</b>'
+        : partlyRevoked ? '<b class="cdk-state-badge is-partial">部分作废</b>'
+          : batch.availableCount > 0 ? '<b class="cdk-state-badge is-available">可使用</b>' : '<b class="cdk-state-badge">已用完</b>';
+      return `<div class="${batchClass}" data-cdk-batch="${escapeHtml(batch.batchNo)}">
+      <span><strong>${escapeHtml(batch.batchNo)} · ${escapeHtml(batch.planType.toUpperCase())} ${badge}</strong>
       <small>总数 ${batch.totalCount} · 未使用 ${batch.availableCount} · 已兑换 ${batch.redeemedCount} · 已作废 ${batch.revokedCount} · ${formatTime(batch.createdAt)}</small></span>
       <span class="cdk-batch-actions">
-        ${batch.downloadable ? `<button type="button" class="text-button" data-download-batch data-redeemed-count="${batch.redeemedCount}" data-revoked-count="${batch.revokedCount}">${batch.redeemedCount || batch.revokedCount ? '导出原始整批' : '导出整批 TXT'}</button>` : '<em>旧批次无明文</em>'}
+        ${batch.downloadable ? `<button type="button" class="text-button" data-download-batch data-redeemed-count="${batch.redeemedCount}" data-revoked-count="${batch.revokedCount}">下载原始 TXT</button><button type="button" class="text-button" data-status-report>下载状态清单 CSV</button>` : '<em>历史批次无明文恢复副本</em>'}
         ${batch.availableCount > 0 ? '<button type="button" class="danger-small" data-revoke-batch>作废未使用</button>' : ''}
-      </span></div>`).join('')
+      </span></div>`;
+    }).join('')
     : '<p class="empty-state">还没有 CDK 批次</p>';
   elements.syncTime.textContent = `更新于 ${new Date().toLocaleTimeString('zh-CN', { hour12: false })}`;
 }
@@ -457,6 +497,19 @@ async function downloadStoredBatch(batchNo, button) {
     showNotice(`已导出批次 ${payload.batchNo}。`, 'success');
   } catch (error) {
     showNotice(cdkErrorMessage(error, '批次导出'));
+  } finally { button.disabled = false; }
+}
+
+async function downloadStoredBatchStatus(batchNo, button) {
+  button.disabled = true;
+  try {
+    const payload = await sensitiveApi(`/api/v1/admin/cdks/${encodeURIComponent(batchNo)}/status-report`, {
+      method: 'POST'
+    });
+    downloadCdkStatusCsv(payload);
+    showNotice(`已下载批次 ${payload.batchNo} 的逐码状态清单。`, 'success');
+  } catch (error) {
+    showNotice(cdkErrorMessage(error, '状态清单下载'));
   } finally { button.disabled = false; }
 }
 
@@ -581,10 +634,10 @@ async function loadCardIntake() {
   const latest = payload.batches?.[0];
   const rows = payload.discoveries || [];
   const summary = latest
-    ? `<div><span><strong>最近批次 · ${escapeHtml(latest.status)}</strong><small>发现 ${latest.discoveredCount} · 已接管 ${latest.acceptedCount} · 待人工核对 ${latest.reviewCount} · 失败 ${latest.failedCount}</small></span><em>${escapeHtml(latest.id.slice(0, 8))}</em></div>`
+    ? `<div><span><strong>最近批次 · ${escapeHtml(CARD_INTAKE_BATCH_LABELS[latest.status] || latest.status)}</strong><small>发现 ${latest.discoveredCount} · 已接管 ${latest.acceptedCount} · 待人工核对 ${latest.reviewCount} · 失败 ${latest.failedCount}</small></span><em>${escapeHtml(latest.id.slice(0, 8))}</em></div>`
     : '<p class="empty-state">还没有新卡接管批次</p>';
-  const details = rows.map((item) => `<div><span><strong>卡台 ID ${escapeHtml(item.externalCardId)}</strong><small>验证 ${item.validationAttempts} 次${item.failureCode ? ` · ${escapeHtml(item.failureCode)}` : ''}</small></span><em>${escapeHtml(item.intakeStatus)}</em></div>`).join('');
-  elements.cardIntakeList.innerHTML = `${!payload.configured ? '<p class="provider-warning">服务器尚未配置卡台只读凭据；暂时只能查看历史接管记录。</p>' : ''}${summary}${details}`;
+  const details = rows.map((item) => `<div><span><strong>卡台 ID ${escapeHtml(item.externalCardId)}</strong><small>验证 ${item.validationAttempts} 次${item.failureCode ? ` · ${escapeHtml(item.failureCode)}` : ''}</small></span><em>${escapeHtml(CARD_INTAKE_LABELS[item.intakeStatus] || item.intakeStatus)}</em></div>`).join('');
+  elements.cardIntakeList.innerHTML = `${!payload.configured ? '<p class="provider-warning">服务器尚未配置卡台只读凭据；暂时只能查看历史接管记录。</p>' : ''}<p class="intake-explanation">这里是本地新卡接管队列，不是卡台实时总库存。新卡需要两次稳定读取并完成接管后，才会进入可分配库存；数据在点击“同步并接管新卡”后更新。</p>${summary}${details}`;
 }
 
 async function requestCardSync(providerCardId = null, button = null) {
@@ -1020,13 +1073,27 @@ elements.reconciliationTable?.addEventListener('click', (event) => {
       .catch(() => { button.disabled = false; showNotice('案例解决失败。'); });
   }
 });
-document.querySelector('#refresh-button').addEventListener('click', () => {
+document.querySelector('#refresh-button').addEventListener('click', async (event) => {
+  const button = event.currentTarget;
+  if (button.disabled) return;
   hideNotice();
-  (state.view === 'overview' ? loadOverview()
+  button.disabled = true;
+  button.classList.add('is-loading');
+  button.textContent = '刷新中…';
+  elements.syncTime.textContent = '正在刷新…';
+  try {
+    await (state.view === 'overview' ? loadOverview()
     : state.view === 'stock' ? loadStock()
       : state.view === 'cdks' ? loadCdkBatches()
-        : state.view === 'reconciliation' ? loadReconciliationCases() : loadOrders())
-    .catch(() => showNotice('刷新失败，请稍后重试。'));
+        : state.view === 'reconciliation' ? loadReconciliationCases() : loadOrders());
+    showNotice('刷新完成。', 'success');
+  } catch {
+    showNotice('刷新失败，请稍后重试。');
+  } finally {
+    button.disabled = false;
+    button.classList.remove('is-loading');
+    button.textContent = '刷新';
+  }
 });
 document.querySelector('#refresh-stock')?.addEventListener('click', () => loadStock().catch(() => showNotice('库存读取失败。')));
 document.querySelector('#sync-all-cards')?.addEventListener('click', (event) => requestCardSync(null, event.currentTarget));
@@ -1134,9 +1201,9 @@ elements.cdkForm.addEventListener('submit', async (event) => {
   button.disabled = true;
   button.textContent = '生成中…';
   const count = Number(elements.cdkCount.value);
-  if (count > 10 && !window.confirm(`确认一次生成 ${count} 个 CDK？\n\n生成后请下载并妥善保存。`)) {
+  if (count > 10 && !window.confirm(`确认一次生成 ${count} 个 CDK？\n\n生成只创建批次，不会自动下载或交付。`)) {
     button.disabled = false;
-    button.textContent = '生成并导出整批 TXT';
+    button.textContent = '生成 CDK';
     return;
   }
   const storedRequest = JSON.parse(sessionStorage.getItem('cdk-generation-request') || 'null');
@@ -1154,7 +1221,6 @@ elements.cdkForm.addEventListener('submit', async (event) => {
     elements.generatedCdks.rows = Math.min(Math.max(payload.codes.length, 3), 18);
     elements.cdkBatchLabel.textContent = `批次 ${payload.batchNo} · ${payload.count} 个`;
     elements.cdkResult.hidden = false;
-    downloadCodes(payload.batchNo, payload.codes);
     sessionStorage.removeItem('cdk-generation-request');
     window.clearTimeout(state.cdkClearTimer);
     state.cdkClearTimer = window.setTimeout(() => {
@@ -1164,17 +1230,17 @@ elements.cdkForm.addEventListener('submit', async (event) => {
   } catch (error) {
     showNotice(cdkErrorMessage(error, 'CDK 生成'));
     button.disabled = false;
-    button.textContent = '生成并导出整批 TXT';
+    button.textContent = '生成 CDK';
     return;
   }
-  showNotice(`已生成并导出批次 ${payload.batchNo}，共 ${payload.count} 个 CDK。`, 'success');
+  showNotice(`已生成批次 ${payload.batchNo}，共 ${payload.count} 个 CDK；尚未下载。`, 'success');
   try {
     await loadCdkBatches();
   } catch {
-    showNotice(`批次 ${payload.batchNo} 已生成并导出，但列表刷新失败；请点“刷新”核对，不要再次生成。`, 'warning');
+    showNotice(`批次 ${payload.batchNo} 已生成，但列表刷新失败；请点“刷新”核对，不要再次生成。`, 'warning');
   } finally {
     button.disabled = false;
-    button.textContent = '生成并导出整批 TXT';
+    button.textContent = '生成 CDK';
   }
 });
 elements.downloadCdks.addEventListener('click', () => {
@@ -1187,6 +1253,7 @@ elements.cdkBatches.addEventListener('click', (event) => {
   if (!row) return;
   const batchNo = row.dataset.cdkBatch;
   if (event.target.closest('[data-download-batch]')) downloadStoredBatch(batchNo, event.target.closest('button'));
+  if (event.target.closest('[data-status-report]')) downloadStoredBatchStatus(batchNo, event.target.closest('button'));
   if (event.target.closest('[data-revoke-batch]')) revokeStoredBatch(batchNo, event.target.closest('button'));
 });
 elements.copyCdks.addEventListener('click', async () => {

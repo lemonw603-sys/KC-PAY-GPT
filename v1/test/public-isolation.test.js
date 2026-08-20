@@ -63,15 +63,15 @@ test('admin assets contain no remote, legacy, or secret-bearing dependencies', (
   }
 });
 
-test('admin batch generation exports the complete CDK batch and labels recovery exports clearly', () => {
+test('admin batch generation keeps generation and downloads separate and exposes audit history', () => {
   const html = fs.readFileSync(path.join(directory, 'admin', 'index.html'), 'utf8');
   const script = fs.readFileSync(path.join(directory, 'admin', 'assets', 'admin.js'), 'utf8');
-  assert.match(html, /生成并导出整批 TXT/);
-  assert.match(html, /再次导出整批 TXT/);
-  assert.match(script, /downloadCodes\(payload\.batchNo, payload\.codes\)/);
-  assert.match(script, /导出整批 TXT/);
-  assert.match(script, /导出原始整批/);
+  assert.match(html, />生成 CDK</);
+  assert.match(html, /下载本批次 TXT/);
+  assert.match(script, /下载原始 TXT/);
+  assert.match(script, /下载状态清单 CSV/);
+  assert.match(script, /已全部作废/);
   assert.match(script, /禁止把文件中的码重新发放/);
-  assert.match(script, /已生成并导出，但列表刷新失败/);
+  assert.match(script, /已生成，但列表刷新失败/);
   assert.match(script, /已作废.*但批次列表刷新失败/);
 });

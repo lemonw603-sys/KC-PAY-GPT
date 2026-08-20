@@ -289,6 +289,7 @@ test('generates CDKs only for an authenticated administrator', async () => {
   });
   let received;
   let revoked;
+  let inspected;
   const app = createApp({
     adminAuth,
     createAdminCdkBatch: async (input) => {
@@ -297,6 +298,10 @@ test('generates CDKs only for an authenticated administrator', async () => {
     },
     listAdminCdkBatches: async () => ({ batches: [{ batchNo: 'B-TEST', totalCount: 1 }] }),
     downloadAdminCdkBatch: async (batchNo) => ({ batchNo, codes: ['PJ-ABCDEFGHJKMNPQRST234'] }),
+    inspectAdminCdkBatch: async (batchNo) => {
+      inspected = batchNo;
+      return { batchNo, codes: [{ code: 'PJ-ABCDEFGHJKMNPQRST234', status: 'REVOKED' }] };
+    },
     revokeAdminCdkBatch: async (batchNo, reason) => {
       revoked = { batchNo, reason };
       return { batchNo, revokedCount: 1 };
@@ -348,6 +353,13 @@ test('generates CDKs only for an authenticated administrator', async () => {
     assert.deepEqual(await download.json(), {
       batchNo: 'B-TEST', codes: ['PJ-ABCDEFGHJKMNPQRST234']
     });
+    const statusReport = await fetch(`${baseUrl}/api/v1/admin/cdks/B-TEST/status-report`, {
+      method: 'POST', headers: { Cookie: sensitiveCookie, Origin: baseUrl }
+    });
+    assert.deepEqual(await statusReport.json(), {
+      batchNo: 'B-TEST', codes: [{ code: 'PJ-ABCDEFGHJKMNPQRST234', status: 'REVOKED' }]
+    });
+    assert.equal(inspected, 'B-TEST');
     const revoke = await fetch(`${baseUrl}/api/v1/admin/cdks/B-TEST/revoke`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Cookie: sensitiveCookie, Origin: baseUrl },

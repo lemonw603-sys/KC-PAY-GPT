@@ -7,6 +7,7 @@ import { createAdminReadService } from './services/admin-read-service.js';
 import {
   createAdminCdkService,
   downloadCdkBatch,
+  inspectCdkBatch,
   listCdkBatches,
   revokeCdkBatch
 } from './services/cdk-service.js';
@@ -196,6 +197,9 @@ const app = createApp({
     deliveryTrackingEnabled: Boolean(cdkDelivery)
   })
   ,downloadAdminCdkBatch: (batchNo) => downloadCdkBatch(pool, batchNo, config.cdkRecoveryKey)
+  ,inspectAdminCdkBatch: (batchNo) => inspectCdkBatch(
+    pool, batchNo, config.cdkHashKey, config.cdkRecoveryKey
+  )
   ,revokeAdminCdkBatch: (batchNo, reason) => revokeCdkBatch(pool, batchNo, reason)
   ,recordAdminCdkDelivery: cdkDelivery ? async (input = {}) => {
     const common = {

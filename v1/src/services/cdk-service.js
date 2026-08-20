@@ -255,7 +255,8 @@ export async function listCdkBatches(pool, { limit = 50 } = {}) {
             SUM(c.status = 'REVOKED') AS revoked_count,
             MIN(c.created_at) AS created_at,
             MAX(b.codes_ciphertext IS NOT NULL) AS downloadable,
-            MAX(b.revoked_at) AS revoked_at
+            MAX(b.revoked_at) AS revoked_at,
+            MAX(b.revoke_reason) AS revoke_reason
      FROM cdks c LEFT JOIN cdk_batches b ON BINARY b.batch_no = BINARY c.batch_no
      WHERE c.batch_no IS NOT NULL
      GROUP BY c.batch_no
@@ -271,8 +272,56 @@ export async function listCdkBatches(pool, { limit = 50 } = {}) {
     revokedCount: Number(row.revoked_count || 0),
     downloadable: Boolean(row.downloadable),
     createdAt: iso(row.created_at),
-    revokedAt: iso(row.revoked_at)
+    revokedAt: iso(row.revoked_at),
+    revokeReason: row.revoke_reason || null
   })) };
+}
+
+export async function inspectCdkBatch(pool, batchNo, cdkHashKey, cdkRecoveryKey) {
+  const normalizedBatchNo = normalizeBatchNo(batchNo);
+  const [batchRows] = await pool.query(
+    `SELECT batch_no, plan_type, requested_count, codes_ciphertext, created_at,
+            revoked_at, revoke_reason
+     FROM cdk_batches WHERE BINARY batch_no = BINARY ? LIMIT 1`,
+    [normalizedBatchNo]
+  );
+  if (!batchRows.length || !batchRows[0].codes_ciphertext) {
+    throw new CdkBatchError('batch plaintext is not available', 'BATCH_DOWNLOAD_UNAVAILABLE');
+  }
+  const decoded = decodeStoredBatch(batchRows[0], cdkRecoveryKey);
+  const [statusRows] = await pool.query(
+    `SELECT c.code_hash, c.status, c.redeemed_at, c.revoked_at, c.revoke_reason,
+            o.public_no
+     FROM cdks c LEFT JOIN orders o ON o.id = c.order_id
+     WHERE BINARY c.batch_no = BINARY ?`,
+    [normalizedBatchNo]
+  );
+  const statusByHash = new Map(statusRows.map((row) => [String(row.code_hash), row]));
+  const codes = decoded.codes.map((code) => {
+    const row = statusByHash.get(hashCurrentCdk(code, cdkHashKey));
+    if (!row) throw new CdkBatchError('stored CDK batch cannot be mapped', 'BATCH_RECOVERY_FAILED');
+    return {
+      code,
+      status: row.status,
+      orderPublicNo: row.public_no || null,
+      redeemedAt: iso(row.redeemed_at),
+      revokedAt: iso(row.revoked_at),
+      revokeReason: row.revoke_reason || null
+    };
+  });
+  await pool.query(
+    `INSERT INTO cdk_admin_events (event_type, batch_no, metadata_json)
+     VALUES ('BATCH_STATUS_EXPORTED', ?, ?)`,
+    [normalizedBatchNo, JSON.stringify({ count: codes.length })]
+  );
+  return {
+    batchNo: normalizedBatchNo,
+    planType: batchRows[0].plan_type,
+    createdAt: iso(batchRows[0].created_at),
+    revokedAt: iso(batchRows[0].revoked_at),
+    revokeReason: batchRows[0].revoke_reason || null,
+    codes
+  };
 }
 
 export async function downloadCdkBatch(pool, batchNo, cdkRecoveryKey) {
@@ -315,15 +364,6 @@ export async function revokeCdkBatch(pool, batchNo, reason = 'operator revoked')
       `UPDATE cdk_batches SET revoked_at = CURRENT_TIMESTAMP(3), revoke_reason = ?
        WHERE BINARY batch_no = BINARY ?`,
       [String(reason).slice(0, 500), normalizedBatchNo]
-    );
-    await connection.query(
-      `UPDATE cdk_batches b SET codes_ciphertext = NULL
-       WHERE BINARY b.batch_no = BINARY ?
-         AND NOT EXISTS (
-           SELECT 1 FROM cdks c
-           WHERE BINARY c.batch_no = BINARY b.batch_no AND c.status = 'AVAILABLE'
-         )`,
-      [normalizedBatchNo]
     );
     await connection.query(
       `INSERT INTO cdk_admin_events (event_type, batch_no, metadata_json)

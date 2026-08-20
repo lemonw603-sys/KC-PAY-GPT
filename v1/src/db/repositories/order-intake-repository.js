@@ -136,17 +136,6 @@ export async function createOrderFromCdk(pool, input) {
         status: 409
       });
     }
-    if (cdkRows[0].batch_no) {
-      await connection.query(
-        `UPDATE cdk_batches b SET codes_ciphertext = NULL
-         WHERE BINARY b.batch_no = BINARY ?
-           AND NOT EXISTS (
-             SELECT 1 FROM cdks c
-             WHERE BINARY c.batch_no = BINARY b.batch_no AND c.status = 'AVAILABLE'
-           )`,
-        [cdkRows[0].batch_no]
-      );
-    }
     await connection.query(
       `INSERT INTO order_events
        (order_id, from_status, to_status, actor_type, reason)

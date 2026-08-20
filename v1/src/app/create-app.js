@@ -49,6 +49,7 @@ export function createApp({
   createAdminCdkBatch = null,
   listAdminCdkBatches = null,
   downloadAdminCdkBatch = null,
+  inspectAdminCdkBatch = null,
   revokeAdminCdkBatch = null,
   recordAdminCdkDelivery = null,
   listAdminReconciliationCases = null,
@@ -353,6 +354,18 @@ export function createApp({
     app.post('/api/v1/admin/cdks/:batchNo/download', ...sensitiveAdminGuards, async (req, res) => {
       try {
         res.json(await downloadAdminCdkBatch(req.params.batchNo));
+      } catch (error) {
+        if (error instanceof CdkBatchError) {
+          return res.status(404).json({ error: error.code.toLowerCase() });
+        }
+        throw error;
+      }
+    });
+  }
+  if (typeof inspectAdminCdkBatch === 'function') {
+    app.post('/api/v1/admin/cdks/:batchNo/status-report', ...sensitiveAdminGuards, async (req, res) => {
+      try {
+        res.json(await inspectAdminCdkBatch(req.params.batchNo));
       } catch (error) {
         if (error instanceof CdkBatchError) {
           return res.status(404).json({ error: error.code.toLowerCase() });

@@ -16,6 +16,7 @@ import { sessionFixture } from '../test-support/session-fixture.js';
 import {
   createAdminCdkService,
   downloadCdkBatch,
+  inspectCdkBatch,
   listCdkBatches,
   revokeCdkBatch,
   storeCdkBatch
@@ -999,6 +1000,18 @@ test('admin CDK generation is idempotent, recoverable, listable and revocable', 
     });
     const afterRevoke = await listCdkBatches(pool, { limit: 100 });
     assert.equal(afterRevoke.batches.find((batch) => batch.batchNo === batchNo)?.revokedCount, 3);
+    assert.equal(afterRevoke.batches.find((batch) => batch.batchNo === batchNo)?.downloadable, true);
+    const [[retainedBatch]] = await pool.query(
+      'SELECT codes_ciphertext FROM cdk_batches WHERE batch_no = ?', [batchNo]
+    );
+    assert.equal(Buffer.isBuffer(retainedBatch.codes_ciphertext), true);
+    const statusReport = await inspectCdkBatch(
+      pool, batchNo, integrationCdkHashKey, integrationCdkRecoveryKey
+    );
+    assert.deepEqual(statusReport.codes.map((item) => item.code), created.codes);
+    assert.equal(statusReport.codes.every((item) => item.status === 'REVOKED'), true);
+    assert.equal(statusReport.codes.every((item) => item.revokedAt), true);
+    assert.equal(statusReport.codes.every((item) => item.revokeReason === 'integration test'), true);
   } finally {
     if (batchNo) {
       await pool.query('DELETE FROM cdk_admin_events WHERE batch_no = ?', [batchNo]);

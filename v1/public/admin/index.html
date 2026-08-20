@@ -7,8 +7,8 @@
   <meta name="theme-color" content="#f5f8fc">
   <title>Plus 运营后台</title>
   <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/admin/assets/admin.css?v=9">
-  <script src="/admin/assets/admin.js?v=12" defer></script>
+  <link rel="stylesheet" href="/admin/assets/admin.css?v=10">
+  <script src="/admin/assets/admin.js?v=13" defer></script>
 </head>
 <body>
   <div class="admin-shell">
@@ -22,7 +22,7 @@
         <button class="nav-item is-active" type="button" data-view="overview"><span aria-hidden="true">⌂</span>总览</button>
         <button class="nav-item" type="button" data-view="orders"><span aria-hidden="true">≡</span>订单</button>
         <button class="nav-item" type="button" data-view="exceptions"><span aria-hidden="true">!</span>异常队列</button>
-        <button class="nav-item" type="button" data-view="reconciliation"><span aria-hidden="true">✓</span>对账案例</button>
+        <button class="nav-item" type="button" data-view="reconciliation"><span aria-hidden="true">✓</span>资金证据核对</button>
         <button class="nav-item" type="button" data-view="stock"><span aria-hidden="true">▣</span>卡片库存</button>
         <button class="nav-item" type="button" data-view="cdks"><span aria-hidden="true">#</span>CDK 管理</button>
       </nav>
@@ -93,10 +93,10 @@
       <section id="reconciliation-view" class="view" hidden>
         <section class="card orders-card">
           <div class="card-heading">
-            <div><p class="section-kicker">运营核对</p><h2>对账案例队列</h2></div>
+            <div><p class="section-kicker">运营核对</p><h2>资金证据核对队列</h2></div>
             <button class="text-button" id="export-reconciliation" type="button">导出安全 CSV</button>
           </div>
-          <p class="card-description">只展示运营核对所需字段。解决案例必须填写处理结论；重复发现会更新“最后发现”，不会覆盖已经解决的结论。</p>
+          <p class="card-description">当本地订单、充值平台和卡片交易的证据冲突或结果不明时，系统会在这里留下可追溯的人工核对工单，并阻止冒险自动重试，避免重复扣款。操作者应查看关联订单、核对三方证据、分配负责人并填写结论。<strong>点“解决”只保存核对结论，不会自动重充、退款或扣款。</strong></p>
           <form class="filters reconciliation-filters" id="reconciliation-filters">
             <label><span class="sr-only">案例状态</span><select id="reconciliation-status"><option value="">全部状态</option><option value="OPEN">待处理</option><option value="ASSIGNED">已分配</option><option value="RESOLVED">已解决</option></select></label>
             <label><span class="sr-only">严重程度</span><select id="reconciliation-severity"><option value="">全部等级</option><option value="critical">严重</option><option value="warning">警告</option><option value="info">提示</option></select></label>
@@ -113,18 +113,18 @@
             <div><p class="section-kicker">订单入口</p><h2>生成 CDK 卡密</h2></div>
             <span class="write-badge">内部写入</span>
           </div>
-          <p class="card-description">当前仅支持 Plus。一次可生成并导出 1–1000 个 CDK，每个批次合并为一个 TXT。数据库仅保存不可逆 HMAC，批次恢复副本加密保存。生成卡密不会触发开卡或充值。<strong>导出文件不代表已经交付客户。</strong></p>
+          <p class="card-description">当前仅支持 Plus。一次可生成 1–1000 个 CDK；生成后由你另行选择复制或下载 TXT，不会自动下载。数据库保存不可逆 HMAC，批次恢复副本加密保存。生成卡密不会触发开卡或充值。<strong>下载文件不代表已经交付客户。</strong></p>
           <form class="cdk-form" id="cdk-form">
             <label for="cdk-count">生成数量</label>
             <div>
               <input id="cdk-count" name="count" type="number" min="1" max="1000" value="1" required>
-              <button class="primary-button" type="submit">生成并导出整批 TXT</button>
+              <button class="primary-button" type="submit">生成 CDK</button>
             </div>
           </form>
           <div class="cdk-result" id="cdk-result" hidden>
-            <div><span id="cdk-batch-label">批次</span><span class="cdk-result-actions"><button class="text-button" id="download-cdks" type="button">再次导出整批 TXT</button><button class="text-button" id="copy-cdks" type="button">复制全部</button></span></div>
+            <div><span id="cdk-batch-label">批次</span><span class="cdk-result-actions"><button class="text-button" id="download-cdks" type="button">下载本批次 TXT</button><button class="text-button" id="copy-cdks" type="button">复制全部</button></span></div>
             <textarea id="generated-cdks" readonly spellcheck="false" aria-label="刚生成的 CDK 卡密"></textarea>
-            <p>整批 CDK 已导出为一个 TXT；也可复制或在批次记录中再次导出。</p>
+            <p>CDK 已生成，尚未下载或交付。可复制，或点击“下载本批次 TXT”。</p>
           </div>
         </section>
         <section class="card cdk-card cdk-batches-card">
@@ -132,7 +132,7 @@
             <div><p class="section-kicker">批次记录</p><h2>最近 CDK 批次</h2></div>
             <button class="text-button" id="refresh-cdk-batches" type="button">刷新</button>
           </div>
-          <p class="card-description">每个新版批次可一键导出一个完整 TXT；作废只影响尚未兑换的卡密，不会修改已创建的订单。<span id="cdk-delivery-capability">正在读取交付记录能力…</span></p>
+          <p class="card-description">每个新版批次可单独下载原始 TXT 和带状态的 CSV 留档；作废只影响尚未兑换的卡密，记录会保留便于倒查。<span id="cdk-delivery-capability">正在读取交付记录能力…</span></p>
           <div class="mini-list cdk-batch-list" id="cdk-batches"></div>
         </section>
       </section>
@@ -181,8 +181,8 @@
           <div class="mini-list" id="stock-jobs"></div>
         </section>
         <section class="card stock-card">
-          <div class="card-heading"><div><p class="section-kicker">手动开卡接管</p><h2>新卡隔离与入库</h2></div><button class="primary-small" id="discover-new-cards" type="button">同步并接管新卡</button></div>
-          <p class="card-description">你在卡台手动开卡后点一次即可。系统会分页发现新卡、连续读取两次验证；通过后自动进入库存，异常卡继续隔离，不影响其他卡。</p>
+          <div class="card-heading"><div><p class="section-kicker">手动开卡接管</p><h2>待验证新卡（隔离区）</h2></div><button class="primary-small" id="discover-new-cards" type="button">同步并接管新卡</button></div>
+          <p class="card-description">这是本地接管队列，不是卡台实时总卡数。你在卡台手动开卡后点一次；系统会分页发现新卡、连续读取两次验证。通过并接管后才会进入可分配库存，异常卡保留在隔离区。</p>
           <div class="mini-list" id="card-intake-list"><p class="empty-state">正在读取接管状态…</p></div>
         </section>
         <section class="card stock-card">
