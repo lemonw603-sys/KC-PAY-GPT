@@ -15,6 +15,7 @@ import {
   refreshProviderSnapshot,
   snapshotIsFresh
 } from '../src/services/card-provider-snapshot-service.js';
+import { createProviderBalanceSnapshotService } from '../src/services/provider-balance-snapshot-service.js';
 import { openStockCards, syncProvisioningStock } from './card-stock.js';
 
 if (process.env.PROVIDER_WRITES_ENABLED === 'true' || process.env.PROVIDER_CARD_WRITES_ENABLED !== 'true') {
@@ -29,11 +30,15 @@ const provider = new HnskjCardProvider({
   apiKey: String(process.env.HNSKJ_API_KEY || '')
 });
 const stock = createCardStockService({ pool, sessionEncryptionKey: config.sessionEncryptionKey });
+const balanceSnapshots = createProviderBalanceSnapshotService({ pool });
+const refreshSnapshot = () => refreshProviderSnapshot(pool, provider, {
+  balanceSnapshotService: balanceSnapshots
+});
 
 try {
   let snapshot = await readProviderSnapshot(pool);
   if (!snapshotIsFresh(snapshot, { maxAgeMs: 60_000 })) {
-    snapshot = await refreshProviderSnapshot(pool, provider);
+    snapshot = await refreshSnapshot();
   }
   const job = await claimCardStockJob(pool, { workerId });
   if (!job) {
@@ -44,7 +49,7 @@ try {
       const remaining = job.requestedCount - job.openedCount;
       const rules = typeof job.rulesSnapshot === 'string'
         ? JSON.parse(job.rulesSnapshot) : job.rulesSnapshot;
-      snapshot = await refreshProviderSnapshot(pool, provider);
+      snapshot = await refreshSnapshot();
       evaluateCardStockRequest(snapshot, {
         cardTypeId: job.cardTypeId,
         amount: Number(job.amount),
@@ -58,7 +63,7 @@ try {
         amount: Number(job.amount),
         cardTypeId: job.cardTypeId,
         beforeCard: async ({ remaining: cardsRemaining }) => {
-          const live = await refreshProviderSnapshot(pool, provider);
+          const live = await refreshSnapshot();
           evaluateCardStockRequest(live, {
             cardTypeId: job.cardTypeId,
             amount: Number(job.amount),

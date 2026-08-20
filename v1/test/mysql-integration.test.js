@@ -40,6 +40,9 @@ import { commitCardTransactionsForCard } from '../src/db/repositories/card-trans
 import { createAdminReadService } from '../src/services/admin-read-service.js';
 import { createRechargeAuthorization } from '../src/services/recharge-authorization-v2-service.js';
 import { createRechargeAttemptRepository } from '../src/db/repositories/recharge-attempt-repository.js';
+import { createProviderBalanceSnapshotService } from '../src/services/provider-balance-snapshot-service.js';
+import { createReconciliationCaseService } from '../src/services/reconciliation-case-service.js';
+import { createOperationsCsvExportService } from '../src/services/operations-csv-export-service.js';
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
 const integrationSessionKey = Buffer.alloc(32, 7);
@@ -1406,6 +1409,57 @@ test('new-order and new-recharge switches default to disabled', {
       { setting_key: 'dispatch_new_recharges', setting_value: 'false' }
     ]);
   } finally {
+    await pool.end();
+  }
+});
+
+test('Foundation v2 operations SQL persists balance history and safe reconciliation data', {
+  skip: !databaseUrl && 'TEST_DATABASE_URL 未配置；完整 MySQL 套件在服务器隔离数据库运行'
+}, async () => {
+  const pool = mysql.createPool({ uri: databaseUrl, connectionLimit: 4, timezone: 'Z' });
+  const observedAt = new Date(`2026-08-20T12:00:${String(Math.floor(Math.random() * 59)).padStart(2, '0')}.123Z`);
+  const dedupeKey = `ops:${crypto.randomUUID()}`;
+  try {
+    const balances = createProviderBalanceSnapshotService({ pool });
+    const first = await balances.recordSnapshot({
+      providerAccountId: legacyCardProviderAccountId,
+      currency: 'USD', availableBalance: '123.450000', observedAt,
+      rawPayload: { data: { balance: '123.450000', apiKey: 'not-persisted' } }
+    });
+    const replay = await balances.recordSnapshot({
+      providerAccountId: legacyCardProviderAccountId,
+      currency: 'USD', availableBalance: '123.450000', observedAt,
+      rawPayload: { data: { apiKey: 'not-persisted', balance: '123.450000' } }
+    });
+    assert.equal(first.inserted, true);
+    assert.equal(replay.inserted, false);
+
+    const cases = createReconciliationCaseService({ pool });
+    await cases.upsertCase({
+      caseType: 'SUBMIT_UNKNOWN_STALE', dedupeKey,
+      evidence: { status: 'SUBMIT_UNKNOWN', apiKey: 'SECRET', cdkCode: 'PJ-ABCDE-FGHJK-MNPQR-ST234' }
+    });
+    const repeated = await cases.upsertCase({
+      caseType: 'SUBMIT_UNKNOWN_STALE', dedupeKey: dedupeKey.toUpperCase(),
+      severity: 'critical', evidence: { status: 'SUBMIT_UNKNOWN' }
+    });
+    assert.equal(repeated.dedupeKey, dedupeKey);
+    const listed = await cases.listCases({ caseType: 'SUBMIT_UNKNOWN_STALE', pageSize: 100 });
+    const item = listed.cases.find((entry) => entry.dedupeKey === dedupeKey);
+    assert.equal(Boolean(item), true);
+    assert.equal('evidence' in item, false);
+
+    const exported = await createOperationsCsvExportService({ pool }).exportCsv({
+      dataset: 'reconciliation_cases', filters: { dedupeKey }, limit: 10
+    });
+    assert.equal(exported.rowCount, 1);
+    assert.doesNotMatch(exported.csv, /SECRET|PJ-ABCDE|apiKey/i);
+  } finally {
+    await pool.query('DELETE FROM reconciliation_cases WHERE dedupe_key = ?', [dedupeKey]);
+    await pool.query(
+      'DELETE FROM provider_balance_snapshots WHERE provider_account_id = ? AND currency = ? AND observed_at = ?',
+      [legacyCardProviderAccountId, 'USD', observedAt]
+    );
     await pool.end();
   }
 });

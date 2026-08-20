@@ -9,6 +9,7 @@ const migrationsDir = path.resolve(here, '../migrations');
 const migrationName = '021_foundation_v2_core.sql';
 const migrationPath = path.join(migrationsDir, migrationName);
 const sql = fs.readFileSync(migrationPath, 'utf8');
+const operationsSql = fs.readFileSync(path.join(migrationsDir, '022_foundation_v2_operations.sql'), 'utf8');
 
 const expectedTables = [
   'provider_accounts',
@@ -24,13 +25,21 @@ const expectedTables = [
   'reconciliation_cases'
 ];
 
-test('Foundation v2 migration is correctly ordered after 020', () => {
+test('Foundation v2 migrations are correctly ordered after 020', () => {
   const names = fs.readdirSync(migrationsDir)
     .filter((name) => /^\d+_[a-z0-9_-]+\.sql$/i.test(name))
     .sort();
-  assert.equal(names.at(-1), migrationName);
-  assert.equal(names.at(-2), '020_runtime_health.sql');
+  assert.equal(names.at(-1), '022_foundation_v2_operations.sql');
+  assert.equal(names.at(-2), migrationName);
+  assert.equal(names.at(-3), '020_runtime_health.sql');
   assert.equal(new Set(names).size, names.length);
+});
+
+test('operations migration adds an explicit replay-safe last-seen timestamp', () => {
+  assert.match(operationsSql, /information_schema\.COLUMNS/i);
+  assert.match(operationsSql, /ADD COLUMN last_seen_at TIMESTAMP\(3\)/i);
+  assert.match(operationsSql, /SET last_seen_at = COALESCE\(last_seen_at, updated_at, detected_at\)/i);
+  assert.doesNotMatch(operationsSql, /DROP\s+(?:TABLE|COLUMN)/i);
 });
 
 test('Foundation v2 creates every required table idempotently', () => {

@@ -20,7 +20,10 @@ const SETTING_META = Object.freeze({
   sync_card_transactions: '同步卡片交易（只读）'
 });
 
-const PERMIT_LABELS = Object.freeze({ LOCKED: '未放行', ARMED: '已放行', CONSUMED: '已使用', REVOKED: '已撤销' });
+const PERMIT_LABELS = Object.freeze({
+  LOCKED: '未放行', ARMED: '已放行', CONSUMED: '已使用',
+  REVOKED: '已撤销', EXPIRED: '已过期', RELEASED: '已释放'
+});
 const TASK_LABELS = Object.freeze({
   ASSIGN_CARD: '分配库存卡', PURCHASE_CARD: '开卡', VERIFY_CARD: '核对卡片',
   PREPARE_RECHARGE: '付款前准备', SUBMIT_RECHARGE: '提交充值', POLL_RECHARGE: '查询充值结果',
@@ -54,7 +57,8 @@ const ORDER_RECONCILIATION_CODES = Object.freeze({
 const state = {
   view: 'overview', page: 1, pageSize: 20, total: 0, status: '', query: '',
   stockProvider: null, stockCatalog: null, stockCardTypeId: '', acceptingOrders: false,
-  cdkClearTimer: null, cdkLoadSequence: 0
+  cdkClearTimer: null, cdkLoadSequence: 0,
+  selectedOrders: new Set(), reconciliationPage: 1, reconciliationTotal: 0
 };
 const elements = {
   navItems: [...document.querySelectorAll('.nav-item')],
@@ -93,7 +97,17 @@ const elements = {
   stockConfirmation: document.querySelector('#stock-confirmation'), stockConfirmHint: document.querySelector('#stock-confirm-hint'),
   stockCost: document.querySelector('#stock-cost'),
   cardIntakeList: document.querySelector('#card-intake-list'),
-  discoverNewCards: document.querySelector('#discover-new-cards')
+  discoverNewCards: document.querySelector('#discover-new-cards'),
+  selectedOrderCount: document.querySelector('#selected-order-count'),
+  batchAuthorizeRecharge: document.querySelector('#batch-authorize-recharge'),
+  selectPageOrders: document.querySelector('#select-page-orders'),
+  reconciliationTable: document.querySelector('#reconciliation-table'),
+  reconciliationCount: document.querySelector('#reconciliation-count'),
+  reconciliationPage: document.querySelector('#reconciliation-page'),
+  reconciliationPrev: document.querySelector('#reconciliation-prev'),
+  reconciliationNext: document.querySelector('#reconciliation-next'),
+  reconciliationStatus: document.querySelector('#reconciliation-status'),
+  reconciliationSeverity: document.querySelector('#reconciliation-severity')
 };
 
 function escapeHtml(value) {
@@ -191,12 +205,14 @@ async function sensitiveApi(url, options) {
   }
 }
 
-function orderRow(order) {
+function orderRow(order, { selectable = false } = {}) {
   const account = order.customerEmail || order.chatgptAccountId || '—';
   const card = order.card?.cardNumber
     ? escapeHtml(order.card.cardNumber)
     : order.card?.last4 ? escapeHtml(order.card.last4) : '—';
+  const canAuthorize = order.status === 'CARD_READY' && order.requiresRechargeConfirmation;
   return `<tr data-order="${escapeHtml(order.publicNo)}" tabindex="0">
+    ${selectable ? `<td><input type="checkbox" data-select-order value="${escapeHtml(order.publicNo)}" aria-label="选择订单 ${escapeHtml(order.publicNo)}" ${state.selectedOrders.has(order.publicNo) ? 'checked' : ''} ${canAuthorize ? '' : 'disabled title="仅待确认充值订单可选择"'}></td>` : ''}
     <td><strong class="order-link">${escapeHtml(order.publicNo)}</strong></td>
     <td><span class="cell-main">${escapeHtml(account)}</span>${order.rechargeOrderNo ? `<small>${escapeHtml(order.rechargeOrderNo)}</small>` : ''}</td>
     <td>${statusChip(order.status)}${order.requiresRechargeConfirmation ? `<small class="attention-note">${escapeHtml(waitingText(order.confirmationReadyAt))}</small>` : order.cancellationReviewRequired ? '<small class="attention-note">续费需处理</small>' : ''}<small class="${order.reconciliation?.issue ? 'attention-note' : ''}">${escapeHtml(ORDER_RECONCILIATION_LABELS[order.reconciliation?.status] || order.reconciliation?.status || '—')}</small></td>
@@ -218,6 +234,10 @@ async function loadOverview() {
     { label: '待确认充值', value: overview.metrics.awaitingConfirmationOrders, note: '需要你逐单确认', filter: 'AWAITING_CONFIRMATION' },
     { label: '需要关注', value: overview.metrics.reviewingOrders, note: '失败、未知或对账订单', filter: 'REVIEW_REQUIRED' },
     { label: '三方对账异常', value: overview.metrics.reconciliationIssues, note: '订单、充值平台、卡片证据冲突', filter: 'RECONCILIATION_ISSUES' },
+    { label: '资金结果未决', value: overview.operationalBacklog?.fundsRiskPending ?? 0,
+      note: '禁止自动重试或切换充值路线', filter: 'RECONCILIATION_ISSUES' },
+    { label: '隔离中新卡', value: overview.operationalBacklog?.cardIntakePending ?? 0,
+      note: '尚未通过稳定快照验证', view: 'stock' },
     { label: '本地可分配卡', value: overview.cardStock?.available ?? 0,
       note: overview.cardStock?.low ? `已到低库存线：${overview.cardStock?.lowThreshold ?? 5}` : `低库存线：${overview.cardStock?.lowThreshold ?? 5}`, view: 'stock' },
     { label: '订单 Worker',
@@ -264,14 +284,123 @@ async function loadOrders() {
   const payload = await api(`/api/v1/admin/orders?${params}`);
   state.total = payload.total;
   elements.ordersTable.innerHTML = payload.orders.length
-    ? payload.orders.map(orderRow).join('')
-    : '<tr><td colspan="6" class="empty-cell">没有符合条件的订单</td></tr>';
+    ? payload.orders.map((order) => orderRow(order, { selectable: true })).join('')
+    : '<tr><td colspan="7" class="empty-cell">没有符合条件的订单</td></tr>';
   const totalPages = Math.max(1, Math.ceil(payload.total / state.pageSize));
   elements.orderCount.textContent = `${payload.total} 条订单`;
   elements.pageLabel.textContent = `第 ${state.page} / ${totalPages} 页`;
   elements.prevPage.disabled = state.page <= 1;
   elements.nextPage.disabled = state.page >= totalPages;
+  updateSelectedOrders();
   elements.syncTime.textContent = `更新于 ${new Date().toLocaleTimeString('zh-CN', { hour12: false })}`;
+}
+
+function updateSelectedOrders() {
+  const count = state.selectedOrders.size;
+  elements.selectedOrderCount.textContent = `已选 ${count} 单`;
+  elements.batchAuthorizeRecharge.disabled = count === 0;
+  const pageBoxes = [...elements.ordersTable.querySelectorAll('[data-select-order]:not(:disabled)')];
+  elements.selectPageOrders.disabled = pageBoxes.length === 0;
+  elements.selectPageOrders.checked = pageBoxes.length > 0 && pageBoxes.every((box) => box.checked);
+  elements.selectPageOrders.indeterminate = pageBoxes.some((box) => box.checked) && !elements.selectPageOrders.checked;
+}
+
+async function downloadOperationsCsv(dataset) {
+  const response = await fetch(`/api/v1/admin/exports/${encodeURIComponent(dataset)}.csv?limit=10000`);
+  if (response.status === 401) {
+    window.location.replace('/admin/login');
+    return;
+  }
+  if (!response.ok) throw new Error('export_failed');
+  const blob = await response.blob();
+  const disposition = response.headers.get('content-disposition') || '';
+  const filename = disposition.match(/filename="([^"]+)"/)?.[1] || `${dataset}.csv`;
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.append(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+  const rowCount = response.headers.get('x-export-row-count') || '0';
+  const reachedLimit = response.headers.get('x-export-truncated') === 'true';
+  showNotice(reachedLimit
+    ? `已导出 ${rowCount} 行，达到单次 10000 行上限；如需继续请按游标分批导出。`
+    : `已导出 ${rowCount} 行。`, reachedLimit ? 'warning' : 'success');
+}
+
+async function authorizeSelectedOrders() {
+  const publicNos = [...state.selectedOrders];
+  if (!publicNos.length) return;
+  if (!window.confirm(`确认给以下 ${publicNos.length} 个订单创建一次性充值许可？\n\n${publicNos.join('\n')}\n\n许可 10 分钟内有效；每单只允许一个资金风险活动尝试。`)) return;
+  elements.batchAuthorizeRecharge.disabled = true;
+  try {
+    const result = await sensitiveApi('/api/v1/admin/recharge-authorizations', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ publicNos, ttlMinutes: 10, confirmation: `确认充值${publicNos.length}单` })
+    });
+    state.selectedOrders.clear();
+    showNotice(`已创建批量充值许可，共 ${result.itemCount ?? publicNos.length} 单。`, 'success');
+    await loadOrders();
+  } catch (error) {
+    const messages = {
+      order_not_eligible: '所选订单中有不可充值订单，请刷新并只选择待确认充值订单。',
+      authorization_exists: '部分订单已有有效充值许可，请刷新后核对。',
+      funds_fence_exists: '部分订单已有资金风险尝试，禁止重复授权。',
+      recharge_confirmation_required: '批量确认信息不匹配，没有创建许可。'
+    };
+    showNotice(messages[error.message] || '批量充值许可未创建，请刷新订单状态后重试。');
+    updateSelectedOrders();
+  }
+}
+
+const RECONCILIATION_STATUS_LABELS = Object.freeze({ OPEN: '待处理', ASSIGNED: '已分配', RESOLVED: '已解决' });
+const RECONCILIATION_SEVERITY_LABELS = Object.freeze({ critical: '严重', warning: '警告', info: '提示' });
+
+async function loadReconciliationCases() {
+  const params = new URLSearchParams({ page: state.reconciliationPage, pageSize: 50 });
+  if (elements.reconciliationStatus.value) params.set('status', elements.reconciliationStatus.value);
+  if (elements.reconciliationSeverity.value) params.set('severity', elements.reconciliationSeverity.value);
+  const payload = await api(`/api/v1/admin/reconciliation-cases?${params}`);
+  state.reconciliationTotal = payload.total;
+  elements.reconciliationTable.innerHTML = payload.cases.length
+    ? payload.cases.map((item) => `<tr data-case-id="${escapeHtml(item.id)}" data-public-no="${escapeHtml(item.publicNo || '')}">
+      <td><strong>${escapeHtml(item.id)}</strong><small>${escapeHtml(item.dedupeKey)}</small></td>
+      <td>${escapeHtml(item.publicNo || '—')}</td>
+      <td><span class="cell-main">${escapeHtml(item.caseType)}</span><small>${escapeHtml(RECONCILIATION_SEVERITY_LABELS[item.severity] || item.severity)}</small></td>
+      <td>${escapeHtml(RECONCILIATION_STATUS_LABELS[item.status] || item.status)}</td>
+      <td>${escapeHtml(item.assignedTo || '未分配')}</td>
+      <td>${formatTime(item.lastSeenAt)}</td>
+      <td class="case-actions">${item.publicNo ? '<button class="text-button" type="button" data-open-case-order>查看订单</button>' : ''}${item.status !== 'RESOLVED' ? '<button class="text-button" type="button" data-assign-case>分配</button><button class="danger-small" type="button" data-resolve-case>解决</button>' : escapeHtml(item.resolutionNote || '已解决')}</td>
+    </tr>`).join('')
+    : '<tr><td colspan="7" class="empty-cell">没有符合条件的对账案例</td></tr>';
+  const totalPages = Math.max(1, Math.ceil(payload.total / 50));
+  elements.reconciliationCount.textContent = `${payload.total} 个案例`;
+  elements.reconciliationPage.textContent = `第 ${state.reconciliationPage} / ${totalPages} 页`;
+  elements.reconciliationPrev.disabled = state.reconciliationPage <= 1;
+  elements.reconciliationNext.disabled = state.reconciliationPage >= totalPages;
+  elements.syncTime.textContent = `更新于 ${new Date().toLocaleTimeString('zh-CN', { hour12: false })}`;
+}
+
+async function assignReconciliationCase(caseId) {
+  const assignedTo = window.prompt('输入负责人名称：', 'admin')?.trim();
+  if (!assignedTo) return;
+  await api(`/api/v1/admin/reconciliation-cases/${encodeURIComponent(caseId)}/assign`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ assignedTo })
+  });
+  showNotice('案例已分配。', 'success');
+  await loadReconciliationCases();
+}
+
+async function resolveReconciliationCase(caseId) {
+  const resolutionNote = window.prompt('填写处理结论（必填）：')?.trim();
+  if (!resolutionNote) return;
+  await sensitiveApi(`/api/v1/admin/reconciliation-cases/${encodeURIComponent(caseId)}/resolve`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ resolutionNote })
+  });
+  showNotice('案例已解决并保留处理结论。', 'success');
+  await loadReconciliationCases();
 }
 
 function downloadCodes(batchNo, codes) {
@@ -297,6 +426,10 @@ async function loadCdkBatches() {
   const sequence = ++state.cdkLoadSequence;
   const payload = await api('/api/v1/admin/cdks/batches?limit=50');
   if (sequence !== state.cdkLoadSequence) return;
+  const deliveryCapability = document.querySelector('#cdk-delivery-capability');
+  if (deliveryCapability) deliveryCapability.textContent = payload.deliveryTrackingEnabled
+    ? '交付记录接口已启用；只有明确的“记录交付”动作才算交付。'
+    : '当前尚未启用客户交付记录；下载、复制均不会被记为已交付。';
   elements.cdkBatches.innerHTML = payload.batches.length
     ? payload.batches.map((batch) => `<div data-cdk-batch="${escapeHtml(batch.batchNo)}">
       <span><strong>${escapeHtml(batch.batchNo)} · ${escapeHtml(batch.planType.toUpperCase())}</strong>
@@ -783,6 +916,7 @@ async function openOrder(publicNo) {
 
 async function switchView(view, { status = '' } = {}) {
   if (state.view === 'cdks' && view !== 'cdks') clearGeneratedCdks();
+  if (state.view === 'orders' && view !== 'orders') state.selectedOrders.clear();
   state.view = view === 'exceptions' ? 'orders' : view;
   state.status = view === 'exceptions' ? 'REVIEW_REQUIRED' : status;
   state.page = 1;
@@ -800,6 +934,10 @@ async function switchView(view, { status = '' } = {}) {
     elements.viewKicker.textContent = '资金与库存';
     elements.viewTitle.textContent = '卡片库存与人工补卡';
     await loadStock();
+  } else if (view === 'reconciliation') {
+    elements.viewKicker.textContent = '运营核对';
+    elements.viewTitle.textContent = '对账案例队列';
+    await loadReconciliationCases();
   } else {
     elements.viewKicker.textContent = view === 'exceptions' ? '人工处理' : '订单中心';
     elements.viewTitle.textContent = view === 'exceptions' ? '需要关注的订单' : '全部订单';
@@ -826,6 +964,7 @@ elements.metrics.addEventListener('click', (event) => {
 });
 elements.filters.addEventListener('submit', (event) => {
   event.preventDefault();
+  state.selectedOrders.clear();
   state.page = 1;
   state.query = elements.search.value.trim();
   state.status = elements.statusFilter.value;
@@ -833,11 +972,60 @@ elements.filters.addEventListener('submit', (event) => {
 });
 elements.prevPage.addEventListener('click', () => { if (state.page > 1) { state.page -= 1; loadOrders(); } });
 elements.nextPage.addEventListener('click', () => { if (state.page * state.pageSize < state.total) { state.page += 1; loadOrders(); } });
+elements.ordersTable.addEventListener('change', (event) => {
+  const checkbox = event.target.closest('[data-select-order]');
+  if (!checkbox) return;
+  if (checkbox.checked) state.selectedOrders.add(checkbox.value);
+  else state.selectedOrders.delete(checkbox.value);
+  updateSelectedOrders();
+});
+elements.selectPageOrders.addEventListener('change', () => {
+  elements.ordersTable.querySelectorAll('[data-select-order]:not(:disabled)').forEach((checkbox) => {
+    checkbox.checked = elements.selectPageOrders.checked;
+    if (checkbox.checked) state.selectedOrders.add(checkbox.value);
+    else state.selectedOrders.delete(checkbox.value);
+  });
+  updateSelectedOrders();
+});
+elements.batchAuthorizeRecharge.addEventListener('click', () => authorizeSelectedOrders());
+document.querySelector('#export-orders')?.addEventListener('click', () => downloadOperationsCsv('orders').catch(() => showNotice('订单导出失败。')));
+document.querySelector('#export-reconciliation')?.addEventListener('click', () => downloadOperationsCsv('reconciliation_cases').catch(() => showNotice('对账案例导出失败。')));
+document.querySelector('#reconciliation-filters')?.addEventListener('submit', (event) => {
+  event.preventDefault();
+  state.reconciliationPage = 1;
+  loadReconciliationCases().catch(() => showNotice('对账案例读取失败。'));
+});
+elements.reconciliationPrev?.addEventListener('click', () => {
+  if (state.reconciliationPage > 1) { state.reconciliationPage -= 1; loadReconciliationCases(); }
+});
+elements.reconciliationNext?.addEventListener('click', () => {
+  if (state.reconciliationPage * 50 < state.reconciliationTotal) { state.reconciliationPage += 1; loadReconciliationCases(); }
+});
+elements.reconciliationTable?.addEventListener('click', (event) => {
+  const row = event.target.closest('[data-case-id]');
+  if (!row) return;
+  const button = event.target.closest('button');
+  if (!button) return;
+  if (button.matches('[data-open-case-order]')) {
+    openOrder(row.dataset.publicNo);
+  } else if (button.matches('[data-assign-case]')) {
+    button.disabled = true;
+    assignReconciliationCase(row.dataset.caseId)
+      .then(() => { button.disabled = false; })
+      .catch(() => { button.disabled = false; showNotice('案例分配失败。'); });
+  } else if (button.matches('[data-resolve-case]')) {
+    button.disabled = true;
+    resolveReconciliationCase(row.dataset.caseId)
+      .then(() => { button.disabled = false; })
+      .catch(() => { button.disabled = false; showNotice('案例解决失败。'); });
+  }
+});
 document.querySelector('#refresh-button').addEventListener('click', () => {
   hideNotice();
   (state.view === 'overview' ? loadOverview()
     : state.view === 'stock' ? loadStock()
-      : state.view === 'cdks' ? loadCdkBatches() : loadOrders())
+      : state.view === 'cdks' ? loadCdkBatches()
+        : state.view === 'reconciliation' ? loadReconciliationCases() : loadOrders())
     .catch(() => showNotice('刷新失败，请稍后重试。'));
 });
 document.querySelector('#refresh-stock')?.addEventListener('click', () => loadStock().catch(() => showNotice('库存读取失败。')));
@@ -935,7 +1123,8 @@ window.setInterval(() => {
   const refresh = state.view === 'overview' ? loadOverview
     : state.view === 'orders' ? loadOrders
       : state.view === 'stock' ? loadStock
-        : state.view === 'cdks' ? loadCdkBatches : null;
+        : state.view === 'cdks' ? loadCdkBatches
+          : state.view === 'reconciliation' ? loadReconciliationCases : null;
   refresh?.().catch(() => {});
 }, 10_000);
 elements.cdkForm.addEventListener('submit', async (event) => {
@@ -1017,7 +1206,7 @@ document.addEventListener('click', (event) => {
     return;
   }
   const row = event.target.closest('tr[data-order]');
-  if (row) openOrder(row.dataset.order);
+  if (row && !event.target.closest('input, button, a')) openOrder(row.dataset.order);
   const card = event.target.closest('[data-card]');
   if (card) openCard(card.dataset.card);
 });

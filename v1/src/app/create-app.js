@@ -8,6 +8,9 @@ import { RechargePermitError } from '../services/recharge-permit-service.js';
 import { RechargeAuthorizationV2Error } from '../services/recharge-authorization-v2-service.js';
 import { OrderCompensationError } from '../services/order-compensation-service.js';
 import { OrderCancellationError } from '../services/order-cancellation-service.js';
+import { ReconciliationCaseError } from '../services/reconciliation-case-service.js';
+import { OperationsCsvExportError } from '../services/operations-csv-export-service.js';
+import { CdkDeliveryError } from '../services/cdk-delivery-service.js';
 import { createFixedWindowRateLimit } from './fixed-window-rate-limit.js';
 
 const DEFAULT_BODY_LIMIT = '256kb';
@@ -47,6 +50,11 @@ export function createApp({
   listAdminCdkBatches = null,
   downloadAdminCdkBatch = null,
   revokeAdminCdkBatch = null,
+  recordAdminCdkDelivery = null,
+  listAdminReconciliationCases = null,
+  assignAdminReconciliationCase = null,
+  resolveAdminReconciliationCase = null,
+  exportAdminOperationsCsv = null,
   adminHost = null,
   orderRateLimit = createFixedWindowRateLimit(),
   orderStatusRateLimit = createFixedWindowRateLimit({ limit: 30 }),
@@ -360,6 +368,85 @@ export function createApp({
         return res.json(result);
       } catch (error) {
         if (error instanceof CdkBatchError) {
+          return res.status(400).json({ error: error.code.toLowerCase() });
+        }
+        throw error;
+      }
+    });
+  }
+  if (typeof recordAdminCdkDelivery === 'function') {
+    app.post('/api/v1/admin/cdks/deliveries', ...sensitiveAdminGuards, async (req, res) => {
+      try {
+        return res.status(201).json(await recordAdminCdkDelivery(req.body || {}));
+      } catch (error) {
+        if (error instanceof CdkDeliveryError) {
+          return res.status(400).json({ error: error.code.toLowerCase(), details: error.details });
+        }
+        throw error;
+      }
+    });
+  }
+  if (typeof listAdminReconciliationCases === 'function') {
+    app.get('/api/v1/admin/reconciliation-cases', noStore, requireAdminApi, async (req, res) => {
+      try {
+        return res.json(await listAdminReconciliationCases(req.query || {}));
+      } catch (error) {
+        if (error instanceof ReconciliationCaseError) {
+          return res.status(400).json({ error: error.code.toLowerCase() });
+        }
+        throw error;
+      }
+    });
+  }
+  if (typeof assignAdminReconciliationCase === 'function') {
+    app.post('/api/v1/admin/reconciliation-cases/:caseId/assign', ...adminWriteGuards, async (req, res) => {
+      try {
+        return res.json(await assignAdminReconciliationCase({
+          id: req.params.caseId,
+          assignedTo: req.body?.assignedTo
+        }));
+      } catch (error) {
+        if (error instanceof ReconciliationCaseError) {
+          return res.status(error.code === 'CASE_NOT_FOUND' ? 404 : 400)
+            .json({ error: error.code.toLowerCase() });
+        }
+        throw error;
+      }
+    });
+  }
+  if (typeof resolveAdminReconciliationCase === 'function') {
+    app.post('/api/v1/admin/reconciliation-cases/:caseId/resolve', ...sensitiveAdminGuards, async (req, res) => {
+      try {
+        return res.json(await resolveAdminReconciliationCase({
+          id: req.params.caseId,
+          resolutionNote: req.body?.resolutionNote
+        }));
+      } catch (error) {
+        if (error instanceof ReconciliationCaseError) {
+          return res.status(error.code === 'CASE_NOT_FOUND' ? 404 : 400)
+            .json({ error: error.code.toLowerCase() });
+        }
+        throw error;
+      }
+    });
+  }
+  if (typeof exportAdminOperationsCsv === 'function') {
+    app.get('/api/v1/admin/exports/:dataset.csv', noStore, requireAdminApi, async (req, res) => {
+      try {
+        const result = await exportAdminOperationsCsv({
+          dataset: req.params.dataset,
+          limit: req.query?.limit,
+          cursor: req.query?.cursor,
+          includeBom: true
+        });
+        res.setHeader('Content-Type', result.contentType);
+        res.setHeader('Content-Disposition', `attachment; filename="${result.dataset}-${new Date().toISOString().slice(0, 10)}.csv"`);
+        res.setHeader('X-Export-Row-Count', String(result.rowCount));
+        res.setHeader('X-Export-Truncated', String(result.truncated));
+        if (result.nextCursor) res.setHeader('X-Export-Next-Cursor', result.nextCursor);
+        return res.send(result.csv);
+      } catch (error) {
+        if (error instanceof OperationsCsvExportError) {
           return res.status(400).json({ error: error.code.toLowerCase() });
         }
         throw error;

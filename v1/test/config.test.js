@@ -30,6 +30,21 @@ test('loads a valid explicit configuration', () => {
   assert.equal(config.sessionEncryptionKey.length, 32);
 });
 
+test('CDK delivery recipient HMAC key is optional but independent when configured', () => {
+  const environment = validEnvironment();
+  const key = crypto.randomBytes(32).toString('base64');
+  const config = loadConfig({ ...environment, CDK_DELIVERY_HMAC_KEY_BASE64: key });
+  assert.equal(config.cdkDeliveryHmacKey.length, 32);
+  assert.throws(() => loadConfig({
+    ...environment,
+    CDK_DELIVERY_HMAC_KEY_BASE64: environment.CDK_HASH_KEY_V1_BASE64
+  }), /must be independent/);
+  assert.throws(() => loadConfig({
+    ...environment,
+    CDK_DELIVERY_HMAC_KEY_BASE64: Buffer.alloc(16).toString('base64')
+  }), /exactly 32 bytes/);
+});
+
 test('production web server only binds an explicit loopback address', () => {
   const production = {
     ...validEnvironment(),

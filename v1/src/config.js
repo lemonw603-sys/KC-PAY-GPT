@@ -29,6 +29,7 @@ const baseSchema = z.object({
     }, 'SESSION_ENCRYPTION_KEY_BASE64 must decode to exactly 32 bytes'),
   CDK_HASH_KEY_V1_BASE64: z.string().trim().min(1),
   CDK_RECOVERY_KEY_BASE64: z.string().trim().min(1),
+  CDK_DELIVERY_HMAC_KEY_BASE64: z.string().trim().min(1).optional(),
   HNSKJ_API_BASE_URL: z.string().url().default('https://card.hnskj.vip/api/open/v1'),
   HNSKJ_API_KEY: z.string().trim().min(1).optional(),
   CARD_INTAKE_PAN_HMAC_KEY_BASE64: z.string().trim().min(1).optional(),
@@ -230,6 +231,23 @@ function validateDatabaseConfig(value, context, { urlKey, tlsKey, caKey }) {
 function validateBaseConfig(value, context) {
   validateAdminConfig(value, context);
   validateCdkSecurityConfig(value, context);
+  if (value.CDK_DELIVERY_HMAC_KEY_BASE64) {
+    try {
+      if (Buffer.from(value.CDK_DELIVERY_HMAC_KEY_BASE64, 'base64').length !== 32) throw new Error();
+    } catch {
+      context.addIssue({
+        code: 'custom', path: ['CDK_DELIVERY_HMAC_KEY_BASE64'],
+        message: 'must decode to exactly 32 bytes'
+      });
+    }
+    if ([value.CDK_HASH_KEY_V1_BASE64, value.CDK_RECOVERY_KEY_BASE64]
+      .includes(value.CDK_DELIVERY_HMAC_KEY_BASE64)) {
+      context.addIssue({
+        code: 'custom', path: ['CDK_DELIVERY_HMAC_KEY_BASE64'],
+        message: 'must be independent from CDK hash and recovery keys'
+      });
+    }
+  }
   if (value.CARD_INTAKE_PAN_HMAC_KEY_BASE64) {
     try {
       if (Buffer.from(value.CARD_INTAKE_PAN_HMAC_KEY_BASE64, 'base64').length !== 32) throw new Error();
@@ -320,6 +338,8 @@ export function loadConfig(env = process.env) {
     sessionEncryptionKey: Buffer.from(result.data.SESSION_ENCRYPTION_KEY_BASE64, 'base64'),
     cdkHashKey: Buffer.from(result.data.CDK_HASH_KEY_V1_BASE64, 'base64'),
     cdkRecoveryKey: Buffer.from(result.data.CDK_RECOVERY_KEY_BASE64, 'base64'),
+    cdkDeliveryHmacKey: result.data.CDK_DELIVERY_HMAC_KEY_BASE64
+      ? Buffer.from(result.data.CDK_DELIVERY_HMAC_KEY_BASE64, 'base64') : null,
     hnskjApiBaseUrl: result.data.HNSKJ_API_BASE_URL,
     hnskjApiKey: result.data.HNSKJ_API_KEY || null,
     cardIntakePanHmacKey: result.data.CARD_INTAKE_PAN_HMAC_KEY_BASE64

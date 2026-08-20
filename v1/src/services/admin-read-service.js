@@ -274,7 +274,7 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, now 
     }
   }
   async function getOverview() {
-    const [[orderCounts], [statusRows], [cdkRows], [settingsRows], [refundRows], [alertRows], [stockRows], [stockSettingRows]] = await Promise.all([
+    const [[orderCounts], [statusRows], [cdkRows], [settingsRows], [refundRows], [alertRows], [stockRows], [stockSettingRows], [backlogRows]] = await Promise.all([
       pool.query(`SELECT
         COUNT(*) AS total,
         SUM(o.created_at >= TIMESTAMP(DATE(CONVERT_TZ(UTC_TIMESTAMP(), '+00:00', '+08:00'))) - INTERVAL 8 HOUR) AS today,
@@ -322,6 +322,15 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, now 
         FROM cards`)
       ,pool.query(`SELECT setting_value FROM app_settings
         WHERE setting_key = 'card_stock_low_threshold' LIMIT 1`)
+      ,pool.query(`SELECT
+          (SELECT COUNT(*) FROM card_discoveries
+            WHERE intake_status IN ('QUARANTINED','VALIDATED','REVIEW_REQUIRED')) AS card_intake_pending,
+          (SELECT COUNT(*) FROM recharge_attempts
+            WHERE funds_risk_state IN ('ACTIVE','UNKNOWN')) AS funds_risk_pending,
+          (SELECT COUNT(*) FROM reconciliation_cases
+            WHERE status IN ('OPEN','ASSIGNED')) AS reconciliation_cases_open,
+          (SELECT COUNT(*) FROM card_sync_jobs
+            WHERE status IN ('PENDING','RUNNING','REVIEW_REQUIRED')) AS card_sync_backlog`)
     ]);
     const count = (value) => Number(value || 0);
     const total = count(orderCounts[0]?.total);
@@ -350,6 +359,12 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, now 
         workerHeartbeatAt: Number.isFinite(heartbeatAt) ? new Date(heartbeatAt).toISOString() : null,
         expiredTaskLeases: count(orderCounts[0]?.expired_task_leases),
         stalledProviderCalls: count(orderCounts[0]?.stalled_provider_calls)
+      },
+      operationalBacklog: {
+        cardIntakePending: count(backlogRows[0]?.card_intake_pending),
+        fundsRiskPending: count(backlogRows[0]?.funds_risk_pending),
+        reconciliationCasesOpen: count(backlogRows[0]?.reconciliation_cases_open),
+        cardSyncBacklog: count(backlogRows[0]?.card_sync_backlog)
       },
       cardStock: {
         available: count(stockRows[0]?.available),

@@ -7,8 +7,8 @@
   <meta name="theme-color" content="#f5f8fc">
   <title>Plus 运营后台</title>
   <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/admin/assets/admin.css?v=8">
-  <script src="/admin/assets/admin.js?v=11" defer></script>
+  <link rel="stylesheet" href="/admin/assets/admin.css?v=9">
+  <script src="/admin/assets/admin.js?v=12" defer></script>
 </head>
 <body>
   <div class="admin-shell">
@@ -22,6 +22,7 @@
         <button class="nav-item is-active" type="button" data-view="overview"><span aria-hidden="true">⌂</span>总览</button>
         <button class="nav-item" type="button" data-view="orders"><span aria-hidden="true">≡</span>订单</button>
         <button class="nav-item" type="button" data-view="exceptions"><span aria-hidden="true">!</span>异常队列</button>
+        <button class="nav-item" type="button" data-view="reconciliation"><span aria-hidden="true">✓</span>对账案例</button>
         <button class="nav-item" type="button" data-view="stock"><span aria-hidden="true">▣</span>卡片库存</button>
         <button class="nav-item" type="button" data-view="cdks"><span aria-hidden="true">#</span>CDK 管理</button>
       </nav>
@@ -67,6 +68,11 @@
 
       <section id="orders-view" class="view" hidden>
         <section class="card orders-card">
+          <div class="batch-toolbar">
+            <span id="selected-order-count">已选 0 单</span>
+            <button class="danger-small" id="batch-authorize-recharge" type="button" disabled>批量确认充值</button>
+            <button class="text-button" id="export-orders" type="button">导出订单 CSV</button>
+          </div>
           <form class="filters" id="order-filters">
             <label class="search-field"><span class="sr-only">搜索订单</span><input id="order-search" type="search" maxlength="191" placeholder="搜索查询码、邮箱或外部订单号"></label>
             <label><span class="sr-only">订单状态</span><select id="status-filter">
@@ -79,8 +85,25 @@
             </select></label>
             <button class="primary-small" type="submit">查询</button>
           </form>
-          <div class="table-wrap"><table><thead><tr><th>订单查询码</th><th>账号</th><th>状态</th><th>卡片</th><th>退款观察</th><th>创建时间</th></tr></thead><tbody id="orders-table"></tbody></table></div>
+          <div class="table-wrap"><table><thead><tr><th><input id="select-page-orders" type="checkbox" aria-label="选择本页订单"></th><th>订单查询码</th><th>账号</th><th>状态</th><th>卡片</th><th>退款观察</th><th>创建时间</th></tr></thead><tbody id="orders-table"></tbody></table></div>
           <div class="pagination"><span id="order-count">0 条订单</span><div><button id="prev-page" type="button">上一页</button><span id="page-label">第 1 页</span><button id="next-page" type="button">下一页</button></div></div>
+        </section>
+      </section>
+
+      <section id="reconciliation-view" class="view" hidden>
+        <section class="card orders-card">
+          <div class="card-heading">
+            <div><p class="section-kicker">运营核对</p><h2>对账案例队列</h2></div>
+            <button class="text-button" id="export-reconciliation" type="button">导出安全 CSV</button>
+          </div>
+          <p class="card-description">只展示运营核对所需字段。解决案例必须填写处理结论；重复发现会更新“最后发现”，不会覆盖已经解决的结论。</p>
+          <form class="filters reconciliation-filters" id="reconciliation-filters">
+            <label><span class="sr-only">案例状态</span><select id="reconciliation-status"><option value="">全部状态</option><option value="OPEN">待处理</option><option value="ASSIGNED">已分配</option><option value="RESOLVED">已解决</option></select></label>
+            <label><span class="sr-only">严重程度</span><select id="reconciliation-severity"><option value="">全部等级</option><option value="critical">严重</option><option value="warning">警告</option><option value="info">提示</option></select></label>
+            <button class="primary-small" type="submit">筛选</button>
+          </form>
+          <div class="table-wrap"><table><thead><tr><th>案例</th><th>订单</th><th>类型 / 等级</th><th>状态</th><th>负责人</th><th>最后发现</th><th>操作</th></tr></thead><tbody id="reconciliation-table"></tbody></table></div>
+          <div class="pagination"><span id="reconciliation-count">0 个案例</span><div><button id="reconciliation-prev" type="button">上一页</button><span id="reconciliation-page">第 1 页</span><button id="reconciliation-next" type="button">下一页</button></div></div>
         </section>
       </section>
 
@@ -90,7 +113,7 @@
             <div><p class="section-kicker">订单入口</p><h2>生成 CDK 卡密</h2></div>
             <span class="write-badge">内部写入</span>
           </div>
-          <p class="card-description">当前仅支持 Plus。一次可生成并导出 1–1000 个 CDK，每个批次合并为一个 TXT。数据库仅保存不可逆 HMAC，批次恢复副本加密保存。生成卡密不会触发开卡或充值。</p>
+          <p class="card-description">当前仅支持 Plus。一次可生成并导出 1–1000 个 CDK，每个批次合并为一个 TXT。数据库仅保存不可逆 HMAC，批次恢复副本加密保存。生成卡密不会触发开卡或充值。<strong>导出文件不代表已经交付客户。</strong></p>
           <form class="cdk-form" id="cdk-form">
             <label for="cdk-count">生成数量</label>
             <div>
@@ -109,7 +132,7 @@
             <div><p class="section-kicker">批次记录</p><h2>最近 CDK 批次</h2></div>
             <button class="text-button" id="refresh-cdk-batches" type="button">刷新</button>
           </div>
-          <p class="card-description">每个新版批次可一键导出一个完整 TXT；作废只影响尚未兑换的卡密，不会修改已创建的订单。</p>
+          <p class="card-description">每个新版批次可一键导出一个完整 TXT；作废只影响尚未兑换的卡密，不会修改已创建的订单。<span id="cdk-delivery-capability">正在读取交付记录能力…</span></p>
           <div class="mini-list cdk-batch-list" id="cdk-batches"></div>
         </section>
       </section>

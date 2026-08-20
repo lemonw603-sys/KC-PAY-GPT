@@ -29,6 +29,9 @@ import { createOrderCancellationService } from './services/order-cancellation-se
 import { HnskjCardProvider } from './providers/index.js';
 import { createCardIntakeService } from './services/card-intake-service.js';
 import { createCardIntakeRepository } from './db/repositories/card-intake-repository.js';
+import { createCdkDeliveryService } from './services/cdk-delivery-service.js';
+import { createReconciliationCaseService } from './services/reconciliation-case-service.js';
+import { createOperationsCsvExportService } from './services/operations-csv-export-service.js';
 
 const config = loadConfig();
 const pool = createDatabasePool(config.database);
@@ -81,6 +84,14 @@ const compensateAdminOrder = createOrderCompensationService({
   cdkRecoveryKey: config.cdkRecoveryKey
 });
 const cancelAdminOrder = createOrderCancellationService({ pool });
+const reconciliationCases = createReconciliationCaseService({ pool });
+const operationsCsv = createOperationsCsvExportService({ pool });
+const cdkDelivery = config.cdkDeliveryHmacKey
+  ? createCdkDeliveryService({
+    pool,
+    recipientReferenceHmacKey: config.cdkDeliveryHmacKey
+  })
+  : null;
 const adminAuth = config.adminPasswordHash
   ? createAdminSessionAuth({
     passwordHash: config.adminPasswordHash,
@@ -180,9 +191,25 @@ const app = createApp({
   ,compensateAdminOrder
   ,cancelAdminOrder
   ,createAdminCdkBatch
-  ,listAdminCdkBatches: (input) => listCdkBatches(pool, input)
+  ,listAdminCdkBatches: async (input) => ({
+    ...await listCdkBatches(pool, input),
+    deliveryTrackingEnabled: Boolean(cdkDelivery)
+  })
   ,downloadAdminCdkBatch: (batchNo) => downloadCdkBatch(pool, batchNo, config.cdkRecoveryKey)
   ,revokeAdminCdkBatch: (batchNo, reason) => revokeCdkBatch(pool, batchNo, reason)
+  ,recordAdminCdkDelivery: cdkDelivery ? async (input = {}) => {
+    const common = {
+      ...input,
+      actorId: 'admin'
+    };
+    return Array.isArray(input.cdkIds)
+      ? cdkDelivery.recordBatchDelivery(common)
+      : cdkDelivery.recordDelivery(common);
+  } : null
+  ,listAdminReconciliationCases: reconciliationCases.listCases
+  ,assignAdminReconciliationCase: reconciliationCases.assign
+  ,resolveAdminReconciliationCase: reconciliationCases.resolve
+  ,exportAdminOperationsCsv: operationsCsv.exportCsv
 });
 
 if (config.trustProxy) {

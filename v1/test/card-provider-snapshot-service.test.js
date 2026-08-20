@@ -3,6 +3,7 @@ import test from 'node:test';
 import {
   evaluateCardStockRequest,
   normalizeProviderSnapshot,
+  refreshProviderSnapshot,
   snapshotIsFresh
 } from '../src/services/card-provider-snapshot-service.js';
 
@@ -59,4 +60,35 @@ test('rejects amount, card type, quota and balance before a paid call', () => {
 test('detects stale provider snapshots', () => {
   assert.equal(snapshotIsFresh(snapshot({ checkedAt: new Date(Date.now() - 121_000) })), false);
   assert.equal(snapshotIsFresh(snapshot()), true);
+});
+
+test('appends immutable balance evidence before updating the current provider snapshot', async () => {
+  const calls = [];
+  const provider = {
+    accountBalance: async () => ({ data: { balance: '100.25', currency: 'USD', exchangeRate: '1' } })
+  };
+  provider.cardTypes = async () => ({ data: {
+    purchaseEnabled: true,
+    exchangeRate: 1,
+    cardLimit: { currentCount: 5, maxLimit: 300, remaining: 295 },
+    cardTypes: [{
+      id: 1, cardType: 'Z-43612081', cardCountry: 'US', binPrefix: '43612081',
+      effectiveCardFeeUsdt: '0.50', effectiveFeeRate: '0.005', minAmount: '5',
+      maxAmount: '200', minBalanceUsdt: '25', requireMinBalance: 1,
+      consumeRate: '0', chargebackFee: '0.40'
+    }]
+  } });
+  const checkedAt = new Date('2026-08-20T12:00:00.000Z');
+  const pool = { async query(sql, values) { calls.push({ kind: 'current', sql, values }); return [{ affectedRows: 1 }, []]; } };
+  const balanceSnapshotService = {
+    async recordSnapshot(input) { calls.push({ kind: 'history', input }); }
+  };
+
+  await refreshProviderSnapshot(pool, provider, { checkedAt, balanceSnapshotService });
+
+  assert.equal(calls[0].kind, 'history');
+  assert.equal(calls[0].input.availableBalance, '100.25');
+  assert.equal(calls[0].input.currency, 'USD');
+  assert.equal(calls[0].input.observedAt, checkedAt);
+  assert.equal(calls[1].kind, 'current');
 });

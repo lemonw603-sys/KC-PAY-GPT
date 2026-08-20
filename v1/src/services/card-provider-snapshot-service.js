@@ -140,11 +140,26 @@ export function snapshotIsFresh(snapshot, {
   return Number.isFinite(syncedAt) && syncedAt <= now && now - syncedAt <= maxAgeMs;
 }
 
-export async function refreshProviderSnapshot(pool, provider, { checkedAt = new Date() } = {}) {
+export async function refreshProviderSnapshot(pool, provider, {
+  checkedAt = new Date(),
+  balanceSnapshotService = null,
+  providerAccountId = '00000000-0000-4000-8000-000000000101'
+} = {}) {
   const [cardTypes, accountBalance] = await Promise.all([
     provider.cardTypes(), provider.accountBalance()
   ]);
   const snapshot = normalizeProviderSnapshot({ cardTypes, accountBalance, checkedAt });
+  if (balanceSnapshotService) {
+    await balanceSnapshotService.recordSnapshot({
+      providerAccountId,
+      currency: snapshot.currency,
+      availableBalance: snapshot.accountBalance,
+      pendingBalance: accountBalance?.data?.pendingBalance == null
+        ? null : String(accountBalance.data.pendingBalance),
+      rawPayload: accountBalance,
+      observedAt: checkedAt
+    });
+  }
   await pool.query(
     `INSERT INTO card_provider_snapshots (provider, payload_json, synced_at)
      VALUES ('hnskj', ?, ?)

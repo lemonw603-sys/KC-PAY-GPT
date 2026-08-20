@@ -431,6 +431,37 @@ test('reads card detail and queues inventory sync without step-up or paid action
   });
 });
 
+test('discovers manual cards through authenticated quarantine intake routes', async () => {
+  const adminAuth = createAdminSessionAuth({
+    passwordHash: await hashAdminPassword('fixture admin password', { salt: Buffer.alloc(16, 21) }),
+    sessionSecret: Buffer.alloc(32, 22), secureCookies: false
+  });
+  const calls = [];
+  const app = createApp({
+    adminAuth,
+    listAdminCardIntake: async () => ({ configured: true, batches: [], discoveries: [] }),
+    discoverAdminCards: async () => {
+      calls.push('discover');
+      return { discovery: { batch: { id: 'batch-1' } }, secondPass: { accepted: 2 } };
+    }
+  });
+  await withServer(app, async (baseUrl) => {
+    assert.equal((await fetch(`${baseUrl}/api/v1/admin/card-intake`)).status, 401);
+    const login = await fetch(`${baseUrl}/api/v1/admin/session`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: 'fixture admin password' })
+    });
+    const cookie = login.headers.get('set-cookie').split(';')[0];
+    const listed = await fetch(`${baseUrl}/api/v1/admin/card-intake`, { headers: { Cookie: cookie } });
+    assert.equal(listed.status, 200);
+    const discovered = await fetch(`${baseUrl}/api/v1/admin/card-intake/discover`, {
+      method: 'POST', headers: { Cookie: cookie, Origin: baseUrl }
+    });
+    assert.equal(discovered.status, 202);
+    assert.deepEqual(calls, ['discover']);
+  });
+});
+
 test('changes intake and one-order recharge permits only through authenticated admin routes', async () => {
   const adminAuth = createAdminSessionAuth({
     passwordHash: await hashAdminPassword('fixture admin password', { salt: Buffer.alloc(16, 11) }),
@@ -571,5 +602,75 @@ test('rejects authenticated admin writes from a different origin', async () => {
     assert.equal(response.status, 403);
     assert.deepEqual(await response.json(), { error: 'admin_origin_required' });
     assert.equal(called, false);
+  });
+});
+
+test('guards batch recharge authorization and exposes reconciliation, delivery, and safe CSV operations', async () => {
+  const adminAuth = createAdminSessionAuth({
+    passwordHash: await hashAdminPassword('fixture admin password', { salt: Buffer.alloc(16, 21) }),
+    sessionSecret: Buffer.alloc(32, 22), secureCookies: false
+  });
+  const received = {};
+  const app = createApp({
+    adminAuth,
+    createAdminRechargeAuthorization: async (input) => {
+      received.authorization = input;
+      return { id: 'auth-1', itemCount: input.publicNos.length };
+    },
+    recordAdminCdkDelivery: async (input) => {
+      received.delivery = input;
+      return { recordedCount: input.cdkIds.length };
+    },
+    listAdminReconciliationCases: async (input) => ({ page: Number(input.page), total: 1, cases: [{ id: 'case-1' }] }),
+    assignAdminReconciliationCase: async (input) => ({ ...input, status: 'ASSIGNED' }),
+    resolveAdminReconciliationCase: async (input) => ({ ...input, status: 'RESOLVED' }),
+    exportAdminOperationsCsv: async (input) => ({
+      dataset: input.dataset, rowCount: 1, truncated: false, nextCursor: null,
+      contentType: 'text/csv; charset=utf-8', csv: '\uFEFFPublic No,Status\r\nPJV2-1,CARD_READY\r\n'
+    })
+  });
+
+  await withServer(app, async (baseUrl) => {
+    const login = await fetch(`${baseUrl}/api/v1/admin/session`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: 'fixture admin password' })
+    });
+    const sessionCookie = login.headers.get('set-cookie').split(';')[0];
+    const sensitiveCookie = await stepUp(baseUrl, sessionCookie);
+
+    const authorization = await fetch(`${baseUrl}/api/v1/admin/recharge-authorizations`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: sensitiveCookie, Origin: baseUrl },
+      body: JSON.stringify({ publicNos: ['PJV2-1', 'PJV2-2'], confirmation: '确认充值2单' })
+    });
+    assert.equal(authorization.status, 201);
+    assert.deepEqual(received.authorization, { publicNos: ['PJV2-1', 'PJV2-2'], confirmation: '确认充值2单' });
+
+    const delivery = await fetch(`${baseUrl}/api/v1/admin/cdks/deliveries`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: sensitiveCookie, Origin: baseUrl },
+      body: JSON.stringify({ batchNo: 'B-1', cdkIds: ['00000000-0000-4000-8000-000000000001'], recipientReference: 'order:1' })
+    });
+    assert.equal(delivery.status, 201);
+    assert.equal((await delivery.json()).recordedCount, 1);
+
+    const cases = await fetch(`${baseUrl}/api/v1/admin/reconciliation-cases?page=1`, { headers: { Cookie: sessionCookie } });
+    assert.equal(cases.status, 200);
+    assert.equal((await cases.json()).total, 1);
+    const assigned = await fetch(`${baseUrl}/api/v1/admin/reconciliation-cases/case-1/assign`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: sessionCookie, Origin: baseUrl },
+      body: JSON.stringify({ assignedTo: 'ops-a' })
+    });
+    assert.equal((await assigned.json()).status, 'ASSIGNED');
+    const resolved = await fetch(`${baseUrl}/api/v1/admin/reconciliation-cases/case-1/resolve`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: sensitiveCookie, Origin: baseUrl },
+      body: JSON.stringify({ resolutionNote: 'provider evidence checked' })
+    });
+    assert.equal((await resolved.json()).status, 'RESOLVED');
+
+    const csv = await fetch(`${baseUrl}/api/v1/admin/exports/orders.csv?limit=10000`, { headers: { Cookie: sessionCookie } });
+    assert.equal(csv.status, 200);
+    assert.match(csv.headers.get('content-type'), /text\/csv/);
+    assert.match(csv.headers.get('content-disposition'), /orders-/);
+    assert.equal(csv.headers.get('x-export-row-count'), '1');
+    assert.match(await csv.text(), /PJV2-1,CARD_READY/);
   });
 });

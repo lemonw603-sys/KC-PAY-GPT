@@ -28,7 +28,9 @@ test('admin overview maps aggregate values without exposing raw records', async 
     [{ status: 'REFUND_DETECTED', count: 1 }],
     [{ count: 1 }],
     [{ available: 7, provisioning: 1, assigned: 2, depleted: 1 }],
-    [{ setting_value: '5' }]
+    [{ setting_value: '5' }],
+    [{ card_intake_pending: 2, funds_risk_pending: 1,
+      reconciliation_cases_open: 3, card_sync_backlog: 4 }]
   ]);
   const result = await createAdminReadService({ pool }).getOverview();
   assert.equal(result.metrics.successRate, 80);
@@ -37,6 +39,10 @@ test('admin overview maps aggregate values without exposing raw records', async 
   assert.deepEqual(result.orderStatuses, [{ status: 'RECHARGE_SUCCESS', count: 8 }]);
   assert.deepEqual(result.cardStock, {
     available: 7, provisioning: 1, assigned: 2, depleted: 1, lowThreshold: 5, low: false
+  });
+  assert.deepEqual(result.operationalBacklog, {
+    cardIntakePending: 2, fundsRiskPending: 1,
+    reconciliationCasesOpen: 3, cardSyncBacklog: 4
   });
   assert.equal(pool.queries.some(({ sql }) => /session_ciphertext|recharge_card_key/i.test(sql)), false);
 });
