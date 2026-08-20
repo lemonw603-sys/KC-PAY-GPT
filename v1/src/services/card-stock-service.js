@@ -281,6 +281,7 @@ export function createCardStockService({ pool, sessionEncryptionKey }) {
         cardLimit: providerSnapshot?.cardLimit || null,
         defaultCardTypeId,
         defaultAmount: String(settingMap.get('default_open_card_amount') || ''),
+        cardTypes: providerSnapshot?.cardTypes || [],
         selectedCardType,
         riskConfirmThreshold: CARD_STOCK_RISK_CONFIRM_THRESHOLD
       },

@@ -61,10 +61,17 @@ export function createCardStockJobService({ pool }) {
         `SELECT setting_value FROM app_settings
          WHERE setting_key = 'default_card_type_id' LIMIT 1 FOR SHARE`
       );
-      const cardTypeId = String(settings[0]?.setting_value || '').trim();
+      const defaultCardTypeId = String(settings[0]?.setting_value || '').trim();
+      const cardTypeId = input.cardTypeId == null
+        ? defaultCardTypeId : String(input.cardTypeId).trim();
       if (!cardTypeId) {
-        throw new PublicApiError('Default card type is not configured', {
+        throw new PublicApiError('Card type is not configured', {
           code: 'CARD_STOCK_CARD_TYPE_UNAVAILABLE', status: 409
+        });
+      }
+      if (!/^[A-Za-z0-9._:-]{1,128}$/.test(cardTypeId)) {
+        throw new PublicApiError('Invalid card type', {
+          code: 'CARD_STOCK_CARD_TYPE_UNAVAILABLE', status: 400
         });
       }
       const snapshot = await readProviderSnapshot(connection);

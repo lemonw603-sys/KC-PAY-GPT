@@ -12,7 +12,7 @@ test('generates unique high-entropy-shaped CDKs without ambiguous characters', (
   const codes = generateCdks(250);
   assert.equal(new Set(codes).size, 250);
   for (const code of codes) {
-    assert.match(code, /^PJ-[A-HJ-KM-NP-Z2-9]{20}$/);
+    assert.match(code, /^PJ-[A-HJ-KM-NP-Z2-9]{5}(?:-[A-HJ-KM-NP-Z2-9]{5}){3}$/);
     assert.doesNotMatch(code, /[01ILO]/);
   }
 });
@@ -27,6 +27,14 @@ test('normalizes line imports and reports duplicates without changing case', () 
     duplicateInputCount: 1
   });
   assert.throws(() => normalizeImportedCdks('bad code'), (error) => error.code === 'INVALID_CDK');
+});
+
+test('accepts both grouped new codes and legacy ungrouped codes', () => {
+  const grouped = 'PJ-ABCDE-FGHJK-MNPQR-ST234';
+  const legacy = 'PJ-ABCDEFGHJKMNPQRST234';
+  assert.deepEqual(normalizeImportedCdks(`${grouped}\n${legacy}`), {
+    codes: [grouped, legacy], inputCount: 2, duplicateInputCount: 0
+  });
 });
 
 test('validates count and creates traceable bounded batch identifiers', () => {

@@ -7,8 +7,8 @@
   <meta name="theme-color" content="#f5f8fc">
   <title>Plus 运营后台</title>
   <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/admin/assets/admin.css?v=6">
-  <script src="/admin/assets/admin.js?v=8" defer></script>
+  <link rel="stylesheet" href="/admin/assets/admin.css?v=7">
+  <script src="/admin/assets/admin.js?v=9" defer></script>
 </head>
 <body>
   <div class="admin-shell">
@@ -26,8 +26,8 @@
         <button class="nav-item" type="button" data-view="cdks"><span aria-hidden="true">#</span>CDK 管理</button>
       </nav>
       <div class="sidebar-foot">
-        <span><i aria-hidden="true"></i>人工确认模式</span>
-        <button id="logout-button" type="button">退出登录</button>
+        <span class="session-state"><i aria-hidden="true"></i><b>管理员已登录</b><small>人工确认模式</small></span>
+        <button id="logout-button" type="button">安全退出</button>
       </div>
     </aside>
 
@@ -138,7 +138,10 @@
               </div>
               <label>数量（超过 10 张需额外确认）<input id="stock-open-count" type="number" min="1" max="10000" value="2" required></label>
               <label>单卡金额（USD）<input id="stock-open-amount" type="number" min="1" max="200" value="16" required></label>
-              <div class="stock-card-profile" id="stock-card-profile"><span>卡片类型</span><strong>正在读取卡台规则</strong><small>无需填写 ID</small></div>
+              <label class="stock-card-type-label" for="stock-card-type">卡片类型（来自卡台实时卡段）
+                <select id="stock-card-type" required disabled><option value="">正在读取卡台规则</option></select>
+              </label>
+              <div class="stock-card-profile" id="stock-card-profile"><span>所选卡段规则</span><strong>正在读取卡台规则</strong><small>提交时服务器会再次校验卡段 ID</small></div>
               <div class="stock-cost" id="stock-cost">正在计算实际费用…</div>
               <label class="stock-confirm-label">输入确认词 <strong id="stock-confirm-hint">开2张</strong><input id="stock-confirmation" type="text" autocomplete="off" required></label>
               <button class="danger-button" type="submit">确认并创建开卡任务</button>

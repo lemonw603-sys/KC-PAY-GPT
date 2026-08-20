@@ -418,11 +418,16 @@ test('card stock jobs require confirmation and move durably through the runner s
       service.createJob({ count: 11, amount: 5, confirmation: '开11张' }),
       (error) => error.code === 'CARD_STOCK_LARGE_BATCH_CONFIRMATION_REQUIRED'
     );
-    job = await service.createJob({
-      count: 11, amount: 5, cardTypeId: '1', confirmation: '开11张', largeBatchConfirmed: true
-    });
     await assert.rejects(
       service.createJob({ count: 1, amount: 16, cardTypeId: '1', confirmation: '开1张' }),
+      (error) => error.code === 'CARD_STOCK_CARD_TYPE_UNAVAILABLE'
+    );
+    job = await service.createJob({
+      count: 11, amount: 5, cardTypeId: '7', confirmation: '开11张', largeBatchConfirmed: true
+    });
+    assert.equal(job.cardTypeId, '7');
+    await assert.rejects(
+      service.createJob({ count: 1, amount: 16, cardTypeId: '7', confirmation: '开1张' }),
       (error) => error.code === 'CARD_STOCK_JOB_ACTIVE'
     );
     const claimed = await claimCardStockJob(pool, { workerId: 'stock-worker-test' });

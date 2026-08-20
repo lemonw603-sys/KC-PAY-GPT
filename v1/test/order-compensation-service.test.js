@@ -31,7 +31,7 @@ test('compensation creates one replacement and closes only a no-side-effect fail
   const result = await createOrderCompensationService({ pool, cdkHashKey: hashKey, cdkRecoveryKey: key })(
     'PJV1-DEMO', { confirmation: '补发 PJV1-DEMO' }
   );
-  assert.match(result.code, /^PJ-[A-Z2-9]{20}$/);
+  assert.match(result.code, /^PJ-[A-HJ-KM-NP-Z2-9]{5}(?:-[A-HJ-KM-NP-Z2-9]{5}){3}$/);
   assert.equal(result.replayed, false);
   assert.equal(pool.queries.some(({ sql }) => /INSERT INTO order_compensations/.test(sql)), true);
   assert.equal(pool.queries.some(({ sql }) => /SET status = 'CLOSED'/.test(sql)), true);

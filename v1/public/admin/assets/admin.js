@@ -52,7 +52,7 @@ const ORDER_RECONCILIATION_CODES = Object.freeze({
 
 const state = {
   view: 'overview', page: 1, pageSize: 20, total: 0, status: '', query: '',
-  stockProvider: null, stockCatalog: null, acceptingOrders: false, cdkClearTimer: null
+  stockProvider: null, stockCatalog: null, stockCardTypeId: '', acceptingOrders: false, cdkClearTimer: null
 };
 const elements = {
   navItems: [...document.querySelectorAll('.nav-item')],
@@ -86,7 +86,8 @@ const elements = {
   stockCards: document.querySelector('#stock-cards'), providerSummary: document.querySelector('#provider-summary'),
   stockThresholdForm: document.querySelector('#stock-threshold-form'), stockThreshold: document.querySelector('#stock-threshold'),
   stockOpenForm: document.querySelector('#stock-open-form'), stockOpenCount: document.querySelector('#stock-open-count'),
-  stockOpenAmount: document.querySelector('#stock-open-amount'), stockCardProfile: document.querySelector('#stock-card-profile'),
+  stockOpenAmount: document.querySelector('#stock-open-amount'), stockCardType: document.querySelector('#stock-card-type'),
+  stockCardProfile: document.querySelector('#stock-card-profile'),
   stockConfirmation: document.querySelector('#stock-confirmation'), stockConfirmHint: document.querySelector('#stock-confirm-hint'),
   stockCost: document.querySelector('#stock-cost')
 };
@@ -303,6 +304,36 @@ const STOCK_JOB_LABELS = Object.freeze({
   PENDING: '等待执行', RUNNING: '执行中', COMPLETED: '已完成', REVIEW_REQUIRED: '需要核对'
 });
 
+function selectedStockCardType() {
+  return state.stockProvider?.cardTypes?.find(
+    (item) => String(item.id) === String(state.stockCardTypeId)
+  ) || null;
+}
+
+function renderSelectedStockCardType({ resetInvalidAmount = false } = {}) {
+  const selected = selectedStockCardType();
+  elements.stockCardType.disabled = !selected;
+  if (!selected) {
+    elements.stockCardProfile.innerHTML = '<span>所选卡段规则</span><strong>没有可用卡段</strong><small>禁止开卡</small>';
+    updateStockEstimate();
+    return;
+  }
+  elements.stockOpenAmount.min = selected.minimumAmount;
+  elements.stockOpenAmount.max = selected.maximumAmount;
+  const currentAmount = Number(elements.stockOpenAmount.value);
+  if (resetInvalidAmount && (!Number.isInteger(currentAmount)
+    || currentAmount < Number(selected.minimumAmount)
+    || currentAmount > Number(selected.maximumAmount))) {
+    const configuredAmount = Number(state.stockProvider?.defaultAmount);
+    elements.stockOpenAmount.value = Number.isInteger(configuredAmount)
+      && configuredAmount >= Number(selected.minimumAmount)
+      && configuredAmount <= Number(selected.maximumAmount)
+      ? String(configuredAmount) : String(selected.minimumAmount);
+  }
+  elements.stockCardProfile.innerHTML = `<span>所选卡段规则</span><strong>${escapeHtml(selected.name)} · ID ${escapeHtml(selected.id)} · BIN ${escapeHtml(selected.binPrefix)}</strong><small>$${escapeHtml(selected.minimumAmount)}–$${escapeHtml(selected.maximumAmount)} · 提交时服务器再次校验</small>`;
+  updateStockEstimate();
+}
+
 async function loadStock() {
   const payload = await api('/api/v1/admin/card-stock');
   state.stockProvider = payload.provider || null;
@@ -319,7 +350,14 @@ async function loadStock() {
   elements.stockThreshold.value = payload.threshold;
   const provider = state.stockProvider;
   const catalog = state.stockCatalog || {};
-  const selected = provider?.selectedCardType;
+  const cardTypes = provider?.cardTypes || [];
+  const stillAvailable = cardTypes.some((item) => String(item.id) === String(state.stockCardTypeId));
+  state.stockCardTypeId = stillAvailable
+    ? state.stockCardTypeId : String(provider?.defaultCardTypeId || cardTypes[0]?.id || '');
+  elements.stockCardType.innerHTML = cardTypes.length
+    ? cardTypes.map((item) => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.name)} · ID ${escapeHtml(item.id)} · BIN ${escapeHtml(item.binPrefix)}</option>`).join('')
+    : '<option value="">没有可用卡段</option>';
+  elements.stockCardType.value = state.stockCardTypeId;
   const providerRemaining = Number(provider?.cardLimit?.remaining);
   if (Number.isInteger(providerRemaining) && providerRemaining > 0) {
     elements.stockOpenCount.max = String(providerRemaining);
@@ -335,21 +373,13 @@ async function loadStock() {
       ${catalog.openingBlocked ? ' · 对账未完成，禁止新开卡' : ''}
       ${provider.purchaseEnabled ? '' : ' · 卡台当前禁止开卡'}
     </small>` : '<p class="provider-warning">尚未取得卡台规则，禁止开卡。</p>';
-  if (selected) {
-    elements.stockCardProfile.innerHTML = `<span>卡片类型</span><strong>${escapeHtml(selected.name)} · BIN ${escapeHtml(selected.binPrefix)}</strong><small>$${escapeHtml(selected.minimumAmount)}–$${escapeHtml(selected.maximumAmount)}</small>`;
-    elements.stockOpenAmount.min = selected.minimumAmount;
-    elements.stockOpenAmount.max = selected.maximumAmount;
-    if (!elements.stockOpenAmount.value) elements.stockOpenAmount.value = provider.defaultAmount || selected.minimumAmount;
-  } else {
-    elements.stockCardProfile.innerHTML = '<span>卡片类型</span><strong>默认卡段不可用</strong><small>禁止开卡</small>';
-  }
+  renderSelectedStockCardType({ resetInvalidAmount: true });
   elements.stockJobs.innerHTML = payload.jobs?.length
     ? payload.jobs.map((job) => `<div><span><strong>${escapeHtml(STOCK_JOB_LABELS[job.status] || job.status)} · ${job.openedCount}/${job.requestedCount} 张</strong><small>${escapeHtml(job.cardTypeName || `卡段 ${job.cardTypeId}`)} · $${escapeHtml(job.amount)} / 张 · 预计总扣款 $${escapeHtml(job.estimatedTotal || '—')} · ${formatTime(job.createdAt)}${job.errorMessage ? ` · ${escapeHtml(job.errorMessage)}` : ''}</small></span><em>${escapeHtml(job.status)}</em></div>`).join('')
     : '<p class="empty-state">还没有后台补卡任务</p>';
   elements.stockCards.innerHTML = payload.cards?.length
     ? payload.cards.map((card) => `<div data-card="${escapeHtml(card.providerCardId)}" role="button" tabindex="0"><span><strong>${escapeHtml(card.cardNumber || card.last4 || '卡号未就绪')}</strong><small>卡台 ID ${escapeHtml(card.providerCardId)} · 余额 $${escapeHtml(card.currentBalance || '0')} · ${card.publicNo ? `订单 ${escapeHtml(card.publicNo)}` : '未分配'} · 交易 ${escapeHtml(card.transactionCount)} 笔 · ${formatTime(card.lastTransactionSyncedAt)}</small></span><em>${escapeHtml(RECONCILIATION_LABELS[card.reconciliationStatus] || card.reconciliationStatus)} / ${escapeHtml(INVENTORY_LABELS[card.inventoryStatus] || card.inventoryStatus)}</em></div>`).join('')
     : '<p class="empty-state">还没有后台卡片</p>';
-  updateStockEstimate();
   elements.syncTime.textContent = `更新于 ${new Date().toLocaleTimeString('zh-CN', { hour12: false })}`;
 }
 
@@ -411,7 +441,7 @@ function updateStockEstimate() {
   const amount = Math.max(0, Number(elements.stockOpenAmount.value) || 0);
   const provider = state.stockProvider;
   const catalog = state.stockCatalog || {};
-  const selected = provider?.selectedCardType;
+  const selected = selectedStockCardType();
   const cardFee = Number(selected?.effectiveCardFee || 0);
   const feeRate = Number(selected?.effectiveFeeRate || 0);
   const rateFee = amount * feeRate;
@@ -747,6 +777,10 @@ document.querySelectorAll('.stock-preset').forEach((button) => button.addEventLi
 }));
 elements.stockOpenCount?.addEventListener('input', updateStockEstimate);
 elements.stockOpenAmount?.addEventListener('input', updateStockEstimate);
+elements.stockCardType?.addEventListener('change', () => {
+  state.stockCardTypeId = elements.stockCardType.value;
+  renderSelectedStockCardType({ resetInvalidAmount: true });
+});
 elements.stockThresholdForm?.addEventListener('submit', async (event) => {
   event.preventDefault();
   try {
@@ -762,6 +796,8 @@ elements.stockOpenForm?.addEventListener('submit', async (event) => {
   event.preventDefault();
   const count = Number(elements.stockOpenCount.value);
   const amount = Number(elements.stockOpenAmount.value);
+  const cardTypeId = state.stockCardTypeId;
+  const cardTypeName = selectedStockCardType()?.name || `卡段 ${cardTypeId}`;
   const expected = `开${count}张`;
   if (elements.stockConfirmation.value.trim() !== expected) {
     showNotice(`请输入确认词“${expected}”。`);
@@ -770,15 +806,15 @@ elements.stockOpenForm?.addEventListener('submit', async (event) => {
   const riskThreshold = Number(state.stockProvider?.riskConfirmThreshold || 10);
   const largeBatchConfirmed = count > riskThreshold;
   const confirmationMessage = largeBatchConfirmed
-    ? `此次将一次性创建 ${count} 张卡，超过 ${riskThreshold} 张风险提示阈值。\n\n每张充值 $${amount}，预计总扣款 $${elements.stockCost.dataset.total}。\n\n确认继续吗？`
-    : `确认创建 ${count} 张、每张充值 $${amount} 的开卡任务？预计总扣款 $${elements.stockCost.dataset.total}。`;
+    ? `此次将在“${cardTypeName}”（ID ${cardTypeId}）一次性创建 ${count} 张卡，超过 ${riskThreshold} 张风险提示阈值。\n\n每张充值 $${amount}，预计总扣款 $${elements.stockCost.dataset.total}。\n\n确认继续吗？`
+    : `确认在“${cardTypeName}”（ID ${cardTypeId}）创建 ${count} 张、每张充值 $${amount} 的开卡任务？预计总扣款 $${elements.stockCost.dataset.total}。`;
   if (!window.confirm(confirmationMessage)) return;
   const button = elements.stockOpenForm.querySelector('button[type="submit"]');
   button.disabled = true;
   try {
     await sensitiveApi('/api/v1/admin/card-stock/jobs', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ count, amount, confirmation: expected, largeBatchConfirmed })
+      body: JSON.stringify({ count, amount, cardTypeId, confirmation: expected, largeBatchConfirmed })
     });
     elements.stockConfirmation.value = '';
     showNotice('开卡任务已创建，服务器将在约 10 秒内开始执行。');
@@ -789,7 +825,7 @@ elements.stockOpenForm?.addEventListener('submit', async (event) => {
       card_stock_amount_out_of_range: '金额不在当前卡段允许范围内。',
       card_stock_balance_insufficient: '卡台余额不足以安全完成整批开卡。',
       card_stock_limit_insufficient: '卡台剩余卡片额度不足。',
-      card_stock_card_type_unavailable: '默认卡段不可用或已变更。',
+      card_stock_card_type_unavailable: '所选卡段 ID 不存在、不可用或已变更。',
       card_stock_purchase_disabled: '卡台当前禁止开卡。',
       card_stock_job_active: '已有补卡任务正在执行。',
       card_catalog_stale: '卡台卡片对账已过期，等待自动同步后再试。',

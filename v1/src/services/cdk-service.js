@@ -93,7 +93,8 @@ export function generateCdks(value, { randomInt = crypto.randomInt } = {}) {
     for (let index = 0; index < CDK_RANDOM_LENGTH; index += 1) {
       suffix += CDK_ALPHABET[randomInt(CDK_ALPHABET.length)];
     }
-    codes.add(`${CDK_PREFIX}${suffix}`);
+    const groupedSuffix = suffix.match(/.{1,5}/g).join('-');
+    codes.add(`${CDK_PREFIX}${groupedSuffix}`);
   }
   return [...codes];
 }

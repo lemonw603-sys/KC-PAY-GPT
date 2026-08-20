@@ -2,7 +2,8 @@ import crypto from 'node:crypto';
 
 export const LEGACY_CDK_HASH_VERSION = 'sha256-v1';
 export const CURRENT_CDK_HASH_VERSION = 'hmac-sha256-v1';
-export const GENERATED_CDK_PATTERN = /^PJ-[A-HJ-KM-NP-Z2-9]{20}$/;
+// New codes are grouped for readability; the original ungrouped format remains redeemable.
+export const GENERATED_CDK_PATTERN = /^PJ-(?:[A-HJ-KM-NP-Z2-9]{20}|[A-HJ-KM-NP-Z2-9]{5}(?:-[A-HJ-KM-NP-Z2-9]{5}){3})$/;
 
 function assertHashKey(key) {
   if (!Buffer.isBuffer(key) || key.length !== 32) {
