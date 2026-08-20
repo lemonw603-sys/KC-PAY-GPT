@@ -121,3 +121,14 @@
 - 外部 TCP 探测受本地测试网络代理影响产生 3306 假阳性；服务器自身公网 IP:3306 明确 `Connection refused`，Docker 只绑定 `127.0.0.1:3306`，firewalld 未开放 3306。
 - 准备新 release 时曾因 `cp -a` 复制 symlink 而覆盖旧 `535fe2b` 目录；当前 release 已修复为真实目录。精确 Git 提交 `535fe2b` 已重建为 `/opt/pojia/releases/20260820-foundation-v2-535fe2b-restored`，259 个非依赖文件清单校验通过；被覆盖目录已标记禁止回滚。
 - 本轮没有开卡、直充、退款、余额提取或其他 Provider 写调用。
+
+## 2026-08-21 - Task: 收尾验收与后台下拉框修复
+### Commitment check
+- CDK 批次作废：代码、后台路由、生产隔离 MySQL 全量测试均通过；只更新 `AVAILABLE`，已兑换码不受影响。
+- CDK 查订单：客户 API 同时支持 `publicNo` 和 CDK，生产隔离 MySQL 测试确认两种查询返回同一订单。
+- 右上角刷新：后台脚本已实现加载中、成功、失败反馈；静态回归测试通过，实际页面可见反馈逻辑存在。
+- 下拉框箭头：统一改为向内收进的 CSS 箭头，资源版本更新到 `admin.css?v=13`；浏览器计算样式和截图复验通过。
+### Production evidence
+- 发布 `/opt/pojia/releases/20260821-ui-fix-1`，Web 重启后 `/health/live` 与 `/health/ready` 均 200。
+- 生产隔离 MySQL 全量验收：282/282 通过、0 skipped；没有 Provider 写调用。
+- 三条 Bark 测试告警已标记 `RESOLVED`，通知记录保留；最终只读体检无 blocker。

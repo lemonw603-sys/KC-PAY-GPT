@@ -170,3 +170,10 @@
 - 最终只读体检无 blocker；`accept_new_orders=false`、`dispatch_new_recharges=false`。
 - 卡库存付费执行 timer 保持停止；Worker 只追踪已有状态，没有可领取资金任务。
 - 本轮未执行任何 Provider 写调用或资金动作。
+
+## 2026-08-21 收尾验收更新
+
+- CDK 作废、CDK 查订单、右上角刷新反馈均完成代码/隔离数据库/静态资源核对。
+- 后台所有 `select` 已改为内收 14px 的 CSS 箭头，资源版本更新为 `admin.css?v=13`，浏览器计算样式和截图复验通过。
+- UI 修复发布为 `/opt/pojia/releases/20260821-ui-fix-1`；Web/Worker/Bark 健康，生产隔离 MySQL 282/282 通过。
+- 当前仍未进行真实开卡、直充、退款或余额提取；下一步只有真实订单人工确认和小批量运行。
