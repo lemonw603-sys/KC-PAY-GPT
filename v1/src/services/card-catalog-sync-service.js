@@ -1,5 +1,3 @@
-import { mapStockCard } from './card-stock-service.js';
-
 const ACTIVE = new Set(['active', 'available', 'usable', 'ready']);
 
 function cardId(record) {
@@ -21,7 +19,7 @@ async function fetchAllCards(provider, { pageSize = 50, maxPages = 100 } = {}) {
   throw new Error('Provider card list exceeded the safe page limit');
 }
 
-export async function syncCardCatalog({ pool, provider, stock, checkedAt = new Date() }) {
+export async function syncCardCatalog({ pool, provider, intake = null, checkedAt = new Date() }) {
   const [settingRows] = await pool.query(
     `SELECT setting_key, setting_value FROM app_settings
      WHERE setting_key IN ('default_card_type_id','default_minimum_required_card_balance')`
@@ -35,19 +33,13 @@ export async function syncCardCatalog({ pool, provider, stock, checkedAt = new D
 
   const listed = await fetchAllCards(provider);
   const active = listed.filter((record) => ACTIVE.has(cardStatus(record)) && cardId(record));
-  const unresolved = [];
-  for (const record of active) {
-    const providerCardId = cardId(record);
-    try {
-      const detail = await provider.card(providerCardId);
-      await stock.register(mapStockCard(detail, {
-        providerCardId,
-        cardTypeId,
-        minimumRequiredBalance
-      }));
-    } catch (error) {
-      unresolved.push({ providerCardId, code: String(error?.code || error?.kind || 'CARD_READ_FAILED').slice(0, 64) });
-    }
+  let intakeResult = null;
+  if (intake) {
+    const discovery = await intake.discover({ requestedBy: 'card-catalog-sync' });
+    const batchId = discovery.batch.id;
+    const firstPass = await intake.validateBatch(batchId);
+    const secondPass = await intake.validateBatch(batchId);
+    intakeResult = { discovery, firstPass, secondPass };
   }
 
   const [counts] = await pool.query(
@@ -64,6 +56,10 @@ export async function syncCardCatalog({ pool, provider, stock, checkedAt = new D
   const listedById = new Map(listed.map((record) => [cardId(record), cardStatus(record)]).filter(([id]) => id));
   const localById = new Map(localCards.map((record) => [String(record.provider_card_id), String(record.status || '').toLowerCase()]));
   const providerOnlyActiveIds = active.map(cardId).filter((id) => !localById.has(id));
+  const unresolved = providerOnlyActiveIds.map((providerCardId) => ({
+    providerCardId,
+    code: intake ? 'CARD_QUARANTINED_OR_REVIEW' : 'CARD_INTAKE_REQUIRED'
+  }));
   const localMissingProviderIds = [...localById.keys()].filter((id) => !listedById.has(id));
   const statusConflictIds = [...localById.entries()]
     .filter(([id, status]) => listedById.has(id) && ACTIVE.has(status) !== ACTIVE.has(listedById.get(id)))
@@ -83,7 +79,13 @@ export async function syncCardCatalog({ pool, provider, stock, checkedAt = new D
     localMissingProviderCount: localMissingProviderIds.length,
     localMissingProviderIds,
     statusConflictCount: statusConflictIds.length,
-    statusConflictIds
+    statusConflictIds,
+    intake: intakeResult ? {
+      batchId: intakeResult.discovery.batch.id,
+      created: intakeResult.discovery.created,
+      firstPass: intakeResult.firstPass,
+      secondPass: intakeResult.secondPass
+    } : null
   };
   await pool.query(
     `INSERT INTO card_catalog_snapshots (provider, payload_json, synced_at)

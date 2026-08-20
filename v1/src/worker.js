@@ -2,6 +2,7 @@ import os from 'node:os';
 import { loadWorkerConfig } from './config.js';
 import { createDatabasePool } from './db/pool.js';
 import { createWorkflowRepository } from './db/repositories/workflow-repository.js';
+import { createRechargeAttemptRepository } from './db/repositories/recharge-attempt-repository.js';
 import {
   HnskjCardProvider,
   ZzshuRechargeProvider,
@@ -61,6 +62,7 @@ const rechargeProvider = (config.providerReadsEnabled || config.providerRecharge
 const workflow = createWorkflowRepository(pool, {
   sessionEncryptionKey: config.sessionEncryptionKey
 });
+const rechargeAttemptRepository = createRechargeAttemptRepository(pool);
 const handlers = createWorkflowHandlers({
   workflow,
   cardProvider,
@@ -70,6 +72,7 @@ const handlers = createWorkflowHandlers({
   mapCardProvisioning,
   mapCardCredentials,
   buildDirectOrderRequest,
+  rechargeAttemptRepository,
   rechargeWritesEnabled: config.providerRechargeWritesEnabled
 });
 

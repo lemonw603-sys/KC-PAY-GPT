@@ -29,6 +29,9 @@ const baseSchema = z.object({
     }, 'SESSION_ENCRYPTION_KEY_BASE64 must decode to exactly 32 bytes'),
   CDK_HASH_KEY_V1_BASE64: z.string().trim().min(1),
   CDK_RECOVERY_KEY_BASE64: z.string().trim().min(1),
+  HNSKJ_API_BASE_URL: z.string().url().default('https://card.hnskj.vip/api/open/v1'),
+  HNSKJ_API_KEY: z.string().trim().min(1).optional(),
+  CARD_INTAKE_PAN_HMAC_KEY_BASE64: z.string().trim().min(1).optional(),
   ADMIN_HOST: z.string().trim().min(1).max(253).optional(),
   ADMIN_PASSWORD_HASH: z.string().trim()
     .regex(/^scrypt-v1\$[A-Za-z0-9_-]{22}\$[A-Za-z0-9_-]{86}$/)
@@ -227,6 +230,16 @@ function validateDatabaseConfig(value, context, { urlKey, tlsKey, caKey }) {
 function validateBaseConfig(value, context) {
   validateAdminConfig(value, context);
   validateCdkSecurityConfig(value, context);
+  if (value.CARD_INTAKE_PAN_HMAC_KEY_BASE64) {
+    try {
+      if (Buffer.from(value.CARD_INTAKE_PAN_HMAC_KEY_BASE64, 'base64').length !== 32) throw new Error();
+    } catch {
+      context.addIssue({
+        code: 'custom', path: ['CARD_INTAKE_PAN_HMAC_KEY_BASE64'],
+        message: 'must decode to exactly 32 bytes'
+      });
+    }
+  }
   if (net.isIP(value.HOST) === 0) {
     context.addIssue({
       code: 'custom',
@@ -307,6 +320,10 @@ export function loadConfig(env = process.env) {
     sessionEncryptionKey: Buffer.from(result.data.SESSION_ENCRYPTION_KEY_BASE64, 'base64'),
     cdkHashKey: Buffer.from(result.data.CDK_HASH_KEY_V1_BASE64, 'base64'),
     cdkRecoveryKey: Buffer.from(result.data.CDK_RECOVERY_KEY_BASE64, 'base64'),
+    hnskjApiBaseUrl: result.data.HNSKJ_API_BASE_URL,
+    hnskjApiKey: result.data.HNSKJ_API_KEY || null,
+    cardIntakePanHmacKey: result.data.CARD_INTAKE_PAN_HMAC_KEY_BASE64
+      ? Buffer.from(result.data.CARD_INTAKE_PAN_HMAC_KEY_BASE64, 'base64') : null,
     adminHost: result.data.ADMIN_HOST || null,
     adminPasswordHash: result.data.ADMIN_PASSWORD_HASH || null,
     adminSessionSecret: result.data.ADMIN_SESSION_SECRET_BASE64

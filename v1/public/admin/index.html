@@ -8,7 +8,7 @@
   <title>Plus 运营后台</title>
   <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/admin/assets/admin.css?v=8">
-  <script src="/admin/assets/admin.js?v=10" defer></script>
+  <script src="/admin/assets/admin.js?v=11" defer></script>
 </head>
 <body>
   <div class="admin-shell">
@@ -156,6 +156,11 @@
         <section class="card stock-card">
           <div class="card-heading"><div><p class="section-kicker">执行记录</p><h2>最近补卡任务</h2></div><button class="text-button" id="refresh-stock" type="button">刷新</button></div>
           <div class="mini-list" id="stock-jobs"></div>
+        </section>
+        <section class="card stock-card">
+          <div class="card-heading"><div><p class="section-kicker">手动开卡接管</p><h2>新卡隔离与入库</h2></div><button class="primary-small" id="discover-new-cards" type="button">同步并接管新卡</button></div>
+          <p class="card-description">你在卡台手动开卡后点一次即可。系统会分页发现新卡、连续读取两次验证；通过后自动进入库存，异常卡继续隔离，不影响其他卡。</p>
+          <div class="mini-list" id="card-intake-list"><p class="empty-state">正在读取接管状态…</p></div>
         </section>
         <section class="card stock-card">
           <div class="card-heading"><div><p class="section-kicker">卡片明细</p><h2>后台卡片</h2></div><div><button class="text-button" id="sync-all-cards" type="button">只读同步全部</button> <span class="write-badge">完整卡号</span></div></div>

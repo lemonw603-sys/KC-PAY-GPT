@@ -27,7 +27,9 @@ function errorSummary(error) {
 export async function recordProviderCall({
   pool,
   orderId = null,
+  rechargeAttemptId = null,
   provider,
+  providerAccountId = null,
   operation,
   requestKey = null,
   attemptNo = 1,
@@ -40,7 +42,8 @@ export async function recordProviderCall({
     ? NaN : new Date(existingCall.startedAt).getTime();
   const started = Number.isFinite(existingStartedAt) ? existingStartedAt : Date.now();
   const call = existingCall || await startProviderCall(pool, {
-    orderId, provider, operation, requestKey, attemptNo, startedAt: new Date(started)
+    orderId, rechargeAttemptId, provider, providerAccountId,
+    operation, requestKey, attemptNo, startedAt: new Date(started)
   });
   if (!call?.id) throw new Error('Provider call intent is missing');
 

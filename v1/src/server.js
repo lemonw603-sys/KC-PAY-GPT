@@ -17,11 +17,18 @@ import { createCardSyncJobService } from './services/card-sync-job-service.js';
 import { createAdminOperationsService } from './services/admin-operations-service.js';
 import {
   RechargePermitError,
-  armRechargePermit,
   revokeRechargePermit
 } from './services/recharge-permit-service.js';
+import {
+  createRechargeAuthorization,
+  getRechargeAuthorizationStatus,
+  revokeRechargeAuthorization
+} from './services/recharge-authorization-v2-service.js';
 import { createOrderCompensationService } from './services/order-compensation-service.js';
 import { createOrderCancellationService } from './services/order-cancellation-service.js';
+import { HnskjCardProvider } from './providers/index.js';
+import { createCardIntakeService } from './services/card-intake-service.js';
+import { createCardIntakeRepository } from './db/repositories/card-intake-repository.js';
 
 const config = loadConfig();
 const pool = createDatabasePool(config.database);
@@ -38,6 +45,30 @@ const adminReadService = createAdminReadService({
 const cardStockService = createCardStockService({ pool, sessionEncryptionKey: config.sessionEncryptionKey });
 const cardStockJobService = createCardStockJobService({ pool });
 const cardSyncJobService = createCardSyncJobService({ pool });
+const cardIntakeRepository = createCardIntakeRepository({ pool });
+const cardIntakeProvider = config.hnskjApiKey
+  ? new HnskjCardProvider({ baseUrl: config.hnskjApiBaseUrl, apiKey: config.hnskjApiKey })
+  : null;
+async function configuredCardIntake() {
+  if (!cardIntakeProvider) return null;
+  const [rows] = await pool.query(
+    `SELECT setting_key, setting_value FROM app_settings
+     WHERE setting_key IN ('default_card_type_id','default_minimum_required_card_balance')`
+  );
+  const settings = new Map(rows.map((row) => [row.setting_key, row.setting_value]));
+  return createCardIntakeService({
+    provider: cardIntakeProvider,
+    repository: cardIntakeRepository,
+    providerAccountId: '00000000-0000-4000-8000-000000000101',
+    sessionEncryptionKey: config.sessionEncryptionKey,
+    panHmacKey: config.cardIntakePanHmacKey,
+    assumeDedicatedAccount: true,
+    validationRules: {
+      allowedCardTypeIds: [String(settings.get('default_card_type_id') || '')],
+      minimumBalance: String(settings.get('default_minimum_required_card_balance') || '')
+    }
+  });
+}
 const createAdminCdkBatch = createAdminCdkService({
   pool,
   cdkHashKey: config.cdkHashKey,
@@ -71,6 +102,28 @@ const app = createApp({
   requestCardTransactionSync: adminReadService.requestCardTransactionSync
   ,getAdminCard: adminReadService.getCard
   ,requestAdminCardSync: cardSyncJobService.createJobs
+  ,discoverAdminCards: cardIntakeProvider ? async () => {
+    const service = await configuredCardIntake();
+    const discovery = await service.discover();
+    const firstPass = await service.validateBatch(discovery.batch.id);
+    const secondPass = await service.validateBatch(discovery.batch.id);
+    return { discovery, firstPass, secondPass };
+  } : null
+  ,validateAdminCardIntake: cardIntakeProvider
+    ? async (batchId) => (await configuredCardIntake()).validateBatch(batchId) : null
+  ,acceptAdminCardIntake: cardIntakeProvider
+    ? async (input) => (await configuredCardIntake()).acceptDiscoveries(input) : null
+  ,listAdminCardIntake: async (input = {}) => {
+    const batches = await cardIntakeRepository.listBatches({ limit: input.limit });
+    const batchId = String(input.batchId || batches[0]?.id || '').trim();
+    const discoveries = batchId
+      ? await cardIntakeRepository.listDiscoveries(batchId, {
+        statuses: ['QUARANTINED','VALIDATED','REVIEW_REQUIRED','ACCEPTED','EXISTING','FAILED'],
+        limit: input.limit || 100
+      })
+      : [];
+    return { configured: Boolean(cardIntakeProvider), batches, batchId: batchId || null, discoveries };
+  }
   ,getAdminCardStock: async () => ({
     ...await cardStockService.status(),
     ...await cardStockJobService.listJobs({ limit: 20 })
@@ -85,21 +138,45 @@ const app = createApp({
       if (confirmation !== `确认充值 ${publicNo}`) {
         throw new RechargePermitError('Recharge confirmation mismatch', 'RECHARGE_CONFIRMATION_REQUIRED');
       }
-      return armRechargePermit(pool, {
-        publicNo,
-        approvedBy: 'admin',
+      return createRechargeAuthorization(pool, {
+        publicNos: [publicNo],
+        authorizedBy: 'admin',
         ttlMinutes: 10,
-        sessionEncryptionKey: config.sessionEncryptionKey
+        reason: 'single order recharge authorization from admin'
       });
     }
     if (action === 'revoke') {
       if (confirmation !== `撤销充值 ${publicNo}`) {
         throw new RechargePermitError('Recharge revocation confirmation mismatch', 'RECHARGE_CONFIRMATION_REQUIRED');
       }
+      const status = await getRechargeAuthorizationStatus(pool, { publicNo });
+      if (status.authorization?.id && status.authorization.itemStatus === 'PENDING') {
+        return revokeRechargeAuthorization(pool, {
+          authorizationId: status.authorization.id,
+          revokedBy: 'admin'
+        });
+      }
+      // Rolling-deploy compatibility for permits armed before Foundation v2.
       return revokeRechargePermit(pool, { publicNo, revokedBy: 'admin' });
     }
     throw new RechargePermitError('Invalid recharge permit action', 'INVALID_RECHARGE_PERMIT_ACTION');
   }
+  ,createAdminRechargeAuthorization: async (input = {}) => {
+    const publicNos = Array.isArray(input.publicNos) ? input.publicNos : [];
+    if (String(input.confirmation || '') !== `确认充值${publicNos.length}单`) {
+      throw new RechargePermitError('Recharge confirmation mismatch', 'RECHARGE_CONFIRMATION_REQUIRED');
+    }
+    return createRechargeAuthorization(pool, {
+      publicNos,
+      ttlMinutes: input.ttlMinutes ?? 10,
+      authorizedBy: 'admin',
+      reason: input.reason || 'explicit batch recharge authorization from admin'
+    });
+  }
+  ,revokeAdminRechargeAuthorization: (input) => revokeRechargeAuthorization(pool, {
+    authorizationId: input.authorizationId,
+    revokedBy: 'admin'
+  })
   ,compensateAdminOrder
   ,cancelAdminOrder
   ,createAdminCdkBatch

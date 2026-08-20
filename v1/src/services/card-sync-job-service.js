@@ -1,6 +1,12 @@
 import crypto from 'node:crypto';
 import { PublicApiError } from '../domain/public-api-error.js';
 import { redactSensitiveText } from '../security/redaction.js';
+import {
+  CardSyncTier,
+  initialSyncTier,
+  nextCardSyncAt,
+  normalizeCardSyncTier
+} from '../domain/card-sync-policy.js';
 
 function safeProviderCardId(value) {
   const id = String(value || '').trim();
@@ -93,15 +99,24 @@ export async function scheduleDueCardSyncJobs(pool, {
     }
     const [cards] = await connection.query(
       `SELECT c.id FROM cards c
-       WHERE c.order_id IS NOT NULL
-         AND (c.last_transaction_synced_at IS NULL OR c.last_transaction_synced_at < ?)
+       LEFT JOIN orders o ON o.id = c.order_id
+       WHERE c.intake_status IN ('ACCEPTED','LEGACY_ACCEPTED')
+         AND (
+           c.next_sync_at <= ?
+           OR (c.next_sync_at IS NULL AND (c.last_transaction_synced_at IS NULL OR c.last_transaction_synced_at < ?))
+         )
          AND NOT EXISTS (
            SELECT 1 FROM card_sync_jobs j
            WHERE j.card_id = c.id AND j.status IN ('PENDING','RUNNING')
          )
-       ORDER BY COALESCE(c.last_transaction_synced_at, c.created_at) ASC
+       ORDER BY CASE c.sync_tier
+         WHEN 'RECHARGE_PROCESSING' THEN 10 WHEN 'PROVISIONING' THEN 20
+         WHEN 'ASSIGNED' THEN 30 WHEN 'RECENT_TERMINAL' THEN 40
+         WHEN 'INVENTORY' THEN 50 WHEN 'AVAILABLE' THEN 50
+         WHEN 'REFUND_WATCH' THEN 60 WHEN 'ARCHIVED' THEN 70 ELSE 55 END,
+         COALESCE(c.next_sync_at, c.last_transaction_synced_at, c.created_at) ASC
        LIMIT ? FOR UPDATE SKIP LOCKED`,
-      [cutoff, safeLimit]
+      [now, cutoff, safeLimit]
     );
     const bucket = Math.floor(now.getTime() / (interval * 60_000));
     for (const card of cards) {
@@ -137,10 +152,18 @@ export async function claimCardSyncJob(pool, { workerId, leaseSeconds = 120 }) {
     );
     const [rows] = await connection.query(
       `SELECT j.id, j.card_id, j.attempts, j.max_attempts,
-              c.provider_card_id, c.card_type_id, c.funded_amount, c.order_id
+              c.provider_card_id, c.provider_account_id, c.card_type_id,
+              c.funded_amount, c.order_id, c.sync_tier,
+              o.status AS order_status
        FROM card_sync_jobs j INNER JOIN cards c ON c.id = j.card_id
+       LEFT JOIN orders o ON o.id = c.order_id
        WHERE j.status = 'PENDING' AND j.available_at <= CURRENT_TIMESTAMP(3)
-       ORDER BY j.created_at LIMIT 1 FOR UPDATE SKIP LOCKED`
+       ORDER BY CASE c.sync_tier
+         WHEN 'RECHARGE_PROCESSING' THEN 10 WHEN 'PROVISIONING' THEN 20
+         WHEN 'ASSIGNED' THEN 30 WHEN 'RECENT_TERMINAL' THEN 40
+         WHEN 'INVENTORY' THEN 50 WHEN 'AVAILABLE' THEN 50
+         WHEN 'REFUND_WATCH' THEN 60 WHEN 'ARCHIVED' THEN 70 ELSE 55 END,
+         j.created_at LIMIT 1 FOR UPDATE SKIP LOCKED`
     );
     if (!rows.length) {
       await connection.commit();
@@ -165,14 +188,42 @@ export async function claimCardSyncJob(pool, { workerId, leaseSeconds = 120 }) {
   }
 }
 
-export async function completeCardSyncJob(pool, { jobId, workerId }) {
-  const [result] = await pool.query(
-    `UPDATE card_sync_jobs SET status = 'COMPLETED', leased_by = NULL,
-       leased_until = NULL, completed_at = CURRENT_TIMESTAMP(3)
-     WHERE id = ? AND status = 'RUNNING' AND leased_by = ?`,
-    [jobId, workerId]
-  );
-  if (Number(result.affectedRows) !== 1) throw new Error('Card sync job lease lost');
+export async function completeCardSyncJob(pool, { jobId, workerId, now = new Date() }) {
+  const connection = await pool.getConnection();
+  try {
+    await connection.beginTransaction();
+    const [rows] = await connection.query(
+      `SELECT j.card_id, c.inventory_status, o.status AS order_status
+       FROM card_sync_jobs j INNER JOIN cards c ON c.id = j.card_id
+       LEFT JOIN orders o ON o.id = c.order_id
+       WHERE j.id = ? AND j.status = 'RUNNING' AND j.leased_by = ? FOR UPDATE`,
+      [jobId, workerId]
+    );
+    if (rows.length !== 1) throw new Error('Card sync job lease lost');
+    const tier = initialSyncTier({
+      inventoryStatus: rows[0].inventory_status,
+      orderStatus: rows[0].order_status
+    });
+    const [result] = await connection.query(
+      `UPDATE card_sync_jobs SET status = 'COMPLETED', leased_by = NULL,
+         leased_until = NULL, completed_at = ?
+       WHERE id = ? AND status = 'RUNNING' AND leased_by = ?`,
+      [now, jobId, workerId]
+    );
+    if (Number(result.affectedRows) !== 1) throw new Error('Card sync job lease lost');
+    await connection.query(
+      `UPDATE cards SET sync_tier = ?, next_sync_at = ?,
+         sync_consecutive_failures = 0, last_successful_sync_at = ?,
+         updated_at = CURRENT_TIMESTAMP(3) WHERE id = ?`,
+      [tier, nextCardSyncAt({ tier, now }), now, rows[0].card_id]
+    );
+    await connection.commit();
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
 }
 
 export async function failCardSyncJob(pool, { job, workerId, error }) {
@@ -188,5 +239,23 @@ export async function failCardSyncJob(pool, { job, workerId, error }) {
     [retry ? 'PENDING' : 'REVIEW_REQUIRED', code, message,
       retry ? Math.min(300, 10 * (2 ** (job.attempts - 1))) : 0,
       retry ? 'PENDING' : 'REVIEW_REQUIRED', job.id, workerId]
+  );
+  // Keep the tier frozen at claim time. Re-deriving it from a tier string as if
+  // it were an inventory status incorrectly demotes RECENT_TERMINAL and
+  // REFUND_WATCH cards. INVENTORY is the one legacy migration alias.
+  const tier = job.sync_tier === 'INVENTORY'
+    ? CardSyncTier.AVAILABLE
+    : (() => {
+        try { return normalizeCardSyncTier(job.sync_tier); }
+        catch { return CardSyncTier.ARCHIVED; }
+      })();
+  await pool.query(
+    `UPDATE cards SET sync_consecutive_failures = sync_consecutive_failures + 1,
+       next_sync_at = ?, updated_at = CURRENT_TIMESTAMP(3) WHERE id = ?`,
+    [nextCardSyncAt({
+      tier,
+      consecutiveFailures: Number(job.attempts || 1),
+      retryAfterMs: error?.retryAfterMs ?? null
+    }), job.card_id]
   );
 }

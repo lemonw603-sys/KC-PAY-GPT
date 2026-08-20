@@ -47,13 +47,18 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey }) {
     async loadOrderContext(orderId) {
       const [rows] = await pool.query(
         `SELECT o.*,
+                fr.card_provider_account_id,
+                fr.recharge_provider_account_id,
+                fr.executor_kind AS recharge_executor_kind,
                 c.id AS local_card_id,
+                c.provider_account_id AS stored_card_provider_account_id,
                 c.provider_card_id,
                 c.card_type_id AS stored_card_type_id,
                 c.last4,
                 c.status AS card_status,
                 c.card_credentials_ciphertext
          FROM orders o
+         LEFT JOIN fulfillment_routes fr ON fr.id = o.fulfillment_route_id
          LEFT JOIN cards c ON c.order_id = o.id
          WHERE o.id = ?`,
         [orderId]
@@ -69,6 +74,7 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey }) {
         },
         card: row.provider_card_id ? {
           id: row.local_card_id,
+          provider_account_id: row.stored_card_provider_account_id,
           provider_card_id: row.provider_card_id,
           card_type_id: row.stored_card_type_id,
           last4: row.last4,
@@ -94,8 +100,10 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey }) {
     async assignAvailableCard(orderId) {
       return inTransaction(pool, async (connection) => {
         const [orders] = await connection.query(
-          `SELECT status, version, card_type_id, minimum_required_card_balance
-           FROM orders WHERE id = ? FOR UPDATE`,
+          `SELECT o.status, o.version, o.card_type_id, o.minimum_required_card_balance,
+                  o.fulfillment_route_id, fr.card_provider_account_id
+           FROM orders o LEFT JOIN fulfillment_routes fr ON fr.id = o.fulfillment_route_id
+           WHERE o.id = ? FOR UPDATE`,
           [orderId]
         );
         if (orders.length !== 1) throw new Error(`Order not found: ${orderId}`);
@@ -103,20 +111,26 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey }) {
         if (order.status !== OrderStatus.CREATED) {
           throw new Error(`Cannot assign inventory card from ${order.status}`);
         }
+        if (!order.fulfillment_route_id || !order.card_provider_account_id) {
+          throw new Error(`Order route cannot assign a card: ${orderId}`);
+        }
         const [cards] = await connection.query(
           `SELECT id, provider_card_id, current_balance
            FROM cards
            WHERE order_id IS NULL
              AND inventory_status = 'AVAILABLE'
+             AND intake_status IN ('ACCEPTED','LEGACY_ACCEPTED')
+             AND provider_account_id = ?
              AND BINARY card_type_id = BINARY ?
              AND LOWER(status) IN ('active','available','usable','ready')
              AND current_balance >= ?
              AND card_credentials_ciphertext IS NOT NULL
            ORDER BY current_balance ASC, created_at ASC
            LIMIT 1 FOR UPDATE SKIP LOCKED`,
-          [String(order.card_type_id), String(order.minimum_required_card_balance)]
+          [order.card_provider_account_id, String(order.card_type_id),
+            String(order.minimum_required_card_balance)]
         );
-        const alertKey = `card-stock-low:${order.card_type_id}`;
+        const alertKey = `card-stock-low:${order.card_provider_account_id}:${order.card_type_id}`;
         if (cards.length === 0) {
           await connection.query(
             `INSERT INTO operator_alerts
@@ -165,10 +179,12 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey }) {
         const [stockRows] = await connection.query(
           `SELECT COUNT(*) AS count FROM cards
            WHERE order_id IS NULL AND inventory_status = 'AVAILABLE'
+             AND intake_status IN ('ACCEPTED','LEGACY_ACCEPTED')
+             AND provider_account_id = ?
              AND BINARY card_type_id = BINARY ?
              AND LOWER(status) IN ('active','available','usable','ready')
              AND card_credentials_ciphertext IS NOT NULL`,
-          [String(order.card_type_id)]
+          [order.card_provider_account_id, String(order.card_type_id)]
         );
         const threshold = Math.max(0, Number(thresholdRows[0]?.setting_value || 5));
         const remaining = Number(stockRows[0]?.count || 0);
@@ -239,7 +255,9 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey }) {
     async commitPurchasedCard(orderId, card) {
       return inTransaction(pool, async (connection) => {
         const [rows] = await connection.query(
-          'SELECT status, version FROM orders WHERE id = ? FOR UPDATE',
+          `SELECT o.status, o.version, fr.card_provider_account_id
+           FROM orders o LEFT JOIN fulfillment_routes fr ON fr.id = o.fulfillment_route_id
+           WHERE o.id = ? FOR UPDATE`,
           [orderId]
         );
         if (rows.length !== 1) throw new Error(`Order not found: ${orderId}`);
@@ -247,14 +265,21 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey }) {
         if (order.status !== OrderStatus.CARD_PURCHASING) {
           throw new Error(`Cannot commit card from order state ${order.status}`);
         }
+        if (!order.card_provider_account_id) {
+          throw new Error(`Order route has no card provider account: ${orderId}`);
+        }
 
         await connection.query(
           `INSERT INTO cards
-           (id, order_id, inventory_status, assigned_at, provider_card_id, card_type_id, last4, status,
-            funded_amount, current_balance, currency, refund_status)
-           VALUES (UUID(), ?, 'ASSIGNED', CURRENT_TIMESTAMP(3), ?, ?, ?, ?, ?, ?, ?, 'MONITORING')`,
+           (id, provider_account_id, order_id, inventory_status, intake_status, assigned_at,
+            provider_card_id, external_card_id, card_type_id, last4, status,
+            funded_amount, current_balance, currency, refund_status, sync_tier)
+           VALUES (UUID(), ?, ?, 'ASSIGNED', 'ACCEPTED', CURRENT_TIMESTAMP(3),
+             ?, ?, ?, ?, ?, ?, ?, ?, 'MONITORING', 'PROVISIONING')`,
           [
+            order.card_provider_account_id,
             orderId,
+            String(card.providerCardId),
             String(card.providerCardId),
             String(card.cardTypeId),
             card.last4 || null,

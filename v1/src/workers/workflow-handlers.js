@@ -19,6 +19,7 @@ export function createWorkflowHandlers({
   mapCardProvisioning,
   mapCardCredentials,
   buildDirectOrderRequest,
+  rechargeAttemptRepository = null,
   pollDelayMs = 5_000,
   cancellationDelayMs = 60_000,
   failureConfirmDelayMs = 2_500,
@@ -219,15 +220,34 @@ export function createWorkflowHandlers({
       });
     }
     const context = await workflow.loadOrderContext(task.order_id);
-    const permit = await workflow.consumeRechargePermit(task.order_id, task.id, task.attempts);
-    if (!permit.allowed) {
-      throw new TaskExecutionError(`Recharge permit rejected: ${permit.reason}`, {
-        code: 'RECHARGE_PERMIT_REQUIRED', retryable: false
-      });
-    }
     if (context.order.status !== OrderStatus.CARD_READY) {
       throw new TaskExecutionError(`Order cannot submit recharge from ${context.order.status}`, {
         code: 'ORDER_STATE_MISMATCH'
+      });
+    }
+
+    let attempt = null;
+    let permit;
+    if (rechargeAttemptRepository) {
+      try {
+        attempt = await rechargeAttemptRepository.beginAuthorizedAttempt({
+          orderId: task.order_id,
+          taskId: task.id,
+          idempotencyKey: `recharge-submit:${task.order_id}`
+        });
+        permit = {
+          allowed: true,
+          providerCall: { id: attempt.providerCallId, startedAt: attempt.startedAt }
+        };
+      } catch (error) {
+        if (error?.code !== 'AUTHORIZATION_NOT_FOUND') throw error;
+      }
+    }
+    if (!permit) permit = await workflow.consumeRechargePermit(task.order_id, task.id, task.attempts);
+    if (!permit.allowed) {
+      throw new TaskExecutionError(`Recharge authorization rejected: ${permit.reason}`, {
+        code: attempt ? 'RECHARGE_AUTHORIZATION_REQUIRED' : 'RECHARGE_PERMIT_REQUIRED',
+        retryable: false
       });
     }
 
@@ -253,19 +273,33 @@ export function createWorkflowHandlers({
         attemptNo: task.attempts,
         sideEffecting: true,
         existingCall: permit.providerCall,
+        providerAccountId: attempt?.providerAccountId || null,
+        rechargeAttemptId: attempt?.id || null,
         action: () => rechargeProvider.createDirectOrder({
           ...credentials,
           token: context.session,
-          planType: 'plus'
+          planType: context.order.plan_type || 'plus'
         }),
         summarize: (value) => value
       });
     } catch (error) {
-      await workflow.transition(
-        task.order_id,
-        error.uncertain ? OrderStatus.SUBMIT_UNKNOWN : OrderStatus.RECHARGE_FAILED,
-        error.uncertain ? 'recharge submission result unknown' : 'recharge submission rejected'
-      );
+      if (attempt) {
+        await (error.uncertain
+          ? rechargeAttemptRepository.markAttemptUnknown({
+            attemptId: attempt.id,
+            resultSummary: { code: error.code || error.kind || 'RECHARGE_SUBMIT_UNKNOWN' }
+          })
+          : rechargeAttemptRepository.markAttemptCleared({
+            attemptId: attempt.id,
+            resultSummary: { code: error.code || error.kind || 'RECHARGE_SUBMIT_REJECTED' }
+          }));
+      } else {
+        await workflow.transition(
+          task.order_id,
+          error.uncertain ? OrderStatus.SUBMIT_UNKNOWN : OrderStatus.RECHARGE_FAILED,
+          error.uncertain ? 'recharge submission result unknown' : 'recharge submission rejected'
+        );
+      }
       throw new TaskExecutionError(error.message || 'Recharge submission failed', {
         code: error.uncertain ? 'RECHARGE_SUBMIT_UNKNOWN' : 'RECHARGE_SUBMIT_REJECTED',
         retryable: false,
@@ -273,13 +307,33 @@ export function createWorkflowHandlers({
       });
     }
     try {
-      await workflow.commitRechargeSubmission(task.order_id, submission);
+      if (attempt) {
+        await rechargeAttemptRepository.markAttemptSubmitted({
+          attemptId: attempt.id,
+          externalOrderId: submission.orderNo,
+          externalReference: submission.cardKey,
+          resultSummary: { orderNo: String(submission.orderNo) }
+        });
+      } else {
+        await workflow.commitRechargeSubmission(task.order_id, submission);
+      }
     } catch (error) {
-      await workflow.transition(
-        task.order_id,
-        OrderStatus.SUBMIT_UNKNOWN,
-        'provider accepted recharge but local commit failed'
-      );
+      if (attempt) {
+        try {
+          await rechargeAttemptRepository.markAttemptUnknown({
+            attemptId: attempt.id,
+            resultSummary: { code: 'RECHARGE_COMMIT_UNKNOWN' }
+          });
+        } catch {
+          // The ACTIVE funds fence remains authoritative when recovery persistence is unavailable.
+        }
+      } else {
+        await workflow.transition(
+          task.order_id,
+          OrderStatus.SUBMIT_UNKNOWN,
+          'provider accepted recharge but local commit failed'
+        );
+      }
       throw new TaskExecutionError('Recharge was accepted but could not be committed locally', {
         code: 'RECHARGE_COMMIT_UNKNOWN', retryable: false, cause: error
       });

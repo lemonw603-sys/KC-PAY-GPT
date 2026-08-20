@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { PublicApiError } from '../domain/public-api-error.js';
 import { CdkBatchError } from '../services/cdk-service.js';
 import { RechargePermitError } from '../services/recharge-permit-service.js';
+import { RechargeAuthorizationV2Error } from '../services/recharge-authorization-v2-service.js';
 import { OrderCompensationError } from '../services/order-compensation-service.js';
 import { OrderCancellationError } from '../services/order-cancellation-service.js';
 import { createFixedWindowRateLimit } from './fixed-window-rate-limit.js';
@@ -29,11 +30,17 @@ export function createApp({
   requestCardTransactionSync = null,
   getAdminCard = null,
   requestAdminCardSync = null,
+  discoverAdminCards = null,
+  validateAdminCardIntake = null,
+  acceptAdminCardIntake = null,
+  listAdminCardIntake = null,
   getAdminCardStock = null,
   setAdminCardStockThreshold = null,
   createAdminCardStockJob = null,
   setAdminOrderAcceptance = null,
   setAdminRechargePermit = null,
+  createAdminRechargeAuthorization = null,
+  revokeAdminRechargeAuthorization = null,
   compensateAdminOrder = null,
   cancelAdminOrder = null,
   createAdminCdkBatch = null,
@@ -202,6 +209,29 @@ export function createApp({
       return res.status(result.queued ? 202 : 200).json(result);
     });
   }
+  if (typeof listAdminCardIntake === 'function') {
+    app.get('/api/v1/admin/card-intake', noStore, requireAdminApi, async (req, res) => {
+      res.json(await listAdminCardIntake(req.query || {}));
+    });
+  }
+  if (typeof discoverAdminCards === 'function') {
+    app.post('/api/v1/admin/card-intake/discover', ...adminWriteGuards, async (_req, res) => {
+      return res.status(202).json(await discoverAdminCards());
+    });
+  }
+  if (typeof validateAdminCardIntake === 'function') {
+    app.post('/api/v1/admin/card-intake/:batchId/validate', ...adminWriteGuards, async (req, res) => {
+      return res.status(202).json(await validateAdminCardIntake(req.params.batchId));
+    });
+  }
+  if (typeof acceptAdminCardIntake === 'function') {
+    app.post('/api/v1/admin/card-intake/:batchId/accept', ...sensitiveAdminGuards, async (req, res) => {
+      res.json(await acceptAdminCardIntake({
+        batchId: req.params.batchId,
+        discoveryIds: req.body?.discoveryIds
+      }));
+    });
+  }
   if (typeof getAdminCardStock === 'function') {
     app.get('/api/v1/admin/card-stock', noStore, requireAdminApi, async (_req, res) => {
       res.json(await getAdminCardStock());
@@ -229,7 +259,7 @@ export function createApp({
         const result = await setAdminRechargePermit(req.params.publicNo, req.body);
         return res.status(req.body?.action === 'arm' ? 202 : 200).json(result);
       } catch (error) {
-        if (error instanceof RechargePermitError || [
+        if (error instanceof RechargePermitError || error instanceof RechargeAuthorizationV2Error || [
           'RECHARGE_CONFIRMATION_REQUIRED', 'INVALID_RECHARGE_PERMIT_ACTION'
         ].includes(error?.code)) {
           return res.status(400).json({ error: String(error.code).toLowerCase() });
@@ -237,6 +267,34 @@ export function createApp({
         throw error;
       }
     });
+  }
+  if (typeof createAdminRechargeAuthorization === 'function') {
+    app.post('/api/v1/admin/recharge-authorizations', ...sensitiveAdminGuards, async (req, res) => {
+      try {
+        return res.status(201).json(await createAdminRechargeAuthorization(req.body || {}));
+      } catch (error) {
+        if (error instanceof RechargeAuthorizationV2Error || error instanceof RechargePermitError) {
+          return res.status(400).json({ error: error.code.toLowerCase(), details: error.details });
+        }
+        throw error;
+      }
+    });
+  }
+  if (typeof revokeAdminRechargeAuthorization === 'function') {
+    app.post('/api/v1/admin/recharge-authorizations/:authorizationId/revoke',
+      ...sensitiveAdminGuards, async (req, res) => {
+        try {
+          return res.json(await revokeAdminRechargeAuthorization({
+            authorizationId: req.params.authorizationId,
+            ...(req.body || {})
+          }));
+        } catch (error) {
+          if (error instanceof RechargeAuthorizationV2Error) {
+            return res.status(400).json({ error: error.code.toLowerCase(), details: error.details });
+          }
+          throw error;
+        }
+      });
   }
   if (typeof compensateAdminOrder === 'function') {
     app.post('/api/v1/admin/orders/:publicNo/compensation', ...sensitiveAdminGuards, async (req, res) => {

@@ -91,7 +91,9 @@ const elements = {
   stockOpenAmount: document.querySelector('#stock-open-amount'), stockCardType: document.querySelector('#stock-card-type'),
   stockCardProfile: document.querySelector('#stock-card-profile'),
   stockConfirmation: document.querySelector('#stock-confirmation'), stockConfirmHint: document.querySelector('#stock-confirm-hint'),
-  stockCost: document.querySelector('#stock-cost')
+  stockCost: document.querySelector('#stock-cost'),
+  cardIntakeList: document.querySelector('#card-intake-list'),
+  discoverNewCards: document.querySelector('#discover-new-cards')
 };
 
 function escapeHtml(value) {
@@ -434,7 +436,22 @@ async function loadStock() {
   elements.stockCards.innerHTML = payload.cards?.length
     ? payload.cards.map((card) => `<div data-card="${escapeHtml(card.providerCardId)}" role="button" tabindex="0"><span><strong>${escapeHtml(card.cardNumber || card.last4 || '卡号未就绪')}</strong><small>卡台 ID ${escapeHtml(card.providerCardId)} · 余额 $${formatMoney(card.currentBalance || '0')} · ${card.publicNo ? `订单 ${escapeHtml(card.publicNo)}` : '未分配'} · 交易 ${escapeHtml(card.transactionCount)} 笔 · ${formatTime(card.lastTransactionSyncedAt)}</small></span><em>${escapeHtml(RECONCILIATION_LABELS[card.reconciliationStatus] || card.reconciliationStatus)} / ${escapeHtml(INVENTORY_LABELS[card.inventoryStatus] || card.inventoryStatus)}</em></div>`).join('')
     : '<p class="empty-state">还没有后台卡片</p>';
+  await loadCardIntake().catch(() => {
+    elements.cardIntakeList.innerHTML = '<p class="empty-state">新卡接管状态读取失败，请稍后刷新。</p>';
+  });
   elements.syncTime.textContent = `更新于 ${new Date().toLocaleTimeString('zh-CN', { hour12: false })}`;
+}
+
+async function loadCardIntake() {
+  const payload = await api('/api/v1/admin/card-intake?limit=100');
+  elements.discoverNewCards.disabled = !payload.configured;
+  const latest = payload.batches?.[0];
+  const rows = payload.discoveries || [];
+  const summary = latest
+    ? `<div><span><strong>最近批次 · ${escapeHtml(latest.status)}</strong><small>发现 ${latest.discoveredCount} · 已接管 ${latest.acceptedCount} · 待人工核对 ${latest.reviewCount} · 失败 ${latest.failedCount}</small></span><em>${escapeHtml(latest.id.slice(0, 8))}</em></div>`
+    : '<p class="empty-state">还没有新卡接管批次</p>';
+  const details = rows.map((item) => `<div><span><strong>卡台 ID ${escapeHtml(item.externalCardId)}</strong><small>验证 ${item.validationAttempts} 次${item.failureCode ? ` · ${escapeHtml(item.failureCode)}` : ''}</small></span><em>${escapeHtml(item.intakeStatus)}</em></div>`).join('');
+  elements.cardIntakeList.innerHTML = `${!payload.configured ? '<p class="provider-warning">服务器尚未配置卡台只读凭据；暂时只能查看历史接管记录。</p>' : ''}${summary}${details}`;
 }
 
 async function requestCardSync(providerCardId = null, button = null) {
@@ -825,6 +842,23 @@ document.querySelector('#refresh-button').addEventListener('click', () => {
 });
 document.querySelector('#refresh-stock')?.addEventListener('click', () => loadStock().catch(() => showNotice('库存读取失败。')));
 document.querySelector('#sync-all-cards')?.addEventListener('click', (event) => requestCardSync(null, event.currentTarget));
+elements.discoverNewCards?.addEventListener('click', async (event) => {
+  const button = event.currentTarget;
+  button.disabled = true;
+  button.textContent = '正在发现并验证…';
+  try {
+    const result = await api('/api/v1/admin/card-intake/discover', { method: 'POST' });
+    const accepted = Number(result.firstPass?.accepted || 0) + Number(result.secondPass?.accepted || 0);
+    const review = Number(result.secondPass?.reviewRequired || 0);
+    showNotice(`新卡接管完成：已入库 ${accepted} 张${review ? `，${review} 张留在隔离区待核对` : ''}。`, 'success');
+    await loadStock();
+  } catch {
+    showNotice('新卡接管失败；没有通过验证的卡不会进入可用库存。');
+  } finally {
+    button.disabled = false;
+    button.textContent = '同步并接管新卡';
+  }
+});
 document.querySelectorAll('.stock-preset').forEach((button) => button.addEventListener('click', () => {
   elements.stockOpenCount.value = button.dataset.count;
   updateStockEstimate();

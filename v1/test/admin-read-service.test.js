@@ -98,7 +98,7 @@ test('admin order detail exposes the full PAN but not CVV or Session', async () 
     }, {
       task_type: 'SUBMIT_RECHARGE', status: 'PENDING', attempts: 0, max_attempts: 5,
       permit_status: null, permit_expires_at: null
-    }], [], [], [], []
+    }], [], [], [], [], []
   ]);
   const result = await createAdminReadService({
     pool, sessionEncryptionKey: adminCardKey, now: () => nowMs
@@ -112,6 +112,9 @@ test('admin order detail exposes the full PAN but not CVV or Session', async () 
     submissionLocked: true,
     permitStatus: 'LOCKED',
     permitExpiresAt: null,
+    authorizationId: null,
+    rechargeAttemptStatus: null,
+    fundsRiskState: null,
     submissionTaskStatus: 'PENDING',
     submissionAttempts: 0,
     sessionValid: true,

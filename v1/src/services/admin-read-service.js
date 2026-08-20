@@ -484,7 +484,7 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, now 
     if (typeof publicNo !== 'string' || publicNo.length < 8 || publicNo.length > 64) {
       throw new PublicApiError('Invalid public number', { code: 'INVALID_ADMIN_QUERY', status: 400 });
     }
-    const [[orderRows], [eventRows], [taskRows], [callRows], [refundRows], [transactionRows], [compensationRows]] = await Promise.all([
+    const [[orderRows], [eventRows], [taskRows], [callRows], [refundRows], [transactionRows], [compensationRows], [authorizationRows]] = await Promise.all([
       pool.query(`SELECT o.id, o.public_no, o.status, o.plan_type, o.customer_email,
           o.chatgpt_account_id, o.card_type_id, o.open_card_amount,
           o.minimum_required_card_balance, o.actual_payment_amount, o.actual_payment_currency,
@@ -530,12 +530,30 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, now 
         FROM order_compensations oc
         INNER JOIN orders o ON o.id = oc.original_order_id
         INNER JOIN cdks c ON c.id = oc.replacement_cdk_id
-        WHERE BINARY o.public_no = ? LIMIT 1`, [publicNo])
+        WHERE BINARY o.public_no = ? LIMIT 1`, [publicNo]),
+      pool.query(`SELECT ra.id AS authorization_id, ra.status AS authorization_status,
+          ra.expires_at, rai.status AS item_status, rat.id AS attempt_id,
+          rat.status AS attempt_status, rat.funds_risk_state
+        FROM recharge_authorization_items rai
+        INNER JOIN recharge_authorizations ra ON ra.id = rai.authorization_id
+        INNER JOIN orders o ON o.id = rai.order_id
+        LEFT JOIN recharge_attempts rat ON rat.authorization_item_id = rai.id
+        WHERE BINARY o.public_no = ? ORDER BY rai.created_at DESC LIMIT 1`, [publicNo])
     ]);
     const row = orderRows[0];
     if (!row) throw new PublicApiError('Order not found', { code: 'ADMIN_ORDER_NOT_FOUND', status: 404 });
     const prepareTask = taskRows.find((task) => task.task_type === 'PREPARE_RECHARGE');
     const submitTask = taskRows.find((task) => task.task_type === 'SUBMIT_RECHARGE');
+    const authorization = authorizationRows[0] || null;
+    const authorizationExpired = authorization?.expires_at
+      && new Date(authorization.expires_at).getTime() <= now();
+    const effectivePermitStatus = authorization
+      ? (authorization.item_status === 'PENDING' && !authorizationExpired
+        ? 'ARMED'
+        : authorization.item_status === 'PENDING' ? 'EXPIRED' : authorization.item_status)
+      : (submitTask?.permit_status || 'LOCKED');
+    const effectivePermitExpiresAt = authorization?.expires_at
+      ? iso(authorization.expires_at) : (submitTask?.permit_expires_at || null);
     const session = sessionSafety(row, sessionEncryptionKey, now);
     const lastCardSync = row.last_synced_at ? new Date(row.last_synced_at).getTime() : NaN;
     const cardCheckFresh = Number.isFinite(lastCardSync) && now() - lastCardSync <= 15 * 60_000;
@@ -588,14 +606,14 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, now 
     } else if (row.status === 'CARD_READY'
       && submitTask?.status === 'PENDING'
       && Number(submitTask.attempts) === 0
-      && submitTask.permit_status !== 'CONSUMED'
+      && effectivePermitStatus !== 'CONSUMED'
       && !row.recharge_order_no
       && !rechargeCallExists) {
       cancellationCode = cardReady && cardCheckFresh
         ? 'ORDER_CANCELLATION_ELIGIBLE'
         : 'ORDER_CANCELLATION_CARD_NOT_REUSABLE';
     } else if (rechargeCallExists || row.recharge_order_no || Number(submitTask?.attempts || 0) > 0
-      || submitTask?.permit_status === 'CONSUMED') {
+      || effectivePermitStatus === 'CONSUMED') {
       cancellationCode = 'ORDER_CANCELLATION_SUBMISSION_RISK';
     }
     return {
@@ -635,9 +653,12 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, now 
       reconciliation,
       paymentGate: {
         prepaymentReady: prepareTask?.status === 'COMPLETED',
-        submissionLocked: submitTask?.permit_status !== 'ARMED',
-        permitStatus: submitTask?.permit_status || 'LOCKED',
-        permitExpiresAt: submitTask?.permit_expires_at || null,
+        submissionLocked: effectivePermitStatus !== 'ARMED',
+        permitStatus: effectivePermitStatus,
+        permitExpiresAt: effectivePermitExpiresAt,
+        authorizationId: authorization?.authorization_id || null,
+        rechargeAttemptStatus: authorization?.attempt_status || null,
+        fundsRiskState: authorization?.funds_risk_state || null,
         submissionTaskStatus: submitTask?.status || null,
         submissionAttempts: submitTask ? Number(submitTask.attempts) : 0,
         sessionValid: session.valid,

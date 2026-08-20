@@ -4,7 +4,8 @@ import { OrderStatus } from '../src/domain/order-status.js';
 import { ProviderError } from '../src/providers/http-client.js';
 import { createWorkflowHandlers } from '../src/workers/workflow-handlers.js';
 
-function setup({ status = OrderStatus.CARD_READY, rechargeStatuses = [] } = {}) {
+function setup({ status = OrderStatus.CARD_READY, rechargeStatuses = [],
+  rechargeAttemptRepository = null } = {}) {
   const calls = [];
   const providerCalls = [];
   const context = {
@@ -77,12 +78,36 @@ function setup({ status = OrderStatus.CARD_READY, rechargeStatuses = [] } = {}) 
       method: 'POST', path: '/third-party/orders/direct',
       body: { ...input, planType: input.planType || 'plus' }
     }),
+    rechargeAttemptRepository,
     wait: async () => {},
     pollDelayMs: 1,
     failureConfirmDelayMs: 1
   });
   return { calls, providerCalls, context, workflow, cardProvider, rechargeProvider, handlers };
 }
+
+test('Foundation v2 consumes an explicit authorization and commits through the funds fence', async () => {
+  const attemptCalls = [];
+  const rechargeAttemptRepository = {
+    beginAuthorizedAttempt: async (input) => {
+      attemptCalls.push(['begin', input]);
+      return {
+        id: 'attempt-v2', providerCallId: 501, providerAccountId: 'provider-account-v2',
+        startedAt: new Date('2026-08-20T12:00:00.000Z')
+      };
+    },
+    markAttemptSubmitted: async (input) => attemptCalls.push(['submitted', input])
+  };
+  const state = setup({ rechargeAttemptRepository });
+  await state.handlers.SUBMIT_RECHARGE({ id: 7, order_id: 'order-1', attempts: 1 });
+  assert.equal(state.calls.some(([name]) => name === 'permit'), false);
+  assert.equal(attemptCalls[0][0], 'begin');
+  assert.equal(attemptCalls[1][0], 'submitted');
+  assert.equal(attemptCalls[1][1].attemptId, 'attempt-v2');
+  const providerCall = state.providerCalls.find((call) => call.operation === 'create_direct');
+  assert.equal(providerCall.existingCall.id, 501);
+  assert.equal(providerCall.rechargeAttemptId, 'attempt-v2');
+});
 
 test('submits one direct recharge and commits external identifiers', async () => {
   const state = setup();

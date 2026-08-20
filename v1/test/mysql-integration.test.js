@@ -38,11 +38,16 @@ import {
 } from '../src/services/card-sync-job-service.js';
 import { commitCardTransactionsForCard } from '../src/db/repositories/card-transaction-repository.js';
 import { createAdminReadService } from '../src/services/admin-read-service.js';
+import { createRechargeAuthorization } from '../src/services/recharge-authorization-v2-service.js';
+import { createRechargeAttemptRepository } from '../src/db/repositories/recharge-attempt-repository.js';
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
 const integrationSessionKey = Buffer.alloc(32, 7);
 const integrationCdkHashKey = Buffer.alloc(32, 8);
 const integrationCdkRecoveryKey = Buffer.alloc(32, 9);
+const legacyCardProviderAccountId = '00000000-0000-4000-8000-000000000101';
+const legacyProductId = '00000000-0000-4000-8000-000000000201';
+const legacyRouteId = '00000000-0000-4000-8000-000000000301';
 
 function id() {
   return crypto.randomUUID();
@@ -59,8 +64,9 @@ async function createOrder(pool, overrides = {}) {
   await pool.query(
     `INSERT INTO orders
      (id, public_no, cdk_id, status, card_type_id, open_card_amount, minimum_required_card_balance,
-      session_ciphertext, card_purchase_idempotency_key)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      session_ciphertext, card_purchase_idempotency_key, product_id,
+      fulfillment_route_id, route_resolution_status)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'RESOLVED')`,
     [
       orderId,
       overrides.publicNo || `TEST-${orderId}`,
@@ -70,7 +76,9 @@ async function createOrder(pool, overrides = {}) {
       '25.000000',
       '16.000000',
       encryptSecret(JSON.stringify({ accessToken: 'fixture-token', account: { id: 'acct-1' } }), integrationSessionKey),
-      overrides.purchaseKey || `purchase-${orderId}`
+      overrides.purchaseKey || `purchase-${orderId}`,
+      legacyProductId,
+      legacyRouteId
     ]
   );
   await pool.query('UPDATE cdks SET order_id = ? WHERE id = ?', [orderId, cdkId]);
@@ -90,7 +98,21 @@ async function removeOrder(pool, { cdkId, orderId }) {
   await pool.query('DELETE FROM tasks WHERE order_id = ?', [orderId]);
   await pool.query('DELETE FROM operator_alerts WHERE order_id = ?', [orderId]);
   await pool.query('DELETE FROM order_events WHERE order_id = ?', [orderId]);
+  await pool.query('DELETE FROM reconciliation_cases WHERE order_id = ?', [orderId]);
   await pool.query('DELETE FROM provider_calls WHERE order_id = ?', [orderId]);
+  const [authorizationRows] = await pool.query(
+    'SELECT DISTINCT authorization_id FROM recharge_authorization_items WHERE order_id = ?',
+    [orderId]
+  );
+  await pool.query(
+    'UPDATE recharge_authorization_items SET consumed_attempt_id = NULL WHERE order_id = ?',
+    [orderId]
+  );
+  await pool.query('DELETE FROM recharge_attempts WHERE order_id = ?', [orderId]);
+  await pool.query('DELETE FROM recharge_authorization_items WHERE order_id = ?', [orderId]);
+  for (const authorization of authorizationRows) {
+    await pool.query('DELETE FROM recharge_authorizations WHERE id = ?', [authorization.authorization_id]);
+  }
   await pool.query('DELETE FROM refund_cases WHERE order_id = ?', [orderId]);
   const [cards] = await pool.query('SELECT id FROM cards WHERE order_id = ?', [orderId]);
   for (const card of cards) {
@@ -160,9 +182,12 @@ test('assigned cards are periodically queued for transaction and refund observat
     await pool.query(
       `INSERT INTO cards
        (id, order_id, inventory_status, provider_card_id, card_type_id, status,
-        funded_amount, current_balance, currency, refund_status)
-       VALUES (?, ?, 'ASSIGNED', ?, '7', 'active', 25, 20, 'USD', 'MONITORING')`,
-      [cardId, fixture.orderId, `scheduled-card-${cardId}`]
+        funded_amount, current_balance, currency, refund_status,
+        provider_account_id, external_card_id, intake_status, sync_tier)
+       VALUES (?, ?, 'ASSIGNED', ?, '7', 'active', 25, 20, 'USD', 'MONITORING',
+         ?, ?, 'ACCEPTED', 'ASSIGNED')`,
+      [cardId, fixture.orderId, `scheduled-card-${cardId}`,
+        legacyCardProviderAccountId, `scheduled-card-${cardId}`]
     );
     const now = new Date('2026-08-20T10:00:00.000Z');
     assert.deepEqual(await scheduleDueCardSyncJobs(pool, { now }), {
@@ -371,12 +396,14 @@ test('inventory assignment atomically gives one ready card to only one order', {
   await pool.query(
     `INSERT INTO cards
      (id, order_id, inventory_status, provider_card_id, card_type_id, last4, status,
-      funded_amount, current_balance, currency, refund_status, card_credentials_ciphertext)
+      funded_amount, current_balance, currency, refund_status, card_credentials_ciphertext,
+      provider_account_id, external_card_id, intake_status, sync_tier)
      VALUES (?, NULL, 'AVAILABLE', 'stock-provider-1', '7', '4242', 'active',
-       '16.000000', '16.000000', 'USD', 'MONITORING', ?)`,
+       '16.000000', '16.000000', 'USD', 'MONITORING', ?, ?,
+       'stock-provider-1', 'ACCEPTED', 'AVAILABLE')`,
     [stockCardId, encryptSecret(JSON.stringify({
       cardNumber: '4242424242424242', expMonth: 12, expYear: 2032, cvv: '123'
-    }), integrationSessionKey)]
+    }), integrationSessionKey), legacyCardProviderAccountId]
   );
   const workflow = createWorkflowRepository(pool, { sessionEncryptionKey: integrationSessionKey });
   try {
@@ -1133,6 +1160,89 @@ test('worker runs a full fake-provider workflow while enforcing runtime gates', 
     await pool.query(
       `UPDATE app_settings SET setting_value = 'false'
        WHERE setting_key = 'dispatch_new_recharges'`
+    );
+    await removeOrder(pool, fixture);
+    await pool.end();
+  }
+});
+
+test('Foundation v2 freezes authorization and persists the funds fence before submission', {
+  skip: !databaseUrl && 'TEST_DATABASE_URL 未配置；完整 MySQL 套件在服务器隔离数据库运行'
+}, async () => {
+  const pool = mysql.createPool({ uri: databaseUrl, connectionLimit: 4, timezone: 'Z' });
+  const publicNo = `PJV1-V2-${crypto.randomUUID()}`;
+  const fixture = await createOrder(pool, { publicNo, status: OrderStatus.CARD_READY });
+  const cardId = id();
+  try {
+    await pool.query(
+      `INSERT INTO cards
+       (id, provider_account_id, order_id, inventory_status, intake_status,
+        provider_card_id, external_card_id, card_type_id, status,
+        funded_amount, current_balance, currency, refund_status,
+        card_credentials_ciphertext, sync_tier)
+       VALUES (?, ?, ?, 'ASSIGNED', 'ACCEPTED', ?, ?, '7', 'active',
+         25, 25, 'USD', 'MONITORING', ?, 'ASSIGNED')`,
+      [cardId, legacyCardProviderAccountId, fixture.orderId, `v2-card-${cardId}`,
+        `v2-card-${cardId}`, encryptSecret(JSON.stringify({
+          cardNumber: '4242424242424242', expMonth: 12, expYear: 2032, cvv: '123'
+        }), integrationSessionKey)]
+    );
+    const [taskInsert] = await pool.query(
+      `INSERT INTO tasks (order_id, task_type, status, dedupe_key, max_attempts)
+       VALUES (?, 'SUBMIT_RECHARGE', 'PENDING', ?, 5)`,
+      [fixture.orderId, `submit-recharge:${fixture.orderId}`]
+    );
+    const authorization = await createRechargeAuthorization(pool, {
+      publicNos: [publicNo], authorizedBy: 'mysql-test', ttlMinutes: 10
+    });
+    await pool.query(
+      `UPDATE provider_accounts SET write_enabled = 1
+       WHERE id = '00000000-0000-4000-8000-000000000102'`
+    );
+    await pool.query(`UPDATE tasks SET status = 'RUNNING' WHERE id = ?`, [taskInsert.insertId]);
+    const repository = createRechargeAttemptRepository(pool);
+    const attempt = await repository.beginAuthorizedAttempt({
+      orderId: fixture.orderId,
+      taskId: taskInsert.insertId,
+      idempotencyKey: `recharge-submit:${fixture.orderId}`
+    });
+    const [[fenced]] = await pool.query(
+      `SELECT o.status AS order_status, rat.funds_risk_state, rai.status AS item_status,
+          pc.outcome AS call_outcome, pc.recharge_attempt_id
+       FROM orders o
+       INNER JOIN recharge_attempts rat ON rat.order_id = o.id
+       INNER JOIN recharge_authorization_items rai ON rai.id = rat.authorization_item_id
+       INNER JOIN provider_calls pc ON pc.recharge_attempt_id = rat.id
+       WHERE o.id = ?`, [fixture.orderId]
+    );
+    assert.deepEqual(fenced, {
+      order_status: 'SUBMITTING', funds_risk_state: 'ACTIVE', item_status: 'CONSUMED',
+      call_outcome: 'STARTED', recharge_attempt_id: attempt.id
+    });
+    assert.equal(authorization.items[0].id, attempt.authorizationItemId);
+
+    await repository.markAttemptSubmitted({
+      attemptId: attempt.id,
+      externalOrderId: 'external-v2-order',
+      externalReference: 'DIRECT-v2-reference'
+    });
+    const [[committed]] = await pool.query(
+      `SELECT o.status, o.recharge_order_no, o.recharge_card_key,
+          c.card_credentials_ciphertext,
+          SUM(t.task_type = 'POLL_RECHARGE') AS poll_tasks
+       FROM orders o INNER JOIN cards c ON c.order_id = o.id
+       LEFT JOIN tasks t ON t.order_id = o.id
+       WHERE o.id = ? GROUP BY o.id, c.id`, [fixture.orderId]
+    );
+    assert.equal(committed.status, 'RECHARGE_PROCESSING');
+    assert.equal(committed.recharge_order_no, 'external-v2-order');
+    assert.equal(committed.recharge_card_key, 'DIRECT-v2-reference');
+    assert.equal(committed.card_credentials_ciphertext, null);
+    assert.equal(Number(committed.poll_tasks), 1);
+  } finally {
+    await pool.query(
+      `UPDATE provider_accounts SET write_enabled = 0
+       WHERE id = '00000000-0000-4000-8000-000000000102'`
     );
     await removeOrder(pool, fixture);
     await pool.end();

@@ -83,18 +83,38 @@ export async function createOrderFromCdk(pool, input) {
     }
     const cdkId = cdkRows[0].id;
 
+    const [routeRows] = await connection.query(
+      `SELECT p.id AS product_id, fr.id AS fulfillment_route_id
+       FROM products p INNER JOIN fulfillment_routes fr ON fr.product_id = p.id
+       WHERE BINARY p.legacy_plan_type = BINARY ?
+         AND p.status = 'ACTIVE' AND fr.accepts_new_orders = 1
+         AND fr.retired_at IS NULL
+       ORDER BY fr.route_version DESC LIMIT 2 FOR SHARE`,
+      [cdkRows[0].plan_type || 'plus']
+    );
+    if (routeRows.length !== 1) {
+      throw new OrderIntakeError('Order route is not configured', {
+        code: 'ORDER_ROUTE_UNAVAILABLE',
+        status: 503
+      });
+    }
+    const route = routeRows[0];
+
     await connection.query(
       `INSERT INTO orders
-        (id, public_no, cdk_id, status, plan_type, customer_email,
+        (id, public_no, cdk_id, status, plan_type, product_id, fulfillment_route_id,
+        route_resolution_status, customer_email,
         chatgpt_account_id, card_type_id, open_card_amount, minimum_required_card_balance,
         session_ciphertext, card_purchase_idempotency_key)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, 'RESOLVED', ?, ?, ?, ?, ?, ?, ?)`,
       [
         input.orderId,
         input.publicNo,
         cdkId,
         OrderStatus.CREATED,
         cdkRows[0].plan_type || 'plus',
+        route.product_id,
+        route.fulfillment_route_id,
         input.customerEmail,
         input.chatgptAccountId,
         settings.cardTypeId,

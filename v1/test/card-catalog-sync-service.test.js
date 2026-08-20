@@ -10,8 +10,8 @@ function detail(id, balance) {
   } };
 }
 
-test('catalog sync imports every active provider card and records reconciliation counts', async () => {
-  const registered = [];
+test('catalog sync delegates unknown cards to the quarantine intake and records reconciliation counts', async () => {
+  const intakeCalls = [];
   const writes = [];
   const listed = [
     { id: 617, status: 'active' }, { id: 616, status: 'active' },
@@ -41,12 +41,20 @@ test('catalog sync imports every active provider card and records reconciliation
     async cards() { return { data: { cards: listed, total: listed.length } }; },
     async card(id) { return detail(id, id === '493' ? 0.02 : 16); }
   };
-  const stock = { async register(card) { registered.push(card); } };
+  const intake = {
+    async discover() {
+      intakeCalls.push('discover');
+      return { created: true, batch: { id: 'intake-1' } };
+    },
+    async validateBatch(batchId) {
+      intakeCalls.push(`validate:${batchId}`);
+      return { checked: 5, accepted: intakeCalls.length === 3 ? 5 : 0 };
+    }
+  };
   const checkedAt = new Date('2026-08-20T01:00:00.000Z');
-  const result = await syncCardCatalog({ pool, provider, stock, checkedAt });
+  const result = await syncCardCatalog({ pool, provider, intake, checkedAt });
 
-  assert.equal(registered.length, 5);
-  assert.equal(registered.find((card) => card.providerCardId === '493').depleted, true);
+  assert.deepEqual(intakeCalls, ['discover', 'validate:intake-1', 'validate:intake-1']);
   assert.equal(result.providerTotal, 6);
   assert.equal(result.providerActive, 5);
   assert.equal(result.providerInactive, 1);
@@ -60,7 +68,7 @@ test('catalog sync imports every active provider card and records reconciliation
   assert.equal(writes.length, 1);
 });
 
-test('catalog sync blocks opening when an active provider card cannot be resolved', async () => {
+test('catalog sync refuses direct registration when quarantine intake is unavailable', async () => {
   let snapshot;
   const pool = {
     async query(sql, values = []) {
@@ -79,9 +87,9 @@ test('catalog sync blocks opening when an active provider card cannot be resolve
   };
   const provider = {
     async cards() { return { data: { cards: [{ id: 617, status: 'active' }], total: 1 } }; },
-    async card() { throw Object.assign(new Error('read failed'), { code: 'UPSTREAM_TIMEOUT' }); }
+    async card() { throw new Error('catalog sync must not directly read and register unknown cards'); }
   };
-  const result = await syncCardCatalog({ pool, provider, stock: { async register() {} } });
+  const result = await syncCardCatalog({ pool, provider });
   assert.equal(result.unresolvedActive, 1);
-  assert.deepEqual(snapshot.unresolved, [{ providerCardId: '617', code: 'UPSTREAM_TIMEOUT' }]);
+  assert.deepEqual(snapshot.unresolved, [{ providerCardId: '617', code: 'CARD_INTAKE_REQUIRED' }]);
 });
