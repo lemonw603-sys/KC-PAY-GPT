@@ -83,7 +83,22 @@ restore_test() {
     --env MYSQL_ALLOW_EMPTY_PASSWORD=yes "${mysql_image}" --skip-networking \
     >/dev/null
 
+  # The official image briefly starts a temporary initialization server before
+  # stopping it and launching the final server. A plain mysqladmin ping can hit
+  # that temporary server and make the restore race with its shutdown. Wait for
+  # the entrypoint's initialization-complete marker before probing readiness.
   local attempt
+  for attempt in $(seq 1 60); do
+    if docker logs "${container}" 2>&1 \
+      | grep 'MySQL init process done. Ready for start up.' >/dev/null; then
+      break
+    fi
+    sleep 1
+  done
+  docker logs "${container}" 2>&1 \
+    | grep 'MySQL init process done. Ready for start up.' >/dev/null \
+    || die 'restore_mysql_init_timeout'
+
   for attempt in $(seq 1 60); do
     if docker exec "${container}" mysqladmin ping --user=root --silent >/dev/null 2>&1; then
       break
