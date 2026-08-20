@@ -46,6 +46,7 @@ create_secret /etc/pojia/mysql-migrator-password hex
 create_secret /etc/pojia/session-encryption-key base64
 create_secret /etc/pojia/cdk-hash-key-v1 base64
 create_secret /etc/pojia/cdk-recovery-key base64
+create_secret /etc/pojia/cdk-delivery-hmac-key base64
 
 if ! docker container inspect "${MYSQL_CONTAINER}" >/dev/null 2>&1; then
   docker run -d \
@@ -98,6 +99,7 @@ SQL
 session_key=$(tr -d '\n' </etc/pojia/session-encryption-key)
 cdk_hash_key=$(tr -d '\n' </etc/pojia/cdk-hash-key-v1)
 cdk_recovery_key=$(tr -d '\n' </etc/pojia/cdk-recovery-key)
+cdk_delivery_hmac_key=$(tr -d '\n' </etc/pojia/cdk-delivery-hmac-key)
 umask 027
 cat >/etc/pojia/runtime.env <<EOF
 NODE_ENV=production
@@ -109,6 +111,7 @@ DATABASE_TLS=false
 SESSION_ENCRYPTION_KEY_BASE64=${session_key}
 CDK_HASH_KEY_V1_BASE64=${cdk_hash_key}
 CDK_RECOVERY_KEY_BASE64=${cdk_recovery_key}
+CDK_DELIVERY_HMAC_KEY_BASE64=${cdk_delivery_hmac_key}
 ADMIN_HOST=ops.vibebridge.top
 WORKER_POLL_INTERVAL_MS=1000
 WORKER_LEASE_SECONDS=60
