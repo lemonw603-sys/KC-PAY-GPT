@@ -36,7 +36,10 @@ async function main() {
         sessionEncryptionKey: config.sessionEncryptionKey
       })
       : command === 'revoke'
-        ? await revokeRechargePermit(pool, input)
+        ? await revokeRechargePermit(pool, {
+          ...input,
+          disableDispatch: options['disable-dispatch'] === 'true'
+        })
         : await getRechargePermitStatus(pool, input);
     process.stdout.write(`${JSON.stringify(result)}\n`);
   } finally {

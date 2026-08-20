@@ -55,6 +55,8 @@ status() {
   printf 'release=%s\n' "$(readlink -f /opt/pojia/current 2>/dev/null || printf 'missing')"
   printf 'web=%s\n' "$(systemctl is-active pojia-web.service 2>/dev/null || true)"
   printf 'worker=%s\n' "$(systemctl is-active pojia-worker.service 2>/dev/null || true)"
+  printf 'card_stock_runner=%s\n' "$(systemctl is-active pojia-card-stock-runner.service 2>/dev/null || true)"
+  printf 'card_stock_timer=%s\n' "$(systemctl is-active pojia-card-stock-runner.timer 2>/dev/null || true)"
   printf 'bark_notifications=%s\n' "$(systemctl is-active "${bark_service}" 2>/dev/null || true)"
   printf 'mysql=%s\n' "$(docker inspect --format '{{.State.Status}}' pojia-mysql 2>/dev/null || printf 'missing')"
   printf 'backup_timer=%s\n' "$(systemctl is-active "${backup_timer}" 2>/dev/null || true)"

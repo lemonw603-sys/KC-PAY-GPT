@@ -146,7 +146,12 @@ export async function armRechargePermit(pool, {
   });
 }
 
-export async function revokeRechargePermit(pool, { publicNo, revokedBy = 'root', now = new Date() }) {
+export async function revokeRechargePermit(pool, {
+  publicNo,
+  revokedBy = 'root',
+  now = new Date(),
+  disableDispatch = false
+}) {
   const orderNumber = validatePublicNo(publicNo);
   return inTransaction(pool, async (connection) => {
     const [rows] = await connection.query(
@@ -160,6 +165,13 @@ export async function revokeRechargePermit(pool, { publicNo, revokedBy = 'root',
     const payload = parsePayload(rows[0].payload_json);
     const previousStatus = payload.rechargePermit?.status || 'LOCKED';
     if (previousStatus === 'CONSUMED') {
+      if (disableDispatch) {
+        const [dispatch] = await connection.query(
+          `UPDATE app_settings SET setting_value = 'false', updated_at = CURRENT_TIMESTAMP(3)
+           WHERE setting_key = 'dispatch_new_recharges'`
+        );
+        if (dispatch.affectedRows !== 1) throw new Error('Recharge dispatch setting is missing');
+      }
       return { publicNo: orderNumber, status: 'CONSUMED' };
     }
     payload.rechargePermit = {
@@ -176,6 +188,13 @@ export async function revokeRechargePermit(pool, { publicNo, revokedBy = 'root',
       [rows[0].order_id, rows[0].order_status, rows[0].order_status,
         String(revokedBy).slice(0, 128), JSON.stringify({ previousStatus })]
     );
+    if (disableDispatch) {
+      const [dispatch] = await connection.query(
+        `UPDATE app_settings SET setting_value = 'false', updated_at = CURRENT_TIMESTAMP(3)
+         WHERE setting_key = 'dispatch_new_recharges'`
+      );
+      if (dispatch.affectedRows !== 1) throw new Error('Recharge dispatch setting is missing');
+    }
     return { publicNo: orderNumber, status: 'REVOKED' };
   });
 }

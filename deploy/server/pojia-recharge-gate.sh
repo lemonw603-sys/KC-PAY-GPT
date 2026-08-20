@@ -31,7 +31,8 @@ arm() {
 
 close() {
   local public_no=${1:-}
-  if [[ -n ${public_no} ]]; then run_permit revoke "${public_no}"; fi
+  [[ -n ${public_no} ]] || die 'public_no_required_for_close'
+  run_permit revoke "${public_no}" --disable-dispatch true
 }
 
 status() {
@@ -43,7 +44,7 @@ usage() {
   printf '%s\n' \
     'Usage: pojia-recharge-gate <arm|close|status> [public-no] [ttl-minutes]' \
     '  arm <public-no> [ttl]  Arm exactly one untouched order.' \
-    '  close [public-no]      Revoke an unused permit.' \
+    '  close <public-no>      Disable new recharge dispatch and revoke the permit.' \
     '  status [public-no]     Show optional permit state.'
 }
 

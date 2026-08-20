@@ -27,6 +27,9 @@
 - `pojia-ops restore-test`：在无网络的临时 MySQL 容器中做真实恢复演练，不接触生产库。
 - `pojia-ops check`：一次完成状态检查和最新备份校验。
 
+生产迁移、停机顺序、Bark 演练和只读体检必须按
+[`docs/PRODUCTION_PREP_RUNBOOK.md`](../docs/PRODUCTION_PREP_RUNBOOK.md) 执行；在运行手册的维护窗口步骤完成前，不得执行迁移或启用任何 Provider 写路径。
+
 `bootstrap-host.sh` 不删除或改名任何现有容器，不修改 firewalld 和现有 Caddyfile。
 
 Bark 配置保存在 `/etc/pojia/bark.env`，初始为 `BARK_ENABLED=false`。填入 Device Key 后安装并启动：
@@ -39,8 +42,8 @@ systemctl enable --now pojia-bark-notifications.service
 
 真实直充写入统一使用 `pojia-recharge-gate.sh`，安装为 `/usr/local/sbin/pojia-recharge-gate`：
 
-- `status [订单查询码]`：显示三个 Provider 写开关、Worker 和指定订单 Permit 状态。
-- `arm <订单查询码> [分钟]`：先签发唯一、短时、一次性 Permit，再开启 ZZSHU 写入并重启 Worker。
-- `close [订单查询码]`：先关闭 ZZSHU 写入并重启 Worker，再撤销未消费的 Permit。
+- `status [订单查询码]`：显示指定订单 Permit 状态；Provider 写开关和 Worker 状态必须另外用 `systemctl` 与只读体检核对。
+- `arm <订单查询码> [分钟]`：在数据库事务中完成付款前复核、签发唯一短时 Permit，并打开数据库中的 `dispatch_new_recharges` 派发开关；它不会修改 systemd 环境文件。
+- `close <订单查询码>`：在数据库事务中关闭 `dispatch_new_recharges` 并撤销该订单尚未消费的 Permit；它不会停止 Worker，已有订单轮询会继续运行。
 
 不得直接编辑环境文件绕过 Permit。Permit 消费后任何失败都进入终态或人工核对，不自动再次创建直充订单。

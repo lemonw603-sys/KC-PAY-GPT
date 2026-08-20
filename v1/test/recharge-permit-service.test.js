@@ -3,6 +3,7 @@ import test from 'node:test';
 import {
   armRechargePermit,
   getRechargePermitStatus,
+  revokeRechargePermit,
   validateRechargePreflight
 } from '../src/services/recharge-permit-service.js';
 import { encryptSecret } from '../src/security/secret-box.js';
@@ -101,4 +102,23 @@ test('reports a locked untouched task without exposing payload contents', async 
     publicNo: 'PJV1-DEMO', orderStatus: 'CARD_READY', taskStatus: 'PENDING',
     attempts: 0, permitStatus: 'LOCKED', expiresAt: null
   });
+});
+
+test('closing a permit disables new recharge dispatch in the same transaction', async () => {
+  const pool = transactionalPool([
+    [[{
+      order_id: 'order-1', order_status: 'CARD_READY', task_id: 9,
+      payload_json: JSON.stringify({ rechargePermit: { status: 'ARMED' } })
+    }], []],
+    [{ affectedRows: 1 }, []],
+    [{ affectedRows: 1 }, []],
+    [{ affectedRows: 1 }, []]
+  ]);
+  const result = await revokeRechargePermit(pool, {
+    publicNo: 'PJV1-DEMO',
+    disableDispatch: true
+  });
+  assert.deepEqual(result, { publicNo: 'PJV1-DEMO', status: 'REVOKED' });
+  assert.match(pool.queries.at(-1).sql, /dispatch_new_recharges/);
+  assert.match(pool.queries.at(-1).sql, /setting_value = 'false'/);
 });
