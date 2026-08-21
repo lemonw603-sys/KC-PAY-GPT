@@ -187,3 +187,13 @@
 - 隔离 MySQL 8.4 全量测试 `313/313`，Migration 001–025 干净执行和 025 重放成功。
 - 独立对抗式终审未发现剩余 Stage 2 P0/P1 阻断；证据见 `docs/STAGE2_SESSION_FINALIZATION_ACCEPTANCE_2026-08-21.md`。
 - 尚未部署生产，本阶段没有任何 Provider 资金写调用。
+
+## 2026-08-22 - 阶段二生产安全部署
+
+- 通过 KiwiVM 恢复本机 SSH 公钥访问，没有重置服务器或业务凭证。
+- 发布 `/opt/pojia/releases/20260822-stage2-94dbefb`，Migration 025 首次执行和重放通过。
+- 发布前加密备份完整性通过，服务器外副本保存到 `/Users/lemon/backups/AI充值业务/production/2026-08-22/`，SHA-256 一致。
+- 修正 Worker systemd 旧硬编码的充值写开关；实际 Worker 进程三个 Provider 写开关均为 `false`。
+- 接单、派发、Provider 账户和进程资金门禁全部关闭；活动资金风险和活动充值授权均为 0。
+- Web、Worker、Bark active；公网 live/ready 200，后台未登录 API 401；最终只读体检 `ok=true`、无 blocker。
+- 本次没有开卡、卡充值、直充、退款、余额提取或 Browser 付款调用。

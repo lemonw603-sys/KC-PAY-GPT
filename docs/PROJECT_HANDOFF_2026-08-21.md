@@ -7,6 +7,8 @@
 
 > 后续方向更新：本文关于“legacy 浏览器不属于当前生产路径”的运行事实仍有效，但 Browser 已被确认为未来 Plus 主执行链路；ZZSHU 不再是 Browser 项目的投入方向。接手新工作必须以 [`BROWSER_RECHARGE_EXECUTOR_BASELINE_2026-08-21.md`](BROWSER_RECHARGE_EXECUTOR_BASELINE_2026-08-21.md) 和 `DECISIONS.md` 的 D-038 至 D-040 为准。
 
+> 2026-08-22 更新：阶段二 Session 恢复与正确终态已发布生产，当前 release 为 `/opt/pojia/releases/20260822-stage2-94dbefb`，Migration 最新为 025。验收证据见 `STAGE2_SESSION_FINALIZATION_ACCEPTANCE_2026-08-21.md`。
+
 ## 一、项目身份与当前基线
 
 - 本地项目目录：`/Users/lemon/code/AI充值业务`

@@ -2,9 +2,9 @@
 
 ## 1. 结论
 
-阶段二代码、增量迁移、隔离 MySQL 和独立对抗式审查已完成；未发现剩余 P0/P1 阻断项。
+阶段二代码、增量迁移、隔离 MySQL、独立对抗式审查和生产安全部署已完成；未发现剩余 P0/P1 阻断项。
 
-本结论只覆盖本地代码和隔离 MySQL，不代表生产已经部署，也不代表正式成功充值链路已经真实验收。本阶段没有调用开卡、卡充值、直充、退款、余额提取或 Browser 付款接口。
+本结论不代表正式成功充值链路已经真实验收。本阶段没有调用开卡、卡充值、直充、退款、余额提取或 Browser 付款接口。
 
 ## 2. 已实现行为
 
@@ -55,7 +55,18 @@
 
 ## 6. 尚未验收与下一阶段
 
-- 尚未发布到生产；生产部署必须保持所有资金写门禁关闭；
 - 尚未用目标账号为免费账号的正式订单验证最终成功和取消续费；
 - 阶段三仍需取消正常订单逐单人工授权，统一全局门禁、任务恢复和唯一资金 attempt 自动建立；
 - Browser 主执行链路继续按独立基线做非付款 PoC、仿真和控制面，不因本阶段完成而获得真实付款权限。
+
+## 7. 生产部署验收（2026-08-22）
+
+- 发布目录：`/opt/pojia/releases/20260822-stage2-94dbefb`；当前软链接已原子切换到该目录；
+- 发布前创建加密数据库备份，服务器端 SHA-256、解密流和 gzip 完整性验证通过；加密副本已复制到服务器外的 `/Users/lemon/backups/AI充值业务/production/2026-08-22/`，本地与服务器 SHA-256 一致；
+- Migration `025_session_recovery_and_finalization` 首次执行成功，第二次重放为 `already applied`；
+- 后置检查：迁移记录 1、orders 新列 5、Session 更换历史表 1；活动资金风险 0、活动充值授权 0；
+- `accept_new_orders=false`、`dispatch_new_recharges=false`，两个 Provider 账户 `write_enabled=0`；
+- 修正 Worker systemd 中与环境文件冲突的旧硬编码：`PROVIDER_RECHARGE_WRITES_ENABLED` 从 `true` 恢复为 `false`；重启后的真实进程环境三个 Provider 写开关全部为 `false`；
+- Web、Worker、Bark 三个服务均为 `active`；公网 `/health/live`、`/health/ready` 均为 HTTP 200，后台未登录 API 为 401；
+- 客户 Session 更换路由已在线，空请求返回受控的 400；客户资源版本为 v5，后台资源版本为 v15；
+- 最终只读体检 `ok=true`，活动任务、过期租约、资金写相关未决 Provider 调用、资金风险、活动开卡任务、开放对账和 Bark 死信均为 0，最新迁移为 025。历史只读卡片对账中的 `UNCERTAIN` 记录不属于该体检口径，仍按原始证据保留。
