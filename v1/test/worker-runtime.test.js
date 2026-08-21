@@ -9,6 +9,7 @@ import {
 
 const allSettings = Object.freeze({
   dispatchNewRecharges: true,
+  rechargeDispatchMode: 'AUTOMATIC',
   pollExistingOrders: true,
   syncCardTransactions: true
 });
@@ -41,6 +42,10 @@ test('runtime settings and process gates jointly control task eligibility', () =
     allowedTaskTypesFor(allSettings, { providerReadsEnabled: true, providerRechargeWritesEnabled: true }).includes(TaskType.SUBMIT_RECHARGE),
     true
   );
+  assert.equal(
+    allowedTaskTypesFor(allSettings, { providerRechargeWritesEnabled: true }).includes(TaskType.SUBMIT_RECHARGE),
+    false
+  );
 });
 
 test('one worker iteration passes only eligible task types to the runner', async () => {
@@ -58,6 +63,7 @@ test('one worker iteration passes only eligible task types to the runner', async
     }
   });
   assert.equal(result.handled, false);
+  assert.equal(input.rechargeDispatchMode, 'AUTOMATIC');
   assert.deepEqual(input.allowedTaskTypes, [TaskType.ASSIGN_CARD, TaskType.PREPARE_RECHARGE, TaskType.VERIFY_CARD, TaskType.POLL_RECHARGE, TaskType.RECHECK_CANCELLATION, TaskType.SYNC_CARD_TRANSACTIONS]);
 });
 

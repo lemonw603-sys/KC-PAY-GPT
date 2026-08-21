@@ -87,8 +87,8 @@ test('admin refresh feedback and inset dropdown arrows remain visible', () => {
   const html = fs.readFileSync(path.join(directory, 'admin', 'index.html'), 'utf8');
   const script = fs.readFileSync(path.join(directory, 'admin', 'assets', 'admin.js'), 'utf8');
   const styles = fs.readFileSync(path.join(directory, 'admin', 'assets', 'admin.css'), 'utf8');
-  assert.match(html, /admin\.css\?v=15/);
-  assert.match(html, /admin\.js\?v=15/);
+  assert.match(html, /admin\.css\?v=16/);
+  assert.match(html, /admin\.js\?v=16/);
   assert.match(script, /button\.textContent = '刷新中…'/);
   assert.match(script, /showNotice\('刷新完成。', 'success'\)/);
   assert.match(script, /showNotice\('刷新失败，请稍后重试。'\)/);
@@ -96,4 +96,14 @@ test('admin refresh feedback and inset dropdown arrows remain visible', () => {
   assert.match(styles, /padding-right:\s*40px\s*!important/);
   assert.match(styles, /background-image:[^;]+!important/);
   assert.match(styles, /background-position:\s*calc\(100% - 19px\) 50%, calc\(100% - 14px\) 50%\s*!important/);
+});
+
+test('admin describes automatic fulfillment and keeps permits explicitly gray-only', () => {
+  const html = fs.readFileSync(path.join(directory, 'admin', 'index.html'), 'utf8');
+  const script = fs.readFileSync(path.join(directory, 'admin', 'assets', 'admin.js'), 'utf8');
+  assert.match(html, /灰度批量许可/);
+  assert.match(html, /待执行充值/);
+  assert.match(script, /正常模式由系统自动执行/);
+  assert.match(script, /正常订单不需要此操作/);
+  assert.doesNotMatch(`${html}\n${script}`, /逐单确认|待确认充值/);
 });

@@ -119,16 +119,19 @@ export async function scheduleDueCardSyncJobs(pool, {
       [now, cutoff, safeLimit]
     );
     const bucket = Math.floor(now.getTime() / (interval * 60_000));
+    let queued = 0;
     for (const card of cards) {
-      await connection.query(
+      const [result] = await connection.query(
         `INSERT INTO card_sync_jobs
          (id, card_id, status, requested_by, dedupe_key)
-         VALUES (?, ?, 'PENDING', 'scheduler', ?)`,
+         VALUES (?, ?, 'PENDING', 'scheduler', ?)
+         ON DUPLICATE KEY UPDATE dedupe_key = VALUES(dedupe_key)`,
         [crypto.randomUUID(), card.id, `scheduled-card-sync:${card.id}:${bucket}`]
       );
+      if (Number(result.affectedRows) === 1) queued += 1;
     }
     await connection.commit();
-    return { enabled: true, queued: cards.length };
+    return { enabled: true, queued };
   } catch (error) {
     await connection.rollback();
     throw error;

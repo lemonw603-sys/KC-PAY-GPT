@@ -21,21 +21,32 @@ function scriptedPool(responses) {
   return { queries, transaction, async getConnection() { return connection; } };
 }
 
-function beginResponses({ existingAttempts = [], providerInsert = [{ insertId: 501 }, []] } = {}) {
+function beginResponses({
+  existingAttempts = [], providerInsert = [{ insertId: 501 }, []], orderOverrides = {},
+  dispatchEnabled = true, dispatchMode = 'AUTOMATIC', authorizationMode = 'MANUAL'
+} = {}) {
   return [
     [[{ id: 91, order_id: 'order-1', status: 'RUNNING', attempts: 1 }], []],
     [[{
       id: 'order-1', status: 'CARD_READY', version: 7,
       fulfillment_route_id: 'route-1', executor_kind: 'API',
-      recharge_provider_account_id: 'provider-account-1', provider_code: 'new-provider', write_enabled: 1
+      recharge_provider_account_id: 'provider-account-1', provider_code: 'new-provider', write_enabled: 1,
+      minimum_required_card_balance: '16', card_status: 'active', card_balance: '25',
+      card_credentials_ciphertext: Buffer.from('encrypted'),
+      card_last_synced_at: new Date('2026-08-20T11:59:00.000Z'), prepayment_ready: 1,
+      ...orderOverrides
     }], []],
-    [[{
-      id: 'item-1', order_id: 'order-1', item_status: 'PENDING',
-      authorization_id: 'auth-1', authorization_status: 'ACTIVE',
-      expires_at: new Date('2026-08-20T12:10:00.000Z')
-    }], []],
+    [[
+      { setting_key: 'dispatch_new_recharges', setting_value: String(dispatchEnabled) },
+      { setting_key: 'recharge_dispatch_mode', setting_value: dispatchMode }
+    ], []],
     [existingAttempts, []],
     [[], []],
+    [[{
+      id: 'item-1', order_id: 'order-1', item_status: 'PENDING',
+      authorization_id: 'auth-1', authorization_mode: authorizationMode, authorization_status: 'ACTIVE',
+      expires_at: new Date('2026-08-20T12:10:00.000Z')
+    }], []],
     [{ affectedRows: 1 }, []],
     [{ affectedRows: 1 }, []],
     [{ affectedRows: 1 }, []],
@@ -58,6 +69,8 @@ test('atomically begins an authorized attempt in the required lock/write order',
 
   assert.deepEqual(result, {
     id: 'attempt-1', orderId: 'order-1', authorizationItemId: 'item-1',
+    authorizationMode: 'MANUAL',
+    dispatchMode: 'AUTOMATIC',
     providerAccountId: 'provider-account-1', executorKind: 'API',
     status: 'PREPARED', fundsRiskState: 'ACTIVE', providerCallId: 501,
     idempotencyKey: 'recharge-auth-item:item-1', startedAt: now
@@ -65,21 +78,23 @@ test('atomically begins an authorized attempt in the required lock/write order',
   assert.deepEqual(pool.transaction, { began: 1, committed: 1, rolledBack: 0, released: 1 });
   assert.match(pool.queries[0].sql, /FROM tasks[\s\S]*FOR UPDATE/);
   assert.match(pool.queries[1].sql, /FROM orders o[\s\S]*FOR UPDATE/);
-  assert.match(pool.queries[2].sql, /recharge_authorization_items[\s\S]*FOR UPDATE/);
-  assert.match(pool.queries[5].sql, /INSERT INTO recharge_attempts/);
-  assert.match(pool.queries[5].sql, /'PREPARED', 'ACTIVE'/);
-  assert.equal(pool.queries[5].values[6], 'recharge-auth-item:item-1');
-  assert.match(pool.queries[6].sql, /status = 'CONSUMED'/);
-  assert.match(pool.queries[7].sql, /SET status = \?, version = version \+ 1/);
-  assert.match(pool.queries[8].sql, /INSERT INTO order_events/);
-  assert.match(pool.queries[9].sql, /INSERT INTO provider_calls/);
-  assert.match(pool.queries[9].sql, /'create_direct'/);
-  assert.deepEqual(pool.queries[9].values.slice(0, 4), [
+  assert.match(pool.queries[2].sql, /FROM app_settings[\s\S]*FOR UPDATE/);
+  assert.match(pool.queries[3].sql, /FROM recharge_attempts[\s\S]*FOR UPDATE/);
+  assert.match(pool.queries[5].sql, /recharge_authorization_items[\s\S]*FOR UPDATE/);
+  assert.match(pool.queries[6].sql, /INSERT INTO recharge_attempts/);
+  assert.match(pool.queries[6].sql, /'PREPARED', 'ACTIVE'/);
+  assert.equal(pool.queries[6].values[6], 'recharge-auth-item:item-1');
+  assert.match(pool.queries[7].sql, /status = 'CONSUMED'/);
+  assert.match(pool.queries[8].sql, /SET status = \?, version = version \+ 1/);
+  assert.match(pool.queries[9].sql, /INSERT INTO order_events/);
+  assert.match(pool.queries[10].sql, /INSERT INTO provider_calls/);
+  assert.match(pool.queries[10].sql, /'create_direct'/);
+  assert.deepEqual(pool.queries[10].values.slice(0, 4), [
     'order-1', 'attempt-1', 'new-provider', 'provider-account-1'
   ]);
-  assert.equal(pool.queries[9].values[4], 'recharge-auth-item:item-1');
+  assert.equal(pool.queries[10].values[4], 'recharge-auth-item:item-1');
   const allSql = pool.queries.map((entry) => entry.sql).join('\n');
-  assert.doesNotMatch(allSql, /app_settings|dispatch_new_recharges|payload_json/i);
+  assert.doesNotMatch(allSql, /payload_json/i);
 });
 
 test('rolls back every write when provider-call persistence fails', async () => {
@@ -95,9 +110,9 @@ test('rolls back every write when provider-call persistence fails', async () => 
 
 test('expired authorization cannot create a funds-risk attempt', async () => {
   const responses = beginResponses();
-  responses[2] = [[{
+  responses[5] = [[{
     id: 'item-1', order_id: 'order-1', item_status: 'PENDING',
-    authorization_id: 'auth-1', authorization_status: 'ACTIVE',
+    authorization_id: 'auth-1', authorization_mode: 'MANUAL', authorization_status: 'ACTIVE',
     expires_at: new Date('2026-08-20T11:59:59.000Z')
   }], []];
   const pool = scriptedPool(responses);
@@ -108,6 +123,98 @@ test('expired authorization cannot create a funds-risk attempt', async () => {
   }), (error) => error.code === 'AUTHORIZATION_EXPIRED');
   assert.equal(pool.queries.some((entry) => entry.sql.includes('INSERT INTO recharge_attempts')), false);
   assert.equal(pool.transaction.rolledBack, 1);
+});
+
+test('cannot create funds intent before preparation and fresh card checks pass', async () => {
+  for (const [orderOverrides, code] of [
+    [{ prepayment_ready: 0 }, 'PREPAYMENT_NOT_READY'],
+    [{ card_last_synced_at: new Date('2026-08-20T11:40:00.000Z') }, 'CARD_CHECK_STALE'],
+    [{ card_balance: '1' }, 'CARD_NOT_READY']
+  ]) {
+    const pool = scriptedPool(beginResponses({ orderOverrides }));
+    await assert.rejects(
+      createRechargeAttemptRepository(pool).beginAuthorizedAttempt({
+        orderId: 'order-1', taskId: 91, attemptId: `attempt-${code}`,
+        now: new Date('2026-08-20T12:00:00.000Z')
+      }),
+      (error) => error.code === code
+    );
+    assert.equal(pool.queries.some((entry) => /INSERT INTO recharge_attempts/.test(entry.sql)), false);
+    assert.equal(pool.queries.some((entry) => /INSERT INTO provider_calls/.test(entry.sql)), false);
+  }
+});
+
+test('automatically creates and consumes one auditable authorization when none exists', async () => {
+  const now = new Date('2026-08-20T12:00:00.000Z');
+  const responses = beginResponses();
+  responses[5] = [[], []];
+  responses.splice(6, 0,
+    [{ affectedRows: 1 }, []],
+    [{ affectedRows: 1 }, []],
+    [{ affectedRows: 1 }, []],
+    [{ affectedRows: 1 }, []]
+  );
+  const pool = scriptedPool(responses);
+  const result = await createRechargeAttemptRepository(pool).beginAuthorizedAttempt({
+    orderId: 'order-1', taskId: 91, attemptId: 'attempt-auto', now
+  });
+
+  assert.equal(result.authorizationMode, 'AUTOMATIC');
+  assert.match(result.idempotencyKey, /^recharge-auth-item:/);
+  assert.match(pool.queries[6].sql, /SET rai\.status = 'EXPIRED'/);
+  assert.match(pool.queries[7].sql, /INSERT INTO recharge_authorizations/);
+  assert.match(pool.queries[7].sql, /'AUTOMATIC'/);
+  assert.match(pool.queries[8].sql, /INSERT INTO recharge_authorization_items/);
+  assert.match(pool.queries[9].sql, /INSERT INTO recharge_attempts/);
+  assert.match(pool.queries[11].sql, /SET status = 'CONSUMED'/);
+  assert.match(pool.queries[14].sql, /INSERT INTO provider_calls/);
+  assert.deepEqual(pool.transaction, { began: 1, committed: 1, rolledBack: 0, released: 1 });
+});
+
+test('transactional dispatch gate blocks funds writes after dispatch is disabled', async () => {
+  const pool = scriptedPool(beginResponses({ dispatchEnabled: false }));
+  await assert.rejects(
+    createRechargeAttemptRepository(pool).beginAuthorizedAttempt({
+      orderId: 'order-1', taskId: 91, attemptId: 'attempt-disabled',
+      now: new Date('2026-08-20T12:00:00.000Z')
+    }),
+    (error) => error.code === 'DISPATCH_DISABLED'
+  );
+  assert.equal(pool.queries.some((entry) => /INSERT INTO recharge_attempts/.test(entry.sql)), false);
+  assert.equal(pool.queries.some((entry) => /INSERT INTO provider_calls/.test(entry.sql)), false);
+  assert.equal(pool.transaction.rolledBack, 1);
+});
+
+test('manual mode cannot synthesize an automatic authorization', async () => {
+  const responses = beginResponses({ dispatchMode: 'MANUAL' });
+  responses[5] = [[], []];
+  const pool = scriptedPool(responses);
+  await assert.rejects(
+    createRechargeAttemptRepository(pool).beginAuthorizedAttempt({
+      orderId: 'order-1', taskId: 91, attemptId: 'attempt-manual',
+      now: new Date('2026-08-20T12:00:00.000Z')
+    }),
+    (error) => error.code === 'MANUAL_AUTHORIZATION_REQUIRED'
+  );
+  const allSql = pool.queries.map((entry) => entry.sql).join('\n');
+  assert.doesNotMatch(allSql, /INSERT INTO recharge_authorizations/);
+  assert.doesNotMatch(allSql, /INSERT INTO recharge_attempts/);
+  assert.doesNotMatch(allSql, /INSERT INTO provider_calls/);
+});
+
+test('manual mode rejects an explicitly requested automatic authorization item', async () => {
+  const pool = scriptedPool(beginResponses({
+    dispatchMode: 'MANUAL', authorizationMode: 'AUTOMATIC'
+  }));
+  await assert.rejects(
+    createRechargeAttemptRepository(pool).beginAuthorizedAttempt({
+      orderId: 'order-1', taskId: 91, authorizationItemId: 'item-1',
+      attemptId: 'attempt-explicit-auto', now: new Date('2026-08-20T12:00:00.000Z')
+    }),
+    (error) => error.code === 'MANUAL_AUTHORIZATION_REQUIRED'
+  );
+  assert.equal(pool.queries.some((entry) => /INSERT INTO recharge_attempts/.test(entry.sql)), false);
+  assert.equal(pool.queries.some((entry) => /INSERT INTO provider_calls/.test(entry.sql)), false);
 });
 
 test('same order can begin only once when a competing funds fence exists', async () => {

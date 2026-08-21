@@ -35,6 +35,7 @@ function setup({ status = OrderStatus.CARD_READY, rechargeStatuses = [],
     reviewCardPurchase: async (...args) => calls.push(['review-purchase', ...args]),
     commitPurchasedCard: async (...args) => calls.push(['card', ...args]),
     commitCardReady: async (...args) => calls.push(['ready', ...args]),
+    refreshAssignedCardForRecharge: async (...args) => calls.push(['refresh-card', ...args]),
     failCardProvisioning: async (...args) => calls.push(['failed-card', ...args]),
     reviewCardProvisioning: async (...args) => calls.push(['review-card', ...args]),
     commitRechargeSubmission: async (...args) => calls.push(['submission', ...args]),
@@ -126,9 +127,9 @@ test('Foundation v2 consumes an explicit authorization and commits through the f
 test('submits one direct recharge and commits external identifiers', async () => {
   const state = setup();
   await state.handlers.SUBMIT_RECHARGE({ id: 1, order_id: 'order-1', attempts: 1 });
-  assert.equal(state.calls[0][0], 'attempt-submitted');
-  assert.equal(state.calls[0][1].externalOrderId, '12');
-  assert.equal(state.calls[0][1].externalReference, 'DIRECT-fixture');
+  const submitted = state.calls.find(([name]) => name === 'attempt-submitted');
+  assert.equal(submitted[1].externalOrderId, '12');
+  assert.equal(submitted[1].externalReference, 'DIRECT-fixture');
   assert.equal(state.providerCalls.find((call) => call.operation === 'create_direct').existingCall.id, 99);
 });
 
@@ -144,30 +145,53 @@ test('marks a successful provider call unknown when the local submission commit 
   assert.equal(state.calls.at(-1)[0], 'attempt-unknown');
 });
 
-test('refuses a recharge without a Foundation authorization and never calls the provider', async () => {
-  const missingAuthorization = {
-    beginAuthorizedAttempt: async () => { throw Object.assign(new Error('missing'), { code: 'AUTHORIZATION_NOT_FOUND' }); }
+test('keeps provider configuration blockers recoverable and never calls the provider', async () => {
+  const blockedConfiguration = {
+    beginAuthorizedAttempt: async () => {
+      throw Object.assign(new Error('write disabled'), { code: 'PROVIDER_WRITE_DISABLED' });
+    }
   };
-  const state = setup({ rechargeAttemptRepository: missingAuthorization });
+  const state = setup({ rechargeAttemptRepository: blockedConfiguration });
   let submissions = 0;
   state.rechargeProvider.createDirectOrder = async () => { submissions += 1; };
   await assert.rejects(
     state.handlers.SUBMIT_RECHARGE({ id: 7, order_id: 'order-1', attempts: 1 }),
-    (error) => error.code === 'RECHARGE_AUTHORIZATION_REQUIRED'
+    (error) => error.code === 'RECHARGE_CONFIGURATION_BLOCKED'
+      && error.retryable === true
+      && error.refundAttempt === true
   );
   assert.equal(submissions, 0);
   assert.equal(state.calls.some(([name]) => name === 'transition'), false);
 });
 
-test('submits with encrypted cached card credentials without rereading the provider', async () => {
+test('refreshes assigned card evidence immediately before creating a funds attempt', async () => {
   const state = setup();
   state.context.card.credentials = {
     cardNumber: '4242424242424242', expMonth: 12, expYear: 2032, cvv: '123'
   };
-  state.cardProvider.card = async () => { throw new Error('must not reread card credentials'); };
   await state.handlers.SUBMIT_RECHARGE({ id: 1, order_id: 'order-1', attempts: 1 });
   assert.equal(state.calls.at(-1)[0], 'attempt-submitted');
-  assert.equal(state.providerCalls.some((call) => call.operation === 'card_details'), false);
+  assert.equal(state.calls.some(([name]) => name === 'refresh-card'), true);
+  assert.equal(state.providerCalls.some((call) => call.operation === 'card_details'), true);
+});
+
+test('does not create a funds attempt when the fresh assigned-card check is not ready', async () => {
+  let attempts = 0;
+  const state = setup({
+    rechargeAttemptRepository: {
+      beginAuthorizedAttempt: async () => { attempts += 1; }
+    }
+  });
+  state.cardProvider.card = async () => ({ data: { status: 'pending' } });
+  await assert.rejects(
+    state.handlers.SUBMIT_RECHARGE({ id: 1, order_id: 'order-1', attempts: 1 }),
+    (error) => error.code === 'CARD_NOT_READY'
+      && error.retryable === true
+      && error.refundAttempt === true
+  );
+  assert.equal(attempts, 0);
+  assert.equal(state.providerCalls.some((call) => call.operation === 'create_direct'), false);
+  assert.equal(state.calls.some(([name]) => name === 'refresh-card'), true);
 });
 
 test('purchases a card with the persisted idempotency key and commits one binding', async () => {

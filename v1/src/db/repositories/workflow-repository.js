@@ -57,6 +57,9 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
                 c.card_type_id AS stored_card_type_id,
                 c.last4,
                 c.status AS card_status,
+                c.current_balance AS card_current_balance,
+                c.currency AS card_currency,
+                c.last_synced_at AS card_last_synced_at,
                 c.card_credentials_ciphertext
          FROM orders o
          LEFT JOIN fulfillment_routes fr ON fr.id = o.fulfillment_route_id
@@ -80,6 +83,9 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
           card_type_id: row.stored_card_type_id,
           last4: row.last4,
           status: row.card_status,
+          current_balance: row.card_current_balance,
+          currency: row.card_currency,
+          last_synced_at: row.card_last_synced_at,
           credentials: row.card_credentials_ciphertext
             ? JSON.parse(decryptSecret(row.card_credentials_ciphertext, sessionEncryptionKey))
             : null
@@ -439,6 +445,53 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
            VALUES (?, 'SUBMIT_RECHARGE', 'PENDING', ?, 5)`,
           [orderId, `submit-recharge:${orderId}`]
         );
+      });
+    },
+
+    async refreshAssignedCardForRecharge(orderId, snapshot, credentials = null) {
+      return inTransaction(pool, async (connection) => {
+        const [rows] = await connection.query(
+          `SELECT o.status AS order_status, c.id AS card_id
+           FROM orders o INNER JOIN cards c ON c.order_id = o.id
+           WHERE o.id = ? FOR UPDATE`,
+          [orderId]
+        );
+        if (rows.length !== 1) throw new Error(`Assigned card not found: ${orderId}`);
+        if (rows[0].order_status !== OrderStatus.CARD_READY) {
+          throw new Error(`Cannot refresh recharge card from ${rows[0].order_status}`);
+        }
+        const normalizedPan = credentials
+          ? String(credentials.cardNumber || '').replace(/[\s-]/g, '') : '';
+        const panHmac = Buffer.isBuffer(panHmacKey) && /^\d{12,19}$/.test(normalizedPan)
+          ? crypto.createHmac('sha256', panHmacKey).update(normalizedPan).digest('hex') : null;
+        await connection.query(
+          `UPDATE cards SET status = ?, last4 = COALESCE(?, last4),
+             current_balance = COALESCE(?, current_balance), currency = ?, last_synced_at = CURRENT_TIMESTAMP(3),
+             card_credentials_ciphertext = COALESCE(?, card_credentials_ciphertext),
+             card_number_ciphertext = COALESCE(?, card_number_ciphertext),
+             pan_hmac = COALESCE(?, pan_hmac),
+             pan_hmac_version = CASE WHEN ? IS NULL THEN pan_hmac_version ELSE 1 END,
+             updated_at = CURRENT_TIMESTAMP(3)
+           WHERE id = ?`,
+          [snapshot.status, snapshot.last4 || null,
+            snapshot.currentBalance == null ? null : String(snapshot.currentBalance),
+            snapshot.currency || 'USD',
+            credentials ? encryptSecret(JSON.stringify(credentials), sessionEncryptionKey) : null,
+            credentials ? encryptSecret(credentials.cardNumber, sessionEncryptionKey) : null,
+            panHmac, panHmac, rows[0].card_id]
+        );
+        await insertEvent(connection, {
+          orderId,
+          fromStatus: OrderStatus.CARD_READY,
+          toStatus: OrderStatus.CARD_READY,
+          reason: 'assigned card refreshed before recharge funds attempt',
+          metadata: {
+            state: snapshot.state,
+            status: snapshot.status,
+            last4: snapshot.last4 || null,
+            currentBalance: snapshot.currentBalance == null ? null : String(snapshot.currentBalance)
+          }
+        });
       });
     },
 

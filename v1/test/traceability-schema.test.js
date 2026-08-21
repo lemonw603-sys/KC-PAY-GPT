@@ -9,12 +9,13 @@ const migrationsDir = path.resolve(here, '../migrations');
 const migrationName = '024_traceability_center.sql';
 const sql = fs.readFileSync(path.join(migrationsDir, migrationName), 'utf8');
 
-test('traceability migration is the latest ordered migration', () => {
+test('traceability and later state migrations remain correctly ordered', () => {
   const names = fs.readdirSync(migrationsDir)
     .filter((name) => /^\d+_[a-z0-9_-]+\.sql$/i.test(name))
     .sort();
-  assert.equal(names.at(-1), '025_session_recovery_and_finalization.sql');
-  assert.equal(names.at(-2), migrationName);
+  const traceabilityIndex = names.indexOf(migrationName);
+  assert.equal(names[traceabilityIndex + 1], '025_session_recovery_and_finalization.sql');
+  assert.equal(names[traceabilityIndex + 2], '026_automatic_fulfillment_funds_fence.sql');
 });
 
 test('traceability migration creates the required additive ledgers', () => {

@@ -236,7 +236,8 @@ export function createWorkflowHandlers({
   async function submitRecharge(task) {
     if (!rechargeWritesEnabled) {
       throw new TaskExecutionError('Recharge submission is hard-disabled', {
-        code: 'RECHARGE_WRITES_DISABLED', retryable: false
+        code: 'RECHARGE_WRITES_DISABLED', retryable: true,
+        delayMs: 60_000, refundAttempt: true
       });
     }
     const context = await workflow.loadOrderContext(task.order_id);
@@ -247,6 +248,32 @@ export function createWorkflowHandlers({
     }
     await requireFreshCustomerSession(task.order_id, context.session);
 
+    if (!context.card?.provider_card_id) {
+      throw new TaskExecutionError('Order has no assigned card', {
+        code: 'CARD_NOT_READY', retryable: true, delayMs: 60_000, refundAttempt: true
+      });
+    }
+    const cardEnvelope = await recordCall({
+      orderId: task.order_id,
+      provider: 'hnskj',
+      operation: 'card_details',
+      attemptNo: task.attempts,
+      action: () => cardProvider.card(context.card.provider_card_id),
+      summarize: () => ({ cardId: context.card.provider_card_id, purpose: 'pre_recharge_check' })
+    });
+    const cardSnapshot = mapCardProvisioning(
+      cardEnvelope,
+      context.order.minimum_required_card_balance
+    );
+    const credentials = cardSnapshot.state === 'ready'
+      ? mapCardCredentials(cardEnvelope) : null;
+    await workflow.refreshAssignedCardForRecharge(task.order_id, cardSnapshot, credentials);
+    if (cardSnapshot.state !== 'ready') {
+      throw new TaskExecutionError('Assigned card is not ready after the pre-recharge check', {
+        code: 'CARD_NOT_READY', retryable: true, delayMs: 60_000, refundAttempt: true
+      });
+    }
+
     let attempt;
     try {
       attempt = await rechargeAttemptRepository.beginAuthorizedAttempt({
@@ -254,10 +281,13 @@ export function createWorkflowHandlers({
         taskId: task.id
       });
     } catch (error) {
-      if (['AUTHORIZATION_NOT_FOUND', 'AUTHORIZATION_NOT_ACTIVE', 'AUTHORIZATION_EXPIRED']
+      if (['PROVIDER_WRITE_DISABLED', 'ROUTE_NOT_EXECUTABLE', 'PREPAYMENT_NOT_READY',
+        'CARD_CHECK_STALE', 'CARD_NOT_READY', 'DISPATCH_DISABLED',
+        'DISPATCH_MODE_INVALID', 'MANUAL_AUTHORIZATION_REQUIRED']
         .includes(error?.code)) {
-        throw new TaskExecutionError('Recharge requires an active Foundation authorization', {
-          code: 'RECHARGE_AUTHORIZATION_REQUIRED', retryable: true, delayMs: 60_000, cause: error
+        throw new TaskExecutionError('Recharge is waiting for an executable provider configuration', {
+          code: 'RECHARGE_CONFIGURATION_BLOCKED', retryable: true,
+          delayMs: 60_000, refundAttempt: true, cause: error
         });
       }
       throw error;
@@ -266,19 +296,6 @@ export function createWorkflowHandlers({
       allowed: true,
       providerCall: { id: attempt.providerCallId, startedAt: attempt.startedAt }
     };
-
-    let credentials = context.card.credentials;
-    if (!credentials) {
-      const cardEnvelope = await recordCall({
-        orderId: task.order_id,
-        provider: 'hnskj',
-        operation: 'card_details',
-        attemptNo: task.attempts,
-        action: () => cardProvider.card(context.card.provider_card_id),
-        summarize: () => ({ cardId: context.card.provider_card_id })
-      });
-      credentials = mapCardCredentials(cardEnvelope);
-    }
 
     let submission;
     try {

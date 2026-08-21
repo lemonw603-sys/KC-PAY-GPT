@@ -12,7 +12,8 @@ export function allowedTaskTypesFor(settings, {
   if (settings.dispatchNewRecharges) types.push(TaskType.ASSIGN_CARD);
   if (settings.dispatchNewRecharges && (providerWritesEnabled || providerCardWritesEnabled)) types.push(TaskType.PURCHASE_CARD);
   if (settings.dispatchNewRecharges) types.push(TaskType.PREPARE_RECHARGE);
-  if (settings.dispatchNewRecharges && (providerWritesEnabled || providerRechargeWritesEnabled)) types.push(TaskType.SUBMIT_RECHARGE);
+  if (settings.dispatchNewRecharges && providerReadsEnabled
+    && (providerWritesEnabled || providerRechargeWritesEnabled)) types.push(TaskType.SUBMIT_RECHARGE);
   if (settings.pollExistingOrders && providerReadsEnabled) {
     types.push(TaskType.VERIFY_CARD, TaskType.POLL_RECHARGE, TaskType.RECHECK_CANCELLATION);
   }
@@ -46,7 +47,8 @@ export async function runWorkerIteration({
     workerId,
     handlers,
     leaseSeconds,
-    allowedTaskTypes
+    allowedTaskTypes,
+    rechargeDispatchMode: settings.rechargeDispatchMode
   });
 }
 

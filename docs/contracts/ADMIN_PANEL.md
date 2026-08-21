@@ -7,7 +7,8 @@
 - 第一版提供总览、订单、异常、卡片库存、任务、事件、交易和退款观察数据，以及受控的 CDK、补卡、接单和单订单充值写操作。
 - 后台允许管理员生成 Plus CDK，查看批次状态，下载新版批次，并作废尚未兑换的 CDK。新 CDK 记录只保存 HMAC-SHA-256；历史 SHA-256 记录保持只读兼容。新批次为幂等恢复额外使用独立密钥保存 AES-256-GCM 密文。
 - 人工补卡会产生真实费用；后台必须显示卡段实时规则、预计总扣款和可承担数量，超过 10 张出现额外风险确认。
-- 开始接单同时允许已创建订单完成非付费准备；停止接单不取消已有订单。真实充值必须在订单详情逐单二次确认，每次只签发一个短时一次性 Permit。
+- 开始接单同时允许已创建订单完成非付费准备；停止接单不取消已有订单。正常已付款订单在派发与 Provider 写开关开启、规则通过后自动履约，不依赖逐单 Permit。短时一次性 Permit 仅保留为灰度、紧急或特殊订单工具，不能绕过单订单资金栅栏。
+- `recharge_dispatch_mode=AUTOMATIC` 时派发所有规则通过的正常订单；切为 `MANUAL` 时只派发具有有效 `SINGLE`/`BATCH` 许可的灰度订单。两种模式都受全局派发和 Provider 写开关约束。
 - 普通页面只读本地 MySQL；手动同步只写入受控的 `SYNC_CARD_TRANSACTIONS` 任务，由 worker 调用卡台交易 GET 接口。
 
 卡段由服务端定时同步卡台 `/card-types` 快照，浏览器不接受也不上传 Provider 卡段 ID。普通页面读取本地 MySQL 快照，创建补卡任务时服务端再校验快照时效。
@@ -64,7 +65,7 @@ pbpaste | npm --prefix v1 run admin:configure-local
 - `POST /api/v1/admin/card-stock/threshold`
 - `POST /api/v1/admin/card-stock/jobs`（产生真实开卡费用）
 - `POST /api/v1/admin/operations/order-acceptance`（仅接受精确确认词“开始接单”或“停止接单”）
-- `POST /api/v1/admin/orders/:publicNo/recharge-permit`（`arm` 或 `revoke`；真实充值只允许一个未尝试订单）
+- `POST /api/v1/admin/orders/:publicNo/recharge-permit`（`arm` 或 `revoke`；仅用于灰度/特殊放行，不能为已有资金尝试的订单重新付款）
 
 全部响应设置 `Cache-Control: no-store`，未登录统一返回 `401 admin_auth_required`。
 手动同步若已有运行中任务则不重复入队；成功入队返回 `202`。

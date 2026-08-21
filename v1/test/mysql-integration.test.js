@@ -57,6 +57,32 @@ const legacyCardProviderAccountId = '00000000-0000-4000-8000-000000000101';
 const legacyProductId = '00000000-0000-4000-8000-000000000201';
 const legacyRouteId = '00000000-0000-4000-8000-000000000301';
 
+async function setDispatchSettings(pool, { enabled, mode }) {
+  const [rows] = await pool.query(
+    `SELECT setting_key, setting_value FROM app_settings
+     WHERE setting_key IN ('dispatch_new_recharges', 'recharge_dispatch_mode')`
+  );
+  const previous = Object.fromEntries(rows.map((row) => [row.setting_key, row.setting_value]));
+  await pool.query(
+    `UPDATE app_settings SET setting_value = CASE setting_key
+       WHEN 'dispatch_new_recharges' THEN ?
+       WHEN 'recharge_dispatch_mode' THEN ?
+       ELSE setting_value END
+     WHERE setting_key IN ('dispatch_new_recharges', 'recharge_dispatch_mode')`,
+    [String(enabled), mode]
+  );
+  return async () => {
+    await pool.query(
+      `UPDATE app_settings SET setting_value = CASE setting_key
+         WHEN 'dispatch_new_recharges' THEN ?
+         WHEN 'recharge_dispatch_mode' THEN ?
+         ELSE setting_value END
+       WHERE setting_key IN ('dispatch_new_recharges', 'recharge_dispatch_mode')`,
+      [previous.dispatch_new_recharges, previous.recharge_dispatch_mode]
+    );
+  };
+}
+
 function id() {
   return crypto.randomUUID();
 }
@@ -260,10 +286,21 @@ test('assigned cards are periodically queued for transaction and refund observat
     assert.deepEqual(await scheduleDueCardSyncJobs(pool, { now }), {
       enabled: true, queued: 0
     });
+    const claimed = await claimCardSyncJob(pool, {
+      workerId: 'scheduled-card-sync-idempotency-test'
+    });
+    assert.equal(claimed.card_id, cardId);
+    await completeCardSyncJob(pool, {
+      jobId: claimed.id,
+      workerId: 'scheduled-card-sync-idempotency-test'
+    });
+    assert.deepEqual(await scheduleDueCardSyncJobs(pool, { now }), {
+      enabled: true, queued: 0
+    });
     const [[job]] = await pool.query(
       'SELECT status, requested_by FROM card_sync_jobs WHERE card_id = ?', [cardId]
     );
-    assert.deepEqual(job, { status: 'PENDING', requested_by: 'scheduler' });
+    assert.deepEqual(job, { status: 'COMPLETED', requested_by: 'scheduler' });
   } finally {
     await removeOrder(pool, fixture);
     await pool.end();
@@ -1285,6 +1322,7 @@ test('worker runs a full fake-provider workflow while enforcing runtime gates', 
     assert.deepEqual(providerActions, [
       'purchase',
       'card-details',
+      'card-details',
       'create-recharge',
       'poll-recharge',
       'recheck-cancellation'
@@ -1329,19 +1367,26 @@ test('Foundation v2 freezes authorization and persists the funds fence before su
   const publicNo = `PJV1-V2-${crypto.randomUUID()}`;
   const fixture = await createOrder(pool, { publicNo, status: OrderStatus.CARD_READY });
   const cardId = id();
+  let restoreDispatch = async () => {};
   try {
+    restoreDispatch = await setDispatchSettings(pool, { enabled: true, mode: 'MANUAL' });
     await pool.query(
       `INSERT INTO cards
        (id, provider_account_id, order_id, inventory_status, intake_status,
         provider_card_id, external_card_id, card_type_id, status,
         funded_amount, current_balance, currency, refund_status,
-        card_credentials_ciphertext, sync_tier)
+        card_credentials_ciphertext, sync_tier, last_synced_at)
        VALUES (?, ?, ?, 'ASSIGNED', 'ACCEPTED', ?, ?, '7', 'active',
-         25, 25, 'USD', 'MONITORING', ?, 'ASSIGNED')`,
+         25, 25, 'USD', 'MONITORING', ?, 'ASSIGNED', CURRENT_TIMESTAMP(3))`,
       [cardId, legacyCardProviderAccountId, fixture.orderId, `v2-card-${cardId}`,
         `v2-card-${cardId}`, encryptSecret(JSON.stringify({
           cardNumber: '4242424242424242', expMonth: 12, expYear: 2032, cvv: '123'
         }), integrationSessionKey)]
+    );
+    await pool.query(
+      `INSERT INTO tasks (order_id, task_type, status, dedupe_key, max_attempts, completed_at)
+       VALUES (?, 'PREPARE_RECHARGE', 'COMPLETED', ?, 5, CURRENT_TIMESTAMP(3))`,
+      [fixture.orderId, `prepare-v2:${fixture.orderId}`]
     );
     const [taskInsert] = await pool.query(
       `INSERT INTO tasks (order_id, task_type, status, dedupe_key, max_attempts)
@@ -1424,9 +1469,107 @@ test('Foundation v2 freezes authorization and persists the funds fence before su
     assert.equal(finalized.subscription_cancelled, 1);
     assert.notEqual(finalized.finished_at, null);
   } finally {
+    await restoreDispatch();
     await pool.query(
       `UPDATE provider_accounts SET write_enabled = 0
        WHERE id = '00000000-0000-4000-8000-000000000102'`
+    );
+    await removeOrder(pool, fixture);
+    await pool.end();
+  }
+});
+
+test('automatic fulfillment creates one funds attempt and one provider create intent under concurrency', {
+  skip: !databaseUrl && 'TEST_DATABASE_URL 未配置；完整 MySQL 套件在服务器隔离数据库运行'
+}, async () => {
+  const pool = mysql.createPool({ uri: databaseUrl, connectionLimit: 6, timezone: 'Z' });
+  const fixture = await createOrder(pool, { status: OrderStatus.CARD_READY });
+  let originalWriteEnabled = 0;
+  let restoreDispatch = async () => {};
+  try {
+    restoreDispatch = await setDispatchSettings(pool, { enabled: true, mode: 'AUTOMATIC' });
+    const [[providerAccount]] = await pool.query(
+      `SELECT write_enabled FROM provider_accounts
+       WHERE id = '00000000-0000-4000-8000-000000000102'`
+    );
+    originalWriteEnabled = Number(providerAccount.write_enabled);
+    await pool.query(
+      `UPDATE provider_accounts SET write_enabled = 1
+       WHERE id = '00000000-0000-4000-8000-000000000102'`
+    );
+    const cardId = id();
+    await pool.query(
+      `INSERT INTO cards
+       (id, provider_account_id, order_id, inventory_status, intake_status,
+        provider_card_id, external_card_id, card_type_id, status,
+        funded_amount, current_balance, currency, refund_status,
+        card_credentials_ciphertext, sync_tier, last_synced_at)
+       VALUES (?, ?, ?, 'ASSIGNED', 'ACCEPTED', ?, ?, '7', 'active',
+         25, 25, 'USD', 'MONITORING', ?, 'ASSIGNED', CURRENT_TIMESTAMP(3))`,
+      [cardId, legacyCardProviderAccountId, fixture.orderId, `auto-card-${cardId}`,
+        `auto-card-${cardId}`, encryptSecret(JSON.stringify({
+          cardNumber: '4242424242424242', expMonth: 12, expYear: 2032, cvv: '123'
+        }), integrationSessionKey)]
+    );
+    await pool.query(
+      `INSERT INTO tasks (order_id, task_type, status, dedupe_key, max_attempts, completed_at)
+       VALUES (?, 'PREPARE_RECHARGE', 'COMPLETED', ?, 5, CURRENT_TIMESTAMP(3))`,
+      [fixture.orderId, `automatic-prepare:${fixture.orderId}`]
+    );
+    const [firstTask] = await pool.query(
+      `INSERT INTO tasks (order_id, task_type, status, dedupe_key, max_attempts)
+       VALUES (?, 'SUBMIT_RECHARGE', 'RUNNING', ?, 5)`,
+      [fixture.orderId, `automatic-submit-a:${fixture.orderId}`]
+    );
+    const [secondTask] = await pool.query(
+      `INSERT INTO tasks (order_id, task_type, status, dedupe_key, max_attempts)
+       VALUES (?, 'SUBMIT_RECHARGE', 'RUNNING', ?, 5)`,
+      [fixture.orderId, `automatic-submit-b:${fixture.orderId}`]
+    );
+    const repository = createRechargeAttemptRepository(pool);
+    const results = await Promise.allSettled([
+      repository.beginAuthorizedAttempt({ orderId: fixture.orderId, taskId: firstTask.insertId }),
+      repository.beginAuthorizedAttempt({ orderId: fixture.orderId, taskId: secondTask.insertId })
+    ]);
+    const successes = results.filter((result) => result.status === 'fulfilled');
+    assert.equal(successes.length, 1);
+    assert.equal(successes[0].value.authorizationMode, 'AUTOMATIC');
+
+    const [[ledger]] = await pool.query(
+      `SELECT COUNT(DISTINCT rat.id) AS attempts,
+              COUNT(DISTINCT pc.id) AS create_calls,
+              MAX(ra.authorization_mode) AS authorization_mode
+       FROM recharge_attempts rat
+       INNER JOIN recharge_authorization_items rai ON rai.id = rat.authorization_item_id
+       INNER JOIN recharge_authorizations ra ON ra.id = rai.authorization_id
+       INNER JOIN provider_calls pc ON pc.recharge_attempt_id = rat.id
+         AND pc.operation = 'create_direct'
+       WHERE rat.order_id = ?`,
+      [fixture.orderId]
+    );
+    assert.deepEqual(ledger, {
+      attempts: 1,
+      create_calls: 1,
+      authorization_mode: 'AUTOMATIC'
+    });
+
+    await assert.rejects(
+      pool.query(
+        `INSERT INTO provider_calls
+         (order_id, recharge_attempt_id, provider, provider_account_id, operation,
+          request_key, attempt_no, outcome, started_at)
+         VALUES (?, ?, 'zzshu', '00000000-0000-4000-8000-000000000102',
+           'create_direct', ?, 2, 'STARTED', CURRENT_TIMESTAMP(3))`,
+        [fixture.orderId, successes[0].value.id, `duplicate-create:${fixture.orderId}`]
+      ),
+      (error) => error.code === 'ER_DUP_ENTRY'
+    );
+  } finally {
+    await restoreDispatch();
+    await pool.query(
+      `UPDATE provider_accounts SET write_enabled = ?
+       WHERE id = '00000000-0000-4000-8000-000000000102'`,
+      [originalWriteEnabled]
     );
     await removeOrder(pool, fixture);
     await pool.end();
@@ -1443,7 +1586,9 @@ test('a cleared attempt can be reauthorized after Session replacement with a dis
   replacement.user.email = 'retry@example.com';
   replacement.account.id = 'retry-account';
   let originalWriteEnabled = 0;
+  let restoreDispatch = async () => {};
   try {
+    restoreDispatch = await setDispatchSettings(pool, { enabled: true, mode: 'MANUAL' });
     const [[providerAccount]] = await pool.query(
       `SELECT write_enabled FROM provider_accounts
        WHERE id = '00000000-0000-4000-8000-000000000102'`
@@ -1452,6 +1597,25 @@ test('a cleared attempt can be reauthorized after Session replacement with a dis
     await pool.query(
       `UPDATE provider_accounts SET write_enabled = 1
        WHERE id = '00000000-0000-4000-8000-000000000102'`
+    );
+    const cardId = id();
+    await pool.query(
+      `INSERT INTO cards
+       (id, provider_account_id, order_id, inventory_status, intake_status,
+        provider_card_id, external_card_id, card_type_id, status,
+        funded_amount, current_balance, currency, refund_status,
+        card_credentials_ciphertext, sync_tier, last_synced_at)
+       VALUES (?, ?, ?, 'ASSIGNED', 'ACCEPTED', ?, ?, '7', 'active',
+         25, 25, 'USD', 'MONITORING', ?, 'ASSIGNED', CURRENT_TIMESTAMP(3))`,
+      [cardId, legacyCardProviderAccountId, fixture.orderId, `retry-card-${cardId}`,
+        `retry-card-${cardId}`, encryptSecret(JSON.stringify({
+          cardNumber: '4242424242424242', expMonth: 12, expYear: 2032, cvv: '123'
+        }), integrationSessionKey)]
+    );
+    await pool.query(
+      `INSERT INTO tasks (order_id, task_type, status, dedupe_key, max_attempts, completed_at)
+       VALUES (?, 'PREPARE_RECHARGE', 'COMPLETED', ?, 5, CURRENT_TIMESTAMP(3))`,
+      [fixture.orderId, `prepare-retry:${fixture.orderId}`]
     );
     const [taskInsert] = await pool.query(
       `INSERT INTO tasks (order_id, task_type, status, dedupe_key, max_attempts)
@@ -1480,6 +1644,11 @@ test('a cleared attempt can be reauthorized after Session replacement with a dis
     const secondAuthorization = await createRechargeAuthorization(pool, {
       publicNos: [publicNo], authorizedBy: 'mysql-retry-test'
     });
+    await pool.query(
+      `UPDATE tasks SET status = 'COMPLETED', completed_at = CURRENT_TIMESTAMP(3)
+       WHERE order_id = ? AND task_type = 'PREPARE_RECHARGE'`,
+      [fixture.orderId]
+    );
     await pool.query(`UPDATE tasks SET status = 'RUNNING' WHERE id = ?`, [taskInsert.insertId]);
     const second = await repository.beginAuthorizedAttempt({
       orderId: fixture.orderId, taskId: taskInsert.insertId
@@ -1499,6 +1668,7 @@ test('a cleared attempt can be reauthorized after Session replacement with a dis
     ]);
     assert.equal(new Set(attempts.map((row) => row.idempotency_key)).size, 2);
   } finally {
+    await restoreDispatch();
     await pool.query(
       `UPDATE provider_accounts SET write_enabled = ?
        WHERE id = '00000000-0000-4000-8000-000000000102'`,
@@ -1558,7 +1728,8 @@ test('a legacy task permit alone cannot enter the funds path', {
         JSON.stringify({ rechargePermit: { status: 'ARMED', expiresAt } })]
     );
     const task = await claimNextTask(pool, {
-      workerId: 'atomic-intent-worker', allowedTaskTypes: ['SUBMIT_RECHARGE']
+      workerId: 'atomic-intent-worker', allowedTaskTypes: ['SUBMIT_RECHARGE'],
+      rechargeDispatchMode: 'AUTOMATIC'
     });
     assert.equal(task, null);
     const [[state]] = await pool.query(
@@ -1629,8 +1800,12 @@ test('only one worker claims a task and an expired lease is recoverable', {
     );
 
     const claims = await Promise.all([
-      claimNextTask(pool, { workerId: 'worker-a', leaseSeconds: 60 }),
-      claimNextTask(pool, { workerId: 'worker-b', leaseSeconds: 60 })
+      claimNextTask(pool, {
+        workerId: 'worker-a', leaseSeconds: 60, rechargeDispatchMode: 'AUTOMATIC'
+      }),
+      claimNextTask(pool, {
+        workerId: 'worker-b', leaseSeconds: 60, rechargeDispatchMode: 'AUTOMATIC'
+      })
     ]);
     assert.equal(claims.filter(Boolean).length, 1);
 
@@ -1644,7 +1819,8 @@ test('only one worker claims a task and an expired lease is recoverable', {
 
     const recovered = await claimNextTask(pool, {
       workerId: 'recovery-worker',
-      leaseSeconds: 90
+      leaseSeconds: 90,
+      rechargeDispatchMode: 'AUTOMATIC'
     });
     assert.equal(recovered.id, insert.insertId);
     assert.equal(recovered.attempts, 2);

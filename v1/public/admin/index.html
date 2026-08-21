@@ -7,8 +7,8 @@
   <meta name="theme-color" content="#f5f8fc">
   <title>Plus 运营后台</title>
   <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/admin/assets/admin.css?v=15">
-  <script src="/admin/assets/admin.js?v=15" defer></script>
+  <link rel="stylesheet" href="/admin/assets/admin.css?v=16">
+  <script src="/admin/assets/admin.js?v=16" defer></script>
 </head>
 <body>
   <div class="admin-shell">
@@ -70,7 +70,7 @@
         <section class="card orders-card">
           <div class="batch-toolbar">
             <span id="selected-order-count">已选 0 单</span>
-            <button class="danger-small" id="batch-authorize-recharge" type="button" disabled>批量确认充值</button>
+            <button class="danger-small" id="batch-authorize-recharge" type="button" disabled>灰度批量许可</button>
             <button class="text-button" id="export-orders" type="button">导出订单 CSV</button>
           </div>
           <form class="filters" id="order-filters">
@@ -79,7 +79,7 @@
               <option value="">全部状态</option>
               <option value="TODAY">今日订单</option>
               <option value="PROCESSING">自动处理中</option>
-              <option value="AWAITING_CONFIRMATION">待确认充值</option>
+              <option value="AWAITING_CONFIRMATION">待执行充值</option>
               <option value="REVIEW_REQUIRED">需要关注</option>
               <option value="RECONCILIATION_ISSUES">三方对账异常</option>
             </select></label>

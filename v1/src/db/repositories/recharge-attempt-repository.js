@@ -103,17 +103,45 @@ export function createRechargeAttemptRepository(pool) {
 
         const [orders] = await connection.query(
           `SELECT o.id, o.status, o.version, o.fulfillment_route_id,
+                  o.minimum_required_card_balance,
                   fr.executor_kind, fr.recharge_provider_account_id,
-                  pa.provider_code, pa.write_enabled
+                  pa.provider_code, pa.write_enabled,
+                  c.status AS card_status, c.current_balance AS card_balance,
+                  c.card_credentials_ciphertext,
+                  c.last_synced_at AS card_last_synced_at,
+                  EXISTS (
+                    SELECT 1 FROM tasks prepared
+                    WHERE prepared.order_id = o.id
+                      AND prepared.task_type = 'PREPARE_RECHARGE'
+                      AND prepared.status = 'COMPLETED'
+                  ) AS prepayment_ready
            FROM orders o
            LEFT JOIN fulfillment_routes fr ON fr.id = o.fulfillment_route_id
            LEFT JOIN provider_accounts pa ON pa.id = fr.recharge_provider_account_id
+           LEFT JOIN cards c ON c.order_id = o.id
            WHERE o.id = ?
            FOR UPDATE`,
           [order]
         );
         if (orders.length !== 1) throw new RechargeAttemptError('order not found', 'ORDER_NOT_FOUND');
         const orderRow = orders[0];
+        const [runtimeSettings] = await connection.query(
+          `SELECT setting_key, setting_value
+           FROM app_settings
+           WHERE setting_key IN ('dispatch_new_recharges', 'recharge_dispatch_mode')
+           ORDER BY setting_key
+           FOR UPDATE`
+        );
+        const settings = Object.fromEntries(
+          runtimeSettings.map((row) => [row.setting_key, row.setting_value])
+        );
+        if (settings.dispatch_new_recharges !== 'true') {
+          throw new RechargeAttemptError('recharge dispatch is disabled', 'DISPATCH_DISABLED');
+        }
+        const dispatchMode = String(settings.recharge_dispatch_mode || '').trim().toUpperCase();
+        if (!['AUTOMATIC', 'MANUAL'].includes(dispatchMode)) {
+          throw new RechargeAttemptError('recharge dispatch mode is invalid', 'DISPATCH_MODE_INVALID');
+        }
         if (orderRow.status !== 'CARD_READY') {
           throw new RechargeAttemptError('order is not ready for recharge', 'ORDER_NOT_READY');
         }
@@ -123,33 +151,20 @@ export function createRechargeAttemptRepository(pool) {
         if (!Number(orderRow.write_enabled)) {
           throw new RechargeAttemptError('recharge provider account is write-disabled', 'PROVIDER_WRITE_DISABLED');
         }
-
-        const [authorizationItems] = await connection.query(
-          `SELECT rai.id, rai.order_id, rai.status AS item_status,
-                  ra.id AS authorization_id, ra.status AS authorization_status, ra.expires_at
-           FROM recharge_authorization_items rai
-           INNER JOIN recharge_authorizations ra ON ra.id = rai.authorization_id
-           WHERE ${requestedItem ? 'rai.id = ? AND ' : ''}rai.order_id = ?
-             ${requestedItem ? '' : "AND rai.status = 'PENDING' AND ra.status = 'ACTIVE'"}
-           ORDER BY rai.created_at DESC
-           LIMIT 1 FOR UPDATE`,
-          requestedItem ? [requestedItem, order] : [order]
-        );
-        if (authorizationItems.length !== 1) {
-          throw new RechargeAttemptError('authorization item not found', 'AUTHORIZATION_NOT_FOUND');
+        if (!Number(orderRow.prepayment_ready)) {
+          throw new RechargeAttemptError('recharge preparation is not complete', 'PREPAYMENT_NOT_READY');
         }
-        const authorization = authorizationItems[0];
-        const item = authorization.id;
-        // A cleared attempt remains in the immutable funds ledger.  The key
-        // therefore belongs to the single-use authorization item, not to the
-        // order: retrying the same item stays idempotent, while a newly
-        // authorized attempt after Session replacement receives a fresh key.
-        const idempotencyKey = `recharge-auth-item:${item}`.slice(0, 191);
-        if (authorization.item_status !== 'PENDING' || authorization.authorization_status !== 'ACTIVE') {
-          throw new RechargeAttemptError('authorization is not active', 'AUTHORIZATION_NOT_ACTIVE');
+        const cardSyncedAt = orderRow.card_last_synced_at
+          ? new Date(orderRow.card_last_synced_at).getTime() : NaN;
+        if (!Number.isFinite(cardSyncedAt) || now.getTime() - cardSyncedAt > 15 * 60_000) {
+          throw new RechargeAttemptError('card verification is stale', 'CARD_CHECK_STALE');
         }
-        if (new Date(authorization.expires_at).getTime() <= now.getTime()) {
-          throw new RechargeAttemptError('authorization has expired', 'AUTHORIZATION_EXPIRED');
+        const cardActive = ['active', 'available', 'usable', 'ready']
+          .includes(String(orderRow.card_status || '').toLowerCase());
+        if (!cardActive
+          || Number(orderRow.card_balance) < Number(orderRow.minimum_required_card_balance)
+          || !orderRow.card_credentials_ciphertext) {
+          throw new RechargeAttemptError('card is not ready for recharge', 'CARD_NOT_READY');
         }
 
         const [existingAttempts] = await connection.query(
@@ -175,6 +190,90 @@ export function createRechargeAttemptRepository(pool) {
           throw new RechargeAttemptError('legacy provider create call already exists', 'LEGACY_CREATE_ALREADY_ATTEMPTED');
         }
 
+        let [authorizationItems] = await connection.query(
+          `SELECT rai.id, rai.order_id, rai.status AS item_status,
+                  ra.id AS authorization_id, ra.authorization_mode,
+                  ra.status AS authorization_status, ra.expires_at
+           FROM recharge_authorization_items rai
+           INNER JOIN recharge_authorizations ra ON ra.id = rai.authorization_id
+           WHERE ${requestedItem ? 'rai.id = ? AND ' : ''}rai.order_id = ?
+             ${requestedItem ? '' : "AND rai.status = 'PENDING' AND ra.status = 'ACTIVE' AND ra.expires_at > ?"}
+             ${dispatchMode === 'MANUAL' ? "AND ra.authorization_mode IN ('SINGLE', 'BATCH')" : ''}
+           ORDER BY rai.created_at DESC
+           LIMIT 1 FOR UPDATE`,
+          requestedItem ? [requestedItem, order] : [order, now]
+        );
+
+        if (!requestedItem && authorizationItems.length === 0 && dispatchMode === 'MANUAL') {
+          throw new RechargeAttemptError(
+            'manual dispatch mode requires an explicit authorization',
+            'MANUAL_AUTHORIZATION_REQUIRED'
+          );
+        }
+
+        if (!requestedItem && authorizationItems.length === 0) {
+          // Expired/revoked manual items must not keep the generated protected
+          // order key occupied.  This cleanup and the automatic authorization
+          // are committed in the same transaction as the funds fence.
+          await connection.query(
+            `UPDATE recharge_authorization_items rai
+             INNER JOIN recharge_authorizations ra ON ra.id = rai.authorization_id
+             SET rai.status = 'EXPIRED'
+             WHERE rai.order_id = ? AND rai.status = 'PENDING'
+               AND (ra.status <> 'ACTIVE' OR ra.expires_at <= ?)`,
+            [order, now]
+          );
+          const automaticAuthorizationId = randomUUID();
+          const automaticItemId = randomUUID();
+          const expiresAt = new Date(now.getTime() + (15 * 60 * 1_000));
+          await connection.query(
+            `INSERT INTO recharge_authorizations
+             (id, authorization_mode, status, authorized_by, reason, max_orders, expires_at, created_at)
+             VALUES (?, 'AUTOMATIC', 'ACTIVE', 'system:worker',
+               'Automatic fulfillment after order and funds-fence checks', 1, ?, ?)`,
+            [automaticAuthorizationId, expiresAt, now]
+          );
+          await connection.query(
+            `INSERT INTO recharge_authorization_items
+             (id, authorization_id, order_id, status, created_at)
+             VALUES (?, ?, ?, 'PENDING', ?)`,
+            [automaticItemId, automaticAuthorizationId, order, now]
+          );
+          authorizationItems = [{
+            id: automaticItemId,
+            order_id: order,
+            item_status: 'PENDING',
+            authorization_id: automaticAuthorizationId,
+            authorization_mode: 'AUTOMATIC',
+            authorization_status: 'ACTIVE',
+            expires_at: expiresAt
+          }];
+        }
+
+        if (authorizationItems.length !== 1) {
+          throw new RechargeAttemptError('authorization item not found', 'AUTHORIZATION_NOT_FOUND');
+        }
+        const authorization = authorizationItems[0];
+        if (dispatchMode === 'MANUAL'
+          && !['SINGLE', 'BATCH'].includes(authorization.authorization_mode)) {
+          throw new RechargeAttemptError(
+            'manual dispatch mode requires a single or batch authorization',
+            'MANUAL_AUTHORIZATION_REQUIRED'
+          );
+        }
+        const item = authorization.id;
+        // A cleared attempt remains in the immutable funds ledger.  The key
+        // therefore belongs to the single-use authorization item, not to the
+        // order: retrying the same item stays idempotent, while a newly
+        // authorized attempt after Session replacement receives a fresh key.
+        const idempotencyKey = `recharge-auth-item:${item}`.slice(0, 191);
+        if (authorization.item_status !== 'PENDING' || authorization.authorization_status !== 'ACTIVE') {
+          throw new RechargeAttemptError('authorization is not active', 'AUTHORIZATION_NOT_ACTIVE');
+        }
+        if (new Date(authorization.expires_at).getTime() <= now.getTime()) {
+          throw new RechargeAttemptError('authorization has expired', 'AUTHORIZATION_EXPIRED');
+        }
+
         await connection.query(
           `INSERT INTO recharge_attempts
            (id, order_id, fulfillment_route_id, provider_account_id, authorization_item_id,
@@ -194,6 +293,17 @@ export function createRechargeAttemptRepository(pool) {
         if (itemUpdate.affectedRows !== 1) {
           throw new RechargeAttemptError('authorization changed concurrently', 'AUTHORIZATION_CONFLICT');
         }
+        if (authorization.authorization_mode === 'AUTOMATIC') {
+          const [authorizationUpdate] = await connection.query(
+            `UPDATE recharge_authorizations
+             SET status = 'CONSUMED'
+             WHERE id = ? AND authorization_mode = 'AUTOMATIC' AND status = 'ACTIVE'`,
+            [authorization.authorization_id]
+          );
+          if (authorizationUpdate.affectedRows !== 1) {
+            throw new RechargeAttemptError('automatic authorization changed concurrently', 'AUTHORIZATION_CONFLICT');
+          }
+        }
 
         await updateOrder(connection, {
           ...orderRow,
@@ -205,9 +315,14 @@ export function createRechargeAttemptRepository(pool) {
           orderId: order,
           fromStatus: 'CARD_READY',
           toStatus: 'SUBMITTING',
-          reason: 'Foundation v2 authorization consumed; recharge submit intent persisted',
+          reason: 'Recharge authorization consumed; recharge submit intent persisted',
           now,
-          metadata: { attemptId: attempt, executorKind: orderRow.executor_kind }
+          metadata: {
+            attemptId: attempt,
+            executorKind: orderRow.executor_kind,
+            authorizationMode: authorization.authorization_mode,
+            dispatchMode
+          }
         });
 
         const [providerCall] = await connection.query(
@@ -223,6 +338,8 @@ export function createRechargeAttemptRepository(pool) {
           id: attempt,
           orderId: order,
           authorizationItemId: item,
+          authorizationMode: authorization.authorization_mode,
+          dispatchMode,
           providerAccountId: orderRow.recharge_provider_account_id,
           executorKind: orderRow.executor_kind,
           status: 'PREPARED',

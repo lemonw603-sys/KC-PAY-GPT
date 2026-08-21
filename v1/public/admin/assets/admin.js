@@ -19,6 +19,7 @@ const STATUS_META = Object.freeze({
 const SETTING_META = Object.freeze({
   accept_new_orders: '接收新订单',
   dispatch_new_recharges: '派发新充值',
+  recharge_dispatch_mode: '充值派发模式',
   poll_existing_orders: '追踪已有订单',
   sync_card_transactions: '同步卡片交易（只读）'
 });
@@ -147,11 +148,11 @@ function formatMoney(value) {
 
 function waitingText(value) {
   const timestamp = Date.parse(value || '');
-  if (!Number.isFinite(timestamp)) return '等待你确认充值';
+  if (!Number.isFinite(timestamp)) return '等待系统自动执行';
   const minutes = Math.max(0, Math.floor((Date.now() - timestamp) / 60_000));
-  if (minutes < 1) return '刚刚就绪，等待你确认充值';
-  if (minutes < 60) return `已等待 ${minutes} 分钟，请确认充值`;
-  return `已等待 ${Math.floor(minutes / 60)} 小时，请立即处理`;
+  if (minutes < 1) return '刚刚就绪，等待系统自动执行';
+  if (minutes < 60) return `已等待系统执行 ${minutes} 分钟`;
+  return `已等待系统执行 ${Math.floor(minutes / 60)} 小时，请检查派发与 Provider 开关`;
 }
 
 function statusChip(status) {
@@ -227,7 +228,7 @@ function orderRow(order, { selectable = false } = {}) {
     : order.card?.last4 ? escapeHtml(order.card.last4) : '—';
   const canAuthorize = order.status === 'CARD_READY' && order.requiresRechargeConfirmation;
   return `<tr data-order="${escapeHtml(order.publicNo)}" tabindex="0">
-    ${selectable ? `<td><input type="checkbox" data-select-order value="${escapeHtml(order.publicNo)}" aria-label="选择订单 ${escapeHtml(order.publicNo)}" ${state.selectedOrders.has(order.publicNo) ? 'checked' : ''} ${canAuthorize ? '' : 'disabled title="仅待确认充值订单可选择"'}></td>` : ''}
+    ${selectable ? `<td><input type="checkbox" data-select-order value="${escapeHtml(order.publicNo)}" aria-label="选择订单 ${escapeHtml(order.publicNo)}" ${state.selectedOrders.has(order.publicNo) ? 'checked' : ''} ${canAuthorize ? '' : 'disabled title="仅付款前已就绪订单可加入灰度许可"'}></td>` : ''}
     <td><strong class="order-link">${escapeHtml(order.publicNo)}</strong></td>
     <td><span class="cell-main">${escapeHtml(account)}</span>${order.rechargeOrderNo ? `<small>${escapeHtml(order.rechargeOrderNo)}</small>` : ''}</td>
     <td>${statusChip(order.status)}${order.requiresRechargeConfirmation ? `<small class="attention-note">${escapeHtml(waitingText(order.confirmationReadyAt))}</small>` : order.cancellationReviewRequired ? '<small class="attention-note">续费需处理</small>' : ''}<small class="${order.reconciliation?.issue ? 'attention-note' : ''}">${escapeHtml(ORDER_RECONCILIATION_LABELS[order.reconciliation?.status] || order.reconciliation?.status || '—')}</small></td>
@@ -246,7 +247,7 @@ async function loadOverview() {
   const metrics = [
     { label: '今日订单', value: overview.metrics.todayOrders, note: '点击查看今天新订单', filter: 'TODAY' },
     { label: '自动处理中', value: overview.metrics.processingOrders, note: '系统正在自动流转', filter: 'PROCESSING' },
-    { label: '待确认充值', value: overview.metrics.awaitingConfirmationOrders, note: '需要你逐单确认', filter: 'AWAITING_CONFIRMATION' },
+    { label: '待执行充值', value: overview.metrics.awaitingConfirmationOrders, note: '正常模式由系统自动执行', filter: 'AWAITING_CONFIRMATION' },
     { label: '需要关注', value: overview.metrics.reviewingOrders, note: '失败、未知或对账订单', filter: 'REVIEW_REQUIRED' },
     { label: '三方对账异常', value: overview.metrics.reconciliationIssues, note: '订单、充值平台、卡片证据冲突', filter: 'RECONCILIATION_ISSUES' },
     { label: '资金结果未决', value: overview.operationalBacklog?.fundsRiskPending ?? 0,
@@ -278,10 +279,12 @@ async function loadOverview() {
   elements.settingList.innerHTML = overview.settings.map((setting) => {
     const enabled = setting.value === 'true';
     if (setting.key === 'accept_new_orders') state.acceptingOrders = enabled;
-    const control = setting.key === 'accept_new_orders'
+    const control = setting.key === 'recharge_dispatch_mode'
+      ? `<em class="switch-state ${setting.value === 'AUTOMATIC' ? 'is-on' : ''}">${setting.value === 'AUTOMATIC' ? '正常自动' : '仅灰度许可'}</em>`
+      : setting.key === 'accept_new_orders'
       ? `<button class="${enabled ? 'danger-small' : 'primary-small'}" type="button" id="toggle-order-acceptance" data-enabled="${enabled}">${enabled ? '停止接单' : '开始接单'}</button>`
       : `<em class="switch-state ${enabled ? 'is-on' : ''}">${enabled ? '开启' : '关闭'}</em>`;
-    return `<div><span><strong>${escapeHtml(SETTING_META[setting.key] || setting.key)}</strong><small>${setting.key === 'accept_new_orders' ? (enabled ? '新订单可以提交；已有订单仍需逐单确认充值' : '已停止新订单；已有订单仍可继续处理') : `${formatTime(setting.updatedAt)} 更新`}</small></span>${control}</div>`;
+    return `<div><span><strong>${escapeHtml(SETTING_META[setting.key] || setting.key)}</strong><small>${setting.key === 'accept_new_orders' ? (enabled ? '新订单可以提交；规则通过后自动履约' : '已停止新订单；已有订单仍可继续处理和轮询') : `${formatTime(setting.updatedAt)} 更新`}</small></span>${control}</div>`;
   }).join('');
   const alerts = alertData.alerts || [];
   elements.alertsCard.hidden = alerts.length === 0;
@@ -375,7 +378,7 @@ async function downloadOperationsCsv(dataset) {
 async function authorizeSelectedOrders() {
   const publicNos = [...state.selectedOrders];
   if (!publicNos.length) return;
-  if (!window.confirm(`确认给以下 ${publicNos.length} 个订单创建一次性充值许可？\n\n${publicNos.join('\n')}\n\n许可 10 分钟内有效；每单只允许一个资金风险活动尝试。`)) return;
+  if (!window.confirm(`确认为以下 ${publicNos.length} 个特殊/灰度订单创建一次性充值许可？\n\n${publicNos.join('\n')}\n\n正常订单不需要此操作。许可 10 分钟内有效；每单只允许一个资金风险活动尝试。`)) return;
   elements.batchAuthorizeRecharge.disabled = true;
   try {
     const result = await sensitiveApi('/api/v1/admin/recharge-authorizations', {
@@ -383,11 +386,11 @@ async function authorizeSelectedOrders() {
       body: JSON.stringify({ publicNos, ttlMinutes: 10, confirmation: `确认充值${publicNos.length}单` })
     });
     state.selectedOrders.clear();
-    showNotice(`已创建批量充值许可，共 ${result.itemCount ?? publicNos.length} 单。`, 'success');
+    showNotice(`已创建灰度充值许可，共 ${result.itemCount ?? publicNos.length} 单。`, 'success');
     await loadOrders();
   } catch (error) {
     const messages = {
-      order_not_eligible: '所选订单中有不可充值订单，请刷新并只选择待确认充值订单。',
+      order_not_eligible: '所选订单中有不可充值订单，请刷新并只选择付款前已就绪订单。',
       authorization_exists: '部分订单已有有效充值许可，请刷新后核对。',
       funds_fence_exists: '部分订单已有资金风险尝试，禁止重复授权。',
       recharge_confirmation_required: '批量确认信息不匹配，没有创建许可。'
@@ -861,7 +864,7 @@ async function setOrderAcceptance(button) {
   const enabled = !currentlyEnabled;
   const confirmation = enabled ? '开始接单' : '停止接单';
   const message = enabled
-    ? '确认开始接收新订单？\n\n新订单会自动分配库存卡并完成付款前准备，真实充值仍需在订单详情中逐单确认。'
+    ? '确认开始接收新订单？\n\n新订单会自动分配库存卡；派发和 Provider 写开关同时开启时，规则通过后会自动发起真实充值。'
     : '确认停止接收新订单？\n\n已创建的订单不会被取消，仍可继续处理。';
   if (!window.confirm(message)) return;
   button.disabled = true;
@@ -930,12 +933,12 @@ async function openOrder(publicNo) {
       && paymentGate.cardCheckFresh
       && permitStatus !== 'ARMED';
     const permitButton = permitStatus === 'ARMED'
-      ? '<button type="button" class="danger-small" id="revoke-recharge-permit">撤销充值放行</button>'
+      ? '<button type="button" class="danger-small" id="revoke-recharge-permit">撤销灰度许可</button>'
       : canArmRecharge ? `<button type="button" class="danger-small" id="arm-recharge-permit"
           data-customer="${escapeHtml(order.customerEmail || order.chatgptAccountId || '—')}"
           data-card="${escapeHtml(data.card?.cardNumber || data.card?.last4 || '—')}"
           data-balance="${formatMoney(data.card?.currentBalance)}"
-          data-token-expiry="${escapeHtml(formatTime(paymentGate.accessTokenExpiresAt))}">确认充值</button>` : '';
+          data-token-expiry="${escapeHtml(formatTime(paymentGate.accessTokenExpiresAt))}">灰度单笔许可</button>` : '';
     const compensation = data.compensation || {};
     const compensationButton = compensation.eligible || compensation.alreadyIssued
       ? `<button type="button" class="danger-small" id="issue-compensation">${compensation.alreadyIssued ? '重新下载补发 CDK' : '补发 CDK'}</button>`
@@ -963,13 +966,13 @@ async function openOrder(publicNo) {
     const moneyList = (items) => items?.length
       ? items.map((item) => `${item.amount} ${item.currency}`).join('；') : '没有已记录金额';
     elements.detailContent.innerHTML = `
-      <section class="detail-section"><div class="detail-section-heading"><h3>付款执行门</h3>${permitButton}</div>${renderKeyValues([
+      <section class="detail-section"><div class="detail-section-heading"><h3>自动履约与资金栅栏</h3>${permitButton}</div>${renderKeyValues([
         ['付款前检查', paymentGate.prepaymentReady ? '已就绪' : '未就绪'],
-        ['直充状态', paymentGate.submissionLocked ? '已锁定' : '已针对本订单一次性放行'],
-        ['放行凭证', paymentGate.permitStatus || 'LOCKED'],
+        ['正常执行', paymentGate.prepaymentReady ? '规则通过后由系统自动执行' : '等待付款前准备'],
+        ['灰度许可', paymentGate.permitStatus || 'LOCKED'],
         ['直充任务', paymentGate.submissionTaskStatus],
         ['直充执行次数', paymentGate.submissionAttempts ?? 0],
-        ['放行过期时间', formatTime(paymentGate.permitExpiresAt)],
+        ['灰度许可过期时间', formatTime(paymentGate.permitExpiresAt)],
         ['Session 检查', paymentGate.sessionValid ? '有效' : `不可用（${paymentGate.sessionCode || '未知原因'}）`],
         ['Session 过期时间', formatTime(paymentGate.sessionExpiresAt)],
         ['Access Token 过期时间', formatTime(paymentGate.accessTokenExpiresAt)],
