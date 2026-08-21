@@ -101,11 +101,36 @@ HTTP/1.1 201 Created
 | --- | --- |
 | `QUEUED` | 订单已建立，等待执行 |
 | `PROCESSING` | 开卡、提交或轮询中 |
+| `ACTION_REQUIRED` | 需要客户在原订单更换 Session |
+| `FINALIZING` | 充值付款已确认，正在确认自动续费取消 |
 | `REVIEWING` | 提交结果不明、对账异常或未知内部状态，需要复核 |
-| `SUCCESS` | 直充已返回最终成功 |
+| `SUCCESS` | 充值成功且自动续费取消已经确认 |
 | `FAILED` | 失败已经延迟复查确认 |
 
 - 查询不返回内部状态、失败原因、卡信息、Session、Provider 或退款信息。
 - 已关闭订单根据关闭前最后一个业务状态返回成功、失败或复核，不把 `CLOSED` 暴露给客户。
 - 成功和失败响应均带 `Cache-Control: no-store`。
 - 默认单 IP 每分钟 30 次；不存在返回 `404 order_not_found`，请求同时包含两种凭证或均缺失返回 `400 invalid_order_query`。
+
+## 原订单更换 Session
+
+路径：`POST /api/v1/orders/session`
+
+请求必须包含 `publicNo` 或原 CDK 二选一，以及新的完整 Session：
+
+```json
+{
+  "publicNo": "PJV1-...",
+  "session": { "user": {}, "account": {}, "expires": "...", "accessToken": "...", "sessionToken": "..." }
+}
+```
+
+约束：
+
+- 仅允许 `WAITING_FOR_SESSION` 原订单；不创建新订单，也不再次消耗 CDK；
+- 最多更换 3 次；72 小时从第一次明确的客户可修复错误开始，库存或系统等待不计时；
+- 存在 `ACTIVE | UNKNOWN | SETTLED` 资金风险 attempt 时拒绝自动更换，转人工核对；
+- 新 Session 先按订单创建时的同一合同校验，再加密覆盖；历史只记录新旧邮箱/账号 ID、原因、序号和时间，不保存旧 Session；
+- 更换后重新排队付款前准备与提交任务，旧的一次性放行凭证被删除。
+
+成功响应只返回订单查询码、客户状态、已使用次数和剩余次数，不返回 Session 或内部 ID。

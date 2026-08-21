@@ -4,11 +4,14 @@ const STATUS_META = Object.freeze({
   CARD_PROVISIONING: ['等待卡片到账', 'blue'],
   CARD_READY: ['卡片就绪', 'blue'],
   CARD_FAILED: ['开卡失败', 'red'],
+  WAITING_FOR_SESSION: ['等待客户更换 Session', 'orange'],
   SUBMITTING: ['提交中', 'blue'],
   SUBMIT_UNKNOWN: ['提交待确认', 'orange'],
   RECHARGE_PROCESSING: ['充值处理中', 'blue'],
   RECHARGE_SUCCESS: ['充值成功', 'green'],
   RECHARGE_FAILED: ['充值失败', 'red'],
+  CANCELLATION_PENDING: ['取消续费确认中', 'blue'],
+  CANCELLATION_REVIEW_REQUIRED: ['取消续费需复核', 'orange'],
   RECONCILIATION_REQUIRED: ['需要对账', 'orange'],
   CLOSED: ['已关闭', 'gray']
 });
@@ -989,6 +992,11 @@ async function openOrder(publicNo) {
         ['实际支付', order.actualPaymentAmount ? `${order.actualPaymentAmount} ${order.actualPaymentCurrency || ''}` : null],
         ['自动续费', order.subscriptionCancelled === 1 ? '已取消' : order.cancellationReviewRequired ? '需要人工处理' : order.subscriptionCancelled === 0 ? '等待确认' : '未开始'],
         ['续费复查时间', formatTime(order.cancellationCheckedAt)],
+        ['客户操作原因', order.customerActionCode],
+        ['Session 更换次数', `${order.sessionReplacementCount || 0} / 3`],
+        ['Session 修复窗口开始', formatTime(order.sessionRepairStartedAt)],
+        ['Session 修复截止', formatTime(order.sessionRepairExpiresAt)],
+        ['最近更换 Session', formatTime(order.lastSessionReplacedAt)],
         ['失败代码', order.failureCode], ['失败原因', order.failureReason]
       ])}</section>
       <section class="detail-section"><div class="detail-section-heading"><h3>卡片与退款</h3>${data.card ? '<button type="button" class="primary-small" id="sync-transactions">同步交易</button>' : ''}</div>${data.card ? renderKeyValues([
@@ -999,6 +1007,7 @@ async function openOrder(publicNo) {
       ]) : '<p class="empty-state">尚未绑定卡片</p>'}</section>
       <section class="detail-section"><h3>CDK、补发关系与客户付款</h3><div class="mini-list">${trace.cdks?.length ? trace.cdks.map((cdk) => `<div><span><strong>${escapeHtml(cdk.relationship === 'REPLACEMENT' ? '补发 CDK' : '原始 CDK')} · ${escapeHtml(cdk.status)}</strong><small>批次 ${escapeHtml(cdk.batchId || '—')} · 创建 ${formatTime(cdk.createdAt)} · 兑换 ${formatTime(cdk.redeemedAt)}${cdk.redeemedOrderPublicNo ? ` · 订单 ${escapeHtml(cdk.redeemedOrderPublicNo)}` : ''}</small></span>${cdk.redeemedOrderPublicNo && cdk.redeemedOrderPublicNo !== publicNo ? `<button type="button" class="text-button" data-related-order="${escapeHtml(cdk.redeemedOrderPublicNo)}">打开后续订单</button>` : trace.deliveryTrackingEnabled && cdk.status !== 'REVOKED' ? `<button type="button" class="text-button" data-record-cdk-delivery="${escapeHtml(cdk.id)}" data-cdk-batch="${escapeHtml(cdk.batchId || '')}">记录交付</button>` : ''}</div>`).join('') : '<p class="empty-state">没有 CDK 关系记录</p>'}${trace.orderRelationships?.length ? trace.orderRelationships.map((relation) => `<div><span><strong>补发链路</strong><small>原订单 ${escapeHtml(relation.originalPublicNo)} · 后续订单 ${escapeHtml(relation.replacementPublicNo || '尚未兑换')} · ${formatTime(relation.createdAt)}</small></span>${relation.originalPublicNo !== publicNo ? `<button type="button" class="text-button" data-related-order="${escapeHtml(relation.originalPublicNo)}">打开原订单</button>` : relation.replacementPublicNo ? `<button type="button" class="text-button" data-related-order="${escapeHtml(relation.replacementPublicNo)}">打开后续订单</button>` : ''}</div>`).join('') : ''}${trace.customerPayments?.length ? trace.customerPayments.map((payment) => `<div><span><strong>客户付款 · ${escapeHtml(payment.status)} · ${escapeHtml(payment.amount || '金额未记录')} ${escapeHtml(payment.currency || '')}</strong><small>${escapeHtml(payment.channel)} · ${escapeHtml(payment.externalReference || '无外部参考号')} · ${payment.paidAt ? `实际付款 ${formatTime(payment.paidAt)}` : `确认记录 ${formatTime(payment.createdAt)}（实际付款时间未补录）`}</small></span>${payment.amount == null ? '<button type="button" class="text-button" data-complete-customer-payment>补录付款</button>' : ''}</div>`).join('') : '<p class="empty-state">客户在系统外付款；当前尚未补录付款金额</p>'}${trace.deliveries?.length ? trace.deliveries.map((delivery) => `<div><span><strong>CDK ${escapeHtml(delivery.type)} · ${escapeHtml(delivery.channel || '未注明渠道')}</strong><small>收件人仅保存隐私哈希 · ${formatTime(delivery.createdAt)}</small></span></div>`).join('') : ''}</div></section>
       <section class="detail-section"><h3>卡片分配历史</h3><div class="mini-list">${trace.cardAssignments?.length ? trace.cardAssignments.map((assignment) => `<div data-trace-card="${escapeHtml(assignment.providerCardId)}" data-trace-card-account="${escapeHtml(assignment.providerAccountId || '')}" role="button" tabindex="0"><span><strong>${escapeHtml(assignment.cardNumber || assignment.last4 || assignment.providerCardId)} · ${escapeHtml(assignment.kind)}</strong><small>分配 ${formatTime(assignment.assignedAt)}${assignment.releasedAt ? ` · 释放 ${formatTime(assignment.releasedAt)}` : ' · 当前绑定'} · ${escapeHtml(assignment.assignmentReason || assignment.releaseReason || '')}</small></span><em>${escapeHtml(assignment.status)}</em></div>`).join('') : '<p class="empty-state">尚无卡片分配历史</p>'}</div></section>
+      <section class="detail-section"><h3>Session 更换记录</h3><div class="mini-list">${trace.sessionReplacements?.length ? trace.sessionReplacements.map((replacement) => `<div><span><strong>第 ${replacement.replacementNo} 次更换 · ${escapeHtml(replacement.reasonCode || '客户重新提交')}</strong><small>${escapeHtml(replacement.previousCustomerEmail || replacement.previousChatgptAccountId || '原账号未识别')} → ${escapeHtml(replacement.newCustomerEmail || replacement.newChatgptAccountId || '新账号未识别')} · ${formatTime(replacement.createdAt)}</small></span></div>`).join('') : '<p class="empty-state">尚无 Session 更换记录</p>'}</div></section>
       <section class="detail-section"><h3>客户收款与履约成本（原币种）</h3>${renderKeyValues([
         ['客户付款', moneyList(cost.customerPayments)],
         ['卡片开卡/入金', moneyList(cost.cardFundedAmount)],

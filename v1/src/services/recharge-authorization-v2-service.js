@@ -88,7 +88,7 @@ export async function createRechargeAuthorization(pool, {
   return inTransaction(pool, async (connection) => {
     const [rows] = await connection.query(
       `SELECT o.id AS order_id, o.public_no, o.status AS order_status,
-              t.id AS task_id, t.status AS task_status, t.attempts
+              t.id AS task_id, t.status AS task_status, t.attempts, t.last_error_code
        FROM orders o
        INNER JOIN tasks t ON t.order_id = o.id AND t.task_type = 'SUBMIT_RECHARGE'
        WHERE BINARY o.public_no IN (${placeholders(requested)})
@@ -107,7 +107,7 @@ export async function createRechargeAuthorization(pool, {
     const ineligible = orderedRows.filter((row) => (
       row.order_status !== 'CARD_READY'
       || row.task_status !== 'PENDING'
-      || Number(row.attempts) !== 0
+      || (Number(row.attempts) !== 0 && row.last_error_code !== 'RECHARGE_AUTHORIZATION_REQUIRED')
     ));
     if (ineligible.length) {
       throw new RechargeAuthorizationV2Error('one or more orders are not eligible', 'ORDER_NOT_ELIGIBLE', {
@@ -170,6 +170,25 @@ export async function createRechargeAuthorization(pool, {
       throw new RechargeAuthorizationV2Error('an order already belongs to an active authorization', 'AUTHORIZATION_EXISTS', {
         orderIds: protectedItems.map((row) => row.order_id)
       });
+    }
+
+    // A claim/consume race may leave the task safely unstarted but with one
+    // failed scheduling attempt.  The funds fences above prove no Provider
+    // write is active; normalize only that explicit authorization error so an
+    // operator can issue a replacement authorization without SQL repair.
+    const recoverableTaskIds = orderedRows
+      .filter((row) => Number(row.attempts) !== 0)
+      .map((row) => row.task_id);
+    if (recoverableTaskIds.length) {
+      await connection.query(
+        `UPDATE tasks
+         SET attempts = 0, last_error_code = NULL, last_error_message = NULL,
+             available_at = ?, updated_at = ?
+         WHERE id IN (${placeholders(recoverableTaskIds)})
+           AND status = 'PENDING'
+           AND last_error_code = 'RECHARGE_AUTHORIZATION_REQUIRED'`,
+        [now, now, ...recoverableTaskIds]
+      );
     }
 
     await connection.query(

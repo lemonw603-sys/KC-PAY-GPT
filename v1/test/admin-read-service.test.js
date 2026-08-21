@@ -75,12 +75,13 @@ test('admin order list validates filters, maps card summaries, and supports CDK 
   assert.equal(result.orders[0].actualPaymentAmount, '1150.000000');
   assert.equal(result.orders[0].actualPaymentCurrency, 'PHP');
   assert.deepEqual(result.cdkMatches, []);
-  assert.deepEqual(pool.queries[0].values.slice(0, 4), [
-    'CARD_FAILED', 'SUBMIT_UNKNOWN', 'RECHARGE_FAILED', 'RECONCILIATION_REQUIRED'
+  assert.deepEqual(pool.queries[0].values.slice(0, 6), [
+    'CARD_FAILED', 'WAITING_FOR_SESSION', 'SUBMIT_UNKNOWN', 'RECHARGE_FAILED',
+    'CANCELLATION_REVIEW_REQUIRED', 'RECONCILIATION_REQUIRED'
   ]);
   assert.equal(pool.queries.some(({ sql }) => /session_ciphertext|recharge_card_key/i.test(sql)), false);
   assert.match(pool.queries[0].sql, /EXISTS \(\s*SELECT 1 FROM cdks cdk/i);
-  assert.equal(pool.queries[0].values.length, 21);
+  assert.equal(pool.queries[0].values.length, 23);
   assert.match(pool.queries[0].sql, /card_assignment_history/i);
   assert.match(pool.queries[0].sql, /customer_payments/i);
 
@@ -113,7 +114,7 @@ test('admin order detail exposes the full PAN but not CVV or Session', async () 
     }, {
       task_type: 'SUBMIT_RECHARGE', status: 'PENDING', attempts: 0, max_attempts: 5,
       permit_status: null, permit_expires_at: null
-    }], [], [], [], [], [], [], [], [], [], [], [], []
+    }], [], [], [], [], [], [], [], [], [], [], [], [], []
   ]);
   const result = await createAdminReadService({
     pool, sessionEncryptionKey: adminCardKey, now: () => nowMs
@@ -151,7 +152,7 @@ test('admin order detail exposes the full PAN but not CVV or Session', async () 
   assert.deepEqual(result.traceability, {
     deliveryTrackingEnabled: false,
     cdks: [], deliveries: [], customerPayments: [], cardAssignments: [], notes: [], tags: [],
-    orderRelationships: [],
+    orderRelationships: [], sessionReplacements: [],
     fulfillmentCost: {
       customerPayments: [], cardFundedAmount: [], providerConfirmedPayment: [],
       successfulCardPurchases: [], cardTransactionFees: [], exchangeRateApplied: false,

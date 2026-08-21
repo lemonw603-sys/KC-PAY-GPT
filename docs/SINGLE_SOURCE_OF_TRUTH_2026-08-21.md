@@ -10,9 +10,11 @@
 
 > 用户确认后的最终需求基线：[`FINAL_REQUIREMENTS_BASELINE_2026-08-21.md`](FINAL_REQUIREMENTS_BASELINE_2026-08-21.md)。接手时以此文件和 `DECISIONS.md` 的当前有效决策为准。
 
+> Browser 方向最新基线：[`BROWSER_RECHARGE_EXECUTOR_BASELINE_2026-08-21.md`](BROWSER_RECHARGE_EXECUTOR_BASELINE_2026-08-21.md)。Browser 已成为未来 Plus 主执行链路，使用 HNSKJ 虚拟卡并直接操作 ChatGPT 官方购买/订阅管理页面；ZZSHU 仅作旧系统兼容。接手 Browser 工作必须同时阅读该文件和 D-038 至 D-040。
+
 > 当前生产后台与最终需求的逐项对齐审查：[`ADMIN_ALIGNMENT_AUDIT_2026-08-21.md`](ADMIN_ALIGNMENT_AUDIT_2026-08-21.md)。该报告区分线上已提供、代码底座、缺失能力和方向冲突。
 
-> 用户确认的最终实施阶段、依赖和验收路径：[`IMPLEMENTATION_PLAN_FINAL_2026-08-21.md`](IMPLEMENTATION_PLAN_FINAL_2026-08-21.md)。Browser 当前只独立设计，阶段七稳定后才接入。
+> 用户确认的最终实施阶段、依赖和验收路径：[`IMPLEMENTATION_PLAN_FINAL_2026-08-21.md`](IMPLEMENTATION_PLAN_FINAL_2026-08-21.md)。Browser 可立即进行设计、非付款 PoC、仿真控制面和隔离联调；未取得单独操作确认前不接生产、不真实付款。
 
 > 项目从 2026-08-16 起点到当前状态的完整历史交接：[`PROJECT_HANDOFF_FULL_HISTORY_2026-08-21.md`](PROJECT_HANDOFF_FULL_HISTORY_2026-08-21.md)。接手时两份都要读；本文聚焦最近生产事实。
 
@@ -29,7 +31,7 @@
 
 ### 业务定义
 
-本项目是 GPT Plus 自动充值与内部运营系统：客户在客户页面提交 CDK 和完整 ChatGPT Session，系统创建一笔 Plus 产品订单，绑定一张专属虚拟卡，调用卡台与直充 Provider，异步追踪结果，并在后台处理异常、交易和退款观察。
+本项目是 GPT Plus 自动充值与内部运营系统：客户在客户页面提交 CDK 和完整 ChatGPT Session，系统创建一笔 Plus 产品订单，绑定一张专属虚拟卡。未来主链由 HNSKJ 提供卡片，隔离 Browser Worker 直接在 ChatGPT 官方页面购买 Plus并取消续费；现有后台继续处理订单、资金栅栏、异常、交易和审计。
 
 一个必须遵守的业务规则已经由用户明确确认，并由本次真实 Provider 响应验证：
 

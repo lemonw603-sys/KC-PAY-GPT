@@ -26,6 +26,7 @@ export function createApp({
   readiness = async () => ({ ready: true }),
   createCustomerOrder = null,
   getCustomerOrderStatus = null,
+  replaceCustomerSession = null,
   adminAuth = null,
   getAdminOverview = null,
   listAdminOrders = null,
@@ -121,6 +122,16 @@ export function createApp({
       next();
     }, orderStatusRateLimit, async (req, res) => {
       const order = await getCustomerOrderStatus(req.body);
+      return res.json({ order });
+    });
+  }
+
+  if (typeof replaceCustomerSession === 'function') {
+    app.post('/api/v1/orders/session', (_req, res, next) => {
+      res.setHeader('Cache-Control', 'no-store');
+      next();
+    }, orderRateLimit, async (req, res) => {
+      const order = await replaceCustomerSession(req.body || {});
       return res.json({ order });
     });
   }

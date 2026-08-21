@@ -10,12 +10,26 @@ const CUSTOMER_STATUS = Object.freeze({
   CARD_PROVISIONING: 'PROCESSING',
   CARD_READY: 'PROCESSING',
   CARD_FAILED: 'FAILED',
+  WAITING_FOR_SESSION: 'ACTION_REQUIRED',
   SUBMITTING: 'PROCESSING',
   RECHARGE_PROCESSING: 'PROCESSING',
   SUBMIT_UNKNOWN: 'REVIEWING',
   RECONCILIATION_REQUIRED: 'REVIEWING',
   RECHARGE_SUCCESS: 'SUCCESS',
-  RECHARGE_FAILED: 'FAILED'
+  RECHARGE_FAILED: 'FAILED',
+  CANCELLATION_PENDING: 'FINALIZING',
+  CANCELLATION_REVIEW_REQUIRED: 'REVIEWING'
+});
+
+const CUSTOMER_ACTIONS = Object.freeze({
+  ACCOUNT_ALREADY_PLUS: {
+    code: 'ACCOUNT_ALREADY_PLUS',
+    message: '当前账号已是 Plus，请更换一个免费账号的 Session。'
+  },
+  SESSION_INVALID: {
+    code: 'SESSION_INVALID',
+    message: '当前 Session 无效，请重新获取完整 Session。'
+  }
 });
 
 function invalidQuery() {
@@ -43,6 +57,7 @@ function normalizeLookup(input, cdkHashKey) {
 }
 
 function isoDate(value) {
+  if (value == null || value === '') return null;
   const date = value instanceof Date ? value : new Date(value);
   if (!Number.isFinite(date.getTime())) return null;
   return date.toISOString();
@@ -66,10 +81,19 @@ export function createOrderStatusService({
         status: 404
       });
     }
+    const action = CUSTOMER_ACTIONS[order.customer_action_code] || null;
     return {
       publicNo: order.public_no,
       status: mapCustomerOrderStatus(order.effective_status),
-      updatedAt: isoDate(order.updated_at)
+      updatedAt: isoDate(order.updated_at),
+      ...(action ? {
+        actionRequired: action,
+        sessionReplacement: {
+          used: Number(order.session_replacement_count || 0),
+          remaining: Math.max(0, 3 - Number(order.session_replacement_count || 0)),
+          expiresAt: isoDate(order.session_repair_expires_at)
+        }
+      } : {})
     };
   };
 }

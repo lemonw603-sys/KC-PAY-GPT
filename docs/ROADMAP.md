@@ -2,6 +2,10 @@
 
 > 2026-08-21 用户确认的后续实施顺序和阶段验收，以 `IMPLEMENTATION_PLAN_FINAL_2026-08-21.md` 为执行主线。本文保留历史阶段状态；两者冲突时按最终实施规划和当前有效决策执行。
 
+> Browser 方向更新：ZZSHU 剩余合同、错误映射、状态轮询和扩容任务不再继续。Browser 项目当前进入 B0 设计冻结，随后按非付款 PoC→仿真控制面→隔离联调→受控真实灰度→200–300 单/日放量推进，详见 `BROWSER_RECHARGE_EXECUTOR_BASELINE_2026-08-21.md`。
+
+> Browser 当前进度：B0 设计冻结完成；B1 已完成上号器和 legacy Session 注入逻辑的静态分析，已冻结“真实 Cookie + 真实会话响应 + 账号比对”的最小 Adapter 方向，尚未使用真实 Session 执行网页登录 PoC。
+
 - 当前阶段：阶段 4 MVP 运营闭环已具备；已完成一次真实单笔失败链路验证，尚未完成符合业务规则账号的成功充值和新卡付费开通
 - 最后更新：2026-08-21 最终需求对齐后
 
@@ -48,9 +52,9 @@
 - [x] 建立脱敏 fixture 和合同测试。
 - [x] 用单次审批完成卡台账户、余额、卡段和空卡片列表的真实只读验证。
 - [ ] 用卡台真实响应验证相同幂等键重复调用行为。
-- [ ] 用直充真实响应验证错误映射与 `SUBMIT_UNKNOWN` 路径。
-- [ ] 落实硬规则：目标账号当前为 Plus 时本地拒绝，不调用直充 Provider；Provider 业务码 `40030` 映射到订单失败字段和后台原因。
-- [ ] 核对每次真实 `create_direct` 与 `recharge_attempts` 资金账本的一一对应关系。
+- [x] 停止继续验证 ZZSHU 直充错误映射与 `SUBMIT_UNKNOWN` 路径；Browser 项目不再依赖该合同（D-039）。
+- [ ] 目标账号当前为 Plus 时本地拒绝并进入原订单 Session 可恢复状态；该硬规则由 Browser 预检实现，不再依赖 ZZSHU `40030`。
+- [x] 停止为 Browser 项目核对新的 ZZSHU `create_direct`；历史账本只保留兼容审计，不作为 Browser 前置任务（D-039）。
 - [ ] 接入 HNSKJ `POST /cards/{id}/recharge`，验证 write scope、稳定幂等键、`pending` 未知结果和余额/流水对账。
 - [x] 建立持久化 `provider_calls` 记录与递归脱敏，并通过真实 MySQL 落库验证。
 - [x] 建立通用任务执行骨架：单任务隔离、可重试回队、非重试错误进入 dead-letter。
@@ -143,5 +147,6 @@
 
 - 现在可以在独立讨论窗口完成方案和接口边界设计，成果必须回写本项目事实源；
 - 当前不接入生产、不执行真实 Browser 付款；
-- 等正式 API 成功单及阶段七灰度稳定后，再实现隔离 Browser Worker；
-- Browser 与 API 必须共用 `recharge_attempts` 资金栅栏，任何一侧结果未知都禁止换路重付。
+- Browser 已成为未来 Plus 主执行链路，可立即进行非付款 PoC、仿真控制面和隔离联调，不再等待 ZZSHU API 成功单；
+- 历史 API 与 Browser 共用 `recharge_attempts` 资金栅栏，任何旧 API 结果未知订单都禁止切 Browser；新 Browser 订单不调用 ZZSHU；
+- 经单独操作确认前不得打开真实 Browser 付款，详见 D-038、D-039 和 Browser 基线。

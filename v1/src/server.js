@@ -34,6 +34,7 @@ import { createCdkDeliveryService } from './services/cdk-delivery-service.js';
 import { createReconciliationCaseService } from './services/reconciliation-case-service.js';
 import { createOperationsCsvExportService } from './services/operations-csv-export-service.js';
 import { createTraceabilityOperationsService } from './services/traceability-operations-service.js';
+import { createSessionReplacementService } from './services/session-replacement-service.js';
 
 const config = loadConfig();
 const pool = createDatabasePool(config.database);
@@ -43,6 +44,11 @@ const createCustomerOrder = createOrderIntakeService({
   cdkHashKey: config.cdkHashKey
 });
 const getCustomerOrderStatus = createOrderStatusService({ pool, cdkHashKey: config.cdkHashKey });
+const replaceCustomerSession = createSessionReplacementService({
+  pool,
+  sessionEncryptionKey: config.sessionEncryptionKey,
+  cdkHashKey: config.cdkHashKey
+});
 const adminReadService = createAdminReadService({
   pool,
   sessionEncryptionKey: config.sessionEncryptionKey,
@@ -117,6 +123,7 @@ const app = createApp({
   readiness: () => checkDatabaseReady(pool),
   createCustomerOrder,
   getCustomerOrderStatus,
+  replaceCustomerSession,
   adminAuth,
   adminHost: config.adminHost,
   getAdminOverview: adminReadService.getOverview,

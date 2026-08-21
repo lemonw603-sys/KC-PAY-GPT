@@ -1,14 +1,16 @@
 # AI充值业务 v1 产品与技术规格
 
+> 2026-08-21 方向更新：未来 Plus 主执行链路已改为“HNSKJ 虚拟卡 + ChatGPT Browser 自动购买和取消续费”，ZZSHU 不再是新项目依赖或投入方向。本文中所有 ZZSHU/第三方直充创建、`card_key` 和直充轮询内容仅用于历史实现兼容，不再构成 Browser 新开发要求。当前 Browser 单一事实源为 `BROWSER_RECHARGE_EXECUTOR_BASELINE_2026-08-21.md`，决策依据为 `DECISIONS.md` 的 D-038 至 D-040。
+
 - 状态：生产候选；业务规则与真实 Provider 能力仍按本文“待验证/必须修复”项管理
 - 日期：2026-08-17
 - 产品：仅销售 ChatGPT Plus；目标账号当前已是 Plus 时禁止充值，上游也不会接受
 
 ## 1. 结论
 
-v1 建设一条可运营的最小充值链路：目标账号不是当前 Plus 账号时，客户凭 CDK 提交完整 Session，系统优先分配合格库存卡；库存不足时等待并触发受限自动补卡/人工补卡，通过第三方直充接口提交 Plus 产品订单，追踪支付结果并确认取消自动续费。目标账号当前为 Plus 或 Session 无效时进入原订单可恢复状态，允许更换 Session，不重新消耗 CDK。
+v1 建设一条可运营的最小充值链路：目标账号不是当前 Plus 账号时，客户凭 CDK 提交完整 Session，系统优先分配合格库存卡；库存不足时等待并触发受限自动补卡/人工补卡。未来主执行链路由隔离 Browser Worker 在 ChatGPT 官方页面购买 Plus、确认开通并取消自动续费。目标账号当前为 Plus 或 Session 无效时进入原订单可恢复状态，允许更换 Session，不重新消耗 CDK。
 
-系统追求“可恢复、不会静默重复扣款”，不承诺跨两个外部供应商的绝对一次执行。第三方直充创建接口缺少上游幂等能力，因此不明确的创建结果必须冻结为 `SUBMIT_UNKNOWN`，不得自动重试。
+系统追求“可恢复、不会静默重复扣款”。任何 Browser 付款提交结果不明确时必须冻结为 `SUBMIT_UNKNOWN`，先结合账号订阅状态、页面证据和 HNSKJ 卡交易对账，不得自动重新点击付款、换卡或换执行器。
 
 ## 2. 用户与职责
 
@@ -277,9 +279,9 @@ v1 MySQL 对新 CDK 只保存带独立服务端密钥的 HMAC-SHA-256；迁移�
 - 提交结果。
 - 使用 CDK或订单查询码查看充值状态。
 
-状态查询接口同时支持创建时返回的 `publicNo` 和原 CDK。客户仅看到 `QUEUED | PROCESSING | REVIEWING | SUCCESS | FAILED`，不看到卡片、Provider、退款或内部异常细节。
+状态查询接口同时支持创建时返回的 `publicNo` 和原 CDK。客户仅看到 `QUEUED | PROCESSING | ACTION_REQUIRED | FINALIZING | REVIEWING | SUCCESS | FAILED`，不看到卡片、Provider、退款或内部异常细节。`ACTION_REQUIRED` 仅用于账号已是 Plus 或 Session 无效；`FINALIZING` 表示付款成功但仍在确认取消自动续费。
 
-页面不持久化 Session JSON，创建成功后立即清空输入框；仅在当前标签页保留最后一个 `publicNo`。页面对处理中订单有界自动轮询，进入终态后停止。
+页面不持久化 Session JSON，创建或更换成功后立即清空输入框；仅在当前标签页保留最后一个 `publicNo`。页面允许在原订单最多更换 3 次 Session，72 小时从首次客户可修复错误开始。页面对处理中订单有界自动轮询，进入终态后停止。
 
 失败提示应可行动，但不暴露供应商内部细节、卡资料或退款信息。
 

@@ -98,6 +98,49 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
       });
     },
 
+    async markSessionReplacementRequired(orderId, {
+      failureCode = 'TARGET_ACCOUNT_ALREADY_PLUS',
+      failureReason = 'Target account is not eligible for Plus recharge',
+      customerActionCode = 'ACCOUNT_ALREADY_PLUS'
+    } = {}) {
+      return inTransaction(pool, async (connection) => {
+        const [rows] = await connection.query(
+          `SELECT status, version, session_repair_started_at, session_repair_expires_at
+           FROM orders WHERE id = ? FOR UPDATE`, [orderId]
+        );
+        if (rows.length !== 1) throw new Error(`Order not found: ${orderId}`);
+        const order = rows[0];
+        if (order.status === OrderStatus.WAITING_FOR_SESSION) return;
+        if (![OrderStatus.CARD_READY, OrderStatus.SUBMITTING].includes(order.status)) {
+          throw new Error(`Cannot request Session replacement from ${order.status}`);
+        }
+        const [settingRows] = await connection.query(
+          `SELECT setting_value FROM app_settings
+           WHERE setting_key = 'session_replacement_window_hours' LIMIT 1`
+        );
+        const hours = Math.max(1, Math.min(168, Number(settingRows[0]?.setting_value || 72)));
+        const [updated] = await connection.query(
+          `UPDATE orders SET status = ?, failure_code = ?, failure_reason = ?,
+             customer_action_code = ?,
+             session_repair_started_at = COALESCE(session_repair_started_at, CURRENT_TIMESTAMP(3)),
+             session_repair_expires_at = COALESCE(session_repair_expires_at,
+               DATE_ADD(CURRENT_TIMESTAMP(3), INTERVAL ? HOUR)),
+             finished_at = NULL, version = version + 1, updated_at = CURRENT_TIMESTAMP(3)
+           WHERE id = ? AND version = ?`,
+          [OrderStatus.WAITING_FOR_SESSION, failureCode, failureReason,
+            customerActionCode, hours, orderId, order.version]
+        );
+        if (Number(updated.affectedRows) !== 1) {
+          throw new Error(`Concurrent Session repair transition detected: ${orderId}`);
+        }
+        await insertEvent(connection, {
+          orderId, fromStatus: order.status, toStatus: OrderStatus.WAITING_FOR_SESSION,
+          reason: 'target account requires a customer-provided replacement Session',
+          metadata: { failureCode, customerActionCode, replacementWindowHours: hours }
+        });
+      });
+    },
+
     async assignAvailableCard(orderId) {
       return inTransaction(pool, async (connection) => {
         const [orders] = await connection.query(
@@ -587,6 +630,20 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
           ? encryptSecret(JSON.stringify(latestSession), sessionEncryptionKey)
           : null;
         const cancelled = status.isSubscriptionCancelled === 1 ? 1 : 0;
+        const targetStatus = cancelled === 1
+          ? OrderStatus.RECHARGE_SUCCESS : OrderStatus.CANCELLATION_PENDING;
+        const [attemptResult] = await connection.query(
+          `UPDATE recharge_attempts
+           SET status = 'SUCCESS', funds_risk_state = 'SETTLED',
+               finished_at = COALESCE(finished_at, CURRENT_TIMESTAMP(3)),
+               updated_at = CURRENT_TIMESTAMP(3)
+           WHERE order_id = ? AND status IN ('PREPARED','PROCESSING','SUBMIT_UNKNOWN')
+             AND funds_risk_state IN ('ACTIVE','UNKNOWN')`,
+          [orderId]
+        );
+        if (Number(attemptResult.affectedRows) !== 1) {
+          throw new Error(`Recharge success requires exactly one funds attempt: ${orderId}`);
+        }
         const [result] = await connection.query(
           `UPDATE orders SET status = ?,
              session_ciphertext = COALESCE(?, session_ciphertext),
@@ -594,16 +651,19 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
              actual_payment_currency = COALESCE(?, actual_payment_currency),
              subscription_cancelled = ?, cancellation_checked_at = CURRENT_TIMESTAMP(3),
              cancellation_review_required = 0, version = version + 1,
-             updated_at = CURRENT_TIMESTAMP(3), finished_at = CURRENT_TIMESTAMP(3)
+             updated_at = CURRENT_TIMESTAMP(3),
+             finished_at = CASE WHEN ? = 'RECHARGE_SUCCESS' THEN CURRENT_TIMESTAMP(3) ELSE NULL END
            WHERE id = ? AND version = ?`,
-          [OrderStatus.RECHARGE_SUCCESS, encryptedSession,
+          [targetStatus, encryptedSession,
             status.paymentAmount ?? null, status.paymentCurrency ?? null,
-            cancelled, orderId, order.version]
+            cancelled, targetStatus, orderId, order.version]
         );
         if (result.affectedRows !== 1) throw new Error(`Concurrent recharge success detected: ${orderId}`);
         await insertEvent(connection, {
-          orderId, fromStatus: order.status, toStatus: OrderStatus.RECHARGE_SUCCESS,
-          reason: 'provider confirmed success',
+          orderId, fromStatus: order.status, toStatus: targetStatus,
+          reason: cancelled === 1
+            ? 'provider confirmed payment success and subscription cancellation'
+            : 'provider confirmed payment success; subscription cancellation pending',
           metadata: {
             subscriptionCancelled: cancelled,
             paymentAmount: status.paymentAmount ?? null,
@@ -640,6 +700,48 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
       });
     },
 
+    async commitRechargeFailure(orderId, status = null) {
+      return inTransaction(pool, async (connection) => {
+        const [rows] = await connection.query(
+          'SELECT status, version FROM orders WHERE id = ? FOR UPDATE', [orderId]
+        );
+        if (rows.length !== 1) throw new Error(`Order not found: ${orderId}`);
+        const order = rows[0];
+        if (![OrderStatus.RECHARGE_PROCESSING, OrderStatus.SUBMIT_UNKNOWN].includes(order.status)) {
+          throw new Error(`Cannot commit recharge failure from ${order.status}`);
+        }
+        const [attemptResult] = await connection.query(
+          `UPDATE recharge_attempts
+           SET status = 'FAILED', funds_risk_state = 'CLEARED',
+               result_summary_json = COALESCE(?, result_summary_json),
+               last_reconciled_at = CURRENT_TIMESTAMP(3),
+               finished_at = COALESCE(finished_at, CURRENT_TIMESTAMP(3)),
+               updated_at = CURRENT_TIMESTAMP(3)
+           WHERE order_id = ? AND status IN ('PREPARED','PROCESSING','SUBMIT_UNKNOWN')
+             AND funds_risk_state IN ('ACTIVE','UNKNOWN')`,
+          [status == null ? null : JSON.stringify(status), orderId]
+        );
+        if (Number(attemptResult.affectedRows) !== 1) {
+          throw new Error(`Recharge failure requires exactly one funds attempt: ${orderId}`);
+        }
+        const [result] = await connection.query(
+          `UPDATE orders SET status = ?, failure_code = 'PROVIDER_CONFIRMED_FAILURE',
+             failure_reason = 'Recharge provider confirmed failure',
+             customer_action_code = NULL, finished_at = CURRENT_TIMESTAMP(3),
+             version = version + 1, updated_at = CURRENT_TIMESTAMP(3)
+           WHERE id = ? AND version = ?`,
+          [OrderStatus.RECHARGE_FAILED, orderId, order.version]
+        );
+        if (result.affectedRows !== 1) {
+          throw new Error(`Concurrent recharge failure detected: ${orderId}`);
+        }
+        await insertEvent(connection, {
+          orderId, fromStatus: order.status, toStatus: OrderStatus.RECHARGE_FAILED,
+          reason: 'provider confirmed failure', metadata: status
+        });
+      });
+    },
+
     async commitCancellationStatus(orderId, status, latestSession = null, { exhausted = false } = {}) {
       return inTransaction(pool, async (connection) => {
         const [rows] = await connection.query(
@@ -647,7 +749,7 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
         );
         if (rows.length !== 1) throw new Error(`Order not found: ${orderId}`);
         const order = rows[0];
-        if (order.status !== OrderStatus.RECHARGE_SUCCESS) {
+        if (order.status !== OrderStatus.CANCELLATION_PENDING) {
           throw new Error(`Cannot commit cancellation check from ${order.status}`);
         }
         const encryptedSession = latestSession
@@ -655,18 +757,31 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
           : null;
         const cancelled = status.isSubscriptionCancelled === 1 ? 1 : 0;
         const reviewRequired = cancelled === 1 ? 0 : (exhausted ? 1 : 0);
+        const targetStatus = cancelled === 1
+          ? OrderStatus.RECHARGE_SUCCESS
+          : (exhausted ? OrderStatus.CANCELLATION_REVIEW_REQUIRED : OrderStatus.CANCELLATION_PENDING);
         const [result] = await connection.query(
-          `UPDATE orders SET session_ciphertext = COALESCE(?, session_ciphertext),
+          `UPDATE orders SET status = ?, session_ciphertext = COALESCE(?, session_ciphertext),
              actual_payment_amount = COALESCE(actual_payment_amount, ?),
              actual_payment_currency = COALESCE(actual_payment_currency, ?),
              subscription_cancelled = ?, cancellation_checked_at = CURRENT_TIMESTAMP(3),
              cancellation_review_required = ?, version = version + 1,
-             updated_at = CURRENT_TIMESTAMP(3)
+             updated_at = CURRENT_TIMESTAMP(3),
+             finished_at = CASE WHEN ? = 'RECHARGE_SUCCESS' THEN CURRENT_TIMESTAMP(3) ELSE NULL END
            WHERE id = ? AND version = ?`,
-          [encryptedSession, status.paymentAmount ?? null, status.paymentCurrency ?? null,
-            cancelled, reviewRequired, orderId, order.version]
+          [targetStatus, encryptedSession, status.paymentAmount ?? null, status.paymentCurrency ?? null,
+            cancelled, reviewRequired, targetStatus, orderId, order.version]
         );
         if (result.affectedRows !== 1) throw new Error(`Concurrent cancellation check detected: ${orderId}`);
+        if (targetStatus !== OrderStatus.CANCELLATION_PENDING) {
+          await insertEvent(connection, {
+            orderId, fromStatus: OrderStatus.CANCELLATION_PENDING, toStatus: targetStatus,
+            reason: cancelled === 1
+              ? 'subscription cancellation confirmed; fulfillment complete'
+              : 'subscription cancellation could not be confirmed automatically',
+            metadata: { subscriptionCancelled: cancelled, exhausted }
+          });
+        }
       });
     },
 

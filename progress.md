@@ -176,3 +176,14 @@
 - 独立对抗审查最终结论：阶段一无剩余阻断项。
 - 生产发布 `/opt/pojia/releases/20260821-traceability-86d6282`；迁移、PAN 回填、6 项数据一致性检查、Web/Worker/Bark 健康和上线后只读体检全部通过。
 - 生产资金门禁保持关闭，本次无 Provider 写调用。
+
+## 2026-08-21 - 阶段二 Session 恢复与正确终态
+
+- 新增原订单 Session 更换、最多 3 次和首次客户可修复错误起 72 小时窗口；历史不保留旧 Session。
+- 新增 `WAITING_FOR_SESSION`、`CANCELLATION_PENDING`、`CANCELLATION_REVIEW_REQUIRED`，客户侧只展示账号已是 Plus/Session 无效两类行动原因。
+- 只有付款成功且取消续费确认后才最终成功；查询异常耗尽进入人工复核。
+- Foundation v2 提交现在强制先建 `recharge_attempt`；legacy Permit 不能进入资金路径。
+- 修复 40030 后重新授权幂等键冲突、授权 claim/consume 恢复、lease-lost 和非 40030 明确拒绝僵尸订单。
+- 隔离 MySQL 8.4 全量测试 `313/313`，Migration 001–025 干净执行和 025 重放成功。
+- 独立对抗式终审未发现剩余 Stage 2 P0/P1 阻断；证据见 `docs/STAGE2_SESSION_FINALIZATION_ACCEPTANCE_2026-08-21.md`。
+- 尚未部署生产，本阶段没有任何 Provider 资金写调用。

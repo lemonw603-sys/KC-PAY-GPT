@@ -80,7 +80,6 @@ export function createRechargeAttemptRepository(pool) {
       taskId,
       authorizationItemId,
       attemptId = randomUUID(),
-      idempotencyKey = null,
       now = new Date()
     }) {
       const order = required(orderId, 'orderId');
@@ -141,6 +140,11 @@ export function createRechargeAttemptRepository(pool) {
         }
         const authorization = authorizationItems[0];
         const item = authorization.id;
+        // A cleared attempt remains in the immutable funds ledger.  The key
+        // therefore belongs to the single-use authorization item, not to the
+        // order: retrying the same item stays idempotent, while a newly
+        // authorized attempt after Session replacement receives a fresh key.
+        const idempotencyKey = `recharge-auth-item:${item}`.slice(0, 191);
         if (authorization.item_status !== 'PENDING' || authorization.authorization_status !== 'ACTIVE') {
           throw new RechargeAttemptError('authorization is not active', 'AUTHORIZATION_NOT_ACTIVE');
         }
@@ -177,7 +181,7 @@ export function createRechargeAttemptRepository(pool) {
             executor_kind, status, funds_risk_state, idempotency_key, submit_intent_at, created_at, updated_at)
            VALUES (?, ?, ?, ?, ?, ?, 'PREPARED', 'ACTIVE', ?, ?, ?, ?)`,
           [attempt, order, orderRow.fulfillment_route_id, orderRow.recharge_provider_account_id,
-            item, orderRow.executor_kind, idempotencyKey == null ? null : String(idempotencyKey).slice(0, 191),
+            item, orderRow.executor_kind, idempotencyKey,
             now, now, now]
         );
 
@@ -210,9 +214,9 @@ export function createRechargeAttemptRepository(pool) {
           `INSERT INTO provider_calls
            (order_id, recharge_attempt_id, provider, provider_account_id, operation,
             request_key, attempt_no, outcome, started_at)
-           VALUES (?, ?, ?, ?, 'submit_recharge', ?, 1, 'STARTED', ?)`,
+           VALUES (?, ?, ?, ?, 'create_direct', ?, 1, 'STARTED', ?)`,
           [order, attempt, orderRow.provider_code, orderRow.recharge_provider_account_id,
-            idempotencyKey == null ? attempt : String(idempotencyKey).slice(0, 191), now]
+            idempotencyKey, now]
         );
 
         return {
@@ -224,6 +228,7 @@ export function createRechargeAttemptRepository(pool) {
           status: 'PREPARED',
           fundsRiskState: 'ACTIVE',
           providerCallId: providerCall.insertId,
+          idempotencyKey,
           startedAt: now
         };
       });
@@ -272,21 +277,28 @@ export function createRechargeAttemptRepository(pool) {
         allowedAttemptStatuses: ['PREPARED', 'PROCESSING', 'SUBMIT_UNKNOWN'],
         allowedFundsStates: ['ACTIVE', 'UNKNOWN'],
         releaseAuthorization: true,
+        resetSubmitTask: input?.resetSubmitTask !== false,
         setFinishedAt: true
       });
     },
 
-    markAttemptSettled(input) {
+    markAttemptRejected(input) {
       return transitionAttempt(pool, {
         ...input,
-        targetAttemptStatus: 'SUCCESS',
-        targetFundsState: 'SETTLED',
-        targetOrderStatus: 'RECHARGE_SUCCESS',
-        providerOutcome: 'SUCCESS',
-        reason: 'recharge attempt settled',
-        allowedAttemptStatuses: ['PREPARED', 'PROCESSING', 'SUBMIT_UNKNOWN'],
-        allowedFundsStates: ['ACTIVE', 'UNKNOWN'],
-        setFinishedAt: true
+        targetAttemptStatus: 'CLEARED',
+        targetFundsState: 'CLEARED',
+        targetOrderStatus: 'RECHARGE_FAILED',
+        providerOutcome: 'FAILED',
+        reason: 'recharge submission was definitively rejected before funds impact',
+        allowedAttemptStatuses: ['PREPARED', 'PROCESSING'],
+        allowedFundsStates: ['ACTIVE'],
+        releaseAuthorization: true,
+        resetSubmitTask: false,
+        setFinishedAt: true,
+        orderExtraSql: `, failure_code = 'RECHARGE_SUBMIT_REJECTED',
+          failure_reason = 'Recharge provider rejected submission',
+          customer_action_code = NULL, finished_at = ?`,
+        orderExtraValues: [input?.now || new Date()]
       });
     }
   };
@@ -308,7 +320,10 @@ async function transitionAttempt(pool, {
   setSubmittedAt = false,
   setFinishedAt = false,
   releaseAuthorization = false,
-  persistSubmission = false
+  resetSubmitTask = false,
+  persistSubmission = false,
+  orderExtraSql = '',
+  orderExtraValues = []
 }) {
   const id = required(attemptId, 'attemptId');
   return inTransaction(pool, async (connection) => {
@@ -367,27 +382,25 @@ async function transitionAttempt(pool, {
       if (released.affectedRows !== 1) {
         throw new RechargeAttemptError('consumed authorization could not be released', 'AUTHORIZATION_CONFLICT');
       }
-      const [taskReset] = await connection.query(
-        `UPDATE tasks
-         SET status = 'PENDING', attempts = 0, available_at = ?, leased_until = NULL,
-             leased_by = NULL, last_error_code = NULL, last_error_message = NULL,
-             completed_at = NULL, updated_at = ?
-         WHERE order_id = ? AND task_type = 'SUBMIT_RECHARGE'`,
-        [now, now, row.order_id]
-      );
-      if (taskReset.affectedRows !== 1) {
-        throw new RechargeAttemptError('submit task could not be reset for re-authorization', 'TASK_RESET_FAILED');
+      if (resetSubmitTask) {
+        const [taskReset] = await connection.query(
+          `UPDATE tasks
+           SET status = 'PENDING', attempts = 0, available_at = ?, leased_until = NULL,
+               leased_by = NULL, last_error_code = NULL, last_error_message = NULL,
+               completed_at = NULL, updated_at = ?
+           WHERE order_id = ? AND task_type = 'SUBMIT_RECHARGE'`,
+          [now, now, row.order_id]
+        );
+        if (taskReset.affectedRows !== 1) {
+          throw new RechargeAttemptError('submit task could not be reset for re-authorization', 'TASK_RESET_FAILED');
+        }
       }
     }
 
-    await updateOrder(
-      connection,
-      row,
-      targetOrderStatus,
-      now,
-      persistSubmission ? ', recharge_order_no = ?, recharge_card_key = ?' : '',
-      persistSubmission ? [externalOrderId, externalReference] : []
-    );
+    const submissionSql = persistSubmission ? ', recharge_order_no = ?, recharge_card_key = ?' : '';
+    const submissionValues = persistSubmission ? [externalOrderId, externalReference] : [];
+    await updateOrder(connection, row, targetOrderStatus, now,
+      `${submissionSql}${orderExtraSql}`, [...submissionValues, ...orderExtraValues]);
     if (persistSubmission) {
       await connection.query(
         `UPDATE cards SET card_credentials_ciphertext = NULL,

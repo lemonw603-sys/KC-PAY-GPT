@@ -5,6 +5,8 @@
 
 > 注意：本文是阶段性运行交接。项目从最初构想到当前状态的完整历史、历史会话核对和事实/规划分层，以 [`PROJECT_HANDOFF_FULL_HISTORY_2026-08-21.md`](PROJECT_HANDOFF_FULL_HISTORY_2026-08-21.md) 为准。
 
+> 后续方向更新：本文关于“legacy 浏览器不属于当前生产路径”的运行事实仍有效，但 Browser 已被确认为未来 Plus 主执行链路；ZZSHU 不再是 Browser 项目的投入方向。接手新工作必须以 [`BROWSER_RECHARGE_EXECUTOR_BASELINE_2026-08-21.md`](BROWSER_RECHARGE_EXECUTOR_BASELINE_2026-08-21.md) 和 `DECISIONS.md` 的 D-038 至 D-040 为准。
+
 ## 一、项目身份与当前基线
 
 - 本地项目目录：`/Users/lemon/code/AI充值业务`

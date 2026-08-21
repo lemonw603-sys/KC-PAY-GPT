@@ -1,4 +1,5 @@
 import { OrderStatus } from '../domain/order-status.js';
+import { validateChatGptSession } from '../domain/session-validation.js';
 import { TaskExecutionError } from './task-runner.js';
 import { readAllCardTransactions } from '../services/card-transaction-reader.js';
 
@@ -26,6 +27,9 @@ export function createWorkflowHandlers({
   rechargeWritesEnabled = true,
   wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 }) {
+  if (!rechargeAttemptRepository) {
+    throw new TypeError('rechargeAttemptRepository is required');
+  }
   function withoutLatestSession(value) {
     if (Array.isArray(value)) return value.map(withoutLatestSession);
     if (!value || typeof value !== 'object') return value;
@@ -36,6 +40,21 @@ export function createWorkflowHandlers({
   function cardIdFromListRecord(record) {
     const value = record?.id ?? record?.cardId ?? record?.card_id;
     return value == null || String(value).trim() === '' ? null : String(value).trim();
+  }
+
+  async function requireFreshCustomerSession(orderId, session) {
+    try {
+      validateChatGptSession(session);
+    } catch {
+      await workflow.markSessionReplacementRequired(orderId, {
+        failureCode: 'SESSION_INVALID',
+        failureReason: 'Stored customer Session is invalid or expired',
+        customerActionCode: 'SESSION_INVALID'
+      });
+      throw new TaskExecutionError('Customer must replace an invalid Session', {
+        code: 'SESSION_INVALID', retryable: false
+      });
+    }
   }
 
   function cardTypeMatches(record, baseline) {
@@ -189,6 +208,7 @@ export function createWorkflowHandlers({
         code: 'ORDER_STATE_MISMATCH'
       });
     }
+    await requireFreshCustomerSession(task.order_id, context.session);
     if (!context.card?.credentials) {
       throw new TaskExecutionError('Cached card credentials are missing', {
         code: 'CARD_CREDENTIALS_MISSING'
@@ -225,31 +245,27 @@ export function createWorkflowHandlers({
         code: 'ORDER_STATE_MISMATCH'
       });
     }
+    await requireFreshCustomerSession(task.order_id, context.session);
 
-    let attempt = null;
-    let permit;
-    if (rechargeAttemptRepository) {
-      try {
-        attempt = await rechargeAttemptRepository.beginAuthorizedAttempt({
-          orderId: task.order_id,
-          taskId: task.id,
-          idempotencyKey: `recharge-submit:${task.order_id}`
-        });
-        permit = {
-          allowed: true,
-          providerCall: { id: attempt.providerCallId, startedAt: attempt.startedAt }
-        };
-      } catch (error) {
-        if (error?.code !== 'AUTHORIZATION_NOT_FOUND') throw error;
-      }
-    }
-    if (!permit) permit = await workflow.consumeRechargePermit(task.order_id, task.id, task.attempts);
-    if (!permit.allowed) {
-      throw new TaskExecutionError(`Recharge authorization rejected: ${permit.reason}`, {
-        code: attempt ? 'RECHARGE_AUTHORIZATION_REQUIRED' : 'RECHARGE_PERMIT_REQUIRED',
-        retryable: false
+    let attempt;
+    try {
+      attempt = await rechargeAttemptRepository.beginAuthorizedAttempt({
+        orderId: task.order_id,
+        taskId: task.id
       });
+    } catch (error) {
+      if (['AUTHORIZATION_NOT_FOUND', 'AUTHORIZATION_NOT_ACTIVE', 'AUTHORIZATION_EXPIRED']
+        .includes(error?.code)) {
+        throw new TaskExecutionError('Recharge requires an active Foundation authorization', {
+          code: 'RECHARGE_AUTHORIZATION_REQUIRED', retryable: true, delayMs: 60_000, cause: error
+        });
+      }
+      throw error;
     }
+    const permit = {
+      allowed: true,
+      providerCall: { id: attempt.providerCallId, startedAt: attempt.startedAt }
+    };
 
     let credentials = context.card.credentials;
     if (!credentials) {
@@ -283,56 +299,52 @@ export function createWorkflowHandlers({
         summarize: (value) => value
       });
     } catch (error) {
-      if (attempt) {
-        await (error.uncertain
-          ? rechargeAttemptRepository.markAttemptUnknown({
+      const sessionReplacementRequired = !error.uncertain
+        && String(error.businessCode || '') === '40030';
+      await (error.uncertain
+        ? rechargeAttemptRepository.markAttemptUnknown({
             attemptId: attempt.id,
             resultSummary: { code: error.code || error.kind || 'RECHARGE_SUBMIT_UNKNOWN' }
           })
-          : rechargeAttemptRepository.markAttemptCleared({
+        : sessionReplacementRequired
+          ? rechargeAttemptRepository.markAttemptCleared({
             attemptId: attempt.id,
-            resultSummary: { code: error.code || error.kind || 'RECHARGE_SUBMIT_REJECTED' }
+            resultSummary: { code: error.businessCode || error.code || error.kind || 'RECHARGE_SUBMIT_REJECTED' },
+            resetSubmitTask: false
+          })
+          : rechargeAttemptRepository.markAttemptRejected({
+            attemptId: attempt.id,
+            resultSummary: { code: error.businessCode || error.code || error.kind || 'RECHARGE_SUBMIT_REJECTED' }
           }));
-      } else {
-        await workflow.transition(
-          task.order_id,
-          error.uncertain ? OrderStatus.SUBMIT_UNKNOWN : OrderStatus.RECHARGE_FAILED,
-          error.uncertain ? 'recharge submission result unknown' : 'recharge submission rejected'
-        );
+      if (sessionReplacementRequired) {
+        await workflow.markSessionReplacementRequired(task.order_id, {
+          failureCode: 'TARGET_ACCOUNT_ALREADY_PLUS',
+          failureReason: 'Provider rejected target account because it already has Plus',
+          customerActionCode: 'ACCOUNT_ALREADY_PLUS'
+        });
       }
       throw new TaskExecutionError(error.message || 'Recharge submission failed', {
-        code: error.uncertain ? 'RECHARGE_SUBMIT_UNKNOWN' : 'RECHARGE_SUBMIT_REJECTED',
+        code: error.uncertain ? 'RECHARGE_SUBMIT_UNKNOWN'
+          : (sessionReplacementRequired ? 'TARGET_ACCOUNT_ALREADY_PLUS' : 'RECHARGE_SUBMIT_REJECTED'),
         retryable: false,
         cause: error
       });
     }
     try {
-      if (attempt) {
-        await rechargeAttemptRepository.markAttemptSubmitted({
+      await rechargeAttemptRepository.markAttemptSubmitted({
           attemptId: attempt.id,
           externalOrderId: submission.orderNo,
           externalReference: submission.cardKey,
           resultSummary: { orderNo: String(submission.orderNo) }
         });
-      } else {
-        await workflow.commitRechargeSubmission(task.order_id, submission);
-      }
     } catch (error) {
-      if (attempt) {
-        try {
-          await rechargeAttemptRepository.markAttemptUnknown({
+      try {
+        await rechargeAttemptRepository.markAttemptUnknown({
             attemptId: attempt.id,
             resultSummary: { code: 'RECHARGE_COMMIT_UNKNOWN' }
           });
-        } catch {
-          // The ACTIVE funds fence remains authoritative when recovery persistence is unavailable.
-        }
-      } else {
-        await workflow.transition(
-          task.order_id,
-          OrderStatus.SUBMIT_UNKNOWN,
-          'provider accepted recharge but local commit failed'
-        );
+      } catch {
+        // The ACTIVE funds fence remains authoritative when recovery persistence is unavailable.
       }
       throw new TaskExecutionError('Recharge was accepted but could not be committed locally', {
         code: 'RECHARGE_COMMIT_UNKNOWN', retryable: false, cause: error
@@ -415,7 +427,7 @@ export function createWorkflowHandlers({
       return;
     }
     if (status.status === 'failed') {
-      await workflow.transition(task.order_id, OrderStatus.RECHARGE_FAILED, 'provider confirmed failure', status);
+      await workflow.commitRechargeFailure(task.order_id, withoutLatestSession(status));
       return;
     }
     throw new TaskExecutionError(`Unsupported recharge status: ${status.status}`, {
@@ -425,23 +437,35 @@ export function createWorkflowHandlers({
 
   async function recheckCancellation(task) {
     const context = await workflow.loadOrderContext(task.order_id);
-    if (context.order.status !== OrderStatus.RECHARGE_SUCCESS) {
+    if (context.order.status !== OrderStatus.CANCELLATION_PENDING) {
       throw new TaskExecutionError(`Order cannot recheck cancellation from ${context.order.status}`, {
         code: 'ORDER_STATE_MISMATCH'
       });
     }
-    let status = await queryRecharge(task, task.attempts, {
-      includeSession: true,
-      operation: 'recheck_cancellation',
-      requestKey: `cancellation-status:${task.order_id}`
-    });
+    let status;
+    try {
+      status = await queryRecharge(task, task.attempts, {
+        includeSession: true,
+        operation: 'recheck_cancellation',
+        requestKey: `cancellation-status:${task.order_id}`
+      });
+    } catch (error) {
+      if (task.attempts < task.max_attempts) throw error;
+      await workflow.commitCancellationStatus(
+        task.order_id,
+        { status: 'unknown', isSubscriptionCancelled: 0 },
+        null,
+        { exhausted: true }
+      );
+      return;
+    }
     if (Array.isArray(status)) [status] = status;
     if (status.status !== 'success') {
-      await workflow.transition(
+      await workflow.commitCancellationStatus(
         task.order_id,
-        OrderStatus.RECONCILIATION_REQUIRED,
-        'provider status changed after confirmed success',
-        withoutLatestSession(status)
+        withoutLatestSession(status),
+        status.latestSession,
+        { exhausted: true }
       );
       return;
     }

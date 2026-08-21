@@ -192,6 +192,45 @@ test('does not cache missing-order responses', async () => {
   });
 });
 
+test('replaces a customer Session on the original order without exposing internal fields', async () => {
+  let received;
+  const app = createApp({
+    replaceCustomerSession: async (body) => {
+      received = body;
+      return {
+        publicNo: 'PJV1-ABCDEFGHIJKLMNOPQRST',
+        status: 'CARD_READY',
+        replacementCount: 1,
+        replacementsRemaining: 2,
+        repairExpiresAt: '2026-08-24T10:00:00.000Z'
+      };
+    }
+  });
+  await withServer(app, async (baseUrl) => {
+    const body = {
+      publicNo: 'PJV1-ABCDEFGHIJKLMNOPQRST',
+      session: { accessToken: 'fixture', sessionToken: 'fixture' }
+    };
+    const response = await fetch(`${baseUrl}/api/v1/orders/session`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get('cache-control'), 'no-store');
+    assert.deepEqual(await response.json(), {
+      order: {
+        publicNo: 'PJV1-ABCDEFGHIJKLMNOPQRST',
+        status: 'CARD_READY',
+        replacementCount: 1,
+        replacementsRemaining: 2,
+        repairExpiresAt: '2026-08-24T10:00:00.000Z'
+      }
+    });
+    assert.deepEqual(received, body);
+  });
+});
+
 test('protects the admin page and read APIs with a server-side signed session', async () => {
   const adminAuth = createAdminSessionAuth({
     passwordHash: await hashAdminPassword('fixture admin password', { salt: Buffer.alloc(16, 4) }),

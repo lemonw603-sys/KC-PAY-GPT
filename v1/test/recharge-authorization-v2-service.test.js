@@ -100,6 +100,32 @@ test('allows a cleared historical attempt but refuses an active funds fence', as
   assert.doesNotMatch(pool.queries[1].sql, /CLEARED/);
 });
 
+test('recovers only a safely unstarted authorization-race task before reauthorizing it', async () => {
+  const now = new Date('2026-08-20T12:00:00.000Z');
+  const pool = scriptedPool([
+    [[{
+      order_id: 'order-1', public_no: 'PJV2-ORDER-0001', order_status: 'CARD_READY',
+      task_id: 11, task_status: 'PENDING', attempts: 1,
+      last_error_code: 'RECHARGE_AUTHORIZATION_REQUIRED'
+    }], []],
+    [[], []],
+    [[], []],
+    [{ affectedRows: 1 }, []],
+    [[], []],
+    [{ affectedRows: 1 }, []],
+    [{ affectedRows: 1 }, []],
+    [{ affectedRows: 1 }, []]
+  ]);
+
+  const result = await createRechargeAuthorization(pool, {
+    publicNos: ['PJV2-ORDER-0001'], now
+  });
+  assert.equal(result.items.length, 1);
+  assert.match(pool.queries[5].sql, /SET attempts = 0/);
+  assert.deepEqual(pool.queries[5].values.slice(0, 2), [now, now]);
+  assert.equal(pool.queries[5].values[2], 11);
+});
+
 test('refuses authorization when a legacy ZZSHU create call exists', async () => {
   const pool = scriptedPool([
     [[{

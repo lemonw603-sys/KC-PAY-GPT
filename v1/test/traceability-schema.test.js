@@ -13,8 +13,8 @@ test('traceability migration is the latest ordered migration', () => {
   const names = fs.readdirSync(migrationsDir)
     .filter((name) => /^\d+_[a-z0-9_-]+\.sql$/i.test(name))
     .sort();
-  assert.equal(names.at(-1), migrationName);
-  assert.equal(names.at(-2), '023_bark_notifications.sql');
+  assert.equal(names.at(-1), '025_session_recovery_and_finalization.sql');
+  assert.equal(names.at(-2), migrationName);
 });
 
 test('traceability migration creates the required additive ledgers', () => {

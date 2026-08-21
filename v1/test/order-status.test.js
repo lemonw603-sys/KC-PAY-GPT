@@ -15,6 +15,7 @@ test('accepts the intended happy-path order transitions', () => {
     OrderStatus.CARD_READY,
     OrderStatus.SUBMITTING,
     OrderStatus.RECHARGE_PROCESSING,
+    OrderStatus.CANCELLATION_PENDING,
     OrderStatus.RECHARGE_SUCCESS,
     OrderStatus.CLOSED
   ];
@@ -23,6 +24,11 @@ test('accepts the intended happy-path order transitions', () => {
     assert.equal(canTransitionOrder(path[index], path[index + 1]), true);
     assert.doesNotThrow(() => assertOrderTransition(path[index], path[index + 1]));
   }
+});
+
+test('allows a locally invalid Session to enter and leave customer repair', () => {
+  assert.equal(canTransitionOrder(OrderStatus.CARD_READY, OrderStatus.WAITING_FOR_SESSION), true);
+  assert.equal(canTransitionOrder(OrderStatus.WAITING_FOR_SESSION, OrderStatus.CARD_READY), true);
 });
 
 test('blocks retrying an ambiguous submission by state transition', () => {

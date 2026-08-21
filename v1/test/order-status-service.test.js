@@ -9,11 +9,55 @@ import {
 test('maps internal states to the limited customer status vocabulary', () => {
   assert.equal(mapCustomerOrderStatus('CREATED'), 'QUEUED');
   assert.equal(mapCustomerOrderStatus('SUBMITTING'), 'PROCESSING');
+  assert.equal(mapCustomerOrderStatus('WAITING_FOR_SESSION'), 'ACTION_REQUIRED');
+  assert.equal(mapCustomerOrderStatus('CANCELLATION_PENDING'), 'FINALIZING');
+  assert.equal(mapCustomerOrderStatus('CANCELLATION_REVIEW_REQUIRED'), 'REVIEWING');
   assert.equal(mapCustomerOrderStatus('SUBMIT_UNKNOWN'), 'REVIEWING');
   assert.equal(mapCustomerOrderStatus('RECONCILIATION_REQUIRED'), 'REVIEWING');
   assert.equal(mapCustomerOrderStatus('RECHARGE_SUCCESS'), 'SUCCESS');
   assert.equal(mapCustomerOrderStatus('RECHARGE_FAILED'), 'FAILED');
   assert.equal(mapCustomerOrderStatus('FUTURE_PROVIDER_STATE'), 'REVIEWING');
+});
+
+test('exposes only allowlisted customer actions and bounded Session replacement metadata', async () => {
+  const service = createOrderStatusService({
+    pool: {},
+    repository: {
+      findCustomerOrder: async () => ({
+        public_no: 'PJV1-ABCDEFGHIJKLMNOPQRST',
+        effective_status: 'WAITING_FOR_SESSION',
+        customer_action_code: 'ACCOUNT_ALREADY_PLUS',
+        session_replacement_count: 1,
+        session_repair_expires_at: new Date('2026-08-24T10:00:00.000Z'),
+        updated_at: new Date('2026-08-21T10:00:00.000Z')
+      })
+    }
+  });
+  const result = await service({ publicNo: 'PJV1-ABCDEFGHIJKLMNOPQRST' });
+  assert.deepEqual(result.actionRequired, {
+    code: 'ACCOUNT_ALREADY_PLUS',
+    message: '当前账号已是 Plus，请更换一个免费账号的 Session。'
+  });
+  assert.deepEqual(result.sessionReplacement, {
+    used: 1,
+    remaining: 2,
+    expiresAt: '2026-08-24T10:00:00.000Z'
+  });
+
+  const hidden = createOrderStatusService({
+    pool: {},
+    repository: {
+      findCustomerOrder: async () => ({
+        public_no: 'PJV1-ABCDEFGHIJKLMNOPQRST',
+        effective_status: 'WAITING_FOR_SESSION',
+        customer_action_code: 'CARD_INVENTORY_EMPTY',
+        session_replacement_count: 0,
+        updated_at: new Date('2026-08-21T10:00:00.000Z')
+      })
+    }
+  });
+  const hiddenResult = await hidden({ publicNo: 'PJV1-ABCDEFGHIJKLMNOPQRST' });
+  assert.equal(Object.hasOwn(hiddenResult, 'actionRequired'), false);
 });
 
 test('looks up by public number or hashed CDK without passing CDK plaintext', async () => {

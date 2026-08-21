@@ -20,6 +20,20 @@ const STATUS = Object.freeze({
     terminal: false,
     pollAfter: 30000
   },
+  ACTION_REQUIRED: {
+    label: '需要更换资料',
+    title: '请更换账号 Session',
+    description: '当前账号不符合充值条件，请在原订单更换 Session。',
+    terminal: false,
+    pollAfter: 30000
+  },
+  FINALIZING: {
+    label: '收尾中',
+    title: '正在确认取消自动续费',
+    description: '充值平台已确认付款，系统正在确认订阅已取消自动续费。',
+    terminal: false,
+    pollAfter: 10000
+  },
   SUCCESS: {
     label: '已成功',
     title: 'Plus 已开通',
@@ -51,6 +65,10 @@ const ERROR_MESSAGES = Object.freeze({
   ordering_not_configured: '当前暂时无法创建订单，请稍后再试。',
   invalid_order_query: '请输入有效的订单查询码或原 CDK卡密。',
   order_not_found: '没有找到对应订单，请检查输入。',
+  session_replacement_not_allowed: '当前订单不需要更换 Session。',
+  session_replacement_expired: 'Session 更换时间已过，请保留查询码联系人工处理。',
+  session_replacement_limit_reached: 'Session 更换次数已用完，请保留查询码联系人工处理。',
+  funds_state_unsafe: '订单正在资金复核，暂时不能更换 Session。',
   rate_limited: '操作过于频繁，请稍后再试。',
   body_too_large: '账号 Session 内容过大，请检查是否粘贴了多余内容。',
   invalid_json: '请求内容不是有效 JSON。'
@@ -76,11 +94,17 @@ const elements = {
   updatedAt: document.querySelector('#updated-at'),
   pollingNote: document.querySelector('#polling-note'),
   copyButton: document.querySelector('#copy-button'),
+  replacementForm: document.querySelector('#session-replacement-form'),
+  replacementSessionInput: document.querySelector('#replacement-session-input'),
+  replacementConfirmInput: document.querySelector('#replacement-confirm-input'),
+  replacementSubmitButton: document.querySelector('#replacement-submit-button'),
+  replacementLimit: document.querySelector('#replacement-limit'),
   notice: document.querySelector('#notice')
 };
 
 let pollTimer = null;
 let pollingStartedAt = 0;
+let currentOrder = null;
 
 function switchTab(panelId) {
   for (const tab of elements.tabs) {
@@ -162,10 +186,24 @@ function renderOrder(order, { scroll = true } = {}) {
   elements.statusChip.dataset.status = normalizedStatus;
   elements.statusLabel.textContent = meta.label;
   elements.resultTitle.textContent = meta.title;
-  elements.resultDescription.textContent = meta.description;
+  currentOrder = order;
+  const replacement = order.sessionReplacement || {};
+  const replacementExpired = replacement.expiresAt
+    && new Date(replacement.expiresAt).getTime() <= Date.now();
+  const replacementUnavailable = normalizedStatus === 'ACTION_REQUIRED'
+    && (Number(replacement.remaining || 0) <= 0 || replacementExpired);
+  elements.resultDescription.textContent = replacementUnavailable
+    ? 'Session 更换次数或时间窗口已用完，请保留查询码联系人工处理。'
+    : (order.actionRequired?.message || meta.description);
   elements.publicNo.textContent = order.publicNo;
   elements.queryInput.value = order.publicNo;
   elements.updatedAt.textContent = formatTime(order.updatedAt);
+  const mayReplaceSession = normalizedStatus === 'ACTION_REQUIRED'
+    && order.actionRequired && !replacementUnavailable;
+  elements.replacementForm.hidden = !mayReplaceSession;
+  if (mayReplaceSession) {
+    elements.replacementLimit.textContent = `还可更换 ${replacement.remaining ?? 0} 次${replacement.expiresAt ? ` · 截止 ${new Date(replacement.expiresAt).toLocaleString('zh-CN', { hour12: false })}` : ''}`;
+  }
   elements.pollingNote.textContent = meta.terminal
     ? '该订单已进入最终状态，自动查询已停止。'
     : `页面将在 ${Math.round(meta.pollAfter / 1000)} 秒后自动更新。`;
@@ -173,6 +211,38 @@ function renderOrder(order, { scroll = true } = {}) {
   if (scroll) elements.resultCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   schedulePoll(order.publicNo, meta);
 }
+
+elements.replacementForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  hideNotice();
+  if (!currentOrder?.publicNo) return showNotice('请先查询订单。');
+  if (!elements.replacementConfirmInput.checked) return showNotice('请确认新账号当前是免费账号。');
+  let session;
+  try {
+    session = JSON.parse(elements.replacementSessionInput.value);
+  } catch {
+    return showNotice('新 Session 格式不正确，请检查后重试。');
+  }
+  if (!session || typeof session !== 'object' || Array.isArray(session)) {
+    return showNotice('请粘贴完整的新 Session。');
+  }
+  setBusy(elements.replacementSubmitButton, true, '正在更换…');
+  try {
+    const payload = await postJson('/api/v1/orders/session', {
+      publicNo: currentOrder.publicNo, session
+    });
+    elements.replacementSessionInput.value = '';
+    elements.replacementConfirmInput.checked = false;
+    pollingStartedAt = Date.now();
+    renderOrder({ ...payload.order, updatedAt: new Date().toISOString() });
+    showNotice('Session 已更换，订单将继续处理。', 'success');
+  } catch (error) {
+    showNotice(customerMessage(error));
+  } finally {
+    session = null;
+    setBusy(elements.replacementSubmitButton, false, '');
+  }
+});
 
 function stopPolling() {
   if (pollTimer) window.clearTimeout(pollTimer);

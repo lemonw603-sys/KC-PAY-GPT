@@ -19,11 +19,14 @@ export async function claimNextTask(pool, {
          AND (
            task_type <> 'SUBMIT_RECHARGE'
            OR (
-             JSON_UNQUOTE(JSON_EXTRACT(payload_json, '$.rechargePermit.status')) = 'ARMED'
-             AND STR_TO_DATE(
-               JSON_UNQUOTE(JSON_EXTRACT(payload_json, '$.rechargePermit.expiresAt')),
-               '%Y-%m-%dT%H:%i:%s.%fZ'
-             ) > UTC_TIMESTAMP(3)
+             EXISTS (
+               SELECT 1 FROM recharge_authorization_items rai
+               INNER JOIN recharge_authorizations ra ON ra.id = rai.authorization_id
+               WHERE rai.order_id = tasks.order_id
+                 AND rai.status = 'PENDING'
+                 AND ra.status = 'ACTIVE'
+                 AND ra.expires_at > UTC_TIMESTAMP(3)
+             )
            )
          )
          AND (

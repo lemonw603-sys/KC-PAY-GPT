@@ -53,14 +53,14 @@ test('atomically begins an authorized attempt in the required lock/write order',
     taskId: 91,
     authorizationItemId: 'item-1',
     attemptId: 'attempt-1',
-    idempotencyKey: 'idem-1',
     now
   });
 
   assert.deepEqual(result, {
     id: 'attempt-1', orderId: 'order-1', authorizationItemId: 'item-1',
     providerAccountId: 'provider-account-1', executorKind: 'API',
-    status: 'PREPARED', fundsRiskState: 'ACTIVE', providerCallId: 501, startedAt: now
+    status: 'PREPARED', fundsRiskState: 'ACTIVE', providerCallId: 501,
+    idempotencyKey: 'recharge-auth-item:item-1', startedAt: now
   });
   assert.deepEqual(pool.transaction, { began: 1, committed: 1, rolledBack: 0, released: 1 });
   assert.match(pool.queries[0].sql, /FROM tasks[\s\S]*FOR UPDATE/);
@@ -68,13 +68,16 @@ test('atomically begins an authorized attempt in the required lock/write order',
   assert.match(pool.queries[2].sql, /recharge_authorization_items[\s\S]*FOR UPDATE/);
   assert.match(pool.queries[5].sql, /INSERT INTO recharge_attempts/);
   assert.match(pool.queries[5].sql, /'PREPARED', 'ACTIVE'/);
+  assert.equal(pool.queries[5].values[6], 'recharge-auth-item:item-1');
   assert.match(pool.queries[6].sql, /status = 'CONSUMED'/);
   assert.match(pool.queries[7].sql, /SET status = \?, version = version \+ 1/);
   assert.match(pool.queries[8].sql, /INSERT INTO order_events/);
   assert.match(pool.queries[9].sql, /INSERT INTO provider_calls/);
+  assert.match(pool.queries[9].sql, /'create_direct'/);
   assert.deepEqual(pool.queries[9].values.slice(0, 4), [
     'order-1', 'attempt-1', 'new-provider', 'provider-account-1'
   ]);
+  assert.equal(pool.queries[9].values[4], 'recharge-auth-item:item-1');
   const allSql = pool.queries.map((entry) => entry.sql).join('\n');
   assert.doesNotMatch(allSql, /app_settings|dispatch_new_recharges|payload_json/i);
 });
@@ -130,7 +133,7 @@ test('same order can begin only once when a competing funds fence exists', async
 });
 
 function transitionResponses({ orderStatus = 'SUBMITTING', authorizationItemId = 'item-1',
-  release = false, persistSubmission = false } = {}) {
+  release = false, resetTask = release, persistSubmission = false } = {}) {
   const responses = [
     [[{
       id: 'attempt-1', order_id: 'order-1', authorization_item_id: authorizationItemId,
@@ -141,6 +144,8 @@ function transitionResponses({ orderStatus = 'SUBMITTING', authorizationItemId =
   ];
   if (release) {
     responses.push([{ affectedRows: 1 }, []]); // authorization release
+  }
+  if (resetTask) {
     responses.push([{ affectedRows: 1 }, []]); // task reset
   }
   responses.push([{ affectedRows: 1 }, []]); // order
@@ -153,7 +158,7 @@ function transitionResponses({ orderStatus = 'SUBMITTING', authorizationItemId =
   return responses;
 }
 
-test('UNKNOWN and SETTLED retain the order funds fence', async () => {
+test('UNKNOWN retains the order funds fence', async () => {
   const unknownPool = scriptedPool(transitionResponses());
   const unknown = await createRechargeAttemptRepository(unknownPool).markAttemptUnknown({
     attemptId: 'attempt-1', resultSummary: { code: 'timeout' },
@@ -163,14 +168,6 @@ test('UNKNOWN and SETTLED retain the order funds fence', async () => {
   assert.deepEqual(unknownPool.queries[1].values.slice(0, 2), ['SUBMIT_UNKNOWN', 'UNKNOWN']);
   assert.equal(unknown.orderStatus, 'SUBMIT_UNKNOWN');
 
-  const settledPool = scriptedPool(transitionResponses({ orderStatus: 'RECHARGE_PROCESSING' }));
-  const settled = await createRechargeAttemptRepository(settledPool).markAttemptSettled({
-    attemptId: 'attempt-1', externalOrderId: 'external-1',
-    now: new Date('2026-08-20T12:02:00.000Z')
-  });
-  assert.equal(settled.fundsRiskState, 'SETTLED');
-  assert.deepEqual(settledPool.queries[1].values.slice(0, 2), ['SUCCESS', 'SETTLED']);
-  assert.equal(settled.orderStatus, 'RECHARGE_SUCCESS');
 });
 
 test('CLEARED releases the fence and consumed authorization for manual re-authorization', async () => {
@@ -201,6 +198,19 @@ test('a settled attempt can never be cleared and release its fence', async () =>
   );
   assert.equal(pool.queries.length, 1);
   assert.equal(pool.transaction.rolledBack, 1);
+});
+
+test('a definite pre-create rejection atomically clears funds and closes the order', async () => {
+  const now = new Date('2026-08-20T12:03:00.000Z');
+  const pool = scriptedPool(transitionResponses({ release: true, resetTask: false }));
+  const result = await createRechargeAttemptRepository(pool).markAttemptRejected({
+    attemptId: 'attempt-1', resultSummary: { code: 'CAPACITY_REJECTED' }, now
+  });
+  assert.equal(result.fundsRiskState, 'CLEARED');
+  assert.equal(result.orderStatus, 'RECHARGE_FAILED');
+  assert.match(pool.queries[3].sql, /failure_code = 'RECHARGE_SUBMIT_REJECTED'/);
+  assert.match(pool.queries[3].sql, /customer_action_code = NULL/);
+  assert.equal(pool.queries.some((entry) => /UPDATE tasks/.test(entry.sql)), false);
 });
 
 test('markAttemptSubmitted records external identity and moves to processing', async () => {

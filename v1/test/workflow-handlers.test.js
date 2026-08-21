@@ -3,6 +3,7 @@ import test from 'node:test';
 import { OrderStatus } from '../src/domain/order-status.js';
 import { ProviderError } from '../src/providers/http-client.js';
 import { createWorkflowHandlers } from '../src/workers/workflow-handlers.js';
+import { sessionFixture } from '../test-support/session-fixture.js';
 
 function setup({ status = OrderStatus.CARD_READY, rechargeStatuses = [],
   rechargeAttemptRepository = null } = {}) {
@@ -19,7 +20,7 @@ function setup({ status = OrderStatus.CARD_READY, rechargeStatuses = [],
       recharge_card_key: 'DIRECT-fixture'
     },
     card: { provider_card_id: 'card-1' },
-    session: { accessToken: 'fixture' }
+    session: sessionFixture()
   };
   const workflow = {
     loadOrderContext: async () => context,
@@ -28,6 +29,7 @@ function setup({ status = OrderStatus.CARD_READY, rechargeStatuses = [],
       return { providerCardId: 'stock-card-1', remaining: 4 };
     },
     transition: async (...args) => calls.push(['transition', ...args]),
+    markSessionReplacementRequired: async (...args) => calls.push(['session-required', ...args]),
     beginCardPurchase: async (...args) => calls.push(['begin-card', ...args]),
     markCardPurchaseAccepted: async (...args) => calls.push(['purchase-accepted', ...args]),
     reviewCardPurchase: async (...args) => calls.push(['review-purchase', ...args]),
@@ -37,6 +39,7 @@ function setup({ status = OrderStatus.CARD_READY, rechargeStatuses = [],
     reviewCardProvisioning: async (...args) => calls.push(['review-card', ...args]),
     commitRechargeSubmission: async (...args) => calls.push(['submission', ...args]),
     commitRechargeSuccess: async (...args) => calls.push(['success', ...args]),
+    commitRechargeFailure: async (...args) => calls.push(['recharge-failure', ...args]),
     commitCancellationStatus: async (...args) => calls.push(['cancellation', ...args]),
     commitCardTransactions: async (...args) => calls.push(['transactions', ...args]),
     recordPrepaymentReady: async (...args) => calls.push(['prepayment', ...args]),
@@ -58,6 +61,16 @@ function setup({ status = OrderStatus.CARD_READY, rechargeStatuses = [],
     createDirectOrder: async () => ({ orderNo: '12', cardKey: 'DIRECT-fixture', status: 'processing' }),
     queryStatus: async () => rechargeStatuses.shift()
   };
+  const effectiveAttemptRepository = rechargeAttemptRepository || {
+    beginAuthorizedAttempt: async () => ({
+      id: 'attempt-default', providerCallId: 99,
+      providerAccountId: 'provider-account-default', startedAt: new Date()
+    }),
+    markAttemptSubmitted: async (input) => calls.push(['attempt-submitted', input]),
+    markAttemptUnknown: async (input) => calls.push(['attempt-unknown', input]),
+    markAttemptCleared: async (input) => calls.push(['attempt-cleared', input]),
+    markAttemptRejected: async (input) => calls.push(['attempt-rejected', input])
+  };
   const recordCall = async (input) => {
     providerCalls.push(input);
     return input.action();
@@ -78,12 +91,13 @@ function setup({ status = OrderStatus.CARD_READY, rechargeStatuses = [],
       method: 'POST', path: '/third-party/orders/direct',
       body: { ...input, planType: input.planType || 'plus' }
     }),
-    rechargeAttemptRepository,
+    rechargeAttemptRepository: effectiveAttemptRepository,
     wait: async () => {},
     pollDelayMs: 1,
     failureConfirmDelayMs: 1
   });
-  return { calls, providerCalls, context, workflow, cardProvider, rechargeProvider, handlers };
+  return { calls, providerCalls, context, workflow, cardProvider, rechargeProvider,
+    rechargeAttemptRepository: effectiveAttemptRepository, handlers };
 }
 
 test('Foundation v2 consumes an explicit authorization and commits through the funds fence', async () => {
@@ -112,37 +126,34 @@ test('Foundation v2 consumes an explicit authorization and commits through the f
 test('submits one direct recharge and commits external identifiers', async () => {
   const state = setup();
   await state.handlers.SUBMIT_RECHARGE({ id: 1, order_id: 'order-1', attempts: 1 });
-  assert.equal(state.calls[0][0], 'permit');
-  assert.deepEqual(state.calls[1], [
-    'submission',
-    'order-1',
-    { orderNo: '12', cardKey: 'DIRECT-fixture', status: 'processing' }
-  ]);
+  assert.equal(state.calls[0][0], 'attempt-submitted');
+  assert.equal(state.calls[0][1].externalOrderId, '12');
+  assert.equal(state.calls[0][1].externalReference, 'DIRECT-fixture');
   assert.equal(state.providerCalls.find((call) => call.operation === 'create_direct').existingCall.id, 99);
 });
 
 test('marks a successful provider call unknown when the local submission commit fails', async () => {
   const state = setup();
-  state.workflow.commitRechargeSubmission = async () => {
+  state.rechargeAttemptRepository.markAttemptSubmitted = async () => {
     throw new Error('database commit failed');
   };
   await assert.rejects(
     state.handlers.SUBMIT_RECHARGE({ id: 1, order_id: 'order-1', attempts: 1 }),
     (error) => error.code === 'RECHARGE_COMMIT_UNKNOWN'
   );
-  assert.deepEqual(state.calls.at(-1).slice(0, 3), [
-    'transition', 'order-1', OrderStatus.SUBMIT_UNKNOWN
-  ]);
+  assert.equal(state.calls.at(-1)[0], 'attempt-unknown');
 });
 
-test('refuses a recharge without consuming a one-order permit and never calls the provider', async () => {
-  const state = setup();
-  state.workflow.consumeRechargePermit = async () => ({ allowed: false, reason: 'PERMIT_NOT_ARMED' });
+test('refuses a recharge without a Foundation authorization and never calls the provider', async () => {
+  const missingAuthorization = {
+    beginAuthorizedAttempt: async () => { throw Object.assign(new Error('missing'), { code: 'AUTHORIZATION_NOT_FOUND' }); }
+  };
+  const state = setup({ rechargeAttemptRepository: missingAuthorization });
   let submissions = 0;
   state.rechargeProvider.createDirectOrder = async () => { submissions += 1; };
   await assert.rejects(
     state.handlers.SUBMIT_RECHARGE({ id: 7, order_id: 'order-1', attempts: 1 }),
-    (error) => error.code === 'RECHARGE_PERMIT_REQUIRED'
+    (error) => error.code === 'RECHARGE_AUTHORIZATION_REQUIRED'
   );
   assert.equal(submissions, 0);
   assert.equal(state.calls.some(([name]) => name === 'transition'), false);
@@ -155,7 +166,7 @@ test('submits with encrypted cached card credentials without rereading the provi
   };
   state.cardProvider.card = async () => { throw new Error('must not reread card credentials'); };
   await state.handlers.SUBMIT_RECHARGE({ id: 1, order_id: 'order-1', attempts: 1 });
-  assert.equal(state.calls.at(-1)[0], 'submission');
+  assert.equal(state.calls.at(-1)[0], 'attempt-submitted');
   assert.equal(state.providerCalls.some((call) => call.operation === 'card_details'), false);
 });
 
@@ -274,10 +285,10 @@ test('maps an ambiguous create failure to SUBMIT_UNKNOWN', async () => {
   await assert.rejects(
     state.handlers.SUBMIT_RECHARGE({ id: 1, order_id: 'order-1', attempts: 1 })
   );
-  assert.equal(state.calls.at(-1)[2], OrderStatus.SUBMIT_UNKNOWN);
+  assert.equal(state.calls.at(-1)[0], 'attempt-unknown');
 });
 
-test('does not automatically retry even a definite pre-create rejection after consuming a permit', async () => {
+test('closes a definite pre-create rejection without retrying or leaving a processing zombie', async () => {
   const state = setup();
   state.rechargeProvider.createDirectOrder = async () => {
     throw new ProviderError('capacity', { provider: 'zzshu', uncertain: false, retryable: true });
@@ -285,7 +296,46 @@ test('does not automatically retry even a definite pre-create rejection after co
   await assert.rejects(
     state.handlers.SUBMIT_RECHARGE({ id: 1, order_id: 'order-1', attempts: 1 })
   );
-  assert.equal(state.calls.at(-1)[2], OrderStatus.RECHARGE_FAILED);
+  assert.equal(state.calls.at(-1)[0], 'attempt-rejected');
+});
+
+test('maps provider 40030 to a customer-repairable Session replacement state', async () => {
+  const state = setup();
+  state.rechargeProvider.createDirectOrder = async () => {
+    throw new ProviderError('already plus', {
+      provider: 'zzshu', status: 400, businessCode: '40030', uncertain: false
+    });
+  };
+  await assert.rejects(
+    state.handlers.SUBMIT_RECHARGE({ id: 1, order_id: 'order-1', attempts: 1 }),
+    (error) => error.code === 'TARGET_ACCOUNT_ALREADY_PLUS' && error.retryable === false
+  );
+  assert.equal(state.calls.some(([name]) => name === 'transition'), false);
+  assert.equal(state.calls.find(([name]) => name === 'attempt-cleared')[1].resetSubmitTask, false);
+  assert.deepEqual(state.calls.find(([name]) => name === 'session-required').slice(1), [
+    'order-1', {
+      failureCode: 'TARGET_ACCOUNT_ALREADY_PLUS',
+      failureReason: 'Provider rejected target account because it already has Plus',
+      customerActionCode: 'ACCOUNT_ALREADY_PLUS'
+    }
+  ]);
+});
+
+test('moves an expired local Session to customer repair before any recharge submission', async () => {
+  const state = setup({ status: OrderStatus.CARD_READY });
+  state.context.session = { accessToken: 'expired', sessionToken: 'expired', expires: '2020-01-01' };
+  await assert.rejects(
+    state.handlers.SUBMIT_RECHARGE({ id: 1, order_id: 'order-1', attempts: 0 }),
+    (error) => error.code === 'SESSION_INVALID' && error.retryable === false
+  );
+  assert.deepEqual(state.calls.find(([name]) => name === 'session-required').slice(1), [
+    'order-1', {
+      failureCode: 'SESSION_INVALID',
+      failureReason: 'Stored customer Session is invalid or expired',
+      customerActionCode: 'SESSION_INVALID'
+    }
+  ]);
+  assert.equal(state.providerCalls.length, 0);
 });
 
 test('confirms a failed status twice before marking the order failed', async () => {
@@ -297,8 +347,9 @@ test('confirms a failed status twice before marking the order failed', async () 
     ]
   });
   await state.handlers.POLL_RECHARGE({ id: 2, order_id: 'order-1', attempts: 3 });
-  assert.equal(state.calls.at(-1)[2], OrderStatus.RECHARGE_FAILED);
-  assert.equal(state.calls.at(-1)[4].failureReason, 'confirmed');
+  assert.equal(state.calls.at(-1)[0], 'recharge-failure');
+  assert.equal(state.calls.at(-1)[1], 'order-1');
+  assert.equal(state.calls.at(-1)[2].failureReason, 'confirmed');
 });
 
 test('marks success immediately and never guesses unknown states', async () => {
@@ -328,7 +379,7 @@ test('marks success immediately and never guesses unknown states', async () => {
 
 test('persists the latest Session and rechecks cancellation independently', async () => {
   const state = setup({
-    status: OrderStatus.RECHARGE_SUCCESS,
+    status: OrderStatus.CANCELLATION_PENDING,
     rechargeStatuses: [{
       status: 'success', isSubscriptionCancelled: 1,
       latestSession: { accessToken: 'latest', sessionToken: 'latest-session' }
@@ -345,7 +396,7 @@ test('persists the latest Session and rechecks cancellation independently', asyn
 
 test('requeues an unconfirmed cancellation without changing recharge success', async () => {
   const state = setup({
-    status: OrderStatus.RECHARGE_SUCCESS,
+    status: OrderStatus.CANCELLATION_PENDING,
     rechargeStatuses: [{ status: 'success', isSubscriptionCancelled: 0 }]
   });
   await assert.rejects(
@@ -354,6 +405,34 @@ test('requeues an unconfirmed cancellation without changing recharge success', a
   );
   assert.equal(state.calls.at(-1)[0], 'cancellation');
   assert.equal(state.calls.some((call) => call[0] === 'transition'), false);
+});
+
+test('moves a changed post-payment provider result to cancellation review with the review flag path', async () => {
+  const state = setup({
+    status: OrderStatus.CANCELLATION_PENDING,
+    rechargeStatuses: [{ status: 'failed', failureReason: 'status changed after payment success' }]
+  });
+  await state.handlers.RECHECK_CANCELLATION({
+    id: 3, order_id: 'order-1', attempts: 2, max_attempts: 60
+  });
+  assert.equal(state.calls.at(-1)[0], 'cancellation');
+  assert.deepEqual(state.calls.at(-1)[4], { exhausted: true });
+  assert.equal(state.calls.some((call) => call[0] === 'transition'), false);
+});
+
+test('moves exhausted cancellation query errors to review instead of leaving the order pending', async () => {
+  const state = setup({ status: OrderStatus.CANCELLATION_PENDING });
+  state.rechargeProvider.queryStatusWithSession = async () => {
+    throw new ProviderError('provider unavailable', {
+      provider: 'zzshu', uncertain: false, retryable: true
+    });
+  };
+  await state.handlers.RECHECK_CANCELLATION({
+    id: 3, order_id: 'order-1', attempts: 60, max_attempts: 60
+  });
+  assert.equal(state.calls.at(-1)[0], 'cancellation');
+  assert.deepEqual(state.calls.at(-1)[2], { status: 'unknown', isSubscriptionCancelled: 0 });
+  assert.deepEqual(state.calls.at(-1)[4], { exhausted: true });
 });
 
 test('uses a local audit key instead of persisting the recharge card key', async () => {

@@ -1,5 +1,6 @@
 const SELECT_ORDER = `
-  SELECT o.public_no, o.status, o.updated_at,
+  SELECT o.public_no, o.status, o.updated_at, o.customer_action_code,
+         o.session_replacement_count, o.session_repair_expires_at,
          COALESCE(
            CASE WHEN o.status = 'CLOSED' THEN (
              CASE WHEN o.failure_code = 'CANCELLED_PRE_SUBMISSION' THEN 'CARD_FAILED'

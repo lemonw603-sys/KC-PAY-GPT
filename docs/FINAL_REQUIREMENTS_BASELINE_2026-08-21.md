@@ -10,8 +10,10 @@
 - Pro 5X、Pro 20X 只预留产品扩展，当前不实现。
 - 目标规模每天 200–300 单；当前限额是灰度保护，不是最终容量。
 - 三端积木架构：可替换卡台适配层、运营后台、执行/充值台。
-- API 执行器优先，未来增加 Browser 执行器；两者共用订单、资金栅栏、审计和对账。
-- 当前主路线是 HNSKJ + ZZSHU。备用卡台先人工切换，只影响新订单，旧订单保留原路线。
+- Browser 是未来 Plus 充值的主执行链路：HNSKJ 提供虚拟卡，Browser 直接在 ChatGPT 官方页面购买 Plus 并取消续费。
+- Browser 复用现有订单、卡片、资金栅栏、审计、对账和运营后台，不建立第二套业务系统。
+- ZZSHU 不再是 Browser 项目的依赖或投入方向；现有代码和历史数据只作旧系统兼容处理。
+- Browser 详细需求、接口、恢复和容量基线见 `BROWSER_RECHARGE_EXECUTOR_BASELINE_2026-08-21.md`。
 
 ## 2. 付款与 CDK
 
@@ -114,7 +116,7 @@ HNSKJ 已确认存在 `POST /cards/{id}/recharge`，仅 active 卡、需要 writ
 4. 库存资格、HNSKJ recharge 和受限自动补卡；
 5. 运营后台统一操作中心；
 6. 卡台人工切换；
-7. 正式成功单、3–5 单和 10–20 单灰度；
-8. Browser 执行器与 200–300 单/日规模化。
+7. 共享底座验收、Browser 非付款 PoC 和 350 单/24 小时仿真；
+8. Browser 隔离联调、受控真实灰度与 200–300 单/日规模化。
 
-详细任务和退出条件见 `IMPLEMENTATION_PLAN_FINAL_2026-08-21.md`。Browser 当前可单独窗口设计，但阶段七稳定前不接生产。
+详细任务和退出条件见 `IMPLEMENTATION_PLAN_FINAL_2026-08-21.md`。Browser 当前先完成设计、非付款 PoC 和仿真控制面；未取得单独操作确认前不接生产、不真实付款。

@@ -47,6 +47,7 @@ import { createOperationsCsvExportService } from '../src/services/operations-csv
 import { createAlertNotificationRepository } from '../src/db/repositories/alert-notification-repository.js';
 import { createCardStockService, mapStockCard } from '../src/services/card-stock-service.js';
 import { createTraceabilityOperationsService } from '../src/services/traceability-operations-service.js';
+import { createSessionReplacementService } from '../src/services/session-replacement-service.js';
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
 const integrationSessionKey = Buffer.alloc(32, 7);
@@ -111,6 +112,7 @@ async function removeOrder(pool, { cdkId, orderId }) {
   await pool.query('DELETE FROM operator_alerts WHERE order_id = ?', [orderId]);
   await pool.query('DELETE FROM order_events WHERE order_id = ?', [orderId]);
   await pool.query('DELETE FROM reconciliation_cases WHERE order_id = ?', [orderId]);
+  await pool.query('DELETE FROM order_session_replacements WHERE order_id = ?', [orderId]);
   await pool.query('DELETE FROM provider_calls WHERE order_id = ?', [orderId]);
   const [authorizationRows] = await pool.query(
     'SELECT DISTINCT authorization_id FROM recharge_authorization_items WHERE order_id = ?',
@@ -1126,6 +1128,7 @@ test('worker runs a full fake-provider workflow while enforcing runtime gates', 
   const workflow = createWorkflowRepository(pool, {
     sessionEncryptionKey: integrationSessionKey
   });
+  const rechargeAttemptRepository = createRechargeAttemptRepository(pool);
   const cardProvider = {
     cardTypes: async () => ({
       data: { purchaseEnabled: true, cardTypes: [{ id: 7, cardType: 'Z-TEST' }] }
@@ -1177,6 +1180,7 @@ test('worker runs a full fake-provider workflow while enforcing runtime gates', 
       path: '/third-party/orders/direct',
       body: { ...input, planType: input.planType || 'plus' }
     }),
+    rechargeAttemptRepository,
     wait: async () => {}
   });
   const iteration = (overrides = {}) => runWorkerIteration({
@@ -1203,20 +1207,23 @@ test('worker runs a full fake-provider workflow while enforcing runtime gates', 
       `UPDATE app_settings SET setting_value = 'true'
        WHERE setting_key = 'dispatch_new_recharges'`
     );
-    assert.equal((await iteration()).status, 'COMPLETED');
-    assert.equal((await iteration()).status, 'COMPLETED');
-    assert.equal((await iteration()).status, 'COMPLETED');
     await pool.query(
       `UPDATE orders SET session_ciphertext = ? WHERE id = ?`,
       [encryptSecret(JSON.stringify(sessionFixture()), integrationSessionKey), fixture.orderId]
     );
+    assert.equal((await iteration()).status, 'COMPLETED');
+    assert.equal((await iteration()).status, 'COMPLETED');
+    assert.equal((await iteration()).status, 'COMPLETED');
     await pool.query(
       `UPDATE cards SET last_synced_at = CURRENT_TIMESTAMP(3) WHERE order_id = ?`,
       [fixture.orderId]
     );
-    await armRechargePermit(pool, {
-      publicNo: `TEST-${fixture.orderId}`,
-      sessionEncryptionKey: integrationSessionKey
+    await pool.query(
+      `UPDATE provider_accounts SET write_enabled = 1
+       WHERE id = '00000000-0000-4000-8000-000000000102'`
+    );
+    await createRechargeAuthorization(pool, {
+      publicNos: [`TEST-${fixture.orderId}`], authorizedBy: 'fake-e2e-test', ttlMinutes: 10
     });
     assert.equal((await iteration()).status, 'COMPLETED');
 
@@ -1225,11 +1232,23 @@ test('worker runs a full fake-provider workflow while enforcing runtime gates', 
        WHERE setting_key = 'dispatch_new_recharges'`
     );
     await pool.query(
+      `UPDATE provider_accounts SET write_enabled = 0
+       WHERE id = '00000000-0000-4000-8000-000000000102'`
+    );
+    await pool.query(
       `UPDATE tasks SET available_at = CURRENT_TIMESTAMP(3)
        WHERE order_id = ? AND task_type = 'POLL_RECHARGE'`,
       [fixture.orderId]
     );
     assert.equal((await iteration({ providerWritesEnabled: false })).status, 'COMPLETED');
+    const [[pendingCancellation]] = await pool.query(
+      `SELECT status, subscription_cancelled, cancellation_review_required, finished_at
+       FROM orders WHERE id = ?`, [fixture.orderId]
+    );
+    assert.equal(pendingCancellation.status, OrderStatus.CANCELLATION_PENDING);
+    assert.equal(pendingCancellation.subscription_cancelled, 0);
+    assert.equal(pendingCancellation.cancellation_review_required, 0);
+    assert.equal(pendingCancellation.finished_at, null);
     await pool.query(
       `UPDATE tasks SET available_at = CURRENT_TIMESTAMP(3)
        WHERE order_id = ? AND task_type = 'RECHECK_CANCELLATION'`,
@@ -1270,12 +1289,16 @@ test('worker runs a full fake-provider workflow while enforcing runtime gates', 
       'poll-recharge',
       'recheck-cancellation'
     ]);
-    const [[permit]] = await pool.query(
-      `SELECT JSON_UNQUOTE(JSON_EXTRACT(payload_json, '$.rechargePermit.status')) AS status
-       FROM tasks WHERE order_id = ? AND task_type = 'SUBMIT_RECHARGE'`,
+    const [[fundsAttempt]] = await pool.query(
+      `SELECT rat.status, rat.funds_risk_state, rai.status AS authorization_item_status
+       FROM recharge_attempts rat
+       INNER JOIN recharge_authorization_items rai ON rai.id = rat.authorization_item_id
+       WHERE rat.order_id = ?`,
       [fixture.orderId]
     );
-    assert.equal(permit.status, 'CONSUMED');
+    assert.deepEqual(fundsAttempt, {
+      status: 'SUCCESS', funds_risk_state: 'SETTLED', authorization_item_status: 'CONSUMED'
+    });
     const [[createCalls]] = await pool.query(
       `SELECT COUNT(*) AS count, MAX(outcome) AS outcome FROM provider_calls
        WHERE order_id = ? AND provider = 'zzshu' AND operation = 'create_direct'`,
@@ -1372,6 +1395,34 @@ test('Foundation v2 freezes authorization and persists the funds fence before su
     assert.equal(committed.recharge_card_key, 'DIRECT-v2-reference');
     assert.equal(committed.card_credentials_ciphertext, null);
     assert.equal(Number(committed.poll_tasks), 1);
+
+    const workflow = createWorkflowRepository(pool, { sessionEncryptionKey: integrationSessionKey });
+    await workflow.commitRechargeSuccess(fixture.orderId, {
+      status: 'success', isSubscriptionCancelled: 0,
+      paymentAmount: '20.000000', paymentCurrency: 'USD'
+    });
+    const [[pendingCancellation]] = await pool.query(
+      `SELECT o.status, o.finished_at, rat.status AS attempt_status,
+          rat.funds_risk_state, rat.finished_at AS attempt_finished_at
+       FROM orders o INNER JOIN recharge_attempts rat ON rat.order_id = o.id
+       WHERE o.id = ?`, [fixture.orderId]
+    );
+    assert.equal(pendingCancellation.status, OrderStatus.CANCELLATION_PENDING);
+    assert.equal(pendingCancellation.finished_at, null);
+    assert.equal(pendingCancellation.attempt_status, 'SUCCESS');
+    assert.equal(pendingCancellation.funds_risk_state, 'SETTLED');
+    assert.notEqual(pendingCancellation.attempt_finished_at, null);
+
+    await workflow.commitCancellationStatus(fixture.orderId, {
+      status: 'success', isSubscriptionCancelled: 1
+    });
+    const [[finalized]] = await pool.query(
+      `SELECT status, subscription_cancelled, finished_at
+       FROM orders WHERE id = ?`, [fixture.orderId]
+    );
+    assert.equal(finalized.status, OrderStatus.RECHARGE_SUCCESS);
+    assert.equal(finalized.subscription_cancelled, 1);
+    assert.notEqual(finalized.finished_at, null);
   } finally {
     await pool.query(
       `UPDATE provider_accounts SET write_enabled = 0
@@ -1382,7 +1433,118 @@ test('Foundation v2 freezes authorization and persists the funds fence before su
   }
 });
 
-test('recharge permit consumption persists the submit state and provider intent atomically', {
+test('a cleared attempt can be reauthorized after Session replacement with a distinct stable key', {
+  skip: !databaseUrl && 'TEST_DATABASE_URL 未配置；完整 MySQL 套件在服务器隔离数据库运行'
+}, async () => {
+  const pool = mysql.createPool({ uri: databaseUrl, connectionLimit: 3, timezone: 'Z' });
+  const publicNo = `PJV1-${crypto.randomBytes(15).toString('base64url')}`;
+  const fixture = await createOrder(pool, { publicNo, status: OrderStatus.CARD_READY });
+  const replacement = sessionFixture({ nowMs: Date.now(), lifetimeSeconds: 7200 });
+  replacement.user.email = 'retry@example.com';
+  replacement.account.id = 'retry-account';
+  let originalWriteEnabled = 0;
+  try {
+    const [[providerAccount]] = await pool.query(
+      `SELECT write_enabled FROM provider_accounts
+       WHERE id = '00000000-0000-4000-8000-000000000102'`
+    );
+    originalWriteEnabled = Number(providerAccount.write_enabled);
+    await pool.query(
+      `UPDATE provider_accounts SET write_enabled = 1
+       WHERE id = '00000000-0000-4000-8000-000000000102'`
+    );
+    const [taskInsert] = await pool.query(
+      `INSERT INTO tasks (order_id, task_type, status, dedupe_key, max_attempts)
+       VALUES (?, 'SUBMIT_RECHARGE', 'PENDING', ?, 5)`,
+      [fixture.orderId, `submit-retry:${fixture.orderId}`]
+    );
+    const repository = createRechargeAttemptRepository(pool);
+    const firstAuthorization = await createRechargeAuthorization(pool, {
+      publicNos: [publicNo], authorizedBy: 'mysql-retry-test'
+    });
+    await pool.query(`UPDATE tasks SET status = 'RUNNING' WHERE id = ?`, [taskInsert.insertId]);
+    const first = await repository.beginAuthorizedAttempt({
+      orderId: fixture.orderId, taskId: taskInsert.insertId
+    });
+    await repository.markAttemptCleared({
+      attemptId: first.id, resultSummary: { code: '40030' }
+    });
+
+    const workflow = createWorkflowRepository(pool, { sessionEncryptionKey: integrationSessionKey });
+    await workflow.markSessionReplacementRequired(fixture.orderId);
+    await createSessionReplacementService({
+      pool, sessionEncryptionKey: integrationSessionKey,
+      cdkHashKey: integrationCdkHashKey
+    })({ publicNo, session: replacement });
+
+    const secondAuthorization = await createRechargeAuthorization(pool, {
+      publicNos: [publicNo], authorizedBy: 'mysql-retry-test'
+    });
+    await pool.query(`UPDATE tasks SET status = 'RUNNING' WHERE id = ?`, [taskInsert.insertId]);
+    const second = await repository.beginAuthorizedAttempt({
+      orderId: fixture.orderId, taskId: taskInsert.insertId
+    });
+
+    assert.notEqual(first.authorizationItemId, second.authorizationItemId);
+    assert.equal(first.authorizationItemId, firstAuthorization.items[0].id);
+    assert.equal(second.authorizationItemId, secondAuthorization.items[0].id);
+    assert.notEqual(first.idempotencyKey, second.idempotencyKey);
+    const [attempts] = await pool.query(
+      `SELECT status, funds_risk_state, idempotency_key
+       FROM recharge_attempts WHERE order_id = ? ORDER BY created_at, id`,
+      [fixture.orderId]
+    );
+    assert.deepEqual(attempts.map((row) => [row.status, row.funds_risk_state]), [
+      ['CLEARED', 'CLEARED'], ['PREPARED', 'ACTIVE']
+    ]);
+    assert.equal(new Set(attempts.map((row) => row.idempotency_key)).size, 2);
+  } finally {
+    await pool.query(
+      `UPDATE provider_accounts SET write_enabled = ?
+       WHERE id = '00000000-0000-4000-8000-000000000102'`,
+      [originalWriteEnabled]
+    );
+    await removeOrder(pool, fixture);
+    await pool.end();
+  }
+});
+
+test('confirmed recharge failure clears exactly one funds attempt before closing the order', {
+  skip: !databaseUrl && 'TEST_DATABASE_URL 未配置；完整 MySQL 套件在服务器隔离数据库运行'
+}, async () => {
+  const pool = mysql.createPool({ uri: databaseUrl, connectionLimit: 3, timezone: 'Z' });
+  const fixture = await createOrder(pool, { status: OrderStatus.RECHARGE_PROCESSING });
+  const attemptId = id();
+  try {
+    await pool.query(
+      `INSERT INTO recharge_attempts
+       (id, order_id, executor_kind, status, funds_risk_state, submit_intent_at, submitted_at)
+       VALUES (?, ?, 'API', 'PROCESSING', 'ACTIVE', CURRENT_TIMESTAMP(3), CURRENT_TIMESTAMP(3))`,
+      [attemptId, fixture.orderId]
+    );
+    const workflow = createWorkflowRepository(pool, { sessionEncryptionKey: integrationSessionKey });
+    await workflow.commitRechargeFailure(fixture.orderId, {
+      status: 'failed', failureReason: 'confirmed by provider'
+    });
+    const [[state]] = await pool.query(
+      `SELECT o.status AS order_status, o.failure_code, o.finished_at,
+          rat.status AS attempt_status, rat.funds_risk_state, rat.finished_at AS attempt_finished_at
+       FROM orders o INNER JOIN recharge_attempts rat ON rat.order_id = o.id
+       WHERE o.id = ?`, [fixture.orderId]
+    );
+    assert.equal(state.order_status, OrderStatus.RECHARGE_FAILED);
+    assert.equal(state.failure_code, 'PROVIDER_CONFIRMED_FAILURE');
+    assert.notEqual(state.finished_at, null);
+    assert.equal(state.attempt_status, 'FAILED');
+    assert.equal(state.funds_risk_state, 'CLEARED');
+    assert.notEqual(state.attempt_finished_at, null);
+  } finally {
+    await removeOrder(pool, fixture);
+    await pool.end();
+  }
+});
+
+test('a legacy task permit alone cannot enter the funds path', {
   skip: !databaseUrl && 'TEST_DATABASE_URL 未配置；完整 MySQL 套件在服务器隔离数据库运行'
 }, async () => {
   const pool = mysql.createPool({ uri: databaseUrl, connectionLimit: 3, timezone: 'Z' });
@@ -1398,38 +1560,16 @@ test('recharge permit consumption persists the submit state and provider intent 
     const task = await claimNextTask(pool, {
       workerId: 'atomic-intent-worker', allowedTaskTypes: ['SUBMIT_RECHARGE']
     });
-    const workflow = createWorkflowRepository(pool, { sessionEncryptionKey: integrationSessionKey });
-    const result = await workflow.consumeRechargePermit(
-      fixture.orderId, task.id, task.attempts, new Date()
-    );
-    assert.equal(result.allowed, true);
-    assert.equal(Number.isInteger(result.providerCall.id), true);
+    assert.equal(task, null);
     const [[state]] = await pool.query(
       `SELECT o.status,
-              JSON_UNQUOTE(JSON_EXTRACT(t.payload_json, '$.rechargePermit.status')) AS permit_status,
-              pc.outcome
-       FROM orders o INNER JOIN tasks t ON t.order_id = o.id
-       INNER JOIN provider_calls pc ON pc.order_id = o.id
-       WHERE o.id = ? AND t.task_type = 'SUBMIT_RECHARGE'
-         AND pc.provider = 'zzshu' AND pc.operation = 'create_direct'`,
-      [fixture.orderId]
+          (SELECT COUNT(*) FROM recharge_attempts rat WHERE rat.order_id = o.id) AS attempts,
+          (SELECT COUNT(*) FROM provider_calls pc WHERE pc.order_id = o.id) AS provider_calls
+       FROM orders o WHERE o.id = ?`, [fixture.orderId]
     );
-    assert.deepEqual(state, {
-      status: OrderStatus.SUBMITTING, permit_status: 'CONSUMED', outcome: 'STARTED'
-    });
-    await pool.query(
-      `UPDATE provider_calls SET started_at = UTC_TIMESTAMP(3) - INTERVAL 3 MINUTE
-       WHERE id = ?`,
-      [result.providerCall.id]
-    );
-    const admin = createAdminReadService({ pool, now: () => Date.now() });
-    const issues = await admin.listOrders({
-      q: `TEST-${fixture.orderId}`, status: 'RECONCILIATION_ISSUES', pageSize: 10
-    });
-    assert.equal(issues.total, 1);
-    assert.equal(issues.orders[0].reconciliation.code, 'RECHARGE_CREATE_STALLED');
-    const overview = await admin.getOverview();
-    assert.equal(overview.runtimeHealth.stalledProviderCalls >= 1, true);
+    assert.equal(state.status, OrderStatus.CARD_READY);
+    assert.equal(Number(state.attempts), 0);
+    assert.equal(Number(state.provider_calls), 0);
   } finally {
     await removeOrder(pool, fixture);
     await pool.end();
@@ -1640,6 +1780,70 @@ test('traceability payment supplement persists an auditable payment without plai
   } finally {
     await pool.query('DELETE FROM order_notes WHERE order_id = ?', [fixture.orderId]);
     await pool.query('DELETE FROM customer_payments WHERE id = ?', [paymentId]);
+    await removeOrder(pool, fixture);
+    await pool.end();
+  }
+});
+
+test('customer replaces Session on the original MySQL order at most through the repair workflow', {
+  skip: !databaseUrl && 'TEST_DATABASE_URL 未配置；完整 MySQL 套件在服务器隔离数据库运行'
+}, async () => {
+  const pool = mysql.createPool({ uri: databaseUrl, connectionLimit: 3, timezone: 'Z' });
+  const publicNo = `PJV1-${crypto.randomBytes(15).toString('base64url')}`;
+  const fixture = await createOrder(pool, { publicNo, status: OrderStatus.WAITING_FOR_SESSION });
+  const nowMs = Date.parse('2026-08-21T03:00:00.000Z');
+  const replacement = sessionFixture({ nowMs, lifetimeSeconds: 7200 });
+  replacement.user.email = 'replacement@example.com';
+  replacement.account.id = 'replacement-account';
+  try {
+    await pool.query(
+      `UPDATE orders SET customer_action_code = 'ACCOUNT_ALREADY_PLUS',
+         failure_code = 'TARGET_ACCOUNT_ALREADY_PLUS', session_repair_started_at = ?,
+         session_repair_expires_at = DATE_ADD(?, INTERVAL 72 HOUR)
+       WHERE id = ?`, [new Date(nowMs), new Date(nowMs), fixture.orderId]
+    );
+    await pool.query(
+      `INSERT INTO tasks (order_id, task_type, status, dedupe_key, max_attempts)
+       VALUES (?, 'PREPARE_RECHARGE', 'COMPLETED', ?, 5),
+              (?, 'SUBMIT_RECHARGE', 'DEAD', ?, 5)`,
+      [fixture.orderId, `prepare-replacement:${fixture.orderId}`,
+        fixture.orderId, `submit-replacement:${fixture.orderId}`]
+    );
+    const service = createSessionReplacementService({
+      pool, sessionEncryptionKey: integrationSessionKey,
+      cdkHashKey: integrationCdkHashKey, now: () => nowMs
+    });
+    assert.deepEqual(await service({ publicNo, session: replacement }), {
+      publicNo, status: 'PROCESSING', replacementCount: 1, replacementsRemaining: 2
+    });
+    const [[stored]] = await pool.query(
+      `SELECT status, customer_email, chatgpt_account_id, session_replacement_count,
+              customer_action_code, failure_code, session_ciphertext
+       FROM orders WHERE id = ?`, [fixture.orderId]
+    );
+    assert.equal(stored.status, OrderStatus.CARD_READY);
+    assert.equal(stored.customer_email, 'replacement@example.com');
+    assert.equal(stored.chatgpt_account_id, 'replacement-account');
+    assert.equal(stored.session_replacement_count, 1);
+    assert.equal(stored.customer_action_code, null);
+    assert.equal(stored.failure_code, null);
+    assert.equal(JSON.parse(decryptSecret(stored.session_ciphertext, integrationSessionKey)).accessToken,
+      replacement.accessToken);
+    const [tasks] = await pool.query(
+      `SELECT task_type, status, attempts FROM tasks WHERE order_id = ? ORDER BY task_type`,
+      [fixture.orderId]
+    );
+    assert.deepEqual(tasks, [
+      { task_type: 'PREPARE_RECHARGE', status: 'PENDING', attempts: 0 },
+      { task_type: 'SUBMIT_RECHARGE', status: 'PENDING', attempts: 0 }
+    ]);
+    const [[history]] = await pool.query(
+      `SELECT COUNT(*) AS count FROM order_session_replacements WHERE order_id = ?`,
+      [fixture.orderId]
+    );
+    assert.equal(history.count, 1);
+  } finally {
+    await pool.query('DELETE FROM order_session_replacements WHERE order_id = ?', [fixture.orderId]);
     await removeOrder(pool, fixture);
     await pool.end();
   }

@@ -11,16 +11,21 @@ const ORDER_STATUSES = new Set([
   'CARD_PROVISIONING',
   'CARD_READY',
   'CARD_FAILED',
+  'WAITING_FOR_SESSION',
   'SUBMITTING',
   'SUBMIT_UNKNOWN',
   'RECHARGE_PROCESSING',
   'RECHARGE_SUCCESS',
   'RECHARGE_FAILED',
+  'CANCELLATION_PENDING',
+  'CANCELLATION_REVIEW_REQUIRED',
   'RECONCILIATION_REQUIRED',
   'CLOSED'
 ]);
-const REVIEW_STATUSES = ['CARD_FAILED', 'SUBMIT_UNKNOWN', 'RECHARGE_FAILED', 'RECONCILIATION_REQUIRED'];
-const PROCESSING_STATUSES = ['CREATED', 'CARD_PURCHASING', 'CARD_PROVISIONING', 'SUBMITTING', 'RECHARGE_PROCESSING'];
+const REVIEW_STATUSES = ['CARD_FAILED', 'WAITING_FOR_SESSION', 'SUBMIT_UNKNOWN', 'RECHARGE_FAILED',
+  'CANCELLATION_REVIEW_REQUIRED', 'RECONCILIATION_REQUIRED'];
+const PROCESSING_STATUSES = ['CREATED', 'CARD_PURCHASING', 'CARD_PROVISIONING', 'SUBMITTING',
+  'RECHARGE_PROCESSING', 'CANCELLATION_PENDING'];
 const VIRTUAL_FILTERS = new Set([
   'TODAY', 'PROCESSING', 'AWAITING_CONFIRMATION', 'REVIEW_REQUIRED', 'RECONCILIATION_ISSUES'
 ]);
@@ -360,7 +365,7 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
           SELECT 1 FROM order_events oe
           WHERE oe.order_id = o.id AND oe.to_status = 'RECHARGE_SUCCESS'
         ))) AS completed_failed,
-        SUM(o.status IN ('CREATED','CARD_PURCHASING','CARD_PROVISIONING','SUBMITTING','RECHARGE_PROCESSING')) AS processing,
+        SUM(o.status IN ('CREATED','CARD_PURCHASING','CARD_PROVISIONING','SUBMITTING','RECHARGE_PROCESSING','CANCELLATION_PENDING')) AS processing,
         (SELECT COUNT(*) FROM tasks rt
           WHERE rt.status = 'RUNNING' AND rt.leased_until < UTC_TIMESTAMP(3)) AS expired_task_leases,
         (SELECT COUNT(*) FROM provider_calls rp
@@ -668,11 +673,13 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
     }
     const [[orderRows], [eventRows], [taskRows], [callRows], [refundRows], [transactionRows],
       [compensationRows], [authorizationRows], [cdkRows], [deliveryRows], [paymentRows],
-      [assignmentRows], [noteRows], [tagRows], [relationshipRows]] = await Promise.all([
+      [assignmentRows], [noteRows], [tagRows], [relationshipRows], [sessionReplacementRows]] = await Promise.all([
       pool.query(`SELECT o.id, o.public_no, o.status, o.plan_type, o.customer_email,
           o.chatgpt_account_id, o.card_type_id, o.open_card_amount,
           o.minimum_required_card_balance, o.actual_payment_amount, o.actual_payment_currency,
           o.recharge_order_no, o.failure_code, o.failure_reason,
+          o.customer_action_code, o.session_replacement_count,
+          o.session_repair_started_at, o.session_repair_expires_at, o.last_session_replaced_at,
           o.subscription_cancelled, o.cancellation_checked_at, o.cancellation_review_required,
           o.created_at, o.updated_at, o.finished_at, o.session_ciphertext,
           c.provider_card_id, c.last4, c.status AS card_status, c.funded_amount,
@@ -784,6 +791,13 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
           LEFT JOIN orders replacement_order ON replacement_order.cdk_id = replacement_cdk.id
           WHERE BINARY original.public_no = ? OR BINARY replacement_order.public_no = ?
           ORDER BY oc.created_at DESC`, [publicNo, publicNo])
+      ,pool.query(`SELECT sr.replacement_no, sr.reason_code,
+            sr.previous_customer_email, sr.new_customer_email,
+            sr.previous_chatgpt_account_id, sr.new_chatgpt_account_id,
+            sr.created_at
+          FROM order_session_replacements sr
+          INNER JOIN orders o ON o.id = sr.order_id
+          WHERE BINARY o.public_no = ? ORDER BY sr.replacement_no DESC`, [publicNo])
     ]);
     const row = orderRows[0];
     if (!row) throw new PublicApiError('Order not found', { code: 'ADMIN_ORDER_NOT_FOUND', status: 404 });
@@ -877,6 +891,11 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
         rechargeOrderNo: row.recharge_order_no,
         failureCode: row.failure_code,
         failureReason: row.failure_reason,
+        customerActionCode: row.customer_action_code,
+        sessionReplacementCount: Number(row.session_replacement_count || 0),
+        sessionRepairStartedAt: iso(row.session_repair_started_at),
+        sessionRepairExpiresAt: iso(row.session_repair_expires_at),
+        lastSessionReplacedAt: iso(row.last_session_replaced_at),
         subscriptionCancelled: row.subscription_cancelled == null ? null : Number(row.subscription_cancelled),
         cancellationCheckedAt: iso(row.cancellation_checked_at),
         cancellationReviewRequired: Boolean(row.cancellation_review_required),
@@ -971,6 +990,15 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
           originalPublicNo: relationship.original_public_no,
           replacementPublicNo: relationship.replacement_public_no || null,
           createdAt: iso(relationship.created_at)
+        })),
+        sessionReplacements: sessionReplacementRows.map((replacement) => ({
+          replacementNo: Number(replacement.replacement_no),
+          reasonCode: replacement.reason_code,
+          previousCustomerEmail: replacement.previous_customer_email,
+          newCustomerEmail: replacement.new_customer_email,
+          previousChatgptAccountId: replacement.previous_chatgpt_account_id,
+          newChatgptAccountId: replacement.new_chatgpt_account_id,
+          createdAt: iso(replacement.created_at)
         })),
         fulfillmentCost: {
           customerPayments: sumByCurrency(customerPaidRows),
