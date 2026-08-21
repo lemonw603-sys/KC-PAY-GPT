@@ -132,3 +132,36 @@
 - 发布 `/opt/pojia/releases/20260821-ui-fix-1`，Web 重启后 `/health/live` 与 `/health/ready` 均 200。
 - 生产隔离 MySQL 全量验收：282/282 通过、0 skipped；没有 Provider 写调用。
 - 三条 Bark 测试告警已标记 `RESOLVED`，通知记录保留；最终只读体检无 blocker。
+
+## 2026-08-21 - Task: 真实单笔链路、规则纠正与事实源对齐
+
+### What was done
+- 使用真实客户页面、真实 CDK 和真实 Session 创建单笔生产订单。
+- 真实验证到已有库存卡分配、卡片只读核验、充值前 Permit 和 ZZSHU `create_direct`。
+- ZZSHU 返回 HTTP 400 / 业务码 `40030`：仅支持免费账号提交，当前目标账号套餐为 Plus。
+- 明确并落盘硬业务规则：Plus 是要购买的产品；目标账号当前为 Plus 时禁止充值，上游也不会接受。
+- 客户页自动轮询从 5 分钟延长为 30 分钟；失败状态已能从订单库同步到客户状态 API。
+- 真实测试后恢复所有接单、派发、Provider 账户和 Provider 进程写门禁为关闭。
+- 新增跨窗口单一事实源：`docs/SINGLE_SOURCE_OF_TRUTH_2026-08-21.md`。
+
+### Evidence
+- 订单最终状态：`RECHARGE_FAILED`。
+- Provider 调用：ZZSHU `create_direct`，HTTP 400，业务码 `40030`，`DEFINITE_FAILURE`。
+- 未产生 ZZSHU 外部订单号；未确认充值扣款。
+- HNSKJ 卡片只读同步调用成功。
+
+### Remaining
+- 下一次真实充值前必须完成目标账号 Plus 本地硬阻断、40030 失败字段映射、Provider 调用与充值尝试账本关联审计、统一多层写门禁和配置型任务恢复。
+# 2026-08-21 最终需求对齐与对抗式审查收口
+
+- 完成最终需求的第一性原理/冲突审查，报告：`docs/FINAL_REQUIREMENTS_ADVERSARIAL_REVIEW_2026-08-21.md`。
+- 用户确认审查修正方向，形成正式基线：`docs/FINAL_REQUIREMENTS_BASELINE_2026-08-21.md`。
+- `DECISIONS.md` 新增 D-029～D-035，并标明被替代的旧决策。
+- 正式方向：库存优先、人工与受限自动补卡并存；正常订单自动履约但保留资金栅栏；Session 原订单最多更换 3 次；支付成功且取消续费确认后才最终成功；退款仅保留原始同步和人工案件。
+- HNSKJ `POST /cards/{id}/recharge` 已由当前官方文档确认存在，v1 尚未实现；只用于未履约且余额不足的 active 库存卡，新开卡不重复补余额。
+- 卡片默认不跨订单复用；特殊情况保留受控人工口子，禁止系统自动复用，必须记录完整审计。
+- 完成当前 Plus 运营后台与最终需求的代码/API/线上静态资源对齐审查：`docs/ADMIN_ALIGNMENT_AUDIT_2026-08-21.md`。
+- 生产只读证据：Web live/ready 正常、未登录后台 API 返回 401、线上 `admin.js` 与当前本地代码 SHA-256 一致；未使用登录会话读取生产业务数据。
+- 审查结论：后台认证、CDK、库存优先、卡台接管、订单/资金核对和资金栅栏可保留；逐单充值授权、成功终态、Session 更换、自动补卡、卡 recharge、退款自动识别、卡台人工切换和特殊复用入口需要按最终基线对齐。
+- 用户确认后续完整实施路径并落盘：`docs/IMPLEMENTATION_PLAN_FINAL_2026-08-21.md`；决策账本新增 D-036、D-037。
+- Browser 自动化采用“现在独立窗口设计、阶段七稳定后实现接入”的双阶段策略；设计成果必须回写主项目，不得另建订单或资金账。

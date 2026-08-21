@@ -3,6 +3,7 @@ import crypto from 'node:crypto';
 import { decryptSecret } from '../security/secret-box.js';
 import { validateChatGptSession } from '../domain/session-validation.js';
 import { reconcileOrderEvidence } from '../domain/order-reconciliation.js';
+import { createCdkLookup } from '../security/cdk-code.js';
 
 const ORDER_STATUSES = new Set([
   'CREATED',
@@ -152,7 +153,7 @@ function cardNumber(row, key) {
   }
 }
 
-export function createAdminReadService({ pool, sessionEncryptionKey = null, now = () => Date.now() }) {
+export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkHashKey = null, now = () => Date.now() }) {
   async function getCard(providerCardId) {
     const cardId = String(providerCardId || '').trim();
     if (!cardId || cardId.length > 128) {
@@ -323,8 +324,19 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, now 
       ,pool.query(`SELECT setting_value FROM app_settings
         WHERE setting_key = 'card_stock_low_threshold' LIMIT 1`)
       ,pool.query(`SELECT
-          (SELECT COUNT(*) FROM card_discoveries
-            WHERE intake_status IN ('QUARANTINED','VALIDATED','REVIEW_REQUIRED')) AS card_intake_pending,
+          (SELECT COUNT(*) FROM card_discoveries d
+            WHERE d.intake_status IN ('QUARANTINED','VALIDATED','REVIEW_REQUIRED')
+              AND NOT EXISTS (
+                SELECT 1 FROM cards c
+                WHERE c.provider_account_id = d.provider_account_id
+                  AND BINARY c.external_card_id = BINARY d.external_card_id
+              )
+              AND d.id = (
+                SELECT latest.id FROM card_discoveries latest
+                WHERE latest.provider_account_id = d.provider_account_id
+                  AND BINARY latest.external_card_id = BINARY d.external_card_id
+                ORDER BY latest.first_seen_at DESC, latest.id DESC LIMIT 1
+              )) AS card_intake_pending,
           (SELECT COUNT(*) FROM recharge_attempts
             WHERE funds_risk_state IN ('ACTIVE','UNKNOWN')) AS funds_risk_pending,
           (SELECT COUNT(*) FROM reconciliation_cases
@@ -427,10 +439,25 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, now 
       values.push(status);
     }
     if (query) {
-      conditions.push(`(o.public_no LIKE ? OR o.customer_email LIKE ? OR
-        o.chatgpt_account_id LIKE ? OR o.recharge_order_no LIKE ?)`);
+      const lookupConditions = [`o.public_no LIKE ?`, `o.customer_email LIKE ?`,
+        `o.chatgpt_account_id LIKE ?`, `o.recharge_order_no LIKE ?`];
       const pattern = `%${query}%`;
       values.push(pattern, pattern, pattern, pattern);
+      if (Buffer.isBuffer(cdkHashKey)) {
+        const lookup = createCdkLookup(query, cdkHashKey);
+        lookupConditions.push(`EXISTS (
+          SELECT 1 FROM cdks cdk
+          WHERE cdk.id = o.cdk_id AND (
+            (cdk.hash_version = ? AND cdk.code_hash = ?)
+            OR (cdk.hash_version = ? AND cdk.code_hash = ?)
+          )
+        )`);
+        values.push(
+          lookup.current.version, lookup.current.hash,
+          lookup.legacy.version, lookup.legacy.hash
+        );
+      }
+      conditions.push(`(${lookupConditions.join(' OR ')})`);
     }
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
     const [[countRows], [rows]] = await Promise.all([

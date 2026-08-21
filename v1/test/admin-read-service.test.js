@@ -5,6 +5,7 @@ import { encryptSecret } from '../src/security/secret-box.js';
 import { sessionFixture } from '../test-support/session-fixture.js';
 
 const adminCardKey = Buffer.alloc(32, 19);
+const adminCdkKey = Buffer.alloc(32, 23);
 
 function queuedPool(results) {
   const queries = [];
@@ -47,7 +48,7 @@ test('admin overview maps aggregate values without exposing raw records', async 
   assert.equal(pool.queries.some(({ sql }) => /session_ciphertext|recharge_card_key/i.test(sql)), false);
 });
 
-test('admin order list validates filters and maps only card summaries', async () => {
+test('admin order list validates filters, maps card summaries, and supports CDK lookup', async () => {
   const pool = queuedPool([
     [{ total: 1 }],
     [{
@@ -60,7 +61,9 @@ test('admin order list validates filters and maps only card summaries', async ()
       card_number_ciphertext: encryptSecret('4242424242424242', adminCardKey)
     }]
   ]);
-  const result = await createAdminReadService({ pool, sessionEncryptionKey: adminCardKey }).listOrders({
+  const result = await createAdminReadService({
+    pool, sessionEncryptionKey: adminCardKey, cdkHashKey: adminCdkKey
+  }).listOrders({
     page: '1', pageSize: '20', status: 'REVIEW_REQUIRED', q: 'PJV1'
   });
   assert.equal(result.total, 1);
@@ -74,6 +77,8 @@ test('admin order list validates filters and maps only card summaries', async ()
     'CARD_FAILED', 'SUBMIT_UNKNOWN', 'RECHARGE_FAILED', 'RECONCILIATION_REQUIRED'
   ]);
   assert.equal(pool.queries.some(({ sql }) => /session_ciphertext|recharge_card_key/i.test(sql)), false);
+  assert.match(pool.queries[0].sql, /EXISTS \(\s*SELECT 1 FROM cdks cdk/i);
+  assert.equal(pool.queries[0].values.length, 12);
 
   await assert.rejects(
     () => createAdminReadService({ pool: queuedPool([]) }).listOrders({ status: 'NOT_A_STATUS' }),

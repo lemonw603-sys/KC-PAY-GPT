@@ -2,7 +2,7 @@
 
 - 日期：2026-08-17
 - 路径：`POST /api/v1/orders`
-- 当前范围：仅创建 Plus 订单，不触发真实 Provider 写入
+- 当前范围：仅创建 Plus 产品订单；目标账号当前已是 Plus 时不得进入直充；真实 Provider 写入必须经过单笔门禁
 
 ## 请求
 
@@ -20,6 +20,7 @@
 ```
 
 - `session` 必须保留 ChatGPT Session 的完整 JSON，未知扩展字段不会被删除。
+- 业务硬规则：Plus 是要购买的产品，不是可重复充值的当前账号状态；目标账号当前为 Plus 时，订单不得调用直充 Provider。
 - 本地预检查必填字段、`accessToken` 的 JWT 形状与 `iat/exp`、`sessionToken` 的五段 JWE 形状，并要求 access token 至少剩余 5 分钟。
 - 本地不验证 JWT 签名；真实有效性最终由直充上游验证。
 - 卡段、开卡金额和最低所需卡余额不允许客户传入，只读取内部 `app_settings`，并随订单保存为不可变快照。

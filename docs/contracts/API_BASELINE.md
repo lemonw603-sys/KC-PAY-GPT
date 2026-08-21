@@ -86,6 +86,8 @@ X-Idempotency-Key: <16-128 chars>
 - `GET /cards/{id}/transactions`
 - `GET /cards/{id}/otp`
 
+> 重要实现状态：文档中的 `POST /cards/{id}/recharge` 是给既有卡片追加余额的候选接口；截至 2026-08-21，v1 `HnskjCardProvider` 尚未实现该方法，项目也未对该写接口做真实调用。2026-08-18 已验证的成功 PoC 使用的是 `POST /cards/purchase` 开卡，再调用 ZZSHU 直充，不是对既有卡调用本接口。
+
 余额提取接口也要求 `X-Idempotency-Key`，卡上约保留 0.01 USD。v1 不自动提取。
 
 ## 3. 直充平台已确认合同

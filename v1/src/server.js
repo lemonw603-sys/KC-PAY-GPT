@@ -44,7 +44,8 @@ const createCustomerOrder = createOrderIntakeService({
 const getCustomerOrderStatus = createOrderStatusService({ pool, cdkHashKey: config.cdkHashKey });
 const adminReadService = createAdminReadService({
   pool,
-  sessionEncryptionKey: config.sessionEncryptionKey
+  sessionEncryptionKey: config.sessionEncryptionKey,
+  cdkHashKey: config.cdkHashKey
 });
 const cardStockService = createCardStockService({ pool, sessionEncryptionKey: config.sessionEncryptionKey });
 const cardStockJobService = createCardStockJobService({ pool });

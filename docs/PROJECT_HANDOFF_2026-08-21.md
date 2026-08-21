@@ -3,6 +3,8 @@
 > 归档日期：2026-08-21  
 > 用途：当前阶段暂停开发、等待真实订单；后续 AI 或工程师必须先阅读本文，再继续修改代码或执行生产操作。
 
+> 注意：本文是阶段性运行交接。项目从最初构想到当前状态的完整历史、历史会话核对和事实/规划分层，以 [`PROJECT_HANDOFF_FULL_HISTORY_2026-08-21.md`](PROJECT_HANDOFF_FULL_HISTORY_2026-08-21.md) 为准。
+
 ## 一、项目身份与当前基线
 
 - 本地项目目录：`/Users/lemon/code/AI充值业务`
@@ -177,3 +179,13 @@
 - 后台所有 `select` 已改为内收 14px 的 CSS 箭头，资源版本更新为 `admin.css?v=13`，浏览器计算样式和截图复验通过。
 - UI 修复发布为 `/opt/pojia/releases/20260821-ui-fix-1`；Web/Worker/Bark 健康，生产隔离 MySQL 282/282 通过。
 - 当前仍未进行真实开卡、直充、退款或余额提取；下一步只有真实订单人工确认和小批量运行。
+
+## 2026-08-21 真实单笔链路与规则纠正
+
+- 已完成一次真实客户页面到 ZZSHU `create_direct` 的单笔失败链路验证；订单、CDK、Session、库存卡、卡片只读核验、Permit 和 Provider 调用均有生产数据库证据。
+- 本次使用已有库存卡，未验证新卡付费开通；ZZSHU 返回 HTTP 400 / 业务码 `40030`，明确拒绝当前已经是 Plus 的目标账号。
+- 正式业务规则：产品是 Plus；目标账号当前为 Plus 时禁止充值，上游也不会接受。不得把“寻找支持 Plus 目标账号 Provider”作为规划。
+- 本地订单最终为 `RECHARGE_FAILED`，客户状态接口返回 `FAILED`；客户页面原 5 分钟轮询过早停止，已修复为 30 分钟并发布 `/opt/pojia/releases/20260821-customer-polling-1`。
+- 真实测试后已关闭 `accept_new_orders`、`dispatch_new_recharges`、Provider 进程充值写开关和 ZZSHU Provider 账户写标记；没有充值订单号和确认扣款。
+- 真实测试暴露的必须复核项：Provider 能力预检、业务码 40030 映射、Provider 调用与 `recharge_attempts` 账本关联、多层写门禁统一、配置型 DEAD 恢复、Permit 前自动卡片同步。
+- 详细事实、证据边界、横向平台和后续计划统一见 `docs/SINGLE_SOURCE_OF_TRUTH_2026-08-21.md`。

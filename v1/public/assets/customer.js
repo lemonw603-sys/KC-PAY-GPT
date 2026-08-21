@@ -183,7 +183,10 @@ function schedulePoll(publicNo, meta) {
   stopPolling();
   if (meta.terminal || !meta.pollAfter) return;
   if (!pollingStartedAt) pollingStartedAt = Date.now();
-  if (Date.now() - pollingStartedAt > 5 * 60 * 1000) {
+  // Provider operations can legitimately take longer than five minutes. Keep
+  // polling long enough for a terminal failure/success to reach the customer;
+  // the terminal status itself always stops polling immediately.
+  if (Date.now() - pollingStartedAt > 30 * 60 * 1000) {
     elements.pollingNote.textContent = '自动查询已暂停，可点击“查询当前状态”继续。';
     return;
   }

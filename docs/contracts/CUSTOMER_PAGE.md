@@ -9,7 +9,7 @@
 - 提交 CDK + 完整 Session JSON 创建 Plus 订单。
 - 使用 `publicNo` 或原 CDK 查询订单。
 - 展示 `QUEUED | PROCESSING | REVIEWING | SUCCESS | FAILED` 五种客户状态。
-- 对排队和处理中订单每 5 秒轮询，复核中每 30 秒轮询；5 分钟后暂停自动轮询。
+- 对排队和处理中订单每 5 秒轮询，复核中每 30 秒轮询；30 分钟后才暂停自动轮询。
 - 进入成功或失败终态后停止自动轮询。
 
 ## 敏感信息边界

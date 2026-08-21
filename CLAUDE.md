@@ -11,13 +11,18 @@
 - 产品与技术规格：`docs/V1_SPEC.md`
 - 阶段规划与当前状态：`docs/ROADMAP.md`
 - 外部接口合同与验证记录：后续放在 `docs/contracts/`
+- 项目从起点到当前的完整历史交接：`docs/PROJECT_HANDOFF_FULL_HISTORY_2026-08-21.md`
+- 跨窗口交接、生产横向平台、真实测试证据与事实/未验证边界：`docs/SINGLE_SOURCE_OF_TRUTH_2026-08-21.md`
+- 用户确认后的最终需求基线：`docs/FINAL_REQUIREMENTS_BASELINE_2026-08-21.md`
+- 当前 Plus 运营后台与最终需求的对齐审查：`docs/ADMIN_ALIGNMENT_AUDIT_2026-08-21.md`
+- 用户确认的实施主线、阶段退出条件和 Browser 时序：`docs/IMPLEMENTATION_PLAN_FINAL_2026-08-21.md`
 
 方向或范围发生变化时，先更新上述文档，再改实现。
 
 ## 第一版硬约束
 
 - 仅支持 ChatGPT Plus。
-- 一张卡只绑定一个本地订单；失败或状态不明确时不得自动释放给其他订单。
+- 一张卡默认只绑定一个本地订单，系统不得自动跨订单复用；特殊人工例外必须按最终需求基线核实资金/退款风险并完整审计。失败或状态不明确时绝不释放。
 - 卡台开卡写请求必须使用稳定的 `X-Idempotency-Key`；超时和 502/503 只能用原 Key 重试。
 - 第三方直充创建没有上游幂等能力。响应不明确时进入 `SUBMIT_UNKNOWN`，禁止自动重试。
 - 停止新订单与追踪已有订单是两个独立开关；停单不能停止状态轮询和退款同步。
