@@ -42,5 +42,18 @@
 - 特殊人工跨订单复用的操作入口属于阶段四；当前只建立历史账本并硬性禁止自动复用；
 - 复用后交易按订单归属要在特殊复用设计中同步实施；当前页面展示的是卡片级交易证据；
 - PAN HMAC 密钥轮换流程尚未建设；当前版本为 `1`；
-- 生产部署、历史 PAN 回填和登录后页面验收必须单独记录，未执行前不得写为已上线。
+- 登录后的人工视觉验收仍需在后台实际操作时补做；生产数据、API 边界和静态资源验收已完成。
 
+## 5. 生产部署验收
+
+- 上线发布：`/opt/pojia/releases/20260821-traceability-86d6282`；
+- 发布前加密备份：`pojia-20260821T110851Z.sql.gz.enc`，完整性校验通过；
+- Worker 和开卡执行器在迁移前停止；活动任务、过期租约、UNKNOWN、活动 Permit、资金风险尝试和活动开卡任务均为 0；
+- Migration 024 首次执行成功，第二次仅报告 `already applied`；
+- 独立 PAN HMAC 和付款参考号 HMAC 密钥已注入生产环境，未进入代码库；
+- 历史 PAN 回填：`scanned=5 / updated=5 / unavailable=0`；
+- 迁移后一致性校验全部为 0：绑定卡缺 ACTIVE 历史、ACTIVE 历史与当前订单不符、AVAILABLE 历史卡、重复 ACTIVE 历史、缺客户付款事实、缺 PAN HMAC；
+- Web、Worker、Bark 服务均为 active，`/health/live` 与 `/health/ready` 均成功；
+- 上线后只读体检 `ok=true`，最新迁移为 024，所有 blocker 计数为 0；
+- `accept_new_orders=false`、`dispatch_new_recharges=false`，开卡定时器保持关闭；本次没有调用 Provider 开卡、卡充值、直充、退款或余额提取写接口；
+- 外部边界验收：后台 API 未登录返回 401，客户域名后台路径返回 404，新后台资源与 POST 搜索代码已实际提供。
