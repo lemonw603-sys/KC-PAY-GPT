@@ -29,10 +29,10 @@ test('Foundation v2 migrations are correctly ordered after 020', () => {
   const names = fs.readdirSync(migrationsDir)
     .filter((name) => /^\d+_[a-z0-9_-]+\.sql$/i.test(name))
     .sort();
-  assert.equal(names.at(-1), '023_bark_notifications.sql');
-  assert.equal(names.at(-2), '022_foundation_v2_operations.sql');
-  assert.equal(names.at(-3), migrationName);
-  assert.equal(names.at(-4), '020_runtime_health.sql');
+  const foundationIndex = names.indexOf(migrationName);
+  assert.equal(names[foundationIndex - 1], '020_runtime_health.sql');
+  assert.equal(names[foundationIndex + 1], '022_foundation_v2_operations.sql');
+  assert.equal(names[foundationIndex + 2], '023_bark_notifications.sql');
   assert.equal(new Set(names).size, names.length);
 });
 

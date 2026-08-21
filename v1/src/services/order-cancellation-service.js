@@ -7,8 +7,6 @@ export class OrderCancellationError extends Error {
   }
 }
 
-const ACTIVE_CARD_STATUSES = new Set(['active', 'available', 'usable', 'ready']);
-
 export function createOrderCancellationService({ pool }) {
   if (!pool) throw new TypeError('pool is required');
 
@@ -44,7 +42,8 @@ export function createOrderCancellationService({ pool }) {
       if (!order) throw new OrderCancellationError('Order not found', 'ADMIN_ORDER_NOT_FOUND', 404);
       if (order.status === 'CLOSED' && order.failure_code === 'CANCELLED_PRE_SUBMISSION') {
         await connection.commit();
-        return { publicNo: order.public_no, status: 'CLOSED', cardReleased: true, replayed: true };
+        return { publicNo: order.public_no, status: 'CLOSED', cardReleased: true,
+          cardInventoryStatus: 'HELD_FOR_REVIEW', replayed: true };
       }
       if (order.status !== 'CARD_READY') {
         throw new OrderCancellationError('Order is not awaiting recharge', 'ORDER_CANCELLATION_NOT_ELIGIBLE');
@@ -64,14 +63,6 @@ export function createOrderCancellationService({ pool }) {
       if (calls.length) {
         throw new OrderCancellationError('Recharge provider was already called', 'ORDER_CANCELLATION_SUBMISSION_RISK');
       }
-      const cardActive = ACTIVE_CARD_STATUSES.has(String(order.card_status || '').toLowerCase());
-      const cardFunded = Number(order.current_balance) >= Number(order.minimum_required_card_balance);
-      const cardFresh = order.last_synced_at
-        && Date.now() - new Date(order.last_synced_at).getTime() <= 15 * 60_000;
-      if (!cardActive || !cardFunded || !order.card_credentials_ciphertext || !cardFresh) {
-        throw new OrderCancellationError('Card cannot be safely returned to stock', 'ORDER_CANCELLATION_CARD_NOT_REUSABLE');
-      }
-
       await connection.query(
         `UPDATE tasks SET status = 'DEAD', leased_until = NULL, leased_by = NULL,
            last_error_code = 'CANCELLED_BY_ADMIN', last_error_message = ?,
@@ -79,12 +70,25 @@ export function createOrderCancellationService({ pool }) {
          WHERE order_id = ? AND status = 'PENDING'`, [reason, order.id]
       );
       const [released] = await connection.query(
-        `UPDATE cards SET order_id = NULL, inventory_status = 'AVAILABLE', assigned_at = NULL,
+        `UPDATE cards SET order_id = NULL, inventory_status = 'HELD_FOR_REVIEW', assigned_at = NULL,
            updated_at = CURRENT_TIMESTAMP(3)
          WHERE id = ? AND order_id = ?`, [order.card_id, order.id]
       );
       if (Number(released.affectedRows) !== 1) {
         throw new OrderCancellationError('Card assignment changed concurrently', 'ORDER_CANCELLATION_ORDER_CHANGED');
+      }
+      const [assignmentReleased] = await connection.query(
+        `UPDATE card_assignment_history
+         SET status = 'RELEASED', released_by = 'admin', release_reason = ?,
+             released_at = CURRENT_TIMESTAMP(3), updated_at = CURRENT_TIMESTAMP(3)
+         WHERE card_id = ? AND order_id = ? AND status = 'ACTIVE'`,
+        [reason, order.card_id, order.id]
+      );
+      if (Number(assignmentReleased.affectedRows) !== 1) {
+        throw new OrderCancellationError(
+          'Card assignment history is inconsistent',
+          'ORDER_CANCELLATION_ASSIGNMENT_HISTORY_INCONSISTENT'
+        );
       }
       const [closed] = await connection.query(
         `UPDATE orders SET status = 'CLOSED', failure_code = 'CANCELLED_PRE_SUBMISSION',
@@ -99,12 +103,13 @@ export function createOrderCancellationService({ pool }) {
         `INSERT INTO order_events
          (order_id, from_status, to_status, actor_type, actor_id, reason, metadata_json)
          VALUES (?, 'CARD_READY', 'CLOSED', 'ADMIN', 'admin', ?, ?)`,
-        [order.id, 'order cancelled before recharge; card returned to inventory', JSON.stringify({
+        [order.id, 'order cancelled before recharge; card held for manual review', JSON.stringify({
           reason, cardId: order.card_id, cardTypeId: order.card_type_id
         })]
       );
       await connection.commit();
-      return { publicNo: order.public_no, status: 'CLOSED', cardReleased: true, replayed: false };
+      return { publicNo: order.public_no, status: 'CLOSED', cardReleased: true,
+        cardInventoryStatus: 'HELD_FOR_REVIEW', replayed: false };
     } catch (error) {
       await connection.rollback();
       throw error;

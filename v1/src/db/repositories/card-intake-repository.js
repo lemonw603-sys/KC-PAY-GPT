@@ -262,16 +262,17 @@ export function createCardIntakeRepository({ pool, idFactory = crypto.randomUUID
          (id, provider_account_id, order_id, inventory_status, intake_status,
           provider_card_id, external_card_id, card_type_id, last4, status,
           funded_amount, current_balance, currency, refund_status,
-          card_credentials_ciphertext, card_number_ciphertext, pan_hmac,
+          card_credentials_ciphertext, card_number_ciphertext, pan_hmac, pan_hmac_version,
           sync_tier, next_sync_at, last_successful_sync_at, last_synced_at)
          VALUES (?, ?, NULL, ?, 'ACCEPTED', ?, ?, ?, ?, ?, ?, ?, ?, 'MONITORING',
-                 ?, ?, ?, ?, ?, CURRENT_TIMESTAMP(3), CURRENT_TIMESTAMP(3))
+                 ?, ?, ?, CASE WHEN ? IS NULL THEN NULL ELSE 1 END,
+                 ?, ?, CURRENT_TIMESTAMP(3), CURRENT_TIMESTAMP(3))
          ON DUPLICATE KEY UPDATE id = id`,
         [cardId, discovery.providerAccountId, card.inventoryStatus,
           discovery.externalCardId, discovery.externalCardId, card.cardTypeId,
           card.last4, card.status, card.fundedAmount, card.currentBalance,
           card.currency, card.credentialsCiphertext, card.cardNumberCiphertext,
-          card.panHmac, card.syncTier || 'INVENTORY', card.nextSyncAt || null]
+          card.panHmac, card.panHmac, card.syncTier || 'INVENTORY', card.nextSyncAt || null]
       );
       const [inserted] = await connection.query(
         `SELECT id, inventory_status FROM cards WHERE provider_account_id = ?

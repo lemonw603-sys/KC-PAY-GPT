@@ -28,7 +28,7 @@ test('admin overview maps aggregate values without exposing raw records', async 
     [{ setting_key: 'accept_new_orders', setting_value: 'false', updated_at: new Date('2026-08-17T00:00:00Z') }],
     [{ status: 'REFUND_DETECTED', count: 1 }],
     [{ count: 1 }],
-    [{ available: 7, provisioning: 1, assigned: 2, depleted: 1 }],
+    [{ available: 7, provisioning: 1, assigned: 2, depleted: 1, held: 1 }],
     [{ setting_value: '5' }],
     [{ card_intake_pending: 2, funds_risk_pending: 1,
       reconciliation_cases_open: 3, card_sync_backlog: 4 }]
@@ -39,7 +39,8 @@ test('admin overview maps aggregate values without exposing raw records', async 
   assert.equal(result.metrics.awaitingConfirmationOrders, 1);
   assert.deepEqual(result.orderStatuses, [{ status: 'RECHARGE_SUCCESS', count: 8 }]);
   assert.deepEqual(result.cardStock, {
-    available: 7, provisioning: 1, assigned: 2, depleted: 1, lowThreshold: 5, low: false
+    available: 7, provisioning: 1, assigned: 2, depleted: 1, held: 1,
+    lowThreshold: 5, low: false
   });
   assert.deepEqual(result.operationalBacklog, {
     cardIntakePending: 2, fundsRiskPending: 1,
@@ -59,7 +60,7 @@ test('admin order list validates filters, maps card summaries, and supports CDK 
       finished_at: null, last4: '4242', current_balance: '25.000000', currency: 'USD',
       refund_status: 'MONITORING',
       card_number_ciphertext: encryptSecret('4242424242424242', adminCardKey)
-    }]
+    }], []
   ]);
   const result = await createAdminReadService({
     pool, sessionEncryptionKey: adminCardKey, cdkHashKey: adminCdkKey
@@ -73,12 +74,15 @@ test('admin order list validates filters, maps card summaries, and supports CDK 
   });
   assert.equal(result.orders[0].actualPaymentAmount, '1150.000000');
   assert.equal(result.orders[0].actualPaymentCurrency, 'PHP');
+  assert.deepEqual(result.cdkMatches, []);
   assert.deepEqual(pool.queries[0].values.slice(0, 4), [
     'CARD_FAILED', 'SUBMIT_UNKNOWN', 'RECHARGE_FAILED', 'RECONCILIATION_REQUIRED'
   ]);
   assert.equal(pool.queries.some(({ sql }) => /session_ciphertext|recharge_card_key/i.test(sql)), false);
   assert.match(pool.queries[0].sql, /EXISTS \(\s*SELECT 1 FROM cdks cdk/i);
-  assert.equal(pool.queries[0].values.length, 12);
+  assert.equal(pool.queries[0].values.length, 21);
+  assert.match(pool.queries[0].sql, /card_assignment_history/i);
+  assert.match(pool.queries[0].sql, /customer_payments/i);
 
   await assert.rejects(
     () => createAdminReadService({ pool: queuedPool([]) }).listOrders({ status: 'NOT_A_STATUS' }),
@@ -109,7 +113,7 @@ test('admin order detail exposes the full PAN but not CVV or Session', async () 
     }, {
       task_type: 'SUBMIT_RECHARGE', status: 'PENDING', attempts: 0, max_attempts: 5,
       permit_status: null, permit_expires_at: null
-    }], [], [], [], [], []
+    }], [], [], [], [], [], [], [], [], [], [], [], []
   ]);
   const result = await createAdminReadService({
     pool, sessionEncryptionKey: adminCardKey, now: () => nowMs
@@ -144,9 +148,43 @@ test('admin order detail exposes the full PAN but not CVV or Session', async () 
     cardWillBeReleased: true
   });
   assert.deepEqual(result.transactions, []);
+  assert.deepEqual(result.traceability, {
+    deliveryTrackingEnabled: false,
+    cdks: [], deliveries: [], customerPayments: [], cardAssignments: [], notes: [], tags: [],
+    orderRelationships: [],
+    fulfillmentCost: {
+      customerPayments: [], cardFundedAmount: [], providerConfirmedPayment: [],
+      successfulCardPurchases: [], cardTransactionFees: [], exchangeRateApplied: false,
+      note: '各币种保留原值；未留存的历史费用显示为空，不推算汇率或成本。'
+    }
+  });
   assert.equal(JSON.stringify(result).includes('fixture-signature'), false);
   assert.equal(JSON.stringify(result).includes('sessionToken'), false);
   assert.equal(pool.queries.some(({ sql }) => /\bcvv\b/i.test(sql)), false);
+});
+
+test('admin unified search supports exact PAN HMAC, tags, and bounded time filters', async () => {
+  const panKey = Buffer.alloc(32, 31);
+  const pool = queuedPool([[{ total: 0 }], []]);
+  await createAdminReadService({ pool, panHmacKey: panKey }).listOrders({
+    q: '4242-4242-4242-4242', tag: '补发',
+    from: '2026-08-01T00:00:00.000Z', to: '2026-08-31T23:59:59.999Z'
+  });
+  const countQuery = pool.queries[0];
+  assert.match(countQuery.sql, /sc\.pan_hmac = \?/i);
+  assert.match(countQuery.sql, /BINARY ot\.tag = BINARY \?/i);
+  assert.match(countQuery.sql, /o\.created_at >= \?/i);
+  assert.match(countQuery.sql, /o\.created_at <= \?/i);
+  const expectedHmac = (await import('node:crypto')).default
+    .createHmac('sha256', panKey).update('4242424242424242').digest('hex');
+  assert.ok(countQuery.values.includes(expectedHmac));
+
+  await assert.rejects(
+    () => createAdminReadService({ pool: queuedPool([]) }).listOrders({
+      from: '2026-09-01', to: '2026-08-01'
+    }),
+    /Invalid time range/
+  );
 });
 
 test('manual transaction sync queues only a read task and deduplicates active work', async () => {

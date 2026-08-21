@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import { transitionOrder } from './order-repository.js';
 import { OrderStatus } from '../../domain/order-status.js';
 import { decryptSecret, encryptSecret } from '../../security/secret-box.js';
@@ -42,7 +43,7 @@ async function insertEvent(connection, {
   );
 }
 
-export function createWorkflowRepository(pool, { sessionEncryptionKey }) {
+export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKey = null }) {
   return {
     async loadOrderContext(orderId) {
       const [rows] = await pool.query(
@@ -125,6 +126,10 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey }) {
              AND LOWER(status) IN ('active','available','usable','ready')
              AND current_balance >= ?
              AND card_credentials_ciphertext IS NOT NULL
+             AND NOT EXISTS (
+               SELECT 1 FROM card_assignment_history prior
+               WHERE prior.card_id = cards.id
+             )
            ORDER BY current_balance ASC, created_at ASC
            LIMIT 1 FOR UPDATE SKIP LOCKED`,
           [order.card_provider_account_id, String(order.card_type_id),
@@ -150,6 +155,17 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey }) {
           [orderId, card.id]
         );
         if (cardUpdate.affectedRows !== 1) throw new Error(`Concurrent card assignment detected: ${card.id}`);
+        await connection.query(
+          `INSERT INTO card_assignment_history
+           (id, card_id, order_id, assignment_kind, status, assigned_by,
+            assignment_reason, assigned_at, evidence_json)
+           VALUES (UUID(), ?, ?, 'NORMAL', 'ACTIVE', 'worker:assign-available-card',
+             'available inventory card assigned to order', CURRENT_TIMESTAMP(3), ?)`,
+          [card.id, orderId, JSON.stringify({
+            providerCardId: String(card.provider_card_id),
+            balanceAtAssignment: String(card.current_balance)
+          })]
+        );
         const [orderUpdate] = await connection.query(
           `UPDATE orders SET status = ?, version = version + 1,
              updated_at = CURRENT_TIMESTAMP(3) WHERE id = ? AND version = ?`,
@@ -289,6 +305,27 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey }) {
             card.currency || 'USD'
           ]
         );
+        const [insertedCards] = await connection.query(
+          `SELECT id FROM cards
+           WHERE provider_account_id = ? AND BINARY external_card_id = BINARY ?
+           LIMIT 1 FOR UPDATE`,
+          [order.card_provider_account_id, String(card.providerCardId)]
+        );
+        if (insertedCards.length !== 1) {
+          throw new Error(`Purchased card cannot be resolved after insert: ${card.providerCardId}`);
+        }
+        await connection.query(
+          `INSERT INTO card_assignment_history
+           (id, card_id, order_id, assignment_kind, status, assigned_by,
+            assignment_reason, assigned_at, evidence_json)
+           VALUES (UUID(), ?, ?, 'PURCHASED_FOR_ORDER', 'ACTIVE', 'worker:purchase-card',
+             'card purchased for this order', CURRENT_TIMESTAMP(3), ?)`,
+          [insertedCards[0].id, orderId, JSON.stringify({
+            providerCardId: String(card.providerCardId),
+            fundedAmount: String(card.fundedAmount),
+            currency: card.currency || 'USD'
+          })]
+        );
         const [updateResult] = await connection.query(
           `UPDATE orders SET status = ?, version = version + 1,
              updated_at = CURRENT_TIMESTAMP(3)
@@ -324,14 +361,19 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey }) {
         if (order.status !== OrderStatus.CARD_PROVISIONING) {
           throw new Error(`Cannot commit ready card from ${order.status}`);
         }
+        const normalizedPan = String(credentials.cardNumber || '').replace(/[\s-]/g, '');
+        const panHmac = Buffer.isBuffer(panHmacKey) && /^\d{12,19}$/.test(normalizedPan)
+          ? crypto.createHmac('sha256', panHmacKey).update(normalizedPan).digest('hex') : null;
         await connection.query(
           `UPDATE cards SET status = ?, last4 = COALESCE(?, last4),
              current_balance = ?, currency = ?, last_synced_at = CURRENT_TIMESTAMP(3),
              card_credentials_ciphertext = ?, card_number_ciphertext = ?,
+             pan_hmac = COALESCE(?, pan_hmac),
+             pan_hmac_version = CASE WHEN ? IS NULL THEN pan_hmac_version ELSE 1 END,
              updated_at = CURRENT_TIMESTAMP(3) WHERE order_id = ?`,
           [snapshot.status, snapshot.last4 || null, String(snapshot.currentBalance),
             snapshot.currency || 'USD', encryptSecret(JSON.stringify(credentials), sessionEncryptionKey),
-            encryptSecret(credentials.cardNumber, sessionEncryptionKey), orderId]
+            encryptSecret(credentials.cardNumber, sessionEncryptionKey), panHmac, panHmac, orderId]
         );
         const [result] = await connection.query(
           `UPDATE orders SET status = ?, version = version + 1,

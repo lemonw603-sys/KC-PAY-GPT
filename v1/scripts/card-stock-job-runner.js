@@ -29,7 +29,8 @@ const provider = new HnskjCardProvider({
   baseUrl: process.env.HNSKJ_API_BASE_URL || 'https://card.hnskj.vip/api/open/v1',
   apiKey: String(process.env.HNSKJ_API_KEY || '')
 });
-const stock = createCardStockService({ pool, sessionEncryptionKey: config.sessionEncryptionKey });
+const stock = createCardStockService({ pool, sessionEncryptionKey: config.sessionEncryptionKey,
+  panHmacKey: config.cardIntakePanHmacKey });
 const balanceSnapshots = createProviderBalanceSnapshotService({ pool });
 const refreshSnapshot = () => refreshProviderSnapshot(pool, provider, {
   balanceSnapshotService: balanceSnapshots

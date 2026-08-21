@@ -47,6 +47,21 @@ test('CDK delivery recipient HMAC key is optional but independent when configure
   }), /exactly 32 bytes/);
 });
 
+test('payment reference HMAC key is optional, 32-byte, and independently scoped', () => {
+  const environment = validEnvironment();
+  const key = crypto.randomBytes(32).toString('base64');
+  const config = loadConfig({ ...environment, PAYMENT_REFERENCE_HMAC_KEY_BASE64: key });
+  assert.equal(config.paymentReferenceHmacKey.length, 32);
+  assert.throws(() => loadConfig({
+    ...environment,
+    PAYMENT_REFERENCE_HMAC_KEY_BASE64: environment.CDK_HASH_KEY_V1_BASE64
+  }), /must be independent/);
+  assert.throws(() => loadConfig({
+    ...environment,
+    PAYMENT_REFERENCE_HMAC_KEY_BASE64: Buffer.alloc(16).toString('base64')
+  }), /exactly 32 bytes/);
+});
+
 test('production web server only binds an explicit loopback address', () => {
   const production = {
     ...validEnvironment(),

@@ -42,6 +42,7 @@ const baseSchema = z.object({
   HNSKJ_API_BASE_URL: z.string().url().default('https://card.hnskj.vip/api/open/v1'),
   HNSKJ_API_KEY: z.string().trim().min(1).optional(),
   CARD_INTAKE_PAN_HMAC_KEY_BASE64: z.string().trim().min(1).optional(),
+  PAYMENT_REFERENCE_HMAC_KEY_BASE64: z.string().trim().min(1).optional(),
   ADMIN_HOST: z.string().trim().min(1).max(253).optional(),
   ADMIN_PASSWORD_HASH: z.string().trim()
     .regex(/^scrypt-v1\$[A-Za-z0-9_-]{22}\$[A-Za-z0-9_-]{86}$/)
@@ -285,6 +286,24 @@ function validateBaseConfig(value, context) {
       });
     }
   }
+  if (value.PAYMENT_REFERENCE_HMAC_KEY_BASE64) {
+    try {
+      if (Buffer.from(value.PAYMENT_REFERENCE_HMAC_KEY_BASE64, 'base64').length !== 32) throw new Error();
+    } catch {
+      context.addIssue({
+        code: 'custom', path: ['PAYMENT_REFERENCE_HMAC_KEY_BASE64'],
+        message: 'must decode to exactly 32 bytes'
+      });
+    }
+    if ([value.CDK_HASH_KEY_V1_BASE64, value.CDK_RECOVERY_KEY_BASE64,
+      value.CDK_DELIVERY_HMAC_KEY_BASE64, value.CARD_INTAKE_PAN_HMAC_KEY_BASE64]
+      .filter(Boolean).includes(value.PAYMENT_REFERENCE_HMAC_KEY_BASE64)) {
+      context.addIssue({
+        code: 'custom', path: ['PAYMENT_REFERENCE_HMAC_KEY_BASE64'],
+        message: 'must be independent from other hashing and recovery keys'
+      });
+    }
+  }
   if (net.isIP(value.HOST) === 0) {
     context.addIssue({
       code: 'custom',
@@ -371,6 +390,8 @@ export function loadConfig(env = process.env) {
     hnskjApiKey: result.data.HNSKJ_API_KEY || null,
     cardIntakePanHmacKey: result.data.CARD_INTAKE_PAN_HMAC_KEY_BASE64
       ? Buffer.from(result.data.CARD_INTAKE_PAN_HMAC_KEY_BASE64, 'base64') : null,
+    paymentReferenceHmacKey: result.data.PAYMENT_REFERENCE_HMAC_KEY_BASE64
+      ? Buffer.from(result.data.PAYMENT_REFERENCE_HMAC_KEY_BASE64, 'base64') : null,
     adminHost: result.data.ADMIN_HOST || null,
     adminPasswordHash: result.data.ADMIN_PASSWORD_HASH || null,
     adminSessionSecret: result.data.ADMIN_SESSION_SECRET_BASE64

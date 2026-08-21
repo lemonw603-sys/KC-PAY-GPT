@@ -27,19 +27,22 @@ function eligibleRow(overrides = {}) {
   };
 }
 
-test('cancellation closes an untouched order and atomically releases its card', async () => {
+test('cancellation closes an untouched order and quarantines its card from automatic reuse', async () => {
   const pool = fakePool([
     [[eligibleRow()], []], [[], []], [{ affectedRows: 1 }, []],
-    [{ affectedRows: 1 }, []], [{ affectedRows: 1 }, []], [{ affectedRows: 1 }, []]
+    [{ affectedRows: 1 }, []], [{ affectedRows: 1 }, []],
+    [{ affectedRows: 1 }, []], [{ affectedRows: 1 }, []]
   ]);
   const result = await createOrderCancellationService({ pool })(
     'PJV1-DEMO', { confirmation: '取消订单 PJV1-DEMO' }
   );
   assert.deepEqual(result, {
-    publicNo: 'PJV1-DEMO', status: 'CLOSED', cardReleased: true, replayed: false
+    publicNo: 'PJV1-DEMO', status: 'CLOSED', cardReleased: true,
+    cardInventoryStatus: 'HELD_FOR_REVIEW', replayed: false
   });
-  assert.equal(pool.queries.some(({ sql }) => /inventory_status = 'AVAILABLE'/.test(sql)), true);
+  assert.equal(pool.queries.some(({ sql }) => /inventory_status = 'HELD_FOR_REVIEW'/.test(sql)), true);
   assert.equal(pool.queries.some(({ sql }) => /CANCELLED_PRE_SUBMISSION/.test(sql)), true);
+  assert.equal(pool.queries.some(({ sql }) => /UPDATE card_assignment_history/.test(sql)), true);
 });
 
 test('cancellation refuses an attempted recharge without changing tasks or cards', async () => {
@@ -53,15 +56,14 @@ test('cancellation refuses an attempted recharge without changing tasks or cards
   assert.equal(pool.queries.length, 1);
 });
 
-test('cancellation refuses a stale card even when recharge was never attempted', async () => {
+test('cancellation may quarantine a stale card because it is never returned to automatic stock', async () => {
   const pool = fakePool([
-    [[eligibleRow({ last_synced_at: new Date(Date.now() - 16 * 60_000) })], []], [[], []]
+    [[eligibleRow({ last_synced_at: new Date(Date.now() - 16 * 60_000) })], []], [[], []],
+    [{ affectedRows: 1 }, []], [{ affectedRows: 1 }, []], [{ affectedRows: 1 }, []],
+    [{ affectedRows: 1 }, []], [{ affectedRows: 1 }, []]
   ]);
-  await assert.rejects(
-    createOrderCancellationService({ pool })(
-      'PJV1-DEMO', { confirmation: '取消订单 PJV1-DEMO' }
-    ),
-    (error) => error.code === 'ORDER_CANCELLATION_CARD_NOT_REUSABLE'
+  const result = await createOrderCancellationService({ pool })(
+    'PJV1-DEMO', { confirmation: '取消订单 PJV1-DEMO' }
   );
-  assert.equal(pool.queries.length, 2);
+  assert.equal(result.cardInventoryStatus, 'HELD_FOR_REVIEW');
 });

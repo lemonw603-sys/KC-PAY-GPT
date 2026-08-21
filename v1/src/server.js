@@ -33,6 +33,7 @@ import { createCardIntakeRepository } from './db/repositories/card-intake-reposi
 import { createCdkDeliveryService } from './services/cdk-delivery-service.js';
 import { createReconciliationCaseService } from './services/reconciliation-case-service.js';
 import { createOperationsCsvExportService } from './services/operations-csv-export-service.js';
+import { createTraceabilityOperationsService } from './services/traceability-operations-service.js';
 
 const config = loadConfig();
 const pool = createDatabasePool(config.database);
@@ -45,9 +46,15 @@ const getCustomerOrderStatus = createOrderStatusService({ pool, cdkHashKey: conf
 const adminReadService = createAdminReadService({
   pool,
   sessionEncryptionKey: config.sessionEncryptionKey,
-  cdkHashKey: config.cdkHashKey
+  cdkHashKey: config.cdkHashKey,
+  panHmacKey: config.cardIntakePanHmacKey,
+  deliveryTrackingEnabled: Boolean(config.cdkDeliveryHmacKey)
 });
-const cardStockService = createCardStockService({ pool, sessionEncryptionKey: config.sessionEncryptionKey });
+const cardStockService = createCardStockService({
+  pool,
+  sessionEncryptionKey: config.sessionEncryptionKey,
+  panHmacKey: config.cardIntakePanHmacKey
+});
 const cardStockJobService = createCardStockJobService({ pool });
 const cardSyncJobService = createCardSyncJobService({ pool });
 const cardIntakeRepository = createCardIntakeRepository({ pool });
@@ -88,6 +95,10 @@ const compensateAdminOrder = createOrderCompensationService({
 const cancelAdminOrder = createOrderCancellationService({ pool });
 const reconciliationCases = createReconciliationCaseService({ pool });
 const operationsCsv = createOperationsCsvExportService({ pool });
+const traceabilityOperations = createTraceabilityOperationsService({
+  pool,
+  paymentReferenceHmacKey: config.paymentReferenceHmacKey
+});
 const cdkDelivery = config.cdkDeliveryHmacKey
   ? createCdkDeliveryService({
     pool,
@@ -111,6 +122,9 @@ const app = createApp({
   getAdminOverview: adminReadService.getOverview,
   listAdminOrders: adminReadService.listOrders,
   getAdminOrder: adminReadService.getOrder,
+  addAdminOrderNote: traceabilityOperations.addOrderNote,
+  addAdminOrderTag: traceabilityOperations.addOrderTag,
+  completeAdminCustomerPayment: traceabilityOperations.completeCustomerPayment,
   listAdminAlerts: adminReadService.listAlerts,
   requestCardTransactionSync: adminReadService.requestCardTransactionSync
   ,getAdminCard: adminReadService.getCard

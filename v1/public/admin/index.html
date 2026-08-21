@@ -7,8 +7,8 @@
   <meta name="theme-color" content="#f5f8fc">
   <title>Plus 运营后台</title>
   <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/admin/assets/admin.css?v=13">
-  <script src="/admin/assets/admin.js?v=13" defer></script>
+  <link rel="stylesheet" href="/admin/assets/admin.css?v=14">
+  <script src="/admin/assets/admin.js?v=14" defer></script>
 </head>
 <body>
   <div class="admin-shell">
@@ -74,7 +74,7 @@
             <button class="text-button" id="export-orders" type="button">导出订单 CSV</button>
           </div>
           <form class="filters" id="order-filters">
-            <label class="search-field"><span class="sr-only">搜索订单</span><input id="order-search" type="search" maxlength="191" placeholder="搜索查询码、CDK、邮箱、账号或外部订单号"></label>
+            <label class="search-field"><span class="sr-only">搜索订单</span><input id="order-search" type="search" maxlength="191" placeholder="搜索查询码、CDK、邮箱、卡号、卡台 ID 或外部订单号"></label>
             <label><span class="sr-only">订单状态</span><select id="status-filter">
               <option value="">全部状态</option>
               <option value="TODAY">今日订单</option>
@@ -83,6 +83,9 @@
               <option value="REVIEW_REQUIRED">需要关注</option>
               <option value="RECONCILIATION_ISSUES">三方对账异常</option>
             </select></label>
+            <label><span class="sr-only">时间类型</span><select id="order-time-field" title="时间类型"><option value="CREATED">创建时间</option><option value="UPDATED">更新时间</option><option value="FINISHED">完成时间</option><option value="PAID">客户付款时间</option><option value="RECHARGE">充值提交时间</option></select></label>
+            <label><span class="sr-only">开始日期</span><input id="order-from" type="date" title="创建开始日期"></label>
+            <label><span class="sr-only">结束日期</span><input id="order-to" type="date" title="创建结束日期"></label>
             <button class="primary-small" type="submit">查询</button>
           </form>
           <div class="table-wrap"><table><thead><tr><th><input id="select-page-orders" type="checkbox" aria-label="选择本页订单"></th><th>订单查询码</th><th>账号</th><th>状态</th><th>卡片</th><th>退款观察</th><th>创建时间</th></tr></thead><tbody id="orders-table"></tbody></table></div>

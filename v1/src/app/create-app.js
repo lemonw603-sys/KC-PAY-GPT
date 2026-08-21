@@ -11,6 +11,7 @@ import { OrderCancellationError } from '../services/order-cancellation-service.j
 import { ReconciliationCaseError } from '../services/reconciliation-case-service.js';
 import { OperationsCsvExportError } from '../services/operations-csv-export-service.js';
 import { CdkDeliveryError } from '../services/cdk-delivery-service.js';
+import { TraceabilityOperationError } from '../services/traceability-operations-service.js';
 import { createFixedWindowRateLimit } from './fixed-window-rate-limit.js';
 
 const DEFAULT_BODY_LIMIT = '256kb';
@@ -29,6 +30,9 @@ export function createApp({
   getAdminOverview = null,
   listAdminOrders = null,
   getAdminOrder = null,
+  addAdminOrderNote = null,
+  addAdminOrderTag = null,
+  completeAdminCustomerPayment = null,
   listAdminAlerts = null,
   requestCardTransactionSync = null,
   getAdminCard = null,
@@ -188,12 +192,52 @@ export function createApp({
   }
   if (typeof listAdminOrders === 'function') {
     app.get('/api/v1/admin/orders', noStore, requireAdminApi, async (req, res) => {
+      if (req.query?.q) return res.status(400).json({ error: 'admin_search_body_required' });
       res.json(await listAdminOrders(req.query));
+    });
+    app.post('/api/v1/admin/orders/search', ...adminWriteGuards, async (req, res) => {
+      res.json(await listAdminOrders(req.body || {}));
     });
   }
   if (typeof getAdminOrder === 'function') {
     app.get('/api/v1/admin/orders/:publicNo', noStore, requireAdminApi, async (req, res) => {
       res.json(await getAdminOrder(req.params.publicNo));
+    });
+  }
+  if (typeof addAdminOrderNote === 'function') {
+    app.post('/api/v1/admin/orders/:publicNo/notes', ...adminWriteGuards, async (req, res) => {
+      try {
+        return res.status(201).json(await addAdminOrderNote(req.params.publicNo, req.body || {}));
+      } catch (error) {
+        if (error instanceof TraceabilityOperationError) {
+          return res.status(error.status).json({ error: error.code.toLowerCase() });
+        }
+        throw error;
+      }
+    });
+  }
+  if (typeof addAdminOrderTag === 'function') {
+    app.post('/api/v1/admin/orders/:publicNo/tags', ...adminWriteGuards, async (req, res) => {
+      try {
+        return res.status(201).json(await addAdminOrderTag(req.params.publicNo, req.body || {}));
+      } catch (error) {
+        if (error instanceof TraceabilityOperationError) {
+          return res.status(error.status).json({ error: error.code.toLowerCase() });
+        }
+        throw error;
+      }
+    });
+  }
+  if (typeof completeAdminCustomerPayment === 'function') {
+    app.post('/api/v1/admin/orders/:publicNo/customer-payment', ...sensitiveAdminGuards, async (req, res) => {
+      try {
+        return res.json(await completeAdminCustomerPayment(req.params.publicNo, req.body || {}));
+      } catch (error) {
+        if (error instanceof TraceabilityOperationError) {
+          return res.status(error.status).json({ error: error.code.toLowerCase() });
+        }
+        throw error;
+      }
     });
   }
   if (typeof listAdminAlerts === 'function') {
@@ -209,7 +253,7 @@ export function createApp({
   }
   if (typeof getAdminCard === 'function') {
     app.get('/api/v1/admin/cards/:providerCardId', noStore, requireAdminApi, async (req, res) => {
-      res.json(await getAdminCard(req.params.providerCardId));
+      res.json(await getAdminCard(req.params.providerCardId, req.query || {}));
     });
   }
   if (typeof requestAdminCardSync === 'function') {

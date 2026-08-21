@@ -168,7 +168,8 @@ export async function runCardStockCli({ env = process.env } = {}) {
   }
   const config = loadConfig(env);
   const pool = createDatabasePool(config.database);
-  const stock = createCardStockService({ pool, sessionEncryptionKey: config.sessionEncryptionKey });
+  const stock = createCardStockService({ pool, sessionEncryptionKey: config.sessionEncryptionKey,
+    panHmacKey: config.cardIntakePanHmacKey });
   const provider = ['status', 'threshold'].includes(command) ? null : new HnskjCardProvider({
     baseUrl: env.HNSKJ_API_BASE_URL || 'https://card.hnskj.vip/api/open/v1',
     apiKey: String(env.HNSKJ_API_KEY || '')

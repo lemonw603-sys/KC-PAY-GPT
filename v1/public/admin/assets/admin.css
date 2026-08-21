@@ -166,7 +166,7 @@ tbody tr[data-order]:hover, tbody tr[data-order]:focus { background: #f7faff; }
 .cell-main, td small { display: block; }.cell-main { color: #30465d; }.cell-main + small { margin-top: 4px; color: #7d8c9d; font-size: 11px; }
 .empty-cell, .empty-state, .loading-state { padding: 26px 10px; color: #8c9aaa; text-align: center; font-size: 11px; }
 
-.filters { display: grid; grid-template-columns: minmax(220px, 1fr) 190px auto; gap: 10px; margin-bottom: 18px; }
+.filters { display: grid; grid-template-columns: minmax(260px, 1fr) 170px 150px 145px 145px auto; gap: 10px; margin-bottom: 18px; }
 .batch-toolbar { display: flex; align-items: center; justify-content: flex-end; gap: 12px; margin-bottom: 14px; color: var(--muted); font-size: 12px; }
 .batch-toolbar > span { margin-right: auto; font-weight: 800; }
 .reconciliation-filters { grid-template-columns: 190px 190px auto; }

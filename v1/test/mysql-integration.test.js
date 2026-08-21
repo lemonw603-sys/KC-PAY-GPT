@@ -45,6 +45,8 @@ import { createProviderBalanceSnapshotService } from '../src/services/provider-b
 import { createReconciliationCaseService } from '../src/services/reconciliation-case-service.js';
 import { createOperationsCsvExportService } from '../src/services/operations-csv-export-service.js';
 import { createAlertNotificationRepository } from '../src/db/repositories/alert-notification-repository.js';
+import { createCardStockService, mapStockCard } from '../src/services/card-stock-service.js';
+import { createTraceabilityOperationsService } from '../src/services/traceability-operations-service.js';
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
 const integrationSessionKey = Buffer.alloc(32, 7);
@@ -124,6 +126,10 @@ async function removeOrder(pool, { cdkId, orderId }) {
     await pool.query('DELETE FROM recharge_authorizations WHERE id = ?', [authorization.authorization_id]);
   }
   await pool.query('DELETE FROM refund_cases WHERE order_id = ?', [orderId]);
+  await pool.query('DELETE FROM order_notes WHERE order_id = ?', [orderId]);
+  await pool.query('DELETE FROM order_tags WHERE order_id = ?', [orderId]);
+  await pool.query('DELETE FROM customer_payments WHERE order_id = ? OR cdk_id = ?', [orderId, cdkId]);
+  await pool.query('DELETE FROM card_assignment_history WHERE order_id = ?', [orderId]);
   const [cards] = await pool.query('SELECT id FROM cards WHERE order_id = ?', [orderId]);
   for (const card of cards) {
     await pool.query('DELETE FROM card_sync_jobs WHERE card_id = ?', [card.id]);
@@ -354,6 +360,12 @@ test('pre-submission cancellation closes the order and returns its funded card t
       }), integrationSessionKey)]
     );
     await pool.query(
+      `INSERT INTO card_assignment_history
+       (id, card_id, order_id, assignment_kind, status, assigned_by, assignment_reason)
+       VALUES (?, ?, ?, 'NORMAL', 'ACTIVE', 'integration-test', 'cancellation fixture')`,
+      [id(), cardId, fixture.orderId]
+    );
+    await pool.query(
       `INSERT INTO tasks (order_id, task_type, status, dedupe_key, max_attempts)
        VALUES (?, 'SUBMIT_RECHARGE', 'PENDING', ?, 5)`,
       [fixture.orderId, `cancel-submit-${fixture.orderId}`]
@@ -362,6 +374,7 @@ test('pre-submission cancellation closes the order and returns its funded card t
     const service = createOrderCancellationService({ pool });
     const result = await service(order.public_no, { confirmation: `取消订单 ${order.public_no}` });
     assert.equal(result.cardReleased, true);
+    assert.equal(result.cardInventoryStatus, 'HELD_FOR_REVIEW');
     const [[stored]] = await pool.query(
       `SELECT o.status, o.failure_code, c.order_id, c.inventory_status, t.status AS task_status
        FROM orders o INNER JOIN cards c ON c.id = ?
@@ -370,9 +383,10 @@ test('pre-submission cancellation closes the order and returns its funded card t
     );
     assert.deepEqual(stored, {
       status: 'CLOSED', failure_code: 'CANCELLED_PRE_SUBMISSION', order_id: null,
-      inventory_status: 'AVAILABLE', task_status: 'DEAD'
+      inventory_status: 'HELD_FOR_REVIEW', task_status: 'DEAD'
     });
   } finally {
+    await pool.query('DELETE FROM card_assignment_history WHERE card_id = ?', [cardId]);
     await pool.query('DELETE FROM cards WHERE id = ?', [cardId]);
     await removeOrder(pool, fixture);
     await pool.end();
@@ -487,6 +501,47 @@ test('inventory assignment atomically gives one ready card to only one order', {
     await removeOrder(pool, first);
     await removeOrder(pool, second);
     await pool.query('DELETE FROM cards WHERE id = ?', [stockCardId]);
+    await pool.end();
+  }
+});
+
+test('a card registered by the stock service is provider-scoped, accepted, and assignable', {
+  skip: !databaseUrl && 'TEST_DATABASE_URL 未配置；完整 MySQL 套件在服务器隔离数据库运行'
+}, async () => {
+  const pool = mysql.createPool({ uri: databaseUrl, connectionLimit: 3, timezone: 'Z' });
+  const fixture = await createOrder(pool);
+  const providerCardId = `registered-${id()}`;
+  const stock = createCardStockService({
+    pool, sessionEncryptionKey: integrationSessionKey, panHmacKey: Buffer.alloc(32, 22)
+  });
+  try {
+    const card = mapStockCard({ data: {
+      id: providerCardId, cardTypeId: '7', status: 'active', cardBalance: '16.00',
+      currency: 'USD', cardNumber: '4242424242424242', cvv: '123',
+      expiryMonth: 12, expiryYear: 2032
+    } }, { minimumRequiredBalance: '16' });
+    const registered = await stock.register(card);
+    assert.equal(registered.inventoryStatus, 'AVAILABLE');
+    const [[stored]] = await pool.query(
+      `SELECT provider_account_id, external_card_id, intake_status, pan_hmac_version
+       FROM cards WHERE provider_account_id = ? AND BINARY external_card_id = BINARY ?`,
+      [legacyCardProviderAccountId, providerCardId]
+    );
+    assert.deepEqual(stored, {
+      provider_account_id: legacyCardProviderAccountId,
+      external_card_id: providerCardId,
+      intake_status: 'ACCEPTED',
+      pan_hmac_version: 1
+    });
+    const assigned = await createWorkflowRepository(pool, {
+      sessionEncryptionKey: integrationSessionKey, panHmacKey: Buffer.alloc(32, 22)
+    }).assignAvailableCard(fixture.orderId);
+    assert.equal(assigned.providerCardId, providerCardId);
+  } finally {
+    await pool.query('DELETE FROM operator_alerts WHERE dedupe_key = ?', [
+      `card-stock-low:${legacyCardProviderAccountId}:7`
+    ]);
+    await removeOrder(pool, fixture);
     await pool.end();
   }
 });
@@ -966,6 +1021,12 @@ test('admin CDK generation is idempotent, recoverable, listable and revocable', 
     assert.equal(concurrent.filter((result) => !result.replayed).length, 1);
     assert.deepEqual(concurrent[0].codes, concurrent[1].codes);
     assert.equal(created.codes.length, 3);
+    const [[paymentTrace]] = await pool.query(
+      `SELECT COUNT(*) AS count FROM customer_payments p
+       INNER JOIN cdks c ON c.id = p.cdk_id WHERE BINARY c.batch_no = BINARY ?`,
+      [batchNo]
+    );
+    assert.equal(Number(paymentTrace.count), 3);
 
     const [[storedBatch]] = await pool.query(
       'SELECT codes_ciphertext FROM cdk_batches WHERE batch_no = ?', [batchNo]
@@ -1015,6 +1076,10 @@ test('admin CDK generation is idempotent, recoverable, listable and revocable', 
   } finally {
     if (batchNo) {
       await pool.query('DELETE FROM cdk_admin_events WHERE batch_no = ?', [batchNo]);
+      await pool.query(
+        `DELETE p FROM customer_payments p INNER JOIN cdks c ON c.id = p.cdk_id
+         WHERE BINARY c.batch_no = BINARY ?`, [batchNo]
+      );
       await pool.query('DELETE FROM cdks WHERE batch_no = ?', [batchNo]);
       await pool.query('DELETE FROM cdk_batches WHERE batch_no = ?', [batchNo]);
     }
@@ -1525,6 +1590,57 @@ test('Foundation v2 operations SQL persists balance history and safe reconciliat
       'DELETE FROM provider_balance_snapshots WHERE provider_account_id = ? AND currency = ? AND observed_at = ?',
       [legacyCardProviderAccountId, 'USD', observedAt]
     );
+    await pool.end();
+  }
+});
+
+test('traceability payment supplement persists an auditable payment without plaintext reference', {
+  skip: !databaseUrl && 'TEST_DATABASE_URL 未配置；完整 MySQL 套件在服务器隔离数据库运行'
+}, async () => {
+  const pool = mysql.createPool({ uri: databaseUrl, connectionLimit: 3, timezone: 'Z' });
+  const fixture = await createOrder(pool);
+  const publicNo = `TEST-${fixture.orderId}`;
+  const paymentId = id();
+  const reference = `trade-${crypto.randomUUID()}`;
+  try {
+    await pool.query(
+       `INSERT INTO customer_payments
+       (id, cdk_id, order_id, payment_status, payment_channel, recorded_by)
+       VALUES (?, ?, ?, 'PAID', 'EXTERNAL_UNSPECIFIED', 'mysql-test')`,
+      [paymentId, fixture.cdkId, fixture.orderId]
+    );
+    const service = createTraceabilityOperationsService({
+      pool, paymentReferenceHmacKey: Buffer.alloc(32, 31)
+    });
+    const paidAt = '2026-08-21T02:00:00.000Z';
+    assert.deepEqual(await service.completeCustomerPayment(publicNo, {
+      amount: '199.50', currency: 'CNY', channel: 'ALIPAY', paidAt,
+      externalReference: reference
+    }), { publicNo, recorded: true, replayed: false });
+    assert.deepEqual(await service.completeCustomerPayment(publicNo, {
+      amount: '199.500000', currency: 'CNY', channel: 'ALIPAY', paidAt,
+      externalReference: reference
+    }), { publicNo, recorded: true, replayed: true });
+
+    const [[stored]] = await pool.query(
+      `SELECT amount, currency, payment_channel, external_reference_hmac,
+              external_reference_masked
+       FROM customer_payments WHERE id = ?`, [paymentId]
+    );
+    assert.equal(stored.amount, '199.500000');
+    assert.equal(stored.currency, 'CNY');
+    assert.equal(stored.payment_channel, 'ALIPAY');
+    assert.match(stored.external_reference_hmac, /^[a-f0-9]{64}$/);
+    assert.equal(stored.external_reference_hmac.includes(reference), false);
+    assert.match(stored.external_reference_masked, new RegExp(`${reference.slice(-4)}$`));
+    const [[notes]] = await pool.query(
+      'SELECT COUNT(*) AS count FROM order_notes WHERE order_id = ?', [fixture.orderId]
+    );
+    assert.equal(notes.count, 1);
+  } finally {
+    await pool.query('DELETE FROM order_notes WHERE order_id = ?', [fixture.orderId]);
+    await pool.query('DELETE FROM customer_payments WHERE id = ?', [paymentId]);
+    await removeOrder(pool, fixture);
     await pool.end();
   }
 });

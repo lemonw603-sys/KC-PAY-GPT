@@ -220,6 +220,18 @@ export function createAdminCdkService({ pool, cdkHashKey, cdkRecoveryKey }) {
       if (Number(result.affectedRows) !== count) {
         throw new CdkBatchError('generated CDK collision detected', 'GENERATED_COLLISION');
       }
+      const paymentRows = values.map(([cdkId]) => [
+        crypto.randomUUID(), cdkId, 'EXTERNAL_UNSPECIFIED', 'PAID', 'admin'
+      ]);
+      const [paymentResult] = await connection.query(
+        `INSERT INTO customer_payments
+         (id, cdk_id, payment_channel, payment_status, paid_at, recorded_by)
+         VALUES ${paymentRows.map(() => '(?, ?, ?, ?, NULL, ?)').join(', ')}`,
+        paymentRows.flat()
+      );
+      if (Number(paymentResult.affectedRows) !== count) {
+        throw new CdkBatchError('customer payment trace creation was incomplete', 'PAYMENT_TRACE_INCOMPLETE');
+      }
       await connection.query(
         `INSERT INTO cdk_admin_events (event_type, batch_no, metadata_json)
          VALUES ('BATCH_CREATED', ?, ?)`,

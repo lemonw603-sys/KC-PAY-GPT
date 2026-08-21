@@ -18,6 +18,7 @@
     "recharge:permit": "node scripts/recharge-permit.js",
     "card:stock": "node scripts/card-stock.js",
     "card:catalog-sync": "node scripts/card-catalog-sync.js",
+    "cards:backfill-pan-hmac": "node scripts/backfill-card-pan-hmac.js",
     "card:stock-runner": "node scripts/card-stock-job-runner.js",
     "notifications:bark": "node scripts/bark-notification-runner.js",
     "notifications:bark:retry-dead": "node scripts/bark-notification-admin.js retry-dead",

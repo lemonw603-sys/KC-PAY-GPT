@@ -137,6 +137,11 @@ export async function createOrderFromCdk(pool, input) {
       });
     }
     await connection.query(
+      `UPDATE customer_payments SET order_id = ?, updated_at = CURRENT_TIMESTAMP(3)
+       WHERE cdk_id = ? AND order_id IS NULL`,
+      [input.orderId, cdkId]
+    );
+    await connection.query(
       `INSERT INTO order_events
        (order_id, from_status, to_status, actor_type, reason)
        VALUES (?, NULL, ?, 'CUSTOMER', 'order created from CDK')`,

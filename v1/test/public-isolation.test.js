@@ -76,11 +76,18 @@ test('admin batch generation keeps generation and downloads separate and exposes
   assert.match(script, /已作废.*但批次列表刷新失败/);
 });
 
+test('admin sends sensitive unified search in a protected JSON body, never in the URL', () => {
+  const script = fs.readFileSync(path.join(directory, 'admin', 'assets', 'admin.js'), 'utf8');
+  assert.match(script, /\/api\/v1\/admin\/orders\/search/);
+  assert.doesNotMatch(script, /\/api\/v1\/admin\/orders\?[^'"`]*q=/);
+  assert.doesNotMatch(script, /URLSearchParams[\s\S]{0,300}\.set\(['"]q['"]/);
+});
+
 test('admin refresh feedback and inset dropdown arrows remain visible', () => {
   const html = fs.readFileSync(path.join(directory, 'admin', 'index.html'), 'utf8');
   const script = fs.readFileSync(path.join(directory, 'admin', 'assets', 'admin.js'), 'utf8');
   const styles = fs.readFileSync(path.join(directory, 'admin', 'assets', 'admin.css'), 'utf8');
-  assert.match(html, /admin\.css\?v=13/);
+  assert.match(html, /admin\.css\?v=14/);
   assert.match(script, /button\.textContent = '刷新中…'/);
   assert.match(script, /showNotice\('刷新完成。', 'success'\)/);
   assert.match(script, /showNotice\('刷新失败，请稍后重试。'\)/);

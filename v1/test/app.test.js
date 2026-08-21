@@ -251,6 +251,20 @@ test('protects the admin page and read APIs with a server-side signed session', 
       order: { publicNo: 'PJV1-fixture' },
       card: { last4: '4242' }
     });
+
+    const leakedSearch = await fetch(`${baseUrl}/api/v1/admin/orders?q=4242424242424242`, {
+      headers: { Cookie: sessionCookie }
+    });
+    assert.equal(leakedSearch.status, 400);
+    assert.deepEqual(await leakedSearch.json(), { error: 'admin_search_body_required' });
+
+    const safeSearch = await fetch(`${baseUrl}/api/v1/admin/orders/search`, {
+      method: 'POST',
+      headers: { Cookie: sessionCookie, Origin: baseUrl, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ q: '4242424242424242', page: 1 })
+    });
+    assert.equal(safeSearch.status, 200);
+    assert.deepEqual((await safeSearch.json()).query, { q: '4242424242424242', page: 1 });
   });
 });
 

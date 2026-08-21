@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import { decryptSecret, encryptSecret } from '../security/secret-box.js';
 import { mapCardCredentials } from '../providers/hnskj-card.js';
 import {
@@ -9,6 +10,7 @@ import { cardCatalogIsFresh, readCardCatalogSnapshot } from './card-catalog-snap
 
 const ACTIVE = new Set(['active', 'available', 'usable', 'ready']);
 const FAILED = new Set(['failed', 'failure', 'invalid', 'inactive', 'closed', 'cancelled', 'canceled']);
+const LEGACY_HNSKJ_ACCOUNT_ID = '00000000-0000-4000-8000-000000000101';
 
 function cardData(envelope) {
   return envelope?.data?.card ?? envelope?.data ?? {};
@@ -76,7 +78,8 @@ function decryptCardNumber(row, key) {
   }
 }
 
-export function createCardStockService({ pool, sessionEncryptionKey }) {
+export function createCardStockService({ pool, sessionEncryptionKey, panHmacKey = null,
+  providerAccountId = LEGACY_HNSKJ_ACCOUNT_ID }) {
   async function recordStateEvent(connection, { cardId, previous, current, source = 'provider_sync' }) {
     const changed = !previous
       || previous.status !== current.status
@@ -101,14 +104,19 @@ export function createCardStockService({ pool, sessionEncryptionKey }) {
     const [stockRows] = await connection.query(
       `SELECT COUNT(*) AS count FROM cards
        WHERE order_id IS NULL AND inventory_status = 'AVAILABLE'
+         AND provider_account_id = ?
          AND BINARY card_type_id = BINARY ?
          AND LOWER(status) IN ('active','available','usable','ready')
-         AND card_credentials_ciphertext IS NOT NULL`,
-      [String(cardTypeId)]
+         AND intake_status IN ('ACCEPTED','LEGACY_ACCEPTED')
+         AND card_credentials_ciphertext IS NOT NULL
+         AND current_balance >= COALESCE((SELECT CAST(setting_value AS DECIMAL(18,6))
+           FROM app_settings WHERE setting_key = 'default_minimum_required_card_balance' LIMIT 1), 999999999)
+         AND NOT EXISTS (SELECT 1 FROM card_assignment_history ah WHERE ah.card_id = cards.id)`,
+      [providerAccountId, String(cardTypeId)]
     );
     const threshold = Math.max(0, Number(thresholdRows[0]?.setting_value || 5));
     const available = Number(stockRows[0]?.count || 0);
-    const key = `card-stock-low:${cardTypeId}`;
+    const key = `card-stock-low:${providerAccountId}:${cardTypeId}`;
     if (available <= threshold) {
       await connection.query(
         `INSERT INTO operator_alerts
@@ -133,9 +141,12 @@ export function createCardStockService({ pool, sessionEncryptionKey }) {
     try {
       await connection.beginTransaction();
       const [existing] = await connection.query(
-        `SELECT id, order_id, status, inventory_status, current_balance, currency
-         FROM cards WHERE BINARY provider_card_id = BINARY ? FOR UPDATE`,
-        [card.providerCardId]
+        `SELECT c.id, c.order_id, c.status, c.inventory_status, c.current_balance, c.currency,
+                EXISTS (SELECT 1 FROM card_assignment_history h WHERE h.card_id = c.id) AS has_assignment_history
+         FROM cards c
+         WHERE c.provider_account_id = ? AND BINARY c.external_card_id = BINARY ?
+         FOR UPDATE`,
+        [providerAccountId, card.providerCardId]
       );
       const previous = existing[0] ? {
         status: existing[0].status,
@@ -143,6 +154,9 @@ export function createCardStockService({ pool, sessionEncryptionKey }) {
         currentBalance: existing[0].current_balance == null ? null : String(existing[0].current_balance),
         currency: existing[0].currency
       } : null;
+      const normalizedPan = String(card.credentials?.cardNumber || '').replace(/[\s-]/g, '');
+      const panHmac = Buffer.isBuffer(panHmacKey) && /^\d{12,19}$/.test(normalizedPan)
+        ? crypto.createHmac('sha256', panHmacKey).update(normalizedPan).digest('hex') : null;
       if (existing[0]?.order_id) {
         const credentialsCiphertext = card.credentials
           ? encryptSecret(JSON.stringify(card.credentials), sessionEncryptionKey)
@@ -155,10 +169,12 @@ export function createCardStockService({ pool, sessionEncryptionKey }) {
              inventory_status = 'ASSIGNED',
              card_credentials_ciphertext = COALESCE(?, card_credentials_ciphertext),
              card_number_ciphertext = COALESCE(?, card_number_ciphertext),
+             pan_hmac = COALESCE(?, pan_hmac),
+             pan_hmac_version = CASE WHEN ? IS NULL THEN pan_hmac_version ELSE 1 END,
              last_synced_at = CURRENT_TIMESTAMP(3), updated_at = CURRENT_TIMESTAMP(3)
            WHERE id = ?`,
           [card.last4, card.status, card.currentBalance, card.currency,
-            credentialsCiphertext, cardNumberCiphertext, existing[0].id]
+            credentialsCiphertext, cardNumberCiphertext, panHmac, panHmac, existing[0].id]
         );
         await recordStateEvent(connection, {
           cardId: existing[0].id,
@@ -171,9 +187,10 @@ export function createCardStockService({ pool, sessionEncryptionKey }) {
         await connection.commit();
         return { providerCardId: card.providerCardId, inventoryStatus: 'ASSIGNED', alreadyAssigned: true };
       }
-      const inventoryStatus = card.failed ? 'FAILED'
-        : card.depleted ? 'DEPLETED'
-          : card.ready ? 'AVAILABLE' : 'PROVISIONING';
+      const inventoryStatus = existing[0]?.has_assignment_history ? 'HELD_FOR_REVIEW'
+        : card.failed ? 'FAILED'
+          : card.depleted ? 'DEPLETED'
+            : card.ready ? 'AVAILABLE' : 'PROVISIONING';
       const credentialsCiphertext = card.credentials
         ? encryptSecret(JSON.stringify(card.credentials), sessionEncryptionKey)
         : null;
@@ -186,26 +203,33 @@ export function createCardStockService({ pool, sessionEncryptionKey }) {
              current_balance = ?, currency = ?, inventory_status = ?,
              card_credentials_ciphertext = COALESCE(?, card_credentials_ciphertext),
              card_number_ciphertext = COALESCE(?, card_number_ciphertext),
+             pan_hmac = COALESCE(?, pan_hmac),
+             pan_hmac_version = CASE WHEN ? IS NULL THEN pan_hmac_version ELSE 1 END,
              last_synced_at = CURRENT_TIMESTAMP(3), updated_at = CURRENT_TIMESTAMP(3)
-           WHERE id = ? AND order_id IS NULL`,
+          WHERE id = ? AND order_id IS NULL`,
           [card.cardTypeId, card.last4, card.status, card.fundedAmount, card.currentBalance,
-            card.currency, inventoryStatus, credentialsCiphertext, cardNumberCiphertext, existing[0].id]
+            card.currency, inventoryStatus, credentialsCiphertext, cardNumberCiphertext,
+            panHmac, panHmac, existing[0].id]
         );
       } else {
         await connection.query(
           `INSERT INTO cards
            (id, order_id, inventory_status, provider_card_id, card_type_id, last4, status,
             funded_amount, current_balance, currency, refund_status, card_credentials_ciphertext,
-            card_number_ciphertext,
+            card_number_ciphertext, pan_hmac, pan_hmac_version, provider_account_id, external_card_id,
+            intake_status, sync_tier,
             last_synced_at)
-           VALUES (UUID(), NULL, ?, ?, ?, ?, ?, ?, ?, ?, 'MONITORING', ?, ?, CURRENT_TIMESTAMP(3))`,
+           VALUES (UUID(), NULL, ?, ?, ?, ?, ?, ?, ?, ?, 'MONITORING', ?, ?, ?, 1, ?, ?,
+             'ACCEPTED', 'INVENTORY', CURRENT_TIMESTAMP(3))`,
           [inventoryStatus, card.providerCardId, card.cardTypeId, card.last4, card.status,
-            card.fundedAmount, card.currentBalance, card.currency, credentialsCiphertext, cardNumberCiphertext]
+            card.fundedAmount, card.currentBalance, card.currency, credentialsCiphertext,
+            cardNumberCiphertext, panHmac, providerAccountId, card.providerCardId]
         );
       }
       const cardId = existing[0]?.id || (await connection.query(
-        `SELECT id FROM cards WHERE BINARY provider_card_id = BINARY ? LIMIT 1`,
-        [card.providerCardId]
+        `SELECT id FROM cards
+         WHERE provider_account_id = ? AND BINARY external_card_id = BINARY ? LIMIT 1`,
+        [providerAccountId, card.providerCardId]
       ))[0][0].id;
       await recordStateEvent(connection, {
         cardId,
@@ -235,16 +259,21 @@ export function createCardStockService({ pool, sessionEncryptionKey }) {
       pool.query(
         `SELECT card_type_id,
                 SUM(order_id IS NULL AND inventory_status = 'AVAILABLE'
+                  AND intake_status IN ('ACCEPTED','LEGACY_ACCEPTED')
                   AND LOWER(status) IN ('active','available','usable','ready')
-                  AND card_credentials_ciphertext IS NOT NULL) AS available,
+                  AND card_credentials_ciphertext IS NOT NULL
+                  AND current_balance >= COALESCE((SELECT CAST(setting_value AS DECIMAL(18,6))
+                    FROM app_settings WHERE setting_key = 'default_minimum_required_card_balance' LIMIT 1), 999999999)
+                  AND NOT EXISTS (SELECT 1 FROM card_assignment_history ah WHERE ah.card_id = cards.id)) AS available,
                 SUM(order_id IS NULL AND inventory_status = 'PROVISIONING') AS provisioning,
                 SUM(order_id IS NOT NULL OR inventory_status = 'ASSIGNED') AS assigned,
-                SUM(order_id IS NULL AND inventory_status = 'DEPLETED') AS depleted
+                SUM(order_id IS NULL AND inventory_status = 'DEPLETED') AS depleted,
+                SUM(order_id IS NULL AND inventory_status = 'HELD_FOR_REVIEW') AS held
          FROM cards GROUP BY card_type_id ORDER BY card_type_id`
       ),
       pool.query(`SELECT setting_key, setting_value FROM app_settings
         WHERE setting_key IN ('default_card_type_id','default_open_card_amount')`),
-      pool.query(`SELECT c.provider_card_id, c.card_type_id, c.last4, c.status, c.inventory_status,
+      pool.query(`SELECT c.provider_account_id, c.provider_card_id, c.card_type_id, c.last4, c.status, c.inventory_status,
           c.funded_amount, c.current_balance, c.currency, c.order_id,
           c.card_credentials_ciphertext, c.card_number_ciphertext, c.last_synced_at,
           c.last_transaction_synced_at, o.public_no,
@@ -310,9 +339,11 @@ export function createCardStockService({ pool, sessionEncryptionKey }) {
         provisioning: Number(row.provisioning || 0),
         assigned: Number(row.assigned || 0),
         depleted: Number(row.depleted || 0),
+        held: Number(row.held || 0),
         low: Number(row.available || 0) <= threshold
       })),
       cards: cards.map((row) => ({
+        providerAccountId: row.provider_account_id,
         providerCardId: String(row.provider_card_id),
         cardTypeId: String(row.card_type_id),
         cardNumber: decryptCardNumber(row, sessionEncryptionKey),

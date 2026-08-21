@@ -31,7 +31,7 @@ const TASK_LABELS = Object.freeze({
 });
 const TASK_STATUS_LABELS = Object.freeze({ PENDING: '等待执行', RUNNING: '执行中', COMPLETED: '已完成', DEAD: '需要人工处理' });
 const REFUND_LABELS = Object.freeze({ MONITORING: '观察中', DETECTED: '疑似退款', CONFIRMED: '已确认退款', WITHDRAWN: '已提取' });
-const INVENTORY_LABELS = Object.freeze({ AVAILABLE: '可分配', ASSIGNED: '已分配', DEPLETED: '已耗尽', PROVISIONING: '核对中', FAILED: '已失效' });
+const INVENTORY_LABELS = Object.freeze({ AVAILABLE: '可分配', ASSIGNED: '已分配', DEPLETED: '已耗尽', PROVISIONING: '核对中', FAILED: '已失效', HELD_FOR_REVIEW: '已隔离，禁止自动复用' });
 const RECONCILIATION_LABELS = Object.freeze({ OK: '已对账', STALE: '待同步', SYNCING: '同步中', REVIEW_REQUIRED: '需核对', MISMATCH: '不一致' });
 const CARD_INTAKE_LABELS = Object.freeze({
   QUARANTINED: '待第二次稳定读取', VALIDATED: '验证通过，待接管',
@@ -64,6 +64,7 @@ const ORDER_RECONCILIATION_CODES = Object.freeze({
 
 const state = {
   view: 'overview', page: 1, pageSize: 20, total: 0, status: '', query: '',
+  from: '', to: '', timeField: 'CREATED',
   stockProvider: null, stockCatalog: null, stockCardTypeId: '', acceptingOrders: false,
   cdkClearTimer: null, cdkLoadSequence: 0,
   selectedOrders: new Set(), reconciliationPage: 1, reconciliationTotal: 0
@@ -81,6 +82,9 @@ const elements = {
   ordersTable: document.querySelector('#orders-table'),
   filters: document.querySelector('#order-filters'),
   search: document.querySelector('#order-search'),
+  orderFrom: document.querySelector('#order-from'),
+  orderTo: document.querySelector('#order-to'),
+  orderTimeField: document.querySelector('#order-time-field'),
   statusFilter: document.querySelector('#status-filter'),
   orderCount: document.querySelector('#order-count'),
   pageLabel: document.querySelector('#page-label'),
@@ -286,21 +290,48 @@ async function loadOverview() {
 }
 
 async function loadOrders() {
-  const params = new URLSearchParams({ page: state.page, pageSize: state.pageSize });
-  if (state.status) params.set('status', state.status);
-  if (state.query) params.set('q', state.query);
-  const payload = await api(`/api/v1/admin/orders?${params}`);
+  const query = { page: state.page, pageSize: state.pageSize };
+  if (state.status) query.status = state.status;
+  if (state.query) query.q = state.query;
+  query.timeField = state.timeField;
+  if (state.from) query.from = `${state.from}T00:00:00.000+08:00`;
+  if (state.to) query.to = `${state.to}T23:59:59.999+08:00`;
+  const payload = await api('/api/v1/admin/orders/search', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(query)
+  });
   state.total = payload.total;
   elements.ordersTable.innerHTML = payload.orders.length
     ? payload.orders.map((order) => orderRow(order, { selectable: true })).join('')
-    : '<tr><td colspan="7" class="empty-cell">没有符合条件的订单</td></tr>';
+    : payload.cdkMatches?.length
+      ? payload.cdkMatches.map((cdk) => `<tr><td></td><td><strong>CDK 精确匹配</strong><small>批次 ${escapeHtml(cdk.batchNo || '—')}</small></td><td>${escapeHtml(cdk.planType || '—')}</td><td>${escapeHtml(cdk.status)}</td><td>尚未关联卡片</td><td>${payload.deliveryTrackingEnabled && cdk.status !== 'REVOKED' ? `<button type="button" class="text-button" data-search-cdk-delivery="${escapeHtml(cdk.id)}" data-cdk-batch="${escapeHtml(cdk.batchNo || '')}">记录交付</button>` : '—'}</td><td>${formatTime(cdk.createdAt)}</td></tr>`).join('')
+      : '<tr><td colspan="7" class="empty-cell">没有符合条件的订单或 CDK</td></tr>';
   const totalPages = Math.max(1, Math.ceil(payload.total / state.pageSize));
   elements.orderCount.textContent = `${payload.total} 条订单`;
   elements.pageLabel.textContent = `第 ${state.page} / ${totalPages} 页`;
   elements.prevPage.disabled = state.page <= 1;
   elements.nextPage.disabled = state.page >= totalPages;
+  elements.ordersTable.querySelectorAll('[data-search-cdk-delivery]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      await recordCdkDelivery(button.dataset.searchCdkDelivery, button.dataset.cdkBatch);
+      await loadOrders();
+    });
+  });
   updateSelectedOrders();
   elements.syncTime.textContent = `更新于 ${new Date().toLocaleTimeString('zh-CN', { hour12: false })}`;
+}
+
+async function recordCdkDelivery(cdkId, batchNo) {
+  const recipientReference = window.prompt('输入客户收件标识（邮箱、手机号或内部客户号；数据库只保存 HMAC）：')?.trim();
+  if (!recipientReference) return false;
+  const channel = window.prompt('输入交付渠道（例如 wechat、alipay、manual）：', 'manual')?.trim();
+  if (!channel) return false;
+  await sensitiveApi('/api/v1/admin/cdks/deliveries', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ cdkId, batchNo: batchNo || undefined,
+      eventType: 'DELIVERED', channel, recipientReference })
+  });
+  showNotice('CDK 交付记录已保存。', 'success');
+  return true;
 }
 
 function updateSelectedOrders() {
@@ -584,10 +615,11 @@ async function loadStock() {
     available: sum.available + item.available,
     provisioning: sum.provisioning + item.provisioning,
     assigned: sum.assigned + item.assigned,
-    depleted: sum.depleted + item.depleted
-  }), { available: 0, provisioning: 0, assigned: 0, depleted: 0 });
+    depleted: sum.depleted + item.depleted,
+    held: sum.held + (item.held || 0)
+  }), { available: 0, provisioning: 0, assigned: 0, depleted: 0, held: 0 });
   elements.stockSummary.innerHTML = [
-    ['可分配', totals.available], ['已分配', totals.assigned], ['已耗尽', totals.depleted], ['核对中', totals.provisioning]
+    ['可分配', totals.available], ['已分配', totals.assigned], ['隔离卡', totals.held], ['核对中', totals.provisioning]
   ].map(([label, value]) => `<div><span>${label}</span><strong>${value}</strong></div>`).join('');
   elements.stockThreshold.value = payload.threshold;
   const provider = state.stockProvider;
@@ -620,7 +652,7 @@ async function loadStock() {
     ? payload.jobs.map((job) => `<div><span><strong>${escapeHtml(STOCK_JOB_LABELS[job.status] || job.status)} · ${job.openedCount}/${job.requestedCount} 张</strong><small>${escapeHtml(job.cardTypeName || `卡段 ${job.cardTypeId}`)} · $${formatMoney(job.amount)} / 张 · 预计总扣款 $${formatMoney(job.estimatedTotal)} · ${formatTime(job.createdAt)}${job.errorMessage ? ` · ${escapeHtml(job.errorMessage)}` : ''}</small></span><em>${escapeHtml(job.status)}</em></div>`).join('')
     : '<p class="empty-state">还没有后台补卡任务</p>';
   elements.stockCards.innerHTML = payload.cards?.length
-    ? payload.cards.map((card) => `<div data-card="${escapeHtml(card.providerCardId)}" role="button" tabindex="0"><span><strong>${escapeHtml(card.cardNumber || card.last4 || '卡号未就绪')}</strong><small>卡台 ID ${escapeHtml(card.providerCardId)} · 余额 $${formatMoney(card.currentBalance || '0')} · ${card.publicNo ? `订单 ${escapeHtml(card.publicNo)}` : '未分配'} · 交易 ${escapeHtml(card.transactionCount)} 笔 · ${formatTime(card.lastTransactionSyncedAt)}</small></span><em>${escapeHtml(RECONCILIATION_LABELS[card.reconciliationStatus] || card.reconciliationStatus)} / ${escapeHtml(INVENTORY_LABELS[card.inventoryStatus] || card.inventoryStatus)}</em></div>`).join('')
+    ? payload.cards.map((card) => `<div data-card="${escapeHtml(card.providerCardId)}" data-card-account="${escapeHtml(card.providerAccountId || '')}" role="button" tabindex="0"><span><strong>${escapeHtml(card.cardNumber || card.last4 || '卡号未就绪')}</strong><small>卡台 ID ${escapeHtml(card.providerCardId)} · 余额 $${formatMoney(card.currentBalance || '0')} · ${card.publicNo ? `订单 ${escapeHtml(card.publicNo)}` : '未分配'} · 交易 ${escapeHtml(card.transactionCount)} 笔 · ${formatTime(card.lastTransactionSyncedAt)}</small></span><em>${escapeHtml(RECONCILIATION_LABELS[card.reconciliationStatus] || card.reconciliationStatus)} / ${escapeHtml(INVENTORY_LABELS[card.inventoryStatus] || card.inventoryStatus)}</em></div>`).join('')
     : '<p class="empty-state">还没有后台卡片</p>';
   await loadCardIntake().catch(() => {
     elements.cardIntakeList.innerHTML = '<p class="empty-state">新卡接管状态读取失败，请稍后刷新。</p>';
@@ -658,17 +690,20 @@ async function requestCardSync(providerCardId = null, button = null) {
   }
 }
 
-async function openCard(providerCardId) {
+async function openCard(providerCardId, providerAccountId = '') {
   elements.detailKicker.textContent = '卡片详情';
   elements.detailTitle.textContent = providerCardId;
   elements.detailContent.innerHTML = '<p class="loading-state">正在读取卡片详情…</p>';
   if (!elements.detail.open) elements.detail.showModal();
   try {
-    const data = await api(`/api/v1/admin/cards/${encodeURIComponent(providerCardId)}`);
+    const accountQuery = providerAccountId
+      ? `?providerAccountId=${encodeURIComponent(providerAccountId)}` : '';
+    const data = await api(`/api/v1/admin/cards/${encodeURIComponent(providerCardId)}${accountQuery}`);
     const card = data.card;
     elements.detailContent.innerHTML = `
       <section class="detail-section"><div class="detail-section-heading"><h3>卡片状态</h3><button type="button" class="primary-small" id="sync-one-card">只读同步</button></div>${renderKeyValues([
-        ['完整卡号', card.cardNumber || card.last4], ['卡台卡片 ID', card.providerCardId],
+        ['完整卡号', card.cardNumber || card.last4], ['卡台账户 ID', card.providerAccountId],
+        ['卡台卡片 ID', card.providerCardId],
         ['卡段 ID', card.cardTypeId], ['卡片状态', card.status],
         ['库存状态', INVENTORY_LABELS[card.inventoryStatus] || card.inventoryStatus],
         ['开卡金额', `${formatMoney(card.fundedAmount)} ${card.currency || ''}`],
@@ -681,13 +716,17 @@ async function openCard(providerCardId) {
         ['订单号', data.order.publicNo], ['订单状态', STATUS_META[data.order.status]?.[0] || data.order.status],
         ['客户邮箱', data.order.customerEmail]
       ]) : '<p class="empty-state">这张卡尚未分配给订单</p>'}</section>
+      <section class="detail-section"><h3>历史订单关系</h3><div class="mini-list">${data.assignmentHistory?.length ? data.assignmentHistory.map((assignment) => `<div data-card-order="${escapeHtml(assignment.publicNo)}" role="button" tabindex="0"><span><strong>${escapeHtml(assignment.publicNo)} · ${escapeHtml(assignment.kind)}</strong><small>${escapeHtml(assignment.customerEmail || '—')} · 分配 ${formatTime(assignment.assignedAt)}${assignment.releasedAt ? ` · 释放 ${formatTime(assignment.releasedAt)}` : ' · 当前绑定'}</small></span><em>${escapeHtml(assignment.status)}</em></div>`).join('') : '<p class="empty-state">尚无分配历史</p>'}</div></section>
       <section class="detail-section"><h3>卡片交易</h3><div class="mini-list">${data.transactions.length ? data.transactions.map((transaction) => `<div><span><strong>${escapeHtml(transaction.type)} · ${escapeHtml(transaction.amount)} ${escapeHtml(transaction.currency)}</strong><small>${escapeHtml(transaction.merchantName || transaction.relatedTransactionId || transaction.providerTransactionId)} · ${escapeHtml(transaction.tradeTimeRaw || formatTime(transaction.firstSeenAt))}</small></span><em>${escapeHtml(transaction.status)}</em></div>`).join('') : '<p class="empty-state">暂无已同步交易</p>'}</div></section>
       <section class="detail-section"><h3>同步记录</h3><div class="mini-list">${data.syncJobs.length ? data.syncJobs.map((job) => `<div><span><strong>${escapeHtml(STOCK_JOB_LABELS[job.status] || job.status)}</strong><small>${job.attempts}/${job.maxAttempts} 次 · ${formatTime(job.createdAt)}${job.errorMessage ? ` · ${escapeHtml(job.errorMessage)}` : ''}</small></span><em>${escapeHtml(job.status)}</em></div>`).join('') : '<p class="empty-state">尚未手动同步</p>'}</div></section>
       <section class="detail-section"><h3>状态变化</h3><div class="mini-list">${data.events.length ? data.events.map((event) => `<div><span><strong>${escapeHtml(event.type)}</strong><small>${formatTime(event.createdAt)} · ${escapeHtml(event.source)}</small></span></div>`).join('') : '<p class="empty-state">暂无状态变化记录</p>'}</div></section>`;
     document.querySelector('#sync-one-card')?.addEventListener('click', async (event) => {
-      if (await requestCardSync(providerCardId, event.currentTarget)) await openCard(providerCardId);
+      if (await requestCardSync(providerCardId, event.currentTarget)) await openCard(providerCardId, card.providerAccountId);
     });
     document.querySelector('#open-linked-order')?.addEventListener('click', () => openOrder(data.order.publicNo));
+    elements.detailContent.querySelectorAll('[data-card-order]').forEach((item) => {
+      item.addEventListener('click', () => openOrder(item.dataset.cardOrder));
+    });
   } catch {
     elements.detailContent.innerHTML = '<p class="empty-state">卡片详情读取失败，请稍后重试。</p>';
   }
@@ -909,13 +948,17 @@ async function openOrder(publicNo) {
     const cancellationButton = cancellation.eligible
       ? '<button type="button" class="danger-small" id="cancel-order">取消并释放卡片</button>' : '';
     const cancellationLabels = {
-      ORDER_CANCELLATION_ELIGIBLE: '可以安全取消：充值未提交，卡片将返回可用库存',
-      ORDER_CANCELLATION_ALREADY_COMPLETED: '订单已经取消，卡片已经释放',
-      ORDER_CANCELLATION_CARD_NOT_REUSABLE: '卡片状态、余额或同步时间不满足释放条件',
+      ORDER_CANCELLATION_ELIGIBLE: '可以安全取消：充值未提交，卡片将解除绑定并进入隔离区，不会自动复用',
+      ORDER_CANCELLATION_ALREADY_COMPLETED: '订单已经取消，卡片已进入隔离区',
+      ORDER_CANCELLATION_REVIEW_REQUIRED: '订单或卡片关系不完整，需要人工核对',
       ORDER_CANCELLATION_SUBMISSION_RISK: '充值可能已经开始，禁止取消',
       ORDER_CANCELLATION_NOT_ELIGIBLE: '当前订单状态不能取消'
     };
     const reconciliation = data.reconciliation || {};
+    const trace = data.traceability || {};
+    const cost = trace.fulfillmentCost || {};
+    const moneyList = (items) => items?.length
+      ? items.map((item) => `${item.amount} ${item.currency}`).join('；') : '没有已记录金额';
     elements.detailContent.innerHTML = `
       <section class="detail-section"><div class="detail-section-heading"><h3>付款执行门</h3>${permitButton}</div>${renderKeyValues([
         ['付款前检查', paymentGate.prepaymentReady ? '已就绪' : '未就绪'],
@@ -954,6 +997,16 @@ async function openOrder(publicNo) {
         ['当前余额', `${formatMoney(data.card.currentBalance)} ${data.card.currency || ''}`], ['退款观察', REFUND_LABELS[data.card.refundStatus] || data.card.refundStatus],
         ['最后同步', formatTime(data.card.lastSyncedAt)]
       ]) : '<p class="empty-state">尚未绑定卡片</p>'}</section>
+      <section class="detail-section"><h3>CDK、补发关系与客户付款</h3><div class="mini-list">${trace.cdks?.length ? trace.cdks.map((cdk) => `<div><span><strong>${escapeHtml(cdk.relationship === 'REPLACEMENT' ? '补发 CDK' : '原始 CDK')} · ${escapeHtml(cdk.status)}</strong><small>批次 ${escapeHtml(cdk.batchId || '—')} · 创建 ${formatTime(cdk.createdAt)} · 兑换 ${formatTime(cdk.redeemedAt)}${cdk.redeemedOrderPublicNo ? ` · 订单 ${escapeHtml(cdk.redeemedOrderPublicNo)}` : ''}</small></span>${cdk.redeemedOrderPublicNo && cdk.redeemedOrderPublicNo !== publicNo ? `<button type="button" class="text-button" data-related-order="${escapeHtml(cdk.redeemedOrderPublicNo)}">打开后续订单</button>` : trace.deliveryTrackingEnabled && cdk.status !== 'REVOKED' ? `<button type="button" class="text-button" data-record-cdk-delivery="${escapeHtml(cdk.id)}" data-cdk-batch="${escapeHtml(cdk.batchId || '')}">记录交付</button>` : ''}</div>`).join('') : '<p class="empty-state">没有 CDK 关系记录</p>'}${trace.orderRelationships?.length ? trace.orderRelationships.map((relation) => `<div><span><strong>补发链路</strong><small>原订单 ${escapeHtml(relation.originalPublicNo)} · 后续订单 ${escapeHtml(relation.replacementPublicNo || '尚未兑换')} · ${formatTime(relation.createdAt)}</small></span>${relation.originalPublicNo !== publicNo ? `<button type="button" class="text-button" data-related-order="${escapeHtml(relation.originalPublicNo)}">打开原订单</button>` : relation.replacementPublicNo ? `<button type="button" class="text-button" data-related-order="${escapeHtml(relation.replacementPublicNo)}">打开后续订单</button>` : ''}</div>`).join('') : ''}${trace.customerPayments?.length ? trace.customerPayments.map((payment) => `<div><span><strong>客户付款 · ${escapeHtml(payment.status)} · ${escapeHtml(payment.amount || '金额未记录')} ${escapeHtml(payment.currency || '')}</strong><small>${escapeHtml(payment.channel)} · ${escapeHtml(payment.externalReference || '无外部参考号')} · ${payment.paidAt ? `实际付款 ${formatTime(payment.paidAt)}` : `确认记录 ${formatTime(payment.createdAt)}（实际付款时间未补录）`}</small></span>${payment.amount == null ? '<button type="button" class="text-button" data-complete-customer-payment>补录付款</button>' : ''}</div>`).join('') : '<p class="empty-state">客户在系统外付款；当前尚未补录付款金额</p>'}${trace.deliveries?.length ? trace.deliveries.map((delivery) => `<div><span><strong>CDK ${escapeHtml(delivery.type)} · ${escapeHtml(delivery.channel || '未注明渠道')}</strong><small>收件人仅保存隐私哈希 · ${formatTime(delivery.createdAt)}</small></span></div>`).join('') : ''}</div></section>
+      <section class="detail-section"><h3>卡片分配历史</h3><div class="mini-list">${trace.cardAssignments?.length ? trace.cardAssignments.map((assignment) => `<div data-trace-card="${escapeHtml(assignment.providerCardId)}" data-trace-card-account="${escapeHtml(assignment.providerAccountId || '')}" role="button" tabindex="0"><span><strong>${escapeHtml(assignment.cardNumber || assignment.last4 || assignment.providerCardId)} · ${escapeHtml(assignment.kind)}</strong><small>分配 ${formatTime(assignment.assignedAt)}${assignment.releasedAt ? ` · 释放 ${formatTime(assignment.releasedAt)}` : ' · 当前绑定'} · ${escapeHtml(assignment.assignmentReason || assignment.releaseReason || '')}</small></span><em>${escapeHtml(assignment.status)}</em></div>`).join('') : '<p class="empty-state">尚无卡片分配历史</p>'}</div></section>
+      <section class="detail-section"><h3>客户收款与履约成本（原币种）</h3>${renderKeyValues([
+        ['客户付款', moneyList(cost.customerPayments)],
+        ['卡片开卡/入金', moneyList(cost.cardFundedAmount)],
+        ['充值平台确认支付', moneyList(cost.providerConfirmedPayment)],
+        ['卡片成功消费', moneyList(cost.successfulCardPurchases)],
+        ['卡片交易手续费', moneyList(cost.cardTransactionFees)]
+      ])}<p class="empty-state">${escapeHtml(cost.note || '不同币种不自动换算。')}</p></section>
+      <section class="detail-section"><div class="detail-section-heading"><h3>运营标签与备注</h3><span><button type="button" class="text-button" id="add-order-tag">添加标签</button><button type="button" class="text-button" id="add-order-note">添加备注</button></span></div><div class="mini-list">${trace.tags?.length ? trace.tags.map((item) => `<div><span><strong>${escapeHtml(item.tag)}</strong><small>${formatTime(item.createdAt)} · ${escapeHtml(item.createdBy)}</small></span></div>`).join('') : '<p class="empty-state">暂无标签</p>'}${trace.notes?.length ? trace.notes.map((note) => `<div><span><strong>${escapeHtml(note.text)}</strong><small>${formatTime(note.createdAt)} · ${escapeHtml(note.createdBy)}</small></span></div>`).join('') : '<p class="empty-state">暂无备注</p>'}</div></section>
       <section class="detail-section"><h3>卡片交易</h3><div class="mini-list">${data.transactions?.length ? data.transactions.map((transaction) => `<div><span><strong>${escapeHtml(transaction.type)} · ${escapeHtml(transaction.amount)} ${escapeHtml(transaction.currency)}</strong><small>${escapeHtml(transaction.merchantName || transaction.relatedTransactionId || transaction.providerTransactionId)} · ${escapeHtml(transaction.tradeTimeRaw || formatTime(transaction.firstSeenAt))}</small></span><em>${escapeHtml(transaction.status)}</em></div>`).join('') : '<p class="empty-state">暂无已同步交易</p>'}</div></section>
       <section class="detail-section"><h3>订单时间线</h3><div class="timeline">${data.events.length ? data.events.map((event) => `<article><i></i><div><strong>${escapeHtml(STATUS_META[event.toStatus]?.[0] || event.toStatus)}</strong><p>${escapeHtml(event.reason)}</p><small>${formatTime(event.createdAt)} · ${escapeHtml(event.actorType)}</small></div></article>`).join('') : '<p class="empty-state">暂无事件</p>'}</div></section>
       <section class="detail-section"><h3>后台任务</h3><div class="mini-list">${data.tasks.length ? data.tasks.map((task) => `<div><span><strong>${escapeHtml(TASK_LABELS[task.type] || task.type)}</strong><small>${task.attempts}/${task.maxAttempts} 次尝试</small></span><em>${escapeHtml(TASK_STATUS_LABELS[task.status] || task.status)}</em></div>`).join('') : '<p class="empty-state">暂无任务</p>'}</div></section>`;
@@ -962,6 +1015,54 @@ async function openOrder(publicNo) {
     document.querySelector('#revoke-recharge-permit')?.addEventListener('click', (event) => setRechargePermit(publicNo, 'revoke', event.currentTarget));
     document.querySelector('#issue-compensation')?.addEventListener('click', (event) => issueCompensation(publicNo, event.currentTarget));
     document.querySelector('#cancel-order')?.addEventListener('click', (event) => cancelOrder(publicNo, event.currentTarget));
+    document.querySelector('#add-order-tag')?.addEventListener('click', async () => {
+      const tag = window.prompt('输入订单标签（最多 64 个字符）：')?.trim();
+      if (!tag) return;
+      await api(`/api/v1/admin/orders/${encodeURIComponent(publicNo)}/tags`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tag })
+      });
+      showNotice('标签已保存。', 'success');
+      await openOrder(publicNo);
+    });
+    document.querySelector('#add-order-note')?.addEventListener('click', async () => {
+      const note = window.prompt('输入运营备注（最多 2000 个字符）：')?.trim();
+      if (!note) return;
+      await api(`/api/v1/admin/orders/${encodeURIComponent(publicNo)}/notes`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ note })
+      });
+      showNotice('备注已追加。', 'success');
+      await openOrder(publicNo);
+    });
+    elements.detailContent.querySelectorAll('[data-trace-card]').forEach((item) => {
+      item.addEventListener('click', () => openCard(item.dataset.traceCard, item.dataset.traceCardAccount));
+    });
+    elements.detailContent.querySelectorAll('[data-record-cdk-delivery]').forEach((button) => {
+      button.addEventListener('click', async () => {
+        if (await recordCdkDelivery(button.dataset.recordCdkDelivery, button.dataset.cdkBatch)) {
+          await openOrder(publicNo);
+        }
+      });
+    });
+    elements.detailContent.querySelectorAll('[data-related-order]').forEach((button) => {
+      button.addEventListener('click', () => openOrder(button.dataset.relatedOrder));
+    });
+    elements.detailContent.querySelector('[data-complete-customer-payment]')?.addEventListener('click', async () => {
+      const amount = window.prompt('输入客户实际付款金额：')?.trim();
+      if (!amount) return;
+      const currency = window.prompt('输入付款币种（例如 CNY）：', 'CNY')?.trim();
+      if (!currency) return;
+      const channel = window.prompt('输入付款渠道（例如 ALIPAY、WECHAT）：', 'ALIPAY')?.trim();
+      if (!channel) return;
+      const paidAt = window.prompt('输入实际付款时间（必须包含时区，例如 2026-08-21T12:30:00+08:00）：')?.trim();
+      if (!paidAt) return;
+      const externalReference = window.prompt('输入外部交易参考号（可留空；只保存 HMAC 和尾号）：', '')?.trim() || '';
+      await sensitiveApi(`/api/v1/admin/orders/${encodeURIComponent(publicNo)}/customer-payment`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ amount, currency, channel, paidAt, externalReference })
+      });
+      showNotice('客户付款详情已补录。', 'success');
+      await openOrder(publicNo);
+    });
   } catch {
     elements.detailContent.innerHTML = '<p class="empty-state">订单详情读取失败，请稍后重试。</p>';
   }
@@ -1021,6 +1122,9 @@ elements.filters.addEventListener('submit', (event) => {
   state.page = 1;
   state.query = elements.search.value.trim();
   state.status = elements.statusFilter.value;
+  state.from = elements.orderFrom.value;
+  state.to = elements.orderTo.value;
+  state.timeField = elements.orderTimeField.value;
   loadOrders().catch(() => showNotice('订单查询失败，请稍后重试。'));
 });
 elements.prevPage.addEventListener('click', () => { if (state.page > 1) { state.page -= 1; loadOrders(); } });
@@ -1275,7 +1379,7 @@ document.addEventListener('click', (event) => {
   const row = event.target.closest('tr[data-order]');
   if (row && !event.target.closest('input, button, a')) openOrder(row.dataset.order);
   const card = event.target.closest('[data-card]');
-  if (card) openCard(card.dataset.card);
+  if (card) openCard(card.dataset.card, card.dataset.cardAccount);
 });
 document.addEventListener('keydown', (event) => {
   const row = event.target.closest?.('tr[data-order]');
@@ -1286,7 +1390,7 @@ document.addEventListener('keydown', (event) => {
   const card = event.target.closest?.('[data-card]');
   if (card && (event.key === 'Enter' || event.key === ' ')) {
     event.preventDefault();
-    openCard(card.dataset.card);
+    openCard(card.dataset.card, card.dataset.cardAccount);
   }
 });
 

@@ -60,7 +60,8 @@ const rechargeProvider = (config.providerReadsEnabled || config.providerRecharge
       queryStatusWithSession: unavailable('recharge status and Session query')
     };
 const workflow = createWorkflowRepository(pool, {
-  sessionEncryptionKey: config.sessionEncryptionKey
+  sessionEncryptionKey: config.sessionEncryptionKey,
+  panHmacKey: config.cardIntakePanHmacKey
 });
 const rechargeAttemptRepository = createRechargeAttemptRepository(pool);
 const handlers = createWorkflowHandlers({
