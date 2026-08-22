@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import { PublicApiError } from '../../domain/public-api-error.js';
-import { finishProviderCall, startProviderCall } from './provider-call-repository.js';
+import { finishProviderCall } from './provider-call-repository.js';
+import { eligibleInventoryCardSql } from '../../services/card-inventory-eligibility.js';
 
 function decimalAmount(value) {
   const text = String(value ?? '').trim();
@@ -48,7 +49,9 @@ export function createCardFundingRepository(pool) {
       if (existing.length) return { created: false, attempt: existing[0] };
       const [cards] = await connection.query(
         `SELECT id, order_id, inventory_status, status, card_credentials_ciphertext
-         FROM cards WHERE id = ? LIMIT 1 FOR UPDATE`, [card]
+         FROM cards
+         WHERE id = ? AND ${eligibleInventoryCardSql('cards', '0')}
+         LIMIT 1 FOR UPDATE`, [card]
       );
       const row = cards[0];
       if (!row || row.order_id !== null || row.inventory_status !== 'AVAILABLE'
@@ -81,6 +84,11 @@ export function createCardFundingRepository(pool) {
         code: 'CARD_FUNDING_NOT_FOUND', status: 404
       });
       const attempt = rows[0];
+      if (providerAccountId && String(providerAccountId) !== String(attempt.provider_account_id)) {
+        throw new PublicApiError('Card funding provider account mismatch', {
+          code: 'CARD_FUNDING_PROVIDER_MISMATCH', status: 409
+        });
+      }
       if (attempt.status !== 'PREPARED' || attempt.funds_risk_state !== 'NONE') {
         throw new PublicApiError('Card funding attempt is not submit-ready', {
           code: 'CARD_FUNDING_NOT_SUBMIT_READY', status: 409
