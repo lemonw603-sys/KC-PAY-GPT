@@ -115,8 +115,8 @@
 
       <section id="card-funding-view" class="view" hidden>
         <section class="card orders-card">
-          <div class="card-heading"><div><p class="section-kicker">资金安全</p><h2>卡余额充值队列</h2></div><span class="readonly-badge">只读</span></div>
-          <p class="card-description">这里只展示卡余额充值尝试及 Provider 结果。PENDING、UNKNOWN 和人工复核状态不会在此自动重试或改变资金状态。</p>
+          <div class="card-heading"><div><p class="section-kicker">资金安全</p><h2>卡余额充值队列</h2></div><span class="write-badge">人工核对</span></div>
+          <p class="card-description">这里只展示卡余额充值尝试及 Provider 结果。PENDING、UNKNOWN 和人工复核状态不会自动重试；UNKNOWN 只能由人工核对后记录“已扣款”或“未扣款”结论，不会在此自动重充或退款。</p>
           <form class="filters" id="card-funding-filters">
             <label><span class="sr-only">状态</span><select id="card-funding-status"><option value="">全部状态</option><option value="PENDING">处理中</option><option value="MANUAL_REVIEW">人工复核</option><option value="UNKNOWN">未知风险</option><option value="SETTLED">已确认</option><option value="FAILED">失败</option></select></label>
             <button class="primary-small" type="submit">筛选</button>

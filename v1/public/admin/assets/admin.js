@@ -1320,7 +1320,7 @@ async function loadCardFundingAttempts() {
     <td><small>${escapeHtml(item.id)}</small><br>${escapeHtml(item.fundsRiskState)}</td>
     <td>${escapeHtml(item.last4 || item.providerCardId || '—')}</td>
     <td>${escapeHtml(item.amount)} ${escapeHtml(item.currency)}</td>
-    <td>${escapeHtml(item.status)}</td>
+    <td>${escapeHtml(item.status)}${item.fundsRiskState === 'UNKNOWN' ? `<div class="case-actions"><button class="text-button card-funding-resolve" type="button" data-attempt-id="${escapeHtml(item.id)}" data-action="CONFIRM_SETTLED">确认已扣款</button><button class="text-button card-funding-resolve" type="button" data-attempt-id="${escapeHtml(item.id)}" data-action="CONFIRM_NOT_CHARGED">确认未扣款</button></div>` : ''}</td>
     <td>${escapeHtml(item.providerCallOutcome || '—')}${item.providerBusinessCode ? `<small>${escapeHtml(item.providerBusinessCode)}</small>` : ''}</td>
     <td>${escapeHtml(item.publicNo || '—')}</td>
     <td>${formatTime(item.updatedAt || item.createdAt)}</td>
@@ -1331,6 +1331,36 @@ async function loadCardFundingAttempts() {
   elements.cardFundingPrev.disabled = state.cardFundingPage <= 1;
   elements.cardFundingNext.disabled = state.cardFundingPage >= pages;
 }
+
+elements.cardFundingTable?.addEventListener('click', async (event) => {
+  const button = event.target.closest('.card-funding-resolve');
+  if (!button) return;
+  const attemptId = button.dataset.attemptId;
+  const confirmation = window.prompt(`请输入确认词：确认卡充值对账 ${attemptId}`)?.trim();
+  if (!confirmation) return;
+  const note = window.prompt('请输入对账依据（至少 10 个字符；只记录结论，不会自动重充）：')?.trim();
+  if (!note) return;
+  button.disabled = true;
+  try {
+    await sensitiveApi(`/api/v1/admin/card-funding-attempts/${encodeURIComponent(attemptId)}/resolve`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: button.dataset.action, confirmation, note })
+    });
+    showNotice('资金核对结论已保存；没有执行重充或退款。', 'success');
+    await loadCardFundingAttempts();
+  } catch (error) {
+    const messages = {
+      card_funding_manual_confirmation_required: '确认词不匹配，没有修改资金状态。',
+      card_funding_not_unknown: '该记录已不在未知风险状态，请先刷新。',
+      invalid_card_funding_manual_resolution: '对账结论或说明不完整，没有修改资金状态。',
+      admin_step_up_cancelled: '已取消操作，没有修改资金状态。'
+    };
+    showNotice(messages[error.message] || '资金核对失败，没有确认任何变更。');
+    await loadCardFundingAttempts().catch(() => {});
+  } finally {
+    button.disabled = false;
+  }
+});
 
 for (const [status, [label]] of Object.entries(STATUS_META)) {
   elements.statusFilter.insertAdjacentHTML('beforeend', `<option value="${status}">${escapeHtml(label)}</option>`);
