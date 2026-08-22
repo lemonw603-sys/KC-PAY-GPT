@@ -775,6 +775,49 @@ test('card funding scheduler creates one prepared attempt for a fresh low-balanc
   }
 });
 
+test('pending card funding reconciliation settles only after balance reaches minimum', {
+  skip: !databaseUrl && 'TEST_DATABASE_URL 未配置；完整 MySQL 套件在服务器隔离数据库运行'
+}, async () => {
+  const pool = mysql.createPool({ uri: databaseUrl, connectionLimit: 3, timezone: 'Z' });
+  const repository = createCardFundingRepository(pool);
+  const cardId = id();
+  const attemptId = id();
+  const [[originalMinimum]] = await pool.query(
+    `SELECT setting_value FROM app_settings WHERE setting_key='default_minimum_required_card_balance'`
+  );
+  try {
+    await pool.query(`UPDATE app_settings SET setting_value='16' WHERE setting_key='default_minimum_required_card_balance'`);
+    await pool.query(
+      `INSERT INTO cards
+       (id, order_id, inventory_status, provider_card_id, card_type_id, last4, status,
+        funded_amount, current_balance, currency, refund_status, card_credentials_ciphertext,
+        provider_account_id, external_card_id, intake_status, sync_tier, last_transaction_synced_at)
+       VALUES (?, NULL, 'AVAILABLE', ?, '7', '4242', 'active', '16.000000', '4.000000',
+        'USD', 'MONITORING', ?, ?, ?, 'ACCEPTED', 'AVAILABLE', CURRENT_TIMESTAMP(3))`,
+      [cardId, `pending-${id()}`, encryptSecret(JSON.stringify({ cardNumber: '4242424242424242',
+        expMonth: 12, expYear: 2032, cvv: '123' }), integrationSessionKey),
+        legacyCardProviderAccountId, `pending-ext-${id()}`]
+    );
+    await pool.query(
+      `INSERT INTO card_funding_attempts
+       (id, card_id, provider_account_id, amount, currency, status, funds_risk_state, idempotency_key)
+       VALUES (?, ?, ?, '12', 'USD', 'PENDING', 'ACTIVE', ?)`,
+      [attemptId, cardId, legacyCardProviderAccountId, `pending-test-${attemptId}`]
+    );
+    const pending = await repository.reconcile({ attemptId, currentBalance: '15', currency: 'USD' });
+    assert.equal(pending.state, 'PENDING');
+    const settled = await repository.reconcile({ attemptId, currentBalance: '16', currency: 'USD' });
+    assert.equal(settled.state, 'SETTLED');
+  } finally {
+    await pool.query('DELETE FROM card_funding_attempts WHERE id=?', [attemptId]);
+    await pool.query('DELETE FROM cards WHERE id=?', [cardId]);
+    if (originalMinimum) {
+      await pool.query(`UPDATE app_settings SET setting_value=? WHERE setting_key='default_minimum_required_card_balance'`, [originalMinimum.setting_value]);
+    }
+    await pool.end();
+  }
+});
+
 test('replenishment daily limit is adjustable and audited with today usage', {
   skip: !databaseUrl && 'TEST_DATABASE_URL 未配置；完整 MySQL 套件在服务器隔离数据库运行'
 }, async () => {

@@ -21,6 +21,7 @@
     "cards:backfill-pan-hmac": "node scripts/backfill-card-pan-hmac.js",
     "card:stock-runner": "node scripts/card-stock-job-runner.js",
     "card:funding-runner": "node scripts/card-funding-runner.js",
+    "card:funding-reconcile": "node scripts/card-funding-reconcile-runner.js",
     "notifications:bark": "node scripts/bark-notification-runner.js",
     "notifications:bark:retry-dead": "node scripts/bark-notification-admin.js retry-dead",
     "preflight:readiness": "node scripts/preflight-readiness.js",

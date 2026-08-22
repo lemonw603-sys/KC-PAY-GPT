@@ -127,6 +127,43 @@ export function createCardFundingRepository(pool) {
     return rows[0] || null;
   }
 
+  async function nextPending({ providerAccountId }) {
+    const [rows] = await pool.query(
+      `SELECT fa.id, fa.card_id, fa.provider_account_id, c.provider_card_id,
+              fa.amount, fa.external_reference
+       FROM card_funding_attempts fa INNER JOIN cards c ON c.id = fa.card_id
+       WHERE fa.status = 'PENDING' AND fa.funds_risk_state = 'ACTIVE'
+         AND fa.provider_account_id = ?
+       ORDER BY fa.created_at ASC LIMIT 1`, [providerAccountId]
+    );
+    return rows[0] || null;
+  }
+
+  async function reconcile({ attemptId, currentBalance, currency = null,
+    responseSummary = null, reconciledAt = new Date() }) {
+    const balance = Number(currentBalance);
+    if (!Number.isFinite(balance)) throw new TypeError('Invalid reconciled card balance');
+    const [[minimumRow]] = await pool.query(
+      `SELECT setting_value FROM app_settings
+       WHERE setting_key = 'default_minimum_required_card_balance' LIMIT 1`
+    );
+    const minimum = Number(minimumRow?.setting_value);
+    if (!Number.isFinite(minimum) || minimum <= 0) throw new Error('Minimum card balance is not configured');
+    const settled = balance >= minimum;
+    const [result] = await pool.query(
+      `UPDATE card_funding_attempts
+       SET status=?, funds_risk_state=?, last_reconciled_at=?, finished_at=IF(?, ?, finished_at),
+           result_summary_json=?
+       WHERE id=? AND status='PENDING' AND funds_risk_state='ACTIVE'`,
+      [settled ? 'SETTLED' : 'PENDING', settled ? 'SETTLED' : 'ACTIVE', reconciledAt,
+        settled ? 1 : 0, reconciledAt,
+        JSON.stringify({ currentBalance: String(balance), currency, minimumRequired: String(minimum), ...responseSummary }),
+        attemptId]
+    );
+    if (result.affectedRows !== 1) throw new Error('Pending card funding attempt state changed during reconciliation');
+    return { attemptId, state: settled ? 'SETTLED' : 'PENDING', currentBalance: String(balance), minimum: String(minimum) };
+  }
+
   async function finish({ attemptId, providerCallId, outcome, httpStatus = null,
     businessCode = null, responseSummary = null, fundsRiskState, status,
     externalReference = null, finishedAt = new Date() }) {
@@ -147,5 +184,5 @@ export function createCardFundingRepository(pool) {
     if (result.affectedRows !== 1) throw new Error('Card funding attempt state transition lost');
   }
 
-  return { prepare, begin, nextPrepared, finish };
+  return { prepare, begin, nextPrepared, nextPending, reconcile, finish };
 }
