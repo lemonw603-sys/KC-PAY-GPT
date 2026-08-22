@@ -188,7 +188,7 @@ export function createWorkflowHandlers({
 
   async function assignCard(task) {
     const context = await workflow.loadOrderContext(task.order_id);
-    if (context.order.status !== OrderStatus.CREATED) {
+    if (![OrderStatus.CREATED, OrderStatus.WAITING_FOR_CARD].includes(context.order.status)) {
       throw new TaskExecutionError(`Order cannot receive inventory card from ${context.order.status}`, {
         code: 'ORDER_STATE_MISMATCH'
       });
@@ -196,7 +196,12 @@ export function createWorkflowHandlers({
     const assigned = await workflow.assignAvailableCard(task.order_id);
     if (!assigned) {
       throw new TaskExecutionError('No suitable inventory card is available', {
-        code: 'CARD_STOCK_EMPTY', retryable: true, delayMs: 60_000
+        code: 'CARD_STOCK_EMPTY', retryable: true, delayMs: 60_000, refundAttempt: true
+      });
+    }
+    if (assigned.waitingForCard) {
+      throw new TaskExecutionError('No suitable inventory card is available', {
+        code: 'CARD_STOCK_EMPTY', retryable: true, delayMs: 60_000, refundAttempt: true
       });
     }
   }

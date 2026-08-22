@@ -316,6 +316,25 @@ export class HnskjCardProvider {
     });
   }
 
+  async rechargeCard({ cardId, amount, idempotencyKey, remark }) {
+    const rechargeAmount = Number(amount);
+    if (!Number.isInteger(rechargeAmount) || rechargeAmount <= 0) {
+      throw new Error('Hnskj recharge amount must be a positive integer');
+    }
+    const id = String(cardId || '').trim();
+    if (!id) throw new Error('Hnskj recharge card ID is required');
+    return this.request(`/cards/${encodeURIComponent(id)}/recharge`, {
+      method: 'POST',
+      headers: { 'X-Idempotency-Key': assertIdempotencyKey(idempotencyKey) },
+      uncertainOnSchema: true,
+      retryableOnSchema: true,
+      body: {
+        amount: rechargeAmount,
+        ...(remark ? { remark: String(remark).slice(0, 128) } : {})
+      }
+    });
+  }
+
   refreshBalance(cardId) {
     return this.request(`/cards/${encodeURIComponent(String(cardId))}/refresh-balance`, {
       method: 'POST'

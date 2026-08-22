@@ -158,7 +158,7 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
         );
         if (orders.length !== 1) throw new Error(`Order not found: ${orderId}`);
         const order = orders[0];
-        if (order.status !== OrderStatus.CREATED) {
+        if (![OrderStatus.CREATED, OrderStatus.WAITING_FOR_CARD].includes(order.status)) {
           throw new Error(`Cannot assign inventory card from ${order.status}`);
         }
         if (!order.fulfillment_route_id || !order.card_provider_account_id) {
@@ -194,7 +194,22 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
                message = VALUES(message), status = 'OPEN', acknowledged_at = NULL`,
             [alertKey, `卡段 ${order.card_type_id} 没有满足余额要求的可用库存卡，订单正在安全等待。`]
           );
-          return null;
+          if (order.status === OrderStatus.CREATED) {
+            const [waiting] = await connection.query(
+              `UPDATE orders SET status = ?, version = version + 1,
+                 failure_code = NULL, failure_reason = NULL,
+                 updated_at = CURRENT_TIMESTAMP(3)
+               WHERE id = ? AND version = ?`,
+              [OrderStatus.WAITING_FOR_CARD, orderId, order.version]
+            );
+            if (waiting.affectedRows !== 1) throw new Error(`Concurrent waiting-for-card transition detected: ${orderId}`);
+            await insertEvent(connection, {
+              orderId, fromStatus: OrderStatus.CREATED, toStatus: OrderStatus.WAITING_FOR_CARD,
+              reason: 'no eligible inventory card; order waits for replenishment',
+              metadata: { cardTypeId: String(order.card_type_id), minimumRequiredBalance: String(order.minimum_required_card_balance) }
+            });
+          }
+          return { waitingForCard: true };
         }
         const card = cards[0];
         const [cardUpdate] = await connection.query(
@@ -223,7 +238,7 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
         if (orderUpdate.affectedRows !== 1) throw new Error(`Concurrent order assignment detected: ${orderId}`);
         await insertEvent(connection, {
           orderId,
-          fromStatus: OrderStatus.CREATED,
+          fromStatus: order.status,
           toStatus: OrderStatus.CARD_READY,
           reason: 'available inventory card assigned',
           metadata: {
@@ -234,7 +249,8 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
         await connection.query(
           `INSERT INTO tasks (order_id, task_type, status, dedupe_key, max_attempts)
            VALUES (?, 'PREPARE_RECHARGE', 'PENDING', ?, 5),
-                  (?, 'SUBMIT_RECHARGE', 'PENDING', ?, 5)`,
+                  (?, 'SUBMIT_RECHARGE', 'PENDING', ?, 5)
+           ON DUPLICATE KEY UPDATE updated_at = CURRENT_TIMESTAMP(3)`,
           [orderId, `prepare-recharge:${orderId}`, orderId, `submit-recharge:${orderId}`]
         );
         const [thresholdRows] = await connection.query(

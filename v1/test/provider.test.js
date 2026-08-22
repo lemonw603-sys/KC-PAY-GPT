@@ -65,6 +65,38 @@ test('Hnskj purchase sends server-side auth and the stable idempotency key', asy
   });
 });
 
+test('Hnskj existing-card recharge uses the documented endpoint and stable idempotency key', async () => {
+  const calls = [];
+  const provider = new HnskjCardProvider({
+    baseUrl: 'https://cards.example.test', apiKey: 'secret',
+    fetchImpl: async (url, options) => {
+      calls.push({ url, options });
+      return new Response(JSON.stringify({ success: true, data: { status: 'pending' } }), {
+        status: 200, headers: { 'content-type': 'application/json' }
+      });
+    }
+  });
+  await provider.rechargeCard({
+    cardId: 'card-7', amount: 16, idempotencyKey: 'recharge-card-7-20260822'
+  });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, 'https://cards.example.test/cards/card-7/recharge');
+  assert.equal(calls[0].options.method, 'POST');
+  assert.equal(calls[0].options.headers['X-Idempotency-Key'], 'recharge-card-7-20260822');
+  assert.deepEqual(JSON.parse(calls[0].options.body), { amount: 16 });
+});
+
+test('Hnskj existing-card recharge rejects unsafe amount or missing card identity before network access', async () => {
+  let calls = 0;
+  const provider = new HnskjCardProvider({
+    baseUrl: 'https://cards.example.test', apiKey: 'secret',
+    fetchImpl: async () => { calls += 1; return new Response('{}'); }
+  });
+  await assert.rejects(provider.rechargeCard({ cardId: 'card-7', amount: 16.5, idempotencyKey: 'recharge-card-7-20260822' }), /positive integer/);
+  await assert.rejects(provider.rechargeCard({ cardId: '', amount: 16, idempotencyKey: 'recharge-card-7-20260822' }), /card ID/);
+  assert.equal(calls, 0);
+});
+
 test('Hnskj marks 503 as same-key retryable but never invents a new key', async () => {
   const provider = new HnskjCardProvider({
     baseUrl: 'https://card.example/api/open/v1',

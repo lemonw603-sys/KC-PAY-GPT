@@ -220,6 +220,7 @@ test('waits safely when inventory is empty and never opens a card', async () => 
   await assert.rejects(
     state.handlers.ASSIGN_CARD({ id: 8, order_id: 'order-1', attempts: 1 }),
     (error) => error.code === 'CARD_STOCK_EMPTY' && error.retryable === true
+      && error.refundAttempt === true
   );
   assert.equal(purchases, 0);
 });

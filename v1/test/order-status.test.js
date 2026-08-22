@@ -31,6 +31,12 @@ test('allows a locally invalid Session to enter and leave customer repair', () =
   assert.equal(canTransitionOrder(OrderStatus.WAITING_FOR_SESSION, OrderStatus.CARD_READY), true);
 });
 
+test('allows a paid order to wait for replenishment and resume when a card is assigned', () => {
+  assert.equal(isKnownOrderStatus(OrderStatus.WAITING_FOR_CARD), true);
+  assert.equal(canTransitionOrder(OrderStatus.CREATED, OrderStatus.WAITING_FOR_CARD), true);
+  assert.equal(canTransitionOrder(OrderStatus.WAITING_FOR_CARD, OrderStatus.CARD_READY), true);
+});
+
 test('blocks retrying an ambiguous submission by state transition', () => {
   assert.equal(
     canTransitionOrder(OrderStatus.SUBMIT_UNKNOWN, OrderStatus.SUBMITTING),

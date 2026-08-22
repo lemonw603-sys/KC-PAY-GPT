@@ -3,6 +3,7 @@ export const OrderStatus = Object.freeze({
   CARD_PURCHASING: 'CARD_PURCHASING',
   CARD_PROVISIONING: 'CARD_PROVISIONING',
   CARD_READY: 'CARD_READY',
+  WAITING_FOR_CARD: 'WAITING_FOR_CARD',
   CARD_FAILED: 'CARD_FAILED',
   WAITING_FOR_SESSION: 'WAITING_FOR_SESSION',
   SUBMITTING: 'SUBMITTING',
@@ -20,6 +21,7 @@ const transitions = new Map([
   [OrderStatus.CREATED, new Set([
     OrderStatus.CARD_PURCHASING,
     OrderStatus.CARD_READY,
+    OrderStatus.WAITING_FOR_CARD,
     OrderStatus.RECONCILIATION_REQUIRED
   ])],
   [OrderStatus.CARD_PURCHASING, new Set([OrderStatus.CARD_PROVISIONING, OrderStatus.RECONCILIATION_REQUIRED])],
@@ -32,6 +34,11 @@ const transitions = new Map([
   [OrderStatus.CARD_READY, new Set([
     OrderStatus.WAITING_FOR_SESSION,
     OrderStatus.SUBMITTING,
+    OrderStatus.RECONCILIATION_REQUIRED
+  ])],
+  [OrderStatus.WAITING_FOR_CARD, new Set([
+    OrderStatus.CARD_READY,
+    OrderStatus.CLOSED,
     OrderStatus.RECONCILIATION_REQUIRED
   ])],
   [OrderStatus.WAITING_FOR_SESSION, new Set([
