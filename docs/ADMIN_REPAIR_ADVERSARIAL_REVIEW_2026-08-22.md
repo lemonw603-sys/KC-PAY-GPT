@@ -72,3 +72,23 @@
 - 未上传、未部署、未执行生产迁移。
 
 生产对照目前已经确认公网旧资源与候选包不一致；生产 release 目录和服务器端清单仍需通过已登录的服务器只读终端完成最后一项核对。
+
+## 生产只读核对新增阻断（2026-08-22）
+
+通过 SSH 只读核对到生产：
+
+- 主机：`elegant-unicorn-1.localdomain`
+- 当前 release：`/opt/pojia/releases/20260822-stage3-8a3134d`
+- Web/Worker/Bark active；只读卡同步和目录同步 timer active；付费开卡 timer inactive。
+- 生产当前 `admin.js`/`admin.css` 与公网旧资源一致，与本地修复候选包不一致；当前 index 也与候选包不一致。
+- Web 监听 `127.0.0.1:3100`；`/health/live` 返回 `{"status":"ok"}`。
+- `/health/ready` 在本次只读核验中超过 5 秒无响应；公网 `/health/ready` 超过 15 秒无响应。数据库进程列表显示多条长时间执行的 Overview 查询，均卡在 `card_discoveries` 最新记录相关子查询。
+
+这不是生产写入，也没有重启服务。该证据阻止直接部署原候选包：需要先修复 Overview 查询性能并重新生成候选包。
+
+### 新修复
+
+- 将 `card_discoveries` 最新记录统计由相关 `ORDER BY ... LIMIT 1` 子查询改为 anti-join；
+- 新增迁移 `037_card_discovery_latest_index.sql`，为最新记录查询增加复合索引；
+- 隔离 MySQL 迁移 037 后 v1 全量测试仍为 `401/401 pass, 0 fail, 0 skipped`；
+- 新候选包：`artifacts/release-candidate-20260822-0a9c574/`，416 文件，清单 SHA-256：`607675eb618eb1605b3e921e6ea3ae34ec031406ebf764c771a25bbd196aef81`。
