@@ -113,4 +113,9 @@
 
 - 将只读的 Provider 余额/开卡规则快照刷新接入 `card-catalog-sync.js`；不打开 Provider 写入，不购买卡、不充值卡。
 - 后台余额刷新现在由 active 的只读 catalog sync 驱动，不再依赖 card-stock 写入 runner。
+
+### Session 提示文案调整
+
+- 按产品要求，Session 尾部文本仍自动规范化，但不再向客户显示“检测到附加文本”提示。
+- 已部署 `/opt/pojia/releases/20260823-session-silent`，生产文件核验确认旧提示文案不存在；Web/Worker active，健康检查通过。
 - 本地全量测试：403 tests，369 passed，34 skipped，0 failed；跳过项均为未配置隔离 MySQL 的集成测试。

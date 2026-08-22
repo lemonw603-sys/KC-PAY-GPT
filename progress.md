@@ -249,3 +249,4 @@
 - 证实 Provider 余额快照过去依赖写入型 card-stock runner，写入开关关闭时会陈旧；已改为由只读 card-catalog sync 刷新余额/开卡规则快照。
 - 当前 release：`/opt/pojia/releases/20260823-balance-sync`；Web/Worker、目录同步、只读同步正常；接单、派发、Provider 写入仍全部关闭。
 - 未执行开卡、卡充值、ChatGPT 充值、付款、提现或退款。
+- Session 尾部附加文本仍会静默规范化为纯 JSON，但不再向客户显示“检测到附加文本”提示；已部署 `/opt/pojia/releases/20260823-session-silent`。
