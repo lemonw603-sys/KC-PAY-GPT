@@ -35,13 +35,43 @@ const intake = createCardIntakeService({
 });
 const balanceSnapshots = createProviderBalanceSnapshotService({ pool });
 
+async function markProviderSnapshotHealth({ status, message }) {
+  const dedupeKey = 'provider-snapshot:hnskj';
+  if (status === 'OPEN') {
+    await pool.query(
+      `INSERT INTO operator_alerts
+       (id, alert_type, dedupe_key, severity, title, message, status)
+       VALUES (UUID(), 'PROVIDER_SNAPSHOT_STALE', ?, 'critical', '卡台余额同步异常', ?, 'OPEN')
+       ON DUPLICATE KEY UPDATE severity = VALUES(severity), title = VALUES(title),
+         message = VALUES(message), status = 'OPEN', acknowledged_at = NULL`,
+      [dedupeKey, message]
+    );
+  } else {
+    await pool.query(
+      `UPDATE operator_alerts SET status = 'RESOLVED', acknowledged_at = CURRENT_TIMESTAMP(3)
+       WHERE dedupe_key = ? AND status = 'OPEN'`, [dedupeKey]
+    );
+  }
+}
+
 try {
   // Catalog synchronization is read-only. Refresh the provider balance/rules
   // snapshot here as well so the admin affordability view is not dependent on
   // the write-enabled card-stock runner.
-  const providerSnapshot = await refreshProviderSnapshot(pool, provider, {
-    balanceSnapshotService: balanceSnapshots
-  });
+  let providerSnapshot;
+  try {
+    providerSnapshot = await refreshProviderSnapshot(pool, provider, {
+      balanceSnapshotService: balanceSnapshots
+    });
+    await markProviderSnapshotHealth({ status: 'RESOLVED' });
+  } catch (error) {
+    const code = String(error?.code || error?.kind || 'PROVIDER_SNAPSHOT_SYNC_FAILED').slice(0, 80);
+    await markProviderSnapshotHealth({
+      status: 'OPEN',
+      message: `HNSKJ 余额/开卡规则只读同步失败（${code}）。后台不得将旧快照视为实时数据。`
+    });
+    throw error;
+  }
   const catalog = await syncCardCatalog({ pool, provider, intake });
   console.log(JSON.stringify({ ...catalog, providerSnapshotSyncedAt: providerSnapshot.syncedAt }));
 } finally {
