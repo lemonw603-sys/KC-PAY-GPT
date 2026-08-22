@@ -195,3 +195,12 @@
 - 真实测试后已关闭 `accept_new_orders`、`dispatch_new_recharges`、Provider 进程充值写开关和 ZZSHU Provider 账户写标记；没有充值订单号和确认扣款。
 - 真实测试暴露的必须复核项：Provider 能力预检、业务码 40030 映射、Provider 调用与 `recharge_attempts` 账本关联、多层写门禁统一、配置型 DEAD 恢复、Permit 前自动卡片同步。
 - 详细事实、证据边界、横向平台和后续计划统一见 `docs/SINGLE_SOURCE_OF_TRUTH_2026-08-21.md`。
+
+## 2026-08-22 运营后台审计与发布候选包交接补充
+
+- 后台全量审计主文档：`docs/ADMIN_FULL_AUDIT_2026-08-22.md`。
+- 修复后对抗式复核：`docs/ADMIN_REPAIR_ADVERSARIAL_REVIEW_2026-08-22.md`。
+- 当前发布候选包：`artifacts/release-candidate-20260822-f821305/`；仅本地生成，未上传生产。
+- 公网后台静态资源已证实不是本地最新版本；不能把本地修复描述为公网已生效。
+- 最新 v1 隔离 MySQL 全量测试：401 通过、0 失败、0 跳过。
+- 下一步只读动作：核对生产服务器 release 和服务器端文件清单；部署、迁移、重启和资金操作均未执行。
