@@ -176,6 +176,12 @@
 - 没有有效路由时这些进程会 fail-closed，不会回退到旧卡台账户。
 - 本次只改变路由解析，不启用任何 Provider 写入；卡台替换后旧订单仍按卡片记录保留，新任务按当前有效路由处理。
 
+### 路由修复生产验证
+
+- 当前 release：`/opt/pojia/releases/20260823-route-aware`。
+- Web/Worker active，live/ready 通过；卡目录同步和卡余额只读对账均成功运行。
+- 当前有效路由仍是现有 HNSKJ 生产卡台，未发生切换；因此本次证明的是“按路由读取并 fail-closed”，不是“备用卡台切换已真实验收”。
+
 ### 卡余额充值服务注册结果
 
 - 已在生产注册 `pojia-card-funding.service/.timer`，但 timer 明确保持 disabled；service 的进程级 `PROVIDER_CARD_WRITES_ENABLED=false` 也会硬阻断资金写入。
