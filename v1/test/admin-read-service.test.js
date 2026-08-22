@@ -31,6 +31,7 @@ test('admin overview maps aggregate values without exposing raw records', async 
     [{ available: 7, provisioning: 1, assigned: 2, depleted: 1, held: 1 }],
     [{ setting_value: '5' }],
     [{ card_intake_pending: 2, funds_risk_pending: 1,
+      card_funding_risk_pending: 2, card_funding_manual_review: 1,
       reconciliation_cases_open: 3, card_sync_backlog: 4 }]
   ]);
   const result = await createAdminReadService({ pool }).getOverview();
@@ -44,6 +45,7 @@ test('admin overview maps aggregate values without exposing raw records', async 
   });
   assert.deepEqual(result.operationalBacklog, {
     cardIntakePending: 2, fundsRiskPending: 1,
+    cardFundingRiskPending: 2, cardFundingManualReview: 1,
     reconciliationCasesOpen: 3, cardSyncBacklog: 4
   });
   assert.equal(pool.queries.some(({ sql }) => /session_ciphertext|recharge_card_key/i.test(sql)), false);

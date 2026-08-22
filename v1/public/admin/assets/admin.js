@@ -264,6 +264,9 @@ async function loadOverview() {
     { label: '三方对账异常', value: overview.metrics.reconciliationIssues, note: '订单、充值平台、卡片证据冲突', filter: 'RECONCILIATION_ISSUES' },
     { label: '资金结果未决', value: overview.operationalBacklog?.fundsRiskPending ?? 0,
       note: '禁止自动重试或切换充值路线', filter: 'RECONCILIATION_ISSUES' },
+    { label: '卡余额充值待处理', value: overview.operationalBacklog?.cardFundingRiskPending ?? 0,
+      note: overview.operationalBacklog?.cardFundingManualReview
+        ? `${overview.operationalBacklog.cardFundingManualReview} 个需人工复核` : '只读对账或人工复核队列', filter: 'RECONCILIATION_ISSUES' },
     { label: '待验证新卡', value: overview.operationalBacklog?.cardIntakePending ?? 0,
       note: '本地接管队列；同步接管后更新，不会分配给订单', view: 'stock' },
     { label: '本地可分配卡', value: overview.cardStock?.available ?? 0,

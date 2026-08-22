@@ -417,6 +417,10 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
               )) AS card_intake_pending,
           (SELECT COUNT(*) FROM recharge_attempts
             WHERE funds_risk_state IN ('ACTIVE','UNKNOWN')) AS funds_risk_pending,
+          (SELECT COUNT(*) FROM card_funding_attempts
+            WHERE funds_risk_state IN ('ACTIVE','UNKNOWN')) AS card_funding_risk_pending,
+          (SELECT COUNT(*) FROM card_funding_attempts
+            WHERE status = 'MANUAL_REVIEW' OR funds_risk_state = 'UNKNOWN') AS card_funding_manual_review,
           (SELECT COUNT(*) FROM reconciliation_cases
             WHERE status IN ('OPEN','ASSIGNED')) AS reconciliation_cases_open,
           (SELECT COUNT(*) FROM card_sync_jobs
@@ -453,6 +457,8 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
       operationalBacklog: {
         cardIntakePending: count(backlogRows[0]?.card_intake_pending),
         fundsRiskPending: count(backlogRows[0]?.funds_risk_pending),
+        cardFundingRiskPending: count(backlogRows[0]?.card_funding_risk_pending),
+        cardFundingManualReview: count(backlogRows[0]?.card_funding_manual_review),
         reconciliationCasesOpen: count(backlogRows[0]?.reconciliation_cases_open),
         cardSyncBacklog: count(backlogRows[0]?.card_sync_backlog)
       },
