@@ -233,3 +233,13 @@
 - 新增 `docs/HANDOFF_COMPLETENESS_AUDIT_2026-08-22.md`，复核聊天结论、代码提交、阶段文档、生产证据和候选包是否对齐。
 - 明确标记历史快照与最新公网证据的冲突：较早“线上 admin.js 与本地一致”不能覆盖 2026-08-22 最新公网哈希漂移证据。
 - 当前唯一有效状态：本地候选包已验收、未部署；公网仍旧资源；生产服务器端 release/清单本轮尚未取得新的只读终端证据。
+
+## 2026-08-22 - 后台查询性能修复与生产部署
+
+- 修复总览待验证新卡统计的相关子查询，改为 anti-join；新增 Migration 037 复合索引。
+- 隔离 MySQL v1 全量测试 `401/401 pass, 0 fail, 0 skipped`；候选包 manifest 416/416 通过。
+- 生产部署前创建并验证加密备份：`/var/backups/pojia/pojia-20260822T120608Z.sql.gz.enc`。
+- 生产切换到 `/opt/pojia/releases/20260822-0a9c574`，Migration 027–037 完成。
+- Web/Worker/Bark、卡片目录同步和卡片只读同步 active；自动开卡 timer inactive；Provider 三项写入开关均为 false。
+- 本机与公网 live/ready 均返回 200；只读 readiness `ok=true`，活动任务、租约、UNKNOWN Provider 调用、资金风险和活动授权均为 0。
+- 本次没有开卡、充值、付款、提现或退款；后续仍需进行部署后后台逐页只读验收和对抗式复核。

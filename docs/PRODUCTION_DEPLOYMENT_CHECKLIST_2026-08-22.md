@@ -68,3 +68,22 @@
 - 常见真实密钥模式扫描：未发现。
 
 该核验只针对本地候选包，不代表生产已部署。
+
+## 实际部署结果
+
+2026-08-22 已在获得明确确认后完成生产切换：
+
+- 生产当前 release：`/opt/pojia/releases/20260822-0a9c574`；
+- 候选包服务端 manifest：416/416 通过；
+- 部署前加密数据库备份：`/var/backups/pojia/pojia-20260822T120608Z.sql.gz.enc`，校验通过；
+- 数据库迁移：已应用至 `037_card_discovery_latest_index`；
+- Web/Worker：`active`；
+- 卡片目录同步、卡片只读同步、Bark 通知：`active`；
+- 自动开卡 timer：保持 `inactive`；
+- Provider 写入门禁：全部为 `false`；
+- `/health/live`：本机返回 `200`；
+- `/health/ready`：本机和公网均返回 `200`，正文为 `{"status":"ready"}`；
+- readiness：`ok=true`，活动任务、过期租约、UNKNOWN Provider 调用、资金风险、活动授权、对账案件和 DEAD Bark 通知均为 `0`；
+- 未执行真实开卡、充值、付款、提现或退款。
+
+迁移期间发现旧 Web/Worker 退出后仍有历史总览查询持有数据库元数据锁，导致迁移等待；已停止相关同步服务并清理这些已确认属于旧应用的长时间查询，迁移随后完成。该过程没有修改业务数据。
