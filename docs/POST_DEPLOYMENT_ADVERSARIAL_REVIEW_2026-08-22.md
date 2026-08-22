@@ -169,4 +169,10 @@
 - 已将 Provider 余额/开卡规则同步失败写入 `operator_alerts`（`PROVIDER_SNAPSHOT_STALE`，去重键固定）；同步恢复后自动关闭该告警。
 - 已在生产手动运行一次只读卡目录同步，执行成功，Provider 快照刷新成功；没有调用开卡或卡余额充值写接口。
 - Web/Worker 仍 active，健康检查通过，所有资金写入门禁保持关闭。
+
+### 卡余额充值服务注册结果
+
+- 已在生产注册 `pojia-card-funding.service/.timer`，但 timer 明确保持 disabled；service 的进程级 `PROVIDER_CARD_WRITES_ENABLED=false` 也会硬阻断资金写入。
+- 已注册并启用 `pojia-card-funding-reconcile.service/.timer`；该 runner 只读取卡详情/交易并更新对账状态，不调用卡余额写入 API。
+- 首次只读对账执行成功，输出 `handled:false`，表示当前没有待对账资金尝试。
 - 本地全量测试：403 tests，369 passed，34 skipped，0 failed；跳过项均为未配置隔离 MySQL 的集成测试。
