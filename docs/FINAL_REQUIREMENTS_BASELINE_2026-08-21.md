@@ -12,6 +12,10 @@
 - 三端积木架构：可替换卡台适配层、运营后台、执行/充值台。
 - Browser 是未来 Plus 充值的主执行链路：HNSKJ 提供虚拟卡，Browser 直接在 ChatGPT 官方页面购买 Plus 并取消续费。
 - Browser 复用现有订单、卡片、资金栅栏、审计、对账和运营后台，不建立第二套业务系统。
+- “复用”不要求现有 Provider 抽象、路线表、许可命名或后台页面保持不变；为优先跑通 Browser 可以最小调整。不可改变的是防重复扣款、付款未知禁止自动再付和端到端审计。
+- Browser 当前优先验证 hosted Checkout 提链：账号 Context 创建 Checkout，支付 Context 在同一菲律宾 sticky 出口打开完整 hosted 长链；内部短链只作同一 artifact 的同账号打开方式。是否优于原上号器先做同账号只读配对，再以隔离账号 cohort 比较 Checkout 变更阶段。
+- hosted 不是单押方向：原上号器、ChatGPT 站点状态克隆+CDP、同 Context UI、hosted 分离和页面 Context hosted 作为隔离赛道统一比较；失败赛道归档，最终只接 champion 和最多一个可在 Checkout 创建前路由的预验证 fallback。
+- 多赛道对抗式审查后，完整 Profile 方向收敛为仅 ChatGPT allowlist 的站点状态只读克隆；同账号只用于不创建 Checkout 的只读配对，会创建 Checkout 的 lane 使用隔离账号 cohort。最终可保留一个 champion 和最多一个在 Checkout 创建前路由的预验证 fallback。
 - ZZSHU 不再是 Browser 项目的依赖或投入方向；现有代码和历史数据只作旧系统兼容处理。
 - Browser 详细需求、接口、恢复和容量基线见 `BROWSER_RECHARGE_EXECUTOR_BASELINE_2026-08-21.md`。
 
@@ -101,8 +105,8 @@ HNSKJ 已确认存在 `POST /cards/{id}/recharge`，仅 active 卡、需要 writ
 3. 没有原订单更换 Session 接口和可恢复状态；
 4. 40030 尚未完整映射为客户可修复原因；
 5. 最终成功尚未以取消续费确认为硬终态；
-6. 自动补卡触发尚未接入；
-7. 库存资格尚未按无客户 PURCHASE/无资金争议完整实现；
+6. 自动补卡规划器已完成代码和隔离测试，但尚未生产启用，后台配置入口尚未完成；
+7. 库存资格已按无客户 PURCHASE/无资金争议实现并测试，阶段四尚未生产部署；
 8. 特殊人工复用尚无后台受控入口和审计模型；
 9. 正式 CDK→订单→Worker 成功订单仍未真实验收。
 
@@ -119,4 +123,4 @@ HNSKJ 已确认存在 `POST /cards/{id}/recharge`，仅 active 卡、需要 writ
 7. 共享底座验收、Browser 非付款 PoC 和 350 单/24 小时仿真；
 8. Browser 隔离联调、受控真实灰度与 200–300 单/日规模化。
 
-详细任务和退出条件见 `IMPLEMENTATION_PLAN_FINAL_2026-08-21.md`。Browser 当前先完成设计、非付款 PoC 和仿真控制面；未取得单独操作确认前不接生产、不真实付款。
+详细任务和退出条件见 `IMPLEMENTATION_PLAN_FINAL_2026-08-21.md`。Browser 当前先完成设计、非付款 PoC 和仿真控制面；未取得单独操作确认前不接生产、不真实付款。上线前还必须通过账号级互斥、Checkout artifact 单一活动约束、hosted authority 加密短期保存和过期 Checkout 不自动重建的故障注入验收。
