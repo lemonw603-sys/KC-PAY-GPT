@@ -48,6 +48,7 @@ export function createApp({
   createAdminCardStockJob = null,
   getAdminReplenishmentSettings = null,
   setAdminReplenishmentDailyLimit = null,
+  listAdminCardFundingAttempts = null,
   setAdminOrderAcceptance = null,
   setAdminRechargePermit = null,
   createAdminRechargeAuthorization = null,
@@ -321,6 +322,18 @@ export function createApp({
   if (typeof getAdminReplenishmentSettings === 'function') {
     app.get('/api/v1/admin/card-stock/replenishment-settings', noStore, requireAdminApi, async (req, res) => {
       res.json(await getAdminReplenishmentSettings());
+    });
+  }
+  if (typeof listAdminCardFundingAttempts === 'function') {
+    app.get('/api/v1/admin/card-funding-attempts', noStore, requireAdminApi, async (req, res) => {
+      try {
+        return res.json(await listAdminCardFundingAttempts(req.query || {}));
+      } catch (error) {
+        if (error instanceof PublicApiError) {
+          return res.status(error.status || 400).json({ error: error.code.toLowerCase() });
+        }
+        throw error;
+      }
     });
   }
   if (typeof setAdminReplenishmentDailyLimit === 'function') {
