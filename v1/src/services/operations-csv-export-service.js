@@ -98,6 +98,41 @@ const DATASETS = Object.freeze({
       revokedCount: { header: 'Revoked Count', sql: "SUM(c.status = 'REVOKED')", aggregate: true },
       createdAt: { header: 'Created At', sql: 'MIN(c.created_at)', aggregate: true }
     }
+  },
+  order_trace: {
+    tableAlias: 'o',
+    cursorColumn: 'o.created_at',
+    idColumn: 'o.id',
+    from: `orders o
+      LEFT JOIN cdks cdk ON cdk.id = o.cdk_id
+      LEFT JOIN cards card ON card.order_id = o.id`,
+    defaultColumns: ['publicNo', 'cdkBatchNo', 'planType', 'customerEmail', 'status', 'createdAt', 'updatedAt', 'finishedAt', 'customerPaymentAmount', 'customerPaymentCurrency', 'customerPaidAt', 'rechargeAmount', 'rechargeCurrency', 'cardProviderAccountId', 'providerCardId', 'cardLast4', 'cardBalance', 'rechargeOrderNo', 'providerBusinessCode', 'providerOutcome', 'providerFinishedAt', 'failureCode', 'failureReason', 'subscriptionCancelled'],
+    columns: {
+      publicNo: { header: '订单查询码', sql: 'o.public_no' },
+      cdkBatchNo: { header: 'CDK 批次', sql: 'cdk.batch_no' },
+      planType: { header: '产品', sql: 'o.plan_type' },
+      customerEmail: { header: '客户邮箱', sql: 'o.customer_email' },
+      status: { header: '订单状态', sql: 'o.status' },
+      createdAt: { header: '创建时间', sql: 'o.created_at' },
+      updatedAt: { header: '更新时间', sql: 'o.updated_at' },
+      finishedAt: { header: '完成时间', sql: 'o.finished_at' },
+      customerPaymentAmount: { header: '客户付款金额', sql: '(SELECT p.amount FROM customer_payments p WHERE (p.order_id = o.id OR p.cdk_id = o.cdk_id) ORDER BY p.created_at DESC LIMIT 1)' },
+      customerPaymentCurrency: { header: '客户付款币种', sql: '(SELECT p.currency FROM customer_payments p WHERE (p.order_id = o.id OR p.cdk_id = o.cdk_id) ORDER BY p.created_at DESC LIMIT 1)' },
+      customerPaidAt: { header: '客户实际付款时间', sql: '(SELECT p.paid_at FROM customer_payments p WHERE (p.order_id = o.id OR p.cdk_id = o.cdk_id) ORDER BY p.created_at DESC LIMIT 1)' },
+      rechargeAmount: { header: '订单充值金额', sql: 'o.actual_payment_amount' },
+      rechargeCurrency: { header: '订单充值币种', sql: 'o.actual_payment_currency' },
+      cardProviderAccountId: { header: '卡台账户 ID', sql: 'card.provider_account_id' },
+      providerCardId: { header: '卡台卡 ID', sql: 'card.provider_card_id' },
+      cardLast4: { header: '卡号后四位', sql: 'card.last4' },
+      cardBalance: { header: '卡片当前余额', sql: 'card.current_balance' },
+      rechargeOrderNo: { header: 'Provider 订单号', sql: 'o.recharge_order_no' },
+      providerBusinessCode: { header: 'Provider 业务码', sql: '(SELECT pc.business_code FROM provider_calls pc WHERE pc.order_id = o.id ORDER BY pc.id DESC LIMIT 1)' },
+      providerOutcome: { header: 'Provider 结果', sql: '(SELECT pc.outcome FROM provider_calls pc WHERE pc.order_id = o.id ORDER BY pc.id DESC LIMIT 1)' },
+      providerFinishedAt: { header: 'Provider 完成时间', sql: '(SELECT pc.finished_at FROM provider_calls pc WHERE pc.order_id = o.id ORDER BY pc.id DESC LIMIT 1)' },
+      failureCode: { header: '失败代码', sql: 'o.failure_code' },
+      failureReason: { header: '失败原因', sql: 'o.failure_reason' },
+      subscriptionCancelled: { header: '已取消自动续费', sql: 'o.subscription_cancelled' }
+    }
   }
 });
 

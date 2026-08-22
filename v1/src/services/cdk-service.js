@@ -258,8 +258,29 @@ export function createAdminCdkService({ pool, cdkHashKey, cdkRecoveryKey }) {
   };
 }
 
-export async function listCdkBatches(pool, { limit = 50 } = {}) {
+function decodeBatchCursor(value) {
+  if (!value) return null;
+  try {
+    const parsed = JSON.parse(Buffer.from(String(value), 'base64url').toString('utf8'));
+    if (!parsed?.createdAt || !parsed?.batchNo) throw new Error('invalid cursor');
+    return parsed;
+  } catch { throw new CdkBatchError('invalid batch cursor', 'INVALID_CURSOR'); }
+}
+
+function encodeBatchCursor(value) {
+  return value ? Buffer.from(JSON.stringify(value), 'utf8').toString('base64url') : null;
+}
+
+export async function listCdkBatches(pool, { limit = 50, cursor = null, fromDate = null, toDate = null, planType = null, status = null } = {}) {
   const safeLimit = Math.min(100, Math.max(1, Number(limit) || 50));
+  const clauses = ['c.batch_no IS NOT NULL'];
+  const values = [];
+  if (fromDate) { clauses.push('c.created_at >= ?'); values.push(`${String(fromDate).slice(0, 10)} 00:00:00`); }
+  if (toDate) { clauses.push('c.created_at < DATE_ADD(?, INTERVAL 1 DAY)'); values.push(`${String(toDate).slice(0, 10)} 00:00:00`); }
+  if (planType) { clauses.push('c.plan_type = ?'); values.push(String(planType)); }
+  if (status && ['AVAILABLE', 'REDEEMED', 'REVOKED'].includes(String(status))) { clauses.push('EXISTS (SELECT 1 FROM cdks cf WHERE cf.batch_no = c.batch_no AND cf.status = ?)'); values.push(String(status)); }
+  const decoded = decodeBatchCursor(cursor);
+  if (decoded) { clauses.push('(c.created_at < ? OR (c.created_at = ? AND c.batch_no < ?))'); values.push(decoded.createdAt, decoded.createdAt, decoded.batchNo); }
   const [rows] = await pool.query(
     `SELECT c.batch_no, MIN(c.plan_type) AS plan_type, COUNT(*) AS total_count,
             SUM(c.status = 'AVAILABLE') AS available_count,
@@ -270,12 +291,15 @@ export async function listCdkBatches(pool, { limit = 50 } = {}) {
             MAX(b.revoked_at) AS revoked_at,
             MAX(b.revoke_reason) AS revoke_reason
      FROM cdks c LEFT JOIN cdk_batches b ON BINARY b.batch_no = BINARY c.batch_no
-     WHERE c.batch_no IS NOT NULL
+     WHERE ${clauses.join(' AND ')}
      GROUP BY c.batch_no
-     ORDER BY MIN(c.created_at) DESC LIMIT ?`,
-    [safeLimit]
+     ORDER BY MIN(c.created_at) DESC, c.batch_no DESC LIMIT ?`,
+    [...values, safeLimit + 1]
   );
-  return { batches: rows.map((row) => ({
+  const hasMore = rows.length > safeLimit;
+  const pageRows = hasMore ? rows.slice(0, safeLimit) : rows;
+  const tail = pageRows[pageRows.length - 1];
+  return { batches: pageRows.map((row) => ({
     batchNo: row.batch_no,
     planType: row.plan_type,
     totalCount: Number(row.total_count),
@@ -286,7 +310,7 @@ export async function listCdkBatches(pool, { limit = 50 } = {}) {
     createdAt: iso(row.created_at),
     revokedAt: iso(row.revoked_at),
     revokeReason: row.revoke_reason || null
-  })) };
+  })), nextCursor: hasMore && tail ? encodeBatchCursor({ createdAt: new Date(tail.created_at).toISOString(), batchNo: tail.batch_no }) : null };
 }
 
 export async function inspectCdkBatch(pool, batchNo, cdkHashKey, cdkRecoveryKey) {

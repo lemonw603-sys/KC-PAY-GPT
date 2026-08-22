@@ -70,7 +70,7 @@ const state = {
   view: 'overview', page: 1, pageSize: 20, total: 0, status: '', query: '',
   from: '', to: '', timeField: 'CREATED',
   stockProvider: null, stockCatalog: null, stockCardTypeId: '', acceptingOrders: false,
-  cdkClearTimer: null, cdkLoadSequence: 0,
+  cdkClearTimer: null, cdkLoadSequence: 0, cdkBatchCursor: null, cdkBatchRows: [],
   selectedOrders: new Set(), reconciliationPage: 1, reconciliationTotal: 0,
   browserPage: 1, browserTotal: 0, cardFundingPage: 1, cardFundingTotal: 0
 };
@@ -107,6 +107,7 @@ const elements = {
   cdkResult: document.querySelector('#cdk-result'), generatedCdks: document.querySelector('#generated-cdks'),
   cdkBatchLabel: document.querySelector('#cdk-batch-label'), copyCdks: document.querySelector('#copy-cdks'),
   downloadCdks: document.querySelector('#download-cdks'), cdkBatches: document.querySelector('#cdk-batches'),
+  cdkBatchFilters: document.querySelector('#cdk-batch-filters'), cdkBatchPlan: document.querySelector('#cdk-batch-plan'), cdkBatchStatus: document.querySelector('#cdk-batch-status'), cdkBatchFrom: document.querySelector('#cdk-batch-from'), cdkBatchTo: document.querySelector('#cdk-batch-to'), cdkBatchMore: document.querySelector('#cdk-batch-more'), cdkBatchPageInfo: document.querySelector('#cdk-batch-page-info'), exportCdkTrace: document.querySelector('#export-cdk-trace'),
   stockSummary: document.querySelector('#stock-summary'), stockJobs: document.querySelector('#stock-jobs'),
   stockCards: document.querySelector('#stock-cards'), providerSummary: document.querySelector('#provider-summary'),
   stockThresholdForm: document.querySelector('#stock-threshold-form'), stockThreshold: document.querySelector('#stock-threshold'),
@@ -300,9 +301,16 @@ async function loadOverview() {
       filter: 'RECONCILIATION_ISSUES' },
     { label: '已完成订单成功率', value: overview.metrics.successRate == null ? '—' : `${overview.metrics.successRate}%`, note: '不计未完成订单', filter: 'RECHARGE_SUCCESS' }
   ];
-  elements.metrics.innerHTML = metrics.map((item, index) => `<button type="button" class="metric-card metric-${index + 1}" ${item.filter ? `data-order-filter="${item.filter}"` : `data-target-view="${item.view}"`}>
+  const metricButton = (item, index) => `<button type="button" class="metric-card metric-${index + 1}" ${item.filter ? `data-order-filter="${item.filter}"` : `data-target-view="${item.view}"`}>
     <span>${escapeHtml(item.label)}</span><strong>${escapeHtml(item.value)}</strong><small>${escapeHtml(item.note)}</small>
-  </button>`).join('');
+  </button>`;
+  const groups = [
+    ['订单处理', metrics.slice(0, 10)],
+    ['资金与风险', metrics.slice(10, 13)],
+    ['库存运营', metrics.slice(13, 17)],
+    ['系统健康', metrics.slice(17)]
+  ];
+  elements.metrics.innerHTML = groups.map(([title, items]) => `<section class="metric-group"><div class="metric-group-title">${title}</div><div class="metric-group-grid">${items.map((item, offset) => metricButton(item, offset)).join('')}</div></section>`).join('');
   const distribution = (rows, labels) => rows?.length
     ? rows.map((item) => `<div><span><strong>${escapeHtml(labels[item.status] || item.status)}</strong><small>${escapeHtml(item.status)}</small></span><em>${escapeHtml(item.count)}</em></div>`).join('')
     : '<p class="empty-state">暂无记录</p>';
@@ -314,7 +322,8 @@ async function loadOverview() {
   const providerFresh = health.syncedAt && Date.now() - Date.parse(health.syncedAt) <= 6 * 60 * 1000;
   const providerTone = health.purchaseEnabled === true && providerFresh ? 'status-green' : 'status-orange';
   const providerLabel = !health.syncedAt ? '未同步' : !providerFresh ? '规则已过期' : health.purchaseEnabled === true ? '允许开卡' : health.purchaseEnabled === false ? '禁止开卡' : '未知';
-  elements.overviewProviderHealth.innerHTML = `<div><span><strong>HNSKJ 卡台</strong><small>只读同步 ${formatTime(health.syncedAt)}</small></span><em class="status-chip ${providerTone}"><i></i>${providerLabel}</em></div><div><span><strong>卡台余额</strong><small>详见卡片库存页</small></span><em>—</em></div>`;
+  const providerBalance = health.accountBalance == null ? '—' : `${formatMoney(health.accountBalance)} ${escapeHtml(health.currency || 'USD')}`;
+  elements.overviewProviderHealth.innerHTML = `<div><span><strong>${escapeHtml(health.routeLabel || '当前 Plus 卡台路线')}</strong><small>${health.accountCode ? `账户 ${escapeHtml(health.accountCode)} · ` : ''}只读同步 ${formatTime(health.syncedAt)}</small></span><em class="status-chip ${providerTone}"><i></i>${providerLabel}</em></div><div><span><strong>卡台账户余额</strong><small>不是可分配卡片余额</small></span><em>${providerBalance}</em></div><div><span><strong>本地可分配卡</strong><small>需资料完整且余额达标</small></span><em>${escapeHtml(overview.cardStock?.available ?? 0)} 张</em></div>`;
   const maxCount = Math.max(1, ...overview.orderStatuses.map((item) => item.count));
   elements.statusList.innerHTML = overview.orderStatuses.length
     ? overview.orderStatuses.map((item) => `<button type="button" data-status="${escapeHtml(item.status)}">
@@ -674,14 +683,22 @@ function clearGeneratedCdks() {
 
 async function loadCdkBatches() {
   const sequence = ++state.cdkLoadSequence;
-  const payload = await api('/api/v1/admin/cdks/batches?limit=50');
+  const query = new URLSearchParams({ limit: '50' });
+  if (state.cdkBatchCursor) query.set('cursor', state.cdkBatchCursor);
+  if (elements.cdkBatchPlan?.value) query.set('planType', elements.cdkBatchPlan.value);
+  if (elements.cdkBatchStatus?.value) query.set('status', elements.cdkBatchStatus.value);
+  if (elements.cdkBatchFrom?.value) query.set('fromDate', elements.cdkBatchFrom.value);
+  if (elements.cdkBatchTo?.value) query.set('toDate', elements.cdkBatchTo.value);
+  const payload = await api(`/api/v1/admin/cdks/batches?${query}`);
   if (sequence !== state.cdkLoadSequence) return;
+  state.cdkBatchRows = state.cdkBatchCursor ? [...state.cdkBatchRows, ...payload.batches] : payload.batches;
+  state.cdkBatchCursor = payload.nextCursor || null;
   const deliveryCapability = document.querySelector('#cdk-delivery-capability');
   if (deliveryCapability) deliveryCapability.textContent = payload.deliveryTrackingEnabled
     ? '交付记录接口已启用；只有明确的“记录交付”动作才算交付。'
     : '当前尚未启用客户交付记录；下载、复制均不会被记为已交付。';
-  elements.cdkBatches.innerHTML = payload.batches.length
-    ? payload.batches.map((batch) => {
+  elements.cdkBatches.innerHTML = state.cdkBatchRows.length
+    ? state.cdkBatchRows.map((batch) => {
       const fullyRevoked = batch.revokedCount > 0 && batch.revokedCount === batch.totalCount;
       const partlyRevoked = batch.revokedCount > 0 && !fullyRevoked;
       const batchClass = fullyRevoked ? 'cdk-batch-revoked' : partlyRevoked ? 'cdk-batch-partial' : '';
@@ -696,7 +713,9 @@ async function loadCdkBatches() {
         ${batch.availableCount > 0 ? '<button type="button" class="danger-small" data-revoke-batch>作废未使用</button>' : ''}
       </span></div>`;
     }).join('')
-    : '<p class="empty-state">还没有 CDK 批次</p>';
+    : '<p class="empty-state">还没有符合条件的 CDK 批次</p>';
+  if (elements.cdkBatchMore) elements.cdkBatchMore.hidden = !state.cdkBatchCursor;
+  if (elements.cdkBatchPageInfo) elements.cdkBatchPageInfo.textContent = `${state.cdkBatchRows.length} 个批次${state.cdkBatchCursor ? ' · 还有更多' : ''}`;
   elements.syncTime.textContent = `更新于 ${new Date().toLocaleTimeString('zh-CN', { hour12: false })}`;
 }
 
@@ -1744,7 +1763,11 @@ elements.downloadCdks.addEventListener('click', () => {
   const batchNo = elements.cdkBatchLabel.textContent.match(/^批次\s+(\S+)/)?.[1] || 'cdks';
   downloadCodes(batchNo, elements.generatedCdks.value.split(/\r?\n/).filter(Boolean));
 });
-document.querySelector('#refresh-cdk-batches')?.addEventListener('click', () => loadCdkBatches().catch(() => showNotice('批次记录读取失败。')));
+function resetCdkBatchPaging() { state.cdkBatchCursor = null; state.cdkBatchRows = []; }
+document.querySelector('#refresh-cdk-batches')?.addEventListener('click', () => { resetCdkBatchPaging(); loadCdkBatches().catch(() => showNotice('批次记录读取失败。')); });
+elements.cdkBatchFilters?.addEventListener('submit', (event) => { event.preventDefault(); resetCdkBatchPaging(); loadCdkBatches().catch(() => showNotice('批次筛选失败。')); });
+elements.cdkBatchMore?.addEventListener('click', () => loadCdkBatches().catch(() => showNotice('更多批次读取失败。')));
+elements.exportCdkTrace?.addEventListener('click', () => downloadOperationsCsv('order_trace').catch(() => showNotice('订单追溯导出失败。')));
 elements.cdkBatches.addEventListener('click', (event) => {
   const row = event.target.closest('[data-cdk-batch]');
   if (!row) return;

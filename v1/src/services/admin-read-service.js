@@ -403,6 +403,21 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
           SUM(order_id IS NULL AND inventory_status = 'DEPLETED') AS depleted,
           SUM(order_id IS NULL AND inventory_status = 'HELD_FOR_REVIEW') AS held,
           (SELECT synced_at FROM card_provider_snapshots WHERE provider = 'hnskj' LIMIT 1) AS provider_synced_at,
+          (SELECT JSON_UNQUOTE(JSON_EXTRACT(payload_json, '$.accountBalance'))
+             FROM card_provider_snapshots WHERE provider = 'hnskj' LIMIT 1) AS provider_account_balance,
+          (SELECT JSON_UNQUOTE(JSON_EXTRACT(payload_json, '$.currency'))
+             FROM card_provider_snapshots WHERE provider = 'hnskj' LIMIT 1) AS provider_currency,
+          (SELECT fr.route_code
+             FROM fulfillment_routes fr INNER JOIN products p ON p.id = fr.product_id
+            WHERE p.product_code = 'chatgpt_plus' AND p.status = 'ACTIVE'
+              AND fr.accepts_new_orders = 1 AND fr.retired_at IS NULL
+            ORDER BY fr.route_version DESC, fr.created_at DESC LIMIT 1) AS provider_route_code,
+          (SELECT pa.account_code
+             FROM fulfillment_routes fr INNER JOIN products p ON p.id = fr.product_id
+             INNER JOIN provider_accounts pa ON pa.id = fr.card_provider_account_id
+            WHERE p.product_code = 'chatgpt_plus' AND p.status = 'ACTIVE'
+              AND fr.accepts_new_orders = 1 AND fr.retired_at IS NULL
+            ORDER BY fr.route_version DESC, fr.created_at DESC LIMIT 1) AS provider_account_code,
           (SELECT JSON_UNQUOTE(JSON_EXTRACT(payload_json, '$.purchaseEnabled'))
              FROM card_provider_snapshots WHERE provider = 'hnskj' LIMIT 1) AS provider_purchase_enabled
         FROM cards`)
@@ -495,7 +510,11 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
       },
       providerHealth: {
         provider: 'hnskj',
+        routeLabel: stockRows[0]?.provider_route_code || '当前 Plus 卡台路线未配置',
+        accountCode: stockRows[0]?.provider_account_code || null,
         syncedAt: iso(stockRows[0]?.provider_synced_at),
+        accountBalance: stockRows[0]?.provider_account_balance == null ? null : String(stockRows[0].provider_account_balance),
+        currency: stockRows[0]?.provider_currency || 'USD',
         purchaseEnabled: stockRows[0]?.provider_purchase_enabled == null
           ? null : String(stockRows[0].provider_purchase_enabled) === 'true'
       },

@@ -153,3 +153,22 @@ test('enforces maximum row limit and cursor validation', async () => {
     (error) => error.code === 'INVALID_CURSOR'
   );
 });
+
+test('exports the bounded order trace dataset without sensitive authority fields', async () => {
+  const pool = scriptedPool([[[{
+    publicNo: 'PJV1-TRACE', cdkBatchNo: 'B-1', planType: 'plus', customerEmail: 'x@example.com',
+    status: 'RECHARGE_FAILED', createdAt: new Date('2026-08-20T12:00:00.000Z'), updatedAt: new Date('2026-08-20T12:01:00.000Z'),
+    finishedAt: new Date('2026-08-20T12:01:00.000Z'), customerPaymentAmount: null, customerPaymentCurrency: null,
+    customerPaidAt: null, rechargeAmount: null, rechargeCurrency: null, cardProviderAccountId: 'acct',
+    providerCardId: '612', cardLast4: '1666', cardBalance: '16.00', rechargeOrderNo: null,
+    providerBusinessCode: '40030', providerOutcome: 'DEFINITE_FAILURE', providerFinishedAt: new Date('2026-08-20T12:01:00.000Z'),
+    failureCode: null, failureReason: null, subscriptionCancelled: 0,
+    __cursor_value: new Date('2026-08-20T12:00:00.000Z'), __cursor_id: 'order-1'
+  }], []]]);
+  const service = createOperationsCsvExportService({ pool });
+  const result = await service.exportCsv({ dataset: 'order_trace', limit: 1 });
+  assert.equal(result.rowCount, 1);
+  assert.match(result.csv, /订单查询码,CDK 批次,产品,客户邮箱/);
+  assert.match(result.csv, /PJV1-TRACE/);
+  assert.doesNotMatch(pool.queries[0].sql, /card_number_ciphertext|card_credentials_ciphertext|session_ciphertext|cdk.*ciphertext/i);
+});

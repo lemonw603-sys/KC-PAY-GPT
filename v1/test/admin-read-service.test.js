@@ -51,7 +51,8 @@ test('admin overview maps aggregate values without exposing raw records', async 
     replenishmentRemainingToday: 5
   });
   assert.deepEqual(result.providerHealth, {
-    provider: 'hnskj', syncedAt: null, purchaseEnabled: null
+    provider: 'hnskj', routeLabel: '当前 Plus 卡台路线未配置', accountCode: null,
+    syncedAt: null, accountBalance: null, currency: 'USD', purchaseEnabled: null
   });
   assert.equal(pool.queries.some(({ sql }) => /session_ciphertext|recharge_card_key/i.test(sql)), false);
 });
