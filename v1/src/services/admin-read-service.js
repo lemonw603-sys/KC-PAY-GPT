@@ -832,6 +832,20 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
     ]);
     const row = orderRows[0];
     if (!row) throw new PublicApiError('Order not found', { code: 'ADMIN_ORDER_NOT_FOUND', status: 404 });
+    // Historical orders may predate failure-code persistence. Derive a
+    // read-only admin explanation from the authoritative Provider call rather
+    // than mutating production history.
+    const historicalProviderFailure = callRows.find((call) =>
+      call.provider === 'zzshu' && call.operation === 'create_direct'
+        && call.business_code != null && call.outcome !== 'SUCCESS'
+    );
+    const effectiveFailureCode = row.failure_code || (
+      row.status === 'RECHARGE_FAILED' && historicalProviderFailure
+        ? `PROVIDER_${String(historicalProviderFailure.business_code)}` : null
+    );
+    const effectiveFailureReason = row.failure_reason || (
+      effectiveFailureCode ? `Provider ${effectiveFailureCode}（历史记录推导，未修改订单数据）` : null
+    );
     const prepareTask = taskRows.find((task) => task.task_type === 'PREPARE_RECHARGE');
     const submitTask = taskRows.find((task) => task.task_type === 'SUBMIT_RECHARGE');
     const authorization = authorizationRows[0] || null;
@@ -920,8 +934,8 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
         actualPaymentAmount: decimal(row.actual_payment_amount),
         actualPaymentCurrency: row.actual_payment_currency,
         rechargeOrderNo: row.recharge_order_no,
-        failureCode: row.failure_code,
-        failureReason: row.failure_reason,
+        failureCode: effectiveFailureCode,
+        failureReason: effectiveFailureReason,
         customerActionCode: row.customer_action_code,
         sessionReplacementCount: Number(row.session_replacement_count || 0),
         sessionRepairStartedAt: iso(row.session_repair_started_at),

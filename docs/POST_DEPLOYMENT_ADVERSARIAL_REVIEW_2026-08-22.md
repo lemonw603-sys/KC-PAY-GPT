@@ -157,6 +157,12 @@
 - 这不是当前新代码路径的结论；当前代码会写入 `RECHARGE_SUBMIT_REJECTED` 或 `PROVIDER_CONFIRMED_FAILURE`。需要单独设计“历史记录修复/展示回退”方案，禁止直接人工 SQL 改业务数据。
 - 本次查询使用的是实际表结构；项目中不存在名为 `order_trace_events` 的表，追溯关系由订单、CDK、卡片、Provider 调用、充值尝试和事件表共同组成。
 
+### 追溯缺口修复结果
+
+- 后台订单详情现在对历史缺失的失败字段执行只读回退：仅当订单为 `RECHARGE_FAILED` 且存在非成功 ZZSHU `create_direct` Provider 记录时，显示 `PROVIDER_<business_code>` 及“历史记录推导”说明。
+- 不修改订单主表，不改变客户订单状态；当前历史 40030 失败单后台详情已显示 `PROVIDER_40030`，Provider 记录仍显示 `DEFINITE_FAILURE`。
+- 本地全量测试：373 passed、0 failed、34 skipped；生产 Web/Worker active，ready 通过。
+
 ## 第一性原理阶段性审查（2026-08-23）
 
 ### 核心不变量
