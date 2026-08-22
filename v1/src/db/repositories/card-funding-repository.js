@@ -167,10 +167,14 @@ export function createCardFundingRepository(pool) {
   async function finish({ attemptId, providerCallId, outcome, httpStatus = null,
     businessCode = null, responseSummary = null, fundsRiskState, status,
     externalReference = null, finishedAt = new Date() }) {
-    await finishProviderCall(pool, { callId: providerCallId, outcome, httpStatus,
-      businessCode, responseSummary, finishedAt,
-      durationMs: null });
-    const [result] = await pool.query(
+    return withTransaction(pool, async (connection) => {
+      // Keep the provider-call audit and the funding state transition in one
+      // transaction. A crash between two independent writes must not leave a
+      // SUCCESS provider call paired with a SUBMITTING funding attempt.
+      await finishProviderCall(connection, { callId: providerCallId, outcome, httpStatus,
+        businessCode, responseSummary, finishedAt,
+        durationMs: null });
+      const [result] = await connection.query(
       `UPDATE card_funding_attempts
        SET status=?, funds_risk_state=?, external_reference=COALESCE(?, external_reference),
            submitted_at=IF(? IN ('PENDING','SETTLED'), COALESCE(submitted_at, ?), submitted_at),
@@ -178,10 +182,11 @@ export function createCardFundingRepository(pool) {
            last_reconciled_at=IF(? IN ('SETTLED','FAILED'), ?, last_reconciled_at),
            result_summary_json=?
        WHERE id=? AND status='SUBMITTING'`,
-      [status, fundsRiskState, externalReference, status, finishedAt, status, finishedAt,
-        status, finishedAt, responseSummary ? JSON.stringify(responseSummary) : null, attemptId]
-    );
-    if (result.affectedRows !== 1) throw new Error('Card funding attempt state transition lost');
+        [status, fundsRiskState, externalReference, status, finishedAt, status, finishedAt,
+          status, finishedAt, responseSummary ? JSON.stringify(responseSummary) : null, attemptId]
+      );
+      if (result.affectedRows !== 1) throw new Error('Card funding attempt state transition lost');
+    });
   }
 
   return { prepare, begin, nextPrepared, nextPending, reconcile, finish };
