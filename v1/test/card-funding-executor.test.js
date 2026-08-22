@@ -33,6 +33,7 @@ test('card funding executor keeps pending funding active', async () => {
   assert.deepEqual(result, { attemptId: 'attempt-2', state: 'PENDING', externalReference: 'r-2' });
   assert.equal(repository.calls[1].input.fundsRiskState, 'ACTIVE');
   assert.equal(repository.calls[1].input.status, 'PENDING');
+  assert.equal(repository.calls[1].input.outcome, 'SUCCESS');
 });
 
 test('card funding executor locks uncertain provider errors', async () => {

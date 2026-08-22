@@ -15,7 +15,9 @@ export async function executeCardFundingAttempt({ repository, provider, attemptI
     const settled = mapped.state === 'SETTLED';
     await repository.finish({
       attemptId, providerCallId: begun.providerCallId,
-      outcome: settled ? 'SUCCESS' : 'RETRYABLE_FAILURE',
+      // The HTTP/API call succeeded even when the card operation remains
+      // pending; the funding attempt state carries the pending risk.
+      outcome: 'SUCCESS',
       responseSummary: { state: mapped.state, externalReference: mapped.externalReference },
       status: settled ? 'SETTLED' : 'PENDING',
       fundsRiskState: settled ? 'SETTLED' : 'ACTIVE',

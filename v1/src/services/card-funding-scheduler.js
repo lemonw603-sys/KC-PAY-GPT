@@ -45,15 +45,18 @@ export function createCardFundingScheduler({ pool, fundingRepository }) {
       for (const card of cards) {
         const amount = Math.max(1, Math.ceil(minimum - Number(card.current_balance || 0)));
         const attemptId = crypto.randomUUID();
-        await connection.query(
+        const [inserted] = await connection.query(
           `INSERT INTO card_funding_attempts
            (id, card_id, order_id, provider_account_id, amount, currency, status,
             funds_risk_state, idempotency_key)
-           VALUES (?, ?, NULL, ?, ?, 'USD', 'PREPARED', 'NONE', ?)`,
+           VALUES (?, ?, NULL, ?, ?, 'USD', 'PREPARED', 'NONE', ?)
+           ON DUPLICATE KEY UPDATE id = id`,
           [attemptId, card.id, LEGACY_HNSKJ_ACCOUNT_ID, String(amount),
             `card-funding:${attemptId}`]
         );
-        created.push({ id: attemptId, cardId: card.id, amount: String(amount) });
+        if (Number(inserted.affectedRows) === 1) {
+          created.push({ id: attemptId, cardId: card.id, amount: String(amount) });
+        }
       }
       await connection.commit();
       return { enabled: true, scheduled: created.length, attempts: created };
