@@ -170,6 +170,14 @@
 - 生产实测该历史订单返回 `effectiveStatus=RECHARGE_FAILED`、`customerActionCode=ACCOUNT_ALREADY_PLUS`；客户页面现有文案会提示更换免费账号 Session。
 - 已部署 `/opt/pojia/releases/20260823-customer-reason`；Web/Worker active，ready 通过；本地全量测试 373 passed、0 failed、34 skipped。
 
+### 其他客户可见状态核对
+
+- `SESSION_INVALID` 会进入 `WAITING_FOR_SESSION → ACTION_REQUIRED`，客户看到 Session 无效并可在原订单更换 Session；更换次数由服务端限制 3 次。
+- Session 过期在验证层归入无效 Session 路径，不会显示卡片不足或卡台内部错误。
+- `WAITING_FOR_CARD` 映射为客户侧 `PROCESSING`，不暴露库存内部原因；后台仍保留等待卡统计和低库存告警。
+- `SUBMIT_UNKNOWN`、`RECONCILIATION_REQUIRED` 映射为客户侧 `REVIEWING`，不会误显示成功。
+- 当前生产没有这些状态的活动订单，因此以上为代码/测试证据（C/T），不是生产状态样本验证。
+
 ## 第一性原理阶段性审查（2026-08-23）
 
 ### 核心不变量
