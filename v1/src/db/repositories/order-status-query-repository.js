@@ -1,5 +1,11 @@
 const SELECT_ORDER = `
-  SELECT o.public_no, o.status, o.updated_at, o.customer_action_code,
+  SELECT o.public_no, o.status, o.updated_at,
+         COALESCE(o.customer_action_code,
+           CASE WHEN o.status IN ('RECHARGE_FAILED','SUBMIT_UNKNOWN')
+             AND EXISTS (SELECT 1 FROM provider_calls pc
+               WHERE pc.order_id = o.id AND pc.provider = 'zzshu'
+                 AND pc.operation = 'create_direct' AND pc.business_code = '40030')
+             THEN 'ACCOUNT_ALREADY_PLUS' END) AS customer_action_code,
          o.session_replacement_count, o.session_repair_expires_at,
          COALESCE(
            CASE WHEN o.status = 'CLOSED' THEN (

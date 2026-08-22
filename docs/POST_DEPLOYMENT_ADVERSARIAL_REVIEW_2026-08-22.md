@@ -163,6 +163,13 @@
 - 不修改订单主表，不改变客户订单状态；当前历史 40030 失败单后台详情已显示 `PROVIDER_40030`，Provider 记录仍显示 `DEFINITE_FAILURE`。
 - 本地全量测试：373 passed、0 failed、34 skipped；生产 Web/Worker active，ready 通过。
 
+### 客户侧错误映射修复
+
+- 历史 40030 失败订单原先只有 `FAILED`，没有客户动作码，客户看不到“账号已是 Plus”的可行动原因。
+- 客户状态查询现在只读检查关联 ZZSHU `create_direct` 业务码 40030，并映射为 `ACCOUNT_ALREADY_PLUS`；不会把库存或卡台内部问题暴露给客户。
+- 生产实测该历史订单返回 `effectiveStatus=RECHARGE_FAILED`、`customerActionCode=ACCOUNT_ALREADY_PLUS`；客户页面现有文案会提示更换免费账号 Session。
+- 已部署 `/opt/pojia/releases/20260823-customer-reason`；Web/Worker active，ready 通过；本地全量测试 373 passed、0 failed、34 skipped。
+
 ## 第一性原理阶段性审查（2026-08-23）
 
 ### 核心不变量
