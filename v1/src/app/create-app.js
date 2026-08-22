@@ -50,6 +50,8 @@ export function createApp({
   setAdminReplenishmentDailyLimit = null,
   listAdminCardFundingAttempts = null,
   resolveAdminCardFundingUnknown = null,
+  listAdminProviderRoutes = null,
+  switchAdminProviderRoute = null,
   setAdminOrderAcceptance = null,
   setAdminRechargePermit = null,
   createAdminRechargeAuthorization = null,
@@ -345,6 +347,28 @@ export function createApp({
           action: req.body?.action,
           actorId: req.admin?.id || 'admin',
           note: req.body?.note,
+          confirmation: req.body?.confirmation
+        }));
+      } catch (error) {
+        if (error instanceof PublicApiError) {
+          return res.status(error.status || 400).json({ error: error.code.toLowerCase() });
+        }
+        throw error;
+      }
+    });
+  }
+  if (typeof listAdminProviderRoutes === 'function') {
+    app.get('/api/v1/admin/provider-routes', noStore, requireAdminApi, async (_req, res) => {
+      res.json(await listAdminProviderRoutes());
+    });
+  }
+  if (typeof switchAdminProviderRoute === 'function') {
+    app.post('/api/v1/admin/provider-routes/:routeId/switch', ...sensitiveAdminGuards, async (req, res) => {
+      try {
+        return res.json(await switchAdminProviderRoute({
+          routeId: req.params.routeId,
+          actorId: req.admin?.id || 'admin',
+          operatorNote: req.body?.note,
           confirmation: req.body?.confirmation
         }));
       } catch (error) {

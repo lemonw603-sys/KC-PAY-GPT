@@ -16,6 +16,7 @@ import { createCardStockService } from './services/card-stock-service.js';
 import { createCardStockJobService } from './services/card-stock-job-service.js';
 import { createCardReplenishmentSettingsService } from './services/card-replenishment-settings-service.js';
 import { createCardFundingAdminService } from './services/card-funding-admin-service.js';
+import { createProviderRouteAdminService } from './services/provider-route-admin-service.js';
 import { createCardSyncJobService } from './services/card-sync-job-service.js';
 import { createAdminOperationsService } from './services/admin-operations-service.js';
 import {
@@ -67,6 +68,7 @@ const cardStockService = createCardStockService({
 const cardStockJobService = createCardStockJobService({ pool });
 const replenishmentSettingsService = createCardReplenishmentSettingsService({ pool });
 const cardFundingAdminService = createCardFundingAdminService({ pool });
+const providerRouteAdminService = createProviderRouteAdminService({ pool });
 const cardSyncJobService = createCardSyncJobService({ pool });
 const cardIntakeRepository = createCardIntakeRepository({ pool });
 const cardIntakeProvider = config.hnskjApiKey
@@ -174,6 +176,8 @@ const app = createApp({
   ,setAdminReplenishmentDailyLimit: replenishmentSettingsService.setDailyLimit
   ,listAdminCardFundingAttempts: cardFundingAdminService.list
   ,resolveAdminCardFundingUnknown: cardFundingAdminService.resolveUnknown
+  ,listAdminProviderRoutes: providerRouteAdminService.list
+  ,switchAdminProviderRoute: providerRouteAdminService.switchRoute
   ,setAdminOrderAcceptance: adminOperationsService.setOrderAcceptance
   ,setAdminRechargePermit: async (publicNo, input = {}) => {
     const action = String(input.action || '');
