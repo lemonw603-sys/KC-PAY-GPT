@@ -266,7 +266,7 @@ async function loadOverview() {
     api('/api/v1/admin/alerts?limit=10')
   ]);
   const metrics = [
-    { label: '累计订单', value: overview.metrics.totalOrders, note: '全部已创建订单', filter: 'TODAY' },
+    { label: '累计订单', value: overview.metrics.totalOrders, note: '全部已创建订单', view: 'orders' },
     { label: '今日订单', value: overview.metrics.todayOrders, note: '点击查看今天新订单', filter: 'TODAY' },
     { label: '成功订单', value: overview.metrics.successfulOrders, note: '已完成 Plus 开通并结束续费', filter: 'RECHARGE_SUCCESS' },
     { label: '自动处理中', value: overview.metrics.processingOrders, note: '系统正在自动流转', filter: 'PROCESSING' },
@@ -308,8 +308,10 @@ async function loadOverview() {
     : '<p class="empty-state">暂无记录</p>';
   elements.overviewCdkRefundStatus.innerHTML = `<p class="mini-list-heading">CDK</p>${distribution(overview.cdkStatuses, { AVAILABLE: '未使用', REDEEMED: '已兑换', REVOKED: '已作废' })}<p class="mini-list-heading">退款观察</p>${distribution(overview.refundStatuses, { MONITORING: '观察中', DETECTED: '疑似退款', CONFIRMED: '已确认退款', WITHDRAWN: '已提取' })}`;
   const health = overview.providerHealth || {};
-  const providerTone = health.purchaseEnabled === true ? 'status-green' : 'status-orange';
-  elements.overviewProviderHealth.innerHTML = `<div><span><strong>HNSKJ 卡台</strong><small>只读同步 ${formatTime(health.syncedAt)}</small></span><em class="status-chip ${providerTone}"><i></i>${health.purchaseEnabled === true ? '允许开卡' : health.purchaseEnabled === false ? '禁止开卡' : '未知'}</em></div><div><span><strong>卡台余额</strong><small>详见卡片库存页</small></span><em>—</em></div>`;
+  const providerFresh = health.syncedAt && Date.now() - Date.parse(health.syncedAt) <= 120000;
+  const providerTone = health.purchaseEnabled === true && providerFresh ? 'status-green' : 'status-orange';
+  const providerLabel = !health.syncedAt ? '未同步' : !providerFresh ? '规则已过期' : health.purchaseEnabled === true ? '允许开卡' : health.purchaseEnabled === false ? '禁止开卡' : '未知';
+  elements.overviewProviderHealth.innerHTML = `<div><span><strong>HNSKJ 卡台</strong><small>只读同步 ${formatTime(health.syncedAt)}</small></span><em class="status-chip ${providerTone}"><i></i>${providerLabel}</em></div><div><span><strong>卡台余额</strong><small>详见卡片库存页</small></span><em>—</em></div>`;
   const maxCount = Math.max(1, ...overview.orderStatuses.map((item) => item.count));
   elements.statusList.innerHTML = overview.orderStatuses.length
     ? overview.orderStatuses.map((item) => `<button type="button" data-status="${escapeHtml(item.status)}">
