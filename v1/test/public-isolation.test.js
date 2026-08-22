@@ -95,6 +95,8 @@ test('admin refresh feedback and inset dropdown arrows remain visible', () => {
   assert.match(script, /等待 Session/);
   assert.match(script, /自动补卡用量/);
   assert.match(script, /overview-provider-health/);
+  assert.match(script, /card-intake\/.*\/validate/);
+  assert.match(script, /card-intake\/.*\/accept/);
   assert.match(styles, /select\s*\{[\s\S]*appearance:\s*none/);
   assert.match(styles, /padding-right:\s*40px\s*!important/);
   assert.match(styles, /background-image:[^;]+!important/);

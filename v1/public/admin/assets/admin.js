@@ -851,11 +851,37 @@ async function loadCardIntake() {
   const latest = payload.batches?.[0];
   const rows = payload.discoveries || [];
   const summary = latest
-    ? `<div><span><strong>最近批次 · ${escapeHtml(CARD_INTAKE_BATCH_LABELS[latest.status] || latest.status)}</strong><small>发现 ${latest.discoveredCount} · 已接管 ${latest.acceptedCount} · 待人工核对 ${latest.reviewCount} · 失败 ${latest.failedCount}</small></span><em>${escapeHtml(latest.id.slice(0, 8))}</em></div>`
+    ? `<div><span><strong>最近批次 · ${escapeHtml(CARD_INTAKE_BATCH_LABELS[latest.status] || latest.status)}</strong><small>发现 ${latest.discoveredCount} · 已接管 ${latest.acceptedCount} · 待人工核对 ${latest.reviewCount} · 失败 ${latest.failedCount}</small></span><span class="case-actions"><button class="text-button card-intake-validate" type="button" data-batch-id="${escapeHtml(latest.id)}" ${['VALIDATING','ACCEPTED','COMPLETED'].includes(latest.status) ? 'disabled' : ''}>重新验证</button><button class="primary-small card-intake-accept" type="button" data-batch-id="${escapeHtml(latest.id)}" ${latest.status !== 'VALIDATED' ? 'disabled' : ''}>接管已验证卡</button></span></div>`
     : '<p class="empty-state">还没有新卡接管批次</p>';
-  const details = rows.map((item) => `<div><span><strong>卡台 ID ${escapeHtml(item.externalCardId)}</strong><small>验证 ${item.validationAttempts} 次${item.failureCode ? ` · ${escapeHtml(item.failureCode)}` : ''}</small></span><em>${escapeHtml(CARD_INTAKE_LABELS[item.intakeStatus] || item.intakeStatus)}</em></div>`).join('');
+  const details = rows.map((item) => `<div data-intake-id="${escapeHtml(item.id || '')}"><span><strong>卡台 ID ${escapeHtml(item.externalCardId)}</strong><small>验证 ${item.validationAttempts} 次${item.failureCode ? ` · ${escapeHtml(item.failureCode)}` : ''}</small></span><em>${escapeHtml(CARD_INTAKE_LABELS[item.intakeStatus] || item.intakeStatus)}</em></div>`).join('');
   elements.cardIntakeList.innerHTML = `${!payload.configured ? '<p class="provider-warning">服务器尚未配置卡台只读凭据；暂时只能查看历史接管记录。</p>' : ''}<p class="intake-explanation">这里是本地新卡接管队列，不是卡台实时总库存。新卡需要两次稳定读取并完成接管后，才会进入可分配库存；数据在点击“同步并接管新卡”后更新。</p>${summary}${details}`;
 }
+
+elements.cardIntakeList?.addEventListener('click', async (event) => {
+  const validate = event.target.closest('.card-intake-validate');
+  const accept = event.target.closest('.card-intake-accept');
+  const button = validate || accept;
+  if (!button || button.disabled) return;
+  const batchId = button.dataset.batchId;
+  try {
+    if (validate) {
+      await api(`/api/v1/admin/card-intake/${encodeURIComponent(batchId)}/validate`, { method: 'POST' });
+      showNotice('卡片批次已加入验证队列。', 'success');
+    } else {
+      const ids = [...elements.cardIntakeList.querySelectorAll('[data-intake-id]')].map((item) => item.dataset.intakeId);
+      const confirmation = window.prompt(`请输入确认词：接管卡片 ${batchId}`)?.trim();
+      if (!confirmation) return;
+      await sensitiveApi(`/api/v1/admin/card-intake/${encodeURIComponent(batchId)}/accept`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ discoveryIds: ids, confirmation })
+      });
+      showNotice('已接管通过验证的卡片。', 'success');
+    }
+    await loadStock();
+  } catch {
+    showNotice(validate ? '卡片验证任务提交失败。' : '卡片接管失败，没有改变库存。');
+  }
+});
 
 async function requestCardSync(providerCardId = null, button = null) {
   if (button) button.disabled = true;
