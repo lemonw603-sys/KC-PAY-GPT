@@ -59,6 +59,15 @@
 
 静态 DOM 检查发现导航有 `exceptions` 而没有独立 `exceptions-view`；继续核对 `admin.js` 后确认这是有意的别名：点击“异常队列”会切换到订单视图并自动套用 `REVIEW_REQUIRED` 筛选，不是缺失页面。
 
+## 继续核验结果
+
+- 生产 `/health/live` 返回 `{"status":"ok"}`；
+- 生产 `/health/ready` 返回 `{"status":"ready"}`；
+- 公网 `admin.js` 与候选包 SHA-256 一致：`7b0de1b3…4b0c4b99`；
+- 公网 `admin.css` 与候选包 SHA-256 一致：`db22ba85…e4556f9a31`；
+- 前端分支覆盖 `overview/orders/exceptions/reconciliation/card-funding/provider-routes/browser/stock/cdks`；
+- 发现的敏感操作入口均通过 `sensitiveApi`，未发现把敏感写操作改成普通只读 API 的情况。
+
 ## 登录失败复核
 
 用户在登录页输入密码后，页面实际返回“密码不正确，请重新输入”。服务器只读核验确认：
