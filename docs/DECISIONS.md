@@ -71,7 +71,8 @@
 | D-065 | Browser 后台只返回脱敏运行元数据，不返回 authority、密文引用、lease token/hash 或资源 HMAC；人工接管按 REQUESTED→FROZEN→TRANSFERRED→RELEASED 转移同一 run。安全恢复必须明确确认未发生任何付款动作且不存在提交 operation；人工付款结果未知时同事务锁定 run/attempt/order 并进入对账 | 已实现（B2 后台 v1） | 现有后台新增 Browser 队列/详情/控制，API 要求登录、Origin、step-up、确认词和幂等 operation；31 项定向测试及 Docker MySQL 8.4 完整转移/未知锁账通过 |
 | D-066 | 第二轮对抗审查判定 Browser 控制面方向正确，但在 Browser attempt/dispatch、付款后 Plus 激活/取消闭环、真实 BrowserContext 和并发 soak 四个 P0 闸门关闭前，不得宣称批量 Worker 或每日数百单已验证；审查另列 9 个 P1，详见 `docs/2026-08-22_browser-control-plane-adversarial-review-report.md` | 待用户确认 | 本条是审查结论和实施闸门，不改变现有资金边界；确认后按 P0→并发 soak→Worker 顺序推进 |
 | D-067 | 当前无法从公开资料可靠估计“客户账号因充值被封控”的百分比；在获得分层 cohort 分母前，封控风险按未知且可能高度分层处理。最高原则转为可停止闸门：未知支付、跨账号共享运行环境、异常跨国切换、自动换卡/换 lane 均不得继续；单个无法解释的停用冻结相关 lane，两例相关事件冻结 lane+runtime/profile 组合 | 待用户确认 | 公开资料只说明可疑活动/安全风险可能导致临时暂停或停用，没有本业务组合的分母和误报率；详见对抗审查报告“关于客户账号因充值被封控的概率” |
-| D-068 | API 充值路径不增加独立账号预检；由充值 API 的权威响应判断资格。明确的 40030/账号不可充值属于充值前拒绝：保留审计、清除本地资金风险、订单回到 Session 可恢复状态，不删除账本、不重试、不换卡；只有外部结果未知时才进入 UNKNOWN 并禁止回退重付。 | 已确认 | 用户明确说明 API 本身就是充值动作，执行时发现账号问题即可回退；独立预检可能增加风控和重复访问风险 |
+| D-068 | Browser attempt 复用现有唯一 `recharge_attempts` 资金账；Browser route 可不绑定 Provider account、不得伪造 `provider_calls.create_direct`。付款确认不是最终成功，必须依次落盘 Plus 激活和取消确认；两者齐全后才可清算 attempt 并进入 `RECHARGE_SUCCESS` | 已实现 v1，待真实页面观察接入 | 031 增量迁移、Browser repository/recharge attempt repository、定向测试和合同已落盘；真实 BrowserContext/Session/Checkout 仍禁止付款，仅待非付款观察器接入 |
+| D-069 | API 充值路径不增加独立账号预检；由充值 API 的权威响应判断资格。明确的 40030/账号不可充值属于充值前拒绝：保留审计、清除本地资金风险、订单回到 Session 可恢复状态，不删除账本、不重试、不换卡；只有外部结果未知时才进入 UNKNOWN 并禁止回退重付。 | 已确认 | 用户明确说明 API 本身就是充值动作，执行时发现账号问题即可回退；独立预检可能增加风控和重复访问风险 |
 
 ## 变更流程
 
