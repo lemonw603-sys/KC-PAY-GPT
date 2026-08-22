@@ -31,3 +31,17 @@
 ## 复核结论
 
 本次部署和安全门禁验证通过，生产已切换到候选版本；但这只是后台与只读运行基础设施验收，不等于真实充值成功验收。下一阶段必须继续保持资金写入门禁关闭，先做后台登录态逐页只读验收，再单独规划非 Plus 测试账号的单笔真实链路。
+
+## 后台接口只读核验
+
+对以下未登录管理 API 逐一请求，均返回 HTTP 401，未发现未登录数据泄露：
+
+- `/api/v1/admin/overview`
+- `/api/v1/admin/orders`
+- `/api/v1/admin/alerts`
+- `/api/v1/admin/provider-routes`
+- `/api/v1/admin/reconciliation-cases`
+- `/api/v1/admin/browser/runs`
+- `/api/v1/admin/cdks/batches`
+
+当前终端没有可复用的管理员登录会话，因此“登录后逐页展示和数据核对”仍未宣称完成；本次没有尝试绕过登录或执行后台写操作。
