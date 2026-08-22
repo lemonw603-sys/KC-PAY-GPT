@@ -145,4 +145,6 @@ Browser 相关大量文件当前仍在工作树中属于未提交/未跟踪状�
 
 ## 九、依据
 
+运营后台、充值系统、卡台系统的逐项横向对齐见 `docs/CROSS_SYSTEM_ALIGNMENT_REPORT_2026-08-22.md`。
+
 本报告依据 `CLAUDE.md`、`AGENTS.md`、项目角色指南、完整历史交接、单一事实源、最终需求基线、`DECISIONS.md`、`V1_SPEC.md`、`ROADMAP.md`、最终实施计划、后台对齐审查、全项目审查、阶段一至四验收、Browser 当前状态/基线、所有 contracts、当前 `v1/src`、`v1/migrations`、`v1/scripts`、`v1/test` 和根目录 Browser 测试。
