@@ -15,11 +15,14 @@
 - 外部接口合同与验证记录：后续放在 `docs/contracts/`
 - 项目从起点到当前的完整历史交接：`docs/PROJECT_HANDOFF_FULL_HISTORY_2026-08-21.md`
 - 跨窗口交接、生产横向平台、真实测试证据与事实/未验证边界：`docs/SINGLE_SOURCE_OF_TRUTH_2026-08-21.md`
+- 协作与交付执行协议：`docs/PROJECT_OPERATING_PROTOCOL.md`
 - 用户确认后的最终需求基线：`docs/FINAL_REQUIREMENTS_BASELINE_2026-08-21.md`
 - 当前 Plus 运营后台与最终需求的对齐审查：`docs/ADMIN_ALIGNMENT_AUDIT_2026-08-21.md`
 - 用户确认的实施主线、阶段退出条件和 Browser 时序：`docs/IMPLEMENTATION_PLAN_FINAL_2026-08-21.md`
 - Browser 自动充值执行器的需求、架构、接口和恢复基线：`docs/BROWSER_RECHARGE_EXECUTOR_BASELINE_2026-08-21.md`
 - Browser 当前完成项、准确停止点和下一动作：`docs/BROWSER_CURRENT_STATUS_2026-08-22.md`
+- Browser 子项目 BRFE 的跨窗口接班入口：`docs/BRFE_HANDOFF_2026-08-22.md`
+- Browser 五阶段大闸门推进路线：`docs/2026-08-22_browser-execution-roadmap.md`
 - AI Agent 角色、必读顺序和仓库噪音地图：`docs/AI_AGENT_ROLE_AND_READING_GUIDE_2026-08-21.md`
 - Browser Session 上号机制静态合同：`docs/contracts/2026-08-21_browser-session-bootstrap-static-analysis-report.md`
 - Browser hosted Checkout 提链研究、A/B 矩阵和后台可调边界：`docs/2026-08-22_browser-checkout-link-research-report.md`
