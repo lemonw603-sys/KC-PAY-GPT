@@ -804,7 +804,7 @@ async function loadStock() {
     held: sum.held + (item.held || 0)
   }), { available: 0, provisioning: 0, assigned: 0, depleted: 0, held: 0 });
   elements.stockSummary.innerHTML = [
-    ['可分配', totals.available], ['已分配', totals.assigned], ['隔离卡', totals.held], ['核对中', totals.provisioning]
+    ['可分配', totals.available], ['已分配', totals.assigned], ['耗尽卡', totals.depleted], ['隔离卡', totals.held], ['核对中', totals.provisioning]
   ].map(([label, value]) => `<div><span>${label}</span><strong>${value}</strong></div>`).join('');
   elements.stockThreshold.value = payload.threshold;
   const provider = state.stockProvider;
