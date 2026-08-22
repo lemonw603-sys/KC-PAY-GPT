@@ -212,6 +212,40 @@ function renderOrder(order, { scroll = true } = {}) {
   schedulePoll(order.publicNo, meta);
 }
 
+// Browser extensions can append non-JSON labels to a pasted Session. Extract
+// only the first complete JSON object without changing its contents.
+function parseSessionInput(raw) {
+  const text = String(raw || '').trim();
+  try {
+    return { value: JSON.parse(text), hadTrailingText: false };
+  } catch {
+    const start = text.indexOf('{');
+    if (start < 0) throw new Error('invalid_session_json');
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+    for (let index = start; index < text.length; index += 1) {
+      const char = text[index];
+      if (inString) {
+        if (escaped) escaped = false;
+        else if (char === '\\') escaped = true;
+        else if (char === '"') inString = false;
+        continue;
+      }
+      if (char === '"') { inString = true; continue; }
+      if (char === '{') depth += 1;
+      else if (char === '}') {
+        depth -= 1;
+        if (depth === 0) {
+          const value = JSON.parse(text.slice(start, index + 1));
+          return { value, hadTrailingText: Boolean(text.slice(index + 1).trim()) };
+        }
+      }
+    }
+    throw new Error('invalid_session_json');
+  }
+}
+
 elements.replacementForm.addEventListener('submit', async (event) => {
   event.preventDefault();
   hideNotice();
@@ -219,7 +253,12 @@ elements.replacementForm.addEventListener('submit', async (event) => {
   if (!elements.replacementConfirmInput.checked) return showNotice('请确认新账号当前是免费账号。');
   let session;
   try {
-    session = JSON.parse(elements.replacementSessionInput.value);
+    const parsedReplacement = parseSessionInput(elements.replacementSessionInput.value);
+    session = parsedReplacement.value;
+    if (parsedReplacement.hadTrailingText) {
+      elements.replacementSessionInput.value = JSON.stringify(session);
+      showNotice('检测到 Session 后有附加文本，已自动整理为纯 JSON。', 'success');
+    }
   } catch {
     return showNotice('新 Session 格式不正确，请检查后重试。');
   }
@@ -300,7 +339,12 @@ elements.submitForm.addEventListener('submit', async (event) => {
 
   let session;
   try {
-    session = JSON.parse(elements.sessionInput.value);
+    const parsedSession = parseSessionInput(elements.sessionInput.value);
+    session = parsedSession.value;
+    if (parsedSession.hadTrailingText) {
+      elements.sessionInput.value = JSON.stringify(session);
+      showNotice('检测到 Session 后有附加文本，已自动整理为纯 JSON。', 'success');
+    }
   } catch {
     return showNotice('账号 Session 格式不正确，请检查后重试。');
   }
