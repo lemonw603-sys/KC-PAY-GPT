@@ -26,7 +26,7 @@
 2. 将自动补卡/自动开卡调度从固定旧 account ID 改为按 Provider account/route（已完成代码，待测试/部署核对）；
 3. 补齐 HNSKJ card detail、refresh-balance、withdraw 的运行时 Schema 校验；
 4. 增加 UNKNOWN 卡余额充值的后台人工对账结论动作，禁止直接重付（已完成代码，待生产部署）；
-5. 完成卡台 Provider account/路线人工切换基础，切换只影响新订单，旧订单保留原路线。
+5. 完成卡台 Provider account/路线人工切换基础，切换只影响新订单，旧订单保留原路线（后端 API 和审计迁移已完成，后台 UI、余额/卡段现场检查和部署待完成）。
 
 退出条件：危险状态可审计、可恢复，且不需要人工 SQL。
 
