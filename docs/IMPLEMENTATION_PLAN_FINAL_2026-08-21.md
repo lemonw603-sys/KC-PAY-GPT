@@ -64,7 +64,7 @@ flowchart LR
 
 ### 实施内容
 
-0. 在 API 与 Browser 共用的订单资格层增加目标账号套餐预检；当前为 Plus 时在 Provider create 之前进入客户可恢复状态，不能依赖 ZZSHU `40030` 作为预检替代品。
+0. 增加付款前目标账号资格闸门；当前为 Plus 时应在 Provider create 之前进入客户可恢复状态。闸门的实现必须优先复用同一 Browser Context/同一 sticky 出口下的必要只读状态读取，或经过证据确认的低副作用 Provider 只读接口；未经非付款 PoC/A-B 验证，不新增独立登录、切换出口或重复私有接口探测。ZZSHU `40030` 只能作为安全拒绝兜底，不能写成已完成的本地预检。
 1. 增加 `WAITING_FOR_SESSION`；
 2. 增加原订单更换 Session 的客户接口和页面；
 3. 最多 3 次，72 小时从首次客户可修复错误开始；
