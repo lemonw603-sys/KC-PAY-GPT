@@ -257,7 +257,6 @@ elements.replacementForm.addEventListener('submit', async (event) => {
     session = parsedReplacement.value;
     if (parsedReplacement.hadTrailingText) {
       elements.replacementSessionInput.value = JSON.stringify(session);
-      showNotice('检测到 Session 后有附加文本，已自动整理为纯 JSON。', 'success');
     }
   } catch {
     return showNotice('新 Session 格式不正确，请检查后重试。');
@@ -343,7 +342,6 @@ elements.submitForm.addEventListener('submit', async (event) => {
     session = parsedSession.value;
     if (parsedSession.hadTrailingText) {
       elements.sessionInput.value = JSON.stringify(session);
-      showNotice('检测到 Session 后有附加文本，已自动整理为纯 JSON。', 'success');
     }
   } catch {
     return showNotice('账号 Session 格式不正确，请检查后重试。');
