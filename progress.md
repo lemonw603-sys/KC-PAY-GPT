@@ -243,3 +243,9 @@
 - Web/Worker/Bark、卡片目录同步和卡片只读同步 active；自动开卡 timer inactive；Provider 三项写入开关均为 false。
 - 本机与公网 live/ready 均返回 200；只读 readiness `ok=true`，活动任务、租约、UNKNOWN Provider 调用、资金风险和活动授权均为 0。
 - 本次没有开卡、充值、付款、提现或退款；后续仍需进行部署后后台逐页只读验收和对抗式复核。
+### 2026-08-23 只读余额同步与 Session 体验修复
+
+- Session 粘贴尾部被扩展文本污染的问题已修复并部署：页面可提取首个完整 JSON 对象，自动规范化并提示用户。
+- 证实 Provider 余额快照过去依赖写入型 card-stock runner，写入开关关闭时会陈旧；已改为由只读 card-catalog sync 刷新余额/开卡规则快照。
+- 当前 release：`/opt/pojia/releases/20260823-balance-sync`；Web/Worker、目录同步、只读同步正常；接单、派发、Provider 写入仍全部关闭。
+- 未执行开卡、卡充值、ChatGPT 充值、付款、提现或退款。

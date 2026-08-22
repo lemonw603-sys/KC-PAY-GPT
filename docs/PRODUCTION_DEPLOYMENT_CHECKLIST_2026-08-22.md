@@ -98,3 +98,11 @@
 - 登录接口返回 204；总览接口返回 200，约 1.7 秒；
 - 其他只读后台页面接口均返回 200；
 - 没有开启任何 Provider 或资金写入路径。
+
+## 2026-08-23 只读余额同步修复部署
+
+- 代码变更：`v1/scripts/card-catalog-sync.js` 在只读卡目录同步中同时调用 `refreshProviderSnapshot`，刷新 HNSKJ 余额与开卡规则快照。
+- 发布：`/opt/pojia/releases/20260823-balance-sync`；候选包 420 文件，manifest SHA-256：`bc512bd2105d54e3404fb2b9c3c359365f3ed23fd599f0ca6751a933c5fb70d5`。
+- 部署后 Web/Worker：`active`；`/health/live` 与 `/health/ready`：200。
+- 卡目录同步下一次运行成功，日志明确记录 `providerSnapshotSyncedAt=2026-08-22T16:33:24.473Z`；未启用任何 Provider 写入，未购买卡、充值卡或执行资金动作。
+- 中途曾因候选包目录层级和依赖目录未随包上传导致服务短暂重启失败；已修正目录、补齐既有 `node_modules`，随后恢复 Web/Worker。该过程未触碰数据库业务数据。
