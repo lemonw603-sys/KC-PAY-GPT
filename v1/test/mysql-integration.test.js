@@ -46,6 +46,7 @@ import { createReconciliationCaseService } from '../src/services/reconciliation-
 import { createOperationsCsvExportService } from '../src/services/operations-csv-export-service.js';
 import { createAlertNotificationRepository } from '../src/db/repositories/alert-notification-repository.js';
 import { createCardStockService, mapStockCard } from '../src/services/card-stock-service.js';
+import { createCardFundingRepository } from '../src/db/repositories/card-funding-repository.js';
 import { createTraceabilityOperationsService } from '../src/services/traceability-operations-service.js';
 import { createSessionReplacementService } from '../src/services/session-replacement-service.js';
 
@@ -590,6 +591,58 @@ test('a card registered by the stock service is provider-scoped, accepted, and a
       `card-stock-low:${legacyCardProviderAccountId}:7`
     ]);
     await removeOrder(pool, fixture);
+    await pool.end();
+  }
+});
+
+test('card funding ledger fences duplicate balance writes and preserves unknown outcome', {
+  skip: !databaseUrl && 'TEST_DATABASE_URL 未配置；完整 MySQL 套件在服务器隔离数据库运行'
+}, async () => {
+  const pool = mysql.createPool({ uri: databaseUrl, connectionLimit: 3, timezone: 'Z' });
+  const cardId = id();
+  const providerCardId = `funding-${id()}`;
+  const repo = createCardFundingRepository(pool);
+  const key = `funding-key-${id()}`;
+  try {
+    await pool.query(
+      `INSERT INTO cards
+       (id, order_id, inventory_status, provider_card_id, card_type_id, last4, status,
+        funded_amount, current_balance, currency, refund_status, card_credentials_ciphertext,
+        provider_account_id, external_card_id, intake_status, sync_tier, last_transaction_synced_at)
+       VALUES (?, NULL, 'AVAILABLE', ?, '7', '4242', 'active', '16.000000', '4.000000',
+        'USD', 'MONITORING', ?, ?, ?, 'ACCEPTED', 'AVAILABLE', CURRENT_TIMESTAMP(3))`,
+      [cardId, providerCardId, encryptSecret(JSON.stringify({ cardNumber: '4242424242424242',
+        expMonth: 12, expYear: 2032, cvv: '123' }), integrationSessionKey),
+        legacyCardProviderAccountId, providerCardId]
+    );
+    const first = await repo.prepare({ cardId, amount: '12', providerAccountId: legacyCardProviderAccountId, idempotencyKey: key,
+      currency: 'USD' });
+    const second = await repo.prepare({ cardId, amount: '12', providerAccountId: legacyCardProviderAccountId, idempotencyKey: key,
+      currency: 'USD' });
+    assert.equal(first.created, true);
+    assert.equal(second.created, false);
+    const begun = await repo.begin({ attemptId: first.attempt.id, provider: 'hnskj',
+      providerAccountId: legacyCardProviderAccountId, requestKey: `provider-${id()}` });
+    await assert.rejects(
+      repo.begin({ attemptId: first.attempt.id, provider: 'hnskj',
+        providerAccountId: legacyCardProviderAccountId, requestKey: `provider-${id()}` }),
+      (error) => error?.code === 'CARD_FUNDING_NOT_SUBMIT_READY'
+    );
+    await repo.finish({ attemptId: first.attempt.id, providerCallId: begun.providerCallId,
+      outcome: 'UNCERTAIN', httpStatus: 504, businessCode: 'TIMEOUT',
+      responseSummary: { outcome: 'unknown' }, status: 'MANUAL_REVIEW', fundsRiskState: 'UNKNOWN' });
+    const [[attempt]] = await pool.query(
+      `SELECT status, funds_risk_state FROM card_funding_attempts WHERE id=?`, [first.attempt.id]
+    );
+    assert.deepEqual(attempt, { status: 'MANUAL_REVIEW', funds_risk_state: 'UNKNOWN' });
+    const [[call]] = await pool.query(
+      `SELECT outcome, card_funding_attempt_id FROM provider_calls WHERE id=?`, [begun.providerCallId]
+    );
+    assert.deepEqual(call, { outcome: 'UNCERTAIN', card_funding_attempt_id: first.attempt.id });
+  } finally {
+    await pool.query('DELETE FROM provider_calls WHERE card_funding_attempt_id IN (SELECT id FROM card_funding_attempts WHERE card_id=?)', [cardId]);
+    await pool.query('DELETE FROM card_funding_attempts WHERE card_id=?', [cardId]);
+    await pool.query('DELETE FROM cards WHERE id=?', [cardId]);
     await pool.end();
   }
 });
