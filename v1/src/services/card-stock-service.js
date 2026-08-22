@@ -3,6 +3,7 @@ import { decryptSecret, encryptSecret } from '../security/secret-box.js';
 import { mapCardCredentials } from '../providers/hnskj-card.js';
 import {
   CARD_STOCK_RISK_CONFIRM_THRESHOLD,
+  CARD_PROVIDER_STATUS_MAX_AGE_MS,
   readProviderSnapshot,
   snapshotIsFresh
 } from './card-provider-snapshot-service.js';
@@ -294,7 +295,7 @@ export function createCardStockService({ pool, sessionEncryptionKey, panHmacKey 
       threshold,
       provider: {
         syncedAt: providerSnapshot?.syncedAt || null,
-        rulesFresh: snapshotIsFresh(providerSnapshot),
+        rulesFresh: snapshotIsFresh(providerSnapshot, { maxAgeMs: CARD_PROVIDER_STATUS_MAX_AGE_MS }),
         purchaseEnabled: Boolean(providerSnapshot?.purchaseEnabled),
         accountBalance: providerSnapshot?.accountBalance || null,
         currency: providerSnapshot?.currency || 'USD',

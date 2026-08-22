@@ -2,6 +2,10 @@ import { PublicApiError } from '../domain/public-api-error.js';
 
 export const CARD_STOCK_RISK_CONFIRM_THRESHOLD = 10;
 export const CARD_PROVIDER_SNAPSHOT_MAX_AGE_MS = 2 * 60 * 1000;
+// The read-only catalog timer runs every five minutes. This wider window is
+// for informational admin display only; all write runners still require the
+// strict two-minute default and refresh immediately before any write.
+export const CARD_PROVIDER_STATUS_MAX_AGE_MS = 6 * 60 * 1000;
 
 function finite(value, name) {
   const number = Number(value);

@@ -308,7 +308,10 @@ async function loadOverview() {
     : '<p class="empty-state">暂无记录</p>';
   elements.overviewCdkRefundStatus.innerHTML = `<p class="mini-list-heading">CDK</p>${distribution(overview.cdkStatuses, { AVAILABLE: '未使用', REDEEMED: '已兑换', REVOKED: '已作废' })}<p class="mini-list-heading">退款观察</p>${distribution(overview.refundStatuses, { MONITORING: '观察中', DETECTED: '疑似退款', CONFIRMED: '已确认退款', WITHDRAWN: '已提取' })}`;
   const health = overview.providerHealth || {};
-  const providerFresh = health.syncedAt && Date.now() - Date.parse(health.syncedAt) <= 120000;
+  // Catalog sync runs every five minutes; the admin health badge allows a
+  // small scheduling/jitter margin. Write paths still enforce strict freshness
+  // and refresh immediately before execution.
+  const providerFresh = health.syncedAt && Date.now() - Date.parse(health.syncedAt) <= 6 * 60 * 1000;
   const providerTone = health.purchaseEnabled === true && providerFresh ? 'status-green' : 'status-orange';
   const providerLabel = !health.syncedAt ? '未同步' : !providerFresh ? '规则已过期' : health.purchaseEnabled === true ? '允许开卡' : health.purchaseEnabled === false ? '禁止开卡' : '未知';
   elements.overviewProviderHealth.innerHTML = `<div><span><strong>HNSKJ 卡台</strong><small>只读同步 ${formatTime(health.syncedAt)}</small></span><em class="status-chip ${providerTone}"><i></i>${providerLabel}</em></div><div><span><strong>卡台余额</strong><small>详见卡片库存页</small></span><em>—</em></div>`;
