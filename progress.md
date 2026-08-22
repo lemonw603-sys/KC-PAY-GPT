@@ -208,4 +208,5 @@
 - 精确提交 `8a3134dcbd8dc227822177ef8b805e5d879025db` 隔离 MySQL 全量测试 `330/330`；共享工作树含 Browser 并行内容时为 `342/342`。
 - 生产发布 `/opt/pojia/releases/20260822-stage3-8a3134d`，Migration 026 首次执行和重放通过；历史明确失败 orphan 已受限补齐，最终资金账一致性计数全部为 0。
 - Web、Worker、Bark、卡片只读同步、live、ready 和只读 readiness 均通过；接单、派发、Provider 账户和进程资金写门禁保持关闭。
+- 部署后独立只读终审确认 P0=0、P1=0；线上 Git tracked 文件与精确提交全部一致，并补存服务器端 `.manifest.sha256` 后自检通过。
 - 本阶段没有开卡、卡充值、直充、退款、余额提取或 Browser 支付；免费目标账号真实成功充值、取消续费最终态和 3–5 单灰度仍未验收。

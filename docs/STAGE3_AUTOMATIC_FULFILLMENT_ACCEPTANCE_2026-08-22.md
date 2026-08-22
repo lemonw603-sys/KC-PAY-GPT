@@ -120,6 +120,7 @@ Migration：`v1/migrations/026_automatic_fulfillment_funds_fence.sql`
 ## 生产安全部署证据
 
 - 精确 release：`/opt/pojia/releases/20260822-stage3-8a3134d`；`/opt/pojia/current` 已原子切换；源码提交为 `8a3134dcbd8dc227822177ef8b805e5d879025db`。
+- release 内持久保存 `.manifest.sha256`；服务器端对 305 个清单文件自行校验通过，独立终审另对 304 个 Git tracked 文件与提交逐项核验，全部一致。
 - 发布前创建加密数据库备份，服务器 SHA-256、解密流和 gzip 完整性验证通过；服务器外副本位于 `/Users/lemon/backups/AI充值业务/production/2026-08-22/`，两端 SHA-256 一致。
 - Migration 026 首次执行和重放均通过；生产历史中唯一符合条件的 40030 明确失败孤立调用已补齐为 `REJECTED/CLEARED` attempt。
 - 迁移后：orphan create call、API attempt 无 create intent、duplicate create intent、活动/未知资金风险、活动充值许可均为 0；generated column 与唯一索引各 1。
@@ -127,6 +128,7 @@ Migration：`v1/migrations/026_automatic_fulfillment_funds_fence.sql`
 - Web、Worker、Bark 均为 active；公网 live/ready 为 200，后台未登录 API 为 401；只读 readiness 为 `ok=true`、无 blocker。
 - 原来因周期 dedupe key 冲突而失败的卡片只读同步已修复；新版连续运行成功，相同时间桶重复调度返回 0 而不抛错。
 - 部署后资金写 operation 数量为 0，未创建补卡任务；本次没有开卡、卡充值、直充、退款、余额提取或 Browser 支付。
+- 部署后独立只读终审结论：P0=0、P1=0。可以表述为“阶段三已安全部署”，但不能表述为“真实成功充值链路已验收”。
 
 ## 生产发布和回滚约束
 
