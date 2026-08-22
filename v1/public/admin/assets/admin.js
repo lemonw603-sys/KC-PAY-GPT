@@ -72,7 +72,7 @@ const state = {
   stockProvider: null, stockCatalog: null, stockCardTypeId: '', acceptingOrders: false,
   cdkClearTimer: null, cdkLoadSequence: 0,
   selectedOrders: new Set(), reconciliationPage: 1, reconciliationTotal: 0,
-  browserPage: 1, browserTotal: 0
+  browserPage: 1, browserTotal: 0, cardFundingPage: 1, cardFundingTotal: 0
 };
 const elements = {
   navItems: [...document.querySelectorAll('.nav-item')],
@@ -136,6 +136,12 @@ const elements = {
   browserRunsPage: document.querySelector('#browser-runs-page'),
   browserRunsPrev: document.querySelector('#browser-runs-prev'),
   browserRunsNext: document.querySelector('#browser-runs-next')
+  ,cardFundingTable: document.querySelector('#card-funding-table')
+  ,cardFundingCount: document.querySelector('#card-funding-count')
+  ,cardFundingPage: document.querySelector('#card-funding-page')
+  ,cardFundingPrev: document.querySelector('#card-funding-prev')
+  ,cardFundingNext: document.querySelector('#card-funding-next')
+  ,cardFundingStatus: document.querySelector('#card-funding-status')
 };
 
 function escapeHtml(value) {
@@ -1257,6 +1263,10 @@ async function switchView(view, { status = '' } = {}) {
     elements.viewKicker.textContent = '运营核对';
     elements.viewTitle.textContent = '对账案例队列';
     await loadReconciliationCases();
+  } else if (view === 'card-funding') {
+    elements.viewKicker.textContent = '资金安全';
+    elements.viewTitle.textContent = '卡余额充值队列';
+    await loadCardFundingAttempts();
   } else if (view === 'browser') {
     elements.viewKicker.textContent = 'Browser 控制面';
     elements.viewTitle.textContent = '运行、租约与人工接管';
@@ -1267,6 +1277,27 @@ async function switchView(view, { status = '' } = {}) {
     elements.statusFilter.value = state.status;
     await loadOrders();
   }
+}
+
+async function loadCardFundingAttempts() {
+  const params = new URLSearchParams({ page: state.cardFundingPage, pageSize: 20 });
+  if (elements.cardFundingStatus.value) params.set('status', elements.cardFundingStatus.value);
+  const payload = await api(`/api/v1/admin/card-funding-attempts?${params}`);
+  state.cardFundingTotal = payload.total;
+  elements.cardFundingTable.innerHTML = payload.attempts.length ? payload.attempts.map((item) => `<tr>
+    <td><small>${escapeHtml(item.id)}</small><br>${escapeHtml(item.fundsRiskState)}</td>
+    <td>${escapeHtml(item.last4 || item.providerCardId || '—')}</td>
+    <td>${escapeHtml(item.amount)} ${escapeHtml(item.currency)}</td>
+    <td>${escapeHtml(item.status)}</td>
+    <td>${escapeHtml(item.providerCallOutcome || '—')}${item.providerBusinessCode ? `<small>${escapeHtml(item.providerBusinessCode)}</small>` : ''}</td>
+    <td>${escapeHtml(item.publicNo || '—')}</td>
+    <td>${formatTime(item.updatedAt || item.createdAt)}</td>
+  </tr>`).join('') : '<tr><td colspan="7" class="empty-state">暂无记录</td></tr>';
+  const pages = Math.max(1, Math.ceil(payload.total / 20));
+  elements.cardFundingCount.textContent = `${payload.total} 条记录`;
+  elements.cardFundingPage.textContent = `第 ${state.cardFundingPage} / ${pages} 页`;
+  elements.cardFundingPrev.disabled = state.cardFundingPage <= 1;
+  elements.cardFundingNext.disabled = state.cardFundingPage >= pages;
 }
 
 for (const [status, [label]] of Object.entries(STATUS_META)) {
@@ -1381,6 +1412,7 @@ document.querySelector('#refresh-button').addEventListener('click', async (event
     : state.view === 'stock' ? loadStock()
       : state.view === 'cdks' ? loadCdkBatches()
         : state.view === 'reconciliation' ? loadReconciliationCases()
+          : state.view === 'card-funding' ? loadCardFundingAttempts()
           : state.view === 'browser' ? loadBrowserRuns() : loadOrders());
     showNotice('刷新完成。', 'success');
   } catch {
@@ -1390,6 +1422,15 @@ document.querySelector('#refresh-button').addEventListener('click', async (event
     button.classList.remove('is-loading');
     button.textContent = '刷新';
   }
+});
+document.querySelector('#card-funding-filters')?.addEventListener('submit', (event) => {
+  event.preventDefault(); state.cardFundingPage = 1; loadCardFundingAttempts().catch(() => showNotice('卡余额充值队列读取失败。'));
+});
+elements.cardFundingPrev?.addEventListener('click', () => {
+  if (state.cardFundingPage > 1) { state.cardFundingPage -= 1; loadCardFundingAttempts(); }
+});
+elements.cardFundingNext?.addEventListener('click', () => {
+  if (state.cardFundingPage * 20 < state.cardFundingTotal) { state.cardFundingPage += 1; loadCardFundingAttempts(); }
 });
 document.querySelector('#refresh-stock')?.addEventListener('click', () => loadStock().catch(() => showNotice('库存读取失败。')));
 document.querySelector('#sync-all-cards')?.addEventListener('click', (event) => requestCardSync(null, event.currentTarget));
