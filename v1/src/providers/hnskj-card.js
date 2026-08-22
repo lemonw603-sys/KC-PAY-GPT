@@ -179,6 +179,22 @@ export function mapPurchasedCard(envelope) {
   return String(providerCardId);
 }
 
+export function mapCardRechargeResult(envelope) {
+  const data = envelope?.data && typeof envelope.data === 'object' ? envelope.data : {};
+  const rawStatus = valueAt(data, [['status'], ['rechargeStatus'], ['recharge_status'], ['transactionStatus']]);
+  const status = String(rawStatus || '').trim().toLowerCase();
+  const reference = valueAt(data, [['id'], ['rechargeId'], ['recharge_id'], ['transactionId'], ['transaction_id']]);
+  if (['success', 'succeeded', 'completed', 'complete', 'settled'].includes(status)) {
+    return { state: 'SETTLED', externalReference: reference ? String(reference) : null };
+  }
+  if (['pending', 'processing', 'submitted', 'created'].includes(status)) {
+    return { state: 'PENDING', externalReference: reference ? String(reference) : null };
+  }
+  throw new ProviderSchemaError('Invalid Hnskj card recharge result', {
+    provider: 'hnskj', uncertain: true
+  });
+}
+
 export function mapCardCredentials(envelope) {
   const data = cardData(envelope);
   const cardNumber = String(data.cardNumber ?? data.card_number ?? data.number ?? data.pan ?? '').trim();

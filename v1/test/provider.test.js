@@ -7,7 +7,8 @@ import {
   HnskjCardProvider,
   mapCardCredentials,
   mapCardProvisioning,
-  mapPurchasedCard
+  mapPurchasedCard,
+  mapCardRechargeResult
 } from '../src/providers/hnskj-card.js';
 import { assertProviderWritesDisabled, runReadOnlyChecks } from '../scripts/provider-read-check.js';
 import { ProviderError, ProviderSchemaError } from '../src/providers/http-client.js';
@@ -552,4 +553,15 @@ test('Native 422 validation response is a definite pre-create rejection', async 
       && error.uncertain === false
       && error.retryable === false
   );
+});
+
+test('maps Hnskj card recharge outcomes without guessing unknown states', () => {
+  assert.deepEqual(mapCardRechargeResult({ success: true, data: { status: 'pending', id: 'r-1' } }), {
+    state: 'PENDING', externalReference: 'r-1'
+  });
+  assert.deepEqual(mapCardRechargeResult({ success: true, data: { status: 'success', id: 'r-2' } }), {
+    state: 'SETTLED', externalReference: 'r-2'
+  });
+  assert.throws(() => mapCardRechargeResult({ success: true, data: { status: 'mystery' } }),
+    (error) => error instanceof ProviderSchemaError && error.uncertain === true);
 });
