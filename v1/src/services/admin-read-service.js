@@ -410,18 +410,17 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
         WHERE setting_key = 'card_stock_low_threshold' LIMIT 1`)
       ,pool.query(`SELECT
           (SELECT COUNT(*) FROM card_discoveries d
-            WHERE d.intake_status IN ('QUARANTINED','VALIDATED','REVIEW_REQUIRED')
-              AND NOT EXISTS (
-                SELECT 1 FROM cards c
-                WHERE c.provider_account_id = d.provider_account_id
-                  AND BINARY c.external_card_id = BINARY d.external_card_id
-              )
-              AND d.id = (
-                SELECT latest.id FROM card_discoveries latest
-                WHERE latest.provider_account_id = d.provider_account_id
-                  AND BINARY latest.external_card_id = BINARY d.external_card_id
-                ORDER BY latest.first_seen_at DESC, latest.id DESC LIMIT 1
-              )) AS card_intake_pending,
+            LEFT JOIN card_discoveries newer
+              ON newer.provider_account_id = d.provider_account_id
+             AND BINARY newer.external_card_id = BINARY d.external_card_id
+             AND (newer.first_seen_at > d.first_seen_at
+               OR (newer.first_seen_at = d.first_seen_at AND newer.id > d.id))
+            LEFT JOIN cards c
+              ON c.provider_account_id = d.provider_account_id
+             AND BINARY c.external_card_id = BINARY d.external_card_id
+            WHERE newer.id IS NULL
+              AND c.id IS NULL
+              AND d.intake_status IN ('QUARANTINED','VALIDATED','REVIEW_REQUIRED')) AS card_intake_pending,
           (SELECT COUNT(*) FROM recharge_attempts
             WHERE funds_risk_state IN ('ACTIVE','UNKNOWN')) AS funds_risk_pending,
           (SELECT COUNT(*) FROM card_funding_attempts
