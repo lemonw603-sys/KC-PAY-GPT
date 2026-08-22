@@ -34,3 +34,16 @@ test('rejects invalid card funding list filters', async () => {
   const service = createCardFundingAdminService({ pool: { query: async () => { throw new Error('must not query'); } } });
   await assert.rejects(() => service.list({ status: 'SETTLED_OR_UNKNOWN' }), { code: 'INVALID_ADMIN_QUERY' });
 });
+
+test('filters UNKNOWN by funds risk state rather than attempt status', async () => {
+  const queries = [];
+  const service = createCardFundingAdminService({ pool: {
+    async query(sql, params) {
+      queries.push({ sql, params });
+      return /COUNT\(\*\)/.test(sql) ? [[{ total: 0 }]] : [[]];
+    }
+  } });
+  await service.list({ status: 'UNKNOWN' });
+  assert.match(queries[0].sql, /funds_risk_state = 'UNKNOWN'/);
+  assert.deepEqual(queries[0].params, []);
+});

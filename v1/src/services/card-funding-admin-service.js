@@ -1,7 +1,7 @@
 import { PublicApiError } from '../domain/public-api-error.js';
 import { redactSensitiveFields } from '../security/redaction.js';
 
-const STATUSES = new Set(['PREPARED', 'SUBMITTING', 'PENDING', 'SETTLED', 'FAILED', 'MANUAL_REVIEW']);
+const STATUSES = new Set(['PREPARED', 'SUBMITTING', 'PENDING', 'SETTLED', 'FAILED', 'MANUAL_REVIEW', 'UNKNOWN']);
 
 function parseQuery(input = {}) {
   const page = Number(input.page || 1);
@@ -30,8 +30,10 @@ function parseSummary(value) {
 export function createCardFundingAdminService({ pool }) {
   async function list(input = {}) {
     const { page, pageSize, status } = parseQuery(input);
-    const where = status ? 'WHERE fa.status = ?' : '';
-    const params = status ? [status] : [];
+    const where = status
+      ? (status === 'UNKNOWN' ? "WHERE fa.funds_risk_state = 'UNKNOWN'" : 'WHERE fa.status = ?')
+      : '';
+    const params = status && status !== 'UNKNOWN' ? [status] : [];
     const [[countRow], [rows]] = await Promise.all([
       pool.query(`SELECT COUNT(*) AS total FROM card_funding_attempts fa ${where}`, params),
       pool.query(`SELECT fa.id, fa.card_id, fa.order_id, fa.amount, fa.currency,
