@@ -91,8 +91,9 @@
 | D-085 | 隔离 MySQL Browser 目标测试先行通过后再推进压力：dispatch、payment mapping、artifact vault/lease recovery 共 9 项通过；全量数据库测试出现 1 个既有补卡日限额异常，不能归因 Browser 或宣称全量全绿 | 已验证 | `docs/2026-08-22_browser-mysql-concurrency-stage-report.md`；下一项仍是多连接 claim/lease 压力和 bounded soak |
 | D-086 | 隔离 MySQL 单 job claim race 通过：8 个独立连接同时 claim 同一 Browser dispatch job，只允许 1 个 worker 成功，重复 claim 为 0；该结果不替代多 job/续租/接管/soak | 已验证 | `docs/2026-08-22_browser-mysql-claim-race-report.md`；使用真实 `FOR UPDATE SKIP LOCKED` 路径，测试数据已清理 |
 | D-087 | 隔离 MySQL 多 job/lease 验证通过：24 job、8 worker、24 unique claims、0 duplicate；合法 heartbeat 延长租约，过期后新 worker 成功接管 | 已验证（bounded） | `docs/2026-08-22_browser-mysql-multijob-lease-report.md`；不替代连续 24 小时 soak、数据库重启和长时间连接压力 |
+| D-088 | Browser MySQL bounded soak 通过：20 轮持续到达、400 job、8 worker、400 claims、0 missing、0 duplicate、80 heartbeat；仍不替代独立进程/数据库重启和连续 24h soak | 已验证（bounded） | `docs/2026-08-22_browser-mysql-bounded-soak-report.md`；测试数据已清理，付款保持关闭 |
 | D-069 | API 充值路径不增加独立账号预检；由充值 API 的权威响应判断资格。明确的 40030/账号不可充值属于充值前拒绝：保留审计、清除本地资金风险、订单回到 Session 可恢复状态，不删除账本、不重试、不换卡；只有外部结果未知时才进入 UNKNOWN 并禁止回退重付。 | 已确认 | 用户明确说明 API 本身就是充值动作，执行时发现账号问题即可回退；独立预检可能增加风控和重复访问风险 |
-| D-088 | Plus 卡台路线在运营后台提供人工切换入口。切换只影响新订单，既有订单继续使用创建时冻结的路线；切换前要求目标路线只读检查开启、熔断关闭且不在重试窗口，并记录确认词、操作者和原因。暂不做自动故障切换。 | 已实现（后台 API + UI） | 036 迁移、后台服务/API、后台“卡台路线”视图和敏感操作确认已落盘；生产未迁移、未部署、未切换 |
+| D-089 | Plus 卡台路线在运营后台提供人工切换入口。切换只影响新订单，既有订单继续使用创建时冻结的路线；切换前要求目标路线只读检查开启、熔断关闭且不在重试窗口，并记录确认词、操作者和原因。暂不做自动故障切换。 | 已实现（后台 API + UI） | 036 迁移、后台服务/API、后台“卡台路线”视图和敏感操作确认已落盘；生产未迁移、未部署、未切换 |
 
 ## 变更流程
 
