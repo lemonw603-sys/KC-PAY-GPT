@@ -5,6 +5,7 @@ import { HnskjCardProvider } from '../src/providers/index.js';
 import { createCardFundingRepository } from '../src/db/repositories/card-funding-repository.js';
 import { createCardFundingScheduler } from '../src/services/card-funding-scheduler.js';
 import { executeCardFundingAttempt } from '../src/services/card-funding-executor.js';
+import { resolveCurrentCardProviderAccountId } from '../src/services/provider-route-service.js';
 
 if (isEnvTrue(process.env.PROVIDER_WRITES_ENABLED) || !isEnvTrue(process.env.PROVIDER_CARD_WRITES_ENABLED)) {
   throw new Error('Card funding runner requires only PROVIDER_CARD_WRITES_ENABLED=true');
@@ -12,7 +13,8 @@ if (isEnvTrue(process.env.PROVIDER_WRITES_ENABLED) || !isEnvTrue(process.env.PRO
 
 const config = loadConfig();
 const pool = createDatabasePool(config.database);
-const providerAccountId = '00000000-0000-4000-8000-000000000101';
+const providerAccountId = await resolveCurrentCardProviderAccountId(pool);
+if (!providerAccountId) throw new Error('No active production card provider route');
 const provider = new HnskjCardProvider({ baseUrl: config.hnskjApiBaseUrl, apiKey: config.hnskjApiKey });
 const repository = createCardFundingRepository(pool);
 const scheduler = createCardFundingScheduler({ pool, fundingRepository: repository });

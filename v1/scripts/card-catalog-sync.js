@@ -6,6 +6,7 @@ import { createCardIntakeService } from '../src/services/card-intake-service.js'
 import { createCardIntakeRepository } from '../src/db/repositories/card-intake-repository.js';
 import { refreshProviderSnapshot } from '../src/services/card-provider-snapshot-service.js';
 import { createProviderBalanceSnapshotService } from '../src/services/provider-balance-snapshot-service.js';
+import { resolveCurrentCardProviderAccountId } from '../src/services/provider-route-service.js';
 
 if (isEnvTrue(process.env.PROVIDER_WRITES_ENABLED) || isEnvTrue(process.env.PROVIDER_CARD_WRITES_ENABLED)) {
   throw new Error('Card catalog sync refuses to run with provider writes enabled');
@@ -13,6 +14,8 @@ if (isEnvTrue(process.env.PROVIDER_WRITES_ENABLED) || isEnvTrue(process.env.PROV
 
 const config = loadConfig();
 const pool = createDatabasePool(config.database);
+const providerAccountId = await resolveCurrentCardProviderAccountId(pool);
+if (!providerAccountId) throw new Error('No active production card provider route');
 const provider = new HnskjCardProvider({
   baseUrl: process.env.HNSKJ_API_BASE_URL || 'https://card.hnskj.vip/api/open/v1',
   apiKey: String(process.env.HNSKJ_API_KEY || '')
@@ -25,7 +28,7 @@ const [[settings]] = await pool.query(
 const intake = createCardIntakeService({
   provider,
   repository: createCardIntakeRepository({ pool }),
-  providerAccountId: '00000000-0000-4000-8000-000000000101',
+  providerAccountId,
   sessionEncryptionKey: config.sessionEncryptionKey,
   assumeDedicatedAccount: true,
   validationRules: {

@@ -12,6 +12,7 @@ import {
   failCardSyncJob,
   scheduleDueCardSyncJobs
 } from '../src/services/card-sync-job-service.js';
+import { resolveCurrentCardProviderAccountId } from '../src/services/provider-route-service.js';
 
 if (isEnvTrue(process.env.PROVIDER_WRITES_ENABLED)
   || isEnvTrue(process.env.PROVIDER_CARD_WRITES_ENABLED)
@@ -21,13 +22,15 @@ if (isEnvTrue(process.env.PROVIDER_WRITES_ENABLED)
 
 const config = loadConfig();
 const pool = createDatabasePool(config.database);
+const currentCardProviderAccountId = await resolveCurrentCardProviderAccountId(pool);
+if (!currentCardProviderAccountId) throw new Error('No active production card provider route');
 const workerId = `card-read-sync-${os.hostname()}-${process.pid}`;
 const provider = new HnskjCardProvider({
   baseUrl: process.env.HNSKJ_API_BASE_URL || 'https://card.hnskj.vip/api/open/v1',
   apiKey: String(process.env.HNSKJ_API_KEY || '')
 });
 const stock = createCardStockService({ pool, sessionEncryptionKey: config.sessionEncryptionKey,
-  panHmacKey: config.cardIntakePanHmacKey });
+  panHmacKey: config.cardIntakePanHmacKey, providerAccountId: currentCardProviderAccountId });
 
 try {
   const scheduled = await scheduleDueCardSyncJobs(pool);

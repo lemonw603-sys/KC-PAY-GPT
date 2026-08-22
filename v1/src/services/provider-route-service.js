@@ -25,3 +25,12 @@ export async function resolveCurrentCardProviderAccount(connection) {
   );
   return rows[0]?.id ? String(rows[0].id) : null;
 }
+
+export async function resolveCurrentCardProviderAccountId(pool) {
+  const connection = await pool.getConnection();
+  try {
+    return await resolveCurrentCardProviderAccount(connection);
+  } finally {
+    connection.release();
+  }
+}

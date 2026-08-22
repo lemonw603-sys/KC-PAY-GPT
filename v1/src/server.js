@@ -39,9 +39,12 @@ import { createOperationsCsvExportService } from './services/operations-csv-expo
 import { createTraceabilityOperationsService } from './services/traceability-operations-service.js';
 import { createSessionReplacementService } from './services/session-replacement-service.js';
 import { createBrowserAdminService } from './services/browser-admin-service.js';
+import { resolveCurrentCardProviderAccountId } from './services/provider-route-service.js';
 
 const config = loadConfig();
 const pool = createDatabasePool(config.database);
+const currentCardProviderAccountId = await resolveCurrentCardProviderAccountId(pool);
+if (!currentCardProviderAccountId) throw new Error('No active production card provider route');
 const createCustomerOrder = createOrderIntakeService({
   pool,
   sessionEncryptionKey: config.sessionEncryptionKey,
@@ -63,7 +66,8 @@ const adminReadService = createAdminReadService({
 const cardStockService = createCardStockService({
   pool,
   sessionEncryptionKey: config.sessionEncryptionKey,
-  panHmacKey: config.cardIntakePanHmacKey
+  panHmacKey: config.cardIntakePanHmacKey,
+  providerAccountId: currentCardProviderAccountId
 });
 const cardStockJobService = createCardStockJobService({ pool });
 const replenishmentSettingsService = createCardReplenishmentSettingsService({ pool });
@@ -84,7 +88,7 @@ async function configuredCardIntake() {
   return createCardIntakeService({
     provider: cardIntakeProvider,
     repository: cardIntakeRepository,
-    providerAccountId: '00000000-0000-4000-8000-000000000101',
+    providerAccountId: currentCardProviderAccountId,
     sessionEncryptionKey: config.sessionEncryptionKey,
     panHmacKey: config.cardIntakePanHmacKey,
     assumeDedicatedAccount: true,

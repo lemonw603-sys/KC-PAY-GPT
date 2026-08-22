@@ -4,10 +4,12 @@ import { createDatabasePool } from '../src/db/pool.js';
 import { HnskjCardProvider, mapCardProvisioning } from '../src/providers/index.js';
 import { createCardFundingRepository } from '../src/db/repositories/card-funding-repository.js';
 import { commitCardTransactionsForCard } from '../src/db/repositories/card-transaction-repository.js';
+import { resolveCurrentCardProviderAccountId } from '../src/services/provider-route-service.js';
 
 const config = loadConfig();
 const pool = createDatabasePool(config.database);
-const providerAccountId = '00000000-0000-4000-8000-000000000101';
+const providerAccountId = await resolveCurrentCardProviderAccountId(pool);
+if (!providerAccountId) throw new Error('No active production card provider route');
 const provider = new HnskjCardProvider({ baseUrl: config.hnskjApiBaseUrl, apiKey: config.hnskjApiKey });
 const repository = createCardFundingRepository(pool);
 
