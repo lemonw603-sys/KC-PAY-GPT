@@ -24,6 +24,7 @@
         <button class="nav-item" type="button" data-view="exceptions"><span aria-hidden="true">!</span>异常队列</button>
         <button class="nav-item" type="button" data-view="reconciliation"><span aria-hidden="true">✓</span>资金证据核对</button>
         <button class="nav-item" type="button" data-view="card-funding"><span aria-hidden="true">$</span>卡余额充值</button>
+        <button class="nav-item" type="button" data-view="provider-routes"><span aria-hidden="true">⇄</span>卡台路线</button>
         <button class="nav-item" type="button" data-view="browser"><span aria-hidden="true">◎</span>Browser 执行</button>
         <button class="nav-item" type="button" data-view="stock"><span aria-hidden="true">▣</span>卡片库存</button>
         <button class="nav-item" type="button" data-view="cdks"><span aria-hidden="true">#</span>CDK 管理</button>
@@ -122,6 +123,14 @@
           </form>
           <div class="table-wrap"><table><thead><tr><th>尝试</th><th>卡片</th><th>金额</th><th>状态</th><th>Provider 结果</th><th>订单</th><th>时间</th></tr></thead><tbody id="card-funding-table"></tbody></table></div>
           <div class="pagination"><span id="card-funding-count">0 条记录</span><div><button id="card-funding-prev" type="button">上一页</button><span id="card-funding-page">第 1 页</span><button id="card-funding-next" type="button">下一页</button></div></div>
+        </section>
+      </section>
+
+      <section id="provider-routes-view" class="view" hidden>
+        <section class="card orders-card">
+          <div class="card-heading"><div><p class="section-kicker">容灾与切换</p><h2>Plus 卡台路线</h2></div><span class="write-badge">人工切换</span></div>
+          <p class="card-description">路线只影响新订单；已有订单继续使用创建时冻结的路线。切换前必须确认目标卡台的只读检查、熔断状态和重试窗口均正常。这里不展示密钥，也不会自动切换或执行开卡、充值。</p>
+          <div class="table-wrap"><table><thead><tr><th>路线</th><th>新订单</th><th>卡台账户</th><th>只读 / 写入</th><th>健康状态</th><th>操作</th></tr></thead><tbody id="provider-routes-table"></tbody></table></div>
         </section>
       </section>
 

@@ -108,6 +108,17 @@ test('admin Browser view exposes operational metadata but no authority recovery 
   assert.doesNotMatch(script, /\.secretRef|\.navigationUrl|\.leaseToken|\.resourceKeyHmac/);
 });
 
+test('admin exposes audited manual provider-route switching without secret fields', () => {
+  const html = fs.readFileSync(path.join(directory, 'admin', 'index.html'), 'utf8');
+  const script = fs.readFileSync(path.join(directory, 'admin', 'assets', 'admin.js'), 'utf8');
+  assert.match(html, /卡台路线/);
+  assert.match(html, /人工切换/);
+  assert.match(script, /\/api\/v1\/admin\/provider-routes/);
+  assert.match(script, /切换卡台/);
+  assert.match(script, /只影响新订单/);
+  assert.doesNotMatch(`${html}\n${script}`, /secretRef|navigationUrl|leaseToken|resourceKeyHmac|card_credentials_ciphertext|recharge_card_key/i);
+});
+
 test('admin describes automatic fulfillment and keeps permits explicitly gray-only', () => {
   const html = fs.readFileSync(path.join(directory, 'admin', 'index.html'), 'utf8');
   const script = fs.readFileSync(path.join(directory, 'admin', 'assets', 'admin.js'), 'utf8');

@@ -135,7 +135,8 @@ const elements = {
   browserRunsCount: document.querySelector('#browser-runs-count'),
   browserRunsPage: document.querySelector('#browser-runs-page'),
   browserRunsPrev: document.querySelector('#browser-runs-prev'),
-  browserRunsNext: document.querySelector('#browser-runs-next')
+  browserRunsNext: document.querySelector('#browser-runs-next'),
+  providerRoutesTable: document.querySelector('#provider-routes-table')
   ,cardFundingTable: document.querySelector('#card-funding-table')
   ,cardFundingCount: document.querySelector('#card-funding-count')
   ,cardFundingPage: document.querySelector('#card-funding-page')
@@ -1267,6 +1268,10 @@ async function switchView(view, { status = '' } = {}) {
     elements.viewKicker.textContent = '资金安全';
     elements.viewTitle.textContent = '卡余额充值队列';
     await loadCardFundingAttempts();
+  } else if (view === 'provider-routes') {
+    elements.viewKicker.textContent = '容灾与切换';
+    elements.viewTitle.textContent = 'Plus 卡台路线';
+    await loadProviderRoutes();
   } else if (view === 'browser') {
     elements.viewKicker.textContent = 'Browser 控制面';
     elements.viewTitle.textContent = '运行、租约与人工接管';
@@ -1277,6 +1282,33 @@ async function switchView(view, { status = '' } = {}) {
     elements.statusFilter.value = state.status;
     await loadOrders();
   }
+}
+
+function routeHealth(route) {
+  const retrying = route.retryAfterUntil && Date.parse(route.retryAfterUntil) > Date.now();
+  if (!route.readEnabled) return ['只读检查关闭', 'status-red'];
+  if (route.circuitState !== 'CLOSED') return [`熔断 ${route.circuitState || '未知'}`, 'status-red'];
+  if (retrying) return [`重试窗口至 ${formatTime(route.retryAfterUntil)}`, 'status-orange'];
+  return ['只读检查正常', 'status-green'];
+}
+
+async function loadProviderRoutes() {
+  const payload = await api('/api/v1/admin/provider-routes');
+  const routes = Array.isArray(payload.routes) ? payload.routes : [];
+  elements.providerRoutesTable.innerHTML = routes.length ? routes.map((route) => {
+    const [health, tone] = routeHealth(route);
+    const active = route.acceptsNewOrders && !route.retiredAt;
+    const canSwitch = !active && route.readEnabled && route.circuitState === 'CLOSED'
+      && !(route.retryAfterUntil && Date.parse(route.retryAfterUntil) > Date.now());
+    return `<tr>
+      <td><strong class="cell-main">${escapeHtml(route.routeCode || '—')}</strong><small>版本 ${escapeHtml(route.routeVersion)}</small></td>
+      <td>${active ? '<span class="status-chip status-green"><i></i>当前接单</span>' : '<span class="status-chip status-gray"><i></i>备用</span>'}</td>
+      <td><span class="cell-main">${escapeHtml(route.accountCode || '未绑定')}</span><small>账户 ID ${escapeHtml(route.cardProviderAccountId || '—')}</small></td>
+      <td>${route.readEnabled ? '开启' : '关闭'} / ${route.writeEnabled ? '开启' : '关闭'}</td>
+      <td><span class="status-chip ${tone}"><i></i>${escapeHtml(health)}</span></td>
+      <td>${active ? '<small>新订单使用中</small>' : `<button class="primary-small route-switch-button" type="button" data-route-id="${escapeHtml(route.id)}" data-route-label="${escapeHtml(route.routeCode)}:${escapeHtml(route.routeVersion)}" ${canSwitch ? '' : 'disabled'}>切换为当前</button>`}</td>
+    </tr>`;
+  }).join('') : '<tr><td colspan="6" class="empty-state">暂无 Plus 卡台路线配置</td></tr>';
 }
 
 async function loadCardFundingAttempts() {
@@ -1399,6 +1431,35 @@ elements.browserRunsTable?.addEventListener('keydown', (event) => {
     openBrowserRun(row.dataset.browserRun);
   }
 });
+elements.providerRoutesTable?.addEventListener('click', async (event) => {
+  const button = event.target.closest('.route-switch-button');
+  if (!button || button.disabled) return;
+  const label = button.dataset.routeLabel;
+  const confirmation = window.prompt(`请输入确认词：切换卡台 ${label}`)?.trim();
+  if (!confirmation) return;
+  const note = window.prompt('请输入切换原因（至少 10 个字符）：')?.trim();
+  if (!note) return;
+  button.disabled = true;
+  try {
+    await sensitiveApi(`/api/v1/admin/provider-routes/${encodeURIComponent(button.dataset.routeId)}/switch`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ confirmation, note })
+    });
+    showNotice('卡台路线已切换；只影响新订单。', 'success');
+    await loadProviderRoutes();
+  } catch (error) {
+    const messages = {
+      route_switch_confirmation_required: '确认词不匹配，没有切换。',
+      route_switch_note_required: '切换原因至少需要 10 个字符。',
+      route_not_healthy: '目标卡台健康检查未通过，没有切换。',
+      admin_step_up_cancelled: '已取消操作，没有切换。'
+    };
+    showNotice(messages[error.message] || '卡台路线切换失败，没有确认任何变更。');
+    await loadProviderRoutes().catch(() => {});
+  } finally {
+    button.disabled = false;
+  }
+});
 document.querySelector('#refresh-button').addEventListener('click', async (event) => {
   const button = event.currentTarget;
   if (button.disabled) return;
@@ -1413,6 +1474,7 @@ document.querySelector('#refresh-button').addEventListener('click', async (event
       : state.view === 'cdks' ? loadCdkBatches()
         : state.view === 'reconciliation' ? loadReconciliationCases()
           : state.view === 'card-funding' ? loadCardFundingAttempts()
+          : state.view === 'provider-routes' ? loadProviderRoutes()
           : state.view === 'browser' ? loadBrowserRuns() : loadOrders());
     showNotice('刷新完成。', 'success');
   } catch {

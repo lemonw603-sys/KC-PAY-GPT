@@ -85,7 +85,14 @@
 | D-079 | `secure-inbox` 的用户界面收敛为单入口拖拽：文件拖到 `tools/secure-inbox-drop.command`，自动加密并只显示编号；`list/materialize/purge` 仅保留内部调试，不作为日常操作 | 已实现（入口） | 用户明确要求最简单、最便捷；拖拽入口已落盘并通过 Node/脚本语法检查 |
 | D-080 | 用户入口进一步收敛为桌面弹窗直接粘贴：双击 `~/Desktop/安全收件箱.command`，粘贴内容并点击保存，工具加密后只弹出编号；拖拽仍作为文件输入的备用方式 | 已实现（入口） | 用户明确要求不经过文件拖拽，直接复制粘贴；AppleScript/Zsh/Node 语法检查通过 |
 | D-081 | 正式用户入口升级为 macOS 菜单栏原生 App：点击顶部 `🔐` 图标打开多行 NSTextView，原样传递粘贴内容到本地加密核心；桌面 `.command` 保留为备用入口 | 已实现（MVP） | `tools/SecureInboxMenuBar.swift` 可编译，`~/Desktop/安全收件箱.app` 已构建并打开；未改变加密存储和 Browser 解耦边界 |
+| D-082 | 通过同一 Session 的只读 A/B 实测确定 Cookie 家族：采用 `__Secure-next-auth.session-token`，拒绝 `__Secure-authjs.session-token`。next-auth 独立 `/api/auth/session` 返回用户与 accessToken；authjs 仅返回 `WARNING_BANNER` | 已验证 | 2026-08-22 临时 Chromium Context、无卡、无 Checkout、无付款；两种 Cookie 的服务器响应出现明确差异，页面 403/挑战页另行记录，不覆盖 Cookie 家族结论 |
+| D-083 | NON_PH_FUNCTIONAL 观察只通过“服务器身份确认”窄目标；页面 403/挑战页使页面登录和 Checkout 观察保持阻塞，禁止将其解释为账号封控、PH 风控、付款成功或容量证据 | 已验证 | 对抗审查见 `docs/2026-08-22_nonph-observation-adversarial-review.md`；下一网络/PH cohort 必须新建 manifest，不覆盖当前结果 |
+| D-084 | Browser Worker 并发先采用离线 Harness 验证控制壳：8 个异步 Worker 交错领取 240 个合成 dispatch job，重复执行必须为 0；该结果不替代 MySQL 多连接、独立进程、长租约或连续 24 小时 soak | 已验证（离线 Harness） | `docs/2026-08-22_browser-worker-concurrency-harness-report.md`；v1 全量 363 pass/34 skipped/0 fail，下一项补真实并发连接和 bounded soak |
+| D-085 | 隔离 MySQL Browser 目标测试先行通过后再推进压力：dispatch、payment mapping、artifact vault/lease recovery 共 9 项通过；全量数据库测试出现 1 个既有补卡日限额异常，不能归因 Browser 或宣称全量全绿 | 已验证 | `docs/2026-08-22_browser-mysql-concurrency-stage-report.md`；下一项仍是多连接 claim/lease 压力和 bounded soak |
+| D-086 | 隔离 MySQL 单 job claim race 通过：8 个独立连接同时 claim 同一 Browser dispatch job，只允许 1 个 worker 成功，重复 claim 为 0；该结果不替代多 job/续租/接管/soak | 已验证 | `docs/2026-08-22_browser-mysql-claim-race-report.md`；使用真实 `FOR UPDATE SKIP LOCKED` 路径，测试数据已清理 |
+| D-087 | 隔离 MySQL 多 job/lease 验证通过：24 job、8 worker、24 unique claims、0 duplicate；合法 heartbeat 延长租约，过期后新 worker 成功接管 | 已验证（bounded） | `docs/2026-08-22_browser-mysql-multijob-lease-report.md`；不替代连续 24 小时 soak、数据库重启和长时间连接压力 |
 | D-069 | API 充值路径不增加独立账号预检；由充值 API 的权威响应判断资格。明确的 40030/账号不可充值属于充值前拒绝：保留审计、清除本地资金风险、订单回到 Session 可恢复状态，不删除账本、不重试、不换卡；只有外部结果未知时才进入 UNKNOWN 并禁止回退重付。 | 已确认 | 用户明确说明 API 本身就是充值动作，执行时发现账号问题即可回退；独立预检可能增加风控和重复访问风险 |
+| D-088 | Plus 卡台路线在运营后台提供人工切换入口。切换只影响新订单，既有订单继续使用创建时冻结的路线；切换前要求目标路线只读检查开启、熔断关闭且不在重试窗口，并记录确认词、操作者和原因。暂不做自动故障切换。 | 已实现（后台 API + UI） | 036 迁移、后台服务/API、后台“卡台路线”视图和敏感操作确认已落盘；生产未迁移、未部署、未切换 |
 
 ## 变更流程
 
