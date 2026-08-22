@@ -48,6 +48,7 @@ import { createAlertNotificationRepository } from '../src/db/repositories/alert-
 import { createCardStockService, mapStockCard } from '../src/services/card-stock-service.js';
 import { createCardFundingRepository } from '../src/db/repositories/card-funding-repository.js';
 import { createCardReplenishmentSettingsService } from '../src/services/card-replenishment-settings-service.js';
+import { createCardFundingScheduler } from '../src/services/card-funding-scheduler.js';
 import { createTraceabilityOperationsService } from '../src/services/traceability-operations-service.js';
 import { createSessionReplacementService } from '../src/services/session-replacement-service.js';
 
@@ -715,6 +716,61 @@ test('card stock jobs require confirmation and move durably through the runner s
     assert.equal(completed.estimatedTotal, '60.775000');
   } finally {
     if (job) await pool.query('DELETE FROM card_stock_jobs WHERE id = ?', [job.id]);
+    await pool.end();
+  }
+});
+
+test('card funding scheduler creates one prepared attempt for a fresh low-balance card', {
+  skip: !databaseUrl && 'TEST_DATABASE_URL 未配置；完整 MySQL 套件在服务器隔离数据库运行'
+}, async () => {
+  const pool = mysql.createPool({ uri: databaseUrl, connectionLimit: 3, timezone: 'Z' });
+  const scheduler = createCardFundingScheduler({ pool });
+  const cardId = id();
+  const providerCardId = `low-${id()}`;
+  const [[originalSetting]] = await pool.query(
+    `SELECT setting_value FROM app_settings WHERE setting_key='card_balance_recharge_enabled'`
+  );
+  const [[originalMinimum]] = await pool.query(
+    `SELECT setting_value FROM app_settings WHERE setting_key='default_minimum_required_card_balance'`
+  );
+  try {
+    await pool.query(
+      `INSERT INTO app_settings (setting_key, setting_value) VALUES ('card_balance_recharge_enabled','true')
+       ON DUPLICATE KEY UPDATE setting_value='true'`
+    );
+    await pool.query(
+      `UPDATE app_settings SET setting_value='16' WHERE setting_key='default_minimum_required_card_balance'`
+    );
+    await pool.query(
+      `INSERT INTO cards
+       (id, order_id, inventory_status, provider_card_id, card_type_id, last4, status,
+        funded_amount, current_balance, currency, refund_status, card_credentials_ciphertext,
+        provider_account_id, external_card_id, intake_status, sync_tier, last_transaction_synced_at)
+       VALUES (?, NULL, 'AVAILABLE', ?, '7', '4242', 'active', '16.000000', '4.000000',
+        'USD', 'MONITORING', ?, ?, ?, 'ACCEPTED', 'AVAILABLE', CURRENT_TIMESTAMP(3))`,
+      [cardId, providerCardId, encryptSecret(JSON.stringify({ cardNumber: '4242424242424242',
+        expMonth: 12, expYear: 2032, cvv: '123' }), integrationSessionKey),
+        legacyCardProviderAccountId, providerCardId]
+    );
+    const first = await scheduler.scheduleLowBalance({ limit: 10 });
+    const second = await scheduler.scheduleLowBalance({ limit: 10 });
+    assert.equal(first.scheduled, 1);
+    assert.equal(second.scheduled, 0);
+    const [[attempt]] = await pool.query(
+      `SELECT status, funds_risk_state, amount, card_id FROM card_funding_attempts WHERE card_id=?`, [cardId]
+    );
+    assert.deepEqual(attempt, { status: 'PREPARED', funds_risk_state: 'NONE', amount: '12.000000', card_id: cardId });
+  } finally {
+    await pool.query('DELETE FROM card_funding_attempts WHERE card_id=?', [cardId]);
+    await pool.query('DELETE FROM cards WHERE id=?', [cardId]);
+    if (originalSetting) {
+      await pool.query(`UPDATE app_settings SET setting_value=? WHERE setting_key='card_balance_recharge_enabled'`, [originalSetting.setting_value]);
+    } else {
+      await pool.query(`DELETE FROM app_settings WHERE setting_key='card_balance_recharge_enabled'`);
+    }
+    if (originalMinimum) {
+      await pool.query(`UPDATE app_settings SET setting_value=? WHERE setting_key='default_minimum_required_card_balance'`, [originalMinimum.setting_value]);
+    }
     await pool.end();
   }
 });

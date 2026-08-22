@@ -113,6 +113,17 @@ export function createCardFundingRepository(pool) {
     return result;
   }
 
+  async function nextPrepared({ providerAccountId }) {
+    const [rows] = await pool.query(
+      `SELECT id, provider_account_id, idempotency_key
+       FROM card_funding_attempts
+       WHERE status = 'PREPARED' AND funds_risk_state = 'NONE'
+         AND provider_account_id = ?
+       ORDER BY created_at ASC LIMIT 1`, [providerAccountId]
+    );
+    return rows[0] || null;
+  }
+
   async function finish({ attemptId, providerCallId, outcome, httpStatus = null,
     businessCode = null, responseSummary = null, fundsRiskState, status,
     externalReference = null, finishedAt = new Date() }) {
@@ -133,5 +144,5 @@ export function createCardFundingRepository(pool) {
     if (result.affectedRows !== 1) throw new Error('Card funding attempt state transition lost');
   }
 
-  return { prepare, begin, finish };
+  return { prepare, begin, nextPrepared, finish };
 }

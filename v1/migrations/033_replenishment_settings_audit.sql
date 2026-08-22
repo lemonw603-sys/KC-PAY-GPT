@@ -1,4 +1,8 @@
 -- Stage 4: auditable automatic replenishment settings.
+INSERT INTO app_settings (setting_key, setting_value) VALUES
+  ('card_balance_recharge_enabled', 'false')
+ON DUPLICATE KEY UPDATE setting_key = VALUES(setting_key);
+
 CREATE TABLE IF NOT EXISTS admin_setting_events (
   id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   setting_key VARCHAR(64) NOT NULL,
