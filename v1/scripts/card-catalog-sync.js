@@ -4,6 +4,8 @@ import { HnskjCardProvider } from '../src/providers/index.js';
 import { syncCardCatalog } from '../src/services/card-catalog-sync-service.js';
 import { createCardIntakeService } from '../src/services/card-intake-service.js';
 import { createCardIntakeRepository } from '../src/db/repositories/card-intake-repository.js';
+import { refreshProviderSnapshot } from '../src/services/card-provider-snapshot-service.js';
+import { createProviderBalanceSnapshotService } from '../src/services/provider-balance-snapshot-service.js';
 
 if (isEnvTrue(process.env.PROVIDER_WRITES_ENABLED) || isEnvTrue(process.env.PROVIDER_CARD_WRITES_ENABLED)) {
   throw new Error('Card catalog sync refuses to run with provider writes enabled');
@@ -31,9 +33,17 @@ const intake = createCardIntakeService({
     minimumBalance: String(settings.minimum_balance || '')
   }
 });
+const balanceSnapshots = createProviderBalanceSnapshotService({ pool });
 
 try {
-  console.log(JSON.stringify(await syncCardCatalog({ pool, provider, intake })));
+  // Catalog synchronization is read-only. Refresh the provider balance/rules
+  // snapshot here as well so the admin affordability view is not dependent on
+  // the write-enabled card-stock runner.
+  const providerSnapshot = await refreshProviderSnapshot(pool, provider, {
+    balanceSnapshotService: balanceSnapshots
+  });
+  const catalog = await syncCardCatalog({ pool, provider, intake });
+  console.log(JSON.stringify({ ...catalog, providerSnapshotSyncedAt: providerSnapshot.syncedAt }));
 } finally {
   await pool.end();
 }

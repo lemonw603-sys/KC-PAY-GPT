@@ -99,3 +99,18 @@
 - 未分配卡片、未创建充值 attempt、未产生 Provider 调用；
 - 用户明确选择不执行真实充值，因此没有开启派发或资金写入；
 - 该测试 CDK 已兑换，不能再通过普通“作废未兑换 CDK”流程撤回，相关订单和兑换记录保留用于追溯。
+
+## 2026-08-23 余额同步复核
+
+### 已证实事实
+
+- `card_provider_snapshots` 的余额/开卡规则快照由 `card-stock-job-runner.js` 刷新；该 runner 要求 `PROVIDER_CARD_WRITES_ENABLED=true` 才能启动。
+- 当前生产 `pojia-card-stock-runner.timer` 为 inactive，而订单/充值写入门禁仍关闭。因此仅依赖该 runner 时，后台余额快照不会持续更新。
+- 生产 `pojia-card-catalog-sync.timer` 与 `pojia-card-read-sync.timer` 正常 active；catalog sync 原先只更新卡目录快照，不更新 Provider 余额/规则快照。
+- 因此“后台显示的卡台余额可能不是实时余额”是事实，不能称为准确同步。
+
+### 已实施修复
+
+- 将只读的 Provider 余额/开卡规则快照刷新接入 `card-catalog-sync.js`；不打开 Provider 写入，不购买卡、不充值卡。
+- 后台余额刷新现在由 active 的只读 catalog sync 驱动，不再依赖 card-stock 写入 runner。
+- 本地全量测试：403 tests，369 passed，34 skipped，0 failed；跳过项均为未配置隔离 MySQL 的集成测试。
