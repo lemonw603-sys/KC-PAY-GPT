@@ -824,7 +824,7 @@ async function loadStock() {
   elements.providerSummary.innerHTML = provider?.syncedAt ? `
     <div><span>卡台余额</span><strong>$${formatMoney(provider.accountBalance)}</strong></div>
     <div><span>卡台 active 卡</span><strong>${escapeHtml(catalog.providerActive ?? '—')}</strong></div>
-    <div><span>卡台历史总卡数</span><strong>${escapeHtml(catalog.providerTotal ?? '—')}</strong></div>
+    <div><span>卡台当前 active 卡数</span><strong>${escapeHtml(catalog.providerActive ?? '—')}</strong></div>
     <div><span>剩余开卡额度</span><strong>${escapeHtml(provider.cardLimit?.remaining ?? '—')}</strong></div>
     <small class="${provider.rulesFresh && provider.purchaseEnabled && catalog.fresh && !catalog.openingBlocked ? '' : 'provider-warning'}">
       ${provider.rulesFresh ? `规则更新于 ${formatTime(provider.syncedAt)}` : '卡台规则已过期，禁止开卡'}
