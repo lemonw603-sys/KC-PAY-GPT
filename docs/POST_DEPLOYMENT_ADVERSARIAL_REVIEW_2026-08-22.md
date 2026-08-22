@@ -118,4 +118,12 @@
 
 - 按产品要求，Session 尾部文本仍自动规范化，但不再向客户显示“检测到附加文本”提示。
 - 已部署 `/opt/pojia/releases/20260823-session-silent`，生产文件核验确认旧提示文案不存在；Web/Worker active，健康检查通过。
+
+## 2026-08-23 当前版本只读验收
+
+- 当前 release：`/opt/pojia/releases/20260823-session-silent`。
+- Web、Worker、卡目录只读同步、卡片只读同步：active；自动开卡 timer：inactive。
+- `ops` 与 `plus` 的 live/ready 公网检查均返回 HTTP 200。
+- 线上 customer.js 已包含 Session 解析器，旧提示文案不存在。
+- 本地全量测试：403 tests，369 passed，34 skipped，0 failed；跳过项为未配置隔离 MySQL 的集成测试，不代表生产集成测试通过。
 - 本地全量测试：403 tests，369 passed，34 skipped，0 failed；跳过项均为未配置隔离 MySQL 的集成测试。
