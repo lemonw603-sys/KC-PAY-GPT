@@ -46,7 +46,12 @@ test('admin overview maps aggregate values without exposing raw records', async 
   assert.deepEqual(result.operationalBacklog, {
     cardIntakePending: 2, fundsRiskPending: 1,
     cardFundingRiskPending: 2, cardFundingManualReview: 1,
-    reconciliationCasesOpen: 3, cardSyncBacklog: 4
+    reconciliationCasesOpen: 3, cardSyncBacklog: 4,
+    replenishmentUsedToday: 0, replenishmentDailyLimit: 5,
+    replenishmentRemainingToday: 5
+  });
+  assert.deepEqual(result.providerHealth, {
+    provider: 'hnskj', syncedAt: null, purchaseEnabled: null
   });
   assert.equal(pool.queries.some(({ sql }) => /session_ciphertext|recharge_card_key/i.test(sql)), false);
 });

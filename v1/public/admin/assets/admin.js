@@ -81,6 +81,8 @@ const elements = {
   viewTitle: document.querySelector('#view-title'),
   syncTime: document.querySelector('#sync-time'),
   metrics: document.querySelector('#metrics-grid'),
+  overviewCdkRefundStatus: document.querySelector('#overview-cdk-refund-status'),
+  overviewProviderHealth: document.querySelector('#overview-provider-health'),
   statusList: document.querySelector('#status-list'),
   settingList: document.querySelector('#setting-list'),
   recentOrders: document.querySelector('#recent-orders'),
@@ -264,11 +266,17 @@ async function loadOverview() {
     api('/api/v1/admin/alerts?limit=10')
   ]);
   const metrics = [
+    { label: '累计订单', value: overview.metrics.totalOrders, note: '全部已创建订单', filter: 'TODAY' },
     { label: '今日订单', value: overview.metrics.todayOrders, note: '点击查看今天新订单', filter: 'TODAY' },
+    { label: '成功订单', value: overview.metrics.successfulOrders, note: '已完成 Plus 开通并结束续费', filter: 'RECHARGE_SUCCESS' },
     { label: '自动处理中', value: overview.metrics.processingOrders, note: '系统正在自动流转', filter: 'PROCESSING' },
     { label: '待执行充值', value: overview.metrics.awaitingConfirmationOrders, note: '正常模式由系统自动执行', filter: 'AWAITING_CONFIRMATION' },
     { label: '需要关注', value: overview.metrics.reviewingOrders, note: '失败、未知或对账订单', filter: 'REVIEW_REQUIRED' },
     { label: '三方对账异常', value: overview.metrics.reconciliationIssues, note: '订单、充值平台、卡片证据冲突', filter: 'RECONCILIATION_ISSUES' },
+    { label: '等待 Session', value: overview.metrics.waitingForSession ?? 0, note: '客户可在原订单更换 Session', filter: 'WAITING_FOR_SESSION' },
+    { label: '等待补卡', value: overview.metrics.waitingForCard ?? 0, note: '库存不足，等待运营补卡', filter: 'WAITING_FOR_CARD' },
+    { label: '取消续费处理中', value: overview.metrics.cancellationPending ?? 0, note: '充值成功后的终态确认', filter: 'CANCELLATION_PENDING' },
+    { label: '取消续费需复核', value: overview.metrics.cancellationReview ?? 0, note: '取消状态异常，需要人工处理', filter: 'CANCELLATION_REVIEW_REQUIRED' },
     { label: '资金结果未决', value: overview.operationalBacklog?.fundsRiskPending ?? 0,
       note: '禁止自动重试或切换充值路线', filter: 'RECONCILIATION_ISSUES' },
     { label: '卡余额充值待处理', value: overview.operationalBacklog?.cardFundingRiskPending ?? 0,
@@ -278,6 +286,10 @@ async function loadOverview() {
       note: '本地接管队列；同步接管后更新，不会分配给订单', view: 'stock' },
     { label: '本地可分配卡', value: overview.cardStock?.available ?? 0,
       note: overview.cardStock?.low ? `已到低库存线：${overview.cardStock?.lowThreshold ?? 5}` : `低库存线：${overview.cardStock?.lowThreshold ?? 5}`, view: 'stock' },
+    { label: '自动补卡用量', value: `${overview.operationalBacklog?.replenishmentUsedToday ?? 0}/${overview.operationalBacklog?.replenishmentDailyLimit ?? 5}`,
+      note: `今日剩余 ${overview.operationalBacklog?.replenishmentRemainingToday ?? 0} 张`, view: 'stock' },
+    { label: '对账案件未结', value: overview.operationalBacklog?.reconciliationCasesOpen ?? 0, note: '待分配或待解决', view: 'reconciliation' },
+    { label: '卡片同步积压', value: overview.operationalBacklog?.cardSyncBacklog ?? 0, note: '只读交易同步任务', view: 'stock' },
     { label: '订单 Worker',
       value: overview.runtimeHealth?.workerHealthy && !(overview.runtimeHealth?.expiredTaskLeases || overview.runtimeHealth?.stalledProviderCalls) ? '正常' : '需检查',
       note: overview.runtimeHealth?.stalledProviderCalls
@@ -291,6 +303,13 @@ async function loadOverview() {
   elements.metrics.innerHTML = metrics.map((item, index) => `<button type="button" class="metric-card metric-${index + 1}" ${item.filter ? `data-order-filter="${item.filter}"` : `data-target-view="${item.view}"`}>
     <span>${escapeHtml(item.label)}</span><strong>${escapeHtml(item.value)}</strong><small>${escapeHtml(item.note)}</small>
   </button>`).join('');
+  const distribution = (rows, labels) => rows?.length
+    ? rows.map((item) => `<div><span><strong>${escapeHtml(labels[item.status] || item.status)}</strong><small>${escapeHtml(item.status)}</small></span><em>${escapeHtml(item.count)}</em></div>`).join('')
+    : '<p class="empty-state">暂无记录</p>';
+  elements.overviewCdkRefundStatus.innerHTML = `<p class="mini-list-heading">CDK</p>${distribution(overview.cdkStatuses, { AVAILABLE: '未使用', REDEEMED: '已兑换', REVOKED: '已作废' })}<p class="mini-list-heading">退款观察</p>${distribution(overview.refundStatuses, { MONITORING: '观察中', DETECTED: '疑似退款', CONFIRMED: '已确认退款', WITHDRAWN: '已提取' })}`;
+  const health = overview.providerHealth || {};
+  const providerTone = health.purchaseEnabled === true ? 'status-green' : 'status-orange';
+  elements.overviewProviderHealth.innerHTML = `<div><span><strong>HNSKJ 卡台</strong><small>只读同步 ${formatTime(health.syncedAt)}</small></span><em class="status-chip ${providerTone}"><i></i>${health.purchaseEnabled === true ? '允许开卡' : health.purchaseEnabled === false ? '禁止开卡' : '未知'}</em></div><div><span><strong>卡台余额</strong><small>详见卡片库存页</small></span><em>—</em></div>`;
   const maxCount = Math.max(1, ...overview.orderStatuses.map((item) => item.count));
   elements.statusList.innerHTML = overview.orderStatuses.length
     ? overview.orderStatuses.map((item) => `<button type="button" data-status="${escapeHtml(item.status)}">

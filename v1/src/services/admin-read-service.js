@@ -381,6 +381,10 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
         )) AS awaiting_confirmation,
         SUM(o.status IN ('CARD_FAILED','SUBMIT_UNKNOWN','RECHARGE_FAILED','RECONCILIATION_REQUIRED')
             OR o.cancellation_review_required = 1 OR (${STALE_CREATE_ATTEMPT_SQL})) AS reviewing
+        ,SUM(o.status = 'WAITING_FOR_SESSION') AS waiting_for_session
+        ,SUM(o.status = 'WAITING_FOR_CARD') AS waiting_for_card
+        ,SUM(o.status = 'CANCELLATION_PENDING') AS cancellation_pending
+        ,SUM(o.status = 'CANCELLATION_REVIEW_REQUIRED' OR o.cancellation_review_required = 1) AS cancellation_review
         ,SUM(${RECONCILIATION_ISSUE_SQL}) AS reconciliation_issues
         FROM orders o`),
       pool.query('SELECT status, COUNT(*) AS count FROM orders GROUP BY status ORDER BY status'),
@@ -397,7 +401,10 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
           SUM(order_id IS NULL AND inventory_status = 'PROVISIONING') AS provisioning,
           SUM(order_id IS NOT NULL OR inventory_status = 'ASSIGNED') AS assigned,
           SUM(order_id IS NULL AND inventory_status = 'DEPLETED') AS depleted,
-          SUM(order_id IS NULL AND inventory_status = 'HELD_FOR_REVIEW') AS held
+          SUM(order_id IS NULL AND inventory_status = 'HELD_FOR_REVIEW') AS held,
+          (SELECT synced_at FROM card_provider_snapshots WHERE provider = 'hnskj' LIMIT 1) AS provider_synced_at,
+          (SELECT JSON_UNQUOTE(JSON_EXTRACT(payload_json, '$.purchaseEnabled'))
+             FROM card_provider_snapshots WHERE provider = 'hnskj' LIMIT 1) AS provider_purchase_enabled
         FROM cards`)
       ,pool.query(`SELECT setting_value FROM app_settings
         WHERE setting_key = 'card_stock_low_threshold' LIMIT 1`)
@@ -424,7 +431,12 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
           (SELECT COUNT(*) FROM reconciliation_cases
             WHERE status IN ('OPEN','ASSIGNED')) AS reconciliation_cases_open,
           (SELECT COUNT(*) FROM card_sync_jobs
-            WHERE status IN ('PENDING','RUNNING','REVIEW_REQUIRED')) AS card_sync_backlog`)
+            WHERE status IN ('PENDING','RUNNING','REVIEW_REQUIRED')) AS card_sync_backlog,
+          (SELECT COALESCE(SUM(requested_count), 0) FROM card_stock_jobs
+            WHERE job_source = 'AUTOMATIC'
+              AND created_at >= TIMESTAMP(DATE(CONVERT_TZ(UTC_TIMESTAMP(), '+00:00', '+08:00'))) - INTERVAL 8 HOUR
+              AND created_at < TIMESTAMP(DATE(CONVERT_TZ(UTC_TIMESTAMP(), '+00:00', '+08:00'))) + INTERVAL 16 HOUR) AS replenishment_used_today,
+          (SELECT setting_value FROM app_settings WHERE setting_key = 'card_replenishment_daily_limit' LIMIT 1) AS replenishment_daily_limit`)
     ]);
     const count = (value) => Number(value || 0);
     const total = count(orderCounts[0]?.total);
@@ -442,6 +454,10 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
         awaitingConfirmationOrders: count(orderCounts[0]?.awaiting_confirmation),
         reviewingOrders: count(orderCounts[0]?.reviewing),
         reconciliationIssues: count(orderCounts[0]?.reconciliation_issues),
+        waitingForSession: count(orderCounts[0]?.waiting_for_session),
+        waitingForCard: count(orderCounts[0]?.waiting_for_card),
+        cancellationPending: count(orderCounts[0]?.cancellation_pending),
+        cancellationReview: count(orderCounts[0]?.cancellation_review),
         successRate: completed === 0 ? null : Number(((successful / completed) * 100).toFixed(1))
       },
       orderStatuses: statusRows.map((row) => ({ status: row.status, count: count(row.count) })),
@@ -460,7 +476,12 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
         cardFundingRiskPending: count(backlogRows[0]?.card_funding_risk_pending),
         cardFundingManualReview: count(backlogRows[0]?.card_funding_manual_review),
         reconciliationCasesOpen: count(backlogRows[0]?.reconciliation_cases_open),
-        cardSyncBacklog: count(backlogRows[0]?.card_sync_backlog)
+        cardSyncBacklog: count(backlogRows[0]?.card_sync_backlog),
+        replenishmentUsedToday: count(backlogRows[0]?.replenishment_used_today),
+        replenishmentDailyLimit: count(backlogRows[0]?.replenishment_daily_limit || 5),
+        replenishmentRemainingToday: Math.max(0,
+          count(backlogRows[0]?.replenishment_daily_limit || 5)
+          - count(backlogRows[0]?.replenishment_used_today))
       },
       cardStock: {
         available: count(stockRows[0]?.available),
@@ -470,6 +491,12 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
         held: count(stockRows[0]?.held),
         lowThreshold: count(stockSettingRows[0]?.setting_value || 5),
         low: count(stockRows[0]?.available) <= count(stockSettingRows[0]?.setting_value || 5)
+      },
+      providerHealth: {
+        provider: 'hnskj',
+        syncedAt: iso(stockRows[0]?.provider_synced_at),
+        purchaseEnabled: stockRows[0]?.provider_purchase_enabled == null
+          ? null : String(stockRows[0].provider_purchase_enabled) === 'true'
       },
       settings: settingsRows.filter((row) => row.setting_key !== 'worker_heartbeat_at').map((row) => ({
         key: row.setting_key,
