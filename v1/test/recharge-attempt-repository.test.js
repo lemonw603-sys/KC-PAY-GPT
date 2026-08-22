@@ -97,6 +97,27 @@ test('atomically begins an authorized attempt in the required lock/write order',
   assert.doesNotMatch(allSql, /payload_json/i);
 });
 
+test('Browser route creates the shared funds attempt without a Provider call', async () => {
+  const pool = scriptedPool(beginResponses({
+    orderOverrides: {
+      executor_kind: 'BROWSER',
+      recharge_provider_account_id: null,
+      provider_code: null,
+      write_enabled: 0
+    }
+  }));
+  const result = await createRechargeAttemptRepository(pool).beginAuthorizedAttempt({
+    orderId: 'order-1', taskId: 91, authorizationItemId: 'item-1', attemptId: 'browser-attempt-1',
+    now: new Date('2026-08-20T12:00:00.000Z')
+  });
+  assert.equal(result.executorKind, 'BROWSER');
+  assert.equal(result.providerAccountId, null);
+  assert.equal(result.providerCallId, null);
+  assert.equal(pool.queries.some((entry) => /INSERT INTO provider_calls/.test(entry.sql)), false);
+  assert.match(pool.queries[6].sql, /INSERT INTO recharge_attempts/);
+  assert.match(pool.queries[6].sql, /executor_kind/);
+});
+
 test('rolls back every write when provider-call persistence fails', async () => {
   const responses = beginResponses({ providerInsert: new Error('provider call insert failed') });
   const pool = scriptedPool(responses);

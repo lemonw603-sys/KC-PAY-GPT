@@ -19,8 +19,26 @@
 - 当前 Plus 运营后台与最终需求的对齐审查：`docs/ADMIN_ALIGNMENT_AUDIT_2026-08-21.md`
 - 用户确认的实施主线、阶段退出条件和 Browser 时序：`docs/IMPLEMENTATION_PLAN_FINAL_2026-08-21.md`
 - Browser 自动充值执行器的需求、架构、接口和恢复基线：`docs/BROWSER_RECHARGE_EXECUTOR_BASELINE_2026-08-21.md`
+- Browser 当前完成项、准确停止点和下一动作：`docs/BROWSER_CURRENT_STATUS_2026-08-22.md`
 - AI Agent 角色、必读顺序和仓库噪音地图：`docs/AI_AGENT_ROLE_AND_READING_GUIDE_2026-08-21.md`
 - Browser Session 上号机制静态合同：`docs/contracts/2026-08-21_browser-session-bootstrap-static-analysis-report.md`
+- Browser hosted Checkout 提链研究、A/B 矩阵和后台可调边界：`docs/2026-08-22_browser-checkout-link-research-report.md`
+- Browser 多赛道 PoC、网络证据等级和胜出规则：`docs/2026-08-22_browser-multi-lane-poc-baseline.md`
+- Browser 多赛道第一轮对抗式审查与强制修订：`docs/2026-08-22_adversarial-review-browser-multi-lane-report.md`
+- Browser 多赛道实验单位、资源租约和敏感 Checkout 工件合同：`docs/contracts/2026-08-22_browser-multi-lane-experiment-contract.md`
+- Browser 离线 WAL、重启恢复与本地 Playwright 页面仿真实施报告：`docs/2026-08-22_browser-offline-wal-local-mock-implementation-report.md`
+- Browser WAL-backed 编排、崩溃恢复和 350 单等效容量报告：`docs/2026-08-22_browser-durable-orchestrator-capacity-report.md`
+- Browser MySQL 事务映射实施报告：`docs/2026-08-22_browser-mysql-transaction-mapping-implementation-report.md`
+- Browser MySQL 订单/资金 attempt 接口合同：`docs/contracts/2026-08-22_browser-mysql-transaction-mapping-contract.md`
+- Browser artifact vault/资源租约跨进程恢复实施报告：`docs/2026-08-22_browser-artifact-vault-resource-lease-recovery-implementation-report.md`
+- Browser artifact vault/资源租约恢复合同：`docs/contracts/2026-08-22_browser-artifact-vault-resource-lease-recovery-contract.md`
+- Browser 后台追溯/人工控制实施报告：`docs/2026-08-22_browser-admin-trace-and-control-implementation-report.md`
+- Browser 后台追溯/人工控制合同：`docs/contracts/2026-08-22_browser-admin-trace-and-control-contract.md`
+- Browser 提链/扫码/菲律宾自助充值市场工具评估：`docs/2026-08-22_browser-marketplace-tool-assessment-report.md`
+- 扩大 GitHub 固定提交调研与可复用轮子清单：`docs/2026-08-22_browser-automation-github-expanded-research-report.md`
+- 外部账号安全指南与指纹浏览器适用性评估：`docs/2026-08-22_external-guide-browser-fingerprint-assessment-report.md`
+- 本次只读运行时核验与未证明边界：`docs/LIVE_RUNTIME_AUDIT_2026-08-22.md`
+- 当前执行顺序修订（不改变业务方向）：`docs/EXECUTION_PLAN_REVISION_2026-08-22.md`
 
 方向或范围发生变化时，先更新上述文档，再改实现。
 
@@ -39,6 +57,10 @@
 
 - 卡台：`https://card.hnskj.vip/api/open/v1`
 - Browser 目标：ChatGPT 官方购买和订阅管理页面；实际域名、页面结构和支付/3DS依赖必须先通过非付款 PoC 冻结到 `docs/contracts/`。
+- Browser 主链路跑通优先于保持现有 Provider/路线表/许可命名和后台页面不变；允许最小调整。不得调整掉的只有防重复扣款、付款未知锁定和端到端审计。
+- “提链”当前是候选而非已验收结论：必须区分 hosted 长链与依赖账号 Session 的内部短链；与原诺汇盛上号器先做同账号、同菲律宾 sticky 出口的只读配对，会创建 Checkout 的比较使用隔离账号 cohort。
+- Browser PoC 采用隔离赛道，不把所有兼容逻辑堆入一个执行器；赛道表示架构，Runtime/Cookie/网络表示公共实验轴。失败赛道留证后归档，最终只接入 champion 和最多一个可在 Checkout 创建前路由的预验证 fallback。
+- 没有菲律宾出口可以继续 OFFLINE/NON_PH 筛选；普通菲律宾 VPN 只作预筛，最终结论需要接近未来生产的菲律宾 sticky 出口。
 - 旧直充系统：ZZSHU 只保留历史兼容，不参与 Browser 新链路设计和实施。
 - 开源基线：`https://github.com/KC-CatK/KC-PAY-GPT`
 

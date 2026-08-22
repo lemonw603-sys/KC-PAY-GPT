@@ -16,6 +16,7 @@ yarn-error.log*
 _server.out.log
 _server.err.log
 debug_screenshots/
+artifacts/browser-poc/
 product_files/
 data/hcaptcha-config.json
 data/browser-pool/

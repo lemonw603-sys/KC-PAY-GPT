@@ -145,10 +145,12 @@ export function createRechargeAttemptRepository(pool) {
         if (orderRow.status !== 'CARD_READY') {
           throw new RechargeAttemptError('order is not ready for recharge', 'ORDER_NOT_READY');
         }
-        if (!orderRow.fulfillment_route_id || !orderRow.recharge_provider_account_id || !orderRow.provider_code) {
+        const isBrowserRoute = String(orderRow.executor_kind || '').toUpperCase() === 'BROWSER';
+        if (!orderRow.fulfillment_route_id
+          || (!isBrowserRoute && (!orderRow.recharge_provider_account_id || !orderRow.provider_code))) {
           throw new RechargeAttemptError('order has no executable recharge route', 'ROUTE_NOT_EXECUTABLE');
         }
-        if (!Number(orderRow.write_enabled)) {
+        if (!isBrowserRoute && !Number(orderRow.write_enabled)) {
           throw new RechargeAttemptError('recharge provider account is write-disabled', 'PROVIDER_WRITE_DISABLED');
         }
         if (!Number(orderRow.prepayment_ready)) {
@@ -325,14 +327,18 @@ export function createRechargeAttemptRepository(pool) {
           }
         });
 
-        const [providerCall] = await connection.query(
-          `INSERT INTO provider_calls
-           (order_id, recharge_attempt_id, provider, provider_account_id, operation,
-            request_key, attempt_no, outcome, started_at)
-           VALUES (?, ?, ?, ?, 'create_direct', ?, 1, 'STARTED', ?)`,
-          [order, attempt, orderRow.provider_code, orderRow.recharge_provider_account_id,
-            idempotencyKey, now]
-        );
+        let providerCallId = null;
+        if (!isBrowserRoute) {
+          const [providerCall] = await connection.query(
+            `INSERT INTO provider_calls
+             (order_id, recharge_attempt_id, provider, provider_account_id, operation,
+              request_key, attempt_no, outcome, started_at)
+             VALUES (?, ?, ?, ?, 'create_direct', ?, 1, 'STARTED', ?)`,
+            [order, attempt, orderRow.provider_code, orderRow.recharge_provider_account_id,
+              idempotencyKey, now]
+          );
+          providerCallId = providerCall.insertId;
+        }
 
         return {
           id: attempt,
@@ -344,7 +350,7 @@ export function createRechargeAttemptRepository(pool) {
           executorKind: orderRow.executor_kind,
           status: 'PREPARED',
           fundsRiskState: 'ACTIVE',
-          providerCallId: providerCall.insertId,
+          providerCallId,
           idempotencyKey,
           startedAt: now
         };

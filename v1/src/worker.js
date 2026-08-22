@@ -3,6 +3,7 @@ import { loadWorkerConfig } from './config.js';
 import { createDatabasePool } from './db/pool.js';
 import { createWorkflowRepository } from './db/repositories/workflow-repository.js';
 import { createRechargeAttemptRepository } from './db/repositories/recharge-attempt-repository.js';
+import { createBrowserDispatchRepository } from './db/repositories/browser-dispatch-repository.js';
 import {
   HnskjCardProvider,
   ZzshuRechargeProvider,
@@ -64,6 +65,7 @@ const workflow = createWorkflowRepository(pool, {
   panHmacKey: config.cardIntakePanHmacKey
 });
 const rechargeAttemptRepository = createRechargeAttemptRepository(pool);
+const browserDispatchRepository = createBrowserDispatchRepository(pool);
 const handlers = createWorkflowHandlers({
   workflow,
   cardProvider,
@@ -74,6 +76,7 @@ const handlers = createWorkflowHandlers({
   mapCardCredentials,
   buildDirectOrderRequest,
   rechargeAttemptRepository,
+  browserDispatchRepository,
   rechargeWritesEnabled: config.providerRechargeWritesEnabled
 });
 

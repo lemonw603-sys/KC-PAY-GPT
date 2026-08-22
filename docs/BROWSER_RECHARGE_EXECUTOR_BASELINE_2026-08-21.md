@@ -103,6 +103,51 @@ executor_profile: CHATGPT_PLUS_BROWSER_V1
 - HNSKJ 的开卡、查卡、补余额和交易调用继续写 `provider_calls`；
 - 浏览器页面动作写 `browser_runs` 和追加式检查点，不伪造为 HTTP Provider 调用。
 
+### 3.4 Browser-first 可调边界
+
+本节修订此前可能被理解为“现有后台和资金栅栏实现不可变化”的过强约束。Browser 主链路完整跑通优先；以下都属于可调整实现，而不是业务不变量：
+
+- Browser 是否继续称为 Executor，或拆成账号阶段 adapter 与支付阶段 adapter；
+- `fulfillment_routes` 是否拆分卡片来源、账号上下文策略和支付执行策略；
+- `executor_profiles`、`browser_runs`、Checkout artifact 和许可记录的具体表结构；
+- `CHECKOUT_OBSERVATION_PERMIT` 等许可名称、数量和签发位置；
+- 现有运营后台页面、批次派发、并发配置和人工接管布局。
+
+调整后的硬不变量只有：一个订单不能产生两次真实扣款；付款结果未知时不能自动再付；订单、账号、Checkout、卡片、扣款、Plus 开通和取消续费必须可追溯。具体实现允许在 Browser PoC 后最小重构，不需要为了迁就当前抽象牺牲执行成功率。
+
+### 3.5 Hosted Checkout 提链候选
+
+`CHECKOUT_LINK_HOSTED_V1` 作为当前主路径候选，把账号上下文与支付上下文拆开：
+
+1. 账号 Context 使用 Session Loader v2 装载 Session，核对服务器身份与 Free 状态。
+2. 在账号 Context 内创建 Checkout，记录 link kind、Checkout session id 哈希、processor entity、产品、币种、金额和创建时间。
+3. 优先采用服务端或 Stripe init 返回的完整 hosted 长链；不凭 session id 猜测缺失片段。
+4. 在同一订单菲律宾 sticky 出口下用独立支付 Context 打开 hosted 长链；首轮 A/B 不同时改变出口、locale、内核和 Cookie policy。
+5. 只有 `chatgpt.com/checkout/...` 内部短链时，回退到原账号 Context；不得把它记为 hosted 解耦成功。
+6. 付款、开通核验与取消续费继续使用本基线的唯一资金 attempt、未知锁定和审计规则。
+
+该候选目前只得到公开固定提交源码和离线合同测试支持，尚未取得菲律宾真实 Session A/B。完整证据、风险和验收矩阵见 `2026-08-22_browser-checkout-link-research-report.md`。
+
+### 3.6 多赛道而非单实现堆叠
+
+hosted 提链是候选，不是唯一允许方向。Browser PoC 同时保留原上号器真实 Chrome、ChatGPT 站点状态克隆+CDP、Loader 同 Context UI、hosted 分离 Context和页面 Context 创建 hosted 五条隔离赛道。它们共享证据 schema，不共享可变 Profile，也不拥有独立订单、卡池或资金账。
+
+Patchright/Camoufox 等 Browser runtime、Cookie policy 和网络类型属于公共实验轴；不得为每一种排列复制业务系统。失败赛道保留固定提交、版本和失败证据后归档，最终只把 champion 和最多一个可在 Checkout 创建前路由的预验证 fallback 接入本基线。详细基线见 `2026-08-22_browser-multi-lane-poc-baseline.md`。
+
+### 3.7 第一轮对抗式审查修订
+
+2026-08-22 完成第一轮正式架构对抗式审查，报告和规范合同见 `2026-08-22_adversarial-review-browser-multi-lane-report.md`、`contracts/2026-08-22_browser-multi-lane-experiment-contract.md`。以下修订覆盖此前“同 Session 顺序 A/B”的过强表述：
+
+- 不创建 Checkout 的 `AUTH_READ_ONLY` 可以用同账号做配对对照，但必须平衡顺序、限制 Session 年龄差并记录完整版本清单；
+- 会创建 Checkout 的 `CHECKOUT_MUTATING` 使用隔离账号 cohort，同一账号在同一实验窗口只进入一个变更 lane；
+- 账号身份 HMAC 与订单、卡片、Checkout artifact 分别持有持久化资源租约，订单级资金栅栏不能替代账号级互斥；
+- 完整 hosted URL 和 fragment 是敏感支付工件，只能存入加密短期 artifact vault；普通数据库和证据只保存 opaque ref 与哈希；
+- Checkout 过期或打不开不等于确定失效，默认进入 `CHECKOUT_REVIEW_REQUIRED`，禁止仅凭时间自动重建；
+- 最终可冻结一个 champion 和最多一个独立验证的 fallback；fallback 只能在 Checkout 创建前路由，不能用于未知结果后的换路补付；
+- `FULL_PROFILE_STATE` 改为 `CHATGPT_SITE_STATE_CLONE`，只读克隆 allowlist 内站点状态，不复制密码库、支付方式、历史、扩展或其他网站数据。
+
+外部账号安全指南评估后，指纹浏览器只增加 `ANTIDETECT_LOCAL_PROFILE` runtime 候选：只允许本地工作副本，不使用云 Profile、云同步或第三方 Session 托管。检测网站匿名度分数、随机 Canvas 噪声和浏览历史预热不能作为晋级依据；是否保留由本地安全审查和菲律宾 sticky A/B 决定。
+
 ## 4. 端到端主流程
 
 ### 4.1 正常流程
@@ -116,10 +161,10 @@ executor_profile: CHATGPT_PLUS_BROWSER_V1
 7. Worker 通过受控方式装载 Session，验证实际登录账号与订单账号一致。
 8. Worker 确认账号当前不是 Plus，进入官方 Plus 购买页面。
 9. Worker 校验产品、价格、币种、税费和预计总金额是否符合配置。
-10. Worker 填写账单地址和订单专属卡片，但不在此阶段提交付款。
+10. Worker 进入敏感输入模式后填写账单地址和订单专属卡片；此阶段关闭 trace/HAR/截图，并禁止任何可能触发提交的快捷键或脚本动作。
 11. Worker 写入 `PAYMENT_ARMED` 检查点，并向订单核心请求付款前最终许可。
 12. 订单核心在同一事务中复核资金栅栏、卡片绑定、急停、路线和运行所有权，记录不可逆提交意图。
-13. Worker 只能持该次短时许可点击一次最终付款按钮，并立即写入 `PAYMENT_SUBMITTING`。
+13. Worker 只能持该次短时许可执行一次可能提交付款的动作，并立即写入 `PAYMENT_SUBMITTING`；许可统一覆盖点击、Enter、程序化 form submit、钱包确认和 3DS 最终确认。
 14. Worker 观察页面、账号订阅状态及可用的支付结果，分类为明确成功、明确未付款或结果未知。
 15. 明确成功后进入 `CANCELLATION_PENDING`，打开订阅管理并取消自动续费。
 16. 再次确认 Plus 已生效且续费已取消，订单进入 `RECHARGE_SUCCESS`。
@@ -244,7 +289,7 @@ single_use_nonce
 - 没有其他账号级或订单级执行者；
 - 没有人工冻结、退款争议或对账案件阻止付款。
 
-许可一经消费，不得再次签发，除非对账服务已经用确定性证据证明付款未发生，并通过受控恢复流程继续同一 attempt。
+许可一经消费，不得再次签发，除非对账服务已经用确定性证据证明付款未发生，并通过受控恢复流程继续同一 attempt。付款许可约束所有可能导致授权/扣款的提交方式，不得只拦截可见按钮点击。
 
 ## 6. 页面步骤与定位合同
 
@@ -348,6 +393,8 @@ single_use_nonce
 4. 付款按钮在未知或已消费许可时必须被控制面禁用；人工也不能绕过资金栅栏。
 5. 接管期间自动 Worker 停止输入动作，但继续租约心跳和证据记录。
 6. 接管结束必须选择结构化结果，不允许只写自由文本后把订单改成成功。
+7. 接管采用 `REQUESTED→FROZEN→TRANSFERRED→RELEASED` 的控制所有权转移；自动 Worker 与人工不能同时持有 `CONTROL_OWNER`。
+8. 人工访问 hosted Checkout 使用绑定 run、operator、TTL 和 single-use nonce 的代理入口；后台不展示可复制的原始 hosted URL。
 
 ## 10. 运行环境与敏感数据
 
@@ -366,9 +413,12 @@ single_use_nonce
 - 任务 JSON、普通日志、错误栈、指标标签、截图文件名和通知中不得出现敏感明文；
 - 卡片输入期间关闭 DOM 快照、Playwright trace、HAR 和视频录制；
 - 默认不录制整场视频；只在关键节点保存经过裁剪/脱敏的证据，或保存页面签名与内容哈希；
+- 完整 hosted URL、fragment 和内部可导航短链属于敏感支付工件，只进入加密短期 artifact vault；任务、普通数据库、日志、截图、trace、HAR 和通知只保留 opaque ref 与哈希；
 - CVV 不进入日常后台；执行完成后按既有卡片凭据清理策略处理；
 - Session 更换后旧 Session 明文不可恢复，保留变更审计但不长期保存旧值；
 - Browser 证据必须有保留期限和销毁任务，期限由上线前安全评审冻结。
+
+AI/语义定位只允许处理合成页面或强脱敏观察，不能把真实账号、Session、Checkout authority、账单或支付 DOM 发给外部模型。真实付款页的最终定位、金额/产品断言和状态迁移必须在 Worker 信任边界内以版本化确定性规则执行。
 
 ### 10.3 必须先验证的 Session 事实
 
@@ -382,7 +432,40 @@ single_use_nonce
 
 验证结果必须写入 `docs/contracts/`，再冻结 Session 装载实现。
 
-2026-08-21 已完成用户提供上号器和仓库 legacy `session-auth.js` 的静态分析，结论见 `contracts/2026-08-21_browser-session-bootstrap-static-analysis-report.md`：采用新的最小 Browser Session Adapter，只复用 Cookie 解析、分块和真实只读验证思路；禁止复用 auth API 伪造、Bearer header 注入或 localStorage bootstrap。真实 Cookie 名、分块规则和账号字段仍须通过非付款 PoC 冻结。
+2026-08-21 已完成用户提供上号器和仓库 legacy `session-auth.js` 的静态分析，并实现隔离的三模式非付款 PoC。结论见 `contracts/2026-08-21_browser-session-bootstrap-static-analysis-report.md` 和 `contracts/2026-08-21_browser-session-ab-poc-contract.md`：Browser Session Adapter 采用分层设计，真实 Cookie 和绕过页面补丁的真实只读验证是基线；auth API overlay、Bearer header 注入和 localStorage bootstrap 不进入默认资金链，只作为相互独立、默认关闭的非付款实验层。离线路由复现已证明 legacy 精确 auth route 被后注册的总 route 越过，实际页面伪造主要来自 `window.fetch` 补丁。真实 Cookie 名、账号字段，以及各实验层对菲律宾跨地区会话连续性的作用，仍须通过菲律宾 sticky 出口真实 Session PoC 冻结。
+
+2026-08-22 已实现 Session Loader v2：原始 Token 不猜 Cookie 家族、双 Session 家族输入拒绝、临时 BrowserContext 注入前清理两组 Session Cookie、注入后验证最终集合，并支持带 `email`/`id` 类型的预期账号身份 SHA-256 比对。Session 文件必须位于仓库外且为 `0600`，真实运行缺少 sticky proxy 或实验元数据时失败关闭。真实 Chromium 冲突清理测试和 schema v2 无 Session 公开对照均通过；菲律宾真实链路仍未执行。
+
+### 10.4 菲律宾执行区域与账号地域差异
+
+业务常态是从需要充值的非菲律宾 Free 账号取得 Session，再使用菲律宾 VPN/代理执行 Plus 充值；目标账号基本不属于菲律宾。账号常用地、Session 实际取得地、Session 年龄、菲律宾执行出口、菲律宾账单地区和卡片地区可能不一致，必须作为显式运行变量管理。这里的核心研究对象是“非菲律宾 Session 获取环境 → 菲律宾执行环境”的受控跨区切换，而不是假设存在大量菲律宾账号。
+
+首版区域策略：
+
+- 同一订单从 Session 预检、Checkout、付款观察到取消续费必须使用同一个 sticky 菲律宾代理会话；
+- Worker 崩溃恢复优先恢复同一代理会话标识，不得随机换菲律宾 IP；
+- Browser locale、timezone、账单国家、Checkout 币种和代理出口分别记录，禁止靠隐含默认值拼接；
+- 不在一次订单中先用账号原地区登录、再切菲律宾付款，除非 PoC 证明该流程更稳定；
+- 不把多个国家账号是否能够共用同一菲律宾出口写成已知事实；必须分别按 Session 获取国家/距离、Session 年龄、账号常用国家记录挑战率、Session 失效率和 Checkout 可达率；
+- Executor 收到 Session 后第一次访问 ChatGPT 就使用该订单绑定的菲律宾 sticky 出口，禁止为了“预热”先从本地或账号原地区访问，再切到菲律宾制造第二次位置跳变；
+- Session 材料完整度是独立实验轴：`SESSION_ONLY`、排除原出口临时/陈旧状态的 `CURATED`、`FULL_EXPORT` 不能混为一组，legacy overlay 的效果也不能误归因于地域；
+- legacy auth overlay 作为独立实验变量，不与真实 Cookie 注入混成不可解释的一套逻辑。
+
+非付款 PoC 至少比较：Cookie-only 菲律宾 sticky 出口、Cookie + 最小前端兼容层、legacy overlay 三种模式。每种只验证真实会话响应、账号一致性、Plus 状态、升级入口和 Checkout 可达性，不填写卡片、不点击付款。页面继续渲染但真实会话未通过的结果必须单独标为 `UI_ONLY_SESSION`，不能进入资金链路。
+
+### 10.5 公开实现调研后的增量设计
+
+2026-08-21 已核对多个 GitHub 自动充值/Checkout/浏览器账号项目及官方 Playwright、Stripe 文档，完整证据见 `2026-08-21_browser-automation-recharge-public-research-report.md`。公开实现只作研究输入，不直接复制或当作本项目运行事实。
+
+新增冻结方向：
+
+- Cookie 材料策略拆为 `SESSION_ONLY`、`CURATED`、`FULL_EXPORT`；默认先跑最小基线，不能假设完整导出更稳定；
+- 增加 `CheckoutDiscoveryAdapter`，比较页面升级入口与真实登录页面内创建 hosted Checkout；
+- Checkout 创建使用独立 `CHECKOUT_OBSERVATION_PERMIT`，它不允许填写卡片或点击付款；
+- Checkout URL/processor 从真实响应读取，不硬编码 `openai_llc`；
+- Browser backend 可替换，先比较 Chromium headless 与 headed Chrome/CDP，再决定是否研究 Camoufox；
+- 同一订单的 ChatGPT 站点状态工作副本可加密短期恢复，但绝不跨客户复用；工作副本与菲律宾 sticky 代理共同受持久化租约约束，禁止复制或直接驱动完整个人 Profile；
+- 外部实现中“超时换卡重提、URL 含 success 即成功、日志保存 PAN/CVV/trace”的做法明确禁止。
 
 ## 11. 批量调度与容量
 
@@ -395,10 +478,11 @@ single_use_nonce
 - 人工接管任务不阻塞正常队列；
 - 付款结果对账任务优先级高于新订单预检；
 - 停止新接单不停止已付款订单的开通确认、取消续费和对账。
+- Checkout 创建也受账号级配额、冷却时间、单一活动 artifact 上限和实验 kill switch 控制；创建不是付款，但不是无副作用的只读动作。
 
 ### 11.2 初始容量假设
 
-目标 300 单/日平均约 12.5 单/小时。若单次端到端 Browser 占用 5–10 分钟，理论平均并发低于 3；为覆盖峰值、页面等待和人工任务，实施基线按 6 个并发 Worker 起步，并支持配置扩展到至少 12 个。该数值是容量规划起点，不是生产放量承诺。
+目标 300 单/日平均约 12.5 单/小时。若单次端到端 Browser 占用 5–10 分钟，理论平均并发低于 3；为覆盖峰值、页面等待和人工任务，实施基线按 6 个并发 Worker 起步，并支持配置扩展到至少 12 个。该数值只是 Browser CPU/时长的规划起点；Session 有效率、代理 lease、卡库存/拒绝、3DS、人工接管和对账积压都可能成为更早的容量瓶颈。
 
 ### 11.3 容量验收
 
@@ -410,6 +494,8 @@ single_use_nonce
 - 人工队列积压不阻塞普通预检任务；
 - 所有 run、attempt、检查点和审计可完整追溯；
 - 调度积压、P50/P95 耗时、失败率、人工率和未知率可观测。
+- 使用突发到达、Session 无效、代理不足、卡拒绝、3DS、人工 SLA 超时和对账积压场景，而不是只跑均匀的 350 个成功脚本；
+- 同时报端到端分母、阶段条件成功率、每单 Checkout 创建数、自动容量和人工容量，禁止用过滤后的有效 Session 成功率代表业务产能。
 
 真实放量仍按 1 单、3–5 单、10–20 单、逐步提升并发执行；任何重复付款、资金差异、未知后重付或取消状态不一致都立即停止放量。
 
@@ -425,6 +511,7 @@ Browser 实施采用增量迁移，不改变历史订单状态：
 | `browser_runs` | 一次可租约、可恢复的 Browser 运行 | attempt_id、run_no、status、worker_id、lease、profile_version、last_checkpoint |
 | `browser_checkpoints` | 追加式步骤和资金边界证据 | run_id、sequence、kind、payment_risk、page_signature、result_json、created_at |
 | `browser_evidence` | 脱敏证据索引 | checkpoint_id、evidence_type、object_ref、sha256、redaction_state、expires_at |
+| `checkout_artifacts` | Checkout 敏感工件索引 | run_id、account_key_hmac、kind、secret_ref、url_hash、checkout_hash、created/opened/invalidated_at；原始 URL 不入普通字段 |
 | `browser_interventions` | 人工接管全过程 | run_id、type、status、operator、reason、started_at、finished_at、result |
 | `execution_resource_leases` | 账号/卡片/订单互斥 | resource_type、resource_key_hmac、run_id、lease_until；有效资源唯一 |
 | `payment_permits` | 最终点击的一次性许可 | attempt_id 唯一、run_id、nonce_hash、snapshot_hash、expires_at、consumed_at |
@@ -437,6 +524,7 @@ Browser 实施采用增量迁移，不改变历史订单状态：
 - 检查点只追加，不覆盖历史；
 - `PAYMENT_SUBMITTING` 检查点、许可消费和 attempt 风险状态更新必须原子提交；
 - 页面结果、截图或人工结论不能直接绕过数据库约束创建第二次付款机会。
+- 同一账号身份 HMAC 同时最多一个活动 run 和一个活动 Checkout artifact；Checkout 重建需要确定性失效证据和受控恢复授权。
 
 ## 13. 运营后台复用与新增页面
 
@@ -465,6 +553,7 @@ Browser 实施采用增量迁移，不改变历史订单状态：
 - 开通确认耗时、取消续费确认耗时；
 - 每个 Worker 的成功率、崩溃率和版本；
 - 每条路线的订单量、成功率和资金差异。
+- 端到端输入分母、Session 合格率、每账号 Checkout 创建数、代理阶段漂移率、人工 SLA 和 post-settlement 异常率。
 
 需要立即告警：
 
@@ -486,7 +575,7 @@ Browser 实施采用增量迁移，不改变历史订单状态：
 
 ### 阶段 B1：非付款 Browser PoC
 
-状态：Session 上号器与 legacy 注入逻辑的静态分析已完成；真实网页登录 PoC 尚未执行。
+状态：Session 上号器与 legacy 注入逻辑的静态分析、三模式 PoC 工具、Session Loader v2、离线路由顺序复现、无 Session 公开对照和第一轮多赛道架构对抗式审查已完成；菲律宾 sticky 出口的真实 Session 网页 PoC 尚未执行。
 
 只验证 Session 装载、账号识别、Plus 状态识别、升级入口、Checkout 页面识别和订阅管理入口，不填写真实卡、不点击付款。
 
@@ -495,6 +584,12 @@ Browser 实施采用增量迁移，不改变历史订单状态：
 ### 阶段 B2：控制面和仿真实现
 
 实现 executor profile、run、检查点、租约、一次性付款许可、模拟页面适配器和后台只读视图。
+
+状态：已完成第一版实验编排器、账号/Checkout 租约、加密 artifact vault、人工接管所有权、预路由、多终态 mock gateway、本地追加式 WAL、WAL-backed 编排器和仅监听 `127.0.0.1` 的 Browser/Checkout/payment iframe 仿真页面；11 个 Browser PoC 测试文件共 77 项通过。WAL-backed coordinator 对 run、route、Checkout、付款观察和控制权变更采用“先持久化 intent、再应用、最后提交”的边界，付款外部动作前持久化 `PAYMENT_SUBMITTING`。性质测试、真实子进程退出、租约过期、接管中断、popup 和页面漂移均失败关闭。第一轮 350 单/24 小时等效仿真完成：350 次 submit、0 次重复、3710 条 WAL 事件、约 1.99 MB，38.14 秒完成。MySQL 事务映射 v1 已实现：run、checkpoint、operation、permit 与现有订单/route/资金 attempt 原子关联，未知付款同事务锁为 `RECONCILE_ONLY/SUBMIT_UNKNOWN/UNKNOWN`。artifact vault/资源租约跨进程恢复 v1 也已实现：独立密文表、AES-256-GCM、账号/订单/卡片/artifact 四类租约、统一心跳、过期接管、同 artifact 恢复、过期 review 与确定性销毁均通过 Docker MySQL 8.4。后台追溯/人工控制 v1 已接入现有运营后台，authority 不可见，安全释放与人工未知锁账通过真实 MySQL。尚未完成的是 Browser attempt/Worker 隔离接入、人工同 Context 远程操作通道、并发队列和连续 24 小时 soak。
+
+2026-08-22 对 OpenPrice/PriceAI 的提链、扫码和菲律宾自助充值商品完成只读盘点，结论见 `2026-08-22_browser-marketplace-tool-assessment-report.md`。第三方 UPI 提链 API 虽有较完整异步任务合同，但要求上传 Access Token/Session 并由对方声称加密保留最长 30 分钟，与当前客户 Session 不外传边界冲突；菲律宾 CDK 的业务形态默认归入现有 CDK-API/Provider 路线，不另建 Provider 或业务系统，其实际上游是否同源仍待接口/运行证据确认。当前未采购、未提交真实输入，也未改变 champion/fallback。
+
+B2 接下来的主工程顺序是并发队列及连续 24 小时 soak，再接入隔离 Browser Worker/attempt 派发；MySQL 事务映射、artifact vault/资源租约跨进程恢复和后台追溯/人工控制 v1 均已完成。人工同 Context 远程操作通道仍是 Worker 接入项。公开提链模块静态审查只是可并行研究旁路，不是 B2 的前置条件，也不改变该顺序。
 
 退出条件：崩溃、重复投递、失租约和付款未知仿真均不能产生第二次付款动作；350 单/24 小时容量仿真通过。
 
@@ -561,6 +656,8 @@ Browser 实施采用增量迁移，不改变历史订单状态：
 - 每单隔离 BrowserContext；
 - 每单只有一个资金风险 attempt；
 - 付款后不明确时禁止重付；
+- 同账号跨订单互斥，Checkout 过期不得仅凭时间自动重建；
+- hosted authority 使用加密短期 artifact，不进入普通证据；
 - 成功必须包含 Plus 开通和取消续费确认；
 - 首版验证码与 3DS 采用人工接管；
 - 目标容量每天 200–300 单；

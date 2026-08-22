@@ -81,11 +81,13 @@
 
 这些行为会让页面看起来已经登录，却不能作为真实 Cookie 会话被服务器接受的证据。新 Browser 主链路禁止整体复用该函数。
 
-这不是批量充值所需的“风控规避能力”。它主要是旧代码为了让前端页面继续渲染而做的本地兼容补丁：被伪造的是当前 BrowserContext 看见的响应，ChatGPT 服务端、Checkout 和支付系统并不会因此建立真实登录会话或授予购买权限。进入真实购买请求后，服务端仍会校验 Cookie、账号和支付上下文。
+静态代码不能证明这些补丁的原始目的。结合仓库同时存在的菲律宾 `locale/timezone`、住宅代理建议和 `{session}` sticky proxy，可以合理推断：作者可能试图在跨地区 Session 经菲律宾出口进入 Checkout 时，减少登录重定向和前端会话丢失，并保持一次任务内的浏览器/出口一致性。该推断尚无独立提交说明或运行证据，不能直接写成已验证风控机制。
 
-把 Bearer Token 强行加到多个网页/支付域也不能证明能降低风控；它可能生成与官方浏览器不同的请求形态，反而让登录证据和付款结果更难判断。批量稳定性应来自真实有效 Session、每单隔离 Context、账号/地区/页面上下文一致、受控并发、挑战人工接管和确定性恢复，而不是伪造认证响应。
+这些补丁可能影响前端导航和部分接受 Bearer 的请求，但被伪造的 `/api/auth/session` 仍只是当前 BrowserContext 看见的响应，不能单独证明 ChatGPT 服务端、Checkout 或支付系统已经接受该会话。因此不应删除其研究价值，也不能把“页面能继续走”直接当成真实登录或付款许可。
 
-可以定点提炼并重新测试的函数思想：Cookie 规范化、超长分块、Playwright 注入、真实 `/api/auth/session` 校验和 UI 探针。所有 auth API 伪造、Bearer 补丁和 bootstrap localStorage 逻辑必须排除。
+Bearer 注入是否改善跨地区场景、影响哪些端点、是否产生异常请求形态，必须通过非付款网络取证确认。最终成功证据仍必须来自服务器实际接受的账号/订阅状态和后续资金证据。
+
+可以定点提炼并重新测试的函数思想：Cookie 规范化、超长分块、Playwright 注入、真实 `/api/auth/session` 校验和 UI 探针。auth API 伪造、Bearer 补丁和 bootstrap localStorage 不进入默认资金链；它们只允许在独立、默认关闭、无付款能力的实验 Context 中逐层测试。
 
 ## 5. 推荐的最小 Session Adapter
 
@@ -103,6 +105,11 @@ interface BrowserSessionInput {
   expectedAccountId: string;
   expectedEmail?: string;
   sessionToken: string;
+  cookies?: Array<{ name: string; value: string }>;
+  deviceId?: string;
+  sessionAcquisitionCountry?: string;
+  sessionAcquiredAt?: string;
+  accountHabitualCountry?: string;
   expiresAt: string;
 }
 ```
@@ -116,7 +123,7 @@ interface BrowserSessionInput {
 3. 选择候选 Cookie 名和对应分块名称；
 4. 使用 Playwright `context.addCookies()` 注入，属性固定且不写持久化 profile；
 5. 访问真实 `/api/auth/session` 或等价只读会话端点；
-6. 禁止 route fulfill、fetch patch、localStorage bootstrap 或 Bearer header 注入；
+6. 基线模式不安装 route fulfill、fetch patch、localStorage bootstrap 或 Bearer header；实验模式只能在另一个无付款能力的 Context 中安装单一变量；
 7. 从真实响应提取账号 ID、用户 ID、邮箱和有效期；
 8. 与订单冻结的 `expectedAccountId` 比对；
 9. 再访问首页做 UI 登录探针；
@@ -174,6 +181,7 @@ type BrowserSessionBootstrapResult =
 - 本地 Playwright 1.59.1 支持 `BrowserContext.addCookies()`；
 - legacy `session-auth.js` 含分块与真实 Session API 探针；
 - legacy 同时包含不可复用的 auth API 伪造和 Bearer 注入。
+- legacy 明确提供菲律宾 locale/timezone、住宅代理和按 session 固定出口的配置，证明区域/出口一致性是原方案的设计目标之一。
 
 ### 仍需非付款 PoC
 
@@ -181,18 +189,24 @@ type BrowserSessionBootstrapResult =
 - 现有订单 `sessionToken` 是否足以建立网页登录态；
 - 真实会话响应中稳定的账号 ID 字段；
 - Session 是否绑定设备、地区、出口或其他 Cookie；
+- 非菲律宾 Free 账号 Session 取得后切到菲律宾出口时，Session 获取国家、Session 年龄和账号常用国家分别产生什么影响；
+- `SESSION_ONLY`、精选 Cookie/device bundle 与完整 `cookies[]` 的真实差异；
 - Cloudflare/登录挑战的可重复分类；
 - UI 登录探针和真实会话响应的一致性；
 - Session 失效、被撤销和账号不匹配的实际页面/响应形态。
+- 菲律宾出口登录远距离账号时，Cookie-only 与 auth overlay 两种模式的实际差异；
+- 哪些真实请求接受 Cookie、哪些接受 Bearer，以及 overlay 是否只改变前端表现；
+- 同一订单固定菲律宾出口后，登录、Checkout、3DS和取消续费能否保持同一网络身份。
 
 ## 8. 实施决策
 
-采用“新建最小 Browser Session Adapter”方案：
+采用“新建可分层验证的 Browser Session Adapter”方案：
 
 - 以用户提供扩展的 Cookie 输入规则为参考；
 - 以 legacy 的分块、Playwright 注入和真实只读验证思路为参考；
-- 不安装扩展、不整体复用 legacy `installChatGptSession()`；
-- 不伪造 auth API，不注入 Bearer，不以 Cookie 存在作为成功；
+- 不安装扩展、不整体照搬 legacy `installChatGptSession()`；
+- 默认从真实 Cookie 模式开始；把 auth overlay 与 Bearer 注入拆成独立、可观测、默认关闭的实验层，通过非付款 A/B PoC 判断其真实作用；
+- 即使实验层帮助页面继续导航，也不能用伪造响应或 Cookie 存在作为真实登录成功证据；
 - 通过非付款 PoC 冻结真实 Session 合同后再进入实现。
 
-下一实施边界已经明确：先实现不联网的 Cookie 解析/分块计划与 fixture 测试，再用一枚专门的免费测试账号 Session 进行真实只读登录 PoC。PoC 只到账号、套餐、升级入口、Checkout 页面和订阅管理入口，不填写卡片、不点击付款。
+不联网的 Cookie 解析、分块、fixture 测试、三模式 PoC 骨架、route 顺序复现和无 Session 公开对照已经完成。下一实施边界是使用从非菲律宾 Free 测试账号取得的 Session，在固定菲律宾 sticky 出口执行真实只读 A/B；PoC 只到账号、套餐和升级入口，后续 Checkout 观察需另行扩大只读边界，始终不填写卡片、不点击付款。

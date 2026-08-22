@@ -25,7 +25,7 @@
 ### 本轮最终对齐补充
 
 - 用户确认：如果卡台存在给既有卡片补余额的 API，应直接使用，不应无理由放弃。
-- 代码/文档核验结果：HNSKJ 文档列出 `POST /cards/{id}/recharge`；当前 v1 `HnskjCardProvider` 未实现该方法，现有开卡脚本也没有调用路径，本轮未发起该写接口的真实请求。
+- 代码/文档核验结果：HNSKJ 文档列出 `POST /cards/{id}/recharge`；当前工作树 `HnskjCardProvider` 已实现该方法并有隔离测试，但现有生产 release 未证明包含它，Runner/生产注册和该写接口真实调用仍未完成。
 - 历史成功证据是 2026-08-18 独立 Provider PoC：`POST /cards/purchase` 开出 `$16` 卡后，ZZSHU 直充成功并确认取消续费；这证明成功的是“开卡 + 客户直充”链路，不足以证明“对既有卡调用 `/cards/{id}/recharge`”已经实测成功。
 - 根目录 `对接api.md` 的 `/bank-cards/{id}/balance` 属于另一套 legacy `/pay` 合同，不能与 HNSKJ Open API 混用。
 - Session 更换：原订单最多 3 次，窗口初始 72 小时、可配置；这是 Session 更换窗口，不是 CDK 过期时间，且只能在资金影响前发生。

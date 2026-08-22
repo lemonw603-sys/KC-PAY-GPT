@@ -71,6 +71,12 @@ const cardsDataSchema = z.object({
   source: z.string()
 }).passthrough();
 
+// These endpoints have had field-level drift across observed responses.  We
+// still require an object-shaped data payload at the provider boundary so a
+// scalar/null response cannot leak into workflow code; operation-specific
+// field interpretation remains in the mapper that owns the business rule.
+const objectDataSchema = z.record(z.string(), z.unknown());
+
 const transactionSchema = z.object({
   id: z.string().min(1),
   type: z.string().min(1),
@@ -146,6 +152,10 @@ function validateData(envelope, schema, operation) {
     });
   }
   return { ...envelope, data: result.data };
+}
+
+function validateObjectData(envelope, operation) {
+  return validateData(envelope, objectDataSchema, operation);
 }
 
 const CARD_FAILURE_STATUSES = new Set(['failed', 'failure', 'invalid', 'inactive', 'closed', 'cancelled', 'canceled']);
@@ -309,8 +319,11 @@ export class HnskjCardProvider {
     );
   }
 
-  card(cardId) {
-    return this.request(`/cards/${encodeURIComponent(String(cardId))}`);
+  async card(cardId) {
+    return validateObjectData(
+      await this.request(`/cards/${encodeURIComponent(String(cardId))}`),
+      'card detail'
+    );
   }
 
   async purchaseCard({ cardTypeId, openCardAmount, idempotencyKey, remark }) {
@@ -351,10 +364,13 @@ export class HnskjCardProvider {
     });
   }
 
-  refreshBalance(cardId) {
-    return this.request(`/cards/${encodeURIComponent(String(cardId))}/refresh-balance`, {
-      method: 'POST'
-    });
+  async refreshBalance(cardId) {
+    return validateObjectData(
+      await this.request(`/cards/${encodeURIComponent(String(cardId))}/refresh-balance`, {
+        method: 'POST'
+      }),
+      'balance refresh'
+    );
   }
 
   async transactions(cardId, query = {}) {
@@ -370,12 +386,15 @@ export class HnskjCardProvider {
     );
   }
 
-  withdraw(cardId, idempotencyKey) {
-    return this.request(`/cards/${encodeURIComponent(String(cardId))}/withdraw`, {
-      method: 'POST',
-      headers: { 'X-Idempotency-Key': assertIdempotencyKey(idempotencyKey) },
-      uncertainOnSchema: true,
-      retryableOnSchema: true
-    });
+  async withdraw(cardId, idempotencyKey) {
+    return validateObjectData(
+      await this.request(`/cards/${encodeURIComponent(String(cardId))}/withdraw`, {
+        method: 'POST',
+        headers: { 'X-Idempotency-Key': assertIdempotencyKey(idempotencyKey) },
+        uncertainOnSchema: true,
+        retryableOnSchema: true
+      }),
+      'card withdrawal'
+    );
   }
 }

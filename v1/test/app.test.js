@@ -739,3 +739,70 @@ test('guards batch recharge authorization and exposes reconciliation, delivery, 
     assert.match(await csv.text(), /PJV2-1,CARD_READY/);
   });
 });
+
+test('keeps Browser timelines read-only and requires origin plus step-up for control transfer', async () => {
+  const adminAuth = createAdminSessionAuth({
+    passwordHash: await hashAdminPassword('fixture admin password', { salt: Buffer.alloc(16, 25) }),
+    sessionSecret: Buffer.alloc(32, 26), secureCookies: false
+  });
+  const received = {};
+  const app = createApp({
+    adminAuth,
+    listAdminBrowserRuns: async (input) => ({ page: Number(input.page), total: 1, runs: [{ id: 'run-1' }] }),
+    getAdminBrowserRun: async (runId) => ({ run: { id: runId }, artifacts: [{ id: 'artifact-1' }] }),
+    controlAdminBrowserRun: async (runId, input) => {
+      received.control = { runId, input };
+      return { runId, action: input.action, controlState: 'REQUESTED' };
+    }
+  });
+
+  await withServer(app, async (baseUrl) => {
+    const login = await fetch(`${baseUrl}/api/v1/admin/session`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: 'fixture admin password' })
+    });
+    const sessionCookie = login.headers.get('set-cookie').split(';')[0];
+    const runs = await fetch(`${baseUrl}/api/v1/admin/browser/runs?page=1`, {
+      headers: { Cookie: sessionCookie }
+    });
+    assert.equal(runs.status, 200);
+    assert.equal((await runs.json()).total, 1);
+    const detail = await fetch(`${baseUrl}/api/v1/admin/browser/runs/run-1`, {
+      headers: { Cookie: sessionCookie }
+    });
+    assert.equal(detail.status, 200);
+    assert.equal((await detail.json()).run.id, 'run-1');
+
+    const body = JSON.stringify({
+      action: 'REQUEST', operationId: 'admin-request:run-1',
+      confirmation: '请求人工接管 run-1', reasonCode: 'OPERATOR_REVIEW'
+    });
+    const noStepUp = await fetch(`${baseUrl}/api/v1/admin/browser/runs/run-1/control`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: sessionCookie, Origin: baseUrl }, body
+    });
+    assert.equal(noStepUp.status, 403);
+    assert.deepEqual(await noStepUp.json(), { error: 'admin_step_up_required' });
+    assert.equal(received.control, undefined);
+
+    const sensitiveCookie = await stepUp(baseUrl, sessionCookie);
+    const wrongOrigin = await fetch(`${baseUrl}/api/v1/admin/browser/runs/run-1/control`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: sensitiveCookie,
+        Origin: 'https://attacker.example' }, body
+    });
+    assert.equal(wrongOrigin.status, 403);
+    assert.equal(received.control, undefined);
+
+    const controlled = await fetch(`${baseUrl}/api/v1/admin/browser/runs/run-1/control`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: sensitiveCookie, Origin: baseUrl }, body
+    });
+    assert.equal(controlled.status, 200);
+    assert.equal((await controlled.json()).controlState, 'REQUESTED');
+    assert.deepEqual(received.control, {
+      runId: 'run-1',
+      input: {
+        action: 'REQUEST', operationId: 'admin-request:run-1',
+        confirmation: '请求人工接管 run-1', reasonCode: 'OPERATOR_REVIEW'
+      }
+    });
+  });
+});

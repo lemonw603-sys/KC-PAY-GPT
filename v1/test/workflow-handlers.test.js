@@ -6,7 +6,7 @@ import { createWorkflowHandlers } from '../src/workers/workflow-handlers.js';
 import { sessionFixture } from '../test-support/session-fixture.js';
 
 function setup({ status = OrderStatus.CARD_READY, rechargeStatuses = [],
-  rechargeAttemptRepository = null } = {}) {
+  rechargeAttemptRepository = null, browserDispatchRepository = null } = {}) {
   const calls = [];
   const providerCalls = [];
   const context = {
@@ -93,6 +93,7 @@ function setup({ status = OrderStatus.CARD_READY, rechargeStatuses = [],
       body: { ...input, planType: input.planType || 'plus' }
     }),
     rechargeAttemptRepository: effectiveAttemptRepository,
+    browserDispatchRepository,
     wait: async () => {},
     pollDelayMs: 1,
     failureConfirmDelayMs: 1
@@ -100,6 +101,28 @@ function setup({ status = OrderStatus.CARD_READY, rechargeStatuses = [],
   return { calls, providerCalls, context, workflow, cardProvider, rechargeProvider,
     rechargeAttemptRepository: effectiveAttemptRepository, handlers };
 }
+
+test('Browser submit hands off a durable dispatch job and never calls the recharge Provider', async () => {
+  const dispatches = [];
+  const state = setup({
+    rechargeAttemptRepository: {
+      beginAuthorizedAttempt: async () => ({
+        id: 'browser-attempt-1', executorKind: 'BROWSER', startedAt: new Date()
+      })
+    },
+    browserDispatchRepository: {
+      enqueue: async (input) => { dispatches.push(input); return { status: 'QUEUED' }; }
+    }
+  });
+  await state.handlers.SUBMIT_RECHARGE({ id: 1, order_id: 'order-1', attempts: 1 });
+  assert.deepEqual(dispatches, [{
+    jobKey: 'browser-attempt:browser-attempt-1',
+    attemptId: 'browser-attempt-1',
+    orderId: 'order-1',
+    executorProfileId: null
+  }]);
+  assert.equal(state.providerCalls.some((call) => call.operation === 'create_direct'), false);
+});
 
 test('Foundation v2 consumes an explicit authorization and commits through the funds fence', async () => {
   const attemptCalls = [];

@@ -12,6 +12,8 @@
 
 本轮没有发起新的真实开卡、卡充值、直充、提现或 Browser 付款请求。因此外部平台的“当前实时可用性”仍须以现场只读请求重新确认。
 
+本次追加的只读运行时核验记录见 [`LIVE_RUNTIME_AUDIT_2026-08-22.md`](./LIVE_RUNTIME_AUDIT_2026-08-22.md)：公网 Web 两端的 live/ready 均返回 HTTP 200，运营后台未带会话访问按预期跳转登录；生产 release、数据库和 HNSKJ 当前凭据仍未由本地工具现场核对。
+
 ## 2. 结论先行
 
 三套系统的**数据模型和主要业务方向基本对齐**，但**生产状态没有对齐到最新代码**：
@@ -125,8 +127,8 @@
 
 ### 5.3 当前卡台代码问题
 
-- `card()`、`refreshBalance()` 和 `withdraw()` 路径目前没有像 profile/balance/card-types/transactions 那样统一的完整响应 Schema 校验；未知结构可能在更靠后的业务层才暴露。该问题不等于已造成生产事故，但与“所有外部响应先 Schema 校验”的项目硬约束不完全一致。
-- 低余额补卡调度器仍使用固定的 `LEGACY_HNSKJ_ACCOUNT_ID`，没有从订单冻结的 `fulfillment_route`/Provider account 选择卡台；这与未来人工替换卡台的积木架构尚未完全对齐。
+- `card()`、`refreshBalance()` 和 `withdraw()` 路径现已补上对象形状的运行时 Schema 校验，并有隔离测试；生产 release 是否包含该修复仍需 R0/R1 现场核对。字段级业务解释仍由后续 mapper 负责，未知字段不会被猜测为成功。
+- 自动低余额补卡和自动开卡调度现已按当前 Plus `fulfillment_route` 解析 HNSKJ card Provider account；代码有隔离测试覆盖，尚未生产部署。`card-stock-service` 仍保留 legacy 默认 account 作为显式兼容入口，真正启用多卡台前必须要求调用方传入已选 account，不能依赖默认值。
 - 卡台切换基础数据模型已经存在 Provider account/route，但切换 UI、健康检查、余额/卡段/写权限门槛和审计动作尚未完成。
 
 ## 6. 三套系统之间的对齐关系

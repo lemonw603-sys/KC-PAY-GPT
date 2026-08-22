@@ -9,8 +9,7 @@ import {
 } from './card-provider-snapshot-service.js';
 import { cardCatalogIsFresh, readCardCatalogSnapshot } from './card-catalog-snapshot-service.js';
 import { eligibleInventoryCardSql } from './card-inventory-eligibility.js';
-
-const LEGACY_HNSKJ_ACCOUNT_ID = '00000000-0000-4000-8000-000000000101';
+import { resolveCurrentCardProviderAccount } from './provider-route-service.js';
 
 function shanghaiDayBounds(now = new Date()) {
   const instant = now instanceof Date ? now : new Date(now);
@@ -188,6 +187,11 @@ export function createCardStockJobService({ pool }) {
           code: 'CARD_STOCK_AUTO_SETTINGS_INVALID', status: 409
         });
       }
+      const providerAccountId = await resolveCurrentCardProviderAccount(connection);
+      if (!providerAccountId) {
+        await connection.commit();
+        return { scheduled: false, reason: 'CARD_PROVIDER_ROUTE_UNAVAILABLE' };
+      }
       const [active] = await connection.query(
         `SELECT id FROM card_stock_jobs WHERE status IN ('PENDING','RUNNING') LIMIT 1 FOR UPDATE`
       );
@@ -220,7 +224,7 @@ export function createCardStockJobService({ pool }) {
          WHERE ${eligibleInventoryCardSql('cards', '?')}
            AND provider_account_id = ?
            AND BINARY card_type_id = BINARY ?`,
-        [String(minimum), LEGACY_HNSKJ_ACCOUNT_ID, cardTypeId]
+        [String(minimum), providerAccountId, cardTypeId]
       );
       const available = Number(stock.count || 0);
       if (available > threshold) {

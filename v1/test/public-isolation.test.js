@@ -87,8 +87,8 @@ test('admin refresh feedback and inset dropdown arrows remain visible', () => {
   const html = fs.readFileSync(path.join(directory, 'admin', 'index.html'), 'utf8');
   const script = fs.readFileSync(path.join(directory, 'admin', 'assets', 'admin.js'), 'utf8');
   const styles = fs.readFileSync(path.join(directory, 'admin', 'assets', 'admin.css'), 'utf8');
-  assert.match(html, /admin\.css\?v=16/);
-  assert.match(html, /admin\.js\?v=16/);
+  assert.match(html, /admin\.css\?v=17/);
+  assert.match(html, /admin\.js\?v=17/);
   assert.match(script, /button\.textContent = '刷新中…'/);
   assert.match(script, /showNotice\('刷新完成。', 'success'\)/);
   assert.match(script, /showNotice\('刷新失败，请稍后重试。'\)/);
@@ -96,6 +96,16 @@ test('admin refresh feedback and inset dropdown arrows remain visible', () => {
   assert.match(styles, /padding-right:\s*40px\s*!important/);
   assert.match(styles, /background-image:[^;]+!important/);
   assert.match(styles, /background-position:\s*calc\(100% - 19px\) 50%, calc\(100% - 14px\) 50%\s*!important/);
+});
+
+test('admin Browser view exposes operational metadata but no authority recovery field', () => {
+  const html = fs.readFileSync(path.join(directory, 'admin', 'index.html'), 'utf8');
+  const script = fs.readFileSync(path.join(directory, 'admin', 'assets', 'admin.js'), 'utf8');
+  assert.match(html, /Browser 执行/);
+  assert.match(html, /authority 不可见/);
+  assert.match(script, /\/api\/v1\/admin\/browser\/runs/);
+  assert.match(script, /确认付款结果未知/);
+  assert.doesNotMatch(script, /\.secretRef|\.navigationUrl|\.leaseToken|\.resourceKeyHmac/);
 });
 
 test('admin describes automatic fulfillment and keeps permits explicitly gray-only', () => {

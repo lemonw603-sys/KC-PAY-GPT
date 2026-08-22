@@ -203,6 +203,25 @@ test('Hnskj accepts the observed complete transaction response without page meta
   assert.equal(result.data.page, undefined);
 });
 
+test('Hnskj card detail, balance refresh, and withdrawal reject non-object data at the boundary', async () => {
+  const provider = new HnskjCardProvider({
+    baseUrl: 'https://card.example/api/open/v1',
+    apiKey: 'nhs_test_key',
+    fetchImpl: fetchQueue([
+      response({ success: true, data: 'drifted-card' }),
+      response({ success: true, data: null }),
+      response({ success: true, data: [] })
+    ], [])
+  });
+
+  await assert.rejects(provider.card('fixture-card-id'), ProviderSchemaError);
+  await assert.rejects(provider.refreshBalance('fixture-card-id'), ProviderSchemaError);
+  await assert.rejects(
+    provider.withdraw('fixture-card-id', 'withdraw-123456789012'),
+    ProviderSchemaError
+  );
+});
+
 test('Hnskj rejects amount type drift instead of accepting JavaScript numbers', async () => {
   const invalidBalance = structuredClone(hnskjReadFixtures.balance);
   invalidBalance.data.balance = 0;

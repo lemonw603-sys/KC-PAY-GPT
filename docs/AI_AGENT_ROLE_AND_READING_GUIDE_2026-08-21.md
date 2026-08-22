@@ -40,8 +40,9 @@ Agent 不是：
 | 1 | `../CLAUDE.md` | 项目硬约束、事实源入口和开发纪律 |
 | 2 | `FINAL_REQUIREMENTS_BASELINE_2026-08-21.md` | 用户最终确认的产品规则 |
 | 3 | `BROWSER_RECHARGE_EXECUTOR_BASELINE_2026-08-21.md` | Browser 主链路、接口、恢复和容量设计 |
-| 4 | `IMPLEMENTATION_PLAN_FINAL_2026-08-21.md` | 阶段顺序、退出条件和停止条件 |
-| 5 | `DECISIONS.md` | 判断旧结论是否已被替代 |
+| 4 | `BROWSER_CURRENT_STATUS_2026-08-22.md` | 最近完成项、当前停止点、未验证事实和下一动作 |
+| 5 | `IMPLEMENTATION_PLAN_FINAL_2026-08-21.md` | 阶段顺序、退出条件和停止条件 |
+| 6 | `DECISIONS.md` | 判断旧结论是否已被替代 |
 
 需要生产运行事实时再读 `SINGLE_SOURCE_OF_TRUTH_2026-08-21.md`；需要历史原因时再读 `PROJECT_HANDOFF_FULL_HISTORY_2026-08-21.md`。不要反过来先读历史，再用历史覆盖当前决策。
 
@@ -64,6 +65,7 @@ Agent 不是：
 | --- | --- | --- |
 | `v1/` | 当前共享业务核心 | 订单、数据库、后台、Provider、Worker 和测试的主要实现依据 |
 | `docs/BROWSER_RECHARGE_EXECUTOR_BASELINE_2026-08-21.md` | Browser 单一事实源 | Browser 任务必读 |
+| `docs/BROWSER_CURRENT_STATUS_2026-08-22.md` | Browser 当前接班点 | 先看当前完成/未完成，再按需读研究报告 |
 | `docs/contracts/` | 已验证接口/运行合同 | 只把有证据的事实写成合同 |
 | `docs/DECISIONS.md` | 决策优先级入口 | 先看状态列，已替代决策不能继续实施 |
 | 根目录 `session-auth.js` 等 | legacy 参考代码 | 只能按函数提炼并重新审查，不能整体注册到新运行时 |

@@ -21,6 +21,7 @@ export function createWorkflowHandlers({
   mapCardCredentials,
   buildDirectOrderRequest,
   rechargeAttemptRepository = null,
+  browserDispatchRepository = null,
   pollDelayMs = 5_000,
   cancellationDelayMs = 60_000,
   failureConfirmDelayMs = 2_500,
@@ -297,6 +298,22 @@ export function createWorkflowHandlers({
       }
       throw error;
     }
+
+    if (attempt.executorKind === 'BROWSER') {
+      if (!browserDispatchRepository) {
+        throw new TaskExecutionError('Browser dispatch repository is not configured', {
+          code: 'BROWSER_DISPATCH_UNAVAILABLE', retryable: true, delayMs: 60_000
+        });
+      }
+      await browserDispatchRepository.enqueue({
+        jobKey: `browser-attempt:${attempt.id}`,
+        attemptId: attempt.id,
+        orderId: task.order_id,
+        executorProfileId: attempt.executorProfileId || null
+      });
+      return;
+    }
+
     const permit = {
       allowed: true,
       providerCall: { id: attempt.providerCallId, startedAt: attempt.startedAt }

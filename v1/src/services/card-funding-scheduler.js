@@ -1,7 +1,6 @@
 import crypto from 'node:crypto';
 import { eligibleInventoryCardSql } from './card-inventory-eligibility.js';
-
-const LEGACY_HNSKJ_ACCOUNT_ID = '00000000-0000-4000-8000-000000000101';
+import { resolveCurrentCardProviderAccount } from './provider-route-service.js';
 
 export function createCardFundingScheduler({ pool, fundingRepository }) {
   async function scheduleLowBalance({ limit = 10, now = new Date() } = {}) {
@@ -26,6 +25,11 @@ export function createCardFundingScheduler({ pool, fundingRepository }) {
         await connection.commit();
         return { enabled: true, scheduled: 0, reason: 'MINIMUM_BALANCE_UNCONFIGURED' };
       }
+      const providerAccountId = await resolveCurrentCardProviderAccount(connection);
+      if (!providerAccountId) {
+        await connection.commit();
+        return { enabled: true, scheduled: 0, reason: 'CARD_PROVIDER_ROUTE_UNAVAILABLE' };
+      }
       const [cards] = await connection.query(
         `SELECT c.id, c.current_balance
          FROM cards c
@@ -39,7 +43,7 @@ export function createCardFundingScheduler({ pool, fundingRepository }) {
            )
          ORDER BY c.current_balance ASC, c.updated_at ASC
          LIMIT ? FOR UPDATE SKIP LOCKED`,
-        [LEGACY_HNSKJ_ACCOUNT_ID, String(minimum), safeLimit]
+        [providerAccountId, String(minimum), safeLimit]
       );
       const created = [];
       for (const card of cards) {
@@ -51,7 +55,7 @@ export function createCardFundingScheduler({ pool, fundingRepository }) {
             funds_risk_state, idempotency_key)
            VALUES (?, ?, NULL, ?, ?, 'USD', 'PREPARED', 'NONE', ?)
            ON DUPLICATE KEY UPDATE id = id`,
-          [attemptId, card.id, LEGACY_HNSKJ_ACCOUNT_ID, String(amount),
+          [attemptId, card.id, providerAccountId, String(amount),
             `card-funding:${attemptId}`]
         );
         if (Number(inserted.affectedRows) === 1) {

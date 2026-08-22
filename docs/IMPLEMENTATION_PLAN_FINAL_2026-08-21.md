@@ -169,7 +169,7 @@ ZZSHU 正式成功链路不再是 Browser 项目前置条件。本阶段只验�
 5. 使用模拟页面验证 Browser run、检查点、租约、一次性付款许可和结果未知恢复；第一版编排器、租约、artifact vault、接管所有权、预路由、mock gateway、本地追加式 WAL、WAL-backed 状态变更、真实 BrowserContext/iframe/popup 页面、随机崩溃、重复投递、租约过期、人工接管中断和页面漂移均已完成；MySQL 事务映射 v1 以及跨进程 artifact 密文/四类资源租约 Repository 也已完成并通过隔离 MySQL 8.4；
 6. 完成不少于 350 单/24 小时的无真实付款容量仿真；第一轮 350 单等效仿真已通过（350 submit、0 duplicate，38.14 秒），后续补并发队列和连续 24 小时 soak，不把等效仿真写成真实连续运行事实。
 
-当前主工程关键路径固定为：MySQL 事务映射、artifact vault/资源租约跨进程恢复、后台追溯/人工控制（均已完成 v1）→ 先补 Browser attempt/dispatch 与付款后 Plus 激活/取消闭环 → 并发队列、真实多连接竞争、连续 24 小时 soak → 隔离 Browser Worker 与人工同 Context 通道接入。2026-08-22 第二轮对抗审查见 `docs/2026-08-22_browser-control-plane-adversarial-review-report.md`，在上述 P0 闸门关闭前不得宣称 Browser 批量能力已验证。公开提链源码静态审查属于可并行、非阻塞研究，不得排到该关键路径之前。市场上的菲律宾 CDK 默认按现有 CDK-API/Provider 路线归类，不建立新的业务路线；其实际上游是否同源须以后用接口和运行证据确认。
+当前主工程关键路径固定为：MySQL 事务映射、artifact vault/资源租约跨进程恢复、后台追溯/人工控制（均已完成 v1）→ Browser attempt/dispatch 与付款后 Plus 激活/取消闭环（attempt、终态和 durable dispatch queue/lease v1 已落盘，真实 Worker 和页面观察待接）→ 隔离 Worker 的 lease-loss/action watchdog → 并发队列、真实多连接竞争、连续 24 小时 soak → 人工同 Context 通道接入。2026-08-22 第二轮对抗审查见 `docs/2026-08-22_browser-control-plane-adversarial-review-report.md`，在上述 P0 闸门关闭前不得宣称 Browser 批量能力已验证。公开提链源码静态审查属于可并行、非阻塞研究，不得排到该关键路径之前。市场上的菲律宾 CDK 默认按现有 CDK-API/Provider 路线归类，不建立新的业务路线；其实际上游是否同源须以后用接口和运行证据确认。
 
 ### 停止条件
 
@@ -204,6 +204,7 @@ ZZSHU 正式成功链路不再是 Browser 项目前置条件。本阶段只验�
 Browser 后期实现不依赖 ZZSHU；它使用 HNSKJ 卡片并直接操作 ChatGPT 官方购买和订阅管理页面。实施顺序为：
 
 - 完成非付款 Session/页面 PoC，并冻结 champion 与最多一个可在 Checkout 创建前路由的预验证 fallback；
+- 在非付款 PoC 前接入本地 Session 整理/校验器：仓库外 `0600` 输入、显式 Cookie 家族、内存优先、脱敏日志；不得把规范化 Session 纳入仓库；
 - 实现 Browser run、检查点、资源锁、一次性付款许可和仿真页面适配器；
 - 实现隔离 Browser Worker；
 - 接入共同的 `recharge_attempts`；

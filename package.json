@@ -11,7 +11,14 @@
     "test": "npm run test:legacy && npm run test:v1",
     "test:legacy": "vitest --run",
     "test:v1": "npm --prefix v1 test",
-    "test:watch:legacy": "vitest"
+    "test:watch:legacy": "vitest",
+    "poc:browser-session:public": "node browser-poc/session-ab-poc.js --public-control --mode cookie-only",
+    "poc:browser-session:summarize": "node browser-poc/summarize-ab.js",
+    "poc:browser-session:route-order": "node browser-poc/route-order-proof.js",
+    "poc:browser-experiment:offline": "node browser-poc/run-offline-experiment.js",
+    "poc:browser-experiment:wal": "node browser-poc/run-offline-wal-recovery.js",
+    "poc:browser-experiment:capacity": "node browser-poc/run-capacity-simulation.js 350",
+    "test:browser-poc": "vitest --run test/browser-session-ab-poc.test.js test/browser-checkout-link-core.test.js test/browser-experiment-core.test.js test/browser-mock-gateway.test.js test/browser-offline-experiment-runner.test.js test/browser-experiment-wal.test.js test/browser-offline-wal-recovery.test.js test/browser-local-mock-page.test.js test/browser-wal-backed-experiment.test.js test/browser-process-crash-recovery.test.js test/browser-capacity-simulation.test.js"
   },
   "engines": {
     "node": ">=20"
