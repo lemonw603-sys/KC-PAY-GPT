@@ -252,9 +252,8 @@ flowchart LR
 
 ### 尚未完成或尚未真实验证
 
-- 本地阻断当前 Plus 账号的完整业务实现；
-- 40030 写入订单 failure_code/failure_reason 并统一后台展示；
-- 每次真实 create_direct 与 recharge_attempts 一一对应的事务审计；
+- API 路径不增加独立 Plus 预检；40030 已映射为客户可修复的 Session 状态，后台详细展示仍需生产验收；
+- 每次真实 create_direct 与 recharge_attempts 的事务审计已完成阶段三历史修复和 readiness 约束，新的真实成功单仍待验证；
 - 符合规则的非 Plus 目标账号成功订单；
 - 新卡付费开通、开卡失败、超时和幂等重放；
 - 真实 SUBMIT_UNKNOWN、退款确认、余额提取和取消续费人工路径；
@@ -278,10 +277,10 @@ Worker=active
 
 ### P0：下一次真实充值前
 
-1. 本地硬阻断当前为 Plus 的目标账号；
-2. 将 40030 映射为明确的内部失败码和后台原因；
-3. 完成 provider_calls 与 recharge_attempts 的代码、事务和数据库核对；
-4. 增加 Provider/产品能力预检，禁止不兼容订单进入 Worker。
+1. API 路径不增加独立账号预检；使用 Provider 明确 40030 拒绝作为权威结果并保持 Session 可恢复；
+2. 验收 40030 在后台的完整失败字段和客户原因展示；
+3. 继续用真实成功单核对 provider_calls、recharge_attempts、Provider 订单和卡交易；
+4. Browser 路径另行验证同 Context 只读账号步骤，不把它混入 API 路径。
 
 ### P1：单笔灰度前
 
