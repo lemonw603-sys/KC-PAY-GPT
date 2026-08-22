@@ -92,3 +92,13 @@
 - 新增迁移 `037_card_discovery_latest_index.sql`，为最新记录查询增加复合索引；
 - 隔离 MySQL 迁移 037 后 v1 全量测试仍为 `401/401 pass, 0 fail, 0 skipped`；
 - 新候选包：`artifacts/release-candidate-20260822-0a9c574/`，416 文件，清单 SHA-256：`607675eb618eb1605b3e921e6ea3ae34ec031406ebf764c771a25bbd196aef81`。
+
+### 新查询的隔离环境验证
+
+在已应用迁移 037 的隔离 MySQL 上直接执行与后台总览相同的 anti-join 统计：
+
+- 返回 `0` 条待处理记录；
+- 查询耗时约 `5 ms`；
+- `EXPLAIN` 显示 `newer` 使用 `idx_card_discoveries_review`，`cards` 使用唯一索引 `uq_cards_provider_account_external`，两处均为 `Not exists` 反连接路径。
+
+这只能证明查询在隔离数据集上的计划和耗时正常，不能替代生产部署后的 `/health/ready` 验证。生产当前仍是旧 release，不能据此宣称阻断已解除。
