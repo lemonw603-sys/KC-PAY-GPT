@@ -4,10 +4,12 @@
 
 > Browser 方向更新：ZZSHU 剩余合同、错误映射、状态轮询和扩容任务不再继续。Browser 项目当前进入 B0 设计冻结，随后按非付款 PoC→仿真控制面→隔离联调→受控真实灰度→200–300 单/日放量推进，详见 `BROWSER_RECHARGE_EXECUTOR_BASELINE_2026-08-21.md`。
 
-> Browser 当前进度：B0 设计冻结完成；B1 已完成上号器和 legacy Session 注入逻辑的静态分析，已冻结“真实 Cookie + 真实会话响应 + 账号比对”的最小 Adapter 方向，尚未使用真实 Session 执行网页登录 PoC。
+> Browser 当前进度：B0 设计冻结完成；B1 已完成上号器/legacy 静态分析、两轮扩大公开实现调研、三模式与三档 Cookie policy 非付款 PoC 工具、离线路由顺序复现和无 Session 公开对照。2026-08-22 完成 Session Loader v2、hosted 提链研究、多赛道基线、第一轮正式架构对抗式审查和外部防封/指纹浏览器资料评估；B2 已完成实验编排器、账号/Checkout 租约、加密 artifact vault、接管所有权、预路由、多终态 mock gateway、本地追加式 WAL、WAL-backed 状态变更、`127.0.0.1` Browser/Checkout/payment iframe/popup 仿真、MySQL 事务映射 v1、artifact vault/账号/订单/卡片/Checkout 资源租约跨进程恢复 v1，以及现有运营后台中的 Browser 脱敏视图/人工控制 v1。性质测试和真实子进程退出证明重复投递最多一次提交，页面漂移零提交；第一轮 350 单/24 小时等效仿真为 350 submit、0 duplicate、38.14 秒。Browser PoC 11 文件 77 项通过；MySQL 8.4 DDL 重放、跨 Repository 实例解密、过期接管和人工未知锁账集成通过。菲律宾 sticky 真实 Session、并发队列、人工同 Context 远程操作通道和连续 24 小时 soak 仍未完成。
 
-- 当前阶段：阶段 4 MVP 运营闭环已具备；已完成一次真实单笔失败链路验证，尚未完成符合业务规则账号的成功充值和新卡付费开通
-- 最后更新：2026-08-21 最终需求对齐后
+> Browser 当前主工程顺序：MySQL 事务映射、artifact vault/资源租约跨进程恢复和后台追溯/人工控制均已完成 v1；下一项先补 Browser attempt/dispatch 与付款后 Plus 激活/取消闭环，再做并发队列和连续 24 小时 soak，之后才接入隔离 Worker/人工同 Context 通道。提链源码静态审查可并行但不阻塞主线；菲律宾 CDK 默认归入既有 CDK-API/Provider 路线，不另建系统。
+
+- 当前阶段：阶段 4 代码检查点已完成部分实现；未生产启用自动补卡/卡余额充值，已完成一次真实单笔失败链路验证，尚未完成符合业务规则账号的成功充值和新卡付费开通
+- 最后更新：2026-08-22 全项目对抗式审查后
 
 ## 阶段 0：规格冻结与基线建立
 
@@ -53,9 +55,10 @@
 - [x] 用单次审批完成卡台账户、余额、卡段和空卡片列表的真实只读验证。
 - [ ] 用卡台真实响应验证相同幂等键重复调用行为。
 - [x] 停止继续验证 ZZSHU 直充错误映射与 `SUBMIT_UNKNOWN` 路径；Browser 项目不再依赖该合同（D-039）。
-- [ ] 目标账号当前为 Plus 时本地拒绝并进入原订单 Session 可恢复状态；该硬规则由 Browser 预检实现，不再依赖 ZZSHU `40030`。
+- [ ] 目标账号当前为 Plus 时由 API/Browser 共用的本地预检拒绝并进入原订单 Session 可恢复状态；不能把 ZZSHU `40030` 当作本地预检替代品。预检事实来源仍需冻结。
 - [x] 停止为 Browser 项目核对新的 ZZSHU `create_direct`；历史账本只保留兼容审计，不作为 Browser 前置任务（D-039）。
-- [ ] 接入 HNSKJ `POST /cards/{id}/recharge`，验证 write scope、稳定幂等键、`pending` 未知结果和余额/流水对账。
+- [x] 完成 HNSKJ `POST /cards/{id}/recharge` 适配器、稳定幂等键约束和卡余额充值账本基础；
+- [ ] 接入真实执行器，验证 write scope、`pending` 未知结果和余额/流水对账。
 - [x] 建立持久化 `provider_calls` 记录与递归脱敏，并通过真实 MySQL 落库验证。
 - [x] 建立通用任务执行骨架：单任务隔离、可重试回队、非重试错误进入 dead-letter。
 - [x] 实现开卡、直充提交和状态轮询 handler 规则，并接入任务 runner 的错误分类。
@@ -122,11 +125,12 @@
 
 进入下一次真实成功单前还必须完成：
 
-- [ ] 增加 `WAITING_FOR_SESSION`，支持原订单 72 小时内最多更换 3 次 Session；
-- [ ] 增加支付成功后的取消续费等待/人工复核状态，只有 `is_subscription_cancelled=1` 才最终成功；
-- [ ] 正常订单移除逐单人工审批依赖，保留单订单资金栅栏和全局急停；
-- [ ] 库存资格按未绑定、无客户 `PURCHASE`、余额/资料达标且无资金争议判断；
-- [ ] 接通库存阈值自动补卡：初始每次 1 张、每张 `$16`、每天最多 5 张；
+- [x] 增加 `WAITING_FOR_SESSION`，支持原订单 72 小时内最多更换 3 次 Session；
+- [x] 增加支付成功后的取消续费等待/人工复核状态，只有 `is_subscription_cancelled=1` 才最终成功；
+- [x] 正常订单移除逐单人工审批依赖，保留单订单资金栅栏和全局急停；
+- [x] 库存资格按未绑定、无客户 `PURCHASE`、余额/资料达标且无资金争议判断（代码已完成，生产未部署）；
+- [x] 完成库存资格统一、`WAITING_FOR_CARD`、自动补卡规划器和每日额度代码/隔离测试：初始每次 1 张、每张 `$16`、默认每天最多 5 张；
+- [ ] 完成后台配置入口、用量/剩余展示、审计和生产启用；
 - [ ] 为特殊卡片跨订单复用增加受控人工入口和完整审计，自动库存算法禁止复用。
 - [ ] 将已有 CDK delivery API 接入后台，形成交付、补发和客户引用的可操作追溯闭环。
 - [ ] 增加 Provider 账户/履约路线人工切换页；切换前核验健康、余额、卡段和写权限，只影响新订单。
@@ -148,5 +152,9 @@
 - 现在可以在独立讨论窗口完成方案和接口边界设计，成果必须回写本项目事实源；
 - 当前不接入生产、不执行真实 Browser 付款；
 - Browser 已成为未来 Plus 主执行链路，可立即进行非付款 PoC、仿真控制面和隔离联调，不再等待 ZZSHU API 成功单；
+- 优先验证“账号 Context 提取 hosted 长链→同菲律宾 sticky 出口的独立支付 Context”模式；内部短链不算真正解耦。只读阶段用同账号平衡顺序配对，会创建 Checkout 的阶段必须使用隔离账号 cohort；
+- 同时按多赛道基线保留原上号器、ChatGPT 站点状态克隆+CDP、同 Context UI 和页面 Context hosted；赛道共享证据合同，失败后归档，正式链路最多保留一个 champion 和一个 Checkout 创建前路由的预验证 fallback；
+- Provider 抽象、路线表、资金许可命名和后台布局均可调整；防重复扣款、付款未知锁定和端到端审计不可取消；
 - 历史 API 与 Browser 共用 `recharge_attempts` 资金栅栏，任何旧 API 结果未知订单都禁止切 Browser；新 Browser 订单不调用 ZZSHU；
+- 账号、订单、卡片和 Checkout artifact 分别互斥；过期 Checkout 不自动重建，完整 hosted URL 只存加密短期 artifact；
 - 经单独操作确认前不得打开真实 Browser 付款，详见 D-038、D-039 和 Browser 基线。

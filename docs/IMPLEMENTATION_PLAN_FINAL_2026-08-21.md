@@ -64,6 +64,7 @@ flowchart LR
 
 ### 实施内容
 
+0. 在 API 与 Browser 共用的订单资格层增加目标账号套餐预检；当前为 Plus 时在 Provider create 之前进入客户可恢复状态，不能依赖 ZZSHU `40030` 作为预检替代品。
 1. 增加 `WAITING_FOR_SESSION`；
 2. 增加原订单更换 Session 的客户接口和页面；
 3. 最多 3 次，72 小时从首次客户可修复错误开始；
@@ -163,17 +164,21 @@ ZZSHU 正式成功链路不再是 Browser 项目前置条件。本阶段只验�
 
 1. 验收 CDK→订单→Session 恢复→卡片→唯一资金 attempt→审计/对账的共享链路；
 2. 验收 HNSKJ 库存、开卡、补余额、交易同步和一卡一单约束；
-3. 进行非付款 Browser PoC：Session 装载、账号识别、Plus 状态、升级入口、Checkout 识别和订阅管理入口；
+3. 进行非付款 Browser PoC：三模式 Session、三档 Cookie policy、Session Loader v2、离线路由复现、两轮公开实现调研、hosted Checkout 提链源码研究、多赛道基线、schema v2 无 Session 公开对照和第一轮架构对抗式审查已完成；继续分别实现原上号器真实 Chrome、ChatGPT 站点状态克隆+CDP、Loader 同 Context UI、hosted 分离 Context和页面 Context hosted；菲律宾 sticky 出口下先做同账号只读配对，再用隔离账号 cohort 比较会创建 Checkout 的赛道，验证账号识别、Plus 状态、第二 Context 打开、产品/PHP 金额/主体一致性和订阅管理入口；
 4. 冻结页面签名、Session 合同、失败分类和人工介入点；
-5. 使用模拟页面验证 Browser run、检查点、租约、一次性付款许可和结果未知恢复；
-6. 完成不少于 350 单/24 小时的无真实付款容量仿真。
+5. 使用模拟页面验证 Browser run、检查点、租约、一次性付款许可和结果未知恢复；第一版编排器、租约、artifact vault、接管所有权、预路由、mock gateway、本地追加式 WAL、WAL-backed 状态变更、真实 BrowserContext/iframe/popup 页面、随机崩溃、重复投递、租约过期、人工接管中断和页面漂移均已完成；MySQL 事务映射 v1 以及跨进程 artifact 密文/四类资源租约 Repository 也已完成并通过隔离 MySQL 8.4；
+6. 完成不少于 350 单/24 小时的无真实付款容量仿真；第一轮 350 单等效仿真已通过（350 submit、0 duplicate，38.14 秒），后续补并发队列和连续 24 小时 soak，不把等效仿真写成真实连续运行事实。
+
+当前主工程关键路径固定为：MySQL 事务映射、artifact vault/资源租约跨进程恢复、后台追溯/人工控制（均已完成 v1）→ 先补 Browser attempt/dispatch 与付款后 Plus 激活/取消闭环 → 并发队列、真实多连接竞争、连续 24 小时 soak → 隔离 Browser Worker 与人工同 Context 通道接入。2026-08-22 第二轮对抗审查见 `docs/2026-08-22_browser-control-plane-adversarial-review-report.md`，在上述 P0 闸门关闭前不得宣称 Browser 批量能力已验证。公开提链源码静态审查属于可并行、非阻塞研究，不得排到该关键路径之前。市场上的菲律宾 CDK 默认按现有 CDK-API/Provider 路线归类，不建立新的业务路线；其实际上游是否同源须以后用接口和运行证据确认。
 
 ### 停止条件
 
 - Session 无法可靠建立或比对目标网页账号；
+- 同一账号可能并发持有两个活动 run/Checkout artifact，或变更实验存在跨 lane 账号污染；
 - 付款许可、租约或资源锁存在产生第二次点击的窗口；
 - Worker 崩溃或重复投递能够越过检查点；
 - 敏感数据进入日志、任务、trace 或未脱敏证据；
+- hosted URL/fragment 进入普通数据库、截图、HAR、通知或可复制后台字段；
 - run、attempt、卡片、订单或人工操作追溯链缺失。
 
 ## 10. 阶段八：Browser 主执行链路与规模化
@@ -192,19 +197,22 @@ ZZSHU 正式成功链路不再是 Browser 项目前置条件。本阶段只验�
 - 结果未知处理；
 - 与订单、Provider 路线和资金栅栏的集成方案。
 
-设计成果必须回写本项目，不建立第二套订单、卡池或资金账。当前冻结基线见 `BROWSER_RECHARGE_EXECUTOR_BASELINE_2026-08-21.md`。
+设计成果必须回写本项目，不建立第二套订单、卡池或资金账。为了先跑通 Browser，现有 Provider 抽象、路线表结构、许可命名和运营后台布局允许最小调整；不可删除的硬边界只有防重复扣款、付款未知禁止自动再付和完整审计链。当前冻结基线见 `BROWSER_RECHARGE_EXECUTOR_BASELINE_2026-08-21.md`。
 
 ### 后期实现
 
 Browser 后期实现不依赖 ZZSHU；它使用 HNSKJ 卡片并直接操作 ChatGPT 官方购买和订阅管理页面。实施顺序为：
 
-- 完成非付款 Session/页面 PoC；
+- 完成非付款 Session/页面 PoC，并冻结 champion 与最多一个可在 Checkout 创建前路由的预验证 fallback；
 - 实现 Browser run、检查点、资源锁、一次性付款许可和仿真页面适配器；
 - 实现隔离 Browser Worker；
 - 接入共同的 `recharge_attempts`；
+- 明确 Browser attempt 创建分支与现有 Provider route 的边界，不能从通用入口旁路创建第二套订单/资金状态；
+- 将付款确认、Plus 激活观察、取消确认和延迟生效纳入最终成功判定；
 - 任何旧 API 未知订单禁止切 Browser，新 Browser 订单不调用 ZZSHU；
 - Browser 付款后崩溃禁止重新付款；
-- 完成 350 单/24 小时无真实付款仿真；
+- Checkout 过期或打不开不得仅凭时间自动重建，账号/订单/卡片/artifact 四类资源锁通过故障注入；
+- 完成 350 单/24 小时无真实付款仿真，并明确串行等效仿真不能替代并发队列与 24 小时 soak；
 - 经单独确认后按 1 单、3–5 单、10–20 单受控验证；
 - 完成 200–300 单/日容量、限流、延迟、余额和失败率验收；
 - Plus 稳定后再讨论 Pro 5X、Pro 20X。
