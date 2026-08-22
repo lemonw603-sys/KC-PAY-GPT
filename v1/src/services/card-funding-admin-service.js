@@ -1,7 +1,9 @@
+import crypto from 'node:crypto';
 import { PublicApiError } from '../domain/public-api-error.js';
 import { redactSensitiveFields } from '../security/redaction.js';
 
 const STATUSES = new Set(['PREPARED', 'SUBMITTING', 'PENDING', 'SETTLED', 'FAILED', 'MANUAL_REVIEW', 'UNKNOWN']);
+const MANUAL_ACTIONS = new Set(['CONFIRM_SETTLED', 'CONFIRM_NOT_CHARGED', 'KEEP_MANUAL_REVIEW']);
 
 function parseQuery(input = {}) {
   const page = Number(input.page || 1);
@@ -85,5 +87,66 @@ export function createCardFundingAdminService({ pool }) {
     };
   }
 
-  return { list };
+  async function resolveUnknown({ attemptId, action, actorId, note, confirmation }) {
+    const id = String(attemptId || '').trim();
+    const normalizedAction = String(action || '').trim().toUpperCase();
+    const actor = String(actorId || '').trim();
+    const operatorNote = String(note || '').trim();
+    if (!id || !MANUAL_ACTIONS.has(normalizedAction) || !actor || operatorNote.length < 10) {
+      throw new PublicApiError('Invalid card funding manual resolution', {
+        code: 'INVALID_CARD_FUNDING_MANUAL_RESOLUTION', status: 400
+      });
+    }
+    if (String(confirmation || '').trim() !== `确认卡充值对账 ${id}`) {
+      throw new PublicApiError('Card funding manual resolution confirmation mismatch', {
+        code: 'CARD_FUNDING_MANUAL_CONFIRMATION_REQUIRED', status: 400
+      });
+    }
+    const connection = await pool.getConnection();
+    try {
+      await connection.beginTransaction();
+      const [rows] = await connection.query(
+        `SELECT id, status, funds_risk_state FROM card_funding_attempts
+         WHERE id = ? LIMIT 1 FOR UPDATE`, [id]
+      );
+      const attempt = rows[0];
+      if (!attempt) throw new PublicApiError('Card funding attempt not found', {
+        code: 'CARD_FUNDING_NOT_FOUND', status: 404
+      });
+      if (attempt.funds_risk_state !== 'UNKNOWN'
+        && !(normalizedAction === 'KEEP_MANUAL_REVIEW' && attempt.status === 'MANUAL_REVIEW')) {
+        throw new PublicApiError('Card funding attempt is not in UNKNOWN review', {
+          code: 'CARD_FUNDING_NOT_UNKNOWN', status: 409
+        });
+      }
+      const next = normalizedAction === 'CONFIRM_SETTLED'
+        ? { status: 'SETTLED', risk: 'SETTLED' }
+        : normalizedAction === 'CONFIRM_NOT_CHARGED'
+          ? { status: 'FAILED', risk: 'NONE' }
+          : { status: 'MANUAL_REVIEW', risk: 'UNKNOWN' };
+      const actionId = crypto.randomUUID();
+      await connection.query(
+        `INSERT INTO card_funding_manual_actions
+         (id, attempt_id, action, actor_id, operator_note)
+         VALUES (?, ?, ?, ?, ?)`, [actionId, id, normalizedAction, actor, operatorNote.slice(0, 2000)]
+      );
+      await connection.query(
+        `UPDATE card_funding_attempts
+         SET status = ?, funds_risk_state = ?, finished_at = IF(? IN ('SETTLED','FAILED'), CURRENT_TIMESTAMP(3), finished_at),
+             result_summary_json = JSON_SET(COALESCE(result_summary_json, JSON_OBJECT()),
+               '$.manualResolution', JSON_OBJECT('action', ?, 'actorId', ?, 'note', ?, 'actionId', ?))
+         WHERE id = ?`,
+        [next.status, next.risk, next.status, normalizedAction, actor, operatorNote.slice(0, 2000), actionId, id]
+      );
+      await connection.commit();
+      return { attemptId: id, action: normalizedAction, status: next.status, fundsRiskState: next.risk, actionId };
+    } catch (error) {
+      await connection.rollback();
+      throw error;
+    } finally {
+      connection.release();
+    }
+  }
+
+  return { list, resolveUnknown };
 }

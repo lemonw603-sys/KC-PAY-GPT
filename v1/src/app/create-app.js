@@ -49,6 +49,7 @@ export function createApp({
   getAdminReplenishmentSettings = null,
   setAdminReplenishmentDailyLimit = null,
   listAdminCardFundingAttempts = null,
+  resolveAdminCardFundingUnknown = null,
   setAdminOrderAcceptance = null,
   setAdminRechargePermit = null,
   createAdminRechargeAuthorization = null,
@@ -328,6 +329,24 @@ export function createApp({
     app.get('/api/v1/admin/card-funding-attempts', noStore, requireAdminApi, async (req, res) => {
       try {
         return res.json(await listAdminCardFundingAttempts(req.query || {}));
+      } catch (error) {
+        if (error instanceof PublicApiError) {
+          return res.status(error.status || 400).json({ error: error.code.toLowerCase() });
+        }
+        throw error;
+      }
+    });
+  }
+  if (typeof resolveAdminCardFundingUnknown === 'function') {
+    app.post('/api/v1/admin/card-funding-attempts/:attemptId/resolve', ...sensitiveAdminGuards, async (req, res) => {
+      try {
+        return res.json(await resolveAdminCardFundingUnknown({
+          attemptId: req.params.attemptId,
+          action: req.body?.action,
+          actorId: req.admin?.id || 'admin',
+          note: req.body?.note,
+          confirmation: req.body?.confirmation
+        }));
       } catch (error) {
         if (error instanceof PublicApiError) {
           return res.status(error.status || 400).json({ error: error.code.toLowerCase() });

@@ -173,6 +173,7 @@ const app = createApp({
   ,getAdminReplenishmentSettings: replenishmentSettingsService.get
   ,setAdminReplenishmentDailyLimit: replenishmentSettingsService.setDailyLimit
   ,listAdminCardFundingAttempts: cardFundingAdminService.list
+  ,resolveAdminCardFundingUnknown: cardFundingAdminService.resolveUnknown
   ,setAdminOrderAcceptance: adminOperationsService.setOrderAcceptance
   ,setAdminRechargePermit: async (publicNo, input = {}) => {
     const action = String(input.action || '');
