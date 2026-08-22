@@ -3,6 +3,7 @@ import { transitionOrder } from './order-repository.js';
 import { OrderStatus } from '../../domain/order-status.js';
 import { decryptSecret, encryptSecret } from '../../security/secret-box.js';
 import { persistCardTransactions } from './card-transaction-repository.js';
+import { eligibleInventoryCardSql } from '../../services/card-inventory-eligibility.js';
 
 function parseSession(ciphertext, key) {
   const text = decryptSecret(ciphertext, key);
@@ -167,22 +168,13 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
         const [cards] = await connection.query(
           `SELECT id, provider_card_id, current_balance
            FROM cards
-           WHERE order_id IS NULL
-             AND inventory_status = 'AVAILABLE'
-             AND intake_status IN ('ACCEPTED','LEGACY_ACCEPTED')
+           WHERE ${eligibleInventoryCardSql('cards', '?')}
              AND provider_account_id = ?
              AND BINARY card_type_id = BINARY ?
-             AND LOWER(status) IN ('active','available','usable','ready')
-             AND current_balance >= ?
-             AND card_credentials_ciphertext IS NOT NULL
-             AND NOT EXISTS (
-               SELECT 1 FROM card_assignment_history prior
-               WHERE prior.card_id = cards.id
-             )
            ORDER BY current_balance ASC, created_at ASC
            LIMIT 1 FOR UPDATE SKIP LOCKED`,
-          [order.card_provider_account_id, String(order.card_type_id),
-            String(order.minimum_required_card_balance)]
+          [String(order.minimum_required_card_balance), order.card_provider_account_id,
+            String(order.card_type_id)]
         );
         const alertKey = `card-stock-low:${order.card_provider_account_id}:${order.card_type_id}`;
         if (cards.length === 0) {
@@ -259,13 +251,11 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
         );
         const [stockRows] = await connection.query(
           `SELECT COUNT(*) AS count FROM cards
-           WHERE order_id IS NULL AND inventory_status = 'AVAILABLE'
-             AND intake_status IN ('ACCEPTED','LEGACY_ACCEPTED')
+           WHERE ${eligibleInventoryCardSql('cards', '?')}
              AND provider_account_id = ?
-             AND BINARY card_type_id = BINARY ?
-             AND LOWER(status) IN ('active','available','usable','ready')
-             AND card_credentials_ciphertext IS NOT NULL`,
-          [order.card_provider_account_id, String(order.card_type_id)]
+             AND BINARY card_type_id = BINARY ?`,
+          [String(order.minimum_required_card_balance), order.card_provider_account_id,
+            String(order.card_type_id)]
         );
         const threshold = Math.max(0, Number(thresholdRows[0]?.setting_value || 5));
         const remaining = Number(stockRows[0]?.count || 0);

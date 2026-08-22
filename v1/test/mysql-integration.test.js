@@ -506,10 +506,10 @@ test('inventory assignment atomically gives one ready card to only one order', {
     `INSERT INTO cards
      (id, order_id, inventory_status, provider_card_id, card_type_id, last4, status,
       funded_amount, current_balance, currency, refund_status, card_credentials_ciphertext,
-      provider_account_id, external_card_id, intake_status, sync_tier)
+      provider_account_id, external_card_id, intake_status, sync_tier, last_transaction_synced_at)
      VALUES (?, NULL, 'AVAILABLE', 'stock-provider-1', '7', '4242', 'active',
        '16.000000', '16.000000', 'USD', 'MONITORING', ?, ?,
-       'stock-provider-1', 'ACCEPTED', 'AVAILABLE')`,
+       'stock-provider-1', 'ACCEPTED', 'AVAILABLE', CURRENT_TIMESTAMP(3))`,
     [stockCardId, encryptSecret(JSON.stringify({
       cardNumber: '4242424242424242', expMonth: 12, expYear: 2032, cvv: '123'
     }), integrationSessionKey), legacyCardProviderAccountId]
@@ -520,12 +520,14 @@ test('inventory assignment atomically gives one ready card to only one order', {
       workflow.assignAvailableCard(first.orderId),
       workflow.assignAvailableCard(second.orderId)
     ]);
-    assert.equal(results.filter(Boolean).length, 1);
+    assert.equal(results.filter((result) => result?.providerCardId).length, 1);
+    assert.equal(results.filter((result) => result?.waitingForCard).length, 1);
     const [orders] = await pool.query(
       `SELECT id, status FROM orders WHERE id IN (?, ?) ORDER BY id`,
       [first.orderId, second.orderId]
     );
-    assert.deepEqual(orders.map((row) => row.status).sort(), [OrderStatus.CARD_READY, OrderStatus.CREATED].sort());
+    assert.deepEqual(orders.map((row) => row.status).sort(),
+      [OrderStatus.CARD_READY, OrderStatus.WAITING_FOR_CARD].sort());
     const [[card]] = await pool.query(
       `SELECT order_id, inventory_status FROM cards WHERE id = ?`, [stockCardId]
     );
@@ -572,6 +574,13 @@ test('a card registered by the stock service is provider-scoped, accepted, and a
       intake_status: 'ACCEPTED',
       pan_hmac_version: 1
     });
+    // 新入库卡只有在交易流水完成一次新鲜只读同步后，才进入可分配集合。
+    await pool.query(
+      `UPDATE cards
+       SET last_transaction_synced_at = CURRENT_TIMESTAMP(3)
+       WHERE provider_account_id = ? AND BINARY external_card_id = BINARY ?`,
+      [legacyCardProviderAccountId, providerCardId]
+    );
     const assigned = await createWorkflowRepository(pool, {
       sessionEncryptionKey: integrationSessionKey, panHmacKey: Buffer.alloc(32, 22)
     }).assignAvailableCard(fixture.orderId);
@@ -652,6 +661,102 @@ test('card stock jobs require confirmation and move durably through the runner s
     assert.equal(completed.estimatedTotal, '60.775000');
   } finally {
     if (job) await pool.query('DELETE FROM card_stock_jobs WHERE id = ?', [job.id]);
+    await pool.end();
+  }
+});
+
+test('automatic replenishment reserves one card at a time and hard-stops at the daily limit', {
+  skip: !databaseUrl && 'TEST_DATABASE_URL 未配置；完整 MySQL 套件在服务器隔离数据库运行'
+}, async () => {
+  const pool = mysql.createPool({ uri: databaseUrl, connectionLimit: 3, timezone: 'Z' });
+  const service = createCardStockJobService({ pool });
+  const created = [];
+  const keys = ['card_auto_replenishment_enabled', 'card_replenishment_daily_limit',
+    'card_stock_low_threshold', 'default_card_type_id', 'default_open_card_amount',
+    'default_minimum_required_card_balance'];
+  const [originalRows] = await pool.query(
+    `SELECT setting_key, setting_value FROM app_settings WHERE setting_key IN (${keys.map(() => '?').join(',')})`,
+    keys
+  );
+  const originals = new Map(originalRows.map((row) => [row.setting_key, row.setting_value]));
+  try {
+    const snapshot = {
+      provider: 'hnskj', syncedAt: new Date().toISOString(), purchaseEnabled: true,
+      accountBalance: '1000', currency: 'USD', exchangeRate: '1',
+      cardLimit: { current: 0, maximum: 300, remaining: 300 },
+      cardTypes: [{ id: '7', name: 'Z-TEST', country: 'US', binPrefix: '40041606',
+        effectiveCardFee: '0.5', effectiveFeeRate: '0.005', minimumAmount: '5',
+        maximumAmount: '200', minimumAccountBalance: '25',
+        requireMinimumAccountBalance: true, consumeRate: '0', chargebackFee: '0.4' }]
+    };
+    await pool.query(
+      `INSERT INTO card_provider_snapshots (provider, payload_json, synced_at)
+       VALUES ('hnskj', ?, CURRENT_TIMESTAMP(3))
+       ON DUPLICATE KEY UPDATE payload_json=VALUES(payload_json), synced_at=VALUES(synced_at)`,
+      [JSON.stringify(snapshot)]
+    );
+    await pool.query(
+      `INSERT INTO card_catalog_snapshots (provider, payload_json, synced_at)
+       VALUES ('hnskj', ?, CURRENT_TIMESTAMP(3))
+       ON DUPLICATE KEY UPDATE payload_json=VALUES(payload_json), synced_at=VALUES(synced_at)`,
+      [JSON.stringify({ providerActive: 0, unresolvedActive: 0 })]
+    );
+    const values = {
+      card_auto_replenishment_enabled: 'true', card_replenishment_daily_limit: '5',
+      card_stock_low_threshold: '5', default_card_type_id: '7',
+      default_open_card_amount: '16', default_minimum_required_card_balance: '16'
+    };
+    for (const [key, value] of Object.entries(values)) {
+      await pool.query(
+        `INSERT INTO app_settings (setting_key, setting_value) VALUES (?, ?)
+         ON DUPLICATE KEY UPDATE setting_value=VALUES(setting_value)`, [key, value]
+      );
+    }
+    const reviewJobId = id();
+    await pool.query(
+      `INSERT INTO card_stock_jobs
+       (id, status, job_source, card_type_id, amount, requested_count, opened_count,
+        error_code, error_message, finished_at)
+       VALUES (?, 'REVIEW_REQUIRED', 'AUTOMATIC', '7', 16, 1, 0,
+         'PROVIDER_TIMEOUT', 'uncertain purchase result', CURRENT_TIMESTAMP(3))`,
+      [reviewJobId]
+    );
+    assert.deepEqual(await service.scheduleAutomaticJob(), {
+      scheduled: false, reason: 'FUNDS_REVIEW_REQUIRED'
+    });
+    await pool.query('DELETE FROM card_stock_jobs WHERE id=?', [reviewJobId]);
+    for (let index = 0; index < 5; index += 1) {
+      const scheduled = await service.scheduleAutomaticJob();
+      assert.equal(scheduled.scheduled, true);
+      assert.equal(scheduled.requestedCount, 1);
+      assert.equal(scheduled.usedAfter, index + 1);
+      created.push(scheduled.id);
+      await pool.query(
+        `UPDATE card_stock_jobs SET status='COMPLETED', opened_count=1,
+           finished_at=CURRENT_TIMESTAMP(3) WHERE id=?`, [scheduled.id]
+      );
+    }
+    assert.deepEqual(await service.scheduleAutomaticJob(), {
+      scheduled: false, reason: 'DAILY_LIMIT', used: 5, limit: 5
+    });
+    const [rows] = await pool.query(
+      `SELECT job_source, requested_count, opened_count FROM card_stock_jobs
+       WHERE id IN (${created.map(() => '?').join(',')})`, created
+    );
+    assert.equal(rows.length, 5);
+    assert.equal(rows.every((row) => row.job_source === 'AUTOMATIC'
+      && row.requested_count === 1 && row.opened_count === 1), true);
+  } finally {
+    if (created.length) {
+      await pool.query(`DELETE FROM card_stock_jobs WHERE id IN (${created.map(() => '?').join(',')})`, created);
+    }
+    for (const key of keys) {
+      if (originals.has(key)) {
+        await pool.query('UPDATE app_settings SET setting_value=? WHERE setting_key=?', [originals.get(key), key]);
+      } else {
+        await pool.query('DELETE FROM app_settings WHERE setting_key=?', [key]);
+      }
+    }
     await pool.end();
   }
 });

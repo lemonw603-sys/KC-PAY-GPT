@@ -8,6 +8,17 @@ import {
   snapshotIsFresh
 } from './card-provider-snapshot-service.js';
 import { cardCatalogIsFresh, readCardCatalogSnapshot } from './card-catalog-snapshot-service.js';
+import { eligibleInventoryCardSql } from './card-inventory-eligibility.js';
+
+const LEGACY_HNSKJ_ACCOUNT_ID = '00000000-0000-4000-8000-000000000101';
+
+function shanghaiDayBounds(now = new Date()) {
+  const instant = now instanceof Date ? now : new Date(now);
+  if (!Number.isFinite(instant.getTime())) throw new TypeError('Invalid replenishment clock');
+  const shifted = new Date(instant.getTime() + 8 * 60 * 60_000);
+  const startShifted = Date.UTC(shifted.getUTCFullYear(), shifted.getUTCMonth(), shifted.getUTCDate());
+  return [new Date(startShifted - 8 * 60 * 60_000), new Date(startShifted + 24 * 60 * 60_000 - 8 * 60 * 60_000)];
+}
 
 function integer(value, { min, max, name }) {
   const number = Number(value);
@@ -27,6 +38,7 @@ function mapJob(row) {
   return {
     id: row.id,
     status: row.status,
+    source: row.job_source || 'MANUAL',
     cardTypeId: String(row.card_type_id),
     amount: String(row.amount),
     estimatedTotal: row.estimated_total == null ? null : String(row.estimated_total),
@@ -113,14 +125,14 @@ export function createCardStockJobService({ pool }) {
       };
       await connection.query(
         `INSERT INTO card_stock_jobs
-         (id, status, card_type_id, amount, estimated_total, rules_snapshot_json, requested_count)
-         VALUES (?, 'PENDING', ?, ?, ?, ?, ?)`,
+         (id, status, job_source, card_type_id, amount, estimated_total, rules_snapshot_json, requested_count)
+         VALUES (?, 'PENDING', 'MANUAL', ?, ?, ?, ?, ?)`,
         [id, cardTypeId, String(amount), evaluation.estimatedTotal,
           JSON.stringify(rulesSnapshot), requestedCount]
       );
       await connection.commit();
       return {
-        id, status: 'PENDING', cardTypeId, cardTypeName: evaluation.cardType.name,
+        id, status: 'PENDING', source: 'MANUAL', cardTypeId, cardTypeName: evaluation.cardType.name,
         amount: String(amount), estimatedTotal: evaluation.estimatedTotal,
         requestedCount, openedCount: 0
       };
@@ -135,7 +147,7 @@ export function createCardStockJobService({ pool }) {
   async function listJobs({ limit = 20 } = {}) {
     const safeLimit = Math.min(100, Math.max(1, Number(limit) || 20));
     const [rows] = await pool.query(
-      `SELECT id, status, card_type_id, amount, requested_count, opened_count,
+      `SELECT id, status, job_source, card_type_id, amount, requested_count, opened_count,
               estimated_total, rules_snapshot_json, error_code, error_message,
               created_at, started_at, finished_at
        FROM card_stock_jobs ORDER BY created_at DESC LIMIT ?`,
@@ -144,7 +156,118 @@ export function createCardStockJobService({ pool }) {
     return { jobs: rows.map(mapJob) };
   }
 
-  return { createJob, listJobs };
+  async function scheduleAutomaticJob({ now = new Date() } = {}) {
+    const connection = await pool.getConnection();
+    try {
+      await connection.beginTransaction();
+      const [settingRows] = await connection.query(
+        `SELECT setting_key, setting_value FROM app_settings
+         WHERE setting_key IN ('card_auto_replenishment_enabled','card_replenishment_daily_limit',
+           'card_stock_low_threshold','default_card_type_id','default_open_card_amount',
+           'default_minimum_required_card_balance')
+         ORDER BY setting_key FOR UPDATE`
+      );
+      const settings = new Map(settingRows.map((row) => [row.setting_key, row.setting_value]));
+      if (settings.get('card_auto_replenishment_enabled') !== 'true') {
+        await connection.commit();
+        return { scheduled: false, reason: 'DISABLED' };
+      }
+      const limit = integer(settings.get('card_replenishment_daily_limit'), {
+        min: 1, max: 500, name: 'daily limit'
+      });
+      const threshold = integer(settings.get('card_stock_low_threshold'), {
+        min: 0, max: 100_000, name: 'stock threshold'
+      });
+      const amount = integer(settings.get('default_open_card_amount'), {
+        min: 1, max: 100_000, name: 'amount'
+      });
+      const minimum = Number(settings.get('default_minimum_required_card_balance'));
+      const cardTypeId = String(settings.get('default_card_type_id') || '').trim();
+      if (!cardTypeId || !Number.isFinite(minimum) || minimum <= 0) {
+        throw new PublicApiError('Automatic card stock settings are incomplete', {
+          code: 'CARD_STOCK_AUTO_SETTINGS_INVALID', status: 409
+        });
+      }
+      const [active] = await connection.query(
+        `SELECT id FROM card_stock_jobs WHERE status IN ('PENDING','RUNNING') LIMIT 1 FOR UPDATE`
+      );
+      if (active.length) {
+        await connection.commit();
+        return { scheduled: false, reason: 'JOB_ACTIVE' };
+      }
+      const [unresolvedPaidJobs] = await connection.query(
+        `SELECT id FROM card_stock_jobs
+         WHERE status = 'REVIEW_REQUIRED'
+         ORDER BY created_at ASC LIMIT 1 FOR UPDATE`
+      );
+      if (unresolvedPaidJobs.length) {
+        await connection.commit();
+        return { scheduled: false, reason: 'FUNDS_REVIEW_REQUIRED' };
+      }
+      const [[usage]] = await connection.query(
+        `SELECT COALESCE(SUM(requested_count), 0) AS count FROM card_stock_jobs
+         WHERE job_source = 'AUTOMATIC'
+           AND created_at >= ? AND created_at < ?`,
+        shanghaiDayBounds(now)
+      );
+      const used = Number(usage.count || 0);
+      if (used >= limit) {
+        await connection.commit();
+        return { scheduled: false, reason: 'DAILY_LIMIT', used, limit };
+      }
+      const [[stock]] = await connection.query(
+        `SELECT COUNT(*) AS count FROM cards
+         WHERE ${eligibleInventoryCardSql('cards', '?')}
+           AND provider_account_id = ?
+           AND BINARY card_type_id = BINARY ?`,
+        [String(minimum), LEGACY_HNSKJ_ACCOUNT_ID, cardTypeId]
+      );
+      const available = Number(stock.count || 0);
+      if (available > threshold) {
+        await connection.commit();
+        return { scheduled: false, reason: 'STOCK_SUFFICIENT', available, threshold };
+      }
+      const snapshot = await readProviderSnapshot(connection);
+      if (!snapshotIsFresh(snapshot)) {
+        throw new PublicApiError('Card provider rules are stale', {
+          code: 'CARD_STOCK_RULES_STALE', status: 409
+        });
+      }
+      const catalog = await readCardCatalogSnapshot(connection);
+      if (!cardCatalogIsFresh(catalog) || Number(catalog.unresolvedActive || 0) > 0) {
+        throw new PublicApiError('Card catalog is not safe for automatic opening', {
+          code: 'CARD_CATALOG_UNRESOLVED', status: 409
+        });
+      }
+      const evaluation = evaluateCardStockRequest(snapshot, { cardTypeId, amount, count: 1 });
+      const id = crypto.randomUUID();
+      await connection.query(
+        `INSERT INTO card_stock_jobs
+         (id, status, job_source, card_type_id, amount, estimated_total,
+          rules_snapshot_json, requested_count)
+         VALUES (?, 'PENDING', 'AUTOMATIC', ?, ?, ?, ?, 1)`,
+        [id, cardTypeId, String(amount), evaluation.estimatedTotal, JSON.stringify({
+          providerSyncedAt: snapshot.syncedAt,
+          purchaseEnabled: snapshot.purchaseEnabled,
+          accountBalance: snapshot.accountBalance,
+          cardLimit: snapshot.cardLimit,
+          cardType: evaluation.cardType,
+          evaluation,
+          policy: { available, threshold, usedBefore: used, dailyLimit: limit }
+        })]
+      );
+      await connection.commit();
+      return { scheduled: true, id, source: 'AUTOMATIC', requestedCount: 1,
+        amount: String(amount), available, threshold, usedAfter: used + 1, limit };
+    } catch (error) {
+      await connection.rollback();
+      throw error;
+    } finally {
+      connection.release();
+    }
+  }
+
+  return { createJob, listJobs, scheduleAutomaticJob };
 }
 
 export async function claimCardStockJob(pool, { workerId, leaseSeconds = 1800 }) {
@@ -158,7 +281,7 @@ export async function claimCardStockJob(pool, { workerId, leaseSeconds = 1800 })
        WHERE status = 'RUNNING' AND leased_until < CURRENT_TIMESTAMP(3)`
     );
     const [rows] = await connection.query(
-      `SELECT id, card_type_id, amount, requested_count, opened_count
+      `SELECT id, job_source, card_type_id, amount, requested_count, opened_count
               ,estimated_total, rules_snapshot_json
        FROM card_stock_jobs WHERE status = 'PENDING'
        ORDER BY created_at ASC LIMIT 1 FOR UPDATE SKIP LOCKED`

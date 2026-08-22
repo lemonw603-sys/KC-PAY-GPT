@@ -4,6 +4,7 @@ import { createDatabasePool } from '../src/db/pool.js';
 import { HnskjCardProvider } from '../src/providers/index.js';
 import { createCardStockService } from '../src/services/card-stock-service.js';
 import {
+  createCardStockJobService,
   claimCardStockJob,
   completeCardStockJob,
   failCardStockJob,
@@ -32,6 +33,7 @@ const provider = new HnskjCardProvider({
 const stock = createCardStockService({ pool, sessionEncryptionKey: config.sessionEncryptionKey,
   panHmacKey: config.cardIntakePanHmacKey });
 const balanceSnapshots = createProviderBalanceSnapshotService({ pool });
+const stockJobs = createCardStockJobService({ pool });
 const refreshSnapshot = () => refreshProviderSnapshot(pool, provider, {
   balanceSnapshotService: balanceSnapshots
 });
@@ -41,10 +43,11 @@ try {
   if (!snapshotIsFresh(snapshot, { maxAgeMs: 60_000 })) {
     snapshot = await refreshSnapshot();
   }
+  const automatic = await stockJobs.scheduleAutomaticJob();
   const job = await claimCardStockJob(pool, { workerId });
   if (!job) {
     const sync = await syncProvisioningStock({ pool, provider, stock });
-    console.log(JSON.stringify({ handled: false, providerRulesSynced: true, stockSync: sync }));
+    console.log(JSON.stringify({ handled: false, providerRulesSynced: true, automatic, stockSync: sync }));
   } else {
     try {
       const remaining = job.requestedCount - job.openedCount;
@@ -83,7 +86,8 @@ try {
         workerId,
         openedCount: job.openedCount + result.opened
       });
-      console.log(JSON.stringify({ handled: true, jobId: job.id, status: 'COMPLETED', opened: result.opened }));
+      console.log(JSON.stringify({ handled: true, jobId: job.id, source: job.source,
+        status: 'COMPLETED', opened: result.opened, automatic }));
     } catch (error) {
       await failCardStockJob(pool, { jobId: job.id, workerId, error });
       console.error(JSON.stringify({ handled: true, jobId: job.id, status: 'REVIEW_REQUIRED', code: error?.code || error?.kind || 'FAILED' }));

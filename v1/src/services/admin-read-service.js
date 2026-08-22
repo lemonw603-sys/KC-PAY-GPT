@@ -4,6 +4,7 @@ import { decryptSecret } from '../security/secret-box.js';
 import { validateChatGptSession } from '../domain/session-validation.js';
 import { reconcileOrderEvidence } from '../domain/order-reconciliation.js';
 import { createCdkLookup } from '../security/cdk-code.js';
+import { eligibleInventoryCardSql } from './card-inventory-eligibility.js';
 
 const ORDER_STATUSES = new Set([
   'CREATED',
@@ -391,13 +392,8 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
         WHERE status <> 'WITHDRAWN' GROUP BY status ORDER BY status`)
       ,pool.query(`SELECT COUNT(*) AS count FROM operator_alerts WHERE status = 'OPEN'`)
       ,pool.query(`SELECT
-          SUM(order_id IS NULL AND inventory_status = 'AVAILABLE'
-            AND LOWER(status) IN ('active','available','usable','ready')
-            AND intake_status IN ('ACCEPTED','LEGACY_ACCEPTED')
-            AND card_credentials_ciphertext IS NOT NULL
-            AND NOT EXISTS (SELECT 1 FROM card_assignment_history ah WHERE ah.card_id = cards.id)
-            AND current_balance >= COALESCE((SELECT CAST(setting_value AS DECIMAL(18,6))
-              FROM app_settings WHERE setting_key = 'default_minimum_required_card_balance' LIMIT 1), 999999999)) AS available,
+          SUM(${eligibleInventoryCardSql('cards', `COALESCE((SELECT CAST(setting_value AS DECIMAL(18,6))
+              FROM app_settings WHERE setting_key = 'default_minimum_required_card_balance' LIMIT 1), 999999999)`)}) AS available,
           SUM(order_id IS NULL AND inventory_status = 'PROVISIONING') AS provisioning,
           SUM(order_id IS NOT NULL OR inventory_status = 'ASSIGNED') AS assigned,
           SUM(order_id IS NULL AND inventory_status = 'DEPLETED') AS depleted,

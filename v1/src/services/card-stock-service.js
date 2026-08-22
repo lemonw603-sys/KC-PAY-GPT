@@ -7,6 +7,7 @@ import {
   snapshotIsFresh
 } from './card-provider-snapshot-service.js';
 import { cardCatalogIsFresh, readCardCatalogSnapshot } from './card-catalog-snapshot-service.js';
+import { eligibleInventoryCardSql } from './card-inventory-eligibility.js';
 
 const ACTIVE = new Set(['active', 'available', 'usable', 'ready']);
 const FAILED = new Set(['failed', 'failure', 'invalid', 'inactive', 'closed', 'cancelled', 'canceled']);
@@ -103,15 +104,10 @@ export function createCardStockService({ pool, sessionEncryptionKey, panHmacKey 
     );
     const [stockRows] = await connection.query(
       `SELECT COUNT(*) AS count FROM cards
-       WHERE order_id IS NULL AND inventory_status = 'AVAILABLE'
+       WHERE ${eligibleInventoryCardSql('cards', `COALESCE((SELECT CAST(setting_value AS DECIMAL(18,6))
+           FROM app_settings WHERE setting_key = 'default_minimum_required_card_balance' LIMIT 1), 999999999)`)}
          AND provider_account_id = ?
-         AND BINARY card_type_id = BINARY ?
-         AND LOWER(status) IN ('active','available','usable','ready')
-         AND intake_status IN ('ACCEPTED','LEGACY_ACCEPTED')
-         AND card_credentials_ciphertext IS NOT NULL
-         AND current_balance >= COALESCE((SELECT CAST(setting_value AS DECIMAL(18,6))
-           FROM app_settings WHERE setting_key = 'default_minimum_required_card_balance' LIMIT 1), 999999999)
-         AND NOT EXISTS (SELECT 1 FROM card_assignment_history ah WHERE ah.card_id = cards.id)`,
+         AND BINARY card_type_id = BINARY ?`,
       [providerAccountId, String(cardTypeId)]
     );
     const threshold = Math.max(0, Number(thresholdRows[0]?.setting_value || 5));
@@ -258,13 +254,8 @@ export function createCardStockService({ pool, sessionEncryptionKey, panHmacKey 
       ),
       pool.query(
         `SELECT card_type_id,
-                SUM(order_id IS NULL AND inventory_status = 'AVAILABLE'
-                  AND intake_status IN ('ACCEPTED','LEGACY_ACCEPTED')
-                  AND LOWER(status) IN ('active','available','usable','ready')
-                  AND card_credentials_ciphertext IS NOT NULL
-                  AND current_balance >= COALESCE((SELECT CAST(setting_value AS DECIMAL(18,6))
-                    FROM app_settings WHERE setting_key = 'default_minimum_required_card_balance' LIMIT 1), 999999999)
-                  AND NOT EXISTS (SELECT 1 FROM card_assignment_history ah WHERE ah.card_id = cards.id)) AS available,
+                SUM(${eligibleInventoryCardSql('cards', `COALESCE((SELECT CAST(setting_value AS DECIMAL(18,6))
+                    FROM app_settings WHERE setting_key = 'default_minimum_required_card_balance' LIMIT 1), 999999999)`)}) AS available,
                 SUM(order_id IS NULL AND inventory_status = 'PROVISIONING') AS provisioning,
                 SUM(order_id IS NOT NULL OR inventory_status = 'ASSIGNED') AS assigned,
                 SUM(order_id IS NULL AND inventory_status = 'DEPLETED') AS depleted,
