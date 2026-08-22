@@ -107,7 +107,7 @@ const elements = {
   cdkResult: document.querySelector('#cdk-result'), generatedCdks: document.querySelector('#generated-cdks'),
   cdkBatchLabel: document.querySelector('#cdk-batch-label'), copyCdks: document.querySelector('#copy-cdks'),
   downloadCdks: document.querySelector('#download-cdks'), cdkBatches: document.querySelector('#cdk-batches'),
-  cdkBatchFilters: document.querySelector('#cdk-batch-filters'), cdkBatchPlan: document.querySelector('#cdk-batch-plan'), cdkBatchStatus: document.querySelector('#cdk-batch-status'), cdkBatchFrom: document.querySelector('#cdk-batch-from'), cdkBatchTo: document.querySelector('#cdk-batch-to'), cdkBatchMore: document.querySelector('#cdk-batch-more'), cdkBatchPageInfo: document.querySelector('#cdk-batch-page-info'), exportCdkTrace: document.querySelector('#export-cdk-trace'),
+  cdkBatchFilters: document.querySelector('#cdk-batch-filters'), cdkBatchPlan: document.querySelector('#cdk-batch-plan'), cdkBatchStatus: document.querySelector('#cdk-batch-status'), cdkBatchFrom: document.querySelector('#cdk-batch-from'), cdkBatchTo: document.querySelector('#cdk-batch-to'), cdkBatchMore: document.querySelector('#cdk-batch-more'), cdkBatchPageInfo: document.querySelector('#cdk-batch-page-info'), exportCdkBatches: document.querySelector('#export-cdk-batches'), exportCdkTrace: document.querySelector('#export-cdk-trace'),
   stockSummary: document.querySelector('#stock-summary'), stockJobs: document.querySelector('#stock-jobs'),
   stockCards: document.querySelector('#stock-cards'), providerSummary: document.querySelector('#provider-summary'),
   stockThresholdForm: document.querySelector('#stock-threshold-form'), stockThreshold: document.querySelector('#stock-threshold'),
@@ -1767,6 +1767,7 @@ function resetCdkBatchPaging() { state.cdkBatchCursor = null; state.cdkBatchRows
 document.querySelector('#refresh-cdk-batches')?.addEventListener('click', () => { resetCdkBatchPaging(); loadCdkBatches().catch(() => showNotice('批次记录读取失败。')); });
 elements.cdkBatchFilters?.addEventListener('submit', (event) => { event.preventDefault(); resetCdkBatchPaging(); loadCdkBatches().catch(() => showNotice('批次筛选失败。')); });
 elements.cdkBatchMore?.addEventListener('click', () => loadCdkBatches().catch(() => showNotice('更多批次读取失败。')));
+elements.exportCdkBatches?.addEventListener('click', () => downloadOperationsCsv('cdk_batches').catch(() => showNotice('批次汇总导出失败。')));
 elements.exportCdkTrace?.addEventListener('click', () => downloadOperationsCsv('order_trace').catch(() => showNotice('订单追溯导出失败。')));
 elements.cdkBatches.addEventListener('click', (event) => {
   const row = event.target.closest('[data-cdk-batch]');
