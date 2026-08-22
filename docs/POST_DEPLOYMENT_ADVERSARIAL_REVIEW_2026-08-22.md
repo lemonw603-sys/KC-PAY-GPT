@@ -141,6 +141,22 @@
 - 已将后台展示专用新鲜度窗口调整为 6 分钟，覆盖同步周期和调度抖动；写入任务仍使用严格 2 分钟并在执行前强制刷新，不会放宽资金安全门禁。
 - 已部署 `/opt/pojia/releases/20260823-freshness`；Web/Worker active，live/ready 通过；本地测试 370 passed、0 failed、34 skipped。
 
+## 订单追溯只读审计（2026-08-23）
+
+### 已证实事实
+
+- 生产当前有 3 个订单：1 个内部测试订单仍为 `CREATED`，1 个真实订单为 `RECHARGE_FAILED`，1 个已关闭的预提交取消订单。
+- CDK 表中已兑换 CDK 与订单存在关联；未兑换作废批次保持 `REVOKED`，没有发现已兑换 CDK 被标记为作废。
+- 真实失败订单的卡片关联、卡号后四位、卡片余额、卡片库存状态均可通过订单关联查询得到。
+- Provider 只读卡详情/交易调用均有记录；卡余额充值账本目前为空。
+- 当前生产 `recharge_attempts` 有一条历史拒绝记录，资金风险为 `CLEARED`，没有外部订单号。
+
+### 发现的追溯缺口（未直接修改生产数据）
+
+- 历史真实失败订单的 `orders.failure_code` 和 `failure_reason` 当前为空，虽然订单状态为 `RECHARGE_FAILED`，且对应历史 Provider/attempt 记录存在。这说明旧版本失败收尾没有把可读失败原因回填到订单主表。
+- 这不是当前新代码路径的结论；当前代码会写入 `RECHARGE_SUBMIT_REJECTED` 或 `PROVIDER_CONFIRMED_FAILURE`。需要单独设计“历史记录修复/展示回退”方案，禁止直接人工 SQL 改业务数据。
+- 本次查询使用的是实际表结构；项目中不存在名为 `order_trace_events` 的表，追溯关系由订单、CDK、卡片、Provider 调用、充值尝试和事件表共同组成。
+
 ## 第一性原理阶段性审查（2026-08-23）
 
 ### 核心不变量
