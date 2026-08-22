@@ -7,8 +7,8 @@
   <meta name="theme-color" content="#f5f8fc">
   <title>Plus 运营后台</title>
   <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/admin/assets/admin.css?v=16">
-  <script src="/admin/assets/admin.js?v=16" defer></script>
+  <link rel="stylesheet" href="/admin/assets/admin.css?v=17">
+  <script src="/admin/assets/admin.js?v=17" defer></script>
 </head>
 <body>
   <div class="admin-shell">
@@ -23,6 +23,7 @@
         <button class="nav-item" type="button" data-view="orders"><span aria-hidden="true">≡</span>订单</button>
         <button class="nav-item" type="button" data-view="exceptions"><span aria-hidden="true">!</span>异常队列</button>
         <button class="nav-item" type="button" data-view="reconciliation"><span aria-hidden="true">✓</span>资金证据核对</button>
+        <button class="nav-item" type="button" data-view="browser"><span aria-hidden="true">◎</span>Browser 执行</button>
         <button class="nav-item" type="button" data-view="stock"><span aria-hidden="true">▣</span>卡片库存</button>
         <button class="nav-item" type="button" data-view="cdks"><span aria-hidden="true">#</span>CDK 管理</button>
       </nav>
@@ -110,6 +111,25 @@
         </section>
       </section>
 
+      <section id="browser-view" class="view" hidden>
+        <section class="card orders-card">
+          <div class="card-heading">
+            <div><p class="section-kicker">Browser 控制面</p><h2>运行、租约与人工接管</h2></div>
+            <span class="readonly-badge">authority 不可见</span>
+          </div>
+          <p class="card-description">这里只展示订单、attempt、run、检查点、资源租约、artifact 状态和对账关系，不展示 Checkout URL、Session、卡片凭据、密文引用或租约令牌。人工控制只转移同一个 run 的所有权；付款结果未知时只能锁入对账，不能在这里重付、换卡或重建 Checkout。</p>
+          <form class="filters" id="browser-filters">
+            <label class="search-field"><span class="sr-only">订单查询码</span><input id="browser-public-no" type="search" maxlength="64" placeholder="精确订单查询码"></label>
+            <label><span class="sr-only">运行状态</span><select id="browser-status"><option value="">全部运行状态</option><option value="RUNNING">运行中</option><option value="HUMAN_REQUIRED">等待人工</option><option value="RECONCILE_ONLY">仅可对账</option><option value="READY">待运行</option><option value="COMPLETED">已完成</option><option value="FAILED_SAFE">安全失败</option></select></label>
+            <label><span class="sr-only">付款状态</span><select id="browser-payment-state"><option value="">全部付款状态</option><option value="NOT_STARTED">未开始</option><option value="PAYMENT_ARMED">已许可</option><option value="PAYMENT_SUBMITTING">提交中</option><option value="PAYMENT_UNKNOWN">结果未知</option><option value="PAYMENT_DECLINED">已拒绝</option><option value="PAYMENT_CONFIRMED">已确认</option></select></label>
+            <label><span class="sr-only">控制权</span><select id="browser-control-state"><option value="">全部控制权</option><option value="AUTOMATION">自动化</option><option value="REQUESTED">已请求人工</option><option value="FROZEN">已冻结</option><option value="TRANSFERRED">已转交人工</option><option value="RELEASED">已释放待对账</option></select></label>
+            <button class="primary-small" type="submit">筛选</button>
+          </form>
+          <div class="table-wrap"><table><thead><tr><th>订单 / Run</th><th>运行状态</th><th>付款 / 资金</th><th>控制权</th><th>Worker 租约</th><th>Checkout artifact</th><th>更新时间</th></tr></thead><tbody id="browser-runs-table"></tbody></table></div>
+          <div class="pagination"><span id="browser-runs-count">0 个 run</span><div><button id="browser-runs-prev" type="button">上一页</button><span id="browser-runs-page">第 1 页</span><button id="browser-runs-next" type="button">下一页</button></div></div>
+        </section>
+      </section>
+
       <section id="cdks-view" class="view" hidden>
         <section class="card cdk-card">
           <div class="card-heading">
@@ -149,6 +169,11 @@
             <form class="threshold-form" id="stock-threshold-form">
               <label for="stock-threshold">剩余多少张时提醒</label>
               <div><input id="stock-threshold" type="number" min="0" max="10000" required><button class="primary-small" type="submit">保存阈值</button></div>
+            </form>
+            <form class="threshold-form" id="replenishment-limit-form">
+              <label for="replenishment-daily-limit">每日自动补卡上限</label>
+              <div><input id="replenishment-daily-limit" type="number" min="0" max="500" required><button class="primary-small" type="submit">保存上限</button></div>
+              <p class="form-hint" id="replenishment-usage">今日已使用：—，剩余：—</p>
             </form>
           </section>
           <section class="card stock-card">

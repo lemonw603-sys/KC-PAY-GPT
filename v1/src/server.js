@@ -14,6 +14,7 @@ import {
 import { createAdminSessionAuth } from './security/admin-session.js';
 import { createCardStockService } from './services/card-stock-service.js';
 import { createCardStockJobService } from './services/card-stock-job-service.js';
+import { createCardReplenishmentSettingsService } from './services/card-replenishment-settings-service.js';
 import { createCardSyncJobService } from './services/card-sync-job-service.js';
 import { createAdminOperationsService } from './services/admin-operations-service.js';
 import {
@@ -35,6 +36,7 @@ import { createReconciliationCaseService } from './services/reconciliation-case-
 import { createOperationsCsvExportService } from './services/operations-csv-export-service.js';
 import { createTraceabilityOperationsService } from './services/traceability-operations-service.js';
 import { createSessionReplacementService } from './services/session-replacement-service.js';
+import { createBrowserAdminService } from './services/browser-admin-service.js';
 
 const config = loadConfig();
 const pool = createDatabasePool(config.database);
@@ -62,6 +64,7 @@ const cardStockService = createCardStockService({
   panHmacKey: config.cardIntakePanHmacKey
 });
 const cardStockJobService = createCardStockJobService({ pool });
+const replenishmentSettingsService = createCardReplenishmentSettingsService({ pool });
 const cardSyncJobService = createCardSyncJobService({ pool });
 const cardIntakeRepository = createCardIntakeRepository({ pool });
 const cardIntakeProvider = config.hnskjApiKey
@@ -100,6 +103,7 @@ const compensateAdminOrder = createOrderCompensationService({
 });
 const cancelAdminOrder = createOrderCancellationService({ pool });
 const reconciliationCases = createReconciliationCaseService({ pool });
+const browserAdmin = createBrowserAdminService({ pool });
 const operationsCsv = createOperationsCsvExportService({ pool });
 const traceabilityOperations = createTraceabilityOperationsService({
   pool,
@@ -164,6 +168,8 @@ const app = createApp({
   })
   ,setAdminCardStockThreshold: (value) => cardStockService.setThreshold(value)
   ,createAdminCardStockJob: cardStockJobService.createJob
+  ,getAdminReplenishmentSettings: replenishmentSettingsService.get
+  ,setAdminReplenishmentDailyLimit: replenishmentSettingsService.setDailyLimit
   ,setAdminOrderAcceptance: adminOperationsService.setOrderAcceptance
   ,setAdminRechargePermit: async (publicNo, input = {}) => {
     const action = String(input.action || '');
@@ -235,6 +241,12 @@ const app = createApp({
   ,listAdminReconciliationCases: reconciliationCases.listCases
   ,assignAdminReconciliationCase: reconciliationCases.assign
   ,resolveAdminReconciliationCase: reconciliationCases.resolve
+  ,listAdminBrowserRuns: browserAdmin.listRuns
+  ,getAdminBrowserRun: browserAdmin.getRun
+  ,controlAdminBrowserRun: (runId, input = {}) => browserAdmin.controlRun(runId, {
+    ...input,
+    actorId: 'admin'
+  })
   ,exportAdminOperationsCsv: operationsCsv.exportCsv
 });
 

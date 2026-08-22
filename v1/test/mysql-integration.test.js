@@ -47,6 +47,7 @@ import { createOperationsCsvExportService } from '../src/services/operations-csv
 import { createAlertNotificationRepository } from '../src/db/repositories/alert-notification-repository.js';
 import { createCardStockService, mapStockCard } from '../src/services/card-stock-service.js';
 import { createCardFundingRepository } from '../src/db/repositories/card-funding-repository.js';
+import { createCardReplenishmentSettingsService } from '../src/services/card-replenishment-settings-service.js';
 import { createTraceabilityOperationsService } from '../src/services/traceability-operations-service.js';
 import { createSessionReplacementService } from '../src/services/session-replacement-service.js';
 
@@ -714,6 +715,42 @@ test('card stock jobs require confirmation and move durably through the runner s
     assert.equal(completed.estimatedTotal, '60.775000');
   } finally {
     if (job) await pool.query('DELETE FROM card_stock_jobs WHERE id = ?', [job.id]);
+    await pool.end();
+  }
+});
+
+test('replenishment daily limit is adjustable and audited with today usage', {
+  skip: !databaseUrl && 'TEST_DATABASE_URL 未配置；完整 MySQL 套件在服务器隔离数据库运行'
+}, async () => {
+  const pool = mysql.createPool({ uri: databaseUrl, connectionLimit: 3, timezone: 'Z' });
+  const service = createCardReplenishmentSettingsService({ pool });
+  const [[original]] = await pool.query(
+    `SELECT setting_value FROM app_settings WHERE setting_key='card_replenishment_daily_limit'`
+  );
+  try {
+    const before = await service.get();
+    await service.setDailyLimit({ value: 9, actorId: 'integration-test', reason: 'test update' });
+    const after = await service.get();
+    assert.equal(after.dailyLimit, 9);
+    assert.equal(after.usedToday >= 0, true);
+    const [[event]] = await pool.query(
+      `SELECT setting_key, old_value, new_value, actor_id, reason
+       FROM admin_setting_events WHERE setting_key='card_replenishment_daily_limit'
+       ORDER BY id DESC LIMIT 1`
+    );
+    assert.deepEqual(event, {
+      setting_key: 'card_replenishment_daily_limit',
+      old_value: String(before.dailyLimit), new_value: '9',
+      actor_id: 'integration-test', reason: 'test update'
+    });
+  } finally {
+    await pool.query(
+      `UPDATE app_settings SET setting_value=? WHERE setting_key='card_replenishment_daily_limit'`,
+      [original?.setting_value || '5']
+    );
+    await pool.query(
+      `DELETE FROM admin_setting_events WHERE setting_key='card_replenishment_daily_limit' AND actor_id='integration-test'`
+    );
     await pool.end();
   }
 });

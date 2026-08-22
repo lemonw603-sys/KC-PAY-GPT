@@ -12,6 +12,7 @@ import { ReconciliationCaseError } from '../services/reconciliation-case-service
 import { OperationsCsvExportError } from '../services/operations-csv-export-service.js';
 import { CdkDeliveryError } from '../services/cdk-delivery-service.js';
 import { TraceabilityOperationError } from '../services/traceability-operations-service.js';
+import { BrowserAdminError } from '../services/browser-admin-service.js';
 import { createFixedWindowRateLimit } from './fixed-window-rate-limit.js';
 
 const DEFAULT_BODY_LIMIT = '256kb';
@@ -45,6 +46,8 @@ export function createApp({
   getAdminCardStock = null,
   setAdminCardStockThreshold = null,
   createAdminCardStockJob = null,
+  getAdminReplenishmentSettings = null,
+  setAdminReplenishmentDailyLimit = null,
   setAdminOrderAcceptance = null,
   setAdminRechargePermit = null,
   createAdminRechargeAuthorization = null,
@@ -60,6 +63,9 @@ export function createApp({
   listAdminReconciliationCases = null,
   assignAdminReconciliationCase = null,
   resolveAdminReconciliationCase = null,
+  listAdminBrowserRuns = null,
+  getAdminBrowserRun = null,
+  controlAdminBrowserRun = null,
   exportAdminOperationsCsv = null,
   adminHost = null,
   orderRateLimit = createFixedWindowRateLimit(),
@@ -312,6 +318,20 @@ export function createApp({
       return res.status(202).json({ job });
     });
   }
+  if (typeof getAdminReplenishmentSettings === 'function') {
+    app.get('/api/v1/admin/card-stock/replenishment-settings', noStore, requireAdminApi, async (req, res) => {
+      res.json(await getAdminReplenishmentSettings());
+    });
+  }
+  if (typeof setAdminReplenishmentDailyLimit === 'function') {
+    app.post('/api/v1/admin/card-stock/replenishment-settings', ...sensitiveAdminGuards, async (req, res) => {
+      res.json(await setAdminReplenishmentDailyLimit({
+        value: req.body?.dailyLimit,
+        actorId: 'admin',
+        reason: req.body?.reason
+      }));
+    });
+  }
   if (typeof setAdminOrderAcceptance === 'function') {
     app.post('/api/v1/admin/operations/order-acceptance', ...adminWriteGuards, async (req, res) => {
       res.json(await setAdminOrderAcceptance(req.body));
@@ -493,6 +513,42 @@ export function createApp({
         if (error instanceof ReconciliationCaseError) {
           return res.status(error.code === 'CASE_NOT_FOUND' ? 404 : 400)
             .json({ error: error.code.toLowerCase() });
+        }
+        throw error;
+      }
+    });
+  }
+  if (typeof listAdminBrowserRuns === 'function') {
+    app.get('/api/v1/admin/browser/runs', noStore, requireAdminApi, async (req, res) => {
+      try {
+        return res.json(await listAdminBrowserRuns(req.query || {}));
+      } catch (error) {
+        if (error instanceof BrowserAdminError) {
+          return res.status(error.status).json({ error: error.code.toLowerCase() });
+        }
+        throw error;
+      }
+    });
+  }
+  if (typeof getAdminBrowserRun === 'function') {
+    app.get('/api/v1/admin/browser/runs/:runId', noStore, requireAdminApi, async (req, res) => {
+      try {
+        return res.json(await getAdminBrowserRun(req.params.runId));
+      } catch (error) {
+        if (error instanceof BrowserAdminError) {
+          return res.status(error.status).json({ error: error.code.toLowerCase() });
+        }
+        throw error;
+      }
+    });
+  }
+  if (typeof controlAdminBrowserRun === 'function') {
+    app.post('/api/v1/admin/browser/runs/:runId/control', ...sensitiveAdminGuards, async (req, res) => {
+      try {
+        return res.json(await controlAdminBrowserRun(req.params.runId, req.body || {}));
+      } catch (error) {
+        if (error instanceof BrowserAdminError) {
+          return res.status(error.status).json({ error: error.code.toLowerCase() });
         }
         throw error;
       }

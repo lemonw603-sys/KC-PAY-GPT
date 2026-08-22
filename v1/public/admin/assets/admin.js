@@ -71,7 +71,8 @@ const state = {
   from: '', to: '', timeField: 'CREATED',
   stockProvider: null, stockCatalog: null, stockCardTypeId: '', acceptingOrders: false,
   cdkClearTimer: null, cdkLoadSequence: 0,
-  selectedOrders: new Set(), reconciliationPage: 1, reconciliationTotal: 0
+  selectedOrders: new Set(), reconciliationPage: 1, reconciliationTotal: 0,
+  browserPage: 1, browserTotal: 0
 };
 const elements = {
   navItems: [...document.querySelectorAll('.nav-item')],
@@ -107,6 +108,7 @@ const elements = {
   stockSummary: document.querySelector('#stock-summary'), stockJobs: document.querySelector('#stock-jobs'),
   stockCards: document.querySelector('#stock-cards'), providerSummary: document.querySelector('#provider-summary'),
   stockThresholdForm: document.querySelector('#stock-threshold-form'), stockThreshold: document.querySelector('#stock-threshold'),
+  replenishmentLimitForm: document.querySelector('#replenishment-limit-form'), replenishmentDailyLimit: document.querySelector('#replenishment-daily-limit'), replenishmentUsage: document.querySelector('#replenishment-usage'),
   stockOpenForm: document.querySelector('#stock-open-form'), stockOpenCount: document.querySelector('#stock-open-count'),
   stockOpenAmount: document.querySelector('#stock-open-amount'), stockCardType: document.querySelector('#stock-card-type'),
   stockCardProfile: document.querySelector('#stock-card-profile'),
@@ -123,7 +125,17 @@ const elements = {
   reconciliationPrev: document.querySelector('#reconciliation-prev'),
   reconciliationNext: document.querySelector('#reconciliation-next'),
   reconciliationStatus: document.querySelector('#reconciliation-status'),
-  reconciliationSeverity: document.querySelector('#reconciliation-severity')
+  reconciliationSeverity: document.querySelector('#reconciliation-severity'),
+  browserFilters: document.querySelector('#browser-filters'),
+  browserPublicNo: document.querySelector('#browser-public-no'),
+  browserStatus: document.querySelector('#browser-status'),
+  browserPaymentState: document.querySelector('#browser-payment-state'),
+  browserControlState: document.querySelector('#browser-control-state'),
+  browserRunsTable: document.querySelector('#browser-runs-table'),
+  browserRunsCount: document.querySelector('#browser-runs-count'),
+  browserRunsPage: document.querySelector('#browser-runs-page'),
+  browserRunsPrev: document.querySelector('#browser-runs-prev'),
+  browserRunsNext: document.querySelector('#browser-runs-next')
 };
 
 function escapeHtml(value) {
@@ -184,7 +196,7 @@ async function api(url, options) {
 }
 
 async function requestSensitiveAccess() {
-  const password = window.prompt('请输入后台密码确认敏感操作：\n\n验证后 30 分钟内生成、导出和作废 CDK 不再重复询问。');
+  const password = window.prompt('请输入后台密码确认敏感操作：\n\n验证后 30 分钟内的受保护操作不再重复询问。');
   if (!password) throw new Error('admin_step_up_cancelled');
   const response = await fetch('/api/v1/admin/step-up', {
     method: 'POST',
@@ -448,6 +460,141 @@ async function resolveReconciliationCase(caseId) {
   await loadReconciliationCases();
 }
 
+const BROWSER_RUN_LABELS = Object.freeze({
+  READY: '待运行', RUNNING: '运行中', RECONCILE_ONLY: '仅可对账',
+  HUMAN_REQUIRED: '等待人工', COMPLETED: '已完成', FAILED_SAFE: '安全失败'
+});
+const BROWSER_PAYMENT_LABELS = Object.freeze({
+  NOT_STARTED: '未开始', PAYMENT_ARMED: '已许可', PAYMENT_SUBMITTING: '提交中',
+  PAYMENT_UNKNOWN: '结果未知', PAYMENT_DECLINED: '已拒绝', PAYMENT_CONFIRMED: '已确认'
+});
+const BROWSER_CONTROL_LABELS = Object.freeze({
+  AUTOMATION: '自动化', REQUESTED: '已请求人工', FROZEN: '自动化已冻结',
+  TRANSFERRED: '已转交人工', RELEASED: '已释放待对账'
+});
+
+async function loadBrowserRuns() {
+  const params = new URLSearchParams({ page: state.browserPage, pageSize: 50 });
+  if (elements.browserPublicNo.value.trim()) params.set('publicNo', elements.browserPublicNo.value.trim());
+  if (elements.browserStatus.value) params.set('status', elements.browserStatus.value);
+  if (elements.browserPaymentState.value) params.set('paymentState', elements.browserPaymentState.value);
+  if (elements.browserControlState.value) params.set('controlState', elements.browserControlState.value);
+  const payload = await api(`/api/v1/admin/browser/runs?${params}`);
+  state.browserTotal = payload.total;
+  elements.browserRunsTable.innerHTML = payload.runs.length
+    ? payload.runs.map((run) => `<tr data-browser-run="${escapeHtml(run.id)}" tabindex="0">
+      <td><strong class="order-link">${escapeHtml(run.publicNo)}</strong><small>Run ${escapeHtml(run.id)} · #${run.runNo}</small></td>
+      <td><span class="cell-main">${escapeHtml(BROWSER_RUN_LABELS[run.status] || run.status)}</span><small>${escapeHtml(run.lastCheckpointKind || '尚无检查点')} · ${run.lastCheckpointSequence}</small></td>
+      <td><span class="cell-main">${escapeHtml(BROWSER_PAYMENT_LABELS[run.paymentState] || run.paymentState)}</span><small>${escapeHtml(run.attemptStatus)} / ${escapeHtml(run.fundsRiskState)}</small></td>
+      <td><span class="cell-main">${escapeHtml(BROWSER_CONTROL_LABELS[run.controlState] || run.controlState)}</span><small>${escapeHtml(run.humanOwnerId || run.automationOwnerId || '未分配')}</small></td>
+      <td><span class="cell-main">${escapeHtml(run.worker?.id || '未领取')}</span><small>${formatTime(run.worker?.leaseUntil)}</small></td>
+      <td><span class="cell-main">${escapeHtml(run.activeArtifact?.status || '无活动 artifact')}</span><small>${escapeHtml(run.activeArtifact?.kind || '—')} · ${formatTime(run.activeArtifact?.expiresAt)}</small></td>
+      <td>${formatTime(run.updatedAt)}</td>
+    </tr>`).join('')
+    : '<tr><td colspan="7" class="empty-cell">没有符合条件的 Browser run</td></tr>';
+  const totalPages = Math.max(1, Math.ceil(payload.total / 50));
+  elements.browserRunsCount.textContent = `${payload.total} 个 run`;
+  elements.browserRunsPage.textContent = `第 ${state.browserPage} / ${totalPages} 页`;
+  elements.browserRunsPrev.disabled = state.browserPage <= 1;
+  elements.browserRunsNext.disabled = state.browserPage >= totalPages;
+  elements.syncTime.textContent = `更新于 ${new Date().toLocaleTimeString('zh-CN', { hour12: false })}`;
+}
+
+function browserControlButtons(run) {
+  if (!['READY', 'RUNNING', 'HUMAN_REQUIRED'].includes(run.status)) return '';
+  if (run.controlState === 'AUTOMATION') {
+    return '<button class="text-button" type="button" data-browser-control="REQUEST">请求人工接管</button>';
+  }
+  if (run.controlState === 'REQUESTED') {
+    return '<button class="danger-small" type="button" data-browser-control="FREEZE">冻结自动化</button><button class="text-button" type="button" data-browser-control="CANCEL">取消请求</button>';
+  }
+  if (run.controlState === 'FROZEN') {
+    return '<button class="primary-small" type="button" data-browser-control="TRANSFER">转交人工</button><button class="danger-small" type="button" data-browser-control="MARK_PAYMENT_UNKNOWN">标记付款未知</button>';
+  }
+  if (run.controlState === 'TRANSFERRED') {
+    return '<button class="primary-small" type="button" data-browser-control="RELEASE_SAFE">确认未付款并恢复</button><button class="danger-small" type="button" data-browser-control="MARK_PAYMENT_UNKNOWN">标记付款未知</button>';
+  }
+  return '';
+}
+
+async function controlBrowserRun(run, action) {
+  const confirmations = {
+    REQUEST: `请求人工接管 ${run.id}`,
+    FREEZE: `冻结自动化 ${run.id}`,
+    TRANSFER: `转交人工 ${run.id}`,
+    RELEASE_SAFE: `确认无付款动作并恢复 ${run.id}`,
+    MARK_PAYMENT_UNKNOWN: `确认付款结果未知 ${run.id}`,
+    CANCEL: `取消接管 ${run.id}`
+  };
+  const warnings = {
+    REQUEST: '请求人工接管同一个 Browser run？请求本身不会点击页面。',
+    FREEZE: '冻结自动化页面操作？Worker 只允许维持租约和证据，不得继续输入。',
+    TRANSFER: '确认自动化已经停手，并把同一个 run 转交给指定人工？',
+    RELEASE_SAFE: '只有在确认人工没有点击、回车、提交表单、钱包或 3DS 最终确认时才能恢复自动化。',
+    MARK_PAYMENT_UNKNOWN: '这会把 run、attempt 和订单锁为付款结果未知，只能对账，不能自动重付。',
+    CANCEL: '只允许取消尚未冻结的接管请求。'
+  };
+  if (!window.confirm(warnings[action])) return;
+  const input = {
+    action,
+    operationId: `admin-browser:${action.toLowerCase()}:${crypto.randomUUID()}`,
+    confirmation: confirmations[action]
+  };
+  if (action === 'REQUEST') {
+    input.reasonCode = window.prompt('输入接管原因代码：CAPTCHA、THREE_DS、PAGE_DRIFT、SESSION_REPAIR、OPERATOR_REVIEW 或 PAYMENT_RECONCILIATION', 'OPERATOR_REVIEW')?.trim().toUpperCase();
+    if (!input.reasonCode) return;
+  }
+  if (action === 'TRANSFER') {
+    input.humanOwnerId = window.prompt('输入人工操作者标识：', 'admin')?.trim();
+    if (!input.humanOwnerId) return;
+  }
+  await sensitiveApi(`/api/v1/admin/browser/runs/${encodeURIComponent(run.id)}/control`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input)
+  });
+  showNotice(action === 'MARK_PAYMENT_UNKNOWN'
+    ? '已锁为付款结果未知；只能进入资金证据核对，禁止重付。'
+    : 'Browser 控制权状态已更新。', 'success');
+  await loadBrowserRuns();
+  await openBrowserRun(run.id);
+}
+
+async function openBrowserRun(runId) {
+  elements.detailKicker.textContent = 'Browser 运行详情';
+  elements.detailTitle.textContent = runId;
+  elements.detailContent.innerHTML = '<p class="loading-state">正在读取脱敏时间线…</p>';
+  if (!elements.detail.open) elements.detail.showModal();
+  try {
+    const data = await api(`/api/v1/admin/browser/runs/${encodeURIComponent(runId)}`);
+    const run = data.run;
+    elements.detailContent.innerHTML = `
+      <section class="detail-section"><div class="detail-section-heading"><h3>控制权</h3><span>${browserControlButtons(run)}</span></div>${renderKeyValues([
+        ['订单查询码', run.publicNo], ['Run ID', run.id], ['Attempt ID', run.rechargeAttemptId],
+        ['运行状态', BROWSER_RUN_LABELS[run.status] || run.status],
+        ['付款状态', BROWSER_PAYMENT_LABELS[run.paymentState] || run.paymentState],
+        ['资金风险', run.fundsRiskState], ['订单状态', run.orderStatus],
+        ['控制权', BROWSER_CONTROL_LABELS[run.controlState] || run.controlState],
+        ['自动化 owner', run.automationOwnerId], ['人工 owner', run.humanOwnerId],
+        ['Worker', run.worker?.id], ['Worker 租约', formatTime(run.worker?.leaseUntil)],
+        ['执行配置', `${run.profile.code} v${run.profile.version} / ${run.profile.runtimeId} / ${run.profile.adapterVersion}`],
+        ['赛道', run.selectedLane], ['最后错误', run.lastErrorCode]
+      ])}</section>
+      <section class="detail-section"><h3>Checkout artifact 索引</h3><div class="mini-list">${data.artifacts.length ? data.artifacts.map((item) => `<div><span><strong>${escapeHtml(item.kind)} · ${escapeHtml(item.status)}</strong><small>ID ${escapeHtml(item.id)} · 创建 ${formatTime(item.createdAt)} · 到期 ${formatTime(item.expiresAt)} · 销毁 ${formatTime(item.destroyedAt)}</small></span></div>`).join('') : '<p class="empty-state">没有 artifact；authority 从不在后台返回</p>'}</div></section>
+      <section class="detail-section"><h3>资源租约</h3><div class="mini-list">${data.leases.length ? data.leases.map((item) => `<div><span><strong>${escapeHtml(item.resourceType)} · ${escapeHtml(item.ownerId)}</strong><small>到期 ${formatTime(item.leaseUntil)} · 心跳 ${formatTime(item.heartbeatAt)} · 释放 ${formatTime(item.releasedAt)} ${escapeHtml(item.releaseReason || '')}</small></span></div>`).join('') : '<p class="empty-state">没有资源租约</p>'}</div></section>
+      <section class="detail-section"><h3>检查点</h3><div class="timeline">${data.checkpoints.length ? data.checkpoints.map((item) => `<article><i></i><div><strong>#${item.sequence} ${escapeHtml(item.kind)} · ${escapeHtml(item.paymentRisk)}</strong><p>${escapeHtml(item.operationId || '无 operation')}</p><small>${formatTime(item.createdAt)} · 页面签名 ${escapeHtml(item.pageSignatureHash || '—')}</small></div></article>`).join('') : '<p class="empty-state">没有检查点</p>'}</div></section>
+      <section class="detail-section"><h3>幂等操作</h3><div class="mini-list">${data.operations.length ? data.operations.map((item) => `<div><span><strong>${escapeHtml(item.type)} · ${escapeHtml(item.status)}</strong><small>${escapeHtml(item.operationId)} · ${escapeHtml(item.resultCode || '—')} · ${formatTime(item.completedAt)}</small></span></div>`).join('') : '<p class="empty-state">没有操作记录</p>'}</div></section>
+      <section class="detail-section"><h3>人工接管历史</h3><div class="mini-list">${data.interventions.length ? data.interventions.map((item) => `<div><span><strong>${escapeHtml(item.status)} · ${escapeHtml(item.reasonCode)}</strong><small>请求 ${escapeHtml(item.requestedBy)} · 人工 ${escapeHtml(item.humanOwnerId || '—')} · ${formatTime(item.requestedAt)} · ${escapeHtml(item.resultCode || '')}</small></span></div>`).join('') : '<p class="empty-state">没有人工接管</p>'}</div></section>
+      <section class="detail-section"><h3>对账案件</h3><div class="mini-list">${data.reconciliationCases.length ? data.reconciliationCases.map((item) => `<div><span><strong>${escapeHtml(item.caseType)} · ${escapeHtml(item.status)}</strong><small>${escapeHtml(item.severity)} · ${formatTime(item.detectedAt)}</small></span></div>`).join('') : '<p class="empty-state">没有对账案件</p>'}</div></section>`;
+    elements.detailContent.querySelectorAll('[data-browser-control]').forEach((button) => {
+      button.addEventListener('click', () => controlBrowserRun(run, button.dataset.browserControl)
+        .catch((error) => showNotice(error.message === 'reconcile_only'
+          ? '检测到付款提交证据，只能进入对账，不能恢复自动化。'
+          : '控制权更新失败；原状态未改变。')));
+    });
+  } catch {
+    elements.detailContent.innerHTML = '<p class="empty-state">Browser 运行详情读取失败，请稍后重试。</p>';
+  }
+}
+
 function downloadCodes(batchNo, codes) {
   const blob = new Blob([`${codes.join('\n')}\n`], { type: 'text/plain;charset=utf-8' });
   const url = URL.createObjectURL(blob);
@@ -615,6 +762,9 @@ function renderSelectedStockCardType({ resetInvalidAmount = false } = {}) {
 
 async function loadStock() {
   const payload = await api('/api/v1/admin/card-stock');
+  const replenishment = await api('/api/v1/admin/card-stock/replenishment-settings');
+  elements.replenishmentDailyLimit.value = replenishment.dailyLimit;
+  elements.replenishmentUsage.textContent = `今日已使用：${replenishment.usedToday}，剩余：${replenishment.remainingToday}`;
   state.stockProvider = payload.provider || null;
   state.stockCatalog = payload.catalog || null;
   const totals = (payload.cardTypes || []).reduce((sum, item) => ({
@@ -1104,6 +1254,10 @@ async function switchView(view, { status = '' } = {}) {
     elements.viewKicker.textContent = '运营核对';
     elements.viewTitle.textContent = '对账案例队列';
     await loadReconciliationCases();
+  } else if (view === 'browser') {
+    elements.viewKicker.textContent = 'Browser 控制面';
+    elements.viewTitle.textContent = '运行、租约与人工接管';
+    await loadBrowserRuns();
   } else {
     elements.viewKicker.textContent = view === 'exceptions' ? '人工处理' : '订单中心';
     elements.viewTitle.textContent = view === 'exceptions' ? '需要关注的订单' : '全部订单';
@@ -1189,6 +1343,28 @@ elements.reconciliationTable?.addEventListener('click', (event) => {
       .catch(() => { button.disabled = false; showNotice('案例解决失败。'); });
   }
 });
+elements.browserFilters?.addEventListener('submit', (event) => {
+  event.preventDefault();
+  state.browserPage = 1;
+  loadBrowserRuns().catch(() => showNotice('Browser 运行队列读取失败。'));
+});
+elements.browserRunsPrev?.addEventListener('click', () => {
+  if (state.browserPage > 1) { state.browserPage -= 1; loadBrowserRuns(); }
+});
+elements.browserRunsNext?.addEventListener('click', () => {
+  if (state.browserPage * 50 < state.browserTotal) { state.browserPage += 1; loadBrowserRuns(); }
+});
+elements.browserRunsTable?.addEventListener('click', (event) => {
+  const row = event.target.closest('[data-browser-run]');
+  if (row) openBrowserRun(row.dataset.browserRun);
+});
+elements.browserRunsTable?.addEventListener('keydown', (event) => {
+  const row = event.target.closest('[data-browser-run]');
+  if (row && (event.key === 'Enter' || event.key === ' ')) {
+    event.preventDefault();
+    openBrowserRun(row.dataset.browserRun);
+  }
+});
 document.querySelector('#refresh-button').addEventListener('click', async (event) => {
   const button = event.currentTarget;
   if (button.disabled) return;
@@ -1201,7 +1377,8 @@ document.querySelector('#refresh-button').addEventListener('click', async (event
     await (state.view === 'overview' ? loadOverview()
     : state.view === 'stock' ? loadStock()
       : state.view === 'cdks' ? loadCdkBatches()
-        : state.view === 'reconciliation' ? loadReconciliationCases() : loadOrders());
+        : state.view === 'reconciliation' ? loadReconciliationCases()
+          : state.view === 'browser' ? loadBrowserRuns() : loadOrders());
     showNotice('刷新完成。', 'success');
   } catch {
     showNotice('刷新失败，请稍后重试。');
@@ -1250,6 +1427,23 @@ elements.stockThresholdForm?.addEventListener('submit', async (event) => {
     showNotice('补卡提醒阈值已保存。');
     await loadStock();
   } catch { showNotice('阈值保存失败。'); }
+});
+elements.replenishmentLimitForm?.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const dailyLimit = Number(elements.replenishmentDailyLimit.value);
+  if (!Number.isInteger(dailyLimit) || dailyLimit < 0 || dailyLimit > 500) {
+    showNotice('每日上限必须是 0 到 500 的整数。');
+    return;
+  }
+  if (!window.confirm(`确认将每日自动补卡上限调整为 ${dailyLimit} 张？\n\n只影响后续自动补卡，不影响已创建任务。`)) return;
+  try {
+    await sensitiveApi('/api/v1/admin/card-stock/replenishment-settings', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ dailyLimit, reason: 'admin replenishment policy update' })
+    });
+    showNotice('每日自动补卡上限已保存。');
+    await loadStock();
+  } catch { showNotice('每日自动补卡上限保存失败。'); }
 });
 elements.stockOpenForm?.addEventListener('submit', async (event) => {
   event.preventDefault();
@@ -1307,7 +1501,8 @@ window.setInterval(() => {
     : state.view === 'orders' ? loadOrders
       : state.view === 'stock' ? loadStock
         : state.view === 'cdks' ? loadCdkBatches
-          : state.view === 'reconciliation' ? loadReconciliationCases : null;
+          : state.view === 'reconciliation' ? loadReconciliationCases
+            : state.view === 'browser' ? loadBrowserRuns : null;
   refresh?.().catch(() => {});
 }, 10_000);
 elements.cdkForm.addEventListener('submit', async (event) => {
