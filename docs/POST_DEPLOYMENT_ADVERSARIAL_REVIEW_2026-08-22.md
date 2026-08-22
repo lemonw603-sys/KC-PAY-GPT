@@ -162,4 +162,11 @@
 ### 阶段结论
 
 当前最重要的下一项不是开启客户充值，而是先完成“卡余额充值的只读/写入边界验收”：确认生产 runner 注册、资金账本、未知结果恢复和快照过期告警，再由单独确认进入资金写测试。
+
+### 本轮执行结果
+
+- 生产检查确认：没有注册 `card-funding-runner` 或 `card-funding-reconcile-runner` systemd 服务；卡余额充值尝试数为 0；卡余额充值开关为 `false`。因此没有误执行资金写入。
+- 已将 Provider 余额/开卡规则同步失败写入 `operator_alerts`（`PROVIDER_SNAPSHOT_STALE`，去重键固定）；同步恢复后自动关闭该告警。
+- 已在生产手动运行一次只读卡目录同步，执行成功，Provider 快照刷新成功；没有调用开卡或卡余额充值写接口。
+- Web/Worker 仍 active，健康检查通过，所有资金写入门禁保持关闭。
 - 本地全量测试：403 tests，369 passed，34 skipped，0 failed；跳过项均为未配置隔离 MySQL 的集成测试。
