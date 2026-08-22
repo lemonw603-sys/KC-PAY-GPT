@@ -1,6 +1,6 @@
 # 阶段三：正常订单自动履约验收记录
 
-> 状态：代码与隔离 MySQL 验收通过；生产尚未发布；真实成功充值尚未执行。
+> 状态：代码、隔离 MySQL、独立对抗式复核和生产安全部署已完成；真实成功充值尚未执行。
 >
 > 本文只记录已经由代码、测试或数据库验证的事实，不把设计目标写成已完成事实。
 
@@ -94,6 +94,8 @@ Migration：`v1/migrations/026_automatic_fulfillment_funds_fence.sql`
 
 其中 027 与 Browser 控制面属于并行开发内容；上述数字证明当前共享工作树没有回归，但不代表 Browser 真实充值已验收。阶段三额外完成了自动模式并发、人工模式防绕过、事务总闸、资金唯一索引、卡片实时核验、配置等待和卡同步幂等测试。
 
+精确生产提交 `8a3134dcbd8dc227822177ef8b805e5d879025db` 在同一隔离 MySQL 上为 `330 passed / 0 failed / 0 skipped`；生产 release 无数据库测试运行时为 `303 passed / 0 failed / 27 skipped`，27 项均为显式需要 `TEST_DATABASE_URL` 的 MySQL 集成测试。
+
 ## 对抗式审查纠正项
 
 首次独立审查确认了四类 P1：人工模式可能被自动授权绕过、readiness 未强制 026、生产历史孤立调用会阻塞 readiness、非法派发模式可能表现为心跳正常但不工作。
@@ -109,12 +111,22 @@ Migration：`v1/migrations/026_automatic_fulfillment_funds_fence.sql`
 
 ## 尚未完成或尚未验证
 
-1. 尚未发布到生产。
-2. 尚未在生产启用 `dispatch_new_recharges` 或 Provider 充值写开关。
-3. 尚未用免费目标账号完成一笔真实成功充值。
-4. 尚未真实验证支付成功、取消自动续费确认、最终 `RECHARGE_SUCCESS` 的整条生产链路。
-5. 尚未执行 3–5 单灰度，更未验证每天 100–300 单目标容量。
-6. Browser 自动充值只共享资金栅栏设计；不属于本阶段真实充值验收。
+1. 尚未在生产启用 `dispatch_new_recharges` 或 Provider 充值写开关。
+2. 尚未用免费目标账号完成一笔真实成功充值。
+3. 尚未真实验证支付成功、取消自动续费确认、最终 `RECHARGE_SUCCESS` 的整条生产链路。
+4. 尚未执行 3–5 单灰度，更未验证每天 100–300 单目标容量。
+5. Browser 自动充值只共享资金栅栏设计；不属于本阶段真实充值验收。
+
+## 生产安全部署证据
+
+- 精确 release：`/opt/pojia/releases/20260822-stage3-8a3134d`；`/opt/pojia/current` 已原子切换；源码提交为 `8a3134dcbd8dc227822177ef8b805e5d879025db`。
+- 发布前创建加密数据库备份，服务器 SHA-256、解密流和 gzip 完整性验证通过；服务器外副本位于 `/Users/lemon/backups/AI充值业务/production/2026-08-22/`，两端 SHA-256 一致。
+- Migration 026 首次执行和重放均通过；生产历史中唯一符合条件的 40030 明确失败孤立调用已补齐为 `REJECTED/CLEARED` attempt。
+- 迁移后：orphan create call、API attempt 无 create intent、duplicate create intent、活动/未知资金风险、活动充值许可均为 0；generated column 与唯一索引各 1。
+- 生产保持 `accept_new_orders=false`、`dispatch_new_recharges=false`、`recharge_dispatch_mode=AUTOMATIC`；Provider 账户写标记全部为 0；Worker 的卡写、充值写和总写进程开关均为 `false`。
+- Web、Worker、Bark 均为 active；公网 live/ready 为 200，后台未登录 API 为 401；只读 readiness 为 `ok=true`、无 blocker。
+- 原来因周期 dedupe key 冲突而失败的卡片只读同步已修复；新版连续运行成功，相同时间桶重复调度返回 0 而不抛错。
+- 部署后资金写 operation 数量为 0，未创建补卡任务；本次没有开卡、卡充值、直充、退款、余额提取或 Browser 支付。
 
 ## 生产发布和回滚约束
 

@@ -197,3 +197,15 @@
 - 接单、派发、Provider 账户和进程资金门禁全部关闭；活动资金风险和活动充值授权均为 0。
 - Web、Worker、Bark active；公网 live/ready 200，后台未登录 API 401；最终只读体检 `ok=true`、无 blocker。
 - 本次没有开卡、卡充值、直充、退款、余额提取或 Browser 付款调用。
+
+## 2026-08-22 - 阶段三正常订单自动履约与生产安全部署
+
+- 正常模式改为规则通过后自动履约；`MANUAL` 只消费 `SINGLE/BATCH` 灰度许可，资金事务内重新锁读派发总闸和模式。
+- 自动授权、资金 attempt、订单 `SUBMITTING` 和 `create_direct` intent 同事务；Migration 026 用 generated unique index 保证每个 attempt 最多一个创建意图。
+- 提交前立即只读刷新已绑定卡；卡片或配置不满足时不创建资金 attempt，配置等待退还当前任务尝试次数。
+- 修复周期卡片同步相同时间桶重复 dedupe key 导致 systemd 任务失败；生产新版连续运行成功。
+- 独立对抗式审查确认无剩余 Stage3 P0/P1；补充防御性 MANUAL 最终断言、schema artifact 精确校验，并将 API 与 Browser 资金证据口径分开。
+- 精确提交 `8a3134dcbd8dc227822177ef8b805e5d879025db` 隔离 MySQL 全量测试 `330/330`；共享工作树含 Browser 并行内容时为 `342/342`。
+- 生产发布 `/opt/pojia/releases/20260822-stage3-8a3134d`，Migration 026 首次执行和重放通过；历史明确失败 orphan 已受限补齐，最终资金账一致性计数全部为 0。
+- Web、Worker、Bark、卡片只读同步、live、ready 和只读 readiness 均通过；接单、派发、Provider 账户和进程资金写门禁保持关闭。
+- 本阶段没有开卡、卡充值、直充、退款、余额提取或 Browser 支付；免费目标账号真实成功充值、取消续费最终态和 3–5 单灰度仍未验收。

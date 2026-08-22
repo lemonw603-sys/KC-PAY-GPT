@@ -1,6 +1,6 @@
 # AI充值业务单一事实源与接手手册
 
-> 更新时间：2026-08-21 需求最终对齐补充后
+> 更新时间：2026-08-22 阶段三生产安全部署后
 >
 > 本文用于跨窗口、跨模型交接。事实优先级：生产运行时与真实请求/响应 > 生产数据库状态 > 当前发布资源 > 代码与测试 > 旧文档和历史聊天。
 
@@ -17,6 +17,8 @@
 > 用户确认的最终实施阶段、依赖和验收路径：[`IMPLEMENTATION_PLAN_FINAL_2026-08-21.md`](IMPLEMENTATION_PLAN_FINAL_2026-08-21.md)。Browser 可立即进行设计、非付款 PoC、仿真控制面和隔离联调；未取得单独操作确认前不接生产、不真实付款。
 
 > 项目从 2026-08-16 起点到当前状态的完整历史交接：[`PROJECT_HANDOFF_FULL_HISTORY_2026-08-21.md`](PROJECT_HANDOFF_FULL_HISTORY_2026-08-21.md)。接手时两份都要读；本文聚焦最近生产事实。
+
+> 阶段三最新事实：[`STAGE3_AUTOMATIC_FULFILLMENT_ACCEPTANCE_2026-08-22.md`](STAGE3_AUTOMATIC_FULFILLMENT_ACCEPTANCE_2026-08-22.md)。当前生产已具备正常订单自动履约和每资金 attempt 唯一 `create_direct` intent；逐单 Permit 已降级为灰度/特殊工具。生产资金门禁仍全部关闭，真实成功充值仍未验收。
 
 ## 先看结论
 
@@ -44,7 +46,7 @@
 - 客户页：[https://plus.vibebridge.top/](https://plus.vibebridge.top/)
 - 客户备用域名：[https://pay.vibebridge.top/](https://pay.vibebridge.top/)
 - 运营后台：[https://ops.vibebridge.top/admin](https://ops.vibebridge.top/admin)
-- 当前发布：`/opt/pojia/releases/20260821-customer-polling-1`
+- 当前发布：`/opt/pojia/releases/20260822-stage3-8a3134d`（提交 `8a3134dcbd8dc227822177ef8b805e5d879025db`，Migration 026）
 - Web、Worker、MySQL、卡片只读同步、卡台目录同步和 Bark 服务正常。
 - 当前新订单和新充值派发已关闭；Provider 写开关和 Provider 账户写标记已恢复关闭。
 - 最近真实测试订单已结束为 `RECHARGE_FAILED`，没有 Provider 充值订单号，没有确认扣款。
@@ -58,7 +60,7 @@ flowchart LR
   mysql --> worker[持久化 Worker]
   worker --> cardRead[HNSKJ 只读\n卡片/余额/交易]
   worker --> cardWrite[HNSKJ 开卡写入\n受独立门禁保护]
-  worker --> recharge[ZZSHU 直充\n一次性 Permit]
+  worker --> recharge[ZZSHU API 直充\n正常自动 / 灰度许可]
   recharge --> mysql
   mysql --> statusApi[客户状态 API\nQUEUED/PROCESSING/REVIEWING/SUCCESS/FAILED]
   statusApi --> customer
@@ -109,7 +111,7 @@ flowchart LR
 - CDK 管理支持生成、批次列表、下载、逐码状态 CSV、作废未兑换码和交付审计。
 - 卡片库存展示本地可分配、已分配、已耗尽、核对中，以及卡台 active 卡和历史总卡数快照。
 - “待验证新卡”现按外部卡 ID 去重、排除已接管卡、只取最新未处理记录。
-- 真实充值必须在订单详情中逐单复核并签发一次性 Permit。
+- 正常已付款订单在派发和 Provider 写门禁开启、规则通过后自动履约；单笔/批量 Permit 只用于灰度、紧急和特殊订单。
 - 敏感操作要求登录会话和后台密码 step-up。
 
 ### 应用、Worker 与数据库
@@ -126,7 +128,7 @@ flowchart LR
 ### 外部 Provider
 
 - HNSKJ：卡片、余额、卡段、卡详情和交易读取；开卡写入受独立门禁保护。
-- ZZSHU：直充创建和状态查询；直充写入受进程、账户、派发开关和 Permit 多重门禁保护。
+- ZZSHU：当前 API 直充创建和状态查询；直充写入受进程、账户、派发开关、事务资金栅栏保护；MANUAL 灰度模式额外要求 Permit。
 - 本次真实响应确认：ZZSHU 当前业务规则拒绝“当前已经是 Plus 的目标账号”。
 
 ## 本次对抗式审查的重新验证
@@ -140,7 +142,7 @@ flowchart LR
 | 客户页面错误不更新 | 已证实并已修复 | 后端已是 `RECHARGE_FAILED`、客户 API 已返回 `FAILED`；前端 5 分钟轮询窗口导致未及时展示，已延长到 30 分钟 |
 | 真实成功链路已验证 | 不成立 | 本次只到真实 Provider 的明确拒绝，未验证符合规则账号的成功充值 |
 | 新卡开通链路已验证 | 不成立 | 本次使用已有库存卡，没有真实付费开卡 |
-| 充值尝试账本与 Provider 调用关联完整 | 未完成核验 | 本次查询看到 Provider 调用，但未找到对应 `recharge_attempts` 行；必须补充代码/数据库审计，不把它直接定性为已修复或确定漏洞 |
+| 充值尝试账本与 Provider 调用关联完整 | 已修复并生产核验 | Migration 026 对唯一满足严格证据条件的历史 40030 明确失败调用补齐 `CLEARED` attempt；生产 orphan、缺失 create intent、重复 create intent 均为 0，并由 generated unique index 和 readiness 持续约束 |
 | 后台密码轮换流程可靠 | 已暴露运维缺口 | 第一次重置没有写入生产；需要正式密码轮换与验收流程 |
 
 ## 已纠正的理解偏差

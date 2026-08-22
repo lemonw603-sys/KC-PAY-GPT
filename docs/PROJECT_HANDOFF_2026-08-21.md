@@ -9,6 +9,8 @@
 
 > 2026-08-22 更新：阶段二 Session 恢复与正确终态已发布生产，当前 release 为 `/opt/pojia/releases/20260822-stage2-94dbefb`，Migration 最新为 025。验收证据见 `STAGE2_SESSION_FINALIZATION_ACCEPTANCE_2026-08-21.md`。
 
+> 2026-08-22 后续更新：阶段三正常订单自动履约与资金唯一栅栏已安全发布，当前 release 为 `/opt/pojia/releases/20260822-stage3-8a3134d`，Migration 最新为 026。正常模式不再需要逐单 Permit；Permit 只保留为灰度/特殊工具。接单、派发和全部 Provider 资金写门禁仍关闭，真实成功充值仍未验收。证据见 `STAGE3_AUTOMATIC_FULFILLMENT_ACCEPTANCE_2026-08-22.md`。
+
 ## 一、项目身份与当前基线
 
 - 本地项目目录：`/Users/lemon/code/AI充值业务`
