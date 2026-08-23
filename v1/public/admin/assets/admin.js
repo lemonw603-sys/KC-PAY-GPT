@@ -937,7 +937,7 @@ async function openCard(providerCardId, providerAccountId = '') {
     const card = data.card;
     elements.detailContent.innerHTML = `
       <section class="detail-section"><div class="detail-section-heading"><h3>卡片状态</h3><button type="button" class="primary-small" id="sync-one-card">只读同步</button></div>${renderKeyValues([
-        ['卡号后四位', card.last4 || '—'], ['卡台账户 ID', card.providerAccountId],
+        ['完整卡号', card.cardNumber || card.last4], ['卡台账户 ID', card.providerAccountId],
         ['卡台卡片 ID', card.providerCardId],
         ['卡段 ID', card.cardTypeId], ['卡片状态', card.status],
         ['库存状态', INVENTORY_LABELS[card.inventoryStatus] || card.inventoryStatus],
@@ -1232,7 +1232,7 @@ async function openOrder(publicNo) {
         ['失败代码', order.failureCode], ['失败原因', order.failureReason]
       ])}</section>
       <section class="detail-section"><div class="detail-section-heading"><h3>卡片与退款</h3>${data.card ? '<button type="button" class="primary-small" id="sync-transactions">同步交易</button>' : ''}</div>${data.card ? renderKeyValues([
-        ['卡台卡片 ID', data.card.providerCardId], ['卡号后四位', data.card.last4 || '—'],
+        ['卡台卡片 ID', data.card.providerCardId], ['完整卡号', data.card.cardNumber || data.card.last4],
         ['卡片状态', INVENTORY_LABELS[data.card.status] || data.card.status], ['开卡金额', `${formatMoney(data.card.fundedAmount)} ${data.card.currency || ''}`],
         ['当前余额', `${formatMoney(data.card.currentBalance)} ${data.card.currency || ''}`], ['退款观察', REFUND_LABELS[data.card.refundStatus] || data.card.refundStatus],
         ['最后同步', formatTime(data.card.lastSyncedAt)]

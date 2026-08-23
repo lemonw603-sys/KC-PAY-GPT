@@ -971,7 +971,7 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
       },
       card: row.provider_card_id ? {
         providerCardId: row.provider_card_id,
-        cardNumber: null,
+        cardNumber: cardNumber(row, sessionEncryptionKey),
         last4: row.last4,
         status: row.card_status,
         fundedAmount: decimal(row.funded_amount),
@@ -1038,7 +1038,7 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
           providerAccountId: assignment.provider_account_id,
           providerCardId: assignment.provider_card_id,
           externalCardId: assignment.external_card_id,
-          cardNumber: null, last4: assignment.last4,
+          cardNumber: cardNumber(assignment, sessionEncryptionKey), last4: assignment.last4,
           linkedOrderPublicNo: assignment.linked_public_no,
           linkedOrderStatus: assignment.linked_order_status,
           assignedBy: assignment.assigned_by, assignmentReason: assignment.assignment_reason,
