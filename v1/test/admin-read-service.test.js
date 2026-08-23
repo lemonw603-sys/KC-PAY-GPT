@@ -99,7 +99,7 @@ test('admin order list validates filters, maps card summaries, and supports CDK 
   );
 });
 
-test('admin order detail exposes the full PAN but not CVV or Session', async () => {
+test('admin order detail exposes only card suffix and not CVV or Session', async () => {
   const nowMs = Date.parse('2026-08-19T08:00:00.000Z');
   const pool = queuedPool([
     [{
@@ -129,7 +129,8 @@ test('admin order detail exposes the full PAN but not CVV or Session', async () 
   }).getOrder('PJV1-DEMO');
   assert.equal(result.order.publicNo, 'PJV1-DEMO');
   assert.equal(result.order.minimumRequiredCardBalance, '15.500000');
-  assert.equal(result.card.cardNumber, '4242424242424242');
+  assert.equal(result.card.cardNumber, null);
+  assert.equal(result.card.last4, '4242');
   assert.equal(Object.hasOwn(result.card, 'cvv'), false);
   assert.deepEqual(result.paymentGate, {
     prepaymentReady: true,

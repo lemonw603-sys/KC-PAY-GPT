@@ -474,6 +474,7 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
         waitingForCard: count(orderCounts[0]?.waiting_for_card),
         cancellationPending: count(orderCounts[0]?.cancellation_pending),
         cancellationReview: count(orderCounts[0]?.cancellation_review),
+        completedOrders: completed,
         successRate: completed === 0 ? null : Number(((successful / completed) * 100).toFixed(1))
       },
       orderStatuses: statusRows.map((row) => ({ status: row.status, count: count(row.count) })),
@@ -753,7 +754,8 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
       pool.query(`SELECT pc.provider, pc.operation, pc.attempt_no, pc.http_status,
           pc.business_code, pc.outcome, pc.started_at, pc.finished_at, pc.duration_ms
         FROM provider_calls pc INNER JOIN orders o ON o.id = pc.order_id
-        WHERE BINARY o.public_no = ? ORDER BY pc.id DESC LIMIT 100`, [publicNo]),
+        WHERE BINARY o.public_no = ?
+        ORDER BY (pc.provider = 'zzshu' AND pc.operation = 'create_direct') DESC, pc.id DESC LIMIT 100`, [publicNo]),
       pool.query(`SELECT r.status, r.expected_amount, r.confirmed_amount, r.currency,
           r.detected_at, r.confirmed_at, r.withdrawn_at, r.operator_note, r.updated_at
         FROM refund_cases r INNER JOIN orders o ON o.id = r.order_id
@@ -969,7 +971,7 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
       },
       card: row.provider_card_id ? {
         providerCardId: row.provider_card_id,
-        cardNumber: cardNumber(row, sessionEncryptionKey),
+        cardNumber: null,
         last4: row.last4,
         status: row.card_status,
         fundedAmount: decimal(row.funded_amount),
@@ -1036,7 +1038,7 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
           providerAccountId: assignment.provider_account_id,
           providerCardId: assignment.provider_card_id,
           externalCardId: assignment.external_card_id,
-          cardNumber: cardNumber(assignment, sessionEncryptionKey), last4: assignment.last4,
+          cardNumber: null, last4: assignment.last4,
           linkedOrderPublicNo: assignment.linked_public_no,
           linkedOrderStatus: assignment.linked_order_status,
           assignedBy: assignment.assigned_by, assignmentReason: assignment.assignment_reason,

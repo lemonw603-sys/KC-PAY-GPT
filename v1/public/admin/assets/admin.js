@@ -299,7 +299,7 @@ async function loadOverview() {
           ? `${overview.runtimeHealth.expiredTaskLeases} 个任务租约已过期`
           : overview.runtimeHealth?.workerHealthy ? 'Worker 心跳正常' : 'Worker 心跳超过 1 分钟',
       filter: 'RECONCILIATION_ISSUES' },
-    { label: '已完成订单成功率', value: overview.metrics.successRate == null ? '—' : `${overview.metrics.successRate}%`, note: '不计未完成订单', filter: 'RECHARGE_SUCCESS' }
+    { label: '已完成订单成功率', value: overview.metrics.successRate == null ? '—' : `${overview.metrics.successRate}%`, note: overview.metrics.completedOrders ? `已完成 ${overview.metrics.completedOrders} 单，不计未完成订单` : '暂无已完成订单样本', filter: 'RECHARGE_SUCCESS' }
   ];
   const metricButton = (item, index) => `<button type="button" class="metric-card metric-${index + 1}" ${item.filter ? `data-order-filter="${item.filter}"` : `data-target-view="${item.view}"`}>
     <span>${escapeHtml(item.label)}</span><strong>${escapeHtml(item.value)}</strong><small>${escapeHtml(item.note)}</small>
@@ -937,7 +937,7 @@ async function openCard(providerCardId, providerAccountId = '') {
     const card = data.card;
     elements.detailContent.innerHTML = `
       <section class="detail-section"><div class="detail-section-heading"><h3>卡片状态</h3><button type="button" class="primary-small" id="sync-one-card">只读同步</button></div>${renderKeyValues([
-        ['完整卡号', card.cardNumber || card.last4], ['卡台账户 ID', card.providerAccountId],
+        ['卡号后四位', card.last4 || '—'], ['卡台账户 ID', card.providerAccountId],
         ['卡台卡片 ID', card.providerCardId],
         ['卡段 ID', card.cardTypeId], ['卡片状态', card.status],
         ['库存状态', INVENTORY_LABELS[card.inventoryStatus] || card.inventoryStatus],
@@ -1232,7 +1232,7 @@ async function openOrder(publicNo) {
         ['失败代码', order.failureCode], ['失败原因', order.failureReason]
       ])}</section>
       <section class="detail-section"><div class="detail-section-heading"><h3>卡片与退款</h3>${data.card ? '<button type="button" class="primary-small" id="sync-transactions">同步交易</button>' : ''}</div>${data.card ? renderKeyValues([
-        ['卡台卡片 ID', data.card.providerCardId], ['完整卡号', data.card.cardNumber || data.card.last4],
+        ['卡台卡片 ID', data.card.providerCardId], ['卡号后四位', data.card.last4 || '—'],
         ['卡片状态', INVENTORY_LABELS[data.card.status] || data.card.status], ['开卡金额', `${formatMoney(data.card.fundedAmount)} ${data.card.currency || ''}`],
         ['当前余额', `${formatMoney(data.card.currentBalance)} ${data.card.currency || ''}`], ['退款观察', REFUND_LABELS[data.card.refundStatus] || data.card.refundStatus],
         ['最后同步', formatTime(data.card.lastSyncedAt)]
