@@ -142,6 +142,9 @@ button { cursor: pointer; }
 .status-list { display: grid; gap: 10px; }
 .mini-list-heading { margin: 8px 0 4px; color: var(--muted); font-size: 11px; font-weight: 800; }
 .overview-secondary-grid { align-items: stretch; }
+.alerts-card .card-heading, .alerts-card .mini-list { max-width: 960px; }
+.alerts-card .mini-list > div { justify-content: flex-start; }
+.alerts-card .mini-list > div > em { margin-left: auto; }
 .status-list > button { display: grid; gap: 6px; padding: 0; border: 0; background: none; text-align: left; }
 .status-list > button > span { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
 .status-list strong { font-size: 11px; }
