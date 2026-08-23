@@ -307,8 +307,8 @@ async function loadOverview() {
   const groups = [
     ['订单处理', metrics.slice(0, 10)],
     ['资金与风险', metrics.slice(10, 13)],
-    ['库存运营', metrics.slice(13, 17)],
-    ['系统健康', metrics.slice(17)]
+    ['库存运营', metrics.slice(13, 18)],
+    ['系统健康', metrics.slice(18)]
   ];
   elements.metrics.innerHTML = groups.map(([title, items]) => `<section class="metric-group"><div class="metric-group-title">${title}</div><div class="metric-group-grid">${items.map((item, offset) => metricButton(item, offset)).join('')}</div></section>`).join('');
   const distribution = (rows, labels) => rows?.length
