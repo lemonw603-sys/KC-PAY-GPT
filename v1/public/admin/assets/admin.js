@@ -1568,6 +1568,7 @@ document.querySelector('#refresh-button').addEventListener('click', async (event
   button.textContent = '刷新中…';
   elements.syncTime.textContent = '正在刷新…';
   try {
+    if (state.view === 'cdks') resetCdkBatchPaging();
     await (state.view === 'overview' ? loadOverview()
     : state.view === 'stock' ? loadStock()
       : state.view === 'cdks' ? loadCdkBatches()
