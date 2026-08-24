@@ -44,3 +44,10 @@
 - `git diff --check`：通过。
 - 客户核心测试：`app.test.js`、`order-intake-service.test.js`、`order-status-service.test.js`、`session-replacement-service.test.js` 共 29 项，29 通过，0 失败。
 - 该结果证明当前工作树的客户/API相关代码测试通过；不证明生产部署版本与工作树一致，也不证明外部 Provider 写链路成功。
+
+## 运营后台/Provider/数据层定向测试（本次追加）
+
+- 后台读取、后台会话、Browser 后台、路线管理、卡资金后台、CDK、导出、readiness：33 项，33 通过，0 失败。
+- 卡台快照、目录、库存、卡资金执行、交易分类、Provider 适配与 Provider PoC：54 项，54 通过，0 失败。
+- 迁移/账本/追溯/Session 恢复/Browser 数据层 schema：33 项，33 通过，0 失败。
+- 以上均为当前工作树隔离测试；生产 release、生产数据库和外部 Provider 写入仍未由这些测试证明。
