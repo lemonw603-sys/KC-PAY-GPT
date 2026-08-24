@@ -73,3 +73,15 @@
 
 - 用户要求：全系统验证按整体计划连续推进，不逐小节发送进度或反复请求确认。
 - 执行方式：除非涉及真实资金/生产写入、不可逆高影响变更、权限或关键方向冲突，否则不中途打断；阶段性结果统一汇总，证据持续落盘。
+
+## 2026-08-24｜全系统现场验证与付款前 dry-run 交接
+
+- 工作线：生产只读、HNSKJ 只读、客户页付款前 dry-run。
+- 已完成：SSH 现场核验 release/迁移/服务/定时器/开关/readiness；HNSKJ API `provider:read-check` 和卡目录只读同步；卡台网页余额/卡目录只读；客户页提交测试 CDK + Session 的付款前格式验证。
+- 关键结果：生产 readiness 最终 `ok=true`，三类 Provider 写入和接单/自动充值均关闭；HNSKJ 只读余额 75.670000 USD、18 张卡、7 张 active；客户页返回 `账号 Session 格式不正确，请检查后重试`，没有创建近 30 分钟订单、没有付款页、没有付款动作。
+- 未执行：开卡、卡余额充值、Provider 写、Plus 付款、确认购买、退款、提现、路线切换、开关开启。
+- 残留/阻塞：生产 `tasks.id=22` 为 2026-08-22 遗留 `ASSIGN_CARD/PENDING`；卡目录同步后存在长期 `VALIDATING` intake batch；2 张上游 active 卡进入 quarantine/review；本轮未擅自清理这些生产记录。
+- 未完成：运营后台登录后逐页交叉验证（Chrome 当前无已登录 ops 标签）；真实订单/卡资格/Permit/资金准备未建立；Browser 真实付款不在本轮范围。
+- 修改文件：`docs/FULL_SYSTEM_VERIFICATION_2026-08-24.md`、`docs/CURRENT_STATE.md`、`docs/HANDOFF_LOG.md`；未修改业务代码、迁移、生产配置或其他窗口文件。
+- 验证命令：SSH 只读现场命令、`npm run provider:read-check`、`npm run card:catalog-sync`、最终 `npm run preflight:readiness`、`cd v1 && npm test`（409/375/0/34）。
+- 下一步：先由运营人员确认遗留 PENDING 任务与 VALIDATING intake batch 的处置方式；补齐 ops 后台登录会话后再做逐页只读交叉核验；Session 格式修复后才可重新做付款前 dry-run。任何真实付款仍需单独确认。

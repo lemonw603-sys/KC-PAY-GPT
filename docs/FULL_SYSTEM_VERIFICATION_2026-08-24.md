@@ -51,3 +51,29 @@
 - 卡台快照、目录、库存、卡资金执行、交易分类、Provider 适配与 Provider PoC：54 项，54 通过，0 失败。
 - 迁移/账本/追溯/Session 恢复/Browser 数据层 schema：33 项，33 通过，0 失败。
 - 以上均为当前工作树隔离测试；生产 release、生产数据库和外部 Provider 写入仍未由这些测试证明。
+
+## 2026-08-24 现场全系统验证追加（本轮）
+
+### 证据与命令
+
+- SSH 只读现场：`ssh -o BatchMode=yes root@144.34.180.184`。
+- 现场 release：`/opt/pojia/releases/20260823-admin-ui-alert-7587d44`；Web/Worker、MySQL、Bark active/running；卡库存付费 runner inactive；只读同步与目录同步 timer active。
+- 生产迁移查询：最新 `037_card_discovery_latest_index`，编号 37。
+- 生产 readiness（加载 systemd runtime/admin/card-read/provider 环境，且显式将三类 Provider 写开关置 false）：`ok=true`、`acceptNewOrders=false`、`dispatchNewRecharges=false`、`activeRechargeAuthorizations=0`、`activeOrUnknownFundsRisk=0`、`openReconciliationCases=0`、`activeCardStockJobs=0`、`deadBarkNotifications=0`、`workerHeartbeatAgeSeconds=9`；`activeTasks=1`，阻断项为空。
+- `npm run provider:read-check`：`ok=true`；HNSKJ 账户可读、USD 余额可读、卡型 3、可见卡 18；ZZSHU connection=ok。未调用任何 Provider 写接口。
+- `npm run card:catalog-sync`：只读供应商调用成功；`providerTotal=18`、`providerActive=7`、`available=2`、`assigned=1`、`provisioning=0`；发现 2 张 `CARD_QUARANTINED_OR_REVIEW`。该同步会在本地数据库留下 intake batch 记录，不应误称为纯无写入操作。
+- 卡台已登录网页只读：余额 `75.670000 USD`、18 张卡、7 张活跃、处理中 0；未点击开卡、充值、卡片写操作。
+- 客户页付款前 dry-run：提交当前页面中的测试 CDK 与 Session 后，页面返回 `账号 Session 格式不正确，请检查后重试。`；未创建近 30 分钟订单，未出现付款页或付款提交动作。剪贴板内容未写入日志或文档。
+- 本地测试：`cd v1 && npm test` → 409 tests / 375 pass / 0 fail / 34 skipped。
+
+### 现场残留与未验证边界
+
+- 遗留任务：`tasks.id=22`、`ASSIGN_CARD`、`PENDING`，订单状态 `CREATED`，创建于 2026-08-22；本轮未擅自取消或改写生产任务。
+- 卡目录同步后仍存在长期 `VALIDATING` intake batch；另有 2 张上游 active 卡处于 quarantine/review，不能视为可分配库存。
+- 历史 `provider_calls` 中存在 1 条 `UNCERTAIN`，本次 readiness 的“不确定调用超时”计数为 0；未对历史 UNKNOWN 做人工结算。
+- 运营后台登录后逐页交叉验证未完成：当前 Chrome 没有 `ops.vibebridge.top/admin` 已登录标签页；未猜测凭据或绕过登录。
+- Session 校验失败，故未创建测试订单、未分配卡、未产生 Permit、未触发 Provider 或资金动作。真实 Plus 付款仍未执行。
+
+### 结论
+
+本轮完成了生产、卡台和客户页付款前 dry-run 的可执行只读部分；资金安全边界保持关闭。由于 Session 格式校验失败、遗留 PENDING 任务与 VALIDATING intake batch 未被授权清理，以及后台登录后逐页核验缺少现场会话，本轮不能标记为“全系统闭环通过”。

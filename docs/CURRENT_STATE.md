@@ -57,3 +57,13 @@
 - 客户 Session 在用户剪贴板中；不得读取或写入聊天/普通日志。
 - 卡台当前已恢复正常（用户确认；仍需运行只读检查作为运行证据）。
 - 当前明确禁止真实付款；本轮最多执行到付款前的 dry-run/准备验证，不能提交 Plus 付款。
+
+## 2026-08-24 本轮现场验证结果
+
+- 已现场核验生产 release `/opt/pojia/releases/20260823-admin-ui-alert-7587d44`、Web/Worker/MySQL、迁移 037、只读同步 timer 和开关；接单、自动充值派发、Provider 三类写入均关闭。
+- HNSKJ 只读 API 与网页核验通过：余额 75.670000 USD、18 张卡、7 张 active；未执行开卡、卡余额充值或其他写操作。
+- 客户页付款前 dry-run 已提交一次当前测试 CDK + Session，页面返回“账号 Session 格式不正确，请检查后重试”；未创建订单、未进入付款页、未产生 Permit 或资金动作。
+- 本轮 readiness 最终为 `ok=true`，但 `activeTasks=1`：遗留 `ASSIGN_CARD/PENDING` 任务（2026-08-22 创建）仍在生产；本轮未擅自取消。
+- 卡目录只读同步发现 2 张上游卡处于 `CARD_QUARANTINED_OR_REVIEW`，并留下一个长期 `VALIDATING` intake batch；该残留和同步行为已记录，不能写成“无遗留”。
+- 生产运营后台登录后逐页交叉核验未完成，当前 Chrome 没有已登录的 ops 后台标签页。
+- 代码/测试事实：`cd v1 && npm test` 为 409/375/0/34。
