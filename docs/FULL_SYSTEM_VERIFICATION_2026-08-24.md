@@ -37,3 +37,10 @@
 
 ## 禁止误表述
 “我方服务器正常”目前是用户确认/既有记录，不是本窗口本次现场核验；“卡台升级中”是当前用户/项目记录，恢复状态仍需只读命令核验。
+
+## 客户/API 代码与测试核验（本次追加）
+
+- `node --check`：`create-app.js`、`server.js`、`admin-operations-service.js`、后台 `admin.js` 均通过。
+- `git diff --check`：通过。
+- 客户核心测试：`app.test.js`、`order-intake-service.test.js`、`order-status-service.test.js`、`session-replacement-service.test.js` 共 29 项，29 通过，0 失败。
+- 该结果证明当前工作树的客户/API相关代码测试通过；不证明生产部署版本与工作树一致，也不证明外部 Provider 写链路成功。
