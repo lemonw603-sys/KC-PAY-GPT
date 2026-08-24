@@ -4,6 +4,12 @@
 
 ## 1. 当前阶段
 
+主规划：`docs/2026-08-23_browser-master-plan.md`。后续按大阶段推进，横向维护证据分类、偏差、恢复、资源和交接轨道。
+
+赛马定位：BRFE 内部多 lane 实验，贯穿非 PH/PH 观察和真实履约前的路线选择；不另建订单或资金系统，正式最多一个 champion 和一个预验证 fallback。
+
+账号安全首要原则：优先降低账号误判、误伤和异常中断风险；使用真实一致的 runtime/profile/network，不做身份或指纹伪造。详见 `docs/2026-08-22_brfe-account-safety-operating-principle.md`。
+
 - 阶段：B1 非付款 PoC 与 B2 控制面实现并行；B2 已完成 WAL-backed 编排、崩溃/重复投递安全测试、第一轮 350 单等效容量仿真、MySQL 事务映射 v1、artifact vault/四类资源租约跨进程恢复 v1，以及后台追溯/人工控制 v1。
 - 生产状态：未接生产；没有真实开卡、卡片输入、Checkout 创建或付款。
 - 菲律宾状态：没有执行菲律宾真实 Session 或 sticky 出口 A/B。
@@ -24,6 +30,8 @@
 10. 指纹浏览器仅是本地 runtime 候选；不使用云 Profile、云同步或第三方 Session 托管。
 
 ## 3. 已完成及证据
+
+跨窗口接班入口：`docs/BRFE_HANDOFF_2026-08-22.md`。新模型处理 Browser 任务时先读该入口，再按其中顺序读取当前状态、路线和决策；它不替代 Browser baseline/contracts，而是把角色、停止点和下一批动作集中到一个可验证入口。
 
 | 交付 | 证据 | 状态 |
 | --- | --- | --- |
@@ -56,6 +64,45 @@
 | secure-inbox 单入口 | `tools/secure-inbox-drop.command` | 已支持拖拽文件自动加密并显示编号；复杂命令仅供内部调试 |
 | secure-inbox 粘贴入口 | `~/Desktop/安全收件箱.command` | 已支持双击弹窗直接粘贴并显示编号；不接 Browser Session 适配器 |
 | secure-inbox 菜单栏入口 | `~/Desktop/安全收件箱.app`、`tools/SecureInboxMenuBar.swift` | 已构建 macOS 菜单栏原生多行输入框；点击顶部 `🔐` 后粘贴并保存，桌面命令入口保留备用 |
+| Session Cookie 家族 A/B | `__Secure-next-auth.session-token` | 已通过同一 Session 的只读 A/B 确认；next-auth `/api/auth/session` 返回身份，authjs 不返回身份；页面仍受当前网络 403/挑战影响 |
+| Session A/B 证据 | `docs/2026-08-22_session-cookie-family-ab-evidence.md` | 结论已落盘；当前只推进非付款身份/页面观察，不把 403 外推为 PH 或付款结论 |
+| NON_PH_FUNCTIONAL 正式观察 | `artifacts/browser-poc/nonph-functional-2026-08-22T09-23-48-422Z.json` | `SESSION_SERVER_IDENTITY_CONFIRMED`；前后 auth HTTP 200；页面 HTTP 403；0 付款变更；未创建 Checkout |
+| NON_PH 观察对抗审查 | `docs/2026-08-22_nonph-observation-adversarial-review.md` | 服务器身份窄目标通过；页面登录/Checkout 目标被 403 挑战阻塞；禁止据此晋级付款、champion 或容量结论 |
+| Worker 并发 Harness | `docs/2026-08-22_browser-worker-concurrency-harness-report.md`、`v1/test/browser-worker-concurrency.test.js` | 8 Worker/240 合成 job/0 重复执行；仅离线内存验证，不替代 MySQL 多连接或 24 小时 soak |
+| Browser MySQL/恢复目标测试 | `docs/2026-08-22_browser-mysql-concurrency-stage-report.md` | 隔离 MySQL Browser 相关 9 项通过；全量数据库测试有 1 个既有补卡日限额异常，未归因 Browser；多连接压力和 24h soak 仍未完成 |
+| Browser MySQL claim race | `docs/2026-08-22_browser-mysql-claim-race-report.md` | 8 独立连接同时 claim 同一 job，仅 1 成功、0 重复；多 job、续租、接管和 soak 仍待完成 |
+| Browser MySQL 多 Job/Lease | `docs/2026-08-22_browser-mysql-multijob-lease-report.md` | 24 job/8 worker/0 duplicate；heartbeat 和过期接管通过；连续 24h soak、重启和长连接压力仍待完成 |
+| Browser MySQL bounded soak | `docs/2026-08-22_browser-mysql-bounded-soak-report.md`、`v1/test-support/browser-mysql-bounded-soak.js` | 固定 harness：20 轮/400 job/8 worker/0 missing/0 duplicate/400 heartbeat；15.029 秒时间模式 960/960 claim、0 duplicate、960 heartbeat、四类残留 0；lease 参数盲区已修正；5–15 分钟/24h、资源指标和生产拓扑仍待完成 |
+| Bounded soak 对抗审查 | `docs/2026-08-22_browser-bounded-soak-adversarial-review.md` | harness/清理计数已整改并通过；发现并发 fixture producer 的 `ER_LOCK_DEADLOCK` P1；时间 soak、故障注入和生产拓扑仍未验证 |
+| Worker 崩溃/数据库重启恢复 | `v1/test-support/browser-worker-mysql-crash-recovery.js`、`docs/2026-08-22_browser-worker-crash-db-restart-report.md` | 子进程 SIGKILL 后同 job 过期接管；旧 token heartbeat 被拒；MySQL restart 后连接与 20-job bounded claim 通过；连接池自动重建、页面动作中断和长 soak仍待完成 |
+| 连接重建/动作中断 | `v1/test-support/browser-pool-reconnect.js`、`docs/2026-08-22_browser-connection-rebuild-action-interrupt-report.md` | 单连接 KILL 后同一 pool 查询重建成功；LOCAL_MOCK watchdog 动作中断测试 12/12 通过；多连接/长 soak、真实 Playwright 中断和资金未知恢复仍待完成 |
+| 多连接/Playwright 中断 | `v1/test-support/browser-pool-multi-reconnect.js`、`docs/2026-08-22_browser-multi-reconnect-playwright-interrupt-report.md` | 4 连接同时 KILL 后 4/4 重建；本地 Playwright slow navigation 在失租约时中断，submitEvents=0；长 soak、真实网络/浏览器故障和资金未知恢复仍待完成 |
+| Browser 60 秒时间 soak | `docs/2026-08-22_browser-60s-soak-report.md`、`v1/test-support/browser-mysql-bounded-soak.js` | 每轮清理后的 60.004s/2930 job/4 worker/0 missing/0 duplicate/2930 heartbeat/Threads_connected 峰值 4/残留 0；RSS 约 65MB→187MB 峰值/182MB 结束，需拆分运行时内存指标后才能进入更长 soak |
+| 阶段 1 稳定性批次 | `docs/2026-08-22_browser-stage1-soak-batch-report.md`、`v1/test-support/browser-mysql-bounded-soak.js` | 90s 正常 Node 4590/4590、0 duplicate、4590 heartbeat、残留 0；60s `--expose-gc` 对照 2970/2970、0 duplicate、2970 heartbeat、残留 0；GC 仅作诊断，正常 Node 5–15m/网络抖动/崩溃组合仍待完成 |
+| 阶段 1 5 分钟正常 Node | `docs/2026-08-22_browser-stage1-5m-soak-report.md`、`docs/2026-08-22_browser-stage1-5m-soak-adversarial-review.md` | 300.056s/16,360 job/4 worker/0 missing/0 duplicate/16,360 heartbeat/残留 0；控制面功能性通过，RSS/heap 结束值偏高，资源稳定性和网络抖动组合未关闭，阶段 2 暂不启动 |
+| 阶段 1 资源诊断 | `docs/2026-08-22_browser-stage1-memory-diagnostic-report.md` | `--trace-gc` 与 `--max-old-space-size=64` 对照支持 V8 回收/容量保留假设；64MB 对照 30s 功能性通过、RSS 峰值约 105MB；未冻结生产参数，独立 Worker/网络抖动/长 soak仍待完成 |
+| 阶段 1 数据库不可用组合 | `v1/test-support/browser-db-outage-soak.js`、`docs/2026-08-22_browser-db-outage-soak-report.md` | 30s soak 第 5 秒 pause MySQL 2 秒后恢复：1430/1430 claim、0 duplicate、1430 heartbeat、残留 0；仅窄容器阻塞证据，网络分区/积压/主从切换仍待完成 |
+| 瞬时数据库错误重试 | `v1/src/db/repositories/browser-dispatch-repository.js`、`docs/2026-08-22_browser-dispatch-transient-retry-report.md` | enqueue/claim/heartbeat 最多 3 次短退避；单元 6/6；pause/unpause 1210/1210 claim、0 duplicate、最大 claim 延迟 2093ms；长期网络故障和生产拓扑仍待完成 |
+| 阶段 1 组合故障批次 | `docs/2026-08-22_browser-stage1-combined-fault-batch-report.md` | Worker SIGKILL 接管与 MySQL pause/unpause 持续队列连续通过；旧 token 被拒、1290/1290 claim、0 duplicate、1290 heartbeat、残留 0；同刻并发故障、网络级长 soak和资源闸门仍未关闭 |
+| 同刻 crash+DB pause 发现 | `docs/2026-08-22_browser-concurrent-crash-db-pause-finding.md`、`docs/2026-08-22_browser-stage1-combined-fault-batch-adversarial-review.md` | 首次无界等待已定位并修复旧 pool/exit listener 竞态；重跑 13.266s 成功接管同一 job、旧 token 被拒；更长组合 soak和网络级故障仍待完成 |
+| Soak 队列隔离 | `docs/2026-08-22_browser-soak-queue-isolation-finding.md`、`v1/test-support/browser-mysql-bounded-soak.js` | 10m 结果因 3 个历史残留 job 污染作废；增加空队列前置检查后 120s 6250/6250 claim、0 duplicate、6250 heartbeat、残留 0；长 soak需重新从空队列开始 |
+| 阶段 1 有效 10 分钟 soak | `docs/2026-08-22_browser-stage1-10m-valid-soak-report.md`、`docs/2026-08-22_browser-stage1-10m-valid-soak-adversarial-review.md` | 空队列前置后 600.007s/30,850 job/0 missing/0 duplicate/30,850 heartbeat；脚本和独立残留查询均 0；RSS仍偏高，网络级故障/24h仍待完成 |
+| 阶段 1 网络级连接断开风暴 | `docs/2026-08-22_browser-network-kill-storm-finding.md`、`docs/2026-08-22_browser-network-kill-storm-adversarial-review.md` | MySQL `KILL CONNECTION` 注入 10 轮/20 连接后，持续 soak Harness 触发 40 秒 watchdog 失败；不能归因成 repository 已通过，阶段 1 保持未关闭 |
+| repository-only 网络故障验证 | `docs/2026-08-22_browser-repository-network-fault-report.md`、`docs/2026-08-22_browser-repository-network-fault-adversarial-review.md` | 80 job/4 worker、56 次连接 KILL 后 80 claim/80 heartbeat/0 error/0 残留；显式非排队测试池耗尽快速失败并恢复；共享池配置和主从切换仍未关闭 |
+| 2026-08-23 共享池/组合恢复复验 | `docs/2026-08-23_browser-stage1-shared-recovery-rerun-report.md`、`docs/2026-08-23_browser-stage1-shared-recovery-adversarial-review.md` | 共享池 100ms deadline 耗尽返回 DB_QUERY_TIMEOUT；跨进程崩溃+MySQL pause 同 job 接管、旧 token 拒绝、付款 0；默认等待预算、主从切换、积压和 24h 仍待完成 |
+| 2026-08-23 队列积压 soak | `docs/2026-08-23_browser-queue-backlog-soak-report.md`、`docs/2026-08-23_browser-queue-backlog-adversarial-review.md` | 240 job/6 worker/15ms 间隔，240 claim、0 missing、0 duplicate、240 heartbeat、峰值积压 236、残留 0；仅窄窗口，24h/故障转移仍待完成 |
+| 2026-08-23 队列积压 + MySQL 重启 | `docs/2026-08-23_browser-queue-db-restart-report.md`、`docs/2026-08-23_browser-queue-db-restart-adversarial-review.md` | 预先 120 job，重启后动态端口和 ready 检查，恢复 Worker 120/120 claim、120 heartbeat、0 error、0 残留；主从/网络分区/24h仍待完成 |
+| 2026-08-23 阶段 1 15 分钟 soak | `docs/2026-08-23_browser-stage1-15m-soak-report.md`、`docs/2026-08-23_browser-stage1-15m-soak-adversarial-review.md` | 900107ms/46,370 job/0 missing/0 duplicate/46,370 heartbeat；RSS 峰值 211.2MB、结束 162.6MB；heap 回落；独立残留 0；主从/故障转移/24h仍待完成 |
+| 2026-08-23 数据库拓扑审查 | `docs/2026-08-23_browser-stage1-topology-review.md` | 当前只有单个 MySQL 8.4 容器；主从/故障转移为 `NOT_AVAILABLE_IN_TEST_TOPOLOGY`，不能用单实例结果外推高可用 |
+| 2026-08-23 阶段 1 30 分钟 soak | `docs/2026-08-23_browser-stage1-30m-soak-report.md`、`docs/2026-08-23_browser-stage1-30m-soak-adversarial-review.md` | 1800045ms/94,790 job/0 missing/0 duplicate/94,790 heartbeat；RSS 峰值 210.6MB、结束 131.2MB；heap/external 回落；独立残留 0；主从/故障转移/24h仍待完成 |
+| 2026-08-23 阶段 1 24 小时 soak | `docs/2026-08-23_browser-stage1-24h-soak-run.md`、`docs/2026-08-24_browser-stage1-24h-soak-completion-report.md` | detached 隔离窗口已完成：360/360 claim、0 missing、0 duplicate、360 heartbeat、四类残留 0；A1 其他网络级故障轴和 A2 高可用拓扑仍未关闭 |
+| 2026-08-23 24 小时 soak 中断修订 | `docs/2026-08-23_browser-stage1-24h-interrupted-run.md` | 首轮交互终端承载的 24h 运行无效并清理；detached runner 已以约 360 合成 job/日重新启动，流程主线不等待当前窗口 |
+| 2026-08-23 阶段 2 本地 mock 回归 | `docs/2026-08-23_browser-stage2-local-mock-gate-report.md`、`docs/2026-08-23_browser-stage2-local-mock-gate-adversarial-review.md` | 11 files/77 tests 全通过；本地 Context/页面/WAL/恢复覆盖；真实 Session、外部页面、付款仍禁止 |
+| 2026-08-23 Worker→本地 BrowserContext 接线 | `v1/test/browser-worker-local-mock-integration.test.js` | 4/4 通过：导航→complete、页面漂移 fail-closed、动作中租约丢失 abort、多页面 popup + 人工冻结拦截；mock gateway submitCalls=0；真实外部 BrowserContext仍禁止 |
+| 2026-08-23 NON_PH 只读观察前置 | `docs/2026-08-23_nonph-readonly-observation-preflight.md`、`test/browser-nonph-manifest.test.js` | manifest 约束 1/1、与本地 Worker 集成合计 5/5；真实 Session 观察尚未启动，需仓库外 0600 输入 |
+| 2026-08-23 US VPN cohort 边界 | `docs/2026-08-23_nonph-us-vs-ph-cohort-boundary.md` | 历史材料：用户已确认不再推进 US cohort；既有 manifest/结果不删除、不作为主线或 PH 结论 |
+| 2026-08-23 路线补充 | `docs/2026-08-23_browser-plan-amendment-nonph-us.md`、`browser-poc/manifests/non-ph-us-readonly-2026-08-23.json` | 历史材料：`NON_PH_US` 不再推进；当前 C 只采用 NON_PH_FUNCTIONAL，PH 到位后直接新建 PH manifest/cohort |
+| 2026-08-23 US VPN 依赖边界冻结 | `DECISIONS.md` D-125、D-133 | 历史边界已被 D-133 收敛：US 仅保留历史材料，不进入当前主线；PH 需新 manifest/cohort |
 | 提链/扫码/菲律宾自助充值市场盘点 | `2026-08-22_browser-marketplace-tool-assessment-report.md` | 只读完成；尚未采购。第三方 UPI API 要求外传 Access Token；菲律宾 CDK 默认归入现有 CDK-API/Provider 路线，不另建路线，其上游是否同源仍待证据确认 |
 
 ## 4. 历史材料如何判读
@@ -70,10 +117,10 @@
 
 ### 主工程关键路径（按顺序）
 
-1. 用户确认后，冻结候选 runtime/profile/network manifest，进入真实但不付款的 BrowserContext/Session/Checkout 观察；开始前再次核对 identity resolver 和数据边界。
-2. 真实观察结束后做 cohort 级对抗式审查，未通过不得进入任何真实付款动作。
-3. 增加并发 worker、队列积压、长时间租约续期和 WAL 分段/归档仿真，最后完成连续 24 小时 soak；当前 350 单结果是串行、合成网关的 24 小时等效负载，不能外推吞吐。
-4. 人工同 Context 远程操作通道尚未实现；当前完成的是确定性控制权与审计接口，不把另开浏览器视为接管。
+1. 检查 detached 24h soak 的完整日志、资源指标和独立残留查询；A 稳定性闸门在此之前不关闭。
+2. 保持已通过的本地 BrowserContext 子闸门，同时完成 `NON_PH_FUNCTIONAL` 与可选 `NON_PH_US` 的只读观察前置；当前页面 403 必须按网络限制记录。
+3. 观察结束后做 cohort 级对抗式审查；不得把 US/无代理结果外推为 PH 价格、支付、风控或容量结论。
+4. 补 Worker 崩溃、队列积压、本地 Playwright 中断组合证据，以及后台时间线/人工同 Context 通道；当前没有主从拓扑，不能外推高可用。
 
 ### 非阻塞研究旁路
 

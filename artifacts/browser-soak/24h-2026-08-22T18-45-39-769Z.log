@@ -1,0 +1,35 @@
+{
+  "database": "isolated-test-database",
+  "durationMs": 86400000,
+  "jobsPerRound": 1,
+  "workers": 2,
+  "delayMs": 240000,
+  "leaseSeconds": 600,
+  "created": 360,
+  "claimed": 360,
+  "missing": 0,
+  "duplicateClaims": 0,
+  "heartbeatOk": 360,
+  "elapsedMs": 86423008,
+  "rssStartBytes": 66928640,
+  "rssPeakBytes": 68517888,
+  "rssEndBytes": 27574272,
+  "heapStartBytes": 9491648,
+  "heapPeakBytes": 17987648,
+  "heapEndBytes": 16135480,
+  "externalStartBytes": 1985853,
+  "externalPeakBytes": 2513480,
+  "externalEndBytes": 2425973,
+  "dbThreadsPeak": 4,
+  "claimLatency": {
+    "count": 1080,
+    "avgMs": 7.916666666666667,
+    "maxMs": 178
+  },
+  "heartbeatLatency": {
+    "count": 360,
+    "avgMs": 3.158333333333333,
+    "maxMs": 26
+  }
+}
+{"cleanup":{"residualDispatch":0,"residualAttempts":0,"residualOrders":0,"residualCdks":0}}
