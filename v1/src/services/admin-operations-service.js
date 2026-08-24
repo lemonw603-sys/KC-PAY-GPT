@@ -1,19 +1,35 @@
 import { PublicApiError } from '../domain/public-api-error.js';
 
-function expectedConfirmation(enabled) {
+// Intake (accept_new_orders) and auto-recharge dispatch (dispatch_new_recharges)
+// are two independent control planes. Enabling intake no longer force-enables
+// dispatch: an operator can accept new orders while auto-recharge stays paused
+// (e.g. staging a controlled single order), and must explicitly turn dispatch
+// on. This removes the risk that opening intake silently auto-recharges other
+// orders already sitting in CARD_READY. "Stop intake" still never touches
+// dispatch, and dispatch is unrelated to poll_existing_orders (order tracking).
+
+function acceptanceConfirmation(enabled) {
   return enabled ? '开始接单' : '停止接单';
 }
 
+function dispatchConfirmation(enabled) {
+  return enabled ? '开始自动充值' : '停止自动充值';
+}
+
+function readSetting(rows, key) {
+  return rows.find((row) => row.setting_key === key)?.setting_value === 'true';
+}
+
 export function createAdminOperationsService({ pool }) {
-  async function setOrderAcceptance(input = {}) {
-    if (typeof input.enabled !== 'boolean') {
-      throw new PublicApiError('Order acceptance state must be boolean', {
-        code: 'INVALID_ORDER_ACCEPTANCE_STATE', status: 400
+  async function updateSetting({ enabled, confirmation, settingKey, expectedConfirmation, invalidStateCode, confirmationCode, confirmationMessage }) {
+    if (typeof enabled !== 'boolean') {
+      throw new PublicApiError('Operation state must be boolean', {
+        code: invalidStateCode, status: 400
       });
     }
-    if (input.confirmation !== expectedConfirmation(input.enabled)) {
-      throw new PublicApiError('Order acceptance confirmation mismatch', {
-        code: 'ORDER_ACCEPTANCE_CONFIRMATION_REQUIRED', status: 400
+    if (confirmation !== expectedConfirmation(enabled)) {
+      throw new PublicApiError(confirmationMessage, {
+        code: confirmationCode, status: 400
       });
     }
     const connection = await pool.getConnection();
@@ -29,22 +45,13 @@ export function createAdminOperationsService({ pool }) {
       }
       await connection.query(
         `UPDATE app_settings SET setting_value = ?, updated_at = CURRENT_TIMESTAMP(3)
-         WHERE setting_key = 'accept_new_orders'`,
-        [String(input.enabled)]
+         WHERE setting_key = ?`,
+        [String(enabled), settingKey]
       );
-      if (input.enabled) {
-        await connection.query(
-          `UPDATE app_settings SET setting_value = 'true', updated_at = CURRENT_TIMESTAMP(3)
-           WHERE setting_key = 'dispatch_new_recharges'`
-        );
-      }
       await connection.commit();
-      return {
-        acceptNewOrders: input.enabled,
-        dispatchExistingOrders: input.enabled
-          ? true
-          : rows.find((row) => row.setting_key === 'dispatch_new_recharges')?.setting_value === 'true'
-      };
+      const acceptNewOrders = settingKey === 'accept_new_orders' ? enabled : readSetting(rows, 'accept_new_orders');
+      const dispatchExistingOrders = settingKey === 'dispatch_new_recharges' ? enabled : readSetting(rows, 'dispatch_new_recharges');
+      return { acceptNewOrders, dispatchExistingOrders };
     } catch (error) {
       await connection.rollback();
       throw error;
@@ -53,5 +60,29 @@ export function createAdminOperationsService({ pool }) {
     }
   }
 
-  return { setOrderAcceptance };
+  function setOrderAcceptance(input = {}) {
+    return updateSetting({
+      enabled: input.enabled,
+      confirmation: input.confirmation,
+      settingKey: 'accept_new_orders',
+      expectedConfirmation: acceptanceConfirmation,
+      invalidStateCode: 'INVALID_ORDER_ACCEPTANCE_STATE',
+      confirmationCode: 'ORDER_ACCEPTANCE_CONFIRMATION_REQUIRED',
+      confirmationMessage: 'Order acceptance confirmation mismatch'
+    });
+  }
+
+  function setDispatch(input = {}) {
+    return updateSetting({
+      enabled: input.enabled,
+      confirmation: input.confirmation,
+      settingKey: 'dispatch_new_recharges',
+      expectedConfirmation: dispatchConfirmation,
+      invalidStateCode: 'INVALID_DISPATCH_STATE',
+      confirmationCode: 'DISPATCH_CONFIRMATION_REQUIRED',
+      confirmationMessage: 'Dispatch confirmation mismatch'
+    });
+  }
+
+  return { setOrderAcceptance, setDispatch };
 }
