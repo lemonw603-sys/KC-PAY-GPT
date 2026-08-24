@@ -128,20 +128,33 @@ export function createBrowserWorkerService({
         }
       }, intervalMs);
       let timeoutId;
+      let actionPromise;
       try {
+        actionPromise = Promise.resolve().then(() => action(runtime[actionKind], {
+          signal: controller.signal, profileManifestSha256, networkLeaseHmac
+        }));
         return await Promise.race([
-          action(runtime[actionKind], { signal: controller.signal, profileManifestSha256, networkLeaseHmac }),
+          actionPromise,
           leaseFailurePromise,
           new Promise((_, reject) => {
-            timeoutId = setTimeout(
-              () => reject(new BrowserWorkerError(`Browser action timed out: ${actionKind}`, 'ACTION_TIMEOUT')),
-              actionTimeoutMs
-            );
+            timeoutId = setTimeout(() => {
+              const timeoutError = new BrowserWorkerError(
+                `Browser action timed out: ${actionKind}`, 'ACTION_TIMEOUT'
+              );
+              stopped = true;
+              reject(timeoutError);
+              controller.abort(timeoutError);
+            }, actionTimeoutMs);
           })
         ]);
       } finally {
         clearInterval(watchdog);
         if (timeoutId) clearTimeout(timeoutId);
+        // Promise.race observes late action rejection, while the AbortSignal
+        // above asks Playwright/runtime code to stop any still-running work.
+        // Do not await it here: a broken runtime must not hold the worker
+        // lease forever after the fail-closed timeout.
+        actionPromise?.catch(() => {});
       }
     }
 
