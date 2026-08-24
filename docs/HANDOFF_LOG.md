@@ -114,3 +114,11 @@
 - 当前直接阻塞：生产 `acceptNewOrders=false`，客户页面在提交前提示“当前暂停接收新订单”，未发出 `/api/v1/orders`；因此尚未进入订单、卡台、Provider、资金或付款阶段。
 - `dispatchNewRecharges=false` 继续保持关闭；Provider 写入继续关闭。
 - 未擅自开启接单开关。若继续做“创建订单但不派发、不付款”的 dry-run，必须单独确认临时开启 `acceptNewOrders`，并在测试后关闭。
+
+## 2026-08-24｜Session 与开关风险最终对齐
+
+- 用户确认并要求落盘：Session 是高敏感账号凭证，不能发聊天；用户只需将其放在自己的浏览器剪贴板/页面中，不负责手动切换后台开关。
+- 测试配置对齐：订单创建测试可临时开启接单、保持派发和全部 Provider 写入关闭；派发测试即使 Provider 写入关闭，也可能产生任务/租约/卡片分配状态，不能称为零风险；Provider 写入和真实付款必须单独确认。
+- 执行要求：先确保有合法完整 Session，再开接单；测试后立即关闭接单；不得在没有可用 Session 时先打开生产接单。
+- 本次不执行真实付款、Provider 写入、开卡、卡余额充值、退款或提现。
+- 交接当前事实：生产/卡台只读验证已完成，客户付款前 dry-run 曾被非法 Session 与接单开关阻断；运营后台第二轮逐页只读验证已完成；遗留 PENDING 任务、VALIDATING intake batch、quarantine/review 卡和历史 UNCERTAIN 仍未擅自处理。
