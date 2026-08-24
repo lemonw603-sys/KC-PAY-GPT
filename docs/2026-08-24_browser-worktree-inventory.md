@@ -19,13 +19,13 @@
 
 ## B. 已修改但尚未提交的 Browser 实现/测试
 
-这些文件在本次整理前已存在共享工作区改动；本次不认领、不重写、不提交：
+这些文件在本次整理前已存在共享工作区改动；本轮已完成边界审查，并将这一批 dispatch 实现与测试单独固化：
 
 - `v1/src/db/repositories/browser-dispatch-repository.js`
 - `v1/test/browser-dispatch-repository.test.js`
 - `v1/test/browser-worker-service.test.js`
 
-下一动作：由 Browser 负责人单独审查 dispatch deadlock/连接重试 diff，确认与付款 UNKNOWN、幂等和租约合同兼容后，再形成独立 commit。
+审查结论与修正见 `docs/2026-08-24_browser-dispatch-ambiguous-claim-review.md`。`claim()` 不再重试 ambiguous timeout/connection loss；`enqueue()`/`complete()`/heartbeat 的安全重试边界保留。Worker service 测试仍单独保留，不混入该 commit。
 
 ## C. 未跟踪的 Browser 测试夹具与运行脚本
 
@@ -84,4 +84,3 @@
 2. 审查 C 类测试夹具，确认只属于本地/隔离测试后单独提交。
 3. 将 D 类证据与 E 类事实源按阶段节点分批提交。
 4. 运行 `git status --short`、`git diff --check`、`cd v1 && npm test` 和 `npm run test:browser-poc`，再更新本清单。
-
