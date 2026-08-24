@@ -102,3 +102,8 @@
 - 使用清理后的 Session JSON + 测试 CDK 重试客户提交；页面明确返回“当前暂停接收新订单，请稍后再试”。浏览器 Network 事件显示没有 `/api/v1/orders` 请求。
 - 结论：无 HTTP 状态码/服务端错误代码、无新订单、无卡片绑定、无 Permit、无 Provider/卡台资金动作、无付款页。接单开关保持关闭，未为 dry-run 擅自开启生产接单。
 - 修改仅限 `FULL_SYSTEM_VERIFICATION_2026-08-24.md`、`CURRENT_STATE.md`、`HANDOFF_LOG.md`；Session 原文未进入日志/文档，系统剪贴板未被改写。
+
+## 2026-08-24｜第四轮重试
+
+- 09:14 UTC 重新核验 readiness 和客户 dry-run；接单/派发仍关闭，页面继续返回“当前暂停接收新订单”，Network 无 `/api/v1/orders`。
+- 未开启任何开关，未执行付款或资金写操作；Session 原文未落盘。

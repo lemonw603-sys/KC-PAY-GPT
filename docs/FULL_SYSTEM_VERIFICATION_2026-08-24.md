@@ -96,3 +96,9 @@
 - 使用清理后的 JSON 前缀 + 测试 CDK 重新执行客户付款前 dry-run；页面返回 `当前暂停接收新订单，请稍后再试`。
 - 浏览器 Network 事件未观察到 `/api/v1/orders` 请求；因此没有 HTTP 状态码/错误代码、没有创建订单、没有进入付款页，也没有任何 Provider/卡台/资金写操作。
 - 该轮仅在浏览器内存中临时修剪非 JSON 尾部，没有改写系统剪贴板，也没有把 Session 原文写入日志或文档。
+
+## 2026-08-24 第四轮重试
+
+- 09:14 UTC 前重新跑 readiness：`ok=true`，`acceptNewOrders=false`、`dispatchNewRecharges=false`，迁移仍为 037。
+- 使用当前剪贴板 JSON 前缀（原始 7430 字节，清理后 7409 字节）再次提交测试 CDK + Session；页面仍返回 `当前暂停接收新订单，请稍后再试`。
+- Network 未观察到 `/api/v1/orders`，未产生 HTTP 响应、订单、资金动作或付款页。
