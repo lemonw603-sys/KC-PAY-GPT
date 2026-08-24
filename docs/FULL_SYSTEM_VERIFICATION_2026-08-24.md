@@ -77,3 +77,14 @@
 ### 结论
 
 本轮完成了生产、卡台和客户页付款前 dry-run 的可执行只读部分；资金安全边界保持关闭。由于 Session 格式校验失败、遗留 PENDING 任务与 VALIDATING intake batch 未被授权清理，以及后台登录后逐页核验缺少现场会话，本轮不能标记为“全系统闭环通过”。
+
+## 2026-08-24 第二轮现场复核追加
+
+- 生产只读复核时间：`2026-08-24T08:54:18Z`；release 仍为 `/opt/pojia/releases/20260823-admin-ui-alert-7587d44`；Web/Worker/Bark active，卡库存付费 runner inactive，迁移仍为 `037_card_discovery_latest_index`。
+- 最终 readiness：`ok=true`；`acceptNewOrders=false`、`dispatchNewRecharges=false`、三类 Provider 写开关显式置 false；`activeTasks=1`、其余活动 Permit/资金风险/对账案件/Browser 活动队列均为 0。
+- HNSKJ `provider:read-check` 再次通过：账户 67、USD、3 个卡型、18 张可见卡；未发起任何写请求。
+- 已登录运营后台逐页只读交叉验证：总览、订单、异常队列、资金证据核对、卡余额充值、卡台路线、Browser 执行、卡片库存、CDK 管理均可访问。关键口径：累计订单 3、自动处理中 1、三方对账异常 1、资金结果未决 0、卡余额充值待处理 0、待验证新卡 13、本地可分配卡 0；接单关闭、派发关闭、追踪已有订单开启、派发模式为正常自动。卡台路线显示当前 `LEGACY_HNSKJ_ZZSHU_V1`，备用路线未切换；Browser 运行 0；资金证据案例 0；卡余额充值记录 0；CDK 可使用批次 10 个未使用码。
+- 卡片库存页明确提示“对账未完成，禁止新开卡”；页面中的创建开卡、保存阈值/上限、生成 CDK、作废等按钮均未点击。
+- 客户付款前 dry-run：使用系统剪贴板内容在浏览器内存中填入 Session，并使用既有测试 CDK 提交一次；剪贴板元数据为 279 字节且不是合法 JSON，页面返回 `账号 Session 格式不正确，请检查后重试`；没有新订单、没有付款页、没有付款或 Provider/卡台写入。
+- 订单/卡片/Provider/资金/追溯交叉结论：后台累计订单与生产数据库既有 3 单一致；当前新 dry-run 未新增订单；当前订单仍无新卡绑定、无 Permit、无资金风险、无 Browser run；异常订单与三方对账异常仍为既有历史记录。
+- 未完成边界保持不变：遗留 `ASSIGN_CARD/PENDING` 任务、长期 `VALIDATING` intake batch、2 张 quarantine/review 卡未擅自清理；真实 Plus 付款和成功订单闭环未执行。

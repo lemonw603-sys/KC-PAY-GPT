@@ -85,3 +85,13 @@
 - 修改文件：`docs/FULL_SYSTEM_VERIFICATION_2026-08-24.md`、`docs/CURRENT_STATE.md`、`docs/HANDOFF_LOG.md`；未修改业务代码、迁移、生产配置或其他窗口文件。
 - 验证命令：SSH 只读现场命令、`npm run provider:read-check`、`npm run card:catalog-sync`、最终 `npm run preflight:readiness`、`cd v1 && npm test`（409/375/0/34）。
 - 下一步：先由运营人员确认遗留 PENDING 任务与 VALIDATING intake batch 的处置方式；补齐 ops 后台登录会话后再做逐页只读交叉核验；Session 格式修复后才可重新做付款前 dry-run。任何真实付款仍需单独确认。
+
+## 2026-08-24｜第二轮已登录后台交叉验证交接
+
+- 工作线：生产/卡台只读复核、运营后台逐页交叉验证、客户付款前 dry-run。
+- 已完成：重新核验生产 release/迁移/服务/开关/readiness；HNSKJ API 只读；接管已登录 `ops.vibebridge.top/admin`，逐页检查总览、订单、异常、资金证据、卡余额充值、卡台路线、Browser、卡片库存、CDK；客户页使用系统剪贴板尝试一次付款前 Session 格式验证。
+- 关键后台证据：累计订单 3、自动处理中 1、三方对账异常 1、资金结果未决 0、卡余额充值待处理 0、待验证新卡 13、本地可分配卡 0；接单/派发关闭，追踪已有订单开启；当前路线 `LEGACY_HNSKJ_ZZSHU_V1`，备用未切换；Browser run 0；资金证据案例 0；CDK 可使用 10。
+- 关键 dry-run 结果：系统剪贴板内容 279 字节且不是合法 JSON；客户页返回 Session 格式错误。未创建新订单、未分配卡、未产生 Permit、未调用 Provider 写、未进入付款页。
+- 未执行：付款、确认购买、开卡、卡余额充值、退款、提现、路线切换、CDK 生成/作废/保存阈值等所有写按钮。
+- 未完成/阻塞：需完整合法 Session JSON 才能继续到订单创建前；遗留 `ASSIGN_CARD/PENDING`、长期 `VALIDATING` intake batch 和 quarantine/review 卡未清理；真实 Plus 付款始终未执行。
+- 修改文件：`docs/FULL_SYSTEM_VERIFICATION_2026-08-24.md`、`docs/CURRENT_STATE.md`、`docs/HANDOFF_LOG.md`；未修改业务代码、迁移、生产配置或其他窗口改动。
