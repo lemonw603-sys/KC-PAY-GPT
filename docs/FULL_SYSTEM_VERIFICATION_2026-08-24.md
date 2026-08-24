@@ -88,3 +88,11 @@
 - 客户付款前 dry-run：使用系统剪贴板内容在浏览器内存中填入 Session，并使用既有测试 CDK 提交一次；剪贴板元数据为 279 字节且不是合法 JSON，页面返回 `账号 Session 格式不正确，请检查后重试`；没有新订单、没有付款页、没有付款或 Provider/卡台写入。
 - 订单/卡片/Provider/资金/追溯交叉结论：后台累计订单与生产数据库既有 3 单一致；当前新 dry-run 未新增订单；当前订单仍无新卡绑定、无 Permit、无资金风险、无 Browser run；异常订单与三方对账异常仍为既有历史记录。
 - 未完成边界保持不变：遗留 `ASSIGN_CARD/PENDING` 任务、长期 `VALIDATING` intake batch、2 张 quarantine/review 卡未擅自清理；真实 Plus 付款和成功订单闭环未执行。
+
+## 2026-08-24 第三轮 Session 重试追加
+
+- 系统剪贴板读取结果：总长度 7430 字节；整体不是合法 JSON，解析错误为 `SyntaxError: Unexpected non-whitespace character after JSON`，尾部多出 19 个非 JSON 字符。
+- 去掉尾部非 JSON 字符后，前缀解析为 object，长度 7409 字节；顶层字段仅记录为 `WARNING_BANNER`、`user`、`expires`、`account`、`accessToken`、`authProvider`、`sessionToken`、`rumViewTags`；未记录任何字段值。
+- 使用清理后的 JSON 前缀 + 测试 CDK 重新执行客户付款前 dry-run；页面返回 `当前暂停接收新订单，请稍后再试`。
+- 浏览器 Network 事件未观察到 `/api/v1/orders` 请求；因此没有 HTTP 状态码/错误代码、没有创建订单、没有进入付款页，也没有任何 Provider/卡台/资金写操作。
+- 该轮仅在浏览器内存中临时修剪非 JSON 尾部，没有改写系统剪贴板，也没有把 Session 原文写入日志或文档。

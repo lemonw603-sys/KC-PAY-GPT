@@ -95,3 +95,10 @@
 - 未执行：付款、确认购买、开卡、卡余额充值、退款、提现、路线切换、CDK 生成/作废/保存阈值等所有写按钮。
 - 未完成/阻塞：需完整合法 Session JSON 才能继续到订单创建前；遗留 `ASSIGN_CARD/PENDING`、长期 `VALIDATING` intake batch 和 quarantine/review 卡未清理；真实 Plus 付款始终未执行。
 - 修改文件：`docs/FULL_SYSTEM_VERIFICATION_2026-08-24.md`、`docs/CURRENT_STATE.md`、`docs/HANDOFF_LOG.md`；未修改业务代码、迁移、生产配置或其他窗口改动。
+
+## 2026-08-24｜第三轮 Session 清理与 dry-run 交接
+
+- 剪贴板整体 7430 字节，JSON 解析失败原因为尾部多 19 个非 JSON 字符；只在内存中截断到最后一个 `}`，得到 7409 字节 object。字段名和存在性已核对，未保存字段值。
+- 使用清理后的 Session JSON + 测试 CDK 重试客户提交；页面明确返回“当前暂停接收新订单，请稍后再试”。浏览器 Network 事件显示没有 `/api/v1/orders` 请求。
+- 结论：无 HTTP 状态码/服务端错误代码、无新订单、无卡片绑定、无 Permit、无 Provider/卡台资金动作、无付款页。接单开关保持关闭，未为 dry-run 擅自开启生产接单。
+- 修改仅限 `FULL_SYSTEM_VERIFICATION_2026-08-24.md`、`CURRENT_STATE.md`、`HANDOFF_LOG.md`；Session 原文未进入日志/文档，系统剪贴板未被改写。
