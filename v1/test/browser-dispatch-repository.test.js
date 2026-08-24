@@ -58,6 +58,49 @@ test('claim uses an expiring lease and never returns sensitive payload fields', 
   assert.equal('checkoutUrl' in result, false);
 });
 
+test('enqueue retries a deadlock and commits the idempotent database operation once', async () => {
+  let insertAttempts = 0;
+  const pool = poolFor((sql) => {
+    if (/FROM browser_dispatch_jobs/.test(sql)) return [[], []];
+    if (/FROM recharge_attempts/.test(sql)) return [[{
+      recharge_attempt_id: 'attempt-1', order_id: 'order-1', executor_kind: 'BROWSER',
+      executor_profile_id: null, attempt_status: 'PREPARED', funds_risk_state: 'ACTIVE', order_status: 'SUBMITTING'
+    }], []];
+    if (/INSERT INTO browser_dispatch_jobs/.test(sql)) {
+      insertAttempts += 1;
+      if (insertAttempts === 1) {
+        const error = new Error('deadlock'); error.code = 'ER_LOCK_DEADLOCK'; error.errno = 1213; throw error;
+      }
+      return [{ insertId: 7 }, []];
+    }
+    throw new Error(`unexpected SQL: ${sql}`);
+  });
+  const result = await createBrowserDispatchRepository(pool).enqueue({
+    jobKey: 'browser-attempt:retry', attemptId: 'attempt-1', orderId: 'order-1'
+  });
+  assert.equal(result.jobId, 7);
+  assert.equal(insertAttempts, 2);
+  assert.equal(pool.transaction.rolledBack, 1);
+  assert.equal(pool.transaction.committed, 1);
+});
+
+test('heartbeat retries a transient connection loss without issuing a second action', async () => {
+  let attempts = 0;
+  const pool = poolFor((sql) => {
+    if (/UPDATE browser_dispatch_jobs/.test(sql)) {
+      attempts += 1;
+      if (attempts === 1) throw Object.assign(new Error('socket lost'), { code: 'PROTOCOL_CONNECTION_LOST' });
+      return [{ affectedRows: 1 }, []];
+    }
+    throw new Error(`unexpected SQL: ${sql}`);
+  });
+  const result = await createBrowserDispatchRepository(pool).heartbeat({
+    jobId: 4, workerId: 'worker-1', leaseToken: 'lease-token'
+  });
+  assert.equal(result.jobId, '4');
+  assert.equal(attempts, 2);
+});
+
 test('heartbeat rejects an invalid lease without changing state', async () => {
   const pool = poolFor(() => [{ affectedRows: 0 }, []]);
   await assert.rejects(
@@ -83,4 +126,31 @@ test('complete requires an owned lease and a terminal Browser run', async () => 
   });
   assert.equal(result.status, 'COMPLETED');
   assert.match(pool.calls.at(-1).sql, /status = 'COMPLETED'/);
+});
+
+test('claim transaction acquire timeout destroys a late pool connection without retrying an ambiguous claim', async () => {
+  let destroyed = 0;
+  const lateConnection = {
+    destroy() { destroyed += 1; },
+    release() {},
+    async beginTransaction() {},
+    async rollback() {},
+    async commit() {},
+    async query() { return [[], []]; }
+  };
+  const pool = {
+    async getConnection() {
+      await new Promise((resolve) => setTimeout(resolve, 35));
+      return lateConnection;
+    },
+    async query() { return [[], []]; }
+  };
+  await assert.rejects(
+    createBrowserDispatchRepository(pool, { transactionTimeoutMs: 10 }).claim({
+      workerId: 'timeout-worker', leaseSeconds: 10
+    }),
+    (error) => error.code === 'DB_QUERY_TIMEOUT'
+  );
+  await new Promise((resolve) => setTimeout(resolve, 60));
+  assert.equal(destroyed, 1);
 });

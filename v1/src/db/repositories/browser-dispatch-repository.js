@@ -19,19 +19,122 @@ function hash(value) {
   return createHash('sha256').update(required(value, 'leaseToken')).digest('hex');
 }
 
-async function inTransaction(pool, action) {
-  const connection = await pool.getConnection();
+async function inTransaction(pool, action, { timeoutMs = 5000 } = {}) {
+  let acquireTimer;
+  const acquire = pool.getConnection();
+  const connection = await Promise.race([
+    acquire,
+    new Promise((_, reject) => {
+      acquireTimer = setTimeout(() => reject(Object.assign(new Error('database connection deadline exceeded'), { code: 'DB_QUERY_TIMEOUT' })), timeoutMs);
+    })
+  ]).catch((error) => {
+    if (error?.code === undefined && /No connections available/i.test(error?.message || '')) error.code = 'DB_POOL_EXHAUSTED';
+    // mysql2 keeps a timed-out acquire in its internal wait queue. If it is
+    // eventually fulfilled, destroy that late connection instead of leaking
+    // it back into the pool after the caller has already retried.
+    if (error?.code === 'DB_QUERY_TIMEOUT') acquire.then((lateConnection) => lateConnection.destroy()).catch(() => {});
+    throw error;
+  });
+  clearTimeout(acquireTimer);
+  let timedOut = false;
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => {
+      timedOut = true;
+      connection.destroy();
+      reject(Object.assign(new Error('database transaction deadline exceeded'), { code: 'DB_QUERY_TIMEOUT' }));
+    }, timeoutMs);
+  });
   try {
-    await connection.beginTransaction();
-    const result = await action(connection);
-    await connection.commit();
+    const result = await Promise.race([(async () => {
+      await connection.beginTransaction();
+      const value = await action(connection);
+      await connection.commit();
+      return value;
+    })(), timeout]);
     return result;
   } catch (error) {
-    await connection.rollback();
+    if (!timedOut) await connection.rollback().catch(() => {});
     throw error;
   } finally {
-    connection.release();
+    clearTimeout(timer);
+    if (!timedOut) connection.release();
   }
+}
+
+function isRetryableLockError(error) {
+  return error?.code === 'DB_QUERY_TIMEOUT'
+    || error?.code === 'ER_LOCK_DEADLOCK' || error?.errno === 1213
+    || error?.code === 'ER_LOCK_WAIT_TIMEOUT' || error?.errno === 1205
+    || ['PROTOCOL_CONNECTION_LOST', 'PROTOCOL_ENQUEUE_AFTER_FATAL_ERROR',
+      'ECONNRESET', 'ETIMEDOUT', 'EPIPE', 'ER_SERVER_GONE_ERROR'].includes(error?.code);
+}
+
+function isAmbiguousTransactionError(error) {
+  return error?.code === 'DB_QUERY_TIMEOUT'
+    || ['PROTOCOL_CONNECTION_LOST', 'PROTOCOL_ENQUEUE_AFTER_FATAL_ERROR',
+      'ECONNRESET', 'ETIMEDOUT', 'EPIPE', 'ER_SERVER_GONE_ERROR'].includes(error?.code);
+}
+
+async function inTransactionWithLockRetry(pool, action, {
+  maxAttempts = 3,
+  baseDelayMs = 5,
+  timeoutMs = 5000,
+  retryAmbiguous = true
+} = {}) {
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      return await inTransaction(pool, action, { timeoutMs });
+    } catch (error) {
+      if (!isRetryableLockError(error) || (!retryAmbiguous && isAmbiguousTransactionError(error))
+        || attempt === maxAttempts) throw error;
+      await new Promise((resolve) => setTimeout(resolve, baseDelayMs * attempt));
+    }
+  }
+  throw new Error('unreachable');
+}
+
+async function queryWithTransientRetry(pool, sql, values, { maxAttempts = 3, baseDelayMs = 5 } = {}) {
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      let acquireTimer;
+      const acquire = pool.getConnection();
+      const connection = await Promise.race([
+        acquire,
+        new Promise((_, reject) => {
+          acquireTimer = setTimeout(() => reject(Object.assign(new Error('database connection deadline exceeded'), { code: 'DB_QUERY_TIMEOUT' })), 5000);
+        })
+      ]).catch((error) => {
+        if (error?.code === undefined && /No connections available/i.test(error?.message || '')) error.code = 'DB_POOL_EXHAUSTED';
+        if (error?.code === 'DB_QUERY_TIMEOUT') acquire.then((lateConnection) => lateConnection.destroy()).catch(() => {});
+        throw error;
+      });
+      clearTimeout(acquireTimer);
+      let timedOut = false;
+      let timer;
+      const query = connection.query(sql, values);
+      try {
+        return await Promise.race([
+          query,
+          new Promise((_, reject) => {
+            timer = setTimeout(() => {
+              timedOut = true;
+              connection.destroy();
+              reject(Object.assign(new Error('database query deadline exceeded'), { code: 'DB_QUERY_TIMEOUT' }));
+            }, 5000);
+          })
+        ]);
+      } finally {
+        clearTimeout(timer);
+        query.catch(() => {});
+        if (!timedOut) connection.release();
+      }
+    } catch (error) {
+      if (!isRetryableLockError(error) || attempt === maxAttempts) throw error;
+      await new Promise((resolve) => setTimeout(resolve, baseDelayMs * attempt));
+    }
+  }
+  throw new Error('unreachable');
 }
 
 function publicJob(row, extra = {}) {
@@ -47,13 +150,16 @@ function publicJob(row, extra = {}) {
   };
 }
 
-export function createBrowserDispatchRepository(pool) {
+export function createBrowserDispatchRepository(pool, { transactionTimeoutMs = 5000 } = {}) {
   return {
     async enqueue({ jobKey, attemptId, orderId, executorProfileId = null, now = new Date() }) {
       const key = required(jobKey, 'jobKey');
       const attempt = required(attemptId, 'attemptId');
       const order = required(orderId, 'orderId');
-      return inTransaction(pool, async (connection) => {
+      // Enqueue is a database-only, idempotent operation. A bounded retry is
+      // safe after a deadlock/lock-wait rollback; browser/payment actions are
+      // never executed from this transaction.
+      return inTransactionWithLockRetry(pool, async (connection) => {
         const [existing] = await connection.query(
           `SELECT id, job_key, recharge_attempt_id, order_id, executor_profile_id,
                   status, attempt_count
@@ -105,7 +211,7 @@ export function createBrowserDispatchRepository(pool) {
           attemptCount: 0,
           idempotentReplay: false
         };
-      });
+      }, { timeoutMs: transactionTimeoutMs });
     },
 
     async claim({ workerId, leaseSeconds = 60, now = new Date() }) {
@@ -113,7 +219,11 @@ export function createBrowserDispatchRepository(pool) {
       if (!Number.isInteger(leaseSeconds) || leaseSeconds < 10 || leaseSeconds > 3600) {
         throw new BrowserDispatchError('leaseSeconds must be between 10 and 3600', 'INVALID_ARGUMENT');
       }
-      return inTransaction(pool, async (connection) => {
+      // A claim has no caller-supplied idempotency key. If the transaction
+      // outcome is ambiguous, retrying could claim a second job while the
+      // first lease is already committed but its response was lost. Only
+      // errors that MySQL explicitly rolls back may be retried here.
+      return inTransactionWithLockRetry(pool, async (connection) => {
         const [rows] = await connection.query(
           `SELECT bdj.id, bdj.job_key, bdj.recharge_attempt_id, bdj.order_id,
                   bdj.executor_profile_id, bdj.status, bdj.attempt_count
@@ -143,7 +253,7 @@ export function createBrowserDispatchRepository(pool) {
         return publicJob({ ...row, status: 'CLAIMED', attempt_count: Number(row.attempt_count || 0) + 1 }, {
           leaseToken, leaseUntil, leaseOwner: worker
         });
-      });
+      }, { timeoutMs: transactionTimeoutMs, retryAmbiguous: false });
     },
 
     async heartbeat({ jobId, workerId, leaseToken, leaseSeconds = 60, now = new Date() }) {
@@ -153,7 +263,7 @@ export function createBrowserDispatchRepository(pool) {
         throw new BrowserDispatchError('leaseSeconds must be between 10 and 3600', 'INVALID_ARGUMENT');
       }
       const until = new Date(now.getTime() + leaseSeconds * 1000);
-      const [result] = await pool.query(
+      const [result] = await queryWithTransientRetry(pool,
         `UPDATE browser_dispatch_jobs
          SET lease_until = ?, updated_at = ?
          WHERE id = ? AND status = 'CLAIMED' AND lease_owner = ?
@@ -167,7 +277,7 @@ export function createBrowserDispatchRepository(pool) {
     async complete({ jobId, workerId, leaseToken, now = new Date() }) {
       const id = required(jobId, 'jobId');
       const worker = required(workerId, 'workerId');
-      return inTransaction(pool, async (connection) => {
+      return inTransactionWithLockRetry(pool, async (connection) => {
         const [rows] = await connection.query(
           `SELECT bdj.id, bdj.status, bdj.lease_owner, bdj.lease_token_hash,
                   br.status AS run_status
@@ -197,7 +307,7 @@ export function createBrowserDispatchRepository(pool) {
         );
         if (updated.affectedRows !== 1) throw new BrowserDispatchError('dispatch job changed concurrently', 'JOB_CONFLICT');
         return { jobId: id, status: 'COMPLETED', idempotentReplay: false };
-      });
+      }, { timeoutMs: transactionTimeoutMs });
     }
   };
 }
