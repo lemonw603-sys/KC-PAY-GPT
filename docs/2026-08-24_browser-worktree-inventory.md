@@ -17,19 +17,21 @@
 - `v1/test/browser-worker-timeout.test.js`
 - `docs/2026-08-24_browser-stage1-24h-soak-completion-report.md`
 
-## B. 已修改但尚未提交的 Browser 实现/测试
+后续整理提交：`7ead4d6`（dispatch ambiguous claim 修正）、`75e119d`（隔离夹具）、`2ee2518`（阶段证据/交接）、`d394b53`（当前状态/Worker evidence）。
 
-这些文件在本次整理前已存在共享工作区改动；本轮已完成边界审查，并将这一批 dispatch 实现与测试单独固化：
+## B. 已完成审查并提交的 Browser 实现/测试
+
+这一批原先在共享工作区未提交，现已完成边界审查并单独固化：
 
 - `v1/src/db/repositories/browser-dispatch-repository.js`
 - `v1/test/browser-dispatch-repository.test.js`
 - `v1/test/browser-worker-service.test.js`
 
-审查结论与修正见 `docs/2026-08-24_browser-dispatch-ambiguous-claim-review.md`。`claim()` 不再重试 ambiguous timeout/connection loss；`enqueue()`/`complete()`/heartbeat 的安全重试边界保留。Worker service 测试仍单独保留，不混入该 commit。
+审查结论与修正见 `docs/2026-08-24_browser-dispatch-ambiguous-claim-review.md`。`claim()` 不再重试 ambiguous timeout/connection loss；`enqueue()`/`complete()`/heartbeat 的安全重试边界保留。对应提交：`7ead4d6`、`d394b53`。
 
-## C. 未跟踪的 Browser 测试夹具与运行脚本
+## C. 已跟踪的 Browser 测试夹具与运行脚本
 
-以下内容保留在原路径，不视为生产入口：
+以下内容已在 `75e119d` 中跟踪，保留在原路径且不视为生产入口：
 
 - `v1/test-support/browser-*.js`
 - `v1/test/browser-worker-concurrency.test.js`
@@ -37,11 +39,11 @@
 - `test/browser-nonph-manifest.test.js`
 - `browser-poc/manifests/non-ph-us-readonly-2026-08-23.json`
 
-这些文件的下一步是逐个确认“测试夹具/本地 mock/历史实验”属性后再提交；当前不得注册为生产 Worker、不得接真实付款。
+当前不得注册为生产 Worker、不得接真实付款。
 
-## D. Browser 证据、报告和交接文档
+## D. 已跟踪的 Browser 证据、报告和交接文档
 
-以下内容是历史或当前阶段证据，不应混入运行时代码：
+以下内容已在 `2ee2518`、`d394b53` 中跟踪，是历史或当前阶段证据，不应混入运行时代码：
 
 - `docs/2026-08-22_browser-*.md`
 - `docs/2026-08-23_browser-*.md`
@@ -74,13 +76,13 @@
 
 ## 当前清洁判定
 
-- “最近 Browser 基线 commit 内部是否自洽”：是，已通过对应定向测试。
-- “整个工作树是否 clean”：否，B-E 类仍有共享未提交或未跟踪内容。
-- “是否可以安全执行 `git clean`/`git reset`”：否，会破坏未确认的实现或历史证据。
+- “Browser 源码、隔离夹具、Browser 证据和 soak artifact 是否 clean”：是，已分批提交并通过对应定向测试。
+- “整个工作树是否 clean”：否，E 类跨项目事实源和 F 类非 Browser/生成产物仍未提交或未跟踪。
+- “是否可以安全执行 `git clean`/`git reset`”：否，会破坏 E/F 类未确认的共享改动或生成证据。
 
 ## 后续唯一整理顺序
 
-1. 审查 B 类 dispatch/Worker 测试 diff并单独提交或明确延期。
-2. 审查 C 类测试夹具，确认只属于本地/隔离测试后单独提交。
-3. 将 D 类证据与 E 类事实源按阶段节点分批提交。
+1. 由非 Browser 负责人决定 E 类跨项目事实源的提交边界，不在 Browser commit 中混入。
+2. F 类 release/竞品/工具产物按各自工作线处理；不使用破坏性清理命令。
+3. Browser 后续每个阶段只提交对应源码、测试、证据和本清单更新。
 4. 运行 `git status --short`、`git diff --check`、`cd v1 && npm test` 和 `npm run test:browser-poc`，再更新本清单。
