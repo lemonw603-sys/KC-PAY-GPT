@@ -53,6 +53,7 @@ export function createApp({
   listAdminProviderRoutes = null,
   switchAdminProviderRoute = null,
   setAdminOrderAcceptance = null,
+  setAdminDispatch = null,
   setAdminRechargePermit = null,
   createAdminRechargeAuthorization = null,
   revokeAdminRechargeAuthorization = null,
@@ -391,6 +392,11 @@ export function createApp({
   if (typeof setAdminOrderAcceptance === 'function') {
     app.post('/api/v1/admin/operations/order-acceptance', ...adminWriteGuards, async (req, res) => {
       res.json(await setAdminOrderAcceptance(req.body));
+    });
+  }
+  if (typeof setAdminDispatch === 'function') {
+    app.post('/api/v1/admin/operations/recharge-dispatch', ...adminWriteGuards, async (req, res) => {
+      res.json(await setAdminDispatch(req.body));
     });
   }
   if (typeof setAdminRechargePermit === 'function') {

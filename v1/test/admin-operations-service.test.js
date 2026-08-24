@@ -18,12 +18,24 @@ function poolFixture(settings = [
   return { queries, pool: { async getConnection() { return connection; } } };
 }
 
-test('starting intake also enables safe processing of existing orders', async () => {
+test('starting intake does not enable automatic recharge dispatch', async () => {
   const fixture = poolFixture();
   const service = createAdminOperationsService({ pool: fixture.pool });
   const result = await service.setOrderAcceptance({ enabled: true, confirmation: '开始接单' });
-  assert.deepEqual(result, { acceptNewOrders: true, dispatchExistingOrders: true });
+  assert.deepEqual(result, { acceptNewOrders: true, dispatchExistingOrders: false });
+  assert.equal(fixture.queries.some(({ sql, values }) => /UPDATE/.test(sql) && values[1] === 'dispatch_new_recharges'), false);
+});
+
+test('automatic recharge dispatch has its own exact confirmation and switch', async () => {
+  const fixture = poolFixture();
+  const service = createAdminOperationsService({ pool: fixture.pool });
+  const result = await service.setDispatch({ enabled: true, confirmation: '开始自动充值' });
+  assert.deepEqual(result, { acceptNewOrders: false, dispatchExistingOrders: true });
   assert.equal(fixture.queries.some(({ sql }) => /dispatch_new_recharges/.test(sql) && /UPDATE/.test(sql)), true);
+  await assert.rejects(
+    service.setDispatch({ enabled: false, confirmation: '停止接单' }),
+    (error) => error.code === 'DISPATCH_CONFIRMATION_REQUIRED'
+  );
 });
 
 test('stopping intake leaves existing-order processing unchanged', async () => {

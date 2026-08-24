@@ -183,6 +183,7 @@ const app = createApp({
   ,listAdminProviderRoutes: providerRouteAdminService.list
   ,switchAdminProviderRoute: providerRouteAdminService.switchRoute
   ,setAdminOrderAcceptance: adminOperationsService.setOrderAcceptance
+  ,setAdminDispatch: adminOperationsService.setDispatch
   ,setAdminRechargePermit: async (publicNo, input = {}) => {
     const action = String(input.action || '');
     const confirmation = String(input.confirmation || '');

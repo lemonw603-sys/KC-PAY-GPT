@@ -18,8 +18,8 @@ const STATUS_META = Object.freeze({
 
 const SETTING_META = Object.freeze({
   accept_new_orders: '接收新订单',
-  dispatch_new_recharges: '派发新充值',
-  recharge_dispatch_mode: '充值派发模式',
+  dispatch_new_recharges: '自动充值（对已接订单自动购买 Plus）',
+  recharge_dispatch_mode: '自动充值模式',
   poll_existing_orders: '追踪已有订单',
   sync_card_transactions: '同步卡片交易（只读）'
 });
@@ -174,7 +174,7 @@ function waitingText(value) {
   const minutes = Math.max(0, Math.floor((Date.now() - timestamp) / 60_000));
   if (minutes < 1) return '刚刚就绪，等待系统自动执行';
   if (minutes < 60) return `已等待系统执行 ${minutes} 分钟`;
-  return `已等待系统执行 ${Math.floor(minutes / 60)} 小时，请检查派发与 Provider 开关`;
+  return `已等待系统执行 ${Math.floor(minutes / 60)} 小时，请检查自动充值与对外扣款开关`;
 }
 
 function statusChip(status) {
@@ -338,6 +338,8 @@ async function loadOverview() {
       ? `<em class="switch-state ${setting.value === 'AUTOMATIC' ? 'is-on' : ''}">${setting.value === 'AUTOMATIC' ? '正常自动' : '仅灰度许可'}</em>`
       : setting.key === 'accept_new_orders'
       ? `<button class="${enabled ? 'danger-small' : 'primary-small'}" type="button" id="toggle-order-acceptance" data-enabled="${enabled}">${enabled ? '停止接单' : '开始接单'}</button>`
+      : setting.key === 'dispatch_new_recharges'
+      ? `<button class="${enabled ? 'danger-small' : 'primary-small'}" type="button" id="toggle-recharge-dispatch" data-enabled="${enabled}">${enabled ? '停止自动充值' : '开始自动充值'}</button>`
       : `<em class="switch-state ${enabled ? 'is-on' : ''}">${enabled ? '开启' : '关闭'}</em>`;
     return `<div><span><strong>${escapeHtml(SETTING_META[setting.key] || setting.key)}</strong><small>${setting.key === 'accept_new_orders' ? (enabled ? '新订单可以提交；规则通过后自动履约' : '已停止新订单；已有订单仍可继续处理和轮询') : `${formatTime(setting.updatedAt)} 更新`}</small></span>${control}</div>`;
   }).join('');
@@ -1038,7 +1040,7 @@ async function requestTransactionSync(publicNo, button) {
 
 async function issueCompensation(publicNo, button) {
   const confirmation = `补发 ${publicNo}`;
-  if (!window.confirm(`确认给订单 ${publicNo} 补发 1 个同套餐 CDK？\n\n系统将再次核对：没有卡片、没有供应商调用、任务已明确失败。原订单会关闭，且只能补发一次。`)) return;
+  if (!window.confirm(`确认给订单 ${publicNo} 补发 1 个同套餐 CDK？\n\n系统将再次核对：没有卡片、没有上游调用、任务已明确失败。原订单会关闭，且只能补发一次。`)) return;
   button.disabled = true;
   button.textContent = '核对并补发中…';
   try {
@@ -1093,7 +1095,7 @@ async function setOrderAcceptance(button) {
   const enabled = !currentlyEnabled;
   const confirmation = enabled ? '开始接单' : '停止接单';
   const message = enabled
-    ? '确认开始接收新订单？\n\n新订单会自动分配库存卡；派发和 Provider 写开关同时开启时，规则通过后会自动发起真实充值。'
+    ? '确认开始接收新订单？\n\n新订单会自动分配库存卡；自动充值和对外扣款开关同时开启时，规则通过后会自动发起真实充值。'
     : '确认停止接收新订单？\n\n已创建的订单不会被取消，仍可继续处理。';
   if (!window.confirm(message)) return;
   button.disabled = true;
@@ -1106,6 +1108,28 @@ async function setOrderAcceptance(button) {
     await loadOverview();
   } catch {
     showNotice('接单状态修改失败，原状态未改变。');
+    button.disabled = false;
+  }
+}
+
+async function setRechargeDispatch(button) {
+  const currentlyEnabled = button.dataset.enabled === 'true';
+  const enabled = !currentlyEnabled;
+  const confirmation = enabled ? '开始自动充值' : '停止自动充值';
+  const message = enabled
+    ? '确认开始自动充值？\n\n只会处理符合规则且已接收的订单；已有资金风险或未知结果的订单不会自动重试。'
+    : '确认停止自动充值？\n\n不会取消或停止已有订单的状态追踪。';
+  if (!window.confirm(message)) return;
+  button.disabled = true;
+  try {
+    await api('/api/v1/admin/operations/recharge-dispatch', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled, confirmation })
+    });
+    showNotice(enabled ? '已开始自动充值。' : '已停止自动充值，已有订单仍可继续追踪。');
+    await loadOverview();
+  } catch {
+    showNotice('自动充值状态修改失败，原状态未改变。');
     button.disabled = false;
   }
 }
@@ -1173,7 +1197,7 @@ async function openOrder(publicNo) {
       ? `<button type="button" class="danger-small" id="issue-compensation">${compensation.alreadyIssued ? '重新下载补发 CDK' : '补发 CDK'}</button>`
       : '';
     const compensationLabels = {
-      COMPENSATION_ELIGIBLE: '符合条件：无卡片、无供应商调用、任务已明确失败',
+      COMPENSATION_ELIGIBLE: '符合条件：无卡片、无上游调用、任务已明确失败',
       COMPENSATION_ALREADY_ISSUED: `已经补发 · ${formatTime(compensation.issuedAt)} · 新 CDK ${compensation.replacementStatus || '—'}`,
       COMPENSATION_ORDER_STILL_ACTIVE: '订单仍在处理，禁止补发',
       COMPENSATION_NOT_TERMINALLY_FAILED: '订单未明确失败，禁止补发',
@@ -1792,6 +1816,11 @@ document.addEventListener('click', (event) => {
   const intakeButton = event.target.closest('#toggle-order-acceptance');
   if (intakeButton) {
     setOrderAcceptance(intakeButton);
+    return;
+  }
+  const dispatchButton = event.target.closest('#toggle-recharge-dispatch');
+  if (dispatchButton) {
+    setRechargeDispatch(dispatchButton);
     return;
   }
   const row = event.target.closest('tr[data-order]');
