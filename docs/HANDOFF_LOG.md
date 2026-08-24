@@ -107,3 +107,10 @@
 
 - 09:14 UTC 重新核验 readiness 和客户 dry-run；接单/派发仍关闭，页面继续返回“当前暂停接收新订单”，Network 无 `/api/v1/orders`。
 - 未开启任何开关，未执行付款或资金写操作；Session 原文未落盘。
+
+## 2026-08-24｜Session 尾部与接单开关阻塞确认
+
+- 现场结果：剪贴板 Session JSON 尾部多出 19 个非 JSON 字符；清理尾部后，前端本地解析通过。
+- 当前直接阻塞：生产 `acceptNewOrders=false`，客户页面在提交前提示“当前暂停接收新订单”，未发出 `/api/v1/orders`；因此尚未进入订单、卡台、Provider、资金或付款阶段。
+- `dispatchNewRecharges=false` 继续保持关闭；Provider 写入继续关闭。
+- 未擅自开启接单开关。若继续做“创建订单但不派发、不付款”的 dry-run，必须单独确认临时开启 `acceptNewOrders`，并在测试后关闭。

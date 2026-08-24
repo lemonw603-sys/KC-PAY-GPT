@@ -102,3 +102,10 @@
 - 09:14 UTC 前重新跑 readiness：`ok=true`，`acceptNewOrders=false`、`dispatchNewRecharges=false`，迁移仍为 037。
 - 使用当前剪贴板 JSON 前缀（原始 7430 字节，清理后 7409 字节）再次提交测试 CDK + Session；页面仍返回 `当前暂停接收新订单，请稍后再试`。
 - Network 未观察到 `/api/v1/orders`，未产生 HTTP 响应、订单、资金动作或付款页。
+
+## 最新阻塞修正（2026-08-24）
+
+- 第一层问题已确认：Session 尾部多 19 个非 JSON 字符；清理后本地解析通过。
+- 当前阻塞不是卡台或 Provider：生产 `acceptNewOrders=false`，客户提交在前端短路，未发出 `/api/v1/orders`。
+- `dispatchNewRecharges=false` 与 Provider 写入均继续关闭，故尚未进入自动履约或任何资金阶段。
+- 若需继续付款前 dry-run，只能在用户明确允许下临时开启接单，保持派发和 Provider 写入关闭，并在创建测试订单后立即关闭接单。
