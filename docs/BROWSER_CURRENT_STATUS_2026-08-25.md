@@ -115,3 +115,11 @@
 - 扩展 `CHROME_CONTROL`/`CHECKOUT_OBSERVE` 合同，但 `allowWrites` 仍强制为 false；没有 Checkout 提交和真实付款能力。
 - 新增 Chrome runtime、Session Bootstrap 和 executor 集成测试；`npm --prefix browser-mvp run check` 通过，`npm --prefix browser-mvp test` **32/32 passed**。
 - 本切片没有调用真实 Session、卡台写接口、Checkout 或付款；下一步是把卡台只读就绪卡投影与真实测试 Session 身份核对接入 Chrome lane。
+
+## 2026-08-26 Session 身份与 Checkout 观察切片
+
+- 新增 `browser-mvp/src/session-identity-probe.js`：在页面同源调用 `/api/auth/session`，只返回身份 digest/HTTP 状态，不返回原始 Session JSON；身份不匹配 fail-closed。
+- 新增 `browser-mvp/src/checkout-observer.js`：只读提取套餐、币种、金额和付款表单是否存在，明确 `submitCalls=0`，不点击、不提交。
+- `BrowserExecutionService` 已支持可选 `metadata.sessionIdentity` 和 `metadata.checkoutContract`；配置后会在页面签名后执行身份核对和 Checkout 观察。
+- 新增本地 HTTP/Browser fixture，验证 `/api/auth/session` 身份匹配/不匹配和 Checkout 摘要读取；`npm --prefix browser-mvp test` **34/34 passed**，`npm --prefix browser-mvp run check` 通过。
+- 仍未连接真实测试 Session、目标 ChatGPT Checkout、卡台交易或任何付款写接口；本切片只完成可运行的前置观察能力。

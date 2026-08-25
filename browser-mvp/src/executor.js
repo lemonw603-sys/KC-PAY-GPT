@@ -1,6 +1,8 @@
 import { createHash } from 'node:crypto';
 
 import { assertJobEnvelope, ContractError } from './contracts.js';
+import { probeSessionIdentity } from './session-identity-probe.js';
+import { observeCheckout } from './checkout-observer.js';
 
 export class BrowserExecutionError extends Error {
   constructor(reason, message = `Browser execution stopped: ${reason}`, cause) {
@@ -63,6 +65,14 @@ export class BrowserExecutionService {
       await page.goto(job.metadata.pageContract.urlPrefix, { waitUntil: 'domcontentloaded', timeout: this.timeoutMs });
       if (freezeRequested()) throw new BrowserExecutionError('MANUAL_FREEZE');
       if (!(await assertLease())) throw new BrowserExecutionError('LEASE_LOST');
+      let sessionIdentity = null;
+      if (job.metadata.sessionIdentity) {
+        try {
+          sessionIdentity = await probeSessionIdentity(page, job.metadata.sessionIdentity);
+        } catch (error) {
+          throw new BrowserExecutionError('SESSION_IDENTITY_MISMATCH', error.message, error);
+        }
+      }
       const checkpoint = await this._checkPage(page, job.metadata.pageContract);
       await this._event(job, 'checkpoint', sessionLease ? 3 : 2, {
         action: 'page-signature',
@@ -71,7 +81,15 @@ export class BrowserExecutionService {
         observedTitleDigest: digest(checkpoint.title),
         frameCount: checkpoint.frameCount,
       });
-      return { status: 'OBSERVED', startedAt, finishedAt: this.clock(), submitCalls: 0, sessionBootstrapped: Boolean(sessionLease) };
+      let checkout = null;
+      if (job.metadata.checkoutContract) {
+        try {
+          checkout = await observeCheckout(page, job.metadata.checkoutContract);
+        } catch (error) {
+          throw new BrowserExecutionError('CHECKOUT_OBSERVATION_FAILED', error.message, error);
+        }
+      }
+      return { status: 'OBSERVED', startedAt, finishedAt: this.clock(), submitCalls: 0, sessionBootstrapped: Boolean(sessionLease), sessionIdentity, checkout };
     } catch (error) {
       const failure = error instanceof BrowserExecutionError
         ? error

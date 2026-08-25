@@ -186,3 +186,10 @@
 - `npm --prefix browser-mvp run check` 通过，`npm --prefix browser-mvp test` 32/32 通过。
 
 未完成且未验证：卡台真实 ready-card projection、真实测试 Session 身份核对、目标 Checkout 页面观察、真实付款提交、订阅权益和卡台交易对账。下一步只推进这些前置验证，不启用真实付款写开关。
+
+## 2026-08-26 身份核对/Checkout 观察补充
+
+- 新增同源 `/api/auth/session` 身份探针：只比较 email/accountId/userId，并将结果脱敏为 digest；不把原始响应写入事件。
+- 新增只读 Checkout observer：提取套餐、币种、金额和付款表单存在性；不点击、不提交、不产生付款副作用。
+- Browser 测试累计 34/34 通过。
+- 当前仍没有真实站点/真实 Session/真实卡台交易验证；下一步是由统筹窗口提供可用的测试上游投影和测试 Session 入口，在 Chrome control lane 做页面观察。真实付款写入保持关闭。
