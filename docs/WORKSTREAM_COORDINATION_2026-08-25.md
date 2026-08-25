@@ -2,6 +2,8 @@
 
 > 非 Browser 统筹入口。竞品和 Browser 已分别迁移到独立 worktree；本文件约束并行修改、交接和集成，不替代 `CLAUDE.md`、`AGENTS.md`、`DECISIONS.md`。
 
+统筹窗口自己的接班入口：`docs/NON_BROWSER_COORDINATOR_HANDOFF_2026-08-25.md`。
+
 ## 工作线
 
 | 工作线 | 独立 worktree | 范围 | 当前状态 |
@@ -78,4 +80,3 @@ Browser 窗口：
 ```text
 这是多工作线项目。先读取 AGENTS.md、CLAUDE.md、docs/START_HERE.md、docs/CURRENT_STATE.md、docs/HANDOFF_LOG.md 和对应工作线入口；检查 git worktree list/status/log，确认所有权后再行动。不要覆盖未提交改动，交付时分别说明代码已验证、已提交、已部署、运行时已验证和未验证项。
 ```
-
