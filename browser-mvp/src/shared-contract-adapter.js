@@ -1,4 +1,4 @@
-import { assertJobEnvelope, assertRef, assertSafeObject, ContractError } from './contracts.js';
+import { assertDigest, assertJobEnvelope, assertRef, assertSafeObject, ContractError } from './contracts.js';
 import { createSyntheticManifest } from './fixtures.js';
 
 /**
@@ -12,6 +12,8 @@ export const BROWSER_ELIGIBLE_ORDER_STATUSES = Object.freeze([
 ]);
 
 export const BROWSER_ELIGIBLE_ATTEMPT_STATUSES = Object.freeze(['PENDING', 'OBSERVING']);
+export const BROWSER_ELIGIBLE_CARD_INVENTORY_STATUSES = Object.freeze(['AVAILABLE']);
+export const BROWSER_ELIGIBLE_ROUTE_EXECUTOR_KINDS = Object.freeze(['BROWSER']);
 
 const FORBIDDEN_SOURCE_KEYS = new Set([
   'session_ciphertext',
@@ -83,8 +85,86 @@ export function projectSharedBrowserJob(projection, { manifest = createSynthetic
   return job;
 }
 
+function projectUpstreamCard(projection, { now = Date.now() } = {}) {
+  const card = projection.card;
+  const route = projection.route;
+  if (!card || typeof card !== 'object' || Array.isArray(card)) {
+    throw new ContractError('card projection is required');
+  }
+  if (!route || typeof route !== 'object' || Array.isArray(route)) {
+    throw new ContractError('route projection is required');
+  }
+  const cardRef = requireRef(card.ref, 'card.ref');
+  const providerAccountRef = requireRef(card.providerAccountRef, 'card.providerAccountRef');
+  const routeRef = requireRef(route.ref, 'route.ref');
+  if (card.routeRef !== route.ref) throw new ContractError('card.routeRef must match route.ref');
+  if (route.cardProviderRef !== card.providerAccountRef) {
+    throw new ContractError('route.cardProviderRef must match card.providerAccountRef');
+  }
+  if (!BROWSER_ELIGIBLE_CARD_INVENTORY_STATUSES.includes(card.inventoryStatus)) {
+    throw new ContractError(`card.inventoryStatus ${card.inventoryStatus} is not Browser eligible`);
+  }
+  if (route.status !== 'ACTIVE') throw new ContractError('route.status must be ACTIVE');
+  if (!BROWSER_ELIGIBLE_ROUTE_EXECUTOR_KINDS.includes(route.executorKind)) {
+    throw new ContractError('route.executorKind must be BROWSER');
+  }
+  const readiness = card.readiness;
+  if (!readiness || typeof readiness !== 'object' || Array.isArray(readiness)) {
+    throw new ContractError('card.readiness is required');
+  }
+  if (readiness.status !== 'READY') throw new ContractError('card.readiness.status must be READY');
+  const evidenceDigest = assertDigest(readiness.evidenceDigest, 'card.readiness.evidenceDigest');
+  if (!Number.isFinite(readiness.observedAt) || !Number.isFinite(readiness.validUntil)) {
+    throw new ContractError('card readiness timestamps are required');
+  }
+  if (readiness.validUntil <= now || readiness.observedAt > now) {
+    throw new ContractError('card readiness evidence is stale or from the future');
+  }
+  assertSafeObject({ card, route }, 'upstream card/route projection');
+  return {
+    cardRef,
+    routeRef,
+    providerAccountRef,
+    cardReadyEvidence: {
+      digest: evidenceDigest,
+      observedAt: readiness.observedAt,
+      validUntil: readiness.validUntil,
+    },
+  };
+}
+
+/**
+ * Strict read-only projection used once the Browser line consumes the
+ * card-desk and operations backend as its upstream. It carries only opaque
+ * card/route references and a bounded readiness proof; it never refreshes
+ * the provider or carries card credentials.
+ */
+export function projectUpstreamBrowserJob(projection, {
+  manifest = createSyntheticManifest(),
+  now = Date.now(),
+} = {}) {
+  const job = projectSharedBrowserJob(projection, { manifest });
+  const upstream = projectUpstreamCard(projection, { now });
+  const metadata = {
+    ...job.metadata,
+    source: 'shared-upstream-read-only',
+    upstream,
+    ...(projection.observation?.pageContract == null
+      ? {}
+      : { pageContract: projection.observation.pageContract }),
+  };
+  assertSafeObject(metadata, 'upstream job metadata');
+  const projected = { ...job, metadata };
+  assertJobEnvelope(projected);
+  return projected;
+}
+
 export class ReadOnlySharedContractAdapter {
   project(projection, options) {
     return projectSharedBrowserJob(projection, options);
+  }
+
+  projectUpstream(projection, options) {
+    return projectUpstreamBrowserJob(projection, options);
   }
 }

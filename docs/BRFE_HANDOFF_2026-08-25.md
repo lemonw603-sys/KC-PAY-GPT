@@ -107,6 +107,7 @@
 
 - 非 Browser worktree 定向卡资金/库存测试 16/16 通过。
 - 非 Browser worktree Browser 控制面、卡台路线、资金栅栏和卡资金组合测试 53/53 通过；证明上游合同在代码/隔离测试中可复用，尚不代表生产接线。
+- 当前卡台调用限制已纳入执行约束：后续优先复用快照、关键阶段读取、递增轮询和 UNKNOWN/人工对账，不通过删除安全状态来减少调用。
 - 代码和部署证据显示卡余额充值写开关、生产 funding runner 保持关闭；没有真实 Browser 卡片/Checkout/付款接线证据。
 
 未验证：
@@ -115,6 +116,10 @@
 - Browser 是否已把 HNSKJ 卡片/路线真正接到运行时；方向已确认，但共享写路径、真实 Session/Checkout 和付款仍未接线。
 
 下一步仍保持唯一动作：由统筹窗口冻结 Browser 与共享核心的 `cardRef/routeRef/cardReadyEvidence` 输入合同；在此之前不接卡台 API、不接真实 Session/Checkout、不进入付款写路径。
+
+## 2026-08-26 实施进展
+
+上一条“唯一动作”已在 Browser-only 范围内完成一个非付款切片：上游只读投影 → durable dispatch → claim/lease → 隔离 BrowserContext → evidence → complete。实现文件和测试详见 `BROWSER_CURRENT_STATUS_2026-08-25.md`。下一步不是接真实付款，而是等待统筹窗口提供/冻结 MySQL 上游 projection adapter 的输入合同和调用预算；之后再做隔离 MySQL 非付款联调。
 
 ## 共享事实源边界
 

@@ -55,3 +55,12 @@ M5 只读兼容层已完成；等待统筹窗口评审未决合同，保持 Brow
 - 非 Browser worktree 的卡片补余额实现属于 `card_funding_attempts` 资金动作，不等于 Browser 的 Plus `recharge_attempt`；当前 Browser 分支未接入它。
 - 用户已确认 Browser 的上游是卡台 API + 运营后台；当前 worktree 仍无共享 MySQL adapter、真实卡片引用接线、真实 Session provider、Checkout artifact 或支付 permit。
 - 本轮没有修改非 Browser 共享核心、没有调用卡台写接口、没有执行真实付款。
+- 调用策略：卡台/Provider 读取改为快照复用、关键阶段读取、递增轮询；安全状态保留，不以删状态换取少调用。
+
+## 2026-08-26 上游非付款接线切片
+
+- 新增 `browser-mvp/src/shared-contract-adapter.js` 的 `projectUpstreamBrowserJob()`：只接受 `cardRef`、`routeRef`、`providerAccountRef` 和带有效期的 `cardReadyEvidence`，校验卡片/路线匹配、库存为 `AVAILABLE`、路线为 `ACTIVE/BROWSER`；不读取或复制 PAN/CVV/Session/API key。
+- 新增 `browser-mvp/src/nonpayment-simulation.js`：把上游投影送入 dispatch、claim、隔离 BrowserContext 和证据 sink；明确不提供支付提交能力。
+- 新增 `browser-mvp/test/upstream-simulation.test.js`：投影拒绝过期/错配/非 Browser 路线，并验证非付款闭环。
+- 本轮 Browser 测试从 20/20 增至 **23/23**；`npm --prefix browser-mvp run check` 通过。
+- 这仍是本地合成上游投影，不是 MySQL 生产 adapter，不是真实 Session/Checkout，也不是付款验证。
