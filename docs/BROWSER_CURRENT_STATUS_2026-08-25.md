@@ -98,3 +98,11 @@
 ## 关键动作提醒（运营/审计可见性）
 
 后续任何会产生扣款、冻结或消费的动作，必须记录并可在后台追溯：动作类型、provider account、cardRef/card ID、order/attempt/browser run、幂等键、provider call ID、动作前余额、预计/实际扣款、手续费、动作后余额、外部引用和对账状态。卡台账户余额、卡片余额、卡片补余额、Plus 实际消费金额分栏展示，不能合并成一个金额。M6 仅有 `intent/checkpoint` 观察证据，`submitCalls=0`，无付款副作用。
+
+## 2026-08-26 MVP 范围再收敛
+
+- 用户确认将 MVP 收敛为“核心真实付款纵向切片”，而不是先建设完整生产平台。
+- 第一条链路优先使用 Google Chrome 独立 Profile：卡台已就绪 Visa 卡 → Session Bootstrap/账号核验 → Checkout → 真实付款 → 订阅权益与卡台交易核对 → 最小审计与清理。
+- 指纹浏览器保留为并行兼容性 Spike，不阻塞第一条 Chrome 真实纵向切片；多机调度、完整后台、复杂 Artifact Vault、多 Provider fallback 和容量压测后移。
+- 真实付款采用 `1 笔 → 2–3 笔受控连续` 闸门；首次真实付款提交前仍需单独确认，当前生产付款写开关保持关闭。
+- 长期 Browser 能力路线图草案见 `docs/browser-research/browser-automation-future-roadmap-2026-08-26.md`，待用户确认后冻结。

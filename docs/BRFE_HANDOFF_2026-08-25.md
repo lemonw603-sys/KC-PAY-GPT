@@ -152,3 +152,25 @@
 - 次选：Multilogin Mimic + local storage；第三候选：AdsPower Local API。GoLogin 当前公开开发入口偏 Cloud Browser，不进入首轮。
 - Google Chrome 不被替换：它作为真实 Chrome control lane；指纹浏览器是另一条可替换 runtime lane。指纹浏览器的 Chrome 模式不等于系统 Google Chrome。
 - 以上是能力匹配推荐，不是目标平台风控成功率结论；尚未安装、尚未接入真实 Session、尚未付款。
+
+## 2026-08-26 MVP 范围再收敛（用户确认方向，首次真实付款仍需闸门确认）
+
+上一版“功能较全的非付款扩展 MVP”经对抗式审查后被判定过宽，容易在没有真实 Checkout 产出前堆积后台、容量和运行时复杂度。当前 Browser 线建议收敛为一条核心真实付款纵向切片：
+
+```text
+卡台已就绪 Visa 卡
+→ Session Bootstrap/账号核验
+→ Google Chrome 独立 Profile
+→ 单 Worker 顺序执行
+→ Checkout/真实付款
+→ 订阅权益 + 卡台交易核对
+→ 最小审计与清理
+```
+
+当前保留：卡片占用、幂等、失败/UNKNOWN 停止、最小队列和结果追溯；后移：双 runtime 同时接入、完整运营后台、分布式调度、复杂 Artifact Vault、多 Provider fallback 和大规模压测。指纹浏览器保留为并行兼容性 Spike，不阻塞第一条 Chrome 真实纵向切片。
+
+真实付款验证采用 `1 笔 → 2–3 笔受控连续` 的闸门；在第一次真实付款提交前单独向用户确认，不在本次文档更新中启用生产付款写开关。
+
+长期能力方向草案见：
+`docs/browser-research/browser-automation-future-roadmap-2026-08-26.md`。
+该路线图待用户确认后再作为 Browser 线长期方向冻结；不覆盖共享 `CURRENT_STATE/DECISIONS/HANDOFF_LOG`。
