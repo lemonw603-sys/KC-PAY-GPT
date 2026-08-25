@@ -88,7 +88,7 @@
 
 ## 下一步唯一动作
 
-在 Browser-only 范围建立隔离 MySQL **只读** projection adapter 的合同测试：仅读取统筹窗口冻结的订单/attempt/card/route/readiness 字段，转成 `projectUpstreamBrowserJob()` 输入，再复用现有本地 dispatch 与非付款 BrowserContext。未冻结前不进入共享写路径、真实 Session、Checkout、卡片、付款、Provider 写入或生产 release；不 cherry-pick 混合检查点，不使用 `git add -A`，不清理 `.playwright-cli/`/`artifacts/`。
+在 Browser-only 范围选定并安装一个**本地指纹浏览器候选**，同时把现有上号器能力接成 `SessionMaterialSource`/`SessionBootstrapAdapter` 合同；先做真实 Session 身份核对和非付款一单闭环。未完成前不进入真实 Checkout 写入、真实付款、Provider 写入或生产 release；不 cherry-pick 混合检查点，不使用 `git add -A`，不清理 `.playwright-cli/`/`artifacts/`。
 
 ## 2026-08-26 卡台/非 Browser 交接补充
 
@@ -137,3 +137,10 @@
 - 已核对旧项目 `session-auth.js`、`browser-runtime.js`、`browser-pool.js`：可拆取 Cookie 解析/分块、真实 Session 探针、独立 Context、代理和运行时管理；auth API 伪造、Bearer 注入和 localStorage bootstrap 不进入默认资金链。
 - 已核对指纹能力：项目当前没有商业指纹浏览器接入；已有 `playwright-extra + puppeteer-extra-plugin-stealth`、代理、locale/timezone 和 Browser Pool，不等于指纹浏览器。`ANTIDETECT_LOCAL_PROFILE` 只能作为待验证 runtime lane。
 - 因此下一阶段不再把“上号器”作为默认 SessionProvider 实现；先冻结 `SessionMaterialSource`、`SessionBootstrapAdapter` 和 `BrowserIdentityRuntime` 三者边界，再做一单完整的非付款/模拟支付闭环。
+
+## 2026-08-26 MVP 运行时决策（用户已确认）
+
+- MVP 必须具备上号器的 Session Bootstrap 能力，否则无法完成真实账号进入、Checkout 观察和一单闭环；但不把现有扩展硬编码为唯一实现。
+- MVP 应纳入一个本地指纹浏览器候选，至少用它完成一次非付款/模拟付款闭环；指纹浏览器属于可替换 `BrowserIdentityRuntime`，不成为订单、资金或审计核心依赖。
+- 禁止云 Profile、云同步、第三方 Session 托管和真实付款；先完成本地 Profile、代理、Session、Worker 绑定、身份核验和失租约清理。
+- 当前缺少具体指纹浏览器产品/安装包，未开始安装或真实 Session 运行；该事实不阻塞合同设计，但阻塞真实运行时验证。

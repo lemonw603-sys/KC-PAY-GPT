@@ -6,16 +6,16 @@
 | --- | --- |
 | worktree | `/Users/lemon/.codex/worktrees/9128/AI充值业务` |
 | 分支 | `codex/browser` |
-| 当前 HEAD | `d8f600e` |
-| 当前阶段 | M6：上游只读投影 → Browser 非付款执行模拟 |
+| 当前 HEAD | `cc25b7a` |
+| 当前阶段 | M8：Session Bootstrap + 本地指纹浏览器运行时准备 |
 | 跟踪改动 | 无 |
 | 未跟踪改动 | `.playwright-cli/`、`artifacts/` |
-| Browser MVP | `browser-mvp/` M0–M5 已完成；共享控制面写路径仍未接入 |
+| Browser MVP | `browser-mvp/` M0–M7 合同/模拟切片已完成；Session/指纹运行时和共享控制面写路径仍未接入 |
 | 生产/真实付款 | 未接入、未执行 |
 
 ## 当前阶段
 
-阶段 M6：共享合同只读兼容层和上游非付款执行模拟已完成。当前不是新版 BRFE 阶段 A/B/C 的完成状态；新版控制面和共享适配器写路径尚未进入本分支。
+阶段 M8：用户已确认 MVP 必须具备上号器 Session Bootstrap 能力，并纳入一个本地指纹浏览器候选运行时；当前仍未接入真实 Session、真实 Checkout 或付款。新版 BRFE 控制面和共享适配器写路径尚未进入本分支。
 
 ## 本分支已验证
 
@@ -47,7 +47,7 @@
 
 ## 下一步
 
-在 Browser-only 范围建立隔离 MySQL 只读 projection adapter 合同测试：读取冻结的订单/attempt/card/route/readiness 投影，送入现有 `projectUpstreamBrowserJob()` 和非付款模拟；不接共享写入、真实 Session、Checkout、Provider 写入或真实 Browser 付款。
+在 Browser-only 范围选定并安装一个本地指纹浏览器候选；把现有上号器的 Cookie 输入/注入规则接成 `SessionMaterialSource` 和 `SessionBootstrapAdapter`，用真实 Session 身份核对跑通一单非付款/模拟付款闭环。不接共享写入、真实付款或生产 Provider 写入。
 
 ## M7 隔离 MySQL 只读合同
 
@@ -79,6 +79,13 @@
 - 旧项目可复用的真实能力是 Cookie 解析/分块、真实 Session API/UI 探针、独立 Context、代理、locale/timezone 和 Browser Pool；旧 auth overlay/Bearer/localStorage 伪造默认禁止。
 - 当前没有已接入的商业指纹浏览器。`playwright-extra + puppeteer-extra-plugin-stealth` 只是现有运行时增强；`ANTIDETECT_LOCAL_PROFILE` 保留为候选 lane，不能把“指纹分数”当成功证据。
 - 详细证据：`docs/browser-research/session-loader-and-fingerprint-runtime-facts-2026-08-26.md`。
+
+## MVP 运行时决策（用户已确认）
+
+- 上号器能力是 MVP 必需能力：没有 Session Bootstrap 就无法完整进入账号和走完一单；现有扩展只是第一种输入/注入实现，不是唯一核心。
+- 指纹浏览器应进入 MVP：至少用一个本地候选完成一次非付款/模拟付款闭环；它通过可替换 `BrowserIdentityRuntime` 接入，不绑定订单/资金/审计核心。
+- 禁止云 Profile、云同步、第三方 Session 托管和真实付款；必须验证 Profile、代理、Session、Worker 绑定、服务器账号身份和失租约清理。
+- 具体指纹浏览器产品/安装包尚未提供，故尚未安装、尚未做真实 Session 验证；当前代码仍不能宣称完整业务 MVP。
 
 ## 关键动作提醒（运营/审计可见性）
 
