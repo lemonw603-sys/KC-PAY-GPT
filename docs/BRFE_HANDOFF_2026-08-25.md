@@ -36,9 +36,13 @@
 - 真实 Session、菲律宾出口、Checkout、付款、生产 Worker、生产高可用均未在本分支验证。
 - 当前 worktree 的依赖缺失导致完整 v1 测试未能全绿；需在不改变共享核心的前提下补齐依赖后重跑。
 
+## 迁移审计结果
+
+直接迁移已整理 Browser 小提交被依赖审计阻塞：最早前置 `a84c293` 是包含 108 个文件的混合检查点，含共享资金/Provider/Worker/生产相关改动，不能整批 cherry-pick。详见 `docs/2026-08-25_browser-transfer-audit.md`。
+
 ## 下一步唯一动作
 
-先与 Browser 线统筹窗口确认将哪些已审查 Browser commit 转移到 `codex/browser`，再按 commit 粒度迁移；迁移前不使用 `git add -A`、不清理 `.playwright-cli/`/`artifacts/`、不修改非 Browser 共享核心或生产 release。
+由统筹窗口冻结共享核心基线或批准 Browser-only extraction 后，再按依赖顺序迁移；在此之前不 cherry-pick 混合检查点，不使用 `git add -A`，不清理 `.playwright-cli/`/`artifacts/`，不修改非 Browser 共享核心或生产 release。
 
 ## 共享事实源边界
 

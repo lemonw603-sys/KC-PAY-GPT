@@ -40,4 +40,4 @@
 
 ## 下一步
 
-由统筹窗口确认 Browser commit 转移清单；确认后按独立 commit 迁移并逐批运行 Browser 定向测试，再更新本文件。
+Browser commit 转移已完成依赖审计，但被 `a84c293` 混合共享核心前置阻塞。由统筹窗口冻结共享核心基线或批准 Browser-only extraction 后再迁移；当前不把其他 worktree 的新版 Browser 能力写成本分支已完成。
