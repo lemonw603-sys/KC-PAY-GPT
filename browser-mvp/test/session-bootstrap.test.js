@@ -28,3 +28,16 @@ test('CookieSessionBootstrapAdapter rejects sources without a ChatGPT session to
   const adapter = new CookieSessionBootstrapAdapter({ source: { load: async () => ({ cookieHeader: 'foo=bar' }) } });
   await assert.rejects(() => adapter.open('session-ref:missing'), ContractError);
 });
+
+test('CookieSessionBootstrapAdapter chunks long session tokens using NextAuth cookie names', async () => {
+  const adapter = new CookieSessionBootstrapAdapter({ source: { load: async () => ({ sessionToken: 'x'.repeat(4_100) }) } });
+  const lease = await adapter.open('session-ref:chunked');
+  const added = [];
+  await adapter.bootstrap(lease, { addCookies: async (cookies) => added.push(...cookies) });
+  assert.deepEqual(added.map((cookie) => cookie.name), [
+    '__Secure-next-auth.session-token.0',
+    '__Secure-next-auth.session-token.1',
+  ]);
+  assert.equal(added[0].value.length, 3_936);
+  assert.equal(added[1].value.length, 164);
+});

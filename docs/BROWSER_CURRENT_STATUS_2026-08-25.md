@@ -123,3 +123,11 @@
 - `BrowserExecutionService` 已支持可选 `metadata.sessionIdentity` 和 `metadata.checkoutContract`；配置后会在页面签名后执行身份核对和 Checkout 观察。
 - 新增本地 HTTP/Browser fixture，验证 `/api/auth/session` 身份匹配/不匹配和 Checkout 摘要读取；`npm --prefix browser-mvp test` **34/34 passed**，`npm --prefix browser-mvp run check` 通过。
 - 仍未连接真实测试 Session、目标 ChatGPT Checkout、卡台交易或任何付款写接口；本切片只完成可运行的前置观察能力。
+
+## 2026-08-26 真实 Session 首次观察
+
+- 用户提供的 Session JSON 已在本地临时 Profile 做了一次 Chrome control lane 观察；Session token 按 NextAuth 分块注入成功（仅核对 Cookie 名称，不记录值）。
+- `https://chatgpt.com/` 和同源 `/api/auth/session` 均返回 HTTP 403，页面标题为 `请稍候…`，同时出现 `__cf_bm`，运行被 Cloudflare/人机验证页面拦截。
+- 该结果不能证明 Session 失效或账号不匹配；真实身份、Checkout 和订阅权益仍未验证。
+- 临时 Profile 已删除；未调用卡台写接口、Checkout 提交或付款。
+- 详细记录：`docs/browser-research/real-session-observation-2026-08-26.md`。

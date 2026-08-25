@@ -193,3 +193,9 @@
 - 新增只读 Checkout observer：提取套餐、币种、金额和付款表单存在性；不点击、不提交、不产生付款副作用。
 - Browser 测试累计 34/34 通过。
 - 当前仍没有真实站点/真实 Session/真实卡台交易验证；下一步是由统筹窗口提供可用的测试上游投影和测试 Session 入口，在 Chrome control lane 做页面观察。真实付款写入保持关闭。
+
+## 2026-08-26 真实 Session 首次观察结果
+
+用户提供的 Session 已用于一次本地 Chrome control lane 观察。Session Cookie 分块写入成功，但 ChatGPT 首页和 `/api/auth/session` 返回 403，标题为 `请稍候…`，出现 `__cf_bm`，说明当前先被人机验证/边缘防护拦截。不能把这次结果写成 Session 失效，也没有得到账号身份或 Checkout 证据。
+
+详细记录：`docs/browser-research/real-session-observation-2026-08-26.md`。下一步是 headed Chrome 人工观察/通过验证后再做身份核对；不点击付款、不调用卡台写接口。

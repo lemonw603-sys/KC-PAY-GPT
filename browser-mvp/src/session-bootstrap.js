@@ -5,6 +5,7 @@ import { assertRef, assertSessionLease, ContractError } from './contracts.js';
 
 const CHATGPT_URL = 'https://chatgpt.com';
 const SESSION_COOKIE_BASE = '__Secure-next-auth.session-token';
+const SESSION_COOKIE_CHUNK_SIZE = 3936;
 
 function digest(value) {
   return createHash('sha256').update(value).digest('hex');
@@ -30,6 +31,15 @@ function normalizeCookies(material) {
   if (typeof material === 'string') return parseCookieHeader(material);
   if (Array.isArray(material?.cookies)) return material.cookies.map((cookie) => ({ ...cookie })).filter((cookie) => cookie?.name && cookie?.value);
   if (typeof material?.cookieHeader === 'string') return parseCookieHeader(material.cookieHeader);
+  if (typeof material?.sessionToken === 'string' && material.sessionToken.trim()) {
+    const token = material.sessionToken.trim();
+    if (token.length <= SESSION_COOKIE_CHUNK_SIZE) return [{ name: SESSION_COOKIE_BASE, value: token }];
+    const chunks = [];
+    for (let offset = 0, index = 0; offset < token.length; offset += SESSION_COOKIE_CHUNK_SIZE, index += 1) {
+      chunks.push({ name: `${SESSION_COOKIE_BASE}.${index}`, value: token.slice(offset, offset + SESSION_COOKIE_CHUNK_SIZE) });
+    }
+    return chunks;
+  }
   throw new ContractError('session source must provide cookieHeader or cookies');
 }
 
