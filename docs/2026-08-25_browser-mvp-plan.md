@@ -44,7 +44,7 @@ MVP 不执行真实 Session、Checkout、卡片、付款、Provider 写入或生
 
 完成证据（2026-08-25）：`FileDispatchStore` 使用本地 JSON + 临时文件原子 rename，已覆盖幂等 enqueue、claim、heartbeat、complete、过期 recover；rename 结果不明时抛出 `AmbiguousStorageError`，不自动重放 claim。`npm --prefix browser-mvp test` 为 7/7（含 8 worker/240 job 并发场景）。
 
-### M2：本地 Browser 执行
+### M2：本地 Browser 执行（已完成）
 
 交付：
 
@@ -54,6 +54,8 @@ MVP 不执行真实 Session、Checkout、卡片、付款、Provider 写入或生
 - mock gateway 明确记录 `submitCalls=0`。
 
 退出条件：本地 BrowserContext 集成测试通过，任何敏感动作被拦截时提交计数为 0。
+
+完成证据（2026-08-25）：`LocalPlaywrightRuntimeAdapter` 使用隔离 headless Chromium context；`BrowserExecutionService` 完成导航、URL/title/marker 检查、iframe 计数、租约和人工冻结检查。页面漂移、租约丢失、人工冻结、导航超时均记录脱敏 freeze 事件并 fail-closed；11/11 测试通过，观察结果 `submitCalls=0`。
 
 ### M3：WAL、证据与恢复
 
@@ -94,4 +96,4 @@ MVP 不执行真实 Session、Checkout、卡片、付款、Provider 写入或生
 
 ## 当前唯一下一步
 
-进入 M2：接入临时本地 Playwright BrowserContext 和只读页面检查点，验证漂移/超时/租约丢失时 fail-closed；不接真实 Session、Checkout 或付款。每个阶段结束都更新 `BRFE_HANDOFF_2026-08-25.md`、`BROWSER_CURRENT_STATUS_2026-08-25.md` 和本计划的证据链接。
+进入 M3：实现 append-only WAL、事件序列/哈希链、脱敏证据和 crash/restart/reconcile-only 恢复；不接真实 Session、Checkout 或付款。每个阶段结束都更新 `BRFE_HANDOFF_2026-08-25.md`、`BROWSER_CURRENT_STATUS_2026-08-25.md` 和本计划的证据链接。

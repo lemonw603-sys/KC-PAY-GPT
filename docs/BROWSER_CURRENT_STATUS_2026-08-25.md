@@ -7,15 +7,15 @@
 | worktree | `/Users/lemon/.codex/worktrees/9128/AI充值业务` |
 | 分支 | `codex/browser` |
 | 基线 HEAD | `bd9f05b` |
-| 当前交接提交 | `67eb275` |
+| 当前交接提交 | M2 提交待生成 |
 | 跟踪改动 | 无 |
 | 未跟踪改动 | `.playwright-cli/`、`artifacts/` |
-| Browser MVP 控制面 | `browser-mvp/` 已包含合同层与本地 dispatch；共享控制面仍未接入 |
+| Browser MVP 执行层 | `browser-mvp/` 已包含合同、dispatch 和只读 Playwright 执行；共享控制面仍未接入 |
 | 生产/真实付款 | 未接入、未执行 |
 
 ## 当前阶段
 
-阶段 M1：Browser MVP 本地控制面已完成。当前不是新版 BRFE 阶段 A/B/C 的完成状态；新版控制面和共享适配器尚未进入本分支。
+阶段 M2：Browser MVP 本地 Browser 执行已完成。当前不是新版 BRFE 阶段 A/B/C 的完成状态；新版控制面和共享适配器尚未进入本分支。
 
 ## 本分支已验证
 
@@ -24,6 +24,7 @@
 - 旧 Browser PoC JSON 产物存在于 `artifacts/browser-poc/`，尚未纳入当前分支追踪。
 - `browser-mvp` contract tests：4/4 通过；`node --check`：通过。
 - `FileDispatchStore` 并发/租约测试：3/3 通过（总测试 7/7）。
+- 本地 Chromium BrowserContext/执行器测试：4/4 通过（总测试 11/11）；漂移、租约丢失、冻结、超时均 fail-closed。
 
 ## 本分支未验证
 
@@ -32,7 +33,7 @@
 - 本地 BrowserContext Worker 接线和页面漂移 fail-closed；
 - `NON_PH_FUNCTIONAL` 只读观察器和新版 Browser 合同；
 - 菲律宾 cohort、真实 Session、Checkout、付款、生产 Worker、高可用拓扑。
-- M2 本地 BrowserContext、页面检查点、漂移/超时/租约丢失 fail-closed。
+- M3 WAL、脱敏证据、crash/restart/reconcile-only 恢复。
 
 ## 暂停条件
 
@@ -43,4 +44,4 @@
 
 ## 下一步
 
-进入 M2：在 `browser-mvp/` 内实现本地 BrowserContext 只读观察和页面检查点；不接共享订单、MySQL 或真实 Browser 写入。
+进入 M3：在 `browser-mvp/` 内实现 WAL、脱敏证据和恢复；不接共享订单、MySQL 或真实 Browser 写入。
