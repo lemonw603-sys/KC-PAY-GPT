@@ -6,7 +6,7 @@
 
 - 路径：`/Users/lemon/.codex/worktrees/nonbrowser/AI充值业务`
 - 分支：`codex/nonbrowser-integration-20260825`
-- 最近提交：`e32a6fd docs(non-browser): correct candidate file count`
+- 最近提交：`960c666 docs(non-browser): record customer page smoke check`
 - 工作区：候选已部署；交接文档更新不得混入竞品或 Browser 改动。
 
 ## 当前阶段
