@@ -67,7 +67,7 @@ const ORDER_RECONCILIATION_CODES = Object.freeze({
 });
 
 const state = {
-  view: 'overview', page: 1, pageSize: 20, total: 0, status: '', query: '',
+  view: 'overview', nav: 'overview', page: 1, pageSize: 20, total: 0, status: '', query: '',
   from: '', to: '', timeField: 'CREATED',
   stockProvider: null, stockCatalog: null, stockCardTypeId: '', acceptingOrders: false,
   cdkClearTimer: null, cdkLoadSequence: 0, cdkBatchCursor: null, cdkBatchRows: [],
@@ -323,7 +323,7 @@ async function loadOverview() {
   const providerTone = health.purchaseEnabled === true && providerFresh ? 'status-green' : 'status-orange';
   const providerLabel = !health.syncedAt ? '未同步' : !providerFresh ? '规则已过期' : health.purchaseEnabled === true ? '允许开卡' : health.purchaseEnabled === false ? '禁止开卡' : '未知';
   const providerBalance = health.accountBalance == null ? '—' : `${formatMoney(health.accountBalance)} ${escapeHtml(health.currency || 'USD')}`;
-  elements.overviewProviderHealth.innerHTML = `<div><span><strong>${escapeHtml(health.routeLabel || '当前 Plus 卡台路线')}</strong><small>${health.accountCode ? `账户 ${escapeHtml(health.accountCode)} · ` : ''}只读同步 ${formatTime(health.syncedAt)}</small></span><em class="status-chip ${providerTone}"><i></i>${providerLabel}</em></div><div><span><strong>卡台账户余额</strong><small>不是可分配卡片余额</small></span><em>${providerBalance}</em></div><div><span><strong>本地可分配卡</strong><small>需资料完整且余额达标</small></span><em>${escapeHtml(overview.cardStock?.available ?? 0)} 张</em></div>`;
+  elements.overviewProviderHealth.innerHTML = `<div><span><strong>${escapeHtml(health.routeLabel || '当前 Plus 卡台路线')}</strong><small>${health.accountCode ? `账户 ${escapeHtml(health.accountCode)} · ` : ''}只读同步 ${formatTime(health.syncedAt)}</small></span><em class="status-chip ${providerTone}"><i></i>${providerLabel}</em></div><div><span><strong>卡台账户余额</strong><small>不是可分配卡片余额</small></span><em>${providerBalance}</em></div>`;
   const maxCount = Math.max(1, ...overview.orderStatuses.map((item) => item.count));
   elements.statusList.innerHTML = overview.orderStatuses.length
     ? overview.orderStatuses.map((item) => `<button type="button" data-status="${escapeHtml(item.status)}">
@@ -1333,13 +1333,18 @@ async function openOrder(publicNo) {
   }
 }
 
+function setActiveNav(navId) {
+  state.nav = navId;
+  elements.navItems.forEach((item) => item.classList.toggle('is-active', item.dataset.view === navId));
+}
+
 async function switchView(view, { status = '' } = {}) {
   if (state.view === 'cdks' && view !== 'cdks') clearGeneratedCdks();
   if (state.view === 'orders' && view !== 'orders') state.selectedOrders.clear();
+  setActiveNav(view);
   state.view = view === 'exceptions' ? 'orders' : view;
   state.status = view === 'exceptions' ? 'REVIEW_REQUIRED' : status;
   state.page = 1;
-  elements.navItems.forEach((item) => item.classList.toggle('is-active', item.dataset.view === view));
   elements.views.forEach((panel) => { panel.hidden = panel.id !== `${state.view}-view`; });
   if (view === 'overview') {
     elements.viewKicker.textContent = '运营概览';
@@ -1370,8 +1375,8 @@ async function switchView(view, { status = '' } = {}) {
     elements.viewTitle.textContent = '运行、租约与人工接管';
     await loadBrowserRuns();
   } else {
-    elements.viewKicker.textContent = view === 'exceptions' ? '人工处理' : '订单中心';
-    elements.viewTitle.textContent = view === 'exceptions' ? '需要关注的订单' : '全部订单';
+    elements.viewKicker.textContent = state.nav === 'exceptions' ? '人工处理' : '订单中心';
+    elements.viewTitle.textContent = state.nav === 'exceptions' ? '需要关注的订单' : '全部订单';
     elements.statusFilter.value = state.status;
     await loadOrders();
   }
@@ -1480,6 +1485,7 @@ elements.filters.addEventListener('submit', (event) => {
   state.from = elements.orderFrom.value;
   state.to = elements.orderTo.value;
   state.timeField = elements.orderTimeField.value;
+  if (state.nav !== 'orders') { setActiveNav('orders'); elements.viewKicker.textContent = '订单中心'; elements.viewTitle.textContent = '全部订单'; }
   loadOrders().catch(() => showNotice('订单查询失败，请稍后重试。'));
 });
 elements.prevPage.addEventListener('click', () => { if (state.page > 1) { state.page -= 1; loadOrders(); } });
