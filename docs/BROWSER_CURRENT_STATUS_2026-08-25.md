@@ -6,7 +6,8 @@
 | --- | --- |
 | worktree | `/Users/lemon/.codex/worktrees/9128/AI充值业务` |
 | 分支 | `codex/browser` |
-| HEAD | `bd9f05b` |
+| 基线 HEAD | `bd9f05b` |
+| 当前交接提交 | `8fde834` |
 | 跟踪改动 | 无 |
 | 未跟踪改动 | `.playwright-cli/`、`artifacts/` |
 | Browser 新控制面 | 当前分支未包含 |
