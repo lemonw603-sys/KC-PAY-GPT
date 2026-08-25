@@ -8,7 +8,7 @@
 
 | 工作线 | 独立 worktree | 范围 | 当前状态 |
 |---|---|---|---|
-| 非 Browser 统筹 | `/Users/lemon/.codex/worktrees/nonbrowser/AI充值业务` | release 对账、后台/API/订单/卡片/账本验收和跨线协调 | 线上旧 release 已确认，待候选 release 集成 |
+| 非 Browser 统筹 | `/Users/lemon/.codex/worktrees/nonbrowser/AI充值业务` | release 对账、后台/API/订单/卡片/账本验收和跨线协调 | 候选 `e32a6fd` 已部署，等待后台登录后逐页验收 |
 | 竞品研究 | `/Users/lemon/.codex/worktrees/c566/AI充值业务` | 公开竞品证据、能力矩阵和建议 | 尚无正式研究结论 |
 | Browser 充值线 | `/Users/lemon/.codex/worktrees/9128/AI充值业务` | Browser Worker、控制面、非付款 PoC、Browser 测试/合同 | 本地 soak 有证据，真实 Session/Checkout/付款未验证 |
 

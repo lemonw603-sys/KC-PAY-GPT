@@ -191,3 +191,13 @@
 - 候选静态资源指纹和精确文件清单已写入 `docs/2026-08-25_non-browser-release-reconciliation.md`。
 - 当前分类：代码已验证、已提交、未部署；线上仍为旧 release `7587d44`；未执行开卡、余额充值、Provider 写入、Plus 付款、退款、提现。
 - 下一步：取得单独部署确认后再打包/部署；部署后重新登录后台验收接单与自动充值两个独立控制项，并现场只读核对迁移/开关/systemd/运行 commit。
+
+## 2026-08-25｜非 Browser release 已部署
+
+- 用户已明确确认部署；部署前发现 `dispatch_new_recharges=true`，先停止 Worker，并将派发保护性关闭为 `false`；接单和 Provider 三类写入始终保持关闭。遗留 task 22（`ASSIGN_CARD/PENDING`）未清理。
+- 候选从提交 `e32a6fd` 构建，服务端归档 SHA-256：`b0d7ee8394af959ae82fb3fd3e88546e9c52e0a2f23550f7678722e78664be8d`；release `/opt/pojia/releases/20260825-nonbrowser-e32a6fd-fixed` 的 242/242 manifest 校验通过。
+- 迁移 001–037 全部 `already applied`；部署前备份 `/var/backups/pojia/pojia-20260825T032925Z.sql.gz.enc`，`pojia-ops check` 报告 `backup_integrity=OK`。
+- 部署后 Web/Worker/Bark/卡只读同步/目录同步 active，付费卡库存 runner inactive；公网 `/health/live` 和 `/health/ready` 均 200；`/admin` 未登录 302 到登录页。
+- 线上 admin.js/admin.css SHA-256 与候选一致；admin.js 已包含 `toggle-order-acceptance`、`toggle-recharge-dispatch`、两个新 POST 路由和“停止自动充值”；未认证 POST 路由返回 401 `admin_auth_required`。
+- readiness 仍为 `ok=true`，接单/派发/Provider 写入关闭，资金风险、Permit、UNKNOWN Provider 调用、对账案件和 Browser 活动队列为 0；未执行开卡、余额充值、Provider 写入、Plus 付款、退款或提现。
+- 下一步：有管理员会话后完成后台逐页只读验收；继续保持所有写入门禁关闭，不在验收过程中清理 task 22 或历史异常。

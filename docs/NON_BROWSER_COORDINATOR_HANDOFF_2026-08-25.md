@@ -6,12 +6,12 @@
 
 - 路径：`/Users/lemon/.codex/worktrees/nonbrowser/AI充值业务`
 - 分支：`codex/nonbrowser-integration-20260825`
-- 最近提交：`f3bbe93 fix(non-browser): preserve funding identity and retry gateway uncertainty`
-- 工作区：已精确提取 3 个非 Browser 源文件和 3 个回归测试；不得混入竞品或 Browser 改动。
+- 最近提交：`e32a6fd docs(non-browser): correct candidate file count`
+- 工作区：候选已部署；交接文档更新不得混入竞品或 Browser 改动。
 
 ## 当前阶段
 
-非 Browser 生产 release 对账与候选 release 集成准备；候选提交已形成，等待独立部署确认。
+非 Browser 候选 release 已部署，正在进行部署后运行时和后台只读验收。
 
 ## 已完成
 
@@ -23,27 +23,29 @@
 - 已提取并提交三项安全修复：`CARD_READY -> CLOSED`、HNSKJ `502/503` 保持同键可重试且结果不确定、卡余额准备强制调用方提供稳定幂等键。
 - 候选提交：`f3bbe93`；`v1` 当前 242 个 Git 跟踪文件。
 - 候选静态资源指纹已记录在 release reconciliation 文档。
+- 已部署 `/opt/pojia/releases/20260825-nonbrowser-e32a6fd-fixed`；服务端 242/242 manifest 校验通过，迁移 001–037 均已应用。
+- 部署后 Web/Worker active，公网 live/ready 均 200；接单、派发、Provider 写入仍关闭。
 
 ## 当前事实
 
 - 线上 `/health/ready` 返回 HTTP 200，状态为 `ready`。
 - 线上 `/admin` 未登录返回 HTTP 302 到登录页。
-- SSH 生产只读连接被远端关闭；systemd、`/opt/pojia/current`、迁移版本和数据库开关仍未验证。
-- 当前源码分支 `f3bbe93` 已包含非 Browser 拆分、后台优化、窄屏修复和本轮安全修复；这些改动尚未形成新的生产 release。
+- 当前运行 `/opt/pojia/current` 已指向候选 release；systemd、迁移版本和数据库开关已现场只读核验。
+- 当前源码分支 `e32a6fd` 已包含非 Browser 拆分、后台优化、窄屏修复和本轮安全修复；已部署 release 与候选提交一致。
 - 原共享 checkout 的未提交资产仍保留在竞品 worktree；本轮只提取了明确属于非 Browser 的 6 个文件。
 
 ## 下一条可执行动作
 
-1. 取得单独部署确认；部署前按 `f3bbe93` 和静态资源指纹打包并做数据库备份。
-2. 部署后重新做后台现场验收：接单与自动充值必须显示为两个独立控制项和路由。
-3. 生产数据库开关、迁移版本、systemd 与当前运行 commit 仍需现场只读核验。
+1. 在有管理员会话后逐页验收后台：接单与自动充值必须显示为两个独立控制项和路由。
+2. 继续保持接单、派发和 Provider 写入关闭；不执行真实开卡、充值或付款。
+3. 处理或明确保留 task 22、历史 intake batch 和历史异常，不能在部署验收中顺手清理。
 
 ## 未验证/禁止动作
 
 - 未验证线上数据库开关、systemd 服务、迁移版本和当前运行 commit。
 - 未验证后台登录后的两个新开关。
 - 未执行开卡、卡余额充值、Plus 付款、退款、提现或任何 Provider 写调用。
-- 未经单独确认不得切换生产 release、开启 Provider 写入或执行真实资金操作。
+- 已获得本次部署确认并完成 release 切换；仍不得开启 Provider 写入或执行真实资金操作。
 - 全量测试受环境限制：`369 pass / 34 skipped / 3 fail`；失败为当前 Unicode worktree 下 customer 静态页 500，以及两个需要 `playwright` 的 Browser 集成测试缺包。三项本次安全修复的定向回归为 `36/36 pass`。
 
 ## 交付前必须更新

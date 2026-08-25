@@ -2,17 +2,17 @@
 
 ## 结论
 
-线上后台当前仍运行旧 release `7587d44`；当前仓库的接单/自动充值拆分、后台去重/导航修复和窄屏修复均尚未进入线上静态资源。
+线上后台已切换到 `/opt/pojia/releases/20260825-nonbrowser-e32a6fd-fixed`；接单/自动充值拆分、后台去重/导航修复和窄屏修复已进入线上静态资源。
 
 ## 只读证据
 
 - `GET https://ops.vibebridge.top/health/ready`：HTTP 200，`{"status":"ready"}`。
 - `GET https://ops.vibebridge.top/admin`：HTTP 302 到 `/admin/login`。
-- 线上 `/admin/assets/admin.js` SHA-256：`720d96cad1fe7e70cbf372ccf1f01e2181c3c3e009020a78d619cca57fbd4d73`，与 Git `7587d44` 完全匹配。
-- 线上 `/admin/assets/admin.css` SHA-256：`9d49f2dba810cc3875853cdb93a76ae34a3c7461d49f9c590e83a7fa45aa36de`，与 Git `7587d44` 完全匹配。
-- 线上 `admin.js` 没有 `toggle-recharge-dispatch`、`/recharge-dispatch` 或“停止自动充值”。
-- 未认证探测 `/api/v1/admin/operations/order-acceptance` 和 `/api/v1/admin/operations/recharge-dispatch` 均返回 HTTP 404。
-- SSH 到既有生产主机的只读连接被远端关闭，因此 systemd、`/opt/pojia/current`、迁移版本和数据库开关仍标记为未验证。
+- 线上 `/admin/assets/admin.js` SHA-256：`6a3ce5a855b9d5213d0fc05ef5566a3f5ba89a38103688be70d327ced3f87612`，与候选包一致。
+- 线上 `/admin/assets/admin.css` SHA-256：`445b1b43f04c943b15ff8f03b8d5dcedb6fd3c0c665d94df5c3063ad4e17b412`，与候选包一致。
+- 线上 `admin.js` 已包含 `toggle-recharge-dispatch`、`/recharge-dispatch`、`toggle-order-acceptance` 和“停止自动充值”。
+- 未认证 POST 探测 `/api/v1/admin/operations/order-acceptance` 和 `/api/v1/admin/operations/recharge-dispatch` 均返回 HTTP 401 `admin_auth_required`；GET 返回 404 符合仅 POST 路由设计。
+- SSH 现场核验：`/opt/pojia/current` 指向候选；Web/Worker/Bark/只读同步 active，付费卡库存 runner inactive；迁移最新为 037。
 
 ## 分层状态
 
@@ -20,16 +20,16 @@
 |---|---|
 | 当前源码 | 代码已验证 |
 | 当前分支 | 候选已提交 `f3bbe93`，未部署 |
-| 线上静态资源 | 已部署旧版 `7587d44` |
-| 接单/自动充值拆分 | 代码完成，线上未部署 |
-| 线上数据库开关 | 未验证 |
+| 线上静态资源 | 候选已部署，SHA 与候选一致 |
+| 接单/自动充值拆分 | 已部署；未认证 POST 路由返回 401 |
+| 线上数据库开关 | 已验证：接单 false、派发 false |
 | 真实资金行为 | 未执行 |
 
 ## 下一步
 
-1. 以候选提交 `f3bbe93` 取得单独部署确认。
-2. 部署前重算下列静态资源指纹并生成发布包；部署后登录后台验证两个开关和两个写路由，资金写开关继续关闭。
-3. 生产数据库开关、迁移版本、systemd 与当前运行 commit 仍需现场只读核验。
+1. 在获得管理员会话后逐页验收后台两个独立控制项和对应路由。
+2. 继续保持接单、派发和 Provider 写入关闭；不执行真实开卡、余额充值或付款。
+3. 处理或明确保留遗留 task 22、历史 intake batch 和历史异常。
 
 ## 候选 Release 对账（未部署）
 
@@ -55,4 +55,14 @@
 | `v1/public/admin/assets/admin.css` | `445b1b43f04c943b15ff8f03b8d5dcedb6fd3c0c665d94df5c3063ad4e17b412` |
 
 - 验证：`git diff --check` 通过；定向回归 `node --test test/order-status.test.js test/provider.test.js test/card-funding-repository.test.js` 为 `36 pass / 0 fail`；全量 `npm test` 为 `369 pass / 34 skipped / 3 fail`。全量失败均为环境/基线阻塞：Unicode worktree 下 customer 静态页 500、两个 Browser 测试缺 `playwright`；不能写成候选 release 已全量通过。
-- 状态分类：代码已验证；候选已提交；未部署；线上仍为旧 release `7587d44`；真实资金行为未执行。
+- 状态分类：代码已验证；候选已提交；已部署；运行时已验证（health、manifest、迁移、服务和静态资源）；后台登录后逐页验收未完成；真实资金行为未执行。
+
+## 部署后证据（2026-08-25）
+
+- 部署前备份：`/var/backups/pojia/pojia-20260825T032925Z.sql.gz.enc`，`pojia-ops check` 校验 `backup_integrity=OK`。
+- 候选归档服务端 SHA-256：`b0d7ee8394af959ae82fb3fd3e88546e9c52e0a2f23550f7678722e78664be8d`；release manifest `242/242` 通过。
+- 迁移：001–037 全部 `already applied`。
+- 服务：Web、Worker、Bark、卡只读同步和目录同步 active；卡库存付费 runner inactive。
+- 公网：`/health/live` HTTP 200，`/health/ready` HTTP 200，`/admin` 未登录 HTTP 302 到 `/admin/login`。
+- readiness：`ok=true`；`acceptNewOrders=false`、`dispatchNewRecharges=false`；活动资金风险、Permit、UNKNOWN provider call、对账案件和 Browser 活动队列均为 0；task 22 仍为历史 `ASSIGN_CARD/PENDING`，未清理。
+- 期间未执行开卡、卡余额充值、Provider 写入、Plus 付款、退款或提现。

@@ -1,18 +1,19 @@
-# 当前状态快照（2026-08-24）
+# 当前状态快照（2026-08-25）
 
 > 本文件只保留当前有效状态；历史过程以 `HANDOFF_LOG.md` 和验证报告中的带日期证据为准。
 
 ## 已验证事实（本轮现场/代码证据）
 
-- 生产 release：`/opt/pojia/releases/20260823-admin-ui-alert-7587d44`。
+- 生产 release：`/opt/pojia/releases/20260825-nonbrowser-e32a6fd-fixed`，候选提交 `e32a6fd`。
 - Web、Worker、MySQL、Bark 正常；卡库存付费 runner 未运行；只读同步和目录同步 timer 正常。
 - 最新迁移：`037_card_discovery_latest_index`。
-- readiness：`ok=true`；接单、派发和三类 Provider 写入均关闭；活动 Permit、资金风险、对账案件、Browser 活动队列均为 0；存在 1 个历史遗留活动任务。
+- readiness：`ok=true`；`acceptNewOrders=false`、`dispatchNewRecharges=false`、三类 Provider 写入均关闭；活动 Permit、资金风险、对账案件、Browser 活动队列均为 0；存在 1 个历史遗留 `ASSIGN_CARD/PENDING` 任务（task 22），未擅自清理。
+- 发布后公网 `/health/live`、`/health/ready` 均 HTTP 200；线上 `admin.js`、`admin.css` SHA-256 与候选包一致；未认证 POST 接单/派发新路由均返回 401。
 - HNSKJ 只读检查和网页只读核验通过：余额 `75.670000 USD`、18 张可见卡、7 张 active；本轮未执行开卡、卡余额充值或其他写操作。
 - 运营后台已登录并完成逐页只读交叉验证：总览、订单、异常、资金证据、卡余额充值、卡台路线、Browser、库存、CDK 均可访问。
 - 后台现场口径：累计订单 3、自动处理中 1、三方对账异常 1、资金结果未决 0、卡余额充值待处理 0、待验证新卡 13、本地可分配卡 0、Browser run 0、CDK 可使用批次 10。
 - 客户付款前 dry-run：Session JSON 前缀尾部多 19 个非 JSON 字符；在浏览器内存清理后解析成功，但因 `acceptNewOrders=false` 被页面短路，没有发出 `/api/v1/orders`。
-- 本地当前工作树测试最近一次结果：409 tests / 375 pass / 0 fail / 34 skipped。408/374/0/34 是较早代码状态的历史结果。
+- 本地候选定向回归：36/36 通过；全量测试：369 pass / 34 skipped / 3 fail（Unicode worktree customer 静态页 500、两个 Browser 测试缺 `playwright`）。
 
 ## 用户确认的当前条件
 
