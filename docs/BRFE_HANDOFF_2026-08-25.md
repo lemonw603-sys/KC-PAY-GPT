@@ -4,13 +4,13 @@
 
 - Worktree：`/Users/lemon/.codex/worktrees/9128/AI充值业务`
 - 分支：`codex/browser`
-- 基线 HEAD：`bd9f05b4949f86b9ec095c16abaf7ab6f01f277e`；当前交接提交：`7a831ae`
+- 当前 HEAD：`bb9429d`（`feat(browser): simulate upstream nonpayment execution`）
 - 当前跟踪文件无修改；未跟踪：`.playwright-cli/`、`artifacts/`
 - 本入口只维护 Browser 线，不覆盖非 Browser 共享事实源。
 
 ## 当前阶段
 
-阶段 M5（共享合同只读兼容层）已完成；`browser-mvp/` 已接入当前分支，但尚未接入新版 BRFE 控制面或共享核心写路径。不能把其他 worktree/分支中的 Browser 提交视为本分支已完成。
+阶段 M6（上游只读投影 → Browser 非付款执行模拟）已完成；`browser-mvp/` 已接入当前分支，但尚未接入新版 BRFE 控制面或共享核心写路径。不能把其他 worktree/分支中的 Browser 提交视为本分支已完成。
 
 ## M0 已完成与验证
 
@@ -88,7 +88,7 @@
 
 ## 下一步唯一动作
 
-由统筹窗口评审 `docs/2026-08-25_browser-shared-contract-compat.md` 的未决合同；未冻结前不进入共享写路径、真实 Session、Checkout、卡片、付款、Provider 写入或生产 release；不 cherry-pick 混合检查点，不使用 `git add -A`，不清理 `.playwright-cli/`/`artifacts/`。
+在 Browser-only 范围建立隔离 MySQL **只读** projection adapter 的合同测试：仅读取统筹窗口冻结的订单/attempt/card/route/readiness 字段，转成 `projectUpstreamBrowserJob()` 输入，再复用现有本地 dispatch 与非付款 BrowserContext。未冻结前不进入共享写路径、真实 Session、Checkout、卡片、付款、Provider 写入或生产 release；不 cherry-pick 混合检查点，不使用 `git add -A`，不清理 `.playwright-cli/`/`artifacts/`。
 
 ## 2026-08-26 卡台/非 Browser 交接补充
 
@@ -119,7 +119,13 @@
 
 ## 2026-08-26 实施进展
 
-上一条“唯一动作”已在 Browser-only 范围内完成一个非付款切片：上游只读投影 → durable dispatch → claim/lease → 隔离 BrowserContext → evidence → complete。实现文件和测试详见 `BROWSER_CURRENT_STATUS_2026-08-25.md`。下一步不是接真实付款，而是等待统筹窗口提供/冻结 MySQL 上游 projection adapter 的输入合同和调用预算；之后再做隔离 MySQL 非付款联调。
+上一条“唯一动作”已在 Browser-only 范围内完成一个非付款切片：上游只读投影 → durable dispatch → claim/lease → 隔离 BrowserContext → evidence → complete。随后已补上 Browser-only 的 MySQL 只读 adapter 合同（`browser-mvp/src/mysql-upstream-adapter.js`）：它只执行一次参数化 SELECT，从统筹层冻结的 `browser_upstream_ready_projection` 视图读取字段，再调用 `projectUpstreamBrowserJob()`；没有写方法，不读取卡凭据，不自行把 `PREPARED` 猜测成 Browser 状态。由于共享窗口尚未提供该视图/正式 schema，真实 MySQL 连接目前会按缺表失败闭合。测试覆盖 27/27 通过；该 adapter 仍是隔离合同，不是生产接线。
+
+卡台调用约束保持不变：adapter 只读投影，默认复用已存在 readiness 快照；不得在每个 Browser 页面动作前重新拉卡台，状态刷新使用关键阶段读取和递增轮询。
+
+## 关键资金动作可见性（设计约束）
+
+运营后台/审计视图不得只显示“成功/失败”。涉及扣款、冻结或消费时，必须显示动作类型、provider account、cardRef/card ID、order/attempt/browser run、幂等键、provider call ID、动作前后账户余额、预计/实际扣款、手续费、外部引用和对账状态；卡台账户余额、卡片余额、卡片补余额金额、Plus 实际消费金额必须分栏展示。当前 Browser M6 只产生 `intent/checkpoint` 观察证据，未产生任何付款副作用。
 
 ## 共享事实源边界
 
