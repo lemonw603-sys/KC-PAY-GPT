@@ -182,3 +182,12 @@
 - 未验证边界：A1 网络级 KILL 风暴/长时间重连组合、A2 主从/故障转移、真实非 PH Session 页面、PH cohort、真实 Checkout/付款和生产 Worker 仍未验证。旧 24h metadata 仍是历史 `RUNNING`，以日志和独立查询为准；后续新 runner 会自动更新状态。
 - 下一唯一动作：在不接外部付款的前提下，继续完成 `NON_PH_FUNCTIONAL` 只读观察器前置；若没有仓库外 `0600` Session 输入，只运行 manifest/观察器本地测试，不启动真实观察。
 - Git：本窗口只提交上述 Browser Worker/soak 代码、测试和事实源；其他窗口未提交修改保持不动。
+
+## 2026-08-25｜非 Browser 候选 release 集成对账
+
+- 工作线：非 Browser 统筹/集成验收；竞品与 Browser 仍在独立 worktree，本次未修改其文件。
+- 完成：从竞品 worktree 精确提取 3 个非 Browser 源文件和 3 个回归测试，提交 `f3bbe93`；修复 `CARD_READY -> CLOSED`、HNSKJ 502/503 的同键不确定重试分类、卡余额准备缺失幂等键时禁止自动生成 UUID。
+- 验证：`git diff --check` 通过；定向回归 36/36 通过；`npm test` 369 通过、34 跳过（隔离数据库）、3 个环境/基线失败（Unicode worktree customer 静态页 500、两个 Browser 测试缺 playwright）。
+- 候选静态资源指纹和精确文件清单已写入 `docs/2026-08-25_non-browser-release-reconciliation.md`。
+- 当前分类：代码已验证、已提交、未部署；线上仍为旧 release `7587d44`；未执行开卡、余额充值、Provider 写入、Plus 付款、退款、提现。
+- 下一步：取得单独部署确认后再打包/部署；部署后重新登录后台验收接单与自动充值两个独立控制项，并现场只读核对迁移/开关/systemd/运行 commit。
