@@ -15,7 +15,8 @@
 - **B 窄屏响应式已修复**（`admin.css`）：`@media (max-width:900px)` 补 `.filters { repeat(auto-fill, minmax(140px,1fr)) }` + 搜索框独占行，消除 620–900px「查询按钮溢出视口」死区；浏览器验证 桌面 6 列无回归、700px 死区 4 列换行 btnVisible=true（btnRight=189≪700）。
 - B 金额精度（发现②）：用户决定**暂不修，留作已知低优先项**（存储 DECIMAL(18,6)+`decimalNumbers:false` 精确字符串返回，3 处仅余额门槛直接比较、值域几十美元，实际不触发）。
 - 本次提交：`admin.css`（窄屏）+ 本审查报告 + 本 HANDOFF 记录（`admin.js` 前已提交 `6e5eadc`）。DECISIONS.md / CURRENT_STATE.md 未动（含其他窗口/旧会话未提交改动）。
-- 下一步：C（UI 增量优化：清单2 总览瘦身、空态引导等）。
+- C（UI 增量）用户决定**收尾不做**（UI 已成熟，A/B 已交付核心价值）。本轮到此，本地实测环境已清理（server 停、临时库 `pojia_local` 删，Browser 线库未动）。
+- **下一会话接班入口**：`docs/NON_BROWSER_HANDOFF_2026-08-25.md`（操作性交接：避坑/已确证/待办/本地实测搭法，对应 Browser 线的 `BRFE_HANDOFF_2026-08-22.md`）。
 
 ## 2026-08-24｜接班核实：拆分开关闭环完整 + 测试基线校准（只读，未改业务代码）
 
