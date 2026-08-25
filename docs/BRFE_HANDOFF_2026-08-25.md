@@ -90,6 +90,30 @@
 
 由统筹窗口评审 `docs/2026-08-25_browser-shared-contract-compat.md` 的未决合同；未冻结前不进入共享写路径、真实 Session、Checkout、卡片、付款、Provider 写入或生产 release；不 cherry-pick 混合检查点，不使用 `git add -A`，不清理 `.playwright-cli/`/`artifacts/`。
 
+## 2026-08-26 卡台/非 Browser 交接补充
+
+本轮按“先看卡台 API，再看非 Browser 真实代码”的要求完成只读核实，未修改非 Browser 文件、未调用 HNSKJ 卡余额充值或 Plus 付款写接口。详细地图见：
+`docs/browser-research/nonbrowser-card-funding-and-recharge-map-2026-08-26.md`。
+
+已确认：
+
+- HNSKJ `/cards/purchase` 是开卡；`openCardAmount` 是卡片初始余额，不是 Plus 实际扣款。
+- HNSKJ `/cards/{id}/recharge` 是既有卡补余额；非 Browser worktree 已有 `rechargeCard()`、`card_funding_attempts`、准备/提交/未知/只读对账/人工结案代码，但当前 `codex/browser` 和 `main` 不包含该批文件。
+- 非 Browser Plus 主链路是 HNSKJ 卡台卡片 → ZZSHU `create_direct` → `order_no/card_key` 轮询；这不是 Browser Checkout 链路。
+- 当前 Browser 不应直接拿 HNSKJ/ZZSHU 密钥或复用 card-funding attempt 作为 Browser 付款 attempt；只应消费共享卡引用、路线和卡片就绪证明。
+
+已验证：
+
+- 非 Browser worktree 定向卡资金/库存测试 16/16 通过。
+- 代码和部署证据显示卡余额充值写开关、生产 funding runner 保持关闭；没有真实 Browser 卡片/Checkout/付款接线证据。
+
+未验证：
+
+- HNSKJ `/cards/{id}/recharge` 真实写响应及同幂等键重放。
+- Browser 是否最终复用 HNSKJ 卡片、ZZSHU 直充，或走独立 Checkout 资金路径。
+
+下一步仍保持唯一动作：由统筹窗口冻结 Browser 与共享核心的 `cardRef/routeRef/cardReadyEvidence` 输入合同；在此之前不接卡台 API、不接真实 Session/Checkout、不进入付款写路径。
+
 ## 共享事实源边界
 
 本次未修改 `docs/CURRENT_STATE.md`、`docs/DECISIONS.md`、`docs/HANDOFF_LOG.md`。需要跨线更新时，先向非 Browser 统筹窗口提出。

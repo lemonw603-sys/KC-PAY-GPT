@@ -48,3 +48,10 @@
 ## 下一步
 
 M5 只读兼容层已完成；等待统筹窗口评审未决合同，保持 Browser-only 隔离，不接共享订单写入、MySQL 写入或真实 Browser 付款。
+
+## 2026-08-26 卡台与非 Browser 事实补充
+
+- 已按代码和隔离测试核实 HNSKJ 卡台的开卡、既有卡补余额、卡片就绪和库存接管语义；详见 `docs/browser-research/nonbrowser-card-funding-and-recharge-map-2026-08-26.md`。
+- 非 Browser worktree 的卡片补余额实现属于 `card_funding_attempts` 资金动作，不等于 Browser 的 Plus `recharge_attempt`；当前 Browser 分支未接入它。
+- 当前 worktree 仍无共享 MySQL adapter、真实卡片引用、真实 Session provider、Checkout artifact 或支付 permit。
+- 本轮没有修改非 Browser 共享核心、没有调用卡台写接口、没有执行真实付款。
