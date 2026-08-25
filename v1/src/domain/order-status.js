@@ -34,6 +34,7 @@ const transitions = new Map([
   [OrderStatus.CARD_READY, new Set([
     OrderStatus.WAITING_FOR_SESSION,
     OrderStatus.SUBMITTING,
+    OrderStatus.CLOSED,
     OrderStatus.RECONCILIATION_REQUIRED
   ])],
   [OrderStatus.WAITING_FOR_CARD, new Set([

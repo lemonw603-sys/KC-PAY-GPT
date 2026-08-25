@@ -30,7 +30,7 @@ async function withTransaction(pool, action) {
 
 export function createCardFundingRepository(pool) {
   async function prepare({ cardId, amount, currency = 'USD', providerAccountId, orderId = null,
-    idempotencyKey = crypto.randomUUID() }) {
+    idempotencyKey }) {
     const card = String(cardId || '').trim();
     const provider = String(providerAccountId || '').trim();
     const key = String(idempotencyKey || '').trim();

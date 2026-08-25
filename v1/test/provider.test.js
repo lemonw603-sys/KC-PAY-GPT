@@ -117,6 +117,30 @@ test('Hnskj marks 503 as same-key retryable but never invents a new key', async 
   );
 });
 
+test('Hnskj marks 502 as same-key retryable while preserving the unknown result', async () => {
+  const calls = [];
+  const provider = new HnskjCardProvider({
+    baseUrl: 'https://card.example/api/open/v1',
+    apiKey: 'nhs_test_key',
+    fetchImpl: async (url, init) => {
+      calls.push({ url, init });
+      return response({ success: false, message: '网关异常' }, 502);
+    }
+  });
+
+  await assert.rejects(
+    provider.purchaseCard({
+      cardTypeId: 7,
+      openCardAmount: 25,
+      idempotencyKey: 'order-123456789012345'
+    }),
+    (error) => error instanceof ProviderError
+      && error.retryable === true
+      && error.uncertain === true
+  );
+  assert.equal(calls[0].init.headers['X-Idempotency-Key'], 'order-123456789012345');
+});
+
 test('Hnskj rejects an invalid idempotency key before network access', async () => {
   let called = false;
   const provider = new HnskjCardProvider({

@@ -37,6 +37,11 @@ test('allows a paid order to wait for replenishment and resume when a card is as
   assert.equal(canTransitionOrder(OrderStatus.WAITING_FOR_CARD, OrderStatus.CARD_READY), true);
 });
 
+test('allows an untouched card-ready order to be cancelled before recharge submission', () => {
+  assert.equal(canTransitionOrder(OrderStatus.CARD_READY, OrderStatus.CLOSED), true);
+  assert.doesNotThrow(() => assertOrderTransition(OrderStatus.CARD_READY, OrderStatus.CLOSED));
+});
+
 test('blocks retrying an ambiguous submission by state transition', () => {
   assert.equal(
     canTransitionOrder(OrderStatus.SUBMIT_UNKNOWN, OrderStatus.SUBMITTING),

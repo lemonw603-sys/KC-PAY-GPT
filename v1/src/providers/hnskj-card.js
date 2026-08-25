@@ -136,7 +136,7 @@ function parseEnvelope(response, { uncertainOnSchema = false, retryableOnSchema 
       provider: 'hnskj',
       status: response.status,
       businessCode: error.code,
-      retryable: response.status === 503,
+      retryable: response.status === 502 || response.status === 503,
       uncertain: response.status >= 500
     });
   }
