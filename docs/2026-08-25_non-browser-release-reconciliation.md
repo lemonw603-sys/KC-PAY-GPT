@@ -65,5 +65,6 @@
 - 迁移：001–037 全部 `already applied`。
 - 服务：Web、Worker、Bark、卡只读同步和目录同步 active；卡库存付费 runner inactive。
 - 公网：`/health/live` HTTP 200，`/health/ready` HTTP 200，`/admin` 未登录 HTTP 302 到 `/admin/login`。
+- 客户入口 `https://plus.vibebridge.top/` HTTP 200（8,314 bytes），页面包含 `submit-form` 和 `query-form`；未提交订单或 Session。
 - readiness：`ok=true`；`acceptNewOrders=false`、`dispatchNewRecharges=false`；活动资金风险、Permit、UNKNOWN provider call、对账案件和 Browser 活动队列均为 0；task 22 仍为历史 `ASSIGN_CARD/PENDING`，未清理。
 - 期间未执行开卡、卡余额充值、Provider 写入、Plus 付款、退款或提现。
