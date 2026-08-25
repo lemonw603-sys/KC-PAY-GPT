@@ -173,4 +173,4 @@
 
 长期能力方向草案见：
 `docs/browser-research/browser-automation-future-roadmap-2026-08-26.md`。
-该路线图待用户确认后再作为 Browser 线长期方向冻结；不覆盖共享 `CURRENT_STATE/DECISIONS/HANDOFF_LOG`。
+用户已于 2026-08-26 确认该路线图作为 Browser 线长期方向冻结；不覆盖共享 `CURRENT_STATE/DECISIONS/HANDOFF_LOG`。

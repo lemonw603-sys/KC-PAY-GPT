@@ -105,4 +105,4 @@
 - 第一条链路优先使用 Google Chrome 独立 Profile：卡台已就绪 Visa 卡 → Session Bootstrap/账号核验 → Checkout → 真实付款 → 订阅权益与卡台交易核对 → 最小审计与清理。
 - 指纹浏览器保留为并行兼容性 Spike，不阻塞第一条 Chrome 真实纵向切片；多机调度、完整后台、复杂 Artifact Vault、多 Provider fallback 和容量压测后移。
 - 真实付款采用 `1 笔 → 2–3 笔受控连续` 闸门；首次真实付款提交前仍需单独确认，当前生产付款写开关保持关闭。
-- 长期 Browser 能力路线图草案见 `docs/browser-research/browser-automation-future-roadmap-2026-08-26.md`，待用户确认后冻结。
+- 长期 Browser 能力路线图已由用户于 2026-08-26 确认冻结，见 `docs/browser-research/browser-automation-future-roadmap-2026-08-26.md`。
