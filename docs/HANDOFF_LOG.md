@@ -1,5 +1,38 @@
 # 交接记录
 
+## 2026-08-25｜后台优化 1/3/4 落地 + A 非 Browser 后端只读审查
+
+- 工作线：非 Browser。本轮业务改动仅前端 `v1/public/admin/assets/admin.js`（已提交），后端为纯只读审查。
+- **后台优化（清单 1/3/4）已提交 `6e5eadc`**：
+  - 清单3 去重：总览 Provider 健康卡不再重复渲染「本地可分配卡」（保留带低库存告警+下钻的 metric 卡）。
+  - 清单4 导航身份自愈：引入 `state.nav` 与 `state.view` 解耦 + `setActiveNav` helper；exceptions 伪 view 不再把导航身份塌成 orders；异常队列内改筛选提交后导航归位到订单。
+  - 清单1：按用户选择**保留**「异常队列」高频入口（三入口协调，非删除）。
+  - 清单5 证伪剔除（交接所述 `admin-auth.js:65` 死代码不存在；真实文件 `admin-session.js` 中 `timingSafeEqual` 均为有效使用）。
+  - 验证：`cd v1 && node --test` = **411/377/0/34**；本地全栈（独立 `pojia_local` 库）浏览器实测：导航自愈 ✓、去重 countInPage=1 ✓、console 零错误 ✓。
+- **A 非 Browser 后端只读审查完成**，报告落盘 `docs/2026-08-25_non-browser-backend-readonly-audit.md`：
+  - 8 个风险面（防重复扣款/凭证安全/认证授权/并发一致性/补偿·取消续费/分页边界/状态机迁移/订单追溯）全部过关，**无 P0/P1**。
+  - 5 个 P2/P3 发现：①hnskj 502 归 uncertain vs 文档（代码更保守）；②余额门槛浮点比较（→B）；③`CARD_READY→CLOSED` 状态机缺 domain 边（cancelOrder 绕过 `assertOrderTransition`）；④card-funding 默认 `randomUUID` 幂等键（建议传稳定 key）；⑤redaction `nhs_` 前缀待确认。
+- **B 窄屏响应式已修复**（`admin.css`）：`@media (max-width:900px)` 补 `.filters { repeat(auto-fill, minmax(140px,1fr)) }` + 搜索框独占行，消除 620–900px「查询按钮溢出视口」死区；浏览器验证 桌面 6 列无回归、700px 死区 4 列换行 btnVisible=true（btnRight=189≪700）。
+- B 金额精度（发现②）：用户决定**暂不修，留作已知低优先项**（存储 DECIMAL(18,6)+`decimalNumbers:false` 精确字符串返回，3 处仅余额门槛直接比较、值域几十美元，实际不触发）。
+- 本次提交：`admin.css`（窄屏）+ 本审查报告 + 本 HANDOFF 记录（`admin.js` 前已提交 `6e5eadc`）。DECISIONS.md / CURRENT_STATE.md 未动（含其他窗口/旧会话未提交改动）。
+- 下一步：C（UI 增量优化：清单2 总览瘦身、空态引导等）。
+
+## 2026-08-24｜接班核实：拆分开关闭环完整 + 测试基线校准（只读，未改业务代码）
+
+- 窗口/工作线：非 Browser 接班执行窗口；本轮纯只读核实，未改任何 v1 代码/迁移/生产/其他窗口改动。
+- **核实结论：上个会话“接单/自动充值拆成两个独立开关 + 后台文案改名”闭环完整、已提交、无缺失需补齐。**
+  - service `admin-operations-service.js`：独立 `setOrderAcceptance` + `setDispatch`，联动已解除（开接单不再强开派发，注释明确）。
+  - route `create-app.js:393/398`：`/operations/order-acceptance` + `/operations/recharge-dispatch` 两个 POST。
+  - server `server.js:185-186`：`setAdminOrderAcceptance` + `setAdminDispatch` 已接线。
+  - 前端 `admin.js:340/342`：接单/自动充值两组按钮，确认词/文案齐全（“开始/停止自动充值”）。
+  - test `admin-operations-service.test.js`：覆盖 setDispatch 确认词与错误分支。
+  - 落库证据：上述四文件均在提交 `64e464d`（fix: expose independent admin recharge dispatch control），文案收尾在 `c5eecfa`；工作区对这些文件无未提交改动（非丢失）。
+- 测试基线：`cd v1 && node --test` 工作区实测 = **410 / 376 / 0 / 34（全绿）**；该值含 Browser 线未提交测试改动（`browser-dispatch-repository.test.js`、`browser-worker-service.test.js`，净 +143 行）。不再沿用文档旧值 409/375（未在纯提交态复跑）。
+- 分支澄清：当前 checkout `codex/competitor-recharge-research-20260824` 与文档所述 `codex/mvp-zero-cost-ops-20260819` **同指提交 `c5eecfa`**，是同一 HEAD 的两个分支名，非分歧。
+- 校正：`docs/ADMIN_OPTIMIZATION_LOG_2026-08-24.md` 在磁盘与 git 中均不存在（任务描述“可能在磁盘上”不成立），无需处理。
+- 遗留（未动，非本线可改）：`DECISIONS.md` 决策 ID 重复 D-069/D-089/D-109 仍在（行 75/95/96/97/121/153）；其中 D-089/D-109 重复条目位于其他窗口未提交改动，按硬规则本窗口不改。
+- 下一步：方向待用户拍板（候选：后台优化落地 / 非 Browser 主线深度审查 / 生产只读体检）。
+
 ## 2026-08-24｜全项目独立对抗式审查交接
 
 - 日期/模型：2026-08-24，接班执行模型（本窗口）
@@ -139,3 +172,12 @@
 
 - 用户明确要求：以后发现问题必须修正问题本身，不能只记录问题。
 - 执行规则：先定位→实际修正→验证修正结果→更新当前事实源；若暂时无法修正，必须明确阻塞原因和下一步，不得把“已记录”写成“已解决”。
+## 2026-08-24｜Browser A1 长窗口核验与动作超时 fail-closed 修复
+
+- 工作线：Browser 控制面/Worker，未接生产，未执行 Session、Checkout、卡片或付款写入。
+- 本次完成：核验 detached 24 小时隔离 soak 完整日志和独立 MySQL 残留；360/360 claim、0 missing、0 duplicate、360 heartbeat，cleanup 与独立查询四类残留均为 0。修复 `browser-mysql-bounded-soak.js` 残留查询被 `rows.length` 清空后跳过的问题，并让 detached runner 通过 `BROWSER_SOAK_METADATA_PATH` 在结束时写 `COMPLETED/FAILED` 元数据。修复 Browser Worker 动作超时只返回错误但不终止 runtime 的缺口：现在超时触发 AbortSignal 并永久停止 control shell。
+- 修改文件：`v1/src/services/browser-worker-service.js`、`v1/test/browser-worker-service.test.js`、`v1/test-support/browser-mysql-bounded-soak.js`、`v1/test-support/browser-detached-soak-runner.js`；新增 `docs/2026-08-24_browser-stage1-24h-soak-completion-report.md`；同步 `docs/CURRENT_STATE.md`、`docs/BRFE_HANDOFF_2026-08-22.md`、`docs/DECISIONS.md`。
+- 验证命令与结果：`node --test v1/test/browser-worker-service.test.js` → 6/6；`cd v1 && npm test` → 410 tests / 376 pass / 0 fail / 34 skipped；`npm run test:browser-poc` → 11 files / 77 tests 通过；短 soak `TEST_DATABASE_URL=mysql://root:root@127.0.0.1:54741/pojia_test BROWSER_SOAK_METADATA_PATH=/tmp/browser-soak-metadata-20260824.json node v1/test-support/browser-mysql-bounded-soak.js --duration-ms=1000 --jobs=1 --workers=1 --delay-ms=1 --lease-seconds=60` → 4/4 claim、0 duplicate、4 heartbeat、残留 0、metadata `COMPLETED`；`git diff --check` 通过。
+- 未验证边界：A1 网络级 KILL 风暴/长时间重连组合、A2 主从/故障转移、真实非 PH Session 页面、PH cohort、真实 Checkout/付款和生产 Worker 仍未验证。旧 24h metadata 仍是历史 `RUNNING`，以日志和独立查询为准；后续新 runner 会自动更新状态。
+- 下一唯一动作：在不接外部付款的前提下，继续完成 `NON_PH_FUNCTIONAL` 只读观察器前置；若没有仓库外 `0600` Session 输入，只运行 manifest/观察器本地测试，不启动真实观察。
+- Git：本窗口只提交上述 Browser Worker/soak 代码、测试和事实源；其他窗口未提交修改保持不动。
