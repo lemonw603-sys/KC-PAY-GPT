@@ -35,7 +35,7 @@
 
 - 候选分支：`codex/nonbrowser-integration-20260825`
 - 候选提交：`f3bbe93 fix(non-browser): preserve funding identity and retry gateway uncertainty`
-- 候选范围：当前 `v1` 的 241 个 Git 跟踪文件；本次新增/修改文件精确为：
+- 候选范围：当前 `v1` 的 242 个 Git 跟踪文件；本次新增/修改文件精确为：
   - `v1/src/db/repositories/card-funding-repository.js`
   - `v1/src/domain/order-status.js`
   - `v1/src/providers/hnskj-card.js`
