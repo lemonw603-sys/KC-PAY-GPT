@@ -24,6 +24,7 @@
 
 - [`github-research-synthesis-2026-08-25.md`](./github-research-synthesis-2026-08-25.md)：此前 GitHub/公开实现研究的统一归纳。
 - [`competitor-console-observation-2026-08-25.md`](./competitor-console-observation-2026-08-25.md)：用户提供的竞品后台截图观察，不把界面文案当成实现证明。
+- [`competitor-photo-analysis-2026-08-26.md`](./competitor-photo-analysis-2026-08-26.md)：新增 4 张竞品现场照片的结构、安全和 MVP 启发分析。
 
 ## 原始材料位置
 
