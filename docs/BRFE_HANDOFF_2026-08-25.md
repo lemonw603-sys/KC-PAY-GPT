@@ -4,7 +4,7 @@
 
 - Worktree：`/Users/lemon/.codex/worktrees/9128/AI充值业务`
 - 分支：`codex/browser`
-- 基线 HEAD：`bd9f05b4949f86b9ec095c16abaf7ab6f01f277e`；当前交接提交：`67eb275`
+- 基线 HEAD：`bd9f05b4949f86b9ec095c16abaf7ab6f01f277e`；当前交接提交：`92e1955`
 - 当前跟踪文件无修改；未跟踪：`.playwright-cli/`、`artifacts/`
 - 本入口只维护 Browser 线，不覆盖非 Browser 共享事实源。
 
