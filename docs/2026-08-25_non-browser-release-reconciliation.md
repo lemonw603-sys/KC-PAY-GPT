@@ -55,7 +55,7 @@
 | `v1/public/admin/assets/admin.css` | `445b1b43f04c943b15ff8f03b8d5dcedb6fd3c0c665d94df5c3063ad4e17b412` |
 
 - 验证：`git diff --check` 通过；定向回归 `node --test test/order-status.test.js test/provider.test.js test/card-funding-repository.test.js` 为 `36 pass / 0 fail`；全量 `npm test` 为 `369 pass / 34 skipped / 3 fail`。全量失败均为环境/基线阻塞：Unicode worktree 下 customer 静态页 500、两个 Browser 测试缺 `playwright`；不能写成候选 release 已全量通过。
-- 状态分类：代码已验证；候选已提交；已部署；运行时已验证（health、manifest、迁移、服务和静态资源）；后台登录后逐页验收未完成；真实资金行为未执行。
+- 状态分类：代码已验证；候选已提交；已部署；运行时已验证（health、manifest、迁移、服务和静态资源）；后台登录后逐页只读验收已完成；真实资金行为未执行。
 
 ## 部署后证据（2026-08-25）
 
@@ -68,3 +68,13 @@
 - 客户入口 `https://plus.vibebridge.top/` HTTP 200（8,314 bytes），页面包含 `submit-form` 和 `query-form`；未提交订单或 Session。
 - readiness：`ok=true`；`acceptNewOrders=false`、`dispatchNewRecharges=false`；活动资金风险、Permit、UNKNOWN provider call、对账案件和 Browser 活动队列均为 0；task 22 仍为历史 `ASSIGN_CARD/PENDING`，未清理。
 - 期间未执行开卡、卡余额充值、Provider 写入、Plus 付款、退款或提现。
+
+## 后台登录后只读验收（2026-08-25）
+
+- 已刷新用户 Chrome 中精确的 `Plus 运营后台` 登录标签页，确认页面显示“管理员已登录 / 人工确认模式”。
+- 总览“系统开关”实际 DOM：
+  - `接收新订单` → “已停止新订单；已有订单仍可继续处理和轮询” → 按钮“开始接单”。
+  - `自动充值（对已接订单自动购买 Plus）` → 按钮“开始自动充值”。
+  - 两个控制项独立存在，未点击任何按钮。
+- 逐页只读导航成功：总览、订单、异常队列、资金证据核对、卡余额充值、卡台路线、Browser 执行、卡片库存、CDK 管理。
+- 该验收只读取可见页面和 DOM，不提交订单、不改变开关、不生成 CDK、不创建开卡/充值任务、不执行付款。

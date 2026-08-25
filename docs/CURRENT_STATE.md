@@ -9,6 +9,8 @@
 - 最新迁移：`037_card_discovery_latest_index`。
 - readiness：`ok=true`；`acceptNewOrders=false`、`dispatchNewRecharges=false`、三类 Provider 写入均关闭；活动 Permit、资金风险、对账案件、Browser 活动队列均为 0；存在 1 个历史遗留 `ASSIGN_CARD/PENDING` 任务（task 22），未擅自清理。
 - 发布后公网 `/health/live`、`/health/ready` 均 HTTP 200；线上 `admin.js`、`admin.css` SHA-256 与候选包一致；未认证 POST 接单/派发新路由均返回 401。
+- 部署后刷新已登录后台确认：总览显示“接收新订单”和“自动充值（对已接订单自动购买 Plus）”两个独立控制项，分别显示“开始接单”和“开始自动充值”；未点击任何写入按钮。
+- 已逐页只读打开总览、订单、异常队列、资金证据核对、卡余额充值、卡台路线、Browser 执行、卡片库存、CDK 管理，页面均正常渲染。
 - HNSKJ 只读检查和网页只读核验通过：余额 `75.670000 USD`、18 张可见卡、7 张 active；本轮未执行开卡、卡余额充值或其他写操作。
 - 运营后台已登录并完成逐页只读交叉验证：总览、订单、异常、资金证据、卡余额充值、卡台路线、Browser、库存、CDK 均可访问。
 - 后台现场口径：累计订单 3、自动处理中 1、三方对账异常 1、资金结果未决 0、卡余额充值待处理 0、待验证新卡 13、本地可分配卡 0、Browser run 0、CDK 可使用批次 10。

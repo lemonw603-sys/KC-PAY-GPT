@@ -201,3 +201,10 @@
 - 线上 admin.js/admin.css SHA-256 与候选一致；admin.js 已包含 `toggle-order-acceptance`、`toggle-recharge-dispatch`、两个新 POST 路由和“停止自动充值”；未认证 POST 路由返回 401 `admin_auth_required`。
 - readiness 仍为 `ok=true`，接单/派发/Provider 写入关闭，资金风险、Permit、UNKNOWN Provider 调用、对账案件和 Browser 活动队列为 0；未执行开卡、余额充值、Provider 写入、Plus 付款、退款或提现。
 - 下一步：有管理员会话后完成后台逐页只读验收；继续保持所有写入门禁关闭，不在验收过程中清理 task 22 或历史异常。
+
+## 2026-08-25｜部署后后台逐页只读验收完成
+
+- 使用用户 Chrome 中精确的已登录 `Plus 运营后台` 标签页，刷新后读取最新 DOM；未点击开关、未提交表单、未生成 CDK、未创建任务。
+- 总览确认“接收新订单”显示“已停止新订单”并提供“开始接单”；“自动充值（对已接订单自动购买 Plus）”独立提供“开始自动充值”。两个控制项已在实际线上页面分开显示。
+- 逐页只读导航成功：总览、订单、异常队列、资金证据核对、卡余额充值、卡台路线、Browser 执行、卡片库存、CDK 管理。
+- 本轮完成部署后运行时和后台只读验收；接单、派发、Provider 写入继续关闭，真实开卡、余额充值、Plus 付款、退款和提现均未执行。
