@@ -10,7 +10,7 @@
 
 ## 当前阶段
 
-阶段 M2（Browser MVP 本地 Browser 执行）已完成；`browser-mvp/` 已接入当前分支，但尚未接入新版 BRFE 控制面或共享核心。不能把其他 worktree/分支中的 Browser 提交视为本分支已完成。
+阶段 M3（Browser MVP WAL/恢复）已完成；`browser-mvp/` 已接入当前分支，但尚未接入新版 BRFE 控制面或共享核心。不能把其他 worktree/分支中的 Browser 提交视为本分支已完成。
 
 ## M0 已完成与验证
 
@@ -33,6 +33,13 @@
 - `BrowserExecutionService` 做页面 URL/title/marker 检查并记录 frame count；不暴露 submit/payment 写接口。
 - 页面漂移、租约丢失、人工冻结、导航超时均 fail-closed；本地集成测试和 `submitCalls=0` 断言通过。
 - M2 测试总计 11/11 通过；`npm --prefix browser-mvp run check` 通过。
+
+## M3 已完成与验证
+
+- `AppendOnlyWal` / `WalEvidenceSink`：单写者追加、序列和 SHA-256 哈希链；重启校验通过。
+- WAL 截断/篡改均抛 `WalIntegrityError`，恢复不会继续执行。
+- `reconcileIncompleteJobs` 将无终态证据的 RUNNING job 置为 `RECONCILE_ONLY`，不自动重放。
+- M3 测试总计 14/14 通过；`npm --prefix browser-mvp run check` 通过。
 
 ## 当前分支已验证
 
@@ -64,7 +71,7 @@
 
 ## 下一步唯一动作
 
-进入 M3：仅在 `browser-mvp/` 内实现 WAL、脱敏证据和恢复；在此之前不 cherry-pick 混合检查点，不使用 `git add -A`，不清理 `.playwright-cli/`/`artifacts/`，不修改非 Browser 共享核心或生产 release。
+进入 M4：仅在 `browser-mvp/` 内执行本地/隔离 soak 并记录指标；在此之前不 cherry-pick 混合检查点，不使用 `git add -A`，不清理 `.playwright-cli/`/`artifacts/`，不修改非 Browser 共享核心或生产 release。
 
 ## 共享事实源边界
 

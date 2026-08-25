@@ -2,7 +2,7 @@
 
 这是 Browser 线的隔离控制能力 PoC，不是生产充值实现。
 
-当前 M2 提供四个可替换 Port、合成 job fixture、运行时合同校验、本地文件 dispatch/lease PoC 和只读 Playwright BrowserContext 检查。它不连接共享订单、MySQL、真实 Session、Checkout、卡片、Provider 或付款接口；`LOCAL_MOCK` manifest 也明确禁止任何写入动作。
+当前 M3 提供四个可替换 Port、合成 job fixture、运行时合同校验、本地文件 dispatch/lease PoC、只读 Playwright BrowserContext 检查和 WAL/reconcile-only 恢复。它不连接共享订单、MySQL、真实 Session、Checkout、卡片、Provider 或付款接口；`LOCAL_MOCK` manifest 也明确禁止任何写入动作。
 
 ## 本地验证
 
@@ -20,5 +20,7 @@ npm run check
 - `FileDispatchStore`：M1 的本地原子 JSON 持久化实现，覆盖幂等 enqueue、claim、lease heartbeat、过期恢复和完成状态；它不是生产资金账本。
 - `LocalPlaywrightRuntimeAdapter`：M2 的临时隔离 BrowserContext；只读打开页面，不提供 submit/click/payment 写操作。
 - `BrowserExecutionService`：导航、页面签名检查、租约/人工冻结检查和脱敏证据事件；漂移、超时、租约丢失统一 fail-closed。
+- `AppendOnlyWal` / `WalEvidenceSink`：单写者事件追加、序列/哈希链校验和重启验证；截断或篡改直接阻断恢复。
+- `reconcileIncompleteJobs`：只把无终态证据的 RUNNING job 移入 `RECONCILE_ONLY`，不自动重放 Browser 动作。
 
 所有跨边界对象使用引用和 digest，不接受卡号、CVV、Session 原文、Checkout authority 或明文密钥。

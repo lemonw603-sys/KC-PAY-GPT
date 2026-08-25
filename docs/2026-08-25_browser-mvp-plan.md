@@ -57,7 +57,7 @@ MVP 不执行真实 Session、Checkout、卡片、付款、Provider 写入或生
 
 完成证据（2026-08-25）：`LocalPlaywrightRuntimeAdapter` 使用隔离 headless Chromium context；`BrowserExecutionService` 完成导航、URL/title/marker 检查、iframe 计数、租约和人工冻结检查。页面漂移、租约丢失、人工冻结、导航超时均记录脱敏 freeze 事件并 fail-closed；11/11 测试通过，观察结果 `submitCalls=0`。
 
-### M3：WAL、证据与恢复
+### M3：WAL、证据与恢复（已完成）
 
 交付：
 
@@ -67,6 +67,8 @@ MVP 不执行真实 Session、Checkout、卡片、付款、Provider 写入或生
 - Worker crash、WAL 截断/篡改、重启接管测试。
 
 退出条件：重启后可恢复未完成 job；未知状态只能进入 reconcile-only；WAL 中不存在 Session、卡号、CVV、Checkout authority。
+
+完成证据（2026-08-25）：`AppendOnlyWal`/`WalEvidenceSink` 已实现单写者追加、序列和 SHA-256 哈希链；新实例可验证链，截断/篡改直接抛 `WalIntegrityError`。重启时无终态的 RUNNING job 只进入 `RECONCILE_ONLY`，不自动重放。14/14 测试通过。
 
 ### M4：MVP soak 与交接
 
@@ -96,4 +98,4 @@ MVP 不执行真实 Session、Checkout、卡片、付款、Provider 写入或生
 
 ## 当前唯一下一步
 
-进入 M3：实现 append-only WAL、事件序列/哈希链、脱敏证据和 crash/restart/reconcile-only 恢复；不接真实 Session、Checkout 或付款。每个阶段结束都更新 `BRFE_HANDOFF_2026-08-25.md`、`BROWSER_CURRENT_STATUS_2026-08-25.md` 和本计划的证据链接。
+进入 M4：进行 10–15 分钟本地/隔离 soak，统计 lease、残留、延迟、重复和 WAL 增长，随后完成 Browser-only 交接；不接真实 Session、Checkout 或付款。每个阶段结束都更新 `BRFE_HANDOFF_2026-08-25.md`、`BROWSER_CURRENT_STATUS_2026-08-25.md` 和本计划的证据链接。

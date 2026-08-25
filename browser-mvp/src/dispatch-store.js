@@ -166,6 +166,22 @@ export class FileDispatchStore extends DispatchStore {
     });
   }
 
+  async markReconcileOnly(jobId, reason = 'restart-without-terminal-evidence') {
+    assertRef(jobId, 'jobId');
+    if (typeof reason !== 'string' || reason.length === 0 || reason.length > 160) throw new ContractError('reason must be a short summary');
+    return this._withLock(async () => {
+      const state = await this._readState();
+      const entry = state.jobs[jobId];
+      if (!entry) return null;
+      if (entry.job.state === 'COMPLETED' || entry.job.state === 'FROZEN' || entry.job.state === 'RECONCILE_ONLY') return clone(entry.job);
+      entry.job = { ...entry.job, state: 'RECONCILE_ONLY', recoveryReason: reason };
+      entry.lease = null;
+      entry.updatedAt = this.clock();
+      await this._writeState(state);
+      return clone(entry.job);
+    });
+  }
+
   async snapshot() {
     return this._withLock(async () => clone(await this._readState()));
   }

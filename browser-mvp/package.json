@@ -7,7 +7,7 @@
     "node": ">=20"
   },
   "scripts": {
-    "check": "node --check src/contracts.js && node --check src/ports.js && node --check src/fixtures.js && node --check src/dispatch-store.js && node --check src/runtime-adapter.js && node --check src/evidence-sink.js && node --check src/executor.js",
+    "check": "node --check src/contracts.js && node --check src/ports.js && node --check src/fixtures.js && node --check src/dispatch-store.js && node --check src/runtime-adapter.js && node --check src/evidence-sink.js && node --check src/executor.js && node --check src/wal.js && node --check src/recovery.js",
     "test": "node --test"
   },
   "dependencies": {
