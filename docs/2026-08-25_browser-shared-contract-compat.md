@@ -32,6 +32,24 @@
 - 任意 active funds permit；
 - `SUBMITTING`、`SUBMIT_UNKNOWN`、`RECHARGE_PROCESSING` 等需要外部写入/不确定状态的订单。
 
+## Session 的正确位置
+
+真实 Browser 执行当然需要 Session，但 Session 不应该塞进 dispatch job 或共享 projection。正确链路是：
+
+```text
+共享 projection.sessionRef
+        ↓
+SessionProviderPort（上号器/Session broker）
+        ↓ 只在内存中产生短时 SessionLease
+RuntimeAdapter.open(..., SessionLease)
+        ↓
+隔离 BrowserContext
+        ↓
+执行结束后 close/revoke
+```
+
+`SessionProviderPort` 已作为 Browser-only 预留接口加入，但当前仍是 fail-closed stub，没有接真实上号器。队列、WAL、普通日志和审计只保存 `sessionRef`、`leaseId`、`sessionDigest`、过期时间，不保存 Session 原文。真正的付款执行还需要单独的 funds permit 和写能力确认。
+
 ## 未决合同
 
 1. `recharge_attempts` 是否作为正式共享表、其主键/状态/幂等键如何定义，需非 Browser 统筹窗口确认。

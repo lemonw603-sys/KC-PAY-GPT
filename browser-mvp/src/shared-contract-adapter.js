@@ -75,6 +75,7 @@ export function projectSharedBrowserJob(projection, { manifest = createSynthetic
       orderStatus,
       attemptStatus,
       fundsGate,
+      ...(projection.sessionRef == null ? {} : { sessionRef: requireRef(projection.sessionRef, 'sessionRef') }),
       auditRef: projection.auditRef == null ? null : requireRef(projection.auditRef, 'auditRef'),
     },
   };

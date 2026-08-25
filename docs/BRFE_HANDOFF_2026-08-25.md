@@ -55,7 +55,8 @@
 - order 仅允许 `CARD_READY`/`RECONCILIATION_REQUIRED`；attempt 仅允许 `PENDING`/`OBSERVING`；资金只允许 `NOT_REQUESTED`。
 - active permit、Session/卡凭据/Checkout authority/API key 等源字段直接拒绝。
 - 当前 v1 没有已冻结的 `recharge_attempts` 表合同，适配器不会从 tasks/provider calls 猜测。
-- Browser MVP 测试总计 17/17；`npm --prefix browser-mvp run check` 通过。
+- `SessionProviderPort` 已预留给上号器：共享层只传 `sessionRef`，未来执行阶段产生短时 SessionLease；当前实现仍 fail-closed，不接真实 Session。
+- Browser MVP 测试总计 20/20；`npm --prefix browser-mvp run check` 通过。
 
 ## 当前分支已验证
 

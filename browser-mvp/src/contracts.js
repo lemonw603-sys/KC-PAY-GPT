@@ -66,6 +66,18 @@ export function assertDigest(value, label) {
   return value;
 }
 
+export function assertSessionLease(lease) {
+  assertObject(lease, 'sessionLease');
+  assertRef(lease.leaseId, 'sessionLease.leaseId');
+  assertDigest(lease.sessionDigest, 'sessionLease.sessionDigest');
+  if (!Number.isFinite(lease.expiresAt) || lease.expiresAt <= 0) fail('sessionLease.expiresAt must be a timestamp');
+  if (Object.prototype.hasOwnProperty.call(lease, 'material') || Object.prototype.hasOwnProperty.call(lease, 'session')) {
+    fail('session material must stay inside the SessionProvider/runtime boundary');
+  }
+  assertSafeObject(lease, 'sessionLease');
+  return lease;
+}
+
 export function assertCohortManifest(manifest) {
   assertObject(manifest, 'manifest');
   if (!EXECUTION_MODES.includes(manifest.mode)) fail(`manifest.mode must be one of ${EXECUTION_MODES.join(', ')}`);

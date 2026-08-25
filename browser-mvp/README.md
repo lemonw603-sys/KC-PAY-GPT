@@ -22,5 +22,6 @@ npm run check
 - `BrowserExecutionService`：导航、页面签名检查、租约/人工冻结检查和脱敏证据事件；漂移、超时、租约丢失统一 fail-closed。
 - `AppendOnlyWal` / `WalEvidenceSink`：单写者事件追加、序列/哈希链校验和重启验证；截断或篡改直接阻断恢复。
 - `reconcileIncompleteJobs`：只把无终态证据的 RUNNING job 移入 `RECONCILE_ONLY`，不自动重放 Browser 动作。
+- `SessionProviderPort`：未来上号器的即时取号边界；当前只接受 opaque `sessionRef`，实现默认 fail-closed，不保存或记录 Session 原文。
 
 所有跨边界对象使用引用和 digest，不接受卡号、CVV、Session 原文、Checkout authority 或明文密钥。

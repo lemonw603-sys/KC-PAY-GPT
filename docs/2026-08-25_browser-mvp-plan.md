@@ -102,7 +102,7 @@ MVP 不执行真实 Session、Checkout、卡片、付款、Provider 写入或生
 
 交付：`ReadOnlySharedContractAdapter`、订单/attempt 状态白名单、资金栅栏拒绝、敏感源字段拒绝和兼容性文档。实现只生成 Browser job envelope，不写共享状态、不接 MySQL。
 
-完成证据（2026-08-25）：Browser MVP 测试 17/17 通过；当前 v1 的 `recharge_attempts` 正式表/状态合同尚未冻结，适配器要求统筹层显式提供规范化 `attempt.id/status`，不从 tasks/provider calls 猜测。
+完成证据（2026-08-25）：Browser MVP 测试 20/20 通过；当前 v1 的 `recharge_attempts` 正式表/状态合同尚未冻结，适配器要求统筹层显式提供规范化 `attempt.id/status`，不从 tasks/provider calls 猜测。`SessionProviderPort` 已预留给上号器，但仍为 fail-closed stub，Session 只允许以 opaque ref/短时 lease 进入未来执行边界。
 
 ## 当前唯一下一步
 

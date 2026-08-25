@@ -1,4 +1,4 @@
-import { assertCohortManifest, assertEvidenceEvent, assertJobEnvelope } from './contracts.js';
+import { assertCohortManifest, assertEvidenceEvent, assertJobEnvelope, assertRef, assertSessionLease } from './contracts.js';
 
 export class PortNotImplementedError extends Error {
   constructor(port, method) {
@@ -58,5 +58,23 @@ export class RuntimeAdapter {
 
   async close(_runtime) {
     throw new PortNotImplementedError('RuntimeAdapter', 'close');
+  }
+}
+
+/**
+ * Just-in-time Session boundary. The implementation is where the existing
+ * login/"上号器" belongs. Raw session material must never leave this boundary.
+ */
+export class SessionProviderPort {
+  async open(sessionRef, { purpose = 'browser-observe', ttlMs = 60_000 } = {}) {
+    assertRef(sessionRef, 'sessionRef');
+    if (typeof purpose !== 'string' || purpose.length === 0) throw new TypeError('purpose is required');
+    if (!Number.isInteger(ttlMs) || ttlMs < 1_000) throw new TypeError('ttlMs must be at least 1000ms');
+    throw new PortNotImplementedError('SessionProviderPort', 'open');
+  }
+
+  async close(sessionLease) {
+    assertSessionLease(sessionLease);
+    throw new PortNotImplementedError('SessionProviderPort', 'close');
   }
 }
