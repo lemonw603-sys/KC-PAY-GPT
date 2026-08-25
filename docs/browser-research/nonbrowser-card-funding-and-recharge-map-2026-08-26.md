@@ -3,6 +3,8 @@
 日期：2026-08-26  
 范围：只读核实 Browser 需要依赖的卡台、库存、卡片补余额和非 Browser 直充能力；未改非 Browser 代码，未调用真实资金写接口。
 
+用户已确认的架构决策：**卡台 API 和运营后台是 Browser 自动充值的上游；Browser 执行器消费它们提供的卡片、路线、订单和审计能力。** 这是用户确认，不等于 Browser 运行时已经接线。
+
 ## 1. 先给结论
 
 用户记忆中的“卡台（开卡-充值）→ 浏览器自动化充值”需要拆成两条不同的业务路径，不能把“卡台账户充值”“卡片开卡”“既有卡补余额”“Plus 充值”混成一个“充值”字段：
@@ -168,7 +170,7 @@ HNSKJ /cards 全量发现
 
 - HNSKJ `/cards/{id}/recharge` 的真实写响应、同一幂等键重放行为和生产扣款。
 - Browser 从共享卡片引用到真实 Session/Checkout 的接线。
-- Browser 是否采用 HNSKJ 卡台卡片、ZZSHU 直充，还是独立 Checkout 资金路径；当前 Browser route 仍未冻结。
+- Browser 是否已把 HNSKJ 卡台/运营后台的卡片和路线真正接到运行时；架构方向已由用户确认，但当前 Browser route/共享写接线仍未完成。
 - 真实 Browser Checkout/Stripe/Plus 权益和每日吞吐。
 
 ## 7. 对 Browser MVP 的直接影响
@@ -185,5 +187,4 @@ shared order/attempt
 → final entitlement + card transaction + order event
 ```
 
-卡片补余额是否先于 Browser 执行，由共享控制面按“卡片余额门槛 + 资金风险锁”决定；Browser 只消费“已就绪、归属明确、未被其他 attempt 占用”的卡引用，不自己补卡、不自己开卡台账户、不自己决定最低余额。
-
+卡片补余额是否先于 Browser 执行，由共享控制面按“卡片余额门槛 + 资金风险锁”决定；Browser 只消费“已就绪、归属明确、未被其他 attempt 占用”的卡引用，不自己补卡、不自己开卡台账户、不自己决定最低余额。运营后台作为上游控制面，负责卡台路线、库存、资金风险和 Browser run 的可追溯操作入口。

@@ -101,6 +101,7 @@
 - HNSKJ `/cards/{id}/recharge` 是既有卡补余额；非 Browser worktree 已有 `rechargeCard()`、`card_funding_attempts`、准备/提交/未知/只读对账/人工结案代码，但当前 `codex/browser` 和 `main` 不包含该批文件。
 - 非 Browser Plus 主链路是 HNSKJ 卡台卡片 → ZZSHU `create_direct` → `order_no/card_key` 轮询；这不是 Browser Checkout 链路。
 - 当前 Browser 不应直接拿 HNSKJ/ZZSHU 密钥或复用 card-funding attempt 作为 Browser 付款 attempt；只应消费共享卡引用、路线和卡片就绪证明。
+- 用户已确认架构方向：卡台 API 与运营后台是 Browser 自动充值的上游；Browser 不是孤立脚本，而是消费上游卡片/路线/订单/审计能力的执行器。
 
 已验证：
 
@@ -110,7 +111,7 @@
 未验证：
 
 - HNSKJ `/cards/{id}/recharge` 真实写响应及同幂等键重放。
-- Browser 是否最终复用 HNSKJ 卡片、ZZSHU 直充，或走独立 Checkout 资金路径。
+- Browser 是否已把 HNSKJ 卡片/路线真正接到运行时；方向已确认，但共享写路径、真实 Session/Checkout 和付款仍未接线。
 
 下一步仍保持唯一动作：由统筹窗口冻结 Browser 与共享核心的 `cardRef/routeRef/cardReadyEvidence` 输入合同；在此之前不接卡台 API、不接真实 Session/Checkout、不进入付款写路径。
 
