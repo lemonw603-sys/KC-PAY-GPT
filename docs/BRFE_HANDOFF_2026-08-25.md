@@ -199,3 +199,7 @@
 用户提供的 Session 已用于一次本地 Chrome control lane 观察。Session Cookie 分块写入成功，但 ChatGPT 首页和 `/api/auth/session` 返回 403，标题为 `请稍候…`，出现 `__cf_bm`，说明当前先被人机验证/边缘防护拦截。不能把这次结果写成 Session 失效，也没有得到账号身份或 Checkout 证据。
 
 详细记录：`docs/browser-research/real-session-observation-2026-08-26.md`。下一步是 headed Chrome 人工观察/通过验证后再做身份核对；不点击付款、不调用卡台写接口。
+
+### 上号器集成事实纠正
+
+上述运行没有加载或点击实际的“诺汇盛专用上号器 v1.1.0”扩展，而是使用 MVP 内部 Cookie adapter 复现其 Cookie 写入能力。扩展的真实 popup/`chrome.cookies` 路径、Chrome 扩展加载、Worker 调用和状态回写仍未验证。后续需把“实际扩展 lane”作为独立验收项，不能用直接 Cookie 注入替代其证据。

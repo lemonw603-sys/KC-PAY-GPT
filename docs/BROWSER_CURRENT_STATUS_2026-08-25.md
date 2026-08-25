@@ -131,3 +131,9 @@
 - 该结果不能证明 Session 失效或账号不匹配；真实身份、Checkout 和订阅权益仍未验证。
 - 临时 Profile 已删除；未调用卡台写接口、Checkout 提交或付款。
 - 详细记录：`docs/browser-research/real-session-observation-2026-08-26.md`。
+
+### 上号器使用事实纠正
+
+- 本次真实 Session 观察**没有启动或操作 `/Users/lemon/Downloads/诺汇盛专用上号器 v1.1.0/` 扩展**；使用的是 Browser MVP 内部的 `CookieSessionBootstrapAdapter`，直接把附件 Session 的 `sessionToken` 分块写入 Chrome Profile。
+- 这验证了“上号器所需的 Cookie Bootstrap 能力”，不等于验证了“实际上号器扩展在 Chrome 中工作”。扩展本身仍未接入 Worker。
+- 因此当前 F0 仍是前置运行时切片，不应写成已完成上号器集成或完整 MVP。
