@@ -1,6 +1,6 @@
 # Browser Recharge MVP
 
-这是 Browser 线的隔离控制能力 PoC，不是生产充值实现。
+这是 Browser 线的隔离控制能力 PoC，当前正在向 F0 核心真实付款 MVP 演进；尚未启用真实付款写入。
 
 当前 M3 提供四个可替换 Port、合成 job fixture、运行时合同校验、本地文件 dispatch/lease PoC、只读 Playwright BrowserContext 检查和 WAL/reconcile-only 恢复。它不连接共享订单、MySQL、真实 Session、Checkout、卡片、Provider 或付款接口；`LOCAL_MOCK` manifest 也明确禁止任何写入动作。
 
@@ -23,5 +23,14 @@ npm run check
 - `AppendOnlyWal` / `WalEvidenceSink`：单写者事件追加、序列/哈希链校验和重启验证；截断或篡改直接阻断恢复。
 - `reconcileIncompleteJobs`：只把无终态证据的 RUNNING job 移入 `RECONCILE_ONLY`，不自动重放 Browser 动作。
 - `SessionProviderPort`：未来上号器的即时取号边界；当前只接受 opaque `sessionRef`，实现默认 fail-closed，不保存或记录 Session 原文。
+
+## F0 当前新增
+
+- `GoogleChromeControlRuntimeAdapter`：使用系统 Google Chrome 的独立 persistent Profile；Profile 路径按 opaque `profileRef` 派生，不复用用户默认 Profile。
+- `CookieSessionBootstrapAdapter`：从受控 source 读取 ChatGPT Session Cookie，在 adapter 私有边界内注入 BrowserContext，只向事件写入 digest 和 Cookie 数量。
+- `BrowserExecutionService`：当 job 带 `sessionRef` 时必须提供 Session Bootstrap adapter；身份核对和真实 Checkout 付款仍未接线。
+- `CHROME_CONTROL`/`CHECKOUT_OBSERVE` manifest：默认 `allowWrites=false`，任何写入 manifest 仍 fail-closed。
+
+这批能力只完成真实付款前的纵向前置切片，不代表真实 Session、Checkout 或付款已验证。
 
 所有跨边界对象使用引用和 digest，不接受卡号、CVV、Session 原文、Checkout authority 或明文密钥。

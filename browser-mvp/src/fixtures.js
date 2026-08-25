@@ -17,6 +17,27 @@ export function createSyntheticManifest(overrides = {}) {
   return manifest;
 }
 
+export function createChromeControlManifest(overrides = {}) {
+  const manifest = createSyntheticManifest({
+    mode: 'CHROME_CONTROL',
+    capability: 'CHECKOUT_OBSERVE',
+    profileDigest: digest('browser-mvp:chrome-control:profile:v1'),
+    networkDigest: digest('browser-mvp:chrome-control:network:local:v1'),
+    allowWrites: false,
+    ...overrides,
+  });
+  assertJobEnvelope({
+    schemaVersion: 1,
+    jobId: 'brjob:manifest-check',
+    orderRef: 'order:manifest-check',
+    attemptRef: 'attempt:manifest-check',
+    profileRef: 'profile:manifest-check',
+    state: 'QUEUED',
+    manifest,
+  });
+  return manifest;
+}
+
 export function createSyntheticJob(overrides = {}) {
   const job = {
     schemaVersion: 1,

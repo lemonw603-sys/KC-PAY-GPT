@@ -7,6 +7,7 @@ import { once } from 'node:events';
 import { BrowserExecutionError, BrowserExecutionService } from '../src/executor.js';
 import { MemoryEvidenceSink } from '../src/evidence-sink.js';
 import { LocalPlaywrightRuntimeAdapter } from '../src/runtime-adapter.js';
+import { CookieSessionBootstrapAdapter } from '../src/session-bootstrap.js';
 import { createSyntheticJob } from '../src/fixtures.js';
 
 const pageContract = {
@@ -38,6 +39,22 @@ test('local BrowserContext observes a page and never exposes a submit operation'
     assert.equal(result.submitCalls, 0);
     assert.deepEqual(evidenceSink.events.map((event) => event.type), ['intent', 'checkpoint']);
   });
+});
+
+test('executor bootstraps an opaque Session lease before page observation', async () => {
+  const runtimeAdapter = new LocalPlaywrightRuntimeAdapter({ browserType: chromium });
+  const evidenceSink = new MemoryEvidenceSink();
+  const sessionProvider = new CookieSessionBootstrapAdapter({
+    source: { load: async () => ({ cookieHeader: '__Secure-next-auth.session-token=fixture-session' }) },
+  });
+  const executor = new BrowserExecutionService({ runtimeAdapter, evidenceSink, sessionProvider, timeoutMs: 3_000 });
+  const job = makeJob();
+  job.metadata.sessionRef = 'session-ref:executor';
+  const result = await executor.execute(job, { assertLease: async () => true });
+  assert.equal(result.sessionBootstrapped, true);
+  assert.equal(result.submitCalls, 0);
+  assert.equal(evidenceSink.events[1].summary.action, 'session-bootstrap');
+  assert.equal(evidenceSink.events[1].summary.sessionDigest.length, 64);
 });
 
 test('page drift fails closed and records a redacted freeze reason', async () => {

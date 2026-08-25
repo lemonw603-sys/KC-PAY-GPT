@@ -20,8 +20,8 @@ export const JOB_STATES = Object.freeze([
   'COMPLETED',
 ]);
 
-export const EXECUTION_MODES = Object.freeze(['LOCAL_MOCK']);
-export const CAPABILITIES = Object.freeze(['NON_PH_FUNCTIONAL']);
+export const EXECUTION_MODES = Object.freeze(['LOCAL_MOCK', 'CHROME_CONTROL']);
+export const CAPABILITIES = Object.freeze(['NON_PH_FUNCTIONAL', 'CHECKOUT_OBSERVE']);
 
 export class ContractError extends TypeError {}
 

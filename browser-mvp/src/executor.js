@@ -24,11 +24,12 @@ function assertReadOnlyPageContract(contract) {
 }
 
 export class BrowserExecutionService {
-  constructor({ runtimeAdapter, evidenceSink, clock = () => Date.now(), timeoutMs = 5_000 } = {}) {
+  constructor({ runtimeAdapter, evidenceSink, sessionProvider = null, clock = () => Date.now(), timeoutMs = 5_000 } = {}) {
     if (!runtimeAdapter || typeof runtimeAdapter.open !== 'function' || typeof runtimeAdapter.close !== 'function') throw new TypeError('runtimeAdapter is required');
     if (!evidenceSink || typeof evidenceSink.append !== 'function') throw new TypeError('evidenceSink is required');
     this.runtimeAdapter = runtimeAdapter;
     this.evidenceSink = evidenceSink;
+    this.sessionProvider = sessionProvider;
     this.clock = clock;
     this.timeoutMs = timeoutMs;
   }
@@ -41,23 +42,36 @@ export class BrowserExecutionService {
     const startedAt = this.clock();
     await this._event(job, 'intent', 1, { action: 'observe-page', mode: job.manifest.mode });
     let runtime;
+    let sessionLease;
     try {
       if (freezeRequested()) throw new BrowserExecutionError('MANUAL_FREEZE');
       if (!(await assertLease())) throw new BrowserExecutionError('LEASE_LOST');
-      runtime = await this.runtimeAdapter.open(job.manifest);
+      runtime = await this.runtimeAdapter.open(job.manifest, { profileRef: job.profileRef });
+      if (job.metadata?.sessionRef) {
+        if (!this.sessionProvider || typeof this.sessionProvider.open !== 'function' || typeof this.sessionProvider.bootstrap !== 'function') {
+          throw new BrowserExecutionError('SESSION_PROVIDER_UNAVAILABLE');
+        }
+        sessionLease = await this.sessionProvider.open(job.metadata.sessionRef, { purpose: 'browser-observe' });
+        const sessionResult = await this.sessionProvider.bootstrap(sessionLease, runtime.context);
+        await this._event(job, 'checkpoint', 2, {
+          action: 'session-bootstrap',
+          sessionDigest: sessionResult.sessionDigest,
+          cookieCount: sessionResult.cookieCount,
+        });
+      }
       const page = await runtime.context.newPage();
       await page.goto(job.metadata.pageContract.urlPrefix, { waitUntil: 'domcontentloaded', timeout: this.timeoutMs });
       if (freezeRequested()) throw new BrowserExecutionError('MANUAL_FREEZE');
       if (!(await assertLease())) throw new BrowserExecutionError('LEASE_LOST');
       const checkpoint = await this._checkPage(page, job.metadata.pageContract);
-      await this._event(job, 'checkpoint', 2, {
+      await this._event(job, 'checkpoint', sessionLease ? 3 : 2, {
         action: 'page-signature',
         urlPrefix: job.metadata.pageContract.urlPrefix,
         observedUrlDigest: digest(page.url()),
         observedTitleDigest: digest(checkpoint.title),
         frameCount: checkpoint.frameCount,
       });
-      return { status: 'OBSERVED', startedAt, finishedAt: this.clock(), submitCalls: 0 };
+      return { status: 'OBSERVED', startedAt, finishedAt: this.clock(), submitCalls: 0, sessionBootstrapped: Boolean(sessionLease) };
     } catch (error) {
       const failure = error instanceof BrowserExecutionError
         ? error
@@ -66,6 +80,7 @@ export class BrowserExecutionService {
       throw failure;
     } finally {
       if (runtime) await this.runtimeAdapter.close(runtime).catch(() => undefined);
+      if (sessionLease && this.sessionProvider) await this.sessionProvider.close(sessionLease).catch(() => undefined);
     }
   }
 

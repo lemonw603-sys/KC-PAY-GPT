@@ -174,3 +174,15 @@
 长期能力方向草案见：
 `docs/browser-research/browser-automation-future-roadmap-2026-08-26.md`。
 用户已于 2026-08-26 确认该路线图作为 Browser 线长期方向冻结；不覆盖共享 `CURRENT_STATE/DECISIONS/HANDOFF_LOG`。
+
+## 2026-08-26 F0 首个代码切片
+
+已在当前 Browser worktree 完成真实付款前的最小运行时切片：
+
+- `GoogleChromeControlRuntimeAdapter` 使用系统 Google Chrome 的独立 persistent Profile；
+- `CookieSessionBootstrapAdapter` 将受控 Session Cookie source 转换为 opaque lease 并注入 BrowserContext；
+- `BrowserExecutionService` 在页面观察前强制 Session Bootstrap（有 `sessionRef` 但无 provider 直接 fail-closed）；
+- 合同新增 `CHROME_CONTROL`/`CHECKOUT_OBSERVE`，但写入仍被 `allowWrites=false` 阻断；
+- `npm --prefix browser-mvp run check` 通过，`npm --prefix browser-mvp test` 32/32 通过。
+
+未完成且未验证：卡台真实 ready-card projection、真实测试 Session 身份核对、目标 Checkout 页面观察、真实付款提交、订阅权益和卡台交易对账。下一步只推进这些前置验证，不启用真实付款写开关。

@@ -105,7 +105,7 @@ test('non-payment simulation runs upstream projection through dispatch and Brows
       timeoutMs: 2_000,
     });
     const result = await runNonPaymentUpstreamSimulation({
-      projection: projection(),
+      projection: projection({ sessionRef: undefined }),
       dispatchStore,
       executionService,
       now,
