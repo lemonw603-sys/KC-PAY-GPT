@@ -98,6 +98,12 @@ MVP 不执行真实 Session、Checkout、卡片、付款、Provider 写入或生
 - 不接真实 Session、菲律宾出口、Checkout、卡片、付款、退款、提现或生产 release；
 - 不把旧 worktree 的 Browser 证据外推为当前分支已验证能力。
 
+## M5：共享合同兼容层（只读，已完成）
+
+交付：`ReadOnlySharedContractAdapter`、订单/attempt 状态白名单、资金栅栏拒绝、敏感源字段拒绝和兼容性文档。实现只生成 Browser job envelope，不写共享状态、不接 MySQL。
+
+完成证据（2026-08-25）：Browser MVP 测试 17/17 通过；当前 v1 的 `recharge_attempts` 正式表/状态合同尚未冻结，适配器要求统筹层显式提供规范化 `attempt.id/status`，不从 tasks/provider calls 猜测。
+
 ## 当前唯一下一步
 
-进入 M4：进行 10–15 分钟本地/隔离 soak，统计 lease、残留、延迟、重复和 WAL 增长，随后完成 Browser-only 交接；不接真实 Session、Checkout 或付款。每个阶段结束都更新 `BRFE_HANDOFF_2026-08-25.md`、`BROWSER_CURRENT_STATUS_2026-08-25.md` 和本计划的证据链接。
+由统筹窗口评审 `docs/2026-08-25_browser-shared-contract-compat.md` 中的未决合同；在 `recharge_attempts`、资金 permit 和审计关联正式冻结前，Browser 线保持只读 projection，不接真实 Session、Checkout、卡片、付款、Provider 写入或生产 release；不 cherry-pick 混合检查点，不使用 `git add -A`，不清理 `.playwright-cli/`/`artifacts/`。

@@ -10,7 +10,7 @@
 
 ## 当前阶段
 
-阶段 M4（Browser MVP soak 与交接）已完成；`browser-mvp/` 已接入当前分支，但尚未接入新版 BRFE 控制面或共享核心。不能把其他 worktree/分支中的 Browser 提交视为本分支已完成。
+阶段 M5（共享合同只读兼容层）已完成；`browser-mvp/` 已接入当前分支，但尚未接入新版 BRFE 控制面或共享核心写路径。不能把其他 worktree/分支中的 Browser 提交视为本分支已完成。
 
 ## M0 已完成与验证
 
@@ -49,6 +49,14 @@
 - 报告：`/var/folders/vv/y6273_2s7n98r55m2rc96p_w0000gn/T/browser-mvp-soak-SOtfzq/report.json`。
 - 最终 `npm --prefix browser-mvp test` 14/14，`npm --prefix browser-mvp run check` 和 `git diff --check` 均通过。
 
+## M5 已完成与验证
+
+- `ReadOnlySharedContractAdapter` 只接受规范化 order/attempt/profile projection，输出 Browser job 引用。
+- order 仅允许 `CARD_READY`/`RECONCILIATION_REQUIRED`；attempt 仅允许 `PENDING`/`OBSERVING`；资金只允许 `NOT_REQUESTED`。
+- active permit、Session/卡凭据/Checkout authority/API key 等源字段直接拒绝。
+- 当前 v1 没有已冻结的 `recharge_attempts` 表合同，适配器不会从 tasks/provider calls 猜测。
+- Browser MVP 测试总计 17/17；`npm --prefix browser-mvp run check` 通过。
+
 ## 当前分支已验证
 
 - 旧版 v1 的隔离边界、Worker runtime、Provider PoC 定向测试：8/8 通过。
@@ -79,7 +87,7 @@
 
 ## 下一步唯一动作
 
-MVP 阶段交付完成；后续唯一安全动作是由统筹窗口评审并决定是否进入共享合同适配设计。未获单独确认前，不接真实 Session、Checkout、卡片、付款、Provider 写入或生产 release；不 cherry-pick 混合检查点，不使用 `git add -A`，不清理 `.playwright-cli/`/`artifacts/`。
+由统筹窗口评审 `docs/2026-08-25_browser-shared-contract-compat.md` 的未决合同；未冻结前不进入共享写路径、真实 Session、Checkout、卡片、付款、Provider 写入或生产 release；不 cherry-pick 混合检查点，不使用 `git add -A`，不清理 `.playwright-cli/`/`artifacts/`。
 
 ## 共享事实源边界
 

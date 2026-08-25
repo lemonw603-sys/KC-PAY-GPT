@@ -7,15 +7,15 @@
 | worktree | `/Users/lemon/.codex/worktrees/9128/AI充值业务` |
 | 分支 | `codex/browser` |
 | 基线 HEAD | `bd9f05b` |
-| 当前交接提交 | `b4b354d` |
+| 当前交接提交 | M5 提交待生成 |
 | 跟踪改动 | 无 |
 | 未跟踪改动 | `.playwright-cli/`、`artifacts/` |
-| Browser MVP | `browser-mvp/` M0–M4 已完成；共享控制面仍未接入 |
+| Browser MVP | `browser-mvp/` M0–M5 已完成；共享控制面写路径仍未接入 |
 | 生产/真实付款 | 未接入、未执行 |
 
 ## 当前阶段
 
-阶段 M4：Browser MVP soak 与交接已完成。当前不是新版 BRFE 阶段 A/B/C 的完成状态；新版控制面和共享适配器尚未进入本分支。
+阶段 M5：共享合同只读兼容层已完成。当前不是新版 BRFE 阶段 A/B/C 的完成状态；新版控制面和共享适配器写路径尚未进入本分支。
 
 ## 本分支已验证
 
@@ -27,15 +27,16 @@
 - 本地 Chromium BrowserContext/执行器测试：4/4 通过（总测试 11/11）；漂移、租约丢失、冻结、超时均 fail-closed。
 - WAL/重启/reconcile-only 测试：3/3 通过（总测试 14/14）；截断/篡改均阻断恢复。
 - 10 分钟 soak：601439ms、5328/5328 完成、重复 0、错误 0、残留 0、WAL 15984 条；报告位于 `/var/folders/vv/y6273_2s7n98r55m2rc96p_w0000gn/T/browser-mvp-soak-SOtfzq/report.json`。
+- 共享合同只读适配器测试：3/3 通过（总测试 17/17）；active permit 和敏感源字段均拒绝。
 
 ## 本分支未验证
 
-- 新版 Browser Worker/dispatch/lease/heartbeat；
-- WAL、artifact vault、账号/订单/卡片/Checkout 资源租约；
-- 本地 BrowserContext Worker 接线和页面漂移 fail-closed；
-- `NON_PH_FUNCTIONAL` 只读观察器和新版 Browser 合同；
+- 新版 BRFE Browser Worker/control-plane 接线；
+- 生产 artifact vault、账号/订单/卡片/Checkout 资源租约；
+- BrowserContext 与共享 Worker 的生产接线；
+- 新版 BRFE `NON_PH_FUNCTIONAL` 合同与共享状态适配；
 - 菲律宾 cohort、真实 Session、Checkout、付款、生产 Worker、高可用拓扑。
-- 后续需统筹窗口单独评审共享合同适配；当前不进入真实付款或生产 Browser 写入。
+- `recharge_attempts`、资金 permit、审计关联仍需统筹窗口冻结；当前不进入共享写路径或真实付款。
 
 ## 暂停条件
 
@@ -46,4 +47,4 @@
 
 ## 下一步
 
-MVP 已完成；保持 Browser-only 隔离，等待统筹窗口评审共享合同适配；不接共享订单、MySQL 或真实 Browser 写入。
+M5 只读兼容层已完成；等待统筹窗口评审未决合同，保持 Browser-only 隔离，不接共享订单写入、MySQL 写入或真实 Browser 付款。
