@@ -87,6 +87,14 @@
 - 禁止云 Profile、云同步、第三方 Session 托管和真实付款；必须验证 Profile、代理、Session、Worker 绑定、服务器账号身份和失租约清理。
 - 具体指纹浏览器产品/安装包尚未提供，故尚未安装、尚未做真实 Session 验证；当前代码仍不能宣称完整业务 MVP。
 
+## 指纹浏览器市场评估（2026-08-26）
+
+- 已完成厂商官方文档、GitHub API 示例和社区线索检索；详见 `docs/browser-research/fingerprint-browser-market-review-2026-08-26.md`。
+- 首选：Kameleo local profile + Chroma/Chrome fingerprint + Local API；次选 Multilogin Mimic local storage；第三候选 AdsPower Local API；GoLogin 暂不进入首轮（公开开发入口偏 Cloud Browser）。
+- 系统 Google Chrome 保留为 control lane；指纹浏览器只作为可替换 `BrowserIdentityRuntime`。两条 lane 共享同一订单/Session/证据合同，不共享可变 Profile。
+- Kameleo 官方要求一 Profile 一 BrowserContext，并不建议叠加 `playwright-extra`；如果安装验证通过，Browser MVP 不应继续在 Kameleo 上叠加当前 StealthPlugin。
+- 当前尚未安装任何指纹浏览器，尚未进行真实 Session/Checkout/付款验证；以上只是能力匹配推荐。
+
 ## 关键动作提醒（运营/审计可见性）
 
 后续任何会产生扣款、冻结或消费的动作，必须记录并可在后台追溯：动作类型、provider account、cardRef/card ID、order/attempt/browser run、幂等键、provider call ID、动作前余额、预计/实际扣款、手续费、动作后余额、外部引用和对账状态。卡台账户余额、卡片余额、卡片补余额、Plus 实际消费金额分栏展示，不能合并成一个金额。M6 仅有 `intent/checkpoint` 观察证据，`submitCalls=0`，无付款副作用。

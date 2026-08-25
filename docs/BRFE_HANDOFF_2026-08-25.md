@@ -88,7 +88,7 @@
 
 ## 下一步唯一动作
 
-在 Browser-only 范围选定并安装一个**本地指纹浏览器候选**，同时把现有上号器能力接成 `SessionMaterialSource`/`SessionBootstrapAdapter` 合同；先做真实 Session 身份核对和非付款一单闭环。未完成前不进入真实 Checkout 写入、真实付款、Provider 写入或生产 release；不 cherry-pick 混合检查点，不使用 `git add -A`，不清理 `.playwright-cli/`/`artifacts/`。
+按市场评估优先验证 **Kameleo local profile + Chroma/Chrome fingerprint + Local API**；同时把系统 Google Chrome 保留为 control lane。两条 lane 共用 Session、订单、证据和审计合同，只改变 runtime。先完成真实 Session 身份核对和非付款一单闭环。未完成前不进入真实 Checkout 写入、真实付款、Provider 写入或生产 release；不 cherry-pick 混合检查点，不使用 `git add -A`，不清理 `.playwright-cli/`/`artifacts/`。
 
 ## 2026-08-26 卡台/非 Browser 交接补充
 
@@ -144,3 +144,11 @@
 - MVP 应纳入一个本地指纹浏览器候选，至少用它完成一次非付款/模拟付款闭环；指纹浏览器属于可替换 `BrowserIdentityRuntime`，不成为订单、资金或审计核心依赖。
 - 禁止云 Profile、云同步、第三方 Session 托管和真实付款；先完成本地 Profile、代理、Session、Worker 绑定、身份核验和失租约清理。
 - 当前缺少具体指纹浏览器产品/安装包，未开始安装或真实 Session 运行；该事实不阻塞合同设计，但阻塞真实运行时验证。
+
+## 2026-08-26 指纹浏览器市场评估
+
+- 已检索厂商官方文档、GitHub API 示例和社区讨论；详细矩阵见 `docs/browser-research/fingerprint-browser-market-review-2026-08-26.md`。
+- 首选候选：Kameleo。理由是本地 Local API、Chrome 指纹筛选、Playwright/CDP、local profile 生命周期和官方“一 Profile 一 Context”约束与当前 Worker lease 设计最贴合。
+- 次选：Multilogin Mimic + local storage；第三候选：AdsPower Local API。GoLogin 当前公开开发入口偏 Cloud Browser，不进入首轮。
+- Google Chrome 不被替换：它作为真实 Chrome control lane；指纹浏览器是另一条可替换 runtime lane。指纹浏览器的 Chrome 模式不等于系统 Google Chrome。
+- 以上是能力匹配推荐，不是目标平台风控成功率结论；尚未安装、尚未接入真实 Session、尚未付款。
