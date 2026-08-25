@@ -61,6 +61,7 @@
 
 - 部署前备份：`/var/backups/pojia/pojia-20260825T032925Z.sql.gz.enc`，`pojia-ops check` 校验 `backup_integrity=OK`。
 - 候选归档服务端 SHA-256：`b0d7ee8394af959ae82fb3fd3e88546e9c52e0a2f23550f7678722e78664be8d`；release manifest `242/242` 通过。
+- 本地可重放 artifact：`artifacts/release-candidate-20260825-nonbrowser-e32a6fd/`（归档、242 项 manifest 和 README）。
 - 迁移：001–037 全部 `already applied`。
 - 服务：Web、Worker、Bark、卡只读同步和目录同步 active；卡库存付费 runner inactive。
 - 公网：`/health/live` HTTP 200，`/health/ready` HTTP 200，`/admin` 未登录 HTTP 302 到 `/admin/login`。
