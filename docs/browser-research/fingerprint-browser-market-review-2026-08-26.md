@@ -125,4 +125,40 @@ Google Chrome 与指纹浏览器不是二选一：
 - 任何厂商对目标平台风控/账号关联的实际改善；
 - 所有真实支付和真实客户 Session 行为。
 
+## AdsPower 重点复核（2026-08-26）
+
+网上把 AdsPower 列为推荐，主要不是因为它在所有场景中指纹效果最好，而是因为它把“多 Profile 运营”需要的常用能力集中在一个产品里：
+
+- Profile 可隔离 Cookie、Local Storage、指纹、代理和浏览器设置；
+- Local API 可创建、查询、更新、启动和关闭 Profile；官方还提供 CDP/Playwright 连接示例；
+- 内置 RPA、批量操作、窗口同步和团队权限，适合社媒、电商、广告等重复运营场景；
+- 目前提供 2 个免费 Profile；官方定价表将 Local API 标在 Professional 及以上套餐（Professional 120 RPM、Business 300 RPM、Enterprise 600 RPM）；
+- Profile 创建/编辑支持导入 JSON、Netscape 或 Name=Value 格式 Cookie，因此具备作为 Session Bootstrap 候选的入口。
+
+证据：
+
+- <https://www.adspower.com/>
+- <https://www.adspower.com/pricing>
+- <https://localapi-doc-en.adspower.com/docs/New-Profile-V2>
+- <https://localapi-doc-en.adspower.com/docs/Open-Browser-V2>
+- <https://localapi-doc-en.adspower.com/docs/Code-Samples>
+- <https://help.adspower.com/docs/rpa>
+- <https://help.adspower.com/docs/creating_browser_profiles>
+
+需要区分的事实和宣传：
+
+- **已由官方文档确认**：Local API、CDP/Playwright 示例、Cookie 导入、RPA、批量 Profile、成员权限和 Data Sync 开关；
+- **社区经验，不是项目事实**：上手简单、10–20 个 Profile 运行稳定、教程和用户多；同时也有资源占用、客服和账号关联问题的相反反馈；
+- **不能当作验收指标**：官网的“9M+ 用户”“90% 节省时间”“10x 效率”以及“不被封”等营销表述。
+
+对本项目的影响：AdsPower 应从“第三候选”提升为**并行验证候选**，但暂不替换 Kameleo。它的 Cookie 导入只证明了输入入口，不能证明当前目标站点的完整 Session（包括 HttpOnly/session Cookie、Local Storage/IndexedDB）在启动、重启和换 Profile 后都能保持有效。另需验证：
+
+1. Local API 是否能在当前套餐和 macOS 环境稳定调用；
+2. `__Secure-next-auth.session-token` 等 Session 注入后，真实 `/api/auth/session` 身份是否匹配；
+3. Profile 重启后 Session 是否保留；
+4. Data Sync 关闭时是否仍有数据上传；
+5. SunBrowser Chrome 内核与系统 Google Chrome 的页面/Checkout 兼容性。
+
+因此当前结论是：**AdsPower 可能是小规模 MVP 的最低成本候选，但只有完成上述非付款验证后，才能和 Kameleo 做实际性价比裁决。**
+
 本评估只用于选择 Browser runtime，不代表生产可用，不启动真实付款。
