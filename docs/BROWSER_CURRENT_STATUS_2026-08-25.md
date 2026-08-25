@@ -73,6 +73,13 @@
 - 本轮 Browser 测试从 20/20 增至 **23/23**；`npm --prefix browser-mvp run check` 通过。
 - 这仍是本地合成上游投影，不是 MySQL 生产 adapter，不是真实 Session/Checkout，也不是付款验证。
 
+## Session 上号器与指纹运行时事实修正
+
+- 现有上号器是本地 Chromium MV3 Cookie 写入扩展，不是 API、Session broker、账号验证器或指纹浏览器；它只证明 Cookie 已写入，不证明服务器接受了正确账号。
+- 旧项目可复用的真实能力是 Cookie 解析/分块、真实 Session API/UI 探针、独立 Context、代理、locale/timezone 和 Browser Pool；旧 auth overlay/Bearer/localStorage 伪造默认禁止。
+- 当前没有已接入的商业指纹浏览器。`playwright-extra + puppeteer-extra-plugin-stealth` 只是现有运行时增强；`ANTIDETECT_LOCAL_PROFILE` 保留为候选 lane，不能把“指纹分数”当成功证据。
+- 详细证据：`docs/browser-research/session-loader-and-fingerprint-runtime-facts-2026-08-26.md`。
+
 ## 关键动作提醒（运营/审计可见性）
 
 后续任何会产生扣款、冻结或消费的动作，必须记录并可在后台追溯：动作类型、provider account、cardRef/card ID、order/attempt/browser run、幂等键、provider call ID、动作前余额、预计/实际扣款、手续费、动作后余额、外部引用和对账状态。卡台账户余额、卡片余额、卡片补余额、Plus 实际消费金额分栏展示，不能合并成一个金额。M6 仅有 `intent/checkpoint` 观察证据，`submitCalls=0`，无付款副作用。

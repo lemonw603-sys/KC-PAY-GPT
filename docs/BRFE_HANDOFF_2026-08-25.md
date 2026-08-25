@@ -55,7 +55,7 @@
 - order 仅允许 `CARD_READY`/`RECONCILIATION_REQUIRED`；attempt 仅允许 `PENDING`/`OBSERVING`；资金只允许 `NOT_REQUESTED`。
 - active permit、Session/卡凭据/Checkout authority/API key 等源字段直接拒绝。
 - 当前 v1 没有已冻结的 `recharge_attempts` 表合同，适配器不会从 tasks/provider calls 猜测。
-- `SessionProviderPort` 已预留给上号器：共享层只传 `sessionRef`，未来执行阶段产生短时 SessionLease；当前实现仍 fail-closed，不接真实 Session。
+- `SessionProviderPort` 只是未来可替换边界，不能等同于现有上号器。已核实的上号器是本地 Chromium Cookie 写入扩展，不是 API、Session broker、账号验证器或指纹浏览器；详见 `docs/browser-research/session-loader-and-fingerprint-runtime-facts-2026-08-26.md`。
 - Browser MVP 测试总计 20/20；`npm --prefix browser-mvp run check` 通过。
 
 ## 当前分支已验证
@@ -130,3 +130,10 @@
 ## 共享事实源边界
 
 本次未修改 `docs/CURRENT_STATE.md`、`docs/DECISIONS.md`、`docs/HANDOFF_LOG.md`。需要跨线更新时，先向非 Browser 统筹窗口提出。
+
+## 2026-08-26 Session/指纹运行时事实修正
+
+- 已完成对 `/Users/lemon/Downloads/诺汇盛专用上号器 v1.1.0/` 的静态核实：它只写 `chatgpt.com` 安全 Session Cookie，不负责真实登录验证、账号核验、Profile/代理租约、Checkout 或付款。
+- 已核对旧项目 `session-auth.js`、`browser-runtime.js`、`browser-pool.js`：可拆取 Cookie 解析/分块、真实 Session 探针、独立 Context、代理和运行时管理；auth API 伪造、Bearer 注入和 localStorage bootstrap 不进入默认资金链。
+- 已核对指纹能力：项目当前没有商业指纹浏览器接入；已有 `playwright-extra + puppeteer-extra-plugin-stealth`、代理、locale/timezone 和 Browser Pool，不等于指纹浏览器。`ANTIDETECT_LOCAL_PROFILE` 只能作为待验证 runtime lane。
+- 因此下一阶段不再把“上号器”作为默认 SessionProvider 实现；先冻结 `SessionMaterialSource`、`SessionBootstrapAdapter` 和 `BrowserIdentityRuntime` 三者边界，再做一单完整的非付款/模拟支付闭环。
