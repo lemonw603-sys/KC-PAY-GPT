@@ -137,3 +137,9 @@
 - 本次真实 Session 观察**没有启动或操作 `/Users/lemon/Downloads/诺汇盛专用上号器 v1.1.0/` 扩展**；使用的是 Browser MVP 内部的 `CookieSessionBootstrapAdapter`，直接把附件 Session 的 `sessionToken` 分块写入 Chrome Profile。
 - 这验证了“上号器所需的 Cookie Bootstrap 能力”，不等于验证了“实际上号器扩展在 Chrome 中工作”。扩展本身仍未接入 Worker。
 - 因此当前 F0 仍是前置运行时切片，不应写成已完成上号器集成或完整 MVP。
+
+## 2026-08-26 MVP 再审查结论
+
+- 用户确认需要主动检查后期能力中哪些必须前置；当前判断已把四类硬缺口前置到 F0：实际 Session/上号器 lane、卡片材料 lease、付款后权益/扣款/订阅三方核对、UNKNOWN 锁定与最小人工停止。
+- 这不意味着把完整后台、多机高可用或多 Provider fallback 提前；只前置直接决定“能否安全完成第二笔充值”的最小能力。
+- 详细复核：`docs/browser-research/mvp-future-capability-frontload-review-2026-08-26.md`。

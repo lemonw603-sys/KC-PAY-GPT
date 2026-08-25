@@ -203,3 +203,14 @@
 ### 上号器集成事实纠正
 
 上述运行没有加载或点击实际的“诺汇盛专用上号器 v1.1.0”扩展，而是使用 MVP 内部 Cookie adapter 复现其 Cookie 写入能力。扩展的真实 popup/`chrome.cookies` 路径、Chrome 扩展加载、Worker 调用和状态回写仍未验证。后续需把“实际扩展 lane”作为独立验收项，不能用直接 Cookie 注入替代其证据。
+
+### MVP 前置能力复核
+
+对后期路线做了对抗式复核后，F0 必须补齐四个硬缺口：
+
+1. 实际上号器扩展 lane 或明确等价 Session 路径的运行证据；
+2. 卡片材料 lease/填充边界（只有 `cardRef` 不能完成真实付款）；
+3. 付款后权益、扣款、订阅状态三方核对；
+4. UNKNOWN 锁定、最小人工接管和停止开关。
+
+其余多 Provider、多机高可用、完整运营后台和大规模容量准备仍后移。复核文档：`docs/browser-research/mvp-future-capability-frontload-review-2026-08-26.md`。
