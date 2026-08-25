@@ -7,7 +7,7 @@
 | worktree | `/Users/lemon/.codex/worktrees/9128/AI充值业务` |
 | 分支 | `codex/browser` |
 | 基线 HEAD | `bd9f05b` |
-| 当前交接提交 | M0 提交待生成 |
+| 当前交接提交 | `dd63f32` |
 | 跟踪改动 | 无 |
 | 未跟踪改动 | `.playwright-cli/`、`artifacts/` |
 | Browser MVP 合同层 | `browser-mvp/` 已包含；控制面仍未接入 |
