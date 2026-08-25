@@ -6,7 +6,7 @@
 | --- | --- |
 | worktree | `/Users/lemon/.codex/worktrees/9128/AI充值业务` |
 | 分支 | `codex/browser` |
-| 当前 HEAD | `bb9429d` |
+| 当前 HEAD | `d8f600e` |
 | 当前阶段 | M6：上游只读投影 → Browser 非付款执行模拟 |
 | 跟踪改动 | 无 |
 | 未跟踪改动 | `.playwright-cli/`、`artifacts/` |

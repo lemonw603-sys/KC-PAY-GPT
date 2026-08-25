@@ -4,7 +4,7 @@
 
 - Worktree：`/Users/lemon/.codex/worktrees/9128/AI充值业务`
 - 分支：`codex/browser`
-- 当前 HEAD：`bb9429d`（`feat(browser): simulate upstream nonpayment execution`）
+- 当前 HEAD：`d8f600e`（`feat(browser): add isolated mysql upstream projection contract`）
 - 当前跟踪文件无修改；未跟踪：`.playwright-cli/`、`artifacts/`
 - 本入口只维护 Browser 线，不覆盖非 Browser 共享事实源。
 
