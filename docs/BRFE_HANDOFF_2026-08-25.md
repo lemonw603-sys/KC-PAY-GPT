@@ -10,7 +10,7 @@
 
 ## 当前阶段
 
-阶段 M3（Browser MVP WAL/恢复）已完成；`browser-mvp/` 已接入当前分支，但尚未接入新版 BRFE 控制面或共享核心。不能把其他 worktree/分支中的 Browser 提交视为本分支已完成。
+阶段 M4（Browser MVP soak 与交接）已完成；`browser-mvp/` 已接入当前分支，但尚未接入新版 BRFE 控制面或共享核心。不能把其他 worktree/分支中的 Browser 提交视为本分支已完成。
 
 ## M0 已完成与验证
 
@@ -40,6 +40,14 @@
 - WAL 截断/篡改均抛 `WalIntegrityError`，恢复不会继续执行。
 - `reconcileIncompleteJobs` 将无终态证据的 RUNNING job 置为 `RECONCILE_ONLY`，不自动重放。
 - M3 测试总计 14/14 通过；`npm --prefix browser-mvp run check` 通过。
+
+## M4 已完成与验证
+
+- 10 分钟本地/隔离 soak：实际 601439ms，8 workers，100ms 间隔。
+- 5328/5328 job 完成，唯一 claim 5328，重复 0，错误 0，残留 0。
+- WAL 15984 条、6,520,982 bytes；soak 内校验通过；Chromium preflight `submitCalls=0`。
+- 报告：`/var/folders/vv/y6273_2s7n98r55m2rc96p_w0000gn/T/browser-mvp-soak-SOtfzq/report.json`。
+- 最终 `npm --prefix browser-mvp test` 14/14，`npm --prefix browser-mvp run check` 和 `git diff --check` 均通过。
 
 ## 当前分支已验证
 
@@ -71,7 +79,7 @@
 
 ## 下一步唯一动作
 
-进入 M4：仅在 `browser-mvp/` 内执行本地/隔离 soak 并记录指标；在此之前不 cherry-pick 混合检查点，不使用 `git add -A`，不清理 `.playwright-cli/`/`artifacts/`，不修改非 Browser 共享核心或生产 release。
+MVP 阶段交付完成；后续唯一安全动作是由统筹窗口评审并决定是否进入共享合同适配设计。未获单独确认前，不接真实 Session、Checkout、卡片、付款、Provider 写入或生产 release；不 cherry-pick 混合检查点，不使用 `git add -A`，不清理 `.playwright-cli/`/`artifacts/`。
 
 ## 共享事实源边界
 

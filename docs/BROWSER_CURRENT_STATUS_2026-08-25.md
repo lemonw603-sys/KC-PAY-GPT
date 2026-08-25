@@ -7,15 +7,15 @@
 | worktree | `/Users/lemon/.codex/worktrees/9128/AI充值业务` |
 | 分支 | `codex/browser` |
 | 基线 HEAD | `bd9f05b` |
-| 当前交接提交 | `2f9cb70` |
+| 当前交接提交 | M4 提交待生成 |
 | 跟踪改动 | 无 |
 | 未跟踪改动 | `.playwright-cli/`、`artifacts/` |
-| Browser MVP 恢复层 | `browser-mvp/` 已包含合同、dispatch、只读 Playwright 执行和 WAL 恢复；共享控制面仍未接入 |
+| Browser MVP | `browser-mvp/` M0–M4 已完成；共享控制面仍未接入 |
 | 生产/真实付款 | 未接入、未执行 |
 
 ## 当前阶段
 
-阶段 M3：Browser MVP WAL/恢复已完成。当前不是新版 BRFE 阶段 A/B/C 的完成状态；新版控制面和共享适配器尚未进入本分支。
+阶段 M4：Browser MVP soak 与交接已完成。当前不是新版 BRFE 阶段 A/B/C 的完成状态；新版控制面和共享适配器尚未进入本分支。
 
 ## 本分支已验证
 
@@ -26,6 +26,7 @@
 - `FileDispatchStore` 并发/租约测试：3/3 通过（总测试 7/7）。
 - 本地 Chromium BrowserContext/执行器测试：4/4 通过（总测试 11/11）；漂移、租约丢失、冻结、超时均 fail-closed。
 - WAL/重启/reconcile-only 测试：3/3 通过（总测试 14/14）；截断/篡改均阻断恢复。
+- 10 分钟 soak：601439ms、5328/5328 完成、重复 0、错误 0、残留 0、WAL 15984 条；报告位于 `/var/folders/vv/y6273_2s7n98r55m2rc96p_w0000gn/T/browser-mvp-soak-SOtfzq/report.json`。
 
 ## 本分支未验证
 
@@ -34,7 +35,7 @@
 - 本地 BrowserContext Worker 接线和页面漂移 fail-closed；
 - `NON_PH_FUNCTIONAL` 只读观察器和新版 Browser 合同；
 - 菲律宾 cohort、真实 Session、Checkout、付款、生产 Worker、高可用拓扑。
-- M4 10–15 分钟本地/隔离 soak 和 Browser-only 交接。
+- 后续需统筹窗口单独评审共享合同适配；当前不进入真实付款或生产 Browser 写入。
 
 ## 暂停条件
 
@@ -45,4 +46,4 @@
 
 ## 下一步
 
-进入 M4：在 `browser-mvp/` 内执行本地/隔离 soak 并记录指标；不接共享订单、MySQL 或真实 Browser 写入。
+MVP 已完成；保持 Browser-only 隔离，等待统筹窗口评审共享合同适配；不接共享订单、MySQL 或真实 Browser 写入。

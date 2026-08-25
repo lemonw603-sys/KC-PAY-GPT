@@ -70,7 +70,7 @@ MVP 不执行真实 Session、Checkout、卡片、付款、Provider 写入或生
 
 完成证据（2026-08-25）：`AppendOnlyWal`/`WalEvidenceSink` 已实现单写者追加、序列和 SHA-256 哈希链；新实例可验证链，截断/篡改直接抛 `WalIntegrityError`。重启时无终态的 RUNNING job 只进入 `RECONCILE_ONLY`，不自动重放。14/14 测试通过。
 
-### M4：MVP soak 与交接
+### M4：MVP soak 与交接（已完成）
 
 交付：
 
@@ -79,7 +79,9 @@ MVP 不执行真实 Session、Checkout、卡片、付款、Provider 写入或生
 - Browser MVP 合同、当前状态、交接记录和回放命令；
 - 独立 Git commit。
 
-退出条件：soak 残留为 0，`npm run test:browser-mvp` 全绿，Browser-only worktree 路径无未提交源码改动。
+退出条件：soak 残留为 0，Browser MVP 测试全绿，Browser-only worktree 路径无未提交源码改动。
+
+完成证据（2026-08-25）：10 分钟 soak（实际 601439ms，8 workers，100ms 间隔）完成 5328/5328 jobs，唯一 claim 5328，重复 0，错误 0，残留 0；WAL 15984 条、约 6.2MB，soak 内校验通过。报告：`/var/folders/vv/y6273_2s7n98r55m2rc96p_w0000gn/T/browser-mvp-soak-SOtfzq/report.json`。最终 `npm --prefix browser-mvp test` 14/14、`npm --prefix browser-mvp run check` 和 `git diff --check` 均通过。
 
 ## 未来升级预留
 
