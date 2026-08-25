@@ -162,6 +162,7 @@ HNSKJ /cards 全量发现
 已验证（代码/隔离运行/项目运行记录分开）：
 
 - 非 Browser worktree 定向 card funding 测试：16/16 pass。
+- 非 Browser worktree Browser 控制面、卡台路线、资金栅栏和卡资金组合测试：53/53 pass；这证明了“卡台/运营后台作为上游、Browser 运行引用共享 attempt/route/funds 状态”的代码合同和 fail-closed 规则，但不是生产 Browser 运行证据。
 - Browser worktree `browser-mvp`：20/20 pass，soak 5328/5328，`submitCalls=0`。
 - 非 Browser 生产只读证据：卡台目录/卡片只读同步、库存观察和后台“卡余额充值”页面可访问；卡余额充值写开关为 false，card funding runner 未作为自动写入路径运行。
 - HNSKJ/ZZSHU 的真实读结构、HNSKJ 一次开卡/ZZSHU 一次成功 PoC 已有项目记录，但不等于当前 Browser 已接线。

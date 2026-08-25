@@ -106,6 +106,7 @@
 已验证：
 
 - 非 Browser worktree 定向卡资金/库存测试 16/16 通过。
+- 非 Browser worktree Browser 控制面、卡台路线、资金栅栏和卡资金组合测试 53/53 通过；证明上游合同在代码/隔离测试中可复用，尚不代表生产接线。
 - 代码和部署证据显示卡余额充值写开关、生产 funding runner 保持关闭；没有真实 Browser 卡片/Checkout/付款接线证据。
 
 未验证：
