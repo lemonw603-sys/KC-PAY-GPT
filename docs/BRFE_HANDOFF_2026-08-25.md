@@ -10,7 +10,7 @@
 
 ## 当前阶段
 
-阶段 M0（Browser MVP 合同层）已完成；`browser-mvp/` 已接入当前分支，但尚未接入新版 BRFE 控制面或共享核心。不能把其他 worktree/分支中的 Browser 提交视为本分支已完成。
+阶段 M1（Browser MVP 本地控制面）已完成；`browser-mvp/` 已接入当前分支，但尚未接入新版 BRFE 控制面或共享核心。不能把其他 worktree/分支中的 Browser 提交视为本分支已完成。
 
 ## M0 已完成与验证
 
@@ -19,6 +19,13 @@
 - 运行时拒绝 Session、卡号、CVV、Checkout authority、密钥等敏感字段；默认 Port 未实现时 fail-closed。
 - `npm --prefix browser-mvp test`：4/4 通过。
 - `npm --prefix browser-mvp run check`：通过。
+
+## M1 已完成与验证
+
+- `FileDispatchStore`：原子 JSON 持久化、幂等 enqueue、claim、lease heartbeat、complete、过期 recover。
+- 8 个并发 mock worker 处理 240 个合成 job：240 次唯一 claim、0 漏领、0 非完成残留。
+- 旧 lease token 在接管后无法 heartbeat 或 complete；rename 结果不明时不自动重放 claim。
+- M1 测试总计 7/7 通过（含 M0 合同测试）。
 
 ## 当前分支已验证
 
@@ -50,7 +57,7 @@
 
 ## 下一步唯一动作
 
-进入 M1：仅在 `browser-mvp/` 内实现本地 durable dispatch 和 lease/幂等 PoC；在此之前不 cherry-pick 混合检查点，不使用 `git add -A`，不清理 `.playwright-cli/`/`artifacts/`，不修改非 Browser 共享核心或生产 release。
+进入 M2：仅在 `browser-mvp/` 内接入临时本地 BrowserContext 和只读页面检查点；在此之前不 cherry-pick 混合检查点，不使用 `git add -A`，不清理 `.playwright-cli/`/`artifacts/`，不修改非 Browser 共享核心或生产 release。
 
 ## 共享事实源边界
 

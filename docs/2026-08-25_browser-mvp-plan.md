@@ -31,7 +31,7 @@ MVP 不执行真实 Session、Checkout、卡片、付款、Provider 写入或生
 
 完成证据（2026-08-25）：`browser-mvp/` 已建立，四个 Port、合成 job/manifest/evidence fixture 和 4 条 Node contract tests 已提交；`npm test` 为 4/4，通过 `npm run check`。M0 未连接共享订单、MySQL、真实 Session、Checkout、卡片或付款。
 
-### M1：控制面 MVP
+### M1：控制面 MVP（已完成）
 
 交付：
 
@@ -41,6 +41,8 @@ MVP 不执行真实 Session、Checkout、卡片、付款、Provider 写入或生
 - bounded retry 只覆盖明确可重试的存储错误；ambiguous claim 不自动重试。
 
 退出条件：8 个并发 mock worker 对 240 个合成 job 无重复、无漏领；旧 token 不能续租。
+
+完成证据（2026-08-25）：`FileDispatchStore` 使用本地 JSON + 临时文件原子 rename，已覆盖幂等 enqueue、claim、heartbeat、complete、过期 recover；rename 结果不明时抛出 `AmbiguousStorageError`，不自动重放 claim。`npm --prefix browser-mvp test` 为 7/7（含 8 worker/240 job 并发场景）。
 
 ### M2：本地 Browser 执行
 
@@ -92,4 +94,4 @@ MVP 不执行真实 Session、Checkout、卡片、付款、Provider 写入或生
 
 ## 当前唯一下一步
 
-进入 M1：在 `browser-mvp/` 内实现 enqueue/claim/heartbeat/complete/recover 的本地 durable dispatch PoC，先用合成 job 验证 lease、幂等和恢复，不接共享订单或生产存储。每个阶段结束都更新 `BRFE_HANDOFF_2026-08-25.md`、`BROWSER_CURRENT_STATUS_2026-08-25.md` 和本计划的证据链接。
+进入 M2：接入临时本地 Playwright BrowserContext 和只读页面检查点，验证漂移/超时/租约丢失时 fail-closed；不接真实 Session、Checkout 或付款。每个阶段结束都更新 `BRFE_HANDOFF_2026-08-25.md`、`BROWSER_CURRENT_STATUS_2026-08-25.md` 和本计划的证据链接。

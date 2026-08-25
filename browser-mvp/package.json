@@ -7,7 +7,7 @@
     "node": ">=20"
   },
   "scripts": {
-    "check": "node --check src/contracts.js && node --check src/ports.js && node --check src/fixtures.js",
+    "check": "node --check src/contracts.js && node --check src/ports.js && node --check src/fixtures.js && node --check src/dispatch-store.js",
     "test": "node --test"
   }
 }
