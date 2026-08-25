@@ -4,13 +4,21 @@
 
 - Worktree：`/Users/lemon/.codex/worktrees/9128/AI充值业务`
 - 分支：`codex/browser`
-- 基线 HEAD：`bd9f05b4949f86b9ec095c16abaf7ab6f01f277e`；当前交接提交：`b45fd35`
+- 基线 HEAD：`bd9f05b4949f86b9ec095c16abaf7ab6f01f277e`；当前交接提交：M0 提交待生成
 - 当前跟踪文件无修改；未跟踪：`.playwright-cli/`、`artifacts/`
 - 本入口只维护 Browser 线，不覆盖非 Browser 共享事实源。
 
 ## 当前阶段
 
-当前 worktree 仍是旧 Browser 基线，尚未接入新版 BRFE 控制面。不能把其他 worktree/分支中的 Browser 提交视为本分支已完成。
+阶段 M0（Browser MVP 合同层）已完成；`browser-mvp/` 已接入当前分支，但尚未接入新版 BRFE 控制面或共享核心。不能把其他 worktree/分支中的 Browser 提交视为本分支已完成。
+
+## M0 已完成与验证
+
+- 四个可替换 Port：`BrowserExecutionPort`、`DispatchStore`、`EvidenceSink`、`RuntimeAdapter`。
+- 合成 `LOCAL_MOCK` / `NON_PH_FUNCTIONAL` manifest、job envelope 和 evidence fixture。
+- 运行时拒绝 Session、卡号、CVV、Checkout authority、密钥等敏感字段；默认 Port 未实现时 fail-closed。
+- `npm --prefix browser-mvp test`：4/4 通过。
+- `npm --prefix browser-mvp run check`：通过。
 
 ## 当前分支已验证
 
@@ -42,7 +50,7 @@
 
 ## 下一步唯一动作
 
-由统筹窗口冻结共享核心基线或批准 Browser-only extraction 后，再按依赖顺序迁移；在此之前不 cherry-pick 混合检查点，不使用 `git add -A`，不清理 `.playwright-cli/`/`artifacts/`，不修改非 Browser 共享核心或生产 release。
+进入 M1：仅在 `browser-mvp/` 内实现本地 durable dispatch 和 lease/幂等 PoC；在此之前不 cherry-pick 混合检查点，不使用 `git add -A`，不清理 `.playwright-cli/`/`artifacts/`，不修改非 Browser 共享核心或生产 release。
 
 ## 共享事实源边界
 

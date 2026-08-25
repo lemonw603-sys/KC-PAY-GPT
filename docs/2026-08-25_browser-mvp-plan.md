@@ -18,7 +18,7 @@ MVP 不执行真实 Session、Checkout、卡片、付款、Provider 写入或生
 
 ## 阶段与退出条件
 
-### M0：基线冻结与目录隔离
+### M0：基线冻结与目录隔离（已完成）
 
 交付：
 
@@ -28,6 +28,8 @@ MVP 不执行真实 Session、Checkout、卡片、付款、Provider 写入或生
 - 当前 worktree/commit/未跟踪产物记录。
 
 退出条件：不依赖混合 `a84c293`，不修改非 Browser 共享核心；`node --check` 和最小 contract test 通过。
+
+完成证据（2026-08-25）：`browser-mvp/` 已建立，四个 Port、合成 job/manifest/evidence fixture 和 4 条 Node contract tests 已提交；`npm test` 为 4/4，通过 `npm run check`。M0 未连接共享订单、MySQL、真实 Session、Checkout、卡片或付款。
 
 ### M1：控制面 MVP
 
@@ -90,4 +92,4 @@ MVP 不执行真实 Session、Checkout、卡片、付款、Provider 写入或生
 
 ## 当前唯一下一步
 
-先完成 M0：建立 `browser-mvp/` 目录、四个 ports、合成 fixture 和最小 contract test；M0 通过后再进入 M1。每个阶段结束都更新 `BRFE_HANDOFF_2026-08-25.md`、`BROWSER_CURRENT_STATUS_2026-08-25.md` 和本计划的证据链接。
+进入 M1：在 `browser-mvp/` 内实现 enqueue/claim/heartbeat/complete/recover 的本地 durable dispatch PoC，先用合成 job 验证 lease、幂等和恢复，不接共享订单或生产存储。每个阶段结束都更新 `BRFE_HANDOFF_2026-08-25.md`、`BROWSER_CURRENT_STATUS_2026-08-25.md` 和本计划的证据链接。
