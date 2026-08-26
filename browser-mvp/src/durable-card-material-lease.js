@@ -20,6 +20,7 @@ export class DurableCardMaterialLeaseProvider {
     this.filePath = filePath;
     this.clock = clock;
     this.leases = new Map();
+    this._lock = Promise.resolve();
   }
 
   async init() {
@@ -38,19 +39,21 @@ export class DurableCardMaterialLeaseProvider {
   }
 
   async open(cardRef, { purpose = 'browser-checkout', ttlMs = 60_000 } = {}) {
-    assertRef(cardRef, 'cardRef');
-    if (typeof purpose !== 'string' || purpose.length === 0) throw new TypeError('purpose is required');
-    if (!Number.isInteger(ttlMs) || ttlMs < 1_000 || ttlMs > 5 * 60_000) throw new TypeError('ttlMs must be between 1000ms and 300000ms');
-    for (const lease of this.leases.values()) {
-      if (lease.cardRef === cardRef && ['ACTIVE', 'RECOVERY_REQUIRED'].includes(lease.state) && lease.expiresAt > this.clock()) {
-        throw new ContractError('card already has an active or recovery-required lease');
+    return this._withLock(async () => {
+      assertRef(cardRef, 'cardRef');
+      if (typeof purpose !== 'string' || purpose.length === 0) throw new TypeError('purpose is required');
+      if (!Number.isInteger(ttlMs) || ttlMs < 1_000 || ttlMs > 5 * 60_000) throw new TypeError('ttlMs must be between 1000ms and 300000ms');
+      for (const lease of this.leases.values()) {
+        if (lease.cardRef === cardRef && ['ACTIVE', 'RECOVERY_REQUIRED'].includes(lease.state) && lease.expiresAt > this.clock()) {
+          throw new ContractError('card already has an active or recovery-required lease');
+        }
       }
-    }
-    assertCardMaterial(await this.source.load(cardRef));
-    const lease = { leaseId: `card-material-lease:${randomUUID()}`, cardRef, purpose, expiresAt: this.clock() + ttlMs, state: 'ACTIVE' };
-    this.leases.set(lease.leaseId, lease);
-    await this._persist();
-    return { ...lease };
+      assertCardMaterial(await this.source.load(cardRef));
+      const lease = { leaseId: `card-material-lease:${randomUUID()}`, cardRef, purpose, expiresAt: this.clock() + ttlMs, state: 'ACTIVE' };
+      this.leases.set(lease.leaseId, lease);
+      await this._persist();
+      return { ...lease };
+    });
   }
 
   async withMaterial(lease, callback) {
@@ -63,19 +66,23 @@ export class DurableCardMaterialLeaseProvider {
   }
 
   async close(lease) {
-    const entry = this.leases.get(lease?.leaseId);
-    if (!entry) return;
-    entry.state = 'RELEASED';
-    await this._persist();
+    return this._withLock(async () => {
+      const entry = this.leases.get(lease?.leaseId);
+      if (!entry) return;
+      entry.state = 'RELEASED';
+      await this._persist();
+    });
   }
 
   async recover(leaseId, action = 'revoke') {
-    const entry = this.leases.get(leaseId);
-    if (!entry || entry.state !== 'RECOVERY_REQUIRED') throw new ContractError('lease is not awaiting recovery');
-    if (!['release', 'revoke'].includes(action)) throw new ContractError('recovery action must be release or revoke');
-    entry.state = action === 'release' ? 'RELEASED' : 'REVOKED';
-    await this._persist();
-    return { ...entry };
+    return this._withLock(async () => {
+      const entry = this.leases.get(leaseId);
+      if (!entry || entry.state !== 'RECOVERY_REQUIRED') throw new ContractError('lease is not awaiting recovery');
+      if (!['release', 'revoke'].includes(action)) throw new ContractError('recovery action must be release or revoke');
+      entry.state = action === 'release' ? 'RELEASED' : 'REVOKED';
+      await this._persist();
+      return { ...entry };
+    });
   }
 
   snapshot() { return { version: 1, leases: Object.fromEntries([...this.leases].map(([id, lease]) => [id, { ...lease }])) }; }
@@ -84,5 +91,11 @@ export class DurableCardMaterialLeaseProvider {
     const temp = `${this.filePath}.${process.pid}.tmp`;
     await writeFile(temp, `${JSON.stringify(this.snapshot())}\n`, { mode: 0o600 });
     await rename(temp, this.filePath);
+  }
+
+  async _withLock(operation) {
+    const next = this._lock.then(operation, operation);
+    this._lock = next.catch(() => undefined);
+    return next;
   }
 }

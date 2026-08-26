@@ -16,6 +16,7 @@ export class DurablePaymentSafetyGate {
     this.clock = clock;
     this.journalJobId = 'brjob:payment-gate:journal';
     this.gate = new PaymentSafetyGate({ clock });
+    this._lock = Promise.resolve();
   }
 
   async init() {
@@ -41,15 +42,20 @@ export class DurablePaymentSafetyGate {
   snapshot() { return this.gate.snapshot(); }
 
   async _mutate(operation) {
-    const before = this.gate.snapshot();
-    const result = operation();
-    try {
-      await this._appendState();
-      return clone(result);
-    } catch (error) {
-      this.gate.restore(before);
-      throw error;
-    }
+    const run = async () => {
+      const before = this.gate.snapshot();
+      const result = operation();
+      try {
+        await this._appendState();
+        return clone(result);
+      } catch (error) {
+        this.gate.restore(before);
+        throw error;
+      }
+    };
+    const next = this._lock.then(run, run);
+    this._lock = next.catch(() => undefined);
+    return next;
   }
 
   async _appendState() {

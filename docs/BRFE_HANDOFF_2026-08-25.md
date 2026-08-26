@@ -248,3 +248,5 @@
 - `durable-card-material-lease.js` 只持久化租约元数据，重启后活动租约转为 `RECOVERY_REQUIRED`，卡材料仍只在 callback 内从 source 读取。
 
 `npm --prefix browser-mvp run check` 通过；`npm --prefix browser-mvp test` **40/40 passed**。本轮没有接卡台写接口、没有真实付款。下一步是把这两个合同接入统筹窗口冻结的共享 attempt/card readiness/资金 permit，而不是直接打开付款写开关。
+
+P0 持久化切片已补并发串行保护：同一 attempt 的并发 payment prepare、同一卡的并发 material lease 只允许一个成功；测试仍为 40/40。当前提交前仍需把 durable contracts 接到共享 attempt/card 状态和 Browser lease。

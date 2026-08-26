@@ -184,3 +184,7 @@
 验证新增：预先存在其它 WAL 事件时，payment journal 仍使用全局 WAL sequence；模拟新进程恢复 UNKNOWN；模拟新进程将卡租约锁为 `RECOVERY_REQUIRED`。总测试：`npm --prefix browser-mvp test` **40/40 passed**，`npm --prefix browser-mvp run check` 通过。
 
 边界：这仍是 Browser-only 持久化合同，不是共享订单/卡台生产接线；source、资金 permit、Browser dispatch lease 和真实付款 executor 尚未连接。真实付款写开关保持关闭。
+
+### P0 切片的并发复核
+
+又补了一轮并发审查：Durable payment gate 和 Durable card lease 原先若多个调用同时进入，可能在持久化前互相穿插。现增加各自串行锁；同一 attempt 或同一卡并发请求只允许一个成功。并发回归纳入测试，仍为 40/40 通过。

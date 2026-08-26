@@ -84,6 +84,11 @@ test('durable payment gate restores UNKNOWN after a fresh process', async (t) =>
   const second = await new DurablePaymentSafetyGate({ wal, filePath: join(root, 'gate.json') }).init();
   assert.equal(second.canSubmit({ orderRef: 'order:durable', cardRef: 'card:durable' }), false);
   assert.equal(second.snapshot().attempts[0].state, 'UNKNOWN');
+  const concurrent = await Promise.allSettled([
+    second.prepare({ orderRef: 'order:concurrent', attemptRef: 'attempt:concurrent', cardRef: 'card:concurrent' }),
+    second.prepare({ orderRef: 'order:concurrent', attemptRef: 'attempt:concurrent', cardRef: 'card:concurrent' }),
+  ]);
+  assert.equal(concurrent.filter((result) => result.status === 'fulfilled').length, 1);
 });
 
 test('durable card lease requires recovery after a process restart', async (t) => {
@@ -98,4 +103,6 @@ test('durable card lease requires recovery after a process restart', async (t) =
   await second.recover(lease.leaseId, 'release');
   const replacement = await second.open('card:durable');
   assert.equal(replacement.cardRef, 'card:durable');
+  const concurrent = await Promise.allSettled([second.open('card:concurrent'), second.open('card:concurrent')]);
+  assert.equal(concurrent.filter((result) => result.status === 'fulfilled').length, 1);
 });
