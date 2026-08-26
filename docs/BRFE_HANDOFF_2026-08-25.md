@@ -444,7 +444,7 @@ git diff --check                     # passed（提交前再次执行）
 
 - Worktree：`/Users/lemon/.codex/worktrees/9128/AI充值业务`；分支：`codex/browser`。
 - 本轮仅修改 Browser adapter/runtime/test/docs；未修改 nonbrowser worktree 或共享事实源；未使用 `git add -A`。
-- 共享核心基线：`0ec0f33`；本轮 Browser 提交：`87f5aa9`（`feat(browser): wire shared runtime contract and dry-run aborts`）。
+- 共享核心基线：`0ec0f33`；本轮 Browser 提交：`63f9294`（`feat(browser): wire shared runtime contract and dry-run aborts`）。
 - adapter 已统一到正式状态：`RECHARGE_PROCESSING` + `PREPARED/ACTIVE` + `BROWSER`；拒绝旧 PoC 平行状态和独立 `audit_ref`。
 - 新增 `shared-runtime-integration.js` 接通 claim/run、resource lease、服务端权威 payment permit 边界和 `abortBeforePayment()`。本轮只跑非付款；没有 submit executor、没有卡台写调用。
 - 非付款联调与故障注入：67/67 Browser MVP、50/50 v1 Browser 定向、隔离 MySQL 3/3；外部付款调用 0，安全 abort 后 funds fence CLEARED，permit 无残留。

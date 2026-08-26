@@ -280,4 +280,4 @@ node --test v1/test/browser-*.test.js（定向套件） # 50/50 passed
 - `browser-mvp/test/session-provider.test.js`
 - `browser-mvp/package.json`
 
-本轮提交：`87f5aa9`（`feat(browser): wire shared runtime contract and dry-run aborts`）。未跟踪 `artifacts/browser-checkout-observe/` 保持原样，不纳入提交。
+本轮提交：`63f9294`（`feat(browser): wire shared runtime contract and dry-run aborts`）。未跟踪 `artifacts/browser-checkout-observe/` 保持原样，不纳入提交。
