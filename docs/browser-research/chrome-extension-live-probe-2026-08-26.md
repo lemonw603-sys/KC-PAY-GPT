@@ -28,3 +28,13 @@ Chrome 官方在 Chrome 137 移除了 branded Google Chrome 的 `--load-extensio
 ## 下一步
 
 Google Chrome 主 lane 要继续使用实际扩展，需要在专用 persistent Profile 中通过 `chrome://extensions` 一次性“加载已解压的扩展”；这是持久化安装动作。安装完成后再执行：popup 只读确认 → 用户已提供 Session 的写入验证 → `/api/auth/session` 身份核对。真实付款仍保持关闭。
+
+## 实际安装与 Session Bootstrap 结果
+
+用户确认后，原始 `v1.1.0` 已安装到专用 Profile，真实 popup 验证通过：扩展 ID 存在，标题、Session 输入框、提交按钮和“未登录”状态均可见。
+
+随后用用户已提供的 Session JSON 做实际 popup 写入（不记录原文/邮箱/Token）：扩展返回 `Failed to parse or set cookie named "__Secure-next-auth.session-token".`，未写入 Session Cookie，也未打开 ChatGPT。根因是当前 Session Token 超过单 Cookie 限制，而原始扩展只写一个 Cookie，不支持 NextAuth/Auth.js `.0/.1/...` 分块。
+
+因此不能把“扩展已安装”写成“扩展已完成上号”。同时发现 Worker adapter 点击后立即返回成功、没有等待 popup 结果，也会造成假成功；已修正为等待 popup 状态和 ChatGPT 新页面，错误时 fail-closed。
+
+项目内新建派生版本：`browser-mvp/extensions/nuohuisheng-session-loader/`，版本 `1.1.1`，保留 Downloads 原始 `1.1.0` 不变。派生版增加长 Cookie 分块、旧分块清理、分块会话识别；纯函数测试覆盖 8500 字符 Token 的三段重组。尚未安装到专用 Profile。

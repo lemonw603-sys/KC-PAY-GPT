@@ -268,3 +268,5 @@ P0 持久化切片已补并发串行保护：同一 attempt 的并发 payment pr
 ## 2026-08-26 上号器真实加载纠正
 
 Google Chrome 151 headed context 已实跑；空 `DISPLAY` 不是当前 macOS 阻塞。真正事实是 Chrome 151 忽略解压扩展命令行加载，Profile 中未出现诺汇盛扩展，popup 返回 `ERR_BLOCKED_BY_CLIENT`。Adapter 已增加真实 popup 验证并 fail-closed，测试 43/43。继续 Google Chrome lane 的唯一动作是把解压扩展一次性安装到专用 persistent Profile；未安装前不能再写“扩展 lane 已运行”。
+
+原始上号器 v1.1.0 已装入专用 Profile，但真实长 Session 写入失败，未产生 Cookie/ChatGPT 页面；原因是扩展缺少 Cookie 分块，同时 adapter 会过早报告成功。项目内已派生 v1.1.1 并修正两点，测试 45/45；原始 Downloads 文件保持不变。派生版安装并再次传入 Session 属于下一动作，完成前不能宣称身份核验成功。

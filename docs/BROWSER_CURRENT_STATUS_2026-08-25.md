@@ -218,3 +218,9 @@ order/attempt/cardReadyEvidence/route（只读投影）
 真实运行纠正了两个假设：macOS 上空 `DISPLAY` 没有阻止 headed Chrome 151 启动；真正的阻塞是 Google Chrome 137 起移除了 `--load-extension`，因此 Chrome 151 虽然进程启动，但未加载上号器，popup 返回 `ERR_BLOCKED_BY_CLIENT`。详细证据见 `docs/browser-research/chrome-extension-live-probe-2026-08-26.md`。
 
 代码已增加 `verifyLoaded()`，必须真实打开 popup 并看到输入/按钮控件才能宣称扩展加载成功；测试更新为 43/43。下一步是在专用 persistent Chrome Profile 通过 `chrome://extensions` 一次性安装解压扩展，之后再做 Session 身份核对。该安装是持久化浏览器变更，执行前需在动作点确认。
+
+### 上号器真实安装后的失败与修正
+
+原始 v1.1.0 已实际安装进专用 Chrome Profile，popup 控件验证通过；但用户提供的长 Session 通过 popup 写入失败，Cookie 数量仍为 0，ChatGPT 未打开。原始扩展只写一个 Cookie，不支持 NextAuth/Auth.js 长 Token 分块；同时 Worker adapter 原先未等待 popup 结果，存在假成功。
+
+已在项目内保留派生版 `browser-mvp/extensions/nuohuisheng-session-loader/` v1.1.1（原 Downloads 版本不改），增加 `.0/.1/...` 分块写入、旧分块清理和分块识别；adapter 改为只有 popup 明确成功并打开 ChatGPT 才返回成功。测试更新为 45/45。派生版尚未安装；真实身份仍未验证。

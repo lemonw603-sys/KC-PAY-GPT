@@ -82,8 +82,20 @@ export class ChromeExtensionSessionRuntimeAdapter extends GoogleChromeControlRun
     await popup.locator('#sessionToken').fill(sessionInput);
     const typeControl = popup.locator('#cookieType');
     if (await typeControl.count()) await typeControl.selectOption(cookieType);
+    const extensionId = new URL(popup.url()).host;
+    const openedPage = runtime.context.waitForEvent('page', { timeout: timeoutMs }).catch(() => null);
     await popup.locator('#loginButton').click();
-    return { extensionId: new URL(popup.url()).host, popupUrl: popup.url(), sessionWritten: true, openedChatGPT: true };
+    const status = popup.locator('#statusMessage');
+    await status.waitFor({ state: 'visible', timeout: timeoutMs }).catch(() => undefined);
+    if (!popup.isClosed()) {
+      const tone = await status.getAttribute('data-tone');
+      if (tone === 'error') throw new ContractError(`extension session bootstrap failed: ${await status.textContent()}`);
+    }
+    const chatPage = await openedPage;
+    if (!chatPage) throw new ContractError('extension did not open ChatGPT after writing the Session');
+    await chatPage.waitForLoadState('domcontentloaded', { timeout: timeoutMs }).catch(() => undefined);
+    if (!chatPage.url().startsWith('https://chatgpt.com')) throw new ContractError('extension opened an unexpected destination');
+    return { extensionId, sessionWritten: true, openedChatGPT: true, chatPage };
   }
 
   async verifyLoaded(runtime, { timeoutMs = 5_000, extension = null } = {}) {
