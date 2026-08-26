@@ -13,6 +13,7 @@ import { createSyntheticManifest } from '../src/fixtures.js';
 import { runNonPaymentUpstreamSimulation } from '../src/nonpayment-simulation.js';
 import { runFrontloadedNonPaymentIntegration } from '../src/frontloaded-p0-integration.js';
 import { DurableCardMaterialLeaseProvider } from '../src/durable-card-material-lease.js';
+import { HnskjCardMaterialSource, mapHnskjCardMaterial } from '../src/hnskj-card-material-source.js';
 import { ContractError, hasSensitiveKey } from '../src/contracts.js';
 import { projectUpstreamBrowserJob } from '../src/shared-contract-adapter.js';
 
@@ -28,6 +29,7 @@ function projection(overrides = {}) {
     profile: { id: 'prof-upstream-0001' },
     card: {
       ref: 'card:inventory:0001',
+      providerCardRef: 'provider-card:0001',
       routeRef: 'route:browser:0001',
       providerAccountRef: 'provider-account:hnskj:0001',
       inventoryStatus: 'AVAILABLE',
@@ -70,6 +72,20 @@ test('upstream projection carries only card/route/readiness references', () => {
   assert.equal(hasSensitiveKey(job), false);
   assert.equal('cardNumber' in job.metadata.upstream, false);
   assert.equal('cvv' in job.metadata.upstream, false);
+  assert.equal(job.metadata.upstream.providerCardRef, 'provider-card:0001');
+});
+
+test('HNSKJ card material source is read-only and normalizes provider credentials', async () => {
+  const calls = [];
+  const source = new HnskjCardMaterialSource({
+    provider: { card: async (providerCardRef) => { calls.push(providerCardRef); return { data: { card: { cardNumber: '4111111111111111', expiryMonth: 12, expiryYear: 2030, cvv: '123' } } }; } },
+  });
+  const material = await source.load('provider-card:0001');
+  assert.deepEqual(material, { pan: '4111111111111111', cvc: '123', expMonth: 12, expYear: 2030 });
+  assert.deepEqual(calls, ['provider-card:0001']);
+  assert.throws(() => mapHnskjCardMaterial({ data: { card: { cardNumber: 'bad' } } }), ContractError);
+  assert.equal(typeof source.provider.purchaseCard, 'undefined');
+  assert.equal(source.requiresProviderCardRef, true);
 });
 
 test('stale, mismatched, or non-browser upstream projections fail before dispatch', () => {
@@ -144,11 +160,12 @@ test('frontloaded P0 integration consumes a card lease and releases it after obs
       dispatchStore,
       executionService,
       cardMaterialLeaseProvider,
+      materialRef: 'provider-card:0001',
       now,
     });
     assert.equal(result.result.status, 'OBSERVED');
     assert.equal(result.result.submitCalls, 0);
-    assert.equal(loads, 2, 'one load validates the lease and one load supplies the callback');
+    assert.equal(loads, 1, 'card material is read once inside the callback to minimize provider calls');
     assert.equal(Object.values(cardMaterialLeaseProvider.snapshot().leases)[0].state, 'RELEASED');
   } finally {
     await rm(dir, { recursive: true, force: true });

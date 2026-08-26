@@ -125,6 +125,7 @@ function projectUpstreamCard(projection, { now = Date.now() } = {}) {
     cardRef,
     routeRef,
     providerAccountRef,
+    ...(card.providerCardRef == null ? {} : { providerCardRef: requireRef(card.providerCardRef, 'card.providerCardRef') }),
     cardReadyEvidence: {
       digest: evidenceDigest,
       observedAt: readiness.observedAt,

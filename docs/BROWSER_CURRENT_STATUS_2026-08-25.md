@@ -204,3 +204,11 @@ order/attempt/cardReadyEvidence/route（只读投影）
 该路径明确不创建 payment permit、不消费 active funds permit、不提交 Checkout。测试验证上游投影经过 BrowserContext 后卡租约被释放，卡材料 source 只在租约校验和 callback 内读取。总测试：`npm --prefix browser-mvp test` **41/41 passed**。
 
 边界：仍未接真实 MySQL 视图、真实卡台材料 source、共享资金 permit 或付款 executor；这是隔离联调切片，不是生产付款接线。
+
+## 2026-08-26 当前 MVP 与路线落盘索引
+
+用户已确认继续推进，并要求最新 MVP 与后续规划明确落盘。当前唯一执行口径见：
+
+`docs/browser-research/browser-mvp-current-plan-2026-08-26.md`
+
+该文冻结的重点是：MVP 以“卡台就绪卡 → Session/上号器 → Chrome → Checkout → 受闸门控制的真实付款 → 三方核对 → UNKNOWN/人工接管”为核心；完整后台、多 Provider、多机和 200–300 单/日能力按 F1–F5 后置。当前代码仍处于真实付款前的隔离联调阶段。

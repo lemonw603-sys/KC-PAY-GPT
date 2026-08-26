@@ -48,7 +48,6 @@ export class DurableCardMaterialLeaseProvider {
           throw new ContractError('card already has an active or recovery-required lease');
         }
       }
-      assertCardMaterial(await this.source.load(cardRef));
       const lease = { leaseId: `card-material-lease:${randomUUID()}`, cardRef, purpose, expiresAt: this.clock() + ttlMs, state: 'ACTIVE' };
       this.leases.set(lease.leaseId, lease);
       await this._persist();

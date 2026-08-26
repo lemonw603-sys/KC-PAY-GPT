@@ -256,3 +256,11 @@ P0 持久化切片已补并发串行保护：同一 attempt 的并发 payment pr
 已新增 `frontloaded-p0-integration.js`：Browser 只消费上游 order/attempt/card readiness/route 投影，先获取 durable card lease，再在非付款 Browser observation 内执行，最后释放租约。该路径不会创建 payment permit，也不会调用资金或 Provider 写接口。
 
 验证：`npm --prefix browser-mvp run check` 通过；`npm --prefix browser-mvp test` **41/41 passed**。已验证租约在成功观察后进入 RELEASED；未验证真实 MySQL、卡台材料 API、共享资金 permit、真实 Session/Checkout/付款。
+
+## 2026-08-26 当前 MVP/路线正式索引
+
+按用户要求，当前 MVP 和后续路线已集中落盘：
+
+`docs/browser-research/browser-mvp-current-plan-2026-08-26.md`
+
+本轮新增 `provider_card_ref` 只读字段和 HNSKJ card material source 合同；卡台材料读取改为只在 callback 内读取一次，以遵守卡台调用次数限制。测试结果更新为 `42/42 passed`；仍未接生产 MySQL、真实 Session、Checkout、付款或卡台写接口。

@@ -18,6 +18,7 @@ function row(overrides = {}) {
     attempt_status: 'PENDING',
     profile_id: 'prof-mysql-0001',
     card_ref: 'card:inventory:0001',
+    provider_card_ref: 'provider-card:0001',
     card_route_ref: 'route:browser:0001',
     card_provider_account_ref: 'provider-account:hnskj:0001',
     card_inventory_status: 'AVAILABLE',
@@ -48,6 +49,7 @@ test('MySQL adapter performs one parameterized read and returns an opaque Browse
   assert.match(calls[0].sql, /FROM browser_upstream_ready_projection/);
   assert.doesNotMatch(calls[0].sql, /SELECT\s+\*/i);
   assert.equal(result.job.metadata.upstream.cardRef, 'card:inventory:0001');
+  assert.equal(result.job.metadata.upstream.providerCardRef, 'provider-card:0001');
   assert.equal(result.job.metadata.sessionRef, 'session-ref:mysql-0001');
   assert.equal(result.projection.fundsGate.status, 'NOT_REQUESTED');
   assert.equal(result.sourceDigest.length, 64);

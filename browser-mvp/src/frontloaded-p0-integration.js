@@ -1,5 +1,6 @@
 import { projectUpstreamBrowserJob } from './shared-contract-adapter.js';
 import { runNonPaymentUpstreamSimulation } from './nonpayment-simulation.js';
+import { ContractError } from './contracts.js';
 
 /**
  * Non-payment integration slice for the two P0 contracts. It consumes the
@@ -15,13 +16,18 @@ export async function runFrontloadedNonPaymentIntegration({
   cardMaterialLeaseProvider,
   workerId = 'worker:p0-simulation',
   now = Date.now(),
+  materialRef = null,
 } = {}) {
   if (!cardMaterialLeaseProvider || typeof cardMaterialLeaseProvider.open !== 'function' || typeof cardMaterialLeaseProvider.withMaterial !== 'function' || typeof cardMaterialLeaseProvider.close !== 'function') {
     throw new TypeError('durable card material lease provider is required');
   }
   const job = projectUpstreamBrowserJob(projection, { now });
   const cardRef = job.metadata.upstream.cardRef;
-  const lease = await cardMaterialLeaseProvider.open(cardRef, { purpose: 'browser-nonpayment-simulation' });
+  const resolvedMaterialRef = materialRef || job.metadata.upstream.providerCardRef || cardRef;
+  if (cardMaterialLeaseProvider.requiresProviderCardRef && !materialRef && !job.metadata.upstream.providerCardRef) {
+    throw new ContractError('provider card material source requires an explicit providerCardRef');
+  }
+  const lease = await cardMaterialLeaseProvider.open(resolvedMaterialRef, { purpose: 'browser-nonpayment-simulation' });
   try {
     return await cardMaterialLeaseProvider.withMaterial(lease, async () => runNonPaymentUpstreamSimulation({
       projection,

@@ -18,6 +18,7 @@ SELECT
   attempt_status,
   profile_id,
   card_ref,
+  provider_card_ref,
   card_route_ref,
   card_provider_account_ref,
   card_inventory_status,
@@ -68,6 +69,7 @@ function rowToProjection(row) {
     profile: { id: required(row.profile_id, 'profile_id') },
     card: {
       ref: required(row.card_ref, 'card_ref'),
+      ...(row.provider_card_ref == null ? {} : { providerCardRef: required(row.provider_card_ref, 'provider_card_ref') }),
       routeRef: required(row.card_route_ref, 'card_route_ref'),
       providerAccountRef: required(row.card_provider_account_ref, 'card_provider_account_ref'),
       inventoryStatus: required(row.card_inventory_status, 'card_inventory_status'),
