@@ -6,16 +6,16 @@
 | --- | --- |
 | worktree | `/Users/lemon/.codex/worktrees/9128/AI充值业务` |
 | 分支 | `codex/browser` |
-| 最新 Browser 代码提交 | `a79c5aa` |
-| 当前阶段 | F0：真实上号器 Session Bootstrap/身份核对已通过，下一步为 Checkout 只读观察 |
+| 最新 Browser 代码提交 | `4004741` |
+| 当前阶段 | F0：真实 Checkout 只读观察已通过，下一步为 Checkout Navigation 状态机 |
 | 跟踪改动 | 无 |
 | 未跟踪改动 | `.playwright-cli/`、`artifacts/` |
-| Browser MVP | 队列/租约/WAL/恢复、Chrome 独立 Profile、上号器、身份核对、卡材料/付款安全合同已实现；Checkout/付款及付款后对账未验证 |
+| Browser MVP | 队列/租约/WAL/恢复、Chrome Profile、上号、身份核对、真实 Checkout 观察、卡材料/付款安全合同已有；自动 Checkout 导航、付款及付款后对账未完成 |
 | 生产/真实付款 | 未接入、未执行 |
 
 ## 当前阶段
 
-阶段 F0：系统 Google Chrome 专用 persistent Profile 已安装项目派生上号器 `1.1.1`，用用户已提供 Session 真实写入后，`/api/auth/session` 返回 HTTP 200，user/email/account 三项身份摘要全部匹配。这是 Session Bootstrap 和账号身份边界通过，不等于 Checkout 或付款 MVP 已完成。
+阶段 F0：在已核对身份的专用 Chrome Profile 中，已真实进入 ChatGPT Plus Checkout；观察到 USD 20.00/月、税费 0.00、Stripe 卡号/有效期/CVC 输入和启用的“订阅” submit 控制。卡字段保持空，`submitCalls=0`，没有付款。
 
 ## 本分支已验证
 
@@ -28,9 +28,11 @@
 - WAL/重启/reconcile-only 测试：3/3 通过（总测试 14/14）；截断/篡改均阻断恢复。
 - 10 分钟 soak：601439ms、5328/5328 完成、重复 0、错误 0、残留 0、WAL 15984 条；报告位于 `/var/folders/vv/y6273_2s7n98r55m2rc96p_w0000gn/T/browser-mvp-soak-SOtfzq/report.json`。
 - 共享合同只读适配器与 SessionProvider 合同测试：6/6 通过（总测试 20/20）；active permit 和敏感源字段均拒绝，Session 仅保留 opaque ref/lease 预留。
-- 最新 `npm --prefix browser-mvp test`：**47/47 passed**；`npm --prefix browser-mvp run check`、`git diff --check` 通过。
+- 最新 `npm --prefix browser-mvp test`：**48/48 passed**；`npm --prefix browser-mvp run check`、`git diff --check` 通过。
 - 真实上号器 `1.1.1` popup 可打开；长 Session 拆成 2 个 NextAuth Cookie 分块，ChatGPT 页面打开，`/api/auth/session` HTTP 200，三项身份摘要全部匹配。
 - 已真实复现并修复新标签页先发出 `about:blank` 导致 adapter 假失败的竞态；现等待 URL 到达 `https://chatgpt.com` 后才报告成功。
+- 真实 Checkout 页面已观察：`Plus`、`USD 20.00`、税费 `0.00`、payment form/submit/card fields 均存在；Stripe Payment Page init HTTP 200。
+- `CheckoutObserver` 已从 fixture-only 选择器修正为可识别真实 ChatGPT/Stripe DOM；最新测试 **48/48 passed**。
 
 ## 本分支未验证
 
@@ -38,7 +40,7 @@
 - 生产 artifact vault、账号/订单/卡片/Checkout 资源租约；
 - BrowserContext 与共享 Worker 的生产接线；
 - 新版 BRFE `NON_PH_FUNCTIONAL` 合同与共享状态适配；
-- 菲律宾 cohort、真实 Checkout 页面合同、付款、生产 Worker、高可用拓扑。
+- 菲律宾 cohort、Checkout 自动导航状态机、付款、生产 Worker、高可用拓扑。
 - `recharge_attempts`、资金 permit、审计关联仍需统筹窗口冻结；当前不进入共享写路径或真实付款。
 
 ## 暂停条件
@@ -50,7 +52,7 @@
 
 ## 下一步
 
-使用当前已核对身份的专用 Chrome Profile 执行一次 Checkout **只读观察**：记录套餐/币种/金额/表单存在性和页面特征，`submitCalls=0`，不填卡、不点击付款。指纹浏览器仍作为可替换 runtime Spike，不阻塞这条 F0 Chrome 纵向切片。
+实现 fail-closed 的 Checkout Navigation 状态机：从 ChatGPT 首页打开价格页，按实际状态可选跳过用途问卷，创建 Checkout Session 后立即交给 `observeCheckout()`；不引入填卡或 submit 能力。
 
 ## M7 隔离 MySQL 只读合同
 

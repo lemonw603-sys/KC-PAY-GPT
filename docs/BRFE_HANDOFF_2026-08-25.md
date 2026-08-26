@@ -4,7 +4,7 @@
 
 - Worktree：`/Users/lemon/.codex/worktrees/9128/AI充值业务`
 - 分支：`codex/browser`
-- 当前 Browser 代码提交：`a79c5aa`（`fix(browser): stabilize installed session loader bootstrap`）
+- 当前 Browser 代码提交：`4004741`（`feat(browser): observe live Plus checkout safely`）
 - 当前跟踪文件无修改；未跟踪：`.playwright-cli/`、`artifacts/`
 - 本入口只维护 Browser 线，不覆盖非 Browser 共享事实源。
 
@@ -304,3 +304,25 @@ git diff --check passed
 未验证边界：真实 Checkout 页面合同；卡材料真实读取/填充；共享 MySQL/资金 permit 生产接线；付款提交；权益/订阅/卡台扣款对账；指纹浏览器 runtime Spike。
 
 下一步唯一动作：在当前已核对身份的专用 Chrome Profile 中执行 Checkout **只读观察**，记录套餐/币种/金额/表单存在性并保持 `submitCalls=0`。首次真实付款仍必须另行向用户确认。
+
+## 2026-08-26 最新交接：Checkout 只读观察已通过
+
+本节覆盖上一节的“Checkout 尚未观察”状态。
+
+- Browser 代码提交：`4004741` (`feat(browser): observe live Plus checkout safely`)。
+- 真实路径：ChatGPT 首页 → 价格弹窗 → 升级至 Plus → 可选用途问卷/跳过 → Checkout Session → Stripe Payment Page。
+- 价格弹窗显示当前免费版、Plus `$20/月`、地区“美国”。
+- 真实 Checkout 显示 `Plus 套餐`、`USD 20.00`、预估税费 `0.00`、按月自动续订；Stripe Payment Page init HTTP 200。
+- Stripe 安全字段 `cc-number/cc-exp/cc-csc` 和“订阅” submit 控制存在；支付方式 UI 显示银行卡/PayPal。
+- hCaptcha/invisible challenge frame 已加载，但没有证据表明本次已弹出可见验证码，不得写成“已解决验证码”。
+- 安全结果：`checkoutCreated=true`、`fieldsFilled=0`、`submitCalls=0`、`paymentClicked=false`、`cardApiCalls=0`。
+- 旧 `CheckoutObserver` 只匹配本地 fixture；已根据真实 DOM 增加 `CHATGPT_PLUS_CHECKOUT_CONTRACT`，实际重放能返回币种/金额/税费/表单/卡字段/提交控件存在性，不触发提交。
+- `npm --prefix browser-mvp run check`通过；`npm --prefix browser-mvp test` **48/48 passed**；`git diff --check` 通过。
+- 详细证据：`docs/browser-research/real-checkout-observation-2026-08-26.md`。
+- 本地未跟踪证据：`artifacts/browser-checkout-observe/2026-08-26-live/`；不提交、不覆盖历史 artifact。
+
+已验证边界：真实 Session/身份 → 价格页 → Checkout Session 创建 → Stripe Checkout 只读摘要，最终付款提交为 0。
+
+未验证边界：自动 Checkout Navigation 状态机；真实卡材料读取/填充；payment gate 与 submit executor 强制串接；付款提交；权益/订阅/卡台扣款对账；指纹浏览器 Spike。
+
+下一步唯一动作：实现 fail-closed 的 Checkout Navigation 状态机，把价格弹窗/可选问卷/Checkout Session 创建接入 `BrowserExecutionService`，到达 Checkout 后只调用 `observeCheckout()`，仍然不填卡、不 submit。
