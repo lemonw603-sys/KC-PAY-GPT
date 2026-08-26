@@ -41,6 +41,23 @@ test('local BrowserContext observes a page and never exposes a submit operation'
   });
 });
 
+test('page checkpoint waits for client hydration before checking the final title', async () => {
+  await withExecutor(async (executor) => {
+    const job = makeJob(`
+      <title>Loading application</title>
+      <script>
+        setTimeout(() => {
+          document.title = 'Browser MVP fixture';
+          document.body.innerHTML = '<main data-browser-mvp-marker>observe-only</main>';
+        }, 50);
+      </script>
+    `);
+    const result = await executor.execute(job, { assertLease: async () => true });
+    assert.equal(result.status, 'OBSERVED');
+    assert.equal(result.submitCalls, 0);
+  });
+});
+
 test('executor bootstraps an opaque Session lease before page observation', async () => {
   const runtimeAdapter = new LocalPlaywrightRuntimeAdapter({ browserType: chromium });
   const evidenceSink = new MemoryEvidenceSink();

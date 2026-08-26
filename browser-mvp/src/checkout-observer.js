@@ -46,18 +46,23 @@ async function readMoneyRow(page, { summarySelector, labels }) {
   return parseMoney(rows[0]);
 }
 
-async function inspectCardFields(page) {
+async function inspectCardFields(page, timeoutMs) {
   const selectors = {
     cardNumber: 'input[autocomplete="cc-number"]',
     expiry: 'input[autocomplete="cc-exp"]',
     cvc: 'input[autocomplete="cc-csc"]',
   };
   const present = { cardNumber: false, expiry: false, cvc: false };
-  for (const frame of page.frames()) {
-    for (const [name, selector] of Object.entries(selectors)) {
-      if (!present[name] && await frame.locator(selector).count() > 0) present[name] = true;
+  const deadline = Date.now() + timeoutMs;
+  do {
+    for (const frame of page.frames()) {
+      for (const [name, selector] of Object.entries(selectors)) {
+        if (!present[name] && await frame.locator(selector).count() > 0) present[name] = true;
+      }
     }
-  }
+    if (Object.values(present).every(Boolean) || Date.now() >= deadline) break;
+    await page.waitForTimeout(100);
+  } while (true);
   return present;
 }
 
@@ -72,6 +77,8 @@ export const CHATGPT_PLUS_CHECKOUT_CONTRACT = Object.freeze({
   paymentFormSelector: 'form[data-testid="checkout-form"]',
   submitControlSelector: '[data-testid="checkout-summary-column"] button[type="submit"]',
   inspectSecureCardFields: true,
+  requireSecureCardFields: true,
+  secureFieldTimeoutMs: 10_000,
 });
 
 /** Read-only Checkout summary. It never clicks or submits payment controls. */
@@ -86,9 +93,14 @@ export async function observeCheckout(page, {
   estimatedTaxLabels = [],
   submitControlSelector = null,
   inspectSecureCardFields = false,
+  requireSecureCardFields = false,
+  secureFieldTimeoutMs = 0,
 } = {}) {
   if (!page || typeof page.url !== 'function') throw new TypeError('page is required');
   if (typeof urlPrefix !== 'string' || !urlPrefix) throw new ContractError('checkout urlPrefix is required');
+  if (inspectSecureCardFields && (!Number.isInteger(secureFieldTimeoutMs) || secureFieldTimeoutMs < 0 || secureFieldTimeoutMs > 30_000)) {
+    throw new ContractError('secureFieldTimeoutMs must be between 0 and 30000');
+  }
   if (!page.url().startsWith(urlPrefix)) throw new ContractError('checkout page URL drift');
   let [plan, currency, amount] = await Promise.all([
     readText(page, planSelector),
@@ -107,8 +119,11 @@ export async function observeCheckout(page, {
   const submitControl = submitControlSelector ? page.locator(submitControlSelector) : null;
   const submitControlPresent = submitControl ? (await submitControl.count()) === 1 : false;
   const submitControlEnabled = submitControlPresent ? await submitControl.isEnabled() : false;
-  const cardFieldsPresent = inspectSecureCardFields ? await inspectCardFields(page) : null;
+  const cardFieldsPresent = inspectSecureCardFields ? await inspectCardFields(page, secureFieldTimeoutMs) : null;
   if (!plan || !currency || !amount) throw new ContractError('checkout summary is incomplete');
+  if (requireSecureCardFields && (!cardFieldsPresent || Object.values(cardFieldsPresent).some((present) => !present))) {
+    throw new ContractError('secure card fields did not become ready');
+  }
   return {
     planDigest: digest(plan),
     currency,

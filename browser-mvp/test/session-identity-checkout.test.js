@@ -90,3 +90,29 @@ test('checkout observer matches the live ChatGPT Plus checkout shape without tou
     await browser.close();
   }
 });
+
+test('live Checkout contract fails closed when Stripe secure fields never become ready', async () => {
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage();
+    await page.setContent(`
+      <form data-testid="checkout-form"></form>
+      <section data-testid="checkout-summary-column">
+        <h2>Plus plan</h2>
+        <div><span>Estimated tax</span><span>US$0.00</span></div>
+        <div><span>Total due today</span><span>US$20.00</span></div>
+        <button type="submit">Subscribe</button>
+      </section>
+    `);
+    await assert.rejects(
+      () => observeCheckout(page, {
+        ...CHATGPT_PLUS_CHECKOUT_CONTRACT,
+        urlPrefix: 'about:blank',
+        secureFieldTimeoutMs: 50,
+      }),
+      /secure card fields did not become ready/,
+    );
+  } finally {
+    await browser.close();
+  }
+});
