@@ -392,6 +392,7 @@ git diff --check passed
 本节覆盖上一节的“卡材料填充切片尚未验证”状态。
 
 - 当前 Browser worktree：`/Users/lemon/.codex/worktrees/9128/AI充值业务`；分支：`codex/browser`。
+- 本轮提交：`11d19e6` (`feat(browser): add nonpayment card field fill slice`)。
 - 本轮仍未触碰 `.playwright-cli/`、`artifacts/`，未使用 `git add -A`；共享 `CURRENT_STATE/DECISIONS/HANDOFF_LOG` 未修改。
 - 新增 `browser-mvp/src/nonpayment-card-fill.js`：仅接受短时 card-material lease callback，定位 Stripe-like `cc-number/cc-exp/cc-csc` 安全字段，逐字段检查租约/人工停止后填充；只清理本次实际写入字段，不暴露 PAN/CVC，不提供 click/submit。
 - `BrowserExecutionService` 新增显式非付款选项 `cardMaterialLeaseProvider + cardMaterialLease + fillCardFields=true`；未同时满足 Checkout observer、lease 和 provider 时 fail-closed。返回值只包含状态/计数，固定 `submitCalls=0`。
