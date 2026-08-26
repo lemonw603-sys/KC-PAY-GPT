@@ -33,12 +33,13 @@
 - HNSKJ card material source 的只读响应映射（只允许 `provider.card()`，不含写方法）。
 - 专用 Google Chrome Profile 中的实际派生上号器 `1.1.1`：popup 真实执行、长 Session Cookie 分块写入、ChatGPT 打开和 `/api/auth/session` 三项身份摘要匹配已通过。
 - 真实 ChatGPT Plus Checkout 只读观察：USD 20.00/月、税费 0.00、Stripe 安全卡字段、提交控制和 Payment Page 初始化已验证，`submitCalls=0`。
+- Checkout Navigation 状态机已接入 `BrowserExecutionService`；真实处理首页 hydration、Plus 价格弹窗、前/后置用途问卷、Checkout Session 创建和 Stripe 安全字段就绪，全程 `submitCalls=0`。
 
 ### 尚未完成但属于 MVP 硬验收项
 
 - 真实 MySQL `browser_upstream_ready_projection` 视图及 `provider_card_ref` 口径冻结；
 - 真实卡台只读材料 source 接线（优先一次读取、关键阶段读取，不循环刷新）；
-- Checkout 自动导航状态机，以及页面漂移/403/可见人机验证分流；
+- 真实卡材料 source/lease 与 Stripe 安全字段填充接线，以及 403/可见人机验证人工分流；
 - 付款 executor 与 durable payment gate 强制串接；
 - 付款后三方核对：Plus 权益、外部交易/扣款、订单 attempt/订阅续费状态；
 - 首次真实付款前的单独确认，以及 `1 笔 → 2–3 笔` 受控连续验证。

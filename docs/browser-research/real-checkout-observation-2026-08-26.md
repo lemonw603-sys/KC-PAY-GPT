@@ -118,3 +118,49 @@ git diff --check
 6. 保持 `submitCalls=0` 并记录 Checkout Session 创建事实。
 
 首次真实付款仍必须单独向用户确认。
+
+## Checkout Navigation 状态机实现与真实重放
+
+Browser 代码提交 `d9b19e6` 已将上述人工路径接入 `BrowserExecutionService`：
+
+```text
+首页标记与身份核对
+→ 打开价格弹窗
+→ 可选用途问卷（可在 Plus 点击前或后出现）
+→ 创建 Checkout Session
+→ 等待 Stripe 安全字段就绪
+→ observeCheckout()
+```
+
+状态机只允许点击明确的导航控件；控件如果是 `type=submit`、位于 form 内、匹配不唯一或被未知页面覆盖，则 fail-closed。导航合同开启时必须同时提供只读 Checkout observer 合同。
+
+真实重放过程发现并修正三个仅依靠 fixture 无法发现的竞态：
+
+1. ChatGPT 在 `DOMContentLoaded` 时标题/升级按钮尚未 hydration，现等待必需页面标记可见后再校验最终标题。
+2. 用途问卷可能在定位 Plus 按钮后才覆盖页面，现在检测遮挡并跳过后重试同一 upgrade attempt。
+3. Checkout 主 form 先出现，Stripe 卡号/有效期/CVC iframe 后加载；现在合同要求三项安全字段在 10 秒内全部就绪，否则停止。
+
+最终专用 Chrome 真实执行结果：
+
+```text
+status=OBSERVED
+sessionIdentity.verified=true
+sessionIdentity.httpStatus=200
+checkoutCreated=true
+questionnaireSkipped=true
+currency=USD
+amount=20.00
+estimatedTax=0.00
+paymentFormPresent=true
+submitControlPresent=true
+submitControlEnabled=true
+cardNumber/expiry/cvc present=true
+fieldsFilled=0
+submitCalls=0
+paymentClicked=false
+cardApiCalls=0
+```
+
+证据序列为 `intent(1) → page-signature(2) → checkout-navigation(3)`，记录的 Checkout URL 只保存 digest，不记录 Checkout Session ID。执行后关闭新建 Checkout 页面。
+
+最终验证：`npm --prefix browser-mvp run check` 通过；`npm --prefix browser-mvp test` **53/53 passed**；`git diff --check` 通过。

@@ -326,3 +326,63 @@ git diff --check passed
 未验证边界：自动 Checkout Navigation 状态机；真实卡材料读取/填充；payment gate 与 submit executor 强制串接；付款提交；权益/订阅/卡台扣款对账；指纹浏览器 Spike。
 
 下一步唯一动作：实现 fail-closed 的 Checkout Navigation 状态机，把价格弹窗/可选问卷/Checkout Session 创建接入 `BrowserExecutionService`，到达 Checkout 后只调用 `observeCheckout()`，仍然不填卡、不 submit。
+
+## 2026-08-26 最新交接：Checkout Navigation 自动闭环已通过
+
+本节覆盖上一节的“自动 Checkout Navigation 状态机尚未验证”历史状态。
+
+- Worktree：`/Users/lemon/.codex/worktrees/9128/AI充值业务`；分支：`codex/browser`。
+- Browser 代码提交：`d9b19e6` (`feat(browser): automate checkout navigation read-only`)。
+- 未跟踪 `.playwright-cli/`、`artifacts/` 保持不动；未使用 `git add -A`。
+- `BrowserExecutionService` 已真实自动完成：身份核对 → 首页 hydration → 价格弹窗 → 可选用途问卷 → Checkout Session → Stripe 安全字段就绪 → `observeCheckout()`。
+- 状态机只允许明确的导航控件；`type=submit`、form 内按钮、按钮歧义和未知页面均 fail-closed。开启 Navigation 时必须同时提供只读 Checkout observer。
+- 每次点击前检查 Browser 租约和人工停止；Checkout URL 只记录 digest，不记录 Checkout Session ID。
+
+真实运行发现并修复三个竞态：
+
+1. `DOMContentLoaded` 时 ChatGPT 标题/升级控件可能尚未 hydration，现等待必需首页标记后再校验。
+2. 用途问卷可能在 Plus 点击前或后出现，并可能覆盖已定位的按钮；现按页面状态处理两种顺序后重试导航。
+3. Checkout 主 form 先出现，Stripe 卡号/有效期/CVC iframe 后加载；现要求三项安全字段在 10 秒内全部就绪，否则停止。
+
+最终真实结果：
+
+```text
+status=OBSERVED
+sessionIdentity.verified=true
+sessionIdentity.httpStatus=200
+checkoutCreated=true
+questionnaireSkipped=true
+currency=USD
+amount=20.00
+estimatedTax=0.00
+paymentFormPresent=true
+submitControlPresent=true
+submitControlEnabled=true
+cardNumber/expiry/cvc present=true
+fieldsFilled=0
+submitCalls=0
+paymentClicked=false
+cardApiCalls=0
+```
+
+证据序列为 `intent(1) → page-signature(2) → checkout-navigation(3)`；执行后已关闭本次新建的 Checkout 页面，不复用旧 Checkout Session。
+
+验证命令与结果：
+
+```bash
+npm --prefix browser-mvp run check
+npm --prefix browser-mvp test
+git diff --check
+```
+
+```text
+check passed
+53/53 passed
+git diff --check passed
+```
+
+已验证边界：专用 Chrome Profile 中的真实 Session/身份 → 自动导航 → Checkout 创建 → Stripe 安全字段就绪 → 只读摘要，全程没有填卡和付款副作用。
+
+未验证边界：真实卡材料读取/填充；共享 MySQL/资金 permit 生产接线；payment gate 与 submit executor；付款提交；权益/订阅/卡台扣款三方核对；指纹浏览器 runtime Spike。
+
+下一步唯一动作：进入非付款卡材料切片，先用 fixture 卡材料验证 durable card lease → Stripe 安全字段填充 → 失租约立即停止 → 字段清理，并强制 `submitCalls=0`；本阶段不读取真实卡、不提交付款。
