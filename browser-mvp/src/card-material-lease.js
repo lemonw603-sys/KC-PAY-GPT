@@ -39,12 +39,17 @@ export class InMemoryCardMaterialLeaseProvider {
 
   async withMaterial(lease, callback) {
     if (!lease || typeof lease !== 'object' || typeof callback !== 'function') throw new TypeError('lease and callback are required');
-    const entry = this.leases.get(lease.leaseId);
+    const entry = this.assertActive(lease);
+    return callback(clone(entry.material));
+  }
+
+  assertActive(lease) {
+    const entry = this.leases.get(lease?.leaseId);
     if (!entry || entry.expiresAt <= this.clock()) throw new ContractError('card material lease is expired or unknown');
     if (lease.cardRef !== entry.cardRef || lease.expiresAt !== entry.expiresAt || lease.purpose !== entry.purpose) {
       throw new ContractError('card material lease does not match the issued lease');
     }
-    return callback(clone(entry.material));
+    return entry;
   }
 
   async close(lease) {

@@ -6,7 +6,7 @@
 | --- | --- |
 | worktree | `/Users/lemon/.codex/worktrees/9128/AI充值业务` |
 | 分支 | `codex/browser` |
-| 最新 Browser 代码提交 | `144e7b8` (`test(browser): verify HNSKJ card material fill wiring`) |
+| 最新 Browser 代码提交 | `21ea077`（文档指针；本轮 lease expiry 回归尚未提交） |
 | 当前阶段 | F0：Checkout Navigation + fixture 卡材料非付款填充闭环已通过 |
 | 跟踪改动 | 无 |
 | 未跟踪改动 | `.playwright-cli/`、`artifacts/` |
@@ -35,6 +35,7 @@
 - `CheckoutObserver` 已从 fixture-only 选择器修正为可识别真实 ChatGPT/Stripe DOM；该历史切片提交 `4004741` 当时为 **48/48 passed**，当前累计结果见上方 **53/53**。
 - Checkout Navigation 已接入执行器；问卷在 Plus 点击前/后出现、首页 hydration 和 Stripe iframe 延迟加载均有 fail-closed 处理。
 - fixture 卡材料非付款切片已接入执行器：durable card lease → Stripe 安全字段填充 → 失租约停止 → 已写字段清理；测试验证 `fieldsFilled=3`、`fieldsCleared=3`、`submitCalls=0`，材料 source 只读取 1 次。
+- 卡材料 lease 在每个字段前都会再次校验；新增 expiry 回归证明租约到期时停止下一字段并清理已写字段。
 - `HnskjCardMaterialSource` 已在捕获 provider 响应 fixture 中接入该填充闭环；显式使用 `providerCardRef`，provider 调用次数为 1，错误映射仍 fail-closed。
 
 ## 本分支未验证

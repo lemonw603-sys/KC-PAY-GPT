@@ -426,3 +426,9 @@ git diff --check                     # passed（提交前再次执行）
 未验证边界：真实 HNSKJ API 响应/网络错误、共享 MySQL `browser_upstream_ready_projection` 生产视图、真实卡材料、真实 Stripe 字段、付款与三方对账。
 
 下一步唯一动作：等待统筹窗口冻结 `provider_card_ref`、attempt/card readiness 和共享 MySQL 只读视图口径，然后接入真实 HNSKJ 只读 adapter；继续保持一次读取、无写方法和 payment submit 关闭。
+
+## 2026-08-26 lease expiry 回归补充
+
+- `InMemoryCardMaterialLeaseProvider` 与 `DurableCardMaterialLeaseProvider` 新增 `assertActive()`；非付款填充在每个安全字段前重新校验 card lease。
+- 新增 expiry 回归：租约在第一个字段后到期时，第二个字段不会写入，已写字段仍被清理。
+- 最新验证为 **57/57 passed**；本轮仍未读取真实卡、未调用 HNSKJ 真实 API、未打开 payment submit。

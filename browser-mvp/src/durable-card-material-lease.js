@@ -57,11 +57,16 @@ export class DurableCardMaterialLeaseProvider {
 
   async withMaterial(lease, callback) {
     if (!lease || typeof callback !== 'function') throw new TypeError('lease and callback are required');
-    const entry = this.leases.get(lease.leaseId);
-    if (!entry || entry.state !== 'ACTIVE' || entry.expiresAt <= this.clock()) throw new ContractError('card material lease is expired, revoked, or requires recovery');
-    if (lease.cardRef !== entry.cardRef || lease.expiresAt !== entry.expiresAt || lease.purpose !== entry.purpose) throw new ContractError('card material lease does not match the issued lease');
+    const entry = this.assertActive(lease);
     const material = assertCardMaterial(await this.source.load(entry.cardRef));
     return callback(clone(material));
+  }
+
+  assertActive(lease) {
+    const entry = this.leases.get(lease?.leaseId);
+    if (!entry || entry.state !== 'ACTIVE' || entry.expiresAt <= this.clock()) throw new ContractError('card material lease is expired, revoked, or requires recovery');
+    if (lease.cardRef !== entry.cardRef || lease.expiresAt !== entry.expiresAt || lease.purpose !== entry.purpose) throw new ContractError('card material lease does not match the issued lease');
+    return entry;
   }
 
   async close(lease) {
