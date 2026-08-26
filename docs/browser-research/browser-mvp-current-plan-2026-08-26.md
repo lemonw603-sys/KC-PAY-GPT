@@ -31,10 +31,10 @@
 - payment permit、UNKNOWN 锁定、订单/卡/全局停止、资金差异停止；
 - 上游只读投影 → BrowserContext → 卡片租约释放的非付款联调；
 - HNSKJ card material source 的只读响应映射（只允许 `provider.card()`，不含写方法）。
+- 专用 Google Chrome Profile 中的实际派生上号器 `1.1.1`：popup 真实执行、长 Session Cookie 分块写入、ChatGPT 打开和 `/api/auth/session` 三项身份摘要匹配已通过。
 
 ### 尚未完成但属于 MVP 硬验收项
 
-- headed Chrome 中实际运行上号器 popup，并拿到真实账号身份响应；
 - 真实 MySQL `browser_upstream_ready_projection` 视图及 `provider_card_ref` 口径冻结；
 - 真实卡台只读材料 source 接线（优先一次读取、关键阶段读取，不循环刷新）；
 - Checkout 页面真实观察与页面漂移/403/人机验证分流；
@@ -79,6 +79,6 @@
 
 - 测试是隔离合同和本地仿真，不代表生产接线；
 - 当前没有真实 Checkout/付款副作用证据；
+- 当前已有真实 Session Bootstrap 和身份匹配证据，但这不等于 Checkout 或付款已验证；
 - 卡台 API 写开关、真实付款写开关保持关闭；
 - 未跟踪 `.playwright-cli/`、`artifacts/` 不属于本次修改。
-

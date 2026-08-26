@@ -4,13 +4,13 @@
 
 - Worktree：`/Users/lemon/.codex/worktrees/9128/AI充值业务`
 - 分支：`codex/browser`
-- 当前 HEAD：`d8f600e`（`feat(browser): add isolated mysql upstream projection contract`）
+- 当前 Browser 代码提交：`a79c5aa`（`fix(browser): stabilize installed session loader bootstrap`）
 - 当前跟踪文件无修改；未跟踪：`.playwright-cli/`、`artifacts/`
 - 本入口只维护 Browser 线，不覆盖非 Browser 共享事实源。
 
 ## 当前阶段
 
-阶段 M6（上游只读投影 → Browser 非付款执行模拟）已完成；`browser-mvp/` 已接入当前分支，但尚未接入新版 BRFE 控制面或共享核心写路径。不能把其他 worktree/分支中的 Browser 提交视为本分支已完成。
+阶段 F0：队列/租约/WAL/恢复、Google Chrome 专用 Profile、实际上号器 Session Bootstrap、真实身份核对已进入当前分支并通过验证。尚未完成真实 Checkout 只读观察、卡材料真实接线、付款提交和付款后三方对账。
 
 ## M0 已完成与验证
 
@@ -64,9 +64,9 @@
 - 全量 `v1 npm test` 已启动；78 tests 中 75 pass、3 个测试文件因当前 worktree 未安装 `express`/`mysql2` 启动失败。
 - 已存在旧 Browser 运行产物：`artifacts/browser-poc/*.json`；它们是未跟踪历史证据，不是当前运行时配置。
 
-## 已完成但尚未进入本分支的 Browser 工作
+## 历史迁移审计快照（已被后续提交取代）
 
-以下内容在其他 Browser worktree/分支提交中存在，但当前 `codex/browser` 尚未包含：
+本节是 2026-08-25 迁移当时的历史判断；队列/租约/WAL/恢复已在后续 Browser 提交中实现，不得再把下列条目当成当前缺失。保留此节仅用于解释当时为什么没有整批 cherry-pick：
 
 - Browser Worker control shell、loop、process wrapper；
 - dispatch queue、claim/lease/heartbeat、ambiguous claim 修正；
@@ -270,3 +270,37 @@ P0 持久化切片已补并发串行保护：同一 attempt 的并发 payment pr
 Google Chrome 151 headed context 已实跑；空 `DISPLAY` 不是当前 macOS 阻塞。真正事实是 Chrome 151 忽略解压扩展命令行加载，Profile 中未出现诺汇盛扩展，popup 返回 `ERR_BLOCKED_BY_CLIENT`。Adapter 已增加真实 popup 验证并 fail-closed，测试 43/43。继续 Google Chrome lane 的唯一动作是把解压扩展一次性安装到专用 persistent Profile；未安装前不能再写“扩展 lane 已运行”。
 
 原始上号器 v1.1.0 已装入专用 Profile，但真实长 Session 写入失败，未产生 Cookie/ChatGPT 页面；原因是扩展缺少 Cookie 分块，同时 adapter 会过早报告成功。项目内已派生 v1.1.1 并修正两点，测试 45/45；原始 Downloads 文件保持不变。派生版安装并再次传入 Session 属于下一动作，完成前不能宣称身份核验成功。
+
+## 2026-08-26 最新交接：真实上号和身份核对已通过
+
+本节覆盖上一节的“派生版尚未安装”历史状态。
+
+- Worktree：`/Users/lemon/.codex/worktrees/9128/AI充值业务`；分支：`codex/browser`。
+- Browser 代码提交：`a79c5aa` (`fix(browser): stabilize installed session loader bootstrap`)。
+- 未跟踪 `.playwright-cli/`、`artifacts/` 保持不动；未使用 `git add -A`。
+- 派生源：`browser-mvp/extensions/nuohuisheng-session-loader/`；Chrome 安装副本：`/Users/lemon/Downloads/Browser MVP 上号器 v1.1.1/`。
+- 专用 Google Chrome Profile 真实加载 `Browser MVP 上号器 1.1.1`，popup 控件存在。
+- 使用用户已提供 Session 经 popup 写入后，生成 2 个 NextAuth Session Cookie 分块；ChatGPT 成功打开；`/api/auth/session` 返回 HTTP 200；user/email/account 三项摘要全部匹配。
+- 不记录 Session/Token/邮箱/账号 ID 原文；未打开 Checkout、未填卡、未付款、未调用卡台写接口。
+- 实跑发现 Chrome 新页面先以空 URL/`about:blank` 发出，旧 adapter 会假失败。`a79c5aa` 改为等待 URL 到达 `https://chatgpt.com`，并增加 `installedExtensionId` 以支持 branded Chrome 手动安装路径。
+- 修复后已用真实 adapter 重放，`sessionWritten=true`、`openedChatGPT=true`、三项身份摘要再次全部匹配。
+
+验证命令与结果：
+
+```bash
+npm --prefix browser-mvp run check
+npm --prefix browser-mvp test
+git diff --check
+```
+
+```text
+check passed
+47/47 passed
+git diff --check passed
+```
+
+已验证边界：Google Chrome 专用 Profile → 派生上号器 popup → Session Cookie 分块 → ChatGPT → `/api/auth/session` 身份匹配。
+
+未验证边界：真实 Checkout 页面合同；卡材料真实读取/填充；共享 MySQL/资金 permit 生产接线；付款提交；权益/订阅/卡台扣款对账；指纹浏览器 runtime Spike。
+
+下一步唯一动作：在当前已核对身份的专用 Chrome Profile 中执行 Checkout **只读观察**，记录套餐/币种/金额/表单存在性并保持 `submitCalls=0`。首次真实付款仍必须另行向用户确认。
