@@ -1,7 +1,12 @@
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
+import { redactSensitiveText } from '../../security/redaction.js';
 
 const HEX_64 = /^[a-f0-9]{64}$/i;
 const ACTIVE_RUN_STATUSES = new Set(['READY', 'RUNNING', 'RECONCILE_ONLY', 'HUMAN_REQUIRED']);
+const PAYMENT_READY_CARD_STATUSES = new Set(['active', 'available', 'usable', 'ready']);
+const PAYMENT_SNAPSHOT_MAX_AGE_MS = 15 * 60_000;
+const SAFE_ABORT_ORDER_STATUSES = new Set(['WAITING_FOR_SESSION', 'CARD_READY', 'RECHARGE_FAILED']);
+const CUSTOMER_SESSION_ACTION_CODES = new Set(['ACCOUNT_ALREADY_PLUS', 'SESSION_INVALID']);
 
 export class BrowserExecutionError extends Error {
   constructor(message, code, details = undefined) {
@@ -15,6 +20,14 @@ export class BrowserExecutionError extends Error {
 function required(value, name) {
   const normalized = String(value || '').trim();
   if (!normalized) throw new BrowserExecutionError(`${name} is required`, 'INVALID_ARGUMENT');
+  return normalized;
+}
+
+function requireCode(value, name) {
+  const normalized = required(value, name).toUpperCase();
+  if (!/^[A-Z][A-Z0-9_]{1,63}$/.test(normalized)) {
+    throw new BrowserExecutionError(`${name} must be an uppercase operational code`, 'INVALID_ARGUMENT');
+  }
   return normalized;
 }
 
@@ -37,6 +50,82 @@ function hashesEqual(left, right) {
 
 function json(value) {
   return value == null ? null : JSON.stringify(value);
+}
+
+function decimalMicros(value, name) {
+  const normalized = String(value ?? '').trim();
+  const match = /^(\d+)(?:\.(\d{1,6}))?$/.exec(normalized);
+  if (!match) {
+    throw new BrowserExecutionError(`${name} is not a valid non-negative DECIMAL(18,6)`, 'CARD_SNAPSHOT_INVALID');
+  }
+  return (BigInt(match[1]) * 1_000_000n) + BigInt((match[2] || '').padEnd(6, '0'));
+}
+
+function timestampIso(value, name) {
+  const timestamp = value == null ? NaN : new Date(value).getTime();
+  if (!Number.isFinite(timestamp)) {
+    throw new BrowserExecutionError(`${name} is missing or invalid`, 'CARD_CHECK_STALE');
+  }
+  return { timestamp, iso: new Date(timestamp).toISOString() };
+}
+
+function cardCredentialsDigest(value) {
+  if (value == null) return null;
+  return createHash('sha256').update(Buffer.isBuffer(value) ? value : Buffer.from(String(value))).digest('hex');
+}
+
+function authoritativePaymentSnapshot(row, now) {
+  if (row.executor_kind !== 'BROWSER' || row.route_executor_kind !== 'BROWSER') {
+    throw new BrowserExecutionError('attempt route is not executable by Browser', 'EXECUTOR_KIND_MISMATCH');
+  }
+  if (!row.attempt_fulfillment_route_id || row.attempt_fulfillment_route_id !== row.order_fulfillment_route_id
+    || row.attempt_fulfillment_route_id !== row.route_id) {
+    throw new BrowserExecutionError('attempt and order routes do not match', 'ROUTE_BINDING_MISMATCH');
+  }
+  if (!row.card_id || row.card_order_id !== row.order_id) {
+    throw new BrowserExecutionError('card is not bound to this order', 'CARD_BINDING_MISMATCH');
+  }
+  if (!row.card_provider_account_id || row.card_provider_account_id !== row.route_card_provider_account_id) {
+    throw new BrowserExecutionError('card provider does not match the frozen route', 'CARD_PROVIDER_MISMATCH');
+  }
+  if (!row.provider_card_id) {
+    throw new BrowserExecutionError('card provider reference is missing', 'CARD_NOT_READY');
+  }
+  const cardStatus = String(row.card_status || '').trim().toLowerCase();
+  if (!PAYMENT_READY_CARD_STATUSES.has(cardStatus)) {
+    throw new BrowserExecutionError('card status is not payment-ready', 'CARD_NOT_READY');
+  }
+  if (!row.card_credentials_ciphertext) {
+    throw new BrowserExecutionError('card credentials are missing', 'CARD_NOT_READY');
+  }
+  const balance = decimalMicros(row.card_current_balance, 'card current balance');
+  const minimum = decimalMicros(row.minimum_required_card_balance, 'minimum required card balance');
+  if (balance < minimum) {
+    throw new BrowserExecutionError('card balance is below the order minimum', 'CARD_BALANCE_INSUFFICIENT');
+  }
+  const synced = timestampIso(row.card_last_synced_at, 'card sync time');
+  const ageMs = now.getTime() - synced.timestamp;
+  if (ageMs < 0 || ageMs > PAYMENT_SNAPSHOT_MAX_AGE_MS) {
+    throw new BrowserExecutionError('card verification is stale', 'CARD_CHECK_STALE');
+  }
+  const facts = {
+    attemptId: row.recharge_attempt_id,
+    orderId: row.order_id,
+    routeId: row.route_id,
+    routeCardProviderAccountId: row.route_card_provider_account_id,
+    cardId: row.card_id,
+    cardProviderAccountId: row.card_provider_account_id,
+    providerCardId: row.provider_card_id,
+    cardStatus,
+    cardBalanceMicros: balance.toString(),
+    minimumBalanceMicros: minimum.toString(),
+    cardCredentialsDigest: cardCredentialsDigest(row.card_credentials_ciphertext),
+    cardLastSyncedAt: synced.iso
+  };
+  return {
+    hash: createHash('sha256').update(JSON.stringify(facts)).digest('hex'),
+    facts
+  };
 }
 
 async function inTransaction(pool, action) {
@@ -64,10 +153,24 @@ async function lockRunContext(connection, runId) {
             br.last_checkpoint_sequence,
             rat.order_id, rat.status AS attempt_status, rat.funds_risk_state,
             rat.executor_kind, rat.executor_profile_id AS attempt_profile_id,
-            o.status AS order_status, o.version AS order_version
+            rat.authorization_item_id,
+            rat.fulfillment_route_id AS attempt_fulfillment_route_id,
+            o.status AS order_status, o.version AS order_version,
+            o.fulfillment_route_id AS order_fulfillment_route_id,
+            o.minimum_required_card_balance,
+            c.id AS card_id, c.order_id AS card_order_id,
+            c.provider_account_id AS card_provider_account_id,
+            c.provider_card_id, c.status AS card_status,
+            c.current_balance AS card_current_balance,
+            c.card_credentials_ciphertext,
+            c.last_synced_at AS card_last_synced_at,
+            fr.id AS route_id, fr.executor_kind AS route_executor_kind,
+            fr.card_provider_account_id AS route_card_provider_account_id
      FROM browser_runs br
      INNER JOIN recharge_attempts rat ON rat.id = br.recharge_attempt_id
      INNER JOIN orders o ON o.id = rat.order_id
+     LEFT JOIN cards c ON c.order_id = o.id
+     LEFT JOIN fulfillment_routes fr ON fr.id = rat.fulfillment_route_id
      WHERE br.id = ?
      FOR UPDATE`,
     [runId]
@@ -229,8 +332,8 @@ export function createBrowserExecutionRepository(pool) {
         if (context.attempt_status !== 'PREPARED' || context.funds_risk_state !== 'ACTIVE') {
           throw new BrowserExecutionError('attempt is not ready to start a Browser run', 'ATTEMPT_NOT_READY');
         }
-        if (context.order_status !== 'SUBMITTING') {
-          throw new BrowserExecutionError('order is not in SUBMITTING', 'ORDER_NOT_READY');
+        if (context.order_status !== 'RECHARGE_PROCESSING') {
+          throw new BrowserExecutionError('order is not in RECHARGE_PROCESSING', 'ORDER_NOT_READY');
         }
         if (!context.card_id) {
           throw new BrowserExecutionError('order has no assigned card', 'CARD_NOT_READY');
@@ -283,14 +386,12 @@ export function createBrowserExecutionRepository(pool) {
       runId,
       workerId,
       leaseToken,
-      snapshotHash,
       permitId = randomUUID(),
       ttlSeconds = 60,
       now = new Date()
     }) {
       const run = required(runId, 'runId');
       const worker = required(workerId, 'workerId');
-      const snapshot = requireHash(snapshotHash, 'snapshotHash');
       if (!Number.isInteger(ttlSeconds) || ttlSeconds < 5 || ttlSeconds > 300) {
         throw new BrowserExecutionError('ttlSeconds must be between 5 and 300', 'INVALID_ARGUMENT');
       }
@@ -306,9 +407,10 @@ export function createBrowserExecutionRepository(pool) {
           throw new BrowserExecutionError('automation does not own Browser control', 'CONTROL_NOT_OWNED');
         }
         if (row.executor_kind !== 'BROWSER' || row.attempt_status !== 'PREPARED'
-          || row.funds_risk_state !== 'ACTIVE' || row.order_status !== 'SUBMITTING') {
+          || row.funds_risk_state !== 'ACTIVE' || row.order_status !== 'RECHARGE_PROCESSING') {
           throw new BrowserExecutionError('funds attempt is not eligible for payment', 'ATTEMPT_NOT_READY');
         }
+        const snapshot = authoritativePaymentSnapshot(row, now).hash;
 
         const nonce = randomBytes(32).toString('hex');
         const expiresAt = new Date(now.getTime() + ttlSeconds * 1000);
@@ -366,7 +468,7 @@ export function createBrowserExecutionRepository(pool) {
           throw new BrowserExecutionError('automation does not own Browser control', 'CONTROL_NOT_OWNED');
         }
         if (row.attempt_status !== 'PREPARED' || row.funds_risk_state !== 'ACTIVE'
-          || row.order_status !== 'SUBMITTING') {
+          || row.order_status !== 'RECHARGE_PROCESSING') {
           throw new BrowserExecutionError('funds attempt is not ready for payment', 'ATTEMPT_NOT_READY');
         }
 
@@ -386,6 +488,13 @@ export function createBrowserExecutionRepository(pool) {
         }
         if (new Date(permit.expires_at).getTime() <= now.getTime()) {
           throw new BrowserExecutionError('payment permit expired', 'PAYMENT_PERMIT_EXPIRED');
+        }
+        const currentSnapshot = authoritativePaymentSnapshot(row, now).hash;
+        if (!hashesEqual(currentSnapshot, permit.snapshot_hash)) {
+          throw new BrowserExecutionError(
+            'authoritative card or route facts changed after the permit was issued',
+            'PAYMENT_SNAPSHOT_CHANGED'
+          );
         }
 
         const sequence = await appendCheckpoint(connection, row, {
@@ -436,6 +545,221 @@ export function createBrowserExecutionRepository(pool) {
           checkpointSequence: sequence,
           snapshotHash: permit.snapshot_hash
         };
+      });
+    },
+
+    async abortBeforePayment({
+      runId,
+      workerId,
+      leaseToken,
+      operationId,
+      targetOrderStatus,
+      reasonCode,
+      failureReason,
+      customerActionCode = null,
+      now = new Date()
+    }) {
+      const run = required(runId, 'runId');
+      const worker = required(workerId, 'workerId');
+      const operation = required(operationId, 'operationId');
+      const target = required(targetOrderStatus, 'targetOrderStatus').toUpperCase();
+      const reason = requireCode(reasonCode, 'reasonCode');
+      const publicReason = redactSensitiveText(required(failureReason, 'failureReason'));
+      const actionCode = customerActionCode == null
+        ? null : requireCode(customerActionCode, 'customerActionCode');
+      if (!SAFE_ABORT_ORDER_STATUSES.has(target)) {
+        throw new BrowserExecutionError('targetOrderStatus is not safe for pre-payment abort', 'INVALID_ARGUMENT');
+      }
+      if (target === 'WAITING_FOR_SESSION' && !CUSTOMER_SESSION_ACTION_CODES.has(actionCode)) {
+        throw new BrowserExecutionError(
+          'customerActionCode must describe an actionable Session problem',
+          'INVALID_ARGUMENT'
+        );
+      }
+      if (target !== 'WAITING_FOR_SESSION' && actionCode) {
+        throw new BrowserExecutionError(
+          'customerActionCode is only valid when waiting for Session replacement',
+          'INVALID_ARGUMENT'
+        );
+      }
+
+      return inTransaction(pool, async (connection) => {
+        const prior = await existingOperation(connection, run, operation);
+        if (prior) {
+          if (prior.operation_type !== 'PRE_PAYMENT_ABORT') {
+            throw new BrowserExecutionError('operation ID has another type', 'OPERATION_CONFLICT');
+          }
+          const replay = await lockRunContext(connection, run);
+          return publicRun(replay, { idempotentReplay: true });
+        }
+
+        const row = await lockRunContext(connection, run);
+        assertRunLease(row, { workerId: worker, leaseToken, now });
+        if (row.run_status !== 'RUNNING'
+          || !['NOT_STARTED', 'PAYMENT_ARMED'].includes(row.payment_state)) {
+          throw new BrowserExecutionError('run can no longer abort safely before payment', 'RECONCILE_ONLY');
+        }
+        if (row.control_state !== 'AUTOMATION' || row.automation_owner_id !== worker) {
+          throw new BrowserExecutionError('automation does not own Browser control', 'CONTROL_NOT_OWNED');
+        }
+        if (row.executor_kind !== 'BROWSER' || row.attempt_status !== 'PREPARED'
+          || row.funds_risk_state !== 'ACTIVE' || row.order_status !== 'RECHARGE_PROCESSING') {
+          throw new BrowserExecutionError('funds attempt cannot be cleared safely', 'RECONCILE_ONLY');
+        }
+
+        const [paymentSubmits] = await connection.query(
+          `SELECT id FROM browser_operations
+           WHERE browser_run_id = ? AND operation_type = 'PAYMENT_SUBMIT'
+             AND status IN ('COMMITTED', 'OUTCOME_UNKNOWN')
+           LIMIT 1 FOR UPDATE`,
+          [run]
+        );
+        const [permits] = await connection.query(
+          `SELECT id, status FROM payment_permits
+           WHERE browser_run_id = ? AND recharge_attempt_id = ?
+           FOR UPDATE`,
+          [run, row.recharge_attempt_id]
+        );
+        if (paymentSubmits.length || permits.some((permit) => permit.status === 'CONSUMED')) {
+          throw new BrowserExecutionError('payment evidence requires reconciliation', 'RECONCILE_ONLY');
+        }
+
+        const sequence = await appendCheckpoint(connection, row, {
+          kind: 'PRE_PAYMENT_ABORT', risk: 'NONE', operationId: operation,
+          now, evidence: { reasonCode: reason, targetOrderStatus: target }
+        });
+        await connection.query(
+          `INSERT INTO browser_operations
+           (browser_run_id, operation_id, operation_type, status, result_code,
+            public_result_json, prepared_at, completed_at)
+           VALUES (?, ?, 'PRE_PAYMENT_ABORT', 'COMMITTED', ?, ?, ?, ?)`,
+          [run, operation, reason,
+            json({ reasonCode: reason, targetOrderStatus: target }), now, now]
+        );
+        await connection.query(
+          `UPDATE payment_permits SET status = 'REVOKED', revoked_at = ?
+           WHERE browser_run_id = ? AND recharge_attempt_id = ? AND status = 'ISSUED'`,
+          [now, run, row.recharge_attempt_id]
+        );
+        await connection.query(
+          `UPDATE checkout_artifacts
+           SET status = 'INVALIDATED', invalidated_at = COALESCE(invalidated_at, ?)
+           WHERE browser_run_id = ? AND status IN ('ACTIVE', 'REVIEW_REQUIRED')`,
+          [now, run]
+        );
+        await connection.query(
+          `UPDATE browser_artifact_secrets
+           SET iv = NULL, auth_tag = NULL, ciphertext = NULL,
+               destroyed_at = COALESCE(destroyed_at, ?)
+           WHERE browser_run_id = ? AND destroyed_at IS NULL`,
+          [now, run]
+        );
+        await connection.query(
+          `UPDATE execution_resource_leases
+           SET released_at = COALESCE(released_at, ?),
+               release_reason = COALESCE(release_reason, ?)
+           WHERE browser_run_id = ? AND released_at IS NULL`,
+          [now, `pre-payment abort: ${reason}`.slice(0, 255), run]
+        );
+        await connection.query(
+          `UPDATE browser_dispatch_jobs
+           SET status = 'CANCELLED', last_error_code = ?, completed_at = ?,
+               lease_owner = NULL, lease_token_hash = NULL, lease_until = NULL, updated_at = ?
+           WHERE recharge_attempt_id = ? AND status IN ('QUEUED', 'CLAIMED')`,
+          [reason, now, now, row.recharge_attempt_id]
+        );
+        const [runUpdate] = await connection.query(
+          `UPDATE browser_runs
+           SET status = 'FAILED_SAFE', control_state = 'RELEASED',
+               last_checkpoint_sequence = ?, last_checkpoint_kind = 'PRE_PAYMENT_ABORT',
+               last_error_code = ?, worker_lease_until = NULL, finished_at = ?, updated_at = ?
+           WHERE id = ? AND status = 'RUNNING'
+             AND payment_state IN ('NOT_STARTED', 'PAYMENT_ARMED')`,
+          [sequence, reason, now, now, run]
+        );
+        if (runUpdate.affectedRows !== 1) {
+          throw new BrowserExecutionError('Browser run changed concurrently', 'RUN_CONFLICT');
+        }
+        const [attemptUpdate] = await connection.query(
+          `UPDATE recharge_attempts
+           SET status = 'CLEARED', funds_risk_state = 'CLEARED',
+               result_summary_json = ?, finished_at = ?, updated_at = ?
+           WHERE id = ? AND executor_kind = 'BROWSER'
+             AND status = 'PREPARED' AND funds_risk_state = 'ACTIVE'`,
+          [json({ code: reason, browserRunId: run, noExternalPaymentAction: true }),
+            now, now, row.recharge_attempt_id]
+        );
+        if (attemptUpdate.affectedRows !== 1) {
+          throw new BrowserExecutionError('funds attempt changed concurrently', 'ATTEMPT_CONFLICT');
+        }
+        if (row.authorization_item_id) {
+          const [authorizationUpdate] = await connection.query(
+            `UPDATE recharge_authorization_items SET status = 'RELEASED'
+             WHERE id = ? AND consumed_attempt_id = ? AND status = 'CONSUMED'`,
+            [row.authorization_item_id, row.recharge_attempt_id]
+          );
+          if (authorizationUpdate.affectedRows !== 1) {
+            throw new BrowserExecutionError('consumed authorization could not be released', 'AUTHORIZATION_CONFLICT');
+          }
+        }
+
+        let sessionWindowHours = null;
+        if (target === 'WAITING_FOR_SESSION') {
+          const [settings] = await connection.query(
+            `SELECT setting_value FROM app_settings
+             WHERE setting_key = 'session_replacement_window_hours' LIMIT 1 FOR UPDATE`
+          );
+          sessionWindowHours = Math.max(1, Math.min(168, Number(settings[0]?.setting_value || 72)));
+        }
+        const finishedAt = target === 'RECHARGE_FAILED' ? now : null;
+        const [orderUpdate] = await connection.query(
+          `UPDATE orders
+           SET status = ?, version = version + 1,
+               failure_code = ?, failure_reason = ?, customer_action_code = ?,
+               session_repair_started_at = CASE WHEN ? = 'WAITING_FOR_SESSION'
+                 THEN COALESCE(session_repair_started_at, ?) ELSE session_repair_started_at END,
+               session_repair_expires_at = CASE WHEN ? = 'WAITING_FOR_SESSION'
+                 THEN COALESCE(session_repair_expires_at, DATE_ADD(?, INTERVAL ? HOUR))
+                 ELSE session_repair_expires_at END,
+               finished_at = ?, updated_at = ?
+           WHERE id = ? AND status = 'RECHARGE_PROCESSING' AND version = ?`,
+          [target, reason, publicReason, actionCode,
+            target, now, target, now, sessionWindowHours, finishedAt, now,
+            row.order_id, row.order_version]
+        );
+        if (orderUpdate.affectedRows !== 1) {
+          throw new BrowserExecutionError('order changed concurrently', 'ORDER_CONFLICT');
+        }
+        if (target === 'CARD_READY') {
+          await connection.query(
+            `UPDATE tasks SET status = 'PENDING', attempts = 0, available_at = ?,
+               leased_by = NULL, leased_until = NULL, last_error_code = NULL,
+               last_error_message = NULL, completed_at = NULL, updated_at = ?
+             WHERE order_id = ? AND task_type = 'SUBMIT_RECHARGE'`,
+            [now, now, row.order_id]
+          );
+        } else if (target === 'RECHARGE_FAILED') {
+          await connection.query(
+            `UPDATE tasks SET status = 'DEAD', leased_by = NULL, leased_until = NULL,
+               last_error_code = ?, last_error_message = ?, updated_at = ?
+             WHERE order_id = ? AND task_type = 'SUBMIT_RECHARGE'`,
+            [reason, publicReason, now, row.order_id]
+          );
+        }
+        await connection.query(
+          `INSERT INTO order_events
+           (order_id, from_status, to_status, actor_type, actor_id, reason,
+            metadata_json, created_at)
+           VALUES (?, 'RECHARGE_PROCESSING', ?, 'WORKER', ?, ?, ?, ?)`,
+          [row.order_id, target, worker, publicReason,
+            json({ browserRunId: run, attemptId: row.recharge_attempt_id,
+              reasonCode: reason, noExternalPaymentAction: true,
+              sessionReplacementWindowHours: sessionWindowHours }), now]
+        );
+        return publicRun({
+          ...row, run_status: 'FAILED_SAFE', attempt_status: 'CLEARED',
+          funds_risk_state: 'CLEARED', order_status: target
+        }, { idempotentReplay: false });
       });
     },
 
@@ -497,7 +821,7 @@ export function createBrowserExecutionRepository(pool) {
           `UPDATE orders
            SET status = 'SUBMIT_UNKNOWN', version = version + 1,
                failure_code = ?, failure_reason = ?, updated_at = ?
-           WHERE id = ? AND status = 'SUBMITTING' AND version = ?`,
+           WHERE id = ? AND status = 'RECHARGE_PROCESSING' AND version = ?`,
           [reason, 'Browser payment submission outcome is unknown', now,
             row.order_id, row.order_version]
         );
@@ -508,7 +832,7 @@ export function createBrowserExecutionRepository(pool) {
           `INSERT INTO order_events
            (order_id, from_status, to_status, actor_type, actor_id, reason,
             metadata_json, created_at)
-           VALUES (?, 'SUBMITTING', 'SUBMIT_UNKNOWN', 'SYSTEM', NULL,
+           VALUES (?, 'RECHARGE_PROCESSING', 'SUBMIT_UNKNOWN', 'SYSTEM', NULL,
              'Browser payment submission outcome is unknown', ?, ?)`,
           [row.order_id, json({ browserRunId: run, attemptId: row.recharge_attempt_id, reasonCode: reason }), now]
         );
@@ -694,7 +1018,7 @@ export function createBrowserExecutionRepository(pool) {
         const [orderUpdate] = await connection.query(
           `UPDATE orders
            SET status = 'RECHARGE_SUCCESS', version = version + 1, finished_at = ?, updated_at = ?
-           WHERE id = ? AND status = 'SUBMITTING' AND version = ?`,
+           WHERE id = ? AND status = 'RECHARGE_PROCESSING' AND version = ?`,
           [now, now, row.order_id, row.order_version]
         );
         if (orderUpdate.affectedRows !== 1) {
@@ -703,7 +1027,7 @@ export function createBrowserExecutionRepository(pool) {
         await connection.query(
           `INSERT INTO order_events
            (order_id, from_status, to_status, actor_type, actor_id, reason, metadata_json, created_at)
-           VALUES (?, 'SUBMITTING', 'RECHARGE_SUCCESS', 'SYSTEM', NULL,
+           VALUES (?, 'RECHARGE_PROCESSING', 'RECHARGE_SUCCESS', 'SYSTEM', NULL,
              'Browser Plus activation and cancellation confirmed', ?, ?)`,
           [row.order_id, json({ browserRunId: run, attemptId: row.recharge_attempt_id, evidenceHash: evidence }), now]
         );

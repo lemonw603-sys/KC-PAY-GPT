@@ -222,3 +222,13 @@
 - 总览确认“接收新订单”显示“已停止新订单”并提供“开始接单”；“自动充值（对已接订单自动购买 Plus）”独立提供“开始自动充值”。两个控制项已在实际线上页面分开显示。
 - 逐页只读导航成功：总览、订单、异常队列、资金证据核对、卡余额充值、卡台路线、Browser 执行、卡片库存、CDK 管理。
 - 本轮完成部署后运行时和后台只读验收；接单、派发、Provider 写入继续关闭，真实开卡、余额充值、Plus 付款、退款和提现均未执行。
+
+## 2026-08-26｜Browser 上游合同 3 个 P0 共享核心修复
+
+- 工作线：共享核心/Browser 上游资金控制；未修改 Browser 独立 worktree，未接生产。
+- 完成 P0-1：`issuePaymentPermit()` 不再信任调用方 snapshot；在同事务内锁定并重新核验 attempt/order/route/card/Provider 绑定、卡状态、DECIMAL(18,6) 余额、卡资料和 15 分钟同步时效；snapshot 由服务端计算，付款 intent 前再计算，变化则拒绝。
+- 完成 P0-2：新增单事务 `abortBeforePayment()`；只有没有 `PAYMENT_SUBMIT` 且 permit 未消费时，才可同时将 run 收口为 `FAILED_SAFE`、撤销 permit、失效 Checkout artifact 并清空密文、释放租约、取消 dispatch、清算 attempt/funds、释放 authorization、更新订单并写审计。已有付款证据时返回 `RECONCILE_ONLY`，不回退重付。
+- 完成 P0-3：Browser route 从创建 attempt、dispatch、beginRun、permit、UNKNOWN、Plus 激活、取消续费到最终成功统一使用订单 `RECHARGE_PROCESSING`；API route 仍使用 `SUBMITTING`。
+- 修改代码：`v1/src/domain/order-status.js`、`v1/src/db/repositories/recharge-attempt-repository.js`、`browser-dispatch-repository.js`、`browser-execution-repository.js`、`v1/src/services/browser-admin-service.js`，以及对应单元/MySQL 集成测试。
+- 验证：定向 48/48 通过；临时 Docker MySQL 8.4 从 001–037 迁移成功，Browser 付款唯一性/UNKNOWN、pre-payment safe-abort、artifact/resource 恢复集成 3/3 通过。全量 `npm test` 为 415 total / 378 pass / 34 skipped / 3 fail，3 个可复现环境失败是 Unicode worktree Express `sendFile` 和缺少 `playwright` 包，非本次回归。
+- 未完成/下一项：Browser 独立 worktree adapter 仍需按 `docs/contracts/2026-08-26_browser-upstream-runtime-contract.md` 接线；之后在付款写关闭下完成端到端联调和故障注入。未部署生产，未修改生产开关，未执行真实付款或卡台写入。

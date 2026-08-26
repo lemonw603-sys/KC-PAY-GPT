@@ -86,6 +86,7 @@ test('atomically begins an authorized attempt in the required lock/write order',
   assert.equal(pool.queries[6].values[6], 'recharge-auth-item:item-1');
   assert.match(pool.queries[7].sql, /status = 'CONSUMED'/);
   assert.match(pool.queries[8].sql, /SET status = \?, version = version \+ 1/);
+  assert.equal(pool.queries[8].values[0], 'SUBMITTING');
   assert.match(pool.queries[9].sql, /INSERT INTO order_events/);
   assert.match(pool.queries[10].sql, /INSERT INTO provider_calls/);
   assert.match(pool.queries[10].sql, /'create_direct'/);
@@ -116,6 +117,8 @@ test('Browser route creates the shared funds attempt without a Provider call', a
   assert.equal(pool.queries.some((entry) => /INSERT INTO provider_calls/.test(entry.sql)), false);
   assert.match(pool.queries[6].sql, /INSERT INTO recharge_attempts/);
   assert.match(pool.queries[6].sql, /executor_kind/);
+  assert.equal(pool.queries[8].values[0], 'RECHARGE_PROCESSING');
+  assert.equal(pool.queries[9].values[2], 'RECHARGE_PROCESSING');
 });
 
 test('rolls back every write when provider-call persistence fails', async () => {

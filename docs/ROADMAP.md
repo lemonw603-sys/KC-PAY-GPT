@@ -6,7 +6,7 @@
 
 > Browser 当前进度：B0 设计冻结完成；B1 已完成上号器/legacy 静态分析、两轮扩大公开实现调研、三模式与三档 Cookie policy 非付款 PoC 工具、离线路由顺序复现和无 Session 公开对照。2026-08-22 完成 Session Loader v2、hosted 提链研究、多赛道基线、第一轮正式架构对抗式审查和外部防封/指纹浏览器资料评估；B2 已完成实验编排器、账号/Checkout 租约、加密 artifact vault、接管所有权、预路由、多终态 mock gateway、本地追加式 WAL、WAL-backed 状态变更、`127.0.0.1` Browser/Checkout/payment iframe/popup 仿真、MySQL 事务映射 v1、artifact vault/账号/订单/卡片/Checkout 资源租约跨进程恢复 v1，以及现有运营后台中的 Browser 脱敏视图/人工控制 v1。性质测试和真实子进程退出证明重复投递最多一次提交，页面漂移零提交；第一轮 350 单/24 小时等效仿真为 350 submit、0 duplicate、38.14 秒。Browser PoC 11 文件 77 项通过；MySQL 8.4 DDL 重放、跨 Repository 实例解密、过期接管和人工未知锁账集成通过。菲律宾 sticky 真实 Session、并发队列、人工同 Context 远程操作通道和连续 24 小时 soak 仍未完成。
 
-> Browser 当前主工程顺序：MySQL 事务映射、artifact vault/资源租约跨进程恢复和后台追溯/人工控制均已完成 v1；下一项先补 Browser attempt/dispatch 与付款后 Plus 激活/取消闭环，再做并发队列和连续 24 小时 soak，之后才接入隔离 Worker/人工同 Context 通道。提链源码静态审查可并行但不阻塞主线；菲律宾 CDK 默认归入既有 CDK-API/Provider 路线，不另建系统。
+> Browser 当前主工程顺序：共享核心的 attempt/dispatch、Plus 激活/取消闭环、`RECHARGE_PROCESSING` 状态统一、permit 权威复核和付款前原子 safe-abort 已完成并通过隔离 MySQL。下一项是 Browser 独立 adapter 按 2026-08-26 合同接线，然后做非付款端到端联调和故障注入；最后才申请受控真实付款。
 
 > 2026-08-22 执行修订：业务方向不变，但在 Browser 真实观察或任何资金写入前，先完成 R0 生产只读基线、R1 可重建提交/事实源收敛、R2 v1 P0/P1 缺口和 R3 阶段四安全部署。具体退出条件见 `docs/EXECUTION_PLAN_REVISION_2026-08-22.md`。
 
@@ -154,6 +154,11 @@
 ## Browser 自动化时序
 
 - Browser 上游、状态、卡片、Session、审计和读取策略以 `docs/contracts/2026-08-26_browser-upstream-runtime-contract.md` 为最新合同；PoC 的平行投影状态不得覆盖共享核心状态机；
+- [x] 共享核心 Browser route 在唯一 attempt 建立后使用 `RECHARGE_PROCESSING`；API route 仍使用 `SUBMITTING`；
+- [x] permit 签发时权威复核卡/路线/Provider/余额/资料/时效，并在付款 intent 前检测 snapshot 变化；
+- [x] 付款前 safe-abort 原子收口 run、permit、artifact、租约、dispatch、attempt、authorization、订单和审计；已有付款证据时只核对不回退；
+- [ ] Browser 独立 worktree adapter 按新合同接线，移除平行状态真相；
+- [ ] 保持付款写关闭，完成非付款端到端联调和故障注入；
 - 现在可以在独立讨论窗口完成方案和接口边界设计，成果必须回写本项目事实源；
 - 当前不接入生产、不执行真实 Browser 付款；
 - Browser 已成为未来 Plus 主执行链路，可立即进行非付款 PoC、仿真控制面和隔离联调，不再等待 ZZSHU API 成功单；

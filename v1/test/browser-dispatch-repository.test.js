@@ -29,7 +29,7 @@ test('enqueue is idempotent and stores only Browser references', async () => {
     }
     if (/FROM recharge_attempts/.test(sql)) return [[{
       recharge_attempt_id: 'attempt-1', order_id: 'order-1', executor_kind: 'BROWSER',
-      executor_profile_id: null, attempt_status: 'PREPARED', funds_risk_state: 'ACTIVE', order_status: 'SUBMITTING'
+      executor_profile_id: null, attempt_status: 'PREPARED', funds_risk_state: 'ACTIVE', order_status: 'RECHARGE_PROCESSING'
     }], []];
     if (/INSERT INTO browser_dispatch_jobs/.test(sql)) { existing = true; return [{ insertId: 4 }, []]; }
     throw new Error(`unexpected SQL: ${sql}`);
@@ -64,7 +64,7 @@ test('enqueue retries a deadlock and commits the idempotent database operation o
     if (/FROM browser_dispatch_jobs/.test(sql)) return [[], []];
     if (/FROM recharge_attempts/.test(sql)) return [[{
       recharge_attempt_id: 'attempt-1', order_id: 'order-1', executor_kind: 'BROWSER',
-      executor_profile_id: null, attempt_status: 'PREPARED', funds_risk_state: 'ACTIVE', order_status: 'SUBMITTING'
+      executor_profile_id: null, attempt_status: 'PREPARED', funds_risk_state: 'ACTIVE', order_status: 'RECHARGE_PROCESSING'
     }], []];
     if (/INSERT INTO browser_dispatch_jobs/.test(sql)) {
       insertAttempts += 1;

@@ -47,7 +47,7 @@ Browser **真正可以开始执行**时，数据库必须同时满足：
 
 `CARD_READY` 是创建资金 attempt 之前的业务准备状态，不是 Browser Worker 的最终可执行状态。`RECHARGE_PROCESSING` 表示 Browser 已在处理订单，但不表示已经点击付款；真正的付款提交阶段由 `browser_runs.payment_state = 'PAYMENT_SUBMITTING'` 精确表达。Browser 分支中曾使用的 `order=CARD_READY/RECONCILIATION_REQUIRED`、`attempt=PENDING/OBSERVING` 只属于隔离 PoC 投影，不能直接映射为共享生产状态。
 
-当前代码仍在创建 attempt 时把订单推进为 `SUBMITTING`，Browser dispatch/run 也依赖该状态。这是已核实的当前实现，不是目标合同；接线改造需将 Browser 路线调整为上述 `RECHARGE_PROCESSING` 口径。历史 API 路线是否继续使用 `SUBMITTING` 由其自身提交语义决定，不在本次修改中强行统一。
+共享核心已在 2026-08-26 完成该差异修正：Browser route 创建 attempt 时订单进入 `RECHARGE_PROCESSING`，dispatch、beginRun、permit、UNKNOWN、Plus 激活、取消续费和最终成功均已统一到该口径。历史 API route 仍保留 `SUBMITTING`，不与 Browser 语义混同。Browser 独立 worktree 的 PoC adapter 仍需按本合同接线，这不影响共享核心的已实现事实。
 
 `RECONCILIATION_REQUIRED` 只允许核对和人工处理，禁止创建新的付款动作。确认上一笔明确未付款后，必须由共享核心按受控状态迁移恢复，不由 Browser 自行改状态。
 
@@ -114,7 +114,14 @@ order.id
 
 当前共享核心已经拥有 `recharge_attempts`、`browser_dispatch_jobs`、`browser_runs`、付款 permit、检查点、资源租约、UNKNOWN 锁定和付款后状态表。
 
-当前需要修正两处实现差异：共享核心的 Browser 路线仍将订单提前写为 `SUBMITTING`；Browser 独立 worktree 的 `browser_upstream_ready_projection`、`PENDING/OBSERVING`、`AVAILABLE` 卡和独立 `audit_ref` 仍是 PoC 合同。接线时应同时修正这两处，不建立平行状态机。
+共享核心的 Browser 路线已完成以下生产接线前修正：
+
+- Browser 订单全链路统一为 `RECHARGE_PROCESSING`，API route 继续使用 `SUBMITTING`；
+- permit 签发时从已锁定的权威数据库事实重新核验卡、路线、Provider、余额、卡资料和 15 分钟时效，并由服务端计算 snapshot hash；
+- 真正付款提交前再计算 snapshot，事实变化时失败关闭；
+- 无 `PAYMENT_SUBMIT` 证据时可在单一事务内完成 pre-payment safe-abort，同时收口 run、permit、Checkout artifact/密文、资源租约、dispatch、attempt、authorization、订单和审计。已有付款提交或已消费 permit 时必须进入核对，不得安全回退。
+
+Browser 独立 worktree 的 `browser_upstream_ready_projection`、`PENDING/OBSERVING`、`AVAILABLE` 卡和独立 `audit_ref` 仍是待修正的 PoC 接线差异；不得建立平行状态机。
 
 生产接线验收必须证明：
 
@@ -125,3 +132,10 @@ order.id
 5. 付款 permit 只能消费一次；
 6. 崩溃或未知结果后不会再次付款；
 7. Plus 开通、取消续费和卡台交易最终能回到同一订单审计链。
+
+## 10. 2026-08-26 共享核心实现验证
+
+- 定向单元回归：48/48 通过；
+- 隔离 Docker MySQL 8.4：Browser 付款唯一性/UNKNOWN、pre-payment safe-abort、artifact/resource 恢复共 3/3 通过；
+- 新 safe-abort MySQL 证据同时确认：`FAILED_SAFE`、attempt/funds `CLEARED`、订单 `WAITING_FOR_SESSION`、dispatch `CANCELLED`、permit `REVOKED`、artifact `INVALIDATED`、artifact 密文物理清空、resource lease 释放。
+- 未执行真实付款、真实卡台写入或生产配置修改。

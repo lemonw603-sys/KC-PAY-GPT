@@ -24,7 +24,7 @@ const runRow = {
   last_checkpoint_kind: 'CONTROL_FREEZE', last_error_code: null,
   created_at: now, updated_at: now, finished_at: null,
   attempt_status: 'PREPARED', funds_risk_state: 'ACTIVE',
-  public_no: 'PJV1-BROWSER', order_status: 'SUBMITTING',
+  public_no: 'PJV1-BROWSER', order_status: 'RECHARGE_PROCESSING',
   profile_code: 'BROWSER_V1', profile_version: 1,
   runtime_id: 'PLAYWRIGHT', adapter_version: 'v1',
   artifact_id: 'artifact-1', artifact_kind: 'HOSTED_COMPLETE',

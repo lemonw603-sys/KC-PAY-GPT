@@ -55,3 +55,10 @@ Browser 独立 PoC adapter 当前仍接受 `CARD_READY/RECONCILIATION_REQUIRED`�
 
 当前没有真实 Browser 付款启用或真实资金事故证据。本轮问题属于生产接线前发现的结构性缺口。真实付款开关继续关闭，直至上述三项修复及非付款联调完成。
 
+## 2026-08-26 修复后复核
+
+- P0-1 已在共享核心修复：permit 不再接受调用方 snapshot 作为权威事实，会锁定并重新核验卡/订单/route/Provider/余额/资料/同步时效；付款 intent 前 snapshot 变化会拒绝执行。
+- P0-2 已在共享核心修复：新增单事务 `abortBeforePayment()`，完整收口 run/permit/artifact/secret/resource/dispatch/attempt/authorization/order/event；已有 `PAYMENT_SUBMIT` 或已消费 permit 时拒绝回退。
+- P0-3 已在共享核心修复：Browser 路线从 attempt 创建到最终成功统一使用订单 `RECHARGE_PROCESSING`；API 路线仍保留 `SUBMITTING`。
+- 证据：定向回归 48/48；隔离 Docker MySQL 8.4 集成 3/3，其中 safe-abort 实际校验数据库全部收口状态。
+- 仍未完成：Browser 独立 worktree adapter 对新合同的接线、非付款端到端联调、生产部署和真实付款。因此不得宣称 Browser 生产链路已完成。

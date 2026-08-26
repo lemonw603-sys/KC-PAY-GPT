@@ -53,6 +53,7 @@
 | 控制面第二轮对抗式审查 | `docs/2026-08-22_browser-control-plane-adversarial-review-report.md` | 方向判定通过；Worker/soak 前置闸门暂不通过，发现 4 个 P0、9 个 P1，未接生产 |
 | Browser attempt 与付款后终态 v1 | `031_browser_post_payment_lifecycle.sql`、`recharge-attempt-repository.js`、`browser-execution-repository.js`、`contracts/2026-08-22_browser-attempt-post-payment-contract.md` | Browser route 复用唯一资金 attempt 且不写 Provider call；付款确认→Plus 激活→取消确认→最终成功状态链已实现并通过定向测试，真实页面观察尚未接入 |
 | Browser durable dispatch/lease v1 | `032_browser_dispatch_queue.sql`、`browser-dispatch-repository.js`、`workflow-handlers.js` | Browser `SUBMIT_RECHARGE` 只入队引用并结束 Provider 分支；job 幂等、SKIP LOCKED claim、短租约 heartbeat 已通过定向测试，真实 Browser worker 尚未启动 |
+| 2026-08-26 Browser 上游 P0 收口 | `contracts/2026-08-26_browser-upstream-runtime-contract.md`、`browser-execution-repository.js`、`recharge-attempt-repository.js` | 共享核心已统一 `RECHARGE_PROCESSING`，实现 permit 权威复核/snapshot 再校验和付款前原子 safe-abort；定向 48/48、隔离 MySQL 3/3 通过。Browser 独立 adapter、非付款联调和生产部署未完成 |
 | Isolated Worker control shell v1 | `browser-worker-service.js`、`browser-worker-service.test.js` | claim→beginRun→每动作前 heartbeat/recovery guard 已实现；租约丢失或 RECONCILE_ONLY 时在 runtime 调用前停手，真实浏览器进程尚未启动 |
 | Isolated Worker iteration loop v1 | `browser-worker-loop.js`、`browser-worker-loop.test.js` | idle/claim/execute/fail-stop 循环已实现并通过 mock 测试；尚未接主 worker 进程，也不启动真实 Browser runtime |
 | Worker process wrapper 阶段审查 | `docs/2026-08-22_browser-worker-process-adversarial-review-report.md` | 控制壳方向通过；长动作 lease watchdog、identity/profile/network digest、SIGTERM/崩溃重启 mock smoke 已补；可申请进入用户确认的真实但不付款 BrowserContext 观察，真实付款仍禁止 |
@@ -117,10 +118,10 @@
 
 ### 主工程关键路径（按顺序）
 
-1. 检查 detached 24h soak 的完整日志、资源指标和独立残留查询；A 稳定性闸门在此之前不关闭。
-2. 保持已通过的本地 BrowserContext 子闸门，同时完成 `NON_PH_FUNCTIONAL` 与可选 `NON_PH_US` 的只读观察前置；当前页面 403 必须按网络限制记录。
-3. 观察结束后做 cohort 级对抗式审查；不得把 US/无代理结果外推为 PH 价格、支付、风控或容量结论。
-4. 补 Worker 崩溃、队列积压、本地 Playwright 中断组合证据，以及后台时间线/人工同 Context 通道；当前没有主从拓扑，不能外推高可用。
+1. Browser 独立 worktree adapter 按 `docs/contracts/2026-08-26_browser-upstream-runtime-contract.md` 接线，只使用共享核心状态和权威证据。
+2. 保持付款写关闭，做端到端非付款联调：dispatch→run→permit 前页面步骤→Session 错误 safe-abort→原订单更换 Session。
+3. 注入卡余额/状态/时效/route 变化、租约丢失、崩溃和重放，确认零外部付款且无资金 fence 残留。
+4. 联调完成后再做一次生产前对抗式审查；只有通过后才能另行申请受控真实付款。
 
 ### 非阻塞研究旁路
 

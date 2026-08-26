@@ -31,6 +31,12 @@ test('allows a locally invalid Session to enter and leave customer repair', () =
   assert.equal(canTransitionOrder(OrderStatus.WAITING_FOR_SESSION, OrderStatus.CARD_READY), true);
 });
 
+test('allows Browser processing to start and safely return before payment', () => {
+  assert.doesNotThrow(() => assertOrderTransition(OrderStatus.CARD_READY, OrderStatus.RECHARGE_PROCESSING));
+  assert.doesNotThrow(() => assertOrderTransition(OrderStatus.RECHARGE_PROCESSING, OrderStatus.CARD_READY));
+  assert.doesNotThrow(() => assertOrderTransition(OrderStatus.RECHARGE_PROCESSING, OrderStatus.WAITING_FOR_SESSION));
+});
+
 test('allows a paid order to wait for replenishment and resume when a card is assigned', () => {
   assert.equal(isKnownOrderStatus(OrderStatus.WAITING_FOR_CARD), true);
   assert.equal(canTransitionOrder(OrderStatus.CREATED, OrderStatus.WAITING_FOR_CARD), true);

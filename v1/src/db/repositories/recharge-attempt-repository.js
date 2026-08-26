@@ -307,16 +307,17 @@ export function createRechargeAttemptRepository(pool) {
           }
         }
 
+        const processingOrderStatus = isBrowserRoute ? 'RECHARGE_PROCESSING' : 'SUBMITTING';
         await updateOrder(connection, {
           ...orderRow,
           order_id: orderRow.id,
           order_status: orderRow.status,
           order_version: orderRow.version
-        }, 'SUBMITTING', now);
+        }, processingOrderStatus, now);
         await insertEvent(connection, {
           orderId: order,
           fromStatus: 'CARD_READY',
-          toStatus: 'SUBMITTING',
+          toStatus: processingOrderStatus,
           reason: 'Recharge authorization consumed; recharge submit intent persisted',
           now,
           metadata: {

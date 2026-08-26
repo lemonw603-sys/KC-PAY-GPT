@@ -191,7 +191,7 @@ export function createBrowserDispatchRepository(pool, { transactionTimeoutMs = 5
           throw new BrowserDispatchError('attempt is not routed to Browser', 'EXECUTOR_KIND_MISMATCH');
         }
         if (context.attempt_status !== 'PREPARED' || context.funds_risk_state !== 'ACTIVE'
-          || context.order_status !== 'SUBMITTING') {
+          || context.order_status !== 'RECHARGE_PROCESSING') {
           throw new BrowserDispatchError('Browser attempt is not dispatchable', 'ATTEMPT_NOT_READY');
         }
         const profile = executorProfileId || context.executor_profile_id || null;
@@ -234,7 +234,7 @@ export function createBrowserDispatchRepository(pool, { transactionTimeoutMs = 5
                   OR (bdj.status = 'CLAIMED' AND bdj.lease_until <= ?))
              AND rat.executor_kind = 'BROWSER'
              AND rat.status = 'PREPARED' AND rat.funds_risk_state = 'ACTIVE'
-             AND o.status = 'SUBMITTING'
+             AND o.status = 'RECHARGE_PROCESSING'
            ORDER BY bdj.queued_at, bdj.id
            LIMIT 1 FOR UPDATE SKIP LOCKED`,
           [now]

@@ -484,7 +484,7 @@ export function createBrowserAdminService({
         if (!SAFE_PAYMENT_STATES.has(row.payment_state)
           || !['PREPARED', 'ACTIVE'].includes(row.attempt_status)
           || row.funds_risk_state !== 'ACTIVE'
-          || row.order_status !== 'SUBMITTING'
+          || row.order_status !== 'RECHARGE_PROCESSING'
           || await paymentSubmitExists(connection, run)) {
           throw new BrowserAdminError('payment evidence requires reconciliation', 'RECONCILE_ONLY', 409);
         }

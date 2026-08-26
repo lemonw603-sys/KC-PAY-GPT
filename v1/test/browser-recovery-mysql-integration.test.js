@@ -46,7 +46,7 @@ test('artifact ciphertext and resource leases survive a worker-process restart w
         minimum_required_card_balance, session_ciphertext,
         card_purchase_idempotency_key, product_id, fulfillment_route_id,
         route_resolution_status)
-       VALUES (?, ?, ?, 'SUBMITTING', '7', 25, 16, ?, ?, ?, ?, 'RESOLVED')`,
+       VALUES (?, ?, ?, 'RECHARGE_PROCESSING', '7', 25, 16, ?, ?, ?, ?, 'RESOLVED')`,
       [orderId, `BROWSER-RECOVERY-${orderId}`, cdkId, Buffer.from('isolated-test-session'),
         `browser-recovery-purchase-${orderId}`, productId, routeId]
     );
@@ -56,9 +56,10 @@ test('artifact ciphertext and resource leases survive a worker-process restart w
        (id, order_id, inventory_status, provider_card_id, card_type_id, status,
         funded_amount, current_balance, currency, refund_status,
         card_credentials_ciphertext, provider_account_id, external_card_id,
-        intake_status, sync_tier)
+        intake_status, sync_tier, last_synced_at)
        VALUES (?, ?, 'ASSIGNED', ?, '7', 'active', 25, 20, 'USD', 'MONITORING',
-         ?, '00000000-0000-4000-8000-000000000101', ?, 'ACCEPTED', 'ASSIGNED')`,
+         ?, '00000000-0000-4000-8000-000000000101', ?, 'ACCEPTED', 'ASSIGNED',
+         CURRENT_TIMESTAMP(3))`,
       [cardId, orderId, `browser-recovery-card-${cardId}`, Buffer.from('isolated-test-card'),
         `browser-recovery-card-${cardId}`]
     );

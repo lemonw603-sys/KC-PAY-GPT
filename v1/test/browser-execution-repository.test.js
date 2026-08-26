@@ -1,8 +1,31 @@
 import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
 import test from 'node:test';
 import { createBrowserExecutionRepository } from '../src/db/repositories/browser-execution-repository.js';
 
 const digest = (character) => character.repeat(64);
+
+function paymentSnapshotHash(row) {
+  const micros = (value) => {
+    const [whole, fraction = ''] = String(value).split('.');
+    return ((BigInt(whole) * 1_000_000n) + BigInt(fraction.padEnd(6, '0'))).toString();
+  };
+  const facts = {
+    attemptId: row.recharge_attempt_id,
+    orderId: row.order_id,
+    routeId: row.route_id,
+    routeCardProviderAccountId: row.route_card_provider_account_id,
+    cardId: row.card_id,
+    cardProviderAccountId: row.card_provider_account_id,
+    providerCardId: row.provider_card_id,
+    cardStatus: String(row.card_status).toLowerCase(),
+    cardBalanceMicros: micros(row.card_current_balance),
+    minimumBalanceMicros: micros(row.minimum_required_card_balance),
+    cardCredentialsDigest: crypto.createHash('sha256').update(row.card_credentials_ciphertext).digest('hex'),
+    cardLastSyncedAt: new Date(row.card_last_synced_at).toISOString()
+  };
+  return crypto.createHash('sha256').update(JSON.stringify(facts)).digest('hex');
+}
 
 function scriptedPool(responder) {
   const calls = [];
@@ -53,8 +76,23 @@ function runContext(overrides = {}) {
     funds_risk_state: 'ACTIVE',
     executor_kind: 'BROWSER',
     attempt_profile_id: 'profile-1',
-    order_status: 'SUBMITTING',
+    authorization_item_id: 'authorization-item-1',
+    attempt_fulfillment_route_id: 'route-1',
+    order_status: 'RECHARGE_PROCESSING',
     order_version: 4,
+    order_fulfillment_route_id: 'route-1',
+    minimum_required_card_balance: '16.000000',
+    card_id: 'card-1',
+    card_order_id: 'order-1',
+    card_provider_account_id: 'card-provider-1',
+    provider_card_id: 'provider-card-1',
+    card_status: 'active',
+    card_current_balance: '20.000000',
+    card_credentials_ciphertext: Buffer.from('encrypted-card-credentials'),
+    card_last_synced_at: new Date('2026-08-22T00:00:00.000Z'),
+    route_id: 'route-1',
+    route_executor_kind: 'BROWSER',
+    route_card_provider_account_id: 'card-provider-1',
     ...overrides
   };
 }
@@ -67,7 +105,7 @@ test('beginRun binds an existing Browser funds attempt without creating a provid
         recharge_attempt_id: 'attempt-1', order_id: 'order-1',
         attempt_status: 'PREPARED', funds_risk_state: 'ACTIVE', executor_kind: 'BROWSER',
         fulfillment_route_id: 'route-1',
-        attempt_profile_id: null, order_status: 'SUBMITTING', order_version: 4,
+        attempt_profile_id: null, order_status: 'RECHARGE_PROCESSING', order_version: 4,
         card_id: 'card-1'
       }], []];
     }
@@ -102,16 +140,17 @@ test('payment submission commits permit consumption, checkpoint and funds intent
   const leaseHash = crypto.createHash('sha256').update(leaseToken).digest('hex');
   const permitNonce = 'permit-secret';
   const permitHash = crypto.createHash('sha256').update(permitNonce).digest('hex');
+  const context = runContext({ worker_lease_token_hash: leaseHash });
   const pool = scriptedPool((sql) => {
     if (/FROM app_settings/.test(sql)) return [[{ setting_value: 'true' }], []];
     if (/FROM browser_operations/.test(sql)) return [[], []];
     if (/FROM browser_runs br[\s\S]*INNER JOIN recharge_attempts/.test(sql)) {
-      return [[runContext({ worker_lease_token_hash: leaseHash })], []];
+      return [[context], []];
     }
     if (/FROM payment_permits/.test(sql)) {
       return [[{
         id: 'permit-1', status: 'ISSUED', nonce_hash: permitHash,
-        snapshot_hash: digest('b'), issued_to: 'worker-1',
+        snapshot_hash: paymentSnapshotHash(context), issued_to: 'worker-1',
         expires_at: new Date('2026-08-22T00:02:00.000Z')
       }], []];
     }
@@ -165,11 +204,145 @@ test('payment writes fail closed and roll back while the Browser production swit
   await assert.rejects(
     createBrowserExecutionRepository(pool).issuePaymentPermit({
       runId: 'run-1', workerId: 'worker-1', leaseToken: 'lease',
-      snapshotHash: digest('b')
     }),
     (error) => error.code === 'BROWSER_PAYMENT_WRITES_DISABLED'
   );
   assert.deepEqual(pool.transaction, { began: 1, committed: 0, rolledBack: 1, released: 1 });
+});
+
+test('payment permit derives its snapshot from locked card and route facts', async () => {
+  const leaseToken = 'lease-secret';
+  const leaseHash = crypto.createHash('sha256').update(leaseToken).digest('hex');
+  const context = runContext({ payment_state: 'NOT_STARTED', last_checkpoint_sequence: 0,
+    worker_lease_token_hash: leaseHash });
+  const pool = scriptedPool((sql) => {
+    if (/FROM app_settings/.test(sql)) return [[{ setting_value: 'true' }], []];
+    if (/FROM browser_runs br[\s\S]*INNER JOIN recharge_attempts/.test(sql)) return [[context], []];
+    return updateOk();
+  });
+  const result = await createBrowserExecutionRepository(pool).issuePaymentPermit({
+    runId: 'run-1', workerId: 'worker-1', leaseToken,
+    snapshotHash: digest('f'), permitId: 'permit-1',
+    now: new Date('2026-08-22T00:01:00.000Z')
+  });
+  assert.equal(result.snapshotHash, paymentSnapshotHash(context));
+  assert.notEqual(result.snapshotHash, digest('f'));
+  const insert = pool.calls.find(({ sql }) => /INSERT INTO payment_permits/.test(sql));
+  assert.equal(insert.values[4], paymentSnapshotHash(context));
+});
+
+for (const [name, overrides, code] of [
+  ['insufficient balance', { card_current_balance: '15.999999' }, 'CARD_BALANCE_INSUFFICIENT'],
+  ['inactive card', { card_status: 'frozen' }, 'CARD_NOT_READY'],
+  ['missing card credentials', { card_credentials_ciphertext: null }, 'CARD_NOT_READY'],
+  ['stale card sync', { card_last_synced_at: new Date('2026-08-21T23:40:00.000Z') }, 'CARD_CHECK_STALE'],
+  ['route provider mismatch', { route_card_provider_account_id: 'card-provider-2' }, 'CARD_PROVIDER_MISMATCH']
+]) {
+  test(`payment permit rejects ${name}`, async () => {
+    const leaseToken = 'lease-secret';
+    const leaseHash = crypto.createHash('sha256').update(leaseToken).digest('hex');
+    const pool = scriptedPool((sql) => {
+      if (/FROM app_settings/.test(sql)) return [[{ setting_value: 'true' }], []];
+      if (/FROM browser_runs br[\s\S]*INNER JOIN recharge_attempts/.test(sql)) {
+        return [[runContext({ payment_state: 'NOT_STARTED', worker_lease_token_hash: leaseHash, ...overrides })], []];
+      }
+      throw new Error(`unexpected query: ${sql}`);
+    });
+    await assert.rejects(
+      createBrowserExecutionRepository(pool).issuePaymentPermit({
+        runId: 'run-1', workerId: 'worker-1', leaseToken,
+        now: new Date('2026-08-22T00:01:00.000Z')
+      }),
+      (error) => error.code === code
+    );
+    assert.equal(pool.transaction.rolledBack, 1);
+  });
+}
+
+test('payment submission rejects an authoritative snapshot changed after permit issuance', async () => {
+  const leaseToken = 'lease-secret';
+  const leaseHash = crypto.createHash('sha256').update(leaseToken).digest('hex');
+  const permitNonce = 'permit-secret';
+  const permitHash = crypto.createHash('sha256').update(permitNonce).digest('hex');
+  const original = runContext({ worker_lease_token_hash: leaseHash });
+  const changed = { ...original, card_current_balance: '19.000000' };
+  const pool = scriptedPool((sql) => {
+    if (/FROM browser_operations/.test(sql)) return [[], []];
+    if (/FROM app_settings/.test(sql)) return [[{ setting_value: 'true' }], []];
+    if (/FROM browser_runs br[\s\S]*INNER JOIN recharge_attempts/.test(sql)) return [[changed], []];
+    if (/FROM payment_permits/.test(sql)) return [[{
+      id: 'permit-1', status: 'ISSUED', nonce_hash: permitHash,
+      snapshot_hash: paymentSnapshotHash(original), issued_to: 'worker-1',
+      expires_at: new Date('2026-08-22T00:02:00.000Z')
+    }], []];
+    throw new Error(`unexpected query: ${sql}`);
+  });
+  await assert.rejects(
+    createBrowserExecutionRepository(pool).commitPaymentSubmissionIntent({
+      runId: 'run-1', workerId: 'worker-1', leaseToken, permitNonce,
+      operationId: 'payment-submit:changed', now: new Date('2026-08-22T00:01:00.000Z')
+    }),
+    (error) => error.code === 'PAYMENT_SNAPSHOT_CHANGED'
+  );
+  assert.equal(pool.calls.some(({ sql }) => /operation_type.*PAYMENT_SUBMIT/.test(sql) && /INSERT/.test(sql)), false);
+});
+
+test('Session failure before payment atomically closes Browser state and opens replacement', async () => {
+  const leaseToken = 'lease-secret';
+  const leaseHash = crypto.createHash('sha256').update(leaseToken).digest('hex');
+  const pool = scriptedPool((sql) => {
+    if (/WHERE browser_run_id = \? AND operation_id = \?/.test(sql)) return [[], []];
+    if (/FROM browser_runs br[\s\S]*INNER JOIN recharge_attempts/.test(sql)) {
+      return [[runContext({ payment_state: 'PAYMENT_ARMED', worker_lease_token_hash: leaseHash })], []];
+    }
+    if (/operation_type = 'PAYMENT_SUBMIT'/.test(sql)) return [[], []];
+    if (/SELECT id, status FROM payment_permits/.test(sql)) return [[{ id: 'permit-1', status: 'ISSUED' }], []];
+    if (/session_replacement_window_hours/.test(sql)) return [[{ setting_value: '72' }], []];
+    return updateOk();
+  });
+  const result = await createBrowserExecutionRepository(pool).abortBeforePayment({
+    runId: 'run-1', workerId: 'worker-1', leaseToken,
+    operationId: 'safe-abort:session-1', targetOrderStatus: 'WAITING_FOR_SESSION',
+    reasonCode: 'SESSION_INVALID', failureReason: 'Session is invalid',
+    customerActionCode: 'SESSION_INVALID', now: new Date('2026-08-22T00:01:00.000Z')
+  });
+  assert.equal(result.runStatus, 'FAILED_SAFE');
+  assert.equal(result.attemptStatus, 'CLEARED');
+  assert.equal(result.fundsRiskState, 'CLEARED');
+  assert.equal(result.orderStatus, 'WAITING_FOR_SESSION');
+  const sqlText = pool.calls.map(({ sql }) => sql).join('\n');
+  assert.match(sqlText, /payment_permits SET status = 'REVOKED'/);
+  assert.match(sqlText, /checkout_artifacts[\s\S]*status = 'INVALIDATED'/);
+  assert.match(sqlText, /browser_artifact_secrets[\s\S]*ciphertext = NULL/);
+  assert.match(sqlText, /execution_resource_leases[\s\S]*released_at/);
+  assert.match(sqlText, /browser_dispatch_jobs[\s\S]*status = 'CANCELLED'/);
+  assert.match(sqlText, /recharge_authorization_items SET status = 'RELEASED'/);
+  assert.deepEqual(pool.transaction, { began: 1, committed: 1, rolledBack: 0, released: 1 });
+});
+
+test('pre-payment abort refuses any committed payment-submit evidence', async () => {
+  const leaseToken = 'lease-secret';
+  const leaseHash = crypto.createHash('sha256').update(leaseToken).digest('hex');
+  const pool = scriptedPool((sql) => {
+    if (/WHERE browser_run_id = \? AND operation_id = \?/.test(sql)) return [[], []];
+    if (/FROM browser_runs br[\s\S]*INNER JOIN recharge_attempts/.test(sql)) {
+      return [[runContext({ payment_state: 'PAYMENT_ARMED', worker_lease_token_hash: leaseHash })], []];
+    }
+    if (/operation_type = 'PAYMENT_SUBMIT'/.test(sql)) return [[{ id: 1 }], []];
+    if (/SELECT id, status FROM payment_permits/.test(sql)) return [[{ id: 'permit-1', status: 'CONSUMED' }], []];
+    throw new Error(`unexpected query: ${sql}`);
+  });
+  await assert.rejects(
+    createBrowserExecutionRepository(pool).abortBeforePayment({
+      runId: 'run-1', workerId: 'worker-1', leaseToken,
+      operationId: 'safe-abort:unsafe', targetOrderStatus: 'WAITING_FOR_SESSION',
+      reasonCode: 'SESSION_INVALID', failureReason: 'Session is invalid',
+      customerActionCode: 'SESSION_INVALID', now: new Date('2026-08-22T00:01:00.000Z')
+    }),
+    (error) => error.code === 'RECONCILE_ONLY'
+  );
+  assert.equal(pool.transaction.rolledBack, 1);
+  assert.equal(pool.calls.some(({ sql }) => /UPDATE browser_runs/.test(sql)), false);
 });
 
 test('unknown Browser payment locks run, attempt and order into reconciliation in one transaction', async () => {

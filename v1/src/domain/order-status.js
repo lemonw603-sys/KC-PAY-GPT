@@ -34,6 +34,7 @@ const transitions = new Map([
   [OrderStatus.CARD_READY, new Set([
     OrderStatus.WAITING_FOR_SESSION,
     OrderStatus.SUBMITTING,
+    OrderStatus.RECHARGE_PROCESSING,
     OrderStatus.CLOSED,
     OrderStatus.RECONCILIATION_REQUIRED
   ])],
@@ -62,6 +63,8 @@ const transitions = new Map([
     OrderStatus.RECONCILIATION_REQUIRED
   ])],
   [OrderStatus.RECHARGE_PROCESSING, new Set([
+    OrderStatus.CARD_READY,
+    OrderStatus.WAITING_FOR_SESSION,
     OrderStatus.RECHARGE_SUCCESS,
     OrderStatus.CANCELLATION_PENDING,
     OrderStatus.RECHARGE_FAILED,

@@ -591,6 +591,8 @@ Browser 实施采用增量迁移，不改变历史订单状态：
 
 B2 接下来的主工程顺序是并发队列及连续 24 小时 soak，再接入隔离 Browser Worker/attempt 派发；MySQL 事务映射、artifact vault/资源租约跨进程恢复和后台追溯/人工控制 v1 均已完成。人工同 Context 远程操作通道仍是 Worker 接入项。公开提链模块静态审查只是可并行研究旁路，不是 B2 的前置条件，也不改变该顺序。
 
+2026-08-26 更新：共享核心已完成 Browser 上游合同收口，包括 Browser route 订单 `RECHARGE_PROCESSING` 全链路统一、permit 签发时权威卡/路线/Provider/余额/资料/时效复核、付款 intent 前 snapshot 再校验，以及付款前单事务 safe-abort。定向 48/48 和隔离 Docker MySQL 8.4 集成 3/3 通过。当前准确下一项是独立 Browser adapter 按该合同接线，然后做保持付款关闭的端到端联调；未部署生产，未执行真实付款。
+
 退出条件：崩溃、重复投递、失租约和付款未知仿真均不能产生第二次付款动作；350 单/24 小时容量仿真通过。
 
 ### 阶段 B3：隔离联调
