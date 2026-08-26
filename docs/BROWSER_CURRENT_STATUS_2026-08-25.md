@@ -6,7 +6,7 @@
 | --- | --- |
 | worktree | `/Users/lemon/.codex/worktrees/9128/AI充值业务` |
 | 分支 | `codex/browser` |
-| 最新 Browser 代码提交 | `e19129c` (`fix(browser): stop card fill on lease expiry`) |
+| 最新 Browser 代码提交 | `dfa94e3` (`fix(browser): reject expired card material`) |
 | 当前阶段 | F0：Checkout Navigation + fixture 卡材料非付款填充闭环已通过 |
 | 跟踪改动 | 无 |
 | 未跟踪改动 | `.playwright-cli/`、`artifacts/` |
