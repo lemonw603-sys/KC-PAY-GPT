@@ -1,0 +1,50 @@
+{
+  "manifestId": "NON_PH_FUNCTIONAL_BASELINE_2026_08_22",
+  "manifestVersion": 1,
+  "scope": "AUTH_READ_ONLY",
+  "networkLevel": "NON_PH_FUNCTIONAL",
+  "runtime": {
+    "runtimeId": "PLAYWRIGHT_LOCAL",
+    "runtimeVersion": "1.59.1",
+    "browserEngine": "chromium",
+    "headless": true,
+    "browserBinarySource": "bundled-or-local-verified"
+  },
+  "profile": {
+    "profileMode": "TEMPORARY_BROWSER_CONTEXT",
+    "siteStatePolicy": "SESSION_ONLY",
+    "cloudProfile": false,
+    "profileSync": false,
+    "fullProfileExport": false
+  },
+  "session": {
+    "materialPolicy": "SESSION_ONLY",
+    "serverIdentityProbe": "INDEPENDENT_NETWORK_PROBE",
+    "expectedIdentityRequired": true,
+    "sessionSource": "EXTERNAL_0600_FILE_NOT_IN_REPOSITORY"
+  },
+  "network": {
+    "proxy": false,
+    "sticky": false,
+    "egressProof": "LOCAL_OBSERVATION_ONLY",
+    "countryAssertion": null
+  },
+  "locale": "en-US",
+  "timezone": "UTC",
+  "checkout": {
+    "createAllowed": false,
+    "observationPermit": false,
+    "paymentWrites": false
+  },
+  "evidence": {
+    "storeFullSession": false,
+    "storeFullCheckoutAuthority": false,
+    "storeCardData": false,
+    "publicEvidence": "HASHES_AND_REDACTED_SUMMARIES_ONLY"
+  },
+  "promotion": {
+    "eligibleForPhilippines": false,
+    "eligibleForPayment": false,
+    "requiresNewCohortForNetworkChange": true
+  }
+}

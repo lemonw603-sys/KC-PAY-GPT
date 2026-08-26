@@ -9,11 +9,14 @@ yarn-error.log*
 .env.*
 !.env.example
 *.env
+/private/
+/.playwright-cli/
 
 # Runtime artefacts
 _server.out.log
 _server.err.log
 debug_screenshots/
+artifacts/browser-poc/
 product_files/
 data/hcaptcha-config.json
 data/browser-pool/

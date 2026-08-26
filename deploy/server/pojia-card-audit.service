@@ -1,0 +1,28 @@
+[Unit]
+Description=AI充值业务卡片一致性只读巡检
+After=network-online.target pojia-worker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=pojia
+Group=pojia
+WorkingDirectory=/opt/pojia/current/v1
+EnvironmentFile=/etc/pojia/runtime.env
+EnvironmentFile=/etc/pojia/provider.env
+ExecStart=/usr/bin/node scripts/card-consistency-audit.js
+UMask=0077
+NoNewPrivileges=true
+PrivateDevices=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+LockPersonality=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+CapabilityBoundingSet=
+AmbientCapabilities=

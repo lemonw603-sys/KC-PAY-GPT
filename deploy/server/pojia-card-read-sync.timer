@@ -1,0 +1,11 @@
+[Unit]
+Description=每 15 秒处理一次卡片只读同步任务
+
+[Timer]
+OnBootSec=20s
+OnUnitActiveSec=15s
+AccuracySec=1s
+Unit=pojia-card-read-sync.service
+
+[Install]
+WantedBy=timers.target

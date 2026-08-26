@@ -1,5 +1,6 @@
 const RUNTIME_SETTING_KEYS = Object.freeze([
   'dispatch_new_recharges',
+  'recharge_dispatch_mode',
   'poll_existing_orders',
   'sync_card_transactions'
 ]);
@@ -8,6 +9,14 @@ function parseBooleanSetting(key, value) {
   if (value === 'true') return true;
   if (value === 'false') return false;
   throw new Error(`Invalid boolean app setting ${key}`);
+}
+
+function parseRechargeDispatchMode(value) {
+  const mode = String(value || '').trim().toUpperCase();
+  if (!['AUTOMATIC', 'MANUAL'].includes(mode)) {
+    throw new Error('Invalid recharge dispatch mode');
+  }
+  return mode;
 }
 
 export async function loadRuntimeSettings(pool) {
@@ -26,6 +35,7 @@ export async function loadRuntimeSettings(pool) {
       'dispatch_new_recharges',
       values.get('dispatch_new_recharges')
     ),
+    rechargeDispatchMode: parseRechargeDispatchMode(values.get('recharge_dispatch_mode')),
     pollExistingOrders: parseBooleanSetting(
       'poll_existing_orders',
       values.get('poll_existing_orders')

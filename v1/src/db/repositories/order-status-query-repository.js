@@ -1,10 +1,22 @@
 const SELECT_ORDER = `
   SELECT o.public_no, o.status, o.updated_at,
+         COALESCE(o.customer_action_code,
+           CASE WHEN o.status IN ('RECHARGE_FAILED','SUBMIT_UNKNOWN')
+             AND EXISTS (SELECT 1 FROM provider_calls pc
+               WHERE pc.order_id = o.id AND pc.provider = 'zzshu'
+                 AND pc.operation = 'create_direct' AND pc.business_code = '40030')
+             THEN 'ACCOUNT_ALREADY_PLUS' END) AS customer_action_code,
+         o.session_replacement_count, o.session_repair_expires_at,
          COALESCE(
            CASE WHEN o.status = 'CLOSED' THEN (
-             SELECT oe.to_status FROM order_events oe
-             WHERE oe.order_id = o.id AND oe.to_status <> 'CLOSED'
-             ORDER BY oe.id DESC LIMIT 1
+             CASE WHEN o.failure_code = 'CANCELLED_PRE_SUBMISSION' THEN 'CARD_FAILED'
+             WHEN EXISTS (
+               SELECT 1 FROM order_compensations oc WHERE oc.original_order_id = o.id
+             ) THEN 'CARD_FAILED' ELSE (
+               SELECT oe.to_status FROM order_events oe
+               WHERE oe.order_id = o.id AND oe.to_status <> 'CLOSED'
+               ORDER BY oe.id DESC LIMIT 1
+             ) END
            ) END,
            o.status
          ) AS effective_status
@@ -19,9 +31,14 @@ export async function findCustomerOrder(pool, lookup) {
   } else {
     sql = `${SELECT_ORDER}
       INNER JOIN cdks c ON c.id = o.cdk_id
-      WHERE c.code_hash = ? LIMIT 1`;
-    parameter = lookup.cdkHash;
+      WHERE (c.hash_version = ? AND c.code_hash = ?)
+         OR (c.hash_version = ? AND c.code_hash = ?)
+      LIMIT 1`;
+    parameter = [
+      lookup.cdkLookup.current.version, lookup.cdkLookup.current.hash,
+      lookup.cdkLookup.legacy.version, lookup.cdkLookup.legacy.hash
+    ];
   }
-  const [rows] = await pool.query(sql, [parameter]);
+  const [rows] = await pool.query(sql, Array.isArray(parameter) ? parameter : [parameter]);
   return rows[0] || null;
 }

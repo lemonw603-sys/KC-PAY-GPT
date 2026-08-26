@@ -1,4 +1,4 @@
-# 破甲 v1：真实 MySQL 接入前安全审查
+# AI充值业务 v1：真实 MySQL 接入前安全审查
 
 - 审查日期：2026-08-17
 - 范围：`v1/` Web/API、后台认证、客户入口、数据访问、Provider 调用、worker、配置与 legacy 隔离

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { ProviderError } from '../src/providers/http-client.js';
-import { runOneTask } from '../src/workers/task-runner.js';
+import { runOneTask, TaskExecutionError } from '../src/workers/task-runner.js';
 
 function repositoryFor(task, calls) {
   return {
@@ -50,6 +50,29 @@ test('requeues an explicitly retryable provider failure', async () => {
   assert.equal(result.status, 'PENDING');
   assert.equal(calls[0].input.forceDead, false);
   assert.equal(calls[0].input.retryAt instanceof Date, true);
+});
+
+test('configuration waiting refunds only the current task attempt', async () => {
+  const calls = [];
+  const task = { id: 22, task_type: 'SUBMIT_RECHARGE' };
+  const result = await runOneTask({
+    pool: {},
+    workerId: 'worker-a',
+    handlers: {
+      SUBMIT_RECHARGE: async () => {
+        throw new TaskExecutionError('provider account is disabled', {
+          code: 'RECHARGE_CONFIGURATION_BLOCKED',
+          retryable: true,
+          refundAttempt: true
+        });
+      }
+    },
+    repository: repositoryFor(task, calls)
+  });
+
+  assert.equal(result.status, 'PENDING');
+  assert.equal(calls[0].input.forceDead, false);
+  assert.equal(calls[0].input.refundAttempt, true);
 });
 
 test('dead-letters an ambiguous non-retryable recharge submission', async () => {

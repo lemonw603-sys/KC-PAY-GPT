@@ -1,0 +1,12 @@
+[Unit]
+Description=定时运行AI充值业务卡片一致性只读巡检
+
+[Timer]
+OnBootSec=10min
+OnUnitActiveSec=30min
+RandomizedDelaySec=5min
+Persistent=true
+Unit=pojia-card-audit.service
+
+[Install]
+WantedBy=timers.target

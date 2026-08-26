@@ -1,0 +1,31 @@
+[Unit]
+Description=AI充值业务 Bark notification dispatcher
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pojia
+Group=pojia
+WorkingDirectory=/opt/pojia/current/v1
+EnvironmentFile=/etc/pojia/runtime.env
+EnvironmentFile=/etc/pojia/bark.env
+ExecStart=/usr/bin/node scripts/bark-notification-runner.js
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+LockPersonality=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+CapabilityBoundingSet=
+AmbientCapabilities=
+
+[Install]
+WantedBy=multi-user.target

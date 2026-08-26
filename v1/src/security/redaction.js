@@ -1,9 +1,10 @@
-const SENSITIVE_KEY = /(?:api.?key|authorization|password|secret|token|session|cvv|cvc|card.?number|card.?no|pan)/i;
+const SENSITIVE_KEY = /(?:api.?key|authorization|password|secret|token|session|cvv|cvc|card.?number|card.?no|pan|cdk|recharge.?card.?key|credential|ciphertext)/i;
 
 function redactText(value) {
   return String(value)
     .replace(/nhs_[A-Za-z0-9._-]+/g, '[REDACTED_API_KEY]')
     .replace(/Bearer\s+[^\s]+/gi, 'Bearer [REDACTED]')
+    .replace(/\b(?:PJ-[A-HJ-KM-NP-Z2-9]{5}(?:-[A-HJ-KM-NP-Z2-9]{5}){3}|VCK-[A-Z0-9]{4}(?:-[A-Z0-9]{4}){2,4})\b/gi, '[REDACTED_CDK]')
     .replace(/\beyJ[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+){2,4}\b/g, '[REDACTED_TOKEN]')
     .replace(/\b\d{12,19}\b/g, (match) => `****${match.slice(-4)}`)
     .replace(

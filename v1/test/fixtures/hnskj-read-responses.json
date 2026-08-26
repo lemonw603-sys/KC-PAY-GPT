@@ -71,5 +71,55 @@
       "pageSize": 20,
       "source": "fixture"
     }
+  },
+  "transactions": {
+    "success": true,
+    "message": "成功",
+    "data": {
+      "transactions": [
+        {
+          "id": "CARD_BALANCE_RETURN_fixture",
+          "type": "card_balance_return",
+          "status": "success",
+          "typeText": "CARD_BALANCE_RETURN",
+          "statusText": "成功",
+          "amount": 0.01,
+          "currency": "USD",
+          "merchantName": "fixture",
+          "merchantCountry": "fixture",
+          "merchantMcc": "fixture",
+          "fee": 0,
+          "tradeTime": "2026-08-18 21:09:30",
+          "remark": "fixture",
+          "platformCardId": "fixture-card-id",
+          "cardNoMask": "****0000",
+          "relatedTxnId": "",
+          "settlementStatus": "not_settle",
+          "originalAmount": 0.01,
+          "originalCurrency": "USD"
+        },
+        {
+          "id": "purchase_fixture",
+          "type": "purchase",
+          "status": "processing",
+          "typeText": "PURCHASE",
+          "statusText": "处理中",
+          "amount": -15.97,
+          "currency": "USD",
+          "fee": 0,
+          "tradeTime": "2026-08-18 21:02:08",
+          "platformCardId": "fixture-card-id",
+          "relatedTxnId": "",
+          "settlementStatus": "unsettled",
+          "originalAmount": 982.14,
+          "originalCurrency": "PHP"
+        }
+      ],
+      "total": 2,
+      "page": 1,
+      "pageSize": 50,
+      "source": "fixture",
+      "cardNo": "****0000"
+    }
   }
 }

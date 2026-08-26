@@ -1,0 +1,9 @@
+{
+  "runId": "2026-08-22T18-45-39-769Z",
+  "pid": 48157,
+  "status": "RUNNING",
+  "startedAt": "2026-08-22T18:45:39.783Z",
+  "durationMs": 86400000,
+  "targetRate": "approximately 360 synthetic jobs/day",
+  "outputPath": "/Users/lemon/code/AI充值业务/artifacts/browser-soak/24h-2026-08-22T18-45-39-769Z.log"
+}

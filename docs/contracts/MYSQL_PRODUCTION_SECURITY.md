@@ -2,7 +2,7 @@
 
 - 状态：代码约束已实现，已完成服务器隔离集成验证
 - 日期：2026-08-17
-- 范围：破甲 v1 Web、worker、CDK 工具、迁移、网络与备份
+- 范围：AI充值业务 v1 Web、worker、CDK 工具、迁移、网络与备份
 
 ## 结论
 
@@ -106,7 +106,7 @@ GRANT ALL PRIVILEGES ON pojia.* TO 'pojia_migrator'@'<operator-private-host>';
 
 接入空生产 schema 后逐项记录证据：
 
-1. 3306 从公网不可达，只能从允许的应用/运维网络访问。
+1. 3306 从公网不可达，只能从允许的应用/运维网络访问；必须从外部网络实际执行 TCP 失败验证，不能只检查 Docker 端口映射配置。
 2. 远程连接的 TLS 已启用，证书身份校验通过。
 3. 运行账号能够完成 `SELECT/INSERT/UPDATE/DELETE`，但 `CREATE TABLE` 与 `ALTER TABLE` 被拒绝。
 4. 迁移账号能够完成四个迁移；重复执行不会重复建表。
