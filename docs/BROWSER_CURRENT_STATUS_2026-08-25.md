@@ -188,3 +188,19 @@
 ### P0 切片的并发复核
 
 又补了一轮并发审查：Durable payment gate 和 Durable card lease 原先若多个调用同时进入，可能在持久化前互相穿插。现增加各自串行锁；同一 attempt 或同一卡并发请求只允许一个成功。并发回归纳入测试，仍为 40/40 通过。
+
+## 2026-08-26 P0 与上游只读投影非付款联调
+
+新增 `browser-mvp/src/frontloaded-p0-integration.js`，把现有上游只读投影、durable card-material lease、dispatch 和 BrowserContext 观察串成一条非付款链：
+
+```text
+order/attempt/cardReadyEvidence/route（只读投影）
+→ durable card lease
+→ callback 内重新读取材料
+→ Browser observation
+→ lease RELEASED
+```
+
+该路径明确不创建 payment permit、不消费 active funds permit、不提交 Checkout。测试验证上游投影经过 BrowserContext 后卡租约被释放，卡材料 source 只在租约校验和 callback 内读取。总测试：`npm --prefix browser-mvp test` **41/41 passed**。
+
+边界：仍未接真实 MySQL 视图、真实卡台材料 source、共享资金 permit 或付款 executor；这是隔离联调切片，不是生产付款接线。

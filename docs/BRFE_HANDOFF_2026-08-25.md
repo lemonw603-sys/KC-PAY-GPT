@@ -250,3 +250,9 @@
 `npm --prefix browser-mvp run check` 通过；`npm --prefix browser-mvp test` **40/40 passed**。本轮没有接卡台写接口、没有真实付款。下一步是把这两个合同接入统筹窗口冻结的共享 attempt/card readiness/资金 permit，而不是直接打开付款写开关。
 
 P0 持久化切片已补并发串行保护：同一 attempt 的并发 payment prepare、同一卡的并发 material lease 只允许一个成功；测试仍为 40/40。当前提交前仍需把 durable contracts 接到共享 attempt/card 状态和 Browser lease。
+
+## 2026-08-26 P0 与上游只读投影联调切片
+
+已新增 `frontloaded-p0-integration.js`：Browser 只消费上游 order/attempt/card readiness/route 投影，先获取 durable card lease，再在非付款 Browser observation 内执行，最后释放租约。该路径不会创建 payment permit，也不会调用资金或 Provider 写接口。
+
+验证：`npm --prefix browser-mvp run check` 通过；`npm --prefix browser-mvp test` **41/41 passed**。已验证租约在成功观察后进入 RELEASED；未验证真实 MySQL、卡台材料 API、共享资金 permit、真实 Session/Checkout/付款。

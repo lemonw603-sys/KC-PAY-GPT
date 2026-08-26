@@ -11,6 +11,8 @@ import { BrowserExecutionService } from '../src/executor.js';
 import { LocalPlaywrightRuntimeAdapter } from '../src/runtime-adapter.js';
 import { createSyntheticManifest } from '../src/fixtures.js';
 import { runNonPaymentUpstreamSimulation } from '../src/nonpayment-simulation.js';
+import { runFrontloadedNonPaymentIntegration } from '../src/frontloaded-p0-integration.js';
+import { DurableCardMaterialLeaseProvider } from '../src/durable-card-material-lease.js';
 import { ContractError, hasSensitiveKey } from '../src/contracts.js';
 import { projectUpstreamBrowserJob } from '../src/shared-contract-adapter.js';
 
@@ -117,6 +119,37 @@ test('non-payment simulation runs upstream projection through dispatch and Brows
     const snapshot = await dispatchStore.snapshot();
     assert.equal(snapshot.jobs[result.job.jobId].job.state, 'COMPLETED');
     assert.equal(snapshot.jobs[result.job.jobId].job.metadata.upstream.cardRef, 'card:inventory:0001');
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('frontloaded P0 integration consumes a card lease and releases it after observation', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'browser-upstream-p0-'));
+  try {
+    const dispatchStore = await new FileDispatchStore({ filePath: join(dir, 'dispatch.json'), leaseMs: 5_000 }).init();
+    const evidenceSink = new MemoryEvidenceSink();
+    const executionService = new BrowserExecutionService({
+      runtimeAdapter: new LocalPlaywrightRuntimeAdapter({ browserType: chromium }),
+      evidenceSink,
+      timeoutMs: 2_000,
+    });
+    let loads = 0;
+    const cardMaterialLeaseProvider = await new DurableCardMaterialLeaseProvider({
+      filePath: join(dir, 'card-leases.json'),
+      source: { load: async () => { loads += 1; return { pan: '4111111111111111', expMonth: '12', expYear: '2030', cvc: '123' }; } },
+    }).init();
+    const result = await runFrontloadedNonPaymentIntegration({
+      projection: projection({ sessionRef: undefined }),
+      dispatchStore,
+      executionService,
+      cardMaterialLeaseProvider,
+      now,
+    });
+    assert.equal(result.result.status, 'OBSERVED');
+    assert.equal(result.result.submitCalls, 0);
+    assert.equal(loads, 2, 'one load validates the lease and one load supplies the callback');
+    assert.equal(Object.values(cardMaterialLeaseProvider.snapshot().leases)[0].state, 'RELEASED');
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
