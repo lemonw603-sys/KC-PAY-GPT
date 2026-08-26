@@ -433,3 +433,9 @@ git diff --check                     # passed（提交前再次执行）
 - 新增 expiry 回归：租约在第一个字段后到期时，第二个字段不会写入，已写字段仍被清理。
 - 最新验证为 **57/57 passed**；本轮仍未读取真实卡、未调用 HNSKJ 真实 API、未打开 payment submit。
 - 另补齐 HNSKJ 卡材料有效期校验：过期年份在 Browser source/填充边界直接拒绝，与 `v1/src/providers/hnskj-card.js` 的只读映射口径对齐。
+
+## 2026-08-26 上游合同冻结准备
+
+- 已按用户同意整理 Browser 侧待统筹确认的冻结清单：`docs/browser-research/browser-upstream-contract-freeze-checklist-2026-08-26.md`。
+- 清单明确当前 SQL adapter 的 19 个最小投影字段、状态/路由/ready 约束、一次读取策略和 7 项必须由共享窗口确认的事项。
+- 该文档是 Browser 侧准备材料，不宣称共享 schema 已冻结；在确认前不接真实 MySQL 生产视图、不把 Browser 直接接到 HNSKJ API。

@@ -38,6 +38,7 @@
 - 卡材料 lease 在每个字段前都会再次校验；新增 expiry 回归证明租约到期时停止下一字段并清理已写字段。
 - `HnskjCardMaterialSource` 已在捕获 provider 响应 fixture 中接入该填充闭环；显式使用 `providerCardRef`，provider 调用次数为 1，错误映射仍 fail-closed。
 - HNSKJ 卡材料映射现拒绝过期年份，与非 Browser `mapCardCredentials()` 的已核对口径一致；未改变任何卡台写路径。
+- 已新增待统筹确认的上游合同冻结清单：`docs/browser-research/browser-upstream-contract-freeze-checklist-2026-08-26.md`；它记录当前 Browser adapter 的最小字段和待确认决策，不等于共享 schema 已冻结。
 
 ## 本分支未验证
 
