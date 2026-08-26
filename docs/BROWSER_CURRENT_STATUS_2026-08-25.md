@@ -169,3 +169,7 @@
 复测：`npm --prefix browser-mvp run check` 通过；`npm --prefix browser-mvp test` **38/38 passed**。本轮仍未启动真实扩展、未提交 Checkout、未调用卡台写接口或真实付款。
 
 剩余结构性问题（尚未伪装成已解决）：真实扩展需 headed Chrome/可用 DISPLAY；卡材料仍是内存 source；PaymentSafetyGate 尚未接入付款执行器；三方付款后对账仍是待实现合同；`allowWrites=false` 继续强制。
+
+### 对抗式复核追加：上号器无 background worker
+
+继续核对真实扩展 `manifest.json` 后发现它只有 popup，没有 `background.service_worker`。如果只等待 `context.serviceWorkers()`，实际 lane 会永远误报“扩展未加载”。已修正为：优先使用 worker URL（若存在），否则按 Chromium 解压扩展路径算法派生 extension ID，再打开 popup；同时保留 headed 约束。测试仍为 38/38 通过。

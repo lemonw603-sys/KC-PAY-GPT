@@ -1,10 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, writeFile, realpath, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
-import { ChromeExtensionSessionRuntimeAdapter } from '../src/extension-session-runtime.js';
+import { ChromeExtensionSessionRuntimeAdapter, extensionIdFromPath } from '../src/extension-session-runtime.js';
 import { InMemoryCardMaterialLeaseProvider } from '../src/card-material-lease.js';
 import { PaymentSafetyGate } from '../src/payment-safety-gate.js';
 import { ContractError } from '../src/contracts.js';
@@ -25,7 +25,12 @@ test('extension lane validates MV3 and adds load-extension flags without exposin
   const runtime = await adapter.open(createChromeControlManifest(), { profileRef: 'profile:extension' });
   assert.ok(calls[0].args.some((arg) => arg === `--load-extension=${extensionPath}`));
   assert.equal(calls[0].headless, false);
-  assert.deepEqual(await adapter.validateExtension(), { name: 'fixture', version: '1', popup: 'popup.html' });
+  const validated = await adapter.validateExtension();
+  assert.equal(validated.name, 'fixture');
+  assert.equal(validated.version, '1');
+  assert.equal(validated.popup, 'popup.html');
+  assert.match(validated.extensionId, /^[a-p]{32}$/);
+  assert.equal(validated.extensionId, extensionIdFromPath(await realpath(extensionPath)));
   await adapter.close(runtime);
 });
 

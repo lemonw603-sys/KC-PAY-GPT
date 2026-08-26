@@ -237,3 +237,5 @@
 本轮复核发现的具体问题已修正并通过 38/38 测试：扩展 lane 改为 headed 默认并拒绝 headless，增加 popup 文件校验；card-material lease 增加全量 lease 绑定校验和 5 分钟上限；UNKNOWN 改为按订单或卡任一维度锁定；同一 attempt 的活动 permit 不可重复创建，并增加 permit 过期保护。
 
 这些修正只强化 Browser-only 合同，没有接入付款写路径。仍需统筹窗口提供共享卡材料/资金 permit 合同后再做模拟 Checkout；首次真实付款前仍必须单独确认。
+
+追加审查事实：真实上号器 Manifest 没有 background service worker，不能把“观察到 service worker”作为扩展加载的必要条件。代码已增加按 canonical extension path 派生 ID 的 fallback；因此真实 headed 验证应直接检查 popup 打开、Cookie 写入结果和 ChatGPT 身份响应，而不是只看 worker 事件。

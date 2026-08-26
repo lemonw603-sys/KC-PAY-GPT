@@ -1,4 +1,5 @@
-import { access, readFile } from 'node:fs/promises';
+import { access, readFile, realpath } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 
 import { GoogleChromeControlRuntimeAdapter } from './chrome-control-runtime.js';
@@ -12,6 +13,19 @@ function assertExtensionPath(value) {
 function extensionIdFromServiceWorker(url) {
   const match = /^chrome-extension:\/\/([a-p]{32})\//.exec(url || '');
   return match?.[1] || null;
+}
+
+// Chromium derives unpacked-extension IDs from the absolute extension path.
+// This lane has no background service worker, so derive the ID when no worker
+// target exists instead of assuming every MV3 extension exposes one.
+function extensionIdFromPath(path) {
+  const digest = createHash('sha256').update(path).digest();
+  let id = '';
+  for (let index = 0; index < 16; index += 1) {
+    id += String.fromCharCode(97 + ((digest[index] >> 4) & 0x0f));
+    id += String.fromCharCode(97 + (digest[index] & 0x0f));
+  }
+  return id;
 }
 
 /**
@@ -37,6 +51,7 @@ export class ChromeExtensionSessionRuntimeAdapter extends GoogleChromeControlRun
 
   async validateExtension() {
     await access(this.extensionPath);
+    const canonicalPath = await realpath(this.extensionPath);
     let manifest;
     try {
       manifest = JSON.parse(await readFile(`${this.extensionPath}/manifest.json`, 'utf8'));
@@ -51,7 +66,12 @@ export class ChromeExtensionSessionRuntimeAdapter extends GoogleChromeControlRun
     } catch {
       throw new ContractError('extension popup file is missing');
     }
-    return { name: manifest.name || null, version: manifest.version || null, popup: manifest.action.default_popup };
+    return {
+      name: manifest.name || null,
+      version: manifest.version || null,
+      popup: manifest.action.default_popup,
+      extensionId: extensionIdFromPath(canonicalPath),
+    };
   }
 
   async bootstrapViaPopup(runtime, sessionInput, { cookieType = 'auto', timeoutMs = 5_000 } = {}) {
@@ -67,8 +87,7 @@ export class ChromeExtensionSessionRuntimeAdapter extends GoogleChromeControlRun
         // A disabled/headless browser may not expose extension service workers.
       }
     }
-    const extensionId = extensionIdFromServiceWorker(worker?.url?.());
-    if (!extensionId) throw new ContractError('extension service worker was not observed; use headed Chromium for the extension lane');
+    const extensionId = extensionIdFromServiceWorker(worker?.url?.()) || extension.extensionId;
     const popup = await runtime.context.newPage();
     await popup.goto(`chrome-extension://${extensionId}/${extension.popup}`, { waitUntil: 'domcontentloaded', timeout: timeoutMs });
     await popup.locator('#sessionToken').fill(sessionInput);
@@ -80,3 +99,4 @@ export class ChromeExtensionSessionRuntimeAdapter extends GoogleChromeControlRun
 }
 
 export { extensionIdFromServiceWorker };
+export { extensionIdFromPath };
