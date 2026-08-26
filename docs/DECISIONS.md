@@ -94,6 +94,7 @@
 | D-088 | Browser MySQL bounded soak 通过：20 轮持续到达、400 job、8 worker、400 claims、0 missing、0 duplicate、80 heartbeat；仍不替代独立进程/数据库重启和连续 24h soak | 已验证（bounded） | `docs/2026-08-22_browser-mysql-bounded-soak-report.md`；测试数据已清理，付款保持关闭 |
 | D-069 | API 充值路径不增加独立账号预检；由充值 API 的权威响应判断资格。明确的 40030/账号不可充值属于充值前拒绝：保留审计、清除本地资金风险、订单回到 Session 可恢复状态，不删除账本、不重试、不换卡；只有外部结果未知时才进入 UNKNOWN 并禁止回退重付。 | 已确认 | 用户明确说明 API 本身就是充值动作，执行时发现账号问题即可回退；独立预检可能增加风控和重复访问风险 |
 | D-089 | Plus 卡台路线在运营后台提供人工切换入口。切换只影响新订单，既有订单继续使用创建时冻结的路线；切换前要求目标路线只读检查开启、熔断关闭且不在重试窗口，并记录确认词、操作者和原因。暂不做自动故障切换。 | 已实现（后台 API + UI） | 036 迁移、后台服务/API、后台“卡台路线”视图和敏感操作确认已落盘；生产未迁移、未部署、未切换 |
+| D-090 | Browser 设计优先保证链路跑通、顺畅、稳定，其次保证资金安全；敏感信息采用够用保护，不为绝对隔离增加复杂系统。Browser 执行时可使用必要的完整卡资料和 Session，但普通日志、WAL、截图、录像和客户页面不记录原文。Browser 开始前必须原子建立唯一 attempt 并锁定订单/卡片；订单使用 `RECHARGE_PROCESSING` 表示正在处理，只有真正付款提交时才使用 `browser_run.payment_state=PAYMENT_SUBMITTING`。`RECONCILIATION_REQUIRED` 只核对不重付。 | 已确认，合同已修正；代码待改造 | 用户 2026-08-26 确认：唯一资金记录和锁必要，但不应把尚未点击付款的 Browser 阶段提前表达为 `SUBMITTING`；正式合同见 `docs/contracts/2026-08-26_browser-upstream-runtime-contract.md` |
 
 ## 变更流程
 

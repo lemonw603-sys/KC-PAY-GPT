@@ -1,5 +1,14 @@
 # 交接记录
 
+## 2026-08-26｜Browser 上游合同纠偏与冻结
+
+- 用户确认优先级：先保证充值链路跑通、顺畅、稳定，再保证资金安全；敏感信息不做导致系统复杂化的过度保护。Browser 执行时可使用必要的卡资料和 Session，普通日志/WAL/截图/录像/客户页面仍不记录原文。
+- 代码交叉核验发现 Browser PoC 投影的 `order=CARD_READY/RECONCILIATION_REQUIRED`、`attempt=PENDING/OBSERVING`、card `AVAILABLE` 与共享核心正式状态不一致。共享核心实际在 `CARD_READY` 后原子创建唯一 `recharge_attempt`，把订单推进为 `SUBMITTING`；Browser dispatch 只接受 `attempt=PREPARED`、`funds=ACTIVE`、`executor=BROWSER`，Worker claim 后创建活动 `browser_run`。
+- 用户随后确认进一步纠偏：保留“Browser 开始前建立唯一 attempt 并锁定订单/卡片”，但不把尚未付款的阶段提前命名为 `SUBMITTING`。目标合同改为订单 `RECHARGE_PROCESSING` 表示 Browser 正在处理，真正付款提交由 `browser_run.payment_state=PAYMENT_SUBMITTING` 表达。
+- 已修正合同 `docs/contracts/2026-08-26_browser-upstream-runtime-contract.md` 和 D-090，并更新 CURRENT_STATE。合同明确 `RECONCILIATION_REQUIRED` 只核对不重付，`browser_run_id` 是正式运行审计锚点，不另造平行 `audit_ref`。
+- 本轮只修改文档事实源，未修改 Browser/non-Browser 业务代码、迁移、数据库或生产；未调用卡台写接口、未执行付款。
+- 下一步：先修改共享核心 Browser 路线的状态推进与 dispatch/run 资格，再由 Browser 工作线按同一合同修改 adapter/状态映射；之后做共享 dispatch → run → Session/卡资料 → Checkout 非付款联调。历史 API 路线不在本次改造中盲目改名。
+
 ## 2026-08-25｜后台优化 1/3/4 落地 + A 非 Browser 后端只读审查
 
 - 工作线：非 Browser。本轮业务改动仅前端 `v1/public/admin/assets/admin.js`（已提交），后端为纯只读审查。

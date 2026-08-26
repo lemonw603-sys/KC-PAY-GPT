@@ -153,6 +153,7 @@
 
 ## Browser 自动化时序
 
+- Browser 上游、状态、卡片、Session、审计和读取策略以 `docs/contracts/2026-08-26_browser-upstream-runtime-contract.md` 为最新合同；PoC 的平行投影状态不得覆盖共享核心状态机；
 - 现在可以在独立讨论窗口完成方案和接口边界设计，成果必须回写本项目事实源；
 - 当前不接入生产、不执行真实 Browser 付款；
 - Browser 已成为未来 Plus 主执行链路，可立即进行非付款 PoC、仿真控制面和隔离联调，不再等待 ZZSHU API 成功单；

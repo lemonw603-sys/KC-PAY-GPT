@@ -31,6 +31,7 @@
 - 真实成功订单、卡片写入、卡余额充值、Plus 付款、取消续费和资金对账尚未验证。
 - 生产遗留 `ASSIGN_CARD/PENDING` 任务、长期 `VALIDATING` intake batch、2 张 quarantine/review 卡及 1 条历史 `UNCERTAIN provider_call` 尚未处置。
 - Browser 真实付款尚未验证。
+- Browser 上游运行合同已按用户最新确认修正：必须先建立唯一 attempt 并锁定资源，但 Browser 尚未点击付款时订单应为 `RECHARGE_PROCESSING`，真正提交付款由 `browser_run.payment_state=PAYMENT_SUBMITTING` 表达。当前共享代码仍提前使用 `SUBMITTING`，独立 Browser worktree 仍使用 PoC 状态投影；两侧均待接线改造，因此生产 Browser 接线尚未完成。
 
 ## 建议（不是新业务决策）
 
