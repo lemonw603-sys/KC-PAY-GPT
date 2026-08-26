@@ -37,6 +37,17 @@ test('extension lane validates MV3 and adds load-extension flags without exposin
   await adapter.close(runtime);
 });
 
+test('extension lane fails closed when Chrome did not actually load the popup', async () => {
+  const adapter = Object.create(ChromeExtensionSessionRuntimeAdapter.prototype);
+  adapter.validateExtension = async () => ({ extensionId: 'a'.repeat(32), popup: 'popup.html' });
+  const popup = {
+    goto: async () => { throw new Error('net::ERR_BLOCKED_BY_CLIENT'); },
+    close: async () => undefined,
+  };
+  const runtime = { context: { serviceWorkers: () => [], newPage: async () => popup } };
+  await assert.rejects(() => adapter.verifyLoaded(runtime), /extension is not loaded/);
+});
+
 test('card material is only available inside a short lease callback', async () => {
   let now = 10_000;
   const provider = new InMemoryCardMaterialLeaseProvider({

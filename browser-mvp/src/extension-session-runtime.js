@@ -78,23 +78,32 @@ export class ChromeExtensionSessionRuntimeAdapter extends GoogleChromeControlRun
     if (!runtime?.context) throw new TypeError('runtime handle is required');
     if (typeof sessionInput !== 'string' || sessionInput.trim().length === 0) throw new TypeError('sessionInput is required');
     const extension = await this.validateExtension();
-    const workers = runtime.context.serviceWorkers?.() || [];
-    let worker = workers.find((candidate) => extensionIdFromServiceWorker(candidate.url()));
-    if (!worker && typeof runtime.context.waitForEvent === 'function') {
-      try {
-        worker = await runtime.context.waitForEvent('serviceworker', { timeout: timeoutMs });
-      } catch {
-        // A disabled/headless browser may not expose extension service workers.
-      }
-    }
-    const extensionId = extensionIdFromServiceWorker(worker?.url?.()) || extension.extensionId;
-    const popup = await runtime.context.newPage();
-    await popup.goto(`chrome-extension://${extensionId}/${extension.popup}`, { waitUntil: 'domcontentloaded', timeout: timeoutMs });
+    const popup = await this.verifyLoaded(runtime, { timeoutMs, extension });
     await popup.locator('#sessionToken').fill(sessionInput);
     const typeControl = popup.locator('#cookieType');
     if (await typeControl.count()) await typeControl.selectOption(cookieType);
     await popup.locator('#loginButton').click();
-    return { extensionId, popupUrl: popup.url(), sessionWritten: true, openedChatGPT: true };
+    return { extensionId: new URL(popup.url()).host, popupUrl: popup.url(), sessionWritten: true, openedChatGPT: true };
+  }
+
+  async verifyLoaded(runtime, { timeoutMs = 5_000, extension = null } = {}) {
+    if (!runtime?.context) throw new TypeError('runtime handle is required');
+    const validated = extension || await this.validateExtension();
+    const workers = runtime.context.serviceWorkers?.() || [];
+    const worker = workers.find((candidate) => extensionIdFromServiceWorker(candidate.url()));
+    const extensionId = extensionIdFromServiceWorker(worker?.url?.()) || validated.extensionId;
+    const popup = await runtime.context.newPage();
+    try {
+      await popup.goto(`chrome-extension://${extensionId}/${validated.popup}`, { waitUntil: 'domcontentloaded', timeout: timeoutMs });
+      if (await popup.locator('#sessionToken').count() !== 1 || await popup.locator('#loginButton').count() !== 1) {
+        throw new ContractError('extension popup controls were not found');
+      }
+      return popup;
+    } catch (error) {
+      await popup.close().catch(() => undefined);
+      if (error instanceof ContractError) throw error;
+      throw new ContractError(`extension is not loaded in this Chrome profile: ${error.message}`);
+    }
   }
 }
 

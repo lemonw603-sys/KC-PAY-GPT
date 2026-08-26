@@ -264,3 +264,7 @@ P0 持久化切片已补并发串行保护：同一 attempt 的并发 payment pr
 `docs/browser-research/browser-mvp-current-plan-2026-08-26.md`
 
 本轮新增 `provider_card_ref` 只读字段和 HNSKJ card material source 合同；卡台材料读取改为只在 callback 内读取一次，以遵守卡台调用次数限制。测试结果更新为 `42/42 passed`；仍未接生产 MySQL、真实 Session、Checkout、付款或卡台写接口。
+
+## 2026-08-26 上号器真实加载纠正
+
+Google Chrome 151 headed context 已实跑；空 `DISPLAY` 不是当前 macOS 阻塞。真正事实是 Chrome 151 忽略解压扩展命令行加载，Profile 中未出现诺汇盛扩展，popup 返回 `ERR_BLOCKED_BY_CLIENT`。Adapter 已增加真实 popup 验证并 fail-closed，测试 43/43。继续 Google Chrome lane 的唯一动作是把解压扩展一次性安装到专用 persistent Profile；未安装前不能再写“扩展 lane 已运行”。

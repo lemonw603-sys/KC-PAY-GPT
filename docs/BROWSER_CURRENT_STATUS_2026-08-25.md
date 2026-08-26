@@ -212,3 +212,9 @@ order/attempt/cardReadyEvidence/route（只读投影）
 `docs/browser-research/browser-mvp-current-plan-2026-08-26.md`
 
 该文冻结的重点是：MVP 以“卡台就绪卡 → Session/上号器 → Chrome → Checkout → 受闸门控制的真实付款 → 三方核对 → UNKNOWN/人工接管”为核心；完整后台、多 Provider、多机和 200–300 单/日能力按 F1–F5 后置。当前代码仍处于真实付款前的隔离联调阶段。
+
+## 2026-08-26 Google Chrome 实际扩展加载探针
+
+真实运行纠正了两个假设：macOS 上空 `DISPLAY` 没有阻止 headed Chrome 151 启动；真正的阻塞是 Google Chrome 137 起移除了 `--load-extension`，因此 Chrome 151 虽然进程启动，但未加载上号器，popup 返回 `ERR_BLOCKED_BY_CLIENT`。详细证据见 `docs/browser-research/chrome-extension-live-probe-2026-08-26.md`。
+
+代码已增加 `verifyLoaded()`，必须真实打开 popup 并看到输入/按钮控件才能宣称扩展加载成功；测试更新为 43/43。下一步是在专用 persistent Chrome Profile 通过 `chrome://extensions` 一次性安装解压扩展，之后再做 Session 身份核对。该安装是持久化浏览器变更，执行前需在动作点确认。
