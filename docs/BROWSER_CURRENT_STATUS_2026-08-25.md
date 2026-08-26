@@ -35,6 +35,7 @@
 - `CheckoutObserver` 已从 fixture-only 选择器修正为可识别真实 ChatGPT/Stripe DOM；该历史切片提交 `4004741` 当时为 **48/48 passed**，当前累计结果见上方 **53/53**。
 - Checkout Navigation 已接入执行器；问卷在 Plus 点击前/后出现、首页 hydration 和 Stripe iframe 延迟加载均有 fail-closed 处理。
 - fixture 卡材料非付款切片已接入执行器：durable card lease → Stripe 安全字段填充 → 失租约停止 → 已写字段清理；测试验证 `fieldsFilled=3`、`fieldsCleared=3`、`submitCalls=0`，材料 source 只读取 1 次。
+- `HnskjCardMaterialSource` 已在捕获 provider 响应 fixture 中接入该填充闭环；显式使用 `providerCardRef`，provider 调用次数为 1，错误映射仍 fail-closed。
 
 ## 本分支未验证
 
@@ -42,7 +43,7 @@
 - 生产 artifact vault、账号/订单/卡片/Checkout 资源租约；
 - BrowserContext 与共享 Worker 的生产接线；
 - 新版 BRFE `NON_PH_FUNCTIONAL` 合同与共享状态适配；
-- 菲律宾 cohort、真实 HNSKJ 卡材料 source 运行接线、付款、生产 Worker、高可用拓扑。
+- 菲律宾 cohort、真实 HNSKJ API/卡材料运行接线、付款、生产 Worker、高可用拓扑。
 - `recharge_attempts`、资金 permit、审计关联仍需统筹窗口冻结；当前不进入共享写路径或真实付款。
 
 ## 暂停条件
@@ -54,7 +55,7 @@
 
 ## 下一步
 
-将 HNSKJ 只读 card-material source 接到刚完成的 durable card lease/Stripe 字段填充合同，继续使用捕获/模拟 provider 响应验证一次读取、显式 `providerCardRef` 和失败闭环；本阶段不读取真实卡、不打开 payment submit。
+在统筹窗口冻结 `provider_card_ref`、attempt/card readiness 和共享 MySQL 视图后，接入真实 HNSKJ 只读 API/生产 adapter；当前捕获/模拟响应验证已完成，继续保持单次读取和 fail-closed；本阶段不读取真实卡、不打开 payment submit。
 
 ## M7 隔离 MySQL 只读合同
 

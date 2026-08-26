@@ -40,7 +40,7 @@
 
 - 真实 MySQL `browser_upstream_ready_projection` 视图及 `provider_card_ref` 口径冻结；
 - 真实卡台只读材料 source 接线（优先一次读取、关键阶段读取，不循环刷新）；
-- HNSKJ 只读 card-material source 的真实/捕获响应接线（显式 `providerCardRef`、一次读取）以及 403/可见人机验证人工分流；fixture 填充合同已完成；
+- HNSKJ 只读 card-material source 的真实 API/生产 adapter 接线（显式 `providerCardRef`、一次读取）以及 403/可见人机验证人工分流；捕获响应和 fixture 填充合同已完成；
 - 付款 executor 与 durable payment gate 强制串接；
 - 付款后三方核对：Plus 权益、外部交易/扣款、订单 attempt/订阅续费状态；
 - 首次真实付款前的单独确认，以及 `1 笔 → 2–3 笔` 受控连续验证。

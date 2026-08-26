@@ -200,10 +200,18 @@ test('frontloaded P0 card-fill slice fills fixture Stripe fields, clears them, a
       evidenceSink,
       timeoutMs: 2_000,
     });
-    let loads = 0;
+    const providerCalls = [];
+    const cardMaterialSource = new HnskjCardMaterialSource({
+      provider: {
+        card: async (providerCardRef) => {
+          providerCalls.push(providerCardRef);
+          return { data: { card: { cardNumber: '4111111111111111', expiryMonth: 12, expiryYear: 2030, cvv: '123' } } };
+        },
+      },
+    });
     const cardMaterialLeaseProvider = await new DurableCardMaterialLeaseProvider({
       filePath: join(dir, 'card-leases.json'),
-      source: { load: async () => { loads += 1; return { pan: '4111111111111111', expMonth: 12, expYear: 2030, cvc: '123' }; } },
+      source: cardMaterialSource,
     }).init();
     const result = await runFrontloadedNonPaymentIntegration({
       projection: projection({
@@ -242,7 +250,7 @@ test('frontloaded P0 card-fill slice fills fixture Stripe fields, clears them, a
       paymentClicked: false,
     });
     assert.equal(result.result.submitCalls, 0);
-    assert.equal(loads, 1);
+    assert.deepEqual(providerCalls, ['provider-card:0001']);
     assert.equal(Object.values(cardMaterialLeaseProvider.snapshot().leases)[0].state, 'RELEASED');
   } finally {
     await rm(dir, { recursive: true, force: true });

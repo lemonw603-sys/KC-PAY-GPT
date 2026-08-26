@@ -412,3 +412,17 @@ git diff --check                     # passed（提交前再次执行）
 已验证边界：本地 Playwright fixture、durable card lease、失租约停止、字段清理和非付款集成；未验证真实 HNSKJ API/真实卡材料、真实 Stripe 字段写入、付款提交、付款后三方对账、生产 Worker。
 
 下一步唯一动作：把 `HnskjCardMaterialSource` 接到该填充合同的捕获/模拟 provider 响应，证明显式 `providerCardRef`、单次读取和错误闭环；仍不读取真实卡、不打开 payment submit。
+
+## 2026-08-26 最新交接：HNSKJ 捕获响应已接入非付款填充闭环
+
+本节覆盖上一节的“HNSKJ source 尚待接线”状态。
+
+- 本轮在 `11d19e6` 的非付款切片上补齐 `HnskjCardMaterialSource` 捕获 provider 集成测试；未调用真实 HNSKJ endpoint、未使用真实卡材料。
+- `providerCardRef=provider-card:0001` 经 `HnskjCardMaterialSource` 规范化后进入 durable lease callback，在 Checkout fixture 中填充/清理 3 个安全字段；provider `card()` 调用严格为 1 次。
+- 验证仍为 **56/56 passed**；`npm --prefix browser-mvp run check`、`git diff --check` 通过。
+
+已验证边界：捕获 provider envelope → HNSKJ 只读映射 → durable card lease → Stripe-like 字段非付款填充/清理 → lease release；`submitCalls=0`。
+
+未验证边界：真实 HNSKJ API 响应/网络错误、共享 MySQL `browser_upstream_ready_projection` 生产视图、真实卡材料、真实 Stripe 字段、付款与三方对账。
+
+下一步唯一动作：等待统筹窗口冻结 `provider_card_ref`、attempt/card readiness 和共享 MySQL 只读视图口径，然后接入真实 HNSKJ 只读 adapter；继续保持一次读取、无写方法和 payment submit 关闭。
