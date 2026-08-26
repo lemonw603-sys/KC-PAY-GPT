@@ -32,6 +32,7 @@
 - 生产遗留 `ASSIGN_CARD/PENDING` 任务、长期 `VALIDATING` intake batch、2 张 quarantine/review 卡及 1 条历史 `UNCERTAIN provider_call` 尚未处置。
 - Browser 真实付款尚未验证。
 - Browser 上游运行合同已按用户最新确认修正：必须先建立唯一 attempt 并锁定资源，但 Browser 尚未点击付款时订单应为 `RECHARGE_PROCESSING`，真正提交付款由 `browser_run.payment_state=PAYMENT_SUBMITTING` 表达。当前共享代码仍提前使用 `SUBMITTING`，独立 Browser worktree 仍使用 PoC 状态投影；两侧均待接线改造，因此生产 Browser 接线尚未完成。
+- 合同对抗式审查确认 3 个生产接线前 P0：permit 签发时缺少权威卡/路线/余额复核；缺少付款前安全退出与 Session 修复的原子闭环；状态调整散布于完整资金链，不能只改入口。报告见 `docs/2026-08-26_browser-runtime-contract-adversarial-review.md`；当前真实 Browser 付款仍关闭，未发现已发生资金事故的证据。
 
 ## 建议（不是新业务决策）
 

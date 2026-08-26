@@ -9,6 +9,11 @@
 - 本轮只修改文档事实源，未修改 Browser/non-Browser 业务代码、迁移、数据库或生产；未调用卡台写接口、未执行付款。
 - 下一步：先修改共享核心 Browser 路线的状态推进与 dispatch/run 资格，再由 Browser 工作线按同一合同修改 adapter/状态映射；之后做共享 dispatch → run → Session/卡资料 → Checkout 非付款联调。历史 API 路线不在本次改造中盲目改名。
 
+### 同日对抗式审查
+
+- 只检查重复付款、错误状态、无法恢复和跨线接不通等重大问题，确认 3 个 P0 实现缺口：permit-time 权威卡片/路线复核缺失；付款前 safe-abort/Session 修复没有原子闭环；`SUBMITTING → RECHARGE_PROCESSING` 不能只改入口，必须覆盖完整 Browser 资金状态链。
+- 详细事实、影响和修复顺序已落盘 `docs/2026-08-26_browser-runtime-contract-adversarial-review.md`。这不是已发生事故；当前 Browser 真实付款未启用。
+
 ## 2026-08-25｜后台优化 1/3/4 落地 + A 非 Browser 后端只读审查
 
 - 工作线：非 Browser。本轮业务改动仅前端 `v1/public/admin/assets/admin.js`（已提交），后端为纯只读审查。
