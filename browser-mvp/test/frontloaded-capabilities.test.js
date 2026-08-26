@@ -14,6 +14,7 @@ test('extension lane validates MV3 and adds load-extension flags without exposin
   const extensionPath = await mkdtemp(join(tmpdir(), 'browser-mvp-ext-'));
   t.after(() => rm(extensionPath, { recursive: true, force: true }));
   await writeFile(join(extensionPath, 'manifest.json'), JSON.stringify({ manifest_version: 3, name: 'fixture', version: '1', action: { default_popup: 'popup.html' } }));
+  await writeFile(join(extensionPath, 'popup.html'), '<button id="loginButton">ok</button>');
   const calls = [];
   const context = { close: async () => undefined };
   const adapter = new ChromeExtensionSessionRuntimeAdapter({
@@ -23,6 +24,7 @@ test('extension lane validates MV3 and adds load-extension flags without exposin
   });
   const runtime = await adapter.open(createChromeControlManifest(), { profileRef: 'profile:extension' });
   assert.ok(calls[0].args.some((arg) => arg === `--load-extension=${extensionPath}`));
+  assert.equal(calls[0].headless, false);
   assert.deepEqual(await adapter.validateExtension(), { name: 'fixture', version: '1', popup: 'popup.html' });
   await adapter.close(runtime);
 });
@@ -38,21 +40,26 @@ test('card material is only available inside a short lease callback', async () =
   assert.equal(await provider.withMaterial(lease, (material) => material.pan), '4111111111111111');
   now += 2_001;
   await assert.rejects(() => provider.withMaterial(lease, () => undefined), ContractError);
+  await assert.rejects(() => provider.withMaterial({ ...lease, cardRef: 'card:other' }, () => undefined), ContractError);
 });
 
 test('UNKNOWN locks an order/card and stop switches block new permits', () => {
   const gate = new PaymentSafetyGate();
   const permit = gate.prepare({ orderRef: 'order:one', attemptRef: 'attempt:one', cardRef: 'card:one' });
+  assert.throws(() => gate.prepare({ orderRef: 'order:one', attemptRef: 'attempt:one', cardRef: 'card:one' }), ContractError);
   gate.markSubmitted(permit, 'provider-call:one');
   gate.markUnknown(permit);
   assert.equal(gate.canSubmit({ orderRef: 'order:one', cardRef: 'card:one' }), false);
   assert.throws(() => gate.prepare({ orderRef: 'order:one', attemptRef: 'attempt:two', cardRef: 'card:one' }), ContractError);
   gate.reconcileUnknown(permit, 'FAILED');
   assert.equal(gate.canSubmit({ orderRef: 'order:one', cardRef: 'card:one' }), true);
+  const cardLocked = gate.prepare({ orderRef: 'order:two', attemptRef: 'attempt:two', cardRef: 'card:one' });
+  gate.markUnknown(cardLocked);
+  assert.equal(gate.canSubmit({ orderRef: 'order:three', cardRef: 'card:one' }), false);
   gate.stop('global');
   assert.equal(gate.canSubmit({ orderRef: 'order:two', cardRef: 'card:two' }), false);
   gate.resume('global');
-  assert.equal(gate.canSubmit({ orderRef: 'order:two', cardRef: 'card:two' }), true);
+  assert.equal(gate.canSubmit({ orderRef: 'order:four', cardRef: 'card:two' }), true);
   assert.deepEqual(gate.stopOnFundsDifference({ expectedMinor: 2000, actualMinor: 1999 }), { stopped: true, differenceMinor: -1 });
   assert.equal(gate.canSubmit({ orderRef: 'order:three', cardRef: 'card:three' }), false);
 });

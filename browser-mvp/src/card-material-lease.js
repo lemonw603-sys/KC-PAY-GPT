@@ -2,6 +2,8 @@ import { randomUUID } from 'node:crypto';
 
 import { assertRef, ContractError } from './contracts.js';
 
+const MAX_TTL_MS = 5 * 60_000;
+
 function clone(value) {
   return structuredClone(value);
 }
@@ -28,7 +30,7 @@ export class InMemoryCardMaterialLeaseProvider {
   async open(cardRef, { purpose = 'browser-checkout', ttlMs = 60_000 } = {}) {
     assertRef(cardRef, 'cardRef');
     if (typeof purpose !== 'string' || purpose.length === 0) throw new TypeError('purpose is required');
-    if (!Number.isInteger(ttlMs) || ttlMs < 1_000) throw new TypeError('ttlMs must be at least 1000ms');
+    if (!Number.isInteger(ttlMs) || ttlMs < 1_000 || ttlMs > MAX_TTL_MS) throw new TypeError('ttlMs must be between 1000ms and 300000ms');
     const material = assertMaterial(await this.source.load(cardRef));
     const lease = { leaseId: `card-material-lease:${randomUUID()}`, cardRef, expiresAt: this.clock() + ttlMs, purpose };
     this.leases.set(lease.leaseId, { ...lease, material: clone(material) });
@@ -39,6 +41,9 @@ export class InMemoryCardMaterialLeaseProvider {
     if (!lease || typeof lease !== 'object' || typeof callback !== 'function') throw new TypeError('lease and callback are required');
     const entry = this.leases.get(lease.leaseId);
     if (!entry || entry.expiresAt <= this.clock()) throw new ContractError('card material lease is expired or unknown');
+    if (lease.cardRef !== entry.cardRef || lease.expiresAt !== entry.expiresAt || lease.purpose !== entry.purpose) {
+      throw new ContractError('card material lease does not match the issued lease');
+    }
     return callback(clone(entry.material));
   }
 

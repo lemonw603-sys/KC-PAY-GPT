@@ -10,7 +10,8 @@ function key(value, label) { return assertRef(value, label); }
  * defined before the first real payment is enabled.
  */
 export class PaymentSafetyGate {
-  constructor() {
+  constructor({ clock = () => Date.now() } = {}) {
+    this.clock = clock;
     this.stopped = { global: false, orders: new Set(), cards: new Set() };
     this.attempts = new Map();
   }
@@ -38,10 +39,16 @@ export class PaymentSafetyGate {
     return { stopped: true, differenceMinor: actualMinor - expectedMinor };
   }
 
-  prepare({ orderRef, attemptRef, cardRef }) {
+  prepare({ orderRef, attemptRef, cardRef, ttlMs = 60_000 }) {
     orderRef = key(orderRef, 'orderRef'); attemptRef = key(attemptRef, 'attemptRef'); cardRef = key(cardRef, 'cardRef');
+    if (!Number.isInteger(ttlMs) || ttlMs < 1_000 || ttlMs > 5 * 60_000) throw new TypeError('ttlMs must be between 1000ms and 300000ms');
     this._assertAllowed(orderRef, cardRef);
-    const permit = { permitId: `payment-permit:${randomUUID()}`, orderRef, attemptRef, cardRef, state: 'PREPARED' };
+    for (const attempt of this.attempts.values()) {
+      if (attempt.orderRef === orderRef && attempt.attemptRef === attemptRef && ['PREPARED', 'SUBMITTED', 'UNKNOWN'].includes(attempt.state)) {
+        throw new ContractError('an active payment permit already exists for this attempt');
+      }
+    }
+    const permit = { permitId: `payment-permit:${randomUUID()}`, orderRef, attemptRef, cardRef, state: 'PREPARED', expiresAt: this.clock() + ttlMs };
     this.attempts.set(permit.permitId, permit);
     return { ...permit };
   }
@@ -79,13 +86,14 @@ export class PaymentSafetyGate {
   _entry(permit) {
     const entry = this.attempts.get(permit?.permitId);
     if (!entry) throw new ContractError('payment permit is unknown');
+    if (entry.expiresAt <= this.clock()) throw new ContractError('payment permit is expired');
     return entry;
   }
 
   _assertAllowed(orderRef, cardRef) {
     if (this.stopped.global || this.stopped.orders.has(orderRef) || this.stopped.cards.has(cardRef)) throw new ContractError('payment submissions are stopped');
     for (const attempt of this.attempts.values()) {
-      if (attempt.orderRef === orderRef && attempt.cardRef === cardRef && attempt.state === 'UNKNOWN') throw new ContractError('order/card is locked in UNKNOWN until reconciliation');
+      if ((attempt.orderRef === orderRef || attempt.cardRef === cardRef) && attempt.state === 'UNKNOWN') throw new ContractError('order/card is locked in UNKNOWN until reconciliation');
     }
   }
 }

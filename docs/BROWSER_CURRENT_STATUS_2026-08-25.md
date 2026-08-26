@@ -155,3 +155,17 @@
 验证：`npm --prefix browser-mvp run check` 通过；`npm --prefix browser-mvp test` **38/38 passed**。本次没有加载真实扩展、没有调用卡台写接口、没有提交 Checkout、没有真实付款。
 
 下一步唯一动作：在 headed Chrome（有可用 DISPLAY）中运行扩展 lane 的非付款身份核验；若通过，再由统筹窗口提供共享 `card-material`/资金 permit 合同，继续接入最小模拟 Checkout，不开启真实付款写开关。
+
+## 2026-08-26 对抗式审查与修正
+
+对本轮新增方案逐项按“能否误付款、能否错绑资源、能否重复提交、失败后能否安全恢复”复核，发现并已修正：
+
+- 扩展 lane 原先继承 Chrome runtime 的 `headless=true` 默认值；扩展 popup 在该默认下不能作为真实 lane 使用。现改为默认 headed，并显式拒绝 `headless=true`。
+- 扩展 Manifest 只校验了入口字段，未确认 popup 文件存在。现增加 popup 文件存在性校验。
+- card-material lease 原先只按 `leaseId` 查找，伪造同一 ID 的其它 cardRef 可能造成错绑。现校验 `cardRef/expiresAt/purpose` 全量匹配，并限制 lease 最长 5 分钟。
+- PaymentSafetyGate 原先只锁定“同订单+同卡”的 UNKNOWN；换卡或换订单可能绕过不确定扣款。现 UNKNOWN 按订单或卡任一维度锁定，直到人工对账。
+- PaymentSafetyGate 原先允许同一 attempt 重复创建 PREPARED permit，存在重复提交前置条件。现对 PREPARED/SUBMITTED/UNKNOWN attempt 拒绝重复 permit，并增加 permit 过期检查。
+
+复测：`npm --prefix browser-mvp run check` 通过；`npm --prefix browser-mvp test` **38/38 passed**。本轮仍未启动真实扩展、未提交 Checkout、未调用卡台写接口或真实付款。
+
+剩余结构性问题（尚未伪装成已解决）：真实扩展需 headed Chrome/可用 DISPLAY；卡材料仍是内存 source；PaymentSafetyGate 尚未接入付款执行器；三方付款后对账仍是待实现合同；`allowWrites=false` 继续强制。

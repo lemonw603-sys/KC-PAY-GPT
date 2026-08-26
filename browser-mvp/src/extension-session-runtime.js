@@ -1,4 +1,5 @@
 import { access, readFile } from 'node:fs/promises';
+import { join } from 'node:path';
 
 import { GoogleChromeControlRuntimeAdapter } from './chrome-control-runtime.js';
 import { ContractError } from './contracts.js';
@@ -21,7 +22,8 @@ function extensionIdFromServiceWorker(url) {
 export class ChromeExtensionSessionRuntimeAdapter extends GoogleChromeControlRuntimeAdapter {
   constructor({ extensionPath, ...options } = {}) {
     const path = assertExtensionPath(extensionPath);
-    const launchOptions = { ...(options.launchOptions || {}) };
+    const launchOptions = { headless: false, ...(options.launchOptions || {}) };
+    if (launchOptions.headless === true) throw new ContractError('extension lane requires headed Chromium');
     const args = [...(launchOptions.args || [])];
     if (!args.some((arg) => arg.startsWith('--disable-extensions-except='))) {
       args.push(`--disable-extensions-except=${path}`);
@@ -43,6 +45,11 @@ export class ChromeExtensionSessionRuntimeAdapter extends GoogleChromeControlRun
     }
     if (manifest.manifest_version !== 3 || typeof manifest.action?.default_popup !== 'string') {
       throw new ContractError('extension must be a Manifest V3 action extension with a popup');
+    }
+    try {
+      await access(join(this.extensionPath, manifest.action.default_popup));
+    } catch {
+      throw new ContractError('extension popup file is missing');
     }
     return { name: manifest.name || null, version: manifest.version || null, popup: manifest.action.default_popup };
   }

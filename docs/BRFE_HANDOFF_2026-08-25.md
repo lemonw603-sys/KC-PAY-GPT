@@ -231,3 +231,9 @@
 已验证事实：新增代码可由单元测试调用；扩展参数拼接、MV3 校验、短 lease 过期、UNKNOWN 锁定和停止开关均有测试。未验证事实：headed Chrome 的真实扩展 popup、真实 Session 身份、卡台材料读取、Checkout/付款和三方对账。
 
 暂停条件不变：不执行真实付款、开卡、卡余额充值；不修改非 Browser 共享核心和共享事实源；不使用 `git add -A`；不覆盖 `.playwright-cli/`、`artifacts/`。
+
+## 2026-08-26 对抗式审查结果
+
+本轮复核发现的具体问题已修正并通过 38/38 测试：扩展 lane 改为 headed 默认并拒绝 headless，增加 popup 文件校验；card-material lease 增加全量 lease 绑定校验和 5 分钟上限；UNKNOWN 改为按订单或卡任一维度锁定；同一 attempt 的活动 permit 不可重复创建，并增加 permit 过期保护。
+
+这些修正只强化 Browser-only 合同，没有接入付款写路径。仍需统筹窗口提供共享卡材料/资金 permit 合同后再做模拟 Checkout；首次真实付款前仍必须单独确认。
