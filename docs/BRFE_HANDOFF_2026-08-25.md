@@ -239,3 +239,12 @@
 这些修正只强化 Browser-only 合同，没有接入付款写路径。仍需统筹窗口提供共享卡材料/资金 permit 合同后再做模拟 Checkout；首次真实付款前仍必须单独确认。
 
 追加审查事实：真实上号器 Manifest 没有 background service worker，不能把“观察到 service worker”作为扩展加载的必要条件。代码已增加按 canonical extension path 派生 ID 的 fallback；因此真实 headed 验证应直接检查 popup 打开、Cookie 写入结果和 ChatGPT 身份响应，而不是只看 worker 事件。
+
+## 2026-08-26 P0 持久化切片交接
+
+已按用户同意实现并验证两个 P0：
+
+- `durable-payment-safety-gate.js` 将 permit/提交/UNKNOWN/对账/停止状态写入 AppendOnlyWal；重启后 UNKNOWN 不会丢失。
+- `durable-card-material-lease.js` 只持久化租约元数据，重启后活动租约转为 `RECOVERY_REQUIRED`，卡材料仍只在 callback 内从 source 读取。
+
+`npm --prefix browser-mvp run check` 通过；`npm --prefix browser-mvp test` **40/40 passed**。本轮没有接卡台写接口、没有真实付款。下一步是把这两个合同接入统筹窗口冻结的共享 attempt/card readiness/资金 permit，而不是直接打开付款写开关。

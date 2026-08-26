@@ -173,3 +173,14 @@
 ### 对抗式复核追加：上号器无 background worker
 
 继续核对真实扩展 `manifest.json` 后发现它只有 popup，没有 `background.service_worker`。如果只等待 `context.serviceWorkers()`，实际 lane 会永远误报“扩展未加载”。已修正为：优先使用 worker URL（若存在），否则按 Chromium 解压扩展路径算法派生 extension ID，再打开 popup；同时保留 headed 约束。测试仍为 38/38 通过。
+
+## 2026-08-26 P0 持久化切片已完成（仍不付款）
+
+用户同意先解决两个 P0，现完成 Browser-only 的可恢复合同：
+
+- `browser-mvp/src/durable-payment-safety-gate.js`：以现有 AppendOnlyWal 持久化 payment permit、SUBMITTED、UNKNOWN、对账结果和停止状态；新进程初始化时从最新状态恢复，UNKNOWN 仍禁止再次提交。WAL 只记录 opaque ref/status，不记录卡号、CVC 或 Session。
+- `browser-mvp/src/durable-card-material-lease.js`：持久化卡片租约元数据，不持久化卡材料；进程重启后 ACTIVE 租约自动变为 `RECOVERY_REQUIRED`，必须人工 release/revoke 后才能复用；材料仅在 `withMaterial()` 回调内从上游 source 重新读取。
+
+验证新增：预先存在其它 WAL 事件时，payment journal 仍使用全局 WAL sequence；模拟新进程恢复 UNKNOWN；模拟新进程将卡租约锁为 `RECOVERY_REQUIRED`。总测试：`npm --prefix browser-mvp test` **40/40 passed**，`npm --prefix browser-mvp run check` 通过。
+
+边界：这仍是 Browser-only 持久化合同，不是共享订单/卡台生产接线；source、资金 permit、Browser dispatch lease 和真实付款 executor 尚未连接。真实付款写开关保持关闭。

@@ -83,6 +83,33 @@ export class PaymentSafetyGate {
     return { globalStopped: this.stopped.global, stoppedOrders: [...this.stopped.orders], stoppedCards: [...this.stopped.cards], attempts: [...this.attempts.values()].map((entry) => ({ ...entry })) };
   }
 
+  restore(snapshot) {
+    if (!snapshot || typeof snapshot !== 'object') throw new ContractError('payment gate snapshot is required');
+    this.stopped = {
+      global: snapshot.globalStopped === true,
+      orders: new Set((snapshot.stoppedOrders || []).map((ref) => key(ref, 'orderRef'))),
+      cards: new Set((snapshot.stoppedCards || []).map((ref) => key(ref, 'cardRef'))),
+    };
+    this.attempts = new Map();
+    for (const attempt of snapshot.attempts || []) {
+      const permitId = key(attempt.permitId, 'permitId');
+      const restored = {
+        permitId,
+        orderRef: key(attempt.orderRef, 'orderRef'),
+        attemptRef: key(attempt.attemptRef, 'attemptRef'),
+        cardRef: key(attempt.cardRef, 'cardRef'),
+        state: attempt.state,
+        expiresAt: attempt.expiresAt,
+        ...(attempt.providerCallRef ? { providerCallRef: key(attempt.providerCallRef, 'providerCallRef') } : {}),
+        ...(attempt.reason ? { reason: String(attempt.reason).slice(0, 160) } : {}),
+      };
+      if (!['PREPARED', 'SUBMITTED', 'UNKNOWN', 'SETTLED', 'FAILED', 'MANUAL_REVIEW'].includes(restored.state)) throw new ContractError('invalid payment gate snapshot state');
+      if (!Number.isFinite(restored.expiresAt)) throw new ContractError('invalid payment gate snapshot expiry');
+      this.attempts.set(permitId, restored);
+    }
+    return this.snapshot();
+  }
+
   _entry(permit) {
     const entry = this.attempts.get(permit?.permitId);
     if (!entry) throw new ContractError('payment permit is unknown');

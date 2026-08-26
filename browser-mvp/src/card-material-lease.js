@@ -8,7 +8,7 @@ function clone(value) {
   return structuredClone(value);
 }
 
-function assertMaterial(material) {
+export function assertCardMaterial(material) {
   if (!material || typeof material !== 'object' || Array.isArray(material)) throw new ContractError('card material must be an object');
   for (const key of ['pan', 'expMonth', 'expYear', 'cvc']) {
     if (material[key] === undefined || material[key] === null || String(material[key]).trim() === '') {
@@ -31,7 +31,7 @@ export class InMemoryCardMaterialLeaseProvider {
     assertRef(cardRef, 'cardRef');
     if (typeof purpose !== 'string' || purpose.length === 0) throw new TypeError('purpose is required');
     if (!Number.isInteger(ttlMs) || ttlMs < 1_000 || ttlMs > MAX_TTL_MS) throw new TypeError('ttlMs must be between 1000ms and 300000ms');
-    const material = assertMaterial(await this.source.load(cardRef));
+    const material = assertCardMaterial(await this.source.load(cardRef));
     const lease = { leaseId: `card-material-lease:${randomUUID()}`, cardRef, expiresAt: this.clock() + ttlMs, purpose };
     this.leases.set(lease.leaseId, { ...lease, material: clone(material) });
     return { ...lease };

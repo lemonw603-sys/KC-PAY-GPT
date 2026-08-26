@@ -6,7 +6,10 @@ import { tmpdir } from 'node:os';
 
 import { ChromeExtensionSessionRuntimeAdapter, extensionIdFromPath } from '../src/extension-session-runtime.js';
 import { InMemoryCardMaterialLeaseProvider } from '../src/card-material-lease.js';
+import { DurableCardMaterialLeaseProvider } from '../src/durable-card-material-lease.js';
 import { PaymentSafetyGate } from '../src/payment-safety-gate.js';
+import { DurablePaymentSafetyGate } from '../src/durable-payment-safety-gate.js';
+import { AppendOnlyWal } from '../src/wal.js';
 import { ContractError } from '../src/contracts.js';
 import { createChromeControlManifest } from '../src/fixtures.js';
 
@@ -67,4 +70,32 @@ test('UNKNOWN locks an order/card and stop switches block new permits', () => {
   assert.equal(gate.canSubmit({ orderRef: 'order:four', cardRef: 'card:two' }), true);
   assert.deepEqual(gate.stopOnFundsDifference({ expectedMinor: 2000, actualMinor: 1999 }), { stopped: true, differenceMinor: -1 });
   assert.equal(gate.canSubmit({ orderRef: 'order:three', cardRef: 'card:three' }), false);
+});
+
+test('durable payment gate restores UNKNOWN after a fresh process', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'browser-mvp-durable-gate-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const wal = await new AppendOnlyWal({ filePath: join(root, 'payments.wal') }).init();
+  await wal.append({ jobId: 'brjob:prior-event', type: 'intent', sequence: 1, payloadDigest: '0'.repeat(64), summary: { action: 'prior' } });
+  const first = await new DurablePaymentSafetyGate({ wal, filePath: join(root, 'gate.json') }).init();
+  const permit = await first.prepare({ orderRef: 'order:durable', attemptRef: 'attempt:durable', cardRef: 'card:durable' });
+  await first.markSubmitted(permit, 'provider-call:durable');
+  await first.markUnknown(permit, 'worker-crash');
+  const second = await new DurablePaymentSafetyGate({ wal, filePath: join(root, 'gate.json') }).init();
+  assert.equal(second.canSubmit({ orderRef: 'order:durable', cardRef: 'card:durable' }), false);
+  assert.equal(second.snapshot().attempts[0].state, 'UNKNOWN');
+});
+
+test('durable card lease requires recovery after a process restart', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'browser-mvp-durable-card-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const source = { load: async () => ({ pan: '4111111111111111', expMonth: '12', expYear: '2030', cvc: '123' }) };
+  const first = await new DurableCardMaterialLeaseProvider({ source, filePath: join(root, 'leases.json') }).init();
+  const lease = await first.open('card:durable', { ttlMs: 2_000 });
+  assert.equal(await first.withMaterial(lease, (material) => material.expYear), '2030');
+  const second = await new DurableCardMaterialLeaseProvider({ source, filePath: join(root, 'leases.json') }).init();
+  await assert.rejects(() => second.withMaterial(lease, () => undefined), ContractError);
+  await second.recover(lease.leaseId, 'release');
+  const replacement = await second.open('card:durable');
+  assert.equal(replacement.cardRef, 'card:durable');
 });
