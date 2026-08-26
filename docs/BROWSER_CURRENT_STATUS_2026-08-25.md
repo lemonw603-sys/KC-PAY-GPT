@@ -6,11 +6,11 @@
 | --- | --- |
 | worktree | `/Users/lemon/.codex/worktrees/9128/AI充值业务` |
 | 分支 | `codex/browser` |
-| 最新 Browser 代码提交 | `d9b19e6` |
-| 当前阶段 | F0：Checkout Navigation + Observer 真实自动闭环已通过 |
+| 最新 Browser 代码提交 | `d9b19e6`（本轮文档/非付款代码尚未提交） |
+| 当前阶段 | F0：Checkout Navigation + fixture 卡材料非付款填充闭环已通过 |
 | 跟踪改动 | 无 |
 | 未跟踪改动 | `.playwright-cli/`、`artifacts/` |
-| Browser MVP | 队列/租约/WAL/恢复、Chrome Profile、上号/身份、自动 Checkout 导航/观察、卡材料/付款安全合同已有；真实卡材料接线、付款及付款后对账未完成 |
+| Browser MVP | 队列/租约/WAL/恢复、Chrome Profile、上号/身份、自动 Checkout 导航/观察、fixture 卡材料 lease/填充/清理、付款安全合同已有；真实卡台材料接线、付款及付款后对账未完成 |
 | 生产/真实付款 | 未接入、未执行 |
 
 ## 当前阶段
@@ -34,6 +34,7 @@
 - 真实 Checkout 页面已观察：`Plus`、`USD 20.00`、税费 `0.00`、payment form/submit/card fields 均存在；Stripe Payment Page init HTTP 200。
 - `CheckoutObserver` 已从 fixture-only 选择器修正为可识别真实 ChatGPT/Stripe DOM；该历史切片提交 `4004741` 当时为 **48/48 passed**，当前累计结果见上方 **53/53**。
 - Checkout Navigation 已接入执行器；问卷在 Plus 点击前/后出现、首页 hydration 和 Stripe iframe 延迟加载均有 fail-closed 处理。
+- fixture 卡材料非付款切片已接入执行器：durable card lease → Stripe 安全字段填充 → 失租约停止 → 已写字段清理；测试验证 `fieldsFilled=3`、`fieldsCleared=3`、`submitCalls=0`，材料 source 只读取 1 次。
 
 ## 本分支未验证
 
@@ -41,7 +42,7 @@
 - 生产 artifact vault、账号/订单/卡片/Checkout 资源租约；
 - BrowserContext 与共享 Worker 的生产接线；
 - 新版 BRFE `NON_PH_FUNCTIONAL` 合同与共享状态适配；
-- 菲律宾 cohort、真实卡材料读取/填充、付款、生产 Worker、高可用拓扑。
+- 菲律宾 cohort、真实 HNSKJ 卡材料 source 运行接线、付款、生产 Worker、高可用拓扑。
 - `recharge_attempts`、资金 permit、审计关联仍需统筹窗口冻结；当前不进入共享写路径或真实付款。
 
 ## 暂停条件
@@ -53,7 +54,7 @@
 
 ## 下一步
 
-将 HNSKJ 只读 card-material source 、durable card lease 和 Stripe 安全字段填充边界接成一个**不提交**的隔离闭环；先用 fixture 卡材料验证填充/清理/失租约停止，不在本阶段打开 payment submit。
+将 HNSKJ 只读 card-material source 接到刚完成的 durable card lease/Stripe 字段填充合同，继续使用捕获/模拟 provider 响应验证一次读取、显式 `providerCardRef` 和失败闭环；本阶段不读取真实卡、不打开 payment submit。
 
 ## M7 隔离 MySQL 只读合同
 

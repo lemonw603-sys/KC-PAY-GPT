@@ -386,3 +386,28 @@ git diff --check passed
 未验证边界：真实卡材料读取/填充；共享 MySQL/资金 permit 生产接线；payment gate 与 submit executor；付款提交；权益/订阅/卡台扣款三方核对；指纹浏览器 runtime Spike。
 
 下一步唯一动作：进入非付款卡材料切片，先用 fixture 卡材料验证 durable card lease → Stripe 安全字段填充 → 失租约立即停止 → 字段清理，并强制 `submitCalls=0`；本阶段不读取真实卡、不提交付款。
+
+## 2026-08-26 最新交接：fixture 卡材料非付款填充闭环已通过
+
+本节覆盖上一节的“卡材料填充切片尚未验证”状态。
+
+- 当前 Browser worktree：`/Users/lemon/.codex/worktrees/9128/AI充值业务`；分支：`codex/browser`。
+- 本轮仍未触碰 `.playwright-cli/`、`artifacts/`，未使用 `git add -A`；共享 `CURRENT_STATE/DECISIONS/HANDOFF_LOG` 未修改。
+- 新增 `browser-mvp/src/nonpayment-card-fill.js`：仅接受短时 card-material lease callback，定位 Stripe-like `cc-number/cc-exp/cc-csc` 安全字段，逐字段检查租约/人工停止后填充；只清理本次实际写入字段，不暴露 PAN/CVC，不提供 click/submit。
+- `BrowserExecutionService` 新增显式非付款选项 `cardMaterialLeaseProvider + cardMaterialLease + fillCardFields=true`；未同时满足 Checkout observer、lease 和 provider 时 fail-closed。返回值只包含状态/计数，固定 `submitCalls=0`。
+- `runFrontloadedNonPaymentIntegration()` 已支持该选项：fixture 填充路径在 Browser 页面存活期间只读取一次材料，完成后释放 durable lease；原有 observation-only 路径仍保持 callback 内一次读取约束。
+- 上游只读投影现在可携带 `checkoutNavigationContract` 和 `checkoutContract`，仍经过 `assertSafeObject`，不携带卡凭据/资金 permit。
+
+验证结果：
+
+```text
+npm --prefix browser-mvp run check   # passed
+npm --prefix browser-mvp test        # 56/56 passed
+git diff --check                     # passed（提交前再次执行）
+```
+
+其中包含：成功填充 3 个 fixture 字段并清理 3 个字段；租约在下一个字段前失效时立即停止，已写字段仍全部清理；上游→dispatch→Checkout fixture→card lease→fill→release 集成通过，材料 source 读取次数为 1，submit/付款调用为 0。
+
+已验证边界：本地 Playwright fixture、durable card lease、失租约停止、字段清理和非付款集成；未验证真实 HNSKJ API/真实卡材料、真实 Stripe 字段写入、付款提交、付款后三方对账、生产 Worker。
+
+下一步唯一动作：把 `HnskjCardMaterialSource` 接到该填充合同的捕获/模拟 provider 响应，证明显式 `providerCardRef`、单次读取和错误闭环；仍不读取真实卡、不打开 payment submit。

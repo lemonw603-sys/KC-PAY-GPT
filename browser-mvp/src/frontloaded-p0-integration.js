@@ -17,6 +17,7 @@ export async function runFrontloadedNonPaymentIntegration({
   workerId = 'worker:p0-simulation',
   now = Date.now(),
   materialRef = null,
+  fillCardFields = false,
 } = {}) {
   if (!cardMaterialLeaseProvider || typeof cardMaterialLeaseProvider.open !== 'function' || typeof cardMaterialLeaseProvider.withMaterial !== 'function' || typeof cardMaterialLeaseProvider.close !== 'function') {
     throw new TypeError('durable card material lease provider is required');
@@ -28,14 +29,22 @@ export async function runFrontloadedNonPaymentIntegration({
     throw new ContractError('provider card material source requires an explicit providerCardRef');
   }
   const lease = await cardMaterialLeaseProvider.open(resolvedMaterialRef, { purpose: 'browser-nonpayment-simulation' });
+  const executionOptions = fillCardFields
+    ? { cardMaterialLeaseProvider, cardMaterialLease: lease, fillCardFields: true }
+    : {};
   try {
-    return await cardMaterialLeaseProvider.withMaterial(lease, async () => runNonPaymentUpstreamSimulation({
+    const run = () => runNonPaymentUpstreamSimulation({
       projection,
       dispatchStore,
       executionService,
       workerId,
       now,
-    }));
+      executionOptions,
+    });
+    // Preserve the one-read contract for the observation-only path. The
+    // card-fill path reads exactly once inside the executor while the page is
+    // live, immediately clearing fields before releasing this lease.
+    return fillCardFields ? await run() : await cardMaterialLeaseProvider.withMaterial(lease, run);
   } finally {
     await cardMaterialLeaseProvider.close(lease).catch(() => undefined);
   }

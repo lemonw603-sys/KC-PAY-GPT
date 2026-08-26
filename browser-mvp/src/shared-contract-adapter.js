@@ -153,6 +153,12 @@ export function projectUpstreamBrowserJob(projection, {
     ...(projection.observation?.pageContract == null
       ? {}
       : { pageContract: projection.observation.pageContract }),
+    ...(projection.observation?.checkoutNavigationContract == null
+      ? {}
+      : { checkoutNavigationContract: projection.observation.checkoutNavigationContract }),
+    ...(projection.observation?.checkoutContract == null
+      ? {}
+      : { checkoutContract: projection.observation.checkoutContract }),
   };
   assertSafeObject(metadata, 'upstream job metadata');
   const projected = { ...job, metadata };

@@ -1,5 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { createServer } from 'node:http';
+import { once } from 'node:events';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -16,6 +18,8 @@ import { DurableCardMaterialLeaseProvider } from '../src/durable-card-material-l
 import { HnskjCardMaterialSource, mapHnskjCardMaterial } from '../src/hnskj-card-material-source.js';
 import { ContractError, hasSensitiveKey } from '../src/contracts.js';
 import { projectUpstreamBrowserJob } from '../src/shared-contract-adapter.js';
+import { CHATGPT_PLUS_CHECKOUT_NAVIGATION_CONTRACT } from '../src/chatgpt-checkout-navigator.js';
+import { CHATGPT_PLUS_CHECKOUT_CONTRACT } from '../src/checkout-observer.js';
 
 const now = Date.parse('2026-08-26T00:00:00.000Z');
 const pageHtml = encodeURIComponent(
@@ -169,5 +173,80 @@ test('frontloaded P0 integration consumes a card lease and releases it after obs
     assert.equal(Object.values(cardMaterialLeaseProvider.snapshot().leases)[0].state, 'RELEASED');
   } finally {
     await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('frontloaded P0 card-fill slice fills fixture Stripe fields, clears them, and never submits', async () => {
+  const server = createServer((request, response) => {
+    response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+    if (request.url?.startsWith('/checkout/')) {
+      response.end(`<title>Browser MVP fixture</title><main data-testid="checkout-page-content"><form data-testid="checkout-form"><iframe srcdoc='\
+        <input autocomplete="cc-number"><input autocomplete="cc-exp"><input autocomplete="cc-csc">\
+      '></iframe></form><section data-testid="checkout-summary-column"><h2>Plus plan</h2><div><span>Total due today</span><span>US$20.00</span></div><div><span>Estimated tax</span><span>US$0.00</span></div><button type="submit">Subscribe</button></section></main>`);
+      return;
+    }
+    response.end(`<title>Browser MVP fixture</title><main data-browser-mvp-marker>observe-only</main><button type="button" aria-label="Upgrade">Upgrade</button><section role="dialog" hidden><button type="button">Upgrade to Plus</button></section><script>document.querySelector('[aria-label=Upgrade]').onclick=()=>{document.querySelector('[role=dialog]').hidden=false};document.querySelector('[role=dialog] button').onclick=()=>location.assign('/checkout/fixture');</script>`);
+  });
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  const dir = await mkdtemp(join(tmpdir(), 'browser-upstream-card-fill-'));
+  try {
+    const address = server.address();
+    const base = `http://127.0.0.1:${address.port}`;
+    const dispatchStore = await new FileDispatchStore({ filePath: join(dir, 'dispatch.json'), leaseMs: 5_000 }).init();
+    const evidenceSink = new MemoryEvidenceSink();
+    const executionService = new BrowserExecutionService({
+      runtimeAdapter: new LocalPlaywrightRuntimeAdapter({ browserType: chromium }),
+      evidenceSink,
+      timeoutMs: 2_000,
+    });
+    let loads = 0;
+    const cardMaterialLeaseProvider = await new DurableCardMaterialLeaseProvider({
+      filePath: join(dir, 'card-leases.json'),
+      source: { load: async () => { loads += 1; return { pan: '4111111111111111', expMonth: 12, expYear: 2030, cvc: '123' }; } },
+    }).init();
+    const result = await runFrontloadedNonPaymentIntegration({
+      projection: projection({
+        sessionRef: undefined,
+        observation: {
+          pageContract: {
+            urlPrefix: `${base}/`,
+            title: 'Browser MVP fixture',
+            requiredSelector: '[data-browser-mvp-marker]',
+            markerText: 'observe-only',
+          },
+          checkoutNavigationContract: {
+            ...CHATGPT_PLUS_CHECKOUT_NAVIGATION_CONTRACT,
+            homeUrlPrefix: `${base}/`,
+            checkoutUrlPrefix: `${base}/checkout/`,
+            openPricingSelectors: ['button[aria-label="Upgrade"]'],
+            upgradeLabels: ['Upgrade to Plus'],
+            questionnaireSkipLabels: ['Skip'],
+            checkoutReadySelector: '[data-testid="checkout-page-content"]',
+          },
+          checkoutContract: { ...CHATGPT_PLUS_CHECKOUT_CONTRACT, urlPrefix: `${base}/checkout/`, secureFieldTimeoutMs: 500 },
+        },
+      }),
+      dispatchStore,
+      executionService,
+      cardMaterialLeaseProvider,
+      materialRef: 'provider-card:0001',
+      fillCardFields: true,
+      now,
+    });
+    assert.deepEqual(result.result.cardFill, {
+      status: 'FILLED_AND_CLEARED',
+      fieldsFilled: 3,
+      fieldsCleared: 3,
+      submitCalls: 0,
+      paymentClicked: false,
+    });
+    assert.equal(result.result.submitCalls, 0);
+    assert.equal(loads, 1);
+    assert.equal(Object.values(cardMaterialLeaseProvider.snapshot().leases)[0].state, 'RELEASED');
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+    server.close();
+    await once(server, 'close');
   }
 });

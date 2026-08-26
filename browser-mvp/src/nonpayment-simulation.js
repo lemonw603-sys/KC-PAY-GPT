@@ -11,6 +11,7 @@ export async function runNonPaymentUpstreamSimulation({
   executionService,
   workerId = 'worker:upstream-mock',
   now = Date.now(),
+  executionOptions = {},
 }) {
   const job = projectUpstreamBrowserJob(projection, { now });
   await dispatchStore.enqueue(job);
@@ -18,6 +19,7 @@ export async function runNonPaymentUpstreamSimulation({
   if (!claimed) throw new Error('simulation job was not claimable');
   const result = await executionService.execute(claimed.job, {
     assertLease: async () => true,
+    ...executionOptions,
   });
   const completed = await dispatchStore.complete({
     jobId: claimed.job.jobId,

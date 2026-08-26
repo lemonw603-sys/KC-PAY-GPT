@@ -4,6 +4,7 @@ import { assertJobEnvelope, ContractError } from './contracts.js';
 import { probeSessionIdentity } from './session-identity-probe.js';
 import { observeCheckout } from './checkout-observer.js';
 import { navigateToChatGPTPlusCheckout } from './chatgpt-checkout-navigator.js';
+import { fillSecureCardFieldsNonPayment } from './nonpayment-card-fill.js';
 
 export class BrowserExecutionError extends Error {
   constructor(reason, message = `Browser execution stopped: ${reason}`, cause) {
@@ -37,7 +38,13 @@ export class BrowserExecutionService {
     this.timeoutMs = timeoutMs;
   }
 
-  async execute(job, { assertLease, freezeRequested = () => false } = {}) {
+  async execute(job, {
+    assertLease,
+    freezeRequested = () => false,
+    cardMaterialLeaseProvider = null,
+    cardMaterialLease = null,
+    fillCardFields = false,
+  } = {}) {
     assertJobEnvelope(job);
     if (job.state !== 'RUNNING') throw new BrowserExecutionError('INVALID_STATE', 'job must be RUNNING before Browser execution');
     if (typeof assertLease !== 'function') throw new TypeError('assertLease callback is required');
@@ -117,7 +124,27 @@ export class BrowserExecutionService {
           throw new BrowserExecutionError('CHECKOUT_OBSERVATION_FAILED', error.message, error);
         }
       }
-      return { status: 'OBSERVED', startedAt, finishedAt: this.clock(), submitCalls: 0, sessionBootstrapped: Boolean(sessionLease), sessionIdentity, checkoutNavigation, checkout };
+      let cardFill = null;
+      if (cardMaterialLeaseProvider || cardMaterialLease || fillCardFields) {
+        if (!fillCardFields || !cardMaterialLeaseProvider || !cardMaterialLease || !checkout) {
+          throw new BrowserExecutionError('CARD_MATERIAL_FILL_CONTRACT');
+        }
+        try {
+          cardFill = await fillSecureCardFieldsNonPayment(page, {
+            cardMaterialLeaseProvider,
+            lease: cardMaterialLease,
+            assertContinue: async () => {
+              if (freezeRequested()) throw new BrowserExecutionError('MANUAL_FREEZE');
+              if (!(await assertLease())) throw new BrowserExecutionError('LEASE_LOST');
+            },
+            timeoutMs: this.timeoutMs,
+          });
+        } catch (error) {
+          if (error instanceof BrowserExecutionError) throw error;
+          throw new BrowserExecutionError('CARD_MATERIAL_FILL_FAILED', error.message, error);
+        }
+      }
+      return { status: 'OBSERVED', startedAt, finishedAt: this.clock(), submitCalls: 0, sessionBootstrapped: Boolean(sessionLease), sessionIdentity, checkoutNavigation, checkout, cardFill };
     } catch (error) {
       const failure = error instanceof BrowserExecutionError
         ? error
