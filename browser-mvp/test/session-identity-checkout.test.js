@@ -5,7 +5,7 @@ import { createServer } from 'node:http';
 import { once } from 'node:events';
 
 import { ContractError } from '../src/contracts.js';
-import { observeCheckout } from '../src/checkout-observer.js';
+import { CHATGPT_PLUS_CHECKOUT_CONTRACT, observeCheckout } from '../src/checkout-observer.js';
 import { probeSessionIdentity } from '../src/session-identity-probe.js';
 
 test('session identity probe verifies the real session endpoint without returning raw session data', async () => {
@@ -49,6 +49,42 @@ test('checkout observer extracts plan, currency and amount without submitting pa
     assert.equal(result.currency, 'PHP');
     assert.equal(result.amount, '999');
     assert.equal(result.paymentFormPresent, true);
+    assert.equal(result.submitCalls, 0);
+  } finally {
+    await browser.close();
+  }
+});
+
+test('checkout observer matches the live ChatGPT Plus checkout shape without touching card fields', async () => {
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage();
+    await page.setContent(`
+      <div data-testid="checkout-page-content">
+        <form data-testid="checkout-form"><iframe srcdoc='
+          <input name="number" autocomplete="cc-number">
+          <input name="expiry" autocomplete="cc-exp">
+          <input name="cvc" autocomplete="cc-csc">
+        '></iframe></form>
+        <section data-testid="checkout-summary-column">
+          <h2>Plus 套餐</h2>
+          <div><span>预估税费</span><span>US$0.00</span></div>
+          <div><span>今日应付金额</span><span>US$20.00</span></div>
+          <button type="submit" aria-label="订阅">订阅</button>
+        </section>
+      </div>
+    `);
+    const result = await observeCheckout(page, {
+      ...CHATGPT_PLUS_CHECKOUT_CONTRACT,
+      urlPrefix: 'about:blank',
+    });
+    assert.equal(result.currency, 'USD');
+    assert.equal(result.amount, '20.00');
+    assert.equal(result.estimatedTax, '0.00');
+    assert.equal(result.paymentFormPresent, true);
+    assert.equal(result.submitControlPresent, true);
+    assert.equal(result.submitControlEnabled, true);
+    assert.deepEqual(result.cardFieldsPresent, { cardNumber: true, expiry: true, cvc: true });
     assert.equal(result.submitCalls, 0);
   } finally {
     await browser.close();
