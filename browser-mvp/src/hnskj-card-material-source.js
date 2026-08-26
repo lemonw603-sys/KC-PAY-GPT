@@ -11,7 +11,8 @@ export function mapHnskjCardMaterial(envelope) {
   const cvc = String(data.cvv ?? data.cvc ?? data.securityCode ?? data.security_code ?? '').trim();
   const expMonth = Number(data.expiryMonth ?? data.expiry_month ?? data.expMonth ?? data.exp_month);
   const expYear = Number(data.expiryYear ?? data.expiry_year ?? data.expYear ?? data.exp_year);
-  if (!/^[0-9]{12,19}$/.test(pan) || !/^[0-9]{3,4}$/.test(cvc) || !Number.isInteger(expMonth) || expMonth < 1 || expMonth > 12 || !Number.isInteger(expYear)) {
+  const currentYear = new Date().getUTCFullYear();
+  if (!/^[0-9]{12,19}$/.test(pan) || !/^[0-9]{3,4}$/.test(cvc) || !Number.isInteger(expMonth) || expMonth < 1 || expMonth > 12 || !Number.isInteger(expYear) || expYear < currentYear) {
     throw new ContractError('HNSKJ card material response is incomplete or invalid');
   }
   return { pan, cvc, expMonth, expYear };

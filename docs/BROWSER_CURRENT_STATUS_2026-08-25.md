@@ -37,6 +37,7 @@
 - fixture 卡材料非付款切片已接入执行器：durable card lease → Stripe 安全字段填充 → 失租约停止 → 已写字段清理；测试验证 `fieldsFilled=3`、`fieldsCleared=3`、`submitCalls=0`，材料 source 只读取 1 次。
 - 卡材料 lease 在每个字段前都会再次校验；新增 expiry 回归证明租约到期时停止下一字段并清理已写字段。
 - `HnskjCardMaterialSource` 已在捕获 provider 响应 fixture 中接入该填充闭环；显式使用 `providerCardRef`，provider 调用次数为 1，错误映射仍 fail-closed。
+- HNSKJ 卡材料映射现拒绝过期年份，与非 Browser `mapCardCredentials()` 的已核对口径一致；未改变任何卡台写路径。
 
 ## 本分支未验证
 

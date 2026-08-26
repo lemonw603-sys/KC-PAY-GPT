@@ -88,6 +88,7 @@ test('HNSKJ card material source is read-only and normalizes provider credential
   assert.deepEqual(material, { pan: '4111111111111111', cvc: '123', expMonth: 12, expYear: 2030 });
   assert.deepEqual(calls, ['provider-card:0001']);
   assert.throws(() => mapHnskjCardMaterial({ data: { card: { cardNumber: 'bad' } } }), ContractError);
+  assert.throws(() => mapHnskjCardMaterial({ data: { card: { cardNumber: '4111111111111111', expiryMonth: 12, expiryYear: 2020, cvv: '123' } } }), ContractError);
   assert.equal(typeof source.provider.purchaseCard, 'undefined');
   assert.equal(source.requiresProviderCardRef, true);
 });

@@ -23,7 +23,8 @@ async function uniqueVisibleField(page, selector, name) {
 function formatExpiry(material) {
   const month = Number(material.expMonth);
   const year = Number(material.expYear);
-  if (!Number.isInteger(month) || month < 1 || month > 12 || !Number.isInteger(year) || year < 2000) {
+  const currentYear = new Date().getUTCFullYear();
+  if (!Number.isInteger(month) || month < 1 || month > 12 || !Number.isInteger(year) || year < currentYear) {
     throw new ContractError('card expiry is invalid');
   }
   return `${String(month).padStart(2, '0')} / ${String(year).slice(-2)}`;

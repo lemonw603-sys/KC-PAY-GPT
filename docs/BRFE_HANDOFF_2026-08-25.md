@@ -432,3 +432,4 @@ git diff --check                     # passed（提交前再次执行）
 - `InMemoryCardMaterialLeaseProvider` 与 `DurableCardMaterialLeaseProvider` 新增 `assertActive()`；非付款填充在每个安全字段前重新校验 card lease。
 - 新增 expiry 回归：租约在第一个字段后到期时，第二个字段不会写入，已写字段仍被清理。
 - 最新验证为 **57/57 passed**；本轮仍未读取真实卡、未调用 HNSKJ 真实 API、未打开 payment submit。
+- 另补齐 HNSKJ 卡材料有效期校验：过期年份在 Browser source/填充边界直接拒绝，与 `v1/src/providers/hnskj-card.js` 的只读映射口径对齐。
