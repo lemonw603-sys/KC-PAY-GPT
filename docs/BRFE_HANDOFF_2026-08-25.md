@@ -217,7 +217,7 @@
 
 ## 2026-08-26 交接增量：F0 硬能力前置切片
 
-当前分支 `codex/browser`；未跟踪 `.playwright-cli/`、`artifacts/` 保持不动。新增：
+当前分支 `codex/browser`，本轮提交 `c68fce0`；未跟踪 `.playwright-cli/`、`artifacts/` 保持不动。新增：
 
 1. `ChromeExtensionSessionRuntimeAdapter`：显式加载 `/Users/lemon/Downloads/诺汇盛专用上号器 v1.1.0/` 这类 MV3 扩展，提供 popup 驱动入口；只记录扩展运行状态，不把 Session 原文带出边界。
 2. `InMemoryCardMaterialLeaseProvider`：为未来真实 Checkout 预留 card-material lease，不再假设只有 `cardRef` 就足够完成付款；当前不接卡台 API。
