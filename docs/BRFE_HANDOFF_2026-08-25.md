@@ -214,3 +214,20 @@
 4. UNKNOWN 锁定、最小人工接管和停止开关。
 
 其余多 Provider、多机高可用、完整运营后台和大规模容量准备仍后移。复核文档：`docs/browser-research/mvp-future-capability-frontload-review-2026-08-26.md`。
+
+## 2026-08-26 交接增量：F0 硬能力前置切片
+
+当前分支 `codex/browser`；未跟踪 `.playwright-cli/`、`artifacts/` 保持不动。新增：
+
+1. `ChromeExtensionSessionRuntimeAdapter`：显式加载 `/Users/lemon/Downloads/诺汇盛专用上号器 v1.1.0/` 这类 MV3 扩展，提供 popup 驱动入口；只记录扩展运行状态，不把 Session 原文带出边界。
+2. `InMemoryCardMaterialLeaseProvider`：为未来真实 Checkout 预留 card-material lease，不再假设只有 `cardRef` 就足够完成付款；当前不接卡台 API。
+3. `PaymentSafetyGate`：UNKNOWN 未对账前禁止同订单/卡片再次提交，并支持单卡、单订单、全局停止；当前写开关仍关闭，未接入付款 executor。
+
+验证结果：
+
+- `npm --prefix browser-mvp run check`：通过。
+- `npm --prefix browser-mvp test`：38/38 通过。
+
+已验证事实：新增代码可由单元测试调用；扩展参数拼接、MV3 校验、短 lease 过期、UNKNOWN 锁定和停止开关均有测试。未验证事实：headed Chrome 的真实扩展 popup、真实 Session 身份、卡台材料读取、Checkout/付款和三方对账。
+
+暂停条件不变：不执行真实付款、开卡、卡余额充值；不修改非 Browser 共享核心和共享事实源；不使用 `git add -A`；不覆盖 `.playwright-cli/`、`artifacts/`。

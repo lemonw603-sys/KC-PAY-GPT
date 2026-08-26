@@ -143,3 +143,15 @@
 - 用户确认需要主动检查后期能力中哪些必须前置；当前判断已把四类硬缺口前置到 F0：实际 Session/上号器 lane、卡片材料 lease、付款后权益/扣款/订阅三方核对、UNKNOWN 锁定与最小人工停止。
 - 这不意味着把完整后台、多机高可用或多 Provider fallback 提前；只前置直接决定“能否安全完成第二笔充值”的最小能力。
 - 详细复核：`docs/browser-research/mvp-future-capability-frontload-review-2026-08-26.md`。
+
+## 2026-08-26 F0 前置能力代码切片（本次）
+
+按已确认的“后期硬能力前置、平台复杂度后移”原则，本 Browser worktree 新增三块**真实可调用但仍不产生付款副作用**的能力：
+
+- `browser-mvp/src/extension-session-runtime.js`：明确的本地 MV3 上号器 lane。它校验扩展 Manifest V3、给 Chrome persistent context 加载解压扩展，并提供 popup 驱动入口；返回值只包含扩展 ID/状态，不返回 Session 输入。当前只完成合同和 fake-context 测试，尚未在 headed Chrome 中操作真实扩展。
+- `browser-mvp/src/card-material-lease.js`：`cardRef → 短时材料 lease → callback 内填充` 的最小边界。PAN/有效期/CVC 不进入 job、lease 或 evidence；当前是内存 source 合同，不连接卡台读取或写入。
+- `browser-mvp/src/payment-safety-gate.js`：提交前 permit、提交后 UNKNOWN 锁定、订单/卡片/全局停止开关和人工对账结案状态。它独立于当前只读 executor，`allowWrites=false` 仍保持不变。
+
+验证：`npm --prefix browser-mvp run check` 通过；`npm --prefix browser-mvp test` **38/38 passed**。本次没有加载真实扩展、没有调用卡台写接口、没有提交 Checkout、没有真实付款。
+
+下一步唯一动作：在 headed Chrome（有可用 DISPLAY）中运行扩展 lane 的非付款身份核验；若通过，再由统筹窗口提供共享 `card-material`/资金 permit 合同，继续接入最小模拟 Checkout，不开启真实付款写开关。
