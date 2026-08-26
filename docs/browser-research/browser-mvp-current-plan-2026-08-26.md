@@ -85,3 +85,9 @@
 - 当前已有真实 Session Bootstrap 和身份匹配证据，但这不等于 Checkout 或付款已验证；
 - 卡台 API 写开关、真实付款写开关保持关闭；
 - 未跟踪 `.playwright-cli/`、`artifacts/` 不属于本次修改。
+
+## 2026-08-27 实施进度：共享合同 adapter 与非付款联调已完成
+
+MVP 的 Browser 执行入口已不再依赖旧 `browser_upstream_ready_projection` 或 PoC 状态。当前入口是：共享核心完成资金 attempt → Browser dispatch claim → `browser_run` → Browser 非付款页面动作 → `abortBeforePayment()` 安全收口。未来付款 permit 方法已接入边界，但仍由服务端锁定事实并计算 snapshot，付款写开关保持关闭。
+
+本轮已经验证：正式状态拒绝、卡/route/Provider 绑定、Session/账号状态分流、租约前后丢失、崩溃、重复投递、卡余额/状态/同步时效变化、零外部付款和零资金 fence 残留。下一阶段不是扩大后台，而是先在隔离配置下做真实生产 Worker 的只读 dry-run；真实付款必须单独停下来确认。

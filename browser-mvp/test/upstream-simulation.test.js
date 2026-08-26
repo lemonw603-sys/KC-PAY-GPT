@@ -28,31 +28,26 @@ const pageHtml = encodeURIComponent(
 
 function projection(overrides = {}) {
   return {
-    order: { id: 'ord-upstream-0001', status: 'CARD_READY' },
-    attempt: { id: 'att-upstream-0001', status: 'PENDING' },
+    order: {
+      id: 'ord-upstream-0001', status: 'RECHARGE_PROCESSING',
+      fulfillmentRouteId: 'route:browser:0001',
+    },
+    attempt: {
+      id: 'att-upstream-0001', status: 'PREPARED', fundsRiskState: 'ACTIVE',
+      executorKind: 'BROWSER', fulfillmentRouteId: 'route:browser:0001',
+    },
     profile: { id: 'prof-upstream-0001' },
     card: {
-      ref: 'card:inventory:0001',
+      id: 'card:inventory:0001',
+      orderId: 'ord-upstream-0001',
       providerCardRef: 'provider-card:0001',
-      routeRef: 'route:browser:0001',
-      providerAccountRef: 'provider-account:hnskj:0001',
-      inventoryStatus: 'AVAILABLE',
-      readiness: {
-        status: 'READY',
-        evidenceDigest: 'a'.repeat(64),
-        observedAt: now - 1_000,
-        validUntil: now + 60_000,
-      },
+      providerAccountId: 'provider-account:hnskj:0001',
     },
     route: {
-      ref: 'route:browser:0001',
-      cardProviderRef: 'provider-account:hnskj:0001',
+      id: 'route:browser:0001',
+      cardProviderAccountId: 'provider-account:hnskj:0001',
       executorKind: 'BROWSER',
-      status: 'ACTIVE',
     },
-    sessionRef: 'session-ref:upstream-0001',
-    auditRef: 'audit:upstream-0001',
-    fundsGate: { status: 'NOT_REQUESTED' },
     observation: {
       pageContract: {
         urlPrefix: `data:text/html,${pageHtml}`,
@@ -65,14 +60,14 @@ function projection(overrides = {}) {
   };
 }
 
-test('upstream projection carries only card/route/readiness references', () => {
+test('upstream projection carries only formal card/route bindings', () => {
   const job = projectUpstreamBrowserJob(projection(), {
     manifest: createSyntheticManifest(),
     now,
   });
-  assert.equal(job.metadata.upstream.cardRef, 'card:inventory:0001');
-  assert.equal(job.metadata.upstream.routeRef, 'route:browser:0001');
-  assert.equal(job.metadata.upstream.providerAccountRef, 'provider-account:hnskj:0001');
+  assert.equal(job.metadata.upstream.cardId, 'card:inventory:0001');
+  assert.equal(job.metadata.upstream.routeId, 'route:browser:0001');
+  assert.equal(job.metadata.upstream.cardProviderAccountId, 'provider-account:hnskj:0001');
   assert.equal(hasSensitiveKey(job), false);
   assert.equal('cardNumber' in job.metadata.upstream, false);
   assert.equal('cvv' in job.metadata.upstream, false);
@@ -93,16 +88,16 @@ test('HNSKJ card material source is read-only and normalizes provider credential
   assert.equal(source.requiresProviderCardRef, true);
 });
 
-test('stale, mismatched, or non-browser upstream projections fail before dispatch', () => {
+test('non-executable, mismatched, or non-browser bindings fail before dispatch', () => {
   assert.throws(
     () => projectUpstreamBrowserJob(projection({
-      card: { ...projection().card, readiness: { ...projection().card.readiness, validUntil: now - 1 } },
+      order: { ...projection().order, status: 'RECONCILIATION_REQUIRED' },
     }), { now }),
     ContractError,
   );
   assert.throws(
     () => projectUpstreamBrowserJob(projection({
-      route: { ...projection().route, cardProviderRef: 'provider-account:other:0001' },
+      route: { ...projection().route, cardProviderAccountId: 'provider-account:other:0001' },
     }), { now }),
     ContractError,
   );
@@ -128,7 +123,7 @@ test('non-payment simulation runs upstream projection through dispatch and Brows
       timeoutMs: 2_000,
     });
     const result = await runNonPaymentUpstreamSimulation({
-      projection: projection({ sessionRef: undefined }),
+      projection: projection(),
       dispatchStore,
       executionService,
       now,
@@ -139,7 +134,7 @@ test('non-payment simulation runs upstream projection through dispatch and Brows
     assert.deepEqual(evidenceSink.events.map((event) => event.type), ['intent', 'checkpoint']);
     const snapshot = await dispatchStore.snapshot();
     assert.equal(snapshot.jobs[result.job.jobId].job.state, 'COMPLETED');
-    assert.equal(snapshot.jobs[result.job.jobId].job.metadata.upstream.cardRef, 'card:inventory:0001');
+    assert.equal(snapshot.jobs[result.job.jobId].job.metadata.upstream.cardId, 'card:inventory:0001');
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
@@ -161,7 +156,7 @@ test('frontloaded P0 integration consumes a card lease and releases it after obs
       source: { load: async () => { loads += 1; return { pan: '4111111111111111', expMonth: '12', expYear: '2030', cvc: '123' }; } },
     }).init();
     const result = await runFrontloadedNonPaymentIntegration({
-      projection: projection({ sessionRef: undefined }),
+      projection: projection(),
       dispatchStore,
       executionService,
       cardMaterialLeaseProvider,
@@ -216,7 +211,6 @@ test('frontloaded P0 card-fill slice fills fixture Stripe fields, clears them, a
     }).init();
     const result = await runFrontloadedNonPaymentIntegration({
       projection: projection({
-        sessionRef: undefined,
         observation: {
           pageContract: {
             urlPrefix: `${base}/`,

@@ -31,14 +31,17 @@ test('session lease contract keeps raw material out of dispatch/evidence shapes'
   }), ContractError);
 });
 
-test('shared projection carries only an opaque sessionRef, never session material', () => {
+test('controlled runtime options carry only an opaque sessionRef, never session material', () => {
   const job = projectSharedBrowserJob({
-    order: { id: 'ord-session', status: 'CARD_READY' },
-    attempt: { id: 'att-session', status: 'OBSERVING' },
+    order: { id: 'ord-session', status: 'RECHARGE_PROCESSING', fulfillmentRouteId: 'route-session' },
+    attempt: {
+      id: 'att-session', status: 'PREPARED', fundsRiskState: 'ACTIVE',
+      executorKind: 'BROWSER', fulfillmentRouteId: 'route-session',
+    },
     profile: { id: 'prof-session' },
-    sessionRef: 'session-ref:0001',
-    fundsGate: { status: 'NOT_REQUESTED' },
-  });
+    card: { id: 'card-session', orderId: 'ord-session', providerAccountId: 'provider-session' },
+    route: { id: 'route-session', executorKind: 'BROWSER', cardProviderAccountId: 'provider-session' },
+  }, { sessionRef: 'session-ref:0001' });
   assert.equal(job.metadata.sessionRef, 'session-ref:0001');
   assert.equal('session' in job.metadata, false);
 });

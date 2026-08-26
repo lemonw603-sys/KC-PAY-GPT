@@ -235,3 +235,49 @@ order/attempt/cardReadyEvidence/route（只读投影）
 原始 v1.1.0 已实际安装进专用 Chrome Profile，popup 控件验证通过；但用户提供的长 Session 通过 popup 写入失败，Cookie 数量仍为 0，ChatGPT 未打开。原始扩展只写一个 Cookie，不支持 NextAuth/Auth.js 长 Token 分块；同时 Worker adapter 原先未等待 popup 结果，存在假成功。
 
 已在项目内保留派生版 `browser-mvp/extensions/nuohuisheng-session-loader/` v1.1.1（原 Downloads 版本不改），增加 `.0/.1/...` 分块写入、旧分块清理和分块识别；adapter 改为只有 popup 明确成功并打开 ChatGPT 才返回成功。测试更新为 45/45。派生版尚未安装；真实身份仍未验证。
+
+## 2026-08-27 共享合同 adapter 接线与非付款联调（本轮）
+
+本轮限定在 Browser worktree，未修改 nonbrowser worktree、共享 `CURRENT_STATE.md`、`DECISIONS.md` 或 `HANDOFF_LOG.md`。
+
+### 已完成
+
+- `browser-mvp/src/shared-contract-adapter.js` 已从旧 PoC 投影切换到共享运行合同：仅接受 `orders.status=RECHARGE_PROCESSING`、`recharge_attempts.status=PREPARED`、`funds_risk_state=ACTIVE`、`executor_kind=BROWSER`；`CARD_READY`、`RECONCILIATION_REQUIRED`、`PENDING/OBSERVING`、`AVAILABLE`、独立 `auditRef` 和 `fundsGate` 均拒绝。
+- adapter 现在校验订单/attempt/卡/冻结 route/Provider 账户绑定；`browser_run.id` 是运行/审计引用。Session 只通过受控 runtime option 传入 opaque ref，原文仍不进入 job。
+- `browser-mvp/src/mysql-upstream-adapter.js` 改为按 `browser_run.id` 做一次只读联接查询，移除 `browser_upstream_ready_projection`、readiness TTL 和独立 audit 字段；不选 Session/card credentials。
+- 新增 `browser-mvp/src/shared-runtime-integration.js`：调用共享 `workerService.claim()` / `runClaimedJob()`，处理 run lease/resource lease，调用 `abortBeforePayment()`；保留显式 `issueAuthoritativePaymentPermit()` 作为未来付款边界，绝不调用 submit。
+- Session 无效/身份不匹配/账号已有 Plus 会回到原订单 `WAITING_FOR_SESSION`；卡余额不足、卡状态、同步时效、route/provider 变化和租约/运行时故障在付款前安全回到 `CARD_READY`。安全退出后要求 attempt/funds 为 `CLEARED`、dispatch 取消、permit 撤销。
+- `BrowserExecutionService` 现在接收共享 lease 的 `AbortSignal`，运行中租约丢失可中断页面动作；非付款结果固定检查 `submitCalls=0`。
+
+### 验证证据
+
+```text
+npm --prefix browser-mvp run check                 # passed
+npm --prefix browser-mvp test                      # 67/67 passed
+node --test v1/test/browser-*.test.js（定向套件） # 50/50 passed
+隔离 MySQL 8.4：browser-execution + browser-recovery 集成 # 3/3 passed
+```
+
+非付款故障注入覆盖：卡余额/状态/同步时效/route/provider 变化、Session 无效、账号已有 Plus、dispatch 租约丢失（动作前/动作中）、运行时崩溃、重复投递/旧 run 恢复；每条路径均验证外部付款调用计数为 0，安全收口后资金 fence 为 `CLEARED`，无活动 permit 残留。付款 permit 单元验证服务端自行计算 snapshot，不接受调用方 snapshot。
+
+### 未验证边界
+
+- 真实生产 MySQL 连接、真实 Browser Worker 注册/部署、真实 HNSKJ 只读 API 和真实卡材料；本轮隔离 MySQL 仅运行共享核心仓储集成，不接 Browser adapter 到生产视图。
+- 真实 Checkout 填卡/付款、Plus 激活、取消续费、卡台扣款和三方对账均未执行；`browser_payment_writes_enabled` 与卡台写开关保持关闭。
+- 指纹浏览器 runtime、200–300 单/日容量和生产高可用拓扑未验证。
+
+### 本轮修改文件
+
+- `browser-mvp/src/shared-contract-adapter.js`
+- `browser-mvp/src/mysql-upstream-adapter.js`
+- `browser-mvp/src/shared-runtime-integration.js`
+- `browser-mvp/src/executor.js`
+- `browser-mvp/src/frontloaded-p0-integration.js`
+- `browser-mvp/test/shared-contract-adapter.test.js`
+- `browser-mvp/test/mysql-upstream-adapter.test.js`
+- `browser-mvp/test/shared-runtime-integration.test.js`
+- `browser-mvp/test/upstream-simulation.test.js`
+- `browser-mvp/test/session-provider.test.js`
+- `browser-mvp/package.json`
+
+本轮提交：`87f5aa9`（`feat(browser): wire shared runtime contract and dry-run aborts`）。未跟踪 `artifacts/browser-checkout-observe/` 保持原样，不纳入提交。

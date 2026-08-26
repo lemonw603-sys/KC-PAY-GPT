@@ -40,6 +40,7 @@ export class BrowserExecutionService {
 
   async execute(job, {
     assertLease,
+    signal = null,
     freezeRequested = () => false,
     cardMaterialLeaseProvider = null,
     cardMaterialLease = null,
@@ -57,10 +58,20 @@ export class BrowserExecutionService {
     await this._event(job, 'intent', ++evidenceSequence, { action: 'observe-page', mode: job.manifest.mode });
     let runtime;
     let sessionLease;
+    let abortRuntime;
     try {
+      if (signal?.aborted) throw new BrowserExecutionError('LEASE_LOST');
       if (freezeRequested()) throw new BrowserExecutionError('MANUAL_FREEZE');
       if (!(await assertLease())) throw new BrowserExecutionError('LEASE_LOST');
       runtime = await this.runtimeAdapter.open(job.manifest, { profileRef: job.profileRef });
+      abortRuntime = () => {
+        // Closing the BrowserContext is the only reliable way to interrupt a
+        // Playwright navigation/locator wait after the shared lease is lost.
+        // close() is idempotently attempted again in finally.
+        this.runtimeAdapter.close(runtime).catch(() => undefined);
+      };
+      signal?.addEventListener('abort', abortRuntime, { once: true });
+      if (signal?.aborted) throw new BrowserExecutionError('LEASE_LOST');
       if (job.metadata?.sessionRef) {
         if (!this.sessionProvider || typeof this.sessionProvider.open !== 'function' || typeof this.sessionProvider.bootstrap !== 'function') {
           throw new BrowserExecutionError('SESSION_PROVIDER_UNAVAILABLE');
@@ -152,6 +163,7 @@ export class BrowserExecutionService {
       await this._event(job, 'freeze', ++evidenceSequence, { action: 'fail-closed', reason: failure.reason });
       throw failure;
     } finally {
+      if (abortRuntime) signal?.removeEventListener('abort', abortRuntime);
       if (runtime) await this.runtimeAdapter.close(runtime).catch(() => undefined);
       if (sessionLease && this.sessionProvider) await this.sessionProvider.close(sessionLease).catch(() => undefined);
     }

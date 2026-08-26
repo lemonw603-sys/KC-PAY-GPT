@@ -8,72 +8,75 @@ import {
 } from '../src/mysql-upstream-adapter.js';
 import { ContractError } from '../src/contracts.js';
 
-const now = Date.parse('2026-08-26T00:00:00.000Z');
-
 function row(overrides = {}) {
   return {
-    order_id: 'ord-mysql-0001',
-    order_status: 'CARD_READY',
-    attempt_id: 'att-mysql-0001',
-    attempt_status: 'PENDING',
+    run_id: 'run-mysql-0001',
+    run_status: 'RUNNING',
+    payment_state: 'NOT_STARTED',
     profile_id: 'prof-mysql-0001',
-    card_ref: 'card:inventory:0001',
-    provider_card_ref: 'provider-card:0001',
-    card_route_ref: 'route:browser:0001',
-    card_provider_account_ref: 'provider-account:hnskj:0001',
-    card_inventory_status: 'AVAILABLE',
-    card_readiness_status: 'READY',
-    card_readiness_digest: 'a'.repeat(64),
-    card_readiness_observed_at: new Date(now - 1000),
-    card_readiness_valid_until: new Date(now + 60_000),
-    route_ref: 'route:browser:0001',
-    route_card_provider_ref: 'provider-account:hnskj:0001',
+    order_id: 'ord-mysql-0001',
+    order_status: 'RECHARGE_PROCESSING',
+    order_fulfillment_route_id: 'route-mysql-0001',
+    attempt_id: 'att-mysql-0001',
+    attempt_status: 'PREPARED',
+    funds_risk_state: 'ACTIVE',
+    attempt_executor_kind: 'BROWSER',
+    attempt_fulfillment_route_id: 'route-mysql-0001',
+    card_id: 'card-mysql-0001',
+    card_order_id: 'ord-mysql-0001',
+    provider_card_ref: 'provider-card-mysql-0001',
+    card_provider_account_id: 'provider-account-mysql-0001',
+    route_id: 'route-mysql-0001',
     route_executor_kind: 'BROWSER',
-    route_status: 'ACTIVE',
-    session_ref: 'session-ref:mysql-0001',
-    audit_ref: 'audit:mysql-0001',
+    route_card_provider_account_id: 'provider-account-mysql-0001',
     ...overrides,
   };
 }
 
-test('MySQL adapter performs one parameterized read and returns an opaque Browser job', async () => {
+test('MySQL adapter reads one formal browser_run and returns a run-bound Browser job', async () => {
   const calls = [];
-  const db = { execute: async (sql, params) => {
-    calls.push({ sql, params });
-    return [[row()], []];
-  } };
+  const db = { execute: async (sql, params) => { calls.push({ sql, params }); return [[row()], []]; } };
   const adapter = createMysqlUpstreamProjectionAdapter({ db });
-  const result = await adapter.load({ attemptId: 'att-mysql-0001', now });
+  const result = await adapter.load({ runId: 'run-mysql-0001', sessionRef: 'session-runtime-0001' });
   assert.equal(calls.length, 1);
-  assert.deepEqual(calls[0].params, ['att-mysql-0001']);
-  assert.match(calls[0].sql, /FROM browser_upstream_ready_projection/);
+  assert.deepEqual(calls[0].params, ['run-mysql-0001']);
+  assert.match(calls[0].sql, /FROM browser_runs br/);
+  assert.doesNotMatch(calls[0].sql, /browser_upstream_ready_projection/);
   assert.doesNotMatch(calls[0].sql, /SELECT\s+\*/i);
-  assert.equal(result.job.metadata.upstream.cardRef, 'card:inventory:0001');
-  assert.equal(result.job.metadata.upstream.providerCardRef, 'provider-card:0001');
-  assert.equal(result.job.metadata.sessionRef, 'session-ref:mysql-0001');
-  assert.equal(result.projection.fundsGate.status, 'NOT_REQUESTED');
+  assert.doesNotMatch(calls[0].sql, /session_ciphertext|card_credentials_ciphertext|audit_ref/i);
+  assert.equal(result.job.state, 'RUNNING');
+  assert.equal(result.job.metadata.browserRunRef, 'run:run-mysql-0001');
+  assert.equal(result.job.metadata.upstream.cardId, 'card-mysql-0001');
+  assert.equal(result.job.metadata.upstream.providerCardRef, 'provider-card-mysql-0001');
+  assert.equal(result.job.metadata.sessionRef, 'session-runtime-0001');
   assert.equal(result.sourceDigest.length, 64);
 });
 
-test('adapter rejects missing or ambiguous rows before Browser dispatch', async () => {
-  for (const rows of [[], [row(), row({ attempt_id: 'att-mysql-0001b' })]]) {
+test('adapter rejects missing or ambiguous run rows', async () => {
+  for (const rows of [[], [row(), row({ run_id: 'run-mysql-0001b' })]]) {
     const adapter = createMysqlUpstreamProjectionAdapter({ db: { query: async () => [rows, []] } });
-    await assert.rejects(() => adapter.load({ attemptId: 'att-mysql-0001', now }), /projection (not found|is ambiguous)/);
+    await assert.rejects(() => adapter.load({ runId: 'run-mysql-0001' }), /runtime (not found|is ambiguous)/);
   }
 });
 
-test('row mapper and projection remain fail-closed for stale readiness and credential-shaped fields', async () => {
-  const stale = createMysqlUpstreamProjectionAdapter({
-    db: { query: async () => [[row({ card_readiness_valid_until: new Date(now - 1) })], []] },
-  });
-  await assert.rejects(() => stale.load({ attemptId: 'att-mysql-0001', now }), /.+/);
-  assert.throws(() => rowToProjection({ ...row(), card_credentials_ciphertext: 'must-not-be-read' }), /.+/);
-  assert.doesNotThrow(() => rowToProjection(row({ route_executor_kind: 'API' })));
+test('row mapper rejects sensitive and retired projection columns', () => {
+  for (const key of ['card_credentials_ciphertext', 'session_ciphertext', 'session_ref', 'audit_ref']) {
+    assert.throws(() => rowToProjection({ ...row(), [key]: 'must-not-be-read' }), /forbidden/);
+  }
   assert.throws(() => createMysqlUpstreamProjectionAdapter({ db: {} }), TypeError);
-  assert.match(BROWSER_UPSTREAM_PROJECTION_SQL, /WHERE attempt_id = \?/);
+  assert.match(BROWSER_UPSTREAM_PROJECTION_SQL, /WHERE br\.id = \?/);
 });
 
-test('adapter does not silently reinterpret PREPARED until shared mapping is frozen', async () => {
-  const adapter = createMysqlUpstreamProjectionAdapter({ db: { query: async () => [[row({ attempt_status: 'PREPARED' }),], []] } });
-  await assert.rejects(() => adapter.load({ attemptId: 'att-mysql-0001', now }), ContractError);
+test('formal state, route and Provider drift fail closed without reinterpretation', async () => {
+  for (const changed of [
+    { order_status: 'RECONCILIATION_REQUIRED' },
+    { attempt_status: 'OBSERVING' },
+    { funds_risk_state: 'CLEARED' },
+    { route_executor_kind: 'API' },
+    { route_card_provider_account_id: 'provider-account-other' },
+    { payment_state: 'PAYMENT_SUBMITTING' },
+  ]) {
+    const adapter = createMysqlUpstreamProjectionAdapter({ db: { query: async () => [[row(changed)], []] } });
+    await assert.rejects(() => adapter.load({ runId: 'run-mysql-0001' }), ContractError);
+  }
 });

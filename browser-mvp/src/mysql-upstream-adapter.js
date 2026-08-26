@@ -3,37 +3,40 @@ import { createHash } from 'node:crypto';
 import { projectUpstreamBrowserJob } from './shared-contract-adapter.js';
 
 /**
- * Read-only SQL contract for the Browser boundary.
+ * One bounded read of the already-created shared Browser run. This replaces
+ * the retired browser_upstream_ready_projection view and never invents
+ * PENDING/OBSERVING, AVAILABLE, readiness TTL, or an independent audit_ref.
  *
- * The view is intentionally not created here: its schema belongs to the
- * shared/non-Browser owner and must be frozen there first. Until that happens,
- * a real MySQL connection fails closed with ER_NO_SUCH_TABLE rather than
- * guessing a mapping from tasks/provider_calls or reading card credentials.
+ * Session ciphertext and card credentials are intentionally obtained by
+ * separate controlled runtime providers and never selected into this job.
  */
 export const BROWSER_UPSTREAM_PROJECTION_SQL = `
 SELECT
-  order_id,
-  order_status,
-  attempt_id,
-  attempt_status,
-  profile_id,
-  card_ref,
-  provider_card_ref,
-  card_route_ref,
-  card_provider_account_ref,
-  card_inventory_status,
-  card_readiness_status,
-  card_readiness_digest,
-  card_readiness_observed_at,
-  card_readiness_valid_until,
-  route_ref,
-  route_card_provider_ref,
-  route_executor_kind,
-  route_status,
-  session_ref,
-  audit_ref
-FROM browser_upstream_ready_projection
-WHERE attempt_id = ?
+  br.id AS run_id,
+  br.status AS run_status,
+  br.payment_state,
+  br.executor_profile_id AS profile_id,
+  rat.id AS attempt_id,
+  rat.status AS attempt_status,
+  rat.funds_risk_state,
+  rat.executor_kind AS attempt_executor_kind,
+  rat.fulfillment_route_id AS attempt_fulfillment_route_id,
+  o.id AS order_id,
+  o.status AS order_status,
+  o.fulfillment_route_id AS order_fulfillment_route_id,
+  c.id AS card_id,
+  c.order_id AS card_order_id,
+  c.provider_card_id AS provider_card_ref,
+  c.provider_account_id AS card_provider_account_id,
+  fr.id AS route_id,
+  fr.executor_kind AS route_executor_kind,
+  fr.card_provider_account_id AS route_card_provider_account_id
+FROM browser_runs br
+INNER JOIN recharge_attempts rat ON rat.id = br.recharge_attempt_id
+INNER JOIN orders o ON o.id = rat.order_id
+INNER JOIN cards c ON c.order_id = o.id
+INNER JOIN fulfillment_routes fr ON fr.id = rat.fulfillment_route_id
+WHERE br.id = ?
 LIMIT 1`;
 
 function required(value, name) {
@@ -46,57 +49,58 @@ function sha256(value) {
   return createHash('sha256').update(String(value), 'utf8').digest('hex');
 }
 
-function dateMs(value, name) {
-  const ms = value instanceof Date ? value.getTime() : Date.parse(String(value ?? ''));
-  if (!Number.isFinite(ms)) throw new Error(`${name} must be a valid timestamp`);
-  return ms;
-}
-
-function rowToProjection(row) {
+export function rowToProjection(row) {
   if (!row || typeof row !== 'object' || Array.isArray(row)) {
-    throw new Error('Browser upstream projection row is invalid');
+    throw new Error('Browser shared runtime row is invalid');
   }
-  for (const key of ['card_credentials_ciphertext', 'card_number_ciphertext', 'pan', 'cvv', 'session_ciphertext', 'access_token', 'api_key']) {
+  for (const key of [
+    'card_credentials_ciphertext', 'card_number_ciphertext', 'pan', 'cvv', 'cvc',
+    'session_ciphertext', 'session_ref', 'access_token', 'api_key', 'audit_ref',
+  ]) {
     if (Object.prototype.hasOwnProperty.call(row, key)) {
-      throw new Error(`forbidden upstream column returned: ${key}`);
+      throw new Error(`forbidden shared runtime column returned: ${key}`);
     }
   }
-  // Only aliases from the read-only view are copied. No wildcard SELECT and
-  // no card/session credential columns are accepted at this boundary.
-  const projection = {
-    order: { id: required(row.order_id, 'order_id'), status: required(row.order_status, 'order_status') },
-    attempt: { id: required(row.attempt_id, 'attempt_id'), status: required(row.attempt_status, 'attempt_status') },
+  return {
+    order: {
+      id: required(row.order_id, 'order_id'),
+      status: required(row.order_status, 'order_status'),
+      fulfillmentRouteId: required(row.order_fulfillment_route_id, 'order_fulfillment_route_id'),
+    },
+    attempt: {
+      id: required(row.attempt_id, 'attempt_id'),
+      status: required(row.attempt_status, 'attempt_status'),
+      fundsRiskState: required(row.funds_risk_state, 'funds_risk_state'),
+      executorKind: required(row.attempt_executor_kind, 'attempt_executor_kind'),
+      fulfillmentRouteId: required(row.attempt_fulfillment_route_id, 'attempt_fulfillment_route_id'),
+    },
     profile: { id: required(row.profile_id, 'profile_id') },
+    run: {
+      id: required(row.run_id, 'run_id'),
+      attemptId: required(row.attempt_id, 'attempt_id'),
+      status: required(row.run_status, 'run_status'),
+      paymentState: required(row.payment_state, 'payment_state'),
+    },
     card: {
-      ref: required(row.card_ref, 'card_ref'),
-      ...(row.provider_card_ref == null ? {} : { providerCardRef: required(row.provider_card_ref, 'provider_card_ref') }),
-      routeRef: required(row.card_route_ref, 'card_route_ref'),
-      providerAccountRef: required(row.card_provider_account_ref, 'card_provider_account_ref'),
-      inventoryStatus: required(row.card_inventory_status, 'card_inventory_status'),
-      readiness: {
-        status: required(row.card_readiness_status, 'card_readiness_status'),
-        evidenceDigest: required(row.card_readiness_digest, 'card_readiness_digest'),
-        observedAt: dateMs(row.card_readiness_observed_at, 'card_readiness_observed_at'),
-        validUntil: dateMs(row.card_readiness_valid_until, 'card_readiness_valid_until'),
-      },
+      id: required(row.card_id, 'card_id'),
+      orderId: required(row.card_order_id, 'card_order_id'),
+      ...(row.provider_card_ref == null
+        ? {}
+        : { providerCardRef: required(row.provider_card_ref, 'provider_card_ref') }),
+      providerAccountId: required(row.card_provider_account_id, 'card_provider_account_id'),
     },
     route: {
-      ref: required(row.route_ref, 'route_ref'),
-      cardProviderRef: required(row.route_card_provider_ref, 'route_card_provider_ref'),
+      id: required(row.route_id, 'route_id'),
       executorKind: required(row.route_executor_kind, 'route_executor_kind'),
-      status: required(row.route_status, 'route_status'),
+      cardProviderAccountId: required(row.route_card_provider_account_id, 'route_card_provider_account_id'),
     },
-    ...(row.session_ref == null ? {} : { sessionRef: required(row.session_ref, 'session_ref') }),
-    ...(row.audit_ref == null ? {} : { auditRef: required(row.audit_ref, 'audit_ref') }),
-    fundsGate: { status: 'NOT_REQUESTED' },
   };
-  return projection;
 }
 
 /**
- * Builds a read-only adapter over a mysql2-like pool. The adapter performs
- * exactly one bounded SELECT per load and then delegates all safety checks to
- * projectUpstreamBrowserJob(). It has no write method by design.
+ * Builds a read-only adapter over a mysql2-like pool. It runs after beginRun(),
+ * reads by browser_run.id exactly once, and delegates formal state/binding
+ * checks to projectUpstreamBrowserJob().
  */
 export function createMysqlUpstreamProjectionAdapter({ db, sql = BROWSER_UPSTREAM_PROJECTION_SQL } = {}) {
   if (!db || (typeof db.execute !== 'function' && typeof db.query !== 'function')) {
@@ -104,21 +108,18 @@ export function createMysqlUpstreamProjectionAdapter({ db, sql = BROWSER_UPSTREA
   }
   const runQuery = db.execute?.bind(db) || db.query.bind(db);
   return Object.freeze({
-    async load({ attemptId, now = Date.now(), manifest } = {}) {
-      const id = required(attemptId, 'attemptId');
+    async load({ runId, manifest, observation, sessionRef = null } = {}) {
+      const id = required(runId, 'runId');
       const [rows] = await runQuery(sql, [id]);
       if (!Array.isArray(rows) || rows.length !== 1) {
-        throw new Error(rows?.length === 0 ? 'Browser upstream projection not found' : 'Browser upstream projection is ambiguous');
+        throw new Error(rows?.length === 0 ? 'Browser shared runtime not found' : 'Browser shared runtime is ambiguous');
       }
-      const projection = rowToProjection(rows[0]);
-      const projected = projectUpstreamBrowserJob(projection, { now, manifest });
-      return {
-        projection,
-        job: projected,
-        sourceDigest: sha256(JSON.stringify(rows[0])),
+      const projection = {
+        ...rowToProjection(rows[0]),
+        ...(observation == null ? {} : { observation }),
       };
+      const job = projectUpstreamBrowserJob(projection, { manifest, sessionRef });
+      return { projection, job, sourceDigest: sha256(JSON.stringify(rows[0])) };
     },
   });
 }
-
-export { rowToProjection };

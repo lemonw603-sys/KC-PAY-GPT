@@ -23,7 +23,7 @@ export async function runFrontloadedNonPaymentIntegration({
     throw new TypeError('durable card material lease provider is required');
   }
   const job = projectUpstreamBrowserJob(projection, { now });
-  const cardRef = job.metadata.upstream.cardRef;
+  const cardRef = job.metadata.upstream.cardId;
   const resolvedMaterialRef = materialRef || job.metadata.upstream.providerCardRef || cardRef;
   if (cardMaterialLeaseProvider.requiresProviderCardRef && !materialRef && !job.metadata.upstream.providerCardRef) {
     throw new ContractError('provider card material source requires an explicit providerCardRef');

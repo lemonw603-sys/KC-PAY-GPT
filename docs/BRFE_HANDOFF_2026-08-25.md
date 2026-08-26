@@ -439,3 +439,21 @@ git diff --check                     # passed（提交前再次执行）
 - 已按用户同意整理 Browser 侧待统筹确认的冻结清单：`docs/browser-research/browser-upstream-contract-freeze-checklist-2026-08-26.md`。
 - 清单明确当前 SQL adapter 的 19 个最小投影字段、状态/路由/ready 约束、一次读取策略和 7 项必须由共享窗口确认的事项。
 - 该文档是 Browser 侧准备材料，不宣称共享 schema 已冻结；在确认前不接真实 MySQL 生产视图、不把 Browser 直接接到 HNSKJ API。
+
+## 2026-08-27 Browser 共享合同接线交接
+
+- Worktree：`/Users/lemon/.codex/worktrees/9128/AI充值业务`；分支：`codex/browser`。
+- 本轮仅修改 Browser adapter/runtime/test/docs；未修改 nonbrowser worktree 或共享事实源；未使用 `git add -A`。
+- 共享核心基线：`0ec0f33`；本轮 Browser 提交：`87f5aa9`（`feat(browser): wire shared runtime contract and dry-run aborts`）。
+- adapter 已统一到正式状态：`RECHARGE_PROCESSING` + `PREPARED/ACTIVE` + `BROWSER`；拒绝旧 PoC 平行状态和独立 `audit_ref`。
+- 新增 `shared-runtime-integration.js` 接通 claim/run、resource lease、服务端权威 payment permit 边界和 `abortBeforePayment()`。本轮只跑非付款；没有 submit executor、没有卡台写调用。
+- 非付款联调与故障注入：67/67 Browser MVP、50/50 v1 Browser 定向、隔离 MySQL 3/3；外部付款调用 0，安全 abort 后 funds fence CLEARED，permit 无残留。
+- Session 无效/账号已有 Plus → 原订单 `WAITING_FOR_SESSION`；卡/route/租约/崩溃 → 付款前安全回到 `CARD_READY`；重复投递通过旧 run 恢复路径，不创建平行 run。
+
+### 下一步唯一动作
+
+在统筹窗口确认共享 MySQL 生产接线和真实卡材料读取边界后，先做 **真实生产 Browser Worker 的只读/非付款 dry-run**（仍保持 `browser_payment_writes_enabled=false` 和卡台写开关关闭），再由统筹窗口单独确认是否进入真实付款闸门。
+
+### 未验证
+
+真实生产 Worker/部署、真实 HNSKJ 读取、真实卡材料、真实 Checkout 填卡/付款、Plus/续费取消/卡台扣款三方对账、指纹浏览器和容量均未验证；不能写成生产可用。
