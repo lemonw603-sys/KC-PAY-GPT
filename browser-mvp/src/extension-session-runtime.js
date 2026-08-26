@@ -10,6 +10,14 @@ function assertExtensionPath(value) {
   return value;
 }
 
+function assertInstalledExtensionId(value) {
+  if (value == null) return null;
+  if (typeof value !== 'string' || !/^[a-p]{32}$/.test(value)) {
+    throw new TypeError('installedExtensionId must be a 32-character Chrome extension ID');
+  }
+  return value;
+}
+
 function extensionIdFromServiceWorker(url) {
   const match = /^chrome-extension:\/\/([a-p]{32})\//.exec(url || '');
   return match?.[1] || null;
@@ -34,7 +42,7 @@ function extensionIdFromPath(path) {
  * Checkout or exposes the Session input in a result/event.
  */
 export class ChromeExtensionSessionRuntimeAdapter extends GoogleChromeControlRuntimeAdapter {
-  constructor({ extensionPath, ...options } = {}) {
+  constructor({ extensionPath, installedExtensionId = null, ...options } = {}) {
     const path = assertExtensionPath(extensionPath);
     const launchOptions = { headless: false, ...(options.launchOptions || {}) };
     if (launchOptions.headless === true) throw new ContractError('extension lane requires headed Chromium');
@@ -47,6 +55,7 @@ export class ChromeExtensionSessionRuntimeAdapter extends GoogleChromeControlRun
     }
     super({ ...options, launchOptions: { ...launchOptions, args } });
     this.extensionPath = path;
+    this.installedExtensionId = assertInstalledExtensionId(installedExtensionId);
   }
 
   async validateExtension() {
@@ -70,7 +79,7 @@ export class ChromeExtensionSessionRuntimeAdapter extends GoogleChromeControlRun
       name: manifest.name || null,
       version: manifest.version || null,
       popup: manifest.action.default_popup,
-      extensionId: extensionIdFromPath(canonicalPath),
+      extensionId: this.installedExtensionId || extensionIdFromPath(canonicalPath),
     };
   }
 
@@ -93,8 +102,17 @@ export class ChromeExtensionSessionRuntimeAdapter extends GoogleChromeControlRun
     }
     const chatPage = await openedPage;
     if (!chatPage) throw new ContractError('extension did not open ChatGPT after writing the Session');
-    await chatPage.waitForLoadState('domcontentloaded', { timeout: timeoutMs }).catch(() => undefined);
-    if (!chatPage.url().startsWith('https://chatgpt.com')) throw new ContractError('extension opened an unexpected destination');
+    try {
+      // A newly created Chrome tab is first emitted as about:blank. Waiting on
+      // its existing DOMContentLoaded state would therefore report a false
+      // failure before chrome.tabs.create() commits the ChatGPT navigation.
+      await chatPage.waitForURL((url) => url.origin === 'https://chatgpt.com', {
+        waitUntil: 'domcontentloaded',
+        timeout: timeoutMs,
+      });
+    } catch (error) {
+      throw new ContractError(`extension did not open ChatGPT after writing the Session: ${error.message}`);
+    }
     return { extensionId, sessionWritten: true, openedChatGPT: true, chatPage };
   }
 

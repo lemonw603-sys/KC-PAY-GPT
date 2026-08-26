@@ -48,6 +48,60 @@ test('extension lane fails closed when Chrome did not actually load the popup', 
   await assert.rejects(() => adapter.verifyLoaded(runtime), /extension is not loaded/);
 });
 
+test('extension lane waits for a newly-created blank tab to reach ChatGPT', async () => {
+  const calls = [];
+  let chatUrl = '';
+  const chatPage = {
+    url: () => chatUrl,
+    waitForURL: async (predicate, options) => {
+      calls.push({ action: 'waitForURL', options });
+      chatUrl = 'https://chatgpt.com/';
+      assert.equal(predicate(new URL(chatUrl)), true);
+    },
+  };
+  const controls = {
+    '#sessionToken': { fill: async () => calls.push({ action: 'fill' }) },
+    '#cookieType': {
+      count: async () => 1,
+      selectOption: async (value) => calls.push({ action: 'selectOption', value }),
+    },
+    '#loginButton': { click: async () => calls.push({ action: 'click' }) },
+    '#statusMessage': {
+      waitFor: async () => undefined,
+      getAttribute: async () => 'success',
+      textContent: async () => 'ok',
+    },
+  };
+  const popup = {
+    locator: (selector) => controls[selector],
+    isClosed: () => false,
+    url: () => `chrome-extension://${'b'.repeat(32)}/popup.html`,
+  };
+  const adapter = Object.create(ChromeExtensionSessionRuntimeAdapter.prototype);
+  adapter.validateExtension = async () => ({ extensionId: 'b'.repeat(32), popup: 'popup.html' });
+  adapter.verifyLoaded = async () => popup;
+  const runtime = { context: { waitForEvent: async () => chatPage } };
+  const result = await adapter.bootstrapViaPopup(runtime, 'session-token-long-enough-for-test');
+  assert.equal(result.openedChatGPT, true);
+  assert.equal(result.chatPage, chatPage);
+  assert.equal(calls.some((call) => call.action === 'waitForURL'), true);
+});
+
+test('extension lane can target a manually installed unpacked extension ID', async (t) => {
+  const extensionPath = await mkdtemp(join(tmpdir(), 'browser-mvp-installed-ext-'));
+  t.after(() => rm(extensionPath, { recursive: true, force: true }));
+  await writeFile(join(extensionPath, 'manifest.json'), JSON.stringify({ manifest_version: 3, name: 'fixture', version: '1', action: { default_popup: 'popup.html' } }));
+  await writeFile(join(extensionPath, 'popup.html'), '<button id="loginButton">ok</button>');
+  const installedExtensionId = 'c'.repeat(32);
+  const adapter = new ChromeExtensionSessionRuntimeAdapter({
+    extensionPath,
+    installedExtensionId,
+    profilesRoot: join(extensionPath, 'profiles'),
+    browserType: { launchPersistentContext: async () => ({ close: async () => undefined }) },
+  });
+  assert.equal((await adapter.validateExtension()).extensionId, installedExtensionId);
+});
+
 test('card material is only available inside a short lease callback', async () => {
   let now = 10_000;
   const provider = new InMemoryCardMaterialLeaseProvider({
