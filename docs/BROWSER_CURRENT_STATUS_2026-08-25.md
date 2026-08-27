@@ -391,3 +391,11 @@ npm --prefix browser-mvp run dry-run:shared
 完整复验记录：`docs/browser-research/browser-worker-dry-run-2026-08-27.md`。本次实际 exit code=0；集成测试断言 order=`CARD_READY`、attempt/funds=`CLEARED`、run=`FAILED_SAFE`、dispatch=`CANCELLED`、active permits=0、`PAYMENT_SUBMIT`=0、资源租约=0、external payment calls=0。该 launcher 仍运行本地 Playwright fixture，不等价于真实部署 Worker + Google Chrome。
 
 另新增本地 Worker + Google Chrome fixture 回归：`node --test browser-mvp/test/local-worker-chrome-fixture.test.js` **1/1 passed**。它实际驱动 `createBrowserWorkerProcess` 的 claim/run/complete，并用系统 Chrome 临时 Profile 访问本地 `data:` 页面后关闭；固定无付款提交。该证据仍不代表外部站点或生产 Worker 已验收。
+
+## 2026-08-27 主线合并后 readiness 与 fixture 复验
+
+- 已核对主线合并提交 `6580871`；当前 Browser worktree 的代码树与该提交一致（`git diff 6580871..HEAD` 为空；本轮 readiness 文件尚未合并）。
+- 新增一次性 readiness 命令：`npm --prefix browser-mvp run dry-run:readiness`。在 `isolated-fixture` 模式下已通过数据库 fixture、Chrome executable、Worker 默认参数、五个写开关全 false、无 Session/PAN/CVC 环境变量检查。
+- 按五个写开关为 false 执行 `npm --prefix browser-mvp run dry-run:shared`：静态检查通过，共享 MySQL 集成 `1/1 passed`，临时容器自动清理。
+- `node --test browser-mvp/test/local-worker-chrome-fixture.test.js`：`1/1 passed`，实际启动系统 Google Chrome 临时 profile，驱动本地 Worker claim/run/complete 和本地页面观察，`submitCalls=0`。
+- 详细记录：`docs/browser-research/browser-worker-readiness-2026-08-27.md`。
