@@ -452,3 +452,9 @@ ChatGPT，未读取真实 Session/PAN/CVC，未填卡、未付款、未调用卡
 Browser profile lane 竞争未绑定 job；多 profile 上游路由是后续显式缺口。
 
 详细文档：`docs/browser-research/production-readonly-browser-worker-2026-08-27.md`。
+
+## 2026-08-27 付款执行器代码切片（仅 mock）
+
+新增 `browser-mvp/src/payment-executor.js`：独立 feature gate 默认关闭，先调用共享权威 payment permit 和 submit-intent，再调用仅接受 `MOCK_CHECKOUT` 的本地 adapter。提交后不确定/拒绝一律 `PAYMENT_UNKNOWN`，绝不自动重试或换卡；确认后的 Plus 激活、取消自动续费、卡台交易读取和对账均通过独立 verifier 接口调用。`LIVE` 模式强制拒绝，不连接外部付款端点。
+
+本轮仅做代码和 mock 故障注入验证，未开启 gate、未填卡、未付款、未调用卡台写接口。

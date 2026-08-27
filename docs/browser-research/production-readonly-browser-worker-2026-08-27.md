@@ -122,3 +122,15 @@ external payment calls = 0
 - 未实现真实 Session/card material/payment submitter 和付款后三方对账。
 
 因此本轮结论仅为：正式独立 readonly Worker 进程和部署模板已完成本地 production-shaped 验证；生产真实单仍不可开始。
+
+## 付款执行器代码切片（仅 mock）
+
+新增 `browser-mvp/src/payment-executor.js`，实现正式付款编排边界，但没有任何外部付款客户端：
+
+1. 先通过共享 `issueAuthoritativePaymentPermit()`，再 `commitPaymentSubmissionIntent()`；
+2. 只有独立 gate 显式开启才会继续，默认 `BROWSER_PAYMENT_EXECUTOR_ENABLED=false`；
+3. 当前唯一实现 `MockCheckoutPaymentAdapter`，只接受 `MOCK_CHECKOUT`，不访问网络；
+4. 提交异常、拒绝或结果不确定一律写入 `PAYMENT_UNKNOWN`，不自动重试、不换卡；
+5. 确认后调用 Plus 激活、取消自动续费、卡台交易读取和对账接口；任一未确认都停在 `POST_PAYMENT_UNKNOWN/RECONCILIATION_REQUIRED`，不推进最终成功。
+
+`LIVE` 模式显式拒绝并报告 `LIVE_PAYMENT_ADAPTER_UNAVAILABLE`。systemd 与配置样例固定为 `BROWSER_PAYMENT_EXECUTOR_ENABLED=false`、`BROWSER_PAYMENT_EXECUTOR_MODE=MOCK`。
