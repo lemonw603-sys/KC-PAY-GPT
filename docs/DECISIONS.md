@@ -97,6 +97,8 @@
 | D-090 | Browser 设计优先保证链路跑通、顺畅、稳定，其次保证资金安全；敏感信息采用够用保护，不为绝对隔离增加复杂系统。Browser 执行时可使用必要的完整卡资料和 Session，但普通日志、WAL、截图、录像和客户页面不记录原文。Browser 开始前必须原子建立唯一 attempt 并锁定订单/卡片；订单使用 `RECHARGE_PROCESSING` 表示正在处理，只有真正付款提交时才使用 `browser_run.payment_state=PAYMENT_SUBMITTING`。`RECONCILIATION_REQUIRED` 只核对不重付。 | 已确认；共享核心已实现并通过隔离 MySQL 验证，Browser adapter 待接线 | 用户 2026-08-26 确认：唯一资金记录和锁必要，但不应把尚未点击付款的 Browser 阶段提前表达为 `SUBMITTING`；正式合同及实现证据见 `docs/contracts/2026-08-26_browser-upstream-runtime-contract.md` |
 | D-092 | 卡片库存同步采用 fail-closed：缺失 cardTypeId 只允许 Provider 快照唯一精确名称映射；历史 discovery 不自动重建；详情读取最多 3 次；AVAILABLE 每 10 分钟同步；低库存 Bark 同一 OPEN 事件只推一次，解除后重开才推送。 | 已实现、待部署验证 | 生产只读证据确认 1477 字段漂移、历史重复 discovery、同步新鲜度冲突和告警重推条件；合同见 `docs/contracts/2026-08-27_card-inventory-sync-contract.md` |
 | D-091 | API 真实订单完成后，Browser 工作线解除临时暂停。Browser 立即继续非付款工作（Worker、任务领取/租约/心跳/恢复、状态流转、dry-run、仿真、审计和只读合同）；卡片库存同步专项并行修复。卡片同步修复完成后再做 Browser readiness 只读交叉验证和非付款端到端 dry-run；真实 Browser 付款必须最后单独确认。 | 已确认 | 用户 2026-08-27 同意该顺序；API 订单 `PJV1-FqFnMiSKBtLGN14GyP7W` 已完成，Browser 不因 API 成功自动开启真实付款 |
+| D-093 | 当前确认可用的卡片（尾号 6807、4744）只是当前运营事实，不构成永久卡片白名单；未来新开卡仍须经过统一发现、验证、同步和运营接管流程后，按实时证据决定是否进入可分配库存。不得把卡号写死在代码或规则中。 | 已确认 | 用户 2026-08-27 澄清：当前可用不等于未来只能使用这两张卡 |
+| D-094 | 未来可能从“一卡一充”扩展为“一卡多充”（同一卡承载 2–3 个 Plus 账号）。当前仅确认这是后续规划，尚未启用或确定具体计数规则。数据基础应记录每张卡的成功消费交易/绑定订单数量，并保留 Provider 交易 ID、产品、金额、时间和订单交叉关系；卡片是否可再次分配仍以可验证交易证据和运营规则为准。 | 规划（待设计确认） | 2026-08-28 用户提出；当前交易读取已能区分 `PURCHASE/SUCCESS` 与注资/余额转出，但尚未实现“一卡多充”计数与容量字段 |
 
 ## 变更流程
 
