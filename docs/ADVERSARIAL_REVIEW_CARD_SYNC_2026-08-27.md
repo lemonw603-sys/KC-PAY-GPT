@@ -82,3 +82,10 @@
 - 部署后 readiness 返回 `ok=false`，唯一阻断项为 `worker_heartbeat_stale`，原因是按维护窗口要求 Worker 保持停止；这不是代码故障。
 - 未执行 Provider 写操作、开卡、充值、付款或退款。
 - 部署后 Provider 只读检查：通过；HNSKJ account `67`、7 种卡类型、19 张可见卡；ZZSHU 连接正常。
+
+## 部署后同步观察（2026-08-28）
+
+- 只读同步/目录同步日志持续正常运行，无进程异常退出。
+- 最近一次目录对账：Provider 总卡 19，Provider active 8，本地 `AVAILABLE` 2、`ASSIGNED` 2、`DEPLETED` 2；Provider active 中有 2 张仍为 `CARD_QUARANTINED_OR_REVIEW`（外部卡 ID `1065`、`917`），未被擅自分配。
+- 本地库存查询：`AVAILABLE=2`、`ASSIGNED=2`、`DEPLETED=2`。
+- 当前仍有 1 个 `ASSIGN_CARD/PENDING` 任务（task id `22`）；Worker 保持停止，未领取、删除或推进该任务。
