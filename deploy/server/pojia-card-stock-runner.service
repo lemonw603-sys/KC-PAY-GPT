@@ -1,0 +1,23 @@
+[Unit]
+Description=AI充值业务库存卡后台任务执行器
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+User=pojia
+Group=pojia
+WorkingDirectory=/opt/pojia/current/v1
+EnvironmentFile=/etc/pojia/runtime.env
+EnvironmentFile=/etc/pojia/provider.env
+ExecStart=/usr/bin/env PROVIDER_WRITES_ENABLED=false PROVIDER_CARD_WRITES_ENABLED=true /usr/bin/node scripts/card-stock-job-runner.js
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/opt/pojia /tmp
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

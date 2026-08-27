@@ -74,6 +74,21 @@ test('records a successful provider call with a sanitized summary', async () => 
   assert.equal(calls[1].parameters[0], 'SUCCESS');
 });
 
+test('finishes a provider call intent that was persisted with the business transition', async () => {
+  const calls = [];
+  await recordProviderCall({
+    pool: fakePool(calls),
+    orderId: 'order-1',
+    provider: 'zzshu',
+    operation: 'create_direct',
+    existingCall: { id: 77, startedAt: new Date('2026-08-20T00:00:00.000Z') },
+    action: async () => ({ orderNo: 'external-1' })
+  });
+  assert.equal(calls.length, 1);
+  assert.match(calls[0].sql, /UPDATE provider_calls/);
+  assert.equal(calls[0].parameters.at(-1), 77);
+});
+
 test('records an uncertain provider failure without swallowing it', async () => {
   const calls = [];
   const error = new ProviderError('request failed for nhs_secret-value', {

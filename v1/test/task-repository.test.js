@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { claimNextTask } from '../src/db/repositories/task-repository.js';
+import { claimNextTask, failTask } from '../src/db/repositories/task-repository.js';
 
 test('claims a pending task with a durable lease', async () => {
   const calls = [];
@@ -26,12 +26,21 @@ test('claims a pending task with a durable lease', async () => {
   };
   const pool = { getConnection: async () => connection };
 
-  const task = await claimNextTask(pool, { workerId: 'worker-a', leaseSeconds: 90 });
+  const task = await claimNextTask(pool, {
+    workerId: 'worker-a', leaseSeconds: 90, rechargeDispatchMode: 'AUTOMATIC'
+  });
 
   assert.equal(task.id, 7);
   assert.equal(task.attempts, 1);
   const selectCall = calls.find(([sql]) => typeof sql === 'string' && sql.includes('SELECT id'));
   assert.match(selectCall[0], /FOR UPDATE SKIP LOCKED/);
+  assert.match(selectCall[0], /INNER JOIN fulfillment_routes/);
+  assert.match(selectCall[0], /pa\.write_enabled = 1/);
+  assert.match(selectCall[0], /funds_risk_state IN \('ACTIVE', 'UNKNOWN', 'SETTLED'\)/);
+  assert.match(selectCall[0], /pc\.recharge_attempt_id IS NULL/);
+  assert.match(selectCall[0], /recharge_authorization_items manual_item/);
+  assert.equal(selectCall[1][0], 'AUTOMATIC');
+  assert.doesNotMatch(selectCall[0], /rechargePermit/);
   const updateCall = calls.find(([sql]) => typeof sql === 'string' && sql.includes('UPDATE tasks'));
   assert.deepEqual(updateCall[1].slice(0, 3), ['RUNNING', 'worker-a', 90]);
   assert.equal(calls.some(([name]) => name === 'commit'), true);
@@ -54,7 +63,7 @@ test('expired running tasks remain reclaimable after a worker crash', async () =
 
   const task = await claimNextTask(
     { getConnection: async () => connection },
-    { workerId: 'worker-b' }
+    { workerId: 'worker-b', rechargeDispatchMode: 'AUTOMATIC' }
   );
 
   assert.equal(task, null);
@@ -78,14 +87,68 @@ test('task claiming honors the allowed task-type boundary', async () => {
 
   assert.equal(await claimNextTask(pool, {
     workerId: 'worker-filtered',
-    allowedTaskTypes: []
+    allowedTaskTypes: [],
+    rechargeDispatchMode: 'AUTOMATIC'
   }), null);
   assert.equal(calls.length, 0);
 
   await claimNextTask(pool, {
     workerId: 'worker-filtered',
-    allowedTaskTypes: ['POLL_RECHARGE']
+    allowedTaskTypes: ['POLL_RECHARGE'],
+    rechargeDispatchMode: 'AUTOMATIC'
   });
   assert.match(calls[0][0], /task_type IN \(\?\)/);
-  assert.deepEqual(calls[0][1], ['PENDING', 'RUNNING', 'POLL_RECHARGE']);
+  assert.deepEqual(calls[0][1], ['AUTOMATIC', 'PENDING', 'RUNNING', 'POLL_RECHARGE']);
+});
+
+test('manual dispatch mode claims only explicit SINGLE or BATCH authorizations', async () => {
+  const calls = [];
+  const connection = {
+    beginTransaction: async () => {},
+    query: async (sql, parameters) => {
+      calls.push([sql, parameters]);
+      if (sql.includes('SELECT id, order_id')) return [[]];
+      return [{ affectedRows: 0 }];
+    },
+    commit: async () => {},
+    rollback: async () => {},
+    release: () => {}
+  };
+  await claimNextTask({ getConnection: async () => connection }, {
+    workerId: 'worker-gray',
+    allowedTaskTypes: ['SUBMIT_RECHARGE'],
+    rechargeDispatchMode: 'MANUAL'
+  });
+  assert.equal(calls[0][1][0], 'MANUAL');
+  assert.match(calls[0][0], /authorization_mode IN \('SINGLE', 'BATCH'\)/);
+  assert.match(calls[0][0], /manual_auth\.expires_at > UTC_TIMESTAMP/);
+});
+
+test('recoverable configuration waiting cannot exhaust the task retry budget', async () => {
+  const calls = [];
+  const connection = {
+    beginTransaction: async () => {},
+    query: async (sql, parameters) => {
+      calls.push([sql, parameters]);
+      if (sql.includes('SELECT attempts')) return [[{ attempts: 5, max_attempts: 5 }]];
+      return [{ affectedRows: 1 }];
+    },
+    commit: async () => {},
+    rollback: async () => {},
+    release: () => {}
+  };
+  const result = await failTask({ getConnection: async () => connection }, {
+    taskId: 9,
+    workerId: 'worker-a',
+    errorCode: 'RECHARGE_CONFIGURATION_BLOCKED',
+    errorMessage: 'waiting',
+    retryAt: new Date('2026-08-22T01:00:00.000Z'),
+    refundAttempt: true
+  });
+
+  // Exhaustion is evaluated after refunding the current claim.
+  assert.equal(result.status, 'PENDING');
+  const update = calls.find(([sql]) => sql.includes('UPDATE tasks'));
+  assert.match(update[0], /GREATEST\(attempts - 1, 0\)/);
+  assert.equal(update[1][2], 1);
 });

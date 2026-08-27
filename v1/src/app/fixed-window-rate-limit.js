@@ -1,14 +1,26 @@
 export function createFixedWindowRateLimit({
   limit = 10,
   windowMs = 60_000,
+  maxClients = 10_000,
   now = () => Date.now()
 } = {}) {
+  if (!Number.isSafeInteger(maxClients) || maxClients < 1) {
+    throw new TypeError('maxClients must be a positive safe integer');
+  }
   const clients = new Map();
   return function fixedWindowRateLimit(req, res, next) {
     const timestamp = now();
     const key = req.ip || req.socket?.remoteAddress || 'unknown';
     let state = clients.get(key);
     if (!state || state.resetAt <= timestamp) {
+      if (!state && clients.size >= maxClients) {
+        for (const [client, candidate] of clients) {
+          if (candidate.resetAt <= timestamp) clients.delete(client);
+        }
+        while (clients.size >= maxClients) {
+          clients.delete(clients.keys().next().value);
+        }
+      }
       state = { count: 0, resetAt: timestamp + windowMs };
       clients.set(key, state);
     }

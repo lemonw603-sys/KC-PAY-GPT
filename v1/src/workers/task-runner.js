@@ -6,12 +6,16 @@ import {
 import { redactSensitiveText } from '../security/redaction.js';
 
 export class TaskExecutionError extends Error {
-  constructor(message, { code = 'TASK_FAILED', retryable = false, delayMs = 5_000, cause } = {}) {
+  constructor(message, {
+    code = 'TASK_FAILED', retryable = false, delayMs = 5_000,
+    refundAttempt = false, cause
+  } = {}) {
     super(message, { cause });
     this.name = 'TaskExecutionError';
     this.code = code;
     this.retryable = retryable;
     this.delayMs = delayMs;
+    this.refundAttempt = refundAttempt;
   }
 }
 
@@ -35,12 +39,14 @@ export async function runOneTask({
   handlers,
   leaseSeconds = 60,
   allowedTaskTypes = null,
+  rechargeDispatchMode,
   repository = { claimNextTask, completeTask, failTask }
 }) {
   const task = await repository.claimNextTask(pool, {
     workerId,
     leaseSeconds,
-    allowedTaskTypes
+    allowedTaskTypes,
+    rechargeDispatchMode
   });
   if (!task) return { handled: false };
 
@@ -72,7 +78,8 @@ export async function runOneTask({
       errorCode: error.code,
       errorMessage: redactSensitiveText(error.message),
       retryAt: error.retryable ? new Date(Date.now() + error.delayMs) : null,
-      forceDead: !error.retryable
+      forceDead: !error.retryable,
+      refundAttempt: error.retryable && error.refundAttempt
     });
     return { handled: true, task, status: result.status, error };
   }

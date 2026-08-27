@@ -7,12 +7,14 @@ import { sessionFixture } from '../test-support/session-fixture.js';
 
 test('hashes the CDK and encrypts the complete Session before repository access', async () => {
   const key = crypto.randomBytes(32);
+  const cdkHashKey = crypto.randomBytes(32);
   const nowMs = Date.parse('2026-08-17T00:00:00.000Z');
   const session = sessionFixture({ nowMs });
   let stored;
   const service = createOrderIntakeService({
     pool: {},
     sessionEncryptionKey: key,
+    cdkHashKey,
     now: () => nowMs,
     repository: {
       createOrderFromCdk: async (_pool, input) => {
@@ -24,7 +26,16 @@ test('hashes the CDK and encrypts the complete Session before repository access'
 
   const result = await service({ cdk: '  CDK-fixture-1234  ', session });
   assert.equal(result.status, 'CREATED');
-  assert.equal(stored.cdkHash, crypto.createHash('sha256').update('CDK-fixture-1234').digest('hex'));
+  assert.deepEqual(stored.cdkLookup, {
+    current: {
+      version: 'hmac-sha256-v1',
+      hash: crypto.createHmac('sha256', cdkHashKey).update('CDK-fixture-1234').digest('hex')
+    },
+    legacy: {
+      version: 'sha256-v1',
+      hash: crypto.createHash('sha256').update('CDK-fixture-1234').digest('hex')
+    }
+  });
   assert.equal(stored.cardPurchaseIdempotencyKey, `purchase-${stored.orderId}`);
   assert.deepEqual(JSON.parse(decryptSecret(stored.sessionCiphertext, key)), session);
   assert.equal(JSON.stringify(stored).includes('CDK-fixture-1234'), false);

@@ -15,6 +15,7 @@ test('accepts the intended happy-path order transitions', () => {
     OrderStatus.CARD_READY,
     OrderStatus.SUBMITTING,
     OrderStatus.RECHARGE_PROCESSING,
+    OrderStatus.CANCELLATION_PENDING,
     OrderStatus.RECHARGE_SUCCESS,
     OrderStatus.CLOSED
   ];
@@ -23,6 +24,28 @@ test('accepts the intended happy-path order transitions', () => {
     assert.equal(canTransitionOrder(path[index], path[index + 1]), true);
     assert.doesNotThrow(() => assertOrderTransition(path[index], path[index + 1]));
   }
+});
+
+test('allows a locally invalid Session to enter and leave customer repair', () => {
+  assert.equal(canTransitionOrder(OrderStatus.CARD_READY, OrderStatus.WAITING_FOR_SESSION), true);
+  assert.equal(canTransitionOrder(OrderStatus.WAITING_FOR_SESSION, OrderStatus.CARD_READY), true);
+});
+
+test('allows Browser processing to start and safely return before payment', () => {
+  assert.doesNotThrow(() => assertOrderTransition(OrderStatus.CARD_READY, OrderStatus.RECHARGE_PROCESSING));
+  assert.doesNotThrow(() => assertOrderTransition(OrderStatus.RECHARGE_PROCESSING, OrderStatus.CARD_READY));
+  assert.doesNotThrow(() => assertOrderTransition(OrderStatus.RECHARGE_PROCESSING, OrderStatus.WAITING_FOR_SESSION));
+});
+
+test('allows a paid order to wait for replenishment and resume when a card is assigned', () => {
+  assert.equal(isKnownOrderStatus(OrderStatus.WAITING_FOR_CARD), true);
+  assert.equal(canTransitionOrder(OrderStatus.CREATED, OrderStatus.WAITING_FOR_CARD), true);
+  assert.equal(canTransitionOrder(OrderStatus.WAITING_FOR_CARD, OrderStatus.CARD_READY), true);
+});
+
+test('allows an untouched card-ready order to be cancelled before recharge submission', () => {
+  assert.equal(canTransitionOrder(OrderStatus.CARD_READY, OrderStatus.CLOSED), true);
+  assert.doesNotThrow(() => assertOrderTransition(OrderStatus.CARD_READY, OrderStatus.CLOSED));
 });
 
 test('blocks retrying an ambiguous submission by state transition', () => {

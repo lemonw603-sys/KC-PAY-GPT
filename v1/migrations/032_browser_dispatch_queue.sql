@@ -1,0 +1,26 @@
+-- Durable Browser dispatch queue. Payloads are references only; no Session,
+-- card credentials, Checkout authority or plaintext secrets are accepted here.
+CREATE TABLE IF NOT EXISTS browser_dispatch_jobs (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  job_key VARCHAR(191) NOT NULL,
+  recharge_attempt_id CHAR(36) NOT NULL,
+  order_id CHAR(36) NOT NULL,
+  executor_profile_id CHAR(36) NULL,
+  status VARCHAR(24) NOT NULL DEFAULT 'QUEUED',
+  lease_owner VARCHAR(128) NULL,
+  lease_token_hash CHAR(64) NULL,
+  lease_until TIMESTAMP(3) NULL,
+  attempt_count INT UNSIGNED NOT NULL DEFAULT 0,
+  last_error_code VARCHAR(64) NULL,
+  queued_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  claimed_at TIMESTAMP(3) NULL,
+  completed_at TIMESTAMP(3) NULL,
+  updated_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+  UNIQUE KEY uq_browser_dispatch_job_key (job_key),
+  UNIQUE KEY uq_browser_dispatch_attempt (recharge_attempt_id),
+  KEY idx_browser_dispatch_claim (status, lease_until, queued_at),
+  CONSTRAINT chk_browser_dispatch_status CHECK (status IN ('QUEUED', 'CLAIMED', 'COMPLETED', 'CANCELLED')),
+  CONSTRAINT fk_browser_dispatch_attempt FOREIGN KEY (recharge_attempt_id) REFERENCES recharge_attempts(id),
+  CONSTRAINT fk_browser_dispatch_order FOREIGN KEY (order_id) REFERENCES orders(id),
+  CONSTRAINT fk_browser_dispatch_profile FOREIGN KEY (executor_profile_id) REFERENCES executor_profiles(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

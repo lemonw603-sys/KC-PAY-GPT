@@ -6,8 +6,8 @@
   <meta name="color-scheme" content="light">
   <meta name="theme-color" content="#f5f8fc">
   <title>登录 · Plus 运营后台</title>
-  <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/admin/assets/admin.css?v=2">
+  <link rel="icon" href="/admin/assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/admin/assets/admin.css?v=8">
   <script src="/admin/assets/login.js?v=2" defer></script>
 </head>
 <body class="login-body">
@@ -26,6 +26,8 @@
       <h2>登录运营后台</h2>
       <p>请输入后台密码继续。</p>
       <form id="login-form" novalidate>
+        <label class="sr-only" for="username">管理员账户</label>
+        <input id="username" name="username" type="text" value="admin" autocomplete="username" class="sr-only" tabindex="-1">
         <label for="password">后台密码</label>
         <input id="password" name="password" type="password" minlength="12" maxlength="256" autocomplete="current-password" required autofocus>
         <button class="primary-button" id="login-button" type="submit">登录后台 <span aria-hidden="true">→</span></button>

@@ -3,6 +3,7 @@ import { createOrderFromCdk } from '../db/repositories/order-intake-repository.j
 import { OrderIntakeError } from '../domain/order-intake-error.js';
 import { validateChatGptSession } from '../domain/session-validation.js';
 import { encryptSecret } from '../security/secret-box.js';
+import { createCdkLookup } from '../security/cdk-code.js';
 
 function normalizeCdk(value) {
   if (typeof value !== 'string') {
@@ -24,6 +25,7 @@ function normalizeCdk(value) {
 export function createOrderIntakeService({
   pool,
   sessionEncryptionKey,
+  cdkHashKey,
   now = () => Date.now(),
   repository = { createOrderFromCdk }
 }) {
@@ -46,7 +48,7 @@ export function createOrderIntakeService({
     return repository.createOrderFromCdk(pool, {
       orderId,
       publicNo,
-      cdkHash: crypto.createHash('sha256').update(cdk, 'utf8').digest('hex'),
+      cdkLookup: createCdkLookup(cdk, cdkHashKey),
       customerEmail: validated.customerEmail,
       chatgptAccountId: validated.chatgptAccountId,
       sessionCiphertext,

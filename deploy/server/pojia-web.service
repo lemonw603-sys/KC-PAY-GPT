@@ -1,5 +1,5 @@
 [Unit]
-Description=破甲 v1 Web
+Description=AI充值业务 v1 Web
 After=network-online.target docker.service
 Wants=network-online.target
 Requires=docker.service
@@ -11,6 +11,7 @@ Group=pojia
 WorkingDirectory=/opt/pojia/current/v1
 EnvironmentFile=/etc/pojia/runtime.env
 EnvironmentFile=/etc/pojia/admin.env
+EnvironmentFile=-/etc/pojia/card-read.env
 ExecStart=/usr/bin/node src/server.js
 Restart=on-failure
 RestartSec=3

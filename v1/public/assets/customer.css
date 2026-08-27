@@ -211,6 +211,8 @@ input[type="text"]:focus, textarea:focus { border-color: #4f86de; box-shadow: 0 
 .status-chip[data-status="SUCCESS"] { color: var(--success); background: #e8f7f2; }
 .status-chip[data-status="FAILED"] { color: var(--danger); background: #fff0f1; }
 .status-chip[data-status="REVIEWING"] { color: var(--warning); background: #fff6e5; }
+.status-chip[data-status="ACTION_REQUIRED"] { color: var(--danger); background: #fff0f1; }
+.status-chip[data-status="FINALIZING"] { color: var(--warning); background: #fff6e5; }
 .result-card h2 { margin: 20px 0 7px; font-size: 23px; }
 .result-card > p { color: var(--muted); line-height: 1.65; }
 .order-number { margin-top: 20px; padding: 13px 14px; border-radius: 11px; border: 1px solid var(--line); background: var(--surface-soft); }
@@ -219,6 +221,7 @@ input[type="text"]:focus, textarea:focus { border-color: #4f86de; box-shadow: 0 
 .order-number code { overflow-wrap: anywhere; color: #314961; font-size: 12px; }
 .copy-button { flex: none; border: 1px solid var(--line); border-radius: 8px; background: white; color: var(--text); padding: 6px 9px; font-size: 11px; }
 .polling-note { margin-bottom: 0; font-size: 10px; }
+.session-replacement { margin-top: 16px; padding: 16px; border: 1px solid #f0c6a1; border-radius: 12px; background: #fffaf3; }
 .notice { margin-top: 14px; padding: 12px 14px; border: 1px solid #efb8bd; border-radius: 11px; background: #fff2f3; color: #a8323e; font-size: 12px; line-height: 1.55; }
 .notice[data-kind="success"] { border-color: #a9d9ca; background: #edf9f5; color: #166d57; }
 

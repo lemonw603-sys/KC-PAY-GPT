@@ -11,7 +11,9 @@ const outcomes = new Set([
 
 export async function startProviderCall(pool, {
   orderId = null,
+  rechargeAttemptId = null,
   provider,
+  providerAccountId = null,
   operation,
   requestKey = null,
   attemptNo = 1,
@@ -19,9 +21,11 @@ export async function startProviderCall(pool, {
 }) {
   const [result] = await pool.query(
     `INSERT INTO provider_calls
-     (order_id, provider, operation, request_key, attempt_no, outcome, started_at)
-     VALUES (?, ?, ?, ?, ?, 'STARTED', ?)`,
-    [orderId, provider, operation, requestKey, attemptNo, startedAt]
+     (order_id, recharge_attempt_id, provider, provider_account_id,
+      operation, request_key, attempt_no, outcome, started_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, 'STARTED', ?)`,
+    [orderId, rechargeAttemptId, provider, providerAccountId,
+      operation, requestKey, attemptNo, startedAt]
   );
   return { id: result.insertId, startedAt };
 }

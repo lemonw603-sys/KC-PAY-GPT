@@ -2,7 +2,7 @@
 
 - 日期：2026-08-17
 - 路径：`POST /api/v1/orders`
-- 当前范围：仅创建 Plus 订单，不触发真实 Provider 写入
+- 当前范围：仅创建 Plus 产品订单；目标账号当前已是 Plus 时不得进入直充；真实 Provider 写入必须经过单笔门禁
 
 ## 请求
 
@@ -20,9 +20,10 @@
 ```
 
 - `session` 必须保留 ChatGPT Session 的完整 JSON，未知扩展字段不会被删除。
+- 业务硬规则：Plus 是要购买的产品，不是可重复充值的当前账号状态；目标账号当前为 Plus 时，订单不得调用直充 Provider。
 - 本地预检查必填字段、`accessToken` 的 JWT 形状与 `iat/exp`、`sessionToken` 的五段 JWE 形状，并要求 access token 至少剩余 5 分钟。
 - 本地不验证 JWT 签名；真实有效性最终由直充上游验证。
-- 卡段和开卡金额不允许客户传入，只读取内部 `app_settings`。
+- 卡段、开卡金额和最低所需卡余额不允许客户传入，只读取内部 `app_settings`，并随订单保存为不可变快照。
 
 ## 成功响应
 
@@ -57,7 +58,7 @@ HTTP/1.1 201 Created
 一次成功请求在同一 MySQL 事务中：
 
 1. 锁定接单开关和默认卡配置。
-2. 按 SHA-256 哈希锁定一枚 `AVAILABLE` CDK。
+2. 新 CDK 按 HMAC-SHA-256 锁定；迁移前 CDK 同时用版本化 SHA-256 查询，且必须唯一命中一枚 `AVAILABLE` CDK。
 3. 创建 `CREATED` 订单，Session 以 AES-256-GCM 密文保存。
 4. 将 CDK 改为 `REDEEMED` 并绑定订单。
 5. 写入创建事件和唯一 `PURCHASE_CARD` 任务。
@@ -80,7 +81,7 @@ HTTP/1.1 201 Created
 { "cdk": "PJ-..." }
 ```
 
-两者必须且只能提交一个。CDK 在查询服务内转换为 SHA-256，不会传入数据库查询日志或响应。
+两者必须且只能提交一个。CDK 在查询服务内转换为版本化 HMAC/SHA-256 双查值，不会传入数据库查询日志或响应。
 
 成功响应：
 
@@ -100,11 +101,36 @@ HTTP/1.1 201 Created
 | --- | --- |
 | `QUEUED` | 订单已建立，等待执行 |
 | `PROCESSING` | 开卡、提交或轮询中 |
+| `ACTION_REQUIRED` | 需要客户在原订单更换 Session |
+| `FINALIZING` | 充值付款已确认，正在确认自动续费取消 |
 | `REVIEWING` | 提交结果不明、对账异常或未知内部状态，需要复核 |
-| `SUCCESS` | 直充已返回最终成功 |
+| `SUCCESS` | 充值成功且自动续费取消已经确认 |
 | `FAILED` | 失败已经延迟复查确认 |
 
 - 查询不返回内部状态、失败原因、卡信息、Session、Provider 或退款信息。
 - 已关闭订单根据关闭前最后一个业务状态返回成功、失败或复核，不把 `CLOSED` 暴露给客户。
 - 成功和失败响应均带 `Cache-Control: no-store`。
 - 默认单 IP 每分钟 30 次；不存在返回 `404 order_not_found`，请求同时包含两种凭证或均缺失返回 `400 invalid_order_query`。
+
+## 原订单更换 Session
+
+路径：`POST /api/v1/orders/session`
+
+请求必须包含 `publicNo` 或原 CDK 二选一，以及新的完整 Session：
+
+```json
+{
+  "publicNo": "PJV1-...",
+  "session": { "user": {}, "account": {}, "expires": "...", "accessToken": "...", "sessionToken": "..." }
+}
+```
+
+约束：
+
+- 仅允许 `WAITING_FOR_SESSION` 原订单；不创建新订单，也不再次消耗 CDK；
+- 最多更换 3 次；72 小时从第一次明确的客户可修复错误开始，库存或系统等待不计时；
+- 存在 `ACTIVE | UNKNOWN | SETTLED` 资金风险 attempt 时拒绝自动更换，转人工核对；
+- 新 Session 先按订单创建时的同一合同校验，再加密覆盖；历史只记录新旧邮箱/账号 ID、原因、序号和时间，不保存旧 Session；
+- 更换后重新排队付款前准备与提交任务，旧的一次性放行凭证被删除。
+
+成功响应只返回订单查询码、客户状态、已使用次数和剩余次数，不返回 Session 或内部 ID。

@@ -6,9 +6,11 @@ import { fileURLToPath } from 'node:url';
 import {
   HnskjCardProvider,
   mapCardCredentials,
-  mapCardProvisioning
+  mapCardProvisioning,
+  mapPurchasedCard,
+  mapCardRechargeResult
 } from '../src/providers/hnskj-card.js';
-import { runReadOnlyChecks } from '../scripts/provider-read-check.js';
+import { assertProviderWritesDisabled, runReadOnlyChecks } from '../scripts/provider-read-check.js';
 import { ProviderError, ProviderSchemaError } from '../src/providers/http-client.js';
 import { ZzshuRechargeProvider } from '../src/providers/zzshu-recharge.js';
 
@@ -64,6 +66,38 @@ test('Hnskj purchase sends server-side auth and the stable idempotency key', asy
   });
 });
 
+test('Hnskj existing-card recharge uses the documented endpoint and stable idempotency key', async () => {
+  const calls = [];
+  const provider = new HnskjCardProvider({
+    baseUrl: 'https://cards.example.test', apiKey: 'secret',
+    fetchImpl: async (url, options) => {
+      calls.push({ url, options });
+      return new Response(JSON.stringify({ success: true, data: { status: 'pending' } }), {
+        status: 200, headers: { 'content-type': 'application/json' }
+      });
+    }
+  });
+  await provider.rechargeCard({
+    cardId: 'card-7', amount: 16, idempotencyKey: 'recharge-card-7-20260822'
+  });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, 'https://cards.example.test/cards/card-7/recharge');
+  assert.equal(calls[0].options.method, 'POST');
+  assert.equal(calls[0].options.headers['X-Idempotency-Key'], 'recharge-card-7-20260822');
+  assert.deepEqual(JSON.parse(calls[0].options.body), { amount: 16 });
+});
+
+test('Hnskj existing-card recharge rejects unsafe amount or missing card identity before network access', async () => {
+  let calls = 0;
+  const provider = new HnskjCardProvider({
+    baseUrl: 'https://cards.example.test', apiKey: 'secret',
+    fetchImpl: async () => { calls += 1; return new Response('{}'); }
+  });
+  await assert.rejects(provider.rechargeCard({ cardId: 'card-7', amount: 16.5, idempotencyKey: 'recharge-card-7-20260822' }), /positive integer/);
+  await assert.rejects(provider.rechargeCard({ cardId: '', amount: 16, idempotencyKey: 'recharge-card-7-20260822' }), /card ID/);
+  assert.equal(calls, 0);
+});
+
 test('Hnskj marks 503 as same-key retryable but never invents a new key', async () => {
   const provider = new HnskjCardProvider({
     baseUrl: 'https://card.example/api/open/v1',
@@ -83,6 +117,30 @@ test('Hnskj marks 503 as same-key retryable but never invents a new key', async 
   );
 });
 
+test('Hnskj marks 502 as same-key retryable while preserving the unknown result', async () => {
+  const calls = [];
+  const provider = new HnskjCardProvider({
+    baseUrl: 'https://card.example/api/open/v1',
+    apiKey: 'nhs_test_key',
+    fetchImpl: async (url, init) => {
+      calls.push({ url, init });
+      return response({ success: false, message: '网关异常' }, 502);
+    }
+  });
+
+  await assert.rejects(
+    provider.purchaseCard({
+      cardTypeId: 7,
+      openCardAmount: 25,
+      idempotencyKey: 'order-123456789012345'
+    }),
+    (error) => error instanceof ProviderError
+      && error.retryable === true
+      && error.uncertain === true
+  );
+  assert.equal(calls[0].init.headers['X-Idempotency-Key'], 'order-123456789012345');
+});
+
 test('Hnskj rejects an invalid idempotency key before network access', async () => {
   let called = false;
   const provider = new HnskjCardProvider({
@@ -98,6 +156,18 @@ test('Hnskj rejects an invalid idempotency key before network access', async () 
   assert.equal(called, false);
 });
 
+test('Hnskj purchase mapper accepts known card ID variants and marks a missing ID uncertain', () => {
+  assert.equal(mapPurchasedCard({ data: { card: { id: 451 } } }), '451');
+  assert.equal(mapPurchasedCard({ data: { card_id: 'card-1' } }), 'card-1');
+  assert.throws(
+    () => mapPurchasedCard({ data: { accepted: true } }),
+    (error) => error instanceof ProviderSchemaError
+      && error.provider === 'hnskj'
+      && error.uncertain === true
+      && error.retryable === false
+  );
+});
+
 test('Hnskj read schemas match the one-time live response shapes', async () => {
   const calls = [];
   const provider = new HnskjCardProvider({
@@ -107,7 +177,8 @@ test('Hnskj read schemas match the one-time live response shapes', async () => {
       response(hnskjReadFixtures.profile),
       response(hnskjReadFixtures.balance),
       response(hnskjReadFixtures.cardTypes),
-      response(hnskjReadFixtures.cards)
+      response(hnskjReadFixtures.cards),
+      response(hnskjReadFixtures.transactions)
     ], calls)
   });
 
@@ -115,12 +186,64 @@ test('Hnskj read schemas match the one-time live response shapes', async () => {
   const balance = await provider.accountBalance();
   const cardTypes = await provider.cardTypes();
   const cards = await provider.cards({ page: 1, pageSize: 20 });
+  const transactions = await provider.transactions('fixture-card-id');
 
   assert.equal(profile.data.balance, '0.000000');
   assert.equal(balance.data.exchangeRate, '1.000000');
   assert.equal(cardTypes.data.cardTypes.length, 1);
   assert.equal(cards.data.cards.length, 0);
-  assert.equal(calls.length, 4);
+  assert.equal(transactions.data.transactions[0].type, 'card_balance_return');
+  assert.equal(transactions.data.transactions[1].originalCurrency, 'PHP');
+  assert.equal(calls.length, 5);
+});
+
+test('Hnskj transaction schema rejects missing stable transaction identity', async () => {
+  const invalid = structuredClone(hnskjReadFixtures.transactions);
+  delete invalid.data.transactions[0].id;
+  const provider = new HnskjCardProvider({
+    baseUrl: 'https://card.example/api/open/v1',
+    apiKey: 'nhs_test_key',
+    fetchImpl: async () => response(invalid)
+  });
+
+  await assert.rejects(
+    provider.transactions('fixture-card-id'),
+    (error) => error instanceof ProviderSchemaError && error.uncertain === false
+  );
+});
+
+test('Hnskj accepts the observed complete transaction response without page metadata', async () => {
+  const observed = structuredClone(hnskjReadFixtures.transactions);
+  delete observed.data.page;
+  delete observed.data.pageSize;
+  delete observed.data.cardNo;
+  const provider = new HnskjCardProvider({
+    baseUrl: 'https://card.example/api/open/v1',
+    apiKey: 'nhs_test_key',
+    fetchImpl: async () => response(observed)
+  });
+  const result = await provider.transactions('fixture-card-id');
+  assert.equal(result.data.total, result.data.transactions.length);
+  assert.equal(result.data.page, undefined);
+});
+
+test('Hnskj card detail, balance refresh, and withdrawal reject non-object data at the boundary', async () => {
+  const provider = new HnskjCardProvider({
+    baseUrl: 'https://card.example/api/open/v1',
+    apiKey: 'nhs_test_key',
+    fetchImpl: fetchQueue([
+      response({ success: true, data: 'drifted-card' }),
+      response({ success: true, data: null }),
+      response({ success: true, data: [] })
+    ], [])
+  });
+
+  await assert.rejects(provider.card('fixture-card-id'), ProviderSchemaError);
+  await assert.rejects(provider.refreshBalance('fixture-card-id'), ProviderSchemaError);
+  await assert.rejects(
+    provider.withdraw('fixture-card-id', 'withdraw-123456789012'),
+    ProviderSchemaError
+  );
 });
 
 test('Hnskj rejects amount type drift instead of accepting JavaScript numbers', async () => {
@@ -156,6 +279,21 @@ test('Hnskj card readiness requires terminal status, funded balance and credenti
   assert.equal(failed.state, 'failed');
 });
 
+test('Hnskj card readiness uses the independent minimum balance instead of funded amount', () => {
+  const envelope = {
+    data: {
+      status: 'active',
+      cardBalance: '15.75',
+      cardNumber: '4242424242424242',
+      cvv: '123',
+      expiryMonth: 12,
+      expiryYear: 2032
+    }
+  };
+  assert.equal(mapCardProvisioning(envelope, 15.5).state, 'ready');
+  assert.equal(mapCardProvisioning(envelope, 16).state, 'pending');
+});
+
 test('Hnskj card credentials mapper accepts known read response fields and rejects drift', () => {
   assert.deepEqual(mapCardCredentials({
     data: { number: '4242424242424242', expMonth: 12, expYear: 2032, cvv: '123' }
@@ -181,6 +319,21 @@ test('read-only deployment check calls only provider read operations', async () 
   });
   assert.deepEqual(calls, ['profile', 'balance', 'card-types', 'cards', 'zzshu-connection']);
   assert.equal(result.hnskj.accountId, 7);
+});
+
+test('read-only deployment check refuses every split write switch', () => {
+  assert.doesNotThrow(() => assertProviderWritesDisabled({
+    PROVIDER_WRITES_ENABLED: 'false',
+    PROVIDER_CARD_WRITES_ENABLED: 'false',
+    PROVIDER_RECHARGE_WRITES_ENABLED: 'false'
+  }));
+  for (const key of [
+    'PROVIDER_WRITES_ENABLED',
+    'PROVIDER_CARD_WRITES_ENABLED',
+    'PROVIDER_RECHARGE_WRITES_ENABLED'
+  ]) {
+    assert.throws(() => assertProviderWritesDisabled({ [key]: 'true' }), new RegExp(key));
+  }
 });
 
 test('Zzshu direct creation uses X-API-Key and strips secrets from the result', async () => {
@@ -242,6 +395,8 @@ test('Zzshu status query never returns full token or PAN', async () => {
         token: { accessToken: 'secret' },
         bank_card_no: '4242424242424242',
         payment_result: { success: true, status: 'paid', proxy: 'secret' },
+        payment_amount: '1150.00',
+        payment_currency: 'php',
         is_subscription_cancelled: 0
       }
     })
@@ -255,12 +410,32 @@ test('Zzshu status query never returns full token or PAN', async () => {
     status: 'success',
     failureReason: null,
     paymentResult: { success: true, status: 'paid' },
+    paymentAmount: '1150.00',
+    paymentCurrency: 'PHP',
+    paymentDetailsStatus: 'valid',
     isSubscriptionCancelled: 0,
     finishedAt: null,
     updatedAt: null
   });
   assert.equal('token' in status, false);
   assert.equal('bankCardNo' in status, false);
+});
+
+test('Zzshu keeps a confirmed status while refusing malformed settlement fields', async () => {
+  const provider = new ZzshuRechargeProvider({
+    baseUrl: 'https://card.example/api/v1',
+    apiKey: 'stable-recharge-key',
+    fetchImpl: async () => response({
+      code: 0,
+      message: 'success',
+      data: { status: 'success', payment_amount: '1,150.00', payment_currency: 'PHP' }
+    })
+  });
+  const status = await provider.queryStatus('DIRECT-abc');
+  assert.equal(status.status, 'success');
+  assert.equal(status.paymentAmount, null);
+  assert.equal(status.paymentCurrency, null);
+  assert.equal(status.paymentDetailsStatus, 'invalid');
 });
 
 test('Zzshu trusted workflow status returns the latest Session but still drops PAN', async () => {
@@ -421,4 +596,15 @@ test('Native 422 validation response is a definite pre-create rejection', async 
       && error.uncertain === false
       && error.retryable === false
   );
+});
+
+test('maps Hnskj card recharge outcomes without guessing unknown states', () => {
+  assert.deepEqual(mapCardRechargeResult({ success: true, data: { status: 'pending', id: 'r-1' } }), {
+    state: 'PENDING', externalReference: 'r-1'
+  });
+  assert.deepEqual(mapCardRechargeResult({ success: true, data: { status: 'success', id: 'r-2' } }), {
+    state: 'SETTLED', externalReference: 'r-2'
+  });
+  assert.throws(() => mapCardRechargeResult({ success: true, data: { status: 'mystery' } }),
+    (error) => error instanceof ProviderSchemaError && error.uncertain === true);
 });

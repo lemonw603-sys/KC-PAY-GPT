@@ -27,16 +27,61 @@ const statusDataSchema = z.object({
   status: z.enum(['pending', 'processing', 'success', 'failed']),
   failure_reason: z.string().nullable().optional(),
   payment_result: z.unknown().nullable().optional(),
+  payment_amount: z.union([z.string(), z.number()]).nullable().optional(),
+  payment_currency: z.string().nullable().optional(),
   token: z.record(z.string(), z.unknown()).nullable().optional(),
   is_subscription_cancelled: z.union([z.literal(0), z.literal(1)]).optional(),
   finished_at: z.string().nullable().optional(),
   updated_at: z.string().optional()
 }).passthrough();
 
+function normalizePaymentAmount(value) {
+  if (value == null || value === '') return null;
+  const text = String(value).trim();
+  return /^\d+(?:\.\d{1,6})?$/.test(text) ? text : undefined;
+}
+
+function normalizePaymentCurrency(value) {
+  if (value == null || value === '') return null;
+  const currency = String(value).trim().toUpperCase();
+  return /^[A-Z]{3,8}$/.test(currency) ? currency : undefined;
+}
+
+function normalizePaymentDetails(amountValue, currencyValue) {
+  const amount = normalizePaymentAmount(amountValue);
+  const currency = normalizePaymentCurrency(currencyValue);
+  const bothMissing = amount === null && currency === null;
+  if (bothMissing) return { paymentAmount: null, paymentCurrency: null, paymentDetailsStatus: 'missing' };
+  const bothValid = typeof amount === 'string' && typeof currency === 'string';
+  if (bothValid) return { paymentAmount: amount, paymentCurrency: currency, paymentDetailsStatus: 'valid' };
+  return { paymentAmount: null, paymentCurrency: null, paymentDetailsStatus: 'invalid' };
+}
+
 function normalizeBaseUrl(value) {
   const url = String(value || '').trim().replace(/\/+$/, '');
   if (!url) throw new Error('Zzshu recharge API base URL is required');
   return url;
+}
+
+/**
+ * Build the direct-order request without performing network I/O.
+ * This is intentionally separate from createDirectOrder so pre-payment
+ * validation cannot accidentally submit a charge.
+ */
+export function buildDirectOrderRequest({ cardNumber, expMonth, expYear, cvv, token, planType = 'plus' }) {
+  return {
+    path: '/third-party/orders/direct',
+    method: 'POST',
+    body: {
+      orderType: 'direct',
+      cardNumber: String(cardNumber),
+      expMonth: Number(expMonth),
+      expYear: Number(expYear),
+      cvv: String(cvv),
+      token,
+      planType: String(planType)
+    }
+  };
 }
 
 function parseEnvelope(response, { uncertainOnSchema = false } = {}) {
@@ -88,6 +133,7 @@ function normalizeStatus(value) {
     });
   }
   const data = result.data;
+  const payment = normalizePaymentDetails(data.payment_amount, data.payment_currency);
   return {
     orderNo: data.order_no || null,
     cardKey: data.card_key || null,
@@ -95,6 +141,7 @@ function normalizeStatus(value) {
     status: data.status,
     failureReason: data.failure_reason ?? null,
     paymentResult: safePaymentResult(data.payment_result),
+    ...payment,
     isSubscriptionCancelled: data.is_subscription_cancelled ?? null,
     finishedAt: data.finished_at ?? null,
     updatedAt: data.updated_at ?? null
@@ -155,18 +202,10 @@ export class ZzshuRechargeProvider {
   }
 
   async createDirectOrder({ cardNumber, expMonth, expYear, cvv, token, planType = 'plus' }) {
-    const body = {
-      orderType: 'direct',
-      cardNumber: String(cardNumber),
-      expMonth: Number(expMonth),
-      expYear: Number(expYear),
-      cvv: String(cvv),
-      token,
-      planType: String(planType)
-    };
+    const request = buildDirectOrderRequest({ cardNumber, expMonth, expYear, cvv, token, planType });
     const response = await this.request('/third-party/orders/direct', {
       method: 'POST',
-      body
+      body: request.body
     });
     const envelope = parseEnvelope(response, {
       uncertainOnSchema: response.ok || response.status >= 500

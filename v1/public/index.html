@@ -8,8 +8,8 @@
   <meta name="description" content="ChatGPT Plus CDK卡密提交与订单进度查询">
   <title>Plus 充值中心</title>
   <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/assets/customer.css?v=4">
-  <script src="/assets/customer.js?v=4" defer></script>
+  <link rel="stylesheet" href="/assets/customer.css?v=5">
+  <script src="/assets/customer.js?v=5" defer></script>
 </head>
 <body>
   <div class="page-shell">
@@ -102,6 +102,15 @@
             <h2 id="result-title">订单已建立</h2>
             <p id="result-description">系统已收到订单，请稍后查询进度。</p>
             <div class="order-number"><span>订单查询码</span><div><code id="public-no">—</code><button class="copy-button" id="copy-button" type="button">复制</button></div></div>
+            <form class="session-replacement" id="session-replacement-form" hidden>
+              <div class="field">
+                <div class="label-row"><label for="replacement-session-input">更换账号 Session</label><span id="replacement-limit"></span></div>
+                <textarea id="replacement-session-input" rows="7" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="请粘贴免费账号的完整 Session JSON"></textarea>
+                <p class="field-help">新 Session 会覆盖当前订单资料，不会消耗新 CDK，也不会新建订单。</p>
+              </div>
+              <label class="confirmation"><input id="replacement-confirm-input" type="checkbox"><span>我确认新账号当前是免费账号。</span></label>
+              <button class="primary-button" id="replacement-submit-button" type="submit"><span>更换并继续处理</span><span class="button-arrow" aria-hidden="true">→</span></button>
+            </form>
             <p class="polling-note" id="polling-note"></p>
           </section>
           <div class="notice" id="notice" role="status" aria-live="polite" tabindex="-1" hidden></div>

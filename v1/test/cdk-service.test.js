@@ -4,6 +4,7 @@ import {
   generateCdks,
   normalizeBatchNo,
   normalizeImportedCdks,
+  normalizePlanType,
   validateBatchCount
 } from '../src/services/cdk-service.js';
 
@@ -11,19 +12,29 @@ test('generates unique high-entropy-shaped CDKs without ambiguous characters', (
   const codes = generateCdks(250);
   assert.equal(new Set(codes).size, 250);
   for (const code of codes) {
-    assert.match(code, /^PJ-[A-HJ-KM-NP-Z2-9]{20}$/);
+    assert.match(code, /^PJ-[A-HJ-KM-NP-Z2-9]{5}(?:-[A-HJ-KM-NP-Z2-9]{5}){3}$/);
     assert.doesNotMatch(code, /[01ILO]/);
   }
 });
 
 test('normalizes line imports and reports duplicates without changing case', () => {
-  const result = normalizeImportedCdks('\uFEFFPJ-ABCDEFGH\r\nPJ-abcdefgh\nPJ-ABCDEFGH\n\n');
+  const first = 'PJ-ABCDEFGHJKMNPQRST234';
+  const second = 'PJ-23456789ABCDEFGHJKMN';
+  const result = normalizeImportedCdks(`\uFEFF${first}\r\n${second}\n${first}\n\n`);
   assert.deepEqual(result, {
-    codes: ['PJ-ABCDEFGH', 'PJ-abcdefgh'],
+    codes: [first, second],
     inputCount: 3,
     duplicateInputCount: 1
   });
   assert.throws(() => normalizeImportedCdks('bad code'), (error) => error.code === 'INVALID_CDK');
+});
+
+test('accepts both grouped new codes and legacy ungrouped codes', () => {
+  const grouped = 'PJ-ABCDE-FGHJK-MNPQR-ST234';
+  const legacy = 'PJ-ABCDEFGHJKMNPQRST234';
+  assert.deepEqual(normalizeImportedCdks(`${grouped}\n${legacy}`), {
+    codes: [grouped, legacy], inputCount: 2, duplicateInputCount: 0
+  });
 });
 
 test('validates count and creates traceable bounded batch identifiers', () => {
@@ -35,4 +46,10 @@ test('validates count and creates traceable bounded batch identifiers', () => {
     now: () => new Date('2026-08-17T10:20:30.123Z'),
     randomSuffix: () => 'A1B2C3'
   }), 'B-20260817102030123-A1B2C3');
+});
+
+test('keeps the first release explicitly Plus-only', () => {
+  assert.equal(normalizePlanType(), 'plus');
+  assert.equal(normalizePlanType('PLUS'), 'plus');
+  assert.throws(() => normalizePlanType('pro_5x'), (error) => error.code === 'INVALID_PLAN_TYPE');
 });

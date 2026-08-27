@@ -4,7 +4,7 @@ category: "tooling"
 tags: ["mysql2", "tls", "nodejs"]
 created: 2026-08-17
 last_validated: "2026-08-17"
-source_task: "破甲 v1 production MySQL security contract"
+source_task: "AI充值业务 v1 production MySQL security contract"
 reusable_script: ""
 status: "candidate"
 ---

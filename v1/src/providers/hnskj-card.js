@@ -71,6 +71,41 @@ const cardsDataSchema = z.object({
   source: z.string()
 }).passthrough();
 
+// These endpoints have had field-level drift across observed responses.  We
+// still require an object-shaped data payload at the provider boundary so a
+// scalar/null response cannot leak into workflow code; operation-specific
+// field interpretation remains in the mapper that owns the business rule.
+const objectDataSchema = z.record(z.string(), z.unknown());
+
+const transactionSchema = z.object({
+  id: z.string().min(1),
+  type: z.string().min(1),
+  status: z.string().min(1),
+  typeText: z.string().optional(),
+  statusText: z.string().optional(),
+  amount: z.number(),
+  currency: z.string().length(3),
+  fee: z.number().optional(),
+  tradeTime: z.string().optional(),
+  relatedTxnId: z.string().optional(),
+  settlementStatus: z.string().optional(),
+  originalAmount: z.number().optional(),
+  originalCurrency: z.string().length(3).optional(),
+  merchantName: z.string().optional(),
+  merchantCountry: z.string().optional(),
+  merchantMcc: z.string().optional(),
+  platformCardId: z.string().optional()
+}).passthrough();
+
+const transactionsDataSchema = z.object({
+  transactions: z.array(transactionSchema),
+  total: z.number(),
+  page: z.number().optional(),
+  pageSize: z.number().optional(),
+  source: z.string().optional(),
+  cardNo: z.string().optional()
+}).passthrough();
+
 function normalizeBaseUrl(value) {
   const url = String(value || '').trim().replace(/\/+$/, '');
   if (!url) throw new Error('Hnskj card API base URL is required');
@@ -101,7 +136,7 @@ function parseEnvelope(response, { uncertainOnSchema = false, retryableOnSchema 
       provider: 'hnskj',
       status: response.status,
       businessCode: error.code,
-      retryable: response.status === 503,
+      retryable: response.status === 502 || response.status === 503,
       uncertain: response.status >= 500
     });
   }
@@ -119,10 +154,55 @@ function validateData(envelope, schema, operation) {
   return { ...envelope, data: result.data };
 }
 
+function validateObjectData(envelope, operation) {
+  return validateData(envelope, objectDataSchema, operation);
+}
+
 const CARD_FAILURE_STATUSES = new Set(['failed', 'failure', 'invalid', 'inactive', 'closed', 'cancelled', 'canceled']);
 
 function cardData(envelope) {
   return envelope?.data?.card ?? envelope?.data ?? {};
+}
+
+function valueAt(object, paths) {
+  for (const path of paths) {
+    let value = object;
+    for (const key of path) value = value?.[key];
+    if (value !== undefined && value !== null && String(value).trim() !== '') return value;
+  }
+  return null;
+}
+
+export function mapPurchasedCard(envelope) {
+  const data = envelope?.data;
+  const providerCardId = valueAt(data, [
+    ['card', 'id'], ['card', 'cardId'], ['card', 'card_id'],
+    ['id'], ['cardId'], ['card_id']
+  ]);
+  if (providerCardId === null) {
+    throw new ProviderSchemaError('Hnskj accepted the card purchase but returned no recognizable card ID', {
+      provider: 'hnskj',
+      retryable: false,
+      uncertain: true
+    });
+  }
+  return String(providerCardId);
+}
+
+export function mapCardRechargeResult(envelope) {
+  const data = envelope?.data && typeof envelope.data === 'object' ? envelope.data : {};
+  const rawStatus = valueAt(data, [['status'], ['rechargeStatus'], ['recharge_status'], ['transactionStatus']]);
+  const status = String(rawStatus || '').trim().toLowerCase();
+  const reference = valueAt(data, [['id'], ['rechargeId'], ['recharge_id'], ['transactionId'], ['transaction_id']]);
+  if (['success', 'succeeded', 'completed', 'complete', 'settled'].includes(status)) {
+    return { state: 'SETTLED', externalReference: reference ? String(reference) : null };
+  }
+  if (['pending', 'processing', 'submitted', 'created'].includes(status)) {
+    return { state: 'PENDING', externalReference: reference ? String(reference) : null };
+  }
+  throw new ProviderSchemaError('Invalid Hnskj card recharge result', {
+    provider: 'hnskj', uncertain: true
+  });
 }
 
 export function mapCardCredentials(envelope) {
@@ -145,11 +225,11 @@ export function mapCardCredentials(envelope) {
   return { cardNumber, expMonth, expYear, cvv };
 }
 
-export function mapCardProvisioning(envelope, expectedAmount, now = new Date()) {
+export function mapCardProvisioning(envelope, minimumRequiredBalance, now = new Date()) {
   const data = cardData(envelope);
   const status = String(data.status || '').trim().toLowerCase();
   const currentBalance = Number(data.cardBalance ?? data.currentBalance ?? data.current_balance);
-  const expected = Number(expectedAmount);
+  const minimum = Number(minimumRequiredBalance);
   const cardNumber = String(data.cardNumber ?? data.card_number ?? data.number ?? data.pan ?? '').trim();
   const cvv = String(data.cvv ?? data.cvc ?? '').trim();
   const expMonth = Number(data.expiryMonth ?? data.expiry_month ?? data.expMonth ?? data.exp_month);
@@ -170,7 +250,12 @@ export function mapCardProvisioning(envelope, expectedAmount, now = new Date()) 
   if (CARD_FAILURE_STATUSES.has(status)) {
     return { ...safe, state: 'failed', failureCode: 'CARD_PROVISIONING_FAILED', failureReason: `Provider card status: ${status}` };
   }
-  if (status === 'active' && credentialsReady && Number.isFinite(currentBalance) && currentBalance >= expected) {
+  if (
+    status === 'active'
+    && credentialsReady
+    && Number.isFinite(minimum) && minimum > 0
+    && Number.isFinite(currentBalance) && currentBalance >= minimum
+  ) {
     return { ...safe, state: 'ready' };
   }
   return safe;
@@ -234,8 +319,11 @@ export class HnskjCardProvider {
     );
   }
 
-  card(cardId) {
-    return this.request(`/cards/${encodeURIComponent(String(cardId))}`);
+  async card(cardId) {
+    return validateObjectData(
+      await this.request(`/cards/${encodeURIComponent(String(cardId))}`),
+      'card detail'
+    );
   }
 
   async purchaseCard({ cardTypeId, openCardAmount, idempotencyKey, remark }) {
@@ -257,27 +345,56 @@ export class HnskjCardProvider {
     });
   }
 
-  refreshBalance(cardId) {
-    return this.request(`/cards/${encodeURIComponent(String(cardId))}/refresh-balance`, {
-      method: 'POST'
+  async rechargeCard({ cardId, amount, idempotencyKey, remark }) {
+    const rechargeAmount = Number(amount);
+    if (!Number.isInteger(rechargeAmount) || rechargeAmount <= 0) {
+      throw new Error('Hnskj recharge amount must be a positive integer');
+    }
+    const id = String(cardId || '').trim();
+    if (!id) throw new Error('Hnskj recharge card ID is required');
+    return this.request(`/cards/${encodeURIComponent(id)}/recharge`, {
+      method: 'POST',
+      headers: { 'X-Idempotency-Key': assertIdempotencyKey(idempotencyKey) },
+      uncertainOnSchema: true,
+      retryableOnSchema: true,
+      body: {
+        amount: rechargeAmount,
+        ...(remark ? { remark: String(remark).slice(0, 128) } : {})
+      }
     });
   }
 
-  transactions(cardId, query = {}) {
+  async refreshBalance(cardId) {
+    return validateObjectData(
+      await this.request(`/cards/${encodeURIComponent(String(cardId))}/refresh-balance`, {
+        method: 'POST'
+      }),
+      'balance refresh'
+    );
+  }
+
+  async transactions(cardId, query = {}) {
     const params = new URLSearchParams();
     for (const [key, value] of Object.entries(query)) {
       if (value != null && value !== '') params.set(key, String(value));
     }
     const suffix = params.toString() ? `?${params}` : '';
-    return this.request(`/cards/${encodeURIComponent(String(cardId))}/transactions${suffix}`);
+    return validateData(
+      await this.request(`/cards/${encodeURIComponent(String(cardId))}/transactions${suffix}`),
+      transactionsDataSchema,
+      'card transactions'
+    );
   }
 
-  withdraw(cardId, idempotencyKey) {
-    return this.request(`/cards/${encodeURIComponent(String(cardId))}/withdraw`, {
-      method: 'POST',
-      headers: { 'X-Idempotency-Key': assertIdempotencyKey(idempotencyKey) },
-      uncertainOnSchema: true,
-      retryableOnSchema: true
-    });
+  async withdraw(cardId, idempotencyKey) {
+    return validateObjectData(
+      await this.request(`/cards/${encodeURIComponent(String(cardId))}/withdraw`, {
+        method: 'POST',
+        headers: { 'X-Idempotency-Key': assertIdempotencyKey(idempotencyKey) },
+        uncertainOnSchema: true,
+        retryableOnSchema: true
+      }),
+      'card withdrawal'
+    );
   }
 }

@@ -44,6 +44,9 @@ create_secret /etc/pojia/mysql-root-password hex
 create_secret /etc/pojia/mysql-app-password hex
 create_secret /etc/pojia/mysql-migrator-password hex
 create_secret /etc/pojia/session-encryption-key base64
+create_secret /etc/pojia/cdk-hash-key-v1 base64
+create_secret /etc/pojia/cdk-recovery-key base64
+create_secret /etc/pojia/cdk-delivery-hmac-key base64
 
 if ! docker container inspect "${MYSQL_CONTAINER}" >/dev/null 2>&1; then
   docker run -d \
@@ -94,6 +97,9 @@ FLUSH PRIVILEGES;
 SQL
 
 session_key=$(tr -d '\n' </etc/pojia/session-encryption-key)
+cdk_hash_key=$(tr -d '\n' </etc/pojia/cdk-hash-key-v1)
+cdk_recovery_key=$(tr -d '\n' </etc/pojia/cdk-recovery-key)
+cdk_delivery_hmac_key=$(tr -d '\n' </etc/pojia/cdk-delivery-hmac-key)
 umask 027
 cat >/etc/pojia/runtime.env <<EOF
 NODE_ENV=production
@@ -103,6 +109,10 @@ TRUST_PROXY=true
 DATABASE_URL=mysql://pojia_app:${app_password}@127.0.0.1:3306/pojia
 DATABASE_TLS=false
 SESSION_ENCRYPTION_KEY_BASE64=${session_key}
+CDK_HASH_KEY_V1_BASE64=${cdk_hash_key}
+CDK_RECOVERY_KEY_BASE64=${cdk_recovery_key}
+CDK_DELIVERY_HMAC_KEY_BASE64=${cdk_delivery_hmac_key}
+ADMIN_HOST=ops.vibebridge.top
 WORKER_POLL_INTERVAL_MS=1000
 WORKER_LEASE_SECONDS=60
 PROVIDER_READS_ENABLED=false
@@ -122,6 +132,30 @@ ZZSHU_API_BASE_URL=https://card.zzshu.pro/api/v1
 EOF
   chown root:pojia /etc/pojia/provider.env
   chmod 0640 /etc/pojia/provider.env
+fi
+
+if [[ ! -e /etc/pojia/card-read.env ]]; then
+  cat >/etc/pojia/card-read.env <<'EOF'
+HNSKJ_API_BASE_URL=https://card.hnskj.vip/api/open/v1
+HNSKJ_API_KEY=
+EOF
+  chown root:pojia /etc/pojia/card-read.env
+  chmod 0640 /etc/pojia/card-read.env
+fi
+
+if [[ ! -e /etc/pojia/bark.env ]]; then
+  umask 027
+  cat >/etc/pojia/bark.env <<'EOF'
+BARK_ENABLED=false
+BARK_SERVER_URL=https://api.day.app
+BARK_DEVICE_KEY=
+BARK_GROUP=AI充值业务
+BARK_POLL_INTERVAL_MS=5000
+BARK_REQUEST_TIMEOUT_MS=10000
+BARK_MAX_ATTEMPTS=8
+EOF
+  chown root:pojia /etc/pojia/bark.env
+  chmod 0640 /etc/pojia/bark.env
 fi
 
 cat >/etc/pojia/migration.env <<EOF

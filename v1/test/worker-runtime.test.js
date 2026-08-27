@@ -9,29 +9,42 @@ import {
 
 const allSettings = Object.freeze({
   dispatchNewRecharges: true,
+  rechargeDispatchMode: 'AUTOMATIC',
   pollExistingOrders: true,
   syncCardTransactions: true
 });
 
 test('runtime settings and process gates jointly control task eligibility', () => {
-  assert.deepEqual(allowedTaskTypesFor(allSettings), []);
+  assert.deepEqual(allowedTaskTypesFor(allSettings), [TaskType.ASSIGN_CARD, TaskType.PREPARE_RECHARGE]);
   assert.deepEqual(
     allowedTaskTypesFor(allSettings, { providerReadsEnabled: true }),
-    [TaskType.VERIFY_CARD, TaskType.POLL_RECHARGE, TaskType.RECHECK_CANCELLATION]
+    [TaskType.ASSIGN_CARD, TaskType.PREPARE_RECHARGE, TaskType.VERIFY_CARD, TaskType.POLL_RECHARGE, TaskType.RECHECK_CANCELLATION, TaskType.SYNC_CARD_TRANSACTIONS]
   );
   assert.deepEqual(
     allowedTaskTypesFor(allSettings, {
       providerReadsEnabled: true,
       providerWritesEnabled: true
     }),
-    [TaskType.PURCHASE_CARD, TaskType.SUBMIT_RECHARGE, TaskType.VERIFY_CARD, TaskType.POLL_RECHARGE, TaskType.RECHECK_CANCELLATION]
+    [TaskType.ASSIGN_CARD, TaskType.PURCHASE_CARD, TaskType.PREPARE_RECHARGE, TaskType.SUBMIT_RECHARGE, TaskType.VERIFY_CARD, TaskType.POLL_RECHARGE, TaskType.RECHECK_CANCELLATION, TaskType.SYNC_CARD_TRANSACTIONS]
   );
   assert.deepEqual(
     allowedTaskTypesFor({ ...allSettings, dispatchNewRecharges: false }, {
       providerReadsEnabled: true,
       providerWritesEnabled: true
     }),
-    [TaskType.VERIFY_CARD, TaskType.POLL_RECHARGE, TaskType.RECHECK_CANCELLATION]
+    [TaskType.VERIFY_CARD, TaskType.POLL_RECHARGE, TaskType.RECHECK_CANCELLATION, TaskType.SYNC_CARD_TRANSACTIONS]
+  );
+  assert.deepEqual(
+    allowedTaskTypesFor(allSettings, { providerReadsEnabled: true, providerCardWritesEnabled: true }),
+    [TaskType.ASSIGN_CARD, TaskType.PURCHASE_CARD, TaskType.PREPARE_RECHARGE, TaskType.VERIFY_CARD, TaskType.POLL_RECHARGE, TaskType.RECHECK_CANCELLATION, TaskType.SYNC_CARD_TRANSACTIONS]
+  );
+  assert.equal(
+    allowedTaskTypesFor(allSettings, { providerReadsEnabled: true, providerRechargeWritesEnabled: true }).includes(TaskType.SUBMIT_RECHARGE),
+    true
+  );
+  assert.equal(
+    allowedTaskTypesFor(allSettings, { providerRechargeWritesEnabled: true }).includes(TaskType.SUBMIT_RECHARGE),
+    false
   );
 });
 
@@ -50,7 +63,8 @@ test('one worker iteration passes only eligible task types to the runner', async
     }
   });
   assert.equal(result.handled, false);
-  assert.deepEqual(input.allowedTaskTypes, [TaskType.VERIFY_CARD, TaskType.POLL_RECHARGE, TaskType.RECHECK_CANCELLATION]);
+  assert.equal(input.rechargeDispatchMode, 'AUTOMATIC');
+  assert.deepEqual(input.allowedTaskTypes, [TaskType.ASSIGN_CARD, TaskType.PREPARE_RECHARGE, TaskType.VERIFY_CARD, TaskType.POLL_RECHARGE, TaskType.RECHECK_CANCELLATION, TaskType.SYNC_CARD_TRANSACTIONS]);
 });
 
 test('worker loop runs at most the configured number of iterations concurrently', async () => {
@@ -97,4 +111,25 @@ test('one failed concurrent iteration is reported without cancelling siblings', 
   });
   assert.equal(errors.length, 1);
   assert.equal(completed, 2);
+});
+
+test('worker loop emits a bounded heartbeat without blocking task iterations', async () => {
+  const controller = new AbortController();
+  let heartbeats = 0;
+  let clock = 0;
+  let iterations = 0;
+  await runWorkerLoop({
+    signal: controller.signal,
+    idleDelayMs: 0,
+    heartbeatIntervalMs: 15,
+    now: () => clock,
+    heartbeat: async () => { heartbeats += 1; },
+    iteration: async () => {
+      iterations += 1;
+      clock += 10;
+      if (iterations >= 4) controller.abort();
+      return { handled: true };
+    }
+  });
+  assert.equal(heartbeats, 2);
 });

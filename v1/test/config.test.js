@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import test from 'node:test';
 import {
+  isEnvTrue,
+  loadBarkNotificationConfig,
   loadConfig,
   loadMigrationConfig,
   loadRuntimeDatabaseConfig,
@@ -15,7 +17,9 @@ function validEnvironment() {
     PORT: '3200',
     TRUST_PROXY: 'false',
     DATABASE_URL: 'mysql://user:pass@127.0.0.1:3306/pojia_test',
-    SESSION_ENCRYPTION_KEY_BASE64: crypto.randomBytes(32).toString('base64')
+    SESSION_ENCRYPTION_KEY_BASE64: crypto.randomBytes(32).toString('base64'),
+    CDK_HASH_KEY_V1_BASE64: crypto.randomBytes(32).toString('base64'),
+    CDK_RECOVERY_KEY_BASE64: crypto.randomBytes(32).toString('base64')
   };
 }
 
@@ -26,6 +30,36 @@ test('loads a valid explicit configuration', () => {
   assert.equal(config.trustProxy, false);
   assert.equal(config.database.tls.enabled, false);
   assert.equal(config.sessionEncryptionKey.length, 32);
+});
+
+test('CDK delivery recipient HMAC key is optional but independent when configured', () => {
+  const environment = validEnvironment();
+  const key = crypto.randomBytes(32).toString('base64');
+  const config = loadConfig({ ...environment, CDK_DELIVERY_HMAC_KEY_BASE64: key });
+  assert.equal(config.cdkDeliveryHmacKey.length, 32);
+  assert.throws(() => loadConfig({
+    ...environment,
+    CDK_DELIVERY_HMAC_KEY_BASE64: environment.CDK_HASH_KEY_V1_BASE64
+  }), /must be independent/);
+  assert.throws(() => loadConfig({
+    ...environment,
+    CDK_DELIVERY_HMAC_KEY_BASE64: Buffer.alloc(16).toString('base64')
+  }), /exactly 32 bytes/);
+});
+
+test('payment reference HMAC key is optional, 32-byte, and independently scoped', () => {
+  const environment = validEnvironment();
+  const key = crypto.randomBytes(32).toString('base64');
+  const config = loadConfig({ ...environment, PAYMENT_REFERENCE_HMAC_KEY_BASE64: key });
+  assert.equal(config.paymentReferenceHmacKey.length, 32);
+  assert.throws(() => loadConfig({
+    ...environment,
+    PAYMENT_REFERENCE_HMAC_KEY_BASE64: environment.CDK_HASH_KEY_V1_BASE64
+  }), /must be independent/);
+  assert.throws(() => loadConfig({
+    ...environment,
+    PAYMENT_REFERENCE_HMAC_KEY_BASE64: Buffer.alloc(16).toString('base64')
+  }), /exactly 32 bytes/);
 });
 
 test('production web server only binds an explicit loopback address', () => {
@@ -147,6 +181,15 @@ test('rejects missing database and invalid encryption key', () => {
   assert.throws(() => loadConfig(env), /Invalid v1 configuration/);
 });
 
+test('requires independent CDK hashing and recovery keys', () => {
+  const shared = crypto.randomBytes(32).toString('base64');
+  assert.throws(() => loadConfig({
+    ...validEnvironment(),
+    CDK_HASH_KEY_V1_BASE64: shared,
+    CDK_RECOVERY_KEY_BASE64: shared
+  }), /must be independent/);
+});
+
 test('admin authentication is optional but requires a complete credential pair', () => {
   const disabled = loadConfig(validEnvironment());
   assert.equal(disabled.adminPasswordHash, null);
@@ -172,6 +215,8 @@ test('worker defaults to no provider access and keeps writes hard-locked', () =>
   assert.equal(config.workerConcurrency, 1);
   assert.equal(config.providerReadsEnabled, false);
   assert.equal(config.providerWritesEnabled, false);
+  assert.equal(config.providerCardWritesEnabled, false);
+  assert.equal(config.providerRechargeWritesEnabled, false);
   assert.equal(config.zzshuApiKey, null);
 
   assert.throws(
@@ -206,4 +251,32 @@ test('worker concurrency is bounded and must be an integer', () => {
       /Invalid v1 worker configuration/
     );
   }
+});
+
+test('Bark notifications are fail-closed and require a device key only when enabled', () => {
+  const disabled = loadBarkNotificationConfig({ ...validEnvironment(), BARK_DEVICE_KEY: '' });
+  assert.equal(disabled.enabled, false);
+  assert.equal(disabled.deviceKey, null);
+  assert.equal(disabled.serverUrl, 'https://api.day.app');
+
+  assert.throws(() => loadBarkNotificationConfig({
+    ...validEnvironment(), BARK_ENABLED: 'true'
+  }), /BARK_DEVICE_KEY: is required/);
+
+  const enabled = loadBarkNotificationConfig({
+    ...validEnvironment(),
+    BARK_ENABLED: 'true',
+    BARK_DEVICE_KEY: 'fixture-key',
+    BARK_SERVER_URL: 'https://bark.example.test/'
+  });
+  assert.equal(enabled.enabled, true);
+  assert.equal(enabled.serverUrl, 'https://bark.example.test');
+  assert.equal(enabled.deviceKey, 'fixture-key');
+});
+
+test('write gates normalize case and surrounding whitespace', () => {
+  assert.equal(isEnvTrue(' TRUE '), true);
+  assert.equal(isEnvTrue('True'), true);
+  assert.equal(isEnvTrue(' false '), false);
+  assert.equal(isEnvTrue(undefined), false);
 });

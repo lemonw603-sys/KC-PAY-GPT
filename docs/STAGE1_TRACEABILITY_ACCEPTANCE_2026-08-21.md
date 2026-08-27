@@ -1,0 +1,59 @@
+# 阶段一：追溯与数据中心验收记录（2026-08-21）
+
+> 本文只记录可复现的代码、MySQL 和对抗审查事实；不把未实施的后续能力写成已完成。
+
+## 1. 已实施
+
+- 新增 Migration `024_traceability_center.sql`：卡片绑定历史、客户付款事实、订单备注、标签和 PAN HMAC 版本字段；
+- 统一搜索支持订单查询码、CDK、邮箱、ChatGPT 账号 ID、卡号、后四位、卡号 ID、Provider 订单、失败原因、标签和多种时间范围；
+- PAN/CDK 搜索使用受保护的 `POST` JSON，不进入 URL、浏览器历史和常规访问日志；
+- 新增 PAN HMAC 回填脚本，不输出明文卡号；
+- 新建库存卡写入 Provider 账户、`ACCEPTED` intake 状态和 PAN HMAC，可被同一资格查询分配；
+- 自动分卡排除任何有历史绑定的卡；未提交订单取消后卡进入 `HELD_FOR_REVIEW`，不回到自动库存；
+- 订单档案已联通 CDK、补发关系、交付记录、客户付款、卡片历史、Provider 调用、交易、成本证据、备注和标签；
+- 未兑换 CDK 也可由精确搜索找到并记录交付；
+- 客户实际付款时间不从 CDK 生成时间猜测；未知时保持 `NULL`，可在后台一次性补录；
+- 付款外部参考号只保存独立 HMAC 和遮罩值；补发订单共享原订单付款事实；
+- 成本按币种分开并使用 6 位定点整数汇总，不用 JavaScript 浮点累加，不猜测汇率；
+- 总览、低库存告警和自动分配共用 `intake_status`、凭证、余额和历史绑定约束。
+
+## 2. 确认过的错误与修正
+
+| 问题 | 修正 |
+| --- | --- |
+| 敏感搜索值曾进入 GET URL | 改为同源、鉴权、`no-store` 的 POST JSON |
+| 新库存卡可显示 AVAILABLE 但因缺 Provider/intake 无法分配 | 注册时写入 Provider 账户和 `ACCEPTED`，并增加真实 MySQL 组合回归 |
+| CDK 生成时间被当作实际付款时间 | `paid_at=NULL`，生成只表示“已付款事实被确认” |
+| 库存统计与分卡资格不同 | 统一 intake、凭证、余额和历史占用条件 |
+| 成本曾使用 JS `Number` 累加 | 改为 6 位定点 `BigInt` |
+
+## 3. 验证证据
+
+- 本地全量：`298 passed / 0 failed`；
+- 隔离 MySQL 8.4：`001 → 024` 全量迁移成功；
+- 删除 `024_traceability_center` 迁移登记后重放成功；
+- 隔离 MySQL 8.4 全量：`298 passed / 0 failed / 0 skipped`；
+- 覆盖后台开卡注册→Provider 账户化→intake 接受→订单分配的真实 MySQL 回归；
+- 覆盖付款补录、HMAC 参考号、幂等重放和审计备注的真实 MySQL 回归；
+- 独立对抗审查首轮发现的 3 个 P0 已逐项修正。
+
+## 4. 明确不当作本阶段已完成
+
+- 特殊人工跨订单复用的操作入口属于阶段四；当前只建立历史账本并硬性禁止自动复用；
+- 复用后交易按订单归属要在特殊复用设计中同步实施；当前页面展示的是卡片级交易证据；
+- PAN HMAC 密钥轮换流程尚未建设；当前版本为 `1`；
+- 登录后的人工视觉验收仍需在后台实际操作时补做；生产数据、API 边界和静态资源验收已完成。
+
+## 5. 生产部署验收
+
+- 上线发布：`/opt/pojia/releases/20260821-traceability-86d6282`；
+- 发布前加密备份：`pojia-20260821T110851Z.sql.gz.enc`，完整性校验通过；
+- Worker 和开卡执行器在迁移前停止；活动任务、过期租约、UNKNOWN、活动 Permit、资金风险尝试和活动开卡任务均为 0；
+- Migration 024 首次执行成功，第二次仅报告 `already applied`；
+- 独立 PAN HMAC 和付款参考号 HMAC 密钥已注入生产环境，未进入代码库；
+- 历史 PAN 回填：`scanned=5 / updated=5 / unavailable=0`；
+- 迁移后一致性校验全部为 0：绑定卡缺 ACTIVE 历史、ACTIVE 历史与当前订单不符、AVAILABLE 历史卡、重复 ACTIVE 历史、缺客户付款事实、缺 PAN HMAC；
+- Web、Worker、Bark 服务均为 active，`/health/live` 与 `/health/ready` 均成功；
+- 上线后只读体检 `ok=true`，最新迁移为 024，所有 blocker 计数为 0；
+- `accept_new_orders=false`、`dispatch_new_recharges=false`，开卡定时器保持关闭；本次没有调用 Provider 开卡、卡充值、直充、退款或余额提取写接口；
+- 外部边界验收：后台 API 未登录返回 401，客户域名后台路径返回 404，新后台资源与 POST 搜索代码已实际提供。

@@ -1,0 +1,11 @@
+[Unit]
+Description=每 5 分钟对账一次卡台可用卡
+
+[Timer]
+OnBootSec=30s
+OnUnitActiveSec=5min
+AccuracySec=15s
+Unit=pojia-card-catalog-sync.service
+
+[Install]
+WantedBy=timers.target

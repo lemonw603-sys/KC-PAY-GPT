@@ -1,0 +1,28 @@
+[Unit]
+Description=AI充值业务卡片余额充值执行器（默认关闭）
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+User=pojia
+Group=pojia
+WorkingDirectory=/opt/pojia/current/v1
+EnvironmentFile=/etc/pojia/runtime.env
+EnvironmentFile=/etc/pojia/provider.env
+# Hard gate: this unit is installed for future controlled activation, but
+# cannot perform a card funding write until this explicit value is changed
+# during a separately approved maintenance window.
+ExecStart=/usr/bin/env PROVIDER_WRITES_ENABLED=false PROVIDER_CARD_WRITES_ENABLED=false /usr/bin/node scripts/card-funding-runner.js
+NoNewPrivileges=true
+PrivateDevices=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+UMask=0077
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+LockPersonality=true
+CapabilityBoundingSet=
+

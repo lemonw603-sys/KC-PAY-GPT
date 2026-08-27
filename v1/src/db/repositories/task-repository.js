@@ -3,12 +3,17 @@ import { TaskStatus } from '../../domain/task.js';
 export async function claimNextTask(pool, {
   workerId,
   leaseSeconds = 60,
-  allowedTaskTypes = null
+  allowedTaskTypes = null,
+  rechargeDispatchMode
 }) {
   if (Array.isArray(allowedTaskTypes) && allowedTaskTypes.length === 0) return null;
   const typeFilter = Array.isArray(allowedTaskTypes)
     ? `AND task_type IN (${allowedTaskTypes.map(() => '?').join(', ')})`
     : '';
+  const dispatchMode = String(rechargeDispatchMode || '').trim().toUpperCase();
+  if (!['AUTOMATIC', 'MANUAL'].includes(dispatchMode)) {
+    throw new TypeError('rechargeDispatchMode must be AUTOMATIC or MANUAL');
+  }
   const connection = await pool.getConnection();
   try {
     await connection.beginTransaction();
@@ -17,6 +22,48 @@ export async function claimNextTask(pool, {
        FROM tasks
        WHERE available_at <= CURRENT_TIMESTAMP(3)
          AND (
+           task_type <> 'SUBMIT_RECHARGE'
+           OR (
+             (? = 'AUTOMATIC' OR EXISTS (
+               SELECT 1 FROM recharge_authorization_items manual_item
+               INNER JOIN recharge_authorizations manual_auth
+                 ON manual_auth.id = manual_item.authorization_id
+               WHERE manual_item.order_id = tasks.order_id
+                 AND manual_item.status = 'PENDING'
+                 AND manual_auth.status = 'ACTIVE'
+                 AND manual_auth.authorization_mode IN ('SINGLE', 'BATCH')
+                 AND manual_auth.expires_at > UTC_TIMESTAMP(3)
+             ))
+             AND EXISTS (
+               SELECT 1
+               FROM orders o
+               INNER JOIN fulfillment_routes fr ON fr.id = o.fulfillment_route_id
+               INNER JOIN provider_accounts pa ON pa.id = fr.recharge_provider_account_id
+               WHERE o.id = tasks.order_id
+                 AND o.status = 'CARD_READY'
+                 AND pa.write_enabled = 1
+                 AND EXISTS (
+                   SELECT 1 FROM tasks prepared
+                   WHERE prepared.order_id = o.id
+                     AND prepared.task_type = 'PREPARE_RECHARGE'
+                     AND prepared.status = 'COMPLETED'
+                 )
+             )
+             AND NOT EXISTS (
+               SELECT 1 FROM recharge_attempts rat
+               WHERE rat.order_id = tasks.order_id
+                 AND rat.funds_risk_state IN ('ACTIVE', 'UNKNOWN', 'SETTLED')
+             )
+             AND NOT EXISTS (
+               SELECT 1 FROM provider_calls pc
+               WHERE pc.order_id = tasks.order_id
+                 AND pc.recharge_attempt_id IS NULL
+                 AND LOWER(pc.provider) = 'zzshu'
+                 AND pc.operation = 'create_direct'
+             )
+           )
+         )
+         AND (
            status = ?
            OR (status = ? AND leased_until < CURRENT_TIMESTAMP(3))
          )
@@ -24,7 +71,7 @@ export async function claimNextTask(pool, {
        ORDER BY available_at ASC, id ASC
        LIMIT 1
        FOR UPDATE SKIP LOCKED`,
-      [TaskStatus.PENDING, TaskStatus.RUNNING, ...(allowedTaskTypes || [])]
+      [dispatchMode, TaskStatus.PENDING, TaskStatus.RUNNING, ...(allowedTaskTypes || [])]
     );
 
     if (rows.length === 0) {
@@ -85,7 +132,8 @@ export async function failTask(pool, {
   errorCode,
   errorMessage,
   retryAt = null,
-  forceDead = false
+  forceDead = false,
+  refundAttempt = false
 }) {
   const connection = await pool.getConnection();
   try {
@@ -99,19 +147,24 @@ export async function failTask(pool, {
       throw new Error(`Task lease lost before failure handling: ${taskId}`);
     }
 
+    const effectiveAttempts = Math.max(
+      0,
+      Number(rows[0].attempts) - (refundAttempt ? 1 : 0)
+    );
     const exhausted = forceDead
-      || Number(rows[0].attempts) >= Number(rows[0].max_attempts);
+      || effectiveAttempts >= Number(rows[0].max_attempts);
     const nextStatus = exhausted ? TaskStatus.DEAD : TaskStatus.PENDING;
     const availableAt = exhausted ? null : (retryAt || new Date());
 
     await connection.query(
       `UPDATE tasks
        SET status = ?, available_at = COALESCE(?, available_at),
+           attempts = CASE WHEN ? THEN GREATEST(attempts - 1, 0) ELSE attempts END,
            leased_by = NULL, leased_until = NULL,
            last_error_code = ?, last_error_message = ?,
            updated_at = CURRENT_TIMESTAMP(3)
        WHERE id = ?`,
-      [nextStatus, availableAt, errorCode, errorMessage, taskId]
+      [nextStatus, availableAt, refundAttempt ? 1 : 0, errorCode, errorMessage, taskId]
     );
     await connection.commit();
     return { status: nextStatus };

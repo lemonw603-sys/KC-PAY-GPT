@@ -52,7 +52,8 @@ test('admin assets contain no remote, legacy, or secret-bearing dependencies', (
   const forbidden = [
     'src="http://', 'src="https://', 'href="http://', 'href="https://',
     'url(http://', 'url(https://', 'playwright', 'stripe', 'hcaptcha',
-    'session_ciphertext', 'recharge_card_key', 'card_credentials_ciphertext', 'api key', 'cvv'
+    'session_ciphertext', 'recharge_card_key', 'card_credentials_ciphertext', 'api key', 'cvv',
+    'style="'
   ];
   for (const file of files) {
     const source = fs.readFileSync(file, 'utf8').toLowerCase();
@@ -60,4 +61,78 @@ test('admin assets contain no remote, legacy, or secret-bearing dependencies', (
       assert.equal(source.includes(token), false, `${file} contains ${token}`);
     }
   }
+});
+
+test('admin batch generation keeps generation and downloads separate and exposes audit history', () => {
+  const html = fs.readFileSync(path.join(directory, 'admin', 'index.html'), 'utf8');
+  const script = fs.readFileSync(path.join(directory, 'admin', 'assets', 'admin.js'), 'utf8');
+  assert.match(html, />生成 CDK</);
+  assert.match(html, /下载本批次 TXT/);
+  assert.match(script, /下载原始 TXT/);
+  assert.match(script, /下载状态清单 CSV/);
+  assert.match(script, /已全部作废/);
+  assert.match(script, /禁止把文件中的码重新发放/);
+  assert.match(script, /已生成，但列表刷新失败/);
+  assert.match(script, /已作废.*但批次列表刷新失败/);
+});
+
+test('admin sends sensitive unified search in a protected JSON body, never in the URL', () => {
+  const script = fs.readFileSync(path.join(directory, 'admin', 'assets', 'admin.js'), 'utf8');
+  assert.match(script, /\/api\/v1\/admin\/orders\/search/);
+  assert.doesNotMatch(script, /\/api\/v1\/admin\/orders\?[^'"`]*q=/);
+  assert.doesNotMatch(script, /URLSearchParams[\s\S]{0,300}\.set\(['"]q['"]/);
+});
+
+test('admin refresh feedback and inset dropdown arrows remain visible', () => {
+  const html = fs.readFileSync(path.join(directory, 'admin', 'index.html'), 'utf8');
+  const script = fs.readFileSync(path.join(directory, 'admin', 'assets', 'admin.js'), 'utf8');
+  const styles = fs.readFileSync(path.join(directory, 'admin', 'assets', 'admin.css'), 'utf8');
+  assert.match(html, /admin\.css\?v=17/);
+  assert.match(html, /admin\.js\?v=17/);
+  assert.match(script, /button\.textContent = '刷新中…'/);
+  assert.match(script, /showNotice\('刷新完成。', 'success'\)/);
+  assert.match(script, /showNotice\('刷新失败，请稍后重试。'\)/);
+  assert.match(script, /等待 Session/);
+  assert.match(script, /自动补卡用量/);
+  assert.match(script, /overview-provider-health/);
+  assert.match(script, /card-intake\/.*\/validate/);
+  assert.match(script, /card-intake\/.*\/accept/);
+  assert.match(script, /卡台当前 active 卡数/);
+  assert.doesNotMatch(script, /卡台历史总卡数/);
+  assert.match(script, /耗尽卡/);
+  assert.match(styles, /select\s*\{[\s\S]*appearance:\s*none/);
+  assert.match(styles, /padding-right:\s*40px\s*!important/);
+  assert.match(styles, /background-image:[^;]+!important/);
+  assert.match(styles, /background-position:\s*calc\(100% - 19px\) 50%, calc\(100% - 14px\) 50%\s*!important/);
+});
+
+test('admin Browser view exposes operational metadata but no authority recovery field', () => {
+  const html = fs.readFileSync(path.join(directory, 'admin', 'index.html'), 'utf8');
+  const script = fs.readFileSync(path.join(directory, 'admin', 'assets', 'admin.js'), 'utf8');
+  assert.match(html, /Browser 执行/);
+  assert.match(html, /authority 不可见/);
+  assert.match(script, /\/api\/v1\/admin\/browser\/runs/);
+  assert.match(script, /确认付款结果未知/);
+  assert.doesNotMatch(script, /\.secretRef|\.navigationUrl|\.leaseToken|\.resourceKeyHmac/);
+});
+
+test('admin exposes audited manual provider-route switching without secret fields', () => {
+  const html = fs.readFileSync(path.join(directory, 'admin', 'index.html'), 'utf8');
+  const script = fs.readFileSync(path.join(directory, 'admin', 'assets', 'admin.js'), 'utf8');
+  assert.match(html, /卡台路线/);
+  assert.match(html, /人工切换/);
+  assert.match(script, /\/api\/v1\/admin\/provider-routes/);
+  assert.match(script, /切换卡台/);
+  assert.match(script, /只影响新订单/);
+  assert.doesNotMatch(`${html}\n${script}`, /secretRef|navigationUrl|leaseToken|resourceKeyHmac|card_credentials_ciphertext|recharge_card_key/i);
+});
+
+test('admin describes automatic fulfillment and keeps permits explicitly gray-only', () => {
+  const html = fs.readFileSync(path.join(directory, 'admin', 'index.html'), 'utf8');
+  const script = fs.readFileSync(path.join(directory, 'admin', 'assets', 'admin.js'), 'utf8');
+  assert.match(html, /灰度批量许可/);
+  assert.match(html, /待执行充值/);
+  assert.match(script, /正常模式由系统自动执行/);
+  assert.match(script, /正常订单不需要此操作/);
+  assert.doesNotMatch(`${html}\n${script}`, /逐单确认|待确认充值/);
 });
