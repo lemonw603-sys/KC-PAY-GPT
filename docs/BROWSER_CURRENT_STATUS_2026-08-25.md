@@ -6,16 +6,17 @@
 | --- | --- |
 | worktree | `/Users/lemon/.codex/worktrees/9128/AI充值业务` |
 | 分支 | `codex/browser` |
-| 最新 Browser 代码提交 | `dfa94e3` (`fix(browser): reject expired card material`) |
-| 当前阶段 | F0：Checkout Navigation + fixture 卡材料非付款填充闭环已通过 |
+| 最新 Browser 代码提交 | `8c17412` (`feat(browser): compose shared nonpayment dry run`) |
+| 上一文档交接提交 | `7855390` (`docs(browser): record shared runtime handoff`) |
+| 当前阶段 | F0：正式共享 Worker 非付款 composition 已在全新隔离 MySQL 8.4 + 本地 Playwright fixture 端到端通过 |
 | 跟踪改动 | 无 |
-| 未跟踪改动 | `.playwright-cli/`、`artifacts/` |
-| Browser MVP | 队列/租约/WAL/恢复、Chrome Profile、上号/身份、自动 Checkout 导航/观察、fixture 卡材料 lease/填充/清理、付款安全合同已有；真实卡台材料接线、付款及付款后对账未完成 |
+| 未跟踪改动 | `artifacts/browser-checkout-observe/`（历史运行产物，不修改、不提交） |
+| Browser MVP | 共享 dispatch/run/resource lease、正式状态合同、服务端 payment permit 边界、付款前安全退出，以及真实 Session/Checkout 只读能力已有；真实生产 Worker、真实卡材料、付款 executor 和付款后三方对账未完成 |
 | 生产/真实付款 | 未接入、未执行 |
 
 ## 当前阶段
 
-阶段 F0：`BrowserExecutionService` 已真实自动完成身份核对 → 价格弹窗 → 可选问卷 → Checkout Session → Stripe 安全字段就绪 → 只读摘要。结果为 USD 20.00、税费 0.00、三个卡字段存在，`fieldsFilled=0`、`submitCalls=0`。
+阶段 F0：已把 Browser PoC 接到正式共享 MySQL 仓储合同，并新增显式确认、强制只读的 production-shaped Worker composition。最新端到端路径为：共享 dispatch claim → `browser_run`/资源租约 → 本地 Browser fixture → `abortBeforePayment()`；最终无付款调用、无活动 permit、无资金 fence 和资源租约残留。这仍是隔离环境验证，不是生产 Worker 验收。
 
 ## 本分支已验证
 
@@ -28,7 +29,10 @@
 - WAL/重启/reconcile-only 测试：3/3 通过（总测试 14/14）；截断/篡改均阻断恢复。
 - 10 分钟 soak：601439ms、5328/5328 完成、重复 0、错误 0、残留 0、WAL 15984 条；报告位于 `/var/folders/vv/y6273_2s7n98r55m2rc96p_w0000gn/T/browser-mvp-soak-SOtfzq/report.json`。
 - 共享合同只读适配器与 SessionProvider 合同测试：6/6 通过（总测试 20/20）；active permit 和敏感源字段均拒绝，Session 仅保留 opaque ref/lease 预留。
-- 最新 `npm --prefix browser-mvp test`：**53/53 passed**；`npm --prefix browser-mvp run check`、`git diff --check` 通过。
+- 最新 `npm --prefix browser-mvp test`：**71 tests / 70 passed / 1 skipped / 0 failed**；跳过项仅为未设置 `TEST_DATABASE_URL` 的隔离 MySQL composition 测试。`npm --prefix browser-mvp run check`、`git diff --check` 通过。
+- 使用全新临时 `mysql:8.4`、完整执行 `001–037` migrations 后，`TEST_DATABASE_URL=... node --test browser-mvp/test/shared-dry-run-mysql-integration.test.js`：**1/1 passed**；测试后容器已删除。
+- 正式非付款 composition 只在确认词精确匹配、`browser_payment_writes_enabled=false`、`manifest.allowWrites=false` 时运行；不含 payment submitter，并要求注入跨订单稳定的账号 key resolver，以保持同账号资源互斥。
+- 隔离 MySQL 最终状态已核实：order=`CARD_READY`、attempt/funds=`CLEARED`、run=`FAILED_SAFE`、dispatch=`CANCELLED`、活动 permits=0、`PAYMENT_SUBMIT` operations=0、未释放资源租约=0。
 - 真实上号器 `1.1.1` popup 可打开；长 Session 拆成 2 个 NextAuth Cookie 分块，ChatGPT 页面打开，`/api/auth/session` HTTP 200，三项身份摘要全部匹配。
 - 已真实复现并修复新标签页先发出 `about:blank` 导致 adapter 假失败的竞态；现等待 URL 到达 `https://chatgpt.com` 后才报告成功。
 - 真实 Checkout 页面已观察：`Plus`、`USD 20.00`、税费 `0.00`、payment form/submit/card fields 均存在；Stripe Payment Page init HTTP 200。
@@ -42,12 +46,11 @@
 
 ## 本分支未验证
 
-- 新版 BRFE Browser Worker/control-plane 接线；
-- 生产 artifact vault、账号/订单/卡片/Checkout 资源租约；
-- BrowserContext 与共享 Worker 的生产接线；
-- 新版 BRFE `NON_PH_FUNCTIONAL` 合同与共享状态适配；
-- 菲律宾 cohort、真实 HNSKJ API/卡材料运行接线、付款、生产 Worker、高可用拓扑。
-- `recharge_attempts`、资金 permit、审计关联仍需统筹窗口冻结；当前不进入共享写路径或真实付款。
+- 生产数据库/部署配置下的真实 Browser Worker 注册、claim/heartbeat 和 Chrome dry-run；
+- 生产 artifact vault 与真实账号/订单/卡片/Checkout 资源租约恢复；
+- 真实 HNSKJ 只读卡材料、真实 Checkout 填卡、付款 executor；
+- Plus 权益、订阅状态、卡台扣款的付款后三方对账；
+- 指纹浏览器 runtime、200–300 单/日容量和生产高可用拓扑。
 
 ## 暂停条件
 
@@ -58,9 +61,11 @@
 
 ## 下一步
 
-在统筹窗口冻结 `provider_card_ref`、attempt/card readiness 和共享 MySQL 视图后，接入真实 HNSKJ 只读 API/生产 adapter；当前捕获/模拟响应验证已完成，继续保持单次读取和 fail-closed；本阶段不读取真实卡、不打开 payment submit。
+由统筹窗口提供隔离或预生产的真实 Worker 配置与非敏感测试订单后，运行一次 **真实 Worker/Google Chrome 的只读 dry-run**，继续保持 `browser_payment_writes_enabled=false`、卡台写开关关闭、无 card fill、无 submit。通过后再单独设计真实卡材料与付款闸门验收；首次真实付款必须另行确认。
 
-## M7 隔离 MySQL 只读合同
+## M7 历史隔离 MySQL 只读合同（已被 2026-08-27 正式共享接线取代）
+
+以下记录是当时的阶段事实，仅保留用于追溯；当前 adapter 已不再依赖 `browser_upstream_ready_projection`，最新事实见文末 2026-08-27 两节。
 
 - 新增 `browser-mvp/src/mysql-upstream-adapter.js`：使用参数化单次 SELECT，仅读取统筹层冻结的 `browser_upstream_ready_projection` 视图字段；无写方法、无凭据列、无 Provider 调用。
 - `rowToProjection()` 只生成 Browser 所需的订单/attempt/profile/cardRef/routeRef/readiness/sessionRef/auditRef；任何凭据形状列直接拒绝。
@@ -281,3 +286,58 @@ node --test v1/test/browser-*.test.js（定向套件） # 50/50 passed
 - `browser-mvp/package.json`
 
 本轮提交：`63f9294`（`feat(browser): wire shared runtime contract and dry-run aborts`）。未跟踪 `artifacts/browser-checkout-observe/` 保持原样，不纳入提交。
+
+## 2026-08-27 正式共享 Worker 非付款 composition（最新）
+
+代码提交：`8c17412`（`feat(browser): compose shared nonpayment dry run`）。本节覆盖上一节“尚未把 Browser adapter 接到真实共享 MySQL composition”的未验证项。
+
+### 已完成
+
+- 新增 `createSharedNonPaymentDryRun()`，直接组合共享核心的 dispatch、execution、recovery repositories 与 `createBrowserWorkerService()`，不再使用 Browser-only 平行队列作为此入口的业务真相。
+- 运行前必须精确确认 `RUN SHARED BROWSER NONPAYMENT DRY RUN`，并从 `app_settings` 核实 `browser_payment_writes_enabled=false`；manifest 必须 `allowWrites=false`。
+- composition 没有 payment submitter；无论页面观察成功与否，非付款流程都通过共享 `abortBeforePayment()` 收口。
+- `resolveAccountKey()` 为必需注入项。调用方必须返回跨订单稳定、但不含账号明文的 key；composition 再用本地 HMAC key 生成 `accountKeyHmac`，避免同一账号跨订单并发失去资源互斥。
+- runtime、artifact、resource 使用三个显式 32 字节 key 输入；普通输出仅保留状态和计数。
+
+### 验证命令与结果
+
+```bash
+npm --prefix browser-mvp run check
+# passed
+
+npm --prefix browser-mvp test
+# 71 tests / 70 passed / 1 skipped / 0 failed
+
+# 新建临时 mysql:8.4，连续 SQL 就绪后执行完整 001–037 migrations
+TEST_DATABASE_URL='mysql://root:root@127.0.0.1:<dynamic-port>/pojia_test' \
+  node --test browser-mvp/test/shared-dry-run-mysql-integration.test.js
+# 1/1 passed；临时容器随后删除
+
+git diff --check
+# passed
+```
+
+隔离 MySQL 断言：
+
+```text
+external payment calls = 0
+order = CARD_READY
+attempt = CLEARED
+fundsRiskState = CLEARED
+run = FAILED_SAFE
+dispatch = CANCELLED
+active permits = 0
+PAYMENT_SUBMIT operations = 0
+live resource leases = 0
+```
+
+### 修改文件
+
+- `browser-mvp/package.json`
+- `browser-mvp/src/shared-dry-run-composition.js`
+- `browser-mvp/test/shared-dry-run-composition.test.js`
+- `browser-mvp/test/shared-dry-run-mysql-integration.test.js`
+
+### 未验证边界与下一步唯一动作
+
+本轮只使用全新隔离 MySQL 和本地 Playwright fixture；未连接生产、未读取真实 Session/卡材料、未填写真实卡、未调用卡台写接口、未点击付款。下一步唯一动作是取得统筹窗口提供的隔离/预生产 Worker 配置和非敏感测试订单，在真实 Worker + Google Chrome 上运行一次同合同的只读 dry-run；仍保持付款写开关关闭。首次真实付款前必须另行确认。

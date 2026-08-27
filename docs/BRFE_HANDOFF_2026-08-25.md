@@ -4,13 +4,16 @@
 
 - Worktree：`/Users/lemon/.codex/worktrees/9128/AI充值业务`
 - 分支：`codex/browser`
-- 当前 Browser 代码提交：`4004741`（`feat(browser): observe live Plus checkout safely`）
-- 当前跟踪文件无修改；未跟踪：`.playwright-cli/`、`artifacts/`
+- 当前 Browser 代码提交：`8c17412`（`feat(browser): compose shared nonpayment dry run`）
+- 上一文档交接提交：`7855390`（`docs(browser): record shared runtime handoff`）
+- 当前跟踪文件无修改；未跟踪：`artifacts/browser-checkout-observe/`（历史运行产物，不修改、不提交）
 - 本入口只维护 Browser 线，不覆盖非 Browser 共享事实源。
 
 ## 当前阶段
 
-阶段 F0：队列/租约/WAL/恢复、Google Chrome 专用 Profile、实际上号器 Session Bootstrap、真实身份核对已进入当前分支并通过验证。尚未完成真实 Checkout 只读观察、卡材料真实接线、付款提交和付款后三方对账。
+阶段 F0：正式共享状态 adapter、dispatch/run/resource lease、付款前安全退出已接通；production-shaped 非付款 composition 已在全新隔离 MySQL 8.4 + 本地 Playwright fixture 端到端通过。真实 Session/Checkout 只读能力已有历史实跑证据，但真实生产 Worker、真实卡材料、付款提交和付款后三方对账仍未完成。
+
+> 阅读规则：下方 M0–M7 与 2026-08-26 小节保留历史演进。若与文末 2026-08-27 最新交接冲突，以文末最新交接和本页顶部为准。
 
 ## M0 已完成与验证
 
@@ -76,7 +79,7 @@
 
 相关提交对象可见但未合并到当前分支：`5c0a600`、`7ead4d6`、`75e119d`、`2ee2518`、`d394b53`、`acba927`。
 
-## 未验证事实
+## 历史未验证事实（已被后续交接部分取代）
 
 - 当前分支没有新版 Browser Worker/dispatch/WAL/artifact vault 实现，因此不能在本 worktree 宣称这些能力已验证。
 - 真实 Session、菲律宾出口、Checkout、付款、生产 Worker、生产高可用均未在本分支验证。
@@ -86,7 +89,7 @@
 
 直接迁移已整理 Browser 小提交被依赖审计阻塞：最早前置 `a84c293` 是包含 108 个文件的混合检查点，含共享资金/Provider/Worker/生产相关改动，不能整批 cherry-pick。详见 `docs/2026-08-25_browser-transfer-audit.md`。
 
-## 下一步唯一动作
+## 历史下一步（已完成或被后续路线取代）
 
 按市场评估优先验证 **Kameleo local profile + Chroma/Chrome fingerprint + Local API**；同时把系统 Google Chrome 保留为 control lane。两条 lane 共用 Session、订单、证据和审计合同，只改变 runtime。先完成真实 Session 身份核对和非付款一单闭环。未完成前不进入真实 Checkout 写入、真实付款、Provider 写入或生产 release；不 cherry-pick 混合检查点，不使用 `git add -A`，不清理 `.playwright-cli/`/`artifacts/`。
 
@@ -457,3 +460,42 @@ git diff --check                     # passed（提交前再次执行）
 ### 未验证
 
 真实生产 Worker/部署、真实 HNSKJ 读取、真实卡材料、真实 Checkout 填卡/付款、Plus/续费取消/卡台扣款三方对账、指纹浏览器和容量均未验证；不能写成生产可用。
+
+## 2026-08-27 正式共享 Worker 非付款 composition 交接（最新）
+
+- Worktree：`/Users/lemon/.codex/worktrees/9128/AI充值业务`；分支：`codex/browser`。
+- 代码提交：`8c17412`（`feat(browser): compose shared nonpayment dry run`）。
+- 只修改 `browser-mvp/package.json`、`browser-mvp/src/shared-dry-run-composition.js` 和两份对应测试；未修改 nonbrowser worktree、共享 `CURRENT_STATE.md`、`DECISIONS.md`、`HANDOFF_LOG.md`，未使用 `git add -A`。
+- `createSharedNonPaymentDryRun()` 已把正式共享 MySQL dispatch/execution/recovery repositories、共享 Worker service、Browser executor 和 `abortBeforePayment()` 组成一个实际可调用入口。
+- 入口要求精确确认词、`browser_payment_writes_enabled=false`、`manifest.allowWrites=false`，且没有 payment submitter。账号资源键必须由调用方通过 `resolveAccountKey()` 提供跨订单稳定的 opaque key，再由本地 HMAC 生成资源互斥键；禁止默认用 order ID 冒充账号身份。
+
+### 最新验证
+
+```text
+npm --prefix browser-mvp run check
+→ passed
+
+npm --prefix browser-mvp test
+→ 71 tests / 70 passed / 1 skipped / 0 failed
+  （skip 仅因该命令未设置 TEST_DATABASE_URL）
+
+全新临时 mysql:8.4 + 完整 001–037 migrations
+TEST_DATABASE_URL=... node --test browser-mvp/test/shared-dry-run-mysql-integration.test.js
+→ 1/1 passed
+
+git diff --check
+→ passed
+```
+
+数据库最终核实：order=`CARD_READY`、attempt/funds=`CLEARED`、run=`FAILED_SAFE`、dispatch=`CANCELLED`、活动 permits=0、`PAYMENT_SUBMIT` operations=0、未释放资源租约=0；external payment calls=0。临时容器测试后已删除。
+
+### 未验证
+
+- 未连接生产或预生产数据库，未启动真实部署形态 Worker；
+- 未读取真实 Session、PAN/CVC 或真实 HNSKJ 卡材料，未填真实卡；
+- 未点击付款，未执行 Plus 付款，未调用卡台写接口；
+- 未验证付款后 Plus 权益/续费状态/卡台扣款三方对账、指纹浏览器和容量。
+
+### 下一步唯一动作
+
+向统筹窗口取得**隔离或预生产**的 Worker 配置与非敏感测试订单，在真实 Worker + Google Chrome 上运行一次相同合同的只读 dry-run；继续保持 `browser_payment_writes_enabled=false`、卡台写开关关闭、无 card fill、无 submit。通过后再设计真实卡材料和付款闸门验收；首次真实付款必须单独停下来确认。

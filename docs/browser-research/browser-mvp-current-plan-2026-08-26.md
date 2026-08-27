@@ -38,10 +38,10 @@
 
 ### 尚未完成但属于 MVP 硬验收项
 
-- 真实 MySQL `browser_upstream_ready_projection` 视图及 `provider_card_ref` 口径冻结；
+- 共享 MySQL 正式表接线已替代旧 `browser_upstream_ready_projection` 设想；隔离 MySQL composition 已通过，但真实部署形态 Worker/Chrome 仍需只读 dry-run 验证；
 - 真实卡台只读材料 source 接线（优先一次读取、关键阶段读取，不循环刷新）；
 - HNSKJ 只读 card-material source 的真实 API/生产 adapter 接线（显式 `providerCardRef`、一次读取）以及 403/可见人机验证人工分流；捕获响应和 fixture 填充合同已完成；
-- 付款 executor 与 durable payment gate 强制串接；
+- 付款 executor 与共享服务端权威 payment permit/UNKNOWN 收口强制串接；
 - 付款后三方核对：Plus 权益、外部交易/扣款、订单 attempt/订阅续费状态；
 - 首次真实付款前的单独确认，以及 `1 笔 → 2–3 笔` 受控连续验证。
 
@@ -81,13 +81,27 @@
 ## 当前事实边界
 
 - 测试是隔离合同和本地仿真，不代表生产接线；
-- 当前没有真实 Checkout/付款副作用证据；
-- 当前已有真实 Session Bootstrap 和身份匹配证据，但这不等于 Checkout 或付款已验证；
+- 当前已有真实 Session Bootstrap、身份匹配和真实 Checkout **只读观察**证据，但没有真实填卡或付款成功证据；
+- 最新共享 Worker composition 只在全新隔离 MySQL + 本地 Playwright fixture 验证，付款副作用为 0；不能外推为生产 Worker 已通过；
 - 卡台 API 写开关、真实付款写开关保持关闭；
-- 未跟踪 `.playwright-cli/`、`artifacts/` 不属于本次修改。
+- 未跟踪 `artifacts/browser-checkout-observe/` 不属于本次修改。
 
 ## 2026-08-27 实施进度：共享合同 adapter 与非付款联调已完成
 
 MVP 的 Browser 执行入口已不再依赖旧 `browser_upstream_ready_projection` 或 PoC 状态。当前入口是：共享核心完成资金 attempt → Browser dispatch claim → `browser_run` → Browser 非付款页面动作 → `abortBeforePayment()` 安全收口。未来付款 permit 方法已接入边界，但仍由服务端锁定事实并计算 snapshot，付款写开关保持关闭。
 
-本轮已经验证：正式状态拒绝、卡/route/Provider 绑定、Session/账号状态分流、租约前后丢失、崩溃、重复投递、卡余额/状态/同步时效变化、零外部付款和零资金 fence 残留。下一阶段不是扩大后台，而是先在隔离配置下做真实生产 Worker 的只读 dry-run；真实付款必须单独停下来确认。
+本轮已经验证：正式状态拒绝、卡/route/Provider 绑定、Session/账号状态分流、租约前后丢失、崩溃、重复投递、卡余额/状态/同步时效变化、零外部付款和零资金 fence 残留。
+
+## 2026-08-27 实施进度：正式非付款 Worker composition 已完成
+
+代码提交 `8c17412` 新增 `createSharedNonPaymentDryRun()`，把共享 MySQL dispatch/execution/recovery repositories、共享 Worker service、Browser executor 和 `abortBeforePayment()` 组成一个可调用入口。它要求：
+
+- 精确人工确认词；
+- `browser_payment_writes_enabled=false`；
+- `manifest.allowWrites=false`；
+- 不存在 payment submitter；
+- 调用方提供跨订单稳定的账号 opaque key resolver，不得用订单 ID 代替账号隔离键。
+
+验证结果：Browser 静态检查通过；Browser 全量 71 tests / 70 passed / 1 skipped / 0 failed；全新临时 MySQL 8.4 执行完整 migrations 后的端到端测试 1/1 passed。最终活动 permit、`PAYMENT_SUBMIT` operation、资金 fence 和资源租约残留均为 0，外部付款调用为 0。
+
+这只完成了“生产形状 composition + 隔离数据库/本地页面”的验收，不是生产接线。下一步唯一动作是让统筹窗口提供隔离或预生产 Worker 配置与非敏感测试订单，在真实 Worker + Google Chrome 上运行同合同只读 dry-run；仍不读取真实卡、不填卡、不 submit。首次真实付款必须单独确认。
