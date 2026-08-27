@@ -34,6 +34,15 @@
 - 生产遗留 `ASSIGN_CARD/PENDING` 任务、长期 `VALIDATING` intake batch、2 张 quarantine/review 卡及 1 条历史 `UNCERTAIN provider_call` 尚未处置。
 - Browser 真实付款尚未验证。
 - Browser 上游运行合同已按用户最新确认修正，共享核心的 3 个 P0 已实现和隔离 MySQL 验证。Browser 独立 worktree 仍需修正 PoC adapter 并完成非付款联调；生产未部署本次代码，真实 Browser 付款仍关闭。
+
+## 2026-08-27 Browser 只读 Worker 生产形态部署核验
+
+- 已部署只读候选 release：`/opt/pojia/releases/20260827-browser-readonly-58af6f2`，`/opt/pojia/current` 已切换到该目录。
+- 生产数据库只读 readiness：迁移 037、接单/派发关闭、Browser 付款写入关闭、Browser 队列活动任务为 0；Browser executor profile 已激活且 `productionWritesEnabled=false`。
+- 新增 `pojia-browser-worker.service`，启动前强制检查五类写开关为 `false`；本次已启动并通过 `--check`/只读 fixture smoke，随后停止，未启用常驻服务。
+- 生产机已安装 Playwright Chromium 及运行依赖；未读取真实 Session/PAN/CVC，未访问外部 ChatGPT，未填卡、付款或调用卡台写接口。
+- Web/旧 API Worker 健康检查仍为 `200/ready`；卡库存付费 runner 仍保持 inactive。
+- 该部署只证明生产形态只读 Worker 可启动，不代表真实 Browser 付款可用；真实订单仍需单独付款闸门和外部站点验证。
 - 本次全量 `npm test` 为 415 total / 378 pass / 34 skipped / 3 fail；3 个失败与此次改动无关，且可稳定复现：Unicode worktree 下 Express `sendFile` 返回 500，两个 Browser Worker 测试环境缺少 `playwright` 包。定向和隔离 MySQL 新增路径均已通过。
 
 ## 建议（不是新业务决策）

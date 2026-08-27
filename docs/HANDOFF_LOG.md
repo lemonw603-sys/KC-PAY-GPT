@@ -232,3 +232,11 @@
 - 修改代码：`v1/src/domain/order-status.js`、`v1/src/db/repositories/recharge-attempt-repository.js`、`browser-dispatch-repository.js`、`browser-execution-repository.js`、`v1/src/services/browser-admin-service.js`，以及对应单元/MySQL 集成测试。
 - 验证：定向 48/48 通过；临时 Docker MySQL 8.4 从 001–037 迁移成功，Browser 付款唯一性/UNKNOWN、pre-payment safe-abort、artifact/resource 恢复集成 3/3 通过。全量 `npm test` 为 415 total / 378 pass / 34 skipped / 3 fail，3 个可复现环境失败是 Unicode worktree Express `sendFile` 和缺少 `playwright` 包，非本次回归。
 - 未完成/下一项：Browser 独立 worktree adapter 仍需按 `docs/contracts/2026-08-26_browser-upstream-runtime-contract.md` 接线；之后在付款写关闭下完成端到端联调和故障注入。未部署生产，未修改生产开关，未执行真实付款或卡台写入。
+
+## 2026-08-27 生产只读 Browser Worker 形态核验
+
+- 主线合并后构建只读候选 release `20260827-browser-readonly-58af6f2` 并部署到 `/opt/pojia/current`。
+- 生产 readiness 现场通过：迁移 037、接单/派发关闭、Browser 付款写入关闭、Browser 队列活动任务 0；Browser executor profile 激活且 `productionWritesEnabled=false`。
+- 新增并安装 `pojia-browser-worker.service`；本次启动只读 fixture smoke 通过后立即停止，未启用常驻服务。
+- 生产机安装 Playwright Chromium 与依赖；未访问外部 ChatGPT、未读取真实 Session/PAN/CVC、未填卡、未付款、未调用卡台写接口。
+- 本次仅验证生产进程形态和安全门禁，不代表真实 Browser 充值已可用；真实订单仍需另行确认和付款闸门。
