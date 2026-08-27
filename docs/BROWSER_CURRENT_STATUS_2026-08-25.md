@@ -387,3 +387,5 @@ npm --prefix browser-mvp run dry-run:shared
 ```
 
 结果：静态检查通过，临时 MySQL 迁移后共享 Browser 集成 `1/1 passed`，容器自动删除。将付款开关设为 `true` 或注入 `CHATGPT_TOKEN` 的负向测试均以退出码 2 拒绝。
+
+完整复验记录：`docs/browser-research/browser-worker-dry-run-2026-08-27.md`。本次实际 exit code=0；集成测试断言 order=`CARD_READY`、attempt/funds=`CLEARED`、run=`FAILED_SAFE`、dispatch=`CANCELLED`、active permits=0、`PAYMENT_SUBMIT`=0、资源租约=0、external payment calls=0。该 launcher 仍运行本地 Playwright fixture，不等价于真实部署 Worker + Google Chrome。
