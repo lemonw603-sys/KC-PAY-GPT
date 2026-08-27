@@ -38,3 +38,11 @@
 - `npm test`：402 通过、0 失败、36 跳过。
 - 使用临时 MySQL 8.4 容器、完整执行当前 migrations 后，`test/mysql-integration.test.js`：33 通过、0 失败、0 跳过。
 - 当前工作树未执行合并或部署。
+
+## 合并后部署前复核（2026-08-28）
+
+- 合并提交：`48aa85a merge: card inventory sync hardening`，已进入 `main`。
+- 合并后 `npm test`：402 通过、0 失败、36 跳过。
+- 临时 MySQL 8.4 + 全部 migrations：33 通过、0 失败、0 跳过。
+- `deploy/server` 中 Browser 与只读同步单元的 Provider 写开关均为关闭；卡库存付费 runner 和直充 worker 仍是独立写路径，部署前必须保持停止/关闭。
+- 当前只完成代码和隔离环境复核，尚未执行生产部署或生产只读核验。
