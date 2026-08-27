@@ -72,3 +72,12 @@
 - 数据库 `dispatch_new_recharges`：`true → false`。
 - 复核 readiness：`acceptNewOrders=false`、`dispatchNewRecharges=false`，其余阻断项为空。
 - 当时仍有 1 个 `ASSIGN_CARD`、`PENDING` 任务；未擅自删除或推进，Worker 已停止以避免继续领取。
+
+## 生产部署（2026-08-28）
+
+- 已将 `main` 当前提交部署为 `/opt/pojia/releases/20260828-card-sync-43ca767`。
+- 已切换 `/opt/pojia/current` 并重启 `pojia-web.service`；Web 状态 `active`，本机 `/health/live` 与 `/health/ready` 均返回 `ok/ready`。
+- `pojia-worker.service` 继续保持 `inactive`；卡库存付费 runner 继续 `inactive`；只读同步 timer 继续运行。
+- 接单与派发数据库开关继续为 `false`，Provider 写开关继续为 `false`。
+- 部署后 readiness 返回 `ok=false`，唯一阻断项为 `worker_heartbeat_stale`，原因是按维护窗口要求 Worker 保持停止；这不是代码故障。
+- 未执行 Provider 写操作、开卡、充值、付款或退款。
