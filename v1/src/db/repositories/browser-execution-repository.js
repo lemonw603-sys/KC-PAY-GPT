@@ -879,7 +879,7 @@ export function createBrowserExecutionRepository(pool) {
           throw new BrowserExecutionError('payment is not awaiting confirmation', 'PAYMENT_NOT_CONFIRMABLE');
         }
         const sequence = await appendCheckpoint(connection, row, {
-          kind: 'PAYMENT_CONFIRMED', risk: 'CONFIRMED', operationId: operation,
+          kind: 'PAYMENT_CONFIRMED', risk: 'SETTLED', operationId: operation,
           now, evidence: { evidenceHash: evidence }
         });
         await connection.query(
@@ -925,7 +925,7 @@ export function createBrowserExecutionRepository(pool) {
           throw new BrowserExecutionError('Plus activation is not observable yet', 'PLUS_NOT_PENDING');
         }
         const sequence = await appendCheckpoint(connection, row, {
-          kind: 'PLUS_ACTIVATED', risk: 'CONFIRMED', operationId: operation,
+          kind: 'PLUS_ACTIVATED', risk: 'SETTLED', operationId: operation,
           now, evidence: { evidenceHash: evidence }
         });
         await connection.query(
@@ -979,7 +979,7 @@ export function createBrowserExecutionRepository(pool) {
           throw new BrowserExecutionError('cancellation is not confirmable', 'CANCELLATION_NOT_PENDING');
         }
         const sequence = await appendCheckpoint(connection, row, {
-          kind: 'CANCELLATION_CONFIRMED', risk: 'CONFIRMED', operationId: operation,
+          kind: 'CANCELLATION_CONFIRMED', risk: 'SETTLED', operationId: operation,
           now, evidence: { evidenceHash: evidence }
         });
         await connection.query(

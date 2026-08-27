@@ -622,3 +622,20 @@ active permits=0、`PAYMENT_SUBMIT`=0、live resource leases=0、external paymen
 统筹窗口重新确定**真实单订单验收步骤**。在此之前不安装/启动该 systemd 单元，不向 readonly lane
 派发真实客户订单，不实施付款。需要进入服务器 readonly canary 时，按
 `docs/browser-research/production-readonly-browser-worker-2026-08-27.md` 一次性提供配置并先跑 `--check`。
+
+## 2026-08-27 付款执行器模拟切片（当前最新）
+
+- 新增 `browser-mvp/src/payment-executor.js` 及定向测试：独立 gate 默认关闭，仅允许 `MOCK_CHECKOUT`。
+- 执行顺序固定为：共享权威 permit → submit intent → 单次 adapter 提交 → Plus/取消/卡交易/对账核对。
+- 任意提交异常、拒绝或未知都会进入 UNKNOWN，禁止重试和换卡；`LIVE` 模式显式拒绝。
+- 未修改旧 API Worker 充值逻辑，未接入生产，未开启付款 gate。
+
+验证：`npm --prefix browser-mvp run check` 通过；`node --test browser-mvp/test/payment-executor.test.js` 5/5 通过。
+
+下一步：在隔离 mock 环境完成共享 MySQL 付款状态机集成和崩溃/UNKNOWN 恢复测试；此前不实现 LIVE 适配器、不部署、不开启付款。
+
+### MySQL 模拟付款补充
+
+`npm --prefix browser-mvp run smoke:worker:readonly` 现同时运行 production-readonly Chrome smoke 与 payment executor MySQL mock：3/3 通过。confirmed 路径仅一次 `PAYMENT_SUBMIT` 并完成 Plus/取消/卡交易对账状态；crash 路径进入 `PAYMENT_UNKNOWN/RECONCILE_ONLY`、打开 reconciliation case，重放不再提交。
+
+实跑发现共享 Browser repository 的付款后 checkpoint 使用 `CONFIRMED`，与迁移允许的 `SETTLED` 不一致；已在 `v1/src/db/repositories/browser-execution-repository.js` 修正三处并复验。未触碰旧 API Worker 充值逻辑。

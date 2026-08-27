@@ -67,4 +67,5 @@ node --test \
   "$repo_root/browser-mvp/test/production-readonly-config.test.js" \
   "$repo_root/browser-mvp/test/production-readonly-systemd.test.js"
 TEST_DATABASE_URL="$database_url" node --test \
-  "$repo_root/browser-mvp/test/production-readonly-worker-mysql-smoke.test.js"
+  "$repo_root/browser-mvp/test/production-readonly-worker-mysql-smoke.test.js" \
+  "$repo_root/browser-mvp/test/payment-executor-mysql-integration.test.js"

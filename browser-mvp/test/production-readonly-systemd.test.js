@@ -21,4 +21,6 @@ test('dedicated Browser systemd service is independent and forces all writes off
   ]) {
     assert.match(service, new RegExp(`Environment=${name}=false`));
   }
+  assert.match(service, /Environment=BROWSER_PAYMENT_EXECUTOR_ENABLED=false/);
+  assert.match(service, /Environment=BROWSER_PAYMENT_EXECUTOR_MODE=MOCK/);
 });
