@@ -748,6 +748,9 @@ test('keeps Browser timelines read-only and requires origin plus step-up for con
   const received = {};
   const app = createApp({
     adminAuth,
+    listAdminBrowserDispatchJobs: async (input) => ({
+      page: Number(input.page), total: 1, jobs: [{ id: 41, status: 'QUEUED' }]
+    }),
     listAdminBrowserRuns: async (input) => ({ page: Number(input.page), total: 1, runs: [{ id: 'run-1' }] }),
     getAdminBrowserRun: async (runId) => ({ run: { id: runId }, artifacts: [{ id: 'artifact-1' }] }),
     controlAdminBrowserRun: async (runId, input) => {
@@ -767,6 +770,11 @@ test('keeps Browser timelines read-only and requires origin plus step-up for con
     });
     assert.equal(runs.status, 200);
     assert.equal((await runs.json()).total, 1);
+    const dispatchJobs = await fetch(`${baseUrl}/api/v1/admin/browser/dispatch-jobs?page=1`, {
+      headers: { Cookie: sessionCookie }
+    });
+    assert.equal(dispatchJobs.status, 200);
+    assert.equal((await dispatchJobs.json()).jobs[0].status, 'QUEUED');
     const detail = await fetch(`${baseUrl}/api/v1/admin/browser/runs/run-1`, {
       headers: { Cookie: sessionCookie }
     });

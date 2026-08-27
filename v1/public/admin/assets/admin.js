@@ -134,6 +134,8 @@ const elements = {
   browserStatus: document.querySelector('#browser-status'),
   browserPaymentState: document.querySelector('#browser-payment-state'),
   browserControlState: document.querySelector('#browser-control-state'),
+  browserDispatchTable: document.querySelector('#browser-dispatch-table'),
+  browserDispatchCount: document.querySelector('#browser-dispatch-count'),
   browserRunsTable: document.querySelector('#browser-runs-table'),
   browserRunsCount: document.querySelector('#browser-runs-count'),
   browserRunsPage: document.querySelector('#browser-runs-page'),
@@ -517,6 +519,28 @@ const BROWSER_CONTROL_LABELS = Object.freeze({
   AUTOMATION: '自动化', REQUESTED: '已请求人工', FROZEN: '自动化已冻结',
   TRANSFERRED: '已转交人工', RELEASED: '已释放待对账'
 });
+const BROWSER_DISPATCH_LABELS = Object.freeze({
+  QUEUED: '排队中', CLAIMED: '已领取', COMPLETED: '已完成', CANCELLED: '已安全收口'
+});
+
+async function loadBrowserDispatchJobs() {
+  const params = new URLSearchParams({ page: 1, pageSize: 50 });
+  if (elements.browserPublicNo.value.trim()) params.set('publicNo', elements.browserPublicNo.value.trim());
+  const payload = await api(`/api/v1/admin/browser/dispatch-jobs?${params}`);
+  elements.browserDispatchTable.innerHTML = payload.jobs.length
+    ? payload.jobs.map((job) => `<tr>
+      <td><strong>${escapeHtml(job.publicNo)}</strong><small>Dispatch ${escapeHtml(job.id)} · ${escapeHtml(job.jobKey)}</small></td>
+      <td><span class="cell-main">${escapeHtml(BROWSER_DISPATCH_LABELS[job.status] || job.status)}</span><small>领取 ${job.attemptCount} 次${job.lastErrorCode ? ` · ${escapeHtml(job.lastErrorCode)}` : ''}</small></td>
+      <td><span class="cell-main">${escapeHtml(job.attemptStatus)} / ${escapeHtml(job.fundsRiskState)}</span><small>${escapeHtml(job.orderStatus)} · ${escapeHtml(job.rechargeAttemptId)}</small></td>
+      <td><span class="cell-main">${escapeHtml(job.lease?.owner || '未领取')}</span><small>${formatTime(job.lease?.until)}</small></td>
+      <td><span class="cell-main">${escapeHtml(job.profile?.code || '领取时绑定')}</span><small>${job.latestRun ? `Run ${escapeHtml(job.latestRun.id)} · ${escapeHtml(job.latestRun.status)}` : '尚未创建 Run'}</small></td>
+      <td><span class="cell-main">${formatTime(job.queuedAt)}</span><small>${formatTime(job.updatedAt)}</small></td>
+    </tr>`).join('')
+    : '<tr><td colspan="6" class="empty-cell">没有符合条件的 Browser dispatch 任务</td></tr>';
+  elements.browserDispatchCount.textContent = payload.hasMore
+    ? `至少 ${payload.jobs.length} / ${payload.total} 个任务`
+    : `${payload.total} 个任务`;
+}
 
 async function loadBrowserRuns() {
   const params = new URLSearchParams({ page: state.browserPage, pageSize: 50 });
@@ -1373,7 +1397,7 @@ async function switchView(view, { status = '' } = {}) {
   } else if (view === 'browser') {
     elements.viewKicker.textContent = 'Browser 控制面';
     elements.viewTitle.textContent = '运行、租约与人工接管';
-    await loadBrowserRuns();
+    await Promise.all([loadBrowserDispatchJobs(), loadBrowserRuns()]);
   } else {
     elements.viewKicker.textContent = state.nav === 'exceptions' ? '人工处理' : '订单中心';
     elements.viewTitle.textContent = state.nav === 'exceptions' ? '需要关注的订单' : '全部订单';
@@ -1541,7 +1565,8 @@ elements.reconciliationTable?.addEventListener('click', (event) => {
 elements.browserFilters?.addEventListener('submit', (event) => {
   event.preventDefault();
   state.browserPage = 1;
-  loadBrowserRuns().catch(() => showNotice('Browser 运行队列读取失败。'));
+  Promise.all([loadBrowserDispatchJobs(), loadBrowserRuns()])
+    .catch(() => showNotice('Browser 队列或运行记录读取失败。'));
 });
 elements.browserRunsPrev?.addEventListener('click', () => {
   if (state.browserPage > 1) { state.browserPage -= 1; loadBrowserRuns(); }
@@ -1605,7 +1630,7 @@ document.querySelector('#refresh-button').addEventListener('click', async (event
         : state.view === 'reconciliation' ? loadReconciliationCases()
           : state.view === 'card-funding' ? loadCardFundingAttempts()
           : state.view === 'provider-routes' ? loadProviderRoutes()
-          : state.view === 'browser' ? loadBrowserRuns() : loadOrders());
+          : state.view === 'browser' ? () => Promise.all([loadBrowserDispatchJobs(), loadBrowserRuns()]) : loadOrders());
     showNotice('刷新完成。', 'success');
   } catch {
     showNotice('刷新失败，请稍后重试。');
@@ -1738,7 +1763,8 @@ window.setInterval(() => {
       : state.view === 'stock' ? loadStock
         : state.view === 'cdks' ? loadCdkBatches
           : state.view === 'reconciliation' ? loadReconciliationCases
-            : state.view === 'browser' ? loadBrowserRuns : null;
+            : state.view === 'browser'
+              ? () => Promise.all([loadBrowserDispatchJobs(), loadBrowserRuns()]) : null;
   refresh?.().catch(() => {});
 }, 10_000);
 elements.cdkForm.addEventListener('submit', async (event) => {
