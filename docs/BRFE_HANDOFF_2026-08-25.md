@@ -530,3 +530,5 @@ git diff --check
 本地 `isolated-fixture` 命令已实跑通过：静态检查通过，共享 MySQL 集成 `1/1 passed`；写开关为 `true` 或注入 `CHATGPT_TOKEN` 的两条负向测试均以退出码 2 fail-closed。该命令仍是本地 composition 验收，不等于真实 Worker/生产验收。
 
 详细证据已落盘：`docs/browser-research/browser-worker-dry-run-2026-08-27.md`。本次 exit code=0，临时容器自动清理，数据库终态和零付款副作用断言全部通过。仍未启动 `v1/src/worker.js` 部署进程，未使用外部页面或 Google Chrome；真实 Worker + Chrome 观察仍需后续单独配置和验收。
+
+补充本地 Worker + Chrome fixture：`node --test browser-mvp/test/local-worker-chrome-fixture.test.js` **1/1 passed**，实际经过 `createBrowserWorkerProcess` claim/run/complete 和系统 Google Chrome 临时 profile 的本地页面观察，`submitCalls=0`。这只是本地控制壳证据，不等于真实 Worker/外部站点验收。

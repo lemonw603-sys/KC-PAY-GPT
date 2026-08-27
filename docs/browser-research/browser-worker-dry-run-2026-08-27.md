@@ -57,6 +57,15 @@ external payment calls = 0
 - 付款前安全退出能清除 funds fence、permit 和资源租约；
 - 所有写开关显式为 false 时流程才会启动。
 
+另外新增并实跑了本地 Worker + Google Chrome fixture：
+
+```text
+node --test browser-mvp/test/local-worker-chrome-fixture.test.js
+→ 1/1 passed
+```
+
+该测试通过 `createBrowserWorkerProcess` 驱动一次 claim/run/complete，并用 `GoogleChromeControlRuntimeAdapter` 启动系统 Google Chrome 的临时 persistent profile，访问本地 `data:` 页面后关闭 profile；结果固定 `submitCalls=0`。它证明本地 Worker 控制壳可调用 Chrome runtime，但仍不是外部 ChatGPT 页面或生产 Worker。
+
 ## 尚未验证 / 不应外推
 
 - 这不是生产或预生产 Worker 验收；没有启动 `v1/src/worker.js` 部署进程；
