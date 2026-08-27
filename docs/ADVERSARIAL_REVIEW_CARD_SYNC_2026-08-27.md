@@ -36,5 +36,5 @@
 - `git diff --check`：通过。
 - 关键 JS 文件语法检查：通过。
 - `npm test`：402 通过、0 失败、36 跳过。
-- 当前环境未提供 `TEST_DATABASE_URL`，因此隔离 MySQL 集成测试尚未执行；不能把跳过视为通过。
+- 使用临时 MySQL 8.4 容器、完整执行当前 migrations 后，`test/mysql-integration.test.js`：33 通过、0 失败、0 跳过。
 - 当前工作树未执行合并或部署。
