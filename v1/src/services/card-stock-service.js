@@ -120,7 +120,7 @@ export function createCardStockService({ pool, sessionEncryptionKey, panHmacKey 
          (id, alert_type, dedupe_key, severity, title, message, status)
          VALUES (UUID(), 'CARD_STOCK_LOW', ?, 'warning', '可用卡库存偏低', ?, 'OPEN')
          ON DUPLICATE KEY UPDATE severity = VALUES(severity), title = VALUES(title),
-           message = VALUES(message), status = 'OPEN', acknowledged_at = NULL`,
+           message = VALUES(message), status = 'OPEN'`,
         [key, `卡段 ${cardTypeId} 剩余 ${available} 张可用库存卡，阈值为 ${threshold}。`]
       );
     } else {

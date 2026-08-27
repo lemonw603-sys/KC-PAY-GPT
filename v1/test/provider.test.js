@@ -8,7 +8,8 @@ import {
   mapCardCredentials,
   mapCardProvisioning,
   mapPurchasedCard,
-  mapCardRechargeResult
+  mapCardRechargeResult,
+  normalizeHnskjTransaction
 } from '../src/providers/hnskj-card.js';
 import { assertProviderWritesDisabled, runReadOnlyChecks } from '../scripts/provider-read-check.js';
 import { ProviderError, ProviderSchemaError } from '../src/providers/http-client.js';
@@ -225,6 +226,40 @@ test('Hnskj accepts the observed complete transaction response without page meta
   const result = await provider.transactions('fixture-card-id');
   assert.equal(result.data.total, result.data.transactions.length);
   assert.equal(result.data.page, undefined);
+});
+
+test('Hnskj normalizes the current aggregate transaction shape without weakening identity checks', async () => {
+  const provider = new HnskjCardProvider({
+    baseUrl: 'https://card.example/api/open/v1',
+    apiKey: 'nhs_test_key',
+    fetchImpl: async () => response({ success: true, data: {
+      transactions: [{
+        id: 'agg_tx_1', transactionId: 'provider_tx_1', type: 'PURCHASE',
+        transactionType: 'PURCHASE', status: 'SUCCESS', transactionStatus: 'SUCCESS',
+        amount: '15.93', amountUsd: '15.93', currency: 'USD',
+        feeAmount: '0.00', feeCurrency: 'USD', txnTime: '2026-08-27 15:01:00',
+        originalAmount: '982.14', originalCurrency: 'PHP', merchant: 'OPENAI',
+        cardId: '1477', cardNo: '****6807'
+      }],
+      total: 1, complete: true, cached: false,
+      asOf: '2026-08-27T15:01:01Z', source: 'aggregate'
+    } })
+  });
+  const result = await provider.transactions('1477', { page: 1, pageSize: 50 });
+  assert.deepEqual(result.data.transactions[0], {
+    id: 'agg_tx_1', type: 'PURCHASE', status: 'SUCCESS', amount: '15.93',
+    currency: 'USD', fee: '0.00', tradeTime: '2026-08-27 15:01:00',
+    originalAmount: '982.14', originalCurrency: 'PHP', merchantName: 'OPENAI',
+    platformCardId: '1477'
+  });
+  assert.equal('cardNo' in result.data.transactions[0], false);
+});
+
+test('Hnskj transaction normalization still rejects missing canonical identity', () => {
+  const normalized = normalizeHnskjTransaction({ amount: '16.00', currency: 'USD' });
+  assert.equal(normalized.id, undefined);
+  assert.equal(normalized.type, undefined);
+  assert.equal(normalized.status, undefined);
 });
 
 test('Hnskj card detail, balance refresh, and withdrawal reject non-object data at the boundary', async () => {

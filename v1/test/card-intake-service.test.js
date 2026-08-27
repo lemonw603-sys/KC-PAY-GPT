@@ -42,8 +42,12 @@ function createMemoryRepository({ existing = [] } = {}) {
     },
     async setBatchStatus(id, status) { batches.get(id).status = status; },
     async findExistingExternalIds(account, ids) {
-      return new Map(ids.filter((id) => cards.has(key(account, id)))
-        .map((id) => [id, cards.get(key(account, id)).id]));
+      return new Map(ids.flatMap((id) => {
+        if (cards.has(key(account, id))) return [[id, cards.get(key(account, id)).id]];
+        const discovery = [...discoveries.values()].find((row) =>
+          row.providerAccountId === account && row.externalCardId === id);
+        return discovery ? [[id, discovery.id]] : [];
+      }));
     },
     async addDiscovery({ batchId, providerAccountId, externalCardId, details }) {
       if (cards.has(key(providerAccountId, externalCardId))) {
@@ -77,7 +81,10 @@ function createMemoryRepository({ existing = [] } = {}) {
     },
     async markDiscoveryFailed(id, code, reason) {
       const row = discoveries.get(id);
-      row.intakeStatus = 'FAILED'; row.failureCode = code; row.failureReason = reason;
+      row.validationAttempts += 1;
+      row.intakeStatus = row.validationAttempts >= 3 ? 'FAILED' : 'QUARANTINED';
+      row.failureCode = code; row.failureReason = reason;
+      return { discovery: { ...row }, terminal: row.intakeStatus === 'FAILED' };
     },
     async acceptDiscovery(id, card, { manual = false } = {}) {
       const row = discoveries.get(id);
@@ -157,22 +164,23 @@ test('requires two stable snapshots and isolates partial failures without rollin
 
   const first = await service.validateBatch(intake.batch.id);
   assert.deepEqual({ accepted: first.accepted, pending: first.pending, failed: first.failed },
-    { accepted: 0, pending: 48, failed: 1 });
+    { accepted: 0, pending: 49, failed: 0 });
   assert.equal(repository.cards.size, 1);
 
   const second = await service.validateBatch(intake.batch.id);
   assert.equal(second.accepted, 45);
-  assert.equal(second.pending, 1);
+  assert.equal(second.pending, 2);
   assert.equal(second.reviewRequired, 2);
   assert.equal(second.failed, 0);
   assert.equal(second.batch.acceptedCount, 45);
   assert.equal(second.batch.reviewCount, 2);
-  assert.equal(second.batch.failedCount, 1);
+  assert.equal(second.batch.failedCount, 0);
   assert.equal(second.batch.status, 'VALIDATING');
   assert.equal(repository.cards.has('acct-a:card-47'), false, 'unknown ownership must not enter inventory');
 
   const third = await service.validateBatch(intake.batch.id);
   assert.equal(third.accepted, 1);
+  assert.equal(third.failed, 1);
   assert.equal(third.batch.status, 'COMPLETED');
 });
 
@@ -226,4 +234,42 @@ test('PAN HMAC remains null when its independent key is not configured', async (
   await service.validateBatch(intake.batch.id);
   await service.validateBatch(intake.batch.id);
   assert.equal(repository.cards.get('acct-a:card-1').panHmac, null);
+});
+
+test('maps a provider cardType name to the configured canonical card type ID', async () => {
+  const repository = createMemoryRepository();
+  const provider = createPagedProvider({
+    'card-1': () => cardDetail('card-1', { cardTypeId: undefined, cardType: 'VISA-40024200' })
+  }, { total: 1 });
+  const service = createCardIntakeService({ provider, repository, providerAccountId: 'acct-a',
+    credentialEncryptionKey: Buffer.alloc(32, 4), assumeDedicatedAccount: true,
+    validationRules: {
+      allowedCardTypeIds: ['1'],
+      allowedCardTypes: [{ id: '1', name: 'VISA-40024200' }],
+      minimumBalance: 16
+    } });
+  const intake = await service.discover();
+  await service.validateBatch(intake.batch.id);
+  const result = await service.validateBatch(intake.batch.id);
+  assert.equal(result.accepted, 1);
+  assert.equal(repository.cards.get('acct-a:card-1').cardTypeId, '1');
+});
+
+test('does not rediscover a reviewed provider card in every completed catalog batch', async () => {
+  const repository = createMemoryRepository();
+  const provider = createPagedProvider({
+    'card-1': () => cardDetail('card-1', { cardTypeId: 'other' })
+  }, { total: 1 });
+  const service = createCardIntakeService({ provider, repository, providerAccountId: 'acct-a',
+    credentialEncryptionKey: Buffer.alloc(32, 5), assumeDedicatedAccount: true,
+    validationRules: { allowedCardTypeIds: ['bin-1'] } });
+  const first = await service.discover();
+  await service.validateBatch(first.batch.id);
+  await service.validateBatch(first.batch.id);
+  const reviewed = [...repository.discoveries.values()][0];
+  assert.equal(reviewed.intakeStatus, 'REVIEW_REQUIRED');
+  const second = await service.discover();
+  assert.equal(second.discovered, 0);
+  assert.equal(second.existing, 1);
+  assert.equal(repository.discoveries.size, 1);
 });

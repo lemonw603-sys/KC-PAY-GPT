@@ -14,7 +14,10 @@ const POLICY = Object.freeze({
   [CardSyncTier.PROVISIONING]: { priority: 20, intervalMs: 60_000 },
   [CardSyncTier.ASSIGNED]: { priority: 30, intervalMs: 5 * 60_000 },
   [CardSyncTier.RECENT_TERMINAL]: { priority: 40, intervalMs: 60 * 60_000 },
-  [CardSyncTier.AVAILABLE]: { priority: 50, intervalMs: 6 * 60 * 60_000 },
+  // Inventory qualification requires transaction evidence newer than 15 minutes.
+  // Refresh available cards inside that window so a healthy card does not
+  // oscillate between eligible and stale for most of a six-hour interval.
+  [CardSyncTier.AVAILABLE]: { priority: 50, intervalMs: 10 * 60_000 },
   [CardSyncTier.REFUND_WATCH]: { priority: 60, intervalMs: 24 * 60 * 60_000 },
   [CardSyncTier.ARCHIVED]: { priority: 70, intervalMs: 7 * 24 * 60 * 60_000 },
   [CardSyncTier.MANUAL]: { priority: 5, intervalMs: 0 }
@@ -63,4 +66,3 @@ export function initialSyncTier({ inventoryStatus, orderStatus = null }) {
   if (['DEPLETED', 'FAILED'].includes(inventory)) return CardSyncTier.REFUND_WATCH;
   return CardSyncTier.ARCHIVED;
 }
-

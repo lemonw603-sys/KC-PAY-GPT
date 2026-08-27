@@ -113,6 +113,10 @@ flowchart LR
 7. 卡充值持久化幂等键、金额、手续费、Provider 调用、pending、余额和流水；
 8. 增加受控人工特殊复用入口，系统禁止自动复用。
 
+### 2026-08-27 库存同步专项进度
+
+已完成代码与隔离验证：Provider Schema 兼容、cardType 名称映射、历史 discovery 去重、completed baseline 复用、3 次有界读取失败、AVAILABLE 10 分钟同步、确定性 Schema 直达复核、Bark 每事件一次、当前 route account 归属。仍未完成部署后生产复验、历史重复 discovery 清理策略、FAILED 显式恢复入口和真实手动开卡验收。
+
 ### 退出条件
 
 - 消费过、资金未知或有争议的卡不能进入正常库存；

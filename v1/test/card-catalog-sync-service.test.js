@@ -93,3 +93,37 @@ test('catalog sync refuses direct registration when quarantine intake is unavail
   assert.equal(result.unresolvedActive, 1);
   assert.deepEqual(snapshot.unresolved, [{ providerCardId: '617', code: 'CARD_INTAKE_REQUIRED' }]);
 });
+
+test('catalog sync does not revalidate an unchanged completed intake batch', async () => {
+  const intakeCalls = [];
+  const pool = {
+    async query(sql) {
+      if (/FROM app_settings/.test(sql)) return [[
+        { setting_key: 'default_card_type_id', setting_value: '7' },
+        { setting_key: 'default_minimum_required_card_balance', setting_value: '16' }
+      ], []];
+      if (/SELECT provider_card_id, status FROM cards/.test(sql)) return [[], []];
+      if (/FROM cards/.test(sql)) return [[{}], []];
+      if (/INSERT INTO card_catalog_snapshots/.test(sql)) return [{ affectedRows: 1 }, []];
+      throw new Error(`Unexpected query: ${sql}`);
+    }
+  };
+  const provider = {
+    async cards() { return { data: { cards: [], total: 0 } }; }
+  };
+  const intake = {
+    async discover() {
+      intakeCalls.push('discover');
+      return { created: false, activeBatch: false, batch: { id: 'completed-1', status: 'COMPLETED' } };
+    },
+    async validateBatch() {
+      intakeCalls.push('validate');
+      throw new Error('completed batch must not be revalidated');
+    }
+  };
+  const result = await syncCardCatalog({ pool, provider, intake });
+  assert.deepEqual(intakeCalls, ['discover']);
+  assert.equal(result.intake.batchId, 'completed-1');
+  assert.equal(result.intake.firstPass, null);
+  assert.equal(result.intake.secondPass, null);
+});

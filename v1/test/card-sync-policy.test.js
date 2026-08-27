@@ -38,3 +38,9 @@ test('maps operational card states into stable sync tiers', () => {
   assert.throws(() => normalizeCardSyncTier('unknown'), /Unknown card sync tier/);
 });
 
+test('keeps available inventory transaction evidence inside the 15 minute eligibility window', () => {
+  const now = new Date('2026-08-20T00:00:00.000Z');
+  assert.equal(nextCardSyncAt({
+    tier: CardSyncTier.AVAILABLE, now
+  }).toISOString(), '2026-08-20T00:10:00.000Z');
+});

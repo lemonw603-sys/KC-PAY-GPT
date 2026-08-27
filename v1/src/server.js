@@ -40,6 +40,7 @@ import { createTraceabilityOperationsService } from './services/traceability-ope
 import { createSessionReplacementService } from './services/session-replacement-service.js';
 import { createBrowserAdminService } from './services/browser-admin-service.js';
 import { resolveCurrentCardProviderAccountId } from './services/provider-route-service.js';
+import { readProviderSnapshot } from './services/card-provider-snapshot-service.js';
 
 const config = loadConfig();
 const pool = createDatabasePool(config.database);
@@ -85,6 +86,7 @@ async function configuredCardIntake() {
      WHERE setting_key IN ('default_card_type_id','default_minimum_required_card_balance')`
   );
   const settings = new Map(rows.map((row) => [row.setting_key, row.setting_value]));
+  const providerSnapshot = await readProviderSnapshot(pool);
   return createCardIntakeService({
     provider: cardIntakeProvider,
     repository: cardIntakeRepository,
@@ -94,6 +96,7 @@ async function configuredCardIntake() {
     assumeDedicatedAccount: true,
     validationRules: {
       allowedCardTypeIds: [String(settings.get('default_card_type_id') || '')],
+      allowedCardTypes: providerSnapshot?.cardTypes || [],
       minimumBalance: String(settings.get('default_minimum_required_card_balance') || '')
     }
   });

@@ -13,15 +13,21 @@ export function createAlertNotificationRepository(pool) {
            n.locked_at = NULL, n.sent_at = NULL, n.last_error = NULL,
            n.source_updated_at = a.updated_at
        WHERE n.channel = 'BARK' AND a.status = 'OPEN'
-         AND (n.source_updated_at IS NULL OR n.source_updated_at < a.updated_at)
-         AND n.status IN ('SENT', 'DEAD', 'CANCELLED')`
+         AND (
+           n.status = 'CANCELLED'
+           OR (
+             n.status IN ('SENT', 'DEAD')
+             AND a.acknowledged_at IS NOT NULL
+             AND (n.source_updated_at IS NULL OR n.source_updated_at < a.acknowledged_at)
+           )
+         )`
     );
     await pool.query(
       `UPDATE alert_notifications n
        JOIN operator_alerts a ON a.id = n.alert_id
        SET n.status = 'CANCELLED', n.locked_at = NULL, n.next_attempt_at = NULL
        WHERE n.channel = 'BARK' AND a.status <> 'OPEN'
-         AND n.status IN ('PENDING', 'RETRY', 'SENDING')`
+         AND n.status IN ('PENDING', 'RETRY', 'SENDING', 'SENT', 'DEAD')`
     );
   }
 

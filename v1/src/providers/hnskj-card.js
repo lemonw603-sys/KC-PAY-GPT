@@ -77,25 +77,30 @@ const cardsDataSchema = z.object({
 // field interpretation remains in the mapper that owns the business rule.
 const objectDataSchema = z.record(z.string(), z.unknown());
 
+const decimalValueSchema = z.union([
+  z.number(),
+  z.string().trim().regex(/^-?\d+(?:\.\d+)?$/)
+]).transform((value) => String(value));
+
 const transactionSchema = z.object({
   id: z.string().min(1),
   type: z.string().min(1),
   status: z.string().min(1),
   typeText: z.string().optional(),
   statusText: z.string().optional(),
-  amount: z.number(),
-  currency: z.string().length(3),
-  fee: z.number().optional(),
+  amount: decimalValueSchema,
+  currency: z.string().length(3).transform((value) => value.toUpperCase()),
+  fee: decimalValueSchema.optional(),
   tradeTime: z.string().optional(),
   relatedTxnId: z.string().optional(),
   settlementStatus: z.string().optional(),
-  originalAmount: z.number().optional(),
-  originalCurrency: z.string().length(3).optional(),
+  originalAmount: decimalValueSchema.optional(),
+  originalCurrency: z.string().length(3).transform((value) => value.toUpperCase()).optional(),
   merchantName: z.string().optional(),
   merchantCountry: z.string().optional(),
   merchantMcc: z.string().optional(),
   platformCardId: z.string().optional()
-}).passthrough();
+});
 
 const transactionsDataSchema = z.object({
   transactions: z.array(transactionSchema),
@@ -104,7 +109,7 @@ const transactionsDataSchema = z.object({
   pageSize: z.number().optional(),
   source: z.string().optional(),
   cardNo: z.string().optional()
-}).passthrough();
+});
 
 function normalizeBaseUrl(value) {
   const url = String(value || '').trim().replace(/\/+$/, '');
@@ -171,6 +176,52 @@ function valueAt(object, paths) {
     if (value !== undefined && value !== null && String(value).trim() !== '') return value;
   }
   return null;
+}
+
+function optionalString(value) {
+  return value === undefined || value === null || String(value).trim() === ''
+    ? undefined : String(value);
+}
+
+export function normalizeHnskjTransaction(record) {
+  const source = record && typeof record === 'object' && !Array.isArray(record) ? record : {};
+  const directAmount = valueAt(source, [['amount']]);
+  const usdAmount = valueAt(source, [['amountUsd'], ['usdAmount']]);
+  const originalAmount = valueAt(source, [['originalAmount'], ['original_amount']]);
+  const amount = directAmount ?? usdAmount ?? originalAmount;
+  const currency = directAmount != null
+    ? valueAt(source, [['currency']])
+    : usdAmount != null
+      ? valueAt(source, [['usdCurrency']])
+      : valueAt(source, [['originalCurrency'], ['original_currency']]);
+  return Object.fromEntries(Object.entries({
+    id: optionalString(valueAt(source, [['id'], ['transactionId'], ['transaction_id']])),
+    type: optionalString(valueAt(source, [['type'], ['transactionType'], ['transaction_type']])),
+    status: optionalString(valueAt(source, [['status'], ['transactionStatus'], ['transaction_status']])),
+    typeText: optionalString(valueAt(source, [['typeText'], ['type_text']])),
+    statusText: optionalString(valueAt(source, [['statusText'], ['status_text']])),
+    amount,
+    currency: optionalString(currency),
+    fee: valueAt(source, [['fee'], ['feeAmount'], ['fee_amount']]) ?? undefined,
+    tradeTime: optionalString(valueAt(source, [['tradeTime'], ['txnTime'], ['createTime'], ['createdAt']])),
+    relatedTxnId: optionalString(valueAt(source, [['relatedTxnId'], ['related_txn_id']])),
+    settlementStatus: optionalString(valueAt(source, [['settlementStatus'], ['settlement_status']])),
+    originalAmount: originalAmount ?? undefined,
+    originalCurrency: optionalString(valueAt(source, [['originalCurrency'], ['original_currency']])),
+    merchantName: optionalString(valueAt(source, [['merchantName'], ['merchant']])),
+    merchantCountry: optionalString(valueAt(source, [['merchantCountry'], ['merchant_country']])),
+    merchantMcc: optionalString(valueAt(source, [['merchantMcc'], ['merchant_mcc']])),
+    platformCardId: optionalString(valueAt(source, [['platformCardId'], ['cardId'], ['card_id']]))
+  }).filter(([, value]) => value !== undefined));
+}
+
+function validateTransactionsData(envelope) {
+  const raw = envelope?.data;
+  const normalized = raw && typeof raw === 'object' && !Array.isArray(raw)
+    ? { ...raw, transactions: Array.isArray(raw.transactions)
+      ? raw.transactions.map(normalizeHnskjTransaction) : raw.transactions }
+    : raw;
+  return validateData({ ...envelope, data: normalized }, transactionsDataSchema, 'card transactions');
 }
 
 export function mapPurchasedCard(envelope) {
@@ -379,10 +430,8 @@ export class HnskjCardProvider {
       if (value != null && value !== '') params.set(key, String(value));
     }
     const suffix = params.toString() ? `?${params}` : '';
-    return validateData(
+    return validateTransactionsData(
       await this.request(`/cards/${encodeURIComponent(String(cardId))}/transactions${suffix}`),
-      transactionsDataSchema,
-      'card transactions'
     );
   }
 
