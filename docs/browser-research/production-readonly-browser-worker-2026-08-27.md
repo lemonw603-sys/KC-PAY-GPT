@@ -134,3 +134,12 @@ external payment calls = 0
 5. 确认后调用 Plus 激活、取消自动续费、卡台交易读取和对账接口；任一未确认都停在 `POST_PAYMENT_UNKNOWN/RECONCILIATION_REQUIRED`，不推进最终成功。
 
 `LIVE` 模式显式拒绝并报告 `LIVE_PAYMENT_ADAPTER_UNAVAILABLE`。systemd 与配置样例固定为 `BROWSER_PAYMENT_EXECUTOR_ENABLED=false`、`BROWSER_PAYMENT_EXECUTOR_MODE=MOCK`。
+
+### 共享 MySQL 模拟付款闭环
+
+新增 `payment-executor-mysql-integration.test.js`，由一键 smoke 创建临时 MySQL 8.4、执行 001–037 迁移，并只在该临时库中短时打开数据库 Browser payment gate。外部 adapter 始终是内存 mock，不访问付款端点。验证两条路径：
+
+- CONFIRMED：权威 permit/snapshot → submit intent → 单次 mock submit → payment confirmed → Plus active → cancellation confirmed → card transaction reconcile → `RECHARGE_SUCCESS`；`PAYMENT_SUBMIT` 恰好 1 条。
+- crash/UNKNOWN：submit intent 后 mock 抛错 → run=`RECONCILE_ONLY`、payment=`PAYMENT_UNKNOWN`、attempt/funds=`SUBMIT_UNKNOWN/UNKNOWN`、reconciliation case=1；同 operation 重放不会再次 submit。
+
+首次真实 MySQL 运行发现 `browser-execution-repository.js` 写入 checkpoint risk=`CONFIRMED`，但迁移 027 的有效枚举是 `SETTLED`，导致付款确认路径被数据库约束拒绝。已将三个付款后确认 checkpoint 统一为 `SETTLED` 并复验通过。这是运行时实证修复，不是文档推测。

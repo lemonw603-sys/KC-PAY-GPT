@@ -633,3 +633,9 @@ active permits=0、`PAYMENT_SUBMIT`=0、live resource leases=0、external paymen
 验证：`npm --prefix browser-mvp run check` 通过；`node --test browser-mvp/test/payment-executor.test.js` 5/5 通过。
 
 下一步：在隔离 mock 环境完成共享 MySQL 付款状态机集成和崩溃/UNKNOWN 恢复测试；此前不实现 LIVE 适配器、不部署、不开启付款。
+
+### MySQL 模拟付款补充
+
+`npm --prefix browser-mvp run smoke:worker:readonly` 现同时运行 production-readonly Chrome smoke 与 payment executor MySQL mock：3/3 通过。confirmed 路径仅一次 `PAYMENT_SUBMIT` 并完成 Plus/取消/卡交易对账状态；crash 路径进入 `PAYMENT_UNKNOWN/RECONCILE_ONLY`、打开 reconciliation case，重放不再提交。
+
+实跑发现共享 Browser repository 的付款后 checkpoint 使用 `CONFIRMED`，与迁移允许的 `SETTLED` 不一致；已在 `v1/src/db/repositories/browser-execution-repository.js` 修正三处并复验。未触碰旧 API Worker 充值逻辑。
