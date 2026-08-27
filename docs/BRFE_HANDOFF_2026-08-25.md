@@ -511,3 +511,10 @@ git diff --check
 ### 当前阻塞与解除条件
 
 等待统筹窗口提供隔离/预生产数据库地址、迁移状态、Browser Worker 启动参数、非敏感测试订单，以及两个写开关关闭证明：`browser_payment_writes_enabled=false`、卡台写开关关闭。收到后才执行真实 Worker + Google Chrome 只读 dry-run。
+
+## 2026-08-27 客户安排前紧急只读复验
+
+- 为快速确认安全基线，重新创建临时 `mysql:8.4` 并完整执行 `migrations 001–037`；共享 Browser 非付款集成 `node --test browser-mvp/test/shared-dry-run-mysql-integration.test.js` **1/1 passed**。
+- Browser 全量测试再次为 **71 tests / 70 passed / 1 skipped / 0 failed**；`git diff --check` 通过。
+- 临时容器测试后已删除。本次没有连接生产/预生产、没有启动真实部署 Worker 或外部 Chrome 页面、没有读取 Session/PAN/CVC、没有卡台写入或付款。
+- 该结果确认隔离 composition 仍能零付款安全收口，但不等价于真实 Worker/生产验收；缺少隔离/预生产配置和测试订单的阻塞仍然存在。

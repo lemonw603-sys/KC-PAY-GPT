@@ -352,3 +352,17 @@ live resource leases = 0
 ### 阻塞项与解除条件
 
 需要统筹窗口提供：隔离或预生产 `DATABASE_URL`、完整迁移状态、Browser Worker 启动配置、非敏感测试订单，以及明确的 `browser_payment_writes_enabled=false` 与卡台写开关关闭证明。获得这些输入后，才可执行真实 Worker + Google Chrome 只读 dry-run。
+
+## 2026-08-27 客户安排前紧急只读复验
+
+为在不接生产的前提下尽快确认当前安全基线，重新创建临时 `mysql:8.4` 容器（动态端口，完整执行 migrations `001–037`），并重跑共享 Browser 非付款集成：
+
+```text
+node --test browser-mvp/test/shared-dry-run-mysql-integration.test.js
+→ 1/1 passed
+
+npm --prefix browser-mvp test
+→ 71 tests / 70 passed / 1 skipped / 0 failed
+```
+
+容器在测试后已删除；本次没有启动真实部署 Worker、没有连接生产/预生产数据库、没有启动 Chrome 访问外部页面、没有读取 Session/PAN/CVC、没有卡台或付款调用。该复验只能证明隔离 composition 仍可安全收口，不能替代真实 Worker 验收。
