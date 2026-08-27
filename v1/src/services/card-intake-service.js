@@ -54,6 +54,7 @@ function defaultMapCardDetail(envelope, { externalCardId } = {}) {
   return {
     externalCardId: String(first(data, ['id', 'cardId', 'card_id']) ?? externalCardId ?? ''),
     cardTypeId: first(data, ['cardTypeId', 'card_type_id', 'cardBinId', 'card_bin_id']),
+    cardTypeName: first(data, ['cardType', 'card_type']),
     status: String(first(data, ['status', 'cardStatus', 'card_status']) || '').toLowerCase(),
     fundedAmount: first(data, ['fundedAmount', 'funded_amount', 'openAmount', 'open_amount', 'amount']),
     currentBalance: first(data, ['cardBalance', 'currentBalance', 'current_balance', 'balance']),
@@ -64,6 +65,15 @@ function defaultMapCardDetail(envelope, { externalCardId } = {}) {
     } : null,
     ownershipCertain: data.ownershipCertain ?? data.ownership_certain
   };
+}
+
+function resolveMappedCardType(card, rules) {
+  if (card.cardTypeId != null && String(card.cardTypeId).trim() !== '') return card;
+  const name = String(card.cardTypeName || '').trim();
+  if (!name) return card;
+  const matches = (rules.allowedCardTypes || []).filter((item) =>
+    String(item?.name || '').trim() === name && String(item?.id || '').trim());
+  return matches.length === 1 ? { ...card, cardTypeId: String(matches[0].id) } : card;
 }
 
 function numberOrNull(value) {
@@ -119,6 +129,7 @@ function sanitizedDetails(card, validation) {
   return {
     externalCardId: String(card.externalCardId),
     cardTypeId: card.cardTypeId == null ? null : String(card.cardTypeId),
+    cardTypeName: card.cardTypeName == null ? null : String(card.cardTypeName),
     status: String(card.status || ''),
     fundedAmount: card.fundedAmount == null ? null : String(card.fundedAmount),
     currentBalance: card.currentBalance == null ? null : String(card.currentBalance),
@@ -132,6 +143,7 @@ function cardSnapshot(card) {
   return {
     externalCardId: String(card.externalCardId || ''),
     cardTypeId: card.cardTypeId == null ? null : String(card.cardTypeId),
+    cardTypeName: card.cardTypeName == null ? null : String(card.cardTypeName),
     status: String(card.status || '').toLowerCase(),
     fundedAmount: card.fundedAmount == null ? null : String(card.fundedAmount),
     currentBalance: card.currentBalance == null ? null : String(card.currentBalance),
@@ -199,7 +211,8 @@ export function createCardIntakeService({ provider, repository, providerAccountI
     const opened = await repository.createBatch({ providerAccountId, requestedBy,
       baselineHash: catalog.baselineHash, baselineWatermark: catalog.baselineWatermark,
       baseline: catalog.baseline });
-    if (!opened.created) return { batch: opened.batch, created: false, activeBatch: true };
+    if (!opened.created) return { batch: opened.batch, created: false,
+      activeBatch: repository.activeBatchStatuses?.includes(opened.batch?.status) === true };
     const batchId = opened.batch.id;
     let existing = 0;
     let discovered = 0;
@@ -248,8 +261,9 @@ export function createCardIntakeService({ provider, repository, providerAccountI
 
   async function readAndValidate(discovery) {
     const envelope = await provider.card(discovery.externalCardId);
-    const mapped = await mapCardDetail(envelope, { externalCardId: discovery.externalCardId,
+    const rawMapped = await mapCardDetail(envelope, { externalCardId: discovery.externalCardId,
       providerAccountId });
+    const mapped = resolveMappedCardType(rawMapped, validationRules);
     mapped.externalCardId = String(mapped.externalCardId || discovery.externalCardId);
     if (mapped.externalCardId !== discovery.externalCardId) {
       throw Object.assign(new Error('Provider detail returned a different external card ID'),
@@ -282,9 +296,9 @@ export function createCardIntakeService({ provider, repository, providerAccountI
           materializeCard(read.mapped, read.validation));
         result[accepted.kind === 'accepted' ? 'accepted' : 'existing'] += 1;
       } catch (error) {
-        await repository.markDiscoveryFailed(discovery.id,
+        const failure = await repository.markDiscoveryFailed(discovery.id,
           error?.code || 'CARD_READ_FAILED', error?.message || 'Card read failed');
-        result.failed += 1;
+        result[failure?.terminal === false ? 'pending' : 'failed'] += 1;
       }
     }
     result.batch = await repository.finalizeBatchIfSettled(batchId);

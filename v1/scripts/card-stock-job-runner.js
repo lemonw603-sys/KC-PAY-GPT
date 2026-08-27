@@ -18,6 +18,7 @@ import {
 } from '../src/services/card-provider-snapshot-service.js';
 import { createProviderBalanceSnapshotService } from '../src/services/provider-balance-snapshot-service.js';
 import { openStockCards, syncProvisioningStock } from './card-stock.js';
+import { resolveCurrentCardProviderAccountId } from '../src/services/provider-route-service.js';
 
 if (isEnvTrue(process.env.PROVIDER_WRITES_ENABLED) || !isEnvTrue(process.env.PROVIDER_CARD_WRITES_ENABLED)) {
   throw new Error('Card stock runner requires only PROVIDER_CARD_WRITES_ENABLED=true');
@@ -30,12 +31,15 @@ const provider = new HnskjCardProvider({
   baseUrl: process.env.HNSKJ_API_BASE_URL || 'https://card.hnskj.vip/api/open/v1',
   apiKey: String(process.env.HNSKJ_API_KEY || '')
 });
+const currentCardProviderAccountId = await resolveCurrentCardProviderAccountId(pool);
+if (!currentCardProviderAccountId) throw new Error('No active production card provider route');
 const stock = createCardStockService({ pool, sessionEncryptionKey: config.sessionEncryptionKey,
-  panHmacKey: config.cardIntakePanHmacKey });
+  panHmacKey: config.cardIntakePanHmacKey, providerAccountId: currentCardProviderAccountId });
 const balanceSnapshots = createProviderBalanceSnapshotService({ pool });
 const stockJobs = createCardStockJobService({ pool });
 const refreshSnapshot = () => refreshProviderSnapshot(pool, provider, {
-  balanceSnapshotService: balanceSnapshots
+  balanceSnapshotService: balanceSnapshots,
+  providerAccountId: currentCardProviderAccountId
 });
 
 try {

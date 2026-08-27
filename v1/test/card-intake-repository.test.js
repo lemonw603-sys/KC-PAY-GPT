@@ -85,10 +85,42 @@ test('inventory identity queries are scoped by provider account and external ID'
       assert.deepEqual(params, ['acct-b', 'shared-id']);
       return [[{ id: 'card-b', external_card_id: 'shared-id' }]];
     }
+    if (sql.includes('FROM card_discoveries')) return [[]];
     throw new Error(`Unexpected SQL: ${sql}`);
   });
   const repository = createCardIntakeRepository({ pool });
   const result = await repository.findExistingExternalIds('acct-b', ['shared-id']);
   assert.equal(result.get('shared-id'), 'card-b');
   assert.ok(pool.calls[0].sql.includes('provider_account_id = ?'));
+});
+
+test('known reviewed discoveries suppress duplicate rows in later catalog batches', async () => {
+  const pool = fakePool((sql, params) => {
+    if (sql.includes('SELECT id, external_card_id FROM cards')) return [[]];
+    if (sql.includes('SELECT external_card_id, MIN(id) AS id FROM card_discoveries')) {
+      assert.deepEqual(params, ['acct-a', '1477']);
+      return [[{ id: 'review-1477', external_card_id: '1477' }]];
+    }
+    throw new Error(`Unexpected SQL: ${sql}`);
+  });
+  const repository = createCardIntakeRepository({ pool });
+  const result = await repository.findExistingExternalIds('acct-a', ['1477']);
+  assert.equal(result.get('1477'), 'review-1477');
+});
+
+test('completed intake batch with the same catalog baseline is reused', async () => {
+  const pool = fakePool((sql) => {
+    if (sql.includes('FROM provider_accounts')) return [[{ id: 'acct-a' }]];
+    if (sql.includes("status IN ('DISCOVERING','VALIDATING')")) return [[]];
+    if (sql.includes("baseline_hash = ? AND status = 'COMPLETED'")) return [[{
+      id: 'completed-1', provider_account_id: 'acct-a', status: 'COMPLETED',
+      baseline_hash: 'a'.repeat(64)
+    }]];
+    throw new Error(`Unexpected SQL: ${sql}`);
+  });
+  const repository = createCardIntakeRepository({ pool, idFactory: () => 'must-not-insert' });
+  const result = await repository.createBatch({ providerAccountId: 'acct-a', baselineHash: 'a'.repeat(64) });
+  assert.equal(result.created, false);
+  assert.equal(result.batch.id, 'completed-1');
+  assert.equal(pool.calls.some((call) => call.sql.startsWith('INSERT INTO card_intake_batches')), false);
 });

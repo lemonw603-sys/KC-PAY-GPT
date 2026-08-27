@@ -36,9 +36,10 @@ export async function syncCardCatalog({ pool, provider, intake = null, checkedAt
   let intakeResult = null;
   if (intake) {
     const discovery = await intake.discover({ requestedBy: 'card-catalog-sync' });
-    const batchId = discovery.batch.id;
-    const firstPass = await intake.validateBatch(batchId);
-    const secondPass = await intake.validateBatch(batchId);
+    const batchId = discovery.batch?.id || null;
+    const shouldValidate = batchId && (discovery.created || discovery.activeBatch);
+    const firstPass = shouldValidate ? await intake.validateBatch(batchId) : null;
+    const secondPass = shouldValidate ? await intake.validateBatch(batchId) : null;
     intakeResult = { discovery, firstPass, secondPass };
   }
 
@@ -81,7 +82,7 @@ export async function syncCardCatalog({ pool, provider, intake = null, checkedAt
     statusConflictCount: statusConflictIds.length,
     statusConflictIds,
     intake: intakeResult ? {
-      batchId: intakeResult.discovery.batch.id,
+      batchId: intakeResult.discovery.batch?.id || null,
       created: intakeResult.discovery.created,
       firstPass: intakeResult.firstPass,
       secondPass: intakeResult.secondPass

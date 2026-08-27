@@ -25,17 +25,6 @@ const [[settings]] = await pool.query(
           MAX(CASE WHEN setting_key = 'default_minimum_required_card_balance' THEN setting_value END) AS minimum_balance
    FROM app_settings`
 );
-const intake = createCardIntakeService({
-  provider,
-  repository: createCardIntakeRepository({ pool }),
-  providerAccountId,
-  sessionEncryptionKey: config.sessionEncryptionKey,
-  assumeDedicatedAccount: true,
-  validationRules: {
-    allowedCardTypeIds: [String(settings.card_type_id || '')],
-    minimumBalance: String(settings.minimum_balance || '')
-  }
-});
 const balanceSnapshots = createProviderBalanceSnapshotService({ pool });
 
 async function markProviderSnapshotHealth({ status, message }) {
@@ -64,7 +53,8 @@ try {
   let providerSnapshot;
   try {
     providerSnapshot = await refreshProviderSnapshot(pool, provider, {
-      balanceSnapshotService: balanceSnapshots
+      balanceSnapshotService: balanceSnapshots,
+      providerAccountId
     });
     await markProviderSnapshotHealth({ status: 'RESOLVED' });
   } catch (error) {
@@ -75,6 +65,18 @@ try {
     });
     throw error;
   }
+  const intake = createCardIntakeService({
+    provider,
+    repository: createCardIntakeRepository({ pool }),
+    providerAccountId,
+    sessionEncryptionKey: config.sessionEncryptionKey,
+    assumeDedicatedAccount: true,
+    validationRules: {
+      allowedCardTypeIds: [String(settings.card_type_id || '')],
+      allowedCardTypes: providerSnapshot.cardTypes || [],
+      minimumBalance: String(settings.minimum_balance || '')
+    }
+  });
   const catalog = await syncCardCatalog({ pool, provider, intake });
   console.log(JSON.stringify({ ...catalog, providerSnapshotSyncedAt: providerSnapshot.syncedAt }));
 } finally {

@@ -76,3 +76,9 @@
 ## 后台队列复核补充（2026-08-22）
 
 后台卡余额充值详细队列已完成代码和测试。复核时发现一个真实的筛选错误：页面提供 `UNKNOWN` 选项，但该值属于 `funds_risk_state` 而不是尝试 `status`，原接口会返回参数错误。现已改为按资金风险状态筛选，并新增回归测试。当前本地测试为 `392`，其中 `358` 通过、`34` 跳过；未进行生产部署。
+
+## 卡片库存同步专项修复检查点（2026-08-27）
+
+生产只读确认：当前 release `/opt/pojia/releases/20260827-browser-readonly-58af6f2`、迁移 037；卡 1477 Provider 开卡 `$16`、当前余额 `$0.07`、详情 `cardType=VISA-40024200` 无 `cardTypeId`，本地余额仍 `$16`；两条同步任务均 `REVIEW_REQUIRED/SCHEMA`；历史卡各约 495 条 discovery；provider-scoped 低库存告警 OPEN、Bark SENT。修复尚未部署。
+
+本专项已实现：交易 aggregate 字段归一化与 decimal string 兼容；唯一 cardType 名称映射；completed baseline 复用、历史 discovery 去重、三次有界读取失败；AVAILABLE 10 分钟同步；确定性 Schema 直达复核；Bark 每 OPEN 事件一次且解除重开不漏推、DEAD 不复活；开卡 runner 与余额快照绑定当前 route account。合同见 `docs/contracts/2026-08-27_card-inventory-sync-contract.md`。未修改 Browser/API/资金规则，未执行真实资金动作。

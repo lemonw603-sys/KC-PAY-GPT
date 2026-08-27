@@ -83,6 +83,13 @@ export function createCardIntakeRepository({ pool, idFactory = crypto.randomUUID
         [providerAccountId]
       );
       if (active[0]) return { created: false, batch: mapBatch(active[0]) };
+      const [unchanged] = await connection.query(
+        `SELECT * FROM card_intake_batches
+         WHERE provider_account_id = ? AND baseline_hash = ? AND status = 'COMPLETED'
+         ORDER BY created_at DESC LIMIT 1 FOR UPDATE`,
+        [providerAccountId, baselineHash]
+      );
+      if (unchanged[0]) return { created: false, batch: mapBatch(unchanged[0]) };
 
       const id = idFactory();
       await connection.query(
@@ -122,6 +129,18 @@ export function createCardIntakeRepository({ pool, idFactory = crypto.randomUUID
         [providerAccountId, ...ids]
       );
       for (const row of rows) result.set(String(row.external_card_id), row.id);
+      const [discoveries] = await pool.query(
+        `SELECT external_card_id, MIN(id) AS id FROM card_discoveries
+         WHERE provider_account_id = ?
+           AND external_card_id IN (${ids.map(() => '?').join(',')})
+         GROUP BY external_card_id`,
+        [providerAccountId, ...ids]
+      );
+      for (const row of discoveries) {
+        if (!result.has(String(row.external_card_id))) {
+          result.set(String(row.external_card_id), row.id);
+        }
+      }
     }
     return result;
   }
@@ -213,13 +232,18 @@ export function createCardIntakeRepository({ pool, idFactory = crypto.randomUUID
     });
   }
 
-  async function markDiscoveryFailed(discoveryId, code, reason) {
+  async function markDiscoveryFailed(discoveryId, code, reason, { maxAttempts = 3 } = {}) {
+    const safeMaxAttempts = Math.max(1, Math.min(10, Number(maxAttempts) || 3));
     await pool.query(
-      `UPDATE card_discoveries SET intake_status = 'FAILED',
+      `UPDATE card_discoveries SET
+         intake_status = IF(validation_attempts + 1 >= ?, 'FAILED', 'QUARANTINED'),
          failure_code = ?, failure_reason = ?, validation_attempts = validation_attempts + 1
        WHERE id = ? AND intake_status NOT IN ('ACCEPTED','EXISTING')`,
-      [String(code || 'CARD_VALIDATION_FAILED').slice(0, 64), String(reason || 'Card validation failed').slice(0, 1000), discoveryId]
+      [safeMaxAttempts, String(code || 'CARD_VALIDATION_FAILED').slice(0, 64),
+        String(reason || 'Card validation failed').slice(0, 1000), discoveryId]
     );
+    const discovery = await getDiscovery(discoveryId);
+    return { discovery, terminal: discovery?.intakeStatus === 'FAILED' };
   }
 
   async function acceptDiscovery(discoveryId, card, { manual = false } = {}) {

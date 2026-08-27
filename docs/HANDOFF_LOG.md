@@ -240,3 +240,10 @@
 - 新增并安装 `pojia-browser-worker.service`；本次启动只读 fixture smoke 通过后立即停止，未启用常驻服务。
 - 生产机安装 Playwright Chromium 与依赖；未访问外部 ChatGPT、未读取真实 Session/PAN/CVC、未填卡、未付款、未调用卡台写接口。
 - 本次仅验证生产进程形态和安全门禁，不代表真实 Browser 充值已可用；真实订单仍需另行确认和付款闸门。
+
+## 2026-08-27｜卡片库存与自动同步专项修复
+
+- 分支 `codex/card-inventory-sync-20260827`；未修改 Browser 自动化充值线、API 主流程或资金规则。
+- 生产只读确认卡 1477 Provider `$16` 开卡、当前 `$0.07`、`cardType=VISA-40024200` 无 ID；本地余额 `$16`，两条同步任务 `REVIEW_REQUIRED/SCHEMA`；历史卡最多 495 条 discovery；低库存告警 OPEN/Bark SENT。
+- 已修复 Provider aggregate Schema、cardType 唯一映射、baseline/discovery 去重、3 次读取失败、AVAILABLE 10 分钟、Schema 直达复核、Bark 去重与 route account 归属。
+- 验证：隔离 MySQL 8.4 迁移 001–037；专项 54/54；真实 MySQL 33/33。未部署、未合并、未执行真实开卡/充值/付款/退款/提现；历史清理、FAILED 恢复和真实手动开卡仍未验证。

@@ -230,7 +230,7 @@ export async function completeCardSyncJob(pool, { jobId, workerId, now = new Dat
 }
 
 export async function failCardSyncJob(pool, { job, workerId, error }) {
-  const retry = job.attempts < job.maxAttempts;
+  const retry = job.attempts < job.maxAttempts && error?.retryable !== false;
   const code = String(error?.code || error?.kind || 'CARD_SYNC_FAILED').toUpperCase().slice(0, 64);
   const message = redactSensitiveText(error?.message || 'Card sync failed').slice(0, 1000);
   await pool.query(

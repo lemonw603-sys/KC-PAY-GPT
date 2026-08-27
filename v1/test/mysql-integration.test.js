@@ -51,6 +51,7 @@ import { createCardReplenishmentSettingsService } from '../src/services/card-rep
 import { createCardFundingScheduler } from '../src/services/card-funding-scheduler.js';
 import { createTraceabilityOperationsService } from '../src/services/traceability-operations-service.js';
 import { createSessionReplacementService } from '../src/services/session-replacement-service.js';
+import { createCardIntakeRepository } from '../src/db/repositories/card-intake-repository.js';
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
 const integrationSessionKey = Buffer.alloc(32, 7);
@@ -192,7 +193,10 @@ test('Bark notification claims are concurrency-safe and reopen after resolution'
     await repository.markSent(claimed.find(Boolean).id);
 
     await new Promise((resolve) => setTimeout(resolve, 10));
-    await pool.query('UPDATE operator_alerts SET status = \'RESOLVED\' WHERE id = ?', [alertId]);
+    await pool.query(
+      'UPDATE operator_alerts SET status = \'RESOLVED\', acknowledged_at = CURRENT_TIMESTAMP(3) WHERE id = ?',
+      [alertId]
+    );
     await new Promise((resolve) => setTimeout(resolve, 10));
     await pool.query('UPDATE operator_alerts SET status = \'OPEN\' WHERE id = ?', [alertId]);
     await repository.enqueueOpenAlerts();
@@ -211,9 +215,80 @@ test('Bark notification claims are concurrency-safe and reopen after resolution'
     );
     assert.equal(retryRow.status, 'RETRY');
     assert.ok(retryRow.next_attempt_at);
+    await pool.query(
+      `UPDATE alert_notifications SET status = 'DEAD', next_attempt_at = NULL WHERE id = ?`,
+      [reopened.id]
+    );
+    await repository.enqueueOpenAlerts();
+    assert.equal(await repository.claimNext(), null,
+      'a terminal delivery from the reopened incident must not requeue on every runner tick');
   } finally {
     await pool.query('DELETE FROM alert_notifications WHERE alert_id = ?', [alertId]);
     await pool.query('DELETE FROM operator_alerts WHERE id = ?', [alertId]);
+    await pool.end();
+  }
+});
+
+test('card intake reuses an unchanged completed baseline and suppresses reviewed discoveries', {
+  skip: !databaseUrl && 'TEST_DATABASE_URL 未配置；完整 MySQL 套件在服务器隔离数据库运行'
+}, async () => {
+  const pool = mysql.createPool({ uri: databaseUrl, connectionLimit: 4, timezone: 'Z' });
+  const batchId = id();
+  const nextBatchId = id();
+  const discoveryId = id();
+  const externalCardId = `reviewed-${id()}`;
+  const baselineHash = crypto.createHash('sha256').update(externalCardId).digest('hex');
+  const nextBaselineHash = crypto.createHash('sha256').update(`${externalCardId}-next`).digest('hex');
+  const generatedIds = [batchId, discoveryId, nextBatchId];
+  const repository = createCardIntakeRepository({
+    pool,
+    idFactory: () => generatedIds.shift()
+  });
+  try {
+    const opened = await repository.createBatch({
+      providerAccountId: legacyCardProviderAccountId,
+      requestedBy: 'mysql-integration',
+      baselineHash
+    });
+    assert.equal(opened.created, true);
+    assert.equal(opened.batch.id, batchId);
+    const discovery = await repository.addDiscovery({
+      batchId,
+      providerAccountId: legacyCardProviderAccountId,
+      externalCardId
+    });
+    assert.equal(discovery.kind, 'discovered');
+    await pool.query(
+      `UPDATE card_discoveries SET intake_status = 'REVIEW_REQUIRED', validation_attempts = 2
+       WHERE id = ?`,
+      [discoveryId]
+    );
+    await repository.setBatchStatus(batchId, 'COMPLETED');
+
+    const unchanged = await repository.createBatch({
+      providerAccountId: legacyCardProviderAccountId,
+      requestedBy: 'mysql-integration',
+      baselineHash
+    });
+    assert.equal(unchanged.created, false);
+    assert.equal(unchanged.batch.id, batchId);
+
+    const known = await repository.findExistingExternalIds(
+      legacyCardProviderAccountId,
+      [externalCardId]
+    );
+    assert.equal(known.get(externalCardId), discoveryId);
+
+    const changed = await repository.createBatch({
+      providerAccountId: legacyCardProviderAccountId,
+      requestedBy: 'mysql-integration',
+      baselineHash: nextBaselineHash
+    });
+    assert.equal(changed.created, true);
+    assert.equal(changed.batch.id, nextBatchId);
+  } finally {
+    await pool.query('DELETE FROM card_discoveries WHERE id = ?', [discoveryId]);
+    await pool.query('DELETE FROM card_intake_batches WHERE id IN (?, ?)', [batchId, nextBatchId]);
     await pool.end();
   }
 });
