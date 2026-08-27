@@ -102,6 +102,8 @@
 - `917`：返回 5 条交易，包含 196 USD 注资、200.99 USD 余额转出、1 USD 注资及 1 USD 余额转出；本次返回中没有 ChatGPT 商户消费记录，因此“用于 ChatGPT Plus”仍未独立验证。
 - 两张卡均继续保持 `REVIEW_REQUIRED`，未修改库存状态、未分配、未执行写操作。
 
+运营确认新开卡默认采用 Provider 卡类型 ID `16`（`VISA-40024200`）。已在生产将 `default_card_type_id` 从旧值 `1` 更新为 `16`；该设置只代表发卡规格，不绑定产品。更新后只读 readiness 仍仅因 Worker 按维护要求停止而报告 `worker_heartbeat_stale`，接单/派发和 Provider 写开关保持关闭。
+
 ## 费用与卡类型只读核验（2026-08-28）
 
 Provider `cardTypes` 当前返回 7 种卡类型（ID `16`–`22`），每种均为：开卡费 `0.50 USD`、支付费率 `0.005`（0.5%）、拒付费 `0.40 USD`，最低开卡金额 `5 USD`。这些是本次 Provider 实时只读结果，不代表永久费率。
