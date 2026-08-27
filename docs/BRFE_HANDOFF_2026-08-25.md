@@ -518,3 +518,13 @@ git diff --check
 - Browser 全量测试再次为 **71 tests / 70 passed / 1 skipped / 0 failed**；`git diff --check` 通过。
 - 临时容器测试后已删除。本次没有连接生产/预生产、没有启动真实部署 Worker 或外部 Chrome 页面、没有读取 Session/PAN/CVC、没有卡台写入或付款。
 - 该结果确认隔离 composition 仍能零付款安全收口，但不等价于真实 Worker/生产验收；缺少隔离/预生产配置和测试订单的阻塞仍然存在。
+
+## 2026-08-27 Dry-run 配置模板与启动命令（最新）
+
+- 模板：`docs/browser-research/browser-worker-dry-run-config.example.env`。
+- 启动器：`browser-mvp/scripts/run-shared-dry-run.sh`，npm 入口为 `npm --prefix browser-mvp run dry-run:shared`。
+- 新增 `isolated-fixture` 模式：自动创建临时 MySQL 8.4、执行完整 `001–037` migrations、运行共享 Browser 非付款集成并在退出时删除容器；不需要真实 DB、Session 或卡材料。
+- `isolated`/`preprod` 模式必须由统筹窗口提供 `TEST_DATABASE_URL`；`preprod` 还需要显式确认词。无论模式如何，Browser/payment、Provider、卡资金写开关都必须逐项显式为 `false`。
+- 启动器会拒绝 Session、Token、PAN、有效期和 CVC 环境变量；不会读取 `deploy/server/pojia-worker.service` 或修改任何生产配置。
+
+本地 `isolated-fixture` 命令已实跑通过：静态检查通过，共享 MySQL 集成 `1/1 passed`；写开关为 `true` 或注入 `CHATGPT_TOKEN` 的两条负向测试均以退出码 2 fail-closed。该命令仍是本地 composition 验收，不等于真实 Worker/生产验收。

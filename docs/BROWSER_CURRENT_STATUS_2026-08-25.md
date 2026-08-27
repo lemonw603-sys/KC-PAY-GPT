@@ -366,3 +366,24 @@ npm --prefix browser-mvp test
 ```
 
 容器在测试后已删除；本次没有启动真实部署 Worker、没有连接生产/预生产数据库、没有启动 Chrome 访问外部页面、没有读取 Session/PAN/CVC、没有卡台或付款调用。该复验只能证明隔离 composition 仍可安全收口，不能替代真实 Worker 验收。
+
+## 2026-08-27 Dry-run 配置模板与启动命令
+
+- 新增模板：`docs/browser-research/browser-worker-dry-run-config.example.env`。模板明确：统筹窗口必须提供隔离/预生产数据库 URL、迁移状态和 Worker 参数；`isolated-fixture` 模式可完全使用本地临时 MySQL 8.4 与项目 fixture，无需真实凭证。
+- 新增命令：`npm --prefix browser-mvp run dry-run:shared`，实现于 `browser-mvp/scripts/run-shared-dry-run.sh`。
+- 启动器默认 fail-closed：必须声明 `BROWSER_DRY_RUN_ENV`；`isolated-fixture` 自动创建并清理临时 MySQL；`isolated/preprod` 必须显式提供 `TEST_DATABASE_URL`；所有 `BROWSER_PAYMENT_WRITES_ENABLED`、Provider 写开关和卡资金写开关都必须**明确等于** `false`。
+- 启动器拒绝环境中存在 `CHATGPT_SESSION_COOKIE`、`CHATGPT_TOKEN`、`SESSION_JSON`、`CARD_NUMBER`、`CARD_EXPIRY`、`CARD_CVC`，避免把真实材料带入非付款进程；不读取或写入部署样例。
+
+### 本地命令验证
+
+```bash
+BROWSER_DRY_RUN_ENV=isolated-fixture \
+BROWSER_PAYMENT_WRITES_ENABLED=false \
+PROVIDER_WRITES_ENABLED=false \
+PROVIDER_CARD_WRITES_ENABLED=false \
+PROVIDER_RECHARGE_WRITES_ENABLED=false \
+CARD_FUNDING_WRITES_ENABLED=false \
+npm --prefix browser-mvp run dry-run:shared
+```
+
+结果：静态检查通过，临时 MySQL 迁移后共享 Browser 集成 `1/1 passed`，容器自动删除。将付款开关设为 `true` 或注入 `CHATGPT_TOKEN` 的负向测试均以退出码 2 拒绝。
