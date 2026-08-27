@@ -108,4 +108,4 @@ Provider `cardTypes` 当前返回 7 种卡类型（ID `16`–`22`），每种均
 
 同时注意到 Provider 当前卡类型 ID 为 `16`–`22`，而本地历史订单/配置中出现过 `1`、`7` 等旧 ID；这是需要单独核对的配置对齐问题，不能直接假定为同一类型。
 
-进一步只读核对确认：生产 `app_settings.default_card_type_id` 当前为 `1`，而 Provider 当前 `cardTypes` 仅返回 `16`–`22`；本地 Plus 产品本身没有存储卡类型字段，API 路由也只存产品/Provider account。该映射缺口会阻断后续新卡开通或接管，不能自行猜测将 `1` 改成某个 Provider ID，需运营确认 Plus 应使用的具体卡类型。
+进一步只读核对确认：生产 `app_settings.default_card_type_id` 当前为 `1`，而 Provider 当前 `cardTypes` 仅返回 `16`–`22`；本地产品没有存储卡类型字段，API 路由也只存产品/Provider account。运营补充说明：卡类型不是产品类型，一张已开通的卡可用于不同产品；因此之前将该问题表述为“Plus 应使用哪个卡类型”是不准确的。真正待确认的是 Provider 的发卡类型选择/旧 ID 映射，不应按产品绑定，也不能自行猜测修改。
