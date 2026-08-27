@@ -81,3 +81,4 @@
 - 接单与派发数据库开关继续为 `false`，Provider 写开关继续为 `false`。
 - 部署后 readiness 返回 `ok=false`，唯一阻断项为 `worker_heartbeat_stale`，原因是按维护窗口要求 Worker 保持停止；这不是代码故障。
 - 未执行 Provider 写操作、开卡、充值、付款或退款。
+- 部署后 Provider 只读检查：通过；HNSKJ account `67`、7 种卡类型、19 张可见卡；ZZSHU 连接正常。
