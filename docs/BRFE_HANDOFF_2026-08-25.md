@@ -532,3 +532,11 @@ git diff --check
 详细证据已落盘：`docs/browser-research/browser-worker-dry-run-2026-08-27.md`。本次 exit code=0，临时容器自动清理，数据库终态和零付款副作用断言全部通过。仍未启动 `v1/src/worker.js` 部署进程，未使用外部页面或 Google Chrome；真实 Worker + Chrome 观察仍需后续单独配置和验收。
 
 补充本地 Worker + Chrome fixture：`node --test browser-mvp/test/local-worker-chrome-fixture.test.js` **1/1 passed**，实际经过 `createBrowserWorkerProcess` claim/run/complete 和系统 Google Chrome 临时 profile 的本地页面观察，`submitCalls=0`。这只是本地控制壳证据，不等于真实 Worker/外部站点验收。
+
+## 2026-08-27 主线合并后 readiness 与 fixture 复验（最新）
+
+- 已核对主线合并提交 `6580871`；当前 Browser worktree 代码树与该提交一致，当前新增 readiness 变更待合并。
+- 新增 `npm --prefix browser-mvp run dry-run:readiness`，在 isolated-fixture 下通过数据库/Chrome/Worker 参数检查，所有写开关显式 false，Session/PAN/CVC 环境变量为空。
+- 最新 `dry-run:shared`：exit code=0，共享 MySQL integration `1/1 passed`，容器自动清理；本地 Worker + Chrome fixture `1/1 passed`。
+- 详细证据：`docs/browser-research/browser-worker-readiness-2026-08-27.md`。
+- 预生产仍只缺一次性输入：隔离/预生产 `TEST_DATABASE_URL`、已迁移数据库、Worker 启动参数/workerId、非敏感测试订单、Chrome executable/profile 路径，以及写开关关闭证明。未连接生产、未读取真实 Session/PAN/CVC、未调用卡台写接口、未付款。
