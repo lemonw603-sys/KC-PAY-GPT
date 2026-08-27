@@ -46,3 +46,19 @@
 - 临时 MySQL 8.4 + 全部 migrations：33 通过、0 失败、0 跳过。
 - `deploy/server` 中 Browser 与只读同步单元的 Provider 写开关均为关闭；卡库存付费 runner 和直充 worker 仍是独立写路径，部署前必须保持停止/关闭。
 - 当前只完成代码和隔离环境复核，尚未执行生产部署或生产只读核验。
+
+## 生产只读核验（2026-08-28）
+
+通过 SSH 只读检查当前 VPS：
+
+- hostname：`elegant-unicorn-1.localdomain`
+- release：`/opt/pojia/releases/20260827-browser-readonly-58af6f2`
+- Web/Worker：`active`
+- 卡库存付费 runner：`inactive`
+- 只读同步与目录同步 timer：`active`
+- MySQL：`running`
+- migrations：最新 `037_card_discovery_latest_index`
+- Provider read-check：HNSKJ account `67`、7 种卡类型、19 张可见卡；ZZSHU 连接正常。
+- readiness（命令行强制写开关为 false）：`ok=true`，但数据库设置显示 `acceptNewOrders=true`、`dispatchNewRecharges=true`、模式 `AUTOMATIC`，且存在 1 个 active task。
+
+这意味着本次 readiness 命令本身是只读的，但不能据此断言生产 Worker 没有接单/派发能力；生产数据库的接单与派发开关当前确实为开启状态。未在本次审查中擅自关闭，需由运营决定是否进入维护窗口。
