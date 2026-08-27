@@ -129,10 +129,18 @@ export function createCardIntakeRepository({ pool, idFactory = crypto.randomUUID
         [providerAccountId, ...ids]
       );
       for (const row of rows) result.set(String(row.external_card_id), row.id);
-      // Historical discoveries are deliberately not treated as existing cards.
-      // A prior QUARANTINED/FAILED discovery must be eligible for re-intake when
-      // the provider catalog changes or a transient detail-read failure clears.
-      // The per-batch UNIQUE key still prevents duplicate rows in one intake.
+      const [discoveries] = await pool.query(
+        `SELECT external_card_id, MIN(id) AS id FROM card_discoveries
+         WHERE provider_account_id = ?
+           AND external_card_id IN (${ids.map(() => '?').join(',')})
+         GROUP BY external_card_id`,
+        [providerAccountId, ...ids]
+      );
+      for (const row of discoveries) {
+        if (!result.has(String(row.external_card_id))) {
+          result.set(String(row.external_card_id), row.id);
+        }
+      }
     }
     return result;
   }
