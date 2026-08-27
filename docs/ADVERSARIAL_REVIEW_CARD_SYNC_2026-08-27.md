@@ -62,3 +62,13 @@
 - readiness（命令行强制写开关为 false）：`ok=true`，但数据库设置显示 `acceptNewOrders=true`、`dispatchNewRecharges=true`、模式 `AUTOMATIC`，且存在 1 个 active task。
 
 这意味着本次 readiness 命令本身是只读的，但不能据此断言生产 Worker 没有接单/派发能力；生产数据库的接单与派发开关当前确实为开启状态。未在本次审查中擅自关闭，需由运营决定是否进入维护窗口。
+
+## 维护窗口动作（2026-08-28）
+
+经运营明确授权后执行：
+
+- 停止 `pojia-worker.service`，状态确认 `inactive`。
+- 数据库 `accept_new_orders`：`true → false`。
+- 数据库 `dispatch_new_recharges`：`true → false`。
+- 复核 readiness：`acceptNewOrders=false`、`dispatchNewRecharges=false`，其余阻断项为空。
+- 当时仍有 1 个 `ASSIGN_CARD`、`PENDING` 任务；未擅自删除或推进，Worker 已停止以避免继续领取。
