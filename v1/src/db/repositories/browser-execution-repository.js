@@ -1,5 +1,6 @@
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { redactSensitiveText } from '../../security/redaction.js';
+import { transitionCardConsumptionInTransaction } from '../../services/card-consumption-ledger-service.js';
 
 const HEX_64 = /^[a-f0-9]{64}$/i;
 const ACTIVE_RUN_STATUSES = new Set(['READY', 'RUNNING', 'RECONCILE_ONLY', 'HUMAN_REQUIRED']);
@@ -692,6 +693,15 @@ export function createBrowserExecutionRepository(pool) {
         if (attemptUpdate.affectedRows !== 1) {
           throw new BrowserExecutionError('funds attempt changed concurrently', 'ATTEMPT_CONFLICT');
         }
+        await transitionCardConsumptionInTransaction(connection, {
+          orderId: row.order_id,
+          rechargeAttemptId: row.recharge_attempt_id,
+          targetStatus: 'RELEASED',
+          reason: `Browser pre-payment abort: ${reason}`,
+          allowedCurrentStatuses: ['RESERVED', 'RECONCILIATION'],
+          requireActive: false,
+          evidence: { source: 'browser_pre_payment_abort', browserRunId: run }
+        });
         if (row.authorization_item_id) {
           const [authorizationUpdate] = await connection.query(
             `UPDATE recharge_authorization_items SET status = 'RELEASED'
@@ -817,6 +827,13 @@ export function createBrowserExecutionRepository(pool) {
         if (attemptUpdate.affectedRows !== 1) {
           throw new BrowserExecutionError('funds attempt changed concurrently', 'ATTEMPT_CONFLICT');
         }
+        await transitionCardConsumptionInTransaction(connection, {
+          orderId: row.order_id,
+          rechargeAttemptId: row.recharge_attempt_id,
+          targetStatus: 'RECONCILIATION',
+          requireActive: false,
+          evidence: { source: 'browser_payment_unknown', browserRunId: run, reasonCode: reason }
+        });
         const [orderUpdate] = await connection.query(
           `UPDATE orders
            SET status = 'SUBMIT_UNKNOWN', version = version + 1,
@@ -900,6 +917,14 @@ export function createBrowserExecutionRepository(pool) {
         if (updated.affectedRows !== 1) {
           throw new BrowserExecutionError('Browser run changed concurrently', 'RUN_CONFLICT');
         }
+        await transitionCardConsumptionInTransaction(connection, {
+          orderId: row.order_id,
+          rechargeAttemptId: row.recharge_attempt_id,
+          targetStatus: 'CONSUMED',
+          allowedCurrentStatuses: ['RESERVED', 'RECONCILIATION'],
+          requireActive: false,
+          evidence: { source: 'browser_payment_confirmed', browserRunId: run, evidenceHash: evidence }
+        });
         return publicRun({ ...row, payment_state: 'PAYMENT_CONFIRMED' }, {
           postPaymentState: 'PLUS_PENDING', idempotentReplay: false
         });
@@ -1008,7 +1033,7 @@ export function createBrowserExecutionRepository(pool) {
         }
         const [attemptUpdate] = await connection.query(
           `UPDATE recharge_attempts
-           SET status = 'CLEARED', funds_risk_state = 'CLEARED', finished_at = ?, updated_at = ?
+           SET status = 'SUCCESS', funds_risk_state = 'SETTLED', finished_at = ?, updated_at = ?
            WHERE id = ? AND executor_kind = 'BROWSER' AND status = 'SUBMITTING' AND funds_risk_state = 'ACTIVE'`,
           [now, now, row.recharge_attempt_id]
         );

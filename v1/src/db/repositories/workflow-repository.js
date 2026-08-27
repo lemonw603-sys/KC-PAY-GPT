@@ -4,6 +4,7 @@ import { OrderStatus } from '../../domain/order-status.js';
 import { decryptSecret, encryptSecret } from '../../security/secret-box.js';
 import { persistCardTransactions } from './card-transaction-repository.js';
 import { eligibleInventoryCardSql } from '../../services/card-inventory-eligibility.js';
+import { transitionCardConsumptionInTransaction } from '../../services/card-consumption-ledger-service.js';
 
 function parseSession(ciphertext, key) {
   const text = decryptSecret(ciphertext, key);
@@ -703,6 +704,17 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
         if (Number(attemptResult.affectedRows) !== 1) {
           throw new Error(`Recharge success requires exactly one funds attempt: ${orderId}`);
         }
+        await transitionCardConsumptionInTransaction(connection, {
+          orderId,
+          targetStatus: 'CONSUMED',
+          allowedCurrentStatuses: ['RESERVED', 'RECONCILIATION'],
+          requireActive: false,
+          evidence: {
+            source: 'workflow_recharge_success',
+            paymentAmount: status.paymentAmount ?? null,
+            paymentCurrency: status.paymentCurrency ?? null
+          }
+        });
         const [result] = await connection.query(
           `UPDATE orders SET status = ?,
              session_ciphertext = COALESCE(?, session_ciphertext),
@@ -783,6 +795,15 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
         if (Number(attemptResult.affectedRows) !== 1) {
           throw new Error(`Recharge failure requires exactly one funds attempt: ${orderId}`);
         }
+        await transitionCardConsumptionInTransaction(connection, {
+          orderId,
+          targetStatus: 'RECONCILIATION',
+          requireActive: false,
+          evidence: {
+            source: 'workflow_provider_confirmed_failure_after_submission',
+            reason: 'submitted attempt is not automatically released'
+          }
+        });
         const [result] = await connection.query(
           `UPDATE orders SET status = ?, failure_code = 'PROVIDER_CONFIRMED_FAILURE',
              failure_reason = 'Recharge provider confirmed failure',

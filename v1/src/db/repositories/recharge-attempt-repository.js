@@ -1,4 +1,8 @@
 import { randomUUID } from 'node:crypto';
+import {
+  reserveCardConsumptionInTransaction,
+  transitionCardConsumptionInTransaction
+} from '../../services/card-consumption-ledger-service.js';
 
 export class RechargeAttemptError extends Error {
   constructor(message, code, details = undefined) {
@@ -102,11 +106,13 @@ export function createRechargeAttemptRepository(pool) {
         }
 
         const [orders] = await connection.query(
-          `SELECT o.id, o.status, o.version, o.fulfillment_route_id,
+          `SELECT o.id, o.status, o.version, o.fulfillment_route_id, o.product_id,
+                  o.open_card_amount,
                   o.minimum_required_card_balance,
                   fr.executor_kind, fr.recharge_provider_account_id,
                   pa.provider_code, pa.write_enabled,
-                  c.status AS card_status, c.current_balance AS card_balance,
+                  c.id AS card_id, c.status AS card_status, c.current_balance AS card_balance,
+                  c.currency AS card_currency,
                   c.card_credentials_ciphertext,
                   c.last_synced_at AS card_last_synced_at,
                   EXISTS (
@@ -128,7 +134,8 @@ export function createRechargeAttemptRepository(pool) {
         const [runtimeSettings] = await connection.query(
           `SELECT setting_key, setting_value
            FROM app_settings
-           WHERE setting_key IN ('dispatch_new_recharges', 'recharge_dispatch_mode')
+           WHERE setting_key IN ('dispatch_new_recharges', 'recharge_dispatch_mode',
+             'card_max_successful_payments')
            ORDER BY setting_key
            FOR UPDATE`
         );
@@ -286,6 +293,22 @@ export function createRechargeAttemptRepository(pool) {
             now, now, now]
         );
 
+        const cardConsumption = await reserveCardConsumptionInTransaction(connection, {
+          cardId: orderRow.card_id,
+          orderId: order,
+          rechargeAttemptId: attempt,
+          productId: orderRow.product_id,
+          amount: orderRow.open_card_amount,
+          currency: orderRow.card_currency || 'USD',
+          maxPayments: settings.card_max_successful_payments || 3,
+          evidence: {
+            source: 'recharge_attempt',
+            executorKind: orderRow.executor_kind,
+            authorizationItemId: item
+          },
+          now
+        });
+
         const [itemUpdate] = await connection.query(
           `UPDATE recharge_authorization_items
            SET status = 'CONSUMED', consumed_attempt_id = ?, consumed_at = ?
@@ -352,6 +375,7 @@ export function createRechargeAttemptRepository(pool) {
           status: 'PREPARED',
           fundsRiskState: 'ACTIVE',
           providerCallId,
+          cardConsumptionId: cardConsumption.id,
           idempotencyKey,
           startedAt: now
         };
@@ -386,7 +410,8 @@ export function createRechargeAttemptRepository(pool) {
         providerOutcome: 'UNCERTAIN',
         reason: 'recharge submission outcome is unknown',
         allowedAttemptStatuses: ['PREPARED', 'PROCESSING'],
-        allowedFundsStates: ['ACTIVE']
+        allowedFundsStates: ['ACTIVE'],
+        cardConsumptionStatus: 'RECONCILIATION'
       });
     },
 
@@ -402,7 +427,9 @@ export function createRechargeAttemptRepository(pool) {
         allowedFundsStates: ['ACTIVE', 'UNKNOWN'],
         releaseAuthorization: true,
         resetSubmitTask: input?.resetSubmitTask !== false,
-        setFinishedAt: true
+        setFinishedAt: true,
+        cardConsumptionStatus: 'RELEASED',
+        cardConsumptionReason: 'attempt proven to have no funds impact'
       });
     },
 
@@ -422,7 +449,9 @@ export function createRechargeAttemptRepository(pool) {
         orderExtraSql: `, failure_code = 'RECHARGE_SUBMIT_REJECTED',
           failure_reason = 'Recharge provider rejected submission',
           customer_action_code = NULL, finished_at = ?`,
-        orderExtraValues: [input?.now || new Date()]
+        orderExtraValues: [input?.now || new Date()],
+        cardConsumptionStatus: 'RELEASED',
+        cardConsumptionReason: 'submission definitively rejected before funds impact'
       });
     }
   };
@@ -447,7 +476,9 @@ async function transitionAttempt(pool, {
   resetSubmitTask = false,
   persistSubmission = false,
   orderExtraSql = '',
-  orderExtraValues = []
+  orderExtraValues = [],
+  cardConsumptionStatus = null,
+  cardConsumptionReason = null
 }) {
   const id = required(attemptId, 'attemptId');
   return inTransaction(pool, async (connection) => {
@@ -495,6 +526,19 @@ async function transitionAttempt(pool, {
       `UPDATE recharge_attempts SET ${assignments.join(', ')} WHERE id = ?`,
       values
     );
+
+    if (cardConsumptionStatus) {
+      await transitionCardConsumptionInTransaction(connection, {
+        orderId: row.order_id,
+        rechargeAttemptId: id,
+        targetStatus: cardConsumptionStatus,
+        allowedCurrentStatuses: cardConsumptionStatus === 'RELEASED'
+          ? ['RESERVED', 'RECONCILIATION'] : ['RESERVED'],
+        reason: cardConsumptionReason,
+        evidence: { source: 'recharge_attempt_transition', attemptStatus: targetAttemptStatus },
+        now
+      });
+    }
 
     if (releaseAuthorization && row.authorization_item_id) {
       const [released] = await connection.query(

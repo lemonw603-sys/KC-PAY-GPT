@@ -152,6 +152,7 @@ async function removeOrder(pool, { cdkId, orderId }) {
     'UPDATE recharge_authorization_items SET consumed_attempt_id = NULL WHERE order_id = ?',
     [orderId]
   );
+  await pool.query('DELETE FROM card_consumption_ledger WHERE order_id = ?', [orderId]);
   await pool.query('DELETE FROM recharge_attempts WHERE order_id = ?', [orderId]);
   await pool.query('DELETE FROM recharge_authorization_items WHERE order_id = ?', [orderId]);
   for (const authorization of authorizationRows) {

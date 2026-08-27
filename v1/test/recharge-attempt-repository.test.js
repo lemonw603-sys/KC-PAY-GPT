@@ -12,6 +12,11 @@ function scriptedPool(responses) {
     release() { transaction.released += 1; },
     async query(sql, values = []) {
       queries.push({ sql, values });
+      if (/SELECT id FROM cards WHERE id = \? FOR UPDATE/.test(sql)) return [[{ id: values[0] }], []];
+      if (/FROM card_consumption_ledger[\s\S]*order_id = \? FOR UPDATE/.test(sql)) return [[], []];
+      if (/SELECT COUNT\(\*\) AS used FROM card_consumption_ledger/.test(sql)) return [[{ used: 0 }], []];
+      if (/INSERT INTO card_consumption_ledger/.test(sql)) return [{ affectedRows: 1 }, []];
+      if (/UPDATE card_consumption_ledger/.test(sql)) return [{ affectedRows: 1 }, []];
       const response = responses.shift();
       if (response instanceof Error) throw response;
       if (!response) throw new Error(`unexpected query: ${sql}`);
@@ -32,6 +37,7 @@ function beginResponses({
       fulfillment_route_id: 'route-1', executor_kind: 'API',
       recharge_provider_account_id: 'provider-account-1', provider_code: 'new-provider', write_enabled: 1,
       minimum_required_card_balance: '16', card_status: 'active', card_balance: '25',
+      card_id: 'card-1', product_id: 'product-plus', open_card_amount: '20', card_currency: 'USD',
       card_credentials_ciphertext: Buffer.from('encrypted'),
       card_last_synced_at: new Date('2026-08-20T11:59:00.000Z'), prepayment_ready: 1,
       ...orderOverrides
@@ -39,6 +45,7 @@ function beginResponses({
     [[
       { setting_key: 'dispatch_new_recharges', setting_value: String(dispatchEnabled) },
       { setting_key: 'recharge_dispatch_mode', setting_value: dispatchMode }
+      ,{ setting_key: 'card_max_successful_payments', setting_value: '3' }
     ], []],
     [existingAttempts, []],
     [[], []],
@@ -67,12 +74,13 @@ test('atomically begins an authorized attempt in the required lock/write order',
     now
   });
 
-  assert.deepEqual(result, {
+  assert.deepEqual({ ...result, cardConsumptionId: '<dynamic>' }, {
     id: 'attempt-1', orderId: 'order-1', authorizationItemId: 'item-1',
     authorizationMode: 'MANUAL',
     dispatchMode: 'AUTOMATIC',
     providerAccountId: 'provider-account-1', executorKind: 'API',
     status: 'PREPARED', fundsRiskState: 'ACTIVE', providerCallId: 501,
+    cardConsumptionId: '<dynamic>',
     idempotencyKey: 'recharge-auth-item:item-1', startedAt: now
   });
   assert.deepEqual(pool.transaction, { began: 1, committed: 1, rolledBack: 0, released: 1 });
@@ -84,16 +92,16 @@ test('atomically begins an authorized attempt in the required lock/write order',
   assert.match(pool.queries[6].sql, /INSERT INTO recharge_attempts/);
   assert.match(pool.queries[6].sql, /'PREPARED', 'ACTIVE'/);
   assert.equal(pool.queries[6].values[6], 'recharge-auth-item:item-1');
-  assert.match(pool.queries[7].sql, /status = 'CONSUMED'/);
-  assert.match(pool.queries[8].sql, /SET status = \?, version = version \+ 1/);
-  assert.equal(pool.queries[8].values[0], 'SUBMITTING');
-  assert.match(pool.queries[9].sql, /INSERT INTO order_events/);
-  assert.match(pool.queries[10].sql, /INSERT INTO provider_calls/);
-  assert.match(pool.queries[10].sql, /'create_direct'/);
-  assert.deepEqual(pool.queries[10].values.slice(0, 4), [
+  assert.match(pool.queries[11].sql, /status = 'CONSUMED'/);
+  assert.match(pool.queries[12].sql, /SET status = \?, version = version \+ 1/);
+  assert.equal(pool.queries[12].values[0], 'SUBMITTING');
+  assert.match(pool.queries[13].sql, /INSERT INTO order_events/);
+  assert.match(pool.queries[14].sql, /INSERT INTO provider_calls/);
+  assert.match(pool.queries[14].sql, /'create_direct'/);
+  assert.deepEqual(pool.queries[14].values.slice(0, 4), [
     'order-1', 'attempt-1', 'new-provider', 'provider-account-1'
   ]);
-  assert.equal(pool.queries[10].values[4], 'recharge-auth-item:item-1');
+  assert.equal(pool.queries[14].values[4], 'recharge-auth-item:item-1');
   const allSql = pool.queries.map((entry) => entry.sql).join('\n');
   assert.doesNotMatch(allSql, /payload_json/i);
 });
@@ -117,8 +125,8 @@ test('Browser route creates the shared funds attempt without a Provider call', a
   assert.equal(pool.queries.some((entry) => /INSERT INTO provider_calls/.test(entry.sql)), false);
   assert.match(pool.queries[6].sql, /INSERT INTO recharge_attempts/);
   assert.match(pool.queries[6].sql, /executor_kind/);
-  assert.equal(pool.queries[8].values[0], 'RECHARGE_PROCESSING');
-  assert.equal(pool.queries[9].values[2], 'RECHARGE_PROCESSING');
+  assert.equal(pool.queries[12].values[0], 'RECHARGE_PROCESSING');
+  assert.equal(pool.queries[13].values[2], 'RECHARGE_PROCESSING');
 });
 
 test('rolls back every write when provider-call persistence fails', async () => {
@@ -190,8 +198,8 @@ test('automatically creates and consumes one auditable authorization when none e
   assert.match(pool.queries[7].sql, /'AUTOMATIC'/);
   assert.match(pool.queries[8].sql, /INSERT INTO recharge_authorization_items/);
   assert.match(pool.queries[9].sql, /INSERT INTO recharge_attempts/);
-  assert.match(pool.queries[11].sql, /SET status = 'CONSUMED'/);
-  assert.match(pool.queries[14].sql, /INSERT INTO provider_calls/);
+  assert.match(pool.queries[15].sql, /SET status = 'CONSUMED'/);
+  assert.match(pool.queries[18].sql, /INSERT INTO provider_calls/);
   assert.deepEqual(pool.transaction, { began: 1, committed: 1, rolledBack: 0, released: 1 });
 });
 
@@ -309,12 +317,14 @@ test('CLEARED releases the fence and consumed authorization for manual re-author
   });
   assert.equal(result.fundsRiskState, 'CLEARED');
   assert.equal(result.orderStatus, 'CARD_READY');
-  assert.match(pool.queries[2].sql, /SET status = 'RELEASED'/);
-  assert.deepEqual(pool.queries[2].values, ['item-1', 'attempt-1']);
-  assert.match(pool.queries[3].sql, /UPDATE tasks/);
-  assert.match(pool.queries[3].sql, /attempts = 0/);
-  assert.doesNotMatch(pool.queries[3].sql, /payload_json/);
-  assert.match(pool.queries[4].sql, /UPDATE orders/);
+  assert.match(pool.queries[2].sql, /UPDATE card_consumption_ledger/);
+  assert.equal(pool.queries[2].values[0], 'RELEASED');
+  assert.match(pool.queries[3].sql, /SET status = 'RELEASED'/);
+  assert.deepEqual(pool.queries[3].values, ['item-1', 'attempt-1']);
+  assert.match(pool.queries[4].sql, /UPDATE tasks/);
+  assert.match(pool.queries[4].sql, /attempts = 0/);
+  assert.doesNotMatch(pool.queries[4].sql, /payload_json/);
+  assert.match(pool.queries[5].sql, /UPDATE orders/);
 });
 
 test('a settled attempt can never be cleared and release its fence', async () => {
@@ -339,8 +349,8 @@ test('a definite pre-create rejection atomically clears funds and closes the ord
   });
   assert.equal(result.fundsRiskState, 'CLEARED');
   assert.equal(result.orderStatus, 'RECHARGE_FAILED');
-  assert.match(pool.queries[3].sql, /failure_code = 'RECHARGE_SUBMIT_REJECTED'/);
-  assert.match(pool.queries[3].sql, /customer_action_code = NULL/);
+  assert.match(pool.queries[4].sql, /failure_code = 'RECHARGE_SUBMIT_REJECTED'/);
+  assert.match(pool.queries[4].sql, /customer_action_code = NULL/);
   assert.equal(pool.queries.some((entry) => /UPDATE tasks/.test(entry.sql)), false);
 });
 
