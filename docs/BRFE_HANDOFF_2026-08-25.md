@@ -540,3 +540,85 @@ git diff --check
 - 最新 `dry-run:shared`：exit code=0，共享 MySQL integration `1/1 passed`，容器自动清理；本地 Worker + Chrome fixture `1/1 passed`。
 - 详细证据：`docs/browser-research/browser-worker-readiness-2026-08-27.md`。
 - 预生产仍只缺一次性输入：隔离/预生产 `TEST_DATABASE_URL`、已迁移数据库、Worker 启动参数/workerId、非敏感测试订单、Chrome executable/profile 路径，以及写开关关闭证明。未连接生产、未读取真实 Session/PAN/CVC、未调用卡台写接口、未付款。
+
+## 2026-08-27 独立 production-readonly Browser Worker 交接（当前最新）
+
+### 当前位置
+
+- Worktree：`/Users/lemon/.codex/worktrees/9128/AI充值业务`
+- 分支：`codex/browser`
+- 主线基线：`599b130`
+- 本轮提交：以本文件所在的 Browser 独立提交为准
+- 历史未跟踪 `artifacts/browser-checkout-observe/` 未修改、未提交；未使用 `git add -A`。
+
+### 最后完成项
+
+1. 新增 `production-readonly-worker.js`：独立消费 Browser dispatch，接通共享 run/lease/recovery、
+   Google Chrome、WAL 和 `abortBeforePayment()`。
+2. 新增 fail-closed 配置加载器：五个写开关精确 false、数据库写开关 false、专用确认词、
+   Chrome/目录/迁移/executor profile 就绪检查。
+3. 新增 `pojia-browser-worker.service`：不加载 `provider.env`，不复用旧 API Worker 充值写开关，
+   并使用专用 StateDirectory。
+4. Browser dispatch claim 新增 profile 范围：原子绑定未指定 profile 的 job，且拒绝其他已绑定
+   profile 的 job。这是 Browser 队列边界的向后兼容扩展。
+5. 新增一键 `smoke:worker:readonly`：正式 CLI `--check` + `--once`，临时 MySQL 8.4，系统
+   Google Chrome，测试后自动清理。
+
+### 修改文件
+
+- `browser-mvp/src/production-readonly-config.js`
+- `browser-mvp/src/production-readonly-worker.js`
+- `browser-mvp/scripts/smoke-production-readonly-worker.sh`
+- `browser-mvp/test/production-readonly-config.test.js`
+- `browser-mvp/test/production-readonly-systemd.test.js`
+- `browser-mvp/test/production-readonly-worker-mysql-smoke.test.js`
+- `browser-mvp/src/shared-dry-run-composition.js`
+- `browser-mvp/src/shared-runtime-integration.js`
+- `browser-mvp/package.json`
+- `v1/src/db/repositories/browser-dispatch-repository.js`
+- `v1/test/browser-dispatch-repository.test.js`
+- `deploy/server/pojia-browser-worker.service`
+- `deploy/server/browser-readonly.conf.example`
+- `deploy/README.md`
+- `docs/browser-research/production-readonly-browser-worker-2026-08-27.md`
+- 本 Browser 状态/交接文档。
+
+### 已验证
+
+```text
+npm --prefix browser-mvp run smoke:worker:readonly
+→ production CLI --check: READY
+→ config/systemd: 8/8 passed
+→ production CLI --once + MySQL + Google Chrome: 1/1 passed
+
+npm --prefix browser-mvp run check
+→ passed
+
+npm --prefix browser-mvp test
+→ 81 tests / 79 passed / 2 skipped / 0 failed
+→ 2 skips 仅因未设 TEST_DATABASE_URL；production Worker MySQL 路径已由独立 smoke 1/1 覆盖
+
+v1 Browser dispatch 定向回归
+→ 23/23 passed（含 profile-scoped claim）
+
+git diff --check
+→ passed
+```
+
+smoke 终态：order=`CARD_READY`、attempt/funds=`CLEARED`、run=`FAILED_SAFE`、dispatch=`CANCELLED`、
+active permits=0、`PAYMENT_SUBMIT`=0、live resource leases=0、external payment calls=0。
+
+### 未验证事实
+
+- AlmaLinux/systemd 服务器实际安装/启动/重启；
+- 生产/预生产数据库、真实订单和外部 ChatGPT；
+- 服务器 Google Chrome sandbox/字体/依赖/代理/Profile 恢复；
+- 真实 Session/card material provider、填卡、付款 submitter、权益/订阅/卡台扣款对账。
+
+本轮没有连接生产，没有读取真实 Session/PAN/CVC，没有填卡或付款，没有调用卡台写接口。
+
+### 下一唯一动作
+
+统筹窗口重新确定**真实单订单验收步骤**。在此之前不安装/启动该 systemd 单元，不向 readonly lane
+派发真实客户订单，不实施付款。需要进入服务器 readonly canary 时，按
+`docs/browser-research/production-readonly-browser-worker-2026-08-27.md` 一次性提供配置并先跑 `--check`。

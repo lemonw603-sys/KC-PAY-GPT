@@ -214,8 +214,10 @@ export function createBrowserDispatchRepository(pool, { transactionTimeoutMs = 5
       }, { timeoutMs: transactionTimeoutMs });
     },
 
-    async claim({ workerId, leaseSeconds = 60, now = new Date() }) {
+    async claim({ workerId, executorProfileId = null, leaseSeconds = 60, now = new Date() }) {
       const worker = required(workerId, 'workerId');
+      const profile = executorProfileId == null
+        ? null : required(executorProfileId, 'executorProfileId');
       if (!Number.isInteger(leaseSeconds) || leaseSeconds < 10 || leaseSeconds > 3600) {
         throw new BrowserDispatchError('leaseSeconds must be between 10 and 3600', 'INVALID_ARGUMENT');
       }
@@ -224,6 +226,9 @@ export function createBrowserDispatchRepository(pool, { transactionTimeoutMs = 5
       // first lease is already committed but its response was lost. Only
       // errors that MySQL explicitly rolls back may be retried here.
       return inTransactionWithLockRetry(pool, async (connection) => {
+        const profilePredicate = profile
+          ? 'AND (bdj.executor_profile_id IS NULL OR bdj.executor_profile_id = ?)'
+          : '';
         const [rows] = await connection.query(
           `SELECT bdj.id, bdj.job_key, bdj.recharge_attempt_id, bdj.order_id,
                   bdj.executor_profile_id, bdj.status, bdj.attempt_count
@@ -235,9 +240,10 @@ export function createBrowserDispatchRepository(pool, { transactionTimeoutMs = 5
              AND rat.executor_kind = 'BROWSER'
              AND rat.status = 'PREPARED' AND rat.funds_risk_state = 'ACTIVE'
              AND o.status = 'RECHARGE_PROCESSING'
+             ${profilePredicate}
            ORDER BY bdj.queued_at, bdj.id
            LIMIT 1 FOR UPDATE SKIP LOCKED`,
-          [now]
+          profile ? [now, profile] : [now]
         );
         if (!rows.length) return null;
         const row = rows[0];
@@ -245,12 +251,18 @@ export function createBrowserDispatchRepository(pool, { transactionTimeoutMs = 5
         const leaseUntil = new Date(now.getTime() + leaseSeconds * 1000);
         await connection.query(
           `UPDATE browser_dispatch_jobs
-           SET status = 'CLAIMED', lease_owner = ?, lease_token_hash = ?, lease_until = ?,
+           SET status = 'CLAIMED', executor_profile_id = COALESCE(executor_profile_id, ?),
+               lease_owner = ?, lease_token_hash = ?, lease_until = ?,
                attempt_count = attempt_count + 1, claimed_at = COALESCE(claimed_at, ?), updated_at = ?
            WHERE id = ? AND (status = 'QUEUED' OR (status = 'CLAIMED' AND lease_until <= ?))`,
-          [worker, hash(leaseToken), leaseUntil, now, now, row.id, now]
+          [profile, worker, hash(leaseToken), leaseUntil, now, now, row.id, now]
         );
-        return publicJob({ ...row, status: 'CLAIMED', attempt_count: Number(row.attempt_count || 0) + 1 }, {
+        return publicJob({
+          ...row,
+          executor_profile_id: row.executor_profile_id || profile,
+          status: 'CLAIMED',
+          attempt_count: Number(row.attempt_count || 0) + 1,
+        }, {
           leaseToken, leaseUntil, leaseOwner: worker
         });
       }, { timeoutMs: transactionTimeoutMs, retryAmbiguous: false });

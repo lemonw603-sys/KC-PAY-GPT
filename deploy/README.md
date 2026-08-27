@@ -47,3 +47,38 @@ systemctl enable --now pojia-bark-notifications.service
 - `close <订单查询码>`：在数据库事务中关闭 `dispatch_new_recharges` 并撤销该订单尚未消费的 Permit；它不会停止 Worker，已有订单轮询会继续运行。
 
 不得直接编辑环境文件绕过 Permit。Permit 消费后任何失败都进入终态或人工核对，不自动再次创建直充订单。
+
+## 独立 Browser production-readonly Worker
+
+Browser 队列不由 `pojia-worker.service` 消费。独立单元为
+`deploy/server/pojia-browser-worker.service`，现阶段只能执行 readonly canary，不具备付款能力。
+
+安装前必须同时安装 `v1` 和 `browser-mvp` 依赖，并单独安装系统 Google Chrome：
+
+```bash
+npm --prefix /opt/pojia/current/v1 ci --omit=dev
+PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 \
+  npm --prefix /opt/pojia/current/browser-mvp ci --omit=dev
+install -o root -g pojia -m 0640 \
+  deploy/server/browser-readonly.conf.example /etc/pojia/browser-readonly.env
+install -o root -g root -m 0644 \
+  deploy/server/pojia-browser-worker.service /etc/systemd/system/
+systemctl daemon-reload
+```
+
+随后必须用真实非敏感值替换 env 模板中的占位符，并先验证：
+
+```bash
+systemd-analyze verify /etc/systemd/system/pojia-browser-worker.service
+systemctl start pojia-browser-worker.service   # 仅在单独批准的 readonly canary 窗口
+systemctl status pojia-browser-worker.service
+```
+
+本仓库不自动 `enable/start` 该单元。启动前要求：迁移 `001–037`
+已完成、数据库 `browser_payment_writes_enabled=false`、指定 executor profile 为
+`BROWSER/ACTIVE` 且 `productionWritesEnabled=false`、所有 Provider/卡资金写开关为 false。
+不得将真实客户订单放入当前 readonly lane；它会在观察后通过
+`abortBeforePayment()` 安全退回，不会完成充值。
+
+完整边界、环境项和本地 smoke 证据见
+[`docs/browser-research/production-readonly-browser-worker-2026-08-27.md`](../docs/browser-research/production-readonly-browser-worker-2026-08-27.md)。

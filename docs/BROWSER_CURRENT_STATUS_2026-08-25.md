@@ -6,12 +6,12 @@
 | --- | --- |
 | worktree | `/Users/lemon/.codex/worktrees/9128/AI充值业务` |
 | 分支 | `codex/browser` |
-| 最新 Browser 代码提交 | `8c17412` (`feat(browser): compose shared nonpayment dry run`) |
+| 当前基线 | `599b130` (`merge(browser): add worker readiness checks`)；本轮独立 Worker 提交见 `git log -1` |
 | 上一文档交接提交 | `7855390` (`docs(browser): record shared runtime handoff`) |
-| 当前阶段 | F0：正式共享 Worker 非付款 composition 已在全新隔离 MySQL 8.4 + 本地 Playwright fixture 端到端通过 |
+| 当前阶段 | F1：独立 production-readonly Browser Worker + systemd 模板已完成，并在临时 MySQL 8.4 + 系统 Google Chrome 上通过正式 CLI 非付款闭环 |
 | 跟踪改动 | 无 |
 | 未跟踪改动 | `artifacts/browser-checkout-observe/`（历史运行产物，不修改、不提交） |
-| Browser MVP | 共享 dispatch/run/resource lease、正式状态合同、服务端 payment permit 边界、付款前安全退出，以及真实 Session/Checkout 只读能力已有；真实生产 Worker、真实卡材料、付款 executor 和付款后三方对账未完成 |
+| Browser MVP | 共享 dispatch/run/resource lease、正式状态合同、服务端 payment permit 边界、付款前安全退出、独立 Worker 进程和 systemd 边界已有；真实 Session/卡材料 production provider、付款 executor 和付款后三方对账未完成 |
 | 生产/真实付款 | 未接入、未执行 |
 
 ## 当前阶段
@@ -399,3 +399,56 @@ npm --prefix browser-mvp run dry-run:shared
 - 按五个写开关为 false 执行 `npm --prefix browser-mvp run dry-run:shared`：静态检查通过，共享 MySQL 集成 `1/1 passed`，临时容器自动清理。
 - `node --test browser-mvp/test/local-worker-chrome-fixture.test.js`：`1/1 passed`，实际启动系统 Google Chrome 临时 profile，驱动本地 Worker claim/run/complete 和本地页面观察，`submitCalls=0`。
 - 详细记录：`docs/browser-research/browser-worker-readiness-2026-08-27.md`。
+
+## 2026-08-27 独立 production-readonly Browser Worker（当前最新）
+
+生产部署审查确认的缺口已在 Browser 线修复：`v1/src/worker.js` 仍只做上游业务任务与
+Browser dispatch 入队；新增 `browser-mvp/src/production-readonly-worker.js` 作为正式、独立的
+Browser 队列消费进程，并新增 `deploy/server/pojia-browser-worker.service`。
+
+### 已完成
+
+- 正式 CLI 直接组合共享 MySQL dispatch/execution/recovery repositories、`createBrowserWorkerService()`、
+  resource lease、Google Chrome runtime、WAL 和 `abortBeforePayment()`。
+- 支持 `--check`/`--once`/常驻轮询；`--check` 不启动 Chrome、不 claim 任务。
+- 环境五个写开关必须精确为 false，数据库 `browser_payment_writes_enabled` 也必须为 false。
+- 启动检查新增 executor profile 校验：必须存在、`BROWSER/ACTIVE`，且
+  `config_public_json.productionWritesEnabled=false`。
+- dispatch claim 现可按 executor profile 隔离，并在原子 claim 时把未绑定 job 冻结到当前
+  profile；不会消费已显式绑定到其他 profile 的 job。
+- systemd 不加载 `provider.env`，在 unit 内再次覆盖五个写开关为 false；不复用旧
+  API Worker 的充值写开关。Chrome Profile/cache/WAL 位于专用 StateDirectory。
+
+### 实际验证
+
+```bash
+npm --prefix browser-mvp run smoke:worker:readonly
+# CLI --check READY
+# config/systemd 8/8 passed
+# 正式 CLI --once + 临时 MySQL 8.4 + 系统 Google Chrome 1/1 passed
+
+npm --prefix browser-mvp run check
+# passed
+
+npm --prefix browser-mvp test
+# 81 tests / 79 passed / 2 skipped / 0 failed
+# 两个 skip 均为未设 TEST_DATABASE_URL；独立 smoke 已用真 MySQL 覆盖 production Worker 路径
+
+node --test v1/test/browser-dispatch-repository.test.js
+# profile-scoped claim 定向回归通过
+```
+
+最新 smoke 实际经过正式 CLI 子进程，不是直接调用测试替身。数据库终态：
+order=`CARD_READY`、attempt/funds=`CLEARED`、run=`FAILED_SAFE`、dispatch=`CANCELLED`、活动 permit=0、
+`PAYMENT_SUBMIT`=0、未释放资源租约=0、external payment calls=0。
+
+### 未验证与停止点
+
+未在 AlmaLinux/systemd 实机安装，未连接生产/预生产数据库，未消费真实订单，未访问外部
+ChatGPT，未读取真实 Session/PAN/CVC，未填卡、未付款、未调用卡台写接口。
+
+当前进程是**正式部署形态的 readonly Worker**，不是付款 Worker。它会把非付款观察后的订单通过
+`abortBeforePayment()` 退回，所以不得向它派发真实客户充值订单。现阶段也只允许一个被批准的
+Browser profile lane 竞争未绑定 job；多 profile 上游路由是后续显式缺口。
+
+详细文档：`docs/browser-research/production-readonly-browser-worker-2026-08-27.md`。

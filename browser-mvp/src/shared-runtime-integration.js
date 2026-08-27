@@ -95,7 +95,14 @@ function classifySafeAbort(error) {
  * is implemented and enabled.
  */
 export class SharedBrowserRuntimeIntegration {
-  constructor({ workerService, executionRepository, recoveryRepository, workerId, leaseSeconds = 60 } = {}) {
+  constructor({
+    workerService,
+    executionRepository,
+    recoveryRepository,
+    workerId,
+    executorProfileId = null,
+    leaseSeconds = 60,
+  } = {}) {
     if (!workerService || typeof workerService.claim !== 'function' || typeof workerService.runClaimedJob !== 'function') {
       throw new TypeError('workerService with claim/runClaimedJob is required');
     }
@@ -115,6 +122,8 @@ export class SharedBrowserRuntimeIntegration {
     this.executionRepository = executionRepository;
     this.recoveryRepository = recoveryRepository;
     this.workerId = required(workerId, 'workerId');
+    this.executorProfileId = executorProfileId == null
+      ? null : required(executorProfileId, 'executorProfileId');
     this.leaseSeconds = leaseSeconds;
   }
 
@@ -205,13 +214,22 @@ export class SharedBrowserRuntimeIntegration {
   }
 
   async runNonPaymentOnce() {
-    const claimed = await this.workerService.claim(this.workerId, { leaseSeconds: this.leaseSeconds });
+    const claimed = await this.workerService.claim(this.workerId, {
+      executorProfileId: this.executorProfileId,
+      leaseSeconds: this.leaseSeconds,
+    });
     if (!claimed) return { status: 'IDLE', workerId: this.workerId, externalPaymentCalls: 0 };
     if (claimed.status !== 'CLAIMED') {
       throw new SharedBrowserRuntimeError('dispatch repository returned a non-claimed job', 'JOB_NOT_CLAIMED');
     }
     if (claimed.leaseOwner !== this.workerId || !claimed.leaseToken) {
       throw new SharedBrowserRuntimeError('claimed dispatch lease is not owned by this worker', 'LEASE_NOT_OWNED');
+    }
+    if (this.executorProfileId && claimed.executorProfileId !== this.executorProfileId) {
+      throw new SharedBrowserRuntimeError(
+        'claimed dispatch job belongs to another executor profile',
+        'EXECUTOR_PROFILE_CONFLICT',
+      );
     }
     const control = await this.workerService.runClaimedJob(claimed, {
       workerId: this.workerId,

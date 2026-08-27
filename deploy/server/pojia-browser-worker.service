@@ -1,0 +1,45 @@
+[Unit]
+Description=AI充值业务 Browser Worker (production readonly)
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=simple
+User=pojia
+Group=pojia
+WorkingDirectory=/opt/pojia/current
+EnvironmentFile=/etc/pojia/runtime.env
+EnvironmentFile=/etc/pojia/browser-readonly.env
+Environment=BROWSER_PAYMENT_WRITES_ENABLED=false
+Environment=PROVIDER_WRITES_ENABLED=false
+Environment=PROVIDER_CARD_WRITES_ENABLED=false
+Environment=PROVIDER_RECHARGE_WRITES_ENABLED=false
+Environment=CARD_FUNDING_WRITES_ENABLED=false
+ExecStartPre=/usr/bin/node browser-mvp/src/production-readonly-worker.js --check
+ExecStart=/usr/bin/node browser-mvp/src/production-readonly-worker.js
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=30
+StateDirectory=pojia-browser-worker
+StateDirectoryMode=0700
+Environment=HOME=/var/lib/pojia-browser-worker
+Environment=XDG_CACHE_HOME=/var/lib/pojia-browser-worker/cache
+UMask=0077
+NoNewPrivileges=true
+PrivateDevices=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictNamespaces=false
+LockPersonality=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+CapabilityBoundingSet=
+AmbientCapabilities=
+
+[Install]
+WantedBy=multi-user.target
