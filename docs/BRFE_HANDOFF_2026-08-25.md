@@ -499,3 +499,15 @@ git diff --check
 ### 下一步唯一动作
 
 向统筹窗口取得**隔离或预生产**的 Worker 配置与非敏感测试订单，在真实 Worker + Google Chrome 上运行一次相同合同的只读 dry-run；继续保持 `browser_payment_writes_enabled=false`、卡台写开关关闭、无 card fill、无 submit。通过后再设计真实卡材料和付款闸门验收；首次真实付款必须单独停下来确认。
+
+## 2026-08-27 真实 Worker + Chrome dry-run 准备核对（当前停止点）
+
+- 当前分支/worktree：`codex/browser` / `/Users/lemon/.codex/worktrees/9128/AI充值业务`；HEAD=`e50777d`，包含代码提交 `8c17412` 与文档提交 `e50777d`。
+- 工作区无 Browser 未提交改动；仅有历史未跟踪 `artifacts/browser-checkout-observe/`，保持不动。
+- 当前环境只提供 `AGENT_BROWSER_EXECUTABLE_PATH`，缺少 `TEST_DATABASE_URL`、`DATABASE_URL`、`MIGRATION_DATABASE_URL`、Worker 配置和非敏感测试订单；本轮没有启动 Worker，也没有连接数据库。
+- 已检查部署样例 `deploy/server/pojia-worker.service`：其中显式设置 `PROVIDER_RECHARGE_WRITES_ENABLED=true`，不能在未覆盖为关闭的隔离环境中执行本次只读 dry-run。该服务未被加载或启动。
+- 实际执行仅是文件、Git 和环境核对；未启动 Chrome、未读取 Session/PAN/CVC、未调用卡台或付款接口。
+
+### 当前阻塞与解除条件
+
+等待统筹窗口提供隔离/预生产数据库地址、迁移状态、Browser Worker 启动参数、非敏感测试订单，以及两个写开关关闭证明：`browser_payment_writes_enabled=false`、卡台写开关关闭。收到后才执行真实 Worker + Google Chrome 只读 dry-run。

@@ -341,3 +341,14 @@ live resource leases = 0
 ### 未验证边界与下一步唯一动作
 
 本轮只使用全新隔离 MySQL 和本地 Playwright fixture；未连接生产、未读取真实 Session/卡材料、未填写真实卡、未调用卡台写接口、未点击付款。下一步唯一动作是取得统筹窗口提供的隔离/预生产 Worker 配置和非敏感测试订单，在真实 Worker + Google Chrome 上运行一次同合同的只读 dry-run；仍保持付款写开关关闭。首次真实付款前必须另行确认。
+
+## 2026-08-27 真实 Worker + Chrome dry-run 准备核对（当前停止点）
+
+- 已确认当前分支仍为 `codex/browser`、HEAD 为 `e50777d`；工作区只有历史未跟踪 `artifacts/browser-checkout-observe/`，无 Browser 未提交改动。
+- 当前环境只发现 `AGENT_BROWSER_EXECUTABLE_PATH`，没有 `TEST_DATABASE_URL`、`DATABASE_URL`、`MIGRATION_DATABASE_URL`、Worker 配置或非敏感测试订单；因此没有启动 Worker、没有连接任何数据库。
+- `deploy/server/pojia-worker.service` 的部署样例显式设置 `PROVIDER_RECHARGE_WRITES_ENABLED=true`。在没有隔离覆盖配置并确认卡台写开关关闭前，不能使用该部署样例执行只读 dry-run；本次未加载、未修改、未启动该服务。
+- 本轮实际执行仅为本地文件/环境核对；没有读取 Session/PAN/CVC，没有 Chrome 页面动作，没有卡台或付款调用。
+
+### 阻塞项与解除条件
+
+需要统筹窗口提供：隔离或预生产 `DATABASE_URL`、完整迁移状态、Browser Worker 启动配置、非敏感测试订单，以及明确的 `browser_payment_writes_enabled=false` 与卡台写开关关闭证明。获得这些输入后，才可执行真实 Worker + Google Chrome 只读 dry-run。
