@@ -25,3 +25,7 @@ CREATE TABLE IF NOT EXISTS card_consumption_ledger (
   CONSTRAINT fk_card_consumption_order FOREIGN KEY (order_id) REFERENCES orders(id),
   CONSTRAINT fk_card_consumption_product FOREIGN KEY (product_id) REFERENCES products(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT INTO app_settings (setting_key, setting_value)
+VALUES ('card_max_successful_payments', '3')
+ON DUPLICATE KEY UPDATE setting_key = VALUES(setting_key);
