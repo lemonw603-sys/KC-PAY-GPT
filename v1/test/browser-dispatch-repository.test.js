@@ -58,6 +58,30 @@ test('claim uses an expiring lease and never returns sensitive payload fields', 
   assert.equal('checkoutUrl' in result, false);
 });
 
+test('claim scopes unbound work to the configured Browser profile and freezes that binding', async () => {
+  const pool = poolFor((sql, values) => {
+    if (/FROM browser_dispatch_jobs bdj/.test(sql)) {
+      assert.match(sql, /bdj\.executor_profile_id IS NULL OR bdj\.executor_profile_id = \?/);
+      assert.deepEqual(values.slice(1), ['profile-readonly']);
+      return [[{
+        id: 9, job_key: 'browser-attempt:readonly', recharge_attempt_id: 'attempt-readonly',
+        order_id: 'order-readonly', executor_profile_id: null, status: 'QUEUED', attempt_count: 0,
+      }], []];
+    }
+    if (/UPDATE browser_dispatch_jobs/.test(sql)) {
+      assert.match(sql, /executor_profile_id = COALESCE\(executor_profile_id, \?\)/);
+      assert.equal(values[0], 'profile-readonly');
+      return [{ affectedRows: 1 }, []];
+    }
+    throw new Error(`unexpected SQL: ${sql}`);
+  });
+  const result = await createBrowserDispatchRepository(pool).claim({
+    workerId: 'readonly-worker',
+    executorProfileId: 'profile-readonly',
+  });
+  assert.equal(result.executorProfileId, 'profile-readonly');
+});
+
 test('enqueue retries a deadlock and commits the idempotent database operation once', async () => {
   let insertAttempts = 0;
   const pool = poolFor((sql) => {

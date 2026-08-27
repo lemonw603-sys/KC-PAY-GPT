@@ -1,0 +1,33 @@
+# Install as /etc/pojia/browser-readonly.env with mode 0600.
+# Never include Session, PAN, CVC, HNSKJ_API_KEY, or ZZSHU_API_KEY.
+BROWSER_WORKER_MODE=PRODUCTION_READONLY
+BROWSER_WORKER_CONFIRMATION="RUN BROWSER PRODUCTION READONLY WORKER"
+BROWSER_WORKER_TARGET=EXTERNAL_READONLY
+BROWSER_EXTERNAL_READONLY_CONFIRM=I-CONFIRM-EXTERNAL-READONLY-NO-SESSION
+BROWSER_WORKER_ID=<unique-browser-worker-id>
+BROWSER_EXECUTOR_PROFILE_ID=<active-browser-executor-profile-uuid>
+BROWSER_PROFILES_ROOT=/var/lib/pojia-browser-worker/profiles
+BROWSER_WAL_PATH=/var/lib/pojia-browser-worker/evidence.wal.jsonl
+BROWSER_CHROME_EXECUTABLE_PATH=/usr/bin/google-chrome
+BROWSER_CHROME_HEADLESS=true
+BROWSER_WORKER_POLL_INTERVAL_MS=1000
+BROWSER_WORKER_LEASE_SECONDS=60
+BROWSER_EXECUTION_TIMEOUT_MS=30000
+
+# Read-only observation contract. No Session or card material is accepted.
+BROWSER_OBSERVE_URL_PREFIX=https://<approved-readonly-target>/
+BROWSER_OBSERVE_TITLE=<exact-title>
+BROWSER_OBSERVE_REQUIRED_SELECTOR=<stable-readonly-selector>
+BROWSER_OBSERVE_MARKER_TEXT=<expected-marker>
+
+# Supply three independent random 32-byte keys as canonical base64.
+BROWSER_RUNTIME_HMAC_KEY_BASE64=<base64-32-bytes>
+BROWSER_ARTIFACT_KEY_BASE64=<base64-32-bytes>
+BROWSER_RESOURCE_HMAC_KEY_BASE64=<base64-32-bytes>
+
+# These are duplicated in the service as immutable safety overrides.
+BROWSER_PAYMENT_WRITES_ENABLED=false
+PROVIDER_WRITES_ENABLED=false
+PROVIDER_CARD_WRITES_ENABLED=false
+PROVIDER_RECHARGE_WRITES_ENABLED=false
+CARD_FUNDING_WRITES_ENABLED=false

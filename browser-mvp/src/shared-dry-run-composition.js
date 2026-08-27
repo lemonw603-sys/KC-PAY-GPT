@@ -147,6 +147,7 @@ export function createSharedNonPaymentDryRun({
     executionRepository,
     recoveryRepository,
     workerId: worker,
+    executorProfileId: profile,
     leaseSeconds,
   });
 
