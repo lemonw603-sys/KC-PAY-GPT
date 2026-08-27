@@ -31,6 +31,49 @@ const runRow = {
   artifact_status: 'ACTIVE', artifact_expires_at: now
 };
 
+const dispatchRow = {
+  dispatch_id: 41, job_key: 'browser:attempt-1', recharge_attempt_id: 'attempt-1',
+  order_id: 'order-1', executor_profile_id: 'profile-1', dispatch_status: 'CLAIMED',
+  lease_owner: 'worker-a', lease_until: now, attempt_count: 2,
+  last_error_code: 'LEASE_EXPIRED', queued_at: now, claimed_at: now,
+  completed_at: null, updated_at: now,
+  attempt_status: 'PREPARED', funds_risk_state: 'ACTIVE',
+  public_no: 'PJV1-BROWSER', order_status: 'RECHARGE_PROCESSING',
+  profile_code: 'BROWSER_V1', profile_version: 1,
+  runtime_id: 'CHROME', adapter_version: 'v1',
+  run_id: 'run-1', run_no: 1, run_status: 'RUNNING', payment_state: 'NOT_STARTED'
+};
+
+test('lists queued and claimed Browser dispatch jobs without lease authority', async () => {
+  const pool = queuedPool([[dispatchRow], [{ total: 1 }]]);
+  const result = await createBrowserAdminService({ pool }).listDispatchJobs({
+    page: '1', pageSize: '20', status: 'CLAIMED', publicNo: 'PJV1-BROWSER'
+  });
+  assert.equal(result.total, 1);
+  assert.deepEqual(result.jobs[0].lease, { owner: 'worker-a', until: now.toISOString() });
+  assert.deepEqual(result.jobs[0].latestRun, {
+    id: 'run-1', runNo: 1, status: 'RUNNING', paymentState: 'NOT_STARTED'
+  });
+  assert.equal(result.jobs[0].attemptCount, 2);
+  assert.equal(Object.hasOwn(result.jobs[0], 'orderId'), false);
+  const serialized = JSON.stringify(result);
+  assert.equal(serialized.includes('leaseToken'), false);
+  assert.equal(serialized.includes('leaseTokenHash'), false);
+  assert.doesNotMatch(pool.queries[0].sql, /lease_token_hash|session|ciphertext|card_credentials/i);
+  assert.deepEqual(pool.queries[0].values, ['CLAIMED', 'PJV1-BROWSER', 20, 0]);
+});
+
+test('dispatch list includes a QUEUED job before a Browser run exists', async () => {
+  const pool = queuedPool([[[
+    { ...dispatchRow, dispatch_status: 'QUEUED', lease_owner: null, lease_until: null,
+      attempt_count: 0, run_id: null, run_no: null, run_status: null, payment_state: null }
+  ][0]], [{ total: 1 }]]);
+  const result = await createBrowserAdminService({ pool }).listDispatchJobs();
+  assert.equal(result.jobs[0].status, 'QUEUED');
+  assert.equal(result.jobs[0].lease, null);
+  assert.equal(result.jobs[0].latestRun, null);
+});
+
 test('lists Browser runs without selecting authority, lease hashes, or account HMACs', async () => {
   const pool = queuedPool([[runRow], [{ total: 1 }]]);
   const result = await createBrowserAdminService({ pool }).listRuns({
@@ -87,6 +130,9 @@ test('rejects invalid filters and control confirmations before database access',
   const service = createBrowserAdminService({ pool });
   await assert.rejects(() => service.listRuns({ status: 'NOT_A_STATUS' }), {
     code: 'INVALID_RUN_STATUS'
+  });
+  await assert.rejects(() => service.listDispatchJobs({ status: 'NOT_A_STATUS' }), {
+    code: 'INVALID_DISPATCH_STATUS'
   });
   await assert.rejects(() => service.controlRun('run-1', {
     action: 'REQUEST', operationId: 'op-1', confirmation: 'yes',

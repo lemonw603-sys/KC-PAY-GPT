@@ -9,6 +9,7 @@ import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import mysql from 'mysql2/promise';
 import { createBrowserDispatchRepository } from '../../v1/src/db/repositories/browser-dispatch-repository.js';
+import { createBrowserAdminService } from '../../v1/src/services/browser-admin-service.js';
 const databaseUrl = process.env.TEST_DATABASE_URL;
 const execFileAsync = promisify(execFile);
 const here = dirname(fileURLToPath(import.meta.url));
@@ -73,6 +74,12 @@ test('production readonly entry claims MySQL dispatch, opens Chrome, and safe-ab
     await createBrowserDispatchRepository(pool).enqueue({
       jobKey: `shared-dry:${attemptId}`, attemptId, orderId, executorProfileId: profileId,
     });
+    const dispatchBeforeRun = await createBrowserAdminService({ pool }).listDispatchJobs({
+      publicNo: `SHARED-DRY-${orderId}`
+    });
+    assert.equal(dispatchBeforeRun.total, 1);
+    assert.equal(dispatchBeforeRun.jobs[0].status, 'QUEUED');
+    assert.equal(dispatchBeforeRun.jobs[0].latestRun, null);
 
     const key = (byte) => Buffer.alloc(32, byte).toString('base64');
     const workerEnv = {
@@ -146,6 +153,12 @@ test('production readonly entry claims MySQL dispatch, opens Chrome, and safe-ab
       submitOperations: 0,
       liveResourceLeases: 0,
     });
+    const dispatchAfterRun = await createBrowserAdminService({ pool }).listDispatchJobs({
+      publicNo: `SHARED-DRY-${orderId}`
+    });
+    assert.equal(dispatchAfterRun.jobs[0].status, 'CANCELLED');
+    assert.equal(dispatchAfterRun.jobs[0].latestRun.status, 'FAILED_SAFE');
+    assert.equal(JSON.stringify(dispatchAfterRun).includes('leaseToken'), false);
   } finally {
     await pool.query('DELETE FROM order_events WHERE order_id = ?', [orderId]);
     await pool.query('DELETE FROM payment_permits WHERE recharge_attempt_id = ?', [attemptId]);
