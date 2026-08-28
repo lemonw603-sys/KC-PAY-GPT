@@ -18,6 +18,16 @@ test('one inventory predicate excludes assigned, consumed, disputed and historic
   assert.match(sql, /transaction_type\) = 'PURCHASE'/);
   assert.match(sql, /refund_cases/);
   assert.match(sql, /status <> 'WITHDRAWN'/);
+  assert.match(sql, /card_operational_overrides/);
+  assert.match(sql, /allocation_policy = 'RETIRED'/);
+  assert.match(sql, /PRODUCT_ONLY/);
+});
+
+test('inventory predicate supports product-specific operational overrides without hard-coding card tails', () => {
+  const sql = eligibleInventoryCardSql('c', '0', { productCode: 'plus' });
+  assert.match(sql, /external_card_id/);
+  assert.match(sql, /COALESCE\(eligible_override\.product_code, ''\).*<> 'plus'/);
+  assert.throws(() => eligibleInventoryCardSql('c', '0', { productCode: 'bad product' }), /Invalid product code/);
 });
 
 test('stage 4 migration is replay guarded and defaults automatic card spending to disabled', () => {
