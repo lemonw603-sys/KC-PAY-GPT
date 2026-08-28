@@ -72,6 +72,7 @@ export function createApp({
   listAdminReconciliationCases = null,
   assignAdminReconciliationCase = null,
   resolveAdminReconciliationCase = null,
+  listAdminBrowserDispatchJobs = null,
   listAdminBrowserRuns = null,
   getAdminBrowserRun = null,
   controlAdminBrowserRun = null,
@@ -608,6 +609,18 @@ export function createApp({
     app.get('/api/v1/admin/browser/runs', noStore, requireAdminApi, async (req, res) => {
       try {
         return res.json(await listAdminBrowserRuns(req.query || {}));
+      } catch (error) {
+        if (error instanceof BrowserAdminError) {
+          return res.status(error.status).json({ error: error.code.toLowerCase() });
+        }
+        throw error;
+      }
+    });
+  }
+  if (typeof listAdminBrowserDispatchJobs === 'function') {
+    app.get('/api/v1/admin/browser/dispatch-jobs', noStore, requireAdminApi, async (req, res) => {
+      try {
+        return res.json(await listAdminBrowserDispatchJobs(req.query || {}));
       } catch (error) {
         if (error instanceof BrowserAdminError) {
           return res.status(error.status).json({ error: error.code.toLowerCase() });

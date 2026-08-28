@@ -263,6 +263,7 @@ const app = createApp({
   ,listAdminReconciliationCases: reconciliationCases.listCases
   ,assignAdminReconciliationCase: reconciliationCases.assign
   ,resolveAdminReconciliationCase: reconciliationCases.resolve
+  ,listAdminBrowserDispatchJobs: browserAdmin.listDispatchJobs
   ,listAdminBrowserRuns: browserAdmin.listRuns
   ,getAdminBrowserRun: browserAdmin.getRun
   ,controlAdminBrowserRun: (runId, input = {}) => browserAdmin.controlRun(runId, {

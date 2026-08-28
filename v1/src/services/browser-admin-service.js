@@ -9,6 +9,7 @@ const PAYMENT_STATES = new Set([
   'PAYMENT_DECLINED', 'PAYMENT_CONFIRMED'
 ]);
 const CONTROL_STATES = new Set(['AUTOMATION', 'REQUESTED', 'FROZEN', 'TRANSFERRED', 'RELEASED']);
+const DISPATCH_STATUSES = new Set(['QUEUED', 'CLAIMED', 'COMPLETED', 'CANCELLED']);
 const CONTROL_ACTIONS = new Set([
   'REQUEST', 'FREEZE', 'TRANSFER', 'RELEASE_SAFE', 'MARK_PAYMENT_UNKNOWN', 'CANCEL'
 ]);
@@ -100,6 +101,42 @@ function publicRun(row) {
   };
 }
 
+function publicDispatchJob(row) {
+  return {
+    id: Number(row.dispatch_id ?? row.id),
+    jobKey: row.job_key,
+    rechargeAttemptId: row.recharge_attempt_id,
+    publicNo: row.public_no,
+    status: row.dispatch_status ?? row.status,
+    attemptCount: Number(row.attempt_count || 0),
+    lastErrorCode: row.last_error_code,
+    lease: row.lease_owner ? {
+      owner: row.lease_owner,
+      until: iso(row.lease_until)
+    } : null,
+    attemptStatus: row.attempt_status,
+    fundsRiskState: row.funds_risk_state,
+    orderStatus: row.order_status,
+    profile: row.executor_profile_id ? {
+      id: row.executor_profile_id,
+      code: row.profile_code,
+      version: row.profile_version == null ? null : Number(row.profile_version),
+      runtimeId: row.runtime_id,
+      adapterVersion: row.adapter_version
+    } : null,
+    latestRun: row.run_id ? {
+      id: row.run_id,
+      runNo: Number(row.run_no),
+      status: row.run_status,
+      paymentState: row.payment_state
+    } : null,
+    queuedAt: iso(row.queued_at),
+    claimedAt: iso(row.claimed_at),
+    completedAt: iso(row.completed_at),
+    updatedAt: iso(row.updated_at)
+  };
+}
+
 function normalizeListInput(input = {}) {
   const page = Number(input.page || 1);
   const pageSize = Number(input.pageSize || 20);
@@ -115,6 +152,24 @@ function normalizeListInput(input = {}) {
     status: optionalEnum(input.status, RUN_STATUSES, 'INVALID_RUN_STATUS'),
     paymentState: optionalEnum(input.paymentState, PAYMENT_STATES, 'INVALID_PAYMENT_STATE'),
     controlState: optionalEnum(input.controlState, CONTROL_STATES, 'INVALID_CONTROL_STATE'),
+    publicNo: input.publicNo == null || input.publicNo === ''
+      ? null : required(input.publicNo, 'publicNo', 64)
+  };
+}
+
+function normalizeDispatchListInput(input = {}) {
+  const page = Number(input.page || 1);
+  const pageSize = Number(input.pageSize || 20);
+  if (!Number.isInteger(page) || page < 1 || page > 100_000) {
+    throw new BrowserAdminError('invalid page', 'INVALID_PAGE');
+  }
+  if (!Number.isInteger(pageSize) || pageSize < 1 || pageSize > MAX_PAGE_SIZE) {
+    throw new BrowserAdminError('invalid page size', 'INVALID_PAGE_SIZE');
+  }
+  return {
+    page,
+    pageSize,
+    status: optionalEnum(input.status, DISPATCH_STATUSES, 'INVALID_DISPATCH_STATUS'),
     publicNo: input.publicNo == null || input.publicNo === ''
       ? null : required(input.publicNo, 'publicNo', 64)
   };
@@ -221,6 +276,53 @@ export function createBrowserAdminService({
 } = {}) {
   if (!pool?.query || !pool?.getConnection) {
     throw new Error('Browser admin service requires a MySQL pool');
+  }
+
+  async function listDispatchJobs(input = {}) {
+    const { page, pageSize, status, publicNo } = normalizeDispatchListInput(input);
+    const conditions = [];
+    const values = [];
+    if (status) { conditions.push('bdj.status = ?'); values.push(status); }
+    if (publicNo) { conditions.push('BINARY o.public_no = ?'); values.push(publicNo); }
+    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+    const offset = (page - 1) * pageSize;
+    const [rows] = await pool.query(
+      `SELECT bdj.id AS dispatch_id, bdj.job_key, bdj.recharge_attempt_id,
+              bdj.order_id, bdj.executor_profile_id, bdj.status AS dispatch_status,
+              bdj.lease_owner, bdj.lease_until, bdj.attempt_count,
+              bdj.last_error_code, bdj.queued_at, bdj.claimed_at,
+              bdj.completed_at, bdj.updated_at,
+              rat.status AS attempt_status, rat.funds_risk_state,
+              o.public_no, o.status AS order_status,
+              ep.profile_code, ep.profile_version, ep.runtime_id, ep.adapter_version,
+              br.id AS run_id, br.run_no, br.status AS run_status, br.payment_state
+       FROM browser_dispatch_jobs bdj
+       INNER JOIN recharge_attempts rat ON rat.id = bdj.recharge_attempt_id
+       INNER JOIN orders o ON o.id = bdj.order_id
+       LEFT JOIN executor_profiles ep ON ep.id = bdj.executor_profile_id
+       LEFT JOIN browser_runs br ON br.id = (
+         SELECT latest_br.id FROM browser_runs latest_br
+         WHERE latest_br.recharge_attempt_id = bdj.recharge_attempt_id
+         ORDER BY latest_br.run_no DESC, latest_br.id DESC LIMIT 1
+       )
+       ${where}
+       ORDER BY FIELD(bdj.status, 'CLAIMED', 'QUEUED', 'CANCELLED', 'COMPLETED'),
+                bdj.updated_at DESC, bdj.id DESC
+       LIMIT ? OFFSET ?`,
+      [...values, pageSize, offset]
+    );
+    const [countRows] = await pool.query(
+      `SELECT COUNT(*) AS total
+       FROM browser_dispatch_jobs bdj
+       INNER JOIN orders o ON o.id = bdj.order_id
+       ${where}`,
+      values
+    );
+    const total = Number(countRows[0]?.total || 0);
+    return {
+      page, pageSize, total, hasMore: offset + rows.length < total,
+      jobs: rows.map(publicDispatchJob)
+    };
   }
 
   async function listRuns(input = {}) {
@@ -597,5 +699,5 @@ export function createBrowserAdminService({
     });
   }
 
-  return { listRuns, getRun, controlRun };
+  return { listDispatchJobs, listRuns, getRun, controlRun };
 }

@@ -548,7 +548,7 @@ git diff --check
 - Worktree：`/Users/lemon/.codex/worktrees/9128/AI充值业务`
 - 分支：`codex/browser`
 - 主线基线：`599b130`
-- 本轮提交：以本文件所在的 Browser 独立提交为准
+- 本轮提交：`5711cc2`（feat(browser): expose dispatch queue in admin control plane）
 - 历史未跟踪 `artifacts/browser-checkout-observe/` 未修改、未提交；未使用 `git add -A`。
 
 ### 最后完成项
@@ -639,3 +639,42 @@ active permits=0、`PAYMENT_SUBMIT`=0、live resource leases=0、external paymen
 `npm --prefix browser-mvp run smoke:worker:readonly` 现同时运行 production-readonly Chrome smoke 与 payment executor MySQL mock：3/3 通过。confirmed 路径仅一次 `PAYMENT_SUBMIT` 并完成 Plus/取消/卡交易对账状态；crash 路径进入 `PAYMENT_UNKNOWN/RECONCILE_ONLY`、打开 reconciliation case，重放不再提交。
 
 实跑发现共享 Browser repository 的付款后 checkpoint 使用 `CONFIRMED`，与迁移允许的 `SETTLED` 不一致；已在 `v1/src/db/repositories/browser-execution-repository.js` 修正三处并复验。未触碰旧 API Worker 充值逻辑。
+
+## 2026-08-27 Browser 第一阶段推进交接（Dispatch 只读可见性）
+
+- Worktree：`/Users/lemon/.codex/worktrees/9128/AI充值业务`
+- Branch：`codex/browser`
+- 本轮基线：`2b8c0cd`（主线已包含此前 Browser readonly/mock 提交）
+- 本轮状态：已补后台 dispatch 只读列表，已提交 `5711cc2`；历史未跟踪 `artifacts/browser-checkout-observe/` 未修改、未提交。
+
+### 本轮完成
+
+1. 证明原后台仅展示 `browser_runs`，QUEUED dispatch 在 run 创建前不可见。
+2. 新增 `GET /api/v1/admin/browser/dispatch-jobs` 及 `createBrowserAdminService().listDispatchJobs()`。
+3. Browser 管理页新增 Dispatch 队列表格，与 Run 列表并行展示；只读、脱敏、不返回 lease token/hash、Session、卡资料或密文。
+4. 新增 queued/claimed/无 run、非法状态过滤和 API 路由回归测试。
+
+### 验证结果
+
+- `node --test v1/test/browser-admin-service.test.js --test-name-pattern='Browser|dispatch|rejects'`：5/5 passed。
+- `node --test v1/test/app.test.js --test-name-pattern='Browser timelines'`：Browser 相关路由通过。
+- `npm --prefix browser-mvp test`：既有 Browser 测试保持通过；2 个 MySQL 集成测试因 `TEST_DATABASE_URL` 未配置跳过。
+- 全量 v1 app 测试仍有基线 customer page 路径失败（根 `public/` 与 `v1/public/` 不一致），本轮未触碰该非 Browser 问题。
+
+### 未验证事实
+
+- 未连接生产/预生产数据库；未安装或启动 AlmaLinux/systemd；未访问外部 ChatGPT。
+- 未读取真实 Session/PAN/CVC；未填卡、未付款、未调用卡台写接口。
+- Dispatch 列表 SQL 已在隔离 MySQL smoke 中执行并通过 QUEUED→CANCELLED 断言；仍需在目标生产 MySQL 版本上复核索引计划。
+
+### 下一唯一动作
+
+在不改变 API 充值主流程和卡片同步职责的前提下：先对本轮 dispatch 列表 SQL 做隔离 MySQL 联调，再补齐非付款端到端状态链（领取、租约/心跳、Chrome 本地页面观察、`abortBeforePayment()` 安全收口）并更新证据。完成后再独立提交；不部署、不启用付款。
+
+## 2026-08-28 Browser 线交接补充：migration 039 消费预留
+
+- 当前分支 `codex/browser` 已 rebase 到主线 `5eb0967`；Browser 控制面变更保留，主线 migration/卡运营覆盖未被删除。
+- adapter 与 authoritative snapshot 均强制校验消费账本 `RESERVED` 及 attempt/order/card 三方绑定；快照包含消费预留 ID/status。
+- 隔离 MySQL shared dry-run 使用共享 attempt repository 创建 RESERVED，abort 后 RELEASED；Browser 全量测试 85 passed、4 skipped、0 failed。
+- 本轮未连接生产、未启动生产 Worker、未读取真实 Session/PAN/CVC、未付款、未调用卡台写接口。
+- 下一步：由统筹窗口确认是否接受本提交并安排后续 Browser 验收；本线不自行合并或部署。

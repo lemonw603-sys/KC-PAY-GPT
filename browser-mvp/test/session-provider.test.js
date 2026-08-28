@@ -40,6 +40,10 @@ test('controlled runtime options carry only an opaque sessionRef, never session 
     },
     profile: { id: 'prof-session' },
     card: { id: 'card-session', orderId: 'ord-session', providerAccountId: 'provider-session' },
+    cardConsumption: {
+      id: 'consumption-session', status: 'RESERVED',
+      attemptId: 'att-session', orderId: 'ord-session', cardId: 'card-session',
+    },
     route: { id: 'route-session', executorKind: 'BROWSER', cardProviderAccountId: 'provider-session' },
   }, { sessionRef: 'session-ref:0001' });
   assert.equal(job.metadata.sessionRef, 'session-ref:0001');

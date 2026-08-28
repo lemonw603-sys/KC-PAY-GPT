@@ -86,6 +86,16 @@ function authoritativePaymentSnapshot(row, now) {
   if (!row.card_id || row.card_order_id !== row.order_id) {
     throw new BrowserExecutionError('card is not bound to this order', 'CARD_BINDING_MISMATCH');
   }
+  if (!row.card_consumption_id
+    || row.card_consumption_status !== 'RESERVED'
+    || row.card_consumption_attempt_id !== row.recharge_attempt_id
+    || row.card_consumption_order_id !== row.order_id
+    || row.card_consumption_card_id !== row.card_id) {
+    throw new BrowserExecutionError(
+      'shared card consumption reservation is missing or no longer active',
+      'CARD_CONSUMPTION_NOT_RESERVED'
+    );
+  }
   if (!row.card_provider_account_id || row.card_provider_account_id !== row.route_card_provider_account_id) {
     throw new BrowserExecutionError('card provider does not match the frozen route', 'CARD_PROVIDER_MISMATCH');
   }
@@ -115,6 +125,8 @@ function authoritativePaymentSnapshot(row, now) {
     routeId: row.route_id,
     routeCardProviderAccountId: row.route_card_provider_account_id,
     cardId: row.card_id,
+    cardConsumptionId: row.card_consumption_id,
+    cardConsumptionStatus: row.card_consumption_status,
     cardProviderAccountId: row.card_provider_account_id,
     providerCardId: row.provider_card_id,
     cardStatus,
@@ -165,12 +177,19 @@ async function lockRunContext(connection, runId) {
             c.current_balance AS card_current_balance,
             c.card_credentials_ciphertext,
             c.last_synced_at AS card_last_synced_at,
+            ccl.id AS card_consumption_id,
+            ccl.status AS card_consumption_status,
+            ccl.recharge_attempt_id AS card_consumption_attempt_id,
+            ccl.order_id AS card_consumption_order_id,
+            ccl.card_id AS card_consumption_card_id,
             fr.id AS route_id, fr.executor_kind AS route_executor_kind,
             fr.card_provider_account_id AS route_card_provider_account_id
      FROM browser_runs br
      INNER JOIN recharge_attempts rat ON rat.id = br.recharge_attempt_id
      INNER JOIN orders o ON o.id = rat.order_id
      LEFT JOIN cards c ON c.order_id = o.id
+     LEFT JOIN card_consumption_ledger ccl
+       ON ccl.recharge_attempt_id = rat.id
      LEFT JOIN fulfillment_routes fr ON fr.id = rat.fulfillment_route_id
      WHERE br.id = ?
      FOR UPDATE`,
@@ -1058,7 +1077,7 @@ export function createBrowserExecutionRepository(pool) {
         );
         return publicRun({
           ...row, run_status: 'COMPLETED', payment_state: 'PAYMENT_CONFIRMED',
-          attempt_status: 'CLEARED', funds_risk_state: 'CLEARED', order_status: 'RECHARGE_SUCCESS'
+          attempt_status: 'SUCCESS', funds_risk_state: 'SETTLED', order_status: 'RECHARGE_SUCCESS'
         }, { postPaymentState: 'CANCELLATION_CONFIRMED', idempotentReplay: false });
       });
     },

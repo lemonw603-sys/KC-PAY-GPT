@@ -152,6 +152,14 @@
             <label><span class="sr-only">控制权</span><select id="browser-control-state"><option value="">全部控制权</option><option value="AUTOMATION">自动化</option><option value="REQUESTED">已请求人工</option><option value="FROZEN">已冻结</option><option value="TRANSFERRED">已转交人工</option><option value="RELEASED">已释放待对账</option></select></label>
             <button class="primary-small" type="submit">筛选</button>
           </form>
+          <div class="card-heading compact-heading">
+            <div><p class="section-kicker">Dispatch 队列</p><h3>领取、租约与重投递</h3></div>
+            <span id="browser-dispatch-count" class="readonly-badge">0 个任务</span>
+          </div>
+          <div class="table-wrap"><table><thead><tr><th>订单 / Dispatch</th><th>队列状态</th><th>Attempt / 资金</th><th>Worker 租约</th><th>执行配置 / Run</th><th>排队 / 更新时间</th></tr></thead><tbody id="browser-dispatch-table"></tbody></table></div>
+          <div class="card-heading compact-heading">
+            <div><p class="section-kicker">执行记录</p><h3>Run、检查点与人工接管</h3></div>
+          </div>
           <div class="table-wrap"><table><thead><tr><th>订单 / Run</th><th>运行状态</th><th>付款 / 资金</th><th>控制权</th><th>Worker 租约</th><th>Checkout artifact</th><th>更新时间</th></tr></thead><tbody id="browser-runs-table"></tbody></table></div>
           <div class="pagination"><span id="browser-runs-count">0 个 run</span><div><button id="browser-runs-prev" type="button">上一页</button><span id="browser-runs-page">第 1 页</span><button id="browser-runs-next" type="button">下一页</button></div></div>
         </section>

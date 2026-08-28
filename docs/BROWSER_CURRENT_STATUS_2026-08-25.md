@@ -462,3 +462,38 @@ Browser profile lane 竞争未绑定 job；多 profile 上游路由是后续显�
 ### 付款执行器共享 MySQL 模拟验证
 
 一键 smoke 已纳入两条真实共享 MySQL 状态机测试：mock confirmed 完整推进至 `RECHARGE_SUCCESS`，mock submit crash 推进至 `PAYMENT_UNKNOWN/RECONCILE_ONLY` 并证明重放不二次提交。运行发现并修复 checkpoint `payment_risk` 使用不存在的 `CONFIRMED` 枚举的问题；现与迁移合同统一为 `SETTLED`。该测试只在临时库短时开启 DB gate，外部付款调用仍为 0。
+
+## 2026-08-27 Browser 第一阶段推进：Dispatch 只读可见性（本轮）
+
+### 已完成
+
+- 核实后台真实入口：`GET /api/v1/admin/browser/runs` 只查询 `browser_runs`；只入队、尚未创建 run 的 `browser_dispatch_jobs` 原先不可见。
+- 在 Browser 控制面新增只读 `GET /api/v1/admin/browser/dispatch-jobs`，仅展示队列状态、排队/领取时间、领取次数、Worker owner/租约到期、attempt/资金/订单状态、profile 摘要和最新 run 摘要。
+- `QUEUED` 且无 run 的任务现在可追溯；`CLAIMED`、过期重领线索通过 `attemptCount`/`lastErrorCode`/lease 时间展示。
+- 后台和 API 均不查询或返回 lease token/hash、Session、卡凭据、密文、account HMAC；不复制卡片 readiness 或库存判断。
+- Browser 页面同时刷新 dispatch 队列与 run 列表；未增加写操作。
+
+### 验证
+
+```text
+node --test v1/test/browser-admin-service.test.js --test-name-pattern='Browser|dispatch|rejects'
+→ 5/5 passed
+node --test v1/test/app.test.js --test-name-pattern='Browser timelines'
+→ Browser timeline/dispatch 路由通过
+npm --prefix browser-mvp test
+→ 既有 Browser 测试保持通过（2 个 MySQL 集成测试因未配置 TEST_DATABASE_URL 跳过）
+```
+
+`v1/test/app.test.js` 中已有的 isolated customer page 测试仍因基线 `create-app.js` 指向根目录 `public/`、而当前 v1 页面位于 `v1/public/` 的既有路径问题失败；本轮未修改该非 Browser 基线问题。
+
+### 当前边界
+
+本轮只读后台可见性已补齐，但尚未在 AlmaLinux/systemd 实机、生产/预生产数据库或外部 ChatGPT 上运行；未读取真实 Session/PAN/CVC、未填卡、未付款、未调用卡台写接口。`CARD_READY → RECHARGE_PROCESSING/PREPARED → dispatch → run` 的状态合同继续由共享核心负责；Browser 不在本线复制卡片库存同步/readiness。
+
+## 2026-08-28 migration 039 消费预留对齐（Browser 线）
+
+- Browser adapter 与权威 payment snapshot 同时验证 `card_consumption_ledger`：必须为 `RESERVED`，且 `recharge_attempt_id/order_id/card_id` 与当前 attempt、订单、卡完全一致；否则以 `CARD_CONSUMPTION_NOT_RESERVED` fail-closed。消费预留 ID/status 纳入 snapshot 事实。
+- 隔离 shared dry-run 使用共享 `beginAuthorizedAttempt()` 生成真实 RESERVED 记录，安全 abort 后核实为 `RELEASED`；未实现或复制库存规则。
+- `codex/browser` 已安全 rebase 到主线 `5eb0967`，保留 Browser 控制面改动且无主线 migration 删除。
+- 验证：`npm --prefix browser-mvp test` 85 passed/4 skipped/0 failed；本地 Worker+Google Chrome 非付款 1/1；五个写开关均为 false 的 `dry-run:shared` 隔离 MySQL 1/1 passed。
+- 未连接生产、未启动生产服务、未读取真实 Session/PAN/CVC、未填卡、未付款、未调用卡台写接口。

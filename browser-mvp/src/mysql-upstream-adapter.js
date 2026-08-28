@@ -28,6 +28,11 @@ SELECT
   c.order_id AS card_order_id,
   c.provider_card_id AS provider_card_ref,
   c.provider_account_id AS card_provider_account_id,
+  ccl.id AS card_consumption_id,
+  ccl.status AS card_consumption_status,
+  ccl.recharge_attempt_id AS card_consumption_attempt_id,
+  ccl.order_id AS card_consumption_order_id,
+  ccl.card_id AS card_consumption_card_id,
   fr.id AS route_id,
   fr.executor_kind AS route_executor_kind,
   fr.card_provider_account_id AS route_card_provider_account_id
@@ -35,6 +40,7 @@ FROM browser_runs br
 INNER JOIN recharge_attempts rat ON rat.id = br.recharge_attempt_id
 INNER JOIN orders o ON o.id = rat.order_id
 INNER JOIN cards c ON c.order_id = o.id
+LEFT JOIN card_consumption_ledger ccl ON ccl.recharge_attempt_id = rat.id
 INNER JOIN fulfillment_routes fr ON fr.id = rat.fulfillment_route_id
 WHERE br.id = ?
 LIMIT 1`;
@@ -88,6 +94,13 @@ export function rowToProjection(row) {
         ? {}
         : { providerCardRef: required(row.provider_card_ref, 'provider_card_ref') }),
       providerAccountId: required(row.card_provider_account_id, 'card_provider_account_id'),
+    },
+    cardConsumption: {
+      id: required(row.card_consumption_id, 'card_consumption_id'),
+      status: required(row.card_consumption_status, 'card_consumption_status'),
+      attemptId: required(row.card_consumption_attempt_id, 'card_consumption_attempt_id'),
+      orderId: required(row.card_consumption_order_id, 'card_consumption_order_id'),
+      cardId: required(row.card_consumption_card_id, 'card_consumption_card_id'),
     },
     route: {
       id: required(row.route_id, 'route_id'),

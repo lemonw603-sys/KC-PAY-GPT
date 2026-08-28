@@ -55,6 +55,12 @@ async function createFixture(pool, label) {
      VALUES (?, ?, ?, 'BROWSER', ?, 'PREPARED', 'ACTIVE', ?, CURRENT_TIMESTAMP(3), CURRENT_TIMESTAMP(3))`,
     [ids.attemptId, ids.orderId, routeId, ids.profileId, `mock-payment:${ids.attemptId}`],
   );
+  await pool.query(
+    `INSERT INTO card_consumption_ledger
+     (id, card_id, order_id, recharge_attempt_id, product_id, status, amount, currency)
+     VALUES (?, ?, ?, ?, ?, 'RESERVED', 25, 'USD')`,
+    [crypto.randomUUID(), ids.cardId, ids.orderId, ids.attemptId, productId],
+  );
   const repository = createBrowserExecutionRepository(pool);
   const run = await repository.beginRun({
     attemptId: ids.attemptId, executorProfileId: ids.profileId,
@@ -74,6 +80,7 @@ async function cleanup(pool, ids) {
   await pool.query('DELETE FROM browser_operations WHERE browser_run_id = ?', [ids.runId]);
   await pool.query('DELETE FROM execution_resource_leases WHERE browser_run_id = ?', [ids.runId]);
   await pool.query('DELETE FROM browser_runs WHERE id = ?', [ids.runId]);
+  await pool.query('DELETE FROM card_consumption_ledger WHERE recharge_attempt_id = ?', [ids.attemptId]);
   await pool.query('DELETE FROM recharge_attempts WHERE id = ?', [ids.attemptId]);
   await pool.query('DELETE FROM cards WHERE id = ?', [ids.cardId]);
   await pool.query('DELETE FROM orders WHERE id = ?', [ids.orderId]);
@@ -128,7 +135,7 @@ test('shared MySQL permit and post-payment state machine complete only through m
       run: stored.run_status, payment: stored.payment_state, post: stored.post_payment_state,
       submits: Number(stored.submit_count),
     }, {
-      order: 'RECHARGE_SUCCESS', attempt: 'CLEARED', funds: 'CLEARED', run: 'COMPLETED',
+      order: 'RECHARGE_SUCCESS', attempt: 'SUCCESS', funds: 'SETTLED', run: 'COMPLETED',
       payment: 'PAYMENT_CONFIRMED', post: 'CANCELLATION_CONFIRMED', submits: 1,
     });
   } finally {
