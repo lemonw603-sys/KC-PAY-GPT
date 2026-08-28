@@ -292,3 +292,9 @@
 - `RETIRED` 或非 Plus 的 `PRODUCT_ONLY` discovery 不会被接管进入本地可分配 cards。
 - 新增隔离测试覆盖 Claude 专用覆盖阻止接管；定向 intake/override 测试 `9/9` 通过。
 - 提交：`92b1c06`。未部署生产。
+
+## 2026-08-28｜公网只读健康核验
+
+- `https://ops.vibebridge.top/health/ready` 返回 HTTP 200，响应 `{"status":"ready"}`。
+- `https://plus.vibebridge.top/health/live` 返回 HTTP 200，响应 `{"status":"ok"}`。
+- 本次仅访问公开健康端点；未登录后台、未修改生产配置、未执行 Provider/卡台写操作。
