@@ -264,4 +264,5 @@
 - 下一步：仅生成历史订单/Provider 交易差异报告，先人工核对，不自动改历史；之后再评估后台前端展示。
 - 已完成只读差异报告脚本 `v1/scripts/card-consumption-audit.js` 及测试；它只执行 SELECT，发现差异时输出卡号尾号、账本状态计数和 Provider transaction ID，绝不自动回填。
 - 差异报告新增建议分类：Provider 成功消费多于本地账本时标记 `BACKFILL_REVIEW_REQUIRED`，本地多于 Provider 时标记 `LEDGER_REVIEW_REQUIRED`；两者都必须人工核对后才允许未来设计回填。
+- 用户补充业务事实：Provider 卡 `493`（尾号 `8590`）在 2026-08-18 用于 Plus 充值，因卡台服务器更换后永久不可用。已附加到生产审计报告；没有仅凭口述自动回填账本或直接改生产状态。
 - 生产只读核验（SSH `root@144.34.180.184`）确认当前 release 仍为 `/opt/pojia/releases/20260828-card-sync-43ca767`，其中不存在 migration 038/039 和审计脚本；因此本次未在生产执行审计，也未擅自部署。生产审计的前置条件是单独确认部署包含账本与审计代码。
