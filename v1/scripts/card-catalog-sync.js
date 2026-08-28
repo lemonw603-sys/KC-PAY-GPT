@@ -33,9 +33,11 @@ async function markProviderSnapshotHealth({ status, message }) {
     await pool.query(
       `INSERT INTO operator_alerts
        (id, alert_type, dedupe_key, severity, title, message, status)
-       VALUES (UUID(), 'PROVIDER_SNAPSHOT_STALE', ?, 'critical', '卡台余额同步异常', ?, 'OPEN')
+       VALUES (UUID(), 'PROVIDER_SNAPSHOT_STALE', ?, 'critical', '卡台信息暂时无法更新', ?, 'OPEN')
        ON DUPLICATE KEY UPDATE severity = VALUES(severity), title = VALUES(title),
-         message = VALUES(message), status = 'OPEN', acknowledged_at = NULL`,
+         message = VALUES(message),
+         status = IF(status = 'RESOLVED', 'OPEN', status),
+         acknowledged_at = IF(status = 'RESOLVED', NULL, acknowledged_at)`,
       [dedupeKey, message]
     );
   } else {
@@ -61,7 +63,7 @@ try {
     const code = String(error?.code || error?.kind || 'PROVIDER_SNAPSHOT_SYNC_FAILED').slice(0, 80);
     await markProviderSnapshotHealth({
       status: 'OPEN',
-      message: `HNSKJ 余额/开卡规则只读同步失败（${code}）。后台不得将旧快照视为实时数据。`
+      message: `卡台余额或开卡规则暂时没有更新成功（${code}）。系统已暂停使用旧数据开卡，请稍后刷新。`
     });
     throw error;
   }

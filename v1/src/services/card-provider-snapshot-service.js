@@ -184,6 +184,7 @@ export async function refreshProviderSnapshot(pool, provider, {
     ? null : String(previousRows[0].available_balance);
   if (previousBalance != null && previousBalance !== snapshot.accountBalance) {
     const providerCode = String(snapshot.provider || 'hnskj');
+    const providerLabel = providerCode === 'hnskj' ? '当前卡台' : providerCode;
     const dedupeKey = `provider-balance-change:${providerCode}:${previousBalance}:${snapshot.accountBalance}`;
     await pool.query(
       `INSERT INTO operator_alerts
@@ -193,7 +194,7 @@ export async function refreshProviderSnapshot(pool, provider, {
          message = VALUES(message),
          status = IF(status = 'RESOLVED', 'OPEN', status),
          acknowledged_at = IF(status = 'RESOLVED', NULL, acknowledged_at)`,
-      [dedupeKey, `卡台 ${providerCode} 余额由 ${previousBalance} ${snapshot.currency} 变为 ${snapshot.accountBalance} ${snapshot.currency}。`]
+      [dedupeKey, `${providerLabel}余额由 ${previousBalance} ${snapshot.currency} 变为 ${snapshot.accountBalance} ${snapshot.currency}。`]
     );
   }
   return snapshot;
