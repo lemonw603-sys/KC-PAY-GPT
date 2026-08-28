@@ -66,6 +66,12 @@ test('Browser MySQL mapping preserves one payment action and locks unknown resul
          CURRENT_TIMESTAMP(3), CURRENT_TIMESTAMP(3))`,
       [attemptId, orderId, routeId, `browser-test:${attemptId}`]
     );
+    await pool.query(
+      `INSERT INTO card_consumption_ledger
+       (id, card_id, order_id, recharge_attempt_id, product_id, status, amount, currency)
+       VALUES (?, ?, ?, ?, ?, 'RESERVED', 25, 'USD')`,
+      [crypto.randomUUID(), cardId, orderId, attemptId, productId]
+    );
 
     const repository = createBrowserExecutionRepository(pool);
     const started = await repository.beginRun({
@@ -146,6 +152,7 @@ test('Browser MySQL mapping preserves one payment action and locks unknown resul
     await pool.query('DELETE FROM checkout_artifacts WHERE browser_run_id = ?', [runId]);
     await pool.query('DELETE FROM execution_resource_leases WHERE browser_run_id = ?', [runId]);
     await pool.query('DELETE FROM browser_runs WHERE id = ?', [runId]);
+    await pool.query('DELETE FROM card_consumption_ledger WHERE recharge_attempt_id = ?', [attemptId]);
     await pool.query('DELETE FROM recharge_attempts WHERE id = ?', [attemptId]);
     await pool.query('DELETE FROM card_assignment_history WHERE order_id = ?', [orderId]);
     await pool.query('DELETE FROM cards WHERE id = ?', [cardId]);
@@ -218,6 +225,12 @@ test('Browser MySQL pre-payment abort releases every runtime and funds fence ato
        VALUES (?, ?, ?, 'BROWSER', 'PREPARED', 'ACTIVE', ?,
          CURRENT_TIMESTAMP(3), CURRENT_TIMESTAMP(3))`,
       [attemptId, orderId, routeId, `browser-safe-abort:${attemptId}`]
+    );
+    await pool.query(
+      `INSERT INTO card_consumption_ledger
+       (id, card_id, order_id, recharge_attempt_id, product_id, status, amount, currency)
+       VALUES (?, ?, ?, ?, ?, 'RESERVED', 25, 'USD')`,
+      [crypto.randomUUID(), cardId, orderId, attemptId, productId]
     );
     await pool.query(
       `INSERT INTO browser_dispatch_jobs
@@ -325,6 +338,7 @@ test('Browser MySQL pre-payment abort releases every runtime and funds fence ato
     await pool.query('DELETE FROM browser_artifact_secrets WHERE browser_run_id = ?', [runId]);
     await pool.query('DELETE FROM browser_dispatch_jobs WHERE recharge_attempt_id = ?', [attemptId]);
     await pool.query('DELETE FROM browser_runs WHERE id = ?', [runId]);
+    await pool.query('DELETE FROM card_consumption_ledger WHERE recharge_attempt_id = ?', [attemptId]);
     await pool.query('DELETE FROM recharge_attempts WHERE id = ?', [attemptId]);
     await pool.query('DELETE FROM cards WHERE id = ?', [cardId]);
     await pool.query('DELETE FROM orders WHERE id = ?', [orderId]);

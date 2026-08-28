@@ -670,3 +670,11 @@ active permits=0、`PAYMENT_SUBMIT`=0、live resource leases=0、external paymen
 ### 下一唯一动作
 
 在不改变 API 充值主流程和卡片同步职责的前提下：先对本轮 dispatch 列表 SQL 做隔离 MySQL 联调，再补齐非付款端到端状态链（领取、租约/心跳、Chrome 本地页面观察、`abortBeforePayment()` 安全收口）并更新证据。完成后再独立提交；不部署、不启用付款。
+
+## 2026-08-28 Browser 线交接补充：migration 039 消费预留
+
+- 当前分支 `codex/browser` 已 rebase 到主线 `5eb0967`；Browser 控制面变更保留，主线 migration/卡运营覆盖未被删除。
+- adapter 与 authoritative snapshot 均强制校验消费账本 `RESERVED` 及 attempt/order/card 三方绑定；快照包含消费预留 ID/status。
+- 隔离 MySQL shared dry-run 使用共享 attempt repository 创建 RESERVED，abort 后 RELEASED；Browser 全量测试 85 passed、4 skipped、0 failed。
+- 本轮未连接生产、未启动生产 Worker、未读取真实 Session/PAN/CVC、未付款、未调用卡台写接口。
+- 下一步：由统筹窗口确认是否接受本提交并安排后续 Browser 验收；本线不自行合并或部署。

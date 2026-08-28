@@ -43,6 +43,10 @@ function projection(overrides = {}) {
       providerCardRef: 'provider-card:0001',
       providerAccountId: 'provider-account:hnskj:0001',
     },
+    cardConsumption: {
+      id: 'consumption:0001', status: 'RESERVED',
+      attemptId: 'att-upstream-0001', orderId: 'ord-upstream-0001', cardId: 'card:inventory:0001',
+    },
     route: {
       id: 'route:browser:0001',
       cardProviderAccountId: 'provider-account:hnskj:0001',

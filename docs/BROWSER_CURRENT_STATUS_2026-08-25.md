@@ -489,3 +489,11 @@ npm --prefix browser-mvp test
 ### 当前边界
 
 本轮只读后台可见性已补齐，但尚未在 AlmaLinux/systemd 实机、生产/预生产数据库或外部 ChatGPT 上运行；未读取真实 Session/PAN/CVC、未填卡、未付款、未调用卡台写接口。`CARD_READY → RECHARGE_PROCESSING/PREPARED → dispatch → run` 的状态合同继续由共享核心负责；Browser 不在本线复制卡片库存同步/readiness。
+
+## 2026-08-28 migration 039 消费预留对齐（Browser 线）
+
+- Browser adapter 与权威 payment snapshot 同时验证 `card_consumption_ledger`：必须为 `RESERVED`，且 `recharge_attempt_id/order_id/card_id` 与当前 attempt、订单、卡完全一致；否则以 `CARD_CONSUMPTION_NOT_RESERVED` fail-closed。消费预留 ID/status 纳入 snapshot 事实。
+- 隔离 shared dry-run 使用共享 `beginAuthorizedAttempt()` 生成真实 RESERVED 记录，安全 abort 后核实为 `RELEASED`；未实现或复制库存规则。
+- `codex/browser` 已安全 rebase 到主线 `5eb0967`，保留 Browser 控制面改动且无主线 migration 删除。
+- 验证：`npm --prefix browser-mvp test` 85 passed/4 skipped/0 failed；本地 Worker+Google Chrome 非付款 1/1；五个写开关均为 false 的 `dry-run:shared` 隔离 MySQL 1/1 passed。
+- 未连接生产、未启动生产服务、未读取真实 Session/PAN/CVC、未填卡、未付款、未调用卡台写接口。

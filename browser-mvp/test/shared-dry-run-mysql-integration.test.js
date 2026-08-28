@@ -5,6 +5,7 @@ import mysql from 'mysql2/promise';
 import { chromium } from 'playwright';
 
 import { createBrowserDispatchRepository } from '../../v1/src/db/repositories/browser-dispatch-repository.js';
+import { createRechargeAttemptRepository } from '../../v1/src/db/repositories/recharge-attempt-repository.js';
 import { MemoryEvidenceSink } from '../src/evidence-sink.js';
 import { createSyntheticManifest } from '../src/fixtures.js';
 import { LocalPlaywrightRuntimeAdapter } from '../src/runtime-adapter.js';
@@ -26,9 +27,24 @@ test('real MySQL dispatch/run executes a local Browser dry-run and clears every 
   const cardId = crypto.randomUUID();
   const attemptId = crypto.randomUUID();
   const profileId = crypto.randomUUID();
+  let originalDispatchSetting = 'false';
+  let authorizationId = null;
+  let authorizationItemId = null;
   const evidenceSink = new MemoryEvidenceSink();
   const html = encodeURIComponent('<title>Shared dry-run fixture</title><main data-shared-dry-run>no-payment</main>');
   try {
+    const [[dispatchSetting]] = await pool.query(
+      `SELECT setting_value FROM app_settings WHERE setting_key = 'dispatch_new_recharges' LIMIT 1`,
+    );
+    originalDispatchSetting = String(dispatchSetting?.setting_value ?? 'false');
+    await pool.query(
+      `UPDATE app_settings SET setting_value = 'true'
+       WHERE setting_key = 'dispatch_new_recharges'`,
+    );
+    await pool.query(
+      `UPDATE app_settings SET setting_value = 'AUTOMATIC'
+       WHERE setting_key = 'recharge_dispatch_mode'`,
+    );
     await pool.query(
       `INSERT INTO executor_profiles
        (id, profile_code, profile_version, executor_kind, runtime_id,
@@ -46,7 +62,7 @@ test('real MySQL dispatch/run executes a local Browser dry-run and clears every 
         minimum_required_card_balance, session_ciphertext,
         card_purchase_idempotency_key, product_id, fulfillment_route_id,
         route_resolution_status)
-       VALUES (?, ?, ?, 'RECHARGE_PROCESSING', '7', 25, 16, ?, ?, ?, ?, 'RESOLVED')`,
+       VALUES (?, ?, ?, 'CARD_READY', '7', 25, 16, ?, ?, ?, ?, 'RESOLVED')`,
       [orderId, `SHARED-DRY-${orderId}`, cdkId, Buffer.from('unused-isolated-session'),
         `shared-dry-purchase-${orderId}`, productId, routeId],
     );
@@ -64,13 +80,46 @@ test('real MySQL dispatch/run executes a local Browser dry-run and clears every 
         `shared-dry-card-${cardId}`],
     );
     await pool.query(
-      `INSERT INTO recharge_attempts
-       (id, order_id, fulfillment_route_id, executor_kind, executor_profile_id,
-        status, funds_risk_state, idempotency_key, created_at, updated_at)
-       VALUES (?, ?, ?, 'BROWSER', ?, 'PREPARED', 'ACTIVE', ?,
-         CURRENT_TIMESTAMP(3), CURRENT_TIMESTAMP(3))`,
-      [attemptId, orderId, routeId, profileId, `shared-dry:${attemptId}`],
+      `INSERT INTO tasks
+       (order_id, task_type, status, dedupe_key, max_attempts, completed_at)
+       VALUES (?, 'PREPARE_RECHARGE', 'COMPLETED', ?, 5, CURRENT_TIMESTAMP(3))`,
+      [orderId, `shared-dry-prepare:${orderId}`],
     );
+    const [submitTask] = await pool.query(
+      `INSERT INTO tasks
+       (order_id, task_type, status, dedupe_key, max_attempts)
+       VALUES (?, 'SUBMIT_RECHARGE', 'RUNNING', ?, 5)`,
+      [orderId, `shared-dry-submit:${orderId}`],
+    );
+    const attempt = await createRechargeAttemptRepository(pool).beginAuthorizedAttempt({
+      orderId, taskId: submitTask.insertId, attemptId,
+    });
+    authorizationItemId = attempt.authorizationItemId;
+    const [[authorizationItem]] = await pool.query(
+      `SELECT authorization_id FROM recharge_authorization_items WHERE id = ?`,
+      [authorizationItemId],
+    );
+    authorizationId = authorizationItem.authorization_id;
+    assert.equal(attempt.executorKind, 'BROWSER');
+    assert.equal(attempt.status, 'PREPARED');
+    const [[reserved]] = await pool.query(
+      `SELECT id, card_id, order_id, recharge_attempt_id, status
+       FROM card_consumption_ledger WHERE recharge_attempt_id = ?`,
+      [attemptId],
+    );
+    assert.deepEqual({
+      id: reserved.id,
+      cardId: reserved.card_id,
+      orderId: reserved.order_id,
+      attemptId: reserved.recharge_attempt_id,
+      status: reserved.status,
+    }, {
+      id: attempt.cardConsumptionId,
+      cardId,
+      orderId,
+      attemptId,
+      status: 'RESERVED',
+    });
     await createBrowserDispatchRepository(pool).enqueue({
       jobKey: `shared-dry:${attemptId}`, attemptId, orderId, executorProfileId: profileId,
     });
@@ -106,6 +155,7 @@ test('real MySQL dispatch/run executes a local Browser dry-run and clears every 
       `SELECT o.status AS order_status, rat.status AS attempt_status,
               rat.funds_risk_state, br.status AS run_status,
               bdj.status AS dispatch_status,
+              ccl.status AS card_consumption_status,
               (SELECT COUNT(*) FROM payment_permits pp
                 WHERE pp.recharge_attempt_id = rat.id AND pp.status IN ('ISSUED', 'CONSUMED')) AS active_permits,
               (SELECT COUNT(*) FROM browser_operations bo
@@ -116,6 +166,7 @@ test('real MySQL dispatch/run executes a local Browser dry-run and clears every 
        INNER JOIN recharge_attempts rat ON rat.order_id = o.id
        INNER JOIN browser_runs br ON br.recharge_attempt_id = rat.id
        INNER JOIN browser_dispatch_jobs bdj ON bdj.recharge_attempt_id = rat.id
+       INNER JOIN card_consumption_ledger ccl ON ccl.recharge_attempt_id = rat.id
        WHERE o.id = ?`,
       [orderId],
     );
@@ -125,6 +176,7 @@ test('real MySQL dispatch/run executes a local Browser dry-run and clears every 
       fundsRiskState: stored.funds_risk_state,
       runStatus: stored.run_status,
       dispatchStatus: stored.dispatch_status,
+      cardConsumptionStatus: stored.card_consumption_status,
       activePermits: Number(stored.active_permits),
       submitOperations: Number(stored.submit_operations),
       liveResourceLeases: Number(stored.live_resource_leases),
@@ -134,6 +186,7 @@ test('real MySQL dispatch/run executes a local Browser dry-run and clears every 
       fundsRiskState: 'CLEARED',
       runStatus: 'FAILED_SAFE',
       dispatchStatus: 'CANCELLED',
+      cardConsumptionStatus: 'RELEASED',
       activePermits: 0,
       submitOperations: 0,
       liveResourceLeases: 0,
@@ -147,11 +200,30 @@ test('real MySQL dispatch/run executes a local Browser dry-run and clears every 
     await pool.query('DELETE FROM execution_resource_leases WHERE browser_run_id IN (SELECT id FROM browser_runs WHERE recharge_attempt_id = ?)', [attemptId]);
     await pool.query('DELETE FROM browser_dispatch_jobs WHERE recharge_attempt_id = ?', [attemptId]);
     await pool.query('DELETE FROM browser_runs WHERE recharge_attempt_id = ?', [attemptId]);
+    await pool.query('DELETE FROM card_consumption_ledger WHERE recharge_attempt_id = ?', [attemptId]);
+    if (authorizationItemId) {
+      await pool.query(
+        `UPDATE recharge_authorization_items SET consumed_attempt_id = NULL WHERE id = ?`,
+        [authorizationItemId],
+      );
+    }
     await pool.query('DELETE FROM recharge_attempts WHERE id = ?', [attemptId]);
+    if (authorizationItemId) {
+      await pool.query('DELETE FROM recharge_authorization_items WHERE id = ?', [authorizationItemId]);
+    }
+    if (authorizationId) {
+      await pool.query('DELETE FROM recharge_authorizations WHERE id = ?', [authorizationId]);
+    }
+    await pool.query('DELETE FROM tasks WHERE order_id = ?', [orderId]);
     await pool.query('DELETE FROM cards WHERE id = ?', [cardId]);
     await pool.query('DELETE FROM orders WHERE id = ?', [orderId]);
     await pool.query('DELETE FROM cdks WHERE id = ?', [cdkId]);
     await pool.query('DELETE FROM executor_profiles WHERE id = ?', [profileId]);
+    await pool.query(
+      `UPDATE app_settings SET setting_value = ?
+       WHERE setting_key = 'dispatch_new_recharges'`,
+      [originalDispatchSetting],
+    );
     await pool.end();
   }
 });

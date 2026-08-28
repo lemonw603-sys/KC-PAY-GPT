@@ -71,6 +71,12 @@ test('production readonly entry claims MySQL dispatch, opens Chrome, and safe-ab
          CURRENT_TIMESTAMP(3), CURRENT_TIMESTAMP(3))`,
       [attemptId, orderId, routeId, profileId, `shared-dry:${attemptId}`],
     );
+    await pool.query(
+      `INSERT INTO card_consumption_ledger
+       (id, card_id, order_id, recharge_attempt_id, product_id, status, amount, currency)
+       VALUES (?, ?, ?, ?, ?, 'RESERVED', 25, 'USD')`,
+      [crypto.randomUUID(), cardId, orderId, attemptId, productId],
+    );
     await createBrowserDispatchRepository(pool).enqueue({
       jobKey: `shared-dry:${attemptId}`, attemptId, orderId, executorProfileId: profileId,
     });
@@ -167,6 +173,7 @@ test('production readonly entry claims MySQL dispatch, opens Chrome, and safe-ab
     await pool.query('DELETE FROM execution_resource_leases WHERE browser_run_id IN (SELECT id FROM browser_runs WHERE recharge_attempt_id = ?)', [attemptId]);
     await pool.query('DELETE FROM browser_dispatch_jobs WHERE recharge_attempt_id = ?', [attemptId]);
     await pool.query('DELETE FROM browser_runs WHERE recharge_attempt_id = ?', [attemptId]);
+    await pool.query('DELETE FROM card_consumption_ledger WHERE recharge_attempt_id = ?', [attemptId]);
     await pool.query('DELETE FROM recharge_attempts WHERE id = ?', [attemptId]);
     await pool.query('DELETE FROM cards WHERE id = ?', [cardId]);
     await pool.query('DELETE FROM orders WHERE id = ?', [orderId]);

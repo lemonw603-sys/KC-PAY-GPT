@@ -63,11 +63,15 @@ function assertFormalFundsContext(projection) {
 function projectFormalBinding(projection) {
   const card = projection.card;
   const route = projection.route;
+  const consumption = projection.cardConsumption;
   if (!card || typeof card !== 'object' || Array.isArray(card)) {
     throw new ContractError('card binding is required');
   }
   if (!route || typeof route !== 'object' || Array.isArray(route)) {
     throw new ContractError('route binding is required');
+  }
+  if (!consumption || typeof consumption !== 'object' || Array.isArray(consumption)) {
+    throw new ContractError('shared card consumption reservation is required');
   }
   const orderId = requireRef(projection.order.id, 'order.id');
   const cardId = requireRef(card.id, 'card.id');
@@ -87,11 +91,22 @@ function projectFormalBinding(projection) {
   if (cardProviderAccountId !== routeCardProviderAccountId) {
     throw new ContractError('card Provider account must match the frozen route');
   }
+  const cardConsumptionId = requireRef(consumption.id, 'cardConsumption.id');
+  if (consumption.status !== 'RESERVED') {
+    throw new ContractError('cardConsumption.status must be RESERVED before payment');
+  }
+  if (consumption.attemptId !== projection.attempt.id
+    || consumption.orderId !== projection.order.id
+    || consumption.cardId !== card.id) {
+    throw new ContractError('card consumption reservation must match attempt/order/card');
+  }
   return {
     orderId,
     cardId,
     routeId,
     cardProviderAccountId,
+    cardConsumptionId,
+    cardConsumptionStatus: consumption.status,
     ...(card.providerCardRef == null
       ? {}
       : { providerCardRef: requireRef(card.providerCardRef, 'card.providerCardRef') }),

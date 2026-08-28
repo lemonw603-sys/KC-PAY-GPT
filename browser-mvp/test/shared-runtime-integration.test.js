@@ -32,6 +32,10 @@ function formalProjection(run, observation = undefined) {
       id: 'card-runtime-1', orderId: 'order-runtime-1',
       providerCardRef: 'provider-card-runtime-1', providerAccountId: 'provider-runtime-1',
     },
+    cardConsumption: {
+      id: 'consumption-runtime-1', status: 'RESERVED',
+      attemptId: 'attempt-runtime-1', orderId: 'order-runtime-1', cardId: 'card-runtime-1',
+    },
     route: { id: 'route-runtime-1', executorKind: 'BROWSER', cardProviderAccountId: 'provider-runtime-1' },
     ...(observation == null ? {} : { observation }),
   };

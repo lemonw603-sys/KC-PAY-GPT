@@ -22,6 +22,10 @@ function projection(overrides = {}) {
       id: 'card-0001', orderId: 'ord-0001', providerCardRef: 'provider-card-0001',
       providerAccountId: 'provider-account-0001',
     },
+    cardConsumption: {
+      id: 'consumption-0001', status: 'RESERVED', attemptId: 'att-0001',
+      orderId: 'ord-0001', cardId: 'card-0001',
+    },
     route: { id: 'route-0001', executorKind: 'BROWSER', cardProviderAccountId: 'provider-account-0001' },
     ...overrides,
   };
@@ -39,6 +43,7 @@ test('formal projection maps shared references without parallel business states'
     fundsRiskState: 'ACTIVE', executorKind: 'BROWSER',
   });
   assert.equal(job.metadata.upstream.cardId, 'card-0001');
+  assert.equal(job.metadata.upstream.cardConsumptionId, 'consumption-0001');
   assert.equal(job.metadata.sessionRef, 'session-runtime-0001');
   assert.equal('fundsGate' in job.metadata, false);
   assert.equal('auditRef' in job.metadata, false);
@@ -70,6 +75,16 @@ test('retired fundsGate, independent auditRef, projection Session and credential
   assert.throws(() => projectSharedBrowserJob(projection({ sessionRef: 'session-0001' })), /controlled runtime context/);
   assert.throws(() => projectSharedBrowserJob(projection({ session_ciphertext: 'ciphertext' })), ContractError);
   assert.throws(() => projectSharedBrowserJob(projection({ card: { ...projection().card, card_credentials_ciphertext: 'x' } })), ContractError);
+});
+
+test('shared card consumption reservation must remain RESERVED and bound to the same attempt', () => {
+  assert.throws(() => projectSharedBrowserJob(projection({ cardConsumption: null })), ContractError);
+  assert.throws(() => projectSharedBrowserJob(projection({
+    cardConsumption: { ...projection().cardConsumption, status: 'RELEASED' },
+  })), ContractError);
+  assert.throws(() => projectSharedBrowserJob(projection({
+    cardConsumption: { ...projection().cardConsumption, attemptId: 'att-other' },
+  })), ContractError);
 });
 
 test('browser_run.id is the execution/audit reference and unsafe payment states are rejected', () => {
