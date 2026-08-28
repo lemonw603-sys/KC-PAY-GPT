@@ -290,7 +290,7 @@ export function createCardStockService({ pool, sessionEncryptionKey, panHmacKey 
   }
 
   async function status() {
-    const [[thresholdRows], [rows], [operationalRows], [settings], [cards], providerSnapshot, catalogSnapshot] = await Promise.all([
+    const [[thresholdRows], [rows], [operationalRows], [settings], [cards], [overrideRows], providerSnapshot, catalogSnapshot] = await Promise.all([
       pool.query(
         `SELECT setting_value FROM app_settings
          WHERE setting_key = 'card_stock_low_threshold' LIMIT 1`
@@ -339,6 +339,11 @@ export function createCardStockService({ pool, sessionEncryptionKey, panHmacKey 
           ON co.provider_account_id = c.provider_account_id
          AND BINARY co.external_card_id = BINARY c.external_card_id
         ORDER BY c.created_at DESC LIMIT 200`),
+      pool.query(`SELECT provider_account_id, external_card_id, allocation_policy,
+                         product_code, reason
+                    FROM card_operational_overrides
+                   WHERE allocation_policy IN ('RETIRED', 'PRODUCT_ONLY')
+                   ORDER BY external_card_id`),
       readProviderSnapshot(pool),
       readCardCatalogSnapshot(pool)
     ]);
@@ -399,6 +404,38 @@ export function createCardStockService({ pool, sessionEncryptionKey, panHmacKey 
       };
       return { ...card, ...classifyStockCardOperationalState(card) };
     });
+    const localIds = new Set(mappedCards.map((card) => `${card.providerAccountId}:${card.providerCardId}`));
+    const overrideCards = overrideRows
+      .filter((row) => !localIds.has(`${row.provider_account_id}:${row.external_card_id}`))
+      .map((row) => ({
+        providerAccountId: row.provider_account_id,
+        providerCardId: String(row.external_card_id),
+        cardTypeId: null,
+        cardNumber: null,
+        last4: null,
+        status: 'external-only',
+        inventoryStatus: null,
+        effectiveInventoryStatus: row.allocation_policy,
+        allocationPolicy: row.allocation_policy,
+        allocationProductCode: row.product_code || null,
+        allocationReason: row.reason || null,
+        isAllocatable: false,
+        fundedAmount: null,
+        currentBalance: null,
+        currency: null,
+        assigned: false,
+        publicNo: null,
+        transactionCount: 0,
+        latestTransactionAt: null,
+        lastTransactionSyncedAt: null,
+        syncStatus: null,
+        syncError: null,
+        reconciliationStatus: 'EXTERNAL_ONLY',
+        lastSyncedAt: null,
+        category: row.allocation_policy === 'PRODUCT_ONLY' ? 'PRODUCT_ONLY' : 'RETIRED',
+        reason: row.product_code ? `仅限 ${row.product_code}` : '运营已永久停用',
+        externalOnly: true
+      }));
     return {
       threshold,
       operationalSummary,
@@ -443,7 +480,7 @@ export function createCardStockService({ pool, sessionEncryptionKey, panHmacKey 
         held: Number(row.held || 0),
         low: Number(row.available || 0) <= threshold
       })),
-      cards: mappedCards
+        cards: [...mappedCards, ...overrideCards]
     };
   }
 
