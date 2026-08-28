@@ -404,3 +404,9 @@
 - 当前主线 v1 全量复跑：456 total / 419 pass / 0 fail / 37 skipped。
 - 纠正独立报告两个不准确点：HANDOFF_LOG 实际已有 08-27/08-28 记录；同步吞吐按 15 分钟新鲜度理论约 60 张，不是 40 张。规模风险保留为放量前事项。
 - 生产只读补验通过：release、服务/开关、readiness、健康端点、备份、Provider/卡片审计和运营覆盖均与当前事实源一致。
+
+## 2026-08-28｜Browser 数据库重启恢复验证完成
+
+- Browser 分支提交 `6dfdff7` 修正旧 backlog 测试夹具的订单状态（`SUBMITTING`→`RECHARGE_PROCESSING`），并增强重启恢复断言；合并提交 `39cd53d` 已进入 main。
+- 隔离 MySQL 8.4 真实 `docker restart`：24 个任务恢复领取 24/24，重复 0，心跳 24，旧 lease/token 拒绝，付款提交 0，残留 0。
+- Browser 最新非付款回归 16/16；定向 dispatch/shared 回归 17/17；未连接生产、未读取真实 Session、未填卡、未付款。
