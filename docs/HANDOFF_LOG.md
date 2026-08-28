@@ -332,3 +332,8 @@
 - 写入后立即只读回读确认两条记录正确。
 - 未对未知外部卡 ID 批量猜测或写入；其余旧批次卡需后续取得明确 Provider ID 清单后再处理。
 - 本次未改变接单、派发、Provider 付款或卡台写入开关。
+
+## 2026-08-28｜生产覆盖与运行开关只读复核
+
+- 覆盖表只读回读：`1065=PRODUCT_ONLY(claude)`、`493=RETIRED`，与已确认规则一致。
+- `accept_new_orders=false`、`dispatch_new_recharges=false` 仍保持关闭。
