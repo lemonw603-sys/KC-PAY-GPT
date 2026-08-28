@@ -58,3 +58,20 @@ node --test \
 - 命令：`TEST_DATABASE_URL=<isolated-mysql> node --test v1/test/browser-recovery-mysql-integration.test.js`
 - 结果：**1/1 passed**；验证同一 Browser run 的 Worker 进程重启后 artifact/resource lease 恢复、旧 authority 不外泄，且不产生付款动作。
 - 该测试没有在数据库进程运行中途执行 `docker restart`；因此“数据库进程中途重启后同一 job/attempt 的继续/安全收口”仍属于未验证项，不能把本结果写成数据库重启通过。
+
+## 隔离 MySQL 进程重启故障注入（追加验证）
+
+- 先核对并 rebase 到最新主线 `a1d91de`；未删除主线文件。
+- 根因：旧 backlog 夹具把订单写成 `SUBMITTING`，与当前 Browser claim 合同要求的 `RECHARGE_PROCESSING` 不一致，导致重启恢复时所有 job 被过滤为 0。已仅修正测试夹具状态，不改库存或运行时规则。
+- 命令（临时 MySQL 8.4、migration 001–040、五个写开关均为 false）：
+  `TEST_DATABASE_URL=<isolated> MYSQL_CONTAINER=<container> BACKLOG_JOBS=24 node v1/test-support/browser-queue-backlog-db-restart.js`
+- 结果：preparedExit=0、recoveryExit=0；pendingBefore=24、claimed=24、duplicate=0、heartbeatOk=24、staleLeaseRejected=true、paymentSubmitOperations=0、residual=0、errors=[]。
+- 该结果证明真实 `docker restart` 后同一 backlog 可被恢复领取，旧 lease/token 不能继续 heartbeat，且无付款提交或残留。
+
+定向回归：
+
+```bash
+node --test v1/test/browser-dispatch-repository.test.js browser-mvp/test/shared-runtime-integration.test.js
+```
+
+结果：**17/17 passed**。

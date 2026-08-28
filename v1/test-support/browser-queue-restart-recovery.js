@@ -7,13 +7,16 @@ if (!databaseUrl) throw new Error('TEST_DATABASE_URL is required');
 const workers = Number(process.env.BACKLOG_WORKERS || 6);
 const pool = mysql.createPool({ uri: databaseUrl, connectionLimit: workers + 2, connectTimeout: 3000 });
 const claimed = new Set(); const errors = []; let heartbeatOk = 0; let stop = false;
+let duplicate = 0;
 async function worker(index) {
   const repository = createBrowserDispatchRepository(pool);
   while (!stop) {
     try {
       const job = await repository.claim({ workerId: `restart-recovery-${index}`, leaseSeconds: 120 });
       if (!job) return;
-      claimed.add(String(job.jobId));
+      const id = String(job.jobId);
+      if (claimed.has(id)) duplicate += 1;
+      claimed.add(id);
       await repository.heartbeat({ jobId: job.jobId, workerId: job.leaseOwner, leaseToken: job.leaseToken, leaseSeconds: 120 });
       heartbeatOk += 1;
     } catch (error) { errors.push({ code: error?.code || 'UNKNOWN', message: error?.message || String(error) }); await new Promise((resolve) => setTimeout(resolve, 30)); }
@@ -32,8 +35,27 @@ async function cleanup() {
 try {
   const [[pending]] = await pool.query("SELECT COUNT(*) AS count FROM browser_dispatch_jobs WHERE status IN ('QUEUED','CLAIMED')");
   await Promise.all(Array.from({ length: workers }, (_, index) => worker(index)));
+  let staleLeaseRejected = null;
+  if (process.env.BACKLOG_STALE_JOB_ID && process.env.BACKLOG_STALE_LEASE_TOKEN) {
+    try {
+      await createBrowserDispatchRepository(pool).heartbeat({
+        jobId: process.env.BACKLOG_STALE_JOB_ID,
+        workerId: 'pre-restart-worker',
+        leaseToken: process.env.BACKLOG_STALE_LEASE_TOKEN,
+        leaseSeconds: 120,
+      });
+      staleLeaseRejected = false;
+    } catch (error) {
+      staleLeaseRejected = error?.code === 'LEASE_NOT_OWNED';
+      if (!staleLeaseRejected) errors.push({ code: error?.code || 'UNKNOWN', message: error?.message || String(error) });
+    }
+  }
+  const [[submitOps]] = await pool.query(
+    "SELECT COUNT(*) AS count FROM browser_operations WHERE operation_type = 'PAYMENT_SUBMIT' AND browser_run_id IS NOT NULL",
+  );
   const residual = await cleanup();
-  const result = { scenario: 'browser-queue-restart-recovery', pendingBefore: Number(pending.count), claimed: claimed.size, heartbeatOk, residual, errors: errors.slice(0, 12), errorCount: errors.length };
+  const result = { scenario: 'browser-queue-restart-recovery', pendingBefore: Number(pending.count), claimed: claimed.size, duplicate, heartbeatOk, staleLeaseRejected, paymentSubmitOperations: Number(submitOps.count), residual, errors: errors.slice(0, 12), errorCount: errors.length };
   console.log(JSON.stringify(result, null, 2));
-  if (residual !== 0 || claimed.size !== Number(pending.count) || heartbeatOk !== claimed.size) process.exitCode = 1;
+  if (residual !== 0 || claimed.size !== Number(pending.count) || duplicate !== 0 || heartbeatOk !== claimed.size
+    || staleLeaseRejected === false || Number(submitOps.count) !== 0) process.exitCode = 1;
 } finally { stop = true; await pool.end().catch(() => {}); }
