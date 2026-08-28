@@ -4,8 +4,8 @@
 
 ## 代码与发布
 
-- 主线 HEAD：`d8954bd` (`fix: show effective card allocation status in admin stock`)。
-- 生产 release：`/opt/pojia/releases/20260828-d8954bd-sealed`，为真实独立目录，不是候选软链接。
+- 主线 HEAD：`2c75d31` (`feat: converge admin inventory view`)。
+- 生产 release：`/opt/pojia/releases/20260828-2c75d31-inventory`，为真实独立目录；上一版本回滚点：`/opt/pojia/releases/20260828-d8954bd-sealed`。
 - 可靠回滚点：`/opt/pojia/releases/20260828-fea0ffd-rollback`。
 - 服务：Web、API Worker、卡片读同步、卡目录同步、Bark、备份均正常；Browser Worker 保持 `inactive/disabled`。
 - 付费补卡 runner 已确认为 `inactive/disabled`，避免重启后每 10 秒唤醒并带入卡台写权限。
@@ -45,7 +45,7 @@
 
 ## 当前未完成
 
-- 库存后台收敛已在当前主线完成，但本次前端改动尚未部署生产；发布前需重跑公网健康、readiness 和后台浏览器交叉验收。
+- 库存后台收敛已部署生产（2026-08-28），并已通过发布后公网健康、服务状态、备份完整性和未认证路由验收；后台浏览器交叉验收仍待使用管理员会话执行。
 - 卡段人工刷新与持久默认选择尚未实现。
 - 自动跨订单复用卡片尚未开启。
 - Browser 真实付款尚未验证；仍按独立 Browser 工作线推进非付款联调，真实付款必须另行确认。

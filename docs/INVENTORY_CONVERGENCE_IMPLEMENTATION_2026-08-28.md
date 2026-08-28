@@ -27,3 +27,13 @@
 - 本次是后台信息收敛，不是删除数据或改变卡片分配规则。
 - 生产写开关、自动补卡、Provider 写入和 Browser 付款继续关闭。
 - 本次前端改动尚在主线，需通过下一步正式发布闸门后才是生产生效。
+
+
+## 生产部署记录（2026-08-28）
+
+- 用户已确认部署本收敛版本。
+- 生产 release：`/opt/pojia/releases/20260828-2c75d31-inventory`；通过 `git archive` 从提交 `2c75d31` 构建真实独立目录，未复制 `/opt/pojia/current` 软链接。
+- 原子切换前生产 release：`/opt/pojia/releases/20260828-d8954bd-sealed`，可作为回滚点。
+- 已重启 `pojia-web.service`、`pojia-worker.service`；Browser Worker、付费补卡 runner 保持 `inactive/disabled`。
+- 发布后验证：Web/Worker active；ops/plus `/health/live`、`/health/ready` 均 HTTP 200；`pojia-ops check` 通过且最新加密备份完整性 OK；后台未认证 API 返回 401。
+- 接单、派发、Provider 写入、Browser 付款和自动补卡开关均未开启。

@@ -357,3 +357,16 @@
 - 对抗复查发现 `pojia-card-stock-runner.timer` 处于 inactive 但 enabled，而其 service 显式启用 Provider 卡写入权限。这与当前“自动补卡关闭”不对齐，且主机重启后可每 10 秒唤醒。已直接修正为 inactive/disabled，并确认数据库 `card_auto_replenishment_enabled=false`。
 - 已更新 `CURRENT_STATE.md`、主规划、路线图、决策状态和交接索引；历史 Browser 全量排查报告已标注为历史快照。
 - 阶段报告：`docs/PRE_INVENTORY_CONVERGENCE_SEAL_2026-08-28.md`。下一动作为 A2 库存后台信息收敛；不重做 A1，不删除真实追溯数据，不开启付费写入。
+
+
+## 2026-08-28｜库存后台收敛版本生产部署
+
+- 用户明确确认部署提交 `2c75d31`。
+- 以 `git archive` 构建真实不可变 release：`/opt/pojia/releases/20260828-2c75d31-inventory`，未通过复制 current 软链接构建。
+- 原子切换 `/opt/pojia/current` 完成；切换前 release 为 `/opt/pojia/releases/20260828-d8954bd-sealed`，可回滚。
+- `pojia-web.service`、`pojia-worker.service` 重启后均 `active`；`pojia-browser-worker.service` 与 `pojia-card-stock-runner.timer` 继续 `inactive/disabled`。
+- 发布后 `https://ops.vibebridge.top/health/live`、`/health/ready` 与 `https://plus.vibebridge.top/health/live`、`/health/ready` 均 HTTP 200。
+- `pojia-ops check` 通过：MySQL running、Bark/backup 正常、最新备份 `/var/backups/pojia/pojia-20260828T055851Z.sql.gz.enc` 校验 `backup_integrity=OK`。
+- 未认证后台 API 返回 `401 admin_auth_required`；未执行任何开卡、充值、付款、退款或配置写入。
+- 生产写入闸门保持关闭：接单、派发、Provider 写入、Browser 付款、自动补卡均未开启。
+- 备注：静态资源当前版本参数为 `admin.css?v=8`（以线上实际响应为准，非预期的 v18 文档描述已不采用）。
