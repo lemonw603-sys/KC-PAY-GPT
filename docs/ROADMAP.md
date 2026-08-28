@@ -5,12 +5,12 @@
 
 ## 当前执行快照（2026-08-28）
 
-- 共享订单、资金栅栏、消费账本、migration 040 和最小卡片运营覆盖均已部署。当前生产 release 为 `/opt/pojia/releases/20260828-d8954bd-sealed`。
+- 共享订单、资金栅栏、消费账本、migration 040 和最小卡片运营覆盖均已部署。当前生产 release 为 `/opt/pojia/releases/20260828-2c75d31-inventory`（回滚：`/opt/pojia/releases/20260828-d8954bd-sealed`）。
 - 生产接单、派发、三类 Provider 写入、Browser 付款和自动补卡均保持关闭；readiness `ok=true`，活动任务为 0。
 - 当前卡片规则已落地：`6807/1477` 保留原有 `ASSIGNED`；`4744/1065=PRODUCT_ONLY(claude)`；其余当前旧批次 17 张均 `RETIRED`。未来新卡不继承旧批次结论。
 - 有效 Plus 可分配卡为 0；卡片一致性审计 critical/warning 均为 0。
 - Browser dispatch 只读展示和消费账本绑定已合入主线；Browser 线继续非付款联调，真实付款仍需单独确认。
-- 下一阶段是库存后台信息收敛，不再重做卡片运营覆盖，也不删除真实追溯数据。
+- 库存后台信息收敛已完成并部署生产；下一阶段为管理员会话下的后台浏览器交叉验收，再做卡段人工刷新/持久默认选择。
 - 架构约束：这是个人内部使用系统，后续卡片策略修复采用最小字段和最少流程，优先稳定与资金安全，不建设额外的复杂策略服务或过度敏感信息隔离层。
 - `docs/BROWSER_RECHARGE_MODULE_REPORT_2026-08-25.md` 已明确标注为历史快照，不得覆盖当前 Browser 状态源。
 
