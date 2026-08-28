@@ -256,7 +256,7 @@
           </section>
         </div>
         <section class="card stock-card">
-          <div class="card-heading"><div><p class="section-kicker">运营明细</p><h2>卡片列表</h2></div><div><button class="text-button" id="sync-all-cards" type="button">只读同步全部</button> <span class="write-badge">完整卡号</span></div></div>
+          <div class="card-heading"><div><p class="section-kicker">运营明细</p><h2>卡片列表</h2></div><div class="stock-card-actions"><button class="text-button" id="sync-all-cards" type="button">只读同步全部</button><button class="primary-small" id="discover-new-cards" type="button">同步并接管新卡</button> <span class="write-badge">完整卡号</span></div></div>
           <div class="mini-list stock-card-list" id="stock-cards"></div>
         </section>
         <details class="card stock-card stock-advanced-details">
@@ -266,7 +266,7 @@
         </details>
         <details class="card stock-card stock-advanced-details">
           <summary>新卡接管记录</summary>
-          <div class="advanced-heading"><p>手动开新卡后才需要点一次同步；这不是卡台实时库存数。</p><button class="primary-small" id="discover-new-cards" type="button">同步并接管新卡</button></div>
+          <div class="advanced-heading"><p>手动开新卡后才需要点一次同步；这不是卡台实时库存数。</p></div>
           <div class="mini-list" id="card-intake-list"><p class="empty-state">正在读取接管状态…</p></div>
         </details>
       </section>

@@ -171,5 +171,29 @@ export async function refreshProviderSnapshot(pool, provider, {
        synced_at = VALUES(synced_at), updated_at = CURRENT_TIMESTAMP(3)`,
     [JSON.stringify(snapshot), checkedAt]
   );
+  // Reuse the existing Bark outbox. Notify only on an observed balance change;
+  // the dedupe key prevents repeated syncs from generating repeated notices.
+  // The current snapshot has just been replaced, so read the preceding
+  // immutable observation from the history table (if one exists).
+  const [previousRows] = await pool.query(
+    `SELECT available_balance, currency FROM provider_balance_snapshots
+     WHERE provider_account_id = ? AND currency = ? AND observed_at < ?
+     ORDER BY observed_at DESC LIMIT 1`, [providerAccountId, snapshot.currency, checkedAt]
+  );
+  const previousBalance = previousRows[0]?.available_balance == null
+    ? null : String(previousRows[0].available_balance);
+  if (previousBalance != null && previousBalance !== snapshot.accountBalance) {
+    const dedupeKey = `provider-balance-change:${provider}:${previousBalance}:${snapshot.accountBalance}`;
+    await pool.query(
+      `INSERT INTO operator_alerts
+       (id, alert_type, dedupe_key, severity, title, message, status)
+       VALUES (UUID(), 'PROVIDER_BALANCE_CHANGED', ?, 'info', '卡台余额发生变化', ?, 'OPEN')
+       ON DUPLICATE KEY UPDATE severity = VALUES(severity), title = VALUES(title),
+         message = VALUES(message),
+         status = IF(status = 'RESOLVED', 'OPEN', status),
+         acknowledged_at = IF(status = 'RESOLVED', NULL, acknowledged_at)`,
+      [dedupeKey, `卡台 ${provider} 余额由 ${previousBalance} ${snapshot.currency} 变为 ${snapshot.accountBalance} ${snapshot.currency}。`]
+    );
+  }
   return snapshot;
 }

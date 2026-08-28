@@ -121,6 +121,8 @@ button { cursor: pointer; }
 .card { min-width: 0; border: 1px solid var(--line); border-radius: 17px; background: rgba(255,255,255,.92); box-shadow: 0 14px 36px rgba(50,78,112,.05); }
 .status-card, .settings-card, .recent-card, .orders-card { padding: 20px; }
 .card-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
+.alerts-card .card-heading { align-items: center; }
+.stock-card-actions { display: flex; align-items: center; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
 .card-heading h2 { margin: 0; font-size: 16px; }
 .readonly-badge { padding: 5px 8px; border-radius: 999px; color: var(--green); background: #e9f8f4; font-size: 11px; font-weight: 800; }
 .write-badge { padding: 5px 8px; border-radius: 999px; color: #9a611a; background: #fff2df; font-size: 11px; font-weight: 800; }
@@ -183,6 +185,9 @@ tbody tr[data-order]:hover, tbody tr[data-order]:focus { background: #f7faff; }
 .empty-cell, .empty-state, .loading-state { padding: 26px 10px; color: #8c9aaa; text-align: center; font-size: 11px; }
 
 .filters { display: grid; grid-template-columns: minmax(260px, 1fr) 170px 150px 145px 145px auto; gap: 10px; margin-bottom: 18px; }
+.cdk-batch-filters { display: flex; align-items: center; flex-wrap: wrap; }
+.cdk-batch-filters label { flex: 1 1 145px; min-width: 0; }
+.cdk-batch-filters button { flex: 0 1 auto; min-width: 0; }
 .batch-toolbar { display: flex; align-items: center; justify-content: flex-end; gap: 12px; margin-bottom: 14px; color: var(--muted); font-size: 12px; }
 .batch-toolbar > span { margin-right: auto; font-weight: 800; }
 .reconciliation-filters { grid-template-columns: 190px 190px auto; }

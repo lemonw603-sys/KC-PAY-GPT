@@ -410,3 +410,10 @@
 - Browser 分支提交 `6dfdff7` 修正旧 backlog 测试夹具的订单状态（`SUBMITTING`→`RECHARGE_PROCESSING`），并增强重启恢复断言；合并提交 `39cd53d` 已进入 main。
 - 隔离 MySQL 8.4 真实 `docker restart`：24 个任务恢复领取 24/24，重复 0，心跳 24，旧 lease/token 拒绝，付款提交 0，残留 0。
 - Browser 最新非付款回归 16/16；定向 dispatch/shared 回归 17/17；未连接生产、未读取真实 Session、未填卡、未付款。
+# 2026-08-28 后台全量问题复查与最小修复
+
+- 生产只读核验：当前 4 单（成功 1、失败 1、关闭 2），等待 Session 0，对账案件 0；卡片 6 张（ASSIGNED 2、AVAILABLE 2、DEPLETED 2）。4744 对应 Provider 卡 1065，运营覆盖为 `PRODUCT_ONLY/claude`，因此不在 Plus 本地 cards 列表。
+- 新报告：`docs/ADMIN_FULL_REASSESSMENT_2026-08-28.md`，逐项区分生产事实、代码事实、待验证边界。
+- 修复：低库存告警不再在 OPEN/SENT 状态被同步路径反复 reopen；Provider 余额变化复用余额快照建立去重 Bark 告警；修复提醒标题对齐、CDK 筛选换行、同步接管按钮位置。
+- 验证：v1 定向测试 81 通过、1 跳过、0 失败。未执行生产写操作。
+- 下一步：订单详情默认精简/技术证据折叠；卡片页增加 Provider 全目录和运营覆盖展示；核对成功订单异常的具体触发代码；通过浏览器截图做 UI 交叉验收。

@@ -184,7 +184,9 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
              (id, alert_type, dedupe_key, severity, title, message, status)
              VALUES (UUID(), 'CARD_STOCK_LOW', ?, 'critical', '可用卡库存不足', ?, 'OPEN')
              ON DUPLICATE KEY UPDATE severity = VALUES(severity), title = VALUES(title),
-               message = VALUES(message), status = 'OPEN', acknowledged_at = NULL`,
+               message = VALUES(message),
+               status = IF(status = 'RESOLVED', 'OPEN', status),
+               acknowledged_at = IF(status = 'RESOLVED', NULL, acknowledged_at)`,
             [alertKey, `卡段 ${order.card_type_id} 没有满足余额要求的可用库存卡，订单正在安全等待。`]
           );
           if (order.status === OrderStatus.CREATED) {
@@ -266,7 +268,9 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
              (id, alert_type, dedupe_key, severity, title, message, status)
              VALUES (UUID(), 'CARD_STOCK_LOW', ?, 'warning', '可用卡库存偏低', ?, 'OPEN')
              ON DUPLICATE KEY UPDATE severity = VALUES(severity), title = VALUES(title),
-               message = VALUES(message), status = 'OPEN', acknowledged_at = NULL`,
+               message = VALUES(message),
+               status = IF(status = 'RESOLVED', 'OPEN', status),
+               acknowledged_at = IF(status = 'RESOLVED', NULL, acknowledged_at)`,
             [alertKey, `卡段 ${order.card_type_id} 剩余 ${remaining} 张可用库存卡，阈值为 ${threshold}。`]
           );
         }
