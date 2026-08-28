@@ -22,11 +22,13 @@ async function fetchAllProviderCards(provider, { pageSize = 50, maxPages = 100 }
 }
 
 export async function runCardConsistencyAudit({ pool, provider }) {
-  const [localCards, providerCards] = await Promise.all([
+  const [localCards, providerCards, operationalOverrides] = await Promise.all([
     pool.query('SELECT provider_card_id, status FROM cards').then(([rows]) => rows),
-    fetchAllProviderCards(provider)
+    fetchAllProviderCards(provider),
+    pool.query('SELECT external_card_id AS externalCardId, allocation_policy AS allocationPolicy, product_code AS productCode FROM card_operational_overrides')
+      .then(([rows]) => rows)
   ]);
-  return buildCardConsistencyReport({ providerCards, localCards });
+  return buildCardConsistencyReport({ providerCards, localCards, operationalOverrides });
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

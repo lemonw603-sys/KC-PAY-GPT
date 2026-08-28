@@ -57,3 +57,16 @@ test('rejects cards without stable identifiers', () => {
     'LOCAL_CARD_WITHOUT_PROVIDER_ID'
   ]);
 });
+
+test('operationally retired or product-only unmapped cards are suppressed from mismatch findings', () => {
+  const report = buildCardConsistencyReport({
+    providerCards: [{ id: '493', status: 'active' }, { id: '1065', status: 'active' }],
+    localCards: [],
+    operationalOverrides: [
+      { externalCardId: '493', allocationPolicy: 'RETIRED' },
+      { externalCardId: '1065', allocationPolicy: 'PRODUCT_ONLY', productCode: 'claude' }
+    ]
+  });
+  assert.equal(report.criticalCount, 0);
+  assert.equal(report.suppressedOverrideCount, 2);
+});
