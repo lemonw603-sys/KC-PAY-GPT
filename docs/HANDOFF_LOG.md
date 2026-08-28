@@ -247,3 +247,18 @@
 - 生产只读确认卡 1477 Provider `$16` 开卡、当前 `$0.07`、`cardType=VISA-40024200` 无 ID；本地余额 `$16`，两条同步任务 `REVIEW_REQUIRED/SCHEMA`；历史卡最多 495 条 discovery；低库存告警 OPEN/Bark SENT。
 - 已修复 Provider aggregate Schema、cardType 唯一映射、baseline/discovery 去重、3 次读取失败、AVAILABLE 10 分钟、Schema 直达复核、Bark 去重与 route account 归属。
 - 验证：隔离 MySQL 8.4 迁移 001–037；专项 54/54；真实 MySQL 33/33。未部署、未合并、未执行真实开卡/充值/付款/退款/提现；历史清理、FAILED 恢复和真实手动开卡仍未验证。
+
+## 2026-08-27｜API 成功单后的跨窗口统筹顺序（待最终整合）
+
+- 用户确认：API 真实订单完成后，Browser 临时暂停解除；Browser 先继续非付款工作，卡片库存同步专项并行修复。
+- 顺序：Browser 非付款基础与控制面 → 卡片同步修复后 readiness 只读交叉验证 → Browser 非付款端到端 dry-run → 单独确认 Browser 真实付款。
+- 本记录只记录统筹顺序，不替代 `DECISIONS.md` 的有效决策；Browser 不得自行实现卡片库存判断、修改 API 主流程或开启真实付款。
+- 卡片库存专项需要额外核对本日志中已有修复报告与生产事实，避免把未部署/未合并的工作误认为线上已生效。
+
+## 2026-08-28｜一卡多充账本接入与后台只读统计
+
+- 已将消费次数账本接入 API/Browser 共享资金链：付款前原子预留、成功消费、明确未提交释放、UNKNOWN/付款后失败保留核对占用。
+- 新增 migration 039 精确关联 `recharge_attempts`；新增后台只读接口 `/api/v1/admin/card-consumption`，不执行写操作。
+- 验证：v1 `npm test` 443 total / 406 pass / 0 fail / 37 environment-skipped；隔离 MySQL 001–039 迁移可重复；账本并发、完整 MySQL、Browser MySQL 均通过。
+- Git 提交：`e1d03d2`（账本资金链）、`a6e6634`（后台只读统计）。生产未部署，自动跨订单复用未启用。
+- 下一步：仅生成历史订单/Provider 交易差异报告，先人工核对，不自动改历史；之后再评估后台前端展示。
