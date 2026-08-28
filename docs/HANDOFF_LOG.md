@@ -376,3 +376,9 @@
 - `preflight:readiness`（生产运行环境、只读 Provider 开关）返回 `ok=true`，migration 040；activeTasks/expiredLeases/UNKNOWN/资金风险/活动授权/活动卡任务/对账案件/DEAD Bark 均为 0，worker 心跳约 1 秒。
 - `card-consistency-audit`：Provider 19、本地 6、critical 0、warning 0、suppressedOverrideCount 13。
 - `provider:read-check`：HNSKJ account 67、USD、7 卡类型、可见卡 19；ZZSHU connection ok。
+
+### 2026-08-28｜收敛版本线上静态交叉核验
+
+- 线上 `/admin/login` 可访问；`admin.js?v=8` 返回 127,421 bytes。
+- 静态资源包含“可分配、使用中、暂不可用、永久停用、余额不足”等收敛文案；旧主视图文案“待验证新卡”“同步积压”未出现在该脚本中。
+- 本窗口当前未取得管理员浏览器自动化控制权，因此未将静态检查冒充为登录后的视觉验收；登录后布局/数据展示仍需在可控浏览器会话中完成。
