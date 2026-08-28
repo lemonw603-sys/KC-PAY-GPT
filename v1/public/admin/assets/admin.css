@@ -213,6 +213,10 @@ tbody tr[data-order]:hover, tbody tr[data-order]:focus { background: #f7faff; }
 .close-button { width: 34px; height: 34px; border: 1px solid var(--line); border-radius: 10px; color: #607388; background: white; font-size: 20px; }
 #detail-content { padding: 20px 24px 40px; }
 .detail-section { padding: 18px 0; border-bottom: 1px solid var(--line); }
+.detail-evidence { margin-top: 4px; border-top: 1px solid var(--line); }
+.detail-evidence > summary { padding: 16px 0; cursor: pointer; color: #405873; font-size: 13px; font-weight: 800; }
+.detail-evidence[open] > summary { margin-bottom: 0; }
+.detail-evidence .detail-section:last-child { border-bottom: 0; }
 .detail-section-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .detail-section:first-child { padding-top: 0; }.detail-section:last-child { border: 0; }
 .detail-section h3 { margin: 0 0 13px; font-size: 13px; }
