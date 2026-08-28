@@ -263,3 +263,4 @@
 - Git 提交：`e1d03d2`（账本资金链）、`a6e6634`（后台只读统计）。生产未部署，自动跨订单复用未启用。
 - 下一步：仅生成历史订单/Provider 交易差异报告，先人工核对，不自动改历史；之后再评估后台前端展示。
 - 已完成只读差异报告脚本 `v1/scripts/card-consumption-audit.js` 及测试；它只执行 SELECT，发现差异时输出卡号尾号、账本状态计数和 Provider transaction ID，绝不自动回填。
+- 差异报告新增建议分类：Provider 成功消费多于本地账本时标记 `BACKFILL_REVIEW_REQUIRED`，本地多于 Provider 时标记 `LEDGER_REVIEW_REQUIRED`；两者都必须人工核对后才允许未来设计回填。

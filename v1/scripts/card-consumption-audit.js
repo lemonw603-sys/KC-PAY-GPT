@@ -40,6 +40,11 @@ export async function runCardConsumptionAudit({ pool, limit = 10000 } = {}) {
     const ledgerConsumed = Number(row.ledger_consumed || 0);
     const providerPurchases = Number(row.provider_purchase_success || 0);
     const discrepancy = ledgerConsumed !== providerPurchases;
+    const recommendedAction = !discrepancy
+      ? 'NONE'
+      : providerPurchases > ledgerConsumed
+        ? 'BACKFILL_REVIEW_REQUIRED'
+        : 'LEDGER_REVIEW_REQUIRED';
     return {
       providerCardId: row.provider_card_id,
       last4: row.last4,
@@ -54,6 +59,7 @@ export async function runCardConsumptionAudit({ pool, limit = 10000 } = {}) {
           ? String(row.provider_transaction_ids).split(',').filter(Boolean) : []
       },
       discrepancy,
+      recommendedAction,
       reason: discrepancy
         ? '本地消费账本与 Provider 成功 PURCHASE 数量不一致，需人工核对'
         : null
@@ -64,6 +70,8 @@ export async function runCardConsumptionAudit({ pool, limit = 10000 } = {}) {
     generatedAt: new Date().toISOString(),
     cardCount: cards.length,
     discrepancyCount: cards.filter((card) => card.discrepancy).length,
+    backfillReviewCount: cards.filter((card) => card.recommendedAction === 'BACKFILL_REVIEW_REQUIRED').length,
+    ledgerReviewCount: cards.filter((card) => card.recommendedAction === 'LEDGER_REVIEW_REQUIRED').length,
     cards
   };
 }

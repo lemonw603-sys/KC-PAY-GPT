@@ -8,7 +8,7 @@
 4. Browser 路线：付款前安全退出释放；付款未知保留核对；付款确认即转 `CONSUMED`；Plus 激活和取消续费完成后 attempt 记为 `SUCCESS/SETTLED`。
 5. 账本保存 card/order/attempt/product/amount/currency/Provider transaction ID/evidence，Provider 交易同步不再是实时计数的唯一来源。
 6. 运营后台新增只读接口 `GET /api/v1/admin/card-consumption`，可按 Provider 卡号查看上限、各状态计数和最近账本记录；接口不执行任何写操作。
-7. 新增只读审计命令 `npm run audit:card-consumption`，对比本地 `CONSUMED` 与 Provider `PURCHASE/SUCCESS` 数量，输出差异，不自动回填。
+7. 新增只读审计命令 `npm run audit:card-consumption`，对比本地 `CONSUMED` 与 Provider `PURCHASE/SUCCESS` 数量，输出差异和 `BACKFILL_REVIEW_REQUIRED`/`LEDGER_REVIEW_REQUIRED` 建议，不自动回填。
 
 ## 验证证据
 
@@ -19,6 +19,7 @@
 - Browser MySQL 资金映射与付款前退出：2/2 通过。
 - 后台账本只读视图单元测试通过。
 - 审计脚本单元测试通过，并验证仅执行 SELECT。
+- 审计结果明确区分“Provider 多于本地（需回填复核）”和“本地多于 Provider（需账本复核）”，不把差异直接当成事实。
 - `git diff --check` 通过。
 
 ## 对抗式审查结论
