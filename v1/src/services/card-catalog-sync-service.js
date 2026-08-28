@@ -1,3 +1,5 @@
+import { eligibleInventoryCardSql } from './card-inventory-eligibility.js';
+
 const ACTIVE = new Set(['active', 'available', 'usable', 'ready']);
 
 function cardId(record) {
@@ -45,18 +47,30 @@ export async function syncCardCatalog({ pool, provider, intake = null, checkedAt
 
   const [counts] = await pool.query(
     `SELECT
-       SUM(order_id IS NULL AND inventory_status = 'AVAILABLE') AS available,
+       SUM(${eligibleInventoryCardSql('cards', '?', { productCode: 'plus' })}) AS available,
        SUM(order_id IS NOT NULL OR inventory_status = 'ASSIGNED') AS assigned,
        SUM(order_id IS NULL AND inventory_status = 'DEPLETED') AS depleted,
        SUM(order_id IS NULL AND inventory_status = 'PROVISIONING') AS provisioning
-     FROM cards`
+     FROM cards`, [minimumRequiredBalance]
+  );
+  const [overrideRows] = await pool.query(
+    `SELECT external_card_id, allocation_policy, product_code
+       FROM card_operational_overrides`
   );
   const [localCards] = await pool.query(
     `SELECT provider_card_id, status FROM cards ORDER BY provider_card_id`
   );
   const listedById = new Map(listed.map((record) => [cardId(record), cardStatus(record)]).filter(([id]) => id));
   const localById = new Map(localCards.map((record) => [String(record.provider_card_id), String(record.status || '').toLowerCase()]));
-  const providerOnlyActiveIds = active.map(cardId).filter((id) => !localById.has(id));
+  const overrides = new Map(overrideRows.map((row) => [String(row.external_card_id), row]));
+  const blocksPlus = (id) => {
+    const row = overrides.get(String(id));
+    const policy = String(row?.allocation_policy || '').toUpperCase();
+    return policy === 'RETIRED' || (policy === 'PRODUCT_ONLY'
+      && String(row?.product_code || '').toLowerCase() !== 'plus');
+  };
+  const providerOnlyActiveIds = active.map(cardId)
+    .filter((id) => !localById.has(id) && !blocksPlus(id));
   const unresolved = providerOnlyActiveIds.map((providerCardId) => ({
     providerCardId,
     code: intake ? 'CARD_QUARANTINED_OR_REVIEW' : 'CARD_INTAKE_REQUIRED'

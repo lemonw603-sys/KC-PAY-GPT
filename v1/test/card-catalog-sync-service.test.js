@@ -20,13 +20,14 @@ test('catalog sync delegates unknown cards to the quarantine intake and records 
   ];
   const pool = {
     async query(sql, values = []) {
-      if (/FROM app_settings/.test(sql)) return [[
+      if (/SELECT setting_key, setting_value FROM app_settings/.test(sql)) return [[
         { setting_key: 'default_card_type_id', setting_value: '7' },
         { setting_key: 'default_minimum_required_card_balance', setting_value: '15.5' }
       ], []];
       if (/SELECT provider_card_id, status FROM cards/.test(sql)) return [listed
         .filter((card) => card.status === 'active')
         .map((card) => ({ provider_card_id: String(card.id), status: card.status })), []];
+      if (/SELECT external_card_id, allocation_policy/.test(sql)) return [[], []];
       if (/FROM cards/.test(sql)) return [[{
         available: 3, assigned: 1, depleted: 1, provisioning: 0
       }], []];
@@ -72,11 +73,12 @@ test('catalog sync refuses direct registration when quarantine intake is unavail
   let snapshot;
   const pool = {
     async query(sql, values = []) {
-      if (/FROM app_settings/.test(sql)) return [[
+      if (/SELECT setting_key, setting_value FROM app_settings/.test(sql)) return [[
         { setting_key: 'default_card_type_id', setting_value: '7' },
         { setting_key: 'default_minimum_required_card_balance', setting_value: '15.5' }
       ], []];
       if (/SELECT provider_card_id, status FROM cards/.test(sql)) return [[], []];
+      if (/SELECT external_card_id, allocation_policy/.test(sql)) return [[], []];
       if (/FROM cards/.test(sql)) return [[{}], []];
       if (/INSERT INTO card_catalog_snapshots/.test(sql)) {
         snapshot = JSON.parse(values[0]);
@@ -98,11 +100,12 @@ test('catalog sync does not revalidate an unchanged completed intake batch', asy
   const intakeCalls = [];
   const pool = {
     async query(sql) {
-      if (/FROM app_settings/.test(sql)) return [[
+      if (/SELECT setting_key, setting_value FROM app_settings/.test(sql)) return [[
         { setting_key: 'default_card_type_id', setting_value: '7' },
         { setting_key: 'default_minimum_required_card_balance', setting_value: '16' }
       ], []];
       if (/SELECT provider_card_id, status FROM cards/.test(sql)) return [[], []];
+      if (/SELECT external_card_id, allocation_policy/.test(sql)) return [[], []];
       if (/FROM cards/.test(sql)) return [[{}], []];
       if (/INSERT INTO card_catalog_snapshots/.test(sql)) return [{ affectedRows: 1 }, []];
       throw new Error(`Unexpected query: ${sql}`);
@@ -126,4 +129,31 @@ test('catalog sync does not revalidate an unchanged completed intake batch', asy
   assert.equal(result.intake.batchId, 'completed-1');
   assert.equal(result.intake.firstPass, null);
   assert.equal(result.intake.secondPass, null);
+});
+
+test('catalog snapshot excludes retired and non-Plus product-only cards from Plus availability blockers', async () => {
+  const pool = { async query(sql, values = []) {
+    if (/SELECT setting_key, setting_value FROM app_settings/.test(sql)) return [[
+      { setting_key: 'default_card_type_id', setting_value: '7' },
+      { setting_key: 'default_minimum_required_card_balance', setting_value: '15.5' }
+    ], []];
+    if (/SELECT provider_card_id, status FROM cards/.test(sql)) return [[
+      { provider_card_id: '493', status: 'active' }
+    ], []];
+    if (/SELECT external_card_id, allocation_policy/.test(sql)) return [[
+      { external_card_id: '493', allocation_policy: 'RETIRED', product_code: null },
+      { external_card_id: '1065', allocation_policy: 'PRODUCT_ONLY', product_code: 'claude' },
+      { external_card_id: '917', allocation_policy: 'RETIRED', product_code: null }
+    ], []];
+    if (/FROM cards/.test(sql)) return [[{ available: 0, assigned: 0, depleted: 0, provisioning: 0 }], []];
+    if (/INSERT INTO card_catalog_snapshots/.test(sql)) return [{ affectedRows: 1 }, []];
+    throw new Error(`Unexpected query: ${sql}`);
+  } };
+  const provider = { async cards() { return { data: { cards: [
+    { id: 493, status: 'active' }, { id: 1065, status: 'active' }, { id: 917, status: 'active' }
+  ], total: 3 } }; } };
+  const result = await syncCardCatalog({ pool, provider });
+  assert.equal(result.available, 0);
+  assert.equal(result.providerOnlyActiveCount, 0);
+  assert.equal(result.unresolvedActive, 0);
 });
