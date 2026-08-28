@@ -370,3 +370,9 @@
 - 未认证后台 API 返回 `401 admin_auth_required`；未执行任何开卡、充值、付款、退款或配置写入。
 - 生产写入闸门保持关闭：接单、派发、Provider 写入、Browser 付款、自动补卡均未开启。
 - 备注：静态资源当前版本参数为 `admin.css?v=8`（以线上实际响应为准，非预期的 v18 文档描述已不采用）。
+
+### 2026-08-28 14:05 CST｜发布后只读体检补充
+
+- `preflight:readiness`（生产运行环境、只读 Provider 开关）返回 `ok=true`，migration 040；activeTasks/expiredLeases/UNKNOWN/资金风险/活动授权/活动卡任务/对账案件/DEAD Bark 均为 0，worker 心跳约 1 秒。
+- `card-consistency-audit`：Provider 19、本地 6、critical 0、warning 0、suppressedOverrideCount 13。
+- `provider:read-check`：HNSKJ account 67、USD、7 卡类型、可见卡 19；ZZSHU connection ok。
