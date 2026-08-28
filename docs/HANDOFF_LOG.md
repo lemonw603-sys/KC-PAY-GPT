@@ -298,3 +298,12 @@
 - `https://ops.vibebridge.top/health/ready` 返回 HTTP 200，响应 `{"status":"ready"}`。
 - `https://plus.vibebridge.top/health/live` 返回 HTTP 200，响应 `{"status":"ok"}`。
 - 本次仅访问公开健康端点；未登录后台、未修改生产配置、未执行 Provider/卡台写操作。
+
+## 2026-08-28｜生产服务器只读核验
+
+- SSH 只读连接成功：hostname `elegant-unicorn-1.localdomain`。
+- 当前 release：`/opt/pojia/releases/20260828-card-ledger-43ab997`。
+- 服务状态：`pojia-web.service active/running`；`pojia-worker.service inactive/dead`；`pojia-browser-worker.service inactive/dead`；卡片读取/目录同步 timer active。
+- 当前 release 已包含 migration 039，但不包含 migration 040；因此卡片运营覆盖表尚未部署生产。
+- 直接运行 `v1 npm run preflight:readiness` 未成功，原因是命令环境未注入 `DATABASE_URL`；这不是 readiness 结论，不能据此推断数据库故障。
+- 未执行任何生产写入、重启、部署、开卡、充值或付款。
