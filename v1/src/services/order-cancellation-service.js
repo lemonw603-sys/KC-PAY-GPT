@@ -32,18 +32,58 @@ export function createOrderCancellationService({ pool }) {
                 c.current_balance, c.card_credentials_ciphertext,
                 c.last_synced_at, t.id AS submit_task_id, t.status AS submit_task_status,
                 t.attempts AS submit_attempts,
+                ta.id AS assign_task_id, ta.status AS assign_task_status,
+                ta.attempts AS assign_attempts,
                 JSON_UNQUOTE(JSON_EXTRACT(t.payload_json, '$.rechargePermit.status')) AS permit_status
          FROM orders o
          LEFT JOIN cards c ON c.order_id = o.id
          LEFT JOIN tasks t ON t.order_id = o.id AND t.task_type = 'SUBMIT_RECHARGE'
+         LEFT JOIN tasks ta ON ta.order_id = o.id AND ta.task_type = 'ASSIGN_CARD'
          WHERE BINARY o.public_no = ? LIMIT 1 FOR UPDATE`, [publicNo]
       );
       const order = rows[0];
       if (!order) throw new OrderCancellationError('Order not found', 'ADMIN_ORDER_NOT_FOUND', 404);
       if (order.status === 'CLOSED' && order.failure_code === 'CANCELLED_PRE_SUBMISSION') {
         await connection.commit();
-        return { publicNo: order.public_no, status: 'CLOSED', cardReleased: true,
-          cardInventoryStatus: 'HELD_FOR_REVIEW', replayed: true };
+        return { publicNo: order.public_no, status: 'CLOSED', cardReleased: Boolean(order.card_id),
+          cardInventoryStatus: order.card_id ? 'HELD_FOR_REVIEW' : null, replayed: true };
+      }
+      if (order.status === 'WAITING_FOR_CARD') {
+        if (order.card_id || !order.assign_task_id || order.assign_task_status !== 'PENDING'
+          || Number(order.assign_attempts) !== 0 || order.recharge_order_no || order.recharge_card_key) {
+          throw new OrderCancellationError('Waiting order state is not safely cancellable',
+            'ORDER_CANCELLATION_REVIEW_REQUIRED');
+        }
+        const [calls] = await connection.query(
+          `SELECT id FROM provider_calls WHERE order_id = ? AND operation = 'create_direct'
+           LIMIT 1 FOR UPDATE`, [order.id]
+        );
+        if (calls.length) throw new OrderCancellationError('Recharge provider was already called',
+          'ORDER_CANCELLATION_SUBMISSION_RISK');
+        await connection.query(
+          `UPDATE tasks SET status = 'DEAD', leased_until = NULL, leased_by = NULL,
+             last_error_code = 'CANCELLED_BY_ADMIN', last_error_message = ?,
+             updated_at = CURRENT_TIMESTAMP(3)
+           WHERE id = ? AND status = 'PENDING' AND attempts = 0`,
+          [reason, order.assign_task_id]
+        );
+        const [closed] = await connection.query(
+          `UPDATE orders SET status = 'CLOSED', failure_code = 'CANCELLED_PRE_SUBMISSION',
+             failure_reason = ?, version = version + 1, finished_at = CURRENT_TIMESTAMP(3),
+             updated_at = CURRENT_TIMESTAMP(3)
+           WHERE id = ? AND status = 'WAITING_FOR_CARD'`, [reason, order.id]
+        );
+        if (Number(closed.affectedRows) !== 1) throw new OrderCancellationError(
+          'Order changed concurrently', 'ORDER_CANCELLATION_ORDER_CHANGED');
+        await connection.query(
+          `INSERT INTO order_events
+           (order_id, from_status, to_status, actor_type, actor_id, reason, metadata_json)
+           VALUES (?, 'WAITING_FOR_CARD', 'CLOSED', 'ADMIN', 'admin', ?, ?)`,
+          [order.id, 'order cancelled before card assignment', JSON.stringify({ reason })]
+        );
+        await connection.commit();
+        return { publicNo: order.public_no, status: 'CLOSED', cardReleased: false,
+          cardInventoryStatus: null, replayed: false };
       }
       if (order.status !== 'CARD_READY') {
         throw new OrderCancellationError('Order is not awaiting recharge', 'ORDER_CANCELLATION_NOT_ELIGIBLE');

@@ -56,6 +56,21 @@ test('cancellation refuses an attempted recharge without changing tasks or cards
   assert.equal(pool.queries.length, 1);
 });
 
+test('cancellation closes an untouched waiting-for-card order without inventing a card release', async () => {
+  const pool = fakePool([
+    [[eligibleRow({ status: 'WAITING_FOR_CARD', card_id: null, submit_task_id: null,
+      assign_task_id: 22, assign_task_status: 'PENDING', assign_attempts: 0 })], []],
+    [[], []], [{ affectedRows: 1 }, []], [{ affectedRows: 1 }, []], [{ affectedRows: 1 }, []]
+  ]);
+  const result = await createOrderCancellationService({ pool })(
+    'PJV1-DEMO', { confirmation: '取消订单 PJV1-DEMO', reason: 'confirmed abandoned test order' }
+  );
+  assert.deepEqual(result, { publicNo: 'PJV1-DEMO', status: 'CLOSED', cardReleased: false,
+    cardInventoryStatus: null, replayed: false });
+  assert.equal(pool.queries.some(({ sql }) => /WAITING_FOR_CARD', 'CLOSED'/.test(sql)), true);
+  assert.equal(pool.queries.some(({ sql }) => /UPDATE cards/.test(sql)), false);
+});
+
 test('cancellation may quarantine a stale card because it is never returned to automatic stock', async () => {
   const pool = fakePool([
     [[eligibleRow({ last_synced_at: new Date(Date.now() - 16 * 60_000) })], []], [[], []],
