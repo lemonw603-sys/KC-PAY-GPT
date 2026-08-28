@@ -267,6 +267,7 @@ export function createCardStockService({ pool, sessionEncryptionKey, panHmacKey 
         WHERE setting_key IN ('default_card_type_id','default_open_card_amount')`),
       pool.query(`SELECT c.provider_account_id, c.provider_card_id, c.card_type_id, c.last4, c.status, c.inventory_status,
           c.funded_amount, c.current_balance, c.currency, c.order_id,
+          co.allocation_policy, co.product_code AS allocation_product_code,
           c.card_credentials_ciphertext, c.card_number_ciphertext, c.last_synced_at,
           c.last_transaction_synced_at, o.public_no,
           (SELECT COUNT(*) FROM card_transactions ct WHERE ct.card_id = c.id) AS transaction_count,
@@ -276,6 +277,9 @@ export function createCardStockService({ pool, sessionEncryptionKey, panHmacKey 
           (SELECT csj.error_message FROM card_sync_jobs csj WHERE csj.card_id = c.id
             ORDER BY csj.created_at DESC LIMIT 1) AS sync_error
         FROM cards c LEFT JOIN orders o ON o.id = c.order_id
+        LEFT JOIN card_operational_overrides co
+          ON co.provider_account_id = c.provider_account_id
+         AND BINARY co.external_card_id = BINARY c.external_card_id
         ORDER BY c.created_at DESC LIMIT 200`),
       readProviderSnapshot(pool),
       readCardCatalogSnapshot(pool)
@@ -342,6 +346,10 @@ export function createCardStockService({ pool, sessionEncryptionKey, panHmacKey 
         last4: row.last4,
         status: row.status,
         inventoryStatus: row.inventory_status,
+        effectiveInventoryStatus: row.allocation_policy === 'RETIRED' ? 'RETIRED'
+          : row.allocation_policy === 'PRODUCT_ONLY' ? 'PRODUCT_ONLY' : row.inventory_status,
+        allocationPolicy: row.allocation_policy || 'NORMAL',
+        allocationProductCode: row.allocation_product_code || null,
         fundedAmount: row.funded_amount == null ? null : String(row.funded_amount),
         currentBalance: row.current_balance == null ? null : String(row.current_balance),
         currency: row.currency,
