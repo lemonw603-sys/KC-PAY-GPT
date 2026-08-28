@@ -10,6 +10,7 @@
 ## 差异记录
 
 - Provider 卡 `493`（尾号 `8590`）：本地 `CONSUMED=0`，Provider `PURCHASE/SUCCESS=1`，交易 ID：`agg_tx_190ywhd2bk93r`；分类：`BACKFILL_REVIEW_REQUIRED`。
+- 对卡 `493` 的只读交叉查询：`order_id=NULL`、余额 `$0.010000`、存在完整资料、存在成功 PURCHASE；因此它当前不满足最低余额 `$16`，不会被正常库存资格查询分配。该交易的具体业务订单归属仍需人工从历史 Provider/订单证据确认，不能自动回填。
 
 ## 结论与边界
 
