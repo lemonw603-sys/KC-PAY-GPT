@@ -11,7 +11,7 @@ Group=pojia
 WorkingDirectory=/opt/pojia/current/v1
 EnvironmentFile=/etc/pojia/runtime.env
 EnvironmentFile=-/etc/pojia/provider.env
-ExecStart=/usr/bin/env PROVIDER_WRITES_ENABLED=false PROVIDER_CARD_WRITES_ENABLED=false PROVIDER_RECHARGE_WRITES_ENABLED=true /usr/bin/node src/worker.js
+ExecStart=/usr/bin/env PROVIDER_WRITES_ENABLED=false PROVIDER_CARD_WRITES_ENABLED=false PROVIDER_RECHARGE_WRITES_ENABLED=false /usr/bin/node src/worker.js
 Restart=on-failure
 RestartSec=3
 TimeoutStopSec=15

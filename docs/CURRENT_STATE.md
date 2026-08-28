@@ -39,7 +39,7 @@
 
 ## 验证结果
 
-- v1：454 tests / 417 pass / 0 fail / 37 environment-skipped。
+- v1：456 tests / 419 pass / 0 fail / 37 environment-skipped（2026-08-28 在当前主线复跑）。
 - Browser：89 tests / 85 pass / 0 fail / 4 skipped。
 - 最新加密备份 `/var/backups/pojia/pojia-20260828T043251Z.sql.gz.enc` 已通过 SHA-256 完整性校验。
 
