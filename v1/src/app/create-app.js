@@ -53,6 +53,9 @@ export function createApp({
   resolveAdminCardFundingUnknown = null,
   listAdminProviderRoutes = null,
   switchAdminProviderRoute = null,
+  listCardOperationalOverrides = null,
+  setCardOperationalOverride = null,
+  clearCardOperationalOverride = null,
   setAdminOrderAcceptance = null,
   setAdminDispatch = null,
   setAdminRechargePermit = null,
@@ -384,6 +387,21 @@ export function createApp({
         }
         throw error;
       }
+    });
+  }
+  if (typeof listCardOperationalOverrides === 'function') {
+    app.get('/api/v1/admin/card-operational-overrides', noStore, requireAdminApi, async (req, res) => {
+      res.json(await listCardOperationalOverrides(req.query || {}));
+    });
+  }
+  if (typeof setCardOperationalOverride === 'function') {
+    app.post('/api/v1/admin/card-operational-overrides', ...sensitiveAdminGuards, async (req, res) => {
+      res.status(200).json(await setCardOperationalOverride({ ...(req.body || {}), actorId: req.admin?.id || 'admin' }));
+    });
+  }
+  if (typeof clearCardOperationalOverride === 'function') {
+    app.delete('/api/v1/admin/card-operational-overrides', ...sensitiveAdminGuards, async (req, res) => {
+      res.json(await clearCardOperationalOverride(req.body || {}));
     });
   }
   if (typeof setAdminReplenishmentDailyLimit === 'function') {

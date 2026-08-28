@@ -41,6 +41,7 @@ import { createSessionReplacementService } from './services/session-replacement-
 import { createBrowserAdminService } from './services/browser-admin-service.js';
 import { resolveCurrentCardProviderAccountId } from './services/provider-route-service.js';
 import { readProviderSnapshot } from './services/card-provider-snapshot-service.js';
+import { createCardOperationalOverrideService } from './services/card-operational-override-service.js';
 
 const config = loadConfig();
 const pool = createDatabasePool(config.database);
@@ -74,6 +75,7 @@ const cardStockJobService = createCardStockJobService({ pool });
 const replenishmentSettingsService = createCardReplenishmentSettingsService({ pool });
 const cardFundingAdminService = createCardFundingAdminService({ pool });
 const providerRouteAdminService = createProviderRouteAdminService({ pool });
+const cardOperationalOverrideService = createCardOperationalOverrideService({ pool });
 const cardSyncJobService = createCardSyncJobService({ pool });
 const cardIntakeRepository = createCardIntakeRepository({ pool });
 const cardIntakeProvider = config.hnskjApiKey
@@ -186,6 +188,9 @@ const app = createApp({
   ,resolveAdminCardFundingUnknown: cardFundingAdminService.resolveUnknown
   ,listAdminProviderRoutes: providerRouteAdminService.list
   ,switchAdminProviderRoute: providerRouteAdminService.switchRoute
+  ,listCardOperationalOverrides: cardOperationalOverrideService.list
+  ,setCardOperationalOverride: cardOperationalOverrideService.set
+  ,clearCardOperationalOverride: cardOperationalOverrideService.clear
   ,setAdminOrderAcceptance: adminOperationsService.setOrderAcceptance
   ,setAdminDispatch: adminOperationsService.setDispatch
   ,setAdminRechargePermit: async (publicNo, input = {}) => {
