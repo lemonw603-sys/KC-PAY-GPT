@@ -236,3 +236,30 @@ test('manual transaction sync queues only a read task and deduplicates active wo
     .requestCardTransactionSync('PJV1-DEMO');
   assert.deepEqual(activeResult, { queued: false, taskStatus: 'RUNNING' });
 });
+
+test('card consumption read view reports reserved, consumed and reconciliation counts without writes', async () => {
+  const queries = [];
+  const pool = {
+    async query(sql, values = []) {
+      queries.push({ sql, values });
+      if (/GROUP BY c\.id/.test(sql)) return [[{
+        provider_card_id: 'card-6807', last4: '6807', card_status: 'active',
+        total_records: 3, reserved_count: 1, consumed_count: 1,
+        reconciliation_count: 1, released_count: 0
+      }], []];
+      if (/FROM card_consumption_ledger l/.test(sql)) return [[{
+        id: 'ledger-1', provider_card_id: 'card-6807', last4: '6807', order_id: 'order-1',
+        recharge_attempt_id: 'attempt-1', product_id: 'plus', status: 'RECONCILIATION',
+        amount: '20.00', currency: 'USD', provider_transaction_id: null,
+        reserved_at: new Date(), consumed_at: null, released_at: null, release_reason: null
+      }], []];
+      if (/card_max_successful_payments/.test(sql)) return [[{ setting_value: '3' }], []];
+      throw new Error(`Unexpected query: ${sql}`);
+    }
+  };
+  const result = await createAdminReadService({ pool }).getCardConsumption({ providerCardId: 'card-6807' });
+  assert.equal(result.maxSuccessfulPayments, 3);
+  assert.deepEqual(result.cards[0].consumed, 1);
+  assert.equal(result.records[0].status, 'RECONCILIATION');
+  assert.equal(queries.every((query) => !/^\s*(INSERT|UPDATE|DELETE)/i.test(query.sql)), true);
+});

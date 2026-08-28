@@ -150,6 +150,7 @@ const app = createApp({
   listAdminAlerts: adminReadService.listAlerts,
   requestCardTransactionSync: adminReadService.requestCardTransactionSync
   ,getAdminCard: adminReadService.getCard
+  ,getAdminCardConsumption: adminReadService.getCardConsumption
   ,requestAdminCardSync: cardSyncJobService.createJobs
   ,discoverAdminCards: cardIntakeProvider ? async () => {
     const service = await configuredCardIntake();

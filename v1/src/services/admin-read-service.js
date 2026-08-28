@@ -313,6 +313,58 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
     };
   }
 
+  // Read-only view of the future multi-payment capacity ledger. This endpoint
+  // intentionally never changes card assignment or historical evidence.
+  async function getCardConsumption(input = {}) {
+    const limit = Math.min(200, Math.max(1, Number(input.limit) || 100));
+    const providerCardId = String(input.providerCardId || '').trim();
+    const where = providerCardId ? 'WHERE c.provider_card_id = ?' : '';
+    const params = providerCardId ? [providerCardId] : [];
+    const [rows] = await pool.query(
+      `SELECT c.provider_card_id, c.last4, c.status AS card_status,
+              COUNT(l.id) AS total_records,
+              SUM(l.status = 'RESERVED') AS reserved_count,
+              SUM(l.status = 'CONSUMED') AS consumed_count,
+              SUM(l.status = 'RECONCILIATION') AS reconciliation_count,
+              SUM(l.status = 'RELEASED') AS released_count
+       FROM cards c LEFT JOIN card_consumption_ledger l ON l.card_id = c.id
+       ${where}
+       GROUP BY c.id, c.provider_card_id, c.last4, c.status
+       ORDER BY c.provider_card_id
+       LIMIT ${limit}`,
+      params
+    );
+    const [ledgerRows] = await pool.query(
+      `SELECT l.id, c.provider_card_id, c.last4, l.order_id, l.recharge_attempt_id,
+              l.product_id, l.status, l.amount, l.currency, l.provider_transaction_id,
+              l.reserved_at, l.consumed_at, l.released_at, l.release_reason
+       FROM card_consumption_ledger l INNER JOIN cards c ON c.id = l.card_id
+       ${providerCardId ? 'WHERE c.provider_card_id = ?' : ''}
+       ORDER BY l.created_at DESC LIMIT ${limit}`,
+      params
+    );
+    const [[setting]] = await pool.query(
+      `SELECT setting_value FROM app_settings WHERE setting_key = 'card_max_successful_payments' LIMIT 1`
+    );
+    return {
+      maxSuccessfulPayments: Math.max(1, Number(setting?.setting_value || 3)),
+      cards: rows.map((row) => ({
+        providerCardId: row.provider_card_id, last4: row.last4, status: row.card_status,
+        totalRecords: Number(row.total_records || 0), reserved: Number(row.reserved_count || 0),
+        consumed: Number(row.consumed_count || 0), reconciliation: Number(row.reconciliation_count || 0),
+        released: Number(row.released_count || 0)
+      })),
+      records: ledgerRows.map((row) => ({
+        id: row.id, providerCardId: row.provider_card_id, last4: row.last4,
+        orderId: row.order_id, rechargeAttemptId: row.recharge_attempt_id,
+        productId: row.product_id, status: row.status, amount: decimal(row.amount),
+        currency: row.currency, providerTransactionId: row.provider_transaction_id,
+        reservedAt: iso(row.reserved_at), consumedAt: iso(row.consumed_at),
+        releasedAt: iso(row.released_at), releaseReason: row.release_reason
+      }))
+    };
+  }
+
   async function requestCardTransactionSync(publicNo) {
     if (typeof publicNo !== 'string' || publicNo.length < 8 || publicNo.length > 64) {
       throw new PublicApiError('Invalid public number', { code: 'INVALID_ADMIN_QUERY', status: 400 });
@@ -1147,5 +1199,5 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
     };
   }
 
-  return { getCard, getOrder, getOverview, listOrders, listAlerts, requestCardTransactionSync };
+  return { getCard, getCardConsumption, getOrder, getOverview, listOrders, listAlerts, requestCardTransactionSync };
 }

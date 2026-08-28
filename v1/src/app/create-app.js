@@ -38,6 +38,7 @@ export function createApp({
   listAdminAlerts = null,
   requestCardTransactionSync = null,
   getAdminCard = null,
+  getAdminCardConsumption = null,
   requestAdminCardSync = null,
   discoverAdminCards = null,
   validateAdminCardIntake = null,
@@ -276,6 +277,11 @@ export function createApp({
   if (typeof getAdminCard === 'function') {
     app.get('/api/v1/admin/cards/:providerCardId', noStore, requireAdminApi, async (req, res) => {
       res.json(await getAdminCard(req.params.providerCardId, req.query || {}));
+    });
+  }
+  if (typeof getAdminCardConsumption === 'function') {
+    app.get('/api/v1/admin/card-consumption', noStore, requireAdminApi, async (req, res) => {
+      res.json(await getAdminCardConsumption(req.query || {}));
     });
   }
   if (typeof requestAdminCardSync === 'function') {
