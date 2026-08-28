@@ -337,3 +337,12 @@
 
 - 覆盖表只读回读：`1065=PRODUCT_ONLY(claude)`、`493=RETIRED`，与已确认规则一致。
 - `accept_new_orders=false`、`dispatch_new_recharges=false` 仍保持关闭。
+
+## 2026-08-28｜现有旧批次覆盖补齐与资格审计修正
+
+- 生产 Provider 只读快照确认当前可见卡 19 张：`1477`、`1065` 及其余 17 张旧卡。
+- 按已确认规则保留 `1477/6807` 不设覆盖、`1065/4744=PRODUCT_ONLY(claude)`；其余 17 张当前旧批次卡全部写为 `RETIRED`。该快照不影响未来新开卡。
+- 修正 card consistency audit：已被 `RETIRED` 或 `PRODUCT_ONLY` 覆盖的未接管 Provider 卡不再重复报“未映射关键故障”，但保留 suppressed 计数。
+- 生产资格审计复核：`ok=true`、19 Provider 卡、6 本地卡、critical=0、warning=0、suppressedOverrideCount=13。
+- readiness：`ok=true`、migration 040、资金/UNKNOWN/授权均为 0、接单与派发仍关闭。
+- 部署中发现候选目录最初因 `cp -a` 复制软链接而非内容，已立即修正为真实不可变目录 `/opt/pojia/releases/20260828-eab5567-fixed` 并复核 current 指向正确。未造成业务数据丢失或资金动作。
