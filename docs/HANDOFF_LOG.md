@@ -452,3 +452,9 @@
 - 部署后只读复核发现余额告警首版把 Provider 对象插入文案，产生了两条错误的 `[object Object]` 告警；这是本窗口新增代码的真实缺陷，已立即修正为 `hnskj` Provider code，并将两条错误告警标记为已解决，避免继续通知。
 - 修正提交：`fe9f1c3`；新 release：`/opt/pojia/releases/20260828-admin-fixes-fe9f1c3`。
 - 修正后 Web/Worker active，`pojia-ops check` 通过，备份完整性仍为 OK；未开启任何 Provider/资金写开关。
+
+# 2026-08-28 卡台告警中文化
+
+- `hnskj` 只是代码内部的卡台标识，不是给运营人员看的名称。余额变化通知现改为“当前卡台余额由 X 变为 Y”。
+- “卡台余额/开卡规则只读同步失败”提示已改为白话：“卡台余额或开卡规则暂时没有更新成功，系统已暂停使用旧数据开卡，请稍后刷新。”
+- 修正 release：`/opt/pojia/releases/20260828-admin-alert-wording-7dc63b5`；`pojia-ops check` 通过，所有写开关保持关闭。
