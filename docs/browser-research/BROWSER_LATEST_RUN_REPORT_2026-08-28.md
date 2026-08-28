@@ -51,3 +51,10 @@ node --test \
 - 未读取真实 Session/PAN/CVC；
 - 未填卡、未付款、未调用卡台写接口；
 - 未合并或部署。
+
+## 追加恢复验证（本轮）
+
+- 使用临时隔离 MySQL 8.4，执行 migration 001–039。
+- 命令：`TEST_DATABASE_URL=<isolated-mysql> node --test v1/test/browser-recovery-mysql-integration.test.js`
+- 结果：**1/1 passed**；验证同一 Browser run 的 Worker 进程重启后 artifact/resource lease 恢复、旧 authority 不外泄，且不产生付款动作。
+- 该测试没有在数据库进程运行中途执行 `docker restart`；因此“数据库进程中途重启后同一 job/attempt 的继续/安全收口”仍属于未验证项，不能把本结果写成数据库重启通过。
