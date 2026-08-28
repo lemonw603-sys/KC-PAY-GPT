@@ -317,3 +317,9 @@
 - 生产 readiness（使用 `/etc/pojia` 运行环境只读执行）：`ok=true`、latest migration 040、worker heartbeat 2 秒、资金风险 0、UNKNOWN Provider 调用 0、活动授权 0、阻断项为空；接单和派发仍为 false。
 - 公网 `/health/ready` 仍返回 HTTP 200。
 - 未开启 Provider 写入、卡台写入、Browser 付款写入；未执行开卡、充值、付款、退款。
+
+## 2026-08-28｜生产后台只读路由验收
+
+- `/admin` 返回 302 到 `/admin/login`，后台入口正常。
+- 新增运营覆盖 API、卡片库存 API、Provider 路由 API 在未登录时均返回 `401 admin_auth_required`，说明路由已加载且认证门禁生效。
+- 本轮未使用管理员会话，不读取或修改生产业务数据。
