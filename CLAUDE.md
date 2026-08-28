@@ -10,6 +10,7 @@
 
 ## 单一事实源
 
+- 当前生产/代码快照：`docs/CURRENT_STATE.md`（库存后台收敛前封账：`docs/PRE_INVENTORY_CONVERGENCE_SEAL_2026-08-28.md`）
 - 产品与技术规格：`docs/V1_SPEC.md`
 - 阶段规划与当前状态：`docs/ROADMAP.md`
 - 2026-08-28 统一执行主线：`docs/MASTER_EXECUTION_PLAN_2026-08-28.md`（对抗审查：`docs/MASTER_EXECUTION_PLAN_ADVERSARIAL_REVIEW_2026-08-28.md`）

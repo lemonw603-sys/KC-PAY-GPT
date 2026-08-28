@@ -346,3 +346,14 @@
 - 生产资格审计复核：`ok=true`、19 Provider 卡、6 本地卡、critical=0、warning=0、suppressedOverrideCount=13。
 - readiness：`ok=true`、migration 040、资金/UNKNOWN/授权均为 0、接单与派发仍关闭。
 - 部署中发现候选目录最初因 `cp -a` 复制软链接而非内容，已立即修正为真实不可变目录 `/opt/pojia/releases/20260828-eab5567-fixed` 并复核 current 指向正确。未造成业务数据丢失或资金动作。
+
+## 2026-08-28｜库存后台收敛前整体封账
+
+- 当前主线/生产对齐到 `d8954bd`，release 为 `/opt/pojia/releases/20260828-d8954bd-sealed`；可靠回滚点为 `/opt/pojia/releases/20260828-fea0ffd-rollback`。
+- 重跑本地全量测试：v1 454 total / 417 pass / 0 fail / 37 skipped；Browser 89 total / 85 pass / 0 fail / 4 skipped。
+- 生产 readiness 重跑通过：`ok=true`、migration 040、activeTasks 0、expiredLeases 0、uncertainProviderCalls 0、activeOrUnknownFundsRisk 0、activeRechargeAuthorizations 0、blockers 0。
+- 生产卡片审计：Provider 19、本地 6、critical 0、warning 0；HNSKJ/ZZSHU 只读合同通过；ops/plus 的 live/ready 均 HTTP 200。
+- 最新加密备份 `/var/backups/pojia/pojia-20260828T043251Z.sql.gz.enc` 通过 SHA-256 完整性校验。
+- 对抗复查发现 `pojia-card-stock-runner.timer` 处于 inactive 但 enabled，而其 service 显式启用 Provider 卡写入权限。这与当前“自动补卡关闭”不对齐，且主机重启后可每 10 秒唤醒。已直接修正为 inactive/disabled，并确认数据库 `card_auto_replenishment_enabled=false`。
+- 已更新 `CURRENT_STATE.md`、主规划、路线图、决策状态和交接索引；历史 Browser 全量排查报告已标注为历史快照。
+- 阶段报告：`docs/PRE_INVENTORY_CONVERGENCE_SEAL_2026-08-28.md`。下一动作为 A2 库存后台信息收敛；不重做 A1，不删除真实追溯数据，不开启付费写入。

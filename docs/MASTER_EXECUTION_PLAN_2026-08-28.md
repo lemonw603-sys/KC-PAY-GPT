@@ -12,7 +12,7 @@
 - Browser 控制面、租约、恢复、仿真和非付款测试已完成部分；Browser 独立 adapter、非付款端到端联调和真实页面付款尚未完成。
 - 当前生产接单、派发和 Provider 写入保持关闭。
 - 当前卡片规则：`6807` 可用；`4744` 仅 Claude；除这两张外现有卡（含 `8590`）因同批服务器更换永久不可用、永不分配。
-- 生产后端复核补充：`4744` 当前尚未进入本地 `cards`，而在 discovery 中因 `CARD_TYPE_MISSING` 处于 `REVIEW_REQUIRED`；`6807` 已绑定成功订单且余额 `$0.07`。当前没有可直接分配的 Plus 成品库存。Worker、Browser Worker 和付费补卡 runner 均未运行，readiness 被 Worker 心跳过期阻断。
+- 生产已对齐到 migration 040：`4744/1065=PRODUCT_ONLY(claude)`，其余当前旧批次 17 张卡为 `RETIRED`，`6807/1477` 保留原有 `ASSIGNED` 且不绕过资金/消费账本规则。Plus 可分配库存为 0。API Worker 已恢复并且 readiness `ok=true`；Browser Worker 和付费补卡 runner 保持 inactive/disabled。
 
 ## 不可改变的业务边界
 
@@ -114,14 +114,16 @@
 
 ## 下一可执行项
 
-1. 先实现 A1 最小卡片策略与资格查询；
-2. 同时让 Browser 窗口继续 adapter 和非付款联调；
-3. 两条线完成后做共享底座交叉验收；
-4. 再申请生产状态写入和受控真实测试。
+1. 进入 A2 库存后台收敛：只改主视图信息结构，不再重做 A1，不批量改卡片业务状态。
+2. 同时保持 Browser 独立线继续 adapter 与非付款联调；主线只在共享合同处做交叉审查。
+3. A2 完成后做后台浏览器交叉验收，确认简化没有破坏追溯、分配和审计。
+4. 再做卡段“人工刷新 + 持久默认选择”；不恢复高频自动目录读取。
 
 ## 最新执行状态（2026-08-28）
 
-- 阶段 1 的最小运营覆盖代码与后台接口已完成并通过测试（提交 `fc91d18`）；交接记录见 `docs/HANDOFF_LOG.md`。
-- migration 040 尚未部署生产，生产卡片覆盖尚未写入。
-- Browser 独立线已完成 dispatch 队列只读展示与隔离 MySQL smoke（Browser 提交 `8842c76`），尚未合并主线。
-- 下一动作：先完成 Browser 恢复后的状态确认与主线 diff 审查，再进行 6807/4744/8590 隔离回归和生产只读核验。
+- A1 已完成代码、migration 040、生产覆盖写入、旧批次覆盖、有效库存统计和后台状态展示。
+- Browser 的 dispatch 只读展示和消费账本绑定已安全合入主线（合并提交 `33ffd37`）。
+- 验证用遗留订单已安全取消，生产 `activeTasks=0`。
+- 当前生产 release 为 `/opt/pojia/releases/20260828-d8954bd-sealed`；readiness、Provider 只读合同、卡片审计和公网健康检查均通过。
+- 付费补卡 timer 的“inactive 但 enabled”隐患已修正为 inactive/disabled。
+- 阶段封账见 `docs/PRE_INVENTORY_CONVERGENCE_SEAL_2026-08-28.md`；下一动作是 A2 库存后台收敛。
