@@ -39,3 +39,11 @@ test('stage 4 migration is replay guarded and defaults automatic card spending t
   assert.match(sql, /idx_card_stock_jobs_source_created/);
   assert.doesNotMatch(sql, /purchaseCard|\/cards\/purchase|rechargeCard/);
 });
+
+test('card operational override migration is minimal and replay-safe by table creation', () => {
+  const sql = fs.readFileSync(path.join(here, '../migrations/040_card_operational_overrides.sql'), 'utf8');
+  assert.match(sql, /CREATE TABLE IF NOT EXISTS card_operational_overrides/);
+  assert.match(sql, /UNIQUE KEY uq_card_operational_override/);
+  assert.match(sql, /allocation_policy IN \('NORMAL','PRODUCT_ONLY','RETIRED'\)/);
+  assert.doesNotMatch(sql, /DROP TABLE|DELETE FROM|TRUNCATE/);
+});
