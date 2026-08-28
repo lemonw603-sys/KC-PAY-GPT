@@ -1,5 +1,7 @@
 # AI充值业务路线图
 
+> 2026-08-28 起，跨模块当前执行顺序统一以 `docs/MASTER_EXECUTION_PLAN_2026-08-28.md` 为准；其对抗审查见 `docs/MASTER_EXECUTION_PLAN_ADVERSARIAL_REVIEW_2026-08-28.md`。本文继续保留阶段历史，不再从历史段落单独推导新的“下一步”。
+
 ## 当前执行快照（2026-08-28）
 
 - 共享订单、资金栅栏和一卡多充消费账本已实现；migration 038/039、API/Browser 资金链、后台只读消费统计和只读审计已完成本地/隔离 MySQL 验证，并已部署到生产 release `/opt/pojia/releases/20260828-card-ledger-43ab997`。

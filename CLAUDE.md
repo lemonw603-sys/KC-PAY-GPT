@@ -12,6 +12,7 @@
 
 - 产品与技术规格：`docs/V1_SPEC.md`
 - 阶段规划与当前状态：`docs/ROADMAP.md`
+- 2026-08-28 统一执行主线：`docs/MASTER_EXECUTION_PLAN_2026-08-28.md`（对抗审查：`docs/MASTER_EXECUTION_PLAN_ADVERSARIAL_REVIEW_2026-08-28.md`）
 - 外部接口合同与验证记录：后续放在 `docs/contracts/`
 - 项目从起点到当前的完整历史交接：`docs/PROJECT_HANDOFF_FULL_HISTORY_2026-08-21.md`
 - 跨窗口交接、生产横向平台、真实测试证据与事实/未验证边界：`docs/SINGLE_SOURCE_OF_TRUTH_2026-08-21.md`
