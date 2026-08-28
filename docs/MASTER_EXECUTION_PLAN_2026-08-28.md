@@ -58,6 +58,8 @@
 
 ### 并行线 B：Browser 自动化
 
+> 2026-08-28 重新对齐后的精确停止点见 `docs/BROWSER_COORDINATION_REALIGN_2026-08-28.md`；旧 production-readonly smoke 不代表当前 release 可运行。
+
 1. 接入独立 Browser adapter，共享唯一 attempt/资金栅栏。
 2. 完成非付款端到端联调和故障注入：租约丢失、崩溃、页面漂移、数据库重启、付款前安全退出。
 3. 验收零付款、零重复提交、零资金残留、未知状态只核对不重付。
