@@ -382,3 +382,10 @@
 - 线上 `/admin/login` 可访问；`admin.js?v=8` 返回 127,421 bytes。
 - 静态资源包含“可分配、使用中、暂不可用、永久停用、余额不足”等收敛文案；旧主视图文案“待验证新卡”“同步积压”未出现在该脚本中。
 - 本窗口当前未取得管理员浏览器自动化控制权，因此未将静态检查冒充为登录后的视觉验收；登录后布局/数据展示仍需在可控浏览器会话中完成。
+
+### 2026-08-28｜库存分类与同步运行核验补充
+
+- 生产 `pojia-card-read-sync.timer`、`pojia-card-catalog-sync.timer` 均为 active；最近一次 catalog sync 成功返回：Provider 总卡 19、Provider active 8、inactive 11、assigned 2、depleted 2、available 0、unresolvedActive 0、statusConflict 0。
+- 四类主视图不是卡台原始状态的直接复制，而是由只读同步写入的状态/余额/资料、订单绑定以及 `card_operational_overrides` 共同计算的有效运营分类。
+- 因此“余额不足”表示本次同步观察到余额低于 Plus 最低要求，属于可恢复阻断，不等于永久坏卡；“永久停用”来自明确运营覆盖，不会被普通同步覆盖。
+- 本次核验没有发现同步任务失败或未解析 active 卡；但页面数据仍以最近一次成功同步为准，卡台真实可用性不能仅凭单次目录同步证明。
