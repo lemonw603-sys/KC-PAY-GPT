@@ -114,7 +114,7 @@
 
 ## 下一可执行项
 
-1. 进入 A2 库存后台收敛：只改主视图信息结构，不再重做 A1，不批量改卡片业务状态。
+1. 在已验证的库存后台收敛改动上做生产发布闸门：只读备份、回滚路径、语法/全量测试、公网健康，不再重做 A1。
 2. 同时保持 Browser 独立线继续 adapter 与非付款联调；主线只在共享合同处做交叉审查。
 3. A2 完成后做后台浏览器交叉验收，确认简化没有破坏追溯、分配和审计。
 4. 再做卡段“人工刷新 + 持久默认选择”；不恢复高频自动目录读取。
@@ -126,4 +126,4 @@
 - 验证用遗留订单已安全取消，生产 `activeTasks=0`。
 - 当前生产 release 为 `/opt/pojia/releases/20260828-d8954bd-sealed`；readiness、Provider 只读合同、卡片审计和公网健康检查均通过。
 - 付费补卡 timer 的“inactive 但 enabled”隐患已修正为 inactive/disabled。
-- 阶段封账见 `docs/PRE_INVENTORY_CONVERGENCE_SEAL_2026-08-28.md`；下一动作是 A2 库存后台收敛。
+- 阶段封账见 `docs/PRE_INVENTORY_CONVERGENCE_SEAL_2026-08-28.md`；A2 库存后台收敛已在本地完成并通过测试，实施记录见 `docs/INVENTORY_CONVERGENCE_IMPLEMENTATION_2026-08-28.md`；下一动作是发布闸门。

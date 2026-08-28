@@ -80,6 +80,46 @@ function decryptCardNumber(row, key) {
   }
 }
 
+export function classifyStockCardOperationalState(card) {
+  if (card.effectiveInventoryStatus === 'RETIRED') {
+    return { category: 'RETIRED', reason: '已永久停用，不参与分配' };
+  }
+  if (card.assigned || card.effectiveInventoryStatus === 'ASSIGNED') {
+    return {
+      category: 'IN_USE',
+      reason: card.publicNo ? `已绑定订单 ${card.publicNo}` : '已绑定订单'
+    };
+  }
+  if (card.isAllocatable) {
+    return { category: 'READY', reason: '可直接分配 Plus' };
+  }
+  if (card.effectiveInventoryStatus === 'PRODUCT_ONLY') {
+    return {
+      category: 'BLOCKED',
+      reason: card.allocationProductCode ? `仅限 ${card.allocationProductCode}` : '仅限其他产品'
+    };
+  }
+  if (['MISMATCH', 'REVIEW_REQUIRED'].includes(card.reconciliationStatus)) {
+    return { category: 'BLOCKED', reason: '需要人工核对同步结果' };
+  }
+  if (['SYNCING', 'STALE'].includes(card.reconciliationStatus)) {
+    return { category: 'BLOCKED', reason: '等待只读同步' };
+  }
+  if (card.effectiveInventoryStatus === 'DEPLETED') {
+    return { category: 'BLOCKED', reason: '余额不足，充值后可重新判定' };
+  }
+  if (card.effectiveInventoryStatus === 'PROVISIONING') {
+    return { category: 'BLOCKED', reason: '卡片资料或余额准备中' };
+  }
+  if (card.effectiveInventoryStatus === 'HELD_FOR_REVIEW') {
+    return { category: 'BLOCKED', reason: '需要人工核对' };
+  }
+  if (card.effectiveInventoryStatus === 'FAILED') {
+    return { category: 'BLOCKED', reason: '卡台当前状态不可用' };
+  }
+  return { category: 'BLOCKED', reason: '当前不满足 Plus 安全分配条件' };
+}
+
 export function createCardStockService({ pool, sessionEncryptionKey, panHmacKey = null,
   providerAccountId = LEGACY_HNSKJ_ACCOUNT_ID }) {
   async function recordStateEvent(connection, { cardId, previous, current, source = 'provider_sync' }) {
@@ -248,7 +288,7 @@ export function createCardStockService({ pool, sessionEncryptionKey, panHmacKey 
   }
 
   async function status() {
-    const [[thresholdRows], [rows], [settings], [cards], providerSnapshot, catalogSnapshot] = await Promise.all([
+    const [[thresholdRows], [rows], [operationalRows], [settings], [cards], providerSnapshot, catalogSnapshot] = await Promise.all([
       pool.query(
         `SELECT setting_value FROM app_settings
          WHERE setting_key = 'card_stock_low_threshold' LIMIT 1`
@@ -263,11 +303,27 @@ export function createCardStockService({ pool, sessionEncryptionKey, panHmacKey 
                 SUM(order_id IS NULL AND inventory_status = 'HELD_FOR_REVIEW') AS held
          FROM cards GROUP BY card_type_id ORDER BY card_type_id`
       ),
+      pool.query(
+        `SELECT COUNT(*) AS total,
+                SUM(${eligibleInventoryCardSql('c', `COALESCE((SELECT CAST(setting_value AS DECIMAL(18,6))
+                    FROM app_settings WHERE setting_key = 'default_minimum_required_card_balance' LIMIT 1), 999999999)`)}) AS ready,
+                SUM(CASE WHEN co.allocation_policy = 'RETIRED' THEN 1 ELSE 0 END) AS retired,
+                SUM(CASE WHEN COALESCE(co.allocation_policy, 'NORMAL') <> 'RETIRED'
+                      AND (c.order_id IS NOT NULL OR c.inventory_status = 'ASSIGNED')
+                    THEN 1 ELSE 0 END) AS in_use
+         FROM cards c
+         LEFT JOIN card_operational_overrides co
+           ON co.provider_account_id = c.provider_account_id
+          AND BINARY co.external_card_id = BINARY c.external_card_id`
+      ),
       pool.query(`SELECT setting_key, setting_value FROM app_settings
         WHERE setting_key IN ('default_card_type_id','default_open_card_amount')`),
       pool.query(`SELECT c.provider_account_id, c.provider_card_id, c.card_type_id, c.last4, c.status, c.inventory_status,
           c.funded_amount, c.current_balance, c.currency, c.order_id,
           co.allocation_policy, co.product_code AS allocation_product_code,
+          co.reason AS allocation_reason,
+          (${eligibleInventoryCardSql('c', `COALESCE((SELECT CAST(setting_value AS DECIMAL(18,6))
+              FROM app_settings WHERE setting_key = 'default_minimum_required_card_balance' LIMIT 1), 999999999)`)}) AS is_allocatable,
           c.card_credentials_ciphertext, c.card_number_ciphertext, c.last_synced_at,
           c.last_transaction_synced_at, o.public_no,
           (SELECT COUNT(*) FROM card_transactions ct WHERE ct.card_id = c.id) AS transaction_count,
@@ -295,8 +351,55 @@ export function createCardStockService({ pool, sessionEncryptionKey, panHmacKey 
       ...(catalogSnapshot?.localMissingProviderIds || []),
       ...(catalogSnapshot?.statusConflictIds || [])
     ].map(String));
+    const operational = operationalRows[0] || {};
+    const operationalSummary = {
+      ready: Number(operational.ready || 0),
+      inUse: Number(operational.in_use || 0),
+      retired: Number(operational.retired || 0),
+      blocked: Math.max(0, Number(operational.total || 0)
+        - Number(operational.ready || 0)
+        - Number(operational.in_use || 0)
+        - Number(operational.retired || 0))
+    };
+    const mappedCards = cards.map((row) => {
+      const card = {
+        providerAccountId: row.provider_account_id,
+        providerCardId: String(row.provider_card_id),
+        cardTypeId: String(row.card_type_id),
+        cardNumber: decryptCardNumber(row, sessionEncryptionKey),
+        last4: row.last4,
+        status: row.status,
+        inventoryStatus: row.inventory_status,
+        effectiveInventoryStatus: row.allocation_policy === 'RETIRED' ? 'RETIRED'
+          : row.allocation_policy === 'PRODUCT_ONLY' ? 'PRODUCT_ONLY' : row.inventory_status,
+        allocationPolicy: row.allocation_policy || 'NORMAL',
+        allocationProductCode: row.allocation_product_code || null,
+        allocationReason: row.allocation_reason || null,
+        isAllocatable: Boolean(row.is_allocatable),
+        fundedAmount: row.funded_amount == null ? null : String(row.funded_amount),
+        currentBalance: row.current_balance == null ? null : String(row.current_balance),
+        currency: row.currency,
+        assigned: Boolean(row.order_id),
+        publicNo: row.public_no || null,
+        transactionCount: Number(row.transaction_count || 0),
+        latestTransactionAt: row.latest_transaction_at instanceof Date
+          ? row.latest_transaction_at.toISOString() : row.latest_transaction_at || null,
+        lastTransactionSyncedAt: row.last_transaction_synced_at instanceof Date
+          ? row.last_transaction_synced_at.toISOString() : row.last_transaction_synced_at || null,
+        syncStatus: row.sync_status || null,
+        syncError: row.sync_error || null,
+        reconciliationStatus: mismatchIds.has(String(row.provider_card_id)) ? 'MISMATCH'
+          : ['PENDING', 'RUNNING'].includes(row.sync_status) ? 'SYNCING'
+          : row.sync_status === 'REVIEW_REQUIRED' ? 'REVIEW_REQUIRED'
+            : !row.last_transaction_synced_at ? 'STALE' : 'OK',
+        lastSyncedAt: row.last_synced_at instanceof Date
+          ? row.last_synced_at.toISOString() : row.last_synced_at || null
+      };
+      return { ...card, ...classifyStockCardOperationalState(card) };
+    });
     return {
       threshold,
+      operationalSummary,
       provider: {
         syncedAt: providerSnapshot?.syncedAt || null,
         rulesFresh: snapshotIsFresh(providerSnapshot, { maxAgeMs: CARD_PROVIDER_STATUS_MAX_AGE_MS }),
@@ -338,37 +441,7 @@ export function createCardStockService({ pool, sessionEncryptionKey, panHmacKey 
         held: Number(row.held || 0),
         low: Number(row.available || 0) <= threshold
       })),
-      cards: cards.map((row) => ({
-        providerAccountId: row.provider_account_id,
-        providerCardId: String(row.provider_card_id),
-        cardTypeId: String(row.card_type_id),
-        cardNumber: decryptCardNumber(row, sessionEncryptionKey),
-        last4: row.last4,
-        status: row.status,
-        inventoryStatus: row.inventory_status,
-        effectiveInventoryStatus: row.allocation_policy === 'RETIRED' ? 'RETIRED'
-          : row.allocation_policy === 'PRODUCT_ONLY' ? 'PRODUCT_ONLY' : row.inventory_status,
-        allocationPolicy: row.allocation_policy || 'NORMAL',
-        allocationProductCode: row.allocation_product_code || null,
-        fundedAmount: row.funded_amount == null ? null : String(row.funded_amount),
-        currentBalance: row.current_balance == null ? null : String(row.current_balance),
-        currency: row.currency,
-        assigned: Boolean(row.order_id),
-        publicNo: row.public_no || null,
-        transactionCount: Number(row.transaction_count || 0),
-        latestTransactionAt: row.latest_transaction_at instanceof Date
-          ? row.latest_transaction_at.toISOString() : row.latest_transaction_at || null,
-        lastTransactionSyncedAt: row.last_transaction_synced_at instanceof Date
-          ? row.last_transaction_synced_at.toISOString() : row.last_transaction_synced_at || null,
-        syncStatus: row.sync_status || null,
-        syncError: row.sync_error || null,
-        reconciliationStatus: mismatchIds.has(String(row.provider_card_id)) ? 'MISMATCH'
-          : ['PENDING', 'RUNNING'].includes(row.sync_status) ? 'SYNCING'
-          : row.sync_status === 'REVIEW_REQUIRED' ? 'REVIEW_REQUIRED'
-            : !row.last_transaction_synced_at ? 'STALE' : 'OK',
-        lastSyncedAt: row.last_synced_at instanceof Date
-          ? row.last_synced_at.toISOString() : row.last_synced_at || null
-      }))
+      cards: mappedCards
     };
   }
 

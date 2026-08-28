@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { mapStockCard } from '../src/services/card-stock-service.js';
+import {
+  classifyStockCardOperationalState,
+  mapStockCard
+} from '../src/services/card-stock-service.js';
 
 test('maps a ready provider card into safe assignable stock', () => {
   const card = mapStockCard({ data: {
@@ -62,4 +65,30 @@ test('classifies a terminal provider card as failed stock', () => {
 
 test('rejects stock without stable card identity and type', () => {
   assert.throws(() => mapStockCard({ data: { status: 'active' } }), /lacks provider card ID or card type ID/);
+});
+
+test('collapses card operations into four operator-facing categories', () => {
+  assert.deepEqual(classifyStockCardOperationalState({
+    effectiveInventoryStatus: 'AVAILABLE', isAllocatable: true
+  }), { category: 'READY', reason: '可直接分配 Plus' });
+  assert.deepEqual(classifyStockCardOperationalState({
+    effectiveInventoryStatus: 'ASSIGNED', assigned: true, publicNo: 'PJV1-TEST'
+  }), { category: 'IN_USE', reason: '已绑定订单 PJV1-TEST' });
+  assert.deepEqual(classifyStockCardOperationalState({
+    effectiveInventoryStatus: 'DEPLETED', reconciliationStatus: 'OK'
+  }), { category: 'BLOCKED', reason: '余额不足，充值后可重新判定' });
+  assert.deepEqual(classifyStockCardOperationalState({
+    effectiveInventoryStatus: 'RETIRED', assigned: true
+  }), { category: 'RETIRED', reason: '已永久停用，不参与分配' });
+});
+
+test('does not call a temporarily blocked card permanently unusable', () => {
+  const productOnly = classifyStockCardOperationalState({
+    effectiveInventoryStatus: 'PRODUCT_ONLY', allocationProductCode: 'claude'
+  });
+  const stale = classifyStockCardOperationalState({
+    effectiveInventoryStatus: 'AVAILABLE', reconciliationStatus: 'STALE'
+  });
+  assert.deepEqual(productOnly, { category: 'BLOCKED', reason: '仅限 claude' });
+  assert.deepEqual(stale, { category: 'BLOCKED', reason: '等待只读同步' });
 });

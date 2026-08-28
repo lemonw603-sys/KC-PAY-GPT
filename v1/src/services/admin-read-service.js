@@ -218,8 +218,13 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
           c.inventory_status, c.funded_amount, c.current_balance, c.currency,
           c.refund_status, c.last_synced_at, c.last_transaction_synced_at,
           c.card_number_ciphertext, c.card_credentials_ciphertext,
+          co.allocation_policy, co.product_code AS allocation_product_code,
+          co.reason AS allocation_reason,
           o.public_no, o.status AS order_status, o.customer_email
         FROM cards c LEFT JOIN orders o ON o.id = c.order_id
+        LEFT JOIN card_operational_overrides co
+          ON co.provider_account_id = c.provider_account_id
+         AND BINARY co.external_card_id = BINARY c.external_card_id
         WHERE BINARY c.provider_card_id = BINARY ?
           ${providerAccountId ? 'AND c.provider_account_id = ?' : ''}
         LIMIT 2`, providerAccountId ? [cardId, providerAccountId] : [cardId]);
@@ -265,6 +270,11 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
         last4: row.last4,
         status: row.status,
         inventoryStatus: row.inventory_status,
+        effectiveInventoryStatus: row.allocation_policy === 'RETIRED' ? 'RETIRED'
+          : row.allocation_policy === 'PRODUCT_ONLY' ? 'PRODUCT_ONLY' : row.inventory_status,
+        allocationPolicy: row.allocation_policy || 'NORMAL',
+        allocationProductCode: row.allocation_product_code || null,
+        allocationReason: row.allocation_reason || null,
         fundedAmount: decimal(row.funded_amount),
         currentBalance: decimal(row.current_balance),
         currency: row.currency,

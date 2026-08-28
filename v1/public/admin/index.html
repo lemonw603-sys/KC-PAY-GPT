@@ -7,8 +7,8 @@
   <meta name="theme-color" content="#f5f8fc">
   <title>Plus 运营后台</title>
   <link rel="icon" href="/admin/assets/favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/admin/assets/admin.css?v=17">
-  <script src="/admin/assets/admin.js?v=17" defer></script>
+  <link rel="stylesheet" href="/admin/assets/admin.css?v=18">
+  <script src="/admin/assets/admin.js?v=18" defer></script>
 </head>
 <body>
   <div class="admin-shell">
@@ -208,18 +208,24 @@
       <section id="stock-view" class="view" hidden>
         <div class="stock-grid">
           <section class="card stock-card">
-            <div class="card-heading"><div><p class="section-kicker">库存状态</p><h2>可用卡片</h2></div><span class="write-badge">实时</span></div>
+            <div class="card-heading"><div><p class="section-kicker">Plus 履约</p><h2>卡片概况</h2></div><span class="readonly-badge">有效状态</span></div>
+            <p class="card-description stock-definition">“可分配”指现在就能安全绑定 Plus 订单的卡。余额不足或资料待同步只属于“暂不可用”，不代表卡已失效。</p>
             <div class="stock-summary" id="stock-summary"></div>
             <div class="provider-summary" id="provider-summary"></div>
-            <form class="threshold-form" id="stock-threshold-form">
-              <label for="stock-threshold">剩余多少张时提醒</label>
-              <div><input id="stock-threshold" type="number" min="0" max="10000" required><button class="primary-small" type="submit">保存阈值</button></div>
-            </form>
-            <form class="threshold-form" id="replenishment-limit-form">
-              <label for="replenishment-daily-limit">每日自动补卡上限</label>
-              <div><input id="replenishment-daily-limit" type="number" min="0" max="500" required><button class="primary-small" type="submit">保存上限</button></div>
-              <p class="form-hint" id="replenishment-usage">今日已使用：—，剩余：—</p>
-            </form>
+            <details class="stock-settings-details">
+              <summary>提醒与自动补卡设置</summary>
+              <div class="stock-settings-body">
+                <form class="threshold-form" id="stock-threshold-form">
+                  <label for="stock-threshold">剩余多少张时提醒</label>
+                  <div><input id="stock-threshold" type="number" min="0" max="10000" required><button class="primary-small" type="submit">保存阈值</button></div>
+                </form>
+                <form class="threshold-form" id="replenishment-limit-form">
+                  <label for="replenishment-daily-limit">每日自动补卡上限</label>
+                  <div><input id="replenishment-daily-limit" type="number" min="0" max="500" required><button class="primary-small" type="submit">保存上限</button></div>
+                  <p class="form-hint" id="replenishment-usage">今日已使用：—，剩余：—</p>
+                </form>
+              </div>
+            </details>
           </section>
           <section class="card stock-card">
             <div class="card-heading"><div><p class="section-kicker">人工补卡</p><h2>创建开卡任务</h2></div><span class="write-badge">产生费用</span></div>
@@ -250,18 +256,19 @@
           </section>
         </div>
         <section class="card stock-card">
-          <div class="card-heading"><div><p class="section-kicker">执行记录</p><h2>最近补卡任务</h2></div><button class="text-button" id="refresh-stock" type="button">刷新</button></div>
-          <div class="mini-list" id="stock-jobs"></div>
-        </section>
-        <section class="card stock-card">
-          <div class="card-heading"><div><p class="section-kicker">手动开卡接管</p><h2>待验证新卡（隔离区）</h2></div><button class="primary-small" id="discover-new-cards" type="button">同步并接管新卡</button></div>
-          <p class="card-description">这是本地接管队列，不是卡台实时总卡数。你在卡台手动开卡后点一次；系统会分页发现新卡、连续读取两次验证。通过并接管后才会进入可分配库存，异常卡保留在隔离区。</p>
-          <div class="mini-list" id="card-intake-list"><p class="empty-state">正在读取接管状态…</p></div>
-        </section>
-        <section class="card stock-card">
-          <div class="card-heading"><div><p class="section-kicker">卡片明细</p><h2>后台卡片</h2></div><div><button class="text-button" id="sync-all-cards" type="button">只读同步全部</button> <span class="write-badge">完整卡号</span></div></div>
+          <div class="card-heading"><div><p class="section-kicker">运营明细</p><h2>卡片列表</h2></div><div><button class="text-button" id="sync-all-cards" type="button">只读同步全部</button> <span class="write-badge">完整卡号</span></div></div>
           <div class="mini-list stock-card-list" id="stock-cards"></div>
         </section>
+        <details class="card stock-card stock-advanced-details">
+          <summary>补卡执行记录</summary>
+          <div class="advanced-heading"><p>只在查看开卡任务或排查异常时使用。</p><button class="text-button" id="refresh-stock" type="button">刷新</button></div>
+          <div class="mini-list" id="stock-jobs"></div>
+        </details>
+        <details class="card stock-card stock-advanced-details">
+          <summary>新卡接管记录</summary>
+          <div class="advanced-heading"><p>手动开新卡后才需要点一次同步；这不是卡台实时库存数。</p><button class="primary-small" id="discover-new-cards" type="button">同步并接管新卡</button></div>
+          <div class="mini-list" id="card-intake-list"><p class="empty-state">正在读取接管状态…</p></div>
+        </details>
       </section>
 
       <div class="page-notice" id="page-notice" role="status" aria-live="polite" hidden></div>

@@ -36,6 +36,7 @@ const TASK_LABELS = Object.freeze({
 const TASK_STATUS_LABELS = Object.freeze({ PENDING: '等待执行', RUNNING: '执行中', COMPLETED: '已完成', DEAD: '需要人工处理' });
 const REFUND_LABELS = Object.freeze({ MONITORING: '观察中', DETECTED: '疑似退款', CONFIRMED: '已确认退款', WITHDRAWN: '已提取' });
 const INVENTORY_LABELS = Object.freeze({ AVAILABLE: '可分配', ASSIGNED: '已分配', DEPLETED: '已耗尽', PROVISIONING: '核对中', FAILED: '已失效', HELD_FOR_REVIEW: '已隔离，禁止自动复用', RETIRED: '永久停用', PRODUCT_ONLY: '限定产品' });
+const STOCK_CATEGORY_LABELS = Object.freeze({ READY: '可分配', IN_USE: '使用中', BLOCKED: '暂不可用', RETIRED: '永久停用' });
 const RECONCILIATION_LABELS = Object.freeze({ OK: '已对账', STALE: '待同步', SYNCING: '同步中', REVIEW_REQUIRED: '需核对', MISMATCH: '不一致' });
 const CARD_INTAKE_LABELS = Object.freeze({
   QUARANTINED: '待第二次稳定读取', VALIDATED: '验证通过，待接管',
@@ -268,7 +269,7 @@ async function loadOverview() {
     api('/api/v1/admin/orders?page=1&pageSize=6'),
     api('/api/v1/admin/alerts?limit=10')
   ]);
-  const metrics = [
+  const orderMetrics = [
     { label: '累计订单', value: overview.metrics.totalOrders, note: '全部已创建订单', view: 'orders' },
     { label: '今日订单', value: overview.metrics.todayOrders, note: '点击查看今天新订单', filter: 'TODAY' },
     { label: '成功订单', value: overview.metrics.successfulOrders, note: '已完成 Plus 开通并结束续费', filter: 'RECHARGE_SUCCESS' },
@@ -279,20 +280,20 @@ async function loadOverview() {
     { label: '等待 Session', value: overview.metrics.waitingForSession ?? 0, note: '客户可在原订单更换 Session', filter: 'WAITING_FOR_SESSION' },
     { label: '等待补卡', value: overview.metrics.waitingForCard ?? 0, note: '库存不足，等待运营补卡', filter: 'WAITING_FOR_CARD' },
     { label: '取消续费处理中', value: overview.metrics.cancellationPending ?? 0, note: '充值成功后的终态确认', filter: 'CANCELLATION_PENDING' },
-    { label: '取消续费需复核', value: overview.metrics.cancellationReview ?? 0, note: '取消状态异常，需要人工处理', filter: 'CANCELLATION_REVIEW_REQUIRED' },
+    { label: '取消续费需复核', value: overview.metrics.cancellationReview ?? 0, note: '取消状态异常，需要人工处理', filter: 'CANCELLATION_REVIEW_REQUIRED' }
+  ];
+  const riskMetrics = [
     { label: '资金结果未决', value: overview.operationalBacklog?.fundsRiskPending ?? 0,
       note: '禁止自动重试或切换充值路线', filter: 'RECONCILIATION_ISSUES' },
     { label: '卡余额充值待处理', value: overview.operationalBacklog?.cardFundingRiskPending ?? 0,
       note: overview.operationalBacklog?.cardFundingManualReview
-        ? `${overview.operationalBacklog.cardFundingManualReview} 个需人工复核` : '只读对账或人工复核队列', filter: 'RECONCILIATION_ISSUES' },
-    { label: '待验证新卡', value: overview.operationalBacklog?.cardIntakePending ?? 0,
-      note: '本地接管队列；同步接管后更新，不会分配给订单', view: 'stock' },
-    { label: '本地可分配卡', value: overview.cardStock?.available ?? 0,
-      note: overview.cardStock?.low ? `已到低库存线：${overview.cardStock?.lowThreshold ?? 5}` : `低库存线：${overview.cardStock?.lowThreshold ?? 5}`, view: 'stock' },
-    { label: '自动补卡用量', value: `${overview.operationalBacklog?.replenishmentUsedToday ?? 0}/${overview.operationalBacklog?.replenishmentDailyLimit ?? 5}`,
-      note: `今日剩余 ${overview.operationalBacklog?.replenishmentRemainingToday ?? 0} 张`, view: 'stock' },
-    { label: '对账案件未结', value: overview.operationalBacklog?.reconciliationCasesOpen ?? 0, note: '待分配或待解决', view: 'reconciliation' },
-    { label: '卡片同步积压', value: overview.operationalBacklog?.cardSyncBacklog ?? 0, note: '只读交易同步任务', view: 'stock' },
+        ? `${overview.operationalBacklog.cardFundingManualReview} 个需人工复核` : '只读对账或人工复核队列', filter: 'RECONCILIATION_ISSUES' }
+  ];
+  const inventoryMetrics = [
+    { label: 'Plus 可分配卡', value: overview.cardStock?.available ?? 0,
+      note: overview.cardStock?.low ? `已到低库存线：${overview.cardStock?.lowThreshold ?? 5}` : `低库存线：${overview.cardStock?.lowThreshold ?? 5}`, view: 'stock' }
+  ];
+  const healthMetrics = [
     { label: '订单 Worker',
       value: overview.runtimeHealth?.workerHealthy && !(overview.runtimeHealth?.expiredTaskLeases || overview.runtimeHealth?.stalledProviderCalls) ? '正常' : '需检查',
       note: overview.runtimeHealth?.stalledProviderCalls
@@ -307,10 +308,10 @@ async function loadOverview() {
     <span>${escapeHtml(item.label)}</span><strong>${escapeHtml(item.value)}</strong><small>${escapeHtml(item.note)}</small>
   </button>`;
   const groups = [
-    ['订单处理', metrics.slice(0, 10)],
-    ['资金与风险', metrics.slice(10, 13)],
-    ['库存运营', metrics.slice(13, 18)],
-    ['系统健康', metrics.slice(18)]
+    ['订单处理', orderMetrics],
+    ['资金与风险', riskMetrics],
+    ['库存运营', inventoryMetrics],
+    ['系统健康', healthMetrics]
   ];
   elements.metrics.innerHTML = groups.map(([title, items]) => `<section class="metric-group"><div class="metric-group-title">${title}</div><div class="metric-group-grid">${items.map((item, offset) => metricButton(item, offset)).join('')}</div></section>`).join('');
   const distribution = (rows, labels) => rows?.length
@@ -846,15 +847,10 @@ async function loadStock() {
   elements.replenishmentUsage.textContent = `今日已使用：${replenishment.usedToday}，剩余：${replenishment.remainingToday}`;
   state.stockProvider = payload.provider || null;
   state.stockCatalog = payload.catalog || null;
-  const totals = (payload.cardTypes || []).reduce((sum, item) => ({
-    available: sum.available + item.available,
-    provisioning: sum.provisioning + item.provisioning,
-    assigned: sum.assigned + item.assigned,
-    depleted: sum.depleted + item.depleted,
-    held: sum.held + (item.held || 0)
-  }), { available: 0, provisioning: 0, assigned: 0, depleted: 0, held: 0 });
+  const summary = payload.operationalSummary || { ready: 0, inUse: 0, blocked: 0, retired: 0 };
   elements.stockSummary.innerHTML = [
-    ['可分配', totals.available], ['已分配', totals.assigned], ['耗尽卡', totals.depleted], ['隔离卡', totals.held], ['核对中', totals.provisioning]
+    ['可分配', summary.ready], ['使用中', summary.inUse],
+    ['暂不可用', summary.blocked], ['永久停用', summary.retired]
   ].map(([label, value]) => `<div><span>${label}</span><strong>${value}</strong></div>`).join('');
   elements.stockThreshold.value = payload.threshold;
   const provider = state.stockProvider;
@@ -873,7 +869,7 @@ async function loadStock() {
   }
   elements.providerSummary.innerHTML = provider?.syncedAt ? `
     <div><span>卡台余额</span><strong>$${formatMoney(provider.accountBalance)}</strong></div>
-    <div><span>卡台当前 active 卡数</span><strong>${escapeHtml(catalog.providerActive ?? '—')}</strong></div>
+    <div><span>当前默认卡段</span><strong>${escapeHtml(provider.selectedCardType?.name || '未选择')}</strong></div>
     <div><span>剩余开卡额度</span><strong>${escapeHtml(provider.cardLimit?.remaining ?? '—')}</strong></div>
     <small class="${provider.rulesFresh && provider.purchaseEnabled && catalog.fresh && !catalog.openingBlocked ? '' : 'provider-warning'}">
       ${provider.rulesFresh ? `规则更新于 ${formatTime(provider.syncedAt)}` : '卡台规则已过期，禁止开卡'}
@@ -886,7 +882,7 @@ async function loadStock() {
     ? payload.jobs.map((job) => `<div><span><strong>${escapeHtml(STOCK_JOB_LABELS[job.status] || job.status)} · ${job.openedCount}/${job.requestedCount} 张</strong><small>${escapeHtml(job.cardTypeName || `卡段 ${job.cardTypeId}`)} · $${formatMoney(job.amount)} / 张 · 预计总扣款 $${formatMoney(job.estimatedTotal)} · ${formatTime(job.createdAt)}${job.errorMessage ? ` · ${escapeHtml(job.errorMessage)}` : ''}</small></span><em>${escapeHtml(job.status)}</em></div>`).join('')
     : '<p class="empty-state">还没有后台补卡任务</p>';
   elements.stockCards.innerHTML = payload.cards?.length
-    ? payload.cards.map((card) => `<div data-card="${escapeHtml(card.providerCardId)}" data-card-account="${escapeHtml(card.providerAccountId || '')}" role="button" tabindex="0"><span><strong>${escapeHtml(card.cardNumber || card.last4 || '卡号未就绪')}</strong><small>卡台 ID ${escapeHtml(card.providerCardId)} · 余额 $${formatMoney(card.currentBalance || '0')} · ${card.publicNo ? `订单 ${escapeHtml(card.publicNo)}` : '未分配'} · 交易 ${escapeHtml(card.transactionCount)} 笔 · ${formatTime(card.lastTransactionSyncedAt)}${card.allocationProductCode ? ` · 仅限 ${escapeHtml(card.allocationProductCode)}` : ''}</small></span><em>${escapeHtml(RECONCILIATION_LABELS[card.reconciliationStatus] || card.reconciliationStatus)} / ${escapeHtml(INVENTORY_LABELS[card.effectiveInventoryStatus] || card.effectiveInventoryStatus)}</em></div>`).join('')
+    ? payload.cards.map((card) => `<div data-card="${escapeHtml(card.providerCardId)}" data-card-account="${escapeHtml(card.providerAccountId || '')}" role="button" tabindex="0"><span><strong>${escapeHtml(card.cardNumber || card.last4 || '卡号未就绪')}</strong><small>${escapeHtml(card.reason || '当前不满足 Plus 安全分配条件')} · 余额 $${formatMoney(card.currentBalance || '0')}${card.publicNo ? ` · 订单 ${escapeHtml(card.publicNo)}` : ''}</small></span><em>${escapeHtml(STOCK_CATEGORY_LABELS[card.category] || card.category || '暂不可用')}</em></div>`).join('')
     : '<p class="empty-state">还没有后台卡片</p>';
   await loadCardIntake().catch(() => {
     elements.cardIntakeList.innerHTML = '<p class="empty-state">新卡接管状态读取失败，请稍后刷新。</p>';
@@ -965,7 +961,9 @@ async function openCard(providerCardId, providerAccountId = '') {
         ['完整卡号', card.cardNumber || card.last4], ['卡台账户 ID', card.providerAccountId],
         ['卡台卡片 ID', card.providerCardId],
         ['卡段 ID', card.cardTypeId], ['卡片状态', card.status],
-        ['库存状态', INVENTORY_LABELS[card.inventoryStatus] || card.inventoryStatus],
+        ['有效运营状态', INVENTORY_LABELS[card.effectiveInventoryStatus] || card.effectiveInventoryStatus],
+        ['运营限制', card.allocationReason || (card.allocationProductCode ? `仅限 ${card.allocationProductCode}` : '无')],
+        ['原始库存状态', INVENTORY_LABELS[card.inventoryStatus] || card.inventoryStatus],
         ['开卡金额', `${formatMoney(card.fundedAmount)} ${card.currency || ''}`],
         ['当前余额', `${formatMoney(card.currentBalance)} ${card.currency || ''}`],
         ['退款观察', REFUND_LABELS[card.refundStatus] || card.refundStatus],
