@@ -268,3 +268,12 @@
 - 2026-08-28 只读复核补充：卡 `493` 当前仍为 `active/AVAILABLE`、`order_id=NULL`、余额 `$0.01`；Provider 交易链显示 2026-08-18 成功开卡充值 `$16` → OPENAI purchase 成功 `-$15.97`（`agg_tx_190ywhd2bk93r`）→ `$0.01` 余额转出，另有 2026-08-19 一笔 OPENAI purchase 失败。生产订单/Provider 调用未发现可直接关联的本地订单主键；不得自动回填，需后续增加永久停用/历史归档处理。
 - 用户补充确认当前卡片运营规则：现阶段只有尾号 `6807` 可用；`4744` 可用但已充值 Claude，仅针对该卡保留为 Claude 用卡，不再安排其他套餐。除此之外的所有现有卡（含 `8590`）均属于同一批卡台服务器更换导致的永久不可用状态，永不按可用卡分配。未来新开卡另行按实时证据判定。
 - 生产只读核验（SSH `root@144.34.180.184`）确认当前 release 仍为 `/opt/pojia/releases/20260828-card-sync-43ca767`，其中不存在 migration 038/039 和审计脚本；因此本次未在生产执行审计，也未擅自部署。生产审计的前置条件是单独确认部署包含账本与审计代码。
+
+## 2026-08-28｜最小卡片运营覆盖后台接口
+
+- 新增 `v1/migrations/040_card_operational_overrides.sql` 对应的最小运营覆盖服务 `v1/src/services/card-operational-override-service.js`。
+- 后台新增只针对运营覆盖的查询、设置、清除接口：`GET/POST/DELETE /api/v1/admin/card-operational-overrides`。
+- 支持 `NORMAL`、`PRODUCT_ONLY`、`RETIRED`；`PRODUCT_ONLY` 必须指定产品；所有写操作仍受后台敏感写入门禁保护。
+- 资格查询已统一排除 `RETIRED` 与不匹配 `PRODUCT_ONLY`；本次只完成代码与测试，未部署 migration 040，未写入生产覆盖数据。
+- 验证：新增专项测试通过；此前全量测试 446 total / 409 pass / 0 fail / 37 skipped。
+- 提交：`fc91d18`。
