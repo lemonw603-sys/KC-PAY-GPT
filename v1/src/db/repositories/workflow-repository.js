@@ -249,8 +249,8 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
           [orderId, `prepare-recharge:${orderId}`, orderId, `submit-recharge:${orderId}`]
         );
         const [thresholdRows] = await connection.query(
-          `SELECT setting_value FROM app_settings
-           WHERE setting_key = 'card_stock_low_threshold' LIMIT 1`
+          `SELECT setting_key, setting_value FROM app_settings
+           WHERE setting_key IN ('card_stock_low_threshold', 'card_auto_replenishment_enabled')`
         );
         const [stockRows] = await connection.query(
           `SELECT COUNT(*) AS count FROM cards
@@ -260,9 +260,10 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
           [String(order.minimum_required_card_balance), order.card_provider_account_id,
             String(order.card_type_id)]
         );
-        const threshold = Math.max(0, Number(thresholdRows[0]?.setting_value || 5));
+        const threshold = Math.max(0, Number(thresholdRows.find((row) => row.setting_key === 'card_stock_low_threshold')?.setting_value || 5));
+        const autoReplenishmentEnabled = thresholdRows.some((row) => row.setting_key === 'card_auto_replenishment_enabled' && row.setting_value === 'true');
         const remaining = Number(stockRows[0]?.count || 0);
-        if (remaining <= threshold) {
+        if (remaining <= threshold && autoReplenishmentEnabled) {
           await connection.query(
             `INSERT INTO operator_alerts
              (id, alert_type, dedupe_key, severity, title, message, status)
