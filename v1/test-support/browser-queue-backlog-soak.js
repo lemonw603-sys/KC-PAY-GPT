@@ -27,7 +27,7 @@ async function createJob(index) {
   rows.push({ cdkId, orderId, attemptId });
   await pool.query("INSERT INTO cdks (id, code_hash, status) VALUES (?, ?, 'REDEEMED')", [cdkId, crypto.createHash('sha256').update(cdkId).digest('hex')]);
   await pool.query(`INSERT INTO orders (id, public_no, cdk_id, status, session_ciphertext, card_purchase_idempotency_key, product_id, fulfillment_route_id, route_resolution_status)
-    VALUES (?, ?, ?, 'SUBMITTING', ?, ?, ?, ?, 'RESOLVED')`, [orderId, `BACKLOG-${suffix}-${index}`, cdkId, Buffer.from('queue-backlog'), `backlog-${suffix}-${index}`, productId, routeId]);
+    VALUES (?, ?, ?, 'RECHARGE_PROCESSING', ?, ?, ?, ?, 'RESOLVED')`, [orderId, `BACKLOG-${suffix}-${index}`, cdkId, Buffer.from('queue-backlog'), `backlog-${suffix}-${index}`, productId, routeId]);
   await pool.query(`INSERT INTO recharge_attempts (id, order_id, fulfillment_route_id, executor_kind, status, funds_risk_state, idempotency_key)
     VALUES (?, ?, ?, 'BROWSER', 'PREPARED', 'ACTIVE', ?)`, [attemptId, orderId, routeId, `backlog-${suffix}-${index}`]);
   await pool.query(`INSERT INTO browser_dispatch_jobs (job_key, recharge_attempt_id, order_id, status, queued_at)
