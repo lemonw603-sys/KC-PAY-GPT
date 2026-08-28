@@ -277,3 +277,11 @@
 - 资格查询已统一排除 `RETIRED` 与不匹配 `PRODUCT_ONLY`；本次只完成代码与测试，未部署 migration 040，未写入生产覆盖数据。
 - 验证：新增专项测试通过；此前全量测试 446 total / 409 pass / 0 fail / 37 skipped。
 - 提交：`fc91d18`。
+
+## 2026-08-28｜Browser 分支重新对齐并合入主线
+
+- Browser 分支先对齐最新主线，确认未删除 migration 039/040、消费账本、卡片运营覆盖或既有文档。
+- Browser 提交 `fe3d116`、`2d7160b` 已通过 `git diff --check`，无主线删除项；合并提交：`33ffd37`。
+- Browser 测试：`89 tests / 85 passed / 0 failed / 4 skipped`。
+- 合并后 v1 全量测试：`450 total / 413 pass / 0 fail / 37 skipped`。
+- 仍未部署生产、未启动 Browser Worker、未开启付款写入、未执行真实付款。
