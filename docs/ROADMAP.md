@@ -1,6 +1,7 @@
 # AI充值业务路线图
 
 > 2026-08-28 起，跨模块当前执行顺序统一以 `docs/MASTER_EXECUTION_PLAN_2026-08-28.md` 为准；其对抗审查见 `docs/MASTER_EXECUTION_PLAN_ADVERSARIAL_REVIEW_2026-08-28.md`。本文继续保留阶段历史，不再从历史段落单独推导新的“下一步”。
+> 当前生产后端对齐证据见 `docs/BACKEND_RUNTIME_ALIGNMENT_AUDIT_2026-08-28.md`；该审计对“4744 尚未进入 cards、当前无 Plus 成品库存、Worker/readiness 未就绪”给出了最新事实，优先于旧阶段描述。
 
 ## 当前执行快照（2026-08-28）
 
