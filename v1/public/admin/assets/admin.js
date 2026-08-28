@@ -462,6 +462,14 @@ async function authorizeSelectedOrders() {
 
 const RECONCILIATION_STATUS_LABELS = Object.freeze({ OPEN: '待处理', ASSIGNED: '已分配', RESOLVED: '已解决' });
 const RECONCILIATION_SEVERITY_LABELS = Object.freeze({ critical: '严重', warning: '警告', info: '提示' });
+const RECONCILIATION_TYPE_LABELS = Object.freeze({
+  PROVIDER_PAYMENT_EVIDENCE_MISSING: '缺少充值平台付款证据',
+  PAYMENT_AMOUNT_MISMATCH: '付款金额不一致',
+  CARD_PAYMENT_NOT_FOUND: '找不到卡片付款记录',
+  SUBMIT_UNKNOWN: '提交结果未知',
+  PROVIDER_ORDER_MISSING: '缺少充值平台订单号',
+  EVIDENCE_PENDING: '交易证据尚未同步'
+});
 
 async function loadReconciliationCases() {
   const params = new URLSearchParams({ page: state.reconciliationPage, pageSize: 50 });
@@ -473,7 +481,7 @@ async function loadReconciliationCases() {
     ? payload.cases.map((item) => `<tr data-case-id="${escapeHtml(item.id)}" data-public-no="${escapeHtml(item.publicNo || '')}">
       <td><strong>${escapeHtml(item.id)}</strong><small>${escapeHtml(item.dedupeKey)}</small></td>
       <td>${escapeHtml(item.publicNo || '—')}</td>
-      <td><span class="cell-main">${escapeHtml(item.caseType)}</span><small>${escapeHtml(RECONCILIATION_SEVERITY_LABELS[item.severity] || item.severity)}</small></td>
+      <td><span class="cell-main">${escapeHtml(RECONCILIATION_TYPE_LABELS[item.caseType] || item.caseType)}</span><small>${escapeHtml(item.caseType)} · ${escapeHtml(RECONCILIATION_SEVERITY_LABELS[item.severity] || item.severity)}</small></td>
       <td>${escapeHtml(RECONCILIATION_STATUS_LABELS[item.status] || item.status)}</td>
       <td>${escapeHtml(item.assignedTo || '未分配')}</td>
       <td>${formatTime(item.lastSeenAt)}</td>
