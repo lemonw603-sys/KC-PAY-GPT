@@ -14,6 +14,7 @@
     "cdk": "node scripts/cdk.js",
     "provider:read-check": "node scripts/provider-read-check.js",
     "audit:cards": "node scripts/card-consistency-audit.js",
+    "audit:card-consumption": "node scripts/card-consumption-audit.js",
     "provider:poc": "node scripts/provider-poc.js",
     "recharge:permit": "node scripts/recharge-permit.js",
     "card:stock": "node scripts/card-stock.js",

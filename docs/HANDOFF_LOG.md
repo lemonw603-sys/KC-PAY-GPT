@@ -262,3 +262,4 @@
 - 验证：v1 `npm test` 443 total / 406 pass / 0 fail / 37 environment-skipped；隔离 MySQL 001–039 迁移可重复；账本并发、完整 MySQL、Browser MySQL 均通过。
 - Git 提交：`e1d03d2`（账本资金链）、`a6e6634`（后台只读统计）。生产未部署，自动跨订单复用未启用。
 - 下一步：仅生成历史订单/Provider 交易差异报告，先人工核对，不自动改历史；之后再评估后台前端展示。
+- 已完成只读差异报告脚本 `v1/scripts/card-consumption-audit.js` 及测试；它只执行 SELECT，发现差异时输出卡号尾号、账本状态计数和 Provider transaction ID，绝不自动回填。

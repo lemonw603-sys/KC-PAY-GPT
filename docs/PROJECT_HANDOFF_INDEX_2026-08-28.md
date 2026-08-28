@@ -31,6 +31,7 @@
 - 卡片同步专项已合并并部署；单元/全量测试 402 通过，隔离 MySQL 33 通过。
 - 总体规划最新对抗审查：`docs/PLAN_ADVERSARIAL_REVIEW_2026-08-28.md`；一卡多充必须在付款前预留额度，不能只在成功后计数。
 - 一卡多充账本已接入 API/Browser 共享资金链：付款前预留、付款确认消费、明确未提交释放、UNKNOWN 保留核对；生产尚未部署。
+- 已提供只读审计命令 `cd /Users/lemon/code/AI充值业务/v1 && npm run audit:card-consumption`，只输出本地账本与 Provider 成功消费数量差异，不自动修改历史。
 
 ## 当前未完成或需后续设计
 
