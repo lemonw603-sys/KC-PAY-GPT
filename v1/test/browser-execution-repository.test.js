@@ -16,6 +16,8 @@ function paymentSnapshotHash(row) {
     routeId: row.route_id,
     routeCardProviderAccountId: row.route_card_provider_account_id,
     cardId: row.card_id,
+    cardConsumptionId: row.card_consumption_id,
+    cardConsumptionStatus: row.card_consumption_status,
     cardProviderAccountId: row.card_provider_account_id,
     providerCardId: row.provider_card_id,
     cardStatus: String(row.card_status).toLowerCase(),
@@ -90,6 +92,11 @@ function runContext(overrides = {}) {
     card_current_balance: '20.000000',
     card_credentials_ciphertext: Buffer.from('encrypted-card-credentials'),
     card_last_synced_at: new Date('2026-08-22T00:00:00.000Z'),
+    card_consumption_id: 'consumption-1',
+    card_consumption_status: 'RESERVED',
+    card_consumption_attempt_id: 'attempt-1',
+    card_consumption_order_id: 'order-1',
+    card_consumption_card_id: 'card-1',
     route_id: 'route-1',
     route_executor_kind: 'BROWSER',
     route_card_provider_account_id: 'card-provider-1',
@@ -232,6 +239,7 @@ test('payment permit derives its snapshot from locked card and route facts', asy
 });
 
 for (const [name, overrides, code] of [
+  ['missing card consumption reservation', { card_consumption_status: 'RELEASED' }, 'CARD_CONSUMPTION_NOT_RESERVED'],
   ['insufficient balance', { card_current_balance: '15.999999' }, 'CARD_BALANCE_INSUFFICIENT'],
   ['inactive card', { card_status: 'frozen' }, 'CARD_NOT_READY'],
   ['missing card credentials', { card_credentials_ciphertext: null }, 'CARD_NOT_READY'],

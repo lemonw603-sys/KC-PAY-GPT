@@ -26,6 +26,11 @@ function row(overrides = {}) {
     card_order_id: 'ord-mysql-0001',
     provider_card_ref: 'provider-card-mysql-0001',
     card_provider_account_id: 'provider-account-mysql-0001',
+    card_consumption_id: 'consumption-mysql-0001',
+    card_consumption_status: 'RESERVED',
+    card_consumption_attempt_id: 'att-mysql-0001',
+    card_consumption_order_id: 'ord-mysql-0001',
+    card_consumption_card_id: 'card-mysql-0001',
     route_id: 'route-mysql-0001',
     route_executor_kind: 'BROWSER',
     route_card_provider_account_id: 'provider-account-mysql-0001',
@@ -48,6 +53,7 @@ test('MySQL adapter reads one formal browser_run and returns a run-bound Browser
   assert.equal(result.job.metadata.browserRunRef, 'run:run-mysql-0001');
   assert.equal(result.job.metadata.upstream.cardId, 'card-mysql-0001');
   assert.equal(result.job.metadata.upstream.providerCardRef, 'provider-card-mysql-0001');
+  assert.equal(result.job.metadata.upstream.cardConsumptionId, 'consumption-mysql-0001');
   assert.equal(result.job.metadata.sessionRef, 'session-runtime-0001');
   assert.equal(result.sourceDigest.length, 64);
 });
@@ -75,6 +81,8 @@ test('formal state, route and Provider drift fail closed without reinterpretatio
     { route_executor_kind: 'API' },
     { route_card_provider_account_id: 'provider-account-other' },
     { payment_state: 'PAYMENT_SUBMITTING' },
+    { card_consumption_status: 'RELEASED' },
+    { card_consumption_attempt_id: 'att-mysql-other' },
   ]) {
     const adapter = createMysqlUpstreamProjectionAdapter({ db: { query: async () => [[row(changed)], []] } });
     await assert.rejects(() => adapter.load({ runId: 'run-mysql-0001' }), ContractError);
