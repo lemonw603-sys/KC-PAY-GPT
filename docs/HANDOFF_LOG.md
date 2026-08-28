@@ -437,3 +437,12 @@
 
 - 对 `https://ops.vibebridge.top/admin` 做了只读 HTTP 检查：返回 200，但仍引用生产旧版 `admin.css?v=8`，页面 HTML 尚未包含本地新增的 `stock-card-actions`。因此本轮代码改动尚未进入生产，不能把本地测试当作生产视觉验收结果。
 - 生产部署和登录态下的浏览器视觉验收仍待单独确认；本次没有改生产配置或执行资金动作。
+
+# 2026-08-28 后台修复版本生产部署
+
+- 用户明确确认部署；从当时 `main` HEAD 构建真实独立 release：`/opt/pojia/releases/20260828-admin-fixes-22f46e2`，原子切换 `/opt/pojia/current`。
+- 首次切换后发现新 release 尚未安装 `v1/node_modules`，readiness 因缺少 `zod` 失败；立即在新 release 执行 `npm ci --omit=dev` 并重启 Web/Worker。最终 Web、Worker、Bark、卡片读同步和目录同步均 active；Browser Worker 与自动补卡 timer 继续 disabled。
+- 最终 readiness：`ok=true`，migration 040，active tasks/过期租约/UNKNOWN Provider/资金风险/活动授权/卡任务/对账案件/DEAD Bark 均为 0；接单和派发均 false。
+- 发布前加密备份：`/var/backups/pojia/pojia-20260828T100723Z.sql.gz.enc`，哈希、解密和 gzip 完整性校验均通过。
+- ops/plus 两端 live/ready 均 HTTP 200；线上静态 `admin.js` 已包含“技术证据”折叠，`admin.css` 已包含 `stock-card-actions`。未登录 `/admin` 返回登录页，所以不能把它的旧 `?v=8` 资源版本冒充登录后后台版本。
+- 未开启接单、派发、Provider 写入、Browser 付款或自动补卡；未执行开卡、卡充值、Plus 付款、退款或提现。
