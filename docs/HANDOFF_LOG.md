@@ -446,3 +446,9 @@
 - 发布前加密备份：`/var/backups/pojia/pojia-20260828T100723Z.sql.gz.enc`，哈希、解密和 gzip 完整性校验均通过。
 - ops/plus 两端 live/ready 均 HTTP 200；线上静态 `admin.js` 已包含“技术证据”折叠，`admin.css` 已包含 `stock-card-actions`。未登录 `/admin` 返回登录页，所以不能把它的旧 `?v=8` 资源版本冒充登录后后台版本。
 - 未开启接单、派发、Provider 写入、Browser 付款或自动补卡；未执行开卡、卡充值、Plus 付款、退款或提现。
+
+# 2026-08-28 余额告警部署后复核修正
+
+- 部署后只读复核发现余额告警首版把 Provider 对象插入文案，产生了两条错误的 `[object Object]` 告警；这是本窗口新增代码的真实缺陷，已立即修正为 `hnskj` Provider code，并将两条错误告警标记为已解决，避免继续通知。
+- 修正提交：`fe9f1c3`；新 release：`/opt/pojia/releases/20260828-admin-fixes-fe9f1c3`。
+- 修正后 Web/Worker active，`pojia-ops check` 通过，备份完整性仍为 OK；未开启任何 Provider/资金写开关。
