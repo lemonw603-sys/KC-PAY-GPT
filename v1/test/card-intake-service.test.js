@@ -209,6 +209,24 @@ test('explicit batch acceptance cannot bypass stable technical rules', async () 
   assert.equal(repository.cards.has('shared-acct:card-2'), false);
 });
 
+test('operator allocation override blocks explicit discovery acceptance', async () => {
+  const repository = createMemoryRepository();
+  const provider = createPagedProvider({ 'card-1': () => cardDetail('card-1', { ownershipCertain: false }) }, { total: 1 });
+  const service = createCardIntakeService({ provider, repository, providerAccountId: 'acct-a',
+    credentialEncryptionKey: Buffer.alloc(32, 9),
+    validationRules: { expectedCardTypeId: 'bin-1', expectedAmount: 16 },
+    getOperationalOverride: async () => ({ allocationPolicy: 'PRODUCT_ONLY', productCode: 'claude' }) });
+  const intake = await service.discover();
+  await service.validateBatch(intake.batch.id);
+  await service.validateBatch(intake.batch.id);
+  const row = [...repository.discoveries.values()][0];
+  const accepted = await service.acceptDiscoveries({ batchId: intake.batch.id, discoveryIds: [row.id] });
+  assert.equal(accepted.accepted, 0);
+  assert.equal(accepted.rejected, 1);
+  assert.equal(accepted.failures[0].code, 'CARD_OPERATIONAL_OVERRIDE_BLOCKED');
+  assert.equal(repository.cards.size, 0);
+});
+
 test('same external card ID is independently valid in different provider accounts', async () => {
   const repository = createMemoryRepository();
   for (const account of ['acct-a', 'acct-b']) {

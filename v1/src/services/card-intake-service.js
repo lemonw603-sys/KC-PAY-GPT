@@ -159,6 +159,7 @@ function cardSnapshot(card) {
 
 export function createCardIntakeService({ provider, repository, providerAccountId,
   credentialEncryptionKey, sessionEncryptionKey, panHmacKey = null,
+  getOperationalOverride = null,
   pageSize = 50, maxPages = 100, validationRules = {}, assumeDedicatedAccount = false,
   mapListPage = defaultMapListPage, mapListCard = defaultMapListCard,
   mapCardDetail = defaultMapCardDetail } = {}) {
@@ -313,6 +314,19 @@ export function createCardIntakeService({ provider, repository, providerAccountI
         const discovery = await repository.getDiscovery(id);
         if (!discovery || discovery.intakeBatchId !== batchId) {
           throw Object.assign(new Error('Discovery does not belong to the batch'), { code: 'DISCOVERY_BATCH_MISMATCH' });
+        }
+        if (typeof getOperationalOverride === 'function') {
+          const override = await getOperationalOverride({
+            providerAccountId: discovery.providerAccountId,
+            externalCardId: discovery.externalCardId
+          });
+          const policy = String(override?.allocationPolicy || '').toUpperCase();
+          const product = String(override?.productCode || '').toLowerCase();
+          if (policy === 'RETIRED' || (policy === 'PRODUCT_ONLY' && product !== 'plus')) {
+            throw Object.assign(new Error('Card is blocked by an operator allocation override'), {
+              code: 'CARD_OPERATIONAL_OVERRIDE_BLOCKED'
+            });
+          }
         }
         const read = await readAndValidate(discovery);
         if (read.snapshotHash !== discovery.secondSnapshotHash || !read.validation.rulesPassed) {

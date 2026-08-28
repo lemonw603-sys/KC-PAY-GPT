@@ -96,6 +96,15 @@ async function configuredCardIntake() {
     sessionEncryptionKey: config.sessionEncryptionKey,
     panHmacKey: config.cardIntakePanHmacKey,
     assumeDedicatedAccount: true,
+    getOperationalOverride: async ({ providerAccountId, externalCardId }) => {
+      const [rows] = await pool.query(
+        `SELECT allocation_policy AS allocationPolicy, product_code AS productCode
+           FROM card_operational_overrides
+          WHERE provider_account_id = ? AND BINARY external_card_id = BINARY ? LIMIT 1`,
+        [providerAccountId, externalCardId]
+      );
+      return rows[0] || null;
+    },
     validationRules: {
       allowedCardTypeIds: [String(settings.get('default_card_type_id') || '')],
       allowedCardTypes: providerSnapshot?.cardTypes || [],
