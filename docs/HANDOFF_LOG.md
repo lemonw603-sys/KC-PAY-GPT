@@ -307,3 +307,13 @@
 - 当前 release 已包含 migration 039，但不包含 migration 040；因此卡片运营覆盖表尚未部署生产。
 - 直接运行 `v1 npm run preflight:readiness` 未成功，原因是命令环境未注入 `DATABASE_URL`；这不是 readiness 结论，不能据此推断数据库故障。
 - 未执行任何生产写入、重启、部署、开卡、充值或付款。
+
+## 2026-08-28｜生产部署 migration 040 与 Worker 恢复
+
+- 经用户明确允许后，先执行生产加密备份并校验：`/var/backups/pojia/pojia-20260828T034333Z.sql.gz.enc`，`backup_integrity=OK`。
+- 构建并上传候选 release：`/opt/pojia/releases/20260828-bef3bcb-040`；包含当前 main 的 v1、browser-mvp 和 migration 040。
+- 生产迁移从 001–039 已应用，新增成功应用 `040_card_operational_overrides`。
+- Web 已重启，`pojia-worker.service` 已启动并保持运行；Browser Worker 仍为 disabled/inactive。
+- 生产 readiness（使用 `/etc/pojia` 运行环境只读执行）：`ok=true`、latest migration 040、worker heartbeat 2 秒、资金风险 0、UNKNOWN Provider 调用 0、活动授权 0、阻断项为空；接单和派发仍为 false。
+- 公网 `/health/ready` 仍返回 HTTP 200。
+- 未开启 Provider 写入、卡台写入、Browser 付款写入；未执行开卡、充值、付款、退款。
