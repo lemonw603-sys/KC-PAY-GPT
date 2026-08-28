@@ -285,3 +285,10 @@
 - Browser 测试：`89 tests / 85 passed / 0 failed / 4 skipped`。
 - 合并后 v1 全量测试：`450 total / 413 pass / 0 fail / 37 skipped`。
 - 仍未部署生产、未启动 Browser Worker、未开启付款写入、未执行真实付款。
+
+## 2026-08-28｜卡片接管接受阶段尊重运营覆盖
+
+- Provider discovery 仍保留为可审查记录，但显式接管前会读取 `card_operational_overrides`。
+- `RETIRED` 或非 Plus 的 `PRODUCT_ONLY` discovery 不会被接管进入本地可分配 cards。
+- 新增隔离测试覆盖 Claude 专用覆盖阻止接管；定向 intake/override 测试 `9/9` 通过。
+- 提交：`92b1c06`。未部署生产。
