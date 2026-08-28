@@ -463,4 +463,5 @@
 
 - 生产 `card_auto_replenishment_enabled=false`，当前人工开卡；此前仅因阈值低就反复提醒，和实际可人工补卡的运营方式不匹配。
 - 代码现仅在自动补卡启用时发送“低库存”预警；仍有订单真正进入 `WAITING_FOR_CARD` 时，保留一次必要的阻塞提醒。
-- 定向测试：87 通过、6 跳过、0 失败。待部署 release：`20260829-inventory-alert-<commit>`。
+- 定向测试：87 通过、6 跳过、0 失败。已部署 release：`/opt/pojia/releases/20260829-inventory-alert-9466fdb`。
+- 部署后将当前 1 条不再适用的 OPEN 低库存告警标记为 RESOLVED；没有开启任何 Provider/资金写入。
