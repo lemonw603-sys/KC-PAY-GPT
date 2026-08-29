@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import { PublicApiError } from '../../domain/public-api-error.js';
 import { finishProviderCall } from './provider-call-repository.js';
-import { eligibleInventoryCardSql } from '../../services/card-inventory-eligibility.js';
+import { fundableInventoryCardSql } from '../../services/card-inventory-eligibility.js';
 
 function decimalAmount(value) {
   const text = String(value ?? '').trim();
@@ -50,11 +50,12 @@ export function createCardFundingRepository(pool) {
       const [cards] = await connection.query(
         `SELECT id, order_id, inventory_status, status, card_credentials_ciphertext
          FROM cards
-         WHERE id = ? AND ${eligibleInventoryCardSql('cards', '0')}
+         WHERE id = ? AND ${fundableInventoryCardSql('cards')}
          LIMIT 1 FOR UPDATE`, [card]
       );
       const row = cards[0];
-      if (!row || row.order_id !== null || row.inventory_status !== 'AVAILABLE'
+      if (!row || row.order_id !== null
+        || !['AVAILABLE', 'DEPLETED', 'PROVISIONING'].includes(row.inventory_status)
         || !['active', 'available', 'usable', 'ready'].includes(String(row.status).toLowerCase())
         || !row.card_credentials_ciphertext) {
         throw new PublicApiError('Card is not eligible for balance funding', {

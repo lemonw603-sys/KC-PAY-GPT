@@ -138,7 +138,7 @@ export function createCardStockService({ pool, sessionEncryptionKey, panHmacKey 
     );
   }
 
-  async function refreshLowStockAlert(connection, cardTypeId) {
+  async function refreshLowStockAlert(connection) {
     const [thresholdRows] = await connection.query(
       `SELECT setting_key, setting_value FROM app_settings
        WHERE setting_key IN ('card_stock_low_threshold', 'card_auto_replenishment_enabled')`
@@ -148,13 +148,13 @@ export function createCardStockService({ pool, sessionEncryptionKey, panHmacKey 
        WHERE ${eligibleInventoryCardSql('cards', `COALESCE((SELECT CAST(setting_value AS DECIMAL(18,6))
            FROM app_settings WHERE setting_key = 'default_minimum_required_card_balance' LIMIT 1), 999999999)`)}
          AND provider_account_id = ?
-         AND BINARY card_type_id = BINARY ?`,
-      [providerAccountId, String(cardTypeId)]
+        `,
+      [providerAccountId]
     );
     const threshold = Math.max(0, Number(thresholdRows.find((row) => row.setting_key === 'card_stock_low_threshold')?.setting_value || 5));
     const autoReplenishmentEnabled = thresholdRows.some((row) => row.setting_key === 'card_auto_replenishment_enabled' && row.setting_value === 'true');
     const available = Number(stockRows[0]?.count || 0);
-    const key = `card-stock-low:${providerAccountId}:${cardTypeId}`;
+    const key = `card-stock-low:${providerAccountId}:plus`;
     if (available <= threshold && autoReplenishmentEnabled) {
       await connection.query(
         `INSERT INTO operator_alerts
@@ -164,7 +164,7 @@ export function createCardStockService({ pool, sessionEncryptionKey, panHmacKey 
            message = VALUES(message),
            status = IF(status = 'RESOLVED', 'OPEN', status),
            acknowledged_at = IF(status = 'RESOLVED', NULL, acknowledged_at)`,
-        [key, `卡段 ${cardTypeId} 剩余 ${available} 张可用库存卡，阈值为 ${threshold}。`]
+        [key, `Plus 可直接分配卡剩余 ${available} 张，阈值为 ${threshold}。`]
       );
     } else {
       await connection.query(
@@ -279,7 +279,7 @@ export function createCardStockService({ pool, sessionEncryptionKey, panHmacKey 
           currentBalance: card.currentBalance, currency: card.currency
         }
       });
-      const stock = await refreshLowStockAlert(connection, card.cardTypeId);
+      const stock = await refreshLowStockAlert(connection);
       await connection.commit();
       return { providerCardId: card.providerCardId, inventoryStatus, ...stock };
     } catch (error) {
@@ -293,8 +293,8 @@ export function createCardStockService({ pool, sessionEncryptionKey, panHmacKey 
   async function status() {
     const [[thresholdRows], [rows], [operationalRows], [settings], [cards], [overrideRows], providerSnapshot, catalogSnapshot] = await Promise.all([
       pool.query(
-        `SELECT setting_value FROM app_settings
-         WHERE setting_key = 'card_stock_low_threshold' LIMIT 1`
+        `SELECT setting_key, setting_value FROM app_settings
+         WHERE setting_key IN ('card_stock_low_threshold','card_auto_replenishment_enabled')`
       ),
       pool.query(
         `SELECT card_type_id,
@@ -348,7 +348,12 @@ export function createCardStockService({ pool, sessionEncryptionKey, panHmacKey 
       readProviderSnapshot(pool),
       readCardCatalogSnapshot(pool)
     ]);
-    const threshold = Math.max(0, Number(thresholdRows[0]?.setting_value || 5));
+    const threshold = Math.max(0, Number(thresholdRows.find(
+      (row) => row.setting_key === 'card_stock_low_threshold'
+    )?.setting_value || 5));
+    const autoReplenishmentEnabled = thresholdRows.some(
+      (row) => row.setting_key === 'card_auto_replenishment_enabled' && row.setting_value === 'true'
+    );
     const settingMap = new Map(settings.map((row) => [row.setting_key, row.setting_value]));
     const defaultCardTypeId = String(settingMap.get('default_card_type_id') || '');
     const selectedCardType = providerSnapshot?.cardTypes?.find(
@@ -439,6 +444,7 @@ export function createCardStockService({ pool, sessionEncryptionKey, panHmacKey 
       }));
     return {
       threshold,
+      autoReplenishmentEnabled,
       operationalSummary,
       provider: {
         syncedAt: providerSnapshot?.syncedAt || null,
@@ -479,7 +485,7 @@ export function createCardStockService({ pool, sessionEncryptionKey, panHmacKey 
         assigned: Number(row.assigned || 0),
         depleted: Number(row.depleted || 0),
         held: Number(row.held || 0),
-        low: Number(row.available || 0) <= threshold
+        low: autoReplenishmentEnabled && Number(row.available || 0) <= threshold
       })),
         cards: [...mappedCards, ...overrideCards]
     };
@@ -497,12 +503,7 @@ export function createCardStockService({ pool, sessionEncryptionKey, panHmacKey 
          updated_at = CURRENT_TIMESTAMP(3)`,
       [String(threshold)]
     );
-    const [cardTypes] = await pool.query(
-      `SELECT DISTINCT card_type_id FROM cards WHERE card_type_id IS NOT NULL`
-    );
-    for (const row of cardTypes) {
-      await refreshLowStockAlert(pool, row.card_type_id);
-    }
+    await refreshLowStockAlert(pool);
     return { threshold };
   }
 

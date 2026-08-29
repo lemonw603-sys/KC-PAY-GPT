@@ -35,3 +35,41 @@ export function eligibleInventoryCardSql(alias = 'c', minimumSql = '?', { produc
         )
     )`;
 }
+
+export function fundableInventoryCardSql(alias = 'c', { productCode = 'plus' } = {}) {
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(alias)) throw new TypeError('Invalid card SQL alias');
+  const normalizedProduct = String(productCode || 'plus').trim().toLowerCase();
+  if (!/^[a-z0-9_-]{1,32}$/.test(normalizedProduct)) throw new TypeError('Invalid product code');
+  return `${alias}.order_id IS NULL
+    AND ${alias}.inventory_status IN ('AVAILABLE','DEPLETED','PROVISIONING')
+    AND ${alias}.intake_status IN ('ACCEPTED','LEGACY_ACCEPTED')
+    AND LOWER(${alias}.status) IN ('active','available','usable','ready')
+    AND ${alias}.card_credentials_ciphertext IS NOT NULL
+    AND ${alias}.current_balance IS NOT NULL
+    AND ${alias}.last_transaction_synced_at IS NOT NULL
+    AND ${alias}.last_transaction_synced_at >= DATE_SUB(CURRENT_TIMESTAMP(3), INTERVAL 15 MINUTE)
+    AND NOT EXISTS (
+      SELECT 1 FROM card_assignment_history fundable_history
+      WHERE fundable_history.card_id = ${alias}.id
+    )
+    AND NOT EXISTS (
+      SELECT 1 FROM card_transactions fundable_purchase
+      WHERE fundable_purchase.card_id = ${alias}.id
+        AND UPPER(fundable_purchase.transaction_type) = 'PURCHASE'
+    )
+    AND NOT EXISTS (
+      SELECT 1 FROM refund_cases fundable_refund
+      WHERE fundable_refund.card_id = ${alias}.id
+        AND fundable_refund.status <> 'WITHDRAWN'
+    )
+    AND NOT EXISTS (
+      SELECT 1 FROM card_operational_overrides fundable_override
+      WHERE fundable_override.provider_account_id = ${alias}.provider_account_id
+        AND BINARY fundable_override.external_card_id = BINARY ${alias}.external_card_id
+        AND (
+          fundable_override.allocation_policy = 'RETIRED'
+          OR (fundable_override.allocation_policy = 'PRODUCT_ONLY'
+            AND LOWER(COALESCE(fundable_override.product_code, '')) <> '${normalizedProduct}')
+        )
+    )`;
+}

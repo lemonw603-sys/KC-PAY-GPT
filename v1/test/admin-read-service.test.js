@@ -28,8 +28,9 @@ test('admin overview maps aggregate values without exposing raw records', async 
     [{ setting_key: 'accept_new_orders', setting_value: 'false', updated_at: new Date('2026-08-17T00:00:00Z') }],
     [{ status: 'REFUND_DETECTED', count: 1 }],
     [{ count: 1 }],
-    [{ available: 7, provisioning: 1, assigned: 2, depleted: 1, held: 1 }],
-    [{ setting_value: '5' }],
+    [{ available: 7, provisioning: 1, assigned: 2, depleted: 1, held: 1, needs_funding: 1 }],
+    [{ setting_key: 'card_stock_low_threshold', setting_value: '5' },
+      { setting_key: 'card_auto_replenishment_enabled', setting_value: 'false' }],
     [{ card_intake_pending: 2, funds_risk_pending: 1,
       card_funding_risk_pending: 2, card_funding_manual_review: 1,
       reconciliation_cases_open: 3, card_sync_backlog: 4 }]
@@ -41,7 +42,7 @@ test('admin overview maps aggregate values without exposing raw records', async 
   assert.deepEqual(result.orderStatuses, [{ status: 'RECHARGE_SUCCESS', count: 8 }]);
   assert.deepEqual(result.cardStock, {
     available: 7, provisioning: 1, assigned: 2, depleted: 1, held: 1,
-    lowThreshold: 5, low: false
+    needsFunding: 1, lowThreshold: 5, autoReplenishmentEnabled: false, low: false
   });
   assert.deepEqual(result.operationalBacklog, {
     cardIntakePending: 2, fundsRiskPending: 1,

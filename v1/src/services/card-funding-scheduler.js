@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { eligibleInventoryCardSql } from './card-inventory-eligibility.js';
+import { fundableInventoryCardSql } from './card-inventory-eligibility.js';
 import { resolveCurrentCardProviderAccount } from './provider-route-service.js';
 
 export function createCardFundingScheduler({ pool, fundingRepository }) {
@@ -33,7 +33,7 @@ export function createCardFundingScheduler({ pool, fundingRepository }) {
       const [cards] = await connection.query(
         `SELECT c.id, c.current_balance
          FROM cards c
-         WHERE ${eligibleInventoryCardSql('c', '0')}
+         WHERE ${fundableInventoryCardSql('c')}
            AND c.provider_account_id = ?
            AND c.current_balance < ?
            AND NOT EXISTS (

@@ -574,7 +574,7 @@ test('MySQL enforces one CDK per order and records transitions atomically', {
   }
 });
 
-test('inventory assignment atomically gives one ready card to only one order', {
+test('inventory assignment accepts a supported non-default card segment and gives it to only one order', {
   skip: !databaseUrl && 'TEST_DATABASE_URL 未配置；完整 MySQL 套件在服务器隔离数据库运行'
 }, async () => {
   const pool = mysql.createPool({ uri: databaseUrl, connectionLimit: 4, timezone: 'Z' });
@@ -586,7 +586,7 @@ test('inventory assignment atomically gives one ready card to only one order', {
      (id, order_id, inventory_status, provider_card_id, card_type_id, last4, status,
       funded_amount, current_balance, currency, refund_status, card_credentials_ciphertext,
       provider_account_id, external_card_id, intake_status, sync_tier, last_transaction_synced_at)
-     VALUES (?, NULL, 'AVAILABLE', 'stock-provider-1', '7', '4242', 'active',
+     VALUES (?, NULL, 'AVAILABLE', 'stock-provider-1', '17', '4242', 'active',
        '16.000000', '16.000000', 'USD', 'MONITORING', ?, ?,
        'stock-provider-1', 'ACCEPTED', 'AVAILABLE', CURRENT_TIMESTAMP(3))`,
     [stockCardId, encryptSecret(JSON.stringify({
@@ -617,7 +617,11 @@ test('inventory assignment atomically gives one ready card to only one order', {
     );
     assert.deepEqual(tasks.map((row) => row.task_type), ['PREPARE_RECHARGE', 'SUBMIT_RECHARGE']);
   } finally {
-    await pool.query(`DELETE FROM operator_alerts WHERE dedupe_key = 'card-stock-low:7'`);
+    await pool.query(`DELETE FROM operator_alerts WHERE dedupe_key IN (?, ?, ?)`, [
+      `card-stock-low:${legacyCardProviderAccountId}:plus`,
+      `order-waiting-card:${first.orderId}`,
+      `order-waiting-card:${second.orderId}`
+    ]);
     await removeOrder(pool, first);
     await removeOrder(pool, second);
     await pool.query('DELETE FROM cards WHERE id = ?', [stockCardId]);
@@ -687,7 +691,7 @@ test('card funding ledger fences duplicate balance writes and preserves unknown 
        (id, order_id, inventory_status, provider_card_id, card_type_id, last4, status,
         funded_amount, current_balance, currency, refund_status, card_credentials_ciphertext,
         provider_account_id, external_card_id, intake_status, sync_tier, last_transaction_synced_at)
-       VALUES (?, NULL, 'AVAILABLE', ?, '7', '4242', 'active', '16.000000', '4.000000',
+       VALUES (?, NULL, 'DEPLETED', ?, '7', '4242', 'active', '16.000000', '4.000000',
         'USD', 'MONITORING', ?, ?, ?, 'ACCEPTED', 'AVAILABLE', CURRENT_TIMESTAMP(3))`,
       [cardId, providerCardId, encryptSecret(JSON.stringify({ cardNumber: '4242424242424242',
         expMonth: 12, expYear: 2032, cvv: '123' }), integrationSessionKey),
@@ -822,7 +826,7 @@ test('card funding scheduler creates one prepared attempt for a fresh low-balanc
        (id, order_id, inventory_status, provider_card_id, card_type_id, last4, status,
         funded_amount, current_balance, currency, refund_status, card_credentials_ciphertext,
         provider_account_id, external_card_id, intake_status, sync_tier, last_transaction_synced_at)
-       VALUES (?, NULL, 'AVAILABLE', ?, '7', '4242', 'active', '16.000000', '4.000000',
+       VALUES (?, NULL, 'DEPLETED', ?, '7', '4242', 'active', '16.000000', '4.000000',
         'USD', 'MONITORING', ?, ?, ?, 'ACCEPTED', 'AVAILABLE', CURRENT_TIMESTAMP(3))`,
       [cardId, providerCardId, encryptSecret(JSON.stringify({ cardNumber: '4242424242424242',
         expMonth: 12, expYear: 2032, cvv: '123' }), integrationSessionKey),

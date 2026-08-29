@@ -291,7 +291,13 @@ async function loadOverview() {
   ];
   const inventoryMetrics = [
     { label: 'Plus 可分配卡', value: overview.cardStock?.available ?? 0,
-      note: overview.cardStock?.low ? `已到低库存线：${overview.cardStock?.lowThreshold ?? 5}` : `低库存线：${overview.cardStock?.lowThreshold ?? 5}`, view: 'stock' }
+      note: overview.cardStock?.needsFunding
+        ? `已有 ${overview.cardStock.needsFunding} 张卡，补充余额后可用`
+        : overview.cardStock?.low
+          ? `自动补卡已开启，已到库存线：${overview.cardStock?.lowThreshold ?? 5}`
+          : overview.cardStock?.autoReplenishmentEnabled
+            ? `自动补卡库存线：${overview.cardStock?.lowThreshold ?? 5}`
+            : '人工管理库存，不发送低库存提醒', view: 'stock' }
   ];
   const healthMetrics = [
     { label: '订单 Worker',

@@ -3,7 +3,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { eligibleInventoryCardSql } from '../src/services/card-inventory-eligibility.js';
+import {
+  eligibleInventoryCardSql,
+  fundableInventoryCardSql
+} from '../src/services/card-inventory-eligibility.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
@@ -21,6 +24,16 @@ test('one inventory predicate excludes assigned, consumed, disputed and historic
   assert.match(sql, /card_operational_overrides/);
   assert.match(sql, /allocation_policy = 'RETIRED'/);
   assert.match(sql, /PRODUCT_ONLY/);
+});
+
+test('fundable predicate includes low-balance prepared cards but keeps money-safety exclusions', () => {
+  const sql = fundableInventoryCardSql('c');
+  assert.match(sql, /inventory_status IN \('AVAILABLE','DEPLETED','PROVISIONING'\)/);
+  assert.match(sql, /card_credentials_ciphertext IS NOT NULL/);
+  assert.match(sql, /last_transaction_synced_at IS NOT NULL/);
+  assert.match(sql, /card_assignment_history/);
+  assert.match(sql, /transaction_type\) = 'PURCHASE'/);
+  assert.match(sql, /card_operational_overrides/);
 });
 
 test('inventory predicate supports product-specific operational overrides without hard-coding card tails', () => {

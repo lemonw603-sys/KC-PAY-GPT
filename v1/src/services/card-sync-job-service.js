@@ -157,6 +157,9 @@ export async function claimCardSyncJob(pool, { workerId, leaseSeconds = 120 }) {
       `SELECT j.id, j.card_id, j.attempts, j.max_attempts,
               c.provider_card_id, c.provider_account_id, c.card_type_id,
               c.funded_amount, c.order_id, c.sync_tier,
+              (SELECT setting_value FROM app_settings
+                WHERE setting_key = 'default_minimum_required_card_balance' LIMIT 1)
+                AS minimum_required_card_balance,
               o.status AS order_status
        FROM card_sync_jobs j INNER JOIN cards c ON c.id = j.card_id
        LEFT JOIN orders o ON o.id = c.order_id

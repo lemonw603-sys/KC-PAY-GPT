@@ -4,7 +4,10 @@ import { decryptSecret } from '../security/secret-box.js';
 import { validateChatGptSession } from '../domain/session-validation.js';
 import { reconcileOrderEvidence } from '../domain/order-reconciliation.js';
 import { createCdkLookup } from '../security/cdk-code.js';
-import { eligibleInventoryCardSql } from './card-inventory-eligibility.js';
+import {
+  eligibleInventoryCardSql,
+  fundableInventoryCardSql
+} from './card-inventory-eligibility.js';
 
 const ORDER_STATUSES = new Set([
   'CREATED',
@@ -464,6 +467,9 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
           SUM(order_id IS NOT NULL OR inventory_status = 'ASSIGNED') AS assigned,
           SUM(order_id IS NULL AND inventory_status = 'DEPLETED') AS depleted,
           SUM(order_id IS NULL AND inventory_status = 'HELD_FOR_REVIEW') AS held,
+          SUM(${fundableInventoryCardSql('cards')}
+            AND current_balance < COALESCE((SELECT CAST(setting_value AS DECIMAL(18,6))
+              FROM app_settings WHERE setting_key = 'default_minimum_required_card_balance' LIMIT 1), 999999999)) AS needs_funding,
           (SELECT synced_at FROM card_provider_snapshots WHERE provider = 'hnskj' LIMIT 1) AS provider_synced_at,
           (SELECT JSON_UNQUOTE(JSON_EXTRACT(payload_json, '$.accountBalance'))
              FROM card_provider_snapshots WHERE provider = 'hnskj' LIMIT 1) AS provider_account_balance,
@@ -483,8 +489,8 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
           (SELECT JSON_UNQUOTE(JSON_EXTRACT(payload_json, '$.purchaseEnabled'))
              FROM card_provider_snapshots WHERE provider = 'hnskj' LIMIT 1) AS provider_purchase_enabled
         FROM cards`)
-      ,pool.query(`SELECT setting_value FROM app_settings
-        WHERE setting_key = 'card_stock_low_threshold' LIMIT 1`)
+      ,pool.query(`SELECT setting_key, setting_value FROM app_settings
+        WHERE setting_key IN ('card_stock_low_threshold','card_auto_replenishment_enabled')`)
       ,pool.query(`SELECT
           (SELECT COUNT(*) FROM (
             SELECT d.provider_account_id, d.external_card_id, d.intake_status,
@@ -562,15 +568,27 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
           count(backlogRows[0]?.replenishment_daily_limit || 5)
           - count(backlogRows[0]?.replenishment_used_today))
       },
-      cardStock: {
-        available: count(stockRows[0]?.available),
-        provisioning: count(stockRows[0]?.provisioning),
+      cardStock: (() => {
+        const lowThreshold = count(stockSettingRows.find(
+          (row) => row.setting_key === 'card_stock_low_threshold'
+        )?.setting_value || 5);
+        const autoReplenishmentEnabled = stockSettingRows.some(
+          (row) => row.setting_key === 'card_auto_replenishment_enabled' && row.setting_value === 'true'
+        );
+        const provisioning = count(stockRows[0]?.provisioning);
+        const depleted = count(stockRows[0]?.depleted);
+        const available = count(stockRows[0]?.available);
+        return {
+        available,
+        provisioning,
         assigned: count(stockRows[0]?.assigned),
-        depleted: count(stockRows[0]?.depleted),
+        depleted,
         held: count(stockRows[0]?.held),
-        lowThreshold: count(stockSettingRows[0]?.setting_value || 5),
-        low: count(stockRows[0]?.available) <= count(stockSettingRows[0]?.setting_value || 5)
-      },
+        needsFunding: count(stockRows[0]?.needs_funding),
+        lowThreshold,
+        autoReplenishmentEnabled,
+        low: autoReplenishmentEnabled && available <= lowThreshold
+      }; })(),
       providerHealth: {
         provider: 'hnskj',
         routeLabel: stockRows[0]?.provider_route_code || '当前 Plus 卡台路线未配置',

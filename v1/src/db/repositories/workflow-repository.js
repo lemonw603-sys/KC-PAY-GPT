@@ -3,7 +3,10 @@ import { transitionOrder } from './order-repository.js';
 import { OrderStatus } from '../../domain/order-status.js';
 import { decryptSecret, encryptSecret } from '../../security/secret-box.js';
 import { persistCardTransactions } from './card-transaction-repository.js';
-import { eligibleInventoryCardSql } from '../../services/card-inventory-eligibility.js';
+import {
+  eligibleInventoryCardSql,
+  fundableInventoryCardSql
+} from '../../services/card-inventory-eligibility.js';
 import { transitionCardConsumptionInTransaction } from '../../services/card-consumption-ledger-service.js';
 
 function parseSession(ciphertext, key) {
@@ -171,23 +174,30 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
            FROM cards
            WHERE ${eligibleInventoryCardSql('cards', '?')}
              AND provider_account_id = ?
-             AND BINARY card_type_id = BINARY ?
            ORDER BY current_balance ASC, created_at ASC
            LIMIT 1 FOR UPDATE SKIP LOCKED`,
-          [String(order.minimum_required_card_balance), order.card_provider_account_id,
-            String(order.card_type_id)]
+          [String(order.minimum_required_card_balance), order.card_provider_account_id]
         );
-        const alertKey = `card-stock-low:${order.card_provider_account_id}:${order.card_type_id}`;
+        const alertKey = `order-waiting-card:${orderId}`;
         if (cards.length === 0) {
+          const [[fundable]] = await connection.query(
+            `SELECT COUNT(*) AS count FROM cards
+             WHERE ${fundableInventoryCardSql('cards')}
+               AND provider_account_id = ?`,
+            [order.card_provider_account_id]
+          );
+          const waitingMessage = Number(fundable?.count || 0) > 0
+            ? '现有卡需要补充余额，订单正在等待处理。'
+            : '当前没有可用于 Plus 的卡，订单正在等待处理。';
           await connection.query(
             `INSERT INTO operator_alerts
              (id, alert_type, dedupe_key, severity, title, message, status)
-             VALUES (UUID(), 'CARD_STOCK_LOW', ?, 'critical', '可用卡库存不足', ?, 'OPEN')
+             VALUES (UUID(), 'ORDER_WAITING_FOR_CARD', ?, 'critical', '订单正在等待卡片', ?, 'OPEN')
              ON DUPLICATE KEY UPDATE severity = VALUES(severity), title = VALUES(title),
                message = VALUES(message),
                status = IF(status = 'RESOLVED', 'OPEN', status),
                acknowledged_at = IF(status = 'RESOLVED', NULL, acknowledged_at)`,
-            [alertKey, `卡段 ${order.card_type_id} 没有满足余额要求的可用库存卡，订单正在安全等待。`]
+            [alertKey, waitingMessage]
           );
           if (order.status === OrderStatus.CREATED) {
             const [waiting] = await connection.query(
@@ -242,6 +252,11 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
           }
         });
         await connection.query(
+          `UPDATE operator_alerts SET status = 'RESOLVED', acknowledged_at = CURRENT_TIMESTAMP(3)
+           WHERE dedupe_key = ? AND status = 'OPEN'`,
+          [alertKey]
+        );
+        await connection.query(
           `INSERT INTO tasks (order_id, task_type, status, dedupe_key, max_attempts)
            VALUES (?, 'PREPARE_RECHARGE', 'PENDING', ?, 5),
                   (?, 'SUBMIT_RECHARGE', 'PENDING', ?, 5)
@@ -255,10 +270,8 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
         const [stockRows] = await connection.query(
           `SELECT COUNT(*) AS count FROM cards
            WHERE ${eligibleInventoryCardSql('cards', '?')}
-             AND provider_account_id = ?
-             AND BINARY card_type_id = BINARY ?`,
-          [String(order.minimum_required_card_balance), order.card_provider_account_id,
-            String(order.card_type_id)]
+             AND provider_account_id = ?`,
+          [String(order.minimum_required_card_balance), order.card_provider_account_id]
         );
         const threshold = Math.max(0, Number(thresholdRows.find((row) => row.setting_key === 'card_stock_low_threshold')?.setting_value || 5));
         const autoReplenishmentEnabled = thresholdRows.some((row) => row.setting_key === 'card_auto_replenishment_enabled' && row.setting_value === 'true');
@@ -272,7 +285,8 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
                message = VALUES(message),
                status = IF(status = 'RESOLVED', 'OPEN', status),
                acknowledged_at = IF(status = 'RESOLVED', NULL, acknowledged_at)`,
-            [alertKey, `卡段 ${order.card_type_id} 剩余 ${remaining} 张可用库存卡，阈值为 ${threshold}。`]
+            [`card-stock-low:${order.card_provider_account_id}:plus`,
+              `Plus 可直接分配卡剩余 ${remaining} 张，阈值为 ${threshold}。`]
           );
         }
         return {

@@ -60,7 +60,8 @@ try {
       const mapped = mapStockCard(detail, {
         providerCardId: job.provider_card_id,
         cardTypeId: job.card_type_id,
-        fundedAmount: job.funded_amount
+        fundedAmount: job.funded_amount,
+        minimumRequiredBalance: job.minimum_required_card_balance
       });
       await stock.register(mapped);
       const transactions = await readAllCardTransactions({
