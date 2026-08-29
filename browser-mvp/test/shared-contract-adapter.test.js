@@ -15,7 +15,7 @@ function projection(overrides = {}) {
     order: { id: 'ord-0001', status: 'RECHARGE_PROCESSING', fulfillmentRouteId: 'route-0001' },
     attempt: {
       id: 'att-0001', status: 'PREPARED', fundsRiskState: 'ACTIVE',
-      executorKind: 'BROWSER', fulfillmentRouteId: 'route-0001',
+      executorKind: 'BROWSER', executorProfileId: 'prof-0001', fulfillmentRouteId: 'route-0001',
     },
     profile: { id: 'prof-0001' },
     card: {
@@ -85,6 +85,12 @@ test('shared card consumption reservation must remain RESERVED and bound to the 
   assert.throws(() => projectSharedBrowserJob(projection({
     cardConsumption: { ...projection().cardConsumption, attemptId: 'att-other' },
   })), ContractError);
+});
+
+test('attempt executor profile must remain bound to the Browser run profile', () => {
+  assert.throws(() => projectSharedBrowserJob(projection({
+    attempt: { ...projection().attempt, executorProfileId: 'prof-other' },
+  })), /executorProfileId must match/);
 });
 
 test('browser_run.id is the execution/audit reference and unsafe payment states are rejected', () => {

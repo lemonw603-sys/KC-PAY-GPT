@@ -45,6 +45,8 @@ function assertFormalFundsContext(projection) {
   const attemptStatus = projection.attempt?.status;
   const fundsRiskState = projection.attempt?.fundsRiskState;
   const executorKind = projection.attempt?.executorKind;
+  const attemptProfileId = requireRef(projection.attempt?.executorProfileId, 'attempt.executorProfileId');
+  const profileId = requireRef(projection.profile?.id, 'profile.id');
   if (!BROWSER_ELIGIBLE_ORDER_STATUSES.includes(orderStatus)) {
     throw new ContractError(`order.status ${orderStatus} is not executable by Browser`);
   }
@@ -56,6 +58,9 @@ function assertFormalFundsContext(projection) {
   }
   if (executorKind !== 'BROWSER') {
     throw new ContractError('attempt.executorKind must be BROWSER');
+  }
+  if (attemptProfileId !== profileId) {
+    throw new ContractError('attempt.executorProfileId must match profile.id');
   }
   return { orderStatus, attemptStatus, fundsRiskState, executorKind };
 }

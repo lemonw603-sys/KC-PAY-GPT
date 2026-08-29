@@ -75,3 +75,38 @@ node --test v1/test/browser-dispatch-repository.test.js browser-mvp/test/shared-
 ```
 
 结果：**17/17 passed**。
+## 2026-08-29 主线同步后的最新复验
+
+- `codex/browser` 已同步到最新主线 `a40ccb9`；当前无 Browser 代码差异，之前 Browser 修复已在主线。
+- 非付款联调命令：
+  `node --test browser-mvp/test/shared-runtime-integration.test.js browser-mvp/test/upstream-simulation.test.js browser-mvp/test/local-worker-chrome-fixture.test.js`
+  → **16/16 passed**。
+- 隔离 DB restart 命令（临时 MySQL 8.4、migration 001–040、24 jobs、五个写开关 false）：
+  `TEST_DATABASE_URL=<isolated> MYSQL_CONTAINER=<container> BACKLOG_JOBS=24 node v1/test-support/browser-queue-backlog-db-restart.js`
+  → prepared/recovery exit=0，pendingBefore=24，claimed=24，duplicate=0，heartbeatOk=24，staleLeaseRejected=true，paymentSubmitOperations=0，residual=0，errors=[]。
+- 未连接生产、未启动生产 Browser Worker、未读取真实 Session/PAN/CVC、未填卡、未付款、未调用卡台写接口；本轮未合并或部署。
+
+## 2026-08-29 主线生产只读同步后的 Browser 复验
+
+- `codex/browser` 已同步到最新主线 `43fbeb7`；Browser adapter、dispatch、lease 和消费预留代码均无额外分支差异。
+- 定向非付款联调与故障注入命令：
+  `node --test browser-mvp/test/shared-runtime-integration.test.js browser-mvp/test/upstream-simulation.test.js browser-mvp/test/local-worker-chrome-fixture.test.js v1/test/browser-dispatch-repository.test.js`
+  → **24/24 passed**。
+- 覆盖本地 Google Chrome 观察、dispatch/run、profile-scoped claim、页面/route/card 漂移、租约丢失、runtime 崩溃、重复投递恢复、safe-abort；未产生付款提交。
+- 之前已在同一套已合入主线的 restart harness 上完成临时 MySQL 8.4 + migration 001–040 + 24 jobs 的 `docker restart`：24/24 claim、0 duplicate、旧 lease/token 拒绝、PAYMENT_SUBMIT=0、residual=0。
+- 本轮未连接生产、未启动 Browser Worker、未读取真实 Session/PAN/CVC、未填卡、未付款、未调用卡台写接口、未合并或部署。
+
+## 2026-08-29 Browser adapter 最新主线复核
+
+- 当前 `codex/browser` 已同步主线 `43fbeb7`；adapter 接线与共享上游合同无未提交代码差异。
+- 定向非付款联调（16 个 shared/runtime/upstream/Chrome 测试）与 dispatch repository 合同测试合计 **24/24 passed**。
+- 已确认 adapter 只接受 `RECHARGE_PROCESSING` + `PREPARED/ACTIVE` + Browser route，并要求 migration 039 消费预留 `RESERVED` 且匹配 attempt/order/card；`RECONCILIATION_REQUIRED`、旧 lease/token、页面/route/card 漂移均 fail-closed。
+- 本轮未新增运行时代码；未启动生产、未连接生产数据库、未读取真实 Session/PAN/CVC、未填卡、未付款、未调用 Provider/卡台写接口。
+
+## 2026-08-29 attempt/run executor profile 绑定补强
+
+- 发现并修复 adapter 接线缺口：原投影只读取 `browser_runs.executor_profile_id`，未核对 `recharge_attempts.executor_profile_id`。现 adapter 显式读取 attempt profile，并要求与当前 run/profile 完全一致；漂移时 fail-closed。
+- 权威 payment snapshot 同样再次核对 run/attempt profile，并把 `executorProfileId` 纳入 snapshot hash；错误码为 `EXECUTOR_PROFILE_CONFLICT`。
+- 定向测试：`npm --prefix browser-mvp run check` 通过；adapter/runtime/repository 相关 **46/46 passed**。
+- 隔离非付款端到端：五个写开关均 false 的 `npm --prefix browser-mvp run dry-run:shared`，临时 MySQL + migration 001–040 + Chrome 本地观察 **1/1 passed**，安全退出且无付款提交。
+- 未连接生产、未启动生产 Browser Worker、未读取真实 Session/PAN/CVC、未填卡、未付款、未调用 Provider/卡台写接口。

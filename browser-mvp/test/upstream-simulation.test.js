@@ -34,7 +34,8 @@ function projection(overrides = {}) {
     },
     attempt: {
       id: 'att-upstream-0001', status: 'PREPARED', fundsRiskState: 'ACTIVE',
-      executorKind: 'BROWSER', fulfillmentRouteId: 'route:browser:0001',
+      executorKind: 'BROWSER', executorProfileId: 'prof-upstream-0001',
+      fulfillmentRouteId: 'route:browser:0001',
     },
     profile: { id: 'prof-upstream-0001' },
     card: {

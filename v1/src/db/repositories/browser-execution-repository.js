@@ -76,6 +76,9 @@ function cardCredentialsDigest(value) {
 }
 
 function authoritativePaymentSnapshot(row, now) {
+  if (!row.executor_profile_id || row.executor_profile_id !== row.attempt_profile_id) {
+    throw new BrowserExecutionError('run and attempt executor profiles do not match', 'EXECUTOR_PROFILE_CONFLICT');
+  }
   if (row.executor_kind !== 'BROWSER' || row.route_executor_kind !== 'BROWSER') {
     throw new BrowserExecutionError('attempt route is not executable by Browser', 'EXECUTOR_KIND_MISMATCH');
   }
@@ -120,6 +123,7 @@ function authoritativePaymentSnapshot(row, now) {
     throw new BrowserExecutionError('card verification is stale', 'CARD_CHECK_STALE');
   }
   const facts = {
+    executorProfileId: row.executor_profile_id,
     attemptId: row.recharge_attempt_id,
     orderId: row.order_id,
     routeId: row.route_id,

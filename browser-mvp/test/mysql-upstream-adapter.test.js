@@ -21,6 +21,7 @@ function row(overrides = {}) {
     attempt_status: 'PREPARED',
     funds_risk_state: 'ACTIVE',
     attempt_executor_kind: 'BROWSER',
+    attempt_profile_id: 'prof-mysql-0001',
     attempt_fulfillment_route_id: 'route-mysql-0001',
     card_id: 'card-mysql-0001',
     card_order_id: 'ord-mysql-0001',
@@ -83,6 +84,7 @@ test('formal state, route and Provider drift fail closed without reinterpretatio
     { payment_state: 'PAYMENT_SUBMITTING' },
     { card_consumption_status: 'RELEASED' },
     { card_consumption_attempt_id: 'att-mysql-other' },
+    { attempt_profile_id: 'prof-mysql-other' },
   ]) {
     const adapter = createMysqlUpstreamProjectionAdapter({ db: { query: async () => [[row(changed)], []] } });
     await assert.rejects(() => adapter.load({ runId: 'run-mysql-0001' }), ContractError);

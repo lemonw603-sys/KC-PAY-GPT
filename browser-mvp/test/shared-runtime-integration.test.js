@@ -21,7 +21,8 @@ function formalProjection(run, observation = undefined) {
     order: { id: 'order-runtime-1', status: 'RECHARGE_PROCESSING', fulfillmentRouteId: 'route-runtime-1' },
     attempt: {
       id: 'attempt-runtime-1', status: 'PREPARED', fundsRiskState: 'ACTIVE',
-      executorKind: 'BROWSER', fulfillmentRouteId: 'route-runtime-1',
+      executorKind: 'BROWSER', executorProfileId: 'profile-runtime-1',
+      fulfillmentRouteId: 'route-runtime-1',
     },
     profile: { id: 'profile-runtime-1' },
     run: {

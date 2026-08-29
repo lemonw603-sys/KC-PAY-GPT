@@ -36,7 +36,7 @@ test('controlled runtime options carry only an opaque sessionRef, never session 
     order: { id: 'ord-session', status: 'RECHARGE_PROCESSING', fulfillmentRouteId: 'route-session' },
     attempt: {
       id: 'att-session', status: 'PREPARED', fundsRiskState: 'ACTIVE',
-      executorKind: 'BROWSER', fulfillmentRouteId: 'route-session',
+      executorKind: 'BROWSER', executorProfileId: 'prof-session', fulfillmentRouteId: 'route-session',
     },
     profile: { id: 'prof-session' },
     card: { id: 'card-session', orderId: 'ord-session', providerAccountId: 'provider-session' },

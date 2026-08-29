@@ -11,6 +11,7 @@ function paymentSnapshotHash(row) {
     return ((BigInt(whole) * 1_000_000n) + BigInt(fraction.padEnd(6, '0'))).toString();
   };
   const facts = {
+    executorProfileId: row.executor_profile_id,
     attemptId: row.recharge_attempt_id,
     orderId: row.order_id,
     routeId: row.route_id,
@@ -240,6 +241,7 @@ test('payment permit derives its snapshot from locked card and route facts', asy
 
 for (const [name, overrides, code] of [
   ['missing card consumption reservation', { card_consumption_status: 'RELEASED' }, 'CARD_CONSUMPTION_NOT_RESERVED'],
+  ['executor profile drift', { attempt_profile_id: 'profile-other' }, 'EXECUTOR_PROFILE_CONFLICT'],
   ['insufficient balance', { card_current_balance: '15.999999' }, 'CARD_BALANCE_INSUFFICIENT'],
   ['inactive card', { card_status: 'frozen' }, 'CARD_NOT_READY'],
   ['missing card credentials', { card_credentials_ciphertext: null }, 'CARD_NOT_READY'],
