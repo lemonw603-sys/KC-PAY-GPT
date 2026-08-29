@@ -72,6 +72,7 @@
 - 再次核对部署模板与只读 smoke：`BROWSER_PAYMENT_EXECUTOR_ENABLED=false`、`BROWSER_PAYMENT_EXECUTOR_MODE=MOCK` 均保持关闭/模拟配置。
 - 状态更正：当前仅达到“代码/隔离测试层面的付款前就绪”，尚未达到“生产真实 Browser 付款就绪”。Browser worktree 的旧报告仍列出 production Session/card adapter、真实非付款观察和生产部署演练缺口，必须完成主线对齐与合入审查后才能改变结论。
 - Browser 窗口同步复查已确认：其 `7abbe51` 不能直接合入，会回退主线后续 LIVE adapter/门禁/文档；详见 `docs/2026-08-29_browser-window-sync-review.md`。
+- Browser 窗口最新确认：未新增代码；生产非付款仍缺生产形态只读观察、Worker 部署/回滚演练和部署后审计闭环。已安排先备份差异，再可逆对齐到 `main@a6ba908`。
 - 已建立“余额不足卡付款前停止测试”运行手册：`docs/2026-08-29_browser-pre-submit-session-test-runbook.md`；使用用户指定测试 Session，停止于付款按钮前。
 
 - 库存后台收敛已部署生产（2026-08-28），并已通过发布后公网健康、服务状态、备份完整性和未认证路由验收；后台浏览器交叉验收仍待使用管理员会话执行。
