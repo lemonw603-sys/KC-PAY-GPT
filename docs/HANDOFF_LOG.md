@@ -545,8 +545,16 @@
 - 最终订单 `RECHARGE_SUCCESS`，平台金额 `982.140000 PHP`，Plus 已开通且自动续费已取消；attempt 为 `SUCCESS/SETTLED`。
 - 完成后 Provider 账户写权限恢复为 false，Permit 撤销；readiness `ok=true`，活动任务、UNKNOWN 调用、活动资金风险和开放对账案件均为 0。
 - 卡台读到 `PURCHASE 15.76 USD`；05:59 UTC 再同步后余额由 `$16.00` 降至 `$0.24`，扣减金额一致。交易状态仍为 `PROCESSING`，后续只读补证，不重付。
-- 现场发现 15 分钟分配新鲜度与 60 分钟定时同步错配；主线已实现仅在真实订单等待时按需同步一张过期候选卡的低 API 调用修复，测试 466 total / 429 pass / 0 fail / 37 skipped，尚未部署。
+- 现场发现 15 分钟分配新鲜度与 60 分钟定时同步错配；主线已实现仅在真实订单等待时按需同步一张过期候选卡的低 API 调用修复，测试 466 total / 429 pass / 0 fail / 37 skipped；随后已按下述安全分支部署。
 - 详细证据：`docs/2026-08-29_second_api_real_order_verification.md`。
+
+### 按需同步缺陷安全部署
+
+- 用户明确确认部署。为避免把主线中延期的“开始营业”和 Browser 代码带入生产，从当前生产基线 `ef5afd5` 制作仅含三处运行时/测试变更的安全提交 `bba4105`。
+- 安全分支回归：464 total / 427 pass / 0 fail / 37 environment-skipped。
+- 部署前备份：`/var/backups/pojia/pojia-20260829T060414Z.sql.gz.enc`，加密备份完整性通过。
+- 新 release：`/opt/pojia/releases/20260829-order-demand-sync-bba4105`；回滚点：`/opt/pojia/releases/20260829-card-refresh-ef5afd5`。
+- 部署后 Web、Worker、卡片只读同步/目录同步、Bark 均 active；readiness `ok=true`，活动任务/未知调用/资金风险/对账案件均 0；Provider 三个写开关均 false；ops/plus 四个 live/ready 均 HTTP 200。
 
 ## 2026-08-29｜Browser 首次灰度前只读就绪补强已合入（未部署）
 

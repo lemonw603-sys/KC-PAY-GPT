@@ -4,8 +4,8 @@
 
 ## 代码与发布
 
-- 当前生产代码提交：`ef5afd5`（基于 `58dfe0d` 的库存刷新文案安全发布分支，不含延期的“开始营业”入口）。
-- 生产 release：`/opt/pojia/releases/20260829-card-refresh-ef5afd5`，为真实独立目录；上一版本回滚点：`/opt/pojia/releases/20260829-card-segment-58dfe0d`。
+- 当前生产代码提交：`bba4105`（从生产基线 `ef5afd5` 仅带入按订单需求同步过期候选卡的修复，不含延期的“开始营业”入口或 Browser 新代码）。
+- 生产 release：`/opt/pojia/releases/20260829-order-demand-sync-bba4105`，为真实独立目录；上一版本回滚点：`/opt/pojia/releases/20260829-card-refresh-ef5afd5`。
 - 可靠回滚点：`/opt/pojia/releases/20260828-fea0ffd-rollback`。
 - 服务：Web、API Worker、卡片读同步、卡目录同步、Bark、备份均正常；Browser Worker 保持 `inactive/disabled`。
 - 付费补卡 runner 已确认为 `inactive/disabled`，避免重启后每 10 秒唤醒并带入卡台写权限。
@@ -56,7 +56,7 @@
 - Browser 独立线提交 `1d02c78` 已由统筹审查并以主线提交 `d6f9bf3` 安全合入：attempt 与 run 的 executor profile 现在必须一致，漂移时以 `EXECUTOR_PROFILE_CONFLICT` fail-closed；该 profile 同时进入权威付款 snapshot。合入后语法检查与相关 adapter/runtime/repository 测试 **46/46** 通过；未部署 Browser Worker、未连接生产、未执行付款。
 - Browser 首次灰度前只读就绪补强已由统筹审查并以 `1516c67` 合入：readiness 强制 migration 039/040，CLI 同样强制 payment executor=false/MOCK，并补齐 Browser 专属停止/回滚入口。主线复验 90 tests / 86 pass / 0 fail / 4 skipped；仍未部署生产 Browser Worker。
 - 第二单 API 灰度已完成；临时充值写权限已关闭，单笔 Permit 已撤销。卡台已读到 `PURCHASE 15.76 USD`，05:59 UTC 余额由 `$16.00` 降为 `$0.24`，资金扣减与消费金额一致；交易状态仍为 `PROCESSING`，最终状态待后续只读补证，绝不重付。
-- 本单暴露出“分配要求 15 分钟新鲜、定时同步默认 60 分钟”的窗口错配。主线已实现按订单需求只同步 1 张过期候选卡的低调用量修复，回归 466/429/0/37；尚未部署。
+- 本单暴露出“分配要求 15 分钟新鲜、定时同步默认 60 分钟”的窗口错配。按订单需求只同步 1 张过期候选卡的低调用量修复已通过安全分支 `bba4105` 部署；生产健康和 readiness 正常。
 - 2026-08-29 13:21 CST 公网复核：ops/plus 的 live/ready 四个端点均 HTTP 200。
 - Browser profile 绑定合入后的 v1 全量回归：465 total / 428 pass / 0 fail / 37 environment-skipped。
 - 卡余额充值目前仅有后台记录/核对视图，指定卡发起充值的管理入口暂缓开发；生产 Provider 写入继续关闭。
