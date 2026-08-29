@@ -194,6 +194,15 @@ export function normalizeHnskjTransaction(record) {
     : usdAmount != null
       ? valueAt(source, [['usdCurrency']])
       : valueAt(source, [['originalCurrency'], ['original_currency']]);
+  // The provider's webhook-cache projection also returns local monitoring
+  // records (for example chargeback/chargeback_fee) without an explicit
+  // currency.  Those records are denominated in the account's USD ledger;
+  // rejecting the entire page here hid the real PURCHASE row that followed
+  // them and made every later reconciliation look like a missing payment.
+  const normalizedCurrency = currency ?? (
+    source.platform === true && String(source.source || '').toLowerCase() === 'local'
+      ? 'USD' : null
+  );
   return Object.fromEntries(Object.entries({
     id: optionalString(valueAt(source, [['id'], ['transactionId'], ['transaction_id']])),
     type: optionalString(valueAt(source, [['type'], ['transactionType'], ['transaction_type']])),
@@ -201,9 +210,11 @@ export function normalizeHnskjTransaction(record) {
     typeText: optionalString(valueAt(source, [['typeText'], ['type_text']])),
     statusText: optionalString(valueAt(source, [['statusText'], ['status_text']])),
     amount,
-    currency: optionalString(currency),
+    currency: optionalString(normalizedCurrency),
     fee: valueAt(source, [['fee'], ['feeAmount'], ['fee_amount']]) ?? undefined,
-    tradeTime: optionalString(valueAt(source, [['tradeTime'], ['txnTime'], ['createTime'], ['createdAt']])),
+    tradeTime: optionalString(valueAt(source, [
+      ['tradeTime'], ['txnTime'], ['transaction_time'], ['createTime'], ['createdAt']
+    ])),
     relatedTxnId: optionalString(valueAt(source, [['relatedTxnId'], ['related_txn_id']])),
     settlementStatus: optionalString(valueAt(source, [['settlementStatus'], ['settlement_status']])),
     originalAmount: originalAmount ?? undefined,

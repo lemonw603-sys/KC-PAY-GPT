@@ -120,6 +120,21 @@ export function classifyStockCardOperationalState(card) {
   return { category: 'BLOCKED', reason: '当前不满足 Plus 安全分配条件' };
 }
 
+export function summarizeStockCardOperationalState(cards = []) {
+  const summary = { ready: 0, inUse: 0, retired: 0, blocked: 0 };
+  for (const card of cards) {
+    // Product-specific cards (for example the Claude-only card) are shown
+    // for traceability but are not Plus inventory and must not inflate the
+    // Plus "暂不可用" count.
+    if (card.effectiveInventoryStatus === 'PRODUCT_ONLY') continue;
+    if (card.category === 'READY') summary.ready += 1;
+    else if (card.category === 'IN_USE') summary.inUse += 1;
+    else if (card.category === 'RETIRED') summary.retired += 1;
+    else summary.blocked += 1;
+  }
+  return summary;
+}
+
 export function createCardStockService({ pool, sessionEncryptionKey, panHmacKey = null,
   providerAccountId = LEGACY_HNSKJ_ACCOUNT_ID }) {
   async function recordStateEvent(connection, { cardId, previous, current, source = 'provider_sync' }) {
@@ -291,7 +306,7 @@ export function createCardStockService({ pool, sessionEncryptionKey, panHmacKey 
   }
 
   async function status() {
-    const [[thresholdRows], [rows], [operationalRows], [settings], [cards], [overrideRows], providerSnapshot, catalogSnapshot] = await Promise.all([
+    const [[thresholdRows], [rows], [settings], [cards], [overrideRows], providerSnapshot, catalogSnapshot] = await Promise.all([
       pool.query(
         `SELECT setting_key, setting_value FROM app_settings
          WHERE setting_key IN ('card_stock_low_threshold','card_auto_replenishment_enabled')`
@@ -305,19 +320,6 @@ export function createCardStockService({ pool, sessionEncryptionKey, panHmacKey 
                 SUM(order_id IS NULL AND inventory_status = 'DEPLETED') AS depleted,
                 SUM(order_id IS NULL AND inventory_status = 'HELD_FOR_REVIEW') AS held
          FROM cards GROUP BY card_type_id ORDER BY card_type_id`
-      ),
-      pool.query(
-        `SELECT COUNT(*) AS total,
-                SUM(${eligibleInventoryCardSql('c', `COALESCE((SELECT CAST(setting_value AS DECIMAL(18,6))
-                    FROM app_settings WHERE setting_key = 'default_minimum_required_card_balance' LIMIT 1), 999999999)`)}) AS ready,
-                SUM(CASE WHEN co.allocation_policy = 'RETIRED' THEN 1 ELSE 0 END) AS retired,
-                SUM(CASE WHEN COALESCE(co.allocation_policy, 'NORMAL') <> 'RETIRED'
-                      AND (c.order_id IS NOT NULL OR c.inventory_status = 'ASSIGNED')
-                    THEN 1 ELSE 0 END) AS in_use
-         FROM cards c
-         LEFT JOIN card_operational_overrides co
-           ON co.provider_account_id = c.provider_account_id
-          AND BINARY co.external_card_id = BINARY c.external_card_id`
       ),
       pool.query(`SELECT setting_key, setting_value FROM app_settings
         WHERE setting_key IN ('default_card_type_id','default_open_card_amount')`),
@@ -364,16 +366,6 @@ export function createCardStockService({ pool, sessionEncryptionKey, panHmacKey 
       ...(catalogSnapshot?.localMissingProviderIds || []),
       ...(catalogSnapshot?.statusConflictIds || [])
     ].map(String));
-    const operational = operationalRows[0] || {};
-    const operationalSummary = {
-      ready: Number(operational.ready || 0),
-      inUse: Number(operational.in_use || 0),
-      retired: Number(operational.retired || 0),
-      blocked: Math.max(0, Number(operational.total || 0)
-        - Number(operational.ready || 0)
-        - Number(operational.in_use || 0)
-        - Number(operational.retired || 0))
-    };
     const mappedCards = cards.map((row) => {
       const card = {
         providerAccountId: row.provider_account_id,
@@ -442,6 +434,8 @@ export function createCardStockService({ pool, sessionEncryptionKey, panHmacKey 
         reason: row.product_code ? `仅限 ${row.product_code}` : '运营已永久停用',
         externalOnly: true
       }));
+    const allCards = [...mappedCards, ...overrideCards];
+    const operationalSummary = summarizeStockCardOperationalState(allCards);
     return {
       threshold,
       autoReplenishmentEnabled,
@@ -487,7 +481,7 @@ export function createCardStockService({ pool, sessionEncryptionKey, panHmacKey 
         held: Number(row.held || 0),
         low: autoReplenishmentEnabled && Number(row.available || 0) <= threshold
       })),
-        cards: [...mappedCards, ...overrideCards]
+        cards: allCards
     };
   }
 

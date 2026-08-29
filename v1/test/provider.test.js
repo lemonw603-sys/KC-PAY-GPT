@@ -255,6 +255,33 @@ test('Hnskj normalizes the current aggregate transaction shape without weakening
   assert.equal('cardNo' in result.data.transactions[0], false);
 });
 
+test('Hnskj keeps mixed webhook-cache monitoring rows from hiding the real purchase', async () => {
+  const provider = new HnskjCardProvider({
+    baseUrl: 'https://card.example/api/open/v1',
+    apiKey: 'nhs_test_key',
+    fetchImpl: async () => response({ success: true, data: {
+      transactions: [{
+        id: 'mon:1477:1:3:1787823276:fee', type: 'chargeback_fee',
+        status: '已扣账户余额', amount: '0.40', platform: true, source: 'local',
+        transaction_time: '2026-08-27 17:34:36', merchant: '拒付扣款'
+      }, {
+        id: 'agg_tx_1', transactionType: 'PURCHASE', transactionStatus: 'SUCCESS',
+        amount: '15.93', currency: 'USD', originalAmount: '982.14',
+        originalCurrency: 'PHP', merchantName: 'OPENAI *CHATGPT SUBSCR'
+      }],
+      total: 2, complete: false, cached: true, source: 'webhook_cache'
+    } })
+  });
+  const result = await provider.transactions('1477', { page: 1, pageSize: 50 });
+  assert.equal(result.data.transactions.length, 2);
+  assert.deepEqual(result.data.transactions[0], {
+    id: 'mon:1477:1:3:1787823276:fee', type: 'chargeback_fee',
+    status: '已扣账户余额', amount: '0.40', currency: 'USD',
+    tradeTime: '2026-08-27 17:34:36', merchantName: '拒付扣款'
+  });
+  assert.equal(result.data.transactions[1].type, 'PURCHASE');
+});
+
 test('Hnskj transaction normalization still rejects missing canonical identity', () => {
   const normalized = normalizeHnskjTransaction({ amount: '16.00', currency: 'USD' });
   assert.equal(normalized.id, undefined);

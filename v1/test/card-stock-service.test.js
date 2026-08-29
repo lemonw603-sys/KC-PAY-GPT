@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   classifyStockCardOperationalState,
-  mapStockCard
+  mapStockCard,
+  summarizeStockCardOperationalState
 } from '../src/services/card-stock-service.js';
 
 test('maps a ready provider card into safe assignable stock', () => {
@@ -91,4 +92,15 @@ test('does not call a temporarily blocked card permanently unusable', () => {
   });
   assert.deepEqual(productOnly, { category: 'BLOCKED', reason: '仅限 claude' });
   assert.deepEqual(stale, { category: 'BLOCKED', reason: '等待只读同步' });
+});
+
+test('operational summary includes provider-only cards shown in the same list', () => {
+  assert.deepEqual(summarizeStockCardOperationalState([
+    { category: 'READY' },
+    { category: 'IN_USE' },
+    { category: 'BLOCKED' },
+    { category: 'BLOCKED', effectiveInventoryStatus: 'PRODUCT_ONLY', externalOnly: true },
+    { category: 'RETIRED' },
+    { category: 'RETIRED', externalOnly: true }
+  ]), { ready: 1, inUse: 1, blocked: 1, retired: 2 });
 });
