@@ -103,6 +103,7 @@ const elements = {
   detailTitle: document.querySelector('#detail-title'),
   detailContent: document.querySelector('#detail-content'),
   notice: document.querySelector('#page-notice')
+  ,startBusiness: document.querySelector('#start-business')
   ,alertsCard: document.querySelector('#alerts-card'), alertsList: document.querySelector('#alerts-list'),
   cdkForm: document.querySelector('#cdk-form'), cdkCount: document.querySelector('#cdk-count'),
   cdkResult: document.querySelector('#cdk-result'), generatedCdks: document.querySelector('#generated-cdks'),
@@ -1672,6 +1673,16 @@ elements.cardFundingNext?.addEventListener('click', () => {
   if (state.cardFundingPage * 20 < state.cardFundingTotal) { state.cardFundingPage += 1; loadCardFundingAttempts(); }
 });
 document.querySelector('#refresh-stock')?.addEventListener('click', () => loadStock().catch(() => showNotice('库存读取失败。')));
+elements.startBusiness?.addEventListener('click', async (event) => {
+  const button = event.currentTarget; button.disabled = true;
+  try {
+    await api('/api/v1/admin/operations/start-business', { method: 'POST' });
+    showNotice('只读检查通过，已开始接收新订单并自动派发。', 'success');
+    await loadOverview();
+  } catch (error) {
+    showNotice(error?.message || '开始营业失败：请先确认卡台和库存状态。');
+  } finally { button.disabled = false; }
+});
 elements.refreshCardProviderRules?.addEventListener('click', async (event) => {
   const button = event.currentTarget;
   button.disabled = true;

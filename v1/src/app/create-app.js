@@ -47,6 +47,7 @@ export function createApp({
   getAdminCardStock = null,
   refreshAdminCardStockProvider = null,
   setAdminCardStockDefaultCardType = null,
+  startAdminBusiness = null,
   setAdminCardStockThreshold = null,
   createAdminCardStockJob = null,
   getAdminReplenishmentSettings = null,
@@ -332,6 +333,11 @@ export function createApp({
   if (typeof setAdminCardStockDefaultCardType === 'function') {
     app.post('/api/v1/admin/card-stock/default-card-type', ...adminWriteGuards, async (req, res) => {
       res.json(await setAdminCardStockDefaultCardType(req.body?.cardTypeId));
+    });
+  }
+  if (typeof startAdminBusiness === 'function') {
+    app.post('/api/v1/admin/operations/start-business', ...adminWriteGuards, async (_req, res) => {
+      res.json(await startAdminBusiness());
     });
   }
   if (typeof setAdminCardStockThreshold === 'function') {
