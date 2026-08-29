@@ -1,5 +1,8 @@
 import { accessSync, constants } from 'node:fs';
 
+import { CHATGPT_PLUS_CHECKOUT_NAVIGATION_CONTRACT } from './chatgpt-checkout-navigator.js';
+import { CHATGPT_PLUS_CHECKOUT_CONTRACT } from './checkout-observer.js';
+
 export const PRODUCTION_READONLY_CONFIRMATION = 'RUN BROWSER PRODUCTION READONLY WORKER';
 
 export class ProductionReadonlyConfigError extends Error {
@@ -72,6 +75,12 @@ export function loadProductionReadonlyBrowserConfig(env = process.env) {
       'BROWSER_SHARED_MATERIALS_MODE must be DISABLED or SHARED_ENCRYPTED_NONPAYMENT',
     );
   }
+  const readonlyHarness = String(env.BROWSER_READONLY_HARNESS || 'PAGE_ONLY').trim();
+  if (!['PAGE_ONLY', 'CHATGPT_ACCOUNT_CHECKOUT'].includes(readonlyHarness)) {
+    throw new ProductionReadonlyConfigError(
+      'BROWSER_READONLY_HARNESS must be PAGE_ONLY or CHATGPT_ACCOUNT_CHECKOUT',
+    );
+  }
   const target = required(env, 'BROWSER_WORKER_TARGET');
   const urlPrefix = required(env, 'BROWSER_OBSERVE_URL_PREFIX');
   if (target === 'LOCAL_FIXTURE') {
@@ -100,6 +109,15 @@ export function loadProductionReadonlyBrowserConfig(env = process.env) {
   } else {
     throw new ProductionReadonlyConfigError('BROWSER_WORKER_TARGET must be LOCAL_FIXTURE or EXTERNAL_READONLY');
   }
+  if (readonlyHarness === 'CHATGPT_ACCOUNT_CHECKOUT') {
+    if (target !== 'EXTERNAL_READONLY'
+      || sharedMaterialsMode !== 'SHARED_ENCRYPTED_NONPAYMENT'
+      || urlPrefix !== 'https://chatgpt.com/') {
+      throw new ProductionReadonlyConfigError(
+        'CHATGPT_ACCOUNT_CHECKOUT requires EXTERNAL_READONLY, shared encrypted Session, and https://chatgpt.com/',
+      );
+    }
+  }
 
   const executablePath = required(env, 'BROWSER_CHROME_EXECUTABLE_PATH');
   try {
@@ -118,6 +136,25 @@ export function loadProductionReadonlyBrowserConfig(env = process.env) {
     ? key32(env, 'SESSION_ENCRYPTION_KEY_BASE64')
     : null;
 
+  const observation = {
+    pageContract: {
+      urlPrefix,
+      title: required(env, 'BROWSER_OBSERVE_TITLE'),
+      requiredSelector: required(env, 'BROWSER_OBSERVE_REQUIRED_SELECTOR'),
+      markerText: required(env, 'BROWSER_OBSERVE_MARKER_TEXT'),
+    },
+    ...(readonlyHarness === 'CHATGPT_ACCOUNT_CHECKOUT' ? {
+      accountProbeContract: {
+        path: '/api/auth/session',
+        accountCheckPath: '/backend-api/accounts/check/v4-2023-04-27?timezone_offset_min=0',
+      },
+      checkoutNavigationContract: CHATGPT_PLUS_CHECKOUT_NAVIGATION_CONTRACT,
+      checkoutContract: CHATGPT_PLUS_CHECKOUT_CONTRACT,
+    } : {}),
+  };
+  const sharedSessionEnabled = sharedMaterialsMode === 'SHARED_ENCRYPTED_NONPAYMENT';
+  const sharedCardPreflightEnabled = sharedSessionEnabled && readonlyHarness === 'PAGE_ONLY';
+
   return Object.freeze({
     databaseUrl: required(env, 'DATABASE_URL'),
     databaseTls: env.DATABASE_TLS === 'true',
@@ -132,16 +169,14 @@ export function loadProductionReadonlyBrowserConfig(env = process.env) {
     resourceHmacKey,
     sharedMaterialsMode,
     sharedMaterialEncryptionKey,
+    readonlyHarness,
+    materialPolicy: Object.freeze({
+      sharedSessionEnabled,
+      sharedCardPreflightEnabled,
+    }),
     pollIntervalMs: integer(env, 'BROWSER_WORKER_POLL_INTERVAL_MS', { min: 100, max: 60_000, fallback: 1000 }),
     leaseSeconds: integer(env, 'BROWSER_WORKER_LEASE_SECONDS', { min: 10, max: 3600, fallback: 60 }),
     executionTimeoutMs: integer(env, 'BROWSER_EXECUTION_TIMEOUT_MS', { min: 500, max: 300_000, fallback: 30_000 }),
-    observation: {
-      pageContract: {
-        urlPrefix,
-        title: required(env, 'BROWSER_OBSERVE_TITLE'),
-        requiredSelector: required(env, 'BROWSER_OBSERVE_REQUIRED_SELECTOR'),
-        markerText: required(env, 'BROWSER_OBSERVE_MARKER_TEXT'),
-      },
-    },
+    observation,
   });
 }

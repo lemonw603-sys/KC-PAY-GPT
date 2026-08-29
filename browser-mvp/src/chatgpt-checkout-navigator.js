@@ -187,6 +187,7 @@ export async function navigateToChatGPTPlusCheckout(page, contract = CHATGPT_PLU
   await waitForState(page, () => checkoutReady(page, contract), { timeoutMs, label: 'Checkout readiness' });
   await assertContinue();
   return {
+    plusEntryPresent: true,
     checkoutCreated: actions.includes('upgrade-requested'),
     questionnaireSkipped: actions.includes('questionnaire-skipped'),
     actions,

@@ -75,6 +75,28 @@ test('executor bootstraps an opaque Session lease before page observation', asyn
   assert.equal(sessionProvider.leases.size, 0);
 });
 
+test('lease loss immediately before Session material access is not misclassified and reads nothing', async () => {
+  let sourceReads = 0;
+  const sessionProvider = new CookieSessionBootstrapAdapter({
+    source: { load: async () => { sourceReads += 1; return { sessionToken: 'must-not-load' }; } },
+  });
+  const executor = new BrowserExecutionService({
+    runtimeAdapter: new LocalPlaywrightRuntimeAdapter({ browserType: chromium }),
+    evidenceSink: new MemoryEvidenceSink(),
+    sessionProvider,
+    timeoutMs: 3_000,
+  });
+  const job = makeJob();
+  job.metadata.sessionRef = 'session-ref:lease-loss';
+  let leaseChecks = 0;
+  await assert.rejects(
+    () => executor.execute(job, { assertLease: async () => ++leaseChecks === 1 }),
+    (error) => error instanceof BrowserExecutionError && error.reason === 'LEASE_LOST',
+  );
+  assert.equal(sourceReads, 0);
+  assert.equal(sessionProvider.leases.size, 0);
+});
+
 test('card material preflight is read once, never written to the page, and closed immediately', async () => {
   await withExecutor(async (executor, evidenceSink) => {
     const calls = [];

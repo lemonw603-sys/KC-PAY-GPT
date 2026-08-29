@@ -62,6 +62,7 @@ export function createSharedNonPaymentDryRun({
   runtimeAdapter,
   manifest,
   observation,
+  resolveObservation = null,
   sessionProvider = null,
   resolveSessionRef = async () => null,
   cardMaterialLeaseProvider = null,
@@ -84,8 +85,11 @@ export function createSharedNonPaymentDryRun({
   if (!manifest || manifest.allowWrites !== false) {
     throw new SharedDryRunError('read-only Browser manifest is required', 'WRITE_CAPABLE_MANIFEST_REJECTED');
   }
-  if (!observation?.pageContract) {
+  if (!observation?.pageContract && typeof resolveObservation !== 'function') {
     throw new SharedDryRunError('observation.pageContract is required', 'PAGE_CONTRACT_REQUIRED');
+  }
+  if (resolveObservation != null && typeof resolveObservation !== 'function') {
+    throw new TypeError('resolveObservation must be a function');
   }
   if (typeof resolveSessionRef !== 'function') throw new TypeError('resolveSessionRef must be a function');
   if (typeof resolveCardMaterialRef !== 'function') throw new TypeError('resolveCardMaterialRef must be a function');
@@ -131,10 +135,19 @@ export function createSharedNonPaymentDryRun({
         attemptId: claimedJob.attemptId,
         runId: run.runId,
       });
+      const effectiveObservation = resolveObservation == null ? observation : await resolveObservation({
+        orderId: claimedJob.orderId,
+        attemptId: claimedJob.attemptId,
+        runId: run.runId,
+        baseObservation: observation,
+      });
+      if (!effectiveObservation?.pageContract) {
+        throw new SharedDryRunError('resolved observation.pageContract is required', 'PAGE_CONTRACT_REQUIRED');
+      }
       const loaded = await upstreamAdapter.load({
         runId: run.runId,
         manifest,
-        observation,
+        observation: effectiveObservation,
         sessionRef: sessionRef || null,
       });
       return {

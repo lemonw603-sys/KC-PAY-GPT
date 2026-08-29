@@ -125,6 +125,7 @@ export async function observeCheckout(page, {
     throw new ContractError('secure card fields did not become ready');
   }
   return {
+    recognized: true,
     planDigest: digest(plan),
     currency,
     amount,

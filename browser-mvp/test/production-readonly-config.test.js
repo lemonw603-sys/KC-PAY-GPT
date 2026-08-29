@@ -86,6 +86,36 @@ test('external readonly mode requires https and a separate confirmation', () => 
   })), /must not contain credentials, query, or fragment/);
 });
 
+test('ChatGPT account/Checkout harness is explicit, exact-origin and Session-only', () => {
+  const config = loadProductionReadonlyBrowserConfig(validEnv({
+    BROWSER_WORKER_TARGET: 'EXTERNAL_READONLY',
+    BROWSER_READONLY_HARNESS: 'CHATGPT_ACCOUNT_CHECKOUT',
+    BROWSER_SHARED_MATERIALS_MODE: 'SHARED_ENCRYPTED_NONPAYMENT',
+    SESSION_ENCRYPTION_KEY_BASE64: Buffer.alloc(32, 10).toString('base64'),
+    BROWSER_EXTERNAL_READONLY_CONFIRM: 'I-CONFIRM-EXTERNAL-READONLY-SHARED-MATERIALS-NO-PAYMENT',
+    BROWSER_OBSERVE_URL_PREFIX: 'https://chatgpt.com/',
+    BROWSER_OBSERVE_TITLE: 'ChatGPT',
+    BROWSER_OBSERVE_REQUIRED_SELECTOR: 'main',
+    BROWSER_OBSERVE_MARKER_TEXT: 'fixture-marker',
+  }));
+  assert.equal(config.readonlyHarness, 'CHATGPT_ACCOUNT_CHECKOUT');
+  assert.equal(config.observation.accountProbeContract.path, '/api/auth/session');
+  assert.equal(config.observation.checkoutNavigationContract.homeUrlPrefix, 'https://chatgpt.com/');
+  assert.equal(config.observation.checkoutContract.urlPrefix, 'https://chatgpt.com/checkout/');
+  assert.deepEqual(config.materialPolicy, {
+    sharedSessionEnabled: true,
+    sharedCardPreflightEnabled: false,
+  });
+  assert.throws(() => loadProductionReadonlyBrowserConfig(validEnv({
+    BROWSER_WORKER_TARGET: 'EXTERNAL_READONLY',
+    BROWSER_READONLY_HARNESS: 'CHATGPT_ACCOUNT_CHECKOUT',
+    BROWSER_SHARED_MATERIALS_MODE: 'SHARED_ENCRYPTED_NONPAYMENT',
+    SESSION_ENCRYPTION_KEY_BASE64: Buffer.alloc(32, 10).toString('base64'),
+    BROWSER_EXTERNAL_READONLY_CONFIRM: 'I-CONFIRM-EXTERNAL-READONLY-SHARED-MATERIALS-NO-PAYMENT',
+    BROWSER_OBSERVE_URL_PREFIX: 'https://example.invalid/',
+  })), /requires EXTERNAL_READONLY.*https:\/\/chatgpt\.com\//);
+});
+
 test('production readonly config requires three distinct canonical keys', () => {
   assert.throws(() => loadProductionReadonlyBrowserConfig(validEnv({
     BROWSER_ARTIFACT_KEY_BASE64: key,

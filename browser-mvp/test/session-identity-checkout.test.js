@@ -12,7 +12,19 @@ test('session identity probe verifies the real session endpoint without returnin
   const server = createServer((request, response) => {
     if (request.url === '/api/auth/session') {
       response.writeHead(200, { 'content-type': 'application/json' });
-      response.end(JSON.stringify({ user: { id: 'user-001', email: 'buyer@example.test' }, account: { id: 'acct-001' } }));
+      response.end(JSON.stringify({
+        user: { id: 'user-001', email: 'buyer@example.test' },
+        account: { id: 'acct-001' },
+        accessToken: 'fixture-access-token-must-not-leave-page',
+      }));
+      return;
+    }
+    if (request.url === '/backend-api/accounts/check/v4-fixture') {
+      assert.equal(request.headers.authorization, 'Bearer fixture-access-token-must-not-leave-page');
+      response.writeHead(200, { 'content-type': 'application/json' });
+      response.end(JSON.stringify({
+        accounts: { default: { entitlement: { has_active_subscription: false, subscription_plan: 'free' } } },
+      }));
       return;
     }
     response.writeHead(200, { 'content-type': 'text/html' });
@@ -25,11 +37,86 @@ test('session identity probe verifies the real session endpoint without returnin
   try {
     const page = await browser.newPage();
     await page.goto(`http://127.0.0.1:${address.port}/`, { waitUntil: 'domcontentloaded' });
-    const result = await probeSessionIdentity(page, { email: 'buyer@example.test' });
+    const result = await probeSessionIdentity(page, {
+      email: 'buyer@example.test', accountId: 'acct-001', userId: 'user-001',
+    }, { accountCheckPath: '/backend-api/accounts/check/v4-fixture' });
     assert.equal(result.verified, true);
+    assert.equal(result.loggedIn, true);
+    assert.equal(result.identityMatched, true);
+    assert.equal(result.subscriptionStatus, 'FREE');
+    assert.equal(result.alreadyPlus, false);
     assert.equal(result.httpStatus, 200);
     assert.equal(result.observedEmailDigest.length, 64);
+    assert.equal(JSON.stringify(result).includes('fixture-access-token'), false);
     await assert.rejects(() => probeSessionIdentity(page, { email: 'other@example.test' }), ContractError);
+    await assert.rejects(
+      () => probeSessionIdentity(page, { email: 'buyer@example.test', accountId: 'acct-other' }),
+      /session identity mismatch/,
+    );
+  } finally {
+    await browser.close();
+    server.close();
+    await once(server, 'close');
+  }
+});
+
+test('subscription probe classifies active Plus without returning account-check material', async () => {
+  const server = createServer((request, response) => {
+    response.writeHead(200, { 'content-type': 'application/json' });
+    if (request.url === '/api/auth/session') {
+      response.end(JSON.stringify({
+        user: { email: 'plus@example.test' },
+        accessToken: 'plus-access-token',
+      }));
+      return;
+    }
+    response.end(JSON.stringify({
+      accounts: { default: { entitlement: { has_active_subscription: true, subscription_plan: 'chatgptplusplan' } } },
+    }));
+  });
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  const address = server.address();
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage();
+    await page.goto(`http://127.0.0.1:${address.port}/`, { waitUntil: 'domcontentloaded' });
+    const result = await probeSessionIdentity(page, { email: 'plus@example.test' }, {
+      accountCheckPath: '/backend-api/accounts/check/v4-fixture',
+    });
+    assert.equal(result.subscriptionStatus, 'PLUS');
+    assert.equal(result.alreadyPlus, true);
+    assert.equal(JSON.stringify(result).includes('plus-access-token'), false);
+  } finally {
+    await browser.close();
+    server.close();
+    await once(server, 'close');
+  }
+});
+
+test('subscription schema drift is not misclassified as a customer Session replacement', async () => {
+  const server = createServer((request, response) => {
+    response.writeHead(200, { 'content-type': 'application/json' });
+    if (request.url === '/api/auth/session') {
+      response.end(JSON.stringify({
+        user: { email: 'buyer@example.test' }, accessToken: 'fixture-access-token',
+      }));
+      return;
+    }
+    response.end(JSON.stringify({ accounts: { default: { entitlement: {} } } }));
+  });
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage();
+    await page.goto(`http://127.0.0.1:${server.address().port}/`);
+    await assert.rejects(
+      () => probeSessionIdentity(page, { email: 'buyer@example.test' }, {
+        accountCheckPath: '/backend-api/accounts/check/v4-fixture',
+      }),
+      (error) => error.code === 'ACCOUNT_STATUS_UNKNOWN',
+    );
   } finally {
     await browser.close();
     server.close();

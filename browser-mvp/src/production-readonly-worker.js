@@ -1,5 +1,6 @@
 import { access, mkdir } from 'node:fs/promises';
 import { constants } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { dirname } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { chromium } from 'playwright';
@@ -96,6 +97,27 @@ async function resolveAccountKey(pool, { orderId }) {
   return String(row.account_key);
 }
 
+function sha256(value) {
+  return createHash('sha256').update(String(value), 'utf8').digest('hex');
+}
+
+async function resolveSessionIdentityDigests(pool, { orderId }) {
+  const [[row]] = await pool.query(
+    `SELECT NULLIF(TRIM(chatgpt_account_id), '') AS account_id,
+            NULLIF(LOWER(TRIM(customer_email)), '') AS email
+     FROM orders WHERE id = ? LIMIT 1`,
+    [orderId],
+  );
+  const identity = {
+    ...(row?.account_id ? { accountIdDigest: sha256(row.account_id) } : {}),
+    ...(row?.email ? { emailDigest: sha256(row.email) } : {}),
+  };
+  if (Object.keys(identity).length === 0) {
+    throw new Error('order has no Browser identity digest for readonly account verification');
+  }
+  return identity;
+}
+
 export async function runProductionReadonlyBrowserWorker({
   env = process.env,
   once = false,
@@ -126,7 +148,9 @@ export async function runProductionReadonlyBrowserWorker({
       executablePath: config.executablePath,
       launchOptions: { headless: config.headless },
     });
-    const sharedMaterialsEnabled = config.sharedMaterialsMode === 'SHARED_ENCRYPTED_NONPAYMENT';
+    const sharedMaterialsEnabled = config.materialPolicy.sharedSessionEnabled;
+    const sharedCardPreflightEnabled = config.materialPolicy.sharedCardPreflightEnabled;
+    const chatGptReadonlyHarness = config.readonlyHarness === 'CHATGPT_ACCOUNT_CHECKOUT';
     const sessionProvider = sharedMaterialsEnabled
       ? new CookieSessionBootstrapAdapter({
         source: new SharedEncryptedSessionSource({
@@ -135,7 +159,9 @@ export async function runProductionReadonlyBrowserWorker({
         }),
       })
       : null;
-    const cardMaterialLeaseProvider = sharedMaterialsEnabled
+    // The real ChatGPT readonly harness has no reason to decrypt PAN/CVC.
+    // Card material preflight remains available only to isolated PAGE_ONLY fixtures.
+    const cardMaterialLeaseProvider = sharedCardPreflightEnabled
       ? new InMemoryCardMaterialLeaseProvider({
         source: new SharedEncryptedCardMaterialSource({
           db: pool,
@@ -150,15 +176,21 @@ export async function runProductionReadonlyBrowserWorker({
       runtimeAdapter,
       manifest: createChromeControlManifest(),
       observation: config.observation,
+      resolveObservation: chatGptReadonlyHarness
+        ? async ({ orderId, baseObservation }) => ({
+          ...baseObservation,
+          sessionIdentity: await resolveSessionIdentityDigests(pool, { orderId }),
+        })
+        : null,
       sessionProvider,
       resolveSessionRef: sharedMaterialsEnabled
         ? ({ runId }) => browserRunMaterialRef(runId)
         : async () => null,
       cardMaterialLeaseProvider,
-      resolveCardMaterialRef: sharedMaterialsEnabled
+      resolveCardMaterialRef: sharedCardPreflightEnabled
         ? ({ runId }) => browserRunMaterialRef(runId)
         : async () => null,
-      validateCardMaterialOnly: sharedMaterialsEnabled,
+      validateCardMaterialOnly: sharedCardPreflightEnabled,
       resolveAccountKey: (input) => resolveAccountKey(pool, input),
       runtimeHmacKey: config.runtimeHmacKey,
       artifactKey: config.artifactKey,

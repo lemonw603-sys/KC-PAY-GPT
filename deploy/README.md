@@ -83,8 +83,10 @@ systemctl status pojia-browser-worker.service
 共享 Session/card-material adapter 默认关闭。只在批准的非付款观察中，把独立 env 的
 `BROWSER_SHARED_MATERIALS_MODE` 改为 `SHARED_ENCRYPTED_NONPAYMENT`；它复用 runtime env 中现有
 `SESSION_ENCRYPTION_KEY_BASE64`，不接受原始 Session/PAN/CVC 环境变量。外部只读模式必须同步使用
-确认词 `I-CONFIRM-EXTERNAL-READONLY-SHARED-MATERIALS-NO-PAYMENT`。该模式只注入 Session 并预检卡资料，
-不填卡、不提交付款。
+确认词 `I-CONFIRM-EXTERNAL-READONLY-SHARED-MATERIALS-NO-PAYMENT`。`PAGE_ONLY` 隔离夹具可预检卡资料；
+真实 ChatGPT 只读窗口必须再显式设置 `BROWSER_READONLY_HARNESS=CHATGPT_ACCOUNT_CHECKOUT`，目标必须精确为
+`https://chatgpt.com/`。该 harness 只读取并注入 Session，不解密卡资料，依次核对登录、身份摘要、
+当前订阅、Plus 入口和 Checkout 页面，然后安全退出；不填卡、不提交付款。
 
 完整边界、环境项和本地 smoke 证据见
 [`docs/browser-research/production-readonly-browser-worker-2026-08-27.md`](../docs/browser-research/production-readonly-browser-worker-2026-08-27.md)。

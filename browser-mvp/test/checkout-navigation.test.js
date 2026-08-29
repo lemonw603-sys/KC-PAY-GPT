@@ -39,6 +39,20 @@ test('executor navigates an optional questionnaire to Checkout and remains obser
       `);
       return;
     }
+    if (request.url === '/api/auth/session') {
+      response.end(JSON.stringify({
+        user: { id: 'user-fixture', email: 'buyer@example.test' },
+        account: { id: 'account-fixture' },
+        accessToken: 'fixture-access-token',
+      }));
+      return;
+    }
+    if (request.url?.startsWith('/backend-api/accounts/check/')) {
+      response.end(JSON.stringify({
+        accounts: { default: { entitlement: { has_active_subscription: false, subscription_plan: 'free' } } },
+      }));
+      return;
+    }
     response.end(`
       <title>Navigator fixture</title>
       <main data-browser-mvp-marker>observe-only</main>
@@ -87,6 +101,10 @@ test('executor navigates an optional questionnaire to Checkout and remains obser
         requiredSelector: '[data-browser-mvp-marker]',
         markerText: 'observe-only',
       },
+      sessionIdentity: { email: 'buyer@example.test', accountId: 'account-fixture' },
+      accountProbeContract: {
+        accountCheckPath: '/backend-api/accounts/check/v4-fixture',
+      },
       checkoutNavigationContract: navigationContract,
       checkoutContract: { ...CHATGPT_PLUS_CHECKOUT_CONTRACT, urlPrefix: `${base}/checkout/` },
     },
@@ -100,8 +118,79 @@ test('executor navigates an optional questionnaire to Checkout and remains obser
     assert.equal(result.checkout.amount, '20.00');
     assert.equal(result.checkout.submitCalls, 0);
     assert.equal(result.submitCalls, 0);
+    assert.deepEqual(result.readonlyChecklist, {
+      loggedIn: true,
+      identityMatched: true,
+      alreadyPlus: false,
+      plusEntryPresent: true,
+      checkoutRecognized: true,
+      fieldsWritten: 0,
+      submitCalls: 0,
+    });
     assert.equal(submitted, 0);
-    assert.deepEqual(evidenceSink.events.map((event) => event.summary.action), ['observe-page', 'page-signature', 'checkout-navigation']);
+    assert.deepEqual(evidenceSink.events.map((event) => event.summary.action), [
+      'observe-page', 'account-readonly-probe', 'page-signature', 'checkout-navigation',
+    ]);
+  } finally {
+    server.close();
+    await once(server, 'close');
+  }
+});
+
+test('readonly harness stops an already-Plus account before opening the purchase entry', async () => {
+  let pricingClicks = 0;
+  const server = createServer((request, response) => {
+    response.writeHead(200, { 'content-type': request.url?.startsWith('/api/')
+      || request.url?.startsWith('/backend-api/') ? 'application/json' : 'text/html' });
+    if (request.url === '/api/auth/session') {
+      response.end(JSON.stringify({
+        user: { email: 'plus@example.test' }, accessToken: 'fixture-token',
+      }));
+      return;
+    }
+    if (request.url?.startsWith('/backend-api/accounts/check/')) {
+      response.end(JSON.stringify({
+        accounts: { default: { entitlement: { has_active_subscription: true, subscription_plan: 'plus' } } },
+      }));
+      return;
+    }
+    response.end(`
+      <title>Plus fixture</title><main data-browser-mvp-marker>observe-only</main>
+      <button type="button" aria-label="Upgrade" onclick="fetch('/pricing-click')">Upgrade</button>
+    `);
+    if (request.url === '/pricing-click') pricingClicks += 1;
+  });
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const executor = new BrowserExecutionService({
+    runtimeAdapter: new LocalPlaywrightRuntimeAdapter({ browserType: chromium }),
+    evidenceSink: new MemoryEvidenceSink(),
+    timeoutMs: 2_000,
+  });
+  const job = createSyntheticJob({
+    state: 'RUNNING',
+    metadata: {
+      pageContract: {
+        urlPrefix: `${base}/`, title: 'Plus fixture',
+        requiredSelector: '[data-browser-mvp-marker]', markerText: 'observe-only',
+      },
+      sessionIdentity: { email: 'plus@example.test' },
+      accountProbeContract: { accountCheckPath: '/backend-api/accounts/check/v4-fixture' },
+      checkoutNavigationContract: {
+        ...CHATGPT_PLUS_CHECKOUT_NAVIGATION_CONTRACT,
+        homeUrlPrefix: `${base}/`, checkoutUrlPrefix: `${base}/checkout/`,
+        openPricingSelectors: ['button[aria-label="Upgrade"]'],
+      },
+      checkoutContract: { ...CHATGPT_PLUS_CHECKOUT_CONTRACT, urlPrefix: `${base}/checkout/` },
+    },
+  });
+  try {
+    await assert.rejects(
+      () => executor.execute(job, { assertLease: async () => true }),
+      (error) => error instanceof Error && error.reason === 'ACCOUNT_ALREADY_PLUS',
+    );
+    assert.equal(pricingClicks, 0);
   } finally {
     server.close();
     await once(server, 'close');

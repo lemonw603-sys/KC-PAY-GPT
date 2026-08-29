@@ -161,3 +161,13 @@ git diff --check
 - 未接生产、未读取真实 Session/PAN/CVC、未访问真实 ChatGPT、未填卡、未付款、未调用卡台写接口、未部署。
 - 下一唯一动作：付款保持关闭，用专用非客户测试账号与批准网络做真实 ChatGPT 只读登录/身份/页面观察；先冻结页面/Session 合同。
 - 完整证据：`docs/browser-research/BROWSER_SHARED_MATERIAL_ADAPTER_2026-08-29.md`。
+
+## 9. 2026-08-29 adapter 对抗审查与单次 ChatGPT 非付款 harness
+
+- 分支已 rebase 到主线 `2b83152`；主线已吸收旧 `ddad4f1`，没有重复实现或覆盖库存同步改动。
+- 对抗审查修复 4 个 P1：身份从“任一字段匹配”改为“所有已提供摘要均匹配”；真实 ChatGPT harness 不再解密卡资料；Session/card source 打开前立即复核共享租约；订阅接口漂移不再误判为客户 Session 错误。
+- 新显式模式 `BROWSER_READONLY_HARNESS=CHATGPT_ACCOUNT_CHECKOUT` 只允许精确 `https://chatgpt.com/`，单次核对登录、身份、活动订阅、Plus 入口和 Checkout；结果只有布尔/状态摘要，`fieldsWritten=0`、`submitCalls=0`。
+- 活动 Plus/其他付费订阅在购买入口点击前以 `ACCOUNT_ALREADY_PLUS` 安全退出；身份部分匹配、订阅未知、页面/入口/Checkout 漂移均 fail-closed。
+- 实跑：Browser 全量 `99/95 passed/4 skipped/0 failed`；readonly smoke `10/10 + 3/3`；五个写开关 false 的隔离 MySQL/Chrome shared dry-run `1/1`；`check` 与 `diff --check` 通过。
+- 本轮不连接生产、不读取真实客户 Session/PAN/CVC、不访问真实 ChatGPT、不填卡、不付款、不调用卡台接口、不部署。
+- 合同：`docs/contracts/2026-08-29_browser-chatgpt-readonly-observation-contract.md`；审查：`docs/browser-research/BROWSER_SHARED_MATERIAL_ADAPTER_ADVERSARIAL_REVIEW_2026-08-29.md`。

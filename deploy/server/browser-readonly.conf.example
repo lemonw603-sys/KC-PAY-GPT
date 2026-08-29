@@ -8,6 +8,7 @@ BROWSER_PAYMENT_EXECUTOR_MODE=MOCK
 # Disabled by default. SHARED_ENCRYPTED_NONPAYMENT only decrypts the Session
 # and assigned card through the active browser_run; it never submits payment.
 BROWSER_SHARED_MATERIALS_MODE=DISABLED
+BROWSER_READONLY_HARNESS=PAGE_ONLY
 BROWSER_WORKER_TARGET=EXTERNAL_READONLY
 # When enabling SHARED_ENCRYPTED_NONPAYMENT, replace this with:
 # I-CONFIRM-EXTERNAL-READONLY-SHARED-MATERIALS-NO-PAYMENT
@@ -27,6 +28,19 @@ BROWSER_OBSERVE_URL_PREFIX=https://<approved-readonly-target>/
 BROWSER_OBSERVE_TITLE=<exact-title>
 BROWSER_OBSERVE_REQUIRED_SELECTOR=<stable-readonly-selector>
 BROWSER_OBSERVE_MARKER_TEXT=<expected-marker>
+
+# One-shot ChatGPT account/Checkout observation (only in a separately approved
+# readonly window) replaces the PAGE_ONLY values above with:
+# BROWSER_SHARED_MATERIALS_MODE=SHARED_ENCRYPTED_NONPAYMENT
+# BROWSER_READONLY_HARNESS=CHATGPT_ACCOUNT_CHECKOUT
+# BROWSER_WORKER_TARGET=EXTERNAL_READONLY
+# BROWSER_EXTERNAL_READONLY_CONFIRM=I-CONFIRM-EXTERNAL-READONLY-SHARED-MATERIALS-NO-PAYMENT
+# BROWSER_OBSERVE_URL_PREFIX=https://chatgpt.com/
+# BROWSER_OBSERVE_TITLE=ChatGPT
+# BROWSER_OBSERVE_REQUIRED_SELECTOR=<frozen-home-marker-selector>
+# BROWSER_OBSERVE_MARKER_TEXT=<frozen-home-marker-text>
+# SESSION_ENCRYPTION_KEY_BASE64 is inherited from the existing runtime env.
+# This harness reads the bound Session only; it does not decrypt card material.
 
 # Supply three independent random 32-byte keys as canonical base64.
 BROWSER_RUNTIME_HMAC_KEY_BASE64=<base64-32-bytes>

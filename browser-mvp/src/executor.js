@@ -56,6 +56,9 @@ export class BrowserExecutionService {
     if (job.metadata?.checkoutNavigationContract && !job.metadata?.checkoutContract) {
       throw new ContractError('checkoutContract is required when Checkout navigation is enabled');
     }
+    if (job.metadata?.accountProbeContract && !job.metadata?.sessionIdentity) {
+      throw new ContractError('sessionIdentity is required when account probing is enabled');
+    }
     const startedAt = this.clock();
     let evidenceSequence = 0;
     await this._event(job, 'intent', ++evidenceSequence, { action: 'observe-page', mode: job.manifest.mode });
@@ -82,6 +85,7 @@ export class BrowserExecutionService {
           throw new BrowserExecutionError('SESSION_PROVIDER_UNAVAILABLE');
         }
         let sessionResult;
+        if (!(await assertLease())) throw new BrowserExecutionError('LEASE_LOST');
         try {
           sessionLease = await this.sessionProvider.open(job.metadata.sessionRef, { purpose: 'browser-observe' });
           sessionResult = await this.sessionProvider.bootstrap(sessionLease, runtime.context);
@@ -104,9 +108,29 @@ export class BrowserExecutionService {
       let sessionIdentity = null;
       if (job.metadata.sessionIdentity) {
         try {
-          sessionIdentity = await probeSessionIdentity(page, job.metadata.sessionIdentity);
+          sessionIdentity = await probeSessionIdentity(
+            page,
+            job.metadata.sessionIdentity,
+            job.metadata.accountProbeContract || {},
+          );
         } catch (error) {
-          throw new BrowserExecutionError('SESSION_IDENTITY_MISMATCH', error.message, error);
+          const reason = ['SESSION_INVALID', 'SESSION_IDENTITY_MISMATCH', 'ACCOUNT_STATUS_UNKNOWN'].includes(error?.code)
+            ? error.code : 'SESSION_IDENTITY_MISMATCH';
+          throw new BrowserExecutionError(reason, error.message, error);
+        }
+        await this._event(job, 'checkpoint', ++evidenceSequence, {
+          action: 'account-readonly-probe',
+          loggedIn: sessionIdentity.loggedIn,
+          identityMatched: sessionIdentity.identityMatched,
+          subscriptionStatus: sessionIdentity.subscriptionStatus || null,
+          alreadyPlus: sessionIdentity.alreadyPlus ?? null,
+          submitCalls: 0,
+        });
+        if (sessionIdentity.alreadyPlus) {
+          throw new BrowserExecutionError(
+            'ACCOUNT_ALREADY_PLUS',
+            'target account is not a free account before payment',
+          );
         }
       }
       const checkpoint = await this._checkPage(page, job.metadata.pageContract);
@@ -121,6 +145,7 @@ export class BrowserExecutionService {
         if (cardMaterialLease || !cardMaterialLeaseProvider || typeof cardMaterialLeaseProvider.open !== 'function') {
           throw new BrowserExecutionError('CARD_MATERIAL_PRECHECK_CONTRACT');
         }
+        if (!(await assertLease())) throw new BrowserExecutionError('LEASE_LOST');
         try {
           cardMaterialLease = await cardMaterialLeaseProvider.open(cardMaterialRef, {
             purpose: 'browser-nonpayment-preflight',
@@ -207,7 +232,16 @@ export class BrowserExecutionService {
           throw new BrowserExecutionError('CARD_MATERIAL_FILL_FAILED', error.message, error);
         }
       }
-      return { status: 'OBSERVED', startedAt, finishedAt: this.clock(), submitCalls: 0, sessionBootstrapped, cardMaterialReady, sessionIdentity, checkoutNavigation, checkout, cardFill };
+      const readonlyChecklist = job.metadata.accountProbeContract ? {
+        loggedIn: sessionIdentity?.loggedIn === true,
+        identityMatched: sessionIdentity?.identityMatched === true,
+        alreadyPlus: sessionIdentity?.alreadyPlus === true,
+        plusEntryPresent: checkoutNavigation?.plusEntryPresent === true,
+        checkoutRecognized: checkout?.recognized === true,
+        fieldsWritten: 0,
+        submitCalls: 0,
+      } : null;
+      return { status: 'OBSERVED', startedAt, finishedAt: this.clock(), submitCalls: 0, sessionBootstrapped, cardMaterialReady, sessionIdentity, checkoutNavigation, checkout, cardFill, readonlyChecklist };
     } catch (error) {
       const failure = error instanceof BrowserExecutionError
         ? error

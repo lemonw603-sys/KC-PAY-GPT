@@ -170,6 +170,8 @@ export function projectSharedBrowserJob(projection, {
     ...(sessionRef == null ? {} : { sessionRef: requireRef(sessionRef, 'sessionRef') }),
     ...(projection.observation?.pageContract == null ? {} : { pageContract: projection.observation.pageContract }),
     ...(projection.observation?.sessionIdentity == null ? {} : { sessionIdentity: projection.observation.sessionIdentity }),
+    ...(projection.observation?.accountProbeContract == null
+      ? {} : { accountProbeContract: projection.observation.accountProbeContract }),
     ...(projection.observation?.checkoutNavigationContract == null
       ? {} : { checkoutNavigationContract: projection.observation.checkoutNavigationContract }),
     ...(projection.observation?.checkoutContract == null

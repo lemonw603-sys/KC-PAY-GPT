@@ -696,3 +696,13 @@ active permits=0、`PAYMENT_SUBMIT`=0、live resource leases=0、external paymen
 - 实跑：`smoke:worker:readonly` 9/9 + 3/3；`npm --prefix browser-mvp test` 94/90/4/0；五个写开关 false 的 `dry-run:shared` 1/1。
 - 全程未接生产、未使用真实 Session/PAN/CVC、未访问真实 ChatGPT、未填卡或付款、未部署。
 - 下一动作：只读真实页面/身份观察；仍禁止启用 payment/Provider 写入。详细见 `docs/browser-research/BROWSER_SHARED_MATERIAL_ADAPTER_2026-08-29.md`。
+
+## 2026-08-29 共享材料 adapter 对抗审查 / ChatGPT 单次只读 harness
+
+- 同步基线：`codex/browser` 已 rebase 到 `main@2b83152`；旧 Browser patch 被 Git 正确跳过，历史未跟踪 `artifacts/browser-checkout-observe/` 未动。
+- 修复 P1：身份由任一字段匹配改为所有已提供摘要均匹配；真实 ChatGPT harness 不装配 card source、不解密 PAN/CVC；Session/card source 打开前立即重验共享租约；订阅接口漂移独立归类，不误提示客户更换 Session。
+- 新显式模式 `CHATGPT_ACCOUNT_CHECKOUT` 只允许精确 `https://chatgpt.com/`，依次核对 Session 登录、订单身份摘要、活动订阅、Plus 入口和 Checkout，只返回脱敏布尔/状态摘要。
+- 活动 Plus/其他付费账号在购买入口点击前安全停止；本地 fixture 验证 `fieldsWritten=0`、`submitCalls=0`。
+- 实跑：Browser 全量 `99/95 passed/4 skipped/0 failed`；readonly smoke `10/10 + 3/3`；隔离 MySQL/Chrome shared dry-run `1/1`；`check` 与 `diff --check` 通过。
+- 本轮未连接生产、未读取真实客户材料、未访问真实 ChatGPT、未付款、未部署。下一动作是统筹一次性提供专用非客户测试订单/Session、批准网络/Chrome 和当次首页 marker 后，另开只读窗口执行一次；仍不需要 PAN/CVC。
+- 详细合同与审查：`docs/contracts/2026-08-29_browser-chatgpt-readonly-observation-contract.md`、`docs/browser-research/BROWSER_SHARED_MATERIAL_ADAPTER_ADVERSARIAL_REVIEW_2026-08-29.md`。
