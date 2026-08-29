@@ -5,7 +5,8 @@ import { decryptSecret, encryptSecret } from '../../security/secret-box.js';
 import { persistCardTransactions } from './card-transaction-repository.js';
 import {
   eligibleInventoryCardSql,
-  fundableInventoryCardSql
+  fundableInventoryCardSql,
+  refreshableInventoryCardSql
 } from '../../services/card-inventory-eligibility.js';
 import { transitionCardConsumptionInTransaction } from '../../services/card-consumption-ledger-service.js';
 
@@ -180,15 +181,42 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
         );
         const alertKey = `order-waiting-card:${orderId}`;
         if (cards.length === 0) {
+          const [refreshCandidates] = await connection.query(
+            `SELECT id FROM cards
+             WHERE ${refreshableInventoryCardSql('cards')}
+               AND provider_account_id = ?
+               AND (last_transaction_synced_at IS NULL
+                 OR last_transaction_synced_at < DATE_SUB(CURRENT_TIMESTAMP(3), INTERVAL 15 MINUTE))
+             ORDER BY COALESCE(last_transaction_synced_at, created_at) ASC
+             LIMIT 1 FOR UPDATE SKIP LOCKED`,
+            [order.card_provider_account_id]
+          );
+          let refreshQueued = false;
+          if (refreshCandidates.length > 0) {
+            const cardId = refreshCandidates[0].id;
+            const [queued] = await connection.query(
+              `INSERT INTO card_sync_jobs
+               (id, card_id, status, requested_by, dedupe_key)
+               SELECT ?, ?, 'PENDING', 'worker', ?
+               WHERE NOT EXISTS (
+                 SELECT 1 FROM card_sync_jobs active_sync
+                 WHERE active_sync.card_id = ? AND active_sync.status IN ('PENDING','RUNNING')
+               )`,
+              [crypto.randomUUID(), cardId, `order-demand-sync:${cardId}:${crypto.randomUUID()}`, cardId]
+            );
+            refreshQueued = Number(queued.affectedRows) === 1;
+          }
           const [[fundable]] = await connection.query(
             `SELECT COUNT(*) AS count FROM cards
              WHERE ${fundableInventoryCardSql('cards')}
                AND provider_account_id = ?`,
             [order.card_provider_account_id]
           );
-          const waitingMessage = Number(fundable?.count || 0) > 0
-            ? '现有卡需要补充余额，订单正在等待处理。'
-            : '当前没有可用于 Plus 的卡，订单正在等待处理。';
+          const waitingMessage = refreshCandidates.length > 0
+            ? '现有卡正在更新余额和交易，订单会在更新后继续处理。'
+            : Number(fundable?.count || 0) > 0
+              ? '现有卡需要补充余额，订单正在等待处理。'
+              : '当前没有可用于 Plus 的卡，订单正在等待处理。';
           await connection.query(
             `INSERT INTO operator_alerts
              (id, alert_type, dedupe_key, severity, title, message, status)
@@ -214,7 +242,7 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
               metadata: { cardTypeId: String(order.card_type_id), minimumRequiredBalance: String(order.minimum_required_card_balance) }
             });
           }
-          return { waitingForCard: true };
+          return { waitingForCard: true, refreshQueued };
         }
         const card = cards[0];
         const [cardUpdate] = await connection.query(
