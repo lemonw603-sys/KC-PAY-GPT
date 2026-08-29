@@ -75,6 +75,7 @@
 - Browser 窗口最新确认：未新增代码；生产非付款仍缺生产形态只读观察、Worker 部署/回滚演练和部署后审计闭环。已安排先备份差异，再可逆对齐到 `main@a6ba908`。
 - 已在本地为旧 Browser 提交建立可逆标签 `browser-stale-7abbe51-backup`；未合入其差异，避免回退主线。
 - 已将 `codex/browser` worktree 可逆对齐到主线 `9093c03`；旧内容保存在 `browser-stale-7abbe51`，对齐后 Browser 全量测试 107 项、103 通过、0 失败、4 跳过。
+- 在统一基线上运行 `npm --prefix browser-mvp run smoke:worker:readonly` 成功；隔离 MySQL、只读 Worker 配置和安全门禁通过，未连接生产。
 - 已建立“余额不足卡付款前停止测试”运行手册：`docs/2026-08-29_browser-pre-submit-session-test-runbook.md`；使用用户指定测试 Session，停止于付款按钮前。
 
 - 库存后台收敛已部署生产（2026-08-28），并已通过发布后公网健康、服务状态、备份完整性和未认证路由验收；后台浏览器交叉验收仍待使用管理员会话执行。
