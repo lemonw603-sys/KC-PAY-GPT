@@ -5,12 +5,13 @@
 
 ## 当前执行快照（2026-08-29）
 
-- 共享订单、资金栅栏、消费账本、migration 040 和最小卡片运营覆盖均已部署。当前生产 release 为 `/opt/pojia/releases/20260829-card-refresh-ef5afd5`（不含延期的“开始营业”入口）。
+- 共享订单、资金栅栏、消费账本、migration 040 和最小卡片运营覆盖均已部署。当前生产 release 为 `/opt/pojia/releases/20260829-order-demand-sync-bba4105`（不含延期的“开始营业”入口和 Browser 新代码）。
 - 生产接单和自动充值/派发当前为开启；Provider 账户和常驻 Worker 写权限已在第二单完成后恢复为关闭，Browser 付款和自动补卡保持关闭。
 - 当前卡片规则已落地：`6807/1477` 保留原有 `ASSIGNED`；`4744/1065=PRODUCT_ONLY(claude)`；其余当前旧批次 17 张均 `RETIRED`。未来新卡不继承旧批次结论。
 - `1628/6185` 已用于第二单真实 API 订单，不再作为未使用库存自动分配。人工库存模式下不触发低库存提醒；只有真实订单等待卡片时才按订单提醒一次。
 - 第二单 API 灰度 `PJV1-uVsqgepiEHu3tfpQKQq-` 已真实成功并取消续费；API 主链已有两单成功证据。卡台 PURCHASE 最终结算仍待只读补证，不影响禁止重付结论。
 - 已修复并部署卡片 15 分钟分配新鲜度与 60 分钟目录刷新窗口错配：真实订单等待时只按需同步 1 张安全候选卡，不恢复高频全量 API 读取。
+- 上述按需同步已补全新临时 MySQL 8.4、migration 001–040 集成回归：单任务排队、去重、等待状态、卡片不提前绑定、零 Provider 调用均通过。
 - 卡台当前公布的所有合法卡段均可接管和分配；后台选择的默认卡段只用于未来开卡，不再被错误当作现有卡唯一合法卡段。
 - Browser dispatch 只读展示和消费账本绑定已合入主线；Browser 线继续非付款联调，真实付款仍需单独确认。
 - 库存后台信息收敛已完成并部署生产；卡段人工刷新与持久默认选择已部署至 `/opt/pojia/releases/20260829-card-segment-58dfe0d`。
@@ -176,6 +177,7 @@
 - [x] 付款前 safe-abort 原子收口 run、permit、artifact、租约、dispatch、attempt、authorization、订单和审计；已有付款证据时只核对不回退；
 - [x] Browser 独立 worktree adapter 按新合同接线，移除平行状态真相；attempt/run executor profile 已绑定并进入权威付款 snapshot；
 - [x] 保持付款写关闭，完成非付款端到端联调和故障注入；相关 adapter/runtime/repository 回归 46/46，隔离 MySQL + Chrome 非付款 dry-run 1/1；
+- [x] 共享 Session/卡资料 production adapter 已合入：只通过当前 run 读取 v1 现有密文和当前 attempt 的消费预留，readonly lane 只做 Session bootstrap 与卡资料内存预检，不填卡、不付款；
 - 现在可以在独立讨论窗口完成方案和接口边界设计，成果必须回写本项目事实源；
 - 当前不接入生产、不执行真实 Browser 付款；
 - Browser 已成为未来 Plus 主执行链路，可立即进行非付款 PoC、仿真控制面和隔离联调，不再等待 ZZSHU API 成功单；

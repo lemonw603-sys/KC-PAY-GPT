@@ -556,9 +556,30 @@
 - 新 release：`/opt/pojia/releases/20260829-order-demand-sync-bba4105`；回滚点：`/opt/pojia/releases/20260829-card-refresh-ef5afd5`。
 - 部署后 Web、Worker、卡片只读同步/目录同步、Bark 均 active；readiness `ok=true`，活动任务/未知调用/资金风险/对账案件均 0；Provider 三个写开关均 false；ops/plus 四个 live/ready 均 HTTP 200。
 
+### 按需同步真实 MySQL 回归补齐
+
+- 新增集成用例覆盖真实订单遇到一张交易证据超过 15 分钟、但资料/余额/绑定均安全的候选卡。
+- 全新临时 MySQL 8.4、migration 001–040 下验证：第一次只创建一个 `PENDING / requested_by=worker` 的单卡只读任务，订单进入 `WAITING_FOR_CARD`；第二次调用不重复排队；卡不提前绑定、无 Provider 调用。
+- `mysql-integration.test.js` 34/34 通过；v1 无数据库全量 467 total / 429 pass / 0 fail / 38 environment-skipped。
+- 此项只补测试，不需要再次部署生产。
+
+### 第二单卡台交易低频补证
+
+- 2026-08-29 07:16 UTC 只针对 `1628/6185` 排入一次只读同步；任务正常 `COMPLETED`。
+- 卡余额仍为 `$0.24`；`agg_tx_3eskrt48lubis` 仍为 `PURCHASE 15.76 USD / PROCESSING / UNSETTLED`。
+- 该状态只表示卡台尚未给出最终结算，不改变订单成功、取消续费和禁止重付结论。
+
 ## 2026-08-29｜Browser 首次灰度前只读就绪补强已合入（未部署）
 
 - Browser 窗口提交 `2fd3aa0` 已由统筹审查，并以主线提交 `1516c67` 合入。
 - production-readonly readiness 现在强制 migration 039/040；直接 CLI 与 systemd 一致要求 payment executor=false/MOCK；补充 Browser-only stop/disable/回滚入口。
 - 主线复验：语法检查通过；Browser 90 tests / 86 pass / 0 fail / 4 environment-skipped。
 - 仍缺 production Session/card-material adapter、真实 ChatGPT 非付款观察、LIVE payment/post-payment adapter 和服务器部署/回滚演练；未部署、未真实付款。
+
+## 2026-08-29｜Browser 共享密文材料 adapter 已合入（未部署）
+
+- Browser 独立线提交 `ddad4f1` 经统筹审查与复验后，以主线提交 `58c0d4e` 合入。
+- adapter 只凭当前 `browser_run` 读取 v1 现有 `orders.session_ciphertext`、`cards.card_credentials_ciphertext`，并强制 run/attempt/order/profile/route/provider 以及消费预留一致；不建第二份材料库、不调用卡台。
+- readonly lane 只注入 Session cookie 做页面观察，卡资料只做内存格式/绑定预检；`fieldsWritten=0`、`submitCalls=0`，随后 safe-abort 清理资金栅栏。
+- 统筹复验：Browser 94 total / 90 pass / 0 fail / 4 environment-skipped；production-readonly smoke 的配置/systemd 9/9、隔离 MySQL + CLI/Chrome 3/3 通过。
+- 未部署、未连接生产、未读取真实 Session/PAN/CVC、未访问真实 ChatGPT、未付款。下一缺口是保持付款关闭的真实 ChatGPT 只读登录/身份/页面观察。

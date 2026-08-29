@@ -629,6 +629,69 @@ test('inventory assignment accepts a supported non-default card segment and give
   }
 });
 
+test('inventory assignment queues one read sync for a stale safe candidate without writing to a Provider', {
+  skip: !databaseUrl && 'TEST_DATABASE_URL 未配置；完整 MySQL 套件在服务器隔离数据库运行'
+}, async () => {
+  const pool = mysql.createPool({ uri: databaseUrl, connectionLimit: 3, timezone: 'Z' });
+  const fixture = await createOrder(pool);
+  const cardId = id();
+  const providerCardId = `stale-demand-sync-${id()}`;
+  await pool.query(
+    `INSERT INTO cards
+     (id, order_id, inventory_status, provider_card_id, card_type_id, last4, status,
+      funded_amount, current_balance, currency, refund_status, card_credentials_ciphertext,
+      provider_account_id, external_card_id, intake_status, sync_tier, last_transaction_synced_at)
+     VALUES (?, NULL, 'AVAILABLE', ?, '7', '5151', 'active',
+       '16.000000', '16.000000', 'USD', 'MONITORING', ?, ?, ?,
+       'ACCEPTED', 'AVAILABLE', DATE_SUB(CURRENT_TIMESTAMP(3), INTERVAL 16 MINUTE))`,
+    [cardId, providerCardId, encryptSecret(JSON.stringify({
+      cardNumber: '4242424242425151', expMonth: 12, expYear: 2032, cvv: '123'
+    }), integrationSessionKey), legacyCardProviderAccountId, providerCardId]
+  );
+  const workflow = createWorkflowRepository(pool, { sessionEncryptionKey: integrationSessionKey });
+  try {
+    const first = await workflow.assignAvailableCard(fixture.orderId);
+    assert.deepEqual(first, { waitingForCard: true, refreshQueued: true });
+
+    const [[waitingOrder]] = await pool.query(
+      'SELECT status FROM orders WHERE id = ?', [fixture.orderId]
+    );
+    assert.equal(waitingOrder.status, OrderStatus.WAITING_FOR_CARD);
+
+    const [jobsAfterFirstCall] = await pool.query(
+      `SELECT status, requested_by FROM card_sync_jobs
+       WHERE card_id = ? AND status IN ('PENDING','RUNNING')`, [cardId]
+    );
+    assert.deepEqual(jobsAfterFirstCall, [{ status: 'PENDING', requested_by: 'worker' }]);
+
+    const second = await workflow.assignAvailableCard(fixture.orderId);
+    assert.deepEqual(second, { waitingForCard: true, refreshQueued: false });
+    const [[activeJobs]] = await pool.query(
+      `SELECT COUNT(*) AS count FROM card_sync_jobs
+       WHERE card_id = ? AND status IN ('PENDING','RUNNING')`, [cardId]
+    );
+    assert.equal(activeJobs.count, 1);
+
+    const [[providerWrites]] = await pool.query(
+      `SELECT COUNT(*) AS count FROM provider_calls
+       WHERE order_id = ?`, [fixture.orderId]
+    );
+    assert.equal(providerWrites.count, 0);
+    const [[storedCard]] = await pool.query(
+      'SELECT order_id, inventory_status FROM cards WHERE id = ?', [cardId]
+    );
+    assert.deepEqual(storedCard, { order_id: null, inventory_status: 'AVAILABLE' });
+  } finally {
+    await pool.query('DELETE FROM card_sync_jobs WHERE card_id = ?', [cardId]);
+    await pool.query('DELETE FROM operator_alerts WHERE dedupe_key = ?', [
+      `order-waiting-card:${fixture.orderId}`
+    ]);
+    await pool.query('DELETE FROM cards WHERE id = ?', [cardId]);
+    await removeOrder(pool, fixture);
+    await pool.end();
+  }
+});
+
 test('a card registered by the stock service is provider-scoped, accepted, and assignable', {
   skip: !databaseUrl && 'TEST_DATABASE_URL 未配置；完整 MySQL 套件在服务器隔离数据库运行'
 }, async () => {
