@@ -183,3 +183,13 @@
 - 历史 API 与 Browser 共用 `recharge_attempts` 资金栅栏，任何旧 API 结果未知订单都禁止切 Browser；新 Browser 订单不调用 ZZSHU；
 - 账号、订单、卡片和 Checkout artifact 分别互斥；过期 Checkout 不自动重建，完整 hosted URL 只存加密短期 artifact；
 - 经单独操作确认前不得打开真实 Browser 付款，详见 D-038、D-039 和 Browser 基线。
+
+## 2026-08-29 卡片库存同步复验状态
+
+- [x] 生产后台只读同步全部并等待完成
+- [x] 卡 1477/6807 交易证据复核
+- [x] 订单 `PJV1-FqFnMiSKBtLGN14GyP7W` 对账与卡片核对复核
+- [x] 总览库存统计和控制台检查
+- [ ] 生产资金写入、真实开卡/卡充值/付款（仍需单独确认，当前禁止）
+
+证据报告：`docs/2026-08-29_card-inventory-readonly-sync-verification.md`。

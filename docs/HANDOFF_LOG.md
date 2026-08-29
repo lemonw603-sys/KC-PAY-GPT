@@ -476,3 +476,12 @@
 - 生产后台事实：可直接分配 0、待补余额 1、自动补卡关闭、低库存状态 false、相关 OPEN 告警 0。
 - 验证：v1 459 total / 422 pass / 0 fail / 37 environment-skipped；全新临时 MySQL 8.4 四个集成套件 37/37；生产 readiness `ok=true`、公网 ops/plus ready 200、`pojia-ops check` 和最新加密备份完整性通过。
 - 所有资金写开关、接单、派发、Browser 付款、自动开卡和卡余额充值继续关闭；本轮没有执行真实资金动作。
+
+## 2026-08-29｜部署后卡片库存只读同步复验
+
+- 通过已登录生产后台“卡片库存 → 只读同步全部”，加入 7 张卡队列，等待后刷新完成；未执行任何 Provider/资金写入。
+- 卡 1477/6807：状态 `invalidating`、已分配、余额 `0.07 USD`、资料/交易同步 `08/29 09:50`；`CARD_RECHARGE 16 USD` 与 `PURCHASE 15.93 USD` 成功交易证据已显示。
+- 订单 `PJV1-FqFnMiSKBtLGN14GyP7W`：充值成功、三方一致、卡片核对 15 分钟内已更新、平台金额 `982.140000 PHP`、直充单号 `6294`。
+- 库存：可分配 0、使用中 1、暂不可用 1、永久停用 17；卡台余额 `$47.36`、剩余开卡额度 292、自动补卡关闭。
+- Console 仅有 CSP inline-style 阻止错误；业务只读 GET 请求均 200。详细报告：`docs/2026-08-29_card-inventory-readonly-sync-verification.md`。
+- 下一步：由统筹窗口审查报告；保持所有资金写开关关闭，不部署额外变更。
