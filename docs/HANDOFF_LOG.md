@@ -611,7 +611,7 @@
 - 错误分类进一步明确：付款前确定性问题为 `PRE_SUBMIT_FAILED`（可修正）；付款后不确定性为 `PAYMENT_RESULT_UNKNOWN`（只对账、不重付）。
 - Browser 离线 soak 已运行成功；没有生产网络或资金写入。
 - 生产部署模板和只读 smoke 配置复核通过：Browser 付款开关为 false、模式为 MOCK。
-- 当前达到真实付款前就绪，等待单独、明确的真实 Browser 付款授权；不会因普通继续指令自动开启生产写入。
+- 状态更正：此前“真实付款前就绪”仅指代码/隔离测试层；Browser 旧 worktree 报告仍显示生产 Session/card adapter、真实非付款观察和部署演练未完成，当前不得进入真实付款。
 - 已建立余额不足卡付款前停止测试手册；原始 Session 不落盘，仅记录脱敏摘要和流程证据。
 - 根因定位：官方方案弹窗的“升级至 Plus”按钮为表单外 `type=submit`，旧规则过宽导致假失败；现已改为只拒绝表单内提交控件，并补充说明。
 - 权威收口：订单 `CARD_READY`；attempt/funds `CLEARED`；run `FAILED_SAFE`；dispatch `CANCELLED`；无活动 permit、付款提交记录或资源租约。

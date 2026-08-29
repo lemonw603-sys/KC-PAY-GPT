@@ -1,6 +1,8 @@
 # AI充值业务路线图
 
 > 2026-08-28 起，跨模块当前执行顺序统一以 `docs/MASTER_EXECUTION_PLAN_2026-08-28.md` 为准；其对抗审查见 `docs/MASTER_EXECUTION_PLAN_ADVERSARIAL_REVIEW_2026-08-28.md`。本文继续保留阶段历史，不再从历史段落单独推导新的“下一步”。
+
+> 状态更正（2026-08-29）：当前 Browser 仅达到代码/隔离测试层付款前就绪；生产 Session/card adapter、真实非付款观察和部署演练仍需以 Browser worktree 对齐结果为准，未完成前不得进入真实付款。
 > `docs/BACKEND_RUNTIME_ALIGNMENT_AUDIT_2026-08-28.md` 是部署前历史快照；当前生产事实以 `docs/CURRENT_STATE.md` 和 `docs/PRE_INVENTORY_CONVERGENCE_SEAL_2026-08-28.md` 为准。
 
 ## 当前执行快照（2026-08-29）
