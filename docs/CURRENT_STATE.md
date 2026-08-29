@@ -4,8 +4,8 @@
 
 ## 代码与发布
 
-- 当前生产代码提交：`51a4b7a` (`fix: distinguish fundable cards from missing inventory`)；后续文档提交不改变生产代码。
-- 生产 release：`/opt/pojia/releases/20260829-fundable-inventory-51a4b7a`，为真实独立目录；上一版本回滚点：`/opt/pojia/releases/20260829-card-segments-262bd4d`。
+- 当前生产代码提交：`58dfe0d` (`feat: add manual card segment refresh and persisted default`)。
+- 生产 release：`/opt/pojia/releases/20260829-card-segment-58dfe0d`，为真实独立目录；上一版本回滚点：`/opt/pojia/releases/20260829-admin-cross-cf5025b`。
 - 可靠回滚点：`/opt/pojia/releases/20260828-fea0ffd-rollback`。
 - 服务：Web、API Worker、卡片读同步、卡目录同步、Bark、备份均正常；Browser Worker 保持 `inactive/disabled`。
 - 付费补卡 runner 已确认为 `inactive/disabled`，避免重启后每 10 秒唤醒并带入卡台写权限。
