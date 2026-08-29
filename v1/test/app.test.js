@@ -6,6 +6,7 @@ import { createFixedWindowRateLimit } from '../src/app/fixed-window-rate-limit.j
 import { OrderIntakeError } from '../src/domain/order-intake-error.js';
 import { PublicApiError } from '../src/domain/public-api-error.js';
 import { createAdminSessionAuth, hashAdminPassword } from '../src/security/admin-session.js';
+import { createAdminStartBusinessService } from '../src/services/admin-start-business-service.js';
 
 async function withServer(app, run) {
   const server = app.listen(0, '127.0.0.1');
@@ -494,12 +495,11 @@ test('start-business gates intake and dispatch on read-only readiness and stock'
       cardStock: { available, needsFunding: 2 },
       providerHealth: { syncedAt: ready ? new Date().toISOString() : null, purchaseEnabled: ready }
     }),
-    startAdminBusiness: async () => {
-      if (!ready) throw new Error('卡台只读状态未就绪');
-      if (available < 1) throw new Error('可用卡库存不足：可分配 0，待补余额 2');
-      acceptanceCalls += 1; dispatchCalls += 1;
-      return { ready: true, acceptNewOrders: true, dispatchExistingOrders: true };
-    }
+    startAdminBusiness: createAdminStartBusinessService({
+      adminReadService: { getOverview: async () => ({ cardStock: { available, needsFunding: 2 }, providerHealth: { syncedAt: ready ? new Date().toISOString() : null, purchaseEnabled: ready } }) },
+      cardStockService: { status: async () => ({ provider: { defaultCardTypeId: '16', cardTypes: [{ id: '16', name: 'VISA' }] } }) },
+      adminOperationsService: { setOrderAcceptance: async () => { acceptanceCalls += 1; return { acceptNewOrders: true }; }, setDispatch: async () => { dispatchCalls += 1; return { dispatchExistingOrders: true }; } }
+    })
   });
   async function invoke(app) {
     let result;
