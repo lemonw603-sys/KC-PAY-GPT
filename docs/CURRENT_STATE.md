@@ -1,4 +1,4 @@
-# 当前状态快照（2026-08-29 15:20 CST）
+# 当前状态快照（2026-08-29 15:55 CST）
 
 > 本文件只保留当前有效状态。历史过程查 `docs/HANDOFF_LOG.md`；本阶段封账证据查 `docs/PRE_INVENTORY_CONVERGENCE_SEAL_2026-08-28.md`。
 
@@ -42,7 +42,7 @@
 ## 验证结果
 
 - v1：467 tests / 429 pass / 0 fail / 38 environment-skipped。新增“过期安全候选卡按订单需求只排入一个只读同步任务”的真实 MySQL 集成测试；全新临时 MySQL 8.4、migration 001–040 下，`mysql-integration.test.js` 34/34 通过。
-- Browser：共享密文材料 adapter 合入后为 94 tests / 90 pass / 0 fail / 4 environment-skipped；隔离 MySQL 8.4 + 正式 production-readonly CLI/Chrome smoke 3/3 通过。
+- Browser：只读 ChatGPT 账号/Checkout harness 合入后为 99 tests / 95 pass / 0 fail / 4 environment-skipped；隔离 MySQL 8.4 + 正式 production-readonly CLI/Chrome smoke 3/3 通过，配置/systemd 检查 10/10 通过。
 - 当前已核验的最新部署前加密备份 `/var/backups/pojia/pojia-20260829T060414Z.sql.gz.enc` 已通过解密与 gzip 完整性校验。
 
 ## 当前未完成
@@ -56,9 +56,11 @@
 - Browser 独立线提交 `1d02c78` 已由统筹审查并以主线提交 `d6f9bf3` 安全合入：attempt 与 run 的 executor profile 现在必须一致，漂移时以 `EXECUTOR_PROFILE_CONFLICT` fail-closed；该 profile 同时进入权威付款 snapshot。合入后语法检查与相关 adapter/runtime/repository 测试 **46/46** 通过；未部署 Browser Worker、未连接生产、未执行付款。
 - Browser 首次灰度前只读就绪补强已由统筹审查并以 `1516c67` 合入：readiness 强制 migration 039/040，CLI 同样强制 payment executor=false/MOCK，并补齐 Browser 专属停止/回滚入口。主线复验 90 tests / 86 pass / 0 fail / 4 skipped；仍未部署生产 Browser Worker。
 - Browser 共享 Session/卡资料 production adapter 已由独立线提交 `ddad4f1`，经统筹复验后以主线提交 `58c0d4e` 合入：只通过当前 `browser_run` 读取 v1 现有密文和当前 attempt 的 `RESERVED` 消费预留；不建立第二套存储、不调用卡台、不填卡、不付款。正式 production-readonly smoke 9/9 配置检查与 3/3 隔离 MySQL/Chrome 流程通过；未部署生产、未读取真实材料。
+- Browser 只读 ChatGPT 账号/Checkout harness 已由独立线提交 `7abbe51`，经统筹审查后以主线提交 `7065b60` 合入：身份摘要逐项匹配，订阅状态区分免费/Plus/其他付费/未知；真实观察阶段只读取 Session，不解密 PAN/CVC；页面入口和 Checkout 仅做只读识别。主线 Browser 99 tests / 95 pass / 0 fail / 4 skipped，production-readonly smoke 10/10 + 隔离 MySQL/Chrome 3/3；未部署生产、未访问真实 ChatGPT、未付款。
 - 第二单 API 灰度已完成；临时充值写权限已关闭，单笔 Permit 已撤销。卡台已读到 `PURCHASE 15.76 USD`，余额由 `$16.00` 降为 `$0.24`，资金扣减与消费金额一致；2026-08-29 07:16 UTC 再次单卡低频只读同步后，交易仍为 `PROCESSING / UNSETTLED`。同步任务已正常完成，绝不因未结算而重付。
 - 本单暴露出“分配要求 15 分钟新鲜、定时同步默认 60 分钟”的窗口错配。按订单需求只同步 1 张过期候选卡的低调用量修复已通过安全分支 `bba4105` 部署；生产健康和 readiness 正常。
 - 2026-08-29 13:21 CST 公网复核：ops/plus 的 live/ready 四个端点均 HTTP 200。
+- Browser 下一步不是直接付款：需要一次性提供专用非客户测试账号的隔离订单/Session、身份摘要、批准网络出口和 Chrome 主机，运行 `CHATGPT_ACCOUNT_CHECKOUT` 非付款观察，冻结当次真实页面合同；通过前不部署、不读取真实客户材料、不填卡、不付款。
 - Browser profile 绑定合入后的 v1 全量回归：465 total / 428 pass / 0 fail / 37 environment-skipped。
 - 卡余额充值目前仅有后台记录/核对视图，指定卡发起充值的管理入口暂缓开发；生产 Provider 写入继续关闭。
 

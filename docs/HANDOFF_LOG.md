@@ -583,3 +583,12 @@
 - readonly lane 只注入 Session cookie 做页面观察，卡资料只做内存格式/绑定预检；`fieldsWritten=0`、`submitCalls=0`，随后 safe-abort 清理资金栅栏。
 - 统筹复验：Browser 94 total / 90 pass / 0 fail / 4 environment-skipped；production-readonly smoke 的配置/systemd 9/9、隔离 MySQL + CLI/Chrome 3/3 通过。
 - 未部署、未连接生产、未读取真实 Session/PAN/CVC、未访问真实 ChatGPT、未付款。下一缺口是保持付款关闭的真实 ChatGPT 只读登录/身份/页面观察。
+
+## 2026-08-29｜Browser ChatGPT 账号/Checkout 只读 harness 已合入（未部署）
+
+- Browser 独立线提交 `7abbe51` 经统筹审查后，以主线提交 `7065b60` 合入。
+- 新增一次性 `CHATGPT_ACCOUNT_CHECKOUT` harness：Session bootstrap → `/api/auth/session` 身份逐项匹配 → 同页面订阅状态检查 → 免费账号才继续 Plus 入口和 Checkout 只读识别 → `abortBeforePayment`。
+- 真实观察阶段只读取订单 Session，不解密或读取 PAN/CVC；不会点击付款、不创建付款 permit、不调用 Provider。
+- 对抗式审查修复：身份不再“任一字段匹配即通过”；订阅接口漂移独立归类为 `ACCOUNT_STATUS_UNKNOWN`；Session/card 读取前立即复核租约；真实观察不再无必要读取卡资料。
+- 统筹复验：Browser 99 tests / 95 pass / 0 fail / 4 skipped；production-readonly smoke 配置/systemd 10/10，隔离 MySQL + Chrome 3/3；`git diff --check` 通过。
+- 未部署、未访问真实 ChatGPT、未读取真实 Session/PAN/CVC。下一步只需一次性准备专用非客户测试账号的隔离订单/Session、身份摘要、批准网络出口与 Chrome 主机，然后执行只读观察并冻结真实合同。

@@ -178,8 +178,10 @@
 - [x] Browser 独立 worktree adapter 按新合同接线，移除平行状态真相；attempt/run executor profile 已绑定并进入权威付款 snapshot；
 - [x] 保持付款写关闭，完成非付款端到端联调和故障注入；相关 adapter/runtime/repository 回归 46/46，隔离 MySQL + Chrome 非付款 dry-run 1/1；
 - [x] 共享 Session/卡资料 production adapter 已合入：只通过当前 run 读取 v1 现有密文和当前 attempt 的消费预留，readonly lane 只做 Session bootstrap 与卡资料内存预检，不填卡、不付款；
+- [x] 共享 ChatGPT 账号/Checkout 非付款 harness 已合入：逐项核对身份摘要，区分免费/Plus/其他付费/未知，读取 Plus 入口和 Checkout 只读摘要；真实观察前不解密 PAN/CVC、不填卡、不付款；
 - 现在可以在独立讨论窗口完成方案和接口边界设计，成果必须回写本项目事实源；
 - 当前不接入生产、不执行真实 Browser 付款；
+- 下一步需在一次性批准的专用测试账号与网络出口上执行真实 ChatGPT 非付款观察，冻结页面/Session/订阅合同；观察通过后再设计 LIVE 付款适配器。
 - Browser 已成为未来 Plus 主执行链路，可立即进行非付款 PoC、仿真控制面和隔离联调，不再等待 ZZSHU API 成功单；
 - 优先验证“账号 Context 提取 hosted 长链→同菲律宾 sticky 出口的独立支付 Context”模式；内部短链不算真正解耦。只读阶段用同账号平衡顺序配对，会创建 Checkout 的阶段必须使用隔离账号 cohort；
 - 同时按多赛道基线保留原上号器、ChatGPT 站点状态克隆+CDP、同 Context UI 和页面 Context hosted；赛道共享证据合同，失败后归档，正式链路最多保留一个 champion 和一个 Checkout 创建前路由的预验证 fallback；
