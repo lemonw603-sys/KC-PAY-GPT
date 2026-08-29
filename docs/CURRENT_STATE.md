@@ -71,6 +71,7 @@
 - 本轮完成 Browser 离线 soak（`npm --prefix browser-mvp run soak`）并成功退出；未连接生产、未执行付款。
 - 再次核对部署模板与只读 smoke：`BROWSER_PAYMENT_EXECUTOR_ENABLED=false`、`BROWSER_PAYMENT_EXECUTOR_MODE=MOCK` 均保持关闭/模拟配置。
 - 当前阶段已达到“真实付款前就绪”：下一步仅能在专门确认后执行一单受控 Browser 付款；普通“继续”不自动改变生产写开关。
+- 已建立“余额不足卡付款前停止测试”运行手册：`docs/2026-08-29_browser-pre-submit-session-test-runbook.md`；使用用户指定测试 Session，停止于付款按钮前。
 
 - 库存后台收敛已部署生产（2026-08-28），并已通过发布后公网健康、服务状态、备份完整性和未认证路由验收；后台浏览器交叉验收仍待使用管理员会话执行。
 - 已实现卡段人工刷新（`POST /api/v1/admin/card-stock/provider-refresh`）与默认卡段持久保存（`POST /api/v1/admin/card-stock/default-card-type`）；刷新仅调用 Provider 只读接口，不恢复高频自动读取。
