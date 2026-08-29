@@ -1672,7 +1672,12 @@ elements.cardFundingPrev?.addEventListener('click', () => {
 elements.cardFundingNext?.addEventListener('click', () => {
   if (state.cardFundingPage * 20 < state.cardFundingTotal) { state.cardFundingPage += 1; loadCardFundingAttempts(); }
 });
-document.querySelector('#refresh-stock')?.addEventListener('click', () => loadStock().catch(() => showNotice('库存读取失败。')));
+document.querySelector('#refresh-stock')?.addEventListener('click', async () => {
+  try {
+    await loadStock();
+    showNotice('本地列表已刷新（未同步卡台）。', 'success');
+  } catch { showNotice('库存读取失败。'); }
+});
 elements.startBusiness?.addEventListener('click', async (event) => {
   const button = event.currentTarget; button.disabled = true;
   try {

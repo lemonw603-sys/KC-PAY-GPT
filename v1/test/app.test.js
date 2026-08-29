@@ -78,6 +78,17 @@ test('serves the isolated v1 customer page and local assets', async () => {
   });
 });
 
+test('labels local stock refresh separately from provider card synchronization', async () => {
+  const app = createApp();
+  await withServer(app, async (baseUrl) => {
+    const html = await (await fetch(`${baseUrl}/admin`)).text();
+    const script = await (await fetch(`${baseUrl}/admin/assets/admin.js`)).text();
+    assert.match(html, /id="refresh-stock"[^>]*>刷新本地列表</);
+    assert.match(html, /id="sync-all-cards"[^>]*>同步卡台余额和交易</);
+    assert.match(script, /本地列表已刷新（未同步卡台）/);
+  });
+});
+
 test('readiness fails closed and errors do not expose details', async () => {
   const app = createApp({ readiness: async () => { throw new Error('database password leaked'); } });
   await withServer(app, async (baseUrl) => {
