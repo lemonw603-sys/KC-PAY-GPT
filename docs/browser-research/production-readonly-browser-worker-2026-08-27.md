@@ -9,7 +9,7 @@ browser-mvp/src/production-readonly-worker.js
 deploy/server/pojia-browser-worker.service
 ```
 
-该进程使用正式共享 MySQL dispatch/run/resource lease/recovery/`abortBeforePayment()`，并实际启动系统 Google Chrome。它当前只有只读观察能力，没有 payment submitter、Session provider、卡材料 provider 或卡台写客户端。因此它修复的是“生产部署没有 Browser 队列消费者进程”的阻塞，但**不等于真实付款 Worker 已完成或生产可用**。
+该进程使用正式共享 MySQL dispatch/run/resource lease/recovery/`abortBeforePayment()`，并实际启动系统 Google Chrome。2026-08-29 已增加默认关闭的共享密文 Session/card-material adapter；启用后也只做 Session bootstrap 和卡资料内存预检，不填卡、不付款。进程仍没有 LIVE payment submitter 或卡台写客户端，因此**不等于真实付款 Worker 已完成或生产可用**。
 
 ## 运行链
 
@@ -19,6 +19,7 @@ browser_dispatch_jobs
 → browser_run + dispatch lease
 → execution resource leases
 → Google Chrome persistent context
+→ （显式启用时）共享 Session bootstrap + 卡资料短租约预检
 → 只读 page contract 观察
 → AppendOnlyWal
 → abortBeforePayment()
@@ -45,6 +46,7 @@ browser_dispatch_jobs
 8. Chrome 路径可执行，Profile/WAL 目录可写；
 9. 环境中不得出现原始 Session、Token、PAN/CVC 或卡台 API key；
 10. `LOCAL_FIXTURE` 只接受 `data:text/html,...`；`EXTERNAL_READONLY` 只接受 HTTPS，并需要第二个精确确认词。
+11. 共享材料模式默认 `DISABLED`；启用时只能是 `SHARED_ENCRYPTED_NONPAYMENT`，并要求 v1 secret-box key 和专用外部只读确认词。
 
 任何一项不满足均拒绝启动。普通 stdout/stderr 只记录状态和 reason code；WAL 只接收通过安全合同校验的摘要。
 
@@ -111,6 +113,7 @@ external payment calls = 0
 - 三个彼此独立的 canonical base64 32-byte key；
 - 经批准的本地 fixture 或外部 HTTPS 只读 page contract；
 - 数据库迁移 `001–040` 已完成，数据库 Browser payment 写开关为 false。
+- 默认保持 `BROWSER_SHARED_MATERIALS_MODE=DISABLED`；只有经批准的非付款观察才改为 `SHARED_ENCRYPTED_NONPAYMENT`。
 
 当前上游创建的 Browser dispatch 可能没有预绑定 executor profile。readonly Worker 会在原子 claim 时把未绑定 job 冻结到自己的 profile；本阶段只能运行一个被批准的 Browser profile/Worker lane，且只能放入非敏感 canary 订单。多 profile 路由必须在后续增加上游显式 profile 选择后再开启，不能让两个不同 runtime 竞争未绑定 job。
 
@@ -118,10 +121,10 @@ external payment calls = 0
 
 - 未在 AlmaLinux/systemd 上真实安装、启动或重启；
 - 未连接生产/预生产数据库，未消费真实订单；
-- 未访问外部 ChatGPT，未读取真实 Session/PAN/CVC；
+- 未访问外部 ChatGPT，未读取真实 Session/PAN/CVC；共享 adapter 只使用隔离 fixture 验证；
 - 未填卡、未付款、未调用卡台写接口；
 - 未验证服务器 Chrome sandbox、字体/依赖、代理、真实 Profile 恢复；
-- 未实现真实 Session/card material/payment submitter 和付款后三方对账。
+- 未验证真实 Session 登录/账号身份；未实现 LIVE payment submitter 和付款后三方对账。
 
 因此本轮结论仅为：正式独立 readonly Worker 进程和部署模板已完成本地 production-shaped 验证；生产真实单仍不可开始。
 
@@ -131,6 +134,13 @@ external payment calls = 0
 - readonly 配置加载器现在也强制 payment executor gate 为 `false`、模式为 `MOCK`；即使绕开 systemd 直接运行 CLI，也不能留下看似开启的付款执行器配置。
 - `pojia-browser-worker.service` 保留 `Requires=docker.service` 是当前部署拓扑的显式依赖：生产 MySQL 由 `pojia-mysql` Docker 容器在本机提供，其他 v1 runtime 单元使用同一依赖。Browser 运行时代码本身不调用 Docker；若未来数据库脱离 Docker，再统一调整所有 runtime unit，而不是只改单个 Browser unit。
 - Browser 专属停止/disable/previous-release 回滚命令已补入 `deploy/README.md`；未实际在服务器执行。
+
+### 2026-08-29 共享 Session/card-material adapter
+
+- 新增 `shared-encrypted-materials.js`，按 `browser_run.id` 读取 v1 现有 Session/card 密文；不建第二套存储、不调用卡台 API。
+- 材料释放前再次核对 pre-payment 状态、profile、route、Provider 和 `RESERVED` 消费账本。
+- Session 注入后立即关闭租约；卡资料只做一次内存预检并立即关闭，`fieldsWritten=0`、`submitCalls=0`。
+- production-shaped smoke 更新为 config/systemd 9/9、MySQL/CLI/Chrome 3/3；详细证据见 `docs/browser-research/BROWSER_SHARED_MATERIAL_ADAPTER_2026-08-29.md`。
 
 ## 付款执行器代码切片（仅 mock）
 

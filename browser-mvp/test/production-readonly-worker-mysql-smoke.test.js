@@ -10,11 +10,28 @@ import { fileURLToPath } from 'node:url';
 import mysql from 'mysql2/promise';
 import { createBrowserDispatchRepository } from '../../v1/src/db/repositories/browser-dispatch-repository.js';
 import { createBrowserAdminService } from '../../v1/src/services/browser-admin-service.js';
+import { encryptSecret } from '../../v1/src/security/secret-box.js';
 const databaseUrl = process.env.TEST_DATABASE_URL;
 const execFileAsync = promisify(execFile);
 const here = dirname(fileURLToPath(import.meta.url));
 const productId = '00000000-0000-4000-8000-000000000201';
 const routeId = '00000000-0000-4000-8000-000000000302';
+
+function storedSession() {
+  const nowSeconds = Math.floor(Date.now() / 1000);
+  const jwt = [
+    Buffer.from(JSON.stringify({ alg: 'none' })).toString('base64url'),
+    Buffer.from(JSON.stringify({ iat: nowSeconds - 60, exp: nowSeconds + 3600 })).toString('base64url'),
+    'fixture-signature',
+  ].join('.');
+  return {
+    user: { id: 'isolated-user', email: 'isolated@example.test' },
+    account: { id: 'isolated-account' },
+    accessToken: jwt,
+    sessionToken: 'isolated.jwe.encrypted.payload.tag',
+    expires: new Date(Date.now() + 3_600_000).toISOString(),
+  };
+}
 
 test('production readonly entry claims MySQL dispatch, opens Chrome, and safe-aborts', {
   skip: !databaseUrl && 'TEST_DATABASE_URL is required for isolated shared Browser dry-run integration',
@@ -28,6 +45,7 @@ test('production readonly entry claims MySQL dispatch, opens Chrome, and safe-ab
   const runtimeRoot = await mkdtemp(join(tmpdir(), 'browser-production-readonly-smoke-'));
   t.after(() => rm(runtimeRoot, { recursive: true, force: true }));
   const html = encodeURIComponent('<title>Shared dry-run fixture</title><main data-shared-dry-run>no-payment</main>');
+  const sharedMaterialKey = Buffer.alloc(32, 4);
   try {
     await pool.query(
       `INSERT INTO executor_profiles
@@ -47,7 +65,8 @@ test('production readonly entry claims MySQL dispatch, opens Chrome, and safe-ab
         card_purchase_idempotency_key, product_id, fulfillment_route_id,
         route_resolution_status)
        VALUES (?, ?, ?, 'RECHARGE_PROCESSING', '7', 25, 16, ?, ?, ?, ?, ?, 'RESOLVED')`,
-      [orderId, `SHARED-DRY-${orderId}`, cdkId, Buffer.from('unused-isolated-session'),
+      [orderId, `SHARED-DRY-${orderId}`, cdkId,
+        encryptSecret(JSON.stringify(storedSession()), sharedMaterialKey),
         `isolated-account-${orderId}`, `shared-dry-purchase-${orderId}`, productId, routeId],
     );
     await pool.query('UPDATE cdks SET order_id = ? WHERE id = ?', [orderId, cdkId]);
@@ -60,7 +79,9 @@ test('production readonly entry claims MySQL dispatch, opens Chrome, and safe-ab
        VALUES (?, ?, 'ASSIGNED', ?, '7', 'active', 25, 20, 'USD', 'MONITORING',
          ?, '00000000-0000-4000-8000-000000000101', ?, 'ACCEPTED', 'ASSIGNED',
          CURRENT_TIMESTAMP(3))`,
-      [cardId, orderId, `shared-dry-card-${cardId}`, Buffer.from('unused-isolated-card'),
+      [cardId, orderId, `shared-dry-card-${cardId}`, encryptSecret(JSON.stringify({
+        cardNumber: '4111111111111111', expMonth: 12, expYear: 2032, cvv: '123',
+      }), sharedMaterialKey),
         `shared-dry-card-${cardId}`],
     );
     await pool.query(
@@ -107,6 +128,8 @@ test('production readonly entry claims MySQL dispatch, opens Chrome, and safe-ab
         BROWSER_RUNTIME_HMAC_KEY_BASE64: key(1),
         BROWSER_ARTIFACT_KEY_BASE64: key(2),
         BROWSER_RESOURCE_HMAC_KEY_BASE64: key(3),
+        BROWSER_SHARED_MATERIALS_MODE: 'SHARED_ENCRYPTED_NONPAYMENT',
+        SESSION_ENCRYPTION_KEY_BASE64: sharedMaterialKey.toString('base64'),
         BROWSER_PAYMENT_EXECUTOR_ENABLED: 'false', BROWSER_PAYMENT_EXECUTOR_MODE: 'MOCK',
         BROWSER_PAYMENT_WRITES_ENABLED: 'false', PROVIDER_WRITES_ENABLED: 'false',
         PROVIDER_CARD_WRITES_ENABLED: 'false', PROVIDER_RECHARGE_WRITES_ENABLED: 'false',
@@ -120,9 +143,12 @@ test('production readonly entry claims MySQL dispatch, opens Chrome, and safe-ab
     });
     assert.match(stdout, /status: 'SAFE_ABORTED'/);
     assert.doesNotMatch(`${stdout}\n${stderr}`, /isolated-account-/);
+    assert.doesNotMatch(`${stdout}\n${stderr}`, /isolated\.jwe|4111111111111111/);
     const wal = await readFile(join(runtimeRoot, 'evidence.wal.jsonl'), 'utf8');
     assert.match(wal, /"type":"intent"/);
     assert.doesNotMatch(wal, /isolated-account-/);
+    assert.doesNotMatch(wal, /isolated\.jwe|4111111111111111/);
+    assert.match(wal, /card-material-preflight/);
 
     const [[stored]] = await pool.query(
       `SELECT o.status AS order_status, rat.status AS attempt_status,

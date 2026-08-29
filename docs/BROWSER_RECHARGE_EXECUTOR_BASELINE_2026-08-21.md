@@ -665,6 +665,14 @@ B2 接下来的主工程顺序是并发队列及连续 24 小时 soak，再接�
 - 目标容量每天 200–300 单；
 - 当前只设计和落盘，不接生产、不真实付款。
 
+### 2026-08-29 共享材料接线进展
+
+- production adapter 已复用 `orders.session_ciphertext`、`cards.card_credentials_ciphertext` 和 v1 secret-box；没有新增 Session/card 事实源。
+- opaque ref 直接映射 `browser_run.id`，材料读取再次核对 attempt/order/profile/route/provider 与 `RESERVED` 消费账本。
+- Session cookie 注入后立即关闭租约；卡资料当前只做内存预检，`fieldsWritten=0`、`submitCalls=0`。
+- 隔离 MySQL + Google Chrome 正式 CLI 已通过；真实 ChatGPT 登录/页面、服务器网络和付款仍未验证。
+- 证据：`docs/browser-research/BROWSER_SHARED_MATERIAL_ADAPTER_2026-08-29.md`。
+
 ### 必须通过 PoC 获得证据的事实
 
 - 现有 Session JSON 建立网页登录态的可行性和稳定性；

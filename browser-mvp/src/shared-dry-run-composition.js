@@ -64,6 +64,9 @@ export function createSharedNonPaymentDryRun({
   observation,
   sessionProvider = null,
   resolveSessionRef = async () => null,
+  cardMaterialLeaseProvider = null,
+  resolveCardMaterialRef = async () => null,
+  validateCardMaterialOnly = false,
   resolveAccountKey,
   runtimeHmacKey,
   artifactKey,
@@ -85,6 +88,13 @@ export function createSharedNonPaymentDryRun({
     throw new SharedDryRunError('observation.pageContract is required', 'PAGE_CONTRACT_REQUIRED');
   }
   if (typeof resolveSessionRef !== 'function') throw new TypeError('resolveSessionRef must be a function');
+  if (typeof resolveCardMaterialRef !== 'function') throw new TypeError('resolveCardMaterialRef must be a function');
+  if (validateCardMaterialOnly && (!cardMaterialLeaseProvider
+    || typeof cardMaterialLeaseProvider.open !== 'function'
+    || typeof cardMaterialLeaseProvider.withMaterial !== 'function'
+    || typeof cardMaterialLeaseProvider.close !== 'function')) {
+    throw new TypeError('cardMaterialLeaseProvider is required for card material preflight');
+  }
   if (typeof resolveAccountKey !== 'function') {
     throw new TypeError('resolveAccountKey is required for cross-order account isolation');
   }
@@ -116,13 +126,25 @@ export function createSharedNonPaymentDryRun({
         attemptId: claimedJob.attemptId,
         runId: run.runId,
       });
+      const cardMaterialRef = await resolveCardMaterialRef({
+        orderId: claimedJob.orderId,
+        attemptId: claimedJob.attemptId,
+        runId: run.runId,
+      });
       const loaded = await upstreamAdapter.load({
         runId: run.runId,
         manifest,
         observation,
         sessionRef: sessionRef || null,
       });
-      return { job: loaded.job };
+      return {
+        job: loaded.job,
+        executionOptions: cardMaterialRef == null ? {} : {
+          cardMaterialLeaseProvider,
+          cardMaterialRef,
+          validateCardMaterialOnly,
+        },
+      };
     },
   });
   const workerService = createBrowserWorkerService({

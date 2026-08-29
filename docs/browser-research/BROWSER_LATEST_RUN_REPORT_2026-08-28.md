@@ -121,3 +121,12 @@ node --test v1/test/browser-dispatch-repository.test.js browser-mvp/test/shared-
 - 五个写开关全 false 的 `npm --prefix browser-mvp run dry-run:shared`：隔离 MySQL 8.4 + migration 001–040 + Chrome 1/1。
 - 未连接生产、未读取真实 Session/PAN/CVC、未填卡、未付款、未调用卡台写接口、未部署。首单灰度仍缺 production Session/card-material、真实页面非付款观察、LIVE payment/post-payment 和服务器部署/回滚演练。
 - 完整检查：`docs/browser-research/BROWSER_FIRST_GRAY_READINESS_2026-08-29.md`。
+
+## 2026-08-29 共享 Session/card-material adapter 非付款复验
+
+- Browser 分支先同步主线 `a88f4dc`，旧 Browser patch 已由主线吸收，无重复提交。
+- 正式 readonly Worker 在显式 `SHARED_ENCRYPTED_NONPAYMENT` 模式下，通过 `browser_run.id` 读取隔离 fixture 的 v1 Session/card 密文；Session bootstrap 后和卡资料预检后均立即释放租约。
+- `npm --prefix browser-mvp run smoke:worker:readonly`：config/systemd 9/9，MySQL mock + 正式 readonly CLI/Google Chrome 3/3；stdout/stderr/WAL 无 fixture Session/PAN。
+- `npm --prefix browser-mvp test`：94 tests / 90 passed / 4 skipped / 0 failed。
+- 五个写开关 false 的 `npm --prefix browser-mvp run dry-run:shared`：隔离 MySQL 8.4 + migration 001–040 + Chrome 1/1。
+- 字段写入=0、付款提交=0、Provider 调用=0；未连接生产、未读取真实 Session/PAN/CVC、未访问真实 ChatGPT、未部署。

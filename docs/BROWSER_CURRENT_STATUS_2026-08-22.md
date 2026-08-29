@@ -149,3 +149,15 @@ git diff --check
 - Browser 专属 stop/disable/previous-release 回滚入口已补入 `deploy/README.md`，但未在服务器执行。
 - 首单灰度仍缺 production Session/card-material adapter、真实 ChatGPT 非付款页面观察、LIVE payment/post-payment adapter、候选 release 服务器检查与回滚演练；任何真实付款仍需单独确认。
 - 完整证据与准确未验证边界：`docs/browser-research/BROWSER_FIRST_GRAY_READINESS_2026-08-29.md`。
+
+## 8. 2026-08-29 共享 Session/card-material production adapter
+
+- `codex/browser` 已先同步主线 `a88f4dc`；此前 `2fd3aa0` 被主线 `1516c67` 吸收，rebase 自动跳过，无重复提交或冲突。
+- 新 adapter 直接复用 `orders.session_ciphertext`、`cards.card_credentials_ciphertext`、v1 secret-box 和 `browser_run.id`；没有新增 Session/card 数据库或平行状态。
+- 材料读取再次核对 run/attempt/order/profile/route/provider 与当前 attempt 的 `RESERVED` 消费账本。
+- Session 注入 Chrome 后立即释放短租约；卡资料只做内存预检，`fieldsWritten=0`、`submitCalls=0`，不填页面。
+- `BROWSER_SHARED_MATERIALS_MODE` 默认 `DISABLED`；显式 `SHARED_ENCRYPTED_NONPAYMENT` 仍受全部付款/Provider 写闸门约束。
+- 实跑：readonly smoke config/systemd 9/9、隔离 MySQL mock + 正式 CLI/Chrome 3/3；Browser 全量 94/90 passed/4 skipped/0 failed；共享 isolated dry-run 1/1。
+- 未接生产、未读取真实 Session/PAN/CVC、未访问真实 ChatGPT、未填卡、未付款、未调用卡台写接口、未部署。
+- 下一唯一动作：付款保持关闭，用专用非客户测试账号与批准网络做真实 ChatGPT 只读登录/身份/页面观察；先冻结页面/Session 合同。
+- 完整证据：`docs/browser-research/BROWSER_SHARED_MATERIAL_ADAPTER_2026-08-29.md`。

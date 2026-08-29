@@ -66,6 +66,12 @@ export function loadProductionReadonlyBrowserConfig(env = process.env) {
     }
   }
 
+  const sharedMaterialsMode = String(env.BROWSER_SHARED_MATERIALS_MODE || 'DISABLED').trim();
+  if (!['DISABLED', 'SHARED_ENCRYPTED_NONPAYMENT'].includes(sharedMaterialsMode)) {
+    throw new ProductionReadonlyConfigError(
+      'BROWSER_SHARED_MATERIALS_MODE must be DISABLED or SHARED_ENCRYPTED_NONPAYMENT',
+    );
+  }
   const target = required(env, 'BROWSER_WORKER_TARGET');
   const urlPrefix = required(env, 'BROWSER_OBSERVE_URL_PREFIX');
   if (target === 'LOCAL_FIXTURE') {
@@ -85,7 +91,10 @@ export function loadProductionReadonlyBrowserConfig(env = process.env) {
     if (url.username || url.password || url.search || url.hash) {
       throw new ProductionReadonlyConfigError('external readonly URL must not contain credentials, query, or fragment');
     }
-    if (env.BROWSER_EXTERNAL_READONLY_CONFIRM !== 'I-CONFIRM-EXTERNAL-READONLY-NO-SESSION') {
+    const requiredExternalConfirmation = sharedMaterialsMode === 'SHARED_ENCRYPTED_NONPAYMENT'
+      ? 'I-CONFIRM-EXTERNAL-READONLY-SHARED-MATERIALS-NO-PAYMENT'
+      : 'I-CONFIRM-EXTERNAL-READONLY-NO-SESSION';
+    if (env.BROWSER_EXTERNAL_READONLY_CONFIRM !== requiredExternalConfirmation) {
       throw new ProductionReadonlyConfigError('external readonly target requires its exact confirmation');
     }
   } else {
@@ -105,6 +114,9 @@ export function loadProductionReadonlyBrowserConfig(env = process.env) {
   if (new Set([runtimeHmacKey.toString('hex'), artifactKey.toString('hex'), resourceHmacKey.toString('hex')]).size !== 3) {
     throw new ProductionReadonlyConfigError('Browser runtime, artifact, and resource keys must be distinct');
   }
+  const sharedMaterialEncryptionKey = sharedMaterialsMode === 'SHARED_ENCRYPTED_NONPAYMENT'
+    ? key32(env, 'SESSION_ENCRYPTION_KEY_BASE64')
+    : null;
 
   return Object.freeze({
     databaseUrl: required(env, 'DATABASE_URL'),
@@ -118,6 +130,8 @@ export function loadProductionReadonlyBrowserConfig(env = process.env) {
     runtimeHmacKey,
     artifactKey,
     resourceHmacKey,
+    sharedMaterialsMode,
+    sharedMaterialEncryptionKey,
     pollIntervalMs: integer(env, 'BROWSER_WORKER_POLL_INTERVAL_MS', { min: 100, max: 60_000, fallback: 1000 }),
     leaseSeconds: integer(env, 'BROWSER_WORKER_LEASE_SECONDS', { min: 10, max: 3600, fallback: 60 }),
     executionTimeoutMs: integer(env, 'BROWSER_EXECUTION_TIMEOUT_MS', { min: 500, max: 300_000, fallback: 30_000 }),

@@ -96,3 +96,9 @@ npm --prefix browser-mvp run dry-run:shared
 4. 接通 LIVE payment/post-payment adapters，先用 mock/隔离状态机和故障注入验证；
 5. 完成部署/停止/回滚演练和付款前最终审查；
 6. 用户单独确认后才执行一单真实 Browser 付款。
+
+## 2026-08-29 后续进展：共享材料 adapter 已完成
+
+原“最短顺序”第 1 项已经完成：production Session/card-material adapter 已按 `browser_run.id` 接到 v1 现有密文，隔离 MySQL + 正式 CLI + Chrome 非付款验证通过。卡资料当前只做内存预检，不写页面。
+
+当前最短下一步改为：使用专用非客户测试账号和批准网络做真实 ChatGPT 只读登录/身份/页面观察，冻结 Session/页面合同；仍不填卡、不付款。完整证据见 `docs/browser-research/BROWSER_SHARED_MATERIAL_ADAPTER_2026-08-29.md`。

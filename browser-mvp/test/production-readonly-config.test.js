@@ -95,6 +95,38 @@ test('production readonly config requires three distinct canonical keys', () => 
   })), /canonical base64/);
 });
 
+test('shared encrypted material mode is explicit and reuses the v1 secret-box key', () => {
+  const disabled = loadProductionReadonlyBrowserConfig(validEnv());
+  assert.equal(disabled.sharedMaterialsMode, 'DISABLED');
+  assert.equal(disabled.sharedMaterialEncryptionKey, null);
+  assert.throws(() => loadProductionReadonlyBrowserConfig(validEnv({
+    BROWSER_SHARED_MATERIALS_MODE: 'SHARED_ENCRYPTED_NONPAYMENT',
+  })), /SESSION_ENCRYPTION_KEY_BASE64 is required/);
+  const enabled = loadProductionReadonlyBrowserConfig(validEnv({
+    BROWSER_SHARED_MATERIALS_MODE: 'SHARED_ENCRYPTED_NONPAYMENT',
+    SESSION_ENCRYPTION_KEY_BASE64: Buffer.alloc(32, 33).toString('base64'),
+  }));
+  assert.equal(enabled.sharedMaterialsMode, 'SHARED_ENCRYPTED_NONPAYMENT');
+  assert.equal(enabled.sharedMaterialEncryptionKey.length, 32);
+  assert.throws(() => loadProductionReadonlyBrowserConfig(validEnv({
+    BROWSER_WORKER_TARGET: 'EXTERNAL_READONLY',
+    BROWSER_OBSERVE_URL_PREFIX: 'https://example.invalid/',
+    BROWSER_SHARED_MATERIALS_MODE: 'SHARED_ENCRYPTED_NONPAYMENT',
+    SESSION_ENCRYPTION_KEY_BASE64: Buffer.alloc(32, 33).toString('base64'),
+    BROWSER_EXTERNAL_READONLY_CONFIRM: 'I-CONFIRM-EXTERNAL-READONLY-NO-SESSION',
+  })), /external readonly target requires/);
+  assert.doesNotThrow(() => loadProductionReadonlyBrowserConfig(validEnv({
+    BROWSER_WORKER_TARGET: 'EXTERNAL_READONLY',
+    BROWSER_OBSERVE_URL_PREFIX: 'https://example.invalid/',
+    BROWSER_SHARED_MATERIALS_MODE: 'SHARED_ENCRYPTED_NONPAYMENT',
+    SESSION_ENCRYPTION_KEY_BASE64: Buffer.alloc(32, 33).toString('base64'),
+    BROWSER_EXTERNAL_READONLY_CONFIRM: 'I-CONFIRM-EXTERNAL-READONLY-SHARED-MATERIALS-NO-PAYMENT',
+  })));
+  assert.throws(() => loadProductionReadonlyBrowserConfig(validEnv({
+    BROWSER_SHARED_MATERIALS_MODE: 'LIVE',
+  })), /must be DISABLED or SHARED_ENCRYPTED_NONPAYMENT/);
+});
+
 test('production readonly CLI rejects unknown or ambiguous process modes', () => {
   assert.deepEqual(parseProductionReadonlyArgs([]), { checkOnly: false, once: false });
   assert.deepEqual(parseProductionReadonlyArgs(['--once']), { checkOnly: false, once: true });

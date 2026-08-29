@@ -123,6 +123,11 @@ order.id
 
 Browser 独立 worktree 的 `browser_upstream_ready_projection`、`PENDING/OBSERVING`、`AVAILABLE` 卡和独立 `audit_ref` 仍是待修正的 PoC 接线差异；不得建立平行状态机。
 
+2026-08-29 接线更新：上述平行投影差异已收口；共享 Session/card-material adapter 以
+`browser-run:<browser_run.id>` 作为进程内 opaque ref，直接读取 v1 现有密文。材料释放前再次核对
+run/attempt/order/profile/route/provider 和 `RESERVED` 消费账本；Session/card 只进入短内存租约，
+不写入 job、run metadata、WAL 或普通日志。当前只做非付款预检，卡字段写入和付款仍为 0。
+
 生产接线验收必须证明：
 
 1. 同一 attempt 只产生一个可执行 dispatch/run；

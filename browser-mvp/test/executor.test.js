@@ -72,6 +72,45 @@ test('executor bootstraps an opaque Session lease before page observation', asyn
   assert.equal(result.submitCalls, 0);
   assert.equal(evidenceSink.events[1].summary.action, 'session-bootstrap');
   assert.equal(evidenceSink.events[1].summary.sessionDigest.length, 64);
+  assert.equal(sessionProvider.leases.size, 0);
+});
+
+test('card material preflight is read once, never written to the page, and closed immediately', async () => {
+  await withExecutor(async (executor, evidenceSink) => {
+    const calls = [];
+    const provider = {
+      async open(ref, options) {
+        calls.push(['open', ref, options.purpose]);
+        return { leaseId: 'lease-fixture', cardRef: ref, expiresAt: Date.now() + 60_000 };
+      },
+      async withMaterial(_lease, callback) {
+        calls.push(['withMaterial']);
+        return callback({ pan: '4111111111111111', expMonth: 12, expYear: 2032, cvc: '123' });
+      },
+      async close(lease) {
+        calls.push(['close', lease.leaseId]);
+      },
+    };
+    const result = await executor.execute(makeJob(), {
+      assertLease: async () => true,
+      cardMaterialLeaseProvider: provider,
+      cardMaterialRef: 'browser-run:fixture',
+      validateCardMaterialOnly: true,
+    });
+    assert.equal(result.cardMaterialReady, true);
+    assert.equal(result.submitCalls, 0);
+    assert.deepEqual(calls, [
+      ['open', 'browser-run:fixture', 'browser-nonpayment-preflight'],
+      ['withMaterial'],
+      ['close', 'lease-fixture'],
+    ]);
+    const event = evidenceSink.events.find((entry) => entry.summary.action === 'card-material-preflight');
+    assert.deepEqual(event.summary, {
+      action: 'card-material-preflight', ready: true, fieldsWritten: 0, submitCalls: 0,
+    });
+    assert.equal(JSON.stringify(result).includes('4111111111111111'), false);
+    assert.equal(JSON.stringify(evidenceSink.events).includes('4111111111111111'), false);
+  });
 });
 
 test('page drift fails closed and records a redacted freeze reason', async () => {

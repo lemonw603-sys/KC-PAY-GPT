@@ -5,6 +5,7 @@ import { probeSessionIdentity } from './session-identity-probe.js';
 import { observeCheckout } from './checkout-observer.js';
 import { navigateToChatGPTPlusCheckout } from './chatgpt-checkout-navigator.js';
 import { fillSecureCardFieldsNonPayment } from './nonpayment-card-fill.js';
+import { assertCardMaterial } from './card-material-lease.js';
 
 export class BrowserExecutionError extends Error {
   constructor(reason, message = `Browser execution stopped: ${reason}`, cause) {
@@ -44,6 +45,8 @@ export class BrowserExecutionService {
     freezeRequested = () => false,
     cardMaterialLeaseProvider = null,
     cardMaterialLease = null,
+    cardMaterialRef = null,
+    validateCardMaterialOnly = false,
     fillCardFields = false,
   } = {}) {
     assertJobEnvelope(job);
@@ -58,6 +61,8 @@ export class BrowserExecutionService {
     await this._event(job, 'intent', ++evidenceSequence, { action: 'observe-page', mode: job.manifest.mode });
     let runtime;
     let sessionLease;
+    let sessionBootstrapped = false;
+    let ownedCardMaterialLease = false;
     let abortRuntime;
     try {
       if (signal?.aborted) throw new BrowserExecutionError('LEASE_LOST');
@@ -76,8 +81,16 @@ export class BrowserExecutionService {
         if (!this.sessionProvider || typeof this.sessionProvider.open !== 'function' || typeof this.sessionProvider.bootstrap !== 'function') {
           throw new BrowserExecutionError('SESSION_PROVIDER_UNAVAILABLE');
         }
-        sessionLease = await this.sessionProvider.open(job.metadata.sessionRef, { purpose: 'browser-observe' });
-        const sessionResult = await this.sessionProvider.bootstrap(sessionLease, runtime.context);
+        let sessionResult;
+        try {
+          sessionLease = await this.sessionProvider.open(job.metadata.sessionRef, { purpose: 'browser-observe' });
+          sessionResult = await this.sessionProvider.bootstrap(sessionLease, runtime.context);
+          sessionBootstrapped = true;
+          await this.sessionProvider.close(sessionLease);
+          sessionLease = null;
+        } catch (error) {
+          throw new BrowserExecutionError('SESSION_INVALID', 'stored Browser Session is unavailable or invalid', error);
+        }
         await this._event(job, 'checkpoint', ++evidenceSequence, {
           action: 'session-bootstrap',
           sessionDigest: sessionResult.sessionDigest,
@@ -104,6 +117,45 @@ export class BrowserExecutionService {
         observedTitleDigest: digest(checkpoint.title),
         frameCount: checkpoint.frameCount,
       });
+      if (cardMaterialRef != null) {
+        if (cardMaterialLease || !cardMaterialLeaseProvider || typeof cardMaterialLeaseProvider.open !== 'function') {
+          throw new BrowserExecutionError('CARD_MATERIAL_PRECHECK_CONTRACT');
+        }
+        try {
+          cardMaterialLease = await cardMaterialLeaseProvider.open(cardMaterialRef, {
+            purpose: 'browser-nonpayment-preflight',
+          });
+          ownedCardMaterialLease = true;
+        } catch (error) {
+          throw new BrowserExecutionError('CARD_NOT_READY', 'stored card material is unavailable or invalid', error);
+        }
+      }
+      let cardMaterialReady = false;
+      if (validateCardMaterialOnly) {
+        if (!cardMaterialLeaseProvider || !cardMaterialLease
+          || typeof cardMaterialLeaseProvider.withMaterial !== 'function') {
+          throw new BrowserExecutionError('CARD_MATERIAL_PRECHECK_CONTRACT');
+        }
+        try {
+          await cardMaterialLeaseProvider.withMaterial(cardMaterialLease, (material) => {
+            assertCardMaterial(material);
+          });
+          cardMaterialReady = true;
+          if (!fillCardFields && ownedCardMaterialLease) {
+            await cardMaterialLeaseProvider.close(cardMaterialLease);
+            cardMaterialLease = null;
+            ownedCardMaterialLease = false;
+          }
+        } catch (error) {
+          throw new BrowserExecutionError('CARD_NOT_READY', 'stored card material preflight failed', error);
+        }
+        await this._event(job, 'checkpoint', ++evidenceSequence, {
+          action: 'card-material-preflight',
+          ready: true,
+          fieldsWritten: 0,
+          submitCalls: 0,
+        });
+      }
       let checkoutNavigation = null;
       if (job.metadata.checkoutNavigationContract) {
         const assertContinue = async () => {
@@ -136,8 +188,8 @@ export class BrowserExecutionService {
         }
       }
       let cardFill = null;
-      if (cardMaterialLeaseProvider || cardMaterialLease || fillCardFields) {
-        if (!fillCardFields || !cardMaterialLeaseProvider || !cardMaterialLease || !checkout) {
+      if (fillCardFields) {
+        if (!cardMaterialLeaseProvider || !cardMaterialLease || !checkout) {
           throw new BrowserExecutionError('CARD_MATERIAL_FILL_CONTRACT');
         }
         try {
@@ -155,7 +207,7 @@ export class BrowserExecutionService {
           throw new BrowserExecutionError('CARD_MATERIAL_FILL_FAILED', error.message, error);
         }
       }
-      return { status: 'OBSERVED', startedAt, finishedAt: this.clock(), submitCalls: 0, sessionBootstrapped: Boolean(sessionLease), sessionIdentity, checkoutNavigation, checkout, cardFill };
+      return { status: 'OBSERVED', startedAt, finishedAt: this.clock(), submitCalls: 0, sessionBootstrapped, cardMaterialReady, sessionIdentity, checkoutNavigation, checkout, cardFill };
     } catch (error) {
       const failure = error instanceof BrowserExecutionError
         ? error
@@ -166,6 +218,9 @@ export class BrowserExecutionService {
       if (abortRuntime) signal?.removeEventListener('abort', abortRuntime);
       if (runtime) await this.runtimeAdapter.close(runtime).catch(() => undefined);
       if (sessionLease && this.sessionProvider) await this.sessionProvider.close(sessionLease).catch(() => undefined);
+      if (ownedCardMaterialLease && cardMaterialLease && cardMaterialLeaseProvider) {
+        await cardMaterialLeaseProvider.close(cardMaterialLease).catch(() => undefined);
+      }
     }
   }
 

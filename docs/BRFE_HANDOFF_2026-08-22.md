@@ -112,4 +112,8 @@ git diff --check
 - `docs/browser-research/BROWSER_FIRST_GRAY_READINESS_2026-08-29.md`；
 - `docs/BRFE_HANDOFF_2026-08-25.md` 的 2026-08-29 交接。
 
-当前 production-readonly Worker 的本地非付款闭环已通过，但仍缺 production Session/card-material adapter、真实 ChatGPT 非付款观察、LIVE payment/post-payment adapter 和服务器部署/回滚演练。未单独确认前仍禁止真实付款。
+该检查点当时仍缺 production Session/card-material adapter；此项已由下方“共享材料 adapter 最新覆盖”完成。真实 ChatGPT 非付款观察、LIVE payment/post-payment adapter 和服务器部署/回滚演练仍未完成。未单独确认前仍禁止真实付款。
+
+## 2026-08-29 共享材料 adapter 最新覆盖
+
+当前接班事实已推进到 `docs/browser-research/BROWSER_SHARED_MATERIAL_ADAPTER_2026-08-29.md`：共享 Session/card 密文 adapter 和 readonly Worker 非付款接线已完成隔离验证。下一步不再重复本地 adapter；保持付款关闭，进入专用非客户测试账号的真实 ChatGPT 只读登录/身份/页面观察。

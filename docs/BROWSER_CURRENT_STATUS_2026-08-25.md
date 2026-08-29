@@ -505,3 +505,13 @@ npm --prefix browser-mvp test
 - production-shaped smoke 实跑 config/systemd 8/8、MySQL mock/正式 readonly CLI + Google Chrome 3/3；共享 isolated dry-run 1/1，均无真实付款。
 - 部署说明更新为 migration 001–040，并补 Browser 专属停止、disable 和 previous-release 回滚入口。
 - 当前 readonly Worker 不接 Session/card material/payment submitter，不能用于真实客户充值；首单前的准确缺口见 `docs/browser-research/BROWSER_FIRST_GRAY_READINESS_2026-08-29.md`。
+
+## 2026-08-29 共享 Session/card-material production adapter
+
+- 基线已同步 `a88f4dc`；Browser 旧提交已由主线吸收，无重复 patch。
+- 新增 run-bound 共享密文 adapter：Session/card 分别从 v1 权威记录即时解密，使用 opaque `browser-run:<id>` 和短内存租约，不建立平行事实源。
+- pre-payment 状态、profile、route、Provider、attempt/order/card 的 `RESERVED` 账本不一致均 fail-closed。
+- 正式 readonly CLI 的共享材料模式默认关闭；隔离启用时只完成 Session bootstrap、卡资料内存预检和页面观察，字段写入/付款提交均为 0。
+- 验证：smoke 9/9 + 3/3；Browser 全量 94 tests / 90 passed / 4 skipped / 0 failed；isolated shared dry-run 1/1。
+- 未连接生产/预生产，未读取真实 Session/PAN/CVC，未访问外部 ChatGPT，未填卡、未付款、未调用卡台写接口、未部署。
+- 证据与下一缺口：`docs/browser-research/BROWSER_SHARED_MATERIAL_ADAPTER_2026-08-29.md`。

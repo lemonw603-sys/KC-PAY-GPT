@@ -687,3 +687,12 @@ active permits=0、`PAYMENT_SUBMIT`=0、live resource leases=0、external paymen
 - 实跑：`smoke:worker:readonly` 为 8/8 + 3/3；Browser 全量 90 tests / 86 passed / 4 skipped / 0 failed；`dry-run:shared` 隔离 MySQL + Chrome 1/1。
 - 全程未接生产、未读取真实 Session/PAN/CVC、未填卡、未付款、未调用卡台写接口、未部署。
 - 当前仍不是首单就绪：缺 production Session/card-material adapter、真实 ChatGPT 非付款观察、LIVE payment/post-payment adapter 和服务器候选 release/回滚演练。详见 `docs/browser-research/BROWSER_FIRST_GRAY_READINESS_2026-08-29.md`。
+
+## 2026-08-29 共享 Session/card-material adapter 交接
+
+- 主线基线：`a88f4dc`；`2fd3aa0` 已由 `1516c67` 合入，Browser 分支同步时自动跳过重复 patch。
+- 完成：`SharedEncryptedSessionSource`、`SharedEncryptedCardMaterialSource`、run-bound opaque ref、短租约、readonly Worker 可选接线和默认关闭配置。
+- Session/card 都复用 v1 现有密文和 key；没有新表、新状态或 Provider API 调用。卡资料当前只做 `fieldsWritten=0` 的内存预检。
+- 实跑：`smoke:worker:readonly` 9/9 + 3/3；`npm --prefix browser-mvp test` 94/90/4/0；五个写开关 false 的 `dry-run:shared` 1/1。
+- 全程未接生产、未使用真实 Session/PAN/CVC、未访问真实 ChatGPT、未填卡或付款、未部署。
+- 下一动作：只读真实页面/身份观察；仍禁止启用 payment/Provider 写入。详细见 `docs/browser-research/BROWSER_SHARED_MATERIAL_ADAPTER_2026-08-29.md`。

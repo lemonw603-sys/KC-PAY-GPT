@@ -11,6 +11,13 @@ import { GoogleChromeControlRuntimeAdapter } from './chrome-control-runtime.js';
 import { AppendOnlyWal, WalEvidenceSink } from './wal.js';
 import { createSharedNonPaymentDryRun, SHARED_NONPAYMENT_DRY_RUN_CONFIRMATION } from './shared-dry-run-composition.js';
 import { loadProductionReadonlyBrowserConfig } from './production-readonly-config.js';
+import { CookieSessionBootstrapAdapter } from './session-bootstrap.js';
+import { InMemoryCardMaterialLeaseProvider } from './card-material-lease.js';
+import {
+  browserRunMaterialRef,
+  SharedEncryptedCardMaterialSource,
+  SharedEncryptedSessionSource,
+} from './shared-encrypted-materials.js';
 
 export const REQUIRED_PRODUCTION_READONLY_MIGRATIONS = Object.freeze([
   '039_card_consumption_attempt_link',
@@ -119,6 +126,23 @@ export async function runProductionReadonlyBrowserWorker({
       executablePath: config.executablePath,
       launchOptions: { headless: config.headless },
     });
+    const sharedMaterialsEnabled = config.sharedMaterialsMode === 'SHARED_ENCRYPTED_NONPAYMENT';
+    const sessionProvider = sharedMaterialsEnabled
+      ? new CookieSessionBootstrapAdapter({
+        source: new SharedEncryptedSessionSource({
+          db: pool,
+          encryptionKey: config.sharedMaterialEncryptionKey,
+        }),
+      })
+      : null;
+    const cardMaterialLeaseProvider = sharedMaterialsEnabled
+      ? new InMemoryCardMaterialLeaseProvider({
+        source: new SharedEncryptedCardMaterialSource({
+          db: pool,
+          encryptionKey: config.sharedMaterialEncryptionKey,
+        }),
+      })
+      : null;
     const worker = createSharedNonPaymentDryRun({
       pool,
       workerId: config.workerId,
@@ -126,6 +150,15 @@ export async function runProductionReadonlyBrowserWorker({
       runtimeAdapter,
       manifest: createChromeControlManifest(),
       observation: config.observation,
+      sessionProvider,
+      resolveSessionRef: sharedMaterialsEnabled
+        ? ({ runId }) => browserRunMaterialRef(runId)
+        : async () => null,
+      cardMaterialLeaseProvider,
+      resolveCardMaterialRef: sharedMaterialsEnabled
+        ? ({ runId }) => browserRunMaterialRef(runId)
+        : async () => null,
+      validateCardMaterialOnly: sharedMaterialsEnabled,
       resolveAccountKey: (input) => resolveAccountKey(pool, input),
       runtimeHmacKey: config.runtimeHmacKey,
       artifactKey: config.artifactKey,
