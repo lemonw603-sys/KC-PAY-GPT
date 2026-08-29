@@ -74,7 +74,7 @@ systemctl start pojia-browser-worker.service   # 仅在单独批准的 readonly 
 systemctl status pojia-browser-worker.service
 ```
 
-本仓库不自动 `enable/start` 该单元。启动前要求：迁移 `001–037`
+本仓库不自动 `enable/start` 该单元。启动前要求：迁移 `001–040`
 已完成、数据库 `browser_payment_writes_enabled=false`、指定 executor profile 为
 `BROWSER/ACTIVE` 且 `productionWritesEnabled=false`、所有 Provider/卡资金写开关为 false。
 不得将真实客户订单放入当前 readonly lane；它会在观察后通过
@@ -82,3 +82,19 @@ systemctl status pojia-browser-worker.service
 
 完整边界、环境项和本地 smoke 证据见
 [`docs/browser-research/production-readonly-browser-worker-2026-08-27.md`](../docs/browser-research/production-readonly-browser-worker-2026-08-27.md)。
+
+Browser 单元的最小停止/回滚入口（只影响 Browser，不停止旧 API Worker）：
+
+```bash
+systemctl stop pojia-browser-worker.service
+systemctl disable pojia-browser-worker.service
+systemctl reset-failed pojia-browser-worker.service
+
+# 若本次发布同时切换了 /opt/pojia/current，再按发布记录恢复 previous release：
+ln -sfn /opt/pojia/releases/<previous-release> /opt/pojia/current
+systemctl daemon-reload
+```
+
+回滚后必须确认 `pojia-browser-worker.service` 为 `inactive/disabled`，数据库
+`browser_payment_writes_enabled=false`，且没有活动 Browser permit/lease。不要通过回滚重新派发
+`PAYMENT_UNKNOWN`/`RECONCILIATION_REQUIRED` 任务；这两类任务只能核对。

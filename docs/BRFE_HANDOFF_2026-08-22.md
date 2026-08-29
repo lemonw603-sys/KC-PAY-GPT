@@ -103,3 +103,13 @@ git diff --check
 ## 绝对停止条件
 
 没有当次明确确认，不接生产、不填写真实卡片、不点击真实付款、不提取余额、不把页面 403 或单一交易信号写成成功。
+
+## 2026-08-29 当前接班覆盖
+
+本文件前述“下一批”是历史阶段记录；当前准确停止点已推进到首次灰度前生产化就绪检查。接班时先读：
+
+- `docs/BROWSER_CURRENT_STATUS_2026-08-22.md` 第 7 节；
+- `docs/browser-research/BROWSER_FIRST_GRAY_READINESS_2026-08-29.md`；
+- `docs/BRFE_HANDOFF_2026-08-25.md` 的 2026-08-29 交接。
+
+当前 production-readonly Worker 的本地非付款闭环已通过，但仍缺 production Session/card-material adapter、真实 ChatGPT 非付款观察、LIVE payment/post-payment adapter 和服务器部署/回滚演练。未单独确认前仍禁止真实付款。

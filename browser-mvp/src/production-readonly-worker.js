@@ -12,6 +12,11 @@ import { AppendOnlyWal, WalEvidenceSink } from './wal.js';
 import { createSharedNonPaymentDryRun, SHARED_NONPAYMENT_DRY_RUN_CONFIRMATION } from './shared-dry-run-composition.js';
 import { loadProductionReadonlyBrowserConfig } from './production-readonly-config.js';
 
+export const REQUIRED_PRODUCTION_READONLY_MIGRATIONS = Object.freeze([
+  '039_card_consumption_attempt_link',
+  '040_card_operational_overrides',
+]);
+
 function delay(ms, signal) {
   if (signal?.aborted) return Promise.resolve();
   return new Promise((resolve) => {
@@ -28,10 +33,13 @@ function delay(ms, signal) {
 export async function checkProductionReadonlyDatabase(pool, { executorProfileId } = {}) {
   if (!executorProfileId) throw new Error('executorProfileId is required for database readiness');
   const [[migration]] = await pool.query(
-    `SELECT COUNT(*) AS present FROM schema_migrations
-     WHERE version = '037_card_discovery_latest_index'`,
+    `SELECT COUNT(DISTINCT version) AS present FROM schema_migrations
+     WHERE version IN (?, ?)`,
+    REQUIRED_PRODUCTION_READONLY_MIGRATIONS,
   );
-  if (Number(migration?.present) !== 1) throw new Error('required migration 037 is not applied');
+  if (Number(migration?.present) !== REQUIRED_PRODUCTION_READONLY_MIGRATIONS.length) {
+    throw new Error('required Browser migrations 039 and 040 are not applied');
+  }
   const [[setting]] = await pool.query(
     `SELECT setting_value FROM app_settings
      WHERE setting_key = 'browser_payment_writes_enabled' LIMIT 1`,
@@ -56,7 +64,7 @@ export async function checkProductionReadonlyDatabase(pool, { executorProfileId 
     ready: true,
     browserPaymentWritesEnabled: false,
     executorProfileId,
-    migration: '037',
+    migrations: [...REQUIRED_PRODUCTION_READONLY_MIGRATIONS],
   };
 }
 

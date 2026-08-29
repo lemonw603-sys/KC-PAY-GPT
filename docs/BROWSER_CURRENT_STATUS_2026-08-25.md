@@ -497,3 +497,11 @@ npm --prefix browser-mvp test
 - `codex/browser` 已安全 rebase 到主线 `5eb0967`，保留 Browser 控制面改动且无主线 migration 删除。
 - 验证：`npm --prefix browser-mvp test` 85 passed/4 skipped/0 failed；本地 Worker+Google Chrome 非付款 1/1；五个写开关均为 false 的 `dry-run:shared` 隔离 MySQL 1/1 passed。
 - 未连接生产、未启动生产服务、未读取真实 Session/PAN/CVC、未填卡、未付款、未调用卡台写接口。
+
+## 2026-08-29 首次灰度前生产化就绪检查
+
+- 分支与主线同步到 `16cec70`，统筹已合入的 profile 绑定修复无重复提交/冲突。
+- 修正 production-readonly readiness：从仅检查 migration 037 改为强制 039/040，并强制 payment executor gate=false、MODE=MOCK。
+- production-shaped smoke 实跑 config/systemd 8/8、MySQL mock/正式 readonly CLI + Google Chrome 3/3；共享 isolated dry-run 1/1，均无真实付款。
+- 部署说明更新为 migration 001–040，并补 Browser 专属停止、disable 和 previous-release 回滚入口。
+- 当前 readonly Worker 不接 Session/card material/payment submitter，不能用于真实客户充值；首单前的准确缺口见 `docs/browser-research/BROWSER_FIRST_GRAY_READINESS_2026-08-29.md`。

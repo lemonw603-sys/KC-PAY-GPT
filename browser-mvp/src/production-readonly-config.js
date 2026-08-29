@@ -50,6 +50,12 @@ export function loadProductionReadonlyBrowserConfig(env = process.env) {
   ]) {
     if (env[name] !== 'false') throw new ProductionReadonlyConfigError(`${name} must be exactly false`);
   }
+  if (env.BROWSER_PAYMENT_EXECUTOR_ENABLED !== 'false') {
+    throw new ProductionReadonlyConfigError('BROWSER_PAYMENT_EXECUTOR_ENABLED must be exactly false');
+  }
+  if (env.BROWSER_PAYMENT_EXECUTOR_MODE !== 'MOCK') {
+    throw new ProductionReadonlyConfigError('BROWSER_PAYMENT_EXECUTOR_MODE must be exactly MOCK');
+  }
   for (const name of [
     'CHATGPT_SESSION_COOKIE', 'CHATGPT_TOKEN', 'SESSION_JSON',
     'CARD_NUMBER', 'CARD_EXPIRY', 'CARD_CVC',

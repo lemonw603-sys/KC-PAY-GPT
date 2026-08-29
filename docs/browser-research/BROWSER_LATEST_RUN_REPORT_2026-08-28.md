@@ -110,3 +110,14 @@ node --test v1/test/browser-dispatch-repository.test.js browser-mvp/test/shared-
 - 定向测试：`npm --prefix browser-mvp run check` 通过；adapter/runtime/repository 相关 **46/46 passed**。
 - 隔离非付款端到端：五个写开关均 false 的 `npm --prefix browser-mvp run dry-run:shared`，临时 MySQL + migration 001–040 + Chrome 本地观察 **1/1 passed**，安全退出且无付款提交。
 - 未连接生产、未启动生产 Browser Worker、未读取真实 Session/PAN/CVC、未填卡、未付款、未调用 Provider/卡台写接口。
+
+## 2026-08-29 首次灰度前生产化就绪复验
+
+- `codex/browser` 与 `main` 同步到 `16cec70`，无重复提交或冲突。
+- 修复 readiness 仍只认 migration 037 的缺口：现强制 039/040；同时要求 payment executor gate=false、MODE=MOCK。
+- 首轮 smoke 因 fixture 未携带新增 gate 而 fail-closed；仅修正 fixture 后复跑通过，没有放宽运行时检查。
+- `npm --prefix browser-mvp run smoke:worker:readonly`：config/systemd 8/8，MySQL mock + 正式 readonly CLI/Google Chrome 3/3。
+- `npm --prefix browser-mvp test`：90 tests / 86 passed / 4 skipped / 0 failed。
+- 五个写开关全 false 的 `npm --prefix browser-mvp run dry-run:shared`：隔离 MySQL 8.4 + migration 001–040 + Chrome 1/1。
+- 未连接生产、未读取真实 Session/PAN/CVC、未填卡、未付款、未调用卡台写接口、未部署。首单灰度仍缺 production Session/card-material、真实页面非付款观察、LIVE payment/post-payment 和服务器部署/回滚演练。
+- 完整检查：`docs/browser-research/BROWSER_FIRST_GRAY_READINESS_2026-08-29.md`。

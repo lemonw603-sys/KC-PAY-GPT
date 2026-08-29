@@ -678,3 +678,12 @@ active permits=0、`PAYMENT_SUBMIT`=0、live resource leases=0、external paymen
 - 隔离 MySQL shared dry-run 使用共享 attempt repository 创建 RESERVED，abort 后 RELEASED；Browser 全量测试 85 passed、4 skipped、0 failed。
 - 本轮未连接生产、未启动生产 Worker、未读取真实 Session/PAN/CVC、未付款、未调用卡台写接口。
 - 下一步：由统筹窗口确认是否接受本提交并安排后续 Browser 验收；本线不自行合并或部署。
+
+## 2026-08-29 首次灰度前生产化就绪交接
+
+- 同步基线：`codex/browser`/`main` 均为 `16cec70`；历史未跟踪 `artifacts/browser-checkout-observe/` 未动。
+- 本轮最小修复：production-readonly readiness 强制 migration 039/040；直接 CLI 和 systemd 均要求 Browser payment executor gate=false/MOCK；smoke fixture 同步该合同。
+- 本轮文档修复：部署迁移口径更新为 001–040；增加 Browser-only stop/disable/previous-release 回滚入口。
+- 实跑：`smoke:worker:readonly` 为 8/8 + 3/3；Browser 全量 90 tests / 86 passed / 4 skipped / 0 failed；`dry-run:shared` 隔离 MySQL + Chrome 1/1。
+- 全程未接生产、未读取真实 Session/PAN/CVC、未填卡、未付款、未调用卡台写接口、未部署。
+- 当前仍不是首单就绪：缺 production Session/card-material adapter、真实 ChatGPT 非付款观察、LIVE payment/post-payment adapter 和服务器候选 release/回滚演练。详见 `docs/browser-research/BROWSER_FIRST_GRAY_READINESS_2026-08-29.md`。

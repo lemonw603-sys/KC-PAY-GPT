@@ -107,6 +107,7 @@ test('production readonly entry claims MySQL dispatch, opens Chrome, and safe-ab
         BROWSER_RUNTIME_HMAC_KEY_BASE64: key(1),
         BROWSER_ARTIFACT_KEY_BASE64: key(2),
         BROWSER_RESOURCE_HMAC_KEY_BASE64: key(3),
+        BROWSER_PAYMENT_EXECUTOR_ENABLED: 'false', BROWSER_PAYMENT_EXECUTOR_MODE: 'MOCK',
         BROWSER_PAYMENT_WRITES_ENABLED: 'false', PROVIDER_WRITES_ENABLED: 'false',
         PROVIDER_CARD_WRITES_ENABLED: 'false', PROVIDER_RECHARGE_WRITES_ENABLED: 'false',
         CARD_FUNDING_WRITES_ENABLED: 'false',

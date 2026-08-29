@@ -39,10 +39,12 @@ browser_dispatch_jobs
 2. 精确确认词 `RUN BROWSER PRODUCTION READONLY WORKER`；
 3. 五个环境写开关都**精确等于** `false`；
 4. 数据库 `app_settings.browser_payment_writes_enabled=false`；
-5. 配置的 `executor_profiles` 行存在、为 `BROWSER/ACTIVE`，且 `config_public_json.productionWritesEnabled=false`；
-6. Chrome 路径可执行，Profile/WAL 目录可写；
-7. 环境中不得出现原始 Session、Token、PAN/CVC 或卡台 API key；
-8. `LOCAL_FIXTURE` 只接受 `data:text/html,...`；`EXTERNAL_READONLY` 只接受 HTTPS，并需要第二个精确确认词。
+5. `BROWSER_PAYMENT_EXECUTOR_ENABLED=false` 且 `BROWSER_PAYMENT_EXECUTOR_MODE=MOCK`；
+6. migration 039/040 均存在，确保消费预留 attempt 绑定和当前卡片运营覆盖模型已落库；
+7. 配置的 `executor_profiles` 行存在、为 `BROWSER/ACTIVE`，且 `config_public_json.productionWritesEnabled=false`；
+8. Chrome 路径可执行，Profile/WAL 目录可写；
+9. 环境中不得出现原始 Session、Token、PAN/CVC 或卡台 API key；
+10. `LOCAL_FIXTURE` 只接受 `data:text/html,...`；`EXTERNAL_READONLY` 只接受 HTTPS，并需要第二个精确确认词。
 
 任何一项不满足均拒绝启动。普通 stdout/stderr 只记录状态和 reason code；WAL 只接收通过安全合同校验的摘要。
 
@@ -70,7 +72,7 @@ npm --prefix browser-mvp run smoke:worker:readonly
 
 ```text
 临时 mysql:8.4
-→ migrations 001–037
+→ migrations 001–040
 → fixture ACTIVE/read-only executor profile
 → 正式 CLI --check
 → 非敏感 order/attempt/card/dispatch fixture
@@ -108,7 +110,7 @@ external payment calls = 0
 - 一个明确用于 readonly canary 的 `ACTIVE` Browser executor profile；
 - 三个彼此独立的 canonical base64 32-byte key；
 - 经批准的本地 fixture 或外部 HTTPS 只读 page contract；
-- 数据库迁移 `001–037` 已完成，数据库 Browser payment 写开关为 false。
+- 数据库迁移 `001–040` 已完成，数据库 Browser payment 写开关为 false。
 
 当前上游创建的 Browser dispatch 可能没有预绑定 executor profile。readonly Worker 会在原子 claim 时把未绑定 job 冻结到自己的 profile；本阶段只能运行一个被批准的 Browser profile/Worker lane，且只能放入非敏感 canary 订单。多 profile 路由必须在后续增加上游显式 profile 选择后再开启，不能让两个不同 runtime 竞争未绑定 job。
 
@@ -122,6 +124,13 @@ external payment calls = 0
 - 未实现真实 Session/card material/payment submitter 和付款后三方对账。
 
 因此本轮结论仅为：正式独立 readonly Worker 进程和部署模板已完成本地 production-shaped 验证；生产真实单仍不可开始。
+
+### 2026-08-29 就绪检查补充
+
+- `--check` 不再只认旧 migration 037；现在同时要求 039 和 040，缺任一项均 fail-closed。
+- readonly 配置加载器现在也强制 payment executor gate 为 `false`、模式为 `MOCK`；即使绕开 systemd 直接运行 CLI，也不能留下看似开启的付款执行器配置。
+- `pojia-browser-worker.service` 保留 `Requires=docker.service` 是当前部署拓扑的显式依赖：生产 MySQL 由 `pojia-mysql` Docker 容器在本机提供，其他 v1 runtime 单元使用同一依赖。Browser 运行时代码本身不调用 Docker；若未来数据库脱离 Docker，再统一调整所有 runtime unit，而不是只改单个 Browser unit。
+- Browser 专属停止/disable/previous-release 回滚命令已补入 `deploy/README.md`；未实际在服务器执行。
 
 ## 付款执行器代码切片（仅 mock）
 

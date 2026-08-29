@@ -36,6 +36,8 @@ function validEnv(overrides = {}) {
     PROVIDER_CARD_WRITES_ENABLED: 'false',
     PROVIDER_RECHARGE_WRITES_ENABLED: 'false',
     CARD_FUNDING_WRITES_ENABLED: 'false',
+    BROWSER_PAYMENT_EXECUTOR_ENABLED: 'false',
+    BROWSER_PAYMENT_EXECUTOR_MODE: 'MOCK',
     ...overrides,
   };
 }
@@ -55,6 +57,12 @@ test('production readonly config rejects every write switch and raw credential m
   ]) {
     assert.throws(() => loadProductionReadonlyBrowserConfig(validEnv({ [name]: 'true' })), /must be exactly false/);
   }
+  assert.throws(() => loadProductionReadonlyBrowserConfig(validEnv({
+    BROWSER_PAYMENT_EXECUTOR_ENABLED: 'true',
+  })), /BROWSER_PAYMENT_EXECUTOR_ENABLED must be exactly false/);
+  assert.throws(() => loadProductionReadonlyBrowserConfig(validEnv({
+    BROWSER_PAYMENT_EXECUTOR_MODE: 'LIVE',
+  })), /BROWSER_PAYMENT_EXECUTOR_MODE must be exactly MOCK/);
   for (const name of ['CHATGPT_TOKEN', 'SESSION_JSON', 'CARD_NUMBER', 'CARD_CVC', 'HNSKJ_API_KEY']) {
     assert.throws(() => loadProductionReadonlyBrowserConfig(validEnv({ [name]: 'forbidden' })), /must be absent/);
   }
@@ -98,7 +106,7 @@ test('production readonly CLI rejects unknown or ambiguous process modes', () =>
 test('database readiness refuses Browser payment writes even when environment flags are false', async () => {
   const pool = {
     async query(sql) {
-      if (sql.includes('schema_migrations')) return [[{ present: 1 }], []];
+      if (sql.includes('schema_migrations')) return [[{ present: 2 }], []];
       if (sql.includes('browser_payment_writes_enabled')) return [[{ setting_value: 'true' }], []];
       throw new Error('dispatch query must not run');
     },
@@ -110,7 +118,7 @@ test('database readiness refuses Browser payment writes even when environment fl
 
 test('database readiness requires an active read-only Browser executor profile', async () => {
   const query = async (sql) => {
-    if (sql.includes('schema_migrations')) return [[{ present: 1 }], []];
+    if (sql.includes('schema_migrations')) return [[{ present: 2 }], []];
     if (sql.includes('browser_payment_writes_enabled')) return [[{ setting_value: 'false' }], []];
     if (sql.includes('FROM executor_profiles')) {
       return [[{
@@ -127,10 +135,23 @@ test('database readiness requires an active read-only Browser executor profile',
     executorProfileId: '00000000-0000-4000-8000-000000000001',
   });
   assert.equal(ready.ready, true);
+  assert.deepEqual(ready.migrations, [
+    '039_card_consumption_attempt_link',
+    '040_card_operational_overrides',
+  ]);
+
+  await assert.rejects(() => checkProductionReadonlyDatabase({
+    async query(sql) {
+      if (sql.includes('schema_migrations')) return [[{ present: 1 }], []];
+      throw new Error('readiness must stop at the migration check');
+    },
+  }, {
+    executorProfileId: '00000000-0000-4000-8000-000000000001',
+  }), /required Browser migrations 039 and 040/);
 
   const disabledPool = {
     async query(sql) {
-      if (sql.includes('schema_migrations')) return [[{ present: 1 }], []];
+      if (sql.includes('schema_migrations')) return [[{ present: 2 }], []];
       if (sql.includes('browser_payment_writes_enabled')) return [[{ setting_value: 'false' }], []];
       if (sql.includes('FROM executor_profiles')) {
         return [[{ executor_kind: 'BROWSER', status: 'DISABLED', production_writes_enabled: 'false' }], []];

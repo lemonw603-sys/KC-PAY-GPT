@@ -140,3 +140,12 @@ npm run poc:browser-experiment:capacity
 npm --prefix v1 test
 git diff --check
 ```
+
+## 7. 2026-08-29 首次灰度前生产化就绪检查
+
+- `codex/browser` 已与主线 `16cec70` 对齐，无重复提交或冲突。
+- production-readonly `--check` 现要求 migration 039/040、payment executor gate=false/MOCK；旧 037 readiness 口径已纠正。
+- 本地 production-shaped smoke：config/systemd 8/8、MySQL mock/readonly CLI + Google Chrome 3/3；共享隔离 dry-run 1/1；均为非付款。
+- Browser 专属 stop/disable/previous-release 回滚入口已补入 `deploy/README.md`，但未在服务器执行。
+- 首单灰度仍缺 production Session/card-material adapter、真实 ChatGPT 非付款页面观察、LIVE payment/post-payment adapter、候选 release 服务器检查与回滚演练；任何真实付款仍需单独确认。
+- 完整证据与准确未验证边界：`docs/browser-research/BROWSER_FIRST_GRAY_READINESS_2026-08-29.md`。
