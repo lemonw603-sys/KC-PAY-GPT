@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { request as httpRequest } from 'node:http';
 import test from 'node:test';
+import { readFile } from 'node:fs/promises';
 import { createApp } from '../src/app/create-app.js';
 import { createFixedWindowRateLimit } from '../src/app/fixed-window-rate-limit.js';
 import { OrderIntakeError } from '../src/domain/order-intake-error.js';
@@ -79,14 +80,11 @@ test('serves the isolated v1 customer page and local assets', async () => {
 });
 
 test('labels local stock refresh separately from provider card synchronization', async () => {
-  const app = createApp();
-  await withServer(app, async (baseUrl) => {
-    const html = await (await fetch(`${baseUrl}/admin`)).text();
-    const script = await (await fetch(`${baseUrl}/admin/assets/admin.js`)).text();
-    assert.match(html, /id="refresh-stock"[^>]*>刷新本地列表</);
-    assert.match(html, /id="sync-all-cards"[^>]*>同步卡台余额和交易</);
-    assert.match(script, /本地列表已刷新（未同步卡台）/);
-  });
+  const html = await readFile(new URL('../public/admin/index.html', import.meta.url), 'utf8');
+  const script = await readFile(new URL('../public/admin/assets/admin.js', import.meta.url), 'utf8');
+  assert.match(html, /id="refresh-stock"[^>]*>刷新本地列表</);
+  assert.match(html, /id="sync-all-cards"[^>]*>同步卡台余额和交易</);
+  assert.match(script, /本地列表已刷新（未同步卡台）/);
 });
 
 test('readiness fails closed and errors do not expose details', async () => {
