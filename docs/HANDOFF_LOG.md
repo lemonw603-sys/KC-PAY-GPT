@@ -615,6 +615,7 @@
 - Browser worktree `7abbe51` 与主线不兼容，直接合入会删除/回退主线后续付款门禁和文档；已改为逐文件选择性比较，不直接 cherry-pick。
 - Browser 最新报告确认无新增提交；下一步为备份差异后可逆对齐 `main@a6ba908`，再判断是否存在可安全恢复的最小只读补丁。
 - 已建立标签 `browser-stale-7abbe51-backup` 保存旧分支，当前主线未合入其差异。
+- 已执行可逆对齐：`codex/browser` 现在指向 `main@9093c03`，旧分支保存在 `browser-stale-7abbe51`；对齐后全量测试通过（103/107，4 跳过）。
 - 已建立余额不足卡付款前停止测试手册；原始 Session 不落盘，仅记录脱敏摘要和流程证据。
 - 根因定位：官方方案弹窗的“升级至 Plus”按钮为表单外 `type=submit`，旧规则过宽导致假失败；现已改为只拒绝表单内提交控件，并补充说明。
 - 权威收口：订单 `CARD_READY`；attempt/funds `CLEARED`；run `FAILED_SAFE`；dispatch `CANCELLED`；无活动 permit、付款提交记录或资源租约。
