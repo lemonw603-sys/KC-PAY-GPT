@@ -86,3 +86,20 @@ test('mock adapter rejects non-mock checkout before any external action', async 
   assert.equal(result.status, 'UNKNOWN');
   assert.equal(adapter.calls.length, 0);
 });
+
+test('post-payment verifier errors become structured reconciliation state', async () => {
+  const { executor, control, adapter } = harness();
+  const original = executor.postPaymentVerifier.confirmCancellation;
+  executor.postPaymentVerifier.confirmCancellation = async () => { throw new Error('temporary verifier outage'); };
+  const result = await executor.execute({
+    control, run: { runId: 'run-1', leaseToken: 'lease-1' }, checkout: { kind: 'MOCK_CHECKOUT' },
+    cardMaterial: { ref: 'card-material' }, operationId: 'pay-1',
+  });
+  executor.postPaymentVerifier.confirmCancellation = original;
+  assert.deepEqual(result, {
+    status: 'POST_PAYMENT_UNKNOWN',
+    reasonCode: 'POST_PAYMENT_RECONCILIATION_REQUIRED',
+    paymentSubmitCalls: 1,
+  });
+  assert.equal(adapter.calls.length, 1);
+});

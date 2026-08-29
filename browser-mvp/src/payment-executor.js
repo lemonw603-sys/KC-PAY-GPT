@@ -147,20 +147,30 @@ export class BrowserPaymentExecutor {
     await this.executionRepository.markPaymentConfirmed({
       runId: run.runId, operationId: `${op}:confirmed`, evidenceHash: paymentEvidenceHash,
     });
-    const plus = await this.postPaymentVerifier.confirmPlus();
-    if (!plus?.confirmed) return { status: 'POST_PAYMENT_UNKNOWN', reasonCode: 'PLUS_ACTIVATION_UNCONFIRMED', paymentSubmitCalls: 1 };
-    await this.executionRepository.recordPlusActivation({
-      runId: run.runId, operationId: `${op}:plus`, evidenceHash: digest(plus.evidence),
-    });
-    const cancellation = await this.postPaymentVerifier.confirmCancellation();
-    const transactions = await this.postPaymentVerifier.readCardTransactions();
-    const reconciliation = await this.postPaymentVerifier.reconcile({ transactions });
-    if (!cancellation?.confirmed || !reconciliation?.matched) {
-      return { status: 'POST_PAYMENT_UNKNOWN', reasonCode: 'POST_PAYMENT_RECONCILIATION_REQUIRED', paymentSubmitCalls: 1 };
+    try {
+      const plus = await this.postPaymentVerifier.confirmPlus();
+      if (!plus?.confirmed) return { status: 'POST_PAYMENT_UNKNOWN', reasonCode: 'PLUS_ACTIVATION_UNCONFIRMED', paymentSubmitCalls: 1 };
+      await this.executionRepository.recordPlusActivation({
+        runId: run.runId, operationId: `${op}:plus`, evidenceHash: digest(plus.evidence),
+      });
+      const cancellation = await this.postPaymentVerifier.confirmCancellation();
+      const transactions = await this.postPaymentVerifier.readCardTransactions();
+      const reconciliation = await this.postPaymentVerifier.reconcile({ transactions });
+      if (!cancellation?.confirmed || !reconciliation?.matched) {
+        return { status: 'POST_PAYMENT_UNKNOWN', reasonCode: 'POST_PAYMENT_RECONCILIATION_REQUIRED', paymentSubmitCalls: 1 };
+      }
+      await this.executionRepository.recordCancellationConfirmed({
+        runId: run.runId, operationId: `${op}:cancellation`, evidenceHash: digest({ cancellation: cancellation.evidence, transactions }),
+      });
+      return { status: 'COMPLETED', paymentSubmitCalls: 1, cardTransactionCount: transactions.length };
+    } catch (error) {
+      // Payment is already confirmed; a verifier/recording failure must never
+      // bubble into a retryable submit path. Leave the run for reconciliation.
+      return {
+        status: 'POST_PAYMENT_UNKNOWN',
+        reasonCode: 'POST_PAYMENT_RECONCILIATION_REQUIRED',
+        paymentSubmitCalls: 1,
+      };
     }
-    await this.executionRepository.recordCancellationConfirmed({
-      runId: run.runId, operationId: `${op}:cancellation`, evidenceHash: digest({ cancellation: cancellation.evidence, transactions }),
-    });
-    return { status: 'COMPLETED', paymentSubmitCalls: 1, cardTransactionCount: transactions.length };
   }
 }
