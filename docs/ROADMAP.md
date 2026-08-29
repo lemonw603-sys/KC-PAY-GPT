@@ -172,8 +172,8 @@
 - [x] 共享核心 Browser route 在唯一 attempt 建立后使用 `RECHARGE_PROCESSING`；API route 仍使用 `SUBMITTING`；
 - [x] permit 签发时权威复核卡/路线/Provider/余额/资料/时效，并在付款 intent 前检测 snapshot 变化；
 - [x] 付款前 safe-abort 原子收口 run、permit、artifact、租约、dispatch、attempt、authorization、订单和审计；已有付款证据时只核对不回退；
-- [ ] Browser 独立 worktree adapter 按新合同接线，移除平行状态真相；
-- [ ] 保持付款写关闭，完成非付款端到端联调和故障注入；
+- [x] Browser 独立 worktree adapter 按新合同接线，移除平行状态真相；attempt/run executor profile 已绑定并进入权威付款 snapshot；
+- [x] 保持付款写关闭，完成非付款端到端联调和故障注入；相关 adapter/runtime/repository 回归 46/46，隔离 MySQL + Chrome 非付款 dry-run 1/1；
 - 现在可以在独立讨论窗口完成方案和接口边界设计，成果必须回写本项目事实源；
 - 当前不接入生产、不执行真实 Browser 付款；
 - Browser 已成为未来 Plus 主执行链路，可立即进行非付款 PoC、仿真控制面和隔离联调，不再等待 ZZSHU API 成功单；

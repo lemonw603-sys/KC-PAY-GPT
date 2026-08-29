@@ -52,6 +52,7 @@
 - 已新增低复杂度“开始营业”入口：通过只读就绪检查后才同时开放接单与自动派发；库存不足会明确提示，不会误报卡台故障。
 - 自动跨订单复用卡片尚未开启。
 - Browser 真实付款尚未验证；仍按独立 Browser 工作线推进非付款联调，真实付款必须另行确认。
+- Browser 独立线提交 `1d02c78` 已由统筹审查并以主线提交 `d6f9bf3` 安全合入：attempt 与 run 的 executor profile 现在必须一致，漂移时以 `EXECUTOR_PROFILE_CONFLICT` fail-closed；该 profile 同时进入权威付款 snapshot。合入后语法检查与相关 adapter/runtime/repository 测试 **46/46** 通过；未部署 Browser Worker、未连接生产、未执行付款。
 - 卡余额充值目前仅有后台记录/核对视图，指定卡发起充值的管理入口暂缓开发；生产 Provider 写入继续关闭。
 
 ## 2026-08-29 卡片库存只读同步复验
