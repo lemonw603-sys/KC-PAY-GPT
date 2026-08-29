@@ -15,7 +15,7 @@ test('LIVE adapter fills secure fields and requires an explicit outcome observer
   const browser = await chromium.launch({ headless: true });
   try {
     const page = await browser.newPage();
-    await page.setContent(`<div><input autocomplete="cc-number"><input autocomplete="cc-exp"><input autocomplete="cc-csc"><button data-pay type="submit">Pay</button></div>`);
+    await page.setContent(`<div><input autocomplete="cc-number"><input autocomplete="cc-exp"><input autocomplete="cc-csc"><button data-pay type="submit" onclick="event.preventDefault()">Pay</button></div>`);
     const adapter = new LiveChatGPTPaymentAdapter({ enabled: true, confirmation: LIVE_PAYMENT_CONFIRMATION });
     await assert.rejects(() => adapter.submit({ page, checkout, cardMaterial: card, operationId: 'op-2' }), (e) => e.code === 'PAYMENT_RESULT_UNKNOWN');
   } finally { await browser.close(); }

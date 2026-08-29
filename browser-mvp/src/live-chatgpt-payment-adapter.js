@@ -66,26 +66,37 @@ export class LiveChatGPTPaymentAdapter {
       if (!/^\d{12,19}$/.test(values.cardNumber) || !/^\d{3,4}$/.test(values.cvc)) {
         throw new LiveChatGPTPaymentAdapterError('card material format is invalid', 'CARD_MATERIAL_INVALID');
       }
-      for (const [name, field] of Object.entries(fields)) {
+      try {
+        for (const [name, field] of Object.entries(fields)) {
+          await assertContinue();
+          if ((await field.inputValue()).trim()) throw new LiveChatGPTPaymentAdapterError(`${name} secure field is not empty`, 'CHECKOUT_DRIFT');
+          await field.fill(values[name]);
+        }
         await assertContinue();
-        if ((await field.inputValue()).trim()) throw new LiveChatGPTPaymentAdapterError(`${name} secure field is not empty`, 'CHECKOUT_DRIFT');
-        await field.fill(values[name]);
+        const submit = await oneVisible(page, checkout.submitControlSelector, 'payment submit control');
+        const shape = await submit.evaluate((element) => ({
+          tag: element.tagName.toLowerCase(), type: element.getAttribute('type')?.toLowerCase() || null,
+        }));
+        if (shape.tag !== 'button' || shape.type !== 'submit') throw new ContractError('payment submit control shape drift');
+        await submit.click();
+        if (typeof this.outcomeObserver !== 'function') {
+          throw new LiveChatGPTPaymentAdapterError('payment outcome observer is required after submit', 'PAYMENT_RESULT_UNKNOWN');
+        }
+        const outcome = await this.outcomeObserver({ page, operationId: required(operationId, 'operationId') });
+        if (outcome?.status !== 'CONFIRMED') {
+          throw new LiveChatGPTPaymentAdapterError('payment outcome was not confirmed', 'PAYMENT_RESULT_UNKNOWN');
+        }
+        return { status: 'CONFIRMED', providerCallRef: `browser:${required(operationId, 'operationId')}` };
+      } finally {
+        // Never leave card values in the page after success, failure, or an
+        // unknown outcome. Cleanup is best effort because the page may have
+        // navigated after the submit click.
+        await Promise.all(Object.values(fields).map(async (field) => {
+          try { await field.fill(''); } catch {
+            await field.evaluate((element) => { element.value = ''; element.dispatchEvent(new Event('input', { bubbles: true })); }).catch(() => undefined);
+          }
+        }));
       }
-      await assertContinue();
-      const submit = await oneVisible(page, checkout.submitControlSelector, 'payment submit control');
-      const shape = await submit.evaluate((element) => ({
-        tag: element.tagName.toLowerCase(), type: element.getAttribute('type')?.toLowerCase() || null,
-      }));
-      if (shape.tag !== 'button' || shape.type !== 'submit') throw new ContractError('payment submit control shape drift');
-      await submit.click();
-      if (typeof this.outcomeObserver !== 'function') {
-        throw new LiveChatGPTPaymentAdapterError('payment outcome observer is required after submit', 'PAYMENT_RESULT_UNKNOWN');
-      }
-      const outcome = await this.outcomeObserver({ page, operationId: required(operationId, 'operationId') });
-      if (outcome?.status !== 'CONFIRMED') {
-        throw new LiveChatGPTPaymentAdapterError('payment outcome was not confirmed', 'PAYMENT_RESULT_UNKNOWN');
-      }
-      return { status: 'CONFIRMED', providerCallRef: `browser:${required(operationId, 'operationId')}` };
     } catch (error) {
       if (error instanceof LiveChatGPTPaymentAdapterError) throw error;
       throw new LiveChatGPTPaymentAdapterError('LIVE Browser payment failed', 'PAYMENT_RESULT_UNKNOWN', error);
