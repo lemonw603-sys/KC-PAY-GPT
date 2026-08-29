@@ -465,3 +465,14 @@
 - 代码现仅在自动补卡启用时发送“低库存”预警；仍有订单真正进入 `WAITING_FOR_CARD` 时，保留一次必要的阻塞提醒。
 - 定向测试：87 通过、6 跳过、0 失败。已部署 release：`/opt/pojia/releases/20260829-inventory-alert-9466fdb`。
 - 部署后将当前 1 条不再适用的 OPEN 低库存告警标记为 RESOLVED；没有开启任何 Provider/资金写入。
+
+# 2026-08-29 新卡识别与“有卡但需补余额”语义修复
+
+- 生产现场发现 Provider 新卡 `1628/6185`：active、卡段 17、余额 `$5`、资料完整；旧规则因默认开卡卡段为 16 将其错误标记为 `CARD_TYPE_MISMATCH`。
+- 提交 `262bd4d` 修复接管规则：接受卡台当前公布的全部合法卡段，默认卡段只决定未来开卡偏好。定向回归和全量测试通过；部署 `/opt/pojia/releases/20260829-card-segments-262bd4d`。
+- 将旧的错误 discovery 精确恢复为待验证并重新读取；最终 `1628` 接管成功，目录 `unresolvedActive=0`、`providerOnlyActiveCount=0`。该过程只调用卡台读取接口，没有开卡、卡充值或付款。
+- 继续核验发现四个同源问题并以提交 `51a4b7a` 修复：后台不再把“可直接分配 0”展示成“没有卡”；卡读取统一使用 Plus 最低余额；可补余额卡能进入既有卡充值调度；订单分配不再错误限制为默认开卡卡段。
+- 第二版生产 release：`/opt/pojia/releases/20260829-fundable-inventory-51a4b7a`。卡片读同步后，`6185` 正确为 `DEPLETED / 余额不足，充值后可重新判定`，余额 `$5`，未绑定订单。
+- 生产后台事实：可直接分配 0、待补余额 1、自动补卡关闭、低库存状态 false、相关 OPEN 告警 0。
+- 验证：v1 459 total / 422 pass / 0 fail / 37 environment-skipped；全新临时 MySQL 8.4 四个集成套件 37/37；生产 readiness `ok=true`、公网 ops/plus ready 200、`pojia-ops check` 和最新加密备份完整性通过。
+- 所有资金写开关、接单、派发、Browser 付款、自动开卡和卡余额充值继续关闭；本轮没有执行真实资金动作。

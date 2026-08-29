@@ -3,12 +3,13 @@
 > 2026-08-28 起，跨模块当前执行顺序统一以 `docs/MASTER_EXECUTION_PLAN_2026-08-28.md` 为准；其对抗审查见 `docs/MASTER_EXECUTION_PLAN_ADVERSARIAL_REVIEW_2026-08-28.md`。本文继续保留阶段历史，不再从历史段落单独推导新的“下一步”。
 > `docs/BACKEND_RUNTIME_ALIGNMENT_AUDIT_2026-08-28.md` 是部署前历史快照；当前生产事实以 `docs/CURRENT_STATE.md` 和 `docs/PRE_INVENTORY_CONVERGENCE_SEAL_2026-08-28.md` 为准。
 
-## 当前执行快照（2026-08-28）
+## 当前执行快照（2026-08-29）
 
-- 共享订单、资金栅栏、消费账本、migration 040 和最小卡片运营覆盖均已部署。当前生产 release 为 `/opt/pojia/releases/20260828-2c75d31-inventory`（回滚：`/opt/pojia/releases/20260828-d8954bd-sealed`）。
+- 共享订单、资金栅栏、消费账本、migration 040 和最小卡片运营覆盖均已部署。当前生产 release 为 `/opt/pojia/releases/20260829-fundable-inventory-51a4b7a`（回滚：`/opt/pojia/releases/20260829-card-segments-262bd4d`）。
 - 生产接单、派发、三类 Provider 写入、Browser 付款和自动补卡均保持关闭；readiness `ok=true`，活动任务为 0。
 - 当前卡片规则已落地：`6807/1477` 保留原有 `ASSIGNED`；`4744/1065=PRODUCT_ONLY(claude)`；其余当前旧批次 17 张均 `RETIRED`。未来新卡不继承旧批次结论。
-- 有效 Plus 可分配卡为 0；卡片一致性审计 critical/warning 均为 0。
+- 有效 Plus 可直接分配卡为 0；新接管的 `1628/6185` 余额 `$5`，属于“有卡、补余额后可用”。人工库存模式下不触发低库存提醒；只有真实订单等待卡片时才按订单提醒一次。
+- 卡台当前公布的所有合法卡段均可接管和分配；后台选择的默认卡段只用于未来开卡，不再被错误当作现有卡唯一合法卡段。
 - Browser dispatch 只读展示和消费账本绑定已合入主线；Browser 线继续非付款联调，真实付款仍需单独确认。
 - 库存后台信息收敛已完成并部署生产；下一阶段为管理员会话下的后台浏览器交叉验收，再做卡段人工刷新/持久默认选择。
 - 架构约束：这是个人内部使用系统，后续卡片策略修复采用最小字段和最少流程，优先稳定与资金安全，不建设额外的复杂策略服务或过度敏感信息隔离层。

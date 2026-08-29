@@ -1,11 +1,11 @@
-# 当前状态快照（2026-08-28 13:03 CST）
+# 当前状态快照（2026-08-29 09:08 CST）
 
 > 本文件只保留当前有效状态。历史过程查 `docs/HANDOFF_LOG.md`；本阶段封账证据查 `docs/PRE_INVENTORY_CONVERGENCE_SEAL_2026-08-28.md`。
 
 ## 代码与发布
 
-- 主线 HEAD：`2c75d31` (`feat: converge admin inventory view`)。
-- 生产 release：`/opt/pojia/releases/20260828-2c75d31-inventory`，为真实独立目录；上一版本回滚点：`/opt/pojia/releases/20260828-d8954bd-sealed`。
+- 当前生产代码提交：`51a4b7a` (`fix: distinguish fundable cards from missing inventory`)；后续文档提交不改变生产代码。
+- 生产 release：`/opt/pojia/releases/20260829-fundable-inventory-51a4b7a`，为真实独立目录；上一版本回滚点：`/opt/pojia/releases/20260829-card-segments-262bd4d`。
 - 可靠回滚点：`/opt/pojia/releases/20260828-fea0ffd-rollback`。
 - 服务：Web、API Worker、卡片读同步、卡目录同步、Bark、备份均正常；Browser Worker 保持 `inactive/disabled`。
 - 付费补卡 runner 已确认为 `inactive/disabled`，避免重启后每 10 秒唤醒并带入卡台写权限。
@@ -17,17 +17,18 @@
 - `card_auto_replenishment_enabled=false`；每日自动开卡上限配置值为 `5`，但自动补卡未开启。
 - `PROVIDER_WRITES_ENABLED=false`、`PROVIDER_CARD_WRITES_ENABLED=false`、`PROVIDER_RECHARGE_WRITES_ENABLED=false`。
 - Browser systemd 单元强制 `BROWSER_PAYMENT_WRITES_ENABLED=false`，且服务未启动。
-- 2026-08-28 13:03 CST 在禁用付费补卡 timer 后重跑生产 readiness：`ok=true`；活动任务、过期租约、UNKNOWN Provider 调用、资金风险、活动授权、开放对账案件均为 `0`，`blockers=[]`。
+- 2026-08-29 09:07 CST 重跑生产 readiness：`ok=true`；活动任务、过期租约、UNKNOWN Provider 调用、资金风险、活动授权、开放对账案件均为 `0`，`blockers=[]`。
 - 公网 ops/plus 的 live/ready 四个端点均 HTTP 200。
-- HNSKJ/ZZSHU 只读合同检查通过：HNSKJ 账户 67、USD、7 个卡类型、19 张可见卡；ZZSHU 连接通过。
+- 当前卡台只读目录共 20 张卡；目录同步与卡片详情读取通过。
 
 ## 卡片与库存事实
 
 - `1477 / 6807`：不设运营覆盖；当前原始/有效状态均为 `ASSIGNED`，仍受订单绑定、余额、交易与消费账本限制。
 - `1065 / 4744`：`PRODUCT_ONLY(claude)`，不分配 Plus。
 - 当前其余 17 张旧批次卡：全部 `RETIRED`；未来新卡不继承这个结论。
-- 卡片一致性审计：`ok=true`，Provider 19、本地 6、critical 0、warning 0。
-- Plus 实际可分配卡为 `0`；`catalog.available=0`、`unresolvedActive=0`、`providerOnlyActiveCount=0`、`openingBlocked=false`。
+- `1628 / 6185`：Provider 状态 active、卡段 17、余额 `$5`、资料完整，已接管进本地；当前为“余额不足，充值后可用”，不是“缺卡”或“坏卡”。
+- Plus 实际可直接分配卡为 `0`，但有 `1` 张可补余额卡；`catalog.unresolvedActive=0`、`providerOnlyActiveCount=0`。
+- 默认开卡卡段只决定未来开卡偏好，不再排除卡台当前公布的其他合法卡段；订单分配也不再要求卡片卡段等于订单创建时的默认开卡卡段。
 - 原始 Provider/本地状态可以与运营覆盖不同；后台主视图已显示有效运营状态，不再把旧卡误展示为可分配。
 
 ## 订单与资金状态
@@ -39,9 +40,9 @@
 
 ## 验证结果
 
-- v1：456 tests / 419 pass / 0 fail / 37 environment-skipped（2026-08-28 在当前主线复跑）。
+- v1：459 tests / 422 pass / 0 fail / 37 environment-skipped；另在全新临时 MySQL 8.4 上完成 37/37 数据库集成测试。
 - Browser：89 tests / 85 pass / 0 fail / 4 skipped。
-- 最新加密备份 `/var/backups/pojia/pojia-20260828T043251Z.sql.gz.enc` 已通过 SHA-256 完整性校验。
+- 最新加密备份 `/var/backups/pojia/pojia-20260829T005211Z.sql.gz.enc` 已通过解密与 gzip 完整性校验。
 
 ## 当前未完成
 
