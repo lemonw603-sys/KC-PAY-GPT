@@ -108,7 +108,7 @@ export class BrowserPaymentExecutor {
     this.enabled = enabled === true;
   }
 
-  async execute({ control, run, checkout, cardMaterial, operationId } = {}) {
+  async execute({ control, run, page = null, checkout, cardMaterial, operationId } = {}) {
     if (!this.enabled) throw new BrowserPaymentExecutorError('Browser payment executor is disabled', 'PAYMENT_EXECUTOR_DISABLED');
     const op = required(operationId, 'operationId');
     if (!control || typeof control.assertLeaseBeforeAction !== 'function') throw new TypeError('control is required');
@@ -128,7 +128,7 @@ export class BrowserPaymentExecutor {
     let submission;
     try {
       await control.assertLeaseBeforeAction('PAYMENT_SUBMIT');
-      submission = await this.paymentAdapter.submit({ operationId: op, checkout, cardMaterial, permit });
+      submission = await this.paymentAdapter.submit({ page, operationId: op, checkout, cardMaterial, permit });
       await control.assertLeaseBeforeAction('PAYMENT_RESULT');
     } catch (error) {
       await this.executionRepository.markPaymentUnknown({

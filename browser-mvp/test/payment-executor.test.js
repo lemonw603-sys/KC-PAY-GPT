@@ -103,3 +103,18 @@ test('post-payment verifier errors become structured reconciliation state', asyn
   });
   assert.equal(adapter.calls.length, 1);
 });
+
+test('payment executor forwards the Browser page only to the payment adapter boundary', async () => {
+  const { executor, control } = harness();
+  let observedPage = null;
+  executor.paymentAdapter = {
+    async submit(input) { observedPage = input.page; return { status: 'DECLINED', providerCallRef: 'mock-page-forward' }; },
+  };
+  const page = { opaque: true };
+  const result = await executor.execute({
+    control, page, run: { runId: 'run-1', leaseToken: 'lease-1' }, checkout: { kind: 'MOCK_CHECKOUT' },
+    cardMaterial: { ref: 'card-material' }, operationId: 'pay-page',
+  });
+  assert.equal(observedPage, page);
+  assert.equal(result.status, 'UNKNOWN');
+});
