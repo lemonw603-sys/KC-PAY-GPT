@@ -273,6 +273,28 @@ test('maps a provider cardType name to the configured canonical card type ID', a
   assert.equal(repository.cards.get('acct-a:card-1').cardTypeId, '1');
 });
 
+test('accepts a supported non-default card segment with low balance as provisioning inventory', async () => {
+  const repository = createMemoryRepository();
+  const provider = createPagedProvider({
+    'card-1': () => cardDetail('card-1', {
+      cardTypeId: '17', fundedAmount: '5', currentBalance: '5'
+    })
+  }, { total: 1 });
+  const service = createCardIntakeService({ provider, repository, providerAccountId: 'acct-a',
+    credentialEncryptionKey: Buffer.alloc(32, 6), assumeDedicatedAccount: true,
+    validationRules: {
+      allowedCardTypeIds: ['16', '17'],
+      allowedCardTypes: [{ id: '16' }, { id: '17' }],
+      minimumBalance: 16
+    } });
+  const intake = await service.discover();
+  await service.validateBatch(intake.batch.id);
+  const result = await service.validateBatch(intake.batch.id);
+  assert.equal(result.accepted, 1);
+  assert.equal(result.reviewRequired, 0);
+  assert.equal(repository.cards.get('acct-a:card-1').inventoryStatus, 'PROVISIONING');
+});
+
 test('does not rediscover a reviewed provider card in every completed catalog batch', async () => {
   const repository = createMemoryRepository();
   const provider = createPagedProvider({

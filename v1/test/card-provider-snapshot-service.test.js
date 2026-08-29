@@ -3,9 +3,17 @@ import test from 'node:test';
 import {
   evaluateCardStockRequest,
   normalizeProviderSnapshot,
+  providerSupportedCardTypeIds,
   refreshProviderSnapshot,
   snapshotIsFresh
 } from '../src/services/card-provider-snapshot-service.js';
+
+test('accepts every advertised card segment and uses the opening default only as fallback', () => {
+  assert.deepEqual(providerSupportedCardTypeIds({
+    cardTypes: [{ id: 16 }, { id: '17' }, { id: 17 }]
+  }, 16), ['16', '17']);
+  assert.deepEqual(providerSupportedCardTypeIds({ cardTypes: [] }, 16), ['16']);
+});
 
 function snapshot({ balance = '35.71', remaining = 295, checkedAt = new Date() } = {}) {
   return normalizeProviderSnapshot({

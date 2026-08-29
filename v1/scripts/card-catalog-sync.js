@@ -4,7 +4,10 @@ import { HnskjCardProvider } from '../src/providers/index.js';
 import { syncCardCatalog } from '../src/services/card-catalog-sync-service.js';
 import { createCardIntakeService } from '../src/services/card-intake-service.js';
 import { createCardIntakeRepository } from '../src/db/repositories/card-intake-repository.js';
-import { refreshProviderSnapshot } from '../src/services/card-provider-snapshot-service.js';
+import {
+  providerSupportedCardTypeIds,
+  refreshProviderSnapshot
+} from '../src/services/card-provider-snapshot-service.js';
 import { createProviderBalanceSnapshotService } from '../src/services/provider-balance-snapshot-service.js';
 import { resolveCurrentCardProviderAccountId } from '../src/services/provider-route-service.js';
 
@@ -74,7 +77,9 @@ try {
     sessionEncryptionKey: config.sessionEncryptionKey,
     assumeDedicatedAccount: true,
     validationRules: {
-      allowedCardTypeIds: [String(settings.card_type_id || '')],
+      // Accept every card segment currently advertised by the provider. The
+      // selected default segment is only the preference for future openings.
+      allowedCardTypeIds: providerSupportedCardTypeIds(providerSnapshot, settings.card_type_id),
       allowedCardTypes: providerSnapshot.cardTypes || [],
       minimumBalance: String(settings.minimum_balance || '')
     }

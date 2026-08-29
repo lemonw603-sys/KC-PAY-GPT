@@ -51,6 +51,15 @@ export function normalizeProviderSnapshot({ cardTypes, accountBalance, checkedAt
   };
 }
 
+export function providerSupportedCardTypeIds(snapshot, fallbackCardTypeId = null) {
+  const advertised = (snapshot?.cardTypes || [])
+    .map((item) => String(item?.id ?? '').trim())
+    .filter(Boolean);
+  if (advertised.length) return [...new Set(advertised)];
+  const fallback = String(fallbackCardTypeId ?? '').trim();
+  return fallback ? [fallback] : [];
+}
+
 export function evaluateCardStockRequest(snapshot, {
   cardTypeId,
   amount,

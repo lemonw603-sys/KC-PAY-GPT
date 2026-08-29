@@ -40,7 +40,10 @@ import { createTraceabilityOperationsService } from './services/traceability-ope
 import { createSessionReplacementService } from './services/session-replacement-service.js';
 import { createBrowserAdminService } from './services/browser-admin-service.js';
 import { resolveCurrentCardProviderAccountId } from './services/provider-route-service.js';
-import { readProviderSnapshot } from './services/card-provider-snapshot-service.js';
+import {
+  providerSupportedCardTypeIds,
+  readProviderSnapshot
+} from './services/card-provider-snapshot-service.js';
 import { createCardOperationalOverrideService } from './services/card-operational-override-service.js';
 
 const config = loadConfig();
@@ -106,7 +109,11 @@ async function configuredCardIntake() {
       return rows[0] || null;
     },
     validationRules: {
-      allowedCardTypeIds: [String(settings.get('default_card_type_id') || '')],
+      // The default card type controls which segment new opening jobs use. It
+      // must not make an otherwise supported existing card invalid.
+      allowedCardTypeIds: providerSupportedCardTypeIds(
+        providerSnapshot, settings.get('default_card_type_id')
+      ),
       allowedCardTypes: providerSnapshot?.cardTypes || [],
       minimumBalance: String(settings.get('default_minimum_required_card_balance') || '')
     }
