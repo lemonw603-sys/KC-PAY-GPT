@@ -52,7 +52,7 @@
 - 用户提供的 Session 已在本地一次性解析并通过 `validateChatGptSession()`；原文尾部附加文本被解析层截断，原文未写入日志、WAL、文档或 Git。
 - 隔离 MySQL + Headful Chrome 实测：页面 HTTP 200、`/api/auth/session` HTTP 200、登录身份匹配、订阅状态 `FREE`；未读取真实 PAN/CVC，未填卡，`submitCalls=0`。
 - 首次运行发现两个真实缺陷并已修复：Checkout 观察结果字段名 `cardNumber/cvc` 被安全对象检查误判为敏感字段；ChatGPT 官方首页标题存在 `ChatGPT: ...` 副标题变体；现已改为非敏感 presence 字段并允许官方标题后缀。
-- 复验仍在 Checkout 导航阶段失败（当前证据码 `CHECKOUT_NAVIGATION_FAILED`），资金状态已安全清理：订单回 `CARD_READY`、attempt/funds `CLEARED`、run `FAILED_SAFE`、dispatch `CANCELLED`、无 payment permit/submit operation/活动租约。该失败尚未证明页面导航已通过，不能进入真实付款。
+- 此前 `CHECKOUT_NAVIGATION_FAILED` 已定位并修复；最新 Headful 只读复验已完整到达 Checkout：登录/身份匹配、免费账号、Plus 入口、Checkout 摘要和安全字段均通过，`submitCalls=0`。仍未填卡、未付款、未连接生产。
 - 根因已定位：ChatGPT 方案弹窗的“升级至 Plus”是弹窗内、表单外的 `type=submit` 按钮，旧安全判断将所有 `type=submit` 一律拒绝，造成假失败；已收窄为仅拒绝处于表单内的提交控件。方案弹窗打开与 Plus 按钮已在 Headful 只读诊断中确认，未点击付款。
 - 临时隔离容器与运行目录已停止并清理；未连接生产、未部署本轮改动。
 

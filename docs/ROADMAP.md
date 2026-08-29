@@ -175,7 +175,7 @@
 
 - [x] 隔离 Headful Chrome 成功建立 Session、核对身份和免费订阅状态，零付款、零卡资料读取。
 - [x] 修复 Checkout 观察结果被 `assertSafeObject` 误判为敏感字段，以及官方首页标题副标题变体。
-- [ ] Checkout 导航仍需继续定位 `CHECKOUT_NAVIGATION_FAILED`；在该项通过并冻结当次页面合同前，不得设计/启用真实付款。
+- [x] Checkout 导航错误已定位并修复；Headful 只读复验已到达 Checkout 且零提交。下一门禁仍是独立确认后才可设计/启用真实付款。
 - [x] 定位并修复 Checkout 导航假失败：允许表单外的计划升级按钮（仅打开 Checkout），仍拒绝表单内提交控件；需再做一次隔离端到端复验。
 
 - Browser 上游、状态、卡片、Session、审计和读取策略以 `docs/contracts/2026-08-26_browser-upstream-runtime-contract.md` 为最新合同；PoC 的平行投影状态不得覆盖共享核心状态机；
