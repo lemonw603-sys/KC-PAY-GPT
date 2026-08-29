@@ -115,6 +115,7 @@ const elements = {
   replenishmentLimitForm: document.querySelector('#replenishment-limit-form'), replenishmentDailyLimit: document.querySelector('#replenishment-daily-limit'), replenishmentUsage: document.querySelector('#replenishment-usage'),
   stockOpenForm: document.querySelector('#stock-open-form'), stockOpenCount: document.querySelector('#stock-open-count'),
   stockOpenAmount: document.querySelector('#stock-open-amount'), stockCardType: document.querySelector('#stock-card-type'),
+  refreshCardProviderRules: document.querySelector('#refresh-card-provider-rules'),
   stockCardProfile: document.querySelector('#stock-card-profile'),
   stockConfirmation: document.querySelector('#stock-confirmation'), stockConfirmHint: document.querySelector('#stock-confirm-hint'),
   stockCost: document.querySelector('#stock-cost'),
@@ -1671,6 +1672,16 @@ elements.cardFundingNext?.addEventListener('click', () => {
   if (state.cardFundingPage * 20 < state.cardFundingTotal) { state.cardFundingPage += 1; loadCardFundingAttempts(); }
 });
 document.querySelector('#refresh-stock')?.addEventListener('click', () => loadStock().catch(() => showNotice('库存读取失败。')));
+elements.refreshCardProviderRules?.addEventListener('click', async (event) => {
+  const button = event.currentTarget;
+  button.disabled = true;
+  try {
+    await api('/api/v1/admin/card-stock/provider-refresh', { method: 'POST' });
+    showNotice('卡段规则已人工刷新。', 'success');
+    await loadStock();
+  } catch { showNotice('卡段规则刷新失败。'); }
+  finally { button.disabled = false; }
+});
 document.querySelector('#sync-all-cards')?.addEventListener('click', (event) => requestCardSync(null, event.currentTarget));
 elements.discoverNewCards?.addEventListener('click', async (event) => {
   const button = event.currentTarget;
@@ -1698,6 +1709,11 @@ elements.stockOpenAmount?.addEventListener('input', updateStockEstimate);
 elements.stockCardType?.addEventListener('change', () => {
   state.stockCardTypeId = elements.stockCardType.value;
   renderSelectedStockCardType({ resetInvalidAmount: true });
+  api('/api/v1/admin/card-stock/default-card-type', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ cardTypeId: state.stockCardTypeId })
+  }).then(() => showNotice('默认卡段已保存。', 'success'))
+    .catch(() => showNotice('默认卡段保存失败。'));
 });
 elements.stockThresholdForm?.addEventListener('submit', async (event) => {
   event.preventDefault();

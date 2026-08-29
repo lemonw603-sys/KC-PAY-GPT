@@ -458,6 +458,30 @@ test('creates paid card stock jobs only through an authenticated admin route', a
   });
 });
 
+test('exposes guarded provider refresh and default card type routes', async () => {
+  const adminAuth = createAdminSessionAuth({
+    passwordHash: await hashAdminPassword('fixture admin password', { salt: Buffer.alloc(16, 19) }),
+    sessionSecret: Buffer.alloc(32, 20), secureCookies: false
+  });
+  let refreshed = 0; let selected;
+  const app = createApp({
+    adminAuth,
+    refreshAdminCardStockProvider: async () => { refreshed += 1; return { syncedAt: 'now', cardTypes: [] }; },
+    setAdminCardStockDefaultCardType: async (id) => { selected = id; return { cardTypeId: id }; }
+  });
+  await withServer(app, async (baseUrl) => {
+    assert.equal((await fetch(`${baseUrl}/api/v1/admin/card-stock/provider-refresh`, { method: 'POST' })).status, 401);
+    const login = await fetch(`${baseUrl}/api/v1/admin/session`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: 'fixture admin password' }) });
+    const cookie = login.headers.get('set-cookie').split(';')[0];
+    const refresh = await fetch(`${baseUrl}/api/v1/admin/card-stock/provider-refresh`, { method: 'POST', headers: { Cookie: cookie, Origin: baseUrl } });
+    assert.equal(refresh.status, 200);
+    assert.equal(refreshed, 1);
+    const stepped = await stepUp(baseUrl, cookie);
+    const response = await fetch(`${baseUrl}/api/v1/admin/card-stock/default-card-type`, { method: 'POST', headers: { Cookie: stepped, Origin: baseUrl, 'Content-Type': 'application/json' }, body: JSON.stringify({ cardTypeId: '16' }) });
+    assert.equal(response.status, 200); assert.equal(selected, '16');
+  });
+});
+
 test('reads card detail and queues inventory sync without step-up or paid actions', async () => {
   const adminAuth = createAdminSessionAuth({
     passwordHash: await hashAdminPassword('fixture admin password', { salt: Buffer.alloc(16, 14) }),

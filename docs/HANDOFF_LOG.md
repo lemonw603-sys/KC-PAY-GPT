@@ -485,3 +485,11 @@
 - 库存：可分配 0、使用中 1、暂不可用 1、永久停用 17；卡台余额 `$47.36`、剩余开卡额度 292、自动补卡关闭。
 - Console 仅有 CSP inline-style 阻止错误；业务只读 GET 请求均 200。详细报告：`docs/2026-08-29_card-inventory-readonly-sync-verification.md`。
 - 下一步：由统筹窗口审查报告；保持所有资金写开关关闭，不部署额外变更。
+
+## 2026-08-29｜卡段人工刷新与持久默认选择（未部署）
+
+- 新增管理员卡片库存卡段人工刷新入口及后端路由 `POST /api/v1/admin/card-stock/provider-refresh`；仅调用 Provider `cardTypes/accountBalance` 只读接口并更新既有 snapshot，不执行开卡、充值或付款。
+- 新增默认卡段保存路由 `POST /api/v1/admin/card-stock/default-card-type`，校验当前新鲜 snapshot 中的合法卡段后写入既有 `app_settings.default_card_type_id`。
+- 前端卡段下拉变更后持久保存，普通库存刷新不触发 Provider 读取；未恢复高频自动读取。
+- 测试：`npm test` 全量 461，424 通过、0 失败、37 环境跳过；新增路由认证/调用测试通过。
+- 尚未部署或生产复验；需主线审查后再决定发布。

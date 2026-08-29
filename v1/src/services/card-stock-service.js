@@ -501,5 +501,23 @@ export function createCardStockService({ pool, sessionEncryptionKey, panHmacKey 
     return { threshold };
   }
 
-  return { register, status, setThreshold };
+  async function setDefaultCardType(cardTypeId) {
+    const id = String(cardTypeId ?? '').trim();
+    if (!id) throw new Error('Card type id is required');
+    const snapshot = await readProviderSnapshot(pool);
+    if (!snapshotIsFresh(snapshot, { maxAgeMs: CARD_PROVIDER_STATUS_MAX_AGE_MS })) {
+      throw new Error('Card provider rules are stale');
+    }
+    const selected = snapshot.cardTypes?.find((item) => String(item.id) === id);
+    if (!selected) throw new Error('Card type is unavailable');
+    await pool.query(
+      `INSERT INTO app_settings (setting_key, setting_value)
+       VALUES ('default_card_type_id', ?)
+       ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value),
+         updated_at = CURRENT_TIMESTAMP(3)`, [id]
+    );
+    return { cardTypeId: id, cardTypeName: selected.name };
+  }
+
+  return { register, status, setThreshold, setDefaultCardType };
 }

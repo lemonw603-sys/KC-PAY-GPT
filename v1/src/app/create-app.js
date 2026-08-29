@@ -45,6 +45,8 @@ export function createApp({
   acceptAdminCardIntake = null,
   listAdminCardIntake = null,
   getAdminCardStock = null,
+  refreshAdminCardStockProvider = null,
+  setAdminCardStockDefaultCardType = null,
   setAdminCardStockThreshold = null,
   createAdminCardStockJob = null,
   getAdminReplenishmentSettings = null,
@@ -320,6 +322,16 @@ export function createApp({
   if (typeof getAdminCardStock === 'function') {
     app.get('/api/v1/admin/card-stock', noStore, requireAdminApi, async (_req, res) => {
       res.json(await getAdminCardStock());
+    });
+  }
+  if (typeof refreshAdminCardStockProvider === 'function') {
+    app.post('/api/v1/admin/card-stock/provider-refresh', ...adminWriteGuards, async (_req, res) => {
+      res.json(await refreshAdminCardStockProvider());
+    });
+  }
+  if (typeof setAdminCardStockDefaultCardType === 'function') {
+    app.post('/api/v1/admin/card-stock/default-card-type', ...adminWriteGuards, async (req, res) => {
+      res.json(await setAdminCardStockDefaultCardType(req.body?.cardTypeId));
     });
   }
   if (typeof setAdminCardStockThreshold === 'function') {

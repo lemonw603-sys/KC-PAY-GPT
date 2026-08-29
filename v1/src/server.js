@@ -42,7 +42,8 @@ import { createBrowserAdminService } from './services/browser-admin-service.js';
 import { resolveCurrentCardProviderAccountId } from './services/provider-route-service.js';
 import {
   providerSupportedCardTypeIds,
-  readProviderSnapshot
+  readProviderSnapshot,
+  refreshProviderSnapshot
 } from './services/card-provider-snapshot-service.js';
 import { createCardOperationalOverrideService } from './services/card-operational-override-service.js';
 
@@ -196,6 +197,21 @@ const app = createApp({
     ...await cardStockService.status(),
     ...await cardStockJobService.listJobs({ limit: 20 })
   })
+  ,refreshAdminCardStockProvider: cardIntakeProvider
+    ? async () => {
+      const snapshot = await refreshProviderSnapshot(pool, cardIntakeProvider, {
+        providerAccountId: currentCardProviderAccountId
+      });
+      return {
+        syncedAt: snapshot.syncedAt,
+        cardTypes: snapshot.cardTypes,
+        accountBalance: snapshot.accountBalance,
+        currency: snapshot.currency,
+        cardLimit: snapshot.cardLimit,
+        purchaseEnabled: snapshot.purchaseEnabled
+      };
+    } : null
+  ,setAdminCardStockDefaultCardType: cardStockService.setDefaultCardType
   ,setAdminCardStockThreshold: (value) => cardStockService.setThreshold(value)
   ,createAdminCardStockJob: cardStockJobService.createJob
   ,getAdminReplenishmentSettings: replenishmentSettingsService.get
