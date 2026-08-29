@@ -54,7 +54,8 @@
 - 自动跨订单复用卡片尚未开启。
 - Browser 真实付款尚未验证；仍按独立 Browser 工作线推进非付款联调，真实付款必须另行确认。
 - Browser 独立线提交 `1d02c78` 已由统筹审查并以主线提交 `d6f9bf3` 安全合入：attempt 与 run 的 executor profile 现在必须一致，漂移时以 `EXECUTOR_PROFILE_CONFLICT` fail-closed；该 profile 同时进入权威付款 snapshot。合入后语法检查与相关 adapter/runtime/repository 测试 **46/46** 通过；未部署 Browser Worker、未连接生产、未执行付款。
-- 第二单 API 灰度已完成；临时充值写权限已关闭，单笔 Permit 已撤销。卡台已读到 `PURCHASE 15.76 USD`，但截至 05:54 UTC 仍为 `PROCESSING` 且余额快照仍为 `$16`，最终卡台结算证据待后续只读同步补齐，绝不重付。
+- Browser 首次灰度前只读就绪补强已由统筹审查并以 `1516c67` 合入：readiness 强制 migration 039/040，CLI 同样强制 payment executor=false/MOCK，并补齐 Browser 专属停止/回滚入口。主线复验 90 tests / 86 pass / 0 fail / 4 skipped；仍未部署生产 Browser Worker。
+- 第二单 API 灰度已完成；临时充值写权限已关闭，单笔 Permit 已撤销。卡台已读到 `PURCHASE 15.76 USD`，05:59 UTC 余额由 `$16.00` 降为 `$0.24`，资金扣减与消费金额一致；交易状态仍为 `PROCESSING`，最终状态待后续只读补证，绝不重付。
 - 本单暴露出“分配要求 15 分钟新鲜、定时同步默认 60 分钟”的窗口错配。主线已实现按订单需求只同步 1 张过期候选卡的低调用量修复，回归 466/429/0/37；尚未部署。
 - 2026-08-29 13:21 CST 公网复核：ops/plus 的 live/ready 四个端点均 HTTP 200。
 - Browser profile 绑定合入后的 v1 全量回归：465 total / 428 pass / 0 fail / 37 environment-skipped。

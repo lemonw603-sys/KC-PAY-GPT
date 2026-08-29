@@ -544,6 +544,13 @@
 - 用户当次明确允许真实付款后，临时打开 recharge-specific 写入并签发单笔 Permit；`create_direct` 仅调用 1 次，外部订单号 `7025`。
 - 最终订单 `RECHARGE_SUCCESS`，平台金额 `982.140000 PHP`，Plus 已开通且自动续费已取消；attempt 为 `SUCCESS/SETTLED`。
 - 完成后 Provider 账户写权限恢复为 false，Permit 撤销；readiness `ok=true`，活动任务、UNKNOWN 调用、活动资金风险和开放对账案件均为 0。
-- 卡台读到 `PURCHASE 15.76 USD`，但当时仍为 `PROCESSING`、余额快照仍 `$16`；后续只读补证，不重付。
+- 卡台读到 `PURCHASE 15.76 USD`；05:59 UTC 再同步后余额由 `$16.00` 降至 `$0.24`，扣减金额一致。交易状态仍为 `PROCESSING`，后续只读补证，不重付。
 - 现场发现 15 分钟分配新鲜度与 60 分钟定时同步错配；主线已实现仅在真实订单等待时按需同步一张过期候选卡的低 API 调用修复，测试 466 total / 429 pass / 0 fail / 37 skipped，尚未部署。
 - 详细证据：`docs/2026-08-29_second_api_real_order_verification.md`。
+
+## 2026-08-29｜Browser 首次灰度前只读就绪补强已合入（未部署）
+
+- Browser 窗口提交 `2fd3aa0` 已由统筹审查，并以主线提交 `1516c67` 合入。
+- production-readonly readiness 现在强制 migration 039/040；直接 CLI 与 systemd 一致要求 payment executor=false/MOCK；补充 Browser-only stop/disable/回滚入口。
+- 主线复验：语法检查通过；Browser 90 tests / 86 pass / 0 fail / 4 environment-skipped。
+- 仍缺 production Session/card-material adapter、真实 ChatGPT 非付款观察、LIVE payment/post-payment adapter 和服务器部署/回滚演练；未部署、未真实付款。
