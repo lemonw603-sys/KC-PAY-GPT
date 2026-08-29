@@ -59,7 +59,10 @@ async function assertSafeNavigationControl(locator, label) {
   }));
   if (!['button', 'a'].includes(shape.tag)) throw new ContractError(`${label} is not a navigation control`);
   if (shape.disabled) throw new ContractError(`${label} is disabled`);
-  if (shape.type === 'submit' || shape.insideForm) throw new ContractError(`${label} may submit a form`);
+  // ChatGPT's plan picker renders the non-payment "升级至 Plus" action as a
+  // standalone button with type=submit but no enclosing form. It only opens
+  // Checkout; a submit control inside a form remains forbidden.
+  if (shape.insideForm) throw new ContractError(`${label} may submit a form`);
 }
 
 async function safeClick(locator, label, assertContinue, timeoutMs) {

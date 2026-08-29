@@ -53,6 +53,7 @@
 - 隔离 MySQL + Headful Chrome 实测：页面 HTTP 200、`/api/auth/session` HTTP 200、登录身份匹配、订阅状态 `FREE`；未读取真实 PAN/CVC，未填卡，`submitCalls=0`。
 - 首次运行发现两个真实缺陷并已修复：Checkout 观察结果字段名 `cardNumber/cvc` 被安全对象检查误判为敏感字段；ChatGPT 官方首页标题存在 `ChatGPT: ...` 副标题变体；现已改为非敏感 presence 字段并允许官方标题后缀。
 - 复验仍在 Checkout 导航阶段失败（当前证据码 `CHECKOUT_NAVIGATION_FAILED`），资金状态已安全清理：订单回 `CARD_READY`、attempt/funds `CLEARED`、run `FAILED_SAFE`、dispatch `CANCELLED`、无 payment permit/submit operation/活动租约。该失败尚未证明页面导航已通过，不能进入真实付款。
+- 根因已定位：ChatGPT 方案弹窗的“升级至 Plus”是弹窗内、表单外的 `type=submit` 按钮，旧安全判断将所有 `type=submit` 一律拒绝，造成假失败；已收窄为仅拒绝处于表单内的提交控件。方案弹窗打开与 Plus 按钮已在 Headful 只读诊断中确认，未点击付款。
 - 临时隔离容器与运行目录已停止并清理；未连接生产、未部署本轮改动。
 
 - 库存后台收敛已部署生产（2026-08-28），并已通过发布后公网健康、服务状态、备份完整性和未认证路由验收；后台浏览器交叉验收仍待使用管理员会话执行。

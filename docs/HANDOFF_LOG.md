@@ -598,5 +598,6 @@
 - 已证实：页面和 `/api/auth/session` 可达；身份匹配；订阅为 `FREE`；未填卡、未付款、`submitCalls=0`。
 - 已修复：只读 Checkout 结果字段命名导致安全检查误报；ChatGPT 首页官方标题存在副标题变体导致页面漂移误报。
 - 当前阻塞：Checkout 导航阶段仍返回 `CHECKOUT_NAVIGATION_FAILED`，具体页面控制项/流程仍需下一轮只读定位；不得把它解释成 Session 无效或允许付款。
+- 根因定位：官方方案弹窗的“升级至 Plus”按钮为表单外 `type=submit`，旧规则过宽导致假失败；现已改为只拒绝表单内提交控件，并补充说明。
 - 权威收口：订单 `CARD_READY`；attempt/funds `CLEARED`；run `FAILED_SAFE`；dispatch `CANCELLED`；无活动 permit、付款提交记录或资源租约。
 - 未部署、未执行真实开卡/卡充值/付款；下一步是继续只读定位 Checkout 导航失败并补测试，之后再更新本文件与 Browser 合同。
