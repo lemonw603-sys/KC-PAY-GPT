@@ -137,6 +137,9 @@ export async function observeCheckout(page, {
     submitControlPresent,
     submitControlEnabled,
     cardFieldsPresent,
+    // Carry the reviewed selector forward as part of the immutable observation
+    // contract; the LIVE adapter must not invent its own submit target.
+    submitControlSelector: submitControlSelector || null,
     submitCalls: 0,
   };
 }

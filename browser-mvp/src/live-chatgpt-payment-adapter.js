@@ -49,7 +49,8 @@ export class LiveChatGPTPaymentAdapter {
   async submit({ page, checkout, cardMaterial, operationId, assertContinue = async () => undefined } = {}) {
     if (!this.enabled) throw new LiveChatGPTPaymentAdapterError('LIVE Browser payment adapter is disabled', 'PAYMENT_EXECUTOR_DISABLED');
     if (!page || typeof page.frames !== 'function') throw new TypeError('page is required');
-    if (!checkout?.recognized || checkout.submitControlSelector == null) {
+    const op = required(operationId, 'operationId');
+    if (!checkout?.recognized || typeof checkout.submitControlSelector !== 'string' || !checkout.submitControlSelector.trim()) {
       throw new LiveChatGPTPaymentAdapterError('recognized Checkout contract is required', 'CHECKOUT_ADAPTER_MISMATCH');
     }
     try {
@@ -82,11 +83,11 @@ export class LiveChatGPTPaymentAdapter {
         if (typeof this.outcomeObserver !== 'function') {
           throw new LiveChatGPTPaymentAdapterError('payment outcome observer is required after submit', 'PAYMENT_RESULT_UNKNOWN');
         }
-        const outcome = await this.outcomeObserver({ page, operationId: required(operationId, 'operationId') });
+        const outcome = await this.outcomeObserver({ page, operationId: op });
         if (outcome?.status !== 'CONFIRMED') {
           throw new LiveChatGPTPaymentAdapterError('payment outcome was not confirmed', 'PAYMENT_RESULT_UNKNOWN');
         }
-        return { status: 'CONFIRMED', providerCallRef: `browser:${required(operationId, 'operationId')}` };
+        return { status: 'CONFIRMED', providerCallRef: `browser:${op}` };
       } finally {
         // Never leave card values in the page after success, failure, or an
         // unknown outcome. Cleanup is best effort because the page may have

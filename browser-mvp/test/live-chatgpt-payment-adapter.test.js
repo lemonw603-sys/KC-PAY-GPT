@@ -20,3 +20,14 @@ test('LIVE adapter fills secure fields and requires an explicit outcome observer
     await assert.rejects(() => adapter.submit({ page, checkout, cardMaterial: card, operationId: 'op-2' }), (e) => e.code === 'PAYMENT_RESULT_UNKNOWN');
   } finally { await browser.close(); }
 });
+
+test('LIVE adapter validates operation id before touching checkout or clicking', async () => {
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage();
+    await page.setContent(`<input autocomplete="cc-number"><input autocomplete="cc-exp"><input autocomplete="cc-csc"><button data-pay type="submit" onclick="window.clicked=true; event.preventDefault()">Pay</button>`);
+    const adapter = new LiveChatGPTPaymentAdapter({ enabled: true, confirmation: LIVE_PAYMENT_CONFIRMATION, outcomeObserver: async () => ({ status: 'CONFIRMED' }) });
+    await assert.rejects(() => adapter.submit({ page, checkout, cardMaterial: card }), (e) => e.code === 'INVALID_ARGUMENT');
+    assert.equal(await page.locator('[data-pay]').evaluate((el) => window.clicked === true), false);
+  } finally { await browser.close(); }
+});
