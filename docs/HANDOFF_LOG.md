@@ -605,6 +605,7 @@
 - 复查并补强提交后卡字段清理；未知或异常结果不形成重试路径，测试保持 2/2 通过。
 - BrowserPaymentExecutor 现在显式把 page 传给适配器，其他层不接触页面/卡字段；付款状态测试 7/7 通过。
 - 对抗复查发现：LIVE 适配器原先在 operationId 缺失时可能先完成页面填写甚至点击，再报参数错误；且观察结果未携带提交选择器。现已在副作用前校验并补齐合同字段；新增测试通过（commit 99dd076）。
+- 后续联调又发现安全字段名映射错误（`cardNumber/cvc` 与合同的 `number/securityCode` 不一致），已修复；新增 3DS/挑战异常清理测试，全量测试 102 通过、0 失败、4 跳过。
 - 根因定位：官方方案弹窗的“升级至 Plus”按钮为表单外 `type=submit`，旧规则过宽导致假失败；现已改为只拒绝表单内提交控件，并补充说明。
 - 权威收口：订单 `CARD_READY`；attempt/funds `CLEARED`；run `FAILED_SAFE`；dispatch `CANCELLED`；无活动 permit、付款提交记录或资源租约。
 - 未部署、未执行真实开卡/卡充值/付款；下一步是继续只读定位 Checkout 导航失败并补测试，之后再更新本文件与 Browser 合同。

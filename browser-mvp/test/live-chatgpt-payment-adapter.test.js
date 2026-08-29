@@ -31,3 +31,20 @@ test('LIVE adapter validates operation id before touching checkout or clicking',
     assert.equal(await page.locator('[data-pay]').evaluate((el) => window.clicked === true), false);
   } finally { await browser.close(); }
 });
+
+test('LIVE adapter converts 3DS/challenge observer failures to UNKNOWN and clears fields', async () => {
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage();
+    await page.setContent(`<input autocomplete="cc-number"><input autocomplete="cc-exp"><input autocomplete="cc-csc"><button data-pay type="submit">Pay</button>`);
+    await page.locator('[data-pay]').evaluate((el) => el.addEventListener('click', () => { window.clicked = (window.clicked || 0) + 1; }));
+    const adapter = new LiveChatGPTPaymentAdapter({
+      enabled: true, confirmation: LIVE_PAYMENT_CONFIRMATION,
+      outcomeObserver: async () => { throw new Error('3DS challenge appeared'); },
+    });
+    await assert.rejects(() => adapter.submit({ page, checkout, cardMaterial: card, operationId: 'op-3' }), (e) => e.code === 'PAYMENT_RESULT_UNKNOWN');
+    for (const selector of ['cc-number', 'cc-exp', 'cc-csc']) {
+      assert.equal(await page.locator(`input[autocomplete="${selector}"]`).inputValue(), '');
+    }
+  } finally { await browser.close(); }
+});

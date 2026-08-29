@@ -63,6 +63,7 @@
 - 对 LIVE 适配器做了针对性对抗复查并修复两处边界：在任何页面/付款副作用前校验 operationId 与非空提交选择器；只读 Checkout 观察结果现在携带已审查的 submitControlSelector。全量测试通过；LIVE 仍未接生产。
 - 已新增真实 Browser 付款前检查清单：`docs/2026-08-29_browser-live-payment-readiness-checklist.md`；生产付款开关仍关闭。
 - HNSKJ 卡是否支持/触发 3DS：当前没有卡台字段、真实 Browser 付款或供应商文档证据，不能判断为“有”或“没有”。现行 Browser 设计仅把 3DS 作为可能的付款后续状态，未知时转人工对账，不自动重试。
+- 本轮联调测试发现并修复 LIVE 适配器字段名映射错误：安全字段合同使用 `number/expiry/securityCode`，适配器此前误用 `cardNumber/cvc`，会导致填写/清理不完整；现已统一并加入 3DS/挑战异常后的清理测试。
 
 - 库存后台收敛已部署生产（2026-08-28），并已通过发布后公网健康、服务状态、备份完整性和未认证路由验收；后台浏览器交叉验收仍待使用管理员会话执行。
 - 已实现卡段人工刷新（`POST /api/v1/admin/card-stock/provider-refresh`）与默认卡段持久保存（`POST /api/v1/admin/card-stock/default-card-type`）；刷新仅调用 Provider 只读接口，不恢复高频自动读取。

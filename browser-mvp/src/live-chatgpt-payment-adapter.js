@@ -60,11 +60,11 @@ export class LiveChatGPTPaymentAdapter {
         fields[name] = await oneVisible(page, selector, name);
       }
       const values = {
-        cardNumber: String(cardMaterial.pan).replace(/\s+/g, ''),
+        number: String(cardMaterial.pan).replace(/\s+/g, ''),
         expiry: `${String(cardMaterial.expMonth).padStart(2, '0')} / ${String(cardMaterial.expYear).slice(-2)}`,
-        cvc: String(cardMaterial.cvc),
+        securityCode: String(cardMaterial.cvc),
       };
-      if (!/^\d{12,19}$/.test(values.cardNumber) || !/^\d{3,4}$/.test(values.cvc)) {
+      if (!/^\d{12,19}$/.test(values.number) || !/^\d{3,4}$/.test(values.securityCode)) {
         throw new LiveChatGPTPaymentAdapterError('card material format is invalid', 'CARD_MATERIAL_INVALID');
       }
       try {
