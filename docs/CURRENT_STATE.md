@@ -55,6 +55,7 @@
 - 此前 `CHECKOUT_NAVIGATION_FAILED` 已定位并修复；最新 Headful 只读复验已完整到达 Checkout：登录/身份匹配、免费账号、Plus 入口、Checkout 摘要和安全字段均通过，`submitCalls=0`。仍未填卡、未付款、未连接生产。
 - 根因已定位：ChatGPT 方案弹窗的“升级至 Plus”是弹窗内、表单外的 `type=submit` 按钮，旧安全判断将所有 `type=submit` 一律拒绝，造成假失败；已收窄为仅拒绝处于表单内的提交控件。方案弹窗打开与 Plus 按钮已在 Headful 只读诊断中确认，未点击付款。
 - 临时隔离容器与运行目录已停止并清理；未连接生产、未部署本轮改动。
+- Mock 付款状态机回归已完成：付款执行器关闭/错误配置、确认成功、拒绝、提交后未知、Plus 未确认、取消续费或交易对账不完整等路径均通过；本轮无外部付款调用。
 
 - 库存后台收敛已部署生产（2026-08-28），并已通过发布后公网健康、服务状态、备份完整性和未认证路由验收；后台浏览器交叉验收仍待使用管理员会话执行。
 - 已实现卡段人工刷新（`POST /api/v1/admin/card-stock/provider-refresh`）与默认卡段持久保存（`POST /api/v1/admin/card-stock/default-card-type`）；刷新仅调用 Provider 只读接口，不恢复高频自动读取。

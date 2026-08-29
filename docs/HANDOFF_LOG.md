@@ -599,6 +599,7 @@
 - 已修复：只读 Checkout 结果字段命名导致安全检查误报；ChatGPT 首页官方标题存在副标题变体导致页面漂移误报。
 - 最新复验已通过 Checkout 只读阶段：登录、身份、免费订阅、Plus 入口、Checkout 和安全字段均成功，`submitCalls=0`；尚未进入付款。
 - 已新增付款通道设计合同：先 Mock 回归，再单独确认后实现 LIVE 适配器，成功必须同时确认付款、Plus 激活和取消续费；未知结果禁止重付。
+- Mock 回归已完成：14 项通过、0 失败；LIVE 适配器仍明确不可用，未连接生产或执行真实付款。
 - 根因定位：官方方案弹窗的“升级至 Plus”按钮为表单外 `type=submit`，旧规则过宽导致假失败；现已改为只拒绝表单内提交控件，并补充说明。
 - 权威收口：订单 `CARD_READY`；attempt/funds `CLEARED`；run `FAILED_SAFE`；dispatch `CANCELLED`；无活动 permit、付款提交记录或资源租约。
 - 未部署、未执行真实开卡/卡充值/付款；下一步是继续只读定位 Checkout 导航失败并补测试，之后再更新本文件与 Browser 合同。
