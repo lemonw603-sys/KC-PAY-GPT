@@ -55,6 +55,7 @@
 - Browser 独立线提交 `1d02c78` 已由统筹审查并以主线提交 `d6f9bf3` 安全合入：attempt 与 run 的 executor profile 现在必须一致，漂移时以 `EXECUTOR_PROFILE_CONFLICT` fail-closed；该 profile 同时进入权威付款 snapshot。合入后语法检查与相关 adapter/runtime/repository 测试 **46/46** 通过；未部署 Browser Worker、未连接生产、未执行付款。
 - 第二单 API 灰度当前等待客户提交 Session。客户提交前不打开 Provider 充值写入；提交后先由后台完成订单、卡片、余额、新鲜度、重复付款和资金风险检查，再做只读交叉核验，真实付款仍需当次确认。
 - 2026-08-29 13:21 CST 公网复核：ops/plus 的 live/ready 四个端点均 HTTP 200。
+- Browser profile 绑定合入后的 v1 全量回归：465 total / 428 pass / 0 fail / 37 environment-skipped。
 - 卡余额充值目前仅有后台记录/核对视图，指定卡发起充值的管理入口暂缓开发；生产 Provider 写入继续关闭。
 
 ## 2026-08-29 卡片库存只读同步复验

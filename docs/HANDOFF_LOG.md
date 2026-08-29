@@ -535,4 +535,5 @@
 - Browser 独立线提交 `1d02c78` 已由统筹逐项审查，并以主线提交 `d6f9bf3` 合入；只带入本轮 Browser 代码、测试和运行报告，没有合并 Browser 分支历史。
 - 修复内容：共享 adapter 显式读取 `recharge_attempts.executor_profile_id`，要求它与 `browser_runs.executor_profile_id` 一致；权威付款 snapshot 再次核对并纳入 `executorProfileId`，漂移错误码为 `EXECUTOR_PROFILE_CONFLICT`。
 - 主线复验：`npm --prefix browser-mvp run check` 通过；adapter/runtime/repository 定向测试 **46/46 passed**。
+- 随后执行 v1 全量回归：465 total / 428 pass / 0 fail / 37 environment-skipped。
 - 边界：本轮未部署生产 Browser Worker、未连接生产、未读取真实 Session/PAN/CVC、未填卡、未付款，也未改变生产写开关。
