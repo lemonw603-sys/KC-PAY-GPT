@@ -482,6 +482,42 @@ test('exposes guarded provider refresh and default card type routes', async () =
   });
 });
 
+test('start-business gates intake and dispatch on read-only readiness and stock', async () => {
+  const adminAuth = createAdminSessionAuth({
+    passwordHash: await hashAdminPassword('fixture admin password', { salt: Buffer.alloc(16, 21) }),
+    sessionSecret: Buffer.alloc(32, 22), secureCookies: false
+  });
+  let acceptanceCalls = 0; let dispatchCalls = 0;
+  const makeApp = ({ available = 1, ready = true } = {}) => createApp({
+    adminAuth,
+    getAdminOverview: async () => ({
+      cardStock: { available, needsFunding: 2 },
+      providerHealth: { syncedAt: ready ? new Date().toISOString() : null, purchaseEnabled: ready }
+    }),
+    startAdminBusiness: async () => {
+      if (!ready) throw new Error('卡台只读状态未就绪');
+      if (available < 1) throw new Error('可用卡库存不足：可分配 0，待补余额 2');
+      acceptanceCalls += 1; dispatchCalls += 1;
+      return { ready: true, acceptNewOrders: true, dispatchExistingOrders: true };
+    }
+  });
+  async function invoke(app) {
+    let result;
+    await withServer(app, async (baseUrl) => {
+      const login = await fetch(`${baseUrl}/api/v1/admin/session`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: 'fixture admin password' }) });
+      const cookie = login.headers.get('set-cookie').split(';')[0];
+      result = await fetch(`${baseUrl}/api/v1/admin/operations/start-business`, { method: 'POST', headers: { Cookie: cookie, Origin: baseUrl } });
+    });
+    return result;
+  }
+  const ready = await invoke(makeApp());
+  assert.equal(ready.status, 200); assert.equal(acceptanceCalls, 1); assert.equal(dispatchCalls, 1);
+  const blocked = await invoke(makeApp({ available: 0 }));
+  assert.equal(blocked.status, 500); assert.equal(acceptanceCalls, 1); assert.equal(dispatchCalls, 1);
+  const stale = await invoke(makeApp({ ready: false }));
+  assert.equal(stale.status, 500); assert.equal(acceptanceCalls, 1); assert.equal(dispatchCalls, 1);
+});
+
 test('reads card detail and queues inventory sync without step-up or paid actions', async () => {
   const adminAuth = createAdminSessionAuth({
     passwordHash: await hashAdminPassword('fixture admin password', { salt: Buffer.alloc(16, 14) }),
