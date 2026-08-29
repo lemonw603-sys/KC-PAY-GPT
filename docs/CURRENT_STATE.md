@@ -47,6 +47,14 @@
 
 ## 当前未完成
 
+### 2026-08-29｜ChatGPT 只读观察复验（当前停止点）
+
+- 用户提供的 Session 已在本地一次性解析并通过 `validateChatGptSession()`；原文尾部附加文本被解析层截断，原文未写入日志、WAL、文档或 Git。
+- 隔离 MySQL + Headful Chrome 实测：页面 HTTP 200、`/api/auth/session` HTTP 200、登录身份匹配、订阅状态 `FREE`；未读取真实 PAN/CVC，未填卡，`submitCalls=0`。
+- 首次运行发现两个真实缺陷并已修复：Checkout 观察结果字段名 `cardNumber/cvc` 被安全对象检查误判为敏感字段；ChatGPT 官方首页标题存在 `ChatGPT: ...` 副标题变体；现已改为非敏感 presence 字段并允许官方标题后缀。
+- 复验仍在 Checkout 导航阶段失败（当前证据码 `CHECKOUT_NAVIGATION_FAILED`），资金状态已安全清理：订单回 `CARD_READY`、attempt/funds `CLEARED`、run `FAILED_SAFE`、dispatch `CANCELLED`、无 payment permit/submit operation/活动租约。该失败尚未证明页面导航已通过，不能进入真实付款。
+- 临时隔离容器与运行目录已停止并清理；未连接生产、未部署本轮改动。
+
 - 库存后台收敛已部署生产（2026-08-28），并已通过发布后公网健康、服务状态、备份完整性和未认证路由验收；后台浏览器交叉验收仍待使用管理员会话执行。
 - 已实现卡段人工刷新（`POST /api/v1/admin/card-stock/provider-refresh`）与默认卡段持久保存（`POST /api/v1/admin/card-stock/default-card-type`）；刷新仅调用 Provider 只读接口，不恢复高频自动读取。
 - “开始营业”入口代码已在主线但暂不部署；生产继续使用现有分离开关。该入口的部分成功回滚优化延期。

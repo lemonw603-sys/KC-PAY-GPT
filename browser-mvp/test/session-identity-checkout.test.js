@@ -4,7 +4,7 @@ import { chromium } from 'playwright';
 import { createServer } from 'node:http';
 import { once } from 'node:events';
 
-import { ContractError } from '../src/contracts.js';
+import { assertSafeObject, ContractError } from '../src/contracts.js';
 import { CHATGPT_PLUS_CHECKOUT_CONTRACT, observeCheckout } from '../src/checkout-observer.js';
 import { probeSessionIdentity } from '../src/session-identity-probe.js';
 
@@ -124,6 +124,32 @@ test('subscription schema drift is not misclassified as a customer Session repla
   }
 });
 
+test('Cloudflare access blocking is not misclassified as an invalid customer Session', async () => {
+  const server = createServer((request, response) => {
+    response.writeHead(403, {
+      'content-type': 'text/html; charset=UTF-8',
+      server: 'cloudflare',
+      'cf-ray': 'fixture-ray',
+    });
+    response.end('<!doctype html><title>Just a moment</title><main>challenge</main>');
+  });
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage();
+    await page.goto(`http://127.0.0.1:${server.address().port}/`);
+    await assert.rejects(
+      () => probeSessionIdentity(page, { email: 'buyer@example.test' }),
+      (error) => error.code === 'CHATGPT_ACCESS_BLOCKED',
+    );
+  } finally {
+    await browser.close();
+    server.close();
+    await once(server, 'close');
+  }
+});
+
 test('checkout observer extracts plan, currency and amount without submitting payment', async () => {
   const browser = await chromium.launch({ headless: true });
   try {
@@ -171,7 +197,8 @@ test('checkout observer matches the live ChatGPT Plus checkout shape without tou
     assert.equal(result.paymentFormPresent, true);
     assert.equal(result.submitControlPresent, true);
     assert.equal(result.submitControlEnabled, true);
-    assert.deepEqual(result.cardFieldsPresent, { cardNumber: true, expiry: true, cvc: true });
+    assert.deepEqual(result.cardFieldsPresent, { number: true, expiry: true, securityCode: true });
+    assert.doesNotThrow(() => assertSafeObject(result, 'checkout observation'));
     assert.equal(result.submitCalls, 0);
   } finally {
     await browser.close();

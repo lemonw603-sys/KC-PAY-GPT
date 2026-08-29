@@ -56,6 +56,7 @@ fail-closed 配置检查
 - harness 不创建 `SharedEncryptedCardMaterialSource`，因此真实观察不解密 PAN/CVC；
 - 每次 Session/card material 读取前重新验证执行租约；租约丢失立即停止；
 - 任一身份字段不一致、订阅状态不明、页面选择器不唯一、控件可能提交表单、页面漂移或 Checkout 摘要不全都 fail-closed。
+- ChatGPT 首页不依赖语言相关的固定文案；登录身份和订阅状态已经由同源接口核对，首页只核对 URL、`ChatGPT` 产品标题（允许官方副标题后缀）和唯一 `main`，避免中文/英文文案变化制造假故障。
 
 ## 4. 结果分类
 
@@ -65,6 +66,7 @@ fail-closed 配置检查
 | Session HTTP 失败或身份任一字段不匹配 | `SESSION_INVALID`，原订单回 `WAITING_FOR_SESSION` |
 | Plus/其他活动付费订阅 | `ACCOUNT_ALREADY_PLUS`，原订单回 `WAITING_FOR_SESSION` |
 | 订阅响应未知、入口缺失/多义、页面漂移、Checkout 不完整 | 付款前安全失败，不允许继续到付款 |
+| Cloudflare/限流阻断导致 ChatGPT 页面或 Session 接口不可达 | `CHATGPT_ACCESS_BLOCKED`，按运行网络问题安全停止，不要求客户更换 Session |
 | 任意 `PAYMENT_SUBMIT`/外部付款调用不为 0 | 不按只读成功处理，保持资金核对边界 |
 
 ## 5. 一次性外部输入

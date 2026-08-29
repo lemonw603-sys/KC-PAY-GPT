@@ -87,7 +87,7 @@ test('external readonly mode requires https and a separate confirmation', () => 
 });
 
 test('ChatGPT account/Checkout harness is explicit, exact-origin and Session-only', () => {
-  const config = loadProductionReadonlyBrowserConfig(validEnv({
+  const chatGptEnv = validEnv({
     BROWSER_WORKER_TARGET: 'EXTERNAL_READONLY',
     BROWSER_READONLY_HARNESS: 'CHATGPT_ACCOUNT_CHECKOUT',
     BROWSER_SHARED_MATERIALS_MODE: 'SHARED_ENCRYPTED_NONPAYMENT',
@@ -96,8 +96,9 @@ test('ChatGPT account/Checkout harness is explicit, exact-origin and Session-onl
     BROWSER_OBSERVE_URL_PREFIX: 'https://chatgpt.com/',
     BROWSER_OBSERVE_TITLE: 'ChatGPT',
     BROWSER_OBSERVE_REQUIRED_SELECTOR: 'main',
-    BROWSER_OBSERVE_MARKER_TEXT: 'fixture-marker',
-  }));
+  });
+  delete chatGptEnv.BROWSER_OBSERVE_MARKER_TEXT;
+  const config = loadProductionReadonlyBrowserConfig(chatGptEnv);
   assert.equal(config.readonlyHarness, 'CHATGPT_ACCOUNT_CHECKOUT');
   assert.equal(config.observation.accountProbeContract.path, '/api/auth/session');
   assert.equal(config.observation.checkoutNavigationContract.homeUrlPrefix, 'https://chatgpt.com/');
@@ -106,6 +107,7 @@ test('ChatGPT account/Checkout harness is explicit, exact-origin and Session-onl
     sharedSessionEnabled: true,
     sharedCardPreflightEnabled: false,
   });
+  assert.equal(config.observation.pageContract.markerText, '');
   assert.throws(() => loadProductionReadonlyBrowserConfig(validEnv({
     BROWSER_WORKER_TARGET: 'EXTERNAL_READONLY',
     BROWSER_READONLY_HARNESS: 'CHATGPT_ACCOUNT_CHECKOUT',

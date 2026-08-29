@@ -87,6 +87,9 @@ export async function probeSessionIdentity(page, expectedIdentity, {
     return {
       ok: response.ok,
       status: response.status,
+      contentType: response.headers.get('content-type') || '',
+      server: response.headers.get('server') || '',
+      hasCfRay: Boolean(response.headers.get('cf-ray')),
       email: typeof user.email === 'string' ? user.email.trim().toLowerCase() : '',
       userId: typeof user.id === 'string' ? user.id.trim() : '',
       accountId: typeof body?.account?.id === 'string' ? body.account.id.trim() : '',
@@ -94,6 +97,24 @@ export async function probeSessionIdentity(page, expectedIdentity, {
     };
   }, { sessionPath: checkedSessionPath, subscriptionPath: checkedAccountPath });
   if (!observed?.ok) {
+    const accessBlocked = Number(observed?.status) === 429
+      || (Number(observed?.status) === 403 && (
+        String(observed?.contentType || '').toLowerCase().includes('text/html')
+        || String(observed?.server || '').toLowerCase().includes('cloudflare')
+        || observed?.hasCfRay === true
+      ));
+    if (accessBlocked) {
+      throw new SessionIdentityProbeError(
+        'ChatGPT access was blocked before Session identity could be verified',
+        'CHATGPT_ACCESS_BLOCKED',
+      );
+    }
+    if (Number(observed?.status) >= 500) {
+      throw new SessionIdentityProbeError(
+        `session identity service returned HTTP ${observed.status}`,
+        'ACCOUNT_STATUS_UNKNOWN',
+      );
+    }
     throw new SessionIdentityProbeError(
       `session identity probe returned HTTP ${observed?.status ?? 'unknown'}`,
       'SESSION_INVALID',

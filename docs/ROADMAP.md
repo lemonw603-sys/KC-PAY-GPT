@@ -171,6 +171,12 @@
 
 ## Browser 自动化时序
 
+### 2026-08-29 只读真实观察最新结果
+
+- [x] 隔离 Headful Chrome 成功建立 Session、核对身份和免费订阅状态，零付款、零卡资料读取。
+- [x] 修复 Checkout 观察结果被 `assertSafeObject` 误判为敏感字段，以及官方首页标题副标题变体。
+- [ ] Checkout 导航仍需继续定位 `CHECKOUT_NAVIGATION_FAILED`；在该项通过并冻结当次页面合同前，不得设计/启用真实付款。
+
 - Browser 上游、状态、卡片、Session、审计和读取策略以 `docs/contracts/2026-08-26_browser-upstream-runtime-contract.md` 为最新合同；PoC 的平行投影状态不得覆盖共享核心状态机；
 - [x] 共享核心 Browser route 在唯一 attempt 建立后使用 `RECHARGE_PROCESSING`；API route 仍使用 `SUBMITTING`；
 - [x] permit 签发时权威复核卡/路线/Provider/余额/资料/时效，并在付款 intent 前检测 snapshot 变化；

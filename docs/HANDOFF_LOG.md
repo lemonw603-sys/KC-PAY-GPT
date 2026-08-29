@@ -592,3 +592,11 @@
 - 对抗式审查修复：身份不再“任一字段匹配即通过”；订阅接口漂移独立归类为 `ACCOUNT_STATUS_UNKNOWN`；Session/card 读取前立即复核租约；真实观察不再无必要读取卡资料。
 - 统筹复验：Browser 99 tests / 95 pass / 0 fail / 4 skipped；production-readonly smoke 配置/systemd 10/10，隔离 MySQL + Chrome 3/3；`git diff --check` 通过。
 - 未部署、未访问真实 ChatGPT、未读取真实 Session/PAN/CVC。下一步只需一次性准备专用非客户测试账号的隔离订单/Session、身份摘要、批准网络出口与 Chrome 主机，然后执行只读观察并冻结真实合同。
+## 2026-08-29｜ChatGPT 只读观察复验与当前停止点
+
+- 输入：用户提供的 Session 文件；仅在隔离 MySQL + Headful Chrome 使用，原文不进入输出或持久化。
+- 已证实：页面和 `/api/auth/session` 可达；身份匹配；订阅为 `FREE`；未填卡、未付款、`submitCalls=0`。
+- 已修复：只读 Checkout 结果字段命名导致安全检查误报；ChatGPT 首页官方标题存在副标题变体导致页面漂移误报。
+- 当前阻塞：Checkout 导航阶段仍返回 `CHECKOUT_NAVIGATION_FAILED`，具体页面控制项/流程仍需下一轮只读定位；不得把它解释成 Session 无效或允许付款。
+- 权威收口：订单 `CARD_READY`；attempt/funds `CLEARED`；run `FAILED_SAFE`；dispatch `CANCELLED`；无活动 permit、付款提交记录或资源租约。
+- 未部署、未执行真实开卡/卡充值/付款；下一步是继续只读定位 Checkout 导航失败并补测试，之后再更新本文件与 Browser 合同。

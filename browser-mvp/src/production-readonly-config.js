@@ -141,7 +141,12 @@ export function loadProductionReadonlyBrowserConfig(env = process.env) {
       urlPrefix,
       title: required(env, 'BROWSER_OBSERVE_TITLE'),
       requiredSelector: required(env, 'BROWSER_OBSERVE_REQUIRED_SELECTOR'),
-      markerText: required(env, 'BROWSER_OBSERVE_MARKER_TEXT'),
+      // The authenticated ChatGPT harness already proves identity through
+      // /api/auth/session and the account endpoint. A localized homepage text
+      // fragment adds fragility without adding another trust boundary.
+      markerText: readonlyHarness === 'CHATGPT_ACCOUNT_CHECKOUT'
+        ? String(env.BROWSER_OBSERVE_MARKER_TEXT || '').trim()
+        : required(env, 'BROWSER_OBSERVE_MARKER_TEXT'),
     },
     ...(readonlyHarness === 'CHATGPT_ACCOUNT_CHECKOUT' ? {
       accountProbeContract: {

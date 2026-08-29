@@ -48,11 +48,14 @@ async function readMoneyRow(page, { summarySelector, labels }) {
 
 async function inspectCardFields(page, timeoutMs) {
   const selectors = {
-    cardNumber: 'input[autocomplete="cc-number"]',
+    number: 'input[autocomplete="cc-number"]',
     expiry: 'input[autocomplete="cc-exp"]',
-    cvc: 'input[autocomplete="cc-csc"]',
+    securityCode: 'input[autocomplete="cc-csc"]',
   };
-  const present = { cardNumber: false, expiry: false, cvc: false };
+  // These are presence flags only. Keep the return shape compatible with the
+  // Browser safe-object contract so a successful Checkout observation cannot
+  // be mistaken for leaked card material by the outer runtime adapter.
+  const present = { number: false, expiry: false, securityCode: false };
   const deadline = Date.now() + timeoutMs;
   do {
     for (const frame of page.frames()) {

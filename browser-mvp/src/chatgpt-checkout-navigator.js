@@ -14,7 +14,7 @@ async function visibleCount(locator) {
   return count;
 }
 
-async function uniqueVisibleSelector(page, selectors, label) {
+async function uniqueVisibleSelector(page, selectors, label, { allowEquivalentMultiple = false } = {}) {
   const matches = [];
   for (const selector of selectors || []) {
     const locator = page.locator(selector);
@@ -23,7 +23,13 @@ async function uniqueVisibleSelector(page, selectors, label) {
       if (await candidate.isVisible()) matches.push(candidate);
     }
   }
-  if (matches.length !== 1) throw new ContractError(`${label} must resolve to one visible control`);
+  if (matches.length === 0) throw new ContractError(`${label} must resolve to one visible control`);
+  if (matches.length > 1 && !allowEquivalentMultiple) throw new ContractError(`${label} must resolve to one visible control`);
+  if (matches.length > 1 && allowEquivalentMultiple) {
+    // ChatGPT may render the same upgrade action in both header/sidebar.
+    // Every candidate is still checked as a non-form navigation control.
+    for (const candidate of matches) await assertSafeNavigationControl(candidate, label);
+  }
   return matches[0];
 }
 
@@ -37,7 +43,10 @@ async function uniqueVisibleButton(scope, labels, label, { optional = false } = 
     }
   }
   if (optional && matches.length === 0) return null;
-  if (matches.length !== 1) throw new ContractError(`${label} must resolve to one visible button`);
+  if (matches.length !== 1) {
+    if (process.env.DEBUG_BROWSER_ERRORS === 'true') console.error('button mismatch', label, matches.length, labels);
+    throw new ContractError(`${label} must resolve to one visible button`);
+  }
   return matches[0];
 }
 
@@ -109,7 +118,9 @@ export async function navigateToChatGPTPlusCheckout(page, contract = CHATGPT_PLU
 
   const actions = [];
   if (!await checkoutReady(page, contract)) {
-    const openPricing = await uniqueVisibleSelector(page, contract.openPricingSelectors, 'open pricing control');
+    const openPricing = await uniqueVisibleSelector(page, contract.openPricingSelectors, 'open pricing control', {
+      allowEquivalentMultiple: true,
+    });
     await safeClick(openPricing, 'open pricing control', assertContinue, timeoutMs);
     actions.push('pricing-opened');
     await waitForState(page, async () => {
@@ -153,7 +164,7 @@ export async function navigateToChatGPTPlusCheckout(page, contract = CHATGPT_PLU
           'questionnaire skip control',
           { optional: true },
         );
-        if (!racedQuestionnaire || ++questionnaireRaceRecoveries > 2) throw error;
+        if (!racedQuestionnaire || ++questionnaireRaceRecoveries > 2) { if (process.env.DEBUG_BROWSER_ERRORS === 'true') console.error('upgrade failed', error?.message); throw error; }
         await safeClick(racedQuestionnaire, 'questionnaire skip control', assertContinue, timeoutMs);
         actions.push('questionnaire-skipped');
         await waitForState(page, async () => {

@@ -20,12 +20,13 @@ function digest(input) {
   return createHash('sha256').update(input).digest('hex');
 }
 
-function assertReadOnlyPageContract(contract) {
+function assertReadOnlyPageContract(contract, { identityProbeRequired = false } = {}) {
   if (!contract || typeof contract !== 'object') throw new ContractError('pageContract is required');
   if (typeof contract.urlPrefix !== 'string' || contract.urlPrefix.length === 0) throw new ContractError('pageContract.urlPrefix is required');
   if (typeof contract.title !== 'string' || contract.title.length === 0) throw new ContractError('pageContract.title is required');
   if (typeof contract.requiredSelector !== 'string' || contract.requiredSelector.length === 0) throw new ContractError('pageContract.requiredSelector is required');
-  if (typeof contract.markerText !== 'string' || contract.markerText.length === 0) throw new ContractError('pageContract.markerText is required');
+  if (typeof contract.markerText !== 'string') throw new ContractError('pageContract.markerText must be a string');
+  if (!identityProbeRequired && contract.markerText.length === 0) throw new ContractError('pageContract.markerText is required');
 }
 
 export class BrowserExecutionService {
@@ -52,7 +53,9 @@ export class BrowserExecutionService {
     assertJobEnvelope(job);
     if (job.state !== 'RUNNING') throw new BrowserExecutionError('INVALID_STATE', 'job must be RUNNING before Browser execution');
     if (typeof assertLease !== 'function') throw new TypeError('assertLease callback is required');
-    assertReadOnlyPageContract(job.metadata?.pageContract);
+    assertReadOnlyPageContract(job.metadata?.pageContract, {
+      identityProbeRequired: Boolean(job.metadata?.accountProbeContract),
+    });
     if (job.metadata?.checkoutNavigationContract && !job.metadata?.checkoutContract) {
       throw new ContractError('checkoutContract is required when Checkout navigation is enabled');
     }
@@ -114,7 +117,12 @@ export class BrowserExecutionService {
             job.metadata.accountProbeContract || {},
           );
         } catch (error) {
-          const reason = ['SESSION_INVALID', 'SESSION_IDENTITY_MISMATCH', 'ACCOUNT_STATUS_UNKNOWN'].includes(error?.code)
+          const reason = [
+            'SESSION_INVALID',
+            'SESSION_IDENTITY_MISMATCH',
+            'ACCOUNT_STATUS_UNKNOWN',
+            'CHATGPT_ACCESS_BLOCKED',
+          ].includes(error?.code)
             ? error.code : 'SESSION_IDENTITY_MISMATCH';
           throw new BrowserExecutionError(reason, error.message, error);
         }
@@ -269,9 +277,12 @@ export class BrowserExecutionService {
     }
     if (await marker.count() !== 1) throw new BrowserExecutionError('PAGE_DRIFT');
     const title = await page.title();
-    if (title !== contract.title) throw new BrowserExecutionError('PAGE_DRIFT');
+    const titleMatches = contract.title === 'ChatGPT'
+      ? title === contract.title || title.startsWith(`${contract.title}:`)
+      : title === contract.title;
+    if (!titleMatches) throw new BrowserExecutionError('PAGE_DRIFT');
     const text = await marker.textContent();
-    if (!text?.includes(contract.markerText)) throw new BrowserExecutionError('PAGE_DRIFT');
+    if (contract.markerText && !text?.includes(contract.markerText)) throw new BrowserExecutionError('PAGE_DRIFT');
     return { title, frameCount: page.frames().length };
   }
 
