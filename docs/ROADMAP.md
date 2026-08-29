@@ -178,6 +178,7 @@
 - [x] Checkout 导航错误已定位并修复；Headful 只读复验已到达 Checkout 且零提交。下一门禁仍是独立确认后才可设计/启用真实付款。
 - [x] 已冻结 Browser 付款通道设计合同（`docs/contracts/2026-08-29_browser-payment-lane-contract.md`）；当前仅做 Mock 状态机回归，不启用 LIVE 付款。
 - [x] Mock 付款状态机回归完成（14 通过、2 环境跳过）；覆盖确认、拒绝、未知、重复执行和最终取消续费门禁。
+- [x] 修复付款确认后的核验器异常传播，统一进入人工对账结果，不形成重付路径。
 - [x] 定位并修复 Checkout 导航假失败：允许表单外的计划升级按钮（仅打开 Checkout），仍拒绝表单内提交控件；需再做一次隔离端到端复验。
 
 - Browser 上游、状态、卡片、Session、审计和读取策略以 `docs/contracts/2026-08-26_browser-upstream-runtime-contract.md` 为最新合同；PoC 的平行投影状态不得覆盖共享核心状态机；
