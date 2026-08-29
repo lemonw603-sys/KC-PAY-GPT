@@ -489,7 +489,7 @@ test('start-business gates intake and dispatch on read-only readiness and stock'
     sessionSecret: Buffer.alloc(32, 22), secureCookies: false
   });
   let acceptanceCalls = 0; let dispatchCalls = 0;
-  const makeApp = ({ available = 1, ready = true } = {}) => createApp({
+  const makeApp = ({ available = 1, ready = true, failDispatch = false } = {}) => createApp({
     adminAuth,
     getAdminOverview: async () => ({
       cardStock: { available, needsFunding: 2 },
@@ -498,7 +498,7 @@ test('start-business gates intake and dispatch on read-only readiness and stock'
     startAdminBusiness: createAdminStartBusinessService({
       adminReadService: { getOverview: async () => ({ cardStock: { available, needsFunding: 2 }, providerHealth: { syncedAt: ready ? new Date().toISOString() : null, purchaseEnabled: ready } }) },
       cardStockService: { status: async () => ({ provider: { defaultCardTypeId: '16', cardTypes: [{ id: '16', name: 'VISA' }] } }) },
-      adminOperationsService: { setOrderAcceptance: async () => { acceptanceCalls += 1; return { acceptNewOrders: true }; }, setDispatch: async () => { dispatchCalls += 1; return { dispatchExistingOrders: true }; } }
+      adminOperationsService: { setOrderAcceptance: async ({ enabled }) => { acceptanceCalls += enabled ? 1 : -1; return { acceptNewOrders: enabled }; }, setDispatch: async () => { if (failDispatch) throw new Error('dispatch failed'); dispatchCalls += 1; return { dispatchExistingOrders: true }; } }
     })
   });
   async function invoke(app) {
@@ -516,6 +516,8 @@ test('start-business gates intake and dispatch on read-only readiness and stock'
   assert.equal(blocked.status, 500); assert.equal(acceptanceCalls, 1); assert.equal(dispatchCalls, 1);
   const stale = await invoke(makeApp({ ready: false }));
   assert.equal(stale.status, 500); assert.equal(acceptanceCalls, 1); assert.equal(dispatchCalls, 1);
+  const failed = await invoke(makeApp({ failDispatch: true }));
+  assert.equal(failed.status, 500); assert.equal(acceptanceCalls, 1); assert.equal(dispatchCalls, 1);
 });
 
 test('reads card detail and queues inventory sync without step-up or paid actions', async () => {

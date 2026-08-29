@@ -16,7 +16,14 @@ export function createAdminStartBusinessService({ adminReadService, cardStockSer
       throw new Error(`可用卡库存不足：可分配 ${stock.available || 0}，待补余额 ${stock.needsFunding || 0}`);
     }
     const acceptance = await adminOperationsService.setOrderAcceptance({ enabled: true, confirmation: '开始接单' });
-    const dispatch = await adminOperationsService.setDispatch({ enabled: true, confirmation: '开始自动充值' });
+    let dispatch;
+    try {
+      dispatch = await adminOperationsService.setDispatch({ enabled: true, confirmation: '开始自动充值' });
+    } catch (error) {
+      // Compensation keeps the two public switches from ending in a partial-open state.
+      await adminOperationsService.setOrderAcceptance({ enabled: false, confirmation: '停止接单' }).catch(() => {});
+      throw error;
+    }
     return { ready: true, acceptNewOrders: acceptance.acceptNewOrders, dispatchExistingOrders: dispatch.dispatchExistingOrders };
   };
 }
