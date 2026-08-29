@@ -73,3 +73,40 @@ export function fundableInventoryCardSql(alias = 'c', { productCode = 'plus' } =
         )
     )`;
 }
+
+// Candidate cards may be stale, so this predicate must never be used to assign
+// or spend a card. It exists only to enqueue one on-demand read synchronization
+// when a real order is waiting, avoiding high-frequency polling of the full catalog.
+export function refreshableInventoryCardSql(alias = 'c', { productCode = 'plus' } = {}) {
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(alias)) throw new TypeError('Invalid card SQL alias');
+  const normalizedProduct = String(productCode || 'plus').trim().toLowerCase();
+  if (!/^[a-z0-9_-]{1,32}$/.test(normalizedProduct)) throw new TypeError('Invalid product code');
+  return `${alias}.order_id IS NULL
+    AND ${alias}.inventory_status IN ('AVAILABLE','DEPLETED','PROVISIONING')
+    AND ${alias}.intake_status IN ('ACCEPTED','LEGACY_ACCEPTED')
+    AND ${alias}.card_credentials_ciphertext IS NOT NULL
+    AND NOT EXISTS (
+      SELECT 1 FROM card_assignment_history refresh_history
+      WHERE refresh_history.card_id = ${alias}.id
+    )
+    AND NOT EXISTS (
+      SELECT 1 FROM card_transactions refresh_purchase
+      WHERE refresh_purchase.card_id = ${alias}.id
+        AND UPPER(refresh_purchase.transaction_type) = 'PURCHASE'
+    )
+    AND NOT EXISTS (
+      SELECT 1 FROM refund_cases refresh_refund
+      WHERE refresh_refund.card_id = ${alias}.id
+        AND refresh_refund.status <> 'WITHDRAWN'
+    )
+    AND NOT EXISTS (
+      SELECT 1 FROM card_operational_overrides refresh_override
+      WHERE refresh_override.provider_account_id = ${alias}.provider_account_id
+        AND BINARY refresh_override.external_card_id = BINARY ${alias}.external_card_id
+        AND (
+          refresh_override.allocation_policy = 'RETIRED'
+          OR (refresh_override.allocation_policy = 'PRODUCT_ONLY'
+            AND LOWER(COALESCE(refresh_override.product_code, '')) <> '${normalizedProduct}')
+        )
+    )`;
+}

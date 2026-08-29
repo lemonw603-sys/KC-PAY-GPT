@@ -13,7 +13,7 @@
 
 ## 运行门禁与体检
 
-- 用户已在运营后台手动开启“接收新订单”和“自动充值/自动派发”，作为第二单 API 灰度准备；这一操作已由用户确认，但尚未通过服务器配置面独立复核。
+- 生产服务器已独立复核：`acceptNewOrders=true`、`dispatchNewRecharges=true`、派发模式 `AUTOMATIC`；这是用户此前手动开启并决定继续保留的当前运营状态。
 - `card_auto_replenishment_enabled=false`；每日自动开卡上限配置值为 `5`，但自动补卡未开启。
 - `PROVIDER_WRITES_ENABLED=false`、`PROVIDER_CARD_WRITES_ENABLED=false`、`PROVIDER_RECHARGE_WRITES_ENABLED=false`。
 - Browser systemd 单元强制 `BROWSER_PAYMENT_WRITES_ENABLED=false`，且服务未启动。
@@ -26,7 +26,7 @@
 - `1477 / 6807`：不设运营覆盖；当前原始/有效状态均为 `ASSIGNED`，仍受订单绑定、余额、交易与消费账本限制。
 - `1065 / 4744`：`PRODUCT_ONLY(claude)`，不分配 Plus。
 - 当前其余 17 张旧批次卡：全部 `RETIRED`；未来新卡不继承这个结论。
-- `1628 / 6185`：Provider 状态 active、卡段 17、资料完整并已接管进本地；用户手动补余额并在后台看到“可直接分配 Plus · 余额 `$16.00`”。它是第二单 API 灰度的候选卡；付款前仍由系统重新核对余额、状态、同步时效和唯一资金栅栏。
+- `1628 / 6185`：已分配给第二单真实 API 订单并完成 Plus 充值；不得再作为未使用库存自动分配。卡台 PURCHASE 最终结算状态仍待只读同步补证。
 - Plus 实际可直接分配卡为 `0`，但有 `1` 张可补余额卡；`catalog.unresolvedActive=0`、`providerOnlyActiveCount=0`。
 - 默认开卡卡段只决定未来开卡偏好，不再排除卡台当前公布的其他合法卡段；订单分配也不再要求卡片卡段等于订单创建时的默认开卡卡段。
 - 原始 Provider/本地状态可以与运营覆盖不同；后台主视图已显示有效运营状态，不再把旧卡误展示为可分配。
@@ -34,6 +34,7 @@
 ## 订单与资金状态
 
 - 已完成真实 API 订单 `PJV1-FqFnMiSKBtLGN14GyP7W`，使用 `1477/6807`，并完成取消续费。
+- 已完成第二单真实 API 订单 `PJV1-uVsqgepiEHu3tfpQKQq-`，使用 `1628/6185`；外部直充单 `7025`，平台金额 `982.140000 PHP`，最终 `RECHARGE_SUCCESS` 且 `subscription_cancelled=1`。attempt 为 `SUCCESS/SETTLED`，无活动资金风险或开放对账案件。
 - 验证用的遗留订单 `PJV1-4cK-yDhExDQbnpr8403G`已按“不充值”结论安全取消；它从未分配卡、未调用 Provider、未建立充值 attempt。
 - 当前活动任务为 `0`，不存在该遗留任务反复调度/API 调用风险。
 - 消费账本已部署；当前查询为空。历史真实订单发生于账本上线前，没有可靠主键证据时不自动回填。
@@ -53,7 +54,8 @@
 - 自动跨订单复用卡片尚未开启。
 - Browser 真实付款尚未验证；仍按独立 Browser 工作线推进非付款联调，真实付款必须另行确认。
 - Browser 独立线提交 `1d02c78` 已由统筹审查并以主线提交 `d6f9bf3` 安全合入：attempt 与 run 的 executor profile 现在必须一致，漂移时以 `EXECUTOR_PROFILE_CONFLICT` fail-closed；该 profile 同时进入权威付款 snapshot。合入后语法检查与相关 adapter/runtime/repository 测试 **46/46** 通过；未部署 Browser Worker、未连接生产、未执行付款。
-- 第二单 API 灰度当前等待客户提交 Session。客户提交前不打开 Provider 充值写入；提交后先由后台完成订单、卡片、余额、新鲜度、重复付款和资金风险检查，再做只读交叉核验，真实付款仍需当次确认。
+- 第二单 API 灰度已完成；临时充值写权限已关闭，单笔 Permit 已撤销。卡台已读到 `PURCHASE 15.76 USD`，但截至 05:54 UTC 仍为 `PROCESSING` 且余额快照仍为 `$16`，最终卡台结算证据待后续只读同步补齐，绝不重付。
+- 本单暴露出“分配要求 15 分钟新鲜、定时同步默认 60 分钟”的窗口错配。主线已实现按订单需求只同步 1 张过期候选卡的低调用量修复，回归 466/429/0/37；尚未部署。
 - 2026-08-29 13:21 CST 公网复核：ops/plus 的 live/ready 四个端点均 HTTP 200。
 - Browser profile 绑定合入后的 v1 全量回归：465 total / 428 pass / 0 fail / 37 environment-skipped。
 - 卡余额充值目前仅有后台记录/核对视图，指定卡发起充值的管理入口暂缓开发；生产 Provider 写入继续关闭。

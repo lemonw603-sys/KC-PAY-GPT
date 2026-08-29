@@ -537,3 +537,13 @@
 - 主线复验：`npm --prefix browser-mvp run check` 通过；adapter/runtime/repository 定向测试 **46/46 passed**。
 - 随后执行 v1 全量回归：465 total / 428 pass / 0 fail / 37 environment-skipped。
 - 边界：本轮未部署生产 Browser Worker、未连接生产、未读取真实 Session/PAN/CVC、未填卡、未付款，也未改变生产写开关。
+
+## 2026-08-29｜第二单真实 API 全链路成功
+
+- 客户提交 CDK + Session 后创建订单 `PJV1-uVsqgepiEHu3tfpQKQq-`；使用卡 `1628/6185`。
+- 用户当次明确允许真实付款后，临时打开 recharge-specific 写入并签发单笔 Permit；`create_direct` 仅调用 1 次，外部订单号 `7025`。
+- 最终订单 `RECHARGE_SUCCESS`，平台金额 `982.140000 PHP`，Plus 已开通且自动续费已取消；attempt 为 `SUCCESS/SETTLED`。
+- 完成后 Provider 账户写权限恢复为 false，Permit 撤销；readiness `ok=true`，活动任务、UNKNOWN 调用、活动资金风险和开放对账案件均为 0。
+- 卡台读到 `PURCHASE 15.76 USD`，但当时仍为 `PROCESSING`、余额快照仍 `$16`；后续只读补证，不重付。
+- 现场发现 15 分钟分配新鲜度与 60 分钟定时同步错配；主线已实现仅在真实订单等待时按需同步一张过期候选卡的低 API 调用修复，测试 466 total / 429 pass / 0 fail / 37 skipped，尚未部署。
+- 详细证据：`docs/2026-08-29_second_api_real_order_verification.md`。

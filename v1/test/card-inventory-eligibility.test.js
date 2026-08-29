@@ -5,7 +5,8 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import {
   eligibleInventoryCardSql,
-  fundableInventoryCardSql
+  fundableInventoryCardSql,
+  refreshableInventoryCardSql
 } from '../src/services/card-inventory-eligibility.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -34,6 +35,18 @@ test('fundable predicate includes low-balance prepared cards but keeps money-saf
   assert.match(sql, /card_assignment_history/);
   assert.match(sql, /transaction_type\) = 'PURCHASE'/);
   assert.match(sql, /card_operational_overrides/);
+});
+
+test('refreshable predicate is safe only for on-demand read synchronization', () => {
+  const sql = refreshableInventoryCardSql('c');
+  assert.match(sql, /order_id IS NULL/);
+  assert.match(sql, /card_credentials_ciphertext IS NOT NULL/);
+  assert.match(sql, /card_assignment_history/);
+  assert.match(sql, /transaction_type\) = 'PURCHASE'/);
+  assert.match(sql, /refund_cases/);
+  assert.match(sql, /card_operational_overrides/);
+  assert.doesNotMatch(sql, /last_transaction_synced_at/);
+  assert.doesNotMatch(sql, /current_balance >=/);
 });
 
 test('inventory predicate supports product-specific operational overrides without hard-coding card tails', () => {

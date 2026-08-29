@@ -1,0 +1,43 @@
+# 第二单真实 API 全链路验证（2026-08-29）
+
+## 结果
+
+- 订单查询码：`PJV1-uVsqgepiEHu3tfpQKQq-`
+- 客户邮箱：`exkk3390@gmail.com`
+- 产品：ChatGPT Plus
+- 使用卡片：Provider 卡 `1628`，尾号 `6185`
+- 直充订单号：`7025`
+- 最终订单状态：`RECHARGE_SUCCESS`
+- 平台结算金额：`982.140000 PHP`
+- Plus 开通后已确认取消自动续费：`subscription_cancelled=1`
+- 充值 attempt：`SUCCESS / SETTLED`
+
+本单从客户 CDK + Session 提交开始，经过卡片分配、付款前准备、单笔 Permit、API 创建、状态轮询、成功确认和取消续费复核，完成了第二次真实端到端闭环。
+
+## 资金与门禁证据
+
+- 真实创建前：订单无 recharge attempt、无 ZZSHU 创建调用、无资金风险。
+- 用户当次明确允许后，签发 5 分钟单笔 Permit，并只为本次灰度临时启用 ZZSHU 账户写权限和 recharge-specific Worker 写开关。
+- `create_direct` 只出现 1 次并成功，外部订单号为 `7025`。
+- 完成后：Provider 账户 `write_enabled=0`，单笔 Permit 已撤销；常驻 Worker 的三类 Provider 写开关仍为 false。
+- 最终 readiness：`ok=true`；活动任务、UNKNOWN Provider 调用、活动/未知资金风险、开放对账案件均为 0。
+- 接单和自动派发维持用户此前手动开启的状态，不因本单清理而关闭。
+
+## 卡片交易证据边界
+
+- 卡台已读到本次 `PURCHASE 15.760000 USD`，交易 ID `agg_tx_3eskrt48lubis`。
+- 截至 2026-08-29 05:54 UTC，卡台仍把该交易标为 `PROCESSING`，卡片快照余额仍为 `$16.00`；因此不能把卡台最终结算状态写成已完成。
+- 订单、Plus 开通和取消续费已由充值 Provider 明确确认成功；卡台 PURCHASE 的最终状态与余额变化仍由后续只读同步补证，不触发重付。
+
+## 本单发现并修复的缺陷（尚未部署）
+
+订单最初短暂进入 `WAITING_FOR_CARD`，原因不是没卡：卡 `6185` 有 `$16`、资料完整且未使用，但分配规则要求交易证据 15 分钟内新鲜，而全量定时同步默认按 60 分钟到期，形成时间窗口不一致。
+
+主线已做低调用量修复：
+
+- 不把全卡目录改成高频轮询；
+- 只有真实订单等待且存在安全但过期的候选卡时，按需排入 1 张卡的只读余额/交易同步；
+- 同步完成后，原 `ASSIGN_CARD` 任务按已有重试机制继续；
+- 过期数据仍不能直接用于分配或付款。
+
+代码回归：466 total / 429 pass / 0 fail / 37 environment-skipped。该修复未部署生产，部署仍需单独确认。
