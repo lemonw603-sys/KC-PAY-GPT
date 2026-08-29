@@ -59,6 +59,7 @@
 - 对抗复查发现并修复：付款已确认后，Plus/取消续费/交易核验器异常不能冒泡成可重试错误；现在统一返回 `POST_PAYMENT_UNKNOWN`，保留人工对账边界，不触发重付。
 - 已加入 `LiveChatGPTPaymentAdapter` 最小代码边界：默认关闭，必须同时提供精确确认词和结果观察器才会动作；本轮仅本地测试，未接入生产配置。
 - 对 LIVE 适配器做了失败路径复查：提交后无论结果确认、未知或异常，都会尽力清理页面卡字段；结果观察器缺失仍强制 `PAYMENT_RESULT_UNKNOWN`。测试 2/2 通过。
+- 已将 Browser 页面对象以显式参数转交给付款适配器边界，BrowserPaymentExecutor 本身不解析页面或卡字段；新增转交测试通过。
 
 - 库存后台收敛已部署生产（2026-08-28），并已通过发布后公网健康、服务状态、备份完整性和未认证路由验收；后台浏览器交叉验收仍待使用管理员会话执行。
 - 已实现卡段人工刷新（`POST /api/v1/admin/card-stock/provider-refresh`）与默认卡段持久保存（`POST /api/v1/admin/card-stock/default-card-type`）；刷新仅调用 Provider 只读接口，不恢复高频自动读取。

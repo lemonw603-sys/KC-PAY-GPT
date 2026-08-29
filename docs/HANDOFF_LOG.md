@@ -603,6 +603,7 @@
 - 付款执行器对抗复查修复：付款确认后核验器/记录器异常现在返回结构化 `POST_PAYMENT_UNKNOWN`，不再冒泡为可能重试的错误；新增测试通过。
 - 新增 `browser-mvp/src/live-chatgpt-payment-adapter.js`：默认禁用、精确确认词门禁、付款结果无观察器则强制 UNKNOWN；测试 2/2 通过，未接生产。
 - 复查并补强提交后卡字段清理；未知或异常结果不形成重试路径，测试保持 2/2 通过。
+- BrowserPaymentExecutor 现在显式把 page 传给适配器，其他层不接触页面/卡字段；付款状态测试 7/7 通过。
 - 根因定位：官方方案弹窗的“升级至 Plus”按钮为表单外 `type=submit`，旧规则过宽导致假失败；现已改为只拒绝表单内提交控件，并补充说明。
 - 权威收口：订单 `CARD_READY`；attempt/funds `CLEARED`；run `FAILED_SAFE`；dispatch `CANCELLED`；无活动 permit、付款提交记录或资源租约。
 - 未部署、未执行真实开卡/卡充值/付款；下一步是继续只读定位 Checkout 导航失败并补测试，之后再更新本文件与 Browser 合同。
