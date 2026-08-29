@@ -53,6 +53,7 @@ export class LiveChatGPTPaymentAdapter {
     if (!checkout?.recognized || typeof checkout.submitControlSelector !== 'string' || !checkout.submitControlSelector.trim()) {
       throw new LiveChatGPTPaymentAdapterError('recognized Checkout contract is required', 'CHECKOUT_ADAPTER_MISMATCH');
     }
+    let submitted = false;
     try {
       assertCardMaterial(cardMaterial);
       const fields = {};
@@ -60,11 +61,11 @@ export class LiveChatGPTPaymentAdapter {
         fields[name] = await oneVisible(page, selector, name);
       }
       const values = {
-        number: String(cardMaterial.pan).replace(/\s+/g, ''),
+        cardNumber: String(cardMaterial.pan).replace(/\s+/g, ''),
         expiry: `${String(cardMaterial.expMonth).padStart(2, '0')} / ${String(cardMaterial.expYear).slice(-2)}`,
-        securityCode: String(cardMaterial.cvc),
+        cvc: String(cardMaterial.cvc),
       };
-      if (!/^\d{12,19}$/.test(values.number) || !/^\d{3,4}$/.test(values.securityCode)) {
+      if (!/^\d{12,19}$/.test(values.cardNumber) || !/^\d{3,4}$/.test(values.cvc)) {
         throw new LiveChatGPTPaymentAdapterError('card material format is invalid', 'CARD_MATERIAL_INVALID');
       }
       try {
@@ -80,6 +81,7 @@ export class LiveChatGPTPaymentAdapter {
         }));
         if (shape.tag !== 'button' || shape.type !== 'submit') throw new ContractError('payment submit control shape drift');
         await submit.click();
+        submitted = true;
         if (typeof this.outcomeObserver !== 'function') {
           throw new LiveChatGPTPaymentAdapterError('payment outcome observer is required after submit', 'PAYMENT_RESULT_UNKNOWN');
         }
@@ -92,15 +94,17 @@ export class LiveChatGPTPaymentAdapter {
         // Never leave card values in the page after success, failure, or an
         // unknown outcome. Cleanup is best effort because the page may have
         // navigated after the submit click.
-        await Promise.all(Object.values(fields).map(async (field) => {
+        for (const field of Object.values(fields)) {
           try { await field.fill(''); } catch {
             await field.evaluate((element) => { element.value = ''; element.dispatchEvent(new Event('input', { bubbles: true })); }).catch(() => undefined);
           }
-        }));
+        }
       }
     } catch (error) {
       if (error instanceof LiveChatGPTPaymentAdapterError) throw error;
-      throw new LiveChatGPTPaymentAdapterError('LIVE Browser payment failed', 'PAYMENT_RESULT_UNKNOWN', error);
+      throw new LiveChatGPTPaymentAdapterError(
+        'LIVE Browser payment failed', submitted ? 'PAYMENT_RESULT_UNKNOWN' : 'CHECKOUT_DRIFT', error,
+      );
     }
   }
 }

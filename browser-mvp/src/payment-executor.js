@@ -131,6 +131,12 @@ export class BrowserPaymentExecutor {
       submission = await this.paymentAdapter.submit({ page, operationId: op, checkout, cardMaterial, permit });
       await control.assertLeaseBeforeAction('PAYMENT_RESULT');
     } catch (error) {
+      // Failures proven to occur before the submit click must not poison the
+      // payment attempt as UNKNOWN; they are safe to correct/retry by the
+      // caller. Only post-click failures consume the one-shot uncertainty path.
+      if (['CHECKOUT_DRIFT', 'CARD_MATERIAL_INVALID', 'CHECKOUT_ADAPTER_MISMATCH', 'INVALID_ARGUMENT'].includes(error?.code)) {
+        return { status: 'PRE_SUBMIT_FAILED', reasonCode: error.code, paymentSubmitCalls: 0 };
+      }
       await this.executionRepository.markPaymentUnknown({
         runId: run.runId, operationId: `${op}:unknown`, reasonCode: 'PAYMENT_RESULT_UNKNOWN',
       });

@@ -187,6 +187,7 @@
 - [x] 联调发现并修复 LIVE 适配器安全字段映射错误；补充 3DS/挑战异常后的清理回归。
 - [x] 收敛 Browser 付款门禁，区分硬性资金安全条件与按需触发的 3DS/验证码处理，避免人为增加流程障碍。
 - [x] 完成门禁收敛复查并记录测试结果（`docs/2026-08-29_browser-gate-simplification-review.md`）。
+- [x] 完成第二轮对抗审查，修复提交前错误分类和字段清理稳定性问题（`docs/2026-08-29_browser-gate-adversarial-review.md`）。
 - [x] 定位并修复 Checkout 导航假失败：允许表单外的计划升级按钮（仅打开 Checkout），仍拒绝表单内提交控件；需再做一次隔离端到端复验。
 
 - Browser 上游、状态、卡片、Session、审计和读取策略以 `docs/contracts/2026-08-26_browser-upstream-runtime-contract.md` 为最新合同；PoC 的平行投影状态不得覆盖共享核心状态机；

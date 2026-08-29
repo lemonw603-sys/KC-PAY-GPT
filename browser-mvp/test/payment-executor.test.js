@@ -83,8 +83,20 @@ test('mock adapter rejects non-mock checkout before any external action', async 
     control, run: { runId: 'run-1', leaseToken: 'lease-1' }, checkout: { kind: 'LIVE_CHECKOUT' },
     cardMaterial: { ref: 'card-material' }, operationId: 'pay-1',
   });
-  assert.equal(result.status, 'UNKNOWN');
+  assert.equal(result.status, 'PRE_SUBMIT_FAILED');
+  assert.equal(result.reasonCode, 'CHECKOUT_ADAPTER_MISMATCH');
   assert.equal(adapter.calls.length, 0);
+});
+
+test('proven pre-submit drift is recoverable and does not mark payment UNKNOWN', async () => {
+  const { executor, control, calls } = harness();
+  executor.paymentAdapter = { async submit() { const error = new Error('selector drift'); error.code = 'CHECKOUT_DRIFT'; throw error; } };
+  const result = await executor.execute({
+    control, run: { runId: 'run-1', leaseToken: 'lease-1' }, checkout: { kind: 'MOCK_CHECKOUT' },
+    cardMaterial: { ref: 'card-material' }, operationId: 'pay-drift',
+  });
+  assert.deepEqual(result, { status: 'PRE_SUBMIT_FAILED', reasonCode: 'CHECKOUT_DRIFT', paymentSubmitCalls: 0 });
+  assert.equal(calls.filter((value) => Array.isArray(value) && value[0] === 'unknown').length, 0);
 });
 
 test('post-payment verifier errors become structured reconciliation state', async () => {
