@@ -33,6 +33,8 @@ test('fundable predicate includes reusable low-balance cards but keeps money-saf
   assert.match(sql, /card_credentials_ciphertext IS NOT NULL/);
   assert.match(sql, /last_transaction_synced_at IS NOT NULL/);
   assert.match(sql, /fundable_assignment\.status='ACTIVE'/);
+  assert.match(sql, /fundable_funding\.status='PREPARED'/);
+  assert.match(sql, /funds_risk_state IN \('ACTIVE','UNKNOWN'\)/);
   assert.match(sql, /card_consumption_ledger/);
   assert.match(sql, /card_operational_overrides/);
 });

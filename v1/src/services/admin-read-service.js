@@ -224,7 +224,10 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
           co.allocation_policy, co.product_code AS allocation_product_code,
           co.reason AS allocation_reason,
           o.public_no, o.status AS order_status, o.customer_email
-        FROM cards c LEFT JOIN orders o ON o.id = c.order_id
+        FROM cards c
+        LEFT JOIN card_assignment_history active_assignment
+          ON active_assignment.card_id=c.id AND active_assignment.status='ACTIVE'
+        LEFT JOIN orders o ON o.id = active_assignment.order_id
         LEFT JOIN card_operational_overrides co
           ON co.provider_account_id = c.provider_account_id
          AND BINARY co.external_card_id = BINARY c.external_card_id
@@ -463,10 +466,17 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
       ,pool.query(`SELECT
           SUM(${eligibleInventoryCardSql('cards', `COALESCE((SELECT CAST(setting_value AS DECIMAL(18,6))
               FROM app_settings WHERE setting_key = 'default_minimum_required_card_balance' LIMIT 1), 999999999)`)}) AS available,
-          SUM(order_id IS NULL AND inventory_status = 'PROVISIONING') AS provisioning,
-          SUM(order_id IS NOT NULL OR inventory_status = 'ASSIGNED') AS assigned,
-          SUM(order_id IS NULL AND inventory_status = 'DEPLETED') AS depleted,
-          SUM(order_id IS NULL AND inventory_status = 'HELD_FOR_REVIEW') AS held,
+          SUM(inventory_status = 'PROVISIONING' AND NOT EXISTS (
+            SELECT 1 FROM card_assignment_history overview_assignment
+            WHERE overview_assignment.card_id=cards.id AND overview_assignment.status='ACTIVE')) AS provisioning,
+          SUM(EXISTS (SELECT 1 FROM card_assignment_history overview_assignment
+            WHERE overview_assignment.card_id=cards.id AND overview_assignment.status='ACTIVE')) AS assigned,
+          SUM(inventory_status = 'DEPLETED' AND NOT EXISTS (
+            SELECT 1 FROM card_assignment_history overview_assignment
+            WHERE overview_assignment.card_id=cards.id AND overview_assignment.status='ACTIVE')) AS depleted,
+          SUM(inventory_status = 'HELD_FOR_REVIEW' AND NOT EXISTS (
+            SELECT 1 FROM card_assignment_history overview_assignment
+            WHERE overview_assignment.card_id=cards.id AND overview_assignment.status='ACTIVE')) AS held,
           SUM(${fundableInventoryCardSql('cards')}
             AND current_balance < COALESCE((SELECT CAST(setting_value AS DECIMAL(18,6))
               FROM app_settings WHERE setting_key = 'default_minimum_required_card_balance' LIMIT 1), 999999999)) AS needs_funding,

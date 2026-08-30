@@ -99,7 +99,6 @@ export async function scheduleDueCardSyncJobs(pool, {
     }
     const [cards] = await connection.query(
       `SELECT c.id FROM cards c
-       LEFT JOIN orders o ON o.id = c.order_id
        WHERE c.intake_status IN ('ACCEPTED','LEGACY_ACCEPTED')
          AND (
            c.next_sync_at <= ?
@@ -156,13 +155,15 @@ export async function claimCardSyncJob(pool, { workerId, leaseSeconds = 120 }) {
     const [rows] = await connection.query(
       `SELECT j.id, j.card_id, j.attempts, j.max_attempts,
               c.provider_card_id, c.provider_account_id, c.card_type_id,
-              c.funded_amount, c.order_id, c.sync_tier,
+              c.funded_amount, active_assignment.order_id, c.sync_tier,
               (SELECT setting_value FROM app_settings
                 WHERE setting_key = 'default_minimum_required_card_balance' LIMIT 1)
                 AS minimum_required_card_balance,
               o.status AS order_status
        FROM card_sync_jobs j INNER JOIN cards c ON c.id = j.card_id
-       LEFT JOIN orders o ON o.id = c.order_id
+       LEFT JOIN card_assignment_history active_assignment
+         ON active_assignment.card_id=c.id AND active_assignment.status='ACTIVE'
+       LEFT JOIN orders o ON o.id = active_assignment.order_id
        WHERE j.status = 'PENDING' AND j.available_at <= CURRENT_TIMESTAMP(3)
        ORDER BY CASE c.sync_tier
          WHEN 'RECHARGE_PROCESSING' THEN 10 WHEN 'PROVISIONING' THEN 20
@@ -201,7 +202,9 @@ export async function completeCardSyncJob(pool, { jobId, workerId, now = new Dat
     const [rows] = await connection.query(
       `SELECT j.card_id, c.inventory_status, o.status AS order_status
        FROM card_sync_jobs j INNER JOIN cards c ON c.id = j.card_id
-       LEFT JOIN orders o ON o.id = c.order_id
+       LEFT JOIN card_assignment_history active_assignment
+         ON active_assignment.card_id=c.id AND active_assignment.status='ACTIVE'
+       LEFT JOIN orders o ON o.id = active_assignment.order_id
        WHERE j.id = ? AND j.status = 'RUNNING' AND j.leased_by = ? FOR UPDATE`,
       [jobId, workerId]
     );

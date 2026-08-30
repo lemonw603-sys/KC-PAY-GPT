@@ -63,7 +63,6 @@ try {
         fundedAmount: job.funded_amount,
         minimumRequiredBalance: job.minimum_required_card_balance
       });
-      await stock.register(mapped);
       const transactions = await readAllCardTransactions({
         fetchPage: (page, pageSize) => recordProviderCall({
           pool,
@@ -89,6 +88,10 @@ try {
         transactions,
         cardSnapshot: mapped
       });
+      // Persist the fresh transaction timestamp before reclassifying stock.
+      // Otherwise register() can briefly see stale evidence, open a false
+      // low-stock incident, and leave it open after the same sync succeeds.
+      await stock.register(mapped);
       await completeCardSyncJob(pool, { jobId: job.id, workerId });
       console.log(JSON.stringify({
         handled: true,

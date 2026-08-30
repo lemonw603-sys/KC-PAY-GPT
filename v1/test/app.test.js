@@ -87,6 +87,16 @@ test('labels local stock refresh separately from provider card synchronization',
   assert.match(script, /本地列表已刷新（未同步卡台）/);
 });
 
+test('exposes the one-to-four card capacity setting in the admin UI', async () => {
+  const html = await readFile(new URL('../public/admin/index.html', import.meta.url), 'utf8');
+  const script = await readFile(new URL('../public/admin/assets/admin.js', import.meta.url), 'utf8');
+  assert.match(html, /id="card-capacity-form"/);
+  assert.match(html, /id="card-capacity"[^>]*required/);
+  for (const value of [1, 2, 3, 4]) assert.match(html, new RegExp(`<option value="${value}">${value} 次</option>`));
+  assert.match(script, /\/api\/v1\/admin\/card-stock\/max-successful-payments/);
+  assert.match(script, /payload\.maxSuccessfulPayments \|\| 3/);
+});
+
 test('readiness fails closed and errors do not expose details', async () => {
   const app = createApp({ readiness: async () => { throw new Error('database password leaked'); } });
   await withServer(app, async (baseUrl) => {
@@ -490,6 +500,58 @@ test('exposes guarded provider refresh and default card type routes', async () =
     const response = await fetch(`${baseUrl}/api/v1/admin/card-stock/default-card-type`, { method: 'POST', headers: { Cookie: stepped, Origin: baseUrl, 'Content-Type': 'application/json' }, body: JSON.stringify({ cardTypeId: '16' }) });
     assert.equal(response.status, 200); assert.equal(selected, '16');
   });
+});
+
+test('updates card capacity through the guarded admin route without provider calls', async () => {
+  const adminAuth = createAdminSessionAuth({
+    passwordHash: await hashAdminPassword('fixture admin password', { salt: Buffer.alloc(16, 23) }),
+    sessionSecret: Buffer.alloc(32, 24), secureCookies: false
+  });
+  let capacity = 3;
+  let settingWrites = 0;
+  let providerCalls = 0;
+  const app = createApp({
+    adminAuth,
+    getAdminCardStock: async () => ({ maxSuccessfulPayments: capacity }),
+    setAdminCardMaxSuccessfulPayments: async (count) => {
+      settingWrites += 1;
+      capacity = count;
+      return { maxSuccessfulPayments: count };
+    },
+    refreshAdminCardStockProvider: async () => {
+      providerCalls += 1;
+      return {};
+    }
+  });
+  await withServer(app, async (baseUrl) => {
+    const denied = await fetch(`${baseUrl}/api/v1/admin/card-stock/max-successful-payments`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ count: 4 })
+    });
+    assert.equal(denied.status, 401);
+    const login = await fetch(`${baseUrl}/api/v1/admin/session`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: 'fixture admin password' })
+    });
+    const cookie = login.headers.get('set-cookie').split(';')[0];
+    for (const invalid of [0, 5, 1.5, '2', true, 'invalid']) {
+      const response = await fetch(`${baseUrl}/api/v1/admin/card-stock/max-successful-payments`, {
+        method: 'POST', headers: { Cookie: cookie, Origin: baseUrl, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ count: invalid })
+      });
+      assert.equal(response.status, 400);
+      assert.deepEqual(await response.json(), { error: 'invalid_card_capacity' });
+    }
+    const updated = await fetch(`${baseUrl}/api/v1/admin/card-stock/max-successful-payments`, {
+      method: 'POST', headers: { Cookie: cookie, Origin: baseUrl, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ count: 4 })
+    });
+    assert.equal(updated.status, 200);
+    assert.deepEqual(await updated.json(), { maxSuccessfulPayments: 4 });
+    const stock = await fetch(`${baseUrl}/api/v1/admin/card-stock`, { headers: { Cookie: cookie } });
+    assert.deepEqual(await stock.json(), { maxSuccessfulPayments: 4 });
+  });
+  assert.equal(settingWrites, 1);
+  assert.equal(providerCalls, 0);
 });
 
 test('start-business gates intake and dispatch on read-only readiness and stock', async () => {

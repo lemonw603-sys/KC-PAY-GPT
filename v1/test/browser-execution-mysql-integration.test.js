@@ -51,10 +51,10 @@ test('Browser MySQL mapping preserves one payment action and locks unknown resul
        (id, order_id, inventory_status, provider_card_id, card_type_id, status,
         funded_amount, current_balance, currency, refund_status,
         card_credentials_ciphertext, provider_account_id, external_card_id,
-        intake_status, sync_tier, last_synced_at)
+        intake_status, sync_tier, last_synced_at, last_transaction_synced_at)
        VALUES (?, ?, 'ASSIGNED', ?, '7', 'active', 25, 20, 'USD', 'MONITORING',
          ?, '00000000-0000-4000-8000-000000000101', ?, 'ACCEPTED', 'ASSIGNED',
-         CURRENT_TIMESTAMP(3))`,
+         CURRENT_TIMESTAMP(3), CURRENT_TIMESTAMP(3))`,
       [cardId, orderId, `browser-test-card-${cardId}`, Buffer.from('isolated-test-card'),
         `browser-test-card-${cardId}`]
     );
@@ -211,10 +211,10 @@ test('Browser MySQL pre-payment abort releases every runtime and funds fence ato
        (id, order_id, inventory_status, provider_card_id, card_type_id, status,
         funded_amount, current_balance, currency, refund_status,
         card_credentials_ciphertext, provider_account_id, external_card_id,
-        intake_status, sync_tier, last_synced_at)
+        intake_status, sync_tier, last_synced_at, last_transaction_synced_at)
        VALUES (?, ?, 'ASSIGNED', ?, '7', 'active', 25, 20, 'USD', 'MONITORING',
          ?, '00000000-0000-4000-8000-000000000101', ?, 'ACCEPTED', 'ASSIGNED',
-         CURRENT_TIMESTAMP(3))`,
+         CURRENT_TIMESTAMP(3), CURRENT_TIMESTAMP(3))`,
       [cardId, orderId, `browser-safe-abort-card-${cardId}`,
         Buffer.from('isolated-test-card'), `browser-safe-abort-card-${cardId}`]
     );

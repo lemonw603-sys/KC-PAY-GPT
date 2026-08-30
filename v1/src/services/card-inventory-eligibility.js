@@ -51,6 +51,10 @@ export function fundableInventoryCardSql(alias = 'c', { productCode = 'plus' } =
         WHERE setting_key='card_max_successful_payments' LIMIT 1), 3)
     AND NOT EXISTS (SELECT 1 FROM card_assignment_history fundable_assignment
       WHERE fundable_assignment.card_id=${alias}.id AND fundable_assignment.status='ACTIVE')
+    AND NOT EXISTS (SELECT 1 FROM card_funding_attempts fundable_funding
+      WHERE fundable_funding.card_id=${alias}.id
+        AND (fundable_funding.status='PREPARED'
+          OR fundable_funding.funds_risk_state IN ('ACTIVE','UNKNOWN')))
     AND NOT EXISTS (
       SELECT 1 FROM refund_cases fundable_refund
       WHERE fundable_refund.card_id = ${alias}.id

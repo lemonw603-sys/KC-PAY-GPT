@@ -325,7 +325,6 @@ function transitionResponses({ orderStatus = 'SUBMITTING', authorizationItemId =
   }
   responses.push([{ affectedRows: 1 }, []]); // order
   if (persistSubmission) {
-    responses.push([{ affectedRows: 1 }, []]); // clear cached card credentials
     responses.push([{ affectedRows: 1 }, []]); // enqueue polling
   }
   responses.push([{ affectedRows: 1 }, []]); // event
@@ -403,6 +402,6 @@ test('markAttemptSubmitted records external identity and moves to processing', a
   assert.match(pool.queries[1].sql, /submitted_at = COALESCE/);
   assert.match(pool.queries[1].sql, /external_order_id = \?/);
   assert.match(pool.queries[2].sql, /recharge_order_no = \?/);
-  assert.match(pool.queries[3].sql, /card_credentials_ciphertext = NULL/);
-  assert.match(pool.queries[4].sql, /POLL_RECHARGE/);
+  assert.match(pool.queries[3].sql, /POLL_RECHARGE/);
+  assert.equal(pool.queries.some((entry) => /card_credentials_ciphertext = NULL/.test(entry.sql)), false);
 });

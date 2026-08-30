@@ -470,9 +470,9 @@ test('pre-submission cancellation closes the order and returns its funded card t
       `INSERT INTO cards
        (id, order_id, inventory_status, assigned_at, provider_card_id, card_type_id,
         last4, status, funded_amount, current_balance, currency, refund_status,
-        card_credentials_ciphertext, last_synced_at)
+        card_credentials_ciphertext, last_synced_at, last_transaction_synced_at)
        VALUES (?, ?, 'ASSIGNED', CURRENT_TIMESTAMP(3), ?, '1', '4242', 'active',
-        '16.000000', '16.000000', 'USD', 'MONITORING', ?, CURRENT_TIMESTAMP(3))`,
+        '16.000000', '16.000000', 'USD', 'MONITORING', ?, CURRENT_TIMESTAMP(3), CURRENT_TIMESTAMP(3))`,
       [cardId, fixture.orderId, `cancel-card-${cardId}`, encryptSecret(JSON.stringify({
         cardNumber: '4242424242424242', expMonth: 12, expYear: 2032, cvv: '123'
       }), integrationSessionKey)]
@@ -492,16 +492,16 @@ test('pre-submission cancellation closes the order and returns its funded card t
     const service = createOrderCancellationService({ pool });
     const result = await service(order.public_no, { confirmation: `取消订单 ${order.public_no}` });
     assert.equal(result.cardReleased, true);
-    assert.equal(result.cardInventoryStatus, 'HELD_FOR_REVIEW');
+    assert.equal(result.cardInventoryStatus, 'AVAILABLE');
     const [[stored]] = await pool.query(
-      `SELECT o.status, o.failure_code, c.order_id, c.inventory_status, t.status AS task_status
+      `SELECT o.status, o.failure_code, o.assigned_card_id, c.order_id, c.inventory_status, t.status AS task_status
        FROM orders o INNER JOIN cards c ON c.id = ?
        INNER JOIN tasks t ON t.order_id = o.id AND t.task_type = 'SUBMIT_RECHARGE'
        WHERE o.id = ?`, [cardId, fixture.orderId]
     );
     assert.deepEqual(stored, {
-      status: 'CLOSED', failure_code: 'CANCELLED_PRE_SUBMISSION', order_id: null,
-      inventory_status: 'HELD_FOR_REVIEW', task_status: 'DEAD'
+      status: 'CLOSED', failure_code: 'CANCELLED_PRE_SUBMISSION', assigned_card_id: null,
+      order_id: fixture.orderId, inventory_status: 'AVAILABLE', task_status: 'DEAD'
     });
   } finally {
     await pool.query('DELETE FROM card_assignment_history WHERE card_id = ?', [cardId]);
@@ -625,6 +625,71 @@ test('inventory assignment accepts a supported non-default card segment and give
     await removeOrder(pool, first);
     await removeOrder(pool, second);
     await pool.query('DELETE FROM cards WHERE id = ?', [stockCardId]);
+    await pool.end();
+  }
+});
+
+test('one card serves sequential orders until the configured capacity is exhausted', {
+  skip: !databaseUrl && 'TEST_DATABASE_URL 未配置；完整 MySQL 套件在服务器隔离数据库运行'
+}, async () => {
+  const pool = mysql.createPool({ uri: databaseUrl, connectionLimit: 4, timezone: 'Z' });
+  const first = await createOrder(pool);
+  const second = await createOrder(pool);
+  const third = await createOrder(pool);
+  const cardId = id();
+  const [[originalLimit]] = await pool.query(
+    `SELECT setting_value FROM app_settings WHERE setting_key='card_max_successful_payments'`
+  );
+  try {
+    await pool.query(`UPDATE app_settings SET setting_value='2' WHERE setting_key='card_max_successful_payments'`);
+    await pool.query(
+      `INSERT INTO cards
+       (id, order_id, inventory_status, provider_card_id, card_type_id, last4, status,
+        funded_amount, current_balance, currency, refund_status, card_credentials_ciphertext,
+        provider_account_id, external_card_id, intake_status, sync_tier,
+        last_synced_at, last_transaction_synced_at)
+       VALUES (?, NULL, 'AVAILABLE', ?, '17', '4242', 'active', 16, 16, 'USD', 'MONITORING',
+        ?, ?, ?, 'ACCEPTED', 'AVAILABLE', CURRENT_TIMESTAMP(3), CURRENT_TIMESTAMP(3))`,
+      [cardId, `multi-${cardId}`, encryptSecret(JSON.stringify({
+        cardNumber: '4242424242424242', expMonth: 12, expYear: 2032, cvv: '123'
+      }), integrationSessionKey), legacyCardProviderAccountId, `multi-${cardId}`]
+    );
+    const workflow = createWorkflowRepository(pool, { sessionEncryptionKey: integrationSessionKey });
+    assert.equal((await workflow.assignAvailableCard(first.orderId)).providerCardId, `multi-${cardId}`);
+    await pool.query(`UPDATE card_consumption_ledger SET status='CONSUMED', consumed_at=CURRENT_TIMESTAMP(3)
+      WHERE card_id=? AND order_id=?`, [cardId, first.orderId]);
+    await pool.query(`UPDATE card_assignment_history SET status='RELEASED', released_at=CURRENT_TIMESTAMP(3)
+      WHERE card_id=? AND order_id=?`, [cardId, first.orderId]);
+    const stock = createCardStockService({ pool, sessionEncryptionKey: integrationSessionKey });
+    const refreshedCard = mapStockCard({ data: {
+      id: `multi-${cardId}`, cardTypeId: '17', status: 'active', cardBalance: '16.00',
+      currency: 'USD', cardNumber: '4242424242424242', cvv: '123',
+      expiryMonth: 12, expiryYear: 2032
+    } }, { minimumRequiredBalance: '16' });
+    assert.equal((await stock.register(refreshedCard)).inventoryStatus, 'AVAILABLE');
+    const [[afterFirstSync]] = await pool.query(
+      `SELECT order_id, inventory_status FROM cards WHERE id=?`, [cardId]
+    );
+    assert.deepEqual(afterFirstSync, { order_id: first.orderId, inventory_status: 'AVAILABLE' });
+
+    assert.equal((await workflow.assignAvailableCard(second.orderId)).providerCardId, `multi-${cardId}`);
+    await pool.query(`UPDATE card_consumption_ledger SET status='CONSUMED', consumed_at=CURRENT_TIMESTAMP(3)
+      WHERE card_id=? AND order_id=?`, [cardId, second.orderId]);
+    await pool.query(`UPDATE card_assignment_history SET status='RELEASED', released_at=CURRENT_TIMESTAMP(3)
+      WHERE card_id=? AND order_id=?`, [cardId, second.orderId]);
+    assert.equal((await stock.register(refreshedCard)).inventoryStatus, 'AVAILABLE');
+
+    assert.equal((await workflow.assignAvailableCard(third.orderId)).waitingForCard, true);
+    const [[usage]] = await pool.query(`SELECT COUNT(*) AS count FROM card_consumption_ledger
+      WHERE card_id=? AND status='CONSUMED'`, [cardId]);
+    assert.equal(Number(usage.count), 2);
+  } finally {
+    await pool.query(`UPDATE app_settings SET setting_value=? WHERE setting_key='card_max_successful_payments'`,
+      [originalLimit?.setting_value || '3']);
+    await removeOrder(pool, third);
+    await removeOrder(pool, second);
+    await removeOrder(pool, first);
+    await pool.query('DELETE FROM cards WHERE id=?', [cardId]);
     await pool.end();
   }
 });
@@ -918,6 +983,74 @@ test('card funding scheduler creates one prepared attempt for a fresh low-balanc
   }
 });
 
+test('a settled funding attempt allows a later exact top-up while active funding still blocks duplicates', {
+  skip: !databaseUrl && 'TEST_DATABASE_URL 未配置；完整 MySQL 套件在服务器隔离数据库运行'
+}, async () => {
+  const pool = mysql.createPool({ uri: databaseUrl, connectionLimit: 3, timezone: 'Z' });
+  const repository = createCardFundingRepository(pool);
+  const cardId = id();
+  const providerCardId = `repeat-funding-${id()}`;
+  try {
+    await pool.query(
+      `INSERT INTO cards
+       (id, order_id, inventory_status, provider_card_id, card_type_id, last4, status,
+        funded_amount, current_balance, currency, refund_status, card_credentials_ciphertext,
+        provider_account_id, external_card_id, intake_status, sync_tier, last_transaction_synced_at)
+       VALUES (?, NULL, 'DEPLETED', ?, '7', '4242', 'active', '16.000000', '4.000000',
+        'USD', 'MONITORING', ?, ?, ?, 'ACCEPTED', 'AVAILABLE', CURRENT_TIMESTAMP(3))`,
+      [cardId, providerCardId, encryptSecret(JSON.stringify({ cardNumber: '4242424242424242',
+        expMonth: 12, expYear: 2032, cvv: '123' }), integrationSessionKey),
+        legacyCardProviderAccountId, providerCardId]
+    );
+    const first = await repository.prepare({
+      cardId, amount: '12', providerAccountId: legacyCardProviderAccountId,
+      idempotencyKey: `repeat-funding-first-${cardId}`
+    });
+    assert.equal(first.created, true);
+    const begun = await repository.begin({
+      attemptId: first.attempt.id, provider: 'hnskj', providerAccountId: legacyCardProviderAccountId,
+      requestKey: `repeat-funding-provider-${cardId}`
+    });
+    await repository.finish({
+      attemptId: first.attempt.id, providerCallId: begun.providerCallId,
+      outcome: 'SUCCESS', httpStatus: 200, businessCode: 'SUCCESS',
+      responseSummary: { outcome: 'settled' }, status: 'SETTLED', fundsRiskState: 'SETTLED'
+    });
+    const [[settledSync]] = await pool.query(
+      `SELECT status, requested_by, dedupe_key FROM card_sync_jobs WHERE card_id=?`, [cardId]
+    );
+    assert.deepEqual(settledSync, {
+      status: 'PENDING', requested_by: 'card-funding',
+      dedupe_key: `funding-settled:${first.attempt.id}`
+    });
+    await pool.query(`UPDATE cards SET current_balance='10.000000' WHERE id=?`, [cardId]);
+    const second = await repository.prepare({
+      cardId, amount: '6', providerAccountId: legacyCardProviderAccountId,
+      idempotencyKey: `repeat-funding-second-${cardId}`
+    });
+    assert.equal(second.created, true);
+    assert.equal(String(second.attempt.amount), '6');
+    await assert.rejects(repository.prepare({
+      cardId, amount: '6', providerAccountId: legacyCardProviderAccountId,
+      idempotencyKey: `repeat-funding-blocked-${cardId}`
+    }), (error) => error.code === 'CARD_FUNDING_CARD_NOT_ELIGIBLE');
+    const [attempts] = await pool.query(
+      `SELECT status, funds_risk_state, amount FROM card_funding_attempts
+       WHERE card_id=? ORDER BY created_at`, [cardId]
+    );
+    assert.deepEqual(attempts, [
+      { status: 'SETTLED', funds_risk_state: 'SETTLED', amount: '12.000000' },
+      { status: 'PREPARED', funds_risk_state: 'NONE', amount: '6.000000' }
+    ]);
+  } finally {
+    await pool.query('DELETE FROM card_sync_jobs WHERE card_id=?', [cardId]);
+    await pool.query('DELETE FROM provider_calls WHERE card_funding_attempt_id IN (SELECT id FROM card_funding_attempts WHERE card_id=?)', [cardId]);
+    await pool.query('DELETE FROM card_funding_attempts WHERE card_id=?', [cardId]);
+    await pool.query('DELETE FROM cards WHERE id=?', [cardId]);
+    await pool.end();
+  }
+});
+
 test('pending card funding reconciliation settles only after balance reaches minimum', {
   skip: !databaseUrl && 'TEST_DATABASE_URL 未配置；完整 MySQL 套件在服务器隔离数据库运行'
 }, async () => {
@@ -951,6 +1084,10 @@ test('pending card funding reconciliation settles only after balance reaches min
     assert.equal(pending.state, 'PENDING');
     const settled = await repository.reconcile({ attemptId, currentBalance: '16', currency: 'USD' });
     assert.equal(settled.state, 'SETTLED');
+    const [[syncJobs]] = await pool.query(
+      `SELECT COUNT(*) AS count FROM card_sync_jobs WHERE card_id=?`, [cardId]
+    );
+    assert.equal(Number(syncJobs.count), 0);
   } finally {
     await pool.query('DELETE FROM card_funding_attempts WHERE id=?', [attemptId]);
     await pool.query('DELETE FROM cards WHERE id=?', [cardId]);
@@ -1818,9 +1955,9 @@ test('Foundation v2 freezes authorization and persists the funds fence before su
        (id, provider_account_id, order_id, inventory_status, intake_status,
         provider_card_id, external_card_id, card_type_id, status,
         funded_amount, current_balance, currency, refund_status,
-        card_credentials_ciphertext, sync_tier, last_synced_at)
+        card_credentials_ciphertext, sync_tier, last_synced_at, last_transaction_synced_at)
        VALUES (?, ?, ?, 'ASSIGNED', 'ACCEPTED', ?, ?, '7', 'active',
-         25, 25, 'USD', 'MONITORING', ?, 'ASSIGNED', CURRENT_TIMESTAMP(3))`,
+         25, 25, 'USD', 'MONITORING', ?, 'ASSIGNED', CURRENT_TIMESTAMP(3), CURRENT_TIMESTAMP(3))`,
       [cardId, legacyCardProviderAccountId, fixture.orderId, `v2-card-${cardId}`,
         `v2-card-${cardId}`, encryptSecret(JSON.stringify({
           cardNumber: '4242424242424242', expMonth: 12, expYear: 2032, cvv: '123'
@@ -1881,7 +2018,7 @@ test('Foundation v2 freezes authorization and persists the funds fence before su
     assert.equal(committed.status, 'RECHARGE_PROCESSING');
     assert.equal(committed.recharge_order_no, 'external-v2-order');
     assert.equal(committed.recharge_card_key, 'DIRECT-v2-reference');
-    assert.equal(committed.card_credentials_ciphertext, null);
+    assert.ok(Buffer.isBuffer(committed.card_credentials_ciphertext));
     assert.equal(Number(committed.poll_tasks), 1);
 
     const workflow = createWorkflowRepository(pool, { sessionEncryptionKey: integrationSessionKey });
@@ -1946,9 +2083,9 @@ test('automatic fulfillment creates one funds attempt and one provider create in
        (id, provider_account_id, order_id, inventory_status, intake_status,
         provider_card_id, external_card_id, card_type_id, status,
         funded_amount, current_balance, currency, refund_status,
-        card_credentials_ciphertext, sync_tier, last_synced_at)
+        card_credentials_ciphertext, sync_tier, last_synced_at, last_transaction_synced_at)
        VALUES (?, ?, ?, 'ASSIGNED', 'ACCEPTED', ?, ?, '7', 'active',
-         25, 25, 'USD', 'MONITORING', ?, 'ASSIGNED', CURRENT_TIMESTAMP(3))`,
+         25, 25, 'USD', 'MONITORING', ?, 'ASSIGNED', CURRENT_TIMESTAMP(3), CURRENT_TIMESTAMP(3))`,
       [cardId, legacyCardProviderAccountId, fixture.orderId, `auto-card-${cardId}`,
         `auto-card-${cardId}`, encryptSecret(JSON.stringify({
           cardNumber: '4242424242424242', expMonth: 12, expYear: 2032, cvv: '123'
@@ -2047,9 +2184,9 @@ test('a cleared attempt can be reauthorized after Session replacement with a dis
        (id, provider_account_id, order_id, inventory_status, intake_status,
         provider_card_id, external_card_id, card_type_id, status,
         funded_amount, current_balance, currency, refund_status,
-        card_credentials_ciphertext, sync_tier, last_synced_at)
+        card_credentials_ciphertext, sync_tier, last_synced_at, last_transaction_synced_at)
        VALUES (?, ?, ?, 'ASSIGNED', 'ACCEPTED', ?, ?, '7', 'active',
-         25, 25, 'USD', 'MONITORING', ?, 'ASSIGNED', CURRENT_TIMESTAMP(3))`,
+         25, 25, 'USD', 'MONITORING', ?, 'ASSIGNED', CURRENT_TIMESTAMP(3), CURRENT_TIMESTAMP(3))`,
       [cardId, legacyCardProviderAccountId, fixture.orderId, `retry-card-${cardId}`,
         `retry-card-${cardId}`, encryptSecret(JSON.stringify({
           cardNumber: '4242424242424242', expMonth: 12, expYear: 2032, cvv: '123'

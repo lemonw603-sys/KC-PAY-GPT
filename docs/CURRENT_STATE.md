@@ -114,7 +114,7 @@
 - 已实现卡段人工刷新（`POST /api/v1/admin/card-stock/provider-refresh`）与默认卡段持久保存（`POST /api/v1/admin/card-stock/default-card-type`）；刷新仅调用 Provider 只读接口，不恢复高频自动读取。
 - “开始营业”入口代码已在主线但暂不部署；生产继续使用现有分离开关。该入口的部分成功回滚优化延期。
 - 已新增低复杂度“开始营业”入口：通过只读就绪检查后才同时开放接单与自动派发；库存不足会明确提示，不会误报卡台故障。
-- 自动跨订单复用卡片尚未开启。
+- 自动跨订单复用已在候选代码实现但尚未部署生产；生产仍按当前已部署版本运行。
 - Browser 真实付款尚未验证；仍按独立 Browser 工作线推进非付款联调，真实付款必须另行确认。
 - Browser 独立线提交 `1d02c78` 已由统筹审查并以主线提交 `d6f9bf3` 安全合入：attempt 与 run 的 executor profile 现在必须一致，漂移时以 `EXECUTOR_PROFILE_CONFLICT` fail-closed；该 profile 同时进入权威付款 snapshot。合入后语法检查与相关 adapter/runtime/repository 测试 **46/46** 通过；未部署 Browser Worker、未连接生产、未执行付款。
 - Browser 首次灰度前只读就绪补强已由统筹审查并以 `1516c67` 合入：readiness 强制 migration 039/040，CLI 同样强制 payment executor=false/MOCK，并补齐 Browser 专属停止/回滚入口。主线复验 90 tests / 86 pass / 0 fail / 4 skipped；仍未部署生产 Browser Worker。
@@ -147,8 +147,14 @@
 
 ## 2026-08-31 自动补余额复查更新
 
-代码复查发现旧资金栅栏会把 SETTLED 记录永久绑定到卡片，导致卡片后续再次低余额时无法补余额，与持续补给/一卡多充规划冲突。已新增 `v1/migrations/042_card_funding_settled_reusable.sql`：SETTLED 仅保留历史证据，资金栅栏仅覆盖 PREPARED、ACTIVE、UNKNOWN；scheduler 同步收窄重复任务判断。全量 v1 回归 440 通过、0 失败、38 项因未配置 `TEST_DATABASE_URL` 跳过。尚未执行隔离 MySQL 迁移验证、Provider/卡台写入或生产启用。
+代码复查发现旧资金栅栏会把 SETTLED 记录永久绑定到卡片，导致卡片后续再次低余额时无法补余额，与持续补给/一卡多充规划冲突。已新增 `v1/migrations/042_card_funding_settled_reusable.sql`：SETTLED 仅保留历史证据，资金栅栏仅覆盖 ACTIVE/UNKNOWN，另由 PREPARED 唯一栅栏阻止未提交任务重复创建。隔离 MySQL 已证明 SETTLED 后可按精确差额再次补余额，PREPARED 仍阻止重复任务。Provider/卡台写入和生产启用均未执行。
 
-## 2026-08-31 一卡多单与自动补余额联合版本（开发中）
+## 2026-08-31 一卡多单与自动补余额联合版本（候选完成，待生产确认）
 
-已完成第一轮主线实现：新增订单侧 `assigned_card_id`，消费账本在分卡时预留容量并在 attempt 创建时绑定；同一卡在历史成功次数未达全局 1–4 次上限、没有 ACTIVE/UNKNOWN/RECONCILIATION 占用且卡资料/余额证据合格时可顺序服务新订单。API 与 Browser 付款确认后都会消费额度、释放活动分配并强制卡片重新同步，避免用付款前旧余额立即分配下一单。后台已增加全局 1–4 次设置入口。自动补余额成功后会立即排队只读卡片同步，使等待订单恢复。迁移 042/043 已在本地隔离 MySQL 8.4 空库完整执行；普通全量回归 441 通过、0 失败、38 项环境跳过。隔离 MySQL 旧夹具仍在按新订单侧关联和 15 分钟证据规则更新，尚未制作候选、部署或执行资金写入。
+候选实现已完成：新增订单侧 `assigned_card_id`，消费账本在分卡时预留容量并在 attempt 创建时绑定；同一卡在历史成功次数未达全局 1–4 次上限、没有活动分配或资金未知占用且卡资料/余额证据合格时可顺序服务新订单。API 与 Browser 付款确认后都会消费额度、释放活动分配并强制卡片重新同步，避免用付款前旧余额立即分配下一单。后台已增加全局 1–4 次设置入口，并对非整数或范围外值返回 400；保存设置不调用 Provider。自动补余额直接返回 SETTLED 时排队一次去重只读同步；PENDING 经对账转为 SETTLED 时复用 runner 刚取得的余额/交易证据，不再重复调用卡台。
+
+验证：本地 MySQL 8.4 空库迁移 001–043 全部成功；隔离核心套件 35 通过、0 失败、1 个既有 fake-provider 跳过，覆盖同一卡顺序服务两单、第三单达到上限停止、SETTLED 后再次精确补余额及 PREPARED 重复阻断；v1 全量串行回归 482 通过、0 失败、1 个既有跳过。一次并行共享数据库回归曾因 Browser 测试文件间争锁出现死锁，相关 Browser MySQL 测试单独运行及串行全量均通过，因此候选验收固定使用干净库串行回归。
+
+候选前对抗复查已完成并修正四处会影响真实运营的问题：所有“当前使用中”判断改以 ACTIVE 分配历史为准，不再把只作历史兼容的 `cards.order_id` 当成永久占用；卡片只读同步后可恢复 AVAILABLE 并继续服务下一单；API 提交后不再清除后续 Browser/API 复用仍需要的加密卡资料；只读同步先持久化交易新鲜度再刷新库存分类，避免同一成功同步过程误开低库存提醒。补余额对账 runner 已读取过最新余额和交易，因此对账 SETTLED 不再重复排同步；只有直接 SETTLED 才补排一次去重同步。
+
+尚未执行：生产 migration 042/043、生产部署、`PROVIDER_CARD_WRITES_ENABLED`、卡资金 timer、真实开卡/补余额/API 或 Browser 付款。以上仍需单独确认。

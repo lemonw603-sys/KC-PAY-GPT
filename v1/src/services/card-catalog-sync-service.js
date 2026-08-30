@@ -48,9 +48,14 @@ export async function syncCardCatalog({ pool, provider, intake = null, checkedAt
   const [counts] = await pool.query(
     `SELECT
        SUM(${eligibleInventoryCardSql('cards', '?', { productCode: 'plus' })}) AS available,
-       SUM(order_id IS NOT NULL OR inventory_status = 'ASSIGNED') AS assigned,
-       SUM(order_id IS NULL AND inventory_status = 'DEPLETED') AS depleted,
-       SUM(order_id IS NULL AND inventory_status = 'PROVISIONING') AS provisioning
+       SUM(EXISTS (SELECT 1 FROM card_assignment_history catalog_assignment
+         WHERE catalog_assignment.card_id=cards.id AND catalog_assignment.status='ACTIVE')) AS assigned,
+       SUM(inventory_status = 'DEPLETED' AND NOT EXISTS (
+         SELECT 1 FROM card_assignment_history catalog_assignment
+         WHERE catalog_assignment.card_id=cards.id AND catalog_assignment.status='ACTIVE')) AS depleted,
+       SUM(inventory_status = 'PROVISIONING' AND NOT EXISTS (
+         SELECT 1 FROM card_assignment_history catalog_assignment
+         WHERE catalog_assignment.card_id=cards.id AND catalog_assignment.status='ACTIVE')) AS provisioning
      FROM cards`, [minimumRequiredBalance]
   );
   const [overrideRows] = await pool.query(

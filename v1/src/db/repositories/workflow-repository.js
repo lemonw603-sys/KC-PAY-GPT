@@ -821,10 +821,6 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
         if (updateResult.affectedRows !== 1) {
           throw new Error(`Concurrent recharge commit detected: ${orderId}`);
         }
-        await connection.query(
-          `UPDATE cards SET card_credentials_ciphertext = NULL, updated_at = CURRENT_TIMESTAMP(3)
-           WHERE order_id = ?`, [orderId]
-        );
         await insertEvent(connection, {
           orderId,
           fromStatus: OrderStatus.SUBMITTING,

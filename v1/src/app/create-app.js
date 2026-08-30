@@ -349,7 +349,11 @@ export function createApp({
   }
   if (typeof setAdminCardMaxSuccessfulPayments === 'function') {
     app.post('/api/v1/admin/card-stock/max-successful-payments', ...adminWriteGuards, async (req, res) => {
-      res.json(await setAdminCardMaxSuccessfulPayments(req.body?.count));
+      const count = req.body?.count;
+      if (typeof count !== 'number' || !Number.isInteger(count) || count < 1 || count > 4) {
+        return res.status(400).json({ error: 'invalid_card_capacity' });
+      }
+      res.json(await setAdminCardMaxSuccessfulPayments(count));
     });
   }
   if (typeof createAdminCardStockJob === 'function') {

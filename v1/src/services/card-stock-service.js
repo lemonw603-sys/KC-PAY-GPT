@@ -199,7 +199,8 @@ export function createCardStockService({ pool, sessionEncryptionKey, panHmacKey 
       await connection.beginTransaction();
       const [existing] = await connection.query(
         `SELECT c.id, c.order_id, c.status, c.inventory_status, c.current_balance, c.currency,
-                EXISTS (SELECT 1 FROM card_assignment_history h WHERE h.card_id = c.id) AS has_assignment_history
+                EXISTS (SELECT 1 FROM card_assignment_history h
+                  WHERE h.card_id = c.id AND h.status='ACTIVE') AS has_active_assignment
          FROM cards c
          WHERE c.provider_account_id = ? AND BINARY c.external_card_id = BINARY ?
          FOR UPDATE`,
@@ -214,7 +215,7 @@ export function createCardStockService({ pool, sessionEncryptionKey, panHmacKey 
       const normalizedPan = String(card.credentials?.cardNumber || '').replace(/[\s-]/g, '');
       const panHmac = Buffer.isBuffer(panHmacKey) && /^\d{12,19}$/.test(normalizedPan)
         ? crypto.createHmac('sha256', panHmacKey).update(normalizedPan).digest('hex') : null;
-      if (existing[0]?.order_id) {
+      if (existing[0]?.has_active_assignment) {
         const credentialsCiphertext = card.credentials
           ? encryptSecret(JSON.stringify(card.credentials), sessionEncryptionKey)
           : null;
@@ -244,10 +245,9 @@ export function createCardStockService({ pool, sessionEncryptionKey, panHmacKey 
         await connection.commit();
         return { providerCardId: card.providerCardId, inventoryStatus: 'ASSIGNED', alreadyAssigned: true };
       }
-      const inventoryStatus = existing[0]?.has_assignment_history ? 'HELD_FOR_REVIEW'
-        : card.failed ? 'FAILED'
-          : card.depleted ? 'DEPLETED'
-            : card.ready ? 'AVAILABLE' : 'PROVISIONING';
+      const inventoryStatus = card.failed ? 'FAILED'
+        : card.depleted ? 'DEPLETED'
+          : card.ready ? 'AVAILABLE' : 'PROVISIONING';
       const credentialsCiphertext = card.credentials
         ? encryptSecret(JSON.stringify(card.credentials), sessionEncryptionKey)
         : null;
@@ -263,7 +263,7 @@ export function createCardStockService({ pool, sessionEncryptionKey, panHmacKey 
              pan_hmac = COALESCE(?, pan_hmac),
              pan_hmac_version = CASE WHEN ? IS NULL THEN pan_hmac_version ELSE 1 END,
              last_synced_at = CURRENT_TIMESTAMP(3), updated_at = CURRENT_TIMESTAMP(3)
-          WHERE id = ? AND order_id IS NULL`,
+          WHERE id = ?`,
           [card.cardTypeId, card.last4, card.status, card.fundedAmount, card.currentBalance,
             card.currency, inventoryStatus, credentialsCiphertext, cardNumberCiphertext,
             panHmac, panHmac, existing[0].id]
@@ -317,10 +317,17 @@ export function createCardStockService({ pool, sessionEncryptionKey, panHmacKey 
         `SELECT card_type_id,
                 SUM(${eligibleInventoryCardSql('cards', `COALESCE((SELECT CAST(setting_value AS DECIMAL(18,6))
                     FROM app_settings WHERE setting_key = 'default_minimum_required_card_balance' LIMIT 1), 999999999)`)}) AS available,
-                SUM(order_id IS NULL AND inventory_status = 'PROVISIONING') AS provisioning,
-                SUM(order_id IS NOT NULL OR inventory_status = 'ASSIGNED') AS assigned,
-                SUM(order_id IS NULL AND inventory_status = 'DEPLETED') AS depleted,
-                SUM(order_id IS NULL AND inventory_status = 'HELD_FOR_REVIEW') AS held
+                SUM(inventory_status = 'PROVISIONING' AND NOT EXISTS (
+                  SELECT 1 FROM card_assignment_history stock_assignment
+                  WHERE stock_assignment.card_id=cards.id AND stock_assignment.status='ACTIVE')) AS provisioning,
+                SUM(EXISTS (SELECT 1 FROM card_assignment_history stock_assignment
+                  WHERE stock_assignment.card_id=cards.id AND stock_assignment.status='ACTIVE')) AS assigned,
+                SUM(inventory_status = 'DEPLETED' AND NOT EXISTS (
+                  SELECT 1 FROM card_assignment_history stock_assignment
+                  WHERE stock_assignment.card_id=cards.id AND stock_assignment.status='ACTIVE')) AS depleted,
+                SUM(inventory_status = 'HELD_FOR_REVIEW' AND NOT EXISTS (
+                  SELECT 1 FROM card_assignment_history stock_assignment
+                  WHERE stock_assignment.card_id=cards.id AND stock_assignment.status='ACTIVE')) AS held
          FROM cards GROUP BY card_type_id ORDER BY card_type_id`
       ),
       pool.query(`SELECT setting_key, setting_value FROM app_settings

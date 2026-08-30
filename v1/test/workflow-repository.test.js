@@ -32,4 +32,5 @@ test('recharge submission events do not duplicate the card key', async () => {
   const eventInsert = queries.find((query) => query.sql.includes('INSERT INTO order_events'));
   assert.deepEqual(JSON.parse(eventInsert.parameters[4]), { orderNo: 'external-order-1' });
   assert.equal(eventInsert.parameters[4].includes('DIRECT-sensitive-fixture'), false);
+  assert.equal(queries.some((query) => /card_credentials_ciphertext = NULL/.test(query.sql)), false);
 });

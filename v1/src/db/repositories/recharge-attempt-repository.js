@@ -642,11 +642,6 @@ async function transitionAttempt(pool, {
       `${submissionSql}${orderExtraSql}`, [...submissionValues, ...orderExtraValues]);
     if (persistSubmission) {
       await connection.query(
-        `UPDATE cards SET card_credentials_ciphertext = NULL,
-           updated_at = CURRENT_TIMESTAMP(3) WHERE order_id = ?`,
-        [row.order_id]
-      );
-      await connection.query(
         `INSERT INTO tasks
          (order_id, task_type, status, dedupe_key, max_attempts, available_at)
          VALUES (?, 'POLL_RECHARGE', 'PENDING', ?, 720,
