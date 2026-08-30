@@ -120,9 +120,8 @@ export function createCardFundingRepository(pool) {
        FROM card_funding_attempts
        WHERE status = 'PREPARED' AND funds_risk_state = 'NONE'
          AND provider_account_id = ?
-         AND EXISTS (SELECT 1 FROM app_settings
-                     WHERE setting_key = 'card_balance_recharge_enabled'
-                       AND setting_value = 'true')
+         -- Explicit order-linked funding attempts are allowed to run even
+         -- when the legacy global low-balance scanner remains disabled.
        ORDER BY created_at ASC LIMIT 1`, [providerAccountId]
     );
     return rows[0] || null;

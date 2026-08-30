@@ -213,6 +213,32 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
             [order.card_provider_account_id]
           );
           let replenishmentQueued = false;
+          let fundingQueued = false;
+          const [[underfunded]] = await connection.query(
+            `SELECT c.id, c.current_balance
+             FROM cards c
+             WHERE ${fundableInventoryCardSql('c')}
+               AND c.provider_account_id = ?
+               AND c.current_balance < ?
+             ORDER BY c.current_balance ASC, c.updated_at ASC
+             LIMIT 1 FOR UPDATE SKIP LOCKED`,
+            [order.card_provider_account_id, String(order.minimum_required_card_balance)]
+          );
+          if (underfunded) {
+            const amount = Math.max(1,
+              Math.ceil(Number(order.minimum_required_card_balance) - Number(underfunded.current_balance || 0)));
+            const fundingKey = `order-card-funding:${orderId}:${underfunded.id}`;
+            const [fundingInsert] = await connection.query(
+              `INSERT INTO card_funding_attempts
+               (id, card_id, order_id, provider_account_id, amount, currency, status,
+                funds_risk_state, idempotency_key)
+               VALUES (?, ?, ?, ?, ?, 'USD', 'PREPARED', 'NONE', ?)
+               ON DUPLICATE KEY UPDATE id = id`,
+              [crypto.randomUUID(), underfunded.id, orderId, order.card_provider_account_id,
+                String(amount), fundingKey]
+            );
+            fundingQueued = Number(fundingInsert.affectedRows) === 1;
+          }
           const [[autoSetting]] = await connection.query(
             `SELECT setting_value FROM app_settings
              WHERE setting_key = 'card_auto_replenishment_enabled' LIMIT 1`
@@ -237,8 +263,8 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
           }
           const waitingMessage = refreshCandidates.length > 0
             ? '现有卡正在更新余额和交易，订单会在更新后继续处理。'
-            : Number(fundable?.count || 0) > 0
-              ? '现有卡需要补充余额，订单正在等待处理。'
+            : fundingQueued
+              ? '现有卡余额不足，已自动补足，订单会继续处理。'
               : replenishmentQueued
                 ? '当前没有可用卡，已自动安排开卡，订单会继续处理。'
                 : '当前没有可用于 Plus 的卡，订单正在等待处理。';
@@ -270,6 +296,7 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
           return {
             waitingForCard: true,
             refreshQueued,
+            ...(fundingQueued ? { fundingQueued: true } : {}),
             ...(replenishmentQueued ? { replenishmentQueued: true } : {})
           };
         }
