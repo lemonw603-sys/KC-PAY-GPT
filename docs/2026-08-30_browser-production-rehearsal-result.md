@@ -7,7 +7,7 @@
 - 服务环境写开关：付款、Provider、卡资金均为 `false`。
 - 首次启动演练：失败，原因是当前 release 缺少 `playwright` 依赖（`ERR_MODULE_NOT_FOUND`）。
 - 补齐依赖并切换到候选 release 后再次启动：依赖问题已越过，但只读 Worker 报 `ProductionReadonlyConfigError / INVALID_BROWSER_WORKER_CONFIG`，说明生产 env 与当前候选版本的只读配置合同仍未对齐。
-- 补齐 service 中的 `BROWSER_PAYMENT_EXECUTOR_ENABLED=false` 与 `BROWSER_PAYMENT_EXECUTOR_MODE=MOCK` 后，候选 release 已成功启动（READY/IDLE），随后停止并恢复旧 release；回滚后服务为 inactive/disabled。
+- 重新安装并加载已包含 `BROWSER_PAYMENT_EXECUTOR_ENABLED=false` 与 `BROWSER_PAYMENT_EXECUTOR_MODE=MOCK` 的 systemd unit（随后执行 `daemon-reload`）后，候选 release 已成功启动（READY/IDLE），随后停止并恢复旧 release；回滚后服务为 inactive/disabled。只读时间线、unit mtime/hash 与未变化的 env 文件共同证明，前一次失败使用的是生产 `/etc/systemd/system` 中的陈旧 unit，不是候选模板缺少这两个变量。
 - 已立即执行 `stop`、`disable`，当前 `pojia-browser-worker.service` 为 `inactive/disabled`，避免持续重启。
 
 ## 判断

@@ -18,8 +18,6 @@ Environment=PROVIDER_RECHARGE_WRITES_ENABLED=false
 Environment=CARD_FUNDING_WRITES_ENABLED=false
 Environment=BROWSER_PAYMENT_EXECUTOR_ENABLED=false
 Environment=BROWSER_PAYMENT_EXECUTOR_MODE=MOCK
-Environment=BROWSER_PAYMENT_EXECUTOR_ENABLED=false
-Environment=BROWSER_PAYMENT_EXECUTOR_MODE=MOCK
 ExecStartPre=/usr/bin/node browser-mvp/src/production-readonly-worker.js --check
 ExecStart=/usr/bin/node browser-mvp/src/production-readonly-worker.js
 Restart=on-failure

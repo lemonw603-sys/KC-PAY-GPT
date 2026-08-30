@@ -1,4 +1,4 @@
-# 当前状态快照（2026-08-29 15:55 CST）
+# 当前状态快照（2026-08-30）
 
 > 本文件只保留当前有效状态。历史过程查 `docs/HANDOFF_LOG.md`；本阶段封账证据查 `docs/PRE_INVENTORY_CONVERGENCE_SEAL_2026-08-28.md`。
 
@@ -8,6 +8,7 @@
 - 生产 release：`/opt/pojia/releases/20260829-order-demand-sync-bba4105`，为真实独立目录；上一版本回滚点：`/opt/pojia/releases/20260829-card-refresh-ef5afd5`。
 - 可靠回滚点：`/opt/pojia/releases/20260828-fea0ffd-rollback`。
 - 服务：Web、API Worker、卡片读同步、卡目录同步、Bark、备份均正常；Browser Worker 保持 `inactive/disabled`。
+- Browser Worker 的候选 release 启动/停止/回滚演练已经通过；生产 `current` 仍是 `bba4105`，未包含主线最新 Browser Session/Checkout harness 和派发修复。
 - 付费补卡 runner 已确认为 `inactive/disabled`，避免重启后每 10 秒唤醒并带入卡台写权限。
 - 最新迁移：`040_card_operational_overrides`。
 
@@ -77,10 +78,11 @@
 - 已将 `codex/browser` worktree 可逆对齐到主线 `9093c03`；旧内容保存在 `browser-stale-7abbe51`，对齐后 Browser 全量测试 107 项、103 通过、0 失败、4 跳过。
 - 在统一基线上运行 `npm --prefix browser-mvp run smoke:worker:readonly` 成功；隔离 MySQL、只读 Worker 配置和安全门禁通过，未连接生产。
 - 已生成候选归档 `/tmp/aicharge-main-46b2cc7.tar`；语法检查、全量测试和 `git diff --check` 均通过，候选包未部署。
-- 已整理生产只读启动/停止/回滚演练手册：`docs/2026-08-30_browser-production-readonly-rehearsal.md`；当前因无 SSH 会话尚未执行。
+- 已整理并执行生产只读启动/停止/回滚演练：`docs/2026-08-30_browser-production-readonly-rehearsal.md`。
 - 已执行生产只读启动演练但发现部署缺口：当前 release 缺少 `playwright`，Worker 启动失败并触发重启尝试；已立即 stop/disable，当前保持 `inactive/disabled`。详见 `docs/2026-08-30_browser-production-rehearsal-result.md`。
 - 补齐 Playwright 后再次启动候选 release，依赖问题已解决但暴露出生产只读 env 合同不匹配（`INVALID_BROWSER_WORKER_CONFIG`）；已回滚 current 并保持 Worker `inactive/disabled`。
-- 已补齐 service 的只读付款执行器环境变量；候选 release 成功 READY/IDLE 启动并安全停止，随后回滚旧 release，当前 Worker 仍 `inactive/disabled`。
+- 候选 release 已成功 READY/IDLE 启动并安全停止，随后回滚旧 release，当前 Worker 仍 `inactive/disabled`。只读复核已确认：候选模板原本就有付款执行器关闭变量，失败时生产加载的是陈旧 systemd unit；重新安装 unit、执行 `daemon-reload` 并切回候选后才成功。不是 env 文件覆盖，也不是候选模板缺变量。
+- 2026-08-30 端到端审查发现并修正 Browser 自然派发的 API 耦合、PREPARE 的 ZZSHU 语义泄漏，以及复审发现的 attempt→job 非原子、默认切换未验证 Browser Worker 在线、领取未按进程 executor 能力隔离。主线提交 `f95e6bb` 增加 Browser 专用 dispatch/heartbeat readiness、route-aware 领取、attempt+job 原子事务与全局默认充值方式。第一轮全量回归 v1 `471 total / 433 pass / 0 fail / 38 environment-skipped`、Browser `107 total / 103 pass / 0 fail / 4 skipped`；二次定向回归 v1 `88/88`、Browser config `9/9`。尚未部署，部署前不得兑换当前测试 CDK。
 - 已建立“余额不足卡付款前停止测试”运行手册：`docs/2026-08-29_browser-pre-submit-session-test-runbook.md`；使用用户指定测试 Session，停止于付款按钮前。
 
 - 库存后台收敛已部署生产（2026-08-28），并已通过发布后公网健康、服务状态、备份完整性和未认证路由验收；后台浏览器交叉验收仍待使用管理员会话执行。

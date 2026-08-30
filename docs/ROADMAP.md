@@ -2,7 +2,7 @@
 
 > 2026-08-28 起，跨模块当前执行顺序统一以 `docs/MASTER_EXECUTION_PLAN_2026-08-28.md` 为准；其对抗审查见 `docs/MASTER_EXECUTION_PLAN_ADVERSARIAL_REVIEW_2026-08-28.md`。本文继续保留阶段历史，不再从历史段落单独推导新的“下一步”。
 
-> 状态更正（2026-08-29）：当前 Browser 仅达到代码/隔离测试层付款前就绪；生产 Session/card adapter、真实非付款观察和部署演练仍需以 Browser worktree 对齐结果为准，未完成前不得进入真实付款。
+> 状态更正（2026-08-30）：Browser Worker 的生产启动/停止/回滚演练已完成，但生产仍运行旧 release，且真实 ChatGPT 生产形态非付款观察尚未完成。审查另发现 Browser `SUBMIT_RECHARGE` 仍错误依赖 API Provider 写开关/账户，修复并部署前不能消费测试 CDK，更不能进入真实付款。
 > `docs/BACKEND_RUNTIME_ALIGNMENT_AUDIT_2026-08-28.md` 是部署前历史快照；当前生产事实以 `docs/CURRENT_STATE.md` 和 `docs/PRE_INVENTORY_CONVERGENCE_SEAL_2026-08-28.md` 为准。
 
 ## 当前执行快照（2026-08-29）
@@ -16,7 +16,7 @@
 - 上述按需同步已补全新临时 MySQL 8.4、migration 001–040 集成回归：单任务排队、去重、等待状态、卡片不提前绑定、零 Provider 调用均通过。
 - 卡台当前公布的所有合法卡段均可接管和分配；后台选择的默认卡段只用于未来开卡，不再被错误当作现有卡唯一合法卡段。
 - Browser dispatch 只读展示和消费账本绑定已合入主线；Browser 线继续非付款联调，真实付款仍需单独确认。
-- 充值执行路线后续收敛为一个全局“默认充值方式”（API/Browser）入口，不做逐订单选择；切换只作用于尚未进入履约的订单，执行中和付款结果未知订单保持原路线锁定。
+- 充值执行路线已在主线实现为一个全局“默认充值方式”（API/Browser）入口，不做逐订单选择；切换只作用于切换后新创建的订单，既有订单始终使用创建时冻结的路线。当前待候选部署与生产非付款验收。
 - 库存后台信息收敛已完成并部署生产；卡段人工刷新与持久默认选择已部署至 `/opt/pojia/releases/20260829-card-segment-58dfe0d`。
 - 架构约束：这是个人内部使用系统，后续卡片策略修复采用最小字段和最少流程，优先稳定与资金安全，不建设额外的复杂策略服务或过度敏感信息隔离层。
 - `docs/BROWSER_RECHARGE_MODULE_REPORT_2026-08-25.md` 已明确标注为历史快照，不得覆盖当前 Browser 状态源。
