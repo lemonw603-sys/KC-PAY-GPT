@@ -617,6 +617,7 @@
 - 已建立标签 `browser-stale-7abbe51-backup` 保存旧分支，当前主线未合入其差异。
 - 已执行可逆对齐：`codex/browser` 现在指向 `main@9093c03`，旧分支保存在 `browser-stale-7abbe51`；对齐后全量测试通过（103/107，4 跳过）。
 - 对齐后只读 Worker smoke 成功（含隔离 MySQL 与安全门禁）；未连接生产、未付款。
+- 已生成未部署候选归档 `/tmp/aicharge-main-46b2cc7.tar`；check、全量测试和 diff 检查通过。
 - 已建立余额不足卡付款前停止测试手册；原始 Session 不落盘，仅记录脱敏摘要和流程证据。
 - 根因定位：官方方案弹窗的“升级至 Plus”按钮为表单外 `type=submit`，旧规则过宽导致假失败；现已改为只拒绝表单内提交控件，并补充说明。
 - 权威收口：订单 `CARD_READY`；attempt/funds `CLEARED`；run `FAILED_SAFE`；dispatch `CANCELLED`；无活动 permit、付款提交记录或资源租约。
