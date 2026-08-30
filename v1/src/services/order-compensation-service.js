@@ -45,7 +45,7 @@ export function createOrderCompensationService({ pool, cdkHashKey, cdkRecoveryKe
       const [rows] = await connection.query(
         `SELECT o.id, o.public_no, o.status, o.plan_type,
                 oc.code_ciphertext, oc.created_at AS compensated_at,
-                (SELECT COUNT(*) FROM cards c WHERE c.order_id = o.id) AS card_count,
+                (o.assigned_card_id IS NOT NULL) AS card_count,
                 (SELECT COUNT(*) FROM provider_calls pc WHERE pc.order_id = o.id) AS provider_call_count,
                 (SELECT COUNT(*) FROM tasks t WHERE t.order_id = o.id AND t.status IN ('PENDING','RUNNING')) AS active_task_count,
                 (SELECT COUNT(*) FROM tasks t WHERE t.order_id = o.id AND t.status = 'DEAD') AS dead_task_count

@@ -114,6 +114,7 @@ const elements = {
   stockCards: document.querySelector('#stock-cards'), providerSummary: document.querySelector('#provider-summary'),
   stockThresholdForm: document.querySelector('#stock-threshold-form'), stockThreshold: document.querySelector('#stock-threshold'),
   replenishmentLimitForm: document.querySelector('#replenishment-limit-form'), replenishmentDailyLimit: document.querySelector('#replenishment-daily-limit'), replenishmentUsage: document.querySelector('#replenishment-usage'),
+  cardCapacityForm: document.querySelector('#card-capacity-form'), cardCapacity: document.querySelector('#card-capacity'),
   stockOpenForm: document.querySelector('#stock-open-form'), stockOpenCount: document.querySelector('#stock-open-count'),
   stockOpenAmount: document.querySelector('#stock-open-amount'), stockCardType: document.querySelector('#stock-card-type'),
   refreshCardProviderRules: document.querySelector('#refresh-card-provider-rules'),
@@ -871,6 +872,7 @@ async function loadStock() {
     ['暂不可用', summary.blocked], ['永久停用', summary.retired]
   ].map(([label, value]) => `<div><span>${label}</span><strong>${value}</strong></div>`).join('');
   elements.stockThreshold.value = payload.threshold;
+  elements.cardCapacity.value = String(payload.maxSuccessfulPayments || 3);
   const provider = state.stockProvider;
   const catalog = state.stockCatalog || {};
   const cardTypes = provider?.cardTypes || [];
@@ -1769,6 +1771,17 @@ elements.stockThresholdForm?.addEventListener('submit', async (event) => {
     showNotice('补卡提醒阈值已保存。');
     await loadStock();
   } catch { showNotice('阈值保存失败。'); }
+});
+elements.cardCapacityForm?.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  try {
+    await api('/api/v1/admin/card-stock/max-successful-payments', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ count: Number(elements.cardCapacity.value) })
+    });
+    showNotice('每张卡的成功充值次数上限已更新，只影响后续分配。', 'success');
+    await loadStock();
+  } catch (error) { showNotice(error.message); }
 });
 elements.replenishmentLimitForm?.addEventListener('submit', async (event) => {
   event.preventDefault();

@@ -49,6 +49,7 @@ export function createApp({
   setAdminCardStockDefaultCardType = null,
   startAdminBusiness = null,
   setAdminCardStockThreshold = null,
+  setAdminCardMaxSuccessfulPayments = null,
   createAdminCardStockJob = null,
   getAdminReplenishmentSettings = null,
   setAdminReplenishmentDailyLimit = null,
@@ -344,6 +345,11 @@ export function createApp({
   if (typeof setAdminCardStockThreshold === 'function') {
     app.post('/api/v1/admin/card-stock/threshold', ...adminWriteGuards, async (req, res) => {
       res.json(await setAdminCardStockThreshold(req.body?.count));
+    });
+  }
+  if (typeof setAdminCardMaxSuccessfulPayments === 'function') {
+    app.post('/api/v1/admin/card-stock/max-successful-payments', ...adminWriteGuards, async (req, res) => {
+      res.json(await setAdminCardMaxSuccessfulPayments(req.body?.count));
     });
   }
   if (typeof createAdminCardStockJob === 'function') {

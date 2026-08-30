@@ -215,6 +215,7 @@ const app = createApp({
     } : null
   ,setAdminCardStockDefaultCardType: cardStockService.setDefaultCardType
   ,setAdminCardStockThreshold: (value) => cardStockService.setThreshold(value)
+  ,setAdminCardMaxSuccessfulPayments: (value) => cardStockService.setMaxSuccessfulPayments(value)
   ,createAdminCardStockJob: cardStockJobService.createJob
   ,getAdminReplenishmentSettings: replenishmentSettingsService.get
   ,setAdminReplenishmentDailyLimit: replenishmentSettingsService.setDailyLimit

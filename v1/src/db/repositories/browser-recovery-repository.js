@@ -134,7 +134,7 @@ async function lockRunResources(connection, runId) {
      FROM browser_runs br
      INNER JOIN recharge_attempts rat ON rat.id = br.recharge_attempt_id
      INNER JOIN orders o ON o.id = rat.order_id
-     LEFT JOIN cards c ON c.order_id = o.id
+     LEFT JOIN cards c ON (c.id = o.assigned_card_id OR (o.assigned_card_id IS NULL AND c.order_id = o.id))
      LEFT JOIN checkout_artifacts ca
        ON ca.browser_run_id = br.id AND ca.status IN ('ACTIVE', 'REVIEW_REQUIRED')
      WHERE br.id = ?

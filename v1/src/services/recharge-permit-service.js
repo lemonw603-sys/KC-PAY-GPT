@@ -89,7 +89,7 @@ export async function armRechargePermit(pool, {
               c.card_credentials_ciphertext, c.last_synced_at AS card_last_synced_at,
               c.last_transaction_synced_at AS card_last_transaction_synced_at
        FROM orders o INNER JOIN tasks t ON t.order_id = o.id
-       LEFT JOIN cards c ON c.order_id = o.id
+       LEFT JOIN cards c ON (c.id = o.assigned_card_id OR (o.assigned_card_id IS NULL AND c.order_id = o.id))
        WHERE BINARY o.public_no = ? AND t.task_type = 'SUBMIT_RECHARGE'
        LIMIT 1 FOR UPDATE`,
       [orderNumber]

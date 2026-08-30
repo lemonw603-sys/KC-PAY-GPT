@@ -11,15 +11,15 @@ import {
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
-test('one inventory predicate excludes assigned, consumed, disputed and historically bound cards', () => {
+test('inventory predicate permits sequential reuse below capacity but excludes active assignment and disputes', () => {
   const sql = eligibleInventoryCardSql('cards', '?');
-  assert.match(sql, /order_id IS NULL/);
-  assert.match(sql, /inventory_status = 'AVAILABLE'/);
+  assert.match(sql, /inventory_status IN \('AVAILABLE','ASSIGNED','DEPLETED'\)/);
   assert.match(sql, /current_balance >= \?/);
   assert.match(sql, /last_transaction_synced_at IS NOT NULL/);
   assert.match(sql, /INTERVAL 15 MINUTE/);
-  assert.match(sql, /card_assignment_history/);
-  assert.match(sql, /transaction_type\) = 'PURCHASE'/);
+  assert.match(sql, /card_consumption_ledger/);
+  assert.match(sql, /card_max_successful_payments/);
+  assert.match(sql, /eligible_assignment\.status='ACTIVE'/);
   assert.match(sql, /refund_cases/);
   assert.match(sql, /status <> 'WITHDRAWN'/);
   assert.match(sql, /card_operational_overrides/);
@@ -27,22 +27,22 @@ test('one inventory predicate excludes assigned, consumed, disputed and historic
   assert.match(sql, /PRODUCT_ONLY/);
 });
 
-test('fundable predicate includes low-balance prepared cards but keeps money-safety exclusions', () => {
+test('fundable predicate includes reusable low-balance cards but keeps money-safety exclusions', () => {
   const sql = fundableInventoryCardSql('c');
-  assert.match(sql, /inventory_status IN \('AVAILABLE','DEPLETED','PROVISIONING'\)/);
+  assert.match(sql, /inventory_status IN \('AVAILABLE','ASSIGNED','DEPLETED','PROVISIONING'\)/);
   assert.match(sql, /card_credentials_ciphertext IS NOT NULL/);
   assert.match(sql, /last_transaction_synced_at IS NOT NULL/);
-  assert.match(sql, /card_assignment_history/);
-  assert.match(sql, /transaction_type\) = 'PURCHASE'/);
+  assert.match(sql, /fundable_assignment\.status='ACTIVE'/);
+  assert.match(sql, /card_consumption_ledger/);
   assert.match(sql, /card_operational_overrides/);
 });
 
 test('refreshable predicate is safe only for on-demand read synchronization', () => {
   const sql = refreshableInventoryCardSql('c');
-  assert.match(sql, /order_id IS NULL/);
+  assert.match(sql, /inventory_status IN \('AVAILABLE','ASSIGNED','DEPLETED','PROVISIONING'\)/);
   assert.match(sql, /card_credentials_ciphertext IS NOT NULL/);
-  assert.match(sql, /card_assignment_history/);
-  assert.match(sql, /transaction_type\) = 'PURCHASE'/);
+  assert.match(sql, /refresh_assignment\.status='ACTIVE'/);
+  assert.match(sql, /card_consumption_ledger/);
   assert.match(sql, /refund_cases/);
   assert.match(sql, /card_operational_overrides/);
   assert.doesNotMatch(sql, /last_transaction_synced_at/);

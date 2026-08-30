@@ -8,6 +8,8 @@ function fakePool(responses) {
     async beginTransaction() {}, async commit() {}, async rollback() {}, release() {},
     async query(sql, values = []) {
       queries.push({ sql, values });
+      if (/FROM card_consumption_ledger/.test(sql)) return [[{ id: 'usage-1', status: 'RESERVED', recharge_attempt_id: null }], []];
+      if (/UPDATE card_consumption_ledger/.test(sql)) return [{ affectedRows: 1 }, []];
       const response = responses.shift();
       if (response === undefined) throw new Error(`Unexpected query: ${sql}`);
       return response;
@@ -27,7 +29,7 @@ function eligibleRow(overrides = {}) {
   };
 }
 
-test('cancellation closes an untouched order and quarantines its card from automatic reuse', async () => {
+test('cancellation closes an untouched order and releases its capacity for safe reuse', async () => {
   const pool = fakePool([
     [[eligibleRow()], []], [[], []], [{ affectedRows: 1 }, []],
     [{ affectedRows: 1 }, []], [{ affectedRows: 1 }, []],
@@ -38,9 +40,9 @@ test('cancellation closes an untouched order and quarantines its card from autom
   );
   assert.deepEqual(result, {
     publicNo: 'PJV1-DEMO', status: 'CLOSED', cardReleased: true,
-    cardInventoryStatus: 'HELD_FOR_REVIEW', replayed: false
+    cardInventoryStatus: 'AVAILABLE', replayed: false
   });
-  assert.equal(pool.queries.some(({ sql }) => /inventory_status = 'HELD_FOR_REVIEW'/.test(sql)), true);
+  assert.equal(pool.queries.some(({ sql }) => /inventory_status = CASE/.test(sql)), true);
   assert.equal(pool.queries.some(({ sql }) => /CANCELLED_PRE_SUBMISSION/.test(sql)), true);
   assert.equal(pool.queries.some(({ sql }) => /UPDATE card_assignment_history/.test(sql)), true);
 });
@@ -71,7 +73,7 @@ test('cancellation closes an untouched waiting-for-card order without inventing 
   assert.equal(pool.queries.some(({ sql }) => /UPDATE cards/.test(sql)), false);
 });
 
-test('cancellation may quarantine a stale card because it is never returned to automatic stock', async () => {
+test('cancellation releases assignment while freshness rules still guard reuse', async () => {
   const pool = fakePool([
     [[eligibleRow({ last_synced_at: new Date(Date.now() - 16 * 60_000) })], []], [[], []],
     [{ affectedRows: 1 }, []], [{ affectedRows: 1 }, []], [{ affectedRows: 1 }, []],
@@ -80,5 +82,5 @@ test('cancellation may quarantine a stale card because it is never returned to a
   const result = await createOrderCancellationService({ pool })(
     'PJV1-DEMO', { confirmation: '取消订单 PJV1-DEMO' }
   );
-  assert.equal(result.cardInventoryStatus, 'HELD_FOR_REVIEW');
+  assert.equal(result.cardInventoryStatus, 'AVAILABLE');
 });

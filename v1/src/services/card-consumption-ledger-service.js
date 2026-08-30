@@ -36,7 +36,16 @@ export async function reserveCardConsumptionInTransaction(connection, {
       && existing.recharge_attempt_id !== rechargeAttemptId) {
       throw new CardConsumptionLedgerError('order already owns a different active reservation', 'ORDER_RESERVATION_EXISTS');
     }
-    return { id: existing.id, cardId, orderId, status: existing.status, idempotent: true };
+    if (existing.status === 'RESERVED' && rechargeAttemptId && !existing.recharge_attempt_id) {
+      await connection.query(
+        `UPDATE card_consumption_ledger SET recharge_attempt_id=?, updated_at=?
+         WHERE id=? AND status='RESERVED' AND recharge_attempt_id IS NULL`,
+        [rechargeAttemptId, now, existing.id]
+      );
+    }
+    return { id: existing.id, cardId, orderId, status: existing.status,
+      rechargeAttemptId: existing.recharge_attempt_id || rechargeAttemptId || null,
+      idempotent: true };
   }
   if (existing?.status === 'RECONCILIATION') {
     throw new CardConsumptionLedgerError('card consumption requires reconciliation', 'CARD_CONSUMPTION_RECONCILIATION');

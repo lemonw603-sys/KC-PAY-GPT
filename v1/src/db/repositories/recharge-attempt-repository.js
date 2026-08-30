@@ -125,7 +125,7 @@ export function createRechargeAttemptRepository(pool) {
            FROM orders o
            LEFT JOIN fulfillment_routes fr ON fr.id = o.fulfillment_route_id
            LEFT JOIN provider_accounts pa ON pa.id = fr.recharge_provider_account_id
-           LEFT JOIN cards c ON c.order_id = o.id
+           LEFT JOIN cards c ON (c.id = o.assigned_card_id OR (o.assigned_card_id IS NULL AND c.order_id = o.id))
            WHERE o.id = ?
            FOR UPDATE`,
           [order]
@@ -513,7 +513,8 @@ export function createRechargeAttemptRepository(pool) {
           customer_action_code = NULL, finished_at = ?`,
         orderExtraValues: [input?.now || new Date()],
         cardConsumptionStatus: 'RELEASED',
-        cardConsumptionReason: 'submission definitively rejected before funds impact'
+        cardConsumptionReason: 'submission definitively rejected before funds impact',
+        releaseCardAssignment: true
       });
     }
   };
@@ -536,6 +537,7 @@ async function transitionAttempt(pool, {
   setFinishedAt = false,
   releaseAuthorization = false,
   resetSubmitTask = false,
+  releaseCardAssignment = false,
   persistSubmission = false,
   orderExtraSql = '',
   orderExtraValues = [],
@@ -600,6 +602,13 @@ async function transitionAttempt(pool, {
         evidence: { source: 'recharge_attempt_transition', attemptStatus: targetAttemptStatus },
         now
       });
+    }
+    if (releaseCardAssignment) {
+      await connection.query(
+        `UPDATE card_assignment_history SET status='RELEASED', released_by='worker:definite-rejection',
+           release_reason='submission definitively rejected before funds impact', released_at=?
+         WHERE order_id=? AND status='ACTIVE'`, [now, row.order_id]
+      );
     }
 
     if (releaseAuthorization && row.authorization_item_id) {

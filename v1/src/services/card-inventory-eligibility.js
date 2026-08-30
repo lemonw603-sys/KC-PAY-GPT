@@ -2,23 +2,20 @@ export function eligibleInventoryCardSql(alias = 'c', minimumSql = '?', { produc
   if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(alias)) throw new TypeError('Invalid card SQL alias');
   const normalizedProduct = String(productCode || 'plus').trim().toLowerCase();
   if (!/^[a-z0-9_-]{1,32}$/.test(normalizedProduct)) throw new TypeError('Invalid product code');
-  return `${alias}.order_id IS NULL
-    AND ${alias}.inventory_status = 'AVAILABLE'
+  return `${alias}.inventory_status IN ('AVAILABLE','ASSIGNED','DEPLETED')
     AND ${alias}.intake_status IN ('ACCEPTED','LEGACY_ACCEPTED')
     AND LOWER(${alias}.status) IN ('active','available','usable','ready')
     AND ${alias}.card_credentials_ciphertext IS NOT NULL
     AND ${alias}.last_transaction_synced_at IS NOT NULL
     AND ${alias}.last_transaction_synced_at >= DATE_SUB(CURRENT_TIMESTAMP(3), INTERVAL 15 MINUTE)
     AND ${alias}.current_balance >= ${minimumSql}
-    AND NOT EXISTS (
-      SELECT 1 FROM card_assignment_history eligible_history
-      WHERE eligible_history.card_id = ${alias}.id
-    )
-    AND NOT EXISTS (
-      SELECT 1 FROM card_transactions eligible_purchase
-      WHERE eligible_purchase.card_id = ${alias}.id
-        AND UPPER(eligible_purchase.transaction_type) = 'PURCHASE'
-    )
+    AND (SELECT COUNT(*) FROM card_consumption_ledger eligible_usage
+      WHERE eligible_usage.card_id = ${alias}.id
+        AND eligible_usage.status IN ('RESERVED','CONSUMED','RECONCILIATION'))
+      < COALESCE((SELECT CAST(setting_value AS UNSIGNED) FROM app_settings
+        WHERE setting_key='card_max_successful_payments' LIMIT 1), 3)
+    AND NOT EXISTS (SELECT 1 FROM card_assignment_history eligible_assignment
+      WHERE eligible_assignment.card_id=${alias}.id AND eligible_assignment.status='ACTIVE')
     AND NOT EXISTS (
       SELECT 1 FROM refund_cases eligible_refund
       WHERE eligible_refund.card_id = ${alias}.id
@@ -40,23 +37,20 @@ export function fundableInventoryCardSql(alias = 'c', { productCode = 'plus' } =
   if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(alias)) throw new TypeError('Invalid card SQL alias');
   const normalizedProduct = String(productCode || 'plus').trim().toLowerCase();
   if (!/^[a-z0-9_-]{1,32}$/.test(normalizedProduct)) throw new TypeError('Invalid product code');
-  return `${alias}.order_id IS NULL
-    AND ${alias}.inventory_status IN ('AVAILABLE','DEPLETED','PROVISIONING')
+  return `${alias}.inventory_status IN ('AVAILABLE','ASSIGNED','DEPLETED','PROVISIONING')
     AND ${alias}.intake_status IN ('ACCEPTED','LEGACY_ACCEPTED')
     AND LOWER(${alias}.status) IN ('active','available','usable','ready')
     AND ${alias}.card_credentials_ciphertext IS NOT NULL
     AND ${alias}.current_balance IS NOT NULL
     AND ${alias}.last_transaction_synced_at IS NOT NULL
     AND ${alias}.last_transaction_synced_at >= DATE_SUB(CURRENT_TIMESTAMP(3), INTERVAL 15 MINUTE)
-    AND NOT EXISTS (
-      SELECT 1 FROM card_assignment_history fundable_history
-      WHERE fundable_history.card_id = ${alias}.id
-    )
-    AND NOT EXISTS (
-      SELECT 1 FROM card_transactions fundable_purchase
-      WHERE fundable_purchase.card_id = ${alias}.id
-        AND UPPER(fundable_purchase.transaction_type) = 'PURCHASE'
-    )
+    AND (SELECT COUNT(*) FROM card_consumption_ledger fundable_usage
+      WHERE fundable_usage.card_id = ${alias}.id
+        AND fundable_usage.status IN ('RESERVED','CONSUMED','RECONCILIATION'))
+      < COALESCE((SELECT CAST(setting_value AS UNSIGNED) FROM app_settings
+        WHERE setting_key='card_max_successful_payments' LIMIT 1), 3)
+    AND NOT EXISTS (SELECT 1 FROM card_assignment_history fundable_assignment
+      WHERE fundable_assignment.card_id=${alias}.id AND fundable_assignment.status='ACTIVE')
     AND NOT EXISTS (
       SELECT 1 FROM refund_cases fundable_refund
       WHERE fundable_refund.card_id = ${alias}.id
@@ -81,19 +75,16 @@ export function refreshableInventoryCardSql(alias = 'c', { productCode = 'plus' 
   if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(alias)) throw new TypeError('Invalid card SQL alias');
   const normalizedProduct = String(productCode || 'plus').trim().toLowerCase();
   if (!/^[a-z0-9_-]{1,32}$/.test(normalizedProduct)) throw new TypeError('Invalid product code');
-  return `${alias}.order_id IS NULL
-    AND ${alias}.inventory_status IN ('AVAILABLE','DEPLETED','PROVISIONING')
+  return `${alias}.inventory_status IN ('AVAILABLE','ASSIGNED','DEPLETED','PROVISIONING')
     AND ${alias}.intake_status IN ('ACCEPTED','LEGACY_ACCEPTED')
     AND ${alias}.card_credentials_ciphertext IS NOT NULL
-    AND NOT EXISTS (
-      SELECT 1 FROM card_assignment_history refresh_history
-      WHERE refresh_history.card_id = ${alias}.id
-    )
-    AND NOT EXISTS (
-      SELECT 1 FROM card_transactions refresh_purchase
-      WHERE refresh_purchase.card_id = ${alias}.id
-        AND UPPER(refresh_purchase.transaction_type) = 'PURCHASE'
-    )
+    AND (SELECT COUNT(*) FROM card_consumption_ledger refresh_usage
+      WHERE refresh_usage.card_id = ${alias}.id
+        AND refresh_usage.status IN ('RESERVED','CONSUMED','RECONCILIATION'))
+      < COALESCE((SELECT CAST(setting_value AS UNSIGNED) FROM app_settings
+        WHERE setting_key='card_max_successful_payments' LIMIT 1), 3)
+    AND NOT EXISTS (SELECT 1 FROM card_assignment_history refresh_assignment
+      WHERE refresh_assignment.card_id=${alias}.id AND refresh_assignment.status='ACTIVE')
     AND NOT EXISTS (
       SELECT 1 FROM refund_cases refresh_refund
       WHERE refresh_refund.card_id = ${alias}.id

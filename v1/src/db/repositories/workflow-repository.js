@@ -8,7 +8,10 @@ import {
   fundableInventoryCardSql,
   refreshableInventoryCardSql
 } from '../../services/card-inventory-eligibility.js';
-import { transitionCardConsumptionInTransaction } from '../../services/card-consumption-ledger-service.js';
+import {
+  reserveCardConsumptionInTransaction,
+  transitionCardConsumptionInTransaction
+} from '../../services/card-consumption-ledger-service.js';
 
 function topUpAmount(minimum, current) {
   const delta = Number(minimum) - Number(current || 0);
@@ -75,7 +78,7 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
                 c.card_credentials_ciphertext
          FROM orders o
          LEFT JOIN fulfillment_routes fr ON fr.id = o.fulfillment_route_id
-         LEFT JOIN cards c ON c.order_id = o.id
+         LEFT JOIN cards c ON (c.id = o.assigned_card_id OR (o.assigned_card_id IS NULL AND c.order_id = o.id))
          WHERE o.id = ?`,
         [orderId]
       );
@@ -163,7 +166,8 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
     async assignAvailableCard(orderId) {
       return inTransaction(pool, async (connection) => {
         const [orders] = await connection.query(
-          `SELECT o.status, o.version, o.card_type_id, o.minimum_required_card_balance,
+          `SELECT o.status, o.version, o.card_type_id, o.product_id, o.open_card_amount,
+                  o.minimum_required_card_balance,
                   o.fulfillment_route_id, fr.card_provider_account_id
            FROM orders o LEFT JOIN fulfillment_routes fr ON fr.id = o.fulfillment_route_id
            WHERE o.id = ? FOR UPDATE`,
@@ -310,10 +314,15 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
           };
         }
         const card = cards[0];
+        const [[capacitySetting]] = await connection.query(
+          `SELECT setting_value FROM app_settings
+           WHERE setting_key='card_max_successful_payments' LIMIT 1 FOR SHARE`
+        );
+        const maxPayments = Number(capacitySetting?.setting_value || 3);
         const [cardUpdate] = await connection.query(
-          `UPDATE cards SET order_id = ?, inventory_status = 'ASSIGNED',
-             assigned_at = CURRENT_TIMESTAMP(3), updated_at = CURRENT_TIMESTAMP(3)
-           WHERE id = ? AND order_id IS NULL AND inventory_status = 'AVAILABLE'`,
+          `UPDATE cards SET order_id = COALESCE(order_id, ?), inventory_status = 'ASSIGNED',
+             assigned_at = COALESCE(assigned_at, CURRENT_TIMESTAMP(3)), updated_at = CURRENT_TIMESTAMP(3)
+           WHERE id = ? AND inventory_status IN ('AVAILABLE','ASSIGNED','DEPLETED')`,
           [orderId, card.id]
         );
         if (cardUpdate.affectedRows !== 1) throw new Error(`Concurrent card assignment detected: ${card.id}`);
@@ -328,10 +337,19 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
             balanceAtAssignment: String(card.current_balance)
           })]
         );
+        await reserveCardConsumptionInTransaction(connection, {
+          cardId: card.id,
+          orderId,
+          productId: order.product_id,
+          amount: order.open_card_amount,
+          currency: 'USD',
+          maxPayments,
+          evidence: { source: 'card_assignment', providerCardId: String(card.provider_card_id) }
+        });
         const [orderUpdate] = await connection.query(
-          `UPDATE orders SET status = ?, version = version + 1,
+          `UPDATE orders SET status = ?, assigned_card_id = ?, version = version + 1,
              updated_at = CURRENT_TIMESTAMP(3) WHERE id = ? AND version = ?`,
-          [OrderStatus.CARD_READY, orderId, order.version]
+          [OrderStatus.CARD_READY, card.id, orderId, order.version]
         );
         if (orderUpdate.affectedRows !== 1) throw new Error(`Concurrent order assignment detected: ${orderId}`);
         await insertEvent(connection, {
@@ -439,7 +457,8 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
     async commitPurchasedCard(orderId, card) {
       return inTransaction(pool, async (connection) => {
         const [rows] = await connection.query(
-          `SELECT o.status, o.version, fr.card_provider_account_id
+          `SELECT o.status, o.version, o.product_id, o.open_card_amount,
+                  fr.card_provider_account_id
            FROM orders o LEFT JOIN fulfillment_routes fr ON fr.id = o.fulfillment_route_id
            WHERE o.id = ? FOR UPDATE`,
           [orderId]
@@ -494,11 +513,24 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
             currency: card.currency || 'USD'
           })]
         );
+        const [[capacitySetting]] = await connection.query(
+          `SELECT setting_value FROM app_settings
+           WHERE setting_key='card_max_successful_payments' LIMIT 1 FOR SHARE`
+        );
+        await reserveCardConsumptionInTransaction(connection, {
+          cardId: insertedCards[0].id,
+          orderId,
+          productId: order.product_id,
+          amount: order.open_card_amount,
+          currency: card.currency || 'USD',
+          maxPayments: Number(capacitySetting?.setting_value || 3),
+          evidence: { source: 'card_purchase_assignment', providerCardId: String(card.providerCardId) }
+        });
         const [updateResult] = await connection.query(
-          `UPDATE orders SET status = ?, version = version + 1,
+          `UPDATE orders SET status = ?, assigned_card_id = ?, version = version + 1,
              updated_at = CURRENT_TIMESTAMP(3)
            WHERE id = ? AND version = ?`,
-          [OrderStatus.CARD_PROVISIONING, orderId, order.version]
+          [OrderStatus.CARD_PROVISIONING, insertedCards[0].id, orderId, order.version]
         );
         if (updateResult.affectedRows !== 1) {
           throw new Error(`Concurrent card commit detected: ${orderId}`);
@@ -538,7 +570,9 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
              card_credentials_ciphertext = ?, card_number_ciphertext = ?,
              pan_hmac = COALESCE(?, pan_hmac),
              pan_hmac_version = CASE WHEN ? IS NULL THEN pan_hmac_version ELSE 1 END,
-             updated_at = CURRENT_TIMESTAMP(3) WHERE order_id = ?`,
+             updated_at = CURRENT_TIMESTAMP(3) WHERE id = (
+               SELECT assigned_card_id FROM orders WHERE id = ?
+             )`,
           [snapshot.status, snapshot.last4 || null, String(snapshot.currentBalance),
             snapshot.currency || 'USD', encryptSecret(JSON.stringify(credentials), sessionEncryptionKey),
             encryptSecret(credentials.cardNumber, sessionEncryptionKey), panHmac, panHmac, orderId]
@@ -571,7 +605,7 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
       return inTransaction(pool, async (connection) => {
         const [rows] = await connection.query(
           `SELECT o.status AS order_status, c.id AS card_id
-           FROM orders o INNER JOIN cards c ON c.order_id = o.id
+           FROM orders o INNER JOIN cards c ON (c.id = o.assigned_card_id OR (o.assigned_card_id IS NULL AND c.order_id = o.id))
            WHERE o.id = ? FOR UPDATE`,
           [orderId]
         );
@@ -618,7 +652,7 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
       return inTransaction(pool, async (connection) => {
         const [rows] = await connection.query(
           `SELECT c.id AS card_id
-           FROM orders o INNER JOIN cards c ON c.order_id = o.id
+           FROM orders o INNER JOIN cards c ON (c.id = o.assigned_card_id OR (o.assigned_card_id IS NULL AND c.order_id = o.id))
            WHERE o.id = ? FOR UPDATE`, [orderId]
         );
         if (rows.length !== 1) throw new Error(`Assigned card not found: ${orderId}`);
@@ -849,6 +883,18 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
             paymentCurrency: status.paymentCurrency ?? null
           }
         });
+        await connection.query(
+          `UPDATE card_assignment_history SET status='RELEASED', released_by='worker:payment-confirmed',
+             release_reason='payment confirmed; capacity ledger retains consumption',
+             released_at=CURRENT_TIMESTAMP(3)
+           WHERE order_id=? AND status='ACTIVE'`, [orderId]
+        );
+        await connection.query(
+          `UPDATE cards c INNER JOIN orders o ON o.assigned_card_id=c.id
+           SET c.inventory_status='DEPLETED', c.current_balance=NULL,
+               c.last_transaction_synced_at=NULL, c.updated_at=CURRENT_TIMESTAMP(3)
+           WHERE o.id=?`, [orderId]
+        );
         const [result] = await connection.query(
           `UPDATE orders SET status = ?,
              session_ciphertext = COALESCE(?, session_ciphertext),
@@ -880,8 +926,8 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
           `INSERT INTO card_sync_jobs
            (id, card_id, status, requested_by, dedupe_key)
            SELECT UUID(), c.id, 'PENDING', 'workflow', CONCAT('post-recharge:', ?)
-           FROM cards c
-           WHERE c.order_id = ?
+           FROM orders assigned_order INNER JOIN cards c ON c.id = assigned_order.assigned_card_id
+           WHERE assigned_order.id = ?
              AND EXISTS (
                SELECT 1 FROM app_settings s
                WHERE s.setting_key = 'sync_card_transactions' AND s.setting_value = 'true'
@@ -1002,7 +1048,8 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
     async commitCardTransactions(orderId, transactions, cardSnapshot = null) {
       return inTransaction(pool, async (connection) => {
         const [cards] = await connection.query(
-          'SELECT id FROM cards WHERE order_id = ? FOR UPDATE', [orderId]
+          `SELECT c.id FROM orders o INNER JOIN cards c ON (c.id = o.assigned_card_id OR (o.assigned_card_id IS NULL AND c.order_id = o.id))
+           WHERE o.id = ? FOR UPDATE`, [orderId]
         );
         if (cards.length !== 1) throw new Error(`Card not found for order: ${orderId}`);
         await persistCardTransactions(connection, {

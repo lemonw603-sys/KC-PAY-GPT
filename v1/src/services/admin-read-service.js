@@ -392,7 +392,7 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
         throw new PublicApiError('Transaction sync is disabled', { code: 'ADMIN_SYNC_DISABLED', status: 409 });
       }
       const [rows] = await connection.query(
-        `SELECT o.id, c.id AS card_id FROM orders o LEFT JOIN cards c ON c.order_id = o.id
+        `SELECT o.id, c.id AS card_id FROM orders o LEFT JOIN cards c ON (c.id = o.assigned_card_id OR (o.assigned_card_id IS NULL AND c.order_id = o.id))
          WHERE BINARY o.public_no = ? LIMIT 1 FOR UPDATE`, [publicNo]
       );
       if (rows.length !== 1) throw new PublicApiError('Order not found', { code: 'ADMIN_ORDER_NOT_FOUND', status: 404 });
@@ -761,7 +761,7 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
           (${SUCCESSFUL_PURCHASE_SQL}) AS successful_purchase_exists,
           (${PAYMENT_MATCH_SQL}) AS payment_matched,
           (${PAYMENT_SETTLED_SQL}) AS payment_settled
-        FROM orders o LEFT JOIN cards c ON c.order_id = o.id
+        FROM orders o LEFT JOIN cards c ON (c.id = o.assigned_card_id OR (o.assigned_card_id IS NULL AND c.order_id = o.id))
         ${where}
         ORDER BY o.created_at DESC, o.id DESC
         LIMIT ? OFFSET ?`, [...values, pageSize, (page - 1) * pageSize]),
@@ -835,7 +835,7 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
           c.current_balance, c.currency, c.refund_status, c.last_synced_at,
           c.last_transaction_synced_at,
           c.card_number_ciphertext, c.card_credentials_ciphertext
-        FROM orders o LEFT JOIN cards c ON c.order_id = o.id
+        FROM orders o LEFT JOIN cards c ON (c.id = o.assigned_card_id OR (o.assigned_card_id IS NULL AND c.order_id = o.id))
         WHERE BINARY o.public_no = ? LIMIT 1`, [publicNo]),
       pool.query(`SELECT oe.from_status, oe.to_status, oe.actor_type, oe.actor_id,
           oe.reason, oe.created_at FROM order_events oe
@@ -864,10 +864,7 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
           ct.merchant_name, ct.merchant_country, ct.merchant_mcc,
           ct.first_seen_at, ct.last_seen_at
         FROM orders o
-        INNER JOIN cards c ON c.order_id = o.id OR EXISTS (
-          SELECT 1 FROM card_assignment_history ah
-          WHERE ah.card_id = c.id AND ah.order_id = o.id
-        )
+        INNER JOIN cards c ON (c.id = o.assigned_card_id OR (o.assigned_card_id IS NULL AND c.order_id = o.id))
         INNER JOIN card_transactions ct ON ct.card_id = c.id
         WHERE BINARY o.public_no = ?
         ORDER BY ct.id DESC LIMIT 200`, [publicNo]),

@@ -198,7 +198,7 @@ async function lockRunContext(connection, runId) {
      FROM browser_runs br
      INNER JOIN recharge_attempts rat ON rat.id = br.recharge_attempt_id
      INNER JOIN orders o ON o.id = rat.order_id
-     LEFT JOIN cards c ON c.order_id = o.id
+     LEFT JOIN cards c ON (c.id = o.assigned_card_id OR (o.assigned_card_id IS NULL AND c.order_id = o.id))
      LEFT JOIN card_consumption_ledger ccl
        ON ccl.recharge_attempt_id = rat.id
      LEFT JOIN fulfillment_routes fr ON fr.id = rat.fulfillment_route_id
@@ -328,7 +328,7 @@ export function createBrowserExecutionRepository(pool) {
                   c.id AS card_id
            FROM recharge_attempts rat
            INNER JOIN orders o ON o.id = rat.order_id
-           LEFT JOIN cards c ON c.order_id = o.id
+           LEFT JOIN cards c ON (c.id = o.assigned_card_id OR (o.assigned_card_id IS NULL AND c.order_id = o.id))
            WHERE rat.id = ?
            FOR UPDATE`,
           [attempt]
@@ -955,6 +955,17 @@ export function createBrowserExecutionRepository(pool) {
           requireActive: false,
           evidence: { source: 'browser_payment_confirmed', browserRunId: run, evidenceHash: evidence }
         });
+        await connection.query(
+          `UPDATE card_assignment_history SET status='RELEASED', released_by='browser:payment-confirmed',
+             release_reason='payment confirmed; capacity ledger retains consumption', released_at=?
+           WHERE order_id=? AND status='ACTIVE'`, [now, row.order_id]
+        );
+        await connection.query(
+          `UPDATE cards c INNER JOIN orders o ON o.assigned_card_id=c.id
+           SET c.inventory_status='DEPLETED', c.current_balance=NULL,
+               c.last_transaction_synced_at=NULL, c.updated_at=?
+           WHERE o.id=?`, [now, row.order_id]
+        );
         return publicRun({ ...row, payment_state: 'PAYMENT_CONFIRMED' }, {
           postPaymentState: 'PLUS_PENDING', idempotentReplay: false
         });

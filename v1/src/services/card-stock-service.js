@@ -84,14 +84,16 @@ export function classifyStockCardOperationalState(card) {
   if (card.effectiveInventoryStatus === 'RETIRED') {
     return { category: 'RETIRED', reason: '已永久停用，不参与分配' };
   }
+  if (card.isAllocatable) {
+    return { category: 'READY', reason: card.usedCapacity > 0
+      ? `可继续分配 Plus（已用 ${card.usedCapacity}/${card.maxCapacity} 次）`
+      : '可直接分配 Plus' };
+  }
   if (card.assigned || card.effectiveInventoryStatus === 'ASSIGNED') {
     return {
       category: 'IN_USE',
       reason: card.publicNo ? `已绑定订单 ${card.publicNo}` : '已绑定订单'
     };
-  }
-  if (card.isAllocatable) {
-    return { category: 'READY', reason: '可直接分配 Plus' };
   }
   if (card.effectiveInventoryStatus === 'PRODUCT_ONLY') {
     return {
@@ -322,9 +324,9 @@ export function createCardStockService({ pool, sessionEncryptionKey, panHmacKey 
          FROM cards GROUP BY card_type_id ORDER BY card_type_id`
       ),
       pool.query(`SELECT setting_key, setting_value FROM app_settings
-        WHERE setting_key IN ('default_card_type_id','default_open_card_amount')`),
+        WHERE setting_key IN ('default_card_type_id','default_open_card_amount','card_max_successful_payments')`),
       pool.query(`SELECT c.provider_account_id, c.provider_card_id, c.card_type_id, c.last4, c.status, c.inventory_status,
-          c.funded_amount, c.current_balance, c.currency, c.order_id,
+          c.funded_amount, c.current_balance, c.currency, active_assignment.order_id AS active_order_id,
           co.allocation_policy, co.product_code AS allocation_product_code,
           co.reason AS allocation_reason,
           (${eligibleInventoryCardSql('c', `COALESCE((SELECT CAST(setting_value AS DECIMAL(18,6))
@@ -332,12 +334,17 @@ export function createCardStockService({ pool, sessionEncryptionKey, panHmacKey 
           c.card_credentials_ciphertext, c.card_number_ciphertext, c.last_synced_at,
           c.last_transaction_synced_at, o.public_no,
           (SELECT COUNT(*) FROM card_transactions ct WHERE ct.card_id = c.id) AS transaction_count,
+          (SELECT COUNT(*) FROM card_consumption_ledger usage_rows
+            WHERE usage_rows.card_id=c.id AND usage_rows.status IN ('RESERVED','CONSUMED','RECONCILIATION')) AS used_capacity,
           (SELECT MAX(ct.last_seen_at) FROM card_transactions ct WHERE ct.card_id = c.id) AS latest_transaction_at,
           (SELECT csj.status FROM card_sync_jobs csj WHERE csj.card_id = c.id
             ORDER BY csj.created_at DESC LIMIT 1) AS sync_status,
           (SELECT csj.error_message FROM card_sync_jobs csj WHERE csj.card_id = c.id
             ORDER BY csj.created_at DESC LIMIT 1) AS sync_error
-        FROM cards c LEFT JOIN orders o ON o.id = c.order_id
+        FROM cards c
+        LEFT JOIN card_assignment_history active_assignment
+          ON active_assignment.card_id=c.id AND active_assignment.status='ACTIVE'
+        LEFT JOIN orders o ON o.id = active_assignment.order_id
         LEFT JOIN card_operational_overrides co
           ON co.provider_account_id = c.provider_account_id
          AND BINARY co.external_card_id = BINARY c.external_card_id
@@ -358,6 +365,8 @@ export function createCardStockService({ pool, sessionEncryptionKey, panHmacKey 
     );
     const settingMap = new Map(settings.map((row) => [row.setting_key, row.setting_value]));
     const defaultCardTypeId = String(settingMap.get('default_card_type_id') || '');
+    const maxSuccessfulPayments = Math.min(4, Math.max(1,
+      Number(settingMap.get('card_max_successful_payments') || 3)));
     const selectedCardType = providerSnapshot?.cardTypes?.find(
       (item) => String(item.id) === defaultCardTypeId
     ) || null;
@@ -384,7 +393,9 @@ export function createCardStockService({ pool, sessionEncryptionKey, panHmacKey 
         fundedAmount: row.funded_amount == null ? null : String(row.funded_amount),
         currentBalance: row.current_balance == null ? null : String(row.current_balance),
         currency: row.currency,
-        assigned: Boolean(row.order_id),
+        assigned: Boolean(row.active_order_id),
+        usedCapacity: Number(row.used_capacity || 0),
+        maxCapacity: maxSuccessfulPayments,
         publicNo: row.public_no || null,
         transactionCount: Number(row.transaction_count || 0),
         latestTransactionAt: row.latest_transaction_at instanceof Date
@@ -439,6 +450,7 @@ export function createCardStockService({ pool, sessionEncryptionKey, panHmacKey 
     return {
       threshold,
       autoReplenishmentEnabled,
+      maxSuccessfulPayments,
       operationalSummary,
       provider: {
         syncedAt: providerSnapshot?.syncedAt || null,
@@ -501,6 +513,21 @@ export function createCardStockService({ pool, sessionEncryptionKey, panHmacKey 
     return { threshold };
   }
 
+  async function setMaxSuccessfulPayments(value) {
+    const limit = Number(value);
+    if (!Number.isInteger(limit) || limit < 1 || limit > 4) {
+      throw new Error('Card successful payment limit must be an integer between 1 and 4');
+    }
+    await pool.query(
+      `INSERT INTO app_settings (setting_key, setting_value)
+       VALUES ('card_max_successful_payments', ?)
+       ON DUPLICATE KEY UPDATE setting_value=VALUES(setting_value),
+         updated_at=CURRENT_TIMESTAMP(3)`,
+      [String(limit)]
+    );
+    return { maxSuccessfulPayments: limit };
+  }
+
   async function setDefaultCardType(cardTypeId) {
     const id = String(cardTypeId ?? '').trim();
     if (!id) throw new Error('Card type id is required');
@@ -519,5 +546,5 @@ export function createCardStockService({ pool, sessionEncryptionKey, panHmacKey 
     return { cardTypeId: id, cardTypeName: selected.name };
   }
 
-  return { register, status, setThreshold, setDefaultCardType };
+  return { register, status, setThreshold, setMaxSuccessfulPayments, setDefaultCardType };
 }

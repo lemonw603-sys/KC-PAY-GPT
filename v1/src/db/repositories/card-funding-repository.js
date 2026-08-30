@@ -54,8 +54,8 @@ export function createCardFundingRepository(pool) {
          LIMIT 1 FOR UPDATE`, [card]
       );
       const row = cards[0];
-      if (!row || row.order_id !== null
-        || !['AVAILABLE', 'DEPLETED', 'PROVISIONING'].includes(row.inventory_status)
+      if (!row
+        || !['AVAILABLE', 'ASSIGNED', 'DEPLETED', 'PROVISIONING'].includes(row.inventory_status)
         || !['active', 'available', 'usable', 'ready'].includes(String(row.status).toLowerCase())
         || !row.card_credentials_ciphertext) {
         throw new PublicApiError('Card is not eligible for balance funding', {
@@ -186,6 +186,17 @@ export function createCardFundingRepository(pool) {
           status, finishedAt, responseSummary ? JSON.stringify(responseSummary) : null, attemptId]
       );
       if (result.affectedRows !== 1) throw new Error('Card funding attempt state transition lost');
+      if (status === 'SETTLED') {
+        await connection.query(
+          `INSERT INTO card_sync_jobs
+           (id, card_id, status, requested_by, dedupe_key)
+           SELECT UUID(), fa.card_id, 'PENDING', 'card-funding', CONCAT('funding-settled:', fa.id)
+           FROM card_funding_attempts fa WHERE fa.id=?
+             AND NOT EXISTS (SELECT 1 FROM card_sync_jobs active_sync
+               WHERE active_sync.card_id=fa.card_id AND active_sync.status IN ('PENDING','RUNNING'))`,
+          [attemptId]
+        );
+      }
     });
   }
 

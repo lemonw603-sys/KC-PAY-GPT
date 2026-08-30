@@ -1,3 +1,5 @@
+import { transitionCardConsumptionInTransaction } from './card-consumption-ledger-service.js';
+
 export class OrderCancellationError extends Error {
   constructor(message, code, status = 409) {
     super(message);
@@ -36,7 +38,7 @@ export function createOrderCancellationService({ pool }) {
                 ta.attempts AS assign_attempts,
                 JSON_UNQUOTE(JSON_EXTRACT(t.payload_json, '$.rechargePermit.status')) AS permit_status
          FROM orders o
-         LEFT JOIN cards c ON c.order_id = o.id
+         LEFT JOIN cards c ON (c.id = o.assigned_card_id OR (o.assigned_card_id IS NULL AND c.order_id = o.id))
          LEFT JOIN tasks t ON t.order_id = o.id AND t.task_type = 'SUBMIT_RECHARGE'
          LEFT JOIN tasks ta ON ta.order_id = o.id AND ta.task_type = 'ASSIGN_CARD'
          WHERE BINARY o.public_no = ? LIMIT 1 FOR UPDATE`, [publicNo]
@@ -110,9 +112,10 @@ export function createOrderCancellationService({ pool }) {
          WHERE order_id = ? AND status = 'PENDING'`, [reason, order.id]
       );
       const [released] = await connection.query(
-        `UPDATE cards SET order_id = NULL, inventory_status = 'HELD_FOR_REVIEW', assigned_at = NULL,
-           updated_at = CURRENT_TIMESTAMP(3)
-         WHERE id = ? AND order_id = ?`, [order.card_id, order.id]
+        `UPDATE cards SET inventory_status = CASE
+             WHEN current_balance >= ? THEN 'AVAILABLE' ELSE 'DEPLETED' END,
+           assigned_at = NULL, updated_at = CURRENT_TIMESTAMP(3)
+         WHERE id = ?`, [String(order.minimum_required_card_balance), order.card_id]
       );
       if (Number(released.affectedRows) !== 1) {
         throw new OrderCancellationError('Card assignment changed concurrently', 'ORDER_CANCELLATION_ORDER_CHANGED');
@@ -130,8 +133,17 @@ export function createOrderCancellationService({ pool }) {
           'ORDER_CANCELLATION_ASSIGNMENT_HISTORY_INCONSISTENT'
         );
       }
+      await transitionCardConsumptionInTransaction(connection, {
+        orderId: order.id,
+        targetStatus: 'RELEASED',
+        reason: `Order cancelled before payment: ${reason}`,
+        allowedCurrentStatuses: ['RESERVED'],
+        requireActive: false,
+        evidence: { source: 'admin_order_cancellation' }
+      });
       const [closed] = await connection.query(
-        `UPDATE orders SET status = 'CLOSED', failure_code = 'CANCELLED_PRE_SUBMISSION',
+        `UPDATE orders SET status = 'CLOSED', assigned_card_id=NULL,
+           failure_code = 'CANCELLED_PRE_SUBMISSION',
            failure_reason = ?, version = version + 1, finished_at = CURRENT_TIMESTAMP(3),
            updated_at = CURRENT_TIMESTAMP(3)
          WHERE id = ? AND status = 'CARD_READY'`, [reason, order.id]
@@ -143,13 +155,15 @@ export function createOrderCancellationService({ pool }) {
         `INSERT INTO order_events
          (order_id, from_status, to_status, actor_type, actor_id, reason, metadata_json)
          VALUES (?, 'CARD_READY', 'CLOSED', 'ADMIN', 'admin', ?, ?)`,
-        [order.id, 'order cancelled before recharge; card held for manual review', JSON.stringify({
+        [order.id, 'order cancelled before recharge; card capacity released', JSON.stringify({
           reason, cardId: order.card_id, cardTypeId: order.card_type_id
         })]
       );
       await connection.commit();
+      const cardInventoryStatus = Number(order.current_balance) >= Number(order.minimum_required_card_balance)
+        ? 'AVAILABLE' : 'DEPLETED';
       return { publicNo: order.public_no, status: 'CLOSED', cardReleased: true,
-        cardInventoryStatus: 'HELD_FOR_REVIEW', replayed: false };
+        cardInventoryStatus, replayed: false };
     } catch (error) {
       await connection.rollback();
       throw error;

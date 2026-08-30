@@ -105,7 +105,7 @@ const DATASETS = Object.freeze({
     idColumn: 'o.id',
     from: `orders o
       LEFT JOIN cdks cdk ON cdk.id = o.cdk_id
-      LEFT JOIN cards card ON card.order_id = o.id`,
+      LEFT JOIN cards card ON (card.id = o.assigned_card_id OR (o.assigned_card_id IS NULL AND card.order_id = o.id))`,
     defaultColumns: ['publicNo', 'cdkBatchNo', 'planType', 'customerEmail', 'status', 'createdAt', 'updatedAt', 'finishedAt', 'customerPaymentAmount', 'customerPaymentCurrency', 'customerPaidAt', 'rechargeAmount', 'rechargeCurrency', 'cardProviderAccountId', 'providerCardId', 'cardLast4', 'cardBalance', 'rechargeOrderNo', 'providerBusinessCode', 'providerOutcome', 'providerFinishedAt', 'failureCode', 'failureReason', 'subscriptionCancelled'],
     columns: {
       publicNo: { header: '订单查询码', sql: 'o.public_no' },

@@ -225,6 +225,14 @@
                   <div><input id="replenishment-daily-limit" type="number" min="0" max="500" required><button class="primary-small" type="submit">保存上限</button></div>
                   <p class="form-hint" id="replenishment-usage">今日已使用：—，剩余：—</p>
                 </form>
+                <form class="threshold-form" id="card-capacity-form">
+                  <label for="card-capacity">每张卡最多成功充值次数</label>
+                  <div><select id="card-capacity" required>
+                    <option value="1">1 次</option><option value="2">2 次</option>
+                    <option value="3">3 次</option><option value="4">4 次</option>
+                  </select><button class="primary-small" type="submit">保存次数</button></div>
+                  <p class="form-hint">达到上限后不再分配；修改只影响后续订单，不改写历史。</p>
+                </form>
               </div>
             </details>
           </section>

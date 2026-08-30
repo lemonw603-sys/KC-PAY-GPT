@@ -17,6 +17,7 @@ function scriptedPool(responses, { browserDispatchError = null } = {}) {
       if (/SELECT COUNT\(\*\) AS used FROM card_consumption_ledger/.test(sql)) return [[{ used: 0 }], []];
       if (/INSERT INTO card_consumption_ledger/.test(sql)) return [{ affectedRows: 1 }, []];
       if (/UPDATE card_consumption_ledger/.test(sql)) return [{ affectedRows: 1 }, []];
+      if (/UPDATE card_assignment_history/.test(sql)) return [{ affectedRows: 1 }, []];
       if (/INSERT INTO browser_dispatch_jobs/.test(sql)) {
         if (browserDispatchError) throw browserDispatchError;
         return [{ insertId: 701 }, []];
@@ -384,8 +385,9 @@ test('a definite pre-create rejection atomically clears funds and closes the ord
   });
   assert.equal(result.fundsRiskState, 'CLEARED');
   assert.equal(result.orderStatus, 'RECHARGE_FAILED');
-  assert.match(pool.queries[4].sql, /failure_code = 'RECHARGE_SUBMIT_REJECTED'/);
-  assert.match(pool.queries[4].sql, /customer_action_code = NULL/);
+  const orderUpdate = pool.queries.find((entry) => /failure_code = 'RECHARGE_SUBMIT_REJECTED'/.test(entry.sql));
+  assert.ok(orderUpdate);
+  assert.match(orderUpdate.sql, /customer_action_code = NULL/);
   assert.equal(pool.queries.some((entry) => /UPDATE tasks/.test(entry.sql)), false);
 });
 
