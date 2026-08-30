@@ -74,7 +74,7 @@ systemctl start pojia-browser-worker.service   # 仅在单独批准的 readonly 
 systemctl status pojia-browser-worker.service
 ```
 
-本仓库不自动 `enable/start` 该单元。启动前要求：迁移 `001–040`
+本仓库不自动 `enable/start` 该单元。启动前要求：迁移 `001–041`
 已完成、数据库 `browser_payment_writes_enabled=false`、指定 executor profile 为
 `BROWSER/ACTIVE` 且 `productionWritesEnabled=false`、所有 Provider/卡资金写开关为 false。
 不得将真实客户订单放入当前 readonly lane；它会在观察后通过
