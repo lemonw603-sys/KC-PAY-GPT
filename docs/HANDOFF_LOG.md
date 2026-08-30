@@ -644,3 +644,10 @@
 - 任务 `986d345d-e4b6-4ad6-b770-ef447c3b6f74` 完成，新增卡 Provider id `1839`、尾号 `1013`，余额 `$16.00`，已同步接管为 `AVAILABLE / ACCEPTED`，未绑定订单。
 - 仅临时进程开启 `PROVIDER_CARD_WRITES_ENABLED=true`；常驻服务及其他 Provider 写权限未开启；未创建订单、未充值、未付款。
 - 详细报告：`docs/2026-08-30_manual-card-opening-result.md`。
+
+# 2026-08-30｜启用“无卡自动补卡”
+
+- 用户明确要求没有可分配卡时自动补卡，不再逐单人工确认。
+- 生产设置：`card_auto_replenishment_enabled=true`、`card_stock_low_threshold=0`、`card_replenishment_daily_limit=5`；默认卡段/金额为 `16` / `$16`。
+- `pojia-card-stock-runner.timer` 已 `active/enabled`，每 10 秒检查；当前 1 张可分配 Plus 卡，最近日志为 `STOCK_SUFFICIENT`，没有新增开卡。
+- 自动任务执行前仍校验 Provider 规则、账户余额和目录；充值/付款写入保持关闭。

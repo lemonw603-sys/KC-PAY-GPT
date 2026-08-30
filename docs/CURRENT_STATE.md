@@ -16,7 +16,7 @@
 
 - 生产服务器已独立复核：`acceptNewOrders=true`、`dispatchNewRecharges=true`、派发模式 `AUTOMATIC`；这是用户此前手动开启并决定继续保留的当前运营状态。
 - 2026-08-30 已部署主线 `4dadf79` 对应 release `/opt/pojia/releases/20260830-browser-routing-4dadf79`；迁移 041 已应用，Web/ API Worker active，Browser Worker 保持 inactive/disabled。部署后公网 live/ready 均 HTTP 200；当前 Browser dispatch gate=false、专用心跳为空，API 路线仍是新订单默认路线。
-- `card_auto_replenishment_enabled=false`；每日自动开卡上限配置值为 `5`，但自动补卡未开启。
+- `card_auto_replenishment_enabled=true`；无可分配 Plus 卡时自动开 1 张 `$16` 卡，每日上限 `5`；`card_stock_low_threshold=0`，仍有 1 张可分配卡时不提前开卡。
 - `PROVIDER_WRITES_ENABLED=false`、`PROVIDER_CARD_WRITES_ENABLED=false`、`PROVIDER_RECHARGE_WRITES_ENABLED=false`。
 - Browser systemd 单元强制 `BROWSER_PAYMENT_WRITES_ENABLED=false`，且服务未启动。
 - 2026-08-29 09:07 CST 重跑生产 readiness：`ok=true`；活动任务、过期租约、UNKNOWN Provider 调用、资金风险、活动授权、开放对账案件均为 `0`，`blockers=[]`。
@@ -55,6 +55,12 @@
 - 新卡 Provider id `1839`、尾号 `1013`，余额 `$16.00 USD`，已自动同步为 `AVAILABLE / ACCEPTED`，未绑定订单。
 - 当次仅临时进程开启卡台开卡写权限；常驻配置未改变，自动补卡仍关闭，Browser/充值/其他 Provider 写入仍关闭。
 - 详细记录：`docs/2026-08-30_manual-card-opening-result.md`。
+
+### 2026-08-30｜自动补卡已启用
+
+- 用户明确要求“没卡就自动补卡”，已启用生产自动补卡定时器。
+- `pojia-card-stock-runner.timer` 已 `active/enabled`，每 10 秒检查；当前可分配 Plus 卡为 `1`，日志显示 `STOCK_SUFFICIENT`，未额外开卡。
+- 每次任务仍先读取最新 Provider 规则、余额和目录；其他充值/付款写入保持关闭。
 
 ### 2026-08-30｜Browser 生产形态非付款安全窗口
 
