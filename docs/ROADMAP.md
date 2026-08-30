@@ -298,3 +298,12 @@
 
 经复查，自动补余额是高频运营和“开始营业”自动自愈的基础，优先于后台控制面收敛；但必须先完成代码、幂等、未知结果和受控生产验证，不得直接打开资金写权限。随后再实现统一就绪结果和首页入口。
 入口文件：`docs/ACTIVE_WORKSTREAM.md`。
+
+## 2026-08-31 自动补余额代码复查修正
+
+- [x] 发现并修正已结算补余额永久占用卡片资金栅栏的问题；同一卡片后续余额再次不足时可创建新的补余额 attempt。
+- [x] 新增可重放迁移 `v1/migrations/042_card_funding_settled_reusable.sql`，仅调整生成栅栏表达式，不删除或改写历史账本。
+- [x] scheduler 仅以 PREPARED/ACTIVE/UNKNOWN 阻止重复任务；SETTLED 作为历史证据保留。
+- [x] v1 全量单元/契约回归：440 通过、0 失败、38 环境跳过（未配置 TEST_DATABASE_URL 的 MySQL 集成项）。
+- [ ] 在隔离 MySQL 验证迁移后“同一卡片两次先后补余额”及 ACTIVE/UNKNOWN 并发互斥。
+- [ ] 完成受控生产小额写入验收前，不启用 `PROVIDER_CARD_WRITES_ENABLED` 或卡资金 timer。

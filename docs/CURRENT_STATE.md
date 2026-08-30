@@ -144,3 +144,7 @@
 > 状态更新：候选版本已于 2026-08-31 切换生产；Web/Worker active，Browser Worker inactive/disabled，live/ready HTTP 200。Provider/卡台写入和真实付款仍未执行。
 
 部署后复核：`pojia-ops check` 通过，备份完整性 OK；Web/Worker 最近 10 分钟无 warning/alert；公网 live/ready 继续 HTTP 200。
+
+## 2026-08-31 自动补余额复查更新
+
+代码复查发现旧资金栅栏会把 SETTLED 记录永久绑定到卡片，导致卡片后续再次低余额时无法补余额，与持续补给/一卡多充规划冲突。已新增 `v1/migrations/042_card_funding_settled_reusable.sql`：SETTLED 仅保留历史证据，资金栅栏仅覆盖 PREPARED、ACTIVE、UNKNOWN；scheduler 同步收窄重复任务判断。全量 v1 回归 440 通过、0 失败、38 项因未配置 `TEST_DATABASE_URL` 跳过。尚未执行隔离 MySQL 迁移验证、Provider/卡台写入或生产启用。

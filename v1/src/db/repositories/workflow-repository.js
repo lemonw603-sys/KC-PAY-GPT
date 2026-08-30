@@ -10,6 +10,11 @@ import {
 } from '../../services/card-inventory-eligibility.js';
 import { transitionCardConsumptionInTransaction } from '../../services/card-consumption-ledger-service.js';
 
+function topUpAmount(minimum, current) {
+  const delta = Number(minimum) - Number(current || 0);
+  return Math.max(0.000001, Number(delta.toFixed(6))).toFixed(6);
+}
+
 function parseSession(ciphertext, key) {
   const text = decryptSecret(ciphertext, key);
   const session = JSON.parse(text);
@@ -227,8 +232,10 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
             [order.card_provider_account_id, String(order.minimum_required_card_balance)]
           );
           if (underfunded) {
-            const amount = Math.max(1,
-              Math.ceil(Number(order.minimum_required_card_balance) - Number(underfunded.current_balance || 0)));
+            const amount = topUpAmount(
+              order.minimum_required_card_balance,
+              underfunded.current_balance
+            );
             const fundingKey = `order-card-funding:${orderId}:${underfunded.id}`;
             const [fundingInsert] = await connection.query(
               `INSERT INTO card_funding_attempts
@@ -237,7 +244,7 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
                VALUES (?, ?, ?, ?, ?, 'USD', 'PREPARED', 'NONE', ?)
                ON DUPLICATE KEY UPDATE id = id`,
               [crypto.randomUUID(), underfunded.id, orderId, order.card_provider_account_id,
-                String(amount), fundingKey]
+                amount, fundingKey]
             );
             fundingQueued = Number(fundingInsert.affectedRows) === 1;
           }
