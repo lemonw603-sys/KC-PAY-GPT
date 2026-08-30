@@ -953,7 +953,7 @@ async function requestCardSync(providerCardId = null, button = null) {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(providerCardId ? { providerCardId } : {})
     });
-    showNotice(`已加入 ${result.queued} 张卡的只读同步队列${result.alreadyActive ? `，${result.alreadyActive} 张正在同步` : ''}。`);
+    showNotice(`已加入 ${result.queued} 张卡的完整只读同步队列（资料、余额和交易）${result.alreadyActive ? `，${result.alreadyActive} 张正在同步` : ''}。`);
     await loadStock();
     return result;
   } catch {
@@ -975,7 +975,7 @@ async function openCard(providerCardId, providerAccountId = '') {
     const data = await api(`/api/v1/admin/cards/${encodeURIComponent(providerCardId)}${accountQuery}`);
     const card = data.card;
     elements.detailContent.innerHTML = `
-      <section class="detail-section"><div class="detail-section-heading"><h3>卡片状态</h3><button type="button" class="primary-small" id="sync-one-card">只读同步</button></div>${renderKeyValues([
+      <section class="detail-section"><div class="detail-section-heading"><h3>卡片状态</h3><button type="button" class="primary-small" id="sync-one-card">完整只读同步</button></div>${renderKeyValues([
         ['完整卡号', card.cardNumber || card.last4], ['卡台账户 ID', card.providerAccountId],
         ['卡台卡片 ID', card.providerCardId],
         ['卡段 ID', card.cardTypeId], ['卡片状态', card.status],
