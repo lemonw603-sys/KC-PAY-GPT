@@ -142,3 +142,5 @@
 代码已收紧 API attempt、Browser payment permit/submit intent 与旧 API permit 预检：`last_transaction_synced_at` 缺失或超过 15 分钟均阻断；订单会幂等排队只读交易同步后重试。定向测试 92 项通过，尚未运行全量、尚未部署生产，Provider/卡台写入和真实付款均未执行。
 
 > 状态更新：候选版本已于 2026-08-31 切换生产；Web/Worker active，Browser Worker inactive/disabled，live/ready HTTP 200。Provider/卡台写入和真实付款仍未执行。
+
+部署后复核：`pojia-ops check` 通过，备份完整性 OK；Web/Worker 最近 10 分钟无 warning/alert；公网 live/ready 继续 HTTP 200。
