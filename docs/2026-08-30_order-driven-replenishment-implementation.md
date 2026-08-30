@@ -59,6 +59,12 @@
 - 本地 v1 全量回归恢复为 439 通过、0 失败、38 环境跳过。
 - 以上为测试代码修正，未改变生产业务逻辑；生产当前仍运行 `dd0037b`，测试修正未部署。
 
+## 最新隔离 MySQL 复跑（2026-08-30）
+
+- 自动补卡旧夹具修正后，`test/mysql-integration.test.js` 为 **33 通过、1 未通过**。
+- 唯一未通过仍是旧 fake-provider Worker 场景：当前订单驱动/路由门禁下该次迭代返回 `handled=false`，旧测试试图模拟旧版完整 Provider 写流程；这不是生产报错，不能用放宽断言的方式掩盖，应重写为当前路由和门禁的真实夹具。
+- 迁移、资金栅栏、补给调度相关的其余数据库测试均通过；生产数据和外部 Provider 均未写入。
+
 ## 提交
 
 - `e07e6a0 fix: retry browser dispatch handoff without releasing funds fence`
