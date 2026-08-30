@@ -621,6 +621,7 @@
 - 已整理生产只读演练手册；实际演练需 SSH 会话，尚未执行。
 - 生产只读启动演练发现当前 release 缺少 Playwright 依赖，已 stop/disable 清理，未产生付款或 Provider 写入；补齐依赖前禁止再次启动。
 - 补齐依赖后的候选启动继续暴露 `INVALID_BROWSER_WORKER_CONFIG`；已恢复旧 release、reset-failed 并保持服务 disabled。下一步是对齐只读 env 合同。
+- 已对齐只读 env 合同并完成候选 release 的 READY/IDLE 启动、停止和回滚；当前服务 inactive/disabled，无资金写入。
 - 已建立余额不足卡付款前停止测试手册；原始 Session 不落盘，仅记录脱敏摘要和流程证据。
 - 根因定位：官方方案弹窗的“升级至 Plus”按钮为表单外 `type=submit`，旧规则过宽导致假失败；现已改为只拒绝表单内提交控件，并补充说明。
 - 权威收口：订单 `CARD_READY`；attempt/funds `CLEARED`；run `FAILED_SAFE`；dispatch `CANCELLED`；无活动 permit、付款提交记录或资源租约。

@@ -80,6 +80,7 @@
 - 已整理生产只读启动/停止/回滚演练手册：`docs/2026-08-30_browser-production-readonly-rehearsal.md`；当前因无 SSH 会话尚未执行。
 - 已执行生产只读启动演练但发现部署缺口：当前 release 缺少 `playwright`，Worker 启动失败并触发重启尝试；已立即 stop/disable，当前保持 `inactive/disabled`。详见 `docs/2026-08-30_browser-production-rehearsal-result.md`。
 - 补齐 Playwright 后再次启动候选 release，依赖问题已解决但暴露出生产只读 env 合同不匹配（`INVALID_BROWSER_WORKER_CONFIG`）；已回滚 current 并保持 Worker `inactive/disabled`。
+- 已补齐 service 的只读付款执行器环境变量；候选 release 成功 READY/IDLE 启动并安全停止，随后回滚旧 release，当前 Worker 仍 `inactive/disabled`。
 - 已建立“余额不足卡付款前停止测试”运行手册：`docs/2026-08-29_browser-pre-submit-session-test-runbook.md`；使用用户指定测试 Session，停止于付款按钮前。
 
 - 库存后台收敛已部署生产（2026-08-28），并已通过发布后公网健康、服务状态、备份完整性和未认证路由验收；后台浏览器交叉验收仍待使用管理员会话执行。
