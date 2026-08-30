@@ -49,6 +49,13 @@
 
 ## 当前未完成
 
+### 2026-08-30｜手动开卡
+
+- 已按用户明确指令，通过正式手动库存任务开通 1 张 `$16` 卡；任务 `986d345d-e4b6-4ad6-b770-ef447c3b6f74` 已完成。
+- 新卡 Provider id `1839`、尾号 `1013`，余额 `$16.00 USD`，已自动同步为 `AVAILABLE / ACCEPTED`，未绑定订单。
+- 当次仅临时进程开启卡台开卡写权限；常驻配置未改变，自动补卡仍关闭，Browser/充值/其他 Provider 写入仍关闭。
+- 详细记录：`docs/2026-08-30_manual-card-opening-result.md`。
+
 ### 2026-08-30｜Browser 生产形态非付款安全窗口
 
 - 测试 CDK 已通过正常客户入口创建 Browser 路线订单 `PJV1-TZmbNEpYNd0Gs_YgRKF_`；订单创建时路线正确冻结为 Browser。

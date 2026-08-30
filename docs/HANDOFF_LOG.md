@@ -636,3 +636,11 @@
 - 测试订单已通过正式取消服务关闭；CDK 已兑换并绑定该订单，不得复用。默认 API、接单/派发、Browser gate/Worker/env 已全部恢复。
 - 恢复后活动 task、ACTIVE/UNKNOWN attempt、Browser job/run/lease 均为 0；Web/API Worker active，ops/plus 四个公网 live/ready 均为 HTTP 200。
 - 详细报告：`docs/2026-08-30_browser-production-nonpayment-window-result.md`。
+
+# 2026-08-30｜按明确指令手动开卡
+
+- 通过正式库存任务服务创建并执行 1 张、金额 `$16`、卡段 `16` 的手动开卡任务；预计总扣款 `$16.58`。
+- Provider 当时规则快照显示开卡允许、账户余额 `$36.30`、剩余额度 `292`；自动补卡保持关闭。
+- 任务 `986d345d-e4b6-4ad6-b770-ef447c3b6f74` 完成，新增卡 Provider id `1839`、尾号 `1013`，余额 `$16.00`，已同步接管为 `AVAILABLE / ACCEPTED`，未绑定订单。
+- 仅临时进程开启 `PROVIDER_CARD_WRITES_ENABLED=true`；常驻服务及其他 Provider 写权限未开启；未创建订单、未充值、未付款。
+- 详细报告：`docs/2026-08-30_manual-card-opening-result.md`。
