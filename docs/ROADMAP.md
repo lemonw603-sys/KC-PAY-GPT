@@ -176,6 +176,17 @@
 
 ## Browser 自动化时序
 
+## 2026-08-30 订单驱动补给实施状态
+
+- [x] 订单无合格卡时按需幂等排队自动开卡；无等待订单不自动开卡
+- [x] 订单存在合格但余额不足卡时排队订单关联补余额任务
+- [x] Browser attempt/dispatch 入队保持原子；临时入队失败可安全重试且不释放资金栅栏
+- [x] v1 全量回归 439 通过、0 失败；Browser 回归 103 通过、0 失败
+- [ ] 生产部署前完成候选 release 演练与只读验收
+- [ ] 单独确认 API Provider 写权限范围；Browser Worker/gate 继续独立控制
+
+记录：`docs/2026-08-30_order-driven-replenishment-implementation.md`。
+
 ### 2026-08-29 只读真实观察最新结果
 
 - [x] 隔离 Headful Chrome 成功建立 Session、核对身份和免费订阅状态，零付款、零卡资料读取。
