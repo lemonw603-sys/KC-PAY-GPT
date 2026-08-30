@@ -283,3 +283,11 @@
 - [ ] 按分类实现开始营业结果页和最小操作入口
 
 证据：`docs/2026-08-31_admin-control-surface-adversarial-review.md`。
+
+## 2026-08-31 控制面最小改造方案对抗式复查
+
+- [x] 复查并收窄首版范围：只改就绪结果、首页入口和高级设置分层
+- [x] 确认稳定 checkId/actionId、幂等自动动作、Browser 未就绪保护和现有库存门禁不变
+- [ ] 实现统一就绪结果与后台首页最小改造
+
+证据：`docs/2026-08-31_admin-control-surface-plan-adversarial-review.md`。
