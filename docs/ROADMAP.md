@@ -258,3 +258,12 @@
 - [ ] 生产部署（需单独确认）
 
 证据报告：`docs/2026-08-31_payment-preflight-transaction-evidence-fix.md`。
+
+## 2026-08-31 生产候选只读演练
+
+- [x] 候选归档校验并上传生产 VPS
+- [x] 候选 release 依赖安装、systemd 校验、Browser readonly 启动/停止
+- [x] 恢复原 current，Web/Worker 健康检查通过，Browser Worker 保持 inactive/disabled
+- [ ] 是否正式切换候选 release（需用户单独确认）
+
+证据：`docs/2026-08-31_production-candidate-readonly-rehearsal.md`。
