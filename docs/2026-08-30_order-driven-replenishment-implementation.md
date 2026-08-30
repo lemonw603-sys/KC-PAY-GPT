@@ -45,6 +45,13 @@
 - 其余该套件 34 项通过；Browser 相关文件在 v1 release 中缺少 Playwright 依赖，导致全量脚本另有环境性失败，未影响 Web/Worker 运行。
 - 因此当前结论是：生产服务健康，但“完整隔离 MySQL 套件全绿”尚未达成；需先更新两处旧夹具/断言并重新复跑，不能宣称全部集成测试通过。
 
+## 复跑进展（2026-08-30）
+
+- 已为自动补卡测试补入 `WAITING_FOR_CARD` 订单夹具；该项旧断言问题已消除。
+- 重新迁移并运行隔离 MySQL 套件后：核心数据库测试 34 项通过；剩余 1 个旧 fake-provider Worker 断言仍与当前订单驱动状态机不匹配（期望 `COMPLETED`，实际无该状态返回）。
+- 生产 release 中 v1 全量测试还会加载 Browser 测试文件，而 v1 独立依赖未包含 Playwright，产生 2 个环境性失败；不影响生产 Web/Worker，需后续拆分测试入口或补测试依赖边界。
+- 本轮未修改生产数据、未执行 Provider 写入、未开卡、未补余额、未付款。
+
 ## 提交
 
 - `e07e6a0 fix: retry browser dispatch handoff without releasing funds fence`
