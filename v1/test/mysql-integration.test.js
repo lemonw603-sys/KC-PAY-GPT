@@ -1689,9 +1689,7 @@ test('worker runs a full fake-provider workflow while enforcing runtime gates', 
     );
     assert.equal((await iteration()).status, 'COMPLETED');
     assert.equal((await iteration()).status, 'COMPLETED');
-    // SUBMIT_RECHARGE hands the API call to the provider and does not expose
-    // a task-level status object; the worker contract is the handled flag.
-    assert.equal((await iteration()).handled, true);
+    assert.equal((await iteration()).status, 'COMPLETED');
     await pool.query(
       `UPDATE cards SET last_synced_at = CURRENT_TIMESTAMP(3) WHERE order_id = ?`,
       [fixture.orderId]
@@ -1703,7 +1701,9 @@ test('worker runs a full fake-provider workflow while enforcing runtime gates', 
     await createRechargeAuthorization(pool, {
       publicNos: [`TEST-${fixture.orderId}`], authorizedBy: 'fake-e2e-test', ttlMinutes: 10
     });
-    assert.equal((await iteration()).status, 'COMPLETED');
+    // SUBMIT_RECHARGE hands the API call to the provider and reports handled,
+    // while completion is reflected by the persisted order state.
+    assert.equal((await iteration()).handled, true);
 
     await pool.query(
       `UPDATE app_settings SET setting_value = 'false'
