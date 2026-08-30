@@ -253,6 +253,7 @@
 - [x] 发现并修复分配门槛与付款前门槛不一致：API attempt 与 Browser 权威支付快照均校验 `last_transaction_synced_at`（15 分钟）
 - [x] 交易证据过期时订单只读排队同步并短延迟重试，不执行付款/换卡
 - [x] 定向回归通过（92 项）
+- [x] 隔离 MySQL + Chrome 的 Browser production-readonly 候选演练通过（3 项）；只读配置/systemd 检查 10 项通过
 - [ ] v1、Browser 全量回归及隔离集成测试
 - [ ] 生产部署（需单独确认）
 
