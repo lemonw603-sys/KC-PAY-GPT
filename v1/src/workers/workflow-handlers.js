@@ -26,6 +26,7 @@ export function createWorkflowHandlers({
   cancellationDelayMs = 60_000,
   failureConfirmDelayMs = 2_500,
   rechargeWritesEnabled = true,
+  browserDispatchEnabled = true,
   wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 }) {
   if (!rechargeAttemptRepository) {
@@ -220,33 +221,66 @@ export function createWorkflowHandlers({
         code: 'CARD_CREDENTIALS_MISSING'
       });
     }
-    const request = buildDirectOrderRequest({
-      ...context.card.credentials,
-      token: context.session,
-      planType: context.order.plan_type || 'plus'
-    });
-    if (request.method !== 'POST' || request.path !== '/third-party/orders/direct') {
-      throw new TaskExecutionError('Recharge request contract is invalid', {
-        code: 'RECHARGE_REQUEST_INVALID'
+    const executorKind = String(context.order.recharge_executor_kind || '').toUpperCase();
+    if (!['API', 'BROWSER'].includes(executorKind)) {
+      throw new TaskExecutionError('Recharge route executor is invalid', {
+        code: 'ROUTE_NOT_EXECUTABLE'
       });
     }
+    let evidence;
+    if (executorKind === 'BROWSER') {
+      evidence = {
+        executorKind: 'BROWSER',
+        requestContract: 'CHATGPT_CHECKOUT',
+        planType: String(context.order.plan_type || 'plus'),
+        cardLast4: String(context.card.credentials.cardNumber).slice(-4),
+        submitted: false
+      };
+    } else {
+      const request = buildDirectOrderRequest({
+        ...context.card.credentials,
+        token: context.session,
+        planType: context.order.plan_type || 'plus'
+      });
+      if (request.method !== 'POST' || request.path !== '/third-party/orders/direct') {
+        throw new TaskExecutionError('Recharge request contract is invalid', {
+          code: 'RECHARGE_REQUEST_INVALID'
+        });
+      }
+      evidence = {
+        executorKind: 'API',
+        requestMethod: request.method,
+        requestPath: request.path,
+        planType: String(request.body.planType),
+        cardLast4: String(context.card.credentials.cardNumber).slice(-4),
+        submitted: false
+      };
+    }
     await workflow.recordPrepaymentReady(task.order_id, {
-      requestMethod: request.method,
-      requestPath: request.path,
-      planType: String(request.body.planType),
-      cardLast4: String(context.card.credentials.cardNumber).slice(-4),
-      submitted: false
+      ...evidence
     });
   }
 
   async function submitRecharge(task) {
-    if (!rechargeWritesEnabled) {
-      throw new TaskExecutionError('Recharge submission is hard-disabled', {
+    const context = await workflow.loadOrderContext(task.order_id);
+    const executorKind = String(context.order.recharge_executor_kind || '').toUpperCase();
+    if (executorKind === 'API' && !rechargeWritesEnabled) {
+      throw new TaskExecutionError('API recharge submission is hard-disabled', {
         code: 'RECHARGE_WRITES_DISABLED', retryable: true,
         delayMs: 60_000, refundAttempt: true
       });
     }
-    const context = await workflow.loadOrderContext(task.order_id);
+    if (executorKind === 'BROWSER' && !browserDispatchEnabled) {
+      throw new TaskExecutionError('Browser recharge dispatch is disabled', {
+        code: 'BROWSER_DISPATCH_DISABLED', retryable: true,
+        delayMs: 60_000, refundAttempt: true
+      });
+    }
+    if (!['API', 'BROWSER'].includes(executorKind)) {
+      throw new TaskExecutionError('Recharge route executor is invalid', {
+        code: 'ROUTE_NOT_EXECUTABLE', retryable: false
+      });
+    }
     if (context.order.status !== OrderStatus.CARD_READY) {
       throw new TaskExecutionError(`Order cannot submit recharge from ${context.order.status}`, {
         code: 'ORDER_STATE_MISMATCH'
@@ -289,6 +323,7 @@ export function createWorkflowHandlers({
     } catch (error) {
       if (['PROVIDER_WRITE_DISABLED', 'ROUTE_NOT_EXECUTABLE', 'PREPAYMENT_NOT_READY',
         'CARD_CHECK_STALE', 'CARD_NOT_READY', 'DISPATCH_DISABLED',
+        'BROWSER_DISPATCH_DISABLED', 'EXECUTOR_PROFILE_DISABLED',
         'DISPATCH_MODE_INVALID', 'MANUAL_AUTHORIZATION_REQUIRED']
         .includes(error?.code)) {
         throw new TaskExecutionError('Recharge is waiting for an executable provider configuration', {

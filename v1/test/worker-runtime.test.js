@@ -9,6 +9,7 @@ import {
 
 const allSettings = Object.freeze({
   dispatchNewRecharges: true,
+  browserDispatchEnabled: false,
   rechargeDispatchMode: 'AUTOMATIC',
   pollExistingOrders: true,
   syncCardTransactions: true
@@ -46,6 +47,12 @@ test('runtime settings and process gates jointly control task eligibility', () =
     allowedTaskTypesFor(allSettings, { providerRechargeWritesEnabled: true }).includes(TaskType.SUBMIT_RECHARGE),
     false
   );
+  assert.equal(
+    allowedTaskTypesFor({ ...allSettings, browserDispatchEnabled: true }, {
+      providerReadsEnabled: true
+    }).includes(TaskType.SUBMIT_RECHARGE),
+    true
+  );
 });
 
 test('one worker iteration passes only eligible task types to the runner', async () => {
@@ -64,7 +71,25 @@ test('one worker iteration passes only eligible task types to the runner', async
   });
   assert.equal(result.handled, false);
   assert.equal(input.rechargeDispatchMode, 'AUTOMATIC');
+  assert.deepEqual(input.allowedRechargeExecutorKinds, []);
   assert.deepEqual(input.allowedTaskTypes, [TaskType.ASSIGN_CARD, TaskType.PREPARE_RECHARGE, TaskType.VERIFY_CARD, TaskType.POLL_RECHARGE, TaskType.RECHECK_CANCELLATION, TaskType.SYNC_CARD_TRANSACTIONS]);
+});
+
+test('worker passes only executable recharge kinds to task claiming', async () => {
+  const captured = [];
+  await runWorkerIteration({
+    pool: {}, workerId: 'browser-only', handlers: {}, providerReadsEnabled: true,
+    settingsRepository: { loadRuntimeSettings: async () => ({ ...allSettings, browserDispatchEnabled: true }) },
+    taskRunner: async (input) => { captured.push(input); return { handled: false }; }
+  });
+  assert.deepEqual(captured[0].allowedRechargeExecutorKinds, ['BROWSER']);
+  await runWorkerIteration({
+    pool: {}, workerId: 'api-only', handlers: {}, providerReadsEnabled: true,
+    providerRechargeWritesEnabled: true,
+    settingsRepository: { loadRuntimeSettings: async () => allSettings },
+    taskRunner: async (input) => { captured.push(input); return { handled: false }; }
+  });
+  assert.deepEqual(captured[1].allowedRechargeExecutorKinds, ['API']);
 });
 
 test('worker loop runs at most the configured number of iterations concurrently', async () => {

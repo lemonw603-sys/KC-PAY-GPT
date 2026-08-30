@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createRechargeAttemptRepository } from '../src/db/repositories/recharge-attempt-repository.js';
 
-function scriptedPool(responses) {
+function scriptedPool(responses, { browserDispatchError = null } = {}) {
   const queries = [];
   const transaction = { began: 0, committed: 0, rolledBack: 0, released: 0 };
   const connection = {
@@ -17,6 +17,10 @@ function scriptedPool(responses) {
       if (/SELECT COUNT\(\*\) AS used FROM card_consumption_ledger/.test(sql)) return [[{ used: 0 }], []];
       if (/INSERT INTO card_consumption_ledger/.test(sql)) return [{ affectedRows: 1 }, []];
       if (/UPDATE card_consumption_ledger/.test(sql)) return [{ affectedRows: 1 }, []];
+      if (/INSERT INTO browser_dispatch_jobs/.test(sql)) {
+        if (browserDispatchError) throw browserDispatchError;
+        return [{ insertId: 701 }, []];
+      }
       const response = responses.shift();
       if (response instanceof Error) throw response;
       if (!response) throw new Error(`unexpected query: ${sql}`);
@@ -28,9 +32,11 @@ function scriptedPool(responses) {
 
 function beginResponses({
   existingAttempts = [], providerInsert = [{ insertId: 501 }, []], orderOverrides = {},
-  dispatchEnabled = true, dispatchMode = 'AUTOMATIC', authorizationMode = 'MANUAL'
+  dispatchEnabled = true, browserDispatchEnabled = true,
+  dispatchMode = 'AUTOMATIC', authorizationMode = 'MANUAL'
 } = {}) {
-  return [
+  const browser = orderOverrides.executor_kind === 'BROWSER';
+  const responses = [
     [[{ id: 91, order_id: 'order-1', status: 'RUNNING', attempts: 1 }], []],
     [[{
       id: 'order-1', status: 'CARD_READY', version: 7,
@@ -44,6 +50,7 @@ function beginResponses({
     }], []],
     [[
       { setting_key: 'dispatch_new_recharges', setting_value: String(dispatchEnabled) },
+      { setting_key: 'browser_dispatch_enabled', setting_value: String(browserDispatchEnabled) },
       { setting_key: 'recharge_dispatch_mode', setting_value: dispatchMode }
       ,{ setting_key: 'card_max_successful_payments', setting_value: '3' }
     ], []],
@@ -60,6 +67,8 @@ function beginResponses({
     [{ affectedRows: 1 }, []],
     providerInsert
   ];
+  if (browser) responses.splice(3, 0, [[{ id: 'browser-profile-1' }], []]);
+  return responses;
 }
 
 test('atomically begins an authorized attempt in the required lock/write order', async () => {
@@ -91,7 +100,7 @@ test('atomically begins an authorized attempt in the required lock/write order',
   assert.match(pool.queries[5].sql, /recharge_authorization_items[\s\S]*FOR UPDATE/);
   assert.match(pool.queries[6].sql, /INSERT INTO recharge_attempts/);
   assert.match(pool.queries[6].sql, /'PREPARED', 'ACTIVE'/);
-  assert.equal(pool.queries[6].values[6], 'recharge-auth-item:item-1');
+  assert.equal(pool.queries[6].values[7], 'recharge-auth-item:item-1');
   assert.match(pool.queries[11].sql, /status = 'CONSUMED'/);
   assert.match(pool.queries[12].sql, /SET status = \?, version = version \+ 1/);
   assert.equal(pool.queries[12].values[0], 'SUBMITTING');
@@ -121,12 +130,36 @@ test('Browser route creates the shared funds attempt without a Provider call', a
   });
   assert.equal(result.executorKind, 'BROWSER');
   assert.equal(result.providerAccountId, null);
+  assert.equal(result.executorProfileId, 'browser-profile-1');
   assert.equal(result.providerCallId, null);
   assert.equal(pool.queries.some((entry) => /INSERT INTO provider_calls/.test(entry.sql)), false);
-  assert.match(pool.queries[6].sql, /INSERT INTO recharge_attempts/);
-  assert.match(pool.queries[6].sql, /executor_kind/);
-  assert.equal(pool.queries[12].values[0], 'RECHARGE_PROCESSING');
-  assert.equal(pool.queries[13].values[2], 'RECHARGE_PROCESSING');
+  assert.equal(pool.queries.filter((entry) => /INSERT INTO browser_dispatch_jobs/.test(entry.sql)).length, 1);
+  const attemptInsert = pool.queries.find((entry) => /INSERT INTO recharge_attempts/.test(entry.sql));
+  assert.match(attemptInsert.sql, /executor_profile_id/);
+  assert.equal(attemptInsert.values[6], 'browser-profile-1');
+  const orderUpdate = pool.queries.find((entry) => /SET status = \?, version = version \+ 1/.test(entry.sql));
+  assert.equal(orderUpdate.values[0], 'RECHARGE_PROCESSING');
+  const orderEvent = pool.queries.find((entry) => /INSERT INTO order_events/.test(entry.sql));
+  assert.equal(orderEvent.values[2], 'RECHARGE_PROCESSING');
+});
+
+test('Browser attempt and dispatch job roll back together when atomic enqueue fails', async () => {
+  const pool = scriptedPool(beginResponses({
+    orderOverrides: {
+      executor_kind: 'BROWSER', recharge_provider_account_id: null,
+      provider_code: null, write_enabled: 0
+    }
+  }), { browserDispatchError: new Error('dispatch insert failed') });
+  await assert.rejects(
+    createRechargeAttemptRepository(pool).beginAuthorizedAttempt({
+      orderId: 'order-1', taskId: 91, authorizationItemId: 'item-1',
+      attemptId: 'browser-attempt-atomic', now: new Date('2026-08-20T12:00:00.000Z')
+    }),
+    /dispatch insert failed/
+  );
+  assert.deepEqual(pool.transaction, { began: 1, committed: 0, rolledBack: 1, released: 1 });
+  assert.equal(pool.queries.some((entry) => /INSERT INTO recharge_attempts/.test(entry.sql)), true);
+  assert.equal(pool.queries.some((entry) => /INSERT INTO browser_dispatch_jobs/.test(entry.sql)), true);
 });
 
 test('rolls back every write when provider-call persistence fails', async () => {

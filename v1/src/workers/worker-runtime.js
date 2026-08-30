@@ -13,7 +13,9 @@ export function allowedTaskTypesFor(settings, {
   if (settings.dispatchNewRecharges && (providerWritesEnabled || providerCardWritesEnabled)) types.push(TaskType.PURCHASE_CARD);
   if (settings.dispatchNewRecharges) types.push(TaskType.PREPARE_RECHARGE);
   if (settings.dispatchNewRecharges && providerReadsEnabled
-    && (providerWritesEnabled || providerRechargeWritesEnabled)) types.push(TaskType.SUBMIT_RECHARGE);
+    && (providerWritesEnabled || providerRechargeWritesEnabled || settings.browserDispatchEnabled)) {
+    types.push(TaskType.SUBMIT_RECHARGE);
+  }
   if (settings.pollExistingOrders && providerReadsEnabled) {
     types.push(TaskType.VERIFY_CARD, TaskType.POLL_RECHARGE, TaskType.RECHECK_CANCELLATION);
   }
@@ -42,12 +44,18 @@ export async function runWorkerIteration({
     providerCardWritesEnabled,
     providerRechargeWritesEnabled
   });
+  const allowedRechargeExecutorKinds = [];
+  if (providerReadsEnabled && (providerWritesEnabled || providerRechargeWritesEnabled)) {
+    allowedRechargeExecutorKinds.push('API');
+  }
+  if (settings.browserDispatchEnabled) allowedRechargeExecutorKinds.push('BROWSER');
   return taskRunner({
     pool,
     workerId,
     handlers,
     leaseSeconds,
     allowedTaskTypes,
+    allowedRechargeExecutorKinds,
     rechargeDispatchMode: settings.rechargeDispatchMode
   });
 }

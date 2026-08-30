@@ -222,6 +222,7 @@ const app = createApp({
   ,resolveAdminCardFundingUnknown: cardFundingAdminService.resolveUnknown
   ,listAdminProviderRoutes: providerRouteAdminService.list
   ,switchAdminProviderRoute: providerRouteAdminService.switchRoute
+  ,setAdminDefaultRechargeMethod: providerRouteAdminService.setDefaultRechargeMethod
   ,listCardOperationalOverrides: cardOperationalOverrideService.list
   ,setCardOperationalOverride: cardOperationalOverrideService.set
   ,clearCardOperationalOverride: cardOperationalOverrideService.clear

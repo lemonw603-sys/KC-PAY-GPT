@@ -611,6 +611,10 @@ test('changes intake and one-order recharge permits only through authenticated a
       received.push(['intake', input]);
       return { acceptNewOrders: input.enabled, dispatchExistingOrders: true };
     },
+    setAdminDefaultRechargeMethod: async (input) => {
+      received.push(['method', input]);
+      return { method: input.method, changed: true };
+    },
     setAdminRechargePermit: async (publicNo, input) => {
       received.push(['permit', publicNo, input]);
       return { publicNo, status: 'ARMED', expiresAt: '2026-08-19T12:00:00.000Z' };
@@ -630,6 +634,11 @@ test('changes intake and one-order recharge permits only through authenticated a
       body: JSON.stringify({ enabled: true, confirmation: '开始接单' })
     });
     assert.equal(intake.status, 200);
+    const method = await fetch(`${baseUrl}/api/v1/admin/operations/default-recharge-method`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cookie, Origin: baseUrl },
+      body: JSON.stringify({ method: 'BROWSER', confirmation: '切换默认充值方式为 BROWSER' })
+    });
+    assert.equal(method.status, 200);
     const sensitiveCookie = await stepUp(baseUrl, cookie);
     const permit = await fetch(`${baseUrl}/api/v1/admin/orders/PJV1-DEMO/recharge-permit`, {
       method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: sensitiveCookie, Origin: baseUrl },
@@ -638,6 +647,7 @@ test('changes intake and one-order recharge permits only through authenticated a
     assert.equal(permit.status, 202);
     assert.deepEqual(received, [
       ['intake', { enabled: true, confirmation: '开始接单' }],
+      ['method', { method: 'BROWSER', actorId: 'admin', confirmation: '切换默认充值方式为 BROWSER' }],
       ['permit', 'PJV1-DEMO', { action: 'arm', confirmation: '确认充值 PJV1-DEMO' }]
     ]);
   });

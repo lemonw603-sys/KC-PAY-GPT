@@ -88,3 +88,15 @@ test('Browser dispatch queue stores references and supports expiring claims', ()
   const dispatchDefinition = dispatchSql.slice(dispatchSql.indexOf('CREATE TABLE'));
   assert.doesNotMatch(dispatchDefinition, /session|card_number|checkout_url|authority/i);
 });
+
+test('Browser Worker heartbeat migration is ordered last and replay safe', () => {
+  const heartbeatName = '041_browser_worker_heartbeat.sql';
+  const heartbeatSql = fs.readFileSync(path.join(migrationsDir, heartbeatName), 'utf8');
+  const names = fs.readdirSync(migrationsDir)
+    .filter((name) => /^\d+_[a-z0-9_-]+\.sql$/i.test(name))
+    .sort();
+  assert.equal(names[names.indexOf(heartbeatName) - 1], '040_card_operational_overrides.sql');
+  assert.match(heartbeatSql, /browser_worker_heartbeat_at/);
+  assert.match(heartbeatSql, /ON DUPLICATE KEY UPDATE/i);
+  assert.doesNotMatch(heartbeatSql, /DROP\s+(?:TABLE|COLUMN)/i);
+});

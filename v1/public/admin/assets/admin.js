@@ -342,7 +342,9 @@ async function loadOverview() {
       <progress class="status-bar" max="${maxCount}" value="${item.count}" aria-label="${escapeHtml(item.status)} ${item.count} 单"></progress>
     </button>`).join('')
     : '<p class="empty-state">还没有订单数据</p>';
-  elements.settingList.innerHTML = overview.settings.map((setting) => {
+  const rechargeMethod = String(health.rechargeMethod || '').toUpperCase();
+  const methodControl = `<div><span><strong>默认充值方式</strong><small>只影响切换后新建订单；执行中的订单保持原路线</small></span><span class="segmented-actions"><button class="${rechargeMethod === 'API' ? 'primary-small' : 'ghost-button'} default-recharge-method" type="button" data-method="API" ${rechargeMethod === 'API' ? 'disabled' : ''}>API 充值</button><button class="${rechargeMethod === 'BROWSER' ? 'primary-small' : 'ghost-button'} default-recharge-method" type="button" data-method="BROWSER" ${rechargeMethod === 'BROWSER' || !health.browserRechargeReady ? 'disabled' : ''} title="${health.browserRechargeReady ? '切换为 Browser 充值' : 'Browser 执行器尚未就绪'}">Browser 充值</button></span></div>`;
+  elements.settingList.innerHTML = methodControl + overview.settings.map((setting) => {
     const enabled = setting.value === 'true';
     if (setting.key === 'accept_new_orders') state.acceptingOrders = enabled;
     const control = setting.key === 'recharge_dispatch_mode'
@@ -1171,6 +1173,32 @@ async function setRechargeDispatch(button) {
   }
 }
 
+async function setDefaultRechargeMethod(button) {
+  const method = String(button.dataset.method || '').toUpperCase();
+  if (!['API', 'BROWSER'].includes(method)) return;
+  const label = method === 'API' ? 'API 充值' : 'Browser 充值';
+  if (!window.confirm(`确认将默认充值方式切换为“${label}”？\n\n只影响切换后新建订单；已经创建或正在执行的订单不会改线。`)) return;
+  button.disabled = true;
+  try {
+    await api('/api/v1/admin/operations/default-recharge-method', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ method, confirmation: `切换默认充值方式为 ${method}` })
+    });
+    showNotice(`默认充值方式已切换为${label}；只影响之后新建的订单。`, 'success');
+    await loadOverview();
+  } catch (error) {
+    const messages = {
+      browser_recharge_not_ready: 'Browser 执行器尚未就绪，默认充值方式没有改变。',
+      default_recharge_route_unavailable: '对应充值路线不可用，默认充值方式没有改变。',
+      default_recharge_method_confirmation_required: '确认信息不匹配，默认充值方式没有改变。'
+    };
+    showNotice(messages[error.message] || '默认充值方式切换失败，原设置未改变。');
+    await loadOverview().catch(() => {});
+  } finally {
+    button.disabled = false;
+  }
+}
+
 async function setRechargePermit(publicNo, action, button) {
   const arming = action === 'arm';
   const confirmation = `${arming ? '确认充值' : '撤销充值'} ${publicNo}`;
@@ -1898,6 +1926,11 @@ elements.copyCdks.addEventListener('click', async () => {
   }
 });
 document.addEventListener('click', (event) => {
+  const methodButton = event.target.closest('.default-recharge-method');
+  if (methodButton) {
+    setDefaultRechargeMethod(methodButton);
+    return;
+  }
   const intakeButton = event.target.closest('#toggle-order-acceptance');
   if (intakeButton) {
     setOrderAcceptance(intakeButton);

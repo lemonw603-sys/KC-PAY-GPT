@@ -170,7 +170,7 @@ test('production readonly CLI rejects unknown or ambiguous process modes', () =>
 test('database readiness refuses Browser payment writes even when environment flags are false', async () => {
   const pool = {
     async query(sql) {
-      if (sql.includes('schema_migrations')) return [[{ present: 2 }], []];
+      if (sql.includes('schema_migrations')) return [[{ present: 3 }], []];
       if (sql.includes('browser_payment_writes_enabled')) return [[{ setting_value: 'true' }], []];
       throw new Error('dispatch query must not run');
     },
@@ -182,7 +182,7 @@ test('database readiness refuses Browser payment writes even when environment fl
 
 test('database readiness requires an active read-only Browser executor profile', async () => {
   const query = async (sql) => {
-    if (sql.includes('schema_migrations')) return [[{ present: 2 }], []];
+    if (sql.includes('schema_migrations')) return [[{ present: 3 }], []];
     if (sql.includes('browser_payment_writes_enabled')) return [[{ setting_value: 'false' }], []];
     if (sql.includes('FROM executor_profiles')) {
       return [[{
@@ -202,6 +202,7 @@ test('database readiness requires an active read-only Browser executor profile',
   assert.deepEqual(ready.migrations, [
     '039_card_consumption_attempt_link',
     '040_card_operational_overrides',
+    '041_browser_worker_heartbeat',
   ]);
 
   await assert.rejects(() => checkProductionReadonlyDatabase({
@@ -211,11 +212,11 @@ test('database readiness requires an active read-only Browser executor profile',
     },
   }, {
     executorProfileId: '00000000-0000-4000-8000-000000000001',
-  }), /required Browser migrations 039 and 040/);
+  }), /required Browser migrations 039, 040 and 041/);
 
   const disabledPool = {
     async query(sql) {
-      if (sql.includes('schema_migrations')) return [[{ present: 2 }], []];
+      if (sql.includes('schema_migrations')) return [[{ present: 3 }], []];
       if (sql.includes('browser_payment_writes_enabled')) return [[{ setting_value: 'false' }], []];
       if (sql.includes('FROM executor_profiles')) {
         return [[{ executor_kind: 'BROWSER', status: 'DISABLED', production_writes_enabled: 'false' }], []];

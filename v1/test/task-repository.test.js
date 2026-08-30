@@ -27,7 +27,8 @@ test('claims a pending task with a durable lease', async () => {
   const pool = { getConnection: async () => connection };
 
   const task = await claimNextTask(pool, {
-    workerId: 'worker-a', leaseSeconds: 90, rechargeDispatchMode: 'AUTOMATIC'
+    workerId: 'worker-a', leaseSeconds: 90, rechargeDispatchMode: 'AUTOMATIC',
+    allowedRechargeExecutorKinds: ['API']
   });
 
   assert.equal(task.id, 7);
@@ -35,11 +36,15 @@ test('claims a pending task with a durable lease', async () => {
   const selectCall = calls.find(([sql]) => typeof sql === 'string' && sql.includes('SELECT id'));
   assert.match(selectCall[0], /FOR UPDATE SKIP LOCKED/);
   assert.match(selectCall[0], /INNER JOIN fulfillment_routes/);
-  assert.match(selectCall[0], /pa\.write_enabled = 1/);
+  assert.match(selectCall[0], /fr\.executor_kind = 'API' AND pa\.write_enabled = 1/);
+  assert.match(selectCall[0], /fr\.executor_kind = 'BROWSER'/);
+  assert.match(selectCall[0], /browser_dispatch_enabled/);
+  assert.match(selectCall[0], /browser_profile\.status = 'ACTIVE'/);
   assert.match(selectCall[0], /funds_risk_state IN \('ACTIVE', 'UNKNOWN', 'SETTLED'\)/);
   assert.match(selectCall[0], /pc\.recharge_attempt_id IS NULL/);
   assert.match(selectCall[0], /recharge_authorization_items manual_item/);
   assert.equal(selectCall[1][0], 'AUTOMATIC');
+  assert.equal(selectCall[1][1], 'API');
   assert.doesNotMatch(selectCall[0], /rechargePermit/);
   const updateCall = calls.find(([sql]) => typeof sql === 'string' && sql.includes('UPDATE tasks'));
   assert.deepEqual(updateCall[1].slice(0, 3), ['RUNNING', 'worker-a', 90]);
@@ -117,11 +122,33 @@ test('manual dispatch mode claims only explicit SINGLE or BATCH authorizations',
   await claimNextTask({ getConnection: async () => connection }, {
     workerId: 'worker-gray',
     allowedTaskTypes: ['SUBMIT_RECHARGE'],
+    allowedRechargeExecutorKinds: ['API'],
     rechargeDispatchMode: 'MANUAL'
   });
   assert.equal(calls[0][1][0], 'MANUAL');
   assert.match(calls[0][0], /authorization_mode IN \('SINGLE', 'BATCH'\)/);
   assert.match(calls[0][0], /manual_auth\.expires_at > UTC_TIMESTAMP/);
+  assert.match(calls[0][0], /fr\.executor_kind IN \(\?\)/);
+  assert.equal(calls[0][1][1], 'API');
+});
+
+test('submit task claim is restricted to this process executor capabilities', async () => {
+  const calls = [];
+  const connection = {
+    beginTransaction: async () => {}, commit: async () => {}, rollback: async () => {}, release: () => {},
+    query: async (sql, parameters) => {
+      calls.push([sql, parameters]);
+      if (sql.includes('SELECT id, order_id')) return [[]];
+      return [{ affectedRows: 0 }];
+    }
+  };
+  await claimNextTask({ getConnection: async () => connection }, {
+    workerId: 'browser-only', allowedTaskTypes: ['SUBMIT_RECHARGE'],
+    allowedRechargeExecutorKinds: ['BROWSER'], rechargeDispatchMode: 'AUTOMATIC'
+  });
+  assert.match(calls[0][0], /fr\.executor_kind IN \(\?\)/);
+  assert.equal(calls[0][1][1], 'BROWSER');
+  assert.equal(calls[0][1].includes('API'), false);
 });
 
 test('recoverable configuration waiting cannot exhaust the task retry budget', async () => {

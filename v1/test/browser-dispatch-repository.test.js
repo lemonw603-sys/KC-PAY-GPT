@@ -44,10 +44,14 @@ test('enqueue is idempotent and stores only Browser references', async () => {
 
 test('claim uses an expiring lease and never returns sensitive payload fields', async () => {
   const pool = poolFor((sql) => {
-    if (/FROM browser_dispatch_jobs bdj/.test(sql)) return [[{
-      id: 4, job_key: 'browser-attempt:1', recharge_attempt_id: 'attempt-1', order_id: 'order-1',
-      executor_profile_id: 'profile-1', status: 'QUEUED', attempt_count: 0
-    }], []];
+    if (/FROM browser_dispatch_jobs bdj/.test(sql)) {
+      assert.match(sql, /browser_gate\.setting_key = 'browser_dispatch_enabled'/);
+      assert.match(sql, /browser_gate\.setting_value = 'true'/);
+      return [[{
+        id: 4, job_key: 'browser-attempt:1', recharge_attempt_id: 'attempt-1', order_id: 'order-1',
+        executor_profile_id: 'profile-1', status: 'QUEUED', attempt_count: 0
+      }], []];
+    }
     return [{ affectedRows: 1 }, []];
   });
   const result = await createBrowserDispatchRepository(pool).claim({ workerId: 'worker-1' });

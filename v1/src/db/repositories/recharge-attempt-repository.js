@@ -135,7 +135,7 @@ export function createRechargeAttemptRepository(pool) {
           `SELECT setting_key, setting_value
            FROM app_settings
            WHERE setting_key IN ('dispatch_new_recharges', 'recharge_dispatch_mode',
-             'card_max_successful_payments')
+             'browser_dispatch_enabled', 'card_max_successful_payments')
            ORDER BY setting_key
            FOR UPDATE`
         );
@@ -159,6 +159,22 @@ export function createRechargeAttemptRepository(pool) {
         }
         if (!isBrowserRoute && !Number(orderRow.write_enabled)) {
           throw new RechargeAttemptError('recharge provider account is write-disabled', 'PROVIDER_WRITE_DISABLED');
+        }
+        let browserExecutorProfileId = null;
+        if (isBrowserRoute) {
+          if (settings.browser_dispatch_enabled !== 'true') {
+            throw new RechargeAttemptError('Browser dispatch is disabled', 'BROWSER_DISPATCH_DISABLED');
+          }
+          const [profiles] = await connection.query(
+            `SELECT id FROM executor_profiles
+             WHERE executor_kind = 'BROWSER' AND status = 'ACTIVE'
+             ORDER BY profile_version DESC, created_at DESC LIMIT 1
+             FOR SHARE`
+          );
+          browserExecutorProfileId = profiles[0]?.id || null;
+          if (!browserExecutorProfileId) {
+            throw new RechargeAttemptError('Browser executor profile is disabled', 'EXECUTOR_PROFILE_DISABLED');
+          }
         }
         if (!Number(orderRow.prepayment_ready)) {
           throw new RechargeAttemptError('recharge preparation is not complete', 'PREPAYMENT_NOT_READY');
@@ -286,12 +302,21 @@ export function createRechargeAttemptRepository(pool) {
         await connection.query(
           `INSERT INTO recharge_attempts
            (id, order_id, fulfillment_route_id, provider_account_id, authorization_item_id,
-            executor_kind, status, funds_risk_state, idempotency_key, submit_intent_at, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, 'PREPARED', 'ACTIVE', ?, ?, ?, ?)`,
+            executor_kind, executor_profile_id, status, funds_risk_state, idempotency_key,
+            submit_intent_at, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, 'PREPARED', 'ACTIVE', ?, ?, ?, ?)`,
           [attempt, order, orderRow.fulfillment_route_id, orderRow.recharge_provider_account_id,
-            item, orderRow.executor_kind, idempotencyKey,
+            item, orderRow.executor_kind, browserExecutorProfileId, idempotencyKey,
             now, now, now]
         );
+        if (isBrowserRoute) {
+          await connection.query(
+            `INSERT INTO browser_dispatch_jobs
+             (job_key, recharge_attempt_id, order_id, executor_profile_id, status, queued_at)
+             VALUES (?, ?, ?, ?, 'QUEUED', ?)`,
+            [`browser-attempt:${attempt}`, attempt, order, browserExecutorProfileId, now]
+          );
+        }
 
         const cardConsumption = await reserveCardConsumptionInTransaction(connection, {
           cardId: orderRow.card_id,
@@ -372,6 +397,7 @@ export function createRechargeAttemptRepository(pool) {
           dispatchMode,
           providerAccountId: orderRow.recharge_provider_account_id,
           executorKind: orderRow.executor_kind,
+          ...(isBrowserRoute ? { executorProfileId: browserExecutorProfileId } : {}),
           status: 'PREPARED',
           fundsRiskState: 'ACTIVE',
           providerCallId,

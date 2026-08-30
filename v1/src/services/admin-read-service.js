@@ -480,6 +480,17 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
             WHERE p.product_code = 'chatgpt_plus' AND p.status = 'ACTIVE'
               AND fr.accepts_new_orders = 1 AND fr.retired_at IS NULL
             ORDER BY fr.route_version DESC, fr.created_at DESC LIMIT 1) AS provider_route_code,
+          (SELECT fr.executor_kind
+             FROM fulfillment_routes fr INNER JOIN products p ON p.id = fr.product_id
+            WHERE p.product_code = 'chatgpt_plus' AND p.status = 'ACTIVE'
+              AND fr.accepts_new_orders = 1 AND fr.retired_at IS NULL
+            ORDER BY fr.route_version DESC, fr.created_at DESC LIMIT 1) AS recharge_executor_kind,
+          (SELECT setting_value FROM app_settings
+            WHERE setting_key = 'browser_dispatch_enabled' LIMIT 1) AS browser_dispatch_enabled,
+          (SELECT setting_value FROM app_settings
+            WHERE setting_key = 'browser_worker_heartbeat_at' LIMIT 1) AS browser_worker_heartbeat_at,
+          EXISTS(SELECT 1 FROM executor_profiles
+            WHERE executor_kind = 'BROWSER' AND status = 'ACTIVE') AS browser_profile_active,
           (SELECT pa.account_code
              FROM fulfillment_routes fr INNER JOIN products p ON p.id = fr.product_id
              INNER JOIN provider_accounts pa ON pa.id = fr.card_provider_account_id
@@ -598,6 +609,13 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
         currency: stockRows[0]?.provider_currency || 'USD',
         purchaseEnabled: stockRows[0]?.provider_purchase_enabled == null
           ? null : String(stockRows[0].provider_purchase_enabled) === 'true'
+        ,rechargeMethod: stockRows[0]?.recharge_executor_kind || null
+        ,browserRechargeReady: (() => {
+          const heartbeatAt = Date.parse(stockRows[0]?.browser_worker_heartbeat_at || '');
+          return stockRows[0]?.browser_dispatch_enabled === 'true'
+            && Boolean(stockRows[0]?.browser_profile_active)
+            && Number.isFinite(heartbeatAt) && now() - heartbeatAt <= 60_000;
+        })()
       },
       settings: settingsRows.filter((row) => row.setting_key !== 'worker_heartbeat_at').map((row) => ({
         key: row.setting_key,

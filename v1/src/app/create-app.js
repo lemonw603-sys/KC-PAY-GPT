@@ -56,6 +56,7 @@ export function createApp({
   resolveAdminCardFundingUnknown = null,
   listAdminProviderRoutes = null,
   switchAdminProviderRoute = null,
+  setAdminDefaultRechargeMethod = null,
   listCardOperationalOverrides = null,
   setCardOperationalOverride = null,
   clearCardOperationalOverride = null,
@@ -398,6 +399,22 @@ export function createApp({
           routeId: req.params.routeId,
           actorId: req.admin?.id || 'admin',
           operatorNote: req.body?.note,
+          confirmation: req.body?.confirmation
+        }));
+      } catch (error) {
+        if (error instanceof PublicApiError) {
+          return res.status(error.status || 400).json({ error: error.code.toLowerCase() });
+        }
+        throw error;
+      }
+    });
+  }
+  if (typeof setAdminDefaultRechargeMethod === 'function') {
+    app.post('/api/v1/admin/operations/default-recharge-method', ...adminWriteGuards, async (req, res) => {
+      try {
+        return res.json(await setAdminDefaultRechargeMethod({
+          method: req.body?.method,
+          actorId: req.admin?.id || 'admin',
           confirmation: req.body?.confirmation
         }));
       } catch (error) {

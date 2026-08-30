@@ -5,8 +5,9 @@ import { ProviderError } from '../src/providers/http-client.js';
 import { createWorkflowHandlers } from '../src/workers/workflow-handlers.js';
 import { sessionFixture } from '../test-support/session-fixture.js';
 
-function setup({ status = OrderStatus.CARD_READY, rechargeStatuses = [],
-  rechargeAttemptRepository = null, browserDispatchRepository = null } = {}) {
+function setup({ status = OrderStatus.CARD_READY, executorKind = 'API', rechargeStatuses = [],
+  rechargeAttemptRepository = null, browserDispatchRepository = null,
+  rechargeWritesEnabled = true, browserDispatchEnabled = true } = {}) {
   const calls = [];
   const providerCalls = [];
   const context = {
@@ -18,6 +19,7 @@ function setup({ status = OrderStatus.CARD_READY, rechargeStatuses = [],
       minimum_required_card_balance: 16,
       card_purchase_idempotency_key: 'purchase-order-0001',
       recharge_card_key: 'DIRECT-fixture'
+      ,recharge_executor_kind: executorKind
     },
     card: { provider_card_id: 'card-1' },
     session: sessionFixture()
@@ -94,6 +96,8 @@ function setup({ status = OrderStatus.CARD_READY, rechargeStatuses = [],
     }),
     rechargeAttemptRepository: effectiveAttemptRepository,
     browserDispatchRepository,
+    rechargeWritesEnabled,
+    browserDispatchEnabled,
     wait: async () => {},
     pollDelayMs: 1,
     failureConfirmDelayMs: 1
@@ -105,6 +109,7 @@ function setup({ status = OrderStatus.CARD_READY, rechargeStatuses = [],
 test('Browser submit hands off a durable dispatch job and never calls the recharge Provider', async () => {
   const dispatches = [];
   const state = setup({
+    executorKind: 'BROWSER',
     rechargeAttemptRepository: {
       beginAuthorizedAttempt: async () => ({
         id: 'browser-attempt-1', executorKind: 'BROWSER', startedAt: new Date()
@@ -122,6 +127,26 @@ test('Browser submit hands off a durable dispatch job and never calls the rechar
     executorProfileId: null
   }]);
   assert.equal(state.providerCalls.some((call) => call.operation === 'create_direct'), false);
+});
+
+test('API and Browser submit gates are independent and never fall back across executors', async () => {
+  const api = setup({ rechargeWritesEnabled: false, browserDispatchEnabled: true });
+  await assert.rejects(
+    api.handlers.SUBMIT_RECHARGE({ id: 1, order_id: 'order-1', attempts: 1 }),
+    (error) => error.code === 'RECHARGE_WRITES_DISABLED'
+  );
+  assert.equal(api.providerCalls.length, 0);
+
+  const browser = setup({
+    executorKind: 'BROWSER', rechargeWritesEnabled: true, browserDispatchEnabled: false,
+    rechargeAttemptRepository: { beginAuthorizedAttempt: async () => { throw new Error('must not begin'); } },
+    browserDispatchRepository: { enqueue: async () => { throw new Error('must not enqueue'); } }
+  });
+  await assert.rejects(
+    browser.handlers.SUBMIT_RECHARGE({ id: 1, order_id: 'order-1', attempts: 1 }),
+    (error) => error.code === 'BROWSER_DISPATCH_DISABLED'
+  );
+  assert.equal(browser.providerCalls.length, 0);
 });
 
 test('Foundation v2 consumes an explicit authorization and commits through the funds fence', async () => {
@@ -292,6 +317,25 @@ test('prepares and records a redacted recharge request without submitting it', a
     'prepayment', 'order-1', {
       requestMethod: 'POST',
       requestPath: '/third-party/orders/direct',
+      executorKind: 'API',
+      planType: 'plus',
+      cardLast4: '4242',
+      submitted: false
+    }
+  ]);
+});
+
+test('Browser preparation records checkout evidence without a ZZSHU direct request contract', async () => {
+  const state = setup({ status: OrderStatus.CARD_READY, executorKind: 'BROWSER' });
+  state.context.order.plan_type = 'plus';
+  state.context.card.credentials = {
+    cardNumber: '4242424242424242', expMonth: 12, expYear: 2032, cvv: '123'
+  };
+  await state.handlers.PREPARE_RECHARGE({ id: 10, order_id: 'order-1', attempts: 1 });
+  assert.deepEqual(state.calls.at(-1), [
+    'prepayment', 'order-1', {
+      executorKind: 'BROWSER',
+      requestContract: 'CHATGPT_CHECKOUT',
       planType: 'plus',
       cardLast4: '4242',
       submitted: false

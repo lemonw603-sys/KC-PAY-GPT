@@ -4,12 +4,19 @@ export async function claimNextTask(pool, {
   workerId,
   leaseSeconds = 60,
   allowedTaskTypes = null,
+  allowedRechargeExecutorKinds = [],
   rechargeDispatchMode
 }) {
   if (Array.isArray(allowedTaskTypes) && allowedTaskTypes.length === 0) return null;
   const typeFilter = Array.isArray(allowedTaskTypes)
     ? `AND task_type IN (${allowedTaskTypes.map(() => '?').join(', ')})`
     : '';
+  const executorKinds = [...new Set((allowedRechargeExecutorKinds || [])
+    .map((kind) => String(kind).trim().toUpperCase()))]
+    .filter((kind) => ['API', 'BROWSER'].includes(kind));
+  const executorFilter = executorKinds.length
+    ? `AND fr.executor_kind IN (${executorKinds.map(() => '?').join(', ')})`
+    : 'AND 1 = 0';
   const dispatchMode = String(rechargeDispatchMode || '').trim().toUpperCase();
   if (!['AUTOMATIC', 'MANUAL'].includes(dispatchMode)) {
     throw new TypeError('rechargeDispatchMode must be AUTOMATIC or MANUAL');
@@ -38,10 +45,26 @@ export async function claimNextTask(pool, {
                SELECT 1
                FROM orders o
                INNER JOIN fulfillment_routes fr ON fr.id = o.fulfillment_route_id
-               INNER JOIN provider_accounts pa ON pa.id = fr.recharge_provider_account_id
+               LEFT JOIN provider_accounts pa ON pa.id = fr.recharge_provider_account_id
                WHERE o.id = tasks.order_id
                  AND o.status = 'CARD_READY'
-                 AND pa.write_enabled = 1
+                 ${executorFilter}
+                 AND (
+                   (fr.executor_kind = 'API' AND pa.write_enabled = 1)
+                   OR (
+                     fr.executor_kind = 'BROWSER'
+                     AND EXISTS (
+                       SELECT 1 FROM app_settings browser_gate
+                       WHERE browser_gate.setting_key = 'browser_dispatch_enabled'
+                         AND browser_gate.setting_value = 'true'
+                     )
+                     AND EXISTS (
+                       SELECT 1 FROM executor_profiles browser_profile
+                       WHERE browser_profile.executor_kind = 'BROWSER'
+                         AND browser_profile.status = 'ACTIVE'
+                     )
+                   )
+                 )
                  AND EXISTS (
                    SELECT 1 FROM tasks prepared
                    WHERE prepared.order_id = o.id
@@ -71,7 +94,7 @@ export async function claimNextTask(pool, {
        ORDER BY available_at ASC, id ASC
        LIMIT 1
        FOR UPDATE SKIP LOCKED`,
-      [dispatchMode, TaskStatus.PENDING, TaskStatus.RUNNING, ...(allowedTaskTypes || [])]
+      [dispatchMode, ...executorKinds, TaskStatus.PENDING, TaskStatus.RUNNING, ...(allowedTaskTypes || [])]
     );
 
     if (rows.length === 0) {

@@ -1,5 +1,6 @@
 const RUNTIME_SETTING_KEYS = Object.freeze([
   'dispatch_new_recharges',
+  'browser_dispatch_enabled',
   'recharge_dispatch_mode',
   'poll_existing_orders',
   'sync_card_transactions'
@@ -34,6 +35,10 @@ export async function loadRuntimeSettings(pool) {
     dispatchNewRecharges: parseBooleanSetting(
       'dispatch_new_recharges',
       values.get('dispatch_new_recharges')
+    ),
+    browserDispatchEnabled: parseBooleanSetting(
+      'browser_dispatch_enabled',
+      values.get('browser_dispatch_enabled')
     ),
     rechargeDispatchMode: parseRechargeDispatchMode(values.get('recharge_dispatch_mode')),
     pollExistingOrders: parseBooleanSetting(

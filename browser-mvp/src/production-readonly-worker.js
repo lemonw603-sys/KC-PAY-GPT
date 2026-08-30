@@ -23,6 +23,7 @@ import {
 export const REQUIRED_PRODUCTION_READONLY_MIGRATIONS = Object.freeze([
   '039_card_consumption_attempt_link',
   '040_card_operational_overrides',
+  '041_browser_worker_heartbeat',
 ]);
 
 function delay(ms, signal) {
@@ -42,11 +43,11 @@ export async function checkProductionReadonlyDatabase(pool, { executorProfileId 
   if (!executorProfileId) throw new Error('executorProfileId is required for database readiness');
   const [[migration]] = await pool.query(
     `SELECT COUNT(DISTINCT version) AS present FROM schema_migrations
-     WHERE version IN (?, ?)`,
+     WHERE version IN (?, ?, ?)`,
     REQUIRED_PRODUCTION_READONLY_MIGRATIONS,
   );
   if (Number(migration?.present) !== REQUIRED_PRODUCTION_READONLY_MIGRATIONS.length) {
-    throw new Error('required Browser migrations 039 and 040 are not applied');
+    throw new Error('required Browser migrations 039, 040 and 041 are not applied');
   }
   const [[setting]] = await pool.query(
     `SELECT setting_value FROM app_settings
@@ -136,10 +137,20 @@ export async function runProductionReadonlyBrowserWorker({
     DATABASE_TLS_CA_BASE64: env.DATABASE_TLS_CA_BASE64,
   });
   const pool = createDatabasePool(database);
+  let heartbeatStarted = false;
+  const writeHeartbeat = async (value = new Date().toISOString()) => {
+    await pool.query(
+      `UPDATE app_settings SET setting_value = ?, updated_at = CURRENT_TIMESTAMP(3)
+       WHERE setting_key = 'browser_worker_heartbeat_at'`,
+      [value],
+    );
+  };
   try {
     await checkProductionReadonlyFilesystem(config);
     await checkProductionReadonlyDatabase(pool, { executorProfileId: config.executorProfileId });
     if (env.BROWSER_WORKER_CHECK_ONLY === 'true') return { status: 'READY' };
+    await writeHeartbeat();
+    heartbeatStarted = true;
     const wal = await new AppendOnlyWal({ filePath: config.walPath }).init();
     await wal.verify();
     const runtimeAdapter = new GoogleChromeControlRuntimeAdapter({
@@ -201,6 +212,7 @@ export async function runProductionReadonlyBrowserWorker({
     });
 
     do {
+      await writeHeartbeat();
       const result = await worker.runOnce({ confirmation: SHARED_NONPAYMENT_DRY_RUN_CONFIRMATION });
       await onResult(result);
       if (once || signal?.aborted) return result;
@@ -208,6 +220,7 @@ export async function runProductionReadonlyBrowserWorker({
     } while (!signal?.aborted);
     return { status: 'STOPPED' };
   } finally {
+    if (heartbeatStarted) await writeHeartbeat('').catch(() => {});
     await pool.end();
   }
 }

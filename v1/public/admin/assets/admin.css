@@ -170,6 +170,7 @@ button { cursor: pointer; }
 .setting-list > div:last-child { border: 0; }
 .setting-list strong, .setting-list small { display: block; }
 .setting-list strong { font-size: 13px; }.setting-list small { margin-top: 4px; color: var(--muted); font-size: 11px; }
+.segmented-actions { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
 .switch-state { padding: 5px 8px; border-radius: 999px; color: #8b5960; background: #fff0f1; font-size: 11px; font-style: normal; font-weight: 800; }
 .switch-state.is-on { color: #168368; background: #e9f8f3; }
 

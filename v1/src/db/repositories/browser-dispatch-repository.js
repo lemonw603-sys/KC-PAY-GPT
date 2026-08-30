@@ -240,6 +240,11 @@ export function createBrowserDispatchRepository(pool, { transactionTimeoutMs = 5
              AND rat.executor_kind = 'BROWSER'
              AND rat.status = 'PREPARED' AND rat.funds_risk_state = 'ACTIVE'
              AND o.status = 'RECHARGE_PROCESSING'
+             AND EXISTS (
+               SELECT 1 FROM app_settings browser_gate
+               WHERE browser_gate.setting_key = 'browser_dispatch_enabled'
+                 AND browser_gate.setting_value = 'true'
+             )
              ${profilePredicate}
            ORDER BY bdj.queued_at, bdj.id
            LIMIT 1 FOR UPDATE SKIP LOCKED`,
