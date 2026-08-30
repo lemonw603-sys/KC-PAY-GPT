@@ -21,6 +21,15 @@
 - 生产 API Provider 写入、Browser Worker/gate、真实付款仍保持关闭。
 - 生产启用前仍需候选 release 部署演练、资金/任务只读检查，以及明确的 API 写权限范围确认。
 
+## 部署后只读验收（2026-08-30）
+
+- 当前 release：`/opt/pojia/releases/20260830-order-replenishment-dd0037b`。
+- Web/Worker active；`pojia-ops status` 正常；公网 live/ready 均 HTTP 200。
+- readiness：`ok=true`，migration 041，活动任务/资金风险/UNKNOWN/对账案件均为 0。
+- 当前接单与派发开关为开启，Provider/API/Browser 写入权限仍关闭；Browser Worker disabled。
+- 卡资金补给 timer 当前 inactive，因此没有后台资金写入动作；本轮未创建订单、未开卡、未补余额。
+- 定向订单驱动回归：88 通过、0 失败；本地全量 v1：439 通过、0 失败、38 环境跳过。
+
 ## 提交
 
 - `e07e6a0 fix: retry browser dispatch handoff without releasing funds fence`
