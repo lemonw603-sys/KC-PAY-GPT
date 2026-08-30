@@ -15,6 +15,7 @@
 ## 运行门禁与体检
 
 - 生产服务器已独立复核：`acceptNewOrders=true`、`dispatchNewRecharges=true`、派发模式 `AUTOMATIC`；这是用户此前手动开启并决定继续保留的当前运营状态。
+- 2026-08-30 已部署主线 `4dadf79` 对应 release `/opt/pojia/releases/20260830-browser-routing-4dadf79`；迁移 041 已应用，Web/ API Worker active，Browser Worker 保持 inactive/disabled。部署后公网 live/ready 均 HTTP 200；当前 Browser dispatch gate=false、专用心跳为空，API 路线仍是新订单默认路线。
 - `card_auto_replenishment_enabled=false`；每日自动开卡上限配置值为 `5`，但自动补卡未开启。
 - `PROVIDER_WRITES_ENABLED=false`、`PROVIDER_CARD_WRITES_ENABLED=false`、`PROVIDER_RECHARGE_WRITES_ENABLED=false`。
 - Browser systemd 单元强制 `BROWSER_PAYMENT_WRITES_ENABLED=false`，且服务未启动。
