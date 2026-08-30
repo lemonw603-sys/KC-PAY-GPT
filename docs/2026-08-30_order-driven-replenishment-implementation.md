@@ -52,6 +52,13 @@
 - 生产 release 中 v1 全量测试还会加载 Browser 测试文件，而 v1 独立依赖未包含 Playwright，产生 2 个环境性失败；不影响生产 Web/Worker，需后续拆分测试入口或补测试依赖边界。
 - 本轮未修改生产数据、未执行 Provider 写入、未开卡、未补余额、未付款。
 
+## 测试修正（2026-08-30）
+
+- 已修正自动补卡集成夹具：显式创建 `WAITING_FOR_CARD` 订单。
+- 已修正 fake-provider Worker 集成断言：提交任务以 `handled=true` 为 Worker 合同，订单终态由持久化状态核验。
+- 本地 v1 全量回归恢复为 439 通过、0 失败、38 环境跳过。
+- 以上为测试代码修正，未改变生产业务逻辑；生产当前仍运行 `dd0037b`，测试修正未部署。
+
 ## 提交
 
 - `e07e6a0 fix: retry browser dispatch handoff without releasing funds fence`
