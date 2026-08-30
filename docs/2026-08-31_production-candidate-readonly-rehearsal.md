@@ -25,3 +25,12 @@
 
 ## 边界
 本次没有启用 Browser Worker，没有执行 Provider/卡台写入、开卡、充值、付款或真实订单；生产 current 已恢复原 release。候选 release 保留在服务器供后续可逆部署确认。
+
+## 后续正式切换结果
+用户确认后，已将 `/opt/pojia/current` 切换到候选 `20260831-preflight-8da5127`，重启 Web/Worker 并完成健康检查。首次检查遇到重启瞬间的短暂 502，脚本立即回滚；等待策略修正后第二次切换成功。
+
+- Web/Worker：active
+- Browser Worker：inactive/disabled
+- 公网 live/ready：HTTP 200
+- 备份：切换前立即创建并通过完整性校验
+- Provider、卡台、付款写入：均未执行

@@ -137,6 +137,8 @@
 - Console 唯一错误为 CSP 阻止 inline style，未发现业务请求失败；只读 GET 接口均 HTTP 200。
 - 详细报告：`docs/2026-08-29_card-inventory-readonly-sync-verification.md`。
 
-## 2026-08-31 付款前证据门槛修复（未部署）
+## 2026-08-31 付款前证据门槛修复（已部署）
 
 代码已收紧 API attempt、Browser payment permit/submit intent 与旧 API permit 预检：`last_transaction_synced_at` 缺失或超过 15 分钟均阻断；订单会幂等排队只读交易同步后重试。定向测试 92 项通过，尚未运行全量、尚未部署生产，Provider/卡台写入和真实付款均未执行。
+
+> 状态更新：候选版本已于 2026-08-31 切换生产；Web/Worker active，Browser Worker inactive/disabled，live/ready HTTP 200。Provider/卡台写入和真实付款仍未执行。
