@@ -1003,6 +1003,7 @@ test('automatic replenishment reserves one card at a time and hard-stops at the 
   const pool = mysql.createPool({ uri: databaseUrl, connectionLimit: 3, timezone: 'Z' });
   const service = createCardStockJobService({ pool });
   const created = [];
+  const demandFixture = await createOrder(pool, { status: OrderStatus.WAITING_FOR_CARD });
   const keys = ['card_auto_replenishment_enabled', 'card_replenishment_daily_limit',
     'card_stock_low_threshold', 'default_card_type_id', 'default_open_card_amount',
     'default_minimum_required_card_balance'];
@@ -1089,6 +1090,7 @@ test('automatic replenishment reserves one card at a time and hard-stops at the 
         await pool.query('DELETE FROM app_settings WHERE setting_key=?', [key]);
       }
     }
+    await removeOrder(pool, demandFixture);
     await pool.end();
   }
 });
