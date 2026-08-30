@@ -171,6 +171,18 @@ export function createCardStockJobService({ pool }) {
         await connection.commit();
         return { scheduled: false, reason: 'DISABLED' };
       }
+      // Automatic opening is demand-driven. The timer is only a recovery
+      // fallback; never buy inventory when no customer order is waiting for a
+      // card. The order-triggered path will enqueue the same idempotent job
+      // immediately when it is implemented.
+      const [[demand]] = await connection.query(
+        `SELECT COUNT(*) AS count FROM orders
+         WHERE status = 'WAITING_FOR_CARD'`
+      );
+      if (Number(demand?.count || 0) === 0) {
+        await connection.commit();
+        return { scheduled: false, reason: 'NO_DEMAND' };
+      }
       const limit = integer(settings.get('card_replenishment_daily_limit'), {
         min: 1, max: 500, name: 'daily limit'
       });
