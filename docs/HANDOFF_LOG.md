@@ -651,3 +651,11 @@
 - 生产设置：`card_auto_replenishment_enabled=true`、`card_stock_low_threshold=0`、`card_replenishment_daily_limit=5`；默认卡段/金额为 `16` / `$16`。
 - `pojia-card-stock-runner.timer` 已 `active/enabled`，每 10 秒检查；当前 1 张可分配 Plus 卡，最近日志为 `STOCK_SUFFICIENT`，没有新增开卡。
 - 自动任务执行前仍校验 Provider 规则、账户余额和目录；充值/付款写入保持关闭。
+# 2026-08-30｜订单驱动补给提交部署
+
+- 用户确认部署 `main`；从提交 `dd0037b` 构建不可变 release `/opt/pojia/releases/20260830-order-replenishment-dd0037b`。
+- 部署前回归：v1 `439 pass / 0 fail / 38 skipped`；Browser `103 pass / 0 fail / 4 skipped`；`git diff --check` 通过。
+- 部署前 release `/opt/pojia/releases/20260830-browser-routing-4dadf79` 保留为回滚点；通过原子切换更新 `/opt/pojia/current`。
+- 生产验证：Web/Worker active；`pojia-ops status` 正常；ops/plus live/ready 均 HTTP 200。
+- Browser Worker `disabled`；Provider 写入、卡台写入、真实付款均未开启或执行。
+- 未执行开卡、补余额、提交订单或任何资金写入；本次仅发布订单驱动补给逻辑。

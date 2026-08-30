@@ -16,7 +16,7 @@
 ## 运行门禁与体检
 
 - 生产服务器已独立复核：`acceptNewOrders=true`、`dispatchNewRecharges=true`、派发模式 `AUTOMATIC`；这是用户此前手动开启并决定继续保留的当前运营状态。
-- 2026-08-30 已部署主线 `4dadf79` 对应 release `/opt/pojia/releases/20260830-browser-routing-4dadf79`；迁移 041 已应用，Web/ API Worker active，Browser Worker 保持 inactive/disabled。部署后公网 live/ready 均 HTTP 200；当前 Browser dispatch gate=false、专用心跳为空，API 路线仍是新订单默认路线。
+- 2026-08-30 已部署订单驱动补给提交 `dd0037b` 对应 release `/opt/pojia/releases/20260830-order-replenishment-dd0037b`；上一版 `/opt/pojia/releases/20260830-browser-routing-4dadf79` 保留为回滚点。Web/ API Worker active，Browser Worker 保持 inactive/disabled；公网 live/ready 均 HTTP 200。Provider/API/Browser 付款写入仍关闭。
 - `card_auto_replenishment_enabled=true`；无可分配 Plus 卡时自动开 1 张 `$16` 卡，每日上限 `5`；`card_stock_low_threshold=0`，仍有 1 张可分配卡时不提前开卡。
 - `PROVIDER_WRITES_ENABLED=false`、`PROVIDER_CARD_WRITES_ENABLED=false`、`PROVIDER_RECHARGE_WRITES_ENABLED=false`。
 - Browser systemd 单元强制 `BROWSER_PAYMENT_WRITES_ENABLED=false`，且服务未启动。
