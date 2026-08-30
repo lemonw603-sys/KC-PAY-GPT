@@ -66,6 +66,7 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
                 c.current_balance AS card_current_balance,
                 c.currency AS card_currency,
                 c.last_synced_at AS card_last_synced_at,
+                c.last_transaction_synced_at AS card_last_transaction_synced_at,
                 c.card_credentials_ciphertext
          FROM orders o
          LEFT JOIN fulfillment_routes fr ON fr.id = o.fulfillment_route_id
@@ -92,6 +93,7 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
           current_balance: row.card_current_balance,
           currency: row.card_currency,
           last_synced_at: row.card_last_synced_at,
+          last_transaction_synced_at: row.card_last_transaction_synced_at,
           credentials: row.card_credentials_ciphertext
             ? JSON.parse(decryptSecret(row.card_credentials_ciphertext, sessionEncryptionKey))
             : null
@@ -602,6 +604,28 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
             currentBalance: snapshot.currentBalance == null ? null : String(snapshot.currentBalance)
           }
         });
+      });
+    },
+
+    async queueAssignedCardTransactionSync(orderId) {
+      return inTransaction(pool, async (connection) => {
+        const [rows] = await connection.query(
+          `SELECT c.id AS card_id
+           FROM orders o INNER JOIN cards c ON c.order_id = o.id
+           WHERE o.id = ? FOR UPDATE`, [orderId]
+        );
+        if (rows.length !== 1) throw new Error(`Assigned card not found: ${orderId}`);
+        const [result] = await connection.query(
+          `INSERT INTO card_sync_jobs
+           (id, card_id, status, requested_by, dedupe_key)
+           SELECT UUID(), ?, 'PENDING', 'workflow', ?
+           WHERE NOT EXISTS (
+             SELECT 1 FROM card_sync_jobs
+             WHERE card_id = ? AND status IN ('PENDING','RUNNING')
+           )`,
+          [rows[0].card_id, `order-demand-transaction-sync:${orderId}`, rows[0].card_id]
+        );
+        return { queued: Number(result.affectedRows) === 1, cardId: rows[0].card_id };
       });
     },
 

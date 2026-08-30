@@ -45,7 +45,8 @@ function beginResponses({
       minimum_required_card_balance: '16', card_status: 'active', card_balance: '25',
       card_id: 'card-1', product_id: 'product-plus', open_card_amount: '20', card_currency: 'USD',
       card_credentials_ciphertext: Buffer.from('encrypted'),
-      card_last_synced_at: new Date('2026-08-20T11:59:00.000Z'), prepayment_ready: 1,
+      card_last_synced_at: new Date('2026-08-20T11:59:00.000Z'),
+      card_last_transaction_synced_at: new Date('2026-08-20T11:59:00.000Z'), prepayment_ready: 1,
       ...orderOverrides
     }], []],
     [[
@@ -194,6 +195,7 @@ test('cannot create funds intent before preparation and fresh card checks pass',
   for (const [orderOverrides, code] of [
     [{ prepayment_ready: 0 }, 'PREPAYMENT_NOT_READY'],
     [{ card_last_synced_at: new Date('2026-08-20T11:40:00.000Z') }, 'CARD_CHECK_STALE'],
+    [{ card_last_transaction_synced_at: new Date('2026-08-20T11:40:00.000Z') }, 'CARD_TRANSACTION_CHECK_STALE'],
     [{ card_balance: '1' }, 'CARD_NOT_READY']
   ]) {
     const pool = scriptedPool(beginResponses({ orderOverrides }));

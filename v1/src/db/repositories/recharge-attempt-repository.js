@@ -115,6 +115,7 @@ export function createRechargeAttemptRepository(pool) {
                   c.currency AS card_currency,
                   c.card_credentials_ciphertext,
                   c.last_synced_at AS card_last_synced_at,
+                  c.last_transaction_synced_at AS card_last_transaction_synced_at,
                   EXISTS (
                     SELECT 1 FROM tasks prepared
                     WHERE prepared.order_id = o.id
@@ -183,6 +184,13 @@ export function createRechargeAttemptRepository(pool) {
           ? new Date(orderRow.card_last_synced_at).getTime() : NaN;
         if (!Number.isFinite(cardSyncedAt) || now.getTime() - cardSyncedAt > 15 * 60_000) {
           throw new RechargeAttemptError('card verification is stale', 'CARD_CHECK_STALE');
+        }
+        const transactionSyncedAt = orderRow.card_last_transaction_synced_at
+          ? new Date(orderRow.card_last_transaction_synced_at).getTime() : NaN;
+        if (!Number.isFinite(transactionSyncedAt)
+          || transactionSyncedAt > now.getTime()
+          || now.getTime() - transactionSyncedAt > 15 * 60_000) {
+          throw new RechargeAttemptError('card transaction evidence is stale', 'CARD_TRANSACTION_CHECK_STALE');
         }
         const cardActive = ['active', 'available', 'usable', 'ready']
           .includes(String(orderRow.card_status || '').toLowerCase());

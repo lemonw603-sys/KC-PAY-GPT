@@ -136,3 +136,7 @@
 - 库存总览：可分配 0、使用中 1、暂不可用 1、永久停用 17；卡台余额 `$47.36`、默认卡段 VISA-40024200、剩余开卡额度 292；自动补卡关闭。
 - Console 唯一错误为 CSP 阻止 inline style，未发现业务请求失败；只读 GET 接口均 HTTP 200。
 - 详细报告：`docs/2026-08-29_card-inventory-readonly-sync-verification.md`。
+
+## 2026-08-31 付款前证据门槛修复（未部署）
+
+代码已收紧 API attempt、Browser payment permit/submit intent 与旧 API permit 预检：`last_transaction_synced_at` 缺失或超过 15 分钟均阻断；订单会幂等排队只读交易同步后重试。定向测试 92 项通过，尚未运行全量、尚未部署生产，Provider/卡台写入和真实付款均未执行。

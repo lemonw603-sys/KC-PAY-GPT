@@ -122,6 +122,11 @@ function authoritativePaymentSnapshot(row, now) {
   if (ageMs < 0 || ageMs > PAYMENT_SNAPSHOT_MAX_AGE_MS) {
     throw new BrowserExecutionError('card verification is stale', 'CARD_CHECK_STALE');
   }
+  const transactionSynced = timestampIso(row.card_last_transaction_synced_at, 'card transaction sync time');
+  const transactionAgeMs = now.getTime() - transactionSynced.timestamp;
+  if (transactionAgeMs < 0 || transactionAgeMs > PAYMENT_SNAPSHOT_MAX_AGE_MS) {
+    throw new BrowserExecutionError('card transaction evidence is stale', 'CARD_TRANSACTION_CHECK_STALE');
+  }
   const facts = {
     executorProfileId: row.executor_profile_id,
     attemptId: row.recharge_attempt_id,
@@ -137,7 +142,8 @@ function authoritativePaymentSnapshot(row, now) {
     cardBalanceMicros: balance.toString(),
     minimumBalanceMicros: minimum.toString(),
     cardCredentialsDigest: cardCredentialsDigest(row.card_credentials_ciphertext),
-    cardLastSyncedAt: synced.iso
+    cardLastSyncedAt: synced.iso,
+    cardLastTransactionSyncedAt: transactionSynced.iso
   };
   return {
     hash: createHash('sha256').update(JSON.stringify(facts)).digest('hex'),
@@ -181,6 +187,7 @@ async function lockRunContext(connection, runId) {
             c.current_balance AS card_current_balance,
             c.card_credentials_ciphertext,
             c.last_synced_at AS card_last_synced_at,
+            c.last_transaction_synced_at AS card_last_transaction_synced_at,
             ccl.id AS card_consumption_id,
             ccl.status AS card_consumption_status,
             ccl.recharge_attempt_id AS card_consumption_attempt_id,

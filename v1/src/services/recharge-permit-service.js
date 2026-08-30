@@ -49,8 +49,15 @@ export function validateRechargePreflight(row, { sessionEncryptionKey, now }) {
     throw new RechargePermitError('Session is expired or invalid', 'SESSION_INVALID');
   }
   const syncedAt = row.card_last_synced_at ? new Date(row.card_last_synced_at).getTime() : NaN;
-  if (!Number.isFinite(syncedAt) || now.getTime() - syncedAt > 15 * 60_000) {
+  if (!Number.isFinite(syncedAt) || syncedAt > now.getTime() || now.getTime() - syncedAt > 15 * 60_000) {
     throw new RechargePermitError('Card verification is stale', 'CARD_CHECK_STALE');
+  }
+  const transactionSyncedAt = row.card_last_transaction_synced_at
+    ? new Date(row.card_last_transaction_synced_at).getTime() : NaN;
+  if (!Number.isFinite(transactionSyncedAt)
+    || transactionSyncedAt > now.getTime()
+    || now.getTime() - transactionSyncedAt > 15 * 60_000) {
+    throw new RechargePermitError('Card transaction evidence is stale', 'CARD_TRANSACTION_CHECK_STALE');
   }
   const active = ['active', 'available', 'usable', 'ready'].includes(String(row.card_status || '').toLowerCase());
   if (!active || Number(row.card_balance) < Number(row.minimum_required_card_balance)
@@ -79,7 +86,8 @@ export async function armRechargePermit(pool, {
               o.minimum_required_card_balance, t.id AS task_id,
               t.status AS task_status, t.attempts, t.payload_json,
               c.status AS card_status, c.current_balance AS card_balance,
-              c.card_credentials_ciphertext, c.last_synced_at AS card_last_synced_at
+              c.card_credentials_ciphertext, c.last_synced_at AS card_last_synced_at,
+              c.last_transaction_synced_at AS card_last_transaction_synced_at
        FROM orders o INNER JOIN tasks t ON t.order_id = o.id
        LEFT JOIN cards c ON c.order_id = o.id
        WHERE BINARY o.public_no = ? AND t.task_type = 'SUBMIT_RECHARGE'

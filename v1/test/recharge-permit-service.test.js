@@ -72,6 +72,7 @@ test('recharge preflight requires a live Session and a freshly verified funded c
   const valid = {
     session_ciphertext: encryptSecret(JSON.stringify(sessionFixture({ nowMs: now.getTime() })), key),
     card_last_synced_at: new Date(now.getTime() - 60_000),
+    card_last_transaction_synced_at: new Date(now.getTime() - 60_000),
     card_status: 'active',
     card_balance: '16.000000',
     minimum_required_card_balance: '15.500000',

@@ -1,0 +1,19 @@
+# 付款前交易证据门槛修复｜2026-08-31
+
+## 发现
+两笔真实 API 链路复查与代码审查发现，卡片分配阶段检查 `last_transaction_synced_at`，但付款前 attempt/Browser 权威快照只检查 `last_synced_at`。因此卡在分配后等待超过 15 分钟时，卡资料仍新鲜可能绕过交易证据门槛。
+
+## 修复
+- `recharge-attempt-repository` 在建立 API/Browser 资金 attempt 前同时校验 `last_transaction_synced_at`，缺失、未来时间或超过 15 分钟均 fail-closed 为 `CARD_TRANSACTION_CHECK_STALE`。
+- Browser `authoritativePaymentSnapshot` 将交易同步时间纳入锁定快照及 hash；签发 permit 和提交付款 intent 均复核该字段。
+- Browser/ API 共用同一 15 分钟交易证据原则；Browser 付款不会因旧快照继续执行。
+- API 旧 permit 预检 `recharge-permit-service` 同步增加交易证据门槛。
+- 订单提交遇到交易证据过期时，幂等排队一次只读卡交易同步并短延迟重试，不开卡、不付款、不换卡。
+
+## 验证
+- 定向回归：Browser repository、recharge permit、recharge attempt、workflow handlers 共 92 项通过，0 失败。
+- 新增/更新测试覆盖 Browser 付款快照和 API attempt 的交易证据过期场景。
+- 尚未部署生产；未执行 Provider 写入、卡台写入或真实付款。
+
+## 当前边界
+该修复只收紧付款前证据门槛，不改变库存模型、卡片分配规则、Browser/ API 默认路线或资金未知状态机。部署前仍需运行 v1 全量及 Browser 全量回归，并由用户确认生产部署。

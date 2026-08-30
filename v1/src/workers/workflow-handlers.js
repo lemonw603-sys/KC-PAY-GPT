@@ -323,8 +323,17 @@ export function createWorkflowHandlers({
         taskId: task.id
       });
     } catch (error) {
+      if (error?.code === 'CARD_TRANSACTION_CHECK_STALE') {
+        if (typeof workflow.queueAssignedCardTransactionSync === 'function') {
+          await workflow.queueAssignedCardTransactionSync(task.order_id);
+        }
+        throw new TaskExecutionError('Card transaction evidence is stale; read-only sync queued', {
+          code: 'CARD_TRANSACTION_CHECK_STALE', retryable: true, delayMs: 5_000,
+          refundAttempt: true, cause: error
+        });
+      }
       if (['PROVIDER_WRITE_DISABLED', 'ROUTE_NOT_EXECUTABLE', 'PREPAYMENT_NOT_READY',
-        'CARD_CHECK_STALE', 'CARD_NOT_READY', 'DISPATCH_DISABLED',
+        'CARD_CHECK_STALE', 'CARD_TRANSACTION_CHECK_STALE', 'CARD_NOT_READY', 'DISPATCH_DISABLED',
         'BROWSER_DISPATCH_DISABLED', 'EXECUTOR_PROFILE_DISABLED',
         'DISPATCH_MODE_INVALID', 'MANUAL_AUTHORIZATION_REQUIRED']
         .includes(error?.code)) {

@@ -25,7 +25,8 @@ function paymentSnapshotHash(row) {
     cardBalanceMicros: micros(row.card_current_balance),
     minimumBalanceMicros: micros(row.minimum_required_card_balance),
     cardCredentialsDigest: crypto.createHash('sha256').update(row.card_credentials_ciphertext).digest('hex'),
-    cardLastSyncedAt: new Date(row.card_last_synced_at).toISOString()
+    cardLastSyncedAt: new Date(row.card_last_synced_at).toISOString(),
+    cardLastTransactionSyncedAt: new Date(row.card_last_transaction_synced_at).toISOString()
   };
   return crypto.createHash('sha256').update(JSON.stringify(facts)).digest('hex');
 }
@@ -93,6 +94,7 @@ function runContext(overrides = {}) {
     card_current_balance: '20.000000',
     card_credentials_ciphertext: Buffer.from('encrypted-card-credentials'),
     card_last_synced_at: new Date('2026-08-22T00:00:00.000Z'),
+    card_last_transaction_synced_at: new Date('2026-08-22T00:00:00.000Z'),
     card_consumption_id: 'consumption-1',
     card_consumption_status: 'RESERVED',
     card_consumption_attempt_id: 'attempt-1',
@@ -246,6 +248,7 @@ for (const [name, overrides, code] of [
   ['inactive card', { card_status: 'frozen' }, 'CARD_NOT_READY'],
   ['missing card credentials', { card_credentials_ciphertext: null }, 'CARD_NOT_READY'],
   ['stale card sync', { card_last_synced_at: new Date('2026-08-21T23:40:00.000Z') }, 'CARD_CHECK_STALE'],
+  ['stale transaction evidence', { card_last_transaction_synced_at: new Date('2026-08-21T23:40:00.000Z') }, 'CARD_TRANSACTION_CHECK_STALE'],
   ['route provider mismatch', { route_card_provider_account_id: 'card-provider-2' }, 'CARD_PROVIDER_MISMATCH']
 ]) {
   test(`payment permit rejects ${name}`, async () => {
