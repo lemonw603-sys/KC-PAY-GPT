@@ -193,13 +193,41 @@ export function createRechargeAttemptRepository(pool) {
         }
 
         const [existingAttempts] = await connection.query(
-          `SELECT id, funds_risk_state
+          `SELECT id, status, funds_risk_state, executor_kind, executor_profile_id,
+                  submit_intent_at, created_at
            FROM recharge_attempts
            WHERE order_id = ? AND funds_risk_state IN ('ACTIVE', 'UNKNOWN', 'SETTLED')
            FOR UPDATE`,
           [order]
         );
         if (existingAttempts.length) {
+          // Browser dispatch is a two-step durable handoff: the funds fence
+          // may commit before the dispatch job insert. Reusing an existing
+          // prepared Browser attempt lets a retry idempotently finish enqueue
+          // instead of creating a second fence or dead-lettering the order.
+          const existing = existingAttempts[0];
+          if (existingAttempts.length === 1
+            && existing.executor_kind === 'BROWSER'
+            && existing.status === 'PREPARED'
+            && existing.funds_risk_state === 'ACTIVE') {
+            return {
+              id: existing.id,
+              orderId: order,
+              authorizationItemId: null,
+              authorizationMode: null,
+              dispatchMode,
+              providerAccountId: orderRow.recharge_provider_account_id,
+              executorKind: 'BROWSER',
+              executorProfileId: existing.executor_profile_id || null,
+              status: 'PREPARED',
+              fundsRiskState: 'ACTIVE',
+              providerCallId: null,
+              cardConsumptionId: null,
+              idempotencyKey: null,
+              startedAt: existing.submit_intent_at || existing.created_at || now,
+              idempotentReplay: true
+            };
+          }
           throw new RechargeAttemptError('order already has a funds-risk attempt', 'FUNDS_FENCE_EXISTS');
         }
 

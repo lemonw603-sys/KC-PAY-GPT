@@ -637,3 +637,22 @@ test('rejects transaction sync when the order has no bound card', async () => {
   assert.equal(state.providerCalls.length, 0);
   assert.equal(state.calls.length, 0);
 });
+
+test('Browser dispatch enqueue failure remains retryable without refunding the durable funds fence', async () => {
+  let enqueues = 0;
+  const state = setup({
+    executorKind: 'BROWSER',
+    rechargeAttemptRepository: {
+      beginAuthorizedAttempt: async () => ({ id: 'browser-attempt-retry', executorKind: 'BROWSER', startedAt: new Date() })
+    },
+    browserDispatchRepository: {
+      enqueue: async () => { enqueues += 1; throw new Error('temporary db outage'); }
+    }
+  });
+  await assert.rejects(
+    state.handlers.SUBMIT_RECHARGE({ id: 1, order_id: 'order-1', attempts: 1 }),
+    (error) => error.code === 'BROWSER_DISPATCH_ENQUEUE_RETRY'
+      && error.retryable === true && error.refundAttempt === false
+  );
+  assert.equal(enqueues, 1);
+});

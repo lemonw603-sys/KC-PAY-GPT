@@ -342,12 +342,22 @@ export function createWorkflowHandlers({
           code: 'BROWSER_DISPATCH_UNAVAILABLE', retryable: true, delayMs: 60_000
         });
       }
-      await browserDispatchRepository.enqueue({
-        jobKey: `browser-attempt:${attempt.id}`,
-        attemptId: attempt.id,
-        orderId: task.order_id,
-        executorProfileId: attempt.executorProfileId || null
-      });
+      try {
+        await browserDispatchRepository.enqueue({
+          jobKey: `browser-attempt:${attempt.id}`,
+          attemptId: attempt.id,
+          orderId: task.order_id,
+          executorProfileId: attempt.executorProfileId || null
+        });
+      } catch (error) {
+        // The funds fence is already durable. Keep the task retryable without
+        // refunding/clearing that fence; the next attempt reuses the prepared
+        // Browser attempt and idempotently completes the dispatch handoff.
+        throw new TaskExecutionError('Browser dispatch enqueue failed; retrying durable handoff', {
+          code: 'BROWSER_DISPATCH_ENQUEUE_RETRY', retryable: true,
+          delayMs: 5_000, refundAttempt: false, cause: error
+        });
+      }
       return;
     }
 
