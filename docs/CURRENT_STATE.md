@@ -78,6 +78,7 @@
 - 在统一基线上运行 `npm --prefix browser-mvp run smoke:worker:readonly` 成功；隔离 MySQL、只读 Worker 配置和安全门禁通过，未连接生产。
 - 已生成候选归档 `/tmp/aicharge-main-46b2cc7.tar`；语法检查、全量测试和 `git diff --check` 均通过，候选包未部署。
 - 已整理生产只读启动/停止/回滚演练手册：`docs/2026-08-30_browser-production-readonly-rehearsal.md`；当前因无 SSH 会话尚未执行。
+- 已执行生产只读启动演练但发现部署缺口：当前 release 缺少 `playwright`，Worker 启动失败并触发重启尝试；已立即 stop/disable，当前保持 `inactive/disabled`。详见 `docs/2026-08-30_browser-production-rehearsal-result.md`。
 - 已建立“余额不足卡付款前停止测试”运行手册：`docs/2026-08-29_browser-pre-submit-session-test-runbook.md`；使用用户指定测试 Session，停止于付款按钮前。
 
 - 库存后台收敛已部署生产（2026-08-28），并已通过发布后公网健康、服务状态、备份完整性和未认证路由验收；后台浏览器交叉验收仍待使用管理员会话执行。
