@@ -267,3 +267,11 @@
 - [x] 已切换候选 release `20260831-preflight-8da5127`；Web/Worker 健康检查通过，Browser Worker 仍关闭
 
 证据：`docs/2026-08-31_production-candidate-readonly-rehearsal.md`。
+
+## 2026-08-31 运营后台控制面盘点
+
+- [x] 盘点日常开关、低频配置和高级资金闸门，确认当前操作面过度暴露内部状态
+- [x] 形成最小收敛方案：默认充值方式 + 开始营业/暂停接单 + 就绪摘要
+- [ ] 按盘点结果改造后台首页控制面（不删除底层安全字段）
+
+证据：`docs/2026-08-31_admin-control-surface-audit.md`。
