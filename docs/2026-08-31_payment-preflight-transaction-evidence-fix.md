@@ -12,6 +12,8 @@
 
 ## 验证
 - 定向回归：Browser repository、recharge permit、recharge attempt、workflow handlers 共 92 项通过，0 失败。
+- Browser production-readonly smoke（隔离 MySQL + Chrome）：3 项通过；其中包含共享资金状态机和安全中止流程。
+- Browser readonly 配置/ systemd 检查：10 项通过。
 - 新增/更新测试覆盖 Browser 付款快照和 API attempt 的交易证据过期场景。
 - 尚未部署生产；未执行 Provider 写入、卡台写入或真实付款。
 

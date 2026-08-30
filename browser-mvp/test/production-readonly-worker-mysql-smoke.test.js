@@ -47,6 +47,7 @@ test('production readonly entry claims MySQL dispatch, opens Chrome, and safe-ab
   const html = encodeURIComponent('<title>Shared dry-run fixture</title><main data-shared-dry-run>no-payment</main>');
   const sharedMaterialKey = Buffer.alloc(32, 4);
   try {
+    await pool.query("UPDATE app_settings SET setting_value = 'true' WHERE setting_key = 'browser_dispatch_enabled'");
     await pool.query(
       `INSERT INTO executor_profiles
        (id, profile_code, profile_version, executor_kind, runtime_id,
@@ -75,10 +76,10 @@ test('production readonly entry claims MySQL dispatch, opens Chrome, and safe-ab
        (id, order_id, inventory_status, provider_card_id, card_type_id, status,
         funded_amount, current_balance, currency, refund_status,
         card_credentials_ciphertext, provider_account_id, external_card_id,
-        intake_status, sync_tier, last_synced_at)
+        intake_status, sync_tier, last_synced_at, last_transaction_synced_at)
        VALUES (?, ?, 'ASSIGNED', ?, '7', 'active', 25, 20, 'USD', 'MONITORING',
          ?, '00000000-0000-4000-8000-000000000101', ?, 'ACCEPTED', 'ASSIGNED',
-         CURRENT_TIMESTAMP(3))`,
+         CURRENT_TIMESTAMP(3), CURRENT_TIMESTAMP(3))`,
       [cardId, orderId, `shared-dry-card-${cardId}`, encryptSecret(JSON.stringify({
         cardNumber: '4111111111111111', expMonth: 12, expYear: 2032, cvv: '123',
       }), sharedMaterialKey),
@@ -193,6 +194,7 @@ test('production readonly entry claims MySQL dispatch, opens Chrome, and safe-ab
     assert.equal(dispatchAfterRun.jobs[0].latestRun.status, 'FAILED_SAFE');
     assert.equal(JSON.stringify(dispatchAfterRun).includes('leaseToken'), false);
   } finally {
+    await pool.query("UPDATE app_settings SET setting_value = 'false' WHERE setting_key = 'browser_dispatch_enabled'").catch(() => {});
     await pool.query('DELETE FROM order_events WHERE order_id = ?', [orderId]);
     await pool.query('DELETE FROM payment_permits WHERE recharge_attempt_id = ?', [attemptId]);
     await pool.query('DELETE FROM browser_checkpoints WHERE browser_run_id IN (SELECT id FROM browser_runs WHERE recharge_attempt_id = ?)', [attemptId]);

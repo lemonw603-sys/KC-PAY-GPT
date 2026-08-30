@@ -43,9 +43,10 @@ async function createFixture(pool, label) {
     `INSERT INTO cards
      (id, order_id, inventory_status, provider_card_id, card_type_id, status,
       funded_amount, current_balance, currency, refund_status, card_credentials_ciphertext,
-      provider_account_id, external_card_id, intake_status, sync_tier, last_synced_at)
+      provider_account_id, external_card_id, intake_status, sync_tier, last_synced_at,
+      last_transaction_synced_at)
      VALUES (?, ?, 'ASSIGNED', ?, '7', 'active', 25, 20, 'USD', 'MONITORING', ?,
-       '00000000-0000-4000-8000-000000000101', ?, 'ACCEPTED', 'ASSIGNED', CURRENT_TIMESTAMP(3))`,
+       '00000000-0000-4000-8000-000000000101', ?, 'ACCEPTED', 'ASSIGNED', CURRENT_TIMESTAMP(3), CURRENT_TIMESTAMP(3))`,
     [ids.cardId, ids.orderId, `mock-pay-card-${ids.cardId}`, Buffer.from('isolated-card'), `mock-pay-card-${ids.cardId}`],
   );
   await pool.query(
