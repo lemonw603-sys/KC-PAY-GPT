@@ -36,6 +36,15 @@
 - 本次未连接生产数据库，未创建订单、未触发卡台开卡/补余额、未调用 Provider 写接口。
 - 受限于本机未提供隔离 MySQL，数据库事务级场景仍需在隔离数据库环境补跑；不能把本次 dry-run 当作生产资金动作验收。
 
+## 隔离 MySQL 复跑结果（2026-08-30）
+
+- 已在生产 MySQL 容器中创建并自动清理临时测试库，完成迁移 001–041。
+- 相关套件暴露 2 个**测试夹具/旧断言不匹配**，不是生产写入失败：
+  1. 旧的自动补卡测试未创建 `WAITING_FOR_CARD` 订单，现按新规则返回 `NO_DEMAND`，旧断言仍期待 `FUNDS_REVIEW_REQUIRED`。
+  2. 旧 fake-provider worker 测试仍按旧状态机断言 `COMPLETED`，当前订单驱动路由下返回值不再匹配。
+- 其余该套件 34 项通过；Browser 相关文件在 v1 release 中缺少 Playwright 依赖，导致全量脚本另有环境性失败，未影响 Web/Worker 运行。
+- 因此当前结论是：生产服务健康，但“完整隔离 MySQL 套件全绿”尚未达成；需先更新两处旧夹具/断言并重新复跑，不能宣称全部集成测试通过。
+
 ## 提交
 
 - `e07e6a0 fix: retry browser dispatch handoff without releasing funds fence`
