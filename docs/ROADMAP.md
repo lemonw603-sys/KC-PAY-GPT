@@ -2,12 +2,12 @@
 
 > 2026-08-28 起，跨模块当前执行顺序统一以 `docs/MASTER_EXECUTION_PLAN_2026-08-28.md` 为准；其对抗审查见 `docs/MASTER_EXECUTION_PLAN_ADVERSARIAL_REVIEW_2026-08-28.md`。本文继续保留阶段历史，不再从历史段落单独推导新的“下一步”。
 
-> 状态更正（2026-08-30）：Browser Worker 的生产启动/停止/回滚演练已完成，但生产仍运行旧 release，且真实 ChatGPT 生产形态非付款观察尚未完成。审查另发现 Browser `SUBMIT_RECHARGE` 仍错误依赖 API Provider 写开关/账户，修复并部署前不能消费测试 CDK，更不能进入真实付款。
+> 状态更正（2026-08-30）：Browser/API 路由硬断链、专用心跳、原子 attempt+job 和全局默认充值方式已部署。生产形态安全窗口已证明订单能冻结 Browser 路线，但当前因没有余额达到 `$16` 的可分配 Plus 卡，真实派发在 `WAITING_FOR_CARD` 停止，尚未形成 Browser job 或进入 Checkout。详见 `docs/2026-08-30_browser-production-nonpayment-window-result.md`。
 > `docs/BACKEND_RUNTIME_ALIGNMENT_AUDIT_2026-08-28.md` 是部署前历史快照；当前生产事实以 `docs/CURRENT_STATE.md` 和 `docs/PRE_INVENTORY_CONVERGENCE_SEAL_2026-08-28.md` 为准。
 
-## 当前执行快照（2026-08-29）
+## 当前执行快照（2026-08-30）
 
-- 共享订单、资金栅栏、消费账本、migration 040 和最小卡片运营覆盖均已部署。当前生产 release 为 `/opt/pojia/releases/20260829-order-demand-sync-bba4105`（不含延期的“开始营业”入口和 Browser 新代码）。
+- 共享订单、资金栅栏、消费账本、migration 041、最小卡片运营覆盖和 Browser/API 全局默认路由均已部署。当前生产 release 为 `/opt/pojia/releases/20260830-browser-routing-4dadf79`。
 - 生产接单和自动充值/派发当前为开启；Provider 账户和常驻 Worker 写权限已在第二单完成后恢复为关闭，Browser 付款和自动补卡保持关闭。
 - 当前卡片规则已落地：`6807/1477` 保留原有 `ASSIGNED`；`4744/1065=PRODUCT_ONLY(claude)`；其余当前旧批次 17 张均 `RETIRED`。未来新卡不继承旧批次结论。
 - `1628/6185` 已用于第二单真实 API 订单，不再作为未使用库存自动分配。人工库存模式下不触发低库存提醒；只有真实订单等待卡片时才按订单提醒一次。
@@ -16,8 +16,8 @@
 - 上述按需同步已补全新临时 MySQL 8.4、migration 001–040 集成回归：单任务排队、去重、等待状态、卡片不提前绑定、零 Provider 调用均通过。
 - 卡台当前公布的所有合法卡段均可接管和分配；后台选择的默认卡段只用于未来开卡，不再被错误当作现有卡唯一合法卡段。
 - Browser dispatch 只读展示和消费账本绑定已合入主线；Browser 线继续非付款联调，真实付款仍需单独确认。
-- 充值执行路线已在主线实现为一个全局“默认充值方式”（API/Browser）入口，不做逐订单选择；切换只作用于切换后新创建的订单，既有订单始终使用创建时冻结的路线。当前待候选部署与生产非付款验收。
-- 2026-08-30 已部署 `main@4dadf79` 到生产候选 release，迁移 041 已应用；Browser Worker 仍保持 inactive/disabled，默认 API 路线与 Browser dispatch gate 未改变。生产非付款 Browser 观察仍待单独安全窗口。
+- 充值执行路线已部署为一个全局“默认充值方式”（API/Browser）入口，不做逐订单选择；切换只作用于切换后新创建的订单，既有订单始终使用创建时冻结的路线。当前默认 API。
+- 2026-08-30 已完成一次生产形态安全窗口：Browser Worker READY/IDLE、路由切换和订单冻结均通过；真实库存无 `$16` 可分配卡，订单按正确门禁停在 `WAITING_FOR_CARD`，未创建 Browser job、未访问 ChatGPT。窗口已完整清理，Worker 回到 inactive/disabled。
 - 库存后台信息收敛已完成并部署生产；卡段人工刷新与持久默认选择已部署至 `/opt/pojia/releases/20260829-card-segment-58dfe0d`。
 - 架构约束：这是个人内部使用系统，后续卡片策略修复采用最小字段和最少流程，优先稳定与资金安全，不建设额外的复杂策略服务或过度敏感信息隔离层。
 - `docs/BROWSER_RECHARGE_MODULE_REPORT_2026-08-25.md` 已明确标注为历史快照，不得覆盖当前 Browser 状态源。

@@ -4,13 +4,13 @@
 
 ## 代码与发布
 
-- 当前生产代码提交：`bba4105`（从生产基线 `ef5afd5` 仅带入按订单需求同步过期候选卡的修复，不含延期的“开始营业”入口或 Browser 新代码）。
-- 生产 release：`/opt/pojia/releases/20260829-order-demand-sync-bba4105`，为真实独立目录；上一版本回滚点：`/opt/pojia/releases/20260829-card-refresh-ef5afd5`。
+- 当前生产代码提交：`4dadf79`（运行代码包含 `f95e6bb` 的 Browser/API 路由硬断链、专用心跳、原子 attempt+job 和全局默认充值方式修复）。
+- 生产 release：`/opt/pojia/releases/20260830-browser-routing-4dadf79`；上一版本回滚点：`/opt/pojia/releases/20260829-order-demand-sync-bba4105`。
 - 可靠回滚点：`/opt/pojia/releases/20260828-fea0ffd-rollback`。
 - 服务：Web、API Worker、卡片读同步、卡目录同步、Bark、备份均正常；Browser Worker 保持 `inactive/disabled`。
 - Browser Worker 的候选 release 启动/停止/回滚演练已经通过；生产 `current` 仍是 `bba4105`，未包含主线最新 Browser Session/Checkout harness 和派发修复。
 - 付费补卡 runner 已确认为 `inactive/disabled`，避免重启后每 10 秒唤醒并带入卡台写权限。
-- 最新迁移：`040_card_operational_overrides`。
+- 最新迁移：`041_browser_worker_heartbeat`。
 
 ## 运行门禁与体检
 
@@ -48,6 +48,16 @@
 - 当前已核验的最新部署前加密备份 `/var/backups/pojia/pojia-20260829T060414Z.sql.gz.enc` 已通过解密与 gzip 完整性校验。
 
 ## 当前未完成
+
+### 2026-08-30｜Browser 生产形态非付款安全窗口
+
+- 测试 CDK 已通过正常客户入口创建 Browser 路线订单 `PJV1-TZmbNEpYNd0Gs_YgRKF_`；订单创建时路线正确冻结为 Browser。
+- Browser Worker 使用生产 EXTERNAL_READONLY/ChatGPT harness 配置通过检查并 READY/IDLE；专用心跳和全局默认充值方式门禁实际生效。
+- 正常派发在 `ASSIGN_CARD` 停止：生产没有余额达到 `$16` 的可分配 Plus 卡，订单进入 `WAITING_FOR_CARD / CARD_STOCK_EMPTY`；未建立 attempt、Browser job/run 或资金预留，未访问 ChatGPT。
+- 此结果纠正此前测试计划：余额不足卡不能绕过真实资金/分卡门禁继续到 Checkout；强行改库或降低最低余额不构成真实链路验收。
+- 测试订单已正式取消为 `CLOSED / CANCELLED_PRE_SUBMISSION`，测试 CDK 已兑换不得复用；默认 API、接单/派发原状态、Browser gate/Worker/env 均已恢复。
+- 清理后活动 task、attempt、Browser job/run/lease 均为 0，ops/plus 四个 live/ready 公网端点均为 HTTP 200。
+- 详细证据：`docs/2026-08-30_browser-production-nonpayment-window-result.md`。
 
 ### 2026-08-29｜ChatGPT 只读观察复验（当前停止点）
 

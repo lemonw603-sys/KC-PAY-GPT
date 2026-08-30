@@ -626,3 +626,13 @@
 - 根因定位：官方方案弹窗的“升级至 Plus”按钮为表单外 `type=submit`，旧规则过宽导致假失败；现已改为只拒绝表单内提交控件，并补充说明。
 - 权威收口：订单 `CARD_READY`；attempt/funds `CLEARED`；run `FAILED_SAFE`；dispatch `CANCELLED`；无活动 permit、付款提交记录或资源租约。
 - 未部署、未执行真实开卡/卡充值/付款；下一步是继续只读定位 Checkout 导航失败并补测试，之后再更新本文件与 Browser 合同。
+# 2026-08-30｜Browser 生产形态非付款安全窗口
+
+- 已备份生产 Browser env、systemd 单元和控制面状态；备份目录：`/var/backups/pojia/browser-nonpayment-20260830T084134Z`。
+- Browser Worker 使用 `EXTERNAL_READONLY + SHARED_ENCRYPTED_NONPAYMENT + CHATGPT_ACCOUNT_CHECKOUT` 通过配置检查并 READY/IDLE；付款执行器保持 `false/MOCK`，Provider/卡台写入全部关闭。
+- 临时切换默认充值方式为 Browser，通过正常客户入口使用测试 CDK 创建订单 `PJV1-TZmbNEpYNd0Gs_YgRKF_`；数据库确认订单创建时正确冻结 Browser route。
+- 正常派发在分卡阶段以 `CARD_STOCK_EMPTY` 停止，订单进入 `WAITING_FOR_CARD`。生产没有余额达到 `$16` 的可分配 Plus 卡，因此未创建 recharge attempt、Browser job/run/lease，也未访问 ChatGPT。
+- 已纠正此前“使用余额不足卡仍可沿真实订单链路进入 Checkout”的错误计划：真实生产链路必须先通过卡片余额和可分配资格，不允许靠改库或降低最低余额绕过。
+- 测试订单已通过正式取消服务关闭；CDK 已兑换并绑定该订单，不得复用。默认 API、接单/派发、Browser gate/Worker/env 已全部恢复。
+- 恢复后活动 task、ACTIVE/UNKNOWN attempt、Browser job/run/lease 均为 0；Web/API Worker active，ops/plus 四个公网 live/ready 均为 HTTP 200。
+- 详细报告：`docs/2026-08-30_browser-production-nonpayment-window-result.md`。
