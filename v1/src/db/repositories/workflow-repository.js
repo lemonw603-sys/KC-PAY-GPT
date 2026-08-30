@@ -212,11 +212,36 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
                AND provider_account_id = ?`,
             [order.card_provider_account_id]
           );
+          let replenishmentQueued = false;
+          const [[autoSetting]] = await connection.query(
+            `SELECT setting_value FROM app_settings
+             WHERE setting_key = 'card_auto_replenishment_enabled' LIMIT 1`
+          );
+          if (autoSetting?.setting_value === 'true' && Number(fundable?.count || 0) === 0) {
+            // Bind the automatic opening request to real customer demand. The
+            // stock runner re-checks live rules, balance and quota immediately
+            // before the paid call; this row only provides a durable trigger.
+            const [queued] = await connection.query(
+              `INSERT INTO card_stock_jobs
+               (id, status, job_source, card_type_id, amount, requested_count,
+                opened_count, rules_snapshot_json)
+               SELECT ?, 'PENDING', 'AUTOMATIC', ?, ?, 1, 0, ?
+               WHERE NOT EXISTS (
+                 SELECT 1 FROM card_stock_jobs
+                 WHERE status IN ('PENDING','RUNNING')
+               )`,
+              [crypto.randomUUID(), String(order.card_type_id), String(order.open_card_amount),
+                JSON.stringify({ demandOrderId: String(orderId) })]
+            );
+            replenishmentQueued = Number(queued.affectedRows) === 1;
+          }
           const waitingMessage = refreshCandidates.length > 0
             ? '现有卡正在更新余额和交易，订单会在更新后继续处理。'
             : Number(fundable?.count || 0) > 0
               ? '现有卡需要补充余额，订单正在等待处理。'
-              : '当前没有可用于 Plus 的卡，订单正在等待处理。';
+              : replenishmentQueued
+                ? '当前没有可用卡，已自动安排开卡，订单会继续处理。'
+                : '当前没有可用于 Plus 的卡，订单正在等待处理。';
           await connection.query(
             `INSERT INTO operator_alerts
              (id, alert_type, dedupe_key, severity, title, message, status)
@@ -242,7 +267,11 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
               metadata: { cardTypeId: String(order.card_type_id), minimumRequiredBalance: String(order.minimum_required_card_balance) }
             });
           }
-          return { waitingForCard: true, refreshQueued };
+          return {
+            waitingForCard: true,
+            refreshQueued,
+            ...(replenishmentQueued ? { replenishmentQueued: true } : {})
+          };
         }
         const card = cards[0];
         const [cardUpdate] = await connection.query(

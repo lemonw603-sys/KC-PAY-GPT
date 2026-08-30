@@ -6,6 +6,7 @@
 
 - 当前生产代码提交：`4dadf79`（运行代码包含 `f95e6bb` 的 Browser/API 路由硬断链、专用心跳、原子 attempt+job 和全局默认充值方式修复）。
 - 生产 release：`/opt/pojia/releases/20260830-browser-routing-4dadf79`；上一版本回滚点：`/opt/pojia/releases/20260829-order-demand-sync-bba4105`。
+- 本地 `main` 已新增订单驱动自动开卡触发和 60 秒兜底定时器改动，尚未部署到生产。
 - 可靠回滚点：`/opt/pojia/releases/20260828-fea0ffd-rollback`。
 - 服务：Web、API Worker、卡片读同步、卡目录同步、Bark、备份均正常；Browser Worker 保持 `inactive/disabled`。
 - Browser Worker 的候选 release 启动/停止/回滚演练已经通过；生产 `current` 仍是 `bba4105`，未包含主线最新 Browser Session/Checkout harness 和派发修复。

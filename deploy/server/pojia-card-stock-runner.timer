@@ -3,7 +3,7 @@ Description=每 10 秒检查一次库存卡后台任务
 
 [Timer]
 OnBootSec=15s
-OnUnitActiveSec=10s
+OnUnitActiveSec=60s
 AccuracySec=1s
 Unit=pojia-card-stock-runner.service
 
