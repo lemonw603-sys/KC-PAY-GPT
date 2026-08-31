@@ -77,7 +77,8 @@ const handlers = createWorkflowHandlers({
   buildDirectOrderRequest,
   rechargeAttemptRepository,
   browserDispatchRepository,
-  rechargeWritesEnabled: config.providerRechargeWritesEnabled
+  rechargeWritesEnabled: config.providerRechargeWritesEnabled,
+  holdBeforeProvider: process.env.RECHARGE_SUBMIT_HOLD_BEFORE_PROVIDER === 'true'
 });
 
 function requestShutdown(signal) {

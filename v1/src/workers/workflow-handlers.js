@@ -27,6 +27,7 @@ export function createWorkflowHandlers({
   failureConfirmDelayMs = 2_500,
   rechargeWritesEnabled = true,
   browserDispatchEnabled = true,
+  holdBeforeProvider = false,
   wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 }) {
   if (!rechargeAttemptRepository) {
@@ -343,6 +344,16 @@ export function createWorkflowHandlers({
         });
       }
       throw error;
+    }
+
+    // Test-only boundary: preserve the durable SUBMITTING attempt and stop
+    // immediately before the external recharge call. This is intentionally
+    // injected after all pre-payment checks and never enabled by production
+    // defaults.
+    if (executorKind === 'API' && holdBeforeProvider) {
+      throw new TaskExecutionError('Test hold before external recharge provider call', {
+        code: 'PREPAYMENT_TEST_HOLD', retryable: false, refundAttempt: false
+      });
     }
 
     if (attempt.executorKind === 'BROWSER') {
