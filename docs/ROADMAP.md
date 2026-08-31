@@ -1,5 +1,7 @@
 # AI充值业务路线图
 
+> **当前唯一规划地图：`docs/PROJECT_MAP.md`。** 本文件保存详细阶段清单和历史状态，不再单独决定“下一步”；发生冲突时，生产事实看 `CURRENT_STATE.md`，执行顺序看 `PROJECT_MAP.md`。
+
 > 2026-08-28 起，跨模块当前执行顺序统一以 `docs/MASTER_EXECUTION_PLAN_2026-08-28.md` 为准；其对抗审查见 `docs/MASTER_EXECUTION_PLAN_ADVERSARIAL_REVIEW_2026-08-28.md`。本文继续保留阶段历史，不再从历史段落单独推导新的“下一步”。
 
 > **2026-08-31 当前执行顺序更正**：运营控制面 `973cb72` 与自动补余额 `95ee5ad` 均已部署；用户已确认并开启订单驱动 funding gate、数据库能力开关和 5 秒 timer。空闲验证证明零 Provider 充值调用。下一步是首笔真实补余额验收；通过后进入 3–5 单连续真实订单验证。Browser 线继续并行但不自行真实付款。详见 `docs/2026-08-31_order-driven-card-funding-production-candidate.md`。

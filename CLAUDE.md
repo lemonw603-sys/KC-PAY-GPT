@@ -10,6 +10,7 @@
 
 ## 单一事实源
 
+- 项目方向、总体进度与唯一执行顺序：`docs/PROJECT_MAP.md`（新窗口先读）
 - 当前生产/代码快照：`docs/CURRENT_STATE.md`（库存后台收敛前封账：`docs/PRE_INVENTORY_CONVERGENCE_SEAL_2026-08-28.md`）
 - 产品与技术规格：`docs/V1_SPEC.md`
 - 阶段规划与当前状态：`docs/ROADMAP.md`

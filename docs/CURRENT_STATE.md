@@ -1,22 +1,23 @@
 # 当前状态快照（2026-08-31）
 
 > 本文件只保留当前有效状态。历史过程查 `docs/HANDOFF_LOG.md`；本阶段封账证据查 `docs/PRE_INVENTORY_CONVERGENCE_SEAL_2026-08-28.md`。
+> 项目方向、总体进度和唯一执行顺序查 `docs/PROJECT_MAP.md`。
 
 ## 代码与发布
 
 - 当前生产代码提交：代码 `95ee5ad`、文档对齐 `c185d19`（订单驱动自动补余额版本已发布）；2026-08-31 生产资金执行门禁已按用户确认开启，尚待首笔真实补余额验收。
 - 生产 release：`/opt/pojia/releases/20260831-order-funding-c185d19`；回滚点：`/opt/pojia/releases/20260831-control-browser-973cb72`。
-- 一卡跨订单复用、每卡 1–4 次成功上限和运营控制面均已部署。订单驱动自动补余额执行器现已在生产开启；空闲验证通过，但首笔真实补余额与订单自动恢复仍未验收。
+- 一卡跨订单复用、每卡 1–4 次成功上限和运营控制面均已部署；生产 `card_max_successful_payments=3`。订单驱动自动补余额执行器现已在生产开启；空闲验证通过，但首笔真实补余额与订单自动恢复仍未验收。
 - 自动补余额收口版本 `95ee5ad` 已发布并开启：改为订单驱动，不再后台预充所有低余额卡；5 秒领取订单任务、15 秒低调用量对账。独立 systemd gate、数据库能力开关和 funding timer 均已开启；当前没有待补任务，开启后零 Provider 充值调用。
 - 可靠回滚点：`/opt/pojia/releases/20260828-fea0ffd-rollback`。
 - 服务：Web、API Worker、卡片读同步、卡目录同步、Bark、备份均正常；Browser Worker 保持 `inactive/disabled`。
-- Browser Worker 的候选 release 启动/停止/回滚演练已经通过；生产 `current` 仍是 `bba4105`，未包含主线最新 Browser Session/Checkout harness 和派发修复。
-- 卡余额充值 runner 当前为 `inactive/disabled`；只读对账 timer 为 `active/enabled`。候选 unit 增加独立的 `CARD_FUNDING_EXECUTION_ENABLED` 门禁，普通部署后仍关闭，不会隐式产生卡台写入。
+- Browser Worker 的候选 release 启动/停止/回滚演练已经通过；当前生产 release 已包含主线 Browser Session/Checkout harness、派发修复和跨订单复用兼容代码，但 Browser Worker 仍为 `inactive/disabled`，真实付款未验收。
+- 卡余额 funding timer 与只读对账 timer 均为 `active/enabled`；独立 `CARD_FUNDING_EXECUTION_ENABLED=true`。只有 funding service 获得窄范围卡余额写能力，普通 Web/Worker 和 Browser 写权限未随之打开。
 - 最新迁移：`043_order_assigned_card`。
 
 ## 运行门禁与体检
 
-- 生产服务器已独立复核：`acceptNewOrders=true`、`dispatchNewRecharges=true`、派发模式 `AUTOMATIC`；这是用户此前手动开启并决定继续保留的当前运营状态。
+- 生产服务器已独立复核：`acceptNewOrders=true`、`dispatchNewRecharges=true`、派发模式 `AUTOMATIC`；这是用户此前手动开启并决定继续保留的当前运营状态。 当前默认充值路线已再次从生产 `fulfillment_routes` 核对为 API（`LEGACY_HNSKJ_ZZSHU_V1 accepts_new_orders=1`；Browser 路线为 0）。
 - 2026-08-31 已部署 `/opt/pojia/releases/20260831-order-funding-c185d19`；Web/Worker active，库存 timer、只读补余额对账 timer（15 秒）和卡余额 funding timer（5 秒）均 active/enabled，Browser Worker inactive/disabled；公网 live/ready 均 HTTP 200。
 - `card_auto_replenishment_enabled=true`；无可分配 Plus 卡时自动开 1 张 `$16` 卡，每日上限 `5`；`card_stock_low_threshold=0`，仍有 1 张可分配卡时不提前开卡。
 - 常驻 Web/Worker 仍为 `PROVIDER_WRITES_ENABLED=false`、`PROVIDER_CARD_WRITES_ENABLED=false`、`PROVIDER_RECHARGE_WRITES_ENABLED=false`；只有独立 funding service 以 `PROVIDER_CARD_WRITES_ENABLED=true` + `CARD_FUNDING_EXECUTION_ENABLED=true` 获得窄范围卡余额写能力。生产 `card_balance_recharge_enabled=true`。
