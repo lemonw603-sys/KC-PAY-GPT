@@ -25,6 +25,7 @@ SELECT
   o.id AS order_id,
   o.status AS order_status,
   o.fulfillment_route_id AS order_fulfillment_route_id,
+  o.assigned_card_id AS order_assigned_card_id,
   c.id AS card_id,
   c.order_id AS card_order_id,
   c.provider_card_id AS provider_card_ref,
@@ -40,7 +41,8 @@ SELECT
 FROM browser_runs br
 INNER JOIN recharge_attempts rat ON rat.id = br.recharge_attempt_id
 INNER JOIN orders o ON o.id = rat.order_id
-INNER JOIN cards c ON c.order_id = o.id
+INNER JOIN cards c ON (c.id = o.assigned_card_id
+  OR (o.assigned_card_id IS NULL AND c.order_id = o.id))
 LEFT JOIN card_consumption_ledger ccl ON ccl.recharge_attempt_id = rat.id
 INNER JOIN fulfillment_routes fr ON fr.id = rat.fulfillment_route_id
 WHERE br.id = ?
@@ -73,6 +75,9 @@ export function rowToProjection(row) {
       id: required(row.order_id, 'order_id'),
       status: required(row.order_status, 'order_status'),
       fulfillmentRouteId: required(row.order_fulfillment_route_id, 'order_fulfillment_route_id'),
+      ...(row.order_assigned_card_id == null
+        ? {}
+        : { assignedCardId: required(row.order_assigned_card_id, 'order_assigned_card_id') }),
     },
     attempt: {
       id: required(row.attempt_id, 'attempt_id'),
@@ -91,7 +96,7 @@ export function rowToProjection(row) {
     },
     card: {
       id: required(row.card_id, 'card_id'),
-      orderId: required(row.card_order_id, 'card_order_id'),
+      ownerOrderId: required(row.card_order_id, 'card_order_id'),
       ...(row.provider_card_ref == null
         ? {}
         : { providerCardRef: required(row.provider_card_ref, 'provider_card_ref') }),

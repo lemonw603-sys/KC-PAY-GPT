@@ -4,7 +4,6 @@ import crypto from 'node:crypto';
 import mysql from 'mysql2/promise';
 import { chromium } from 'playwright';
 
-import { createBrowserDispatchRepository } from '../../v1/src/db/repositories/browser-dispatch-repository.js';
 import { createRechargeAttemptRepository } from '../../v1/src/db/repositories/recharge-attempt-repository.js';
 import { MemoryEvidenceSink } from '../src/evidence-sink.js';
 import { createSyntheticManifest } from '../src/fixtures.js';
@@ -23,11 +22,14 @@ test('real MySQL dispatch/run executes a local Browser dry-run and clears every 
 }, async () => {
   const pool = mysql.createPool({ uri: databaseUrl, connectionLimit: 6, timezone: 'Z' });
   const cdkId = crypto.randomUUID();
+  const ownerCdkId = crypto.randomUUID();
   const orderId = crypto.randomUUID();
+  const ownerOrderId = crypto.randomUUID();
   const cardId = crypto.randomUUID();
   const attemptId = crypto.randomUUID();
   const profileId = crypto.randomUUID();
   let originalDispatchSetting = 'false';
+  let originalBrowserDispatchSetting = 'false';
   let authorizationId = null;
   let authorizationItemId = null;
   const evidenceSink = new MemoryEvidenceSink();
@@ -37,6 +39,10 @@ test('real MySQL dispatch/run executes a local Browser dry-run and clears every 
       `SELECT setting_value FROM app_settings WHERE setting_key = 'dispatch_new_recharges' LIMIT 1`,
     );
     originalDispatchSetting = String(dispatchSetting?.setting_value ?? 'false');
+    const [[browserDispatchSetting]] = await pool.query(
+      `SELECT setting_value FROM app_settings WHERE setting_key = 'browser_dispatch_enabled' LIMIT 1`,
+    );
+    originalBrowserDispatchSetting = String(browserDispatchSetting?.setting_value ?? 'false');
     await pool.query(
       `UPDATE app_settings SET setting_value = 'true'
        WHERE setting_key = 'dispatch_new_recharges'`,
@@ -44,6 +50,10 @@ test('real MySQL dispatch/run executes a local Browser dry-run and clears every 
     await pool.query(
       `UPDATE app_settings SET setting_value = 'AUTOMATIC'
        WHERE setting_key = 'recharge_dispatch_mode'`,
+    );
+    await pool.query(
+      `UPDATE app_settings SET setting_value = 'true'
+       WHERE setting_key = 'browser_dispatch_enabled'`,
     );
     await pool.query(
       `INSERT INTO executor_profiles
@@ -56,6 +66,21 @@ test('real MySQL dispatch/run executes a local Browser dry-run and clears every 
     await pool.query('INSERT INTO cdks (id, code_hash, status) VALUES (?, ?, \'REDEEMED\')', [
       cdkId, crypto.createHash('sha256').update(cdkId).digest('hex'),
     ]);
+    await pool.query('INSERT INTO cdks (id, code_hash, status) VALUES (?, ?, \'REDEEMED\')', [
+      ownerCdkId, crypto.createHash('sha256').update(ownerCdkId).digest('hex'),
+    ]);
+    await pool.query(
+      `INSERT INTO orders
+       (id, public_no, cdk_id, status, card_type_id, open_card_amount,
+        minimum_required_card_balance, session_ciphertext,
+        card_purchase_idempotency_key, product_id, fulfillment_route_id,
+        route_resolution_status)
+       VALUES (?, ?, ?, 'SUCCESS', '7', 25, 16, ?, ?, ?, ?, 'RESOLVED')`,
+      [ownerOrderId, `SHARED-CARD-OWNER-${ownerOrderId}`, ownerCdkId,
+        Buffer.from('unused-owner-session'), `shared-owner-purchase-${ownerOrderId}`,
+        productId, routeId],
+    );
+    await pool.query('UPDATE cdks SET order_id = ? WHERE id = ?', [ownerOrderId, ownerCdkId]);
     await pool.query(
       `INSERT INTO orders
        (id, public_no, cdk_id, status, card_type_id, open_card_amount,
@@ -72,13 +97,14 @@ test('real MySQL dispatch/run executes a local Browser dry-run and clears every 
        (id, order_id, inventory_status, provider_card_id, card_type_id, status,
         funded_amount, current_balance, currency, refund_status,
         card_credentials_ciphertext, provider_account_id, external_card_id,
-        intake_status, sync_tier, last_synced_at)
+        intake_status, sync_tier, last_synced_at, last_transaction_synced_at)
        VALUES (?, ?, 'ASSIGNED', ?, '7', 'active', 25, 20, 'USD', 'MONITORING',
          ?, '00000000-0000-4000-8000-000000000101', ?, 'ACCEPTED', 'ASSIGNED',
-         CURRENT_TIMESTAMP(3))`,
-      [cardId, orderId, `shared-dry-card-${cardId}`, Buffer.from('unused-isolated-card'),
+         CURRENT_TIMESTAMP(3), CURRENT_TIMESTAMP(3))`,
+      [cardId, ownerOrderId, `shared-dry-card-${cardId}`, Buffer.from('unused-isolated-card'),
         `shared-dry-card-${cardId}`],
     );
+    await pool.query('UPDATE orders SET assigned_card_id = ? WHERE id = ?', [cardId, orderId]);
     await pool.query(
       `INSERT INTO tasks
        (order_id, task_type, status, dedupe_key, max_attempts, completed_at)
@@ -120,8 +146,19 @@ test('real MySQL dispatch/run executes a local Browser dry-run and clears every 
       attemptId,
       status: 'RESERVED',
     });
-    await createBrowserDispatchRepository(pool).enqueue({
-      jobKey: `shared-dry:${attemptId}`, attemptId, orderId, executorProfileId: profileId,
+    const [[queuedJob]] = await pool.query(
+      `SELECT job_key, executor_profile_id, status
+       FROM browser_dispatch_jobs WHERE recharge_attempt_id = ?`,
+      [attemptId],
+    );
+    assert.deepEqual({
+      jobKey: queuedJob.job_key,
+      executorProfileId: queuedJob.executor_profile_id,
+      status: queuedJob.status,
+    }, {
+      jobKey: `browser-attempt:${attemptId}`,
+      executorProfileId: profileId,
+      status: 'QUEUED',
     });
 
     const dryRun = createSharedNonPaymentDryRun({
@@ -217,12 +254,19 @@ test('real MySQL dispatch/run executes a local Browser dry-run and clears every 
     await pool.query('DELETE FROM tasks WHERE order_id = ?', [orderId]);
     await pool.query('DELETE FROM cards WHERE id = ?', [cardId]);
     await pool.query('DELETE FROM orders WHERE id = ?', [orderId]);
+    await pool.query('DELETE FROM orders WHERE id = ?', [ownerOrderId]);
     await pool.query('DELETE FROM cdks WHERE id = ?', [cdkId]);
+    await pool.query('DELETE FROM cdks WHERE id = ?', [ownerCdkId]);
     await pool.query('DELETE FROM executor_profiles WHERE id = ?', [profileId]);
     await pool.query(
       `UPDATE app_settings SET setting_value = ?
        WHERE setting_key = 'dispatch_new_recharges'`,
       [originalDispatchSetting],
+    );
+    await pool.query(
+      `UPDATE app_settings SET setting_value = ?
+       WHERE setting_key = 'browser_dispatch_enabled'`,
+      [originalBrowserDispatchSetting],
     );
     await pool.end();
   }

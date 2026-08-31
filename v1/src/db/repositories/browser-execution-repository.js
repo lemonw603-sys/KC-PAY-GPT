@@ -86,7 +86,9 @@ function authoritativePaymentSnapshot(row, now) {
     || row.attempt_fulfillment_route_id !== row.route_id) {
     throw new BrowserExecutionError('attempt and order routes do not match', 'ROUTE_BINDING_MISMATCH');
   }
-  if (!row.card_id || row.card_order_id !== row.order_id) {
+  if (!row.card_id || (row.assigned_card_id
+    ? row.assigned_card_id !== row.card_id
+    : row.card_order_id !== row.order_id)) {
     throw new BrowserExecutionError('card is not bound to this order', 'CARD_BINDING_MISMATCH');
   }
   if (!row.card_consumption_id
@@ -180,6 +182,7 @@ async function lockRunContext(connection, runId) {
             rat.fulfillment_route_id AS attempt_fulfillment_route_id,
             o.status AS order_status, o.version AS order_version,
             o.fulfillment_route_id AS order_fulfillment_route_id,
+            o.assigned_card_id,
             o.minimum_required_card_balance,
             c.id AS card_id, c.order_id AS card_order_id,
             c.provider_account_id AS card_provider_account_id,

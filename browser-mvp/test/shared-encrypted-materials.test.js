@@ -104,6 +104,14 @@ test('shared encrypted sources bind material to one active browser_run and short
   await cardProvider.close(cardLease);
 });
 
+test('shared card material SQL resolves the assigned card instead of assuming card ownership by this order', async () => {
+  const cardDb = dbReturning(context());
+  const source = new SharedEncryptedCardMaterialSource({ db: cardDb, encryptionKey: key });
+  await source.load(browserRunMaterialRef('run-fixture'));
+  assert.match(cardDb.calls[0].sql, /c\.id = o\.assigned_card_id/);
+  assert.match(cardDb.calls[0].sql, /o\.assigned_card_id IS NULL AND c\.order_id = o\.id/);
+});
+
 test('shared encrypted material sources fail closed on state, reservation and ciphertext drift', async () => {
   const sessionSource = new SharedEncryptedSessionSource({
     db: dbReturning(context({ run_status: 'FAILED_SAFE' })),

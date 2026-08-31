@@ -85,6 +85,7 @@ function runContext(overrides = {}) {
     order_status: 'RECHARGE_PROCESSING',
     order_version: 4,
     order_fulfillment_route_id: 'route-1',
+    assigned_card_id: 'card-1',
     minimum_required_card_balance: '16.000000',
     card_id: 'card-1',
     card_order_id: 'order-1',
@@ -239,6 +240,25 @@ test('payment permit derives its snapshot from locked card and route facts', asy
   assert.notEqual(result.snapshotHash, digest('f'));
   const insert = pool.calls.find(({ sql }) => /INSERT INTO payment_permits/.test(sql));
   assert.equal(insert.values[4], paymentSnapshotHash(context));
+});
+
+test('payment permit accepts a reused card bound through orders.assigned_card_id', async () => {
+  const leaseToken = 'lease-secret';
+  const leaseHash = crypto.createHash('sha256').update(leaseToken).digest('hex');
+  const context = runContext({
+    payment_state: 'NOT_STARTED', last_checkpoint_sequence: 0,
+    worker_lease_token_hash: leaseHash, card_order_id: 'original-order-1',
+  });
+  const pool = scriptedPool((sql) => {
+    if (/FROM app_settings/.test(sql)) return [[{ setting_value: 'true' }], []];
+    if (/FROM browser_runs br[\s\S]*INNER JOIN recharge_attempts/.test(sql)) return [[context], []];
+    return updateOk();
+  });
+  const result = await createBrowserExecutionRepository(pool).issuePaymentPermit({
+    runId: 'run-1', workerId: 'worker-1', leaseToken,
+    permitId: 'permit-reused-card', now: new Date('2026-08-22T00:01:00.000Z'),
+  });
+  assert.equal(result.snapshotHash, paymentSnapshotHash(context));
 });
 
 for (const [name, overrides, code] of [

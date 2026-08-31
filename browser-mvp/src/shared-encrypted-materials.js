@@ -38,7 +38,8 @@ SELECT br.status AS run_status, br.payment_state,
 FROM browser_runs br
 INNER JOIN recharge_attempts rat ON rat.id = br.recharge_attempt_id
 INNER JOIN orders o ON o.id = rat.order_id
-INNER JOIN cards c ON c.order_id = o.id
+INNER JOIN cards c ON (c.id = o.assigned_card_id
+  OR (o.assigned_card_id IS NULL AND c.order_id = o.id))
 INNER JOIN card_consumption_ledger ccl ON ccl.recharge_attempt_id = rat.id
 INNER JOIN fulfillment_routes fr ON fr.id = rat.fulfillment_route_id
 WHERE br.id = ?`;

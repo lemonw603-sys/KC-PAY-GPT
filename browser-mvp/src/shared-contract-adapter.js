@@ -83,7 +83,15 @@ function projectFormalBinding(projection) {
   const routeId = requireRef(route.id, 'route.id');
   const cardProviderAccountId = requireRef(card.providerAccountId, 'card.providerAccountId');
   const routeCardProviderAccountId = requireRef(route.cardProviderAccountId, 'route.cardProviderAccountId');
-  if (card.orderId !== projection.order.id) throw new ContractError('card.orderId must match order.id');
+  if (projection.order.assignedCardId != null) {
+    if (requireRef(projection.order.assignedCardId, 'order.assignedCardId') !== cardId) {
+      throw new ContractError('order.assignedCardId must match card.id');
+    }
+  } else if ((card.ownerOrderId ?? card.orderId) !== projection.order.id) {
+    // Legacy single-order rows predate orders.assigned_card_id. Only those
+    // rows may use the original card owner as the binding authority.
+    throw new ContractError('legacy card.ownerOrderId must match order.id');
+  }
   if (projection.attempt.fulfillmentRouteId !== route.id) {
     throw new ContractError('attempt.fulfillmentRouteId must match route.id');
   }

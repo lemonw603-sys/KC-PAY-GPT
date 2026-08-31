@@ -17,6 +17,7 @@ function row(overrides = {}) {
     order_id: 'ord-mysql-0001',
     order_status: 'RECHARGE_PROCESSING',
     order_fulfillment_route_id: 'route-mysql-0001',
+    order_assigned_card_id: 'card-mysql-0001',
     attempt_id: 'att-mysql-0001',
     attempt_status: 'PREPARED',
     funds_risk_state: 'ACTIVE',
@@ -59,6 +60,15 @@ test('MySQL adapter reads one formal browser_run and returns a run-bound Browser
   assert.equal(result.sourceDigest.length, 64);
 });
 
+test('MySQL adapter binds a reused card through orders.assigned_card_id and the consumption reservation', async () => {
+  const adapter = createMysqlUpstreamProjectionAdapter({
+    db: { query: async () => [[row({ card_order_id: 'original-order-0001' })], []] },
+  });
+  const result = await adapter.load({ runId: 'run-mysql-0001' });
+  assert.equal(result.job.metadata.upstream.orderId, 'ord-mysql-0001');
+  assert.equal(result.job.metadata.upstream.cardId, 'card-mysql-0001');
+});
+
 test('adapter rejects missing or ambiguous run rows', async () => {
   for (const rows of [[], [row(), row({ run_id: 'run-mysql-0001b' })]]) {
     const adapter = createMysqlUpstreamProjectionAdapter({ db: { query: async () => [rows, []] } });
@@ -84,6 +94,7 @@ test('formal state, route and Provider drift fail closed without reinterpretatio
     { payment_state: 'PAYMENT_SUBMITTING' },
     { card_consumption_status: 'RELEASED' },
     { card_consumption_attempt_id: 'att-mysql-other' },
+    { order_assigned_card_id: 'card-mysql-other' },
     { attempt_profile_id: 'prof-mysql-other' },
   ]) {
     const adapter = createMysqlUpstreamProjectionAdapter({ db: { query: async () => [[row(changed)], []] } });

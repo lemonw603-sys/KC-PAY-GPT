@@ -13,7 +13,9 @@ test('Browser MySQL mapping preserves one payment action and locks unknown resul
 }, async () => {
   const pool = mysql.createPool({ uri: databaseUrl, connectionLimit: 4, timezone: 'Z' });
   const cdkId = crypto.randomUUID();
+  const ownerCdkId = crypto.randomUUID();
   const orderId = crypto.randomUUID();
+  const ownerOrderId = crypto.randomUUID();
   const cardId = crypto.randomUUID();
   const attemptId = crypto.randomUUID();
   const runId = crypto.randomUUID();
@@ -36,6 +38,22 @@ test('Browser MySQL mapping preserves one payment action and locks unknown resul
       [cdkId, crypto.createHash('sha256').update(cdkId).digest('hex')]
     );
     await pool.query(
+      `INSERT INTO cdks (id, code_hash, status) VALUES (?, ?, 'REDEEMED')`,
+      [ownerCdkId, crypto.createHash('sha256').update(ownerCdkId).digest('hex')]
+    );
+    await pool.query(
+      `INSERT INTO orders
+       (id, public_no, cdk_id, status, card_type_id, open_card_amount,
+        minimum_required_card_balance, session_ciphertext,
+        card_purchase_idempotency_key, product_id, fulfillment_route_id,
+        route_resolution_status)
+       VALUES (?, ?, ?, 'SUCCESS', '7', 25, 16, ?, ?, ?, ?, 'RESOLVED')`,
+      [ownerOrderId, `BROWSER-CARD-OWNER-${ownerOrderId}`, ownerCdkId,
+        Buffer.from('isolated-owner-session'), `browser-owner-purchase-${ownerOrderId}`,
+        productId, routeId]
+    );
+    await pool.query('UPDATE cdks SET order_id = ? WHERE id = ?', [ownerOrderId, ownerCdkId]);
+    await pool.query(
       `INSERT INTO orders
        (id, public_no, cdk_id, status, card_type_id, open_card_amount,
         minimum_required_card_balance, session_ciphertext,
@@ -55,9 +73,10 @@ test('Browser MySQL mapping preserves one payment action and locks unknown resul
        VALUES (?, ?, 'ASSIGNED', ?, '7', 'active', 25, 20, 'USD', 'MONITORING',
          ?, '00000000-0000-4000-8000-000000000101', ?, 'ACCEPTED', 'ASSIGNED',
          CURRENT_TIMESTAMP(3), CURRENT_TIMESTAMP(3))`,
-      [cardId, orderId, `browser-test-card-${cardId}`, Buffer.from('isolated-test-card'),
+      [cardId, ownerOrderId, `browser-test-card-${cardId}`, Buffer.from('isolated-test-card'),
         `browser-test-card-${cardId}`]
     );
+    await pool.query('UPDATE orders SET assigned_card_id = ? WHERE id = ?', [cardId, orderId]);
     await pool.query(
       `INSERT INTO recharge_attempts
        (id, order_id, fulfillment_route_id, executor_kind, status,
@@ -157,7 +176,9 @@ test('Browser MySQL mapping preserves one payment action and locks unknown resul
     await pool.query('DELETE FROM card_assignment_history WHERE order_id = ?', [orderId]);
     await pool.query('DELETE FROM cards WHERE id = ?', [cardId]);
     await pool.query('DELETE FROM orders WHERE id = ?', [orderId]);
+    await pool.query('DELETE FROM orders WHERE id = ?', [ownerOrderId]);
     await pool.query('DELETE FROM cdks WHERE id = ?', [cdkId]);
+    await pool.query('DELETE FROM cdks WHERE id = ?', [ownerCdkId]);
     await pool.query('DELETE FROM executor_profiles WHERE id = ?', [profileId]);
     await pool.query(
       `UPDATE app_settings SET setting_value = 'false'

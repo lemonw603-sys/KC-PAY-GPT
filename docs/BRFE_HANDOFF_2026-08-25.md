@@ -1,5 +1,7 @@
 # BRFE 接班入口（Browser 线，2026-08-25）
 
+> **2026-08-31 最新接班点：** Browser 已对齐 `main@9d3d5f4`。一卡多单兼容复核修复了旧 `cards.order_id = orders.id` 假设，当前以 `orders.assigned_card_id + RESERVED card_consumption_ledger` 绑定复用卡；自动补余额仍完全属于共享上游，Browser 只消费同步后的权威余额和 15 分钟交易证据。全量及隔离 MySQL 非付款测试通过，生产未部署、Worker 未启动、付款未执行。下一步是统筹审查本分支提交并安全合入，详见 `docs/browser-research/BROWSER_CARD_REUSE_COMPATIBILITY_2026-08-31.md`。
+
 ## 当前 worktree 与提交
 
 - Worktree：`/Users/lemon/.codex/worktrees/9128/AI充值业务`
