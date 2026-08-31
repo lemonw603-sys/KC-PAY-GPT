@@ -19,7 +19,8 @@ const SELECT_ORDER = `
              ) END
            ) END,
            o.status
-         ) AS effective_status
+         ) AS effective_status,
+         o.customer_email, o.finished_at, o.id AS internal_order_id
   FROM orders o`;
 
 export async function findCustomerOrder(pool, lookup) {
@@ -40,5 +41,11 @@ export async function findCustomerOrder(pool, lookup) {
     ];
   }
   const [rows] = await pool.query(sql, Array.isArray(parameter) ? parameter : [parameter]);
-  return rows[0] || null;
+  const order = rows[0];
+  if (!order) return null;
+  const [events] = await pool.query(
+    `SELECT to_status, created_at FROM order_events WHERE order_id = ? ORDER BY id ASC`,
+    [order.internal_order_id]
+  );
+  return { ...order, events };
 }

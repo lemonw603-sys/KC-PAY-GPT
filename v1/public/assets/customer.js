@@ -100,6 +100,14 @@ const elements = {
   replacementSubmitButton: document.querySelector('#replacement-submit-button'),
   replacementLimit: document.querySelector('#replacement-limit'),
   notice: document.querySelector('#notice')
+  ,successMeta: document.querySelector('#customer-success-meta')
+  ,customerEmail: document.querySelector('#customer-email')
+  ,customerFinishedAt: document.querySelector('#customer-finished-at')
+  ,timeline: document.querySelector('#order-timeline')
+  ,confirmDialog: document.querySelector('#submit-confirm-dialog')
+  ,successDialog: document.querySelector('#success-dialog')
+  ,successEmail: document.querySelector('#success-email')
+  ,successFinishedAt: document.querySelector('#success-finished-at')
 };
 
 let pollTimer = null;
@@ -198,6 +206,19 @@ function renderOrder(order, { scroll = true } = {}) {
   elements.publicNo.textContent = order.publicNo;
   elements.queryInput.value = order.publicNo;
   elements.updatedAt.textContent = formatTime(order.updatedAt);
+  const success = normalizedStatus === 'SUCCESS';
+  elements.successMeta.hidden = !success;
+  if (success) {
+    elements.customerEmail.textContent = order.customerEmail || '—';
+    elements.customerFinishedAt.textContent = formatTime(order.finishedAt || order.updatedAt) || '—';
+    elements.successEmail.textContent = order.customerEmail || '—';
+    elements.successFinishedAt.textContent = formatTime(order.finishedAt || order.updatedAt) || '—';
+    if (elements.successDialog && successShownFor !== order.publicNo && !elements.successDialog.open) {
+      successShownFor = order.publicNo;
+      elements.successDialog.showModal();
+    }
+  }
+  elements.timeline.innerHTML = (order.timeline || []).map((item) => `<li><span>${escapeHtml(STATUS[item.status]?.label || item.status || '处理中')}</span><time>${escapeHtml(formatTime(item.updatedAt))}</time></li>`).join('');
   const mayReplaceSession = normalizedStatus === 'ACTION_REQUIRED'
     && order.actionRequired && !replacementUnavailable;
   elements.replacementForm.hidden = !mayReplaceSession;
@@ -211,6 +232,15 @@ function renderOrder(order, { scroll = true } = {}) {
   if (scroll) elements.resultCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   schedulePoll(order.publicNo, meta);
 }
+
+let submitConfirmed = false;
+let successShownFor = null;
+elements.confirmDialog?.addEventListener('close', () => {
+  if (elements.confirmDialog.returnValue === 'confirm') {
+    submitConfirmed = true;
+    elements.submitForm.requestSubmit();
+  }
+});
 
 // Browser extensions can append non-JSON labels to a pasted Session. Extract
 // only the first complete JSON object without changing its contents.
@@ -349,6 +379,12 @@ elements.submitForm.addEventListener('submit', async (event) => {
   if (!session || typeof session !== 'object' || Array.isArray(session)) {
     return showNotice('请粘贴完整的账号 Session。');
   }
+
+  if (!submitConfirmed) {
+    elements.confirmDialog?.showModal();
+    return;
+  }
+  submitConfirmed = false;
 
   setBusy(elements.submitButton, true, '正在安全提交…');
   try {

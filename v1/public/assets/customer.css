@@ -109,7 +109,7 @@ main { padding-bottom: 0; }
 .tab strong { font-size: 15px; }
 .tab small { margin-top: 3px; color: var(--muted); font-size: 11px; }
 
-.service-layout { display: grid; grid-template-columns: minmax(0, 1.32fr) minmax(390px, .88fr); gap: 20px; align-items: start; }
+.service-layout { display: grid; grid-template-columns: minmax(0, .9fr) minmax(390px, 1.1fr); gap: 20px; align-items: start; }
 .intro-card, .panel, .result-card {
   border: 1px solid var(--line);
   border-radius: var(--radius);
@@ -224,6 +224,20 @@ input[type="text"]:focus, textarea:focus { border-color: #4f86de; box-shadow: 0 
 .session-replacement { margin-top: 16px; padding: 16px; border: 1px solid #f0c6a1; border-radius: 12px; background: #fffaf3; }
 .notice { margin-top: 14px; padding: 12px 14px; border: 1px solid #efb8bd; border-radius: 11px; background: #fff2f3; color: #a8323e; font-size: 12px; line-height: 1.55; }
 .notice[data-kind="success"] { border-color: #a9d9ca; background: #edf9f5; color: #166d57; }
+.customer-success-meta { display: grid; gap: 8px; margin-top: 14px; padding: 12px 14px; border: 1px solid #cde9df; border-radius: 11px; background: #f3fcf8; font-size: 11px; }
+.customer-success-meta p { display: flex; justify-content: space-between; gap: 12px; margin: 0; color: var(--muted); }
+.customer-success-meta span { color: var(--text); font-weight: 700; overflow-wrap: anywhere; text-align: right; }
+.order-timeline { display: grid; gap: 7px; margin: 14px 0 0; padding: 0; list-style: none; }
+.order-timeline:empty { display: none; }
+.order-timeline li { display: flex; justify-content: space-between; gap: 12px; color: #53677e; font-size: 10px; }
+.order-timeline time { color: var(--muted); text-align: right; }
+.confirm-dialog { width: min(92vw, 420px); border: 1px solid var(--line); border-radius: 16px; padding: 22px; color: var(--text); box-shadow: 0 24px 70px rgba(22, 43, 73, .24); }
+.confirm-dialog::backdrop { background: rgba(19, 39, 65, .3); }
+.confirm-dialog h2 { margin: 0; font-size: 19px; }
+.confirm-dialog p { color: var(--muted); font-size: 12px; line-height: 1.6; }
+.dialog-actions { display: flex; justify-content: flex-end; gap: 9px; margin-top: 18px; }
+.dialog-actions > button:not(.primary-button) { border: 1px solid var(--line); border-radius: 9px; background: white; color: var(--text); padding: 9px 12px; font-size: 11px; }
+.dialog-actions .primary-button { width: auto; min-height: 38px; padding: 0 14px; font-size: 11px; }
 
 footer { padding: 3px 0; color: #8a99aa; border-top: 1px solid var(--line); text-align: center; font-size: 10px; line-height: 14px; }
 footer p { margin: 0; }

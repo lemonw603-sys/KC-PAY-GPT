@@ -112,6 +112,11 @@
               <button class="primary-button" id="replacement-submit-button" type="submit"><span>更换并继续处理</span><span class="button-arrow" aria-hidden="true">→</span></button>
             </form>
             <p class="polling-note" id="polling-note"></p>
+            <div class="customer-success-meta" id="customer-success-meta" hidden>
+              <p><strong>账号邮箱</strong><span id="customer-email">—</span></p>
+              <p><strong>完成时间</strong><span id="customer-finished-at">—</span></p>
+            </div>
+            <ol class="order-timeline" id="order-timeline" aria-label="订单处理进度"></ol>
           </section>
           <div class="notice" id="notice" role="status" aria-live="polite" tabindex="-1" hidden></div>
         </div>
@@ -119,6 +124,21 @@
     </main>
     <footer><p>请妥善保管 CDK卡密和订单查询码。</p></footer>
   </div>
+  <dialog class="confirm-dialog" id="submit-confirm-dialog" aria-labelledby="submit-confirm-title">
+    <form method="dialog" id="submit-confirm-form">
+      <h2 id="submit-confirm-title">确认提交充值？</h2>
+      <p>确认后将创建订单并开始处理。Session 原文不会在弹窗中显示。</p>
+      <div class="dialog-actions"><button value="cancel" type="submit">返回检查</button><button class="primary-button" id="confirm-submit-button" value="confirm" type="submit">确认创建订单</button></div>
+    </form>
+  </dialog>
+  <dialog class="confirm-dialog success-dialog" id="success-dialog" aria-labelledby="success-title">
+    <form method="dialog">
+      <h2 id="success-title">Plus 已成功开通</h2>
+      <p>订单已完成，下面是本次处理的账号信息：</p>
+      <div class="customer-success-meta"><p><strong>账号邮箱</strong><span id="success-email">—</span></p><p><strong>完成时间</strong><span id="success-finished-at">—</span></p></div>
+      <div class="dialog-actions"><button class="primary-button" value="close" type="submit">知道了</button></div>
+    </form>
+  </dialog>
   <noscript><p class="noscript">需要启用 JavaScript 才能提交或查询订单。</p></noscript>
 </body>
 </html>

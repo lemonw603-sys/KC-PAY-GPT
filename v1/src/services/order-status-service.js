@@ -68,6 +68,13 @@ export function mapCustomerOrderStatus(internalStatus) {
   return CUSTOMER_STATUS[internalStatus] || 'REVIEWING';
 }
 
+function customerTimeline(events = []) {
+  return events.map((event) => ({
+    status: mapCustomerOrderStatus(event.to_status),
+    updatedAt: isoDate(event.created_at)
+  })).filter((event, index, list) => index === 0 || event.status !== list[index - 1].status);
+}
+
 export function createOrderStatusService({
   pool,
   cdkHashKey,
@@ -83,10 +90,11 @@ export function createOrderStatusService({
       });
     }
     const action = CUSTOMER_ACTIONS[order.customer_action_code] || null;
-    return {
+    const response = {
       publicNo: order.public_no,
       status: mapCustomerOrderStatus(order.effective_status),
       updatedAt: isoDate(order.updated_at),
+      ...(Array.isArray(order.events) ? { timeline: customerTimeline(order.events) } : {}),
       ...(action ? {
         actionRequired: action,
         sessionReplacement: {
@@ -96,5 +104,10 @@ export function createOrderStatusService({
         }
       } : {})
     };
+    if (response.status === 'SUCCESS') {
+      response.customerEmail = order.customer_email || null;
+      response.finishedAt = isoDate(order.finished_at || order.updated_at);
+    }
+    return response;
   };
 }
