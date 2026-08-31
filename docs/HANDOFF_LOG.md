@@ -841,3 +841,11 @@
 - 重启后 Worker `active`，进程环境核对：`PROVIDER_READS_ENABLED=true`、`PROVIDER_RECHARGE_WRITES_ENABLED=true`、`PROVIDER_WRITES_ENABLED=false`、`PROVIDER_CARD_WRITES_ENABLED=false`。
 - 当前默认 Plus 路线为 API，`provider_accounts.write_enabled=1/read_enabled=1`；接单与自动派发数据库开关均为 true。
 - 只读 readiness：`ok=true`，`apiRechargeExecutionEnabled=true`，active tasks/expired leases/uncertain calls/active funds risk/open reconciliation 均为 0，Worker heartbeat age 14 秒，最新 migration 044；本步骤未创建订单、未付款、未调用 Provider。
+
+# 2026-08-31｜恢复 API 常驻最小充值权限
+
+- 用户确认后现场核对生产 `elegant-unicorn-1.localdomain`：`/opt/pojia/current` 仍为 `/opt/pojia/releases/20260831-prepayment-hold-55b6ec4`。
+- `/etc/systemd/system/pojia-worker.service.d/api-recharge-enabled.conf` 已存在且明确设置 `PROVIDER_RECHARGE_WRITES_ENABLED=true`；仅保留 `PROVIDER_WRITES_ENABLED=false`、`PROVIDER_CARD_WRITES_ENABLED=false`。创建备份 `/var/backups/pojia/api-recharge-enable-20260831T104328Z`，执行 daemon-reload 并重启 Worker。
+- 重启后 `pojia-worker.service=active/running`，进程环境实际为 `PROVIDER_RECHARGE_WRITES_ENABLED=true`、通用 Provider/卡片写=false；`/health/ready` 返回 `{"status":"ready"}`。
+- 数据库只读核对：recharge account `zzshu/legacy-primary/RECHARGE` 为 `read_enabled=1、write_enabled=1、circuit_state=CLOSED`；card account `hnskj/legacy-primary/CARD` 为 `read_enabled=1、write_enabled=0、circuit_state=CLOSED`。接单/派发及自动补给开关仍为 true，三个补给 timer active。
+- 本动作未创建订单、未读取客户 Session、未调用 Provider、未开卡、未补余额、未付款。后台管理员 readiness 细项尚待登录会话复核。

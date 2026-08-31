@@ -1,4 +1,4 @@
-# 当前生产状态快照｜2026-08-31 16:05 CST
+# 当前生产状态快照｜2026-08-31 18:45 CST
 
 > 只保留当前有效事实；历史过程查 `HANDOFF_LOG.md`，方向与顺序查 `PROJECT_MAP.md`，全链路和验收细则查 `PROJECT_OPERATING_MODEL.md`。
 > 本快照已现场核对生产 release、systemd、Worker 进程环境、数据库 Provider account 和只读 readiness。
@@ -21,15 +21,15 @@
 - Worker 实际进程环境：
   - `PROVIDER_WRITES_ENABLED=false`
   - `PROVIDER_CARD_WRITES_ENABLED=false`
-  - `PROVIDER_RECHARGE_WRITES_ENABLED=false`
+  - `PROVIDER_RECHARGE_WRITES_ENABLED=true`（已恢复并重启后核对）
 - 数据库 recharge Provider account：`read_enabled=1`、`write_enabled=1`、`circuit_state=CLOSED`。
 - 数据库 card Provider account：`read_enabled=1`、`write_enabled=0`、`circuit_state=CLOSED`；现行 stock/funding runner 不以该 `write_enabled` 为写门禁，而以各自 systemd 窄范围 gate 为准。这是字段语义不一致，但不是当前补给的实际阻断。
-- 因 Worker 进程门禁为 false，数据库账户允许写也不能执行 API 最终充值。
-- 只读 readiness：`ok=false`；唯一 blocker 为 `api_recharge_execution_disabled`；活动任务、过期租约、UNKNOWN Provider 调用、活动资金风险和开放对账案件均为 0。
+- Worker 进程已具备 API 最终充值能力；数据库 recharge Provider account 同样允许写。
+- `/health/ready` 返回 `{"status":"ready"}`；Worker 重启后 active/running，进程环境实际为 `PROVIDER_RECHARGE_WRITES_ENABLED=true`。后台 readiness 需用已登录管理员会话复核，不能以未认证 404/401 代替。
 
 ### 当前结论
 
-生产目前是**业务开关已营业，但 API 最终执行权限关闭**的半开状态，不能直接承诺客户订单会自动充值完成。该状态与已确认的“API 最小充值权限长期常开”基线冲突；下一步必须先恢复 `PROVIDER_RECHARGE_WRITES_ENABLED=true`，其余写门禁继续关闭，并重跑 readiness。
+生产目前已恢复 API 最小执行权限：业务开关已营业，Worker 具备 API 最终充值能力；后台 readiness 细项仍需登录会话复核。
 
 ## 3. “开始营业”当前真实行为
 
@@ -77,7 +77,7 @@
 
 ## 6. 当前唯一下一步
 
-1. 恢复 Worker 常驻最小 API 充值权限为 true；确保 hold 关闭，通用 Provider/卡片写与 Browser 付款仍关闭。
-2. 重启后验证 readiness `ok=true`、Worker 能力心跳 true，且活动测试任务/资金风险仍为 0。
-3. 再接受下一笔真实 API 订单。当前已有 1 张 `$16` 可分配卡，因此不人为破坏库存来强行测补余额/开卡；实际命中时再联合验收。
+1. 已恢复 Worker 常驻最小 API 充值权限并完成重启/只读核对；hold 关闭，通用 Provider/卡片写与 Browser 付款仍关闭。
+2. 下一步是使用已登录后台复核 readiness 细项并确认活动任务/资金风险为 0。
+3. 复核通过后接受下一笔真实 API 订单。当前已有 1 张 `$16` 可分配卡，不人为破坏库存来强行测补余额/开卡；实际命中时联合验收。
 4. 通过后进入 3–5 单连续 API 验收；Browser 非付款线并行。

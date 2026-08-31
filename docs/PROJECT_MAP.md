@@ -1,7 +1,7 @@
 # AI充值业务｜唯一项目规划地图
 
 > **用途**：只回答四件事：项目目标、当前生产事实、已完成/未完成、唯一执行顺序。
-> **最后统一核对**：2026-08-31 16:05 CST。已对照前后端代码、生产 `/opt/pojia/current`、systemd、进程环境、数据库开关/卡片资格和只读 readiness；本轮未执行任何生产写入。
+> **最后统一核对**：2026-08-31 18:45 CST。已对照前后端代码、生产 `/opt/pojia/current`、systemd、进程环境、数据库开关/卡片资格和只读 readiness；本轮未执行任何生产写入。
 > 历史报告不能覆盖本地图；实时生产事实优先，变化后必须同步更新本地图与 `CURRENT_STATE.md`。
 > 全链路、控制矩阵、自动补给状态机、库存最小模型、资金边界、通知、回滚和验收细则统一见 `docs/PROJECT_OPERATING_MODEL.md`。
 
@@ -41,10 +41,10 @@
 | Browser Worker | inactive / disabled | 未进入真实 Browser 付款 |
 | 接单 / 派发 | true / true | 只读 readiness；当前后台已处于营业业务状态 |
 | 默认路线 | API | 只读 readiness |
-| Worker 最终 API 充值能力 | **false** | 进程环境 `PROVIDER_RECHARGE_WRITES_ENABLED=false` |
+| Worker 最终 API 充值能力 | **true** | 已安装最小权限 drop-in，重启后进程环境为 `PROVIDER_RECHARGE_WRITES_ENABLED=true` |
 | Provider recharge account | `write_enabled=1` | 数据库只读核对；但进程门禁为 false，仍不能执行 |
 | Provider card account | `write_enabled=0`，circuit=CLOSED | 当前 stock/funding runner **不以该字段为写门禁**，而以各自窄范围进程 gate 为准；这个语义不一致需在后续收敛，不得猜测它当前会阻断补给 |
-| readiness | **不通过** | 唯一 blocker：`api_recharge_execution_disabled` |
+| readiness | **待后台会话复核** | `/health/ready` 通过；未认证请求不能代替管理员 readiness 细项 |
 | 通用 Provider / 卡片写 | false / false | Worker 进程环境 |
 | 独立自动补余额 | DB gate=true；`pojia-card-funding.timer` 与 reconcile timer active/enabled | 独立 runner 只开补余额所需卡片写；空闲零写已验证，首笔真实补余额未验收 |
 | 独立自动开卡 | DB gate=true；`pojia-card-stock-runner.timer` active/enabled，60 秒兜底 | stock runner 只开开卡所需卡片写；真实缺卡订单闭环未验收 |
@@ -53,7 +53,7 @@
 | 活动任务/资金风险/开放对账 | 0 / 0 / 0 | 2026-08-31 13:26 只读 readiness |
 | 最新 migration | 044 | 只读 readiness |
 
-**当前关键漂移**：已确认的生产基线是 API 最小充值权限长期打开，但付款前暂停演练清理后，Worker 被恢复成了 `false`。因此现在是“接单和派发已开，但最终 API 充值执行被阻断”的半开状态，不能宣称可直接营业完成充值。必须先修复这个配置漂移。
+**当前状态**：API 最小充值权限已按确认恢复，Worker 进程实际为 `true`；接单和派发已开。后台 readiness 细项仍需用已登录会话复核，不能以未认证请求代替。
 
 ## 4. “开始营业”真实合同（按代码核对）
 
@@ -99,7 +99,7 @@
 
 ### P0｜立即修正生产半开漂移
 
-- 恢复已确认的 API 常驻最小执行能力：Worker `PROVIDER_RECHARGE_WRITES_ENABLED=true`；保持 Worker 通用 Provider/普通卡片写与 Browser 付款关闭。独立 funding/stock runner 保持它们已确认的窄范围卡片写权限，不得被误关。
+- 已恢复并核对 API 常驻最小执行能力：Worker `PROVIDER_RECHARGE_WRITES_ENABLED=true`；保持 Worker 通用 Provider/普通卡片写与 Browser 付款关闭。独立 funding/stock runner 保持它们已确认的窄范围卡片写权限，不得被误关。
 - 保持 `RECHARGE_SUBMIT_HOLD_BEFORE_PROVIDER` 关闭。
 - 部署/重启后只读验证：readiness `ok=true`、Worker 心跳能力为 true、无活动测试 task/attempt/资金栅栏。
 - 这是恢复已确认生产基线，不把它做成每单手动开关。
