@@ -1,0 +1,286 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0b0e14" media="(prefers-color-scheme: dark)">
+  <meta name="description" content="ChatGPT Plus 自助充值 — 提交 CDK 与账号 Session，核对邮箱后创建订单并跟踪进度。">
+  <title>Plus 充值中心 · 重设计原型</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230e9f6e'/%3E%3Cpath d='M9 16.5l4.5 4.5L23 11' stroke='white' stroke-width='2.6' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <!-- ============ 演示提示条（仅原型，生产移除） ============ -->
+  <div class="proto-ribbon" id="proto-ribbon">
+    <span class="proto-ribbon__dot" aria-hidden="true"></span>
+    交互原型 · 不连接生产 · 不创建真实订单
+    <button type="button" class="proto-ribbon__toggle" id="demo-open">演示面板</button>
+  </div>
+
+  <div class="app-shell">
+    <!-- ============ 顶栏 ============ -->
+    <header class="topbar">
+      <a class="brand" href="#" aria-label="Plus 充值中心">
+        <span class="brand__mark" aria-hidden="true">
+          <svg viewBox="0 0 32 32" width="28" height="28"><rect width="32" height="32" rx="9" fill="currentColor"/><path d="M9 16.5l4.5 4.5L23 11" stroke="#fff" stroke-width="2.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </span>
+        <span class="brand__text">
+          <strong>Plus 充值中心</strong>
+          <small>ChatGPT Plus 自助开通</small>
+        </span>
+      </a>
+      <button type="button" class="ghost-link" id="nav-query" aria-label="使用查询码查询订单">
+        <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><circle cx="9" cy="9" r="6" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M13.5 13.5L18 18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+        查订单
+      </button>
+    </header>
+
+    <main class="stage" id="stage" aria-live="polite">
+
+      <!-- 进度指示（提交流程 3 步；查询/结果视图会隐藏） -->
+      <nav class="stepper" id="stepper" aria-label="充值流程进度">
+        <ol>
+          <li class="step" data-step="1"><span class="step__dot">1</span><span class="step__label">填写资料</span></li>
+          <li class="step" data-step="2"><span class="step__dot">2</span><span class="step__label">核对邮箱</span></li>
+          <li class="step" data-step="3"><span class="step__dot">3</span><span class="step__label">跟踪进度</span></li>
+        </ol>
+        <div class="stepper__rail"><span class="stepper__fill" id="stepper-fill"></span></div>
+      </nav>
+
+      <!-- ========== 视图 1：填写资料（默认 / 输入） ========== -->
+      <section class="view" id="view-input" data-view="input">
+        <div class="card card--form">
+          <div class="card__head">
+            <div>
+              <h1 class="card__title">开通 ChatGPT Plus</h1>
+              <p class="card__sub">填写卡密与账号 Session，下一步核对邮箱后再创建订单。</p>
+            </div>
+            <span class="plan-badge">PLUS</span>
+          </div>
+
+          <form id="input-form" novalidate>
+            <div class="field" id="field-cdk">
+              <label for="cdk">CDK 卡密</label>
+              <input id="cdk" name="cdk" type="text" inputmode="text" autocomplete="off"
+                     autocapitalize="off" spellcheck="false" minlength="8" maxlength="256"
+                     placeholder="粘贴你的 CDK 卡密" required>
+              <p class="field__hint">每个卡密仅可使用一次；已用过的卡密可直接「查订单」找回进度。</p>
+              <p class="field__error" data-error></p>
+            </div>
+
+            <div class="field" id="field-session">
+              <div class="field__labelrow">
+                <label for="session">账号 Session</label>
+                <span class="field__tag">仅本次开通使用</span>
+              </div>
+              <textarea id="session" name="session" rows="7" autocomplete="off"
+                        autocapitalize="off" spellcheck="false"
+                        placeholder="粘贴完整的 Session JSON（{ &quot;user&quot;: …, &quot;accessToken&quot;: … }）" required></textarea>
+              <p class="field__hint">整段粘贴即可。系统只从中读取你的账号邮箱用于核对，创建订单后输入框会清空。</p>
+              <p class="field__error" data-error></p>
+            </div>
+
+            <button type="submit" class="btn btn--primary btn--block" id="to-confirm">
+              <span class="btn__label">下一步：核对邮箱</span>
+              <svg class="btn__arrow" viewBox="0 0 20 20" width="18" height="18" aria-hidden="true"><path d="M4 10h11M11 5l5 5-5 5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+          </form>
+
+          <ul class="assurance">
+            <li><svg viewBox="0 0 20 20" width="15" height="15" aria-hidden="true"><path d="M10 2l6 2.5v4.7c0 3.9-2.6 6.9-6 8.3-3.4-1.4-6-4.4-6-8.3V4.5L10 2z" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>账号资料仅用于本次订单，全程加密。</li>
+            <li><svg viewBox="0 0 20 20" width="15" height="15" aria-hidden="true"><circle cx="10" cy="10" r="7.2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M10 6v4.2l2.8 1.6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>提交后可凭查询码随时查看进度。</li>
+          </ul>
+        </div>
+      </section>
+
+      <!-- ========== 视图 2：核对邮箱（确认） ========== -->
+      <section class="view" id="view-confirm" data-view="confirm" hidden>
+        <div class="card card--confirm">
+          <button type="button" class="card__back" id="confirm-back">
+            <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><path d="M12 5l-5 5 5 5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            返回修改
+          </button>
+
+          <div class="confirm__crux">
+            <p class="confirm__eyebrow">请核对充值账号</p>
+            <h1 class="confirm__title">Plus 将充值到这个邮箱</h1>
+            <div class="email-plate" id="email-plate">
+              <svg class="email-plate__icon" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M4 7l8 6 8-6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              <span class="email-plate__value" id="confirm-email">name@example.com</span>
+            </div>
+            <p class="confirm__note">邮箱来自你粘贴的 Session，与最终充值账号一致。若不是你要开通的账号，请返回修改。</p>
+          </div>
+
+          <dl class="confirm__meta">
+            <div><dt>开通项目</dt><dd>ChatGPT Plus 月度会员</dd></div>
+            <div><dt>卡密</dt><dd id="confirm-cdk">••••••••</dd></div>
+          </dl>
+
+          <label class="checkbox" id="confirm-check-wrap">
+            <input type="checkbox" id="confirm-check">
+            <span class="checkbox__box" aria-hidden="true"></span>
+            <span class="checkbox__text">我已确认上方邮箱是本次要开通 Plus 的账号。</span>
+          </label>
+
+          <div class="confirm__actions">
+            <button type="button" class="btn btn--ghost" id="confirm-cancel">邮箱不对，返回</button>
+            <button type="button" class="btn btn--primary" id="confirm-create" disabled>
+              <span class="btn__label">确认无误，创建订单</span>
+            </button>
+          </div>
+          <p class="confirm__safety"><svg viewBox="0 0 20 20" width="14" height="14" aria-hidden="true"><path d="M6 9V6.5a4 4 0 118 0V9m-9 0h10v7H5V9z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>点击前不会创建订单，也不会发起任何充值。</p>
+        </div>
+      </section>
+
+      <!-- ========== 视图 3：进度 / 结果（处理中·需更换·失败·成功 复用同一状态区） ========== -->
+      <section class="view" id="view-tracking" data-view="tracking" hidden>
+        <div class="card status-card" id="status-card" data-status="QUEUED">
+          <!-- 成功时顶部的完成勋章 -->
+          <div class="status-card__crest" id="status-crest" hidden>
+            <svg class="crest-check" viewBox="0 0 52 52" width="52" height="52" aria-hidden="true"><circle cx="26" cy="26" r="24" fill="none" stroke="currentColor" stroke-width="2.5" class="crest-check__ring"/><path d="M16 27l7 7 14-15" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" class="crest-check__tick"/></svg>
+          </div>
+
+          <div class="status-card__top">
+            <span class="status-chip" id="status-chip">
+              <span class="status-chip__pulse" aria-hidden="true"></span>
+              <span id="status-chip-label">已排队</span>
+            </span>
+            <span class="status-card__updated" id="status-updated"></span>
+          </div>
+
+          <h1 class="status-card__title" id="status-title">订单已创建</h1>
+          <p class="status-card__desc" id="status-desc">系统已收到订单，正在等待处理。</p>
+
+          <!-- 成功摘要（就地展示，不弹窗） -->
+          <div class="success-summary" id="success-summary" hidden>
+            <div class="success-summary__row"><span>充值账号</span><strong id="success-email">—</strong></div>
+            <div class="success-summary__row"><span>完成时间</span><strong id="success-time">—</strong></div>
+          </div>
+
+          <!-- 查询码 -->
+          <div class="ticket" id="ticket">
+            <div class="ticket__label">订单查询码 <span>妥善保存，可随时查进度</span></div>
+            <div class="ticket__row">
+              <code id="ticket-code">PJV1-————————————————————</code>
+              <button type="button" class="btn btn--copy" id="ticket-copy">复制</button>
+            </div>
+          </div>
+
+          <!-- 需更换 Session 的行动区 -->
+          <form class="replace" id="replace-form" hidden>
+            <div class="replace__head">
+              <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true"><path d="M10 2v4m0 8v4M2 10h4m8 0h4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><circle cx="10" cy="10" r="3" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>
+              <div>
+                <strong id="replace-title">需要更换账号 Session</strong>
+                <small id="replace-limit"></small>
+              </div>
+            </div>
+            <textarea id="replace-session" rows="5" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="粘贴一个「免费账号」的完整 Session JSON"></textarea>
+            <p class="field__hint">更换不会消耗新卡密，也不会新建订单，只更新当前订单的账号。</p>
+            <label class="checkbox checkbox--sm">
+              <input type="checkbox" id="replace-check">
+              <span class="checkbox__box" aria-hidden="true"></span>
+              <span class="checkbox__text">我确认新账号当前是免费账号。</span>
+            </label>
+            <button type="submit" class="btn btn--primary btn--block" id="replace-submit">
+              <span class="btn__label">更换并继续处理</span>
+            </button>
+          </form>
+
+          <!-- 失败时的求助区 -->
+          <div class="helpbox" id="helpbox" hidden>
+            <p id="helpbox-text">本次订单未能完成，你的卡密和账号已由人工接手核对，请保留查询码稍后再查。</p>
+          </div>
+
+          <!-- 时间线 -->
+          <div class="timeline-wrap">
+            <div class="timeline-wrap__head">处理进度</div>
+            <ol class="timeline" id="timeline" aria-label="订单处理进度"></ol>
+          </div>
+
+          <p class="poll-note" id="poll-note"></p>
+
+          <div class="status-card__foot">
+            <button type="button" class="ghost-link" id="tracking-new">＋ 提交新的充值</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ========== 视图 4：订单查询 ========== ==== -->
+      <section class="view" id="view-query" data-view="query" hidden>
+        <div class="card card--form">
+          <button type="button" class="card__back" id="query-back">
+            <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><path d="M12 5l-5 5 5 5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            返回充值
+          </button>
+          <div class="card__head">
+            <div>
+              <h1 class="card__title">查询订单进度</h1>
+              <p class="card__sub">输入查询码，或用原来的 CDK 卡密找回订单。</p>
+            </div>
+          </div>
+          <form id="query-form" novalidate>
+            <div class="field">
+              <label for="query-input">查询码或 CDK 卡密</label>
+              <input id="query-input" name="query" type="text" autocomplete="off" autocapitalize="off"
+                     spellcheck="false" maxlength="256" placeholder="PJV1-… 或 你的 CDK 卡密" required>
+              <p class="field__hint">忘记保存查询码时，用原 CDK 卡密也能找回同一订单。</p>
+              <p class="field__error" data-error></p>
+            </div>
+            <button type="submit" class="btn btn--primary btn--block" id="query-submit">
+              <span class="btn__label">查询当前状态</span>
+              <svg class="btn__arrow" viewBox="0 0 20 20" width="18" height="18" aria-hidden="true"><path d="M4 10h11M11 5l5 5-5 5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+          </form>
+        </div>
+      </section>
+
+      <!-- 通知条 -->
+      <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+    </main>
+
+    <footer class="footse">
+      <p>请妥善保管 CDK 卡密与订单查询码。遇到问题保留查询码联系客服。</p>
+    </footer>
+  </div>
+
+  <!-- ============ 演示面板（仅原型） ============ -->
+  <aside class="demo" id="demo" hidden aria-label="原型演示面板">
+    <div class="demo__head">
+      <strong>演示面板</strong>
+      <button type="button" id="demo-close" aria-label="关闭演示面板">✕</button>
+    </div>
+    <p class="demo__hint">仅原型，用于预览各状态。生产版本不含本面板，也不会有任何 mock。</p>
+    <div class="demo__group">
+      <span>快速跳转</span>
+      <div class="demo__grid">
+        <button type="button" data-demo="input">默认/输入</button>
+        <button type="button" data-demo="prefill">填入示例</button>
+        <button type="button" data-demo="confirm">核对邮箱</button>
+        <button type="button" data-demo="QUEUED">已排队</button>
+        <button type="button" data-demo="PROCESSING">处理中</button>
+        <button type="button" data-demo="FINALIZING">收尾中</button>
+        <button type="button" data-demo="REVIEWING">复核中</button>
+        <button type="button" data-demo="ACTION_REQUIRED">需更换</button>
+        <button type="button" data-demo="SUCCESS">成功</button>
+        <button type="button" data-demo="FAILED">失败</button>
+        <button type="button" data-demo="query">查询入口</button>
+        <button type="button" data-demo="autoplay">自动演进▶</button>
+      </div>
+    </div>
+    <div class="demo__group">
+      <span>外观</span>
+      <div class="demo__grid demo__grid--2">
+        <button type="button" data-theme="light">浅色</button>
+        <button type="button" data-theme="dark">深色</button>
+      </div>
+    </div>
+  </aside>
+
+  <noscript><p style="padding:24px;text-align:center">需要启用 JavaScript 才能使用本页面。</p></noscript>
+
+  <script src="./mock-api.js"></script>
+  <script src="./app.js"></script>
+</body>
+</html>
