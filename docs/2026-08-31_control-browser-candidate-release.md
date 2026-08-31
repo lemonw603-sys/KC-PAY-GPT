@@ -20,3 +20,14 @@
 ## 部署边界
 
 候选尚未切换生产。生产切换前需要一次明确确认；切换本身不启用 Browser Worker、卡资金 timer 或任何 Provider 写权限。
+
+## 对抗复查后的替代候选
+
+原 `0a6e651` 候选已因部署前对抗式审查发现的问题作废，不得部署。修正后的正式候选如下：
+
+- 候选 HEAD：`973cb72`
+- 本地归档：`/tmp/aicharge-control-browser-973cb72.tar.gz`
+- SHA-256：`4dfc7d61772bed83e74ff9167a9c29505ab19ffaad32c9b4e9370103bae37864`
+- 服务器候选：`/opt/pojia/releases/20260831-control-browser-973cb72`
+- 候选依赖、语法和只读 readiness 均通过；`latestMigrationNumber=43`，`blockers=[]`。
+- 当前生产仍为 `/opt/pojia/releases/20260831-card-reuse-068c070`。

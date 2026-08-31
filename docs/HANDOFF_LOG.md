@@ -727,3 +727,8 @@
 - 原 `0a6e651` 候选经真实场景代入发现三项阻塞：默认 API 被 Browser 未启动误报、开始营业与无卡自动补卡相互矛盾、失败只返回不可操作的 internal_error；另发现 overview 重复读取。
 - 上述问题已直接修正，原候选作废，不得部署；详细审查见 `docs/2026-08-31_control-browser-candidate-adversarial-review.md`。
 - 修正后全量回归：Legacy 87/87；v1 448 passed / 0 failed / 40 skipped；Browser 105 passed / 0 failed / 4 skipped。
+
+# 2026-08-31｜对抗修正后替代候选就绪
+
+- 新候选 HEAD `973cb72`，release `/opt/pojia/releases/20260831-control-browser-973cb72`，SHA-256 `4dfc7d61772bed83e74ff9167a9c29505ab19ffaad32c9b4e9370103bae37864`。
+- 依赖安装、语法、全量测试和生产只读 readiness 均通过；当前生产仍为 `068c070`，未切换、未产生资金写入。
