@@ -7,6 +7,7 @@
 - 该暂停只用于本次测试窗口，不改变默认路线或长期运营决策；测试结束后必须恢复之前的最小 API 充值权限并重新核对 readiness。
 - 截止记录时生产没有活动订单、活动任务或充值 attempt；没有创建订单、Provider 调用或资金写入。
 - 订单提交后允许正常走卡片/Session 准备，但在 API `create_direct` 最终提交前停止；需以数据库状态和 `provider_calls` 证据确认，不能仅凭页面文案判断。
+- 实际订单 `PJV1-0RcrjBEOL6senGnzqW7e` 已创建并完成卡片/Session 准备；当前状态 `CARD_READY`，卡片尾号 `1013`（Provider card `1839`）已分配，`SUBMIT_RECHARGE` 仍为 `PENDING`，尚未创建 `recharge_attempts`，对应 `provider_calls` 为 0。未发生客户充值付款。
 
 ## 2026-08-31｜全栈对抗核查候选已部署并开启最小 API 充值权限
 
