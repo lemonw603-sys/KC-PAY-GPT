@@ -39,6 +39,7 @@ export async function runOneTask({
   handlers,
   leaseSeconds = 60,
   allowedTaskTypes = null,
+  allowedRechargeExecutorKinds = [],
   rechargeDispatchMode,
   repository = { claimNextTask, completeTask, failTask }
 }) {
@@ -46,6 +47,7 @@ export async function runOneTask({
     workerId,
     leaseSeconds,
     allowedTaskTypes,
+    allowedRechargeExecutorKinds,
     rechargeDispatchMode
   });
   if (!task) return { handled: false };

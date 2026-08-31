@@ -3,9 +3,9 @@ import test from 'node:test';
 import { ProviderError } from '../src/providers/http-client.js';
 import { runOneTask, TaskExecutionError } from '../src/workers/task-runner.js';
 
-function repositoryFor(task, calls) {
+function repositoryFor(task, calls, claimed = []) {
   return {
-    claimNextTask: async () => task,
+    claimNextTask: async (_pool, input) => { claimed.push(input); return task; },
     completeTask: async (_pool, input) => calls.push({ method: 'complete', input }),
     failTask: async (_pool, input) => {
       calls.push({ method: 'fail', input });
@@ -13,6 +13,18 @@ function repositoryFor(task, calls) {
     }
   };
 }
+
+test('forwards recharge executor capability boundary to task claiming', async () => {
+  const calls = [];
+  const claimed = [];
+  await runOneTask({
+    pool: {}, workerId: 'worker-a', allowedTaskTypes: ['SUBMIT_RECHARGE'],
+    allowedRechargeExecutorKinds: ['API'], rechargeDispatchMode: 'AUTOMATIC',
+    handlers: { SUBMIT_RECHARGE: async () => {} },
+    repository: repositoryFor({ id: 99, task_type: 'SUBMIT_RECHARGE' }, calls, claimed)
+  });
+  assert.deepEqual(claimed[0].allowedRechargeExecutorKinds, ['API']);
+});
 
 test('completes one leased task without affecting other jobs', async () => {
   const calls = [];
