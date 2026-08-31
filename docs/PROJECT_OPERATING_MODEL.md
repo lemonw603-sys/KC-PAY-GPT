@@ -1,7 +1,7 @@
 # AI充值业务｜当前运行模型与验收总册
 
 > **层级**：`PROJECT_MAP.md` 的详细配套，不另行决定优先级。  
-> **最后核对**：2026-08-31 16:05 CST。
+> **最后核对**：2026-08-31 23:03 CST。
 > **标记**：`[事实]`=代码或运行证据；`[决策]`=用户已确认；`[建议]`=尚未确认/实施，不能当现状。
 
 ## 1. 端到端业务链路
@@ -14,7 +14,7 @@
 | 自动补余额 | 合格低余额卡精确补差额 | funding attempt `PREPARED→SUBMITTING/PENDING→SETTLED` | 明确未扣款可失败；不明结果 `UNKNOWN`，禁止重补 | `[事实]` 已部署，首笔真实闭环未验收 |
 | 自动开卡 | 无合格卡时开目标余额卡 | 唯一库存任务、Provider 卡、卡接管 | 不因 timer 重复开卡；无需求不读取 Provider | `[事实]` 已部署，真实无卡闭环未验收 |
 | 付款授权 | 建立唯一 recharge attempt、资金栅栏 | `CARD_READY→SUBMITTING` | 并发/重放复用或拒绝，不产生第二次外部提交 | `[事实]` 付款前演练通过 |
-| API 执行 | Provider `create_direct` | Provider call + attempt + 外部订单 | 充值前确定失败可恢复；提交结果未知锁 `SUBMIT_UNKNOWN` | `[事实]` 历史两单成功；当前权限阻断 |
+| API 执行 | Provider `create_direct` | Provider call + attempt + 外部订单 | 充值前确定失败可恢复；提交结果未知锁 `SUBMIT_UNKNOWN` | `[事实]` 历史两单成功；当前生产充值 gate=true、只读 preflight 通过 |
 | Browser 执行 | Browser job/run、Checkout、付款 | Browser lease、run、payment operation | 付款前失败可恢复；点击后未知只对账不重付 | `[事实]` 非付款/隔离；真实付款未验收 |
 | 交付收口 | Plus 确认、取消续费 | `RECHARGE_SUCCESS`、取消标记 | 支付成功但后验未知不能重付，进入核对 | `[事实]` 历史 API 实单 |
 | 资金/运营闭环 | 交易、余额、对账、Bark | Provider 交易证据、资金风险、对账案件、通知 outbox | 未决资金优先核对，保留全部历史证据 | `[事实]` 基础存在；连续运营校准未完成 |
@@ -98,8 +98,9 @@
 
 - `[事实]` 历史至少两笔真实订单成功并取消续费。
 - `[事实]` 当前 release 付款前链可到 `SUBMITTING`；executor capability 传递缺陷已修。
-- `[事实]` 当前生产 Worker API 写权限为 false，所以现在不能自动完成新订单。
-- 下一门槛：恢复常驻最小权限→readiness 通过→真实订单→3–5 单连续运营。
+- `[事实]` 当前生产 Worker API 写权限为 true；2026-08-31 23:02 CST 只读 preflight `ok=true`、`blockers=[]`。
+- `[事实]` 最新订单 `PJV1-HfAEiq8dBpDLXzt4t96e` 为 `WAITING_FOR_SESSION`：JSON 语法层已通过并建单，但业务 Session 尚未通过，且无活动 task/资金风险/UNKNOWN Provider call。
+- 下一门槛：下一笔有效 Session 的真实订单→3–5 单连续运营。当前 `WAITING_FOR_SESSION` 不算成功验收。
 
 ### Browser
 
@@ -158,8 +159,8 @@
 
 ### 已知缺陷/漂移
 
-1. 生产接单/派发为 true，但 API Worker 最终写权限 false，当前半开。
-2. API 权限 blocker 无后台 actionId/跳转；这是可见性缺口，不应演变成逐单手动按钮。
+1. API 常驻最小写权限已经恢复；仍缺少“权限日后漂移为关闭”时的后台 actionId/明确运维入口，但这不应演变成逐单手动按钮。
+2. 生产 release 仍为 `55b6ec4`；本地 `1c2c9ba` 供应规划修复未部署。自动补给已通过隔离 MySQL 验证，但真实生产低余额补款和无卡开卡闭环均未验收。
 3. 此前地图未随 hold 演练更新，已在 `a5b2299` 修正；维护流程必须实际执行。
 4. 当前已登录后台的 v20 完整视觉、点击、Network/Console 交叉验收没有最新证据。
 5. 自动补给 readiness 尚不能发现独立 runner/timer 或卡 Provider account 的运行漂移，营业后也不会自动收口已开的接单/派发。

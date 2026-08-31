@@ -1,11 +1,11 @@
-# 当前生产状态快照｜2026-08-31 18:45 CST
+# 当前生产状态快照｜2026-08-31 23:03 CST
 
 > 只保留当前有效事实；历史过程查 `HANDOFF_LOG.md`，方向与顺序查 `PROJECT_MAP.md`，全链路和验收细则查 `PROJECT_OPERATING_MODEL.md`。
 > 本快照已现场核对生产 release、systemd、Worker 进程环境、数据库 Provider account 和只读 readiness。
 
 ## 1. 代码、release 与服务
 
-- 本地主线的生产代码基线为 `55b6ec4`，其后为演练证据与规划对齐提交；本文不固定一个会在下次提交后立即过期的本地 HEAD。
+- 生产代码基线仍为 `55b6ec4`；本地 `1c2c9ba` 的供应规划修复已通过本地/隔离测试但**尚未部署**，不得把它描述成当前生产行为。
 - 生产 `/opt/pojia/current`：`/opt/pojia/releases/20260831-prepayment-hold-55b6ec4`。
 - `pojia-web.service=active`；`pojia-worker.service=active`。
 - `pojia-browser-worker.service=inactive/disabled`。
@@ -25,11 +25,12 @@
 - 数据库 recharge Provider account：`read_enabled=1`、`write_enabled=1`、`circuit_state=CLOSED`。
 - 数据库 card Provider account：`read_enabled=1`、`write_enabled=0`、`circuit_state=CLOSED`；现行 stock/funding runner 不以该 `write_enabled` 为写门禁，而以各自 systemd 窄范围 gate 为准。这是字段语义不一致，但不是当前补给的实际阻断。
 - Worker 进程已具备 API 最终充值能力；数据库 recharge Provider account 同样允许写。
-- `/health/ready` 返回 `{"status":"ready"}`；Worker 重启后 active/running，进程环境实际为 `PROVIDER_RECHARGE_WRITES_ENABLED=true`。后台 readiness 需用已登录管理员会话复核，不能以未认证 404/401 代替。
+- `/health/ready` 返回 `{"status":"ready"}`；Worker 重启后 active/running，进程环境实际为 `PROVIDER_RECHARGE_WRITES_ENABLED=true`。
+- 2026-08-31 23:02 CST 通过生产 SSH 执行只读 `preflight:readiness`：`ok=true`、`blockers=[]`、Worker heartbeat 6 秒，活动任务/过期租约/UNKNOWN Provider call/资金风险/开放对账均为 0。
 
 ### 当前结论
 
-生产目前已恢复 API 最小执行权限：业务开关已营业，Worker 具备 API 最终充值能力；后台 readiness 细项仍需登录会话复核。
+生产目前已恢复 API 最小执行权限：业务开关已营业，Worker 具备 API 最终充值能力，生产只读 preflight 无 blocker。该结论只证明系统级执行基线，不证明某个客户 Session 或单笔 Provider 结果。
 
 ## 3. “开始营业”当前真实行为
 
@@ -58,6 +59,12 @@
 
 ## 5. 已验证与未验证
 
+### 最新订单边界
+
+- 最新订单 `PJV1-HfAEiq8dBpDLXzt4t96e` 于 2026-08-31 22:04 CST 建立，当前为 `WAITING_FOR_SESSION`。
+- 客户页 `parseSessionInput()` 已能将首个完整 JSON 对象解析出来并剥离尾随文本；成功建单只证明 JSON 语法层通过，不证明 Session 身份、账号资格或业务可用性通过。
+- 2026-08-31 23:02 CST 只读核对无活动 task、无 ACTIVE/UNKNOWN 资金风险、无 UNKNOWN Provider call；本单没有付款证据。单纯粘贴不会建单，`POST /api/v1/orders` 只在客户表单 submit 处理器中发生。
+
 ### 已验证
 
 - 至少两笔历史真实 API 成功订单，并完成取消续费。
@@ -68,7 +75,7 @@
 
 ### 尚未验证
 
-- 当前 release/config 恢复 API 常驻最小权限后的下一笔真实订单。
+- 当前 release/config 恢复 API 常驻最小权限后的下一笔**有效 Session**真实订单；最新 `WAITING_FOR_SESSION` 订单不算成功链路验收。
 - 低余额卡精确补款→到账→原订单自动继续的生产闭环。
 - 无合格卡时唯一自动开卡→订单继续的生产闭环。
 - 一卡跨 3 个订单的真实计数和上限停止。
@@ -78,6 +85,6 @@
 ## 6. 当前唯一下一步
 
 1. 已恢复 Worker 常驻最小 API 充值权限并完成重启/只读核对；hold 关闭，通用 Provider/卡片写与 Browser 付款仍关闭。
-2. 下一步是使用已登录后台复核 readiness 细项并确认活动任务/资金风险为 0。
-3. 复核通过后接受下一笔真实 API 订单。当前已有 1 张 `$16` 可分配卡，不人为破坏库存来强行测补余额/开卡；实际命中时联合验收。
-4. 通过后进入 3–5 单连续 API 验收；Browser 非付款线并行。
+2. 生产只读 preflight 已确认 blocker、活动任务和资金风险均为 0；仍需把逐单 Session 验证与系统 readiness 分开。
+3. 接受下一笔有效 Session 的真实 API 订单。当前已有 1 张 `$16` 可分配卡，不人为破坏库存来强行测补余额/开卡；实际命中时联合验收。
+4. 通过后进入 3–5 单连续 API 验收；Browser 非付款线并行。自动补给目前只有隔离 MySQL 验证，真实生产补余额/开卡闭环仍未验收。

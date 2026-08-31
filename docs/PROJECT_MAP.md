@@ -1,7 +1,7 @@
 # AI充值业务｜唯一项目规划地图
 
 > **用途**：只回答四件事：项目目标、当前生产事实、已完成/未完成、唯一执行顺序。
-> **最后统一核对**：2026-08-31 18:45 CST。已对照前后端代码、生产 `/opt/pojia/current`、systemd、进程环境、数据库开关/卡片资格和只读 readiness；本轮未执行任何生产写入。
+> **最后统一核对**：2026-08-31 23:03 CST。已对照前后端代码，并通过 SSH 只读核对生产 `/opt/pojia/current`、systemd、Worker 实际进程环境和 readiness；本轮未执行任何生产写入。
 > 历史报告不能覆盖本地图；实时生产事实优先，变化后必须同步更新本地图与 `CURRENT_STATE.md`。
 > 全链路、控制矩阵、自动补给状态机、库存最小模型、资金边界、通知、回滚和验收细则统一见 `docs/PROJECT_OPERATING_MODEL.md`。
 
@@ -42,18 +42,19 @@
 | 接单 / 派发 | true / true | 只读 readiness；当前后台已处于营业业务状态 |
 | 默认路线 | API | 只读 readiness |
 | Worker 最终 API 充值能力 | **true** | 已安装最小权限 drop-in，重启后进程环境为 `PROVIDER_RECHARGE_WRITES_ENABLED=true` |
-| Provider recharge account | `write_enabled=1` | 数据库只读核对；但进程门禁为 false，仍不能执行 |
+| Provider recharge account | `write_enabled=1` | 数据库只读核对；Worker 进程充值 gate 同样为 true，当前可执行 |
 | Provider card account | `write_enabled=0`，circuit=CLOSED | 当前 stock/funding runner **不以该字段为写门禁**，而以各自窄范围进程 gate 为准；这个语义不一致需在后续收敛，不得猜测它当前会阻断补给 |
-| readiness | **待后台会话复核** | `/health/ready` 通过；未认证请求不能代替管理员 readiness 细项 |
+| readiness | **只读 preflight 通过** | 2026-08-31 23:02 CST：`ok=true`、`blockers=[]`、Worker heartbeat 6 秒；这不等于逐单 Session/账号/Provider 最终结果已验证 |
 | 通用 Provider / 卡片写 | false / false | Worker 进程环境 |
 | 独立自动补余额 | DB gate=true；`pojia-card-funding.timer` 与 reconcile timer active/enabled | 独立 runner 只开补余额所需卡片写；空闲零写已验证，首笔真实补余额未验收 |
 | 独立自动开卡 | DB gate=true；`pojia-card-stock-runner.timer` active/enabled，60 秒兜底 | stock runner 只开开卡所需卡片写；真实缺卡订单闭环未验收 |
 | 当前 Plus 可立即分配 | 1 张：Provider `1839`，尾号 `1013`，`$16.00` | 按当前生产资格 SQL 只读计算 |
 | 每卡成功次数上限 | 3 | 已部署；连续跨订单实证仍不足 |
-| 活动任务/资金风险/开放对账 | 0 / 0 / 0 | 2026-08-31 13:26 只读 readiness |
+| 活动任务/资金风险/开放对账 | 0 / 0 / 0 | 2026-08-31 23:02 CST 只读 preflight |
 | 最新 migration | 044 | 只读 readiness |
+| 最新订单 | `PJV1-HfAEiq8dBpDLXzt4t96e`=`WAITING_FOR_SESSION` | Session 文本已通过客户页 JSON 解析并成功建单，但业务 Session 尚未通过运行验证；active task/资金风险/UNKNOWN Provider call 均为 0，未发生付款 |
 
-**当前状态**：API 最小充值权限已按确认恢复，Worker 进程实际为 `true`；接单和派发已开。后台 readiness 细项仍需用已登录会话复核，不能以未认证请求代替。
+**当前状态**：API 最小充值权限已按确认恢复，Worker 进程实际为 `true`；接单和派发已开；生产只读 preflight 已通过。最新订单只走到 `WAITING_FOR_SESSION`，不得把“JSON 语法解析通过”写成“Session 业务验证通过”。
 
 ## 4. “开始营业”真实合同（按代码核对）
 
@@ -84,25 +85,26 @@
 | 板块 | 状态 | 已证明 | 未完成 |
 |---|---|---|---|
 | 订单/CDK/Session/任务/资金核心 | 已验收 | 两笔真实 API 成功历史；幂等、UNKNOWN、任务与资金边界 | 连续运营与并发放量 |
-| API 充值 | 历史真实成功；**当前运行配置阻断** | 付款前暂停演练走到 `SUBMITTING` 且未外部提交；executor capability 传递已修 | 先恢复常驻最小权限，再做下一笔真实订单 |
+| API 充值 | 历史真实成功；当前执行基线已恢复 | 付款前暂停演练走到 `SUBMITTING` 且未外部提交；executor capability 传递已修；生产充值 gate=true、preflight 无 blocker | 下一笔有效 Session 的真实订单；当前 `WAITING_FOR_SESSION` 订单不构成成功链路验收 |
 | 付款前暂停机制 | 已验证并清理 | 正确停在外部 `create_direct` 前；测试订单/资金栅栏已正式收敛 | 非日常生产能力，默认应关闭 |
 | 自动补余额 | 已部署待实单 | 订单驱动、5 秒本地领取、15 秒低调用对账、空闲零 Provider 写 | 首笔低余额精确补差额→到账→原订单继续 |
 | 自动开卡 | 已部署待实单 | 无需求不刷新 Provider；自动规则已开启 | 真实无卡订单唯一开卡及自动恢复 |
 | 一卡多单 | 已部署待连续实单 | 全局 1–4、当前 3、共享账本/容量门禁 | 连续订单计数、释放、上限停止 |
 | 库存与运营覆盖 | 已部署，有历史数据缺口 | 旧批次停用、Claude 专用卡、未来新卡按证据接管 | `6807/1477` 现为 Provider `invalidating` 且保留历史 ACTIVE assignment，当前资格计算不会分配；这是系统状态与“卡实际可用”运营事实的待收敛缺口 |
-| 运营控制面 | 部分部署 | 开始营业、默认路线、就绪摘要及部分跳转 | 修复权限基线；补齐 API 权限无入口；用真实运营复核入口与噪音 |
+| 运营控制面 | 部分部署 | 开始营业、默认路线、就绪摘要及部分跳转；API 权限基线已恢复 | 补齐 API 权限漂移无入口；用真实运营复核入口与噪音 |
 | Browser | 并行开发/非付款验证 | adapter、共享合同、租约/WAL、只读 Checkout、生产启动停止演练 | 当前主线生产非付款闭环；真实付款需另行确认 |
 | 对账/Bark/费用监控 | 部分验收 | 资金 UNKNOWN、余额变化 Bark、交易证据基础 | 连续订单校准误报；费用标准/变化监控 |
 | 放量/恢复 | 未验收 | 备份、健康检查、回滚点 | 3–5 单→10–20 单→恢复演练→100–300 单/日 |
 
 ## 6. 唯一执行顺序
 
-### P0｜立即修正生产半开漂移
+### P0｜保持并监测已恢复的生产执行基线
 
 - 已恢复并核对 API 常驻最小执行能力：Worker `PROVIDER_RECHARGE_WRITES_ENABLED=true`；保持 Worker 通用 Provider/普通卡片写与 Browser 付款关闭。独立 funding/stock runner 保持它们已确认的窄范围卡片写权限，不得被误关。
 - 保持 `RECHARGE_SUBMIT_HOLD_BEFORE_PROVIDER` 关闭。
 - 部署/重启后只读验证：readiness `ok=true`、Worker 心跳能力为 true、无活动测试 task/attempt/资金栅栏。
 - 这是恢复已确认生产基线，不把它做成每单手动开关。
+- 当前生产 release 仍为 `55b6ec4`；本地 `1c2c9ba` 的供应规划修复尚未部署，不能把本地测试结论当成生产行为。
 
 ### P1｜下一笔真实 API 订单
 
