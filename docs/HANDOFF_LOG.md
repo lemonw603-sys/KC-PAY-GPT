@@ -714,3 +714,10 @@
 - 新增兼容性报告：`docs/browser-research/BROWSER_CARD_REUSE_COMPATIBILITY_2026-08-31.md`。
 - 回归：Browser `109 tests / 105 passed / 0 failed / 4 skipped`；v1 `486 tests / 446 passed / 0 failed / 40 skipped`。
 - 本次只改代码与测试，未部署生产、未启动 Browser Worker、未执行 Provider/卡台写入或付款。待控制面改造与 Browser 兼容改动合并后统一制作候选 release。
+
+# 2026-08-31｜控制面与 Browser 兼容候选已就绪
+
+- 候选 release `/opt/pojia/releases/20260831-control-browser-0a6e651` 已构建、上传并安装依赖；当前生产未切换。
+- 候选 SHA-256、全量测试、只读 readiness 和部署边界见 `docs/2026-08-31_control-browser-candidate-release.md`。
+- 首次候选依赖安装因解压文件为 root 所有而失败；确认候选不是 current 后修正候选目录所有权并成功重装，线上服务未受影响。
+- 下一动作仅为经确认后的生产原子切换与部署后只读验收；不会联动开启 Browser/Provider/卡资金写入。

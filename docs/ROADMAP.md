@@ -288,7 +288,7 @@
 
 - [x] 复查并收窄首版范围：只改就绪结果、首页入口和高级设置分层
 - [x] 确认稳定 checkId/actionId、幂等自动动作、Browser 未就绪保护和现有库存门禁不变
-- [ ] 实现统一就绪结果与后台首页最小改造
+- [x] 实现统一就绪结果与后台首页最小改造（候选已就绪，待生产切换）
 
 证据：`docs/2026-08-31_admin-control-surface-plan-adversarial-review.md`。
 
