@@ -760,3 +760,12 @@
 - 开启后无 WAITING_FOR_CARD、无 PREPARED/ACTIVE/PENDING/UNKNOWN funding attempt；开启时间后没有 `card_recharge` Provider call。runner 连续 `{"handled":false}`，空闲未产生 Provider API 调用。
 - Web/Worker active；reconcile timer active/enabled；Browser Worker inactive/disabled；ops/plus live/ready 四项 HTTP 200；`pojia-ops check` 与备份完整性通过；最近相关日志无 warning/error。
 - 未执行真实开卡、补余额、API/Browser 付款、退款或提现。下一停止点为首笔真实订单驱动补余额验收；这一步尚未完成。
+
+
+# 2026-08-31｜统一项目规划地图建立
+
+- 用户要求把“运营控制面收敛与自动补给”、整个项目规划和总体进度合并成一张持续更新的地图，避免多份旧计划和聊天上下文导致遗忘或跑偏。
+- 新增 `docs/PROJECT_MAP.md`：统一记录最终目标、架构、全部板块状态、当前工作线、退出条件、唯一执行顺序、不做事项和维护规则。
+- `docs/ACTIVE_WORKSTREAM.md` 已收敛为地图入口；`CLAUDE.md`、接班阅读指南和 `ROADMAP.md` 已将地图设为新窗口首读和唯一执行顺序来源；旧 `MASTER_EXECUTION_PLAN_2026-08-28.md` 明确降级为历史阶段证据。
+- 对抗核对时同时修正旧事实漂移：当前生产 release 已含 Browser 共享兼容代码；funding timer 已开启；默认路线实时核对为 API；每卡成功次数生产值为 3；D-094/D-095/D-108/D-110–D-113 状态已更新。
+- 当前唯一下一步不变：首笔真实订单驱动自动补余额验收；随后 3–5 单连续 API 运营验证。Browser 非付款联调并行，不自行真实付款。
