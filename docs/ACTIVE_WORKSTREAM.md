@@ -4,8 +4,9 @@
 
 1. `docs/PROJECT_MAP.md`
 2. `docs/CURRENT_STATE.md`
-3. `docs/DECISIONS.md` 尾部
-4. `docs/HANDOFF_LOG.md`
+3. `docs/PROJECT_OPERATING_MODEL.md`
+4. `docs/DECISIONS.md` 尾部
+5. `docs/HANDOFF_LOG.md`
 
 当前精确停止点：付款前 hold 演练已完成并清理，但清理把 Worker 的 API 最小充值权限恢复成了 `false`，与已确认的生产常驻基线冲突；接单与派发仍为 true，readiness 唯一 blocker 为 `api_recharge_execution_disabled`。
 

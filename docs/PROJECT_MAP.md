@@ -1,8 +1,9 @@
 # AI充值业务｜唯一项目规划地图
 
 > **用途**：只回答四件事：项目目标、当前生产事实、已完成/未完成、唯一执行顺序。
-> **最后统一核对**：2026-08-31 13:30 CST。已对照 `main@c472854`、前后端代码、生产 `/opt/pojia/current`、systemd、进程环境和只读 readiness。
+> **最后统一核对**：2026-08-31 14:05 CST。已对照前后端代码、生产 `/opt/pojia/current`、systemd、进程环境、数据库开关和只读 readiness。
 > 历史报告不能覆盖本地图；实时生产事实优先，变化后必须同步更新本地图与 `CURRENT_STATE.md`。
+> 全链路、控制矩阵、自动补给状态机、库存最小模型、资金边界、通知、回滚和验收细则统一见 `docs/PROJECT_OPERATING_MODEL.md`。
 
 ## 1. 已确认的目标和原则
 
@@ -141,4 +142,4 @@
 3. release、systemd、数据库开关、默认路线或服务状态变化；
 4. 唯一下一步或优先级变化。
 
-新窗口首读：`PROJECT_MAP.md` → `CURRENT_STATE.md` → `DECISIONS.md` 尾部 → 地图引用的证据报告。`ROADMAP.md` 仅为历史明细，不得自行覆盖本地图。
+新窗口首读：`PROJECT_MAP.md` → `CURRENT_STATE.md` → `PROJECT_OPERATING_MODEL.md` → `DECISIONS.md` 尾部 → 引用的证据报告。`ROADMAP.md` 仅为历史明细，不得自行覆盖本地图。

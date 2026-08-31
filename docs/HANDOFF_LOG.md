@@ -816,3 +816,10 @@
 - 代码复核：“开始营业”只检查路线、执行器和卡供给，随后打开接单+派发；不会打开 systemd/Provider 权限。API 权限关闭没有 actionId/后台跳转，不能再宣称所有错误均可跳转。
 - 已重写 `PROJECT_MAP.md`、`CURRENT_STATE.md`、`ACTIVE_WORKSTREAM.md`，在 `ROADMAP.md` 顶部标明旧快照过期；详细报告 `docs/2026-08-31_project-map-authoritative-reconciliation.md`。
 - 当前唯一下一步：恢复已确认的 API 常驻最小充值权限并重跑 readiness，然后再接下一笔真实 API 订单。本轮未修改生产或执行资金动作。
+
+# 2026-08-31｜规划地图第二轮完整性补强
+
+- 在权威地图纠偏后，继续按代码/生产证据补齐完整运行模型，新增 `docs/PROJECT_OPERATING_MODEL.md`。
+- 总册覆盖：端到端业务链、开始营业检查/跳转矩阵、自动补余额/开卡状态机、API/Browser 双线、库存最小模型、资金幂等、Bark/对账/费用监控、部署备份回滚、分阶段验收、已知缺陷/未验证项、事实/决策/建议分层和文档职责。
+- 14:05 CST 再次现场复核：current 仍为 `20260831-prepayment-hold-55b6ec4`；Web/Worker active，Browser inactive；自动开卡/funding/reconcile timers active；Worker 通用 Provider、卡片、API 充值写仍均为 false。未修改生产或执行资金动作。
+- `PROJECT_MAP.md`、`CURRENT_STATE.md`、`ACTIVE_WORKSTREAM.md` 与 `CLAUDE.md` 已加入总册入口。地图继续只负责方向和顺序，不把全部细节塞回单页。

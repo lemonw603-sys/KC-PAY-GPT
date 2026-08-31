@@ -1,6 +1,6 @@
-# 当前生产状态快照｜2026-08-31 13:30 CST
+# 当前生产状态快照｜2026-08-31 14:05 CST
 
-> 只保留当前有效事实；历史过程查 `HANDOFF_LOG.md`，方向与顺序查 `PROJECT_MAP.md`。
+> 只保留当前有效事实；历史过程查 `HANDOFF_LOG.md`，方向与顺序查 `PROJECT_MAP.md`，全链路和验收细则查 `PROJECT_OPERATING_MODEL.md`。
 > 本快照已现场核对生产 release、systemd、Worker 进程环境、数据库 Provider account 和只读 readiness。
 
 ## 1. 代码、release 与服务
