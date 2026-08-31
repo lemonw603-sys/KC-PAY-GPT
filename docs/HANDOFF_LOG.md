@@ -671,3 +671,10 @@
 - 部署后只读 readiness：`ok=true`、`latestMigrationNumber=43`、活动任务/过期租约/未知 Provider 调用/资金风险/开放对账案件均为 0，`blockers=[]`；接单与派发保持部署前 `true`，未擅自改变。
 - 发现并修正候选 unit 描述与生产 timer 漂移：生产原为 10 秒触发，已更新为 60 秒；候选 `deploy/server/pojia-card-stock-runner.timer` 同步修正。runner 日志显示连续 `NO_DEMAND`，无额外开卡。
 - Provider 写权限仍保持关闭：`PROVIDER_WRITES_ENABLED=false`；常驻 Web/Worker 的卡台与充值写权限均关闭，未执行真实开卡、补余额、付款、退款或提现。
+
+# 2026-08-31｜一卡多单与自动补余额部署后只读验证
+
+- 部署后只读复核通过；详细报告：`docs/2026-08-31_card-reuse-post-deploy-verification.md`。
+- 当前 release、迁移 043、Web/Worker、库存/读同步/Bark、Browser Worker 与卡资金 timer 状态均符合预期；本地/公网 live/ready 正常。
+- readiness `ok=true`，活动任务、过期租约、未知 Provider 调用、资金风险和开放对账案件均为 0；`pojia-ops check` 与备份完整性检查通过。
+- 本轮未执行任何资金写入；库存 runner 最近执行均为 `NO_DEMAND`。
