@@ -4,21 +4,22 @@
 
 ## 代码与发布
 
-- 当前生产代码提交：`068c070`（一卡跨订单复用、每卡 1–4 次成功上限、自动补余额及活动分配/付款后同步修复）。
-- 生产 release：`/opt/pojia/releases/20260831-card-reuse-068c070`；回滚点：`/opt/pojia/releases/20260831-preflight-8da5127`。
-- 一卡跨订单复用与自动补余额联合版本已部署；库存 runner 生产定时器已校正为 60 秒间隔。
+- 当前生产代码提交：`973cb72`（运营控制面、当前路线就绪判断与自动补给入口修正）。
+- 生产 release：`/opt/pojia/releases/20260831-control-browser-973cb72`；回滚点：`/opt/pojia/releases/20260831-card-reuse-068c070`。
+- 一卡跨订单复用与每卡 1–4 次成功上限已部署；运营控制面也已部署。自动补余额的数据表和订单编排已在生产，但生产执行器尚未开启，不能称为已完成生产验收。
+- 自动补余额收口候选为 `95ee5ad`：改为订单驱动，不再后台预充所有低余额卡；5 秒领取订单任务、15 秒低调用量对账；代码和隔离回归已完成，待发布后受控启用与真实小额验收。
 - 可靠回滚点：`/opt/pojia/releases/20260828-fea0ffd-rollback`。
 - 服务：Web、API Worker、卡片读同步、卡目录同步、Bark、备份均正常；Browser Worker 保持 `inactive/disabled`。
 - Browser Worker 的候选 release 启动/停止/回滚演练已经通过；生产 `current` 仍是 `bba4105`，未包含主线最新 Browser Session/Checkout harness 和派发修复。
-- 付费补卡 runner 已确认为 `inactive/disabled`，避免重启后每 10 秒唤醒并带入卡台写权限。
+- 卡余额充值 runner 当前为 `inactive/disabled`；只读对账 timer 为 `active/enabled`。候选 unit 增加独立的 `CARD_FUNDING_EXECUTION_ENABLED` 门禁，普通部署后仍关闭，不会隐式产生卡台写入。
 - 最新迁移：`043_order_assigned_card`。
 
 ## 运行门禁与体检
 
 - 生产服务器已独立复核：`acceptNewOrders=true`、`dispatchNewRecharges=true`、派发模式 `AUTOMATIC`；这是用户此前手动开启并决定继续保留的当前运营状态。
-- 2026-08-31 已部署 `068c070` 联合版本；Web/Worker active，Browser Worker 保持 inactive/disabled；公网 live/ready 均 HTTP 200。Provider/API/Browser 付款写入仍关闭。
+- 2026-08-31 已部署 `973cb72` 控制面版本；Web/Worker active，库存 timer active/enabled，Browser Worker inactive/disabled，卡余额充值 timer inactive/disabled；公网 live/ready 均 HTTP 200。Provider/API/Browser 付款写入仍关闭。
 - `card_auto_replenishment_enabled=true`；无可分配 Plus 卡时自动开 1 张 `$16` 卡，每日上限 `5`；`card_stock_low_threshold=0`，仍有 1 张可分配卡时不提前开卡。
-- `PROVIDER_WRITES_ENABLED=false`、`PROVIDER_CARD_WRITES_ENABLED=false`、`PROVIDER_RECHARGE_WRITES_ENABLED=false`。
+- 常驻 Web/Worker 当前为 `PROVIDER_WRITES_ENABLED=false`、`PROVIDER_CARD_WRITES_ENABLED=false`、`PROVIDER_RECHARGE_WRITES_ENABLED=false`；生产 `card_balance_recharge_enabled=false`，尚未放开自动补余额。
 - Browser systemd 单元强制 `BROWSER_PAYMENT_WRITES_ENABLED=false`，且服务未启动。
 - 2026-08-29 09:07 CST 重跑生产 readiness：`ok=true`；活动任务、过期租约、UNKNOWN Provider 调用、资金风险、活动授权、开放对账案件均为 `0`，`blockers=[]`。
 - 公网 ops/plus 的 live/ready 四个端点均 HTTP 200。

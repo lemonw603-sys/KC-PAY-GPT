@@ -732,3 +732,11 @@
 
 - 新候选 HEAD `973cb72`，release `/opt/pojia/releases/20260831-control-browser-973cb72`，SHA-256 `4dfc7d61772bed83e74ff9167a9c29505ab19ffaad32c9b4e9370103bae37864`。
 - 依赖安装、语法、全量测试和生产只读 readiness 均通过；当前生产仍为 `068c070`，未切换、未产生资金写入。
+
+# 2026-08-31｜自动补余额生产缺口修正与候选完成
+
+- 用户指出原计划要求自动补余额与当前批次一起完成。复查确认：虽然账本、migration 042/043 和订单侧 PREPARED 已存在，但生产 funding timer 关闭，且旧 service 权限合同会导致启用即失败，因此此前不能称为完成。
+- 已以 `95ee5ad` 完成订单驱动自动补余额收口：独立生产 gate、5 秒任务领取、15 秒低调用量对账、资金中卡片不可分配、Provider 接受后本地落账失败锁 UNKNOWN、对账后库存恢复、取消订单清理未提交补给任务，并删除无订单全库存预充 scheduler。
+- 隔离 MySQL 与全量验证结果、生产只读预检和启用边界见 `docs/2026-08-31_order-driven-card-funding-production-candidate.md`。
+- 当前生产仍为 `/opt/pojia/releases/20260831-control-browser-973cb72`；`card_balance_recharge_enabled=false`，funding timer inactive/disabled；本轮尚未执行卡余额充值或其他资金写入。
+- 下一步：发布 `95ee5ad` 但保持独立 funding gate 关闭，完成发布后只读验收；随后仅在用户明确确认后开启生产补余额并执行一次真实小额验收。通过后进入 3–5 单连续真实订单阶段。
