@@ -749,3 +749,14 @@
 - Web/Worker 和公网健康通过；只读补余额对账 timer 已重启并按 15 秒运行；funding timer 继续 inactive/disabled，`CARD_FUNDING_EXECUTION_ENABLED=false`、`card_balance_recharge_enabled=false`。
 - 生产无 PREPARED/ACTIVE/UNKNOWN funding attempt、无 WAITING_FOR_CARD 订单；未执行任何资金写入。
 - 下一步不是跳过自动补余额进入放量，而是由用户一次确认后受控开启独立 funding gate、数据库能力开关和 funding timer，并选择一张允许补余额的卡做一次真实小额验收。
+
+
+# 2026-08-31｜订单驱动自动补余额生产开启
+
+- 用户明确确认“开启”。第一次开启脚本在写入任何配置或数据库前因 Node heredoc 语法错误退出；现场复核确认 timer 仍 disabled/inactive、drop-in 不存在、数据库仍为 false，因此没有半开启状态。修正脚本后一次完成开启。
+- 当前 release：`/opt/pojia/releases/20260831-order-funding-c185d19`；开启前备份：`/var/backups/pojia/funding-enable-20260831T020605Z`。
+- systemd drop-in：`/etc/systemd/system/pojia-card-funding.service.d/production-enabled.conf`，`CARD_FUNDING_EXECUTION_ENABLED=true`；funding timer active/enabled。
+- 数据库 `card_balance_recharge_enabled=true`；审计事件已写入，actor `deployment:card-funding-enable`，reason “用户确认开启订单驱动自动补余额”。
+- 开启后无 WAITING_FOR_CARD、无 PREPARED/ACTIVE/PENDING/UNKNOWN funding attempt；开启时间后没有 `card_recharge` Provider call。runner 连续 `{"handled":false}`，空闲未产生 Provider API 调用。
+- Web/Worker active；reconcile timer active/enabled；Browser Worker inactive/disabled；ops/plus live/ready 四项 HTTP 200；`pojia-ops check` 与备份完整性通过；最近相关日志无 warning/error。
+- 未执行真实开卡、补余额、API/Browser 付款、退款或提现。下一停止点为首笔真实订单驱动补余额验收；这一步尚未完成。

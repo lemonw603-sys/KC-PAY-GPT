@@ -58,3 +58,15 @@
 - 数据库无 PREPARED/ACTIVE/UNKNOWN funding attempt、无 WAITING_FOR_CARD 订单。
 - ops/plus 四个公网 live/ready 均 HTTP 200；`pojia-ops check`、备份完整性和最近日志检查通过。
 - 本次发布未执行卡余额充值、开卡、API/Browser 付款、退款或提现。
+
+
+## 生产开启结果
+
+- 用户于 2026-08-31 明确确认开启。
+- 第一次操作脚本在变更前因 heredoc 语法错误退出；复核 timer、drop-in 和数据库后确认没有部分变更，再执行修正版。
+- 开启备份：`/var/backups/pojia/funding-enable-20260831T020605Z`。
+- systemd：`pojia-card-funding.timer` active/enabled；drop-in 将独立 gate 设为 `CARD_FUNDING_EXECUTION_ENABLED=true`。基础 unit 继续将 API/订单充值权限设为 false，只在 funding 进程内窄开 `PROVIDER_CARD_WRITES_ENABLED=true`。
+- 数据库：`card_balance_recharge_enabled=true`，审计 actor/reason 已记录。
+- 空闲验收：无等待卡订单，无 PREPARED/ACTIVE/PENDING/UNKNOWN 资金任务；开启后 `card_recharge` Provider 调用为 0；runner 仅返回 `{"handled":false}`。
+- 系统验收：Web/Worker、funding/reconcile timers 正常；Browser Worker 保持关闭；公网健康、`pojia-ops check`、备份完整性和日志检查通过。
+- 尚未执行真实补余额，因此候选的最后退出条件仍是首笔订单驱动真实补差额：必须证明唯一 Provider 写调用、幂等键、到账与交易证据、库存恢复和订单自动继续；UNKNOWN 不重试。
