@@ -46,3 +46,15 @@
 - API/Browser 付款权限不变。
 
 发布后只读验收通过，再申请一次确认，同时开启独立 gate、数据库能力开关和 funding timer。真实验收只选择一张明确允许补余额的低余额卡，记录补前余额、精确补款、Provider 调用次数、交易证据和补后订单恢复；出现 UNKNOWN 立即停止，不自动再补。
+
+## 发布结果
+
+- 已发布 release：`/opt/pojia/releases/20260831-order-funding-c185d19`。
+- 回滚点：`/opt/pojia/releases/20260831-control-browser-973cb72`。
+- 部署前加密备份：`/var/backups/pojia/pojia-20260831T015201Z.sql.gz.enc`，完整性 OK。
+- systemd unit 备份：`/var/backups/pojia/funding-units-20260831T015159Z`。
+- Web/Worker active；库存 timer active/enabled；只读 funding reconcile timer 已按新 unit 重启为 15 秒；Browser Worker inactive/disabled。
+- paid funding timer 仍为 inactive/disabled；独立 `CARD_FUNDING_EXECUTION_ENABLED=false`；数据库 `card_balance_recharge_enabled=false`。
+- 数据库无 PREPARED/ACTIVE/UNKNOWN funding attempt、无 WAITING_FOR_CARD 订单。
+- ops/plus 四个公网 live/ready 均 HTTP 200；`pojia-ops check`、备份完整性和最近日志检查通过。
+- 本次发布未执行卡余额充值、开卡、API/Browser 付款、退款或提现。

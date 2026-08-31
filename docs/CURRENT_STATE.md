@@ -4,10 +4,10 @@
 
 ## 代码与发布
 
-- 当前生产代码提交：`973cb72`（运营控制面、当前路线就绪判断与自动补给入口修正）。
-- 生产 release：`/opt/pojia/releases/20260831-control-browser-973cb72`；回滚点：`/opt/pojia/releases/20260831-card-reuse-068c070`。
+- 当前生产代码提交：代码 `95ee5ad`、文档对齐 `c185d19`（订单驱动自动补余额生产候选已发布，资金门禁保持关闭）。
+- 生产 release：`/opt/pojia/releases/20260831-order-funding-c185d19`；回滚点：`/opt/pojia/releases/20260831-control-browser-973cb72`。
 - 一卡跨订单复用与每卡 1–4 次成功上限已部署；运营控制面也已部署。自动补余额的数据表和订单编排已在生产，但生产执行器尚未开启，不能称为已完成生产验收。
-- 自动补余额收口候选为 `95ee5ad`：改为订单驱动，不再后台预充所有低余额卡；5 秒领取订单任务、15 秒低调用量对账；代码和隔离回归已完成，待发布后受控启用与真实小额验收。
+- 自动补余额收口版本 `95ee5ad` 已发布：改为订单驱动，不再后台预充所有低余额卡；5 秒领取订单任务、15 秒低调用量对账。当前独立 systemd gate、数据库能力开关和 funding timer 均保持关闭，待受控启用与真实小额验收。
 - 可靠回滚点：`/opt/pojia/releases/20260828-fea0ffd-rollback`。
 - 服务：Web、API Worker、卡片读同步、卡目录同步、Bark、备份均正常；Browser Worker 保持 `inactive/disabled`。
 - Browser Worker 的候选 release 启动/停止/回滚演练已经通过；生产 `current` 仍是 `bba4105`，未包含主线最新 Browser Session/Checkout harness 和派发修复。
@@ -17,7 +17,7 @@
 ## 运行门禁与体检
 
 - 生产服务器已独立复核：`acceptNewOrders=true`、`dispatchNewRecharges=true`、派发模式 `AUTOMATIC`；这是用户此前手动开启并决定继续保留的当前运营状态。
-- 2026-08-31 已部署 `973cb72` 控制面版本；Web/Worker active，库存 timer active/enabled，Browser Worker inactive/disabled，卡余额充值 timer inactive/disabled；公网 live/ready 均 HTTP 200。Provider/API/Browser 付款写入仍关闭。
+- 2026-08-31 已部署 `/opt/pojia/releases/20260831-order-funding-c185d19`；Web/Worker active，库存 timer active/enabled，只读补余额对账 timer active/enabled（15 秒、无 pending 时零 Provider 调用），Browser Worker inactive/disabled，卡余额充值 timer inactive/disabled；公网 live/ready 均 HTTP 200。
 - `card_auto_replenishment_enabled=true`；无可分配 Plus 卡时自动开 1 张 `$16` 卡，每日上限 `5`；`card_stock_low_threshold=0`，仍有 1 张可分配卡时不提前开卡。
 - 常驻 Web/Worker 当前为 `PROVIDER_WRITES_ENABLED=false`、`PROVIDER_CARD_WRITES_ENABLED=false`、`PROVIDER_RECHARGE_WRITES_ENABLED=false`；生产 `card_balance_recharge_enabled=false`，尚未放开自动补余额。
 - Browser systemd 单元强制 `BROWSER_PAYMENT_WRITES_ENABLED=false`，且服务未启动。

@@ -740,3 +740,12 @@
 - 隔离 MySQL 与全量验证结果、生产只读预检和启用边界见 `docs/2026-08-31_order-driven-card-funding-production-candidate.md`。
 - 当前生产仍为 `/opt/pojia/releases/20260831-control-browser-973cb72`；`card_balance_recharge_enabled=false`，funding timer inactive/disabled；本轮尚未执行卡余额充值或其他资金写入。
 - 下一步：发布 `95ee5ad` 但保持独立 funding gate 关闭，完成发布后只读验收；随后仅在用户明确确认后开启生产补余额并执行一次真实小额验收。通过后进入 3–5 单连续真实订单阶段。
+
+
+# 2026-08-31｜订单驱动自动补余额版本已发布（资金门禁未开启）
+
+- 用户已确认发布；生产已原子切换至 `/opt/pojia/releases/20260831-order-funding-c185d19`，回滚点为 `/opt/pojia/releases/20260831-control-browser-973cb72`。
+- 部署前加密备份 `/var/backups/pojia/pojia-20260831T015201Z.sql.gz.enc` 完整性通过；旧 funding unit 备份在 `/var/backups/pojia/funding-units-20260831T015159Z`。
+- Web/Worker 和公网健康通过；只读补余额对账 timer 已重启并按 15 秒运行；funding timer 继续 inactive/disabled，`CARD_FUNDING_EXECUTION_ENABLED=false`、`card_balance_recharge_enabled=false`。
+- 生产无 PREPARED/ACTIVE/UNKNOWN funding attempt、无 WAITING_FOR_CARD 订单；未执行任何资金写入。
+- 下一步不是跳过自动补余额进入放量，而是由用户一次确认后受控开启独立 funding gate、数据库能力开关和 funding timer，并选择一张允许补余额的卡做一次真实小额验收。

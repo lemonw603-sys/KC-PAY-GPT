@@ -2,7 +2,7 @@
 
 > 2026-08-28 起，跨模块当前执行顺序统一以 `docs/MASTER_EXECUTION_PLAN_2026-08-28.md` 为准；其对抗审查见 `docs/MASTER_EXECUTION_PLAN_ADVERSARIAL_REVIEW_2026-08-28.md`。本文继续保留阶段历史，不再从历史段落单独推导新的“下一步”。
 
-> **2026-08-31 当前执行顺序更正**：运营控制面 `973cb72` 已部署。现在不直接进入放量阶段；先发布并受控验收自动补余额候选 `95ee5ad`。该候选只在真实 `WAITING_FOR_CARD` 订单存在且生产能力开关开启时给一张合格低余额卡补差额，不做后台全库存预充；资金写入与真实小额验收必须单独确认。通过后进入 3–5 单连续真实订单验证，Browser 线继续并行但不自行真实付款。详见 `docs/2026-08-31_order-driven-card-funding-production-candidate.md`。
+> **2026-08-31 当前执行顺序更正**：运营控制面 `973cb72` 已部署。现在不直接进入放量阶段；自动补余额候选 `95ee5ad` 已发布；下一步是受控启用和真实小额验收。该候选只在真实 `WAITING_FOR_CARD` 订单存在且生产能力开关开启时给一张合格低余额卡补差额，不做后台全库存预充；资金写入与真实小额验收必须单独确认。通过后进入 3–5 单连续真实订单验证，Browser 线继续并行但不自行真实付款。详见 `docs/2026-08-31_order-driven-card-funding-production-candidate.md`。
 
 > 状态更正（2026-08-30）：Browser/API 路由硬断链、专用心跳、原子 attempt+job 和全局默认充值方式已部署。生产形态安全窗口已证明订单能冻结 Browser 路线，但当前因没有余额达到 `$16` 的可分配 Plus 卡，真实派发在 `WAITING_FOR_CARD` 停止，尚未形成 Browser job 或进入 Checkout。详见 `docs/2026-08-30_browser-production-nonpayment-window-result.md`。
 > `docs/BACKEND_RUNTIME_ALIGNMENT_AUDIT_2026-08-28.md` 是部署前历史快照；当前生产事实以 `docs/CURRENT_STATE.md` 和 `docs/PRE_INVENTORY_CONVERGENCE_SEAL_2026-08-28.md` 为准。
