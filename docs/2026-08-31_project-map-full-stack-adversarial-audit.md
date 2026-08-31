@@ -39,6 +39,7 @@
 - 后台默认 API 时同时要求 Worker 健康和真实充值权限；
 - 只读 readiness 在营业开关已开、默认 API、权限关闭时报告 `api_recharge_execution_disabled`；
 - Web 不会隐式打开资金权限。
+- 仓库新增可审计的最小权限 systemd drop-in 模板；确认后安装即可长期打开 API 充值，同时保持通用 Provider 写、卡片写和 Browser 付款关闭，避免现场手改产生配置漂移。
 
 仍需单独确认：部署时是否把 Worker 的最小 `PROVIDER_RECHARGE_WRITES_ENABLED` 长期开启。该动作会让后续真实订单具备真实充值能力，不能由本轮只读核查擅自执行。
 

@@ -48,6 +48,18 @@ systemctl enable --now pojia-bark-notifications.service
 
 不得直接编辑环境文件绕过 Permit。Permit 消费后任何失败都进入终态或人工核对，不自动再次创建直充订单。
 
+若默认 API 路线进入常驻自动运营，必须在一次明确确认后安装仓库内的最小权限 drop-in，不能临时手改 unit：
+
+```bash
+install -d -m 0755 /etc/systemd/system/pojia-worker.service.d
+install -m 0644 deploy/server/pojia-worker-api-recharge-enabled.conf.example \
+  /etc/systemd/system/pojia-worker.service.d/api-recharge-enabled.conf
+systemctl daemon-reload
+systemctl restart pojia-worker.service
+```
+
+该 drop-in 只把 `PROVIDER_RECHARGE_WRITES_ENABLED` 设为 true；通用 Provider 写和卡片写继续为 false。停止 API 自动充值时删除该 drop-in、`daemon-reload` 并重启 Worker。部署后必须等待 Worker 心跳，并确认后台/readiness 的 `apiRechargeExecutionEnabled=true`；不能只看服务进程 active。
+
 ## 独立 Browser production-readonly Worker
 
 Browser 队列不由 `pojia-worker.service` 消费。独立单元为
