@@ -82,6 +82,7 @@ const elements = {
   viewTitle: document.querySelector('#view-title'),
   syncTime: document.querySelector('#sync-time'),
   metrics: document.querySelector('#metrics-grid'),
+  readinessList: document.querySelector('#admin-readiness-list'),
   overviewCdkRefundStatus: document.querySelector('#overview-cdk-refund-status'),
   overviewProviderHealth: document.querySelector('#overview-provider-health'),
   statusList: document.querySelector('#status-list'),
@@ -267,11 +268,20 @@ function orderRow(order, { selectable = false } = {}) {
 }
 
 async function loadOverview() {
-  const [overview, recent, alertData] = await Promise.all([
+  const [overview, recent, alertData, readiness] = await Promise.all([
     api('/api/v1/admin/overview'),
     api('/api/v1/admin/orders?page=1&pageSize=6'),
-    api('/api/v1/admin/alerts?limit=10')
+    api('/api/v1/admin/alerts?limit=10'),
+    api('/api/v1/admin/operations/readiness')
   ]);
+  if (elements.readinessList) {
+    const statusLabels = { READY: '已就绪', ACTION_REQUIRED: '需要处理', BLOCKED: '暂不可用' };
+    elements.readinessList.innerHTML = (readiness.checks || []).map((item) => `<div class="readiness-row readiness-${String(item.status || '').toLowerCase()}"><span><strong>${escapeHtml(item.message || item.checkId)}</strong><small>${escapeHtml(statusLabels[item.status] || item.status || '未知')}</small></span>${item.actionId ? `<button type="button" class="text-button readiness-action" data-readiness-action="${escapeHtml(item.actionId)}">去处理</button>` : '<span class="readiness-ok">✓</span>'}</div>`).join('') || '<p class="empty-state">暂无检查项</p>';
+    elements.readinessList.querySelectorAll('[data-readiness-action]').forEach((button) => button.addEventListener('click', () => {
+      const target = { REFRESH_PROVIDER_RULES: 'stock', OPEN_CARD_STOCK: 'stock', OPEN_BROWSER_STATUS: 'browser' }[button.dataset.readinessAction];
+      if (target) document.querySelector(`.nav-item[data-view="${target}"]`)?.click();
+    }));
+  }
   const orderMetrics = [
     { label: '累计订单', value: overview.metrics.totalOrders, note: '全部已创建订单', view: 'orders' },
     { label: '今日订单', value: overview.metrics.todayOrders, note: '点击查看今天新订单', filter: 'TODAY' },

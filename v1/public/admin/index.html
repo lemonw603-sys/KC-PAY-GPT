@@ -7,8 +7,8 @@
   <meta name="theme-color" content="#f5f8fc">
   <title>Plus 运营后台</title>
   <link rel="icon" href="/admin/assets/favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/admin/assets/admin.css?v=18">
-  <script src="/admin/assets/admin.js?v=18" defer></script>
+  <link rel="stylesheet" href="/admin/assets/admin.css?v=19">
+  <script src="/admin/assets/admin.js?v=19" defer></script>
 </head>
 <body>
   <div class="admin-shell">
@@ -50,6 +50,10 @@
 
       <section id="overview-view" class="view" aria-labelledby="view-title">
         <div class="metrics-grid" id="metrics-grid" aria-label="关键指标"></div>
+        <section class="card readiness-card" aria-labelledby="readiness-title">
+          <div class="card-heading"><div><p class="section-kicker">开工检查</p><h2 id="readiness-title">系统就绪情况</h2></div><span class="readonly-badge">只读</span></div>
+          <div class="readiness-list" id="admin-readiness-list"><p class="empty-state">正在检查…</p></div>
+        </section>
         <div class="dashboard-grid overview-secondary-grid">
           <section class="card status-card"><div class="card-heading"><div><p class="section-kicker">卡密与退款</p><h2>状态分布</h2></div><span class="readonly-badge">只读</span></div><div class="mini-list" id="overview-cdk-refund-status"></div></section>
           <section class="card status-card"><div class="card-heading"><div><p class="section-kicker">卡台健康</p><h2>卡台状态</h2></div><span class="readonly-badge">只读</span></div><div class="mini-list" id="overview-provider-health"></div></section>
