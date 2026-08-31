@@ -800,3 +800,11 @@
 - 全新 MySQL 8.4 migration 001–044 与定向集成通过；v1/Browser/legacy 全量回归通过。生产尚未部署、未改变任何资金权限或执行资金写入。
 - 详细证据：`docs/2026-08-31_project-map-full-stack-adversarial-audit.md`。下一停止点是候选提交后，部署前一次性确认是否长期开启最小 API 充值执行权限。
 - 最终候选 HEAD `d5fb3cf`，服务器目录 `/opt/pojia/releases/20260831-map-audit-d5fb3cf`，归档 SHA-256 `71038bb373b95c49b1ff1124337c8fa42659da3283a547ba5ebea122ec1cc8c6`；候选未切流。只读运行候选 readiness 已准确返回 `api_recharge_execution_disabled`，证明假就绪修复能够识别当前生产冲突。
+
+# 2026-08-31｜生产付款前暂停演练清理
+
+- 按用户确认部署并完成 hold 演练后，保留候选 release `/opt/pojia/releases/20260831-prepayment-hold-55b6ec4` 作为可回滚证据；`/opt/pojia/current` 仍指向该 release。
+- 测试订单 `PJV1-0RcrjBEOL6senGnzqW7e` 通过 `markAttemptRejected` 正式收敛：订单 `RECHARGE_FAILED`；attempt `7b2ad429-608c-4590-aaf5-acb0b7012179` 为 `CLEARED/CLEARED`，资金栅栏释放，完成时间 `2026-08-31T04:43:06.226Z`；测试 task 保持 DEAD，不会自动重试。
+- 原本的 `provider_calls.create_direct` 意图记录已由 `STARTED` 收敛为 `FAILED`，无 HTTP 状态、无完成外部订单号；未执行真实充值、付款、开卡、卡充值或提现。
+- 已关闭并移出临时 systemd drop-in `/etc/systemd/system/pojia-worker.service.d/prepayment-hold.conf`（保留为 `.completed-20260831` 备份），daemon-reload 后重启。
+- 当前生产 Worker 环境恢复最小默认权限：`PROVIDER_READS_ENABLED=true`，通用 Provider/卡片/充值写入均为 `false`；Web/Worker 均 `active`。未恢复任何真实充值权限。
