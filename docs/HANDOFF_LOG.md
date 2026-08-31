@@ -659,3 +659,15 @@
 - 生产验证：Web/Worker active；`pojia-ops status` 正常；ops/plus live/ready 均 HTTP 200。
 - Browser Worker `disabled`；Provider 写入、卡台写入、真实付款均未开启或执行。
 - 未执行开卡、补余额、提交订单或任何资金写入；本次仅发布订单驱动补给逻辑。
+
+# 2026-08-31｜一卡多单与自动补余额联合版本生产部署
+
+- 用户已确认部署候选提交 `068c070e06d31cbe284438c62e48efae8f66cab0`。
+- 目标 release：`/opt/pojia/releases/20260831-card-reuse-068c070`；部署前回滚点：`/opt/pojia/releases/20260831-preflight-8da5127`。
+- 依赖安装首次因 `/opt/pojia/.npm` root-owned 缓存失败；未影响旧 release。随后使用 `/tmp/pojia-npm-cache-068c070` 独立缓存成功安装 v1 与 browser-mvp 依赖，语法检查通过。
+- 生产 migration 042/043 已执行；第二次迁移全部 `already applied`。最新迁移为 `043_order_assigned_card`。
+- 原子切换后 Web/Worker active，库存 runner timer active/enabled；Browser Worker inactive/disabled，card funding timer inactive/disabled。
+- 本地/公网 live 与 ready 均返回正常；`pojia-ops check` 通过，最新加密备份 `/var/backups/pojia/pojia-20260830T235805Z.sql.gz.enc` 完整性 OK。
+- 部署后只读 readiness：`ok=true`、`latestMigrationNumber=43`、活动任务/过期租约/未知 Provider 调用/资金风险/开放对账案件均为 0，`blockers=[]`；接单与派发保持部署前 `true`，未擅自改变。
+- 发现并修正候选 unit 描述与生产 timer 漂移：生产原为 10 秒触发，已更新为 60 秒；候选 `deploy/server/pojia-card-stock-runner.timer` 同步修正。runner 日志显示连续 `NO_DEMAND`，无额外开卡。
+- Provider 写权限仍保持关闭：`PROVIDER_WRITES_ENABLED=false`；常驻 Web/Worker 的卡台与充值写权限均关闭，未执行真实开卡、补余额、付款、退款或提现。

@@ -1,5 +1,5 @@
 [Unit]
-Description=每 10 秒检查一次库存卡后台任务
+Description=每 60 秒检查一次库存卡后台任务
 
 [Timer]
 OnBootSec=15s
