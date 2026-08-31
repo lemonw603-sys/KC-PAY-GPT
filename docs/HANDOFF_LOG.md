@@ -849,3 +849,10 @@
 - 重启后 `pojia-worker.service=active/running`，进程环境实际为 `PROVIDER_RECHARGE_WRITES_ENABLED=true`、通用 Provider/卡片写=false；`/health/ready` 返回 `{"status":"ready"}`。
 - 数据库只读核对：recharge account `zzshu/legacy-primary/RECHARGE` 为 `read_enabled=1、write_enabled=1、circuit_state=CLOSED`；card account `hnskj/legacy-primary/CARD` 为 `read_enabled=1、write_enabled=0、circuit_state=CLOSED`。接单/派发及自动补给开关仍为 true，三个补给 timer active。
 - 本动作未创建订单、未读取客户 Session、未调用 Provider、未开卡、未补余额、未付款。后台管理员 readiness 细项尚待登录会话复核。
+# 2026-08-31｜客户提交与后台 CDK 体验收敛（未部署）
+
+- 新增 `v1/public/assets/session-input.js`，Session 仅允许完整 JSON object，静默去除闭合对象后的复制尾部文本；前缀标签、数组、截断内容和非 json 围栏 fail-closed。
+- 客户提交增加不明结果防重复状态，并在 CDK 已绑定时自动尝试找回原订单；paste/blur 规范化不显示多余提示。
+- CDK 生成改为复用已登录管理员会话（保留数量确认、幂等键、审计）；下载/作废/状态导出仍 step-up。
+- 定向测试 3/3、JavaScript 语法检查和 diff 检查通过；完整 v1 测试受工作区未安装依赖影响，未部署生产。
+- 下一步：安装依赖重跑完整测试，再做独立发布和浏览器只读验收。

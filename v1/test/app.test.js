@@ -395,18 +395,9 @@ test('generates CDKs only for an authenticated administrator', async () => {
       body: JSON.stringify({ password: 'fixture admin password' })
     });
     const sessionCookie = login.headers.get('set-cookie').split(';')[0];
-    const stepUpRequired = await fetch(`${baseUrl}/api/v1/admin/cdks/generate`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Cookie: sessionCookie,
-        Origin: baseUrl, 'Idempotency-Key': 'fixture-idempotency-001' },
-      body: JSON.stringify({ count: 1 })
-    });
-    assert.equal(stepUpRequired.status, 403);
-    assert.deepEqual(await stepUpRequired.json(), { error: 'admin_step_up_required' });
-    const sensitiveCookie = await stepUp(baseUrl, sessionCookie);
     const generated = await fetch(`${baseUrl}/api/v1/admin/cdks/generate`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Cookie: sensitiveCookie,
+      headers: { 'Content-Type': 'application/json', Cookie: sessionCookie,
         Origin: baseUrl, 'Idempotency-Key': 'fixture-idempotency-001' },
       body: JSON.stringify({ count: 1 })
     });
@@ -421,9 +412,14 @@ test('generates CDKs only for an authenticated administrator', async () => {
     });
     assert.deepEqual(await batches.json(), { batches: [{ batchNo: 'B-TEST', totalCount: 1 }] });
     const download = await fetch(`${baseUrl}/api/v1/admin/cdks/B-TEST/download`, {
+      method: 'POST', headers: { Cookie: sessionCookie, Origin: baseUrl }
+    });
+    assert.equal(download.status, 403);
+    const sensitiveCookie = await stepUp(baseUrl, sessionCookie);
+    const confirmedDownload = await fetch(`${baseUrl}/api/v1/admin/cdks/B-TEST/download`, {
       method: 'POST', headers: { Cookie: sensitiveCookie, Origin: baseUrl }
     });
-    assert.deepEqual(await download.json(), {
+    assert.deepEqual(await confirmedDownload.json(), {
       batchNo: 'B-TEST', codes: ['PJ-ABCDEFGHJKMNPQRST234']
     });
     const statusReport = await fetch(`${baseUrl}/api/v1/admin/cdks/B-TEST/status-report`, {

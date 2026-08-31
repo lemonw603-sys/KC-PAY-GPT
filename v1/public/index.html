@@ -9,7 +9,7 @@
   <title>Plus 充值中心</title>
   <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/assets/customer.css?v=5">
-  <script src="/assets/customer.js?v=5" defer></script>
+  <script type="module" src="/assets/customer.js?v=6"></script>
 </head>
 <body>
   <div class="page-shell">
@@ -73,13 +73,14 @@
               <div class="field">
                 <div class="label-row"><label for="session-input">账号 Session</label><span>仅用于本次开通</span></div>
                 <textarea id="session-input" name="session" rows="8" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="请粘贴完整的 Session JSON" required></textarea>
-                <p class="field-help">请粘贴完整内容；订单创建成功后，此输入框会自动清空。</p>
+                <p class="field-help">请粘贴完整内容；复制工具附加在 JSON 尾部的文字会被自动去除。</p>
               </div>
               <label class="confirmation">
                 <input id="confirm-input" type="checkbox" required>
                 <span>我已核对 CDK卡密和账号信息，确认提交本次开通。</span>
               </label>
               <button class="primary-button" id="submit-button" type="submit"><span>确认提交</span><span class="button-arrow" aria-hidden="true">→</span></button>
+              <p class="submit-state" id="submit-state" aria-live="polite"></p>
             </form>
             <p class="panel-footnote"><span aria-hidden="true"></span>请勿将账号 Session 转发给他人</p>
           </section>

@@ -1894,12 +1894,21 @@ elements.cdkForm.addEventListener('submit', async (event) => {
   button.disabled = true;
   button.textContent = '生成中…';
   const count = Number(elements.cdkCount.value);
-  if (count > 10 && !window.confirm(`确认一次生成 ${count} 个 CDK？\n\n生成只创建批次，不会自动下载或交付。`)) {
+  if (!Number.isInteger(count) || count < 1 || count > 1000) {
+    showNotice('生成数量必须是 1–1000 之间的整数。');
     button.disabled = false;
     button.textContent = '生成 CDK';
     return;
   }
-  const storedRequest = JSON.parse(sessionStorage.getItem('cdk-generation-request') || 'null');
+  if (!window.confirm(`确认生成 ${count} 个 Plus CDK？\n\n本操作会写入并记录审计，但不会自动下载、交付、开卡或充值。`)) {
+    button.disabled = false;
+    button.textContent = '生成 CDK';
+    return;
+  }
+  let storedRequest = null;
+  try { storedRequest = JSON.parse(sessionStorage.getItem('cdk-generation-request') || 'null'); } catch {
+    sessionStorage.removeItem('cdk-generation-request');
+  }
   const requestKey = storedRequest?.count === count
     ? storedRequest.key : crypto.randomUUID();
   sessionStorage.setItem('cdk-generation-request', JSON.stringify({ count, key: requestKey }));

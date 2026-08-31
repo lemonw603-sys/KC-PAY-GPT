@@ -176,7 +176,7 @@
             <div><p class="section-kicker">订单入口</p><h2>生成 CDK 卡密</h2></div>
             <span class="write-badge">内部写入</span>
           </div>
-          <p class="card-description">当前仅支持 Plus。一次可生成 1–1000 个 CDK；生成后由你另行选择复制或下载 TXT，不会自动下载。数据库保存不可逆 HMAC，批次恢复副本加密保存。生成卡密不会触发开卡或充值。外部付款只记录“已确认”，实际金额和付款时间可在订单详情中补录；未补录时导出显示“未记录”。<strong>下载文件不代表已经交付客户。</strong></p>
+          <p class="card-description">当前仅支持 Plus。一次可生成 1–1000 个 CDK；已登录管理员确认数量后即可生成，无需再次输入密码。请求使用幂等键防止重复批次，生成动作和批次均保留审计。生成后由你另行选择复制或下载 TXT，不会自动下载，也不会触发开卡或充值。<strong>下载文件不代表已经交付客户。</strong></p>
           <form class="cdk-form" id="cdk-form">
             <label for="cdk-count">生成数量</label>
             <div>

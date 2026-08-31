@@ -264,3 +264,10 @@ footer p { margin: 0; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; animation: none !important; }
 }
+.submit-state {
+  min-height: 1.4em;
+  margin: 10px 0 0;
+  color: #526579;
+  font-size: .86rem;
+  text-align: center;
+}

@@ -15,6 +15,7 @@ test('customer assets contain no remote or legacy runtime dependencies', () => {
     path.join(directory, 'index.html'),
     path.join(directory, 'assets', 'customer.css'),
     path.join(directory, 'assets', 'customer.js'),
+    path.join(directory, 'assets', 'session-input.js'),
     path.join(directory, 'assets', 'favicon.svg')
   ];
   const forbidden = [

@@ -145,3 +145,5 @@
 
 | D-117 | 内部提醒只展示需要运营采取动作的 warning/critical。卡台余额变化继续发 Bark 并保留审计，但 info 历史不占后台提醒；订单等待卡提醒必须绑定订单并随取消/终态关闭；自动补给已开启时，低库存由系统按订单恢复，不再发送要求人工处理的低库存提醒。 | 已实现并部署 | migration 044 已关闭历史陈旧等待卡/低库存提醒；余额 info 证据继续保留。 |
 | D-118 | 默认 API 路线长期开放 Worker 的最小真实充值权限：只设 `PROVIDER_RECHARGE_WRITES_ENABLED=true`；`PROVIDER_WRITES_ENABLED=false`、`PROVIDER_CARD_WRITES_ENABLED=false` 和 Browser 付款门禁继续独立关闭。 | 已确认并部署 | 用户在本次候选部署前明确确认；生产以独立 systemd drop-in 落地，Worker 进程环境和心跳已复核。 |
+
+| D-119 | 后台 CDK 生成复用已登录管理员会话，不再为每次生成重复输入密码；保留同源、写限流、数量确认、稳定幂等键和批次审计。下载原始 CDK、状态导出、作废及其他高敏感明文操作继续要求短时 step-up。客户 Session 只静默去除完整 JSON 后的复制尾部文本，前缀标签/截断内容 fail-closed；提交结果不明时先查询原 CDK，禁止重复创建。 | 已实现，待部署与浏览器验收 | 2026-08-31 客户/后台体验收敛；详见 `docs/2026-08-31_customer-admin-ux-session-cdk.md`。不改变 Provider、资金、补给或 Browser 执行器。 |

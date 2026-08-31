@@ -1,3 +1,5 @@
+import { parseSessionInput } from './session-input.js';
+
 const STATUS = Object.freeze({
   QUEUED: {
     label: '已排队',
@@ -84,6 +86,7 @@ const elements = {
   confirmInput: document.querySelector('#confirm-input'),
   queryInput: document.querySelector('#query-input'),
   submitButton: document.querySelector('#submit-button'),
+  submitState: document.querySelector('#submit-state'),
   queryButton: document.querySelector('#query-button'),
   resultCard: document.querySelector('#result-card'),
   statusChip: document.querySelector('#status-chip'),
@@ -105,6 +108,7 @@ const elements = {
 let pollTimer = null;
 let pollingStartedAt = 0;
 let currentOrder = null;
+let pendingSubmissionCdk = '';
 
 function switchTab(panelId) {
   for (const tab of elements.tabs) {
@@ -212,38 +216,18 @@ function renderOrder(order, { scroll = true } = {}) {
   schedulePoll(order.publicNo, meta);
 }
 
-// Browser extensions can append non-JSON labels to a pasted Session. Extract
-// only the first complete JSON object without changing its contents.
-function parseSessionInput(raw) {
-  const text = String(raw || '').trim();
+function normalizeSessionField(field) {
   try {
-    return { value: JSON.parse(text), hadTrailingText: false };
+    const parsed = parseSessionInput(field.value);
+    if (parsed.hadTrailingText) field.value = parsed.canonical;
   } catch {
-    const start = text.indexOf('{');
-    if (start < 0) throw new Error('invalid_session_json');
-    let depth = 0;
-    let inString = false;
-    let escaped = false;
-    for (let index = start; index < text.length; index += 1) {
-      const char = text[index];
-      if (inString) {
-        if (escaped) escaped = false;
-        else if (char === '\\') escaped = true;
-        else if (char === '"') inString = false;
-        continue;
-      }
-      if (char === '"') { inString = true; continue; }
-      if (char === '{') depth += 1;
-      else if (char === '}') {
-        depth -= 1;
-        if (depth === 0) {
-          const value = JSON.parse(text.slice(start, index + 1));
-          return { value, hadTrailingText: Boolean(text.slice(index + 1).trim()) };
-        }
-      }
-    }
-    throw new Error('invalid_session_json');
+    // Validation remains submit-driven; paste never adds a noisy notice.
   }
+}
+
+for (const field of [elements.sessionInput, elements.replacementSessionInput]) {
+  field.addEventListener('paste', () => window.setTimeout(() => normalizeSessionField(field), 0));
+  field.addEventListener('blur', () => normalizeSessionField(field));
 }
 
 elements.replacementForm.addEventListener('submit', async (event) => {
@@ -256,7 +240,7 @@ elements.replacementForm.addEventListener('submit', async (event) => {
     const parsedReplacement = parseSessionInput(elements.replacementSessionInput.value);
     session = parsedReplacement.value;
     if (parsedReplacement.hadTrailingText) {
-      elements.replacementSessionInput.value = JSON.stringify(session);
+      elements.replacementSessionInput.value = parsedReplacement.canonical;
     }
   } catch {
     return showNotice('新 Session 格式不正确，请检查后重试。');
@@ -334,6 +318,12 @@ elements.submitForm.addEventListener('submit', async (event) => {
   hideNotice();
   const cdk = elements.cdkInput.value.trim();
   if (cdk.length < 8) return showNotice('请输入有效的 CDK卡密。');
+  if (pendingSubmissionCdk === cdk) {
+    elements.queryInput.value = cdk;
+    switchTab('query-panel');
+    showNotice('上次提交结果尚未确认，请先查询原订单，避免重复提交。', 'warning');
+    return;
+  }
   if (!elements.confirmInput.checked) return showNotice('请先核对 CDK卡密和账号信息。');
 
   let session;
@@ -341,7 +331,7 @@ elements.submitForm.addEventListener('submit', async (event) => {
     const parsedSession = parseSessionInput(elements.sessionInput.value);
     session = parsedSession.value;
     if (parsedSession.hadTrailingText) {
-      elements.sessionInput.value = JSON.stringify(session);
+      elements.sessionInput.value = parsedSession.canonical;
     }
   } catch {
     return showNotice('账号 Session 格式不正确，请检查后重试。');
@@ -351,22 +341,41 @@ elements.submitForm.addEventListener('submit', async (event) => {
   }
 
   setBusy(elements.submitButton, true, '正在安全提交…');
+  elements.submitState.textContent = '正在创建订单，请勿关闭页面或重复点击。';
   try {
     const payload = await postJson('/api/v1/orders', { cdk, session });
     elements.sessionInput.value = '';
     elements.confirmInput.checked = false;
     pollingStartedAt = Date.now();
+    pendingSubmissionCdk = '';
     renderOrder({ ...payload.order, status: 'QUEUED', updatedAt: null });
     showNotice('订单已建立，请保存订单查询码。', 'success');
   } catch (error) {
     if (error.message === 'cdk_unavailable') {
       elements.queryInput.value = cdk;
       switchTab('query-panel');
+      try {
+        const recovered = await postJson('/api/v1/orders/status', { cdk });
+        pollingStartedAt = Date.now();
+        pendingSubmissionCdk = '';
+        renderOrder(recovered.order);
+        showNotice('该 CDK 已绑定订单，已为你找回原订单。', 'success');
+        return;
+      } catch {
+        // Preserve the original server error if the recovery lookup races.
+      }
+    } else if (error.message === 'network_error' || error.message === 'invalid_response') {
+      pendingSubmissionCdk = cdk;
+      elements.queryInput.value = cdk;
+      switchTab('query-panel');
+      showNotice('提交结果暂时无法确认。请使用原 CDK 查询，不要重复创建订单。', 'warning');
+      return;
     }
     showNotice(customerMessage(error));
   } finally {
     session = null;
     setBusy(elements.submitButton, false, '');
+    elements.submitState.textContent = '';
   }
 });
 

@@ -545,7 +545,7 @@ export function createApp({
     });
   }
   if (typeof createAdminCdkBatch === 'function') {
-    app.post('/api/v1/admin/cdks/generate', ...sensitiveAdminGuards, async (req, res) => {
+    app.post('/api/v1/admin/cdks/generate', ...adminWriteGuards, async (req, res) => {
       try {
         const result = await createAdminCdkBatch({
           ...req.body,
@@ -732,7 +732,7 @@ export function createApp({
 
   app.get('/admin', noStore, async (req, res) => {
     if (!adminAuth || !await adminAuth.authenticateRequest(req)) return res.redirect(302, '/admin/login');
-    return res.sendFile(path.join(publicDirectory, 'admin', 'index.html'));
+    return res.sendFile('index.html', { root: path.join(publicDirectory, 'admin') });
   });
   app.use('/admin/assets', express.static(path.join(publicDirectory, 'admin', 'assets'), {
     etag: true,
@@ -742,7 +742,7 @@ export function createApp({
 
   app.get('/', (_req, res) => {
     res.setHeader('Cache-Control', 'no-store');
-    res.sendFile(path.join(publicDirectory, 'index.html'));
+    res.sendFile('index.html', { root: publicDirectory });
   });
   app.use('/assets', express.static(path.join(publicDirectory, 'assets'), {
     etag: true,
