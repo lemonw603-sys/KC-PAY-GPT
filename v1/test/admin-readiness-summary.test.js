@@ -30,8 +30,23 @@ test('no card can auto-heal only when opening rules and default card type are re
   assert.equal(blocked.checks[1].actionId, 'REFRESH_PROVIDER_RULES');
 });
 
-test('underfunded inventory remains blocked while production funding runner is disabled', () => {
+test('underfunded inventory remains blocked while production funding is disabled', () => {
   const result = buildAdminReadinessSummary({ ...base, cardStock: { available: 0, needsFunding: 2, autoReplenishmentEnabled: true } }, { defaultCardTypeReady: true });
   assert.equal(result.status, 'BLOCKED');
   assert.equal(result.checks[1].actionId, 'OPEN_CARD_FUNDING');
+});
+
+test('underfunded inventory is auto-healable after order-driven production funding is enabled', () => {
+  const result = buildAdminReadinessSummary({
+    ...base,
+    cardStock: {
+      available: 0,
+      needsFunding: 2,
+      autoReplenishmentEnabled: true,
+      balanceFundingEnabled: true
+    }
+  }, { defaultCardTypeReady: true });
+  assert.equal(result.status, 'AUTO_HEAL');
+  assert.equal(result.ready, true);
+  assert.equal(result.checks[1].actionId, null);
 });

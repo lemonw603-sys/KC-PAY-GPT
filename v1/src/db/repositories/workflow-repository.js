@@ -235,7 +235,19 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
              LIMIT 1 FOR UPDATE SKIP LOCKED`,
             [order.card_provider_account_id, String(order.minimum_required_card_balance)]
           );
-          if (underfunded) {
+          const [supplySettings] = await connection.query(
+            `SELECT setting_key, setting_value FROM app_settings
+             WHERE setting_key IN ('card_auto_replenishment_enabled','card_balance_recharge_enabled')`
+          );
+          const autoReplenishmentEnabled = supplySettings.some(
+            (row) => row.setting_key === 'card_auto_replenishment_enabled'
+              && row.setting_value === 'true'
+          );
+          const balanceFundingEnabled = supplySettings.some(
+            (row) => row.setting_key === 'card_balance_recharge_enabled'
+              && row.setting_value === 'true'
+          );
+          if (underfunded && balanceFundingEnabled) {
             const amount = topUpAmount(
               order.minimum_required_card_balance,
               underfunded.current_balance
@@ -252,11 +264,7 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
             );
             fundingQueued = Number(fundingInsert.affectedRows) === 1;
           }
-          const [[autoSetting]] = await connection.query(
-            `SELECT setting_value FROM app_settings
-             WHERE setting_key = 'card_auto_replenishment_enabled' LIMIT 1`
-          );
-          if (autoSetting?.setting_value === 'true' && Number(fundable?.count || 0) === 0) {
+          if (autoReplenishmentEnabled && Number(fundable?.count || 0) === 0) {
             // Bind the automatic opening request to real customer demand. The
             // stock runner re-checks live rules, balance and quota immediately
             // before the paid call; this row only provides a durable trigger.

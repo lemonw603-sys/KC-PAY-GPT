@@ -27,7 +27,9 @@ export function buildAdminReadinessSummary(overview = {}, { defaultCardTypeReady
   if (available > 0) {
     checks.push(check('CARD_SUPPLY', 'READY', `可直接分配卡 ${available} 张`));
   } else if (needsFunding > 0) {
-    checks.push(check('CARD_SUPPLY', 'BLOCKED', `有 ${needsFunding} 张卡需要补余额后才能使用`, 'OPEN_CARD_FUNDING'));
+    checks.push(stock.balanceFundingEnabled === true
+      ? check('CARD_SUPPLY', 'AUTO_HEAL', `有 ${needsFunding} 张卡余额不足；订单到达后会自动补足`)
+      : check('CARD_SUPPLY', 'BLOCKED', `有 ${needsFunding} 张卡需要补余额后才能使用`, 'OPEN_CARD_FUNDING'));
   } else if (stock.autoReplenishmentEnabled === true) {
     const providerReady = Boolean(health.syncedAt)
       && snapshotIsFresh({ syncedAt: health.syncedAt })

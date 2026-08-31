@@ -4,6 +4,7 @@ export async function executeCardFundingAttempt({ repository, provider, attemptI
   providerAccountId, providerName = 'hnskj', requestKey, now = new Date() }) {
   const begun = await repository.begin({ attemptId, provider: providerName,
     providerAccountId, requestKey, startedAt: now });
+  let providerAccepted = false;
   try {
     const response = await provider.rechargeCard({
       cardId: begun.cardId,
@@ -11,22 +12,32 @@ export async function executeCardFundingAttempt({ repository, provider, attemptI
       idempotencyKey: requestKey,
       remark: `card-funding:${attemptId}`
     });
+    providerAccepted = true;
     const mapped = mapCardRechargeResult(response);
     const settled = mapped.state === 'SETTLED';
-    await repository.finish({
-      attemptId, providerCallId: begun.providerCallId,
-      // The HTTP/API call succeeded even when the card operation remains
-      // pending; the funding attempt state carries the pending risk.
-      outcome: 'SUCCESS',
-      responseSummary: { state: mapped.state, externalReference: mapped.externalReference },
-      status: settled ? 'SETTLED' : 'PENDING',
-      fundsRiskState: settled ? 'SETTLED' : 'ACTIVE',
-      externalReference: mapped.externalReference,
-      finishedAt: new Date()
-    });
+    try {
+      await repository.finish({
+        attemptId, providerCallId: begun.providerCallId,
+        // The HTTP/API call succeeded even when the card operation remains
+        // pending; the funding attempt state carries the pending risk.
+        outcome: 'SUCCESS',
+        responseSummary: { state: mapped.state, externalReference: mapped.externalReference },
+        status: settled ? 'SETTLED' : 'PENDING',
+        fundsRiskState: settled ? 'SETTLED' : 'ACTIVE',
+        externalReference: mapped.externalReference,
+        finishedAt: new Date()
+      });
+    } catch (error) {
+      // Once the provider has accepted the request, a local persistence error
+      // can never be treated as a definite failure. Lock it as UNKNOWN so no
+      // scheduler, order retry or operator action can automatically pay again.
+      error.uncertain = true;
+      error.kind = error.kind || 'local_commit_after_provider_acceptance';
+      throw error;
+    }
     return { attemptId, state: mapped.state, externalReference: mapped.externalReference };
   } catch (error) {
-    const unknown = error?.uncertain === true;
+    const unknown = providerAccepted || error?.uncertain === true;
     await repository.finish({
       attemptId, providerCallId: begun.providerCallId,
       outcome: unknown ? 'UNCERTAIN' : 'DEFINITE_FAILURE',

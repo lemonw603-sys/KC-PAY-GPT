@@ -16,6 +16,10 @@ export function eligibleInventoryCardSql(alias = 'c', minimumSql = '?', { produc
         WHERE setting_key='card_max_successful_payments' LIMIT 1), 3)
     AND NOT EXISTS (SELECT 1 FROM card_assignment_history eligible_assignment
       WHERE eligible_assignment.card_id=${alias}.id AND eligible_assignment.status='ACTIVE')
+    AND NOT EXISTS (SELECT 1 FROM card_funding_attempts eligible_funding
+      WHERE eligible_funding.card_id=${alias}.id
+        AND (eligible_funding.status='PREPARED'
+          OR eligible_funding.funds_risk_state IN ('ACTIVE','UNKNOWN')))
     AND NOT EXISTS (
       SELECT 1 FROM refund_cases eligible_refund
       WHERE eligible_refund.card_id = ${alias}.id

@@ -62,6 +62,27 @@ export function createOrderCancellationService({ pool }) {
         );
         if (calls.length) throw new OrderCancellationError('Recharge provider was already called',
           'ORDER_CANCELLATION_SUBMISSION_RISK');
+        // Cancel supply work that has not reached any provider side effect.
+        // A RUNNING/PENDING/UNKNOWN funding operation is deliberately left in
+        // the funding ledger for reconciliation; it only prepares reusable
+        // internal inventory and never authorizes a customer payment.
+        await connection.query(
+          `UPDATE card_funding_attempts
+           SET status='FAILED', funds_risk_state='CLEARED', finished_at=CURRENT_TIMESTAMP(3),
+             result_summary_json=JSON_OBJECT('code','ORDER_CANCELLED_BEFORE_FUNDING'),
+             updated_at=CURRENT_TIMESTAMP(3)
+           WHERE order_id=? AND status='PREPARED' AND funds_risk_state='NONE'`,
+          [order.id]
+        );
+        await connection.query(
+          `UPDATE card_stock_jobs
+           SET status='CANCELLED', error_code='ORDER_CANCELLED_BEFORE_OPENING',
+             error_message='关联订单已在开卡前取消。', finished_at=CURRENT_TIMESTAMP(3),
+             updated_at=CURRENT_TIMESTAMP(3)
+           WHERE status='PENDING' AND job_source='AUTOMATIC'
+             AND JSON_UNQUOTE(JSON_EXTRACT(rules_snapshot_json, '$.demandOrderId'))=?`,
+          [order.id]
+        );
         await connection.query(
           `UPDATE tasks SET status = 'DEAD', leased_until = NULL, leased_by = NULL,
              last_error_code = 'CANCELLED_BY_ADMIN', last_error_message = ?,

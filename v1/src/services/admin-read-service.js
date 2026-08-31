@@ -458,7 +458,7 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
       pool.query('SELECT status, COUNT(*) AS count FROM orders GROUP BY status ORDER BY status'),
       pool.query('SELECT status, COUNT(*) AS count FROM cdks GROUP BY status ORDER BY status'),
       pool.query(`SELECT setting_key, setting_value, updated_at FROM app_settings
-        WHERE setting_key IN ('accept_new_orders','dispatch_new_recharges','recharge_dispatch_mode','poll_existing_orders','sync_card_transactions','worker_heartbeat_at')
+        WHERE setting_key IN ('accept_new_orders','dispatch_new_recharges','recharge_dispatch_mode','poll_existing_orders','sync_card_transactions','worker_heartbeat_at','card_balance_recharge_enabled')
         ORDER BY setting_key`),
       pool.query(`SELECT status, COUNT(*) AS count FROM refund_cases
         WHERE status <> 'WITHDRAWN' GROUP BY status ORDER BY status`)
@@ -596,6 +596,9 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
         const autoReplenishmentEnabled = stockSettingRows.some(
           (row) => row.setting_key === 'card_auto_replenishment_enabled' && row.setting_value === 'true'
         );
+        const balanceFundingEnabled = settingsRows.some(
+          (row) => row.setting_key === 'card_balance_recharge_enabled' && row.setting_value === 'true'
+        );
         const provisioning = count(stockRows[0]?.provisioning);
         const depleted = count(stockRows[0]?.depleted);
         const available = count(stockRows[0]?.available);
@@ -608,6 +611,7 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
         needsFunding: count(stockRows[0]?.needs_funding),
         lowThreshold,
         autoReplenishmentEnabled,
+        balanceFundingEnabled,
         low: autoReplenishmentEnabled && available <= lowThreshold
       }; })(),
       providerHealth: {

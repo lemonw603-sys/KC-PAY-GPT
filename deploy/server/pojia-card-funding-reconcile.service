@@ -11,7 +11,7 @@ Group=pojia
 WorkingDirectory=/opt/pojia/current/v1
 EnvironmentFile=/etc/pojia/runtime.env
 EnvironmentFile=/etc/pojia/provider.env
-ExecStart=/usr/bin/node scripts/card-funding-reconcile-runner.js
+ExecStart=/usr/bin/env PROVIDER_WRITES_ENABLED=false PROVIDER_RECHARGE_WRITES_ENABLED=false PROVIDER_CARD_WRITES_ENABLED=false /usr/bin/node scripts/card-funding-reconcile-runner.js
 NoNewPrivileges=true
 PrivateDevices=true
 PrivateTmp=true
@@ -22,4 +22,3 @@ RestrictSUIDSGID=true
 RestrictNamespaces=true
 LockPersonality=true
 CapabilityBoundingSet=
-

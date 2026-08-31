@@ -10,6 +10,8 @@ function fakePool(responses) {
       queries.push({ sql, values });
       if (/FROM card_consumption_ledger/.test(sql)) return [[{ id: 'usage-1', status: 'RESERVED', recharge_attempt_id: null }], []];
       if (/UPDATE card_consumption_ledger/.test(sql)) return [{ affectedRows: 1 }, []];
+      if (/UPDATE card_funding_attempts/.test(sql)) return [{ affectedRows: 1 }, []];
+      if (/UPDATE card_stock_jobs/.test(sql)) return [{ affectedRows: 1 }, []];
       const response = responses.shift();
       if (response === undefined) throw new Error(`Unexpected query: ${sql}`);
       return response;
@@ -70,6 +72,8 @@ test('cancellation closes an untouched waiting-for-card order without inventing 
   assert.deepEqual(result, { publicNo: 'PJV1-DEMO', status: 'CLOSED', cardReleased: false,
     cardInventoryStatus: null, replayed: false });
   assert.equal(pool.queries.some(({ sql }) => /WAITING_FOR_CARD', 'CLOSED'/.test(sql)), true);
+  assert.equal(pool.queries.some(({ sql }) => /UPDATE card_funding_attempts/.test(sql)), true);
+  assert.equal(pool.queries.some(({ sql }) => /UPDATE card_stock_jobs/.test(sql)), true);
   assert.equal(pool.queries.some(({ sql }) => /UPDATE cards/.test(sql)), false);
 });
 

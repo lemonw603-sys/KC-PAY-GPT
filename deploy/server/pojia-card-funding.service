@@ -11,10 +11,11 @@ Group=pojia
 WorkingDirectory=/opt/pojia/current/v1
 EnvironmentFile=/etc/pojia/runtime.env
 EnvironmentFile=/etc/pojia/provider.env
-# Hard gate: this unit is installed for future controlled activation, but
-# cannot perform a card funding write until this explicit value is changed
-# during a separately approved maintenance window.
-ExecStart=/usr/bin/env PROVIDER_WRITES_ENABLED=false PROVIDER_CARD_WRITES_ENABLED=false /usr/bin/node scripts/card-funding-runner.js
+# The provider capability is intentionally narrow: card balance funding only.
+# A second, unit-specific gate remains off after ordinary deployments and is
+# enabled with a systemd drop-in only during an approved production rollout.
+Environment=CARD_FUNDING_EXECUTION_ENABLED=false
+ExecStart=/usr/bin/env PROVIDER_WRITES_ENABLED=false PROVIDER_RECHARGE_WRITES_ENABLED=false PROVIDER_CARD_WRITES_ENABLED=true /usr/bin/node scripts/card-funding-runner.js
 NoNewPrivileges=true
 PrivateDevices=true
 PrivateTmp=true
@@ -25,4 +26,3 @@ RestrictSUIDSGID=true
 RestrictNamespaces=true
 LockPersonality=true
 CapabilityBoundingSet=
-

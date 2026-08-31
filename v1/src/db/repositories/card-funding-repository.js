@@ -122,18 +122,21 @@ export function createCardFundingRepository(pool) {
          AND provider_account_id = ?
          -- Explicit order-linked funding attempts are allowed to run even
          -- when the legacy global low-balance scanner remains disabled.
-       ORDER BY created_at ASC LIMIT 1`, [providerAccountId]
+       ORDER BY (order_id IS NULL) ASC, created_at ASC LIMIT 1`, [providerAccountId]
     );
     return rows[0] || null;
   }
 
   async function nextPending({ providerAccountId }) {
     const [rows] = await pool.query(
-      `SELECT fa.id, fa.card_id, fa.provider_account_id, c.provider_card_id,
+      `SELECT fa.id, fa.card_id, fa.order_id, fa.provider_account_id,
+              c.provider_card_id, c.card_type_id, c.funded_amount,
               fa.amount, fa.external_reference
        FROM card_funding_attempts fa INNER JOIN cards c ON c.id = fa.card_id
        WHERE fa.status = 'PENDING' AND fa.funds_risk_state = 'ACTIVE'
          AND fa.provider_account_id = ?
+         AND (fa.last_reconciled_at IS NULL
+           OR fa.last_reconciled_at <= DATE_SUB(CURRENT_TIMESTAMP(3), INTERVAL 15 SECOND))
        ORDER BY fa.created_at ASC LIMIT 1`, [providerAccountId]
     );
     return rows[0] || null;

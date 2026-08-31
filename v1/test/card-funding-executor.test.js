@@ -47,3 +47,32 @@ test('card funding executor locks uncertain provider errors', async () => {
   assert.equal(repository.calls[1].input.status, 'MANUAL_REVIEW');
   assert.equal(repository.calls[1].input.outcome, 'UNCERTAIN');
 });
+
+test('card funding executor locks a provider-accepted write when local commit fails', async () => {
+  const calls = [];
+  let finishes = 0;
+  const repository = {
+    async begin(input) {
+      calls.push({ type: 'begin', input });
+      return { providerCallId: 9, cardId: 'card-1', amount: '12', currency: 'USD' };
+    },
+    async finish(input) {
+      calls.push({ type: 'finish', input });
+      finishes += 1;
+      if (finishes === 1) throw new Error('temporary local commit failure');
+    }
+  };
+  const result = await executeCardFundingAttempt({
+    repository,
+    attemptId: 'attempt-local-commit',
+    providerAccountId: 'account-1',
+    requestKey: 'funding-request-local-commit',
+    provider: {
+      rechargeCard: async () => ({ success: true, data: { status: 'success', id: 'r-local' } })
+    }
+  });
+  assert.deepEqual(result, { attemptId: 'attempt-local-commit', state: 'UNKNOWN', code: null });
+  assert.equal(calls[2].input.status, 'MANUAL_REVIEW');
+  assert.equal(calls[2].input.fundsRiskState, 'UNKNOWN');
+  assert.equal(calls[2].input.outcome, 'UNCERTAIN');
+});

@@ -1,9 +1,9 @@
 [Unit]
-Description=每 30 秒检查一次卡片余额充值只读对账
+Description=每 15 秒检查一次待确认的卡片余额充值
 
 [Timer]
-OnBootSec=35s
-OnUnitActiveSec=30s
+OnBootSec=15s
+OnUnitActiveSec=15s
 AccuracySec=1s
 Unit=pojia-card-funding-reconcile.service
 

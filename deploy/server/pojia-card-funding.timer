@@ -1,12 +1,11 @@
 [Unit]
-Description=每 30 秒检查一次卡片余额充值任务（默认关闭）
+Description=每 5 秒领取一次订单驱动的卡片余额充值任务（默认关闭）
 
 [Timer]
-OnBootSec=30s
-OnUnitActiveSec=30s
+OnBootSec=5s
+OnUnitActiveSec=5s
 AccuracySec=1s
 Unit=pojia-card-funding.service
 
 [Install]
 WantedBy=timers.target
-

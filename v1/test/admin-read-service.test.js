@@ -42,7 +42,8 @@ test('admin overview maps aggregate values without exposing raw records', async 
   assert.deepEqual(result.orderStatuses, [{ status: 'RECHARGE_SUCCESS', count: 8 }]);
   assert.deepEqual(result.cardStock, {
     available: 7, provisioning: 1, assigned: 2, depleted: 1, held: 1,
-    needsFunding: 1, lowThreshold: 5, autoReplenishmentEnabled: false, low: false
+    needsFunding: 1, lowThreshold: 5, autoReplenishmentEnabled: false,
+    balanceFundingEnabled: false, low: false
   });
   assert.deepEqual(result.operationalBacklog, {
     cardIntakePending: 2, fundsRiskPending: 1,
