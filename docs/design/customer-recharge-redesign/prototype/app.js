@@ -77,6 +77,9 @@
     timeline: $('timeline'), pollNote: $('poll-note'), trackingNew: $('tracking-new'),
     queryForm: $('query-form'), queryInput: $('query-input'), querySubmit: $('query-submit'), queryBack: $('query-back'),
     navQuery: $('nav-query'), toast: $('toast'),
+    guideOpen: $('session-help-open'), replaceHelpOpen: $('replace-help-open'),
+    guide: $('session-guide'), guideClose: $('guide-close'), guideDone: $('guide-done'),
+    subLink: $('subscription-link'),
     demo: $('demo'), demoOpen: $('demo-open'), demoClose: $('demo-close')
   };
 
@@ -217,6 +220,7 @@
     // 成功
     el.crest.hidden = !success;
     el.successSummary.hidden = !success;
+    el.subLink.hidden = !success;
     el.statusCard.classList.toggle('is-success', success && successShownFor !== order.publicNo);
     if (success) {
       el.successEmail.textContent = order.customerEmail || '—';
@@ -379,6 +383,15 @@
     } catch { toast('复制失败，请手动选中查询码。'); }
   });
 
+  // ---------------- Session 获取教程弹层 ----------------
+  function openGuide() { if (el.guide && typeof el.guide.showModal === 'function') el.guide.showModal(); }
+  function closeGuide() { el.guide?.close?.(); }
+  el.guideOpen?.addEventListener('click', openGuide);
+  el.replaceHelpOpen?.addEventListener('click', openGuide);
+  el.guideClose?.addEventListener('click', closeGuide);
+  el.guideDone?.addEventListener('click', closeGuide);
+  el.guide?.addEventListener('click', (e) => { if (e.target === el.guide) closeGuide(); }); // 点背景关闭
+
   // ---------------- 主题 + 演示面板（仅原型） ----------------
   function setTheme(t) { document.documentElement.setAttribute('data-theme', t); }
   const SAMPLE_SESSION = JSON.stringify({
@@ -435,6 +448,8 @@
     confirm: demoConfirm,
     autoplay: demoAutoplay,
     theme: setTheme,
+    guide: openGuide,
+    closeGuide: closeGuide,
     closeDemo: () => { el.demo.hidden = true; }
   };
 

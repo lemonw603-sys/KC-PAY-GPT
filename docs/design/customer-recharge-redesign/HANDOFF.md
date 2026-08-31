@@ -114,6 +114,12 @@ const api = {
 - `mock-api.js`、`capture.mjs` 整个文件不落地。
 - favicon 改回现有 `/assets/favicon.svg`（原型用内联 data-uri 便于独立运行）。
 
+### 落地保留（是生产功能，不是演示件，别误删）
+
+- **Session 获取教程弹层**：`#session-guide` dialog、`.help-link` 入口（`#session-help-open` / `#replace-help-open`）、`openGuide/closeGuide` 及其事件绑定——全部保留。仅 `window.__proto.guide/closeGuide` 这两个钩子随 `__proto` 一起移除。
+- **成功页订阅外链**：`#subscription-link` 及 `renderStatus` 里 `el.subLink.hidden = !success`——保留。
+- 教程与订阅外链均指向 ChatGPT 官方域名（`chatgpt.com`、`chatgpt.com/api/auth/session`），带 `target="_blank" rel="noopener noreferrer"`；不涉及任何后端接口。若运营有独立帮助中心 / 教程页，可把外链改为站内地址。
+
 ### 落地时必须调整
 
 - 资源引用路径改为 `/assets/customer.css?v=6` / `/assets/customer.js?v=6`（**bump 版本号**避免缓存旧文件；现网是 `?v=5`）。

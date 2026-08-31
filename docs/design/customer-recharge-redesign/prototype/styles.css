@@ -437,6 +437,59 @@ body {
 .view { animation: view-in .38s cubic-bezier(.22,.7,.3,1) both; }
 @keyframes view-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
 
+/* ---------- 「如何获取 Session」入口 ---------- */
+.help-link { display: inline-flex; align-items: center; gap: 5px; font: inherit; font-size: 12.5px; font-weight: 680;
+  color: var(--brand-ink); background: none; border: none; cursor: pointer; padding: 2px; border-radius: var(--r-sm); }
+.help-link svg { flex: 0 0 auto; }
+.help-link:hover { text-decoration: underline; text-underline-offset: 2px; }
+.help-link--block { width: 100%; justify-content: center; margin: 0 0 10px; padding: 9px 12px;
+  background: var(--surface); border: 1px dashed var(--line-strong); border-radius: var(--r-sm); }
+.help-link--block:hover { background: var(--surface-3); text-decoration: none; }
+
+/* ---------- 成功页：去官网确认订阅 ---------- */
+.sub-link { display: flex; flex-direction: column; gap: 3px; margin: 14px 0 0; padding: 13px 16px; text-decoration: none;
+  border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface-2); transition: border-color .15s, background .15s; }
+.sub-link:hover { border-color: var(--brand); background: var(--brand-soft); }
+.sub-link__main { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 680; color: var(--ink); }
+.sub-link__main svg { color: var(--brand-ink); flex: 0 0 auto; }
+.sub-link__hint { font-size: 12px; color: var(--ink-3); padding-left: 24px; line-height: 1.45; }
+
+/* ---------- Session 获取教程弹层 ---------- */
+.guide { width: min(520px, calc(100vw - 28px)); max-height: 88vh; overflow-y: auto; padding: 22px;
+  border: 1px solid var(--line); border-radius: var(--r-xl); background: var(--surface); color: var(--ink); box-shadow: var(--shadow-lg); }
+.guide::backdrop { background: rgba(10,14,20,.5); }
+:root[data-theme="dark"] .guide::backdrop, :root:not([data-theme="light"]) .guide::backdrop { background: rgba(0,0,0,.6); }
+.guide[open] { animation: guide-in .28s cubic-bezier(.2,.7,.3,1); }
+@keyframes guide-in { from { opacity: 0; transform: translateY(12px) scale(.985); } to { opacity: 1; transform: none; } }
+.guide__head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.guide__eyebrow { margin: 0 0 3px; font-size: 11.5px; font-weight: 700; color: var(--brand-ink); letter-spacing: .03em; }
+.guide__head h2 { margin: 0; font-size: 19px; font-weight: 760; letter-spacing: -.01em; }
+.guide__close { flex: 0 0 auto; width: 32px; height: 32px; border-radius: 50%; border: 1px solid var(--line);
+  background: var(--surface-2); color: var(--ink-2); font-size: 14px; cursor: pointer; line-height: 1; }
+.guide__close:hover { background: var(--surface-3); color: var(--ink); }
+.guide__intro { margin: 0 0 14px; font-size: 13.5px; color: var(--ink-2); line-height: 1.55; }
+.guide__actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 18px; }
+.guide__link { font-size: 13.5px; padding: 11px 12px; text-decoration: none; }
+.guide__steps { list-style: none; margin: 0 0 16px; padding: 0; display: grid; gap: 14px; }
+.guide__steps li { display: flex; gap: 12px; }
+.guide__num { flex: 0 0 auto; width: 24px; height: 24px; border-radius: 50%; background: var(--accent-ink); color: var(--surface);
+  display: grid; place-items: center; font-size: 12.5px; font-weight: 700; }
+:root[data-theme="dark"] .guide__num, :root:not([data-theme="light"]) .guide__num { color: #0b0e14; }
+.guide__steps strong { display: block; font-size: 14px; font-weight: 680; margin-bottom: 2px; }
+.guide__steps p { margin: 0; font-size: 13px; color: var(--ink-2); line-height: 1.5; }
+.guide__steps code { font-family: var(--mono); font-size: 12px; background: var(--surface-3); padding: 1px 5px; border-radius: 5px; word-break: break-all; }
+.guide kbd { font-family: var(--mono); font-size: 11.5px; background: var(--surface-3); border: 1px solid var(--line-strong);
+  border-radius: 5px; padding: 1px 5px; }
+.guide__sample { background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-md); padding: 12px 14px; margin-bottom: 14px; }
+.guide__sample-label { font-size: 12px; font-weight: 650; color: var(--ink-3); margin-bottom: 7px; }
+.guide__sample code { display: block; font-family: var(--mono); font-size: 11.5px; color: var(--ink-2); line-height: 1.5; word-break: break-all; }
+.guide__warn { display: flex; gap: 8px; align-items: flex-start; margin: 0 0 16px; padding: 11px 13px; font-size: 12.5px; line-height: 1.5;
+  color: var(--warn); background: var(--warn-soft); border: 1px solid color-mix(in srgb, var(--warn) 26%, transparent); border-radius: var(--r-md); }
+.guide__warn svg { flex: 0 0 auto; margin-top: 1px; }
+.guide__foot { display: flex; justify-content: flex-end; }
+.guide__foot .btn { min-width: 148px; }
+@media (max-width: 480px) { .guide__actions { grid-template-columns: 1fr; } .guide { padding: 18px; } }
+
 /* ---------- 演示面板 ---------- */
 .demo { position: fixed; right: 16px; bottom: 16px; z-index: 60; width: min(300px, calc(100vw - 32px));
   background: var(--surface); border: 1px solid var(--line-strong); border-radius: var(--r-lg);

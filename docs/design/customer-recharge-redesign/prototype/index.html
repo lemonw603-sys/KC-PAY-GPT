@@ -72,12 +72,15 @@
             <div class="field" id="field-session">
               <div class="field__labelrow">
                 <label for="session">账号 Session</label>
-                <span class="field__tag">仅本次开通使用</span>
+                <button type="button" class="help-link" id="session-help-open">
+                  <svg viewBox="0 0 20 20" width="15" height="15" aria-hidden="true"><circle cx="10" cy="10" r="7.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 8a2 2 0 113 1.7c-.6.4-1 .8-1 1.6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="10" cy="14" r=".7" fill="currentColor"/></svg>
+                  如何获取 Session？
+                </button>
               </div>
               <textarea id="session" name="session" rows="7" autocomplete="off"
                         autocapitalize="off" spellcheck="false"
                         placeholder="粘贴完整的 Session JSON（{ &quot;user&quot;: …, &quot;accessToken&quot;: … }）" required></textarea>
-              <p class="field__hint">整段粘贴即可。系统只从中读取你的账号邮箱用于核对，创建订单后输入框会清空。</p>
+              <p class="field__hint">仅用于本次开通。整段粘贴即可，系统只读取账号邮箱用于核对，创建订单后自动清空。不会读取 Session？点右上「如何获取 Session？」。</p>
               <p class="field__error" data-error></p>
             </div>
 
@@ -157,6 +160,13 @@
             <div class="success-summary__row"><span>充值账号</span><strong id="success-email">—</strong></div>
             <div class="success-summary__row"><span>完成时间</span><strong id="success-time">—</strong></div>
           </div>
+          <a class="sub-link" id="subscription-link" href="https://chatgpt.com/" target="_blank" rel="noopener noreferrer" hidden>
+            <span class="sub-link__main">
+              <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><path d="M10 2l6 2.4v4.5c0 3.7-2.5 6.6-6 7.9-3.5-1.3-6-4.2-6-7.9V4.4L10 2z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M7.5 10l1.8 1.8L13 8" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              去 ChatGPT 官网确认订阅状态
+            </span>
+            <span class="sub-link__hint">登录后在「设置 → 订阅」查看，本页不经手你的账号订阅信息 ↗</span>
+          </a>
 
           <!-- 查询码 -->
           <div class="ticket" id="ticket">
@@ -176,6 +186,10 @@
                 <small id="replace-limit"></small>
               </div>
             </div>
+            <button type="button" class="help-link help-link--block" id="replace-help-open">
+              <svg viewBox="0 0 20 20" width="15" height="15" aria-hidden="true"><circle cx="10" cy="10" r="7.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 8a2 2 0 113 1.7c-.6.4-1 .8-1 1.6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="10" cy="14" r=".7" fill="currentColor"/></svg>
+              如何获取新账号 Session？
+            </button>
             <textarea id="replace-session" rows="5" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="粘贴一个「免费账号」的完整 Session JSON"></textarea>
             <p class="field__hint">更换不会消耗新卡密，也不会新建订单，只更新当前订单的账号。</p>
             <label class="checkbox checkbox--sm">
@@ -277,6 +291,36 @@
       </div>
     </div>
   </aside>
+
+  <!-- ============ Session 获取教程弹层 ============ -->
+  <dialog class="guide" id="session-guide" aria-labelledby="guide-title">
+    <div class="guide__head">
+      <div>
+        <p class="guide__eyebrow">跟着做 · 约 1 分钟</p>
+        <h2 id="guide-title">如何获取账号 Session</h2>
+      </div>
+      <button type="button" class="guide__close" id="guide-close" aria-label="关闭教程">✕</button>
+    </div>
+    <p class="guide__intro">在浏览器登录要充值的 ChatGPT 账号，打开官方 Token 页面，把整段内容复制粘贴回来即可。两个按钮直达官方页面：</p>
+    <div class="guide__actions">
+      <a class="btn btn--ghost guide__link" href="https://chatgpt.com/" target="_blank" rel="noopener noreferrer">① 先登录 ChatGPT ↗</a>
+      <a class="btn btn--ghost guide__link" href="https://chatgpt.com/api/auth/session" target="_blank" rel="noopener noreferrer">② 打开 Token 页面 ↗</a>
+    </div>
+    <ol class="guide__steps">
+      <li><span class="guide__num">1</span><div><strong>登录要充值的账号</strong><p>点「先登录 ChatGPT」，确认浏览器当前登录的就是本次要开通 Plus 的账号。</p></div></li>
+      <li><span class="guide__num">2</span><div><strong>打开 Token 页面</strong><p>点「打开 Token 页面」，浏览器会显示一段 JSON 文本（<code>chatgpt.com/api/auth/session</code>）。</p></div></li>
+      <li><span class="guide__num">3</span><div><strong>全选复制</strong><p>Windows 按 <kbd>Ctrl</kbd>+<kbd>A</kbd> 再 <kbd>Ctrl</kbd>+<kbd>C</kbd>；Mac 按 <kbd>⌘</kbd>+<kbd>A</kbd> 再 <kbd>⌘</kbd>+<kbd>C</kbd>，复制整段 JSON。</p></div></li>
+      <li><span class="guide__num">4</span><div><strong>粘贴回本页</strong><p>回到充值页，把完整 JSON 粘进「账号 Session」输入框，点「下一步」核对邮箱。</p></div></li>
+    </ol>
+    <div class="guide__sample">
+      <div class="guide__sample-label">正确页面示例（应包含 email、accessToken）</div>
+      <code>{"user":{"id":"user-…","email":"you@example.com"},"accessToken":"eyJhb…","expires":"…"}</code>
+    </div>
+    <p class="guide__warn"><svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><path d="M10 2.5l7.5 13H2.5L10 2.5z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M10 8v3.2M10 13.6v.4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>Token 包含账号登录权限，请勿转发给他人；充值完成后建议退出 ChatGPT 再重新登录一次。</p>
+    <div class="guide__foot">
+      <button type="button" class="btn btn--primary" id="guide-done">我知道了，去粘贴</button>
+    </div>
+  </dialog>
 
   <noscript><p style="padding:24px;text-align:center">需要启用 JavaScript 才能使用本页面。</p></noscript>
 

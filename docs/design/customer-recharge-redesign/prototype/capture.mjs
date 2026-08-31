@@ -22,7 +22,8 @@ const STATES = [
   { seq: '04', name: 'success',         setup: async (p) => { await p.evaluate(() => window.__proto.status('SUCCESS')); await p.waitForTimeout(700); } },
   { seq: '05', name: 'action-required', setup: async (p) => p.evaluate(() => window.__proto.status('ACTION_REQUIRED')) },
   { seq: '06', name: 'failed',          setup: async (p) => p.evaluate(() => window.__proto.status('FAILED')) },
-  { seq: '07', name: 'query',           setup: async (p) => p.evaluate(() => window.__proto.view('query')) }
+  { seq: '07', name: 'query',           setup: async (p) => p.evaluate(() => window.__proto.view('query')) },
+  { seq: '08', name: 'guide',           fullPage: false, setup: async (p) => { await p.evaluate(() => { window.__proto.view('input', { step: 1 }); window.__proto.guide(); }); await p.waitForTimeout(420); } }
 ];
 
 const DEVICES = [
@@ -45,11 +46,11 @@ async function shoot(browser, device, theme) {
 
   const suffix = theme === 'dark' ? '-dark' : '';
   for (const s of STATES) {
-    await page.evaluate(() => window.__proto.view('input', { step: 1 })); // reset
+    await page.evaluate(() => { window.__proto.closeGuide(); window.__proto.view('input', { step: 1 }); }); // reset
     await s.setup(page);
     await page.waitForTimeout(260);
     const file = join(OUT, `${device.id}-${s.seq}-${s.name}${suffix}.png`);
-    await page.screenshot({ path: file, fullPage: true });
+    await page.screenshot({ path: file, fullPage: s.fullPage !== false });
     console.log('✓', file.replace(OUT + '/', ''));
   }
   await context.close();
