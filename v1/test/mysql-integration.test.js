@@ -700,6 +700,13 @@ test('inventory assignment queues one read sync for a stale safe candidate witho
   const fixture = await createOrder(pool);
   const cardId = id();
   const providerCardId = `stale-demand-sync-${id()}`;
+  const [[originalAuto]] = await pool.query(
+    `SELECT setting_value FROM app_settings WHERE setting_key='card_auto_replenishment_enabled'`
+  );
+  await pool.query(
+    `UPDATE app_settings SET setting_value='true'
+     WHERE setting_key='card_auto_replenishment_enabled'`
+  );
   await pool.query(
     `INSERT INTO cards
      (id, order_id, inventory_status, provider_card_id, card_type_id, last4, status,
@@ -727,6 +734,13 @@ test('inventory assignment queues one read sync for a stale safe candidate witho
        WHERE card_id = ? AND status IN ('PENDING','RUNNING')`, [cardId]
     );
     assert.deepEqual(jobsAfterFirstCall, [{ status: 'PENDING', requested_by: 'worker' }]);
+    const [[openingJobs]] = await pool.query(
+      `SELECT COUNT(*) AS count FROM card_stock_jobs
+       WHERE JSON_UNQUOTE(JSON_EXTRACT(rules_snapshot_json, '$.demandOrderId')) = ?`,
+      [fixture.orderId]
+    );
+    assert.equal(Number(openingJobs.count), 0,
+      'stale evidence must be refreshed before an automatic paid opening is queued');
 
     const second = await workflow.assignAvailableCard(fixture.orderId);
     assert.deepEqual(second, { waitingForCard: true, refreshQueued: false });
@@ -746,12 +760,23 @@ test('inventory assignment queues one read sync for a stale safe candidate witho
     );
     assert.deepEqual(storedCard, { order_id: null, inventory_status: 'AVAILABLE' });
   } finally {
+    await pool.query(
+      `DELETE FROM card_stock_jobs
+       WHERE JSON_UNQUOTE(JSON_EXTRACT(rules_snapshot_json, '$.demandOrderId')) = ?`,
+      [fixture.orderId]
+    );
     await pool.query('DELETE FROM card_sync_jobs WHERE card_id = ?', [cardId]);
     await pool.query('DELETE FROM operator_alerts WHERE dedupe_key = ?', [
       `order-waiting-card:${fixture.orderId}`
     ]);
     await pool.query('DELETE FROM cards WHERE id = ?', [cardId]);
     await removeOrder(pool, fixture);
+    if (originalAuto) {
+      await pool.query(
+        `UPDATE app_settings SET setting_value=? WHERE setting_key='card_auto_replenishment_enabled'`,
+        [originalAuto.setting_value]
+      );
+    }
     await pool.end();
   }
 });

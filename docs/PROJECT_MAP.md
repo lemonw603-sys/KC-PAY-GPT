@@ -1,7 +1,7 @@
 # AI充值业务｜唯一项目规划地图
 
 > **用途**：只回答四件事：项目目标、当前生产事实、已完成/未完成、唯一执行顺序。
-> **最后统一核对**：2026-08-31 14:05 CST。已对照前后端代码、生产 `/opt/pojia/current`、systemd、进程环境、数据库开关和只读 readiness。
+> **最后统一核对**：2026-08-31 16:05 CST。已对照前后端代码、生产 `/opt/pojia/current`、systemd、进程环境、数据库开关/卡片资格和只读 readiness；本轮未执行任何生产写入。
 > 历史报告不能覆盖本地图；实时生产事实优先，变化后必须同步更新本地图与 `CURRENT_STATE.md`。
 > 全链路、控制矩阵、自动补给状态机、库存最小模型、资金边界、通知、回滚和验收细则统一见 `docs/PROJECT_OPERATING_MODEL.md`。
 
@@ -43,10 +43,12 @@
 | 默认路线 | API | 只读 readiness |
 | Worker 最终 API 充值能力 | **false** | 进程环境 `PROVIDER_RECHARGE_WRITES_ENABLED=false` |
 | Provider recharge account | `write_enabled=1` | 数据库只读核对；但进程门禁为 false，仍不能执行 |
+| Provider card account | `write_enabled=0`，circuit=CLOSED | 当前 stock/funding runner **不以该字段为写门禁**，而以各自窄范围进程 gate 为准；这个语义不一致需在后续收敛，不得猜测它当前会阻断补给 |
 | readiness | **不通过** | 唯一 blocker：`api_recharge_execution_disabled` |
 | 通用 Provider / 卡片写 | false / false | Worker 进程环境 |
-| 自动补余额 | 数据库能力和独立 timer 已开启 | 空闲零写调用已验证；首笔真实补余额未验收 |
-| 自动开卡 | 已开启、订单驱动 + 60 秒兜底 | 真实缺卡订单的唯一开卡/恢复尚待验收 |
+| 独立自动补余额 | DB gate=true；`pojia-card-funding.timer` 与 reconcile timer active/enabled | 独立 runner 只开补余额所需卡片写；空闲零写已验证，首笔真实补余额未验收 |
+| 独立自动开卡 | DB gate=true；`pojia-card-stock-runner.timer` active/enabled，60 秒兜底 | stock runner 只开开卡所需卡片写；真实缺卡订单闭环未验收 |
+| 当前 Plus 可立即分配 | 1 张：Provider `1839`，尾号 `1013`，`$16.00` | 按当前生产资格 SQL 只读计算 |
 | 每卡成功次数上限 | 3 | 已部署；连续跨订单实证仍不足 |
 | 活动任务/资金风险/开放对账 | 0 / 0 / 0 | 2026-08-31 13:26 只读 readiness |
 | 最新 migration | 044 | 只读 readiness |
@@ -70,6 +72,11 @@
 
 当前跳转事实：卡台规则、卡片库存、卡余额充值、Browser、对账、卡台路线已有映射；API 执行权限关闭只有文字提示，没有按钮。这是待收敛缺口，不能再写成“所有阻断都有入口”。
 
+两个必须保留的实际边界：
+
+- 这是一次“开始营业”时的快照；若营业后执行能力漂移，当前代码不会自动关闭已开的接单/派发。
+- 自动补给 readiness 目前主要看 DB 业务开关、快照和默认卡段；尚未将独立 runner/timer 心跳、其窄范围进程 gate、开卡日限额和未决任务全部纳入按钮检查。卡 Provider account 的 `write_enabled=0` 当前又不是 runner 实际门禁，不得把它猜成按钮已检查或当前阻断。本轮已另行只读确认当前两个独立 runner 可用。
+
 ## 5. 板块状态
 
 状态口径：**已验收**=真实/生产证据；**已部署待实单**=代码与生产能力存在但缺真实闭环；**开发/并行**=不能宣称生产完成。
@@ -82,7 +89,7 @@
 | 自动补余额 | 已部署待实单 | 订单驱动、5 秒本地领取、15 秒低调用对账、空闲零 Provider 写 | 首笔低余额精确补差额→到账→原订单继续 |
 | 自动开卡 | 已部署待实单 | 无需求不刷新 Provider；自动规则已开启 | 真实无卡订单唯一开卡及自动恢复 |
 | 一卡多单 | 已部署待连续实单 | 全局 1–4、当前 3、共享账本/容量门禁 | 连续订单计数、释放、上限停止 |
-| 库存与运营覆盖 | 已部署 | 旧批次停用、Claude 专用卡、未来新卡按证据接管 | 用真实新卡继续校准，不扩张分类 |
+| 库存与运营覆盖 | 已部署，有历史数据缺口 | 旧批次停用、Claude 专用卡、未来新卡按证据接管 | `6807/1477` 现为 Provider `invalidating` 且保留历史 ACTIVE assignment，当前资格计算不会分配；这是系统状态与“卡实际可用”运营事实的待收敛缺口 |
 | 运营控制面 | 部分部署 | 开始营业、默认路线、就绪摘要及部分跳转 | 修复权限基线；补齐 API 权限无入口；用真实运营复核入口与噪音 |
 | Browser | 并行开发/非付款验证 | adapter、共享合同、租约/WAL、只读 Checkout、生产启动停止演练 | 当前主线生产非付款闭环；真实付款需另行确认 |
 | 对账/Bark/费用监控 | 部分验收 | 资金 UNKNOWN、余额变化 Bark、交易证据基础 | 连续订单校准误报；费用标准/变化监控 |
@@ -92,7 +99,7 @@
 
 ### P0｜立即修正生产半开漂移
 
-- 恢复已确认的 API 常驻最小执行能力：Worker `PROVIDER_RECHARGE_WRITES_ENABLED=true`；保持通用 Provider 写、卡片写、Browser 付款关闭。
+- 恢复已确认的 API 常驻最小执行能力：Worker `PROVIDER_RECHARGE_WRITES_ENABLED=true`；保持 Worker 通用 Provider/普通卡片写与 Browser 付款关闭。独立 funding/stock runner 保持它们已确认的窄范围卡片写权限，不得被误关。
 - 保持 `RECHARGE_SUBMIT_HOLD_BEFORE_PROVIDER` 关闭。
 - 部署/重启后只读验证：readiness `ok=true`、Worker 心跳能力为 true、无活动测试 task/attempt/资金栅栏。
 - 这是恢复已确认生产基线，不把它做成每单手动开关。
@@ -100,7 +107,7 @@
 ### P1｜下一笔真实 API 订单
 
 - 客户正常提交 CDK + Session，系统自动处理；不再先人为关闭应有能力。
-- 若命中低余额卡，同时验收精确补余额、唯一 Provider 调用、到账与原订单继续；若无卡则验收唯一开卡。
+- 当前有 1 张 `$16` 可立即分配卡，下一单大概率是直接分配路径；只在实际命中低余额/无卡条件时才同时验收补余额/开卡，不为测试人为改库存。
 - 核对充值成功、Plus、取消续费、卡余额/交易、对账和 Bark。
 
 ### P2｜3–5 单连续 API 运营
@@ -142,4 +149,4 @@
 3. release、systemd、数据库开关、默认路线或服务状态变化；
 4. 唯一下一步或优先级变化。
 
-新窗口首读：`PROJECT_MAP.md` → `CURRENT_STATE.md` → `PROJECT_OPERATING_MODEL.md` → `DECISIONS.md` 尾部 → 引用的证据报告。`ROADMAP.md` 仅为历史明细，不得自行覆盖本地图。
+新窗口首读：`PROJECT_MAP.md` → `CURRENT_STATE.md` → `PROJECT_OPERATING_MODEL.md` → 引用的证据报告。`DECISIONS.md` 是决策历史账本，其旧状态栏不得覆盖当前生产事实；`ROADMAP.md` 仅为历史明细，不得自行覆盖本地图。

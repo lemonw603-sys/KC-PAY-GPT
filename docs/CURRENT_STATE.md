@@ -1,15 +1,16 @@
-# 当前生产状态快照｜2026-08-31 14:05 CST
+# 当前生产状态快照｜2026-08-31 16:05 CST
 
 > 只保留当前有效事实；历史过程查 `HANDOFF_LOG.md`，方向与顺序查 `PROJECT_MAP.md`，全链路和验收细则查 `PROJECT_OPERATING_MODEL.md`。
 > 本快照已现场核对生产 release、systemd、Worker 进程环境、数据库 Provider account 和只读 readiness。
 
 ## 1. 代码、release 与服务
 
-- 本地主线：`main@c472854`；工作区除未跟踪 `output/` 外无其他改动（本次文档修正前）。
+- 本地主线的生产代码基线为 `55b6ec4`，其后为演练证据与规划对齐提交；本文不固定一个会在下次提交后立即过期的本地 HEAD。
 - 生产 `/opt/pojia/current`：`/opt/pojia/releases/20260831-prepayment-hold-55b6ec4`。
 - `pojia-web.service=active`；`pojia-worker.service=active`。
 - `pojia-browser-worker.service=inactive/disabled`。
-- 自动开卡 timer、卡余额 funding timer、funding reconcile timer 均 active；最新 migration 为 `044_operator_alert_actionability`。
+- `pojia-card-stock-runner.timer`、`pojia-card-funding.timer`、`pojia-card-funding-reconcile.timer` 均 active/enabled；最新 migration 为 `044_operator_alert_actionability`。
+- 普通 Worker 的卡片写为 false，但两个独立补给 runner 分别保留开卡/补余额所需的窄范围卡片写；不能用 Worker 环境推断自动补给被关闭。
 - 付款前 hold 的临时 drop-in 已移出运行配置，测试订单已正式清理；当前不处于 hold 演练。
 
 ## 2. 当前营业与执行门禁
@@ -22,6 +23,7 @@
   - `PROVIDER_CARD_WRITES_ENABLED=false`
   - `PROVIDER_RECHARGE_WRITES_ENABLED=false`
 - 数据库 recharge Provider account：`read_enabled=1`、`write_enabled=1`、`circuit_state=CLOSED`。
+- 数据库 card Provider account：`read_enabled=1`、`write_enabled=0`、`circuit_state=CLOSED`；现行 stock/funding runner 不以该 `write_enabled` 为写门禁，而以各自 systemd 窄范围 gate 为准。这是字段语义不一致，但不是当前补给的实际阻断。
 - 因 Worker 进程门禁为 false，数据库账户允许写也不能执行 API 最终充值。
 - 只读 readiness：`ok=false`；唯一 blocker 为 `api_recharge_execution_disabled`；活动任务、过期租约、UNKNOWN Provider 调用、活动资金风险和开放对账案件均为 0。
 
@@ -42,6 +44,8 @@
 
 已有跳转：卡台路线、Browser、对账、卡片库存、卡余额充值、刷新 Provider 规则。API 充值进程权限关闭目前只显示文字、没有“去处理”跳转。
 
+该按钮尚未检查独立 funding/stock runner 心跳与它们的窄范围进程 gate、开卡日限额和未决补给任务；且若营业后执行能力漂移，当前代码不会自动关闭已经为 true 的接单/派发。这些是开始营业快照的真实边界。
+
 ## 4. 自动补给与卡片规则
 
 - `card_balance_recharge_enabled=true`，独立 funding service/timer 已开启；仅真实订单遇到合格低余额卡时创建精确差额 attempt。空闲零 Provider 写调用已验证，首笔真实补余额闭环尚未验收。
@@ -49,6 +53,8 @@
 - 每卡最大成功支付次数全局设置为 3（可在 1–4 调整）；跨订单容量代码已部署，连续真实订单计数/释放/上限仍待验收。
 - `4744/1065=PRODUCT_ONLY(claude)`；当前旧失效批次（含 8590）均 `RETIRED`；未来新卡按实时证据接管，不使用永久卡号白名单。
 - 15 分钟资料/交易证据要求触发按需只读刷新，不把订单年龄本身当失败。
+- 当前资格 SQL 只读计算为：可立即分配 1 张（Provider `1839`，尾号 `1013`，余额 `$16.00`）。
+- 尾号 `6807` / Provider `1477` 的真实卡可用性是用户确认的运营事实；但当前生产数据为 Provider status=`invalidating`、历史 assignment=`ACTIVE`，因此现行资格 SQL **不会把它分配给新订单**。这是待核对/收敛的历史数据缺口，不得误报为当前可分配。
 
 ## 5. 已验证与未验证
 
@@ -73,5 +79,5 @@
 
 1. 恢复 Worker 常驻最小 API 充值权限为 true；确保 hold 关闭，通用 Provider/卡片写与 Browser 付款仍关闭。
 2. 重启后验证 readiness `ok=true`、Worker 能力心跳 true，且活动测试任务/资金风险仍为 0。
-3. 再接受下一笔真实 API 订单，并尽量同时验收自动补余额或自动开卡。
+3. 再接受下一笔真实 API 订单。当前已有 1 张 `$16` 可分配卡，因此不人为破坏库存来强行测补余额/开卡；实际命中时再联合验收。
 4. 通过后进入 3–5 单连续 API 验收；Browser 非付款线并行。

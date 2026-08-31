@@ -198,6 +198,13 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
                AND provider_account_id = ?
                AND (last_transaction_synced_at IS NULL
                  OR last_transaction_synced_at < DATE_SUB(CURRENT_TIMESTAMP(3), INTERVAL 15 MINUTE))
+               AND NOT EXISTS (
+                 SELECT 1 FROM card_sync_jobs exhausted_sync
+                 WHERE exhausted_sync.card_id = cards.id
+                   AND exhausted_sync.status = 'REVIEW_REQUIRED'
+                   AND exhausted_sync.completed_at >= COALESCE(
+                     cards.last_transaction_synced_at, cards.created_at)
+               )
              ORDER BY COALESCE(last_transaction_synced_at, created_at) ASC
              LIMIT 1 FOR UPDATE SKIP LOCKED`,
             [order.card_provider_account_id]
@@ -264,7 +271,12 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
             );
             fundingQueued = Number(fundingInsert.affectedRows) === 1;
           }
-          if (autoReplenishmentEnabled && Number(fundable?.count || 0) === 0) {
+          // A stale local card is not proof that inventory is absent. Wait for
+          // the already queued read sync before spending money on a new card;
+          // the retry will fund or assign it when the refreshed evidence allows.
+          if (autoReplenishmentEnabled
+            && Number(fundable?.count || 0) === 0
+            && refreshCandidates.length === 0) {
             // Bind the automatic opening request to real customer demand. The
             // stock runner re-checks live rules, balance and quota immediately
             // before the paid call; this row only provides a durable trigger.

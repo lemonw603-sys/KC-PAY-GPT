@@ -823,3 +823,14 @@
 - 总册覆盖：端到端业务链、开始营业检查/跳转矩阵、自动补余额/开卡状态机、API/Browser 双线、库存最小模型、资金幂等、Bark/对账/费用监控、部署备份回滚、分阶段验收、已知缺陷/未验证项、事实/决策/建议分层和文档职责。
 - 14:05 CST 再次现场复核：current 仍为 `20260831-prepayment-hold-55b6ec4`；Web/Worker active，Browser inactive；自动开卡/funding/reconcile timers active；Worker 通用 Provider、卡片、API 充值写仍均为 false。未修改生产或执行资金动作。
 - `PROJECT_MAP.md`、`CURRENT_STATE.md`、`ACTIVE_WORKSTREAM.md` 与 `CLAUDE.md` 已加入总册入口。地图继续只负责方向和顺序，不把全部细节塞回单页。
+
+# 2026-08-31｜规划地图最后一轮定向对抗审查
+
+- 16:05 CST 再次只读核对生产：current 仍为 `20260831-prepayment-hold-55b6ec4`；Web/Worker active、Browser inactive/disabled；接单/派发=true、默认 API；Worker API 充值写=false；readiness 唯一 blocker `api_recharge_execution_disabled`，活动任务/资金风险/开放对账均 0。
+- 明确普通 Worker 卡片写=false 与独立自动补给权限不是一回事：stock/funding/reconcile timers active/enabled，独立 runner 保留窄范围卡片写。card Provider account 当前 read=1、write=0、circuit=CLOSED，但 stock/funding runner 不以该 `write_enabled` 为门禁；这是待收敛的字段语义不一致，不是当前自动补给 blocker。
+- 当前可立即分配卡只有 Provider `1839`/尾号 `1013`/`$16.00`；`6807/1477` 因 Provider `invalidating` + 历史 ACTIVE assignment 当前不会被系统分配，不再把“卡实际可用”误写成“系统当前可分配”。
+- 修正订单资源准备缺陷：有过期证据候选时先只读同步，不同时排付费开卡；同步任务执行中改为 5 秒重试；达到 REVIEW_REQUIRED 后才允许后续无安全候选路径。一次性 MySQL 8.4 migration 001–044 定向测试 1/1 通过；尚未部署。
+- 最终复验：`git diff --check` 与两个 JavaScript 语法检查通过；控制面/任务/工作流定向单测 52/52 通过；重新创建一次性 MySQL 8.4 并从 migration 001–044 验证相关集成测试 1/1 通过。
+- 补齐“开始营业”真实边界：当前不检查独立补给 runner 心跳、卡 Provider account 写权限/熔断、开卡额度/资金和未决补给；营业后能力漂移也不会自动关闭已开的接单/派发。
+- 更新 `PROJECT_MAP.md`、`CURRENT_STATE.md`、`PROJECT_OPERATING_MODEL.md`、`ACTIVE_WORKSTREAM.md`、`ROADMAP.md`；详细报告 `docs/2026-08-31_project-map-final-targeted-adversarial-review.md`。
+- 本轮未执行任何生产写入或资金操作；`DECISIONS.md` 存在并行窗口未提交重写，本提交不覆盖、不采信。

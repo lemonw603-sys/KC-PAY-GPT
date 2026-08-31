@@ -205,7 +205,8 @@ export function createWorkflowHandlers({
     if (assigned.waitingForCard) {
       throw new TaskExecutionError('No suitable inventory card is available', {
         code: 'CARD_STOCK_EMPTY', retryable: true,
-        delayMs: assigned.replenishmentQueued || assigned.fundingQueued ? 5_000 : 60_000,
+        delayMs: assigned.refreshQueued || assigned.replenishmentQueued || assigned.fundingQueued
+          ? 5_000 : 60_000,
         refundAttempt: true
       });
     }

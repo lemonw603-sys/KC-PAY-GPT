@@ -2,6 +2,8 @@
 
 > **当前唯一规划地图：`docs/PROJECT_MAP.md`。** 本文件保存详细阶段清单和历史状态，不再单独决定“下一步”；发生冲突时，生产事实看 `CURRENT_STATE.md`，执行顺序看 `PROJECT_MAP.md`。
 
+> **2026-08-31 16:05 最终定向审查**：生产仍为 API 执行权限关闭的半开状态；独立开卡/补余额 runner 与 DB gate 已开，不得被 Worker 的卡片写=false 误判为关闭。当前有 1 张 `$16` 可立即分配卡；`6807/1477` 因 Provider `invalidating` + 历史 ACTIVE assignment 暂不会被系统分配。下文其他“当前/下一步”字样均是带日期的历史快照，不得单独执行。
+
 > **2026-08-31 13:30 最新纠正**：付款前 hold 演练已经完成并清理，生产 current 已变为 `/opt/pojia/releases/20260831-prepayment-hold-55b6ec4`；接单/派发仍开、默认 API，但 Worker `PROVIDER_RECHARGE_WRITES_ENABLED=false`，readiness 唯一 blocker 为 `api_recharge_execution_disabled`。下文所有较早的“权限已开启/readiness 通过/下一步直接做自动补余额实单”快照均已过期。当前先恢复已确认的 API 常驻最小权限，再做真实订单。准确矩阵见 `docs/2026-08-31_runtime-code-production-alignment-matrix.md`。
 
 > 2026-08-28 起，跨模块当前执行顺序统一以 `docs/MASTER_EXECUTION_PLAN_2026-08-28.md` 为准；其对抗审查见 `docs/MASTER_EXECUTION_PLAN_ADVERSARIAL_REVIEW_2026-08-28.md`。本文继续保留阶段历史，不再从历史段落单独推导新的“下一步”。
