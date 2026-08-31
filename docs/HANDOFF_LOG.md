@@ -678,3 +678,9 @@
 - 当前 release、迁移 043、Web/Worker、库存/读同步/Bark、Browser Worker 与卡资金 timer 状态均符合预期；本地/公网 live/ready 正常。
 - readiness `ok=true`，活动任务、过期租约、未知 Provider 调用、资金风险和开放对账案件均为 0；`pojia-ops check` 与备份完整性检查通过。
 - 本轮未执行任何资金写入；库存 runner 最近执行均为 `NO_DEMAND`。
+
+# 2026-08-31｜部署后全量回归与测试修正
+
+- 生产部署后的本地回归完成：legacy/Vitest `14 files / 87 passed / 0 failed`；v1 `483 tests / 443 passed / 0 failed / 40 skipped`；Browser `107 tests / 103 passed / 0 failed / 4 skipped`。
+- 发现并修正一个测试框架问题：`test/browser-nonph-manifest.test.js` 使用 `node:test` 被 Vitest 识别为“无测试套件”；改为 Vitest `test` 导入后，根级 legacy 回归完整通过。
+- 该修正仅影响测试发现，不改变生产运行逻辑；`git diff --check` 通过。

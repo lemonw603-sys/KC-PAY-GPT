@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import test from 'node:test';
+import { test } from 'vitest';
 
 const manifest = JSON.parse(fs.readFileSync(new URL('../browser-poc/manifests/non-ph-functional-baseline-2026-08-22.json', import.meta.url)));
 const usManifest = JSON.parse(fs.readFileSync(new URL('../browser-poc/manifests/non-ph-us-readonly-2026-08-23.json', import.meta.url)));
