@@ -849,3 +849,9 @@
 - 重启后 `pojia-worker.service=active/running`，进程环境实际为 `PROVIDER_RECHARGE_WRITES_ENABLED=true`、通用 Provider/卡片写=false；`/health/ready` 返回 `{"status":"ready"}`。
 - 数据库只读核对：recharge account `zzshu/legacy-primary/RECHARGE` 为 `read_enabled=1、write_enabled=1、circuit_state=CLOSED`；card account `hnskj/legacy-primary/CARD` 为 `read_enabled=1、write_enabled=0、circuit_state=CLOSED`。接单/派发及自动补给开关仍为 true，三个补给 timer active。
 - 本动作未创建订单、未读取客户 Session、未调用 Provider、未开卡、未补余额、未付款。后台管理员 readiness 细项尚待登录会话复核。
+# 2026-09-01｜部署供应同步修复候选（只读验收）
+
+- 用户确认部署候选 `main@3f23aa3`。部署前生产 preflight：`ok=true`、`blockers=[]`，活动任务/过期租约/UNKNOWN Provider call/资金风险/开放对账均为 0；并创建加密数据库备份 `/var/backups/pojia/pojia-20260831T153049Z.sql.gz.enc`（完整性 OK）。
+- 新建 release `/opt/pojia/releases/20260831-supply-sync-3f23aa3`，保留旧版 `55b6ec4`；无 migration 变化。原子切换 `/opt/pojia/current`，重启 Web/Worker 及 stock/funding/reconcile timers。
+- 部署后只读核对：Web/Worker 与三个补给 timer active；Worker 实际环境 `PROVIDER_RECHARGE_WRITES_ENABLED=true`、通用 Provider/普通卡片写=false；preflight `ok=true`、`blockers=[]`、heartbeat 2 秒、活动任务/资金风险/UNKNOWN Provider call 均 0。
+- 本轮未创建订单、未开卡、未补余额、未调用 Provider 写接口、未付款。旧版 `/opt/pojia/releases/20260831-prepayment-hold-55b6ec4` 保留可回滚；回滚前需再次核对无活动/UNKNOWN 资金动作。

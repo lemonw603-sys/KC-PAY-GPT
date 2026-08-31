@@ -1,7 +1,7 @@
 # AI充值业务｜唯一项目规划地图
 
 > **用途**：只回答四件事：项目目标、当前生产事实、已完成/未完成、唯一执行顺序。
-> **最后统一核对**：2026-08-31 23:03 CST。已对照前后端代码，并通过 SSH 只读核对生产 `/opt/pojia/current`、systemd、Worker 实际进程环境和 readiness；本轮未执行任何生产写入。
+> **最后统一核对**：2026-09-01 00:34 CST。已对照前后端代码，并通过 SSH 只读核对部署后生产 `/opt/pojia/current`、systemd、Worker 实际进程环境和 readiness；本轮未执行订单/资金写入。
 > 历史报告不能覆盖本地图；实时生产事实优先，变化后必须同步更新本地图与 `CURRENT_STATE.md`。
 > 全链路、控制矩阵、自动补给状态机、库存最小模型、资金边界、通知、回滚和验收细则统一见 `docs/PROJECT_OPERATING_MODEL.md`。
 
@@ -36,7 +36,7 @@
 
 | 项目 | 当前事实 | 证据/含义 |
 |---|---|---|
-| 生产 release | `/opt/pojia/releases/20260831-prepayment-hold-55b6ec4` | `/opt/pojia/current` 现场读取；地图旧值已纠正 |
+| 生产 release | `/opt/pojia/releases/20260831-supply-sync-3f23aa3` | `/opt/pojia/current` 现场读取；旧版 `55b6ec4` 保留回滚 |
 | Web / API Worker | active / active | systemd 现场读取 |
 | Browser Worker | inactive / disabled | 未进入真实 Browser 付款 |
 | 接单 / 派发 | true / true | 只读 readiness；当前后台已处于营业业务状态 |
@@ -104,7 +104,7 @@
 - 保持 `RECHARGE_SUBMIT_HOLD_BEFORE_PROVIDER` 关闭。
 - 部署/重启后只读验证：readiness `ok=true`、Worker 心跳能力为 true、无活动测试 task/attempt/资金栅栏。
 - 这是恢复已确认生产基线，不把它做成每单手动开关。
-- 当前生产 release 仍为 `55b6ec4`；本地 `1c2c9ba` 的供应规划修复尚未部署，不能把本地测试结论当成生产行为。
+- 候选 `3f23aa3` 已部署并完成部署后只读 preflight；无 migration 变化，旧版 `55b6ec4` 保留回滚。
 
 ### P1｜下一笔真实 API 订单
 

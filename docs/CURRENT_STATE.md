@@ -1,12 +1,12 @@
-# 当前生产状态快照｜2026-08-31 23:03 CST
+# 当前生产状态快照｜2026-09-01 00:34 CST
 
 > 只保留当前有效事实；历史过程查 `HANDOFF_LOG.md`，方向与顺序查 `PROJECT_MAP.md`，全链路和验收细则查 `PROJECT_OPERATING_MODEL.md`。
 > 本快照已现场核对生产 release、systemd、Worker 进程环境、数据库 Provider account 和只读 readiness。
 
 ## 1. 代码、release 与服务
 
-- 生产代码基线仍为 `55b6ec4`；本地 `1c2c9ba` 的供应规划修复已通过本地/隔离测试但**尚未部署**，不得把它描述成当前生产行为。
-- 生产 `/opt/pojia/current`：`/opt/pojia/releases/20260831-prepayment-hold-55b6ec4`。
+- 生产代码已部署候选 `3f23aa3`（包含 `1c2c9ba` 供应规划修复）；旧版 `55b6ec4` 保留可回滚。
+- 生产 `/opt/pojia/current`：`/opt/pojia/releases/20260831-supply-sync-3f23aa3`。
 - `pojia-web.service=active`；`pojia-worker.service=active`。
 - `pojia-browser-worker.service=inactive/disabled`。
 - `pojia-card-stock-runner.timer`、`pojia-card-funding.timer`、`pojia-card-funding-reconcile.timer` 均 active/enabled；最新 migration 为 `044_operator_alert_actionability`。
@@ -26,7 +26,7 @@
 - 数据库 card Provider account：`read_enabled=1`、`write_enabled=0`、`circuit_state=CLOSED`；现行 stock/funding runner 不以该 `write_enabled` 为写门禁，而以各自 systemd 窄范围 gate 为准。这是字段语义不一致，但不是当前补给的实际阻断。
 - Worker 进程已具备 API 最终充值能力；数据库 recharge Provider account 同样允许写。
 - `/health/ready` 返回 `{"status":"ready"}`；Worker 重启后 active/running，进程环境实际为 `PROVIDER_RECHARGE_WRITES_ENABLED=true`。
-- 2026-08-31 23:02 CST 通过生产 SSH 执行只读 `preflight:readiness`：`ok=true`、`blockers=[]`、Worker heartbeat 6 秒，活动任务/过期租约/UNKNOWN Provider call/资金风险/开放对账均为 0。
+- 2026-08-31 23:32 CST 部署后通过生产 SSH 执行只读 `preflight:readiness`：`ok=true`、`blockers=[]`、Worker heartbeat 2 秒，活动任务/过期租约/UNKNOWN Provider call/资金风险/开放对账均为 0。
 
 ### 当前结论
 
