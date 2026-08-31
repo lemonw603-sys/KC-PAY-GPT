@@ -30,6 +30,7 @@ export function createApp({
   replaceCustomerSession = null,
   adminAuth = null,
   getAdminOverview = null,
+  getAdminReadinessSummary = null,
   listAdminOrders = null,
   getAdminOrder = null,
   addAdminOrderNote = null,
@@ -220,6 +221,11 @@ export function createApp({
   if (typeof getAdminOverview === 'function') {
     app.get('/api/v1/admin/overview', noStore, requireAdminApi, async (_req, res) => {
       res.json(await getAdminOverview());
+    });
+  }
+  if (typeof getAdminReadinessSummary === 'function') {
+    app.get('/api/v1/admin/operations/readiness', noStore, requireAdminApi, async (_req, res) => {
+      res.json(await getAdminReadinessSummary());
     });
   }
   if (typeof listAdminOrders === 'function') {

@@ -47,6 +47,7 @@ import {
 } from './services/card-provider-snapshot-service.js';
 import { createCardOperationalOverrideService } from './services/card-operational-override-service.js';
 import { createAdminStartBusinessService } from './services/admin-start-business-service.js';
+import { buildAdminReadinessSummary } from './services/admin-readiness-summary.js';
 
 const config = loadConfig();
 const pool = createDatabasePool(config.database);
@@ -163,6 +164,7 @@ const app = createApp({
   adminAuth,
   adminHost: config.adminHost,
   getAdminOverview: adminReadService.getOverview,
+  getAdminReadinessSummary: async () => buildAdminReadinessSummary(await adminReadService.getOverview()),
   listAdminOrders: adminReadService.listOrders,
   getAdminOrder: adminReadService.getOrder,
   addAdminOrderNote: traceabilityOperations.addOrderNote,

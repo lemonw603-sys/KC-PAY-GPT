@@ -690,3 +690,11 @@
 - 主线已进入运营控制面收敛阶段：先统一就绪结果/开始营业反馈，再收敛首页入口与错误跳转。
 - Browser 窗口已重新安排非付款兼容性复核：以 `main` 最新基线检查一卡多单容量、自动补余额、默认充值方式及 15 分钟交易证据门槛的兼容性；明确禁止真实付款及 Provider/卡台写入。
 - 本轮主线已完成生产只读与全量回归，等待 Browser 线报告后做统一判断。
+
+# 2026-08-31｜运营控制面就绪摘要第一批实现
+
+- 新增只读服务 `v1/src/services/admin-readiness-summary.js`，将卡台规则、卡片库存、Browser 执行器状态统一转换为稳定 `checkId/status/actionId/message` 摘要。
+- 新增管理员只读接口：`GET /api/v1/admin/operations/readiness`；不执行写操作、不放宽任何资金或库存门禁。
+- 状态分类：`READY`、`ACTION_REQUIRED`、`BLOCKED`；Browser 未就绪只作为动作提示，不阻断 API 充值。
+- 新增 2 个单元测试；语法检查及定向 v1 回归通过（84/84）。
+- 尚未部署；待后续补齐首页展示/跳转后制作候选 release，并按生产部署闸门单独确认。
