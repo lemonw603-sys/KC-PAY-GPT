@@ -808,3 +808,11 @@
 - 原本的 `provider_calls.create_direct` 意图记录已由 `STARTED` 收敛为 `FAILED`，无 HTTP 状态、无完成外部订单号；未执行真实充值、付款、开卡、卡充值或提现。
 - 已关闭并移出临时 systemd drop-in `/etc/systemd/system/pojia-worker.service.d/prepayment-hold.conf`（保留为 `.completed-20260831` 备份），daemon-reload 后重启。
 - 当前生产 Worker 环境恢复最小默认权限：`PROVIDER_READS_ENABLED=true`，通用 Provider/卡片/充值写入均为 `false`；Web/Worker 均 `active`。未恢复任何真实充值权限。
+
+# 2026-08-31｜规划地图权威纠偏
+
+- 发现并实际修正事实源漂移：旧地图/CURRENT_STATE 仍写 map-audit release、API 权限 true、readiness 通过，但现场 current 已为 `20260831-prepayment-hold-55b6ec4`，Worker API 充值权限 false，readiness 唯一 blocker 为 `api_recharge_execution_disabled`。
+- 现场复核：接单/派发/自动开卡/自动补余额均 true；每卡成功次数 3；Provider recharge account write_enabled=1；Web/Worker active、Browser inactive/disabled；活动任务/资金风险/开放对账均为 0。
+- 代码复核：“开始营业”只检查路线、执行器和卡供给，随后打开接单+派发；不会打开 systemd/Provider 权限。API 权限关闭没有 actionId/后台跳转，不能再宣称所有错误均可跳转。
+- 已重写 `PROJECT_MAP.md`、`CURRENT_STATE.md`、`ACTIVE_WORKSTREAM.md`，在 `ROADMAP.md` 顶部标明旧快照过期；详细报告 `docs/2026-08-31_project-map-authoritative-reconciliation.md`。
+- 当前唯一下一步：恢复已确认的 API 常驻最小充值权限并重跑 readiness，然后再接下一笔真实 API 订单。本轮未修改生产或执行资金动作。

@@ -1,186 +1,77 @@
-# 当前状态快照（2026-08-31）
+# 当前生产状态快照｜2026-08-31 13:30 CST
 
-> 本文件只保留当前有效状态。历史过程查 `docs/HANDOFF_LOG.md`；本阶段封账证据查 `docs/PRE_INVENTORY_CONVERGENCE_SEAL_2026-08-28.md`。
-> 项目方向、总体进度和唯一执行顺序查 `docs/PROJECT_MAP.md`。
+> 只保留当前有效事实；历史过程查 `HANDOFF_LOG.md`，方向与顺序查 `PROJECT_MAP.md`。
+> 本快照已现场核对生产 release、systemd、Worker 进程环境、数据库 Provider account 和只读 readiness。
 
-## 代码与发布
+## 1. 代码、release 与服务
 
-- 当前生产 release：`/opt/pojia/releases/20260831-map-audit-d5fb3cf`；直接回滚点：`/opt/pojia/releases/20260831-order-funding-c185d19`。
-- migration 044 `044_operator_alert_actionability` 已执行。部署前加密备份 `/var/backups/pojia/pojia-20260831T031529Z.sql.gz.enc` 已通过哈希、解密和 gzip 完整性校验；unit/current 现场备份在 `/var/backups/pojia/map-audit-deploy-20260831T031527Z`。
-- 用户已确认长期开启 API Worker 的最小真实充值权限。当前 Worker 最终生效值为 `PROVIDER_WRITES_ENABLED=false`、`PROVIDER_CARD_WRITES_ENABLED=false`、`PROVIDER_RECHARGE_WRITES_ENABLED=true`；通用 Provider 写、卡片写和 Browser 付款未开启。
-- 当前 `accept_new_orders=true`、`dispatch_new_recharges=true`、默认路线 API；Worker 心跳已持续写入 `worker_recharge_writes_enabled=true`。部署后只读 readiness 为 `ok=true`、`blockers=[]`，不再存在“看似营业但不能最终提交 API 充值”的假就绪。
-- 本轮同时部署：空闲自动开卡不再刷新 Provider、取消/终态订单关闭等待卡提醒、余额变化 info 不占后台内部提醒、自动补给开启时关闭不可行动的低库存提醒、库存 timer Description 修正为 60 秒。
-- 部署后连续 3 个库存 timer 周期均为 `NO_DEMAND`、`providerRulesSynced=false`；无新订单、Provider 调用、库存任务或补余额 attempt 被部署意外触发。
-- Web/Worker、自动开卡 timer、funding timer 和 funding reconcile timer 均 active/enabled；Browser Worker 仍 inactive/disabled。ops/plus 四个 live/ready 端点均 HTTP 200，`pojia-ops check` 通过。替换 Worker unit 时 systemd 记录过一次预期的 “Current command vanished” 提示；新进程启动后无 warning/error。
-- 后台主页面文件已升级到 v20；由于本轮没有可接管的管理员浏览器会话，不把登录后真实布局、按钮、Network/Console 视觉点击验收写成已完成。
-- 一卡跨订单复用、每卡 1–4 次成功上限和运营控制面均已部署；生产 `card_max_successful_payments=3`。订单驱动自动补余额执行器现已在生产开启；空闲验证通过，但首笔真实补余额与订单自动恢复仍未验收。
-- 自动补余额收口版本 `95ee5ad` 已发布并开启：改为订单驱动，不再后台预充所有低余额卡；5 秒领取订单任务、15 秒低调用量对账。独立 systemd gate、数据库能力开关和 funding timer 均已开启；当前没有待补任务，开启后零 Provider 充值调用。
-- 可靠回滚点：`/opt/pojia/releases/20260828-fea0ffd-rollback`。
-- 服务：Web、API Worker、卡片读同步、卡目录同步、Bark、备份均正常；Browser Worker 保持 `inactive/disabled`。
-- Browser Worker 的候选 release 启动/停止/回滚演练已经通过；当前生产 release 已包含主线 Browser Session/Checkout harness、派发修复和跨订单复用兼容代码，但 Browser Worker 仍为 `inactive/disabled`，真实付款未验收。
-- 卡余额 funding timer 与只读对账 timer 均为 `active/enabled`；独立 `CARD_FUNDING_EXECUTION_ENABLED=true`。只有 funding service 获得窄范围卡余额写能力，普通 Web/Worker 和 Browser 写权限未随之打开。
-- 生产最新迁移：`044_operator_alert_actionability`。
+- 本地主线：`main@c472854`；工作区除未跟踪 `output/` 外无其他改动（本次文档修正前）。
+- 生产 `/opt/pojia/current`：`/opt/pojia/releases/20260831-prepayment-hold-55b6ec4`。
+- `pojia-web.service=active`；`pojia-worker.service=active`。
+- `pojia-browser-worker.service=inactive/disabled`。
+- 自动开卡 timer、卡余额 funding timer、funding reconcile timer 均 active；最新 migration 为 `044_operator_alert_actionability`。
+- 付款前 hold 的临时 drop-in 已移出运行配置，测试订单已正式清理；当前不处于 hold 演练。
 
-## 运行门禁与体检
+## 2. 当前营业与执行门禁
 
-- 生产服务器已独立复核：`acceptNewOrders=true`、`dispatchNewRecharges=true`、派发模式 `AUTOMATIC`；这是用户此前手动开启并决定继续保留的当前运营状态。 当前默认充值路线已再次从生产 `fulfillment_routes` 核对为 API（`LEGACY_HNSKJ_ZZSHU_V1 accepts_new_orders=1`；Browser 路线为 0）。
-- 2026-08-31 已部署 `/opt/pojia/releases/20260831-map-audit-d5fb3cf`；Web/Worker active，库存 timer、只读补余额对账 timer（15 秒）和卡余额 funding timer（5 秒）均 active/enabled，Browser Worker inactive/disabled；公网 live/ready 均 HTTP 200。
-- `card_auto_replenishment_enabled=true`；无可分配 Plus 卡时自动开 1 张 `$16` 卡，每日上限 `5`；`card_stock_low_threshold=0`，仍有 1 张可分配卡时不提前开卡。
-- 常驻 Worker 为 `PROVIDER_WRITES_ENABLED=false`、`PROVIDER_CARD_WRITES_ENABLED=false`、`PROVIDER_RECHARGE_WRITES_ENABLED=true`；独立 funding service 以 `PROVIDER_CARD_WRITES_ENABLED=true` + `CARD_FUNDING_EXECUTION_ENABLED=true` 获得窄范围卡余额写能力。生产 `card_balance_recharge_enabled=true`。
-- 当前“接单 + 自动派发 + 默认 API”与 Worker 最终充值权限已经对齐；这表示新 API 订单具备自动执行条件，不等于首笔真实自动补余额或连续 3–5 单运营已经验收。
-- Browser systemd 单元强制 `BROWSER_PAYMENT_WRITES_ENABLED=false`，且服务未启动。
-- 2026-08-31 11:17 CST 重跑生产 readiness：`ok=true`、`apiRechargeExecutionEnabled=true`；活动任务、过期租约、UNKNOWN Provider 调用、资金风险、活动授权、开放对账案件均为 `0`，`blockers=[]`。
-- 公网 ops/plus 的 live/ready 四个端点均 HTTP 200。
-- 当前卡台只读目录共 20 张卡；目录同步与卡片详情读取通过。
+- `acceptNewOrders=true`。
+- `dispatchNewRecharges=true`，模式 `AUTOMATIC`。
+- 默认充值方式：API。
+- Worker 实际进程环境：
+  - `PROVIDER_WRITES_ENABLED=false`
+  - `PROVIDER_CARD_WRITES_ENABLED=false`
+  - `PROVIDER_RECHARGE_WRITES_ENABLED=false`
+- 数据库 recharge Provider account：`read_enabled=1`、`write_enabled=1`、`circuit_state=CLOSED`。
+- 因 Worker 进程门禁为 false，数据库账户允许写也不能执行 API 最终充值。
+- 只读 readiness：`ok=false`；唯一 blocker 为 `api_recharge_execution_disabled`；活动任务、过期租约、UNKNOWN Provider 调用、活动资金风险和开放对账案件均为 0。
 
-## 卡片与库存事实
+### 当前结论
 
-- `1477 / 6807`：不设运营覆盖；当前原始/有效状态均为 `ASSIGNED`，仍受订单绑定、余额、交易与消费账本限制。
-- `1065 / 4744`：`PRODUCT_ONLY(claude)`，不分配 Plus。
-- 当前其余 17 张旧批次卡：全部 `RETIRED`；未来新卡不继承这个结论。
-- `1628 / 6185`：已分配给第二单真实 API 订单并完成 Plus 充值；不得再作为未使用库存自动分配。卡台 PURCHASE 最终结算状态仍待只读同步补证。
-- Plus 实际可直接分配卡为 `0`，但有 `1` 张可补余额卡；`catalog.unresolvedActive=0`、`providerOnlyActiveCount=0`。
-- 默认开卡卡段只决定未来开卡偏好，不再排除卡台当前公布的其他合法卡段；订单分配也不再要求卡片卡段等于订单创建时的默认开卡卡段。
-- 原始 Provider/本地状态可以与运营覆盖不同；后台主视图已显示有效运营状态，不再把旧卡误展示为可分配。
+生产目前是**业务开关已营业，但 API 最终执行权限关闭**的半开状态，不能直接承诺客户订单会自动充值完成。该状态与已确认的“API 最小充值权限长期常开”基线冲突；下一步必须先恢复 `PROVIDER_RECHARGE_WRITES_ENABLED=true`，其余写门禁继续关闭，并重跑 readiness。
 
-## 订单与资金状态
+## 3. “开始营业”当前真实行为
 
-- 已完成真实 API 订单 `PJV1-FqFnMiSKBtLGN14GyP7W`，使用 `1477/6807`，并完成取消续费。
-- 已完成第二单真实 API 订单 `PJV1-uVsqgepiEHu3tfpQKQq-`，使用 `1628/6185`；外部直充单 `7025`，平台金额 `982.140000 PHP`，最终 `RECHARGE_SUCCESS` 且 `subscription_cancelled=1`。attempt 为 `SUCCESS/SETTLED`，无活动资金风险或开放对账案件。
-- 验证用的遗留订单 `PJV1-4cK-yDhExDQbnpr8403G`已按“不充值”结论安全取消；它从未分配卡、未调用 Provider、未建立充值 attempt。
-- 当前活动任务为 `0`，不存在该遗留任务反复调度/API 调用风险。
-- 消费账本已部署；当前查询为空。历史真实订单发生于账本上线前，没有可靠主键证据时不自动回填。
+代码会先检查：
 
-## 验证结果
+1. 默认 API/Browser 路线是否可识别；
+2. 所选执行器是否健康且具备真实执行能力；
+3. 卡供给是否可直接满足，或能由自动补余额/自动开卡恢复；
+4. 自动开卡时 Provider 快照、开卡能力和默认卡段是否就绪。
 
-- v1：467 tests / 429 pass / 0 fail / 38 environment-skipped。新增“过期安全候选卡按订单需求只排入一个只读同步任务”的真实 MySQL 集成测试；全新临时 MySQL 8.4、migration 001–040 下，`mysql-integration.test.js` 34/34 通过。
-- Browser：只读 ChatGPT 账号/Checkout harness 合入后为 99 tests / 95 pass / 0 fail / 4 environment-skipped；隔离 MySQL 8.4 + 正式 production-readonly CLI/Chrome smoke 3/3 通过，配置/systemd 检查 10/10 通过。
-- 当前已核验的最新部署前加密备份 `/var/backups/pojia/pojia-20260829T060414Z.sql.gz.enc` 已通过解密与 gzip 完整性校验。
+无 blocker 后才打开接单与自动派发；派发开启失败时补偿关闭接单。该入口不会修改 systemd、Provider account 或资金写权限。
 
-## 各工作线当前状态与必要历史证据
+已有跳转：卡台路线、Browser、对账、卡片库存、卡余额充值、刷新 Provider 规则。API 充值进程权限关闭目前只显示文字、没有“去处理”跳转。
 
-### 2026-08-31｜项目地图统一对抗核查（已部署）
+## 4. 自动补给与卡片规则
 
-- 前端/后端：Worker 真实充值能力心跳、后台假就绪阻断和只读 readiness 已部署；当前默认 API 的最小充值权限已打开，readiness 为 `ok=true`。
-- 自动开卡：连续 3 个空闲周期确认 `NO_DEMAND/providerRulesSynced=false`，不再每 60 秒重复读取 Provider 规则。
-- 提醒：历史等待卡 critical 和低库存 warning 均已 RESOLVED；2 条余额变化 info 继续 OPEN 作为 Bark/审计证据，但后台 list/count 会过滤 info。
-- 部署：current 已切换 `/opt/pojia/releases/20260831-map-audit-d5fb3cf`，migration 044；库存 timer Description 已与实际 60 秒一致。本次部署未创建订单、未触发开卡、补余额、API 充值或 Browser 付款。
+- `card_balance_recharge_enabled=true`，独立 funding service/timer 已开启；仅真实订单遇到合格低余额卡时创建精确差额 attempt。空闲零 Provider 写调用已验证，首笔真实补余额闭环尚未验收。
+- 自动开卡已开启：真实无卡需求时按当前默认卡段开一张目标余额卡；60 秒 timer 只兜底，无需求时不刷新 Provider。
+- 每卡最大成功支付次数全局设置为 3（可在 1–4 调整）；跨订单容量代码已部署，连续真实订单计数/释放/上限仍待验收。
+- `4744/1065=PRODUCT_ONLY(claude)`；当前旧失效批次（含 8590）均 `RETIRED`；未来新卡按实时证据接管，不使用永久卡号白名单。
+- 15 分钟资料/交易证据要求触发按需只读刷新，不把订单年龄本身当失败。
 
-### 2026-08-30｜手动开卡
+## 5. 已验证与未验证
 
-- 已按用户明确指令，通过正式手动库存任务开通 1 张 `$16` 卡；任务 `986d345d-e4b6-4ad6-b770-ef447c3b6f74` 已完成。
-- 新卡 Provider id `1839`、尾号 `1013`，余额 `$16.00 USD`，已自动同步为 `AVAILABLE / ACCEPTED`，未绑定订单。
-- 当次仅临时进程开启卡台开卡写权限；常驻配置未改变，自动补卡仍关闭，Browser/充值/其他 Provider 写入仍关闭。
-- 详细记录：`docs/2026-08-30_manual-card-opening-result.md`。
+### 已验证
 
-### 2026-08-30｜自动补卡已启用
+- 至少两笔历史真实 API 成功订单，并完成取消续费。
+- 付款前暂停演练：订单走到 `SUBMITTING`/唯一 attempt/资金栅栏，在外部 `create_direct` 前停止；没有真实付款。
+- 演练清理：测试订单为 `RECHARGE_FAILED`，attempt/funds fence 清除，task 保持 DEAD，避免自动重试。
+- Worker executor capability 传递缺陷已修复并有测试覆盖。
+- 自动补余额空闲安全：无订单时零 Provider 充值写调用。
 
-- 用户明确要求“没卡就自动补卡”，已启用生产自动补卡定时器。
-- `pojia-card-stock-runner.timer` 已 `active/enabled`，每 10 秒检查；当前可分配 Plus 卡为 `1`，日志显示 `STOCK_SUFFICIENT`，未额外开卡。
-- 每次任务仍先读取最新 Provider 规则、余额和目录；其他充值/付款写入保持关闭。
+### 尚未验证
 
-### 2026-08-30｜Browser 生产形态非付款安全窗口
+- 当前 release/config 恢复 API 常驻最小权限后的下一笔真实订单。
+- 低余额卡精确补款→到账→原订单自动继续的生产闭环。
+- 无合格卡时唯一自动开卡→订单继续的生产闭环。
+- 一卡跨 3 个订单的真实计数和上限停止。
+- 当前主线的 Browser 生产非付款闭环与任何真实 Browser 付款。
+- 3–5 单连续 API 稳定性、10–20 单并发、恢复演练和 100–300 单/日。
 
-- 测试 CDK 已通过正常客户入口创建 Browser 路线订单 `PJV1-TZmbNEpYNd0Gs_YgRKF_`；订单创建时路线正确冻结为 Browser。
-- Browser Worker 使用生产 EXTERNAL_READONLY/ChatGPT harness 配置通过检查并 READY/IDLE；专用心跳和全局默认充值方式门禁实际生效。
-- 正常派发在 `ASSIGN_CARD` 停止：生产没有余额达到 `$16` 的可分配 Plus 卡，订单进入 `WAITING_FOR_CARD / CARD_STOCK_EMPTY`；未建立 attempt、Browser job/run 或资金预留，未访问 ChatGPT。
-- 此结果纠正此前测试计划：余额不足卡不能绕过真实资金/分卡门禁继续到 Checkout；强行改库或降低最低余额不构成真实链路验收。
-- 测试订单已正式取消为 `CLOSED / CANCELLED_PRE_SUBMISSION`，测试 CDK 已兑换不得复用；默认 API、接单/派发原状态、Browser gate/Worker/env 均已恢复。
-- 清理后活动 task、attempt、Browser job/run/lease 均为 0，ops/plus 四个 live/ready 公网端点均为 HTTP 200。
-- 详细证据：`docs/2026-08-30_browser-production-nonpayment-window-result.md`。
+## 6. 当前唯一下一步
 
-### 2026-08-29｜ChatGPT 只读观察复验（当前停止点）
-
-- 用户提供的 Session 已在本地一次性解析并通过 `validateChatGptSession()`；原文尾部附加文本被解析层截断，原文未写入日志、WAL、文档或 Git。
-- 隔离 MySQL + Headful Chrome 实测：页面 HTTP 200、`/api/auth/session` HTTP 200、登录身份匹配、订阅状态 `FREE`；未读取真实 PAN/CVC，未填卡，`submitCalls=0`。
-- 首次运行发现两个真实缺陷并已修复：Checkout 观察结果字段名 `cardNumber/cvc` 被安全对象检查误判为敏感字段；ChatGPT 官方首页标题存在 `ChatGPT: ...` 副标题变体；现已改为非敏感 presence 字段并允许官方标题后缀。
-- 此前 `CHECKOUT_NAVIGATION_FAILED` 已定位并修复；最新 Headful 只读复验已完整到达 Checkout：登录/身份匹配、免费账号、Plus 入口、Checkout 摘要和安全字段均通过，`submitCalls=0`。仍未填卡、未付款、未连接生产。
-- 根因已定位：ChatGPT 方案弹窗的“升级至 Plus”是弹窗内、表单外的 `type=submit` 按钮，旧安全判断将所有 `type=submit` 一律拒绝，造成假失败；已收窄为仅拒绝处于表单内的提交控件。方案弹窗打开与 Plus 按钮已在 Headful 只读诊断中确认，未点击付款。
-- 临时隔离容器与运行目录已停止并清理；未连接生产、未部署本轮改动。
-- Mock 付款状态机回归已完成：付款执行器关闭/错误配置、确认成功、拒绝、提交后未知、Plus 未确认、取消续费或交易对账不完整等路径均通过；本轮无外部付款调用。
-- 对抗复查发现并修复：付款已确认后，Plus/取消续费/交易核验器异常不能冒泡成可重试错误；现在统一返回 `POST_PAYMENT_UNKNOWN`，保留人工对账边界，不触发重付。
-- 已加入 `LiveChatGPTPaymentAdapter` 最小代码边界：默认关闭，必须同时提供精确确认词和结果观察器才会动作；本轮仅本地测试，未接入生产配置。
-- 对 LIVE 适配器做了失败路径复查：提交后无论结果确认、未知或异常，都会尽力清理页面卡字段；结果观察器缺失仍强制 `PAYMENT_RESULT_UNKNOWN`。测试 2/2 通过。
-- 已将 Browser 页面对象以显式参数转交给付款适配器边界，BrowserPaymentExecutor 本身不解析页面或卡字段；新增转交测试通过。
-- 对 LIVE 适配器做了针对性对抗复查并修复两处边界：在任何页面/付款副作用前校验 operationId 与非空提交选择器；只读 Checkout 观察结果现在携带已审查的 submitControlSelector。全量测试通过；LIVE 仍未接生产。
-- 已新增真实 Browser 付款前检查清单：`docs/2026-08-29_browser-live-payment-readiness-checklist.md`；生产付款开关仍关闭。
-- HNSKJ 卡是否支持/触发 3DS：当前没有卡台字段、真实 Browser 付款或供应商文档证据，不能判断为“有”或“没有”。现行 Browser 设计仅把 3DS 作为可能的付款后续状态，未知时转人工对账，不自动重试。
-- 本轮联调确认 LIVE 适配器与当前安全字段选择器（`cardNumber/expiry/cvc`）映射一致，并加入 3DS/挑战异常后的清理测试。
-- 已重新区分 Browser 付款门禁：只保留防重复付款和结果可追踪等真正硬条件；3DS/验证码仅在运行时实际出现时处理，不作为正常付款的预先拦截。
-- 已完成门禁收敛复查，详见 `docs/2026-08-29_browser-gate-simplification-review.md`；Browser 全量测试保持 102 通过、0 失败、4 跳过。
-- 新一轮对抗审查发现并修复提交前错误误标支付未知、字段并发清理不稳定两处问题；详见 `docs/2026-08-29_browser-gate-adversarial-review.md`。
-- 当前错误分类已固定：付款前可证明失败使用 `PRE_SUBMIT_FAILED`；点击付款后结果不确定使用 `PAYMENT_RESULT_UNKNOWN`，两者不可混用。
-- 本轮完成 Browser 离线 soak（`npm --prefix browser-mvp run soak`）并成功退出；未连接生产、未执行付款。
-- 再次核对部署模板与只读 smoke：`BROWSER_PAYMENT_EXECUTOR_ENABLED=false`、`BROWSER_PAYMENT_EXECUTOR_MODE=MOCK` 均保持关闭/模拟配置。
-- 状态更正：当前仅达到“代码/隔离测试层面的付款前就绪”，尚未达到“生产真实 Browser 付款就绪”。Browser worktree 的旧报告仍列出 production Session/card adapter、真实非付款观察和生产部署演练缺口，必须完成主线对齐与合入审查后才能改变结论。
-- Browser 窗口同步复查已确认：其 `7abbe51` 不能直接合入，会回退主线后续 LIVE adapter/门禁/文档；详见 `docs/2026-08-29_browser-window-sync-review.md`。
-- Browser 窗口最新确认：未新增代码；生产非付款仍缺生产形态只读观察、Worker 部署/回滚演练和部署后审计闭环。已安排先备份差异，再可逆对齐到 `main@a6ba908`。
-- 已在本地为旧 Browser 提交建立可逆标签 `browser-stale-7abbe51-backup`；未合入其差异，避免回退主线。
-- 已将 `codex/browser` worktree 可逆对齐到主线 `9093c03`；旧内容保存在 `browser-stale-7abbe51`，对齐后 Browser 全量测试 107 项、103 通过、0 失败、4 跳过。
-- 在统一基线上运行 `npm --prefix browser-mvp run smoke:worker:readonly` 成功；隔离 MySQL、只读 Worker 配置和安全门禁通过，未连接生产。
-- 已生成候选归档 `/tmp/aicharge-main-46b2cc7.tar`；语法检查、全量测试和 `git diff --check` 均通过，候选包未部署。
-- 已整理并执行生产只读启动/停止/回滚演练：`docs/2026-08-30_browser-production-readonly-rehearsal.md`。
-- 已执行生产只读启动演练但发现部署缺口：当前 release 缺少 `playwright`，Worker 启动失败并触发重启尝试；已立即 stop/disable，当前保持 `inactive/disabled`。详见 `docs/2026-08-30_browser-production-rehearsal-result.md`。
-- 补齐 Playwright 后再次启动候选 release，依赖问题已解决但暴露出生产只读 env 合同不匹配（`INVALID_BROWSER_WORKER_CONFIG`）；已回滚 current 并保持 Worker `inactive/disabled`。
-- 候选 release 已成功 READY/IDLE 启动并安全停止，随后回滚旧 release，当前 Worker 仍 `inactive/disabled`。只读复核已确认：候选模板原本就有付款执行器关闭变量，失败时生产加载的是陈旧 systemd unit；重新安装 unit、执行 `daemon-reload` 并切回候选后才成功。不是 env 文件覆盖，也不是候选模板缺变量。
-- 2026-08-30 端到端审查发现并修正 Browser 自然派发的 API 耦合、PREPARE 的 ZZSHU 语义泄漏，以及复审发现的 attempt→job 非原子、默认切换未验证 Browser Worker 在线、领取未按进程 executor 能力隔离。主线提交 `f95e6bb` 增加 Browser 专用 dispatch/heartbeat readiness、route-aware 领取、attempt+job 原子事务与全局默认充值方式。相关代码现已包含在生产 release 中，但 Browser Worker 仍 inactive/disabled，真实付款仍未验收。
-- 已建立“余额不足卡付款前停止测试”运行手册：`docs/2026-08-29_browser-pre-submit-session-test-runbook.md`；使用用户指定测试 Session，停止于付款按钮前。
-
-- 库存后台收敛已部署生产（2026-08-28），并已通过发布后公网健康、服务状态、备份完整性和未认证路由验收；后台浏览器交叉验收仍待使用管理员会话执行。
-- 已实现卡段人工刷新（`POST /api/v1/admin/card-stock/provider-refresh`）与默认卡段持久保存（`POST /api/v1/admin/card-stock/default-card-type`）；刷新仅调用 Provider 只读接口，不恢复高频自动读取。
-- “开始营业”入口代码已在主线但暂不部署；生产继续使用现有分离开关。该入口的部分成功回滚优化延期。
-- 已新增低复杂度“开始营业”入口：通过只读就绪检查后才同时开放接单与自动派发；库存不足会明确提示，不会误报卡台故障。
-- 自动跨订单复用已部署生产；当前仍待连续真实订单证明消费次数、释放和达到上限停止。
-- Browser 真实付款尚未验证；仍按独立 Browser 工作线推进非付款联调，真实付款必须另行确认。
-- Browser 独立线提交 `1d02c78` 已由统筹审查并以主线提交 `d6f9bf3` 安全合入：attempt 与 run 的 executor profile 现在必须一致，漂移时以 `EXECUTOR_PROFILE_CONFLICT` fail-closed；该 profile 同时进入权威付款 snapshot。合入后语法检查与相关 adapter/runtime/repository 测试 **46/46** 通过；未部署 Browser Worker、未连接生产、未执行付款。
-- Browser 首次灰度前只读就绪补强已由统筹审查并以 `1516c67` 合入：readiness 强制 migration 039/040，CLI 同样强制 payment executor=false/MOCK，并补齐 Browser 专属停止/回滚入口。主线复验 90 tests / 86 pass / 0 fail / 4 skipped；仍未部署生产 Browser Worker。
-- Browser 共享 Session/卡资料 production adapter 已由独立线提交 `ddad4f1`，经统筹复验后以主线提交 `58c0d4e` 合入：只通过当前 `browser_run` 读取 v1 现有密文和当前 attempt 的 `RESERVED` 消费预留；不建立第二套存储、不调用卡台、不填卡、不付款。正式 production-readonly smoke 9/9 配置检查与 3/3 隔离 MySQL/Chrome 流程通过；未部署生产、未读取真实材料。
-- Browser 只读 ChatGPT 账号/Checkout harness 已由独立线提交 `7abbe51`，经统筹审查后以主线提交 `7065b60` 合入：身份摘要逐项匹配，订阅状态区分免费/Plus/其他付费/未知；真实观察阶段只读取 Session，不解密 PAN/CVC；页面入口和 Checkout 仅做只读识别。主线 Browser 99 tests / 95 pass / 0 fail / 4 skipped，production-readonly smoke 10/10 + 隔离 MySQL/Chrome 3/3；未部署生产、未访问真实 ChatGPT、未付款。
-- 第二单 API 灰度已完成；临时充值写权限已关闭，单笔 Permit 已撤销。卡台已读到 `PURCHASE 15.76 USD`，余额由 `$16.00` 降为 `$0.24`，资金扣减与消费金额一致；2026-08-29 07:16 UTC 再次单卡低频只读同步后，交易仍为 `PROCESSING / UNSETTLED`。同步任务已正常完成，绝不因未结算而重付。
-- 本单暴露出“分配要求 15 分钟新鲜、定时同步默认 60 分钟”的窗口错配。按订单需求只同步 1 张过期候选卡的低调用量修复已通过安全分支 `bba4105` 部署；生产健康和 readiness 正常。
-- 2026-08-29 13:21 CST 公网复核：ops/plus 的 live/ready 四个端点均 HTTP 200。
-- Browser 下一步不是直接付款：需要一次性提供专用非客户测试账号的隔离订单/Session、身份摘要、批准网络出口和 Chrome 主机，运行 `CHATGPT_ACCOUNT_CHECKOUT` 非付款观察，冻结当次真实页面合同；通过前不部署、不读取真实客户材料、不填卡、不付款。
-- Browser profile 绑定合入后的 v1 全量回归：465 total / 428 pass / 0 fail / 37 environment-skipped。
-- 卡余额充值目前仅有后台记录/核对视图，指定卡发起充值的管理入口暂缓开发；生产 Provider 写入继续关闭。
-
-## 2026-08-29 卡片库存只读同步复验
-
-- 已登录生产后台执行“卡片库存 → 只读同步全部”，页面提示加入 7 张卡同步队列；等待后刷新完成。全程未执行开卡、卡充值、付款、退款、提现或任何写开关操作。
-- 卡 1477（卡号末四位 6807）详情：卡台账户 `00000000-0000-4000-8000-000000000101`、卡段 1、状态 `invalidating`、已分配、余额 `0.07 USD`、资料/交易同步时间 `08/29 09:50`。
-- 交易证据：`CARD_RECHARGE 16.000000 USD SUCCESS` 与 `PURCHASE 15.930000 USD SUCCESS` 均已显示并持久化；chargeback 监控记录仍保留。
-- 订单 `PJV1-FqFnMiSKBtLGN14GyP7W` 现显示“充值成功 / 三方一致 / 卡片核对 15 分钟内已更新”，平台金额 `982.140000 PHP`，直充订单号 `6294`。
-- 库存总览：可分配 0、使用中 1、暂不可用 1、永久停用 17；卡台余额 `$47.36`、默认卡段 VISA-40024200、剩余开卡额度 292；自动补卡关闭。
-- Console 唯一错误为 CSP 阻止 inline style，未发现业务请求失败；只读 GET 接口均 HTTP 200。
-- 详细报告：`docs/2026-08-29_card-inventory-readonly-sync-verification.md`。
-
-## 2026-08-31 付款前证据门槛修复（已部署）
-
-代码已收紧 API attempt、Browser payment permit/submit intent 与旧 API permit 预检：`last_transaction_synced_at` 缺失或超过 15 分钟均阻断；订单会幂等排队只读交易同步后重试。该修复已完成全量回归并部署生产；超过 15 分钟会触发按需同步，不会仅因时间超过而把订单判失败。
-
-> 状态更新：候选版本已于 2026-08-31 切换生产；Web/Worker active，Browser Worker inactive/disabled，live/ready HTTP 200。Provider/卡台写入和真实付款仍未执行。
-
-部署后复核：`pojia-ops check` 通过，备份完整性 OK；Web/Worker 最近 10 分钟无 warning/alert；公网 live/ready 继续 HTTP 200。
-
-## 2026-08-31 自动补余额复查更新
-
-代码复查发现旧资金栅栏会把 SETTLED 记录永久绑定到卡片，导致卡片后续再次低余额时无法补余额，与持续补给/一卡多充规划冲突。已新增 `v1/migrations/042_card_funding_settled_reusable.sql`：SETTLED 仅保留历史证据，资金栅栏仅覆盖 ACTIVE/UNKNOWN，另由 PREPARED 唯一栅栏阻止未提交任务重复创建。隔离 MySQL 已证明 SETTLED 后可按精确差额再次补余额，PREPARED 仍阻止重复任务。Provider/卡台写入和生产启用均未执行。
-
-## 2026-08-31 一卡多单与自动补余额联合版本（候选完成，待生产确认）
-
-候选实现已完成：新增订单侧 `assigned_card_id`，消费账本在分卡时预留容量并在 attempt 创建时绑定；同一卡在历史成功次数未达全局 1–4 次上限、没有活动分配或资金未知占用且卡资料/余额证据合格时可顺序服务新订单。API 与 Browser 付款确认后都会消费额度、释放活动分配并强制卡片重新同步，避免用付款前旧余额立即分配下一单。后台已增加全局 1–4 次设置入口，并对非整数或范围外值返回 400；保存设置不调用 Provider。自动补余额直接返回 SETTLED 时排队一次去重只读同步；PENDING 经对账转为 SETTLED 时复用 runner 刚取得的余额/交易证据，不再重复调用卡台。
-
-验证：本地 MySQL 8.4 空库迁移 001–043 全部成功；隔离核心套件 35 通过、0 失败、1 个既有 fake-provider 跳过，覆盖同一卡顺序服务两单、第三单达到上限停止、SETTLED 后再次精确补余额及 PREPARED 重复阻断；v1 全量串行回归 482 通过、0 失败、1 个既有跳过。一次并行共享数据库回归曾因 Browser 测试文件间争锁出现死锁，相关 Browser MySQL 测试单独运行及串行全量均通过，因此候选验收固定使用干净库串行回归。
-
-候选前对抗复查已完成并修正四处会影响真实运营的问题：所有“当前使用中”判断改以 ACTIVE 分配历史为准，不再把只作历史兼容的 `cards.order_id` 当成永久占用；卡片只读同步后可恢复 AVAILABLE 并继续服务下一单；API 提交后不再清除后续 Browser/API 复用仍需要的加密卡资料；只读同步先持久化交易新鲜度再刷新库存分类，避免同一成功同步过程误开低库存提醒。补余额对账 runner 已读取过最新余额和交易，因此对账 SETTLED 不再重复排同步；只有直接 SETTLED 才补排一次去重同步。
-
-上述段落是部署前候选记录。生产 migration 042/043、代码部署和独立卡资金 timer 开启现已完成；真实补余额、API/Browser 付款仍未在本次开启中执行。
-
-
-## 2026-08-31 订单驱动自动补余额已在生产开启
-
-- 用户明确确认“开启”。生产已创建 systemd drop-in `/etc/systemd/system/pojia-card-funding.service.d/production-enabled.conf`，设置 `CARD_FUNDING_EXECUTION_ENABLED=true`；`pojia-card-funding.timer` 已 `active/enabled`。
-- 数据库 `card_balance_recharge_enabled=true`，审计事件 actor 为 `deployment:card-funding-enable`，reason 为“用户确认开启订单驱动自动补余额”。
-- 开启前状态完整备份：`/var/backups/pojia/funding-enable-20260831T020605Z`；开启当时 release 为 `/opt/pojia/releases/20260831-order-funding-c185d19`，当前已升级为 `/opt/pojia/releases/20260831-map-audit-d5fb3cf`，funding 开关和 timer 保持开启。
-- 开启后只读验收：无 `WAITING_FOR_CARD` 订单，无 PREPARED/ACTIVE/PENDING/UNKNOWN funding attempt；开启时间后 `provider_calls.operation=card_recharge` 为 0。funding runner 每轮输出 `{"handled":false}`，证明空闲仅查数据库、未调用 Provider 写接口。
-- Web/Worker 与 funding/reconcile timers 正常；Browser Worker 继续 `inactive/disabled`；ops/plus 四个公网 live/ready 均 HTTP 200；`pojia-ops check` 和备份完整性通过，最近日志无 warning/error。
-- 当前能力是“已开启且空闲安全验证通过”，不是“真实补余额闭环已验收”。下一项必须等待真实订单遇到合格低余额卡，记录补前余额、精确差额、唯一 Provider 调用、幂等键、补后交易证据及订单自动恢复；UNKNOWN 时停止且不得重补。
+1. 恢复 Worker 常驻最小 API 充值权限为 true；确保 hold 关闭，通用 Provider/卡片写与 Browser 付款仍关闭。
+2. 重启后验证 readiness `ok=true`、Worker 能力心跳 true，且活动测试任务/资金风险仍为 0。
+3. 再接受下一笔真实 API 订单，并尽量同时验收自动补余额或自动开卡。
+4. 通过后进入 3–5 单连续 API 验收；Browser 非付款线并行。

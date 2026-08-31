@@ -2,6 +2,8 @@
 
 > **当前唯一规划地图：`docs/PROJECT_MAP.md`。** 本文件保存详细阶段清单和历史状态，不再单独决定“下一步”；发生冲突时，生产事实看 `CURRENT_STATE.md`，执行顺序看 `PROJECT_MAP.md`。
 
+> **2026-08-31 13:30 最新纠正**：付款前 hold 演练已经完成并清理，生产 current 已变为 `/opt/pojia/releases/20260831-prepayment-hold-55b6ec4`；接单/派发仍开、默认 API，但 Worker `PROVIDER_RECHARGE_WRITES_ENABLED=false`，readiness 唯一 blocker 为 `api_recharge_execution_disabled`。下文所有较早的“权限已开启/readiness 通过/下一步直接做自动补余额实单”快照均已过期。当前先恢复已确认的 API 常驻最小权限，再做真实订单。准确矩阵见 `docs/2026-08-31_runtime-code-production-alignment-matrix.md`。
+
 > 2026-08-28 起，跨模块当前执行顺序统一以 `docs/MASTER_EXECUTION_PLAN_2026-08-28.md` 为准；其对抗审查见 `docs/MASTER_EXECUTION_PLAN_ADVERSARIAL_REVIEW_2026-08-28.md`。本文继续保留阶段历史，不再从历史段落单独推导新的“下一步”。
 
 > **2026-08-31 当前执行顺序更正**：统一核查发现生产接单/派发/默认 API 已开启，但 Worker 的 API 真实充值权限仍关闭；同时空闲自动开卡 timer 每 60 秒重复刷新 Provider。当前先部署控制面/体检/空闲调用/提醒收敛候选，并单独确认是否长期开启最小 API 充值权限；随后才做首笔真实自动补余额与 3–5 单连续 API 验收。Browser 线继续并行但不自行真实付款。唯一顺序以 `docs/PROJECT_MAP.md` 为准。
