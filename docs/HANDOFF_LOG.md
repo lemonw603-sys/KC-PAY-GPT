@@ -834,3 +834,10 @@
 - 补齐“开始营业”真实边界：当前不检查独立补给 runner 心跳、卡 Provider account 写权限/熔断、开卡额度/资金和未决补给；营业后能力漂移也不会自动关闭已开的接单/派发。
 - 更新 `PROJECT_MAP.md`、`CURRENT_STATE.md`、`PROJECT_OPERATING_MODEL.md`、`ACTIVE_WORKSTREAM.md`、`ROADMAP.md`；详细报告 `docs/2026-08-31_project-map-final-targeted-adversarial-review.md`。
 - 本轮未执行任何生产写入或资金操作；`DECISIONS.md` 存在并行窗口未提交重写，本提交不覆盖、不采信。
+
+# 2026-08-31｜恢复 API 常驻最小充值权限
+
+- 按用户确认安装 `/etc/systemd/system/pojia-worker.service.d/api-recharge-enabled.conf`（来自仓库示例），仅将 `PROVIDER_RECHARGE_WRITES_ENABLED=true`；通用 Provider/卡片写入保持 false。
+- 重启后 Worker `active`，进程环境核对：`PROVIDER_READS_ENABLED=true`、`PROVIDER_RECHARGE_WRITES_ENABLED=true`、`PROVIDER_WRITES_ENABLED=false`、`PROVIDER_CARD_WRITES_ENABLED=false`。
+- 当前默认 Plus 路线为 API，`provider_accounts.write_enabled=1/read_enabled=1`；接单与自动派发数据库开关均为 true。
+- 只读 readiness：`ok=true`，`apiRechargeExecutionEnabled=true`，active tasks/expired leases/uncertain calls/active funds risk/open reconciliation 均为 0，Worker heartbeat age 14 秒，最新 migration 044；本步骤未创建订单、未付款、未调用 Provider。
