@@ -1,44 +1,46 @@
 import { snapshotIsFresh } from './card-provider-snapshot-service.js';
 
-/**
- * Convert the existing overview fields into a small, stable control-plane
- * summary. This is presentation-only: it performs no writes and does not
- * relax any execution gate.
- */
-export function buildAdminReadinessSummary(overview = {}) {
+function check(checkId, status, message, actionId = null) {
+  return { checkId, status, actionId, message };
+}
+
+/** Summarise only gates needed by the currently selected route. */
+export function buildAdminReadinessSummary(overview = {}, { defaultCardTypeReady = false } = {}) {
   const health = overview.providerHealth || {};
   const stock = overview.cardStock || {};
+  const runtime = overview.runtimeHealth || {};
+  const method = String(health.rechargeMethod || 'API').toUpperCase();
   const checks = [];
-  const providerReady = Boolean(health.syncedAt)
-    && snapshotIsFresh({ syncedAt: health.syncedAt })
-    && health.purchaseEnabled === true;
-  checks.push({
-    checkId: 'PROVIDER_READINESS',
-    status: providerReady ? 'READY' : 'ACTION_REQUIRED',
-    actionId: providerReady ? null : 'REFRESH_PROVIDER_RULES',
-    message: providerReady ? '卡台规则和开卡权限已就绪' : '请刷新卡台规则并确认开卡权限'
-  });
 
-  const stockReady = Number(stock.available || 0) > 0;
-  checks.push({
-    checkId: 'CARD_STOCK',
-    status: stockReady ? 'READY' : 'BLOCKED',
-    actionId: stockReady ? null : 'OPEN_CARD_STOCK',
-    message: stockReady ? `可分配卡 ${Number(stock.available || 0)} 张` : '当前没有可直接分配的卡'
-  });
+  if (method === 'BROWSER') {
+    checks.push(health.browserRechargeReady === true
+      ? check('EXECUTION_ROUTE', 'READY', '默认使用 Browser，执行器已就绪')
+      : check('EXECUTION_ROUTE', 'BLOCKED', '默认使用 Browser，但执行器尚未就绪', 'OPEN_BROWSER_STATUS'));
+  } else {
+    checks.push(runtime.workerHealthy === true
+      ? check('EXECUTION_ROUTE', 'READY', '默认使用 API，订单 Worker 正常')
+      : check('EXECUTION_ROUTE', 'BLOCKED', 'API 订单 Worker 当前不健康', 'OPEN_RECONCILIATION'));
+  }
 
-  const browserReady = health.browserRechargeReady === true;
-  checks.push({
-    checkId: 'BROWSER_EXECUTOR',
-    status: browserReady ? 'READY' : 'ACTION_REQUIRED',
-    actionId: browserReady ? null : 'OPEN_BROWSER_STATUS',
-    message: browserReady ? 'Browser 执行器已就绪' : 'Browser 执行器当前未就绪（不影响 API 充值）'
-  });
+  const available = Number(stock.available || 0);
+  const needsFunding = Number(stock.needsFunding || 0);
+  if (available > 0) {
+    checks.push(check('CARD_SUPPLY', 'READY', `可直接分配卡 ${available} 张`));
+  } else if (needsFunding > 0) {
+    checks.push(check('CARD_SUPPLY', 'BLOCKED', `有 ${needsFunding} 张卡需要补余额后才能使用`, 'OPEN_CARD_FUNDING'));
+  } else if (stock.autoReplenishmentEnabled === true) {
+    const providerReady = Boolean(health.syncedAt)
+      && snapshotIsFresh({ syncedAt: health.syncedAt })
+      && health.purchaseEnabled === true
+      && defaultCardTypeReady;
+    checks.push(providerReady
+      ? check('CARD_SUPPLY', 'AUTO_HEAL', '当前无卡；首个订单到达时会按已确认规则自动开卡')
+      : check('CARD_SUPPLY', 'BLOCKED', '自动补卡已开启，但卡台规则或默认卡段未就绪', 'REFRESH_PROVIDER_RULES'));
+  } else {
+    checks.push(check('CARD_SUPPLY', 'BLOCKED', '当前无可用卡，且自动补卡未开启', 'OPEN_CARD_STOCK'));
+  }
 
   const blocked = checks.some((item) => item.status === 'BLOCKED');
-  const actionRequired = checks.some((item) => item.status === 'ACTION_REQUIRED');
-  return {
-    status: blocked ? 'BLOCKED' : actionRequired ? 'ACTION_REQUIRED' : 'READY',
-    checks
-  };
+  const autoHeal = checks.some((item) => item.status === 'AUTO_HEAL');
+  return { status: blocked ? 'BLOCKED' : autoHeal ? 'AUTO_HEAL' : 'READY', ready: !blocked, method, checks };
 }

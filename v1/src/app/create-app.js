@@ -345,7 +345,9 @@ export function createApp({
   }
   if (typeof startAdminBusiness === 'function') {
     app.post('/api/v1/admin/operations/start-business', ...adminWriteGuards, async (_req, res) => {
-      res.json(await startAdminBusiness());
+      const result = await startAdminBusiness();
+      if (!result.ready) return res.status(409).json({ error: 'business_not_ready', ...result });
+      return res.json(result);
     });
   }
   if (typeof setAdminCardStockThreshold === 'function') {

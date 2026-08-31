@@ -721,3 +721,9 @@
 - 候选 SHA-256、全量测试、只读 readiness 和部署边界见 `docs/2026-08-31_control-browser-candidate-release.md`。
 - 首次候选依赖安装因解压文件为 root 所有而失败；确认候选不是 current 后修正候选目录所有权并成功重装，线上服务未受影响。
 - 下一动作仅为经确认后的生产原子切换与部署后只读验收；不会联动开启 Browser/Provider/卡资金写入。
+
+# 2026-08-31｜候选部署前对抗式审查与修正
+
+- 原 `0a6e651` 候选经真实场景代入发现三项阻塞：默认 API 被 Browser 未启动误报、开始营业与无卡自动补卡相互矛盾、失败只返回不可操作的 internal_error；另发现 overview 重复读取。
+- 上述问题已直接修正，原候选作废，不得部署；详细审查见 `docs/2026-08-31_control-browser-candidate-adversarial-review.md`。
+- 修正后全量回归：Legacy 87/87；v1 448 passed / 0 failed / 40 skipped；Browser 105 passed / 0 failed / 4 skipped。

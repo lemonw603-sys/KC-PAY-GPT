@@ -3,20 +3,35 @@ import test from 'node:test';
 import { buildAdminReadinessSummary } from '../src/services/admin-readiness-summary.js';
 
 const fresh = new Date().toISOString();
+const base = {
+  providerHealth: { rechargeMethod: 'API', syncedAt: fresh, purchaseEnabled: true, browserRechargeReady: false },
+  runtimeHealth: { workerHealthy: true },
+  cardStock: { available: 1, needsFunding: 0, autoReplenishmentEnabled: true }
+};
 
-test('readiness summary is presentation-only and ready when provider and stock are ready', () => {
-  const result = buildAdminReadinessSummary({
-    providerHealth: { syncedAt: fresh, purchaseEnabled: true, browserRechargeReady: false },
-    cardStock: { available: 2 }
-  });
-  assert.equal(result.status, 'ACTION_REQUIRED');
-  assert.equal(result.checks.find((item) => item.checkId === 'CARD_STOCK').status, 'READY');
-  assert.equal(result.checks.find((item) => item.checkId === 'BROWSER_EXECUTOR').actionId, 'OPEN_BROWSER_STATUS');
+test('API readiness ignores an inactive Browser executor when API and inventory are ready', () => {
+  const result = buildAdminReadinessSummary(base, { defaultCardTypeReady: true });
+  assert.equal(result.status, 'READY');
+  assert.equal(result.ready, true);
+  assert.deepEqual(result.checks.map((item) => item.checkId), ['EXECUTION_ROUTE', 'CARD_SUPPLY']);
 });
 
-test('missing stock is a blocker while browser not-ready remains informational action', () => {
-  const result = buildAdminReadinessSummary({ providerHealth: {}, cardStock: { available: 0 } });
+test('Browser is a blocker only when it is the selected default route', () => {
+  const result = buildAdminReadinessSummary({ ...base, providerHealth: { ...base.providerHealth, rechargeMethod: 'BROWSER' } });
   assert.equal(result.status, 'BLOCKED');
-  assert.equal(result.checks.find((item) => item.checkId === 'CARD_STOCK').actionId, 'OPEN_CARD_STOCK');
-  assert.match(result.checks.find((item) => item.checkId === 'BROWSER_EXECUTOR').message, /API/);
+  assert.equal(result.checks[0].actionId, 'OPEN_BROWSER_STATUS');
+});
+
+test('no card can auto-heal only when opening rules and default card type are ready', () => {
+  const overview = { ...base, cardStock: { available: 0, needsFunding: 0, autoReplenishmentEnabled: true } };
+  assert.equal(buildAdminReadinessSummary(overview, { defaultCardTypeReady: true }).status, 'AUTO_HEAL');
+  const blocked = buildAdminReadinessSummary(overview, { defaultCardTypeReady: false });
+  assert.equal(blocked.status, 'BLOCKED');
+  assert.equal(blocked.checks[1].actionId, 'REFRESH_PROVIDER_RULES');
+});
+
+test('underfunded inventory remains blocked while production funding runner is disabled', () => {
+  const result = buildAdminReadinessSummary({ ...base, cardStock: { available: 0, needsFunding: 2, autoReplenishmentEnabled: true } }, { defaultCardTypeReady: true });
+  assert.equal(result.status, 'BLOCKED');
+  assert.equal(result.checks[1].actionId, 'OPEN_CARD_FUNDING');
 });

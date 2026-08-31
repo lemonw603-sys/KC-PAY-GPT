@@ -208,8 +208,26 @@ async function api(url, options) {
     throw new Error('admin_auth_required');
   }
   const payload = await response.json().catch(() => null);
-  if (!response.ok) throw new Error(payload?.error || 'request_failed');
+  if (!response.ok) {
+    const error = new Error(payload?.error || 'request_failed');
+    error.payload = payload;
+    throw error;
+  }
   return payload;
+}
+
+function renderReadiness(readiness = {}) {
+  if (!elements.readinessList) return;
+  const statusLabels = { READY: '已就绪', AUTO_HEAL: '自动处理', ACTION_REQUIRED: '需要处理', BLOCKED: '暂不可用' };
+  const actionViews = {
+    REFRESH_PROVIDER_RULES: 'stock', OPEN_CARD_STOCK: 'stock', OPEN_CARD_FUNDING: 'card-funding',
+    OPEN_BROWSER_STATUS: 'browser', OPEN_RECONCILIATION: 'reconciliation'
+  };
+  elements.readinessList.innerHTML = (readiness.checks || []).map((item) => `<div class="readiness-row readiness-${String(item.status || '').toLowerCase()}"><span><strong>${escapeHtml(item.message || item.checkId)}</strong><small>${escapeHtml(statusLabels[item.status] || item.status || '未知')}</small></span>${item.actionId ? `<button type="button" class="text-button readiness-action" data-readiness-action="${escapeHtml(item.actionId)}">去处理</button>` : '<span class="readiness-ok">✓</span>'}</div>`).join('') || '<p class="empty-state">暂无检查项</p>';
+  elements.readinessList.querySelectorAll('[data-readiness-action]').forEach((button) => button.addEventListener('click', () => {
+    const target = actionViews[button.dataset.readinessAction];
+    if (target) document.querySelector(`.nav-item[data-view="${target}"]`)?.click();
+  }));
 }
 
 async function requestSensitiveAccess() {
@@ -268,20 +286,12 @@ function orderRow(order, { selectable = false } = {}) {
 }
 
 async function loadOverview() {
-  const [overview, recent, alertData, readiness] = await Promise.all([
+  const [overview, recent, alertData] = await Promise.all([
     api('/api/v1/admin/overview'),
     api('/api/v1/admin/orders?page=1&pageSize=6'),
-    api('/api/v1/admin/alerts?limit=10'),
-    api('/api/v1/admin/operations/readiness')
+    api('/api/v1/admin/alerts?limit=10')
   ]);
-  if (elements.readinessList) {
-    const statusLabels = { READY: '已就绪', ACTION_REQUIRED: '需要处理', BLOCKED: '暂不可用' };
-    elements.readinessList.innerHTML = (readiness.checks || []).map((item) => `<div class="readiness-row readiness-${String(item.status || '').toLowerCase()}"><span><strong>${escapeHtml(item.message || item.checkId)}</strong><small>${escapeHtml(statusLabels[item.status] || item.status || '未知')}</small></span>${item.actionId ? `<button type="button" class="text-button readiness-action" data-readiness-action="${escapeHtml(item.actionId)}">去处理</button>` : '<span class="readiness-ok">✓</span>'}</div>`).join('') || '<p class="empty-state">暂无检查项</p>';
-    elements.readinessList.querySelectorAll('[data-readiness-action]').forEach((button) => button.addEventListener('click', () => {
-      const target = { REFRESH_PROVIDER_RULES: 'stock', OPEN_CARD_STOCK: 'stock', OPEN_BROWSER_STATUS: 'browser' }[button.dataset.readinessAction];
-      if (target) document.querySelector(`.nav-item[data-view="${target}"]`)?.click();
-    }));
-  }
+  renderReadiness(overview.readiness);
   const orderMetrics = [
     { label: '累计订单', value: overview.metrics.totalOrders, note: '全部已创建订单', view: 'orders' },
     { label: '今日订单', value: overview.metrics.todayOrders, note: '点击查看今天新订单', filter: 'TODAY' },
@@ -1721,11 +1731,16 @@ document.querySelector('#refresh-stock')?.addEventListener('click', async () => 
 elements.startBusiness?.addEventListener('click', async (event) => {
   const button = event.currentTarget; button.disabled = true;
   try {
-    await api('/api/v1/admin/operations/start-business', { method: 'POST' });
-    showNotice('只读检查通过，已开始接收新订单并自动派发。', 'success');
+    const result = await api('/api/v1/admin/operations/start-business', { method: 'POST' });
+    renderReadiness(result.readiness);
+    showNotice(result.readiness?.status === 'AUTO_HEAL'
+      ? '已开始营业；当前补给会在首个订单到达时自动处理。'
+      : '只读检查通过，已开始接收新订单并自动派发。', 'success');
     await loadOverview();
   } catch (error) {
-    showNotice(error?.message || '开始营业失败：请先确认卡台和库存状态。');
+    if (error?.payload?.readiness) renderReadiness(error.payload.readiness);
+    const firstBlocker = error?.payload?.readiness?.checks?.find((item) => item.status === 'BLOCKED');
+    showNotice(firstBlocker?.message || '开始营业失败：请按就绪卡片提示处理。');
   } finally { button.disabled = false; }
 });
 elements.refreshCardProviderRules?.addEventListener('click', async (event) => {

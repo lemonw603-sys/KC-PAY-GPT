@@ -156,6 +156,13 @@ const adminAuth = config.adminPasswordHash
     pool
   })
   : null;
+async function getAdminOverviewWithReadiness() {
+  const [overview, stockStatus] = await Promise.all([adminReadService.getOverview(), cardStockService.status()]);
+  const defaultId = stockStatus.provider?.defaultCardTypeId;
+  const defaultCardTypeReady = stockStatus.provider?.cardTypes?.some((item) => String(item.id) === String(defaultId)) === true;
+  return { ...overview, readiness: buildAdminReadinessSummary(overview, { defaultCardTypeReady }) };
+}
+
 const app = createApp({
   readiness: () => checkDatabaseReady(pool),
   createCustomerOrder,
@@ -163,8 +170,8 @@ const app = createApp({
   replaceCustomerSession,
   adminAuth,
   adminHost: config.adminHost,
-  getAdminOverview: adminReadService.getOverview,
-  getAdminReadinessSummary: async () => buildAdminReadinessSummary(await adminReadService.getOverview()),
+  getAdminOverview: getAdminOverviewWithReadiness,
+  getAdminReadinessSummary: async () => (await getAdminOverviewWithReadiness()).readiness,
   listAdminOrders: adminReadService.listOrders,
   getAdminOrder: adminReadService.getOrder,
   addAdminOrderNote: traceabilityOperations.addOrderNote,
