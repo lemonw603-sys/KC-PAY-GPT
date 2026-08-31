@@ -706,3 +706,11 @@
 - 管理后台资源版本由 v18 升至 v19，避免旧缓存继续显示旧页面。
 - v1 全量回归：485 tests / 445 passed / 0 failed / 40 skipped；静态语法与 diff 检查通过。
 - 代码尚未部署生产；待 Browser 兼容复核和候选发布前检查完成后统一制作 release。
+
+# 2026-08-31｜Browser 多订单复用兼容修正合入主线
+
+- Browser 窗口完成并提交 `4591ce3`；统筹审查后已合入 main（`6742248`）。
+- 修正 Browser 上游投影、共享密文材料读取和付款前权威快照：优先使用 `orders.assigned_card_id` 绑定复用卡，旧订单继续使用 `cards.order_id` 兼容回退；消费账本/attempt 绑定保持不变。
+- 新增兼容性报告：`docs/browser-research/BROWSER_CARD_REUSE_COMPATIBILITY_2026-08-31.md`。
+- 回归：Browser `109 tests / 105 passed / 0 failed / 4 skipped`；v1 `486 tests / 446 passed / 0 failed / 40 skipped`。
+- 本次只改代码与测试，未部署生产、未启动 Browser Worker、未执行 Provider/卡台写入或付款。待控制面改造与 Browser 兼容改动合并后统一制作候选 release。
