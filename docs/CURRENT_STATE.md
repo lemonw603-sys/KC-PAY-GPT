@@ -7,6 +7,7 @@
 
 - 生产代码已部署候选 `3f23aa3`（包含 `1c2c9ba` 供应规划修复）；旧版 `55b6ec4` 保留可回滚。
 - 生产 `/opt/pojia/current`：`/opt/pojia/releases/20260831-supply-sync-3f23aa3`。
+- 本地 main 已形成客户充值页重设计正式代码候选，尚未部署；生产客户页仍是上述 release 的旧界面。候选边界与验证见 `docs/2026-09-01_customer-recharge-redesign-production-candidate.md`。
 - `pojia-web.service=active`；`pojia-worker.service=active`。
 - `pojia-browser-worker.service=inactive/disabled`。
 - `pojia-card-stock-runner.timer`、`pojia-card-funding.timer`、`pojia-card-funding-reconcile.timer` 均 active/enabled；最新 migration 为 `044_operator_alert_actionability`。

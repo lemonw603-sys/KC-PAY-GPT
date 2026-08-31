@@ -855,3 +855,11 @@
 - 新建 release `/opt/pojia/releases/20260831-supply-sync-3f23aa3`，保留旧版 `55b6ec4`；无 migration 变化。原子切换 `/opt/pojia/current`，重启 Web/Worker 及 stock/funding/reconcile timers。
 - 部署后只读核对：Web/Worker 与三个补给 timer active；Worker 实际环境 `PROVIDER_RECHARGE_WRITES_ENABLED=true`、通用 Provider/普通卡片写=false；preflight `ok=true`、`blockers=[]`、heartbeat 2 秒、活动任务/资金风险/UNKNOWN Provider call 均 0。
 - 本轮未创建订单、未开卡、未补余额、未调用 Provider 写接口、未付款。旧版 `/opt/pojia/releases/20260831-prepayment-hold-55b6ec4` 保留可回滚；回滚前需再次核对无活动/UNKNOWN 资金动作。
+
+# 2026-09-01｜客户充值页重设计正式代码候选
+
+- 将 Claude 的隔离设计原型移植到 `v1/public` 正式客户页，保留单列三步、邮箱确认主视图和页面内状态/成功；删除 mock/demo/capture 与成功弹窗。
+- 确认前只在本地解析 Session 并展示 `user.email`，零订单请求；确认后才调用现有 `/orders`，查询/换 Session 继续使用现有 `/orders/status`、`/orders/session`。
+- 保留防重复提交、查询码 sessionStorage 恢复、生产轮询、错误/更换 Session 流程；成功消费现有 `customerEmail/finishedAt/timeline`。
+- v1 全量 466 通过、42 跳过、0 失败；Playwright 验证确认前 0 请求、确认后 1 次建单、Session 清空、SUCCESS 无 dialog、390px 无横向溢出。
+- 候选未部署、未连接生产、未创建订单或执行资金动作；报告：`docs/2026-09-01_customer-recharge-redesign-production-candidate.md`。

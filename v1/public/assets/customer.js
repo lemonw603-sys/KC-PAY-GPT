@@ -1,441 +1,437 @@
-const STATUS = Object.freeze({
-  QUEUED: {
-    label: '已排队',
-    title: '订单已建立',
-    description: '系统已收到订单，正在等待处理。',
-    terminal: false,
-    pollAfter: 5000
-  },
-  PROCESSING: {
-    label: '处理中',
-    title: '正在处理 Plus',
-    description: '订单已进入处理流程，请不要重复提交。',
-    terminal: false,
-    pollAfter: 5000
-  },
-  REVIEWING: {
-    label: '复核中',
-    title: '订单正在复核',
-    description: '系统需要进一步确认结果，请保留查询码并稍后查看。',
-    terminal: false,
-    pollAfter: 30000
-  },
-  ACTION_REQUIRED: {
-    label: '需要更换资料',
-    title: '请更换账号 Session',
-    description: '当前账号不符合充值条件，请在原订单更换 Session。',
-    terminal: false,
-    pollAfter: 30000
-  },
-  FINALIZING: {
-    label: '收尾中',
-    title: '正在确认取消自动续费',
-    description: '充值平台已确认付款，系统正在确认订阅已取消自动续费。',
-    terminal: false,
-    pollAfter: 10000
-  },
-  SUCCESS: {
-    label: '已成功',
-    title: 'Plus 已开通',
-    description: '本次订单已经处理完成。',
-    terminal: true,
-    pollAfter: null
-  },
-  FAILED: {
-    label: '未成功',
-    title: '订单未能完成',
-    description: '本次订单未能完成，请保留查询码等待人工处理。',
-    terminal: true,
-    pollAfter: null
-  }
-});
+/* =========================================================================
+   customer.js — 客户充值页视图状态机与真实客户 API 契约。
+   关键不变量：
+   1) 「下一步：核对邮箱」只在本地解析 Session 提取邮箱，绝不发任何请求。
+   2) 只有客户在确认页点「确认无误，创建订单」后，才调用 createOrder。
+   3) 页面只展示邮箱；Session / Token 全文不回显，创建成功后清空输入。
+   4) 状态一律来自客户契约的 7 种映射态，从不显示内部/卡台/资金状态。
+   ========================================================================= */
+(function () {
+  'use strict';
 
-const ERROR_MESSAGES = Object.freeze({
-  invalid_order_request: '请检查提交内容。',
-  incomplete_session: '账号 Session 不完整，请重新复制完整内容。',
-  invalid_access_token: '账号 Session 无效，请重新获取完整内容。',
-  invalid_access_token_claims: '账号 Session 无效，请重新获取完整内容。',
-  access_token_expired: '账号 Session 已过期，请重新获取后提交。',
-  access_token_near_expiry: '账号 Session 即将过期，请重新获取后提交。',
-  invalid_session_token: '账号 Session 无效，请重新获取完整内容。',
-  invalid_session_expiry: '账号 Session 的有效期信息无效，请重新获取。',
-  session_expired: '账号 Session 已过期，请重新获取。',
-  cdk_unavailable: 'CDK卡密不可用或已绑定订单，可切换到“查询进度”找回原订单。',
-  ordering_paused: '当前暂停接收新订单，请稍后再试。',
-  ordering_not_configured: '当前暂时无法创建订单，请稍后再试。',
-  invalid_order_query: '请输入有效的订单查询码或原 CDK卡密。',
-  order_not_found: '没有找到对应订单，请检查输入。',
-  session_replacement_not_allowed: '当前订单不需要更换 Session。',
-  session_replacement_expired: 'Session 更换时间已过，请保留查询码联系人工处理。',
-  session_replacement_limit_reached: 'Session 更换次数已用完，请保留查询码联系人工处理。',
-  funds_state_unsafe: '订单正在资金复核，暂时不能更换 Session。',
-  rate_limited: '操作过于频繁，请稍后再试。',
-  body_too_large: '账号 Session 内容过大，请检查是否粘贴了多余内容。',
-  invalid_json: '请求内容不是有效 JSON。'
-});
-
-const elements = {
-  tabs: [...document.querySelectorAll('[role="tab"]')],
-  panels: [...document.querySelectorAll('[role="tabpanel"]')],
-  submitForm: document.querySelector('#submit-form'),
-  queryForm: document.querySelector('#query-form'),
-  cdkInput: document.querySelector('#cdk-input'),
-  sessionInput: document.querySelector('#session-input'),
-  confirmInput: document.querySelector('#confirm-input'),
-  queryInput: document.querySelector('#query-input'),
-  submitButton: document.querySelector('#submit-button'),
-  queryButton: document.querySelector('#query-button'),
-  resultCard: document.querySelector('#result-card'),
-  statusChip: document.querySelector('#status-chip'),
-  statusLabel: document.querySelector('#status-label'),
-  resultTitle: document.querySelector('#result-title'),
-  resultDescription: document.querySelector('#result-description'),
-  publicNo: document.querySelector('#public-no'),
-  updatedAt: document.querySelector('#updated-at'),
-  pollingNote: document.querySelector('#polling-note'),
-  copyButton: document.querySelector('#copy-button'),
-  replacementForm: document.querySelector('#session-replacement-form'),
-  replacementSessionInput: document.querySelector('#replacement-session-input'),
-  replacementConfirmInput: document.querySelector('#replacement-confirm-input'),
-  replacementSubmitButton: document.querySelector('#replacement-submit-button'),
-  replacementLimit: document.querySelector('#replacement-limit'),
-  notice: document.querySelector('#notice')
-  ,successMeta: document.querySelector('#customer-success-meta')
-  ,customerEmail: document.querySelector('#customer-email')
-  ,customerFinishedAt: document.querySelector('#customer-finished-at')
-  ,timeline: document.querySelector('#order-timeline')
-  ,confirmDialog: document.querySelector('#submit-confirm-dialog')
-  ,successDialog: document.querySelector('#success-dialog')
-  ,successEmail: document.querySelector('#success-email')
-  ,successFinishedAt: document.querySelector('#success-finished-at')
-};
-
-let pollTimer = null;
-let pollingStartedAt = 0;
-let currentOrder = null;
-
-function switchTab(panelId) {
-  for (const tab of elements.tabs) {
-    const active = tab.dataset.tab === panelId;
-    tab.classList.toggle('is-active', active);
-    tab.setAttribute('aria-selected', String(active));
-    tab.tabIndex = active ? 0 : -1;
-  }
-  for (const panel of elements.panels) panel.hidden = panel.id !== panelId;
-  hideNotice();
-}
-
-function setBusy(button, busy, busyText) {
-  button.disabled = busy;
-  const label = button.querySelector('span');
-  if (!button.dataset.defaultText) button.dataset.defaultText = label.textContent;
-  label.textContent = busy ? busyText : button.dataset.defaultText;
-}
-
-function showNotice(message, kind = 'error') {
-  elements.notice.textContent = message;
-  elements.notice.dataset.kind = kind;
-  elements.notice.hidden = false;
-  elements.notice.focus?.();
-}
-
-function hideNotice() {
-  elements.notice.hidden = true;
-  elements.notice.textContent = '';
-  delete elements.notice.dataset.kind;
-}
-
-async function postJson(url, body) {
-  let response;
-  try {
-    response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body)
-    });
-  } catch {
-    throw new Error('network_error');
-  }
-  let payload = null;
-  try {
-    payload = await response.json();
-  } catch {
-    throw new Error('invalid_response');
-  }
-  if (!response.ok) throw new Error(payload?.error || 'request_failed');
-  return payload;
-}
-
-function customerMessage(error) {
-  if (error.message === 'network_error') return '无法连接服务，请检查网络后重试。';
-  if (error.message === 'invalid_response') return '服务返回异常，请稍后重试。';
-  return ERROR_MESSAGES[error.message] || '操作未完成，请稍后重试。';
-}
-
-function formatTime(value) {
-  if (!value) return '';
-  const date = new Date(value);
-  if (!Number.isFinite(date.getTime())) return '';
-  return `更新于 ${date.toLocaleString('zh-CN', { hour12: false })}`;
-}
-
-function rememberPublicNo(publicNo) {
-  try { sessionStorage.setItem('pojia:lastPublicNo', publicNo); } catch { /* unavailable storage */ }
-}
-
-function readRememberedPublicNo() {
-  try { return sessionStorage.getItem('pojia:lastPublicNo'); } catch { return null; }
-}
-
-function renderOrder(order, { scroll = true } = {}) {
-  const normalizedStatus = STATUS[order.status] ? order.status : 'REVIEWING';
-  const meta = STATUS[normalizedStatus];
-  elements.resultCard.hidden = false;
-  elements.statusChip.dataset.status = normalizedStatus;
-  elements.statusLabel.textContent = meta.label;
-  elements.resultTitle.textContent = meta.title;
-  currentOrder = order;
-  const replacement = order.sessionReplacement || {};
-  const replacementExpired = replacement.expiresAt
-    && new Date(replacement.expiresAt).getTime() <= Date.now();
-  const replacementUnavailable = normalizedStatus === 'ACTION_REQUIRED'
-    && (Number(replacement.remaining || 0) <= 0 || replacementExpired);
-  elements.resultDescription.textContent = replacementUnavailable
-    ? 'Session 更换次数或时间窗口已用完，请保留查询码联系人工处理。'
-    : (order.actionRequired?.message || meta.description);
-  elements.publicNo.textContent = order.publicNo;
-  elements.queryInput.value = order.publicNo;
-  elements.updatedAt.textContent = formatTime(order.updatedAt);
-  const success = normalizedStatus === 'SUCCESS';
-  elements.successMeta.hidden = !success;
-  if (success) {
-    elements.customerEmail.textContent = order.customerEmail || '—';
-    elements.customerFinishedAt.textContent = formatTime(order.finishedAt || order.updatedAt) || '—';
-    elements.successEmail.textContent = order.customerEmail || '—';
-    elements.successFinishedAt.textContent = formatTime(order.finishedAt || order.updatedAt) || '—';
-    if (elements.successDialog && successShownFor !== order.publicNo && !elements.successDialog.open) {
-      successShownFor = order.publicNo;
-      elements.successDialog.showModal();
+  async function postJson(url, body) {
+    let response;
+    try {
+      response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+    } catch {
+      throw new Error('network_error');
     }
+    let payload;
+    try { payload = await response.json(); }
+    catch { throw new Error('invalid_response'); }
+    if (!response.ok) throw new Error(payload?.error || 'request_failed');
+    return payload;
   }
-  elements.timeline.innerHTML = (order.timeline || []).map((item) => `<li><span>${escapeHtml(STATUS[item.status]?.label || item.status || '处理中')}</span><time>${escapeHtml(formatTime(item.updatedAt))}</time></li>`).join('');
-  const mayReplaceSession = normalizedStatus === 'ACTION_REQUIRED'
-    && order.actionRequired && !replacementUnavailable;
-  elements.replacementForm.hidden = !mayReplaceSession;
-  if (mayReplaceSession) {
-    elements.replacementLimit.textContent = `还可更换 ${replacement.remaining ?? 0} 次${replacement.expiresAt ? ` · 截止 ${new Date(replacement.expiresAt).toLocaleString('zh-CN', { hour12: false })}` : ''}`;
-  }
-  elements.pollingNote.textContent = meta.terminal
-    ? '该订单已进入最终状态，自动查询已停止。'
-    : `页面将在 ${Math.round(meta.pollAfter / 1000)} 秒后自动更新。`;
-  rememberPublicNo(order.publicNo);
-  if (scroll) elements.resultCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-  schedulePoll(order.publicNo, meta);
-}
 
-let submitConfirmed = false;
-let successShownFor = null;
-elements.confirmDialog?.addEventListener('close', () => {
-  if (elements.confirmDialog.returnValue === 'confirm') {
-    submitConfirmed = true;
-    elements.submitForm.requestSubmit();
-  }
-});
+  const api = Object.freeze({
+    createOrder: (body) => postJson('/api/v1/orders', body),
+    replaceSession: (body) => postJson('/api/v1/orders/session', body),
+    getStatus: (body) => postJson('/api/v1/orders/status', body)
+  });
 
-// Browser extensions can append non-JSON labels to a pasted Session. Extract
-// only the first complete JSON object without changing its contents.
-function parseSessionInput(raw) {
-  const text = String(raw || '').trim();
-  try {
-    return { value: JSON.parse(text), hadTrailingText: false };
-  } catch {
+  // ---- 客户可见 7 状态的展示文案（语义对齐 v1 现有 STATUS，措辞打磨） ----
+  const STATUS = {
+    QUEUED:          { label: '已排队',   title: '订单已创建',           desc: '系统已收到订单，正在排队等待处理。', terminal: false, poll: 5000 },
+    PROCESSING:      { label: '处理中',   title: '正在为你开通 Plus',    desc: '订单已进入处理流程，请不要重复提交，稍候即可。', terminal: false, poll: 5000 },
+    REVIEWING:       { label: '复核中',   title: '订单正在复核',         desc: '系统需要进一步确认结果，请保留查询码稍后查看。', terminal: false, poll: 100000 },
+    ACTION_REQUIRED: { label: '待更换账号', title: '需要更换账号 Session', desc: '当前账号不符合开通条件，请在下方更换一个免费账号的 Session。', terminal: false, poll: 100000 },
+    FINALIZING:      { label: '收尾中',   title: '正在确认取消自动续费', desc: '付款已确认，系统正在关闭自动续费，马上完成。', terminal: false, poll: 10000 },
+    SUCCESS:         { label: '已开通',   title: 'Plus 已成功开通',      desc: '本次订单已全部完成，账号信息如下。', terminal: true,  poll: null },
+    FAILED:          { label: '未成功',   title: '订单未能完成',         desc: '本次订单未能完成，已转入人工核对，请保留查询码稍后再查。', terminal: true, poll: null }
+  };
+
+  // 时间线短标签
+  const TL_LABEL = {
+    QUEUED: '已创建', PROCESSING: '处理中', REVIEWING: '复核中',
+    ACTION_REQUIRED: '等待更换账号', FINALIZING: '确认取消续费',
+    SUCCESS: '已完成', FAILED: '未成功'
+  };
+  const CANON = ['QUEUED', 'PROCESSING', 'FINALIZING', 'SUCCESS'];
+
+  // 错误码 -> 客户文案（对齐现有 customer.js ERROR_MESSAGES）
+  const ERRORS = {
+    invalid_order_request: '请检查提交内容。',
+    incomplete_session: '账号 Session 不完整，请重新复制完整内容。',
+    invalid_access_token: '账号 Session 无效，请重新获取完整内容。',
+    invalid_access_token_claims: '账号 Session 无效，请重新获取完整内容。',
+    access_token_expired: '账号 Session 已过期，请重新获取后提交。',
+    access_token_near_expiry: '账号 Session 即将过期，请重新获取后提交。',
+    invalid_session_token: '账号 Session 无效，请重新获取完整内容。',
+    invalid_session_expiry: '账号 Session 的有效期信息无效，请重新获取。',
+    session_expired: '账号 Session 已过期，请重新获取。',
+    cdk_unavailable: 'CDK 卡密不可用或已绑定订单，可到「查订单」找回原订单。',
+    ordering_paused: '当前暂停接收新订单，请稍后再试。',
+    ordering_not_configured: '当前暂时无法创建订单，请稍后再试。',
+    order_route_unavailable: '当前暂时无法创建订单，请稍后再试。',
+    invalid_order_query: '请输入有效的查询码或原 CDK 卡密。',
+    order_not_found: '没有找到对应订单，请检查输入。',
+    session_replacement_not_allowed: '当前订单不需要更换 Session。',
+    session_replacement_expired: '更换时间已过，请保留查询码联系人工处理。',
+    session_replacement_limit_reached: '更换次数已用完，请保留查询码联系人工处理。',
+    funds_state_unsafe: '订单正在复核，暂时不能更换 Session。',
+    rate_limited: '操作过于频繁，请稍后再试。',
+    body_too_large: '账号 Session 内容过大，请检查是否粘贴了多余内容。',
+    invalid_json: '请求内容格式有误，请稍后重试。'
+  };
+
+  const $ = (id) => document.getElementById(id);
+  const el = {
+    stage: $('stage'), stepper: $('stepper'), stepperFill: $('stepper-fill'),
+    views: { input: $('view-input'), confirm: $('view-confirm'), tracking: $('view-tracking'), query: $('view-query') },
+    inputForm: $('submit-form'), cdk: $('cdk'), session: $('session'),
+    fieldCdk: $('field-cdk'), fieldSession: $('field-session'), toConfirm: $('to-confirm'),
+    confirmBack: $('confirm-back'), confirmCancel: $('confirm-cancel'), confirmCreate: $('confirm-create'),
+    confirmEmail: $('confirm-email'), confirmCdk: $('confirm-cdk'),
+    confirmCheck: $('confirm-check'),
+    statusCard: $('status-card'), crest: $('status-crest'),
+    chip: $('status-chip'), chipLabel: $('status-chip-label'), updated: $('status-updated'),
+    title: $('status-title'), desc: $('status-desc'),
+    successSummary: $('success-summary'), successEmail: $('success-email'), successTime: $('success-time'),
+    ticketCode: $('ticket-code'), ticketCopy: $('ticket-copy'),
+    replaceForm: $('replace-form'), replaceSession: $('replace-session'), replaceCheck: $('replace-check'),
+    replaceSubmit: $('replace-submit'), replaceLimit: $('replace-limit'),
+    helpbox: $('helpbox'), helpText: $('helpbox-text'),
+    timeline: $('timeline'), pollNote: $('poll-note'), trackingNew: $('tracking-new'),
+    queryForm: $('query-form'), queryInput: $('query-input'), querySubmit: $('query-submit'), queryBack: $('query-back'),
+    navQuery: $('nav-query'), toast: $('toast'),
+    guideOpen: $('session-help-open'), replaceHelpOpen: $('replace-help-open'),
+    guide: $('session-guide'), guideClose: $('guide-close'), guideDone: $('guide-done')
+  };
+
+  let pending = null;       // {cdk, session, email} —— 待确认，未发请求
+  let currentOrder = null;
+  let pollTimer = null, pollStart = 0, successShownFor = null;
+
+  // ---------------- 工具 ----------------
+  function escapeHtml(s) { return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+
+  function fmtTime(v) {
+    if (!v) return '';
+    const d = new Date(v);
+    return Number.isFinite(d.getTime()) ? d.toLocaleString('zh-CN', { hour12: false }) : '';
+  }
+  function rememberPublicNo(publicNo) {
+    try { sessionStorage.setItem('pojia:lastPublicNo', publicNo); } catch { /* storage unavailable */ }
+  }
+  function readRememberedPublicNo() {
+    try { return sessionStorage.getItem('pojia:lastPublicNo'); } catch { return null; }
+  }
+  function maskCdk(cdk) {
+    const s = String(cdk || '');
+    if (s.length <= 6) return s;
+    return s.slice(0, 4) + '••••' + s.slice(-2);
+  }
+  function errText(err) {
+    const code = String(err?.code || err?.message || '').toLowerCase();
+    if (code === 'network_error') return '无法连接服务，请检查网络后重试。';
+    if (code === 'invalid_response') return '服务返回异常，请稍后重试。';
+    return ERRORS[code] || '操作未完成，请稍后重试。';
+  }
+
+  // 健壮解析：剥离浏览器扩展可能追加的非 JSON 尾随文本，只取第一个完整 JSON 对象
+  function parseSessionInput(raw) {
+    const text = String(raw || '').trim();
+    try { return { value: JSON.parse(text), hadTrailingText: false }; }
+    catch { /* fall through */ }
     const start = text.indexOf('{');
     if (start < 0) throw new Error('invalid_session_json');
-    let depth = 0;
-    let inString = false;
-    let escaped = false;
-    for (let index = start; index < text.length; index += 1) {
-      const char = text[index];
-      if (inString) {
-        if (escaped) escaped = false;
-        else if (char === '\\') escaped = true;
-        else if (char === '"') inString = false;
-        continue;
-      }
-      if (char === '"') { inString = true; continue; }
-      if (char === '{') depth += 1;
-      else if (char === '}') {
-        depth -= 1;
-        if (depth === 0) {
-          const value = JSON.parse(text.slice(start, index + 1));
-          return { value, hadTrailingText: Boolean(text.slice(index + 1).trim()) };
-        }
-      }
+    let depth = 0, inStr = false, esc = false;
+    for (let i = start; i < text.length; i++) {
+      const c = text[i];
+      if (inStr) { if (esc) esc = false; else if (c === '\\') esc = true; else if (c === '"') inStr = false; continue; }
+      if (c === '"') { inStr = true; continue; }
+      if (c === '{') depth++;
+      else if (c === '}') { if (--depth === 0) { return { value: JSON.parse(text.slice(start, i + 1)), hadTrailingText: Boolean(text.slice(i + 1).trim()) }; } }
     }
     throw new Error('invalid_session_json');
   }
-}
 
-elements.replacementForm.addEventListener('submit', async (event) => {
-  event.preventDefault();
-  hideNotice();
-  if (!currentOrder?.publicNo) return showNotice('请先查询订单。');
-  if (!elements.replacementConfirmInput.checked) return showNotice('请确认新账号当前是免费账号。');
-  let session;
-  try {
-    const parsedReplacement = parseSessionInput(elements.replacementSessionInput.value);
-    session = parsedReplacement.value;
-    if (parsedReplacement.hadTrailingText) {
-      elements.replacementSessionInput.value = JSON.stringify(session);
-    }
-  } catch {
-    return showNotice('新 Session 格式不正确，请检查后重试。');
+  function setBusy(btn, busy) { if (!btn) return; btn.classList.toggle('is-busy', busy); btn.disabled = busy; }
+
+  let toastTimer = null;
+  function toast(msg, kind = 'error') {
+    el.toast.textContent = msg; el.toast.dataset.kind = kind; el.toast.hidden = false;
+    if (toastTimer) clearTimeout(toastTimer);
+    if (kind !== 'error') toastTimer = setTimeout(() => { el.toast.hidden = true; }, 4200);
   }
-  if (!session || typeof session !== 'object' || Array.isArray(session)) {
-    return showNotice('请粘贴完整的新 Session。');
+  function clearToast() { el.toast.hidden = true; }
+
+  function fieldError(field, msg) {
+    field.classList.toggle('is-invalid', Boolean(msg));
+    const p = field.querySelector('[data-error]');
+    if (p) p.textContent = msg || '';
   }
-  setBusy(elements.replacementSubmitButton, true, '正在更换…');
-  try {
-    const payload = await postJson('/api/v1/orders/session', {
-      publicNo: currentOrder.publicNo, session
+
+  // ---------------- 视图切换 ----------------
+  function setStepper(step, done) {
+    el.stepper.hidden = !step;
+    if (!step) return;
+    const steps = el.stepper.querySelectorAll('.step');
+    steps.forEach((s) => {
+      const n = Number(s.dataset.step);
+      s.classList.toggle('is-current', n === step && !done);
+      s.classList.toggle('is-done', n < step || (done && n <= step));
     });
-    elements.replacementSessionInput.value = '';
-    elements.replacementConfirmInput.checked = false;
-    pollingStartedAt = Date.now();
-    renderOrder({ ...payload.order, updatedAt: new Date().toISOString() });
-    showNotice('Session 已更换，订单将继续处理。', 'success');
-  } catch (error) {
-    showNotice(customerMessage(error));
-  } finally {
-    session = null;
-    setBusy(elements.replacementSubmitButton, false, '');
+    el.stepper.dataset.progress = done ? 'done' : String(step);
   }
-});
 
-function stopPolling() {
-  if (pollTimer) window.clearTimeout(pollTimer);
-  pollTimer = null;
-}
-
-function schedulePoll(publicNo, meta) {
-  stopPolling();
-  if (meta.terminal || !meta.pollAfter) return;
-  if (!pollingStartedAt) pollingStartedAt = Date.now();
-  // Provider operations can legitimately take longer than five minutes. Keep
-  // polling long enough for a terminal failure/success to reach the customer;
-  // the terminal status itself always stops polling immediately.
-  if (Date.now() - pollingStartedAt > 30 * 60 * 1000) {
-    elements.pollingNote.textContent = '自动查询已暂停，可点击“查询当前状态”继续。';
-    return;
+  function showView(name, { step, done } = {}) {
+    for (const k in el.views) el.views[k].hidden = k !== name;
+    // 重新触发进入动效
+    const v = el.views[name];
+    v.classList.remove('view'); void v.offsetWidth; v.classList.add('view');
+    if (step) setStepper(step, done); else setStepper(0);
+    clearToast();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   }
-  pollTimer = window.setTimeout(async () => {
-    if (document.hidden) {
-      schedulePoll(publicNo, meta);
-      return;
-    }
-    try {
-      const payload = await postJson('/api/v1/orders/status', { publicNo });
-      renderOrder(payload.order, { scroll: false });
-    } catch {
-      elements.pollingNote.textContent = '自动更新暂时失败，将稍后重试。';
-      pollTimer = window.setTimeout(() => schedulePoll(publicNo, meta), 15000);
-    }
-  }, meta.pollAfter);
-}
 
-elements.tabs.forEach((tab, index) => {
-  tab.addEventListener('click', () => switchTab(tab.dataset.tab));
-  tab.addEventListener('keydown', (event) => {
-    let nextIndex = null;
-    if (event.key === 'ArrowRight') nextIndex = (index + 1) % elements.tabs.length;
-    if (event.key === 'ArrowLeft') nextIndex = (index - 1 + elements.tabs.length) % elements.tabs.length;
-    if (event.key === 'Home') nextIndex = 0;
-    if (event.key === 'End') nextIndex = elements.tabs.length - 1;
-    if (nextIndex === null) return;
-    event.preventDefault();
-    const nextTab = elements.tabs[nextIndex];
-    switchTab(nextTab.dataset.tab);
-    nextTab.focus();
+  // ---------------- 时间线合成 ----------------
+  function buildTimeline(order) {
+    const events = Array.isArray(order.timeline) ? order.timeline.slice() : [];
+    const cur = order.status;
+    const terminal = cur === 'SUCCESS' || cur === 'FAILED';
+    const nodes = events.map((e) => ({ status: e.status, at: e.updatedAt, state: 'done' }));
+    if (!nodes.length) nodes.push({ status: cur, at: order.updatedAt, state: 'done' });
+    nodes[nodes.length - 1].state = terminal ? 'done' : 'current';
+    if (!terminal) {
+      const ci = CANON.indexOf(cur);
+      if (ci >= 0) for (let k = ci + 1; k < CANON.length; k++) nodes.push({ status: CANON[k], at: null, state: 'future' });
+      else if (cur === 'REVIEWING' || cur === 'ACTION_REQUIRED') nodes.push({ status: 'SUCCESS', at: null, state: 'future' });
+    }
+    return nodes;
+  }
+
+  function renderTimeline(order) {
+    const nodes = buildTimeline(order);
+    el.timeline.innerHTML = nodes.map((n) => `
+      <li class="timeline__item" data-state="${n.state}">
+        <span class="timeline__node" aria-hidden="true"></span>
+        <div class="timeline__label">${escapeHtml(TL_LABEL[n.status] || '处理中')}</div>
+        ${n.at ? `<div class="timeline__time">${escapeHtml(fmtTime(n.at))}</div>` : (n.state === 'future' ? '<div class="timeline__time">待进行</div>' : '')}
+      </li>`).join('');
+  }
+
+  // ---------------- 渲染状态卡 ----------------
+  function renderStatus(order, { scroll = true } = {}) {
+    currentOrder = order;
+    const meta = STATUS[order.status] || STATUS.REVIEWING || STATUS.PROCESSING;
+    const terminal = meta.terminal;
+    const success = order.status === 'SUCCESS';
+    const failed = order.status === 'FAILED';
+
+    el.statusCard.dataset.status = order.status;
+    el.statusCard.classList.toggle('is-terminal', terminal);
+
+    el.chipLabel.textContent = meta.label;
+    el.title.textContent = meta.title;
+    el.updated.textContent = order.updatedAt ? '更新于 ' + fmtTime(order.updatedAt) : '';
+
+    // 需更换账号：优先用后端 actionRequired.message
+    const replacement = order.sessionReplacement || {};
+    const expired = replacement.expiresAt && new Date(replacement.expiresAt).getTime() <= Date.now();
+    const canReplace = order.status === 'ACTION_REQUIRED' && Number(replacement.remaining || 0) > 0 && !expired;
+    el.desc.textContent = (order.status === 'ACTION_REQUIRED' && !canReplace)
+      ? '更换次数或时间窗口已用完，请保留查询码联系人工处理。'
+      : (order.actionRequired && order.actionRequired.message) || meta.desc;
+
+    // 查询码
+    el.ticketCode.textContent = order.publicNo;
+    el.queryInput.value = order.publicNo;
+    rememberPublicNo(order.publicNo);
+
+    // 成功
+    el.crest.hidden = !success;
+    el.successSummary.hidden = !success;
+    el.statusCard.classList.toggle('is-success', success && successShownFor !== order.publicNo);
+    if (success) {
+      el.successEmail.textContent = order.customerEmail || '—';
+      el.successTime.textContent = fmtTime(order.finishedAt || order.updatedAt) || '—';
+      successShownFor = order.publicNo;
+    }
+
+    // 需更换表单
+    el.replaceForm.hidden = !canReplace;
+    if (canReplace) {
+      el.replaceLimit.textContent = `还可更换 ${replacement.remaining} 次` +
+        (replacement.expiresAt ? ` · 截止 ${fmtTime(replacement.expiresAt)}` : '');
+    }
+
+    // 失败求助
+    el.helpbox.hidden = !failed;
+
+    // 时间线
+    renderTimeline(order);
+
+    // 轮询提示
+    el.pollNote.textContent = terminal
+      ? '订单已进入最终状态，自动刷新已停止。'
+      : `页面每隔几秒自动刷新进度，无需手动操作。`;
+    el.pollNote.hidden = false;
+
+    setStepper(3, terminal);
+    if (scroll) el.statusCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+    schedulePoll(order.publicNo, meta);
+  }
+
+  // ---------------- 轮询 ----------------
+  function stopPoll() { if (pollTimer) clearTimeout(pollTimer); pollTimer = null; }
+  function schedulePoll(publicNo, meta) {
+    stopPoll();
+    if (!meta || meta.terminal || !meta.poll) return;
+    if (!pollStart) pollStart = Date.now();
+    if (Date.now() - pollStart > 30 * 60 * 1000) { el.pollNote.textContent = '自动刷新已暂停，可到「查订单」继续查询。'; return; }
+    pollTimer = setTimeout(async () => {
+      if (document.hidden) return schedulePoll(publicNo, meta);
+      try {
+        const { order } = await api.getStatus({ publicNo });
+        renderStatus(order, { scroll: false });
+      } catch {
+        el.pollNote.textContent = '自动刷新暂时失败，将稍后重试。';
+        pollTimer = setTimeout(() => schedulePoll(publicNo, meta), 6000);
+      }
+    }, meta.poll);
+  }
+
+  // ---------------- 步骤 1 -> 2：本地解析，绝不发请求 ----------------
+  el.inputForm.addEventListener('submit', (e) => {
+    e.preventDefault();
+    fieldError(el.fieldCdk, ''); fieldError(el.fieldSession, ''); clearToast();
+
+    const cdk = el.cdk.value.trim();
+    if (cdk.length < 8) return fieldError(el.fieldCdk, '请输入有效的 CDK 卡密（至少 8 位）。');
+
+    let parsed;
+    try { parsed = parseSessionInput(el.session.value); }
+    catch { return fieldError(el.fieldSession, '账号 Session 格式不正确，请检查是否粘贴完整。'); }
+    const session = parsed.value;
+    if (!session || typeof session !== 'object' || Array.isArray(session)) {
+      return fieldError(el.fieldSession, '请粘贴完整的账号 Session。');
+    }
+    const email = session.user && session.user.email;
+    if (!email || typeof email !== 'string') {
+      return fieldError(el.fieldSession, '未能从 Session 读取到账号邮箱，请确认粘贴的是完整内容。');
+    }
+    if (parsed.hadTrailingText) el.session.value = JSON.stringify(session);
+
+    pending = { cdk, session, email };
+    // 渲染确认页（只展示邮箱与打码卡密，绝不回显 Session/Token）
+    el.confirmEmail.textContent = email;
+    el.confirmCdk.textContent = maskCdk(cdk);
+    el.confirmCheck.checked = false;
+    el.confirmCreate.disabled = true;
+    showView('confirm', { step: 2 });
   });
-});
 
-elements.submitForm.addEventListener('submit', async (event) => {
-  event.preventDefault();
-  hideNotice();
-  const cdk = elements.cdkInput.value.trim();
-  if (cdk.length < 8) return showNotice('请输入有效的 CDK卡密。');
-  if (!elements.confirmInput.checked) return showNotice('请先核对 CDK卡密和账号信息。');
+  el.confirmCheck.addEventListener('change', () => { el.confirmCreate.disabled = !el.confirmCheck.checked; });
 
-  let session;
-  try {
-    const parsedSession = parseSessionInput(elements.sessionInput.value);
-    session = parsedSession.value;
-    if (parsedSession.hadTrailingText) {
-      elements.sessionInput.value = JSON.stringify(session);
+  function backToInput() { showView('input', { step: 1 }); }
+  el.confirmBack.addEventListener('click', backToInput);
+  el.confirmCancel.addEventListener('click', backToInput);
+
+  // ---------------- 确认后才创建订单 ----------------
+  el.confirmCreate.addEventListener('click', async () => {
+    if (!pending || !el.confirmCheck.checked) return;
+    setBusy(el.confirmCreate, true);
+    try {
+      const { order } = await api.createOrder({ cdk: pending.cdk, session: pending.session });
+      // 清空敏感输入，切断回显
+      el.session.value = ''; pending.session = null; pending = null;
+      pollStart = Date.now(); successShownFor = null;
+      showView('tracking', { step: 3 });
+      renderStatus({ publicNo: order.publicNo, status: 'QUEUED', updatedAt: new Date().toISOString(), timeline: [] });
+      toast('订单已创建，请保存下方查询码。', 'success');
+    } catch (err) {
+      if (String(err?.code || err?.message || '').toLowerCase() === 'cdk_unavailable') {
+        el.queryInput.value = (pending && pending.cdk) || '';
+        showView('query'); toast(errText(err)); return;
+      }
+      backToInput(); toast(errText(err));
+    } finally {
+      setBusy(el.confirmCreate, false);
     }
-  } catch {
-    return showNotice('账号 Session 格式不正确，请检查后重试。');
-  }
-  if (!session || typeof session !== 'object' || Array.isArray(session)) {
-    return showNotice('请粘贴完整的账号 Session。');
-  }
+  });
 
-  if (!submitConfirmed) {
-    elements.confirmDialog?.showModal();
-    return;
-  }
-  submitConfirmed = false;
+  // ---------------- 更换 Session ----------------
+  el.replaceForm.addEventListener('submit', async (e) => {
+    e.preventDefault(); clearToast();
+    if (!currentOrder) return;
+    if (!el.replaceCheck.checked) return toast('请确认新账号当前是免费账号。');
+    let session;
+    try { session = parseSessionInput(el.replaceSession.value).value; }
+    catch { return toast('新 Session 格式不正确，请检查后重试。'); }
+    if (!session || !session.user || !session.user.email) return toast('请粘贴完整的新账号 Session。');
+    setBusy(el.replaceSubmit, true);
+    try {
+      const { order } = await api.replaceSession({ publicNo: currentOrder.publicNo, session });
+      el.replaceSession.value = ''; el.replaceCheck.checked = false; session = null;
+      pollStart = Date.now();
+      renderStatus({ ...order, updatedAt: order.updatedAt || new Date().toISOString(), timeline: order.timeline || [] }, { scroll: true });
+      toast('账号已更换，订单继续处理。', 'success');
+    } catch (err) { toast(errText(err)); }
+    finally { setBusy(el.replaceSubmit, false); }
+  });
 
-  setBusy(elements.submitButton, true, '正在安全提交…');
-  try {
-    const payload = await postJson('/api/v1/orders', { cdk, session });
-    elements.sessionInput.value = '';
-    elements.confirmInput.checked = false;
-    pollingStartedAt = Date.now();
-    renderOrder({ ...payload.order, status: 'QUEUED', updatedAt: null });
-    showNotice('订单已建立，请保存订单查询码。', 'success');
-  } catch (error) {
-    if (error.message === 'cdk_unavailable') {
-      elements.queryInput.value = cdk;
-      switchTab('query-panel');
-    }
-    showNotice(customerMessage(error));
-  } finally {
-    session = null;
-    setBusy(elements.submitButton, false, '');
-  }
-});
+  // ---------------- 查询 ----------------
+  function openQuery() { showView('query'); }
+  el.navQuery.addEventListener('click', openQuery);
+  el.queryBack.addEventListener('click', () => showView('input', { step: 1 }));
+  el.trackingNew.addEventListener('click', () => { stopPoll(); el.cdk.value = ''; el.session.value = ''; showView('input', { step: 1 }); });
 
-elements.queryForm.addEventListener('submit', async (event) => {
-  event.preventDefault();
-  hideNotice();
-  stopPolling();
-  const value = elements.queryInput.value.trim();
-  if (!value) return showNotice('请输入订单查询码或原 CDK卡密。');
-  const query = value.startsWith('PJV1-') ? { publicNo: value } : { cdk: value };
-  setBusy(elements.queryButton, true, '正在查询…');
-  try {
-    const payload = await postJson('/api/v1/orders/status', query);
-    pollingStartedAt = Date.now();
-    renderOrder(payload.order);
-  } catch (error) {
-    showNotice(customerMessage(error));
-  } finally {
-    setBusy(elements.queryButton, false, '');
-  }
-});
+  el.queryForm.addEventListener('submit', async (e) => {
+    e.preventDefault(); clearToast(); stopPoll();
+    const v = el.queryInput.value.trim();
+    if (!v) return toast('请输入查询码或原 CDK 卡密。');
+    const q = v.startsWith('PJV1-') ? { publicNo: v } : { cdk: v };
+    setBusy(el.querySubmit, true);
+    try {
+      const { order } = await api.getStatus(q);
+      pollStart = Date.now(); successShownFor = order.status === 'SUCCESS' ? null : successShownFor;
+      showView('tracking', { step: 3 });
+      renderStatus(order);
+    } catch (err) { toast(errText(err)); }
+    finally { setBusy(el.querySubmit, false); }
+  });
 
-elements.copyButton.addEventListener('click', async () => {
-  const value = elements.publicNo.textContent;
-  if (!value || value === '—') return;
-  try {
-    await navigator.clipboard.writeText(value);
-    elements.copyButton.textContent = '已复制';
-    window.setTimeout(() => { elements.copyButton.textContent = '复制'; }, 1600);
-  } catch {
-    showNotice('复制失败，请手动选中订单查询码。');
-  }
-});
+  // ---------------- 复制查询码 ----------------
+  el.ticketCopy.addEventListener('click', async () => {
+    const v = el.ticketCode.textContent;
+    if (!v) return;
+    try {
+      await navigator.clipboard.writeText(v);
+      el.ticketCopy.textContent = '已复制'; el.ticketCopy.classList.add('is-done');
+      setTimeout(() => { el.ticketCopy.textContent = '复制'; el.ticketCopy.classList.remove('is-done'); }, 1600);
+    } catch { toast('复制失败，请手动选中查询码。'); }
+  });
 
-const lastPublicNo = readRememberedPublicNo();
-if (lastPublicNo) elements.queryInput.value = lastPublicNo;
+  // ---------------- Session 获取教程弹层 ----------------
+  function openGuide() { if (el.guide && typeof el.guide.showModal === 'function') el.guide.showModal(); }
+  function closeGuide() { el.guide?.close?.(); }
+  el.guideOpen?.addEventListener('click', openGuide);
+  el.replaceHelpOpen?.addEventListener('click', openGuide);
+  el.guideClose?.addEventListener('click', closeGuide);
+  el.guideDone?.addEventListener('click', closeGuide);
+  el.guide?.addEventListener('click', (e) => { if (e.target === el.guide) closeGuide(); }); // 点背景关闭
+
+
+  // ---------------- 初始 ----------------
+  const rememberedPublicNo = readRememberedPublicNo();
+  if (rememberedPublicNo) el.queryInput.value = rememberedPublicNo;
+  el.cdk.value = '';
+  el.session.value = '';
+  window.addEventListener('pageshow', (event) => {
+    if (!event.persisted) return;
+    pending = null;
+    el.cdk.value = '';
+    el.session.value = '';
+    fieldError(el.fieldCdk, '');
+    fieldError(el.fieldSession, '');
+    showView('input', { step: 1 });
+  });
+  setStepper(1);
+  showView('input', { step: 1 });
+})();
