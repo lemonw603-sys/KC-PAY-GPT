@@ -141,6 +141,7 @@
 
 | D-115 | 建立 `docs/PROJECT_MAP.md` 作为整个项目唯一规划地图，同时覆盖总体目标、全部工作线、当前主阶段、状态、唯一执行顺序和退出条件。旧 ROADMAP/MASTER 计划继续保留历史证据，但不再独立推导下一步；生产事实仍由 `CURRENT_STATE.md` 负责。重大方向、阶段、生产状态或优先级变化时，地图与 CURRENT_STATE/DECISIONS/HANDOFF 同批更新。 | 已落盘并设为新窗口首读入口 | 用户要求防止多轮规划分散、遗忘和跑偏；`CLAUDE.md`、接班阅读指南、ACTIVE_WORKSTREAM、ROADMAP 和旧 MASTER 计划均已指向或声明地图优先级。 |
 
-| D-116 | “开始营业”和只读 readiness 必须同时验证所选默认路线的真实执行能力，不能只看 Worker 心跳。默认 API 时，Worker 必须主动上报 `PROVIDER_RECHARGE_WRITES_ENABLED` 能力；权限关闭时后台明确阻断开始营业，生产体检报告 `api_recharge_execution_disabled`。这只暴露真实状态，不由 Web 后台隐式打开资金权限。 | 主线候选已实现，待部署 | 2026-08-31 前后端/生产统一核查发现：生产接单、派发和默认 API 已开启，但 Worker 的 API 充值权限关闭，旧后台仍可能显示就绪。 |
+| D-116 | “开始营业”和只读 readiness 必须同时验证所选默认路线的真实执行能力，不能只看 Worker 心跳。默认 API 时，Worker 必须主动上报 `PROVIDER_RECHARGE_WRITES_ENABLED` 能力；权限关闭时后台明确阻断开始营业，生产体检报告 `api_recharge_execution_disabled`。这只暴露真实状态，不由 Web 后台隐式打开资金权限。 | 已实现并部署 | 2026-08-31 部署后 Worker 能力心跳为 true，readiness `ok=true/blockers=[]`。 |
 
-| D-117 | 内部提醒只展示需要运营采取动作的 warning/critical。卡台余额变化继续发 Bark 并保留审计，但 info 历史不占后台提醒；订单等待卡提醒必须绑定订单并随取消/终态关闭；自动补给已开启时，低库存由系统按订单恢复，不再发送要求人工处理的低库存提醒。 | 主线候选已实现，待部署 | 这是对“余额变化 Bark 有价值”和“缺卡骚扰提醒错误”的统一落实；不删除历史资金/余额证据。 |
+| D-117 | 内部提醒只展示需要运营采取动作的 warning/critical。卡台余额变化继续发 Bark 并保留审计，但 info 历史不占后台提醒；订单等待卡提醒必须绑定订单并随取消/终态关闭；自动补给已开启时，低库存由系统按订单恢复，不再发送要求人工处理的低库存提醒。 | 已实现并部署 | migration 044 已关闭历史陈旧等待卡/低库存提醒；余额 info 证据继续保留。 |
+| D-118 | 默认 API 路线长期开放 Worker 的最小真实充值权限：只设 `PROVIDER_RECHARGE_WRITES_ENABLED=true`；`PROVIDER_WRITES_ENABLED=false`、`PROVIDER_CARD_WRITES_ENABLED=false` 和 Browser 付款门禁继续独立关闭。 | 已确认并部署 | 用户在本次候选部署前明确确认；生产以独立 systemd drop-in 落地，Worker 进程环境和心跳已复核。 |

@@ -1,5 +1,17 @@
 # 交接记录
 
+## 2026-08-31｜全栈对抗核查候选已部署并开启最小 API 充值权限
+
+- 用户确认部署，并确认默认 API 路线长期拥有最小真实充值执行权限。
+- 生产已从 `/opt/pojia/releases/20260831-order-funding-c185d19` 原子切换到 `/opt/pojia/releases/20260831-map-audit-d5fb3cf`；migration 044 已执行。
+- Worker 生效权限为：`PROVIDER_WRITES_ENABLED=false`、`PROVIDER_CARD_WRITES_ENABLED=false`、`PROVIDER_RECHARGE_WRITES_ENABLED=true`；Browser Worker 仍 inactive/disabled。
+- 部署前数据库备份 `/var/backups/pojia/pojia-20260831T031529Z.sql.gz.enc` 完整性通过；unit/current 备份位于 `/var/backups/pojia/map-audit-deploy-20260831T031527Z`。
+- 部署后只读 readiness：`ok=true`、`apiRechargeExecutionEnabled=true`、`blockers=[]`；ops/plus live/ready 四项 HTTP 200；`pojia-ops check` 通过。
+- `pojia-ops check` 的职责仍是服务状态与备份完整性；业务执行能力以应用只读 readiness 为准。替换 Worker unit 时 systemd 记录过一次预期提示，新进程启动后无 warning/error。
+- 连续 3 个库存 timer 空闲周期均为 `NO_DEMAND/providerRulesSynced=false`；陈旧等待卡/低库存提醒已关闭，余额变化 info 仍保留但不占后台提醒。
+- 本次部署未创建订单，未触发开卡、补余额、Provider 调用、API 充值或 Browser 付款。下一主线为首笔真实订单驱动自动补余额验收，再进入 3–5 单连续 API 运营验证；Browser 非付款线继续并行。
+- 本轮未取得管理员登录态浏览器控制通道，后台登录后的视觉、按钮、Network/Console 复验仍待补，不得写成已完成。
+
 ## 2026-08-29｜卡段人工刷新部署
 
 - 提交 `58dfe0d` 已部署至 `/opt/pojia/releases/20260829-card-segment-58dfe0d`，并切换 `/opt/pojia/current`。

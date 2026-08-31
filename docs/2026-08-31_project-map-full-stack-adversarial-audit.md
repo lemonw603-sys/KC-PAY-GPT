@@ -151,3 +151,15 @@
 - v1 与 browser-mvp 生产依赖已在候选目录干净安装，关键 JS 语法通过；
 - 候选未切流，`/opt/pojia/current` 仍指向 `/opt/pojia/releases/20260831-order-funding-c185d19`；
 - 使用候选代码对生产数据库执行只读 readiness，准确返回唯一 blocker `api_recharge_execution_disabled`；活动任务、资金风险、未知调用和开放对账案件均为 0。
+
+## 八、部署结果（2026-08-31 11:20 CST）
+
+- 用户已确认部署，并确认长期开启 API Worker 的最小真实充值权限。
+- 部署前备份：数据库 `/var/backups/pojia/pojia-20260831T031529Z.sql.gz.enc` 完整性通过；unit/current 备份 `/var/backups/pojia/map-audit-deploy-20260831T031527Z`。
+- 已执行 migration 044，并原子切换到 `/opt/pojia/releases/20260831-map-audit-d5fb3cf`。
+- Worker 最终权限：通用 Provider 写关闭、卡片写关闭、API 充值写开启；Browser Worker 仍 inactive/disabled。
+- 部署后 readiness 为 `ok=true`、`apiRechargeExecutionEnabled=true`、`blockers=[]`；活动任务、资金风险、UNKNOWN 调用和开放对账案件均为 0。
+- ops/plus 四个 live/ready 端点均 HTTP 200；`pojia-ops check` 和最新备份完整性通过。替换 Worker unit 时 systemd 记录过一次预期的 “Current command vanished” 提示；新进程启动后无 warning/error。
+- migration 044 已关闭陈旧等待卡提醒和自动补给开启时的低库存提醒；余额变化 info 继续保留作为 Bark/审计证据，但不进入后台内部提醒。
+- 连续 3 个库存 timer 周期均为 `NO_DEMAND/providerRulesSynced=false`，未刷新 Provider 规则；部署后未新增订单、Provider 调用、库存任务或补余额 attempt。
+- 本轮没有管理员登录态浏览器控制通道，因此未把登录后的页面视觉与点击验收写成完成；这不影响接口、服务、数据库和静态文件验收结论。
