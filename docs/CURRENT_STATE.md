@@ -7,6 +7,7 @@
 
 - 2026-08-31 统一对抗核查确认一个 P0 配置冲突：生产 `accept_new_orders=true`、`dispatch_new_recharges=true`、默认 API，但 Worker `PROVIDER_RECHARGE_WRITES_ENABLED=false`。因此历史 API 实单成功不等于当前常驻自动提交可用；新订单会在最终 API 提交前进入可重试阻塞。当前主线候选已让后台就绪摘要、Worker 心跳能力和只读 readiness 明确识别该门禁，尚未部署；真实充值权限也尚未长期开启。
 - 本轮候选同时修复：空闲自动开卡每 60 秒重复刷新 Provider、取消订单遗留等待卡提醒、余额变化 info 提醒污染后台、自动补给开启时仍产生低库存人工提醒。新增 migration 044，已在全新 MySQL 8.4 完整执行；候选尚未部署，生产仍为 migration 043。
+- 已构建不切流候选 `/opt/pojia/releases/20260831-map-audit-d5fb3cf`（归档 SHA-256 `71038bb373b95c49b1ff1124337c8fa42659da3283a547ba5ebea122ec1cc8c6`）；依赖和关键语法通过，current 未变化。候选还包含可审计的最小 API 充值权限 drop-in 模板，只有收到一次明确确认后才安装。
 
 - 当前生产代码提交：代码 `95ee5ad`、文档对齐 `c185d19`（订单驱动自动补余额版本已发布）；2026-08-31 生产资金执行门禁已按用户确认开启，尚待首笔真实补余额验收。
 - 生产 release：`/opt/pojia/releases/20260831-order-funding-c185d19`；回滚点：`/opt/pojia/releases/20260831-control-browser-973cb72`。

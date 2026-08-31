@@ -141,3 +141,13 @@
 4. 部署后验证：后台不再假就绪、只读 readiness 正确阻断/放行、空闲 3 个周期零 Provider 规则刷新、陈旧提醒关闭、静态资源与 main 一致；
 5. API 执行配置一致后，再做首笔真实自动补余额验收；
 6. 进入 3–5 单连续 API 运营验证，Browser 非付款线继续并行。
+
+## 七、候选 release
+
+- 候选 HEAD：`d5fb3cf`；
+- 本地归档：`/tmp/aicharge-map-audit-d5fb3cf.tar.gz`；
+- SHA-256：`71038bb373b95c49b1ff1124337c8fa42659da3283a547ba5ebea122ec1cc8c6`；
+- 服务器候选：`/opt/pojia/releases/20260831-map-audit-d5fb3cf`；
+- v1 与 browser-mvp 生产依赖已在候选目录干净安装，关键 JS 语法通过；
+- 候选未切流，`/opt/pojia/current` 仍指向 `/opt/pojia/releases/20260831-order-funding-c185d19`；
+- 使用候选代码对生产数据库执行只读 readiness，准确返回唯一 blocker `api_recharge_execution_disabled`；活动任务、资金风险、未知调用和开放对账案件均为 0。
