@@ -698,3 +698,11 @@
 - 状态分类：`READY`、`ACTION_REQUIRED`、`BLOCKED`；Browser 未就绪只作为动作提示，不阻断 API 充值。
 - 新增 2 个单元测试；语法检查及定向 v1 回归通过（84/84）。
 - 尚未部署；待后续补齐首页展示/跳转后制作候选 release，并按生产部署闸门单独确认。
+
+# 2026-08-31｜运营后台控制面第二批：就绪卡片与跳转
+
+- 首页新增“系统就绪情况”卡片，读取 `GET /api/v1/admin/operations/readiness`，展示 READY/ACTION_REQUIRED/BLOCKED 三类结果。
+- 每个需要处理的项目提供稳定 actionId 跳转：卡台规则/卡片库存/Browser 状态；不按中文文案判断，不自动打开 Provider 或资金写权限。
+- 管理后台资源版本由 v18 升至 v19，避免旧缓存继续显示旧页面。
+- v1 全量回归：485 tests / 445 passed / 0 failed / 40 skipped；静态语法与 diff 检查通过。
+- 代码尚未部署生产；待 Browser 兼容复核和候选发布前检查完成后统一制作 release。
