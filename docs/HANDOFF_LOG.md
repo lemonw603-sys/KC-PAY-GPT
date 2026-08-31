@@ -684,3 +684,9 @@
 - 生产部署后的本地回归完成：legacy/Vitest `14 files / 87 passed / 0 failed`；v1 `483 tests / 443 passed / 0 failed / 40 skipped`；Browser `107 tests / 103 passed / 0 failed / 4 skipped`。
 - 发现并修正一个测试框架问题：`test/browser-nonph-manifest.test.js` 使用 `node:test` 被 Vitest 识别为“无测试套件”；改为 Vitest `test` 导入后，根级 legacy 回归完整通过。
 - 该修正仅影响测试发现，不改变生产运行逻辑；`git diff --check` 通过。
+
+# 2026-08-31｜下一阶段并行任务启动
+
+- 主线已进入运营控制面收敛阶段：先统一就绪结果/开始营业反馈，再收敛首页入口与错误跳转。
+- Browser 窗口已重新安排非付款兼容性复核：以 `main` 最新基线检查一卡多单容量、自动补余额、默认充值方式及 15 分钟交易证据门槛的兼容性；明确禁止真实付款及 Provider/卡台写入。
+- 本轮主线已完成生产只读与全量回归，等待 Browser 线报告后做统一判断。
