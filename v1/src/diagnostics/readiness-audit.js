@@ -10,9 +10,18 @@ async function scalar(pool, sql, values = []) {
 export async function runReadinessAudit(pool, { now = new Date() } = {}) {
   const [settingsRows] = await pool.query(
     `SELECT setting_key, setting_value FROM app_settings
-     WHERE setting_key IN ('accept_new_orders', 'dispatch_new_recharges', 'recharge_dispatch_mode', 'worker_heartbeat_at')`
+     WHERE setting_key IN ('accept_new_orders', 'dispatch_new_recharges', 'recharge_dispatch_mode',
+       'worker_heartbeat_at', 'worker_recharge_writes_enabled')`
   );
   const settings = Object.fromEntries(settingsRows.map((row) => [row.setting_key, row.setting_value]));
+  const [routeRows] = await pool.query(
+    `SELECT fr.executor_kind FROM fulfillment_routes fr
+     INNER JOIN products p ON p.id=fr.product_id
+     WHERE p.product_code='chatgpt_plus' AND p.status='ACTIVE'
+       AND fr.accepts_new_orders=1 AND fr.retired_at IS NULL
+     ORDER BY fr.route_version DESC, fr.created_at DESC LIMIT 1`
+  );
+  const selectedExecutorKind = String(routeRows[0]?.executor_kind || '').toUpperCase() || null;
 
   const [activeTasks, expiredLeases, uncertainCalls, orphanRechargeCreateCalls,
     attemptsWithoutCreateIntent, duplicateCreateIntents, activeAuthorizations,
@@ -85,6 +94,14 @@ export async function runReadinessAudit(pool, { now = new Date() } = {}) {
     blockers.push('recharge_dispatch_mode_invalid');
   }
   if (heartbeatAgeSeconds == null || heartbeatAgeSeconds > 120) blockers.push('worker_heartbeat_stale');
+  if (settings.accept_new_orders === 'true' && settings.dispatch_new_recharges === 'true'
+    && !['API', 'BROWSER'].includes(selectedExecutorKind)) {
+    blockers.push('fulfillment_route_unavailable');
+  }
+  if (settings.accept_new_orders === 'true' && settings.dispatch_new_recharges === 'true'
+    && selectedExecutorKind === 'API' && settings.worker_recharge_writes_enabled !== 'true') {
+    blockers.push('api_recharge_execution_disabled');
+  }
   if (latestMigrationNumber < 26 || generatedFenceColumns !== 1 || uniqueFenceIndexes !== 1) {
     blockers.push('schema_not_current');
   }
@@ -96,7 +113,9 @@ export async function runReadinessAudit(pool, { now = new Date() } = {}) {
     settings: {
       acceptNewOrders: settings.accept_new_orders === 'true',
       dispatchNewRecharges: settings.dispatch_new_recharges === 'true',
-      rechargeDispatchMode: settings.recharge_dispatch_mode || null
+      rechargeDispatchMode: settings.recharge_dispatch_mode || null,
+      selectedExecutorKind,
+      apiRechargeExecutionEnabled: settings.worker_recharge_writes_enabled === 'true'
     },
     counts: {
       activeTasks,

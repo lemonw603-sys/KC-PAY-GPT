@@ -102,9 +102,11 @@ await runWorkerLoop({
   providerCardWritesEnabled: config.providerCardWritesEnabled,
   providerRechargeWritesEnabled: config.providerRechargeWritesEnabled,
   heartbeat: () => pool.query(
-    `UPDATE app_settings SET setting_value = ?, updated_at = CURRENT_TIMESTAMP(3)
-     WHERE setting_key = 'worker_heartbeat_at'`,
-    [new Date().toISOString()]
+    `INSERT INTO app_settings (setting_key, setting_value)
+     VALUES ('worker_heartbeat_at', ?), ('worker_recharge_writes_enabled', ?)
+     ON DUPLICATE KEY UPDATE setting_value=VALUES(setting_value),
+       updated_at=CURRENT_TIMESTAMP(3)`,
+    [new Date().toISOString(), String(config.providerRechargeWritesEnabled)]
   ),
   signal: abortController.signal,
   onError: (error) => {

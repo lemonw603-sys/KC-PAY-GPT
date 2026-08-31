@@ -12,11 +12,10 @@ import {
 } from '../src/services/card-stock-job-service.js';
 import {
   evaluateCardStockRequest,
-  readProviderSnapshot,
-  refreshProviderSnapshot,
-  snapshotIsFresh
+  refreshProviderSnapshot
 } from '../src/services/card-provider-snapshot-service.js';
 import { createProviderBalanceSnapshotService } from '../src/services/provider-balance-snapshot-service.js';
+import { scheduleAutomaticStockJob } from '../src/services/card-stock-runner-service.js';
 import { openStockCards, syncProvisioningStock } from './card-stock.js';
 import { resolveCurrentCardProviderAccountId } from '../src/services/provider-route-service.js';
 
@@ -43,21 +42,17 @@ const refreshSnapshot = () => refreshProviderSnapshot(pool, provider, {
 });
 
 try {
-  let snapshot = await readProviderSnapshot(pool);
-  if (!snapshotIsFresh(snapshot, { maxAgeMs: 60_000 })) {
-    snapshot = await refreshSnapshot();
-  }
-  const automatic = await stockJobs.scheduleAutomaticJob();
+  const { automatic, providerRulesSynced } = await scheduleAutomaticStockJob({ stockJobs, refreshSnapshot });
   const job = await claimCardStockJob(pool, { workerId });
   if (!job) {
     const sync = await syncProvisioningStock({ pool, provider, stock });
-    console.log(JSON.stringify({ handled: false, providerRulesSynced: true, automatic, stockSync: sync }));
+    console.log(JSON.stringify({ handled: false, providerRulesSynced, automatic, stockSync: sync }));
   } else {
     try {
       const remaining = job.requestedCount - job.openedCount;
       const rules = typeof job.rulesSnapshot === 'string'
         ? JSON.parse(job.rulesSnapshot) : job.rulesSnapshot;
-      snapshot = await refreshSnapshot();
+      let snapshot = await refreshSnapshot();
       evaluateCardStockRequest(snapshot, {
         cardTypeId: job.cardTypeId,
         amount: Number(job.amount),

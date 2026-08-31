@@ -564,10 +564,10 @@ test('start-business gates intake and dispatch on read-only readiness and stock'
     adminAuth,
     getAdminOverview: async () => ({
       cardStock: { available, needsFunding, autoReplenishmentEnabled },
-      providerHealth: { rechargeMethod: 'API', syncedAt: ready ? new Date().toISOString() : null, purchaseEnabled: ready }, runtimeHealth: { workerHealthy: ready }
+      providerHealth: { rechargeMethod: 'API', syncedAt: ready ? new Date().toISOString() : null, purchaseEnabled: ready }, runtimeHealth: { workerHealthy: ready, rechargeWritesEnabled: true }
     }),
     startAdminBusiness: createAdminStartBusinessService({
-      adminReadService: { getOverview: async () => ({ cardStock: { available, needsFunding, autoReplenishmentEnabled }, providerHealth: { rechargeMethod: 'API', syncedAt: ready ? new Date().toISOString() : null, purchaseEnabled: ready }, runtimeHealth: { workerHealthy: ready } }) },
+      adminReadService: { getOverview: async () => ({ cardStock: { available, needsFunding, autoReplenishmentEnabled }, providerHealth: { rechargeMethod: 'API', syncedAt: ready ? new Date().toISOString() : null, purchaseEnabled: ready }, runtimeHealth: { workerHealthy: ready, rechargeWritesEnabled: true } }) },
       cardStockService: { status: async () => ({ provider: { defaultCardTypeId: '16', cardTypes: [{ id: '16', name: 'VISA' }] } }) },
       adminOperationsService: { setOrderAcceptance: async ({ enabled }) => { acceptanceCalls += enabled ? 1 : -1; return { acceptNewOrders: enabled }; }, setDispatch: async () => { if (failDispatch) throw new Error('dispatch failed'); dispatchCalls += 1; return { dispatchExistingOrders: true }; } }
     })

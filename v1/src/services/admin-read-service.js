@@ -458,11 +458,12 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
       pool.query('SELECT status, COUNT(*) AS count FROM orders GROUP BY status ORDER BY status'),
       pool.query('SELECT status, COUNT(*) AS count FROM cdks GROUP BY status ORDER BY status'),
       pool.query(`SELECT setting_key, setting_value, updated_at FROM app_settings
-        WHERE setting_key IN ('accept_new_orders','dispatch_new_recharges','recharge_dispatch_mode','poll_existing_orders','sync_card_transactions','worker_heartbeat_at','card_balance_recharge_enabled')
+        WHERE setting_key IN ('accept_new_orders','dispatch_new_recharges','recharge_dispatch_mode','poll_existing_orders','sync_card_transactions','worker_heartbeat_at','worker_recharge_writes_enabled','card_balance_recharge_enabled')
         ORDER BY setting_key`),
       pool.query(`SELECT status, COUNT(*) AS count FROM refund_cases
         WHERE status <> 'WITHDRAWN' GROUP BY status ORDER BY status`)
-      ,pool.query(`SELECT COUNT(*) AS count FROM operator_alerts WHERE status = 'OPEN'`)
+      ,pool.query(`SELECT COUNT(*) AS count FROM operator_alerts
+        WHERE status = 'OPEN' AND severity IN ('warning','critical')`)
       ,pool.query(`SELECT
           SUM(${eligibleInventoryCardSql('cards', `COALESCE((SELECT CAST(setting_value AS DECIMAL(18,6))
               FROM app_settings WHERE setting_key = 'default_minimum_required_card_balance' LIMIT 1), 999999999)`)}) AS available,
@@ -550,6 +551,9 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
     const heartbeatRow = settingsRows.find((row) => row.setting_key === 'worker_heartbeat_at');
     const heartbeatAt = Date.parse(heartbeatRow?.setting_value || '');
     const workerHealthy = Number.isFinite(heartbeatAt) && now() - heartbeatAt <= 60_000;
+    const rechargeWritesEnabled = settingsRows.some(
+      (row) => row.setting_key === 'worker_recharge_writes_enabled' && row.setting_value === 'true'
+    );
     return {
       metrics: {
         totalOrders: total,
@@ -572,6 +576,7 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
       openAlertCount: count(alertRows[0]?.count),
       runtimeHealth: {
         workerHealthy,
+        rechargeWritesEnabled,
         workerHeartbeatAt: Number.isFinite(heartbeatAt) ? new Date(heartbeatAt).toISOString() : null,
         expiredTaskLeases: count(orderCounts[0]?.expired_task_leases),
         stalledProviderCalls: count(orderCounts[0]?.stalled_provider_calls)
@@ -612,7 +617,7 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
         lowThreshold,
         autoReplenishmentEnabled,
         balanceFundingEnabled,
-        low: autoReplenishmentEnabled && available <= lowThreshold
+        low: !autoReplenishmentEnabled && available <= lowThreshold
       }; })(),
       providerHealth: {
         provider: 'hnskj',
@@ -631,7 +636,7 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
             && Number.isFinite(heartbeatAt) && now() - heartbeatAt <= 60_000;
         })()
       },
-      settings: settingsRows.filter((row) => row.setting_key !== 'worker_heartbeat_at').map((row) => ({
+      settings: settingsRows.filter((row) => !['worker_heartbeat_at', 'worker_recharge_writes_enabled'].includes(row.setting_key)).map((row) => ({
         key: row.setting_key,
         value: row.setting_value,
         updatedAt: iso(row.updated_at)
@@ -646,7 +651,8 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
               a.created_at, a.acknowledged_at, o.public_no, o.customer_email,
               o.recharge_order_no
        FROM operator_alerts a LEFT JOIN orders o ON o.id = a.order_id
-       WHERE a.status = 'OPEN' ORDER BY a.created_at DESC LIMIT ?`, [limit]
+       WHERE a.status = 'OPEN' AND a.severity IN ('warning','critical')
+       ORDER BY a.created_at DESC LIMIT ?`, [limit]
     );
     return { alerts: rows.map((row) => ({
       id: row.id, type: row.alert_type, severity: row.severity, title: row.title,

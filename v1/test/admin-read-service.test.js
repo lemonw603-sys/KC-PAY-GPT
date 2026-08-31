@@ -58,6 +58,15 @@ test('admin overview maps aggregate values without exposing raw records', async 
     rechargeMethod: null, browserRechargeReady: false
   });
   assert.equal(pool.queries.some(({ sql }) => /session_ciphertext|recharge_card_key/i.test(sql)), false);
+  assert.match(pool.queries.find(({ sql }) => /COUNT\(\*\) AS count FROM operator_alerts/.test(sql)).sql,
+    /severity IN \('warning','critical'\)/);
+});
+
+test('admin internal reminders expose only actionable warning and critical alerts', async () => {
+  const pool = queuedPool([[]]);
+  const result = await createAdminReadService({ pool }).listAlerts({ limit: 20 });
+  assert.deepEqual(result, { alerts: [] });
+  assert.match(pool.queries[0].sql, /a\.severity IN \('warning','critical'\)/);
 });
 
 test('admin order list validates filters, maps card summaries, and supports CDK lookup', async () => {

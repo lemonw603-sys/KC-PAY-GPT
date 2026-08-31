@@ -4,7 +4,7 @@
 
 > 2026-08-28 起，跨模块当前执行顺序统一以 `docs/MASTER_EXECUTION_PLAN_2026-08-28.md` 为准；其对抗审查见 `docs/MASTER_EXECUTION_PLAN_ADVERSARIAL_REVIEW_2026-08-28.md`。本文继续保留阶段历史，不再从历史段落单独推导新的“下一步”。
 
-> **2026-08-31 当前执行顺序更正**：运营控制面 `973cb72` 与自动补余额 `95ee5ad` 均已部署；用户已确认并开启订单驱动 funding gate、数据库能力开关和 5 秒 timer。空闲验证证明零 Provider 充值调用。下一步是首笔真实补余额验收；通过后进入 3–5 单连续真实订单验证。Browser 线继续并行但不自行真实付款。详见 `docs/2026-08-31_order-driven-card-funding-production-candidate.md`。
+> **2026-08-31 当前执行顺序更正**：统一核查发现生产接单/派发/默认 API 已开启，但 Worker 的 API 真实充值权限仍关闭；同时空闲自动开卡 timer 每 60 秒重复刷新 Provider。当前先部署控制面/体检/空闲调用/提醒收敛候选，并单独确认是否长期开启最小 API 充值权限；随后才做首笔真实自动补余额与 3–5 单连续 API 验收。Browser 线继续并行但不自行真实付款。唯一顺序以 `docs/PROJECT_MAP.md` 为准。
 
 > 状态更正（2026-08-30）：Browser/API 路由硬断链、专用心跳、原子 attempt+job 和全局默认充值方式已部署。生产形态安全窗口已证明订单能冻结 Browser 路线，但当前因没有余额达到 `$16` 的可分配 Plus 卡，真实派发在 `WAITING_FOR_CARD` 停止，尚未形成 Browser job 或进入 Checkout。详见 `docs/2026-08-30_browser-production-nonpayment-window-result.md`。
 > `docs/BACKEND_RUNTIME_ALIGNMENT_AUDIT_2026-08-28.md` 是部署前历史快照；当前生产事实以 `docs/CURRENT_STATE.md` 和 `docs/PRE_INVENTORY_CONVERGENCE_SEAL_2026-08-28.md` 为准。

@@ -9,17 +9,23 @@ export function buildAdminReadinessSummary(overview = {}, { defaultCardTypeReady
   const health = overview.providerHealth || {};
   const stock = overview.cardStock || {};
   const runtime = overview.runtimeHealth || {};
-  const method = String(health.rechargeMethod || 'API').toUpperCase();
+  const method = String(health.rechargeMethod || '').toUpperCase() || null;
   const checks = [];
 
-  if (method === 'BROWSER') {
+  if (!['API', 'BROWSER'].includes(method)) {
+    checks.push(check('EXECUTION_ROUTE', 'BLOCKED', 'Plus 默认充值路线未配置或不可识别', 'OPEN_PROVIDER_ROUTES'));
+  } else if (method === 'BROWSER') {
     checks.push(health.browserRechargeReady === true
       ? check('EXECUTION_ROUTE', 'READY', '默认使用 Browser，执行器已就绪')
       : check('EXECUTION_ROUTE', 'BLOCKED', '默认使用 Browser，但执行器尚未就绪', 'OPEN_BROWSER_STATUS'));
   } else {
-    checks.push(runtime.workerHealthy === true
-      ? check('EXECUTION_ROUTE', 'READY', '默认使用 API，订单 Worker 正常')
-      : check('EXECUTION_ROUTE', 'BLOCKED', 'API 订单 Worker 当前不健康', 'OPEN_RECONCILIATION'));
+    if (runtime.workerHealthy !== true) {
+      checks.push(check('EXECUTION_ROUTE', 'BLOCKED', 'API 订单 Worker 当前不健康', 'OPEN_RECONCILIATION'));
+    } else if (runtime.rechargeWritesEnabled !== true) {
+      checks.push(check('EXECUTION_ROUTE', 'BLOCKED', '默认使用 API，但真实充值执行权限尚未开启，需要通过部署配置开启'));
+    } else {
+      checks.push(check('EXECUTION_ROUTE', 'READY', '默认使用 API，订单 Worker 和真实充值权限均已就绪'));
+    }
   }
 
   const available = Number(stock.available || 0);

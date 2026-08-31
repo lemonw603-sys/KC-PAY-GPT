@@ -769,3 +769,12 @@
 - `docs/ACTIVE_WORKSTREAM.md` 已收敛为地图入口；`CLAUDE.md`、接班阅读指南和 `ROADMAP.md` 已将地图设为新窗口首读和唯一执行顺序来源；旧 `MASTER_EXECUTION_PLAN_2026-08-28.md` 明确降级为历史阶段证据。
 - 对抗核对时同时修正旧事实漂移：当前生产 release 已含 Browser 共享兼容代码；funding timer 已开启；默认路线实时核对为 API；每卡成功次数生产值为 3；D-094/D-095/D-108/D-110–D-113 状态已更新。
 - 当前唯一下一步不变：首笔真实订单驱动自动补余额验收；随后 3–5 单连续 API 运营验证。Browser 非付款联调并行，不自行真实付款。
+
+# 2026-08-31｜项目地图前端/后端/生产统一对抗核查
+
+- 已按运行事实重新核查 `PROJECT_MAP.md`、运营后台、订单 Worker、自动补给、生产 release/MySQL/systemd/logs。
+- 确认 P0：生产接单、派发和默认 API 已开启，但 Worker `PROVIDER_RECHARGE_WRITES_ENABLED=false`，旧后台和只读 readiness 均漏检，不能宣称当前可自动完成 API 新订单。
+- 主线候选已增加 Worker 真实充值能力心跳、后台假就绪阻断和 readiness blocker；Web 不隐式开启资金权限。
+- 同批修复空闲自动开卡重复 Provider 刷新、取消订单遗留等待卡提醒、余额 info 污染内部提醒、自动补给开启仍产生低库存人工提醒；新增 migration 044。
+- 全新 MySQL 8.4 migration 001–044 与定向集成通过；v1/Browser/legacy 全量回归通过。生产尚未部署、未改变任何资金权限或执行资金写入。
+- 详细证据：`docs/2026-08-31_project-map-full-stack-adversarial-audit.md`。下一停止点是候选提交后，部署前一次性确认是否长期开启最小 API 充值执行权限。

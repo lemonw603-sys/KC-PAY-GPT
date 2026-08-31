@@ -5,7 +5,7 @@ import { buildAdminReadinessSummary } from '../src/services/admin-readiness-summ
 const fresh = new Date().toISOString();
 const base = {
   providerHealth: { rechargeMethod: 'API', syncedAt: fresh, purchaseEnabled: true, browserRechargeReady: false },
-  runtimeHealth: { workerHealthy: true },
+  runtimeHealth: { workerHealthy: true, rechargeWritesEnabled: true },
   cardStock: { available: 1, needsFunding: 0, autoReplenishmentEnabled: true }
 };
 
@@ -14,6 +14,26 @@ test('API readiness ignores an inactive Browser executor when API and inventory 
   assert.equal(result.status, 'READY');
   assert.equal(result.ready, true);
   assert.deepEqual(result.checks.map((item) => item.checkId), ['EXECUTION_ROUTE', 'CARD_SUPPLY']);
+});
+
+test('API readiness blocks intake when the worker cannot submit real recharges', () => {
+  const result = buildAdminReadinessSummary({
+    ...base,
+    runtimeHealth: { workerHealthy: true, rechargeWritesEnabled: false }
+  }, { defaultCardTypeReady: true });
+  assert.equal(result.status, 'BLOCKED');
+  assert.equal(result.ready, false);
+  assert.match(result.checks[0].message, /真实充值执行权限尚未开启/);
+});
+
+test('missing default route is not guessed as API and links to route management', () => {
+  const result = buildAdminReadinessSummary({
+    ...base,
+    providerHealth: { ...base.providerHealth, rechargeMethod: null }
+  }, { defaultCardTypeReady: true });
+  assert.equal(result.status, 'BLOCKED');
+  assert.equal(result.method, null);
+  assert.equal(result.checks[0].actionId, 'OPEN_PROVIDER_ROUTES');
 });
 
 test('Browser is a blocker only when it is the selected default route', () => {

@@ -221,7 +221,8 @@ function renderReadiness(readiness = {}) {
   const statusLabels = { READY: '已就绪', AUTO_HEAL: '自动处理', ACTION_REQUIRED: '需要处理', BLOCKED: '暂不可用' };
   const actionViews = {
     REFRESH_PROVIDER_RULES: 'stock', OPEN_CARD_STOCK: 'stock', OPEN_CARD_FUNDING: 'card-funding',
-    OPEN_BROWSER_STATUS: 'browser', OPEN_RECONCILIATION: 'reconciliation'
+    OPEN_BROWSER_STATUS: 'browser', OPEN_RECONCILIATION: 'reconciliation',
+    OPEN_PROVIDER_ROUTES: 'provider-routes'
   };
   elements.readinessList.innerHTML = (readiness.checks || []).map((item) => `<div class="readiness-row readiness-${String(item.status || '').toLowerCase()}"><span><strong>${escapeHtml(item.message || item.checkId)}</strong><small>${escapeHtml(statusLabels[item.status] || item.status || '未知')}</small></span>${item.actionId ? `<button type="button" class="text-button readiness-action" data-readiness-action="${escapeHtml(item.actionId)}">去处理</button>` : '<span class="readiness-ok">✓</span>'}</div>`).join('') || '<p class="empty-state">暂无检查项</p>';
   elements.readinessList.querySelectorAll('[data-readiness-action]').forEach((button) => button.addEventListener('click', () => {
@@ -301,7 +302,7 @@ async function loadOverview() {
     { label: '需要关注', value: overview.metrics.reviewingOrders, note: '失败、未知或对账订单', filter: 'REVIEW_REQUIRED' },
     { label: '三方对账异常', value: overview.metrics.reconciliationIssues, note: '订单、充值平台、卡片证据冲突', filter: 'RECONCILIATION_ISSUES' },
     { label: '等待 Session', value: overview.metrics.waitingForSession ?? 0, note: '客户可在原订单更换 Session', filter: 'WAITING_FOR_SESSION' },
-    { label: '等待补卡', value: overview.metrics.waitingForCard ?? 0, note: '库存不足，等待运营补卡', filter: 'WAITING_FOR_CARD' },
+    { label: '等待卡片就绪', value: overview.metrics.waitingForCard ?? 0, note: '系统会自动补余额或开卡；无法继续时才需人工处理', filter: 'WAITING_FOR_CARD' },
     { label: '取消续费处理中', value: overview.metrics.cancellationPending ?? 0, note: '充值成功后的终态确认', filter: 'CANCELLATION_PENDING' },
     { label: '取消续费需复核', value: overview.metrics.cancellationReview ?? 0, note: '取消状态异常，需要人工处理', filter: 'CANCELLATION_REVIEW_REQUIRED' }
   ];
@@ -319,7 +320,7 @@ async function loadOverview() {
         : overview.cardStock?.low
           ? `自动补卡已开启，已到库存线：${overview.cardStock?.lowThreshold ?? 5}`
           : overview.cardStock?.autoReplenishmentEnabled
-            ? `自动补卡库存线：${overview.cardStock?.lowThreshold ?? 5}`
+            ? '没有合格卡时，系统会按真实订单需求自动开卡'
             : '人工管理库存，不发送低库存提醒', view: 'stock' }
   ];
   const healthMetrics = [

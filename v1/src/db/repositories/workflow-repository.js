@@ -291,13 +291,14 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
                 : '当前没有可用于 Plus 的卡，订单正在等待处理。';
           await connection.query(
             `INSERT INTO operator_alerts
-             (id, alert_type, dedupe_key, severity, title, message, status)
-             VALUES (UUID(), 'ORDER_WAITING_FOR_CARD', ?, 'critical', '订单正在等待卡片', ?, 'OPEN')
+             (id, alert_type, dedupe_key, order_id, severity, title, message, status)
+             VALUES (UUID(), 'ORDER_WAITING_FOR_CARD', ?, ?, 'critical', '订单正在等待卡片', ?, 'OPEN')
              ON DUPLICATE KEY UPDATE severity = VALUES(severity), title = VALUES(title),
+               order_id = VALUES(order_id),
                message = VALUES(message),
                status = IF(status = 'RESOLVED', 'OPEN', status),
                acknowledged_at = IF(status = 'RESOLVED', NULL, acknowledged_at)`,
-            [alertKey, waitingMessage]
+            [alertKey, orderId, waitingMessage]
           );
           if (order.status === OrderStatus.CREATED) {
             const [waiting] = await connection.query(
@@ -395,7 +396,7 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
         const threshold = Math.max(0, Number(thresholdRows.find((row) => row.setting_key === 'card_stock_low_threshold')?.setting_value || 5));
         const autoReplenishmentEnabled = thresholdRows.some((row) => row.setting_key === 'card_auto_replenishment_enabled' && row.setting_value === 'true');
         const remaining = Number(stockRows[0]?.count || 0);
-        if (remaining <= threshold && autoReplenishmentEnabled) {
+        if (remaining <= threshold && !autoReplenishmentEnabled) {
           await connection.query(
             `INSERT INTO operator_alerts
              (id, alert_type, dedupe_key, severity, title, message, status)
@@ -406,6 +407,13 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
                acknowledged_at = IF(status = 'RESOLVED', NULL, acknowledged_at)`,
             [`card-stock-low:${order.card_provider_account_id}:plus`,
               `Plus 可直接分配卡剩余 ${remaining} 张，阈值为 ${threshold}。`]
+          );
+        } else {
+          await connection.query(
+            `UPDATE operator_alerts SET status='RESOLVED',
+               acknowledged_at=COALESCE(acknowledged_at, CURRENT_TIMESTAMP(3))
+             WHERE dedupe_key=? AND status='OPEN'`,
+            [`card-stock-low:${order.card_provider_account_id}:plus`]
           );
         }
         return {

@@ -5,6 +5,9 @@
 
 ## 代码与发布
 
+- 2026-08-31 统一对抗核查确认一个 P0 配置冲突：生产 `accept_new_orders=true`、`dispatch_new_recharges=true`、默认 API，但 Worker `PROVIDER_RECHARGE_WRITES_ENABLED=false`。因此历史 API 实单成功不等于当前常驻自动提交可用；新订单会在最终 API 提交前进入可重试阻塞。当前主线候选已让后台就绪摘要、Worker 心跳能力和只读 readiness 明确识别该门禁，尚未部署；真实充值权限也尚未长期开启。
+- 本轮候选同时修复：空闲自动开卡每 60 秒重复刷新 Provider、取消订单遗留等待卡提醒、余额变化 info 提醒污染后台、自动补给开启时仍产生低库存人工提醒。新增 migration 044，已在全新 MySQL 8.4 完整执行；候选尚未部署，生产仍为 migration 043。
+
 - 当前生产代码提交：代码 `95ee5ad`、文档对齐 `c185d19`（订单驱动自动补余额版本已发布）；2026-08-31 生产资金执行门禁已按用户确认开启，尚待首笔真实补余额验收。
 - 生产 release：`/opt/pojia/releases/20260831-order-funding-c185d19`；回滚点：`/opt/pojia/releases/20260831-control-browser-973cb72`。
 - 一卡跨订单复用、每卡 1–4 次成功上限和运营控制面均已部署；生产 `card_max_successful_payments=3`。订单驱动自动补余额执行器现已在生产开启；空闲验证通过，但首笔真实补余额与订单自动恢复仍未验收。
@@ -13,7 +16,7 @@
 - 服务：Web、API Worker、卡片读同步、卡目录同步、Bark、备份均正常；Browser Worker 保持 `inactive/disabled`。
 - Browser Worker 的候选 release 启动/停止/回滚演练已经通过；当前生产 release 已包含主线 Browser Session/Checkout harness、派发修复和跨订单复用兼容代码，但 Browser Worker 仍为 `inactive/disabled`，真实付款未验收。
 - 卡余额 funding timer 与只读对账 timer 均为 `active/enabled`；独立 `CARD_FUNDING_EXECUTION_ENABLED=true`。只有 funding service 获得窄范围卡余额写能力，普通 Web/Worker 和 Browser 写权限未随之打开。
-- 最新迁移：`043_order_assigned_card`。
+- 生产最新迁移：`043_order_assigned_card`；主线候选最新迁移：`044_operator_alert_actionability`。
 
 ## 运行门禁与体检
 
@@ -21,6 +24,7 @@
 - 2026-08-31 已部署 `/opt/pojia/releases/20260831-order-funding-c185d19`；Web/Worker active，库存 timer、只读补余额对账 timer（15 秒）和卡余额 funding timer（5 秒）均 active/enabled，Browser Worker inactive/disabled；公网 live/ready 均 HTTP 200。
 - `card_auto_replenishment_enabled=true`；无可分配 Plus 卡时自动开 1 张 `$16` 卡，每日上限 `5`；`card_stock_low_threshold=0`，仍有 1 张可分配卡时不提前开卡。
 - 常驻 Web/Worker 仍为 `PROVIDER_WRITES_ENABLED=false`、`PROVIDER_CARD_WRITES_ENABLED=false`、`PROVIDER_RECHARGE_WRITES_ENABLED=false`；只有独立 funding service 以 `PROVIDER_CARD_WRITES_ENABLED=true` + `CARD_FUNDING_EXECUTION_ENABLED=true` 获得窄范围卡余额写能力。生产 `card_balance_recharge_enabled=true`。
+- 这意味着当前“接单 + 自动派发 + 默认 API”与 Worker 的最终充值权限不一致；在开启最小充值权限或停止接单前，不能把生产描述为可无人值守完成新 API 订单。
 - Browser systemd 单元强制 `BROWSER_PAYMENT_WRITES_ENABLED=false`，且服务未启动。
 - 2026-08-29 09:07 CST 重跑生产 readiness：`ok=true`；活动任务、过期租约、UNKNOWN Provider 调用、资金风险、活动授权、开放对账案件均为 `0`，`blockers=[]`。
 - 公网 ops/plus 的 live/ready 四个端点均 HTTP 200。
@@ -51,6 +55,14 @@
 - 当前已核验的最新部署前加密备份 `/var/backups/pojia/pojia-20260829T060414Z.sql.gz.enc` 已通过解密与 gzip 完整性校验。
 
 ## 当前未完成
+
+### 2026-08-31｜项目地图统一对抗核查（候选，待部署）
+
+- 前端：生产 v19 静态资源与已部署 release 一致；现有“开始营业”只读取数据库/库存/Worker 心跳，未识别 Worker 的真实 API 充值权限，可能产生假就绪。本轮候选已增加 `worker_recharge_writes_enabled` 心跳能力并阻断假就绪。
+- 后端：API handler 在 `PROVIDER_RECHARGE_WRITES_ENABLED=false` 时确定返回 `RECHARGE_WRITES_DISABLED`；生产当前正是该配置。只读 readiness 旧版同样漏检，候选已补 `api_recharge_execution_disabled` blocker。
+- 自动开卡：生产日志实证空闲 `NO_DEMAND` 时仍每 60 秒输出 `providerRulesSynced=true`，重复读取 Provider；候选改为先查数据库需求，仅在真实需求且规则过期时刷新一次。
+- 提醒：生产有 2 条历史 `PROVIDER_BALANCE_CHANGED/info` 和 1 条无 `order_id` 的陈旧 `ORDER_WAITING_FOR_CARD/critical`。候选保留 Bark/审计证据，但后台只展示 warning/critical；等待卡提醒绑定订单并在取消/终态时关闭；自动补给开启时关闭不可行动的低库存提醒。
+- 部署：生产仍为 `/opt/pojia/releases/20260831-order-funding-c185d19`、migration 043；候选未切换、未执行开卡/补余额/API 充值/Browser 付款。生产 Web/Worker 与 timers 正常，ops/plus 四个 live/ready 为 HTTP 200，最近 45 分钟无 warning/error；库存 timer 实际 60 秒，但生产 Description 仍错误写成 10 秒，候选文件已是 60 秒。
 
 ### 2026-08-30｜手动开卡
 

@@ -12,6 +12,7 @@ function fakePool(responses) {
       if (/UPDATE card_consumption_ledger/.test(sql)) return [{ affectedRows: 1 }, []];
       if (/UPDATE card_funding_attempts/.test(sql)) return [{ affectedRows: 1 }, []];
       if (/UPDATE card_stock_jobs/.test(sql)) return [{ affectedRows: 1 }, []];
+      if (/UPDATE operator_alerts/.test(sql)) return [{ affectedRows: 1 }, []];
       const response = responses.shift();
       if (response === undefined) throw new Error(`Unexpected query: ${sql}`);
       return response;

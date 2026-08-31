@@ -104,6 +104,14 @@ export function createOrderCancellationService({ pool }) {
            VALUES (?, 'WAITING_FOR_CARD', 'CLOSED', 'ADMIN', 'admin', ?, ?)`,
           [order.id, 'order cancelled before card assignment', JSON.stringify({ reason })]
         );
+        await connection.query(
+          `UPDATE operator_alerts
+           SET status='RESOLVED', acknowledged_at=COALESCE(acknowledged_at, CURRENT_TIMESTAMP(3)),
+             updated_at=CURRENT_TIMESTAMP(3)
+           WHERE status='OPEN' AND alert_type='ORDER_WAITING_FOR_CARD'
+             AND (order_id=? OR dedupe_key=?)`,
+          [order.id, `order-waiting-card:${order.id}`]
+        );
         await connection.commit();
         return { publicNo: order.public_no, status: 'CLOSED', cardReleased: false,
           cardInventoryStatus: null, replayed: false };

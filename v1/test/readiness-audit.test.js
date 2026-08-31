@@ -4,16 +4,20 @@ import { runReadinessAudit } from '../src/diagnostics/readiness-audit.js';
 
 function fakePool({
   counts = {}, heartbeat = '2026-08-21T00:00:00.000Z',
-  migration = '026_automatic_fulfillment_funds_fence', dispatchMode = 'AUTOMATIC'
+  migration = '026_automatic_fulfillment_funds_fence', dispatchMode = 'AUTOMATIC',
+  acceptNewOrders = false, dispatchNewRecharges = false, rechargeWritesEnabled = true,
+  executorKind = 'API'
 } = {}) {
   return {
     async query(sql) {
       if (sql.includes('FROM app_settings')) return [[
-        { setting_key: 'accept_new_orders', setting_value: 'false' },
-        { setting_key: 'dispatch_new_recharges', setting_value: 'false' },
+        { setting_key: 'accept_new_orders', setting_value: String(acceptNewOrders) },
+        { setting_key: 'dispatch_new_recharges', setting_value: String(dispatchNewRecharges) },
         { setting_key: 'recharge_dispatch_mode', setting_value: dispatchMode },
-        { setting_key: 'worker_heartbeat_at', setting_value: heartbeat }
+        { setting_key: 'worker_heartbeat_at', setting_value: heartbeat },
+        { setting_key: 'worker_recharge_writes_enabled', setting_value: String(rechargeWritesEnabled) }
       ]];
+      if (sql.includes('FROM fulfillment_routes')) return executorKind ? [[{ executor_kind: executorKind }]] : [[]];
       if (sql.includes('FROM schema_migrations')) return [[{ version: migration }]];
       const match = [
         ['FROM tasks WHERE status IN', 'activeTasks'],
@@ -69,6 +73,27 @@ test('readiness audit accepts later migrations after Stage 3 funds schema is pre
   });
   assert.equal(report.blockers.includes('schema_not_current'), false);
   assert.equal(report.latestMigrationNumber, 27);
+});
+
+test('readiness audit catches an open API business with payment execution disabled', async () => {
+  const report = await runReadinessAudit(fakePool({
+    acceptNewOrders: true,
+    dispatchNewRecharges: true,
+    rechargeWritesEnabled: false
+  }), { now: new Date('2026-08-21T00:01:00.000Z') });
+  assert.equal(report.ok, false);
+  assert.equal(report.settings.selectedExecutorKind, 'API');
+  assert.equal(report.settings.apiRechargeExecutionEnabled, false);
+  assert.deepEqual(report.blockers, ['api_recharge_execution_disabled']);
+});
+
+test('readiness audit does not allow open business without a selected route', async () => {
+  const report = await runReadinessAudit(fakePool({
+    acceptNewOrders: true,
+    dispatchNewRecharges: true,
+    executorKind: null
+  }), { now: new Date('2026-08-21T00:01:00.000Z') });
+  assert.deepEqual(report.blockers, ['fulfillment_route_unavailable']);
 });
 
 test('readiness rejects missing Stage 3 schema artifacts and an invalid dispatch mode', async () => {
