@@ -880,3 +880,11 @@
 - 自动开卡和自动补余额均为 true；stock/funding/reconcile timers active。通用 Provider 写、普通 Worker 卡片写和 Browser 付款继续关闭，因为它们不是 API 正常营业必需项，自动补给使用各自已开启的窄范围执行权限。
 - 当前可直接分配卡为 0。首次 readiness 因卡台规则快照超过严格 2 分钟窗口显示供应 blocker；执行一次卡台规则/余额只读刷新（2 个 Provider 只读请求、仅更新本地快照）后，readiness=`AUTO_HEAL/ready=true`，明确显示“当前无卡；首个订单到达时会按已确认规则自动开卡”。
 - 当前无活动/UNKNOWN 资金风险、无开放对账；本轮未创建订单、未开卡、未补余额、未付款，也未开启通用写权限。
+
+# 2026-09-01｜$16 卡未计入可分配库存的根因修复
+
+- 卡台与生产数据库交叉核对确认 Provider `1839` / 尾号 `1013` 为 active、余额 `$16`、资料完整。显示“可分配 0”不是卡台或同步丢卡，而是订单 `PJV1-HfAEiq8dBpDLXzt4t96e` 在 Provider 明确返回 `40030/DEFINITE_FAILURE`、attempt/资金风险和消费预留均已清除后，仍停在 `WAITING_FOR_SESSION` 并保留 ACTIVE 卡绑定。
+- 根因是生命周期缺口：后台取消只支持 `CARD_READY`，不能安全关闭 `WAITING_FOR_SESSION`；Session 更换窗口到期后也没有自动收尾，可能永久占用可复用卡。
+- 修复 `d1c4d32`：仅在所有资金状态已明确清除、所有 `create_direct` 调用均为明确失败且无外部订单号时，允许取消等待 Session 的订单并释放绑定；资金 `ACTIVE/UNKNOWN/SETTLED` 仍强制锁卡；Worker 对过期更换窗口执行同一保护逻辑自动收尾；后台详情同步显示可取消入口。
+- 验证：v1 全量 `512 total / 470 pass / 42 environment-skipped / 0 fail`；全新隔离 MySQL `39 total / 38 pass / 1 legacy-skipped / 0 fail`。部署 `/opt/pojia/releases/20260901-session-release-d1c4d32`，Web/Worker active，live/ready 通过，API 最小充值权限仍为 true，Browser Worker 仍关闭。
+- 用户此前已明确该订单略过；生产保护条件现场全部满足后将其关闭并释放卡。随后只读同步完成：尾号 1013=`AVAILABLE`、余额 `$16`、ACTIVE assignment=0、资格 SQL=`eligible=1`。本轮未执行开卡、补余额、Provider 写入或付款。

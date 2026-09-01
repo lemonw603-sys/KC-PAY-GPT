@@ -1,7 +1,7 @@
 # AI充值业务｜唯一项目规划地图
 
 > **用途**：只回答四件事：项目目标、当前生产事实、已完成/未完成、唯一执行顺序。
-> **最后统一核对**：2026-09-01 10:38 CST。已对照前后端代码，并通过 SSH 只读核对部署后生产 `/opt/pojia/current`、systemd、Worker 实际进程环境和 readiness；本轮未执行订单/资金写入。
+> **最后统一核对**：2026-09-01 11:02 CST。已对照前后端代码，并通过 SSH 核对部署后生产 release、systemd、Worker 实际进程环境、订单/卡绑定和 readiness；本轮关闭一笔已确认略过且资金风险已清除的遗留订单，未执行 Provider 写入或付款。
 > 历史报告不能覆盖本地图；实时生产事实优先，变化后必须同步更新本地图与 `CURRENT_STATE.md`。
 > 全链路、控制矩阵、自动补给状态机、库存最小模型、资金边界、通知、回滚和验收细则统一见 `docs/PROJECT_OPERATING_MODEL.md`。
 
@@ -36,7 +36,7 @@
 
 | 项目 | 当前事实 | 证据/含义 |
 |---|---|---|
-| 生产 release | `/opt/pojia/releases/20260901-customer-ui-b4cc5ea` | `/opt/pojia/current` 现场读取；直接回滚点为 `20260831-supply-sync-3f23aa3` |
+| 生产 release | `/opt/pojia/releases/20260901-session-release-d1c4d32` | `/opt/pojia/current` 现场读取；直接回滚点为 `20260901-customer-ui-b4cc5ea` |
 | Web / API Worker | active / active | systemd 现场读取 |
 | Browser Worker | inactive / disabled | 未进入真实 Browser 付款 |
 | 接单 / 派发 | true / true | 只读 readiness；当前后台已处于营业业务状态 |
@@ -48,13 +48,13 @@
 | 通用 Provider / 卡片写 | false / false | Worker 进程环境 |
 | 独立自动补余额 | DB gate=true；`pojia-card-funding.timer` 与 reconcile timer active/enabled | 独立 runner 只开补余额所需卡片写；空闲零写已验证，首笔真实补余额未验收 |
 | 独立自动开卡 | DB gate=true；`pojia-card-stock-runner.timer` active/enabled，60 秒兜底 | stock runner 只开开卡所需卡片写；真实缺卡订单闭环未验收 |
-| 当前 Plus 可立即分配 | 0 张 | 按当前生产资格 SQL 只读计算；系统存在 4 张已分配、4 张余额耗尽卡；下一单由自动开卡恢复供给 |
+| 当前 Plus 可立即分配 | 1 张：Provider `1839`、尾号 `1013`、`$16.00` | 遗留 WAITING_FOR_SESSION 订单的无效 ACTIVE 绑定已安全释放；11:01 CST 只读同步后资格 SQL=`eligible=1` |
 | 每卡成功次数上限 | 3 | 已部署；连续跨订单实证仍不足 |
 | 活动任务/资金风险/开放对账 | 0 / 0 / 0 | 2026-08-31 23:02 CST 只读 preflight |
 | 最新 migration | 044 | 只读 readiness |
-| 最新订单 | `PJV1-HfAEiq8dBpDLXzt4t96e`=`WAITING_FOR_SESSION` | Session 文本已通过客户页 JSON 解析并成功建单，但业务 Session 尚未通过运行验证；active task/资金风险/UNKNOWN Provider call 均为 0，未发生付款 |
+| 最新订单 | `PJV1-HfAEiq8dBpDLXzt4t96e`=`CLOSED` | Provider 明确拒绝“账号已有 Plus”，无资金影响；用户已略过该单，修复后安全关闭并释放卡片，未发生付款 |
 
-**当前状态**：API 最小充值权限已按确认恢复，Worker 进程实际为 `true`；接单和派发已开；生产只读 preflight 已通过。最新订单只走到 `WAITING_FOR_SESSION`，不得把“JSON 语法解析通过”写成“Session 业务验证通过”。
+**当前状态**：API 最小充值权限已按确认恢复，Worker 进程实际为 `true`；接单和派发已开；生产只读 preflight 已通过。尾号 1013 的异常占用已释放并恢复可分配。
 
 ## 4. “开始营业”真实合同（按代码核对）
 
@@ -105,12 +105,12 @@
 - 保持 `RECHARGE_SUBMIT_HOLD_BEFORE_PROVIDER` 关闭。
 - 部署/重启后只读验证：readiness `ok=true`、Worker 心跳能力为 true、无活动测试 task/attempt/资金栅栏。
 - 这是恢复已确认生产基线，不把它做成每单手动开关。
-- 当前 `b4cc5ea` 已部署并完成部署后只读 preflight；无 migration 变化，直接回滚点 `3f23aa3` 保留。
+- 当前 `d1c4d32` 已部署并完成部署后只读 preflight；无 migration 变化，直接回滚点 `b4cc5ea` 保留。
 
 ### P1｜下一笔真实 API 订单
 
 - 客户正常提交 CDK + Session，系统自动处理；不再先人为关闭应有能力。
-- 当前无可立即分配卡；下一单会自然命中无卡自动开卡路径，可同时验收唯一开卡、自动恢复和 API 充值，不人为改库存。
+- 当前有 1 张 `$16` 可立即分配卡；下一单应先走直接分配并验收完整 API 链路，不人为改库存。
 - 核对充值成功、Plus、取消续费、卡余额/交易、对账和 Bark。
 
 ### P2｜3–5 单连续 API 运营
