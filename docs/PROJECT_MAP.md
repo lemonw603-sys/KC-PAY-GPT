@@ -52,7 +52,7 @@
 | 每卡成功次数上限 | 3 | 已部署；连续跨订单实证仍不足 |
 | 活动任务/资金风险/开放对账 | 0 / 0 / 0 | 2026-08-31 23:02 CST 只读 preflight |
 | 最新 migration | 044 | 只读 readiness |
-| 最新订单 | `PJV1-zqelgAB9K9TsiMdtq_Ox`=`WAITING_FOR_SESSION` | 2026-09-01 12:45 CST 提交；API 已识别目标账号已有 Plus（`TARGET_ACCOUNT_ALREADY_PLUS`）并安全停止，attempt/资金风险已清除，未付款；订单待用户决定是否关闭 |
+| 最新订单 | `PJV1-zqelgAB9K9TsiMdtq_Ox`=`CLOSED` | API 已识别目标账号已有 Plus（`TARGET_ACCOUNT_ALREADY_PLUS`）并安全停止；用户随后关闭订单，attempt/资金风险已清除，CDK 保持 `REDEEMED`，未付款 |
 
 **当前状态**：API 最小充值权限已按确认恢复，Worker 进程实际为 `true`；接单和派发已开；生产只读 preflight 已通过。尾号 1013 的异常占用已释放并恢复可分配。
 

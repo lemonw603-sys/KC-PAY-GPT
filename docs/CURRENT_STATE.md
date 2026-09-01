@@ -62,7 +62,7 @@
 
 ### 最新订单边界
 
-- 最新订单 `PJV1-zqelgAB9K9TsiMdtq_Ox` 于 2026-09-01 12:45 CST 建立。API 已返回目标账号已有 Plus（`TARGET_ACCOUNT_ALREADY_PLUS`），attempt/资金风险与消费预留均已清除，未付款；订单当前仍为 `WAITING_FOR_SESSION`，待决定是否安全关闭。
+- 最新订单 `PJV1-zqelgAB9K9TsiMdtq_Ox` 于 2026-09-01 12:45 CST 建立。API 已返回目标账号已有 Plus（`TARGET_ACCOUNT_ALREADY_PLUS`），attempt/资金风险与消费预留均已清除，未付款；用户已关闭订单；订单现为 `CLOSED`，对应 CDK 为 `REDEEMED`，不可复用。
 - 客户页 `parseSessionInput()` 已能将首个完整 JSON 对象解析出来并剥离尾随文本；成功建单只证明 JSON 语法层通过，不证明 Session 身份、账号资格或业务可用性通过。
 - 2026-08-31 23:02 CST 只读核对无活动 task、无 ACTIVE/UNKNOWN 资金风险、无 UNKNOWN Provider call；本单没有付款证据。单纯粘贴不会建单，`POST /api/v1/orders` 只在客户表单 submit 处理器中发生。
 
