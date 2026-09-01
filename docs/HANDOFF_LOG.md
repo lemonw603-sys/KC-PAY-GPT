@@ -864,3 +864,4 @@
 - v1 全量 466 通过、42 跳过、0 失败；Playwright 验证确认前 0 请求、确认后 1 次建单、Session 清空、SUCCESS 无 dialog、390px 无横向溢出。
 - 候选未部署、未连接生产、未创建订单或执行资金动作；报告：`docs/2026-09-01_customer-recharge-redesign-production-candidate.md`。
 - 正式移植复核发现首版候选遗漏 Claude 原型中的两个教程直达按钮和成功页订阅确认外链；已直接补齐，不把遗漏只留在报告中。
+- 对照后端 Session 合同和旧生产轮询继续修正：教程示例补齐 `account/sessionToken`；失败文案取消未经实现的“人工已接手”承诺；`REVIEWING/ACTION_REQUIRED` 从误移植的 100 秒恢复为 30 秒。

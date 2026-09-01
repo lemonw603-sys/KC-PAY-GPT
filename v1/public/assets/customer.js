@@ -37,11 +37,11 @@
   const STATUS = {
     QUEUED:          { label: '已排队',   title: '订单已创建',           desc: '系统已收到订单，正在排队等待处理。', terminal: false, poll: 5000 },
     PROCESSING:      { label: '处理中',   title: '正在为你开通 Plus',    desc: '订单已进入处理流程，请不要重复提交，稍候即可。', terminal: false, poll: 5000 },
-    REVIEWING:       { label: '复核中',   title: '订单正在复核',         desc: '系统需要进一步确认结果，请保留查询码稍后查看。', terminal: false, poll: 100000 },
-    ACTION_REQUIRED: { label: '待更换账号', title: '需要更换账号 Session', desc: '当前账号不符合开通条件，请在下方更换一个免费账号的 Session。', terminal: false, poll: 100000 },
+    REVIEWING:       { label: '复核中',   title: '订单正在复核',         desc: '系统需要进一步确认结果，请保留查询码稍后查看。', terminal: false, poll: 30000 },
+    ACTION_REQUIRED: { label: '待更换账号', title: '需要更换账号 Session', desc: '当前账号不符合开通条件，请在下方更换一个免费账号的 Session。', terminal: false, poll: 30000 },
     FINALIZING:      { label: '收尾中',   title: '正在确认取消自动续费', desc: '付款已确认，系统正在关闭自动续费，马上完成。', terminal: false, poll: 10000 },
     SUCCESS:         { label: '已开通',   title: 'Plus 已成功开通',      desc: '本次订单已全部完成，账号信息如下。', terminal: true,  poll: null },
-    FAILED:          { label: '未成功',   title: '订单未能完成',         desc: '本次订单未能完成，已转入人工核对，请保留查询码稍后再查。', terminal: true, poll: null }
+    FAILED:          { label: '未成功',   title: '订单未能完成',         desc: '本次订单未能完成，请保留查询码联系客服核对。', terminal: true, poll: null }
   };
 
   // 时间线短标签
@@ -271,7 +271,7 @@
     // 轮询提示
     el.pollNote.textContent = terminal
       ? '订单已进入最终状态，自动刷新已停止。'
-      : `页面每隔几秒自动刷新进度，无需手动操作。`;
+      : '页面会自动刷新进度，无需手动操作。';
     el.pollNote.hidden = false;
 
     setStepper(3, terminal);

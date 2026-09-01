@@ -48,6 +48,14 @@ test('customer assets contain no remote or legacy runtime dependencies', () => {
   assert.match(html, /id="session-help-open"/);
   assert.match(html, /id="subscription-link"/);
   assert.match(html, /rel="noopener noreferrer"/);
+  assert.match(html, /"account":\{"id":"account-…"\}/);
+  assert.match(html, /"sessionToken":"…"/);
+  assert.doesNotMatch(html, /已由人工接手核对/);
+
+  const customerScript = fs.readFileSync(path.join(directory, 'assets', 'customer.js'), 'utf8');
+  assert.match(customerScript, /REVIEWING:[\s\S]{0,180}poll: 30000/);
+  assert.match(customerScript, /ACTION_REQUIRED:[\s\S]{0,220}poll: 30000/);
+  assert.doesNotMatch(customerScript, /已转入人工核对/);
 });
 
 test('admin assets contain no remote, legacy, or secret-bearing dependencies', () => {
