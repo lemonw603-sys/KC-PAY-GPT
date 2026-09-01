@@ -1,15 +1,15 @@
-# 当前生产状态快照｜2026-09-01 15:54 CST
+# 当前生产状态快照｜2026-09-01 22:32 CST
 
 > 只保留当前有效事实；历史过程查 `HANDOFF_LOG.md`，方向与顺序查 `PROJECT_MAP.md`，全链路和验收细则查 `PROJECT_OPERATING_MODEL.md`。
 > 本快照已现场核对生产 release、systemd、Worker 进程环境、数据库 Provider account 和只读 readiness；Browser 主线只读回归证据见 `docs/2026-09-01_browser-main-readonly-regression.md`。
 
 ## 1. 代码、release 与服务
 
-- 生产已部署 Provider 真实失败原因透传 `569e8ee`；该 release 同时包含后台刷新修复 `2f1fa0a`、卡片异常占用释放 `2bce69e`、客户充值页重设计 `b4cc5ea` 和供应规划修复 `3f23aa3`。
-- 生产 `/opt/pojia/current`：`/opt/pojia/releases/20260901-provider-reason-569e8ee`；直接回滚点为 `/opt/pojia/releases/20260901-admin-refresh-2f1fa0a`。
+- 生产已部署 Browser 访问阻断重试修复 `7bad460`；该 release 同时包含 Provider 失败原因透传、后台刷新、卡片异常占用释放、客户充值页重设计和供应规划修复。
+- 生产 `/opt/pojia/current`：`/opt/pojia/releases/20260901-browser-access-block-7bad460f26d311d8f15103c86933a276cf4b9d14`；直接回滚点为 `/opt/pojia/releases/20260901-provider-reason-569e8ee`。
 - 客户页已完成公网桌面/390px 移动端、教程弹层、真实历史订单查询、CSP、静态资源哈希和 Console 复验；真实成功订单的成功邮箱/时间线仍待下一单验收。详细证据见 `docs/2026-09-01_customer-recharge-redesign-production-candidate.md`。
 - `pojia-web.service=active`；`pojia-worker.service=active`。
-- `pojia-browser-worker.service=inactive/disabled`。
+- `pojia-browser-worker.service=inactive/disabled`（本轮曾短暂启动非付款测试，结束后已停止）。
 - `pojia-card-stock-runner.timer`、`pojia-card-funding.timer`、`pojia-card-funding-reconcile.timer` 均 active/enabled；最新 migration 为 `044_operator_alert_actionability`。
 - 普通 Worker 的卡片写为 false，但两个独立补给 runner 分别保留开卡/补余额所需的窄范围卡片写；不能用 Worker 环境推断自动补给被关闭。
 - 付款前 hold 的临时 drop-in 已移出运行配置，测试订单已正式清理；当前不处于 hold 演练。
@@ -55,12 +55,15 @@
 - 每卡最大成功支付次数全局设置为 3（可在 1–4 调整）；跨订单容量代码已部署，连续真实订单计数/释放/上限仍待验收。
 - `4744/1065=PRODUCT_ONLY(claude)`；当前旧失效批次（含 8590）均 `RETIRED`；未来新卡按实时证据接管，不使用永久卡号白名单。
 - 15 分钟资料/交易证据要求触发按需只读刷新，不把订单年龄本身当失败。
-- 当前可立即分配为 **0 张**。Provider `1839/1013` 本次支付被拒后已由用户停用，当前 `invalidating/$0.01`；旧批次均 `RETIRED`，不能进入自动补余额或新订单分配。下一笔有效订单应进入自动开新卡分支。
+- 当前可立即分配为 **1 张**：本轮自动开卡生成 Provider 卡 `2338`、尾号 `4643`，余额 `$16`；测试订单取消后 assignment 已释放、库存为 `AVAILABLE`。旧批次均 `RETIRED`，不能进入自动补余额或新订单分配。
 - 尾号 `6807` / Provider `1477` 的真实卡可用性是用户确认的运营事实；但当前生产数据为 Provider status=`invalidating`、历史 assignment=`ACTIVE`，因此现行资格 SQL **不会把它分配给新订单**。这是待核对/收敛的历史数据缺口，不得误报为当前可分配。
 
 ## 5. 已验证与未验证
 
 ### 最新订单边界
+
+- Browser 非付款测试订单 `PJV1-zffo7WJvbKcPECKcCxzx` 已完成清理：自动开卡扣款预计 `$16.58`，实际卡台余额由 `$36.01` 变为 `$19.43`；订单已 `CLOSED/CANCELLED_PRE_SUBMISSION`，新卡 `2338`/尾号 `4643` 为 `AVAILABLE`。Browser 访问阶段返回 `CHATGPT_ACCESS_BLOCKED`，未创建任何 `create_direct` Provider 调用，未点击付款。
+- 测试期间发现 Browser Worker 在该错误下会将订单回到 `CARD_READY` 并重复创建 attempt（共 20 次，均 `CLEARED`，无外部付款）；已修复 `7bad460`：访问/Checkout 阻断现在终止为 `RECHARGE_FAILED`，不再重排提交任务。修复已部署并通过定向 Browser 测试。
 
 - 最新订单 `PJV1-412JIT_yfiuBpZeC39_m` 于 2026-09-01 14:01 CST 建立。API Provider 返回明确失败“卡片被拒，请换卡后重提”，外部订单号 `8849`；订单为 `RECHARGE_FAILED`，资金风险已清除、无成功付款。按失败策略，所用卡片暂不恢复为可直接分配。
 - 客户页 `parseSessionInput()` 已能将首个完整 JSON 对象解析出来并剥离尾随文本；成功建单只证明 JSON 语法层通过，不证明 Session 身份、账号资格或业务可用性通过。

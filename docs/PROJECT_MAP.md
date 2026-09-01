@@ -1,7 +1,7 @@
 # AI充值业务｜唯一项目规划地图
 
 > **用途**：只回答四件事：项目目标、当前生产事实、已完成/未完成、唯一执行顺序。
-> **最后统一核对**：2026-09-01 15:54 CST。已对照前后端代码，并通过 SSH 复核部署后的生产 release、systemd、Worker 实际进程环境、只读 readiness 和历史失败原因投影；本轮未执行 Provider 写入或付款。
+> **最后统一核对**：2026-09-01 22:32 CST。已对照前后端代码，并通过 SSH 复核部署后的生产 release、systemd、Worker 实际进程环境、只读 readiness 和 Browser 非付款测试清理结果；本轮未执行 Provider 充值写入或付款。
 > 历史报告不能覆盖本地图；实时生产事实优先，变化后必须同步更新本地图与 `CURRENT_STATE.md`。
 > 全链路、控制矩阵、自动补给状态机、库存最小模型、资金边界、通知、回滚和验收细则统一见 `docs/PROJECT_OPERATING_MODEL.md`。
 
@@ -36,9 +36,9 @@
 
 | 项目 | 当前事实 | 证据/含义 |
 |---|---|---|
-| 生产 release | `/opt/pojia/releases/20260901-provider-reason-569e8ee` | `/opt/pojia/current` 现场读取；直接回滚点为 `20260901-admin-refresh-2f1fa0a` |
+| 生产 release | `/opt/pojia/releases/20260901-browser-access-block-7bad460f26d311d8f15103c86933a276cf4b9d14` | 已部署 Browser 访问阻断重试修复；直接回滚点为 `20260901-provider-reason-569e8ee` |
 | Web / API Worker | active / active | systemd 现场读取 |
-| Browser Worker | inactive / disabled | 未进入真实 Browser 付款 |
+| Browser Worker | inactive / disabled | 本轮短暂启动完成非付款测试后已停止；未进入真实 Browser 付款 |
 | 接单 / 派发 | true / true | 只读 readiness；当前后台已处于营业业务状态 |
 | 默认路线 | API | 只读 readiness |
 | Worker 最终 API 充值能力 | **true** | 已安装最小权限 drop-in，重启后进程环境为 `PROVIDER_RECHARGE_WRITES_ENABLED=true` |
@@ -48,7 +48,7 @@
 | 通用 Provider / 卡片写 | false / false | Worker 进程环境 |
 | 独立自动补余额 | DB gate=true；`pojia-card-funding.timer` 与 reconcile timer active/enabled | 独立 runner 只开补余额所需卡片写；空闲零写已验证，首笔真实补余额未验收 |
 | 独立自动开卡 | DB gate=true；`pojia-card-stock-runner.timer` active/enabled，60 秒兜底 | stock runner 只开开卡所需卡片写；真实缺卡订单闭环未验收 |
-| 当前 Plus 可立即分配 | **0 张** | `1839/1013` 本次支付被拒后已由用户停用，当前 `invalidating/$0.01`；旧批次均 `RETIRED`，4744 为 Claude 专用，不得补余额后冒充 Plus 库存 |
+| 当前 Plus 可立即分配 | **1 张** | 本轮自动开卡生成新卡 `provider_card_id=2338`、尾号 `4643`，余额 `$16`，测试订单取消后已释放为 `AVAILABLE`；旧批次均 `RETIRED`，4744 为 Claude 专用 |
 | 每卡成功次数上限 | 3 | 已部署；连续跨订单实证仍不足 |
 | 活动任务/资金风险/开放对账 | 0 / 0 / 0 | 2026-09-01 15:54 CST 只读 preflight |
 | 最新 migration | 044 | 只读 readiness |
@@ -103,7 +103,7 @@
 | 库存与运营覆盖 | 已部署，有历史数据缺口 | 旧批次停用、Claude 专用卡、未来新卡按证据接管 | `6807/1477` 现为 Provider `invalidating` 且保留历史 ACTIVE assignment，当前资格计算不会分配；这是系统状态与“卡实际可用”运营事实的待收敛缺口 |
 | 运营控制面 | 部分部署 | 开始营业、默认路线、就绪摘要及部分跳转；API 权限基线已恢复 | 补齐 API 权限漂移无入口；用真实运营复核入口与噪音 |
 | 客户充值页 | 已部署，待下一笔成功实单验收结果态 | Claude 单列三步设计已接入真实客户 API；生产 CSP、桌面/390px、教程、历史订单查询、时间线和 Session 更换入口已复验 | 下一笔真实成功订单验收成功邮箱、完成时间与完整时间线；不为此另造测试订单 |
-| Browser | 并行开发/非付款验证 | 当前 main 只读 smoke 10/10、隔离 shared dry-run 1/1；生产 Browser Worker 仍 disabled/inactive | 客户式 CDK+Session 订单的生产形态只读观察（可使用非客户测试订单）；真实付款需另行确认 |
+| Browser | 生产形态非付款测试已执行，付款仍未验收 | 客户式 CDK+Session 订单已创建；系统自动开卡、分卡并启动 Browser Worker；付款前未发生外部支付 | 本轮因 ChatGPT 返回 `CHATGPT_ACCESS_BLOCKED` 未到 Checkout；发现并修复阻断重试循环；下一轮需重新在可访问环境执行一次到付款按钮前的观察 |
 | 对账/Bark/费用监控 | 部分验收 | 资金 UNKNOWN、余额变化 Bark、交易证据基础 | 连续订单校准误报；费用标准/变化监控 |
 | 放量/恢复 | 未验收 | 备份、健康检查、回滚点 | 3–5 单→10–20 单→恢复演练→100–300 单/日 |
 
@@ -130,7 +130,8 @@
 
 ### B｜Browser 并行线
 
-- 当前 main 的 Browser 只读 smoke 与隔离 shared dry-run 已通过；下一步按真实业务准备一笔测试 CDK+Session 订单，临时切换默认路线为 Browser，走到付款前一步并停止；保持付款写入关闭。
+- 本轮已按真实业务创建测试 CDK+Session 订单，临时切换默认路线为 Browser；系统自动开卡并分配后，Browser 访问被 ChatGPT/网络返回 `CHATGPT_ACCESS_BLOCKED`，在付款前安全终止。测试订单、资金风险、租约和 Browser Worker 已清理，默认路线已恢复 API。
+- 已修复：`CHATGPT_ACCESS_BLOCKED`、Checkout 导航/观察阻断不再回到 `CARD_READY` 重排 `SUBMIT_RECHARGE`；改为终态 `RECHARGE_FAILED`，避免重复创建 attempt。修复已部署到当前 release 并通过定向测试。
 - 非付款闭环通过后，再单独确认首笔真实 Browser 付款；成功后再讨论把全局默认路线从 API 切为 Browser。
 
 ### E｜客户充值页体验线

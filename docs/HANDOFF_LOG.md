@@ -996,3 +996,17 @@
 - 在当前生产 release `569e8ee` 使用生产 Browser 只读环境重新执行 `production-readonly-worker.js --check`，结果为 `READY`。
 - Browser Worker 仍为 disabled/inactive，默认路线仍为 API；未创建测试订单、未读取 Session、未访问 ChatGPT、未调用 Provider、未付款。
 - 下一项有价值的 Browser 验收仍是客户式测试 CDK+Session 走到付款按钮前停止；需要临时切换默认路线并启动 Browser Worker时再单独确认。
+
+# 2026-09-01｜Browser 客户式非付款订单实测与访问阻断重试修复
+
+- 用户确认允许本轮 Browser 测试；测试前生产只读核对：API 默认路线、接单/自动派发开启，Browser Worker disabled；卡台实时余额 `$36.01`，按卡段 16/余额 16 计算自动开卡预计扣款 `$16.58`。
+- 临时备份：`/var/backups/pojia/browser-customer-nonpayment-20260901T141038Z`；数据库备份：`/var/backups/pojia/pojia-20260901T141040Z.sql.gz.enc`。
+- 按真实客户路径生成 1 个测试 CDK，临时开启 Browser dispatch、切换默认路线为 Browser、短暂开启接单；`POST /api/v1/orders` 返回 `201`，订单 `PJV1-zffo7WJvbKcPECKcCxzx` 创建并冻结 Browser 路线。
+- 系统自动开卡任务完成 1 张：Provider 卡 `2338`、尾号 `4643`、余额 `$16`；订单自动分卡后进入 Browser 执行。
+- Browser Worker 使用 `EXTERNAL_READONLY + SHARED_ENCRYPTED_NONPAYMENT + CHATGPT_ACCOUNT_CHECKOUT`，未读取 PAN/CVC、未填卡、未点击付款。ChatGPT 访问阶段返回 `CHATGPT_ACCESS_BLOCKED`，未产生 `create_direct` Provider 调用。
+- 发现真实缺陷：`CHATGPT_ACCESS_BLOCKED` 被错误分类为 `CARD_READY`，safe-abort 后重新排队 `SUBMIT_RECHARGE`，短时间重复创建 20 个 Browser attempt；全部资金状态最终 `CLEARED`，但造成无意义重试和运行噪音。该行为不符合“阻断后不自动重复尝试”的原则。
+- 修复提交 `7bad460`：访问/Checkout 阻断改为终态 `RECHARGE_FAILED`；保留卡片/路线校验失败的有限 `CARD_READY` 重试，未知或访问阻断不再重排提交任务。定向 Browser 测试通过（26 项，26 通过）。
+- 清理与恢复：停止 Browser Worker；撤销 Browser dispatch；恢复 `/etc/pojia/browser-readonly.env` 原 `LOCAL_FIXTURE` 配置；默认路线恢复 API；接单和自动派发恢复开启；正式取消测试订单，卡 assignment 释放，卡 `2338` 变为 `AVAILABLE`；删除测试 CDK/临时响应文件。
+- 生产部署：不可变 release `/opt/pojia/releases/20260901-browser-access-block-7bad460f26d311d8f15103c86933a276cf4b9d14`，回滚点 `/opt/pojia/releases/20260901-provider-reason-569e8ee`。Web/Worker active，Browser Worker inactive/disabled。
+- 部署后验证：生产 Browser unit 短暂启动只读 fixture 后正常停止；API readiness `ok=true`、active/unknown funds=0、活动任务=0、Browser job/run/lease=0；默认 API、接单/派发均为 true。
+- 未完成：ChatGPT 真实页面因 `CHATGPT_ACCESS_BLOCKED` 未到 Checkout；后续需在可访问的批准网络环境重新执行到最终付款按钮前的非付款观察。不得把本轮结果说成 Browser 付款链路已验收。
