@@ -966,3 +966,9 @@
 - HNSKJ 卡 `1839`/尾号 `1013`：`active`、余额 `$16.00`、资料完整；交易只有 `CARD_RECHARGE 16 USD SUCCESS`，无 PURCHASE。
 - 结论：已证实上游支付处理方拒绝该卡；没有更细 decline code，不能把原因猜成余额、3DS、CVV、BIN、地区或银行规则。资金 attempt 已 `FAILED/CLEARED`，订单终态 `RECHARGE_FAILED`，保持不自动重付/换卡。
 - 发现展示缺口：订单主表失败原因仍为通用文案，具体 Provider 拒绝原文只在 attempt 结果摘要中；已记录为后续只读展示修复候选。详见 `docs/2026-09-01_order-412JIT-card-decline-investigation.md`。
+
+# 2026-09-01｜用户停用拒付卡后的同步
+
+- 用户在 HNSKJ 卡台删除/停用卡 `1839`（尾号 `1013`）后，现场只读复查为 `invalidating`、余额 `$0.01`；卡台列表仍可见。
+- 本地旧快照曾为 `active/$16`，已通过 HNSKJ `GET /cards/1839` 做一次本地只读同步，更新为 `invalidating/$0.010000`；未调用卡台写接口。
+- 失败订单 `PJV1-412JIT_yfiuBpZeC39_m` 的 ACTIVE assignment 仍保留，作为失败后资金/卡片关联证据，不会进入新订单资格计算。

@@ -59,3 +59,8 @@ paymentResult.status=failed
 2. 向 ZZSHU 索取订单 8849 的更细拒付字段；若接口始终只返回通用文案，则将“上游明确拒付、底层原因未知”作为最终可证结论。
 3. 单独修正后台失败原因透传：在不暴露 PAN/Session 的前提下，把 `result_summary_json.failureReason` 显示为 Provider 原因；这不改变付款或重试策略。
 
+## 用户删除卡后的复核（2026-09-01 15:02 CST）
+
+- HNSKJ 只读复查显示卡 `1839` 已变为 `invalidating`，余额 `$0.01`，卡台列表中仍可见；这与用户“已删除/停用”的操作一致。
+- 本地原快照仍是 `active/$16.00`，属于同步滞后。已执行一次**仅本地落库的只读同步**（HNSKJ `GET /cards/1839`，未调用任何写接口），现在本地已更新为 `status=invalidating`、`current_balance=0.010000`，同步时间为 `2026-09-01T07:02:12Z`。
+- 本地 `inventory_status` 仍为 `ASSIGNED` 是有意保留的失败订单证据；该卡有订单 `PJV1-412JIT_yfiuBpZeC39_m` 的 ACTIVE assignment，当前不会被资格 SQL 分配。不能为了显示“删除”而直接释放这条 assignment，否则会丢失失败后的资金/卡片关联证据。
