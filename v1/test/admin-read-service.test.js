@@ -184,6 +184,29 @@ test('admin order detail exposes the full PAN but not CVV or Session', async () 
   assert.equal(pool.queries.some(({ sql }) => /\bcvv\b/i.test(sql)), false);
 });
 
+test('admin order detail prefers the Provider attempt failure reason over a generic order reason', async () => {
+  const nowMs = Date.parse('2026-09-01T07:30:00.000Z');
+  const pool = queuedPool([
+    [{
+      id: 'order-failed', public_no: 'PJV1-FAILED', status: 'RECHARGE_FAILED', plan_type: 'plus',
+      failure_code: 'PROVIDER_CONFIRMED_FAILURE',
+      failure_reason: 'Recharge provider confirmed failure',
+      recharge_attempt_result_summary_json: JSON.stringify({
+        status: 'failed', failureReason: '卡片被拒，请换卡后重提'
+      }),
+      created_at: new Date(nowMs - 60_000), updated_at: new Date(nowMs),
+      finished_at: new Date(nowMs)
+    }],
+    [], [], [], [], [], [], [], [], [], [], [], [], [], [], []
+  ]);
+  const result = await createAdminReadService({ pool, now: () => nowMs })
+    .getOrder('PJV1-FAILED');
+  assert.equal(result.order.failureCode, 'PROVIDER_CONFIRMED_FAILURE');
+  assert.equal(result.order.failureReason, '卡片被拒，请换卡后重提');
+  assert.equal(result.order.failureReasonSource, 'PROVIDER_ATTEMPT');
+  assert.match(pool.queries[0].sql, /recharge_attempt_result_summary_json/);
+});
+
 test('admin unified search supports exact PAN HMAC, tags, and bounded time filters', async () => {
   const panKey = Buffer.alloc(32, 31);
   const pool = queuedPool([[{ total: 0 }], []]);

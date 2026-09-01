@@ -2519,6 +2519,8 @@ test('confirmed recharge failure clears exactly one funds attempt before closing
     );
     assert.equal(state.order_status, OrderStatus.RECHARGE_FAILED);
     assert.equal(state.failure_code, 'PROVIDER_CONFIRMED_FAILURE');
+    const [[failure]] = await pool.query('SELECT failure_reason FROM orders WHERE id = ?', [fixture.orderId]);
+    assert.equal(failure.failure_reason, 'confirmed by provider');
     assert.notEqual(state.finished_at, null);
     assert.equal(state.attempt_status, 'FAILED');
     assert.equal(state.funds_risk_state, 'CLEARED');

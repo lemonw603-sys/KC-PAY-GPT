@@ -389,6 +389,9 @@ test('closes a definite pre-create rejection without retrying or leaving a proce
     state.handlers.SUBMIT_RECHARGE({ id: 1, order_id: 'order-1', attempts: 1 })
   );
   assert.equal(state.calls.at(-1)[0], 'attempt-rejected');
+  assert.deepEqual(state.calls.at(-1)[1].resultSummary, {
+    code: 'provider', failureReason: 'capacity'
+  });
 });
 
 test('maps provider 40030 to a customer-repairable Session replacement state', async () => {

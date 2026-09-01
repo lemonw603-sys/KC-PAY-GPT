@@ -34,3 +34,33 @@ test('recharge submission events do not duplicate the card key', async () => {
   assert.equal(eventInsert.parameters[4].includes('DIRECT-sensitive-fixture'), false);
   assert.equal(queries.some((query) => /card_credentials_ciphertext = NULL/.test(query.sql)), false);
 });
+
+test('confirmed recharge failure persists the redacted Provider reason on the order', async () => {
+  const queries = [];
+  const connection = {
+    beginTransaction: async () => {},
+    commit: async () => {},
+    rollback: async () => {},
+    release: () => {},
+    query: async (sql, parameters) => {
+      queries.push({ sql, parameters });
+      if (sql.includes('SELECT status, version FROM orders')) {
+        return [[{ status: OrderStatus.RECHARGE_PROCESSING, version: 4 }]];
+      }
+      return [{ affectedRows: 1 }];
+    }
+  };
+  const workflow = createWorkflowRepository({ getConnection: async () => connection }, {
+    sessionEncryptionKey: Buffer.alloc(32, 1)
+  });
+
+  await workflow.commitRechargeFailure('order-1', {
+    status: 'failed',
+    failureReason: '卡片被拒；sessionToken=secret-value'
+  });
+
+  const orderUpdate = queries.find((query) => /failure_code = 'PROVIDER_CONFIRMED_FAILURE'/.test(query.sql));
+  assert.ok(orderUpdate);
+  assert.equal(orderUpdate.parameters[1], '卡片被拒；sessionToken=[REDACTED]');
+  assert.equal(orderUpdate.parameters.includes('secret-value'), false);
+});

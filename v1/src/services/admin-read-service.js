@@ -4,6 +4,7 @@ import { decryptSecret } from '../security/secret-box.js';
 import { validateChatGptSession } from '../domain/session-validation.js';
 import { reconcileOrderEvidence } from '../domain/order-reconciliation.js';
 import { createCdkLookup } from '../security/cdk-code.js';
+import { redactSensitiveText } from '../security/redaction.js';
 import {
   eligibleInventoryCardSql,
   fundableInventoryCardSql
@@ -99,6 +100,19 @@ function iso(value) {
 
 function decimal(value) {
   return value == null ? null : String(value);
+}
+
+function providerFailureReason(value) {
+  if (!value) return null;
+  try {
+    const summary = typeof value === 'string' ? JSON.parse(value) : value;
+    if (!summary || typeof summary !== 'object' || Array.isArray(summary)) return null;
+    const reason = summary.failureReason ?? summary.failure_reason;
+    if (typeof reason !== 'string' || !reason.trim()) return null;
+    return redactSensitiveText(reason.trim());
+  } catch {
+    return null;
+  }
 }
 
 function transactionMatchesPayment(transaction, amount, currency) {
@@ -851,6 +865,10 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
           o.session_repair_started_at, o.session_repair_expires_at, o.last_session_replaced_at,
           o.subscription_cancelled, o.cancellation_checked_at, o.cancellation_review_required,
           o.created_at, o.updated_at, o.finished_at, o.session_ciphertext,
+          (SELECT rat.result_summary_json FROM recharge_attempts rat
+           WHERE rat.order_id = o.id
+           ORDER BY COALESCE(rat.finished_at, rat.updated_at, rat.created_at) DESC, rat.id DESC
+           LIMIT 1) AS recharge_attempt_result_summary_json,
           c.provider_card_id, c.last4, c.status AS card_status, c.funded_amount,
           c.current_balance, c.currency, c.refund_status, c.last_synced_at,
           c.last_transaction_synced_at,
@@ -979,7 +997,9 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
       row.status === 'RECHARGE_FAILED' && historicalProviderFailure
         ? `PROVIDER_${String(historicalProviderFailure.business_code)}` : null
     );
-    const effectiveFailureReason = row.failure_reason || (
+    const attemptFailureReason = row.status === 'RECHARGE_FAILED'
+      ? providerFailureReason(row.recharge_attempt_result_summary_json) : null;
+    const effectiveFailureReason = attemptFailureReason || row.failure_reason || (
       effectiveFailureCode ? `Provider ${effectiveFailureCode}（历史记录推导，未修改订单数据）` : null
     );
     const prepareTask = taskRows.find((task) => task.task_type === 'PREPARE_RECHARGE');
@@ -1080,6 +1100,7 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
         rechargeOrderNo: row.recharge_order_no,
         failureCode: effectiveFailureCode,
         failureReason: effectiveFailureReason,
+        failureReasonSource: attemptFailureReason ? 'PROVIDER_ATTEMPT' : (effectiveFailureReason ? 'ORDER' : null),
         customerActionCode: row.customer_action_code,
         sessionReplacementCount: Number(row.session_replacement_count || 0),
         sessionRepairStartedAt: iso(row.session_repair_started_at),

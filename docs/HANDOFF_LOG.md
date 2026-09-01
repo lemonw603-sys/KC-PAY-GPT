@@ -977,3 +977,9 @@
 
 - 更正此前“其他未绑定卡余额约 `$0.01` 属于余额不足”的错误表述。生产数据库 `card_operational_overrides` 现场核对显示，旧批次卡（含 `8590/493` 及其余旧卡）已统一标记 `RETIRED`，原因是服务器更换后永久不可用；它们不是可补余额卡，不得进入自动补给或新订单分配。
 - `4744/1065` 为 Claude 专用；只有未来新接管、通过实时卡详情与交易证据的卡，才纳入 Plus 库存。
+# 2026-09-01｜后台透传 Provider 真实失败原因候选
+
+- 根因确认：订单详情此前只读 `orders.failure_reason`；轮询后的真实 `failureReason` 保存在 `recharge_attempts.result_summary_json`，而订单主表被写成通用 `Recharge provider confirmed failure`，导致运营后台看不到“卡片被拒，请换卡后重提”等决定性原文。
+- 当前 `main` 已修复两层：历史失败订单详情只读提取最新 attempt 的 `failureReason` 并标为“Provider 返回原因”；未来轮询确认失败时，将脱敏后的 Provider 原文同时写入订单主表。提交前拒绝也把错误原文写入 attempt 摘要，供详情读取。
+- 敏感字段通过既有 `redactSensitiveText` 后才进入订单展示/主表；无 Provider 原文时继续使用通用兜底，不猜测拒付原因。
+- 验证：定向 60/60；`v1 npm test` 共 515 项，472 通过、43 项因未配置隔离数据库跳过、0 失败。当前仅为代码候选，尚未部署生产，未创建订单、未调用 Provider、未执行任何资金动作。

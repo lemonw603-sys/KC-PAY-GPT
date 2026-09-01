@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import { transitionOrder } from './order-repository.js';
 import { OrderStatus } from '../../domain/order-status.js';
 import { decryptSecret, encryptSecret } from '../../security/secret-box.js';
+import { redactSensitiveText } from '../../security/redaction.js';
 import { persistCardTransactions } from './card-transaction-repository.js';
 import {
   eligibleInventoryCardSql,
@@ -25,6 +26,13 @@ function parseSession(ciphertext, key) {
     throw new Error('Stored Session is not a JSON object');
   }
   return session;
+}
+
+function providerFailureReason(status) {
+  const reason = status?.failureReason ?? status?.failure_reason;
+  return typeof reason === 'string' && reason.trim()
+    ? redactSensitiveText(reason.trim())
+    : 'Recharge provider confirmed failure';
 }
 
 async function inTransaction(pool, action) {
@@ -977,6 +985,7 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
 
     async commitRechargeFailure(orderId, status = null) {
       return inTransaction(pool, async (connection) => {
+        const failureReason = providerFailureReason(status);
         const [rows] = await connection.query(
           'SELECT status, version FROM orders WHERE id = ? FOR UPDATE', [orderId]
         );
@@ -1010,11 +1019,11 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
         });
         const [result] = await connection.query(
           `UPDATE orders SET status = ?, failure_code = 'PROVIDER_CONFIRMED_FAILURE',
-             failure_reason = 'Recharge provider confirmed failure',
+             failure_reason = ?,
              customer_action_code = NULL, finished_at = CURRENT_TIMESTAMP(3),
              version = version + 1, updated_at = CURRENT_TIMESTAMP(3)
            WHERE id = ? AND version = ?`,
-          [OrderStatus.RECHARGE_FAILED, orderId, order.version]
+          [OrderStatus.RECHARGE_FAILED, failureReason, orderId, order.version]
         );
         if (result.affectedRows !== 1) {
           throw new Error(`Concurrent recharge failure detected: ${orderId}`);

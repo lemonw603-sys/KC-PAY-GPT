@@ -1341,7 +1341,8 @@ async function openOrder(publicNo) {
         ['Session 修复窗口开始', formatTime(order.sessionRepairStartedAt)],
         ['Session 修复截止', formatTime(order.sessionRepairExpiresAt)],
         ['最近更换 Session', formatTime(order.lastSessionReplacedAt)],
-        ['失败代码', order.failureCode], ['失败原因', order.failureReason]
+        ['失败代码', order.failureCode],
+        [order.failureReasonSource === 'PROVIDER_ATTEMPT' ? 'Provider 返回原因' : '失败原因', order.failureReason]
       ])}</section>
       <section class="detail-section"><div class="detail-section-heading"><h3>卡片与退款</h3>${data.card ? '<button type="button" class="primary-small" id="sync-transactions">同步交易</button>' : ''}</div>${data.card ? renderKeyValues([
         ['卡台卡片 ID', data.card.providerCardId], ['完整卡号', data.card.cardNumber || data.card.last4],

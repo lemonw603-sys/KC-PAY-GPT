@@ -421,7 +421,10 @@ export function createWorkflowHandlers({
           })
           : rechargeAttemptRepository.markAttemptRejected({
             attemptId: attempt.id,
-            resultSummary: { code: error.businessCode || error.code || error.kind || 'RECHARGE_SUBMIT_REJECTED' }
+            resultSummary: {
+              code: error.businessCode || error.code || error.kind || 'RECHARGE_SUBMIT_REJECTED',
+              failureReason: error.message || 'Recharge provider rejected submission'
+            }
           }));
       if (sessionReplacementRequired) {
         await workflow.markSessionReplacementRequired(task.order_id, {
