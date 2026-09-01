@@ -510,6 +510,78 @@ test('pre-submission cancellation closes the order and returns its funded card t
   }
 });
 
+test('a definite Session rejection can be closed without stranding its funded card', {
+  skip: !databaseUrl && 'TEST_DATABASE_URL 未配置；完整 MySQL 套件在服务器隔离数据库运行'
+}, async () => {
+  const pool = mysql.createPool({ uri: databaseUrl, connectionLimit: 4, timezone: 'Z' });
+  const fixture = await createOrder(pool, {
+    publicNo: `PJV1-SESSION-CANCEL-${Date.now()}`, status: OrderStatus.WAITING_FOR_SESSION
+  });
+  const cardId = id();
+  try {
+    await pool.query(
+      `INSERT INTO cards
+       (id, order_id, inventory_status, assigned_at, provider_card_id, external_card_id,
+        card_type_id, last4, status, funded_amount, current_balance, currency, refund_status,
+        card_credentials_ciphertext, last_synced_at, last_transaction_synced_at,
+        provider_account_id, intake_status, sync_tier)
+       VALUES (?, ?, 'ASSIGNED', CURRENT_TIMESTAMP(3), ?, ?, '1', '4242', 'active',
+        '16.000000', '16.000000', 'USD', 'MONITORING', ?, CURRENT_TIMESTAMP(3),
+        CURRENT_TIMESTAMP(3), ?, 'ACCEPTED', 'ASSIGNED')`,
+      [cardId, fixture.orderId, `session-card-${cardId}`, `session-card-${cardId}`,
+        encryptSecret(JSON.stringify({
+          cardNumber: '4242424242424242', expMonth: 12, expYear: 2032, cvv: '123'
+        }), integrationSessionKey), legacyCardProviderAccountId]
+    );
+    await pool.query('UPDATE orders SET assigned_card_id=?, failure_code=? WHERE id=?',
+      [cardId, 'TARGET_ACCOUNT_ALREADY_PLUS', fixture.orderId]);
+    await pool.query(
+      `INSERT INTO card_assignment_history
+       (id, card_id, order_id, assignment_kind, status, assigned_by, assignment_reason)
+       VALUES (?, ?, ?, 'NORMAL', 'ACTIVE', 'integration-test', 'Session rejection fixture')`,
+      [id(), cardId, fixture.orderId]
+    );
+    await pool.query(
+      `INSERT INTO tasks (order_id, task_type, status, dedupe_key, attempts, max_attempts,
+        last_error_code)
+       VALUES (?, 'SUBMIT_RECHARGE', 'DEAD', ?, 1, 5, 'TARGET_ACCOUNT_ALREADY_PLUS')`,
+      [fixture.orderId, `session-cancel-submit-${fixture.orderId}`]
+    );
+    await pool.query(
+      `INSERT INTO provider_calls
+       (order_id, provider, provider_account_id, operation, request_key, attempt_no,
+        http_status, business_code, outcome, started_at, finished_at, duration_ms)
+       VALUES (?, 'zzshu', ?, 'create_direct', ?, 1, 400, '40030', 'DEFINITE_FAILURE',
+        CURRENT_TIMESTAMP(3), CURRENT_TIMESTAMP(3), 1)`,
+      [fixture.orderId, '00000000-0000-4000-8000-000000000102',
+        `session-cancel-call-${fixture.orderId}`]
+    );
+    const [[order]] = await pool.query('SELECT public_no FROM orders WHERE id=?', [fixture.orderId]);
+    const result = await createOrderCancellationService({ pool })(order.public_no, {
+      confirmation: `取消订单 ${order.public_no}`,
+      reason: 'customer abandoned Session replacement'
+    });
+    assert.deepEqual({ status: result.status, cardReleased: result.cardReleased,
+      cardInventoryStatus: result.cardInventoryStatus },
+    { status: 'CLOSED', cardReleased: true, cardInventoryStatus: 'AVAILABLE' });
+    const [[stored]] = await pool.query(
+      `SELECT o.status, c.inventory_status, h.status AS assignment_status
+       FROM orders o INNER JOIN cards c ON c.id=?
+       INNER JOIN card_assignment_history h ON h.card_id=c.id AND h.order_id=o.id
+       WHERE o.id=?`, [cardId, fixture.orderId]
+    );
+    assert.deepEqual(stored, {
+      status: 'CLOSED', inventory_status: 'AVAILABLE', assignment_status: 'RELEASED'
+    });
+  } finally {
+    await pool.query('DELETE FROM provider_calls WHERE order_id=?', [fixture.orderId]);
+    await pool.query('DELETE FROM card_assignment_history WHERE card_id=?', [cardId]);
+    await pool.query('DELETE FROM cards WHERE id=?', [cardId]);
+    await removeOrder(pool, fixture);
+    await pool.end();
+  }
+});
+
 test('MySQL enforces one CDK per order and records transitions atomically', {
   skip: !databaseUrl && 'TEST_DATABASE_URL 未配置；完整 MySQL 套件在服务器隔离数据库运行'
 }, async () => {

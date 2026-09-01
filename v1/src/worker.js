@@ -15,6 +15,8 @@ import { buildDirectOrderRequest } from './providers/zzshu-recharge.js';
 import { recordProviderCall } from './providers/provider-call-recorder.js';
 import { createWorkflowHandlers } from './workers/workflow-handlers.js';
 import { runWorkerLoop } from './workers/worker-runtime.js';
+import { createOrderCancellationService } from './services/order-cancellation-service.js';
+import { createSessionRepairExpiryService } from './services/session-repair-expiry-service.js';
 
 const config = loadWorkerConfig();
 const pool = createDatabasePool(config.database);
@@ -66,6 +68,10 @@ const workflow = createWorkflowRepository(pool, {
 });
 const rechargeAttemptRepository = createRechargeAttemptRepository(pool);
 const browserDispatchRepository = createBrowserDispatchRepository(pool);
+const closeExpiredSessionRepairOrders = createSessionRepairExpiryService({
+  pool,
+  cancelOrder: createOrderCancellationService({ pool })
+});
 const handlers = createWorkflowHandlers({
   workflow,
   cardProvider,
@@ -102,13 +108,19 @@ await runWorkerLoop({
   providerWritesEnabled: config.providerWritesEnabled,
   providerCardWritesEnabled: config.providerCardWritesEnabled,
   providerRechargeWritesEnabled: config.providerRechargeWritesEnabled,
-  heartbeat: () => pool.query(
-    `INSERT INTO app_settings (setting_key, setting_value)
-     VALUES ('worker_heartbeat_at', ?), ('worker_recharge_writes_enabled', ?)
-     ON DUPLICATE KEY UPDATE setting_value=VALUES(setting_value),
-       updated_at=CURRENT_TIMESTAMP(3)`,
-    [new Date().toISOString(), String(config.providerRechargeWritesEnabled)]
-  ),
+  heartbeat: async () => {
+    await pool.query(
+      `INSERT INTO app_settings (setting_key, setting_value)
+       VALUES ('worker_heartbeat_at', ?), ('worker_recharge_writes_enabled', ?)
+       ON DUPLICATE KEY UPDATE setting_value=VALUES(setting_value),
+         updated_at=CURRENT_TIMESTAMP(3)`,
+      [new Date().toISOString(), String(config.providerRechargeWritesEnabled)]
+    );
+    const cleanup = await closeExpiredSessionRepairOrders();
+    if (cleanup.closed || cleanup.reviewRequired) {
+      console.log(JSON.stringify({ sessionRepairExpiry: cleanup }));
+    }
+  },
   signal: abortController.signal,
   onError: (error) => {
     console.error('worker iteration failed', {

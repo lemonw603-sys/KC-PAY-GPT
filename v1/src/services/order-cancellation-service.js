@@ -36,6 +36,15 @@ export function createOrderCancellationService({ pool }) {
                 t.attempts AS submit_attempts,
                 ta.id AS assign_task_id, ta.status AS assign_task_status,
                 ta.attempts AS assign_attempts,
+                (SELECT COUNT(*) FROM recharge_attempts cancellation_attempt
+                  WHERE cancellation_attempt.order_id=o.id
+                    AND cancellation_attempt.funds_risk_state IN ('ACTIVE','UNKNOWN','SETTLED'))
+                  AS unsafe_attempt_count,
+                (SELECT COUNT(*) FROM provider_calls cancellation_call
+                  WHERE cancellation_call.order_id=o.id
+                    AND cancellation_call.operation='create_direct'
+                    AND cancellation_call.outcome <> 'DEFINITE_FAILURE')
+                  AS unsafe_provider_call_count,
                 JSON_UNQUOTE(JSON_EXTRACT(t.payload_json, '$.rechargePermit.status')) AS permit_status
          FROM orders o
          LEFT JOIN cards c ON (c.id = o.assigned_card_id OR (o.assigned_card_id IS NULL AND c.order_id = o.id))
@@ -116,19 +125,30 @@ export function createOrderCancellationService({ pool }) {
         return { publicNo: order.public_no, status: 'CLOSED', cardReleased: false,
           cardInventoryStatus: null, replayed: false };
       }
-      if (order.status !== 'CARD_READY') {
+      const waitingForReplacement = order.status === 'WAITING_FOR_SESSION';
+      if (!waitingForReplacement && order.status !== 'CARD_READY') {
         throw new OrderCancellationError('Order is not awaiting recharge', 'ORDER_CANCELLATION_NOT_ELIGIBLE');
       }
       if (!order.card_id || !order.submit_task_id) {
         throw new OrderCancellationError('Order state is incomplete', 'ORDER_CANCELLATION_REVIEW_REQUIRED');
       }
-      if (order.submit_task_status !== 'PENDING' || Number(order.submit_attempts) !== 0
-        || order.permit_status === 'CONSUMED' || order.recharge_order_no || order.recharge_card_key) {
+      const replacementSafelyRejected = waitingForReplacement
+        && order.submit_task_status === 'DEAD'
+        && Number(order.unsafe_attempt_count || 0) === 0
+        && Number(order.unsafe_provider_call_count || 0) === 0
+        && !order.recharge_order_no && !order.recharge_card_key;
+      const untouchedCardReady = !waitingForReplacement
+        && order.submit_task_status === 'PENDING'
+        && Number(order.submit_attempts) === 0
+        && order.permit_status !== 'CONSUMED'
+        && !order.recharge_order_no && !order.recharge_card_key;
+      if (!replacementSafelyRejected && !untouchedCardReady) {
         throw new OrderCancellationError('Recharge may have started', 'ORDER_CANCELLATION_SUBMISSION_RISK');
       }
       const [calls] = await connection.query(
         `SELECT id FROM provider_calls
          WHERE order_id = ? AND provider = 'zzshu' AND operation = 'create_direct'
+           AND outcome <> 'DEFINITE_FAILURE'
          LIMIT 1 FOR UPDATE`, [order.id]
       );
       if (calls.length) {
@@ -143,8 +163,13 @@ export function createOrderCancellationService({ pool }) {
       const [released] = await connection.query(
         `UPDATE cards SET inventory_status = CASE
              WHEN current_balance >= ? THEN 'AVAILABLE' ELSE 'DEPLETED' END,
-           assigned_at = NULL, updated_at = CURRENT_TIMESTAMP(3)
-         WHERE id = ?`, [String(order.minimum_required_card_balance), order.card_id]
+           assigned_at = NULL,
+           sync_tier = CASE WHEN current_balance >= ? THEN 'AVAILABLE' ELSE sync_tier END,
+           next_sync_at = CASE WHEN current_balance >= ? THEN CURRENT_TIMESTAMP(3) ELSE next_sync_at END,
+           updated_at = CURRENT_TIMESTAMP(3)
+         WHERE id = ?`, [String(order.minimum_required_card_balance),
+          String(order.minimum_required_card_balance), String(order.minimum_required_card_balance),
+          order.card_id]
       );
       if (Number(released.affectedRows) !== 1) {
         throw new OrderCancellationError('Card assignment changed concurrently', 'ORDER_CANCELLATION_ORDER_CHANGED');
@@ -175,7 +200,7 @@ export function createOrderCancellationService({ pool }) {
            failure_code = 'CANCELLED_PRE_SUBMISSION',
            failure_reason = ?, version = version + 1, finished_at = CURRENT_TIMESTAMP(3),
            updated_at = CURRENT_TIMESTAMP(3)
-         WHERE id = ? AND status = 'CARD_READY'`, [reason, order.id]
+         WHERE id = ? AND status = ?`, [reason, order.id, order.status]
       );
       if (Number(closed.affectedRows) !== 1) {
         throw new OrderCancellationError('Order changed concurrently', 'ORDER_CANCELLATION_ORDER_CHANGED');
@@ -183,8 +208,10 @@ export function createOrderCancellationService({ pool }) {
       await connection.query(
         `INSERT INTO order_events
          (order_id, from_status, to_status, actor_type, actor_id, reason, metadata_json)
-         VALUES (?, 'CARD_READY', 'CLOSED', 'ADMIN', 'admin', ?, ?)`,
-        [order.id, 'order cancelled before recharge; card capacity released', JSON.stringify({
+         VALUES (?, ?, 'CLOSED', 'ADMIN', 'admin', ?, ?)`,
+        [order.id, order.status, waitingForReplacement
+          ? 'Session replacement order closed after definite no-funds rejection; card capacity released'
+          : 'order cancelled before recharge; card capacity released', JSON.stringify({
           reason, cardId: order.card_id, cardTypeId: order.card_type_id
         })]
       );

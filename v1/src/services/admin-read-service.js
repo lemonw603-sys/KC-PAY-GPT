@@ -1044,6 +1044,14 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
     let cancellationCode = 'ORDER_CANCELLATION_NOT_ELIGIBLE';
     if (row.status === 'CLOSED' && row.failure_code === 'CANCELLED_PRE_SUBMISSION') {
       cancellationCode = 'ORDER_CANCELLATION_ALREADY_COMPLETED';
+    } else if (row.status === 'WAITING_FOR_SESSION'
+      && row.provider_card_id
+      && submitTask?.status === 'DEAD'
+      && (!authorization || authorization.funds_risk_state === 'CLEARED')
+      && !row.recharge_order_no
+      && callRows.filter((call) => call.provider === 'zzshu' && call.operation === 'create_direct')
+        .every((call) => call.outcome === 'DEFINITE_FAILURE')) {
+      cancellationCode = 'ORDER_CANCELLATION_ELIGIBLE';
     } else if (row.status === 'CARD_READY'
       && submitTask?.status === 'PENDING'
       && Number(submitTask.attempts) === 0

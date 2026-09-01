@@ -28,6 +28,7 @@ function eligibleRow(overrides = {}) {
     card_id: 'card-1', card_type_id: '1', card_status: 'active', current_balance: '16',
     card_credentials_ciphertext: Buffer.from('encrypted'), last_synced_at: new Date(),
     submit_task_id: 7, submit_task_status: 'PENDING', submit_attempts: 0, permit_status: 'LOCKED',
+    unsafe_attempt_count: 0, unsafe_provider_call_count: 0,
     ...overrides
   };
 }
@@ -88,4 +89,33 @@ test('cancellation releases assignment while freshness rules still guard reuse',
     'PJV1-DEMO', { confirmation: '取消订单 PJV1-DEMO' }
   );
   assert.equal(result.cardInventoryStatus, 'AVAILABLE');
+});
+
+test('cancellation releases a waiting-for-session card after a definite no-funds rejection', async () => {
+  const pool = fakePool([
+    [[eligibleRow({ status: 'WAITING_FOR_SESSION', failure_code: 'TARGET_ACCOUNT_ALREADY_PLUS',
+      submit_task_status: 'DEAD', submit_attempts: 1 })], []],
+    [[], []], [{ affectedRows: 1 }, []], [{ affectedRows: 1 }, []],
+    [{ affectedRows: 1 }, []], [{ affectedRows: 1 }, []], [{ affectedRows: 1 }, []]
+  ]);
+  const result = await createOrderCancellationService({ pool })(
+    'PJV1-DEMO', { confirmation: '取消订单 PJV1-DEMO', reason: 'customer abandoned replacement' }
+  );
+  assert.equal(result.status, 'CLOSED');
+  assert.equal(result.cardReleased, true);
+  assert.equal(result.cardInventoryStatus, 'AVAILABLE');
+  assert.equal(pool.queries.some(({ sql, values }) => /VALUES \(\?, \?, 'CLOSED'/.test(sql)
+    && values[1] === 'WAITING_FOR_SESSION'), true);
+});
+
+test('cancellation keeps a waiting-for-session card locked when funds are not proven clear', async () => {
+  const pool = fakePool([[[eligibleRow({ status: 'WAITING_FOR_SESSION', submit_task_status: 'DEAD',
+    submit_attempts: 1, unsafe_attempt_count: 1 })], []]]);
+  await assert.rejects(
+    createOrderCancellationService({ pool })(
+      'PJV1-DEMO', { confirmation: '取消订单 PJV1-DEMO' }
+    ),
+    (error) => error.code === 'ORDER_CANCELLATION_SUBMISSION_RISK'
+  );
+  assert.equal(pool.queries.some(({ sql }) => /UPDATE cards/.test(sql)), false);
 });
