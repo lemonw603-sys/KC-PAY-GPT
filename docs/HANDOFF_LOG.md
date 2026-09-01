@@ -983,3 +983,10 @@
 - 当前 `main` 已修复两层：历史失败订单详情只读提取最新 attempt 的 `failureReason` 并标为“Provider 返回原因”；未来轮询确认失败时，将脱敏后的 Provider 原文同时写入订单主表。提交前拒绝也把错误原文写入 attempt 摘要，供详情读取。
 - 敏感字段通过既有 `redactSensitiveText` 后才进入订单展示/主表；无 Provider 原文时继续使用通用兜底，不猜测拒付原因。
 - 验证：定向 60/60；`v1 npm test` 共 515 项，472 通过、43 项因未配置隔离数据库跳过、0 失败。当前仅为代码候选，尚未部署生产，未创建订单、未调用 Provider、未执行任何资金动作。
+
+# 2026-09-01｜Provider 真实失败原因候选部署
+
+- 用户明确确认部署 `569e8ee`；构建不可变 release `/opt/pojia/releases/20260901-provider-reason-569e8ee`，归档 SHA-256 `8ea742c9b2ad49a6556ca3e60f1f8a86d49f677afacbeaa210ed35a894b8a9b8`，直接回滚点 `/opt/pojia/releases/20260901-admin-refresh-2f1fa0a`。
+- 部署前只读 preflight `ok=true/blockers=[]`、活动任务/UNKNOWN 资金风险/开放对账均为 0；加密数据库备份 `/var/backups/pojia/pojia-20260901T075052Z.sql.gz.enc` 完整性通过。unit/release 快照目录：`/var/backups/pojia/provider-reason-569e8ee-20260901T075346Z`。
+- 原子切换后 Web/Worker 和三个补给 timer 均 active，Browser Worker 保持 disabled/inactive；API 最小充值权限 true，通用 Provider/普通卡片写 false。公网 ops/plus readiness 均正常，部署后 preflight 继续 `ok=true/blockers=[]`，活动任务和资金风险均为 0，最近 Web/Worker 无 warning/error。
+- 使用生产新代码对既有失败订单 `PJV1-412JIT_yfiuBpZeC39_m` 做只读投影验证：`failureReason=卡片被拒，请换卡后重提`、`failureReasonSource=PROVIDER_ATTEMPT`；生产静态资源已包含“Provider 返回原因”。未创建订单、未调用 Provider、未执行资金动作。

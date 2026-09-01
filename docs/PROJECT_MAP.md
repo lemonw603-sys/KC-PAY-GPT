@@ -1,7 +1,7 @@
 # AI充值业务｜唯一项目规划地图
 
 > **用途**：只回答四件事：项目目标、当前生产事实、已完成/未完成、唯一执行顺序。
-> **最后统一核对**：2026-09-01 15:28 CST。已对照前后端代码，并通过 SSH 复核当前生产 release、systemd、Worker 实际进程环境和只读 readiness；本轮未执行 Provider 写入或付款。
+> **最后统一核对**：2026-09-01 15:54 CST。已对照前后端代码，并通过 SSH 复核部署后的生产 release、systemd、Worker 实际进程环境、只读 readiness 和历史失败原因投影；本轮未执行 Provider 写入或付款。
 > 历史报告不能覆盖本地图；实时生产事实优先，变化后必须同步更新本地图与 `CURRENT_STATE.md`。
 > 全链路、控制矩阵、自动补给状态机、库存最小模型、资金边界、通知、回滚和验收细则统一见 `docs/PROJECT_OPERATING_MODEL.md`。
 
@@ -36,7 +36,7 @@
 
 | 项目 | 当前事实 | 证据/含义 |
 |---|---|---|
-| 生产 release | `/opt/pojia/releases/20260901-admin-refresh-2f1fa0a` | `/opt/pojia/current` 现场读取；直接回滚点为 `20260901-session-release-d1c4d32` |
+| 生产 release | `/opt/pojia/releases/20260901-provider-reason-569e8ee` | `/opt/pojia/current` 现场读取；直接回滚点为 `20260901-admin-refresh-2f1fa0a` |
 | Web / API Worker | active / active | systemd 现场读取 |
 | Browser Worker | inactive / disabled | 未进入真实 Browser 付款 |
 | 接单 / 派发 | true / true | 只读 readiness；当前后台已处于营业业务状态 |
@@ -44,13 +44,13 @@
 | Worker 最终 API 充值能力 | **true** | 已安装最小权限 drop-in，重启后进程环境为 `PROVIDER_RECHARGE_WRITES_ENABLED=true` |
 | Provider recharge account | `write_enabled=1` | 数据库只读核对；Worker 进程充值 gate 同样为 true，当前可执行 |
 | Provider card account | `write_enabled=0`，circuit=CLOSED | 当前 stock/funding runner **不以该字段为写门禁**，而以各自窄范围进程 gate 为准；这个语义不一致需在后续收敛，不得猜测它当前会阻断补给 |
-| readiness | **只读 preflight 通过** | 2026-09-01 15:28 CST：`ok=true`、`blockers=[]`、Worker heartbeat 13 秒；这不等于逐单 Session/账号/Provider 最终结果已验证 |
+| readiness | **只读 preflight 通过** | 2026-09-01 15:54 CST：`ok=true`、`blockers=[]`、Worker heartbeat 2 秒；这不等于逐单 Session/账号/Provider 最终结果已验证 |
 | 通用 Provider / 卡片写 | false / false | Worker 进程环境 |
 | 独立自动补余额 | DB gate=true；`pojia-card-funding.timer` 与 reconcile timer active/enabled | 独立 runner 只开补余额所需卡片写；空闲零写已验证，首笔真实补余额未验收 |
 | 独立自动开卡 | DB gate=true；`pojia-card-stock-runner.timer` active/enabled，60 秒兜底 | stock runner 只开开卡所需卡片写；真实缺卡订单闭环未验收 |
 | 当前 Plus 可立即分配 | **0 张** | `1839/1013` 本次支付被拒后已由用户停用，当前 `invalidating/$0.01`；旧批次均 `RETIRED`，4744 为 Claude 专用，不得补余额后冒充 Plus 库存 |
 | 每卡成功次数上限 | 3 | 已部署；连续跨订单实证仍不足 |
-| 活动任务/资金风险/开放对账 | 0 / 0 / 0 | 2026-09-01 15:28 CST 只读 preflight |
+| 活动任务/资金风险/开放对账 | 0 / 0 / 0 | 2026-09-01 15:54 CST 只读 preflight |
 | 最新 migration | 044 | 只读 readiness |
 | 最新订单 | `PJV1-412JIT_yfiuBpZeC39_m`=`RECHARGE_FAILED` | API 订单完成一次提交与轮询；Provider 返回明确失败“卡片被拒，请换卡后重提”，外部订单号 `8849`，资金风险已清除，无成功付款；卡片按失败策略保留为不可直接分配，待后续核对 |
 
@@ -62,7 +62,7 @@
 
 用户已在卡台删除/停用该卡；最新只读状态为 `invalidating/$0.01`，本地已同步。失败订单的 ACTIVE assignment 仍保留作为审计证据，不参与新订单资格计算。
 
-该单暴露的后台失败原因噪音已在当前 `main` 修复、尚未部署：详情优先显示 attempt 中经脱敏的真实 Provider 失败原文，未来确认失败也会把该原文落到订单主表；通用失败文案只作为无原文时的兜底。
+该单暴露的后台失败原因噪音已部署修复：生产只读投影已返回 attempt 中经脱敏的真实 Provider 原文“卡片被拒，请换卡后重提”；未来确认失败也会把该原文落到订单主表，通用失败文案只作为无原文时的兜底。
 
 库存口径更正：旧批次未绑定卡不是“余额不足可补款”，而是已确认因服务器更换永久不可用，`card_operational_overrides` 均为 `RETIRED`；4744/1065 为 Claude 专用。它们不得进入自动补余额或新订单分配。只有未来新接管且通过实时证据的卡才纳入 Plus 库存。
 
@@ -142,7 +142,7 @@
 ### P3｜控制面二次收敛
 
 - 以 P1/P2 的真实操作证据收敛入口、重复信息和提醒。
-- 先部署并只读复验已完成的 Provider 失败原因透传候选；不为此创建测试订单。
+- Provider 失败原因透传已部署并用既有失败单只读复验，不为此创建测试订单。
 - 日常首页目标：默认充值方式 + 开始/暂停营业 + 一行就绪状态。
 - 底层权限应显示真实状态但不要求逐单操作；明确无入口项的处理方式。
 

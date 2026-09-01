@@ -1,12 +1,12 @@
-# 当前生产状态快照｜2026-09-01 15:28 CST
+# 当前生产状态快照｜2026-09-01 15:54 CST
 
 > 只保留当前有效事实；历史过程查 `HANDOFF_LOG.md`，方向与顺序查 `PROJECT_MAP.md`，全链路和验收细则查 `PROJECT_OPERATING_MODEL.md`。
 > 本快照已现场核对生产 release、systemd、Worker 进程环境、数据库 Provider account 和只读 readiness；Browser 主线只读回归证据见 `docs/2026-09-01_browser-main-readonly-regression.md`。
 
 ## 1. 代码、release 与服务
 
-- 生产已部署卡片异常占用释放修复 `2bce69e`（核心修复 `d1c4d32`）；该 release 同时包含客户充值页重设计 `b4cc5ea` 和此前 `3f23aa3` 供应规划修复。
-- 生产 `/opt/pojia/current`：`/opt/pojia/releases/20260901-admin-refresh-2f1fa0a`；直接回滚点为 `/opt/pojia/releases/20260901-session-release-d1c4d32`。
+- 生产已部署 Provider 真实失败原因透传 `569e8ee`；该 release 同时包含后台刷新修复 `2f1fa0a`、卡片异常占用释放 `2bce69e`、客户充值页重设计 `b4cc5ea` 和供应规划修复 `3f23aa3`。
+- 生产 `/opt/pojia/current`：`/opt/pojia/releases/20260901-provider-reason-569e8ee`；直接回滚点为 `/opt/pojia/releases/20260901-admin-refresh-2f1fa0a`。
 - 客户页已完成公网桌面/390px 移动端、教程弹层、真实历史订单查询、CSP、静态资源哈希和 Console 复验；真实成功订单的成功邮箱/时间线仍待下一单验收。详细证据见 `docs/2026-09-01_customer-recharge-redesign-production-candidate.md`。
 - `pojia-web.service=active`；`pojia-worker.service=active`。
 - `pojia-browser-worker.service=inactive/disabled`。
@@ -27,7 +27,7 @@
 - 数据库 card Provider account：`read_enabled=1`、`write_enabled=0`、`circuit_state=CLOSED`；现行 stock/funding runner 不以该 `write_enabled` 为写门禁，而以各自 systemd 窄范围 gate 为准。这是字段语义不一致，但不是当前补给的实际阻断。
 - Worker 进程已具备 API 最终充值能力；数据库 recharge Provider account 同样允许写。
 - `/health/ready` 返回 `{"status":"ready"}`；Worker 重启后 active/running，进程环境实际为 `PROVIDER_RECHARGE_WRITES_ENABLED=true`。
-- 2026-09-01 15:28 CST 再次现场核对：默认路线为 API，接单/自动派发/API 最小充值权限、自动开卡和自动补余额均为 true；Browser Worker 仍关闭。只读 preflight `ok=true/blockers=[]`、活动任务 0、UNKNOWN 资金风险 0、开放对账 0，Worker heartbeat 13 秒。尾号 1013 已由用户停用，当前没有 Plus 可直接分配卡。
+- 2026-09-01 15:54 CST 部署后现场核对：默认路线为 API，接单/自动派发/API 最小充值权限、自动开卡和自动补余额均为 true；Browser Worker 仍关闭。只读 preflight `ok=true/blockers=[]`、活动任务 0、UNKNOWN 资金风险 0、开放对账 0，Worker heartbeat 2 秒。尾号 1013 已由用户停用，当前没有 Plus 可直接分配卡。
 
 ### 当前结论
 
@@ -96,6 +96,6 @@
 - 同一状态响应中的目标账号套餐为 `free`，因此本次不是已是 Plus 的 `40030` 分支；创建、轮询均有明确响应，不是超时或 `SUBMIT_UNKNOWN`。
 - HNSKJ 只读复验：卡 `1839`/尾号 `1013` 为 `active`、余额 `$16.00`、资料完整；交易仅有 `$16.00 CARD_RECHARGE SUCCESS`，没有对应 `PURCHASE`。这证明卡台侧就绪不等于 ZZSHU/商户侧消费一定获批，但没有证据证明已扣款。
 - 结论边界：已确认是上游支付处理方拒绝该卡；上游未提供更细 decline code，不能擅自归因于余额、3DS、CVV、BIN、地区或银行规则。详见 `docs/2026-09-01_order-412JIT-card-decline-investigation.md`。
-- 后台失败原因透传已在当前 `main` 完成、尚未部署：历史失败单会只读提取最新 attempt 的 `failureReason` 并明确标成“Provider 返回原因”；未来轮询确认失败时也会把脱敏后的 Provider 原文写入订单主表。现有生产仍是旧展示，需部署本候选后生效。
+- 后台失败原因透传已部署：历史订单 `PJV1-412JIT_yfiuBpZeC39_m` 经生产代码和数据库只读调用实际返回“卡片被拒，请换卡后重提”，来源为 `PROVIDER_ATTEMPT`；未来轮询确认失败时也会把脱敏后的 Provider 原文写入订单主表。
 - 用户随后在卡台删除/停用该卡。现场复查 HNSKJ 显示 `1839/1013=invalidating`、余额 `$0.01`；本地原快照曾滞后为 `active/$16`，已执行一次只读同步更新本地快照。因失败订单仍有 ACTIVE assignment，本地 `inventory_status=ASSIGNED` 继续保留审计关联，资格计算不会分配该卡。
 - 口径更正：未绑定的旧卡（`203/261/314/315/316/317/332/333/334/335/444/451/493/612/616/617/917`）不是“余额不足等待补款”，而是因同批服务器更换已确认永久不可用，均有 `card_operational_overrides.allocation_policy=RETIRED`，不得进入自动补余额或新订单分配。`1065/4744` 为 Claude 专用，不属于 Plus 库存。后续只有新接管且通过实时证据的卡才可进入补给/分配流程。
