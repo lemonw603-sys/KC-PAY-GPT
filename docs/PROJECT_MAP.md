@@ -115,7 +115,7 @@
 - 保持 `RECHARGE_SUBMIT_HOLD_BEFORE_PROVIDER` 关闭。
 - 部署/重启后只读验证：readiness `ok=true`、Worker 心跳能力为 true、无活动测试 task/attempt/资金栅栏。
 - 这是恢复已确认生产基线，不把它做成每单手动开关。
-- 当前 `2bce69e` 已部署并完成部署后健康核对；无 migration 变化，直接回滚点 `d1c4d32` 保留。
+- 当前生产为 `569e8ee`，已完成部署后健康与失败原因投影核对；无 migration 变化，直接回滚点为 `2f1fa0a`。
 
 ### P1｜下一笔真实 API 订单
 

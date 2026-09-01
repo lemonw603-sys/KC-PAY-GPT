@@ -990,3 +990,9 @@
 - 部署前只读 preflight `ok=true/blockers=[]`、活动任务/UNKNOWN 资金风险/开放对账均为 0；加密数据库备份 `/var/backups/pojia/pojia-20260901T075052Z.sql.gz.enc` 完整性通过。unit/release 快照目录：`/var/backups/pojia/provider-reason-569e8ee-20260901T075346Z`。
 - 原子切换后 Web/Worker 和三个补给 timer 均 active，Browser Worker 保持 disabled/inactive；API 最小充值权限 true，通用 Provider/普通卡片写 false。公网 ops/plus readiness 均正常，部署后 preflight 继续 `ok=true/blockers=[]`，活动任务和资金风险均为 0，最近 Web/Worker 无 warning/error。
 - 使用生产新代码对既有失败订单 `PJV1-412JIT_yfiuBpZeC39_m` 做只读投影验证：`failureReason=卡片被拒，请换卡后重提`、`failureReasonSource=PROVIDER_ATTEMPT`；生产静态资源已包含“Provider 返回原因”。未创建订单、未调用 Provider、未执行资金动作。
+
+# 2026-09-01｜无真实订单期间的 Browser 只读前置复核
+
+- 在当前生产 release `569e8ee` 使用生产 Browser 只读环境重新执行 `production-readonly-worker.js --check`，结果为 `READY`。
+- Browser Worker 仍为 disabled/inactive，默认路线仍为 API；未创建测试订单、未读取 Session、未访问 ChatGPT、未调用 Provider、未付款。
+- 下一项有价值的 Browser 验收仍是客户式测试 CDK+Session 走到付款按钮前停止；需要临时切换默认路线并启动 Browser Worker时再单独确认。
