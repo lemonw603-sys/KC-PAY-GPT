@@ -718,3 +718,10 @@ active permits=0、`PAYMENT_SUBMIT`=0、live resource leases=0、external paymen
 - 显式配置 `BROWSER_RUNTIME_PROVIDER=BITBROWSER` + `BROWSER_BITBROWSER_ENABLED=true` 才启用；Local API/CDP 必须 loopback，异常时尝试关闭 Profile。
 - 当前默认 Google Chrome，Browser Worker/付款/卡台写入均未启用；未部署。
 - 合同：`docs/contracts/2026-09-02_bitbrowser-profile-runtime-contract.md`。
+
+# 2026-09-02｜BitBrowser Session 只读实测停止点
+
+- 首次实测已证明 Session 登录/身份匹配，账号为 `FREE`；现有 Checkout 过渡合同超时，未识别套餐与金额。
+- 诊断性重进遇到订阅接口 HTTP 403，在 Plus 点击前 fail-closed，不再重试。
+- 未建单、未连生产队列、未读/填卡、未点付款，Profile 已关闭。
+- 完整证据：`docs/browser-research/BITBROWSER_SESSION_CHECKOUT_READONLY_2026-09-02.md`。

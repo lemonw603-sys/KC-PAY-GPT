@@ -195,4 +195,12 @@ git diff --check
 - 生产只读 Worker 仅在 `BROWSER_RUNTIME_PROVIDER=BITBROWSER` 且 `BROWSER_BITBROWSER_ENABLED=true` 时选用该 adapter；默认继续为 Google Chrome，五个写开关和 payment `false/MOCK` 规则不变。
 - 未改共享 queue/run/lease/attempt/资金栅栏/消费账本/审计；未写入代理订阅、密码、Session 或卡资料。
 - 完整配置、Local API/CDP 和崩溃收口合同：`docs/contracts/2026-09-02_bitbrowser-profile-runtime-contract.md`。
-- 当前只完成代码/mock 测试；未部署、未连生产队列、未登录或付款。
+- adapter 实现阶段完成代码/mock 测试且未部署；随后的真实非付款登录证据见第 12 节，付款仍未执行。
+
+## 12. 2026-09-02 BitBrowser Session / Checkout 只读观察
+
+- 已使用独立测试 Profile 和已确认测试 Session 进行一次真实非付款观察；未创建订单、未连生产队列。
+- 首次实测 ChatGPT 首页 HTTP 200，Session 身份摘要完全匹配，账号检查 HTTP 200 且状态为 `FREE`。
+- 进入 Plus 选择流程后，现有合同等待 Checkout/问卷过渡超时，未识别套餐/币种/金额；已 fail-closed 收口。
+- 单次诊断性重进时订阅检查 HTTP 403，按 `ACCOUNT_STATUS_UNKNOWN` 在 Plus 点击前停止，不继续重试。
+- 两次均为卡字段写入 0、payment submit 0、项目 Provider/卡台调用 0，Profile 已关闭。证据：`docs/browser-research/BITBROWSER_SESSION_CHECKOUT_READONLY_2026-09-02.md`。
