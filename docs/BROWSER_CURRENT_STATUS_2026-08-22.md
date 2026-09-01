@@ -1,6 +1,6 @@
 # Browser 项目当前状态与接班点（2026-08-22）
 
-> **2026-09-02 生产出口阻断更新：** 生产出口 `144.34.180.184` 在无 Browser、无 Session 的普通 HTTPS 请求阶段即收到 Cloudflare HTTP 403 challenge；生产 headless Chromium 的无登录首页/登录页观察同样为 `Just a moment...`。当前最可能原因是出口 IP/ASN/地域，headless 是否影响挑战通过率仍未验证。生产 Browser Worker 保持 `disabled/inactive`；API 默认路线不依赖该页面访问，不受影响。后续只比较“批准的稳定出口”和“迁移到可正常访问的执行主机”，实测前不预设住宅代理。证据：`docs/browser-research/PRODUCTION_CHATGPT_ACCESS_BLOCK_DIAGNOSIS_2026-09-02.md`。
+> **2026-09-02 生产出口阻断更新：** 生产出口 `144.34.180.184` 在无 Browser、无 Session 的普通 HTTPS 请求阶段即收到 Cloudflare HTTP 403 challenge；生产 headless Chromium 的无登录首页/登录页观察同样为 `Just a moment...`。后续本地同出口 A/B 已证明 curl/headless 403、headed 200，浏览器形态/图形会话至少是关键变量；生产出口 IP/ASN/地域仅为未排除因素，不再写成已确认根因。生产 Browser Worker 保持 `disabled/inactive`；API 默认路线不依赖该页面访问，不受影响。后续只比较“批准的稳定出口”和“迁移到可正常访问的执行主机”，实测前不预设住宅代理。证据：`docs/browser-research/PRODUCTION_CHATGPT_ACCESS_BLOCK_DIAGNOSIS_2026-09-02.md`。
 
 > **2026-08-31 兼容性更新：** 基于 `main@9d3d5f4` 复核一卡多单、自动补余额、全局默认充值方式和 15 分钟交易证据门槛时，发现 Browser adapter 仍按 `cards.order_id = orders.id` 绑定卡片，会拒绝 `orders.assigned_card_id` 指向历史订单卡片的合法复用场景。现已改为 `assigned_card_id + RESERVED 消费账本` 权威绑定并保留旧数据回退；Browser 109/105/0/4、共享定向 55/55、隔离 MySQL 复用卡 2/2 与完整非付款 dry-run 1/1 通过。未部署、未接生产、未付款。证据：`docs/browser-research/BROWSER_CARD_REUSE_COMPATIBILITY_2026-08-31.md`。
 

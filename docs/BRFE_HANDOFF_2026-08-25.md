@@ -1,6 +1,6 @@
 # BRFE 接班入口（Browser 线，2026-08-25）
 
-> **2026-09-02 最新停止点：** 生产只读诊断已证明出口 `144.34.180.184` 在无 Browser、无 Session 的普通 HTTPS 阶段就被 Cloudflare 返回 403 challenge；无登录 headless Chromium 同样停在 `Just a moment...`。当前不是 Session 或付款问题，最可能是出口 IP/ASN/地域；headed A/B 因生产无显示环境尚未完成。生产 Browser Worker 必须保持 `disabled/inactive`，API 默认路线不受影响。下一唯一动作是对“批准的稳定出口”或“可正常访问的执行主机”做相同无登录只读 A/B，不预设住宅代理。详见 `docs/browser-research/PRODUCTION_CHATGPT_ACCESS_BLOCK_DIAGNOSIS_2026-09-02.md`。
+> **2026-09-02 最新停止点：** 生产只读诊断已证明出口 `144.34.180.184` 在无 Browser、无 Session 的普通 HTTPS 阶段就被 Cloudflare 返回 403 challenge；无登录 headless Chromium 同样停在 `Just a moment...`。当前不是 Session 或付款问题；本地同出口 A/B 已证明 curl/headless 403、headed 200，浏览器形态/图形会话至少是关键变量。生产因无 headed 对照，出口 IP/ASN/地域只保留为未排除因素。生产 Browser Worker 必须保持 `disabled/inactive`，API 默认路线不受影响。下一唯一动作是对“批准的稳定出口”或“可正常访问的执行主机”做相同无登录只读 A/B，不预设住宅代理。详见 `docs/browser-research/PRODUCTION_CHATGPT_ACCESS_BLOCK_DIAGNOSIS_2026-09-02.md`。
 
 > **2026-08-31 最新接班点：** Browser 已对齐 `main@9d3d5f4`。一卡多单兼容复核修复了旧 `cards.order_id = orders.id` 假设，当前以 `orders.assigned_card_id + RESERVED card_consumption_ledger` 绑定复用卡；自动补余额仍完全属于共享上游，Browser 只消费同步后的权威余额和 15 分钟交易证据。全量及隔离 MySQL 非付款测试通过，生产未部署、Worker 未启动、付款未执行。下一步是统筹审查本分支提交并安全合入，详见 `docs/browser-research/BROWSER_CARD_REUSE_COMPATIBILITY_2026-08-31.md`。
 

@@ -4,7 +4,7 @@
 
 生产服务器出口 `144.34.180.184` 在**没有 Browser、没有 Session**的普通 HTTPS 请求阶段即被 Cloudflare 返回 HTTP 403 challenge。生产安装的 Chromium headless 使用全新、无登录 Context 访问 ChatGPT 首页和登录页时得到相同的 403、`Just a moment...` 和验证页面。
 
-因此，本次 `CHATGPT_ACCESS_BLOCKED` 的直接触发层已经定位为**生产公网出口到 Cloudflare 的边缘访问挑战**。出口 IP、ASN 或地域是当前最可能原因；headless 特征不是触发 403 的必要条件，但是否影响挑战通过率尚未完成 headed A/B，不能下定论。
+因此，本次 `CHATGPT_ACCESS_BLOCKED` 的直接触发层已经定位为 Cloudflare 边缘挑战，但**不能再把生产出口 IP、ASN 或地域写成已确认根因**。后续同一台本地 Mac、同一出口的 A/B 已证明：curl/headless Chrome 为 403 challenge，而 headed Google Chrome 为 HTTP 200；浏览器形态与图形会话至少是关键变量。生产主机没有完成 headed 对照，出口 IP/ASN/地域只保留为未排除因素。
 
 这不是 Browser 付款失败证据，也不是客户 Session 失效证据。当前 API 默认充值路线不依赖 ChatGPT Browser 页面访问，不受本次 Browser 出口阻断影响。生产 Browser Worker 应继续保持 `disabled/inactive`，不得因本报告启动。
 
@@ -40,7 +40,7 @@
   - `https://chatgpt.com/auth/login`：HTTP 403；
   - 响应 `server: cloudflare`、HTML、带 `cf-ray`，正文含 `challenge-platform`。
 
-这证明挑战在 Session 验证和 Browser 指纹之前即可发生。
+这证明挑战在 Session 验证之前即可发生；但本地同出口 headed/headless A/B 又证明浏览器形态会改变结果，因此普通 HTTP 403 不能单独证明出口是根因。
 
 ### 3. 无登录 headless Chromium
 
@@ -59,7 +59,19 @@
 
 本轮未获得 headed 对比结果。生产主机没有 `DISPLAY`、`Xvfb` 或 `xvfb-run`；直接启动 headed Chromium 在显示环境建立前因 Crashpad/SIGTRAP 退出。安装显示设施会改变生产主机，因此没有在只读排查中执行。
 
-由此只能得出：headless 不是**触发**当前 403 的必要条件；不能得出 headed Chrome 一定通过或一定失败。
+生产主机本身仍只能得出 headed 结果未知；不能据此把生产出口或 headless 单独定为根因。
+
+## 本地 Mac 同出口 A/B 修正证据
+
+在本地 Mac 公网出口 `38.255.16.205` 上，无登录、无 Session、同一网络条件下仅切换运行形态：
+
+| 运行形态 | 首页 | 登录页 | Cloudflare challenge |
+| --- | --- | --- | --- |
+| `curl` | HTTP 403 | HTTP 403 | 是 |
+| Google Chrome headless | HTTP 403，标题 `请稍候…` | HTTP 403，标题 `请稍候…` | 是 |
+| Google Chrome headed | HTTP 200，正常公开首页 | HTTP 200，正常登录页 | 否 |
+
+证据保存在 `artifacts/browser-local-access-diag-20260902/`。这组同机同出口 A/B 证明浏览器形态/图形会话至少是关键变量，也直接推翻了“curl 403 即可确认出口 IP/ASN 是根因”的过强结论。
 
 ## 错误分类审查
 
@@ -76,7 +88,7 @@
 
 不把“住宅代理”或任何代理产品写成既定路线。只保留两个候选，并通过相同无登录只读探针实测选择：
 
-1. 使用经过批准、可固定且稳定的网络出口；
-2. 将 Browser 执行器迁移到能够正常访问 ChatGPT 的主机。
+1. 短期使用已经实测 HTTP 200 的本地 Mac headed Google Chrome，先完成非付款 pilot；
+2. 长期使用经过批准、可固定且稳定的出口或常在线执行主机，并同时验证 headed/headless，而不是只测 curl。
 
 候选出口/主机首先必须通过：DNS/TLS、普通 HTTP、headless 与 headed 同 URL 对比、连续稳定性和 sticky 一致性。全部只读门槛通过前，生产 Browser Worker继续关闭；API 默认路线照常独立运行。
