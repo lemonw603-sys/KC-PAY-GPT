@@ -188,3 +188,11 @@ git diff --check
 - 该结果只证明网络/运行时第一道可达性，不证明 Session 登录、Checkout、付款或长期稳定性。
 - 未创建订单、未连接生产队列、未读取 Session/PAN/CVC、未调用 Provider/卡台、未付款、未部署。
 - 证据与下一步：`docs/browser-research/BITBROWSER_PH_PROXY_PILOT_2026-09-02.md`。
+
+## 11. 2026-09-02 BitBrowser Profile Runtime Adapter
+
+- 已新增默认禁用的 `BitBrowserProfileRuntimeAdapter`；它只通过 loopback Local API 启停一个预配 Profile，并用 Playwright CDP 接管唯一已有 Context。
+- 生产只读 Worker 仅在 `BROWSER_RUNTIME_PROVIDER=BITBROWSER` 且 `BROWSER_BITBROWSER_ENABLED=true` 时选用该 adapter；默认继续为 Google Chrome，五个写开关和 payment `false/MOCK` 规则不变。
+- 未改共享 queue/run/lease/attempt/资金栅栏/消费账本/审计；未写入代理订阅、密码、Session 或卡资料。
+- 完整配置、Local API/CDP 和崩溃收口合同：`docs/contracts/2026-09-02_bitbrowser-profile-runtime-contract.md`。
+- 当前只完成代码/mock 测试；未部署、未连生产队列、未登录或付款。

@@ -19,6 +19,14 @@ function required(env, name) {
   return value;
 }
 
+function opaqueRef(env, name) {
+  const value = required(env, name);
+  if (!/^[a-z0-9][a-z0-9._:-]{2,127}$/i.test(value)) {
+    throw new ProductionReadonlyConfigError(`${name} must be an opaque reference`);
+  }
+  return value;
+}
+
 function integer(env, name, { min, max, fallback }) {
   const raw = String(env[name] ?? fallback);
   const value = Number(raw);
@@ -119,11 +127,48 @@ export function loadProductionReadonlyBrowserConfig(env = process.env) {
     }
   }
 
-  const executablePath = required(env, 'BROWSER_CHROME_EXECUTABLE_PATH');
-  try {
-    accessSync(executablePath, constants.X_OK);
-  } catch {
-    throw new ProductionReadonlyConfigError('BROWSER_CHROME_EXECUTABLE_PATH is not executable');
+  const runtimeProvider = String(env.BROWSER_RUNTIME_PROVIDER || 'GOOGLE_CHROME').trim().toUpperCase();
+  if (!['GOOGLE_CHROME', 'BITBROWSER'].includes(runtimeProvider)) {
+    throw new ProductionReadonlyConfigError('BROWSER_RUNTIME_PROVIDER must be GOOGLE_CHROME or BITBROWSER');
+  }
+  let executablePath = null;
+  let profilesRoot = null;
+  let bitBrowser = null;
+  if (runtimeProvider === 'GOOGLE_CHROME') {
+    if (env.BROWSER_BITBROWSER_ENABLED === 'true') {
+      throw new ProductionReadonlyConfigError(
+        'BROWSER_BITBROWSER_ENABLED cannot be true unless BROWSER_RUNTIME_PROVIDER=BITBROWSER',
+      );
+    }
+    executablePath = required(env, 'BROWSER_CHROME_EXECUTABLE_PATH');
+    profilesRoot = required(env, 'BROWSER_PROFILES_ROOT');
+    try {
+      accessSync(executablePath, constants.X_OK);
+    } catch {
+      throw new ProductionReadonlyConfigError('BROWSER_CHROME_EXECUTABLE_PATH is not executable');
+    }
+  } else {
+    if (env.BROWSER_BITBROWSER_ENABLED !== 'true') {
+      throw new ProductionReadonlyConfigError('BROWSER_BITBROWSER_ENABLED must be exactly true for BITBROWSER');
+    }
+    const apiUrl = required(env, 'BROWSER_BITBROWSER_API_URL');
+    let parsed;
+    try {
+      parsed = new URL(apiUrl);
+    } catch {
+      throw new ProductionReadonlyConfigError('BROWSER_BITBROWSER_API_URL must be a valid URL');
+    }
+    if (parsed.protocol !== 'http:' || !['127.0.0.1', '::1', 'localhost'].includes(parsed.hostname)
+      || parsed.username || parsed.password || parsed.pathname !== '/' || parsed.search || parsed.hash) {
+      throw new ProductionReadonlyConfigError('BROWSER_BITBROWSER_API_URL must be a plain loopback HTTP origin');
+    }
+    bitBrowser = Object.freeze({
+      apiUrl: parsed.toString().replace(/\/$/, ''),
+      profileId: opaqueRef(env, 'BROWSER_BITBROWSER_PROFILE_ID'),
+      apiTimeoutMs: integer(env, 'BROWSER_BITBROWSER_API_TIMEOUT_MS', {
+        min: 250, max: 60_000, fallback: 10_000,
+      }),
+    });
   }
 
   const runtimeHmacKey = key32(env, 'BROWSER_RUNTIME_HMAC_KEY_BASE64');
@@ -165,10 +210,12 @@ export function loadProductionReadonlyBrowserConfig(env = process.env) {
     databaseTls: env.DATABASE_TLS === 'true',
     workerId: required(env, 'BROWSER_WORKER_ID'),
     executorProfileId: required(env, 'BROWSER_EXECUTOR_PROFILE_ID'),
-    profilesRoot: required(env, 'BROWSER_PROFILES_ROOT'),
+    runtimeProvider,
+    profilesRoot,
     walPath: required(env, 'BROWSER_WAL_PATH'),
     executablePath,
     headless: env.BROWSER_CHROME_HEADLESS !== 'false',
+    bitBrowser,
     runtimeHmacKey,
     artifactKey,
     resourceHmacKey,

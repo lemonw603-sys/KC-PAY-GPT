@@ -712,3 +712,9 @@ active permits=0、`PAYMENT_SUBMIT`=0、live resource leases=0、external paymen
 - 实跑：Browser 全量 `99/95 passed/4 skipped/0 failed`；readonly smoke `10/10 + 3/3`；隔离 MySQL/Chrome shared dry-run `1/1`；`check` 与 `diff --check` 通过。
 - 本轮未连接生产、未读取真实客户材料、未访问真实 ChatGPT、未付款、未部署。下一动作是统筹一次性提供专用非客户测试订单/Session、批准网络/Chrome 和当次首页 marker 后，另开只读窗口执行一次；仍不需要 PAN/CVC。
 - 详细合同与审查：`docs/contracts/2026-08-29_browser-chatgpt-readonly-observation-contract.md`、`docs/browser-research/BROWSER_SHARED_MATERIAL_ADAPTER_ADVERSARIAL_REVIEW_2026-08-29.md`。
+# 2026-09-02｜BitBrowser runtime adapter 停止点
+
+- Browser 分支已实现最小 BitBrowser launcher/profile adapter，只替换 runtime 层，不改共享业务核心。
+- 显式配置 `BROWSER_RUNTIME_PROVIDER=BITBROWSER` + `BROWSER_BITBROWSER_ENABLED=true` 才启用；Local API/CDP 必须 loopback，异常时尝试关闭 Profile。
+- 当前默认 Google Chrome，Browser Worker/付款/卡台写入均未启用；未部署。
+- 合同：`docs/contracts/2026-09-02_bitbrowser-profile-runtime-contract.md`。

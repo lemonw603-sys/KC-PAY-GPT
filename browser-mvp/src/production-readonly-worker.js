@@ -9,6 +9,10 @@ import { loadRuntimeDatabaseConfig } from '../../v1/src/config.js';
 import { createDatabasePool } from '../../v1/src/db/pool.js';
 import { createChromeControlManifest } from './fixtures.js';
 import { GoogleChromeControlRuntimeAdapter } from './chrome-control-runtime.js';
+import {
+  BitBrowserLocalApiClient,
+  BitBrowserProfileRuntimeAdapter,
+} from './bitbrowser-profile-runtime.js';
 import { AppendOnlyWal, WalEvidenceSink } from './wal.js';
 import { createSharedNonPaymentDryRun, SHARED_NONPAYMENT_DRY_RUN_CONFIRMATION } from './shared-dry-run-composition.js';
 import { loadProductionReadonlyBrowserConfig } from './production-readonly-config.js';
@@ -78,13 +82,39 @@ export async function checkProductionReadonlyDatabase(pool, { executorProfileId 
 }
 
 export async function checkProductionReadonlyFilesystem(config) {
-  await mkdir(config.profilesRoot, { recursive: true, mode: 0o700 });
   await mkdir(dirname(config.walPath), { recursive: true, mode: 0o700 });
-  await Promise.all([
-    access(config.profilesRoot, constants.R_OK | constants.W_OK | constants.X_OK),
-    access(dirname(config.walPath), constants.R_OK | constants.W_OK | constants.X_OK),
-  ]);
+  const checks = [access(dirname(config.walPath), constants.R_OK | constants.W_OK | constants.X_OK)];
+  if (config.profilesRoot) {
+    await mkdir(config.profilesRoot, { recursive: true, mode: 0o700 });
+    checks.push(access(config.profilesRoot, constants.R_OK | constants.W_OK | constants.X_OK));
+  }
+  await Promise.all(checks);
   return { ready: true };
+}
+
+export function createProductionReadonlyRuntimeAdapter(config, {
+  browserType = chromium,
+  fetchImpl = globalThis.fetch,
+} = {}) {
+  if (config.runtimeProvider === 'BITBROWSER') {
+    const apiClient = new BitBrowserLocalApiClient({
+      baseUrl: config.bitBrowser.apiUrl,
+      fetchImpl,
+      timeoutMs: config.bitBrowser.apiTimeoutMs,
+    });
+    return new BitBrowserProfileRuntimeAdapter({
+      browserType,
+      apiClient,
+      profileId: config.bitBrowser.profileId,
+      enabled: true,
+    });
+  }
+  return new GoogleChromeControlRuntimeAdapter({
+    browserType,
+    profilesRoot: config.profilesRoot,
+    executablePath: config.executablePath,
+    launchOptions: { headless: config.headless },
+  });
 }
 
 async function resolveAccountKey(pool, { orderId }) {
@@ -124,6 +154,7 @@ export async function runProductionReadonlyBrowserWorker({
   once = false,
   signal = null,
   browserType = chromium,
+  fetchImpl = globalThis.fetch,
   onResult = (result) => console.log('browser readonly iteration', {
     status: result.status,
     reasonCode: result.reasonCode || null,
@@ -148,17 +179,13 @@ export async function runProductionReadonlyBrowserWorker({
   try {
     await checkProductionReadonlyFilesystem(config);
     await checkProductionReadonlyDatabase(pool, { executorProfileId: config.executorProfileId });
+    const runtimeAdapter = createProductionReadonlyRuntimeAdapter(config, { browserType, fetchImpl });
+    if (typeof runtimeAdapter.checkHealth === 'function') await runtimeAdapter.checkHealth();
     if (env.BROWSER_WORKER_CHECK_ONLY === 'true') return { status: 'READY' };
     await writeHeartbeat();
     heartbeatStarted = true;
     const wal = await new AppendOnlyWal({ filePath: config.walPath }).init();
     await wal.verify();
-    const runtimeAdapter = new GoogleChromeControlRuntimeAdapter({
-      browserType,
-      profilesRoot: config.profilesRoot,
-      executablePath: config.executablePath,
-      launchOptions: { headless: config.headless },
-    });
     const sharedMaterialsEnabled = config.materialPolicy.sharedSessionEnabled;
     const sharedCardPreflightEnabled = config.materialPolicy.sharedCardPreflightEnabled;
     const chatGptReadonlyHarness = config.readonlyHarness === 'CHATGPT_ACCOUNT_CHECKOUT';

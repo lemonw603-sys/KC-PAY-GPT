@@ -7,8 +7,10 @@ import {
 } from '../src/production-readonly-config.js';
 import {
   checkProductionReadonlyDatabase,
+  createProductionReadonlyRuntimeAdapter,
   parseProductionReadonlyArgs,
 } from '../src/production-readonly-worker.js';
+import { BitBrowserProfileRuntimeAdapter } from '../src/bitbrowser-profile-runtime.js';
 
 const key = Buffer.alloc(32, 7).toString('base64');
 
@@ -47,6 +49,51 @@ test('production readonly config accepts an explicit local fixture and no write 
   assert.equal(config.workerId, 'browser-worker-test');
   assert.equal(config.observation.pageContract.title, 'fixture');
   assert.equal(config.runtimeHmacKey.length, 32);
+});
+
+test('BitBrowser runtime is explicit, loopback-only and does not require a Chrome executable', () => {
+  const config = loadProductionReadonlyBrowserConfig(validEnv({
+    BROWSER_RUNTIME_PROVIDER: 'BITBROWSER',
+    BROWSER_BITBROWSER_ENABLED: 'true',
+    BROWSER_BITBROWSER_API_URL: 'http://127.0.0.1:54345',
+    BROWSER_BITBROWSER_PROFILE_ID: 'bit-profile-test-001',
+    BROWSER_CHROME_EXECUTABLE_PATH: '/definitely/not/chrome',
+  }));
+  assert.equal(config.runtimeProvider, 'BITBROWSER');
+  assert.equal(config.executablePath, null);
+  assert.equal(config.profilesRoot, null);
+  assert.deepEqual(config.bitBrowser, {
+    apiUrl: 'http://127.0.0.1:54345',
+    profileId: 'bit-profile-test-001',
+    apiTimeoutMs: 10_000,
+  });
+  const adapter = createProductionReadonlyRuntimeAdapter(config, {
+    browserType: { connectOverCDP: async () => undefined },
+    fetchImpl: async () => ({ ok: true, json: async () => ({ success: true }) }),
+  });
+  assert.equal(adapter instanceof BitBrowserProfileRuntimeAdapter, true);
+
+  assert.throws(() => loadProductionReadonlyBrowserConfig(validEnv({
+    BROWSER_RUNTIME_PROVIDER: 'BITBROWSER',
+    BROWSER_BITBROWSER_API_URL: 'http://127.0.0.1:54345',
+    BROWSER_BITBROWSER_PROFILE_ID: 'bit-profile-test-001',
+  })), /BROWSER_BITBROWSER_ENABLED must be exactly true/);
+  assert.throws(() => loadProductionReadonlyBrowserConfig(validEnv({
+    BROWSER_RUNTIME_PROVIDER: 'BITBROWSER',
+    BROWSER_BITBROWSER_ENABLED: 'true',
+    BROWSER_BITBROWSER_API_URL: 'http://192.0.2.1:54345',
+    BROWSER_BITBROWSER_PROFILE_ID: 'bit-profile-test-001',
+  })), /plain loopback HTTP origin/);
+  assert.throws(() => loadProductionReadonlyBrowserConfig(validEnv({
+    BROWSER_RUNTIME_PROVIDER: 'BITBROWSER',
+    BROWSER_BITBROWSER_ENABLED: 'true',
+    BROWSER_BITBROWSER_API_URL: 'http://127.0.0.1:54345',
+    BROWSER_BITBROWSER_PROFILE_ID: 'contains spaces',
+  })), /opaque reference/);
+  assert.throws(() => loadProductionReadonlyBrowserConfig(validEnv({
+    BROWSER_RUNTIME_PROVIDER: 'GOOGLE_CHROME',
+    BROWSER_BITBROWSER_ENABLED: 'true',
+  })), /cannot be true unless/);
 });
 
 test('production readonly config rejects every write switch and raw credential material', () => {

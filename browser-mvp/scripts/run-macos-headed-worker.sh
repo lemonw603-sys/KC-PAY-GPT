@@ -37,8 +37,21 @@ for name in CHATGPT_SESSION_COOKIE CHATGPT_TOKEN SESSION_JSON CARD_NUMBER CARD_E
   [[ -z "${!name:-}" ]] || fail "$name must be absent"
 done
 
-chrome="${BROWSER_CHROME_EXECUTABLE_PATH:-/Applications/Google Chrome.app/Contents/MacOS/Google Chrome}"
-[[ -x "$chrome" ]] || fail "headed Google Chrome is not executable: $chrome"
+runtime_provider="${BROWSER_RUNTIME_PROVIDER:-GOOGLE_CHROME}"
+case "$runtime_provider" in
+  GOOGLE_CHROME)
+    chrome="${BROWSER_CHROME_EXECUTABLE_PATH:-/Applications/Google Chrome.app/Contents/MacOS/Google Chrome}"
+    [[ -x "$chrome" ]] || fail "headed Google Chrome is not executable: $chrome"
+    [[ -n "${BROWSER_PROFILES_ROOT:-}" ]] || fail "BROWSER_PROFILES_ROOT is required for Google Chrome"
+    ;;
+  BITBROWSER)
+    [[ "${BROWSER_BITBROWSER_ENABLED:-}" == "true" ]] || fail "BROWSER_BITBROWSER_ENABLED must be true"
+    [[ "${BROWSER_BITBROWSER_API_URL:-}" == http://127.0.0.1:* ]] \
+      || fail "BROWSER_BITBROWSER_API_URL must use 127.0.0.1"
+    [[ -n "${BROWSER_BITBROWSER_PROFILE_ID:-}" ]] || fail "BROWSER_BITBROWSER_PROFILE_ID is required"
+    ;;
+  *) fail "BROWSER_RUNTIME_PROVIDER must be GOOGLE_CHROME or BITBROWSER" ;;
+esac
 [[ -n "${BROWSER_DB_TUNNEL_SSH_TARGET:-}" ]] || fail "BROWSER_DB_TUNNEL_SSH_TARGET is required"
 [[ -n "${BROWSER_DB_TUNNEL_IDENTITY_FILE:-}" ]] || fail "BROWSER_DB_TUNNEL_IDENTITY_FILE is required"
 [[ -f "$BROWSER_DB_TUNNEL_IDENTITY_FILE" ]] || fail "SSH identity file is missing"
@@ -57,8 +70,12 @@ node -e '
   if (u.protocol !== "mysql:" || !["127.0.0.1", "localhost"].includes(u.hostname) || (u.port || "3306") !== expected) process.exit(2);
 ' || fail "DATABASE_URL must use the configured local loopback tunnel port"
 
-mkdir -p "$BROWSER_PROFILES_ROOT" "$(dirname "$BROWSER_WAL_PATH")"
-chmod 700 "$BROWSER_PROFILES_ROOT" "$(dirname "$BROWSER_WAL_PATH")"
+if [[ "$runtime_provider" == "GOOGLE_CHROME" ]]; then
+  mkdir -p "$BROWSER_PROFILES_ROOT"
+  chmod 700 "$BROWSER_PROFILES_ROOT"
+fi
+mkdir -p "$(dirname "$BROWSER_WAL_PATH")"
+chmod 700 "$(dirname "$BROWSER_WAL_PATH")"
 
 ssh -N -T \
   -i "$BROWSER_DB_TUNNEL_IDENTITY_FILE" \
