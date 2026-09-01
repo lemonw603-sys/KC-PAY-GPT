@@ -118,3 +118,15 @@ systemctl daemon-reload
 回滚后必须确认 `pojia-browser-worker.service` 为 `inactive/disabled`，数据库
 `browser_payment_writes_enabled=false`，且没有活动 Browser permit/lease。不要通过回滚重新派发
 `PAYMENT_UNKNOWN`/`RECONCILIATION_REQUIRED` 任务；这两类任务只能核对。
+
+## macOS headed Browser readonly Worker（默认不加载）
+
+生产 VPS 出口与 headless 运行均出现 Cloudflare challenge 后，本地同出口 A/B 证明 headed Google Chrome 可正常访问公开 ChatGPT 页面。短期只读 pilot 可复用现有 Browser Worker，不建立第二套队列或业务状态：
+
+- 启动脚本：`browser-mvp/scripts/run-macos-headed-worker.sh`；
+- 环境模板：`deploy/macos/browser-readonly.env.example`；
+- launchd 模板：`deploy/macos/com.vibebridge.browser-readonly.plist.example`。
+
+模板 `RunAtLoad=false`、`KeepAlive=false`，不会自行启动。环境文件必须为 `0600`，Chrome 必须 headed，五个写开关和 payment executor 必须关闭。数据库只能通过 SSH 本地端口转发访问生产 loopback MySQL，禁止公开 3306。隧道退出时 wrapper 会向 Worker 发送 `SIGTERM`；Worker 的 AbortController 负责关闭 Browser runtime，数据库租约/恢复合同继续作为权威状态。
+
+安装 launchd 之前必须单独批准，并补齐受限 SSH 身份、loopback MySQL 账号、三把 Browser key、共享 Session key、executor profile 和本地状态目录。launcher 固定使用 `--once`，首次仅允许 `--check` 和单个非付款任务；不得填卡或付款。长期仍应迁移到常在线的专用 Browser 主机，不把个人 Mac 当作 200–300 单/日最终节点。
