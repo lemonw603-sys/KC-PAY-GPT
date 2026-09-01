@@ -79,8 +79,23 @@ function classifySafeAbort(error) {
       failureReason: 'Browser execution lease was lost before payment',
     };
   }
+  // Access/navigation blocks are not card-readiness problems. Returning the
+  // order to CARD_READY would requeue SUBMIT_RECHARGE and let a readonly
+  // worker retry the same blocked Session indefinitely.  Treat this class as
+  // a terminal pre-payment failure; the operator can inspect the evidence and
+  // deliberately retry later rather than generating repeated attempts.
+  if (sourceCode === 'CHATGPT_ACCESS_BLOCKED'
+    || sourceCode === 'CHECKOUT_NAVIGATION_FAILED'
+    || sourceCode === 'CHECKOUT_OBSERVATION_FAILED') {
+    return {
+      targetOrderStatus: 'RECHARGE_FAILED',
+      reasonCode: sourceCode,
+      customerActionCode: null,
+      failureReason: 'Browser could not access or verify the ChatGPT checkout before payment',
+    };
+  }
   return {
-    targetOrderStatus: 'CARD_READY',
+    targetOrderStatus: 'RECHARGE_FAILED',
     reasonCode: sourceCode,
     customerActionCode: null,
     failureReason: 'Browser execution stopped safely before payment',

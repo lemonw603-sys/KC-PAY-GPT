@@ -193,6 +193,20 @@ test('Session invalid and account-already-Plus return the original order to Sess
   }
 });
 
+test('ChatGPT access blocks are terminal and do not requeue the submit task', async () => {
+  const harness = makeHarness({
+    execution: async () => {
+      throw Object.assign(new Error('upstream access blocked'), { reason: 'CHATGPT_ACCESS_BLOCKED' });
+    },
+  });
+  const result = await harness.integration.runNonPaymentOnce();
+  assert.equal(result.status, 'SAFE_ABORTED');
+  assert.equal(result.reasonCode, 'CHATGPT_ACCESS_BLOCKED');
+  assert.equal(result.targetOrderStatus, 'RECHARGE_FAILED');
+  assert.equal(result.externalPaymentCalls, 0);
+  assert.equal(harness.state.fundsRiskState, 'CLEARED');
+});
+
 test('authoritative permit rejects card balance/status/sync and route drift, then safe-abort clears funds', async () => {
   for (const code of [
     'CARD_BALANCE_INSUFFICIENT', 'CARD_NOT_READY', 'CARD_CHECK_STALE',
