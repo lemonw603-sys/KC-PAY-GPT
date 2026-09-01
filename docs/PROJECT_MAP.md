@@ -1,7 +1,7 @@
 # AI充值业务｜唯一项目规划地图
 
 > **用途**：只回答四件事：项目目标、当前生产事实、已完成/未完成、唯一执行顺序。
-> **最后统一核对**：2026-09-01 11:02 CST。已对照前后端代码，并通过 SSH 核对部署后生产 release、systemd、Worker 实际进程环境、订单/卡绑定和 readiness；本轮关闭一笔已确认略过且资金风险已清除的遗留订单，未执行 Provider 写入或付款。
+> **最后统一核对**：2026-09-01 15:28 CST。已对照前后端代码，并通过 SSH 复核当前生产 release、systemd、Worker 实际进程环境和只读 readiness；本轮未执行 Provider 写入或付款。
 > 历史报告不能覆盖本地图；实时生产事实优先，变化后必须同步更新本地图与 `CURRENT_STATE.md`。
 > 全链路、控制矩阵、自动补给状态机、库存最小模型、资金边界、通知、回滚和验收细则统一见 `docs/PROJECT_OPERATING_MODEL.md`。
 
@@ -44,17 +44,17 @@
 | Worker 最终 API 充值能力 | **true** | 已安装最小权限 drop-in，重启后进程环境为 `PROVIDER_RECHARGE_WRITES_ENABLED=true` |
 | Provider recharge account | `write_enabled=1` | 数据库只读核对；Worker 进程充值 gate 同样为 true，当前可执行 |
 | Provider card account | `write_enabled=0`，circuit=CLOSED | 当前 stock/funding runner **不以该字段为写门禁**，而以各自窄范围进程 gate 为准；这个语义不一致需在后续收敛，不得猜测它当前会阻断补给 |
-| readiness | **只读 preflight 通过** | 2026-08-31 23:02 CST：`ok=true`、`blockers=[]`、Worker heartbeat 6 秒；这不等于逐单 Session/账号/Provider 最终结果已验证 |
+| readiness | **只读 preflight 通过** | 2026-09-01 15:28 CST：`ok=true`、`blockers=[]`、Worker heartbeat 13 秒；这不等于逐单 Session/账号/Provider 最终结果已验证 |
 | 通用 Provider / 卡片写 | false / false | Worker 进程环境 |
 | 独立自动补余额 | DB gate=true；`pojia-card-funding.timer` 与 reconcile timer active/enabled | 独立 runner 只开补余额所需卡片写；空闲零写已验证，首笔真实补余额未验收 |
 | 独立自动开卡 | DB gate=true；`pojia-card-stock-runner.timer` active/enabled，60 秒兜底 | stock runner 只开开卡所需卡片写；真实缺卡订单闭环未验收 |
-| 当前 Plus 可立即分配 | 1 张：Provider `1839`、尾号 `1013`、`$16.00` | 遗留 WAITING_FOR_SESSION 订单的无效 ACTIVE 绑定已安全释放；11:01 CST 只读同步后资格 SQL=`eligible=1` |
+| 当前 Plus 可立即分配 | **0 张** | `1839/1013` 本次支付被拒后已由用户停用，当前 `invalidating/$0.01`；旧批次均 `RETIRED`，4744 为 Claude 专用，不得补余额后冒充 Plus 库存 |
 | 每卡成功次数上限 | 3 | 已部署；连续跨订单实证仍不足 |
-| 活动任务/资金风险/开放对账 | 0 / 0 / 0 | 2026-08-31 23:02 CST 只读 preflight |
+| 活动任务/资金风险/开放对账 | 0 / 0 / 0 | 2026-09-01 15:28 CST 只读 preflight |
 | 最新 migration | 044 | 只读 readiness |
 | 最新订单 | `PJV1-412JIT_yfiuBpZeC39_m`=`RECHARGE_FAILED` | API 订单完成一次提交与轮询；Provider 返回明确失败“卡片被拒，请换卡后重提”，外部订单号 `8849`，资金风险已清除，无成功付款；卡片按失败策略保留为不可直接分配，待后续核对 |
 
-**当前状态**：API 最小充值权限已按确认恢复，Worker 进程实际为 `true`；接单和派发已开；生产只读 preflight 已通过。尾号 1013 的异常占用已释放并恢复可分配。
+**当前状态**：API 最小充值权限、接单、自动派发、自动开卡和自动补余额均已开启；生产只读 preflight `ok=true/blockers=[]`。当前没有 Plus 可分配卡，下一笔有效 API 订单应进入“无合格卡→自动开新卡”分支，而不是给旧卡补余额。
 
 ### 最新拒付的证据边界
 
@@ -118,7 +118,7 @@
 ### P1｜下一笔真实 API 订单
 
 - 客户正常提交 CDK + Session，系统自动处理；不再先人为关闭应有能力。
-- 当前有 1 张 `$16` 可立即分配卡；下一单应先走直接分配并验收完整 API 链路，不人为改库存。
+- 当前没有可直接分配的 Plus 卡；旧批次不可恢复。下一笔有效订单应验收“唯一自动开一张 `$16` 新卡→卡片就绪→API 充值→取消续费→交易/余额/对账”的完整链路，不人为把旧卡改成可用，也不自动换卡重付失败订单。
 - 核对充值成功、Plus、取消续费、卡余额/交易、对账和 Bark。
 
 ### P2｜3–5 单连续 API 运营
