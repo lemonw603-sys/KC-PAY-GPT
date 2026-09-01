@@ -885,6 +885,6 @@
 
 - 卡台与生产数据库交叉核对确认 Provider `1839` / 尾号 `1013` 为 active、余额 `$16`、资料完整。显示“可分配 0”不是卡台或同步丢卡，而是订单 `PJV1-HfAEiq8dBpDLXzt4t96e` 在 Provider 明确返回 `40030/DEFINITE_FAILURE`、attempt/资金风险和消费预留均已清除后，仍停在 `WAITING_FOR_SESSION` 并保留 ACTIVE 卡绑定。
 - 根因是生命周期缺口：后台取消只支持 `CARD_READY`，不能安全关闭 `WAITING_FOR_SESSION`；Session 更换窗口到期后也没有自动收尾，可能永久占用可复用卡。
-- 修复 `d1c4d32`：仅在所有资金状态已明确清除、所有 `create_direct` 调用均为明确失败且无外部订单号时，允许取消等待 Session 的订单并释放绑定；资金 `ACTIVE/UNKNOWN/SETTLED` 仍强制锁卡；Worker 对过期更换窗口执行同一保护逻辑自动收尾；后台详情同步显示可取消入口。
-- 验证：v1 全量 `512 total / 470 pass / 42 environment-skipped / 0 fail`；全新隔离 MySQL `39 total / 38 pass / 1 legacy-skipped / 0 fail`。部署 `/opt/pojia/releases/20260901-session-release-d1c4d32`，Web/Worker active，live/ready 通过，API 最小充值权限仍为 true，Browser Worker 仍关闭。
+- 修复 `d1c4d32`，并以 `2bce69e` 收紧到期扫描候选：仅在所有资金状态已明确清除、所有 `create_direct` 调用均为明确失败且无外部订单号时，允许取消等待 Session 的订单并释放绑定；资金 `ACTIVE/UNKNOWN/SETTLED` 仍强制锁卡；Worker 对过期更换窗口执行同一保护逻辑自动收尾且不会反复扫描不安全订单；后台详情同步显示可取消入口。
+- 验证：v1 全量 `512 total / 470 pass / 42 environment-skipped / 0 fail`；全新隔离 MySQL `39 total / 38 pass / 1 legacy-skipped / 0 fail`。最终部署 `/opt/pojia/releases/20260901-session-release-2bce69e`，Web/Worker active，live/ready 通过，API 最小充值权限仍为 true，Browser Worker 仍关闭。
 - 用户此前已明确该订单略过；生产保护条件现场全部满足后将其关闭并释放卡。随后只读同步完成：尾号 1013=`AVAILABLE`、余额 `$16`、ACTIVE assignment=0、资格 SQL=`eligible=1`。本轮未执行开卡、补余额、Provider 写入或付款。

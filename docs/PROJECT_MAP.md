@@ -36,7 +36,7 @@
 
 | 项目 | 当前事实 | 证据/含义 |
 |---|---|---|
-| 生产 release | `/opt/pojia/releases/20260901-session-release-d1c4d32` | `/opt/pojia/current` 现场读取；直接回滚点为 `20260901-customer-ui-b4cc5ea` |
+| 生产 release | `/opt/pojia/releases/20260901-session-release-2bce69e` | `/opt/pojia/current` 现场读取；直接回滚点为 `20260901-session-release-d1c4d32` |
 | Web / API Worker | active / active | systemd 现场读取 |
 | Browser Worker | inactive / disabled | 未进入真实 Browser 付款 |
 | 接单 / 派发 | true / true | 只读 readiness；当前后台已处于营业业务状态 |
@@ -105,7 +105,7 @@
 - 保持 `RECHARGE_SUBMIT_HOLD_BEFORE_PROVIDER` 关闭。
 - 部署/重启后只读验证：readiness `ok=true`、Worker 心跳能力为 true、无活动测试 task/attempt/资金栅栏。
 - 这是恢复已确认生产基线，不把它做成每单手动开关。
-- 当前 `d1c4d32` 已部署并完成部署后只读 preflight；无 migration 变化，直接回滚点 `b4cc5ea` 保留。
+- 当前 `2bce69e` 已部署并完成部署后健康核对；无 migration 变化，直接回滚点 `d1c4d32` 保留。
 
 ### P1｜下一笔真实 API 订单
 

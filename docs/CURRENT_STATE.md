@@ -5,8 +5,8 @@
 
 ## 1. 代码、release 与服务
 
-- 生产已部署卡片异常占用释放修复 `d1c4d32`；该 release 同时包含客户充值页重设计 `b4cc5ea` 和此前 `3f23aa3` 供应规划修复。
-- 生产 `/opt/pojia/current`：`/opt/pojia/releases/20260901-session-release-d1c4d32`；直接回滚点为 `/opt/pojia/releases/20260901-customer-ui-b4cc5ea`。
+- 生产已部署卡片异常占用释放修复 `2bce69e`（核心修复 `d1c4d32`）；该 release 同时包含客户充值页重设计 `b4cc5ea` 和此前 `3f23aa3` 供应规划修复。
+- 生产 `/opt/pojia/current`：`/opt/pojia/releases/20260901-session-release-2bce69e`；直接回滚点为 `/opt/pojia/releases/20260901-session-release-d1c4d32`。
 - 客户页已完成公网桌面/390px 移动端、教程弹层、真实历史订单查询、CSP、静态资源哈希和 Console 复验；真实成功订单的成功邮箱/时间线仍待下一单验收。详细证据见 `docs/2026-09-01_customer-recharge-redesign-production-candidate.md`。
 - `pojia-web.service=active`；`pojia-worker.service=active`。
 - `pojia-browser-worker.service=inactive/disabled`。
