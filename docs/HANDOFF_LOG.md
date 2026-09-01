@@ -922,3 +922,9 @@
 - API task 已完成卡分配/准备，`SUBMIT_RECHARGE` 以 `TARGET_ACCOUNT_ALREADY_PLUS` 明确失败并安全停止；attempt 与资金风险均 `CLEARED`，消费账本为 `RELEASED`，无 Provider 付款写入。
 - 现场未执行付款或其他资金动作。该订单不适合作为 Browser 测试订单（账号已是 Plus）；是否关闭该等待订单需另行决定。
 - 只读观察还发现该卡的 `cards.order_id` 仍指向历史失败订单，而本次新订单也引用同一 `assigned_card_id`；当前消费账本均已 RELEASED、无资金风险。该元数据一致性需后续单独核对，暂不据此判定为资金或重复付款。
+
+# 2026-09-01｜关闭 API 测试订单后的 CDK 状态核对
+
+- 订单 `PJV1-zqelgAB9K9TsiMdtq_Ox` 已由用户关闭，生产数据库状态为 `CLOSED`。
+- 对应 CDK 当前状态为 `REDEEMED`（`redeemed_at` 已记录，`revoked_at` 为空），不是 `REVOKED`。
+- 代码在成功建单时即把 `AVAILABLE` CDK 原子标记为 `REDEEMED`；关闭订单不会自动把 CDK 恢复为可用或改成作废。实际效果是该 CDK 已被消费，不能再次提交。未执行任何 CDK 状态写入。
