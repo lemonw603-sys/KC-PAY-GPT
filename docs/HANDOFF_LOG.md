@@ -908,3 +908,9 @@
 
 - 代码核对确认：`provider-routes` 页面仍保留“切换为当前”按钮，用于不同卡台/Provider route；总览设置区的 API/Browser 按钮只切换默认充值执行路径。两者分别调用不同管理接口，不是互相替代。
 - 卡台切换仍需在“卡台路线”页面选择备用 route，并经过健康检查、确认词和操作原因；默认充值方式切换只影响新订单。
+
+# 2026-09-01｜主线 Browser/API 路由与订单边界定向回归
+
+- 当前 `v1` 定向套件：116 tests，113 pass，3 environment-skipped，0 fail。
+- 覆盖默认充值方式原子切换、Browser 就绪门禁、API/Browser 执行器隔离、客户 Session 订单接入、Browser 付款前安全返回、资金 attempt/dispatch 原子性；未执行生产写入或付款。
+- 结果与当前代码一致：客户式 CDK+Session 可作为 Browser 订单输入；默认路线切换已有后台能力；Browser 仍需在生产非付款观察前保持付款关闭。
