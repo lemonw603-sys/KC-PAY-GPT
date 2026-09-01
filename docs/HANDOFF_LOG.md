@@ -865,3 +865,11 @@
 - 候选未部署、未连接生产、未创建订单或执行资金动作；报告：`docs/2026-09-01_customer-recharge-redesign-production-candidate.md`。
 - 正式移植复核发现首版候选遗漏 Claude 原型中的两个教程直达按钮和成功页订阅确认外链；已直接补齐，不把遗漏只留在报告中。
 - 对照后端 Session 合同和旧生产轮询继续修正：教程示例补齐 `account/sessionToken`；失败文案取消未经实现的“人工已接手”承诺；`REVIEWING/ACTION_REQUIRED` 从误移植的 100 秒恢复为 30 秒。
+
+# 2026-09-01｜客户充值页重设计生产部署
+
+- 用户核对本地最终候选后明确批准部署。部署提交 `b4cc5ea`，release `/opt/pojia/releases/20260901-customer-ui-b4cc5ea`，回滚点 `/opt/pojia/releases/20260831-supply-sync-3f23aa3`，归档 SHA-256 `42967d32adb0be0034a21aa00c4756b6664357f057f202edaef0e1b75e72d6a4`。
+- 部署前只读 readiness `ok=true/blockers=[]`，创建并验证加密备份 `/var/backups/pojia/pojia-20260901T020107Z.sql.gz.enc`。首次在候选目录安装依赖因 `pojia` 默认 npm cache 权限失败，发生在切流前；删除未完成候选并使用隔离 cache 重建后成功，生产未受影响。
+- 原子切换后 Web/Worker active，三个自动补给 timer active，Browser inactive/disabled；API 充值最小权限 true，通用 Provider/普通卡片写 false。部署后 readiness 仍 `ok=true/blockers=[]`，活动任务、资金风险、UNKNOWN Provider call、开放对账均为 0，最近 Web/Worker 无 warning/error。
+- 公网 `plus/ops` live/ready 均 HTTP 200，JS/CSS 哈希与本地一致；Playwright 完成桌面/390px 输入、教程和 ACTION_REQUIRED 历史订单查询复验，Console 0 error/0 warning、移动端无横向溢出。
+- 本轮只查询既有订单状态一次；没有创建订单、更换 Session、开卡、补余额、Provider 写入或付款。成功邮箱/完成时间/成功时间线留待下一笔自然成功订单验收。

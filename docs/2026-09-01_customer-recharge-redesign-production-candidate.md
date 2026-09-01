@@ -1,7 +1,7 @@
-# 客户充值页重设计｜正式代码候选
+# 客户充值页重设计｜正式部署与验证
 
 日期：2026-09-01
-状态：代码候选已完成并验证，**尚未部署生产**
+状态：**已部署生产并完成只读验收**；真实成功结果态待下一笔自然发生的成功订单验收
 
 ## 范围
 
@@ -20,7 +20,7 @@
 
 - 未修改 Provider、卡台、自动补给、Browser、资金、付款、对账或 CDK 管理后台；
 - 未修改客户 API 的业务语义或数据库 migration；
-- 未连接生产、未创建订单、未开卡/补余额、未付款。
+- 部署和验收未创建订单、未开卡/补余额、未付款；只对既有订单执行一次状态查询。
 
 ## 真实接口
 
@@ -46,8 +46,15 @@
 
 `/Users/lemon/code/AI充值业务/output/customer-page-final-candidate/`
 
+## 生产部署与复验
+
+- 用户已确认本地视觉候选并批准部署；生产 release：`/opt/pojia/releases/20260901-customer-ui-b4cc5ea`，回滚点：`/opt/pojia/releases/20260831-supply-sync-3f23aa3`。
+- 归档 SHA-256：`42967d32adb0be0034a21aa00c4756b6664357f057f202edaef0e1b75e72d6a4`；部署前加密数据库备份：`/var/backups/pojia/pojia-20260901T020107Z.sql.gz.enc`，完整性通过。
+- 公网 `plus/ops` live/ready 均 HTTP 200；生产 readiness `ok=true`、`blockers=[]`、Worker heartbeat 1 秒，活动任务/资金风险/UNKNOWN Provider call/开放对账均为 0。
+- 生产 HTML 已出现教程、邮箱确认、订阅确认和完整 Session 示例；JS/CSS 与本地候选 SHA-256 一致，浏览器 Console 0 error/0 warning。
+- Playwright 已核对 1440px 与 390px 输入页、教程弹层；390px `scrollWidth=innerWidth=390`。教程弹层在移动端采用内部纵向滚动，不横向溢出。
+- 用既有订单 `PJV1-HfAEiq8dBpDLXzt4t96e` 只读查询得到 `ACTION_REQUIRED`，页面正确展示三段时间线、更换 Session 入口、剩余次数和截止时间；Network 只有一次 `POST /api/v1/orders/status`，没有建单或资金写入。
+
 ## 尚未验证
 
-- 尚未部署后的生产 CSP / 公网页面复验；
-- 尚未用真实订单验证生产返回的时间线和成功邮箱；
-- 尚未由用户最终确认正式候选视觉后批准部署。
+- 尚未用部署后的下一笔真实成功订单验证成功状态返回的客户邮箱、完成时间与完整时间线；该项随下一笔自然订单验收，不单独创建测试订单。
