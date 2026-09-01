@@ -20,8 +20,6 @@ test('customer assets contain no remote or legacy runtime dependencies', () => {
   const forbidden = [
     'src="http://',
     'src="https://',
-    'href="http://',
-    'href="https://',
     'url(http://',
     'url(https://',
     "fetch('http://",
@@ -39,6 +37,17 @@ test('customer assets contain no remote or legacy runtime dependencies', () => {
       assert.equal(source.includes(token), false, `${file} contains ${token}`);
     }
   }
+
+  const html = fs.readFileSync(path.join(directory, 'index.html'), 'utf8');
+  const externalLinks = [...html.matchAll(/href="(https?:\/\/[^"#]+)"/g)].map((match) => match[1]);
+  assert.deepEqual(externalLinks.sort(), [
+    'https://chatgpt.com/',
+    'https://chatgpt.com/',
+    'https://chatgpt.com/api/auth/session'
+  ]);
+  assert.match(html, /id="session-help-open"/);
+  assert.match(html, /id="subscription-link"/);
+  assert.match(html, /rel="noopener noreferrer"/);
 });
 
 test('admin assets contain no remote, legacy, or secret-bearing dependencies', () => {

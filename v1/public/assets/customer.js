@@ -91,6 +91,7 @@
     chip: $('status-chip'), chipLabel: $('status-chip-label'), updated: $('status-updated'),
     title: $('status-title'), desc: $('status-desc'),
     successSummary: $('success-summary'), successEmail: $('success-email'), successTime: $('success-time'),
+    subLink: $('subscription-link'),
     ticketCode: $('ticket-code'), ticketCopy: $('ticket-copy'),
     replaceForm: $('replace-form'), replaceSession: $('replace-session'), replaceCheck: $('replace-check'),
     replaceSubmit: $('replace-submit'), replaceLimit: $('replace-limit'),
@@ -246,6 +247,7 @@
     // 成功
     el.crest.hidden = !success;
     el.successSummary.hidden = !success;
+    el.subLink.hidden = !success;
     el.statusCard.classList.toggle('is-success', success && successShownFor !== order.publicNo);
     if (success) {
       el.successEmail.textContent = order.customerEmail || '—';

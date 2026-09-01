@@ -863,3 +863,4 @@
 - 保留防重复提交、查询码 sessionStorage 恢复、生产轮询、错误/更换 Session 流程；成功消费现有 `customerEmail/finishedAt/timeline`。
 - v1 全量 466 通过、42 跳过、0 失败；Playwright 验证确认前 0 请求、确认后 1 次建单、Session 清空、SUCCESS 无 dialog、390px 无横向溢出。
 - 候选未部署、未连接生产、未创建订单或执行资金动作；报告：`docs/2026-09-01_customer-recharge-redesign-production-candidate.md`。
+- 正式移植复核发现首版候选遗漏 Claude 原型中的两个教程直达按钮和成功页订阅确认外链；已直接补齐，不把遗漏只留在报告中。
