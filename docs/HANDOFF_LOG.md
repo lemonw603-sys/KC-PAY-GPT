@@ -902,3 +902,9 @@
 - 纠正前述“必须准备专用测试账号”的过窄表述：客户式 Browser 全链路验收的真实输入是“生成 CDK → 客户提交 CDK+Session → 创建订单 → Browser 执行到付款前停止”；不需要额外账号密码流程。
 - 代码现场核对：`provider-route-admin-service.js` 已实现 API/Browser 默认充值方式切换；后台“卡台路线”页面已有切换按钮。切换仅影响新订单，且切换 Browser 前检查 Browser dispatch、活动 profile 与 60 秒心跳。
 - 本轮未切换生产路线、未创建订单、未启动 Browser Worker、未付款。
+
+
+# 2026-09-01｜区分卡台切换与充值路径切换
+
+- 代码核对确认：`provider-routes` 页面仍保留“切换为当前”按钮，用于不同卡台/Provider route；总览设置区的 API/Browser 按钮只切换默认充值执行路径。两者分别调用不同管理接口，不是互相替代。
+- 卡台切换仍需在“卡台路线”页面选择备用 route，并经过健康检查、确认词和操作原因；默认充值方式切换只影响新订单。
