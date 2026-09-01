@@ -950,3 +950,11 @@
 - 原子切换 `/opt/pojia/current`，重启 Web/Worker 与补给 timer。部署后：release 指向候选、Web/Worker/timer active、`/health/ready` HTTP 200；API Worker `PROVIDER_RECHARGE_WRITES_ENABLED=true`、通用 Provider/卡片写=false。
 - 生产前端现场包含“刷新当前页”“刷新批次列表”“刷新卡段规则”“刷新本地列表”。未执行任何 Provider 写入、开卡、补余额或付款。
 - 回滚准备目录：`/var/backups/pojia/admin-refresh-20260901T20260901T055227Z`（含 previous release 与 unit 快照）。
+
+
+# 2026-09-01｜新 API 测试订单明确失败
+
+- 新订单 `PJV1-412JIT_yfiuBpZeC39_m` 走 API；ASSIGN_CARD、PREPARE、SUBMIT 和轮询任务均已完成。
+- Provider 外部订单号 `8849` 返回明确失败：`卡片被拒，请换卡后重提`；本地状态 `RECHARGE_FAILED`，attempt `FAILED/CLEARED`，无成功付款证据。
+- 该卡按“Provider 明确拒绝后不自动重新分配”策略保留为 `ASSIGNED`，不能把它误报为可立即分配；后续需按卡片核对/运营决定处理。
+- 本轮未执行换卡、重试、开卡、补余额或付款。

@@ -52,7 +52,7 @@
 | 每卡成功次数上限 | 3 | 已部署；连续跨订单实证仍不足 |
 | 活动任务/资金风险/开放对账 | 0 / 0 / 0 | 2026-08-31 23:02 CST 只读 preflight |
 | 最新 migration | 044 | 只读 readiness |
-| 最新订单 | `PJV1-zqelgAB9K9TsiMdtq_Ox`=`CLOSED` | API 已识别目标账号已有 Plus（`TARGET_ACCOUNT_ALREADY_PLUS`）并安全停止；用户随后关闭订单，attempt/资金风险已清除，CDK 保持 `REDEEMED`，未付款 |
+| 最新订单 | `PJV1-412JIT_yfiuBpZeC39_m`=`RECHARGE_FAILED` | API 订单完成一次提交与轮询；Provider 返回明确失败“卡片被拒，请换卡后重提”，外部订单号 `8849`，资金风险已清除，无成功付款；卡片按失败策略保留为不可直接分配，待后续核对 |
 
 **当前状态**：API 最小充值权限已按确认恢复，Worker 进程实际为 `true`；接单和派发已开；生产只读 preflight 已通过。尾号 1013 的异常占用已释放并恢复可分配。
 
