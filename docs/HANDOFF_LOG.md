@@ -914,3 +914,11 @@
 - 当前 `v1` 定向套件：116 tests，113 pass，3 environment-skipped，0 fail。
 - 覆盖默认充值方式原子切换、Browser 就绪门禁、API/Browser 执行器隔离、客户 Session 订单接入、Browser 付款前安全返回、资金 attempt/dispatch 原子性；未执行生产写入或付款。
 - 结果与当前代码一致：客户式 CDK+Session 可作为 Browser 订单输入；默认路线切换已有后台能力；Browser 仍需在生产非付款观察前保持付款关闭。
+
+
+# 2026-09-01｜新 API 测试订单只读观察
+
+- 生产最新订单 `PJV1-zqelgAB9K9TsiMdtq_Ox`：客户式 CDK+Session 已提交，路线为 API；订单当前 `WAITING_FOR_SESSION`。
+- API task 已完成卡分配/准备，`SUBMIT_RECHARGE` 以 `TARGET_ACCOUNT_ALREADY_PLUS` 明确失败并安全停止；attempt 与资金风险均 `CLEARED`，消费账本为 `RELEASED`，无 Provider 付款写入。
+- 现场未执行付款或其他资金动作。该订单不适合作为 Browser 测试订单（账号已是 Plus）；是否关闭该等待订单需另行决定。
+- 只读观察还发现该卡的 `cards.order_id` 仍指向历史失败订单，而本次新订单也引用同一 `assigned_card_id`；当前消费账本均已 RELEASED、无资金风险。该元数据一致性需后续单独核对，暂不据此判定为资金或重复付款。
