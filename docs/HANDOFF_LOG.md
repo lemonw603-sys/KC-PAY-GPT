@@ -888,3 +888,10 @@
 - 修复 `d1c4d32`，并以 `2bce69e` 收紧到期扫描候选：仅在所有资金状态已明确清除、所有 `create_direct` 调用均为明确失败且无外部订单号时，允许取消等待 Session 的订单并释放绑定；资金 `ACTIVE/UNKNOWN/SETTLED` 仍强制锁卡；Worker 对过期更换窗口执行同一保护逻辑自动收尾且不会反复扫描不安全订单；后台详情同步显示可取消入口。
 - 验证：v1 全量 `512 total / 470 pass / 42 environment-skipped / 0 fail`；全新隔离 MySQL `39 total / 38 pass / 1 legacy-skipped / 0 fail`。最终部署 `/opt/pojia/releases/20260901-session-release-2bce69e`，Web/Worker active，live/ready 通过，API 最小充值权限仍为 true，Browser Worker 仍关闭。
 - 用户此前已明确该订单略过；生产保护条件现场全部满足后将其关闭并释放卡。随后只读同步完成：尾号 1013=`AVAILABLE`、余额 `$16`、ACTIVE assignment=0、资格 SQL=`eligible=1`。本轮未执行开卡、补余额、Provider 写入或付款。
+
+
+# 2026-09-01｜Browser 主线只读回归与生产配置核对
+
+- 当前 main 执行 `npm --prefix browser-mvp run smoke:worker:readonly`：10/10 配置检查、3/3 隔离 MySQL/Chrome smoke 通过；shared dry-run 1/1 通过，未产生任何外部写入。
+- SSH 只读核对生产：release `20260901-session-release-2bce69e`；Web/API Worker active；Browser Worker disabled/inactive；Browser 代码、systemd 和 migrations 027/028/031/032/041 均存在。Browser systemd 强制 payment/Provider/card/funding writes=false；API Worker 最小充值权限仍 true。
+- 未启动生产 Browser、未访问 ChatGPT、未读取客户材料、未创建 Checkout、未付款。下一步是专用非客户账号/批准网络的生产形态只读观察，需另行确认。证据：`docs/2026-09-01_browser-main-readonly-regression.md`。

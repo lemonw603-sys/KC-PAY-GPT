@@ -1,7 +1,7 @@
 # 当前生产状态快照｜2026-09-01 11:02 CST
 
 > 只保留当前有效事实；历史过程查 `HANDOFF_LOG.md`，方向与顺序查 `PROJECT_MAP.md`，全链路和验收细则查 `PROJECT_OPERATING_MODEL.md`。
-> 本快照已现场核对生产 release、systemd、Worker 进程环境、数据库 Provider account 和只读 readiness。
+> 本快照已现场核对生产 release、systemd、Worker 进程环境、数据库 Provider account 和只读 readiness；Browser 主线只读回归证据见 `docs/2026-09-01_browser-main-readonly-regression.md`。
 
 ## 1. 代码、release 与服务
 
@@ -88,4 +88,4 @@
 1. 已恢复 Worker 常驻最小 API 充值权限并完成重启/只读核对；hold 关闭，通用 Provider/卡片写与 Browser 付款仍关闭。
 2. 生产只读 preflight 已确认 blocker、活动任务和资金风险均为 0；仍需把逐单 Session 验证与系统 readiness 分开。
 3. 接受下一笔有效 Session 的真实 API 订单。当前有 1 张 `$16` 可立即分配卡；下一单应先走直接分配，不人为改库存。
-4. 通过后进入 3–5 单连续 API 验收；Browser 非付款线并行。自动补给目前只有隔离 MySQL 验证，真实生产补余额/开卡闭环仍未验收。
+4. 通过后进入 3–5 单连续 API 验收；Browser 非付款线并行，当前 main 隔离只读回归已通过，下一步准备专用非客户账号/批准网络的生产形态只读观察。自动补给目前只有隔离 MySQL 验证，真实生产补余额/开卡闭环仍未验收。
