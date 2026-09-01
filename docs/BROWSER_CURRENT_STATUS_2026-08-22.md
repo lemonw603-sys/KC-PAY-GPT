@@ -179,3 +179,12 @@ git diff --check
 - 实跑：Browser 全量 `99/95 passed/4 skipped/0 failed`；readonly smoke `10/10 + 3/3`；五个写开关 false 的隔离 MySQL/Chrome shared dry-run `1/1`；`check` 与 `diff --check` 通过。
 - 本轮不连接生产、不读取真实客户 Session/PAN/CVC、不访问真实 ChatGPT、不填卡、不付款、不调用卡台接口、不部署。
 - 合同：`docs/contracts/2026-08-29_browser-chatgpt-readonly-observation-contract.md`；审查：`docs/browser-research/BROWSER_SHARED_MATERIAL_ADAPTER_ADVERSARIAL_REVIEW_2026-08-29.md`。
+
+## 10. 2026-09-02 BitBrowser + 菲律宾代理只读 Pilot
+
+- 本机已安装并校验 BitBrowser 7.1.5 Apple Silicon；Local API `127.0.0.1:54345` 健康检查通过。
+- 用户提供的菲律宾订阅已通过本机 mihomo 配置为本地代理；Cloudflare trace 显示 `loc=PH`、`colo=MNL`。订阅 URL/认证信息不进入仓库。
+- 全新 BitBrowser Profile 通过 CDP 被 Playwright 接管；无登录访问 ChatGPT 公开首页返回 HTTP 200，未出现 Cloudflare challenge。
+- 该结果只证明网络/运行时第一道可达性，不证明 Session 登录、Checkout、付款或长期稳定性。
+- 未创建订单、未连接生产队列、未读取 Session/PAN/CVC、未调用 Provider/卡台、未付款、未部署。
+- 证据与下一步：`docs/browser-research/BITBROWSER_PH_PROXY_PILOT_2026-09-02.md`。
