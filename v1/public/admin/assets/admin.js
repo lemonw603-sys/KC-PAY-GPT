@@ -838,7 +838,7 @@ async function revokeStoredBatch(batchNo, button) {
   try {
     await loadCdkBatches();
   } catch {
-    showNotice(`已作废 ${result.revokedCount} 个未使用 CDK，但批次列表刷新失败；请点“刷新”核对。`, 'warning');
+    showNotice(`已作废 ${result.revokedCount} 个未使用 CDK，但批次列表刷新失败；请点“刷新批次列表”核对。`, 'warning');
   }
 }
 
@@ -1711,7 +1711,7 @@ document.querySelector('#refresh-button').addEventListener('click', async (event
   } finally {
     button.disabled = false;
     button.classList.remove('is-loading');
-    button.textContent = '刷新';
+    button.textContent = '刷新当前页';
   }
 });
 document.querySelector('#card-funding-filters')?.addEventListener('submit', (event) => {
@@ -1930,7 +1930,7 @@ elements.cdkForm.addEventListener('submit', async (event) => {
   try {
     await loadCdkBatches();
   } catch {
-    showNotice(`批次 ${payload.batchNo} 已生成，但列表刷新失败；请点“刷新”核对，不要再次生成。`, 'warning');
+    showNotice(`批次 ${payload.batchNo} 已生成，但列表刷新失败；请点“刷新批次列表”核对，不要再次生成。`, 'warning');
   } finally {
     button.disabled = false;
     button.textContent = '生成 CDK';
