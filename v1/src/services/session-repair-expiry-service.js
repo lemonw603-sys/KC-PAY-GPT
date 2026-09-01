@@ -9,6 +9,18 @@ export function createSessionRepairExpiryService({ pool, cancelOrder, batchSize 
        WHERE status='WAITING_FOR_SESSION'
          AND session_repair_expires_at IS NOT NULL
          AND session_repair_expires_at <= CURRENT_TIMESTAMP(3)
+         AND assigned_card_id IS NOT NULL
+         AND recharge_order_no IS NULL AND recharge_card_key IS NULL
+         AND EXISTS (SELECT 1 FROM tasks expiry_task
+           WHERE expiry_task.order_id=orders.id
+             AND expiry_task.task_type='SUBMIT_RECHARGE' AND expiry_task.status='DEAD')
+         AND NOT EXISTS (SELECT 1 FROM recharge_attempts expiry_attempt
+           WHERE expiry_attempt.order_id=orders.id
+             AND expiry_attempt.funds_risk_state IN ('ACTIVE','UNKNOWN','SETTLED'))
+         AND NOT EXISTS (SELECT 1 FROM provider_calls expiry_call
+           WHERE expiry_call.order_id=orders.id
+             AND expiry_call.operation='create_direct'
+             AND expiry_call.outcome <> 'DEFINITE_FAILURE')
        ORDER BY session_repair_expires_at
        LIMIT ?`,
       [limit]
