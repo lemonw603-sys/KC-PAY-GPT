@@ -895,3 +895,10 @@
 - 当前 main 执行 `npm --prefix browser-mvp run smoke:worker:readonly`：10/10 配置检查、3/3 隔离 MySQL/Chrome smoke 通过；shared dry-run 1/1 通过，未产生任何外部写入。
 - SSH 只读核对生产：release `20260901-session-release-2bce69e`；Web/API Worker active；Browser Worker disabled/inactive；Browser 代码、systemd 和 migrations 027/028/031/032/041 均存在。Browser systemd 强制 payment/Provider/card/funding writes=false；API Worker 最小充值权限仍 true。
 - 未启动生产 Browser、未访问 ChatGPT、未读取客户材料、未创建 Checkout、未付款。下一步是专用非客户账号/批准网络的生产形态只读观察，需另行确认。证据：`docs/2026-09-01_browser-main-readonly-regression.md`。
+
+
+# 2026-09-01｜纠正 Browser 验收输入与默认路线切换事实
+
+- 纠正前述“必须准备专用测试账号”的过窄表述：客户式 Browser 全链路验收的真实输入是“生成 CDK → 客户提交 CDK+Session → 创建订单 → Browser 执行到付款前停止”；不需要额外账号密码流程。
+- 代码现场核对：`provider-route-admin-service.js` 已实现 API/Browser 默认充值方式切换；后台“卡台路线”页面已有切换按钮。切换仅影响新订单，且切换 Browser 前检查 Browser dispatch、活动 profile 与 60 秒心跳。
+- 本轮未切换生产路线、未创建订单、未启动 Browser Worker、未付款。
