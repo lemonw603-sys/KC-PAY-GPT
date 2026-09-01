@@ -89,3 +89,11 @@
 2. 生产只读 preflight 已确认 blocker、活动任务和资金风险均为 0；仍需把逐单 Session 验证与系统 readiness 分开。
 3. 接受下一笔有效 Session 的真实 API 订单。当前有 1 张 `$16` 可立即分配卡；下一单应先走直接分配，不人为改库存。
 4. 通过后进入 3–5 单连续 API 验收；Browser 非付款线并行，当前 main 隔离只读回归已通过；下一步按客户式 CDK+Session 测试订单做生产形态观察，走到付款前一步即停。自动补给目前只有隔离 MySQL 验证，真实生产补余额/开卡闭环仍未验收。
+
+## 7. 2026-09-01 最新失败单的现场复核（订单 8849）
+
+- `PJV1-412JIT_yfiuBpZeC39_m` 的 ZZSHU 外部订单 `8849` 已通过创建接口受理，随后最终状态为 `failed`；原始只读状态的唯一失败详情为“卡片被拒，请换卡后重提”，`paymentResult.success=false`，支付金额 `982.14 PHP`。
+- 同一状态响应中的目标账号套餐为 `free`，因此本次不是已是 Plus 的 `40030` 分支；创建、轮询均有明确响应，不是超时或 `SUBMIT_UNKNOWN`。
+- HNSKJ 只读复验：卡 `1839`/尾号 `1013` 为 `active`、余额 `$16.00`、资料完整；交易仅有 `$16.00 CARD_RECHARGE SUCCESS`，没有对应 `PURCHASE`。这证明卡台侧就绪不等于 ZZSHU/商户侧消费一定获批，但没有证据证明已扣款。
+- 结论边界：已确认是上游支付处理方拒绝该卡；上游未提供更细 decline code，不能擅自归因于余额、3DS、CVV、BIN、地区或银行规则。详见 `docs/2026-09-01_order-412JIT-card-decline-investigation.md`。
+- 发现一个展示缺口：订单主表 `failure_reason` 是通用文案，具体 Provider `failureReason` 仅在 attempt 结果摘要中；这不导致拒付，但后台可能无法直接显示真实拒绝原文，后续可做只读透传修复。

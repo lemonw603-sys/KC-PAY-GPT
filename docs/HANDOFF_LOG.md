@@ -958,3 +958,11 @@
 - Provider 外部订单号 `8849` 返回明确失败：`卡片被拒，请换卡后重提`；本地状态 `RECHARGE_FAILED`，attempt `FAILED/CLEARED`，无成功付款证据。
 - 该卡按“Provider 明确拒绝后不自动重新分配”策略保留为 `ASSIGNED`，不能把它误报为可立即分配；后续需按卡片核对/运营决定处理。
 - 本轮未执行换卡、重试、开卡、补余额或付款。
+
+# 2026-09-01｜订单 8849 卡片拒付只读调查
+
+- 对生产订单 `PJV1-412JIT_yfiuBpZeC39_m` 做了数据库、ZZSHU 状态接口和 HNSKJ 卡/交易接口交叉核对；全程只读，未重试、换卡、开卡、补余额或付款。
+- ZZSHU 外部订单 `8849`：`failed`，原始失败详情为“卡片被拒，请换卡后重提”，`paymentResult.success=false`，金额 `982.14 PHP`；目标账号套餐为 `free`。
+- HNSKJ 卡 `1839`/尾号 `1013`：`active`、余额 `$16.00`、资料完整；交易只有 `CARD_RECHARGE 16 USD SUCCESS`，无 PURCHASE。
+- 结论：已证实上游支付处理方拒绝该卡；没有更细 decline code，不能把原因猜成余额、3DS、CVV、BIN、地区或银行规则。资金 attempt 已 `FAILED/CLEARED`，订单终态 `RECHARGE_FAILED`，保持不自动重付/换卡。
+- 发现展示缺口：订单主表失败原因仍为通用文案，具体 Provider 拒绝原文只在 attempt 结果摘要中；已记录为后续只读展示修复候选。详见 `docs/2026-09-01_order-412JIT-card-decline-investigation.md`。
