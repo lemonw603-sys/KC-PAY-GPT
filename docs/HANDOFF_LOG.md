@@ -873,3 +873,10 @@
 - 原子切换后 Web/Worker active，三个自动补给 timer active，Browser inactive/disabled；API 充值最小权限 true，通用 Provider/普通卡片写 false。部署后 readiness 仍 `ok=true/blockers=[]`，活动任务、资金风险、UNKNOWN Provider call、开放对账均为 0，最近 Web/Worker 无 warning/error。
 - 公网 `plus/ops` live/ready 均 HTTP 200，JS/CSS 哈希与本地一致；Playwright 完成桌面/390px 输入、教程和 ACTION_REQUIRED 历史订单查询复验，Console 0 error/0 warning、移动端无横向溢出。
 - 本轮只查询既有订单状态一次；没有创建订单、更换 Session、开卡、补余额、Provider 写入或付款。成功邮箱/完成时间/成功时间线留待下一笔自然成功订单验收。
+
+# 2026-09-01｜API 随时接单状态复核
+
+- 用户要求在继续 Browser 工作时仍可随时切回 API，并把正常营业所需能力保持开启。现场核对确认无需切换：生产默认路线已经是 API，`accept_new_orders=true`、`dispatch_new_recharges=true`、`recharge_dispatch_mode=AUTOMATIC`、Worker API 充值最小权限=true。
+- 自动开卡和自动补余额均为 true；stock/funding/reconcile timers active。通用 Provider 写、普通 Worker 卡片写和 Browser 付款继续关闭，因为它们不是 API 正常营业必需项，自动补给使用各自已开启的窄范围执行权限。
+- 当前可直接分配卡为 0。首次 readiness 因卡台规则快照超过严格 2 分钟窗口显示供应 blocker；执行一次卡台规则/余额只读刷新（2 个 Provider 只读请求、仅更新本地快照）后，readiness=`AUTO_HEAL/ready=true`，明确显示“当前无卡；首个订单到达时会按已确认规则自动开卡”。
+- 当前无活动/UNKNOWN 资金风险、无开放对账；本轮未创建订单、未开卡、未补余额、未付款，也未开启通用写权限。

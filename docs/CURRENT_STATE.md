@@ -27,7 +27,7 @@
 - 数据库 card Provider account：`read_enabled=1`、`write_enabled=0`、`circuit_state=CLOSED`；现行 stock/funding runner 不以该 `write_enabled` 为写门禁，而以各自 systemd 窄范围 gate 为准。这是字段语义不一致，但不是当前补给的实际阻断。
 - Worker 进程已具备 API 最终充值能力；数据库 recharge Provider account 同样允许写。
 - `/health/ready` 返回 `{"status":"ready"}`；Worker 重启后 active/running，进程环境实际为 `PROVIDER_RECHARGE_WRITES_ENABLED=true`。
-- 2026-09-01 10:22 CST 客户页部署后通过生产 SSH 执行只读 `preflight:readiness`：`ok=true`、`blockers=[]`、Worker heartbeat 1 秒，活动任务/过期租约/UNKNOWN Provider call/资金风险/开放对账均为 0。
+- 2026-09-01 10:38 CST 再次现场核对：默认路线仍为 API，接单/自动派发/API 最小充值权限、自动开卡和自动补余额均为 true；Browser Worker 仍关闭。只读刷新卡台规则后，运营 readiness=`AUTO_HEAL/ready=true`：当前无可分配卡，首个订单到达时会按已确认规则自动开卡。
 
 ### 当前结论
 
@@ -55,7 +55,7 @@
 - 每卡最大成功支付次数全局设置为 3（可在 1–4 调整）；跨订单容量代码已部署，连续真实订单计数/释放/上限仍待验收。
 - `4744/1065=PRODUCT_ONLY(claude)`；当前旧失效批次（含 8590）均 `RETIRED`；未来新卡按实时证据接管，不使用永久卡号白名单。
 - 15 分钟资料/交易证据要求触发按需只读刷新，不把订单年龄本身当失败。
-- 当前资格 SQL 只读计算为：可立即分配 1 张（Provider `1839`，尾号 `1013`，余额 `$16.00`）。
+- 当前资格 SQL 只读计算为：可立即分配 0 张；系统存在 4 张已分配、4 张余额耗尽卡。自动开卡和自动补余额均已开启，因此当前不是停止接单状态；下一单会走无卡自动开卡路径。
 - 尾号 `6807` / Provider `1477` 的真实卡可用性是用户确认的运营事实；但当前生产数据为 Provider status=`invalidating`、历史 assignment=`ACTIVE`，因此现行资格 SQL **不会把它分配给新订单**。这是待核对/收敛的历史数据缺口，不得误报为当前可分配。
 
 ## 5. 已验证与未验证
