@@ -36,7 +36,7 @@
 
 | 项目 | 当前事实 | 证据/含义 |
 |---|---|---|
-| 生产 release | `/opt/pojia/releases/20260901-session-release-2bce69e` | `/opt/pojia/current` 现场读取；直接回滚点为 `20260901-session-release-d1c4d32` |
+| 生产 release | `/opt/pojia/releases/20260901-admin-refresh-2f1fa0a` | `/opt/pojia/current` 现场读取；直接回滚点为 `20260901-session-release-d1c4d32` |
 | Web / API Worker | active / active | systemd 现场读取 |
 | Browser Worker | inactive / disabled | 未进入真实 Browser 付款 |
 | 接单 / 派发 | true / true | 只读 readiness；当前后台已处于营业业务状态 |

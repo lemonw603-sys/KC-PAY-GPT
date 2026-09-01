@@ -941,3 +941,12 @@
 - 按用户确认完成最小前端修正：右上角按钮改为“刷新当前页”；CDK 页面按钮改为“刷新批次列表”；相关失败提示同步改名，避免误点错误作用域。
 - 验证：`node --check v1/public/admin/assets/admin.js` 通过；`npm --prefix v1 test -- --test-name-pattern='admin|CDK'`：122 tests，117 pass，5 environment-skipped，0 fail。
 - 当前只在 main 代码中完成，尚未部署生产；部署前需按发布流程做候选构建、备份和只读 preflight。
+
+
+# 2026-09-01｜刷新按钮修正部署
+
+- 用户确认后，将 `main@2f1fa0a` 构建为 `/opt/pojia/releases/20260901-admin-refresh-2f1fa0a`；无 migration 变化。
+- 部署前核对：Web/Worker 与补给 timer active；活动任务、资金风险、UNKNOWN Provider call、开放对账均为 0；创建并校验加密备份 `/var/backups/pojia/pojia-20260901T055129Z.sql.gz.enc`。
+- 原子切换 `/opt/pojia/current`，重启 Web/Worker 与补给 timer。部署后：release 指向候选、Web/Worker/timer active、`/health/ready` HTTP 200；API Worker `PROVIDER_RECHARGE_WRITES_ENABLED=true`、通用 Provider/卡片写=false。
+- 生产前端现场包含“刷新当前页”“刷新批次列表”“刷新卡段规则”“刷新本地列表”。未执行任何 Provider 写入、开卡、补余额或付款。
+- 回滚准备目录：`/var/backups/pojia/admin-refresh-20260901T20260901T055227Z`（含 previous release 与 unit 快照）。

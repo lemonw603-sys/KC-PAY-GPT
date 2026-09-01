@@ -1,4 +1,4 @@
-# 当前生产状态快照｜2026-09-01 11:02 CST
+# 当前生产状态快照｜2026-09-01 13:52 CST
 
 > 只保留当前有效事实；历史过程查 `HANDOFF_LOG.md`，方向与顺序查 `PROJECT_MAP.md`，全链路和验收细则查 `PROJECT_OPERATING_MODEL.md`。
 > 本快照已现场核对生产 release、systemd、Worker 进程环境、数据库 Provider account 和只读 readiness；Browser 主线只读回归证据见 `docs/2026-09-01_browser-main-readonly-regression.md`。
@@ -6,7 +6,7 @@
 ## 1. 代码、release 与服务
 
 - 生产已部署卡片异常占用释放修复 `2bce69e`（核心修复 `d1c4d32`）；该 release 同时包含客户充值页重设计 `b4cc5ea` 和此前 `3f23aa3` 供应规划修复。
-- 生产 `/opt/pojia/current`：`/opt/pojia/releases/20260901-session-release-2bce69e`；直接回滚点为 `/opt/pojia/releases/20260901-session-release-d1c4d32`。
+- 生产 `/opt/pojia/current`：`/opt/pojia/releases/20260901-admin-refresh-2f1fa0a`；直接回滚点为 `/opt/pojia/releases/20260901-session-release-d1c4d32`。
 - 客户页已完成公网桌面/390px 移动端、教程弹层、真实历史订单查询、CSP、静态资源哈希和 Console 复验；真实成功订单的成功邮箱/时间线仍待下一单验收。详细证据见 `docs/2026-09-01_customer-recharge-redesign-production-candidate.md`。
 - `pojia-web.service=active`；`pojia-worker.service=active`。
 - `pojia-browser-worker.service=inactive/disabled`。
