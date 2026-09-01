@@ -15,6 +15,7 @@
 - BitBrowser `/browser/open` 返回本地 CDP 地址；Playwright `connectOverCDP()` 成功接管。
 - 在全新空白 Profile、无登录条件下访问 `https://chatgpt.com/`：最终 HTTP 200，标题为 `ChatGPT: Chat, Work, Create & Code with AI`，页面进入公开首页；未出现 Cloudflare challenge。
 - 测试截图：`artifacts/bitbrowser-ph-chatgpt-20260902.png`。
+- 在同一空白 Profile 上连续 3 次重新导航 ChatGPT，均保持正常公开首页标题和正文，无再次出现 challenge。
 
 ## 尚未验证
 
