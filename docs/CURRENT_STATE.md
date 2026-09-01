@@ -1,4 +1,4 @@
-# 当前生产状态快照｜2026-09-01 22:32 CST
+# 当前生产状态快照｜2026-09-02 00:32 CST
 
 > 只保留当前有效事实；历史过程查 `HANDOFF_LOG.md`，方向与顺序查 `PROJECT_MAP.md`，全链路和验收细则查 `PROJECT_OPERATING_MODEL.md`。
 > 本快照已现场核对生产 release、systemd、Worker 进程环境、数据库 Provider account 和只读 readiness；Browser 主线只读回归证据见 `docs/2026-09-01_browser-main-readonly-regression.md`。
@@ -90,9 +90,9 @@
 ## 6. 当前唯一下一步
 
 1. 已恢复 Worker 常驻最小 API 充值权限并完成重启/只读核对；hold 关闭，通用 Provider/卡片写与 Browser 付款仍关闭。
-2. 生产只读 preflight 已确认 blocker、活动任务和资金风险均为 0；仍需把逐单 Session 验证与系统 readiness 分开。
-3. 接受下一笔有效 Session 的真实 API 订单。当前没有合格 Plus 卡；下一单应验收“自动开一张 `$16` 新卡并继续原订单”，不得给旧 `RETIRED` 卡补钱，也不得重试已失败的 1013。
-4. 通过后进入 3–5 单连续 API 验收；Browser 非付款线并行，当前 main 隔离只读回归已通过；下一步按客户式 CDK+Session 测试订单做生产形态观察，走到付款前一步即停。自动补给目前只有隔离 MySQL 验证，真实生产补余额/开卡闭环仍未验收。
+2. 生产只读 preflight 已确认 blocker、活动任务和资金风险均为 0；Provider 卡 `2338`、尾号 `4643` 当前为 `active/AVAILABLE/$16`，可直接供下一笔 API 订单使用。
+3. 接受下一笔有效 Session 的真实 API 订单，优先验收“自动分配 4643→API 充值→取消续费→交易/余额/对账”；不得给旧 `RETIRED` 卡补钱，也不得重试已失败的 1013。
+4. 通过后进入 3–5 单连续 API 验收，观察一卡多单、余额不足后的精确补款及下一次无卡自动开卡。Browser 下一步不是重复建单，而是先解决/确认 `CHATGPT_ACCESS_BLOCKED` 的可访问网络环境，再重新执行到付款按钮前的非付款观察。
 
 ## 7. 2026-09-01 最新失败单的现场复核（订单 8849）
 
