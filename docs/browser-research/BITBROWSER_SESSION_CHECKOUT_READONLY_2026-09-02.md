@@ -91,3 +91,31 @@
 3. 长时运行、断线恢复、付款和付款后状态。
 
 下一步应先采集当前 Plus 入口点击后的脱敏 URL/新页签/对话框状态，冻结新导航合同；在账号检查再次稳定返回前不重复点击升级入口。
+
+## 税费原因核查（本轮新增）
+
+本轮专门对比了历史 `USD 20 / tax 0` 证据与当前只读 checkout 证据，结论是：**当前页面已明显切换到 PH 定价/税费轨道**，但仅凭现有只读证据还不能唯一锁定“账单地址、税号或企业购买状态”中的某一个是唯一触发因素。
+
+### 已证实
+
+- 当前 checkout 页面进入的是 `https://chatgpt.com/checkout/openai_llc/oaics_a462d8b18e0643d59b2b9c8773354021`，页面正文显示：
+  - `Monthly subscription ₱982.14`
+  - `VAT (12%) ₱117.86`
+  - `Due today ₱1,100.00`
+- 当前网络响应明确命中了 `https://chatgpt.com/backend-api/checkout_pricing_config/configs/PH`，且返回 HTTP 200。
+- 页面里可见 `Payment method`、`I'm purchasing as business` 与 `subscription-tax-id` 输入项，说明当前 checkout 确实暴露了企业购买/税务相关 UI。
+- 历史只读证据里，checkout 曾显示 `USD 20.00` 且税费为 `0.00`；对应旧状态文档也记录了 `Plus`、`USD 20.00`、税费 `0.00` 的观察。
+
+### 未证实
+
+- 当前 billing country / billing address 的具体值：本轮只读证据未直接暴露其原文。
+- `I'm purchasing as business` 是否已被显式勾选，或 `subscription-tax-id` 是否有值：当前 DOM 只证明控件存在，未证明状态值。
+- `PH` 定价是由哪一个单一因素触发：已知与地区/定价配置一致，但无法仅凭当前证据断定是地址、税号、企业购买态还是会话/地区路由的唯一原因。
+
+### 对比结论
+
+与历史 `USD 20 / tax 0` 相比，当前 checkout 的税费变化最直接的证据链是：
+
+`checkout_pricing_config/configs/PH` → 页面显示 `PHP` 定价 → `VAT (12%)` 出现 → `Due today ₱1,100.00`
+
+因此，本轮只能确认：**税费变化与 PH 定价轨道一致**；不能确认：**billing address / tax ID / business purchase 中哪一个是唯一触发项**。后续若要进一步缩小原因，只能继续保持只读，采集更完整但不含原文的账单区块状态与页面网络响应，而不能通过修改账单资料来反推。
