@@ -25,3 +25,7 @@
 进一步诊断确认：Stripe 卡字段和账单地址 iframe 在部分加载窗口内确实会出现；曾在一次临时内存会话中填入卡字段（未提交），随后关闭 Profile。多次重新打开同一 Checkout 时字段又会消失或延迟，说明当前链接/Stripe 初始化存在间歇性状态，不能把它当作稳定测试结果。临时截图和脚本已删除。
 
 下一次只读尝试应先复用同一 Profile，记录升级请求/页面错误并等待有限时长；若仍卡在 “Getting your plan ready”，应停止，不增加重试频率，也不绕过税务或风控校验。
+
+## 当前阻塞（现场）
+
+在完成新 Checkout 创建后，BitBrowser Local API 随即返回“今日打开窗口次数已达上限”。该限制来自 BitBrowser 当前账户/套餐，不是 ChatGPT、Stripe、代理或项目代码错误。新 Checkout 已创建，但 Profile 已关闭，今日无法再次经 Local API 打开并完成地址税费对照。后续必须等待额度重置或经用户确认升级 BitBrowser 套餐；恢复后应在一次 Profile 生命周期内完成全部观察，避免重复开关消耗次数。
