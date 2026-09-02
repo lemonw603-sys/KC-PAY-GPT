@@ -120,3 +120,11 @@
 - 当前卡台余额为 `$19.43`；卡段要求 `minBalanceUsdt=25`，开 `$16` 卡的预计费用为 `$16.58`，开卡后余额将低于 Provider 要求的最低余额。
 - 因此当前仍不能安全开 `$16` 卡，真实阻断是**卡台账户余额不足**，不是卡段维护。剩余开卡额度为 `291`。
 - 已保留并验证本地保护修复：同步保留 `maintaining` 字段，遇到未来维护卡段时在付费调用前返回 `CARD_STOCK_CARD_TYPE_UNAVAILABLE`；本次未执行开卡或任何 Provider 写入。
+
+## 8. 2026-09-02 Browser 六 Profile 代码状态（非生产）
+
+- `codex/browser` 已基于 `main@0624f2a` 实现 1–6 BitBrowser Profile 常驻池、并发 lane、订单间页面/Cookie/storage 清理和故障槽隔离。
+- 付款前代码时序已改为：卡片/账单地址准备→读取最终税费与总额→预算判断→Checkout 摘要绑定权威 permit/submit intent→最终复核；仍未接生产 LIVE 付款。
+- Browser 全量 `138 total / 134 passed / 4 skipped / 0 failed`；v1 repository 定向 `21/21`。需 `TEST_DATABASE_URL` 的隔离 MySQL 项保持未执行。
+- 这不改变本文件前述生产事实：生产 release 未变，Browser Worker 仍 `inactive/disabled`，默认路线仍为 API，未执行 Subscribe/付款/Provider 写入。
+- 详细证据：`docs/browser-research/BROWSER_SIX_PROFILE_POOL_IMPLEMENTATION_2026-09-02.md`。

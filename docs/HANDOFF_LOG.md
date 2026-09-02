@@ -1010,3 +1010,12 @@
 - 生产部署：不可变 release `/opt/pojia/releases/20260901-browser-access-block-7bad460f26d311d8f15103c86933a276cf4b9d14`，回滚点 `/opt/pojia/releases/20260901-provider-reason-569e8ee`。Web/Worker active，Browser Worker inactive/disabled。
 - 部署后验证：生产 Browser unit 短暂启动只读 fixture 后正常停止；API readiness `ok=true`、active/unknown funds=0、活动任务=0、Browser job/run/lease=0；默认 API、接单/派发均为 true。
 - 未完成：ChatGPT 真实页面因 `CHATGPT_ACCESS_BLOCKED` 未到 Checkout；后续需在可访问的批准网络环境重新执行到最终付款按钮前的非付款观察。不得把本轮结果说成 Browser 付款链路已验收。
+
+## 2026-09-02｜Browser 六 Profile 常驻池代码完成（未部署、未付款）
+
+- 分支已 rebase 到当时最新 `main@0624f2a`，没有覆盖主线的 API/卡库存/税费文档进展。
+- 实现 1–6 BitBrowser Profile 常驻池、并发 readonly lane、槽位租约、单槽隔离、客户状态清理与 shutdown 汇总。
+- 修正最终金额时序：账单地址后税费/总额先稳定并通过 budget guard，Checkout 摘要再绑定权威 payment permit 和 submit intent。
+- 增加 JIT billing address 合同；没有记录任何用户真实卡号、CVC 或地址。
+- 本地结果：Browser 138/134 pass/4 skip/0 fail；v1 repository 21/21。
+- 详见 `docs/browser-research/BROWSER_SIX_PROFILE_POOL_IMPLEMENTATION_2026-09-02.md`。

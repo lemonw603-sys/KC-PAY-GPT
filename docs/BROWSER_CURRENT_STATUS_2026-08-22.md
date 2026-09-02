@@ -204,3 +204,13 @@ git diff --check
 - 进入 Plus 选择流程后，现有合同等待 Checkout/问卷过渡超时，未识别套餐/币种/金额；已 fail-closed 收口。
 - 单次诊断性重进时订阅检查 HTTP 403，按 `ACCOUNT_STATUS_UNKNOWN` 在 Plus 点击前停止，不继续重试。
 - 两次均为卡字段写入 0、payment submit 0、项目 Provider/卡台调用 0，Profile 已关闭。证据：`docs/browser-research/BITBROWSER_SESSION_CHECKOUT_READONLY_2026-09-02.md`。
+
+## 13. 2026-09-02 六 Profile 常驻池实施
+
+- `codex/browser` 已在最新 `main` 基线上实现 1–6 Profile 常驻池、同步槽位租约、单槽故障隔离、订单间 Cookie/storage 清理、并发 readonly lane 和 shutdown 失败汇总。
+- 对抗审查修正了关键付款时序：卡片和账单地址先在无付款副作用阶段填入，读取地址后的最终税费/总额并通过预算检查；该 Checkout 摘要哈希随后与数据库权威卡/路线事实共同绑定 permit 与 submit intent，permit 后金额再漂移则停止。
+- 账单地址通过 JIT `billingAddress` 合同进入 adapter；不得进入 job、WAL、artifact 或普通文档。本轮没有落盘用户真实卡片/地址。
+- 验证：Browser 全量 `138 total / 134 passed / 4 skipped / 0 failed`；v1 Browser repository 定向 `21/21`。4 项需 `TEST_DATABASE_URL` 的隔离 MySQL 测试未运行，不冒充通过。
+- 本轮没有生产部署、没有启动生产 Worker、没有点击 Subscribe、没有付款或 Provider/卡台写入。
+- 尚未证明：BitBrowser 套餐同时常驻 6 个 Profile；六路菲律宾 sticky 出口；真实 3/6 Profile 并发和长期稳定；LIVE 付款后 observer/对账。
+- 详细报告：`docs/browser-research/BROWSER_SIX_PROFILE_POOL_IMPLEMENTATION_2026-09-02.md`。

@@ -177,7 +177,10 @@
 
 ## 2026-09-02 Browser 最新进度（现场核对）
 
-- API 生产只读核验已完成：基础服务/权限/readiness 正常，但最近两笔真实 API 订单均因上游开通超时失败；这不改变 Browser 并行线。
-- Browser worktree 最新提交为 `e3c15eb`：付款前 Live Checkout adapter 已加固（双重 Checkout 重读、预算门禁、卡有效期校验、UNKNOWN 不重试），默认及生产付款开关仍关闭。
-- Browser 验证：全量 `126 total / 122 passed / 4 skipped / 0 failed`；readonly + 隔离 MySQL smoke `11/11 + 3/3`；未部署、未填真实卡、未点击 Subscribe。
-- Browser 下一步：实现真实预算 guard、付款结果/Plus 激活/取消续费/交易对账 observer，并接入隔离状态机；完成前不部署、不启动生产付款。
+- API 生产线保持默认路线；Browser Worker 仍为 `inactive/disabled`，本轮未部署、未付款。
+- BitBrowser 菲律宾 Profile 已实测：公开页面可达，测试 Session 身份匹配且账号为 FREE，已进入真实 Checkout；菲律宾 Checkout 只读观察为基础价 `₱982.14`、VAT `₱117.86`、合计 `₱1,100.00`。Delaware 地址后的税费尚因 BitBrowser 当日打开额度阻塞，待额度恢复复验。
+- `codex/browser` 已基于当前 main 实现 1–6 Profile 常驻池：单 Profile 单订单、Profile 间并行；订单间清理页面/Cookie/storage；清理失败隔离槽位；第 7 个并发拒绝。
+- 对抗审查已修复地址/税费与付款许可顺序：先无付款地填写卡和账单地址并读取最终总额，再将 Checkout 摘要绑定权威 permit/submit intent；permit 后金额漂移仍停止。
+- 代码验证：Browser `138 total / 134 passed / 4 skipped / 0 failed`；v1 repository 定向 `21/21`。没有 `TEST_DATABASE_URL` 的 4 项隔离 MySQL 实跑仍未执行。
+- Browser 下一步：BitBrowser 额度恢复后先完成 Delaware 非付款税费复验，再做单 Profile 生产形态非付款闭环；之后按 1→3→6 验证 Profile 同开额度、固定菲律宾 sticky 出口、并发隔离和吞吐。真实付款仍需独立确认。
+- 详细实施/审查：`docs/browser-research/BROWSER_SIX_PROFILE_POOL_IMPLEMENTATION_2026-09-02.md`。

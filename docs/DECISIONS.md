@@ -145,3 +145,5 @@
 
 | D-117 | 内部提醒只展示需要运营采取动作的 warning/critical。卡台余额变化继续发 Bark 并保留审计，但 info 历史不占后台提醒；订单等待卡提醒必须绑定订单并随取消/终态关闭；自动补给已开启时，低库存由系统按订单恢复，不再发送要求人工处理的低库存提醒。 | 已实现并部署 | migration 044 已关闭历史陈旧等待卡/低库存提醒；余额 info 证据继续保留。 |
 | D-118 | 默认 API 路线长期开放 Worker 的最小真实充值权限：只设 `PROVIDER_RECHARGE_WRITES_ENABLED=true`；`PROVIDER_WRITES_ENABLED=false`、`PROVIDER_CARD_WRITES_ENABLED=false` 和 Browser 付款门禁继续独立关闭。 | 已确认并部署 | 用户在本次候选部署前明确确认；生产以独立 systemd drop-in 落地，Worker 进程环境和心跳已复核。 |
+
+| D-119 | Browser 第一版容量采用 6 个常驻 BitBrowser Profile：单 Profile 同一时刻只处理一单，Profile 间并行；订单间必须清理客户页面、Session Cookie 与站点存储，清理失败的 Profile 不得回池。最终 Checkout 税费/总额必须在填写卡片与账单地址后稳定，再绑定权威付款 permit 和 submit intent；不得让 permit 绑定地址前旧金额。 | 代码已实现并通过本地回归，未部署、待真实 1→3→6 Profile 验收 | 实施与对抗审查见 `docs/browser-research/BROWSER_SIX_PROFILE_POOL_IMPLEMENTATION_2026-09-02.md`；当前仍未证明 BitBrowser 套餐 6 开、六路代理隔离或真实付款。 |
