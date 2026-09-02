@@ -174,3 +174,10 @@
 4. 唯一下一步或优先级变化。
 
 新窗口首读：`PROJECT_MAP.md` → `CURRENT_STATE.md` → `PROJECT_OPERATING_MODEL.md` → 引用的证据报告。`DECISIONS.md` 是决策历史账本，其旧状态栏不得覆盖当前生产事实；`ROADMAP.md` 仅为历史明细，不得自行覆盖本地图。
+
+## 2026-09-02 Browser 最新进度（现场核对）
+
+- API 生产只读核验已完成：基础服务/权限/readiness 正常，但最近两笔真实 API 订单均因上游开通超时失败；这不改变 Browser 并行线。
+- Browser worktree 最新提交为 `e3c15eb`：付款前 Live Checkout adapter 已加固（双重 Checkout 重读、预算门禁、卡有效期校验、UNKNOWN 不重试），默认及生产付款开关仍关闭。
+- Browser 验证：全量 `126 total / 122 passed / 4 skipped / 0 failed`；readonly + 隔离 MySQL smoke `11/11 + 3/3`；未部署、未填真实卡、未点击 Subscribe。
+- Browser 下一步：实现真实预算 guard、付款结果/Plus 激活/取消续费/交易对账 observer，并接入隔离状态机；完成前不部署、不启动生产付款。
