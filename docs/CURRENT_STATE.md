@@ -113,3 +113,10 @@
 - 后台失败原因透传已部署：历史订单 `PJV1-412JIT_yfiuBpZeC39_m` 经生产代码和数据库只读调用实际返回“卡片被拒，请换卡后重提”，来源为 `PROVIDER_ATTEMPT`；未来轮询确认失败时也会把脱敏后的 Provider 原文写入订单主表。
 - 用户随后在卡台删除/停用该卡。现场复查 HNSKJ 显示 `1839/1013=invalidating`、余额 `$0.01`；本地原快照曾滞后为 `active/$16`，已执行一次只读同步更新本地快照。因失败订单仍有 ACTIVE assignment，本地 `inventory_status=ASSIGNED` 继续保留审计关联，资格计算不会分配该卡。
 - 口径更正：未绑定的旧卡（`203/261/314/315/316/317/332/333/334/335/444/451/493/612/616/617/917`）不是“余额不足等待补款”，而是因同批服务器更换已确认永久不可用，均有 `card_operational_overrides.allocation_policy=RETIRED`，不得进入自动补余额或新订单分配。`1065/4744` 为 Claude 专用，不属于 Plus 库存。后续只有新接管且通过实时证据的卡才可进入补给/分配流程。
+
+## 8. 2026-09-02 卡段开卡只读复核
+
+- 现场读取 HNSKJ `card-types`：`purchaseEnabled=true`、剩余开卡额度 `291`，但 7 个可见卡段全部 `maintaining=true`（“对应卡头升级维护中，稍后恢复”）。
+- 因此当前不能安全开卡；`purchaseEnabled=true` 不能覆盖卡段维护状态。
+- 已修正 `v1/src/services/card-provider-snapshot-service.js`：同步保留 `maintaining` 字段，开卡评估遇到维护卡段在付费调用前返回 `CARD_STOCK_CARD_TYPE_UNAVAILABLE`。
+- 定向测试 `v1/test/card-provider-snapshot-service.test.js`：7/7 passed。未执行开卡或任何 Provider 写入。

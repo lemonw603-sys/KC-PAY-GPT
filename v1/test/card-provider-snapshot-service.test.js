@@ -65,6 +65,14 @@ test('rejects amount, card type, quota and balance before a paid call', () => {
   }), (error) => error.code === 'CARD_STOCK_BALANCE_INSUFFICIENT');
 });
 
+test('rejects a provider card segment marked under maintenance before a paid call', () => {
+  const maintained = snapshot();
+  maintained.cardTypes[0].maintaining = true;
+  assert.throws(() => evaluateCardStockRequest(maintained, {
+    cardTypeId: '1', amount: 16, count: 1
+  }), (error) => error.code === 'CARD_STOCK_CARD_TYPE_UNAVAILABLE');
+});
+
 test('detects stale provider snapshots', () => {
   assert.equal(snapshotIsFresh(snapshot({ checkedAt: new Date(Date.now() - 121_000) })), false);
   assert.equal(snapshotIsFresh(snapshot()), true);

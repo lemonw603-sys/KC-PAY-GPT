@@ -30,7 +30,8 @@ function normalizeCardType(item) {
     minimumAccountBalance: String(item.minBalanceUsdt),
     requireMinimumAccountBalance: Number(item.requireMinBalance) === 1,
     consumeRate: String(item.consumeRate),
-    chargebackFee: String(item.chargebackFee)
+    chargebackFee: String(item.chargebackFee),
+    maintaining: item.maintaining === true
   };
 }
 
@@ -74,6 +75,11 @@ export function evaluateCardStockRequest(snapshot, {
   const selected = snapshot.cardTypes?.find((item) => String(item.id) === String(cardTypeId));
   if (!selected || (expectedCardTypeName && selected.name !== expectedCardTypeName)) {
     throw new PublicApiError('Configured card type is unavailable or changed', {
+      code: 'CARD_STOCK_CARD_TYPE_UNAVAILABLE', status: 409
+    });
+  }
+  if (selected.maintaining === true) {
+    throw new PublicApiError('Selected card segment is under maintenance', {
       code: 'CARD_STOCK_CARD_TYPE_UNAVAILABLE', status: 409
     });
   }
