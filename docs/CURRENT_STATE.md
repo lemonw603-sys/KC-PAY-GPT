@@ -114,9 +114,9 @@
 - 用户随后在卡台删除/停用该卡。现场复查 HNSKJ 显示 `1839/1013=invalidating`、余额 `$0.01`；本地原快照曾滞后为 `active/$16`，已执行一次只读同步更新本地快照。因失败订单仍有 ACTIVE assignment，本地 `inventory_status=ASSIGNED` 继续保留审计关联，资格计算不会分配该卡。
 - 口径更正：未绑定的旧卡（`203/261/314/315/316/317/332/333/334/335/444/451/493/612/616/617/917`）不是“余额不足等待补款”，而是因同批服务器更换已确认永久不可用，均有 `card_operational_overrides.allocation_policy=RETIRED`，不得进入自动补余额或新订单分配。`1065/4744` 为 Claude 专用，不属于 Plus 库存。后续只有新接管且通过实时证据的卡才可进入补给/分配流程。
 
-## 8. 2026-09-02 卡段开卡只读复核
+## 8. 2026-09-02 卡段开卡只读复核（更正）
 
-- 现场读取 HNSKJ `card-types`：`purchaseEnabled=true`、剩余开卡额度 `291`，但 7 个可见卡段全部 `maintaining=true`（“对应卡头升级维护中，稍后恢复”）。
-- 因此当前不能安全开卡；`purchaseEnabled=true` 不能覆盖卡段维护状态。
-- 已修正 `v1/src/services/card-provider-snapshot-service.js`：同步保留 `maintaining` 字段，开卡评估遇到维护卡段在付费调用前返回 `CARD_STOCK_CARD_TYPE_UNAVAILABLE`。
-- 定向测试 `v1/test/card-provider-snapshot-service.test.js`：7/7 passed。未执行开卡或任何 Provider 写入。
+- 第一次卡段读取结果与随后直接读取结果不一致；已按最新原始 Provider 响应复核，当前 7 个卡段（ID 16–22）均 `maintaining=false`、`purchaseEnabled=true`，卡段维护不是当前阻断。
+- 当前卡台余额为 `$19.43`；卡段要求 `minBalanceUsdt=25`，开 `$16` 卡的预计费用为 `$16.58`，开卡后余额将低于 Provider 要求的最低余额。
+- 因此当前仍不能安全开 `$16` 卡，真实阻断是**卡台账户余额不足**，不是卡段维护。剩余开卡额度为 `291`。
+- 已保留并验证本地保护修复：同步保留 `maintaining` 字段，遇到未来维护卡段时在付费调用前返回 `CARD_STOCK_CARD_TYPE_UNAVAILABLE`；本次未执行开卡或任何 Provider 写入。
