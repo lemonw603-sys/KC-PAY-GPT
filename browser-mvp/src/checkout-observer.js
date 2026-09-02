@@ -2,8 +2,14 @@ import { createHash } from 'node:crypto';
 
 import { ContractError } from './contracts.js';
 
+const MONEY_NUMBER_PATTERN = '(?:[0-9]{1,3}(?:,[0-9]{3})*(?:[.,][0-9]{1,2})?|[0-9]+(?:[.,][0-9]{1,2})?)';
+
 function digest(value) {
   return createHash('sha256').update(String(value || '')).digest('hex');
+}
+
+function escapeRegex(value) {
+  return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 async function readText(page, selector) {
@@ -13,20 +19,27 @@ async function readText(page, selector) {
   return (await locator.textContent())?.trim() || '';
 }
 
+async function readBlockText(page, selector) {
+  if (!selector) return '';
+  const locator = page.locator(selector);
+  if (await locator.count() !== 1) return '';
+  return (await locator.innerText())?.trim() || (await locator.textContent())?.trim() || '';
+}
+
 function normalizeAmount(value) {
   const compact = value.replace(/\s+/g, '');
-  if (compact.includes('.') && compact.includes(',')) return compact.replaceAll(',', '');
+  if (compact.includes(',')) return compact.replaceAll(',', '');
   return compact;
 }
 
 function parseMoney(value) {
-  const prefix = /(US\$|USD|PHP|\$|₱)\s*([0-9]+(?:[.,][0-9]{1,2})?)/i.exec(value || '');
-  const suffix = /([0-9]+(?:[.,][0-9]{1,2})?)\s*(USD|PHP)/i.exec(value || '');
+  const prefix = new RegExp(`(US\\$|USD|PHP|\\$|₱)\\s*(${MONEY_NUMBER_PATTERN})`, 'i').exec(value || '');
+  const suffix = new RegExp(`(${MONEY_NUMBER_PATTERN})\\s*(USD|PHP)`, 'i').exec(value || '');
   const match = prefix || suffix;
   if (!match) return null;
   const token = prefix ? match[1].toUpperCase() : match[2].toUpperCase();
   const amount = normalizeAmount(prefix ? match[2] : match[1]);
-  const currency = token === 'US$' ? 'USD' : token;
+  const currency = token === 'US$' ? 'USD' : token === '₱' ? 'PHP' : token;
   return { currency, amount };
 }
 
@@ -34,9 +47,15 @@ async function readMoneyRow(page, { summarySelector, labels }) {
   if (!summarySelector || !Array.isArray(labels) || labels.length === 0) return null;
   const summary = page.locator(summarySelector);
   if (await summary.count() !== 1) return null;
+  const summaryText = (await summary.innerText().catch(() => ''))?.trim() || (await summary.textContent().catch(() => ''))?.trim() || '';
+  for (const label of labels) {
+    const pattern = new RegExp(`${escapeRegex(label)}[\\s\\S]*?(US\\$|USD|PHP|\\$|₱)\\s*(${MONEY_NUMBER_PATTERN})`, 'i');
+    const match = pattern.exec(summaryText);
+    if (match) return parseMoney(`${match[1]} ${match[2]}`);
+  }
   const rows = [];
   for (const label of labels) {
-    const matches = summary.getByText(label, { exact: true });
+    const matches = summary.getByText(label, { exact: false });
     const count = await matches.count();
     for (let index = 0; index < count; index += 1) {
       rows.push((await matches.nth(index).locator('..').textContent())?.trim() || '');
@@ -75,8 +94,8 @@ export const CHATGPT_PLUS_CHECKOUT_CONTRACT = Object.freeze({
   currencySelector: null,
   amountSelector: null,
   summarySelector: '[data-testid="checkout-summary-column"]',
-  amountLabels: Object.freeze(['今日应付金额', 'Total due today', 'Amount due today']),
-  estimatedTaxLabels: Object.freeze(['预估税费', 'Estimated tax']),
+  amountLabels: Object.freeze(['Due today', '今日应付金额', 'Total due today', 'Amount due today']),
+  estimatedTaxLabels: Object.freeze(['VAT (12%)', '预估税费', 'Estimated tax']),
   paymentFormSelector: 'form[data-testid="checkout-form"]',
   submitControlSelector: '[data-testid="checkout-summary-column"] button[type="submit"]',
   inspectSecureCardFields: true,
@@ -114,9 +133,24 @@ export async function observeCheckout(page, {
     readMoneyRow(page, { summarySelector, labels: amountLabels }),
     readMoneyRow(page, { summarySelector, labels: estimatedTaxLabels }),
   ]);
+  const summaryText = await readBlockText(page, summarySelector);
   if ((!currency || !amount) && amountRow) {
     currency = amountRow.currency;
     amount = amountRow.amount;
+  }
+  if ((!currency || !amount) && summaryText) {
+    const amountPatterns = Array.isArray(amountLabels) && amountLabels.length > 0 ? amountLabels : ['Due today'];
+    for (const label of amountPatterns) {
+      const match = new RegExp(`${escapeRegex(label)}[\\s\\S]*?(US\\$|USD|PHP|\\$|₱)\\s*(${MONEY_NUMBER_PATTERN})`, 'i').exec(summaryText);
+      if (match) {
+        const parsed = parseMoney(`${match[1]} ${match[2]}`);
+        if (parsed) {
+          currency = currency || parsed.currency;
+          amount = amount || parsed.amount;
+          break;
+        }
+      }
+    }
   }
   const paymentFormPresent = paymentFormSelector ? (await page.locator(paymentFormSelector).count()) === 1 : false;
   const submitControl = submitControlSelector ? page.locator(submitControlSelector) : null;

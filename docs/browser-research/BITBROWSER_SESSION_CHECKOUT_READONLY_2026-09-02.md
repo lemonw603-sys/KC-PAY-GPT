@@ -34,6 +34,23 @@
 ## 本轮新增证据
 
 - `artifacts/bitbrowser-session-readonly-20260902/retry-1788312839770.json`
+- `artifacts/bitbrowser-session-readonly-20260902/checkout-dom-dump.json`
+
+## Checkout 观察器最小修复
+
+基于上面的真实 DOM/网络证据，`checkout-observer` 做了最小适配，不改支付边界：
+
+- `checkout-summary-column` 现在支持按整块文本回退解析，不再只依赖单个子节点的精确命中；
+- `Due today` / `VAT (12%)` 被加入到当前 summary 识别标签；
+- PHP 金额里的 `₱` 现在会归一化为 `PHP`，并保持金额归一化输出；
+- 新增了一条贴近当前 live DOM 的只读单测，确保还能稳定提取 `ChatGPT Plus / PHP / 1100.00`，同时仍然保留 secure field 和 submit 的 fail-closed 边界。
+
+## 本轮验证结果
+
+- `npm --prefix browser-mvp run check` 通过；
+- `node --test browser-mvp/test/session-identity-checkout.test.js browser-mvp/test/checkout-navigation.test.js browser-mvp/test/production-readonly-config.test.js browser-mvp/test/bitbrowser-profile-runtime.test.js` 28/28 通过；
+- `BROWSER_DRY_RUN_ENV=isolated-fixture BROWSER_PAYMENT_WRITES_ENABLED=false PROVIDER_WRITES_ENABLED=false PROVIDER_CARD_WRITES_ENABLED=false PROVIDER_RECHARGE_WRITES_ENABLED=false CARD_FUNDING_WRITES_ENABLED=false npm --prefix browser-mvp run dry-run:shared` 1/1 通过；
+- 全程仍然没有真实付款、没有填卡、没有 Provider/卡台写入。
 
 ## 结论更新
 
@@ -46,11 +63,10 @@
 
 **仍未证明：**
 
-1. checkout 页面上可稳定提取的套餐、币种和金额；
-2. 这个 checkout path 与当前 page contract 的结构是否应改为新的只读观察锚点，还是应该把现有 observer 只读 selector 做一次最小适配；
-3. 长时运行、断线恢复、付款与付款后状态。
+1. 该 checkout path 在更多只读会话里是否持续稳定；
+2. 长时运行、断线恢复、付款与付款后状态。
 
-下一步应先根据这次 `checkout/openai_llc/oaics_931de720de204029b826689701ca1b0a` 的脱敏 URL、网络响应与页面结构，定位是“选择器漂移”还是“页面形态变更”，然后只做最小只读适配；仍不得进入卡字段、submit 或付款。
+下一步应在同一只读边界内，基于这次 `checkout/openai_llc/oaics_931de720de204029b826689701ca1b0a` 的路径再做一次短回归，确认修复后的 summary 解析对 live 页面仍稳定；仍不得进入卡字段、submit 或付款。
 
 ## 证据
 

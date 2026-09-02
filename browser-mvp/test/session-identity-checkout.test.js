@@ -205,6 +205,47 @@ test('checkout observer matches the live ChatGPT Plus checkout shape without tou
   }
 });
 
+test('checkout observer parses the current ChatGPT Plus checkout summary text without touching card fields', async () => {
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage();
+    await page.setContent(`
+      <div data-testid="checkout-page-content">
+        <form data-testid="checkout-form">
+          <section data-testid="checkout-summary-column">
+            <h2>ChatGPT Plus</h2>
+            <h3>Payment method</h3>
+            <p>Monthly subscription ₱982.14</p>
+            <p>VAT (12%) ₱117.86</p>
+            <p>Due today ₱1,100.00</p>
+            <button type="submit" aria-label="Subscribe">Subscribe</button>
+          </section>
+          <iframe srcdoc='
+            <input name="number" autocomplete="cc-number">
+            <input name="expiry" autocomplete="cc-exp">
+            <input name="cvc" autocomplete="cc-csc">
+          '></iframe>
+        </form>
+      </div>
+    `);
+    const result = await observeCheckout(page, {
+      ...CHATGPT_PLUS_CHECKOUT_CONTRACT,
+      urlPrefix: 'about:blank',
+    });
+    assert.equal(result.planDigest.length > 0, true);
+    assert.equal(result.currency, 'PHP');
+    assert.equal(result.amount, '1100.00');
+    assert.equal(result.estimatedTax, '117.86');
+    assert.equal(result.paymentFormPresent, true);
+    assert.equal(result.submitControlPresent, true);
+    assert.equal(result.submitControlEnabled, true);
+    assert.deepEqual(result.cardFieldsPresent, { number: true, expiry: true, securityCode: true });
+    assert.equal(result.submitCalls, 0);
+  } finally {
+    await browser.close();
+  }
+});
+
 test('live Checkout contract fails closed when Stripe secure fields never become ready', async () => {
   const browser = await chromium.launch({ headless: true });
   try {
