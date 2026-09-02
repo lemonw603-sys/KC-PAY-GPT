@@ -132,6 +132,7 @@
 
 - 本轮已按真实业务创建测试 CDK+Session 订单，临时切换默认路线为 Browser；系统自动开卡并分配后，Browser 访问被 ChatGPT/网络返回 `CHATGPT_ACCESS_BLOCKED`，在付款前安全终止。测试订单、资金风险、租约和 Browser Worker 已清理，默认路线已恢复 API。
 - 已修复：`CHATGPT_ACCESS_BLOCKED`、Checkout 导航/观察阻断不再回到 `CARD_READY` 重排 `SUBMIT_RECHARGE`；改为终态 `RECHARGE_FAILED`，避免重复创建 attempt。修复已部署到当前 release 并通过定向测试。
+- 最新只读税费尝试：BitBrowser 菲律宾 Profile 可访问套餐页并显示 Plus ₱1,100；点击升级后停在 “Getting your plan ready”，未进入 Checkout，税费与 Delaware 地址影响尚未验证（详见 `docs/browser-research/BITBROWSER_TAX_READONLY_ATTEMPT_2026-09-02.md`）。
 - 非付款闭环通过后，再单独确认首笔真实 Browser 付款；成功后再讨论把全局默认路线从 API 切为 Browser。
 
 ### E｜客户充值页体验线
