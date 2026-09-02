@@ -515,3 +515,12 @@ npm --prefix browser-mvp test
 - 验证：smoke 9/9 + 3/3；Browser 全量 94 tests / 90 passed / 4 skipped / 0 failed；isolated shared dry-run 1/1。
 - 未连接生产/预生产，未读取真实 Session/PAN/CVC，未访问外部 ChatGPT，未填卡、未付款、未调用卡台写接口、未部署。
 - 证据与下一缺口：`docs/browser-research/BROWSER_SHARED_MATERIAL_ADAPTER_2026-08-29.md`。
+
+## 2026-09-02 LIVE Checkout 付款前加固
+
+- 修正已有 live adapter 与配置层互相矛盾：`LIVE` 现在只有在 executor gate、数据库/进程付款写 gate 和精确确认同时满足时才可装配，默认仍关闭。
+- 点击前新增两次 checkout 重读：填卡前一次、填卡后一次；套餐、币种、VAT/税费后总额或 submit 控件任何变化均在点击前停止。
+- 增加必需的余额预算决策和卡有效期校验；余额不足为可修复的 pre-submit failure，不会误锁为付款 UNKNOWN。
+- 验证：定向 15/15；Browser 全量 124/120/4/0；production-shaped readonly + isolated MySQL smoke 11/11 + 3/3。
+- 全程没有真实 Session/PAN/CVC、真实填卡、Subscribe 点击、Provider/卡台写入或生产部署。
+- 当前仍未装配生产付款 Worker；付款结果、Plus 激活、取消续费、卡交易和最终对账是下一实现缺口。详细报告：`docs/browser-research/BROWSER_LIVE_ADAPTER_PREFLIGHT_HARDENING_2026-09-02.md`。

@@ -725,3 +725,10 @@ active permits=0、`PAYMENT_SUBMIT`=0、live resource leases=0、external paymen
 - 诊断性重进遇到订阅接口 HTTP 403，在 Plus 点击前 fail-closed，不再重试。
 - 未建单、未连生产队列、未读/填卡、未点付款，Profile 已关闭。
 - 完整证据：`docs/browser-research/BITBROWSER_SESSION_CHECKOUT_READONLY_2026-09-02.md`。
+
+## 2026-09-02 LIVE Checkout 付款前加固交接
+
+- 当前 Browser worktree 已修正 `LIVE` 配置不可达问题，但只在三道精确 gate 同时开启时可装配，默认/生产 readonly 配置保持关闭。
+- adapter 现在必须在填卡前及唯一点击前重读套餐、币种、税费和 `Due today`，并获得显式预算批准；漂移或余额不足均在点击前停止。
+- 全量与隔离 MySQL smoke 已通过；没有真实付款、生产部署或资金写入。
+- 下一步不是直接部署付款：先实现实际 budgetGuard、付款结果/Plus/取消/卡交易 observer 与生产 composition，再做 fixture/隔离 MySQL 故障注入。任何真实 Subscribe 点击仍需用户单独确认。

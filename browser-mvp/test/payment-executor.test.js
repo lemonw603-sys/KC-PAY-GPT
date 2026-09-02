@@ -30,10 +30,18 @@ function harness({ outcome = 'CONFIRMED', plusActive = true, cancellationConfirm
   return { executor, control, executionRepository, adapter, verifier, calls };
 }
 
-test('payment executor is disabled by default and rejects live adapter mode', () => {
+test('payment executor is disabled by default and LIVE mode requires every independent gate', () => {
   assert.equal(loadPaymentExecutorConfig({}).enabled, false);
   assert.equal(loadPaymentExecutorConfig({ BROWSER_PAYMENT_EXECUTOR_ENABLED: 'true' }).mode, 'MOCK');
-  assert.throws(() => loadPaymentExecutorConfig({ BROWSER_PAYMENT_EXECUTOR_MODE: 'LIVE' }), (error) => error.code === 'LIVE_PAYMENT_ADAPTER_UNAVAILABLE');
+  assert.throws(() => loadPaymentExecutorConfig({ BROWSER_PAYMENT_EXECUTOR_MODE: 'LIVE' }), (error) => error.code === 'LIVE_PAYMENT_GATES_NOT_CONFIRMED');
+  const live = loadPaymentExecutorConfig({
+    BROWSER_PAYMENT_EXECUTOR_MODE: 'LIVE',
+    BROWSER_PAYMENT_EXECUTOR_ENABLED: 'true',
+    BROWSER_PAYMENT_WRITES_ENABLED: 'true',
+    BROWSER_LIVE_PAYMENT_CONFIRMATION: 'I-CONFIRM-LIVE-BROWSER-PAYMENT-ADAPTER',
+  });
+  assert.equal(live.enabled, true);
+  assert.equal(live.mode, 'LIVE');
   const { executor, control } = harness({ enabled: false });
   return assert.rejects(() => executor.execute({ control, run: { runId: 'run-1', leaseToken: 'lease-1' }, checkout: { kind: 'MOCK_CHECKOUT' }, cardMaterial: { ref: 'card-material' }, operationId: 'pay-1' }), (error) => error.code === 'PAYMENT_EXECUTOR_DISABLED');
 });
@@ -49,7 +57,7 @@ test('mock payment lane obtains authoritative permit, submits once, and verifies
   assert.equal(adapter.calls.length, 1);
   assert.deepEqual(verifier.calls, ['plus', 'cancellation', 'card-transactions', 'reconcile']);
   assert.deepEqual(calls.filter((value) => typeof value === 'string' && value.startsWith('lease:')), [
-    'lease:PAYMENT_PERMIT', 'lease:PAYMENT_SUBMIT', 'lease:PAYMENT_RESULT',
+    'lease:PAYMENT_PREFLIGHT', 'lease:PAYMENT_PERMIT', 'lease:PAYMENT_SUBMIT', 'lease:PAYMENT_RESULT',
   ]);
 });
 
@@ -90,13 +98,44 @@ test('mock adapter rejects non-mock checkout before any external action', async 
 
 test('proven pre-submit drift is recoverable and does not mark payment UNKNOWN', async () => {
   const { executor, control, calls } = harness();
-  executor.paymentAdapter = { async submit() { const error = new Error('selector drift'); error.code = 'CHECKOUT_DRIFT'; throw error; } };
+  executor.paymentAdapter = {
+    async preflight() { const error = new Error('selector drift'); error.code = 'CHECKOUT_DRIFT'; throw error; },
+    async submit() { throw new Error('must not submit'); },
+  };
   const result = await executor.execute({
     control, run: { runId: 'run-1', leaseToken: 'lease-1' }, checkout: { kind: 'MOCK_CHECKOUT' },
     cardMaterial: { ref: 'card-material' }, operationId: 'pay-drift',
   });
   assert.deepEqual(result, { status: 'PRE_SUBMIT_FAILED', reasonCode: 'CHECKOUT_DRIFT', paymentSubmitCalls: 0 });
   assert.equal(calls.filter((value) => Array.isArray(value) && value[0] === 'unknown').length, 0);
+});
+
+test('insufficient balance proven before click is recoverable and does not mark payment UNKNOWN', async () => {
+  const { executor, control, calls } = harness();
+  executor.paymentAdapter = {
+    async preflight() { const error = new Error('balance'); error.code = 'INSUFFICIENT_CARD_BALANCE'; throw error; },
+    async submit() { throw new Error('must not submit'); },
+  };
+  const result = await executor.execute({
+    control, run: { runId: 'run-1', leaseToken: 'lease-1' }, checkout: { kind: 'MOCK_CHECKOUT' },
+    cardMaterial: { ref: 'card-material' }, operationId: 'pay-balance',
+  });
+  assert.deepEqual(result, { status: 'PRE_SUBMIT_FAILED', reasonCode: 'INSUFFICIENT_CARD_BALANCE', paymentSubmitCalls: 0 });
+  assert.equal(calls.filter((value) => Array.isArray(value) && value[0] === 'unknown').length, 0);
+});
+
+test('a drift discovered after submit intent is consumed becomes UNKNOWN, never retryable', async () => {
+  const { executor, control, calls } = harness();
+  executor.paymentAdapter = {
+    async preflight() { return { status: 'READY', submitCalls: 0 }; },
+    async submit() { const error = new Error('late drift'); error.code = 'CHECKOUT_DRIFT'; throw error; },
+  };
+  const result = await executor.execute({
+    control, run: { runId: 'run-1', leaseToken: 'lease-1' }, checkout: { kind: 'MOCK_CHECKOUT' },
+    cardMaterial: { ref: 'card-material' }, operationId: 'pay-late-drift',
+  });
+  assert.deepEqual(result, { status: 'UNKNOWN', reasonCode: 'PAYMENT_RESULT_UNKNOWN', paymentSubmitCalls: 1 });
+  assert.equal(calls.filter((value) => Array.isArray(value) && value[0] === 'unknown').length, 1);
 });
 
 test('post-payment verifier errors become structured reconciliation state', async () => {

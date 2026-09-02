@@ -34,6 +34,52 @@ async function oneVisible(page, selector, label) {
   }
 }
 
+function checkoutFingerprint(checkout) {
+  return JSON.stringify({
+    recognized: checkout?.recognized === true,
+    planDigest: String(checkout?.planDigest || ''),
+    currency: String(checkout?.currency || '').toUpperCase(),
+    amount: String(checkout?.amount || ''),
+    estimatedTax: checkout?.estimatedTax == null ? null : String(checkout.estimatedTax),
+    submitControlSelector: String(checkout?.submitControlSelector || ''),
+  });
+}
+
+function assertCheckoutReadyAndStable(reviewed, current) {
+  if (!reviewed?.recognized || !current?.recognized
+    || checkoutFingerprint(reviewed) !== checkoutFingerprint(current)) {
+    throw new LiveChatGPTPaymentAdapterError(
+      'Checkout plan, currency, tax, total, or submit target changed before payment',
+      'CHECKOUT_DRIFT',
+    );
+  }
+  if (current.paymentFormPresent !== true
+    || current.submitControlPresent !== true
+    || current.submitControlEnabled !== true) {
+    throw new LiveChatGPTPaymentAdapterError('Checkout payment controls are not ready', 'CHECKOUT_DRIFT');
+  }
+}
+
+function cardValues(cardMaterial) {
+  assertCardMaterial(cardMaterial);
+  const month = Number(cardMaterial.expMonth);
+  const year = Number(cardMaterial.expYear);
+  const now = new Date();
+  const currentMonth = now.getUTCFullYear() * 12 + now.getUTCMonth() + 1;
+  const expiryMonth = year * 12 + month;
+  const values = {
+    cardNumber: String(cardMaterial.pan).replace(/\s+/g, ''),
+    expiry: `${String(month).padStart(2, '0')} / ${String(year).slice(-2)}`,
+    cvc: String(cardMaterial.cvc).trim(),
+  };
+  if (!/^\d{12,19}$/.test(values.cardNumber) || !/^\d{3,4}$/.test(values.cvc)
+    || !Number.isInteger(month) || month < 1 || month > 12
+    || !Number.isInteger(year) || expiryMonth < currentMonth) {
+    throw new LiveChatGPTPaymentAdapterError('card material format is invalid', 'CARD_MATERIAL_INVALID');
+  }
+  return values;
+}
+
 /**
  * Minimal LIVE adapter. It is inert unless both enabled=true and the exact
  * confirmation string are supplied by a separately controlled caller.
@@ -41,9 +87,45 @@ async function oneVisible(page, selector, label) {
  * outcome observer, otherwise the result is deliberately UNKNOWN.
  */
 export class LiveChatGPTPaymentAdapter {
-  constructor({ enabled = false, confirmation = '', outcomeObserver = null } = {}) {
+  constructor({
+    enabled = false,
+    confirmation = '',
+    checkoutObserver = null,
+    budgetGuard = null,
+    outcomeObserver = null,
+  } = {}) {
     this.enabled = enabled === true && confirmation === LIVE_PAYMENT_CONFIRMATION;
+    this.checkoutObserver = checkoutObserver;
+    this.budgetGuard = budgetGuard;
     this.outcomeObserver = outcomeObserver;
+  }
+
+  /**
+   * Performs every check that can be proven without touching payment fields or
+   * consuming a payment submit intent. BrowserPaymentExecutor calls this
+   * before it asks the shared repository for a one-shot permit.
+   */
+  async preflight({ page, checkout, cardMaterial, operationId } = {}) {
+    if (!this.enabled) throw new LiveChatGPTPaymentAdapterError('LIVE Browser payment adapter is disabled', 'PAYMENT_EXECUTOR_DISABLED');
+    if (!page || typeof page.frames !== 'function') throw new TypeError('page is required');
+    const op = required(operationId, 'operationId');
+    if (!checkout?.recognized || typeof checkout.submitControlSelector !== 'string' || !checkout.submitControlSelector.trim()) {
+      throw new LiveChatGPTPaymentAdapterError('recognized Checkout contract is required', 'CHECKOUT_ADAPTER_MISMATCH');
+    }
+    if (typeof this.checkoutObserver !== 'function') {
+      throw new LiveChatGPTPaymentAdapterError('Checkout re-observer is required before payment', 'CHECKOUT_DRIFT');
+    }
+    if (typeof this.budgetGuard !== 'function') {
+      throw new LiveChatGPTPaymentAdapterError('card budget guard is required before payment', 'INSUFFICIENT_CARD_BALANCE');
+    }
+    cardValues(cardMaterial);
+    const observed = await this.checkoutObserver({ page, operationId: op });
+    assertCheckoutReadyAndStable(checkout, observed);
+    const budget = await this.budgetGuard({ checkout: observed, operationId: op });
+    if (budget?.approved !== true) {
+      throw new LiveChatGPTPaymentAdapterError('card balance does not cover the current Checkout total', 'INSUFFICIENT_CARD_BALANCE');
+    }
+    return { status: 'READY', submitCalls: 0 };
   }
 
   async submit({ page, checkout, cardMaterial, operationId, assertContinue = async () => undefined } = {}) {
@@ -55,18 +137,14 @@ export class LiveChatGPTPaymentAdapter {
     }
     let submitted = false;
     try {
-      assertCardMaterial(cardMaterial);
+      // Repeat preflight after the authoritative submit intent. Any failure
+      // from this point is deliberately treated as UNKNOWN by the executor,
+      // because the one-shot intent has already been consumed.
+      await this.preflight({ page, checkout, cardMaterial, operationId: op });
+      const values = cardValues(cardMaterial);
       const fields = {};
       for (const [name, selector] of Object.entries(SECURE_CARD_FIELD_SELECTORS)) {
         fields[name] = await oneVisible(page, selector, name);
-      }
-      const values = {
-        cardNumber: String(cardMaterial.pan).replace(/\s+/g, ''),
-        expiry: `${String(cardMaterial.expMonth).padStart(2, '0')} / ${String(cardMaterial.expYear).slice(-2)}`,
-        cvc: String(cardMaterial.cvc),
-      };
-      if (!/^\d{12,19}$/.test(values.cardNumber) || !/^\d{3,4}$/.test(values.cvc)) {
-        throw new LiveChatGPTPaymentAdapterError('card material format is invalid', 'CARD_MATERIAL_INVALID');
       }
       try {
         for (const [name, field] of Object.entries(fields)) {
@@ -75,11 +153,20 @@ export class LiveChatGPTPaymentAdapter {
           await field.fill(values[name]);
         }
         await assertContinue();
+        // Card country/BIN can change tax or the amount due. Re-read after the
+        // secure fields are populated and before the one permitted click.
+        const beforeSubmit = await this.checkoutObserver({ page, operationId: op });
+        assertCheckoutReadyAndStable(checkout, beforeSubmit);
+        const finalBudget = await this.budgetGuard({ checkout: beforeSubmit, operationId: op });
+        if (finalBudget?.approved !== true) {
+          throw new LiveChatGPTPaymentAdapterError('card balance does not cover the final Checkout total', 'INSUFFICIENT_CARD_BALANCE');
+        }
         const submit = await oneVisible(page, checkout.submitControlSelector, 'payment submit control');
         const shape = await submit.evaluate((element) => ({
           tag: element.tagName.toLowerCase(), type: element.getAttribute('type')?.toLowerCase() || null,
         }));
         if (shape.tag !== 'button' || shape.type !== 'submit') throw new ContractError('payment submit control shape drift');
+        await assertContinue();
         await submit.click();
         submitted = true;
         if (typeof this.outcomeObserver !== 'function') {

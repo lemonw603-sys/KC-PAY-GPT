@@ -1,5 +1,7 @@
 import { createHash } from 'node:crypto';
 
+import { LIVE_PAYMENT_CONFIRMATION } from './live-chatgpt-payment-adapter.js';
+
 export class BrowserPaymentExecutorError extends Error {
   constructor(message, code, cause = undefined) {
     super(message, cause ? { cause } : undefined);
@@ -14,10 +16,19 @@ export function loadPaymentExecutorConfig(env = process.env) {
   if (!['MOCK', 'LIVE'].includes(mode)) {
     throw new BrowserPaymentExecutorError('BROWSER_PAYMENT_EXECUTOR_MODE must be MOCK or LIVE', 'INVALID_PAYMENT_EXECUTOR_MODE');
   }
-  if (mode === 'LIVE') {
-    throw new BrowserPaymentExecutorError('LIVE Browser payment adapter is not implemented in this release', 'LIVE_PAYMENT_ADAPTER_UNAVAILABLE');
+  if (mode === 'LIVE' && (!enabled
+    || env.BROWSER_PAYMENT_WRITES_ENABLED !== 'true'
+    || env.BROWSER_LIVE_PAYMENT_CONFIRMATION !== LIVE_PAYMENT_CONFIRMATION)) {
+    throw new BrowserPaymentExecutorError(
+      'LIVE Browser payment requires the executor gate, payment-write gate, and exact confirmation',
+      'LIVE_PAYMENT_GATES_NOT_CONFIRMED',
+    );
   }
-  return Object.freeze({ enabled, mode });
+  return Object.freeze({
+    enabled,
+    mode,
+    liveConfirmation: mode === 'LIVE' ? LIVE_PAYMENT_CONFIRMATION : null,
+  });
 }
 
 function digest(value) {
@@ -40,13 +51,19 @@ export class MockCheckoutPaymentAdapter {
     this.calls = [];
   }
 
-  async submit({ operationId, checkout, cardMaterial }) {
+  async preflight({ operationId, checkout, cardMaterial }) {
+    required(operationId, 'operationId');
     if (!checkout || checkout.kind !== 'MOCK_CHECKOUT') {
       throw new BrowserPaymentExecutorError('mock adapter requires MOCK_CHECKOUT', 'CHECKOUT_ADAPTER_MISMATCH');
     }
     if (!cardMaterial || typeof cardMaterial !== 'object') {
       throw new BrowserPaymentExecutorError('card material must stay inside the adapter boundary', 'CARD_MATERIAL_REQUIRED');
     }
+    return { status: 'READY', submitCalls: 0 };
+  }
+
+  async submit({ operationId, checkout, cardMaterial }) {
+    await this.preflight({ operationId, checkout, cardMaterial });
     this.calls.push({ operationId: required(operationId, 'operationId') });
     if (this.outcome === 'UNKNOWN') throw new Error('mock checkout connection lost after submit');
     if (this.outcome === 'DECLINED') return { status: 'DECLINED', providerCallRef: `mock-call:${operationId}` };
@@ -112,6 +129,21 @@ export class BrowserPaymentExecutor {
     if (!this.enabled) throw new BrowserPaymentExecutorError('Browser payment executor is disabled', 'PAYMENT_EXECUTOR_DISABLED');
     const op = required(operationId, 'operationId');
     if (!control || typeof control.assertLeaseBeforeAction !== 'function') throw new TypeError('control is required');
+    const recoverablePreSubmitCodes = [
+      'CHECKOUT_DRIFT', 'CARD_MATERIAL_INVALID', 'CHECKOUT_ADAPTER_MISMATCH',
+      'INSUFFICIENT_CARD_BALANCE', 'INVALID_ARGUMENT',
+    ];
+    if (typeof this.paymentAdapter.preflight === 'function') {
+      try {
+        await control.assertLeaseBeforeAction('PAYMENT_PREFLIGHT');
+        await this.paymentAdapter.preflight({ page, operationId: op, checkout, cardMaterial });
+      } catch (error) {
+        if (recoverablePreSubmitCodes.includes(error?.code)) {
+          return { status: 'PRE_SUBMIT_FAILED', reasonCode: error.code, paymentSubmitCalls: 0 };
+        }
+        throw error;
+      }
+    }
     await control.assertLeaseBeforeAction('PAYMENT_PERMIT');
     const permit = await this.integration.issueAuthoritativePaymentPermit({ control, run });
     const intent = await this.executionRepository.commitPaymentSubmissionIntent({
@@ -131,12 +163,11 @@ export class BrowserPaymentExecutor {
       submission = await this.paymentAdapter.submit({ page, operationId: op, checkout, cardMaterial, permit });
       await control.assertLeaseBeforeAction('PAYMENT_RESULT');
     } catch (error) {
-      // Failures proven to occur before the submit click must not poison the
-      // payment attempt as UNKNOWN; they are safe to correct/retry by the
-      // caller. Only post-click failures consume the one-shot uncertainty path.
-      if (['CHECKOUT_DRIFT', 'CARD_MATERIAL_INVALID', 'CHECKOUT_ADAPTER_MISMATCH', 'INVALID_ARGUMENT'].includes(error?.code)) {
-        return { status: 'PRE_SUBMIT_FAILED', reasonCode: error.code, paymentSubmitCalls: 0 };
-      }
+      // commitPaymentSubmissionIntent has already consumed the one-shot
+      // permit. Even a locally proven no-click failure cannot be advertised as
+      // retryable until the shared repository gains an explicit, auditable
+      // pre-external-action reversal. Lock it UNKNOWN instead of returning a
+      // state that disagrees with the authoritative database.
       await this.executionRepository.markPaymentUnknown({
         runId: run.runId, operationId: `${op}:unknown`, reasonCode: 'PAYMENT_RESULT_UNKNOWN',
       });
