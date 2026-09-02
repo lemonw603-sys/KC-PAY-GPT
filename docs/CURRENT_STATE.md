@@ -89,6 +89,13 @@
 
 ## 6. 当前唯一下一步
 
+### 2026-09-02 新增真实 API 订单结果（现场核对）
+
+- 客户提交后创建订单 `PJV1-T4ZOp1MpFM0G6sXehOYX`，冻结路线为 API。
+- Provider 外部订单号 `9247` 已提交并完成轮询，最终订单状态为 `RECHARGE_FAILED`。
+- Provider 返回 `paymentResult.success=false`，失败原文为“开通超时，请稍后查询是否已到账”；系统 `funds_risk_state=CLEARED`，未形成成功付款金额。
+- 本轮没有自动换卡、重试或切换 Browser；后续须先人工决定是否继续，不得把该单当作成功链路验收。
+
 1. 已恢复 Worker 常驻最小 API 充值权限并完成重启/只读核对；hold 关闭，通用 Provider/卡片写与 Browser 付款仍关闭。
 2. 生产只读 preflight 已确认 blocker、活动任务和资金风险均为 0；Provider 卡 `2338`、尾号 `4643` 当前为 `active/AVAILABLE/$16`，可直接供下一笔 API 订单使用。
 3. 接受下一笔有效 Session 的真实 API 订单，优先验收“自动分配 4643→API 充值→取消续费→交易/余额/对账”；不得给旧 `RETIRED` 卡补钱，也不得重试已失败的 1013。
