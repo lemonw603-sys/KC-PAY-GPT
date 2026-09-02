@@ -169,3 +169,53 @@ test('payment executor forwards the Browser page only to the payment adapter bou
   assert.equal(observedPage, page);
   assert.equal(result.status, 'UNKNOWN');
 });
+
+test('payment preparation settles final total before permit and binds the same snapshot to submit intent', async () => {
+  const calls = [];
+  const prepared = { checkoutSnapshotHash: 'a'.repeat(64), opaque: true };
+  const paymentAdapter = {
+    async prepare() { calls.push('prepare'); return prepared; },
+    async submitPrepared(input) {
+      calls.push(['submit-prepared', input.prepared.checkoutSnapshotHash]);
+      return { status: 'CONFIRMED', providerCallRef: 'browser:fixture' };
+    },
+    async cleanupPrepared(input) { calls.push(['cleanup', input.checkoutSnapshotHash]); },
+    async submit() { throw new Error('unprepared submit must not be used'); },
+  };
+  const integration = {
+    workerId: 'worker-1',
+    async issueAuthoritativePaymentPermit(input) {
+      calls.push(['permit', input.checkoutSnapshotHash]);
+      return { permitNonce: 'nonce-1' };
+    },
+  };
+  const repository = {
+    async commitPaymentSubmissionIntent(input) {
+      calls.push(['intent', input.checkoutSnapshotHash]);
+      return { executeExternal: true };
+    },
+    async markPaymentConfirmed() { calls.push('confirmed'); },
+    async recordPlusActivation() { calls.push('plus-record'); },
+    async recordCancellationConfirmed() { calls.push('cancel-record'); },
+  };
+  const executor = new BrowserPaymentExecutor({
+    integration,
+    executionRepository: repository,
+    paymentAdapter,
+    postPaymentVerifier: new MockPostPaymentVerifier(),
+    enabled: true,
+  });
+  const result = await executor.execute({
+    control: { async assertLeaseBeforeAction(action) { calls.push(`lease:${action}`); } },
+    run: { runId: 'run-1', leaseToken: 'lease-1' },
+    page: { opaque: true }, checkout: { recognized: true }, cardMaterial: { opaque: true },
+    operationId: 'pay-prepared',
+  });
+  assert.equal(result.status, 'COMPLETED');
+  assert.ok(calls.indexOf('prepare') < calls.findIndex((entry) => Array.isArray(entry) && entry[0] === 'permit'));
+  assert.deepEqual(calls.filter((entry) => Array.isArray(entry) && ['permit', 'intent'].includes(entry[0])), [
+    ['permit', 'a'.repeat(64)],
+    ['intent', 'a'.repeat(64)],
+  ]);
+  assert.deepEqual(calls.at(-1), ['cleanup', 'a'.repeat(64)]);
+});

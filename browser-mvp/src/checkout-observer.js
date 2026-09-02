@@ -100,7 +100,7 @@ export const CHATGPT_PLUS_CHECKOUT_CONTRACT = Object.freeze({
   submitControlSelector: '[data-testid="checkout-summary-column"] button[type="submit"]',
   inspectSecureCardFields: true,
   requireSecureCardFields: true,
-  secureFieldTimeoutMs: 10_000,
+  secureFieldTimeoutMs: 60_000,
 });
 
 /** Read-only Checkout summary. It never clicks or submits payment controls. */
@@ -120,8 +120,8 @@ export async function observeCheckout(page, {
 } = {}) {
   if (!page || typeof page.url !== 'function') throw new TypeError('page is required');
   if (typeof urlPrefix !== 'string' || !urlPrefix) throw new ContractError('checkout urlPrefix is required');
-  if (inspectSecureCardFields && (!Number.isInteger(secureFieldTimeoutMs) || secureFieldTimeoutMs < 0 || secureFieldTimeoutMs > 30_000)) {
-    throw new ContractError('secureFieldTimeoutMs must be between 0 and 30000');
+  if (inspectSecureCardFields && (!Number.isInteger(secureFieldTimeoutMs) || secureFieldTimeoutMs < 0 || secureFieldTimeoutMs > 120_000)) {
+    throw new ContractError('secureFieldTimeoutMs must be between 0 and 120000');
   }
   if (!page.url().startsWith(urlPrefix)) throw new ContractError('checkout page URL drift');
   let [plan, currency, amount] = await Promise.all([

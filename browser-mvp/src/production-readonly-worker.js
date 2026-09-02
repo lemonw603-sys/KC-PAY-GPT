@@ -11,6 +11,7 @@ import { createChromeControlManifest } from './fixtures.js';
 import { GoogleChromeControlRuntimeAdapter } from './chrome-control-runtime.js';
 import {
   BitBrowserLocalApiClient,
+  BitBrowserProfilePoolRuntimeAdapter,
   BitBrowserProfileRuntimeAdapter,
 } from './bitbrowser-profile-runtime.js';
 import { AppendOnlyWal, WalEvidenceSink } from './wal.js';
@@ -102,11 +103,20 @@ export function createProductionReadonlyRuntimeAdapter(config, {
       fetchImpl,
       timeoutMs: config.bitBrowser.apiTimeoutMs,
     });
+    if (config.bitBrowser.profileIds.length > 1) {
+      return new BitBrowserProfilePoolRuntimeAdapter({
+        browserType,
+        apiClient,
+        profileIds: config.bitBrowser.profileIds,
+        enabled: true,
+      });
+    }
     return new BitBrowserProfileRuntimeAdapter({
       browserType,
       apiClient,
       profileId: config.bitBrowser.profileId,
       enabled: true,
+      keepAlive: config.bitBrowser.keepAlive,
     });
   }
   return new GoogleChromeControlRuntimeAdapter({
@@ -168,6 +178,7 @@ export async function runProductionReadonlyBrowserWorker({
     DATABASE_TLS_CA_BASE64: env.DATABASE_TLS_CA_BASE64,
   });
   const pool = createDatabasePool(database);
+  let runtimeAdapter = null;
   let heartbeatStarted = false;
   const writeHeartbeat = async (value = new Date().toISOString()) => {
     await pool.query(
@@ -179,7 +190,7 @@ export async function runProductionReadonlyBrowserWorker({
   try {
     await checkProductionReadonlyFilesystem(config);
     await checkProductionReadonlyDatabase(pool, { executorProfileId: config.executorProfileId });
-    const runtimeAdapter = createProductionReadonlyRuntimeAdapter(config, { browserType, fetchImpl });
+    runtimeAdapter = createProductionReadonlyRuntimeAdapter(config, { browserType, fetchImpl });
     if (typeof runtimeAdapter.checkHealth === 'function') await runtimeAdapter.checkHealth();
     if (env.BROWSER_WORKER_CHECK_ONLY === 'true') return { status: 'READY' };
     await writeHeartbeat();
@@ -238,17 +249,32 @@ export async function runProductionReadonlyBrowserWorker({
       executionTimeoutMs: config.executionTimeoutMs,
     });
 
-    do {
-      await writeHeartbeat();
-      const result = await worker.runOnce({ confirmation: SHARED_NONPAYMENT_DRY_RUN_CONFIRMATION });
-      await onResult(result);
-      if (once || signal?.aborted) return result;
-      if (result.status === 'IDLE') await delay(config.pollIntervalMs, signal);
-    } while (!signal?.aborted);
-    return { status: 'STOPPED' };
+    const runLane = async () => {
+      let lastResult = { status: 'IDLE' };
+      do {
+        await writeHeartbeat();
+        lastResult = await worker.runOnce({ confirmation: SHARED_NONPAYMENT_DRY_RUN_CONFIRMATION });
+        await onResult(lastResult);
+        if (once || signal?.aborted) return lastResult;
+        if (lastResult.status === 'IDLE') await delay(config.pollIntervalMs, signal);
+      } while (!signal?.aborted);
+      return lastResult;
+    };
+    const laneCount = once ? 1 : config.workerConcurrency;
+    const results = await Promise.all(Array.from({ length: laneCount }, () => runLane()));
+    return once ? results[0] : { status: 'STOPPED', lanes: results.length };
   } finally {
+    let shutdownError = null;
+    if (runtimeAdapter && typeof runtimeAdapter.shutdown === 'function') {
+      try {
+        await runtimeAdapter.shutdown();
+      } catch (error) {
+        shutdownError = error;
+      }
+    }
     if (heartbeatStarted) await writeHeartbeat('').catch(() => {});
     await pool.end();
+    if (shutdownError) throw shutdownError;
   }
 }
 

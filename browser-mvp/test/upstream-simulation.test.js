@@ -15,7 +15,11 @@ import { createSyntheticManifest } from '../src/fixtures.js';
 import { runNonPaymentUpstreamSimulation } from '../src/nonpayment-simulation.js';
 import { runFrontloadedNonPaymentIntegration } from '../src/frontloaded-p0-integration.js';
 import { DurableCardMaterialLeaseProvider } from '../src/durable-card-material-lease.js';
-import { HnskjCardMaterialSource, mapHnskjCardMaterial } from '../src/hnskj-card-material-source.js';
+import {
+  ConfiguredBillingAddressSource,
+  HnskjCardMaterialSource,
+  mapHnskjCardMaterial,
+} from '../src/hnskj-card-material-source.js';
 import { ContractError, hasSensitiveKey } from '../src/contracts.js';
 import { projectUpstreamBrowserJob } from '../src/shared-contract-adapter.js';
 import { CHATGPT_PLUS_CHECKOUT_NAVIGATION_CONTRACT } from '../src/chatgpt-checkout-navigator.js';
@@ -91,6 +95,25 @@ test('HNSKJ card material source is read-only and normalizes provider credential
   assert.throws(() => mapHnskjCardMaterial({ data: { card: { cardNumber: '4111111111111111', expiryMonth: 12, expiryYear: 2020, cvv: '123' } } }), ContractError);
   assert.equal(typeof source.provider.purchaseCard, 'undefined');
   assert.equal(source.requiresProviderCardRef, true);
+});
+
+test('HNSKJ card material source attaches billing address only through its JIT source', async () => {
+  const address = {
+    name: 'Fixture Customer', country: 'US', line1: '1 Fixture Street',
+    city: 'Wilmington', state: 'DE', postalCode: '19801',
+  };
+  const source = new HnskjCardMaterialSource({
+    provider: {
+      card: async () => ({
+        data: { card: { cardNumber: '4111111111111111', expiryMonth: 12, expiryYear: 2030, cvv: '123' } },
+      }),
+    },
+    billingAddressSource: new ConfiguredBillingAddressSource({ address }),
+  });
+  const material = await source.load('provider-card:0001');
+  assert.deepEqual(material.billingAddress, address);
+  material.billingAddress.city = 'mutated';
+  assert.equal((await source.load('provider-card:0001')).billingAddress.city, 'Wilmington');
 });
 
 test('non-executable, mismatched, or non-browser bindings fail before dispatch', () => {

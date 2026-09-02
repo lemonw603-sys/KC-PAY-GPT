@@ -27,6 +27,22 @@ function opaqueRef(env, name) {
   return value;
 }
 
+function opaqueRefList(env, name, { min = 1, max = 6 } = {}) {
+  const values = required(env, name).split(',').map((value) => value.trim()).filter(Boolean);
+  if (values.length < min || values.length > max) {
+    throw new ProductionReadonlyConfigError(`${name} must contain between ${min} and ${max} references`);
+  }
+  for (const value of values) {
+    if (!/^[a-z0-9][a-z0-9._:-]{2,127}$/i.test(value)) {
+      throw new ProductionReadonlyConfigError(`${name} contains an invalid opaque reference`);
+    }
+  }
+  if (new Set(values).size !== values.length) {
+    throw new ProductionReadonlyConfigError(`${name} must not contain duplicate references`);
+  }
+  return values;
+}
+
 function integer(env, name, { min, max, fallback }) {
   const raw = String(env[name] ?? fallback);
   const value = Number(raw);
@@ -162,9 +178,34 @@ export function loadProductionReadonlyBrowserConfig(env = process.env) {
       || parsed.username || parsed.password || parsed.pathname !== '/' || parsed.search || parsed.hash) {
       throw new ProductionReadonlyConfigError('BROWSER_BITBROWSER_API_URL must be a plain loopback HTTP origin');
     }
+    if (String(env.BROWSER_BITBROWSER_PROFILE_ID || '').trim()
+      && String(env.BROWSER_BITBROWSER_PROFILE_IDS || '').trim()) {
+      throw new ProductionReadonlyConfigError(
+        'configure either BROWSER_BITBROWSER_PROFILE_ID or BROWSER_BITBROWSER_PROFILE_IDS, not both',
+      );
+    }
+    const profileIds = String(env.BROWSER_BITBROWSER_PROFILE_IDS || '').trim()
+      ? opaqueRefList(env, 'BROWSER_BITBROWSER_PROFILE_IDS')
+      : [opaqueRef(env, 'BROWSER_BITBROWSER_PROFILE_ID')];
+    const keepAlive = env.BROWSER_BITBROWSER_KEEP_ALIVE === 'true';
+    if (profileIds.length > 1 && !keepAlive) {
+      throw new ProductionReadonlyConfigError(
+        'multiple BitBrowser Profiles require BROWSER_BITBROWSER_KEEP_ALIVE=true',
+      );
+    }
+    const workerConcurrency = integer(env, 'BROWSER_WORKER_CONCURRENCY', {
+      min: 1, max: 6, fallback: 1,
+    });
+    if (workerConcurrency > profileIds.length) {
+      throw new ProductionReadonlyConfigError(
+        'BROWSER_WORKER_CONCURRENCY cannot exceed the configured BitBrowser Profile count',
+      );
+    }
     bitBrowser = Object.freeze({
       apiUrl: parsed.toString().replace(/\/$/, ''),
-      profileId: opaqueRef(env, 'BROWSER_BITBROWSER_PROFILE_ID'),
+      profileId: profileIds[0],
+      profileIds: Object.freeze(profileIds),
+      keepAlive,
       apiTimeoutMs: integer(env, 'BROWSER_BITBROWSER_API_TIMEOUT_MS', {
         min: 250, max: 60_000, fallback: 10_000,
       }),
@@ -227,6 +268,11 @@ export function loadProductionReadonlyBrowserConfig(env = process.env) {
       sharedCardPreflightEnabled,
     }),
     pollIntervalMs: integer(env, 'BROWSER_WORKER_POLL_INTERVAL_MS', { min: 100, max: 60_000, fallback: 1000 }),
+    workerConcurrency: runtimeProvider === 'BITBROWSER'
+      ? bitBrowser.profileIds.length === 1
+        ? 1
+        : integer(env, 'BROWSER_WORKER_CONCURRENCY', { min: 1, max: 6, fallback: 1 })
+      : 1,
     leaseSeconds: integer(env, 'BROWSER_WORKER_LEASE_SECONDS', { min: 10, max: 3600, fallback: 60 }),
     executionTimeoutMs: integer(env, 'BROWSER_EXECUTION_TIMEOUT_MS', { min: 500, max: 300_000, fallback: 30_000 }),
     observation,

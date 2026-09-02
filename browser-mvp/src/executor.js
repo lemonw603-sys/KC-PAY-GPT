@@ -79,7 +79,10 @@ export class BrowserExecutionService {
         // Closing the BrowserContext is the only reliable way to interrupt a
         // Playwright navigation/locator wait after the shared lease is lost.
         // close() is idempotently attempted again in finally.
-        this.runtimeAdapter.close(runtime).catch(() => undefined);
+        const interrupt = typeof this.runtimeAdapter.interrupt === 'function'
+          ? this.runtimeAdapter.interrupt.bind(this.runtimeAdapter)
+          : this.runtimeAdapter.close.bind(this.runtimeAdapter);
+        interrupt(runtime).catch(() => undefined);
       };
       signal?.addEventListener('abort', abortRuntime, { once: true });
       if (signal?.aborted) throw new BrowserExecutionError('LEASE_LOST');

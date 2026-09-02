@@ -31,6 +31,12 @@ function paymentSnapshotHash(row) {
   return crypto.createHash('sha256').update(JSON.stringify(facts)).digest('hex');
 }
 
+function checkoutBoundSnapshotHash(row, checkoutSnapshotHash) {
+  return crypto.createHash('sha256')
+    .update(`authoritative:${paymentSnapshotHash(row)}|checkout:${checkoutSnapshotHash}`)
+    .digest('hex');
+}
+
 function scriptedPool(responder) {
   const calls = [];
   const transaction = { began: 0, committed: 0, rolledBack: 0, released: 0 };
@@ -240,6 +246,48 @@ test('payment permit derives its snapshot from locked card and route facts', asy
   assert.notEqual(result.snapshotHash, digest('f'));
   const insert = pool.calls.find(({ sql }) => /INSERT INTO payment_permits/.test(sql));
   assert.equal(insert.values[4], paymentSnapshotHash(context));
+});
+
+test('payment permit binds the address-adjusted Checkout snapshot and rejects a different submit snapshot', async () => {
+  const leaseToken = 'lease-secret';
+  const leaseHash = crypto.createHash('sha256').update(leaseToken).digest('hex');
+  const permitNonce = 'permit-secret';
+  const permitHash = crypto.createHash('sha256').update(permitNonce).digest('hex');
+  const context = runContext({ payment_state: 'NOT_STARTED', last_checkpoint_sequence: 0,
+    worker_lease_token_hash: leaseHash });
+  const checkoutA = digest('a');
+  const checkoutB = digest('b');
+  const issuePool = scriptedPool((sql) => {
+    if (/FROM app_settings/.test(sql)) return [[{ setting_value: 'true' }], []];
+    if (/FROM browser_runs br[\s\S]*INNER JOIN recharge_attempts/.test(sql)) return [[context], []];
+    return updateOk();
+  });
+  const issued = await createBrowserExecutionRepository(issuePool).issuePaymentPermit({
+    runId: 'run-1', workerId: 'worker-1', leaseToken, permitId: 'permit-checkout-bound',
+    checkoutSnapshotHash: checkoutA, now: new Date('2026-08-22T00:01:00.000Z'),
+  });
+  assert.equal(issued.snapshotHash, checkoutBoundSnapshotHash(context, checkoutA));
+
+  const armed = { ...context, payment_state: 'PAYMENT_ARMED' };
+  const commitPool = scriptedPool((sql) => {
+    if (/FROM browser_operations/.test(sql)) return [[], []];
+    if (/FROM app_settings/.test(sql)) return [[{ setting_value: 'true' }], []];
+    if (/FROM browser_runs br[\s\S]*INNER JOIN recharge_attempts/.test(sql)) return [[armed], []];
+    if (/FROM payment_permits/.test(sql)) return [[{
+      id: 'permit-checkout-bound', status: 'ISSUED', nonce_hash: permitHash,
+      snapshot_hash: checkoutBoundSnapshotHash(armed, checkoutA), issued_to: 'worker-1',
+      expires_at: new Date('2026-08-22T00:02:00.000Z'),
+    }], []];
+    throw new Error(`unexpected query: ${sql}`);
+  });
+  await assert.rejects(
+    createBrowserExecutionRepository(commitPool).commitPaymentSubmissionIntent({
+      runId: 'run-1', workerId: 'worker-1', leaseToken, permitNonce,
+      operationId: 'payment-submit:checkout-drift', checkoutSnapshotHash: checkoutB,
+      now: new Date('2026-08-22T00:01:00.000Z'),
+    }),
+    (error) => error.code === 'PAYMENT_SNAPSHOT_CHANGED',
+  );
 });
 
 test('payment permit accepts a reused card bound through orders.assigned_card_id', async () => {

@@ -3,6 +3,11 @@ import { assertCohortManifest, assertRef, ContractError } from './contracts.js';
 
 const DEFAULT_API_BASE_URL = 'http://127.0.0.1:54345';
 const LOOPBACK_HOSTS = new Set(['127.0.0.1', '::1', 'localhost']);
+const PROFILE_SCOPED_START_FAILURES = new Set([
+  'BITBROWSER_ATTACH_FAILED',
+  'BITBROWSER_CONTEXT_CONFLICT',
+  'BITBROWSER_ISOLATION_RESET_FAILED',
+]);
 
 export class BitBrowserRuntimeError extends Error {
   constructor(message, code, cause = undefined) {
@@ -52,6 +57,12 @@ function assertApiSuccess(payload) {
     throw new BitBrowserRuntimeError('BitBrowser Local API returned an invalid response', 'BITBROWSER_API_INVALID_RESPONSE');
   }
   if (payload.success === false || payload.code === -1 || payload.status === 'error') {
+    if (String(payload.msg || '').trim() === '今日打开窗口次数已达上限') {
+      throw new BitBrowserRuntimeError(
+        'BitBrowser daily profile open limit was reached',
+        'BITBROWSER_DAILY_OPEN_LIMIT',
+      );
+    }
     // Never include the vendor response body: profile metadata may be present.
     throw new BitBrowserRuntimeError('BitBrowser Local API rejected the request', 'BITBROWSER_API_REJECTED');
   }
@@ -133,7 +144,14 @@ export class BitBrowserLocalApiClient {
  * exposes its existing BrowserContext over CDP.
  */
 export class BitBrowserProfileRuntimeAdapter extends RuntimeAdapter {
-  constructor({ browserType, apiClient, profileId, enabled = false, connectOptions = {} } = {}) {
+  constructor({
+    browserType,
+    apiClient,
+    profileId,
+    enabled = false,
+    keepAlive = false,
+    connectOptions = {},
+  } = {}) {
     super();
     if (!browserType || typeof browserType.connectOverCDP !== 'function') {
       throw new TypeError('browserType.connectOverCDP is required');
@@ -146,8 +164,70 @@ export class BitBrowserProfileRuntimeAdapter extends RuntimeAdapter {
     this.apiClient = apiClient;
     this.profileId = assertRef(profileId, 'BitBrowser profileId');
     this.enabled = enabled === true;
+    this.keepAlive = keepAlive === true;
     this.connectOptions = { ...connectOptions };
     this.activeProfileRef = null;
+    this.cachedRuntime = null;
+  }
+
+  async #resetCustomerState(runtime) {
+    const context = runtime?.context;
+    if (!context || typeof context.pages !== 'function') {
+      throw new BitBrowserRuntimeError('BitBrowser context is unavailable', 'BITBROWSER_ISOLATION_RESET_FAILED');
+    }
+    const pages = context.pages();
+    // Preserve only the local BitBrowser workspace tab. Every customer page is
+    // closed between leases so no DOM, popup or Checkout can cross orders.
+    await Promise.all(pages.map(async (page) => {
+      let url = '';
+      try { url = page.url(); } catch { return; }
+      if (url.startsWith('https://console.bitbrowser.net/')) return;
+      await page.close({ runBeforeUnload: false });
+    }));
+    if (typeof context.clearCookies !== 'function') {
+      throw new BitBrowserRuntimeError('BitBrowser cookie reset is unavailable', 'BITBROWSER_ISOLATION_RESET_FAILED');
+    }
+    await context.clearCookies({ domain: /(^|\.)(chatgpt|openai)\.com$/i });
+    let anchor = context.pages()[0];
+    let temporaryAnchor = null;
+    if (!anchor && typeof context.newPage === 'function') {
+      temporaryAnchor = await context.newPage();
+      anchor = temporaryAnchor;
+    }
+    if (anchor && typeof context.newCDPSession === 'function') {
+      const session = await context.newCDPSession(anchor);
+      try {
+        for (const origin of [
+          'https://chatgpt.com',
+          'https://openai.com',
+          'https://auth.openai.com',
+          'https://platform.openai.com',
+        ]) {
+          await session.send('Storage.clearDataForOrigin', { origin, storageTypes: 'all' });
+        }
+      } finally {
+        await session.detach().catch(() => undefined);
+        await temporaryAnchor?.close?.({ runBeforeUnload: false }).catch(() => undefined);
+      }
+    } else if (temporaryAnchor) {
+      await temporaryAnchor.close({ runBeforeUnload: false }).catch(() => undefined);
+    }
+  }
+
+  async #physicalClose(runtime = this.cachedRuntime) {
+    if (!runtime) return;
+    let closeError = null;
+    try {
+      await this.apiClient.closeProfile(this.profileId);
+    } catch (error) {
+      closeError = error;
+    }
+    await runtime.browser?.close?.().catch(() => undefined);
+    this.cachedRuntime = null;
+    this.activeProfileRef = null;
+    if (closeError) {
+      throw new BitBrowserRuntimeError('BitBrowser profile cleanup failed', 'BITBROWSER_CLEANUP_FAILED', closeError);
+    }
   }
 
   async checkHealth() {
@@ -172,6 +252,13 @@ export class BitBrowserProfileRuntimeAdapter extends RuntimeAdapter {
     let profileStarted = false;
     this.activeProfileRef = runProfileRef;
     try {
+      if (this.keepAlive && this.cachedRuntime) {
+        if (this.cachedRuntime.browser?.isConnected?.() === false) {
+          await this.#physicalClose(this.cachedRuntime).catch(() => undefined);
+        } else {
+          return { ...this.cachedRuntime, profileRef: runProfileRef };
+        }
+      }
       await this.apiClient.health();
       const { cdpEndpoint } = await this.apiClient.openProfile(this.profileId);
       profileStarted = true;
@@ -183,7 +270,7 @@ export class BitBrowserProfileRuntimeAdapter extends RuntimeAdapter {
           'BITBROWSER_CONTEXT_CONFLICT',
         );
       }
-      return {
+      const runtime = {
         browser,
         context: contexts[0],
         profileRef: runProfileRef,
@@ -191,6 +278,11 @@ export class BitBrowserProfileRuntimeAdapter extends RuntimeAdapter {
         cdpEndpoint,
         ownsContext: false,
       };
+      if (this.keepAlive) {
+        await this.#resetCustomerState(runtime);
+        this.cachedRuntime = { ...runtime, profileRef: null };
+      }
+      return runtime;
     } catch (error) {
       if (profileStarted) await this.apiClient.closeProfile(this.profileId).catch(() => undefined);
       if (browser) await browser.close().catch(() => undefined);
@@ -204,17 +296,156 @@ export class BitBrowserProfileRuntimeAdapter extends RuntimeAdapter {
     if (!runtime?.browser || runtime.vendorProfileId !== this.profileId) {
       throw new TypeError('BitBrowser runtime handle is required');
     }
-    let closeError = null;
+    if (!this.keepAlive) return this.#physicalClose(runtime);
+    if (runtime.profileRef !== this.activeProfileRef) {
+      throw new BitBrowserRuntimeError('BitBrowser runtime lease does not match the active job', 'BITBROWSER_PROFILE_LEASE_MISMATCH');
+    }
     try {
-      await this.apiClient.closeProfile(this.profileId);
+      await this.#resetCustomerState(runtime);
+      this.activeProfileRef = null;
+      return { released: true, keptAlive: true };
     } catch (error) {
-      closeError = error;
+      await this.#physicalClose(runtime).catch(() => undefined);
+      if (error instanceof BitBrowserRuntimeError) throw error;
+      throw new BitBrowserRuntimeError(
+        'BitBrowser customer state reset failed',
+        'BITBROWSER_ISOLATION_RESET_FAILED',
+        error,
+      );
     }
-    await runtime.browser.close().catch(() => undefined);
-    this.activeProfileRef = null;
-    if (closeError) {
-      throw new BitBrowserRuntimeError('BitBrowser profile cleanup failed', 'BITBROWSER_CLEANUP_FAILED', closeError);
+  }
+
+  async interrupt(runtime) {
+    if (!this.keepAlive) return this.close(runtime);
+    if (!runtime || runtime.profileRef !== this.activeProfileRef) return;
+    // Interrupt page waits immediately but retain the logical slot until the
+    // executor reaches its awaited finally/close boundary.
+    await Promise.all(runtime.context.pages().map(async (page) => {
+      let url = '';
+      try { url = page.url(); } catch { return; }
+      if (!url.startsWith('https://console.bitbrowser.net/')) {
+        await page.close({ runBeforeUnload: false }).catch(() => undefined);
+      }
+    }));
+  }
+
+  /** Physical process-shutdown hook. Logical job close keeps the Profile warm. */
+  async shutdown() {
+    await this.#physicalClose();
+    return { closed: true };
+  }
+}
+
+/**
+ * In-process pool for 1-6 isolated, persistent BitBrowser Profiles. A slot is
+ * synchronously reserved before any await, so concurrent job claims cannot
+ * receive the same BrowserContext.
+ */
+export class BitBrowserProfilePoolRuntimeAdapter extends RuntimeAdapter {
+  constructor({ browserType, apiClient, profileIds, enabled = false, connectOptions = {} } = {}) {
+    super();
+    if (!Array.isArray(profileIds) || profileIds.length < 1 || profileIds.length > 6) {
+      throw new TypeError('profileIds must contain between 1 and 6 Profiles');
     }
+    const normalized = profileIds.map((id) => assertRef(id, 'BitBrowser profileId'));
+    if (new Set(normalized).size !== normalized.length) throw new TypeError('profileIds must be unique');
+    this.apiClient = apiClient;
+    this.slots = normalized.map((profileId, index) => ({
+      index,
+      reserved: false,
+      leaseRef: null,
+      quarantined: false,
+      adapter: new BitBrowserProfileRuntimeAdapter({
+        browserType,
+        apiClient,
+        profileId,
+        enabled,
+        keepAlive: true,
+        connectOptions,
+      }),
+    }));
+  }
+
+  async checkHealth() {
+    return this.apiClient.health();
+  }
+
+  async open(manifest, options = {}) {
+    const candidates = this.slots.filter((candidate) => !candidate.reserved && !candidate.quarantined);
+    if (!candidates.length) {
+      const hasBusyHealthySlot = this.slots.some((candidate) => candidate.reserved && !candidate.quarantined);
+      throw new BitBrowserRuntimeError(
+        hasBusyHealthySlot ? 'all BitBrowser Profile slots are busy' : 'no healthy BitBrowser Profile slot is available',
+        hasBusyHealthySlot ? 'BITBROWSER_POOL_EXHAUSTED' : 'BITBROWSER_POOL_UNAVAILABLE',
+      );
+    }
+    let lastError = null;
+    for (const slot of candidates) {
+      slot.reserved = true;
+      try {
+        const runtime = await slot.adapter.open(manifest, options);
+        slot.leaseRef = runtime.profileRef;
+        return { ...runtime, poolSlot: slot.index };
+      } catch (error) {
+        slot.reserved = false;
+        slot.leaseRef = null;
+        // The daily open cap is account-wide; probing every slot would only
+        // consume time and repeat the same vendor rejection.
+        if (!PROFILE_SCOPED_START_FAILURES.has(error?.code)) throw error;
+        slot.quarantined = true;
+        lastError = error;
+      }
+    }
+    throw new BitBrowserRuntimeError(
+      'every available BitBrowser Profile failed to start and was quarantined',
+      'BITBROWSER_POOL_UNAVAILABLE',
+      lastError,
+    );
+  }
+
+  async close(runtime) {
+    const slot = this.slots[runtime?.poolSlot];
+    if (!slot || !slot.reserved || !runtime?.profileRef
+      || runtime.profileRef !== slot.leaseRef
+      || runtime.vendorProfileId !== slot.adapter.profileId) {
+      throw new BitBrowserRuntimeError('BitBrowser pool lease is invalid', 'BITBROWSER_POOL_LEASE_MISMATCH');
+    }
+    let releasedCleanly = false;
+    try {
+      const result = await slot.adapter.close(runtime);
+      releasedCleanly = true;
+      return result;
+    } finally {
+      slot.reserved = false;
+      slot.leaseRef = null;
+      if (!releasedCleanly) slot.quarantined = true;
+    }
+  }
+
+
+  async interrupt(runtime) {
+    const slot = this.slots[runtime?.poolSlot];
+    if (!slot || !slot.reserved || runtime?.profileRef !== slot.leaseRef
+      || runtime.vendorProfileId !== slot.adapter.profileId) return;
+    await slot.adapter.interrupt(runtime);
+  }
+
+  async shutdown() {
+    const results = await Promise.allSettled(this.slots.map((slot) => slot.adapter.shutdown()));
+    for (const slot of this.slots) {
+      slot.reserved = false;
+      slot.leaseRef = null;
+      slot.quarantined = false;
+    }
+    const failures = results.filter((result) => result.status === 'rejected');
+    if (failures.length) {
+      throw new BitBrowserRuntimeError(
+        `failed to shut down ${failures.length} BitBrowser Profile slot(s)`,
+        'BITBROWSER_POOL_SHUTDOWN_FAILED',
+        new AggregateError(failures.map((result) => result.reason)),
+      );
+    }
+    return { closed: true };
   }
 }
 

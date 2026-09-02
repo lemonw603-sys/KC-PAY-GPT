@@ -133,7 +133,22 @@ export class BrowserPaymentExecutor {
       'CHECKOUT_DRIFT', 'CARD_MATERIAL_INVALID', 'CHECKOUT_ADAPTER_MISMATCH',
       'INSUFFICIENT_CARD_BALANCE', 'INVALID_ARGUMENT',
     ];
-    if (typeof this.paymentAdapter.preflight === 'function') {
+    let prepared = null;
+    if (typeof this.paymentAdapter.prepare === 'function') {
+      try {
+        await control.assertLeaseBeforeAction('PAYMENT_PREPARE');
+        prepared = await this.paymentAdapter.prepare({
+          page, operationId: op, checkout, cardMaterial,
+          assertContinue: () => control.assertLeaseBeforeAction('PAYMENT_PREPARE_CONTINUE'),
+        });
+      } catch (error) {
+        if (recoverablePreSubmitCodes.includes(error?.code)
+          || error?.code === 'BILLING_ADDRESS_INVALID') {
+          return { status: 'PRE_SUBMIT_FAILED', reasonCode: error.code, paymentSubmitCalls: 0 };
+        }
+        throw error;
+      }
+    } else if (typeof this.paymentAdapter.preflight === 'function') {
       try {
         await control.assertLeaseBeforeAction('PAYMENT_PREFLIGHT');
         await this.paymentAdapter.preflight({ page, operationId: op, checkout, cardMaterial });
@@ -144,25 +159,35 @@ export class BrowserPaymentExecutor {
         throw error;
       }
     }
-    await control.assertLeaseBeforeAction('PAYMENT_PERMIT');
-    const permit = await this.integration.issueAuthoritativePaymentPermit({ control, run });
-    const intent = await this.executionRepository.commitPaymentSubmissionIntent({
-      runId: required(run?.runId, 'run.runId'),
-      workerId: required(this.integration.workerId, 'workerId'),
-      leaseToken: required(run?.leaseToken, 'run.leaseToken'),
-      permitNonce: required(permit.permitNonce, 'permit.permitNonce'),
-      operationId: op,
-    });
-    if (!intent.executeExternal) {
-      return { status: 'RECONCILE_ONLY', idempotentReplay: true, paymentSubmitCalls: 0 };
-    }
-
-    let submission;
     try {
-      await control.assertLeaseBeforeAction('PAYMENT_SUBMIT');
-      submission = await this.paymentAdapter.submit({ page, operationId: op, checkout, cardMaterial, permit });
-      await control.assertLeaseBeforeAction('PAYMENT_RESULT');
-    } catch (error) {
+      await control.assertLeaseBeforeAction('PAYMENT_PERMIT');
+      const checkoutSnapshotHash = prepared?.checkoutSnapshotHash || null;
+      const permit = await this.integration.issueAuthoritativePaymentPermit({
+        control, run, checkoutSnapshotHash,
+      });
+      const intent = await this.executionRepository.commitPaymentSubmissionIntent({
+        runId: required(run?.runId, 'run.runId'),
+        workerId: required(this.integration.workerId, 'workerId'),
+        leaseToken: required(run?.leaseToken, 'run.leaseToken'),
+        permitNonce: required(permit.permitNonce, 'permit.permitNonce'),
+        operationId: op,
+        checkoutSnapshotHash,
+      });
+      if (!intent.executeExternal) {
+        return { status: 'RECONCILE_ONLY', idempotentReplay: true, paymentSubmitCalls: 0 };
+      }
+
+      let submission;
+      try {
+        await control.assertLeaseBeforeAction('PAYMENT_SUBMIT');
+        submission = prepared && typeof this.paymentAdapter.submitPrepared === 'function'
+          ? await this.paymentAdapter.submitPrepared({
+            prepared, permit,
+            assertContinue: () => control.assertLeaseBeforeAction('PAYMENT_SUBMIT_CONTINUE'),
+          })
+          : await this.paymentAdapter.submit({ page, operationId: op, checkout, cardMaterial, permit });
+        await control.assertLeaseBeforeAction('PAYMENT_RESULT');
+      } catch (error) {
       // commitPaymentSubmissionIntent has already consumed the one-shot
       // permit. Even a locally proven no-click failure cannot be advertised as
       // retryable until the shared repository gains an explicit, auditable
@@ -171,20 +196,20 @@ export class BrowserPaymentExecutor {
       await this.executionRepository.markPaymentUnknown({
         runId: run.runId, operationId: `${op}:unknown`, reasonCode: 'PAYMENT_RESULT_UNKNOWN',
       });
-      return { status: 'UNKNOWN', reasonCode: 'PAYMENT_RESULT_UNKNOWN', paymentSubmitCalls: 1 };
-    }
-    if (submission?.status !== 'CONFIRMED') {
-      await this.executionRepository.markPaymentUnknown({
-        runId: run.runId, operationId: `${op}:unknown`, reasonCode: `PAYMENT_${submission?.status || 'UNKNOWN'}`,
-      });
-      return { status: 'UNKNOWN', reasonCode: `PAYMENT_${submission?.status || 'UNKNOWN'}`, paymentSubmitCalls: 1 };
-    }
+        return { status: 'UNKNOWN', reasonCode: 'PAYMENT_RESULT_UNKNOWN', paymentSubmitCalls: 1 };
+      }
+      if (submission?.status !== 'CONFIRMED') {
+        await this.executionRepository.markPaymentUnknown({
+          runId: run.runId, operationId: `${op}:unknown`, reasonCode: `PAYMENT_${submission?.status || 'UNKNOWN'}`,
+        });
+        return { status: 'UNKNOWN', reasonCode: `PAYMENT_${submission?.status || 'UNKNOWN'}`, paymentSubmitCalls: 1 };
+      }
 
-    const paymentEvidenceHash = digest({ operationId: op, providerCallRef: submission.providerCallRef, status: submission.status });
-    await this.executionRepository.markPaymentConfirmed({
-      runId: run.runId, operationId: `${op}:confirmed`, evidenceHash: paymentEvidenceHash,
-    });
-    try {
+      const paymentEvidenceHash = digest({ operationId: op, providerCallRef: submission.providerCallRef, status: submission.status });
+      await this.executionRepository.markPaymentConfirmed({
+        runId: run.runId, operationId: `${op}:confirmed`, evidenceHash: paymentEvidenceHash,
+      });
+      try {
       const plus = await this.postPaymentVerifier.confirmPlus();
       if (!plus?.confirmed) return { status: 'POST_PAYMENT_UNKNOWN', reasonCode: 'PLUS_ACTIVATION_UNCONFIRMED', paymentSubmitCalls: 1 };
       await this.executionRepository.recordPlusActivation({
@@ -199,15 +224,20 @@ export class BrowserPaymentExecutor {
       await this.executionRepository.recordCancellationConfirmed({
         runId: run.runId, operationId: `${op}:cancellation`, evidenceHash: digest({ cancellation: cancellation.evidence, transactions }),
       });
-      return { status: 'COMPLETED', paymentSubmitCalls: 1, cardTransactionCount: transactions.length };
-    } catch (error) {
+        return { status: 'COMPLETED', paymentSubmitCalls: 1, cardTransactionCount: transactions.length };
+      } catch (error) {
       // Payment is already confirmed; a verifier/recording failure must never
       // bubble into a retryable submit path. Leave the run for reconciliation.
-      return {
-        status: 'POST_PAYMENT_UNKNOWN',
-        reasonCode: 'POST_PAYMENT_RECONCILIATION_REQUIRED',
-        paymentSubmitCalls: 1,
-      };
+        return {
+          status: 'POST_PAYMENT_UNKNOWN',
+          reasonCode: 'POST_PAYMENT_RECONCILIATION_REQUIRED',
+          paymentSubmitCalls: 1,
+        };
+      }
+    } finally {
+      if (prepared && typeof this.paymentAdapter.cleanupPrepared === 'function') {
+        await this.paymentAdapter.cleanupPrepared(prepared).catch(() => undefined);
+      }
     }
   }
 }

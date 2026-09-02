@@ -65,6 +65,8 @@ test('BitBrowser runtime is explicit, loopback-only and does not require a Chrom
   assert.deepEqual(config.bitBrowser, {
     apiUrl: 'http://127.0.0.1:54345',
     profileId: 'bit-profile-test-001',
+    profileIds: ['bit-profile-test-001'],
+    keepAlive: false,
     apiTimeoutMs: 10_000,
   });
   const adapter = createProductionReadonlyRuntimeAdapter(config, {
@@ -72,6 +74,36 @@ test('BitBrowser runtime is explicit, loopback-only and does not require a Chrom
     fetchImpl: async () => ({ ok: true, json: async () => ({ success: true }) }),
   });
   assert.equal(adapter instanceof BitBrowserProfileRuntimeAdapter, true);
+
+  const keepAlive = loadProductionReadonlyBrowserConfig(validEnv({
+    BROWSER_RUNTIME_PROVIDER: 'BITBROWSER',
+    BROWSER_BITBROWSER_ENABLED: 'true',
+    BROWSER_BITBROWSER_API_URL: 'http://127.0.0.1:54345',
+    BROWSER_BITBROWSER_PROFILE_ID: 'bit-profile-test-001',
+    BROWSER_BITBROWSER_KEEP_ALIVE: 'true',
+  }));
+  assert.equal(keepAlive.bitBrowser.keepAlive, true);
+
+  const sixProfile = loadProductionReadonlyBrowserConfig(validEnv({
+    BROWSER_RUNTIME_PROVIDER: 'BITBROWSER',
+    BROWSER_BITBROWSER_ENABLED: 'true',
+    BROWSER_BITBROWSER_API_URL: 'http://127.0.0.1:54345',
+    BROWSER_BITBROWSER_PROFILE_ID: '',
+    BROWSER_BITBROWSER_PROFILE_IDS: 'bit-001,bit-002,bit-003,bit-004,bit-005,bit-006',
+    BROWSER_BITBROWSER_KEEP_ALIVE: 'true',
+    BROWSER_WORKER_CONCURRENCY: '6',
+  }));
+  assert.equal(sixProfile.bitBrowser.profileIds.length, 6);
+  assert.equal(sixProfile.workerConcurrency, 6);
+  assert.throws(() => loadProductionReadonlyBrowserConfig(validEnv({
+    BROWSER_RUNTIME_PROVIDER: 'BITBROWSER',
+    BROWSER_BITBROWSER_ENABLED: 'true',
+    BROWSER_BITBROWSER_API_URL: 'http://127.0.0.1:54345',
+    BROWSER_BITBROWSER_PROFILE_ID: '',
+    BROWSER_BITBROWSER_PROFILE_IDS: 'bit-001,bit-002',
+    BROWSER_WORKER_CONCURRENCY: '3',
+    BROWSER_BITBROWSER_KEEP_ALIVE: 'true',
+  })), /cannot exceed/);
 
   assert.throws(() => loadProductionReadonlyBrowserConfig(validEnv({
     BROWSER_RUNTIME_PROVIDER: 'BITBROWSER',

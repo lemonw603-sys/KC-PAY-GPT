@@ -1,5 +1,7 @@
+import { createHash } from 'node:crypto';
+
 import { ContractError } from './contracts.js';
-import { assertCardMaterial } from './card-material-lease.js';
+import { assertBillingAddress, assertCardMaterial } from './card-material-lease.js';
 import { SECURE_CARD_FIELD_SELECTORS } from './nonpayment-card-fill.js';
 
 export const LIVE_PAYMENT_CONFIRMATION = 'I-CONFIRM-LIVE-BROWSER-PAYMENT-ADAPTER';
@@ -18,8 +20,8 @@ function required(value, name) {
   return normalized;
 }
 
-async function oneVisible(page, selector, label) {
-  const deadline = Date.now() + 10_000;
+async function oneVisible(page, selector, label, timeoutMs = 60_000) {
+  const deadline = Date.now() + timeoutMs;
   while (true) {
     const matches = [];
     for (const frame of page.frames()) {
@@ -33,6 +35,15 @@ async function oneVisible(page, selector, label) {
     await page.waitForTimeout(100);
   }
 }
+
+const BILLING_FIELD_SELECTORS = Object.freeze({
+  name: 'input[autocomplete="billing name"]',
+  country: 'select[autocomplete="billing country"]',
+  line1: 'input[autocomplete="billing address-line1"]',
+  city: 'input[autocomplete="billing address-level2"]',
+  postalCode: 'input[autocomplete="billing postal-code"]',
+  state: 'select[autocomplete="billing address-level1"]',
+});
 
 function checkoutFingerprint(checkout) {
   return JSON.stringify({
@@ -60,6 +71,43 @@ function assertCheckoutReadyAndStable(reviewed, current) {
   }
 }
 
+function assertCheckoutIdentity(reviewed, current) {
+  if (!reviewed?.recognized || !current?.recognized
+    || String(reviewed.planDigest || '') !== String(current.planDigest || '')
+    || String(reviewed.currency || '').toUpperCase() !== String(current.currency || '').toUpperCase()
+    || String(reviewed.submitControlSelector || '') !== String(current.submitControlSelector || '')) {
+    throw new LiveChatGPTPaymentAdapterError(
+      'Checkout plan, currency, or submit target changed while preparing payment',
+      'CHECKOUT_DRIFT',
+    );
+  }
+  if (current.paymentFormPresent !== true
+    || current.submitControlPresent !== true
+    || current.submitControlEnabled !== true) {
+    throw new LiveChatGPTPaymentAdapterError('Checkout payment controls are not ready', 'CHECKOUT_DRIFT');
+  }
+}
+
+function checkoutSnapshotHash(checkout) {
+  return createHash('sha256').update(checkoutFingerprint(checkout)).digest('hex');
+}
+
+async function clearPreparedFields(prepared) {
+  for (const field of Object.values(prepared?.fields || {})) {
+    try { await field.fill(''); } catch {
+      await field.evaluate((element) => {
+        element.value = '';
+        element.dispatchEvent(new Event('input', { bubbles: true }));
+      }).catch(() => undefined);
+    }
+  }
+  for (const field of Object.values(prepared?.billingFields || {})) {
+    try {
+      if (typeof field.fill === 'function') await field.fill('');
+    } catch { /* best-effort sensitive field cleanup */ }
+  }
+}
+
 function cardValues(cardMaterial) {
   assertCardMaterial(cardMaterial);
   const month = Number(cardMaterial.expMonth);
@@ -67,10 +115,17 @@ function cardValues(cardMaterial) {
   const now = new Date();
   const currentMonth = now.getUTCFullYear() * 12 + now.getUTCMonth() + 1;
   const expiryMonth = year * 12 + month;
+  let billingAddress;
+  try {
+    billingAddress = assertBillingAddress(cardMaterial.billingAddress);
+  } catch {
+    throw new LiveChatGPTPaymentAdapterError('billing address format is invalid', 'BILLING_ADDRESS_INVALID');
+  }
   const values = {
     cardNumber: String(cardMaterial.pan).replace(/\s+/g, ''),
     expiry: `${String(month).padStart(2, '0')} / ${String(year).slice(-2)}`,
     cvc: String(cardMaterial.cvc).trim(),
+    billingAddress,
   };
   if (!/^\d{12,19}$/.test(values.cardNumber) || !/^\d{3,4}$/.test(values.cvc)
     || !Number.isInteger(month) || month < 1 || month > 12
@@ -93,11 +148,16 @@ export class LiveChatGPTPaymentAdapter {
     checkoutObserver = null,
     budgetGuard = null,
     outcomeObserver = null,
+    fieldTimeoutMs = 60_000,
   } = {}) {
     this.enabled = enabled === true && confirmation === LIVE_PAYMENT_CONFIRMATION;
     this.checkoutObserver = checkoutObserver;
     this.budgetGuard = budgetGuard;
     this.outcomeObserver = outcomeObserver;
+    if (!Number.isInteger(fieldTimeoutMs) || fieldTimeoutMs < 1_000 || fieldTimeoutMs > 120_000) {
+      throw new TypeError('fieldTimeoutMs must be between 1000 and 120000');
+    }
+    this.fieldTimeoutMs = fieldTimeoutMs;
   }
 
   /**
@@ -128,70 +188,124 @@ export class LiveChatGPTPaymentAdapter {
     return { status: 'READY', submitCalls: 0 };
   }
 
-  async submit({ page, checkout, cardMaterial, operationId, assertContinue = async () => undefined } = {}) {
+  /**
+   * Populate card and billing fields without clicking Submit. The returned
+   * opaque handle remains process-local and binds the later permit to the
+   * address-adjusted tax/total snapshot.
+   */
+  async prepare({ page, checkout, cardMaterial, operationId, assertContinue = async () => undefined } = {}) {
     if (!this.enabled) throw new LiveChatGPTPaymentAdapterError('LIVE Browser payment adapter is disabled', 'PAYMENT_EXECUTOR_DISABLED');
     if (!page || typeof page.frames !== 'function') throw new TypeError('page is required');
     const op = required(operationId, 'operationId');
     if (!checkout?.recognized || typeof checkout.submitControlSelector !== 'string' || !checkout.submitControlSelector.trim()) {
       throw new LiveChatGPTPaymentAdapterError('recognized Checkout contract is required', 'CHECKOUT_ADAPTER_MISMATCH');
     }
+    if (typeof this.checkoutObserver !== 'function') {
+      throw new LiveChatGPTPaymentAdapterError('Checkout re-observer is required before payment', 'CHECKOUT_DRIFT');
+    }
+    if (typeof this.budgetGuard !== 'function') {
+      throw new LiveChatGPTPaymentAdapterError('card budget guard is required before payment', 'INSUFFICIENT_CARD_BALANCE');
+    }
+    const values = cardValues(cardMaterial);
+    const fields = {};
+    const billingFields = {};
+    const prepared = { page, operationId: op, fields, billingFields, finalCheckout: null, checkoutSnapshotHash: null };
+    try {
+      const beforeFill = await this.checkoutObserver({ page, operationId: op });
+      assertCheckoutReadyAndStable(checkout, beforeFill);
+      for (const [name, selector] of Object.entries(SECURE_CARD_FIELD_SELECTORS)) {
+        fields[name] = await oneVisible(page, selector, name, this.fieldTimeoutMs);
+      }
+      for (const [name, field] of Object.entries(fields)) {
+        await assertContinue();
+        if ((await field.inputValue()).trim()) {
+          throw new LiveChatGPTPaymentAdapterError(`${name} secure field is not empty`, 'CHECKOUT_DRIFT');
+        }
+        await field.fill(values[name]);
+      }
+      for (const [name, selector] of Object.entries(BILLING_FIELD_SELECTORS)) {
+        billingFields[name] = await oneVisible(page, selector, `billing ${name}`, this.fieldTimeoutMs);
+      }
+      const billing = values.billingAddress;
+      await assertContinue();
+      await billingFields.country.selectOption(billing.country);
+      await billingFields.name.fill(billing.name);
+      await billingFields.line1.fill(billing.line1);
+      await billingFields.city.fill(billing.city);
+      await billingFields.postalCode.fill(billing.postalCode);
+      if (billing.country === 'US') await billingFields.state.selectOption(billing.state);
+      await billingFields.postalCode.press('Tab');
+      await assertContinue();
+      const finalCheckout = await this.checkoutObserver({ page, operationId: op });
+      // Tax and total are allowed to settle only during this pre-permit phase.
+      assertCheckoutIdentity(checkout, finalCheckout);
+      const budget = await this.budgetGuard({ checkout: finalCheckout, operationId: op });
+      if (budget?.approved !== true) {
+        throw new LiveChatGPTPaymentAdapterError('card balance does not cover the final Checkout total', 'INSUFFICIENT_CARD_BALANCE');
+      }
+      prepared.finalCheckout = finalCheckout;
+      prepared.checkoutSnapshotHash = checkoutSnapshotHash(finalCheckout);
+      return prepared;
+    } catch (error) {
+      await clearPreparedFields(prepared);
+      if (error instanceof LiveChatGPTPaymentAdapterError || error instanceof ContractError) throw error;
+      throw new LiveChatGPTPaymentAdapterError('LIVE Browser payment preparation failed', 'CHECKOUT_DRIFT', error);
+    }
+  }
+
+  async submitPrepared({ prepared, assertContinue = async () => undefined } = {}) {
+    if (!this.enabled) throw new LiveChatGPTPaymentAdapterError('LIVE Browser payment adapter is disabled', 'PAYMENT_EXECUTOR_DISABLED');
+    if (!prepared?.page || !prepared?.finalCheckout || !prepared?.checkoutSnapshotHash) {
+      throw new LiveChatGPTPaymentAdapterError('prepared Checkout handle is required', 'CHECKOUT_DRIFT');
+    }
+    const { page, operationId: op, finalCheckout } = prepared;
+    await assertContinue();
+    const current = await this.checkoutObserver({ page, operationId: op });
+    assertCheckoutReadyAndStable(finalCheckout, current);
+    if (checkoutSnapshotHash(current) !== prepared.checkoutSnapshotHash) {
+      throw new LiveChatGPTPaymentAdapterError('prepared Checkout snapshot changed before payment', 'CHECKOUT_DRIFT');
+    }
+    const budget = await this.budgetGuard({ checkout: current, operationId: op });
+    if (budget?.approved !== true) {
+      throw new LiveChatGPTPaymentAdapterError('card balance does not cover the final Checkout total', 'INSUFFICIENT_CARD_BALANCE');
+    }
+    const submit = await oneVisible(page, current.submitControlSelector, 'payment submit control', this.fieldTimeoutMs);
+    const shape = await submit.evaluate((element) => ({
+      tag: element.tagName.toLowerCase(), type: element.getAttribute('type')?.toLowerCase() || null,
+    }));
+    if (shape.tag !== 'button' || shape.type !== 'submit') throw new ContractError('payment submit control shape drift');
+    await assertContinue();
+    await submit.click();
+    if (typeof this.outcomeObserver !== 'function') {
+      throw new LiveChatGPTPaymentAdapterError('payment outcome observer is required after submit', 'PAYMENT_RESULT_UNKNOWN');
+    }
+    const outcome = await this.outcomeObserver({ page, operationId: op });
+    if (outcome?.status !== 'CONFIRMED') {
+      throw new LiveChatGPTPaymentAdapterError('payment outcome was not confirmed', 'PAYMENT_RESULT_UNKNOWN');
+    }
+    return { status: 'CONFIRMED', providerCallRef: `browser:${op}` };
+  }
+
+  async cleanupPrepared(prepared) {
+    await clearPreparedFields(prepared);
+  }
+
+  async submit({ page, checkout, cardMaterial, operationId, assertContinue = async () => undefined } = {}) {
+    let prepared = null;
     let submitted = false;
     try {
-      // Repeat preflight after the authoritative submit intent. Any failure
-      // from this point is deliberately treated as UNKNOWN by the executor,
-      // because the one-shot intent has already been consumed.
-      await this.preflight({ page, checkout, cardMaterial, operationId: op });
-      const values = cardValues(cardMaterial);
-      const fields = {};
-      for (const [name, selector] of Object.entries(SECURE_CARD_FIELD_SELECTORS)) {
-        fields[name] = await oneVisible(page, selector, name);
-      }
-      try {
-        for (const [name, field] of Object.entries(fields)) {
-          await assertContinue();
-          if ((await field.inputValue()).trim()) throw new LiveChatGPTPaymentAdapterError(`${name} secure field is not empty`, 'CHECKOUT_DRIFT');
-          await field.fill(values[name]);
-        }
-        await assertContinue();
-        // Card country/BIN can change tax or the amount due. Re-read after the
-        // secure fields are populated and before the one permitted click.
-        const beforeSubmit = await this.checkoutObserver({ page, operationId: op });
-        assertCheckoutReadyAndStable(checkout, beforeSubmit);
-        const finalBudget = await this.budgetGuard({ checkout: beforeSubmit, operationId: op });
-        if (finalBudget?.approved !== true) {
-          throw new LiveChatGPTPaymentAdapterError('card balance does not cover the final Checkout total', 'INSUFFICIENT_CARD_BALANCE');
-        }
-        const submit = await oneVisible(page, checkout.submitControlSelector, 'payment submit control');
-        const shape = await submit.evaluate((element) => ({
-          tag: element.tagName.toLowerCase(), type: element.getAttribute('type')?.toLowerCase() || null,
-        }));
-        if (shape.tag !== 'button' || shape.type !== 'submit') throw new ContractError('payment submit control shape drift');
-        await assertContinue();
-        await submit.click();
-        submitted = true;
-        if (typeof this.outcomeObserver !== 'function') {
-          throw new LiveChatGPTPaymentAdapterError('payment outcome observer is required after submit', 'PAYMENT_RESULT_UNKNOWN');
-        }
-        const outcome = await this.outcomeObserver({ page, operationId: op });
-        if (outcome?.status !== 'CONFIRMED') {
-          throw new LiveChatGPTPaymentAdapterError('payment outcome was not confirmed', 'PAYMENT_RESULT_UNKNOWN');
-        }
-        return { status: 'CONFIRMED', providerCallRef: `browser:${op}` };
-      } finally {
-        // Never leave card values in the page after success, failure, or an
-        // unknown outcome. Cleanup is best effort because the page may have
-        // navigated after the submit click.
-        for (const field of Object.values(fields)) {
-          try { await field.fill(''); } catch {
-            await field.evaluate((element) => { element.value = ''; element.dispatchEvent(new Event('input', { bubbles: true })); }).catch(() => undefined);
-          }
-        }
-      }
+      prepared = await this.prepare({ page, checkout, cardMaterial, operationId, assertContinue });
+      submitted = true;
+      return await this.submitPrepared({ prepared, assertContinue });
     } catch (error) {
       if (error instanceof LiveChatGPTPaymentAdapterError) throw error;
       throw new LiveChatGPTPaymentAdapterError(
         'LIVE Browser payment failed', submitted ? 'PAYMENT_RESULT_UNKNOWN' : 'CHECKOUT_DRIFT', error,
       );
+    } finally {
+      if (prepared) await this.cleanupPrepared(prepared).catch(() => undefined);
     }
   }
 }
+
+export { BILLING_FIELD_SELECTORS };
