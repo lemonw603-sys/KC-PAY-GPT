@@ -34,3 +34,11 @@ npm run check
 这批能力只完成真实付款前的纵向前置切片，不代表真实 Session、Checkout 或付款已验证。
 
 所有跨边界对象使用引用和 digest，不接受卡号、CVV、Session 原文、Checkout authority 或明文密钥。
+
+## 六 Profile 生产形态（仍未部署）
+
+- BitBrowser 可通过 `BROWSER_BITBROWSER_PROFILE_IDS` 配置最多 6 个唯一 Profile；多 Profile 强制常驻复用，`BROWSER_WORKER_CONCURRENCY` 不得超过 Profile 数。
+- macOS launcher 默认 `BROWSER_LOCAL_RUN_MODE=ONCE`；只有显式选择 `CONTINUOUS` 才运行常驻 lane。
+- Worker 进程 heartbeat 默认每 10 秒写一次，与 lane 数无关；空闲 lane 不再各自写 heartbeat。
+- 当前仍是非付款 Worker：五类 Provider/卡资金写开关必须为 false，付款执行器必须为 `false/MOCK`。
+- 配置与验收边界见 `../docs/browser-research/BROWSER_SIX_PROFILE_PRODUCTION_SHAPE_PREPARATION_2026-09-02.md`。

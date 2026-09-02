@@ -44,6 +44,43 @@ function delay(ms, signal) {
   });
 }
 
+export async function runProcessHeartbeat({ writeHeartbeat, intervalMs, signal }) {
+  if (typeof writeHeartbeat !== 'function') throw new TypeError('writeHeartbeat is required');
+  if (!Number.isInteger(intervalMs) || intervalMs < 5_000 || intervalMs > 30_000) {
+    throw new TypeError('heartbeat interval must be between 5000 and 30000ms');
+  }
+  do {
+    await writeHeartbeat();
+    if (signal?.aborted) break;
+    await delay(intervalMs, signal);
+  } while (!signal?.aborted);
+}
+
+export async function runConcurrentWorkerLanes({
+  runOnce,
+  laneCount,
+  pollIntervalMs,
+  once = false,
+  signal = null,
+  onResult = () => {},
+} = {}) {
+  if (typeof runOnce !== 'function') throw new TypeError('runOnce is required');
+  if (!Number.isInteger(laneCount) || laneCount < 1 || laneCount > 6) {
+    throw new TypeError('laneCount must be between 1 and 6');
+  }
+  const runLane = async (laneIndex) => {
+    let lastResult = { status: 'IDLE' };
+    do {
+      lastResult = await runOnce({ laneIndex });
+      await onResult(lastResult, { laneIndex });
+      if (once || signal?.aborted) return lastResult;
+      if (lastResult.status === 'IDLE') await delay(pollIntervalMs, signal);
+    } while (!signal?.aborted);
+    return lastResult;
+  };
+  return Promise.all(Array.from({ length: laneCount }, (_, laneIndex) => runLane(laneIndex)));
+}
+
 export async function checkProductionReadonlyDatabase(pool, { executorProfileId } = {}) {
   if (!executorProfileId) throw new Error('executorProfileId is required for database readiness');
   const [[migration]] = await pool.query(
@@ -180,6 +217,9 @@ export async function runProductionReadonlyBrowserWorker({
   const pool = createDatabasePool(database);
   let runtimeAdapter = null;
   let heartbeatStarted = false;
+  const processController = new AbortController();
+  const forwardAbort = () => processController.abort();
+  signal?.addEventListener('abort', forwardAbort, { once: true });
   const writeHeartbeat = async (value = new Date().toISOString()) => {
     await pool.query(
       `UPDATE app_settings SET setting_value = ?, updated_at = CURRENT_TIMESTAMP(3)
@@ -193,7 +233,6 @@ export async function runProductionReadonlyBrowserWorker({
     runtimeAdapter = createProductionReadonlyRuntimeAdapter(config, { browserType, fetchImpl });
     if (typeof runtimeAdapter.checkHealth === 'function') await runtimeAdapter.checkHealth();
     if (env.BROWSER_WORKER_CHECK_ONLY === 'true') return { status: 'READY' };
-    await writeHeartbeat();
     heartbeatStarted = true;
     const wal = await new AppendOnlyWal({ filePath: config.walPath }).init();
     await wal.verify();
@@ -249,19 +288,31 @@ export async function runProductionReadonlyBrowserWorker({
       executionTimeoutMs: config.executionTimeoutMs,
     });
 
-    const runLane = async () => {
-      let lastResult = { status: 'IDLE' };
-      do {
-        await writeHeartbeat();
-        lastResult = await worker.runOnce({ confirmation: SHARED_NONPAYMENT_DRY_RUN_CONFIRMATION });
-        await onResult(lastResult);
-        if (once || signal?.aborted) return lastResult;
-        if (lastResult.status === 'IDLE') await delay(config.pollIntervalMs, signal);
-      } while (!signal?.aborted);
-      return lastResult;
-    };
     const laneCount = once ? 1 : config.workerConcurrency;
-    const results = await Promise.all(Array.from({ length: laneCount }, () => runLane()));
+    const heartbeatTask = runProcessHeartbeat({
+      writeHeartbeat,
+      intervalMs: config.heartbeatIntervalMs,
+      signal: processController.signal,
+    });
+    const lanesTask = runConcurrentWorkerLanes({
+      runOnce: () => worker.runOnce({ confirmation: SHARED_NONPAYMENT_DRY_RUN_CONFIRMATION }),
+      laneCount,
+      pollIntervalMs: config.pollIntervalMs,
+      once,
+      signal: processController.signal,
+      onResult,
+    });
+    let results;
+    try {
+      results = await Promise.race([
+        lanesTask,
+        heartbeatTask.then(() => new Promise(() => {})),
+      ]);
+    } finally {
+      processController.abort();
+      await heartbeatTask;
+      await lanesTask.catch(() => {});
+    }
     return once ? results[0] : { status: 'STOPPED', lanes: results.length };
   } finally {
     let shutdownError = null;
@@ -274,6 +325,7 @@ export async function runProductionReadonlyBrowserWorker({
     }
     if (heartbeatStarted) await writeHeartbeat('').catch(() => {});
     await pool.end();
+    signal?.removeEventListener('abort', forwardAbort);
     if (shutdownError) throw shutdownError;
   }
 }

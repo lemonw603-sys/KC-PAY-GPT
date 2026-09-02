@@ -268,6 +268,9 @@ export function loadProductionReadonlyBrowserConfig(env = process.env) {
       sharedCardPreflightEnabled,
     }),
     pollIntervalMs: integer(env, 'BROWSER_WORKER_POLL_INTERVAL_MS', { min: 100, max: 60_000, fallback: 1000 }),
+    heartbeatIntervalMs: integer(env, 'BROWSER_WORKER_HEARTBEAT_INTERVAL_MS', {
+      min: 5_000, max: 30_000, fallback: 10_000,
+    }),
     workerConcurrency: runtimeProvider === 'BITBROWSER'
       ? bitBrowser.profileIds.length === 1
         ? 1

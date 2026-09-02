@@ -1,4 +1,4 @@
-# 当前生产状态快照｜2026-09-02 00:32 CST
+# 当前生产状态快照｜2026-09-02 21:42 CST
 
 > 只保留当前有效事实；历史过程查 `HANDOFF_LOG.md`，方向与顺序查 `PROJECT_MAP.md`，全链路和验收细则查 `PROJECT_OPERATING_MODEL.md`。
 > 本快照已现场核对生产 release、systemd、Worker 进程环境、数据库 Provider account 和只读 readiness；Browser 主线只读回归证据见 `docs/2026-09-01_browser-main-readonly-regression.md`。
@@ -55,14 +55,22 @@
 - 每卡最大成功支付次数全局设置为 3（可在 1–4 调整）；跨订单容量代码已部署，连续真实订单计数/释放/上限仍待验收。
 - `4744/1065=PRODUCT_ONLY(claude)`；当前旧失效批次（含 8590）均 `RETIRED`；未来新卡按实时证据接管，不使用永久卡号白名单。
 - 15 分钟资料/交易证据要求触发按需只读刷新，不把订单年龄本身当失败。
-- 当前可立即分配为 **1 张**：本轮自动开卡生成 Provider 卡 `2338`、尾号 `4643`，余额 `$16`；测试订单取消后 assignment 已释放、库存为 `AVAILABLE`。旧批次均 `RETIRED`，不能进入自动补余额或新订单分配。
+- 当前可立即分配为 **0 张**：21:40 CST 只读库存投影 `ready=0/available=0`。Provider 卡 `2338`、尾号 `4643` 虽仍为 `active/$16`，但已绑定失败订单 `PJV1-u696SEuwCQqyReHZ_FmP`、库存为 `ASSIGNED`，不得误写成可分配。旧批次均 `RETIRED`，不能进入自动补余额或新订单分配。
 - 尾号 `6807` / Provider `1477` 的真实卡可用性是用户确认的运营事实；但当前生产数据为 Provider status=`invalidating`、历史 assignment=`ACTIVE`，因此现行资格 SQL **不会把它分配给新订单**。这是待核对/收敛的历史数据缺口，不得误报为当前可分配。
 
 ## 5. 已验证与未验证
 
+### Browser 分支最新代码状态（未部署）
+
+- `codex/browser` 已补齐六 Profile 的 macOS 启动形态：单/多 Profile 配置互斥校验、1–6 唯一 Profile、并发上限、默认 `ONCE` 与显式 `CONTINUOUS`。
+- Worker heartbeat 已改为进程级默认 10 秒一次，不再由每条空闲 lane 每轮写数据库；1 秒 lane poll 只查询共享任务库，不调用 Provider/卡台 API。
+- 本地验证：Browser `140 total / 136 passed / 4 skipped / 0 failed`；v1 Browser repository `21/21`；shell/JS 语法和 `git diff --check` 通过。
+- 以上不改变生产状态：本轮未部署、未启动生产 Browser Worker、未访问真实客户 Session、未调用 Provider/卡台、未点击 Subscribe、未付款。
+- 证据：`docs/browser-research/BROWSER_SIX_PROFILE_PRODUCTION_SHAPE_PREPARATION_2026-09-02.md`。
+
 ### 最新订单边界
 
-- Browser 非付款测试订单 `PJV1-zffo7WJvbKcPECKcCxzx` 已完成清理：自动开卡扣款预计 `$16.58`，实际卡台余额由 `$36.01` 变为 `$19.43`；订单已 `CLOSED/CANCELLED_PRE_SUBMISSION`，新卡 `2338`/尾号 `4643` 为 `AVAILABLE`。Browser 访问阶段返回 `CHATGPT_ACCESS_BLOCKED`，未创建任何 `create_direct` Provider 调用，未点击付款。
+- Browser 非付款测试订单 `PJV1-zffo7WJvbKcPECKcCxzx` 已完成清理：自动开卡扣款预计 `$16.58`，实际卡台余额由 `$36.01` 变为 `$19.43`；订单已 `CLOSED/CANCELLED_PRE_SUBMISSION`，新卡 `2338`/尾号 `4643` **当时**曾释放为 `AVAILABLE`，之后已被 API 失败订单重新绑定，当前状态以上述 21:40 CST 投影为准。Browser 访问阶段返回 `CHATGPT_ACCESS_BLOCKED`，未创建任何 `create_direct` Provider 调用，未点击付款。
 - 测试期间发现 Browser Worker 在该错误下会将订单回到 `CARD_READY` 并重复创建 attempt（共 20 次，均 `CLEARED`，无外部付款）；已修复 `7bad460`：访问/Checkout 阻断现在终止为 `RECHARGE_FAILED`，不再重排提交任务。修复已部署并通过定向 Browser 测试。
 
 - 最新订单 `PJV1-412JIT_yfiuBpZeC39_m` 于 2026-09-01 14:01 CST 建立。API Provider 返回明确失败“卡片被拒，请换卡后重提”，外部订单号 `8849`；订单为 `RECHARGE_FAILED`，资金风险已清除、无成功付款。按失败策略，所用卡片暂不恢复为可直接分配。
@@ -100,8 +108,8 @@
 - 重试期间暴露自动开卡阻断：Provider 当前可见卡段均 `maintaining=true`，数据库默认卡段仍为已消失的 `16`，stock runner 返回 `CARD_STOCK_CARD_TYPE_UNAVAILABLE`。本次通过释放并复用现有卡继续，不代表自动开卡闭环成功。
 
 1. 已恢复 Worker 常驻最小 API 充值权限并完成重启/只读核对；hold 关闭，通用 Provider/卡片写与 Browser 付款仍关闭。
-2. 生产只读 preflight 已确认 blocker、活动任务和资金风险均为 0；Provider 卡 `2338`、尾号 `4643` 当前为 `active/AVAILABLE/$16`，可直接供下一笔 API 订单使用。
-3. 接受下一笔有效 Session 的真实 API 订单，优先验收“自动分配 4643→API 充值→取消续费→交易/余额/对账”；不得给旧 `RETIRED` 卡补钱，也不得重试已失败的 1013。
+2. 2026-09-02 21:42 CST 生产只读 preflight 已确认 `ok=true/blockers=[]`、活动任务和资金风险均为 0；库存投影同时确认 `ready=0/available=0`，卡 `2338` 仍为 `ASSIGNED`，不可供下一笔订单使用。
+3. 下一笔有效 API 订单将进入“无合格卡→自动开卡”，但卡台余额 `$19.43` 低于当前卡段要求的最低账户余额 `$25`；来单前需先由运营补足卡台账户余额，否则不能把自动开卡写成可成功。
 4. 通过后进入 3–5 单连续 API 验收，观察一卡多单、余额不足后的精确补款及下一次无卡自动开卡。Browser 下一步不是重复建单，而是先解决/确认 `CHATGPT_ACCESS_BLOCKED` 的可访问网络环境，再重新执行到付款按钮前的非付款观察。
 
 ## 7. 2026-09-01 最新失败单的现场复核（订单 8849）

@@ -17,7 +17,11 @@ test('macOS headed launcher is fail-closed and tunnel-bound', async () => {
   assert.match(script, /DATABASE_URL must use the configured local loopback tunnel port/);
   assert.match(script, /ExitOnForwardFailure=yes/);
   assert.match(script, /ServerAliveInterval=15/);
-  assert.match(script, /caffeinate -dimsu node[^\n]*production-readonly-worker\.js\" --once/);
+  assert.match(script, /BROWSER_LOCAL_RUN_MODE must be ONCE or CONTINUOUS/);
+  assert.match(script, /worker_args=\(\)/);
+  assert.match(script, /worker_args\+=\(--once\)/);
+  assert.match(script, /BROWSER_BITBROWSER_PROFILE_IDS/);
+  assert.match(script, /BitBrowser Profile IDs must be unique/);
   assert.match(script, /production-readonly-worker\.js" --check/);
   assert.match(script, /kill -TERM "\$worker_pid"/);
   assert.doesNotMatch(script, /-R [^\n]*3306/);
@@ -52,5 +56,8 @@ test('macOS env template is headed readonly and keeps every write gate off', asy
     'CARD_FUNDING_WRITES_ENABLED', 'BROWSER_PAYMENT_EXECUTOR_ENABLED',
   ]) assert.match(env, new RegExp(`^${name}=false$`, 'm'));
   assert.match(env, /^BROWSER_PAYMENT_EXECUTOR_MODE=MOCK$/m);
+  assert.match(env, /^BROWSER_LOCAL_RUN_MODE=ONCE$/m);
+  assert.match(env, /^BROWSER_WORKER_HEARTBEAT_INTERVAL_MS=10000$/m);
+  assert.match(env, /BROWSER_BITBROWSER_PROFILE_IDS=PROFILE_1,PROFILE_2,PROFILE_3,PROFILE_4,PROFILE_5,PROFILE_6/);
   assert.doesNotMatch(env, /CHATGPT_SESSION_COOKIE=|CARD_NUMBER=|CARD_CVC=/);
 });

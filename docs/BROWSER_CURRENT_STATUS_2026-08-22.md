@@ -214,3 +214,13 @@ git diff --check
 - 本轮没有生产部署、没有启动生产 Worker、没有点击 Subscribe、没有付款或 Provider/卡台写入。
 - 尚未证明：BitBrowser 套餐同时常驻 6 个 Profile；六路菲律宾 sticky 出口；真实 3/6 Profile 并发和长期稳定；LIVE 付款后 observer/对账。
 - 详细报告：`docs/browser-research/BROWSER_SIX_PROFILE_POOL_IMPLEMENTATION_2026-09-02.md`。
+
+## 14. 2026-09-02 六 Profile 生产形态准备
+
+- macOS launcher 已支持单 Profile 或 1–6 个唯一 Profile 列表；多 Profile 强制 keep-alive 且 Worker 并发不得超过 Profile 数。
+- launcher 默认 `BROWSER_LOCAL_RUN_MODE=ONCE`，只有显式 `CONTINUOUS` 才运行常驻 lane；launchd 仍默认不加载、不保活。
+- Worker heartbeat 从 lane 循环移到进程级循环，默认 10 秒一次；六条空闲 lane 不再制造六倍 heartbeat 数据库写入。
+- 配置模板与 README 已同步六 Profile 示例，不包含真实 Profile ID、代理订阅或密钥。
+- 验证：Browser `140 total / 136 passed / 4 skipped / 0 failed`；v1 repository `21/21`；4 个 MySQL 环境测试仍因没有 `TEST_DATABASE_URL` 跳过。
+- 未部署、未启动生产 Worker、未访问客户 Session、未点击 Subscribe、未付款、未调用 Provider/卡台。
+- 下一步仍是额度恢复后的单 Profile 非付款税费复验，再按 1→3→6 验证同开额度与隔离；详见 `docs/browser-research/BROWSER_SIX_PROFILE_PRODUCTION_SHAPE_PREPARATION_2026-09-02.md`。

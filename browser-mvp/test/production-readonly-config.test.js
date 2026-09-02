@@ -9,6 +9,8 @@ import {
   checkProductionReadonlyDatabase,
   createProductionReadonlyRuntimeAdapter,
   parseProductionReadonlyArgs,
+  runConcurrentWorkerLanes,
+  runProcessHeartbeat,
 } from '../src/production-readonly-worker.js';
 import { BitBrowserProfileRuntimeAdapter } from '../src/bitbrowser-profile-runtime.js';
 
@@ -49,6 +51,51 @@ test('production readonly config accepts an explicit local fixture and no write 
   assert.equal(config.workerId, 'browser-worker-test');
   assert.equal(config.observation.pageContract.title, 'fixture');
   assert.equal(config.runtimeHmacKey.length, 32);
+  assert.equal(config.heartbeatIntervalMs, 10_000);
+});
+
+test('process heartbeat is independent from six worker lanes', async () => {
+  const controller = new AbortController();
+  let heartbeatWrites = 0;
+  let activeRuns = 0;
+  let peakRuns = 0;
+  let completedRuns = 0;
+  const heartbeat = runProcessHeartbeat({
+    writeHeartbeat: async () => { heartbeatWrites += 1; },
+    intervalMs: 5_000,
+    signal: controller.signal,
+  });
+  const lanes = runConcurrentWorkerLanes({
+    laneCount: 6,
+    pollIntervalMs: 100,
+    signal: controller.signal,
+    runOnce: async () => {
+      activeRuns += 1;
+      peakRuns = Math.max(peakRuns, activeRuns);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      activeRuns -= 1;
+      completedRuns += 1;
+      if (completedRuns === 6) controller.abort();
+      return { status: 'IDLE' };
+    },
+  });
+  const results = await lanes;
+  await heartbeat;
+  assert.equal(peakRuns, 6);
+  assert.equal(results.length, 6);
+  assert.equal(heartbeatWrites, 1);
+});
+
+test('one lane failure rejects the concurrent lane group', async () => {
+  await assert.rejects(() => runConcurrentWorkerLanes({
+    laneCount: 3,
+    pollIntervalMs: 100,
+    once: true,
+    runOnce: async ({ laneIndex }) => {
+      if (laneIndex === 1) throw new Error('lane failed');
+      return { status: 'IDLE' };
+    },
+  }), /lane failed/);
 });
 
 test('BitBrowser runtime is explicit, loopback-only and does not require a Chrome executable', () => {

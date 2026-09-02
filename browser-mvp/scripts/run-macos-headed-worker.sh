@@ -38,6 +38,9 @@ for name in CHATGPT_SESSION_COOKIE CHATGPT_TOKEN SESSION_JSON CARD_NUMBER CARD_E
 done
 
 runtime_provider="${BROWSER_RUNTIME_PROVIDER:-GOOGLE_CHROME}"
+run_mode="${BROWSER_LOCAL_RUN_MODE:-ONCE}"
+[[ "$run_mode" == "ONCE" || "$run_mode" == "CONTINUOUS" ]] \
+  || fail "BROWSER_LOCAL_RUN_MODE must be ONCE or CONTINUOUS"
 case "$runtime_provider" in
   GOOGLE_CHROME)
     chrome="${BROWSER_CHROME_EXECUTABLE_PATH:-/Applications/Google Chrome.app/Contents/MacOS/Google Chrome}"
@@ -48,7 +51,29 @@ case "$runtime_provider" in
     [[ "${BROWSER_BITBROWSER_ENABLED:-}" == "true" ]] || fail "BROWSER_BITBROWSER_ENABLED must be true"
     [[ "${BROWSER_BITBROWSER_API_URL:-}" == http://127.0.0.1:* ]] \
       || fail "BROWSER_BITBROWSER_API_URL must use 127.0.0.1"
-    [[ -n "${BROWSER_BITBROWSER_PROFILE_ID:-}" ]] || fail "BROWSER_BITBROWSER_PROFILE_ID is required"
+    single_profile="${BROWSER_BITBROWSER_PROFILE_ID:-}"
+    profile_list="${BROWSER_BITBROWSER_PROFILE_IDS:-}"
+    [[ -z "$single_profile" || -z "$profile_list" ]] \
+      || fail "configure either BROWSER_BITBROWSER_PROFILE_ID or BROWSER_BITBROWSER_PROFILE_IDS, not both"
+    [[ -n "$single_profile" || -n "$profile_list" ]] \
+      || fail "a BitBrowser Profile ID or Profile ID list is required"
+    if [[ -n "$profile_list" ]]; then
+      IFS=',' read -r -a profiles <<< "$profile_list"
+      [[ "${#profiles[@]}" -ge 1 && "${#profiles[@]}" -le 6 ]] \
+        || fail "BROWSER_BITBROWSER_PROFILE_IDS must contain 1 to 6 Profiles"
+      seen_profiles=','
+      for profile in "${profiles[@]}"; do
+        [[ -n "$profile" && "$profile" != *[[:space:]]* ]] \
+          || fail "BitBrowser Profile IDs must be non-empty and contain no spaces"
+        [[ "$seen_profiles" != *",$profile,"* ]] || fail "BitBrowser Profile IDs must be unique"
+        seen_profiles+="$profile,"
+      done
+      [[ "${BROWSER_BITBROWSER_KEEP_ALIVE:-}" == "true" ]] \
+        || fail "multiple BitBrowser Profiles require BROWSER_BITBROWSER_KEEP_ALIVE=true"
+      concurrency="${BROWSER_WORKER_CONCURRENCY:-1}"
+      [[ "$concurrency" =~ ^[1-6]$ && "$concurrency" -le "${#profiles[@]}" ]] \
+        || fail "BROWSER_WORKER_CONCURRENCY must be 1 to the configured Profile count"
+    fi
     ;;
   *) fail "BROWSER_RUNTIME_PROVIDER must be GOOGLE_CHROME or BITBROWSER" ;;
 esac
@@ -96,7 +121,9 @@ done
 node "$repo_root/browser-mvp/src/production-readonly-worker.js" --check
 
 # caffeinate prevents idle/system sleep while the headed GUI Worker owns a lease.
-caffeinate -dimsu node "$repo_root/browser-mvp/src/production-readonly-worker.js" --once &
+worker_args=()
+[[ "$run_mode" == "CONTINUOUS" ]] || worker_args+=(--once)
+caffeinate -dimsu node "$repo_root/browser-mvp/src/production-readonly-worker.js" "${worker_args[@]}" &
 worker_pid=$!
 
 # Either side dying closes the other. A lost tunnel therefore sends SIGTERM to

@@ -1019,3 +1019,20 @@
 - 增加 JIT billing address 合同；没有记录任何用户真实卡号、CVC 或地址。
 - 本地结果：Browser 138/134 pass/4 skip/0 fail；v1 repository 21/21。
 - 详见 `docs/browser-research/BROWSER_SIX_PROFILE_POOL_IMPLEMENTATION_2026-09-02.md`。
+
+## 2026-09-02｜Browser 六 Profile 生产形态准备完成（未部署、未付款）
+
+- macOS launcher 已支持单/多 BitBrowser Profile、默认 `ONCE` 和显式 `CONTINUOUS`；多 Profile 校验唯一性、keep-alive 和并发上限。
+- Worker heartbeat 已从各 lane 轮询移为进程级默认 10 秒一次；lane 继续并发领取共享数据库任务，但不会按 lane 数放大 heartbeat 写入。
+- macOS/server 配置模板和 README 已同步六 Profile 示例；未记录真实 Profile ID、代理订阅或密钥。
+- 对抗审查确认未改变共享订单/资金/审计、未扩大任何付款或 Provider 写权限；lane 错误会传播，Profile 清理故障继续隔离槽位。
+- 验证：`bash -n`、Browser `check`、Browser `140/136 pass/4 skip/0 fail`、v1 repository `21/21`、`git diff --check` 均通过。
+- 本轮无生产部署、无生产 Worker 启动、无真实客户 Session、无 Provider/卡台调用、无 Subscribe/付款。下一步为额度恢复后的单 Profile 非付款税费复验，然后 1→3→6 同开/隔离验证。
+
+## 2026-09-02｜生产事实源冲突纠正（只读）
+
+- 为满足当轮事实闸门，通过 SSH 只读复核 production release、Web/API/Browser 服务、readiness 和卡库存投影：release 仍为 `7bad460`，Web/API Worker active，Browser disabled/inactive。
+- 21:42 CST readiness 为 `ok=true/blockers=[]`、活动任务/资金风险/开放对账均 0、Worker heartbeat 12 秒；未改变任何开关。
+- 纠正文档内部“当前有 1 张可分配卡”与“当前无卡”的冲突：库存投影实际为 `ready=0/available=0`；卡 `2338`/尾号 `4643` 仍绑定失败订单 `PJV1-u696SEuwCQqyReHZ_FmP`，为 `ASSIGNED`，不可分配。
+- 卡台余额仍为 `$19.43`，低于卡段最低账户余额 `$25`；因此下一笔无卡订单的自动开卡目前会受卡台余额规则阻断，不能写成已具备成功条件。
+- 本次只读命令未调用 Provider 写接口、未开卡、未补余额、未创建订单、未付款。
