@@ -9,6 +9,7 @@
 
 1. Plus 运营后台是中枢：客户提交 CDK + Session 后，系统应尽快自行完成资源准备和充值，不能要求运营逐单寻找底层开关。
 2. API 与 Browser 共用订单、卡片、消费次数、资金栅栏和审计；默认充值方式是一个全局选择，只影响新订单，不做逐单路线选择。
+   Browser 容量采用用户确认的 6 个常驻 BitBrowser Profile 池：单 Profile 单订单串行、Profile 之间并行；每个 Profile 固定隔离 Session/Checkout/运行身份/网络引用，先 1→3→6 分级验收。
 3. API 正常目标 2 分钟内，Browser 正常目标 5 分钟内；超过目标但仍能继续时保持处理中，不因超时自动转人工。
 4. 有合格卡但余额不足时优先精确补足；没有合格卡时自动开一张带目标余额的新卡。无真实需求时不轮询卡台做无效付费读取。
 5. Provider **API 最小充值执行权限是生产常驻能力**，不是日常营业开关；已确认目标基线是只开 `PROVIDER_RECHARGE_WRITES_ENABLED=true`，通用 Provider 写、卡片写与 Browser 付款权限分别控制。
@@ -133,6 +134,7 @@
 - 本轮已按真实业务创建测试 CDK+Session 订单，临时切换默认路线为 Browser；系统自动开卡并分配后，Browser 访问被 ChatGPT/网络返回 `CHATGPT_ACCESS_BLOCKED`，在付款前安全终止。测试订单、资金风险、租约和 Browser Worker 已清理，默认路线已恢复 API。
 - 已修复：`CHATGPT_ACCESS_BLOCKED`、Checkout 导航/观察阻断不再回到 `CARD_READY` 重排 `SUBMIT_RECHARGE`；改为终态 `RECHARGE_FAILED`，避免重复创建 attempt。修复已部署到当前 release 并通过定向测试。
 - 最新只读税费尝试：BitBrowser 菲律宾 Profile 可访问套餐页；复用仍有效的既有 Checkout 后，现场确认基础价 ₱982.14 + 12% VAT ₱117.86 = ₱1,100。未填卡时页面没有账单地址输入区，所以 Delaware 地址影响尚未验证（详见 `docs/browser-research/BITBROWSER_TAX_READONLY_ATTEMPT_2026-09-02.md`）。
+- 容量方向已确认：实现 6 个常驻隔离 Profile，按单 Profile 串行、多 Profile 并行达到约一分钟一单；当前 adapter 仍是每次执行开关 Profile，且只证明一个菲律宾节点，尚未实现或验收六路运行（详见 `docs/browser-research/BROWSER_SIX_PROFILE_POOL_DECISION_2026-09-02.md`）。
 - 非付款闭环通过后，再单独确认首笔真实 Browser 付款；成功后再讨论把全局默认路线从 API 切为 Browser。
 
 ### E｜客户充值页体验线
