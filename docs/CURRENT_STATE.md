@@ -142,5 +142,13 @@
 - 单个 BitBrowser 菲律宾 Profile 已完成一次生命周期内的 Session 注入、身份/FREE 核对、真实 ChatGPT Plus Checkout、卡片与 Delaware 账单地址填写、最终金额稳定读取和清理。
 - 地址填写后金额仍为 `PHP 982.14 + VAT 117.86 = PHP 1100.00`；Subscribe 控件存在且启用，但未点击，`submitCalls=0`，没有付款或 Provider/卡台写入。
 - 敏感输入经仓库外 `0600` 临时文件读取后立即删除；结束时清空字段、Cookie/storage 并关闭 Profile。生产 release、默认 API 路线和 Browser Worker 状态未改变。
-- Browser 当前下一步由“单 Profile 税费复验”推进为 3 Profile 非付款同开/隔离验证，通过后再扩到 6 Profile；真实付款与部署仍未确认。
+- 单 Profile 完成后曾推进 3 Profile 非付款同开/隔离验证；其现场结果和当前阻塞以第 10 节为准。真实付款与部署仍未确认。
 - 证据：`docs/browser-research/BITBROWSER_DELAWARE_NONPAYMENT_TAX_OBSERVATION_2026-09-03.md`。
+
+## 10. 2026-09-03 Browser 三 Profile 准备与访问闸门
+
+- BitBrowser 本地已由 1 个扩为 3 个候选 Profile；两个新 Profile 禁止账号/Session/Cookie/storage/支付地址同步，opaque ID 只存在本机 `0600` Git 忽略配置。
+- 三个 Profile 均可由 Local API 启动和 CDP 接管；两个新 Profile 在无 Session、无卡阶段单独访问 ChatGPT 均为 HTTP 403，trace 仍为菲律宾出口。调整明显不一致的 Windows/Chrome 147 User-Agent 与 Mac/Chrome 148 配置后结果不变。
+- Cloudflare 非登录 bootstrap Cookie 对照也未使新 Profile 通过；对照 Cookie 已从新 Profile 清理，所有 Profile 已关闭。
+- 因此三 Profile 真实访问/隔离测试未通过，不能进入 6 Profile。下一步先让一个新 Profile 经自身 headed 访问或另一稳定出口取得 HTTP 200，再恢复三路测试。
+- 无 Session、卡片、Checkout、Provider/卡台写入或付款；生产状态未改变。证据：`docs/browser-research/BITBROWSER_THREE_PROFILE_ACCESS_AND_ISOLATION_ATTEMPT_2026-09-03.md`。

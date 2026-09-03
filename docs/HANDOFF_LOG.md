@@ -1052,3 +1052,11 @@
 - Delaware 地址后仍为 `PHP 982.14 + VAT 117.86 = PHP 1100.00`；`submitCalls=0`，无 Provider/卡台写入。
 - 已清理字段、Cookie/storage、临时敏感文件并关闭 Profile；未部署、未切生产路线、未启动生产 Browser Worker。
 - 下一步：3 Profile 非付款同开/隔离验证，通过后 6 Profile；Claude 客户充值页优化线保持独立，本轮未触碰。
+
+## 2026-09-03｜BitBrowser 三 Profile 访问闸门未通过并安全收口
+
+- 通过官方 Local API 新建 2 个无账号/Session/Cookie/storage/支付地址同步的候选 Profile；与原 Profile 共 3 个，opaque ID 只存本机 `0600` Git 忽略配置。
+- 新增三 Profile 非付款检查器。三者可启动/CDP 接管；两个新 Profile 无 Session 访问 ChatGPT 均 HTTP 403，菲律宾 trace 正常。
+- 纠正新 Profile 指纹配置/User-Agent 明显不一致后仍 403；仅含 Cloudflare 非登录 Cookie 的 bootstrap 对照也无效，已清理。
+- 按在线窄探测规则停止继续随机尝试；三个 Profile 全部关闭。本轮无 Session、卡片、Checkout、付款或生产变更。
+- 下一步先让一个新 Profile 经自身 headed 访问或另一已验证稳定出口取得 HTTP 200，再恢复三路隔离测试；不得把 3 个 Profile 已创建写成三路已可用。

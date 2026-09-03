@@ -231,4 +231,12 @@ git diff --check
 - 测试 Session 身份匹配、账号为 FREE；真实 ChatGPT Plus Checkout 已填写 3 个卡字段与 Delaware 账单必填字段，并停在启用的 Subscribe 控件前。
 - 最终稳定金额仍为基础价 `PHP 982.14`、VAT `PHP 117.86`、合计 `PHP 1100.00`；`submitCalls=0`。字段、Cookie/storage 和 Profile 已清理。
 - 当前菲律宾定价轨道不能依赖 Delaware 地址免税；付款预算必须读取地址填写后的最终页面金额。
-- 单 Profile 非付款闸门完成，下一步为 3 Profile 同开/隔离非付款验证，再扩到 6 Profile。生产 Browser Worker、真实付款及付款后闭环仍未验证。
+- 单 Profile 非付款闸门完成；随后 3 Profile 现场尝试的结果与当前阻塞以第 16 节为准。生产 Browser Worker、真实付款及付款后闭环仍未验证。
+
+## 16. 2026-09-03 三 Profile 真实访问闸门尝试
+
+- 本地新建 2 个不同步账号/Session/Cookie/storage/支付地址的候选 Profile，与原 Profile 组成 3 个本地槽位；ID 仅存 `0600` Git 忽略配置。
+- 新增三 Profile 非付款检查器；三者均可启动/CDP 接管，但两个新 Profile 在 Session 注入前访问 ChatGPT 即为 HTTP 403，菲律宾出口可见。
+- 已用单变量方式纠正新 Profile 的 Windows/Chrome 147 User-Agent 与 Mac/Chrome 148 配置不一致，并做一次仅含 Cloudflare 非登录 Cookie 的 bootstrap 对照；两者均未改变 403。对照 Cookie 已清理。
+- 结论：三 Profile 数量准备完成不等于三路可用；真实同开/隔离闸门未通过。先为一个新 Profile 通过 headed 访问或独立稳定出口建立 HTTP 200 基线，再继续 3→6；不再随机在线重试。
+- 本轮无 Session、填卡、Checkout、submit、Provider/卡台或生产动作。
