@@ -182,6 +182,6 @@
 - `codex/browser` 已基于当前 main 实现 1–6 Profile 常驻池：单 Profile 单订单、Profile 间并行；订单间清理页面/Cookie/storage；清理失败隔离槽位；第 7 个并发拒绝。
 - 对抗审查已修复地址/税费与付款许可顺序：先无付款地填写卡和账单地址并读取最终总额，再将 Checkout 摘要绑定权威 permit/submit intent；permit 后金额漂移仍停止。
 - 生产形态准备已补齐：macOS launcher 支持单/多 Profile、默认 `ONCE`/显式 `CONTINUOUS`；六 lane 共用一个进程 heartbeat，默认每 10 秒更新，不再随 lane 数放大数据库写入；配置模板已同步且未含真实 ID/代理/密钥。
-- 代码验证：Browser `140 total / 136 passed / 4 skipped / 0 failed`；v1 repository 定向 `21/21`。没有 `TEST_DATABASE_URL` 的 4 项隔离 MySQL 实跑仍未执行。
+- 代码验证：Browser 普通全量 `140 total / 136 passed / 4 environment-skipped / 0 failed`；随后用全新临时 MySQL 8.4、完整 migrations 001–044 将对应 4 项逐项实跑为 `4/4 passed`；v1 repository 定向 `21/21`。
 - Browser 下一步：BitBrowser 额度恢复后先完成 Delaware 非付款税费复验，再按 1→3→6 验证 Profile 同开额度、固定菲律宾 sticky 出口、并发隔离和吞吐。真实付款与生产部署仍需独立确认。
 - 详细实施/审查：`docs/browser-research/BROWSER_SIX_PROFILE_POOL_IMPLEMENTATION_2026-09-02.md`、`docs/browser-research/BROWSER_SIX_PROFILE_PRODUCTION_SHAPE_PREPARATION_2026-09-02.md`。

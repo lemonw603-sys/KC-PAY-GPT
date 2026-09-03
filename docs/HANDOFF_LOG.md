@@ -1036,3 +1036,11 @@
 - 纠正文档内部“当前有 1 张可分配卡”与“当前无卡”的冲突：库存投影实际为 `ready=0/available=0`；卡 `2338`/尾号 `4643` 仍绑定失败订单 `PJV1-u696SEuwCQqyReHZ_FmP`，为 `ASSIGNED`，不可分配。
 - 卡台余额仍为 `$19.43`，低于卡段最低账户余额 `$25`；因此下一笔无卡订单的自动开卡目前会受卡台余额规则阻断，不能写成已具备成功条件。
 - 本次只读命令未调用 Provider 写接口、未开卡、未补余额、未创建订单、未付款。
+
+## 2026-09-03｜Browser 原 4 个 MySQL 环境跳过项补验完成
+
+- 新建一次性本地 `mysql:8.4` 隔离容器，等待正式初始化完成后执行完整 migrations `001–044`。
+- 串行运行 `shared-dry-run-mysql-integration`、`payment-executor-mysql-integration`、`production-readonly-worker-mysql-smoke`：共 `4/4 passed`、0 skipped、0 failed。
+- 覆盖共享 permit/付款后 mock 状态机、提交崩溃进入 UNKNOWN 且重放不二次提交、生产形态 dispatch→Chrome→safe-abort、共享 run 付款前资金栅栏清理。
+- 临时容器已停止并删除；未连接生产数据库，未访问 ChatGPT，未读取客户 Session/卡资料，未调用 Provider/卡台，未付款。
+- 用户同时说明 Claude 正在独立优化客户充值网站；Browser worktree 本轮不接触客户页文件，也不干扰该工作线。

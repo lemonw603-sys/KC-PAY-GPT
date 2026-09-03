@@ -221,6 +221,6 @@ git diff --check
 - launcher 默认 `BROWSER_LOCAL_RUN_MODE=ONCE`，只有显式 `CONTINUOUS` 才运行常驻 lane；launchd 仍默认不加载、不保活。
 - Worker heartbeat 从 lane 循环移到进程级循环，默认 10 秒一次；六条空闲 lane 不再制造六倍 heartbeat 数据库写入。
 - 配置模板与 README 已同步六 Profile 示例，不包含真实 Profile ID、代理订阅或密钥。
-- 验证：Browser `140 total / 136 passed / 4 skipped / 0 failed`；v1 repository `21/21`；4 个 MySQL 环境测试仍因没有 `TEST_DATABASE_URL` 跳过。
+- 验证：Browser 普通全量 `140 total / 136 passed / 4 environment-skipped / 0 failed`；随后用全新临时 MySQL 8.4、完整 migrations 001–044 将对应 4 项实跑为 `4/4 passed`；v1 repository `21/21`。
 - 未部署、未启动生产 Worker、未访问客户 Session、未点击 Subscribe、未付款、未调用 Provider/卡台。
 - 下一步仍是额度恢复后的单 Profile 非付款税费复验，再按 1→3→6 验证同开额度与隔离；详见 `docs/browser-research/BROWSER_SIX_PROFILE_PRODUCTION_SHAPE_PREPARATION_2026-09-02.md`。

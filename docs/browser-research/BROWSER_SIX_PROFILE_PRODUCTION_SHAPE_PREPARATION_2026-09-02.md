@@ -31,7 +31,17 @@ node --test v1/test/browser-execution-repository.test.js  21/21 pass
 git diff --check                                      PASS
 ```
 
-4 个 skipped 均依赖 `TEST_DATABASE_URL`，本轮没有把它们写成通过。
+普通全量中的 4 个 skipped 均依赖 `TEST_DATABASE_URL`。随后已创建全新临时 `mysql:8.4`、完整执行 migrations `001–044`，按单并发运行对应三份集成测试文件：
+
+```text
+shared MySQL permit/post-payment mock state machine       PASS
+mock submission crash -> UNKNOWN/replay no resubmit       PASS
+production readonly MySQL dispatch/Chrome/safe-abort      PASS
+shared MySQL dispatch/run/pre-payment fence cleanup       PASS
+4 total / 4 pass / 0 skipped / 0 fail
+```
+
+临时容器在测试结束后已停止并删除；没有连接生产数据库。至此原 4 个环境跳过项均已有本轮隔离 MySQL 实跑证据。
 
 ## 额度恢复后的单次非付款复验清单
 

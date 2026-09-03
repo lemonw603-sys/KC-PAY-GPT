@@ -64,7 +64,7 @@
 
 - `codex/browser` 已补齐六 Profile 的 macOS 启动形态：单/多 Profile 配置互斥校验、1–6 唯一 Profile、并发上限、默认 `ONCE` 与显式 `CONTINUOUS`。
 - Worker heartbeat 已改为进程级默认 10 秒一次，不再由每条空闲 lane 每轮写数据库；1 秒 lane poll 只查询共享任务库，不调用 Provider/卡台 API。
-- 本地验证：Browser `140 total / 136 passed / 4 skipped / 0 failed`；v1 Browser repository `21/21`；shell/JS 语法和 `git diff --check` 通过。
+- 本地验证：Browser 普通全量 `140 total / 136 passed / 4 environment-skipped / 0 failed`；全新临时 MySQL 8.4、完整 migrations 001–044 下，原 4 个跳过项已单独实跑 `4/4 passed`；v1 Browser repository `21/21`；shell/JS 语法和 `git diff --check` 通过。
 - 以上不改变生产状态：本轮未部署、未启动生产 Browser Worker、未访问真实客户 Session、未调用 Provider/卡台、未点击 Subscribe、未付款。
 - 证据：`docs/browser-research/BROWSER_SIX_PROFILE_PRODUCTION_SHAPE_PREPARATION_2026-09-02.md`。
 
