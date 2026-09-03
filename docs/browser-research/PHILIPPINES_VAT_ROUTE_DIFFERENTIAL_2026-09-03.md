@@ -28,6 +28,30 @@
 
 Delaware 地址在菲律宾出口下没有改变税额，只能排除“地址单变量必然生效”，不能排除地址与其他定位信号组合后的影响。
 
+## 2026-09-03 新一轮社区与实现对照
+
+新增证据把“页面显示的 `982.14`”和“最终应付 `982.14`”分开了：
+
+- 一张公开的菲律宾 ChatGPT Plus 账单明确列出：订阅净价 `982.14`、12% VAT `117.86`、最终应付 `1100.00`。因此价格网站或 Checkout 配置中的 `982.14` 可能只是 PSP 净价，不能单凭该字段证明免税成交：<https://www.scribd.com/document/996990553/Invoice-Pgfdbz9d-0002>。
+- 社区中能复现 `982` 最终价的具体经验组合是“美国出口 + 手动选择菲律宾价格 + 美国免税州地址”：<https://t.me/s/landiansub?before=16384>。它与本项目“Browser 出口固定菲律宾”的已确认约束冲突，所以只能用来说明税务定位是组合信号，不能直接照搬。
+- 公开支付实现显示，除了 Checkout 创建请求外，还存在 `POST /backend-api/payments/checkout/snapshot`，用于把账单国家/州等资料写入 Checkout 快照；该请求是否发生、发生在什么时候，以及其后总额是否改变，是当前比继续随机换地址更有价值的检查点：<https://github.com/1537271403/pay153-checkout-link/blob/main/stripe_checkout.py>。
+- 公开实现同时确认 `POST /backend-api/payments/checkout` 的 `custom/hosted` 两种模式以及 `billing_details.country/currency` 输入；当前 UI 入口与显式 `PH/PHP + custom` 是否生成同一税务上下文，仍须现场 A/B：<https://gist.github.com/fangyuan99/e93a81f634b68c570a0edb1fee39a511>。
+
+目前最强的、但尚未现场证明的候选机制是：**税不是由页面地址输入框单独决定，而是在 Checkout 创建与 billing snapshot 更新时，根据创建入口、显式地区、出口、卡 BIN 和账单资料联合计算。** 现有 API 成功单没有保留上游 Checkout 创建出口与 snapshot 时序，不能用“API 成交价为 `982.14`”反推其出口一定是菲律宾。
+
+## 已完成的观察器补强（尚未执行新一轮现场 A/B）
+
+`browser-mvp/scripts/observe-bitbrowser-checkout-tax-nonpayment.js` 已增加：
+
+1. Checkout 创建请求的脱敏字段：入口、套餐、`custom/hosted`、billing country/currency；
+2. `/checkout/snapshot` 是否发生、HTTP 状态、country/state 和地址字段是否齐全（只记布尔值，不记姓名、街道、城市、邮编原文）；
+3. `/configs/PH` 的 country/currency/price/tax/VAT/PSP 等白名单字段；
+4. 填卡前、填卡后、账单地址后的三段金额时间线；
+5. Stripe 请求只记脱敏后的 URL path 与状态，Checkout ID 被替换为 `:checkout`；
+6. 最终证据再次扫描 Session、Token、PAN、CVC、完整地址、Checkout ID 等禁止内容。
+
+新增 7 项脱敏测试；Browser 全量为 `150 total / 145 passed / 5 environment-skipped / 0 failed`。本轮没有打开 BitBrowser、没有读取 Session/卡资料、没有创建 Checkout、没有付款。
+
 ## 非付款 A/B 矩阵
 
 在同一代码版本、同一计划、顺序执行且不点击 Subscribe 的前提下：

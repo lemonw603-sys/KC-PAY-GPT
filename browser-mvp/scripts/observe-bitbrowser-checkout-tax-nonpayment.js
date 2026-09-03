@@ -10,6 +10,11 @@ import { BitBrowserLocalApiClient } from '../src/bitbrowser-profile-runtime.js';
 import { CookieSessionBootstrapAdapter } from '../src/session-bootstrap.js';
 import { probeSessionIdentity } from '../src/session-identity-probe.js';
 import {
+  assertEvidenceIsSecretFree,
+  sanitizeObservedRequest,
+  sanitizeObservedResponse,
+} from '../src/checkout-tax-evidence.js';
+import {
   CHATGPT_PLUS_CHECKOUT_NAVIGATION_CONTRACT,
   navigateToChatGPTPlusCheckout,
 } from '../src/chatgpt-checkout-navigator.js';
@@ -191,6 +196,53 @@ async function fillBillingAddress(page, address) {
   return { countrySet, stateSet, fieldsFilled: 4 };
 }
 
+async function readBillingRegion(page) {
+  const readValue = async (selectors) => {
+    const field = await firstVisible(page, selectors, 2_000);
+    if (!field) return null;
+    const tag = await field.evaluate((node) => node.tagName.toLowerCase());
+    if (tag === 'select') {
+      return field.locator('option:checked').evaluate((option) => ({ value: option.value, label: option.textContent?.trim() || null }));
+    }
+    return { value: await field.inputValue().catch(() => null), label: await field.getAttribute('aria-label').catch(() => null) };
+  };
+  const country = await readValue([
+    '#billingAddress-countryInput', 'select[autocomplete="billing country"]',
+    '[role="combobox"][aria-label*="country" i]',
+  ]);
+  const state = await readValue([
+    '#billingAddress-administrativeAreaInput', 'select[autocomplete="billing address-level1"]',
+    '[role="combobox"][aria-label*="state" i]',
+  ]);
+  const normalize = (field, allowed) => {
+    const candidates = [field?.value, field?.label].filter(Boolean).map((value) => String(value).trim());
+    return candidates.find((value) => allowed.includes(value.toUpperCase()))?.toUpperCase() || null;
+  };
+  return { country: normalize(country, ['US']), state: normalize(state, ['DE']) };
+}
+
+function installSafeNetworkObserver(page, evidence) {
+  const pending = new Set();
+  page.on('request', (request) => {
+    const safe = sanitizeObservedRequest(request.url(), request.method(), request.postData());
+    if (safe) evidence.push(safe);
+  });
+  page.on('response', (response) => {
+    const task = (async () => {
+      const url = response.url();
+      const responseShape = sanitizeObservedResponse(url, response.status());
+      const bodyText = ['checkout-create-response', 'checkout-snapshot-response', 'pricing-config-response'].includes(responseShape?.kind)
+        ? await response.text().catch(() => null)
+        : null;
+      const safe = sanitizeObservedResponse(url, response.status(), bodyText);
+      if (safe) evidence.push(safe);
+    })();
+    pending.add(task);
+    task.finally(() => pending.delete(task));
+  });
+  return async () => Promise.allSettled([...pending]);
+}
+
 const MONEY = '(?:[0-9]{1,3}(?:,[0-9]{3})*(?:\\.[0-9]{2})|[0-9]+(?:\\.[0-9]{2}))';
 
 function moneyAfter(text, labels) {
@@ -276,6 +328,8 @@ async function main() {
   let sessionLease = null;
   const fieldsToClear = [];
   const result = { status: 'FAILED_SAFE', submitCalls: 0 };
+  const networkEvidence = [];
+  let flushNetworkEvidence = async () => undefined;
   try {
     await api.health();
     const { cdpEndpoint } = await api.openProfile(input.profileId);
@@ -291,14 +345,19 @@ async function main() {
     sessionLease = null;
     page = await context.newPage();
     await installSubmitTripwire(page);
+    flushNetworkEvidence = installSafeNetworkObserver(page, networkEvidence);
     await page.goto('https://chatgpt.com/', { waitUntil: 'domcontentloaded', timeout: 45_000 });
     const identity = await probeSessionIdentity(page, expectedIdentity, { accountCheckPath: ACCOUNT_CHECK_PATH });
     if (identity.alreadyPlus) throw new Error('test account is already subscribed');
     const navigation = await navigateToChatGPTPlusCheckout(page, CHATGPT_PLUS_CHECKOUT_NAVIGATION_CONTRACT, { timeoutMs: 45_000 });
+    const totalsBeforePaymentData = await waitForStableTotals(page);
     const cardFields = await fillCardFields(page, input.card);
     fieldsToClear.push(...Object.values(cardFields));
+    const totalsAfterCard = await waitForStableTotals(page);
     const billing = await fillBillingAddress(page, input.billingAddress);
     const totals = await waitForStableTotals(page);
+    const billingRegion = await readBillingRegion(page);
+    await flushNetworkEvidence();
     const submit = page.locator(`${SUMMARY_SELECTOR} button[type="submit"]`);
     result.status = 'OBSERVED_BEFORE_SUBMIT';
     result.identityMatched = identity.identityMatched === true;
@@ -311,10 +370,21 @@ async function main() {
     result.baseAmount = totals.base.amount;
     result.estimatedTax = totals.tax?.amount ?? null;
     result.totalAmount = totals.total.amount;
+    result.totalsTimeline = {
+      beforePaymentData: totalsBeforePaymentData,
+      afterCard: totalsAfterCard,
+      afterBillingAddress: totals,
+    };
+    result.finalBillingRegion = billingRegion;
+    result.networkEvidence = networkEvidence;
     result.billingFieldsFilled = billing.fieldsFilled + 2;
     result.cardFieldsFilled = 3;
     result.submitControlPresent = await submit.count() === 1;
     result.submitControlEnabled = await submit.count() === 1 ? await submit.isEnabled() : false;
+    assertEvidenceIsSecretFree(result, [
+      input.card.pan, input.card.cvc, input.billingAddress.name, input.billingAddress.line1,
+      input.billingAddress.city, input.billingAddress.postalCode,
+    ]);
   } finally {
     result.fieldsCleared = await clearFields(fieldsToClear);
     if (page) {

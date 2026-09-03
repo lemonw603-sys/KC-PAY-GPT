@@ -1101,3 +1101,11 @@
 - 后续不再随机换地址；共享队列闭环后、首笔真实 Browser 付款前，用非付款 A/B 分离出口、账号和支付定位信号，找到可复现的 `982.14` 条件。
 - 本轮只更新事实源与研究结论，没有启动 Profile、创建订单、填写卡片或付款。
 - 用户随后补充并确认 Browser 出口必须使用菲律宾；已从实验矩阵删除美国出口，不再把换国家出口当作免税方案。
+
+## 2026-09-03｜菲律宾 Checkout 税费观察器补强
+
+- 增加 Checkout 创建、billing snapshot、pricing config、Stripe 脱敏 path 和填卡/地址前后金额时间线观察。
+- 网络证据严格白名单化；完整地址、Session/Token、PAN/CVC、Checkout ID 不进入结果。新增测试覆盖 snapshot 地址原文丢弃和 Stripe Checkout ID 脱敏。
+- 社区/公开实现对照表明 `982.14` 可能是未税 PSP 净价，且权威账单地址通过 `/backend-api/payments/checkout/snapshot` 更新；当前最优先验证 snapshot 是否发生，而不是继续随机换地址。
+- Browser 全量 `150 total / 145 passed / 5 environment-skipped / 0 failed`。本轮无 BitBrowser、Session、卡片、Checkout、Provider、生产或付款动作。
+- 证据：`docs/browser-research/PHILIPPINES_CHECKOUT_TAX_OBSERVER_ENHANCEMENT_2026-09-03.md`。

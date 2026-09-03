@@ -183,3 +183,11 @@
 - Delaware 地址单变量已经证明不足以去除 VAT；下一阶段需要保持零付款，用受控 A/B 分离账号地区、Checkout 创建路径和支付/账单定位信号，并读取地址填写后的最终稳定总额。
 - 运营方进一步确认出口必须使用菲律宾；因此美国出口线索退出实施矩阵。后续保持同一菲律宾出口，只分离账号/定价轨道、Checkout 创建路径、卡 BIN/支付信息及账单资料。
 - 该成本机制必须在首笔真实 Browser 付款前确认；证据和实验矩阵见 `docs/browser-research/PHILIPPINES_VAT_ROUTE_DIFFERENTIAL_2026-09-03.md`。
+
+## 14. 2026-09-03 菲律宾 Checkout 税费观察器已补强（代码验证，未现场重跑）
+
+- 已对白名单网络证据、Checkout 创建、billing snapshot、pricing config、Stripe path 脱敏和三段金额时间线完成实现。
+- 公开菲律宾账单证明 `982.14` 可只是未税净价，最终应付仍可能为 `1100.00`；社区可复现免税组合使用美国出口，与本项目菲律宾固定出口约束冲突，不能照搬。
+- 当前最先要验证的是 Delaware 地址是否真正进入 `/backend-api/payments/checkout/snapshot` 以及 snapshot 前后金额是否变化，不再继续随机换地址。
+- Browser 全量 `150 total / 145 passed / 5 environment-skipped / 0 failed`；本轮没有打开 Profile、读取敏感输入、创建 Checkout、付款或改生产。
+- 证据：`docs/browser-research/PHILIPPINES_CHECKOUT_TAX_OBSERVER_ENHANCEMENT_2026-09-03.md`。
