@@ -9,7 +9,8 @@
 1. 先重新启动原三个 Profile。结果继续为 ChatGPT HTTP 200 `3/3`、Cookie 隔离 `3/3`、localStorage 隔离 `3/3`，证明此前保留 Profile 运行 Cookie 的修复在关闭并重新启动后仍有效。
 2. 通过 BitBrowser loopback Local API 创建另外三个本地 Profile；不复制账号、Session、Cookie、localStorage、IndexedDB、支付地址或客户材料。六个 opaque Profile ID 仅保存在 Git 忽略、调用者持有的本机 `0600` 配置中。
 3. 第一轮用六个并发 `/browser/open` 请求启动时，Local API 在已部分启动窗口后拒绝了其中一个请求。这不是 ChatGPT 页面失败，但会形成部分成功的中间状态。已关闭全部窗口并确认六个 Profile 均恢复关闭状态。
-4. 验证器因此改为**顺序启动 Profile、并行执行页面验证**，并记录每一个已成功启动的 ID，以便任一阶段失败时完整关闭。本次改动不改变 Worker 的六 lane 并发模型，只避免向 BitBrowser Local API 瞬间并发发送六个启动请求。
+4. 随后确认问题不只属于验证器：生产 `BitBrowserProfilePoolRuntimeAdapter` 的六 lane 首次冷启动也会并发调用 Local API。生产池已增加启动互斥，物理窗口按顺序启动，成功连接后页面任务仍保持六路并行；失败重选槽位时也重新读取实时预留状态，避免使用 await 前的陈旧候选列表。
+5. 使用修正后的真实生产池复验时，第 4 个 Profile 曾有一次页面未正常到达；完整关闭后只对该 Profile 做一次单变量复验，恢复 HTTP 200。随后重新执行生产池六路复验并全部通过，未继续盲目重试。
 
 ## 最终现场结果
 
@@ -34,7 +35,8 @@ submitCalls=0
 
 ## 代码与测试
 
-- 新增 `browser-mvp/scripts/verify-bitbrowser-profile-pool-nonpayment.js`，接受 1–6 个本机 Profile，输出只有聚合计数和哈希去重数。
+- 新增 `browser-mvp/scripts/verify-bitbrowser-profile-pool-nonpayment.js`，直接使用生产 `BitBrowserProfilePoolRuntimeAdapter` 接受 1–6 个本机 Profile，输出只有聚合计数和哈希去重数。
+- 生产 Profile 池冷启动增加互斥：窗口顺序打开、任务继续并行；六 lane 并发单测明确断言 Local API 同时打开数为 `1`。
 - `browser-mvp/package.json` 的语法检查纳入该脚本。
 - Browser 全量测试：`141 total / 137 passed / 4 environment-skipped / 0 failed`。
 - 所有 Profile 在验证结束后关闭；生产 release、默认 API 路线和 Browser Worker 状态未改变。

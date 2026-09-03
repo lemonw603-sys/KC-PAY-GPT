@@ -354,6 +354,8 @@ test('Profile pool gives concurrent jobs different persistent Profiles and reuse
 test('six-Profile pool reserves six distinct lanes and rejects a seventh concurrent job', async () => {
   const profileIds = Array.from({ length: 6 }, (_, index) => `bit-profile-00${index + 1}`);
   const openCounts = new Map();
+  let activeProfileStarts = 0;
+  let maximumConcurrentProfileStarts = 0;
   const pool = new BitBrowserProfilePoolRuntimeAdapter({
     browserType: {
       connectOverCDP: async () => ({
@@ -365,7 +367,11 @@ test('six-Profile pool reserves six distinct lanes and rejects a seventh concurr
     apiClient: {
       health: async () => ({ ready: true }),
       openProfile: async (profileId) => {
+        activeProfileStarts += 1;
+        maximumConcurrentProfileStarts = Math.max(maximumConcurrentProfileStarts, activeProfileStarts);
+        await new Promise((resolve) => setTimeout(resolve, 5));
         openCounts.set(profileId, (openCounts.get(profileId) || 0) + 1);
+        activeProfileStarts -= 1;
         return { cdpEndpoint: 'http://127.0.0.1:61234/' };
       },
       closeProfile: async () => undefined,
@@ -377,6 +383,7 @@ test('six-Profile pool reserves six distinct lanes and rejects a seventh concurr
     pool.open(createChromeControlManifest(), { profileRef: `profile:run-00${index + 1}` })
   )));
   assert.equal(new Set(runtimes.map((runtime) => runtime.vendorProfileId)).size, 6);
+  assert.equal(maximumConcurrentProfileStarts, 1);
   await assert.rejects(
     () => pool.open(createChromeControlManifest(), { profileRef: 'profile:run-007' }),
     (error) => error.code === 'BITBROWSER_POOL_EXHAUSTED',

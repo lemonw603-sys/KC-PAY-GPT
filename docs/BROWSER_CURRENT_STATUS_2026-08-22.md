@@ -246,8 +246,9 @@ git diff --check
 
 - 原三 Profile 关闭/重启后继续达到 ChatGPT HTTP 200 `3/3` 和 Cookie/localStorage 隔离 `3/3`。
 - 新建另外三个不复制客户材料的本地 Profile，六个 opaque ID 只保存在 Git 忽略的 `0600` 本机配置。
-- 已修复实测发现的 Local API 启动编排问题：不能并发突发调用六次 `/browser/open` 后假定全成；现在顺序启动并跟踪已启动集合，页面验证仍可六路并行，失败时完整关闭。
+- 已修复实测发现的生产池 Local API 启动编排问题：不能并发突发调用六次 `/browser/open` 后假定全成；现在生产池物理窗口顺序启动、页面任务仍六路并行，失败重选使用实时槽位状态并完整关闭。
 - 最终六路为 ChatGPT HTTP 200 `6/6`、Cookie/localStorage 隔离 `6/6`、运行时指纹摘要去重 `6/6`，菲律宾出口摘要去重 `1/6`。
 - 当前单出口由用户确认作为现阶段方案；不同稳定出口不再阻断当前功能推进，但长时常驻、共享队列真实租约、付款和付款后对账仍未验证。
+- 修正后的生产池首次现场复验有一个新 Profile 临时未正常到达页面；单槽一次复验恢复，随后完整六路再次 `6/6` 通过，不存在已确认的固定坏槽。
 - 全量测试 `141 total / 137 passed / 4 environment-skipped / 0 failed`；无 Session、卡字段、submit、Provider/卡台写入、生产部署或付款。
 - 证据：`docs/browser-research/BITBROWSER_SIX_PROFILE_ACCESS_AND_ISOLATION_VERIFICATION_2026-09-03.md`。

@@ -6,7 +6,11 @@ import process from 'node:process';
 
 import { chromium } from 'playwright';
 
-import { BitBrowserLocalApiClient } from '../src/bitbrowser-profile-runtime.js';
+import {
+  BitBrowserLocalApiClient,
+  BitBrowserProfilePoolRuntimeAdapter,
+} from '../src/bitbrowser-profile-runtime.js';
+import { createChromeControlManifest } from '../src/fixtures.js';
 
 const OPERATIONAL_COOKIE_NAMES = new Set([
   '__cf_bm', '__cflb', '_cfuvid', 'cf_clearance', 'oai-did',
@@ -132,7 +136,7 @@ async function verifyLane(runtime, index) {
   if (response?.status() !== 200 || /just a moment|请稍候/i.test(title)) {
     throw new Error(`lane ${index + 1} did not reach ChatGPT normally`);
   }
-  const marker = `lane-${index + 1}-${digest(runtime.profileId).slice(0, 10)}`;
+  const marker = `lane-${index + 1}-${digest(runtime.vendorProfileId).slice(0, 10)}`;
   await context.addCookies([{
     name: 'codex_lane_isolation', value: marker, url: 'https://chatgpt.com/', secure: true, sameSite: 'Lax',
   }]);
@@ -163,18 +167,23 @@ async function main() {
   const ids = await loadProfileIds(configPath);
   const api = new BitBrowserLocalApiClient({ timeoutMs: 60_000 });
   const runtimes = [];
-  const startedProfileIds = [];
+  let pool = null;
   try {
     await api.health();
-    // BitBrowser's local service can reject a burst of concurrent /browser/open
-    // calls after starting only part of the pool. Start sequentially so every
-    // successfully started profile is known and can be closed on any failure.
-    for (const profileId of ids) {
-      const item = { profileId, ...(await api.openProfile(profileId)) };
-      startedProfileIds.push(profileId);
-      const browser = await chromium.connectOverCDP(item.cdpEndpoint);
-      runtimes.push({ ...item, browser });
-    }
+    pool = new BitBrowserProfilePoolRuntimeAdapter({
+      browserType: chromium,
+      apiClient: api,
+      profileIds: ids,
+      enabled: true,
+    });
+    const manifest = createChromeControlManifest();
+    const openResults = await Promise.allSettled(ids.map((_, index) => pool.open(manifest, {
+      profileRef: `verification:lane-${index + 1}`,
+    })));
+    runtimes.push(...openResults.filter((result) => result.status === 'fulfilled')
+      .map((result) => result.value));
+    const failedOpen = openResults.find((result) => result.status === 'rejected');
+    if (failedOpen) throw failedOpen.reason;
     const laneResults = await Promise.allSettled(runtimes.map(verifyLane));
     const failedLane = laneResults.find((result) => result.status === 'rejected');
     if (failedLane) throw failedLane.reason;
@@ -193,12 +202,10 @@ async function main() {
       submitCalls: 0,
     })}\n`);
   } finally {
-    await Promise.all(runtimes.map(async ({ browser }) => {
-      const context = browser.contexts()[0];
-      if (context) await clearCustomerState(context).catch(() => undefined);
-      await browser.close().catch(() => undefined);
-    }));
-    await Promise.all(startedProfileIds.map((id) => api.closeProfile(id).catch(() => undefined)));
+    if (pool) {
+      await Promise.allSettled(runtimes.map((runtime) => pool.close(runtime)));
+      await pool.shutdown().catch(() => undefined);
+    }
   }
 }
 

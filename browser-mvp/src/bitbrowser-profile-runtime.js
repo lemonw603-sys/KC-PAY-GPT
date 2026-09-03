@@ -384,6 +384,10 @@ export class BitBrowserProfilePoolRuntimeAdapter extends RuntimeAdapter {
     const normalized = profileIds.map((id) => assertRef(id, 'BitBrowser profileId'));
     if (new Set(normalized).size !== normalized.length) throw new TypeError('profileIds must be unique');
     this.apiClient = apiClient;
+    // BitBrowser Local API can partially start a burst of profiles and reject
+    // one request. Serialize physical startup while keeping leased/warm lanes
+    // fully concurrent after they have attached.
+    this.startupTail = Promise.resolve();
     this.slots = normalized.map((profileId, index) => ({
       index,
       reserved: false,
@@ -404,20 +408,35 @@ export class BitBrowserProfilePoolRuntimeAdapter extends RuntimeAdapter {
     return this.apiClient.health();
   }
 
-  async open(manifest, options = {}) {
-    const candidates = this.slots.filter((candidate) => !candidate.reserved && !candidate.quarantined);
-    if (!candidates.length) {
-      const hasBusyHealthySlot = this.slots.some((candidate) => candidate.reserved && !candidate.quarantined);
-      throw new BitBrowserRuntimeError(
-        hasBusyHealthySlot ? 'all BitBrowser Profile slots are busy' : 'no healthy BitBrowser Profile slot is available',
-        hasBusyHealthySlot ? 'BITBROWSER_POOL_EXHAUSTED' : 'BITBROWSER_POOL_UNAVAILABLE',
-      );
+  async withStartupLock(operation) {
+    const previous = this.startupTail;
+    let release;
+    this.startupTail = new Promise((resolve) => { release = resolve; });
+    await previous.catch(() => undefined);
+    try {
+      return await operation();
+    } finally {
+      release();
     }
+  }
+
+  async open(manifest, options = {}) {
     let lastError = null;
-    for (const slot of candidates) {
+    while (true) {
+      // Recompute after every failed slot. A candidate list captured before an
+      // await may contain a slot that another concurrent caller has reserved.
+      const slot = this.slots.find((candidate) => !candidate.reserved && !candidate.quarantined);
+      if (!slot) {
+        const hasBusyHealthySlot = this.slots.some((candidate) => candidate.reserved && !candidate.quarantined);
+        throw new BitBrowserRuntimeError(
+          hasBusyHealthySlot ? 'all BitBrowser Profile slots are busy' : 'no healthy BitBrowser Profile slot is available',
+          hasBusyHealthySlot ? 'BITBROWSER_POOL_EXHAUSTED' : 'BITBROWSER_POOL_UNAVAILABLE',
+          lastError,
+        );
+      }
       slot.reserved = true;
       try {
-        const runtime = await slot.adapter.open(manifest, options);
+        const runtime = await this.withStartupLock(() => slot.adapter.open(manifest, options));
         slot.leaseRef = runtime.profileRef;
         return { ...runtime, poolSlot: slot.index };
       } catch (error) {
@@ -430,11 +449,6 @@ export class BitBrowserProfilePoolRuntimeAdapter extends RuntimeAdapter {
         lastError = error;
       }
     }
-    throw new BitBrowserRuntimeError(
-      'every available BitBrowser Profile failed to start and was quarantined',
-      'BITBROWSER_POOL_UNAVAILABLE',
-      lastError,
-    );
   }
 
   async close(runtime) {

@@ -158,8 +158,9 @@
 
 - 原三个 Profile 关闭后重新启动，仍为 ChatGPT HTTP 200 `3/3`、Cookie/localStorage 隔离 `3/3`，此前 Profile 运行 Cookie 保留修复通过重启复验。
 - 本地已新增三个不承载客户材料的 Profile，形成六槽配置；opaque ID 只在 Git 忽略的本机 `0600` 文件中。
-- 第一轮六个并发 Local API 启动请求出现部分启动后单请求被拒；所有窗口已关闭并确认收敛。验证器已改为顺序启动、并行验收，并对每个已启动 Profile 做失败清理。
+- 第一轮六个并发 Local API 启动请求出现部分启动后单请求被拒；所有窗口已关闭并确认收敛。生产 Profile 池和验证器均已改为物理窗口顺序启动、页面任务并行，并对实时槽位状态和失败清理负责。
 - 最终真实六路结果：ChatGPT HTTP 200 `6/6`、Cookie 隔离 `6/6`、localStorage 隔离 `6/6`、本轮运行时指纹摘要 `6/6` 不同；菲律宾出口摘要只有 `1` 个。
 - 用户已确认现阶段六 Profile 可共用一个菲律宾出口；这不是六个独立出口，也尚未证明长时常驻或高并发付款风控。
+- 修正后的生产池复验中，第 4 个 Profile 曾有一次页面未正常到达；单槽一次复验恢复 HTTP 200，随后完整六路再次 `6/6` 通过，当前没有固定坏槽证据。
 - Session 注入、卡字段写入、submit、Provider/卡台写入均为 0；Browser 全量 `141 total / 137 passed / 4 environment-skipped / 0 failed`。生产 Browser Worker仍未部署/启用。
 - 下一步是六 Profile 接入生产形态但仍不付款的本地 Worker/共享队列闭环，再单独确认首笔真实 Browser 付款。证据：`docs/browser-research/BITBROWSER_SIX_PROFILE_ACCESS_AND_ISOLATION_VERIFICATION_2026-09-03.md`。

@@ -134,7 +134,7 @@
 - 本轮已按真实业务创建测试 CDK+Session 订单，临时切换默认路线为 Browser；系统自动开卡并分配后，Browser 访问被 ChatGPT/网络返回 `CHATGPT_ACCESS_BLOCKED`，在付款前安全终止。测试订单、资金风险、租约和 Browser Worker 已清理，默认路线已恢复 API。
 - 已修复：`CHATGPT_ACCESS_BLOCKED`、Checkout 导航/观察阻断不再回到 `CARD_READY` 重排 `SUBMIT_RECHARGE`；改为终态 `RECHARGE_FAILED`，避免重复创建 attempt。修复已部署到当前 release 并通过定向测试。
 - 单 Profile Delaware 非付款税费复验已完成：测试 Session 身份匹配且为 FREE，真实 ChatGPT Plus Checkout 填入卡片和 Delaware 账单地址后，稳定金额仍为基础价 `PHP 982.14` + VAT `PHP 117.86` = `PHP 1100.00`；Subscribe 可用但未点击，`submitCalls=0`，字段/Session/Profile 已清理。不能再把免税州地址视为菲律宾 Checkout 的免税规则或成本依据（详见 `docs/browser-research/BITBROWSER_DELAWARE_NONPAYMENT_TAX_OBSERVATION_2026-09-03.md`）。
-- 容量方向已确认并完成真实 1→3→6 Profile 访问/隔离验收：6 个常驻隔离 Profile，单 Profile 串行、Profile 间并行；六路同时达到 ChatGPT HTTP 200、Cookie/localStorage 隔离和运行时指纹摘要差异 `6/6`。已修复客户清理误删 Cloudflare 运行 Cookie，以及并发突发启动造成 Local API 部分成功的问题；六路现共用一个菲律宾出口，用户确认现阶段不以多出口作为阻断（详见 `docs/browser-research/BITBROWSER_SIX_PROFILE_ACCESS_AND_ISOLATION_VERIFICATION_2026-09-03.md`）。
+- 容量方向已确认并完成真实 1→3→6 Profile 访问/隔离验收：6 个常驻隔离 Profile，单 Profile 串行、Profile 间并行；六路同时达到 ChatGPT HTTP 200、Cookie/localStorage 隔离和运行时指纹摘要差异 `6/6`。已修复客户清理误删 Cloudflare 运行 Cookie，以及生产池并发突发启动造成 Local API 部分成功的问题；生产池现为物理窗口顺序打开、页面任务并行。六路共用一个菲律宾出口，用户确认现阶段不以多出口作为阻断（详见 `docs/browser-research/BITBROWSER_SIX_PROFILE_ACCESS_AND_ISOLATION_VERIFICATION_2026-09-03.md`）。
 - 非付款闭环通过后，再单独确认首笔真实 Browser 付款；成功后再讨论把全局默认路线从 API 切为 Browser。
 
 ### E｜客户充值页体验线
