@@ -147,3 +147,4 @@
 | D-118 | 默认 API 路线长期开放 Worker 的最小真实充值权限：只设 `PROVIDER_RECHARGE_WRITES_ENABLED=true`；`PROVIDER_WRITES_ENABLED=false`、`PROVIDER_CARD_WRITES_ENABLED=false` 和 Browser 付款门禁继续独立关闭。 | 已确认并部署 | 用户在本次候选部署前明确确认；生产以独立 systemd drop-in 落地，Worker 进程环境和心跳已复核。 |
 
 | D-119 | Browser 第一版容量采用 6 个常驻 BitBrowser Profile：单 Profile 同一时刻只处理一单，Profile 间并行；订单间必须清理客户页面、Session Cookie 与站点存储，清理失败的 Profile 不得回池。最终 Checkout 税费/总额必须在填写卡片与账单地址后稳定，再绑定权威付款 permit 和 submit intent；不得让 permit 绑定地址前旧金额。 | 代码已实现并通过本地回归，未部署、待真实 1→3→6 Profile 验收 | 实施与对抗审查见 `docs/browser-research/BROWSER_SIX_PROFILE_POOL_IMPLEMENTATION_2026-09-02.md`；当前仍未证明 BitBrowser 套餐 6 开、六路代理隔离或真实付款。 |
+| D-120 | Browser 不使用“美国免税州地址必然免税”作为业务规则或预算捷径；必须在卡片与账单地址填写后读取 Checkout 最终稳定总额。当前菲律宾 Profile 实测填写 Delaware 地址后仍为 `PHP 982.14 + VAT 117.86 = PHP 1100.00`。 | 单 Profile 非付款实测完成，生产付款未启用 | 证据见 `docs/browser-research/BITBROWSER_DELAWARE_NONPAYMENT_TAX_OBSERVATION_2026-09-03.md`；Subscribe 可用但未点击，`submitCalls=0`。 |

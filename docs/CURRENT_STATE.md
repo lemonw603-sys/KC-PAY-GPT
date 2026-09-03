@@ -136,3 +136,11 @@
 - Browser 全量 `138 total / 134 passed / 4 skipped / 0 failed`；v1 repository 定向 `21/21`。需 `TEST_DATABASE_URL` 的隔离 MySQL 项保持未执行。
 - 这不改变本文件前述生产事实：生产 release 未变，Browser Worker 仍 `inactive/disabled`，默认路线仍为 API，未执行 Subscribe/付款/Provider 写入。
 - 详细证据：`docs/browser-research/BROWSER_SIX_PROFILE_POOL_IMPLEMENTATION_2026-09-02.md`。
+
+## 9. 2026-09-03 Browser 单 Profile Delaware 非付款复验
+
+- 单个 BitBrowser 菲律宾 Profile 已完成一次生命周期内的 Session 注入、身份/FREE 核对、真实 ChatGPT Plus Checkout、卡片与 Delaware 账单地址填写、最终金额稳定读取和清理。
+- 地址填写后金额仍为 `PHP 982.14 + VAT 117.86 = PHP 1100.00`；Subscribe 控件存在且启用，但未点击，`submitCalls=0`，没有付款或 Provider/卡台写入。
+- 敏感输入经仓库外 `0600` 临时文件读取后立即删除；结束时清空字段、Cookie/storage 并关闭 Profile。生产 release、默认 API 路线和 Browser Worker 状态未改变。
+- Browser 当前下一步由“单 Profile 税费复验”推进为 3 Profile 非付款同开/隔离验证，通过后再扩到 6 Profile；真实付款与部署仍未确认。
+- 证据：`docs/browser-research/BITBROWSER_DELAWARE_NONPAYMENT_TAX_OBSERVATION_2026-09-03.md`。

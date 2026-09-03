@@ -1044,3 +1044,11 @@
 - 覆盖共享 permit/付款后 mock 状态机、提交崩溃进入 UNKNOWN 且重放不二次提交、生产形态 dispatch→Chrome→safe-abort、共享 run 付款前资金栅栏清理。
 - 临时容器已停止并删除；未连接生产数据库，未访问 ChatGPT，未读取客户 Session/卡资料，未调用 Provider/卡台，未付款。
 - 用户同时说明 Claude 正在独立优化客户充值网站；Browser worktree 本轮不接触客户页文件，也不干扰该工作线。
+
+## 2026-09-03｜BitBrowser 单 Profile Delaware 非付款税费复验完成
+
+- 新增 `browser-mvp/scripts/observe-bitbrowser-checkout-tax-nonpayment.js`：只接受仓库外 `0600` 输入，读取即删；无 Subscribe/付款提交路径，并有页面 submit tripwire。
+- 现场完整跑通：测试 Session 身份匹配、FREE、真实 ChatGPT Plus Checkout、3 个卡字段和 6 个账单必填字段、最终金额稳定、Subscribe 前停止。
+- Delaware 地址后仍为 `PHP 982.14 + VAT 117.86 = PHP 1100.00`；`submitCalls=0`，无 Provider/卡台写入。
+- 已清理字段、Cookie/storage、临时敏感文件并关闭 Profile；未部署、未切生产路线、未启动生产 Browser Worker。
+- 下一步：3 Profile 非付款同开/隔离验证，通过后 6 Profile；Claude 客户充值页优化线保持独立，本轮未触碰。

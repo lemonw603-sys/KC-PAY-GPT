@@ -104,7 +104,7 @@
 | 库存与运营覆盖 | 已部署，有历史数据缺口 | 旧批次停用、Claude 专用卡、未来新卡按证据接管 | `6807/1477` 现为 Provider `invalidating` 且保留历史 ACTIVE assignment，当前资格计算不会分配；这是系统状态与“卡实际可用”运营事实的待收敛缺口 |
 | 运营控制面 | 部分部署 | 开始营业、默认路线、就绪摘要及部分跳转；API 权限基线已恢复 | 补齐 API 权限漂移无入口；用真实运营复核入口与噪音 |
 | 客户充值页 | 已部署，待下一笔成功实单验收结果态 | Claude 单列三步设计已接入真实客户 API；生产 CSP、桌面/390px、教程、历史订单查询、时间线和 Session 更换入口已复验 | 下一笔真实成功订单验收成功邮箱、完成时间与完整时间线；不为此另造测试订单 |
-| Browser | 生产形态非付款测试已执行；六 Profile 代码已完成；付款仍未验收 | 客户式 CDK+Session 订单已创建；BitBrowser+菲律宾出口已验证 Session/FREE/真实 Checkout；六 Profile 常驻池、并发 lane、订单隔离和进程级 heartbeat 已通过本地回归 | Delaware 地址后税费；BitBrowser 套餐 3/6 Profile 同开；真实并发/长期运行；生产部署与真实付款 |
+| Browser | 单 Profile 非付款税费闸门已通过；六 Profile 代码已完成；付款仍未验收 | BitBrowser+菲律宾出口已验证 Session/FREE/真实 Checkout/填卡/Delaware 地址后最终金额；六 Profile 常驻池、并发 lane、订单隔离和进程级 heartbeat 已通过本地回归 | BitBrowser 套餐 3/6 Profile 同开；真实并发/长期运行；生产部署与真实付款 |
 | 对账/Bark/费用监控 | 部分验收 | 资金 UNKNOWN、余额变化 Bark、交易证据基础 | 连续订单校准误报；费用标准/变化监控 |
 | 放量/恢复 | 未验收 | 备份、健康检查、回滚点 | 3–5 单→10–20 单→恢复演练→100–300 单/日 |
 
@@ -133,7 +133,7 @@
 
 - 本轮已按真实业务创建测试 CDK+Session 订单，临时切换默认路线为 Browser；系统自动开卡并分配后，Browser 访问被 ChatGPT/网络返回 `CHATGPT_ACCESS_BLOCKED`，在付款前安全终止。测试订单、资金风险、租约和 Browser Worker 已清理，默认路线已恢复 API。
 - 已修复：`CHATGPT_ACCESS_BLOCKED`、Checkout 导航/观察阻断不再回到 `CARD_READY` 重排 `SUBMIT_RECHARGE`；改为终态 `RECHARGE_FAILED`，避免重复创建 attempt。修复已部署到当前 release 并通过定向测试。
-- 最新只读税费尝试：BitBrowser 菲律宾 Profile 可访问套餐页；复用仍有效的既有 Checkout 后，现场确认基础价 ₱982.14 + 12% VAT ₱117.86 = ₱1,100。未填卡时页面没有账单地址输入区，所以 Delaware 地址影响尚未验证（详见 `docs/browser-research/BITBROWSER_TAX_READONLY_ATTEMPT_2026-09-02.md`）。
+- 单 Profile Delaware 非付款税费复验已完成：测试 Session 身份匹配且为 FREE，真实 ChatGPT Plus Checkout 填入卡片和 Delaware 账单地址后，稳定金额仍为基础价 `PHP 982.14` + VAT `PHP 117.86` = `PHP 1100.00`；Subscribe 可用但未点击，`submitCalls=0`，字段/Session/Profile 已清理。不能再把免税州地址视为菲律宾 Checkout 的免税规则或成本依据（详见 `docs/browser-research/BITBROWSER_DELAWARE_NONPAYMENT_TAX_OBSERVATION_2026-09-03.md`）。
 - 容量方向已确认并完成代码实现：6 个常驻隔离 Profile，单 Profile 串行、Profile 间并行；macOS launcher 已支持 1–6 Profile 与默认一次性/显式常驻模式，heartbeat 已从各 lane 移为每进程默认 10 秒一次。当前只证明一个菲律宾节点，尚未验收 3/6 路真实同开与长期运行（详见 `docs/browser-research/BROWSER_SIX_PROFILE_PRODUCTION_SHAPE_PREPARATION_2026-09-02.md`）。
 - 非付款闭环通过后，再单独确认首笔真实 Browser 付款；成功后再讨论把全局默认路线从 API 切为 Browser。
 
@@ -178,10 +178,10 @@
 ## 2026-09-02 Browser 最新进度（现场核对）
 
 - API 生产线保持默认路线；Browser Worker 仍为 `inactive/disabled`，本轮未部署、未付款。
-- BitBrowser 菲律宾 Profile 已实测：公开页面可达，测试 Session 身份匹配且账号为 FREE，已进入真实 Checkout；菲律宾 Checkout 只读观察为基础价 `₱982.14`、VAT `₱117.86`、合计 `₱1,100.00`。Delaware 地址后的税费尚因 BitBrowser 当日打开额度阻塞，待额度恢复复验。
+- BitBrowser 单 Profile 非付款闸门已实测通过：公开页面可达，测试 Session 身份匹配且账号为 FREE；进入真实 ChatGPT Plus Checkout 并填写卡片和 Delaware 地址后，金额仍为基础价 `PHP 982.14`、VAT `PHP 117.86`、合计 `PHP 1100.00`。Subscribe 可用但未点击，`submitCalls=0`，结束后已清理。
 - `codex/browser` 已基于当前 main 实现 1–6 Profile 常驻池：单 Profile 单订单、Profile 间并行；订单间清理页面/Cookie/storage；清理失败隔离槽位；第 7 个并发拒绝。
 - 对抗审查已修复地址/税费与付款许可顺序：先无付款地填写卡和账单地址并读取最终总额，再将 Checkout 摘要绑定权威 permit/submit intent；permit 后金额漂移仍停止。
 - 生产形态准备已补齐：macOS launcher 支持单/多 Profile、默认 `ONCE`/显式 `CONTINUOUS`；六 lane 共用一个进程 heartbeat，默认每 10 秒更新，不再随 lane 数放大数据库写入；配置模板已同步且未含真实 ID/代理/密钥。
 - 代码验证：Browser 普通全量 `140 total / 136 passed / 4 environment-skipped / 0 failed`；随后用全新临时 MySQL 8.4、完整 migrations 001–044 将对应 4 项逐项实跑为 `4/4 passed`；v1 repository 定向 `21/21`。
-- Browser 下一步：BitBrowser 额度恢复后先完成 Delaware 非付款税费复验，再按 1→3→6 验证 Profile 同开额度、固定菲律宾 sticky 出口、并发隔离和吞吐。真实付款与生产部署仍需独立确认。
+- Browser 下一步：按 3→6 验证 Profile 同开额度、固定出口、并发隔离和吞吐；仍保持非付款。真实付款与生产部署需独立确认。
 - 详细实施/审查：`docs/browser-research/BROWSER_SIX_PROFILE_POOL_IMPLEMENTATION_2026-09-02.md`、`docs/browser-research/BROWSER_SIX_PROFILE_PRODUCTION_SHAPE_PREPARATION_2026-09-02.md`。

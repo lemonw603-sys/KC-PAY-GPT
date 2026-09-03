@@ -686,3 +686,10 @@ B2 接下来的主工程顺序是并发队列及连续 24 小时 soak，再接�
 - 单机 Browser Worker 的真实耗时、资源占用和合理并发。
 
 这些事实未验证前不得伪装成已知合同，也不得用于打开生产付款写开关。
+
+### 2026-09-03 非付款税费证据更新
+
+- 单 BitBrowser 菲律宾 Profile 已证明测试 Session 登录、FREE 状态、真实 ChatGPT Plus Checkout、卡片/账单地址填写和 Subscribe 前停止可以在一次生命周期内完成。
+- Delaware 地址填写后的稳定总额仍为 `PHP 1100.00`（基础价 `982.14` + VAT `117.86`）；不得把免税州地址写成固定免税策略。
+- 运行时继续以地址填写后的最终 Checkout 摘要作为预算和 permit 输入；本次未点击 Subscribe、未付款、未验证付款后状态。
+- 证据：`docs/browser-research/BITBROWSER_DELAWARE_NONPAYMENT_TAX_OBSERVATION_2026-09-03.md`。

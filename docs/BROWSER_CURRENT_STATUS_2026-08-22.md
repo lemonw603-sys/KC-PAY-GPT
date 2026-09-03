@@ -223,4 +223,12 @@ git diff --check
 - 配置模板与 README 已同步六 Profile 示例，不包含真实 Profile ID、代理订阅或密钥。
 - 验证：Browser 普通全量 `140 total / 136 passed / 4 environment-skipped / 0 failed`；随后用全新临时 MySQL 8.4、完整 migrations 001–044 将对应 4 项实跑为 `4/4 passed`；v1 repository `21/21`。
 - 未部署、未启动生产 Worker、未访问客户 Session、未点击 Subscribe、未付款、未调用 Provider/卡台。
-- 下一步仍是额度恢复后的单 Profile 非付款税费复验，再按 1→3→6 验证同开额度与隔离；详见 `docs/browser-research/BROWSER_SIX_PROFILE_PRODUCTION_SHAPE_PREPARATION_2026-09-02.md`。
+- 本节当时的下一步“单 Profile 税费复验”已于 2026-09-03 完成；当前按第 15 节推进 3→6 Profile 同开与隔离验证。生产形态准备详见 `docs/browser-research/BROWSER_SIX_PROFILE_PRODUCTION_SHAPE_PREPARATION_2026-09-02.md`。
+
+## 15. 2026-09-03 单 Profile Delaware 非付款税费复验
+
+- 新增只接受仓库外 `0600` 输入的单次复验工具；敏感输入读取后删除，工具没有 Subscribe 点击或付款提交路径，页面另装 submit tripwire。
+- 测试 Session 身份匹配、账号为 FREE；真实 ChatGPT Plus Checkout 已填写 3 个卡字段与 Delaware 账单必填字段，并停在启用的 Subscribe 控件前。
+- 最终稳定金额仍为基础价 `PHP 982.14`、VAT `PHP 117.86`、合计 `PHP 1100.00`；`submitCalls=0`。字段、Cookie/storage 和 Profile 已清理。
+- 当前菲律宾定价轨道不能依赖 Delaware 地址免税；付款预算必须读取地址填写后的最终页面金额。
+- 单 Profile 非付款闸门完成，下一步为 3 Profile 同开/隔离非付款验证，再扩到 6 Profile。生产 Browser Worker、真实付款及付款后闭环仍未验证。
