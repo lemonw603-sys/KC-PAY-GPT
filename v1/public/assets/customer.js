@@ -1,10 +1,10 @@
 /* =========================================================================
    customer.js — 客户充值页视图状态机与真实客户 API 契约。
    关键不变量：
-   1) 「下一步：核对邮箱」只在本地解析 Session 提取邮箱，绝不发任何请求。
-   2) 只有客户在确认页点「确认无误，创建订单」后，才调用 createOrder。
+   1) 填写页仅在本地解析 Session 读取邮箱并就地显示，绝不发任何请求。
+   2) 只有客户点「确认无误，创建订单」后，才调用 createOrder（恰好一次）。
    3) 页面只展示邮箱；Session / Token 全文不回显，创建成功后清空输入。
-   4) 状态一律来自客户契约的 7 种映射态，从不显示内部/卡台/资金状态。
+   4) 状态一律来自客户契约映射态（7 步进展链 + 复核/待换号/失败分支），从不显示内部/卡台/资金状态。
    ========================================================================= */
 (function () {
   'use strict';
@@ -35,22 +35,28 @@
 
   // ---- 客户可见 7 状态的展示文案（语义对齐 v1 现有 STATUS，措辞打磨） ----
   const STATUS = {
-    QUEUED:          { label: '已排队',   title: '订单已创建',           desc: '系统已收到订单，正在排队等待处理。', terminal: false, poll: 5000 },
-    PROCESSING:      { label: '处理中',   title: '正在为你开通 Plus',    desc: '订单已进入处理流程，请不要重复提交，稍候即可。', terminal: false, poll: 5000 },
+    QUEUED:          { label: '已创建',   title: '订单已创建',           desc: '系统已收到你的订单，正在排队安排开通。', terminal: false, poll: 5000 },
+    PREPARING:       { label: '准备中',   title: '正在准备开通',         desc: '系统正在为你准备开通，通常一分钟左右完成。请稍候，无需重复提交，页面会自动刷新进度。', terminal: false, poll: 5000 },
+    PAYING:          { label: '正在支付', title: '正在支付',             desc: '系统正在为你完成支付，请稍候。', terminal: false, poll: 4000 },
+    ACTIVATING:      { label: '正在开通', title: '正在开通 Plus',        desc: '支付已提交，正在为你开通 ChatGPT Plus，马上完成。', terminal: false, poll: 5000 },
+    CONFIRMING:      { label: '确认订阅', title: '正在确认订阅',         desc: '开通已提交，系统正在确认订阅结果，马上就好。', terminal: false, poll: 6000 },
     REVIEWING:       { label: '复核中',   title: '订单正在复核',         desc: '系统需要进一步确认结果，请保留查询码稍后查看。', terminal: false, poll: 30000 },
     ACTION_REQUIRED: { label: '待更换账号', title: '需要更换账号 Session', desc: '当前账号不符合开通条件，请在下方更换一个免费账号的 Session。', terminal: false, poll: 30000 },
-    FINALIZING:      { label: '收尾中',   title: '正在确认取消自动续费', desc: '付款已确认，系统正在关闭自动续费，马上完成。', terminal: false, poll: 10000 },
     SUCCESS:         { label: '已开通',   title: 'Plus 已成功开通',      desc: '本次订单已全部完成，账号信息如下。', terminal: true,  poll: null },
     FAILED:          { label: '未成功',   title: '订单未能完成',         desc: '本次订单未能完成，请保留查询码联系客服核对。', terminal: true, poll: null }
   };
 
   // 时间线短标签
   const TL_LABEL = {
-    QUEUED: '已创建', PROCESSING: '处理中', REVIEWING: '复核中',
-    ACTION_REQUIRED: '等待更换账号', FINALIZING: '确认取消续费',
+    QUEUED: '已创建', PREPARING: '准备中',
+    PAYING: '正在支付', ACTIVATING: '正在开通 Plus', CONFIRMING: '正在确认订阅',
+    REVIEWING: '复核中', ACTION_REQUIRED: '等待更换账号',
     SUCCESS: '已完成', FAILED: '未成功'
   };
-  const CANON = ['QUEUED', 'PROCESSING', 'FINALIZING', 'SUCCESS'];
+  // 6 步正常进展链；横向进度条用短标签与百分比刻度（准备段占比大——真实等待最久）
+  const CANON = ['QUEUED', 'PREPARING', 'PAYING', 'ACTIVATING', 'CONFIRMING', 'SUCCESS'];
+  const STEP_SHORT = { QUEUED: '已创建', PREPARING: '准备中', PAYING: '支付', ACTIVATING: '开通', CONFIRMING: '确认', SUCCESS: '完成' };
+  const PROGRESS_PCT = { QUEUED: 8, PREPARING: 34, PAYING: 55, ACTIVATING: 75, CONFIRMING: 92, SUCCESS: 100 };
 
   // 错误码 -> 客户文案（对齐现有 customer.js ERROR_MESSAGES）
   const ERRORS = {
@@ -80,13 +86,11 @@
 
   const $ = (id) => document.getElementById(id);
   const el = {
-    stage: $('stage'), stepper: $('stepper'), stepperFill: $('stepper-fill'),
-    views: { input: $('view-input'), confirm: $('view-confirm'), tracking: $('view-tracking'), query: $('view-query') },
+    stage: $('stage'), stepper: $('stepper'),
+    views: { input: $('view-input'), tracking: $('view-tracking'), query: $('view-query') },
     inputForm: $('submit-form'), cdk: $('cdk'), session: $('session'),
     fieldCdk: $('field-cdk'), fieldSession: $('field-session'), toConfirm: $('to-confirm'),
-    confirmBack: $('confirm-back'), confirmCancel: $('confirm-cancel'), confirmCreate: $('confirm-create'),
-    confirmEmail: $('confirm-email'), confirmCdk: $('confirm-cdk'),
-    confirmCheck: $('confirm-check'),
+    inlineEmail: $('inline-email'), inlineEmailValue: $('inline-email-value'),
     statusCard: $('status-card'), crest: $('status-crest'),
     chip: $('status-chip'), chipLabel: $('status-chip-label'), updated: $('status-updated'),
     title: $('status-title'), desc: $('status-desc'),
@@ -96,7 +100,9 @@
     replaceForm: $('replace-form'), replaceSession: $('replace-session'), replaceCheck: $('replace-check'),
     replaceSubmit: $('replace-submit'), replaceLimit: $('replace-limit'),
     helpbox: $('helpbox'), helpText: $('helpbox-text'),
-    timeline: $('timeline'), pollNote: $('poll-note'), trackingNew: $('tracking-new'),
+    progress: $('progress'), progressNum: $('progress-num'), progressCur: $('progress-cur'),
+    progressStep: $('progress-step'), progressFill: $('progress-fill'), progressNodes: $('progress-nodes'),
+    pollNote: $('poll-note'), trackingNew: $('tracking-new'),
     queryForm: $('query-form'), queryInput: $('query-input'), querySubmit: $('query-submit'), queryBack: $('query-back'),
     navQuery: $('nav-query'), toast: $('toast'),
     guideOpen: $('session-help-open'), replaceHelpOpen: $('replace-help-open'),
@@ -171,13 +177,11 @@
   function setStepper(step, done) {
     el.stepper.hidden = !step;
     if (!step) return;
-    const steps = el.stepper.querySelectorAll('.step');
-    steps.forEach((s) => {
+    el.stepper.querySelectorAll('.stepper__seg').forEach((s) => {
       const n = Number(s.dataset.step);
       s.classList.toggle('is-current', n === step && !done);
       s.classList.toggle('is-done', n < step || (done && n <= step));
     });
-    el.stepper.dataset.progress = done ? 'done' : String(step);
   }
 
   function showView(name, { step, done } = {}) {
@@ -190,30 +194,37 @@
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
-  // ---------------- 时间线合成 ----------------
-  function buildTimeline(order) {
-    const events = Array.isArray(order.timeline) ? order.timeline.slice() : [];
-    const cur = order.status;
-    const terminal = cur === 'SUCCESS' || cur === 'FAILED';
-    const nodes = events.map((e) => ({ status: e.status, at: e.updatedAt, state: 'done' }));
-    if (!nodes.length) nodes.push({ status: cur, at: order.updatedAt, state: 'done' });
-    nodes[nodes.length - 1].state = terminal ? 'done' : 'current';
-    if (!terminal) {
-      const ci = CANON.indexOf(cur);
-      if (ci >= 0) for (let k = ci + 1; k < CANON.length; k++) nodes.push({ status: CANON[k], at: null, state: 'future' });
-      else if (cur === 'REVIEWING' || cur === 'ACTION_REQUIRED') nodes.push({ status: 'SUCCESS', at: null, state: 'future' });
-    }
-    return nodes;
+  // ---------------- 横向进度条：百分比 + 6 节点 + 平滑动画 ----------------
+  let lastPct = 0;
+  const prefersReduced = () => window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  function animateProgress(from, to) {
+    if (prefersReduced()) { el.progressFill.style.width = to + '%'; el.progressNum.textContent = to; return; }
+    const dur = 900, t0 = performance.now();
+    (function frame(now) {
+      const t = Math.min(1, (now - t0) / dur);
+      const eased = 1 - Math.pow(1 - t, 3);       // easeOutCubic：先快后缓、顺滑不跳格
+      const v = Math.round(from + (to - from) * eased);
+      el.progressFill.style.width = v + '%';
+      el.progressNum.textContent = v;
+      if (t < 1) requestAnimationFrame(frame);
+    })(performance.now());
   }
 
-  function renderTimeline(order) {
-    const nodes = buildTimeline(order);
-    el.timeline.innerHTML = nodes.map((n) => `
-      <li class="timeline__item" data-state="${n.state}">
-        <span class="timeline__node" aria-hidden="true"></span>
-        <div class="timeline__label">${escapeHtml(TL_LABEL[n.status] || '处理中')}</div>
-        ${n.at ? `<div class="timeline__time">${escapeHtml(fmtTime(n.at))}</div>` : (n.state === 'future' ? '<div class="timeline__time">待进行</div>' : '')}
-      </li>`).join('');
+  function renderProgress(order) {
+    const cur = order.status;
+    const idx = CANON.indexOf(cur);
+    if (idx < 0) { el.progress.hidden = true; return; }   // 复核 / 待换号 / 失败等异常态不进正常进度条
+    el.progress.hidden = false;
+    const terminal = cur === 'SUCCESS';
+    el.progressNodes.innerHTML = CANON.map((s, i) => {
+      const state = i < idx ? 'done' : (i === idx ? (terminal ? 'done' : 'current') : 'future');
+      return `<div class="hp__node" data-state="${state}"><span class="hp__dot" aria-hidden="true"></span><span class="hp__lbl">${escapeHtml(STEP_SHORT[s])}</span></div>`;
+    }).join('');
+    el.progressCur.textContent = (STATUS[cur] && STATUS[cur].title) || TL_LABEL[cur] || '';
+    el.progressStep.textContent = `第 ${idx + 1} / ${CANON.length} 步`;
+    const target = PROGRESS_PCT[cur] || Math.round((idx + 1) / CANON.length * 100);
+    animateProgress(lastPct, target);
+    lastPct = target;
   }
 
   // ---------------- 渲染状态卡 ----------------
@@ -265,8 +276,8 @@
     // 失败求助
     el.helpbox.hidden = !failed;
 
-    // 时间线
-    renderTimeline(order);
+    // 横向进度条
+    renderProgress(order);
 
     // 轮询提示
     el.pollNote.textContent = terminal
@@ -274,7 +285,7 @@
       : '页面会自动刷新进度，无需手动操作。';
     el.pollNote.hidden = false;
 
-    setStepper(3, terminal);
+    setStepper(order.status === 'SUCCESS' ? 3 : 2, order.status === 'SUCCESS');
     if (scroll) el.statusCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
     schedulePoll(order.publicNo, meta);
@@ -299,62 +310,60 @@
     }, meta.poll);
   }
 
-  // ---------------- 步骤 1 -> 2：本地解析，绝不发请求 ----------------
-  el.inputForm.addEventListener('submit', (e) => {
+  // ---------------- 填写页：本地解析邮箱、就地核对、一步创建订单 ----------------
+  // 不变量：邮箱在建单前就地显示供核对；只有点「创建订单」才 createOrder；
+  // 绝不回显 Session/Token 全文；建单成功后清空 Session。
+  function refreshInputEmail() {
+    const cdk = el.cdk.value.trim();
+    let email = null;
+    try {
+      const parsed = parseSessionInput(el.session.value);
+      const session = parsed.value;
+      if (session && typeof session === 'object' && !Array.isArray(session)
+          && session.user && typeof session.user.email === 'string' && session.user.email) {
+        email = session.user.email;
+        if (parsed.hadTrailingText) el.session.value = JSON.stringify(session);
+        pending = { cdk, session, email };
+      }
+    } catch { /* 尚未粘贴完整，静默等待 */ }
+    if (!email) pending = null;
+    if (email) { el.inlineEmailValue.textContent = email; el.inlineEmail.hidden = false; }
+    else { el.inlineEmail.hidden = true; }
+    el.toConfirm.disabled = !(cdk.length >= 8 && email);
+    return email;
+  }
+
+  el.session.addEventListener('input', refreshInputEmail);
+  el.cdk.addEventListener('input', refreshInputEmail);
+
+  el.inputForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     fieldError(el.fieldCdk, ''); fieldError(el.fieldSession, ''); clearToast();
 
     const cdk = el.cdk.value.trim();
     if (cdk.length < 8) return fieldError(el.fieldCdk, '请输入有效的 CDK 卡密（至少 8 位）。');
-
-    let parsed;
-    try { parsed = parseSessionInput(el.session.value); }
-    catch { return fieldError(el.fieldSession, '账号 Session 格式不正确，请检查是否粘贴完整。'); }
-    const session = parsed.value;
-    if (!session || typeof session !== 'object' || Array.isArray(session)) {
-      return fieldError(el.fieldSession, '请粘贴完整的账号 Session。');
+    if (!refreshInputEmail() || !pending) {
+      return fieldError(el.fieldSession, '账号 Session 无效或不完整，请确认粘贴了完整内容。');
     }
-    const email = session.user && session.user.email;
-    if (!email || typeof email !== 'string') {
-      return fieldError(el.fieldSession, '未能从 Session 读取到账号邮箱，请确认粘贴的是完整内容。');
-    }
-    if (parsed.hadTrailingText) el.session.value = JSON.stringify(session);
 
-    pending = { cdk, session, email };
-    // 渲染确认页（只展示邮箱与打码卡密，绝不回显 Session/Token）
-    el.confirmEmail.textContent = email;
-    el.confirmCdk.textContent = maskCdk(cdk);
-    el.confirmCheck.checked = false;
-    el.confirmCreate.disabled = true;
-    showView('confirm', { step: 2 });
-  });
-
-  el.confirmCheck.addEventListener('change', () => { el.confirmCreate.disabled = !el.confirmCheck.checked; });
-
-  function backToInput() { showView('input', { step: 1 }); }
-  el.confirmBack.addEventListener('click', backToInput);
-  el.confirmCancel.addEventListener('click', backToInput);
-
-  // ---------------- 确认后才创建订单 ----------------
-  el.confirmCreate.addEventListener('click', async () => {
-    if (!pending || !el.confirmCheck.checked) return;
-    setBusy(el.confirmCreate, true);
+    setBusy(el.toConfirm, true);
     try {
       const { order } = await api.createOrder({ cdk: pending.cdk, session: pending.session });
       // 清空敏感输入，切断回显
-      el.session.value = ''; pending.session = null; pending = null;
+      el.session.value = ''; el.inlineEmail.hidden = true;
+      pending.session = null; pending = null;
       pollStart = Date.now(); successShownFor = null;
-      showView('tracking', { step: 3 });
+      showView('tracking', { step: 2 });
       renderStatus({ publicNo: order.publicNo, status: 'QUEUED', updatedAt: new Date().toISOString(), timeline: [] });
       toast('订单已创建，请保存下方查询码。', 'success');
     } catch (err) {
       if (String(err?.code || err?.message || '').toLowerCase() === 'cdk_unavailable') {
-        el.queryInput.value = (pending && pending.cdk) || '';
+        el.queryInput.value = cdk;
         showView('query'); toast(errText(err)); return;
       }
-      backToInput(); toast(errText(err));
+      toast(errText(err));
     } finally {
-      setBusy(el.confirmCreate, false);
+      setBusy(el.toConfirm, false);
     }
   });
 
@@ -393,7 +402,7 @@
     try {
       const { order } = await api.getStatus(q);
       pollStart = Date.now(); successShownFor = order.status === 'SUCCESS' ? null : successShownFor;
-      showView('tracking', { step: 3 });
+      showView('tracking', { step: 2 });
       renderStatus(order);
     } catch (err) { toast(errText(err)); }
     finally { setBusy(el.querySubmit, false); }
