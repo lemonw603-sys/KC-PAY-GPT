@@ -6,7 +6,7 @@
 - 改动为纯展示层 + 一处后端映射（`order-status-service` `CUSTOMER_STATUS` 合并 `CARD_READY→PREPARING`，7 步收 6 步）；未改客户 API 语义、订单状态机、资金/付款/对账、任何 migration；核心不变量（邮箱建单前可见/点击才建单 1 次/Session 清空/客户不见内部态）保留。
 - 验证：后端 6 步映射测试通过；`v1` 全量 516/472 通过、1 失败（admin 后台 `admin.js?v=21` vs 测试 `v=20`，**预存漂移、本次未动 admin、git 确认**）、43 跳过；本地预览桌面 1440px + 移动 375px 渲染核对通过（横向进度条 75%/6 节点、金徽章、邮箱就地核对、移动端 stepper 无溢出）。
 - 详见 `docs/2026-09-03_customer-page-redesign-v2-implementation.md`；预览定稿 Artifact 用户已确认。
-- 待部署：备份 DB/unit/current → 落 4 文件+资源版本 → release 化原子切换 → 只读复验（health/ready、readiness、公网 CSP、Console）→ 留回滚点 → 单独确认。**部署前不动生产客户页。**
+- **已部署（2026-09-03）**：用户确认后从本地 Mac scp 4 个改动文件到生产、复制当前 release 新建 `20260901…7bad460` 的副本为 `/opt/pojia/releases/20260903-customer-redesign-3cef082`、覆盖 4 文件、原子切 `current`、`systemctl restart pojia-web`。复验：`/health/ready`=`{"status":"ready"}`、`pojia-web`=active、current 已指向新 release。回滚点保留旧 release `…browser-access-block-7bad460`（`ln -sfn <旧> current && restart`）。生产非 git 部署（release 目录 + 符号链接）。**2026-09-03 已补客户页真实渲染现场验证**：公网 curl 核实生产 serve 新版 `customer.css`/`customer.js`（含 `--brand:#0b7d5a`/`PROGRESS_PCT`/`animateProgress`）、`index.html` 引用 `?v=10`、CSP 同源放行；重建自包含预览走真实前端渲染路径目视确认深色 / 浅色输入页 + 跟踪进度（PAYING 55%/第 3-6 步/6 节点递进）三态正确。Browser pane 首屏"裸奔"系内置浏览器对 `customer.js` 文件名的 `ERR_BLOCKED_BY_CLIENT` 客户端拦截假阳性、非生产问题（服务器 200 + 正确 content-type 已 curl 证明）。
 
 ## 2026-08-31｜正式订单付款前暂停测试窗口
 

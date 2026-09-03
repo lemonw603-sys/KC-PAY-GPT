@@ -2,12 +2,14 @@
 
 > 只保留当前有效事实；历史过程查 `HANDOFF_LOG.md`，方向与顺序查 `PROJECT_MAP.md`，全链路和验收细则查 `PROJECT_OPERATING_MODEL.md`。
 > 本快照已现场核对生产 release、systemd、Worker 进程环境、数据库 Provider account 和只读 readiness；Browser 主线只读回归证据见 `docs/2026-09-01_browser-main-readonly-regression.md`。
+> **2026-09-03 增量**：客户充值页 v2 改版 release 已部署并公网现场渲染验证（见 §1）；本次仅重核客户页 release 与渲染，§2–§5 的业务门禁 / 资金 / 卡片沿用 2026-09-02 00:32 核对基线，未重新现场核对。
 
 ## 1. 代码、release 与服务
 
-- 生产已部署 Browser 访问阻断重试修复 `7bad460`；该 release 同时包含 Provider 失败原因透传、后台刷新、卡片异常占用释放、客户充值页重设计和供应规划修复。
-- 生产 `/opt/pojia/current`：`/opt/pojia/releases/20260901-browser-access-block-7bad460f26d311d8f15103c86933a276cf4b9d14`；直接回滚点为 `/opt/pojia/releases/20260901-provider-reason-569e8ee`。
+- 生产当前 release `20260903-customer-redesign-3cef082`（打包 HEAD `3cef082` = 接手审计报告 + 本地预览 gitignore；含客户页 v2 改版 commit `67b1598`）；在前序 release `7bad460`（Browser 访问阻断重试修复、Provider 失败原因透传、后台刷新、卡片异常占用释放、客户充值页重设计、供应规划修复）基础上叠加客户充值页 6 步横向进度/去二次确认/3 步骤条/配色升级改版。
+- 生产 `/opt/pojia/current`：`/opt/pojia/releases/20260903-customer-redesign-3cef082`；直接回滚点为 `/opt/pojia/releases/20260901-browser-access-block-7bad460f26d311d8f15103c86933a276cf4b9d14`（`ln -sfn <旧 release> current && systemctl restart pojia-web`）。
 - 客户页已完成公网桌面/390px 移动端、教程弹层、真实历史订单查询、CSP、静态资源哈希和 Console 复验；真实成功订单的成功邮箱/时间线仍待下一单验收。详细证据见 `docs/2026-09-01_customer-recharge-redesign-production-candidate.md`。
+- 客户页 v2 改版（2026-09-03 部署 `3cef082`）：去二次确认一步建单、6 步横向进度条（大号百分比 + easeOutCubic 平滑动画 + 6 节点依次递进）、3 步骤条（填写资料→开通处理→开通完成）、祖母绿压深 + 香槟金点缀配色；资源版本 `?v=10`。公网 curl 现场核实生产 serve 新版 `customer.css`（32213B，含 `--brand:#0b7d5a`/`--gold:#a9843f`）、`customer.js`（22971B，含 `CANON`/`PROGRESS_PCT`/`animateProgress`/`renderProgress`）、`index.html` 引用 `?v=10`，CSP `style-src/script-src 'self'` 放行同源资源；重建自包含预览走真实前端渲染路径目视确认深色/浅色输入页 + 跟踪进度（PAYING 55%/第 3-6 步/6 节点递进）三态正确。实施与验证记录见 `docs/2026-09-03_customer-page-redesign-v2-implementation.md`。
 - `pojia-web.service=active`；`pojia-worker.service=active`。
 - `pojia-browser-worker.service=inactive/disabled`（本轮曾短暂启动非付款测试，结束后已停止）。
 - `pojia-card-stock-runner.timer`、`pojia-card-funding.timer`、`pojia-card-funding-reconcile.timer` 均 active/enabled；最新 migration 为 `044_operator_alert_actionability`。
