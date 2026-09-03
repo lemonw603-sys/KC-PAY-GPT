@@ -49,21 +49,21 @@
 }
 
 :root[data-theme="dark"] {
-  --bg: #0a0e0c;
-  --bg-glow: #121a16;
-  --surface: #121814;
-  --surface-2: #18201b;
-  --surface-3: #212c25;
+  --bg: #070a08;
+  --bg-glow: #0e1712;
+  --surface: #18211c;
+  --surface-2: #1f2a23;
+  --surface-3: #29352e;
   --ink: #e9efeb;
   --ink-2: #a2ada6;
   --ink-3: #6b766e;
-  --line: #24302a;
-  --line-strong: #354339;
+  --line: #2e3c34;
+  --line-strong: #415046;
   --brand: #2fc48d;
   --brand-ink: #5cd9ab;
   --brand-soft: #0f2b20;
   --gold: #d4b072;
-  --gold-ink: #e2c48d;
+  --gold-ink: #f4d488;
   --gold-soft: #2a2113;
   --accent-ink: #eef4f0;      /* 深色下主 CTA 用亮底深字 */
   --accent-ink-2: #dce6e0;
@@ -82,21 +82,21 @@
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg: #0a0e0c;
-    --bg-glow: #121a16;
-    --surface: #121814;
-    --surface-2: #18201b;
-    --surface-3: #212c25;
+    --bg: #070a08;
+    --bg-glow: #0e1712;
+    --surface: #18211c;
+    --surface-2: #1f2a23;
+    --surface-3: #29352e;
     --ink: #e9efeb;
     --ink-2: #a2ada6;
     --ink-3: #6b766e;
-    --line: #24302a;
-    --line-strong: #354339;
+    --line: #2e3c34;
+    --line-strong: #415046;
     --brand: #2fc48d;
     --brand-ink: #5cd9ab;
     --brand-soft: #0f2b20;
     --gold: #d4b072;
-    --gold-ink: #e2c48d;
+    --gold-ink: #f4d488;
     --gold-soft: #2a2113;
     --accent-ink: #eef4f0;
     --accent-ink-2: #dce6e0;
@@ -188,6 +188,8 @@ body {
   box-shadow: var(--shadow-lg);
   padding: 26px 24px;
 }
+:root[data-theme="dark"] .card { border-color: var(--line-strong); box-shadow: var(--shadow-lg), inset 0 1px 0 rgba(255,255,255,.07); }
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]) .card { border-color: var(--line-strong); box-shadow: var(--shadow-lg), inset 0 1px 0 rgba(255,255,255,.07); } }
 .card__head { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; margin-bottom: 20px; }
 .card__title { margin: 0; font-size: 22px; font-weight: 760; letter-spacing: -.02em; }
 .card__sub { margin: 6px 0 0; font-size: 14px; color: var(--ink-2); }
@@ -409,6 +411,8 @@ body {
   background: linear-gradient(90deg, var(--status-accent), color-mix(in srgb, var(--status-accent) 55%, var(--gold)));
   box-shadow: 0 0 14px color-mix(in srgb, var(--status-accent) 45%, transparent);
   transition: width .5s cubic-bezier(.33,.85,.3,1); }
+:root[data-theme="dark"] .hp__fill { background: linear-gradient(90deg, var(--brand) 6%, var(--gold)); }
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]) .hp__fill { background: linear-gradient(90deg, var(--brand) 6%, var(--gold)); } }
 .hp__fill::after { content: ""; position: absolute; inset: 0; background: linear-gradient(90deg, transparent, rgba(255,255,255,.45), transparent); animation: hp-shine 2.1s ease-in-out infinite; }
 .status-card.is-terminal .hp__fill::after { animation: none; }
 @keyframes hp-shine { 0% { transform: translateX(-120%); } 55%,100% { transform: translateX(360%); } }
