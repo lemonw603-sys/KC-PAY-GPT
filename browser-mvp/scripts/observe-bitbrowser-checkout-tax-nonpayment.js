@@ -257,9 +257,9 @@ async function readTotals(page) {
   const summary = page.locator(SUMMARY_SELECTOR);
   if (await summary.count() !== 1) throw new Error('checkout summary is unavailable');
   const text = await summary.innerText();
-  const base = moneyAfter(text, ['Monthly subscription', '月度订阅']);
+  const base = moneyAfter(text, ['Monthly subscription', '月度订阅', '按月订阅']);
   const tax = moneyAfter(text, ['VAT(?: \\(12%\\))?', 'Estimated tax', '预估税费']);
-  const total = moneyAfter(text, ['Due today', 'Total due today', '今日应付']);
+  const total = moneyAfter(text, ['Due today', 'Total due today', '今日应付金额', '今日应付']);
   if (!base || !total) throw new Error('checkout totals were incomplete');
   return { base, tax, total };
 }

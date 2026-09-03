@@ -134,7 +134,8 @@
 - 本轮已按真实业务创建测试 CDK+Session 订单，临时切换默认路线为 Browser；系统自动开卡并分配后，Browser 访问被 ChatGPT/网络返回 `CHATGPT_ACCESS_BLOCKED`，在付款前安全终止。测试订单、资金风险、租约和 Browser Worker 已清理，默认路线已恢复 API。
 - 已修复：`CHATGPT_ACCESS_BLOCKED`、Checkout 导航/观察阻断不再回到 `CARD_READY` 重排 `SUBMIT_RECHARGE`；改为终态 `RECHARGE_FAILED`，避免重复创建 attempt。修复已部署到当前 release 并通过定向测试。
 - 单 Profile Delaware 非付款税费复验已完成：测试 Session 身份匹配且为 FREE，真实 ChatGPT Plus Checkout 填入卡片和 Delaware 账单地址后，稳定金额仍为基础价 `PHP 982.14` + VAT `PHP 117.86` = `PHP 1100.00`；Subscribe 可用但未点击，`submitCalls=0`，字段/Session/Profile 已清理。不能再把免税州地址视为菲律宾 Checkout 的免税规则或成本依据（详见 `docs/browser-research/BITBROWSER_DELAWARE_NONPAYMENT_TAX_OBSERVATION_2026-09-03.md`）。
-- 税费观察器已补齐 Checkout 创建、billing snapshot、pricing config、Stripe 脱敏路径和填卡/地址前后金额时间线；全量 `150 total / 145 passed / 5 environment-skipped / 0 failed`。这只是代码准备，尚未执行新一轮线上 A/B；下一次先证明地址是否进入权威 snapshot，再决定是否比较显式 API 创建或卡 BIN（详见 `docs/browser-research/PHILIPPINES_CHECKOUT_TAX_OBSERVER_ENHANCEMENT_2026-09-03.md`）。
+- 税费观察器已补齐 Checkout 创建、billing snapshot、pricing config、Stripe 脱敏路径和填卡/地址前后金额时间线。美国出口诊断对照已实跑；菲律宾出口内的账号/创建路径/卡 BIN 分流 A/B 仍未执行。当前 Browser 全量 `151 total / 146 passed / 5 environment-skipped / 0 failed`。
+- 美国出口一次性非付款对照已完成：常规升级入口直接选中 `US/USD`，地址前 `USD 22.40`，填写 `US/DE` 后税额变为 0、总额 `USD 20.00`；`submitCalls=0`。这证明出口会影响定价轨道，但没有复现 `PHP 982.14`，也不改变生产菲律宾出口决策。若继续税费定位，下一窄实验是 `US 出口 + 创建时显式 PH/PHP`（详见 `docs/browser-research/US_EXIT_DELAWARE_TAX_AB_NONPAYMENT_2026-09-04.md`）。
 - 容量方向已确认并完成真实 1→3→6 Profile 访问/隔离验收：6 个常驻隔离 Profile，单 Profile 串行、Profile 间并行；六路同时达到 ChatGPT HTTP 200、Cookie/localStorage 隔离和运行时指纹摘要差异 `6/6`。已修复客户清理误删 Cloudflare 运行 Cookie，以及生产池并发突发启动造成 Local API 部分成功的问题；生产池现为物理窗口顺序打开、页面任务并行。六路共用一个菲律宾出口，用户确认现阶段不以多出口作为阻断（详见 `docs/browser-research/BITBROWSER_SIX_PROFILE_ACCESS_AND_ISOLATION_VERIFICATION_2026-09-03.md`）。
 - 非付款闭环通过后，再单独确认首笔真实 Browser 付款；成功后再讨论把全局默认路线从 API 切为 Browser。
 
@@ -180,7 +181,7 @@
 
 - API 生产线保持默认路线；Browser Worker 仍为 `inactive/disabled`，本轮未部署、未付款。
 - BitBrowser 单 Profile 非付款闸门已实测通过：公开页面可达，测试 Session 身份匹配且账号为 FREE；进入真实 ChatGPT Plus Checkout 并填写卡片和 Delaware 地址后，金额仍为基础价 `PHP 982.14`、VAT `PHP 117.86`、合计 `PHP 1100.00`。Subscribe 可用但未点击，`submitCalls=0`，结束后已清理。
-- 成本口径已纠正：运营方确认近期多单确实以 `PHP 982.14` 成交，仓库内两笔真实成功 API 证据也独立支持该价格；因此 `1100.00` 不是菲律宾充值不可避免的统一成本，只是当前 Browser 环境的实测结果。运营方同时确认 Browser 出口必须保持菲律宾；付款前新增的非付款税费分流 A/B 只比较账号、Checkout 创建路径、卡 BIN/支付信息与账单资料，不再把美国出口列为候选。
+- 成本口径已纠正：运营方确认近期多单确实以 `PHP 982.14` 成交，仓库内两笔真实成功 API 证据也独立支持该价格；因此 `1100.00` 不是菲律宾充值不可避免的统一成本，只是当前 Browser 环境的实测结果。运营方同时确认 Browser 生产出口保持菲律宾；美国出口只完成了一次明确允许的诊断对照，不列为当前生产候选。
 - `codex/browser` 已基于当前 main 实现 1–6 Profile 常驻池：单 Profile 单订单、Profile 间并行；订单间清理页面/Cookie/storage；清理失败隔离槽位；第 7 个并发拒绝。
 - 对抗审查已修复地址/税费与付款许可顺序：先无付款地填写卡和账单地址并读取最终总额，再将 Checkout 摘要绑定权威 permit/submit intent；permit 后金额漂移仍停止。
 - 生产形态准备已补齐：macOS launcher 支持单/多 Profile、默认 `ONCE`/显式 `CONTINUOUS`；六 lane 共用一个进程 heartbeat，默认每 10 秒更新，不再随 lane 数放大数据库写入；配置模板已同步且未含真实 ID/代理/密钥。

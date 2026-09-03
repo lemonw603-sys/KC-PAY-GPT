@@ -33,6 +33,22 @@ async function uniqueVisibleSelector(page, selectors, label, { allowEquivalentMu
   return matches[0];
 }
 
+async function waitForUniqueVisibleSelector(page, selectors, label, options, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      return await uniqueVisibleSelector(page, selectors, label, options);
+    } catch (error) {
+      // A freshly bootstrapped ChatGPT session can pass the account probe
+      // before the shell has hydrated its upgrade controls. Only retry the
+      // zero-match state; ambiguous or unsafe controls must still fail closed.
+      if (error?.message !== `${label} must resolve to one visible control`) throw error;
+    }
+    await page.waitForTimeout(100);
+  }
+  throw new ContractError(`${label} must resolve to one visible control`);
+}
+
 async function uniqueVisibleButton(scope, labels, label, { optional = false } = {}) {
   const matches = [];
   for (const name of labels || []) {
@@ -69,7 +85,9 @@ async function safeClick(locator, label, assertContinue, timeoutMs) {
   await assertContinue();
   await assertSafeNavigationControl(locator, label);
   try {
-    await locator.click({ timeout: Math.min(timeoutMs, 5_000) });
+    // Cold fingerprint profiles can expose a visible control before the
+    // surrounding React shell stops intercepting pointer events.
+    await locator.click({ timeout: Math.min(timeoutMs, 15_000) });
   } catch (error) {
     throw new ContractError(`${label} click failed: ${String(error.message || error).split('\n')[0]}`);
   }
@@ -121,9 +139,9 @@ export async function navigateToChatGPTPlusCheckout(page, contract = CHATGPT_PLU
 
   const actions = [];
   if (!await checkoutReady(page, contract)) {
-    const openPricing = await uniqueVisibleSelector(page, contract.openPricingSelectors, 'open pricing control', {
+    const openPricing = await waitForUniqueVisibleSelector(page, contract.openPricingSelectors, 'open pricing control', {
       allowEquivalentMultiple: true,
-    });
+    }, timeoutMs);
     await safeClick(openPricing, 'open pricing control', assertContinue, timeoutMs);
     actions.push('pricing-opened');
     await waitForState(page, async () => {

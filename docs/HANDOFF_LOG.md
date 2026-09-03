@@ -1109,3 +1109,13 @@
 - 社区/公开实现对照表明 `982.14` 可能是未税 PSP 净价，且权威账单地址通过 `/backend-api/payments/checkout/snapshot` 更新；当前最优先验证 snapshot 是否发生，而不是继续随机换地址。
 - Browser 全量 `150 total / 145 passed / 5 environment-skipped / 0 failed`。本轮无 BitBrowser、Session、卡片、Checkout、Provider、生产或付款动作。
 - 证据：`docs/browser-research/PHILIPPINES_CHECKOUT_TAX_OBSERVER_ENHANCEMENT_2026-09-03.md`。
+
+## 2026-09-04｜美国出口 Delaware 非付款对照完成
+
+- 用独立一次性 BitBrowser Profile 和美国出口执行真实 ChatGPT Plus Checkout 非付款对照；Session 身份匹配、账号为 FREE。
+- 常规升级入口选中 `US/USD`：地址前 `20.00 + 2.40 = 22.40 USD`，填写 `US/DE` 后 `20.00 + 0.00 = 20.00 USD`。
+- Checkout create 回读 `US/USD/custom`，地址后观察到 snapshot 204；本次未复现 `PHP 982.14`，下一窄对照应为 `US 出口 + 创建时显式 PH/PHP`。
+- Subscribe 未点击、`submitCalls=0`，没有 Provider/卡台写入；敏感临时文件、字段、Cookie/storage 与 Profile 已清理。
+- 现场暴露并修正了 UI hydration 时序、新中文金额标签和 Stripe 合法 `cookie` URL 导致的证扫误报。全量 `151/146 pass/5 environment-skip/0 fail`。
+- 生产、默认 API 路线和 Browser Worker 状态均未改变。
+- 证据：`docs/browser-research/US_EXIT_DELAWARE_TAX_AB_NONPAYMENT_2026-09-04.md`。

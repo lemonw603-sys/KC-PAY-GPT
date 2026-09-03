@@ -147,6 +147,16 @@
 - 单 Profile 完成后曾推进 3 Profile 非付款同开/隔离验证；其现场结果和当前阻塞以第 10 节为准。真实付款与部署仍未确认。
 - 证据：`docs/browser-research/BITBROWSER_DELAWARE_NONPAYMENT_TAX_OBSERVATION_2026-09-03.md`。
 
+## 9.1 2026-09-04 美国出口 Delaware 非付款对照
+
+- 独立 BitBrowser Profile 现场确认美国出口和 ChatGPT HTTP 200；测试 Session 身份匹配且为 FREE。
+- 常规升级入口进入 `US/USD` Checkout：填卡/地址前为 `USD 20.00 + 2.40 tax = 22.40`，填写 `US/DE` 后为 `USD 20.00 + 0.00 tax = 20.00`。
+- pricing config 与 Checkout create 均指向 `US/USD`；地址后 snapshot 返回 204，但当次未观察到 request body，不宣称 snapshot 内部地区字段已证实。
+- Subscribe 可用但未点击，`submitCalls=0`；字段、Cookie/storage、一次性敏感文件和 Profile 均已清理。
+- 本次未复现 `PHP 982.14`；只证明常规入口在美国出口下切到 US/USD 轨道。生产 Browser 菲律宾出口决策未变。
+- 本轮修正冷 Profile UI hydration 等待、中文金额标签和证据安全扫描误报；Browser 全量 `151 total / 146 passed / 5 environment-skipped / 0 failed`。
+- 证据：`docs/browser-research/US_EXIT_DELAWARE_TAX_AB_NONPAYMENT_2026-09-04.md`。
+
 ## 10. 2026-09-03 Browser 三 Profile 访问与隔离闸门
 
 - BitBrowser 本地已由 1 个扩为 3 个候选 Profile；两个新 Profile 禁止账号/Session/Cookie/storage/支付地址同步，opaque ID 只存在本机 `0600` Git 忽略配置。
@@ -181,7 +191,7 @@
 - 运营方确认近期已有多笔订单以 `PHP 982.14` 实际成交；仓库内 2026-08-18 独立成功 PoC 和 2026-08-29 第二笔真实 API 成功订单也记录 `982.14 PHP`，并有卡台 PURCHASE 证据。
 - 当前 BitBrowser 的 `982.14 + VAT 117.86 = 1100.00 PHP` 只证明现有菲律宾 Profile、账号、网络与支付定位信号组合会加税，不能推导成菲律宾所有充值都必须支付 `1100.00`。
 - Delaware 地址单变量已经证明不足以去除 VAT；下一阶段需要保持零付款，用受控 A/B 分离账号地区、Checkout 创建路径和支付/账单定位信号，并读取地址填写后的最终稳定总额。
-- 运营方进一步确认出口必须使用菲律宾；因此美国出口线索退出实施矩阵。后续保持同一菲律宾出口，只分离账号/定价轨道、Checkout 创建路径、卡 BIN/支付信息及账单资料。
+- 运营方进一步确认生产出口保持菲律宾；美国出口不进入生产实施矩阵。2026-09-04 美国出口仅在单次明确允许下作了诊断对照；生产方向未变。
 - 该成本机制必须在首笔真实 Browser 付款前确认；证据和实验矩阵见 `docs/browser-research/PHILIPPINES_VAT_ROUTE_DIFFERENTIAL_2026-09-03.md`。
 
 ## 14. 2026-09-03 菲律宾 Checkout 税费观察器已补强（代码验证，未现场重跑）

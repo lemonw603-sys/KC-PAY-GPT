@@ -110,7 +110,7 @@ function extractPricingSignals(value, output = {}, prefix = '', depth = 0) {
         ? safeString(child, { max: 80, pattern: /^[A-Za-z0-9 _.,%+-]+$/ })
         : Number.isFinite(child) || typeof child === 'boolean' ? child : null;
       if (safeValue !== null) output[path] = safeValue;
-    } else if (child && typeof child === 'object') {
+    } else if (!forbiddenKey && child && typeof child === 'object') {
       extractPricingSignals(child, output, path, depth + 1);
     }
   }
@@ -183,8 +183,16 @@ export function assertEvidenceIsSecretFree(evidence, forbiddenValues = []) {
     'authorization', 'cookie', 'sessiontoken', 'accesstoken', 'pan', 'cvc',
     'line1', 'postalcode', 'client_secret', 'session_id', 'checkout_session_id',
   ];
-  for (const name of forbiddenNames) {
-    if (serialized.toLowerCase().includes(name)) throw new Error(`evidence contains forbidden field: ${name}`);
+  const pending = [evidence];
+  while (pending.length) {
+    const value = pending.pop();
+    if (!value || typeof value !== 'object') continue;
+    for (const [key, child] of Object.entries(value)) {
+      const normalizedKey = key.toLowerCase().replace(/[^a-z0-9]/g, '');
+      const forbidden = forbiddenNames.find((name) => normalizedKey.includes(name.replace(/[^a-z0-9]/g, '')));
+      if (forbidden) throw new Error(`evidence contains forbidden field: ${forbidden}`);
+      if (child && typeof child === 'object') pending.push(child);
+    }
   }
   for (const value of forbiddenValues.filter(Boolean).map(String)) {
     if (serialized.includes(value)) throw new Error('evidence contains a forbidden value');

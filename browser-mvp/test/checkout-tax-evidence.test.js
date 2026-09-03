@@ -99,6 +99,7 @@ test('pricing config response keeps tax and PSP signals but drops identifiers an
     JSON.stringify({
       country: 'PH', currency: 'PHP', plus: { price: 982.14, tax_inclusive: false, vat_rate: 12 },
       psp_override: { amount: 982.14, currency: 'PHP' },
+      cookie_preferences: { price: 1, currency: 'USD' },
       client_secret: 'never-log', customer_email: 'test@example.com', checkout_session_id: 'oaics_never',
     }),
   );
@@ -118,4 +119,12 @@ test('unrelated traffic and invalid modes are ignored or nulled', () => {
   assert.equal(evidence.checkoutUiMode, null);
   assert.equal(evidence.billingCountry, null);
   assert.equal(evidence.billingCurrency, null);
+});
+
+test('secret scan rejects forbidden field names but not harmless URL path text', () => {
+  assert.equal(assertEvidenceIsSecretFree({ path: '/cookie-preferences/status' }), true);
+  assert.throws(
+    () => assertEvidenceIsSecretFree({ nested: { client_secret: 'redacted' } }),
+    /forbidden field: client_secret/,
+  );
 });
