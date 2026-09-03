@@ -164,3 +164,12 @@
 - 修正后的生产池复验中，第 4 个 Profile 曾有一次页面未正常到达；单槽一次复验恢复 HTTP 200，随后完整六路再次 `6/6` 通过，当前没有固定坏槽证据。
 - Session 注入、卡字段写入、submit、Provider/卡台写入均为 0；Browser 全量 `141 total / 137 passed / 4 environment-skipped / 0 failed`。生产 Browser Worker仍未部署/启用。
 - 下一步是六 Profile 接入生产形态但仍不付款的本地 Worker/共享队列闭环，再单独确认首笔真实 Browser 付款。证据：`docs/browser-research/BITBROWSER_SIX_PROFILE_ACCESS_AND_ISOLATION_VERIFICATION_2026-09-03.md`。
+
+## 12. 2026-09-03 Browser 六 Profile 共享队列闭环尝试
+
+- 一次性 MySQL 8.4、完整 migrations 和六条合成 dispatch job 已用于真实六 Profile 生产 Worker 形态测试；无客户 Session、真实卡资料、ChatGPT Checkout、Provider/卡台调用或付款。
+- 第一轮发现生产时序缺陷：Worker 先领取六个任务再等待 Profile 顺序冷启动，后排任务可能在窗口就绪前租约过期，最终出现 `ACTION_TIMEOUT` 后 safe-abort 又遇到 `LEASE_EXPIRED`。
+- 代码已改为 Worker 启动时先 warmup 所需 Profile，全部就绪后才启动队列 lane；账户级启动错误只调用一次 Local API并阻断剩余排队启动。
+- 修正后的第二轮在 warmup 第一个窗口收到 `BITBROWSER_DAILY_OPEN_LIMIT`，发生在队列领取之前；当天额度已用完，因此不能宣称共享队列闭环已通过。
+- 当前 Browser 全量 `143 total / 138 passed / 5 environment-skipped / 0 failed`；六个真实 Profile 均关闭，一次性数据库已删除。
+- 唯一下一步：每日额度恢复后原样重跑隔离集成项，验收六 job 全部安全收敛且付款 permit/submit/活动租约为 0。证据：`docs/browser-research/BITBROWSER_SIX_PROFILE_SHARED_QUEUE_NONPAYMENT_ATTEMPT_2026-09-03.md`。

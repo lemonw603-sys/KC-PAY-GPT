@@ -379,6 +379,7 @@ test('six-Profile pool reserves six distinct lanes and rejects a seventh concurr
     profileIds,
     enabled: true,
   });
+  assert.deepEqual(await pool.warmup(createChromeControlManifest()), { warmed: 6 });
   const runtimes = await Promise.all(profileIds.map((_, index) => (
     pool.open(createChromeControlManifest(), { profileRef: `profile:run-00${index + 1}` })
   )));
@@ -392,6 +393,29 @@ test('six-Profile pool reserves six distinct lanes and rejects a seventh concurr
   const reused = await pool.open(createChromeControlManifest(), { profileRef: 'profile:run-reused' });
   assert.equal(openCounts.get(reused.vendorProfileId), 1);
   await pool.close(reused);
+  await pool.shutdown();
+});
+
+test('account-wide startup rejection stops the remaining warmup API calls', async () => {
+  let openCalls = 0;
+  const pool = new BitBrowserProfilePoolRuntimeAdapter({
+    browserType: { connectOverCDP: async () => undefined },
+    apiClient: {
+      health: async () => ({ ready: true }),
+      openProfile: async () => {
+        openCalls += 1;
+        throw new BitBrowserRuntimeError('fixture account limit', 'BITBROWSER_DAILY_OPEN_LIMIT');
+      },
+      closeProfile: async () => undefined,
+    },
+    profileIds: Array.from({ length: 6 }, (_, index) => `bit-profile-00${index + 1}`),
+    enabled: true,
+  });
+  await assert.rejects(
+    () => pool.warmup(createChromeControlManifest()),
+    (error) => error.code === 'BITBROWSER_DAILY_OPEN_LIMIT',
+  );
+  assert.equal(openCalls, 1);
   await pool.shutdown();
 });
 

@@ -252,3 +252,11 @@ git diff --check
 - 修正后的生产池首次现场复验有一个新 Profile 临时未正常到达页面；单槽一次复验恢复，随后完整六路再次 `6/6` 通过，不存在已确认的固定坏槽。
 - 全量测试 `141 total / 137 passed / 4 environment-skipped / 0 failed`；无 Session、卡字段、submit、Provider/卡台写入、生产部署或付款。
 - 证据：`docs/browser-research/BITBROWSER_SIX_PROFILE_ACCESS_AND_ISOLATION_VERIFICATION_2026-09-03.md`。
+
+## 18. 2026-09-03 六 Profile 共享队列非付款尝试
+
+- 隔离 MySQL、六条合成共享 dispatch job 和真实六 Profile 的生产 Worker 形态首次实跑，发现先 claim 后冷启动会让后排运行租约在 Profile 就绪前过期。
+- 已实现 pool warmup：六个物理窗口顺序启动并清理完成后才启动共享队列 lane；窗口就绪后仍六路并行。账户级启动错误会阻断同一批剩余启动请求。
+- 修正后的现场复验被 BitBrowser 当日打开窗口额度阻断在第一个 warmup，尚未领取队列任务；因此集成闭环仍待额度恢复后原样重跑。
+- Browser 全量 `143 total / 138 passed / 5 environment-skipped / 0 failed`；Profile 全关、隔离数据库已删除、零付款与零生产改动。
+- 证据：`docs/browser-research/BITBROWSER_SIX_PROFILE_SHARED_QUEUE_NONPAYMENT_ATTEMPT_2026-09-03.md`。

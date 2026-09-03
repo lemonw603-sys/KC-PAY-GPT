@@ -1077,3 +1077,11 @@
 - 用户确认现阶段共用一个菲律宾出口即可；这不等于六出口隔离，也尚未证明长时常驻、共享队列任务领取或真实付款。
 - Browser 全量 `141 total / 137 passed / 4 environment-skipped / 0 failed`；无 Session、卡字段、submit、Provider/卡台写入、部署或付款。
 - 修正后的真实生产池复验曾出现第 4 个 Profile 一次临时页面异常；单槽一次复验恢复 HTTP 200，随后完整六路再次 `6/6` 通过，没有固定坏槽证据。
+
+## 2026-09-03｜六 Profile 共享队列实跑发现冷启动租约问题并修正
+
+- 使用一次性 MySQL 8.4、完整 migrations、六条合成订单/attempt/消费预留/dispatch job 和真实六 Profile 运行生产只读 Worker 形态；所有付款与 Provider 写开关关闭。
+- 第一轮证明原生产时序会先领取六单再等待 Profile 顺序冷启动，后排 run lease 可能过期，出现 `ACTION_TIMEOUT` 后 safe-abort 又遇到 `LEASE_EXPIRED`。
+- 已增加池 warmup，并移动到队列 lane 启动之前：Profile 全部就绪后才领单；账户级启动失败只调用一次 Local API，避免其余五个重复失败。
+- 修正后第二轮被当日 `BITBROWSER_DAILY_OPEN_LIMIT` 阻断在第一个 warmup、尚未领单；不得宣称集成闭环通过。额度恢复后只需原样重跑新集成测试。
+- 全量 `143 total / 138 passed / 5 environment-skipped / 0 failed`；六个 Profile 已关闭，一次性数据库已删除，无生产/客户/付款动作。

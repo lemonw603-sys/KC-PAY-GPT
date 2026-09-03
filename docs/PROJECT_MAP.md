@@ -104,7 +104,7 @@
 | 库存与运营覆盖 | 已部署，有历史数据缺口 | 旧批次停用、Claude 专用卡、未来新卡按证据接管 | `6807/1477` 现为 Provider `invalidating` 且保留历史 ACTIVE assignment，当前资格计算不会分配；这是系统状态与“卡实际可用”运营事实的待收敛缺口 |
 | 运营控制面 | 部分部署 | 开始营业、默认路线、就绪摘要及部分跳转；API 权限基线已恢复 | 补齐 API 权限漂移无入口；用真实运营复核入口与噪音 |
 | 客户充值页 | 已部署，待下一笔成功实单验收结果态 | Claude 单列三步设计已接入真实客户 API；生产 CSP、桌面/390px、教程、历史订单查询、时间线和 Session 更换入口已复验 | 下一笔真实成功订单验收成功邮箱、完成时间与完整时间线；不为此另造测试订单 |
-| Browser | 六 Profile 真实访问/隔离闸门已通过；付款仍未验收 | 单 Profile 已验证 Session/FREE/真实 Checkout/填卡/最终金额；六 Profile 同开 ChatGPT HTTP 200=6/6、Cookie/storage 隔离=6/6、运行时指纹摘要=6/6 | 六 Profile 共享队列非付款闭环、长时常驻、生产部署与真实付款；当前共用一个菲律宾出口 |
+| Browser | 六 Profile 真实访问/隔离闸门已通过；共享队列闭环修复待额度恢复复验；付款未验收 | 单 Profile 已验证 Session/FREE/真实 Checkout/填卡/最终金额；六 Profile HTTP/Cookie/storage/指纹摘要=6/6；冷启动已改为先预热后领单 | 重跑六 Profile 共享队列非付款闭环、长时常驻、生产部署与真实付款；当前共用一个菲律宾出口 |
 | 对账/Bark/费用监控 | 部分验收 | 资金 UNKNOWN、余额变化 Bark、交易证据基础 | 连续订单校准误报；费用标准/变化监控 |
 | 放量/恢复 | 未验收 | 备份、健康检查、回滚点 | 3–5 单→10–20 单→恢复演练→100–300 单/日 |
 
@@ -183,5 +183,5 @@
 - 对抗审查已修复地址/税费与付款许可顺序：先无付款地填写卡和账单地址并读取最终总额，再将 Checkout 摘要绑定权威 permit/submit intent；permit 后金额漂移仍停止。
 - 生产形态准备已补齐：macOS launcher 支持单/多 Profile、默认 `ONCE`/显式 `CONTINUOUS`；六 lane 共用一个进程 heartbeat，默认每 10 秒更新，不再随 lane 数放大数据库写入；配置模板已同步且未含真实 ID/代理/密钥。
 - 代码验证：Browser 普通全量 `140 total / 136 passed / 4 environment-skipped / 0 failed`；随后用全新临时 MySQL 8.4、完整 migrations 001–044 将对应 4 项逐项实跑为 `4/4 passed`；v1 repository 定向 `21/21`。
-- Browser 下一步：用现有六 Profile 配置完成生产形态但仍不付款的本地 Worker/共享队列闭环与常驻恢复；通过后再为首笔真实 Browser 付款单独确认。不同稳定出口暂不阻断当前阶段。
+- Browser 下一步：BitBrowser 每日打开额度恢复后，原样重跑现有六 Profile + 隔离 MySQL 的生产 Worker/共享队列非付款闭环；代码已修正先领单后冷启动导致租约过期的问题，但修正后现场复验尚未完成。通过后再为首笔真实 Browser 付款单独确认；不同稳定出口暂不阻断当前阶段。
 - 详细实施/审查：`docs/browser-research/BROWSER_SIX_PROFILE_POOL_IMPLEMENTATION_2026-09-02.md`、`docs/browser-research/BROWSER_SIX_PROFILE_PRODUCTION_SHAPE_PREPARATION_2026-09-02.md`。

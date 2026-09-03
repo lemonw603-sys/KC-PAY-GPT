@@ -388,6 +388,7 @@ export class BitBrowserProfilePoolRuntimeAdapter extends RuntimeAdapter {
     // one request. Serialize physical startup while keeping leased/warm lanes
     // fully concurrent after they have attached.
     this.startupTail = Promise.resolve();
+    this.startupFatalError = null;
     this.slots = normalized.map((profileId, index) => ({
       index,
       reserved: false,
@@ -408,13 +409,38 @@ export class BitBrowserProfilePoolRuntimeAdapter extends RuntimeAdapter {
     return this.apiClient.health();
   }
 
+  /**
+   * Physically start and clean the requested number of lanes before any queue
+   * job is claimed. This keeps cold-start latency outside database run leases.
+   */
+  async warmup(manifest, { count = this.slots.length } = {}) {
+    if (!Number.isInteger(count) || count < 1 || count > this.slots.length) {
+      throw new TypeError('warmup count must be between one and the Profile pool size');
+    }
+    const results = await Promise.allSettled(Array.from({ length: count }, (_, index) => (
+      this.open(manifest, { profileRef: `warmup:lane-${index + 1}` })
+    )));
+    const runtimes = results.filter((result) => result.status === 'fulfilled').map((result) => result.value);
+    const releases = await Promise.allSettled(runtimes.map((runtime) => this.close(runtime)));
+    const failure = results.find((result) => result.status === 'rejected')
+      || releases.find((result) => result.status === 'rejected');
+    if (failure) throw failure.reason;
+    return { warmed: runtimes.length };
+  }
+
   async withStartupLock(operation) {
     const previous = this.startupTail;
     let release;
     this.startupTail = new Promise((resolve) => { release = resolve; });
     await previous.catch(() => undefined);
     try {
-      return await operation();
+      if (this.startupFatalError) throw this.startupFatalError;
+      try {
+        return await operation();
+      } catch (error) {
+        if (!PROFILE_SCOPED_START_FAILURES.has(error?.code)) this.startupFatalError = error;
+        throw error;
+      }
     } finally {
       release();
     }
@@ -485,6 +511,7 @@ export class BitBrowserProfilePoolRuntimeAdapter extends RuntimeAdapter {
       slot.leaseRef = null;
       slot.quarantined = false;
     }
+    this.startupFatalError = null;
     const failures = results.filter((result) => result.status === 'rejected');
     if (failures.length) {
       throw new BitBrowserRuntimeError(

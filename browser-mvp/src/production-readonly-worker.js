@@ -233,6 +233,10 @@ export async function runProductionReadonlyBrowserWorker({
     runtimeAdapter = createProductionReadonlyRuntimeAdapter(config, { browserType, fetchImpl });
     if (typeof runtimeAdapter.checkHealth === 'function') await runtimeAdapter.checkHealth();
     if (env.BROWSER_WORKER_CHECK_ONLY === 'true') return { status: 'READY' };
+    const manifest = createChromeControlManifest();
+    if (typeof runtimeAdapter.warmup === 'function') {
+      await runtimeAdapter.warmup(manifest, { count: once ? 1 : config.workerConcurrency });
+    }
     heartbeatStarted = true;
     const wal = await new AppendOnlyWal({ filePath: config.walPath }).init();
     await wal.verify();
@@ -262,7 +266,7 @@ export async function runProductionReadonlyBrowserWorker({
       workerId: config.workerId,
       executorProfileId: config.executorProfileId,
       runtimeAdapter,
-      manifest: createChromeControlManifest(),
+      manifest,
       observation: config.observation,
       resolveObservation: chatGptReadonlyHarness
         ? async ({ orderId, baseObservation }) => ({
