@@ -233,10 +233,11 @@ git diff --check
 - 当前菲律宾定价轨道不能依赖 Delaware 地址免税；付款预算必须读取地址填写后的最终页面金额。
 - 单 Profile 非付款闸门完成；随后 3 Profile 现场尝试的结果与当前阻塞以第 16 节为准。生产 Browser Worker、真实付款及付款后闭环仍未验证。
 
-## 16. 2026-09-03 三 Profile 真实访问闸门尝试
+## 16. 2026-09-03 三 Profile 真实访问与隔离闸门
 
 - 本地新建 2 个不同步账号/Session/Cookie/storage/支付地址的候选 Profile，与原 Profile 组成 3 个本地槽位；ID 仅存 `0600` Git 忽略配置。
-- 新增三 Profile 非付款检查器；三者均可启动/CDP 接管，但两个新 Profile 在 Session 注入前访问 ChatGPT 即为 HTTP 403，菲律宾出口可见。
-- 已用单变量方式纠正新 Profile 的 Windows/Chrome 147 User-Agent 与 Mac/Chrome 148 配置不一致，并做一次仅含 Cloudflare 非登录 Cookie 的 bootstrap 对照；两者均未改变 403。对照 Cookie 已清理。
-- 结论：三 Profile 数量准备完成不等于三路可用；真实同开/隔离闸门未通过。先为一个新 Profile 通过 headed 访问或独立稳定出口建立 HTTP 200 基线，再继续 3→6；不再随机在线重试。
+- 用户分别在三个 headed Profile 建立公开页访问后，三者均有独立 PID/CDP 端口/BrowserContext，新 Profile 无 Session cookie。
+- 定位到运行时隔离缺陷：全域 Cookie 清理同时删除 Profile 自身的 Cloudflare clearance。现已改为清掉所有客户/未知 Cookie，仅恢复五类 Profile 运行 Cookie；storage 和页面仍全清。
+- 真实三路同时复验为 ChatGPT HTTP 200 `3/3`、Cookie/localStorage 隔离 `3/3`、菲律宾出口；Session/卡/submit `0`。
+- 三路共用一个出口，完整指纹差异未证明；下一步先验完整指纹和重启稳定性，再进入 6 Profile。
 - 本轮无 Session、填卡、Checkout、submit、Provider/卡台或生产动作。

@@ -239,6 +239,38 @@ test('keep-alive runtime opens once, resets customer state between jobs, and phy
   assert.ok(calls.includes('Storage.clearDataForOrigin:https://openai.com'));
 });
 
+test('customer reset preserves only Profile operational access cookies', async () => {
+  const restored = [];
+  const context = {
+    pages: () => [{ url: () => 'https://console.bitbrowser.net/' }],
+    cookies: async () => [
+      { name: 'cf_clearance', value: 'profile-access', domain: '.chatgpt.com', path: '/', secure: true, httpOnly: true, sameSite: 'None' },
+      { name: 'oai-did', value: 'profile-device', domain: '.chatgpt.com', path: '/', secure: true, sameSite: 'Lax' },
+      { name: '__Secure-next-auth.session-token', value: 'customer-secret', domain: '.chatgpt.com', path: '/', secure: true, httpOnly: true },
+      { name: 'unknown-cookie', value: 'customer-state', domain: '.chatgpt.com', path: '/' },
+    ],
+    clearCookies: async () => undefined,
+    addCookies: async (cookies) => restored.push(...cookies),
+  };
+  const browser = { contexts: () => [context], isConnected: () => true, close: async () => undefined };
+  const adapter = new BitBrowserProfileRuntimeAdapter({
+    browserType: { connectOverCDP: async () => browser },
+    apiClient: {
+      health: async () => undefined,
+      openProfile: async () => ({ cdpEndpoint: 'http://127.0.0.1:61234/' }),
+      closeProfile: async () => undefined,
+    },
+    profileId: 'bit-profile-001', enabled: true, keepAlive: true,
+  });
+  const runtime = await adapter.open(createChromeControlManifest(), { profileRef: 'profile:run-001' });
+  await adapter.close(runtime);
+  await adapter.shutdown();
+  assert.ok(restored.some((cookie) => cookie.name === 'cf_clearance'));
+  assert.ok(restored.some((cookie) => cookie.name === 'oai-did'));
+  assert.ok(restored.every((cookie) => !cookie.name.includes('session-token')));
+  assert.ok(restored.every((cookie) => cookie.name !== 'unknown-cookie'));
+});
+
 test('keep-alive runtime fails closed and shuts down when customer isolation reset fails', async () => {
   const calls = [];
   const context = {

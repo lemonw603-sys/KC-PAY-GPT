@@ -1060,3 +1060,10 @@
 - 纠正新 Profile 指纹配置/User-Agent 明显不一致后仍 403；仅含 Cloudflare 非登录 Cookie 的 bootstrap 对照也无效，已清理。
 - 按在线窄探测规则停止继续随机尝试；三个 Profile 全部关闭。本轮无 Session、卡片、Checkout、付款或生产变更。
 - 下一步先让一个新 Profile 经自身 headed 访问或另一已验证稳定出口取得 HTTP 200，再恢复三路隔离测试；不得把 3 个 Profile 已创建写成三路已可用。
+
+## 2026-09-03｜用户 headed 建立访问后三 Profile 隔离复验通过
+
+- 用户手动打开三个 Profile 后，现场为 3 个 PID、3 个 CDP 端口和 3 个独立 BrowserContext；两个新 Profile 有各自 Cloudflare 运行 Cookie且无 Session cookie。
+- 定位到上一轮自动 403 的直接原因：运行时客户清理误删 Cloudflare clearance。修复为全清客户/未知 Cookie 后只恢复严格五项 Profile 运行 Cookie allowlist，storage/页面继续全清。
+- 单测 16/16；真实三路同时为 ChatGPT HTTP 200 `3/3`、Cookie 隔离 `3/3`、localStorage 隔离 `3/3`、菲律宾出口；Session/卡/submit 为 0。
+- 三路当前共用同一出口，完整指纹差异尚未验证；自动复验结束后三个 Profile 均关闭。未部署、未付款。

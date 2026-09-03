@@ -32,7 +32,15 @@ function parseTrace(value) {
 }
 
 async function clearLane(context) {
-  await context.clearCookies();
+  const keepNames = new Set(['__cf_bm', '__cflb', '_cfuvid', 'cf_clearance', 'oai-did']);
+  const operationalCookies = (await context.cookies()).filter((cookie) => keepNames.has(cookie.name)
+    && /(^|\.)(chatgpt|openai)\.com$/i.test(String(cookie.domain || '').replace(/^\./, '')))
+    .map((cookie) => Object.fromEntries(Object.entries({
+      name: cookie.name, value: cookie.value, domain: cookie.domain, path: cookie.path || '/',
+      expires: cookie.expires, httpOnly: cookie.httpOnly, secure: cookie.secure, sameSite: cookie.sameSite,
+    }).filter(([, value]) => value !== undefined)));
+  await context.clearCookies({ domain: /(^|\.)(chatgpt|openai)\.com$/i });
+  if (operationalCookies.length) await context.addCookies(operationalCookies);
   const anchor = context.pages()[0] || await context.newPage();
   const session = await context.newCDPSession(anchor);
   try {

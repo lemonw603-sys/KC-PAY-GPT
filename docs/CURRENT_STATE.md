@@ -145,10 +145,11 @@
 - 单 Profile 完成后曾推进 3 Profile 非付款同开/隔离验证；其现场结果和当前阻塞以第 10 节为准。真实付款与部署仍未确认。
 - 证据：`docs/browser-research/BITBROWSER_DELAWARE_NONPAYMENT_TAX_OBSERVATION_2026-09-03.md`。
 
-## 10. 2026-09-03 Browser 三 Profile 准备与访问闸门
+## 10. 2026-09-03 Browser 三 Profile 访问与隔离闸门
 
 - BitBrowser 本地已由 1 个扩为 3 个候选 Profile；两个新 Profile 禁止账号/Session/Cookie/storage/支付地址同步，opaque ID 只存在本机 `0600` Git 忽略配置。
-- 三个 Profile 均可由 Local API 启动和 CDP 接管；两个新 Profile 在无 Session、无卡阶段单独访问 ChatGPT 均为 HTTP 403，trace 仍为菲律宾出口。调整明显不一致的 Windows/Chrome 147 User-Agent 与 Mac/Chrome 148 配置后结果不变。
-- Cloudflare 非登录 bootstrap Cookie 对照也未使新 Profile 通过；对照 Cookie 已从新 Profile 清理，所有 Profile 已关闭。
-- 因此三 Profile 真实访问/隔离测试未通过，不能进入 6 Profile。下一步先让一个新 Profile 经自身 headed 访问或另一稳定出口取得 HTTP 200，再恢复三路测试。
+- 用户在三个独立 headed Profile 打开 ChatGPT 后，现场确认 3 个 PID、3 个 CDP 端口、每个 1 个 BrowserContext；新 Profile 取得各自 Cloudflare 运行 Cookie，没有 Session cookie。
+- 查明并修复此前 403 的直接机制问题：客户隔离原先清掉全部 ChatGPT/OpenAI Cookie，也误删 Profile 的 Cloudflare clearance。现在仅恢复五类 Profile 运行 Cookie，Session/Auth/未知 Cookie 全部删除，storage 和客户页面仍清空。
+- 修正后真实三路同时验证：ChatGPT HTTP 200=`3/3`，Cookie 隔离=`3/3`，localStorage 隔离=`3/3`，Session/卡/submit 均为 0。
+- 三路当前共用同一个菲律宾出口；粗粒度指纹属性摘要相同，完整指纹差异和网络隔离尚未证明。下一步先验完整指纹与重启稳定性，再进入 6 Profile。
 - 无 Session、卡片、Checkout、Provider/卡台写入或付款；生产状态未改变。证据：`docs/browser-research/BITBROWSER_THREE_PROFILE_ACCESS_AND_ISOLATION_ATTEMPT_2026-09-03.md`。

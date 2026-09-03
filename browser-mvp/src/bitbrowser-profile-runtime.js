@@ -8,6 +8,31 @@ const PROFILE_SCOPED_START_FAILURES = new Set([
   'BITBROWSER_CONTEXT_CONFLICT',
   'BITBROWSER_ISOLATION_RESET_FAILED',
 ]);
+const PROFILE_OPERATIONAL_COOKIE_NAMES = new Set([
+  '__cf_bm',
+  '__cflb',
+  '_cfuvid',
+  'cf_clearance',
+  'oai-did',
+]);
+
+function isChatGptCookieDomain(domain) {
+  return /(^|\.)(chatgpt|openai)\.com$/i.test(String(domain || '').replace(/^\./, ''));
+}
+
+function reusableOperationalCookie(cookie) {
+  if (!cookie || !PROFILE_OPERATIONAL_COOKIE_NAMES.has(cookie.name) || !isChatGptCookieDomain(cookie.domain)) return null;
+  return Object.fromEntries(Object.entries({
+    name: cookie.name,
+    value: cookie.value,
+    domain: cookie.domain,
+    path: cookie.path || '/',
+    expires: cookie.expires,
+    httpOnly: cookie.httpOnly,
+    secure: cookie.secure,
+    sameSite: cookie.sameSite,
+  }).filter(([, value]) => value !== undefined));
+}
 
 export class BitBrowserRuntimeError extends Error {
   constructor(message, code, cause = undefined) {
@@ -175,6 +200,9 @@ export class BitBrowserProfileRuntimeAdapter extends RuntimeAdapter {
     if (!context || typeof context.pages !== 'function') {
       throw new BitBrowserRuntimeError('BitBrowser context is unavailable', 'BITBROWSER_ISOLATION_RESET_FAILED');
     }
+    const operationalCookies = typeof context.cookies === 'function'
+      ? (await context.cookies()).map(reusableOperationalCookie).filter(Boolean)
+      : [];
     const pages = context.pages();
     // Preserve only the local BitBrowser workspace tab. Every customer page is
     // closed between leases so no DOM, popup or Checkout can cross orders.
@@ -188,6 +216,12 @@ export class BitBrowserProfileRuntimeAdapter extends RuntimeAdapter {
       throw new BitBrowserRuntimeError('BitBrowser cookie reset is unavailable', 'BITBROWSER_ISOLATION_RESET_FAILED');
     }
     await context.clearCookies({ domain: /(^|\.)(chatgpt|openai)\.com$/i });
+    if (operationalCookies.length > 0) {
+      if (typeof context.addCookies !== 'function') {
+        throw new BitBrowserRuntimeError('BitBrowser operational cookie restore is unavailable', 'BITBROWSER_ISOLATION_RESET_FAILED');
+      }
+      await context.addCookies(operationalCookies);
+    }
     let anchor = context.pages()[0];
     let temporaryAnchor = null;
     if (!anchor && typeof context.newPage === 'function') {

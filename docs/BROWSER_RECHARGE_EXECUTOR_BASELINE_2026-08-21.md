@@ -693,3 +693,10 @@ B2 接下来的主工程顺序是并发队列及连续 24 小时 soak，再接�
 - Delaware 地址填写后的稳定总额仍为 `PHP 1100.00`（基础价 `982.14` + VAT `117.86`）；不得把免税州地址写成固定免税策略。
 - 运行时继续以地址填写后的最终 Checkout 摘要作为预算和 permit 输入；本次未点击 Subscribe、未付款、未验证付款后状态。
 - 证据：`docs/browser-research/BITBROWSER_DELAWARE_NONPAYMENT_TAX_OBSERVATION_2026-09-03.md`。
+
+### 2026-09-03 Profile 访问状态与客户隔离更新
+
+- 客户间清理继续删除全部 Session/Auth/未知 Cookie、站点 storage 和客户页面，但严格保留 Profile 自身的 Cloudflare 访问 Cookie与 `oai-did`；否则每单全量清 Cookie 会破坏已经建立的 headed 访问状态。
+- 三个独立 Profile 已真实同时达到 ChatGPT HTTP 200，Cookie/localStorage 隔离均 3/3；未注入 Session、未填卡、未进入付款。
+- 三者当前共用一个菲律宾出口，完整指纹差异和网络隔离仍未验证，不得把 Profile 隔离外推为出口隔离。
+- 证据：`docs/browser-research/BITBROWSER_THREE_PROFILE_ACCESS_AND_ISOLATION_ATTEMPT_2026-09-03.md`。
