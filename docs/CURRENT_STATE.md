@@ -155,6 +155,7 @@
 - Subscribe 可用但未点击，`submitCalls=0`；字段、Cookie/storage、一次性敏感文件和 Profile 均已清理。
 - 本次未复现 `PHP 982.14`；只证明常规入口在美国出口下切到 US/USD 轨道。生产 Browser 菲律宾出口决策未变。
 - 本轮修正冷 Profile UI hydration 等待、中文金额标签和证据安全扫描误报；Browser 全量 `151 total / 146 passed / 5 environment-skipped / 0 failed`。
+- 继续尝试显式 `PH/PHP + custom` Checkout 创建时，两次均在创建端点被 HTTP 400 `unusual activity` 拒绝；已按在线窄探测规则停止。未进入 Checkout、未填卡、未付款；该组合的最终币种/税额仍未验证。
 - 证据：`docs/browser-research/US_EXIT_DELAWARE_TAX_AB_NONPAYMENT_2026-09-04.md`。
 
 ## 10. 2026-09-03 Browser 三 Profile 访问与隔离闸门

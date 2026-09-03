@@ -1119,3 +1119,10 @@
 - 现场暴露并修正了 UI hydration 时序、新中文金额标签和 Stripe 合法 `cookie` URL 导致的证扫误报。全量 `151/146 pass/5 environment-skip/0 fail`。
 - 生产、默认 API 路线和 Browser Worker 状态均未改变。
 - 证据：`docs/browser-research/US_EXIT_DELAWARE_TAX_AB_NONPAYMENT_2026-09-04.md`。
+
+## 2026-09-04｜US 出口 + 显式 PH/PHP 创建被上游门禁拒绝
+
+- 在用户同意后，观察器增加了显式 `PH/PHP + custom` Checkout 创建模式，仍无付款提交能力。
+- 当前美国 Profile/测试账号组合两次创建均返回 HTTP 400；第二次经安全脱敏后的公开错误为 `Our systems have detected unusual activity. Please try again later.`
+- 在线尝试次数达 2 后已停止；未进入 Checkout、未填卡、未付款，`submitCalls=0`。临时文件和 Profile 已清理。
+- 该结果不能证明或否定 `US + PH/PHP` 的最终税额；只证明当前请求组合被上游异常活动门禁阻断。

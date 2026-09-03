@@ -74,4 +74,4 @@ Web 组全部使用同一菲律宾出口，一次只改变一个变量。每组�
 
 ## 2026-09-04 美国出口诊断对照
 
-经运营方单次明确允许，已用独立美国出口 Profile 做非付款对照。常规升级入口进入 `US/USD`轨道：地址前为 `20.00 + 2.40 = 22.40 USD`，填写 `US/DE` 地址后为 `20.00 + 0.00 = 20.00 USD`。这证明出口是定价轨道的重要组合信号，但未复现 `PHP 982.14`；若继续该社区线索，必须单独验证“US 出口 + 创建时显式 PH/PHP”。详见 `docs/browser-research/US_EXIT_DELAWARE_TAX_AB_NONPAYMENT_2026-09-04.md`。
+经运营方单次明确允许，已用独立美国出口 Profile 做非付款对照。常规升级入口进入 `US/USD`轨道：地址前为 `20.00 + 2.40 = 22.40 USD`，填写 `US/DE` 地址后为 `20.00 + 0.00 = 20.00 USD`。这证明出口是定价轨道的重要组合信号，但未复现 `PHP 982.14`。随后“US 出口 + 创建时显式 PH/PHP”两次均被上游 HTTP 400 `unusual activity` 拒绝，已停止重试；该组合的最终税额仍未验证。详见 `docs/browser-research/US_EXIT_DELAWARE_TAX_AB_NONPAYMENT_2026-09-04.md`。

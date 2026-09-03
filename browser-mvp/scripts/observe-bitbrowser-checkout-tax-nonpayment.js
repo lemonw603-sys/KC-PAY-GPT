@@ -19,9 +19,10 @@ import {
   navigateToChatGPTPlusCheckout,
 } from '../src/chatgpt-checkout-navigator.js';
 
-const INPUT_KEYS = new Set(['profileId', 'sessionFile', 'card', 'billingAddress']);
+const INPUT_KEYS = new Set(['profileId', 'sessionFile', 'card', 'billingAddress', 'checkout']);
 const CARD_KEYS = new Set(['pan', 'expMonth', 'expYear', 'cvc']);
 const ADDRESS_KEYS = new Set(['name', 'country', 'line1', 'city', 'state', 'postalCode']);
+const CHECKOUT_KEYS = new Set(['creationMode', 'country', 'currency']);
 const ACCOUNT_CHECK_PATH = '/backend-api/accounts/check/v4-2023-04-27?timezone_offset_min=0';
 const SUMMARY_SELECTOR = '[data-testid="checkout-summary-column"]';
 
@@ -51,6 +52,7 @@ function validateInput(input) {
   assertExactKeys(input, INPUT_KEYS, 'input');
   assertExactKeys(input.card, CARD_KEYS, 'input.card');
   assertExactKeys(input.billingAddress, ADDRESS_KEYS, 'input.billingAddress');
+  if (input.checkout !== undefined) assertExactKeys(input.checkout, CHECKOUT_KEYS, 'input.checkout');
   if (!/^[a-zA-Z0-9_-]{8,128}$/.test(String(input.profileId || ''))) throw new Error('profileId is invalid');
   if (!String(input.sessionFile || '').startsWith('/')) throw new Error('sessionFile must be absolute');
   if (!/^\d{12,19}$/.test(String(input.card.pan || '').replace(/\s/g, ''))) throw new Error('PAN format is invalid');
@@ -64,6 +66,60 @@ function validateInput(input) {
     || !/^[A-Z]{2}$/.test(String(address.state || '').toUpperCase())) {
     throw new Error('billingAddress is incomplete');
   }
+  if (input.checkout !== undefined) {
+    if (input.checkout.creationMode !== 'explicit-api'
+      || !/^[A-Z]{2}$/.test(String(input.checkout.country || ''))
+      || !/^[A-Z]{3}$/.test(String(input.checkout.currency || ''))) {
+      throw new Error('checkout explicit region is invalid');
+    }
+  }
+}
+
+async function createExplicitCheckout(page, checkout, accessToken, timeoutMs = 45_000) {
+  if (typeof accessToken !== 'string' || accessToken.length < 32) throw new Error('session access token is unavailable');
+  const response = await page.evaluate(async ({ token, country, currency }) => {
+    const result = await fetch('/backend-api/payments/checkout', {
+      method: 'POST',
+      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      body: JSON.stringify({
+        entry_point: 'all_plans_pricing_modal',
+        plan_name: 'chatgptplusplan',
+        billing_details: { country, currency },
+        checkout_ui_mode: 'custom',
+      }),
+    });
+    let body = null;
+    try { body = await result.json(); } catch { /* response shape checked below */ }
+    return {
+      ok: result.ok,
+      status: result.status,
+      checkoutSessionId: typeof body?.checkout_session_id === 'string' ? body.checkout_session_id : null,
+      detail: typeof body?.detail === 'string' ? body.detail
+        : typeof body?.message === 'string' ? body.message
+          : typeof body?.error?.message === 'string' ? body.error.message : null,
+    };
+  }, { token: accessToken, country: checkout.country, currency: checkout.currency });
+  if (!response.ok || response.status !== 200) {
+    const safeDetail = String(response.detail || 'no public detail')
+      .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, '<email-redacted>')
+      .replace(/\b(?:oaics_|cs_(?:live|test)_)[A-Za-z0-9_-]+\b/g, '<checkout-redacted>')
+      .replace(/[A-Za-z0-9_.-]{80,}/g, '<opaque-redacted>')
+      .slice(0, 240);
+    throw new Error(`explicit checkout creation failed with HTTP ${response.status}: ${safeDetail}`);
+  }
+  if (!/^(?:oaics_|cs_(?:live|test)_)[A-Za-z0-9_-]{8,256}$/.test(String(response.checkoutSessionId || ''))) {
+    throw new Error('explicit checkout creation returned an unsupported response');
+  }
+  const checkoutUrl = `https://chatgpt.com/checkout/openai_llc/${response.checkoutSessionId}`;
+  await page.goto(checkoutUrl, { waitUntil: 'domcontentloaded', timeout: timeoutMs });
+  const marker = page.locator(CHATGPT_PLUS_CHECKOUT_NAVIGATION_CONTRACT.checkoutReadySelector);
+  await marker.waitFor({ state: 'visible', timeout: timeoutMs });
+  return {
+    checkoutCreated: true,
+    actions: ['explicit-checkout-created'],
+    checkoutUrlDigest: digest(page.url()),
+    submitCalls: 0,
+  };
 }
 
 async function clearCustomerState(context) {
@@ -349,7 +405,9 @@ async function main() {
     await page.goto('https://chatgpt.com/', { waitUntil: 'domcontentloaded', timeout: 45_000 });
     const identity = await probeSessionIdentity(page, expectedIdentity, { accountCheckPath: ACCOUNT_CHECK_PATH });
     if (identity.alreadyPlus) throw new Error('test account is already subscribed');
-    const navigation = await navigateToChatGPTPlusCheckout(page, CHATGPT_PLUS_CHECKOUT_NAVIGATION_CONTRACT, { timeoutMs: 45_000 });
+    const navigation = input.checkout?.creationMode === 'explicit-api'
+      ? await createExplicitCheckout(page, input.checkout, session.accessToken, 45_000)
+      : await navigateToChatGPTPlusCheckout(page, CHATGPT_PLUS_CHECKOUT_NAVIGATION_CONTRACT, { timeoutMs: 45_000 });
     const totalsBeforePaymentData = await waitForStableTotals(page);
     const cardFields = await fillCardFields(page, input.card);
     fieldsToClear.push(...Object.values(cardFields));
@@ -362,6 +420,7 @@ async function main() {
     result.status = 'OBSERVED_BEFORE_SUBMIT';
     result.identityMatched = identity.identityMatched === true;
     result.subscriptionStatus = identity.subscriptionStatus;
+    result.checkoutCreationMode = input.checkout?.creationMode || 'ui';
     result.checkoutUrlDigest = navigation.checkoutUrlDigest || digest(page.url());
     const planText = (await page.locator(`${SUMMARY_SELECTOR} h2`).first().textContent().catch(() => ''))?.trim() || '';
     if (!/ChatGPT Plus/i.test(planText)) throw new Error('checkout plan was not confirmed as ChatGPT Plus');
@@ -382,6 +441,7 @@ async function main() {
     result.submitControlPresent = await submit.count() === 1;
     result.submitControlEnabled = await submit.count() === 1 ? await submit.isEnabled() : false;
     assertEvidenceIsSecretFree(result, [
+      session.accessToken, session.sessionToken,
       input.card.pan, input.card.cvc, input.billingAddress.name, input.billingAddress.line1,
       input.billingAddress.city, input.billingAddress.postalCode,
     ]);

@@ -35,7 +35,7 @@ Session 身份匹配，账号状态为 `FREE`，通过常规升级入口进入�
 1. 出口国家是 Checkout 地区/币种选择的决定性组合信号之一。
 2. 在已进入 US/USD 轨道后，Delaware 地址可以把当次显示税降为 0。
 3. 它**没有**复现 `PHP 982.14` 最终价，因为常规入口已切换为 `USD 20.00`。
-4. 要验证社区线索“美国出口 + 显式 PH/PHP 定价”，下一个实验必须在创建 Checkout 时显式锁定 `PH/PHP`，不能把本次常规 US 入口结果冒充为该结论。
+4. 要验证社区线索“美国出口 + 显式 PH/PHP 定价”，必须在创建 Checkout 时显式锁定 `PH/PHP`，不能把本次常规 US 入口结果冒充为该结论。
 
 这一结果只是诊断对照，不改变当前 Browser 生产出口保持菲律宾的业务决策。
 
@@ -47,6 +47,19 @@ Session 身份匹配，账号状态为 `FREE`，通过常规升级入口进入�
 
 Browser 全量测试：`151 total / 146 passed / 5 environment-skipped / 0 failed`。
 
+## 显式 `PH/PHP` 创建尝试
+
+在用户同意继续后，观察器增加了显式 API 创建模式，请求只包含已核对的 Plus 套餐、`PH/PHP`和 `custom` 模式，仍无任何付款调用。
+
+现场结果：
+
+- 第一次创建返回 HTTP 400；原观察器只保留状态码。
+- 补充安全错误摘要后只重试一次，仍为 HTTP 400，公开错误是 `Our systems have detected unusual activity. Please try again later.`
+- 在线窄探测已达 2 次，按规则停止，不继续重复创建 Checkout。
+- 两次都停在 Checkout 创建前：未进入支付页、未填卡、未点击 Subscribe、`submitCalls=0`。一次性 Session/输入文件已删除，Profile 已关闭。
+
+该返回可以确认当前账号/出口/请求节奏组合被上游异常活动门禁拒绝，但不能用来判断 `US 出口 + PH/PHP` 的最终税额。下次只应在冷却后或更换独立 FREE 测试账号队列后复验一次，不应当前继续重试。
+
 ## 证据路径
 
 脱敏现场结果（不纳入 Git）：
@@ -54,4 +67,3 @@ Browser 全量测试：`151 total / 146 passed / 5 environment-skipped / 0 faile
 ```text
 /Users/lemon/.codex/worktrees/9128/AI充值业务/artifacts/browser-us-tax-ab-20260904/result-success.json
 ```
-

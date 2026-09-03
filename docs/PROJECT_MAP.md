@@ -135,7 +135,7 @@
 - 已修复：`CHATGPT_ACCESS_BLOCKED`、Checkout 导航/观察阻断不再回到 `CARD_READY` 重排 `SUBMIT_RECHARGE`；改为终态 `RECHARGE_FAILED`，避免重复创建 attempt。修复已部署到当前 release 并通过定向测试。
 - 单 Profile Delaware 非付款税费复验已完成：测试 Session 身份匹配且为 FREE，真实 ChatGPT Plus Checkout 填入卡片和 Delaware 账单地址后，稳定金额仍为基础价 `PHP 982.14` + VAT `PHP 117.86` = `PHP 1100.00`；Subscribe 可用但未点击，`submitCalls=0`，字段/Session/Profile 已清理。不能再把免税州地址视为菲律宾 Checkout 的免税规则或成本依据（详见 `docs/browser-research/BITBROWSER_DELAWARE_NONPAYMENT_TAX_OBSERVATION_2026-09-03.md`）。
 - 税费观察器已补齐 Checkout 创建、billing snapshot、pricing config、Stripe 脱敏路径和填卡/地址前后金额时间线。美国出口诊断对照已实跑；菲律宾出口内的账号/创建路径/卡 BIN 分流 A/B 仍未执行。当前 Browser 全量 `151 total / 146 passed / 5 environment-skipped / 0 failed`。
-- 美国出口一次性非付款对照已完成：常规升级入口直接选中 `US/USD`，地址前 `USD 22.40`，填写 `US/DE` 后税额变为 0、总额 `USD 20.00`；`submitCalls=0`。这证明出口会影响定价轨道，但没有复现 `PHP 982.14`，也不改变生产菲律宾出口决策。若继续税费定位，下一窄实验是 `US 出口 + 创建时显式 PH/PHP`（详见 `docs/browser-research/US_EXIT_DELAWARE_TAX_AB_NONPAYMENT_2026-09-04.md`）。
+- 美国出口一次性非付款对照已完成：常规升级入口直接选中 `US/USD`，地址前 `USD 22.40`，填写 `US/DE` 后税额变为 0、总额 `USD 20.00`；`submitCalls=0`。随后显式 `PH/PHP` Checkout 创建连续两次被上游 HTTP 400 `unusual activity` 门禁拒绝，已停止重试；因此还不能判定该组合的税额。生产菲律宾出口决策未变（详见 `docs/browser-research/US_EXIT_DELAWARE_TAX_AB_NONPAYMENT_2026-09-04.md`）。
 - 容量方向已确认并完成真实 1→3→6 Profile 访问/隔离验收：6 个常驻隔离 Profile，单 Profile 串行、Profile 间并行；六路同时达到 ChatGPT HTTP 200、Cookie/localStorage 隔离和运行时指纹摘要差异 `6/6`。已修复客户清理误删 Cloudflare 运行 Cookie，以及生产池并发突发启动造成 Local API 部分成功的问题；生产池现为物理窗口顺序打开、页面任务并行。六路共用一个菲律宾出口，用户确认现阶段不以多出口作为阻断（详见 `docs/browser-research/BITBROWSER_SIX_PROFILE_ACCESS_AND_ISOLATION_VERIFICATION_2026-09-03.md`）。
 - 非付款闭环通过后，再单独确认首笔真实 Browser 付款；成功后再讨论把全局默认路线从 API 切为 Browser。
 
