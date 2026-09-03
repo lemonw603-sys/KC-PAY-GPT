@@ -8,8 +8,8 @@
   <meta name="description" content="ChatGPT Plus 自助充值 — 提交 CDK 与账号 Session，核对邮箱后创建订单并跟踪进度。">
   <title>Plus 充值中心</title>
   <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/assets/customer.css?v=6">
-  <script src="/assets/customer.js?v=6" defer></script>
+  <link rel="stylesheet" href="/assets/customer.css?v=10">
+  <script src="/assets/customer.js?v=10" defer></script>
 </head>
 <body>
   <div class="app-shell">
@@ -33,13 +33,12 @@
     <main class="stage" id="stage" aria-live="polite">
 
       <!-- 进度指示（提交流程 3 步；查询/结果视图会隐藏） -->
-      <nav class="stepper" id="stepper" aria-label="充值流程进度">
-        <ol>
-          <li class="step" data-step="1"><span class="step__dot">1</span><span class="step__label">填写资料</span></li>
-          <li class="step" data-step="2"><span class="step__dot">2</span><span class="step__label">核对邮箱</span></li>
-          <li class="step" data-step="3"><span class="step__dot">3</span><span class="step__label">跟踪进度</span></li>
-        </ol>
-        <div class="stepper__rail"><span class="stepper__fill" id="stepper-fill"></span></div>
+      <nav class="stepper" id="stepper" aria-label="开通流程">
+        <div class="stepper__seg" data-step="1"><span class="ic"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4h9l5 5v11H5z"/><path d="M14 4v5h5"/><path d="M8.5 13h6M8.5 16h4"/></svg></span><span>填写资料</span></div>
+        <span class="stepper__link"></span>
+        <div class="stepper__seg" data-step="2"><span class="ic"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"/><path d="M12 7.5V12l3 2"/></svg></span><span>开通处理</span></div>
+        <span class="stepper__link"></span>
+        <div class="stepper__seg" data-step="3"><span class="ic"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.5 2.5L16 9"/></svg></span><span>开通完成</span></div>
       </nav>
 
       <!-- ========== 视图 1：填写资料（默认 / 输入） ========== -->
@@ -78,8 +77,15 @@
               <p class="field__error" data-error></p>
             </div>
 
-            <button type="submit" class="btn btn--primary btn--block" id="to-confirm">
-              <span class="btn__label">下一步：核对邮箱</span>
+            <div class="inline-email" id="inline-email" hidden>
+              <svg class="inline-email__icon" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M4 7l8 6 8-6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              <div class="inline-email__text">
+                <span class="inline-email__label">将为这个账号开通 Plus，请核对</span>
+                <span class="inline-email__value" id="inline-email-value">—</span>
+              </div>
+            </div>
+            <button type="submit" class="btn btn--primary btn--block" id="to-confirm" disabled>
+              <span class="btn__label">确认无误，创建订单</span>
               <svg class="btn__arrow" viewBox="0 0 20 20" width="18" height="18" aria-hidden="true"><path d="M4 10h11M11 5l5 5-5 5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
             </button>
           </form>
@@ -91,44 +97,8 @@
         </div>
       </section>
 
-      <!-- ========== 视图 2：核对邮箱（确认） ========== -->
-      <section class="view" id="view-confirm" data-view="confirm" hidden>
-        <div class="card card--confirm">
-          <button type="button" class="card__back" id="confirm-back">
-            <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><path d="M12 5l-5 5 5 5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            返回修改
-          </button>
+      <!-- 视图 2（核对邮箱）已合并进「填写资料」页：邮箱就地显示核对，一步创建订单 -->
 
-          <div class="confirm__crux">
-            <p class="confirm__eyebrow">请核对充值账号</p>
-            <h1 class="confirm__title">Plus 将充值到这个邮箱</h1>
-            <div class="email-plate" id="email-plate">
-              <svg class="email-plate__icon" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M4 7l8 6 8-6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
-              <span class="email-plate__value" id="confirm-email">name@example.com</span>
-            </div>
-            <p class="confirm__note">邮箱来自你粘贴的 Session。请确认这是你希望充值的账号；若不是，请返回修改。</p>
-          </div>
-
-          <dl class="confirm__meta">
-            <div><dt>开通项目</dt><dd>ChatGPT Plus 月度会员</dd></div>
-            <div><dt>卡密</dt><dd id="confirm-cdk">••••••••</dd></div>
-          </dl>
-
-          <label class="checkbox" id="confirm-check-wrap">
-            <input type="checkbox" id="confirm-check">
-            <span class="checkbox__box" aria-hidden="true"></span>
-            <span class="checkbox__text">我已确认上方邮箱是本次要开通 Plus 的账号。</span>
-          </label>
-
-          <div class="confirm__actions">
-            <button type="button" class="btn btn--ghost" id="confirm-cancel">邮箱不对，返回</button>
-            <button type="button" class="btn btn--primary" id="confirm-create" disabled>
-              <span class="btn__label">确认无误，创建订单</span>
-            </button>
-          </div>
-          <p class="confirm__safety"><svg viewBox="0 0 20 20" width="14" height="14" aria-hidden="true"><path d="M6 9V6.5a4 4 0 118 0V9m-9 0h10v7H5V9z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>点击前不会创建订单，也不会发起任何充值。</p>
-        </div>
-      </section>
 
       <!-- ========== 视图 3：进度 / 结果（处理中·需更换·失败·成功 复用同一状态区） ========== -->
       <section class="view" id="view-tracking" data-view="tracking" hidden>
@@ -200,10 +170,14 @@
             <p id="helpbox-text">本次订单未能完成，请保留查询码联系客服核对。</p>
           </div>
 
-          <!-- 时间线 -->
-          <div class="timeline-wrap">
-            <div class="timeline-wrap__head">处理进度</div>
-            <ol class="timeline" id="timeline" aria-label="订单处理进度"></ol>
+          <!-- 横向进度条（JS 按状态填充百分比与节点） -->
+          <div class="hp" id="progress" aria-label="开通进度" hidden>
+            <div class="hp__top">
+              <div class="hp__pct"><span id="progress-num">0</span><sup>%</sup></div>
+              <div class="hp__meta"><div class="hp__cur" id="progress-cur"></div><div class="hp__sub" id="progress-step"></div></div>
+            </div>
+            <div class="hp__track"><div class="hp__fill" id="progress-fill"></div></div>
+            <div class="hp__nodes" id="progress-nodes"></div>
           </div>
 
           <p class="poll-note" id="poll-note"></p>

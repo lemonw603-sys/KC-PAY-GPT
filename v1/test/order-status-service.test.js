@@ -6,15 +6,23 @@ import {
   mapCustomerOrderStatus
 } from '../src/services/order-status-service.js';
 
-test('maps internal states to the limited customer status vocabulary', () => {
+test('maps internal states to the 6-step customer progress vocabulary', () => {
+  // 正常成功链：QUEUED→PREPARING→PAYING→ACTIVATING→CONFIRMING→SUCCESS（「等卡」与「卡就绪」合并为 PREPARING）
   assert.equal(mapCustomerOrderStatus('CREATED'), 'QUEUED');
-  assert.equal(mapCustomerOrderStatus('SUBMITTING'), 'PROCESSING');
+  assert.equal(mapCustomerOrderStatus('WAITING_FOR_CARD'), 'PREPARING');
+  assert.equal(mapCustomerOrderStatus('CARD_PURCHASING'), 'PREPARING');
+  assert.equal(mapCustomerOrderStatus('CARD_PROVISIONING'), 'PREPARING');
+  assert.equal(mapCustomerOrderStatus('CARD_READY'), 'PREPARING');
+  assert.equal(mapCustomerOrderStatus('SUBMITTING'), 'PAYING');
+  assert.equal(mapCustomerOrderStatus('RECHARGE_PROCESSING'), 'ACTIVATING');
+  assert.equal(mapCustomerOrderStatus('CANCELLATION_PENDING'), 'CONFIRMING');
+  assert.equal(mapCustomerOrderStatus('RECHARGE_SUCCESS'), 'SUCCESS');
+  // 异常分支单列，不混进正常进度条
   assert.equal(mapCustomerOrderStatus('WAITING_FOR_SESSION'), 'ACTION_REQUIRED');
-  assert.equal(mapCustomerOrderStatus('CANCELLATION_PENDING'), 'FINALIZING');
   assert.equal(mapCustomerOrderStatus('CANCELLATION_REVIEW_REQUIRED'), 'REVIEWING');
   assert.equal(mapCustomerOrderStatus('SUBMIT_UNKNOWN'), 'REVIEWING');
   assert.equal(mapCustomerOrderStatus('RECONCILIATION_REQUIRED'), 'REVIEWING');
-  assert.equal(mapCustomerOrderStatus('RECHARGE_SUCCESS'), 'SUCCESS');
+  assert.equal(mapCustomerOrderStatus('CARD_FAILED'), 'FAILED');
   assert.equal(mapCustomerOrderStatus('RECHARGE_FAILED'), 'FAILED');
   assert.equal(mapCustomerOrderStatus('FUTURE_PROVIDER_STATE'), 'REVIEWING');
 });
@@ -81,7 +89,7 @@ test('looks up by public number or hashed CDK without passing CDK plaintext', as
   const byCdk = await service({ cdk: '  PJ-ABCDEFGH  ' });
   assert.deepEqual(byPublicNo, {
     publicNo: 'PJV1-ABCDEFGHIJKLMNOPQRST',
-    status: 'PROCESSING',
+    status: 'ACTIVATING',
     updatedAt: '2026-08-17T10:00:00.000Z'
   });
   assert.deepEqual(calls[0], { publicNo: 'PJV1-ABCDEFGHIJKLMNOPQRST' });
