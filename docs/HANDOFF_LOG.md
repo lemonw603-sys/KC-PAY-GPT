@@ -1067,3 +1067,12 @@
 - 定位到上一轮自动 403 的直接原因：运行时客户清理误删 Cloudflare clearance。修复为全清客户/未知 Cookie 后只恢复严格五项 Profile 运行 Cookie allowlist，storage/页面继续全清。
 - 单测 16/16；真实三路同时为 ChatGPT HTTP 200 `3/3`、Cookie 隔离 `3/3`、localStorage 隔离 `3/3`、菲律宾出口；Session/卡/submit 为 0。
 - 三路当前共用同一出口，完整指纹差异尚未验证；自动复验结束后三个 Profile 均关闭。未部署、未付款。
+
+## 2026-09-03｜BitBrowser 六 Profile 真实访问与隔离复验通过
+
+- 原三个 Profile 关闭/重启后继续达到 ChatGPT HTTP 200 `3/3` 和 Cookie/localStorage 隔离 `3/3`；此前访问 Cookie 保留修复没有因重启失效。
+- 通过 loopback Local API 新建三个不复制客户材料的 Profile，形成六槽；ID 只保存在 Git 忽略的本机 `0600` 配置。
+- 第一轮并发突发启动暴露 Local API 部分成功问题，已完整关闭并确认六个窗口均收敛；新验证器改为顺序启动、并行页面验收、按已启动集合失败清理。
+- 最终六路：HTTP 200 `6/6`、Cookie 隔离 `6/6`、localStorage 隔离 `6/6`、运行时指纹摘要 `6/6` 不同、菲律宾出口摘要 `1/6`。
+- 用户确认现阶段共用一个菲律宾出口即可；这不等于六出口隔离，也尚未证明长时常驻、共享队列任务领取或真实付款。
+- Browser 全量 `141 total / 137 passed / 4 environment-skipped / 0 failed`；无 Session、卡字段、submit、Provider/卡台写入、部署或付款。

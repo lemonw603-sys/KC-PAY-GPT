@@ -104,7 +104,7 @@
 | 库存与运营覆盖 | 已部署，有历史数据缺口 | 旧批次停用、Claude 专用卡、未来新卡按证据接管 | `6807/1477` 现为 Provider `invalidating` 且保留历史 ACTIVE assignment，当前资格计算不会分配；这是系统状态与“卡实际可用”运营事实的待收敛缺口 |
 | 运营控制面 | 部分部署 | 开始营业、默认路线、就绪摘要及部分跳转；API 权限基线已恢复 | 补齐 API 权限漂移无入口；用真实运营复核入口与噪音 |
 | 客户充值页 | 已部署，待下一笔成功实单验收结果态 | Claude 单列三步设计已接入真实客户 API；生产 CSP、桌面/390px、教程、历史订单查询、时间线和 Session 更换入口已复验 | 下一笔真实成功订单验收成功邮箱、完成时间与完整时间线；不为此另造测试订单 |
-| Browser | 单 Profile 非付款税费闸门和三 Profile HTTP/Cookie/storage 隔离已通过；付款仍未验收 | 原 Profile 已验证 Session/FREE/真实 Checkout/填卡/最终金额；三 Profile 同开 ChatGPT HTTP 200=3/3；六 Profile 池代码通过 | 三 Profile 完整指纹差异与重启稳定性；六 Profile；不同稳定出口；生产部署与真实付款 |
+| Browser | 六 Profile 真实访问/隔离闸门已通过；付款仍未验收 | 单 Profile 已验证 Session/FREE/真实 Checkout/填卡/最终金额；六 Profile 同开 ChatGPT HTTP 200=6/6、Cookie/storage 隔离=6/6、运行时指纹摘要=6/6 | 六 Profile 共享队列非付款闭环、长时常驻、生产部署与真实付款；当前共用一个菲律宾出口 |
 | 对账/Bark/费用监控 | 部分验收 | 资金 UNKNOWN、余额变化 Bark、交易证据基础 | 连续订单校准误报；费用标准/变化监控 |
 | 放量/恢复 | 未验收 | 备份、健康检查、回滚点 | 3–5 单→10–20 单→恢复演练→100–300 单/日 |
 
@@ -134,7 +134,7 @@
 - 本轮已按真实业务创建测试 CDK+Session 订单，临时切换默认路线为 Browser；系统自动开卡并分配后，Browser 访问被 ChatGPT/网络返回 `CHATGPT_ACCESS_BLOCKED`，在付款前安全终止。测试订单、资金风险、租约和 Browser Worker 已清理，默认路线已恢复 API。
 - 已修复：`CHATGPT_ACCESS_BLOCKED`、Checkout 导航/观察阻断不再回到 `CARD_READY` 重排 `SUBMIT_RECHARGE`；改为终态 `RECHARGE_FAILED`，避免重复创建 attempt。修复已部署到当前 release 并通过定向测试。
 - 单 Profile Delaware 非付款税费复验已完成：测试 Session 身份匹配且为 FREE，真实 ChatGPT Plus Checkout 填入卡片和 Delaware 账单地址后，稳定金额仍为基础价 `PHP 982.14` + VAT `PHP 117.86` = `PHP 1100.00`；Subscribe 可用但未点击，`submitCalls=0`，字段/Session/Profile 已清理。不能再把免税州地址视为菲律宾 Checkout 的免税规则或成本依据（详见 `docs/browser-research/BITBROWSER_DELAWARE_NONPAYMENT_TAX_OBSERVATION_2026-09-03.md`）。
-- 容量方向已确认并完成代码实现：6 个常驻隔离 Profile，单 Profile 串行、Profile 间并行；现场三个独立 Profile 在用户 headed 建立各自访问状态后，三路同时达到 ChatGPT HTTP 200，Cookie/localStorage 隔离 3/3。已修复客户清理误删 Cloudflare 运行 Cookie的问题；三者当前共用一个菲律宾出口，网络隔离尚未成立（详见 `docs/browser-research/BITBROWSER_THREE_PROFILE_ACCESS_AND_ISOLATION_ATTEMPT_2026-09-03.md`）。
+- 容量方向已确认并完成真实 1→3→6 Profile 访问/隔离验收：6 个常驻隔离 Profile，单 Profile 串行、Profile 间并行；六路同时达到 ChatGPT HTTP 200、Cookie/localStorage 隔离和运行时指纹摘要差异 `6/6`。已修复客户清理误删 Cloudflare 运行 Cookie，以及并发突发启动造成 Local API 部分成功的问题；六路现共用一个菲律宾出口，用户确认现阶段不以多出口作为阻断（详见 `docs/browser-research/BITBROWSER_SIX_PROFILE_ACCESS_AND_ISOLATION_VERIFICATION_2026-09-03.md`）。
 - 非付款闭环通过后，再单独确认首笔真实 Browser 付款；成功后再讨论把全局默认路线从 API 切为 Browser。
 
 ### E｜客户充值页体验线
@@ -183,5 +183,5 @@
 - 对抗审查已修复地址/税费与付款许可顺序：先无付款地填写卡和账单地址并读取最终总额，再将 Checkout 摘要绑定权威 permit/submit intent；permit 后金额漂移仍停止。
 - 生产形态准备已补齐：macOS launcher 支持单/多 Profile、默认 `ONCE`/显式 `CONTINUOUS`；六 lane 共用一个进程 heartbeat，默认每 10 秒更新，不再随 lane 数放大数据库写入；配置模板已同步且未含真实 ID/代理/密钥。
 - 代码验证：Browser 普通全量 `140 total / 136 passed / 4 environment-skipped / 0 failed`；随后用全新临时 MySQL 8.4、完整 migrations 001–044 将对应 4 项逐项实跑为 `4/4 passed`；v1 repository 定向 `21/21`。
-- Browser 下一步：先验证三 Profile 完整指纹差异与重新启动后的访问稳定性，再创建并验证另外三个 Profile；如需更强风控隔离，为各 Profile 准备不同稳定出口。仍保持非付款，真实付款与生产部署需独立确认。
+- Browser 下一步：用现有六 Profile 配置完成生产形态但仍不付款的本地 Worker/共享队列闭环与常驻恢复；通过后再为首笔真实 Browser 付款单独确认。不同稳定出口暂不阻断当前阶段。
 - 详细实施/审查：`docs/browser-research/BROWSER_SIX_PROFILE_POOL_IMPLEMENTATION_2026-09-02.md`、`docs/browser-research/BROWSER_SIX_PROFILE_PRODUCTION_SHAPE_PREPARATION_2026-09-02.md`。
