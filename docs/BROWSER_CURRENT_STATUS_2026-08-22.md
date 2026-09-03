@@ -260,3 +260,10 @@ git diff --check
 - 修正后的现场复验被 BitBrowser 当日打开窗口额度阻断在第一个 warmup，尚未领取队列任务；因此集成闭环仍待额度恢复后原样重跑。
 - Browser 全量 `143 total / 138 passed / 5 environment-skipped / 0 failed`；Profile 全关、隔离数据库已删除、零付款与零生产改动。
 - 证据：`docs/browser-research/BITBROWSER_SIX_PROFILE_SHARED_QUEUE_NONPAYMENT_ATTEMPT_2026-09-03.md`。
+
+## 19. 2026-09-03 菲律宾税费分流事实纠正
+
+- `PHP 982.14` 已由历史真实成功 API 订单及运营方近期多单确认，不是不可复现的旧价格；当前 Browser 的 `PHP 1100.00` 不能再写成菲律宾路线固定成本。
+- 现有单变量证据仅能排除“Delaware 地址本身必然免税”；尚未分离访问出口、账号地区、支付信息和账单地址的联合影响。
+- 六 Profile 共享队列非付款闭环通过后、首笔 Browser 真实付款前，执行零付款税费 A/B 并冻结可复现的最终金额合同。
+- 证据与矩阵：`docs/browser-research/PHILIPPINES_VAT_ROUTE_DIFFERENTIAL_2026-09-03.md`。

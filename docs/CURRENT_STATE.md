@@ -175,3 +175,10 @@
 - 修正后的第二轮在 warmup 第一个窗口收到 `BITBROWSER_DAILY_OPEN_LIMIT`，发生在队列领取之前；当天额度已用完，因此不能宣称共享队列闭环已通过。
 - 当前 Browser 全量 `143 total / 138 passed / 5 environment-skipped / 0 failed`；六个真实 Profile 均关闭，一次性数据库已删除。
 - 唯一下一步：每日额度恢复后原样重跑隔离集成项，验收六 job 全部安全收敛且付款 permit/submit/活动租约为 0。证据：`docs/browser-research/BITBROWSER_SIX_PROFILE_SHARED_QUEUE_NONPAYMENT_ATTEMPT_2026-09-03.md`。
+
+## 13. 2026-09-03 菲律宾 Browser 税费口径纠正
+
+- 运营方确认近期已有多笔订单以 `PHP 982.14` 实际成交；仓库内 2026-08-18 独立成功 PoC 和 2026-08-29 第二笔真实 API 成功订单也记录 `982.14 PHP`，并有卡台 PURCHASE 证据。
+- 当前 BitBrowser 的 `982.14 + VAT 117.86 = 1100.00 PHP` 只证明现有菲律宾 Profile、账号、网络与支付定位信号组合会加税，不能推导成菲律宾所有充值都必须支付 `1100.00`。
+- Delaware 地址单变量已经证明不足以去除 VAT；下一阶段需要保持零付款，用受控 A/B 分离访问出口、账号地区和支付/账单定位信号，并读取地址填写后的最终稳定总额。
+- 该成本机制必须在首笔真实 Browser 付款前确认；证据和实验矩阵见 `docs/browser-research/PHILIPPINES_VAT_ROUTE_DIFFERENTIAL_2026-09-03.md`。
