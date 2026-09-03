@@ -179,10 +179,10 @@
 
 - API 生产线保持默认路线；Browser Worker 仍为 `inactive/disabled`，本轮未部署、未付款。
 - BitBrowser 单 Profile 非付款闸门已实测通过：公开页面可达，测试 Session 身份匹配且账号为 FREE；进入真实 ChatGPT Plus Checkout 并填写卡片和 Delaware 地址后，金额仍为基础价 `PHP 982.14`、VAT `PHP 117.86`、合计 `PHP 1100.00`。Subscribe 可用但未点击，`submitCalls=0`，结束后已清理。
-- 成本口径已纠正：运营方确认近期多单确实以 `PHP 982.14` 成交，仓库内两笔真实成功 API 证据也独立支持该价格；因此 `1100.00` 不是菲律宾充值不可避免的统一成本，只是当前 Browser 环境的实测结果。Browser 付款前新增一个非付款税费分流 A/B，目标是找出决定 `982.14/1100.00` 的网络、账号与支付定位信号，不能继续只换地址猜测。
+- 成本口径已纠正：运营方确认近期多单确实以 `PHP 982.14` 成交，仓库内两笔真实成功 API 证据也独立支持该价格；因此 `1100.00` 不是菲律宾充值不可避免的统一成本，只是当前 Browser 环境的实测结果。运营方同时确认 Browser 出口必须保持菲律宾；付款前新增的非付款税费分流 A/B 只比较账号、Checkout 创建路径、卡 BIN/支付信息与账单资料，不再把美国出口列为候选。
 - `codex/browser` 已基于当前 main 实现 1–6 Profile 常驻池：单 Profile 单订单、Profile 间并行；订单间清理页面/Cookie/storage；清理失败隔离槽位；第 7 个并发拒绝。
 - 对抗审查已修复地址/税费与付款许可顺序：先无付款地填写卡和账单地址并读取最终总额，再将 Checkout 摘要绑定权威 permit/submit intent；permit 后金额漂移仍停止。
 - 生产形态准备已补齐：macOS launcher 支持单/多 Profile、默认 `ONCE`/显式 `CONTINUOUS`；六 lane 共用一个进程 heartbeat，默认每 10 秒更新，不再随 lane 数放大数据库写入；配置模板已同步且未含真实 ID/代理/密钥。
 - 代码验证：Browser 普通全量 `140 total / 136 passed / 4 environment-skipped / 0 failed`；随后用全新临时 MySQL 8.4、完整 migrations 001–044 将对应 4 项逐项实跑为 `4/4 passed`；v1 repository 定向 `21/21`。
-- Browser 下一步：BitBrowser 每日打开额度恢复后，原样重跑现有六 Profile + 隔离 MySQL 的生产 Worker/共享队列非付款闭环；代码已修正先领单后冷启动导致租约过期的问题，但修正后现场复验尚未完成。闭环通过后、首笔真实 Browser 付款前，完成 `982.14/1100.00` 非付款税费分流 A/B；不同稳定出口暂不阻断共享队列测试，但可能是税费分流实验变量。
+- Browser 下一步：BitBrowser 每日打开额度恢复后，原样重跑现有六 Profile + 隔离 MySQL 的生产 Worker/共享队列非付款闭环；代码已修正先领单后冷启动导致租约过期的问题，但修正后现场复验尚未完成。闭环通过后、首笔真实 Browser 付款前，在菲律宾出口固定不变的条件下完成 `982.14/1100.00` 非付款税费分流 A/B。
 - 详细实施/审查：`docs/browser-research/BROWSER_SIX_PROFILE_POOL_IMPLEMENTATION_2026-09-02.md`、`docs/browser-research/BROWSER_SIX_PROFILE_PRODUCTION_SHAPE_PREPARATION_2026-09-02.md`。
