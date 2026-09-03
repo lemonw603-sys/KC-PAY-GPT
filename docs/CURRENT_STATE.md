@@ -2,12 +2,12 @@
 
 > 只保留当前有效事实；历史过程查 `HANDOFF_LOG.md`，方向与顺序查 `PROJECT_MAP.md`，全链路和验收细则查 `PROJECT_OPERATING_MODEL.md`。
 > 本快照已现场核对生产 release、systemd、Worker 进程环境、数据库 Provider account 和只读 readiness；Browser 主线只读回归证据见 `docs/2026-09-01_browser-main-readonly-regression.md`。
-> **2026-09-03 增量**：客户充值页 v2 改版 release 已部署并公网现场渲染验证（见 §1）；本次仅重核客户页 release 与渲染，§2–§5 的业务门禁 / 资金 / 卡片沿用 2026-09-02 00:32 核对基线，未重新现场核对。
+> **2026-09-03 增量**：客户充值页 v2 改版 + 夜间配色微调两次 release 已先后部署并公网现场验证（见 §1，当前 release `20260903-dark-surface-eba5331`）；本次仅重核客户页 release 与渲染，§2–§5 的业务门禁 / 资金 / 卡片沿用 2026-09-02 00:32 核对基线，未重新现场核对。
 
 ## 1. 代码、release 与服务
 
 - 生产当前 release `20260903-dark-surface-eba5331`（commit `eba5331`：夜间卡片与背景拉开层次——背景压深/卡片提亮/边框加清晰/卡片顶部微光立体边，仅深色态、白天零改动）；其父为客户页 v2 改版 release `20260903-customer-redesign-3cef082`（HEAD `3cef082`，含改版 commit `67b1598`）；再前序 `7bad460`（Browser 访问阻断重试修复、Provider 失败原因透传、后台刷新、卡片异常占用释放、供应规划修复）。
-- 生产 `/opt/pojia/current`：`/opt/pojia/releases/20260903-customer-redesign-3cef082`；直接回滚点为 `/opt/pojia/releases/20260901-browser-access-block-7bad460f26d311d8f15103c86933a276cf4b9d14`（`ln -sfn <旧 release> current && systemctl restart pojia-web`）。
+- 生产 `/opt/pojia/current`：`/opt/pojia/releases/20260903-dark-surface-eba5331`；直接回滚点为 `/opt/pojia/releases/20260903-customer-redesign-3cef082`（`ln -sfn <旧 release> current && systemctl restart pojia-web`）。
 - 客户页已完成公网桌面/390px 移动端、教程弹层、真实历史订单查询、CSP、静态资源哈希和 Console 复验；真实成功订单的成功邮箱/时间线仍待下一单验收。详细证据见 `docs/2026-09-01_customer-recharge-redesign-production-candidate.md`。
 - 客户页 v2 改版（2026-09-03 部署 `3cef082`）：去二次确认一步建单、6 步横向进度条（大号百分比 + easeOutCubic 平滑动画 + 6 节点依次递进）、3 步骤条（填写资料→开通处理→开通完成）、祖母绿压深 + 香槟金点缀配色；资源版本 `?v=10`。公网 curl 现场核实生产 serve 新版 `customer.css`（32213B，含 `--brand:#0b7d5a`/`--gold:#a9843f`）、`customer.js`（22971B，含 `CANON`/`PROGRESS_PCT`/`animateProgress`/`renderProgress`）、`index.html` 引用 `?v=10`，CSP `style-src/script-src 'self'` 放行同源资源；重建自包含预览走真实前端渲染路径目视确认深色/浅色输入页 + 跟踪进度（PAYING 55%/第 3-6 步/6 节点递进）三态正确。实施与验证记录见 `docs/2026-09-03_customer-page-redesign-v2-implementation.md`。
 - 客户页夜间配色微调（2026-09-03 部署 `eba5331`，`?v=11`）：深色态卡片与页面背景明度太近、卡片浮不出——已压深背景 `--bg #0a0e0c→#070a08`、压暗顶部光晕 `--bg-glow→#0e1712`、提亮卡片 `--surface #121814→#18211c`（同步抬 `--surface-2/3` 保持"输入框>卡片>背景"阶梯）、`--line/--line-strong` 边框提亮、`.card` 深色态加顶部 `inset` 微光立体边；仅深色、白天零改动。公网 curl 核实生产 `customer.css?v=11`（32787B）含上述 token、`index.html` 引用 `?v=11`、`/health/ready`=ready。绿金强调色本轮未改（一度试改后按用户澄清"指的是卡片/背景"已还原）。
