@@ -168,3 +168,10 @@
 - 候选 Browser 回归：`156 total / 151 passed / 5 skipped / 0 failed`；v1 全量：`529 total / 483 passed / 46 skipped / 0 failed`。
 - 修复提交 `b902e87` 已选择性同步到主线；主线用户未提交的 `docs/DECISIONS.md` 未触碰、未暂存、未覆盖。
 - 该修复只证明本地回归通过；未部署生产，未启动 Browser Worker，未执行 Provider/卡台写入或付款。
+
+### 2026-09-04 生产部署前体检进展
+
+- 代码/测试板块已完成：`git diff --check` 通过；v1 与 Browser 全量回归均 0 失败。
+- migration 046/047 已现场检查为增量 SQL，默认账单地址开关为关闭；尚未执行生产迁移。
+- 本地 `npm --prefix v1 run preflight:readiness` 未能启动，原因是当前 shell 未提供 `DATABASE_URL`（配置校验直接拒绝），这不是 readiness 通过或生产可用的证据；不能用本地缺少凭证替代生产核对。
+- 生产 systemd、当前 release、数据库迁移版本和运行开关仍需在有生产连接的执行窗口现场只读核对；在此之前不部署 Browser 候选、不启动 Worker、不做资金动作。
