@@ -1003,6 +1003,7 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
       effectiveFailureCode ? `Provider ${effectiveFailureCode}（历史记录推导，未修改订单数据）` : null
     );
     const prepareTask = taskRows.find((task) => task.task_type === 'PREPARE_RECHARGE');
+    const assignTask = taskRows.find((task) => task.task_type === 'ASSIGN_CARD');
     const submitTask = taskRows.find((task) => task.task_type === 'SUBMIT_RECHARGE');
     const authorization = authorizationRows[0] || null;
     const authorizationExpired = authorization?.expires_at
@@ -1071,6 +1072,17 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
       && !row.recharge_order_no
       && callRows.filter((call) => call.provider === 'zzshu' && call.operation === 'create_direct')
         .every((call) => call.outcome === 'DEFINITE_FAILURE')) {
+      cancellationCode = 'ORDER_CANCELLATION_ELIGIBLE';
+    } else if (row.status === 'WAITING_FOR_CARD'
+      && !row.provider_card_id
+      && assignTask?.status === 'PENDING'
+      && Number(assignTask.attempts) === 0
+      && !row.recharge_order_no
+      && !row.recharge_card_key
+      && !rechargeCallExists) {
+      // The cancellation service has a guarded WAITING_FOR_CARD path. Keep
+      // the admin projection aligned so operators can reach that action
+      // instead of being forced to leave a pre-assignment order stranded.
       cancellationCode = 'ORDER_CANCELLATION_ELIGIBLE';
     } else if (row.status === 'CARD_READY'
       && submitTask?.status === 'PENDING'
