@@ -238,7 +238,6 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
                AND provider_account_id = ?`,
             [order.card_provider_account_id]
           );
-          let replenishmentQueued = false;
           let fundingQueued = false;
           const [[underfunded]] = await connection.query(
             `SELECT c.id, c.current_balance
@@ -282,44 +281,40 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
           // A stale local card is not proof that inventory is absent. Wait for
           // the already queued read sync before spending money on a new card;
           // the retry will fund or assign it when the refreshed evidence allows.
-          if (autoReplenishmentEnabled
+          // WAITING_FOR_CARD itself is the durable replenishment trigger. Do
+          // not create a paid stock job here: that bypassed the scheduler's
+          // live rule, balance and daily-limit checks and recreated a failed
+          // job on every order retry.
+          const replenishmentPending = autoReplenishmentEnabled
             && Number(fundable?.count || 0) === 0
-            && refreshCandidates.length === 0) {
-            // Bind the automatic opening request to real customer demand. The
-            // stock runner re-checks live rules, balance and quota immediately
-            // before the paid call; this row only provides a durable trigger.
-            const [queued] = await connection.query(
-              `INSERT INTO card_stock_jobs
-               (id, status, job_source, card_type_id, amount, requested_count,
-                opened_count, rules_snapshot_json)
-               SELECT ?, 'PENDING', 'AUTOMATIC', ?, ?, 1, 0, ?
-               WHERE NOT EXISTS (
-                 SELECT 1 FROM card_stock_jobs
-                 WHERE status IN ('PENDING','RUNNING')
-               )`,
-              [crypto.randomUUID(), String(order.card_type_id), String(order.open_card_amount),
-                JSON.stringify({ demandOrderId: String(orderId) })]
-            );
-            replenishmentQueued = Number(queued.affectedRows) === 1;
-          }
+            && refreshCandidates.length === 0;
           const waitingMessage = refreshCandidates.length > 0
             ? '现有卡正在更新余额和交易，订单会在更新后继续处理。'
             : fundingQueued
               ? '现有卡余额不足，已自动补足，订单会继续处理。'
-              : replenishmentQueued
+              : replenishmentPending
                 ? '当前没有可用卡，已自动安排开卡，订单会继续处理。'
                 : '当前没有可用于 Plus 的卡，订单正在等待处理。';
-          await connection.query(
-            `INSERT INTO operator_alerts
-             (id, alert_type, dedupe_key, order_id, severity, title, message, status)
-             VALUES (UUID(), 'ORDER_WAITING_FOR_CARD', ?, ?, 'critical', '订单正在等待卡片', ?, 'OPEN')
-             ON DUPLICATE KEY UPDATE severity = VALUES(severity), title = VALUES(title),
-               order_id = VALUES(order_id),
-               message = VALUES(message),
-               status = IF(status = 'RESOLVED', 'OPEN', status),
-               acknowledged_at = IF(status = 'RESOLVED', NULL, acknowledged_at)`,
-            [alertKey, orderId, waitingMessage]
-          );
+          const autoHealing = refreshCandidates.length > 0 || fundingQueued || replenishmentPending;
+          if (autoHealing) {
+            await connection.query(
+              `UPDATE operator_alerts SET status='RESOLVED',
+                 acknowledged_at=COALESCE(acknowledged_at, CURRENT_TIMESTAMP(3))
+               WHERE dedupe_key=? AND status='OPEN'`,
+              [alertKey]
+            );
+          } else {
+            await connection.query(
+              `INSERT INTO operator_alerts
+               (id, alert_type, dedupe_key, order_id, severity, title, message, status)
+               VALUES (UUID(), 'ORDER_WAITING_FOR_CARD', ?, ?, 'critical', '订单正在等待卡片', ?, 'OPEN')
+               ON DUPLICATE KEY UPDATE severity = VALUES(severity), title = VALUES(title),
+                 order_id = VALUES(order_id), message = VALUES(message),
+                 status = IF(status = 'RESOLVED', 'OPEN', status),
+                 acknowledged_at = IF(status = 'RESOLVED', NULL, acknowledged_at)`,
+              [alertKey, orderId, waitingMessage]
+            );
+          }
           if (order.status === OrderStatus.CREATED) {
             const [waiting] = await connection.query(
               `UPDATE orders SET status = ?, version = version + 1,
@@ -339,7 +334,7 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
             waitingForCard: true,
             refreshQueued,
             ...(fundingQueued ? { fundingQueued: true } : {}),
-            ...(replenishmentQueued ? { replenishmentQueued: true } : {})
+            ...(replenishmentPending ? { replenishmentPending: true } : {})
           };
         }
         const card = cards[0];
@@ -1017,6 +1012,19 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
             reason: 'submitted attempt is not automatically released'
           }
         });
+        await connection.query(
+          `INSERT INTO card_sync_jobs
+           (id, card_id, status, requested_by, dedupe_key)
+           SELECT UUID(), o.assigned_card_id, 'PENDING', 'workflow', CONCAT('failed-recharge-reconcile:', ?)
+           FROM orders o
+           WHERE o.id = ? AND o.assigned_card_id IS NOT NULL
+             AND NOT EXISTS (
+               SELECT 1 FROM card_sync_jobs j
+               WHERE j.card_id = o.assigned_card_id AND j.status IN ('PENDING','RUNNING')
+             )
+           ON DUPLICATE KEY UPDATE dedupe_key = VALUES(dedupe_key)`,
+          [orderId, orderId]
+        );
         const [result] = await connection.query(
           `UPDATE orders SET status = ?, failure_code = 'PROVIDER_CONFIRMED_FAILURE',
              failure_reason = ?,

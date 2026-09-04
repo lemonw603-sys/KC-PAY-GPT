@@ -33,3 +33,12 @@
 继续核对订单/资金/库存/自动补给和 Browser readiness 的代码与生产投影；在矛盾定位前不切换路线、不创建真实订单。
 
 本报告只记录只读证据，未执行 Provider 写入、开卡、补余额或付款。
+
+## 2026-09-04 深核增量：新卡错误占用与缺卡误报
+
+- 已确认 Provider 卡 2772/尾号 9051 为 active、余额 $16，失败订单 9414 没有 PURCHASE；`RECONCILIATION` 消费账本与 ACTIVE assignment 未释放，是 available=0 的直接根因。
+- 已确认补给“24/5”不是开了 24 张卡：24 个 automatic 请求中 23 个开卡前失败、实际只成功 1 张。订单重试绕过 scheduler 反复直插任务是根因。
+- 已完成候选修复：失败后触发交易同步并在双重证据下释放；订单不再直插开卡任务；自动自愈不再推缺卡 Bark；终态按 opened_count 统计日用量。
+- 验证：定向 14/14、隔离 MySQL 5/5、v1 全套 521（477 pass/44 skip/0 fail）。
+- 当前状态：候选尚未部署；部署和生产只读同步后才能把生产 available=0 改写为已修复。
+- 详细证据：`docs/2026-09-04-card-availability-root-cause-and-fix.md`。

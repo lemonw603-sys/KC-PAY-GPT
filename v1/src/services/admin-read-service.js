@@ -552,7 +552,9 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
             WHERE status IN ('OPEN','ASSIGNED')) AS reconciliation_cases_open,
           (SELECT COUNT(*) FROM card_sync_jobs
             WHERE status IN ('PENDING','RUNNING','REVIEW_REQUIRED')) AS card_sync_backlog,
-          (SELECT COALESCE(SUM(requested_count), 0) FROM card_stock_jobs
+          (SELECT COALESCE(SUM(CASE
+              WHEN status IN ('PENDING','RUNNING') THEN requested_count
+              ELSE opened_count END), 0) FROM card_stock_jobs
             WHERE job_source = 'AUTOMATIC'
               AND created_at >= TIMESTAMP(DATE(CONVERT_TZ(UTC_TIMESTAMP(), '+00:00', '+08:00'))) - INTERVAL 8 HOUR
               AND created_at < TIMESTAMP(DATE(CONVERT_TZ(UTC_TIMESTAMP(), '+00:00', '+08:00'))) + INTERVAL 16 HOUR) AS replenishment_used_today,

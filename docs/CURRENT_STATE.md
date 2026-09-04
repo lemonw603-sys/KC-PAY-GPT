@@ -1,5 +1,7 @@
 # 当前生产状态快照｜2026-09-02 00:32 CST
 
+> **2026-09-04 现场增量（优先于下方 09-02 基线）**：当前生产 release 仍为 `20260903-dark-surface-eba5331`。新卡 `2772/9051` 实际 `active/$16`，但失败订单 9414 的消费账本=`RECONCILIATION`、assignment=ACTIVE，导致 available=0；交易同步仅见开卡充值、无 PURCHASE。自动补卡今日显示 24/5，实为 24 个请求、23 个零开卡预检失败、实际 opened=1。代码修复候选已完成、尚未部署；生产状态仍未收敛。详见 `docs/2026-09-04-card-availability-root-cause-and-fix.md`。
+
 > 只保留当前有效事实；历史过程查 `HANDOFF_LOG.md`，方向与顺序查 `PROJECT_MAP.md`，全链路和验收细则查 `PROJECT_OPERATING_MODEL.md`。
 > 本快照已现场核对生产 release、systemd、Worker 进程环境、数据库 Provider account 和只读 readiness；Browser 主线只读回归证据见 `docs/2026-09-01_browser-main-readonly-regression.md`。
 > **2026-09-03 增量**：客户充值页 v2 改版 + 夜间配色微调两次 release 已先后部署并公网现场验证（见 §1，当前 release `20260903-dark-surface-eba5331`）；本次仅重核客户页 release 与渲染，§2–§5 的业务门禁 / 资金 / 卡片沿用 2026-09-02 00:32 核对基线，未重新现场核对。

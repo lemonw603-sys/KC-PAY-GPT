@@ -816,6 +816,13 @@ test('inventory assignment queues one read sync for a stale safe candidate witho
 
     const second = await workflow.assignAvailableCard(fixture.orderId);
     assert.deepEqual(second, { waitingForCard: true, refreshQueued: false });
+    const [[autoHealAlert]] = await pool.query(
+      `SELECT COUNT(*) AS count FROM operator_alerts
+       WHERE dedupe_key = ? AND status = 'OPEN'`,
+      [`order-waiting-card:${fixture.orderId}`]
+    );
+    assert.equal(Number(autoHealAlert.count), 0,
+      'a queued or in-flight read sync must not repeatedly page the operator');
     const [[activeJobs]] = await pool.query(
       `SELECT COUNT(*) AS count FROM card_sync_jobs
        WHERE card_id = ? AND status IN ('PENDING','RUNNING')`, [cardId]
@@ -2527,6 +2534,81 @@ test('confirmed recharge failure clears exactly one funds attempt before closing
     assert.notEqual(state.attempt_finished_at, null);
   } finally {
     await removeOrder(pool, fixture);
+    await pool.end();
+  }
+});
+
+test('fresh card evidence releases a provider-confirmed failed order card for reuse', {
+  skip: !databaseUrl && 'TEST_DATABASE_URL 未配置；完整 MySQL 套件在服务器隔离数据库运行'
+}, async () => {
+  const pool = mysql.createPool({ uri: databaseUrl, connectionLimit: 3, timezone: 'Z' });
+  const fixture = await createOrder(pool, { status: OrderStatus.RECHARGE_FAILED });
+  const cardId = id();
+  const attemptId = id();
+  try {
+    await pool.query(
+      `INSERT INTO cards
+       (id, order_id, inventory_status, provider_card_id, card_type_id, last4, status,
+        funded_amount, current_balance, currency, refund_status, card_credentials_ciphertext,
+        provider_account_id, external_card_id, intake_status, sync_tier, last_transaction_synced_at)
+       VALUES (?, ?, 'ASSIGNED', ?, '7', '2772', 'active', '16', '16', 'USD',
+        'MONITORING', ?, ?, ?, 'ACCEPTED', 'ASSIGNED', CURRENT_TIMESTAMP(3))`,
+      [cardId, fixture.orderId, `failed-card-${cardId}`,
+        encryptSecret(JSON.stringify({ cardNumber: '4242424242422772',
+          expMonth: 12, expYear: 2032, cvv: '123' }), integrationSessionKey),
+        legacyCardProviderAccountId, `failed-card-${cardId}`]
+    );
+    await pool.query(
+      `UPDATE orders SET assigned_card_id=?, failure_code='PROVIDER_CONFIRMED_FAILURE'
+       WHERE id=?`, [cardId, fixture.orderId]
+    );
+    await pool.query(
+      `INSERT INTO recharge_attempts
+       (id, order_id, executor_kind, status, funds_risk_state, submit_intent_at, finished_at)
+       VALUES (?, ?, 'API', 'FAILED', 'CLEARED', CURRENT_TIMESTAMP(3), CURRENT_TIMESTAMP(3))`,
+      [attemptId, fixture.orderId]
+    );
+    await pool.query(
+      `INSERT INTO card_consumption_ledger
+       (id, card_id, order_id, recharge_attempt_id, product_id, status, amount, currency, reserved_at)
+       VALUES (?, ?, ?, ?, ?, 'RECONCILIATION', '16', 'USD', CURRENT_TIMESTAMP(3))`,
+      [id(), cardId, fixture.orderId, attemptId, legacyProductId]
+    );
+    await pool.query(
+      `INSERT INTO card_assignment_history
+       (id, card_id, order_id, assignment_kind, status, assigned_by, assigned_at)
+       VALUES (?, ?, ?, 'NORMAL', 'ACTIVE', 'test', CURRENT_TIMESTAMP(3))`,
+      [id(), cardId, fixture.orderId]
+    );
+
+    await commitCardTransactionsForCard(pool, {
+      cardId, orderId: fixture.orderId,
+      transactions: [{
+        id: `funding-${cardId}`, type: 'CARD_RECHARGE', status: 'SUCCESS',
+        amount: '16', currency: 'USD', classification: 'NOT_REFUND',
+        rawHash: crypto.createHash('sha256').update(cardId).digest('hex')
+      }],
+      cardSnapshot: { currentBalance: '16', currency: 'USD' }
+    });
+
+    const [[ledger]] = await pool.query(
+      'SELECT status, release_reason FROM card_consumption_ledger WHERE order_id=?',
+      [fixture.orderId]
+    );
+    const [[assignment]] = await pool.query(
+      'SELECT status, released_by FROM card_assignment_history WHERE order_id=?',
+      [fixture.orderId]
+    );
+    assert.equal(ledger.status, 'RELEASED');
+    assert.match(ledger.release_reason, /card sync found no successful purchase/);
+    assert.deepEqual(assignment, {
+      status: 'RELEASED', released_by: 'worker:post-failure-card-sync'
+    });
+  } finally {
+    await removeOrder(pool, fixture);
+    await pool.query('DELETE FROM card_sync_jobs WHERE card_id=?', [cardId]);
+    await pool.query('DELETE FROM card_transactions WHERE card_id=?', [cardId]);
+    await pool.query('DELETE FROM cards WHERE id=?', [cardId]);
     await pool.end();
   }
 });

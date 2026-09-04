@@ -88,8 +88,9 @@ try {
       console.log(JSON.stringify({ handled: true, jobId: job.id, source: job.source,
         status: 'COMPLETED', opened: result.opened, automatic }));
     } catch (error) {
-      await failCardStockJob(pool, { jobId: job.id, workerId, error });
-      console.error(JSON.stringify({ handled: true, jobId: job.id, status: 'REVIEW_REQUIRED', code: error?.code || error?.kind || 'FAILED' }));
+      const failure = await failCardStockJob(pool, { jobId: job.id, workerId, error });
+      console.error(JSON.stringify({ handled: true, jobId: job.id,
+        status: failure.status, code: failure.code }));
       process.exitCode = 1;
     }
   }

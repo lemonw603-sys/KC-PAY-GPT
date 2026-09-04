@@ -29,7 +29,9 @@ export function createCardReplenishmentSettingsService({ pool }) {
       [DAILY_LIMIT_KEY]
     );
     const [[usage]] = await pool.query(
-      `SELECT COALESCE(SUM(requested_count), 0) AS used
+      `SELECT COALESCE(SUM(CASE
+          WHEN status IN ('PENDING','RUNNING') THEN requested_count
+          ELSE opened_count END), 0) AS used
        FROM card_stock_jobs
        WHERE job_source = 'AUTOMATIC' AND created_at >= ? AND created_at < ?`,
       shanghaiDayBounds(now)

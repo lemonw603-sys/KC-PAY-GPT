@@ -111,6 +111,51 @@ export async function persistCardTransactions(connection, {
       [cardId]
     );
   }
+
+  // Provider failure alone is not enough to release a submitted card. Once a
+  // successful transaction sync independently confirms that no purchase was
+  // observed, close the reconciliation hold and its active assignment.
+  await connection.query(
+    `UPDATE card_consumption_ledger l
+     INNER JOIN orders o ON o.id = l.order_id AND o.assigned_card_id = l.card_id
+     INNER JOIN recharge_attempts ra ON ra.id = l.recharge_attempt_id
+     INNER JOIN cards c ON c.id = l.card_id
+     SET l.status = 'RELEASED',
+         l.released_at = COALESCE(l.released_at, CURRENT_TIMESTAMP(3)),
+         l.release_reason = 'provider failure confirmed; card sync found no successful purchase',
+         l.evidence_json = JSON_MERGE_PATCH(COALESCE(l.evidence_json, JSON_OBJECT()), JSON_OBJECT(
+           'source', 'post_failure_card_transaction_sync',
+           'orderStatus', o.status,
+           'attemptStatus', ra.status,
+           'fundsRiskState', ra.funds_risk_state
+         ))
+     WHERE l.card_id = ? AND l.status = 'RECONCILIATION'
+       AND o.status = 'RECHARGE_FAILED'
+       AND o.failure_code = 'PROVIDER_CONFIRMED_FAILURE'
+       AND ra.status = 'FAILED' AND ra.funds_risk_state = 'CLEARED'
+       AND ra.finished_at IS NOT NULL
+       AND c.last_transaction_synced_at >= ra.finished_at
+       AND c.current_balance >= l.amount
+       AND NOT EXISTS (
+         SELECT 1 FROM card_transactions purchase
+         WHERE purchase.card_id = l.card_id
+           AND purchase.transaction_type = 'PURCHASE'
+           AND LOWER(purchase.status) = 'success'
+           AND purchase.first_seen_at >= l.reserved_at
+       )`,
+    [cardId]
+  );
+  await connection.query(
+    `UPDATE card_assignment_history h
+     INNER JOIN card_consumption_ledger l
+       ON l.card_id = h.card_id AND l.order_id = h.order_id
+     SET h.status = 'RELEASED', h.released_by = 'worker:post-failure-card-sync',
+         h.release_reason = 'provider failure confirmed; card sync found no successful purchase',
+         h.released_at = COALESCE(h.released_at, CURRENT_TIMESTAMP(3))
+     WHERE h.card_id = ? AND h.status = 'ACTIVE' AND l.status = 'RELEASED'
+       AND l.release_reason = 'provider failure confirmed; card sync found no successful purchase'`,
+    [cardId]
+  );
 }
 
 export async function commitCardTransactionsForCard(pool, input) {

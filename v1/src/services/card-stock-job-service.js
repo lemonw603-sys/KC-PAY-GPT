@@ -171,13 +171,13 @@ export function createCardStockJobService({ pool }) {
         await connection.commit();
         return { scheduled: false, reason: 'DISABLED' };
       }
-      // Automatic opening is demand-driven. The timer is only a recovery
-      // fallback; never buy inventory when no customer order is waiting for a
-      // card. The order-triggered path will enqueue the same idempotent job
-      // immediately when it is implemented.
+      // Automatic opening is demand-driven. WAITING_FOR_CARD is the durable
+      // trigger; this scheduler is the only place allowed to turn that demand
+      // into a paid job after checking live rules, balance and daily quota.
       const [[demand]] = await connection.query(
-        `SELECT COUNT(*) AS count FROM orders
-         WHERE status = 'WAITING_FOR_CARD'`
+        `SELECT id, (SELECT COUNT(*) FROM orders WHERE status = 'WAITING_FOR_CARD') AS count
+         FROM orders WHERE status = 'WAITING_FOR_CARD'
+         ORDER BY created_at ASC LIMIT 1 FOR UPDATE`
       );
       if (Number(demand?.count || 0) === 0) {
         await connection.commit();
@@ -214,6 +214,11 @@ export function createCardStockJobService({ pool }) {
       const [unresolvedPaidJobs] = await connection.query(
         `SELECT id FROM card_stock_jobs
          WHERE status = 'REVIEW_REQUIRED'
+           AND (opened_count > 0 OR error_code IS NULL OR error_code NOT IN (
+             'CARD_STOCK_CARD_TYPE_UNAVAILABLE','CARD_STOCK_BALANCE_INSUFFICIENT',
+             'CARD_STOCK_LIMIT_INSUFFICIENT','CARD_STOCK_AMOUNT_OUT_OF_RANGE',
+             'CARD_STOCK_RULES_STALE','CARD_CATALOG_STALE','CARD_CATALOG_UNRESOLVED'
+           ))
          ORDER BY created_at ASC LIMIT 1 FOR UPDATE`
       );
       if (unresolvedPaidJobs.length) {
@@ -221,7 +226,9 @@ export function createCardStockJobService({ pool }) {
         return { scheduled: false, reason: 'FUNDS_REVIEW_REQUIRED' };
       }
       const [[usage]] = await connection.query(
-        `SELECT COALESCE(SUM(requested_count), 0) AS count FROM card_stock_jobs
+        `SELECT COALESCE(SUM(CASE
+           WHEN status IN ('PENDING','RUNNING') THEN requested_count
+           ELSE opened_count END), 0) AS count FROM card_stock_jobs
          WHERE job_source = 'AUTOMATIC'
            AND created_at >= ? AND created_at < ?`,
         shanghaiDayBounds(now)
@@ -269,6 +276,7 @@ export function createCardStockJobService({ pool }) {
           cardLimit: snapshot.cardLimit,
           cardType: evaluation.cardType,
           evaluation,
+          demandOrderId: demand.id,
           policy: { available, threshold, usedBefore: used, dailyLimit: limit }
         })]
       );
@@ -348,10 +356,50 @@ export async function completeCardStockJob(pool, { jobId, workerId, openedCount 
 export async function failCardStockJob(pool, { jobId, workerId, error }) {
   const code = String(error?.code || error?.kind || 'CARD_STOCK_OPEN_FAILED').toUpperCase().slice(0, 64);
   const message = redactSensitiveText(error?.message || 'Card stock opening failed').slice(0, 1000);
-  await pool.query(
-    `UPDATE card_stock_jobs SET status = 'REVIEW_REQUIRED', error_code = ?, error_message = ?,
-       leased_by = NULL, leased_until = NULL, finished_at = CURRENT_TIMESTAMP(3)
-     WHERE id = ? AND status = 'RUNNING' AND leased_by = ?`,
-    [code, message, jobId, workerId]
-  );
+  const safePreflightCodes = new Set([
+    'CARD_STOCK_CARD_TYPE_UNAVAILABLE', 'CARD_STOCK_BALANCE_INSUFFICIENT',
+    'CARD_STOCK_LIMIT_INSUFFICIENT', 'CARD_STOCK_AMOUNT_OUT_OF_RANGE',
+    'CARD_STOCK_RULES_STALE', 'CARD_CATALOG_STALE', 'CARD_CATALOG_UNRESOLVED'
+  ]);
+  let status = 'REVIEW_REQUIRED';
+  const connection = await pool.getConnection();
+  try {
+    await connection.beginTransaction();
+    const [[job]] = await connection.query(
+      `SELECT job_source, rules_snapshot_json, opened_count FROM card_stock_jobs
+       WHERE id=? AND status='RUNNING' AND leased_by=? FOR UPDATE`,
+      [jobId, workerId]
+    );
+    status = safePreflightCodes.has(code) && Number(job?.opened_count || 0) === 0
+      ? 'FAILED' : 'REVIEW_REQUIRED';
+    const [result] = await connection.query(
+      `UPDATE card_stock_jobs SET status = ?, error_code = ?, error_message = ?,
+         leased_by = NULL, leased_until = NULL, finished_at = CURRENT_TIMESTAMP(3)
+       WHERE id = ? AND status = 'RUNNING' AND leased_by = ?`,
+      [status, code, message, jobId, workerId]
+    );
+    if (Number(result.affectedRows) !== 1) throw new Error('Card stock job lease lost before failure');
+    const rules = typeof job?.rules_snapshot_json === 'string'
+      ? JSON.parse(job.rules_snapshot_json) : job?.rules_snapshot_json;
+    const demandOrderId = rules?.demandOrderId || null;
+    if (job?.job_source === 'AUTOMATIC' && demandOrderId) {
+      await connection.query(
+        `INSERT INTO operator_alerts
+         (id, alert_type, dedupe_key, order_id, severity, title, message, status)
+         VALUES (UUID(), 'ORDER_WAITING_FOR_CARD', ?, ?, 'warning', '自动补卡未完成', ?, 'OPEN')
+         ON DUPLICATE KEY UPDATE severity=VALUES(severity), title=VALUES(title),
+           message=VALUES(message), status=IF(status='RESOLVED','OPEN',status),
+           acknowledged_at=IF(status='RESOLVED',NULL,acknowledged_at)`,
+        [`order-waiting-card:${demandOrderId}`, demandOrderId,
+          `自动补卡暂未完成（${code}）；系统会在条件恢复后继续尝试。`]
+      );
+    }
+    await connection.commit();
+  } catch (failure) {
+    await connection.rollback();
+    throw failure;
+  } finally {
+    connection.release();
+  }
+  return { status, code };
 }

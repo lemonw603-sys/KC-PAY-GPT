@@ -63,4 +63,7 @@ test('confirmed recharge failure persists the redacted Provider reason on the or
   assert.ok(orderUpdate);
   assert.equal(orderUpdate.parameters[1], '卡片被拒；sessionToken=[REDACTED]');
   assert.equal(orderUpdate.parameters.includes('secret-value'), false);
+  const syncInsert = queries.find((query) => query.sql.includes('failed-recharge-reconcile:'));
+  assert.ok(syncInsert);
+  assert.deepEqual(syncInsert.parameters, ['order-1', 'order-1']);
 });
