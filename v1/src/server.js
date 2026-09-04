@@ -39,6 +39,7 @@ import { createOperationsCsvExportService } from './services/operations-csv-expo
 import { createTraceabilityOperationsService } from './services/traceability-operations-service.js';
 import { createSessionReplacementService } from './services/session-replacement-service.js';
 import { createBrowserAdminService } from './services/browser-admin-service.js';
+import { createBrowserBillingAddressAdminService } from './services/browser-billing-address-admin-service.js';
 import { resolveCurrentCardProviderAccountId } from './services/provider-route-service.js';
 import {
   providerSupportedCardTypeIds,
@@ -137,6 +138,7 @@ const compensateAdminOrder = createOrderCompensationService({
 const cancelAdminOrder = createOrderCancellationService({ pool });
 const reconciliationCases = createReconciliationCaseService({ pool });
 const browserAdmin = createBrowserAdminService({ pool });
+const browserBillingAddressAdmin = createBrowserBillingAddressAdminService({ pool });
 const operationsCsv = createOperationsCsvExportService({ pool });
 const traceabilityOperations = createTraceabilityOperationsService({
   pool,
@@ -309,6 +311,8 @@ const app = createApp({
   ,listAdminReconciliationCases: reconciliationCases.listCases
   ,assignAdminReconciliationCase: reconciliationCases.assign
   ,resolveAdminReconciliationCase: reconciliationCases.resolve
+  ,getAdminBillingAddressSettings: browserBillingAddressAdmin.get
+  ,setAdminBillingAddressSettings: browserBillingAddressAdmin.set
   ,listAdminBrowserDispatchJobs: browserAdmin.listDispatchJobs
   ,listAdminBrowserRuns: browserAdmin.listRuns
   ,getAdminBrowserRun: browserAdmin.getRun

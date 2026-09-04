@@ -59,6 +59,8 @@ export function createApp({
   listAdminProviderRoutes = null,
   switchAdminProviderRoute = null,
   setAdminDefaultRechargeMethod = null,
+  getAdminBillingAddressSettings = null,
+  setAdminBillingAddressSettings = null,
   listCardOperationalOverrides = null,
   setCardOperationalOverride = null,
   clearCardOperationalOverride = null,
@@ -441,6 +443,15 @@ export function createApp({
         }
         throw error;
       }
+    });
+  }
+  if (typeof getAdminBillingAddressSettings === 'function') {
+    app.get('/api/v1/admin/browser/billing-address', noStore, requireAdminApi, async (_req, res) => res.json(await getAdminBillingAddressSettings()));
+  }
+  if (typeof setAdminBillingAddressSettings === 'function') {
+    app.post('/api/v1/admin/browser/billing-address', ...sensitiveAdminGuards, async (req, res) => {
+      try { return res.json(await setAdminBillingAddressSettings({ ...req.body, actorId: req.admin?.id || 'admin' })); }
+      catch (error) { if (error instanceof PublicApiError) return res.status(error.status || 400).json({ error: error.code.toLowerCase() }); throw error; }
     });
   }
   if (typeof listCardOperationalOverrides === 'function') {

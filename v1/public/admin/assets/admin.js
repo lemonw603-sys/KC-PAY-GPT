@@ -1639,6 +1639,26 @@ elements.reconciliationTable?.addEventListener('click', (event) => {
       .catch(() => { button.disabled = false; showNotice('案例解决失败。'); });
   }
 });
+async function loadBillingAddressSettings() {
+  const data = await api('/api/v1/admin/browser/billing-address');
+  const enabled = document.querySelector('#billing-address-enabled');
+  const state = document.querySelector('#billing-address-state');
+  const name = document.querySelector('#billing-address-name');
+  if (!enabled) return;
+  enabled.value = data.enabled ? 'true' : 'false'; state.value = data.state || 'DE'; name.value = '';
+  document.querySelector('#billing-address-meta').textContent = `${data.source} · ${data.sourceVersion}${data.nameConfigured ? ' · 姓名已配置' : ' · 尚未配置姓名'}`;
+}
+async function saveBillingAddressSettings(event) {
+  event.preventDefault();
+  const enabled = document.querySelector('#billing-address-enabled').value === 'true';
+  const state = document.querySelector('#billing-address-state').value;
+  const name = document.querySelector('#billing-address-name').value.trim();
+  const confirmation = '确认更新账单地址设置';
+  await api('/api/v1/admin/browser/billing-address', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled, state, name, confirmation }) });
+  await loadBillingAddressSettings(); showNotice('账单地址设置已保存。', 'success');
+}
+document.querySelector('#billing-address-settings')?.addEventListener('submit', (event) => saveBillingAddressSettings(event).catch((e) => showNotice(e.message || '保存失败。')));
+
 elements.browserFilters?.addEventListener('submit', (event) => {
   event.preventDefault();
   state.browserPage = 1;
@@ -1707,7 +1727,7 @@ document.querySelector('#refresh-button').addEventListener('click', async (event
         : state.view === 'reconciliation' ? loadReconciliationCases()
           : state.view === 'card-funding' ? loadCardFundingAttempts()
           : state.view === 'provider-routes' ? loadProviderRoutes()
-          : state.view === 'browser' ? () => Promise.all([loadBrowserDispatchJobs(), loadBrowserRuns()]) : loadOrders());
+          : state.view === 'browser' ? () => Promise.all([loadBrowserDispatchJobs(), loadBrowserRuns(), loadBillingAddressSettings()]) : loadOrders());
     showNotice('刷新完成。', 'success');
   } catch {
     showNotice('刷新失败，请稍后重试。');
