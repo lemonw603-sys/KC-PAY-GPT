@@ -51,6 +51,8 @@
 
 复核代码后确认根因：HNSKJ 的 `rechargeCard` 合同只接受整数 USD，而补差额计算产生 `$15.99`；参数在本地适配器被确定性拒绝，故 Provider 实际没有收到充值请求（provider call 无 HTTP 状态）。已修正为按 Provider 合同向上取整（本例 `$16`），提交 `8caccfb` 并部署至 `/opt/pojia/releases/20260904-funding-integer-8caccfb`；Web/Worker active，`/health/ready=ready`。尚未重试该订单，避免未经再次确认产生新的资金写入。
 
+本次订单随后暴露出另一个机制级 P0：补余额 attempt 确定失败并清账后，原订单没有稳定地回到“低余额卡重新准备补余额”的恢复状态，而是停在 `ASSIGN_CARD/WAITING_FOR_CARD`。这不是单笔订单文案问题，而是失败状态机与订单调度之间的断链。必须在共享核心一次性修复：确定失败可重新生成新的唯一 attempt；未知结果继续锁定不得重试；任务恢复必须可重复且不重复扣款；API 与 Browser 共用同一恢复合同。当前不对该订单盲目重试。
+
 在全新隔离库重建并执行 001–045 后，已通过 4 个关键 MySQL 场景：库存同步持久化、分配卡定期同步、15 分钟可分配卡刷新、并发下单 worker 单次领取及过期租约恢复（`4 passed / 0 failed`）。
 
 ## 生产部署（2026-09-04）
