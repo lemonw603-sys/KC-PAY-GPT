@@ -1172,4 +1172,5 @@
 - 启动既有 mihomo 配置后代理恢复，Cloudflare trace=`PH/MNL`；第二次 canary 的 DB 检查 `READY`，但六 Profile warmup 因 Local API 10 秒超时（`BITBROWSER_API_TIMEOUT`）退出。随后对六 Profile 发起关闭请求，全部成功，未留窗口。下一步需单独调高只读 API 超时后再受控复验。
 - 将本地只读 env 的 BitBrowser API 超时调为 60 秒后，第三次 `ONCE` canary 成功：DB `READY`、只读迭代 `IDLE`、Worker exit 0；隧道关闭且无 Profile 残留。未领单、未读客户 Session、未调用 Provider/卡台、未付款。
 - 按用户建议先做单 Profile：临时配置第一个 Profile、API 超时 60 秒，`ONCE` canary 成功（DB `READY`、迭代 `IDLE`、exit 0），隧道关闭；未改动六 Profile 正式配置，未领单/付款。
+- 用单 Profile 临时配置短暂运行 `CONTINUOUS`，多次 `IDLE` 后 Ctrl-C 收尾成功；修复 launcher 在 `set -u` 下连续模式空数组导致的 `worker_args[@]: unbound variable`，并完成 shell 语法检查。未领单/读 Session/付款。
 - 详细证据：`docs/browser-research/MACOS_BROWSER_PRODUCTION_TUNNEL_CHECK_2026-09-04.md`。

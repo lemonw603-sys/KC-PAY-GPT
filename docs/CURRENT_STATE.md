@@ -9,6 +9,7 @@
 > **2026-09-04 canary 复验**：恢复 mihomo 后 Cloudflare trace=`PH/MNL`；第二次 canary 的生产 DB 检查仍 `READY`，但六 Profile warmup 因 Local API 10 秒超时退出。六 Profile 已通过 Local API 全部关闭，无残留窗口。当前阻断收敛为 warmup/API 超时，尚未启动生产常驻 Worker。
 > **2026-09-04 canary 收敛**：本地只读 env 将 BitBrowser API 超时调为 60 秒后，第三次 `ONCE` canary 成功（生产 DB `READY`、迭代 `IDLE`、exit 0）；SSH 隧道已关闭、Profile 无残留。尚未领取任务或启动常驻生产 Worker。
 > **2026-09-04 单 Profile 复验**：临时取第一个 Profile 做单 Profile `ONCE` canary，结果 `READY → IDLE → exit 0`，隧道已关闭；六 Profile 正式配置未改动，尚未执行真实 Session/订单。
+> **2026-09-04 连续模式复验**：同一单 Profile 临时运行 `CONTINUOUS`，多次 `IDLE` 后 Ctrl-C 正常收尾；修复 launcher 在 `set -u` 下连续模式空参数数组 bug。仍未领单、读取 Session或付款。
 
 ## 1. 代码、release 与服务
 

@@ -39,6 +39,7 @@
 - 按“先单 Profile、再多 Profile”的方案，从六 Profile 配置中临时取第一个 Profile，生成仓库外 `0600` 配置，未改动正式六 Profile env。
 - 单 Profile `ONCE` canary 成功：生产 DB `READY`，只读迭代 `IDLE`，Worker exit 0；隧道已关闭。
 - 这验证了单 Profile 的启动/收尾路径，不代表真实 Session 页面或六路并行已验收；下一步可在有测试订单时先用该 Profile 走到付款前，再决定是否扩展多 Profile。
+- 进一步用同一单 Profile 配置短暂运行 `CONTINUOUS` 模式，连续收到多次 `IDLE` 后以 Ctrl-C 停止，隧道和 Worker 正常收尾。期间发现并修复 launcher 在 `set -u` 下连续模式空参数数组的脚本 bug；未领单、未读取 Session、未付款。
 
 ## 结论边界
 

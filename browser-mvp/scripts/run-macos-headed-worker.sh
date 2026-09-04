@@ -123,7 +123,11 @@ node "$repo_root/browser-mvp/src/production-readonly-worker.js" --check
 # caffeinate prevents idle/system sleep while the headed GUI Worker owns a lease.
 worker_args=()
 [[ "$run_mode" == "CONTINUOUS" ]] || worker_args+=(--once)
-caffeinate -dimsu node "$repo_root/browser-mvp/src/production-readonly-worker.js" "${worker_args[@]}" &
+if [[ "${#worker_args[@]}" -gt 0 ]]; then
+  caffeinate -dimsu node "$repo_root/browser-mvp/src/production-readonly-worker.js" "${worker_args[@]}" &
+else
+  caffeinate -dimsu node "$repo_root/browser-mvp/src/production-readonly-worker.js" &
+fi
 worker_pid=$!
 
 # Either side dying closes the other. A lost tunnel therefore sends SIGTERM to
