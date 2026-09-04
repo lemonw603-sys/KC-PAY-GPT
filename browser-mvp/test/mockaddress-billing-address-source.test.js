@@ -18,3 +18,12 @@ test('MockAddress source rejects unsupported states and malformed names', () => 
   assert.throws(() => new MockAddressBillingAddressSource({ name: 'x', state: 'CA' }), /supported/);
   assert.throws(() => new MockAddressBillingAddressSource({ state: 'DE' }), /name is required/);
 });
+
+test('MockAddress source keeps one address per card and separates different cards', async () => {
+  const { InMemoryBillingAddressAssignmentStore } = await import('../src/mockaddress-billing-address-source.js');
+  const source = new (await import('../src/mockaddress-billing-address-source.js')).MockAddressBillingAddressSource({ name: 'Test', state: 'DE', assignmentStore: new InMemoryBillingAddressAssignmentStore() });
+  const a = await source.load('card:a');
+  const b = await source.load('card:b');
+  assert.notDeepEqual(a, b);
+  assert.deepEqual(a, await source.load('card:a'));
+});
