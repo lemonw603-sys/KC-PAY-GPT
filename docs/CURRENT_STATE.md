@@ -160,3 +160,11 @@
 - 用户将策略从“严格一张卡一个地址”修订为“尽可能一张卡一个地址，不因地址池耗尽阻塞订单”。地址槽位仍优先一对一分配；全部槽位占用时，选择当前使用次数最低的地址复用，并保留卡片到槽位的持久绑定。
 
 - MockAddress 后台设置服务已补充单测：v1 全量现为 `528 total / 482 passed / 46 environment-skipped / 0 failed`。本轮仍未部署 migration 046/047。
+
+### 2026-09-04 Browser 候选回归修复（已同步主线）
+
+- 在 Browser 候选 worktree 对齐最新主线后发现 v1 客户首页 `GET /` 返回 500；现场错误为 Express `sendFile` 的 `NotFoundError`，文件实际存在且可读，属于静态发送路径在该 worktree 中的不稳定行为。
+- 修复为读取 `v1/public/index.html` 后以 HTML 响应发送，并保留 `Cache-Control: no-store`；未改变业务 API、资金门禁或 Browser 逻辑。
+- 候选 Browser 回归：`156 total / 151 passed / 5 skipped / 0 failed`；v1 全量：`529 total / 483 passed / 46 skipped / 0 failed`。
+- 修复提交 `b902e87` 已选择性同步到主线；主线用户未提交的 `docs/DECISIONS.md` 未触碰、未暂存、未覆盖。
+- 该修复只证明本地回归通过；未部署生产，未启动 Browser Worker，未执行 Provider/卡台写入或付款。

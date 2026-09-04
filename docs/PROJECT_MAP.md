@@ -212,3 +212,7 @@
 
 - 已完成 MockAddress/Browser 对齐的代码级审查并修正 migration 047：地址池不足时允许最低使用次数复用，避免“尽可能一张卡一个地址”与数据库唯一槽位约束冲突。
 - 证据报告：`docs/2026-09-04_browser-mockaddress-alignment-audit.md`。当前仍未部署 046/047，Browser 分支尚未完整合入生产主线。
+
+### 2026-09-04 回归修复状态
+
+Browser 候选对齐后发现 v1 客户首页静态 `sendFile` 在候选 worktree 返回 500。已改为安全读取本地 HTML 后响应，提交 `b902e87` 已同步主线。Browser 与 v1 全量测试均 0 失败；生产部署和 Browser 真实付款仍未进行。
