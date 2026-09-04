@@ -34,6 +34,12 @@
 
 结论：10 秒是本机 BitBrowser 冷启动的观测超时，不代表业务失败；60 秒配置可完成无任务只读 canary。后续只有在真实非付款任务下才能验证页面访问和长时吞吐。
 
+## 单 Profile 先行复验
+
+- 按“先单 Profile、再多 Profile”的方案，从六 Profile 配置中临时取第一个 Profile，生成仓库外 `0600` 配置，未改动正式六 Profile env。
+- 单 Profile `ONCE` canary 成功：生产 DB `READY`，只读迭代 `IDLE`，Worker exit 0；隧道已关闭。
+- 这验证了单 Profile 的启动/收尾路径，不代表真实 Session 页面或六路并行已验收；下一步可在有测试订单时先用该 Profile 走到付款前，再决定是否扩展多 Profile。
+
 ## 结论边界
 
 SSH target/key 和 loopback 隧道路径已具备可用证据，但仍未完成生产 Browser 只读 Worker 的配置文件创建、launchd 加载或队列接入。当前只能说“接入前置网络与权限路径已打通”，不能说 Browser 已接入生产或已具备客户订单履约能力。
