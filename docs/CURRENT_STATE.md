@@ -193,3 +193,9 @@
 - Web/API Worker 已重启并 active，库存 runner timer 已恢复 active；Browser Worker 仍 `inactive/disabled`。
 - 生产 `/health/live`、`/health/ready` 和客户首页均 HTTP 200。
 - Provider reads=true；通用写、卡片写、充值写均 false。未启动 Browser Worker，未执行 Provider/卡台写入、开卡、补余额或付款。
+
+### 2026-09-04 Browser production-readonly canary
+
+- 已在生产启动 Browser readonly systemd canary；ExecStartPre 检查成功，Worker 连续多轮返回 `status=IDLE`，随后正常停止。
+- 当前生产配置目标仍为 `LOCAL_FIXTURE`，不是外部 ChatGPT/真实 Session；因此本次只证明生产 unit、Node 运行时、配置校验、启动/停止和安全空队列循环正常，不等于真实 ChatGPT 访问或付款能力验收。
+- canary 结束后已确认 `pojia-browser-worker.service=inactive/disabled`；未创建订单、未读取 Session/PAN/CVC、未调用 Provider/卡台写接口、未付款。

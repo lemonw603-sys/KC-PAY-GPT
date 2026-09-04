@@ -1056,3 +1056,8 @@
 - 迁移 046/047 已执行，第二次运行确认幂等（already applied）。
 - current 已切换至 `20260904-browser-candidate-32b8a04`；Web/API Worker 重启 active，Browser Worker 保持 disabled/inactive；Provider/卡台/付款写权限未开启。
 - live/ready/客户首页 HTTP 200；未创建订单、未执行资金或付款动作。
+
+### 2026-09-04 Browser production-readonly canary
+
+- 生产 Browser unit 启动检查成功，连续多轮 `IDLE`，正常停止；最终 inactive/disabled。
+- 配置目标为 LOCAL_FIXTURE，未接入外部 ChatGPT 或真实客户 Session；无订单、无资金和付款写入。

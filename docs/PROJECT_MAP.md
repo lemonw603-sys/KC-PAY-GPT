@@ -228,3 +228,7 @@ Browser 候选对齐后发现 v1 客户首页静态 `sendFile` 在候选 worktre
 ### 2026-09-04 部署状态更新
 
 候选 release `20260904-browser-candidate-32b8a04` 已完成备份/恢复演练、上传、迁移 046/047 和 Web/API Worker 重启；live/ready/客户首页均 200。Browser Worker 仍 disabled/inactive，所有 Provider/卡台/付款写权限保持关闭，Browser 付款尚未验收。
+
+### 2026-09-04 Browser canary 结果
+
+生产 Browser readonly unit 已启动并通过 ExecStartPre，连续 IDLE 后正常停止，最终 inactive/disabled。当前仍是 LOCAL_FIXTURE 配置，仅完成生产运行边界验证，不代表外部 ChatGPT 或真实付款已验收。
