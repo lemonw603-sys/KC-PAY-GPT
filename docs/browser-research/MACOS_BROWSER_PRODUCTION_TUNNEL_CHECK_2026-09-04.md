@@ -9,6 +9,8 @@
 - 生产 MySQL 确认仅监听 `127.0.0.1:3306`，没有把 3306 暴露为公网监听。
 - 生产 `/etc/pojia/browser-readonly.env` 当前为 `root:pojia 0640`。这是与 systemd unit（`User=pojia`, `Group=pojia`）匹配的最小可读权限；不能误改为 `0600`，否则服务账号无法读取。macOS 本地 launcher 的独立环境文件才强制 `0600`。
 - `run-macos-headed-worker.sh` 通过 shell 语法检查；Browser production-readonly 配置、macOS launcher、systemd 合同相关测试共 31/31 通过。
+- 本机目标路径 `~/Library/Application Support/VibeBridge/browser-readonly.env` 当前不存在，launchd 服务也未加载；这是预期的未接入状态，不是故障。
+- 生产 runtime 中存在数据库 URL 与共享加密 key，Browser readonly env 中存在 worker/profile 与三把 Browser key；本轮只核对“存在”，没有读取、复制或打印值。
 
 ## 结论边界
 
