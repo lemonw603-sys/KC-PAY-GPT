@@ -232,3 +232,9 @@
 - Web、API Worker、卡台目录同步 timer、Bark 通知服务重启后均 `active`；`/health/live`=`ok`、`/health/ready`=`ready`。
 - 生产文件 SHA-256 与本地提交一致；Browser Worker 仍 `inactive/disabled`。
 - Provider reads=true；Provider 通用写、卡片写、充值写均 false。未执行开卡、补余额、Provider 写入或付款。
+
+### 2026-09-05 真实 Browser 订单测试边界修订
+
+- 用户确认：若 Checkout 现场确认税费为 0 且金额正确，可在最终确认后执行真实付款；否则必须付款前退出。
+- 本次优先使用已存在且已验证可用的卡，不依赖开新卡。卡台当前维护响应导致“开新卡/补余额”不可验证，不得因此阻断已有卡的只读核对。
+- 付款前硬门槛：订单/路线/Session/卡绑定一致，卡状态与余额有新鲜证据，账单地址已注入，Checkout 税费与总额现场读取，且用户再次明确确认付款；任一条件不满足即安全退出。

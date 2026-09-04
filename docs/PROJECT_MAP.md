@@ -256,3 +256,8 @@ Browser 候选对齐后发现 v1 客户首页静态 `sendFile` 在候选 worktre
 - 已部署 `/opt/pojia/releases/20260905-maintenance-bark-6246cc1`（commit `6246cc1`），部署前备份 `backup_integrity=OK`。
 - Web/Worker/catalog-sync/Bark 服务 active，live/ready 均正常；Browser Worker 继续 disabled/inactive。
 - Provider 读取开启，全部写权限关闭；未进行任何资金或付款动作。
+
+### 2026-09-05 真实 Browser 订单策略修订
+
+- 真实订单优先走“已有可用卡”分支；不等待卡台开新卡。HNSKJ 维护期间只验证已有卡读取/绑定，开卡与补余额保持停用。
+- 若 Checkout 现场税费为 0、总额核对无误，且用户在付款前再次明确确认，才允许进入真实付款；否则在付款按钮前退出并保留证据。

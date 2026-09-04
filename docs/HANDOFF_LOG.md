@@ -1087,3 +1087,9 @@
 - 现场复核当前 release 仍为 `20260905-maintenance-bark-6246cc1`；Web/Worker/catalog-sync/Bark 均 active，`/health/ready=ready`。
 - Browser Worker inactive；Provider reads=true，所有写权限=false。当前无须人工操作，等待卡台维护状态变化或真实订单。
 - 下一阶段顺序：先观察同步/告警去重；有订单后再单笔 Browser 非付款 pilot，走到 Checkout 金额/税费读取后安全退出。
+
+## 2026-09-05｜真实订单付款条件修订
+
+- 用户授权条件已记录：仅当 Checkout 现场确认免税且金额正确时，才考虑完整付款；不是无条件付款授权。
+- 测试优先使用已有卡；卡台维护导致开新卡不可用时，不执行开卡/补余额，不影响对已有卡的只读验证。
+- 付款前必须重新核对卡状态/余额、账单地址、税费、总额、订单与路线一致性，并在最后一步再次请求明确付款确认。
