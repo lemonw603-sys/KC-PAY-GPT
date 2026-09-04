@@ -210,3 +210,10 @@
 
 - 已通过用户本地 Chrome 当前打开的 X Article 现场读取内容，确认其核心顺序为：菲律宾出口稳定 → 先 Plus → 同账号确认 Plus 生效 → 再升级 Pro 20X；每次以实际 Checkout 金额/税费为准。
 - 文章中的约 145.15 USD 是个人案例，不是生产定价结论；项目仅吸收顺序、地址候选和付款前重读原则，不复制其卡片方案。
+
+### 2026-09-05 Bark 重复“卡台信息暂时无法更新”现场核对
+
+- 生产 `operator_alerts` 中 `dedupe_key=provider-snapshot:hnskj` 只有一条 `PROVIDER_SNAPSHOT_STALE`，状态长期为 `OPEN`（创建 2026-08-24），最近更新时间 2026-09-04 21:16；说明不是每次失败都创建了新告警记录。
+- 生产日志显示 card-catalog-sync 周期性调用 HNSKJ `cardTypes/accountBalance` 时在 `parseEnvelope` 失败，随后任务以 `RETRY_PENDING` 反复重试；因此底层 Provider 快照同步确实持续失败。
+- 截图中的重复 Bark 通知不是简单的“多条告警”问题：同一长期 OPEN 事件被重复触发通知，且告警仅被 acknowledge 而未 resolved。现有通知去重没有把“同一 OPEN 事件的更新”与“新故障边沿”区分开。
+- 该问题属于 P0 机制问题：需先修复 Provider 响应解析/失败分类和退避，再让 Bark 仅在 OPEN 边沿或明确状态变化时通知，并增加冷却/last-notified 约束；不能只关闭通知声音而保留底层失败循环。

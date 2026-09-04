@@ -240,3 +240,7 @@ Browser 候选对齐后发现 v1 客户首页静态 `sendFile` 在候选 worktre
 ### 2026-09-05 Pro 20X 流程线索已现场读取
 
 用户本地 Chrome 已打开的文章可现场读取；其流程线索与项目设计一致：PH 出口、先 Plus 再 Pro 20X、同账号确认、付款前重读 Checkout 金额/税费。文章价格仅作线索，Pro 20X 仍未启用或验收。
+
+### 2026-09-05 卡台同步告警 P0 发现
+
+生产现场确认 HNSKJ 卡段/余额快照同步持续在 `parseEnvelope` 失败，任务反复 `RETRY_PENDING`。`provider-snapshot:hnskj` 为单一长期 OPEN 告警，重复 Bark 来自同一事件更新未做边沿/冷却抑制。需将 Provider 解析失败、退避和 Bark 通知去重作为同一 P0 修复，不得只静音通知。

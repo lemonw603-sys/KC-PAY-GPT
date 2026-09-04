@@ -1061,3 +1061,9 @@
 
 - 生产 Browser unit 启动检查成功，连续多轮 `IDLE`，正常停止；最终 inactive/disabled。
 - 配置目标为 LOCAL_FIXTURE，未接入外部 ChatGPT 或真实客户 Session；无订单、无资金和付款写入。
+
+### 2026-09-05 Bark 重复告警 P0 证据
+
+- 生产日志：HNSKJ `cardTypes/accountBalance` 在 `parseEnvelope` 失败，catalog-sync 任务周期性 `RETRY_PENDING`。
+- 数据库：`provider-snapshot:hnskj` 只有一条长期 OPEN 的 `PROVIDER_SNAPSHOT_STALE` 告警（创建 2026-08-24，最近更新 2026-09-04），不是多条 dedupe 记录。
+- 结论：底层 Provider 快照同步失败持续存在；通知层未区分同一 OPEN 事件更新与新故障边沿，导致 Bark 重复推送。待修复 Provider 解析/退避和通知冷却，不执行资金写入。
