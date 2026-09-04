@@ -1019,3 +1019,11 @@
 - 生产部署：不可变 release `/opt/pojia/releases/20260901-browser-access-block-7bad460f26d311d8f15103c86933a276cf4b9d14`，回滚点 `/opt/pojia/releases/20260901-provider-reason-569e8ee`。Web/Worker active，Browser Worker inactive/disabled。
 - 部署后验证：生产 Browser unit 短暂启动只读 fixture 后正常停止；API readiness `ok=true`、active/unknown funds=0、活动任务=0、Browser job/run/lease=0；默认 API、接单/派发均为 true。
 - 未完成：ChatGPT 真实页面因 `CHATGPT_ACCESS_BLOCKED` 未到 Checkout；后续需在可访问的批准网络环境重新执行到最终付款按钮前的非付款观察。不得把本轮结果说成 Browser 付款链路已验收。
+
+## 2026-09-04 新卡错误占用、自动补卡循环与缺卡误报修复
+
+- commit `a8bd7e6`；release `/opt/pojia/releases/20260904-card-availability-a8bd7e6-real`；回滚点 `/opt/pojia/releases/20260903-dark-surface-eba5331`。
+- 根因：Provider 失败订单 9414 的卡 2772 在无 PURCHASE、余额仍 $16 后仍保留 RECONCILIATION + ACTIVE assignment；订单重试路径又绕过 scheduler 反复创建 24 个 automatic job，实际仅开卡 1 张；自动自愈过程被错误当成人工告警。
+- 修复：失败后强制只读交易同步并以双证据安全释放；WAITING_FOR_CARD 成为唯一需求触发，scheduler 独占付费任务创建；预检零开卡失败不占资金复核/日配额；过程自愈不推送，真正失败按订单唯一提醒。
+- 生产复验：卡 2772=`AVAILABLE/isAllocatable/READY`、ledger/assignment=`RELEASED`；overview available=1、readiness=READY、CARD_SUPPLY=READY；补卡 used=1/limit=5；openAlertCount=0；公网健康 ready。
+- 部署修正：首次复制 current 时保留 symlink，候选别名误指旧 release；发现后建立真实 `...-real` release，并以 `git HEAD^` 六个文件 SHA 恢复旧 release，最终 current/回滚目录已核对且误别名已 unlink。

@@ -40,5 +40,5 @@
 - 已确认补给“24/5”不是开了 24 张卡：24 个 automatic 请求中 23 个开卡前失败、实际只成功 1 张。订单重试绕过 scheduler 反复直插任务是根因。
 - 已完成候选修复：失败后触发交易同步并在双重证据下释放；订单不再直插开卡任务；自动自愈不再推缺卡 Bark；终态按 opened_count 统计日用量。
 - 验证：定向 14/14、隔离 MySQL 5/5、v1 全套 521（477 pass/44 skip/0 fail）。
-- 当前状态：候选尚未部署；部署和生产只读同步后才能把生产 available=0 改写为已修复。
+- 当前状态：已部署并完成生产只读同步；2772 已恢复 AVAILABLE/READY，overview available=1/readiness=READY，补卡用量=1/5，开放提醒=0。
 - 详细证据：`docs/2026-09-04-card-availability-root-cause-and-fix.md`。

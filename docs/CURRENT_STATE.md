@@ -1,6 +1,6 @@
 # 当前生产状态快照｜2026-09-02 00:32 CST
 
-> **2026-09-04 现场增量（优先于下方 09-02 基线）**：当前生产 release 仍为 `20260903-dark-surface-eba5331`。新卡 `2772/9051` 实际 `active/$16`，但失败订单 9414 的消费账本=`RECONCILIATION`、assignment=ACTIVE，导致 available=0；交易同步仅见开卡充值、无 PURCHASE。自动补卡今日显示 24/5，实为 24 个请求、23 个零开卡预检失败、实际 opened=1。代码修复候选已完成、尚未部署；生产状态仍未收敛。详见 `docs/2026-09-04-card-availability-root-cause-and-fix.md`。
+> **2026-09-04 现场增量（优先于下方 09-02 基线）**：当前生产 release 为 `/opt/pojia/releases/20260904-card-availability-a8bd7e6-real`，回滚点 `20260903-dark-surface-eba5331`。新卡 `2772/9051` 的失败订单遗留占用闭环已修复；生产只读同步后该卡为 `AVAILABLE/isAllocatable/READY`、余额 `$16`，ledger 与 assignment 均为 `RELEASED`。管理后台 overview 已现场返回 available=1、readiness=READY、CARD_SUPPLY=READY、补卡使用量=1/5、openAlertCount=0；Web/Worker/相关 timer/Bark active，公网健康 ready。详见 `docs/2026-09-04-card-availability-root-cause-and-fix.md`。
 
 > 只保留当前有效事实；历史过程查 `HANDOFF_LOG.md`，方向与顺序查 `PROJECT_MAP.md`，全链路和验收细则查 `PROJECT_OPERATING_MODEL.md`。
 > 本快照已现场核对生产 release、systemd、Worker 进程环境、数据库 Provider account 和只读 readiness；Browser 主线只读回归证据见 `docs/2026-09-01_browser-main-readonly-regression.md`。

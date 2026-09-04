@@ -38,4 +38,14 @@
 
 ## 部署与历史收敛
 
-当前为代码候选，尚未部署。部署后需对卡 `2772` 发起一次只读同步；新逻辑会在事务内自动释放其错误占用。随后复核：available=1、active assignment=0、ledger=RELEASED、今日自动补卡使用量=1、无重复缺卡 Bark。该动作不付款、不充值、不新开卡。
+已部署到 `/opt/pojia/releases/20260904-card-availability-a8bd7e6-real`，回滚点 `/opt/pojia/releases/20260903-dark-surface-eba5331`。部署后对卡 `2772` 执行一次只读同步，生产闭环结果：
+
+- 卡 2772：`AVAILABLE/isAllocatable=true/category=READY`，余额 `$16`；
+- ledger=`RELEASED`，assignment=`RELEASED`；
+- 管理后台 overview：`cardStock.available=1`、`readiness=READY`、`CARD_SUPPLY=READY`；
+- 今日补卡投影从错误的 requested 24 改为真实 used 1，remaining 4；
+- `openAlertCount=0`，对应等待卡片 alert 为 RESOLVED；
+- Web/Worker/timer/Bark 均 active，公网两个 `/health/ready` 均 ready；
+- 全程没有付款、充值或新开卡。
+
+部署过程中首次 `cp -a /opt/pojia/current` 保留了 symlink，导致候选别名仍指向旧 release；发现后立即建立真实 release `...-real`、切换 current，并用 `git HEAD^` 的逐文件 SHA 基线恢复旧 release。最终 current 和回滚目录均已核对，错误别名已 unlink。
