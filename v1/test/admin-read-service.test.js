@@ -49,6 +49,8 @@ test('admin overview maps aggregate values without exposing raw records', async 
     cardIntakePending: 2, fundsRiskPending: 1,
     cardFundingRiskPending: 2, cardFundingManualReview: 1,
     reconciliationCasesOpen: 3, cardSyncBacklog: 4,
+    cardSyncOldestAgeSeconds: 0, cardSyncAvgLatencySeconds: 0,
+    cardSyncFailureRate: 0,
     replenishmentUsedToday: 0, replenishmentDailyLimit: 5,
     replenishmentRemainingToday: 5
   });

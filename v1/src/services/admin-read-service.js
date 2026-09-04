@@ -552,6 +552,12 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
             WHERE status IN ('OPEN','ASSIGNED')) AS reconciliation_cases_open,
           (SELECT COUNT(*) FROM card_sync_jobs
             WHERE status IN ('PENDING','RUNNING','REVIEW_REQUIRED')) AS card_sync_backlog,
+          (SELECT COALESCE(TIMESTAMPDIFF(SECOND, MIN(created_at), UTC_TIMESTAMP()), 0)
+             FROM card_sync_jobs WHERE status IN ('PENDING','RUNNING')) AS card_sync_oldest_age_seconds,
+          (SELECT COALESCE(ROUND(AVG(TIMESTAMPDIFF(SECOND, created_at, completed_at)), 1), 0)
+             FROM card_sync_jobs WHERE status = 'COMPLETED' AND completed_at >= UTC_TIMESTAMP() - INTERVAL 24 HOUR) AS card_sync_avg_latency_seconds,
+          (SELECT COALESCE(ROUND(100 * SUM(status IN ('REVIEW_REQUIRED')) / NULLIF(COUNT(*), 0), 1), 0)
+             FROM card_sync_jobs WHERE completed_at >= UTC_TIMESTAMP() - INTERVAL 24 HOUR OR status IN ('PENDING','RUNNING','REVIEW_REQUIRED')) AS card_sync_failure_rate,
           (SELECT COALESCE(SUM(CASE
               WHEN status IN ('PENDING','RUNNING') THEN requested_count
               ELSE opened_count END), 0) FROM card_stock_jobs
@@ -604,6 +610,9 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
         cardFundingManualReview: count(backlogRows[0]?.card_funding_manual_review),
         reconciliationCasesOpen: count(backlogRows[0]?.reconciliation_cases_open),
         cardSyncBacklog: count(backlogRows[0]?.card_sync_backlog),
+        cardSyncOldestAgeSeconds: count(backlogRows[0]?.card_sync_oldest_age_seconds),
+        cardSyncAvgLatencySeconds: count(backlogRows[0]?.card_sync_avg_latency_seconds),
+        cardSyncFailureRate: count(backlogRows[0]?.card_sync_failure_rate),
         replenishmentUsedToday: count(backlogRows[0]?.replenishment_used_today),
         replenishmentDailyLimit: count(backlogRows[0]?.replenishment_daily_limit || 5),
         replenishmentRemainingToday: Math.max(0,
