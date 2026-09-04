@@ -47,6 +47,10 @@
 
 在全新隔离库重建并执行 001–045 后，已通过 4 个关键 MySQL 场景：库存同步持久化、分配卡定期同步、15 分钟可分配卡刷新、并发下单 worker 单次领取及过期租约恢复（`4 passed / 0 failed`）。
 
+## 生产部署（2026-09-04）
+
+用户确认后已完成生产数据库备份（`backup_integrity=OK`），部署 release `/opt/pojia/releases/20260904-sync-p0-6aff7fe`，以 root 迁移账号应用 `045_card_sync_priority`，原子切换 `/opt/pojia/current` 并重启 Web、API Worker 与只读同步 timer。现场结果：三项服务/定时器 active，`/health/ready` 返回 `{"status":"ready"}`；只读同步最近一次退出码 0，Provider 写环境均为 false。生产数据库中已有 1105 条同步任务均具备 priority 字段。未执行开卡、补余额、付款或其他 Provider 写入。
+
 ## API / Browser 共用稳定性边界
 
 同步队列、卡片资格、消费次数、资金栅栏和审计属于 API 与 Browser 共用核心，不能为某一条路线单独复制一套“快速实现”。受控并发必须在共享层完成：同步 worker 的并发上限、单卡互斥、租约恢复和失败退避对两条路线统一生效；API 与 Browser 仅在最终执行器层分支。这样未来切换默认路线不会改变库存和资金一致性。

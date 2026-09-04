@@ -170,6 +170,8 @@
 
 本轮同步频率与 P0 对抗式复查已落盘：`docs/2026-09-04-sync-frequency-and-p0-review.md`。结论是 timer 频率本身不是主要问题，库存同步队列的优先级/失败隔离/单任务吞吐才是 P0；该同步可靠性修正与自动补余额、无卡自动开卡生产闭环应作为同一批 P0 推进。
 
+2026-09-04：同步 P0 release `/opt/pojia/releases/20260904-sync-p0-6aff7fe` 已部署；迁移 045、优先级/待复核隔离、轻量指标和最多 4（硬上限 6）并发 runner 已上线。生产 Web/Worker/read-sync timer active，`/health/ready=ready`；未执行资金写入。
+
 下一笔 Browser 真实订单前，必须按 `docs/2026-09-04_full-system-preflight-scope.md` 一次性核对客户充值页、运营后台（含 Browser）、订单/资金、库存/卡台/自动补给、后端共享核心及生产部署。该体检不创建订单、不调用 Provider 写接口、不付款；结果必须区分实时证据、代码证据、历史快照和未验证。统筹按板块定时汇报“已完成/进行中/下一块/阻塞”，不以微步骤反复打断。
 
 ## 9. 地图维护纪律
