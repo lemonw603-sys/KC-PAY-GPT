@@ -175,3 +175,12 @@
 - migration 046/047 已现场检查为增量 SQL，默认账单地址开关为关闭；尚未执行生产迁移。
 - 本地 `npm --prefix v1 run preflight:readiness` 未能启动，原因是当前 shell 未提供 `DATABASE_URL`（配置校验直接拒绝），这不是 readiness 通过或生产可用的证据；不能用本地缺少凭证替代生产核对。
 - 生产 systemd、当前 release、数据库迁移版本和运行开关仍需在有生产连接的执行窗口现场只读核对；在此之前不部署 Browser 候选、不启动 Worker、不做资金动作。
+
+### 2026-09-04 生产只读体检现场结果（SSH 核对）
+
+- 生产主机 `144.34.180.184` 可通过现有 SSH 会话只读核对；当前 release：`/opt/pojia/releases/20260904-funding-recovery-race-4bf84f9`。
+- `pojia-web.service`、`pojia-worker.service` 为 `active/enabled`；`pojia-browser-worker.service` 为 `inactive/disabled`。
+- `http://127.0.0.1:3100/health/live` 与 `/health/ready` 均 HTTP 200。
+- 数据库已执行迁移最高版本为 `045_card_sync_priority`；046/047 尚未部署，符合当前计划边界。
+- 生产配置事实：Provider reads=true（provider.env），Provider 通用写=false、卡片写=false、充值写=false；Browser 为 `PRODUCTION_READONLY/LOCAL_FIXTURE/headless`。Funding 与 read-sync timer 均 active/enabled，但 funding unit 的卡片写权限仍为 false，未执行资金写入。
+- 本轮只读核对未修改生产、未执行迁移、未启动 Browser Worker、未调用 Provider/卡台写接口、未开卡/补余额/付款。

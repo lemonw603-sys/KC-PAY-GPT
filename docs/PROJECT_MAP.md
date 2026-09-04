@@ -220,3 +220,7 @@ Browser 候选对齐后发现 v1 客户首页静态 `sendFile` 在候选 worktre
 ### 2026-09-04 部署前体检进展
 
 代码回归已通过；迁移 046/047 仅完成静态审查，未上生产。尝试运行本地 readiness 因 `DATABASE_URL` 未注入而被配置层拒绝，不能据此判断生产状态。生产 release/systemd/DB 仍待现场只读核对。
+
+### 2026-09-04 生产现场体检结果
+
+已通过现有 SSH 会话完成只读核对：生产 release 为 `20260904-funding-recovery-race-4bf84f9`；Web/Worker active，Browser Worker inactive/disabled；live/ready 均 200；数据库最高迁移为 045，046/047 未部署；Provider 读取开启、所有写入关闭。当前具备继续做部署前差异评估的证据，但不代表 Browser 生产付款已验收。
