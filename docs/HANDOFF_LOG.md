@@ -1074,3 +1074,10 @@
 - 测试通过：v1 `528/482/46/0`，Browser `113/109/4/0`。
 - 工作区仍保留用户未提交 `docs/DECISIONS.md`，不可覆盖或提交；本次代码文件尚未提交/部署。
 - 下一步：审查 diff 后提交独立 commit；备份并部署至生产，重启相关服务后只读验证告警/同步状态。保持所有资金与付款写权限关闭。
+
+## 2026-09-05｜P0 修复已部署
+
+- 生产 release：`/opt/pojia/releases/20260905-maintenance-bark-6246cc1`。
+- 部署前备份完整性通过；重启后 Web/Worker/catalog-sync/Bark 均 active，live/ready 正常。
+- 已核对生产代码 SHA-256 与本地提交一致；Browser Worker 仍 disabled/inactive，Provider 写权限全部关闭。
+- 后续观察重点：HNSKJ 维护期间同步任务采用长退避，Bark 对同一 OPEN 告警不重复通知；不做资金写入或付款。

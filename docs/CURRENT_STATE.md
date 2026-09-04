@@ -225,3 +225,10 @@
 - Bark outbox 修复为：同一 OPEN 事件更新不重新入队，仅在告警已 CANCELLED 后重新打开时通知；移除 acknowledge 触发重发路径。
 - 验证：v1 全量 `528 total / 482 passed / 46 skipped / 0 failed`；Browser `113 total / 109 passed / 4 skipped / 0 failed`；维护分类与 Bark 定向测试通过。
 - 当前仅本地代码变更，尚未部署生产；生产 Provider 写权限、Browser Worker、付款均保持关闭。
+
+### 2026-09-05 P0 修复已部署生产
+
+- 发布：`/opt/pojia/releases/20260905-maintenance-bark-6246cc1`，由提交 `6246cc1` 的已审查代码构成；部署前备份完整性校验通过。
+- Web、API Worker、卡台目录同步 timer、Bark 通知服务重启后均 `active`；`/health/live`=`ok`、`/health/ready`=`ready`。
+- 生产文件 SHA-256 与本地提交一致；Browser Worker 仍 `inactive/disabled`。
+- Provider reads=true；Provider 通用写、卡片写、充值写均 false。未执行开卡、补余额、Provider 写入或付款。

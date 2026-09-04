@@ -250,3 +250,9 @@ Browser 候选对齐后发现 v1 客户首页静态 `sendFile` 在候选 worktre
 - 现场根因：HNSKJ 读接口返回 `success=false` 维护消息且无 `data`，导致快照同步失败并进入短周期重试；不是已确认的字段改名。
 - 实施修复：维护响应专门分类并采用 5 分钟长退避；Bark 同一 OPEN 事件只通知一次，只有 CANCELLED 后重新打开才允许再次通知。
 - 本地回归已通过（v1 528/482/46/0；Browser 113/109/4/0），生产尚未部署。部署前需备份并复核服务状态；不涉及 Provider 写入或付款。
+
+### 2026-09-05 P0 修复生产部署完成
+
+- 已部署 `/opt/pojia/releases/20260905-maintenance-bark-6246cc1`（commit `6246cc1`），部署前备份 `backup_integrity=OK`。
+- Web/Worker/catalog-sync/Bark 服务 active，live/ready 均正常；Browser Worker 继续 disabled/inactive。
+- Provider 读取开启，全部写权限关闭；未进行任何资金或付款动作。
