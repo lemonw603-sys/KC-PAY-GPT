@@ -1099,3 +1099,10 @@
 - 生产 Web/API 健康正常，但 Browser Worker 仍 `inactive/disabled`，生产目标仍为 `LOCAL_FIXTURE`，不能直接承接外部真实订单。
 - 本地 BitBrowser Local API 已现场返回 `POST /health -> success=true`；这只证明本地控制面可用，不代表 Profile、代理、Session 或 Checkout 已验收。
 - 因此当前动作是测试前置，不创建订单、不切换生产路线、不启用付款写权限。下一步需在本地单 Profile 完成只读连通性和 Checkout 观察，再决定是否进入真实订单。
+
+## 2026-09-05｜BitBrowser 单 Profile 只读预检完成
+
+- 通过 BitBrowser Local API 列出 7 个 Profile，选择 `Plus Browser PH Pilot`（id `10f0dc7b534844c083165796447d5893`）。
+- `POST /browser/open` 成功，CDP 接管成功；访问 `https://chatgpt.com/` 返回正常标题 `ChatGPT: Chat, Work, Create & Code with AI`。
+- 未注入 Session、未创建订单、未进入 Checkout、未读取卡片、未付款；Profile 已正常关闭。
+- 该结果只证明单 Profile/代理/公开页面可达；下一步需要客户式 Session+CDK 才能验证账号与 Checkout。
