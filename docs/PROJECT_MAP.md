@@ -5,6 +5,8 @@
 > 历史报告不能覆盖本地图；实时生产事实优先，变化后必须同步更新本地图与 `CURRENT_STATE.md`。
 > 全链路、控制矩阵、自动补给状态机、库存最小模型、资金边界、通知、回滚和验收细则统一见 `docs/PROJECT_OPERATING_MODEL.md`。
 
+> **2026-09-04 增量核对**：macOS→生产 MySQL loopback SSH 隧道前置路径已实测可用；BitBrowser Local API 本机可达；生产 Browser Worker 仍保持 `disabled/inactive`。生产 env 的 `root:pojia 0640` 与 systemd 服务账号匹配，不应误改为 `0600`；macOS 本地 launcher env 才要求 `0600`。详见 `docs/browser-research/MACOS_BROWSER_PRODUCTION_TUNNEL_CHECK_2026-09-04.md`。
+
 ## 1. 已确认的目标和原则
 
 1. Plus 运营后台是中枢：客户提交 CDK + Session 后，系统应尽快自行完成资源准备和充值，不能要求运营逐单寻找底层开关。
@@ -139,6 +141,8 @@
 - 回到菲律宾 Profile 后，已用官方 UI 原生请求完整重跑：Checkout create 是 `PH/PHP`、HTTP 200、`automatic_tax_enabled=true`；填入当前 HNSKJ 测试卡和 `US/DE` 后仍为 `982.14 + 117.86 = 1100.00 PHP`，且未观察到 ChatGPT checkout snapshot 请求。`submitCalls=0`。所以当前组合未命中 `psp_override`，下一步只在有第二类 BIN/发卡路由测试卡时做单变量 A/B，不再重复同卡（详见 `docs/browser-research/PH_OFFICIAL_UI_PSP_ROUTE_NONPAYMENT_2026-09-04.md`）。
 - 容量方向已确认并完成真实 1→3→6 Profile 访问/隔离验收：6 个常驻隔离 Profile，单 Profile 串行、Profile 间并行；六路同时达到 ChatGPT HTTP 200、Cookie/localStorage 隔离和运行时指纹摘要差异 `6/6`。已修复客户清理误删 Cloudflare 运行 Cookie，以及生产池并发突发启动造成 Local API 部分成功的问题；生产池现为物理窗口顺序打开、页面任务并行。六路共用一个菲律宾出口，用户确认现阶段不以多出口作为阻断（详见 `docs/browser-research/BITBROWSER_SIX_PROFILE_ACCESS_AND_ISOLATION_VERIFICATION_2026-09-03.md`）。
 - 非付款闭环通过后，再单独确认首笔真实 Browser 付款；成功后再讨论把全局默认路线从 API 切为 Browser。
+
+**当前推进点（2026-09-04）**：先在仓库外生成本地只读 env（不含客户 Session/PAN/CVC/API key，权限 0600），执行 launcher `--check`；通过后才安排一次不付款的生产形态只读 canary。未完成前不加载 launchd、不启动生产 Browser Worker。
 
 ### E｜客户充值页体验线
 

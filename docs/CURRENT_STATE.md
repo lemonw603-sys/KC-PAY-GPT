@@ -3,6 +3,7 @@
 > 只保留当前有效事实；历史过程查 `HANDOFF_LOG.md`，方向与顺序查 `PROJECT_MAP.md`，全链路和验收细则查 `PROJECT_OPERATING_MODEL.md`。
 > 本快照已现场核对生产 release、systemd、Worker 进程环境、数据库 Provider account 和只读 readiness；Browser 主线只读回归证据见 `docs/2026-09-01_browser-main-readonly-regression.md`。
 > **2026-09-03 增量**：客户充值页 v2 改版 release 已部署并公网现场渲染验证（见 §1）；本次仅重核客户页 release 与渲染，§2–§5 的业务门禁 / 资金 / 卡片沿用 2026-09-02 00:32 核对基线，未重新现场核对。
+> **2026-09-04 增量**：完成 macOS Browser 生产只读接入前置核对：BitBrowser Local API 本机 HTTP 200；SSH 到生产 MySQL loopback 隧道实测成功后关闭；生产 Browser Worker 仍 `disabled/inactive`。未启动 Worker、未领取任务、未使用客户 Session、未调用 Provider/卡台、未付款。生产 browser env 为 `root:pojia 0640`（匹配 systemd `User/Group=pojia`），本地 launcher env 另行要求 `0600`。详见 `docs/browser-research/MACOS_BROWSER_PRODUCTION_TUNNEL_CHECK_2026-09-04.md`。
 
 ## 1. 代码、release 与服务
 

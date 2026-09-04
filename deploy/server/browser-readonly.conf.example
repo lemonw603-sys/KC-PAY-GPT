@@ -1,4 +1,6 @@
-# Install as /etc/pojia/browser-readonly.env with mode 0600.
+# Install as /etc/pojia/browser-readonly.env, owned by root:pojia with mode 0640
+# (the systemd unit runs as the unprivileged `pojia` group). The local macOS
+# launcher has a separate operator-owned env file and requires mode 0600.
 # Never include Session, PAN, CVC, HNSKJ_API_KEY, or ZZSHU_API_KEY.
 BROWSER_WORKER_MODE=PRODUCTION_READONLY
 BROWSER_WORKER_CONFIRMATION="RUN BROWSER PRODUCTION READONLY WORKER"

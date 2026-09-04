@@ -1161,3 +1161,10 @@
 - 一次性数据库已停止并删除，六个 Profile 均关闭；无 Session、卡资料、ChatGPT Checkout、Provider/卡台调用或付款。
 - Browser 普通全量 `153 total / 148 passed / 5 environment-skipped / 0 failed`。
 - 详细证据：`docs/browser-research/BITBROWSER_SIX_PROFILE_SHARED_QUEUE_NONPAYMENT_ATTEMPT_2026-09-03.md`。
+# 2026-09-04｜macOS Browser 生产只读接入前置核对
+
+- 本轮现场核对本机 BitBrowser Local API（HTTP 200、Profile 未打开）、菲律宾代理配置权限 `0600`、生产 SSH BatchMode 与 MySQL loopback 隧道；随机本地端口转发成功后立即关闭。
+- 生产 Browser Worker 仍 `disabled/inactive`；生产 MySQL 仅监听 `127.0.0.1:3306`。未启动 Worker、未领取任务、未使用客户 Session、未调用 Provider/卡台、未付款。
+- 生产 `/etc/pojia/browser-readonly.env` 为 `root:pojia 0640`，与 unit 的 `User/Group=pojia` 匹配；修正 server env 模板注释，避免把服务配置误改为 `0600`。macOS 本地 launcher env 仍要求 `0600`。
+- launcher shell 检查及 production-readonly/macOS/systemd/config 相关测试 31/31 通过。
+- 详细证据：`docs/browser-research/MACOS_BROWSER_PRODUCTION_TUNNEL_CHECK_2026-09-04.md`。
