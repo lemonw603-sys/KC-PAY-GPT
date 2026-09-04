@@ -26,6 +26,25 @@ const ADDRESS_KEYS = new Set(['name', 'country', 'line1', 'city', 'state', 'post
 const CHECKOUT_KEYS = new Set(['creationMode', 'country', 'currency']);
 const ACCOUNT_CHECK_PATH = '/backend-api/accounts/check/v4-2023-04-27?timezone_offset_min=0';
 const SUMMARY_SELECTOR = '[data-testid="checkout-summary-column"]';
+const OPERATIONAL_COOKIE_NAMES = new Set([
+  '__cf_bm', '__cflb', '_cfuvid', 'cf_clearance', 'oai-did',
+]);
+
+function reusableOperationalCookie(cookie) {
+  const domain = String(cookie?.domain || '').replace(/^\./, '');
+  if (!OPERATIONAL_COOKIE_NAMES.has(cookie?.name)
+    || !/(^|\.)(chatgpt|openai)\.com$/i.test(domain)) return null;
+  return Object.fromEntries(Object.entries({
+    name: cookie.name,
+    value: cookie.value,
+    domain: cookie.domain,
+    path: cookie.path || '/',
+    expires: cookie.expires,
+    httpOnly: cookie.httpOnly,
+    secure: cookie.secure,
+    sameSite: cookie.sameSite,
+  }).filter(([, value]) => value !== undefined));
+}
 
 function digest(value) {
   return createHash('sha256').update(String(value || '')).digest('hex');
@@ -83,7 +102,15 @@ async function clearCustomerState(context) {
   for (const page of context.pages()) {
     if (page !== anchor) await page.close({ runBeforeUnload: false }).catch(() => undefined);
   }
+  // Customer credentials and checkout state must never cross runs, while the
+  // profile-scoped Cloudflare/device cookies are required for a stable headed
+  // fingerprint session. Preserve only the same narrow allowlist used by the
+  // production BitBrowser runtime.
+  const operationalCookies = (await context.cookies())
+    .map(reusableOperationalCookie)
+    .filter(Boolean);
   await context.clearCookies();
+  if (operationalCookies.length) await context.addCookies(operationalCookies);
   const session = await context.newCDPSession(anchor);
   try {
     for (const origin of ['https://chatgpt.com', 'https://openai.com', 'https://auth.openai.com']) {
@@ -231,11 +258,23 @@ async function readBillingRegion(page) {
   return { country: normalize(country, ['US']), state: normalize(state, ['DE']) };
 }
 
-function installSafeNetworkObserver(page, evidence) {
+async function installSafeNetworkObserver(page, evidence) {
   const pending = new Set();
-  page.on('request', (request) => {
-    const safe = sanitizeObservedRequest(request.url(), request.method(), request.postData());
-    if (safe) evidence.push(safe);
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send('Network.enable');
+  cdp.on('Network.requestWillBeSent', (event) => {
+    const task = (async () => {
+      let postData = event.request.postData || null;
+      if (!postData && String(event.request.method).toUpperCase() === 'POST') {
+        postData = await cdp.send('Network.getRequestPostData', { requestId: event.requestId })
+          .then((value) => value?.postData || null)
+          .catch(() => null);
+      }
+      const safe = sanitizeObservedRequest(event.request.url, event.request.method, postData);
+      if (safe) evidence.push(safe);
+    })();
+    pending.add(task);
+    task.finally(() => pending.delete(task));
   });
   page.on('response', (response) => {
     const task = (async () => {
@@ -357,7 +396,7 @@ async function main() {
     sessionLease = null;
     page = await context.newPage();
     await installSubmitTripwire(page);
-    flushNetworkEvidence = installSafeNetworkObserver(page, networkEvidence);
+    flushNetworkEvidence = await installSafeNetworkObserver(page, networkEvidence);
     await page.goto('https://chatgpt.com/', { waitUntil: 'domcontentloaded', timeout: 45_000 });
     const identity = await probeSessionIdentity(page, expectedIdentity, { accountCheckPath: ACCOUNT_CHECK_PATH });
     if (identity.alreadyPlus) throw new Error('test account is already subscribed');

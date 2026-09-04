@@ -1,7 +1,7 @@
 # AI充值业务｜唯一项目规划地图
 
 > **用途**：只回答四件事：项目目标、当前生产事实、已完成/未完成、唯一执行顺序。
-> **最后统一核对**：2026-09-02 21:42 CST。已对照前后端代码，并通过 SSH 复核生产 release、Web/API/Browser 服务、只读 readiness 和本地实时库存投影；本轮未执行 Provider 写入或付款。
+> **最后统一核对**：2026-09-04 CST。生产业务基线仍以 2026-09-02 SSH 核对为准；2026-09-04 另完成本地菲律宾 BitBrowser 官方 UI 非付款观察，未执行 Provider 写入或付款。
 > 历史报告不能覆盖本地图；实时生产事实优先，变化后必须同步更新本地图与 `CURRENT_STATE.md`。
 > 全链路、控制矩阵、自动补给状态机、库存最小模型、资金边界、通知、回滚和验收细则统一见 `docs/PROJECT_OPERATING_MODEL.md`。
 
@@ -134,8 +134,9 @@
 - 本轮已按真实业务创建测试 CDK+Session 订单，临时切换默认路线为 Browser；系统自动开卡并分配后，Browser 访问被 ChatGPT/网络返回 `CHATGPT_ACCESS_BLOCKED`，在付款前安全终止。测试订单、资金风险、租约和 Browser Worker 已清理，默认路线已恢复 API。
 - 已修复：`CHATGPT_ACCESS_BLOCKED`、Checkout 导航/观察阻断不再回到 `CARD_READY` 重排 `SUBMIT_RECHARGE`；改为终态 `RECHARGE_FAILED`，避免重复创建 attempt。修复已部署到当前 release 并通过定向测试。
 - 单 Profile Delaware 非付款税费复验已完成：测试 Session 身份匹配且为 FREE，真实 ChatGPT Plus Checkout 填入卡片和 Delaware 账单地址后，稳定金额仍为基础价 `PHP 982.14` + VAT `PHP 117.86` = `PHP 1100.00`；Subscribe 可用但未点击，`submitCalls=0`，字段/Session/Profile 已清理。不能再把免税州地址视为菲律宾 Checkout 的免税规则或成本依据（详见 `docs/browser-research/BITBROWSER_DELAWARE_NONPAYMENT_TAX_OBSERVATION_2026-09-03.md`）。
-- 税费观察器已补齐 Checkout 创建、billing snapshot、pricing config、Stripe 脱敏路径和填卡/地址前后金额时间线。美国出口诊断对照已实跑；菲律宾出口内的账号/创建路径/卡 BIN 分流 A/B 仍未执行。当前 Browser 全量 `153 total / 148 passed / 5 environment-skipped / 0 failed`。
-- 美国出口一次性非付款对照已完成：常规升级入口直接选中 `US/USD`，地址前 `USD 22.40`，填写 `US/DE` 后税额变为 0、总额 `USD 20.00`；`submitCalls=0`。随后旧探针用附件旧 token 裸调 Checkout API，绕过当前官方前端的 Sentinel/设备/目标路由请求链并得到两次 HTTP 400；该结果已降级为无效实现证据，不能解释为账号被禁或上游对 `US + PH/PHP` 的有效裁决。随后两级修正已实测：①保留官方请求头但在 Sentinel 生成后改 POST body，仍返回 HTTP 400，说明这种后改写仍不等价于官方请求；②改为在前端构建 POST 前切换到官方 PH pricing config，成功读到 `plus.month=1100 inclusive` 与 `psp_override=982.14 exclusive`，但前端生成的是 `US/PHP`，因地区不一致已在本机 abort，Checkout 上游请求为 0。账号“被禁”的说法已撤销，目标税额机制转为核对 PSP route，而不是继续伪造地区字段。生产菲律宾出口决策未变（详见 `docs/browser-research/US_EXIT_DELAWARE_TAX_AB_NONPAYMENT_2026-09-04.md`）。
+- 税费观察器已补齐 Checkout 创建、billing snapshot、pricing config、Stripe 脱敏路径和填卡/地址前后金额时间线；又增加 CDP POST body 取证和严格运行 Cookie allowlist，避免观察脚本自己破坏 Cloudflare 访问状态。当前 Browser 全量 `153 total / 148 passed / 5 environment-skipped / 0 failed`。
+- 美国出口一次性非付款对照已完成：常规升级入口直接选中 `US/USD`，地址前 `USD 22.40`，填写 `US/DE` 后税额变为 0、总额 `USD 20.00`；`submitCalls=0`。随后旧探针用附件旧 token 裸调 Checkout API，绕过当前官方前端的 Sentinel/设备/目标路由请求链并得到两次 HTTP 400；该结果已降级为无效实现证据，不能解释为账号被禁或上游对 `US + PH/PHP` 的有效裁决。随后两级修正已实测：①保留官方请求头但在 Sentinel 生成后改 POST body，仍返回 HTTP 400，说明这种后改写仍不等价于官方请求；②改为在前端构建 POST 前切换到官方 PH pricing config，成功读到 `plus.month=1100 inclusive` 与 `psp_override=982.14 exclusive`，但前端生成的是 `US/PHP`，因地区不一致已在本机 abort，Checkout 上游请求为 0。账号“被禁”的说法已撤销。
+- 回到菲律宾 Profile 后，已用官方 UI 原生请求完整重跑：Checkout create 是 `PH/PHP`、HTTP 200、`automatic_tax_enabled=true`；填入当前 HNSKJ 测试卡和 `US/DE` 后仍为 `982.14 + 117.86 = 1100.00 PHP`，且未观察到 ChatGPT checkout snapshot 请求。`submitCalls=0`。所以当前组合未命中 `psp_override`，下一步只在有第二类 BIN/发卡路由测试卡时做单变量 A/B，不再重复同卡（详见 `docs/browser-research/PH_OFFICIAL_UI_PSP_ROUTE_NONPAYMENT_2026-09-04.md`）。
 - 容量方向已确认并完成真实 1→3→6 Profile 访问/隔离验收：6 个常驻隔离 Profile，单 Profile 串行、Profile 间并行；六路同时达到 ChatGPT HTTP 200、Cookie/localStorage 隔离和运行时指纹摘要差异 `6/6`。已修复客户清理误删 Cloudflare 运行 Cookie，以及生产池并发突发启动造成 Local API 部分成功的问题；生产池现为物理窗口顺序打开、页面任务并行。六路共用一个菲律宾出口，用户确认现阶段不以多出口作为阻断（详见 `docs/browser-research/BITBROWSER_SIX_PROFILE_ACCESS_AND_ISOLATION_VERIFICATION_2026-09-03.md`）。
 - 非付款闭环通过后，再单独确认首笔真实 Browser 付款；成功后再讨论把全局默认路线从 API 切为 Browser。
 
@@ -186,5 +187,5 @@
 - 对抗审查已修复地址/税费与付款许可顺序：先无付款地填写卡和账单地址并读取最终总额，再将 Checkout 摘要绑定权威 permit/submit intent；permit 后金额漂移仍停止。
 - 生产形态准备已补齐：macOS launcher 支持单/多 Profile、默认 `ONCE`/显式 `CONTINUOUS`；六 lane 共用一个进程 heartbeat，默认每 10 秒更新，不再随 lane 数放大数据库写入；配置模板已同步且未含真实 ID/代理/密钥。
 - 代码验证：税费观察器补强后 Browser 普通全量 `150 total / 145 passed / 5 environment-skipped / 0 failed`；此前已用全新临时 MySQL 8.4、完整 migrations 001–044 将当时 4 个数据库跳过项逐项实跑为 `4/4 passed`；v1 repository 定向 `21/21`。当前新增的 BitBrowser 六 Profile 现场集成项仍因每日额度保持 environment-skipped。
-- Browser 下一步：BitBrowser 每日打开额度恢复后，原样重跑现有六 Profile + 隔离 MySQL 的生产 Worker/共享队列非付款闭环；代码已修正先领单后冷启动导致租约过期的问题，但修正后现场复验尚未完成。闭环通过后、首笔真实 Browser 付款前，在菲律宾出口固定不变的条件下完成 `982.14/1100.00` 非付款税费分流 A/B。
+- Browser 下一步：优先原样重跑现有六 Profile + 隔离 MySQL 的生产 Worker/共享队列非付款闭环；代码已修正先领单后冷启动导致租约过期的问题，但修正后现场复验尚未完成。税费线已确认当前 HNSKJ 卡组合不命中 `psp_override`；只在有第二类 BIN/发卡路由测试卡时继续单变量 A/B，不因等待该卡阻塞六 Profile 共享队列非付款验收。
 - 详细实施/审查：`docs/browser-research/BROWSER_SIX_PROFILE_POOL_IMPLEMENTATION_2026-09-02.md`、`docs/browser-research/BROWSER_SIX_PROFILE_PRODUCTION_SHAPE_PREPARATION_2026-09-02.md`。

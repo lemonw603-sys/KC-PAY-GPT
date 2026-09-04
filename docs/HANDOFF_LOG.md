@@ -1143,3 +1143,12 @@
 - 前端最终自然生成 `US/PHP`，不是 `PH/PHP`；安全合同在本机 abort，Checkout 上游请求 `0`、卡字段 `0`、付款 `0`。
 - 结论：账号未被证明封禁；不能继续靠地区字段硬改。下一调查对象是官方 PSP/processor route 如何选择 `psp_override`。
 - 脱敏证据：`artifacts/browser-us-tax-ab-20260904/result-official-ui-rewrite-ph-diagnostic.json`、`artifacts/browser-us-tax-ab-20260904/result-official-pricing-region-ph-final.json`（均保持未跟踪）。
+## 2026-09-04｜菲律宾官方 UI PSP 路由非付款观察完成
+
+- 现场恢复本地 mihomo，Cloudflare trace 为 `loc=PH/colo=MNL`；BitBrowser 先前“网络不通”是代理进程未在运行。
+- 修正独立税费观察脚本误删 Profile 运行 Cookie 的问题；与生产 runtime 统一为五项严格 allowlist，客户 Session/Auth/未知 Cookie 仍全清。
+- 增加 CDP `Network.getRequestPostData` 取证，现场读到官方原生 Checkout POST 为 `PH/PHP`，response HTTP 200，`automatic_tax_enabled=true`。
+- 同一测试卡填入前/后以及页面回读 `US/DE` 后均为 `PHP 982.14 + 117.86 VAT = 1100.00`，未观察到 ChatGPT checkout snapshot，没有命中 `psp_override`。
+- Subscribe 未点击，`submitCalls=0`；字段、Session/Cookie/storage、临时文件和 Profile 已清理；未调用 Provider/卡台，未部署。
+- `npm run check` 通过；Browser 全量 `153 total / 148 passed / 5 environment-skipped / 0 failed`。
+- 详细报告：`docs/browser-research/PH_OFFICIAL_UI_PSP_ROUTE_NONPAYMENT_2026-09-04.md`。

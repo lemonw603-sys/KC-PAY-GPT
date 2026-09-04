@@ -48,6 +48,9 @@ test('checkout response evidence discards ids, URLs and secrets recursively', ()
   assert.equal(evidence.billingCountry, 'PH');
   assert.equal(evidence.billingCurrency, 'PHP');
   assert.equal(evidence.processorEntity, 'OpenAI LLC');
+  assert.deepEqual(evidence.pricingSignals, {
+    'nested.billing_country': 'PH', 'nested.billing_currency': 'PHP',
+  });
   assert.equal(assertEvidenceIsSecretFree(evidence, secrets), true);
 });
 

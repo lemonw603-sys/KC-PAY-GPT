@@ -133,6 +133,10 @@ export function sanitizeCheckoutCreateResponse(rawUrl, status, bodyText) {
       max: 80,
       pattern: /^[A-Za-z0-9 _.-]+$/,
     }),
+    // Keep only pricing/routing scalars. This lets the non-payment probe
+    // distinguish the normal PH amount from an upstream PSP override without
+    // retaining checkout identifiers, URLs, customer data, or secrets.
+    pricingSignals: body ? extractPricingSignals(body) : {},
   };
 }
 

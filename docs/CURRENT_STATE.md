@@ -155,8 +155,18 @@
 - Subscribe 可用但未点击，`submitCalls=0`；字段、Cookie/storage、一次性敏感文件和 Profile 均已清理。
 - 本次未复现 `PHP 982.14`；只证明常规入口在美国出口下切到 US/USD 轨道。生产 Browser 菲律宾出口决策未变。
 - 本轮修正冷 Profile UI hydration 等待、中文金额标签和证据安全扫描误报；Browser 全量 `153 total / 148 passed / 5 environment-skipped / 0 failed`。
-- 旧显式 `PH/PHP + custom` 探针两次得到 HTTP 400 `unusual activity`，但复查确认该探针使用附件旧 token 裸调 API，绕过当前官方前端实际携带的 Sentinel、设备和目标路由请求头；因此不能据此判定账号被禁或该地区组合被有效拒绝。已删除该裸调路径。后续实测证明在 Sentinel 生成后改 POST body 仍返回 HTTP 400；再改为前置选择官方 PH pricing config 后，官方前端生成 `US/PHP`，因不满足 `PH/PHP` 合同已在本机 abort，Checkout 上游请求为 0。PH config 已现场读到 `plus.month=1100 inclusive` 和 `psp_override=982.14 exclusive`；下一步核对 PSP route，不继续把 400 解释成账号封禁。
+- 旧显式 `PH/PHP + custom` 探针两次得到 HTTP 400 `unusual activity`，但复查确认该探针使用附件旧 token 裸调 API，绕过当前官方前端实际携带的 Sentinel、设备和目标路由请求头；因此不能据此判定账号被禁或该地区组合被有效拒绝。已删除该裸调路径。后续实测证明在 Sentinel 生成后改 POST body 仍返回 HTTP 400；再改为前置选择官方 PH pricing config 后，官方前端生成 `US/PHP`，因不满足 `PH/PHP` 合同已在本机 abort，Checkout 上游请求为 0。PH config 已现场读到 `plus.month=1100 inclusive` 和 `psp_override=982.14 exclusive`；后续已转入菲律宾官方 UI PSP route 实测，结果见 9.2，不继续把 400 解释成账号封禁。
 - 证据：`docs/browser-research/US_EXIT_DELAWARE_TAX_AB_NONPAYMENT_2026-09-04.md`。
+
+## 9.2 2026-09-04 菲律宾官方 UI PSP 路由非付款观察
+
+- 恢复本地 mihomo 后实测 Cloudflare trace 为 `loc=PH/colo=MNL`；先前 BitBrowser “网络不通”是本地代理进程未运行，不是 Checkout 代码故障。
+- 独立税费观察脚本与生产 runtime 不一致，曾误清 Cloudflare/设备运行 Cookie 导致 account-check 403；已修正为严格五项 allowlist，Session/Auth/未知 Cookie 仍不保留。
+- CDP 现场取证确认官方前端原生 Checkout create 为 `PH/PHP`、HTTP 200、`automatic_tax_enabled=true`、processor entity=`openai_llc`。
+- 金额在填卡前、填卡后、页面回读 `US/DE` 后始终是 `PHP 982.14 + VAT 117.86 = PHP 1100.00`；未观察到 `/backend-api/payments/checkout/snapshot`。
+- Subscribe 可用但未点击，`submitCalls=0`；7 个字段、Session/Cookie/storage 和临时输入已清理，Profile 已关闭。
+- 当前 HNSKJ 测试卡组合不会选中 `psp_override=982.14`；官方选择条件仍未知。下一步只做不同 BIN/发卡路由测试卡的单变量 A/B，不再重复同卡。
+- 证据：`docs/browser-research/PH_OFFICIAL_UI_PSP_ROUTE_NONPAYMENT_2026-09-04.md`。
 
 ## 10. 2026-09-03 Browser 三 Profile 访问与隔离闸门
 
