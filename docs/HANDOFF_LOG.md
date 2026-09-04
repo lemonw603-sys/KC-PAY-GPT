@@ -1081,3 +1081,9 @@
 - 部署前备份完整性通过；重启后 Web/Worker/catalog-sync/Bark 均 active，live/ready 正常。
 - 已核对生产代码 SHA-256 与本地提交一致；Browser Worker 仍 disabled/inactive，Provider 写权限全部关闭。
 - 后续观察重点：HNSKJ 维护期间同步任务采用长退避，Bark 对同一 OPEN 告警不重复通知；不做资金写入或付款。
+
+## 2026-09-05｜部署后健康复核
+
+- 现场复核当前 release 仍为 `20260905-maintenance-bark-6246cc1`；Web/Worker/catalog-sync/Bark 均 active，`/health/ready=ready`。
+- Browser Worker inactive；Provider reads=true，所有写权限=false。当前无须人工操作，等待卡台维护状态变化或真实订单。
+- 下一阶段顺序：先观察同步/告警去重；有订单后再单笔 Browser 非付款 pilot，走到 Checkout 金额/税费读取后安全退出。
