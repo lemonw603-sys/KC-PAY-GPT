@@ -1067,3 +1067,10 @@
 - 生产日志：HNSKJ `cardTypes/accountBalance` 在 `parseEnvelope` 失败，catalog-sync 任务周期性 `RETRY_PENDING`。
 - 数据库：`provider-snapshot:hnskj` 只有一条长期 OPEN 的 `PROVIDER_SNAPSHOT_STALE` 告警（创建 2026-08-24，最近更新 2026-09-04），不是多条 dedupe 记录。
 - 结论：底层 Provider 快照同步失败持续存在；通知层未区分同一 OPEN 事件更新与新故障边沿，导致 Bark 重复推送。待修复 Provider 解析/退避和通知冷却，不执行资金写入。
+
+## 2026-09-05｜P0 修复进度
+
+- 已修复 `alert-notification-repository` 重复条件及旧测试断言；新增 HNSKJ maintenance 响应分类（长退避 300 秒）。
+- 测试通过：v1 `528/482/46/0`，Browser `113/109/4/0`。
+- 工作区仍保留用户未提交 `docs/DECISIONS.md`，不可覆盖或提交；本次代码文件尚未提交/部署。
+- 下一步：审查 diff 后提交独立 commit；备份并部署至生产，重启相关服务后只读验证告警/同步状态。保持所有资金与付款写权限关闭。

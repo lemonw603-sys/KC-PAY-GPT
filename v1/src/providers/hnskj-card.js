@@ -137,11 +137,17 @@ function parseEnvelope(response, { uncertainOnSchema = false, retryableOnSchema 
   }
   if (!response.ok || result.data.success !== true) {
     const error = extractBusinessError(response);
+    const maintenance = result.data.success === false
+      && /(?:维护|内测结束|升级|暂不可用|temporar(?:y|ily)\s+unavailable|maintenance)/i.test(
+        String(error.message || result.data.message || '')
+      );
     throw new ProviderError(`Hnskj API error: ${error.message}`, {
       provider: 'hnskj',
       status: response.status,
       businessCode: error.code,
-      retryable: response.status === 502 || response.status === 503,
+      kind: maintenance ? 'maintenance' : 'provider',
+      retryable: maintenance || response.status === 502 || response.status === 503,
+      retryAfterMs: maintenance ? 300_000 : null,
       uncertain: response.status >= 500
     });
   }

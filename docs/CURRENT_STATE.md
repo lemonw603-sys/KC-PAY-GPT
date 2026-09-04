@@ -217,3 +217,11 @@
 - 生产日志显示 card-catalog-sync 周期性调用 HNSKJ `cardTypes/accountBalance` 时在 `parseEnvelope` 失败，随后任务以 `RETRY_PENDING` 反复重试；因此底层 Provider 快照同步确实持续失败。
 - 截图中的重复 Bark 通知不是简单的“多条告警”问题：同一长期 OPEN 事件被重复触发通知，且告警仅被 acknowledge 而未 resolved。现有通知去重没有把“同一 OPEN 事件的更新”与“新故障边沿”区分开。
 - 该问题属于 P0 机制问题：需先修复 Provider 响应解析/失败分类和退避，再让 Bark 仅在 OPEN 边沿或明确状态变化时通知，并增加冷却/last-notified 约束；不能只关闭通知声音而保留底层失败循环。
+
+### 2026-09-05 Provider 维护响应与 Bark 去重修复（本地已验证，待部署）
+
+- 生产现场响应已确认：HNSKJ `/account/balance` 与 `/card-types` 返回 HTTP 200 但 `success=false`、无 `data`，消息为“内测结束，正式版本9.5日20：00后推出”。根因是 Provider 主动维护，不是字段漂移。
+- 代码将该类响应分类为 `ProviderError.kind=maintenance`、`retryable=true`、`retryAfterMs=300000`，不会进入资金写入或未知付款状态。
+- Bark outbox 修复为：同一 OPEN 事件更新不重新入队，仅在告警已 CANCELLED 后重新打开时通知；移除 acknowledge 触发重发路径。
+- 验证：v1 全量 `528 total / 482 passed / 46 skipped / 0 failed`；Browser `113 total / 109 passed / 4 skipped / 0 failed`；维护分类与 Bark 定向测试通过。
+- 当前仅本地代码变更，尚未部署生产；生产 Provider 写权限、Browser Worker、付款均保持关闭。

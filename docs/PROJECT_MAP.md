@@ -244,3 +244,9 @@ Browser 候选对齐后发现 v1 客户首页静态 `sendFile` 在候选 worktre
 ### 2026-09-05 卡台同步告警 P0 发现
 
 生产现场确认 HNSKJ 卡段/余额快照同步持续在 `parseEnvelope` 失败，任务反复 `RETRY_PENDING`。`provider-snapshot:hnskj` 为单一长期 OPEN 告警，重复 Bark 来自同一事件更新未做边沿/冷却抑制。需将 Provider 解析失败、退避和 Bark 通知去重作为同一 P0 修复，不得只静音通知。
+
+## 2026-09-05｜P0 卡台同步维护与重复通知修复
+
+- 现场根因：HNSKJ 读接口返回 `success=false` 维护消息且无 `data`，导致快照同步失败并进入短周期重试；不是已确认的字段改名。
+- 实施修复：维护响应专门分类并采用 5 分钟长退避；Bark 同一 OPEN 事件只通知一次，只有 CANCELLED 后重新打开才允许再次通知。
+- 本地回归已通过（v1 528/482/46/0；Browser 113/109/4/0），生产尚未部署。部署前需备份并复核服务状态；不涉及 Provider 写入或付款。

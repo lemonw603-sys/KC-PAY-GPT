@@ -12,15 +12,8 @@ export function createAlertNotificationRepository(pool) {
        SET n.status = 'PENDING', n.attempt_count = 0, n.next_attempt_at = NULL,
            n.locked_at = NULL, n.sent_at = NULL, n.last_error = NULL,
            n.source_updated_at = a.updated_at
-       WHERE n.channel = 'BARK' AND a.status = 'OPEN'
-         AND (
-           n.status = 'CANCELLED'
-           OR (
-             n.status IN ('SENT', 'DEAD')
-             AND a.acknowledged_at IS NOT NULL
-             AND (n.source_updated_at IS NULL OR n.source_updated_at < a.acknowledged_at)
-           )
-         )`
+         WHERE n.channel = 'BARK' AND a.status = 'OPEN'
+         AND n.status = 'CANCELLED'`
     );
     await pool.query(
       `UPDATE alert_notifications n

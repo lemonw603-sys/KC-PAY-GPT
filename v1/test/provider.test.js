@@ -142,6 +142,25 @@ test('Hnskj marks 502 as same-key retryable while preserving the unknown result'
   assert.equal(calls[0].init.headers['X-Idempotency-Key'], 'order-123456789012345');
 });
 
+test('Hnskj classifies provider maintenance responses and requests a long read backoff', async () => {
+  const provider = new HnskjCardProvider({
+    baseUrl: 'https://card.example/api/open/v1',
+    apiKey: 'nhs_test_key',
+    fetchImpl: async () => response({
+      success: false,
+      message: '内测结束，正式版本9.5日20：00后推出 感谢支持尽请期待'
+    }, 200)
+  });
+  await assert.rejects(
+    provider.accountBalance(),
+    (error) => error instanceof ProviderError
+      && error.kind === 'maintenance'
+      && error.retryable === true
+      && error.retryAfterMs === 300_000
+      && error.uncertain === false
+  );
+});
+
 test('Hnskj rejects an invalid idempotency key before network access', async () => {
   let called = false;
   const provider = new HnskjCardProvider({

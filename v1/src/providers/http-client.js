@@ -9,6 +9,7 @@ export class ProviderError extends Error {
     businessCode = null,
     retryable = false,
     uncertain = false,
+    retryAfterMs = null,
     cause = undefined
   } = {}) {
     super(message, { cause });
@@ -19,6 +20,7 @@ export class ProviderError extends Error {
     this.businessCode = businessCode;
     this.retryable = retryable;
     this.uncertain = uncertain;
+    this.retryAfterMs = retryAfterMs;
   }
 }
 

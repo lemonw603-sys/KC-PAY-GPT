@@ -13,9 +13,6 @@ test('Bark outbox sends once per open incident and only requeues after resolutio
   await createAlertNotificationRepository(pool).enqueueOpenAlerts();
   assert.equal(calls.length, 3);
   assert.match(calls[1].sql, /n\.status = 'CANCELLED'/);
-  assert.match(calls[1].sql, /n\.status IN \('SENT', 'DEAD'\)/);
-  assert.match(calls[1].sql, /a\.acknowledged_at IS NOT NULL/);
-  assert.match(calls[1].sql, /n\.source_updated_at < a\.acknowledged_at/);
-  assert.doesNotMatch(calls[1].sql, /n\.sent_at < a\.acknowledged_at/);
-  assert.match(calls[2].sql, /'SENT', 'DEAD'/);
+  assert.doesNotMatch(calls[1].sql, /a\.acknowledged_at IS NOT NULL/);
+  assert.match(calls[2].sql, /n\.status IN \('PENDING', 'RETRY', 'SENDING', 'SENT', 'DEAD'\)/);
 });
