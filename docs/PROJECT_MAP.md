@@ -2,6 +2,8 @@
 
 > **2026-09-04 现场更正（优先于下方旧快照）**：生产实际新卡 `2772/9051` 为 `active/$16`，但订单 `9414` 明确失败且无 PURCHASE 后，消费账本仍停在 `RECONCILIATION`、assignment 仍为 ACTIVE，故被错误排除并显示可分配 0。今日补给 24/5 也已查明为 24 个任务请求、实际仅开卡 1 张；订单重试绕过 scheduler 反复建任务是根因。修复已部署到 `/opt/pojia/releases/20260904-card-availability-a8bd7e6-real`，并通过 v1 全套 521 项（477 pass/44 skip/0 fail）及隔离 MySQL 关键场景。生产只读同步后 2772 已恢复 `AVAILABLE/READY`，overview 为 available=1、readiness=READY、补卡用量=1/5、开放提醒=0。下一阶段继续完成全系统体检，再进入 Browser 真实订单。详见 `docs/2026-09-04-card-availability-root-cause-and-fix.md`。
 
+> **2026-09-04 只读复验最新事实（优先于上条）**：生产卡台实时查询 `2772/9051` 为 `active/$0.01`；同步任务已完成，后台 `current_balance=0.010000`、`last_transaction_synced_at` 已更新，库存正确显示 `DEPLETED`。本次证明同步链路已把卡台变化落库；目前没有可直接分配的 Plus 卡，不执行补余额或开卡。
+
 > **用途**：只回答四件事：项目目标、当前生产事实、已完成/未完成、唯一执行顺序。
 > **最后统一核对**：2026-09-02 00:32 CST。已对照前后端代码，并通过 SSH 复核部署后的生产 release、systemd、Worker 实际进程环境、只读 readiness 和新卡实时库存；本轮未执行 Provider 写入或付款。
 > 历史报告不能覆盖本地图；实时生产事实优先，变化后必须同步更新本地图与 `CURRENT_STATE.md`。

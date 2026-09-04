@@ -1,5 +1,7 @@
 # 当前生产状态快照｜2026-09-02 00:32 CST
 
+> **2026-09-04 只读复验最新事实**：卡台实时查询 `2772/9051=active/$0.01`；已手动排入只读同步并完成，后台 `current_balance=0.010000`、交易同步时间已更新，库存为 `DEPLETED`。此前 `$16/AVAILABLE` 快照已过期；当前没有可直接分配 Plus 卡。本次未执行补余额、开卡或付款。
+
 > **2026-09-04 现场增量（优先于下方 09-02 基线）**：当前生产 release 为 `/opt/pojia/releases/20260904-card-availability-a8bd7e6-real`，回滚点 `20260903-dark-surface-eba5331`。新卡 `2772/9051` 的失败订单遗留占用闭环已修复；生产只读同步后该卡为 `AVAILABLE/isAllocatable/READY`、余额 `$16`，ledger 与 assignment 均为 `RELEASED`。管理后台 overview 已现场返回 available=1、readiness=READY、CARD_SUPPLY=READY、补卡使用量=1/5、openAlertCount=0；Web/Worker/相关 timer/Bark active，公网健康 ready。详见 `docs/2026-09-04-card-availability-root-cause-and-fix.md`。
 
 > 只保留当前有效事实；历史过程查 `HANDOFF_LOG.md`，方向与顺序查 `PROJECT_MAP.md`，全链路和验收细则查 `PROJECT_OPERATING_MODEL.md`。
