@@ -551,7 +551,9 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
           (SELECT COUNT(*) FROM reconciliation_cases
             WHERE status IN ('OPEN','ASSIGNED')) AS reconciliation_cases_open,
           (SELECT COUNT(*) FROM card_sync_jobs
-            WHERE status IN ('PENDING','RUNNING','REVIEW_REQUIRED')) AS card_sync_backlog,
+            WHERE status IN ('PENDING','RUNNING')) AS card_sync_backlog,
+          (SELECT COUNT(*) FROM card_sync_jobs
+            WHERE status = 'REVIEW_REQUIRED') AS card_sync_review_required,
           (SELECT COALESCE(TIMESTAMPDIFF(SECOND, MIN(created_at), UTC_TIMESTAMP()), 0)
              FROM card_sync_jobs WHERE status IN ('PENDING','RUNNING')) AS card_sync_oldest_age_seconds,
           (SELECT COALESCE(ROUND(AVG(TIMESTAMPDIFF(SECOND, created_at, completed_at)), 1), 0)
@@ -610,6 +612,7 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
         cardFundingManualReview: count(backlogRows[0]?.card_funding_manual_review),
         reconciliationCasesOpen: count(backlogRows[0]?.reconciliation_cases_open),
         cardSyncBacklog: count(backlogRows[0]?.card_sync_backlog),
+        cardSyncReviewRequired: count(backlogRows[0]?.card_sync_review_required),
         cardSyncOldestAgeSeconds: count(backlogRows[0]?.card_sync_oldest_age_seconds),
         cardSyncAvgLatencySeconds: count(backlogRows[0]?.card_sync_avg_latency_seconds),
         cardSyncFailureRate: count(backlogRows[0]?.card_sync_failure_rate),

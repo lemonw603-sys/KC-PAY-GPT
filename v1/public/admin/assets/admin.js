@@ -313,7 +313,7 @@ async function loadOverview() {
       note: overview.operationalBacklog?.cardFundingManualReview
         ? `${overview.operationalBacklog.cardFundingManualReview} 个需人工复核` : '只读对账或人工复核队列', filter: 'RECONCILIATION_ISSUES' }
     ,{ label: '卡片同步', value: (overview.operationalBacklog?.cardSyncOldestAgeSeconds ?? 0) > 120 ? '延迟' : '正常',
-      note: `最老 ${overview.operationalBacklog?.cardSyncOldestAgeSeconds ?? 0}s · 平均 ${overview.operationalBacklog?.cardSyncAvgLatencySeconds ?? 0}s · 失败率 ${overview.operationalBacklog?.cardSyncFailureRate ?? 0}%`, view: 'overview' }
+      note: `最老 ${overview.operationalBacklog?.cardSyncOldestAgeSeconds ?? 0}s · 平均 ${overview.operationalBacklog?.cardSyncAvgLatencySeconds ?? 0}s · 失败率 ${overview.operationalBacklog?.cardSyncFailureRate ?? 0}%${overview.operationalBacklog?.cardSyncReviewRequired ? ` · ${overview.operationalBacklog.cardSyncReviewRequired} 条待复核` : ''}`, view: 'overview' }
   ];
   const inventoryMetrics = [
     { label: 'Plus 可分配卡', value: overview.cardStock?.available ?? 0,

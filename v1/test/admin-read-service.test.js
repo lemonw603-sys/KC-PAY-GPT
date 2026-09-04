@@ -33,7 +33,7 @@ test('admin overview maps aggregate values without exposing raw records', async 
       { setting_key: 'card_auto_replenishment_enabled', setting_value: 'false' }],
     [{ card_intake_pending: 2, funds_risk_pending: 1,
       card_funding_risk_pending: 2, card_funding_manual_review: 1,
-      reconciliation_cases_open: 3, card_sync_backlog: 4 }]
+      reconciliation_cases_open: 3, card_sync_backlog: 4, card_sync_review_required: 2 }]
   ]);
   const result = await createAdminReadService({ pool }).getOverview();
   assert.equal(result.metrics.successRate, 80);
@@ -50,7 +50,7 @@ test('admin overview maps aggregate values without exposing raw records', async 
     cardFundingRiskPending: 2, cardFundingManualReview: 1,
     reconciliationCasesOpen: 3, cardSyncBacklog: 4,
     cardSyncOldestAgeSeconds: 0, cardSyncAvgLatencySeconds: 0,
-    cardSyncFailureRate: 0,
+    cardSyncFailureRate: 0, cardSyncReviewRequired: 2,
     replenishmentUsedToday: 0, replenishmentDailyLimit: 5,
     replenishmentRemainingToday: 5
   });
