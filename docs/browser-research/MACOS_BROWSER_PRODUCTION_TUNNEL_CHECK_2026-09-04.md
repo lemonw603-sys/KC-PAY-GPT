@@ -20,6 +20,12 @@
 - wrapper 已自动收尾：SSH 隧道监听已消失、Worker 退出；没有领取任务、读取客户 Session、调用 Provider/卡台或付款。
 - 不再重复打开 Profile 以消耗每日额度。下一步先修复或验证 BitBrowser Profile 的代理连通性，再重跑一次只读 canary。
 
+## 代理恢复后的复验
+
+- 发现本机 mihomo 未运行；按既有 `0600` 配置启动后，HTTP 代理 `127.0.0.1:17897` 恢复监听，Cloudflare trace 实测 `loc=PH`、`colo=MNL`。
+- 重跑一次 canary 后，生产 DB 检查仍为 `READY`；六 Profile warmup 在 BitBrowser Local API 10 秒超时（`BITBROWSER_API_TIMEOUT`），不是“网络不通”拒绝。已通过 Local API 对六个 Profile 发起关闭请求，全部 HTTP 200/success=true，确认没有残留打开窗口。
+- 当前剩余问题是 BitBrowser Profile warmup/Local API 响应时间超过 10 秒，需要在不重复消耗额度的前提下单独调高只读 canary 的 API 超时并做一次受控复验。付款、订单和 Provider 路径仍未触碰。
+
 ## 结论边界
 
 SSH target/key 和 loopback 隧道路径已具备可用证据，但仍未完成生产 Browser 只读 Worker 的配置文件创建、launchd 加载或队列接入。当前只能说“接入前置网络与权限路径已打通”，不能说 Browser 已接入生产或已具备客户订单履约能力。

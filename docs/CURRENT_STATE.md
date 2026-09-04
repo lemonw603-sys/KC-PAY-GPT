@@ -6,6 +6,7 @@
 > **2026-09-04 增量**：完成 macOS Browser 生产只读接入前置核对：BitBrowser Local API 本机 HTTP 200；SSH 到生产 MySQL loopback 隧道实测成功后关闭；生产 Browser Worker 仍 `disabled/inactive`。未启动 Worker、未领取任务、未使用客户 Session、未调用 Provider/卡台、未付款。生产 browser env 为 `root:pojia 0640`（匹配 systemd `User/Group=pojia`），本地 launcher env 另行要求 `0600`。详见 `docs/browser-research/MACOS_BROWSER_PRODUCTION_TUNNEL_CHECK_2026-09-04.md`。
 > **2026-09-04 增量**：已在仓库外创建本机 `0600` 只读 env，BitBrowser 六 Profile/headed 配置加载器检查通过；仍未启动 launcher、未领取任务、未使用客户 Session、未调用 Provider/卡台、未付款。生产 Browser Worker 继续 `disabled/inactive`。
 > **2026-09-04 canary 增量**：一次 `ONCE` canary 的生产 DB 只读检查返回 `READY`；随后 BitBrowser `/browser/open` 返回“网络不通已停止打开浏览器”，wrapper 已安全退出并关闭隧道。当前阻断是 Profile 代理/网络连通性，不是数据库或付款逻辑；不重复打开以免消耗每日额度。
+> **2026-09-04 canary 复验**：恢复 mihomo 后 Cloudflare trace=`PH/MNL`；第二次 canary 的生产 DB 检查仍 `READY`，但六 Profile warmup 因 Local API 10 秒超时退出。六 Profile 已通过 Local API 全部关闭，无残留窗口。当前阻断收敛为 warmup/API 超时，尚未启动生产常驻 Worker。
 
 ## 1. 代码、release 与服务
 
