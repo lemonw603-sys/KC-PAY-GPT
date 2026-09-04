@@ -195,3 +195,9 @@
 4. 唯一下一步或优先级变化。
 
 新窗口首读：`PROJECT_MAP.md` → `CURRENT_STATE.md` → `PROJECT_OPERATING_MODEL.md` → 引用的证据报告。`DECISIONS.md` 是决策历史账本，其旧状态栏不得覆盖当前生产事实；`ROADMAP.md` 仅为历史明细，不得自行覆盖本地图。
+
+## 9. 2026-09-04 MockAddress 集成状态
+
+- 代码已在主线落盘：固定版本本地地址数据、确定性 JIT 地址来源、HNSKJ material boundary 接入、运营后台账单设置接口/页面及 migration 046。
+- 这是“账单地址候选来源”，不是免税保证；每次 Browser Checkout 填写后仍必须以页面重新计算的 tax/total 为准。不得把地址生成器的州标签写成平台税务结论。
+- 当前尚未部署；主线 Browser Worker 仍是生产只读实现，真实 Browser 付款未验收。下一步先完成 Browser 分支选择性对齐、migration/后台只读部署验证和非付款回归，再决定是否进入资金动作。
