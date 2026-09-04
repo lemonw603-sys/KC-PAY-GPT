@@ -22,6 +22,17 @@ function topUpAmount(minimum, current) {
   return String(Math.max(1, Math.ceil(delta)));
 }
 
+function jsonObject(value) {
+  if (value && typeof value === 'object' && !Array.isArray(value)) return value;
+  if (typeof value !== 'string' || !value.trim()) return {};
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
 function parseSession(ciphertext, key) {
   const text = decryptSecret(ciphertext, key);
   const session = JSON.parse(text);
@@ -269,17 +280,35 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
               order.minimum_required_card_balance,
               underfunded.current_balance
             );
-            const fundingKey = `order-card-funding:${orderId}:${underfunded.id}`;
-            const [fundingInsert] = await connection.query(
-              `INSERT INTO card_funding_attempts
+            const [priorFunding] = await connection.query(
+              `SELECT status, funds_risk_state, result_summary_json
+               FROM card_funding_attempts
+               WHERE order_id = ? AND card_id = ?
+               ORDER BY created_at DESC, id DESC FOR UPDATE`,
+              [orderId, underfunded.id]
+            );
+            const lastFunding = priorFunding[0] || null;
+            const retryDisposition = jsonObject(lastFunding?.result_summary_json).retryDisposition;
+            const mayPrepare = priorFunding.length === 0 || (
+              priorFunding.length < 3
+              && lastFunding.status === 'FAILED'
+              && lastFunding.funds_risk_state === 'CLEARED'
+              && retryDisposition === 'AUTO_RETRY'
+            );
+            if (mayPrepare) {
+              const attemptNo = priorFunding.length + 1;
+              const fundingKey = `order-card-funding:${orderId}:${underfunded.id}:v${attemptNo}`;
+              const [fundingInsert] = await connection.query(
+                `INSERT INTO card_funding_attempts
                (id, card_id, order_id, provider_account_id, amount, currency, status,
                 funds_risk_state, idempotency_key)
                VALUES (?, ?, ?, ?, ?, 'USD', 'PREPARED', 'NONE', ?)
                ON DUPLICATE KEY UPDATE id = id`,
-              [crypto.randomUUID(), underfunded.id, orderId, order.card_provider_account_id,
-                amount, fundingKey]
-            );
-            fundingQueued = Number(fundingInsert.affectedRows) === 1;
+                [crypto.randomUUID(), underfunded.id, orderId, order.card_provider_account_id,
+                  amount, fundingKey]
+              );
+              fundingQueued = Number(fundingInsert.affectedRows) === 1;
+            }
           }
           // A stale local card is not proof that inventory is absent. Wait for
           // the already queued read sync before spending money on a new card;

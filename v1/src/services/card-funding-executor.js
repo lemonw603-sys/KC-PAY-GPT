@@ -43,7 +43,11 @@ export async function executeCardFundingAttempt({ repository, provider, attemptI
       outcome: unknown ? 'UNCERTAIN' : 'DEFINITE_FAILURE',
       httpStatus: error?.status ?? null,
       businessCode: error?.businessCode ?? null,
-      responseSummary: { kind: error?.kind || 'provider', code: error?.code || null },
+      responseSummary: {
+        kind: error?.kind || 'provider', code: error?.code || null,
+        retryDisposition: unknown ? 'MANUAL_REVIEW'
+          : error?.retryable === true ? 'AUTO_RETRY' : 'DO_NOT_RETRY'
+      },
       status: unknown ? 'MANUAL_REVIEW' : 'FAILED',
       fundsRiskState: unknown ? 'UNKNOWN' : 'CLEARED',
       finishedAt: new Date()

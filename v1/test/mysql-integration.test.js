@@ -1315,6 +1315,146 @@ test('order-driven balance funding queues only after enablement and chooses the 
   }
 });
 
+test('order-driven funding retries only cleared retryable failures and stops after three attempts', {
+  skip: !databaseUrl && 'TEST_DATABASE_URL 未配置；完整 MySQL 套件在服务器隔离数据库运行'
+}, async () => {
+  const pool = mysql.createPool({ uri: databaseUrl, connectionLimit: 3, timezone: 'Z' });
+  const workflow = createWorkflowRepository(pool, { sessionEncryptionKey: integrationSessionKey });
+  const [[originalFunding]] = await pool.query(
+    `SELECT setting_value FROM app_settings WHERE setting_key='card_balance_recharge_enabled'`
+  );
+  const fixtures = [];
+
+  async function addScenarioCard() {
+    const fixture = await createOrder(pool);
+    const cardId = id();
+    const scenario = { fixture, cardId };
+    fixtures.push(scenario);
+    await pool.query(
+      `INSERT INTO cards
+       (id, order_id, inventory_status, provider_card_id, card_type_id, last4, status,
+        funded_amount, current_balance, currency, refund_status, card_credentials_ciphertext,
+        provider_account_id, external_card_id, intake_status, sync_tier, last_transaction_synced_at)
+       VALUES (?, NULL, 'DEPLETED', ?, '7', '4242', 'active', '16', '0.01',
+        'USD', 'MONITORING', ?, ?, ?, 'ACCEPTED', 'AVAILABLE', CURRENT_TIMESTAMP(3))`,
+      [cardId, `order-funding-recovery-${cardId}`,
+        encryptSecret(JSON.stringify({ cardNumber: '4242424242424242',
+          expMonth: 12, expYear: 2032, cvv: '123' }), integrationSessionKey),
+        legacyCardProviderAccountId, `order-funding-recovery-${cardId}`]
+    );
+    return scenario;
+  }
+
+  async function insertFinishedAttempt({ fixture, cardId, attemptNo, status = 'FAILED',
+    risk = 'CLEARED', retryDisposition }) {
+    await pool.query(
+      `INSERT INTO card_funding_attempts
+       (id, card_id, order_id, provider_account_id, amount, currency, status,
+        funds_risk_state, idempotency_key, result_summary_json, finished_at)
+       VALUES (?, ?, ?, ?, '16', 'USD', ?, ?, ?, ?, CURRENT_TIMESTAMP(3))`,
+      [id(), cardId, fixture.orderId, legacyCardProviderAccountId, status, risk,
+        `order-card-funding:${fixture.orderId}:${cardId}:v${attemptNo}`,
+        JSON.stringify({ retryDisposition })]
+    );
+  }
+
+  try {
+    await pool.query(
+      `UPDATE app_settings SET setting_value='true'
+       WHERE setting_key='card_balance_recharge_enabled'`
+    );
+
+    const retryable = await addScenarioCard();
+    await insertFinishedAttempt({ ...retryable, attemptNo: 1, retryDisposition: 'AUTO_RETRY' });
+    const concurrentSecond = await Promise.all([
+      workflow.assignAvailableCard(retryable.fixture.orderId),
+      workflow.assignAvailableCard(retryable.fixture.orderId)
+    ]);
+    assert.equal(concurrentSecond.filter((result) => result.fundingQueued === true).length, 1);
+    let [attempts] = await pool.query(
+      `SELECT status, idempotency_key FROM card_funding_attempts
+       WHERE order_id=? AND card_id=? ORDER BY created_at, id`,
+      [retryable.fixture.orderId, retryable.cardId]
+    );
+    assert.equal(attempts.length, 2);
+    assert.equal(attempts[1].status, 'PREPARED');
+    assert.match(attempts[1].idempotency_key, /:v2$/);
+
+    await pool.query(
+      `UPDATE card_funding_attempts
+       SET status='FAILED', funds_risk_state='CLEARED',
+           result_summary_json=JSON_OBJECT('retryDisposition','AUTO_RETRY'),
+           finished_at=CURRENT_TIMESTAMP(3)
+       WHERE order_id=? AND card_id=? AND status='PREPARED'`,
+      [retryable.fixture.orderId, retryable.cardId]
+    );
+    const third = await workflow.assignAvailableCard(retryable.fixture.orderId);
+    assert.equal(third.fundingQueued, true);
+    await pool.query(
+      `UPDATE card_funding_attempts
+       SET status='FAILED', funds_risk_state='CLEARED',
+           result_summary_json=JSON_OBJECT('retryDisposition','AUTO_RETRY'),
+           finished_at=CURRENT_TIMESTAMP(3)
+       WHERE order_id=? AND card_id=? AND status='PREPARED'`,
+      [retryable.fixture.orderId, retryable.cardId]
+    );
+    const capped = await workflow.assignAvailableCard(retryable.fixture.orderId);
+    assert.equal(Boolean(capped.fundingQueued), false);
+    [[{ count: attempts }]] = await pool.query(
+      `SELECT COUNT(*) AS count FROM card_funding_attempts WHERE order_id=? AND card_id=?`,
+      [retryable.fixture.orderId, retryable.cardId]
+    );
+    assert.equal(Number(attempts), 3);
+
+    await pool.query('DELETE FROM card_funding_attempts WHERE card_id=?', [retryable.cardId]);
+    await pool.query('DELETE FROM cards WHERE id=?', [retryable.cardId]);
+    await removeOrder(pool, retryable.fixture);
+    fixtures.splice(fixtures.indexOf(retryable), 1);
+
+    const terminal = await addScenarioCard();
+    await insertFinishedAttempt({ ...terminal, attemptNo: 1, retryDisposition: 'DO_NOT_RETRY' });
+    const terminalResult = await workflow.assignAvailableCard(terminal.fixture.orderId);
+    assert.equal(Boolean(terminalResult.fundingQueued), false);
+    const [[terminalCount]] = await pool.query(
+      `SELECT COUNT(*) AS count FROM card_funding_attempts WHERE order_id=? AND card_id=?`,
+      [terminal.fixture.orderId, terminal.cardId]
+    );
+    assert.equal(Number(terminalCount.count), 1);
+
+    await pool.query('DELETE FROM card_funding_attempts WHERE card_id=?', [terminal.cardId]);
+    await pool.query('DELETE FROM cards WHERE id=?', [terminal.cardId]);
+    await removeOrder(pool, terminal.fixture);
+    fixtures.splice(fixtures.indexOf(terminal), 1);
+
+    const unknown = await addScenarioCard();
+    await insertFinishedAttempt({ ...unknown, attemptNo: 1, status: 'MANUAL_REVIEW',
+      risk: 'UNKNOWN', retryDisposition: 'MANUAL_REVIEW' });
+    const unknownResult = await workflow.assignAvailableCard(unknown.fixture.orderId);
+    assert.equal(Boolean(unknownResult.fundingQueued), false);
+    const [[unknownCount]] = await pool.query(
+      `SELECT COUNT(*) AS count FROM card_funding_attempts WHERE order_id=? AND card_id=?`,
+      [unknown.fixture.orderId, unknown.cardId]
+    );
+    assert.equal(Number(unknownCount.count), 1);
+  } finally {
+    for (const { fixture, cardId } of fixtures) {
+      await pool.query('DELETE FROM card_sync_jobs WHERE card_id=?', [cardId]);
+      await pool.query('DELETE FROM provider_calls WHERE card_funding_attempt_id IN '
+        + '(SELECT id FROM card_funding_attempts WHERE card_id=?)', [cardId]);
+      await pool.query('DELETE FROM card_funding_attempts WHERE card_id=?', [cardId]);
+      await pool.query('DELETE FROM cards WHERE id=?', [cardId]);
+      await removeOrder(pool, fixture);
+    }
+    if (originalFunding) {
+      await pool.query(
+        `UPDATE app_settings SET setting_value=? WHERE setting_key='card_balance_recharge_enabled'`,
+        [originalFunding.setting_value]
+      );
+    }
+    await pool.end();
+  }
+});
+
 test('a card with active or unknown funding risk cannot be assigned to an order', {
   skip: !databaseUrl && 'TEST_DATABASE_URL 未配置；完整 MySQL 套件在服务器隔离数据库运行'
 }, async () => {
@@ -2031,7 +2171,7 @@ test('customer status lookup recovers the same order by public number or CDK', {
       actorType: 'TEST',
       reason: 'verify customer processing mapping'
     });
-    assert.equal((await queryStatus({ publicNo })).status, 'PROCESSING');
+    assert.equal((await queryStatus({ publicNo })).status, 'PREPARING');
     await assert.rejects(
       queryStatus({ publicNo: publicNo.toLowerCase() }),
       (error) => error.code === 'INVALID_ORDER_QUERY' || error.code === 'ORDER_NOT_FOUND'

@@ -46,6 +46,42 @@ test('card funding executor locks uncertain provider errors', async () => {
   assert.equal(repository.calls[1].input.fundsRiskState, 'UNKNOWN');
   assert.equal(repository.calls[1].input.status, 'MANUAL_REVIEW');
   assert.equal(repository.calls[1].input.outcome, 'UNCERTAIN');
+  assert.equal(repository.calls[1].input.responseSummary.retryDisposition, 'MANUAL_REVIEW');
+});
+
+test('card funding executor marks an explicitly retryable definite failure for automatic recovery', async () => {
+  const repository = repositoryFor();
+  const result = await executeCardFundingAttempt({ repository, attemptId: 'attempt-retryable',
+    providerAccountId: 'account-1', requestKey: 'funding-request-retryable',
+    provider: { rechargeCard: async () => {
+      const error = new Error('temporary rejection');
+      error.retryable = true;
+      error.businessCode = 'TEMPORARY_REJECTION';
+      throw error;
+    } }
+  });
+  assert.deepEqual(result, {
+    attemptId: 'attempt-retryable', state: 'FAILED', code: 'TEMPORARY_REJECTION'
+  });
+  assert.equal(repository.calls[1].input.fundsRiskState, 'CLEARED');
+  assert.equal(repository.calls[1].input.responseSummary.retryDisposition, 'AUTO_RETRY');
+});
+
+test('card funding executor does not retry a definite non-retryable failure', async () => {
+  const repository = repositoryFor();
+  const result = await executeCardFundingAttempt({ repository, attemptId: 'attempt-terminal',
+    providerAccountId: 'account-1', requestKey: 'funding-request-terminal',
+    provider: { rechargeCard: async () => {
+      const error = new Error('invalid amount');
+      error.businessCode = 'INVALID_AMOUNT';
+      throw error;
+    } }
+  });
+  assert.deepEqual(result, {
+    attemptId: 'attempt-terminal', state: 'FAILED', code: 'INVALID_AMOUNT'
+  });
+  assert.equal(repository.calls[1].input.fundsRiskState, 'CLEARED');
+  assert.equal(repository.calls[1].input.responseSummary.retryDisposition, 'DO_NOT_RETRY');
 });
 
 test('card funding executor locks a provider-accepted write when local commit fails', async () => {
