@@ -1043,3 +1043,9 @@
 - 验证：定向单元 45/45；v1 全量 522 total / 478 pass / 44 environment-skip / 0 fail；全新临时 MySQL 8.4 + 完整 migrations 的关键补给场景 2/2。
 - 卡台实时卡段返回 `requireMinBalance=1/minBalanceUsdt=25`。这是 Provider 开卡前硬条件，不是本地“开卡后保留余额”阈值，因此未按用户口头值伪改成 18；当前卡台余额 `$18.84` 时若进入无卡分支，仍会在 Provider 写入前安全停止。
 - 本轮未开卡、未补余额、未付款；真实低余额补差额成功闭环仍待首笔生产验收。专项记录：`docs/2026-09-04-card-supply-priority-and-retry-fix.md`。
+
+### 2026-09-04 部署前生产只读核对阻塞
+
+- 代码与本地回归已完成；尝试取得生产现场只读证据时，当前任务没有附着 Web Terminal/SSH shell，无法读取生产 release、systemd、数据库迁移版本或健康端点。
+- 已确认不能把历史报告或本地无 `DATABASE_URL` 的 readiness 结果当作生产证据；未执行部署、迁移、Worker 启动或任何资金动作。
+- 解除阻塞所需的最小输入：在服务器控制面板打开 Web Terminal/SSH Terminal，并保持 Linux shell 提示符可见；不需要在聊天中发送密码、私钥或 Token。
