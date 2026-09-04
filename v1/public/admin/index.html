@@ -150,6 +150,17 @@
             <span class="readonly-badge">authority 不可见</span>
           </div>
           <p class="card-description">这里只展示订单、attempt、run、检查点、资源租约、artifact 状态和对账关系，不展示 Checkout URL、Session、卡片凭据、密文引用或租约令牌。人工控制只转移同一个 run 的所有权；付款结果未知时只能锁入对账，不能在这里重付、换卡或重建 Checkout。</p>
+          <section class="card compact-card" aria-labelledby="billing-address-title">
+            <div class="card-heading"><div><p class="section-kicker">账单资料</p><h3 id="billing-address-title">MockAddress 免税州地址</h3></div><span class="readonly-badge">仅地址</span></div>
+            <p class="card-description">使用固定版本的本地地址数据；不会生成或替换卡号。填入后仍以 Checkout 实际税额为准。</p>
+            <form id="billing-address-settings" class="filters">
+              <label><span>状态</span><select id="billing-address-enabled"><option value="false">关闭</option><option value="true">启用</option></select></label>
+              <label><span>州</span><select id="billing-address-state"><option>AK</option><option selected>DE</option><option>MT</option><option>NH</option><option>OR</option></select></label>
+              <label class="search-field"><span>账单姓名</span><input id="billing-address-name" maxlength="120" autocomplete="off"></label>
+              <button class="primary-small" type="submit">保存设置</button>
+            </form>
+            <small id="billing-address-meta"></small>
+          </section>
           <form class="filters" id="browser-filters">
             <label class="search-field"><span class="sr-only">订单查询码</span><input id="browser-public-no" type="search" maxlength="64" placeholder="精确订单查询码"></label>
             <label><span class="sr-only">运行状态</span><select id="browser-status"><option value="">全部运行状态</option><option value="RUNNING">运行中</option><option value="HUMAN_REQUIRED">等待人工</option><option value="RECONCILE_ONLY">仅可对账</option><option value="READY">待运行</option><option value="COMPLETED">已完成</option><option value="FAILED_SAFE">安全失败</option></select></label>

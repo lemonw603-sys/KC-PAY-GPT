@@ -135,3 +135,28 @@
 - 2026-09-04 现场值：卡台余额 `$18.84`；卡台实时卡段合同返回 `requireMinBalance=1/minBalanceUsdt=25`。这表示**发起开卡前账户余额必须至少为 `$25`**，不是“开卡后仍保留 `$25`”。该值来自 Provider，不是本系统的可调安全阈值，不得本地伪改为 `$18`。
 - 因此当前如进入无卡分支，开 `$16` 卡会在 Provider 写入前被余额预检阻止；现有 `2772/9051` 可直接分配，所以无订单时不会触发开卡。剩余开卡额度为 `291`。
 - 已保留并验证本地保护修复：同步保留 `maintaining` 字段，遇到未来维护卡段时在付费调用前返回 `CARD_STOCK_CARD_TYPE_UNAVAILABLE`；本次未执行开卡或任何 Provider 写入。
+
+### 2026-09-04 MockAddress 账单地址集成（代码已落盘，未部署）
+
+- 已固定抓取并纳入仓库数据 `browser-mvp/data/mockaddress-us-taxfree-v20260426.json`，来源版本 `taxfree_target_no_source_perstate888`、生成时间 `2026-04-26`，SHA-256 `509dd2b017aaa5caab9d2ad03a371a62d62029664c2f30d052c81b0f4e83b70c`。运行时不访问 `mockaddress.com`。
+- 新增 `MockAddressBillingAddressSource`：仅返回姓名、国家、州、城市、街道、邮编；按订单/绑定引用确定性选取，重试不会随机换地址；拒绝错误版本、坏 JSON、缺字段和不支持州。
+- HNSKJ JIT card material source 已支持注入该账单来源；Browser LIVE adapter 已有填入账单后重新读取税额/总额的边界（Browser 分支代码尚未部署到生产）。
+- 运营后台新增 Browser→账单资料设置接口和页面：启停、州、账单姓名、来源版本/配置状态。迁移 `046_browser_billing_address_settings.sql` 尚未部署。
+- 验证：MockAddress 定向测试 `2/2`；v1 全量 `526`（480 通过、46 环境跳过、0 失败）；未启动生产 Browser Worker、未调用 Provider/卡台、未开卡、未付款。
+
+### 2026-09-04 卡台注销规则补充（用户现场确认，待下一次只读合同核对）
+
+- 用户在卡台后台确认：注销卡后预计保留 `$0.01`，其余余额退回卡台账户；当天新开的卡当前不能注销。该规则已作为运营事实记录，不把它误写成已通过 API 合同验证的实现能力。
+- 因此 5980 不再为了测试强制注销：若当天不能销卡，则保留并正常使用；任何注销/提现前仍需当次确认并先核对卡台实际可执行状态。
+
+### 2026-09-04 地址复用策略补充
+
+- 用户确认优先保证“一张卡一个账单地址”。已新增地址槽位分配：同一卡片引用始终复用同一地址；不同卡优先占用不同数据行，发生哈希碰撞时自动探测下一个空槽位；地址槽位记录只保存 `binding_ref/state/row_index`，不把完整地址写入账单分配表。
+- 生产持久化表为 migration `047_browser_billing_address_assignments.sql`；`MysqlBillingAddressAssignmentStore` 通过唯一键防止并发重复占用。当前尚未部署 migration 047，也未启用生产 Browser 付款。
+- 该策略降低地址跨卡重复，但不能证明平台一定免税或一定不触发风控；Checkout 实际税额、AVS/Provider 结果仍是权威证据。
+
+### 地址复用策略修订
+
+- 用户将策略从“严格一张卡一个地址”修订为“尽可能一张卡一个地址，不因地址池耗尽阻塞订单”。地址槽位仍优先一对一分配；全部槽位占用时，选择当前使用次数最低的地址复用，并保留卡片到槽位的持久绑定。
+
+- MockAddress 后台设置服务已补充单测：v1 全量现为 `528 total / 482 passed / 46 environment-skipped / 0 failed`。本轮仍未部署 migration 046/047。
