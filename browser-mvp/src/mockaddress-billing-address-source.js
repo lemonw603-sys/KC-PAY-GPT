@@ -39,12 +39,14 @@ export class InMemoryBillingAddressAssignmentStore {
     if (existing != null) return existing;
     for (let offset = 0; offset < rowCount; offset += 1) {
       const candidate = (index + offset) % rowCount;
-      const owner = this.byIndex.get(`${state}:${candidate}`);
-      if (!owner || owner === key) {
-        this.byIndex.set(`${state}:${candidate}`, key); this.byRef.set(key, candidate); return candidate;
+      const owners = this.byIndex.get(`${state}:${candidate}`) || new Set();
+      if (owners.size === 0 || owners.has(key)) {
+        owners.add(key); this.byIndex.set(`${state}:${candidate}`, owners); this.byRef.set(key, candidate); return candidate;
       }
     }
-    throw new ContractError('MockAddress address pool exhausted for configured state');
+    // Pool exhausted: reuse the preferred address rather than blocking an order.
+    const fallback = `${state}:${index}`; const owners = this.byIndex.get(fallback) || new Set();
+    owners.add(key); this.byIndex.set(fallback, owners); this.byRef.set(key, index); return index;
   }
 }
 
@@ -117,6 +119,10 @@ export class MysqlBillingAddressAssignmentStore {
       const found = await this.get(key);
       if (found != null) return found;
     }
-    throw new ContractError('MockAddress address pool exhausted for configured state');
+    const [[fallback]] = await this.pool.query('SELECT row_index AS rowIndex FROM browser_billing_address_assignments WHERE state = ? GROUP BY row_index ORDER BY COUNT(*) ASC, row_index ASC LIMIT 1', [state]);
+    const rowIndex = fallback?.rowIndex == null ? index : Number(fallback.rowIndex);
+    await this.pool.query('INSERT IGNORE INTO browser_billing_address_assignments (binding_ref, state, row_index) VALUES (?, ?, ?)', [key, state, rowIndex]);
+    const found = await this.get(key);
+    return found == null ? rowIndex : found;
   }
 }
