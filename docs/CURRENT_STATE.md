@@ -193,9 +193,10 @@
 - 一次性 MySQL 8.4、完整 migrations 和六条合成 dispatch job 已用于真实六 Profile 生产 Worker 形态测试；无客户 Session、真实卡资料、ChatGPT Checkout、Provider/卡台调用或付款。
 - 第一轮发现生产时序缺陷：Worker 先领取六个任务再等待 Profile 顺序冷启动，后排任务可能在窗口就绪前租约过期，最终出现 `ACTION_TIMEOUT` 后 safe-abort 又遇到 `LEASE_EXPIRED`。
 - 代码已改为 Worker 启动时先 warmup 所需 Profile，全部就绪后才启动队列 lane；账户级启动错误只调用一次 Local API并阻断剩余排队启动。
-- 修正后的第二轮在 warmup 第一个窗口收到 `BITBROWSER_DAILY_OPEN_LIMIT`，发生在队列领取之前；当天额度已用完，因此不能宣称共享队列闭环已通过。
-- 当前 Browser 全量 `143 total / 138 passed / 5 environment-skipped / 0 failed`；六个真实 Profile 均关闭，一次性数据库已删除。
-- 唯一下一步：每日额度恢复后原样重跑隔离集成项，验收六 job 全部安全收敛且付款 permit/submit/活动租约为 0。证据：`docs/browser-research/BITBROWSER_SIX_PROFILE_SHARED_QUEUE_NONPAYMENT_ATTEMPT_2026-09-03.md`。
+- 修正后的第二轮在 warmup 第一个窗口收到 `BITBROWSER_DAILY_OPEN_LIMIT`，发生在队列领取之前；当天额度已用完。2026-09-04 额度恢复后已用全新一次性 MySQL 8.4、migrations `001–044`和六个真实 Profile 原样复验。
+- 首次复验是 90 秒外层 harness 在六窗口串行冷启动期间先超时；不改订单 30 秒租约和 15 秒执行上限，只将环境测试外层等待改为 240 秒。
+- 原样重跑约 95 秒通过：6 job=`CANCELLED`、6 run=`FAILED_SAFE`、6 attempt/funds=`CLEARED`、6 order=`CARD_READY`，活动 permit、付款 submit operation、未释放租约均为 0。
+- 当前 Browser 全量 `153 total / 148 passed / 5 environment-skipped / 0 failed`；六个真实 Profile 均关闭，一次性数据库已删除。下一阶段是生产形态常驻和 Mac Worker 接入，付款仍未开启。证据：`docs/browser-research/BITBROWSER_SIX_PROFILE_SHARED_QUEUE_NONPAYMENT_ATTEMPT_2026-09-03.md`。
 
 ## 13. 2026-09-03 菲律宾 Browser 税费口径纠正
 

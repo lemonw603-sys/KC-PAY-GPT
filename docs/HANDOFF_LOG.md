@@ -1152,3 +1152,12 @@
 - Subscribe 未点击，`submitCalls=0`；字段、Session/Cookie/storage、临时文件和 Profile 已清理；未调用 Provider/卡台，未部署。
 - `npm run check` 通过；Browser 全量 `153 total / 148 passed / 5 environment-skipped / 0 failed`。
 - 详细报告：`docs/browser-research/PH_OFFICIAL_UI_PSP_ROUTE_NONPAYMENT_2026-09-04.md`。
+
+## 2026-09-04｜六 Profile 共享队列非付款闭环复验通过
+
+- 使用全新一次性 MySQL 8.4、完整 migrations `001–044`、六个真实 BitBrowser Profile 和六条合成队列任务实跑。
+- 首次 90 秒外层等待在六窗口串行冷启动期间先超时；订单租约/执行上限不改，只将环境测试外层等待调整为 240 秒并增加队列状态诊断。
+- 原样重跑约 95 秒通过：6 job=`CANCELLED`、6 run=`FAILED_SAFE`、6 attempt/funds=`CLEARED`、6 order=`CARD_READY`，活动 permit、付款 submit operation、未释放租约全部为 0。
+- 一次性数据库已停止并删除，六个 Profile 均关闭；无 Session、卡资料、ChatGPT Checkout、Provider/卡台调用或付款。
+- Browser 普通全量 `153 total / 148 passed / 5 environment-skipped / 0 failed`。
+- 详细证据：`docs/browser-research/BITBROWSER_SIX_PROFILE_SHARED_QUEUE_NONPAYMENT_ATTEMPT_2026-09-03.md`。

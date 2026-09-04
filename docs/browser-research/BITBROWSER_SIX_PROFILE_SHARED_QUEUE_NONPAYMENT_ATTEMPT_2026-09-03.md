@@ -43,4 +43,25 @@ BITBROWSER_DAILY_OPEN_LIMIT
 
 ## 下一步
 
-BitBrowser 每日打开额度恢复后，只重跑同一个集成测试，不创建新业务订单、不改变生产路线。通过标准为六条合成 dispatch job 全部 `CANCELLED/FAILED_SAFE`、attempt/funds 全部 `CLEARED`、付款 permit/submit operation/未释放资源租约全部为 0。
+本节为 2026-09-03 当日结论；额度恢复后的正式复验结果见下节。
+
+## 2026-09-04 额度恢复后正式复验
+
+已使用全新一次性 MySQL 8.4 容器、完整 migrations `001–044`、六个真实 BitBrowser Profile 和六条合成队列任务重跑相同测试。
+
+第一次使用 90 秒的外层测试等待上限，在 6 个物理窗口故意串行冷启动期间先超时；该超时是测试 harness 的外层等待预算不足，不是订单租约失效。测试已改为：
+
+- 继续保持单个订单 30 秒租约和 15 秒执行上限；
+- 仅将包含六窗口串行冷启动的环境集成测试外层等待上限调整为 240 秒；
+- 超时时输出脱敏队列状态计数，防止以后把环境慢误判成业务正确。
+
+原样重跑在约 95 秒后通过：
+
+```text
+six real BitBrowser Profiles consume isolated MySQL jobs and safe-abort without payment: PASS
+tests: 1 passed / 0 failed / 0 skipped
+```
+
+最终断言全部通过：六条 job 均 `CANCELLED`，六条 Browser run 均 `FAILED_SAFE`，六条 attempt/funds 均 `CLEARED`，订单均回到 `CARD_READY`，活动 payment permit、`PAYMENT_SUBMIT` operation 和未释放资源租约均为 0。一次性数据库已停止并删除，六个 Profile 均已关闭。
+
+本测试仍为本地 fixture 非付款闭环；不等于生产部署、真实 ChatGPT 付款或付款后对账已验收。

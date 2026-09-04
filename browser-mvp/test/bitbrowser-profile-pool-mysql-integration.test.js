@@ -29,23 +29,31 @@ async function loadProfileIds(path) {
   return ids;
 }
 
-async function waitForTerminalJobs(pool, expected, timeoutMs = 90_000) {
+async function waitForTerminalJobs(pool, expected, timeoutMs = 240_000) {
   const deadline = Date.now() + timeoutMs;
+  let last = null;
   while (Date.now() < deadline) {
     const [[row]] = await pool.query(
       `SELECT COUNT(*) AS total,
               SUM(status IN ('COMPLETED', 'CANCELLED', 'DEAD')) AS terminal_count
        FROM browser_dispatch_jobs`,
     );
+    last = { total: Number(row.total), terminalCount: Number(row.terminal_count) };
     if (Number(row.total) === expected && Number(row.terminal_count) === expected) return;
     await new Promise((resolve) => setTimeout(resolve, 250));
   }
-  throw new Error('timed out waiting for isolated Browser jobs');
+  const [states] = await pool.query(
+    'SELECT status, COUNT(*) AS count FROM browser_dispatch_jobs GROUP BY status ORDER BY status',
+  );
+  throw new Error(`timed out waiting for isolated Browser jobs: ${JSON.stringify({ last, states })}`);
 }
 
 test('six real BitBrowser Profiles consume isolated MySQL jobs and safe-abort without payment', {
   skip: !enabled && 'TEST_DATABASE_URL and BITBROWSER_PROFILE_CONFIG are required',
-  timeout: 150_000,
+  // Six physical BitBrowser windows intentionally start serially. Keep this
+  // environment-only limit outside the 30-second per-job lease and allow slow
+  // local GUI startup without turning it into a queue correctness failure.
+  timeout: 300_000,
 }, async () => {
   const profileIds = await loadProfileIds(profileConfigPath);
   const pool = mysql.createPool({ uri: databaseUrl, connectionLimit: 12, timezone: 'Z' });
