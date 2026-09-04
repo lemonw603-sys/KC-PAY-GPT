@@ -222,8 +222,8 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
             const cardId = refreshCandidates[0].id;
             const [queued] = await connection.query(
               `INSERT INTO card_sync_jobs
-               (id, card_id, status, requested_by, dedupe_key)
-               SELECT ?, ?, 'PENDING', 'worker', ?
+              (id, card_id, status, requested_by, priority, dedupe_key)
+               SELECT ?, ?, 'PENDING', 'worker', 10, ?
                WHERE NOT EXISTS (
                  SELECT 1 FROM card_sync_jobs active_sync
                  WHERE active_sync.card_id = ? AND active_sync.status IN ('PENDING','RUNNING')
@@ -689,8 +689,8 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
         if (rows.length !== 1) throw new Error(`Assigned card not found: ${orderId}`);
         const [result] = await connection.query(
           `INSERT INTO card_sync_jobs
-           (id, card_id, status, requested_by, dedupe_key)
-           SELECT UUID(), ?, 'PENDING', 'workflow', ?
+           (id, card_id, status, requested_by, priority, dedupe_key)
+           SELECT UUID(), ?, 'PENDING', 'workflow', 10, ?
            WHERE NOT EXISTS (
              SELECT 1 FROM card_sync_jobs
              WHERE card_id = ? AND status IN ('PENDING','RUNNING')
@@ -951,8 +951,8 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
         });
         await connection.query(
           `INSERT INTO card_sync_jobs
-           (id, card_id, status, requested_by, dedupe_key)
-           SELECT UUID(), c.id, 'PENDING', 'workflow', CONCAT('post-recharge:', ?)
+           (id, card_id, status, requested_by, priority, dedupe_key)
+           SELECT UUID(), c.id, 'PENDING', 'workflow', 10, CONCAT('post-recharge:', ?)
            FROM orders assigned_order INNER JOIN cards c ON c.id = assigned_order.assigned_card_id
            WHERE assigned_order.id = ?
              AND EXISTS (
@@ -1014,8 +1014,8 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
         });
         await connection.query(
           `INSERT INTO card_sync_jobs
-           (id, card_id, status, requested_by, dedupe_key)
-           SELECT UUID(), o.assigned_card_id, 'PENDING', 'workflow', CONCAT('failed-recharge-reconcile:', ?)
+           (id, card_id, status, requested_by, priority, dedupe_key)
+           SELECT UUID(), o.assigned_card_id, 'PENDING', 'workflow', 10, CONCAT('failed-recharge-reconcile:', ?)
            FROM orders o
            WHERE o.id = ? AND o.assigned_card_id IS NOT NULL
              AND NOT EXISTS (

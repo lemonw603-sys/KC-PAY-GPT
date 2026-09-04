@@ -57,8 +57,8 @@ export function createCardSyncJobService({ pool }) {
         }
         await connection.query(
           `INSERT INTO card_sync_jobs
-           (id, card_id, status, requested_by, dedupe_key)
-           VALUES (?, ?, 'PENDING', 'admin', ?)`,
+           (id, card_id, status, requested_by, priority, dedupe_key)
+           VALUES (?, ?, 'PENDING', 'admin', 50, ?)`,
           [crypto.randomUUID(), card.id, `card-sync:${card.id}:${crypto.randomUUID()}`]
         );
         queued += 1;
@@ -127,9 +127,9 @@ export async function scheduleDueCardSyncJobs(pool, {
     let queued = 0;
     for (const card of cards) {
       const [result] = await connection.query(
-        `INSERT INTO card_sync_jobs
-         (id, card_id, status, requested_by, dedupe_key)
-         VALUES (?, ?, 'PENDING', 'scheduler', ?)
+         `INSERT INTO card_sync_jobs
+           (id, card_id, status, requested_by, priority, dedupe_key)
+           VALUES (?, ?, 'PENDING', 'scheduler', 100, ?)
          ON DUPLICATE KEY UPDATE dedupe_key = VALUES(dedupe_key)`,
         [crypto.randomUUID(), card.id, `scheduled-card-sync:${card.id}:${bucket}`]
       );
@@ -165,7 +165,7 @@ export async function claimCardSyncJob(pool, { workerId, leaseSeconds = 120 }) {
               (SELECT setting_value FROM app_settings
                 WHERE setting_key = 'default_minimum_required_card_balance' LIMIT 1)
                 AS minimum_required_card_balance,
-              o.status AS order_status
+              o.status AS order_status, j.priority
        FROM card_sync_jobs j INNER JOIN cards c ON c.id = j.card_id
        LEFT JOIN card_assignment_history active_assignment
          ON active_assignment.card_id=c.id AND active_assignment.status='ACTIVE'
@@ -176,7 +176,7 @@ export async function claimCardSyncJob(pool, { workerId, leaseSeconds = 120 }) {
          WHEN 'ASSIGNED' THEN 30 WHEN 'RECENT_TERMINAL' THEN 40
          WHEN 'INVENTORY' THEN 50 WHEN 'AVAILABLE' THEN 50
          WHEN 'REFUND_WATCH' THEN 60 WHEN 'ARCHIVED' THEN 70 ELSE 55 END,
-         j.created_at LIMIT 1 FOR UPDATE SKIP LOCKED`
+         j.priority ASC, j.created_at LIMIT 1 FOR UPDATE SKIP LOCKED`
     );
     if (!rows.length) {
       await connection.commit();

@@ -192,8 +192,8 @@ export function createCardFundingRepository(pool) {
       if (status === 'SETTLED') {
         await connection.query(
           `INSERT INTO card_sync_jobs
-           (id, card_id, status, requested_by, dedupe_key)
-           SELECT UUID(), fa.card_id, 'PENDING', 'card-funding', CONCAT('funding-settled:', fa.id)
+           (id, card_id, status, requested_by, priority, dedupe_key)
+           SELECT UUID(), fa.card_id, 'PENDING', 'card-funding', 20, CONCAT('funding-settled:', fa.id)
            FROM card_funding_attempts fa WHERE fa.id=?
              AND NOT EXISTS (SELECT 1 FROM card_sync_jobs active_sync
                WHERE active_sync.card_id=fa.card_id AND active_sync.status IN ('PENDING','RUNNING'))`,
