@@ -220,3 +220,5 @@
 - 当前最先要验证的是 Delaware 地址是否真正进入 `/backend-api/payments/checkout/snapshot` 以及 snapshot 前后金额是否变化，不再继续随机换地址。
 - Browser 全量 `150 total / 145 passed / 5 environment-skipped / 0 failed`；本轮没有打开 Profile、读取敏感输入、创建 Checkout、付款或改生产。
 - 证据：`docs/browser-research/PHILIPPINES_CHECKOUT_TAX_OBSERVER_ENHANCEMENT_2026-09-03.md`。
+
+> **付款授权边界**：用户允许首笔 Browser 真实付款，但仅在官方 Checkout 最终稳定为 `₱982.14`、税费 `₱0` 时执行；当前 Browser 付款权限仍关闭，既有 `₱1,100` 结果不满足条件。

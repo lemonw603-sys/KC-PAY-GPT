@@ -193,3 +193,5 @@
 - 代码验证：税费观察器补强后 Browser 普通全量 `150 total / 145 passed / 5 environment-skipped / 0 failed`；此前已用全新临时 MySQL 8.4、完整 migrations 001–044 将当时 4 个数据库跳过项逐项实跑为 `4/4 passed`；v1 repository 定向 `21/21`。当前新增的 BitBrowser 六 Profile 现场集成项仍因每日额度保持 environment-skipped。
 - Browser 下一步：六 Profile + 隔离 MySQL 共享队列非付款闭环已于 2026-09-04 复验通过，下一阶段转为生产形态长时常驻和 Mac Worker 接入，付款门禁仍关闭。税费线已确认当前 HNSKJ 卡组合不命中 `psp_override`；只在有第二类 BIN/发卡路由测试卡时继续单变量 A/B，不因等待该卡阻塞 Worker 接入。
 - 详细实施/审查：`docs/browser-research/BROWSER_SIX_PROFILE_POOL_IMPLEMENTATION_2026-09-02.md`、`docs/browser-research/BROWSER_SIX_PROFILE_PRODUCTION_SHAPE_PREPARATION_2026-09-02.md`。
+
+**付款条件更新**：用户已条件性允许首笔 Browser 真实付款，但仅限官方 Checkout 最终稳定显示 `₱982.14` 且税费为 `₱0`；当前 Browser 付款权限仍关闭，现有 PH 实测 `₱1,100` 不满足条件。
