@@ -12,7 +12,7 @@
 4. **Session/账号**：Session 仅通过加密共享材料读取；登录 HTTP 200；身份摘要全部匹配；账号当前为非 Plus；不输出原文 Session/Cookie。
 5. **Checkout**：进入官方 Plus Checkout；确认套餐、币种 PHP、基础价、税费、最终总额；填卡和账单资料后再次读取并等待稳定。记录请求/响应脱敏摘要，不保存完整敏感字段。
 6. **付款闸门**：只有第 5 阶段同时得到总额 `₱982.14`、税费 `₱0` 才临时开启唯一付款许可；确认唯一 submit intent，点击一次；若金额、税费或状态未知，禁止点击。
-7. **付款后履约**：确认 Provider 返回成功；账号 Plus；取消自动续费；订单成功；卡片 PURCHASE 交易与金额/币种一致；卡余额、手续费和卡台余额变化可对账；Bark 通知内容正确。
+7. **付款后履约**：确认官方 Checkout/页面返回成功；账号 Plus；取消自动续费；订单成功；卡片 PURCHASE 交易与金额/币种一致；卡余额、手续费和卡台余额变化可对账；Bark 通知内容正确。Browser 路线不额外调用 ZZSHU 充值 Provider，不能把“Provider 返回成功”列为必测项。
 8. **收尾与不变量**：订单/attempt/run/task 终态正确；无 ACTIVE/UNKNOWN 资金风险；无活动 permit；无未释放 lease；Profile 客户页面、Session Cookie、storage 清理且运行 Cookie 按 allowlist 保留；Worker/隧道停止；默认路线恢复 API、Browser dispatch 关闭、付款权限关闭。
 
 ## 当前现场阻断（已核对）
