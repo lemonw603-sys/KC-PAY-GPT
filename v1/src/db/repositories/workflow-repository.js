@@ -16,7 +16,10 @@ import {
 
 function topUpAmount(minimum, current) {
   const delta = Number(minimum) - Number(current || 0);
-  return Math.max(0.000001, Number(delta.toFixed(6))).toFixed(6);
+  // HNSKJ card recharge contract accepts whole USD amounts only. Round up so
+  // a fractional deficit (e.g. $15.99) is sent as $16 rather than rejected
+  // locally after creating a funding attempt.
+  return String(Math.max(1, Math.ceil(delta)));
 }
 
 function parseSession(ciphertext, key) {
