@@ -1170,4 +1170,5 @@
 - 已在仓库外生成本机 `~/Library/Application Support/VibeBridge/browser-readonly.env`（`0600`，BitBrowser 六 Profile、headed、付款/Provider/卡资金写入均关闭）；直接调用配置加载器通过，尚未启动 launcher/Worker。
 - 按确认执行一次 `ONCE` canary：生产 DB 只读检查 `READY`，随后 BitBrowser `/browser/open` 返回“网络不通已停止打开浏览器”，Worker 安全退出，隧道已关闭。未领单、未读客户 Session、未调用 Provider/卡台、未付款。阻断定位为 Profile 网络/代理连通性；不重复打开以免消耗每日额度。
 - 启动既有 mihomo 配置后代理恢复，Cloudflare trace=`PH/MNL`；第二次 canary 的 DB 检查 `READY`，但六 Profile warmup 因 Local API 10 秒超时（`BITBROWSER_API_TIMEOUT`）退出。随后对六 Profile 发起关闭请求，全部成功，未留窗口。下一步需单独调高只读 API 超时后再受控复验。
+- 将本地只读 env 的 BitBrowser API 超时调为 60 秒后，第三次 `ONCE` canary 成功：DB `READY`、只读迭代 `IDLE`、Worker exit 0；隧道关闭且无 Profile 残留。未领单、未读客户 Session、未调用 Provider/卡台、未付款。
 - 详细证据：`docs/browser-research/MACOS_BROWSER_PRODUCTION_TUNNEL_CHECK_2026-09-04.md`。

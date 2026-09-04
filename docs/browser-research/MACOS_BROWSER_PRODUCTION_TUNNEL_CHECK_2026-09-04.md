@@ -26,6 +26,14 @@
 - 重跑一次 canary 后，生产 DB 检查仍为 `READY`；六 Profile warmup 在 BitBrowser Local API 10 秒超时（`BITBROWSER_API_TIMEOUT`），不是“网络不通”拒绝。已通过 Local API 对六个 Profile 发起关闭请求，全部 HTTP 200/success=true，确认没有残留打开窗口。
 - 当前剩余问题是 BitBrowser Profile warmup/Local API 响应时间超过 10 秒，需要在不重复消耗额度的前提下单独调高只读 canary 的 API 超时并做一次受控复验。付款、订单和 Provider 路径仍未触碰。
 
+## 60 秒超时复验
+
+- 将仓库外本地只读 env 的 `BROWSER_BITBROWSER_API_TIMEOUT_MS` 调整为 `60000`，再次运行一次 `ONCE` canary。
+- 结果：生产 DB 检查 `READY`；只读迭代返回 `IDLE`；Worker 正常退出（exit 0）。SSH 隧道已关闭，Profile 无残留打开窗口，mihomo 菲律宾代理继续监听。
+- 本轮仍未领取订单、读取客户 Session、调用 Provider/卡台或付款。生产 Browser Worker 仍未启用。
+
+结论：10 秒是本机 BitBrowser 冷启动的观测超时，不代表业务失败；60 秒配置可完成无任务只读 canary。后续只有在真实非付款任务下才能验证页面访问和长时吞吐。
+
 ## 结论边界
 
 SSH target/key 和 loopback 隧道路径已具备可用证据，但仍未完成生产 Browser 只读 Worker 的配置文件创建、launchd 加载或队列接入。当前只能说“接入前置网络与权限路径已打通”，不能说 Browser 已接入生产或已具备客户订单履约能力。
