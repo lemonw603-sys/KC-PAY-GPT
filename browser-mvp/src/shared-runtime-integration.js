@@ -197,11 +197,14 @@ export class SharedBrowserRuntimeIntegration {
   }
 
   /**
-   * Future payment-lane boundary. The caller cannot supply a snapshot hash;
-   * issuePaymentPermit() derives it from locked authoritative database facts.
+   * Future payment-lane boundary. The caller cannot replace the authoritative
+   * database snapshot. It may additionally bind a validated, address-adjusted
+   * Checkout digest so permit and submit intent cannot cross different totals.
    * This method is not invoked by runNonPaymentOnce().
    */
-  async issueAuthoritativePaymentPermit({ control, run, ttlSeconds = 60 } = {}) {
+  async issueAuthoritativePaymentPermit({
+    control, run, ttlSeconds = 60, checkoutSnapshotHash = null,
+  } = {}) {
     if (!control || typeof control.assertLeaseBeforeAction !== 'function') {
       throw new TypeError('claimed control is required');
     }
@@ -212,6 +215,7 @@ export class SharedBrowserRuntimeIntegration {
       workerId: this.workerId,
       leaseToken: required(run?.leaseToken, 'run.leaseToken'),
       ttlSeconds,
+      checkoutSnapshotHash,
     });
   }
 

@@ -9,6 +9,11 @@ import { loadRuntimeDatabaseConfig } from '../../v1/src/config.js';
 import { createDatabasePool } from '../../v1/src/db/pool.js';
 import { createChromeControlManifest } from './fixtures.js';
 import { GoogleChromeControlRuntimeAdapter } from './chrome-control-runtime.js';
+import {
+  BitBrowserLocalApiClient,
+  BitBrowserProfilePoolRuntimeAdapter,
+  BitBrowserProfileRuntimeAdapter,
+} from './bitbrowser-profile-runtime.js';
 import { AppendOnlyWal, WalEvidenceSink } from './wal.js';
 import { createSharedNonPaymentDryRun, SHARED_NONPAYMENT_DRY_RUN_CONFIRMATION } from './shared-dry-run-composition.js';
 import { loadProductionReadonlyBrowserConfig } from './production-readonly-config.js';
@@ -37,6 +42,43 @@ function delay(ms, signal) {
     }
     signal?.addEventListener('abort', done, { once: true });
   });
+}
+
+export async function runProcessHeartbeat({ writeHeartbeat, intervalMs, signal }) {
+  if (typeof writeHeartbeat !== 'function') throw new TypeError('writeHeartbeat is required');
+  if (!Number.isInteger(intervalMs) || intervalMs < 5_000 || intervalMs > 30_000) {
+    throw new TypeError('heartbeat interval must be between 5000 and 30000ms');
+  }
+  do {
+    await writeHeartbeat();
+    if (signal?.aborted) break;
+    await delay(intervalMs, signal);
+  } while (!signal?.aborted);
+}
+
+export async function runConcurrentWorkerLanes({
+  runOnce,
+  laneCount,
+  pollIntervalMs,
+  once = false,
+  signal = null,
+  onResult = () => {},
+} = {}) {
+  if (typeof runOnce !== 'function') throw new TypeError('runOnce is required');
+  if (!Number.isInteger(laneCount) || laneCount < 1 || laneCount > 6) {
+    throw new TypeError('laneCount must be between 1 and 6');
+  }
+  const runLane = async (laneIndex) => {
+    let lastResult = { status: 'IDLE' };
+    do {
+      lastResult = await runOnce({ laneIndex });
+      await onResult(lastResult, { laneIndex });
+      if (once || signal?.aborted) return lastResult;
+      if (lastResult.status === 'IDLE') await delay(pollIntervalMs, signal);
+    } while (!signal?.aborted);
+    return lastResult;
+  };
+  return Promise.all(Array.from({ length: laneCount }, (_, laneIndex) => runLane(laneIndex)));
 }
 
 export async function checkProductionReadonlyDatabase(pool, { executorProfileId } = {}) {
@@ -78,13 +120,48 @@ export async function checkProductionReadonlyDatabase(pool, { executorProfileId 
 }
 
 export async function checkProductionReadonlyFilesystem(config) {
-  await mkdir(config.profilesRoot, { recursive: true, mode: 0o700 });
   await mkdir(dirname(config.walPath), { recursive: true, mode: 0o700 });
-  await Promise.all([
-    access(config.profilesRoot, constants.R_OK | constants.W_OK | constants.X_OK),
-    access(dirname(config.walPath), constants.R_OK | constants.W_OK | constants.X_OK),
-  ]);
+  const checks = [access(dirname(config.walPath), constants.R_OK | constants.W_OK | constants.X_OK)];
+  if (config.profilesRoot) {
+    await mkdir(config.profilesRoot, { recursive: true, mode: 0o700 });
+    checks.push(access(config.profilesRoot, constants.R_OK | constants.W_OK | constants.X_OK));
+  }
+  await Promise.all(checks);
   return { ready: true };
+}
+
+export function createProductionReadonlyRuntimeAdapter(config, {
+  browserType = chromium,
+  fetchImpl = globalThis.fetch,
+} = {}) {
+  if (config.runtimeProvider === 'BITBROWSER') {
+    const apiClient = new BitBrowserLocalApiClient({
+      baseUrl: config.bitBrowser.apiUrl,
+      fetchImpl,
+      timeoutMs: config.bitBrowser.apiTimeoutMs,
+    });
+    if (config.bitBrowser.profileIds.length > 1) {
+      return new BitBrowserProfilePoolRuntimeAdapter({
+        browserType,
+        apiClient,
+        profileIds: config.bitBrowser.profileIds,
+        enabled: true,
+      });
+    }
+    return new BitBrowserProfileRuntimeAdapter({
+      browserType,
+      apiClient,
+      profileId: config.bitBrowser.profileId,
+      enabled: true,
+      keepAlive: config.bitBrowser.keepAlive,
+    });
+  }
+  return new GoogleChromeControlRuntimeAdapter({
+    browserType,
+    profilesRoot: config.profilesRoot,
+    executablePath: config.executablePath,
+    launchOptions: { headless: config.headless },
+  });
 }
 
 async function resolveAccountKey(pool, { orderId }) {
@@ -124,6 +201,7 @@ export async function runProductionReadonlyBrowserWorker({
   once = false,
   signal = null,
   browserType = chromium,
+  fetchImpl = globalThis.fetch,
   onResult = (result) => console.log('browser readonly iteration', {
     status: result.status,
     reasonCode: result.reasonCode || null,
@@ -137,7 +215,11 @@ export async function runProductionReadonlyBrowserWorker({
     DATABASE_TLS_CA_BASE64: env.DATABASE_TLS_CA_BASE64,
   });
   const pool = createDatabasePool(database);
+  let runtimeAdapter = null;
   let heartbeatStarted = false;
+  const processController = new AbortController();
+  const forwardAbort = () => processController.abort();
+  signal?.addEventListener('abort', forwardAbort, { once: true });
   const writeHeartbeat = async (value = new Date().toISOString()) => {
     await pool.query(
       `UPDATE app_settings SET setting_value = ?, updated_at = CURRENT_TIMESTAMP(3)
@@ -148,17 +230,16 @@ export async function runProductionReadonlyBrowserWorker({
   try {
     await checkProductionReadonlyFilesystem(config);
     await checkProductionReadonlyDatabase(pool, { executorProfileId: config.executorProfileId });
+    runtimeAdapter = createProductionReadonlyRuntimeAdapter(config, { browserType, fetchImpl });
+    if (typeof runtimeAdapter.checkHealth === 'function') await runtimeAdapter.checkHealth();
     if (env.BROWSER_WORKER_CHECK_ONLY === 'true') return { status: 'READY' };
-    await writeHeartbeat();
+    const manifest = createChromeControlManifest();
+    if (typeof runtimeAdapter.warmup === 'function') {
+      await runtimeAdapter.warmup(manifest, { count: once ? 1 : config.workerConcurrency });
+    }
     heartbeatStarted = true;
     const wal = await new AppendOnlyWal({ filePath: config.walPath }).init();
     await wal.verify();
-    const runtimeAdapter = new GoogleChromeControlRuntimeAdapter({
-      browserType,
-      profilesRoot: config.profilesRoot,
-      executablePath: config.executablePath,
-      launchOptions: { headless: config.headless },
-    });
     const sharedMaterialsEnabled = config.materialPolicy.sharedSessionEnabled;
     const sharedCardPreflightEnabled = config.materialPolicy.sharedCardPreflightEnabled;
     const chatGptReadonlyHarness = config.readonlyHarness === 'CHATGPT_ACCOUNT_CHECKOUT';
@@ -185,7 +266,7 @@ export async function runProductionReadonlyBrowserWorker({
       workerId: config.workerId,
       executorProfileId: config.executorProfileId,
       runtimeAdapter,
-      manifest: createChromeControlManifest(),
+      manifest,
       observation: config.observation,
       resolveObservation: chatGptReadonlyHarness
         ? async ({ orderId, baseObservation }) => ({
@@ -211,17 +292,45 @@ export async function runProductionReadonlyBrowserWorker({
       executionTimeoutMs: config.executionTimeoutMs,
     });
 
-    do {
-      await writeHeartbeat();
-      const result = await worker.runOnce({ confirmation: SHARED_NONPAYMENT_DRY_RUN_CONFIRMATION });
-      await onResult(result);
-      if (once || signal?.aborted) return result;
-      if (result.status === 'IDLE') await delay(config.pollIntervalMs, signal);
-    } while (!signal?.aborted);
-    return { status: 'STOPPED' };
+    const laneCount = once ? 1 : config.workerConcurrency;
+    const heartbeatTask = runProcessHeartbeat({
+      writeHeartbeat,
+      intervalMs: config.heartbeatIntervalMs,
+      signal: processController.signal,
+    });
+    const lanesTask = runConcurrentWorkerLanes({
+      runOnce: () => worker.runOnce({ confirmation: SHARED_NONPAYMENT_DRY_RUN_CONFIRMATION }),
+      laneCount,
+      pollIntervalMs: config.pollIntervalMs,
+      once,
+      signal: processController.signal,
+      onResult,
+    });
+    let results;
+    try {
+      results = await Promise.race([
+        lanesTask,
+        heartbeatTask.then(() => new Promise(() => {})),
+      ]);
+    } finally {
+      processController.abort();
+      await heartbeatTask;
+      await lanesTask.catch(() => {});
+    }
+    return once ? results[0] : { status: 'STOPPED', lanes: results.length };
   } finally {
+    let shutdownError = null;
+    if (runtimeAdapter && typeof runtimeAdapter.shutdown === 'function') {
+      try {
+        await runtimeAdapter.shutdown();
+      } catch (error) {
+        shutdownError = error;
+      }
+    }
     if (heartbeatStarted) await writeHeartbeat('').catch(() => {});
     await pool.end();
+    signal?.removeEventListener('abort', forwardAbort);
+    if (shutdownError) throw shutdownError;
   }
 }
 

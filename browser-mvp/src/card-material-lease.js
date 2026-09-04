@@ -8,12 +8,35 @@ function clone(value) {
   return structuredClone(value);
 }
 
-export function assertCardMaterial(material) {
+export function assertBillingAddress(address) {
+  if (!address || typeof address !== 'object' || Array.isArray(address)) {
+    throw new ContractError('card material.billingAddress must be an object');
+  }
+  const normalized = {
+    name: String(address.name || '').trim(),
+    country: String(address.country || '').trim().toUpperCase(),
+    line1: String(address.line1 || '').trim(),
+    city: String(address.city || '').trim(),
+    postalCode: String(address.postalCode || '').trim(),
+    state: String(address.state || '').trim().toUpperCase(),
+  };
+  if (!normalized.name || !normalized.line1 || !normalized.city || !normalized.postalCode
+    || !/^[A-Z]{2}$/.test(normalized.country)
+    || (normalized.country === 'US' && !/^[A-Z]{2}$/.test(normalized.state))) {
+    throw new ContractError('card material.billingAddress is incomplete or invalid');
+  }
+  return normalized;
+}
+
+export function assertCardMaterial(material, { requireBillingAddress = false } = {}) {
   if (!material || typeof material !== 'object' || Array.isArray(material)) throw new ContractError('card material must be an object');
   for (const key of ['pan', 'expMonth', 'expYear', 'cvc']) {
     if (material[key] === undefined || material[key] === null || String(material[key]).trim() === '') {
       throw new ContractError(`card material.${key} is required`);
     }
+  }
+  if (material.billingAddress != null || requireBillingAddress) {
+    assertBillingAddress(material.billingAddress);
   }
   return material;
 }

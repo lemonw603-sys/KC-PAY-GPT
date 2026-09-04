@@ -9,6 +9,8 @@
 ```bash
 npm test
 npm run check
+# 真实 BitBrowser Profile 池只读验收；配置必须是本机调用者持有的 0600 文件
+node scripts/verify-bitbrowser-profile-pool-nonpayment.js /absolute/path/to/.env.browser-local
 ```
 
 ## 设计边界
@@ -34,3 +36,13 @@ npm run check
 这批能力只完成真实付款前的纵向前置切片，不代表真实 Session、Checkout 或付款已验证。
 
 所有跨边界对象使用引用和 digest，不接受卡号、CVV、Session 原文、Checkout authority 或明文密钥。
+
+## 六 Profile 生产形态（仍未部署）
+
+- BitBrowser 可通过 `BROWSER_BITBROWSER_PROFILE_IDS` 配置最多 6 个唯一 Profile；多 Profile 强制常驻复用，`BROWSER_WORKER_CONCURRENCY` 不得超过 Profile 数。
+- macOS launcher 默认 `BROWSER_LOCAL_RUN_MODE=ONCE`；只有显式选择 `CONTINUOUS` 才运行常驻 lane。
+- 六 lane 冷启动先顺序预热全部 BitBrowser Profile，全部就绪后才领取共享队列任务；冷启动时间不占用订单运行租约。
+- Worker 进程 heartbeat 默认每 10 秒写一次，与 lane 数无关；空闲 lane 不再各自写 heartbeat。
+- 当前仍是非付款 Worker：五类 Provider/卡资金写开关必须为 false，付款执行器必须为 `false/MOCK`。
+- 本地现场已证明 6 个真实 Profile 同时访问 ChatGPT HTTP 200、Cookie/localStorage 隔离和运行时指纹摘要差异；当前六路共用一个菲律宾出口，尚未接生产队列或真实付款。
+- 配置与验收边界见 `../docs/browser-research/BROWSER_SIX_PROFILE_PRODUCTION_SHAPE_PREPARATION_2026-09-02.md`。

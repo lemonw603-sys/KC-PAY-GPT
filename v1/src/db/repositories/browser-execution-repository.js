@@ -49,6 +49,14 @@ function hashesEqual(left, right) {
   return timingSafeEqual(Buffer.from(left, 'hex'), Buffer.from(right, 'hex'));
 }
 
+function boundPaymentSnapshotHash(authoritativeHash, checkoutSnapshotHash = null) {
+  if (checkoutSnapshotHash == null) return authoritativeHash;
+  const checkoutHash = requireHash(checkoutSnapshotHash, 'checkoutSnapshotHash');
+  return createHash('sha256')
+    .update(`authoritative:${authoritativeHash}|checkout:${checkoutHash}`)
+    .digest('hex');
+}
+
 function json(value) {
   return value == null ? null : JSON.stringify(value);
 }
@@ -420,6 +428,7 @@ export function createBrowserExecutionRepository(pool) {
       runId,
       workerId,
       leaseToken,
+      checkoutSnapshotHash = null,
       permitId = randomUUID(),
       ttlSeconds = 60,
       now = new Date()
@@ -444,7 +453,10 @@ export function createBrowserExecutionRepository(pool) {
           || row.funds_risk_state !== 'ACTIVE' || row.order_status !== 'RECHARGE_PROCESSING') {
           throw new BrowserExecutionError('funds attempt is not eligible for payment', 'ATTEMPT_NOT_READY');
         }
-        const snapshot = authoritativePaymentSnapshot(row, now).hash;
+        const snapshot = boundPaymentSnapshotHash(
+          authoritativePaymentSnapshot(row, now).hash,
+          checkoutSnapshotHash,
+        );
 
         const nonce = randomBytes(32).toString('hex');
         const expiresAt = new Date(now.getTime() + ttlSeconds * 1000);
@@ -477,6 +489,7 @@ export function createBrowserExecutionRepository(pool) {
       leaseToken,
       permitNonce,
       operationId,
+      checkoutSnapshotHash = null,
       now = new Date()
     }) {
       const run = required(runId, 'runId');
@@ -523,7 +536,10 @@ export function createBrowserExecutionRepository(pool) {
         if (new Date(permit.expires_at).getTime() <= now.getTime()) {
           throw new BrowserExecutionError('payment permit expired', 'PAYMENT_PERMIT_EXPIRED');
         }
-        const currentSnapshot = authoritativePaymentSnapshot(row, now).hash;
+        const currentSnapshot = boundPaymentSnapshotHash(
+          authoritativePaymentSnapshot(row, now).hash,
+          checkoutSnapshotHash,
+        );
         if (!hashesEqual(currentSnapshot, permit.snapshot_hash)) {
           throw new BrowserExecutionError(
             'authoritative card or route facts changed after the permit was issued',

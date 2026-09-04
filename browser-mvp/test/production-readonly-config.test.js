@@ -7,8 +7,12 @@ import {
 } from '../src/production-readonly-config.js';
 import {
   checkProductionReadonlyDatabase,
+  createProductionReadonlyRuntimeAdapter,
   parseProductionReadonlyArgs,
+  runConcurrentWorkerLanes,
+  runProcessHeartbeat,
 } from '../src/production-readonly-worker.js';
+import { BitBrowserProfileRuntimeAdapter } from '../src/bitbrowser-profile-runtime.js';
 
 const key = Buffer.alloc(32, 7).toString('base64');
 
@@ -47,6 +51,128 @@ test('production readonly config accepts an explicit local fixture and no write 
   assert.equal(config.workerId, 'browser-worker-test');
   assert.equal(config.observation.pageContract.title, 'fixture');
   assert.equal(config.runtimeHmacKey.length, 32);
+  assert.equal(config.heartbeatIntervalMs, 10_000);
+});
+
+test('process heartbeat is independent from six worker lanes', async () => {
+  const controller = new AbortController();
+  let heartbeatWrites = 0;
+  let activeRuns = 0;
+  let peakRuns = 0;
+  let completedRuns = 0;
+  const heartbeat = runProcessHeartbeat({
+    writeHeartbeat: async () => { heartbeatWrites += 1; },
+    intervalMs: 5_000,
+    signal: controller.signal,
+  });
+  const lanes = runConcurrentWorkerLanes({
+    laneCount: 6,
+    pollIntervalMs: 100,
+    signal: controller.signal,
+    runOnce: async () => {
+      activeRuns += 1;
+      peakRuns = Math.max(peakRuns, activeRuns);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      activeRuns -= 1;
+      completedRuns += 1;
+      if (completedRuns === 6) controller.abort();
+      return { status: 'IDLE' };
+    },
+  });
+  const results = await lanes;
+  await heartbeat;
+  assert.equal(peakRuns, 6);
+  assert.equal(results.length, 6);
+  assert.equal(heartbeatWrites, 1);
+});
+
+test('one lane failure rejects the concurrent lane group', async () => {
+  await assert.rejects(() => runConcurrentWorkerLanes({
+    laneCount: 3,
+    pollIntervalMs: 100,
+    once: true,
+    runOnce: async ({ laneIndex }) => {
+      if (laneIndex === 1) throw new Error('lane failed');
+      return { status: 'IDLE' };
+    },
+  }), /lane failed/);
+});
+
+test('BitBrowser runtime is explicit, loopback-only and does not require a Chrome executable', () => {
+  const config = loadProductionReadonlyBrowserConfig(validEnv({
+    BROWSER_RUNTIME_PROVIDER: 'BITBROWSER',
+    BROWSER_BITBROWSER_ENABLED: 'true',
+    BROWSER_BITBROWSER_API_URL: 'http://127.0.0.1:54345',
+    BROWSER_BITBROWSER_PROFILE_ID: 'bit-profile-test-001',
+    BROWSER_CHROME_EXECUTABLE_PATH: '/definitely/not/chrome',
+  }));
+  assert.equal(config.runtimeProvider, 'BITBROWSER');
+  assert.equal(config.executablePath, null);
+  assert.equal(config.profilesRoot, null);
+  assert.deepEqual(config.bitBrowser, {
+    apiUrl: 'http://127.0.0.1:54345',
+    profileId: 'bit-profile-test-001',
+    profileIds: ['bit-profile-test-001'],
+    keepAlive: false,
+    apiTimeoutMs: 10_000,
+  });
+  const adapter = createProductionReadonlyRuntimeAdapter(config, {
+    browserType: { connectOverCDP: async () => undefined },
+    fetchImpl: async () => ({ ok: true, json: async () => ({ success: true }) }),
+  });
+  assert.equal(adapter instanceof BitBrowserProfileRuntimeAdapter, true);
+
+  const keepAlive = loadProductionReadonlyBrowserConfig(validEnv({
+    BROWSER_RUNTIME_PROVIDER: 'BITBROWSER',
+    BROWSER_BITBROWSER_ENABLED: 'true',
+    BROWSER_BITBROWSER_API_URL: 'http://127.0.0.1:54345',
+    BROWSER_BITBROWSER_PROFILE_ID: 'bit-profile-test-001',
+    BROWSER_BITBROWSER_KEEP_ALIVE: 'true',
+  }));
+  assert.equal(keepAlive.bitBrowser.keepAlive, true);
+
+  const sixProfile = loadProductionReadonlyBrowserConfig(validEnv({
+    BROWSER_RUNTIME_PROVIDER: 'BITBROWSER',
+    BROWSER_BITBROWSER_ENABLED: 'true',
+    BROWSER_BITBROWSER_API_URL: 'http://127.0.0.1:54345',
+    BROWSER_BITBROWSER_PROFILE_ID: '',
+    BROWSER_BITBROWSER_PROFILE_IDS: 'bit-001,bit-002,bit-003,bit-004,bit-005,bit-006',
+    BROWSER_BITBROWSER_KEEP_ALIVE: 'true',
+    BROWSER_WORKER_CONCURRENCY: '6',
+  }));
+  assert.equal(sixProfile.bitBrowser.profileIds.length, 6);
+  assert.equal(sixProfile.workerConcurrency, 6);
+  assert.throws(() => loadProductionReadonlyBrowserConfig(validEnv({
+    BROWSER_RUNTIME_PROVIDER: 'BITBROWSER',
+    BROWSER_BITBROWSER_ENABLED: 'true',
+    BROWSER_BITBROWSER_API_URL: 'http://127.0.0.1:54345',
+    BROWSER_BITBROWSER_PROFILE_ID: '',
+    BROWSER_BITBROWSER_PROFILE_IDS: 'bit-001,bit-002',
+    BROWSER_WORKER_CONCURRENCY: '3',
+    BROWSER_BITBROWSER_KEEP_ALIVE: 'true',
+  })), /cannot exceed/);
+
+  assert.throws(() => loadProductionReadonlyBrowserConfig(validEnv({
+    BROWSER_RUNTIME_PROVIDER: 'BITBROWSER',
+    BROWSER_BITBROWSER_API_URL: 'http://127.0.0.1:54345',
+    BROWSER_BITBROWSER_PROFILE_ID: 'bit-profile-test-001',
+  })), /BROWSER_BITBROWSER_ENABLED must be exactly true/);
+  assert.throws(() => loadProductionReadonlyBrowserConfig(validEnv({
+    BROWSER_RUNTIME_PROVIDER: 'BITBROWSER',
+    BROWSER_BITBROWSER_ENABLED: 'true',
+    BROWSER_BITBROWSER_API_URL: 'http://192.0.2.1:54345',
+    BROWSER_BITBROWSER_PROFILE_ID: 'bit-profile-test-001',
+  })), /plain loopback HTTP origin/);
+  assert.throws(() => loadProductionReadonlyBrowserConfig(validEnv({
+    BROWSER_RUNTIME_PROVIDER: 'BITBROWSER',
+    BROWSER_BITBROWSER_ENABLED: 'true',
+    BROWSER_BITBROWSER_API_URL: 'http://127.0.0.1:54345',
+    BROWSER_BITBROWSER_PROFILE_ID: 'contains spaces',
+  })), /opaque reference/);
+  assert.throws(() => loadProductionReadonlyBrowserConfig(validEnv({
+    BROWSER_RUNTIME_PROVIDER: 'GOOGLE_CHROME',
+    BROWSER_BITBROWSER_ENABLED: 'true',
+  })), /cannot be true unless/);
 });
 
 test('production readonly config rejects every write switch and raw credential material', () => {

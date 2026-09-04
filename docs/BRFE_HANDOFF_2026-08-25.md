@@ -1,5 +1,9 @@
 # BRFE 接班入口（Browser 线，2026-08-25）
 
+> **2026-09-02 最新停止点：** 生产只读诊断已证明出口 `144.34.180.184` 在无 Browser、无 Session 的普通 HTTPS 阶段就被 Cloudflare 返回 403 challenge；无登录 headless Chromium 同样停在 `Just a moment...`。当前不是 Session 或付款问题；本地同出口 A/B 已证明 curl/headless 403、headed 200，浏览器形态/图形会话至少是关键变量。生产因无 headed 对照，出口 IP/ASN/地域只保留为未排除因素。生产 Browser Worker 必须保持 `disabled/inactive`，API 默认路线不受影响。下一唯一动作是对“批准的稳定出口”或“可正常访问的执行主机”做相同无登录只读 A/B，不预设住宅代理。详见 `docs/browser-research/PRODUCTION_CHATGPT_ACCESS_BLOCK_DIAGNOSIS_2026-09-02.md`。
+
+> **2026-09-02 Mac MVP 接班补充：** 本地 headed Worker 的最小包装已落盘，沿用共享 MySQL 权威状态，不新增队列。launchd 默认不加载；wrapper 强制 `--once`、SSH loopback tunnel、Chrome headed、写开关 false、payment executor false/MOCK，并在 tunnel 丢失时终止 Worker。尚未配置真实 SSH/DB/key，未连接或领取生产任务。下一动作只能是统筹提供最小受限配置后先跑 `--check`，再单独批准一个非付款 job。
+
 > **2026-08-31 最新接班点：** Browser 已对齐 `main@9d3d5f4`。一卡多单兼容复核修复了旧 `cards.order_id = orders.id` 假设，当前以 `orders.assigned_card_id + RESERVED card_consumption_ledger` 绑定复用卡；自动补余额仍完全属于共享上游，Browser 只消费同步后的权威余额和 15 分钟交易证据。全量及隔离 MySQL 非付款测试通过，生产未部署、Worker 未启动、付款未执行。下一步是统筹审查本分支提交并安全合入，详见 `docs/browser-research/BROWSER_CARD_REUSE_COMPATIBILITY_2026-08-31.md`。
 
 ## 当前 worktree 与提交
@@ -708,3 +712,23 @@ active permits=0、`PAYMENT_SUBMIT`=0、live resource leases=0、external paymen
 - 实跑：Browser 全量 `99/95 passed/4 skipped/0 failed`；readonly smoke `10/10 + 3/3`；隔离 MySQL/Chrome shared dry-run `1/1`；`check` 与 `diff --check` 通过。
 - 本轮未连接生产、未读取真实客户材料、未访问真实 ChatGPT、未付款、未部署。下一动作是统筹一次性提供专用非客户测试订单/Session、批准网络/Chrome 和当次首页 marker 后，另开只读窗口执行一次；仍不需要 PAN/CVC。
 - 详细合同与审查：`docs/contracts/2026-08-29_browser-chatgpt-readonly-observation-contract.md`、`docs/browser-research/BROWSER_SHARED_MATERIAL_ADAPTER_ADVERSARIAL_REVIEW_2026-08-29.md`。
+# 2026-09-02｜BitBrowser runtime adapter 停止点
+
+- Browser 分支已实现最小 BitBrowser launcher/profile adapter，只替换 runtime 层，不改共享业务核心。
+- 显式配置 `BROWSER_RUNTIME_PROVIDER=BITBROWSER` + `BROWSER_BITBROWSER_ENABLED=true` 才启用；Local API/CDP 必须 loopback，异常时尝试关闭 Profile。
+- 当前默认 Google Chrome，Browser Worker/付款/卡台写入均未启用；未部署。
+- 合同：`docs/contracts/2026-09-02_bitbrowser-profile-runtime-contract.md`。
+
+# 2026-09-02｜BitBrowser Session 只读实测停止点
+
+- 首次实测已证明 Session 登录/身份匹配，账号为 `FREE`；现有 Checkout 过渡合同超时，未识别套餐与金额。
+- 诊断性重进遇到订阅接口 HTTP 403，在 Plus 点击前 fail-closed，不再重试。
+- 未建单、未连生产队列、未读/填卡、未点付款，Profile 已关闭。
+- 完整证据：`docs/browser-research/BITBROWSER_SESSION_CHECKOUT_READONLY_2026-09-02.md`。
+
+## 2026-09-02 LIVE Checkout 付款前加固交接
+
+- 当前 Browser worktree 已修正 `LIVE` 配置不可达问题，但只在三道精确 gate 同时开启时可装配，默认/生产 readonly 配置保持关闭。
+- adapter 现在必须在填卡前及唯一点击前重读套餐、币种、税费和 `Due today`，并获得显式预算批准；漂移或余额不足均在点击前停止。
+- 全量与隔离 MySQL smoke 已通过；没有真实付款、生产部署或资金写入。
+- 下一步不是直接部署付款：先实现实际 budgetGuard、付款结果/Plus/取消/卡交易 observer 与生产 composition，再做 fixture/隔离 MySQL 故障注入。任何真实 Subscribe 点击仍需用户单独确认。

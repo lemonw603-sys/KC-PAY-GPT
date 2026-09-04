@@ -118,3 +118,17 @@ systemctl daemon-reload
 回滚后必须确认 `pojia-browser-worker.service` 为 `inactive/disabled`，数据库
 `browser_payment_writes_enabled=false`，且没有活动 Browser permit/lease。不要通过回滚重新派发
 `PAYMENT_UNKNOWN`/`RECONCILIATION_REQUIRED` 任务；这两类任务只能核对。
+
+## macOS headed Browser readonly Worker（默认不加载）
+
+生产 VPS 出口与 headless 运行均出现 Cloudflare challenge 后，本地同出口 A/B 证明 headed Google Chrome 可正常访问公开 ChatGPT 页面。短期只读 pilot 可复用现有 Browser Worker，不建立第二套队列或业务状态：
+
+- 启动脚本：`browser-mvp/scripts/run-macos-headed-worker.sh`；
+- 环境模板：`deploy/macos/browser-readonly.env.example`；
+- launchd 模板：`deploy/macos/com.vibebridge.browser-readonly.plist.example`。
+
+模板 `RunAtLoad=false`、`KeepAlive=false`，不会自行启动。环境文件必须为 `0600`，Chrome 必须 headed，五个写开关和 payment executor 必须关闭。数据库只能通过 SSH 本地端口转发访问生产 loopback MySQL，禁止公开 3306。隧道退出时 wrapper 会向 Worker 发送 `SIGTERM`；Worker 的 AbortController 负责关闭 Browser runtime，数据库租约/恢复合同继续作为权威状态。
+
+同一 wrapper 也支持显式选择本机 BitBrowser Profile runtime。BitBrowser 默认禁用；只有配置 `BROWSER_RUNTIME_PROVIDER=BITBROWSER`、`BROWSER_BITBROWSER_ENABLED=true`、loopback Local API 和预创建 Profile 引用时才会启用。单 Profile 使用 `BROWSER_BITBROWSER_PROFILE_ID`；多 Profile 使用 `BROWSER_BITBROWSER_PROFILE_IDS`（最多 6 个、不得重复），并强制 `BROWSER_BITBROWSER_KEEP_ALIVE=true` 与不超过 Profile 数的 `BROWSER_WORKER_CONCURRENCY`。它只替换 launcher/profile 层，不改共享 queue/lease/资金/审计合同。详见 `docs/contracts/2026-09-02_bitbrowser-profile-runtime-contract.md`。
+
+安装 launchd 之前必须单独批准，并补齐受限 SSH 身份、loopback MySQL 账号、三把 Browser key、共享 Session key、executor profile 和本地状态目录。launcher 默认 `BROWSER_LOCAL_RUN_MODE=ONCE`；只有显式配置 `CONTINUOUS` 才启动常驻 lane。首次仍只允许 `--check` 和单个非付款任务；不得付款。进程 heartbeat 独立于 lane，默认每 10 秒写一次，不随 6 lane 放大为 6 倍。长期仍应迁移到常在线的专用 Browser 主机，不把个人 Mac 当作 200–300 单/日最终节点。

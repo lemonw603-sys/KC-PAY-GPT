@@ -1043,3 +1043,161 @@
 - 验证：定向单元 45/45；v1 全量 522 total / 478 pass / 44 environment-skip / 0 fail；全新临时 MySQL 8.4 + 完整 migrations 的关键补给场景 2/2。
 - 卡台实时卡段返回 `requireMinBalance=1/minBalanceUsdt=25`。这是 Provider 开卡前硬条件，不是本地“开卡后保留余额”阈值，因此未按用户口头值伪改成 18；当前卡台余额 `$18.84` 时若进入无卡分支，仍会在 Provider 写入前安全停止。
 - 本轮未开卡、未补余额、未付款；真实低余额补差额成功闭环仍待首笔生产验收。专项记录：`docs/2026-09-04-card-supply-priority-and-retry-fix.md`。
+
+## 2026-09-02｜Browser 六 Profile 常驻池代码完成（未部署、未付款）
+
+- 分支已 rebase 到当时最新 `main@0624f2a`，没有覆盖主线的 API/卡库存/税费文档进展。
+- 实现 1–6 BitBrowser Profile 常驻池、并发 readonly lane、槽位租约、单槽隔离、客户状态清理与 shutdown 汇总。
+- 修正最终金额时序：账单地址后税费/总额先稳定并通过 budget guard，Checkout 摘要再绑定权威 payment permit 和 submit intent。
+- 增加 JIT billing address 合同；没有记录任何用户真实卡号、CVC 或地址。
+- 本地结果：Browser 138/134 pass/4 skip/0 fail；v1 repository 21/21。
+- 详见 `docs/browser-research/BROWSER_SIX_PROFILE_POOL_IMPLEMENTATION_2026-09-02.md`。
+
+## 2026-09-02｜Browser 六 Profile 生产形态准备完成（未部署、未付款）
+
+- macOS launcher 已支持单/多 BitBrowser Profile、默认 `ONCE` 和显式 `CONTINUOUS`；多 Profile 校验唯一性、keep-alive 和并发上限。
+- Worker heartbeat 已从各 lane 轮询移为进程级默认 10 秒一次；lane 继续并发领取共享数据库任务，但不会按 lane 数放大 heartbeat 写入。
+- macOS/server 配置模板和 README 已同步六 Profile 示例；未记录真实 Profile ID、代理订阅或密钥。
+- 对抗审查确认未改变共享订单/资金/审计、未扩大任何付款或 Provider 写权限；lane 错误会传播，Profile 清理故障继续隔离槽位。
+- 验证：`bash -n`、Browser `check`、Browser `140/136 pass/4 skip/0 fail`、v1 repository `21/21`、`git diff --check` 均通过。
+- 本轮无生产部署、无生产 Worker 启动、无真实客户 Session、无 Provider/卡台调用、无 Subscribe/付款。下一步为额度恢复后的单 Profile 非付款税费复验，然后 1→3→6 同开/隔离验证。
+
+## 2026-09-02｜生产事实源冲突纠正（只读）
+
+- 为满足当轮事实闸门，通过 SSH 只读复核 production release、Web/API/Browser 服务、readiness 和卡库存投影：release 仍为 `7bad460`，Web/API Worker active，Browser disabled/inactive。
+- 21:42 CST readiness 为 `ok=true/blockers=[]`、活动任务/资金风险/开放对账均 0、Worker heartbeat 12 秒；未改变任何开关。
+- 纠正文档内部“当前有 1 张可分配卡”与“当前无卡”的冲突：库存投影实际为 `ready=0/available=0`；卡 `2338`/尾号 `4643` 仍绑定失败订单 `PJV1-u696SEuwCQqyReHZ_FmP`，为 `ASSIGNED`，不可分配。
+- 卡台余额仍为 `$19.43`，低于卡段最低账户余额 `$25`；因此下一笔无卡订单的自动开卡目前会受卡台余额规则阻断，不能写成已具备成功条件。
+- 本次只读命令未调用 Provider 写接口、未开卡、未补余额、未创建订单、未付款。
+
+## 2026-09-03｜Browser 原 4 个 MySQL 环境跳过项补验完成
+
+- 新建一次性本地 `mysql:8.4` 隔离容器，等待正式初始化完成后执行完整 migrations `001–044`。
+- 串行运行 `shared-dry-run-mysql-integration`、`payment-executor-mysql-integration`、`production-readonly-worker-mysql-smoke`：共 `4/4 passed`、0 skipped、0 failed。
+- 覆盖共享 permit/付款后 mock 状态机、提交崩溃进入 UNKNOWN 且重放不二次提交、生产形态 dispatch→Chrome→safe-abort、共享 run 付款前资金栅栏清理。
+- 临时容器已停止并删除；未连接生产数据库，未访问 ChatGPT，未读取客户 Session/卡资料，未调用 Provider/卡台，未付款。
+- 用户同时说明 Claude 正在独立优化客户充值网站；Browser worktree 本轮不接触客户页文件，也不干扰该工作线。
+
+## 2026-09-03｜BitBrowser 单 Profile Delaware 非付款税费复验完成
+
+- 新增 `browser-mvp/scripts/observe-bitbrowser-checkout-tax-nonpayment.js`：只接受仓库外 `0600` 输入，读取即删；无 Subscribe/付款提交路径，并有页面 submit tripwire。
+- 现场完整跑通：测试 Session 身份匹配、FREE、真实 ChatGPT Plus Checkout、3 个卡字段和 6 个账单必填字段、最终金额稳定、Subscribe 前停止。
+- Delaware 地址后仍为 `PHP 982.14 + VAT 117.86 = PHP 1100.00`；`submitCalls=0`，无 Provider/卡台写入。
+- 已清理字段、Cookie/storage、临时敏感文件并关闭 Profile；未部署、未切生产路线、未启动生产 Browser Worker。
+- 下一步：3 Profile 非付款同开/隔离验证，通过后 6 Profile；Claude 客户充值页优化线保持独立，本轮未触碰。
+
+## 2026-09-03｜BitBrowser 三 Profile 访问闸门未通过并安全收口
+
+- 通过官方 Local API 新建 2 个无账号/Session/Cookie/storage/支付地址同步的候选 Profile；与原 Profile 共 3 个，opaque ID 只存本机 `0600` Git 忽略配置。
+- 新增三 Profile 非付款检查器。三者可启动/CDP 接管；两个新 Profile 无 Session 访问 ChatGPT 均 HTTP 403，菲律宾 trace 正常。
+- 纠正新 Profile 指纹配置/User-Agent 明显不一致后仍 403；仅含 Cloudflare 非登录 Cookie 的 bootstrap 对照也无效，已清理。
+- 按在线窄探测规则停止继续随机尝试；三个 Profile 全部关闭。本轮无 Session、卡片、Checkout、付款或生产变更。
+- 下一步先让一个新 Profile 经自身 headed 访问或另一已验证稳定出口取得 HTTP 200，再恢复三路隔离测试；不得把 3 个 Profile 已创建写成三路已可用。
+
+## 2026-09-03｜用户 headed 建立访问后三 Profile 隔离复验通过
+
+- 用户手动打开三个 Profile 后，现场为 3 个 PID、3 个 CDP 端口和 3 个独立 BrowserContext；两个新 Profile 有各自 Cloudflare 运行 Cookie且无 Session cookie。
+- 定位到上一轮自动 403 的直接原因：运行时客户清理误删 Cloudflare clearance。修复为全清客户/未知 Cookie 后只恢复严格五项 Profile 运行 Cookie allowlist，storage/页面继续全清。
+- 单测 16/16；真实三路同时为 ChatGPT HTTP 200 `3/3`、Cookie 隔离 `3/3`、localStorage 隔离 `3/3`、菲律宾出口；Session/卡/submit 为 0。
+- 三路当前共用同一出口，完整指纹差异尚未验证；自动复验结束后三个 Profile 均关闭。未部署、未付款。
+
+## 2026-09-03｜BitBrowser 六 Profile 真实访问与隔离复验通过
+
+- 原三个 Profile 关闭/重启后继续达到 ChatGPT HTTP 200 `3/3` 和 Cookie/localStorage 隔离 `3/3`；此前访问 Cookie 保留修复没有因重启失效。
+- 通过 loopback Local API 新建三个不复制客户材料的 Profile，形成六槽；ID 只保存在 Git 忽略的本机 `0600` 配置。
+- 第一轮并发突发启动暴露 Local API 部分成功问题，已完整关闭并确认六个窗口均收敛；生产 Profile 池和验证器均改为物理窗口顺序启动、页面任务并行、实时重选槽位并完整失败清理。
+- 最终六路：HTTP 200 `6/6`、Cookie 隔离 `6/6`、localStorage 隔离 `6/6`、运行时指纹摘要 `6/6` 不同、菲律宾出口摘要 `1/6`。
+- 用户确认现阶段共用一个菲律宾出口即可；这不等于六出口隔离，也尚未证明长时常驻、共享队列任务领取或真实付款。
+- Browser 全量 `141 total / 137 passed / 4 environment-skipped / 0 failed`；无 Session、卡字段、submit、Provider/卡台写入、部署或付款。
+- 修正后的真实生产池复验曾出现第 4 个 Profile 一次临时页面异常；单槽一次复验恢复 HTTP 200，随后完整六路再次 `6/6` 通过，没有固定坏槽证据。
+
+## 2026-09-03｜六 Profile 共享队列实跑发现冷启动租约问题并修正
+
+- 使用一次性 MySQL 8.4、完整 migrations、六条合成订单/attempt/消费预留/dispatch job 和真实六 Profile 运行生产只读 Worker 形态；所有付款与 Provider 写开关关闭。
+- 第一轮证明原生产时序会先领取六单再等待 Profile 顺序冷启动，后排 run lease 可能过期，出现 `ACTION_TIMEOUT` 后 safe-abort 又遇到 `LEASE_EXPIRED`。
+- 已增加池 warmup，并移动到队列 lane 启动之前：Profile 全部就绪后才领单；账户级启动失败只调用一次 Local API，避免其余五个重复失败。
+- 修正后第二轮被当日 `BITBROWSER_DAILY_OPEN_LIMIT` 阻断在第一个 warmup、尚未领单；不得宣称集成闭环通过。额度恢复后只需原样重跑新集成测试。
+- 全量 `143 total / 138 passed / 5 environment-skipped / 0 failed`；六个 Profile 已关闭，一次性数据库已删除，无生产/客户/付款动作。
+
+## 2026-09-03｜菲律宾 `982.14/1100.00` 税费口径纠正
+
+- 用户确认近期多单确实能以 `PHP 982.14` 成交；项目历史也有两笔成功 API/PoC 和卡台 PURCHASE 支持该价格。
+- 因此撤销“菲律宾 Browser 标准成本必然为 `PHP 1100.00`”的泛化，只保留现场事实：当前菲律宾 BitBrowser Profile 填写 Delaware 地址后的 Checkout 是 `982.14 + 117.86 VAT = 1100.00`。
+- 后续不再随机换地址；共享队列闭环后、首笔真实 Browser 付款前，用非付款 A/B 分离出口、账号和支付定位信号，找到可复现的 `982.14` 条件。
+- 本轮只更新事实源与研究结论，没有启动 Profile、创建订单、填写卡片或付款。
+- 用户随后补充并确认 Browser 出口必须使用菲律宾；已从实验矩阵删除美国出口，不再把换国家出口当作免税方案。
+
+## 2026-09-03｜菲律宾 Checkout 税费观察器补强
+
+- 增加 Checkout 创建、billing snapshot、pricing config、Stripe 脱敏 path 和填卡/地址前后金额时间线观察。
+- 网络证据严格白名单化；完整地址、Session/Token、PAN/CVC、Checkout ID 不进入结果。新增测试覆盖 snapshot 地址原文丢弃和 Stripe Checkout ID 脱敏。
+- 社区/公开实现对照表明 `982.14` 可能是未税 PSP 净价，且权威账单地址通过 `/backend-api/payments/checkout/snapshot` 更新；当前最优先验证 snapshot 是否发生，而不是继续随机换地址。
+- Browser 全量 `150 total / 145 passed / 5 environment-skipped / 0 failed`。本轮无 BitBrowser、Session、卡片、Checkout、Provider、生产或付款动作。
+- 证据：`docs/browser-research/PHILIPPINES_CHECKOUT_TAX_OBSERVER_ENHANCEMENT_2026-09-03.md`。
+
+## 2026-09-04｜美国出口 Delaware 非付款对照完成
+
+- 用独立一次性 BitBrowser Profile 和美国出口执行真实 ChatGPT Plus Checkout 非付款对照；Session 身份匹配、账号为 FREE。
+- 常规升级入口选中 `US/USD`：地址前 `20.00 + 2.40 = 22.40 USD`，填写 `US/DE` 后 `20.00 + 0.00 = 20.00 USD`。
+- Checkout create 回读 `US/USD/custom`，地址后观察到 snapshot 204；本次未复现 `PHP 982.14`，下一窄对照应为 `US 出口 + 创建时显式 PH/PHP`。
+- Subscribe 未点击、`submitCalls=0`，没有 Provider/卡台写入；敏感临时文件、字段、Cookie/storage 与 Profile 已清理。
+- 现场暴露并修正了 UI hydration 时序、新中文金额标签和 Stripe 合法 `cookie` URL 导致的证扫误报。全量 `153/148 pass/5 environment-skip/0 fail`。
+- 生产、默认 API 路线和 Browser Worker 状态均未改变。
+- 证据：`docs/browser-research/US_EXIT_DELAWARE_TAX_AB_NONPAYMENT_2026-09-04.md`。
+
+## 2026-09-04｜US 出口 + 显式 PH/PHP 创建被上游门禁拒绝
+
+- 在用户同意后，观察器增加了显式 `PH/PHP + custom` Checkout 创建模式，仍无付款提交能力。
+- 当前美国 Profile/测试账号组合两次创建均返回 HTTP 400；第二次经安全脱敏后的公开错误为 `Our systems have detected unusual activity. Please try again later.`
+- 在线尝试次数达 2 后已停止；未进入 Checkout、未填卡、未付款，`submitCalls=0`。临时文件和 Profile 已清理。
+- 该结果不能证明或否定 `US + PH/PHP` 的最终税额；只证明当前请求组合被上游异常活动门禁阻断。
+
+## 2026-09-04｜纠正“unusual activity = 账号被禁”错误结论
+
+- 重新对照当前观察器、ChatGPT 活跃前端 bundle 和官方 UI 请求拦截，确认旧 `explicit-api` 探针使用附件旧 `accessToken` 裸调 `/backend-api/payments/checkout`，绕过官方 `safePost`/Sentinel/设备/目标路由上下文。
+- 上游前 abort 捕获确认官方 UI 请求含 bearer、Sentinel、设备、target-path 和 target-route 请求头；`upstreamCheckoutRequests=0`，没有创建 Checkout 或付款。
+- 因此旧两次 HTTP 400 只能说明错误形态的裸请求被拒绝，不能证明测试账号、出口或 `US + PH/PHP` 被禁。
+- 已移除裸调实现，新增官方 UI 请求重写器：只改 `billing_details.country/currency`、其余 body/header 原样保留、最多放行一次上游 Checkout 请求。定向测试 `14/14`，语法检查通过。
+- 尚未执行新的真实 Checkout 创建、填卡或付款；下一步为一次零付款现场复验。
+
+## 2026-09-04｜官方 PH pricing config 前置对照
+
+- 首次修正保留官方 bearer/Sentinel/设备/目标路由头，但在 Sentinel 生成后改写 Checkout POST 为 `PH/PHP`；上游仍返回 HTTP 400。该结果不能解释为账号被禁，说明后改 body 仍可能破坏请求完整性。
+- 第二次修正不改 Checkout POST：先把前端请求的 US pricing config 路由到官方 PH config，再检查前端自然生成的 Checkout 请求。
+- 官方 PH config HTTP 200，明确同时包含 Plus `1100`（tax inclusive）与 `psp_override 982.14`（tax exclusive）。这是目前解释历史 `982.14` 的最强新证据。
+- 前端最终自然生成 `US/PHP`，不是 `PH/PHP`；安全合同在本机 abort，Checkout 上游请求 `0`、卡字段 `0`、付款 `0`。
+- 结论：账号未被证明封禁；不能继续靠地区字段硬改。下一调查对象是官方 PSP/processor route 如何选择 `psp_override`。
+- 脱敏证据：`artifacts/browser-us-tax-ab-20260904/result-official-ui-rewrite-ph-diagnostic.json`、`artifacts/browser-us-tax-ab-20260904/result-official-pricing-region-ph-final.json`（均保持未跟踪）。
+## 2026-09-04｜菲律宾官方 UI PSP 路由非付款观察完成
+
+- 现场恢复本地 mihomo，Cloudflare trace 为 `loc=PH/colo=MNL`；BitBrowser 先前“网络不通”是代理进程未在运行。
+- 修正独立税费观察脚本误删 Profile 运行 Cookie 的问题；与生产 runtime 统一为五项严格 allowlist，客户 Session/Auth/未知 Cookie 仍全清。
+- 增加 CDP `Network.getRequestPostData` 取证，现场读到官方原生 Checkout POST 为 `PH/PHP`，response HTTP 200，`automatic_tax_enabled=true`。
+- 同一测试卡填入前/后以及页面回读 `US/DE` 后均为 `PHP 982.14 + 117.86 VAT = 1100.00`，未观察到 ChatGPT checkout snapshot，没有命中 `psp_override`。
+- Subscribe 未点击，`submitCalls=0`；字段、Session/Cookie/storage、临时文件和 Profile 已清理；未调用 Provider/卡台，未部署。
+- `npm run check` 通过；Browser 全量 `153 total / 148 passed / 5 environment-skipped / 0 failed`。
+- 详细报告：`docs/browser-research/PH_OFFICIAL_UI_PSP_ROUTE_NONPAYMENT_2026-09-04.md`。
+
+## 2026-09-04｜六 Profile 共享队列非付款闭环复验通过
+
+- 使用全新一次性 MySQL 8.4、完整 migrations `001–044`、六个真实 BitBrowser Profile 和六条合成队列任务实跑。
+- 首次 90 秒外层等待在六窗口串行冷启动期间先超时；订单租约/执行上限不改，只将环境测试外层等待调整为 240 秒并增加队列状态诊断。
+- 原样重跑约 95 秒通过：6 job=`CANCELLED`、6 run=`FAILED_SAFE`、6 attempt/funds=`CLEARED`、6 order=`CARD_READY`，活动 permit、付款 submit operation、未释放租约全部为 0。
+- 一次性数据库已停止并删除，六个 Profile 均关闭；无 Session、卡资料、ChatGPT Checkout、Provider/卡台调用或付款。
+- Browser 普通全量 `153 total / 148 passed / 5 environment-skipped / 0 failed`。
+- 详细证据：`docs/browser-research/BITBROWSER_SIX_PROFILE_SHARED_QUEUE_NONPAYMENT_ATTEMPT_2026-09-03.md`。
+# 2026-09-04｜macOS Browser 生产只读接入前置核对
+
+- 本轮现场核对本机 BitBrowser Local API（HTTP 200、Profile 未打开）、菲律宾代理配置权限 `0600`、生产 SSH BatchMode 与 MySQL loopback 隧道；随机本地端口转发成功后立即关闭。
+- 生产 Browser Worker 仍 `disabled/inactive`；生产 MySQL 仅监听 `127.0.0.1:3306`。未启动 Worker、未领取任务、未使用客户 Session、未调用 Provider/卡台、未付款。
+- 生产 `/etc/pojia/browser-readonly.env` 为 `root:pojia 0640`，与 unit 的 `User/Group=pojia` 匹配；修正 server env 模板注释，避免把服务配置误改为 `0600`。macOS 本地 launcher env 仍要求 `0600`。
+- launcher shell 检查及 production-readonly/macOS/systemd/config 相关测试 31/31 通过。
+- 已在仓库外生成本机 `~/Library/Application Support/VibeBridge/browser-readonly.env`（`0600`，BitBrowser 六 Profile、headed、付款/Provider/卡资金写入均关闭）；直接调用配置加载器通过，尚未启动 launcher/Worker。
+- 按确认执行一次 `ONCE` canary：生产 DB 只读检查 `READY`，随后 BitBrowser `/browser/open` 返回“网络不通已停止打开浏览器”，Worker 安全退出，隧道已关闭。未领单、未读客户 Session、未调用 Provider/卡台、未付款。阻断定位为 Profile 网络/代理连通性；不重复打开以免消耗每日额度。
+- 启动既有 mihomo 配置后代理恢复，Cloudflare trace=`PH/MNL`；第二次 canary 的 DB 检查 `READY`，但六 Profile warmup 因 Local API 10 秒超时（`BITBROWSER_API_TIMEOUT`）退出。随后对六 Profile 发起关闭请求，全部成功，未留窗口。下一步需单独调高只读 API 超时后再受控复验。
+- 将本地只读 env 的 BitBrowser API 超时调为 60 秒后，第三次 `ONCE` canary 成功：DB `READY`、只读迭代 `IDLE`、Worker exit 0；隧道关闭且无 Profile 残留。未领单、未读客户 Session、未调用 Provider/卡台、未付款。
+- 按用户建议先做单 Profile：临时配置第一个 Profile、API 超时 60 秒，`ONCE` canary 成功（DB `READY`、迭代 `IDLE`、exit 0），隧道关闭；未改动六 Profile 正式配置，未领单/付款。
+- 用单 Profile 临时配置短暂运行 `CONTINUOUS`，多次 `IDLE` 后 Ctrl-C 收尾成功；修复 launcher 在 `set -u` 下连续模式空数组导致的 `worker_args[@]: unbound variable`，并完成 shell 语法检查。未领单/读 Session/付款。
+- 详细证据：`docs/browser-research/MACOS_BROWSER_PRODUCTION_TUNNEL_CHECK_2026-09-04.md`。
+- 用户确认要做从 CDK+Session 到 Browser 付款完成的完整测试；已建立八阶段可执行清单 `docs/BROWSER_FULL_CHAIN_TEST_PLAN_2026-09-04.md`。本轮仅核对现场：最新订单仍为 API/WAITING_FOR_CARD，Browser dispatch/payment 均关闭，未修改路线或付款权限。
+- 测试前体检发现：当前订单仅一条 alert/一条 SENT Bark 通知，但自动开卡失败后短时间内重复生成多个 `REVIEW_REQUIRED` stock job（`CARD_STOCK_BALANCE_INSUFFICIENT`、`CARD_STOCK_CARD_TYPE_UNAVAILABLE`），造成持续等待和反复提醒观感。详见 `docs/2026-09-04_waiting-card-alert-healthcheck.md`。
