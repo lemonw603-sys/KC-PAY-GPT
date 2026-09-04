@@ -1,7 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { assertRef, ContractError } from './contracts.js';
-import { assertBillingAddress } from './card-material-lease.js';
 
 const TAX_FREE_STATES = Object.freeze(['AK', 'DE', 'MT', 'NH', 'OR']);
 const DEFAULT_DATA_PATH = new URL('../data/mockaddress-us-taxfree-v20260426.json', import.meta.url);
@@ -66,7 +65,11 @@ export class MockAddressBillingAddressSource {
     const rows = dataset.data?.[this.state];
     if (!Array.isArray(rows) || rows.length === 0) throw new ContractError('MockAddress has no rows for configured state');
     const row = normalizeRow(rows[indexFor(bindingRef, rows.length)], this.state);
-    return assertBillingAddress({ ...row, name: this.name });
+    const result = { ...row, name: this.name };
+  if (!result.name || !result.line1 || !result.city || !result.postalCode || !/^[A-Z]{2}$/.test(result.state)) {
+    throw new ContractError('MockAddress billing address is incomplete');
+  }
+  return result;
   }
 
   metadata() { return { source: 'MockAddress', version: this.version, state: this.state }; }
