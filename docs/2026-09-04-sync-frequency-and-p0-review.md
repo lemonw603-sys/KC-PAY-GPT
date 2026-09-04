@@ -49,6 +49,8 @@
 
 用户提交测试订单 `PJV1-tw-hliEBgnOfdEVsxn5r` 后，系统正确计算并创建唯一补余额 attempt，金额为 `$15.990000`。funding runner 确实领取并执行了一次 Provider 卡余额充值，但 Provider 返回确定失败；attempt=`FAILED`、`funds_risk_state=CLEARED`，未产生未知资金风险，也未重复调用。订单当前为 `WAITING_FOR_CARD`，不能把本次写成补余额闭环成功。该结果证明订单驱动、金额计算、幂等和安全清账生效；失败原因需依据 Provider 可提供的原始错误继续核对，不得盲目重试。
 
+复核代码后确认根因：HNSKJ 的 `rechargeCard` 合同只接受整数 USD，而补差额计算产生 `$15.99`；参数在本地适配器被确定性拒绝，故 Provider 实际没有收到充值请求（provider call 无 HTTP 状态）。已修正为按 Provider 合同向上取整（本例 `$16`），提交 `8caccfb` 并部署至 `/opt/pojia/releases/20260904-funding-integer-8caccfb`；Web/Worker active，`/health/ready=ready`。尚未重试该订单，避免未经再次确认产生新的资金写入。
+
 在全新隔离库重建并执行 001–045 后，已通过 4 个关键 MySQL 场景：库存同步持久化、分配卡定期同步、15 分钟可分配卡刷新、并发下单 worker 单次领取及过期租约恢复（`4 passed / 0 failed`）。
 
 ## 生产部署（2026-09-04）
