@@ -13,6 +13,13 @@
 - 生产 runtime 中存在数据库 URL 与共享加密 key，Browser readonly env 中存在 worker/profile 与三把 Browser key；本轮只核对“存在”，没有读取、复制或打印值。
 - 已在仓库外创建本机 `~/Library/Application Support/VibeBridge/browser-readonly.env`，权限 `0600`；配置使用 BitBrowser 六 Profile、headed 模式、生产 loopback 隧道和共享加密材料模式。配置加载器实测通过（`runtimeProvider=BITBROWSER`、6 profiles、payment executor=false），未启动 Worker。
 
+## 只读 canary 结果
+
+- 按确认启动了一次 `run-macos-headed-worker.sh`（`ONCE`）。生产数据库只读检查先返回 `READY`，随后 BitBrowser Profile warmup 在 `/browser/open` 被本地 API 拒绝。
+- 对首个 Profile 做了单次脱敏复核，厂商返回“网络不通已停止打开浏览器”。因此本轮阻断点是 BitBrowser Profile 的网络/代理连通性，不是生产数据库、订单租约或付款逻辑。
+- wrapper 已自动收尾：SSH 隧道监听已消失、Worker 退出；没有领取任务、读取客户 Session、调用 Provider/卡台或付款。
+- 不再重复打开 Profile 以消耗每日额度。下一步先修复或验证 BitBrowser Profile 的代理连通性，再重跑一次只读 canary。
+
 ## 结论边界
 
 SSH target/key 和 loopback 隧道路径已具备可用证据，但仍未完成生产 Browser 只读 Worker 的配置文件创建、launchd 加载或队列接入。当前只能说“接入前置网络与权限路径已打通”，不能说 Browser 已接入生产或已具备客户订单履约能力。

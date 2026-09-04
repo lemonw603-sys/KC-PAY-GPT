@@ -142,7 +142,7 @@
 - 容量方向已确认并完成真实 1→3→6 Profile 访问/隔离验收：6 个常驻隔离 Profile，单 Profile 串行、Profile 间并行；六路同时达到 ChatGPT HTTP 200、Cookie/localStorage 隔离和运行时指纹摘要差异 `6/6`。已修复客户清理误删 Cloudflare 运行 Cookie，以及生产池并发突发启动造成 Local API 部分成功的问题；生产池现为物理窗口顺序打开、页面任务并行。六路共用一个菲律宾出口，用户确认现阶段不以多出口作为阻断（详见 `docs/browser-research/BITBROWSER_SIX_PROFILE_ACCESS_AND_ISOLATION_VERIFICATION_2026-09-03.md`）。
 - 非付款闭环通过后，再单独确认首笔真实 Browser 付款；成功后再讨论把全局默认路线从 API 切为 Browser。
 
-**当前推进点（2026-09-04）**：本地只读 env 已在仓库外生成并通过配置加载器检查（BitBrowser 六 Profile、headed、付款/Provider/卡资金写入关闭）。下一步才运行 launcher `--check`/不付款 canary；未完成前不加载 launchd、不启动常驻生产 Browser Worker。
+**当前推进点（2026-09-04）**：本地只读 env 已生成并通过配置加载器检查；一次 `ONCE` canary 已到生产 DB `READY`，但 BitBrowser Profile warmup 因厂商返回“网络不通已停止打开浏览器”安全退出。先修复/验证 Profile 代理连通性，再重跑 canary；不加载 launchd、不启动常驻生产 Browser Worker。
 
 ### E｜客户充值页体验线
 

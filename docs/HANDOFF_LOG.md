@@ -1168,4 +1168,5 @@
 - 生产 `/etc/pojia/browser-readonly.env` 为 `root:pojia 0640`，与 unit 的 `User/Group=pojia` 匹配；修正 server env 模板注释，避免把服务配置误改为 `0600`。macOS 本地 launcher env 仍要求 `0600`。
 - launcher shell 检查及 production-readonly/macOS/systemd/config 相关测试 31/31 通过。
 - 已在仓库外生成本机 `~/Library/Application Support/VibeBridge/browser-readonly.env`（`0600`，BitBrowser 六 Profile、headed、付款/Provider/卡资金写入均关闭）；直接调用配置加载器通过，尚未启动 launcher/Worker。
+- 按确认执行一次 `ONCE` canary：生产 DB 只读检查 `READY`，随后 BitBrowser `/browser/open` 返回“网络不通已停止打开浏览器”，Worker 安全退出，隧道已关闭。未领单、未读客户 Session、未调用 Provider/卡台、未付款。阻断定位为 Profile 网络/代理连通性；不重复打开以免消耗每日额度。
 - 详细证据：`docs/browser-research/MACOS_BROWSER_PRODUCTION_TUNNEL_CHECK_2026-09-04.md`。
