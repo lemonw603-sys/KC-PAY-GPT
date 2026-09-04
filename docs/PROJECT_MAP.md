@@ -49,8 +49,8 @@
 | Provider card account | `write_enabled=0`，circuit=CLOSED | 当前 stock/funding runner **不以该字段为写门禁**，而以各自窄范围进程 gate 为准；这个语义不一致需在后续收敛，不得猜测它当前会阻断补给 |
 | readiness | **只读 preflight 通过** | 2026-09-01 15:54 CST：`ok=true`、`blockers=[]`、Worker heartbeat 2 秒；这不等于逐单 Session/账号/Provider 最终结果已验证 |
 | 通用 Provider / 卡片写 | false / false | Worker 进程环境 |
-| 独立自动补余额 | DB gate=true；`pojia-card-funding.timer` 与 reconcile timer active/enabled | 独立 runner 只开补余额所需卡片写；空闲零写已验证，首笔真实补余额未验收 |
-| 独立自动开卡 | DB gate=true；`pojia-card-stock-runner.timer` active/enabled，60 秒兜底 | stock runner 只开开卡所需卡片写；真实缺卡订单闭环未验收 |
+| 独立自动补余额 | DB gate=true；`pojia-card-funding.timer` 与 reconcile timer active/enabled | 独立 runner 只开补余额所需卡片写；空闲零写已验证，首笔真实补余额未验收；与自动开卡的抢跑收口已部署 |
+| 独立自动开卡 | DB gate=true；`pojia-card-stock-runner.timer` active/enabled，60 秒兜底 | stock runner 只开开卡所需卡片写；存在合格低余额卡或活动补款时不再抢跑；真实缺卡订单闭环未验收 |
 | 当前 Plus 可立即分配 | **1 张** | 2026-09-04 生产实时核对：`provider_card_id=2772`、尾号 `9051`、`active/AVAILABLE/READY`、余额 `$16`；旧批次均 `RETIRED`，4744 为 Claude 专用 |
 | 每卡成功次数上限 | 3 | 已部署；连续跨订单实证仍不足 |
 | 活动任务/资金风险/开放对账 | 0 / 0 / 0 | 2026-09-01 15:54 CST 只读 preflight |

@@ -102,7 +102,13 @@ export async function scheduleDueCardSyncJobs(pool, {
        WHERE c.intake_status IN ('ACCEPTED','LEGACY_ACCEPTED')
          AND (
            c.next_sync_at <= ?
-           OR (c.next_sync_at IS NULL AND (c.last_transaction_synced_at IS NULL OR c.last_transaction_synced_at < ?))
+           OR (c.next_sync_at IS NULL AND (
+             c.last_transaction_synced_at IS NULL
+             OR c.last_transaction_synced_at < CASE
+               WHEN c.sync_tier IN ('AVAILABLE','INVENTORY') THEN ?
+               ELSE ?
+             END
+           ))
          )
          AND NOT EXISTS (
            SELECT 1 FROM card_sync_jobs j
@@ -115,7 +121,7 @@ export async function scheduleDueCardSyncJobs(pool, {
          WHEN 'REFUND_WATCH' THEN 60 WHEN 'ARCHIVED' THEN 70 ELSE 55 END,
          COALESCE(c.next_sync_at, c.last_transaction_synced_at, c.created_at) ASC
        LIMIT ? FOR UPDATE SKIP LOCKED`,
-      [now, cutoff, safeLimit]
+      [now, new Date(now.getTime() - 15 * 60_000), cutoff, safeLimit]
     );
     const bucket = Math.floor(now.getTime() / (interval * 60_000));
     let queued = 0;

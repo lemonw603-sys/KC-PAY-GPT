@@ -385,6 +385,29 @@ test('assigned cards are periodically queued for transaction and refund observat
   }
 });
 
+test('available cards are refreshed within the 15 minute allocation evidence window', {
+  skip: !databaseUrl && 'TEST_DATABASE_URL 未配置；完整 MySQL 套件在服务器隔离数据库运行'
+}, async () => {
+  const pool = mysql.createPool({ uri: databaseUrl, connectionLimit: 3, timezone: 'Z' });
+  const cardId = id();
+  try {
+    await pool.query(
+      `INSERT INTO cards
+       (id, inventory_status, provider_card_id, card_type_id, status,
+        current_balance, currency, provider_account_id, external_card_id,
+        intake_status, sync_tier, last_transaction_synced_at)
+       VALUES (?, 'AVAILABLE', ?, '7', 'active', 16, 'USD', ?, ?, 'ACCEPTED', 'AVAILABLE', ?)`,
+      [cardId, `available-window-${cardId}`, legacyCardProviderAccountId,
+        `available-window-${cardId}`, new Date(Date.now() - 16 * 60_000)]
+    );
+    assert.deepEqual(await scheduleDueCardSyncJobs(pool), { enabled: true, queued: 1 });
+  } finally {
+    await pool.query('DELETE FROM card_sync_jobs WHERE card_id=?', [cardId]);
+    await pool.query('DELETE FROM cards WHERE id=?', [cardId]);
+    await pool.end();
+  }
+});
+
 test('three-way reconciliation queries run on MySQL and ignore a cancelled pre-submission order', {
   skip: !databaseUrl && 'TEST_DATABASE_URL 未配置；完整 MySQL 套件在服务器隔离数据库运行'
 }, async () => {
