@@ -268,3 +268,11 @@ git diff --check
 - 运营方确认 Browser 出口固定使用菲律宾；美国出口不进入后续实验或生产候选。税费 A/B 必须在菲律宾出口不变时分离其余变量。
 - 六 Profile 共享队列非付款闭环通过后、首笔 Browser 真实付款前，执行零付款税费 A/B 并冻结可复现的最终金额合同。
 - 证据与矩阵：`docs/browser-research/PHILIPPINES_VAT_ROUTE_DIFFERENTIAL_2026-09-03.md`。
+
+## 2026-09-04｜纠正“unusual activity = 账号被禁”错误结论
+
+- 重新对照当前观察器、ChatGPT 活跃前端 bundle 和官方 UI 请求拦截，确认旧 `explicit-api` 探针使用附件旧 `accessToken` 裸调 `/backend-api/payments/checkout`，绕过官方 `safePost`/Sentinel/设备/目标路由上下文。
+- 上游前 abort 捕获确认官方 UI 请求含 bearer、Sentinel、设备、target-path 和 target-route 请求头；`upstreamCheckoutRequests=0`，没有创建 Checkout 或付款。
+- 因此旧两次 HTTP 400 只能说明错误形态的裸请求被拒绝，不能证明测试账号、出口或 `US + PH/PHP` 被禁。
+- 已移除裸调实现，新增官方 UI 请求重写器：只改 `billing_details.country/currency`、其余 body/header 原样保留、最多放行一次上游 Checkout 请求。定向测试 `14/14`，语法检查通过。
+- 尚未执行新的真实 Checkout 创建、填卡或付款；下一步为一次零付款现场复验。

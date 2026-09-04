@@ -18,6 +18,7 @@ import {
   CHATGPT_PLUS_CHECKOUT_NAVIGATION_CONTRACT,
   navigateToChatGPTPlusCheckout,
 } from '../src/chatgpt-checkout-navigator.js';
+import { installOfficialCheckoutRegionRewrite } from '../src/checkout-request-rewrite.js';
 
 const INPUT_KEYS = new Set(['profileId', 'sessionFile', 'card', 'billingAddress', 'checkout']);
 const CARD_KEYS = new Set(['pan', 'expMonth', 'expYear', 'cvc']);
@@ -67,59 +68,12 @@ function validateInput(input) {
     throw new Error('billingAddress is incomplete');
   }
   if (input.checkout !== undefined) {
-    if (input.checkout.creationMode !== 'explicit-api'
+    if (input.checkout.creationMode !== 'official-ui-rewrite'
       || !/^[A-Z]{2}$/.test(String(input.checkout.country || ''))
       || !/^[A-Z]{3}$/.test(String(input.checkout.currency || ''))) {
       throw new Error('checkout explicit region is invalid');
     }
   }
-}
-
-async function createExplicitCheckout(page, checkout, accessToken, timeoutMs = 45_000) {
-  if (typeof accessToken !== 'string' || accessToken.length < 32) throw new Error('session access token is unavailable');
-  const response = await page.evaluate(async ({ token, country, currency }) => {
-    const result = await fetch('/backend-api/payments/checkout', {
-      method: 'POST',
-      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-      body: JSON.stringify({
-        entry_point: 'all_plans_pricing_modal',
-        plan_name: 'chatgptplusplan',
-        billing_details: { country, currency },
-        checkout_ui_mode: 'custom',
-      }),
-    });
-    let body = null;
-    try { body = await result.json(); } catch { /* response shape checked below */ }
-    return {
-      ok: result.ok,
-      status: result.status,
-      checkoutSessionId: typeof body?.checkout_session_id === 'string' ? body.checkout_session_id : null,
-      detail: typeof body?.detail === 'string' ? body.detail
-        : typeof body?.message === 'string' ? body.message
-          : typeof body?.error?.message === 'string' ? body.error.message : null,
-    };
-  }, { token: accessToken, country: checkout.country, currency: checkout.currency });
-  if (!response.ok || response.status !== 200) {
-    const safeDetail = String(response.detail || 'no public detail')
-      .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, '<email-redacted>')
-      .replace(/\b(?:oaics_|cs_(?:live|test)_)[A-Za-z0-9_-]+\b/g, '<checkout-redacted>')
-      .replace(/[A-Za-z0-9_.-]{80,}/g, '<opaque-redacted>')
-      .slice(0, 240);
-    throw new Error(`explicit checkout creation failed with HTTP ${response.status}: ${safeDetail}`);
-  }
-  if (!/^(?:oaics_|cs_(?:live|test)_)[A-Za-z0-9_-]{8,256}$/.test(String(response.checkoutSessionId || ''))) {
-    throw new Error('explicit checkout creation returned an unsupported response');
-  }
-  const checkoutUrl = `https://chatgpt.com/checkout/openai_llc/${response.checkoutSessionId}`;
-  await page.goto(checkoutUrl, { waitUntil: 'domcontentloaded', timeout: timeoutMs });
-  const marker = page.locator(CHATGPT_PLUS_CHECKOUT_NAVIGATION_CONTRACT.checkoutReadySelector);
-  await marker.waitFor({ state: 'visible', timeout: timeoutMs });
-  return {
-    checkoutCreated: true,
-    actions: ['explicit-checkout-created'],
-    checkoutUrlDigest: digest(page.url()),
-    submitCalls: 0,
-  };
 }
 
 async function clearCustomerState(context) {
@@ -382,6 +336,7 @@ async function main() {
   let page = null;
   let profileOpened = false;
   let sessionLease = null;
+  let checkoutRewrite = null;
   const fieldsToClear = [];
   const result = { status: 'FAILED_SAFE', submitCalls: 0 };
   const networkEvidence = [];
@@ -405,9 +360,14 @@ async function main() {
     await page.goto('https://chatgpt.com/', { waitUntil: 'domcontentloaded', timeout: 45_000 });
     const identity = await probeSessionIdentity(page, expectedIdentity, { accountCheckPath: ACCOUNT_CHECK_PATH });
     if (identity.alreadyPlus) throw new Error('test account is already subscribed');
-    const navigation = input.checkout?.creationMode === 'explicit-api'
-      ? await createExplicitCheckout(page, input.checkout, session.accessToken, 45_000)
-      : await navigateToChatGPTPlusCheckout(page, CHATGPT_PLUS_CHECKOUT_NAVIGATION_CONTRACT, { timeoutMs: 45_000 });
+    if (input.checkout?.creationMode === 'official-ui-rewrite') {
+      checkoutRewrite = await installOfficialCheckoutRegionRewrite(page, input.checkout);
+    }
+    const navigation = await navigateToChatGPTPlusCheckout(
+      page,
+      CHATGPT_PLUS_CHECKOUT_NAVIGATION_CONTRACT,
+      { timeoutMs: 45_000 },
+    );
     const totalsBeforePaymentData = await waitForStableTotals(page);
     const cardFields = await fillCardFields(page, input.card);
     fieldsToClear.push(...Object.values(cardFields));
@@ -421,6 +381,7 @@ async function main() {
     result.identityMatched = identity.identityMatched === true;
     result.subscriptionStatus = identity.subscriptionStatus;
     result.checkoutCreationMode = input.checkout?.creationMode || 'ui';
+    if (checkoutRewrite) result.checkoutRequestRewrite = checkoutRewrite.snapshot();
     result.checkoutUrlDigest = navigation.checkoutUrlDigest || digest(page.url());
     const planText = (await page.locator(`${SUMMARY_SELECTOR} h2`).first().textContent().catch(() => ''))?.trim() || '';
     if (!/ChatGPT Plus/i.test(planText)) throw new Error('checkout plan was not confirmed as ChatGPT Plus');
@@ -446,6 +407,7 @@ async function main() {
       input.billingAddress.city, input.billingAddress.postalCode,
     ]);
   } finally {
+    await checkoutRewrite?.dispose().catch(() => undefined);
     result.fieldsCleared = await clearFields(fieldsToClear);
     if (page) {
       const billingFields = await visibleFields(page, [

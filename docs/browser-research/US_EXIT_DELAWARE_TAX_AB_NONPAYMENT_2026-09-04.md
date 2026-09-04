@@ -47,9 +47,9 @@ Session 身份匹配，账号状态为 `FREE`，通过常规升级入口进入�
 
 Browser 全量测试：`151 total / 146 passed / 5 environment-skipped / 0 failed`。
 
-## 显式 `PH/PHP` 创建尝试
+## 旧显式 `PH/PHP` 创建尝试（证据已降级）
 
-在用户同意继续后，观察器增加了显式 API 创建模式，请求只包含已核对的 Plus 套餐、`PH/PHP`和 `custom` 模式，仍无任何付款调用。
+在用户同意继续后，旧观察器曾增加显式 API 创建模式，请求包含 Plus 套餐、`PH/PHP` 和 `custom` 模式，且没有付款调用。事后对照当前生产前端 bundle 与一次上游前 abort 的官方请求捕获，确认该实现并不等价于官方调用：它使用附件中的旧 `accessToken` 裸调 API，缺少官方动态生成的 Sentinel、设备和目标路由请求头。
 
 现场结果：
 
@@ -58,7 +58,7 @@ Browser 全量测试：`151 total / 146 passed / 5 environment-skipped / 0 faile
 - 在线窄探测已达 2 次，按规则停止，不继续重复创建 Checkout。
 - 两次都停在 Checkout 创建前：未进入支付页、未填卡、未点击 Subscribe、`submitCalls=0`。一次性 Session/输入文件已删除，Profile 已关闭。
 
-该返回可以确认当前账号/出口/请求节奏组合被上游异常活动门禁拒绝，但不能用来判断 `US 出口 + PH/PHP` 的最终税额。下次只应在冷却后或更换独立 FREE 测试账号队列后复验一次，不应当前继续重试。
+因此，这两次返回只能证明旧裸调探针被拒绝，不能证明账号被禁、出口被禁或 `US 出口 + PH/PHP` 被官方路径拒绝，也不能判断最终税额。当前官方 UI 拦截样本已确认真实请求同时携带 bearer、Sentinel、设备和目标路由请求头；新实现保留整条官方请求，只重写 `billing_details.country/currency`，并最多放行一次上游 Checkout 创建。离线/拦截验证已通过，真实零付款复验仍待执行。
 
 ## 证据路径
 

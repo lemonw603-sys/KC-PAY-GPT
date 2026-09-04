@@ -1116,7 +1116,7 @@
 - 常规升级入口选中 `US/USD`：地址前 `20.00 + 2.40 = 22.40 USD`，填写 `US/DE` 后 `20.00 + 0.00 = 20.00 USD`。
 - Checkout create 回读 `US/USD/custom`，地址后观察到 snapshot 204；本次未复现 `PHP 982.14`，下一窄对照应为 `US 出口 + 创建时显式 PH/PHP`。
 - Subscribe 未点击、`submitCalls=0`，没有 Provider/卡台写入；敏感临时文件、字段、Cookie/storage 与 Profile 已清理。
-- 现场暴露并修正了 UI hydration 时序、新中文金额标签和 Stripe 合法 `cookie` URL 导致的证扫误报。全量 `151/146 pass/5 environment-skip/0 fail`。
+- 现场暴露并修正了 UI hydration 时序、新中文金额标签和 Stripe 合法 `cookie` URL 导致的证扫误报。全量 `153/148 pass/5 environment-skip/0 fail`。
 - 生产、默认 API 路线和 Browser Worker 状态均未改变。
 - 证据：`docs/browser-research/US_EXIT_DELAWARE_TAX_AB_NONPAYMENT_2026-09-04.md`。
 
@@ -1126,3 +1126,11 @@
 - 当前美国 Profile/测试账号组合两次创建均返回 HTTP 400；第二次经安全脱敏后的公开错误为 `Our systems have detected unusual activity. Please try again later.`
 - 在线尝试次数达 2 后已停止；未进入 Checkout、未填卡、未付款，`submitCalls=0`。临时文件和 Profile 已清理。
 - 该结果不能证明或否定 `US + PH/PHP` 的最终税额；只证明当前请求组合被上游异常活动门禁阻断。
+
+## 2026-09-04｜纠正“unusual activity = 账号被禁”错误结论
+
+- 重新对照当前观察器、ChatGPT 活跃前端 bundle 和官方 UI 请求拦截，确认旧 `explicit-api` 探针使用附件旧 `accessToken` 裸调 `/backend-api/payments/checkout`，绕过官方 `safePost`/Sentinel/设备/目标路由上下文。
+- 上游前 abort 捕获确认官方 UI 请求含 bearer、Sentinel、设备、target-path 和 target-route 请求头；`upstreamCheckoutRequests=0`，没有创建 Checkout 或付款。
+- 因此旧两次 HTTP 400 只能说明错误形态的裸请求被拒绝，不能证明测试账号、出口或 `US + PH/PHP` 被禁。
+- 已移除裸调实现，新增官方 UI 请求重写器：只改 `billing_details.country/currency`、其余 body/header 原样保留、最多放行一次上游 Checkout 请求。定向测试 `14/14`，语法检查通过。
+- 尚未执行新的真实 Checkout 创建、填卡或付款；下一步为一次零付款现场复验。
