@@ -11,9 +11,10 @@
 - `run-macos-headed-worker.sh` 通过 shell 语法检查；Browser production-readonly 配置、macOS launcher、systemd 合同相关测试共 31/31 通过。
 - 本机目标路径 `~/Library/Application Support/VibeBridge/browser-readonly.env` 当前不存在，launchd 服务也未加载；这是预期的未接入状态，不是故障。
 - 生产 runtime 中存在数据库 URL 与共享加密 key，Browser readonly env 中存在 worker/profile 与三把 Browser key；本轮只核对“存在”，没有读取、复制或打印值。
+- 已在仓库外创建本机 `~/Library/Application Support/VibeBridge/browser-readonly.env`，权限 `0600`；配置使用 BitBrowser 六 Profile、headed 模式、生产 loopback 隧道和共享加密材料模式。配置加载器实测通过（`runtimeProvider=BITBROWSER`、6 profiles、payment executor=false），未启动 Worker。
 
 ## 结论边界
 
 SSH target/key 和 loopback 隧道路径已具备可用证据，但仍未完成生产 Browser 只读 Worker 的配置文件创建、launchd 加载或队列接入。当前只能说“接入前置网络与权限路径已打通”，不能说 Browser 已接入生产或已具备客户订单履约能力。
 
-下一次动作仍需单独批准：在仓库外创建不含 Session/PAN/CVC/API key 的本地 `0600` 环境文件，运行 launcher `--check`；通过后再安排一次不付款的生产形态只读 canary。Browser Worker 继续保持 disabled/inactive。
+下一次动作仍需单独批准：运行 launcher 的一次 `--check`/只读 canary（启动时才会建立 SSH 隧道和 Worker）。在此之前不加载 launchd，不领取真实订单，不付款。Browser Worker 继续保持 disabled/inactive。
