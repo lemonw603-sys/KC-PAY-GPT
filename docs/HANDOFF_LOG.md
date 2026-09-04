@@ -1027,3 +1027,10 @@
 - 修复：失败后强制只读交易同步并以双证据安全释放；WAITING_FOR_CARD 成为唯一需求触发，scheduler 独占付费任务创建；预检零开卡失败不占资金复核/日配额；过程自愈不推送，真正失败按订单唯一提醒。
 - 生产复验：卡 2772=`AVAILABLE/isAllocatable/READY`、ledger/assignment=`RELEASED`；overview available=1、readiness=READY、CARD_SUPPLY=READY；补卡 used=1/limit=5；openAlertCount=0；公网健康 ready。
 - 部署修正：首次复制 current 时保留 symlink，候选别名误指旧 release；发现后建立真实 `...-real` release，并以 `git HEAD^` 六个文件 SHA 恢复旧 release，最终 current/回滚目录已核对且误别名已 unlink。
+## 2026-09-04 自动补余额优先与开卡快速重试修正
+
+- 当轮重新核对当前代码、生产 release/systemd/DB 和管理员实时 API；生产可分配卡为 `2772/9051 active/AVAILABLE/READY/$16`，补余额与补卡 DB gate 及独立 timer 均开启。
+- 修正三点：存在合格低余额卡时 stock scheduler 不再抢跑开新卡；多张可补卡选择余额最高者以最小化补差额；订单收到 `replenishmentPending` 后按 5 秒而非误退化到 60 秒重试。
+- 验证：定向单元 45/45；v1 全量 522 total / 478 pass / 44 environment-skip / 0 fail；全新临时 MySQL 8.4 + 完整 migrations 的关键补给场景 2/2。
+- 卡台实时卡段返回 `requireMinBalance=1/minBalanceUsdt=25`。这是 Provider 开卡前硬条件，不是本地“开卡后保留余额”阈值，因此未按用户口头值伪改成 18；当前卡台余额 `$18.84` 时若进入无卡分支，仍会在 Provider 写入前安全停止。
+- 本轮未开卡、未补余额、未付款；真实低余额补差额成功闭环仍待首笔生产验收。专项记录：`docs/2026-09-04-card-supply-priority-and-retry-fix.md`。

@@ -245,7 +245,7 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
              WHERE ${fundableInventoryCardSql('c')}
                AND c.provider_account_id = ?
                AND c.current_balance < ?
-             ORDER BY c.current_balance ASC, c.updated_at ASC
+             ORDER BY c.current_balance DESC, c.updated_at ASC
              LIMIT 1 FOR UPDATE SKIP LOCKED`,
             [order.card_provider_account_id, String(order.minimum_required_card_balance)]
           );

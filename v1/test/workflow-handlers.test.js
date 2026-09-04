@@ -273,6 +273,20 @@ test('waits safely when inventory is empty and never opens a card', async () => 
   assert.equal(purchases, 0);
 });
 
+test('retries quickly while automatic replenishment is pending', async () => {
+  const state = setup({ status: OrderStatus.CREATED });
+  state.workflow.assignAvailableCard = async () => ({
+    waitingForCard: true,
+    replenishmentPending: true
+  });
+  await assert.rejects(
+    state.handlers.ASSIGN_CARD({ id: 8, order_id: 'order-1', attempts: 1 }),
+    (error) => error.code === 'CARD_STOCK_EMPTY'
+      && error.retryable === true
+      && error.delayMs === 5_000
+  );
+});
+
 test('recovers a missing purchase response ID from the persisted before-list without repurchasing', async () => {
   const state = setup({ status: OrderStatus.CARD_PURCHASING });
   let purchaseCalls = 0;

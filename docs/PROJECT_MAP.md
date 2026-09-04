@@ -51,13 +51,13 @@
 | 通用 Provider / 卡片写 | false / false | Worker 进程环境 |
 | 独立自动补余额 | DB gate=true；`pojia-card-funding.timer` 与 reconcile timer active/enabled | 独立 runner 只开补余额所需卡片写；空闲零写已验证，首笔真实补余额未验收 |
 | 独立自动开卡 | DB gate=true；`pojia-card-stock-runner.timer` active/enabled，60 秒兜底 | stock runner 只开开卡所需卡片写；真实缺卡订单闭环未验收 |
-| 当前 Plus 可立即分配 | **1 张** | 本轮自动开卡生成新卡 `provider_card_id=2338`、尾号 `4643`，余额 `$16`，测试订单取消后已释放为 `AVAILABLE`；旧批次均 `RETIRED`，4744 为 Claude 专用 |
+| 当前 Plus 可立即分配 | **1 张** | 2026-09-04 生产实时核对：`provider_card_id=2772`、尾号 `9051`、`active/AVAILABLE/READY`、余额 `$16`；旧批次均 `RETIRED`，4744 为 Claude 专用 |
 | 每卡成功次数上限 | 3 | 已部署；连续跨订单实证仍不足 |
 | 活动任务/资金风险/开放对账 | 0 / 0 / 0 | 2026-09-01 15:54 CST 只读 preflight |
 | 最新 migration | 044 | 只读 readiness |
 | 最新订单 | `PJV1-412JIT_yfiuBpZeC39_m`=`RECHARGE_FAILED` | API 订单完成一次提交与轮询；Provider 返回明确失败“卡片被拒，请换卡后重提”，外部订单号 `8849`，资金风险已清除，无成功付款；卡片按失败策略保留为不可直接分配，待后续核对 |
 
-**当前状态**：API 最小充值权限、接单、自动派发、自动开卡和自动补余额均已开启；生产只读 preflight `ok=true/blockers=[]`。当前没有 Plus 可分配卡，下一笔有效 API 订单应进入“无合格卡→自动开新卡”分支，而不是给旧卡补余额。
+**当前状态**：API 最小充值权限、接单、自动派发、自动开卡和自动补余额均已开启；生产实时 overview 为 `READY`。当前有 1 张 `$16` Plus 可分配卡 `2772/9051`，下一笔有效订单先直接分配它，不触发补余额或开卡。
 
 ### 最新拒付的证据边界
 
@@ -123,7 +123,7 @@
 ### P1｜下一笔真实 API 订单
 
 - 客户正常提交 CDK + Session，系统自动处理；不再先人为关闭应有能力。
-- 当前已有 1 张可直接分配的 Plus 卡：Provider 卡 `2338`、尾号 `4643`、余额 `$16`、库存 `AVAILABLE`。下一笔有效订单应优先复用该卡，验收“自动分卡→API 充值→取消续费→交易/余额/对账”的完整链路；只有后续无合格卡时才再次验证自动开卡。
+- 当前已有 1 张可直接分配的 Plus 卡：Provider 卡 `2772`、尾号 `9051`、余额 `$16`、库存 `AVAILABLE/READY`。下一笔有效订单应优先复用该卡；只有后续无可直接分配卡、也无合格低余额卡可补时，才进入自动开卡。
 - 核对充值成功、Plus、取消续费、卡余额/交易、对账和 Bark。
 
 ### P2｜3–5 单连续 API 运营

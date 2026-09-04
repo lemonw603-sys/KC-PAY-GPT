@@ -8,7 +8,10 @@ import {
   snapshotIsFresh
 } from './card-provider-snapshot-service.js';
 import { cardCatalogIsFresh, readCardCatalogSnapshot } from './card-catalog-snapshot-service.js';
-import { eligibleInventoryCardSql } from './card-inventory-eligibility.js';
+import {
+  eligibleInventoryCardSql,
+  fundableInventoryCardSql
+} from './card-inventory-eligibility.js';
 import { resolveCurrentCardProviderAccount } from './provider-route-service.js';
 
 function shanghaiDayBounds(now = new Date()) {
@@ -249,6 +252,31 @@ export function createCardStockJobService({ pool }) {
       if (available > threshold) {
         await connection.commit();
         return { scheduled: false, reason: 'STOCK_SUFFICIENT', available, threshold };
+      }
+      const [activeFunding] = await connection.query(
+        `SELECT id FROM card_funding_attempts
+         WHERE order_id = ?
+           AND (status IN ('PREPARED','SUBMITTING','PENDING')
+             OR funds_risk_state IN ('ACTIVE','UNKNOWN'))
+         LIMIT 1 FOR UPDATE`,
+        [demand.id]
+      );
+      if (activeFunding.length) {
+        await connection.commit();
+        return { scheduled: false, reason: 'CARD_FUNDING_ACTIVE' };
+      }
+      // A WAITING_FOR_CARD order can already be healing through an existing
+      // low-balance card. Never race that cheaper, order-linked path by buying
+      // a second card while funding or its follow-up sync is still progressing.
+      const [[fundable]] = await connection.query(
+        `SELECT COUNT(*) AS count FROM cards
+         WHERE ${fundableInventoryCardSql('cards')}
+           AND provider_account_id = ?`,
+        [providerAccountId]
+      );
+      if (Number(fundable?.count || 0) > 0) {
+        await connection.commit();
+        return { scheduled: false, reason: 'FUNDABLE_CARD_EXISTS' };
       }
       const snapshot = await readProviderSnapshot(connection);
       if (!snapshotIsFresh(snapshot)) {

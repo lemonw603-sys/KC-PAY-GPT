@@ -1202,13 +1202,14 @@ test('order-linked funding is claimed before any manually prepared background at
   }
 });
 
-test('order-driven balance funding queues only after its production capability is enabled', {
+test('order-driven balance funding queues only after enablement and chooses the smallest top-up', {
   skip: !databaseUrl && 'TEST_DATABASE_URL 未配置；完整 MySQL 套件在服务器隔离数据库运行'
 }, async () => {
   const pool = mysql.createPool({ uri: databaseUrl, connectionLimit: 3, timezone: 'Z' });
   const fixture = await createOrder(pool);
   const workflow = createWorkflowRepository(pool, { sessionEncryptionKey: integrationSessionKey });
   const cardId = id();
+  const closerCardId = id();
   const [[originalFunding]] = await pool.query(
     `SELECT setting_value FROM app_settings WHERE setting_key='card_balance_recharge_enabled'`
   );
@@ -1232,11 +1233,24 @@ test('order-driven balance funding queues only after its production capability i
           expMonth: 12, expYear: 2032, cvv: '123' }), integrationSessionKey),
         legacyCardProviderAccountId, `order-funding-gate-${cardId}`]
     );
+    await pool.query(
+      `INSERT INTO cards
+       (id, order_id, inventory_status, provider_card_id, card_type_id, last4, status,
+        funded_amount, current_balance, currency, refund_status, card_credentials_ciphertext,
+        provider_account_id, external_card_id, intake_status, sync_tier, last_transaction_synced_at)
+       VALUES (?, NULL, 'DEPLETED', ?, '7', '4343', 'active', '16', '10',
+        'USD', 'MONITORING', ?, ?, ?, 'ACCEPTED', 'AVAILABLE', CURRENT_TIMESTAMP(3))`,
+      [closerCardId, `order-funding-closest-${closerCardId}`,
+        encryptSecret(JSON.stringify({ cardNumber: '4343434343434343',
+          expMonth: 12, expYear: 2032, cvv: '123' }), integrationSessionKey),
+        legacyCardProviderAccountId, `order-funding-closest-${closerCardId}`]
+    );
     const disabled = await workflow.assignAvailableCard(fixture.orderId);
     assert.equal(disabled.waitingForCard, true);
     assert.equal(disabled.fundingQueued, undefined);
     const [[before]] = await pool.query(
-      'SELECT COUNT(*) AS count FROM card_funding_attempts WHERE card_id=?', [cardId]
+      'SELECT COUNT(*) AS count FROM card_funding_attempts WHERE card_id IN (?,?)',
+      [cardId, closerCardId]
     );
     assert.equal(Number(before.count), 0);
 
@@ -1249,18 +1263,18 @@ test('order-driven balance funding queues only after its production capability i
     assert.equal(enabled.fundingQueued, true);
     const [[attempt]] = await pool.query(
       `SELECT order_id, amount, status, funds_risk_state
-       FROM card_funding_attempts WHERE card_id=?`, [cardId]
+       FROM card_funding_attempts WHERE card_id=?`, [closerCardId]
     );
     assert.deepEqual(attempt, {
       order_id: fixture.orderId,
-      amount: '12.000000',
+      amount: '6.000000',
       status: 'PREPARED',
       funds_risk_state: 'NONE'
     });
   } finally {
-    await pool.query('DELETE FROM card_sync_jobs WHERE card_id=?', [cardId]);
-    await pool.query('DELETE FROM card_funding_attempts WHERE card_id=?', [cardId]);
-    await pool.query('DELETE FROM cards WHERE id=?', [cardId]);
+    await pool.query('DELETE FROM card_sync_jobs WHERE card_id IN (?,?)', [cardId, closerCardId]);
+    await pool.query('DELETE FROM card_funding_attempts WHERE card_id IN (?,?)', [cardId, closerCardId]);
+    await pool.query('DELETE FROM cards WHERE id IN (?,?)', [cardId, closerCardId]);
     await removeOrder(pool, fixture);
     if (originalFunding) {
       await pool.query(
@@ -1382,6 +1396,7 @@ test('automatic replenishment reserves one card at a time and hard-stops at the 
   const pool = mysql.createPool({ uri: databaseUrl, connectionLimit: 3, timezone: 'Z' });
   const service = createCardStockJobService({ pool });
   const created = [];
+  let fundableCardId = null;
   const demandFixture = await createOrder(pool, { status: OrderStatus.WAITING_FOR_CARD });
   const keys = ['card_auto_replenishment_enabled', 'card_replenishment_daily_limit',
     'card_stock_low_threshold', 'default_card_type_id', 'default_open_card_amount',
@@ -1437,6 +1452,35 @@ test('automatic replenishment reserves one card at a time and hard-stops at the 
       scheduled: false, reason: 'FUNDS_REVIEW_REQUIRED'
     });
     await pool.query('DELETE FROM card_stock_jobs WHERE id=?', [reviewJobId]);
+    fundableCardId = id();
+    await pool.query(
+      `INSERT INTO cards
+       (id, order_id, inventory_status, provider_card_id, card_type_id, last4, status,
+        funded_amount, current_balance, currency, refund_status, card_credentials_ciphertext,
+        provider_account_id, external_card_id, intake_status, sync_tier, last_transaction_synced_at)
+       VALUES (?, NULL, 'DEPLETED', ?, '7', '4242', 'active', '16', '4',
+        'USD', 'MONITORING', ?, ?, ?, 'ACCEPTED', 'AVAILABLE', CURRENT_TIMESTAMP(3))`,
+      [fundableCardId, `stock-funding-race-${fundableCardId}`,
+        encryptSecret(JSON.stringify({ cardNumber: '4242424242424242',
+          expMonth: 12, expYear: 2032, cvv: '123' }), integrationSessionKey),
+        legacyCardProviderAccountId, `stock-funding-race-${fundableCardId}`]
+    );
+    assert.deepEqual(await service.scheduleAutomaticJob(), {
+      scheduled: false, reason: 'FUNDABLE_CARD_EXISTS'
+    });
+    await pool.query(
+      `INSERT INTO card_funding_attempts
+       (id, card_id, order_id, provider_account_id, amount, currency, status,
+        funds_risk_state, idempotency_key)
+       VALUES (?, ?, ?, ?, '12', 'USD', 'PREPARED', 'NONE', ?)`,
+      [id(), fundableCardId, demandFixture.orderId, legacyCardProviderAccountId,
+        `stock-funding-active-${fundableCardId}`]
+    );
+    assert.deepEqual(await service.scheduleAutomaticJob(), {
+      scheduled: false, reason: 'CARD_FUNDING_ACTIVE'
+    });
+    await pool.query('DELETE FROM card_funding_attempts WHERE card_id=?', [fundableCardId]);
+    await pool.query('DELETE FROM cards WHERE id=?', [fundableCardId]);
     for (let index = 0; index < 5; index += 1) {
       const scheduled = await service.scheduleAutomaticJob();
       assert.equal(scheduled.scheduled, true);
@@ -1462,6 +1506,7 @@ test('automatic replenishment reserves one card at a time and hard-stops at the 
     if (created.length) {
       await pool.query(`DELETE FROM card_stock_jobs WHERE id IN (${created.map(() => '?').join(',')})`, created);
     }
+    if (fundableCardId) await pool.query('DELETE FROM cards WHERE id=?', [fundableCardId]);
     for (const key of keys) {
       if (originals.has(key)) {
         await pool.query('UPDATE app_settings SET setting_value=? WHERE setting_key=?', [originals.get(key), key]);
