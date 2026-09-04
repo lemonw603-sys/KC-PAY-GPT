@@ -1175,3 +1175,4 @@
 - 用单 Profile 临时配置短暂运行 `CONTINUOUS`，多次 `IDLE` 后 Ctrl-C 收尾成功；修复 launcher 在 `set -u` 下连续模式空数组导致的 `worker_args[@]: unbound variable`，并完成 shell 语法检查。未领单/读 Session/付款。
 - 详细证据：`docs/browser-research/MACOS_BROWSER_PRODUCTION_TUNNEL_CHECK_2026-09-04.md`。
 - 用户确认要做从 CDK+Session 到 Browser 付款完成的完整测试；已建立八阶段可执行清单 `docs/BROWSER_FULL_CHAIN_TEST_PLAN_2026-09-04.md`。本轮仅核对现场：最新订单仍为 API/WAITING_FOR_CARD，Browser dispatch/payment 均关闭，未修改路线或付款权限。
+- 测试前体检发现：当前订单仅一条 alert/一条 SENT Bark 通知，但自动开卡失败后短时间内重复生成多个 `REVIEW_REQUIRED` stock job（`CARD_STOCK_BALANCE_INSUFFICIENT`、`CARD_STOCK_CARD_TYPE_UNAVAILABLE`），造成持续等待和反复提醒观感。详见 `docs/2026-09-04_waiting-card-alert-healthcheck.md`。

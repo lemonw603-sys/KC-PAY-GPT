@@ -197,3 +197,5 @@
 **付款条件更新**：用户已条件性允许首笔 Browser 真实付款，但仅限官方 Checkout 最终稳定显示 `₱982.14` 且税费为 `₱0`；当前 Browser 付款权限仍关闭，现有 PH 实测 `₱1,100` 不满足条件。
 
 **全链路测试基线**：首笔真实 Browser 测试按 `docs/BROWSER_FULL_CHAIN_TEST_PLAN_2026-09-04.md` 的八阶段证据清单执行；当前先处理 API 订单与 Browser 路线冻结冲突，再从单 Profile 开始。
+
+**测试前体检发现（2026-09-04）**：最新 API 订单的等待卡 alert 本身有订单级去重（当前仅 1 条 SENT 通知），但自动开卡失败后在无物质变化时重复生成 `REVIEW_REQUIRED` stock job（余额不足/卡段不可用），导致订单长期 `WAITING_FOR_CARD` 并造成反复提醒观感。详见 `docs/2026-09-04_waiting-card-alert-healthcheck.md`；Browser 真实测试前需先抑制该重复供给尝试或处理该订单。
