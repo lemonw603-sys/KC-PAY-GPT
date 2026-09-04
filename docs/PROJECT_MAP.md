@@ -1,8 +1,6 @@
 # AI充值业务｜唯一项目规划地图
 
-> **2026-09-04 现场更正（优先于下方旧快照）**：生产实际新卡 `2772/9051` 为 `active/$16`，但订单 `9414` 明确失败且无 PURCHASE 后，消费账本仍停在 `RECONCILIATION`、assignment 仍为 ACTIVE，故被错误排除并显示可分配 0。今日补给 24/5 也已查明为 24 个任务请求、实际仅开卡 1 张；订单重试绕过 scheduler 反复建任务是根因。修复已部署到 `/opt/pojia/releases/20260904-card-availability-a8bd7e6-real`，并通过 v1 全套 521 项（477 pass/44 skip/0 fail）及隔离 MySQL 关键场景。生产只读同步后 2772 已恢复 `AVAILABLE/READY`，overview 为 available=1、readiness=READY、补卡用量=1/5、开放提醒=0。下一阶段继续完成全系统体检，再进入 Browser 真实订单。详见 `docs/2026-09-04-card-availability-root-cause-and-fix.md`。
-
-> **2026-09-04 只读复验最新事实（优先于上条）**：生产卡台实时查询 `2772/9051` 为 `active/$0.01`；同步任务已完成，后台 `current_balance=0.010000`、`last_transaction_synced_at` 已更新，库存正确显示 `DEPLETED`。本次证明同步链路已把卡台变化落库；目前没有可直接分配的 Plus 卡，不执行补余额或开卡。
+> **2026-09-04 自动补余额恢复机制最新进展**：生产仍为 `/opt/pojia/releases/20260904-funding-integer-8caccfb`，卡 `2772/9051=active/DEPLETED/$0.01`，测试订单 `PJV1-tw-hliEBgnOfdEVsxn5r=WAITING_FOR_CARD`，旧补款 attempt 为 `$15.99/FAILED/CLEARED`且没有恢复分类。共享恢复修复已在 `main@0e5a82d` 完成：仅 `FAILED+CLEARED+AUTO_RETRY` 自动生成新的唯一 attempt，最多 3 次；不可恢复失败不重试，UNKNOWN 继续锁定。本地 526 项与全新 MySQL 42 项集成测试均无失败；尚未部署，也未再次执行补余额。
 
 > **用途**：只回答四件事：项目目标、当前生产事实、已完成/未完成、唯一执行顺序。
 > **最后统一核对**：2026-09-02 00:32 CST。已对照前后端代码，并通过 SSH 复核部署后的生产 release、systemd、Worker 实际进程环境、只读 readiness 和新卡实时库存；本轮未执行 Provider 写入或付款。
@@ -41,7 +39,7 @@
 
 | 项目 | 当前事实 | 证据/含义 |
 |---|---|---|
-| 生产 release | `/opt/pojia/releases/20260901-browser-access-block-7bad460f26d311d8f15103c86933a276cf4b9d14` | 已部署 Browser 访问阻断重试修复；直接回滚点为 `20260901-provider-reason-569e8ee` |
+| 生产 release | `/opt/pojia/releases/20260904-funding-integer-8caccfb` | 已部署 Provider 整数美元补款合同修复；新的失败恢复机制 `0e5a82d` 尚未部署 |
 | Web / API Worker | active / active | systemd 现场读取 |
 | Browser Worker | inactive / disabled | 本轮短暂启动完成非付款测试后已停止；未进入真实 Browser 付款 |
 | 接单 / 派发 | true / true | 只读 readiness；当前后台已处于营业业务状态 |
@@ -53,13 +51,13 @@
 | 通用 Provider / 卡片写 | false / false | Worker 进程环境 |
 | 独立自动补余额 | DB gate=true；`pojia-card-funding.timer` 与 reconcile timer active/enabled | 独立 runner 只开补余额所需卡片写；空闲零写已验证，首笔真实补余额未验收；与自动开卡的抢跑收口已部署 |
 | 独立自动开卡 | DB gate=true；`pojia-card-stock-runner.timer` active/enabled，60 秒兜底 | stock runner 只开开卡所需卡片写；存在合格低余额卡或活动补款时不再抢跑；真实缺卡订单闭环未验收 |
-| 当前 Plus 可立即分配 | **1 张** | 2026-09-04 生产实时核对：`provider_card_id=2772`、尾号 `9051`、`active/AVAILABLE/READY`、余额 `$16`；旧批次均 `RETIRED`，4744 为 Claude 专用 |
+| 当前 Plus 可立即分配 | **0 张** | 2026-09-04 生产数据库现场核对：`2772/9051=active/DEPLETED/$0.01`；旧批次为 `RETIRED`，4744/1065 为 Claude 专用 |
 | 每卡成功次数上限 | 3 | 已部署；连续跨订单实证仍不足 |
-| 活动任务/资金风险/开放对账 | 0 / 0 / 0 | 2026-09-01 15:54 CST 只读 preflight |
-| 最新 migration | 044 | 只读 readiness |
-| 最新订单 | `PJV1-412JIT_yfiuBpZeC39_m`=`RECHARGE_FAILED` | API 订单完成一次提交与轮询；Provider 返回明确失败“卡片被拒，请换卡后重提”，外部订单号 `8849`，资金风险已清除，无成功付款；卡片按失败策略保留为不可直接分配，待后续核对 |
+| 活动任务/补款 ACTIVE 或 UNKNOWN | 1 / 0 | 活动任务是当前测试订单的 `ASSIGN_CARD/PENDING`；无未决补款资金风险 |
+| 最新 migration | 045 | `045_card_sync_priority` 已在生产落库 |
+| 当前测试订单 | `PJV1-tw-hliEBgnOfdEVsxn5r`=`WAITING_FOR_CARD` | `ASSIGN_CARD/PENDING`；旧补款 attempt 在 Provider 请求前因 `$15.99` 非整数被本地拒绝，`FAILED/CLEARED`，无实际扣款 |
 
-**当前状态**：API 最小充值权限、接单、自动派发、自动开卡和自动补余额均已开启；生产实时 overview 为 `READY`。当前有 1 张 `$16` Plus 可分配卡 `2772/9051`，下一笔有效订单先直接分配它，不触发补余额或开卡。
+**当前状态**：API 最小充值权限、接单、自动派发、自动开卡和自动补余额均已开启；Web/Worker/补给 timer 均 active，`/health/ready=ready`。当前没有可直接分配的 Plus 卡；订单已触发低余额卡补款，首次因整数合同缺陷明确失败并安全清账。新恢复机制仅完成代码与隔离验证，不得误报为生产已生效。
 
 ### 最新拒付的证据边界
 
@@ -102,7 +100,7 @@
 | 订单/CDK/Session/任务/资金核心 | 已验收 | 两笔真实 API 成功历史；幂等、UNKNOWN、任务与资金边界 | 连续运营与并发放量 |
 | API 充值 | 历史真实成功；当前执行基线已恢复 | 付款前暂停演练走到 `SUBMITTING` 且未外部提交；executor capability 传递已修；生产充值 gate=true、preflight 无 blocker | 下一笔有效 Session 的真实订单；当前 `WAITING_FOR_SESSION` 订单不构成成功链路验收 |
 | 付款前暂停机制 | 已验证并清理 | 正确停在外部 `create_direct` 前；测试订单/资金栅栏已正式收敛 | 非日常生产能力，默认应关闭 |
-| 自动补余额 | 已部署待实单 | 订单驱动、5 秒本地领取、15 秒低调用对账、空闲零 Provider 写 | 首笔低余额精确补差额→到账→原订单继续 |
+| 自动补余额 | 生产首笔已触发，恢复修复待部署 | 订单驱动、空闲零 Provider 写、首次明确失败安全清账；`0e5a82d` 已实现有界自动恢复 | 部署恢复修复，以可审计动作恢复旧 attempt，验证 `$16`→到账→原订单继续 |
 | 自动开卡 | 已部署待实单 | 无需求不刷新 Provider；自动规则已开启 | 真实无卡订单唯一开卡及自动恢复 |
 | 一卡多单 | 已部署待连续实单 | 全局 1–4、当前 3、共享账本/容量门禁 | 连续订单计数、释放、上限停止 |
 | 库存与运营覆盖 | 已部署，有历史数据缺口 | 旧批次停用、Claude 专用卡、未来新卡按证据接管 | `6807/1477` 现为 Provider `invalidating` 且保留历史 ACTIVE assignment，当前资格计算不会分配；这是系统状态与“卡实际可用”运营事实的待收敛缺口 |
@@ -120,13 +118,13 @@
 - 保持 `RECHARGE_SUBMIT_HOLD_BEFORE_PROVIDER` 关闭。
 - 部署/重启后只读验证：readiness `ok=true`、Worker 心跳能力为 true、无活动测试 task/attempt/资金栅栏。
 - 这是恢复已确认生产基线，不把它做成每单手动开关。
-- 当前生产为 `7bad460`，已完成部署后健康、Browser 访问阻断重试修复和只读 readiness 核对；无 migration 变化，直接回滚点为 `569e8ee`。
+- 当前生产为 `8caccfb`；整数补款修复已生效，失败恢复修复 `0e5a82d` 尚未部署。
 
-### P1｜下一笔真实 API 订单
+### P1｜完成当前自动补余额验收
 
-- 客户正常提交 CDK + Session，系统自动处理；不再先人为关闭应有能力。
-- 当前已有 1 张可直接分配的 Plus 卡：Provider 卡 `2772`、尾号 `9051`、余额 `$16`、库存 `AVAILABLE/READY`。下一笔有效订单应优先复用该卡；只有后续无可直接分配卡、也无合格低余额卡可补时，才进入自动开卡。
-- 核对充值成功、Plus、取消续费、卡余额/交易、对账和 Bark。
+- 部署 `0e5a82d`，保持旧失败记录不变。
+- 对旧 `$15.99/FAILED/CLEARED` attempt 执行一次可审计恢复，再由系统生成 `$16` v2，不用裸 SQL 直接制造“成功”。
+- 验收 Provider 只调用一次、到账对账、卡恢复就绪和原订单继续；未经单独确认不执行客户 Plus 最终付款。
 
 ### P2｜3–5 单连续 API 运营
 

@@ -62,3 +62,17 @@
 ## API / Browser 共用稳定性边界
 
 同步队列、卡片资格、消费次数、资金栅栏和审计属于 API 与 Browser 共用核心，不能为某一条路线单独复制一套“快速实现”。受控并发必须在共享层完成：同步 worker 的并发上限、单卡互斥、租约恢复和失败退避对两条路线统一生效；API 与 Browser 仅在最终执行器层分支。这样未来切换默认路线不会改变库存和资金一致性。
+
+## 补款明确失败恢复修复（2026-09-04）
+
+`main@0e5a82d` 已实现最小共享恢复合同：
+
+- executor 在失败摘要中固化 `AUTO_RETRY / DO_NOT_RETRY / MANUAL_REVIEW`；
+- 仅最近一次为 `FAILED + CLEARED + AUTO_RETRY` 时，订单调度才能生成新 attempt；
+- 每个订单+卡片最多 3 个 attempt，并使用 `v1/v2/v3` 稳定幂等键；
+- `DO_NOT_RETRY` 不会重试同卡，`UNKNOWN` 保持资金锁并等待人工对账；
+- 并发调度下只有一个新 `PREPARED` attempt，不复制 API/Browser 状态机。
+
+验证：无数据库全量 `526 total / 480 passed / 46 environment-skipped / 0 failed`；全新 MySQL 8.4.11、完整 migration 001–045 的 `mysql-integration.test.js` 为 `42 total / 41 passed / 1 intentional skip / 0 failed`。隔离容器未连接 Provider，未开卡、补款或付款。
+
+生产仍在 `8caccfb`，该恢复修复尚未部署。旧 `$15.99` 失败 attempt 没有 `retryDisposition`，因此不会被新代码擅自重试；后续必须以明确、可审计的恢复动作把它标记为可恢复，再由系统生成 `$16` 的 v2 attempt。

@@ -1,23 +1,20 @@
-# 当前生产状态快照｜2026-09-02 00:32 CST
+# 当前生产状态快照｜2026-09-04
 
 > **2026-09-04 只读复验最新事实**：卡台实时查询 `2772/9051=active/$0.01`；已手动排入只读同步并完成，后台 `current_balance=0.010000`、交易同步时间已更新，库存为 `DEPLETED`。此前 `$16/AVAILABLE` 快照已过期；当前没有可直接分配 Plus 卡。本次未执行补余额、开卡或付款。
 
-> **2026-09-04 现场增量（优先于下方 09-02 基线）**：当前生产 release 为 `/opt/pojia/releases/20260904-card-availability-a8bd7e6-real`，回滚点 `20260903-dark-surface-eba5331`。新卡 `2772/9051` 的失败订单遗留占用闭环已修复；生产只读同步后该卡为 `AVAILABLE/isAllocatable/READY`、余额 `$16`，ledger 与 assignment 均为 `RELEASED`。管理后台 overview 已现场返回 available=1、readiness=READY、CARD_SUPPLY=READY、补卡使用量=1/5、openAlertCount=0；Web/Worker/相关 timer/Bark active，公网健康 ready。详见 `docs/2026-09-04-card-availability-root-cause-and-fix.md`。
+> **2026-09-04 补款恢复增量**：生产 release 为 `/opt/pojia/releases/20260904-funding-integer-8caccfb`，Web/Worker/只读同步、补款、补款对账和补卡 timer 均 active，`/health/ready=ready`，migration 最新为 045。测试订单 `PJV1-tw-hliEBgnOfdEVsxn5r` 仍为 `WAITING_FOR_CARD/ASSIGN_CARD PENDING`；旧 `$15.99` attempt=`FAILED/CLEARED`、无 Provider 实际扣款。`main@0e5a82d` 已完成“只自动重试可恢复且明确未扣款的失败，最多 3 次，UNKNOWN 继续锁定”的共享修复；尚未部署。
 
 > 只保留当前有效事实；历史过程查 `HANDOFF_LOG.md`，方向与顺序查 `PROJECT_MAP.md`，全链路和验收细则查 `PROJECT_OPERATING_MODEL.md`。
 > 本快照已现场核对生产 release、systemd、Worker 进程环境、数据库 Provider account 和只读 readiness；Browser 主线只读回归证据见 `docs/2026-09-01_browser-main-readonly-regression.md`。
-> **2026-09-03 增量**：客户充值页 v2 改版 + 夜间配色微调两次 release 已先后部署并公网现场验证（见 §1，当前 release `20260903-dark-surface-eba5331`）；本次仅重核客户页 release 与渲染，§2–§5 的业务门禁 / 资金 / 卡片沿用 2026-09-02 00:32 核对基线，未重新现场核对。
-
 ## 1. 代码、release 与服务
 
-- 生产当前 release `20260903-dark-surface-eba5331`（commit `eba5331`：夜间卡片与背景拉开层次——背景压深/卡片提亮/边框加清晰/卡片顶部微光立体边，仅深色态、白天零改动）；其父为客户页 v2 改版 release `20260903-customer-redesign-3cef082`（HEAD `3cef082`，含改版 commit `67b1598`）；再前序 `7bad460`（Browser 访问阻断重试修复、Provider 失败原因透传、后台刷新、卡片异常占用释放、供应规划修复）。
-- 生产 `/opt/pojia/current`：`/opt/pojia/releases/20260903-dark-surface-eba5331`；直接回滚点为 `/opt/pojia/releases/20260903-customer-redesign-3cef082`（`ln -sfn <旧 release> current && systemctl restart pojia-web`）。
+- 生产 `/opt/pojia/current`：`/opt/pojia/releases/20260904-funding-integer-8caccfb`，已包含客户页、Browser 阻断修复、库存 P0 和 HNSKJ 整数补款修复。新恢复机制 `0e5a82d` 尚未部署。
 - 客户页已完成公网桌面/390px 移动端、教程弹层、真实历史订单查询、CSP、静态资源哈希和 Console 复验；真实成功订单的成功邮箱/时间线仍待下一单验收。详细证据见 `docs/2026-09-01_customer-recharge-redesign-production-candidate.md`。
 - 客户页 v2 改版（2026-09-03 部署 `3cef082`）：去二次确认一步建单、6 步横向进度条（大号百分比 + easeOutCubic 平滑动画 + 6 节点依次递进）、3 步骤条（填写资料→开通处理→开通完成）、祖母绿压深 + 香槟金点缀配色；资源版本 `?v=10`。公网 curl 现场核实生产 serve 新版 `customer.css`（32213B，含 `--brand:#0b7d5a`/`--gold:#a9843f`）、`customer.js`（22971B，含 `CANON`/`PROGRESS_PCT`/`animateProgress`/`renderProgress`）、`index.html` 引用 `?v=10`，CSP `style-src/script-src 'self'` 放行同源资源；重建自包含预览走真实前端渲染路径目视确认深色/浅色输入页 + 跟踪进度（PAYING 55%/第 3-6 步/6 节点递进）三态正确。实施与验证记录见 `docs/2026-09-03_customer-page-redesign-v2-implementation.md`。
 - 客户页夜间配色微调（2026-09-03 部署 `eba5331`，`?v=11`）：深色态卡片与页面背景明度太近、卡片浮不出——已压深背景 `--bg #0a0e0c→#070a08`、压暗顶部光晕 `--bg-glow→#0e1712`、提亮卡片 `--surface #121814→#18211c`（同步抬 `--surface-2/3` 保持"输入框>卡片>背景"阶梯）、`--line/--line-strong` 边框提亮、`.card` 深色态加顶部 `inset` 微光立体边；仅深色、白天零改动。公网 curl 核实生产 `customer.css?v=11`（32787B）含上述 token、`index.html` 引用 `?v=11`、`/health/ready`=ready。绿金强调色本轮未改（一度试改后按用户澄清"指的是卡片/背景"已还原）。
 - `pojia-web.service=active`；`pojia-worker.service=active`。
 - `pojia-browser-worker.service=inactive/disabled`（本轮曾短暂启动非付款测试，结束后已停止）。
-- `pojia-card-stock-runner.timer`、`pojia-card-funding.timer`、`pojia-card-funding-reconcile.timer` 均 active/enabled；最新 migration 为 `044_operator_alert_actionability`。
+- `pojia-card-stock-runner.timer`、`pojia-card-funding.timer`、`pojia-card-funding-reconcile.timer` 均 active/enabled；最新 migration 为 `045_card_sync_priority`。
 - 普通 Worker 的卡片写为 false，但两个独立补给 runner 分别保留开卡/补余额所需的窄范围卡片写；不能用 Worker 环境推断自动补给被关闭。
 - 付款前 hold 的临时 drop-in 已移出运行配置，测试订单已正式清理；当前不处于 hold 演练。
 
@@ -62,7 +59,7 @@
 - 每卡最大成功支付次数全局设置为 3（可在 1–4 调整）；跨订单容量代码已部署，连续真实订单计数/释放/上限仍待验收。
 - `4744/1065=PRODUCT_ONLY(claude)`；当前旧失效批次（含 8590）均 `RETIRED`；未来新卡按实时证据接管，不使用永久卡号白名单。
 - 15 分钟资料/交易证据要求触发按需只读刷新，不把订单年龄本身当失败。
-- 当前可立即分配为 **1 张**：2026-09-04 生产实时核对为 Provider 卡 `2772`、尾号 `9051`，`active/AVAILABLE/READY`，余额 `$16`。旧批次均 `RETIRED`，不能进入自动补余额或新订单分配。
+- 当前可立即分配为 **0 张**：2026-09-04 生产现场核对为 Provider 卡 `2772`、尾号 `9051`，`active/DEPLETED`，余额 `$0.01`。旧批次均 `RETIRED`，不能进入自动补余额或新订单分配。
 - 尾号 `6807` / Provider `1477` 的真实卡可用性是用户确认的运营事实；但当前生产数据为 Provider status=`invalidating`、历史 assignment=`ACTIVE`，因此现行资格 SQL **不会把它分配给新订单**。这是待核对/收敛的历史数据缺口，不得误报为当前可分配。
 
 ## 5. 已验证与未验证
@@ -82,7 +79,7 @@
 - 付款前暂停演练：订单走到 `SUBMITTING`/唯一 attempt/资金栅栏，在外部 `create_direct` 前停止；没有真实付款。
 - 演练清理：测试订单为 `RECHARGE_FAILED`，attempt/funds fence 清除，task 保持 DEAD，避免自动重试。
 - Worker executor capability 传递缺陷已修复并有测试覆盖。
-- 自动补余额空闲安全：无订单时零 Provider 充值写调用。
+- 自动补余额空闲安全：无订单时零 Provider 充值写调用。首次真实触发已证明明确失败会清除资金风险，但尚未验收到账与原订单继续。
 
 ### 尚未验证
 
@@ -107,9 +104,9 @@
 - 重试期间暴露自动开卡阻断：Provider 当前可见卡段均 `maintaining=true`，数据库默认卡段仍为已消失的 `16`，stock runner 返回 `CARD_STOCK_CARD_TYPE_UNAVAILABLE`。本次通过释放并复用现有卡继续，不代表自动开卡闭环成功。
 
 1. 已恢复 Worker 常驻最小 API 充值权限并完成重启/只读核对；hold 关闭，通用 Provider/卡片写与 Browser 付款仍关闭。
-2. 2026-09-04 生产实时 overview 为 `READY`、开放提醒 0；Provider 卡 `2772`、尾号 `9051` 当前为 `active/AVAILABLE/READY/$16`，可直接供下一笔订单使用。
-3. 下一笔有效订单先验收“自动分配 9051→按冻结路线执行→交易/余额/对账”；不得给旧 `RETIRED` 卡补钱，也不得重试已明确失败的历史订单。
-4. 通过后进入 3–5 单连续 API 验收，观察一卡多单、余额不足后的精确补款及下一次无卡自动开卡。Browser 下一步不是重复建单，而是先解决/确认 `CHATGPT_ACCESS_BLOCKED` 的可访问网络环境，再重新执行到付款按钮前的非付款观察。
+2. 生产卡 `2772/9051` 当前为 `active/DEPLETED/$0.01`，测试订单正在 `WAITING_FOR_CARD`，没有 ACTIVE/UNKNOWN 补款资金风险。
+3. 下一步部署 `0e5a82d`，以可审计方式恢复旧 `$15.99/FAILED/CLEARED` attempt，由系统创建 `$16` v2 并验收到账、同步和原订单继续。
+4. 未经单独确认不执行客户 Plus 最终付款。补款闭环通过后再验收无卡自动开卡，然后回到 Browser 真实订单主线。
 
 ## 7. 2026-09-01 最新失败单的现场复核（订单 8849）
 
