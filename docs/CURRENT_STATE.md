@@ -184,3 +184,12 @@
 - 数据库已执行迁移最高版本为 `045_card_sync_priority`；046/047 尚未部署，符合当前计划边界。
 - 生产配置事实：Provider reads=true（provider.env），Provider 通用写=false、卡片写=false、充值写=false；Browser 为 `PRODUCTION_READONLY/LOCAL_FIXTURE/headless`。Funding 与 read-sync timer 均 active/enabled，但 funding unit 的卡片写权限仍为 false，未执行资金写入。
 - 本轮只读核对未修改生产、未执行迁移、未启动 Browser Worker、未调用 Provider/卡台写接口、未开卡/补余额/付款。
+
+### 2026-09-04 Browser 候选部署完成（未启用 Browser 付款）
+
+- 已完成生产备份、完整性校验和隔离恢复演练：`restore_test=OK`，恢复 53 张表。
+- 已上传并校验候选归档（SHA-256 `f31e59a6f282907f2832fd4c9a2b8381948d52175f903ba19a0f19248ec07eb1`），当前 release 已切换为 `/opt/pojia/releases/20260904-browser-candidate-32b8a04`。
+- 使用独立迁移账号执行 046/047；第二次执行全部报告 `already applied`。数据库最高迁移为 `047_browser_billing_address_assignments`。
+- Web/API Worker 已重启并 active，库存 runner timer 已恢复 active；Browser Worker 仍 `inactive/disabled`。
+- 生产 `/health/live`、`/health/ready` 和客户首页均 HTTP 200。
+- Provider reads=true；通用写、卡片写、充值写均 false。未启动 Browser Worker，未执行 Provider/卡台写入、开卡、补余额或付款。

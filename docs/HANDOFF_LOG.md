@@ -1049,3 +1049,10 @@
 - 代码与本地回归已完成；尝试取得生产现场只读证据时，当前任务没有附着 Web Terminal/SSH shell，无法读取生产 release、systemd、数据库迁移版本或健康端点。
 - 已确认不能把历史报告或本地无 `DATABASE_URL` 的 readiness 结果当作生产证据；未执行部署、迁移、Worker 启动或任何资金动作。
 - 解除阻塞所需的最小输入：在服务器控制面板打开 Web Terminal/SSH Terminal，并保持 Linux shell 提示符可见；不需要在聊天中发送密码、私钥或 Token。
+
+### 2026-09-04 Browser 候选部署记录
+
+- 生产备份与隔离恢复通过（53 表）；候选归档上传校验通过。
+- 迁移 046/047 已执行，第二次运行确认幂等（already applied）。
+- current 已切换至 `20260904-browser-candidate-32b8a04`；Web/API Worker 重启 active，Browser Worker 保持 disabled/inactive；Provider/卡台/付款写权限未开启。
+- live/ready/客户首页 HTTP 200；未创建订单、未执行资金或付款动作。
