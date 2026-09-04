@@ -194,8 +194,19 @@ export function assertEvidenceIsSecretFree(evidence, forbiddenValues = []) {
       if (child && typeof child === 'object') pending.push(child);
     }
   }
+  const scalarValues = [];
+  const scalarPending = [evidence];
+  while (scalarPending.length) {
+    const value = scalarPending.pop();
+    if (value && typeof value === 'object') scalarPending.push(...Object.values(value));
+    else if (value !== undefined && value !== null) scalarValues.push(String(value));
+  }
   for (const value of forbiddenValues.filter(Boolean).map(String)) {
-    if (serialized.includes(value)) throw new Error('evidence contains a forbidden value');
+    // Short secrets such as CVCs are common substrings of unrelated amounts,
+    // counts and hashes. Require an exact scalar match for them; longer secret
+    // material remains protected by the stricter substring scan.
+    const leaked = value.length < 8 ? scalarValues.includes(value) : serialized.includes(value);
+    if (leaked) throw new Error('evidence contains a forbidden value');
   }
   return true;
 }

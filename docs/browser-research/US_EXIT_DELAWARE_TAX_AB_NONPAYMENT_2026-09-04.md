@@ -58,7 +58,7 @@ Browser 全量测试：`151 total / 146 passed / 5 environment-skipped / 0 faile
 - 在线窄探测已达 2 次，按规则停止，不继续重复创建 Checkout。
 - 两次都停在 Checkout 创建前：未进入支付页、未填卡、未点击 Subscribe、`submitCalls=0`。一次性 Session/输入文件已删除，Profile 已关闭。
 
-因此，这两次返回只能证明旧裸调探针被拒绝，不能证明账号被禁、出口被禁或 `US 出口 + PH/PHP` 被官方路径拒绝，也不能判断最终税额。当前官方 UI 拦截样本已确认真实请求同时携带 bearer、Sentinel、设备和目标路由请求头；新实现保留整条官方请求，只重写 `billing_details.country/currency`，并最多放行一次上游 Checkout 创建。离线/拦截验证已通过，真实零付款复验仍待执行。
+因此，这两次返回只能证明旧裸调探针被拒绝，不能证明账号被禁、出口被禁或 `US 出口 + PH/PHP` 被官方路径拒绝，也不能判断最终税额。当前官方 UI 拦截样本已确认真实请求同时携带 bearer、Sentinel、设备和目标路由请求头；第一次修正保留完整官方请求头、只在 Sentinel 生成后改写 POST body，但现场仍返回 HTTP 400；这说明后改 body 可能破坏请求完整性，仍不能视为官方原生路径。第二次修正将变更提前到 pricing config：官方 PH config 返回成功，并明确包含 `1100 inclusive` 与 `psp_override 982.14 exclusive`；官方前端随后生成 `US/PHP`，未达到 `PH/PHP` 合同，因此被本地拦截，Checkout 上游请求为 0。后续应核对触发 `psp_override` 的官方 PSP route，不再继续伪造地区字段。
 
 ## 证据路径
 
@@ -66,4 +66,6 @@ Browser 全量测试：`151 total / 146 passed / 5 environment-skipped / 0 faile
 
 ```text
 /Users/lemon/.codex/worktrees/9128/AI充值业务/artifacts/browser-us-tax-ab-20260904/result-success.json
+/Users/lemon/.codex/worktrees/9128/AI充值业务/artifacts/browser-us-tax-ab-20260904/result-official-ui-rewrite-ph-diagnostic.json
+/Users/lemon/.codex/worktrees/9128/AI充值业务/artifacts/browser-us-tax-ab-20260904/result-official-pricing-region-ph-final.json
 ```

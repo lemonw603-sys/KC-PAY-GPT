@@ -1134,3 +1134,12 @@
 - 因此旧两次 HTTP 400 只能说明错误形态的裸请求被拒绝，不能证明测试账号、出口或 `US + PH/PHP` 被禁。
 - 已移除裸调实现，新增官方 UI 请求重写器：只改 `billing_details.country/currency`、其余 body/header 原样保留、最多放行一次上游 Checkout 请求。定向测试 `14/14`，语法检查通过。
 - 尚未执行新的真实 Checkout 创建、填卡或付款；下一步为一次零付款现场复验。
+
+## 2026-09-04｜官方 PH pricing config 前置对照
+
+- 首次修正保留官方 bearer/Sentinel/设备/目标路由头，但在 Sentinel 生成后改写 Checkout POST 为 `PH/PHP`；上游仍返回 HTTP 400。该结果不能解释为账号被禁，说明后改 body 仍可能破坏请求完整性。
+- 第二次修正不改 Checkout POST：先把前端请求的 US pricing config 路由到官方 PH config，再检查前端自然生成的 Checkout 请求。
+- 官方 PH config HTTP 200，明确同时包含 Plus `1100`（tax inclusive）与 `psp_override 982.14`（tax exclusive）。这是目前解释历史 `982.14` 的最强新证据。
+- 前端最终自然生成 `US/PHP`，不是 `PH/PHP`；安全合同在本机 abort，Checkout 上游请求 `0`、卡字段 `0`、付款 `0`。
+- 结论：账号未被证明封禁；不能继续靠地区字段硬改。下一调查对象是官方 PSP/processor route 如何选择 `psp_override`。
+- 脱敏证据：`artifacts/browser-us-tax-ab-20260904/result-official-ui-rewrite-ph-diagnostic.json`、`artifacts/browser-us-tax-ab-20260904/result-official-pricing-region-ph-final.json`（均保持未跟踪）。

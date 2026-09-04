@@ -123,6 +123,11 @@ test('unrelated traffic and invalid modes are ignored or nulled', () => {
 
 test('secret scan rejects forbidden field names but not harmless URL path text', () => {
   assert.equal(assertEvidenceIsSecretFree({ path: '/cookie-preferences/status' }), true);
+  assert.equal(assertEvidenceIsSecretFree({ digest: 'abc579def' }, ['579']), true);
+  assert.throws(
+    () => assertEvidenceIsSecretFree({ harmlessName: '579' }, ['579']),
+    /forbidden value/,
+  );
   assert.throws(
     () => assertEvidenceIsSecretFree({ nested: { client_secret: 'redacted' } }),
     /forbidden field: client_secret/,

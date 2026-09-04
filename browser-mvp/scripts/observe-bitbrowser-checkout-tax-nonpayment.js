@@ -18,7 +18,7 @@ import {
   CHATGPT_PLUS_CHECKOUT_NAVIGATION_CONTRACT,
   navigateToChatGPTPlusCheckout,
 } from '../src/chatgpt-checkout-navigator.js';
-import { installOfficialCheckoutRegionRewrite } from '../src/checkout-request-rewrite.js';
+import { installOfficialPricingRegionSelection } from '../src/checkout-request-rewrite.js';
 
 const INPUT_KEYS = new Set(['profileId', 'sessionFile', 'card', 'billingAddress', 'checkout']);
 const CARD_KEYS = new Set(['pan', 'expMonth', 'expYear', 'cvc']);
@@ -68,7 +68,7 @@ function validateInput(input) {
     throw new Error('billingAddress is incomplete');
   }
   if (input.checkout !== undefined) {
-    if (input.checkout.creationMode !== 'official-ui-rewrite'
+    if (input.checkout.creationMode !== 'official-pricing-region'
       || !/^[A-Z]{2}$/.test(String(input.checkout.country || ''))
       || !/^[A-Z]{3}$/.test(String(input.checkout.currency || ''))) {
       throw new Error('checkout explicit region is invalid');
@@ -336,11 +336,12 @@ async function main() {
   let page = null;
   let profileOpened = false;
   let sessionLease = null;
-  let checkoutRewrite = null;
+  let checkoutRegionSelection = null;
   const fieldsToClear = [];
   const result = { status: 'FAILED_SAFE', submitCalls: 0 };
   const networkEvidence = [];
   let flushNetworkEvidence = async () => undefined;
+  let failure = null;
   try {
     await api.health();
     const { cdpEndpoint } = await api.openProfile(input.profileId);
@@ -360,8 +361,8 @@ async function main() {
     await page.goto('https://chatgpt.com/', { waitUntil: 'domcontentloaded', timeout: 45_000 });
     const identity = await probeSessionIdentity(page, expectedIdentity, { accountCheckPath: ACCOUNT_CHECK_PATH });
     if (identity.alreadyPlus) throw new Error('test account is already subscribed');
-    if (input.checkout?.creationMode === 'official-ui-rewrite') {
-      checkoutRewrite = await installOfficialCheckoutRegionRewrite(page, input.checkout);
+    if (input.checkout?.creationMode === 'official-pricing-region') {
+      checkoutRegionSelection = await installOfficialPricingRegionSelection(page, input.checkout);
     }
     const navigation = await navigateToChatGPTPlusCheckout(
       page,
@@ -381,7 +382,7 @@ async function main() {
     result.identityMatched = identity.identityMatched === true;
     result.subscriptionStatus = identity.subscriptionStatus;
     result.checkoutCreationMode = input.checkout?.creationMode || 'ui';
-    if (checkoutRewrite) result.checkoutRequestRewrite = checkoutRewrite.snapshot();
+    if (checkoutRegionSelection) result.checkoutRegionSelection = checkoutRegionSelection.snapshot();
     result.checkoutUrlDigest = navigation.checkoutUrlDigest || digest(page.url());
     const planText = (await page.locator(`${SUMMARY_SELECTOR} h2`).first().textContent().catch(() => ''))?.trim() || '';
     if (!/ChatGPT Plus/i.test(planText)) throw new Error('checkout plan was not confirmed as ChatGPT Plus');
@@ -406,8 +407,20 @@ async function main() {
       input.card.pan, input.card.cvc, input.billingAddress.name, input.billingAddress.line1,
       input.billingAddress.city, input.billingAddress.postalCode,
     ]);
+  } catch (error) {
+    failure = error;
+    await flushNetworkEvidence();
+    result.errorCode = error?.code || error?.name || 'ERROR';
+    result.message = String(error?.message || error).slice(0, 240);
+    result.networkEvidence = networkEvidence;
+    if (checkoutRegionSelection) result.checkoutRegionSelection = checkoutRegionSelection.snapshot();
+    assertEvidenceIsSecretFree(result, [
+      session.accessToken, session.sessionToken,
+      input.card.pan, input.card.cvc, input.billingAddress.name, input.billingAddress.line1,
+      input.billingAddress.city, input.billingAddress.postalCode,
+    ]);
   } finally {
-    await checkoutRewrite?.dispose().catch(() => undefined);
+    await checkoutRegionSelection?.dispose().catch(() => undefined);
     result.fieldsCleared = await clearFields(fieldsToClear);
     if (page) {
       const billingFields = await visibleFields(page, [
@@ -422,6 +435,7 @@ async function main() {
     if (browser) await browser.close().catch(() => undefined);
   }
   process.stdout.write(`${JSON.stringify(result)}\n`);
+  if (failure) process.exitCode = 1;
 }
 
 main().catch((error) => {
