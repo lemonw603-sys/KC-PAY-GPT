@@ -113,14 +113,14 @@ export class MysqlBillingAddressAssignmentStore {
   }
   async claim(ref, state, index, rowCount) {
     const key = String(ref);
+    const [usedRows] = await this.pool.query('SELECT row_index AS rowIndex, COUNT(*) AS uses FROM browser_billing_address_assignments WHERE state = ? GROUP BY row_index ORDER BY uses ASC, row_index ASC', [state]);
+    const counts = new Map(usedRows.map((row) => [Number(row.rowIndex), Number(row.uses)]));
+    let rowIndex = index;
     for (let offset = 0; offset < rowCount; offset += 1) {
       const candidate = (index + offset) % rowCount;
-      await this.pool.query('INSERT IGNORE INTO browser_billing_address_assignments (binding_ref, state, row_index) VALUES (?, ?, ?)', [key, state, candidate]);
-      const found = await this.get(key);
-      if (found != null) return found;
+      if (!counts.has(candidate)) { rowIndex = candidate; break; }
+      rowIndex = Number([...counts.entries()].sort((a, b) => a[1] - b[1] || a[0] - b[0])[0]?.[0] ?? index);
     }
-    const [[fallback]] = await this.pool.query('SELECT row_index AS rowIndex FROM browser_billing_address_assignments WHERE state = ? GROUP BY row_index ORDER BY COUNT(*) ASC, row_index ASC LIMIT 1', [state]);
-    const rowIndex = fallback?.rowIndex == null ? index : Number(fallback.rowIndex);
     await this.pool.query('INSERT IGNORE INTO browser_billing_address_assignments (binding_ref, state, row_index) VALUES (?, ?, ?)', [key, state, rowIndex]);
     const found = await this.get(key);
     return found == null ? rowIndex : found;

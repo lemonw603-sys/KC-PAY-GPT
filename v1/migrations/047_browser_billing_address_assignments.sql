@@ -4,5 +4,5 @@ CREATE TABLE IF NOT EXISTS browser_billing_address_assignments (
   row_index INT UNSIGNED NOT NULL,
   created_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
   PRIMARY KEY (binding_ref),
-  UNIQUE KEY uq_browser_billing_address_slot (state, row_index)
+  KEY idx_browser_billing_address_slot (state, row_index)
 ) ENGINE=InnoDB;
