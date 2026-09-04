@@ -1632,6 +1632,17 @@ test('automatic replenishment reserves one card at a time and hard-stops at the 
       scheduled: false, reason: 'FUNDABLE_CARD_EXISTS'
     });
     await pool.query(
+      `UPDATE cards SET last_transaction_synced_at=DATE_SUB(CURRENT_TIMESTAMP(3), INTERVAL 16 MINUTE)
+       WHERE id=?`, [fundableCardId]
+    );
+    assert.deepEqual(await service.scheduleAutomaticJob(), {
+      scheduled: false, reason: 'CARD_EVIDENCE_REFRESH_PENDING'
+    });
+    await pool.query(
+      `UPDATE cards SET last_transaction_synced_at=CURRENT_TIMESTAMP(3) WHERE id=?`,
+      [fundableCardId]
+    );
+    await pool.query(
       `INSERT INTO card_funding_attempts
        (id, card_id, order_id, provider_account_id, amount, currency, status,
         funds_risk_state, idempotency_key)

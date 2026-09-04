@@ -10,7 +10,8 @@ import {
 import { cardCatalogIsFresh, readCardCatalogSnapshot } from './card-catalog-snapshot-service.js';
 import {
   eligibleInventoryCardSql,
-  fundableInventoryCardSql
+  fundableInventoryCardSql,
+  refreshableInventoryCardSql
 } from './card-inventory-eligibility.js';
 import { resolveCurrentCardProviderAccount } from './provider-route-service.js';
 
@@ -277,6 +278,20 @@ export function createCardStockJobService({ pool }) {
       if (Number(fundable?.count || 0) > 0) {
         await connection.commit();
         return { scheduled: false, reason: 'FUNDABLE_CARD_EXISTS' };
+      }
+      // Freshness is an allocation/funding precondition, not proof that the
+      // card is absent. If a structurally eligible card merely needs fresh
+      // evidence, let the waiting order's read-sync path resolve it before a
+      // paid card-opening job is allowed to race ahead.
+      const [[refreshable]] = await connection.query(
+        `SELECT COUNT(*) AS count FROM cards
+         WHERE ${refreshableInventoryCardSql('cards')}
+           AND provider_account_id = ?`,
+        [providerAccountId]
+      );
+      if (Number(refreshable?.count || 0) > 0) {
+        await connection.commit();
+        return { scheduled: false, reason: 'CARD_EVIDENCE_REFRESH_PENDING' };
       }
       const snapshot = await readProviderSnapshot(connection);
       if (!snapshotIsFresh(snapshot)) {
