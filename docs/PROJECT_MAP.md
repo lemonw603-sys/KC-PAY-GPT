@@ -1,6 +1,6 @@
 # AI充值业务｜唯一项目规划地图
 
-> **2026-09-04 自动补余额恢复机制最新进展**：生产仍为 `/opt/pojia/releases/20260904-funding-integer-8caccfb`，卡 `2772/9051=active/DEPLETED/$0.01`，测试订单 `PJV1-tw-hliEBgnOfdEVsxn5r=WAITING_FOR_CARD`，旧补款 attempt 为 `$15.99/FAILED/CLEARED`且没有恢复分类。共享恢复修复已在 `main@0e5a82d` 完成：仅 `FAILED+CLEARED+AUTO_RETRY` 自动生成新的唯一 attempt，最多 3 次；不可恢复失败不重试，UNKNOWN 继续锁定。本地 526 项与全新 MySQL 42 项集成测试均无失败；尚未部署，也未再次执行补余额。
+> **2026-09-04 补给与恢复机制最新事实**：生产已部署 `/opt/pojia/releases/20260904-funding-recovery-race-4bf84f9`，包含补款明确失败有界恢复 `0e5a82d` 与“陈旧低余额卡先同步、禁止抢跑开卡” `4bf84f9`。部署前，卡台账户余额恢复到 `$34.83`，系统在旧卡 9051 证据陈旧时抢先开了 `2833/5980/$16`，随后自动分配并提交 API 订单 9440，Provider 明确失败“验证策略失败，请稍后重试”。无 PURCHASE，卡 5980 仍 `$16/AVAILABLE`并已安全释放；测试订单已终态失败，不再对其重试或补款。
 
 > **用途**：只回答四件事：项目目标、当前生产事实、已完成/未完成、唯一执行顺序。
 > **最后统一核对**：2026-09-02 00:32 CST。已对照前后端代码，并通过 SSH 复核部署后的生产 release、systemd、Worker 实际进程环境、只读 readiness 和新卡实时库存；本轮未执行 Provider 写入或付款。
@@ -39,7 +39,7 @@
 
 | 项目 | 当前事实 | 证据/含义 |
 |---|---|---|
-| 生产 release | `/opt/pojia/releases/20260904-funding-integer-8caccfb` | 已部署 Provider 整数美元补款合同修复；新的失败恢复机制 `0e5a82d` 尚未部署 |
+| 生产 release | `/opt/pojia/releases/20260904-funding-recovery-race-4bf84f9` | 已部署补款失败有界恢复与陈旧卡先同步修复；直接回滚点 `20260904-funding-recovery-0e5a82d` |
 | Web / API Worker | active / active | systemd 现场读取 |
 | Browser Worker | inactive / disabled | 本轮短暂启动完成非付款测试后已停止；未进入真实 Browser 付款 |
 | 接单 / 派发 | true / true | 只读 readiness；当前后台已处于营业业务状态 |
@@ -51,13 +51,13 @@
 | 通用 Provider / 卡片写 | false / false | Worker 进程环境 |
 | 独立自动补余额 | DB gate=true；`pojia-card-funding.timer` 与 reconcile timer active/enabled | 独立 runner 只开补余额所需卡片写；空闲零写已验证，首笔真实补余额未验收；与自动开卡的抢跑收口已部署 |
 | 独立自动开卡 | DB gate=true；`pojia-card-stock-runner.timer` active/enabled，60 秒兜底 | stock runner 只开开卡所需卡片写；存在合格低余额卡或活动补款时不再抢跑；真实缺卡订单闭环未验收 |
-| 当前 Plus 可立即分配 | **0 张** | 2026-09-04 生产数据库现场核对：`2772/9051=active/DEPLETED/$0.01`；旧批次为 `RETIRED`，4744/1065 为 Claude 专用 |
+| 当前 Plus 可立即分配 | **1 张** | 新卡 `2833/5980=active/AVAILABLE/$16`，失败订单的 assignment/ledger 已安全释放；`2772/9051=DEPLETED/$0.01` |
 | 每卡成功次数上限 | 3 | 已部署；连续跨订单实证仍不足 |
-| 活动任务/补款 ACTIVE 或 UNKNOWN | 1 / 0 | 活动任务是当前测试订单的 `ASSIGN_CARD/PENDING`；无未决补款资金风险 |
+| 活动任务/补款 ACTIVE 或 UNKNOWN | 0 / 0 | 测试订单任务已结束；无未决补款资金风险 |
 | 最新 migration | 045 | `045_card_sync_priority` 已在生产落库 |
-| 当前测试订单 | `PJV1-tw-hliEBgnOfdEVsxn5r`=`WAITING_FOR_CARD` | `ASSIGN_CARD/PENDING`；旧补款 attempt 在 Provider 请求前因 `$15.99` 非整数被本地拒绝，`FAILED/CLEARED`，无实际扣款 |
+| 当前测试订单 | `PJV1-tw-hliEBgnOfdEVsxn5r`=`RECHARGE_FAILED` | 自动开卡/分配/API 提交已运行；外部订单 9440 明确失败，资金 `CLEARED`，无 PURCHASE |
 
-**当前状态**：API 最小充值权限、接单、自动派发、自动开卡和自动补余额均已开启；Web/Worker/补给 timer 均 active，`/health/ready=ready`。当前没有可直接分配的 Plus 卡；订单已触发低余额卡补款，首次因整数合同缺陷明确失败并安全清账。新恢复机制仅完成代码与隔离验证，不得误报为生产已生效。
+**当前状态**：API 最小充值权限、接单、自动派发、自动开卡和自动补余额均已开启；Web/Worker/补给 timer 均 active，`/health/ready=ready`。当前有 1 张 `$16` 可分配卡 5980。补款失败有界恢复和陈旧卡先同步修复已生产生效，但尚未用新的低余额订单验收成功到账。
 
 ### 最新拒付的证据边界
 
@@ -100,8 +100,8 @@
 | 订单/CDK/Session/任务/资金核心 | 已验收 | 两笔真实 API 成功历史；幂等、UNKNOWN、任务与资金边界 | 连续运营与并发放量 |
 | API 充值 | 历史真实成功；当前执行基线已恢复 | 付款前暂停演练走到 `SUBMITTING` 且未外部提交；executor capability 传递已修；生产充值 gate=true、preflight 无 blocker | 下一笔有效 Session 的真实订单；当前 `WAITING_FOR_SESSION` 订单不构成成功链路验收 |
 | 付款前暂停机制 | 已验证并清理 | 正确停在外部 `create_direct` 前；测试订单/资金栅栏已正式收敛 | 非日常生产能力，默认应关闭 |
-| 自动补余额 | 生产首笔已触发，恢复修复待部署 | 订单驱动、空闲零 Provider 写、首次明确失败安全清账；`0e5a82d` 已实现有界自动恢复 | 部署恢复修复，以可审计动作恢复旧 attempt，验证 `$16`→到账→原订单继续 |
-| 自动开卡 | 已部署待实单 | 无需求不刷新 Provider；自动规则已开启 | 真实无卡订单唯一开卡及自动恢复 |
+| 自动补余额 | 恢复修复已部署，待新实单 | 订单驱动、空闲零 Provider 写、明确失败安全清账、有界自动恢复 | 下一次真实低余额订单验收 `$16`→到账→原订单继续 |
+| 自动开卡 | 生产链路已运行 | 无卡订单唯一开卡 2833→分配→原订单继续；失败后卡安全释放 | 陈旧低余额卡抢跑漏洞已修，待下一次自然需求复验 |
 | 一卡多单 | 已部署待连续实单 | 全局 1–4、当前 3、共享账本/容量门禁 | 连续订单计数、释放、上限停止 |
 | 库存与运营覆盖 | 已部署，有历史数据缺口 | 旧批次停用、Claude 专用卡、未来新卡按证据接管 | `6807/1477` 现为 Provider `invalidating` 且保留历史 ACTIVE assignment，当前资格计算不会分配；这是系统状态与“卡实际可用”运营事实的待收敛缺口 |
 | 运营控制面 | 部分部署 | 开始营业、默认路线、就绪摘要及部分跳转；API 权限基线已恢复 | 补齐 API 权限漂移无入口；用真实运营复核入口与噪音 |
@@ -120,11 +120,11 @@
 - 这是恢复已确认生产基线，不把它做成每单手动开关。
 - 当前生产为 `8caccfb`；整数补款修复已生效，失败恢复修复 `0e5a82d` 尚未部署。
 
-### P1｜完成当前自动补余额验收
+### P1｜下一笔真实 Browser 订单前收口
 
-- 部署 `0e5a82d`，保持旧失败记录不变。
-- 对旧 `$15.99/FAILED/CLEARED` attempt 执行一次可审计恢复，再由系统生成 `$16` v2，不用裸 SQL 直接制造“成功”。
-- 验收 Provider 只调用一次、到账对账、卡恢复就绪和原订单继续；未经单独确认不执行客户 Plus 最终付款。
+- 当前 5980 已是 `$16/AVAILABLE`，不为了制造补款场景自动提现或销卡。
+- 下一笔 Browser 真实订单前，复核默认路线、BitBrowser Profile、付款许可和中止点；一次性说清验收清单。
+- 自动补余额成功到账改为下一次自然低余额场景验收，不重试已终态失败的当前订单。
 
 ### P2｜3–5 单连续 API 运营
 

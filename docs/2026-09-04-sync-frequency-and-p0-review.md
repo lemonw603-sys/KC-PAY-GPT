@@ -75,4 +75,4 @@
 
 验证：无数据库全量 `526 total / 480 passed / 46 environment-skipped / 0 failed`；全新 MySQL 8.4.11、完整 migration 001–045 的 `mysql-integration.test.js` 为 `42 total / 41 passed / 1 intentional skip / 0 failed`。隔离容器未连接 Provider，未开卡、补款或付款。
 
-生产仍在 `8caccfb`，该恢复修复尚未部署。旧 `$15.99` 失败 attempt 没有 `retryDisposition`，因此不会被新代码擅自重试；后续必须以明确、可审计的恢复动作把它标记为可恢复，再由系统生成 `$16` 的 v2 attempt。
+生产已部署到 `20260904-funding-recovery-race-4bf84f9`。旧 `$15.99` 失败 attempt 没有 `retryDisposition`，因此新代码没有对它擅自重试；原订单随后通过自动开卡获得新卡并进入 API 执行，最终明确失败，故不再恢复旧 attempt。此次还暴露“陈旧低余额卡同步未完成前抢跑开卡”竞态，已由 `4bf84f9` 增加 `refreshable` 防线并随同上述 release 部署。

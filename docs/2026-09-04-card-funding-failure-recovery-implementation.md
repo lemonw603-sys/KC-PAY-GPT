@@ -39,3 +39,16 @@
 1. 按发布流程备份并部署 `0e5a82d`。
 2. 为旧 `$15.99/FAILED/CLEARED` attempt 记录一次可审计恢复动作，不改写旧失败事实。
 3. 观察系统生成 `$16` v2、Provider 只调用一次、到账对账和原订单继续。未经单独确认不执行客户 Plus 最终付款。
+
+
+## 生产结果与新竞态修复
+
+- 备份：`/var/backups/pojia/pojia-20260904T124226Z.sql.gz.enc`，SHA-256 完整性通过。
+- 首先部署 `0e5a82d` 到 `/opt/pojia/releases/20260904-funding-recovery-0e5a82d`。
+- 部署切换前的 12:38–12:41 UTC，卡台账户余额已恢复为 `$34.83`；系统自动开卡 `2833/5980/$16`，分配到测试订单并提交 API 外部订单 9440。Provider 最终明确失败“验证策略失败，请稍后重试”，资金状态 `CLEARED`、卡交易无 PURCHASE，卡 5980 仍 `$16`并已释放为 `AVAILABLE`。
+- 这证明无卡自动开卡→分配→原订单继续的生产路径已真实运行，但最终 API 充值未成功。
+- 同时定位竞态：自动补卡 scheduler 只认 15 分钟内的 `fundable` 卡；9051 当时恰好证据陈旧，scheduler 在其只读同步完成前就付费开了新卡。
+- `4bf84f9` 增加付费开卡前的 `refreshable` 防线：有结构上可用但证据陈旧的卡时，返回 `CARD_EVIDENCE_REFRESH_PENDING`，等订单按需只读同步，禁止抢跑开卡。
+- 该修复已部署为 `/opt/pojia/releases/20260904-funding-recovery-race-4bf84f9`；Web/Worker/补给 timer 均 active，`/health/ready=ready`。
+
+因原测试订单已终态失败，不再修改旧 `$15.99` attempt 或强制生成 v2。补款到账闭环留待下一次自然低余额需求验收。

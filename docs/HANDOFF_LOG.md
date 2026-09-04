@@ -1,5 +1,14 @@
 # 交接记录
 
+## 2026-09-04｜补款失败恢复、陈旧卡抢跑修复与生产运行证据
+
+- 代码提交 `0e5a82d`：补款失败固化 `AUTO_RETRY/DO_NOT_RETRY/MANUAL_REVIEW`，仅 `FAILED+CLEARED+AUTO_RETRY` 有界自动恢复，订单+卡最多 3 个 attempt，UNKNOWN 不重试。
+- 本地全量 526/0 fail；全新 MySQL 8.4.11 + migration 001–045 为 42 total / 41 pass / 1 intentional skip / 0 fail。
+- 生产备份 `/var/backups/pojia/pojia-20260904T124226Z.sql.gz.enc` 完整性通过；先发布 `20260904-funding-recovery-0e5a82d`。
+- 发布前 12:38–12:41 UTC，系统在卡台余额 `$34.83` 时自动开卡 `2833/5980/$16`，分配给 `PJV1-tw-hliEBgnOfdEVsxn5r`并创建 API 外部订单 9440；Provider 明确失败“验证策略失败，请稍后重试”，无 PURCHASE，卡保留 `$16`并安全释放为 AVAILABLE。
+- 根因是 9051 证据陈旧时被 `fundable` 查询排除，stock scheduler 在只读同步完成前就抢跑开卡。提交 `4bf84f9` 增加 `refreshable` 防线；有可刷新旧卡时先等同步，不允许付费开卡。
+- 最终生产 release `/opt/pojia/releases/20260904-funding-recovery-race-4bf84f9`；Web/Worker/补给 timer active，`/health/ready=ready`。旧测试订单已终态，不重试。当前可分配 Plus 卡为 5980/$16；补款成功到账留待下一次自然低余额场景验收。
+
 ## 2026-09-03｜客户充值页改版 v2 落地（待部署）
 
 - 用户确认预览定稿后落地：去二次确认（邮箱就地核对、一步建单）、6 步真实横向进度条（合并「准备/就绪」）+ 百分比 easeOutCubic 平滑动画、3 步骤条图标化、祖母绿+香槟金配色升级、等待文案对齐 1 分钟目标。
