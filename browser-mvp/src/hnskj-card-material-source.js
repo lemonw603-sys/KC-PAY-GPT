@@ -23,16 +23,23 @@ export function mapHnskjCardMaterial(envelope) {
  * local inventory/card reference; no write method exists on this boundary.
  */
 export class HnskjCardMaterialSource {
-  constructor({ provider } = {}) {
+  constructor({ provider, billingAddressSource = null } = {}) {
     if (!provider || typeof provider.card !== 'function') throw new TypeError('provider.card is required');
+    if (billingAddressSource != null && typeof billingAddressSource.load !== 'function') {
+      throw new TypeError('billingAddressSource.load is required');
+    }
     this.provider = provider;
+    this.billingAddressSource = billingAddressSource;
     this.requiresProviderCardRef = true;
   }
 
   async load(providerCardRef) {
     assertRef(providerCardRef, 'providerCardRef');
     try {
-      return mapHnskjCardMaterial(await this.provider.card(providerCardRef));
+      const material = mapHnskjCardMaterial(await this.provider.card(providerCardRef));
+      if (!this.billingAddressSource) return material;
+      const billingAddress = await this.billingAddressSource.load(providerCardRef);
+      return { ...material, billingAddress };
     } catch (error) {
       if (error instanceof ContractError) throw error;
       throw new ContractError('HNSKJ card material read failed');
