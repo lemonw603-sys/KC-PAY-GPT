@@ -1174,3 +1174,4 @@
 - 按用户建议先做单 Profile：临时配置第一个 Profile、API 超时 60 秒，`ONCE` canary 成功（DB `READY`、迭代 `IDLE`、exit 0），隧道关闭；未改动六 Profile 正式配置，未领单/付款。
 - 用单 Profile 临时配置短暂运行 `CONTINUOUS`，多次 `IDLE` 后 Ctrl-C 收尾成功；修复 launcher 在 `set -u` 下连续模式空数组导致的 `worker_args[@]: unbound variable`，并完成 shell 语法检查。未领单/读 Session/付款。
 - 详细证据：`docs/browser-research/MACOS_BROWSER_PRODUCTION_TUNNEL_CHECK_2026-09-04.md`。
+- 用户确认要做从 CDK+Session 到 Browser 付款完成的完整测试；已建立八阶段可执行清单 `docs/BROWSER_FULL_CHAIN_TEST_PLAN_2026-09-04.md`。本轮仅核对现场：最新订单仍为 API/WAITING_FOR_CARD，Browser dispatch/payment 均关闭，未修改路线或付款权限。

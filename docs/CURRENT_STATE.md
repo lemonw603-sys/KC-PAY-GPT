@@ -222,3 +222,4 @@
 - 证据：`docs/browser-research/PHILIPPINES_CHECKOUT_TAX_OBSERVER_ENHANCEMENT_2026-09-03.md`。
 
 > **付款授权边界**：用户允许首笔 Browser 真实付款，但仅在官方 Checkout 最终稳定为 `₱982.14`、税费 `₱0` 时执行；当前 Browser 付款权限仍关闭，既有 `₱1,100` 结果不满足条件。
+> **2026-09-04 全链路测试清单**：已建立八阶段真实 Browser 订单验收清单，涵盖客户提交、路线冻结、派发/卡片、Session 身份、Checkout 税费、唯一付款、Plus/续费/交易对账/通知和收尾不变量；执行前仍需解决当前 API 订单的路线冻结问题。

@@ -195,3 +195,5 @@
 - 详细实施/审查：`docs/browser-research/BROWSER_SIX_PROFILE_POOL_IMPLEMENTATION_2026-09-02.md`、`docs/browser-research/BROWSER_SIX_PROFILE_PRODUCTION_SHAPE_PREPARATION_2026-09-02.md`。
 
 **付款条件更新**：用户已条件性允许首笔 Browser 真实付款，但仅限官方 Checkout 最终稳定显示 `₱982.14` 且税费为 `₱0`；当前 Browser 付款权限仍关闭，现有 PH 实测 `₱1,100` 不满足条件。
+
+**全链路测试基线**：首笔真实 Browser 测试按 `docs/BROWSER_FULL_CHAIN_TEST_PLAN_2026-09-04.md` 的八阶段证据清单执行；当前先处理 API 订单与 Browser 路线冻结冲突，再从单 Profile 开始。
