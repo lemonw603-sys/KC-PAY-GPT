@@ -232,3 +232,7 @@ Browser 候选对齐后发现 v1 客户首页静态 `sendFile` 在候选 worktre
 ### 2026-09-04 Browser canary 结果
 
 生产 Browser readonly unit 已启动并通过 ExecStartPre，连续 IDLE 后正常停止，最终 inactive/disabled。当前仍是 LOCAL_FIXTURE 配置，仅完成生产运行边界验证，不代表外部 ChatGPT 或真实付款已验收。
+
+### 2026-09-05 Pro 20X 基础准备
+
+用户将“20X”更正为 Pro 20X。当前 V1 仍只启用 Plus；产品字段和路由结构已预留。已记录基础准备方案：在不改变当前 Plus 生产行为的前提下保留 plan_type、产品识别和禁用配置，未来独立验证 Pro 20X 的 Checkout 价格/税费/资格/Provider 合同后再启用。

@@ -199,3 +199,9 @@
 - 已在生产启动 Browser readonly systemd canary；ExecStartPre 检查成功，Worker 连续多轮返回 `status=IDLE`，随后正常停止。
 - 当前生产配置目标仍为 `LOCAL_FIXTURE`，不是外部 ChatGPT/真实 Session；因此本次只证明生产 unit、Node 运行时、配置校验、启动/停止和安全空队列循环正常，不等于真实 ChatGPT 访问或付款能力验收。
 - canary 结束后已确认 `pojia-browser-worker.service=inactive/disabled`；未创建订单、未读取 Session/PAN/CVC、未调用 Provider/卡台写接口、未付款。
+
+### 2026-09-05 Pro 20X 复核
+
+- 已将用户所说“20X”按既有命名核对为 `Pro 20X`，不是 Plus 的 USD 20 月费价格。
+- 当前代码仍是 Plus-only；Pro 20X 仅有产品字段/数据库扩展预留，未进入 CDK PLAN_TYPES、Provider 路由或生产付款。
+- 已落盘基础准备记录 `docs/2026-09-05_pro20x-readiness-note.md`：本次真实 Plus Browser 测试只复核产品字段可扩展性，不提前启用 Pro 20X。
