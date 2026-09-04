@@ -2,6 +2,7 @@ import express from 'express';
 import helmet from 'helmet';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { readFile } from 'node:fs/promises';
 import { PublicApiError } from '../domain/public-api-error.js';
 import { CdkBatchError } from '../services/cdk-service.js';
 import { RechargePermitError } from '../services/recharge-permit-service.js';
@@ -751,9 +752,13 @@ export function createApp({
     fallthrough: true
   }));
 
-  app.get('/', (_req, res) => {
+  app.get('/', async (_req, res, next) => {
     res.setHeader('Cache-Control', 'no-store');
-    res.sendFile(path.join(publicDirectory, 'index.html'));
+    try {
+      res.type('html').send(await readFile(path.join(publicDirectory, 'index.html')));
+    } catch (error) {
+      next(error);
+    }
   });
   app.use('/assets', express.static(path.join(publicDirectory, 'assets'), {
     etag: true,
