@@ -3,10 +3,11 @@ import { createHash } from 'node:crypto';
 import { ContractError } from './contracts.js';
 
 export class SessionIdentityProbeError extends ContractError {
-  constructor(message, code) {
+  constructor(message, code, details = null) {
     super(message);
     this.name = 'SessionIdentityProbeError';
     this.code = code;
+    this.details = details && typeof details === 'object' ? Object.freeze({ ...details }) : null;
   }
 }
 
@@ -109,17 +110,20 @@ export async function probeSessionIdentity(page, expectedIdentity, {
       throw new SessionIdentityProbeError(
         'ChatGPT access was blocked before Session identity could be verified',
         'CHATGPT_ACCESS_BLOCKED',
+        { stage: 'session-endpoint', httpStatus: Number(observed?.status) || null, contentType: String(observed?.contentType || '').slice(0, 80), server: String(observed?.server || '').slice(0, 80), hasCfRay: observed?.hasCfRay === true },
       );
     }
     if (Number(observed?.status) >= 500) {
       throw new SessionIdentityProbeError(
         `session identity service returned HTTP ${observed.status}`,
         'ACCOUNT_STATUS_UNKNOWN',
+        { stage: 'session-endpoint', httpStatus: Number(observed?.status) || null, contentType: String(observed?.contentType || '').slice(0, 80), server: String(observed?.server || '').slice(0, 80), hasCfRay: observed?.hasCfRay === true },
       );
     }
     throw new SessionIdentityProbeError(
       `session identity probe returned HTTP ${observed?.status ?? 'unknown'}`,
       'SESSION_INVALID',
+      { stage: 'session-endpoint', httpStatus: Number(observed?.status) || null, contentType: String(observed?.contentType || '').slice(0, 80), server: String(observed?.server || '').slice(0, 80), hasCfRay: observed?.hasCfRay === true },
     );
   }
   const observedDigests = {
@@ -129,7 +133,7 @@ export async function probeSessionIdentity(page, expectedIdentity, {
   };
   const expectedEntries = Object.entries(expected).filter(([, value]) => value);
   if (!expectedEntries.every(([key, value]) => observedDigests[key] === value)) {
-    throw new SessionIdentityProbeError('session identity mismatch', 'SESSION_IDENTITY_MISMATCH');
+    throw new SessionIdentityProbeError('session identity mismatch', 'SESSION_IDENTITY_MISMATCH', { stage: 'identity-compare', httpStatus: observed.status });
   }
   if (checkedAccountPath && (!observed.subscription?.ok || observed.subscription.state === 'UNKNOWN')) {
     throw new SessionIdentityProbeError(

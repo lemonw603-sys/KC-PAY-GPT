@@ -30,6 +30,17 @@ function normalizeCode(error) {
   return /^[A-Z][A-Z0-9_]{1,63}$/.test(value) ? value : 'BROWSER_PREFLIGHT_FAILED';
 }
 
+function diagnosticDetails(error) {
+  for (let current = error, depth = 0; current && depth < 8; current = current.cause, depth += 1) {
+    if (current?.details && typeof current.details === 'object') {
+      return Object.fromEntries(Object.entries(current.details).filter(([key]) => (
+        ['stage', 'httpStatus', 'contentType', 'server', 'hasCfRay'].includes(key)
+      )));
+    }
+  }
+  return null;
+}
+
 function orderIdFromRef(ref) {
   assertRef(ref, 'orderRef');
   if (!ref.startsWith(ORDER_REF_PREFIX)) throw new TypeError(`orderRef must use ${ORDER_REF_PREFIX}`);
@@ -261,6 +272,7 @@ export class BrowserOrderPreflightRepository {
       );
       if (!order || !leased) throw new Error('Browser preflight lease or order was lost');
       if (customerActionCode && ELIGIBLE_ORDER_STATUSES.includes(order.status)) {
+        const diagnostic = diagnosticDetails(error);
         const [[setting]] = await connection.query(
           `SELECT setting_value FROM app_settings
            WHERE setting_key='session_replacement_window_hours' LIMIT 1`,
@@ -292,7 +304,7 @@ export class BrowserOrderPreflightRepository {
            VALUES (?,?,'WAITING_FOR_SESSION','WORKER',?,
              'Browser preflight requires a replacement Session',?)`,
           [task.order_id, order.status, this.workerId,
-            JSON.stringify({ taskId: task.task_id, reasonCode: code, customerActionCode })],
+            JSON.stringify({ taskId: task.task_id, reasonCode: code, customerActionCode, ...(diagnostic ? { diagnostic } : {}) })],
         );
         await connection.commit();
         return { status: 'CUSTOMER_ACTION_REQUIRED', reasonCode: code };

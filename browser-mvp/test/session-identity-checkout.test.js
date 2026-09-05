@@ -63,6 +63,25 @@ test('session identity probe verifies the real session endpoint without returnin
   }
 });
 
+test('Session endpoint failures expose only bounded diagnostic metadata', async () => {
+  const server = createServer((_request, response) => {
+    response.writeHead(401, { 'content-type': 'application/json', server: 'fixture-auth' });
+    response.end(JSON.stringify({ error: 'unauthorized' }));
+  });
+  server.listen(0, '127.0.0.1'); await once(server, 'listening');
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage(); await page.goto(`http://127.0.0.1:${server.address().port}/`);
+    await assert.rejects(
+      () => probeSessionIdentity(page, { email: 'buyer@example.test' }),
+      (error) => error.code === 'SESSION_INVALID'
+        && error.details?.stage === 'session-endpoint'
+        && error.details?.httpStatus === 401
+        && !JSON.stringify(error).includes('unauthorized'),
+    );
+  } finally { await browser.close(); server.close(); await once(server, 'close'); }
+});
+
 test('subscription probe classifies active Plus without returning account-check material', async () => {
   const server = createServer((request, response) => {
     response.writeHead(200, { 'content-type': 'application/json' });
