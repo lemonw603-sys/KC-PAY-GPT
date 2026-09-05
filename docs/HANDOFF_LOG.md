@@ -1193,3 +1193,10 @@
 - 本机 `production-readonly-worker.js --check` 返回 `READY`；随后 `--once` 返回 `IDLE` 并正常退出，证明本机 Worker 可访问生产共享数据库、满足 Browser 只读迁移/执行器合同、并能安全启动一轮。
 - 此轮没有 Browser job，因此没有打开 Profile、没有注入 Session、没有创建订单、没有读取卡片、没有开卡/补余额、没有 Provider 写入、没有付款。
 - 隧道、临时环境文件和临时 Worker 均已结束/清理；生产 Browser systemd 仍 inactive/disabled，默认路线仍 API。
+
+## 2026-09-05｜单 Profile Browser 测试窗口已打开
+
+- 用户确认后，本机共享 Session 只读 Worker 已保持运行，通过 SSH 本地数据库隧道访问生产共享库；连续空闲轮询返回 `IDLE`，heartbeat 已写入并保持新鲜。
+- 按现有路线服务合同，将 `browser_dispatch_enabled` 开为 `true`，并通过 `createProviderRouteAdminService.setDefaultRechargeMethod()` 原子切换默认路线：API `accepts_new_orders=0` → Browser `accepts_new_orders=1`。路由事件：`ce963a40-872c-4f31-9a89-a09a9e3fe4b5`。
+- 当前生产 Browser systemd 仍保持关闭；实际执行控制面是本机 BitBrowser，避免把本机 `127.0.0.1:54345` 错写到远程服务器。
+- 现在可以提交这一单的 Session + CDK；订单创建后先核对 `executor_kind=BROWSER`、Browser job/run 和 Profile 生命周期，再执行到付款前停止。当前未读取客户 Session、未创建新订单、未 Provider/卡台写入、未付款。
