@@ -5,6 +5,7 @@ import { probeSessionIdentity } from './session-identity-probe.js';
 import { observeCheckout } from './checkout-observer.js';
 import { navigateToChatGPTPlusCheckout } from './chatgpt-checkout-navigator.js';
 import { fillSecureCardFieldsNonPayment } from './nonpayment-card-fill.js';
+import { fillTransientBillingEmail } from './billing-address-fill.js';
 import { assertCardMaterial } from './card-material-lease.js';
 
 export class BrowserExecutionError extends Error {
@@ -123,12 +124,14 @@ export class BrowserExecutionService {
       if (freezeRequested()) throw new BrowserExecutionError('MANUAL_FREEZE');
       if (!(await assertLease())) throw new BrowserExecutionError('LEASE_LOST');
       let sessionIdentity = null;
+      let transientBillingEmail = null;
       if (job.metadata.sessionIdentity) {
         try {
           sessionIdentity = await probeSessionIdentity(
             page,
             job.metadata.sessionIdentity,
             job.metadata.accountProbeContract || {},
+            { onVerifiedEmail: (email) => { transientBillingEmail = email; } },
           );
         } catch (error) {
           const reason = [
@@ -154,6 +157,9 @@ export class BrowserExecutionService {
             'target account is not a free account before payment',
           );
         }
+      }
+      if (transientBillingEmail) {
+        await fillTransientBillingEmail(page, transientBillingEmail, { timeoutMs: this.timeoutMs });
       }
       const checkpoint = await this._checkPage(page, job.metadata.pageContract);
       await this._event(job, 'checkpoint', ++evidenceSequence, {
