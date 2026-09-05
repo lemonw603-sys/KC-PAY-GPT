@@ -332,7 +332,8 @@ export function createCardStockService({ pool, sessionEncryptionKey, panHmacKey 
       ),
       pool.query(`SELECT setting_key, setting_value FROM app_settings
         WHERE setting_key IN ('default_card_type_id','default_open_card_amount','card_max_successful_payments')`),
-      pool.query(`SELECT c.provider_account_id, c.provider_card_id, c.card_type_id, c.last4, c.status, c.inventory_status,
+      pool.query(`SELECT c.provider_account_id, pa.provider_code, pa.account_code,
+          c.provider_card_id, c.card_type_id, c.last4, c.status, c.inventory_status,
           c.funded_amount, c.current_balance, c.currency, c.sync_tier, active_assignment.order_id AS active_order_id,
           co.allocation_policy, co.product_code AS allocation_product_code,
           co.reason AS allocation_reason,
@@ -349,6 +350,7 @@ export function createCardStockService({ pool, sessionEncryptionKey, panHmacKey 
           (SELECT csj.error_message FROM card_sync_jobs csj WHERE csj.card_id = c.id
             ORDER BY csj.created_at DESC LIMIT 1) AS sync_error
         FROM cards c
+        LEFT JOIN provider_accounts pa ON pa.id = c.provider_account_id
         LEFT JOIN card_assignment_history active_assignment
           ON active_assignment.card_id=c.id AND active_assignment.status='ACTIVE'
         LEFT JOIN orders o ON o.id = active_assignment.order_id
@@ -385,6 +387,9 @@ export function createCardStockService({ pool, sessionEncryptionKey, panHmacKey 
     const mappedCards = cards.map((row) => {
       const card = {
         providerAccountId: row.provider_account_id,
+        providerCode: row.provider_code || null,
+        providerAccountCode: row.account_code || null,
+        providerLabel: row.provider_code === 'manual_excel' ? '备用卡台' : (row.provider_code === 'hnskj' ? 'HNSKJ 卡台' : (row.provider_code || '未知卡台')),
         providerCardId: String(row.provider_card_id),
         cardTypeId: String(row.card_type_id),
         cardNumber: decryptCardNumber(row, sessionEncryptionKey),
@@ -426,6 +431,9 @@ export function createCardStockService({ pool, sessionEncryptionKey, panHmacKey 
       .filter((row) => !localIds.has(`${row.provider_account_id}:${row.external_card_id}`))
       .map((row) => ({
         providerAccountId: row.provider_account_id,
+        providerCode: null,
+        providerAccountCode: null,
+        providerLabel: '外部卡台记录',
         providerCardId: String(row.external_card_id),
         cardTypeId: null,
         cardNumber: null,

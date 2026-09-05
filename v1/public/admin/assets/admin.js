@@ -927,9 +927,11 @@ async function loadStock() {
   elements.stockJobs.innerHTML = payload.jobs?.length
     ? payload.jobs.map((job) => `<div><span><strong>${escapeHtml(STOCK_JOB_LABELS[job.status] || job.status)} · ${job.openedCount}/${job.requestedCount} 张</strong><small>${escapeHtml(job.cardTypeName || `卡段 ${job.cardTypeId}`)} · $${formatMoney(job.amount)} / 张 · 预计总扣款 $${formatMoney(job.estimatedTotal)} · ${formatTime(job.createdAt)}${job.errorMessage ? ` · ${escapeHtml(job.errorMessage)}` : ''}</small></span><em>${escapeHtml(job.status)}</em></div>`).join('')
     : '<p class="empty-state">还没有后台补卡任务</p>';
-  elements.stockCards.innerHTML = payload.cards?.length
-    ? payload.cards.map((card) => `${card.externalOnly ? '<div>' : `<div data-card="${escapeHtml(card.providerCardId)}" data-card-account="${escapeHtml(card.providerAccountId || '')}" role="button" tabindex="0">`}<span><strong>${escapeHtml(card.cardNumber || card.last4 || `卡台卡片 ${card.providerCardId}`)}</strong><small>${escapeHtml(card.reason || '当前不满足 Plus 安全分配条件')}${card.currentBalance != null ? ` · 余额 $${formatMoney(card.currentBalance)}` : ''}${card.publicNo ? ` · 订单 ${escapeHtml(card.publicNo)}` : ''}</small></span><em>${escapeHtml(STOCK_CATEGORY_LABELS[card.category] || card.category || '暂不可用')}</em></div>`).join('')
-    : '<p class="empty-state">还没有后台卡片</p>';
+  if (payload.cards?.length) {
+    const groups = new Map();
+    for (const card of payload.cards) { const key = `${card.providerAccountId || 'external'}:${card.providerLabel || '未知卡台'}`; if (!groups.has(key)) groups.set(key, []); groups.get(key).push(card); }
+    elements.stockCards.innerHTML = [...groups.values()].map((cards) => `<div class="mini-list-heading">${escapeHtml(cards[0].providerLabel || '未知卡台')} · ${cards.length} 张</div>${cards.map((card) => `${card.externalOnly ? '<div>' : `<div data-card="${escapeHtml(card.providerCardId)}" data-card-account="${escapeHtml(card.providerAccountId || '')}" role="button" tabindex="0">`}<span><strong>${escapeHtml(card.cardNumber || card.last4 || `卡台卡片 ${card.providerCardId}`)}</strong><small>${escapeHtml(card.reason || '当前不满足 Plus 安全分配条件')}${card.currentBalance != null ? ` · 余额 $${formatMoney(card.currentBalance)}` : ''}${card.publicNo ? ` · 订单 ${escapeHtml(card.publicNo)}` : ''}</small></span><em>${escapeHtml(STOCK_CATEGORY_LABELS[card.category] || card.category || '暂不可用')}</em></div>`).join('')}`).join('');
+  } else elements.stockCards.innerHTML = '<p class="empty-state">还没有后台卡片</p>';
   await loadCardIntake().catch(() => {
     elements.cardIntakeList.innerHTML = '<p class="empty-state">新卡接管状态读取失败，请稍后刷新。</p>';
   });
