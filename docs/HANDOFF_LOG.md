@@ -1151,3 +1151,10 @@
 - BitBrowser 日志明确显示 `connect ECONNREFUSED 127.0.0.1:17897`，随后报“网络不通已停止打开浏览器”；该步骤发生在 Profile 真正启动前。
 - `17897` 为 mihomo mixed-port。现场有两个 mihomo 进程而只有一个监听该端口，存在重复启动/生命周期竞争。当前端口已恢复，ipify 返回 `38.60.246.34`；BitBrowser 日志缓存该 IP 为 PH/Tagum。
 - 因此“以前能开、现在打不开”的直接原因已从猜测变为日志证据：代理进程瞬时不可用；ChatGPT Cloudflare challenge 另行处理。未付款、未创建订单。
+## 2026-09-05｜BitBrowser mihomo 生命周期修复
+
+- 根因已由原始 BitBrowser 日志确认：开 Profile 前连接 `127.0.0.1:17897` 被拒绝；现场还发现曾有重复 mihomo 进程，端口监听和上游可用性不稳定。
+- 已新增 `scripts/run-bitbrowser-mihomo.sh` 与用户级 `scripts/com.ai充值业务.mihomo.plist`：launchd `KeepAlive` 管理单实例，wrapper 目录锁阻止重复启动；已停止无主 PID 并以受控服务重新启动。
+- 已新增 `scripts/bitbrowser-proxy-health.sh`；`agent-evidence-gate.sh browser-order` 现在不再只测端口，而是要求单一 mihomo、监听归属正确、经代理访问 `api.ipify.org` 成功。
+- 现场证据：BitBrowser Local API `READY`；mihomo `PID=45732` 同时监听 `17897/19097`；出口 `38.60.246.34`；`LOCAL_MIHOMO_PROCESSES=1`；生产 Web/Worker active，Browser Worker inactive/disabled，生产目标仍 `LOCAL_FIXTURE`，最新订单路线仍 API。
+- 未创建订单、未读取客户 Session、未切换生产路线、未开卡/补余额、未 Provider 写入、未付款。Cloudflare challenge 是独立未解决项，后续需单独验证。

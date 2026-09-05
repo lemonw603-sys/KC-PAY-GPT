@@ -1,5 +1,7 @@
 # 当前生产状态快照｜2026-09-04
 
+> **2026-09-05 本机 BitBrowser 代理生命周期修复现场证据**：已停止无主 mihomo 进程并交由 `~/Library/LaunchAgents/com.ai充值业务.mihomo.plist` 管理，wrapper 使用目录锁防止重复实例。健康检查已从“端口 LISTEN”升级为单实例、监听归属和真实 HTTPS 出口请求三项检查；当前 `17897` 与 `19097` 均由同一 mihomo PID `45732` 监听，ipify 经代理返回 `38.60.246.34`，检查结果 `READY`。这只修复本机代理生命周期，不代表 ChatGPT Cloudflare challenge 已解决。
+
 > **2026-09-04 只读复验最新事实**：旧卡 `2772/9051=active/$0.01/DEPLETED`；其此前 `$16/AVAILABLE` 快照已过期。随后系统真实自动开出 `2833/5980`，当前生产数据库为 `active/$16/AVAILABLE`，因此当前有 1 张可直接分配 Plus 卡。本文后续凡写“当前无卡”的旧句均不得覆盖这一较新事实。
 
 > **2026-09-04 补给恢复最新增量**：生产 release 为 `/opt/pojia/releases/20260904-funding-recovery-race-4bf84f9`，Web/Worker/只读同步、补款、补款对账和补卡 timer 均 active，`/health/ready=ready`，migration 最新为 045。补款明确失败有界恢复与陈旧卡先同步修复已部署。原测试订单在部署前已因自动开卡而继续，API 外部订单 9440 最终明确失败，无 PURCHASE，卡 5980 已安全释放为 `$16/AVAILABLE`。

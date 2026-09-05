@@ -33,11 +33,13 @@ if [[ "$mode" == "browser-order" ]]; then
     curl -fsS -m 5 -X POST http://127.0.0.1:54345/health -H 'Content-Type: application/json' -d '{}' >/dev/null \
       || { echo "LOCAL_BITBROWSER_API=UNAVAILABLE" >&2; exit 66; }
   fi
-  if ! (command -v nc >/dev/null 2>&1 && nc -z -w 2 127.0.0.1 17897 >/dev/null 2>&1); then
+  echo "LOCAL_BITBROWSER_API=READY"
+  if ! proxy_health="$(./scripts/bitbrowser-proxy-health.sh 2>&1)"; then
+    echo "$proxy_health" >&2
     echo "LOCAL_PROXY_17897=UNAVAILABLE" >&2
     exit 66
   fi
-  echo "LOCAL_BITBROWSER_API=READY"
+  echo "$proxy_health"
   echo "LOCAL_PROXY_17897=READY"
   if command -v pgrep >/dev/null 2>&1; then echo "LOCAL_MIHOMO_PROCESSES=$(pgrep -x mihomo | wc -l | tr -d ' ')"; fi
 fi
