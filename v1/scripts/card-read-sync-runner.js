@@ -36,10 +36,15 @@ const maxConcurrency = Math.min(6, Math.max(1, Number(process.env.CARD_SYNC_CONC
 
 async function processJob(job, scheduled) {
   const owner = job.leaseWorkerId;
+  // Maintenance retries deliberately preserve the card's failure budget, so
+  // the numeric attempt may be reused. Bind read-call audit keys to the unique
+  // claim owner as well, preventing a retry from colliding with an earlier
+  // provider_calls row while keeping every external read auditable.
+  const claimKey = `${job.id}:${owner}`;
   try {
     const detail = await recordProviderCall({
       pool, orderId: job.order_id || null, provider: 'hnskj',
-      operation: 'card_reconciliation_detail', requestKey: `card-read-sync:${job.id}:detail`,
+      operation: 'card_reconciliation_detail', requestKey: `card-read-sync:${claimKey}:detail`,
       attemptNo: job.attempts,
       action: () => provider.card(job.provider_card_id),
       summarize: (value) => {
@@ -55,7 +60,7 @@ async function processJob(job, scheduled) {
       fetchPage: (page, pageSize) => recordProviderCall({
         pool, orderId: job.order_id || null, provider: 'hnskj',
         operation: 'card_reconciliation_transactions',
-        requestKey: `card-read-sync:${job.id}:transactions:${page}`, attemptNo: job.attempts,
+        requestKey: `card-read-sync:${claimKey}:transactions:${page}`, attemptNo: job.attempts,
         action: () => provider.transactions(job.provider_card_id, { page, pageSize }),
         summarize: (value) => ({ providerCardId: job.provider_card_id, page: value.data.page,
           count: value.data.transactions.length, total: value.data.total,
