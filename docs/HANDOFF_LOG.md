@@ -1,5 +1,12 @@
 # 交接记录
 
+## 2026-09-06｜D6 卡源切换与完整快照生产验收
+
+- 真实后台页面发现三处误导：自动开卡关闭却显示开启、同步失败率 100% 却显示正常、空备用来源统计 1 张。提交 `c9f482e` 修复并发布 `/opt/pojia/releases/20260906-admin-alignment-c9f482e`；v1 `500/47/0`、Browser `128/4/0`，826 文件 manifest 通过。
+- 生产实际执行 HNSKJ→备用 A→HNSKJ，均只影响新订单；2 个安全可接管 Browser 等待订单未迁移，API 等待订单未变化，两条审计事件落库。
+- `/Users/lemon/Downloads/卡片列表.xls` 的 2 卡完整快照成功导入备用 A；同文件重放命中同一批次 `replay=true`。两卡资料均加密，余额 `$0`–`$2`，按 `$18` 门槛可分配数 0；HNSKJ 11 张未变化。
+- 最终 Browser 卡源为 HNSKJ；资金/Browser 活动项均 0，旧自动开卡与 Browser Worker/付款继续关闭。D6 真实 Browser 订单尚未开始，证据见 `CARD_SOURCE_D6_PRODUCTION_ACCEPTANCE_2026-09-06.md`。
+
 ## 2026-09-06｜卡台来源 D5 已完成生产部署
 
 - 从精确 commit `8012da8bf624a3b55390a03f8e89a83e9e0ba23c` 构建并上传全新 release `/opt/pojia/releases/20260906-card-sources-8012da8`；依赖安装前后全量 manifest 均为 `825/825 OK`，没有复制旧 release 或局部覆盖。
