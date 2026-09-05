@@ -221,6 +221,37 @@ test('Checkout navigator rejects any navigation control that could submit a form
   }
 });
 
+test('Checkout navigator opens the live-style Profile menu before Upgrade and remains observe-only', async () => {
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage();
+    await page.setContent(`
+      <button data-testid="accounts-profile-button" style="pointer-events:none">Covered profile</button>
+      <button data-testid="accounts-profile-button" onclick="document.querySelector('#menu').hidden=false">Profile</button>
+      <div id="menu" hidden>
+        <button type="button" aria-label="Upgrade" onclick="document.querySelector('[role=dialog]').hidden=false">Upgrade</button>
+      </div>
+      <section role="dialog" hidden>
+        <button type="button" id="upgrade-plus" onclick="document.querySelector('[data-testid=checkout-page-content]').hidden=false">Upgrade to Plus</button>
+      </section>
+      <main data-testid="checkout-page-content" hidden><span>Checkout ready</span></main>
+    `);
+    const result = await navigateToChatGPTPlusCheckout(page, {
+      ...CHATGPT_PLUS_CHECKOUT_NAVIGATION_CONTRACT,
+      homeUrlPrefix: 'about:blank',
+      checkoutUrlPrefix: 'about:blank',
+      openPricingSelectors: ['button[data-direct-upgrade]'],
+      profileMenuSelectors: ['[data-testid="accounts-profile-button"]'],
+      profileUpgradeSelectors: ['button[aria-label="Upgrade"]'],
+      upgradeLabels: ['Upgrade to Plus'],
+    }, { timeoutMs: 2_000 });
+    assert.deepEqual(result.actions, ['profile-menu-opened', 'pricing-opened', 'upgrade-requested']);
+    assert.equal(result.submitCalls, 0);
+  } finally {
+    await browser.close();
+  }
+});
+
 test('executor refuses Checkout navigation without a read-only observer contract', async () => {
   let opened = false;
   const executor = new BrowserExecutionService({

@@ -95,11 +95,25 @@ export class CookieSessionBootstrapAdapter extends SessionProviderPort {
 
   async bootstrap(sessionLease, context) {
     assertSessionLease(sessionLease);
-    if (!context || typeof context.addCookies !== 'function') throw new TypeError('BrowserContext.addCookies is required');
+    if (!context || typeof context.addCookies !== 'function'
+      || typeof context.cookies !== 'function' || typeof context.clearCookies !== 'function') {
+      throw new TypeError('BrowserContext cookie read/write methods are required');
+    }
     const entry = this.leases.get(sessionLease.leaseId);
     if (!entry || entry.expiresAt <= this.clock()) throw new ContractError('session lease is expired or unknown');
+    const existingCookies = await context.cookies(CHATGPT_URL);
+    const staleSessionCookies = existingCookies.filter((cookie) => (
+      cookie.name === SESSION_COOKIE_BASE || cookie.name.startsWith(`${SESSION_COOKIE_BASE}.`)
+    ));
+    for (const cookie of staleSessionCookies) {
+      await context.clearCookies({ name: cookie.name, domain: cookie.domain, path: cookie.path });
+    }
     await context.addCookies(entry.cookies);
-    return { cookieCount: entry.cookies.length, sessionDigest: sessionLease.sessionDigest };
+    return {
+      cookieCount: entry.cookies.length,
+      replacedCookieCount: staleSessionCookies.length,
+      sessionDigest: sessionLease.sessionDigest,
+    };
   }
 
   async close(sessionLease) {

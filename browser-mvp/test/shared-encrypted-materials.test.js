@@ -77,6 +77,8 @@ test('shared encrypted sources bind material to one active browser_run and short
   assert.equal('sessionToken' in sessionLease, false);
   const cookies = [];
   const sessionResult = await sessionProvider.bootstrap(sessionLease, {
+    cookies: async () => [],
+    clearCookies: async () => undefined,
     addCookies: async (items) => cookies.push(...items),
   });
   assert.equal(sessionResult.cookieCount, 1);

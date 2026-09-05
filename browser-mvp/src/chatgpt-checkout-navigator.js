@@ -14,7 +14,7 @@ async function visibleCount(locator) {
   return count;
 }
 
-async function uniqueVisibleSelector(page, selectors, label, { allowEquivalentMultiple = false } = {}) {
+async function visibleSelectorMatches(page, selectors) {
   const matches = [];
   for (const selector of selectors || []) {
     const locator = page.locator(selector);
@@ -23,6 +23,11 @@ async function uniqueVisibleSelector(page, selectors, label, { allowEquivalentMu
       if (await candidate.isVisible()) matches.push(candidate);
     }
   }
+  return matches;
+}
+
+async function uniqueVisibleSelector(page, selectors, label, { allowEquivalentMultiple = false } = {}) {
+  const matches = await visibleSelectorMatches(page, selectors);
   if (matches.length === 0) throw new ContractError(`${label} must resolve to one visible control`);
   if (matches.length > 1 && !allowEquivalentMultiple) throw new ContractError(`${label} must resolve to one visible control`);
   if (matches.length > 1 && allowEquivalentMultiple) {
@@ -31,6 +36,18 @@ async function uniqueVisibleSelector(page, selectors, label, { allowEquivalentMu
     for (const candidate of matches) await assertSafeNavigationControl(candidate, label);
   }
   return matches[0];
+}
+
+async function lastVisibleNavigationSelector(page, selectors, label, { optional = false } = {}) {
+  const matches = await visibleSelectorMatches(page, selectors);
+  if (optional && matches.length === 0) return null;
+  if (matches.length === 0) throw new ContractError(`${label} must resolve to a visible control`);
+  // ChatGPT currently renders two overlapping profile controls. The last
+  // visible control is the one that receives pointer events in the live DOM.
+  // Validate every duplicate before selecting it so selector drift cannot
+  // turn this fallback into an arbitrary click.
+  for (const candidate of matches) await assertSafeNavigationControl(candidate, label);
+  return matches.at(-1);
 }
 
 async function uniqueVisibleButton(scope, labels, label, { optional = false } = {}) {
@@ -95,6 +112,8 @@ export const CHATGPT_PLUS_CHECKOUT_NAVIGATION_CONTRACT = Object.freeze({
   homeUrlPrefix: 'https://chatgpt.com/',
   checkoutUrlPrefix: 'https://chatgpt.com/checkout/',
   openPricingSelectors: Object.freeze(['button[aria-label="升级"]', 'button[aria-label="Upgrade"]']),
+  profileMenuSelectors: Object.freeze(['[data-testid="accounts-profile-button"]']),
+  profileUpgradeSelectors: Object.freeze(['button[aria-label="升级"]', 'button[aria-label="Upgrade"]']),
   pricingDialogSelector: '[role="dialog"]',
   upgradeLabels: Object.freeze(['升级至 Plus', 'Upgrade to Plus']),
   questionnaireSkipLabels: Object.freeze(['跳过', 'Skip']),
@@ -121,9 +140,27 @@ export async function navigateToChatGPTPlusCheckout(page, contract = CHATGPT_PLU
 
   const actions = [];
   if (!await checkoutReady(page, contract)) {
-    const openPricing = await uniqueVisibleSelector(page, contract.openPricingSelectors, 'open pricing control', {
-      allowEquivalentMultiple: true,
-    });
+    let openPricing = await lastVisibleNavigationSelector(
+      page,
+      contract.openPricingSelectors,
+      'open pricing control',
+      { optional: true },
+    );
+    if (!openPricing) {
+      const profileMenu = await lastVisibleNavigationSelector(
+        page,
+        contract.profileMenuSelectors,
+        'profile menu control',
+      );
+      await safeClick(profileMenu, 'profile menu control', assertContinue, timeoutMs);
+      actions.push('profile-menu-opened');
+      openPricing = await waitForState(page, async () => lastVisibleNavigationSelector(
+        page,
+        contract.profileUpgradeSelectors,
+        'profile upgrade control',
+        { optional: true },
+      ), { timeoutMs, label: 'profile upgrade control' });
+    }
     await safeClick(openPricing, 'open pricing control', assertContinue, timeoutMs);
     actions.push('pricing-opened');
     await waitForState(page, async () => {

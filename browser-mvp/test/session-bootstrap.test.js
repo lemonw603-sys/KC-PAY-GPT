@@ -16,12 +16,28 @@ test('CookieSessionBootstrapAdapter returns opaque lease and injects only inside
   assert.equal(typeof lease.sessionDigest, 'string');
   assert.equal('cookies' in lease, false);
   const added = [];
-  const result = await adapter.bootstrap(lease, { addCookies: async (cookies) => added.push(...cookies) });
+  const cleared = [];
+  const result = await adapter.bootstrap(lease, {
+    cookies: async () => [
+      { name: '__Secure-next-auth.session-token.0', domain: '.chatgpt.com', path: '/' },
+      { name: '__Secure-next-auth.session-token.1', domain: '.chatgpt.com', path: '/' },
+      { name: '__cf_bm', domain: '.chatgpt.com', path: '/' },
+    ],
+    clearCookies: async (filter) => cleared.push(filter),
+    addCookies: async (cookies) => added.push(...cookies),
+  });
   assert.equal(result.cookieCount, 1);
+  assert.equal(result.replacedCookieCount, 2);
+  assert.deepEqual(cleared, [
+    { name: '__Secure-next-auth.session-token.0', domain: '.chatgpt.com', path: '/' },
+    { name: '__Secure-next-auth.session-token.1', domain: '.chatgpt.com', path: '/' },
+  ]);
   assert.equal(added[0].name, '__Secure-next-auth.session-token');
   assert.equal(added[0].url, 'https://chatgpt.com');
   await adapter.close(lease);
-  await assert.rejects(() => adapter.bootstrap(lease, { addCookies: async () => undefined }), ContractError);
+  await assert.rejects(() => adapter.bootstrap(lease, {
+    cookies: async () => [], clearCookies: async () => undefined, addCookies: async () => undefined,
+  }), ContractError);
 });
 
 test('CookieSessionBootstrapAdapter rejects sources without a ChatGPT session token', async () => {
@@ -33,7 +49,11 @@ test('CookieSessionBootstrapAdapter chunks long session tokens using NextAuth co
   const adapter = new CookieSessionBootstrapAdapter({ source: { load: async () => ({ sessionToken: 'x'.repeat(4_100) }) } });
   const lease = await adapter.open('session-ref:chunked');
   const added = [];
-  await adapter.bootstrap(lease, { addCookies: async (cookies) => added.push(...cookies) });
+  await adapter.bootstrap(lease, {
+    cookies: async () => [],
+    clearCookies: async () => undefined,
+    addCookies: async (cookies) => added.push(...cookies),
+  });
   assert.deepEqual(added.map((cookie) => cookie.name), [
     '__Secure-next-auth.session-token.0',
     '__Secure-next-auth.session-token.1',
