@@ -27,6 +27,12 @@
 - 不领取订单的诊断已重新执行：本次在 BitBrowser `/browser/open` 阶段超时，底层为 `AbortError`；没有进入 Session 注入、账号检查、Checkout 或任何支付步骤。
 - 因此当前剩余问题是 BitBrowser Local API/Profile 开窗稳定性，不能继续归因于卡台或业务闸门。订单 68 保持 `PENDING`，不再消耗其预算；下一步先做 Local API 单独健康/开窗生命周期诊断，确认稳定后再重跑订单。
 
+## 2026-09-05｜BitBrowser 开窗超时根因与修复
+
+- 独立调用 Local API 现场测得：`/browser/open` 冷启动耗时约 `10.9s` 并最终成功；原 adapter 默认超时 `10s`，因此错误包装为 `PAGE_CHECKPOINT_FAILED`。
+- 已将 BitBrowser adapter API 超时提高到 `20s`，保留健康、Profile 白名单、CDP 和只读能力校验。定向回归 `14/14` 通过，提交 `ed89208`，修复已同步当前生产 release。
+- `/browser/close` 现场返回成功；未领取订单、未注入 Session、未进入 Checkout、未 Provider/卡台写入、未付款。订单 68 仍保持 `PENDING`，下一步才可在确认预算后重跑。
+
 ## 2026-09-04｜补款失败恢复、陈旧卡抢跑修复与生产运行证据
 
 - 代码提交 `0e5a82d`：补款失败固化 `AUTO_RETRY/DO_NOT_RETRY/MANUAL_REVIEW`，仅 `FAILED+CLEARED+AUTO_RETRY` 有界自动恢复，订单+卡最多 3 个 attempt，UNKNOWN 不重试。
