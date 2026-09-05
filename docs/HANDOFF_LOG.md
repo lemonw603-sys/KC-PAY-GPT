@@ -51,6 +51,12 @@
 - 数据库已落为：任务 `COMPLETED`（`last_error_code=SESSION_INVALID`），订单 `WAITING_FOR_SESSION`、`customer_action_code=SESSION_INVALID`。这不是卡台或资金闸门阻断，而是当前订单保存的 Session 在 ChatGPT Session 接口不可用/已失效。
 - 全程无充值 attempt、无卡资料读取、无 Provider/卡台写入、无付款。后续需客户重新提交可用且与订单身份匹配的 Session，再走现有 Session 修复流程；不应继续重试这条旧 Session。
 
+## 2026-09-05｜Session 失败诊断证据增强
+
+- 用户确认提交的 Session 无误；已修正机制，不再只保存笼统 `SESSION_INVALID`。Session 探针现在记录受限诊断元数据：失败阶段、HTTP 状态、Content-Type/Server 截断值和 Cloudflare 标记；绝不记录响应正文、Token、Cookie 或邮箱明文。
+- Browser preflight 在转入 `WAITING_FOR_SESSION` 时把该诊断摘要写入 `order_events.metadata_json`，保留订单已有加密 Session 原件，便于区分真实失效、身份不匹配、Cloudflare 和上游错误。
+- 定向 Session 测试通过；代码提交 `a4c9084`，修复已同步生产当前 release，`/health/ready=ready`。尚未重跑新订单，避免重复消耗任务。
+
 ## 2026-09-05｜完整只读导航诊断的间歇性身份结果
 
 - 现场在同一订单/同一 Profile 上先后得到两种结果：一次 Session 与订单 email/account 摘要哈希完全匹配，另一次执行器返回 `SESSION_IDENTITY_MISMATCH`。因此不能把单次失败直接定性为客户 Session 错误。
