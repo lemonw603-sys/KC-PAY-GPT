@@ -5,7 +5,7 @@ import { probeSessionIdentity } from './session-identity-probe.js';
 import { observeCheckout } from './checkout-observer.js';
 import { navigateToChatGPTPlusCheckout } from './chatgpt-checkout-navigator.js';
 import { fillSecureCardFieldsNonPayment } from './nonpayment-card-fill.js';
-import { fillTransientBillingEmail } from './billing-address-fill.js';
+import { fillBillingAddress, fillTransientBillingEmail } from './billing-address-fill.js';
 import { assertCardMaterial } from './card-material-lease.js';
 
 export class BrowserExecutionError extends Error {
@@ -226,6 +226,11 @@ export class BrowserExecutionService {
           questionnaireSkipped: checkoutNavigation.questionnaireSkipped,
           checkoutUrlDigest: checkoutNavigation.checkoutUrlDigest,
           submitCalls: 0,
+        });
+      }
+      if (cardMaterialLease && cardMaterialLeaseProvider && typeof cardMaterialLeaseProvider.withMaterial === 'function') {
+        await cardMaterialLeaseProvider.withMaterial(cardMaterialLease, async (material) => {
+          if (material?.billingAddress) await fillBillingAddress(page, material.billingAddress, { timeoutMs: this.timeoutMs });
         });
       }
       if (transientBillingEmail) {
