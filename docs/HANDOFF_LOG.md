@@ -1477,3 +1477,4 @@
 - 该混装携带的旧 `workflow-repository.js` 会让同一 WAITING_FOR_CARD 订单每次重试都插入新开卡任务；60 秒 timer 持续领取，停止前累计 969 条任务。故障窗口所有任务 opened_count=0、无新增卡，资金 attempt 无 ACTIVE/UNKNOWN。
 - 用户明确“如果每分钟自动开卡任务有问题就不用恢复”。已将 `pojia-card-stock-runner.timer` disable/stop、service stop/reset-failed，并把 `card_auto_replenishment_enabled` 改为 false、写设置审计。等待超过一个完整周期后任务数与最新创建时间均未变化；Web/API Worker保持 active，未关闭卡同步和独立补余额。
 - D5 当前阻断：必须从单一 commit 用 git archive 构建完整候选并做全量 manifest 校验，禁止继续复制旧 release 局部覆盖。历史 969 条记录保留，后续仅做有证据的状态收敛，不物理删除。
+- 发布机制阻断已在本地收口：提交 `8012da8` 新增精确 commit 归档器和全量 release verifier，删除旧自动开卡 timer 部署单元并更新 runbook；v1 `546/499/47/0`、Browser `132/128/4/0`。本地候选 `artifacts/release-candidate-20260906-8012da8/` 含 825 个 tracked 文件且校验通过；修改/缺失/额外文件三类反例均失败关闭。尚未部署，D5 仍需单独确认。

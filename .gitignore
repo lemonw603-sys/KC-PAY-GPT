@@ -17,6 +17,7 @@ _server.out.log
 _server.err.log
 debug_screenshots/
 artifacts/browser-poc/
+artifacts/release-candidate-*/
 product_files/
 data/hcaptcha-config.json
 data/browser-pool/
