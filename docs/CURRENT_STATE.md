@@ -286,3 +286,10 @@
 - 该端口是本机 mihomo mixed-port；现场存在两个 mihomo 进程（PID 4541、7152），只有一个监听 17897，说明代理进程生命周期/重复启动存在风险。
 - 当前端口已恢复监听，代理请求 `https://api.ipify.org` 返回 `38.60.246.34`；此前 Profile 记录的 IP 为同一地址，BitBrowser 日志缓存地理信息为 PH/Tagum，但仍需稳定性复核。
 - 结论：本次打不开的直接根因是本地代理进程瞬时不可用/重复实例，不是生产代码与 BitBrowser adapter 未对齐；ChatGPT challenge 是后续独立问题。
+
+### 2026-09-05 Browser 闸门对抗式审查（现场）
+
+- 原前置闸门检查范围不足，不能证明真实 Browser 订单可执行；已在提交 `bceabdd` 中补强：要求本地 readonly Worker、SSH 数据库隧道，并输出生产 Browser schema、最新迁移和 heartbeat。
+- 本轮现场：本地依赖 READY；生产 Browser Worker 仍 inactive/disabled、target=LOCAL_FIXTURE；Provider 写权限关闭；最新订单仍为 API `WAITING_FOR_CARD`。未创建 Browser 订单、未读取 Session、未付款。
+- v1 回归 529/483/0（46 skipped），Browser 118/114/0（4 skipped）；跳过项为隔离 MySQL 集成，不能等同真实链路通过。
+- 详见 `docs/BROWSER_PREFLIGHT_ADVERSARIAL_AUDIT_2026-09-05.md`。
