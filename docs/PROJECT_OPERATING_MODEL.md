@@ -205,3 +205,17 @@
 - 卡同步机制：`docs/2026-08-30_card-sync-mechanism-audit.md`
 - Browser 最新生产非付款结果：`docs/2026-08-30_browser-production-nonpayment-window-result.md`
 - Browser 门禁审查：`docs/2026-08-29_browser-gate-adversarial-review.md`
+
+## 2026-09-05｜就绪声明的证据门禁（新增）
+
+此前将“代码/本地测试准备好”错误表述为“生产真实 Browser 已准备好”。今后任何“可以开始”声明必须同时列出并现场证明：
+
+1. 生产 release 与 commit；
+2. Web/Worker/Browser Worker 实际状态；
+3. Browser target 是否为真实执行目标而非 `LOCAL_FIXTURE`；
+4. 路线、Provider 写权限和资金开关；
+5. 当前订单/任务是否已出现并可观测；
+6. 账单地址、卡、Session、Profile 的当前证据；
+7. 明确区分“代码通过”“只读预检通过”“真实订单可执行”“付款已验收”。
+
+缺一项不得使用“已准备好/已跑通”表述；必须说明缺口和下一项可逆动作。每单不重复完整体检，但第一次、部署后、路线/Profile/代理变更和异常恢复必须重新执行对应层级检查。
