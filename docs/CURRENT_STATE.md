@@ -263,3 +263,9 @@
 - ChatGPT account/Checkout 只读 harness 可与 BitBrowser + shared encrypted Session 组合；付款和 Provider 写开关仍必须全部为 false。
 - Browser 全量：`118 total / 114 passed / 4 skipped / 0 failed`；跳过项均要求隔离 MySQL。
 - 尚未完成：本地 Worker 连接共享数据库的集成演练、断线/租约测试、生产形态配置和部署。不得据此创建真实订单。
+
+### 2026-09-05 BitBrowser 真实 adapter 只读联调结果
+
+- 使用新 adapter 连接本地 `Plus Browser PH Pilot` Profile，Local API open/CDP/单 Context/close 均成功。
+- 导航 ChatGPT 时最终 URL 带 `__cf_chl_rt_tk`，页面标题为空，属于当前 Cloudflare challenge/未完成页面，不能视为正常 ChatGPT 可达。
+- 该结果推翻“公开首页已稳定可达”的旧结论：BitBrowser 控制链已接通，但当前 Profile/出口访问不稳定；未注入 Session、未创建订单、未进入 Checkout、未付款。

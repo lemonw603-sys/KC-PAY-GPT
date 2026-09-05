@@ -1135,3 +1135,8 @@
 - commit `1675ed7`：Worker runtime factory 可选择 BitBrowser adapter；配置新增 `BITBROWSER_READONLY`、本地 API URL校验和独立 no-payment confirmation。
 - Browser 全量 `118/114/4/0`。当前未部署、未启动生产 Worker、未切换路线、未创建订单、未付款。
 - 下一步必须先做本地 BitBrowser + 共享数据库只读联调与故障注入，满足闸门后才部署只读 Worker。
+
+## 2026-09-05｜BitBrowser 实际 adapter 联调发现访问挑战
+
+- 新 adapter 实际 open/CDP/close 成功，但 ChatGPT 导航落到带 `__cf_chl_rt_tk` 的 Cloudflare challenge，标题为空。
+- 因此 adapter 控制面通过，页面可达性闸门失败；不得继续共享订单或真实订单。下一步先处理单 Profile/出口稳定性，并增加 challenge 分类测试。
