@@ -1200,3 +1200,12 @@
 - 按现有路线服务合同，将 `browser_dispatch_enabled` 开为 `true`，并通过 `createProviderRouteAdminService.setDefaultRechargeMethod()` 原子切换默认路线：API `accepts_new_orders=0` → Browser `accepts_new_orders=1`。路由事件：`ce963a40-872c-4f31-9a89-a09a9e3fe4b5`。
 - 当前生产 Browser systemd 仍保持关闭；实际执行控制面是本机 BitBrowser，避免把本机 `127.0.0.1:54345` 错写到远程服务器。
 - 现在可以提交这一单的 Session + CDK；订单创建后先核对 `executor_kind=BROWSER`、Browser job/run 和 Profile 生命周期，再执行到付款前停止。当前未读取客户 Session、未创建新订单、未 Provider/卡台写入、未付款。
+
+## 2026-09-05｜真实订单前全链路自查完成
+
+- 现场检查了本地代理/BitBrowser、Browser MVP 代码语法、并发/租约测试、生产 release/systemd/env、生产数据库路由/设置/订单/attempt/run/lease。
+- 本地：代理单实例健康，BitBrowser API READY，7 个 Profile 可见；Browser `npm run check` 与并发/配置/Adapter 定向测试通过；本机共享只读 Worker 正在运行，使用 SSH 隧道访问生产库。
+- 生产：Web/普通 Worker active，Browser systemd inactive/disabled，生产目标仍 `LOCAL_FIXTURE`；生产数据库 Browser 路线已 `accepts_new_orders=1`、API 路线为 0，`browser_dispatch_enabled=true`，heartbeat 新鲜，付款写权限 false。
+- 生产数据：订单 `CLOSED=6/RECHARGE_FAILED=7/RECHARGE_SUCCESS=2/WAITING_FOR_CARD=1`；Browser jobs `CANCELLED=20`、runs `FAILED_SAFE=20`（历史测试）；当前活动 execution lease=0；无新 Browser job/run。
+- 关键未对齐但不阻断本次本机方案：生产 release 不含 BitBrowser adapter，远程 Browser systemd 仍是 LOCAL_FIXTURE；因此本次必须由本机 Worker 控制本机 BitBrowser，不能启动远程 Browser systemd。
+- 结论：订单前置条件已满足到“可提交客户式 Browser 测试输入”，但尚未提交 Session/CDK，也未读取客户数据、创建新订单、Provider/卡台写入或付款。
