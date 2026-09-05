@@ -13,3 +13,7 @@ test('allows minor currency rounding but not percentage tax', () => {
 test('rejects arithmetic mismatch', () => {
   assert.throws(() => assertZeroTaxQuote({ subtotal: 982.14, tax: 0, total: 1000, currency: 'PHP' }), /does not match/);
 });
+
+test('rejects non-Philippine currency', () => {
+  assert.throws(() => assertZeroTaxQuote({ subtotal: 20, tax: 0, total: 20, currency: 'USD' }), /currency must be PHP/);
+});

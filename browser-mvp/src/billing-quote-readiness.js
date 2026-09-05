@@ -16,8 +16,10 @@ export function assertZeroTaxQuote({ subtotal, tax, total, currency, toleranceMi
   const due = parse(total, 'total');
   const tolerance = Number(toleranceMinor);
   if (!Number.isInteger(tolerance) || tolerance < 0 || tolerance > 100) throw new ContractError('toleranceMinor is invalid');
-  if (!String(currency || '').trim()) throw new ContractError('quote currency is missing');
+  const quoteCurrency = String(currency || '').trim().toUpperCase();
+  if (!quoteCurrency) throw new ContractError('quote currency is missing');
+  if (quoteCurrency !== 'PHP') throw new ContractError('checkout currency must be PHP');
   if (taxValue > tolerance / 100) throw new ContractError('checkout tax is not zero');
   if (Math.abs(due - sub - taxValue) > tolerance / 100) throw new ContractError('checkout total does not match quote');
-  return { verified: true, currency: String(currency).trim(), subtotal: sub, tax: taxValue, total: due, toleranceMinor: tolerance };
+  return { verified: true, currency: quoteCurrency, subtotal: sub, tax: taxValue, total: due, toleranceMinor: tolerance };
 }
