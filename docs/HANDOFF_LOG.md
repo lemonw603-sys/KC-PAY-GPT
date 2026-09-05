@@ -1191,3 +1191,11 @@
 - 部署后只读证据：`pojia-web=active`、`pojia-worker=active`、`pojia-browser-worker=inactive`、Browser unit=`disabled`；`http://127.0.0.1:3100/health/live` 返回 `{"status":"ok"}`，`/health/ready` 返回 `{"status":"ready"}`。
 - 生产 Worker 环境核对：`PROVIDER_WRITES_ENABLED=false`、`PROVIDER_CARD_WRITES_ENABLED=false`、`PROVIDER_RECHARGE_WRITES_ENABLED=true`；Browser 付款/Provider 写入未开启。release 内共享材料文件 SHA-256=`144a778adf9ddab05ea9b1825e7c8321281cf2775d498f290f14c73295a71bca`，与本地 commit 文件一致。
 - 未创建/领取真实订单，未调用 Provider/卡台写接口，未填卡，未付款；直接回滚点为 `/opt/pojia/releases/20260905-browser-checkout-92fc70e`。
+
+## 2026-09-05｜部署后生产只读冒烟与 Browser 前置核对
+
+- 核对 current=`/opt/pojia/releases/20260905-session-errors-d24f6d6`、共享材料文件版本与错误码字符串；`pojia-web`/`pojia-worker` active，`pojia-browser-worker` inactive/disabled。
+- 健康检查：`127.0.0.1:3100/health/live`=`{"status":"ok"}`，`/health/ready`=`{"status":"ready"}`。
+- 路由只读：`CHATGPT_PLUS_BROWSER_V1` 为 BROWSER 且 `accepts_new_orders=1`；`LEGACY_HNSKJ_ZZSHU_V1` 为 API 且 `accepts_new_orders=0`。Browser dispatch 表仅有历史 `CANCELLED` 记录，无 QUEUED/CLAIMED。
+- 最近 Browser 路线订单均未进入 Browser attempt/run，状态为 `WAITING_FOR_SESSION`、`customer_action_code=SESSION_INVALID`；没有可安全跟踪到 Checkout 前置的活动订单。未创建测试订单，也未要求用户重新提交旧订单。
+- Worker 实际开关保持 `PROVIDER_WRITES_ENABLED=false`、`PROVIDER_CARD_WRITES_ENABLED=false`、`PROVIDER_RECHARGE_WRITES_ENABLED=true`；未调用 Provider/卡台写接口、未填卡、未付款。

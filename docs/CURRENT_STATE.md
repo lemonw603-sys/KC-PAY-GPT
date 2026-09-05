@@ -228,3 +228,5 @@
 > **2026-09-04 等待卡提醒体检**：当前 API 订单只有一条订单级 OPEN alert 与一条 SENT 通知，但自动开卡在约 5 分钟内连续产生 `REVIEW_REQUIRED`（余额不足、卡段不可用），造成订单持续等待与反复提醒观感。尚未修改生产数据；Browser 全链路测试前需处理该重复供给尝试。
 
 > **2026-09-05 部署结果**：commit `d24f6d6` 已发布到 `/opt/pojia/releases/20260905-session-errors-d24f6d6`，`/opt/pojia/current` 已切换到该 release。生产 `pojia-web`/`pojia-worker` active，Browser Worker inactive/disabled；`/health/live`=`ok`、`/health/ready`=`ready`；Provider 通用/卡片写关闭，API 充值最小写权限保持原值 `true`。未执行真实订单、Provider/卡台写入、填卡或付款。
+
+> **2026-09-05 生产只读冒烟**：新 release/version、服务状态、health、路由和错误码传播已现场核对。生产 Browser Worker 仍 inactive/disabled；最近 Browser 路线订单没有可继续到 Checkout 前置的活动 attempt/run（仅 `WAITING_FOR_SESSION`/`SESSION_INVALID`），因此未跟踪或修改任何订单，也未创建测试订单。无 Provider/卡台写入、填卡或付款。

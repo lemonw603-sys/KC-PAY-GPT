@@ -298,3 +298,10 @@ git diff --check
 - commit `d24f6d6` 已部署为 `/opt/pojia/releases/20260905-session-errors-d24f6d6` 并切换 `/opt/pojia/current`；生产 Browser Worker 仍为 `inactive/disabled`，没有启动或领取任务。
 - 部署后 `/health/live`=`{"status":"ok"}`、`/health/ready`=`{"status":"ready"}`；`pojia-web`/`pojia-worker` active；共享材料文件 SHA-256 与本地 commit 一致。
 - 生产资金/Provider 开关只读核对：通用 Provider 写、卡片写关闭，API 充值最小权限保持 `PROVIDER_RECHARGE_WRITES_ENABLED=true`；Browser 付款写入关闭。未执行真实订单、Provider/卡台写入、填卡或付款。
+
+## 2026-09-05｜部署后生产只读冒烟
+
+- current 已确认指向 `/opt/pojia/releases/20260905-session-errors-d24f6d6`；Web/Worker active，Browser Worker inactive/disabled；live/ready 均正常。
+- 路由表显示 Browser 路线接受新单、API 路线不接受新单；Browser dispatch 无 QUEUED/CLAIMED，仅历史 CANCELLED。
+- 最近 Browser 路线订单停在 `WAITING_FOR_SESSION`/`SESSION_INVALID`，未创建 recharge_attempt/browser_run，未进入 Checkout 前置；未创建测试订单，不修改现有订单。
+- 本轮仅只读核对，Provider/卡台写入、Session 读取、填卡、付款均为 0。
