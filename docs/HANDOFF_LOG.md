@@ -1180,3 +1180,9 @@
 - 生产当前 release `/opt/pojia/releases/20260905-maintenance-bark-6246cc1` 中不存在 `browser-mvp/src/bitbrowser-control-runtime.js`；生产 Browser env 仍为 `BROWSER_WORKER_TARGET=LOCAL_FIXTURE`，没有 `BITBROWSER_API_BASE_URL`。
 - 因此当前生产 Browser Worker 不是 BitBrowser 实际执行器，直接切换路线会把订单送入未接入 BitBrowser 的只读 fixture，不能进行真实 Browser 测试。
 - 结论：测试不是取消，而是被现场发现的“生产候选未部署/未接线”阻断。下一步应先把已验证的 BitBrowser adapter 候选部署为只读、设置目标与 API 地址、启动 `--check` 并做生产只读 readiness；在此之前不切换 Browser 默认路线、不创建订单、不读取 Session、不付款。
+
+## 2026-09-05｜部署目标架构再次核对
+
+- 进一步核对后发现：BitBrowser Local API 监听在本机 `127.0.0.1:54345`，而生产 Browser systemd 运行在远程服务器；即使把 adapter 文件上传，远程服务里的 `127.0.0.1` 也不是本机 BitBrowser。
+- 因此不能把 `BITBROWSER_API_BASE_URL=http://127.0.0.1:54345` 直接写进远程生产配置，也不能把“上传代码”误报成“真实 Browser 已接线”。当前没有部署这类无效配置。
+- 正确候选是：Browser 控制 Worker 运行在本机并通过受控 SSH 数据库隧道访问生产共享数据库，或建立明确的反向 API 隧道后再让远程 Worker 控制本机 BitBrowser；两者都必须先做只读 readiness 和回滚验证。
