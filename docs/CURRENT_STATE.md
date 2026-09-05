@@ -256,3 +256,10 @@
 - 启动对齐工作后现场查代码确认：生产 readonly Worker 当前只接 `GoogleChromeControlRuntimeAdapter`，配置 target 仅控制 `LOCAL_FIXTURE/EXTERNAL_READONLY`，没有 BitBrowser Local API/CDP adapter。
 - 本地 BitBrowser 预检是独立手工控制面验证，不等于生产 Worker 已接入 BitBrowser。不能只改环境变量就宣称 Browser 真实订单可执行。
 - 因此真实 Browser 订单前的实际缺口是“BitBrowser runtime adapter + 执行器/DB 租约接线”，而不是简单开启 Worker；当前不切换生产路线、不启动付款。
+
+### 2026-09-05 BitBrowser 接入 readonly Worker（代码完成，未部署）
+
+- `BitBrowserControlRuntimeAdapter` 已接入 `production-readonly-worker.js`，新增 `BITBROWSER_READONLY` target 和独立精确确认词。
+- ChatGPT account/Checkout 只读 harness 可与 BitBrowser + shared encrypted Session 组合；付款和 Provider 写开关仍必须全部为 false。
+- Browser 全量：`118 total / 114 passed / 4 skipped / 0 failed`；跳过项均要求隔离 MySQL。
+- 尚未完成：本地 Worker 连接共享数据库的集成演练、断线/租约测试、生产形态配置和部署。不得据此创建真实订单。

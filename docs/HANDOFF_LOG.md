@@ -1129,3 +1129,9 @@
 - 扩展执行模式 `BITBROWSER_CONTROL`；新增 3 个隔离测试，全部通过；Browser `npm run check` 通过。
 - 当前仍未接入 `production-readonly-worker.js`、共享队列或生产配置；未部署、未启动 Worker、未创建新订单、未付款。
 - 下一批：把 adapter 接入 Worker 的 runtime factory/config，增加 Profile/代理漂移、断线、租约丢失和安全关闭测试，再做本地共享订单只读联调。
+
+## 2026-09-05｜BitBrowser readonly Worker 接线完成（本地）
+
+- commit `1675ed7`：Worker runtime factory 可选择 BitBrowser adapter；配置新增 `BITBROWSER_READONLY`、本地 API URL校验和独立 no-payment confirmation。
+- Browser 全量 `118/114/4/0`。当前未部署、未启动生产 Worker、未切换路线、未创建订单、未付款。
+- 下一步必须先做本地 BitBrowser + 共享数据库只读联调与故障注入，满足闸门后才部署只读 Worker。
