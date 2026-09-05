@@ -8,6 +8,12 @@
 - 新增本地 fixture 覆盖 Profile→Upgrade→Checkout 和旧 cookie 清理；Browser 全量 `120 pass/4 skipped/0 fail`。
 - Commit：`92fc70e`。未部署、未启动生产 Browser Worker、未读取客户 Session、未调用 Provider/卡台、未付款。下一步是部署前只读审查/发布候选，然后退还任务 68 因实现缺陷消耗的重试次数并重跑 `BROWSER_PREFLIGHT`。
 
+## 2026-09-05｜只读修复候选已发布
+
+- 已创建并切换 release `/opt/pojia/releases/20260905-browser-checkout-92fc70e`；切换前后备份校验均为 `OK`，`pojia-web`/`pojia-worker` active，`/health/live` 与 `/health/ready` 正常。
+- 远程 `pojia-browser-worker` 继续 `disabled/inactive`，生产目标仍为 `LOCAL_FIXTURE`；本次发布不改变 API 路线、Provider/卡台写入或付款权限。
+- 由于本机 BitBrowser 只读 Worker 需要受控 SSH 隧道，订单 68 的重跑尚未执行；不得把“已发布”误报为 Browser 订单已完成。下一步是启动本机只读 Worker，核对任务 68 的当前租约/重试预算后再运行前置观察。
+
 ## 2026-09-04｜补款失败恢复、陈旧卡抢跑修复与生产运行证据
 
 - 代码提交 `0e5a82d`：补款失败固化 `AUTO_RETRY/DO_NOT_RETRY/MANUAL_REVIEW`，仅 `FAILED+CLEARED+AUTO_RETRY` 有界自动恢复，订单+卡最多 3 个 attempt，UNKNOWN 不重试。
