@@ -105,7 +105,7 @@ test('admin refresh feedback and inset dropdown arrows remain visible', () => {
   const script = fs.readFileSync(path.join(directory, 'admin', 'assets', 'admin.js'), 'utf8');
   const styles = fs.readFileSync(path.join(directory, 'admin', 'assets', 'admin.css'), 'utf8');
   assert.match(html, /admin\.css\?v=20/);
-  assert.match(html, /admin\.js\?v=21/);
+  assert.match(html, /admin\.js\?v=22/);
   assert.match(script, /button\.textContent = '刷新中…'/);
   assert.match(script, /showNotice\('刷新完成。', 'success'\)/);
   assert.match(script, /showNotice\('刷新失败，请稍后重试。'\)/);

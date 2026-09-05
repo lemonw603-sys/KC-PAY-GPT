@@ -25,6 +25,7 @@ test('lists API fixed source separately from the operator-selected Browser sourc
   assert.equal(result.apiProviderAccountId, 'hnskj');
   assert.equal(result.browserProviderAccountId, 'backup-a');
   assert.deepEqual(result.displayNames, { API: 'API 充值', BROWSER: '浏览器自动化充值' });
+  assert.match(pool.queries[0].sql, /SUM\(c\.id IS NOT NULL AND COALESCE\(c\.source_present,1\)=1\) AS present_count/);
 });
 
 test('Browser source switch records warnings but does not block an unhealthy operator selection', async () => {

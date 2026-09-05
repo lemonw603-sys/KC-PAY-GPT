@@ -36,8 +36,9 @@ export function createCardSourceAdminService({ pool } = {}) {
   async function list() {
     const [rows] = await pool.query(`SELECT pa.*,
       COUNT(c.id) AS card_count,
-      SUM(COALESCE(c.source_present,1)=1) AS present_count,
-      SUM(COALESCE(c.source_present,1)=1 AND LOWER(c.status) IN ('active','available','usable','ready')) AS usable_fact_count
+      SUM(c.id IS NOT NULL AND COALESCE(c.source_present,1)=1) AS present_count,
+      SUM(c.id IS NOT NULL AND COALESCE(c.source_present,1)=1
+        AND LOWER(c.status) IN ('active','available','usable','ready')) AS usable_fact_count
       FROM provider_accounts pa LEFT JOIN cards c ON c.provider_account_id=pa.id
       WHERE pa.purpose='CARD' GROUP BY pa.id ORDER BY pa.provider_code='hnskj' DESC, pa.created_at ASC`);
     const [selectionRows] = await pool.query(`SELECT s.provider_account_id, s.version, s.updated_by, s.updated_at

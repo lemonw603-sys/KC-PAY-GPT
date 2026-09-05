@@ -87,6 +87,17 @@ test('labels local stock refresh separately from provider card synchronization',
   assert.match(script, /本地列表已刷新（未同步卡台）/);
 });
 
+test('admin overview does not describe disabled automatic card opening as enabled', async () => {
+  const html = await readFile(new URL('../public/admin/index.html', import.meta.url), 'utf8');
+  const script = await readFile(new URL('../public/admin/assets/admin.js', import.meta.url), 'utf8');
+  assert.match(html, /admin\.js\?v=22/);
+  assert.match(script, /自动开卡已关闭；当前无合格卡时需要人工处理/);
+  assert.match(script, /自动开卡已关闭；当前低于库存线/);
+  assert.match(script, /cardSyncReviewRequired/);
+  assert.match(script, /cardSyncFailureRate/);
+  assert.doesNotMatch(script, /自动补卡已开启，已到库存线/);
+});
+
 test('exposes the one-to-four card capacity setting in the admin UI', async () => {
   const html = await readFile(new URL('../public/admin/index.html', import.meta.url), 'utf8');
   const script = await readFile(new URL('../public/admin/assets/admin.js', import.meta.url), 'utf8');

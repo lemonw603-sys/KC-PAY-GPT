@@ -310,7 +310,12 @@ async function loadOverview() {
     { label: '需要关注', value: overview.metrics.reviewingOrders, note: '失败、未知或对账订单', filter: 'REVIEW_REQUIRED' },
     { label: '需要人工核对', value: overview.metrics.reconciliationIssues, note: '与真实案例队列完全一致', filter: 'RECONCILIATION_ISSUES' },
     { label: '等待 Session', value: overview.metrics.waitingForSession ?? 0, note: '客户可在原订单更换 Session', filter: 'WAITING_FOR_SESSION' },
-    { label: '等待卡片就绪', value: overview.metrics.waitingForCard ?? 0, note: '系统会自动补余额或开卡；无法继续时才需人工处理', filter: 'WAITING_FOR_CARD' },
+    { label: '等待卡片就绪', value: overview.metrics.waitingForCard ?? 0,
+      note: overview.cardStock?.needsFunding && overview.cardStock?.balanceFundingEnabled
+        ? `已有 ${overview.cardStock.needsFunding} 张卡可按订单需求自动补足余额`
+        : overview.cardStock?.autoReplenishmentEnabled
+          ? '没有合格卡时，系统会按真实订单需求自动开卡'
+          : '自动开卡已关闭；当前无合格卡时需要人工处理', filter: 'WAITING_FOR_CARD' },
     { label: '取消续费处理中', value: overview.metrics.cancellationPending ?? 0, note: '充值成功后的终态确认', filter: 'CANCELLATION_PENDING' },
     { label: '取消续费需复核', value: overview.metrics.cancellationReview ?? 0, note: '取消状态异常，需要人工处理', filter: 'CANCELLATION_REVIEW_REQUIRED' }
   ];
@@ -320,15 +325,20 @@ async function loadOverview() {
     { label: '卡余额充值待处理', value: overview.operationalBacklog?.cardFundingRiskPending ?? 0,
       note: overview.operationalBacklog?.cardFundingManualReview
         ? `${overview.operationalBacklog.cardFundingManualReview} 个需人工复核` : '只读对账或人工复核队列', filter: 'RECONCILIATION_ISSUES' }
-    ,{ label: '卡片同步', value: (overview.operationalBacklog?.cardSyncOldestAgeSeconds ?? 0) > 120 ? '延迟' : '正常',
+    ,{ label: '卡片同步', value: (overview.operationalBacklog?.cardSyncReviewRequired ?? 0) > 0
+        || (overview.operationalBacklog?.cardSyncFailureRate ?? 0) > 0
+        ? '需检查'
+        : (overview.operationalBacklog?.cardSyncOldestAgeSeconds ?? 0) > 120 ? '延迟' : '正常',
       note: `最老 ${overview.operationalBacklog?.cardSyncOldestAgeSeconds ?? 0}s · 平均 ${overview.operationalBacklog?.cardSyncAvgLatencySeconds ?? 0}s · 失败率 ${overview.operationalBacklog?.cardSyncFailureRate ?? 0}%${overview.operationalBacklog?.cardSyncReviewRequired ? ` · ${overview.operationalBacklog.cardSyncReviewRequired} 条待复核` : ''}`, view: 'overview' }
   ];
   const inventoryMetrics = [
     { label: 'Plus 可分配卡', value: overview.cardStock?.available ?? 0,
       note: overview.cardStock?.needsFunding
-        ? `已有 ${overview.cardStock.needsFunding} 张卡，补充余额后可用`
+        ? overview.cardStock?.balanceFundingEnabled
+          ? `已有 ${overview.cardStock.needsFunding} 张卡，订单到达后会自动补足余额`
+          : `已有 ${overview.cardStock.needsFunding} 张卡余额不足，需要人工处理`
         : overview.cardStock?.low
-          ? `自动补卡已开启，已到库存线：${overview.cardStock?.lowThreshold ?? 5}`
+          ? `自动开卡已关闭；当前低于库存线：${overview.cardStock?.lowThreshold ?? 5}`
           : overview.cardStock?.autoReplenishmentEnabled
             ? '没有合格卡时，系统会按真实订单需求自动开卡'
             : '人工管理库存，不发送低库存提醒', view: 'stock' }
