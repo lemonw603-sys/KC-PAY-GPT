@@ -1311,3 +1311,12 @@
 - 正式顺序现为：宽松结构观察 → 短租约内填卡 → 账单地址 → Session 邮箱 → 等待严格 PHP/零税/金额一致报价 → 清空卡字段；任何严格条件失败均付款前停止。
 - 测试：Browser `132 total / 128 passed / 4 environment-skipped / 0 failed`；v1 `532 total / 486 passed / 46 environment-skipped / 0 failed`；`npm run check`、`git diff --check` 通过。
 - 尚未部署；生产 Browser Worker 仍保持 `inactive/disabled`，真实 Browser 付款仍未验收。下一步：提交当前候选，随后按生产 release/服务/配置/数据库四层核对执行无付款发布。
+
+## 2026-09-05｜Browser 零税候选生产发布
+
+- 提交 `04e08e6` 以 Browser-only 方式发布到不可变 release `/opt/pojia/releases/20260905-browser-zero-tax-04e08e6`；v1 目录从原 release 原样复制，没有部署新的 migration 或改业务数据。
+- 归档 SHA-256 为 `4127073d7bac5533c9d3337117f5c0394b57020d85b2899815e371ee569b9761`；8 个关键 Browser 源文件在生产逐项 `sha256sum -c=OK`，生产 `npm run check` 通过。
+- 原子切换前回滚点 `/opt/pojia/releases/20260905-session-errors-d24f6d6`；切换后 Web/Worker `active`，live/ready 为 `ok/ready`，API Worker 的窄充值权限仍为 `PROVIDER_RECHARGE_WRITES_ENABLED=true`。
+- 生产 Browser `production-readonly-worker --check` 返回 `READY`，但服务继续保持 `inactive/disabled`；没有启动 Browser Worker、没有领取订单、没有 Provider/卡台写入、没有付款。
+- 发布前后均核对：RUNNING task=0、ACTIVE/UNKNOWN recharge attempt=0、ACTIVE/UNKNOWN funding attempt=0。
+- 下一步：针对当前真实 Browser 订单核对卡证据恢复状态；卡台恢复后，由本机正式 Worker接入共享订单、卡资料和账单地址，按已冻结的零税流程运行到付款前，再请求一次最终付款确认。

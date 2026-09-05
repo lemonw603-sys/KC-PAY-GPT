@@ -24,4 +24,4 @@
 - 导航新增 `Rejoin Plus`，并对价格弹窗 React 尚未完成水合的无跳转点击做最多一次有界重试。
 - BitBrowser Profile 清理旧页时保留一个空白页，避免关闭最后标签导致 Context 自行终止。
 - 回归：Browser `132 total / 128 passed / 4 environment-skipped / 0 failed`；v1 `532 total / 486 passed / 46 environment-skipped / 0 failed`。
-- 状态：代码已验证，尚未部署生产；生产 Browser Worker 仍不得据此宣称已启用或已完成真实付款验收。
+- 状态：提交 `04e08e6` 已作为 Browser-only 不可变 release `/opt/pojia/releases/20260905-browser-zero-tax-04e08e6` 发布；生产文件哈希逐项匹配，Browser `--check=READY`。Web/Worker 为 `active`、live/ready 正常；Browser Worker 仍 `inactive/disabled`，不得据此宣称已启用或已完成真实付款验收。直接回滚点为 `/opt/pojia/releases/20260905-session-errors-d24f6d6`。

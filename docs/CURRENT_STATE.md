@@ -1,6 +1,6 @@
 # 当前生产状态快照｜2026-09-05
 
-> **最新代码/现场边界（2026-09-05）**：本地已用两个独立 BitBrowser Profile 完成目标 Session 三项身份匹配后的全新 Checkout 前后对照；两次均从 `PHP ₱1,100（含 12% VAT）` 在填卡、US/DE 地址和 Session 邮箱后重算为 `PHP ₱982.14 / Tax 0`，未点击 Subscribe、未付款。相关正式代码已通过 Browser `132/128/4/0` 与 v1 `532/486/46/0`，但**尚未部署生产**。最后现场确认的生产 release 仍为 `/opt/pojia/releases/20260905-session-errors-d24f6d6`，Browser Worker `inactive/disabled`；本文下方更早的 release 描述只作历史记录，不得覆盖本条。详情见 `docs/browser-research/BITBROWSER_TAX_MULTI_SAMPLE_2026-09-05.md`。
+> **最新代码/生产边界（2026-09-05）**：本地已用两个独立 BitBrowser Profile 完成目标 Session 三项身份匹配后的全新 Checkout 前后对照；两次均从 `PHP ₱1,100（含 12% VAT）` 在填卡、US/DE 地址和 Session 邮箱后重算为 `PHP ₱982.14 / Tax 0`，未点击 Subscribe、未付款。提交 `04e08e6` 已发布为 `/opt/pojia/releases/20260905-browser-zero-tax-04e08e6`，直接回滚点 `/opt/pojia/releases/20260905-session-errors-d24f6d6`；Browser 文件哈希、`npm run check`、生产 Browser `--check=READY`、Web/Worker active、live/ready 均通过。Browser Worker 仍 `inactive/disabled`；发布后 RUNNING task=0、ACTIVE/UNKNOWN 充值资金=0、ACTIVE/UNKNOWN 补款资金=0。本文下方更早的 release 描述只作历史记录，不得覆盖本条。详情见 `docs/browser-research/BITBROWSER_TAX_MULTI_SAMPLE_2026-09-05.md`。
 
 > **2026-09-05 本机 BitBrowser 代理生命周期修复现场证据**：已停止无主 mihomo 进程并交由 `~/Library/LaunchAgents/com.ai充值业务.mihomo.plist` 管理，wrapper 使用目录锁防止重复实例。健康检查已从“端口 LISTEN”升级为单实例、监听归属和真实 HTTPS 出口请求三项检查；当前 `17897` 与 `19097` 均由同一 mihomo PID `45732` 监听，ipify 经代理返回 `38.60.246.34`，检查结果 `READY`。这只修复本机代理生命周期，不代表 ChatGPT Cloudflare challenge 已解决。
 
