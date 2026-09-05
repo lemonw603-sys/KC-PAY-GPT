@@ -14,6 +14,12 @@
 - 远程 `pojia-browser-worker` 继续 `disabled/inactive`，生产目标仍为 `LOCAL_FIXTURE`；本次发布不改变 API 路线、Provider/卡台写入或付款权限。
 - 由于本机 BitBrowser 只读 Worker 需要受控 SSH 隧道，订单 68 的重跑尚未执行；不得把“已发布”误报为 Browser 订单已完成。下一步是启动本机只读 Worker，核对任务 68 的当前租约/重试预算后再运行前置观察。
 
+## 2026-09-05｜发布后订单 68 只读重跑结果
+
+- 本机通过 SSH 隧道启动 `production-readonly-worker.js --check`，返回 `READY`；随后运行一次订单 68 的只读任务。
+- 本轮 Worker 以 `PAGE_CHECKPOINT_FAILED` fail-closed，未进入账号检查、Checkout、卡资料读取或任何付款步骤；WAL 原始记录在 `/tmp/bitbrowser-local-worker.wal.jsonl`，只包含 intent/freeze，不含 Session 明文。
+- 该结果证明发布后的执行环境可启动，但页面检查仍有运行时漂移/配置不匹配待定位；不能把它归因于卡台，也不能宣称 Browser 链路已通过。不要在未核对任务预算和页面证据前再次消耗重试次数。
+
 ## 2026-09-04｜补款失败恢复、陈旧卡抢跑修复与生产运行证据
 
 - 代码提交 `0e5a82d`：补款失败固化 `AUTO_RETRY/DO_NOT_RETRY/MANUAL_REVIEW`，仅 `FAILED+CLEARED+AUTO_RETRY` 有界自动恢复，订单+卡最多 3 个 attempt，UNKNOWN 不重试。
