@@ -269,3 +269,9 @@
 - 使用新 adapter 连接本地 `Plus Browser PH Pilot` Profile，Local API open/CDP/单 Context/close 均成功。
 - 导航 ChatGPT 时最终 URL 带 `__cf_chl_rt_tk`，页面标题为空，属于当前 Cloudflare challenge/未完成页面，不能视为正常 ChatGPT 可达。
 - 该结果推翻“公开首页已稳定可达”的旧结论：BitBrowser 控制链已接通，但当前 Profile/出口访问不稳定；未注入 Session、未创建订单、未进入 Checkout、未付款。
+
+### 2026-09-05 BitBrowser 代理/配额复核
+
+- BitBrowser `/health` 与 `/browser/list` 仍正常；Pilot Profile `status=1`，代理为 `http://127.0.0.1`，lastIp `38.60.246.34`，未提供 country/city 元数据。
+- 第二次 adapter open 在 15 秒内超时；未重复重试以避免触发 BitBrowser 开窗配额/锁死。该结果确认 Profile 生命周期/开窗稳定性尚未通过。
+- 未访问 Session、未创建订单、未进入 Checkout、未付款。

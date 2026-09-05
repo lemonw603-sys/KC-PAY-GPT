@@ -1140,3 +1140,8 @@
 
 - 新 adapter 实际 open/CDP/close 成功，但 ChatGPT 导航落到带 `__cf_chl_rt_tk` 的 Cloudflare challenge，标题为空。
 - 因此 adapter 控制面通过，页面可达性闸门失败；不得继续共享订单或真实订单。下一步先处理单 Profile/出口稳定性，并增加 challenge 分类测试。
+
+## 2026-09-05｜BitBrowser 第二次开窗超时
+
+- BitBrowser 控制面 health/list 正常，但同一 Pilot Profile 第二次 open 在 adapter 超时；未继续重试。
+- 代理出口仅有 lastIp，Profile 未给出国家元数据；不能把它认定为 PH 出口。当前需先查开窗配额/代理链稳定性，再继续页面测试。
