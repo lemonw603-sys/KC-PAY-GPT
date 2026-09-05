@@ -1199,3 +1199,10 @@
 - 路由只读：`CHATGPT_PLUS_BROWSER_V1` 为 BROWSER 且 `accepts_new_orders=1`；`LEGACY_HNSKJ_ZZSHU_V1` 为 API 且 `accepts_new_orders=0`。Browser dispatch 表仅有历史 `CANCELLED` 记录，无 QUEUED/CLAIMED。
 - 最近 Browser 路线订单均未进入 Browser attempt/run，状态为 `WAITING_FOR_SESSION`、`customer_action_code=SESSION_INVALID`；没有可安全跟踪到 Checkout 前置的活动订单。未创建测试订单，也未要求用户重新提交旧订单。
 - Worker 实际开关保持 `PROVIDER_WRITES_ENABLED=false`、`PROVIDER_CARD_WRITES_ENABLED=false`、`PROVIDER_RECHARGE_WRITES_ENABLED=true`；未调用 Provider/卡台写接口、未填卡、未付款。
+
+## 2026-09-05｜新 Browser 订单只读跟踪
+
+- 新订单 `PJV1-eqTeit7QVMx-qPqIfjJi`（内部 id `b90190c1-f86c-4f83-a441-0ebc20bc06d0`）已确认路由 `CHATGPT_PLUS_BROWSER_V1`、Session replacement `0`。
+- 状态从前台 `PREPARING` 映射回权威订单 `WAITING_FOR_CARD`；唯一关联任务为 `ASSIGN_CARD/PENDING`，`last_error_code=CARD_STOCK_EMPTY`。
+- 尚无 `recharge_attempt`、`browser_run`、`BROWSER_PREFLIGHT` 或 Checkout 前置记录；因此没有读取客户 Session 内容，也没有执行 Browser 动作。
+- 未创建测试订单、未修改订单/任务，未调用 Provider/卡台写接口、未填卡、未付款。下一步需先等待/处理卡库存资格，不能跳过卡片前置直接进入 Browser。

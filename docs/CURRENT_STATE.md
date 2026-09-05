@@ -230,3 +230,5 @@
 > **2026-09-05 部署结果**：commit `d24f6d6` 已发布到 `/opt/pojia/releases/20260905-session-errors-d24f6d6`，`/opt/pojia/current` 已切换到该 release。生产 `pojia-web`/`pojia-worker` active，Browser Worker inactive/disabled；`/health/live`=`ok`、`/health/ready`=`ready`；Provider 通用/卡片写关闭，API 充值最小写权限保持原值 `true`。未执行真实订单、Provider/卡台写入、填卡或付款。
 
 > **2026-09-05 生产只读冒烟**：新 release/version、服务状态、health、路由和错误码传播已现场核对。生产 Browser Worker 仍 inactive/disabled；最近 Browser 路线订单没有可继续到 Checkout 前置的活动 attempt/run（仅 `WAITING_FOR_SESSION`/`SESSION_INVALID`），因此未跟踪或修改任何订单，也未创建测试订单。无 Provider/卡台写入、填卡或付款。
+
+> **2026-09-05 新 Browser 订单跟踪**：`PJV1-eqTeit7QVMx-qPqIfjJi` 当前 `WAITING_FOR_CARD`，`ASSIGN_CARD/PENDING/CARD_STOCK_EMPTY`；Session replacement 次数 `0`。无 recharge_attempt、browser_run 或 BROWSER_PREFLIGHT 记录，未到 Checkout 前置；本轮未读取 Session、未创建测试订单、未修改生产数据。

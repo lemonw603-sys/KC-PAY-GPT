@@ -205,3 +205,5 @@
 **测试前体检发现（2026-09-04）**：最新 API 订单的等待卡 alert 本身有订单级去重（当前仅 1 条 SENT 通知），但自动开卡失败后在无物质变化时重复生成 `REVIEW_REQUIRED` stock job（余额不足/卡段不可用），导致订单长期 `WAITING_FOR_CARD` 并造成反复提醒观感。详见 `docs/2026-09-04_waiting-card-alert-healthcheck.md`；Browser 真实测试前需先抑制该重复供给尝试或处理该订单。
 
 > **2026-09-05 生产只读冒烟**：部署 release `20260905-session-errors-d24f6d6` 现场核对通过；Web/Worker active，Browser Worker inactive/disabled，live/ready 正常，生产路由表为 `CHATGPT_PLUS_BROWSER_V1`（BROWSER，接受新单）与 `LEGACY_HNSKJ_ZZSHU_V1`（API，不接受新单）。最近 Browser 路线订单仅停在 `WAITING_FOR_SESSION`/`SESSION_INVALID`，没有 recharge_attempt/browser_run，未进入 Checkout 前置；未创建测试订单。
+
+> **2026-09-05 新 Browser 订单只读跟踪**：新订单 `PJV1-eqTeit7QVMx-qPqIfjJi`（内部 id `b90190c1-f86c-4f83-a441-0ebc20bc06d0`）路由为 `CHATGPT_PLUS_BROWSER_V1`，Session 已写入但当前状态 `WAITING_FOR_CARD`；关联 `ASSIGN_CARD` 任务仍 `PENDING`，`last_error_code=CARD_STOCK_EMPTY`，尚未创建 `recharge_attempt`/`browser_run`，因此未进入 BROWSER_PREFLIGHT/Checkout。未读取 Session 内容，未修改订单或任务。

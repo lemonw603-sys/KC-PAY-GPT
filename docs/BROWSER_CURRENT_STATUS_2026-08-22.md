@@ -305,3 +305,9 @@ git diff --check
 - 路由表显示 Browser 路线接受新单、API 路线不接受新单；Browser dispatch 无 QUEUED/CLAIMED，仅历史 CANCELLED。
 - 最近 Browser 路线订单停在 `WAITING_FOR_SESSION`/`SESSION_INVALID`，未创建 recharge_attempt/browser_run，未进入 Checkout 前置；未创建测试订单，不修改现有订单。
 - 本轮仅只读核对，Provider/卡台写入、Session 读取、填卡、付款均为 0。
+
+## 2026-09-05｜新 Browser 订单只读跟踪
+
+- 新订单 `PJV1-eqTeit7QVMx-qPqIfjJi` 路由为 `CHATGPT_PLUS_BROWSER_V1`，Session replacement `0`；当前权威状态 `WAITING_FOR_CARD`。
+- `ASSIGN_CARD` 任务仍 `PENDING`，`last_error_code=CARD_STOCK_EMPTY`；没有 `recharge_attempt/browser_run/BROWSER_PREFLIGHT`，未进入 Checkout 前置。
+- 本轮未读取 Session 原文、未修改任务或订单、未创建测试订单、未调用 Provider/卡台写接口、未填卡、未付款。
