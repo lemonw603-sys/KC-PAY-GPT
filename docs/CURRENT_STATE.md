@@ -438,3 +438,7 @@
 ### 2026-09-06｜D2-RC1 冻结候选稿
 
 已形成 `docs/CARD_SOURCE_AND_RECONCILIATION_FROZEN_SPEC.md`。当前状态：D1 讨论完成，D2 候选等待用户整体验收；尚未进入 D3，业务代码、migration 048 和生产均未改变。终审通过后才建立决策 ID 到代码/测试的实现映射。
+
+### 2026-09-06｜D2-FINAL 已正式冻结
+
+用户已确认卡台来源切换、完整快照、Browser 付款核实和路线化对账的最终冻结规格：`docs/CARD_SOURCE_AND_RECONCILIATION_FROZEN_SPEC.md`。D2 已完成，D3 为下一阶段；本轮只完成冻结状态更新，业务代码、migration 048、生产 release、服务和数据库均未改变。进入编码前必须先补齐决策 ID 到代码/测试/验收的实施映射。

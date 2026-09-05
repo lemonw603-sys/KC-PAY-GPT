@@ -1453,3 +1453,9 @@
 
 - 汇总所有已确认决策与对抗审查修正为 `docs/CARD_SOURCE_AND_RECONCILIATION_FROZEN_SPEC.md` D2-RC1。
 - D1 已完成，D2 等待用户整份确认；禁止提前进入实现或部署。
+
+## 2026-09-06｜D2-FINAL 正式冻结
+
+- 用户明确确认 D2 冻结稿无问题，可以冻结。
+- `docs/CARD_SOURCE_AND_RECONCILIATION_FROZEN_SPEC.md` 已从 D2-RC1 更新为 D2-FINAL。
+- 下一阶段为 D3 实现映射与编码；当前没有业务代码或生产变化。
