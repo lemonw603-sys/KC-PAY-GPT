@@ -356,3 +356,5 @@ Browser 候选对齐后发现 v1 客户首页静态 `sendFile` 在候选 worktre
 > **2026-09-06 付款未知范围讨论（未最终冻结）**：用户指出网络延迟可能导致“已付款但未返回”，一笔未知不应暂停整个 Browser 链路。代码核对显示当前 UNKNOWN 主要锁定对应 run/attempt/order/card，其他订单任务仍可领取；但 executor 缺少点击后的有界 `VERIFYING_PAYMENT` 自动观察阶段，诊断 audit 又会把全局 UNKNOWN 列作 blocker，口径需收敛。建议保留同一未决订单不二次点击的局部互斥，同时让其他订单/Profile/卡台继续运行。详见 `docs/2026-09-06_payment-unknown-scope-discussion.md`；尚未实现、未部署。
 
 > **2026-09-06 三方对账现场核查**：生产总览动态计算 4 个“三方对账异常”，但 `reconciliation_cases` 为 0；4 个全部是明确 `FAILED/DEFINITE_FAILURE` 后没有外部充值订单号的 CLOSED/RECHARGE_FAILED 单，属于现有投影误报。另发现对账 SQL仍使用旧 `cards.order_id`，不适配一卡跨订单复用；并硬编码 ZZSHU，不能作为 Browser + HNSKJ/手工卡台的统一证据模型。建议保留真实资金对账核心，删除误报口径，拆分为“付款核实中/证据待同步/需人工核对”，且一单未知不暂停全链路。详见 `docs/2026-09-06_three-way-reconciliation-audit.md`；未实现、未部署。
+
+> **2026-09-06 卡台来源与对账工作线防漂移机制启用**：新增唯一状态表 `docs/CARD_SOURCE_AND_RECONCILIATION_WORKSTREAM.md`，集中记录已确认、待冻结、已否定、生产差距、实现映射和部署验收；专项报告只能提供证据，不能自行改变决策。当前阶段 D1 方案讨论，未达到 D2 冻结前不得开始业务代码实现或生产部署。后续每项必须通过“决策 ID→代码→测试→release→生产证据”闭环，避免新模型从旧文档恢复已否定方案。
