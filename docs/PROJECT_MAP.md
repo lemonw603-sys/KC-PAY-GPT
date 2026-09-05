@@ -276,3 +276,9 @@ Browser 候选对齐后发现 v1 客户首页静态 `sendFile` 在候选 worktre
 
 - 现场代码核对发现生产 Worker 仅实现 Google Chrome control lane；BitBrowser 目前只完成本地 Local API/CDP 手工预检，尚未接入 Worker runtime adapter。
 - 后续必须先实现并隔离验证 BitBrowser adapter（open/close/CDP、Profile 绑定、只读 manifest、异常安全退出），再做生产只读接线；不能通过修改 target 或启动 Worker 伪装完成。
+
+### 2026-09-05 闸门对抗式审查与补强
+
+- 现场确认旧闸门不是全链路验证；已补强 `scripts/agent-evidence-gate.sh browser-order`，额外检查本地只读 Worker、SSH DB 隧道、生产 Browser schema 和 heartbeat。
+- 本轮实际结果：本地前置依赖 READY；生产 Browser Worker 仍 inactive/disabled、target=LOCAL_FIXTURE；Provider 写权限关闭；最新订单仍 API `WAITING_FOR_CARD`。因此只能进入真实 Browser 订单的准备阶段，不能宣称 Browser 充值已跑通。
+- 完整审查记录：`docs/BROWSER_PREFLIGHT_ADVERSARIAL_AUDIT_2026-09-05.md`。

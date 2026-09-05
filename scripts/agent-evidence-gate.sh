@@ -42,6 +42,21 @@ if [[ "$mode" == "browser-order" ]]; then
   echo "$proxy_health"
   echo "LOCAL_PROXY_17897=READY"
   if command -v pgrep >/dev/null 2>&1; then echo "LOCAL_MIHOMO_PROCESSES=$(pgrep -x mihomo | wc -l | tr -d ' ')"; fi
+  # A real Browser order is not executable merely because BitBrowser and the
+  # proxy answer.  Require the shared local worker and its DB tunnel as
+  # separate, observable prerequisites; otherwise report a hard blocker.
+  if pgrep -f 'browser-mvp/src/production-readonly-worker.js' >/dev/null 2>&1; then
+    echo "LOCAL_BROWSER_WORKER=READY"
+  else
+    echo "LOCAL_BROWSER_WORKER=UNAVAILABLE" >&2
+    exit 67
+  fi
+  if pgrep -f 'ssh .* -L 13306:127.0.0.1:3306' >/dev/null 2>&1; then
+    echo "LOCAL_DB_TUNNEL=READY"
+  else
+    echo "LOCAL_DB_TUNNEL=UNAVAILABLE" >&2
+    exit 67
+  fi
 fi
 
 host="${POJIA_PRODUCTION_SSH:-root@144.34.180.184}"
@@ -72,6 +87,20 @@ const [orders] = await pool.query(`SELECT o.public_no, o.status,
 console.log(`LATEST_ORDER=${JSON.stringify(orders[0] || null)}`);
 await pool.end();
 NODE
+    # Schema and runtime evidence are distinct from service health.  The
+    # worker must have a recent heartbeat and the browser tables must exist.
+    node --input-type=module - <<'\''NODE2'\''
+import mysql from "mysql2/promise";
+const p=await mysql.createPool(process.env.DATABASE_URL);
+const [m]=await p.query("select version from schema_migrations order by applied_at desc limit 1");
+const [allTables]=await p.query("show tables");
+const t=allTables.filter((row) => Object.values(row).includes("browser_dispatch_jobs"));
+const [h]=await p.query("select setting_value from app_settings where setting_key=? limit 1", ["browser_worker_heartbeat_at"]);
+console.log(`PRODUCTION_BROWSER_SCHEMA=${t.length ? "READY" : "MISSING"}`);
+console.log(`PRODUCTION_LATEST_MIGRATION=${m[0]?.version || "UNKNOWN"}`);
+console.log(`PRODUCTION_BROWSER_HEARTBEAT=${h[0]?.setting_value || "NULL"}`);
+await p.end();
+NODE2
   '
 fi
 
