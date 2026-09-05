@@ -77,6 +77,7 @@ export const CHATGPT_PLUS_CHECKOUT_CONTRACT = Object.freeze({
   summarySelector: '[data-testid="checkout-summary-column"]',
   amountLabels: Object.freeze(['今日应付金额', 'Total due today', 'Amount due today']),
   estimatedTaxLabels: Object.freeze(['预估税费', 'Estimated tax']),
+  subtotalLabels: Object.freeze(['月度订阅', 'Monthly subscription', 'Subtotal']),
   paymentFormSelector: 'form[data-testid="checkout-form"]',
   submitControlSelector: '[data-testid="checkout-summary-column"] button[type="submit"]',
   inspectSecureCardFields: true,
@@ -100,6 +101,8 @@ export async function observeCheckout(page, {
   secureFieldTimeoutMs = 0,
   requiredCurrency = null,
   requireZeroTax = false,
+  subtotalLabels = [],
+  requireQuoteConsistency = false,
 } = {}) {
   if (!page || typeof page.url !== 'function') throw new TypeError('page is required');
   if (typeof urlPrefix !== 'string' || !urlPrefix) throw new ContractError('checkout urlPrefix is required');
@@ -112,9 +115,10 @@ export async function observeCheckout(page, {
     readText(page, currencySelector),
     readText(page, amountSelector),
   ]);
-  const [amountRow, taxRow] = await Promise.all([
+  const [amountRow, taxRow, subtotalRow] = await Promise.all([
     readMoneyRow(page, { summarySelector, labels: amountLabels }),
     readMoneyRow(page, { summarySelector, labels: estimatedTaxLabels }),
+    readMoneyRow(page, { summarySelector, labels: subtotalLabels }),
   ]);
   if ((!currency || !amount) && amountRow) {
     currency = amountRow.currency;
@@ -133,6 +137,15 @@ export async function observeCheckout(page, {
     const taxText = String(taxRow?.amount ?? '').trim();
     const taxValue = Number(taxText.replace(/,/g, ''));
     if (!Number.isFinite(taxValue) || taxValue > 0.01) throw new ContractError('checkout tax is not zero');
+  }
+  if (requireQuoteConsistency) {
+    if (!subtotalRow || !amountRow || subtotalRow.currency !== amountRow.currency) throw new ContractError('checkout quote is incomplete');
+    const subtotalValue = Number(subtotalRow.amount.replace(/,/g, ''));
+    const totalValue = Number(amountRow.amount.replace(/,/g, ''));
+    const taxValue = Number(String(taxRow?.amount ?? '0').replace(/,/g, ''));
+    if (![subtotalValue, totalValue, taxValue].every(Number.isFinite) || Math.abs(totalValue - subtotalValue - taxValue) > 0.01) {
+      throw new ContractError('checkout quote total does not match subtotal');
+    }
   }
   if (requireSecureCardFields && (!cardFieldsPresent || Object.values(cardFieldsPresent).some((present) => !present))) {
     throw new ContractError('secure card fields did not become ready');
