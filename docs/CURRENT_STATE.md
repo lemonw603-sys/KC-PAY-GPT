@@ -305,3 +305,10 @@
 - 已删除 `scripts/agent-evidence-gate.sh` 与 `browser-mvp/scripts/check-dry-run-readiness.sh`，并从 Browser npm scripts 移除 readiness 包装命令。
 - 保留代理健康与只读 smoke/test 工具；生产运行代码未改动。
 - `AGENTS.md` 已改为要求直接核对代码、release、服务/进程、数据库、请求/日志，不把脚本输出当作全链路结论。
+
+### 2026-09-05 Browser 真实订单首段结果（付款前）
+
+- 新订单 `PJV1-lxez72TytHc1O6QZxjNd` 已现场创建并冻结为 Browser（route `CHATGPT_PLUS_BROWSER_V1`）。
+- 订单当前 `WAITING_FOR_CARD`，尚未创建 `recharge_attempt`、Browser job 或 Browser run。
+- 现场卡台快照显示存在一张 `$16`、`active/AVAILABLE` 卡，但其 `last_synced_at` / `last_transaction_synced_at` 已超过新鲜度窗口，因此资格计算按规则拒绝分配；这不是“没有卡”的事实，而是“没有满足新鲜证据条件的可分配卡”。
+- 本次真实 Browser 测试已在卡资格门停住；未读取 Session、未进入 ChatGPT、未调用 Provider/卡台写入、未付款。不得重复提交或强行绕过新鲜度门槛。
