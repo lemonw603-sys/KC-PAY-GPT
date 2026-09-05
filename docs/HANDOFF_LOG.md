@@ -1106,3 +1106,8 @@
 - `POST /browser/open` 成功，CDP 接管成功；访问 `https://chatgpt.com/` 返回正常标题 `ChatGPT: Chat, Work, Create & Code with AI`。
 - 未注入 Session、未创建订单、未进入 Checkout、未读取卡片、未付款；Profile 已正常关闭。
 - 该结果只证明单 Profile/代理/公开页面可达；下一步需要客户式 Session+CDK 才能验证账号与 Checkout。
+
+## 2026-09-05｜Browser 日常效率原则
+
+- 已确认采用“三层检查”：一次性完整基线、每单自动轻量检查、异常/高风险动作人工确认。
+- 不把 BitBrowser 首次预检拆成每单人工步骤；正常订单目标是自动运行到付款前，仅在真实付款前请求一次确认。
