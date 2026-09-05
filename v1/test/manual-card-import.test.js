@@ -15,6 +15,7 @@ test('manual backup-card migration creates isolated source, audit tables and Bro
   assert.match(migration, /CREATE TABLE IF NOT EXISTS fulfillment_route_card_sources/i);
   assert.match(migration, /00000000-0000-4000-8000-000000000103/);
   assert.match(migration, /CHATGPT_PLUS_BROWSER_V1/);
+  assert.match(migration, /WHERE fr\.card_provider_account_id = pa\.id/i);
 });
 
 test('manual workbook parser rejects non-OOXML bytes before database access', () => {

@@ -51,7 +51,7 @@ INSERT INTO fulfillment_route_card_sources (fulfillment_route_id, provider_accou
 SELECT fr.id, pa.id, 100
 FROM fulfillment_routes fr
 INNER JOIN provider_accounts pa ON pa.provider_code='hnskj' AND pa.environment='PRODUCTION' AND pa.purpose='CARD'
-WHERE fr.route_code='CHATGPT_PLUS_BROWSER_V1'
+WHERE fr.card_provider_account_id = pa.id
 ON DUPLICATE KEY UPDATE priority = VALUES(priority), enabled = 1;
 
 INSERT INTO fulfillment_route_card_sources (fulfillment_route_id, provider_account_id, priority)
