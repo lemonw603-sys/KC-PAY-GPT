@@ -1122,3 +1122,10 @@
 
 - 代码现场复核：`production-readonly-worker.js` 固定使用 `GoogleChromeControlRuntimeAdapter`；当前配置 target 只支持 `LOCAL_FIXTURE/EXTERNAL_READONLY`，没有 BitBrowser Local API adapter。
 - 本地 BitBrowser 公开首页预检不等于共享 Worker 可消费真实订单。下一步应先做 BitBrowser runtime adapter 和隔离测试，再接生产只读 Worker；不直接改 env/启动生产/切换路线。
+
+## 2026-09-05｜BitBrowser adapter 第一批实现
+
+- 新增只读 `BitBrowserControlRuntimeAdapter`，接入统一 RuntimeAdapter 合同；支持 health/list/open/CDP/close，拒绝写入 manifest、未批准 Profile 和非 ChatGPT Profile。
+- 扩展执行模式 `BITBROWSER_CONTROL`；新增 3 个隔离测试，全部通过；Browser `npm run check` 通过。
+- 当前仍未接入 `production-readonly-worker.js`、共享队列或生产配置；未部署、未启动 Worker、未创建新订单、未付款。
+- 下一批：把 adapter 接入 Worker 的 runtime factory/config，增加 Profile/代理漂移、断线、租约丢失和安全关闭测试，再做本地共享订单只读联调。
