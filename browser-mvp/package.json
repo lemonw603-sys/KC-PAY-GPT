@@ -12,7 +12,6 @@
     "worker:readonly:check": "node src/production-readonly-worker.js --check",
     "smoke:worker:readonly": "bash scripts/smoke-production-readonly-worker.sh",
     "test": "node --test",
-    "dry-run:readiness": "bash scripts/check-dry-run-readiness.sh",
     "dry-run:shared": "bash scripts/run-shared-dry-run.sh",
     "soak": "node scripts/soak.js"
   },

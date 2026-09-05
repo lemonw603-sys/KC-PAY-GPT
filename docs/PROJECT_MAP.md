@@ -288,3 +288,9 @@ Browser 候选对齐后发现 v1 客户首页静态 `sendFile` 在候选 worktre
 - 通过生产数据库直接只读核对：`fulfillment_routes` 中 ChatGPT Plus 当前 `BROWSER.accepts_new_orders=1`、`API.accepts_new_orders=0`；`browser_dispatch_enabled=true`，Browser Profile ACTIVE，heartbeat 持续更新。
 - 因此后台 Browser 按钮不可点击的原因是它已经是当前默认路线（前端对当前选中项设置 disabled），不是“无法切换”。此前依据旧 API 订单推断当前默认路线为 API 属于错误，已纠正。
 - 旧 API 订单保持 API 路线冻结；新提交订单将按 Browser 路线创建。付款写权限仍关闭。
+
+### 2026-09-05 检查脚本收敛
+
+- 按用户决定删除两个容易被误读为“系统已就绪”的汇总闸门：`scripts/agent-evidence-gate.sh`、`browser-mvp/scripts/check-dry-run-readiness.sh`。
+- 保留 `scripts/bitbrowser-proxy-health.sh` 与 Browser readonly smoke/test 脚本；它们只做运行健康或测试，不下业务结论。
+- 事实核对改回直接读取代码、生产服务、数据库、日志和真实订单证据；不再依赖单一汇总脚本。

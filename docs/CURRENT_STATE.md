@@ -299,3 +299,9 @@
 - 最新生产数据库只读核对显示 ChatGPT Plus 当前默认路线已是 Browser：`BROWSER.accepts_new_orders=1`、`API.accepts_new_orders=0`；Browser dispatch=true、Profile ACTIVE、heartbeat 持续更新。
 - 后台 Browser 按钮不可点击是因为当前已经选中 Browser，前端按设计禁用当前选中项；不是切换失败。
 - 之前看到的最新订单为旧 API 订单，不能代表当前默认路线；该订单路线冻结不变。新订单应按 Browser 创建，付款写权限仍关闭。
+
+### 2026-09-05 检查脚本收敛
+
+- 已删除 `scripts/agent-evidence-gate.sh` 与 `browser-mvp/scripts/check-dry-run-readiness.sh`，并从 Browser npm scripts 移除 readiness 包装命令。
+- 保留代理健康与只读 smoke/test 工具；生产运行代码未改动。
+- `AGENTS.md` 已改为要求直接核对代码、release、服务/进程、数据库、请求/日志，不把脚本输出当作全链路结论。
