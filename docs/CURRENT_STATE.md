@@ -338,3 +338,7 @@
 - 当前 release：`/opt/pojia/releases/20260905-card-sync-backoff-fbf789c`；Web/Worker 与四个卡片相关 timer active，live/ready 正常。
 - 已通过正式同步服务为卡 `2833` 新建一项只读同步任务。HNSKJ 仍明确返回 maintenance；新代码将任务保持 `PENDING`、`attempts=0`、下次执行时间延后 300 秒，证明不再被 15 秒 timer 消耗重试预算或误送人工。
 - Browser 测试订单 `PJV1-lxez72TytHc1O6QZxjNd` 仍 `WAITING_FOR_CARD`，等待上游恢复后取得新鲜证据；未读取 Session、未开卡/补余额、未付款。
+
+### 2026-09-05｜新鲜度与 Provider 退避接续点
+
+生产已核对 `retryAfterMs` 维护退避修复生效；15 分钟证据门槛保持不变。当前 Browser 订单等待的直接原因是 Provider 只读同步不可用，非 Session 或路由错误。Provider 恢复后应由同步任务自动刷新并重新评估卡资格，无需客户重复提交；禁止绕过新鲜度或伪造同步时间。

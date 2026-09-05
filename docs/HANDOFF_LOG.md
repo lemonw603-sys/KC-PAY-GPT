@@ -1294,3 +1294,10 @@
 - 当前订单已幂等补建 `BROWSER_PREFLIGHT`；本机 Worker 使用独立 BitBrowser Profile id，Session 注入成功。
 - 安全结构诊断确认账号接口 HTTP 200、`has_active_subscription=false`，但保留历史 `subscription_plan=chatgptplusplan`。旧解析器因此返回 `ACCOUNT_STATUS_UNKNOWN`，不是客户 Session 格式错误，也不是卡台问题。
 - 修复只调整这一权威判定：活动布尔为 false 即当前 FREE；活动为 true 仍按 plan 区分 Plus/其他付费，字段缺失仍为 UNKNOWN。未输出 Session/Token/邮箱原文，未读取卡资料、未付款。
+
+### 2026-09-05｜新鲜度机制当前结论与后续接续点
+
+- 已现场核对生产 release `/opt/pojia/releases/20260905-session-errors-d24f6d6`：`card-sync-job-service.js` 已包含 Provider maintenance 的 `retryAfterMs` 退避；`pojia-card-read-sync.timer` active，最近运行正常。
+- 15 分钟门槛仍按设计作为付款/分卡时证据有效期，不能直接关闭或手工伪造新鲜时间。
+- 当前订单卡住的根因是 Provider 只读同步仍不可用，导致已有 `$16` 卡没有新的余额/交易证据；不是 Session、Browser 路由或本地“无卡”事实。
+- Provider 恢复后由现有同步任务自动重试；成功后重新计算库存资格，订单无需重新提交 Session/CDK。若 Provider 持续不可用，只能等待或切换到已验证可用的执行上游，不绕过门槛。
