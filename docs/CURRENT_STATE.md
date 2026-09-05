@@ -9,6 +9,8 @@
 > **2026-09-04 补给恢复最新增量**：生产 release 为 `/opt/pojia/releases/20260904-funding-recovery-race-4bf84f9`，Web/Worker/只读同步、补款、补款对账和补卡 timer 均 active，`/health/ready=ready`，migration 最新为 045。补款明确失败有界恢复与陈旧卡先同步修复已部署。原测试订单在部署前已因自动开卡而继续，API 外部订单 9440 最终明确失败，无 PURCHASE，卡 5980 已安全释放为 `$16/AVAILABLE`。
 
 > 只保留当前有效事实；历史过程查 `HANDOFF_LOG.md`，方向与顺序查 `PROJECT_MAP.md`，全链路和验收细则查 `PROJECT_OPERATING_MODEL.md`。
+
+> **2026-09-05 代码修复状态**：Browser Checkout 导航已适配当前 ChatGPT Profile 菜单入口，且持久 Context 的 Session 注入会先删除旧 Session cookie 分块再写入本单 cookie；不清理 `__cf_bm` 等非 Session cookie。代码提交 `92fc70e`，Browser 全量回归 `120 pass/4 skipped/0 fail`。生产仍运行 `/opt/pojia/releases/20260905-browser-preflight-3cd3d57`，本修复尚未部署；Browser Worker 仍 inactive/disabled，付款/Provider/卡台写入均未执行。
 > 本快照已现场核对生产 release、systemd、Worker 进程环境、数据库 Provider account 和只读 readiness；Browser 主线只读回归证据见 `docs/2026-09-01_browser-main-readonly-regression.md`。
 ## 1. 代码、release 与服务
 

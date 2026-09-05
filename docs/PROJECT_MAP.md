@@ -7,6 +7,8 @@
 > **2026-09-04 补给与恢复机制最新事实**：生产已部署 `/opt/pojia/releases/20260904-funding-recovery-race-4bf84f9`，包含补款明确失败有界恢复 `0e5a82d` 与“陈旧低余额卡先同步、禁止抢跑开卡” `4bf84f9`。部署前，卡台账户余额恢复到 `$34.83`，系统在旧卡 9051 证据陈旧时抢先开了 `2833/5980/$16`，随后自动分配并提交 API 订单 9440，Provider 明确失败“验证策略失败，请稍后重试”。无 PURCHASE，卡 5980 仍 `$16/AVAILABLE`并已安全释放；测试订单已终态失败，不再对其重试或补款。
 
 > **用途**：只回答四件事：项目目标、当前生产事实、已完成/未完成、唯一执行顺序。
+
+> **2026-09-05 Browser Checkout 入口修复已完成**：针对真实只读观察发现的页面漂移，导航器现在在首页 Upgrade 不存在时，会安全点击可见 Profile 菜单（`[data-testid="accounts-profile-button"]`）后再定位 Upgrade；所有候选仍经过非表单导航控件校验，付款提交控件继续禁止。持久 BitBrowser Context 注入 Session 前只清理旧的 `__Secure-next-auth.session-token` 分块，不触碰 Cloudflare/代理 Cookie，避免跨订单残留。Browser 全量（本轮 `npm test`：120 pass/4 skip/0 fail）通过；提交 `92fc70e`。尚未部署生产，尚未重跑真实订单前置观察。
 > **最后统一核对**：2026-09-02 00:32 CST。已对照前后端代码，并通过 SSH 复核部署后的生产 release、systemd、Worker 实际进程环境、只读 readiness 和新卡实时库存；本轮未执行 Provider 写入或付款。
 > 历史报告不能覆盖本地图；实时生产事实优先，变化后必须同步更新本地图与 `CURRENT_STATE.md`。
 > 全链路、控制矩阵、自动补给状态机、库存最小模型、资金边界、通知、回滚和验收细则统一见 `docs/PROJECT_OPERATING_MODEL.md`。

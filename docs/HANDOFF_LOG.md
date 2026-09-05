@@ -1,5 +1,13 @@
 # 交接记录
 
+## 2026-09-05｜Checkout 入口漂移与持久 Session 残留修复
+
+- 现场根因：ChatGPT 首页不再直接渲染旧 `aria-label=Upgrade`，必须先打开 `[data-testid="accounts-profile-button"]`；持久 BitBrowser Context 只 `addCookies()` 会留下上一单的 Session 分块。
+- 已修复 `browser-mvp/src/chatgpt-checkout-navigator.js`：增加 Profile 菜单回退路径，选择最后一个实际可点击的可见控件；每次点击继续拒绝表单内控件，保持只读边界。
+- 已修复 `browser-mvp/src/session-bootstrap.js`：注入当前 Session 前仅清理 `__Secure-next-auth.session-token` 及其分块，保留 Cloudflare/代理 Cookie；返回替换数量用于审计。
+- 新增本地 fixture 覆盖 Profile→Upgrade→Checkout 和旧 cookie 清理；Browser 全量 `120 pass/4 skipped/0 fail`。
+- Commit：`92fc70e`。未部署、未启动生产 Browser Worker、未读取客户 Session、未调用 Provider/卡台、未付款。下一步是部署前只读审查/发布候选，然后退还任务 68 因实现缺陷消耗的重试次数并重跑 `BROWSER_PREFLIGHT`。
+
 ## 2026-09-04｜补款失败恢复、陈旧卡抢跑修复与生产运行证据
 
 - 代码提交 `0e5a82d`：补款失败固化 `AUTO_RETRY/DO_NOT_RETRY/MANUAL_REVIEW`，仅 `FAILED+CLEARED+AUTO_RETRY` 有界自动恢复，订单+卡最多 3 个 attempt，UNKNOWN 不重试。

@@ -4,6 +4,8 @@
 
 > 这是 Browser 任务的最短接班入口，只描述当前有效状态，不替代需求基线、Browser 基线和决策账本。历史研究报告用于证据追溯，不能覆盖本文指向的当前合同。
 
+> **2026-09-05 最新代码增量**：Checkout 入口已兼容当前 Profile 菜单路径（旧首页 Upgrade 缺失时先点 `[data-testid="accounts-profile-button"]`，再点菜单内 Upgrade）；持久 Profile 写入 Session 前清理旧 Session cookie 分块，避免跨订单串号。提交 `92fc70e`，Browser 回归 `120/4/0`。该增量尚未部署生产；真实 Browser 订单仍停在只读前置观察，不得宣称付款链路已验收。
+
 > **2026-08-30 当前覆盖说明：** Browser worktree 已快进至当时主线，且没有独有 tracked 提交；生产仍运行旧 release `bba4105`，Browser Worker 为 `inactive/disabled`。生产启动/停止/回滚演练已完成，但真实 ChatGPT 生产形态非付款观察尚未完成。`f95e6bb` 已修正 `SUBMIT_RECHARGE` 的 API 耦合、Browser PREPARE 的 ZZSHU 语义泄漏、attempt/job 非原子、默认切换未检查 Browser Worker 心跳、领取未按 executor 能力隔离，并实现全局默认充值方式。回归：v1 全量 471/433 pass/0 fail/38 skipped，Browser 全量 107/103 pass/0 fail/4 skipped，二次定向 88/88 + 9/9。当前下一步是候选构建、部署确认与生产非付款验收；部署前不得消费测试 CDK，真实付款仍未就绪。本文后续早期阶段描述仅作历史证据，若冲突以本覆盖说明、`docs/CURRENT_STATE.md` 和 D-105 为准。
 
 ## 1. 当前阶段
