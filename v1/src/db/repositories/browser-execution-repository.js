@@ -101,7 +101,8 @@ function authoritativePaymentSnapshot(row, now) {
       'CARD_CONSUMPTION_NOT_RESERVED'
     );
   }
-  if (!row.card_provider_account_id || row.card_provider_account_id !== row.route_card_provider_account_id) {
+  if (!row.card_provider_account_id
+    || (row.sync_tier !== 'MANUAL_IMPORT' && row.card_provider_account_id !== row.route_card_provider_account_id)) {
     throw new BrowserExecutionError('card provider does not match the frozen route', 'CARD_PROVIDER_MISMATCH');
   }
   if (!row.provider_card_id) {
@@ -119,14 +120,17 @@ function authoritativePaymentSnapshot(row, now) {
   if (balance < minimum) {
     throw new BrowserExecutionError('card balance is below the order minimum', 'CARD_BALANCE_INSUFFICIENT');
   }
-  const synced = timestampIso(row.card_last_synced_at, 'card sync time');
+  const synced = row.sync_tier === 'MANUAL_IMPORT'
+    ? { iso: row.card_last_synced_at ? new Date(row.card_last_synced_at).toISOString() : null, timestamp: now.getTime() }
+    : timestampIso(row.card_last_synced_at, 'card sync time');
   const ageMs = now.getTime() - synced.timestamp;
-  if (ageMs < 0 || ageMs > PAYMENT_SNAPSHOT_MAX_AGE_MS) {
+  if (row.sync_tier !== 'MANUAL_IMPORT' && (ageMs < 0 || ageMs > PAYMENT_SNAPSHOT_MAX_AGE_MS)) {
     throw new BrowserExecutionError('card verification is stale', 'CARD_CHECK_STALE');
   }
-  const transactionSynced = timestampIso(row.card_last_transaction_synced_at, 'card transaction sync time');
-  const transactionAgeMs = now.getTime() - transactionSynced.timestamp;
-  if (transactionAgeMs < 0 || transactionAgeMs > PAYMENT_SNAPSHOT_MAX_AGE_MS) {
+  const transactionSynced = row.sync_tier === 'MANUAL_IMPORT'
+    ? null : timestampIso(row.card_last_transaction_synced_at, 'card transaction sync time');
+  const transactionAgeMs = transactionSynced ? now.getTime() - transactionSynced.timestamp : null;
+  if (transactionSynced && (transactionAgeMs < 0 || transactionAgeMs > PAYMENT_SNAPSHOT_MAX_AGE_MS)) {
     throw new BrowserExecutionError('card transaction evidence is stale', 'CARD_TRANSACTION_CHECK_STALE');
   }
   const facts = {
@@ -145,7 +149,7 @@ function authoritativePaymentSnapshot(row, now) {
     minimumBalanceMicros: minimum.toString(),
     cardCredentialsDigest: cardCredentialsDigest(row.card_credentials_ciphertext),
     cardLastSyncedAt: synced.iso,
-    cardLastTransactionSyncedAt: transactionSynced.iso
+    cardLastTransactionSyncedAt: transactionSynced?.iso || null
   };
   return {
     hash: createHash('sha256').update(JSON.stringify(facts)).digest('hex'),
@@ -186,6 +190,7 @@ async function lockRunContext(connection, runId) {
             o.minimum_required_card_balance,
             c.id AS card_id, c.order_id AS card_order_id,
             c.provider_account_id AS card_provider_account_id,
+            c.sync_tier,
             c.provider_card_id, c.status AS card_status,
             c.current_balance AS card_current_balance,
             c.card_credentials_ciphertext,

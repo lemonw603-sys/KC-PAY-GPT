@@ -49,6 +49,7 @@ import {
 import { createCardOperationalOverrideService } from './services/card-operational-override-service.js';
 import { createAdminStartBusinessService } from './services/admin-start-business-service.js';
 import { buildAdminReadinessSummary } from './services/admin-readiness-summary.js';
+import { createManualCardImportService } from './services/manual-card-import-service.js';
 
 const config = loadConfig();
 const pool = createDatabasePool(config.database);
@@ -139,6 +140,9 @@ const cancelAdminOrder = createOrderCancellationService({ pool });
 const reconciliationCases = createReconciliationCaseService({ pool });
 const browserAdmin = createBrowserAdminService({ pool });
 const browserBillingAddressAdmin = createBrowserBillingAddressAdminService({ pool });
+const manualCardImport = createManualCardImportService({
+  pool, encryptionKey: config.sessionEncryptionKey, panHmacKey: config.cardIntakePanHmacKey
+});
 const operationsCsv = createOperationsCsvExportService({ pool });
 const traceabilityOperations = createTraceabilityOperationsService({
   pool,
@@ -313,6 +317,8 @@ const app = createApp({
   ,resolveAdminReconciliationCase: reconciliationCases.resolve
   ,getAdminBillingAddressSettings: browserBillingAddressAdmin.get
   ,setAdminBillingAddressSettings: browserBillingAddressAdmin.set
+  ,previewManualCardImport: manualCardImport.preview
+  ,commitManualCardImport: manualCardImport.commit
   ,listAdminBrowserDispatchJobs: browserAdmin.listDispatchJobs
   ,listAdminBrowserRuns: browserAdmin.listRuns
   ,getAdminBrowserRun: browserAdmin.getRun

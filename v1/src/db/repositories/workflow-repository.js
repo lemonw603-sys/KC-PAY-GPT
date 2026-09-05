@@ -207,17 +207,24 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
           `SELECT id, provider_card_id, current_balance
            FROM cards
            WHERE ${eligibleInventoryCardSql('cards', '?')}
-             AND provider_account_id = ?
+             AND EXISTS (SELECT 1 FROM fulfillment_route_card_sources src
+                         WHERE src.fulfillment_route_id = ?
+                           AND src.provider_account_id = cards.provider_account_id
+                           AND src.enabled = 1)
            ORDER BY current_balance ASC, created_at ASC
            LIMIT 1 FOR UPDATE SKIP LOCKED`,
-          [String(order.minimum_required_card_balance), order.card_provider_account_id]
+            [String(order.minimum_required_card_balance), order.fulfillment_route_id]
         );
         const alertKey = `order-waiting-card:${orderId}`;
         if (cards.length === 0) {
           const [refreshCandidates] = await connection.query(
             `SELECT id FROM cards
              WHERE ${refreshableInventoryCardSql('cards')}
-               AND provider_account_id = ?
+               AND sync_tier <> 'MANUAL_IMPORT'
+               AND EXISTS (SELECT 1 FROM fulfillment_route_card_sources src
+                           WHERE src.fulfillment_route_id = ?
+                             AND src.provider_account_id = cards.provider_account_id
+                             AND src.enabled = 1)
                AND (last_transaction_synced_at IS NULL
                  OR last_transaction_synced_at < DATE_SUB(CURRENT_TIMESTAMP(3), INTERVAL 15 MINUTE))
                AND NOT EXISTS (
@@ -229,7 +236,7 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
                )
              ORDER BY COALESCE(last_transaction_synced_at, created_at) ASC
              LIMIT 1 FOR UPDATE SKIP LOCKED`,
-            [order.card_provider_account_id]
+            [order.fulfillment_route_id]
           );
           let refreshQueued = false;
           if (refreshCandidates.length > 0) {

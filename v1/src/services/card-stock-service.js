@@ -333,7 +333,7 @@ export function createCardStockService({ pool, sessionEncryptionKey, panHmacKey 
       pool.query(`SELECT setting_key, setting_value FROM app_settings
         WHERE setting_key IN ('default_card_type_id','default_open_card_amount','card_max_successful_payments')`),
       pool.query(`SELECT c.provider_account_id, c.provider_card_id, c.card_type_id, c.last4, c.status, c.inventory_status,
-          c.funded_amount, c.current_balance, c.currency, active_assignment.order_id AS active_order_id,
+          c.funded_amount, c.current_balance, c.currency, c.sync_tier, active_assignment.order_id AS active_order_id,
           co.allocation_policy, co.product_code AS allocation_product_code,
           co.reason AS allocation_reason,
           (${eligibleInventoryCardSql('c', `COALESCE((SELECT CAST(setting_value AS DECIMAL(18,6))
@@ -411,7 +411,8 @@ export function createCardStockService({ pool, sessionEncryptionKey, panHmacKey 
           ? row.last_transaction_synced_at.toISOString() : row.last_transaction_synced_at || null,
         syncStatus: row.sync_status || null,
         syncError: row.sync_error || null,
-        reconciliationStatus: mismatchIds.has(String(row.provider_card_id)) ? 'MISMATCH'
+        reconciliationStatus: row.sync_tier === 'MANUAL_IMPORT' ? 'MANUAL_SNAPSHOT'
+          : mismatchIds.has(String(row.provider_card_id)) ? 'MISMATCH'
           : ['PENDING', 'RUNNING'].includes(row.sync_status) ? 'SYNCING'
           : row.sync_status === 'REVIEW_REQUIRED' ? 'REVIEW_REQUIRED'
             : !row.last_transaction_synced_at ? 'STALE' : 'OK',

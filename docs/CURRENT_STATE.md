@@ -16,6 +16,14 @@
 
 > **2026-09-05 代码修复状态**：Browser Checkout 导航已适配当前 ChatGPT Profile 菜单入口，且持久 Context 的 Session 注入会先删除旧 Session cookie 分块再写入本单 cookie；不清理 `__cf_bm` 等非 Session cookie。代码提交 `92fc70e`，Browser 全量回归 `120 pass/4 skipped/0 fail`。生产已切换至 `/opt/pojia/releases/20260905-browser-checkout-92fc70e`，备份完整性 `OK`，live/ready 均正常；Browser Worker 仍 inactive/disabled，付款/Provider/卡台写入均未执行。
 > 本快照已现场核对生产 release、systemd、Worker 进程环境、数据库 Provider account 和只读 readiness；Browser 主线只读回归证据见 `docs/2026-09-01_browser-main-readonly-regression.md`。
+
+## 2026-09-05 备用卡台接入开发状态（本地，未部署）
+
+- `/Users/lemon/Downloads/卡片列表.xls` 已现场解析：文件签名为 OOXML ZIP，17 列表头、2 行数据；导入器按签名和固定表头解析，不依赖扩展名。
+- 已新增 `v1/migrations/048_manual_backup_card_import.sql`、`v1/src/services/manual-card-import-service.js` 和后台上传→预览→确认导入入口。数据写入独立 `manual_excel` 卡源，`sync_tier=MANUAL_IMPORT`；不调用 Provider，不进入自动开卡/补余额/卡台同步。
+- Browser 卡资格与付款前检查对手工快照走正式分支：不伪造 15 分钟 Provider 交易同步时间，仍保留余额、绑定、消费账本、退款争议、租约和资金栅栏；路线卡源表支持 HNSKJ 优先、手工卡兜底。
+- 模板两张卡余额为 `$2`、`$0`，均应为不可分配；完整 PAN/CVC 未写入代码、文档、日志或测试 fixture。
+- 验证：v1 定向 105/105 通过，Browser 既有 128/132（4 环境跳过）基线通过，Node 语法检查通过，真实模板解析通过。未执行生产迁移、未导入生产、未启动 Browser Worker、未创建订单或付款。
 ## 1. 代码、release 与服务
 
 - 生产 `/opt/pojia/current`：`/opt/pojia/releases/20260904-funding-recovery-race-4bf84f9`，直接回滚点 `/opt/pojia/releases/20260904-funding-recovery-0e5a82d`，再前为 `20260904-funding-integer-8caccfb`。

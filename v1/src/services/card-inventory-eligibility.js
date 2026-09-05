@@ -6,8 +6,10 @@ export function eligibleInventoryCardSql(alias = 'c', minimumSql = '?', { produc
     AND ${alias}.intake_status IN ('ACCEPTED','LEGACY_ACCEPTED')
     AND LOWER(${alias}.status) IN ('active','available','usable','ready')
     AND ${alias}.card_credentials_ciphertext IS NOT NULL
-    AND ${alias}.last_transaction_synced_at IS NOT NULL
-    AND ${alias}.last_transaction_synced_at >= DATE_SUB(CURRENT_TIMESTAMP(3), INTERVAL 15 MINUTE)
+    AND (${alias}.sync_tier = 'MANUAL_IMPORT' OR (
+      ${alias}.last_transaction_synced_at IS NOT NULL
+      AND ${alias}.last_transaction_synced_at >= DATE_SUB(CURRENT_TIMESTAMP(3), INTERVAL 15 MINUTE)
+    ))
     AND ${alias}.current_balance >= ${minimumSql}
     AND (SELECT COUNT(*) FROM card_consumption_ledger eligible_usage
       WHERE eligible_usage.card_id = ${alias}.id
@@ -46,6 +48,7 @@ export function fundableInventoryCardSql(alias = 'c', { productCode = 'plus' } =
     AND LOWER(${alias}.status) IN ('active','available','usable','ready')
     AND ${alias}.card_credentials_ciphertext IS NOT NULL
     AND ${alias}.current_balance IS NOT NULL
+    AND ${alias}.sync_tier <> 'MANUAL_IMPORT'
     AND ${alias}.last_transaction_synced_at IS NOT NULL
     AND ${alias}.last_transaction_synced_at >= DATE_SUB(CURRENT_TIMESTAMP(3), INTERVAL 15 MINUTE)
     AND (SELECT COUNT(*) FROM card_consumption_ledger fundable_usage
@@ -85,6 +88,7 @@ export function refreshableInventoryCardSql(alias = 'c', { productCode = 'plus' 
   if (!/^[a-z0-9_-]{1,32}$/.test(normalizedProduct)) throw new TypeError('Invalid product code');
   return `${alias}.inventory_status IN ('AVAILABLE','ASSIGNED','DEPLETED','PROVISIONING')
     AND ${alias}.intake_status IN ('ACCEPTED','LEGACY_ACCEPTED')
+    AND ${alias}.sync_tier <> 'MANUAL_IMPORT'
     AND ${alias}.card_credentials_ciphertext IS NOT NULL
     AND (SELECT COUNT(*) FROM card_consumption_ledger refresh_usage
       WHERE refresh_usage.card_id = ${alias}.id

@@ -153,6 +153,9 @@ const elements = {
   ,cardFundingPrev: document.querySelector('#card-funding-prev')
   ,cardFundingNext: document.querySelector('#card-funding-next')
   ,cardFundingStatus: document.querySelector('#card-funding-status')
+  ,manualCardImportForm: document.querySelector('#manual-card-import-form')
+  ,manualCardImportFile: document.querySelector('#manual-card-import-file')
+  ,manualCardImportPreview: document.querySelector('#manual-card-import-preview')
 };
 
 function escapeHtml(value) {
@@ -1986,6 +1989,22 @@ elements.copyCdks.addEventListener('click', async () => {
     elements.generatedCdks.select();
     showNotice('自动复制失败，已选中卡密，请手动复制。');
   }
+});
+elements.manualCardImportForm?.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const file = elements.manualCardImportFile?.files?.[0];
+  if (!file) return;
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  let binary = ''; for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  try {
+    const preview = await api('/api/v1/admin/manual-cards/preview', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ filename: file.name, fileBase64: btoa(binary) }) });
+    elements.manualCardImportPreview.innerHTML = `<p>共 ${preview.rowCount} 行：新增 ${preview.insertCount}，更新 ${preview.updateCount}，拒绝 ${preview.rejectedCount}</p>${preview.rows.map((row) => `<div><span><strong>序列号 ${escapeHtml(row.sequence)}… · 尾号 ${escapeHtml(row.last4 || '—')}</strong><small>余额 $${escapeHtml(row.balance || '—')} · ${escapeHtml(row.state || '—')}${row.errors.length ? ` · ${escapeHtml(row.errors.join('、'))}` : ''}</small></span><em>${escapeHtml(row.status)}</em></div>`).join('')}<button class="danger-button" type="button" id="commit-manual-card-import">确认导入 ${preview.insertCount + preview.updateCount} 张</button>`;
+    elements.manualCardImportPreview.querySelector('#commit-manual-card-import')?.addEventListener('click', async () => {
+      const confirmation = window.prompt(`请输入确认词：${preview.confirmation}`)?.trim(); if (!confirmation) return;
+      try { await sensitiveApi('/api/v1/admin/manual-cards/import', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ filename: file.name, fileBase64: btoa(binary), confirmation }) }); showNotice('备用卡已导入独立卡池，仅供 Browser 使用。', 'success'); await loadStock(); }
+      catch { showNotice('备用卡导入失败，库存没有改变。'); }
+    });
+  } catch { showNotice('文件解析失败，请确认是备用卡台导出的 Excel。'); }
 });
 document.addEventListener('click', (event) => {
   const methodButton = event.target.closest('.default-recharge-method');

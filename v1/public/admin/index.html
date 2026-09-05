@@ -67,6 +67,15 @@
             <div class="card-heading"><div><p class="section-kicker">订单分布</p><h2>处理状态</h2></div><button class="text-button" type="button" data-open-orders>查看全部</button></div>
             <div class="status-list" id="status-list"></div>
           </section>
+          <section class="card stock-card" id="manual-card-import-card">
+            <div class="card-heading"><div><p class="section-kicker">备用卡台</p><h2>导入备用卡</h2></div><span class="readonly-badge">仅供 Browser</span></div>
+            <p class="card-description">上传备用卡台导出的 Excel。导入前先预览；完整卡号和 CVC 只会加密保存，不会显示在页面或日志中。</p>
+            <form id="manual-card-import-form">
+              <label>卡片文件（.xls / .xlsx）<input id="manual-card-import-file" type="file" accept=".xls,.xlsx" required></label>
+              <button class="primary-small" type="submit">预览导入</button>
+            </form>
+            <div id="manual-card-import-preview" class="mini-list"></div>
+          </section>
           <section class="card settings-card">
             <div class="card-heading"><div><p class="section-kicker">运行控制</p><h2>系统开关</h2></div><span class="write-badge">人工控制</span></div>
             <div class="setting-list" id="setting-list"></div>

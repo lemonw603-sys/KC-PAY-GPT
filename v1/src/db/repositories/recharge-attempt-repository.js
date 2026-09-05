@@ -112,6 +112,7 @@ export function createRechargeAttemptRepository(pool) {
                   fr.executor_kind, fr.recharge_provider_account_id,
                   pa.provider_code, pa.write_enabled,
                   c.id AS card_id, c.status AS card_status, c.current_balance AS card_balance,
+                  c.sync_tier,
                   c.currency AS card_currency,
                   c.card_credentials_ciphertext,
                   c.last_synced_at AS card_last_synced_at,
@@ -180,16 +181,16 @@ export function createRechargeAttemptRepository(pool) {
         if (!Number(orderRow.prepayment_ready)) {
           throw new RechargeAttemptError('recharge preparation is not complete', 'PREPAYMENT_NOT_READY');
         }
-        const cardSyncedAt = orderRow.card_last_synced_at
+        const cardSyncedAt = orderRow.sync_tier === 'MANUAL_IMPORT' ? now.getTime() : orderRow.card_last_synced_at
           ? new Date(orderRow.card_last_synced_at).getTime() : NaN;
-        if (!Number.isFinite(cardSyncedAt) || now.getTime() - cardSyncedAt > 15 * 60_000) {
+        if (orderRow.sync_tier !== 'MANUAL_IMPORT' && (!Number.isFinite(cardSyncedAt) || now.getTime() - cardSyncedAt > 15 * 60_000)) {
           throw new RechargeAttemptError('card verification is stale', 'CARD_CHECK_STALE');
         }
-        const transactionSyncedAt = orderRow.card_last_transaction_synced_at
+        const transactionSyncedAt = orderRow.sync_tier === 'MANUAL_IMPORT' ? null : orderRow.card_last_transaction_synced_at
           ? new Date(orderRow.card_last_transaction_synced_at).getTime() : NaN;
-        if (!Number.isFinite(transactionSyncedAt)
+        if (orderRow.sync_tier !== 'MANUAL_IMPORT' && (!Number.isFinite(transactionSyncedAt)
           || transactionSyncedAt > now.getTime()
-          || now.getTime() - transactionSyncedAt > 15 * 60_000) {
+          || now.getTime() - transactionSyncedAt > 15 * 60_000)) {
           throw new RechargeAttemptError('card transaction evidence is stale', 'CARD_TRANSACTION_CHECK_STALE');
         }
         const cardActive = ['active', 'available', 'usable', 'ready']

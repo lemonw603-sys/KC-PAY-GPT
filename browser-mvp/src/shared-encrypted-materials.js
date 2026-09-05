@@ -28,6 +28,7 @@ SELECT br.status AS run_status, br.payment_state,
        o.id AS order_id, o.status AS order_status,
        o.fulfillment_route_id AS order_route_id,
        c.id AS card_id, c.provider_account_id AS card_provider_account_id,
+       c.sync_tier,
        c.card_credentials_ciphertext,
        ccl.status AS consumption_status,
        ccl.recharge_attempt_id AS consumption_attempt_id,
@@ -172,7 +173,8 @@ export class SharedEncryptedCardMaterialSource {
       assertPrePaymentContext(row, 'CARD_NOT_READY');
       if (!row.card_id || !row.attempt_id || !row.order_id
         || !row.card_provider_account_id
-        || row.card_provider_account_id !== row.route_card_provider_account_id
+        || (!['MANUAL_IMPORT'].includes(String(row.sync_tier || ''))
+          && row.card_provider_account_id !== row.route_card_provider_account_id)
         || row.consumption_status !== 'RESERVED'
         || row.consumption_attempt_id !== row.attempt_id
         || row.consumption_order_id !== row.order_id

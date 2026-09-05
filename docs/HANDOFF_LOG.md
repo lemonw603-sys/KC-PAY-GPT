@@ -1325,3 +1325,12 @@
 - 曾误报“客户提交后系统没有跨窗口订单发现机制”。现场重新读取生产代码和数据库后确认：建单事务已持久化 `orders`、`order_events`、`tasks`，Browser 路线会创建 `BROWSER_PREFLIGHT` 任务，现有任务领取机制就是跨窗口/跨进程发现机制。
 - 本次订单 `PJV1-AH6M688B3Wfv5_vxISmp` 已真实落库，路线 `CHATGPT_PLUS_BROWSER_V1/BROWSER`，状态 `WAITING_FOR_CARD`；`ASSIGN_CARD` 为 `PENDING`，最近错误 `CARD_STOCK_EMPTY`。提交没有丢失。
 - 误判根因是执行窗口未先采用生产可用的 Node/mysql2 只读查询（服务器没有 `mysql` CLI），却根据本机窗口不可见下结论；已停止残留本地测试进程。以后订单存在性先查生产原始响应/后台接口，再报告，不新增“订单收件箱”重复模块。
+
+## 2026-09-05｜备用卡台 Excel 接入第一批（未部署）
+
+- 现场读取 `/Users/lemon/Downloads/卡片列表.xls`，确认实际为 OOXML/XLSX ZIP；17 列表头和 2 行卡片数据可解析。余额为 `$2` 与 `$0`，均不满足 Plus 最低余额，未作为可用卡宣称。
+- 新增 `048_manual_backup_card_import.sql`：独立 `manual_excel`/`backup-primary` 卡源、导入批次/行审计表、Browser 路线卡源映射表；无 Provider 写操作。
+- 新增 `manual-card-import-service.js`：签名检测、OOXML 解压、表头/卡号/CVC/有效期/状态/余额关系校验、序列号幂等更新、PAN HMAC 与 AES-GCM 加密。后台新增上传、预览和二次确认导入；预览只返回截断序列号、尾号、余额、州和错误。
+- Browser 资格和付款前证据将 `MANUAL_IMPORT` 与 HNSKJ 15 分钟交易证据区分；手工卡不进入 HNSKJ read-sync/funding，仍受余额、绑定、消费账本、退款争议、租约和资金栅栏约束。
+- 验证：v1 定向 105/105 通过；Browser 既有 128/132（4 环境跳过）基线通过；Node 语法检查和真实模板解析通过。工作区保留用户未提交的 `docs/DECISIONS.md` 以及本批 package/代码/migration 改动；尚未提交、未部署、未导入生产、未启动 Browser Worker、未调用 Provider/卡台、未付款。
+- 下一步：补充数据库集成测试及 Browser 多卡源 SQL 覆盖，完成对抗审查后再精确提交；生产部署需用户当次确认。

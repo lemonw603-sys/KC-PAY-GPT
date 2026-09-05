@@ -15,6 +15,8 @@
 > **2026-09-05 Browser Checkout 入口修复已完成**：针对真实只读观察发现的页面漂移，导航器现在在首页 Upgrade 不存在时，会安全点击可见 Profile 菜单（`[data-testid="accounts-profile-button"]`）后再定位 Upgrade；所有候选仍经过非表单导航控件校验，付款提交控件继续禁止。持久 BitBrowser Context 注入 Session 前只清理旧的 `__Secure-next-auth.session-token` 分块，不触碰 Cloudflare/代理 Cookie，避免跨订单残留。Browser 全量（本轮 `npm test`：120 pass/4 skip/0 fail）通过；提交 `92fc70e`。尚未部署生产，尚未重跑真实订单前置观察。
 > **最后统一核对**：2026-09-02 00:32 CST。已对照前后端代码，并通过 SSH 复核部署后的生产 release、systemd、Worker 实际进程环境、只读 readiness 和新卡实时库存；本轮未执行 Provider 写入或付款。
 > 历史报告不能覆盖本地图；实时生产事实优先，变化后必须同步更新本地图与 `CURRENT_STATE.md`。
+
+> **2026-09-05 备用卡台接入开发批次（本地未部署）**：根据实际模板 `/Users/lemon/Downloads/卡片列表.xls`（内容为 OOXML/XLSX ZIP，不能只按 `.xls` 后缀判断）已实现第一批：`048_manual_backup_card_import.sql`、备用卡解析/预览/确认导入服务及后台入口。备用卡源 `manual_excel` 使用 `sync_tier=MANUAL_IMPORT`，不进入 HNSKJ 同步、自动开卡或补余额；Browser 路线通过 `fulfillment_route_card_sources` 支持 HNSKJ 优先、备用卡兜底。PAN/CVC 仅 AES-GCM 加密，预览和日志不返回明文。模板现场解析为 2 行，余额 `$2` 与 `$0` 均不满足当前 Plus 最低余额，未宣称可用。v1 定向测试 105/105；尚未提交、尚未部署 048、尚未导入生产。
 > 全链路、控制矩阵、自动补给状态机、库存最小模型、资金边界、通知、回滚和验收细则统一见 `docs/PROJECT_OPERATING_MODEL.md`。
 
 ## 1. 已确认的目标和原则

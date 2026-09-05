@@ -16,7 +16,9 @@ import { TraceabilityOperationError } from '../services/traceability-operations-
 import { BrowserAdminError } from '../services/browser-admin-service.js';
 import { createFixedWindowRateLimit } from './fixed-window-rate-limit.js';
 
-const DEFAULT_BODY_LIMIT = '256kb';
+// Manual card spreadsheets are capped at 2MB by the importer; leave room for
+// base64 overhead while keeping the API body bounded.
+const DEFAULT_BODY_LIMIT = '3mb';
 const publicDirectory = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   '..',
@@ -62,6 +64,8 @@ export function createApp({
   setAdminDefaultRechargeMethod = null,
   getAdminBillingAddressSettings = null,
   setAdminBillingAddressSettings = null,
+  previewManualCardImport = null,
+  commitManualCardImport = null,
   listCardOperationalOverrides = null,
   setCardOperationalOverride = null,
   clearCardOperationalOverride = null,
@@ -452,6 +456,18 @@ export function createApp({
   if (typeof setAdminBillingAddressSettings === 'function') {
     app.post('/api/v1/admin/browser/billing-address', ...sensitiveAdminGuards, async (req, res) => {
       try { return res.json(await setAdminBillingAddressSettings({ ...req.body, actorId: req.admin?.id || 'admin' })); }
+      catch (error) { if (error instanceof PublicApiError) return res.status(error.status || 400).json({ error: error.code.toLowerCase() }); throw error; }
+    });
+  }
+  if (typeof previewManualCardImport === 'function') {
+    app.post('/api/v1/admin/manual-cards/preview', ...adminWriteGuards, async (req, res) => {
+      try { return res.json(await previewManualCardImport({ ...(req.body || {}), requestedBy: req.admin?.id || 'admin' })); }
+      catch (error) { if (error instanceof PublicApiError) return res.status(error.status || 400).json({ error: error.code.toLowerCase() }); throw error; }
+    });
+  }
+  if (typeof commitManualCardImport === 'function') {
+    app.post('/api/v1/admin/manual-cards/import', ...sensitiveAdminGuards, async (req, res) => {
+      try { return res.json(await commitManualCardImport({ ...(req.body || {}), requestedBy: req.admin?.id || 'admin' })); }
       catch (error) { if (error instanceof PublicApiError) return res.status(error.status || 400).json({ error: error.code.toLowerCase() }); throw error; }
     });
   }
