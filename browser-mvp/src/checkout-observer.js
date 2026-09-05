@@ -98,6 +98,8 @@ export async function observeCheckout(page, {
   inspectSecureCardFields = false,
   requireSecureCardFields = false,
   secureFieldTimeoutMs = 0,
+  requiredCurrency = null,
+  requireZeroTax = false,
 } = {}) {
   if (!page || typeof page.url !== 'function') throw new TypeError('page is required');
   if (typeof urlPrefix !== 'string' || !urlPrefix) throw new ContractError('checkout urlPrefix is required');
@@ -124,6 +126,14 @@ export async function observeCheckout(page, {
   const submitControlEnabled = submitControlPresent ? await submitControl.isEnabled() : false;
   const cardFieldsPresent = inspectSecureCardFields ? await inspectCardFields(page, secureFieldTimeoutMs) : null;
   if (!plan || !currency || !amount) throw new ContractError('checkout summary is incomplete');
+  if (requiredCurrency && String(currency).trim().toUpperCase() !== String(requiredCurrency).trim().toUpperCase()) {
+    throw new ContractError('checkout currency does not match required currency');
+  }
+  if (requireZeroTax) {
+    const taxText = String(taxRow?.amount ?? '').trim();
+    const taxValue = Number(taxText.replace(/,/g, ''));
+    if (!Number.isFinite(taxValue) || taxValue > 0.01) throw new ContractError('checkout tax is not zero');
+  }
   if (requireSecureCardFields && (!cardFieldsPresent || Object.values(cardFieldsPresent).some((present) => !present))) {
     throw new ContractError('secure card fields did not become ready');
   }
