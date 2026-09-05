@@ -21,6 +21,12 @@
 - 该结果证明发布后的执行环境可启动，但页面检查仍有运行时漂移/配置不匹配待定位；不能把它归因于卡台，也不能宣称 Browser 链路已通过。不要在未核对任务预算和页面证据前再次消耗重试次数。
 - 进一步代码/运行时对照定位：本机 env 将 `BROWSER_OBSERVE_MARKER_TEXT=x` 带入 ChatGPT 实际页面检查；真实首页没有这个固定文本，因此 `_checkPage()` 在进入账号探针前以 `PAGE_DRIFT` 失败，外层记录为 `PAGE_CHECKPOINT_FAILED`。BitBrowser CDP Context 的 `cookies/clearCookies/addCookies` 均存在，Session 清理改动不是触发点。应将真实 ChatGPT 只读 env 的 marker 置空（保留 `requiredSelector=body`），再在退还任务预算后重跑，不能直接继续消耗当前任务。
 
+## 2026-09-05｜Profile 控件兼容修复与非消费诊断
+
+- 真实 DOM 现场确认 Profile 入口为 `div[role=button][tabindex=0]`；已放宽安全导航校验，仅允许可访问按钮角色且仍禁止表单内控件。提交 `57e4fef`，Browser 回归 `120 pass/4 skipped/0 fail`，修复已同步到生产当前 release。
+- 不领取订单的诊断已重新执行：本次在 BitBrowser `/browser/open` 阶段超时，底层为 `AbortError`；没有进入 Session 注入、账号检查、Checkout 或任何支付步骤。
+- 因此当前剩余问题是 BitBrowser Local API/Profile 开窗稳定性，不能继续归因于卡台或业务闸门。订单 68 保持 `PENDING`，不再消耗其预算；下一步先做 Local API 单独健康/开窗生命周期诊断，确认稳定后再重跑订单。
+
 ## 2026-09-04｜补款失败恢复、陈旧卡抢跑修复与生产运行证据
 
 - 代码提交 `0e5a82d`：补款失败固化 `AUTO_RETRY/DO_NOT_RETRY/MANUAL_REVIEW`，仅 `FAILED+CLEARED+AUTO_RETRY` 有界自动恢复，订单+卡最多 3 个 attempt，UNKNOWN 不重试。
