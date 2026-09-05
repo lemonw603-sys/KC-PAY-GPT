@@ -19,6 +19,7 @@
 - 本机通过 SSH 隧道启动 `production-readonly-worker.js --check`，返回 `READY`；随后运行一次订单 68 的只读任务。
 - 本轮 Worker 以 `PAGE_CHECKPOINT_FAILED` fail-closed，未进入账号检查、Checkout、卡资料读取或任何付款步骤；WAL 原始记录在 `/tmp/bitbrowser-local-worker.wal.jsonl`，只包含 intent/freeze，不含 Session 明文。
 - 该结果证明发布后的执行环境可启动，但页面检查仍有运行时漂移/配置不匹配待定位；不能把它归因于卡台，也不能宣称 Browser 链路已通过。不要在未核对任务预算和页面证据前再次消耗重试次数。
+- 进一步代码/运行时对照定位：本机 env 将 `BROWSER_OBSERVE_MARKER_TEXT=x` 带入 ChatGPT 实际页面检查；真实首页没有这个固定文本，因此 `_checkPage()` 在进入账号探针前以 `PAGE_DRIFT` 失败，外层记录为 `PAGE_CHECKPOINT_FAILED`。BitBrowser CDP Context 的 `cookies/clearCookies/addCookies` 均存在，Session 清理改动不是触发点。应将真实 ChatGPT 只读 env 的 marker 置空（保留 `requiredSelector=body`），再在退还任务预算后重跑，不能直接继续消耗当前任务。
 
 ## 2026-09-04｜补款失败恢复、陈旧卡抢跑修复与生产运行证据
 
