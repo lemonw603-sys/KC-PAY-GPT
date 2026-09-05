@@ -15,6 +15,10 @@ BROWSER_WORKER_TARGET=EXTERNAL_READONLY
 BROWSER_EXTERNAL_READONLY_CONFIRM=I-CONFIRM-EXTERNAL-READONLY-NO-SESSION
 BROWSER_WORKER_ID=<unique-browser-worker-id>
 BROWSER_EXECUTOR_PROFILE_ID=<active-browser-executor-profile-uuid>
+# BITBROWSER_READONLY uses a second, independent identifier namespace.
+# Never put the database executor UUID in this field.
+# BITBROWSER_PROFILE_ID=<bitbrowser-local-profile-id>
+# BITBROWSER_API_BASE_URL=http://127.0.0.1:54345
 BROWSER_PROFILES_ROOT=/var/lib/pojia-browser-worker/profiles
 BROWSER_WAL_PATH=/var/lib/pojia-browser-worker/evidence.wal.jsonl
 BROWSER_CHROME_EXECUTABLE_PATH=/usr/bin/google-chrome
@@ -39,6 +43,11 @@ BROWSER_OBSERVE_MARKER_TEXT=<expected-marker>
 # BROWSER_OBSERVE_TITLE=ChatGPT
 # BROWSER_OBSERVE_REQUIRED_SELECTOR=<frozen-home-marker-selector>
 # BROWSER_OBSERVE_MARKER_TEXT=<frozen-home-marker-text>
+# For the local BitBrowser lane, replace EXTERNAL_READONLY with:
+# BROWSER_WORKER_TARGET=BITBROWSER_READONLY
+# BITBROWSER_READONLY_CONFIRM=I-CONFIRM-BITBROWSER-READONLY-SHARED-MATERIALS-NO-PAYMENT
+# BITBROWSER_PROFILE_ID=<bitbrowser-local-profile-id>
+# BITBROWSER_API_BASE_URL=http://127.0.0.1:54345
 # SESSION_ENCRYPTION_KEY_BASE64 is inherited from the existing runtime env.
 # This harness reads the bound Session only; it does not decrypt card material.
 

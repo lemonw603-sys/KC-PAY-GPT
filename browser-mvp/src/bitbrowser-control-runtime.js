@@ -24,12 +24,19 @@ async function readJson(response, endpoint) {
  * exposes no payment or page-submit capability.
  */
 export class BitBrowserControlRuntimeAdapter extends RuntimeAdapter {
-  constructor({ browserType, apiBaseUrl = DEFAULT_API_BASE_URL, fetchImpl = globalThis.fetch, timeoutMs = 10_000 } = {}) {
+  constructor({
+    browserType,
+    bitbrowserProfileId,
+    apiBaseUrl = DEFAULT_API_BASE_URL,
+    fetchImpl = globalThis.fetch,
+    timeoutMs = 10_000,
+  } = {}) {
     super();
     if (!browserType || typeof browserType.connectOverCDP !== 'function') throw new TypeError('browserType.connectOverCDP is required');
     if (typeof fetchImpl !== 'function') throw new TypeError('fetchImpl is required');
     if (!Number.isInteger(timeoutMs) || timeoutMs < 1_000 || timeoutMs > 60_000) throw new TypeError('timeoutMs must be between 1000 and 60000');
     this.browserType = browserType;
+    this.bitbrowserProfileId = assertRef(bitbrowserProfileId, 'bitbrowserProfileId');
     this.apiBaseUrl = normalizeBaseUrl(apiBaseUrl);
     this.fetchImpl = fetchImpl;
     this.timeoutMs = timeoutMs;
@@ -55,7 +62,8 @@ export class BitBrowserControlRuntimeAdapter extends RuntimeAdapter {
     if (manifest.mode !== 'BITBROWSER_CONTROL') throw new ContractError('BitBrowser adapter requires BITBROWSER_CONTROL mode');
     if (manifest.capability !== 'CHECKOUT_OBSERVE') throw new ContractError('BitBrowser adapter requires CHECKOUT_OBSERVE capability');
     if (manifest.allowWrites !== false) throw new ContractError('BitBrowser adapter is read-only');
-    const ref = assertRef(profileRef, 'profileRef');
+    const logicalProfileRef = assertRef(profileRef, 'profileRef');
+    const ref = this.bitbrowserProfileId;
     const health = await this.request('/health', {});
     if (typeof health !== 'string' && health !== undefined) throw new Error('BitBrowser health response is invalid');
     const listing = await this.request('/browser/list', { page: 0, pageSize: 100 });
@@ -72,7 +80,14 @@ export class BitBrowserControlRuntimeAdapter extends RuntimeAdapter {
       browser = await this.browserType.connectOverCDP(`http://${openedData.http}`);
       const context = browser.contexts()[0];
       if (!context) throw new Error('BitBrowser CDP returned no BrowserContext');
-      return { browser, context, profileRef: ref, bitbrowserHttp: openedData.http, opened: true };
+      return {
+        browser,
+        context,
+        profileRef: logicalProfileRef,
+        bitbrowserProfileId: ref,
+        bitbrowserHttp: openedData.http,
+        opened: true,
+      };
     } catch (error) {
       if (browser) await browser.close().catch(() => undefined);
       if (opened) await this.request('/browser/close', { id: ref }).catch(() => undefined);
@@ -81,10 +96,12 @@ export class BitBrowserControlRuntimeAdapter extends RuntimeAdapter {
   }
 
   async close(runtime) {
-    if (!runtime?.context || !runtime?.profileRef) throw new TypeError('BitBrowser runtime handle is required');
+    if (!runtime?.context || !runtime?.profileRef || !runtime?.bitbrowserProfileId) {
+      throw new TypeError('BitBrowser runtime handle is required');
+    }
     await runtime.context.close().catch(() => undefined);
     if (runtime.browser) await runtime.browser.close().catch(() => undefined);
-    await this.request('/browser/close', { id: runtime.profileRef }).catch(() => undefined);
+    await this.request('/browser/close', { id: runtime.bitbrowserProfileId }).catch(() => undefined);
   }
 }
 

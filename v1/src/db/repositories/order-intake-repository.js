@@ -84,7 +84,7 @@ export async function createOrderFromCdk(pool, input) {
     const cdkId = cdkRows[0].id;
 
     const [routeRows] = await connection.query(
-      `SELECT p.id AS product_id, fr.id AS fulfillment_route_id
+      `SELECT p.id AS product_id, fr.id AS fulfillment_route_id, fr.executor_kind
        FROM products p INNER JOIN fulfillment_routes fr ON fr.product_id = p.id
        WHERE BINARY p.legacy_plan_type = BINARY ?
          AND p.status = 'ACTIVE' AND fr.accepts_new_orders = 1
@@ -153,6 +153,14 @@ export async function createOrderFromCdk(pool, input) {
        VALUES (?, 'ASSIGN_CARD', 'PENDING', ?, 10080)`,
       [input.orderId, `assign-card:${input.orderId}`]
     );
+    if (route.executor_kind === 'BROWSER') {
+      await connection.query(
+        `INSERT INTO tasks
+         (order_id, task_type, status, dedupe_key, max_attempts)
+         VALUES (?, 'BROWSER_PREFLIGHT', 'PENDING', ?, 5)`,
+        [input.orderId, `browser-preflight:${input.orderId}`]
+      );
+    }
     await connection.commit();
     return {
       orderId: input.orderId,

@@ -65,6 +65,16 @@ export async function claimNextTask(pool, {
                      )
                    )
                  )
+                 AND (
+                   fr.executor_kind <> 'BROWSER'
+                   OR EXISTS (
+                     SELECT 1 FROM tasks browser_preflight
+                     WHERE browser_preflight.order_id = o.id
+                       AND browser_preflight.task_type = 'BROWSER_PREFLIGHT'
+                       AND browser_preflight.status = 'COMPLETED'
+                       AND JSON_UNQUOTE(JSON_EXTRACT(browser_preflight.payload_json, '$.outcome')) = 'PASSED'
+                   )
+                 )
                  AND EXISTS (
                    SELECT 1 FROM tasks prepared
                    WHERE prepared.order_id = o.id

@@ -294,6 +294,15 @@
 - v1 回归 529/483/0（46 skipped），Browser 118/114/0（4 skipped）；跳过项为隔离 MySQL 集成，不能等同真实链路通过。
 - 详见 `docs/BROWSER_PREFLIGHT_ADVERSARIAL_AUDIT_2026-09-05.md`。
 
+### 2026-09-05 Browser 卡前检查与 Profile 命名空间修复（代码完成）
+
+- 当前生产 release 现场为 `/opt/pojia/releases/20260905-card-sync-claimkey-8fb9ea4`；Web/API Worker/read-sync timer active，远程 Browser systemd inactive/disabled。本机 PID 59113 的只读 Worker与 PID 59089 的 MySQL 隧道仍在。
+- 生产数据库现场：订单 `PJV1-lxez72TytHc1O6QZxjNd` 冻结为 Browser、状态 `WAITING_FOR_CARD`、无 attempt/job/run；卡 `2833` 为 `active/AVAILABLE/$16`、无活动消费预留，但卡片和交易证据过期，上游维护无法刷新。
+- 代码修复数据库 executor UUID 与 BitBrowser Profile id 混用；新增 Browser order-scoped `BROWSER_PREFLIGHT` 任务及正式 Browser submit 的完成依赖。
+- 前置检查不创建资金 attempt/run/permit，不读取卡资料；正式付款前卡片新鲜度检查保持不变。
+- 本地测试：Browser 123/119/4/0，v1 531/485/46/0；跳过项仍是缺隔离 `TEST_DATABASE_URL` 的 MySQL 集成，不得当作真实付款验收。
+- 下一动作：提交本轮代码与文档，部署 v1 创建任务逻辑/领取依赖；为当前订单幂等补建一次 preflight task；用本机 BitBrowser 只读 Worker跑到 Checkout 后停止。付款写权限继续为 false。
+
 ### 2026-09-05 默认路线现场纠正
 
 - 最新生产数据库只读核对显示 ChatGPT Plus 当前默认路线已是 Browser：`BROWSER.accepts_new_orders=1`、`API.accepts_new_orders=0`；Browser dispatch=true、Profile ACTIVE、heartbeat 持续更新。

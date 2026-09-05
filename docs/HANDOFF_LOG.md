@@ -1209,3 +1209,10 @@
 - 生产数据：订单 `CLOSED=6/RECHARGE_FAILED=7/RECHARGE_SUCCESS=2/WAITING_FOR_CARD=1`；Browser jobs `CANCELLED=20`、runs `FAILED_SAFE=20`（历史测试）；当前活动 execution lease=0；无新 Browser job/run。
 - 关键未对齐但不阻断本次本机方案：生产 release 不含 BitBrowser adapter，远程 Browser systemd 仍是 LOCAL_FIXTURE；因此本次必须由本机 Worker 控制本机 BitBrowser，不能启动远程 Browser systemd。
 - 结论：订单前置条件已满足到“可提交客户式 Browser 测试输入”，但尚未提交 Session/CDK，也未读取客户数据、创建新订单、Provider/卡台写入或付款。
+
+## 2026-09-05｜Browser 卡前前置检查实现
+
+- 现场重新核对生产 release、服务、本机 Worker/隧道、数据库订单/路线/卡片/任务，确认真实订单卡在陈旧卡证据；HNSKJ 维护使证据无法刷新。
+- 修复两类 Profile id 混用：数据库 `BROWSER_EXECUTOR_PROFILE_ID=00000000-0000-4000-8000-000000000401` 只用于共享租约；本机 BitBrowser Profile 由独立 `BITBROWSER_PROFILE_ID` 配置。
+- 新增 `BROWSER_PREFLIGHT` 订单任务、order-scoped 加密 Session source、Checkout 非付款观察、有限结果持久化和 Browser submit 完成依赖；Session 更换会按有无已绑定卡分别恢复 `CARD_READY` 或 `WAITING_FOR_CARD`。
+- 回归：Browser 123/119/4/0，v1 531/485/46/0，定向测试与 `git diff --check` 通过。尚未部署、尚未给当前订单补任务、尚未访问该订单 Session/Checkout、未付款。

@@ -82,6 +82,9 @@ export function loadProductionReadonlyBrowserConfig(env = process.env) {
     );
   }
   const target = required(env, 'BROWSER_WORKER_TARGET');
+  const bitbrowserProfileId = target === 'BITBROWSER_READONLY'
+    ? required(env, 'BITBROWSER_PROFILE_ID')
+    : null;
   const urlPrefix = required(env, 'BROWSER_OBSERVE_URL_PREFIX');
   if (target === 'LOCAL_FIXTURE') {
     if (!urlPrefix.startsWith('data:text/html,')) {
@@ -122,7 +125,9 @@ export function loadProductionReadonlyBrowserConfig(env = process.env) {
       }
     }
   } else {
-    throw new ProductionReadonlyConfigError('BROWSER_WORKER_TARGET must be LOCAL_FIXTURE or EXTERNAL_READONLY');
+    throw new ProductionReadonlyConfigError(
+      'BROWSER_WORKER_TARGET must be LOCAL_FIXTURE, EXTERNAL_READONLY, or BITBROWSER_READONLY',
+    );
   }
   if (readonlyHarness === 'CHATGPT_ACCOUNT_CHECKOUT') {
     if (!['EXTERNAL_READONLY', 'BITBROWSER_READONLY'].includes(target)
@@ -185,6 +190,7 @@ export function loadProductionReadonlyBrowserConfig(env = process.env) {
     walPath: required(env, 'BROWSER_WAL_PATH'),
     executablePath,
     bitbrowserApiBaseUrl: target === 'BITBROWSER_READONLY' ? required(env, 'BITBROWSER_API_BASE_URL') : null,
+    bitbrowserProfileId,
     headless: env.BROWSER_CHROME_HEADLESS !== 'false',
     runtimeHmacKey,
     artifactKey,

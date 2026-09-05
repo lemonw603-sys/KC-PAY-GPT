@@ -11,6 +11,7 @@ import {
 } from '../src/production-readonly-worker.js';
 
 const key = Buffer.alloc(32, 7).toString('base64');
+const profileId = '10f0dc7b534844c083165796447d5893';
 
 function validEnv(overrides = {}) {
   return {
@@ -87,9 +88,16 @@ test('external readonly mode requires https and a separate confirmation', () => 
 });
 
 test('BitBrowser readonly mode requires a local API URL and preserves the no-write contract', () => {
+  assert.throws(() => loadProductionReadonlyBrowserConfig(validEnv({
+    BROWSER_WORKER_TARGET: 'BITBROWSER_READONLY',
+    BITBROWSER_API_BASE_URL: 'http://127.0.0.1:54345',
+    BITBROWSER_READONLY_CONFIRM: 'I-CONFIRM-BITBROWSER-READONLY-NO-SESSION',
+    BROWSER_OBSERVE_URL_PREFIX: 'https://chatgpt.com/',
+  })), /BITBROWSER_PROFILE_ID is required/);
   const config = loadProductionReadonlyBrowserConfig(validEnv({
     BROWSER_WORKER_TARGET: 'BITBROWSER_READONLY',
     BITBROWSER_API_BASE_URL: 'http://127.0.0.1:54345',
+    BITBROWSER_PROFILE_ID: profileId,
     BITBROWSER_READONLY_CONFIRM: 'I-CONFIRM-BITBROWSER-READONLY-NO-SESSION',
     BROWSER_OBSERVE_URL_PREFIX: 'https://chatgpt.com/',
     BROWSER_OBSERVE_TITLE: 'ChatGPT',
@@ -97,9 +105,11 @@ test('BitBrowser readonly mode requires a local API URL and preserves the no-wri
   }));
   assert.equal(config.target, 'BITBROWSER_READONLY');
   assert.equal(config.bitbrowserApiBaseUrl, 'http://127.0.0.1:54345');
+  assert.equal(config.bitbrowserProfileId, profileId);
   assert.throws(() => loadProductionReadonlyBrowserConfig(validEnv({
     BROWSER_WORKER_TARGET: 'BITBROWSER_READONLY',
     BITBROWSER_API_BASE_URL: 'http://user:pass@127.0.0.1:54345',
+    BITBROWSER_PROFILE_ID: profileId,
     BITBROWSER_READONLY_CONFIRM: 'I-CONFIRM-BITBROWSER-READONLY-NO-SESSION',
     BROWSER_OBSERVE_URL_PREFIX: 'https://chatgpt.com/',
   })), /must not contain credentials/);
@@ -109,6 +119,7 @@ test('ChatGPT account checkout harness accepts a BitBrowser readonly target with
   const config = loadProductionReadonlyBrowserConfig(validEnv({
     BROWSER_WORKER_TARGET: 'BITBROWSER_READONLY',
     BITBROWSER_API_BASE_URL: 'http://127.0.0.1:54345',
+    BITBROWSER_PROFILE_ID: profileId,
     BITBROWSER_READONLY_CONFIRM: 'I-CONFIRM-BITBROWSER-READONLY-SHARED-MATERIALS-NO-PAYMENT',
     BROWSER_READONLY_HARNESS: 'CHATGPT_ACCOUNT_CHECKOUT',
     BROWSER_SHARED_MATERIALS_MODE: 'SHARED_ENCRYPTED_NONPAYMENT',

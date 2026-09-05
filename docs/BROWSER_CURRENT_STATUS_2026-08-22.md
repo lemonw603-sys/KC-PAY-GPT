@@ -120,6 +120,8 @@
 
 ## 5. 下一可执行项
 
+> **2026-09-05 最新覆盖：** 当前优先修复数据库 executor profile UUID 与 BitBrowser 本地 Profile id 混用，并引入卡前 `BROWSER_PREFLIGHT`。该任务在订单仍为 `WAITING_FOR_CARD` 时只读验证 Session、身份、订阅与 Checkout；正式 Browser submit 必须等待其 `outcome=PASSED`，付款前卡片/资金新鲜度门槛保持不变。合同见 `docs/contracts/2026-09-05_browser-order-preflight-contract.md`。真实付款仍未验收。
+
 ### 主工程关键路径（按顺序）
 
 1. Browser 独立 worktree adapter 按 `docs/contracts/2026-08-26_browser-upstream-runtime-contract.md` 接线，只使用共享核心状态和权威证据。

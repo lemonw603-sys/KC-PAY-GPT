@@ -40,6 +40,8 @@ test('claims a pending task with a durable lease', async () => {
   assert.match(selectCall[0], /fr\.executor_kind = 'BROWSER'/);
   assert.match(selectCall[0], /browser_dispatch_enabled/);
   assert.match(selectCall[0], /browser_profile\.status = 'ACTIVE'/);
+  assert.match(selectCall[0], /browser_preflight\.task_type = 'BROWSER_PREFLIGHT'/);
+  assert.match(selectCall[0], /JSON_EXTRACT\(browser_preflight\.payload_json, '\$\.outcome'\)/);
   assert.match(selectCall[0], /funds_risk_state IN \('ACTIVE', 'UNKNOWN', 'SETTLED'\)/);
   assert.match(selectCall[0], /pc\.recharge_attempt_id IS NULL/);
   assert.match(selectCall[0], /recharge_authorization_items manual_item/);

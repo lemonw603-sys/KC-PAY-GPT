@@ -32,11 +32,14 @@ test('BitBrowser adapter opens an approved ChatGPT profile through CDP and close
   const calls = [];
   const browser = fakeBrowser();
   const adapter = new BitBrowserControlRuntimeAdapter({
+    bitbrowserProfileId: profileId,
     browserType: { connectOverCDP: async (url) => { assert.equal(url, 'http://127.0.0.1:62388'); return browser; } },
     fetchImpl: fakeFetch(calls),
   });
-  const runtime = await adapter.open(manifest, { profileRef: profileId });
+  const runtime = await adapter.open(manifest, { profileRef: 'profile:database-uuid' });
   assert.equal(runtime.context, browser.context);
+  assert.equal(runtime.profileRef, 'profile:database-uuid');
+  assert.equal(runtime.bitbrowserProfileId, profileId);
   await adapter.close(runtime);
   assert.deepEqual(calls.map((call) => call.path), ['/health', '/browser/list', '/browser/open', '/browser/close']);
 });
@@ -44,15 +47,17 @@ test('BitBrowser adapter opens an approved ChatGPT profile through CDP and close
 test('BitBrowser adapter rejects an unapproved profile before opening it', async () => {
   const calls = [];
   const adapter = new BitBrowserControlRuntimeAdapter({
+    bitbrowserProfileId: 'unknown-profile',
     browserType: { connectOverCDP: async () => { throw new Error('must not connect'); } },
     fetchImpl: fakeFetch(calls),
   });
-  await assert.rejects(adapter.open(manifest, { profileRef: 'unknown-profile' }), /not in the approved profile list/);
+  await assert.rejects(adapter.open(manifest, { profileRef: 'profile:database-uuid' }), /not in the approved profile list/);
   assert.deepEqual(calls.map((call) => call.path), ['/health', '/browser/list']);
 });
 
 test('BitBrowser adapter rejects write-capable manifests', async () => {
   const adapter = new BitBrowserControlRuntimeAdapter({
+    bitbrowserProfileId: profileId,
     browserType: { connectOverCDP: async () => fakeBrowser() },
     fetchImpl: fakeFetch([]),
   });

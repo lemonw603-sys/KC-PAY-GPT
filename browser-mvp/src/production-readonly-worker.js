@@ -10,6 +10,7 @@ import { createDatabasePool } from '../../v1/src/db/pool.js';
 import { createBitBrowserControlManifest, createChromeControlManifest } from './fixtures.js';
 import { GoogleChromeControlRuntimeAdapter } from './chrome-control-runtime.js';
 import { BitBrowserControlRuntimeAdapter } from './bitbrowser-control-runtime.js';
+import { createBrowserOrderPreflightWorker } from './browser-order-preflight.js';
 import { AppendOnlyWal, WalEvidenceSink } from './wal.js';
 import { createSharedNonPaymentDryRun, SHARED_NONPAYMENT_DRY_RUN_CONFIRMATION } from './shared-dry-run-composition.js';
 import { loadProductionReadonlyBrowserConfig } from './production-readonly-config.js';
@@ -155,7 +156,11 @@ export async function runProductionReadonlyBrowserWorker({
     const wal = await new AppendOnlyWal({ filePath: config.walPath }).init();
     await wal.verify();
     const runtimeAdapter = config.target === 'BITBROWSER_READONLY'
-      ? new BitBrowserControlRuntimeAdapter({ browserType, apiBaseUrl: config.bitbrowserApiBaseUrl })
+      ? new BitBrowserControlRuntimeAdapter({
+        browserType,
+        apiBaseUrl: config.bitbrowserApiBaseUrl,
+        bitbrowserProfileId: config.bitbrowserProfileId,
+      })
       : new GoogleChromeControlRuntimeAdapter({
       browserType,
       profilesRoot: config.profilesRoot,
@@ -215,9 +220,33 @@ export async function runProductionReadonlyBrowserWorker({
       leaseSeconds: config.leaseSeconds,
       executionTimeoutMs: config.executionTimeoutMs,
     });
+    const preflightWorker = chatGptReadonlyHarness
+      ? createBrowserOrderPreflightWorker({
+        pool,
+        workerId: config.workerId,
+        executorProfileId: config.executorProfileId,
+        runtimeAdapter,
+        manifest: config.target === 'BITBROWSER_READONLY'
+          ? createBitBrowserControlManifest()
+          : createChromeControlManifest(),
+        observation: config.observation,
+        encryptionKey: config.sharedMaterialEncryptionKey,
+        evidenceSink: new WalEvidenceSink(wal),
+        leaseSeconds: config.leaseSeconds,
+        executionTimeoutMs: config.executionTimeoutMs,
+      })
+      : null;
 
     do {
       await writeHeartbeat();
+      if (preflightWorker) {
+        const preflightResult = await preflightWorker.runOnce();
+        if (preflightResult.status !== 'IDLE') {
+          await onResult(preflightResult);
+          if (once || signal?.aborted) return preflightResult;
+          continue;
+        }
+      }
       const result = await worker.runOnce({ confirmation: SHARED_NONPAYMENT_DRY_RUN_CONFIRMATION });
       await onResult(result);
       if (once || signal?.aborted) return result;

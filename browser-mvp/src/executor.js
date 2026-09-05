@@ -96,7 +96,15 @@ export class BrowserExecutionService {
           await this.sessionProvider.close(sessionLease);
           sessionLease = null;
         } catch (error) {
-          throw new BrowserExecutionError('SESSION_INVALID', 'stored Browser Session is unavailable or invalid', error);
+          const reason = ['BROWSER_PREFLIGHT_CONTEXT_UNAVAILABLE', 'BROWSER_PREFLIGHT_SOURCE_UNAVAILABLE']
+            .includes(error?.code) ? error.code : 'SESSION_INVALID';
+          throw new BrowserExecutionError(
+            reason,
+            reason === 'SESSION_INVALID'
+              ? 'stored Browser Session is unavailable or invalid'
+              : 'Browser preflight Session source is temporarily unavailable',
+            error,
+          );
         }
         await this._event(job, 'checkpoint', ++evidenceSequence, {
           action: 'session-bootstrap',

@@ -58,7 +58,8 @@ export function createSessionReplacementService({
       const [rows] = await connection.query(
         `SELECT o.id, o.public_no, o.status, o.version, o.customer_email,
                 o.chatgpt_account_id, o.customer_action_code,
-                o.session_replacement_count, o.session_repair_expires_at
+                o.session_replacement_count, o.session_repair_expires_at,
+                o.assigned_card_id
          FROM orders o INNER JOIN cdks c ON c.id = o.cdk_id
          WHERE ${lookup.sql} LIMIT 1 FOR UPDATE`, lookup.values
       );
@@ -83,6 +84,7 @@ export function createSessionReplacementService({
       if (Number(riskRows[0]?.count || 0) !== 0) throw replacementError('FUNDS_STATE_UNSAFE');
 
       const replacementNo = Number(order.session_replacement_count) + 1;
+      const resumeStatus = order.assigned_card_id ? 'CARD_READY' : 'WAITING_FOR_CARD';
       await connection.query(
         `INSERT INTO order_session_replacements
          (id, order_id, replacement_no, reason_code,
@@ -95,13 +97,13 @@ export function createSessionReplacementService({
           validated.customerEmail, validated.chatgptAccountId]
       );
       const [updated] = await connection.query(
-        `UPDATE orders SET status = 'CARD_READY', session_ciphertext = ?,
+        `UPDATE orders SET status = ?, session_ciphertext = ?,
            customer_email = ?, chatgpt_account_id = ?,
            session_replacement_count = ?, last_session_replaced_at = CURRENT_TIMESTAMP(3),
            customer_action_code = NULL, failure_code = NULL, failure_reason = NULL,
            version = version + 1, updated_at = CURRENT_TIMESTAMP(3)
          WHERE id = ? AND version = ? AND status = 'WAITING_FOR_SESSION'`,
-        [sessionCiphertext, validated.customerEmail, validated.chatgptAccountId,
+        [resumeStatus, sessionCiphertext, validated.customerEmail, validated.chatgptAccountId,
           replacementNo, order.id, order.version]
       );
       if (Number(updated.affectedRows) !== 1) {
@@ -115,15 +117,15 @@ export function createSessionReplacementService({
              THEN JSON_REMOVE(COALESCE(payload_json, JSON_OBJECT()), '$.rechargePermit')
              ELSE payload_json END,
            updated_at = CURRENT_TIMESTAMP(3)
-         WHERE order_id = ? AND task_type IN ('PREPARE_RECHARGE','SUBMIT_RECHARGE')`,
+         WHERE order_id = ? AND task_type IN ('BROWSER_PREFLIGHT','PREPARE_RECHARGE','SUBMIT_RECHARGE')`,
         [order.id]
       );
       await connection.query(
         `INSERT INTO order_events
          (order_id, from_status, to_status, actor_type, actor_id, reason, metadata_json)
-         VALUES (?, 'WAITING_FOR_SESSION', 'CARD_READY', 'customer', NULL,
+         VALUES (?, 'WAITING_FOR_SESSION', ?, 'customer', NULL,
            'customer replaced Session on the original order', ?)`,
-        [order.id, JSON.stringify({ replacementNo,
+        [order.id, resumeStatus, JSON.stringify({ replacementNo,
           accountChanged: order.chatgpt_account_id !== validated.chatgptAccountId })]
       );
       await connection.commit();

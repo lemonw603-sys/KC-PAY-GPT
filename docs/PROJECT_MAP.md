@@ -304,3 +304,12 @@ Browser 候选对齐后发现 v1 客户首页静态 `sendFile` 在候选 worktre
 
 - release `20260905-card-sync-backoff-fbf789c` 已部署；备份完整性、服务/timer、live/ready 均通过。
 - 生产实证：维护失败后的 card sync job 为 `PENDING/attempts=0`，`available_at` 延后 300 秒，修复生效。当前上游仍维护，因此测试订单继续等待，不把“机制已修复”误写成“卡台已恢复”。
+
+### 2026-09-05 Browser 卡前前置检查（当前主线）
+
+- 现场确认当前真实 Browser 订单 `PJV1-lxez72TytHc1O6QZxjNd` 为 `WAITING_FOR_CARD`；卡 `2833` 本地库存状态为 `AVAILABLE/$16`，但卡片与交易证据停留在 2026-09-04 21:00 UTC。HNSKJ 维护导致无法刷新，因此不是“数据库没有卡”。
+- 发现正式 Worker 把数据库 executor profile UUID 与 BitBrowser Local API Profile id 当成同一个值；现已拆成 `BROWSER_EXECUTOR_PROFILE_ID` 与 `BITBROWSER_PROFILE_ID` 两个明确配置。
+- 新增 `BROWSER_PREFLIGHT`：Browser 订单创建时与 `ASSIGN_CARD` 同事务排队；先做 Session/身份/订阅/Checkout/金额/税费只读观察，不创建 attempt、run、资金预留，不读取卡资料，不付款。
+- Browser 正式 `SUBMIT_RECHARGE` 必须等待前置检查 `outcome=PASSED`；填卡或付款前仍执行原有卡片新鲜度与资金检查，不能用前置结果绕过。
+- 本地回归：Browser `123 total / 119 passed / 4 skipped / 0 failed`；v1 `531 total / 485 passed / 46 skipped / 0 failed`。生产部署与当前订单前置观察仍在本轮后续执行，未宣称付款跑通。
+- 合同：`docs/contracts/2026-09-05_browser-order-preflight-contract.md`。
