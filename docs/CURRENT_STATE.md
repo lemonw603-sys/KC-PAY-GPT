@@ -250,3 +250,9 @@
 - 生产层：当前真实订单证据为 API 路线；生产 Browser Worker disabled、target=LOCAL_FIXTURE，因此不能消费真实 Browser 订单。
 - 文案/后台层：当前按钮与后端门禁基本一致；问题不在“API 订单被错误改成 Browser”，而在执行前没有完成路线核对，且我错误地把本地预检表述为生产就绪。
 - 流程层新增硬门禁：提交前必须现场读取默认路线；提交后必须读取订单 executor_kind、Browser job/run；三者未一致不得继续。
+
+### 2026-09-05 Browser 执行器架构复核
+
+- 启动对齐工作后现场查代码确认：生产 readonly Worker 当前只接 `GoogleChromeControlRuntimeAdapter`，配置 target 仅控制 `LOCAL_FIXTURE/EXTERNAL_READONLY`，没有 BitBrowser Local API/CDP adapter。
+- 本地 BitBrowser 预检是独立手工控制面验证，不等于生产 Worker 已接入 BitBrowser。不能只改环境变量就宣称 Browser 真实订单可执行。
+- 因此真实 Browser 订单前的实际缺口是“BitBrowser runtime adapter + 执行器/DB 租约接线”，而不是简单开启 Worker；当前不切换生产路线、不启动付款。

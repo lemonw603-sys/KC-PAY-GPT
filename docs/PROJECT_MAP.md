@@ -267,3 +267,8 @@ Browser 候选对齐后发现 v1 客户首页静态 `sendFile` 在候选 worktre
 - 首次接入、代理/Profile 变更、代码部署或连续异常时执行完整 Browser 基线检查。
 - 日常订单由系统自动完成轻量健康检查，不要求操作员逐项确认。
 - 仅路线切换、Provider/卡台写入、开卡/补余额和真实付款等高风险动作需要人工确认。
+
+### 2026-09-05 Browser 执行器真实缺口纠偏
+
+- 现场代码核对发现生产 Worker 仅实现 Google Chrome control lane；BitBrowser 目前只完成本地 Local API/CDP 手工预检，尚未接入 Worker runtime adapter。
+- 后续必须先实现并隔离验证 BitBrowser adapter（open/close/CDP、Profile 绑定、只读 manifest、异常安全退出），再做生产只读接线；不能通过修改 target 或启动 Worker 伪装完成。

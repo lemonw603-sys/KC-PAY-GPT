@@ -1117,3 +1117,8 @@
 - 最近订单 `PJV1-7EYSr3AZfjVl5JZQwTZt` 已创建，状态 `WAITING_FOR_CARD`，路线已解析为 `LEGACY_HNSKJ_ZZSHU_V1`，`executor_kind=API`，无卡绑定。
 - 没有新的 Browser dispatch job/run；原因不是 Session 格式，而是订单创建时默认路线仍为 API。订单路线已冻结，不能在执行中静默改成 Browser。
 - 本轮未重复提交、未切换生产路线、未开卡/补余额/付款。后续若要 Browser，必须先完成路线切换并确认新订单策略，避免重复消费 CDK。
+
+## 2026-09-05｜启动 Browser 对齐后发现架构缺口
+
+- 代码现场复核：`production-readonly-worker.js` 固定使用 `GoogleChromeControlRuntimeAdapter`；当前配置 target 只支持 `LOCAL_FIXTURE/EXTERNAL_READONLY`，没有 BitBrowser Local API adapter。
+- 本地 BitBrowser 公开首页预检不等于共享 Worker 可消费真实订单。下一步应先做 BitBrowser runtime adapter 和隔离测试，再接生产只读 Worker；不直接改 env/启动生产/切换路线。
