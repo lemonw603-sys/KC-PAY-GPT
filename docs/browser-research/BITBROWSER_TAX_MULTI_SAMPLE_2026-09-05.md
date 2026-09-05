@@ -1,14 +1,13 @@
-# BitBrowser 多样本税额对照（2026-09-05）
+# BitBrowser 税额多样本核验（2026-09-05）
 
-## 现场样本
+## 有效样本
 
-- 新 Profile `Plus Browser PH Lane 2`：新 Session、Checkout；未填卡时显示 `PHP / ₱982.14 / Tax 0% / ₱0.00 / Due ₱982.14`。
-- 新 Profile `AI Recharge Browser Lane 4`：注入同一测试 Session，先从套餐页新建 Checkout；初始报价 `₱982.14 + VAT 12% ₱117.86 = ₱1,100`。随后在同一 Checkout 填入一组新的测试卡字段、US/DE 账单地址和 Session 邮箱，页面更新为 `Tax (0%) / ₱0.00 / Due ₱982.14`。
+- Profile `Plus Browser PH Lane 2`：注入测试 Session 后，`/api/auth/session` 现场复核 email/user/account 三项摘要均匹配；Checkout 显示 `PHP / ₱982.14 / Tax 0% / ₱0.00 / Due ₱982.14`。未付款。
 
-## 关键差异
+## 作废样本
 
-同一代理地区和同一 Session 并不能保证初始报价一致；样本 B 证明填写支付卡 + US/DE 地址 + 邮箱后可触发零税报价刷新。样本 A 证明无卡也可能在 Checkout 初始化时直接得到零税，说明税务报价还受 Checkout/账号上下文或初始化时序影响。
+- Profile `AI Recharge Browser Lane 4` 曾观察到新 Checkout 初始 12% VAT、填写 US/DE 地址后变为 0%。但随后对同一 Checkout 调用 `/api/auth/session` 复核，email/user/account 三项均与目标 Session 不匹配。该持久 Profile 同时存在旧账号页面；因此该样本不能用于证明“同一 Session 地址前后税额变化”，此前结论作废。
 
-## 边界
+## 当前结论
 
-本轮未点击 Subscribe、未付款。尚不能证明某个单一变量“永远”导致零税；能固化的是：自动填写完整账单资料，等待服务端报价刷新，并只在 PHP、税额 0、总额与小计一致时继续。
+目前只有一笔身份已核验的零税 Checkout 样本；尚不足以证明所有订单稳定零税。后续每个样本必须先关闭旧 ChatGPT 页面、注入 Session、通过 email/user/account 摘要三重匹配，再创建新 Checkout，记录初始报价与 US/DE 地址后的报价。身份不匹配样本不得计入规律。
