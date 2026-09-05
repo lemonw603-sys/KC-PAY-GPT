@@ -52,8 +52,10 @@ function assertSameOriginPath(path, name, { optional = false } = {}) {
 export async function probeSessionIdentity(page, expectedIdentity, {
   path = '/api/auth/session',
   accountCheckPath = null,
+  onVerifiedEmail = null,
 } = {}) {
   if (!page || typeof page.evaluate !== 'function') throw new TypeError('page.evaluate is required');
+  if (onVerifiedEmail != null && typeof onVerifiedEmail !== 'function') throw new TypeError('onVerifiedEmail must be a function');
   const expected = normalizeIdentity(expectedIdentity);
   const checkedSessionPath = assertSameOriginPath(path, 'session path');
   const checkedAccountPath = assertSameOriginPath(accountCheckPath, 'accountCheckPath', { optional: true });
@@ -141,6 +143,9 @@ export async function probeSessionIdentity(page, expectedIdentity, {
       'ACCOUNT_STATUS_UNKNOWN',
     );
   }
+  // Optional transient handoff for the current task only. The email is never
+  // included in the returned shared result or persisted by this module.
+  if (onVerifiedEmail && observed.email) await onVerifiedEmail(observed.email);
   return {
     verified: true,
     loggedIn: true,
