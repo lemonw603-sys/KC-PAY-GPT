@@ -243,3 +243,10 @@
 
 - 复核发现此前把“本地 BitBrowser 公开首页预检通过”过度表述为“生产真实 Browser 已准备好”；实际生产 Browser Worker 仍 disabled，target 仍为 `LOCAL_FIXTURE`。
 - 已建立证据门禁：以后必须分别报告代码测试、只读预检、真实订单可执行和付款验收，不得混称。
+
+### 2026-09-05 执行方式与全层对齐审查
+
+- 代码层：默认充值方式按钮明确写明“只影响切换后新建订单”，Browser 切换服务要求 Browser dispatch 开启、ACTIVE Profile 和 60 秒内 heartbeat；订单创建后路线冻结，API 订单不会静默改成 Browser。
+- 生产层：当前真实订单证据为 API 路线；生产 Browser Worker disabled、target=LOCAL_FIXTURE，因此不能消费真实 Browser 订单。
+- 文案/后台层：当前按钮与后端门禁基本一致；问题不在“API 订单被错误改成 Browser”，而在执行前没有完成路线核对，且我错误地把本地预检表述为生产就绪。
+- 流程层新增硬门禁：提交前必须现场读取默认路线；提交后必须读取订单 executor_kind、Browser job/run；三者未一致不得继续。
