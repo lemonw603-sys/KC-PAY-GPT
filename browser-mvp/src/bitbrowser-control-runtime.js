@@ -83,6 +83,12 @@ export class BitBrowserControlRuntimeAdapter extends RuntimeAdapter {
       browser = await this.browserType.connectOverCDP(`http://${openedData.http}`);
       const context = browser.contexts()[0];
       if (!context) throw new Error('BitBrowser CDP returned no BrowserContext');
+      // A BitBrowser Profile is persistent. Close every page inherited from a
+      // previous task before the executor creates its single task page; this
+      // prevents old in-memory account state from competing with new cookies.
+      if (typeof context.pages === 'function') {
+        for (const page of context.pages()) await page.close().catch(() => undefined);
+      }
       return {
         browser,
         context,

@@ -20,7 +20,12 @@ function fakeFetch(calls, { failOpen = false } = {}) {
 }
 
 function fakeBrowser() {
-  const context = { close: async () => {} };
+  const closed = [];
+  const context = {
+    close: async () => {},
+    pages: () => [{ close: async () => closed.push('old-1') }, { close: async () => closed.push('old-2') }],
+    closed,
+  };
   return {
     contexts: () => [context],
     close: async () => {},
@@ -40,6 +45,7 @@ test('BitBrowser adapter opens an approved ChatGPT profile through CDP and close
   assert.equal(runtime.context, browser.context);
   assert.equal(runtime.profileRef, 'profile:database-uuid');
   assert.equal(runtime.bitbrowserProfileId, profileId);
+  assert.deepEqual(browser.context.closed, ['old-1', 'old-2']);
   await adapter.close(runtime);
   assert.deepEqual(calls.map((call) => call.path), ['/health', '/browser/list', '/browser/open', '/browser/close']);
 });
