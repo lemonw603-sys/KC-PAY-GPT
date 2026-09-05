@@ -422,3 +422,7 @@
 ### 2026-09-06｜付款结果未知的停止范围待收敛
 
 用户明确反对一笔付款未知导致整个链路停机。当前代码实查：Browser UNKNOWN 会锁对应 run/attempt/order/card并建对账案例，任务领取不会因此自动阻止所有其他订单；但付款执行器在点击后异常时直接进入 UNKNOWN，尚无 `VERIFYING_PAYMENT` 有界自动核验阶段，诊断 audit 与开始营业摘要对全局 UNKNOWN 的口径也不一致。推荐方向是局部锁定未决订单并继续自动核验，其他订单照常；同一未决订单不二次点击。整体仍在讨论，未改代码/生产。
+
+### 2026-09-06｜三方对账与付款 UNKNOWN 核查
+
+生产现场：20 单中总览 SQL显示 4 个“三方对账异常”，实际 `reconciliation_cases` 为空；4 个均为 ZZSHU 明确失败后没有 `recharge_order_no`，属于误报。代码同时存在旧 `cards.order_id` 关联不适配一卡复用、ZZSHU 硬编码不适配 Browser、动态异常与案例队列口径分裂。对账核心仍应保留用于真实未知/冲突，但当前统一“三方异常”投影需收敛。报告：`docs/2026-09-06_three-way-reconciliation-audit.md`。未改代码/生产。

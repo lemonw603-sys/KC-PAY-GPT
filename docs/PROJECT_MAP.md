@@ -354,3 +354,5 @@ Browser 候选对齐后发现 v1 客户首页静态 `sendFile` 在候选 worktre
 > **2026-09-06 卡台能力与完整快照规则确认**：用户明确备用卡台每次导出均包含该卡台全部卡片，因此导入按“完整快照”处理：本次缺失卡不删除历史，但停止进入新订单分配；若存在活动绑定/attempt/run/UNKNOWN 则保持锁定并核对。用户再次明确浏览器自动化充值可以使用 HNSKJ：HNSKJ 同时服务 API 和 Browser，Browser 也可切换到其他备用卡台；选 HNSKJ 时仍可使用其 API 同步/开卡/补余额能力，选无 API 来源时只使用已导入卡片。整体方案仍在讨论，未实现、未部署。
 
 > **2026-09-06 付款未知范围讨论（未最终冻结）**：用户指出网络延迟可能导致“已付款但未返回”，一笔未知不应暂停整个 Browser 链路。代码核对显示当前 UNKNOWN 主要锁定对应 run/attempt/order/card，其他订单任务仍可领取；但 executor 缺少点击后的有界 `VERIFYING_PAYMENT` 自动观察阶段，诊断 audit 又会把全局 UNKNOWN 列作 blocker，口径需收敛。建议保留同一未决订单不二次点击的局部互斥，同时让其他订单/Profile/卡台继续运行。详见 `docs/2026-09-06_payment-unknown-scope-discussion.md`；尚未实现、未部署。
+
+> **2026-09-06 三方对账现场核查**：生产总览动态计算 4 个“三方对账异常”，但 `reconciliation_cases` 为 0；4 个全部是明确 `FAILED/DEFINITE_FAILURE` 后没有外部充值订单号的 CLOSED/RECHARGE_FAILED 单，属于现有投影误报。另发现对账 SQL仍使用旧 `cards.order_id`，不适配一卡跨订单复用；并硬编码 ZZSHU，不能作为 Browser + HNSKJ/手工卡台的统一证据模型。建议保留真实资金对账核心，删除误报口径，拆分为“付款核实中/证据待同步/需人工核对”，且一单未知不暂停全链路。详见 `docs/2026-09-06_three-way-reconciliation-audit.md`；未实现、未部署。
