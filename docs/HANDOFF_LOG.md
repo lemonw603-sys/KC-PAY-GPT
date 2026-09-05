@@ -1158,3 +1158,10 @@
 - 已新增 `scripts/bitbrowser-proxy-health.sh`；`agent-evidence-gate.sh browser-order` 现在不再只测端口，而是要求单一 mihomo、监听归属正确、经代理访问 `api.ipify.org` 成功。
 - 现场证据：BitBrowser Local API `READY`；mihomo `PID=45732` 同时监听 `17897/19097`；出口 `38.60.246.34`；`LOCAL_MIHOMO_PROCESSES=1`；生产 Web/Worker active，Browser Worker inactive/disabled，生产目标仍 `LOCAL_FIXTURE`，最新订单路线仍 API。
 - 未创建订单、未读取客户 Session、未切换生产路线、未开卡/补余额、未 Provider 写入、未付款。Cloudflare challenge 是独立未解决项，后续需单独验证。
+
+## 2026-09-05｜代理修复后单 Profile 只读复核
+
+- 先通过 `agent-evidence-gate.sh browser-order`：BitBrowser API READY、mihomo 单实例、代理真实出口请求成功；生产 Browser Worker 仍 inactive/disabled，生产目标仍 LOCAL_FIXTURE。
+- Pilot Profile 完成 `open → CDP → https://chatgpt.com/ → close`；HTTP 200，标题 `ChatGPT: Chat, Work, Create & Code with AI`，未出现 Cloudflare challenge，页面数 3。
+- 原始工件：`artifacts/bitbrowser-single-profile-check-20260905/result.json`；详细记录：`docs/browser-research/BITBROWSER_SINGLE_PROFILE_PROXY_RECHECK_2026-09-05.md`。
+- 未注入 Session、未进入 Checkout、未创建订单、未读取卡片、未开卡/补余额、未 Provider 写入、未付款。下一步才是同一生命周期内的客户式只读 Session/Checkout 观察。
