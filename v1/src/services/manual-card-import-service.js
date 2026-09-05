@@ -72,6 +72,20 @@ export function parseManualCardWorkbook(input) {
 function hmac(pan, key) { return /^\d{12,19}$/.test(pan) ? crypto.createHmac('sha256', key).update(pan).digest('hex') : null; }
 function confirmationFor(count) { return `确认提交 ${count} 张卡的完整快照`; }
 function sourceError(message, code, status = 400) { return new PublicApiError(message, { code, status }); }
+function decodeWorkbook(fileBase64) {
+  const encoded = String(fileBase64 || '').trim();
+  if (!encoded) throw sourceError('card spreadsheet is required', 'MANUAL_CARD_FILE_INVALID');
+  const bytes = Buffer.from(encoded, 'base64');
+  const canonical = encoded.replace(/=+$/, '');
+  if (!bytes.length || bytes.toString('base64').replace(/=+$/, '') !== canonical) {
+    throw sourceError('card spreadsheet encoding is invalid', 'MANUAL_CARD_FILE_INVALID');
+  }
+  try { return { bytes, rows: parseManualCardWorkbook(bytes) }; }
+  catch (error) {
+    if (error instanceof PublicApiError) throw error;
+    throw sourceError('card spreadsheet is invalid', 'MANUAL_CARD_FILE_INVALID');
+  }
+}
 function sourceQuery(forUpdate = false) {
   return `SELECT id, provider_code, account_code, display_name, source_adapter,
     supports_browser_recharge, operational_enabled
@@ -132,8 +146,7 @@ export function createManualCardImportService({ pool, encryptionKey, panHmacKey 
   }
 
   async function preview({ providerAccountId, filename = 'cards.xlsx', fileBase64 } = {}) {
-    const bytes = Buffer.from(String(fileBase64 || ''), 'base64');
-    const rows = parseManualCardWorkbook(bytes);
+    const { rows } = decodeWorkbook(fileBase64);
     const state = await inspect({ queryable: pool, providerAccountId, rows });
     const result = rows.map((r) => publicRow(r, state.byExternal.has(r.row['卡序列号']), state.conflictHmacs.has(hmac(r.pan, panHmacKey))));
     const structuralCount = result.filter((r) => r.status === 'REJECTED').length;
@@ -150,7 +163,7 @@ export function createManualCardImportService({ pool, encryptionKey, panHmacKey 
   }
 
   async function commit({ providerAccountId, filename = 'cards.xlsx', fileBase64, confirmation, requestedBy = 'admin' } = {}) {
-    const bytes = Buffer.from(String(fileBase64 || ''), 'base64'); const rows = parseManualCardWorkbook(bytes);
+    const { bytes, rows } = decodeWorkbook(fileBase64);
     if (confirmation !== confirmationFor(rows.length)) throw sourceError('import confirmation mismatch', 'MANUAL_CARD_IMPORT_CONFIRMATION_REQUIRED');
     if (rows.some((r) => r.structuralErrors.some((e) => STRUCTURAL_ERRORS.has(e)))) throw sourceError('full snapshot contains structural errors', 'MANUAL_CARD_SNAPSHOT_INVALID', 409);
     const hash = crypto.createHash('sha256').update(bytes).digest('hex');

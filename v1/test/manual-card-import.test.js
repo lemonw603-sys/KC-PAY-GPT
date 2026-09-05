@@ -30,6 +30,19 @@ test('manual workbook parser never accepts a file over the bounded size', () => 
   assert.throws(() => parseManualCardWorkbook(Buffer.alloc(2 * 1024 * 1024 + 1)), /exceeds 2MB/);
 });
 
+test('manual import API service classifies empty or corrupt uploads as client errors', async () => {
+  const pool = { async getConnection() { throw new Error('database must not be reached'); } };
+  const service = createManualCardImportService({
+    pool, encryptionKey: Buffer.alloc(32, 1), panHmacKey: Buffer.alloc(32, 2)
+  });
+  for (const fileBase64 of ['', Buffer.from('not a workbook').toString('base64')]) {
+    await assert.rejects(
+      service.preview({ providerAccountId: 'source-a', fileBase64 }),
+      (error) => error.code === 'MANUAL_CARD_FILE_INVALID' && error.status === 400
+    );
+  }
+});
+
 
 function workbook(rows) {
   const strings = rows.flat();
