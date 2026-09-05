@@ -61,3 +61,9 @@
 - migration 048/备用卡导入何时以何种最小模型进入生产。
 
 以上问题在继续实现前需要结合用户业务流程再次讨论确认。
+
+## 追加核查：本地与生产版本差异
+
+- 本地 `workflow-repository.js` 的卡片分配 SQL 已引用 `fulfillment_route_card_sources`；生产 current release 的同文件未引用该表，说明备用卡源分配逻辑尚未进入生产代码。
+- 本地 `provider-route-admin-service.js` 与生产同名文件 SHA-256 一致；路线切换拦截逻辑已在生产生效。
+- 生产 current release 不含 migration 048；若仅切换后台文案或新增 UI，不能产生备用卡源能力，必须先设计并部署数据库/分配逻辑候选。

@@ -402,3 +402,7 @@
 ### 2026-09-06｜多卡源/卡台切换全层现场核查
 
 已完成本地代码 + 生产 release/服务/数据库只读核对，报告见 `docs/2026-09-06_card-source-current-system-audit.md`。真实现状：后台“Plus 卡台路线”切换的是 `fulfillment_routes` 的接单/充值路线；前后端均在目标不健康时阻止切换；生产仅有 API 与 Browser 两条路线，且都绑定 `legacy-primary`，尚无 `fulfillment_route_card_sources` 表。备用卡台策略未进入生产。之前提出的“当前卡台独立入口”和“单订单切换”属于未核实设计，已撤回。当前不实现、不部署，等待基于现场事实重新讨论。
+
+### 2026-09-06｜本地/生产差异补充
+
+深查确认：本地卡源分配实现已使用 `fulfillment_route_card_sources`，但生产 current release 仍是旧版分配代码且没有 migration 048；备用卡源导入/分配尚未生产化。生产路线切换服务与本地一致，健康状态拦截仍真实生效。仅修改前端入口无法解决卡源切换，需先重新讨论并设计生产可用的最小模型。
