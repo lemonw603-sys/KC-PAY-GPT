@@ -45,8 +45,9 @@ migration 048 → 卡源/快照服务 → 建单冻结 → 分卡约束 → 后�
 
 ## 5. 本轮回归证据（2026-09-06）
 
-- `v1/npm test`：540 tests，493 pass，47 skip（均为未配置隔离数据库的套件），0 fail。
+- `v1/npm test`：543 tests，496 pass，47 skip（均为未配置隔离数据库的套件），0 fail。
 - 隔离 MySQL 多来源快照/建单冻结/切换/缺失收敛/跨来源 PAN 冲突：通过。
 - 隔离 MySQL Browser execution mapping（付款一次性提交、未知状态进入 `VERIFYING_PAYMENT`、前置安全终止）：2/2 通过。
 - `browser-mvp/npm test`：132 tests，128 pass，4 skip，0 fail。
 - 本轮新增 `browser_runs.verification_*` 字段；`markPaymentUnknown` 不再立即创建人工案例；只有 `escalatePaymentVerification` 才创建 `BROWSER_PAYMENT_UNKNOWN` 案例。
+- 新增 `browser-payment-verification-service.js` 协调器与 due 查询：UNKNOWN 继续只读观察，CONFIRMED/DECLINED 安全收敛，超时/冲突才升级人工案例；协调器尚未接入生产进程。

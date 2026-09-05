@@ -292,6 +292,36 @@ function publicRun(row, extra = {}) {
 
 export function createBrowserExecutionRepository(pool) {
   return {
+    async listPaymentVerificationsDue({ now = new Date(), limit = 20 } = {}) {
+      if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
+        throw new BrowserExecutionError('limit must be between 1 and 100', 'INVALID_ARGUMENT');
+      }
+      const [rows] = await pool.query(
+        `SELECT br.id AS run_id, br.verification_state,
+                br.verification_deadline_at, br.verification_next_check_at,
+                br.verification_check_count, br.payment_state,
+                rat.order_id, rat.executor_profile_id
+         FROM browser_runs br
+         INNER JOIN recharge_attempts rat ON rat.id = br.recharge_attempt_id
+         INNER JOIN orders o ON o.id = rat.order_id
+         WHERE br.status = 'RECONCILE_ONLY'
+           AND br.payment_state = 'PAYMENT_UNKNOWN'
+           AND br.verification_state = 'VERIFYING_PAYMENT'
+           AND (br.verification_next_check_at IS NULL OR br.verification_next_check_at <= ?)
+         ORDER BY COALESCE(br.verification_next_check_at, br.verification_started_at), br.id
+         LIMIT ?`, [now, limit]
+      );
+      return rows.map((row) => ({
+        runId: row.run_id,
+        verificationState: row.verification_state,
+        verificationDeadlineAt: row.verification_deadline_at,
+        verificationNextCheckAt: row.verification_next_check_at,
+        verificationCheckCount: Number(row.verification_check_count || 0),
+        paymentState: row.payment_state,
+        orderId: row.order_id,
+        executorProfileId: row.executor_profile_id,
+      }));
+    },
     async beginRun({
       attemptId,
       executorProfileId,
