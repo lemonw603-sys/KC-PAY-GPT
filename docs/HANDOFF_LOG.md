@@ -57,6 +57,12 @@
 - Browser preflight 在转入 `WAITING_FOR_SESSION` 时把该诊断摘要写入 `order_events.metadata_json`，保留订单已有加密 Session 原件，便于区分真实失效、身份不匹配、Cloudflare 和上游错误。
 - 定向 Session 测试通过；代码提交 `a4c9084`，修复已同步生产当前 release，`/health/ready=ready`。尚未重跑新订单，避免重复消耗任务。
 
+## 2026-09-05｜本地 Session 校验错误分类落地
+
+- 已将订单侧本地 Session 材料错误从笼统 `SESSION_INVALID` 拆为 `SESSION_MATERIAL_INVALID` 及具体校验码（`INCOMPLETE_SESSION`、`SESSION_EXPIRED`、`INVALID_SESSION_TOKEN`、`ACCESS_TOKEN_EXPIRED` 等）；远端接口拒绝仍由探针单独记录 HTTP 诊断。
+- Browser preflight 仍统一引导客户更换 Session，但内部事件保留 `stage=causeCode`，不写入明文 Session/Token。
+- Browser 全量回归 `121 pass/4 skipped/0 fail`；提交 `28381d3`，修复已同步生产，`/health/ready=ready`。
+
 ## 2026-09-05｜完整只读导航诊断的间歇性身份结果
 
 - 现场在同一订单/同一 Profile 上先后得到两种结果：一次 Session 与订单 email/account 摘要哈希完全匹配，另一次执行器返回 `SESSION_IDENTITY_MISMATCH`。因此不能把单次失败直接定性为客户 Session 错误。
