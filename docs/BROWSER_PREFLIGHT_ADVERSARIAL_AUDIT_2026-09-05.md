@@ -47,3 +47,14 @@
 ## 下一步
 
 在不执行付款的前提下，使用专门的真实测试订单完成：订单路线冻结 → Browser job/run → Session/账号 → Checkout 金额税费读取 → 付款前安全退出 → 状态/审计回写。每一段均保存原始证据；若任一段失败，停在最早不确定点，不重试付款、不换路线。
+
+## 二次纠偏：避免闸门影响决策
+
+用户指出闸门若输出含糊的“ready”，可能被错误当作业务结论。本轮将版本升级为 v2：
+
+- 结果明确命名为 `PREFLIGHT_READY`，不再叫 `ORDER_EVIDENCE_READY`；
+- 明确标注 `LATEST_ORDER_SCOPE=diagnostic_only`，旧订单仅作诊断，不参与默认路线判断；
+- 直接读取并强制断言 `fulfillment_routes.accepts_new_orders` 恰好一个且为 `BROWSER`；
+- 不满足时以非零状态退出。
+
+闸门仍不是订单验收器，只负责阻止明显的环境/路线错配。

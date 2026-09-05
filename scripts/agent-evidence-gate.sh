@@ -10,7 +10,7 @@ case "$mode" in
   *) echo "usage: $0 {local|production|browser-order}" >&2; exit 64 ;;
 esac
 
-echo "EVIDENCE_GATE_VERSION=1"
+echo "EVIDENCE_GATE_VERSION=2"
 echo "MODE=$mode"
 echo "REPO=$repo_root"
 echo "GIT_BRANCH=$(git branch --show-current)"
@@ -91,7 +91,12 @@ const pool = await mysql.createPool(process.env.DATABASE_URL);
       INNER JOIN products p ON p.id = fr.product_id
       WHERE p.product_code = ? AND fr.retired_at IS NULL
         AND fr.accepts_new_orders = 1`, [productCode]);
+    console.log(`LATEST_ORDER_SCOPE=diagnostic_only`);
     console.log(`CURRENT_DEFAULT_ROUTE=${JSON.stringify(routes)}`);
+    if (routes.length !== 1 || routes[0].executor_kind !== "BROWSER") {
+      console.error("CURRENT_DEFAULT_ROUTE_EXPECTED=BROWSER");
+      process.exit(68);
+    }
     await pool.end();
 NODE
     # Schema and runtime evidence are distinct from service health.  The
@@ -112,4 +117,4 @@ NODE2
 fi
 
 mode_upper="$(printf '%s' "$mode" | tr '[:lower:]' '[:upper:]')"
-echo "RESULT=${mode_upper}_EVIDENCE_READY"
+echo "RESULT=${mode_upper}_PREFLIGHT_READY"
