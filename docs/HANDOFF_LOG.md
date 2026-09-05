@@ -1186,3 +1186,10 @@
 - 进一步核对后发现：BitBrowser Local API 监听在本机 `127.0.0.1:54345`，而生产 Browser systemd 运行在远程服务器；即使把 adapter 文件上传，远程服务里的 `127.0.0.1` 也不是本机 BitBrowser。
 - 因此不能把 `BITBROWSER_API_BASE_URL=http://127.0.0.1:54345` 直接写进远程生产配置，也不能把“上传代码”误报成“真实 Browser 已接线”。当前没有部署这类无效配置。
 - 正确候选是：Browser 控制 Worker 运行在本机并通过受控 SSH 数据库隧道访问生产共享数据库，或建立明确的反向 API 隧道后再让远程 Worker 控制本机 BitBrowser；两者都必须先做只读 readiness 和回滚验证。
+
+## 2026-09-05｜本机 Browser Worker 只读接线通过
+
+- 按方案 A 做了受控验证：本机临时 SSH `-L` 隧道映射生产 MySQL 到本机 `13306`，临时环境将目标设为 `BITBROWSER_READONLY`、API 指向本机 `127.0.0.1:54345`，所有付款/Provider/卡资金写开关保持 false。
+- 本机 `production-readonly-worker.js --check` 返回 `READY`；随后 `--once` 返回 `IDLE` 并正常退出，证明本机 Worker 可访问生产共享数据库、满足 Browser 只读迁移/执行器合同、并能安全启动一轮。
+- 此轮没有 Browser job，因此没有打开 Profile、没有注入 Session、没有创建订单、没有读取卡片、没有开卡/补余额、没有 Provider 写入、没有付款。
+- 隧道、临时环境文件和临时 Worker 均已结束/清理；生产 Browser systemd 仍 inactive/disabled，默认路线仍 API。
