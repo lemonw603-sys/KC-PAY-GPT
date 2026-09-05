@@ -1,5 +1,7 @@
 # 当前生产状态快照｜2026-09-05
 
+> **2026-09-05 订单发现机制纠偏**：曾错误声称“订单提交后没有跨窗口发现机制”。代码和生产数据库现场核对后确认，现有建单事务已写入 `orders`、`order_events` 与 `tasks`，Browser 路线同时写入 `BROWSER_PREFLIGHT`；系统具备持久化任务发现能力。本次客户订单 `PJV1-AH6M688B3Wfv5_vxISmp` 已落库，当前 `WAITING_FOR_CARD`，路线 `CHATGPT_PLUS_BROWSER_V1/BROWSER`，`ASSIGN_CARD` 任务 `PENDING`，最近错误 `CARD_STOCK_EMPTY`。误判根因是本执行窗口未使用生产可用的 Node/mysql2 查询方式，却先据此下结论；不是客户提交失败，也不是数据库漏写。后续涉及“有没有新订单”必须先读取生产数据库或已登录后台的原始响应，禁止凭窗口可见性或历史上下文推断。
+
 > **最新代码/生产边界（2026-09-05）**：本地已用两个独立 BitBrowser Profile 完成目标 Session 三项身份匹配后的全新 Checkout 前后对照；两次均从 `PHP ₱1,100（含 12% VAT）` 在填卡、US/DE 地址和 Session 邮箱后重算为 `PHP ₱982.14 / Tax 0`，未点击 Subscribe、未付款。提交 `04e08e6` 已发布为 `/opt/pojia/releases/20260905-browser-zero-tax-04e08e6`，直接回滚点 `/opt/pojia/releases/20260905-session-errors-d24f6d6`；Browser 文件哈希、`npm run check`、生产 Browser `--check=READY`、Web/Worker active、live/ready 均通过。Browser Worker 仍 `inactive/disabled`；发布后 RUNNING task=0、ACTIVE/UNKNOWN 充值资金=0、ACTIVE/UNKNOWN 补款资金=0。本文下方更早的 release 描述只作历史记录，不得覆盖本条。详情见 `docs/browser-research/BITBROWSER_TAX_MULTI_SAMPLE_2026-09-05.md`。
 
 > **2026-09-05 本机 BitBrowser 代理生命周期修复现场证据**：已停止无主 mihomo 进程并交由 `~/Library/LaunchAgents/com.ai充值业务.mihomo.plist` 管理，wrapper 使用目录锁防止重复实例。健康检查已从“端口 LISTEN”升级为单实例、监听归属和真实 HTTPS 出口请求三项检查；当前 `17897` 与 `19097` 均由同一 mihomo PID `45732` 监听，ipify 经代理返回 `38.60.246.34`，检查结果 `READY`。这只修复本机代理生命周期，不代表 ChatGPT Cloudflare challenge 已解决。

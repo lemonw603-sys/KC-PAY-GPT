@@ -1,5 +1,7 @@
 # AI充值业务｜唯一项目规划地图
 
+> **2026-09-05 订单可观测性纠偏（重要）**：本轮曾误判“客户提交结果只停留在客户页面、系统没有跨窗口订单发现机制”。现场复核证明该判断不成立：订单创建事务已持久化 `orders`、`order_events` 和对应 `tasks`，Browser 路线还会写入 `BROWSER_PREFLIGHT` 任务；本次新订单 `PJV1-AH6M688B3Wfv5_vxISmp` 已在生产数据库落库，状态为 `WAITING_FOR_CARD`、路线 `BROWSER`，`ASSIGN_CARD` 任务为 `PENDING`（最近错误 `CARD_STOCK_EMPTY`）。此前“查不到”是执行窗口误用了本机无 `mysql` 客户端并在未读到生产数据库前做了结论，不是系统漏写订单。已停止残留的本地测试进程，后续先用生产 Node/mysql2 只读查询或后台订单查询接口核对，再回答订单是否存在；不新增重复的“订单收件箱”模块，避免过度设计。
+
 > **2026-09-05 Browser 零税流程多样本收口（最新）**：已完成两个独立 BitBrowser Profile 的身份有效、全新 Checkout 前后对照，均从 `PHP ₱982.14 + VAT ₱117.86 = ₱1,100.00` 在填卡、US/DE 账单地址和瞬时 Session 邮箱后重算为 `PHP ₱982.14 + Tax ₱0 = ₱982.14`；另有一个身份有效零税样本。全程未点击 Subscribe、未付款。正式代码已收口真实标签/千分位、PHP/零税/金额一致性、卡→地址→重报价顺序、Session 空响应稳定等待、`Rejoin Plus` 水合重试和 BitBrowser 最后一页存活问题。Browser `132/128/4/0`、v1 `532/486/46/0`。提交 `04e08e6` 已发布为 `/opt/pojia/releases/20260905-browser-zero-tax-04e08e6`；生产哈希、Browser `--check=READY`、Web/Worker、live/ready 均通过，Browser Worker 保持 `inactive/disabled`。**下一步不是继续猜税额，而是把本机正式 Worker 的卡资料/地址租约接入当前真实 Browser 订单，并在付款前再做一次订单级核对；真实 Browser 付款仍未验收。** 证据见 `docs/browser-research/BITBROWSER_TAX_MULTI_SAMPLE_2026-09-05.md`。
 
 > **2026-09-05 BitBrowser 代理生命周期已修复（本机现场）**：此前开窗失败的直接证据是 `ECONNREFUSED 127.0.0.1:17897`。已将 mihomo 从无主进程迁移为用户级 launchd 单实例服务 `com.ai充值业务.mihomo`，固定使用 BitBrowser 代理目录；健康闸门现在同时检查“仅一个 mihomo、17897 监听归属正确、经代理访问 ipify 成功”。当前现场 `PID=45732`、出口 `38.60.246.34`、`LOCAL_MIHOMO_PROCESSES=1`，BitBrowser Local API 与生产只读状态复核均通过。ChatGPT Cloudflare challenge 仍是独立的页面访问问题，未宣称已解决。

@@ -1320,3 +1320,8 @@
 - 生产 Browser `production-readonly-worker --check` 返回 `READY`，但服务继续保持 `inactive/disabled`；没有启动 Browser Worker、没有领取订单、没有 Provider/卡台写入、没有付款。
 - 发布前后均核对：RUNNING task=0、ACTIVE/UNKNOWN recharge attempt=0、ACTIVE/UNKNOWN funding attempt=0。
 - 下一步：针对当前真实 Browser 订单核对卡证据恢复状态；卡台恢复后，由本机正式 Worker接入共享订单、卡资料和账单地址，按已冻结的零税流程运行到付款前，再请求一次最终付款确认。
+# 2026-09-05｜订单发现机制纠偏
+
+- 曾误报“客户提交后系统没有跨窗口订单发现机制”。现场重新读取生产代码和数据库后确认：建单事务已持久化 `orders`、`order_events`、`tasks`，Browser 路线会创建 `BROWSER_PREFLIGHT` 任务，现有任务领取机制就是跨窗口/跨进程发现机制。
+- 本次订单 `PJV1-AH6M688B3Wfv5_vxISmp` 已真实落库，路线 `CHATGPT_PLUS_BROWSER_V1/BROWSER`，状态 `WAITING_FOR_CARD`；`ASSIGN_CARD` 为 `PENDING`，最近错误 `CARD_STOCK_EMPTY`。提交没有丢失。
+- 误判根因是执行窗口未先采用生产可用的 Node/mysql2 只读查询（服务器没有 `mysql` CLI），却根据本机窗口不可见下结论；已停止残留本地测试进程。以后订单存在性先查生产原始响应/后台接口，再报告，不新增“订单收件箱”重复模块。
