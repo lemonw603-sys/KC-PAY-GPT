@@ -1,6 +1,6 @@
 # 当前生产状态快照｜2026-09-06
 
-> **2026-09-06 D6 最新生产事实**：真实后台/API 验收发现并修复三项运营误导：自动开卡关闭却显示开启、同步失败率 100% 却显示正常、空备用卡台被统计为 1 张。修复 commit `c9f482e` 已发布为 `/opt/pojia/releases/20260906-admin-alignment-c9f482e`，826 文件 manifest 与两套全量测试通过。Browser 卡源已实测 HNSKJ→备用 A→HNSKJ，两次均不接管旧订单且有审计。备用 A 的 2 卡完整快照已原子导入，同文件重放幂等；两卡余额 `$0`–`$2`，低于 `$18` 门槛，可分配数 0。Browser Worker/付款/旧自动开卡仍关闭，未发生资金动作。证据见 `docs/CARD_SOURCE_D6_PRODUCTION_ACCEPTANCE_2026-09-06.md`。
+> **2026-09-06 D6 最新生产事实**：真实后台/API 验收发现并修复三项运营误导：自动开卡关闭却显示开启、同步失败率 100% 却显示正常、空备用卡台被统计为 1 张。修复 commit `c9f482e` 已上线；空/损坏卡文件分类修复 commit `c6e9f48` 已发布为当前 release `/opt/pojia/releases/20260906-import-errors-c6e9f48`，827 文件 manifest 通过，生产空文件请求实测返回 `HTTP 400 manual_card_file_invalid`。Browser 卡源已实测 HNSKJ→备用 A→HNSKJ，两次均不接管旧订单且有审计。备用 A 的 2 卡完整快照已原子导入，同文件重放幂等；两卡余额 `$0`–`$2`，低于 `$18` 门槛，可分配数 0。Web/API Worker active；Browser Worker/付款/旧自动开卡仍关闭，未发生资金动作。证据见 `docs/CARD_SOURCE_D6_PRODUCTION_ACCEPTANCE_2026-09-06.md`。
 
 > **自动开卡当前状态**：旧 timer 架构不再恢复；`pojia-card-stock-runner.timer/service=inactive/disabled`，`card_auto_replenishment_enabled=false`。969 条历史任务保留审计证据，活动数为 0、最新创建时间仍为 `2026-09-05T22:32:12.365Z`。未来只能实现订单事件触发、同一需求唯一任务、明确失败停止和有界恢复的新机制，并单独验收。自动补余额是独立机制，当前 timer 正常。
 

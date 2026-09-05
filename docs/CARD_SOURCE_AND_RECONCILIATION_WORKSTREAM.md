@@ -81,9 +81,9 @@
 
 ## 6. 已核实的当前生产状态与剩余差距
 
-- 生产 current：`/opt/pojia/releases/20260906-card-sources-8012da8`（commit `8012da8`）；825 文件全量 manifest 通过，migration 048 已部署。
+- 生产 current：`/opt/pojia/releases/20260906-import-errors-c6e9f48`（commit `c6e9f48`）；827 文件全量 manifest 通过，migration 048 已部署。空/损坏快照已在生产实测为 `HTTP 400 manual_card_file_invalid`，不再误报 500。
 - HNSKJ 和备用卡 A 的能力字段、Browser 当前来源 HNSKJ、历史订单冻结来源均已在生产数据库核对。
-- 备用卡导入入口已上线，但生产导入批次仍为 0；尚未用实际完整快照验证预览、确认、缺失卡收敛和统计。
+- 备用卡导入入口已上线；生产已用 2 卡完整快照验证预览、原子提交、分池统计与同文件幂等重放。
 - Browser Worker 与付款保持关闭；当前 Browser 路线接新单，因此不能把“代码/结构已上线”误报为“Browser 可履约”。
 - 旧自动开卡 timer 与总开关保持关闭；969 条历史任务未增长。新订单事件触发的自动开卡机制尚未另行实现/验收。
 - HNSKJ 卡目录只读同步当前收到 `HTTP 403 maintenance`；按已冻结决策不自动回退，只提示并等待运营者处理。

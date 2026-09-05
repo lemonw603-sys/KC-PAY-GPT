@@ -56,6 +56,19 @@
 - Web/API Worker、只读同步、补余额/对账 timer、Bark 均 active；公网 health ready 正常；
 - HNSKJ 卡目录仍返回 maintenance 403，属于上游可用性约束。
 
-## 5. 尚未完成
+## 5. 导入错误边界与最终生产复验
+
+验收脚本首次错把空上传字段发往预览接口，生产当时返回笼统的 `500 internal_error`。数据库没有发生写入，但这暴露了空文件/损坏文件未稳定分类为客户端输入错误的边界。
+
+- 修复 commit：`c6e9f487caad6cd7b49046e423e431bf7e5e915d`；
+- 最终生产 release：`/opt/pojia/releases/20260906-import-errors-c6e9f48`；
+- v1 全量回归：`548 total / 501 pass / 47 skip / 0 fail`；
+- release manifest：`827` 个文件全部通过；
+- 生产真实 HTTP 复验：已认证的管理员请求向预览接口提交空 `fileBase64`，返回 `HTTP 400 {"error":"manual_card_file_invalid"}`，未访问 Provider；复核后生产仍只有 `1` 个手工导入批次和 `2` 张手工卡，没有新增批次或卡片；
+- 生产安全复核：Web/API Worker `active`，Browser Worker 与旧自动开卡 timer/service 均 `inactive/disabled`；`browser_payment_writes_enabled=false`、`card_auto_replenishment_enabled=false`；RUNNING task、ACTIVE/UNKNOWN recharge/funding、活动 Browser run/dispatch 均为 `0`；
+- 跨过一个完整定时周期后，stock jobs 仍为 `969`，活动数 `0`，最新创建时间仍为 `2026-09-05T22:32:12.365Z`；
+- 本机与生产 `/tmp/d6-admin-tokens.json` 均不存在；本轮临时响应文件已安全删除，不在日志或文档中保留会话令牌。
+
+## 6. 尚未完成
 
 D6 尚未完成真实订单出口条件：还需用一张达到余额门槛的选定卡源卡，在 Browser Worker 受控启用后验证“新订单冻结当前卡源 → 分卡 → Checkout/零税 → 付款 → Plus/取消续费 → 账本/对账/客户状态”。当前不得把卡源切换和导入成功表述为 Browser 付款已跑通。

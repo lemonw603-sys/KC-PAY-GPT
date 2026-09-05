@@ -1,6 +1,6 @@
 # AI充值业务｜唯一项目规划地图
 
-> **2026-09-06 D6 卡源生产验收进行中（当前最高优先级）**：生产后台/API、Browser 卡源 HNSKJ↔备用 A 双向切换、不接管旧订单、切换审计、2 卡完整快照与幂等重放均已实测。页面验收发现的“自动开卡关闭却显示开启”“100% 同步失败却显示正常”“空来源统计 1 张”已由 `c9f482e` 修复并发布到 `/opt/pojia/releases/20260906-admin-alignment-c9f482e`；826 文件 manifest、v1 与 Browser 全量测试通过。最终卡源已恢复 HNSKJ；备用两卡余额均低于 `$18`，不会被 Plus 分配。Browser Worker、付款、旧自动开卡继续关闭。下一步为达到余额门槛后的真实 Browser 订单验收，当前不能宣称付款链路完成。证据见 `docs/CARD_SOURCE_D6_PRODUCTION_ACCEPTANCE_2026-09-06.md`。
+> **2026-09-06 D6 卡源生产验收进行中（当前最高优先级）**：生产后台/API、Browser 卡源 HNSKJ↔备用 A 双向切换、不接管旧订单、切换审计、2 卡完整快照与幂等重放均已实测。页面误导已由 `c9f482e` 修复；空/损坏卡文件已由 `c6e9f48` 稳定分类为客户端错误。当前生产 release 为 `/opt/pojia/releases/20260906-import-errors-c6e9f48`，827 文件 manifest 通过，空文件接口实测返回 `HTTP 400 manual_card_file_invalid`。最终卡源已恢复 HNSKJ；备用两卡余额均低于 `$18`，不会被 Plus 分配。Browser Worker、付款、旧自动开卡继续关闭；969 条 stock jobs 跨完整周期未增长。下一步为有达到 `$18` 门槛的卡后执行真实 Browser 订单验收，当前不能宣称付款链路完成。证据见 `docs/CARD_SOURCE_D6_PRODUCTION_ACCEPTANCE_2026-09-06.md`。
 
 > **2026-09-05 订单可观测性纠偏（重要）**：本轮曾误判“客户提交结果只停留在客户页面、系统没有跨窗口订单发现机制”。现场复核证明该判断不成立：订单创建事务已持久化 `orders`、`order_events` 和对应 `tasks`，Browser 路线还会写入 `BROWSER_PREFLIGHT` 任务；本次新订单 `PJV1-AH6M688B3Wfv5_vxISmp` 已在生产数据库落库，状态为 `WAITING_FOR_CARD`、路线 `BROWSER`，`ASSIGN_CARD` 任务为 `PENDING`（最近错误 `CARD_STOCK_EMPTY`）。此前“查不到”是执行窗口误用了本机无 `mysql` 客户端并在未读到生产数据库前做了结论，不是系统漏写订单。已停止残留的本地测试进程，并将缺失的 Browser 建单任务写入生产候选 `/opt/pojia/releases/20260905-order-preflight-130349` 后重启 Web、复验 `ready`；后续先用生产 Node/mysql2 只读查询或后台订单查询接口核对，再回答订单是否存在；不新增重复的“订单收件箱”模块，避免过度设计。
 
