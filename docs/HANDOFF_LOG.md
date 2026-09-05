@@ -33,6 +33,12 @@
 - 已将 BitBrowser adapter API 超时提高到 `20s`，保留健康、Profile 白名单、CDP 和只读能力校验。定向回归 `14/14` 通过，提交 `ed89208`，修复已同步当前生产 release。
 - `/browser/close` 现场返回成功；未领取订单、未注入 Session、未进入 Checkout、未 Provider/卡台写入、未付款。订单 68 仍保持 `PENDING`，下一步才可在确认预算后重跑。
 
+## 2026-09-05｜修复后订单前置复跑与 Session 身份冲突
+
+- 在 `ed89208` 开窗超时修复后，订单 68 重新执行已越过 BitBrowser 开窗、Session 注入、页面检查和账号接口；WAL 记录 `session-bootstrap`、`account-readonly-probe` 前的身份校验分支。
+- 本次真实失败原因为 `SESSION_IDENTITY_MISMATCH`，不是卡台、Checkout 导航或付款闸门；执行器已安全停止，未创建充值 attempt、未读取卡资料、未 Provider/卡台写入、未付款。
+- 这表明订单中保存的客户身份摘要与所提交 Session 实际账号不一致（具体值不落日志）。订单保持 `PENDING`，剩余任务预算不得自动重试；需客户在原订单提交匹配该订单的 Session 后，按既定 Session 修复流程重新验证。
+
 ## 2026-09-04｜补款失败恢复、陈旧卡抢跑修复与生产运行证据
 
 - 代码提交 `0e5a82d`：补款失败固化 `AUTO_RETRY/DO_NOT_RETRY/MANUAL_REVIEW`，仅 `FAILED+CLEARED+AUTO_RETRY` 有界自动恢复，订单+卡最多 3 个 attempt，UNKNOWN 不重试。
