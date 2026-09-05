@@ -67,6 +67,20 @@ async function uniqueVisibleButton(scope, labels, label, { optional = false } = 
   return matches[0];
 }
 
+async function uniqueVisibleMenuItem(scope, labels, label, { optional = false } = {}) {
+  const matches = [];
+  for (const name of labels || []) {
+    const locator = scope.getByRole('menuitem', { name, exact: true });
+    for (let index = 0; index < await locator.count(); index += 1) {
+      const candidate = locator.nth(index);
+      if (await candidate.isVisible()) matches.push(candidate);
+    }
+  }
+  if (optional && matches.length === 0) return null;
+  if (matches.length !== 1) throw new ContractError(`${label} must resolve to one visible menu item`);
+  return matches[0];
+}
+
 async function assertSafeNavigationControl(locator, label) {
   const shape = await locator.evaluate((element) => ({
     tag: element.tagName.toLowerCase(),
@@ -78,7 +92,8 @@ async function assertSafeNavigationControl(locator, label) {
   }));
   const nativeControl = ['button', 'a'].includes(shape.tag);
   const accessibleButton = shape.role === 'button' && Number.isInteger(shape.tabIndex) && shape.tabIndex >= 0;
-  if (!nativeControl && !accessibleButton) throw new ContractError(`${label} is not a navigation control`);
+  const menuItem = shape.role === 'menuitem';
+  if (!nativeControl && !accessibleButton && !menuItem) throw new ContractError(`${label} is not a navigation control`);
   if (shape.disabled) throw new ContractError(`${label} is disabled`);
   // ChatGPT's plan picker renders the non-payment "升级至 Plus" action as a
   // standalone button with type=submit but no enclosing form. It only opens
@@ -118,6 +133,7 @@ export const CHATGPT_PLUS_CHECKOUT_NAVIGATION_CONTRACT = Object.freeze({
   openPricingSelectors: Object.freeze(['button[aria-label="升级"]', 'button[aria-label="Upgrade"]']),
   profileMenuSelectors: Object.freeze(['[data-testid="accounts-profile-button"]']),
   profileUpgradeSelectors: Object.freeze(['button[aria-label="升级"]', 'button[aria-label="Upgrade"]']),
+  profileUpgradeLabels: Object.freeze(['升级套餐', 'Upgrade plan']),
   pricingDialogSelector: '[role="dialog"]',
   upgradeLabels: Object.freeze(['升级至 Plus', 'Upgrade to Plus']),
   questionnaireSkipLabels: Object.freeze(['跳过', 'Skip']),
@@ -158,12 +174,11 @@ export async function navigateToChatGPTPlusCheckout(page, contract = CHATGPT_PLU
       );
       await safeClick(profileMenu, 'profile menu control', assertContinue, timeoutMs);
       actions.push('profile-menu-opened');
-      openPricing = await waitForState(page, async () => lastVisibleNavigationSelector(
-        page,
-        contract.profileUpgradeSelectors,
-        'profile upgrade control',
-        { optional: true },
-      ), { timeoutMs, label: 'profile upgrade control' });
+      openPricing = await waitForState(page, async () => {
+        const bySelector = await lastVisibleNavigationSelector(page, contract.profileUpgradeSelectors, 'profile upgrade control', { optional: true });
+        if (bySelector) return bySelector;
+        return uniqueVisibleMenuItem(page, contract.profileUpgradeLabels, 'profile upgrade control', { optional: true });
+      }, { timeoutMs, label: 'profile upgrade control' });
     }
     await safeClick(openPricing, 'open pricing control', assertContinue, timeoutMs);
     actions.push('pricing-opened');
