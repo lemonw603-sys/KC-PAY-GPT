@@ -23,7 +23,10 @@ test('session identity probe verifies the real session endpoint without returnin
       assert.equal(request.headers.authorization, 'Bearer fixture-access-token-must-not-leave-page');
       response.writeHead(200, { 'content-type': 'application/json' });
       response.end(JSON.stringify({
-        accounts: { default: { entitlement: { has_active_subscription: false, subscription_plan: 'free' } } },
+        accounts: { default: { entitlement: {
+          has_active_subscription: false,
+          subscription_plan: 'chatgptplusplan',
+        } } },
       }));
       return;
     }

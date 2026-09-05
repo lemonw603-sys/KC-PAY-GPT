@@ -1216,3 +1216,10 @@
 - 修复两类 Profile id 混用：数据库 `BROWSER_EXECUTOR_PROFILE_ID=00000000-0000-4000-8000-000000000401` 只用于共享租约；本机 BitBrowser Profile 由独立 `BITBROWSER_PROFILE_ID` 配置。
 - 新增 `BROWSER_PREFLIGHT` 订单任务、order-scoped 加密 Session source、Checkout 非付款观察、有限结果持久化和 Browser submit 完成依赖；Session 更换会按有无已绑定卡分别恢复 `CARD_READY` 或 `WAITING_FOR_CARD`。
 - 回归：Browser 123/119/4/0，v1 531/485/46/0，定向测试与 `git diff --check` 通过。尚未部署、尚未给当前订单补任务、尚未访问该订单 Session/Checkout、未付款。
+
+## 2026-09-05｜首轮前置观察发现历史套餐字段误判
+
+- release `20260905-browser-preflight-3cd3d57` 已部署，备份 `/var/backups/pojia/pojia-20260905T035424Z.sql.gz.enc` 完整；Web/Worker active，远程 Browser systemd 仍 inactive/disabled。
+- 当前订单已幂等补建 `BROWSER_PREFLIGHT`；本机 Worker 使用独立 BitBrowser Profile id，Session 注入成功。
+- 安全结构诊断确认账号接口 HTTP 200、`has_active_subscription=false`，但保留历史 `subscription_plan=chatgptplusplan`。旧解析器因此返回 `ACCOUNT_STATUS_UNKNOWN`，不是客户 Session 格式错误，也不是卡台问题。
+- 修复只调整这一权威判定：活动布尔为 false 即当前 FREE；活动为 true 仍按 plan 区分 Plus/其他付费，字段缺失仍为 UNKNOWN。未输出 Session/Token/邮箱原文，未读取卡资料、未付款。

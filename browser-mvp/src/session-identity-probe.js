@@ -80,7 +80,9 @@ export async function probeSessionIdentity(page, expectedIdentity, {
         let state = 'UNKNOWN';
         if (hasActive === true && plan.includes('plus')) state = 'PLUS';
         else if (hasActive === true) state = 'PAID_OTHER';
-        else if (hasActive === false && (!plan || plan.includes('free'))) state = 'FREE';
+        // ChatGPT can retain the last paid plan name after it is inactive.
+        // The explicit active-subscription boolean is authoritative.
+        else if (hasActive === false) state = 'FREE';
         subscription = { ok: accountResponse.ok, status: accountResponse.status, state };
       }
     }

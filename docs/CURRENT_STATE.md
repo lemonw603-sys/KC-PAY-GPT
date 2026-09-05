@@ -302,6 +302,7 @@
 - 前置检查不创建资金 attempt/run/permit，不读取卡资料；正式付款前卡片新鲜度检查保持不变。
 - 本地测试：Browser 123/119/4/0，v1 531/485/46/0；跳过项仍是缺隔离 `TEST_DATABASE_URL` 的 MySQL 集成，不得当作真实付款验收。
 - 下一动作：提交本轮代码与文档，部署 v1 创建任务逻辑/领取依赖；为当前订单幂等补建一次 preflight task；用本机 BitBrowser 只读 Worker跑到 Checkout 后停止。付款写权限继续为 false。
+- 部署后首次运行：Profile 标识拆分已生效，Session 注入成功，`/api/auth/session` 与账号检查均 HTTP 200。现场安全摘要显示 `has_active_subscription=false`、`subscription_plan=chatgptplusplan`；旧解析条件将其误判为未知。已修正为显式 `has_active_subscription=false => FREE`，Schema 缺字段仍为未知并失败关闭。
 
 ### 2026-09-05 默认路线现场纠正
 
