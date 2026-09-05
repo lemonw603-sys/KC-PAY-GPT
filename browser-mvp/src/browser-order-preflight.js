@@ -11,6 +11,15 @@ const ORDER_REF_PREFIX = 'browser-order:';
 const ELIGIBLE_ORDER_STATUSES = Object.freeze(['CREATED', 'WAITING_FOR_CARD', 'CARD_READY']);
 const CUSTOMER_ACTION_CODES = new Map([
   ['SESSION_INVALID', 'SESSION_INVALID'],
+  ['SESSION_MATERIAL_INVALID', 'SESSION_INVALID'],
+  ['SESSION_EXPIRED', 'SESSION_INVALID'],
+  ['ACCESS_TOKEN_EXPIRED', 'SESSION_INVALID'],
+  ['ACCESS_TOKEN_NEAR_EXPIRY', 'SESSION_INVALID'],
+  ['INVALID_SESSION_EXPIRY', 'SESSION_INVALID'],
+  ['INVALID_SESSION_TOKEN', 'SESSION_INVALID'],
+  ['INVALID_ACCESS_TOKEN', 'SESSION_INVALID'],
+  ['INVALID_ACCESS_TOKEN_CLAIMS', 'SESSION_INVALID'],
+  ['INCOMPLETE_SESSION', 'SESSION_INVALID'],
   ['SESSION_IDENTITY_MISMATCH', 'SESSION_INVALID'],
   ['ACCOUNT_ALREADY_PLUS', 'ACCOUNT_ALREADY_PLUS'],
 ]);
@@ -34,7 +43,7 @@ function diagnosticDetails(error) {
   for (let current = error, depth = 0; current && depth < 8; current = current.cause, depth += 1) {
     if (current?.details && typeof current.details === 'object') {
       return Object.fromEntries(Object.entries(current.details).filter(([key]) => (
-        ['stage', 'httpStatus', 'contentType', 'server', 'hasCfRay'].includes(key)
+        ['stage', 'causeCode', 'httpStatus', 'contentType', 'server', 'hasCfRay'].includes(key)
       )));
     }
   }
@@ -89,7 +98,8 @@ export class BrowserOrderEncryptedSessionSource {
     }
     if (!row.session_ciphertext) {
       const error = new Error('stored Browser Session is unavailable');
-      error.code = 'SESSION_INVALID';
+      error.code = 'SESSION_MATERIAL_INVALID';
+      error.details = { stage: 'session-material', causeCode: 'MISSING_CIPHERTEXT' };
       throw error;
     }
     try {
@@ -98,7 +108,9 @@ export class BrowserOrderEncryptedSessionSource {
       return { sessionToken: validated.session.sessionToken };
     } catch (error) {
       const wrapped = new Error('stored Browser Session is unavailable or invalid', { cause: error });
-      wrapped.code = 'SESSION_INVALID';
+      wrapped.code = ['INCOMPLETE_SESSION', 'INVALID_SESSION_EXPIRY', 'SESSION_EXPIRED', 'INVALID_SESSION_TOKEN', 'INVALID_ACCESS_TOKEN', 'INVALID_ACCESS_TOKEN_CLAIMS', 'ACCESS_TOKEN_EXPIRED', 'ACCESS_TOKEN_NEAR_EXPIRY'].includes(error?.code)
+        ? error.code : 'SESSION_MATERIAL_INVALID';
+      wrapped.details = { stage: 'session-material', causeCode: error?.code || 'DECRYPT_OR_PARSE_FAILED' };
       throw wrapped;
     }
   }
