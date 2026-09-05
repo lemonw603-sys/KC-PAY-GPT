@@ -1,5 +1,14 @@
 # 交接记录
 
+## 2026-09-06｜卡台来源 D5 已完成生产部署
+
+- 从精确 commit `8012da8bf624a3b55390a03f8e89a83e9e0ba23c` 构建并上传全新 release `/opt/pojia/releases/20260906-card-sources-8012da8`；依赖安装前后全量 manifest 均为 `825/825 OK`，没有复制旧 release 或局部覆盖。
+- 维护窗口中新建加密备份 `/var/backups/pojia/pojia-20260905T230819Z.sql.gz.enc`，完整性 `OK`；隔离恢复 `54` 张表成功。migration 048 应用成功，二次执行全部 `already applied`。
+- `/opt/pojia/current` 已原子切换；Web/API Worker、只读同步、补余额/对账 timer、Bark 恢复，公网 plus/ops live/ready 均正常。
+- Browser Worker、Browser 付款、旧自动开卡 timer 和自动开卡总开关继续关闭；未导入备用卡、未开卡、未补余额、未付款。历史 stock jobs 保持 `969`、活动 `0`，没有新增。
+- 生产已验证 HNSKJ 可供 API/Browser、备用卡 A 仅供 Browser，Browser 当前来源仍为 HNSKJ，历史订单冻结来源无空值。
+- HNSKJ 卡目录只读同步当前被上游 `HTTP 403 maintenance` 拒绝；未自动回退或写资金。D6 尚未开始，详见 `CARD_SOURCE_D5_PRODUCTION_DEPLOYMENT_2026-09-06.md`。
+
 ## 2026-09-05｜Checkout 入口漂移与持久 Session 残留修复
 
 - 现场根因：ChatGPT 首页不再直接渲染旧 `aria-label=Upgrade`，必须先打开 `[data-testid="accounts-profile-button"]`；持久 BitBrowser Context 只 `addCookies()` 会留下上一单的 Session 分块。

@@ -71,3 +71,8 @@ extra=2
 6. 部署窗口再次核对路线、Browser heartbeat、未决资金、活动任务和新备份，再执行 migration 048。
 
 D4 结论：migration 048 本身具备小表前滚候选条件；生产 release 混装与自动开卡任务风暴已被识别并完成止损。发布机制修复提交为 `8012da8`：新增单一 commit 归档器与全量 verifier，删除旧自动开卡 timer 部署单元；修改、缺失、额外文件三类反例均能失败关闭。由该提交生成的本地候选位于 `artifacts/release-candidate-20260906-8012da8/`，825 个 tracked 文件校验通过。当前生产仍未部署该候选；D5 只能在用户单独确认、创建新备份并再次核对运行状态后开始。
+
+
+## 6. D5 后续结果（2026-09-06）
+
+D4 阻断已由单提交发布机制修复并完成 D5 上线。生产 current 为 `/opt/pojia/releases/20260906-card-sources-8012da8`，migration 048 已应用；825 文件 manifest、备份/恢复演练、服务/数据库与安全开关均已复验。旧自动开卡 timer 未恢复，历史任务仍为 969 且不增长。完整证据与未验证边界见 `CARD_SOURCE_D5_PRODUCTION_DEPLOYMENT_2026-09-06.md`。
