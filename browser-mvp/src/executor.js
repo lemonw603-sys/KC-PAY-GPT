@@ -96,8 +96,14 @@ export class BrowserExecutionService {
           await this.sessionProvider.close(sessionLease);
           sessionLease = null;
         } catch (error) {
-          const reason = ['BROWSER_PREFLIGHT_CONTEXT_UNAVAILABLE', 'BROWSER_PREFLIGHT_SOURCE_UNAVAILABLE']
-            .includes(error?.code) ? error.code : 'SESSION_INVALID';
+          const sessionReasons = [
+            'BROWSER_PREFLIGHT_CONTEXT_UNAVAILABLE', 'BROWSER_PREFLIGHT_SOURCE_UNAVAILABLE',
+            'SESSION_INVALID', 'SESSION_MATERIAL_INVALID', 'INCOMPLETE_SESSION',
+            'INVALID_SESSION_EXPIRY', 'SESSION_EXPIRED', 'INVALID_SESSION_TOKEN',
+            'INVALID_ACCESS_TOKEN', 'INVALID_ACCESS_TOKEN_CLAIMS', 'ACCESS_TOKEN_EXPIRED',
+            'ACCESS_TOKEN_NEAR_EXPIRY',
+          ];
+          const reason = sessionReasons.includes(error?.code) ? error.code : 'SESSION_INVALID';
           throw new BrowserExecutionError(
             reason,
             reason === 'SESSION_INVALID'
