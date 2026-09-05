@@ -1165,3 +1165,11 @@
 - Pilot Profile 完成 `open → CDP → https://chatgpt.com/ → close`；HTTP 200，标题 `ChatGPT: Chat, Work, Create & Code with AI`，未出现 Cloudflare challenge，页面数 3。
 - 原始工件：`artifacts/bitbrowser-single-profile-check-20260905/result.json`；详细记录：`docs/browser-research/BITBROWSER_SINGLE_PROFILE_PROXY_RECHECK_2026-09-05.md`。
 - 未注入 Session、未进入 Checkout、未创建订单、未读取卡片、未开卡/补余额、未 Provider 写入、未付款。下一步才是同一生命周期内的客户式只读 Session/Checkout 观察。
+
+## 2026-09-05｜Browser 容量运行时体检
+
+- 现场核对代码、生产 systemd/env、生产数据库和本地 BitBrowser Profile 列表；没有用历史对话推断容量。
+- 当前 Browser Worker inactive/disabled，生产 target=LOCAL_FIXTURE，`browser_dispatch_enabled=false`；API 路线接新单，Browser 路线 `accepts_new_orders=0`。
+- 生产只有 1 个 ACTIVE/BROWSER executor profile；Browser readonly worker 每轮顺序执行一个 `runOnce()`，没有 Profile 池调度。普通 API Worker 未设置 `WORKER_CONCURRENCY`，实际按代码默认 1。
+- 本机虽列出 6 个 Browser lane Profile，但尚未注册为生产租约池，也没有完成 3/6 路并发验证。因此当前不能声称具备每日几百单能力。
+- 详细体检：`docs/BROWSER_CAPACITY_RUNTIME_AUDIT_2026-09-05.md`。未改生产、未创建订单、未读取 Session、未资金写入、未付款。
