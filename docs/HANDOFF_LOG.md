@@ -1111,3 +1111,9 @@
 
 - 已确认采用“三层检查”：一次性完整基线、每单自动轻量检查、异常/高风险动作人工确认。
 - 不把 BitBrowser 首次预检拆成每单人工步骤；正常订单目标是自动运行到付款前，仅在真实付款前请求一次确认。
+
+## 2026-09-05｜真实订单提交后现场核对
+
+- 最近订单 `PJV1-7EYSr3AZfjVl5JZQwTZt` 已创建，状态 `WAITING_FOR_CARD`，路线已解析为 `LEGACY_HNSKJ_ZZSHU_V1`，`executor_kind=API`，无卡绑定。
+- 没有新的 Browser dispatch job/run；原因不是 Session 格式，而是订单创建时默认路线仍为 API。订单路线已冻结，不能在执行中静默改成 Browser。
+- 本轮未重复提交、未切换生产路线、未开卡/补余额/付款。后续若要 Browser，必须先完成路线切换并确认新订单策略，避免重复消费 CDK。
