@@ -70,11 +70,15 @@ async function uniqueVisibleButton(scope, labels, label, { optional = false } = 
 async function assertSafeNavigationControl(locator, label) {
   const shape = await locator.evaluate((element) => ({
     tag: element.tagName.toLowerCase(),
+    role: element.getAttribute('role')?.toLowerCase() || null,
+    tabIndex: element.tabIndex,
     type: element.getAttribute('type')?.toLowerCase() || null,
-    disabled: Boolean(element.disabled),
+    disabled: Boolean(element.disabled) || element.getAttribute('aria-disabled') === 'true',
     insideForm: Boolean(element.closest('form')),
   }));
-  if (!['button', 'a'].includes(shape.tag)) throw new ContractError(`${label} is not a navigation control`);
+  const nativeControl = ['button', 'a'].includes(shape.tag);
+  const accessibleButton = shape.role === 'button' && Number.isInteger(shape.tabIndex) && shape.tabIndex >= 0;
+  if (!nativeControl && !accessibleButton) throw new ContractError(`${label} is not a navigation control`);
   if (shape.disabled) throw new ContractError(`${label} is disabled`);
   // ChatGPT's plan picker renders the non-payment "升级至 Plus" action as a
   // standalone button with type=submit but no enclosing form. It only opens

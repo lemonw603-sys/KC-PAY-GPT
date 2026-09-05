@@ -226,8 +226,8 @@ test('Checkout navigator opens the live-style Profile menu before Upgrade and re
   try {
     const page = await browser.newPage();
     await page.setContent(`
-      <button data-testid="accounts-profile-button" style="pointer-events:none">Covered profile</button>
-      <button data-testid="accounts-profile-button" onclick="document.querySelector('#menu').hidden=false">Profile</button>
+      <div role="button" tabindex="0" data-testid="accounts-profile-button" style="pointer-events:none">Covered profile</div>
+      <div role="button" tabindex="0" data-testid="accounts-profile-button" onclick="document.querySelector('#menu').hidden=false">Profile</div>
       <div id="menu" hidden>
         <button type="button" aria-label="Upgrade" onclick="document.querySelector('[role=dialog]').hidden=false">Upgrade</button>
       </div>
