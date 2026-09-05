@@ -346,3 +346,5 @@ Browser 候选对齐后发现 v1 客户首页静态 `sendFile` 在候选 worktre
 > **2026-09-06 多卡源现场核查完成（只读）**：已核对本地代码与生产 release，证实当前“卡台路线”入口实际切换的是 `fulfillment_routes.accepts_new_orders`（充值/接单路线），后端和前端均以健康条件拦截切换；生产尚无 `fulfillment_route_card_sources` 表，备用卡源策略未上线，API/Browser 当前均绑定 `legacy-primary`。此前关于独立当前卡台和单订单切换的设计均不能视为现状。完整证据：`docs/2026-09-06_card-source-current-system-audit.md`。下一步先基于事实重新讨论入口与切换语义，不实现、不部署。
 
 > **2026-09-06 深查增量**：进一步比对发现本地卡源分配代码已引用 `fulfillment_route_card_sources`，但生产 current release 的 `workflow-repository.js` 尚未包含该引用且生产不含 migration 048；备用卡源能力确实尚未进入生产。生产路线切换服务与本地一致，当前健康拦截仍真实存在。后续必须先基于此差异重新设计，不得只改页面文案。
+
+> **2026-09-06 多卡源讨论错误复盘**：对照真实前端、后端、建单/分卡事务和生产后，新增纠正十项错误判断。最重要修正：为了保证“切换只影响新订单”，Browser 当前卡台必须在订单创建事务中冻结，不能等到异步分卡时才读取；否则切换会错误影响已提交但等待卡片的订单。API 首版固定 HNSKJ，不做对称卡台切换；不做 AUTO/优先级/自动回退/日常单订单切换；健康与库存只告知、不阻止运营选择。完整复盘：`docs/2026-09-06_card-source-discussion-error-review.md`。整体方案仍在讨论，未实现、未部署。

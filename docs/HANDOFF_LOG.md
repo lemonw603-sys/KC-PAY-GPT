@@ -1404,3 +1404,10 @@
 - 生产 current release 不含 migration 048，且生产 workflow repository 未接入 `fulfillment_route_card_sources`；本地候选与生产并不对齐。
 - 生产路线切换服务与本地一致，仍以健康条件拦截切换。
 - 任何实现前必须先处理版本/迁移/分配逻辑差异，不能只调整页面。
+
+## 2026-09-06｜多卡源讨论错误复盘
+
+- 复盘并纠正十项错误判断，详见 `docs/2026-09-06_card-source-discussion-error-review.md`。
+- 新发现的关键一致性问题：卡源若在异步分卡时才确定，会让切换影响已提交旧订单；必须在建单事务中冻结 Browser 卡源。
+- API 固定 HNSKJ；Browser 直接人工选源；不做自动优先级、自动回退和日常单订单切换；告警不阻止选择。
+- 整体方案仍在讨论，未实现、未部署、未改变生产。
