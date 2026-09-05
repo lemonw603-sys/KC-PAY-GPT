@@ -157,9 +157,6 @@ export class BrowserExecutionService {
           );
         }
       }
-      if (transientBillingEmail) {
-        await fillTransientBillingEmail(page, transientBillingEmail, { timeoutMs: this.timeoutMs });
-      }
       const checkpoint = await this._checkPage(page, job.metadata.pageContract);
       await this._event(job, 'checkpoint', ++evidenceSequence, {
         action: 'page-signature',
@@ -230,6 +227,9 @@ export class BrowserExecutionService {
           checkoutUrlDigest: checkoutNavigation.checkoutUrlDigest,
           submitCalls: 0,
         });
+      }
+      if (transientBillingEmail) {
+        await fillTransientBillingEmail(page, transientBillingEmail, { timeoutMs: this.timeoutMs });
       }
       let checkout = null;
       if (job.metadata.checkoutContract) {
