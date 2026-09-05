@@ -28,6 +28,20 @@ if [[ "$mode" == "local" ]]; then
   exit 0
 fi
 
+if [[ "$mode" == "browser-order" ]]; then
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsS -m 5 -X POST http://127.0.0.1:54345/health -H 'Content-Type: application/json' -d '{}' >/dev/null \
+      || { echo "LOCAL_BITBROWSER_API=UNAVAILABLE" >&2; exit 66; }
+  fi
+  if ! (command -v nc >/dev/null 2>&1 && nc -z -w 2 127.0.0.1 17897 >/dev/null 2>&1); then
+    echo "LOCAL_PROXY_17897=UNAVAILABLE" >&2
+    exit 66
+  fi
+  echo "LOCAL_BITBROWSER_API=READY"
+  echo "LOCAL_PROXY_17897=READY"
+  if command -v pgrep >/dev/null 2>&1; then echo "LOCAL_MIHOMO_PROCESSES=$(pgrep -x mihomo | wc -l | tr -d ' ')"; fi
+fi
+
 host="${POJIA_PRODUCTION_SSH:-root@144.34.180.184}"
 ssh -o BatchMode=yes -o ConnectTimeout=8 "$host" 'set -e
   echo "PRODUCTION_CURRENT=$(readlink -f /opt/pojia/current)"
