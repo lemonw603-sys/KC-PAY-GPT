@@ -25,6 +25,15 @@ export function reconcileOrderEvidence({
   if (status === 'RECONCILIATION_REQUIRED' || status === 'SUBMIT_UNKNOWN') {
     return { status: 'REVIEW_REQUIRED', code: status, issue: true };
   }
+  // A provider-confirmed failure may legitimately have no external order ID.
+  // Check the terminal failure evidence before the generic missing-ID branch.
+  if (FAILED_RECHARGE_STATUSES.has(status)
+    || (status === 'CLOSED' && (createAttempted || rechargeOrderNo || successfulPurchaseExists))) {
+    if (successfulPurchaseExists) {
+      return { status: 'REVIEW_REQUIRED', code: 'FAILED_ORDER_HAS_SUCCESSFUL_CHARGE', issue: true };
+    }
+    return { status: 'CONSISTENT_FAILURE', code: 'NO_SUCCESSFUL_CARD_CHARGE', issue: false };
+  }
   if (!createAttempted && !rechargeOrderNo) {
     if (successfulPurchaseExists) {
       return { status: 'REVIEW_REQUIRED', code: 'CARD_CHARGED_WITHOUT_RECHARGE', issue: true };
@@ -57,12 +66,6 @@ export function reconcileOrderEvidence({
     return paymentSettled
       ? { status: 'MATCHED', code: 'THREE_WAY_MATCHED', issue: false }
       : { status: 'EVIDENCE_PENDING', code: 'CARD_PAYMENT_UNSETTLED', issue: false };
-  }
-  if (FAILED_RECHARGE_STATUSES.has(status) || status === 'CLOSED') {
-    if (successfulPurchaseExists) {
-      return { status: 'REVIEW_REQUIRED', code: 'FAILED_ORDER_HAS_SUCCESSFUL_CHARGE', issue: true };
-    }
-    return { status: 'CONSISTENT_FAILURE', code: 'NO_SUCCESSFUL_CARD_CHARGE', issue: false };
   }
   return { status: 'IN_PROGRESS', code: 'ORDER_NOT_TERMINAL', issue: false };
 }

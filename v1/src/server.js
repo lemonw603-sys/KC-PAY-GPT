@@ -50,6 +50,7 @@ import { createCardOperationalOverrideService } from './services/card-operationa
 import { createAdminStartBusinessService } from './services/admin-start-business-service.js';
 import { buildAdminReadinessSummary } from './services/admin-readiness-summary.js';
 import { createManualCardImportService } from './services/manual-card-import-service.js';
+import { createCardSourceAdminService } from './services/card-source-admin-service.js';
 
 const config = loadConfig();
 const pool = createDatabasePool(config.database);
@@ -83,6 +84,7 @@ const cardStockJobService = createCardStockJobService({ pool });
 const replenishmentSettingsService = createCardReplenishmentSettingsService({ pool });
 const cardFundingAdminService = createCardFundingAdminService({ pool });
 const providerRouteAdminService = createProviderRouteAdminService({ pool });
+const cardSourceAdminService = createCardSourceAdminService({ pool });
 const cardOperationalOverrideService = createCardOperationalOverrideService({ pool });
 const cardSyncJobService = createCardSyncJobService({ pool });
 const cardIntakeRepository = createCardIntakeRepository({ pool });
@@ -237,8 +239,11 @@ const app = createApp({
   ,listAdminCardFundingAttempts: cardFundingAdminService.list
   ,resolveAdminCardFundingUnknown: cardFundingAdminService.resolveUnknown
   ,listAdminProviderRoutes: providerRouteAdminService.list
-  ,switchAdminProviderRoute: providerRouteAdminService.switchRoute
   ,setAdminDefaultRechargeMethod: providerRouteAdminService.setDefaultRechargeMethod
+  ,listAdminCardSources: cardSourceAdminService.list
+  ,createAdminManualCardSource: cardSourceAdminService.createManualSource
+  ,estimateAdminBrowserCardSourceTakeover: cardSourceAdminService.estimateWaitingTakeover
+  ,switchAdminBrowserCardSource: cardSourceAdminService.switchBrowserSource
   ,listCardOperationalOverrides: cardOperationalOverrideService.list
   ,setCardOperationalOverride: cardOperationalOverrideService.set
   ,clearCardOperationalOverride: cardOperationalOverrideService.clear

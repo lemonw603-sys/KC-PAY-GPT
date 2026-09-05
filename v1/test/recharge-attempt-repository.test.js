@@ -42,9 +42,10 @@ function beginResponses({
     [[{
       id: 'order-1', status: 'CARD_READY', version: 7,
       fulfillment_route_id: 'route-1', executor_kind: 'API',
+      frozen_card_provider_account_id: 'card-source-1',
       recharge_provider_account_id: 'provider-account-1', provider_code: 'new-provider', write_enabled: 1,
       minimum_required_card_balance: '16', card_status: 'active', card_balance: '25',
-      card_id: 'card-1', product_id: 'product-plus', open_card_amount: '20', card_currency: 'USD',
+      card_id: 'card-1', card_provider_account_id: 'card-source-1', product_id: 'product-plus', open_card_amount: '20', card_currency: 'USD',
       card_credentials_ciphertext: Buffer.from('encrypted'),
       card_last_synced_at: new Date('2026-08-20T11:59:00.000Z'),
       card_last_transaction_synced_at: new Date('2026-08-20T11:59:00.000Z'), prepayment_ready: 1,

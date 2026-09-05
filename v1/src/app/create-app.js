@@ -62,6 +62,10 @@ export function createApp({
   listAdminProviderRoutes = null,
   switchAdminProviderRoute = null,
   setAdminDefaultRechargeMethod = null,
+  listAdminCardSources = null,
+  createAdminManualCardSource = null,
+  estimateAdminBrowserCardSourceTakeover = null,
+  switchAdminBrowserCardSource = null,
   getAdminBillingAddressSettings = null,
   setAdminBillingAddressSettings = null,
   previewManualCardImport = null,
@@ -448,6 +452,31 @@ export function createApp({
         }
         throw error;
       }
+    });
+  }
+  if (typeof listAdminCardSources === 'function') {
+    app.get('/api/v1/admin/card-sources', noStore, requireAdminApi, async (_req, res) => {
+      res.json(await listAdminCardSources());
+    });
+  }
+  if (typeof createAdminManualCardSource === 'function') {
+    app.post('/api/v1/admin/card-sources', ...sensitiveAdminGuards, async (req, res) => {
+      res.status(201).json(await createAdminManualCardSource({
+        ...(req.body || {}), actorId: req.admin?.id || 'admin'
+      }));
+    });
+  }
+  if (typeof estimateAdminBrowserCardSourceTakeover === 'function') {
+    app.get('/api/v1/admin/card-sources/browser/takeover-estimate', noStore, requireAdminApi,
+      async (_req, res) => res.json(await estimateAdminBrowserCardSourceTakeover()));
+  }
+  if (typeof switchAdminBrowserCardSource === 'function') {
+    app.post('/api/v1/admin/card-sources/browser/current', ...adminWriteGuards, async (req, res) => {
+      res.json(await switchAdminBrowserCardSource({
+        providerAccountId: req.body?.providerAccountId,
+        takeoverWaiting: req.body?.takeoverWaiting === true,
+        actorId: req.admin?.id || 'admin'
+      }));
     });
   }
   if (typeof getAdminBillingAddressSettings === 'function') {

@@ -15,7 +15,7 @@ function paymentSnapshotHash(row) {
     attemptId: row.recharge_attempt_id,
     orderId: row.order_id,
     routeId: row.route_id,
-    routeCardProviderAccountId: row.route_card_provider_account_id,
+    frozenCardProviderAccountId: row.frozen_card_provider_account_id,
     cardId: row.card_id,
     cardConsumptionId: row.card_consumption_id,
     cardConsumptionStatus: row.card_consumption_status,
@@ -85,6 +85,7 @@ function runContext(overrides = {}) {
     order_status: 'RECHARGE_PROCESSING',
     order_version: 4,
     order_fulfillment_route_id: 'route-1',
+    frozen_card_provider_account_id: 'card-provider-1',
     assigned_card_id: 'card-1',
     minimum_required_card_balance: '16.000000',
     card_id: 'card-1',
@@ -269,7 +270,7 @@ for (const [name, overrides, code] of [
   ['missing card credentials', { card_credentials_ciphertext: null }, 'CARD_NOT_READY'],
   ['stale card sync', { card_last_synced_at: new Date('2026-08-21T23:40:00.000Z') }, 'CARD_CHECK_STALE'],
   ['stale transaction evidence', { card_last_transaction_synced_at: new Date('2026-08-21T23:40:00.000Z') }, 'CARD_TRANSACTION_CHECK_STALE'],
-  ['route provider mismatch', { route_card_provider_account_id: 'card-provider-2' }, 'CARD_PROVIDER_MISMATCH']
+  ['frozen source mismatch', { frozen_card_provider_account_id: 'card-provider-2' }, 'CARD_PROVIDER_MISMATCH']
 ]) {
   test(`payment permit rejects ${name}`, async () => {
     const leaseToken = 'lease-secret';
@@ -401,7 +402,8 @@ test('unknown Browser payment locks run, attempt and order into reconciliation i
   assert.match(sqlText, /UPDATE browser_runs[\s\S]*status = 'RECONCILE_ONLY'/);
   assert.match(sqlText, /UPDATE recharge_attempts[\s\S]*funds_risk_state = 'UNKNOWN'/);
   assert.match(sqlText, /UPDATE orders[\s\S]*status = 'SUBMIT_UNKNOWN'/);
-  assert.match(sqlText, /INSERT INTO reconciliation_cases/);
+  assert.doesNotMatch(sqlText, /INSERT INTO reconciliation_cases/);
+  assert.match(sqlText, /verification_state = 'VERIFYING_PAYMENT'/);
   assert.deepEqual(pool.transaction, { began: 1, committed: 1, rolledBack: 0, released: 1 });
 });
 

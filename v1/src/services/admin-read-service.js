@@ -67,16 +67,11 @@ const PAYMENT_SETTLED_SQL = `EXISTS (SELECT 1 FROM cards rsetcard
       AND ABS(ABS(rsett.original_amount) - o.actual_payment_amount) <= 0.01)
       OR (UPPER(rsett.currency) = UPPER(o.actual_payment_currency)
       AND ABS(ABS(rsett.amount) - o.actual_payment_amount) <= 0.01)))`;
-const RECONCILIATION_ISSUE_SQL = `(o.status IN ('SUBMIT_UNKNOWN','RECONCILIATION_REQUIRED')
-  OR (${STALE_CREATE_ATTEMPT_SQL})
-  OR ((${CREATE_ATTEMPTED_SQL}) AND o.recharge_order_no IS NULL AND o.status <> 'SUBMITTING')
-  OR (NOT (${CREATE_ATTEMPTED_SQL}) AND o.recharge_order_no IS NULL AND (${SUCCESSFUL_PURCHASE_SQL}))
-  OR ((o.status = 'RECHARGE_SUCCESS' OR (${SUCCESS_EVENT_SQL})) AND (
-    o.recharge_order_no IS NULL OR o.actual_payment_amount IS NULL OR o.actual_payment_currency IS NULL
-    OR ((${TRANSACTION_SYNCED_SQL}) AND NOT (${PAYMENT_MATCH_SQL}))
-  ))
-  OR ((o.status = 'RECHARGE_FAILED' OR (o.status = 'CLOSED' AND NOT (${SUCCESS_EVENT_SQL})))
-    AND (${SUCCESSFUL_PURCHASE_SQL})))`;
+// The operator-facing count is the actual case queue, never a second derived
+// heuristic. Evidence collectors may open/resolve cases, but the dashboard and
+// filter must always agree with what an operator can actually open.
+const RECONCILIATION_ISSUE_SQL = `EXISTS (SELECT 1 FROM reconciliation_cases rci
+  WHERE rci.order_id=o.id AND rci.status IN ('OPEN','ASSIGNED'))`;
 
 function reconciliationFromRow(row) {
   return reconcileOrderEvidence({
@@ -467,7 +462,8 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
         ,SUM(o.status = 'WAITING_FOR_CARD') AS waiting_for_card
         ,SUM(o.status = 'CANCELLATION_PENDING') AS cancellation_pending
         ,SUM(o.status = 'CANCELLATION_REVIEW_REQUIRED' OR o.cancellation_review_required = 1) AS cancellation_review
-        ,SUM(${RECONCILIATION_ISSUE_SQL}) AS reconciliation_issues
+        ,(SELECT COUNT(*) FROM reconciliation_cases overview_case
+          WHERE overview_case.status IN ('OPEN','ASSIGNED')) AS reconciliation_issues
         FROM orders o`),
       pool.query('SELECT status, COUNT(*) AS count FROM orders GROUP BY status ORDER BY status'),
       pool.query('SELECT status, COUNT(*) AS count FROM cdks GROUP BY status ORDER BY status'),

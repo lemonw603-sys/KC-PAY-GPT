@@ -189,9 +189,9 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
       return inTransaction(pool, async (connection) => {
         const [orders] = await connection.query(
           `SELECT o.status, o.version, o.card_type_id, o.product_id, o.open_card_amount,
-                  o.minimum_required_card_balance,
-                  o.fulfillment_route_id, fr.card_provider_account_id
-           FROM orders o LEFT JOIN fulfillment_routes fr ON fr.id = o.fulfillment_route_id
+                  o.minimum_required_card_balance, o.fulfillment_route_id,
+                  o.frozen_card_provider_account_id AS card_provider_account_id
+           FROM orders o
            WHERE o.id = ? FOR UPDATE`,
           [orderId]
         );
@@ -203,17 +203,21 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
         if (!order.fulfillment_route_id || !order.card_provider_account_id) {
           throw new Error(`Order route cannot assign a card: ${orderId}`);
         }
+        const [sourceRows] = await connection.query(
+          `SELECT id, supports_api_sync, supports_auto_open, supports_auto_funding
+           FROM provider_accounts WHERE id=? AND purpose='CARD' LIMIT 1 FOR UPDATE`,
+          [order.card_provider_account_id]
+        );
+        if (sourceRows.length !== 1) throw new Error(`Frozen card source not found: ${orderId}`);
+        const source = sourceRows[0];
         const [cards] = await connection.query(
           `SELECT id, provider_card_id, current_balance
            FROM cards
            WHERE ${eligibleInventoryCardSql('cards', '?')}
-             AND EXISTS (SELECT 1 FROM fulfillment_route_card_sources src
-                         WHERE src.fulfillment_route_id = ?
-                           AND src.provider_account_id = cards.provider_account_id
-                           AND src.enabled = 1)
+             AND cards.provider_account_id = ?
            ORDER BY current_balance ASC, created_at ASC
            LIMIT 1 FOR UPDATE SKIP LOCKED`,
-            [String(order.minimum_required_card_balance), order.fulfillment_route_id]
+            [String(order.minimum_required_card_balance), order.card_provider_account_id]
         );
         const alertKey = `order-waiting-card:${orderId}`;
         if (cards.length === 0) {
@@ -221,10 +225,7 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
             `SELECT id FROM cards
              WHERE ${refreshableInventoryCardSql('cards')}
                AND sync_tier <> 'MANUAL_IMPORT'
-               AND EXISTS (SELECT 1 FROM fulfillment_route_card_sources src
-                           WHERE src.fulfillment_route_id = ?
-                             AND src.provider_account_id = cards.provider_account_id
-                             AND src.enabled = 1)
+               AND provider_account_id = ?
                AND (last_transaction_synced_at IS NULL
                  OR last_transaction_synced_at < DATE_SUB(CURRENT_TIMESTAMP(3), INTERVAL 15 MINUTE))
                AND NOT EXISTS (
@@ -236,7 +237,7 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
                )
              ORDER BY COALESCE(last_transaction_synced_at, created_at) ASC
              LIMIT 1 FOR UPDATE SKIP LOCKED`,
-            [order.fulfillment_route_id]
+            [order.card_provider_account_id]
           );
           let refreshQueued = false;
           if (refreshCandidates.length > 0) {
@@ -274,11 +275,11 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
             `SELECT setting_key, setting_value FROM app_settings
              WHERE setting_key IN ('card_auto_replenishment_enabled','card_balance_recharge_enabled')`
           );
-          const autoReplenishmentEnabled = supplySettings.some(
+          const autoReplenishmentEnabled = Boolean(source.supports_auto_open) && supplySettings.some(
             (row) => row.setting_key === 'card_auto_replenishment_enabled'
               && row.setting_value === 'true'
           );
-          const balanceFundingEnabled = supplySettings.some(
+          const balanceFundingEnabled = Boolean(source.supports_auto_funding) && supplySettings.some(
             (row) => row.setting_key === 'card_balance_recharge_enabled'
               && row.setting_value === 'true'
           );
@@ -448,7 +449,8 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
           [String(order.minimum_required_card_balance), order.card_provider_account_id]
         );
         const threshold = Math.max(0, Number(thresholdRows.find((row) => row.setting_key === 'card_stock_low_threshold')?.setting_value || 5));
-        const autoReplenishmentEnabled = thresholdRows.some((row) => row.setting_key === 'card_auto_replenishment_enabled' && row.setting_value === 'true');
+        const autoReplenishmentEnabled = Boolean(source.supports_auto_open)
+          && thresholdRows.some((row) => row.setting_key === 'card_auto_replenishment_enabled' && row.setting_value === 'true');
         const remaining = Number(stockRows[0]?.count || 0);
         if (remaining <= threshold && !autoReplenishmentEnabled) {
           await connection.query(
@@ -528,8 +530,8 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
       return inTransaction(pool, async (connection) => {
         const [rows] = await connection.query(
           `SELECT o.status, o.version, o.product_id, o.open_card_amount,
-                  fr.card_provider_account_id
-           FROM orders o LEFT JOIN fulfillment_routes fr ON fr.id = o.fulfillment_route_id
+                  o.frozen_card_provider_account_id AS card_provider_account_id
+           FROM orders o
            WHERE o.id = ? FOR UPDATE`,
           [orderId]
         );

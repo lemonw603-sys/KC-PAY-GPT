@@ -24,7 +24,7 @@
         <button class="nav-item" type="button" data-view="exceptions"><span aria-hidden="true">!</span>异常队列</button>
         <button class="nav-item" type="button" data-view="reconciliation"><span aria-hidden="true">✓</span>资金证据核对</button>
         <button class="nav-item" type="button" data-view="card-funding"><span aria-hidden="true">$</span>卡余额充值</button>
-        <button class="nav-item" type="button" data-view="provider-routes"><span aria-hidden="true">⇄</span>卡台路线</button>
+        <button class="nav-item" type="button" data-view="provider-routes"><span aria-hidden="true">⇄</span>卡台管理</button>
         <button class="nav-item" type="button" data-view="browser"><span aria-hidden="true">◎</span>Browser 执行</button>
         <button class="nav-item" type="button" data-view="stock"><span aria-hidden="true">▣</span>卡片库存</button>
         <button class="nav-item" type="button" data-view="cdks"><span aria-hidden="true">#</span>CDK 管理</button>
@@ -67,15 +67,6 @@
             <div class="card-heading"><div><p class="section-kicker">订单分布</p><h2>处理状态</h2></div><button class="text-button" type="button" data-open-orders>查看全部</button></div>
             <div class="status-list" id="status-list"></div>
           </section>
-          <section class="card stock-card" id="manual-card-import-card">
-            <div class="card-heading"><div><p class="section-kicker">备用卡台</p><h2>导入备用卡</h2></div><span class="readonly-badge">仅供 Browser</span></div>
-            <p class="card-description">上传备用卡台导出的 Excel。导入前先预览；完整卡号和 CVC 只会加密保存，不会显示在页面或日志中。</p>
-            <form id="manual-card-import-form">
-              <label>卡片文件（.xls / .xlsx）<input id="manual-card-import-file" type="file" accept=".xls,.xlsx" required></label>
-              <button class="primary-small" type="submit">预览导入</button>
-            </form>
-            <div id="manual-card-import-preview" class="mini-list"></div>
-          </section>
           <section class="card settings-card">
             <div class="card-heading"><div><p class="section-kicker">运行控制</p><h2>系统开关</h2></div><span class="write-badge">人工控制</span></div>
             <div class="setting-list" id="setting-list"></div>
@@ -102,7 +93,7 @@
               <option value="PROCESSING">自动处理中</option>
               <option value="AWAITING_CONFIRMATION">待执行充值</option>
               <option value="REVIEW_REQUIRED">需要关注</option>
-              <option value="RECONCILIATION_ISSUES">三方对账异常</option>
+              <option value="RECONCILIATION_ISSUES">需要人工核对</option>
             </select></label>
             <label><span class="sr-only">时间类型</span><select id="order-time-field" title="时间类型"><option value="CREATED">创建时间</option><option value="UPDATED">更新时间</option><option value="FINISHED">完成时间</option><option value="PAID">客户付款时间</option><option value="RECHARGE">充值提交时间</option></select></label>
             <label><span class="sr-only">开始日期</span><input id="order-from" type="date" title="创建开始日期"></label>
@@ -120,7 +111,7 @@
             <div><p class="section-kicker">运营核对</p><h2>资金证据核对队列</h2></div>
             <button class="text-button" id="export-reconciliation" type="button">导出安全 CSV</button>
           </div>
-          <p class="card-description">当本地订单、充值平台和卡片交易的证据冲突或结果不明时，系统会在这里留下可追溯的人工核对工单，并阻止冒险自动重试，避免重复扣款。操作者应查看关联订单、核对三方证据、分配负责人并填写结论。<strong>点“解决”只保存核对结论，不会自动重充、退款或扣款。</strong></p>
+          <p class="card-description">只有自动核实超时或证据真正冲突时，系统才会在这里留下可追溯的人工核对案例。普通付款核实中、证据同步中和明确失败不会进入此队列。<strong>点“解决”只保存核对结论，不会自动重充、退款或扣款。</strong></p>
           <form class="filters reconciliation-filters" id="reconciliation-filters">
             <label><span class="sr-only">案例状态</span><select id="reconciliation-status"><option value="">全部状态</option><option value="OPEN">待处理</option><option value="ASSIGNED">已分配</option><option value="RESOLVED">已解决</option></select></label>
             <label><span class="sr-only">严重程度</span><select id="reconciliation-severity"><option value="">全部等级</option><option value="critical">严重</option><option value="warning">警告</option><option value="info">提示</option></select></label>
@@ -146,9 +137,28 @@
 
       <section id="provider-routes-view" class="view" hidden>
         <section class="card orders-card">
-          <div class="card-heading"><div><p class="section-kicker">容灾与切换</p><h2>Plus 卡台路线</h2></div><span class="write-badge">人工切换</span></div>
-          <p class="card-description">路线只影响新订单；已有订单继续使用创建时冻结的路线。切换前必须确认目标卡台的只读检查、熔断状态和重试窗口均正常。这里不展示密钥，也不会自动切换或执行开卡、充值。</p>
-          <div class="table-wrap"><table><thead><tr><th>路线</th><th>新订单</th><th>卡台账户</th><th>只读 / 写入</th><th>健康状态</th><th>操作</th></tr></thead><tbody id="provider-routes-table"></tbody></table></div>
+          <div class="card-heading"><div><p class="section-kicker">来源与库存</p><h2>卡台管理</h2></div><span class="write-badge">人工指定</span></div>
+          <p class="card-description">API 充值固定使用 HNSKJ。浏览器自动化充值可直接指定任一卡台；异常只提醒、不阻止保存，也不会自动回退。默认只影响之后创建的新订单。</p>
+          <div id="card-source-summary" class="mini-list"></div>
+          <div class="table-wrap"><table><thead><tr><th>卡台</th><th>能力</th><th>库存快照</th><th>告知状态</th><th>Browser 操作</th></tr></thead><tbody id="provider-routes-table"></tbody></table></div>
+        </section>
+        <section class="card compact-card">
+          <div class="card-heading"><div><p class="section-kicker">扩展来源</p><h2>新增备用卡台</h2></div><span class="write-badge">配置</span></div>
+          <form id="manual-card-source-form" class="filters">
+            <label><span>内部代号</span><input id="manual-card-source-code" maxlength="64" placeholder="backup-b" required></label>
+            <label><span>显示名称</span><input id="manual-card-source-name" maxlength="128" placeholder="备用卡台 B" required></label>
+            <button class="primary-small" type="submit">新增卡台</button>
+          </form>
+        </section>
+        <section class="card stock-card" id="manual-card-import-card">
+          <div class="card-heading"><div><p class="section-kicker">完整快照</p><h2>导入备用卡</h2></div><span class="readonly-badge">仅供 Browser</span></div>
+          <p class="card-description">每次文件代表所选卡台的全部卡片。结构错误或跨卡台同卡冲突会阻止整批提交；停用、过期和余额不足仍会记录，但不会参与新订单分配。</p>
+          <form id="manual-card-import-form" class="filters">
+            <label><span>备用卡台</span><select id="manual-card-import-source" required><option value="">请先读取卡台</option></select></label>
+            <label><span>卡片文件</span><input id="manual-card-import-file" type="file" accept=".xls,.xlsx" required></label>
+            <button class="primary-small" type="submit">预览完整快照</button>
+          </form>
+          <div id="manual-card-import-preview" class="mini-list"></div>
         </section>
       </section>
 

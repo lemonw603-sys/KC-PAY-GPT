@@ -65,6 +65,10 @@ test('Browser MySQL mapping preserves one payment action and locks unknown resul
     );
     await pool.query('UPDATE cdks SET order_id = ? WHERE id = ?', [orderId, cdkId]);
     await pool.query(
+      `UPDATE orders SET frozen_card_provider_account_id =
+         '00000000-0000-4000-8000-000000000101' WHERE id = ?`, [orderId]
+    );
+    await pool.query(
       `INSERT INTO cards
        (id, order_id, inventory_status, provider_card_id, card_type_id, status,
         funded_amount, current_balance, currency, refund_status,
@@ -128,6 +132,13 @@ test('Browser MySQL mapping preserves one payment action and locks unknown resul
     });
     const recovery = await repository.getRecoveryState(runId);
     assert.equal(recovery.recoveryMode, 'RECONCILE_ONLY');
+    const [[verification]] = await pool.query(
+      `SELECT verification_state, verification_deadline_at, verification_next_check_at
+       FROM browser_runs WHERE id = ?`, [runId]
+    );
+    assert.equal(verification.verification_state, 'VERIFYING_PAYMENT');
+    assert.ok(verification.verification_deadline_at);
+    assert.ok(verification.verification_next_check_at);
     assert.equal(recovery.fundsRiskState, 'UNKNOWN');
 
     const [[stored]] = await pool.query(
@@ -227,6 +238,10 @@ test('Browser MySQL pre-payment abort releases every runtime and funds fence ato
         `browser-safe-abort-purchase-${orderId}`, productId, routeId]
     );
     await pool.query('UPDATE cdks SET order_id = ? WHERE id = ?', [orderId, cdkId]);
+    await pool.query(
+      `UPDATE orders SET frozen_card_provider_account_id =
+         '00000000-0000-4000-8000-000000000101' WHERE id = ?`, [orderId]
+    );
     await pool.query(
       `INSERT INTO cards
        (id, order_id, inventory_status, provider_card_id, card_type_id, status,

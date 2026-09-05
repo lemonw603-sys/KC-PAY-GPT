@@ -84,11 +84,20 @@ export async function createOrderFromCdk(pool, input) {
     const cdkId = cdkRows[0].id;
 
     const [routeRows] = await connection.query(
-      `SELECT p.id AS product_id, fr.id AS fulfillment_route_id, fr.executor_kind
+      `SELECT p.id AS product_id, fr.id AS fulfillment_route_id, fr.executor_kind,
+              CASE WHEN fr.executor_kind='API' THEN fr.card_provider_account_id
+                   ELSE bcs.provider_account_id END AS frozen_card_provider_account_id
        FROM products p INNER JOIN fulfillment_routes fr ON fr.product_id = p.id
+       LEFT JOIN browser_card_source_selections bcs ON bcs.product_id=p.id
+       INNER JOIN provider_accounts cpa ON cpa.id=CASE
+         WHEN fr.executor_kind='API' THEN fr.card_provider_account_id
+         ELSE bcs.provider_account_id END
        WHERE BINARY p.legacy_plan_type = BINARY ?
          AND p.status = 'ACTIVE' AND fr.accepts_new_orders = 1
          AND fr.retired_at IS NULL
+         AND ((fr.executor_kind='API' AND cpa.provider_code='hnskj'
+               AND cpa.supports_api_recharge=1)
+           OR (fr.executor_kind='BROWSER' AND cpa.supports_browser_recharge=1))
        ORDER BY fr.route_version DESC LIMIT 2 FOR SHARE`,
       [cdkRows[0].plan_type || 'plus']
     );
@@ -103,10 +112,11 @@ export async function createOrderFromCdk(pool, input) {
     await connection.query(
       `INSERT INTO orders
         (id, public_no, cdk_id, status, plan_type, product_id, fulfillment_route_id,
+        frozen_card_provider_account_id,
         route_resolution_status, customer_email,
         chatgpt_account_id, card_type_id, open_card_amount, minimum_required_card_balance,
         session_ciphertext, card_purchase_idempotency_key)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 'RESOLVED', ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'RESOLVED', ?, ?, ?, ?, ?, ?, ?)`,
       [
         input.orderId,
         input.publicNo,
@@ -115,6 +125,7 @@ export async function createOrderFromCdk(pool, input) {
         cdkRows[0].plan_type || 'plus',
         route.product_id,
         route.fulfillment_route_id,
+        route.frozen_card_provider_account_id,
         input.customerEmail,
         input.chatgptAccountId,
         settings.cardTypeId,

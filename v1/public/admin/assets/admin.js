@@ -48,7 +48,7 @@ const CARD_INTAKE_BATCH_LABELS = Object.freeze({
 });
 const ORDER_RECONCILIATION_LABELS = Object.freeze({
   MATCHED: '三方一致', NOT_SUBMITTED: '尚未提交', IN_PROGRESS: '对账进行中',
-  EVIDENCE_PENDING: '等待卡片证据', CONSISTENT_FAILURE: '失败结果一致', REVIEW_REQUIRED: '三方对账异常'
+  EVIDENCE_PENDING: '证据待同步', CONSISTENT_FAILURE: '失败结果一致', REVIEW_REQUIRED: '需要人工核对'
 });
 const ORDER_RECONCILIATION_CODES = Object.freeze({
   THREE_WAY_MATCHED: '充值平台金额与卡片支付交易一致，且交易已结算',
@@ -147,6 +147,10 @@ const elements = {
   browserRunsPrev: document.querySelector('#browser-runs-prev'),
   browserRunsNext: document.querySelector('#browser-runs-next'),
   providerRoutesTable: document.querySelector('#provider-routes-table')
+  ,cardSourceSummary: document.querySelector('#card-source-summary')
+  ,manualCardSourceForm: document.querySelector('#manual-card-source-form')
+  ,manualCardSourceCode: document.querySelector('#manual-card-source-code')
+  ,manualCardSourceName: document.querySelector('#manual-card-source-name')
   ,cardFundingTable: document.querySelector('#card-funding-table')
   ,cardFundingCount: document.querySelector('#card-funding-count')
   ,cardFundingPage: document.querySelector('#card-funding-page')
@@ -155,6 +159,7 @@ const elements = {
   ,cardFundingStatus: document.querySelector('#card-funding-status')
   ,manualCardImportForm: document.querySelector('#manual-card-import-form')
   ,manualCardImportFile: document.querySelector('#manual-card-import-file')
+  ,manualCardImportSource: document.querySelector('#manual-card-import-source')
   ,manualCardImportPreview: document.querySelector('#manual-card-import-preview')
 };
 
@@ -303,7 +308,7 @@ async function loadOverview() {
     { label: '自动处理中', value: overview.metrics.processingOrders, note: '系统正在自动流转', filter: 'PROCESSING' },
     { label: '待执行充值', value: overview.metrics.awaitingConfirmationOrders, note: '正常模式由系统自动执行', filter: 'AWAITING_CONFIRMATION' },
     { label: '需要关注', value: overview.metrics.reviewingOrders, note: '失败、未知或对账订单', filter: 'REVIEW_REQUIRED' },
-    { label: '三方对账异常', value: overview.metrics.reconciliationIssues, note: '订单、充值平台、卡片证据冲突', filter: 'RECONCILIATION_ISSUES' },
+    { label: '需要人工核对', value: overview.metrics.reconciliationIssues, note: '与真实案例队列完全一致', filter: 'RECONCILIATION_ISSUES' },
     { label: '等待 Session', value: overview.metrics.waitingForSession ?? 0, note: '客户可在原订单更换 Session', filter: 'WAITING_FOR_SESSION' },
     { label: '等待卡片就绪', value: overview.metrics.waitingForCard ?? 0, note: '系统会自动补余额或开卡；无法继续时才需人工处理', filter: 'WAITING_FOR_CARD' },
     { label: '取消续费处理中', value: overview.metrics.cancellationPending ?? 0, note: '充值成功后的终态确认', filter: 'CANCELLATION_PENDING' },
@@ -370,7 +375,7 @@ async function loadOverview() {
     </button>`).join('')
     : '<p class="empty-state">还没有订单数据</p>';
   const rechargeMethod = String(health.rechargeMethod || '').toUpperCase();
-  const methodControl = `<div><span><strong>默认充值方式</strong><small>只影响切换后新建订单；执行中的订单保持原路线</small></span><span class="segmented-actions"><button class="${rechargeMethod === 'API' ? 'primary-small' : 'ghost-button'} default-recharge-method" type="button" data-method="API" ${rechargeMethod === 'API' ? 'disabled' : ''}>API 充值</button><button class="${rechargeMethod === 'BROWSER' ? 'primary-small' : 'ghost-button'} default-recharge-method" type="button" data-method="BROWSER" ${rechargeMethod === 'BROWSER' || !health.browserRechargeReady ? 'disabled' : ''} title="${health.browserRechargeReady ? '切换为 Browser 充值' : 'Browser 执行器尚未就绪'}">Browser 充值</button></span></div>`;
+  const methodControl = `<div><span><strong>默认充值方式</strong><small>只影响切换后新建订单；执行中的订单保持原路线</small></span><span class="segmented-actions"><button class="${rechargeMethod === 'API' ? 'primary-small' : 'ghost-button'} default-recharge-method" type="button" data-method="API" ${rechargeMethod === 'API' ? 'disabled' : ''}>API 充值</button><button class="${rechargeMethod === 'BROWSER' ? 'primary-small' : 'ghost-button'} default-recharge-method" type="button" data-method="BROWSER" ${rechargeMethod === 'BROWSER' || !health.browserRechargeReady ? 'disabled' : ''} title="${health.browserRechargeReady ? '切换为浏览器自动化充值' : 'Browser 执行器尚未就绪'}">浏览器自动化充值</button></span></div>`;
   elements.settingList.innerHTML = methodControl + overview.settings.map((setting) => {
     const enabled = setting.value === 'true';
     if (setting.key === 'accept_new_orders') state.acceptingOrders = enabled;
@@ -1206,7 +1211,7 @@ async function setRechargeDispatch(button) {
 async function setDefaultRechargeMethod(button) {
   const method = String(button.dataset.method || '').toUpperCase();
   if (!['API', 'BROWSER'].includes(method)) return;
-  const label = method === 'API' ? 'API 充值' : 'Browser 充值';
+  const label = method === 'API' ? 'API 充值' : '浏览器自动化充值';
   if (!window.confirm(`确认将默认充值方式切换为“${label}”？\n\n只影响切换后新建订单；已经创建或正在执行的订单不会改线。`)) return;
   button.disabled = true;
   try {
@@ -1329,7 +1334,7 @@ async function openOrder(publicNo) {
       ])}</section>
       <section class="detail-section"><div class="detail-section-heading"><h3>取消未充值订单</h3>${cancellationButton}</div><p class="empty-state">${escapeHtml(cancellationLabels[cancellation.code] || '当前不可取消')}</p></section>
       <section class="detail-section"><div class="detail-section-heading"><h3>失败补偿</h3>${compensationButton}</div><p class="empty-state">${escapeHtml(compensationLabels[compensation.code] || '当前不可补发')}</p></section>
-      <section class="detail-section"><h3>三方对账</h3>${renderKeyValues([
+      <section class="detail-section"><h3>资金证据状态</h3>${renderKeyValues([
         ['对账结果', ORDER_RECONCILIATION_LABELS[reconciliation.status] || reconciliation.status],
         ['判定依据', ORDER_RECONCILIATION_CODES[reconciliation.code] || reconciliation.code],
         ['充值平台订单号', order.rechargeOrderNo],
@@ -1473,8 +1478,8 @@ async function switchView(view, { status = '' } = {}) {
     elements.viewTitle.textContent = '卡余额充值队列';
     await loadCardFundingAttempts();
   } else if (view === 'provider-routes') {
-    elements.viewKicker.textContent = '容灾与切换';
-    elements.viewTitle.textContent = 'Plus 卡台路线';
+    elements.viewKicker.textContent = '来源与库存';
+    elements.viewTitle.textContent = '卡台管理';
     await loadProviderRoutes();
   } else if (view === 'browser') {
     elements.viewKicker.textContent = 'Browser 控制面';
@@ -1488,31 +1493,33 @@ async function switchView(view, { status = '' } = {}) {
   }
 }
 
-function routeHealth(route) {
-  const retrying = route.retryAfterUntil && Date.parse(route.retryAfterUntil) > Date.now();
-  if (!route.readEnabled) return ['只读检查关闭', 'status-red'];
-  if (route.circuitState !== 'CLOSED') return [`熔断 ${route.circuitState || '未知'}`, 'status-red'];
-  if (retrying) return [`重试窗口至 ${formatTime(route.retryAfterUntil)}`, 'status-orange'];
-  return ['只读检查正常', 'status-green'];
+function sourceHealth(source) {
+  if (!source.operationalEnabled) return ['运营标记停用（仍可选择）', 'status-red'];
+  if (source.providerCode === 'manual_excel' && !source.lastFullSnapshotAt) return ['尚未导入完整快照', 'status-orange'];
+  if (source.circuitState && source.circuitState !== 'CLOSED') return [`熔断 ${source.circuitState}（仍可选择）`, 'status-red'];
+  return ['当前无告知性异常', 'status-green'];
 }
 
 async function loadProviderRoutes() {
-  const payload = await api('/api/v1/admin/provider-routes');
-  const routes = Array.isArray(payload.routes) ? payload.routes : [];
-  elements.providerRoutesTable.innerHTML = routes.length ? routes.map((route) => {
-    const [health, tone] = routeHealth(route);
-    const active = route.acceptsNewOrders && !route.retiredAt;
-    const canSwitch = !active && route.readEnabled && route.circuitState === 'CLOSED'
-      && !(route.retryAfterUntil && Date.parse(route.retryAfterUntil) > Date.now());
+  const [payload, estimate] = await Promise.all([
+    api('/api/v1/admin/card-sources'),
+    api('/api/v1/admin/card-sources/browser/takeover-estimate')
+  ]);
+  const sources = Array.isArray(payload.sources) ? payload.sources : [];
+  elements.cardSourceSummary.innerHTML = `<div><span><strong>API 充值固定卡台</strong><small>不可切换到无 API 的备用来源</small></span><em>${escapeHtml(sources.find((item) => item.id === payload.apiProviderAccountId)?.displayName || 'HNSKJ')}</em></div><div><span><strong>浏览器自动化充值当前卡台</strong><small>切换默认只影响新订单</small></span><em>${escapeHtml(sources.find((item) => item.id === payload.browserProviderAccountId)?.displayName || '未设置')}</em></div>`;
+  elements.manualCardImportSource.innerHTML = `<option value="">选择备用卡台</option>${sources.filter((item) => item.providerCode === 'manual_excel').map((item) => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.displayName)}</option>`).join('')}`;
+  elements.providerRoutesTable.innerHTML = sources.length ? sources.map((source) => {
+    const [health, tone] = sourceHealth(source);
+    const active = source.id === payload.browserProviderAccountId;
+    const capabilities = [source.supportsApiRecharge ? 'API 充值' : null, source.supportsBrowserRecharge ? 'Browser' : null, source.supportsApiSync ? 'API 同步' : '完整快照', source.supportsAutoOpen ? '自动开卡' : null, source.supportsAutoFunding ? '自动补余额' : null].filter(Boolean).join(' · ');
     return `<tr>
-      <td><strong class="cell-main">${escapeHtml(route.routeCode || '—')}</strong><small>版本 ${escapeHtml(route.routeVersion)}</small></td>
-      <td>${active ? '<span class="status-chip status-green"><i></i>当前接单</span>' : '<span class="status-chip status-gray"><i></i>备用</span>'}</td>
-      <td><span class="cell-main">${escapeHtml(route.accountCode || '未绑定')}</span><small>账户 ID ${escapeHtml(route.cardProviderAccountId || '—')}</small></td>
-      <td>${route.readEnabled ? '开启' : '关闭'} / ${route.writeEnabled ? '开启' : '关闭'}</td>
+      <td><strong class="cell-main">${escapeHtml(source.displayName)}</strong><small>${escapeHtml(source.accountCode)} · ${escapeHtml(source.providerCode)}</small></td>
+      <td>${escapeHtml(capabilities)}</td>
+      <td>${source.cardCount} 张历史卡 · ${source.presentCount} 张在当前快照<small>最近完整快照 ${formatTime(source.lastFullSnapshotAt)}</small></td>
       <td><span class="status-chip ${tone}"><i></i>${escapeHtml(health)}</span></td>
-      <td>${active ? '<small>新订单使用中</small>' : `<button class="primary-small route-switch-button" type="button" data-route-id="${escapeHtml(route.id)}" data-route-label="${escapeHtml(route.routeCode)}:${escapeHtml(route.routeVersion)}" ${canSwitch ? '' : 'disabled'}>切换为当前</button>`}</td>
+      <td>${!source.supportsBrowserRecharge ? '<small>不支持 Browser</small>' : active ? '<small>Browser 新订单使用中</small>' : `<span class="segmented-actions"><button class="primary-small route-switch-button" type="button" data-source-id="${escapeHtml(source.id)}">设为当前</button>${Number(estimate.count || 0) ? `<button class="ghost-button route-switch-button" type="button" data-source-id="${escapeHtml(source.id)}" data-takeover="true">同时接管 ${Number(estimate.count)} 单</button>` : ''}</span>`}</td>
     </tr>`;
-  }).join('') : '<tr><td colspan="6" class="empty-state">暂无 Plus 卡台路线配置</td></tr>';
+  }).join('') : '<tr><td colspan="5" class="empty-state">暂无卡台配置</td></tr>';
 }
 
 async function loadCardFundingAttempts() {
@@ -1690,31 +1697,28 @@ elements.browserRunsTable?.addEventListener('keydown', (event) => {
 elements.providerRoutesTable?.addEventListener('click', async (event) => {
   const button = event.target.closest('.route-switch-button');
   if (!button || button.disabled) return;
-  const label = button.dataset.routeLabel;
-  const confirmation = window.prompt(`请输入确认词：切换卡台 ${label}`)?.trim();
-  if (!confirmation) return;
-  const note = window.prompt('请输入切换原因（至少 10 个字符）：')?.trim();
-  if (!note) return;
   button.disabled = true;
   try {
-    await sensitiveApi(`/api/v1/admin/provider-routes/${encodeURIComponent(button.dataset.routeId)}/switch`, {
+    const result = await api('/api/v1/admin/card-sources/browser/current', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ confirmation, note })
+      body: JSON.stringify({ providerAccountId: button.dataset.sourceId, takeoverWaiting: button.dataset.takeover === 'true' })
     });
-    showNotice('卡台路线已切换；只影响新订单。', 'success');
+    showNotice(`Browser 卡台已切换${result.actualTakeoverCount ? `，并安全接管 ${result.actualTakeoverCount} 单` : '；只影响之后的新订单'}${result.warnings?.length ? '。目标来源当前有提醒，请在卡台管理中查看' : ''}。`, 'success');
     await loadProviderRoutes();
   } catch (error) {
-    const messages = {
-      route_switch_confirmation_required: '确认词不匹配，没有切换。',
-      route_switch_note_required: '切换原因至少需要 10 个字符。',
-      route_not_healthy: '目标卡台健康检查未通过，没有切换。',
-      admin_step_up_cancelled: '已取消操作，没有切换。'
-    };
-    showNotice(messages[error.message] || '卡台路线切换失败，没有确认任何变更。');
+    showNotice('Browser 卡台切换失败，原选择未改变。');
     await loadProviderRoutes().catch(() => {});
   } finally {
     button.disabled = false;
   }
+});
+elements.manualCardSourceForm?.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  try {
+    await sensitiveApi('/api/v1/admin/card-sources', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ accountCode: elements.manualCardSourceCode.value.trim(), displayName: elements.manualCardSourceName.value.trim() }) });
+    elements.manualCardSourceForm.reset(); showNotice('备用卡台已新增。', 'success'); await loadProviderRoutes();
+  } catch (error) { showNotice(error.message || '新增备用卡台失败。'); }
 });
 document.querySelector('#refresh-button').addEventListener('click', async (event) => {
   const button = event.currentTarget;
@@ -1995,15 +1999,16 @@ elements.copyCdks.addEventListener('click', async () => {
 elements.manualCardImportForm?.addEventListener('submit', async (event) => {
   event.preventDefault();
   const file = elements.manualCardImportFile?.files?.[0];
-  if (!file) return;
+  const providerAccountId = elements.manualCardImportSource?.value;
+  if (!file || !providerAccountId) return showNotice('请先选择备用卡台和完整快照文件。');
   const bytes = new Uint8Array(await file.arrayBuffer());
   let binary = ''; for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
   try {
-    const preview = await api('/api/v1/admin/manual-cards/preview', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ filename: file.name, fileBase64: btoa(binary) }) });
-    elements.manualCardImportPreview.innerHTML = `<p>共 ${preview.rowCount} 行：新增 ${preview.insertCount}，更新 ${preview.updateCount}，拒绝 ${preview.rejectedCount}</p>${preview.rows.map((row) => `<div><span><strong>序列号 ${escapeHtml(row.sequence)}… · 尾号 ${escapeHtml(row.last4 || '—')}</strong><small>余额 $${escapeHtml(row.balance || '—')} · ${escapeHtml(row.state || '—')}${row.errors.length ? ` · ${escapeHtml(row.errors.join('、'))}` : ''}</small></span><em>${escapeHtml(row.status)}</em></div>`).join('')}<button class="danger-button" type="button" id="commit-manual-card-import">确认导入 ${preview.insertCount + preview.updateCount} 张</button>`;
+    const preview = await api('/api/v1/admin/manual-cards/preview', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ providerAccountId, filename: file.name, fileBase64: btoa(binary) }) });
+    elements.manualCardImportPreview.innerHTML = `<p>${escapeHtml(preview.sourceName)} · 共 ${preview.rowCount} 行：新增 ${preview.insertCount}，更新 ${preview.updateCount}，业务不可用 ${preview.unavailableCount}，快照缺失 ${preview.missingCount}，活动风险 ${preview.activeRiskCount}，跨来源冲突 ${preview.conflictCount}，结构错误 ${preview.rejectedCount}</p>${preview.rows.map((row) => `<div><span><strong>序列号 ${escapeHtml(row.sequence)}… · 尾号 ${escapeHtml(row.last4 || '—')}</strong><small>余额 $${escapeHtml(row.balance || '—')} · ${escapeHtml(row.state || '—')}${row.errors.length ? ` · ${escapeHtml(row.errors.join('、'))}` : ''}</small></span><em>${escapeHtml(row.status)}</em></div>`).join('')}<button class="danger-button" type="button" id="commit-manual-card-import" ${preview.commitAllowed ? '' : 'disabled'}>提交完整快照（${preview.rowCount} 张）</button>`;
     elements.manualCardImportPreview.querySelector('#commit-manual-card-import')?.addEventListener('click', async () => {
       const confirmation = window.prompt(`请输入确认词：${preview.confirmation}`)?.trim(); if (!confirmation) return;
-      try { await sensitiveApi('/api/v1/admin/manual-cards/import', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ filename: file.name, fileBase64: btoa(binary), confirmation }) }); showNotice('备用卡已导入独立卡池，仅供 Browser 使用。', 'success'); await loadStock(); }
+      try { await sensitiveApi('/api/v1/admin/manual-cards/import', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ providerAccountId, filename: file.name, fileBase64: btoa(binary), confirmation }) }); showNotice('完整快照已原子更新；其他卡台未受影响。', 'success'); await Promise.all([loadProviderRoutes(), loadStock()]); }
       catch { showNotice('备用卡导入失败，库存没有改变。'); }
     });
   } catch { showNotice('文件解析失败，请确认是备用卡台导出的 Excel。'); }

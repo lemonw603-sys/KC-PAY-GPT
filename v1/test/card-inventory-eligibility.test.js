@@ -15,6 +15,7 @@ test('inventory predicate permits sequential reuse below capacity but excludes a
   const sql = eligibleInventoryCardSql('cards', '?');
   assert.match(sql, /inventory_status IN \('AVAILABLE','ASSIGNED','DEPLETED'\)/);
   assert.match(sql, /current_balance >= \?/);
+  assert.match(sql, /source_present/);
   assert.match(sql, /last_transaction_synced_at IS NOT NULL/);
   assert.match(sql, /INTERVAL 15 MINUTE/);
   assert.match(sql, /card_consumption_ledger/);

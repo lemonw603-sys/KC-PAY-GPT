@@ -93,7 +93,8 @@ export class MockPostPaymentVerifier {
  * retried or switched to another card.
  */
 export class BrowserPaymentExecutor {
-  constructor({ integration, executionRepository, paymentAdapter, postPaymentVerifier, enabled = false } = {}) {
+  constructor({ integration, executionRepository, paymentAdapter, postPaymentVerifier,
+    enabled = false, verificationWindowMs = 5 * 60_000, verificationIntervalMs = 5_000 } = {}) {
     if (!integration || typeof integration.issueAuthoritativePaymentPermit !== 'function') throw new TypeError('integration is required');
     if (!executionRepository || typeof executionRepository.commitPaymentSubmissionIntent !== 'function') throw new TypeError('executionRepository is required');
     if (!paymentAdapter || typeof paymentAdapter.submit !== 'function') throw new TypeError('paymentAdapter is required');
@@ -106,6 +107,15 @@ export class BrowserPaymentExecutor {
     this.paymentAdapter = paymentAdapter;
     this.postPaymentVerifier = postPaymentVerifier;
     this.enabled = enabled === true;
+    if (!Number.isInteger(verificationWindowMs) || verificationWindowMs < 1_000) {
+      throw new TypeError('verificationWindowMs must be an integer >= 1000');
+    }
+    if (!Number.isInteger(verificationIntervalMs) || verificationIntervalMs < 250
+      || verificationIntervalMs > verificationWindowMs) {
+      throw new TypeError('verificationIntervalMs must be within verificationWindowMs');
+    }
+    this.verificationWindowMs = verificationWindowMs;
+    this.verificationIntervalMs = verificationIntervalMs;
   }
 
   async execute({ control, run, page = null, checkout, cardMaterial, operationId } = {}) {
@@ -139,12 +149,16 @@ export class BrowserPaymentExecutor {
       }
       await this.executionRepository.markPaymentUnknown({
         runId: run.runId, operationId: `${op}:unknown`, reasonCode: 'PAYMENT_RESULT_UNKNOWN',
+        verificationDeadline: new Date(Date.now() + this.verificationWindowMs),
+        verificationNextCheckAt: new Date(Date.now() + this.verificationIntervalMs),
       });
       return { status: 'UNKNOWN', reasonCode: 'PAYMENT_RESULT_UNKNOWN', paymentSubmitCalls: 1 };
     }
     if (submission?.status !== 'CONFIRMED') {
       await this.executionRepository.markPaymentUnknown({
         runId: run.runId, operationId: `${op}:unknown`, reasonCode: `PAYMENT_${submission?.status || 'UNKNOWN'}`,
+        verificationDeadline: new Date(Date.now() + this.verificationWindowMs),
+        verificationNextCheckAt: new Date(Date.now() + this.verificationIntervalMs),
       });
       return { status: 'UNKNOWN', reasonCode: `PAYMENT_${submission?.status || 'UNKNOWN'}`, paymentSubmitCalls: 1 };
     }

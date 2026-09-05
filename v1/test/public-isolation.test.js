@@ -135,14 +135,15 @@ test('admin Browser view exposes operational metadata but no authority recovery 
   assert.doesNotMatch(script, /\.secretRef|\.navigationUrl|\.leaseToken|\.resourceKeyHmac/);
 });
 
-test('admin exposes audited manual provider-route switching without secret fields', () => {
+test('admin separates recharge method from audited Browser card-source switching', () => {
   const html = fs.readFileSync(path.join(directory, 'admin', 'index.html'), 'utf8');
   const script = fs.readFileSync(path.join(directory, 'admin', 'assets', 'admin.js'), 'utf8');
-  assert.match(html, /卡台路线/);
-  assert.match(html, /人工切换/);
-  assert.match(script, /\/api\/v1\/admin\/provider-routes/);
-  assert.match(script, /切换卡台/);
-  assert.match(script, /只影响新订单/);
+  assert.match(html, /卡台管理/);
+  assert.match(html, /人工指定/);
+  assert.match(html, /API 充值固定使用 HNSKJ/);
+  assert.match(script, /\/api\/v1\/admin\/card-sources\/browser\/current/);
+  assert.match(script, /Browser 卡台已切换/);
+  assert.match(html, /只影响之后创建的新订单/);
   assert.doesNotMatch(`${html}\n${script}`, /secretRef|navigationUrl|leaseToken|resourceKeyHmac|card_credentials_ciphertext|recharge_card_key/i);
 });
 

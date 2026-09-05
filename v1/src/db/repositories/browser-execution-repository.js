@@ -102,7 +102,7 @@ function authoritativePaymentSnapshot(row, now) {
     );
   }
   if (!row.card_provider_account_id
-    || (row.sync_tier !== 'MANUAL_IMPORT' && row.card_provider_account_id !== row.route_card_provider_account_id)) {
+    || row.card_provider_account_id !== row.frozen_card_provider_account_id) {
     throw new BrowserExecutionError('card provider does not match the frozen route', 'CARD_PROVIDER_MISMATCH');
   }
   if (!row.provider_card_id) {
@@ -138,7 +138,7 @@ function authoritativePaymentSnapshot(row, now) {
     attemptId: row.recharge_attempt_id,
     orderId: row.order_id,
     routeId: row.route_id,
-    routeCardProviderAccountId: row.route_card_provider_account_id,
+    frozenCardProviderAccountId: row.frozen_card_provider_account_id,
     cardId: row.card_id,
     cardConsumptionId: row.card_consumption_id,
     cardConsumptionStatus: row.card_consumption_status,
@@ -176,6 +176,9 @@ async function lockRunContext(connection, runId) {
   const [rows] = await connection.query(
     `SELECT br.id AS run_id, br.recharge_attempt_id, br.executor_profile_id,
             br.status AS run_status, br.payment_state, br.post_payment_state,
+            br.verification_state, br.verification_started_at,
+            br.verification_deadline_at, br.verification_next_check_at,
+            br.verification_check_count,
             br.plus_activated_at, br.cancellation_confirmed_at, br.account_key_hmac,
             br.worker_id, br.worker_lease_token_hash, br.worker_lease_until,
             br.control_state, br.automation_owner_id, br.human_owner_id,
@@ -186,6 +189,7 @@ async function lockRunContext(connection, runId) {
             rat.fulfillment_route_id AS attempt_fulfillment_route_id,
             o.status AS order_status, o.version AS order_version,
             o.fulfillment_route_id AS order_fulfillment_route_id,
+            o.frozen_card_provider_account_id,
             o.assigned_card_id,
             o.minimum_required_card_balance,
             c.id AS card_id, c.order_id AS card_order_id,
@@ -273,6 +277,11 @@ function publicRun(row, extra = {}) {
     orderId: row.order_id,
     runStatus: row.run_status,
     paymentState: row.payment_state,
+    verificationState: row.verification_state || 'NOT_REQUIRED',
+    verificationStartedAt: row.verification_started_at || null,
+    verificationDeadlineAt: row.verification_deadline_at || null,
+    verificationNextCheckAt: row.verification_next_check_at || null,
+    verificationCheckCount: Number(row.verification_check_count || 0),
     postPaymentState: row.post_payment_state,
     attemptStatus: row.attempt_status,
     fundsRiskState: row.funds_risk_state,
@@ -811,10 +820,24 @@ export function createBrowserExecutionRepository(pool) {
       });
     },
 
-    async markPaymentUnknown({ runId, operationId, reasonCode, now = new Date() }) {
+    async markPaymentUnknown({ runId, operationId, reasonCode,
+      verificationDeadline, verificationNextCheckAt = null, now = new Date() }) {
       const run = required(runId, 'runId');
       const operation = required(operationId, 'operationId');
       const reason = required(reasonCode, 'reasonCode');
+      // Repository callers may be recovery/admin code without a scheduler
+      // config object; retain a bounded default while normal workers pass the
+      // configured deadline explicitly.
+      const deadline = verificationDeadline == null
+        ? new Date(now.getTime() + 5 * 60_000)
+        : new Date(verificationDeadline);
+      if (!Number.isFinite(deadline.getTime()) || deadline.getTime() <= now.getTime()) {
+        throw new BrowserExecutionError('verificationDeadline must be after now', 'INVALID_ARGUMENT');
+      }
+      const nextCheck = verificationNextCheckAt == null ? now : new Date(verificationNextCheckAt);
+      if (!Number.isFinite(nextCheck.getTime()) || nextCheck.getTime() > deadline.getTime()) {
+        throw new BrowserExecutionError('verificationNextCheckAt must not exceed the deadline', 'INVALID_ARGUMENT');
+      }
 
       return inTransaction(pool, async (connection) => {
         const prior = await existingOperation(connection, run, operation);
@@ -846,10 +869,13 @@ export function createBrowserExecutionRepository(pool) {
         const [runUpdate] = await connection.query(
           `UPDATE browser_runs
            SET status = 'RECONCILE_ONLY', payment_state = 'PAYMENT_UNKNOWN',
+               verification_state = 'VERIFYING_PAYMENT', verification_started_at = ?,
+               verification_deadline_at = ?, verification_next_check_at = ?,
+               verification_check_count = 0,
                last_checkpoint_sequence = ?, last_checkpoint_kind = 'PAYMENT_UNKNOWN',
                last_error_code = ?, updated_at = ?
            WHERE id = ? AND status = 'RUNNING' AND payment_state = 'PAYMENT_SUBMITTING'`,
-          [sequence, reason, now, run]
+          [now, deadline, nextCheck, sequence, reason, now, run]
         );
         if (runUpdate.affectedRows !== 1) {
           throw new BrowserExecutionError('Browser run changed concurrently', 'RUN_CONFLICT');
@@ -891,21 +917,15 @@ export function createBrowserExecutionRepository(pool) {
              'Browser payment submission outcome is unknown', ?, ?)`,
           [row.order_id, json({ browserRunId: run, attemptId: row.recharge_attempt_id, reasonCode: reason }), now]
         );
-        await connection.query(
-          `INSERT INTO reconciliation_cases
-           (id, case_type, status, severity, dedupe_key, order_id,
-            recharge_attempt_id, evidence_json, detected_at, updated_at)
-           VALUES (?, 'BROWSER_PAYMENT_UNKNOWN', 'OPEN', 'critical', ?, ?, ?, ?, ?, ?)
-           ON DUPLICATE KEY UPDATE last_seen_at = VALUES(detected_at),
-             evidence_json = VALUES(evidence_json), updated_at = VALUES(updated_at)`,
-          [randomUUID(), `browser-payment-unknown:${row.recharge_attempt_id}`,
-            row.order_id, row.recharge_attempt_id,
-            json({ browserRunId: run, reasonCode: reason }), now, now]
-        );
         return publicRun({
           ...row,
           run_status: 'RECONCILE_ONLY',
           payment_state: 'PAYMENT_UNKNOWN',
+          verification_state: 'VERIFYING_PAYMENT',
+          verification_started_at: now,
+          verification_deadline_at: deadline,
+          verification_next_check_at: nextCheck,
+          verification_check_count: 0,
           attempt_status: 'SUBMIT_UNKNOWN',
           funds_risk_state: 'UNKNOWN',
           order_status: 'SUBMIT_UNKNOWN'
@@ -928,9 +948,13 @@ export function createBrowserExecutionRepository(pool) {
           return publicRun(replay, { idempotentReplay: true });
         }
         const row = await lockRunContext(connection, run);
-        if (row.payment_state !== 'PAYMENT_SUBMITTING'
+        const confirmingUnknown = row.payment_state === 'PAYMENT_UNKNOWN'
+          && row.verification_state === 'VERIFYING_PAYMENT'
+          && row.attempt_status === 'SUBMIT_UNKNOWN'
+          && row.funds_risk_state === 'UNKNOWN';
+        if (!confirmingUnknown && (row.payment_state !== 'PAYMENT_SUBMITTING'
           || row.attempt_status !== 'SUBMITTING'
-          || row.funds_risk_state !== 'ACTIVE') {
+          || row.funds_risk_state !== 'ACTIVE')) {
           throw new BrowserExecutionError('payment is not awaiting confirmation', 'PAYMENT_NOT_CONFIRMABLE');
         }
         const sequence = await appendCheckpoint(connection, row, {
@@ -946,14 +970,41 @@ export function createBrowserExecutionRepository(pool) {
         );
         const [updated] = await connection.query(
           `UPDATE browser_runs
-           SET payment_state = 'PAYMENT_CONFIRMED', post_payment_state = 'PLUS_PENDING',
+           SET status = 'RUNNING', payment_state = 'PAYMENT_CONFIRMED',
+               verification_state = 'RESOLVED', verification_next_check_at = NULL,
+               post_payment_state = 'PLUS_PENDING',
                last_checkpoint_sequence = ?, last_checkpoint_kind = 'PAYMENT_CONFIRMED',
                updated_at = ?
-           WHERE id = ? AND status = 'RUNNING' AND payment_state = 'PAYMENT_SUBMITTING'`,
+           WHERE id = ? AND ((status = 'RUNNING' AND payment_state = 'PAYMENT_SUBMITTING')
+             OR (status = 'RECONCILE_ONLY' AND payment_state = 'PAYMENT_UNKNOWN'
+               AND verification_state = 'VERIFYING_PAYMENT'))`,
           [sequence, now, run]
         );
         if (updated.affectedRows !== 1) {
           throw new BrowserExecutionError('Browser run changed concurrently', 'RUN_CONFLICT');
+        }
+        if (confirmingUnknown) {
+          await connection.query(
+            `UPDATE recharge_attempts
+             SET status='SUBMITTING', funds_risk_state='ACTIVE', updated_at=?
+             WHERE id=? AND status='SUBMIT_UNKNOWN' AND funds_risk_state='UNKNOWN'`,
+            [now, row.recharge_attempt_id]
+          );
+          await connection.query(
+            `UPDATE orders
+             SET status='RECHARGE_PROCESSING', version=version+1,
+                 failure_code=NULL, failure_reason=NULL, updated_at=?
+             WHERE id=? AND status='SUBMIT_UNKNOWN' AND version=?`,
+            [now, row.order_id, row.order_version]
+          );
+          await connection.query(
+            `INSERT INTO order_events
+             (order_id, from_status, to_status, actor_type, actor_id, reason,
+              metadata_json, created_at)
+             VALUES (?, 'SUBMIT_UNKNOWN', 'RECHARGE_PROCESSING', 'SYSTEM', NULL,
+               'Browser payment confirmed by bounded verification', ?, ?)`,
+            [row.order_id, json({ browserRunId: run, evidenceHash: evidence }), now]
+          );
         }
         await transitionCardConsumptionInTransaction(connection, {
           orderId: row.order_id,
@@ -975,8 +1026,187 @@ export function createBrowserExecutionRepository(pool) {
            WHERE o.id=?`, [now, row.order_id]
         );
         return publicRun({ ...row, payment_state: 'PAYMENT_CONFIRMED' }, {
+          runStatus: 'RUNNING', verificationState: 'RESOLVED',
+          attemptStatus: confirmingUnknown ? 'SUBMITTING' : row.attempt_status,
+          fundsRiskState: confirmingUnknown ? 'ACTIVE' : row.funds_risk_state,
+          orderStatus: confirmingUnknown ? 'RECHARGE_PROCESSING' : row.order_status,
           postPaymentState: 'PLUS_PENDING', idempotentReplay: false
         });
+      });
+    },
+
+    async recordPaymentVerificationObservation({ runId, operationId, outcome,
+      evidenceHash, nextCheckAt = null, now = new Date() }) {
+      const run = required(runId, 'runId');
+      const operation = required(operationId, 'operationId');
+      const result = requireCode(outcome, 'outcome');
+      if (!['UNKNOWN', 'CONFIRMED', 'DECLINED', 'CONFLICT'].includes(result)) {
+        throw new BrowserExecutionError('unsupported verification outcome', 'INVALID_ARGUMENT');
+      }
+      const evidence = requireHash(evidenceHash, 'evidenceHash');
+      const nextCheck = nextCheckAt == null ? null : new Date(nextCheckAt);
+      if (nextCheck && !Number.isFinite(nextCheck.getTime())) {
+        throw new BrowserExecutionError('nextCheckAt is invalid', 'INVALID_ARGUMENT');
+      }
+      return inTransaction(pool, async (connection) => {
+        const prior = await existingOperation(connection, run, operation);
+        if (prior) return { runId: run, outcome: result, idempotentReplay: true };
+        const row = await lockRunContext(connection, run);
+        if (row.payment_state !== 'PAYMENT_UNKNOWN'
+          || row.verification_state !== 'VERIFYING_PAYMENT') {
+          throw new BrowserExecutionError('payment is not being verified', 'PAYMENT_NOT_VERIFYING');
+        }
+        await connection.query(
+          `INSERT INTO browser_post_payment_observations
+           (browser_run_id, observation_kind, observation_status, evidence_hash,
+            evidence_json, observed_at)
+           VALUES (?, 'PAYMENT_VERIFICATION', ?, ?, ?, ?)`,
+          [run, result, evidence, json({ evidenceHash: evidence }), now]
+        );
+        await connection.query(
+          `INSERT INTO browser_operations
+           (browser_run_id, operation_id, operation_type, status, result_code,
+            public_result_json, prepared_at, completed_at)
+           VALUES (?, ?, 'PAYMENT_VERIFICATION', 'COMMITTED', ?, ?, ?, ?)`,
+          [run, operation, result, json({ evidenceHash: evidence }), now, now]
+        );
+        await connection.query(
+          `UPDATE browser_runs
+           SET verification_check_count=verification_check_count+1,
+               verification_next_check_at=?, updated_at=?
+           WHERE id=? AND verification_state='VERIFYING_PAYMENT'`,
+          [nextCheck, now, run]
+        );
+        return { runId: run, outcome: result,
+          verificationCheckCount: Number(row.verification_check_count || 0) + 1,
+          idempotentReplay: false };
+      });
+    },
+
+    async escalatePaymentVerification({ runId, operationId, reasonCode,
+      evidenceHash, now = new Date() }) {
+      const run = required(runId, 'runId');
+      const operation = required(operationId, 'operationId');
+      const reason = requireCode(reasonCode, 'reasonCode');
+      const evidence = requireHash(evidenceHash, 'evidenceHash');
+      return inTransaction(pool, async (connection) => {
+        const prior = await existingOperation(connection, run, operation);
+        if (prior) return publicRun(await lockRunContext(connection, run), { idempotentReplay: true });
+        const row = await lockRunContext(connection, run);
+        if (row.payment_state !== 'PAYMENT_UNKNOWN'
+          || row.verification_state !== 'VERIFYING_PAYMENT') {
+          throw new BrowserExecutionError('payment is not being verified', 'PAYMENT_NOT_VERIFYING');
+        }
+        await connection.query(
+          `INSERT INTO browser_operations
+           (browser_run_id, operation_id, operation_type, status, result_code,
+            public_result_json, prepared_at, completed_at)
+           VALUES (?, ?, 'PAYMENT_VERIFICATION_ESCALATED', 'COMMITTED', ?, ?, ?, ?)`,
+          [run, operation, reason, json({ evidenceHash: evidence }), now, now]
+        );
+        await connection.query(
+          `UPDATE browser_runs SET status='HUMAN_REQUIRED',
+             verification_state='HUMAN_REQUIRED', verification_next_check_at=NULL,
+             last_error_code=?, updated_at=?
+           WHERE id=? AND status='RECONCILE_ONLY'
+             AND verification_state='VERIFYING_PAYMENT'`, [reason, now, run]
+        );
+        await connection.query(
+          `INSERT INTO reconciliation_cases
+           (id, case_type, status, severity, dedupe_key, order_id,
+            recharge_attempt_id, evidence_json, detected_at, updated_at)
+           VALUES (?, 'BROWSER_PAYMENT_UNKNOWN', 'OPEN', 'critical', ?, ?, ?, ?, ?, ?)
+           ON DUPLICATE KEY UPDATE last_seen_at=VALUES(detected_at),
+             evidence_json=VALUES(evidence_json), updated_at=VALUES(updated_at)`,
+          [randomUUID(), `browser-payment-unknown:${row.recharge_attempt_id}`,
+            row.order_id, row.recharge_attempt_id,
+            json({ browserRunId: run, reasonCode: reason, evidenceHash: evidence }), now, now]
+        );
+        return publicRun({ ...row, run_status: 'HUMAN_REQUIRED',
+          verification_state: 'HUMAN_REQUIRED' }, { idempotentReplay: false });
+      });
+    },
+
+    async markPaymentDeclinedAfterVerification({ runId, operationId, reasonCode,
+      evidenceHash, now = new Date() }) {
+      const run = required(runId, 'runId');
+      const operation = required(operationId, 'operationId');
+      const reason = requireCode(reasonCode, 'reasonCode');
+      const evidence = requireHash(evidenceHash, 'evidenceHash');
+      return inTransaction(pool, async (connection) => {
+        const prior = await existingOperation(connection, run, operation);
+        if (prior) return publicRun(await lockRunContext(connection, run), { idempotentReplay: true });
+        const row = await lockRunContext(connection, run);
+        if (row.payment_state !== 'PAYMENT_UNKNOWN'
+          || row.verification_state !== 'VERIFYING_PAYMENT'
+          || row.attempt_status !== 'SUBMIT_UNKNOWN'
+          || row.funds_risk_state !== 'UNKNOWN') {
+          throw new BrowserExecutionError('payment is not being verified', 'PAYMENT_NOT_VERIFYING');
+        }
+        const sequence = await appendCheckpoint(connection, row, {
+          kind: 'PAYMENT_DECLINED_VERIFIED', risk: 'NONE', operationId: operation,
+          now, evidence: { reasonCode: reason, evidenceHash: evidence }
+        });
+        await connection.query(
+          `INSERT INTO browser_operations
+           (browser_run_id, operation_id, operation_type, status, result_code,
+            public_result_json, prepared_at, completed_at)
+           VALUES (?, ?, 'PAYMENT_DECLINED_VERIFIED', 'COMMITTED', ?, ?, ?, ?)`,
+          [run, operation, reason, json({ evidenceHash: evidence }), now, now]
+        );
+        await connection.query(
+          `UPDATE browser_runs SET status='FAILED_SAFE', payment_state='PAYMENT_DECLINED',
+             verification_state='RESOLVED', verification_next_check_at=NULL,
+             last_checkpoint_sequence=?, last_checkpoint_kind='PAYMENT_DECLINED_VERIFIED',
+             last_error_code=?, finished_at=?, updated_at=?
+           WHERE id=? AND status='RECONCILE_ONLY'
+             AND payment_state='PAYMENT_UNKNOWN' AND verification_state='VERIFYING_PAYMENT'`,
+          [sequence, reason, now, now, run]
+        );
+        await connection.query(
+          `UPDATE recharge_attempts SET status='FAILED', funds_risk_state='CLEARED',
+             result_summary_json=?, finished_at=?, updated_at=?
+           WHERE id=? AND status='SUBMIT_UNKNOWN' AND funds_risk_state='UNKNOWN'`,
+          [json({ code: reason, browserRunId: run, evidenceHash: evidence }),
+            now, now, row.recharge_attempt_id]
+        );
+        await transitionCardConsumptionInTransaction(connection, {
+          orderId: row.order_id,
+          rechargeAttemptId: row.recharge_attempt_id,
+          targetStatus: 'RELEASED',
+          allowedCurrentStatuses: ['RECONCILIATION'],
+          requireActive: false,
+          evidence: { source: 'browser_payment_declined_verified', browserRunId: run,
+            reasonCode: reason, evidenceHash: evidence }
+        });
+        await connection.query(
+          `UPDATE card_assignment_history SET status='RELEASED',
+             released_by='browser:payment-verification', release_reason=?, released_at=?
+           WHERE order_id=? AND status='ACTIVE'`,
+          ['payment decline verified with account still free', now, row.order_id]
+        );
+        const [orderUpdate] = await connection.query(
+          `UPDATE orders SET status='RECHARGE_FAILED', version=version+1,
+             failure_code=?, failure_reason='Browser payment was definitively declined',
+             finished_at=?, updated_at=?
+           WHERE id=? AND status='SUBMIT_UNKNOWN' AND version=?`,
+          [reason, now, now, row.order_id, row.order_version]
+        );
+        if (orderUpdate.affectedRows !== 1) {
+          throw new BrowserExecutionError('order changed concurrently', 'ORDER_CONFLICT');
+        }
+        await connection.query(
+          `INSERT INTO order_events
+           (order_id, from_status, to_status, actor_type, actor_id, reason,
+            metadata_json, created_at)
+           VALUES (?, 'SUBMIT_UNKNOWN', 'RECHARGE_FAILED', 'SYSTEM', NULL,
+             'Browser payment decline verified; account remains free', ?, ?)`,
+          [row.order_id, json({ browserRunId: run, evidenceHash: evidence }), now]
+        );
+        return publicRun({ ...row, run_status: 'FAILED_SAFE',
+          payment_state: 'PAYMENT_DECLINED', verification_state: 'RESOLVED',
+          attempt_status: 'FAILED', funds_risk_state: 'CLEARED',
+          order_status: 'RECHARGE_FAILED' }, { idempotentReplay: false });
       });
     },
 

@@ -1459,3 +1459,9 @@
 - 用户明确确认 D2 冻结稿无问题，可以冻结。
 - `docs/CARD_SOURCE_AND_RECONCILIATION_FROZEN_SPEC.md` 已从 D2-RC1 更新为 D2-FINAL。
 - 下一阶段为 D3 实现映射与编码；当前没有业务代码或生产变化。
+## 2026-09-06｜D3 本地卡源与付款未知核实收口
+
+- 完成并回归 migration 048、本地多卡源完整快照、订单冻结来源、Browser 卡台管理和基础对账收敛；未部署、未开卡、未补余额、未付款。
+- `v1` 540 项测试为 493 通过、47 隔离跳过、0 失败；多卡源 MySQL 回归通过；Browser MVP 132 项为 128 通过、4 跳过、0 失败。
+- 修正 PAY-03：付款点击后的短时无响应先进入 `VERIFYING_PAYMENT`，不立即制造 Bark/人工对账案例；核实确认可恢复同一 attempt，明确拒绝可安全释放，超时/冲突才升级 `HUMAN_REQUIRED` 并创建真实案例。
+- 下一步：接入只读核实调度（ChatGPT 状态/Checkout、HNSKJ 交易、手工快照），完成 API+HNSKJ、Browser+HNSKJ、Browser+手工卡三类证据收敛；随后进入 D4 生产差异核对。

@@ -107,11 +107,13 @@ export function createRechargeAttemptRepository(pool) {
 
         const [orders] = await connection.query(
           `SELECT o.id, o.status, o.version, o.fulfillment_route_id, o.product_id,
+                  o.frozen_card_provider_account_id,
                   o.open_card_amount,
                   o.minimum_required_card_balance,
                   fr.executor_kind, fr.recharge_provider_account_id,
                   pa.provider_code, pa.write_enabled,
-                  c.id AS card_id, c.status AS card_status, c.current_balance AS card_balance,
+                  c.id AS card_id, c.provider_account_id AS card_provider_account_id,
+                  c.status AS card_status, c.current_balance AS card_balance,
                   c.sync_tier,
                   c.currency AS card_currency,
                   c.card_credentials_ciphertext,
@@ -158,6 +160,10 @@ export function createRechargeAttemptRepository(pool) {
         if (!orderRow.fulfillment_route_id
           || (!isBrowserRoute && (!orderRow.recharge_provider_account_id || !orderRow.provider_code))) {
           throw new RechargeAttemptError('order has no executable recharge route', 'ROUTE_NOT_EXECUTABLE');
+        }
+        if (!orderRow.frozen_card_provider_account_id
+          || orderRow.card_provider_account_id !== orderRow.frozen_card_provider_account_id) {
+          throw new RechargeAttemptError('assigned card does not match the order frozen source', 'CARD_SOURCE_MISMATCH');
         }
         if (!isBrowserRoute && !Number(orderRow.write_enabled)) {
           throw new RechargeAttemptError('recharge provider account is write-disabled', 'PROVIDER_WRITE_DISABLED');

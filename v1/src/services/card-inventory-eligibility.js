@@ -3,6 +3,7 @@ export function eligibleInventoryCardSql(alias = 'c', minimumSql = '?', { produc
   const normalizedProduct = String(productCode || 'plus').trim().toLowerCase();
   if (!/^[a-z0-9_-]{1,32}$/.test(normalizedProduct)) throw new TypeError('Invalid product code');
   return `${alias}.inventory_status IN ('AVAILABLE','ASSIGNED','DEPLETED')
+    AND COALESCE(${alias}.source_present, 1) = 1
     AND ${alias}.intake_status IN ('ACCEPTED','LEGACY_ACCEPTED')
     AND LOWER(${alias}.status) IN ('active','available','usable','ready')
     AND ${alias}.card_credentials_ciphertext IS NOT NULL
@@ -44,6 +45,7 @@ export function fundableInventoryCardSql(alias = 'c', { productCode = 'plus' } =
   const normalizedProduct = String(productCode || 'plus').trim().toLowerCase();
   if (!/^[a-z0-9_-]{1,32}$/.test(normalizedProduct)) throw new TypeError('Invalid product code');
   return `${alias}.inventory_status IN ('AVAILABLE','ASSIGNED','DEPLETED','PROVISIONING')
+    AND COALESCE(${alias}.source_present, 1) = 1
     AND ${alias}.intake_status IN ('ACCEPTED','LEGACY_ACCEPTED')
     AND LOWER(${alias}.status) IN ('active','available','usable','ready')
     AND ${alias}.card_credentials_ciphertext IS NOT NULL
@@ -87,6 +89,7 @@ export function refreshableInventoryCardSql(alias = 'c', { productCode = 'plus' 
   const normalizedProduct = String(productCode || 'plus').trim().toLowerCase();
   if (!/^[a-z0-9_-]{1,32}$/.test(normalizedProduct)) throw new TypeError('Invalid product code');
   return `${alias}.inventory_status IN ('AVAILABLE','ASSIGNED','DEPLETED','PROVISIONING')
+    AND COALESCE(${alias}.source_present, 1) = 1
     AND ${alias}.intake_status IN ('ACCEPTED','LEGACY_ACCEPTED')
     AND ${alias}.sync_tier <> 'MANUAL_IMPORT'
     AND ${alias}.card_credentials_ciphertext IS NOT NULL

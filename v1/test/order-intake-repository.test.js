@@ -56,6 +56,7 @@ test('Browser order intake atomically creates card assignment and preflight task
       }]];
       if (sql.includes('FROM products')) return [[{
         product_id: 'product-1', fulfillment_route_id: 'route-browser', executor_kind: 'BROWSER',
+        frozen_card_provider_account_id: 'manual-source-a',
       }]];
       if (sql.includes("UPDATE cdks SET status = 'REDEEMED'")) return [{ affectedRows: 1 }];
       return [{ affectedRows: 1 }];
@@ -73,4 +74,7 @@ test('Browser order intake atomically creates card assignment and preflight task
   assert.equal(taskCalls.length, 2);
   assert.match(taskCalls[0].sql, /'ASSIGN_CARD'/);
   assert.match(taskCalls[1].sql, /'BROWSER_PREFLIGHT'/);
+  const insert = calls.find(({ sql }) => sql.includes('INSERT INTO orders'));
+  assert.match(insert.sql, /frozen_card_provider_account_id/);
+  assert.equal(insert.values.includes('manual-source-a'), true);
 });
