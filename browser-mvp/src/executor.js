@@ -130,8 +130,7 @@ export class BrowserExecutionService {
           sessionIdentity = await probeSessionIdentity(
             page,
             job.metadata.sessionIdentity,
-            job.metadata.accountProbeContract || {},
-            { onVerifiedEmail: (email) => { transientBillingEmail = email; } },
+            { ...(job.metadata.accountProbeContract || {}), onVerifiedEmail: (email) => { transientBillingEmail = email; } },
           );
         } catch (error) {
           const reason = [
