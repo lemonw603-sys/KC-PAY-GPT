@@ -29,7 +29,10 @@ export class BitBrowserControlRuntimeAdapter extends RuntimeAdapter {
     bitbrowserProfileId,
     apiBaseUrl = DEFAULT_API_BASE_URL,
     fetchImpl = globalThis.fetch,
-    timeoutMs = 10_000,
+    // BitBrowser may need several seconds to launch an already configured
+    // Chromium profile. Ten seconds was shorter than the observed cold-open
+    // path and caused false timeouts before CDP became available.
+    timeoutMs = 20_000,
   } = {}) {
     super();
     if (!browserType || typeof browserType.connectOverCDP !== 'function') throw new TypeError('browserType.connectOverCDP is required');
