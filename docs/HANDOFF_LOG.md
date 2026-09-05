@@ -1466,3 +1466,4 @@
 - 修正 PAY-03：付款点击后的短时无响应先进入 `VERIFYING_PAYMENT`，不立即制造 Bark/人工对账案例；核实确认可恢复同一 attempt，明确拒绝可安全释放，超时/冲突才升级 `HUMAN_REQUIRED` 并创建真实案例。
 - 下一步：接入只读核实调度（ChatGPT 状态/Checkout、HNSKJ 交易、手工快照），完成 API+HNSKJ、Browser+HNSKJ、Browser+手工卡三类证据收敛；随后进入 D4 生产差异核对。
 - 本轮补充 `browser-payment-verification-service.js` 协调器与 due 查询，新增 3 个单元测试；v1 总计 543 项、0 失败。仅本地候选，未接生产进程。
+- 本轮新增 `route-reconciliation.js` 并接入后台订单读取，覆盖 Browser+HNSKJ、Browser+手工卡和未知执行器分支；新增 3 个测试，v1 总计 546 项、0 失败。生产仍未部署。

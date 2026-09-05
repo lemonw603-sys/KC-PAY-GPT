@@ -2,7 +2,7 @@ import { PublicApiError } from '../domain/public-api-error.js';
 import crypto from 'node:crypto';
 import { decryptSecret } from '../security/secret-box.js';
 import { validateChatGptSession } from '../domain/session-validation.js';
-import { reconcileOrderEvidence } from '../domain/order-reconciliation.js';
+import { reconcileByRoute } from '../domain/route-reconciliation.js';
 import { createCdkLookup } from '../security/cdk-code.js';
 import { redactSensitiveText } from '../security/redaction.js';
 import {
@@ -74,7 +74,9 @@ const RECONCILIATION_ISSUE_SQL = `EXISTS (SELECT 1 FROM reconciliation_cases rci
   WHERE rci.order_id=o.id AND rci.status IN ('OPEN','ASSIGNED'))`;
 
 function reconciliationFromRow(row) {
-  return reconcileOrderEvidence({
+  return reconcileByRoute({
+    executorKind: row.executor_kind || 'API',
+    cardSourceKind: row.card_source_kind || 'API',
     orderStatus: row.status,
     rechargeOrderNo: row.recharge_order_no,
     createAttempted: Boolean(row.create_attempted),
@@ -805,6 +807,11 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
           (${SUCCESSFUL_PURCHASE_SQL}) AS successful_purchase_exists,
           (${PAYMENT_MATCH_SQL}) AS payment_matched,
           (${PAYMENT_SETTLED_SQL}) AS payment_settled
+          ,(SELECT rat.executor_kind FROM recharge_attempts rat
+             WHERE rat.order_id = o.id ORDER BY rat.created_at DESC, rat.id DESC LIMIT 1) AS executor_kind
+          ,(SELECT CASE WHEN pa.source_adapter = 'backup_card_export_v1' THEN 'MANUAL_IMPORT' ELSE 'API' END
+             FROM cards source_card LEFT JOIN provider_accounts pa ON pa.id = source_card.provider_account_id
+             WHERE source_card.id = o.assigned_card_id LIMIT 1) AS card_source_kind
         FROM orders o LEFT JOIN cards c ON (c.id = o.assigned_card_id OR (o.assigned_card_id IS NULL AND c.order_id = o.id))
         ${where}
         ORDER BY o.created_at DESC, o.id DESC
@@ -883,6 +890,11 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
           c.current_balance, c.currency, c.refund_status, c.last_synced_at,
           c.last_transaction_synced_at,
           c.card_number_ciphertext, c.card_credentials_ciphertext
+          ,(SELECT rat.executor_kind FROM recharge_attempts rat
+             WHERE rat.order_id = o.id ORDER BY rat.created_at DESC, rat.id DESC LIMIT 1) AS executor_kind
+          ,(SELECT CASE WHEN pa.source_adapter = 'backup_card_export_v1' THEN 'MANUAL_IMPORT' ELSE 'API' END
+             FROM cards source_card LEFT JOIN provider_accounts pa ON pa.id = source_card.provider_account_id
+             WHERE source_card.id = o.assigned_card_id LIMIT 1) AS card_source_kind
         FROM orders o LEFT JOIN cards c ON (c.id = o.assigned_card_id OR (o.assigned_card_id IS NULL AND c.order_id = o.id))
         WHERE BINARY o.public_no = ? LIMIT 1`, [publicNo]),
       pool.query(`SELECT oe.from_status, oe.to_status, oe.actor_type, oe.actor_id,
@@ -1056,7 +1068,9 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
       transactionMatchesPayment(
         transaction, row.actual_payment_amount, row.actual_payment_currency
       ));
-    const reconciliation = reconcileOrderEvidence({
+    const reconciliation = reconcileByRoute({
+      executorKind: row.executor_kind || 'API',
+      cardSourceKind: row.card_source_kind || 'API',
       orderStatus: row.status,
       rechargeOrderNo: row.recharge_order_no,
       createAttempted: rechargeCallExists,
