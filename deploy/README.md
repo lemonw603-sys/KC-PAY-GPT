@@ -11,7 +11,7 @@
 
 部署顺序：
 
-1. 上传干净的提交产物和本目录配置。
+1. 使用 `scripts/build-production-release.sh <commit> <new-output-directory>` 从一个确定提交构建完整归档；上传后使用 `scripts/verify-production-release.sh` 对全部 tracked 文件校验。禁止复制旧 release 后逐文件覆盖，也禁止只核对“本轮改动文件”。
 2. 执行 `bootstrap-host.sh`，创建独立目录、账号、密钥和 MySQL 容器。
 3. 上传已有的 `admin.env`，权限设为 `root:pojia 0640`。
 4. 使用迁移环境执行数据库迁移，随后锁定迁移账号。
@@ -47,6 +47,8 @@ systemctl enable --now pojia-bark-notifications.service
 - `close <订单查询码>`：在数据库事务中关闭 `dispatch_new_recharges` 并撤销该订单尚未消费的 Permit；它不会停止 Worker，已有订单轮询会继续运行。
 
 不得直接编辑环境文件绕过 Permit。Permit 消费后任何失败都进入终态或人工核对，不自动再次创建直充订单。
+
+旧的 `pojia-card-stock-runner.timer` 已停用并从部署候选删除。不得通过 systemd 定时器恢复“每分钟创建/领取自动开卡任务”的架构；自动开卡只有在订单事件触发、同一需求唯一任务、明确失败停止及有界恢复全部实现并单独验收后，才能以新的执行机制上线。独立自动补余额 runner 不受此条影响。
 
 若默认 API 路线进入常驻自动运营，必须在一次明确确认后安装仓库内的最小权限 drop-in，不能临时手改 unit：
 

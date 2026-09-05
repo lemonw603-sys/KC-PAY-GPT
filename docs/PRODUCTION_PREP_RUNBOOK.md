@@ -5,13 +5,23 @@
 
 ## 0. 操作前快照
 
+先验证候选来自一个确定提交且没有旧 release 叠加文件：
+
+```bash
+scripts/verify-production-release.sh \
+  /opt/pojia/releases/<candidate> \
+  /opt/pojia/release-bundles/<candidate>/source-manifest.sha256
+```
+
+必须返回 `release_manifest=OK`；出现任意 missing、changed 或 extra 都停止部署。候选只能由 `scripts/build-production-release.sh` 通过 `git archive` 构建，禁止复制 current 后局部覆盖。
+
 以 root 执行并保存完整输出：
 
 ```bash
 date -u
 readlink -f /opt/pojia/current
 systemctl is-active pojia-web.service pojia-worker.service \\
-  pojia-card-stock-runner.timer pojia-card-read-sync.timer \\
+  pojia-card-read-sync.timer \\
   pojia-card-catalog-sync.timer pojia-bark-notifications.service
 pojia-ops status
 ```
@@ -31,7 +41,7 @@ nc -vz -w 5 ops.vibebridge.top 3306
 迁移和恢复演练前，停止可能领取资金任务的进程和定时器：
 
 ```bash
-systemctl stop pojia-card-stock-runner.timer pojia-card-stock-runner.service
+systemctl stop pojia-card-stock-runner.service
 systemctl stop pojia-worker.service
 ```
 
@@ -111,6 +121,7 @@ npm run preflight:readiness
 
 - `pojia-worker.service` 停止或无可领取资金任务；
 - `pojia-card-stock-runner.timer` 停止；
+- `card_auto_replenishment_enabled=false`；旧 timer 不得随发布恢复；
 - 所有 Provider 写开关关闭；
 - 没有活动 Permit、UNKNOWN 或资金风险尝试。
 
