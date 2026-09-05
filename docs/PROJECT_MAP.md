@@ -316,3 +316,7 @@ Browser 候选对齐后发现 v1 客户首页静态 `sendFile` 在候选 worktre
 - 本地回归：Browser `123 total / 119 passed / 4 skipped / 0 failed`；v1 `531 total / 485 passed / 46 skipped / 0 failed`。生产部署与当前订单前置观察仍在本轮后续执行，未宣称付款跑通。
 - 合同：`docs/contracts/2026-09-05_browser-order-preflight-contract.md`。
 - 首次真实前置观察发现 ChatGPT 对无活动订阅账号仍可能保留历史 `subscription_plan=chatgptplusplan`，但权威字段 `has_active_subscription=false`。旧解析器要求 plan 名含 `free`，因此把可充值账号误判成 `ACCOUNT_STATUS_UNKNOWN`。已改为以显式活动布尔值为准；没有放宽身份匹配、HTTP 成功或未知 Schema 门槛。
+
+### 当前接续规则（2026-09-05）
+
+卡片存在但交易/余额证据超过 15 分钟时，订单等待 Provider 只读同步；Provider maintenance 使用 `retryAfterMs` 退避，不消耗卡片重试预算。Provider 恢复后自动重试并重新计算资格，客户无需重新提交 Session/CDK；不得绕过新鲜度门槛。
