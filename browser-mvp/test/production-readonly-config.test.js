@@ -86,6 +86,41 @@ test('external readonly mode requires https and a separate confirmation', () => 
   })), /must not contain credentials, query, or fragment/);
 });
 
+test('BitBrowser readonly mode requires a local API URL and preserves the no-write contract', () => {
+  const config = loadProductionReadonlyBrowserConfig(validEnv({
+    BROWSER_WORKER_TARGET: 'BITBROWSER_READONLY',
+    BITBROWSER_API_BASE_URL: 'http://127.0.0.1:54345',
+    BITBROWSER_READONLY_CONFIRM: 'I-CONFIRM-BITBROWSER-READONLY-NO-SESSION',
+    BROWSER_OBSERVE_URL_PREFIX: 'https://chatgpt.com/',
+    BROWSER_OBSERVE_TITLE: 'ChatGPT',
+    BROWSER_OBSERVE_REQUIRED_SELECTOR: 'main',
+  }));
+  assert.equal(config.target, 'BITBROWSER_READONLY');
+  assert.equal(config.bitbrowserApiBaseUrl, 'http://127.0.0.1:54345');
+  assert.throws(() => loadProductionReadonlyBrowserConfig(validEnv({
+    BROWSER_WORKER_TARGET: 'BITBROWSER_READONLY',
+    BITBROWSER_API_BASE_URL: 'http://user:pass@127.0.0.1:54345',
+    BITBROWSER_READONLY_CONFIRM: 'I-CONFIRM-BITBROWSER-READONLY-NO-SESSION',
+    BROWSER_OBSERVE_URL_PREFIX: 'https://chatgpt.com/',
+  })), /must not contain credentials/);
+});
+
+test('ChatGPT account checkout harness accepts a BitBrowser readonly target with shared Session material', () => {
+  const config = loadProductionReadonlyBrowserConfig(validEnv({
+    BROWSER_WORKER_TARGET: 'BITBROWSER_READONLY',
+    BITBROWSER_API_BASE_URL: 'http://127.0.0.1:54345',
+    BITBROWSER_READONLY_CONFIRM: 'I-CONFIRM-BITBROWSER-READONLY-SHARED-MATERIALS-NO-PAYMENT',
+    BROWSER_READONLY_HARNESS: 'CHATGPT_ACCOUNT_CHECKOUT',
+    BROWSER_SHARED_MATERIALS_MODE: 'SHARED_ENCRYPTED_NONPAYMENT',
+    SESSION_ENCRYPTION_KEY_BASE64: Buffer.alloc(32, 10).toString('base64'),
+    BROWSER_OBSERVE_URL_PREFIX: 'https://chatgpt.com/',
+    BROWSER_OBSERVE_TITLE: 'ChatGPT',
+    BROWSER_OBSERVE_REQUIRED_SELECTOR: 'main',
+  }));
+  assert.equal(config.target, 'BITBROWSER_READONLY');
+  assert.equal(config.readonlyHarness, 'CHATGPT_ACCOUNT_CHECKOUT');
+});
+
 test('ChatGPT account/Checkout harness is explicit, exact-origin and Session-only', () => {
   const chatGptEnv = validEnv({
     BROWSER_WORKER_TARGET: 'EXTERNAL_READONLY',

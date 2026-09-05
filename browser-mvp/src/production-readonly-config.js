@@ -87,14 +87,21 @@ export function loadProductionReadonlyBrowserConfig(env = process.env) {
     if (!urlPrefix.startsWith('data:text/html,')) {
       throw new ProductionReadonlyConfigError('LOCAL_FIXTURE requires a data:text/html URL');
     }
-  } else if (target === 'EXTERNAL_READONLY') {
+  } else if (target === 'EXTERNAL_READONLY' || target === 'BITBROWSER_READONLY') {
+    if (target === 'BITBROWSER_READONLY') {
+      const apiBaseUrl = required(env, 'BITBROWSER_API_BASE_URL');
+      let apiUrl;
+      try { apiUrl = new URL(apiBaseUrl); } catch { throw new ProductionReadonlyConfigError('BITBROWSER_API_BASE_URL must be a valid URL'); }
+      if (!['http:', 'https:'].includes(apiUrl.protocol)) throw new ProductionReadonlyConfigError('BITBROWSER_API_BASE_URL must use http or https');
+      if (apiUrl.username || apiUrl.password || apiUrl.search || apiUrl.hash) throw new ProductionReadonlyConfigError('BitBrowser API URL must not contain credentials, query, or fragment');
+    }
     let url;
     try {
       url = new URL(urlPrefix);
     } catch {
       throw new ProductionReadonlyConfigError('EXTERNAL_READONLY requires a valid https URL');
     }
-    if (url.protocol !== 'https:') {
+    if (target === 'EXTERNAL_READONLY' && url.protocol !== 'https:') {
       throw new ProductionReadonlyConfigError('EXTERNAL_READONLY requires an https URL');
     }
     if (url.username || url.password || url.search || url.hash) {
@@ -103,14 +110,22 @@ export function loadProductionReadonlyBrowserConfig(env = process.env) {
     const requiredExternalConfirmation = sharedMaterialsMode === 'SHARED_ENCRYPTED_NONPAYMENT'
       ? 'I-CONFIRM-EXTERNAL-READONLY-SHARED-MATERIALS-NO-PAYMENT'
       : 'I-CONFIRM-EXTERNAL-READONLY-NO-SESSION';
-    if (env.BROWSER_EXTERNAL_READONLY_CONFIRM !== requiredExternalConfirmation) {
+    if (target === 'EXTERNAL_READONLY' && env.BROWSER_EXTERNAL_READONLY_CONFIRM !== requiredExternalConfirmation) {
       throw new ProductionReadonlyConfigError('external readonly target requires its exact confirmation');
+    }
+    if (target === 'BITBROWSER_READONLY') {
+      const requiredBitBrowserConfirmation = sharedMaterialsMode === 'SHARED_ENCRYPTED_NONPAYMENT'
+        ? 'I-CONFIRM-BITBROWSER-READONLY-SHARED-MATERIALS-NO-PAYMENT'
+        : 'I-CONFIRM-BITBROWSER-READONLY-NO-SESSION';
+      if (env.BITBROWSER_READONLY_CONFIRM !== requiredBitBrowserConfirmation) {
+        throw new ProductionReadonlyConfigError('BitBrowser readonly target requires its exact confirmation');
+      }
     }
   } else {
     throw new ProductionReadonlyConfigError('BROWSER_WORKER_TARGET must be LOCAL_FIXTURE or EXTERNAL_READONLY');
   }
   if (readonlyHarness === 'CHATGPT_ACCOUNT_CHECKOUT') {
-    if (target !== 'EXTERNAL_READONLY'
+    if (!['EXTERNAL_READONLY', 'BITBROWSER_READONLY'].includes(target)
       || sharedMaterialsMode !== 'SHARED_ENCRYPTED_NONPAYMENT'
       || urlPrefix !== 'https://chatgpt.com/') {
       throw new ProductionReadonlyConfigError(
@@ -161,6 +176,7 @@ export function loadProductionReadonlyBrowserConfig(env = process.env) {
   const sharedCardPreflightEnabled = sharedSessionEnabled && readonlyHarness === 'PAGE_ONLY';
 
   return Object.freeze({
+    target,
     databaseUrl: required(env, 'DATABASE_URL'),
     databaseTls: env.DATABASE_TLS === 'true',
     workerId: required(env, 'BROWSER_WORKER_ID'),
@@ -168,6 +184,7 @@ export function loadProductionReadonlyBrowserConfig(env = process.env) {
     profilesRoot: required(env, 'BROWSER_PROFILES_ROOT'),
     walPath: required(env, 'BROWSER_WAL_PATH'),
     executablePath,
+    bitbrowserApiBaseUrl: target === 'BITBROWSER_READONLY' ? required(env, 'BITBROWSER_API_BASE_URL') : null,
     headless: env.BROWSER_CHROME_HEADLESS !== 'false',
     runtimeHmacKey,
     artifactKey,

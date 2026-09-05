@@ -38,6 +38,15 @@ export function createChromeControlManifest(overrides = {}) {
   return manifest;
 }
 
+export function createBitBrowserControlManifest(overrides = {}) {
+  return createChromeControlManifest({
+    mode: 'BITBROWSER_CONTROL',
+    profileDigest: digest('browser-mvp:bitbrowser-control:profile:v1'),
+    networkDigest: digest('browser-mvp:bitbrowser-control:network:v1'),
+    ...overrides,
+  });
+}
+
 export function createSyntheticJob(overrides = {}) {
   const job = {
     schemaVersion: 1,

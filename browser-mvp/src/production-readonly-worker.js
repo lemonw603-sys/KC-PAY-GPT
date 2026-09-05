@@ -7,8 +7,9 @@ import { chromium } from 'playwright';
 
 import { loadRuntimeDatabaseConfig } from '../../v1/src/config.js';
 import { createDatabasePool } from '../../v1/src/db/pool.js';
-import { createChromeControlManifest } from './fixtures.js';
+import { createBitBrowserControlManifest, createChromeControlManifest } from './fixtures.js';
 import { GoogleChromeControlRuntimeAdapter } from './chrome-control-runtime.js';
+import { BitBrowserControlRuntimeAdapter } from './bitbrowser-control-runtime.js';
 import { AppendOnlyWal, WalEvidenceSink } from './wal.js';
 import { createSharedNonPaymentDryRun, SHARED_NONPAYMENT_DRY_RUN_CONFIRMATION } from './shared-dry-run-composition.js';
 import { loadProductionReadonlyBrowserConfig } from './production-readonly-config.js';
@@ -153,7 +154,9 @@ export async function runProductionReadonlyBrowserWorker({
     heartbeatStarted = true;
     const wal = await new AppendOnlyWal({ filePath: config.walPath }).init();
     await wal.verify();
-    const runtimeAdapter = new GoogleChromeControlRuntimeAdapter({
+    const runtimeAdapter = config.target === 'BITBROWSER_READONLY'
+      ? new BitBrowserControlRuntimeAdapter({ browserType, apiBaseUrl: config.bitbrowserApiBaseUrl })
+      : new GoogleChromeControlRuntimeAdapter({
       browserType,
       profilesRoot: config.profilesRoot,
       executablePath: config.executablePath,
@@ -185,7 +188,9 @@ export async function runProductionReadonlyBrowserWorker({
       workerId: config.workerId,
       executorProfileId: config.executorProfileId,
       runtimeAdapter,
-      manifest: createChromeControlManifest(),
+      manifest: config.target === 'BITBROWSER_READONLY'
+        ? createBitBrowserControlManifest()
+        : createChromeControlManifest(),
       observation: config.observation,
       resolveObservation: chatGptReadonlyHarness
         ? async ({ orderId, baseObservation }) => ({
