@@ -9,6 +9,8 @@
 
 > **2026-09-05 增量核对**：共享加密 Session 读取已区分上下文不可用（`SESSION_CONTEXT_UNAVAILABLE`）与材料无效（`SESSION_MATERIAL_INVALID`），并透传 `validateChatGptSession` 的具体校验码；Browser executor/runtime integration 保留来源码并继续在付款前安全终止。Browser 全量 `154 total / 149 passed / 5 environment-skipped / 0 failed`；v1 全量仅保留既有静态页面服务测试失败，其他测试通过。未部署、未领真实订单、未调用 Provider/卡台写入、未填卡、未付款。
 
+> **2026-09-05 部署增量**：commit `d24f6d6` 已部署为 `/opt/pojia/releases/20260905-session-errors-d24f6d6` 并原子切换 `/opt/pojia/current`；`pojia-web`/`pojia-worker` active，`pojia-browser-worker` inactive/disabled，`/health/live`=`ok`、`/health/ready`=`ready`。生产 Worker 实际环境保持 `PROVIDER_WRITES_ENABLED=false`、`PROVIDER_CARD_WRITES_ENABLED=false`、`PROVIDER_RECHARGE_WRITES_ENABLED=true`；未执行真实订单、Provider/卡台写入、填卡或付款。
+
 ## 1. 已确认的目标和原则
 
 1. Plus 运营后台是中枢：客户提交 CDK + Session 后，系统应尽快自行完成资源准备和充值，不能要求运营逐单寻找底层开关。

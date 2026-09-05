@@ -226,3 +226,5 @@
 > **付款授权边界**：用户允许首笔 Browser 真实付款，但仅在官方 Checkout 最终稳定为 `₱982.14`、税费 `₱0` 时执行；当前 Browser 付款权限仍关闭，既有 `₱1,100` 结果不满足条件。
 > **2026-09-04 全链路测试清单**：已建立八阶段真实 Browser 订单验收清单，涵盖客户提交、路线冻结、派发/卡片、Session 身份、Checkout 税费、唯一付款、Plus/续费/交易对账/通知和收尾不变量；执行前仍需解决当前 API 订单的路线冻结问题。
 > **2026-09-04 等待卡提醒体检**：当前 API 订单只有一条订单级 OPEN alert 与一条 SENT 通知，但自动开卡在约 5 分钟内连续产生 `REVIEW_REQUIRED`（余额不足、卡段不可用），造成订单持续等待与反复提醒观感。尚未修改生产数据；Browser 全链路测试前需处理该重复供给尝试。
+
+> **2026-09-05 部署结果**：commit `d24f6d6` 已发布到 `/opt/pojia/releases/20260905-session-errors-d24f6d6`，`/opt/pojia/current` 已切换到该 release。生产 `pojia-web`/`pojia-worker` active，Browser Worker inactive/disabled；`/health/live`=`ok`、`/health/ready`=`ready`；Provider 通用/卡片写关闭，API 充值最小写权限保持原值 `true`。未执行真实订单、Provider/卡台写入、填卡或付款。

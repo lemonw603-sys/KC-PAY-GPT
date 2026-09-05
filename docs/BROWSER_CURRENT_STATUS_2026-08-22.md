@@ -292,3 +292,9 @@ git diff --check
 - executor/runtime integration 保留来源 `reasonCode`，客户动作仍可归类为需要更换 Session；无 Browser 付款路径变化。
 - 定向共享材料测试 `33/33` 通过；Browser 全量 `154 total / 149 passed / 5 environment-skipped / 0 failed`。v1 全量仍有既有静态页面服务测试失败，未因本修复引入新失败。
 - 未部署、未启动真实 Worker、未领取真实订单、未调用 Provider/卡台写入、未填卡、未付款。
+
+## 2026-09-05｜共享材料修复已部署
+
+- commit `d24f6d6` 已部署为 `/opt/pojia/releases/20260905-session-errors-d24f6d6` 并切换 `/opt/pojia/current`；生产 Browser Worker 仍为 `inactive/disabled`，没有启动或领取任务。
+- 部署后 `/health/live`=`{"status":"ok"}`、`/health/ready`=`{"status":"ready"}`；`pojia-web`/`pojia-worker` active；共享材料文件 SHA-256 与本地 commit 一致。
+- 生产资金/Provider 开关只读核对：通用 Provider 写、卡片写关闭，API 充值最小权限保持 `PROVIDER_RECHARGE_WRITES_ENABLED=true`；Browser 付款写入关闭。未执行真实订单、Provider/卡台写入、填卡或付款。

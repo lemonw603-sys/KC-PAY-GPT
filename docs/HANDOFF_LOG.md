@@ -1184,3 +1184,10 @@
 - 详细证据：`docs/browser-research/MACOS_BROWSER_PRODUCTION_TUNNEL_CHECK_2026-09-04.md`。
 - 用户确认要做从 CDK+Session 到 Browser 付款完成的完整测试；已建立八阶段可执行清单 `docs/BROWSER_FULL_CHAIN_TEST_PLAN_2026-09-04.md`。本轮仅核对现场：最新订单仍为 API/WAITING_FOR_CARD，Browser dispatch/payment 均关闭，未修改路线或付款权限。
 - 测试前体检发现：当前订单仅一条 alert/一条 SENT Bark 通知，但自动开卡失败后短时间内重复生成多个 `REVIEW_REQUIRED` stock job（`CARD_STOCK_BALANCE_INSUFFICIENT`、`CARD_STOCK_CARD_TYPE_UNAVAILABLE`），造成持续等待和反复提醒观感。详见 `docs/2026-09-04_waiting-card-alert-healthcheck.md`。
+
+## 2026-09-05｜共享材料修复部署
+
+- 将 commit `d24f6d6` 构建为独立 release `/opt/pojia/releases/20260905-session-errors-d24f6d6`（从部署前 `/opt/pojia/releases/20260905-browser-checkout-92fc70e` 复制并覆盖提交文件，保留生产依赖），原子切换 `/opt/pojia/current` 后重启 `pojia-web.service` 与 `pojia-worker.service`。
+- 部署后只读证据：`pojia-web=active`、`pojia-worker=active`、`pojia-browser-worker=inactive`、Browser unit=`disabled`；`http://127.0.0.1:3100/health/live` 返回 `{"status":"ok"}`，`/health/ready` 返回 `{"status":"ready"}`。
+- 生产 Worker 环境核对：`PROVIDER_WRITES_ENABLED=false`、`PROVIDER_CARD_WRITES_ENABLED=false`、`PROVIDER_RECHARGE_WRITES_ENABLED=true`；Browser 付款/Provider 写入未开启。release 内共享材料文件 SHA-256=`144a778adf9ddab05ea9b1825e7c8321281cf2775d498f290f14c73295a71bca`，与本地 commit 文件一致。
+- 未创建/领取真实订单，未调用 Provider/卡台写接口，未填卡，未付款；直接回滚点为 `/opt/pojia/releases/20260905-browser-checkout-92fc70e`。
