@@ -282,3 +282,9 @@ Browser 候选对齐后发现 v1 客户首页静态 `sendFile` 在候选 worktre
 - 现场确认旧闸门不是全链路验证；已补强 `scripts/agent-evidence-gate.sh browser-order`，额外检查本地只读 Worker、SSH DB 隧道、生产 Browser schema 和 heartbeat。
 - 本轮实际结果：本地前置依赖 READY；生产 Browser Worker 仍 inactive/disabled、target=LOCAL_FIXTURE；Provider 写权限关闭；最新订单仍 API `WAITING_FOR_CARD`。因此只能进入真实 Browser 订单的准备阶段，不能宣称 Browser 充值已跑通。
 - 完整审查记录：`docs/BROWSER_PREFLIGHT_ADVERSARIAL_AUDIT_2026-09-05.md`。
+
+### 2026-09-05 生产默认路线现场纠正（最新）
+
+- 通过生产数据库直接只读核对：`fulfillment_routes` 中 ChatGPT Plus 当前 `BROWSER.accepts_new_orders=1`、`API.accepts_new_orders=0`；`browser_dispatch_enabled=true`，Browser Profile ACTIVE，heartbeat 持续更新。
+- 因此后台 Browser 按钮不可点击的原因是它已经是当前默认路线（前端对当前选中项设置 disabled），不是“无法切换”。此前依据旧 API 订单推断当前默认路线为 API 属于错误，已纠正。
+- 旧 API 订单保持 API 路线冻结；新提交订单将按 Browser 路线创建。付款写权限仍关闭。

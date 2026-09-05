@@ -293,3 +293,9 @@
 - 本轮现场：本地依赖 READY；生产 Browser Worker 仍 inactive/disabled、target=LOCAL_FIXTURE；Provider 写权限关闭；最新订单仍为 API `WAITING_FOR_CARD`。未创建 Browser 订单、未读取 Session、未付款。
 - v1 回归 529/483/0（46 skipped），Browser 118/114/0（4 skipped）；跳过项为隔离 MySQL 集成，不能等同真实链路通过。
 - 详见 `docs/BROWSER_PREFLIGHT_ADVERSARIAL_AUDIT_2026-09-05.md`。
+
+### 2026-09-05 默认路线现场纠正
+
+- 最新生产数据库只读核对显示 ChatGPT Plus 当前默认路线已是 Browser：`BROWSER.accepts_new_orders=1`、`API.accepts_new_orders=0`；Browser dispatch=true、Profile ACTIVE、heartbeat 持续更新。
+- 后台 Browser 按钮不可点击是因为当前已经选中 Browser，前端按设计禁用当前选中项；不是切换失败。
+- 之前看到的最新订单为旧 API 订单，不能代表当前默认路线；该订单路线冻结不变。新订单应按 Browser 创建，付款写权限仍关闭。
