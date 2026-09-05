@@ -39,6 +39,12 @@
 - 本次真实失败原因为 `SESSION_IDENTITY_MISMATCH`，不是卡台、Checkout 导航或付款闸门；执行器已安全停止，未创建充值 attempt、未读取卡资料、未 Provider/卡台写入、未付款。
 - 这表明订单中保存的客户身份摘要与所提交 Session 实际账号不一致（具体值不落日志）。订单保持 `PENDING`，剩余任务预算不得自动重试；需客户在原订单提交匹配该订单的 Session 后，按既定 Session 修复流程重新验证。
 
+## 2026-09-05｜完整只读导航诊断的间歇性身份结果
+
+- 现场在同一订单/同一 Profile 上先后得到两种结果：一次 Session 与订单 email/account 摘要哈希完全匹配，另一次执行器返回 `SESSION_IDENTITY_MISMATCH`。因此不能把单次失败直接定性为客户 Session 错误。
+- 当前更可信的根因是持久 BitBrowser Profile 的会话状态在不同开窗之间不稳定（可能存在旧页面/旧账号状态竞争）；业务订单和卡台均未参与该失败。
+- 本轮完整导航尚未通过；订单保持 `PENDING`，不再继续消耗任务预算。下一步应为 Browser Profile 增加“单实例、开窗前关闭旧页面、注入后新页确认”的隔离诊断/修复，完成后再重跑。
+
 ## 2026-09-04｜补款失败恢复、陈旧卡抢跑修复与生产运行证据
 
 - 代码提交 `0e5a82d`：补款失败固化 `AUTO_RETRY/DO_NOT_RETRY/MANUAL_REVIEW`，仅 `FAILED+CLEARED+AUTO_RETRY` 有界自动恢复，订单+卡最多 3 个 attempt，UNKNOWN 不重试。
