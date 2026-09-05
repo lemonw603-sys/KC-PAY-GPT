@@ -55,6 +55,7 @@
 
 - 用户确认提交的 Session 无误；已修正机制，不再只保存笼统 `SESSION_INVALID`。Session 探针现在记录受限诊断元数据：失败阶段、HTTP 状态、Content-Type/Server 截断值和 Cloudflare 标记；绝不记录响应正文、Token、Cookie 或邮箱明文。
 - Browser preflight 在转入 `WAITING_FOR_SESSION` 时把该诊断摘要写入 `order_events.metadata_json`，保留订单已有加密 Session 原件，便于区分真实失效、身份不匹配、Cloudflare 和上游错误。
+- 现场发现执行器在 Session bootstrap 捕获处把具体本地校验码重新覆盖为 `SESSION_INVALID`，导致新订单第二次提交后诊断仍不精确；已修复为保留 `SESSION_EXPIRED`、`INVALID_ACCESS_TOKEN` 等具体码，代码提交 `f96389c`，并同步生产。
 - 定向 Session 测试通过；代码提交 `a4c9084`，修复已同步生产当前 release，`/health/ready=ready`。尚未重跑新订单，避免重复消耗任务。
 
 ## 2026-09-05｜本地 Session 校验错误分类落地
