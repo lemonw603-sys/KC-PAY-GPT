@@ -1,4 +1,8 @@
-# 当前生产状态快照｜2026-09-05
+# 当前生产状态快照｜2026-09-06
+
+> **D4 最新生产事实**：current 路径为 `/opt/pojia/releases/20260905-browser-zero-tax-04e08e6`，但全量 manifest 证明它不是 `04e08e6` 的完整代码：受控文件 204 一致、27 不一致、2 个额外，属于多提交混装 release。Web/API Worker active、live/ready 正常；Browser systemd Worker inactive/disabled，Browser payment=false；数据库最高 migration=047，048 未部署；所有 recharge/funding ACTIVE/UNKNOWN、RUNNING task、活动 Browser run/dispatch、OPEN/ASSIGNED reconciliation case 均为 0。详见 `docs/CARD_SOURCE_D4_PRODUCTION_ALIGNMENT_2026-09-06.md`。
+
+> **自动开卡当前状态**：混装 release 的旧订单重试逻辑造成每分钟新增并领取自动开卡任务，停止前累计 969 条；相关任务 `opened_count=0`，无新增卡。用户确认该 timer 架构无需恢复后，`pojia-card-stock-runner.timer` 已 `inactive/disabled`，service inactive，`card_auto_replenishment_enabled=false` 且有设置审计；等待超过 60 秒后任务数未增长。自动补余额是独立机制，本次未关闭。未来自动开卡只能以订单事件触发、同需求幂等、有界恢复的新机制重新验收，不能恢复旧 timer。
 
 > **2026-09-05 订单发现机制纠偏**：曾错误声称“订单提交后没有跨窗口发现机制”。代码和生产数据库现场核对后确认，现有建单事务已写入 `orders`、`order_events` 与 `tasks`，Browser 路线同时写入 `BROWSER_PREFLIGHT`；系统具备持久化任务发现能力。本次客户订单 `PJV1-AH6M688B3Wfv5_vxISmp` 已落库，当前 `WAITING_FOR_CARD`，路线 `CHATGPT_PLUS_BROWSER_V1/BROWSER`，`ASSIGN_CARD` 任务 `PENDING`，最近错误 `CARD_STOCK_EMPTY`。已把包含 Browser 建单任务写入的 order-intake 文件发布到 `/opt/pojia/releases/20260905-order-preflight-130349` 并复验 Web `ready`，同时为该已存在订单幂等补建 `BROWSER_PREFLIGHT` 任务；该任务随后在付款前安全停止，错误为 `CHECKOUT_OBSERVATION_FAILED`，没有付款。误判根因是本执行窗口未使用生产可用的 Node/mysql2 查询方式，却先据此下结论；不是客户提交失败，也不是数据库漏写。后续涉及“有没有新订单”必须先读取生产数据库或已登录后台的原始响应，禁止凭窗口可见性或历史上下文推断。
 

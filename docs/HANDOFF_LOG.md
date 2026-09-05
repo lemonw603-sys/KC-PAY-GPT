@@ -1467,3 +1467,13 @@
 - 下一步：接入只读核实调度（ChatGPT 状态/Checkout、HNSKJ 交易、手工快照），完成 API+HNSKJ、Browser+HNSKJ、Browser+手工卡三类证据收敛；随后进入 D4 生产差异核对。
 - 本轮补充 `browser-payment-verification-service.js` 协调器与 due 查询，新增 3 个单元测试；v1 总计 543 项、0 失败。仅本地候选，未接生产进程。
 - 本轮新增 `route-reconciliation.js` 并接入后台订单读取，覆盖 Browser+HNSKJ、Browser+手工卡和未知执行器分支；新增 3 个测试，v1 总计 546 项、0 失败。生产仍未部署。
+
+
+## 2026-09-06｜D4 生产对齐发现混装 release 并停止任务风暴
+
+- 现场核对 current release、systemd、直接 health、MySQL 版本/结构、route/account/settings、未决资金、任务、Browser run/dispatch 和备份完整性；原始报告为 `docs/CARD_SOURCE_D4_PRODUCTION_ALIGNMENT_2026-09-06.md`。
+- 生产最高 migration=047；048 新表/字段均不存在。隔离 MySQL 8.4 从 001→047 后加入 API/Browser 代表旧订单，执行 048 成功且旧订单来源全部回填，用时约 0.441 秒。
+- 对标注 commit `04e08e6` 的 231 个受控文件做完整 SHA-256：204 一致、27 不一致、0 缺失、2 额外。生产文件可分别映射到多个更早提交，根因是 Browser-only 发布复制旧 release 后局部覆盖，只校验本轮少量文件，形成多提交混装。
+- 该混装携带的旧 `workflow-repository.js` 会让同一 WAITING_FOR_CARD 订单每次重试都插入新开卡任务；60 秒 timer 持续领取，停止前累计 969 条任务。故障窗口所有任务 opened_count=0、无新增卡，资金 attempt 无 ACTIVE/UNKNOWN。
+- 用户明确“如果每分钟自动开卡任务有问题就不用恢复”。已将 `pojia-card-stock-runner.timer` disable/stop、service stop/reset-failed，并把 `card_auto_replenishment_enabled` 改为 false、写设置审计。等待超过一个完整周期后任务数与最新创建时间均未变化；Web/API Worker保持 active，未关闭卡同步和独立补余额。
+- D5 当前阻断：必须从单一 commit 用 git archive 构建完整候选并做全量 manifest 校验，禁止继续复制旧 release 局部覆盖。历史 969 条记录保留，后续仅做有证据的状态收敛，不物理删除。
