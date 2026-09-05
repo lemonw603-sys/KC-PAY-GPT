@@ -53,54 +53,67 @@ export async function probeSessionIdentity(page, expectedIdentity, {
   path = '/api/auth/session',
   accountCheckPath = null,
   onVerifiedEmail = null,
+  stabilizationTimeoutMs = 0,
+  stabilizationPollMs = 250,
 } = {}) {
   if (!page || typeof page.evaluate !== 'function') throw new TypeError('page.evaluate is required');
   if (onVerifiedEmail != null && typeof onVerifiedEmail !== 'function') throw new TypeError('onVerifiedEmail must be a function');
+  if (!Number.isInteger(stabilizationTimeoutMs) || stabilizationTimeoutMs < 0 || stabilizationTimeoutMs > 30_000) {
+    throw new TypeError('stabilizationTimeoutMs must be between 0 and 30000');
+  }
+  if (!Number.isInteger(stabilizationPollMs) || stabilizationPollMs < 50 || stabilizationPollMs > 2_000) {
+    throw new TypeError('stabilizationPollMs must be between 50 and 2000');
+  }
   const expected = normalizeIdentity(expectedIdentity);
   const checkedSessionPath = assertSameOriginPath(path, 'session path');
   const checkedAccountPath = assertSameOriginPath(accountCheckPath, 'accountCheckPath', { optional: true });
-  const observed = await page.evaluate(async ({ sessionPath, subscriptionPath }) => {
-    const response = await fetch(sessionPath, { credentials: 'include' });
-    let body = null;
-    try { body = await response.json(); } catch { body = null; }
-    const user = body?.user || {};
-    let subscription = null;
-    if (subscriptionPath && response.ok) {
-      const accessToken = typeof body?.accessToken === 'string' ? body.accessToken : '';
-      if (!accessToken) {
-        subscription = { ok: false, status: null, state: 'UNKNOWN' };
-      } else {
-        const accountResponse = await fetch(subscriptionPath, {
-          credentials: 'include',
-          headers: { Accept: 'application/json', Authorization: `Bearer ${accessToken}` },
-        });
-        let accountBody = null;
-        try { accountBody = await accountResponse.json(); } catch { accountBody = null; }
-        const entitlement = accountBody?.accounts?.default?.entitlement || {};
-        const hasActive = entitlement.has_active_subscription;
-        const plan = typeof entitlement.subscription_plan === 'string'
-          ? entitlement.subscription_plan.trim().toLowerCase() : '';
-        let state = 'UNKNOWN';
-        if (hasActive === true && plan.includes('plus')) state = 'PLUS';
-        else if (hasActive === true) state = 'PAID_OTHER';
-        // ChatGPT can retain the last paid plan name after it is inactive.
-        // The explicit active-subscription boolean is authoritative.
-        else if (hasActive === false) state = 'FREE';
-        subscription = { ok: accountResponse.ok, status: accountResponse.status, state };
+  const deadline = Date.now() + stabilizationTimeoutMs;
+  let observed;
+  do {
+    observed = await page.evaluate(async ({ sessionPath, subscriptionPath }) => {
+      const response = await fetch(sessionPath, { credentials: 'include' });
+      let body = null;
+      try { body = await response.json(); } catch { body = null; }
+      const user = body?.user || {};
+      let subscription = null;
+      if (subscriptionPath && response.ok) {
+        const accessToken = typeof body?.accessToken === 'string' ? body.accessToken : '';
+        if (!accessToken) {
+          subscription = { ok: false, status: null, state: 'UNKNOWN' };
+        } else {
+          const accountResponse = await fetch(subscriptionPath, {
+            credentials: 'include',
+            headers: { Accept: 'application/json', Authorization: `Bearer ${accessToken}` },
+          });
+          let accountBody = null;
+          try { accountBody = await accountResponse.json(); } catch { accountBody = null; }
+          const entitlement = accountBody?.accounts?.default?.entitlement || {};
+          const hasActive = entitlement.has_active_subscription;
+          const plan = typeof entitlement.subscription_plan === 'string'
+            ? entitlement.subscription_plan.trim().toLowerCase() : '';
+          let state = 'UNKNOWN';
+          if (hasActive === true && plan.includes('plus')) state = 'PLUS';
+          else if (hasActive === true) state = 'PAID_OTHER';
+          else if (hasActive === false) state = 'FREE';
+          subscription = { ok: accountResponse.ok, status: accountResponse.status, state };
+        }
       }
-    }
-    return {
-      ok: response.ok,
-      status: response.status,
-      contentType: response.headers.get('content-type') || '',
-      server: response.headers.get('server') || '',
-      hasCfRay: Boolean(response.headers.get('cf-ray')),
-      email: typeof user.email === 'string' ? user.email.trim().toLowerCase() : '',
-      userId: typeof user.id === 'string' ? user.id.trim() : '',
-      accountId: typeof body?.account?.id === 'string' ? body.account.id.trim() : '',
-      subscription,
-    };
-  }, { sessionPath: checkedSessionPath, subscriptionPath: checkedAccountPath });
+      return {
+        ok: response.ok,
+        status: response.status,
+        contentType: response.headers.get('content-type') || '',
+        server: response.headers.get('server') || '',
+        hasCfRay: Boolean(response.headers.get('cf-ray')),
+        email: typeof user.email === 'string' ? user.email.trim().toLowerCase() : '',
+        userId: typeof user.id === 'string' ? user.id.trim() : '',
+        accountId: typeof body?.account?.id === 'string' ? body.account.id.trim() : '',
+        subscription,
+      };
+    }, { sessionPath: checkedSessionPath, subscriptionPath: checkedAccountPath });
+    const identityStillLoading = observed?.ok && !observed.email && !observed.userId && !observed.accountId;
+    if (!identityStillLoading || Date.now() >= deadline) break;
+    await page.waitForTimeout(stabilizationPollMs);
+  } while (true);
   if (!observed?.ok) {
     const accessBlocked = Number(observed?.status) === 429
       || (Number(observed?.status) === 403 && (

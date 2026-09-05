@@ -47,11 +47,13 @@ export async function fillSecureCardFieldsNonPayment(page, {
   cardMaterialLeaseProvider,
   lease,
   material = undefined,
+  whileFilled = null,
   assertContinue = async () => undefined,
   timeoutMs = 5_000,
 } = {}) {
   if (!page || typeof page.frames !== 'function') throw new TypeError('page is required');
   if (!Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 30_000) throw new TypeError('timeoutMs must be between 1 and 30000');
+  if (whileFilled != null && typeof whileFilled !== 'function') throw new TypeError('whileFilled must be a function');
   if (material === undefined && (!cardMaterialLeaseProvider || typeof cardMaterialLeaseProvider.withMaterial !== 'function' || typeof cardMaterialLeaseProvider.assertActive !== 'function' || !lease)) {
     throw new TypeError('card material lease provider and lease are required');
   }
@@ -75,6 +77,7 @@ export async function fillSecureCardFieldsNonPayment(page, {
       }
       if (material === undefined) cardMaterialLeaseProvider.assertActive(lease);
       await assertContinue();
+      if (whileFilled) await whileFilled(cardMaterial);
       return { status: 'FILLED_AND_CLEARED', fieldsFilled: written.length, fieldsCleared: 0, submitCalls: 0, paymentClicked: false };
     } finally {
       let fieldsCleared = 0;

@@ -1,5 +1,7 @@
 # AI充值业务｜唯一项目规划地图
 
+> **2026-09-05 Browser 零税流程多样本收口（最新）**：已完成两个独立 BitBrowser Profile 的身份有效、全新 Checkout 前后对照，均从 `PHP ₱982.14 + VAT ₱117.86 = ₱1,100.00` 在填卡、US/DE 账单地址和瞬时 Session 邮箱后重算为 `PHP ₱982.14 + Tax ₱0 = ₱982.14`；另有一个身份有效零税样本。全程未点击 Subscribe、未付款。正式代码已收口真实标签/千分位、PHP/零税/金额一致性、卡→地址→重报价顺序、Session 空响应稳定等待、`Rejoin Plus` 水合重试和 BitBrowser 最后一页存活问题。Browser `132/128/4/0`、v1 `532/486/46/0`。**尚未部署生产，下一步是提交候选并做生产代码发布/只读核对；Browser 真实付款仍未验收。** 证据见 `docs/browser-research/BITBROWSER_TAX_MULTI_SAMPLE_2026-09-05.md`。
+
 > **2026-09-05 BitBrowser 代理生命周期已修复（本机现场）**：此前开窗失败的直接证据是 `ECONNREFUSED 127.0.0.1:17897`。已将 mihomo 从无主进程迁移为用户级 launchd 单实例服务 `com.ai充值业务.mihomo`，固定使用 BitBrowser 代理目录；健康闸门现在同时检查“仅一个 mihomo、17897 监听归属正确、经代理访问 ipify 成功”。当前现场 `PID=45732`、出口 `38.60.246.34`、`LOCAL_MIHOMO_PROCESSES=1`，BitBrowser Local API 与生产只读状态复核均通过。ChatGPT Cloudflare challenge 仍是独立的页面访问问题，未宣称已解决。
 
 > **2026-09-05 单 Profile 复核已通过**：代理修复后，Pilot Profile `10f0dc7b534844c083165796447d5893` 完成 `open → CDP → chatgpt.com → close`；HTTP `200`、正常标题、未出现 Cloudflare challenge。未注入 Session、未进入 Checkout、未创建订单、未付款。原始证据见 `artifacts/bitbrowser-single-profile-check-20260905/result.json`。

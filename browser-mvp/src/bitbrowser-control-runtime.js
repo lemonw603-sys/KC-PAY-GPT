@@ -87,7 +87,13 @@ export class BitBrowserControlRuntimeAdapter extends RuntimeAdapter {
       // previous task before the executor creates its single task page; this
       // prevents old in-memory account state from competing with new cookies.
       if (typeof context.pages === 'function') {
-        for (const page of context.pages()) await page.close().catch(() => undefined);
+        // Closing the last tab terminates some BitBrowser Profile processes and
+        // invalidates the BrowserContext before the executor can create its
+        // task page. Keep one blank tab alive while removing inherited pages.
+        const keeper = typeof context.newPage === 'function' ? await context.newPage() : null;
+        for (const page of context.pages()) {
+          if (page !== keeper) await page.close().catch(() => undefined);
+        }
       }
       return {
         browser,

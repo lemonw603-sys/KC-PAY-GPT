@@ -3,6 +3,8 @@
 ## 有效样本
 
 - Profile `Plus Browser PH Lane 2`：注入测试 Session 后，`/api/auth/session` 现场复核 email/user/account 三项摘要均匹配；Checkout 显示 `PHP / ₱982.14 / Tax 0% / ₱0.00 / Due ₱982.14`。未付款。
+- Profile `Plus Browser PH Lane 3`：关闭旧任务页、清理非 Cookie 站点状态并注入同一目标 Session；email/user/account 三项摘要全部匹配、订阅状态 `FREE`。新建 Checkout 初始为 `PHP / ₱982.14 + VAT ₱117.86 = ₱1,100.00`；填写卡片、US/DE 账单地址及瞬时 Session 邮箱后，服务端重新报价为 `PHP / ₱982.14 + Tax ₱0.00 = ₱982.14`。`submitCalls=0`，未付款。
+- Profile `Plus Browser PH Pilot`：采用与 Lane 3 相同的干净任务生命周期和同一目标 Session；三项身份摘要全部匹配、订阅状态 `FREE`。独立新建 Checkout 同样从 `₱1,100.00（VAT 12%）` 重算为 `₱982.14（Tax 0%）`。`submitCalls=0`，未付款。
 
 ## 作废样本
 
@@ -10,4 +12,16 @@
 
 ## 当前结论
 
-目前只有一笔身份已核验的零税 Checkout 样本；尚不足以证明所有订单稳定零税。后续每个样本必须先关闭旧 ChatGPT 页面、注入 Session、通过 email/user/account 摘要三重匹配，再创建新 Checkout，记录初始报价与 US/DE 地址后的报价。身份不匹配样本不得计入规律。
+现在有两个独立 Profile 的有效“含税→零税”前后对照样本，另有一个独立 Profile 的身份有效零税样本；共同支持以下可重复流程：干净任务页面 → 注入目标 Session → email/user/account 三重匹配 → 新建 Plus Checkout → 填卡 → 填 US/DE 账单地址与 Session 邮箱 → 等服务端重新报价 → 仅接受 PHP、税额 0、`total=subtotal+tax`。身份不匹配样本不得计入规律。
+
+这证明的是当前页面与当前样本下流程可重复，不是上游对未来所有账号、卡 BIN、地区或税务规则的永久承诺。正式执行器必须逐单读取最终报价；任何非 PHP、非零税或金额关系不一致均停在付款前。
+
+## 本轮代码收口
+
+- Checkout 合同已启用 `PHP + zero tax + quote consistency`，并支持现场标签 `Monthly subscription`、`VAT (12%)` / `Tax (0%)`、`Due today` 和千分位金额。
+- 执行顺序已改为：先做宽松结构观察，再在短卡资料租约内填卡 → 账单地址 → Session 邮箱 → 等待严格零税重新报价，最后清空卡字段；不点击提交。
+- Session endpoint 初始返回空身份时只做有界稳定等待；一旦返回已填充但不匹配的身份仍立即失败关闭。
+- 导航新增 `Rejoin Plus`，并对价格弹窗 React 尚未完成水合的无跳转点击做最多一次有界重试。
+- BitBrowser Profile 清理旧页时保留一个空白页，避免关闭最后标签导致 Context 自行终止。
+- 回归：Browser `132 total / 128 passed / 4 environment-skipped / 0 failed`；v1 `532 total / 486 passed / 46 environment-skipped / 0 failed`。
+- 状态：代码已验证，尚未部署生产；生产 Browser Worker 仍不得据此宣称已启用或已完成真实付款验收。

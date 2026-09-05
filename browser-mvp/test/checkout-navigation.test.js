@@ -31,8 +31,9 @@ test('executor navigates an optional questionnaire to Checkout and remains obser
           '></iframe></form>
           <section data-testid="checkout-summary-column">
             <h2>Plus plan</h2>
-            <div><span>Estimated tax</span><span>US$0.00</span></div>
-            <div><span>Total due today</span><span>US$20.00</span></div>
+            <div><span>Monthly subscription</span><span>₱982.14</span></div>
+            <div><span>VAT (0%)</span><span>₱0.00</span></div>
+            <div><span>Due today</span><span>₱982.14</span></div>
             <button type="submit" aria-label="Subscribe">Subscribe</button>
           </section>
         </main>
@@ -114,8 +115,8 @@ test('executor navigates an optional questionnaire to Checkout and remains obser
     assert.equal(result.checkoutNavigation.checkoutCreated, true);
     assert.equal(result.checkoutNavigation.questionnaireSkipped, true);
     assert.deepEqual(result.checkoutNavigation.actions, ['pricing-opened', 'questionnaire-skipped', 'upgrade-requested', 'questionnaire-skipped', 'upgrade-requested']);
-    assert.equal(result.checkout.currency, 'USD');
-    assert.equal(result.checkout.amount, '20.00');
+    assert.equal(result.checkout.currency, 'PHP');
+    assert.equal(result.checkout.amount, '982.14');
     assert.equal(result.checkout.submitCalls, 0);
     assert.equal(result.submitCalls, 0);
     assert.deepEqual(result.readonlyChecklist, {

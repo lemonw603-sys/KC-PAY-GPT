@@ -16,17 +16,21 @@ async function readText(page, selector) {
 function normalizeAmount(value) {
   const compact = value.replace(/\s+/g, '');
   if (compact.includes('.') && compact.includes(',')) return compact.replaceAll(',', '');
+  if (compact.includes(',') && !compact.includes('.')) {
+    const parts = compact.split(',');
+    return parts.length === 2 && parts[1].length <= 2 ? compact.replace(',', '.') : compact.replaceAll(',', '');
+  }
   return compact;
 }
 
 function parseMoney(value) {
-  const prefix = /(US\$|USD|PHP|\$|₱)\s*([0-9]+(?:[.,][0-9]{1,2})?)/i.exec(value || '');
-  const suffix = /([0-9]+(?:[.,][0-9]{1,2})?)\s*(USD|PHP)/i.exec(value || '');
+  const prefix = /(US\$|USD|PHP|\$|₱)\s*([0-9]+(?:[.,][0-9]+)*)/i.exec(value || '');
+  const suffix = /([0-9]+(?:[.,][0-9]+)*)\s*(USD|PHP)/i.exec(value || '');
   const match = prefix || suffix;
   if (!match) return null;
   const token = prefix ? match[1].toUpperCase() : match[2].toUpperCase();
   const amount = normalizeAmount(prefix ? match[2] : match[1]);
-  const currency = token === 'US$' ? 'USD' : token;
+  const currency = token === 'US$' || token === '$' ? 'USD' : token === '₱' ? 'PHP' : token;
   return { currency, amount };
 }
 
@@ -40,6 +44,17 @@ async function readMoneyRow(page, { summarySelector, labels }) {
     const count = await matches.count();
     for (let index = 0; index < count; index += 1) {
       rows.push((await matches.nth(index).locator('..').textContent())?.trim() || '');
+    }
+    if (count === 0 && ['Tax', 'VAT'].includes(label)) {
+      const candidates = summary.locator('span, div, p');
+      for (let index = 0; index < await candidates.count(); index += 1) {
+        const candidate = candidates.nth(index);
+        if (await candidate.evaluate((element) => element.childElementCount > 0)) continue;
+        const text = (await candidate.textContent())?.trim() || '';
+        if (text === label || text.startsWith(`${label} (`)) {
+          rows.push((await candidate.locator('..').textContent())?.trim() || '');
+        }
+      }
     }
   }
   if (rows.length !== 1) return null;
@@ -75,14 +90,17 @@ export const CHATGPT_PLUS_CHECKOUT_CONTRACT = Object.freeze({
   currencySelector: null,
   amountSelector: null,
   summarySelector: '[data-testid="checkout-summary-column"]',
-  amountLabels: Object.freeze(['今日应付金额', 'Total due today', 'Amount due today']),
-  estimatedTaxLabels: Object.freeze(['预估税费', 'Estimated tax']),
+  amountLabels: Object.freeze(['今日应付金额', 'Total due today', 'Amount due today', 'Due today']),
+  estimatedTaxLabels: Object.freeze(['预估税费', 'Estimated tax', 'Tax', 'VAT']),
   subtotalLabels: Object.freeze(['月度订阅', 'Monthly subscription', 'Subtotal']),
   paymentFormSelector: 'form[data-testid="checkout-form"]',
   submitControlSelector: '[data-testid="checkout-summary-column"] button[type="submit"]',
   inspectSecureCardFields: true,
   requireSecureCardFields: true,
   secureFieldTimeoutMs: 10_000,
+  requiredCurrency: 'PHP',
+  requireZeroTax: true,
+  requireQuoteConsistency: true,
 });
 
 /** Read-only Checkout summary. It never clicks or submits payment controls. */

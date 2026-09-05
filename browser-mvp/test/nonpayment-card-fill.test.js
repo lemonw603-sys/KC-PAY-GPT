@@ -43,6 +43,28 @@ test('non-payment card fill uses a lease, clears fields, and never submits', asy
   }
 });
 
+test('non-payment card fill keeps fields only for the bounded billing callback and then clears them', async () => {
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await makePage(browser);
+    const provider = new InMemoryCardMaterialLeaseProvider({ source: { load: async () => CARD } });
+    const lease = await provider.open('card:fixture-billing');
+    let populatedDuringCallback = false;
+    const result = await fillSecureCardFieldsNonPayment(page, {
+      cardMaterialLeaseProvider: provider,
+      lease,
+      whileFilled: async () => {
+        populatedDuringCallback = (await page.frames()[1].locator('input').evaluateAll((inputs) => inputs.every((input) => input.value.length > 0)));
+      },
+    });
+    assert.equal(populatedDuringCallback, true);
+    assert.equal(result.fieldsCleared, 3);
+    assert.deepEqual(await page.frames()[1].locator('input').evaluateAll((inputs) => inputs.map((input) => input.value)), ['', '', '']);
+  } finally {
+    await browser.close();
+  }
+});
+
 test('lease loss stops the next field and still clears fields already written', async () => {
   const browser = await chromium.launch({ headless: true });
   try {

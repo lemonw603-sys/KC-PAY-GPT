@@ -21,6 +21,23 @@ function digest(input) {
   return createHash('sha256').update(input).digest('hex');
 }
 
+async function observeCheckoutAfterRequote(page, contract, timeoutMs) {
+  const deadline = Date.now() + Math.min(timeoutMs, 30_000);
+  let lastError;
+  do {
+    try {
+      return await observeCheckout(page, contract);
+    } catch (error) {
+      lastError = error;
+      const pendingRequote = /tax is not zero|summary is incomplete|quote is incomplete|quote total does not match subtotal/i
+        .test(String(error?.message || ''));
+      if (!pendingRequote || Date.now() >= deadline) throw error;
+      await page.waitForTimeout(250);
+    }
+  } while (true);
+  throw lastError;
+}
+
 function assertReadOnlyPageContract(contract, { identityProbeRequired = false } = {}) {
   if (!contract || typeof contract !== 'object') throw new ContractError('pageContract is required');
   if (typeof contract.urlPrefix !== 'string' || contract.urlPrefix.length === 0) throw new ContractError('pageContract.urlPrefix is required');
@@ -130,7 +147,11 @@ export class BrowserExecutionService {
           sessionIdentity = await probeSessionIdentity(
             page,
             job.metadata.sessionIdentity,
-            { ...(job.metadata.accountProbeContract || {}), onVerifiedEmail: (email) => { transientBillingEmail = email; } },
+            {
+              ...(job.metadata.accountProbeContract || {}),
+              stabilizationTimeoutMs: Math.min(this.timeoutMs, 15_000),
+              onVerifiedEmail: (email) => { transientBillingEmail = email; },
+            },
           );
         } catch (error) {
           const reason = [
@@ -233,20 +254,26 @@ export class BrowserExecutionService {
           if (material?.billingAddress) await fillBillingAddress(page, material.billingAddress, { timeoutMs: this.timeoutMs });
         });
       }
-      if (transientBillingEmail) {
+      if (!fillCardFields && transientBillingEmail) {
         await fillTransientBillingEmail(page, transientBillingEmail, { timeoutMs: this.timeoutMs });
       }
       let checkout = null;
+      let checkoutBeforeBilling = null;
       if (job.metadata.checkoutContract) {
         try {
-          checkout = await observeCheckout(page, job.metadata.checkoutContract);
+          checkoutBeforeBilling = await observeCheckout(page, {
+            ...job.metadata.checkoutContract,
+            requireZeroTax: false,
+            requireQuoteConsistency: false,
+          });
+          if (!fillCardFields) checkout = await observeCheckoutAfterRequote(page, job.metadata.checkoutContract, this.timeoutMs);
         } catch (error) {
           throw new BrowserExecutionError('CHECKOUT_OBSERVATION_FAILED', error.message, error);
         }
       }
       let cardFill = null;
       if (fillCardFields) {
-        if (!cardMaterialLeaseProvider || !cardMaterialLease || !checkout) {
+        if (!cardMaterialLeaseProvider || !cardMaterialLease || !checkoutBeforeBilling) {
           throw new BrowserExecutionError('CARD_MATERIAL_FILL_CONTRACT');
         }
         try {
@@ -258,6 +285,15 @@ export class BrowserExecutionService {
               if (!(await assertLease())) throw new BrowserExecutionError('LEASE_LOST');
             },
             timeoutMs: this.timeoutMs,
+            whileFilled: async (material) => {
+              if (material?.billingAddress) await fillBillingAddress(page, material.billingAddress, { timeoutMs: this.timeoutMs });
+              if (transientBillingEmail) await fillTransientBillingEmail(page, transientBillingEmail, { timeoutMs: this.timeoutMs });
+              try {
+                checkout = await observeCheckoutAfterRequote(page, job.metadata.checkoutContract, this.timeoutMs);
+              } catch (error) {
+                throw new BrowserExecutionError('CHECKOUT_OBSERVATION_FAILED', error.message, error);
+              }
+            },
           });
         } catch (error) {
           if (error instanceof BrowserExecutionError) throw error;
@@ -273,7 +309,7 @@ export class BrowserExecutionService {
         fieldsWritten: 0,
         submitCalls: 0,
       } : null;
-      return { status: 'OBSERVED', startedAt, finishedAt: this.clock(), submitCalls: 0, sessionBootstrapped, cardMaterialReady, sessionIdentity, checkoutNavigation, checkout, cardFill, readonlyChecklist };
+      return { status: 'OBSERVED', startedAt, finishedAt: this.clock(), submitCalls: 0, sessionBootstrapped, cardMaterialReady, sessionIdentity, checkoutNavigation, checkoutBeforeBilling, checkout, cardFill, readonlyChecklist };
     } catch (error) {
       const failure = error instanceof BrowserExecutionError
         ? error

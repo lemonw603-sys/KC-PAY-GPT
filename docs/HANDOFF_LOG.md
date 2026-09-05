@@ -1301,3 +1301,13 @@
 - 15 分钟门槛仍按设计作为付款/分卡时证据有效期，不能直接关闭或手工伪造新鲜时间。
 - 当前订单卡住的根因是 Provider 只读同步仍不可用，导致已有 `$16` 卡没有新的余额/交易证据；不是 Session、Browser 路由或本地“无卡”事实。
 - Provider 恢复后由现有同步任务自动重试；成功后重新计算库存资格，订单无需重新提交 Session/CDK。若 Provider 持续不可用，只能等待或切换到已验证可用的执行上游，不绕过门槛。
+
+## 2026-09-05｜BitBrowser 零税多样本与正式执行顺序收口
+
+- 未依赖旧结论，现场使用两个独立且已打开的 BitBrowser Profile，分别关闭旧任务页、清理非 Cookie 站点状态、注入同一目标 Session，并核对 email/user/account 三项摘要和 `FREE` 状态后新建 Checkout。
+- 两个有效样本均观察到初始 `PHP ₱982.14 + VAT ₱117.86 = ₱1,100.00`；填卡、US/DE 账单地址和瞬时 Session 邮箱后，均由服务端重算为 `PHP ₱982.14 + Tax ₱0 = ₱982.14`。全程 `submitCalls=0`，未点击 Subscribe、未付款。
+- 旧 Lane 4 身份不匹配样本继续作废；BitBrowser 当日新开次数已达上限，本轮复用已打开 Profile 的 CDP，没有把该限额误写成页面或 Session 故障。
+- 现场同时暴露并修复：`Rejoin Plus` 漏识别、pricing React 水合后首次点击无跳转、Session endpoint 初始空响应、关闭最后 Profile 页导致 Context 终止、真实 VAT/Tax/Due 标签及 `₱1,100.00` 千分位解析、执行器先观察严格零税再填卡的错误顺序。
+- 正式顺序现为：宽松结构观察 → 短租约内填卡 → 账单地址 → Session 邮箱 → 等待严格 PHP/零税/金额一致报价 → 清空卡字段；任何严格条件失败均付款前停止。
+- 测试：Browser `132 total / 128 passed / 4 environment-skipped / 0 failed`；v1 `532 total / 486 passed / 46 environment-skipped / 0 failed`；`npm run check`、`git diff --check` 通过。
+- 尚未部署；生产 Browser Worker 仍保持 `inactive/disabled`，真实 Browser 付款仍未验收。下一步：提交当前候选，随后按生产 release/服务/配置/数据库四层核对执行无付款发布。

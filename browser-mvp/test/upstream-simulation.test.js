@@ -183,7 +183,7 @@ test('frontloaded P0 card-fill slice fills fixture Stripe fields, clears them, a
     if (request.url?.startsWith('/checkout/')) {
       response.end(`<title>Browser MVP fixture</title><main data-testid="checkout-page-content"><form data-testid="checkout-form"><iframe srcdoc='\
         <input autocomplete="cc-number"><input autocomplete="cc-exp"><input autocomplete="cc-csc">\
-      '></iframe></form><section data-testid="checkout-summary-column"><h2>Plus plan</h2><div><span>Total due today</span><span>US$20.00</span></div><div><span>Estimated tax</span><span>US$0.00</span></div><button type="submit">Subscribe</button></section></main>`);
+      '></iframe><input name="name"><select name="country"><option value="US">US</option></select><select name="administrativeArea"><option value="DE">DE</option></select><input name="addressLine1"><input name="locality"><input name="postalCode" onblur="document.querySelector('#tax').textContent='₱0.00';document.querySelector('#due').textContent='₱982.14'"></form><section data-testid="checkout-summary-column"><h2>Plus plan</h2><div><span>Monthly subscription</span><span>₱982.14</span></div><div><span>Due today</span><span id="due">₱1,100.00</span></div><div><span>VAT (12%)</span><span id="tax">₱117.86</span></div><button type="submit">Subscribe</button></section></main>`);
       return;
     }
     response.end(`<title>Browser MVP fixture</title><main data-browser-mvp-marker>observe-only</main><button type="button" aria-label="Upgrade">Upgrade</button><section role="dialog" hidden><button type="button">Upgrade to Plus</button></section><script>document.querySelector('[aria-label=Upgrade]').onclick=()=>{document.querySelector('[role=dialog]').hidden=false};document.querySelector('[role=dialog] button').onclick=()=>location.assign('/checkout/fixture');</script>`);
@@ -208,6 +208,9 @@ test('frontloaded P0 card-fill slice fills fixture Stripe fields, clears them, a
           providerCalls.push(providerCardRef);
           return { data: { card: { cardNumber: '4111111111111111', expiryMonth: 12, expiryYear: 2030, cvv: '123' } } };
         },
+      },
+      billingAddressSource: {
+        load: async () => ({ name: 'Test Customer', country: 'US', state: 'DE', line1: '1608 Temple Ter', city: 'Wilmington', postalCode: '19805' }),
       },
     });
     const cardMaterialLeaseProvider = await new DurableCardMaterialLeaseProvider({
@@ -249,6 +252,9 @@ test('frontloaded P0 card-fill slice fills fixture Stripe fields, clears them, a
       submitCalls: 0,
       paymentClicked: false,
     });
+    assert.equal(result.result.checkoutBeforeBilling.estimatedTax, '117.86');
+    assert.equal(result.result.checkout.estimatedTax, '0.00');
+    assert.equal(result.result.checkout.amount, '982.14');
     assert.equal(result.result.submitCalls, 0);
     assert.deepEqual(providerCalls, ['provider-card:0001']);
     assert.equal(Object.values(cardMaterialLeaseProvider.snapshot().leases)[0].state, 'RELEASED');

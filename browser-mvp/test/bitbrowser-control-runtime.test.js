@@ -21,9 +21,12 @@ function fakeFetch(calls, { failOpen = false } = {}) {
 
 function fakeBrowser() {
   const closed = [];
+  const pages = [{ close: async () => closed.push('old-1') }, { close: async () => closed.push('old-2') }];
+  const keeper = { close: async () => closed.push('keeper') };
   const context = {
     close: async () => {},
-    pages: () => [{ close: async () => closed.push('old-1') }, { close: async () => closed.push('old-2') }],
+    newPage: async () => { pages.push(keeper); return keeper; },
+    pages: () => pages,
     closed,
   };
   return {

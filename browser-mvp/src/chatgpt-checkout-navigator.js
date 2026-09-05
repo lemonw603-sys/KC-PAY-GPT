@@ -135,7 +135,7 @@ export const CHATGPT_PLUS_CHECKOUT_NAVIGATION_CONTRACT = Object.freeze({
   profileUpgradeSelectors: Object.freeze(['button[aria-label="升级"]', 'button[aria-label="Upgrade"]']),
   profileUpgradeLabels: Object.freeze(['升级套餐', 'Upgrade plan']),
   pricingDialogSelector: '[role="dialog"]',
-  upgradeLabels: Object.freeze(['升级至 Plus', 'Upgrade to Plus']),
+  upgradeLabels: Object.freeze(['升级至 Plus', 'Upgrade to Plus', '重新订阅 Plus', 'Rejoin Plus']),
   questionnaireSkipLabels: Object.freeze(['跳过', 'Skip']),
   checkoutReadySelector: '[data-testid="checkout-page-content"]',
   maxUpgradeAttempts: 2,
@@ -235,11 +235,25 @@ export async function navigateToChatGPTPlusCheckout(page, contract = CHATGPT_PLU
       }
       actions.push('upgrade-requested');
 
-      const state = await waitForState(page, async () => {
-        if (await checkoutReady(page, contract)) return 'checkout';
-        const skip = await uniqueVisibleButton(page, contract.questionnaireSkipLabels, 'questionnaire skip control', { optional: true });
-        return skip ? 'questionnaire' : null;
-      }, { timeoutMs, label: 'checkout or questionnaire transition' });
+      let state;
+      try {
+        state = await waitForState(page, async () => {
+          if (await checkoutReady(page, contract)) return 'checkout';
+          const skip = await uniqueVisibleButton(page, contract.questionnaireSkipLabels, 'questionnaire skip control', { optional: true });
+          return skip ? 'questionnaire' : null;
+        }, { timeoutMs, label: 'checkout or questionnaire transition' });
+      } catch (error) {
+        // The live pricing dialog can render its text before the React action
+        // is fully hydrated. A click may then be accepted by the DOM without
+        // producing a transition. Retrying the non-form plan entry is safe and
+        // bounded; never retry after the URL has entered Checkout.
+        if (attempt < contract.maxUpgradeAttempts
+          && page.url().startsWith(contract.homeUrlPrefix)
+          && await visibleCount(page.locator(contract.pricingDialogSelector)) === 1) {
+          continue;
+        }
+        throw error;
+      }
       if (state === 'checkout') break;
 
       const skip = await uniqueVisibleButton(page, contract.questionnaireSkipLabels, 'questionnaire skip control');

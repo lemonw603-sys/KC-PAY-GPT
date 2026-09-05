@@ -63,6 +63,37 @@ test('session identity probe verifies the real session endpoint without returnin
   }
 });
 
+test('session identity probe waits for an initially empty hydrated Session response', async () => {
+  let calls = 0;
+  const server = createServer((request, response) => {
+    response.writeHead(200, { 'content-type': request.url === '/' ? 'text/html' : 'application/json' });
+    if (request.url === '/') return response.end('<title>fixture</title>');
+    calls += 1;
+    response.end(calls === 1 ? '{}' : JSON.stringify({ user: { id: 'user-001', email: 'buyer@example.test' }, account: { id: 'acct-001' } }));
+  });
+  server.listen(0, '127.0.0.1'); await once(server, 'listening');
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage(); await page.goto(`http://127.0.0.1:${server.address().port}/`);
+    const result = await probeSessionIdentity(page, { email: 'buyer@example.test', accountId: 'acct-001', userId: 'user-001' }, { stabilizationTimeoutMs: 1000, stabilizationPollMs: 50 });
+    assert.equal(result.identityMatched, true);
+    assert.equal(calls, 2);
+  } finally { await browser.close(); server.close(); await once(server, 'close'); }
+});
+
+test('live PHP quote parser handles thousands and rejects non-zero VAT', async () => {
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage();
+    await page.setContent(`<main data-testid="checkout-page-content"><form data-testid="checkout-form"><iframe srcdoc='<input autocomplete="cc-number"><input autocomplete="cc-exp"><input autocomplete="cc-csc">'></iframe></form><section data-testid="checkout-summary-column"><h2>ChatGPT Plus</h2><div><span>Monthly subscription</span><span>₱982.14</span></div><div><span>VAT (12%)</span><span>₱117.86</span></div><div><span>Due today</span><span>₱1,100.00</span></div><button type="submit">Subscribe</button></section></main>`);
+    await assert.rejects(() => observeCheckout(page, { ...CHATGPT_PLUS_CHECKOUT_CONTRACT, urlPrefix: 'about:blank' }), /tax is not zero/);
+    const relaxed = await observeCheckout(page, { ...CHATGPT_PLUS_CHECKOUT_CONTRACT, urlPrefix: 'about:blank', requireZeroTax: false });
+    assert.equal(relaxed.currency, 'PHP');
+    assert.equal(relaxed.amount, '1100.00');
+    assert.equal(relaxed.estimatedTax, '117.86');
+  } finally { await browser.close(); }
+});
+
 test('Session endpoint failures expose only bounded diagnostic metadata', async () => {
   const server = createServer((_request, response) => {
     response.writeHead(401, { 'content-type': 'application/json', server: 'fixture-auth' });
@@ -203,8 +234,9 @@ test('checkout observer matches the live ChatGPT Plus checkout shape without tou
         '></iframe></form>
         <section data-testid="checkout-summary-column">
           <h2>Plus 套餐</h2>
-          <div><span>预估税费</span><span>US$0.00</span></div>
-          <div><span>今日应付金额</span><span>US$20.00</span></div>
+          <div><span>月度订阅</span><span>₱982.14</span></div>
+          <div><span>Tax (0%)</span><span>₱0.00</span></div>
+          <div><span>今日应付金额</span><span>₱982.14</span></div>
           <button type="submit" aria-label="订阅">订阅</button>
         </section>
       </div>
@@ -213,8 +245,8 @@ test('checkout observer matches the live ChatGPT Plus checkout shape without tou
       ...CHATGPT_PLUS_CHECKOUT_CONTRACT,
       urlPrefix: 'about:blank',
     });
-    assert.equal(result.currency, 'USD');
-    assert.equal(result.amount, '20.00');
+    assert.equal(result.currency, 'PHP');
+    assert.equal(result.amount, '982.14');
     assert.equal(result.estimatedTax, '0.00');
     assert.equal(result.paymentFormPresent, true);
     assert.equal(result.submitControlPresent, true);
@@ -235,8 +267,9 @@ test('live Checkout contract fails closed when Stripe secure fields never become
       <form data-testid="checkout-form"></form>
       <section data-testid="checkout-summary-column">
         <h2>Plus plan</h2>
-        <div><span>Estimated tax</span><span>US$0.00</span></div>
-        <div><span>Total due today</span><span>US$20.00</span></div>
+        <div><span>Monthly subscription</span><span>₱982.14</span></div>
+        <div><span>VAT (0%)</span><span>₱0.00</span></div>
+        <div><span>Due today</span><span>₱982.14</span></div>
         <button type="submit">Subscribe</button>
       </section>
     `);
