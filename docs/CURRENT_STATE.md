@@ -319,3 +319,10 @@
 - 修复 `failCardSyncJob`：Provider maintenance 现在让任务自身遵守 `retryAfterMs`（当前 300 秒），不再被 15 秒 timer 反复领取；维护不消耗单卡重试预算，不会因上游维护错误进入 `REVIEW_REQUIRED`。
 - runner 日志改为使用数据库实际失败处置结果和实际退避秒数，避免日志声称 REVIEW 而数据库仍为 PENDING。
 - v1 全量：530 total / 484 passed / 46 environment-skipped / 0 failed。尚未部署；既有已耗尽的 REVIEW_REQUIRED 任务和当前等待订单尚未自动迁移或恢复。
+
+### 2026-09-05 卡片同步维护退避修复已部署
+
+- 已创建并校验生产加密备份 `/var/backups/pojia/pojia-20260905T031548Z.sql.gz.enc`，`backup_integrity=OK`。
+- 当前 release：`/opt/pojia/releases/20260905-card-sync-backoff-fbf789c`；Web/Worker 与四个卡片相关 timer active，live/ready 正常。
+- 已通过正式同步服务为卡 `2833` 新建一项只读同步任务。HNSKJ 仍明确返回 maintenance；新代码将任务保持 `PENDING`、`attempts=0`、下次执行时间延后 300 秒，证明不再被 15 秒 timer 消耗重试预算或误送人工。
+- Browser 测试订单 `PJV1-lxez72TytHc1O6QZxjNd` 仍 `WAITING_FOR_CARD`，等待上游恢复后取得新鲜证据；未读取 Session、未开卡/补余额、未付款。

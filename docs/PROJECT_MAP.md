@@ -299,3 +299,8 @@ Browser 候选对齐后发现 v1 客户首页静态 `sendFile` 在候选 worktre
 
 - 已修复维护响应没有真正作用到同步 job 的缺陷：maintenance 按 Provider Retry-After 延迟，且不消耗卡片重试预算；避免 15 秒 timer 快速打满 5 次后误入人工。
 - 回归 530/484/46/0。生产仍运行旧 release，当前 Browser 测试订单仍 `WAITING_FOR_CARD`；部署并恢复该订单前不得宣称已修复完成。
+
+### 2026-09-05 卡片同步维护退避生产验收
+
+- release `20260905-card-sync-backoff-fbf789c` 已部署；备份完整性、服务/timer、live/ready 均通过。
+- 生产实证：维护失败后的 card sync job 为 `PENDING/attempts=0`，`available_at` 延后 300 秒，修复生效。当前上游仍维护，因此测试订单继续等待，不把“机制已修复”误写成“卡台已恢复”。
