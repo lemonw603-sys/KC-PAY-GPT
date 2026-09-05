@@ -39,6 +39,12 @@
 - 本次真实失败原因为 `SESSION_IDENTITY_MISMATCH`，不是卡台、Checkout 导航或付款闸门；执行器已安全停止，未创建充值 attempt、未读取卡资料、未 Provider/卡台写入、未付款。
 - 这表明订单中保存的客户身份摘要与所提交 Session 实际账号不一致（具体值不落日志）。订单保持 `PENDING`，剩余任务预算不得自动重试；需客户在原订单提交匹配该订单的 Session 后，按既定 Session 修复流程重新验证。
 
+## 2026-09-05｜BitBrowser 任务级页面隔离修复
+
+- 现场确认 Profile 继承页面可能造成旧账号内存状态竞争；已在 BitBrowser adapter 接管 CDP Context 后关闭全部遗留页面，再由执行器创建本任务唯一页面。
+- 仅影响页面生命周期，不清理 Profile 指纹、代理或非 Session Cookie；安全导航、Session 替换和付款前只读边界保持不变。
+- 定向回归 `11/11` 通过，提交 `87121fe`，修复已同步生产当前 release，`/health/ready=ready`。尚未重跑订单 68。
+
 ## 2026-09-05｜完整只读导航诊断的间歇性身份结果
 
 - 现场在同一订单/同一 Profile 上先后得到两种结果：一次 Session 与订单 email/account 摘要哈希完全匹配，另一次执行器返回 `SESSION_IDENTITY_MISMATCH`。因此不能把单次失败直接定性为客户 Session 错误。
