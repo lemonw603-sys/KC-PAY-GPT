@@ -312,3 +312,10 @@
 - 订单当前 `WAITING_FOR_CARD`，尚未创建 `recharge_attempt`、Browser job 或 Browser run。
 - 现场卡台快照显示存在一张 `$16`、`active/AVAILABLE` 卡，但其 `last_synced_at` / `last_transaction_synced_at` 已超过新鲜度窗口，因此资格计算按规则拒绝分配；这不是“没有卡”的事实，而是“没有满足新鲜证据条件的可分配卡”。
 - 本次真实 Browser 测试已在卡资格门停住；未读取 Session、未进入 ChatGPT、未调用 Provider/卡台写入、未付款。不得重复提交或强行绕过新鲜度门槛。
+
+### 2026-09-05 卡片同步维护退避修复（本地，待部署）
+
+- 现场确认新 Browser 订单停在 `WAITING_FOR_CARD` 的直接原因是卡 `2833` 的交易证据超过 15 分钟，而 HNSKJ 明确处于维护，刷新任务失败。
+- 修复 `failCardSyncJob`：Provider maintenance 现在让任务自身遵守 `retryAfterMs`（当前 300 秒），不再被 15 秒 timer 反复领取；维护不消耗单卡重试预算，不会因上游维护错误进入 `REVIEW_REQUIRED`。
+- runner 日志改为使用数据库实际失败处置结果和实际退避秒数，避免日志声称 REVIEW 而数据库仍为 PENDING。
+- v1 全量：530 total / 484 passed / 46 environment-skipped / 0 failed。尚未部署；既有已耗尽的 REVIEW_REQUIRED 任务和当前等待订单尚未自动迁移或恢复。

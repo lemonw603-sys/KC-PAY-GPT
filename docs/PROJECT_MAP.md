@@ -294,3 +294,8 @@ Browser 候选对齐后发现 v1 客户首页静态 `sendFile` 在候选 worktre
 - 按用户决定删除两个容易被误读为“系统已就绪”的汇总闸门：`scripts/agent-evidence-gate.sh`、`browser-mvp/scripts/check-dry-run-readiness.sh`。
 - 保留 `scripts/bitbrowser-proxy-health.sh` 与 Browser readonly smoke/test 脚本；它们只做运行健康或测试，不下业务结论。
 - 事实核对改回直接读取代码、生产服务、数据库、日志和真实订单证据；不再依赖单一汇总脚本。
+
+### 2026-09-05 卡片同步维护退避修复（代码完成，未部署）
+
+- 已修复维护响应没有真正作用到同步 job 的缺陷：maintenance 按 Provider Retry-After 延迟，且不消耗卡片重试预算；避免 15 秒 timer 快速打满 5 次后误入人工。
+- 回归 530/484/46/0。生产仍运行旧 release，当前 Browser 测试订单仍 `WAITING_FOR_CARD`；部署并恢复该订单前不得宣称已修复完成。

@@ -71,9 +71,10 @@ async function processJob(job, scheduled) {
       transactionCount: transactions.length, scheduled: scheduled.queued, status: 'COMPLETED' }));
     return true;
   } catch (error) {
-    await failCardSyncJob(pool, { job, workerId: owner, error });
+    const failed = await failCardSyncJob(pool, { job, workerId: owner, error });
     console.error(JSON.stringify({ handled: true, jobId: job.id,
-      status: job.attempts < job.maxAttempts ? 'RETRY_PENDING' : 'REVIEW_REQUIRED',
+      status: failed.status === 'PENDING' ? 'RETRY_PENDING' : 'REVIEW_REQUIRED',
+      retryAfterSeconds: failed.status === 'PENDING' ? failed.retryDelaySeconds : null,
       code: error?.code || error?.kind || 'CARD_SYNC_FAILED' }));
     return false;
   }

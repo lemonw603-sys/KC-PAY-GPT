@@ -242,17 +242,27 @@ export async function completeCardSyncJob(pool, { jobId, workerId, now = new Dat
 }
 
 export async function failCardSyncJob(pool, { job, workerId, error }) {
-  const retry = job.attempts < job.maxAttempts && error?.retryable !== false;
+  const maintenance = error?.kind === 'maintenance';
+  const retry = error?.retryable !== false && (maintenance || job.attempts < job.maxAttempts);
   const code = String(error?.code || error?.kind || 'CARD_SYNC_FAILED').toUpperCase().slice(0, 64);
   const message = redactSensitiveText(error?.message || 'Card sync failed').slice(0, 1000);
+  // Provider-wide maintenance is not a card defect and must not burn through
+  // the per-card retry budget. Honour the provider Retry-After on the job
+  // itself (not only on cards.next_sync_at), otherwise the 15-second runner
+  // repeatedly claims the same job until it is incorrectly sent to review.
+  const exponentialDelaySeconds = Math.min(300, 10 * (2 ** (job.attempts - 1)));
+  const providerDelaySeconds = Number.isFinite(Number(error?.retryAfterMs))
+    ? Math.max(0, Math.ceil(Number(error.retryAfterMs) / 1000)) : 0;
+  const retryDelaySeconds = Math.min(3600, Math.max(exponentialDelaySeconds, providerDelaySeconds));
   await pool.query(
-    `UPDATE card_sync_jobs SET status = ?, leased_by = NULL, leased_until = NULL,
+    `UPDATE card_sync_jobs SET status = ?,
+       attempts = GREATEST(0, attempts - ?), leased_by = NULL, leased_until = NULL,
        error_code = ?, error_message = ?,
        available_at = DATE_ADD(CURRENT_TIMESTAMP(3), INTERVAL ? SECOND),
        completed_at = IF(? = 'REVIEW_REQUIRED', CURRENT_TIMESTAMP(3), NULL)
      WHERE id = ? AND status = 'RUNNING' AND leased_by = ?`,
-    [retry ? 'PENDING' : 'REVIEW_REQUIRED', code, message,
-      retry ? Math.min(300, 10 * (2 ** (job.attempts - 1))) : 0,
+    [retry ? 'PENDING' : 'REVIEW_REQUIRED', retry && maintenance ? 1 : 0, code, message,
+      retry ? retryDelaySeconds : 0,
       retry ? 'PENDING' : 'REVIEW_REQUIRED', job.id, workerId]
   );
   // Keep the tier frozen at claim time. Re-deriving it from a tier string as if
@@ -273,4 +283,5 @@ export async function failCardSyncJob(pool, { job, workerId, error }) {
       retryAfterMs: error?.retryAfterMs ?? null
     }), job.card_id]
   );
+  return { status: retry ? 'PENDING' : 'REVIEW_REQUIRED', retryDelaySeconds };
 }

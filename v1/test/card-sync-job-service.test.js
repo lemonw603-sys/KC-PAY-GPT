@@ -23,7 +23,7 @@ test('deterministic read schema failures go directly to review instead of retryi
     })
   });
   assert.equal(pool.calls[0].params[0], 'REVIEW_REQUIRED');
-  assert.equal(pool.calls[0].params[3], 0);
+  assert.equal(pool.calls[0].params[4], 0);
 });
 
 test('transient read failures keep the existing bounded retry path', async () => {
@@ -34,5 +34,20 @@ test('transient read failures keep the existing bounded retry path', async () =>
     error: Object.assign(new Error('timeout'), { kind: 'timeout', retryable: true })
   });
   assert.equal(pool.calls[0].params[0], 'PENDING');
-  assert.equal(pool.calls[0].params[3], 10);
+  assert.equal(pool.calls[0].params[4], 10);
+});
+
+test('provider maintenance honours Retry-After without exhausting the card retry budget', async () => {
+  const pool = recordingPool();
+  await failCardSyncJob(pool, {
+    job: { id: 'job-3', card_id: 'card-3', attempts: 5, maxAttempts: 5, sync_tier: 'AVAILABLE' },
+    workerId: 'worker-3',
+    error: Object.assign(new Error('maintenance'), {
+      kind: 'maintenance', retryable: true, retryAfterMs: 300_000
+    })
+  });
+  assert.equal(pool.calls[0].params[0], 'PENDING');
+  assert.equal(pool.calls[0].params[1], 1);
+  assert.equal(pool.calls[0].params[4], 300);
+  assert.match(pool.calls[0].sql, /attempts = GREATEST\(0, attempts - \?\)/);
 });
