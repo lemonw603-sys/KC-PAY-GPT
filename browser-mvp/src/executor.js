@@ -228,7 +228,7 @@ export class BrowserExecutionService {
           submitCalls: 0,
         });
       }
-      if (cardMaterialLease && cardMaterialLeaseProvider && typeof cardMaterialLeaseProvider.withMaterial === 'function') {
+      if (!fillCardFields && cardMaterialLease && cardMaterialLeaseProvider && typeof cardMaterialLeaseProvider.withMaterial === 'function') {
         await cardMaterialLeaseProvider.withMaterial(cardMaterialLease, async (material) => {
           if (material?.billingAddress) await fillBillingAddress(page, material.billingAddress, { timeoutMs: this.timeoutMs });
         });
