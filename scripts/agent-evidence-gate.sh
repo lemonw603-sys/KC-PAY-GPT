@@ -78,14 +78,21 @@ if [[ "$mode" == "browser-order" ]]; then
     node --input-type=module - <<'\''NODE'\''
 import mysql from "mysql2/promise";
 const pool = await mysql.createPool(process.env.DATABASE_URL);
-const [orders] = await pool.query(`SELECT o.public_no, o.status,
+    const [orders] = await pool.query(`SELECT o.public_no, o.status,
   o.route_resolution_status, fr.route_code, fr.executor_kind,
   (SELECT COUNT(*) FROM browser_dispatch_jobs j WHERE j.order_id=o.id) AS browser_jobs,
   (SELECT COUNT(*) FROM browser_runs br JOIN recharge_attempts ra ON ra.id=br.recharge_attempt_id WHERE ra.order_id=o.id) AS browser_runs
   FROM orders o LEFT JOIN fulfillment_routes fr ON fr.id=o.fulfillment_route_id
   ORDER BY o.created_at DESC LIMIT 1`);
-console.log(`LATEST_ORDER=${JSON.stringify(orders[0] || null)}`);
-await pool.end();
+    console.log(`LATEST_ORDER=${JSON.stringify(orders[0] || null)}`);
+    const productCode = "chatgpt_plus";
+    const [routes] = await pool.query(`SELECT fr.executor_kind
+      FROM fulfillment_routes fr
+      INNER JOIN products p ON p.id = fr.product_id
+      WHERE p.product_code = ? AND fr.retired_at IS NULL
+        AND fr.accepts_new_orders = 1`, [productCode]);
+    console.log(`CURRENT_DEFAULT_ROUTE=${JSON.stringify(routes)}`);
+    await pool.end();
 NODE
     # Schema and runtime evidence are distinct from service health.  The
     # worker must have a recent heartbeat and the browser tables must exist.
