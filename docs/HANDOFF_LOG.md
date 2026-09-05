@@ -45,6 +45,12 @@
 - 仅影响页面生命周期，不清理 Profile 指纹、代理或非 Session Cookie；安全导航、Session 替换和付款前只读边界保持不变。
 - 定向回归 `11/11` 通过，提交 `87121fe`，修复已同步生产当前 release，`/health/ready=ready`。尚未重跑订单 68。
 
+## 2026-09-05｜页面隔离修复后订单 68 最终前置结果
+
+- 订单 68 在修复后实际重跑，BitBrowser 开窗、页面隔离和只读流程均能启动；本轮权威结果为 `CUSTOMER_ACTION_REQUIRED / SESSION_INVALID`。
+- 数据库已落为：任务 `COMPLETED`（`last_error_code=SESSION_INVALID`），订单 `WAITING_FOR_SESSION`、`customer_action_code=SESSION_INVALID`。这不是卡台或资金闸门阻断，而是当前订单保存的 Session 在 ChatGPT Session 接口不可用/已失效。
+- 全程无充值 attempt、无卡资料读取、无 Provider/卡台写入、无付款。后续需客户重新提交可用且与订单身份匹配的 Session，再走现有 Session 修复流程；不应继续重试这条旧 Session。
+
 ## 2026-09-05｜完整只读导航诊断的间歇性身份结果
 
 - 现场在同一订单/同一 Profile 上先后得到两种结果：一次 Session 与订单 email/account 摘要哈希完全匹配，另一次执行器返回 `SESSION_IDENTITY_MISMATCH`。因此不能把单次失败直接定性为客户 Session 错误。
