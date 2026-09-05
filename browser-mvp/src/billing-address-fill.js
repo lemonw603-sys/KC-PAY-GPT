@@ -37,3 +37,18 @@ export async function fillBillingAddress(page, address, { timeoutMs = 5000 } = {
 }
 
 export { SELECTORS as BILLING_ADDRESS_SELECTORS };
+
+/** Fills the transient Session email in the payment form; never persists it. */
+export async function fillTransientBillingEmail(page, email, { timeoutMs = 5000 } = {}) {
+  const value = String(email || '').trim().toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) throw new ContractError('billing email is invalid');
+  const matches = [];
+  for (const frame of page.frames()) {
+    const locator = frame.locator('input[autocomplete="billing email"]');
+    for (let i = 0; i < await locator.count(); i += 1) if (await locator.nth(i).isVisible()) matches.push(locator.nth(i));
+  }
+  if (matches.length !== 1) throw new ContractError('billing email field must resolve to one visible input');
+  await matches[0].fill(value, { timeout: timeoutMs });
+  await matches[0].blur();
+  return { fieldsFilled: 1, paymentClicked: false, submitCalls: 0 };
+}
