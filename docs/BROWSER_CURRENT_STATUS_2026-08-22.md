@@ -285,3 +285,10 @@ git diff --check
 - 前端最终自然生成 `US/PHP`，不是 `PH/PHP`；安全合同在本机 abort，Checkout 上游请求 `0`、卡字段 `0`、付款 `0`。
 - 结论：账号未被证明封禁；不能继续靠地区字段硬改。下一调查对象是官方 PSP/processor route 如何选择 `psp_override`。
 - 脱敏证据：`artifacts/browser-us-tax-ab-20260904/result-official-ui-rewrite-ph-diagnostic.json`、`artifacts/browser-us-tax-ab-20260904/result-official-pricing-region-ph-final.json`（均保持未跟踪）。
+
+## 2026-09-05｜共享加密材料错误码修复
+
+- Session 共享材料读取已将运行上下文缺失/漂移与密文材料损坏分开：分别为 `SESSION_CONTEXT_UNAVAILABLE`、`SESSION_MATERIAL_INVALID`；`validateChatGptSession` 的具体错误码不再被统一吞成 `SESSION_INVALID`。
+- executor/runtime integration 保留来源 `reasonCode`，客户动作仍可归类为需要更换 Session；无 Browser 付款路径变化。
+- 定向共享材料测试 `33/33` 通过；Browser 全量 `154 total / 149 passed / 5 environment-skipped / 0 failed`。v1 全量仍有既有静态页面服务测试失败，未因本修复引入新失败。
+- 未部署、未启动真实 Worker、未领取真实订单、未调用 Provider/卡台写入、未填卡、未付款。

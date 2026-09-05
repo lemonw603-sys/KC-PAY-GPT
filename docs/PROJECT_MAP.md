@@ -7,6 +7,8 @@
 
 > **2026-09-04 增量核对**：macOS→生产 MySQL loopback SSH 隧道前置路径已实测可用；BitBrowser Local API 本机可达；生产 Browser Worker 仍保持 `disabled/inactive`。生产 env 的 `root:pojia 0640` 与 systemd 服务账号匹配，不应误改为 `0600`；macOS 本地 launcher env 才要求 `0600`。详见 `docs/browser-research/MACOS_BROWSER_PRODUCTION_TUNNEL_CHECK_2026-09-04.md`。
 
+> **2026-09-05 增量核对**：共享加密 Session 读取已区分上下文不可用（`SESSION_CONTEXT_UNAVAILABLE`）与材料无效（`SESSION_MATERIAL_INVALID`），并透传 `validateChatGptSession` 的具体校验码；Browser executor/runtime integration 保留来源码并继续在付款前安全终止。Browser 全量 `154 total / 149 passed / 5 environment-skipped / 0 failed`；v1 全量仅保留既有静态页面服务测试失败，其他测试通过。未部署、未领真实订单、未调用 Provider/卡台写入、未填卡、未付款。
+
 ## 1. 已确认的目标和原则
 
 1. Plus 运营后台是中枢：客户提交 CDK + Session 后，系统应尽快自行完成资源准备和充值，不能要求运营逐单寻找底层开关。

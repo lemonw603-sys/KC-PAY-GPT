@@ -11,6 +11,8 @@
 > **2026-09-04 单 Profile 复验**：临时取第一个 Profile 做单 Profile `ONCE` canary，结果 `READY → IDLE → exit 0`，隧道已关闭；六 Profile 正式配置未改动，尚未执行真实 Session/订单。
 > **2026-09-04 连续模式复验**：同一单 Profile 临时运行 `CONTINUOUS`，多次 `IDLE` 后 Ctrl-C 正常收尾；修复 launcher 在 `set -u` 下连续模式空参数数组 bug。仍未领单、读取 Session或付款。
 
+> **2026-09-05 共享材料错误码修复**：`browser-mvp/src/shared-encrypted-materials.js` 现区分 `SESSION_CONTEXT_UNAVAILABLE`、`SESSION_MATERIAL_INVALID`，并透传 `validateChatGptSession` 的具体错误码；`executor.js` 与 `shared-runtime-integration.js` 不再覆盖来源码，仍保持付款前 safe-abort。Browser 全量 `154/149/5 skipped/0 failed`；v1 全量存在既有 v1 客户静态页面 `res.sendFile` 测试失败，其余通过。未部署或执行真实付款。
+
 ## 1. 代码、release 与服务
 
 - 生产当前 release `20260903-customer-redesign-3cef082`（打包 HEAD `3cef082` = 接手审计报告 + 本地预览 gitignore；含客户页 v2 改版 commit `67b1598`）；在前序 release `7bad460`（Browser 访问阻断重试修复、Provider 失败原因透传、后台刷新、卡片异常占用释放、客户充值页重设计、供应规划修复）基础上叠加客户充值页 6 步横向进度/去二次确认/3 步骤条/配色升级改版。

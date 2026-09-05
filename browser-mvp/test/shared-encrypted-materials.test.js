@@ -120,7 +120,7 @@ test('shared encrypted material sources fail closed on state, reservation and ci
   });
   await assert.rejects(
     () => sessionSource.load('browser-run:run-fixture'),
-    (error) => error instanceof SharedEncryptedMaterialError && error.code === 'SESSION_INVALID',
+    (error) => error instanceof SharedEncryptedMaterialError && error.code === 'SESSION_CONTEXT_UNAVAILABLE',
   );
 
   const cardSource = new SharedEncryptedCardMaterialSource({
@@ -139,7 +139,7 @@ test('shared encrypted material sources fail closed on state, reservation and ci
   });
   await assert.rejects(
     () => profileDrift.load('browser-run:run-fixture'),
-    (error) => error.code === 'SESSION_INVALID',
+    (error) => error.code === 'SESSION_CONTEXT_UNAVAILABLE',
   );
 
   const corrupt = new SharedEncryptedCardMaterialSource({
@@ -153,4 +153,38 @@ test('shared encrypted material sources fail closed on state, reservation and ci
       && !error.message.includes('4111111111111111'),
   );
   await assert.rejects(() => corrupt.load('order:wrong-namespace'), ContractError);
+});
+
+test('shared Session source distinguishes unavailable context from invalid material and preserves validation codes', async () => {
+  const unavailable = new SharedEncryptedSessionSource({
+    db: dbReturning(context({ run_status: 'FAILED_SAFE' })),
+    encryptionKey: key,
+    now: () => nowMs,
+  });
+  await assert.rejects(
+    () => unavailable.load('browser-run:run-fixture'),
+    (error) => error.code === 'SESSION_CONTEXT_UNAVAILABLE',
+  );
+
+  const missingMaterial = new SharedEncryptedSessionSource({
+    db: dbReturning(context({ session_ciphertext: null })),
+    encryptionKey: key,
+    now: () => nowMs,
+  });
+  await assert.rejects(
+    () => missingMaterial.load('browser-run:run-fixture'),
+    (error) => error.code === 'SESSION_MATERIAL_INVALID',
+  );
+
+  const invalidSession = sessionFixture();
+  delete invalidSession.sessionToken;
+  const invalid = new SharedEncryptedSessionSource({
+    db: dbReturning(context({ session_ciphertext: encryptSecret(JSON.stringify(invalidSession), key) })),
+    encryptionKey: key,
+    now: () => nowMs,
+  });
+  await assert.rejects(
+    () => invalid.load('browser-run:run-fixture'),
+    (error) => error.code === 'INCOMPLETE_SESSION',
+  );
 });

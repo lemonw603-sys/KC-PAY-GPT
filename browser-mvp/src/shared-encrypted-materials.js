@@ -84,6 +84,12 @@ async function exactlyOne(runQuery, sql, runId, unavailableCode) {
   return rows[0];
 }
 
+function validationErrorCode(error) {
+  if (error?.name !== 'OrderIntakeError') return null;
+  const code = String(error.code || '').trim().toUpperCase();
+  return /^[A-Z][A-Z0-9_]{1,63}$/.test(code) ? code : null;
+}
+
 function assertPrePaymentContext(row, unavailableCode) {
   if (row.run_status !== 'RUNNING' || row.payment_state !== 'NOT_STARTED'
     || row.attempt_status !== 'PREPARED' || row.funds_risk_state !== 'ACTIVE'
@@ -134,18 +140,22 @@ export class SharedEncryptedSessionSource {
         this.runQuery,
         SHARED_SESSION_BY_RUN_SQL,
         runId,
-        'SESSION_INVALID',
+        'SESSION_CONTEXT_UNAVAILABLE',
       );
-      assertPrePaymentContext(row, 'SESSION_INVALID');
+      assertPrePaymentContext(row, 'SESSION_CONTEXT_UNAVAILABLE');
       if (!row.session_ciphertext) {
-        throw new SharedEncryptedMaterialError('stored Session is unavailable', 'SESSION_INVALID');
+        throw new SharedEncryptedMaterialError('stored Session material is unavailable', 'SESSION_MATERIAL_INVALID');
       }
       const stored = JSON.parse(decryptSecret(row.session_ciphertext, this.encryptionKey));
       const validated = validateChatGptSession(stored, { now: this.now });
       return { sessionToken: validated.session.sessionToken };
     } catch (error) {
       if (error instanceof SharedEncryptedMaterialError || error instanceof ContractError) throw error;
-      throw new SharedEncryptedMaterialError('stored Session could not be opened', 'SESSION_INVALID');
+      const code = validationErrorCode(error);
+      if (code) {
+        throw new SharedEncryptedMaterialError('stored Session failed validation', code);
+      }
+      throw new SharedEncryptedMaterialError('stored Session material could not be opened', 'SESSION_MATERIAL_INVALID');
     }
   }
 }

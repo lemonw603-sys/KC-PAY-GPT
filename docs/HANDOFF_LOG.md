@@ -1,5 +1,13 @@
 # 交接记录
 
+## 2026-09-05｜共享加密 Session 错误码透传修复
+
+- 修复 `browser-mvp/src/shared-encrypted-materials.js`：数据库行/运行状态/绑定漂移统一返回 `SESSION_CONTEXT_UNAVAILABLE`；缺失或无法解密的密文返回 `SESSION_MATERIAL_INVALID`；`validateChatGptSession` 的 `INCOMPLETE_SESSION`、`SESSION_EXPIRED` 等具体错误码透传。
+- `browser-mvp/src/executor.js` 保留 Session source 的具体 `error.code`；`shared-runtime-integration.js` 保留 `reasonCode`，仅将客户动作归类为 `SESSION_INVALID`，不覆盖内部来源码。仓库中不存在 `browser-order-preflight.js`，已核对现有 preflight 边界未新增覆盖路径。
+- 新增 `browser-mvp/test/shared-encrypted-materials.test.js` 覆盖上下文不可用、材料无效和具体 Session 校验码。
+- Browser 全量：`154 total / 149 passed / 5 environment-skipped / 0 failed`。v1 全量：既有客户静态页面 `res.sendFile` 测试仍失败，其他测试通过；该既有问题未在本轮修改。
+- 本轮未部署、未领取真实订单、未调用 Provider/卡台写入、未填卡、未付款。
+
 ## 2026-09-03｜客户充值页改版 v2 落地（待部署）
 
 - 用户确认预览定稿后落地：去二次确认（邮箱就地核对、一步建单）、6 步真实横向进度条（合并「准备/就绪」）+ 百分比 easeOutCubic 平滑动画、3 步骤条图标化、祖母绿+香槟金配色升级、等待文案对齐 1 分钟目标。

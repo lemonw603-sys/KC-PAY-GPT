@@ -12,6 +12,8 @@ export class SharedBrowserRuntimeError extends Error {
 const SESSION_ABORTS = new Map([
   ['SESSION_INVALID', 'SESSION_INVALID'],
   ['SESSION_IDENTITY_MISMATCH', 'SESSION_INVALID'],
+  ['SESSION_CONTEXT_UNAVAILABLE', 'SESSION_INVALID'],
+  ['SESSION_MATERIAL_INVALID', 'SESSION_INVALID'],
   ['ACCOUNT_ALREADY_PLUS', 'ACCOUNT_ALREADY_PLUS'],
 ]);
 
@@ -56,7 +58,7 @@ function classifySafeAbort(error) {
   if (customerActionCode) {
     return {
       targetOrderStatus: 'WAITING_FOR_SESSION',
-      reasonCode: customerActionCode,
+      reasonCode: sourceCode,
       customerActionCode,
       failureReason: customerActionCode === 'ACCOUNT_ALREADY_PLUS'
         ? 'Account already has an active Plus subscription before payment'

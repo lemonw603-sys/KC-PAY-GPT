@@ -99,7 +99,10 @@ export class BrowserExecutionService {
           await this.sessionProvider.close(sessionLease);
           sessionLease = null;
         } catch (error) {
-          throw new BrowserExecutionError('SESSION_INVALID', 'stored Browser Session is unavailable or invalid', error);
+          const reason = typeof error?.code === 'string' && error.code.trim()
+            ? error.code.trim()
+            : 'SESSION_INVALID';
+          throw new BrowserExecutionError(reason, error?.message || 'stored Browser Session is unavailable or invalid', error);
         }
         await this._event(job, 'checkpoint', ++evidenceSequence, {
           action: 'session-bootstrap',
