@@ -1145,3 +1145,9 @@
 
 - BitBrowser 控制面 health/list 正常，但同一 Pilot Profile 第二次 open 在 adapter 超时；未继续重试。
 - 代理出口仅有 lastIp，Profile 未给出国家元数据；不能把它认定为 PH 出口。当前需先查开窗配额/代理链稳定性，再继续页面测试。
+
+## 2026-09-05｜BitBrowser 开窗失败根因现场确认
+
+- BitBrowser 日志明确显示 `connect ECONNREFUSED 127.0.0.1:17897`，随后报“网络不通已停止打开浏览器”；该步骤发生在 Profile 真正启动前。
+- `17897` 为 mihomo mixed-port。现场有两个 mihomo 进程而只有一个监听该端口，存在重复启动/生命周期竞争。当前端口已恢复，ipify 返回 `38.60.246.34`；BitBrowser 日志缓存该 IP 为 PH/Tagum。
+- 因此“以前能开、现在打不开”的直接原因已从猜测变为日志证据：代理进程瞬时不可用；ChatGPT Cloudflare challenge 另行处理。未付款、未创建订单。

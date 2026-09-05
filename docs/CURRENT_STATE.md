@@ -275,3 +275,10 @@
 - BitBrowser `/health` 与 `/browser/list` 仍正常；Pilot Profile `status=1`，代理为 `http://127.0.0.1`，lastIp `38.60.246.34`，未提供 country/city 元数据。
 - 第二次 adapter open 在 15 秒内超时；未重复重试以避免触发 BitBrowser 开窗配额/锁死。该结果确认 Profile 生命周期/开窗稳定性尚未通过。
 - 未访问 Session、未创建订单、未进入 Checkout、未付款。
+
+### 2026-09-05 BitBrowser 开窗失败根因已确认
+
+- BitBrowser 日志显示失败不是订单、Session 或项目代码：打开 Profile 前的代理探测连接 `127.0.0.1:17897` 被拒绝，BitBrowser 明确记录“网络不通已停止打开浏览器”。
+- 该端口是本机 mihomo mixed-port；现场存在两个 mihomo 进程（PID 4541、7152），只有一个监听 17897，说明代理进程生命周期/重复启动存在风险。
+- 当前端口已恢复监听，代理请求 `https://api.ipify.org` 返回 `38.60.246.34`；此前 Profile 记录的 IP 为同一地址，BitBrowser 日志缓存地理信息为 PH/Tagum，但仍需稳定性复核。
+- 结论：本次打不开的直接根因是本地代理进程瞬时不可用/重复实例，不是生产代码与 BitBrowser adapter 未对齐；ChatGPT challenge 是后续独立问题。
