@@ -63,6 +63,7 @@
 - 已将订单侧本地 Session 材料错误从笼统 `SESSION_INVALID` 拆为 `SESSION_MATERIAL_INVALID` 及具体校验码（`INCOMPLETE_SESSION`、`SESSION_EXPIRED`、`INVALID_SESSION_TOKEN`、`ACCESS_TOKEN_EXPIRED` 等）；远端接口拒绝仍由探针单独记录 HTTP 诊断。
 - Browser preflight 仍统一引导客户更换 Session，但内部事件保留 `stage=causeCode`，不写入明文 Session/Token。
 - Browser 全量回归 `121 pass/4 skipped/0 fail`；提交 `28381d3`，修复已同步生产，`/health/ready=ready`。
+- 本轮用户要求“先查清再要求重提”后，已现场完成本地/生产代码哈希对齐、Browser `125` 测试 `121/0`、v1 `532` 测试 `486/0`、生产服务/健康检查和当前订单任务状态核对；没有再要求用户重复提交。当前订单仍是 `WAITING_FOR_SESSION`，需等下一次用户提交后才能产生新一轮运行时证据。
 
 ## 2026-09-05｜完整只读导航诊断的间歇性身份结果
 
