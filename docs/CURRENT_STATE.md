@@ -232,3 +232,5 @@
 > **2026-09-05 生产只读冒烟**：新 release/version、服务状态、health、路由和错误码传播已现场核对。生产 Browser Worker 仍 inactive/disabled；最近 Browser 路线订单没有可继续到 Checkout 前置的活动 attempt/run（仅 `WAITING_FOR_SESSION`/`SESSION_INVALID`），因此未跟踪或修改任何订单，也未创建测试订单。无 Provider/卡台写入、填卡或付款。
 
 > **2026-09-05 新 Browser 订单跟踪**：`PJV1-eqTeit7QVMx-qPqIfjJi` 当前 `WAITING_FOR_CARD`，`ASSIGN_CARD/PENDING/CARD_STOCK_EMPTY`；Session replacement 次数 `0`。无 recharge_attempt、browser_run 或 BROWSER_PREFLIGHT 记录，未到 Checkout 前置；本轮未读取 Session、未创建测试订单、未修改生产数据。
+
+> **2026-09-05 卡库存根因**：唯一 `AVAILABLE/ACCEPTED/active` 卡余额为 `16.00`，但交易同步时间已陈旧（超过资格规则 15 分钟）；只读同步任务因 HNSKJ API Provider 错误进入 `REVIEW_REQUIRED`，所以订单没有资格卡并持续等待。当前订单不能自动继续到 Browser，除非未来获得一次成功且可验证的只读同步或新的合格卡；本轮不绕过规则、不分配陈旧卡、不调用 Provider 写入。

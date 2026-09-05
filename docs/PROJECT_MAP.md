@@ -207,3 +207,5 @@
 > **2026-09-05 生产只读冒烟**：部署 release `20260905-session-errors-d24f6d6` 现场核对通过；Web/Worker active，Browser Worker inactive/disabled，live/ready 正常，生产路由表为 `CHATGPT_PLUS_BROWSER_V1`（BROWSER，接受新单）与 `LEGACY_HNSKJ_ZZSHU_V1`（API，不接受新单）。最近 Browser 路线订单仅停在 `WAITING_FOR_SESSION`/`SESSION_INVALID`，没有 recharge_attempt/browser_run，未进入 Checkout 前置；未创建测试订单。
 
 > **2026-09-05 新 Browser 订单只读跟踪**：新订单 `PJV1-eqTeit7QVMx-qPqIfjJi`（内部 id `b90190c1-f86c-4f83-a441-0ebc20bc06d0`）路由为 `CHATGPT_PLUS_BROWSER_V1`，Session 已写入但当前状态 `WAITING_FOR_CARD`；关联 `ASSIGN_CARD` 任务仍 `PENDING`，`last_error_code=CARD_STOCK_EMPTY`，尚未创建 `recharge_attempt`/`browser_run`，因此未进入 BROWSER_PREFLIGHT/Checkout。未读取 Session 内容，未修改订单或任务。
+
+> **2026-09-05 卡库存根因核对**：生产唯一 `AVAILABLE/ACCEPTED/active` 卡为 card `8ec33749-a85d-11f1-b261-96f4cc0be41b`，余额 `16.00`、目标卡段 `16`，但 `last_transaction_synced_at` 已超过 15 分钟；`eligibleInventoryCardSql` 因新鲜度规则排除它。只读同步任务连续返回 `REVIEW_REQUIRED/PROVIDER`，错误为 HNSKJ API 拒绝；因此当前是“真实可用卡资格未能被新鲜同步证明”，不是订单或 Browser 路由代码把卡误过滤。不能绕过新鲜度、强行分配或调用 Provider 写接口。

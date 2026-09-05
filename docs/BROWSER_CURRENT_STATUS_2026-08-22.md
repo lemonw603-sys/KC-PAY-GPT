@@ -311,3 +311,9 @@ git diff --check
 - 新订单 `PJV1-eqTeit7QVMx-qPqIfjJi` 路由为 `CHATGPT_PLUS_BROWSER_V1`，Session replacement `0`；当前权威状态 `WAITING_FOR_CARD`。
 - `ASSIGN_CARD` 任务仍 `PENDING`，`last_error_code=CARD_STOCK_EMPTY`；没有 `recharge_attempt/browser_run/BROWSER_PREFLIGHT`，未进入 Checkout 前置。
 - 本轮未读取 Session 原文、未修改任务或订单、未创建测试订单、未调用 Provider/卡台写接口、未填卡、未付款。
+
+## 2026-09-05｜新 Browser 订单卡库存资格根因
+
+- 唯一候选卡余额 `16.00`、卡段 `16`，但 `last_transaction_synced_at` 超过 15 分钟资格窗口；`eligibleInventoryCardSql` 安全排除该卡。
+- 只读同步任务连续 `REVIEW_REQUIRED/PROVIDER`，HNSKJ API 返回拒绝；没有成功的新鲜交易/余额证据，因此 `ASSIGN_CARD` 保持 `PENDING/CARD_STOCK_EMPTY`。
+- 订单未创建 attempt/run、未进入 BROWSER_PREFLIGHT/Checkout；不能安全自动继续。不得跳过同步新鲜度或强行分配陈旧卡；不要求用户重提 Session/CDK。

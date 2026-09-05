@@ -1206,3 +1206,10 @@
 - 状态从前台 `PREPARING` 映射回权威订单 `WAITING_FOR_CARD`；唯一关联任务为 `ASSIGN_CARD/PENDING`，`last_error_code=CARD_STOCK_EMPTY`。
 - 尚无 `recharge_attempt`、`browser_run`、`BROWSER_PREFLIGHT` 或 Checkout 前置记录；因此没有读取客户 Session 内容，也没有执行 Browser 动作。
 - 未创建测试订单、未修改订单/任务，未调用 Provider/卡台写接口、未填卡、未付款。下一步需先等待/处理卡库存资格，不能跳过卡片前置直接进入 Browser。
+
+## 2026-09-05｜新 Browser 订单卡库存资格根因
+
+- 订单 `PJV1-eqTeit7QVMx-qPqIfjJi` 的 `ASSIGN_CARD` 任务持续 `PENDING/CARD_STOCK_EMPTY`。数据库当前只有一张 `AVAILABLE/ACCEPTED/active` 卡（card `8ec33749-a85d-11f1-b261-96f4cc0be41b`，余额 `16.00`、card type `16`）。
+- 该卡 `last_transaction_synced_at` 已超过 `eligibleInventoryCardSql` 要求的 15 分钟窗口，因此不能被安全分配。其历史 assignment 已 `RELEASED`，没有活动 assignment、资金尝试或退款案例证据；`order_id` 仍保留历史关联属于审计字段，不是本次唯一阻断。
+- 只读 `card_sync_jobs` 连续为 `REVIEW_REQUIRED`，`error_code=PROVIDER`，日志显示 HNSKJ API 拒绝；`pojia-card-read-sync.timer` 仍按计划触发，但没有成功刷新证明。库存 runner 最近一次也因 Provider 错误失败，未在本轮触发任何写接口。
+- 结论：这是“真实无新鲜资格证明/Provider 只读同步失败”，不是 Session、Browser 路由或代码过滤误判。现有订单当前不能自动进入 `recharge_attempt/browser_run/BROWSER_PREFLIGHT`；不得绕过新鲜度、强行绑定陈旧卡或要求用户重新提交。
