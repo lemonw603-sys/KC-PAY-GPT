@@ -1173,3 +1173,10 @@
 - 生产只有 1 个 ACTIVE/BROWSER executor profile；Browser readonly worker 每轮顺序执行一个 `runOnce()`，没有 Profile 池调度。普通 API Worker 未设置 `WORKER_CONCURRENCY`，实际按代码默认 1。
 - 本机虽列出 6 个 Browser lane Profile，但尚未注册为生产租约池，也没有完成 3/6 路并发验证。因此当前不能声称具备每日几百单能力。
 - 详细体检：`docs/BROWSER_CAPACITY_RUNTIME_AUDIT_2026-09-05.md`。未改生产、未创建订单、未读取 Session、未资金写入、未付款。
+
+## 2026-09-05｜真实 Browser 订单启动前生产候选核对
+
+- 用户确认开始单 Profile 真实 Browser 测试；本轮先运行完整 `browser-order` 闸门并核对生产 release、systemd/env、数据库路由和代码文件，未直接切换路线或创建订单。
+- 生产当前 release `/opt/pojia/releases/20260905-maintenance-bark-6246cc1` 中不存在 `browser-mvp/src/bitbrowser-control-runtime.js`；生产 Browser env 仍为 `BROWSER_WORKER_TARGET=LOCAL_FIXTURE`，没有 `BITBROWSER_API_BASE_URL`。
+- 因此当前生产 Browser Worker 不是 BitBrowser 实际执行器，直接切换路线会把订单送入未接入 BitBrowser 的只读 fixture，不能进行真实 Browser 测试。
+- 结论：测试不是取消，而是被现场发现的“生产候选未部署/未接线”阻断。下一步应先把已验证的 BitBrowser adapter 候选部署为只读、设置目标与 API 地址、启动 `--check` 并做生产只读 readiness；在此之前不切换 Browser 默认路线、不创建订单、不读取 Session、不付款。
