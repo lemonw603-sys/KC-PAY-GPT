@@ -297,25 +297,30 @@ export function createWorkflowHandlers({
         code: 'CARD_NOT_READY', retryable: true, delayMs: 60_000, refundAttempt: true
       });
     }
-    const cardEnvelope = await recordCall({
-      orderId: task.order_id,
-      provider: 'hnskj',
-      operation: 'card_details',
-      attemptNo: task.attempts,
-      action: () => cardProvider.card(context.card.provider_card_id),
-      summarize: () => ({ cardId: context.card.provider_card_id, purpose: 'pre_recharge_check' })
-    });
-    const cardSnapshot = mapCardProvisioning(
-      cardEnvelope,
-      context.order.minimum_required_card_balance
-    );
-    const credentials = cardSnapshot.state === 'ready'
-      ? mapCardCredentials(cardEnvelope) : null;
-    await workflow.refreshAssignedCardForRecharge(task.order_id, cardSnapshot, credentials);
-    if (cardSnapshot.state !== 'ready') {
-      throw new TaskExecutionError('Assigned card is not ready after the pre-recharge check', {
-        code: 'CARD_NOT_READY', retryable: true, delayMs: 60_000, refundAttempt: true
+    const manualSnapshotCard = context.card.sync_tier === 'MANUAL_IMPORT'
+      || context.card.provider_code === 'manual_excel';
+    let credentials = context.card.credentials;
+    if (!manualSnapshotCard) {
+      const cardEnvelope = await recordCall({
+        orderId: task.order_id,
+        provider: 'hnskj',
+        operation: 'card_details',
+        attemptNo: task.attempts,
+        action: () => cardProvider.card(context.card.provider_card_id),
+        summarize: () => ({ cardId: context.card.provider_card_id, purpose: 'pre_recharge_check' })
       });
+      const cardSnapshot = mapCardProvisioning(
+        cardEnvelope,
+        context.order.minimum_required_card_balance
+      );
+      credentials = cardSnapshot.state === 'ready'
+        ? mapCardCredentials(cardEnvelope) : null;
+      await workflow.refreshAssignedCardForRecharge(task.order_id, cardSnapshot, credentials);
+      if (cardSnapshot.state !== 'ready') {
+        throw new TaskExecutionError('Assigned card is not ready after the pre-recharge check', {
+          code: 'CARD_NOT_READY', retryable: true, delayMs: 60_000, refundAttempt: true
+        });
+      }
     }
 
     let attempt;

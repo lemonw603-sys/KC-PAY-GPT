@@ -7,7 +7,8 @@ import { sessionFixture } from '../test-support/session-fixture.js';
 
 function setup({ status = OrderStatus.CARD_READY, executorKind = 'API', rechargeStatuses = [],
   rechargeAttemptRepository = null, browserDispatchRepository = null,
-  rechargeWritesEnabled = true, browserDispatchEnabled = true } = {}) {
+  rechargeWritesEnabled = true, browserDispatchEnabled = true,
+  cardSyncTier = 'FULL', cardProviderCode = 'hnskj' } = {}) {
   const calls = [];
   const providerCalls = [];
   const context = {
@@ -21,7 +22,7 @@ function setup({ status = OrderStatus.CARD_READY, executorKind = 'API', recharge
       recharge_card_key: 'DIRECT-fixture'
       ,recharge_executor_kind: executorKind
     },
-    card: { provider_card_id: 'card-1' },
+    card: { provider_card_id: 'card-1', sync_tier: cardSyncTier, provider_code: cardProviderCode },
     session: sessionFixture()
   };
   const workflow = {
@@ -127,6 +128,26 @@ test('Browser submit hands off a durable dispatch job and never calls the rechar
     executorProfileId: null
   }]);
   assert.equal(state.providerCalls.some((call) => call.operation === 'create_direct'), false);
+});
+
+test('manual Browser card starts from its committed snapshot without calling HNSKJ card details', async () => {
+  const dispatches = [];
+  const state = setup({
+    executorKind: 'BROWSER', cardSyncTier: 'MANUAL_IMPORT', cardProviderCode: 'manual_excel',
+    rechargeAttemptRepository: {
+      beginAuthorizedAttempt: async () => ({
+        id: 'manual-browser-attempt-1', executorKind: 'BROWSER', startedAt: new Date()
+      })
+    },
+    browserDispatchRepository: {
+      enqueue: async (input) => { dispatches.push(input); return { status: 'QUEUED' }; }
+    }
+  });
+  state.cardProvider.card = async () => { throw new Error('HNSKJ must not be called for a manual card'); };
+  await state.handlers.SUBMIT_RECHARGE({ id: 1, order_id: 'order-1', attempts: 1 });
+  assert.equal(state.providerCalls.some((call) => call.operation === 'card_details'), false);
+  assert.equal(state.calls.some(([name]) => name === 'refresh-card'), false);
+  assert.equal(dispatches.length, 1);
 });
 
 test('API and Browser submit gates are independent and never fall back across executors', async () => {

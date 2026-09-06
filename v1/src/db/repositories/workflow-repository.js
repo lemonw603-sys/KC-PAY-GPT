@@ -91,6 +91,8 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
                 c.provider_account_id AS stored_card_provider_account_id,
                 c.provider_card_id,
                 c.card_type_id AS stored_card_type_id,
+                c.sync_tier AS card_sync_tier,
+                card_pa.provider_code AS card_provider_code,
                 c.last4,
                 c.status AS card_status,
                 c.current_balance AS card_current_balance,
@@ -101,6 +103,7 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
          FROM orders o
          LEFT JOIN fulfillment_routes fr ON fr.id = o.fulfillment_route_id
          LEFT JOIN cards c ON (c.id = o.assigned_card_id OR (o.assigned_card_id IS NULL AND c.order_id = o.id))
+         LEFT JOIN provider_accounts card_pa ON card_pa.id = c.provider_account_id
          WHERE o.id = ?`,
         [orderId]
       );
@@ -118,6 +121,8 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
           provider_account_id: row.stored_card_provider_account_id,
           provider_card_id: row.provider_card_id,
           card_type_id: row.stored_card_type_id,
+          sync_tier: row.card_sync_tier,
+          provider_code: row.card_provider_code,
           last4: row.last4,
           status: row.card_status,
           current_balance: row.card_current_balance,
