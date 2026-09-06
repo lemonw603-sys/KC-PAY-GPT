@@ -45,6 +45,41 @@ export function createOrderCancellationService({ pool }) {
                     AND cancellation_call.operation='create_direct'
                     AND cancellation_call.outcome <> 'DEFINITE_FAILURE')
                   AS unsafe_provider_call_count,
+                (SELECT COUNT(*) FROM recharge_attempts browser_attempt
+                  WHERE browser_attempt.order_id=o.id
+                    AND browser_attempt.executor_kind='BROWSER'
+                    AND browser_attempt.status='PREPARED'
+                    AND browser_attempt.funds_risk_state='ACTIVE')
+                  AS browser_prepared_attempt_count,
+                (SELECT MAX(browser_attempt.id) FROM recharge_attempts browser_attempt
+                  WHERE browser_attempt.order_id=o.id
+                    AND browser_attempt.executor_kind='BROWSER'
+                    AND browser_attempt.status='PREPARED'
+                    AND browser_attempt.funds_risk_state='ACTIVE')
+                  AS browser_prepared_attempt_id,
+                (SELECT MAX(browser_attempt.authorization_item_id) FROM recharge_attempts browser_attempt
+                  WHERE browser_attempt.order_id=o.id
+                    AND browser_attempt.executor_kind='BROWSER'
+                    AND browser_attempt.status='PREPARED'
+                    AND browser_attempt.funds_risk_state='ACTIVE')
+                  AS browser_authorization_item_id,
+                (SELECT COUNT(*) FROM browser_dispatch_jobs browser_dispatch
+                  INNER JOIN recharge_attempts browser_attempt
+                    ON browser_attempt.id=browser_dispatch.recharge_attempt_id
+                  WHERE browser_attempt.order_id=o.id
+                    AND browser_dispatch.status='QUEUED')
+                  AS browser_queued_dispatch_count,
+                (SELECT COUNT(*) FROM browser_dispatch_jobs browser_dispatch
+                  INNER JOIN recharge_attempts browser_attempt
+                    ON browser_attempt.id=browser_dispatch.recharge_attempt_id
+                  WHERE browser_attempt.order_id=o.id
+                    AND browser_dispatch.status<>'QUEUED')
+                  AS browser_nonqueued_dispatch_count,
+                (SELECT COUNT(*) FROM browser_runs browser_run
+                  INNER JOIN recharge_attempts browser_attempt
+                    ON browser_attempt.id=browser_run.recharge_attempt_id
+                  WHERE browser_attempt.order_id=o.id)
+                  AS browser_run_count,
                 JSON_UNQUOTE(JSON_EXTRACT(t.payload_json, '$.rechargePermit.status')) AS permit_status
          FROM orders o
          LEFT JOIN cards c ON (c.id = o.assigned_card_id OR (o.assigned_card_id IS NULL AND c.order_id = o.id))
@@ -124,6 +159,117 @@ export function createOrderCancellationService({ pool }) {
         await connection.commit();
         return { publicNo: order.public_no, status: 'CLOSED', cardReleased: false,
           cardInventoryStatus: null, replayed: false };
+      }
+      if (order.status === 'RECHARGE_PROCESSING') {
+        const safelyPreparedBrowserOrder = order.card_id
+          && Number(order.browser_prepared_attempt_count || 0) === 1
+          && order.browser_prepared_attempt_id
+          && Number(order.browser_queued_dispatch_count || 0) === 1
+          && Number(order.browser_nonqueued_dispatch_count || 0) === 0
+          && Number(order.browser_run_count || 0) === 0
+          && Number(order.unsafe_attempt_count || 0) === 1
+          && Number(order.unsafe_provider_call_count || 0) === 0
+          && !order.recharge_order_no && !order.recharge_card_key;
+        if (!safelyPreparedBrowserOrder) {
+          throw new OrderCancellationError('Browser recharge may have started',
+            'ORDER_CANCELLATION_SUBMISSION_RISK');
+        }
+        const [dispatchCancelled] = await connection.query(
+          `UPDATE browser_dispatch_jobs SET status='CANCELLED',
+             last_error_code='CANCELLED_BY_ADMIN', completed_at=CURRENT_TIMESTAMP(3),
+             lease_owner=NULL, lease_token_hash=NULL, lease_until=NULL,
+             updated_at=CURRENT_TIMESTAMP(3)
+           WHERE recharge_attempt_id=? AND status='QUEUED'`,
+          [order.browser_prepared_attempt_id]
+        );
+        if (Number(dispatchCancelled.affectedRows) !== 1) {
+          throw new OrderCancellationError('Browser dispatch changed concurrently',
+            'ORDER_CANCELLATION_ORDER_CHANGED');
+        }
+        const [attemptCleared] = await connection.query(
+          `UPDATE recharge_attempts SET status='CLEARED', funds_risk_state='CLEARED',
+             result_summary_json=JSON_OBJECT('code','CANCELLED_BY_ADMIN',
+               'noExternalPaymentAction',true),
+             finished_at=CURRENT_TIMESTAMP(3), updated_at=CURRENT_TIMESTAMP(3)
+           WHERE id=? AND executor_kind='BROWSER'
+             AND status='PREPARED' AND funds_risk_state='ACTIVE'`,
+          [order.browser_prepared_attempt_id]
+        );
+        if (Number(attemptCleared.affectedRows) !== 1) {
+          throw new OrderCancellationError('Browser attempt changed concurrently',
+            'ORDER_CANCELLATION_ORDER_CHANGED');
+        }
+        await transitionCardConsumptionInTransaction(connection, {
+          orderId: order.id,
+          rechargeAttemptId: order.browser_prepared_attempt_id,
+          targetStatus: 'RELEASED',
+          reason: `Browser order cancelled before run: ${reason}`,
+          allowedCurrentStatuses: ['RESERVED'],
+          evidence: { source: 'admin_order_cancellation', noExternalPaymentAction: true }
+        });
+        if (order.browser_authorization_item_id) {
+          const [authorizationReleased] = await connection.query(
+            `UPDATE recharge_authorization_items SET status='RELEASED'
+             WHERE id=? AND consumed_attempt_id=? AND status='CONSUMED'`,
+            [order.browser_authorization_item_id, order.browser_prepared_attempt_id]
+          );
+          if (Number(authorizationReleased.affectedRows) !== 1) {
+            throw new OrderCancellationError('Browser authorization changed concurrently',
+              'ORDER_CANCELLATION_ORDER_CHANGED');
+          }
+        }
+        const [assignmentReleased] = await connection.query(
+          `UPDATE card_assignment_history
+           SET status='RELEASED', released_by='admin', release_reason=?,
+             released_at=CURRENT_TIMESTAMP(3), updated_at=CURRENT_TIMESTAMP(3)
+           WHERE card_id=? AND order_id=? AND status='ACTIVE'`,
+          [reason, order.card_id, order.id]
+        );
+        if (Number(assignmentReleased.affectedRows) !== 1) {
+          throw new OrderCancellationError('Card assignment history is inconsistent',
+            'ORDER_CANCELLATION_ASSIGNMENT_HISTORY_INCONSISTENT');
+        }
+        const [cardReleased] = await connection.query(
+          `UPDATE cards SET inventory_status=CASE
+               WHEN current_balance >= ? THEN 'AVAILABLE' ELSE 'DEPLETED' END,
+             assigned_at=NULL, updated_at=CURRENT_TIMESTAMP(3)
+           WHERE id=?`,
+          [String(order.minimum_required_card_balance), order.card_id]
+        );
+        if (Number(cardReleased.affectedRows) !== 1) {
+          throw new OrderCancellationError('Card assignment changed concurrently',
+            'ORDER_CANCELLATION_ORDER_CHANGED');
+        }
+        await connection.query(
+          `UPDATE tasks SET status='DEAD', leased_until=NULL, leased_by=NULL,
+             last_error_code='CANCELLED_BY_ADMIN', last_error_message=?,
+             updated_at=CURRENT_TIMESTAMP(3)
+           WHERE order_id=? AND status='PENDING'`, [reason, order.id]
+        );
+        const [closed] = await connection.query(
+          `UPDATE orders SET status='CLOSED', assigned_card_id=NULL,
+             failure_code='CANCELLED_PRE_SUBMISSION', failure_reason=?,
+             version=version+1, finished_at=CURRENT_TIMESTAMP(3),
+             updated_at=CURRENT_TIMESTAMP(3)
+           WHERE id=? AND status='RECHARGE_PROCESSING'`, [reason, order.id]
+        );
+        if (Number(closed.affectedRows) !== 1) {
+          throw new OrderCancellationError('Order changed concurrently',
+            'ORDER_CANCELLATION_ORDER_CHANGED');
+        }
+        await connection.query(
+          `INSERT INTO order_events
+           (order_id, from_status, to_status, actor_type, actor_id, reason, metadata_json)
+           VALUES (?, 'RECHARGE_PROCESSING', 'CLOSED', 'ADMIN', 'admin', ?, ?)`,
+          [order.id, 'Browser order cancelled before any Browser run or payment action',
+            JSON.stringify({ reason, cardId: order.card_id,
+              rechargeAttemptId: order.browser_prepared_attempt_id,
+              noExternalPaymentAction: true })]
+        );
+        await connection.commit();
+        return { publicNo: order.public_no, status: 'CLOSED', cardReleased: true,
+          cardInventoryStatus: Number(order.current_balance) >= Number(order.minimum_required_card_balance)
+            ? 'AVAILABLE' : 'DEPLETED', replayed: false };
       }
       const waitingForReplacement = order.status === 'WAITING_FOR_SESSION';
       if (!waitingForReplacement && order.status !== 'CARD_READY') {

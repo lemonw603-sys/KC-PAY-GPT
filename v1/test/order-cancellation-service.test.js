@@ -29,9 +29,45 @@ function eligibleRow(overrides = {}) {
     card_credentials_ciphertext: Buffer.from('encrypted'), last_synced_at: new Date(),
     submit_task_id: 7, submit_task_status: 'PENDING', submit_attempts: 0, permit_status: 'LOCKED',
     unsafe_attempt_count: 0, unsafe_provider_call_count: 0,
+    browser_prepared_attempt_count: 0, browser_prepared_attempt_id: null,
+    browser_authorization_item_id: null, browser_queued_dispatch_count: 0,
+    browser_nonqueued_dispatch_count: 0, browser_run_count: 0,
     ...overrides
   };
 }
+
+test('cancellation safely closes a queued Browser order before any run or payment action', async () => {
+  const pool = fakePool([
+    [[eligibleRow({ status: 'RECHARGE_PROCESSING', browser_prepared_attempt_count: 1,
+      browser_prepared_attempt_id: 'attempt-1', browser_authorization_item_id: 'auth-1',
+      browser_queued_dispatch_count: 1, unsafe_attempt_count: 1 })], []],
+    [{ affectedRows: 1 }, []], [{ affectedRows: 1 }, []],
+    [{ affectedRows: 1 }, []], [{ affectedRows: 1 }, []],
+    [{ affectedRows: 1 }, []], [{ affectedRows: 1 }, []],
+    [{ affectedRows: 1 }, []], [{ affectedRows: 1 }, []]
+  ]);
+  const result = await createOrderCancellationService({ pool })(
+    'PJV1-DEMO', { confirmation: '取消订单 PJV1-DEMO', reason: 'replaced by 20X order' }
+  );
+  assert.deepEqual(result, { publicNo: 'PJV1-DEMO', status: 'CLOSED', cardReleased: true,
+    cardInventoryStatus: 'AVAILABLE', replayed: false });
+  assert.equal(pool.queries.some(({ sql }) => /UPDATE browser_dispatch_jobs/.test(sql)), true);
+  assert.equal(pool.queries.some(({ sql }) => /UPDATE recharge_attempts/.test(sql)), true);
+  assert.equal(pool.queries.some(({ sql }) => /noExternalPaymentAction/.test(sql)), true);
+});
+
+test('cancellation refuses a Browser order after a run exists', async () => {
+  const pool = fakePool([[[eligibleRow({ status: 'RECHARGE_PROCESSING',
+    browser_prepared_attempt_count: 1, browser_prepared_attempt_id: 'attempt-1',
+    browser_queued_dispatch_count: 1, browser_run_count: 1, unsafe_attempt_count: 1 })], []]]);
+  await assert.rejects(
+    createOrderCancellationService({ pool })(
+      'PJV1-DEMO', { confirmation: '取消订单 PJV1-DEMO' }
+    ),
+    (error) => error.code === 'ORDER_CANCELLATION_SUBMISSION_RISK'
+  );
+  assert.equal(pool.queries.length, 1);
+});
 
 test('cancellation closes an untouched order and releases its capacity for safe reuse', async () => {
   const pool = fakePool([
