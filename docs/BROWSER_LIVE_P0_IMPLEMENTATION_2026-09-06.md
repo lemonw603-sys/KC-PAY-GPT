@@ -88,10 +88,30 @@ ACTIVE/UNKNOWN 充值资金=0
 
 ## 5. 尚未完成与下一步
 
-1. 尚未在隔离 MySQL 跑 4 个环境跳过的 Browser 集成测试；部署前必须补齐，或明确记录无法建立隔离库的事实，不能把跳过写成通过。
+1. 已在临时 MySQL 8.4 隔离库补跑完整 Browser 套件：`154/154/0/0`，原环境跳过项全部实际执行。
 2. 尚未用生产数据执行 LIVE `--check`；本批代码未部署，生产 release 不包含该入口。
 3. 尚未完成“真实订单但付款关闭”的卡→地址→邮箱→PHP 零税重报价回归；需要先部署候选，并以不产生付款的模式验证。
 4. 尚未核对用户充值后的卡片权威余额/资料。
 5. 尚未获得本次真实付款的最终操作确认；任何部署都必须先保持付款关闭。
 
 因此下一阶段是：构建单一 commit release → 部署但保持付款关闭 → LIVE `--check` 与单 Profile 订单级非付款回归 → 核对卡片 → 再让运营提交新 CDK+Session。只有到最终 PHP 零税快照和数据库租约全部通过时，才单独请求一次付款确认。
+
+## 6. 第三批对抗审查与隔离 MySQL 证明
+
+提交 `ff34feb` 修复的不是生产资金状态机，而是此前被跳过后已漂移的测试边界：
+
+- 三个 MySQL 夹具补齐 `orders.frozen_card_provider_account_id`，使测试与当前订单冻结卡源合同一致；
+- 生产 readonly、共享 dry-run、付款状态机用例改为串行执行，避免两类用例并发修改数据库全局付款开关；
+- UNKNOWN 刚建立时不再错误期待立即创建人工对账单；只有到验证截止时间仍无决定性证据时才创建一张人工对账单；
+- 新增 UNKNOWN→确认收口、付款已确认但 Plus 未收口→恢复、UNKNOWN 超时→单订单人工处理三条真实 MySQL 用例。
+
+隔离库最终证据：
+
+```text
+Browser 完整套件（TEST_DATABASE_URL，test-concurrency=1）：154 total / 154 pass / 0 skip / 0 fail
+生产形状 smoke：12 config + 1 readonly MySQL + 1 shared dry-run MySQL + 5 payment/recovery MySQL，全部通过
+每条付款恢复用例：PAYMENT_SUBMIT=1；恢复阶段新增付款调用=0
+UNKNOWN 超时：订单/资金/卡消费保持 UNKNOWN/RECONCILIATION，只创建一张人工对账单
+```
+
+本轮仍未访问生产付款路径、未写 Provider、未填写真实卡、未付款。

@@ -29,8 +29,7 @@
 
 尚未完成：
 
-- 隔离 MySQL 环境中的 Browser 支付/恢复集成测试；
-- 将提交 `bc8ee2f` 构建并部署为单一 commit release；
+- 从包含 `bc8ee2f..ff34feb` 的当前单一 HEAD 构建并部署候选 release；
 - 部署后付款关闭的 LIVE `--check` 与订单级卡→地址→邮箱→零税回归；
 - 真实订单和唯一真实付款验收。
 
@@ -41,6 +40,7 @@
 - HNSKJ 唯一交易匹配与手工卡 Browser+ledger transaction reader；
 - 付款确认与后置核验计划原子建立，恢复按批准订单 SQL 限定；
 - 本机单 Profile 公开页面回归（HTTP 200、无 Cloudflare、0 submit）。
+- 隔离 MySQL 完整 Browser 回归：`154/154/0/0`；UNKNOWN 与付款已确认未收口均证明恢复阶段第二次付款调用为 0。
 
 证据与准确边界见 `docs/BROWSER_LIVE_P0_IMPLEMENTATION_2026-09-06.md`。
 

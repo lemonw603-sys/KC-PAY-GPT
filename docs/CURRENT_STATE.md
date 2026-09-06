@@ -1,5 +1,7 @@
 # 当前生产状态快照｜2026-09-06
 
+> **2026-09-06 Browser LIVE P0 第三批验证边界**：提交 `ff34feb` 已补齐真实 MySQL 付款/恢复证明；临时 MySQL 8.4 中 Browser 完整套件 `154/154/0/0`。UNKNOWN 恢复、付款已确认但后置未收口恢复均证明恢复不产生第二次付款；UNKNOWN 到期只把相关订单保留在人工处理和卡消费对账状态。生产仍是 `/opt/pojia/releases/20260906-import-errors-c6e9f48`，尚未包含 `bc8ee2f..ff34feb`，所以仍不可宣称 LIVE Worker 已上线或可以付款。
+
 > **2026-09-06 Browser LIVE P0 第二批最新边界**：本地提交 `bc8ee2f` 已实现可执行但默认失败关闭的单订单 LIVE Worker、路线化交易读取、卡级账单地址绑定，以及 UNKNOWN/付款已确认未收口的同 Profile 只读恢复。全量回归 Browser `151/147/4/0`、v1 `552/505/47/0`；本机 BitBrowser/代理 READY，Pilot Profile 访问 ChatGPT 为 HTTP 200、无 Cloudflare、0 submit。生产现场仍是 `/opt/pojia/releases/20260906-import-errors-c6e9f48`，Web/API Worker active，Browser Worker与旧自动开卡 inactive/disabled；`browser_payment_writes_enabled=false`，活动 Browser run、ACTIVE/UNKNOWN 充值资金、活动 dispatch、活动开卡任务均为 0。**代码完成不等于已部署或可真实付款**；详见 `docs/BROWSER_LIVE_P0_IMPLEMENTATION_2026-09-06.md`。
 
 > **2026-09-06 Browser LIVE P0 本地候选增量**：已从当前代码修正四个真实缺口：卡前 preflight 允许初始 VAT；付款 intent 延后到卡+地址+邮箱+严格零税重报价+最终复核之后；备用卡导入账单地址保留在 JIT 卡资料边界；Browser 卡源匹配改用 `orders.frozen_card_provider_account_id`。已有独立 LIVE 配置/组装候选和同源 Plus/取消续费核验器；Browser 全量 `142 total / 138 pass / 4 skip / 0 fail`，v1 受影响定向 `18/18`。这些都是本地未提交候选，生产仍是 `/opt/pojia/releases/20260906-import-errors-c6e9f48`，Browser Worker/付款/旧自动开卡仍关闭，本轮无付款。

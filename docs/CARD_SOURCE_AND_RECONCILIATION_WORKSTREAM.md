@@ -121,4 +121,4 @@
 
 ## 9. 下一动作
 
-D6 已完成生产后台/API、Browser 卡源双向切换、不接管旧订单、备用卡完整快照和幂等重放验收，证据见 `CARD_SOURCE_D6_PRODUCTION_ACCEPTANCE_2026-09-06.md`。Browser LIVE P0 本地组装已在提交 `bc8ee2f` 完成，包含路线化 HNSKJ/手工卡交易核验与付款 UNKNOWN/付款后未收口恢复，详见 `BROWSER_LIVE_P0_IMPLEMENTATION_2026-09-06.md`。生产尚未部署该提交，Browser Worker 与付款继续关闭。下一动作是单一 commit 候选部署（付款关闭）→ LIVE `--check` → 订单级非付款回归 → 权威核对充值后的卡；以上通过后再提交真实 Browser 首单并在最终 PHP 零税快照处单独确认付款。
+D6 已完成生产后台/API、Browser 卡源双向切换、不接管旧订单、备用卡完整快照和幂等重放验收，证据见 `CARD_SOURCE_D6_PRODUCTION_ACCEPTANCE_2026-09-06.md`。Browser LIVE P0 本地组装已在提交 `bc8ee2f` 完成；提交 `ff34feb` 又以临时 MySQL 8.4 完成 Browser `154/154/0/0` 回归，证明 HNSKJ/手工卡路线化收口、UNKNOWN/付款后未收口恢复不产生第二次付款。详见 `BROWSER_LIVE_P0_IMPLEMENTATION_2026-09-06.md`。生产尚未部署，Browser Worker 与付款继续关闭。下一动作是单一 commit 候选部署（付款关闭）→ LIVE `--check` → 订单级非付款回归 → 权威核对充值后的卡；以上通过后再提交真实 Browser 首单并在最终 PHP 零税快照处单独确认付款。

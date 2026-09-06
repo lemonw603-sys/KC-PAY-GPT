@@ -1530,3 +1530,11 @@
 - 本机：代理和 BitBrowser API READY；Pilot Profile HTTP 200、无 Cloudflare、1 Context、0 submit。
 - 生产只读：仍为 release `c6e9f48`；Browser Worker/付款/旧自动开卡关闭，活动 Browser run、ACTIVE/UNKNOWN 充值资金、活动 dispatch、活动开卡任务均为 0。未部署、未创建订单、未填写卡片、未付款。
 - 详细证据：`docs/BROWSER_LIVE_P0_IMPLEMENTATION_2026-09-06.md`。下一步构建单一 commit 候选，以付款关闭方式部署并执行 LIVE `--check` 与订单级非付款回归。
+
+## 2026-09-06｜Browser LIVE P0 第三批隔离 MySQL 对抗审查
+
+- 初次实际执行环境跳过项时复现 3 个失败：付款/readonly 夹具没有同步 `orders.frozen_card_provider_account_id`；同时两个文件并行修改全局付款开关会互相干扰。
+- 提交 `ff34feb`：修正三个夹具的订单冻结卡源，生产形状 smoke 改为串行，UNKNOWN 初始阶段不再误判为应立即创建人工对账单。
+- 新增三条 MySQL 资金恢复证明：UNKNOWN 后确认收口、付款已确认但 Plus 未收口后恢复、UNKNOWN 到期只升级相关订单。
+- 临时 MySQL 8.4 完整 Browser 回归：`154 total / 154 pass / 0 skip / 0 fail`；恢复用例均为一条 `PAYMENT_SUBMIT`，恢复阶段 0 次新增付款。
+- 本轮未部署、未改变生产开关、未写 Provider、未填写真实卡、未付款。下一步从当前 HEAD 构建付款关闭的候选 release。

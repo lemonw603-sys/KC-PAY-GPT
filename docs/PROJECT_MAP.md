@@ -1,5 +1,7 @@
 # AI充值业务｜唯一项目规划地图
 
+> **2026-09-06 Browser LIVE P0 第三批（提交 `ff34feb`）**：已在临时 MySQL 8.4 隔离库执行完整 Browser 套件，`154/154/0/0`。对抗审查先复现了旧夹具缺少订单冻结卡源、相反付款开关用例并行互扰等失败，再修复测试合同和串行 smoke；新增 UNKNOWN 恢复、付款已确认未收口恢复、UNKNOWN 超时三条 MySQL 证明，均保持 `PAYMENT_SUBMIT=1`、恢复阶段新增付款调用 `0`。生产仍未部署；下一步从当前 HEAD 构建候选 release，部署时继续保持 Browser Worker 与付款关闭，再执行生产 LIVE `--check`。
+
 > **2026-09-06 Browser LIVE P0 第二批（代码提交 `bc8ee2f`）**：已新增独立 `production-live-worker.js` 的安全 `--check/--once` 双模式、HNSKJ/手工卡路线化交易核验、实体卡级账单地址稳定绑定、付款 UNKNOWN/付款已确认未收口的专用 Session 与同 Profile 只读恢复；付款确认现在原子建立后续核验计划，恢复 SQL 精确限制批准订单，成功后收口订单/attempt/run/账本/assignment/dispatch。Browser `151/147/4/0`、v1 `552/505/47/0`，本机 Pilot Profile HTTP 200、无 Cloudflare、0 submit。生产只读复核仍为 release `c6e9f48`、Browser Worker/付款/旧自动开卡关闭、活动 Browser/资金/派发为 0；**尚未部署，也尚未完成隔离 MySQL 跳过项和订单级非付款回归**。下一步按 `docs/BROWSER_LIVE_P0_IMPLEMENTATION_2026-09-06.md` 构建候选并以付款关闭状态部署核验。
 
 > **2026-09-06 Browser LIVE P0 实现进度（本地候选）**：已修正卡前 preflight 零税时序，保留最终付款前 `PHP+零税+算术一致` 强校验；手工备用卡的账单地址不再被解密层丢弃；Browser 上游投影已改为以订单冻结卡源而非旧路线卡台为权威。新增单订单绑定的 LIVE 配置/组装边界、真实 Plus+取消续费核验器，并把资金时序改为“填写+重报价+最终复核后才落 payment intent，随后单次点击”。Browser 全量 `138 pass / 4 skip / 0 fail`，v1 定向 `18 pass / 0 fail`。仍未完成生产 LIVE 进程、付款 UNKNOWN 真实调度和单 Profile 非付款候选回归；未部署、未启用付款。
