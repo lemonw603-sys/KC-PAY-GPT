@@ -59,6 +59,14 @@ Runtime 连接时关闭已有页面；Session Bootstrap 与上号器反复覆盖
 
 运营者手工完成了 Plus 的邮箱、账单和付款。本次只能记为“人工 Plus 成功”；自动填写、自动零税重报价、自动付款和 20X 最终完成均不得据此宣称已跑通。
 
+### P0：人工付款与生产订单状态脱节
+
+付款后的生产只读核对显示：订单仍为 `RECHARGE_PROCESSING`，attempt 仍为 `PREPARED/ACTIVE`，Browser run 仍为 `RUNNING/NOT_STARTED`，dispatch 仍为过期的 `CLAIMED`，消费账本仍为 `RESERVED USD 16`，且没有 `PAYMENT_SUBMIT` 操作。也就是说，人工 Plus 已完成，但系统完全不知道；这会继续占用卡片并产生错误通知。必须提供明确的人工付款接管/核实收口，禁止直接改库伪造自动化付款。
+
+### P0：Plus 后 Access Token 被服务端拒绝
+
+当前目标身份在 BitBrowser 中仍可通过 `/api/auth/session` 返回 HTTP 200，邮箱摘要匹配；浏览器返回的 Access Token 与订单加密保存的 Token 摘要一致，JWT 自身 `exp` 为 2026-09-16，但账户检查接口现场返回 HTTP 401 `token_expired`。因此这不是“再写一次同样三参”可以解决的问题；服务端已经拒绝这枚 Access Token。必须在原 Profile 内研究并冻结官方页面实际使用的付款后 Session/Access Token 刷新路径；在该路径未证明前，不能承诺永远不向客户补要新 Session。
+
 ## 为什么一个订单没有解决
 
 根因不是订单复杂，而是执行者没有始终锁定“当前订单、当前 Profile、当前页面、下一项成交动作”四个事实，把后台安全设施当成主流程，并在遇到阻碍后反复回到起点。修复原则不是继续加闸门，而是让安全机制服务于连续成交：只阻止跨客户串用和重复付款，不破坏同一订单的已登录现场。
@@ -67,4 +75,6 @@ Runtime 连接时关闭已有页面；Session Bootstrap 与上号器反复覆盖
 
 - 终态后的统一 Profile 清理仍需接入真实订单释放动作；当前补丁先保证活动订单不被破坏。
 - Checkout 填卡已增加脱敏阶段标签（安全控件、账单、邮箱、重报价、付款前复核、提交、结果观察）；仍可在后续需要时补充各阶段耗时。
+- 当前人工 Plus 必须通过正式的“人工付款已完成/转 20X 接管”动作收口生产状态，不能继续保持过期 `CLAIMED/RUNNING/RESERVED`。
+- 必须证明付款后 Access Token 的原 Profile 刷新路径；重复注入同一份三参没有意义。
 - 需要在部署后用单个无付款回归证明：一次上号、一次 Checkout、自动填写邮箱与免税账单、重报价后停在付款前，全程不关闭 Profile。

@@ -6,6 +6,7 @@
 - 代码确认此前存在活动现场破坏：BitBrowser 连接即关旧页、Session 已存在仍被覆盖、失败/超时关闭 Profile、付款前失败清空表单、卡材料默认租约仅 60 秒。
 - 本地候选已改为活动订单 Session/页面/表单保留、唯一订单页复用、失败或超时 detach、卡材料租约 5 分钟，并增加脱敏填表阶段定位；生产 Worker 数据库池等待修复已补真实异步顺序测试。Browser 全量 167/158/9/0。
 - 详细规则：`docs/BROWSER_ACTIVE_ORDER_CONTINUITY_2026-09-06.md`。尚未部署；`docs/DECISIONS.md` 为用户工作区修改，本轮未触碰。
+- 付款后生产只读复核：订单仍卡在 `RECHARGE_PROCESSING`，attempt/run/dispatch/账本仍为活动或过期占用，且 `PAYMENT_SUBMIT=0`；人工付款事实没有正式收口。当前 BitBrowser 身份接口仍 200/匹配，但账户检查对与订单相同的 Access Token 返回 401 `token_expired`（JWT 自身尚未到 `exp`）。重复写同一三参无效，下一步必须实现人工付款接管和原 Profile 付款后凭证刷新。
 
 ## 2026-09-06｜D6 卡源切换与完整快照生产验收
 
