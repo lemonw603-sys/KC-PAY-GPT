@@ -1502,3 +1502,10 @@
 - Web/API Worker active；Browser Worker 与旧自动开卡 timer/service 仍 inactive/disabled；Browser 付款与自动开卡设置均 false。RUNNING task、ACTIVE/UNKNOWN recharge/funding、活动 Browser run/dispatch 均为 0。
 - stock jobs 跨过 65 秒前后均为 969，活动数 0，最新创建时间不变，证明旧任务风暴未恢复。
 - 本机/生产均无 `/tmp/d6-admin-tokens.json`；本轮临时响应已删除。未开卡、未补余额、未付款。
+
+## 2026-09-06｜Browser 真实全链路验收计划与 LIVE 缺口纠偏
+
+- 根据当前 `main`、生产 release、migration 048、本机 BitBrowser/Proxy 和生产开关，落盘 `docs/BROWSER_REAL_E2E_ACCEPTANCE_PLAN_2026-09-06.md`。
+- 发现此前把“付款状态机代码已部署”说得过于接近“真实付款可用”。实际可运行的仍是 readonly Worker，payment executor 会拒绝 LIVE，live click adapter 未接入 Worker，真实 Plus/取消 verifier 与付款未知调度也未完成组装。
+- 另一个 P0 时序问题是：卡前 `BROWSER_PREFLIGHT` 不应强求零税，因为实测零税只在填卡+免税地址+Session 邮箱后重报价产生。卡前只验 Session/FREE/新 Checkout/表单；付款前再强制 PHP+零税+金额一致。
+- 当前不要提交新 CDK+Session。先完成 P0 组装与单 Profile 非付款回归，再用一笔新 Browser 订单做完整验收；本轮未启动 Worker、未付款。

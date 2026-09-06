@@ -121,4 +121,4 @@
 
 ## 9. 下一动作
 
-D6 已完成生产后台/API、Browser 卡源双向切换、不接管旧订单、备用卡完整快照和幂等重放验收，证据见 `CARD_SOURCE_D6_PRODUCTION_ACCEPTANCE_2026-09-06.md`。最终卡源已恢复 HNSKJ；2 张备用卡已加密导入，但余额均低于 `$18`，不会分配。下一步是准备一张达到门槛的 Browser 卡并做真实订单验收；Browser Worker 与付款在该步骤前继续关闭。
+D6 已完成生产后台/API、Browser 卡源双向切换、不接管旧订单、备用卡完整快照和幂等重放验收，证据见 `CARD_SOURCE_D6_PRODUCTION_ACCEPTANCE_2026-09-06.md`。真实首单计划见 `BROWSER_REAL_E2E_ACCEPTANCE_PLAN_2026-09-06.md`。最终卡源已恢复 HNSKJ；2 张备用卡已加密导入，但当时余额均低于 `$18`。充卡后先用当前 Provider 读证据或最新完整快照重新判定；同时必须先完成 LIVE Worker、填卡后零税闸门、真实 Plus/取消观察与付款未知调度的 P0 组装。Browser Worker 与付款在非付款回归通过前继续关闭。
