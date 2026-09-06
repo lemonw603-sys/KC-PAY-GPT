@@ -64,8 +64,9 @@ test('production readonly entry claims MySQL dispatch, opens Chrome, and safe-ab
        (id, public_no, cdk_id, status, card_type_id, open_card_amount,
         minimum_required_card_balance, session_ciphertext, chatgpt_account_id,
         card_purchase_idempotency_key, product_id, fulfillment_route_id,
-        route_resolution_status)
-       VALUES (?, ?, ?, 'RECHARGE_PROCESSING', '7', 25, 16, ?, ?, ?, ?, ?, 'RESOLVED')`,
+        frozen_card_provider_account_id, route_resolution_status)
+       VALUES (?, ?, ?, 'RECHARGE_PROCESSING', '7', 25, 16, ?, ?, ?, ?, ?,
+         '00000000-0000-4000-8000-000000000101', 'RESOLVED')`,
       [orderId, `SHARED-DRY-${orderId}`, cdkId,
         encryptSecret(JSON.stringify(storedSession()), sharedMaterialKey),
         `isolated-account-${orderId}`, `shared-dry-purchase-${orderId}`, productId, routeId],
