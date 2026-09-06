@@ -1,0 +1,9 @@
+{
+  "mode": "ACTUAL_HANDLER_MOCK_DOM_NO_NETWORK",
+  "view": "browser",
+  "loaderCalls": [],
+  "notices": [
+    "刷新完成。"
+  ],
+  "bug": "await receives function instead of invoking Browser refresh"
+}

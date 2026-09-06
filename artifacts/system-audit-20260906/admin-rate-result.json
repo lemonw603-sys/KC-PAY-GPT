@@ -1,0 +1,7 @@
+{
+  "mode": "ACTUAL_RATE_LIMIT_OFFLINE",
+  "acceptedPolls": 60,
+  "nextRequestAtSeconds": 600,
+  "status": 429,
+  "note": "Default shared write limiter: 10s read polling consumes same-IP write budget; app defaults, not live 429 reproduction"
+}

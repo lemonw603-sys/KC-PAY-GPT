@@ -1,0 +1,8 @@
+{
+  "mode": "ACTUAL_POLL_FUNCTION_FAKE_NETWORK",
+  "renderOrder": [
+    "new-order",
+    "old-order"
+  ],
+  "bug": "Stopping timer does not invalidate an in-flight response"
+}

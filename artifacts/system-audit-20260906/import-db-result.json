@@ -1,0 +1,20 @@
+{
+  "mode": "FULL_MIGRATION_MYSQL_ACTUAL_IMPORT_SERVICE",
+  "migrationFiles": 48,
+  "samePanStoredRows": 2,
+  "activeCardIdentityChanged": true,
+  "activeInventoryPreserved": "ASSIGNED",
+  "emptySnapshot": [
+    {
+      "source_present": 0,
+      "inventory_status": "ASSIGNED",
+      "n": 1
+    },
+    {
+      "source_present": 0,
+      "inventory_status": "HELD_FOR_REVIEW",
+      "n": 1
+    }
+  ],
+  "limits": "Sequential actual import commits with active assignment; no Provider or real customer; concurrent allocation not exercised."
+}

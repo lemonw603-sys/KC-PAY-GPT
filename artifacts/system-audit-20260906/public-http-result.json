@@ -1,0 +1,20 @@
+[
+  {
+    "url": "https://plus.vibebridge.top/",
+    "status": 200,
+    "finalUrl": "https://plus.vibebridge.top/",
+    "contentType": "text/html; charset=utf-8",
+    "bytes": 18234
+  },
+  {
+    "url": "https://ops.vibebridge.top/admin",
+    "status": 200,
+    "finalUrl": "https://ops.vibebridge.top/admin/login",
+    "contentType": "text/html; charset=utf-8",
+    "bytes": 1863
+  },
+  {
+    "url": "https://ops.vibebridge.top/api/v1/admin/session",
+    "status": 401
+  }
+]

@@ -1,0 +1,11 @@
+{
+  "mode": "ACTUAL_REPOSITORY_FAKE_DB",
+  "result": {
+    "attemptId": "fixture-pending-topup",
+    "state": "SETTLED",
+    "currentBalance": "18",
+    "minimum": "18"
+  },
+  "readsOnlyGlobalMinimum": true,
+  "note": "No read of requested top-up amount, pre-top-up balance, or provider transaction in this function; no claim that a production top-up was misclassified."
+}
