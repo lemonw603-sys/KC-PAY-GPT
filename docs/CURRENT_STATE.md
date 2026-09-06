@@ -1,5 +1,7 @@
 # 当前生产状态快照｜2026-09-06
 
+> **2026-09-07 悬空订单已收口（生产，最新）**：release `/opt/pojia/releases/20260907-manual-payment-1699197`（commit `1699197`，847 文件 manifest OK，回滚点 `20260906-manual-20x-af15932`，部署前备份 `pojia-20260906T163146Z.sql.gz.enc` 完整）。新增后台 Browser 控制动作 `CONFIRM_MANUAL_PAYMENT`（人工付款已完成）；运营者于 2026-09-06 16:40 UTC 以 `UPGRADED_20X` 收口订单 `PJV1-RCbAiI0IkGMy-hCBgMSn`：订单 `RECHARGE_SUCCESS`、attempt `SUCCESS/SETTLED`、run `COMPLETED/PAYMENT_CONFIRMED/PLUS_CONFIRMED/RELEASED`、dispatch `COMPLETED`、账本 `CONSUMED`、assignment `RELEASED`、租约 0；证据行为 `MANUAL_PAYMENT_CONFIRMED`，`PAYMENT_SUBMIT=0`。全局 ACTIVE/UNKNOWN attempt、open run、open dispatch、RESERVED 账本、open lease、ISSUED permit 均为 0。备用卡 `5501` 现为 `DEPLETED/余额待同步`，需重新导入备用卡完整快照后才可再分配；备用卡台当前可分配 0（`0237` 余额 `$0`）。Web active；API Worker、Browser Worker 仍 inactive。下一步按 `docs/PRODUCT_SIMPLIFICATION_DISCUSSION.md` 末尾「接班实施基线」的顺序执行。
+
 > **2026-09-06 Browser 活动订单连续性纠偏（本地候选，未部署）**：真实 20X 订单中，运营者最终手工完成 Plus；不得记为自动化成功。现场复盘确认 Runtime 在连接时关闭既有页面、Session Bootstrap/上号器重复覆盖 Cookie、异常路径关闭 Profile、付款前失败清空表单以及卡材料 60 秒默认租约会共同破坏连续操作。当前本地已改为：活动 Session/页面保留、唯一订单页复用、LIVE 失败或超时仅 detach、付款前保留表单、卡租约覆盖 5 分钟，并为填表失败增加脱敏阶段定位、为生产 Worker 连接池等待增加测试。Browser 全量 167 项通过 158、环境跳过 9、失败 0；尚未部署。完整规则与问题清单见 `docs/BROWSER_ACTIVE_ORDER_CONTINUITY_2026-09-06.md`。用户未提交的 `docs/DECISIONS.md` 未触碰。
 
 > **同轮生产遗留（只读确认）**：人工 Plus 完成后，目标订单仍为 `RECHARGE_PROCESSING`，attempt=`PREPARED/ACTIVE`、run=`RUNNING/NOT_STARTED`、dispatch=`CLAIMED`（租约已过期）、消费账本=`RESERVED USD 16`、`PAYMENT_SUBMIT=0`。目标身份的 BitBrowser `/api/auth/session` 仍 HTTP 200 且摘要匹配，但账户检查对同一 Access Token 返回 HTTP 401 `token_expired`；浏览器 Token 与订单密文 Token 摘要相同，JWT `exp` 为 2026-09-16。需先实现人工付款接管收口与付款后 Token 刷新路径，不能重放同一三参或直接改库。
@@ -47,7 +49,7 @@
 - 验证：v1 定向 105/105 通过，Browser 既有 128/132（4 环境跳过）基线通过，Node 语法检查通过，真实模板解析通过。未执行生产迁移、未导入生产、未启动 Browser Worker、未创建订单或付款。
 ## 1. 代码、release 与服务
 
-- 生产 `/opt/pojia/current`：`/opt/pojia/releases/20260904-funding-recovery-race-4bf84f9`，直接回滚点 `/opt/pojia/releases/20260904-funding-recovery-0e5a82d`，再前为 `20260904-funding-integer-8caccfb`。
+- 生产 `/opt/pojia/current`：`/opt/pojia/releases/20260907-manual-payment-1699197`（2026-09-07），直接回滚点 `/opt/pojia/releases/20260906-manual-20x-af15932`。本节以下的更早 release 描述只作历史。
 - 客户页已完成公网桌面/390px 移动端、教程弹层、真实历史订单查询、CSP、静态资源哈希和 Console 复验；真实成功订单的成功邮箱/时间线仍待下一单验收。详细证据见 `docs/2026-09-01_customer-recharge-redesign-production-candidate.md`。
 - 客户页 v2 改版（2026-09-03 部署 `3cef082`）：去二次确认一步建单、6 步横向进度条（大号百分比 + easeOutCubic 平滑动画 + 6 节点依次递进）、3 步骤条（填写资料→开通处理→开通完成）、祖母绿压深 + 香槟金点缀配色；资源版本 `?v=10`。公网 curl 现场核实生产 serve 新版 `customer.css`（32213B，含 `--brand:#0b7d5a`/`--gold:#a9843f`）、`customer.js`（22971B，含 `CANON`/`PROGRESS_PCT`/`animateProgress`/`renderProgress`）、`index.html` 引用 `?v=10`，CSP `style-src/script-src 'self'` 放行同源资源；重建自包含预览走真实前端渲染路径目视确认深色/浅色输入页 + 跟踪进度（PAYING 55%/第 3-6 步/6 节点递进）三态正确。实施与验证记录见 `docs/2026-09-03_customer-page-redesign-v2-implementation.md`。
 - 客户页夜间配色微调（2026-09-03 部署 `eba5331`，`?v=11`）：深色态卡片与页面背景明度太近、卡片浮不出——已压深背景 `--bg #0a0e0c→#070a08`、压暗顶部光晕 `--bg-glow→#0e1712`、提亮卡片 `--surface #121814→#18211c`（同步抬 `--surface-2/3` 保持"输入框>卡片>背景"阶梯）、`--line/--line-strong` 边框提亮、`.card` 深色态加顶部 `inset` 微光立体边；仅深色、白天零改动。公网 curl 核实生产 `customer.css?v=11`（32787B）含上述 token、`index.html` 引用 `?v=11`、`/health/ready`=ready。绿金强调色本轮未改（一度试改后按用户澄清"指的是卡片/背景"已还原）。

@@ -68,7 +68,7 @@
 
 | 项目 | 当前事实 | 证据/含义 |
 |---|---|---|
-| 生产 release | `/opt/pojia/releases/20260904-funding-recovery-race-4bf84f9` | 已部署补款失败有界恢复与陈旧卡先同步修复；直接回滚点 `20260904-funding-recovery-0e5a82d` |
+| 生产 release | `/opt/pojia/releases/20260907-manual-payment-1699197`（2026-09-07） | 新增人工付款收口动作 `CONFIRM_MANUAL_PAYMENT`；悬空 20X 订单已收口；直接回滚点 `20260906-manual-20x-af15932` |
 | Web / API Worker | active / active | systemd 现场读取 |
 | Browser Worker | inactive / disabled | 本轮短暂启动完成非付款测试后已停止；未进入真实 Browser 付款 |
 | 接单 / 派发 | true / true | 只读 readiness；当前后台已处于营业业务状态 |
@@ -158,6 +158,7 @@
 
 ### P1｜当前唯一执行项：下一笔真实 Browser 订单前收口
 
+- 2026-09-07 接班（Claude）：悬空订单 `PJV1-RCbAiI0IkGMy-hCBgMSn` 已用新动作「人工付款已完成」收口为成功，全局无遗留活动资金/运行/队列。后续唯一基线是 `docs/PRODUCT_SIMPLIFICATION_DISCUSSION.md` 末尾「接班实施基线」（用户已确认）：付款开关收敛为一个 → 主链路填表顺序/失败保留现场/上号器身份/付款后不另开页 → 一笔真实 Browser 单停在付款前 → 身份池、供给自动化、Worker 常驻并行推进 → 后台五页新版 → 5X/20X。整改矩阵只取直接阻塞主链路的条目。
 - 当前 5980 已是 `$16/AVAILABLE`，不为了制造补款场景自动提现或销卡。
 - 下一笔 Browser 真实订单前，复核默认路线、BitBrowser Profile、付款许可和中止点；一次性说清验收清单。
 - 用户确认本次 Browser 实单要同时验收“无合格 Plus 卡→系统自动开一张带目标余额的新卡→分配→Browser 付款”。现有 5980 不提现、不销卡；测试窗口内只允许用可逆的运营隔离模拟其不可分配，结束后恢复。执行前必须先满足 Provider 开卡余额合同，并确保没有其他新订单被该临时状态影响。
