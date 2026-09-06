@@ -1,6 +1,6 @@
 # AI充值业务项目约定
 
-> AI/工程 Agent 角色：本项目的当前接班执行者。上一模型退出、失败或上下文中断后，新模型必须从事实源和工作区恢复进度，继续设计、编码、测试、验证和交付，而不是重开项目或只做审查。新模型先读 `AGENTS.md` 和 `docs/archive/2026-08/AI_AGENT_ROLE_AND_READING_GUIDE_2026-08-21.md`，不要从根目录 legacy 文件开始漫游。
+> AI/工程 Agent 角色：本项目的当前接班执行者。上一模型退出、失败或上下文中断后，新模型必须从事实源和工作区恢复进度，继续设计、编码、测试、验证和交付，而不是重开项目或只做审查。新模型先读 `AGENTS.md`，按它的四份阅读顺序进入；不要从根目录 legacy 文件或 `docs/archive/` 开始漫游。
 
 ## 项目定位
 
@@ -10,49 +10,20 @@
 
 ## 单一事实源
 
-- 项目方向、总体进度与唯一执行顺序：`docs/PROJECT_MAP.md`（新窗口先读）
-- 卡台来源切换、完整快照、付款未知与对账收敛工作线唯一状态：`docs/CARD_SOURCE_AND_RECONCILIATION_WORKSTREAM.md`
-- 当前生产/代码快照：`docs/CURRENT_STATE.md`（库存后台收敛前封账：`docs/archive/2026-08/PRE_INVENTORY_CONVERGENCE_SEAL_2026-08-28.md`）
-- 当前全链路、控制矩阵、自动补给/库存/资金状态机及验收总册：`docs/PROJECT_OPERATING_MODEL.md`
-- 产品与技术规格：`docs/V1_SPEC.md`
-- 阶段规划与当前状态：`docs/ROADMAP.md`
-- 2026-08-28 统一执行主线：`docs/archive/2026-08/MASTER_EXECUTION_PLAN_2026-08-28.md`（对抗审查：`docs/archive/2026-08/MASTER_EXECUTION_PLAN_ADVERSARIAL_REVIEW_2026-08-28.md`）
-- 外部接口合同与验证记录：后续放在 `docs/contracts/`
-- 项目从起点到当前的完整历史交接：`docs/archive/2026-08/PROJECT_HANDOFF_FULL_HISTORY_2026-08-21.md`
-- 跨窗口交接、生产横向平台、真实测试证据与事实/未验证边界：`docs/archive/2026-08/SINGLE_SOURCE_OF_TRUTH_2026-08-21.md`
-- 协作与交付执行协议：`docs/PROJECT_OPERATING_PROTOCOL.md`
-- 用户确认后的最终需求基线：`docs/archive/2026-08/FINAL_REQUIREMENTS_BASELINE_2026-08-21.md`
-- 当前 Plus 运营后台与最终需求的对齐审查：`docs/archive/2026-08/ADMIN_ALIGNMENT_AUDIT_2026-08-21.md`
-- 用户确认的实施主线、阶段退出条件和 Browser 时序：`docs/archive/2026-08/IMPLEMENTATION_PLAN_FINAL_2026-08-21.md`
-- Browser 自动充值执行器的需求、架构、接口和恢复基线：`docs/archive/2026-08/BROWSER_RECHARGE_EXECUTOR_BASELINE_2026-08-21.md`
-- Browser 当前完成项、准确停止点和下一动作：`docs/archive/2026-08/BROWSER_CURRENT_STATUS_2026-08-22.md`
-- Browser 子项目 BRFE 的跨窗口接班入口：`docs/archive/2026-08/BRFE_HANDOFF_2026-08-22.md`
-- Browser 五阶段大闸门推进路线：`docs/archive/2026-08/2026-08-22_browser-execution-roadmap.md`
-- AI Agent 角色、必读顺序和仓库噪音地图：`docs/archive/2026-08/AI_AGENT_ROLE_AND_READING_GUIDE_2026-08-21.md`
-- Browser Session 上号机制静态合同：`docs/contracts/2026-08-21_browser-session-bootstrap-static-analysis-report.md`
-- Browser hosted Checkout 提链研究、A/B 矩阵和后台可调边界：`docs/archive/2026-08/2026-08-22_browser-checkout-link-research-report.md`
-- Browser 多赛道 PoC、网络证据等级和胜出规则：`docs/archive/2026-08/2026-08-22_browser-multi-lane-poc-baseline.md`
-- Browser 多赛道第一轮对抗式审查与强制修订：`docs/archive/2026-08/2026-08-22_adversarial-review-browser-multi-lane-report.md`
-- Browser 多赛道实验单位、资源租约和敏感 Checkout 工件合同：`docs/contracts/2026-08-22_browser-multi-lane-experiment-contract.md`
-- Browser 离线 WAL、重启恢复与本地 Playwright 页面仿真实施报告：`docs/archive/2026-08/2026-08-22_browser-offline-wal-local-mock-implementation-report.md`
-- Browser WAL-backed 编排、崩溃恢复和 350 单等效容量报告：`docs/archive/2026-08/2026-08-22_browser-durable-orchestrator-capacity-report.md`
-- Browser MySQL 事务映射实施报告：`docs/archive/2026-08/2026-08-22_browser-mysql-transaction-mapping-implementation-report.md`
-- Browser MySQL 订单/资金 attempt 接口合同：`docs/contracts/2026-08-22_browser-mysql-transaction-mapping-contract.md`
-- Browser artifact vault/资源租约跨进程恢复实施报告：`docs/archive/2026-08/2026-08-22_browser-artifact-vault-resource-lease-recovery-implementation-report.md`
-- Browser artifact vault/资源租约恢复合同：`docs/contracts/2026-08-22_browser-artifact-vault-resource-lease-recovery-contract.md`
-- Browser 后台追溯/人工控制实施报告：`docs/archive/2026-08/2026-08-22_browser-admin-trace-and-control-implementation-report.md`
-- Browser 后台追溯/人工控制合同：`docs/contracts/2026-08-22_browser-admin-trace-and-control-contract.md`
-- Browser 提链/扫码/菲律宾自助充值市场工具评估：`docs/archive/2026-08/2026-08-22_browser-marketplace-tool-assessment-report.md`
-- 扩大 GitHub 固定提交调研与可复用轮子清单：`docs/archive/2026-08/2026-08-22_browser-automation-github-expanded-research-report.md`
-- 外部账号安全指南与指纹浏览器适用性评估：`docs/archive/2026-08/2026-08-22_external-guide-browser-fingerprint-assessment-report.md`
-- 本次只读运行时核验与未证明边界：`docs/archive/2026-08/LIVE_RUNTIME_AUDIT_2026-08-22.md`
-- 当前执行顺序修订（不改变业务方向）：`docs/archive/2026-08/EXECUTION_PLAN_REVISION_2026-08-22.md`
+- 目标、生产事实、唯一执行顺序：`docs/PROJECT_MAP.md`（新窗口先读，一页）
+- 生产事实表：`docs/CURRENT_STATE.md`
+- 改造基线（用户确认）：`docs/PRODUCT_SIMPLIFICATION_DISCUSSION.md` 末尾「接班实施基线」；整改矩阵：`docs/SYSTEM_REMEDIATION_MATRIX_2026-09-06.md`
+- 决策账本：`docs/DECISIONS.md`；过程记录：`docs/HANDOFF_LOG.md`
+- 卡台来源与对账工作线：`docs/CARD_SOURCE_AND_RECONCILIATION_WORKSTREAM.md`（冻结稿 `docs/CARD_SOURCE_AND_RECONCILIATION_FROZEN_SPEC.md`）
+- 全链路与状态机总册：`docs/PROJECT_OPERATING_MODEL.md`；产品与技术规格：`docs/V1_SPEC.md`；生产运行手册：`docs/PRODUCTION_PREP_RUNBOOK.md`
+- 外部接口合同：`docs/contracts/`；Browser 研究：`docs/browser-research/`
+- 2026-08 与 2026-09 的历史报告、审查、交接：`docs/archive/`（索引 `docs/archive/INDEX.md`），只作追溯，不作为当前事实
 
 方向或范围发生变化时，先更新上述文档，再改实现。
 
 ## 第一版硬约束
 
-- 仅支持 ChatGPT Plus。
+- 当前生产仅启用 ChatGPT Plus；5X/20X 按接班实施基线顺序启用，Plus 自动化跑通之前不开放。
 - 一张卡同一时刻最多绑定一个活动订单；完成一单并释放活动分配后，可在全局 1–4 次成功充值上限内顺序服务后续订单。容量以消费账本为权威；失败或付款状态不明确时保留占用，绝不释放或换卡重付。
 - 卡台开卡写请求必须使用稳定的 `X-Idempotency-Key`；超时和 502/503 只能用原 Key 重试。
 - 任何付款执行器在提交结果不明确时都进入 `SUBMIT_UNKNOWN`，禁止自动重试、换卡或换执行器；Browser 点击付款后崩溃必须先对账，不能重新点击。

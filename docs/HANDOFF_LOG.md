@@ -1603,3 +1603,12 @@
 - 2026-09-07 用户决定放弃 Codex 在途改动：全部存档到分支 `codex/inflight-20260906-abandoned`（含 browser-mvp A01/A11 延迟交易读取器、admin G15/G16、PROJECT_MAP 顶部状态、整改矩阵与审计工件），主线不再承接 browser-mvp 那部分；仅把有测试的 admin G15/G16 修复、整改矩阵文档和审计工件提回主线。用户自己未提交的 `docs/DECISIONS.md` 重写保留在工作区，未触碰。
 - 2026-09-07 备用卡快照重导后发现导入缺陷：`manual-card-import-service` 的 `activeRiskSql` 把 `funds_risk_state=SETTLED`（已成功结清）也算作活动风险，导致成功付过款的手工卡在后续导入中永远保留 `DEPLETED`，与「Plus 一卡多单」冲突；待随下一次发布修复。当前 `5501=$8.87/DEPLETED`、`0237=$0/AVAILABLE`，备用卡台可分配 0，HNSKJ `5980=$16/AVAILABLE`。
 - 对抗审查修订（用户已确认）：第 2 步规格前先做两个只读验证（结账接口在常驻浏览器身份内可用；Pro 能否免 Plus 直接购买）；Browser Worker 改为搬到常开机器（BitBrowser Windows 版）；规格限两页一天；每步完成标准为「旧实现已删除」。用户提供免费测试账号用于只读验证。
+
+## 2026-09-07｜文档压平与入口重写
+
+- 227 份历史报告按月 `git mv` 到 `docs/archive/2026-08|2026-09|undated/`，45 个文件的引用同步改写，`docs/archive/INDEX.md` 提供旧→新对照（提交 `3fefb89`）。docs 顶层从 242 个文件降到 15 个。
+- `docs/PROJECT_MAP.md` 重写为一页（原 402 行 → 约 70 行）：目标原则、主链、生产事实表、已完成/未完成、唯一执行顺序（用户 09-07 确认版）、不做、维护纪律；旧版原文存 `docs/archive/2026-09/PROJECT_MAP_snapshot_2026-09-07.md`。
+- `docs/CURRENT_STATE.md` 重写为事实表（原 491 行 → 约 45 行），每行带核对时间与证据方式；旧版存 `docs/archive/2026-09/CURRENT_STATE_snapshot_2026-09-07.md`。
+- `AGENTS.md` 阅读顺序缩为四份（CLAUDE.md → PROJECT_MAP → CURRENT_STATE → 接班实施基线）；`CLAUDE.md` 事实源清单从 37 条缩为 8 条，「仅支持 Plus」改为「当前生产仅启用 Plus，5X/20X 按基线顺序启用」。
+- 备用卡导入缺陷修复 `45f953c`（SETTLED 不再冻结卡片，新增隔离 MySQL 回归 2/2）本地已提交，随下一次发布上线。
+- 用户已提供免费测试账号用于只读验证（凭证按需提供，不入仓库）；Browser 卡台下一单用 HNSKJ 还是给备用卡充值待用户决定。
