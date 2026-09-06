@@ -386,3 +386,7 @@ Browser 候选对齐后发现 v1 客户首页静态 `sendFile` 在候选 worktre
 ### 2026-09-06 备用卡 `$20` Browser 首单付款前通过
 
 订单 `PJV1-AH6M688B3Wfv5_vxISmp` 已冻结备用卡台 A，尾号 `5501` 余额 `$20`。真实 BitBrowser 观察已通过身份/FREE、MockAddress DE、PHP 和零税：`₱1100/税117.86` 重报价为 `₱982.14/税0`，唯一 Subscribe 可用，付款 0 次。页面 drift 候选修复完成并通过 Browser 全量 0 fail；下一步只做单一 commit 发布与生产复核，然后请求一次真实付款确认。
+
+### 2026-09-06 付款前修复发布完成
+
+Stripe 地址 iframe 与 Checkout summary 漂移修复已发布为 `/opt/pojia/releases/20260906-stripe-live-a9e65e3`；全量 manifest、备份、服务健康和 LIVE check 通过。订单/卡/账本保持原付款前边界，Browser run 与 permit 为 0。当前执行顺序：取得唯一真实付款确认 → 短时开启订单绑定付款权限 → 单次点击 → Plus/取消续费/账本/客户状态/通知收口 → 立即关闭付款权限。

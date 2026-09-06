@@ -468,3 +468,7 @@
 ## 2026-09-06｜备用卡 `$20` Browser 付款前状态
 
 生产订单 `PJV1-AH6M688B3Wfv5_vxISmp` 为 Browser/备用卡台 A，尾号 `5501` 余额 `$20`，attempt=`PREPARED/ACTIVE`、dispatch=`QUEUED`、账本=`RESERVED $16`。真实 BitBrowser 页面已证明身份匹配/FREE、MockAddress DE，并从 `PHP 1100/税117.86` 重报价到 `PHP 982.14/税0`；付款 0 次。发现的 Checkout summary 与 Stripe 地址 iframe 漂移已在本地修复并通过 Browser `156/0 fail`，待部署复核后进入唯一付款确认。
+
+### 2026-09-06 Stripe drift 修复已部署
+
+当前生产 release 为 `/opt/pojia/releases/20260906-stripe-live-a9e65e3`（commit `a9e65e3`），844 文件 manifest、备份、Web/API Worker、live/ready 和本机 LIVE check 均通过。Browser Worker与付款仍关闭；目标订单状态未漂移，run/permit 均为 0。可在一次最终确认后进入唯一真实付款点。

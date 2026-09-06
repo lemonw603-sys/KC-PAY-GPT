@@ -128,3 +128,7 @@ D6 已完成生产后台/API、Browser 卡源双向切换、不接管旧订单�
 - 订单 `PJV1-AH6M688B3Wfv5_vxISmp` 已证明冻结并使用 `manual_excel/backup-a`，卡尾号 `5501`，生产余额 `$20`；没有调用 HNSKJ 卡资料接口。
 - Session 身份/FREE、MockAddress DE、PHP、零税、金额一致和唯一提交按钮均在真实 Checkout 通过：`₱1100/税117.86` → `₱982.14/税0`。
 - 本轮没有付款；修复 Stripe 地址 iframe/Checkout summary 漂移后需先部署复核，再进入唯一真实付款点。
+
+### 2026-09-06｜备用卡 Browser 付款前修复已发布
+
+`a9e65e3` 已完整发布并通过 844 文件 manifest、备份、服务健康和 LIVE check。目标订单仍冻结 `manual_excel/backup-a`，卡 `5501/$20`，无 Browser run/permit。真实付款确认后，手工卡以 Browser Plus 确认+共享账本收口，不调用 HNSKJ 对账。

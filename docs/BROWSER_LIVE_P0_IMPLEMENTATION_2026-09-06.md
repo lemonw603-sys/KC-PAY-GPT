@@ -151,3 +151,11 @@ LIVE `--check` 不需要订单确认，且强制进程与数据库付款开关�
 - 卡字段 `3/3` 清空，Session Cookie 清理，Profile 关闭，`submitCalls=0`。
 - 现场暴露两项 drift：summary 不再稳定含 `h2`；Stripe 地址 iframe 延迟挂载且存在隐藏/跨 frame 控件。候选代码已改为 summary 容器识别、唯一可见控件定位及 hydration 等待；Browser 全量 `156 total / 149 pass / 7 environment skip / 0 fail`。
 - 脱敏证据：`artifacts/browser-manual-card-prepayment-20260906/`。修复部署并生产复核前仍不得付款。
+
+## 9. Stripe drift 修复生产发布
+
+- 代码 release：`/opt/pojia/releases/20260906-stripe-live-a9e65e3`，commit `a9e65e34b071772ddfb2aa13800c65c019901426`，844 个 tracked 文件全量 manifest 通过；归档 SHA-256 `bd9eb666f4e0ee8839d7362052cb042dfd7ad161c48d46b2fd579618e06c7baa`。
+- 部署前备份：`/var/backups/pojia/pojia-20260906T025642Z.sql.gz.enc`，完整性通过；回滚 release：`/opt/pojia/releases/20260906-manual-browser-86a53ef`。
+- Web/API Worker active，live/ready 正常；Browser Worker inactive/disabled，旧自动开卡 timer inactive，数据库付款开关 false。
+- 本机接生产库的正式 `production-live-worker.js --check` 返回 READY。部署后订单仍是 Browser/备用卡 A/5501/$20、PREPARED/ACTIVE、QUEUED、RESERVED；Browser run=0、payment permit=0。
+- 下一步只剩最终真实付款确认；确认前仍不会点击 Subscribe。

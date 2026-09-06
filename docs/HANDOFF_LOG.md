@@ -1553,3 +1553,10 @@
 - BitBrowser 真实页面：身份匹配、FREE、MockAddress DE；初始 `PHP 1100/tax 117.86`，最终 `PHP 982.14/tax 0`；唯一 Subscribe 可见可用，未点击。
 - 发现并修复 summary `h2` 漂移及 Stripe 隐藏/跨 frame/延迟地址控件；全量 Browser 156 项、0 fail。脱敏证据在 `artifacts/browser-manual-card-prepayment-20260906/`。
 - 卡字段、Session Cookie、Profile 已清理；付款 0 次。下一步提交、部署修复并生产复核，然后进行唯一一次付款确认。
+
+## 2026-09-06｜Stripe drift 修复生产发布
+
+- release `/opt/pojia/releases/20260906-stripe-live-a9e65e3`，commit `a9e65e3`，844/844 manifest OK；备份 `/var/backups/pojia/pojia-20260906T025642Z.sql.gz.enc` OK；回滚 `20260906-manual-browser-86a53ef`。
+- Web/API Worker active，live/ready OK；Browser Worker和旧自动开卡 timer inactive/disabled，付款开关 false。
+- LIVE `--check=READY`；订单仍 PREPARED/ACTIVE、dispatch QUEUED、ledger RESERVED，run=0、permit=0。
+- 下一动作是唯一真实付款确认，随后只对该订单短时开启付款并完成全链路收口。
