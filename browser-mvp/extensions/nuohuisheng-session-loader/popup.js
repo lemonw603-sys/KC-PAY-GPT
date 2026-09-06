@@ -58,20 +58,15 @@ async function writeSessionCookie(name, value) {
   }
 }
 
-async function clearSessionCookies(baseName) {
-  const cookies = await chrome.cookies.getAll({ domain: "chatgpt.com" });
-  const matching = cookies.filter((cookie) => cookie.name === baseName || cookie.name.startsWith(`${baseName}.`));
-  await Promise.all(matching.map((cookie) => chrome.cookies.remove({
-    url: CHATGPT_URL,
-    name: cookie.name
-  })));
-}
-
 async function writeSessionCookies(name, value) {
-  await clearSessionCookies(name);
+  const existing = (await chrome.cookies.getAll({ domain: "chatgpt.com" }))
+    .filter((cookie) => isSessionCookieName(cookie.name, SUPPORTED_SESSION_COOKIE_NAMES));
+  if (existing.length > 0) {
+    return { chunkCount: existing.length, existingSessionPreserved: true };
+  }
   const chunks = splitSessionCookie(name, value);
   for (const chunk of chunks) await writeSessionCookie(chunk.name, chunk.value);
-  return chunks.length;
+  return { chunkCount: chunks.length, existingSessionPreserved: false };
 }
 
 toggleToken.addEventListener("click", () => {
@@ -89,10 +84,12 @@ loginForm.addEventListener("submit", async (event) => {
   try {
     const { name, value } = parseSessionInput(tokenInput.value, cookieType.value);
     setBusy(true);
-    await writeSessionCookies(name, value);
+    const written = await writeSessionCookies(name, value);
 
     tokenInput.value = "";
-    setStatus("会话已写入，正在打开 ChatGPT。", "success");
+    setStatus(written.existingSessionPreserved
+      ? "当前 Profile 已有会话，已保留原登录并打开 ChatGPT。请在订单完成后再清理或更换客户。"
+      : "会话已写入，正在打开 ChatGPT。", "success");
     await refreshSessionBadge();
     await chrome.tabs.create({ url: CHATGPT_URL });
     window.close();

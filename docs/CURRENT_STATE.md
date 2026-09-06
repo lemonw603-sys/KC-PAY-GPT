@@ -1,5 +1,7 @@
 # 当前生产状态快照｜2026-09-06
 
+> **2026-09-06 Browser 活动订单连续性纠偏（本地候选，未部署）**：真实 20X 订单中，运营者最终手工完成 Plus；不得记为自动化成功。现场复盘确认 Runtime 在连接时关闭既有页面、Session Bootstrap/上号器重复覆盖 Cookie、异常路径关闭 Profile、付款前失败清空表单以及卡材料 60 秒默认租约会共同破坏连续操作。当前本地已改为：活动 Session/页面保留、唯一订单页复用、LIVE 失败或超时仅 detach、付款前保留表单、卡租约覆盖 5 分钟，并为填表失败增加脱敏阶段定位、为生产 Worker 连接池等待增加测试。Browser 全量 167 项通过 158、环境跳过 9、失败 0；尚未部署。完整规则与问题清单见 `docs/BROWSER_ACTIVE_ORDER_CONTINUITY_2026-09-06.md`。用户未提交的 `docs/DECISIONS.md` 未触碰。
+
 > **2026-09-06 20X Browser 生产发布**：`MANUAL_20X_HANDOFF` 已由 commit `af1593285421810564303b99a0eb6505722be0ef` 发布为 `/opt/pojia/releases/20260906-manual-20x-af15932`，845 文件 manifest 通过；回滚点 `/opt/pojia/releases/20260906-cancel-browser-de0485b`，部署前加密备份 `/var/backups/pojia/pojia-20260906T042623Z.sql.gz.enc` 完整。Plus 与卡交易确认后不取消续费、不提前完成订单，Profile 保留，人工升级后由后台“确认 20X 已升级”收口；普通 Plus 默认仍取消续费。部署前审查额外发现并修复生产入口/恢复路径遗漏传递模式的问题。全新 MySQL 8.4 集成 7/7、Browser 164/155/9/0、v1 557/510/47/0。部署后 Web 与公网健康 200，API Worker/Browser Worker/旧自动开卡均 inactive，Browser Worker disabled，付款开关/Profile 生产权限 false，活动 Browser run/dispatch/资金/permit 均为 0；本机正式 LIVE `--check=READY`，本轮没有订单或付款。 备用卡 `5501` 当前为 `152 USD / AVAILABLE / active`，无活动 assignment/consumption；运营者已确认实际余额确为 `$152`，数据库与业务事实一致。
 
 

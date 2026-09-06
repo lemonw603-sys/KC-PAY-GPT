@@ -172,6 +172,16 @@ function observation() {
   };
 }
 
+export async function withPoolLifecycle(pool, operation) {
+  if (!pool || typeof pool.end !== 'function') throw new TypeError('pool.end is required');
+  if (typeof operation !== 'function') throw new TypeError('operation is required');
+  try {
+    return await operation();
+  } finally {
+    await pool.end();
+  }
+}
+
 export async function runProductionLiveBrowserWorker({ env = process.env, browserType = chromium } = {}) {
   const config = loadProductionLiveBrowserConfig(env);
   const database = loadRuntimeDatabaseConfig({
@@ -179,7 +189,7 @@ export async function runProductionLiveBrowserWorker({ env = process.env, browse
     DATABASE_TLS: String(config.databaseTls), DATABASE_TLS_CA_BASE64: env.DATABASE_TLS_CA_BASE64,
   });
   const pool = createDatabasePool(database);
-  try {
+  return withPoolLifecycle(pool, async () => {
     await checkProductionLiveFilesystem(config);
     await checkProductionLiveDatabase(pool, config);
     await checkProductionLiveBitBrowser(config);
@@ -279,10 +289,18 @@ export async function runProductionLiveBrowserWorker({ env = process.env, browse
       verificationIntervalMs: config.verificationIntervalMs,
       postPlusAction: config.postPlusAction,
     });
-    return worker.runOnce();
-  } finally {
-    await pool.end();
+    // Await inside the try. Returning the promise directly runs `finally`
+    // immediately, closing the shared MySQL pool while dispatch is starting.
+    return await worker.runOnce();
+  });
+}
+
+function liveFailureDiagnostic(error) {
+  for (let current = error, depth = 0; current && depth < 8; current = current.cause, depth += 1) {
+    const message = String(current?.message || '').trim();
+    if (message) return message.slice(0, 300);
   }
+  return null;
 }
 
 export function parseProductionLiveArgs(argv = []) {
@@ -307,6 +325,8 @@ if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) 
   main().catch((error) => {
     console.error('browser production-live worker failed', {
       name: error?.name || 'Error', code: error?.code || 'BROWSER_LIVE_WORKER_FAILED',
+      ...(process.env.BROWSER_LIVE_DIAGNOSTIC === 'true'
+        ? { diagnostic: liveFailureDiagnostic(error) } : {}),
     });
     process.exitCode = 1;
   });

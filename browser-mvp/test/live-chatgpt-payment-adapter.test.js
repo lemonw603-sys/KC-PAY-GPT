@@ -80,8 +80,12 @@ test('LIVE adapter never submits a non-zero-tax quote', async () => {
     await assert.rejects(() => adapter.submit({
       page, checkout, checkoutContract, cardMaterial: card,
       billingEmail: 'fixture@example.test', operationId: 'op-tax', authorizeSubmit: async () => ({ executeExternal: true }), repriceTimeoutMs: 1_000,
-    }), (error) => error.code === 'CHECKOUT_DRIFT');
+    }), (error) => error.code === 'CHECKOUT_DRIFT'
+      && error.message === 'LIVE Browser payment failed at wait-for-zero-tax-requote');
     assert.equal(await page.evaluate(() => window.clicked || 0), 0);
+    assert.equal(await page.locator('input[autocomplete="cc-number"]').inputValue(), card.pan);
+    assert.equal(await page.locator('input[name="locality"]').inputValue(), card.billingAddress.city);
+    assert.equal(await page.locator('input[autocomplete="billing email"]').inputValue(), 'fixture@example.test');
   } finally { await browser.close(); }
 });
 

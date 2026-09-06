@@ -105,13 +105,24 @@ export class CookieSessionBootstrapAdapter extends SessionProviderPort {
     const staleSessionCookies = existingCookies.filter((cookie) => (
       cookie.name === SESSION_COOKIE_BASE || cookie.name.startsWith(`${SESSION_COOKIE_BASE}.`)
     ));
-    for (const cookie of staleSessionCookies) {
-      await context.clearCookies({ name: cookie.name, domain: cookie.domain, path: cookie.path });
+    // Do not overwrite an authenticated active-order Profile. ChatGPT may
+    // rotate its Session after login or purchase, so replaying the originally
+    // submitted token can destroy a healthy session. Identity probing after
+    // bootstrap remains authoritative. A different customer is admitted only
+    // after terminal lifecycle cleanup removes the previous Session.
+    if (staleSessionCookies.length > 0) {
+      return {
+        cookieCount: staleSessionCookies.length,
+        replacedCookieCount: 0,
+        existingSessionPreserved: true,
+        sessionDigest: sessionLease.sessionDigest,
+      };
     }
     await context.addCookies(entry.cookies);
     return {
       cookieCount: entry.cookies.length,
-      replacedCookieCount: staleSessionCookies.length,
+      replacedCookieCount: 0,
+      existingSessionPreserved: false,
       sessionDigest: sessionLease.sessionDigest,
     };
   }

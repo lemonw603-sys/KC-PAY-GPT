@@ -38,6 +38,12 @@ export function createCardlessPreflightObservation(observation) {
     ...observation,
     checkoutContract: {
       ...observation.checkoutContract,
+      // Cardless preflight proves that Checkout can be created. Stripe secure
+      // fields are a card/payment-stage concern and may be mounted lazily only
+      // after that stage starts; requiring them here made the read-only probe
+      // contradict its own no-card contract.
+      inspectSecureCardFields: false,
+      requireSecureCardFields: false,
       requireZeroTax: false,
       requireQuoteConsistency: false,
     },

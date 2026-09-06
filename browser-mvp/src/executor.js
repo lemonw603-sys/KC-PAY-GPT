@@ -47,6 +47,22 @@ function assertReadOnlyPageContract(contract, { identityProbeRequired = false } 
   if (!identityProbeRequired && contract.markerText.length === 0) throw new ContractError('pageContract.markerText is required');
 }
 
+async function activeOrderPage(context, urlPrefix, timeoutMs) {
+  const existing = typeof context.pages === 'function'
+    ? context.pages().filter((page) => !page.isClosed?.() && page.url().startsWith(urlPrefix))
+    : [];
+  if (existing.length > 1) {
+    throw new BrowserExecutionError(
+      'PROFILE_PAGE_AMBIGUOUS',
+      'active Profile has multiple matching ChatGPT pages; preserve them for operator recovery',
+    );
+  }
+  if (existing.length === 1) return existing[0];
+  const page = await context.newPage();
+  await page.goto(urlPrefix, { waitUntil: 'domcontentloaded', timeout: timeoutMs });
+  return page;
+}
+
 export class BrowserExecutionService {
   constructor({ runtimeAdapter, evidenceSink, sessionProvider = null, clock = () => Date.now(), timeoutMs = 5_000 } = {}) {
     if (!runtimeAdapter || typeof runtimeAdapter.open !== 'function' || typeof runtimeAdapter.close !== 'function') throw new TypeError('runtimeAdapter is required');
@@ -69,6 +85,7 @@ export class BrowserExecutionService {
     fillCardFields = false,
     paymentHandler = null,
     preserveRuntimeOnManualHandoff = false,
+    preserveRuntimeOnFailure = false,
   } = {}) {
     assertJobEnvelope(job);
     if (job.state !== 'RUNNING') throw new BrowserExecutionError('INVALID_STATE', 'job must be RUNNING before Browser execution');
@@ -85,9 +102,9 @@ export class BrowserExecutionService {
     if (paymentHandler != null && typeof paymentHandler !== 'function') {
       throw new TypeError('paymentHandler must be a function');
     }
-    if (preserveRuntimeOnManualHandoff
+    if ((preserveRuntimeOnManualHandoff || preserveRuntimeOnFailure)
       && typeof this.runtimeAdapter.detach !== 'function') {
-      throw new ContractError('runtimeAdapter.detach is required to preserve a manual handoff Profile');
+      throw new ContractError('runtimeAdapter.detach is required to preserve an active-order Profile');
     }
     if (paymentHandler && fillCardFields) {
       throw new ContractError('paymentHandler and non-payment card fill are mutually exclusive');
@@ -107,10 +124,13 @@ export class BrowserExecutionService {
       if (!(await assertLease())) throw new BrowserExecutionError('LEASE_LOST');
       runtime = await this.runtimeAdapter.open(job.manifest, { profileRef: job.profileRef });
       abortRuntime = () => {
-        // Closing the BrowserContext is the only reliable way to interrupt a
-        // Playwright navigation/locator wait after the shared lease is lost.
-        // close() is idempotently attempted again in finally.
-        this.runtimeAdapter.close(runtime).catch(() => undefined);
+        // Disconnecting CDP interrupts Playwright waits without destroying the
+        // active order's visible Profile. Destructive close remains reserved
+        // for a terminal execution path.
+        const stop = preserveRuntimeOnFailure
+          ? this.runtimeAdapter.detach.bind(this.runtimeAdapter)
+          : this.runtimeAdapter.close.bind(this.runtimeAdapter);
+        stop(runtime).catch(() => undefined);
       };
       signal?.addEventListener('abort', abortRuntime, { once: true });
       if (signal?.aborted) throw new BrowserExecutionError('LEASE_LOST');
@@ -149,8 +169,11 @@ export class BrowserExecutionService {
           cookieCount: sessionResult.cookieCount,
         });
       }
-      const page = await runtime.context.newPage();
-      await page.goto(job.metadata.pageContract.urlPrefix, { waitUntil: 'domcontentloaded', timeout: this.timeoutMs });
+      // Reuse the active order's sole ChatGPT page. Creating another tab on
+      // every retry was both wasteful and a needless account-risk signal.
+      const page = await activeOrderPage(
+        runtime.context, job.metadata.pageContract.urlPrefix, this.timeoutMs,
+      );
       if (freezeRequested()) throw new BrowserExecutionError('MANUAL_FREEZE');
       if (!(await assertLease())) throw new BrowserExecutionError('LEASE_LOST');
       let sessionIdentity = null;
@@ -207,6 +230,10 @@ export class BrowserExecutionService {
         try {
           cardMaterialLease = await cardMaterialLeaseProvider.open(cardMaterialRef, {
             purpose: 'browser-nonpayment-preflight',
+            // One lease covers identity, Checkout creation, address/email
+            // entry, requote and the single submit. The old 60-second default
+            // could expire during a normal real page flow and force a restart.
+            ttlMs: 5 * 60_000,
           });
           ownedCardMaterialLease = true;
         } catch (error) {
@@ -352,6 +379,10 @@ export class BrowserExecutionService {
       const failure = error instanceof BrowserExecutionError
         ? error
         : new BrowserExecutionError(error.name === 'TimeoutError' ? 'ACTION_TIMEOUT' : 'PAGE_CHECKPOINT_FAILED', error.message, error);
+      if (preserveRuntimeOnFailure && runtime
+        && !['SESSION_INVALID', 'SESSION_IDENTITY_MISMATCH'].includes(failure.reason)) {
+        preserveRuntime = true;
+      }
       await this._event(job, 'freeze', ++evidenceSequence, { action: 'fail-closed', reason: failure.reason });
       throw failure;
     } finally {

@@ -48,7 +48,7 @@ test('BitBrowser adapter opens an approved ChatGPT profile through CDP and close
   assert.equal(runtime.context, browser.context);
   assert.equal(runtime.profileRef, 'profile:database-uuid');
   assert.equal(runtime.bitbrowserProfileId, profileId);
-  assert.deepEqual(browser.context.closed, ['old-1', 'old-2']);
+  assert.deepEqual(browser.context.closed, []);
   await adapter.close(runtime);
   assert.deepEqual(calls.map((call) => call.path), ['/health', '/browser/list', '/browser/open', '/browser/close']);
 });

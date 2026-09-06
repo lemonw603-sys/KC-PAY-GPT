@@ -85,6 +85,8 @@ test('preflight summary keeps only non-payment operational evidence', () => {
 test('cardless preflight permits the initial VAT quote without weakening the payment contract', () => {
   const strictCheckoutContract = Object.freeze({
     requiredCurrency: 'PHP',
+    inspectSecureCardFields: true,
+    requireSecureCardFields: true,
     requireZeroTax: true,
     requireQuoteConsistency: true,
   });
@@ -94,6 +96,8 @@ test('cardless preflight permits the initial VAT quote without weakening the pay
   };
   const preflight = createCardlessPreflightObservation(observation);
   assert.equal(preflight.checkoutContract.requiredCurrency, 'PHP');
+  assert.equal(preflight.checkoutContract.inspectSecureCardFields, false);
+  assert.equal(preflight.checkoutContract.requireSecureCardFields, false);
   assert.equal(preflight.checkoutContract.requireZeroTax, false);
   assert.equal(preflight.checkoutContract.requireQuoteConsistency, false);
   assert.equal(strictCheckoutContract.requireZeroTax, true);

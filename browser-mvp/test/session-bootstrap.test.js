@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { ContractError } from '../src/contracts.js';
 import { CookieSessionBootstrapAdapter } from '../src/session-bootstrap.js';
 
-test('CookieSessionBootstrapAdapter returns opaque lease and injects only inside the runtime boundary', async () => {
+test('CookieSessionBootstrapAdapter preserves an existing active Profile session', async () => {
   const source = {
     async load(ref) {
       assert.equal(ref, 'session-ref:fixture');
@@ -26,14 +26,11 @@ test('CookieSessionBootstrapAdapter returns opaque lease and injects only inside
     clearCookies: async (filter) => cleared.push(filter),
     addCookies: async (cookies) => added.push(...cookies),
   });
-  assert.equal(result.cookieCount, 1);
-  assert.equal(result.replacedCookieCount, 2);
-  assert.deepEqual(cleared, [
-    { name: '__Secure-next-auth.session-token.0', domain: '.chatgpt.com', path: '/' },
-    { name: '__Secure-next-auth.session-token.1', domain: '.chatgpt.com', path: '/' },
-  ]);
-  assert.equal(added[0].name, '__Secure-next-auth.session-token');
-  assert.equal(added[0].url, 'https://chatgpt.com');
+  assert.equal(result.cookieCount, 2);
+  assert.equal(result.replacedCookieCount, 0);
+  assert.equal(result.existingSessionPreserved, true);
+  assert.deepEqual(cleared, []);
+  assert.deepEqual(added, []);
   await adapter.close(lease);
   await assert.rejects(() => adapter.bootstrap(lease, {
     cookies: async () => [], clearCookies: async () => undefined, addCookies: async () => undefined,

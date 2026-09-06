@@ -454,6 +454,7 @@ export function createBrowserPaymentExecutionRuntime({
         signal,
         paymentHandler,
         preserveRuntimeOnManualHandoff,
+        preserveRuntimeOnFailure: true,
       });
     },
   });

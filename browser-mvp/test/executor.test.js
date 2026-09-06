@@ -58,6 +58,36 @@ test('page checkpoint waits for client hydration before checking the final title
   });
 });
 
+test('executor reuses the sole active-order page instead of opening another tab', async () => {
+  const browser = await chromium.launch({ headless: true });
+  const context = await browser.newContext();
+  const job = makeJob();
+  const existing = await context.newPage();
+  await existing.goto(job.metadata.pageContract.urlPrefix);
+  let newPageCalls = 0;
+  const runtimeAdapter = {
+    async open() {
+      return { context: {
+        pages: () => context.pages(),
+        newPage: async () => { newPageCalls += 1; return context.newPage(); },
+      } };
+    },
+    async close() {},
+  };
+  try {
+    const executor = new BrowserExecutionService({
+      runtimeAdapter, evidenceSink: new MemoryEvidenceSink(), timeoutMs: 1_000,
+    });
+    const result = await executor.execute(job, { assertLease: async () => true });
+    assert.equal(result.status, 'OBSERVED');
+    assert.equal(newPageCalls, 0);
+    assert.equal(context.pages().length, 1);
+  } finally {
+    await context.close();
+    await browser.close();
+  }
+});
+
 test('executor bootstraps an opaque Session lease before page observation', async () => {
   const runtimeAdapter = new LocalPlaywrightRuntimeAdapter({ browserType: chromium });
   const evidenceSink = new MemoryEvidenceSink();
@@ -102,7 +132,7 @@ test('card material preflight is read once, never written to the page, and close
     const calls = [];
     const provider = {
       async open(ref, options) {
-        calls.push(['open', ref, options.purpose]);
+        calls.push(['open', ref, options.purpose, options.ttlMs]);
         return { leaseId: 'lease-fixture', cardRef: ref, expiresAt: Date.now() + 60_000 };
       },
       async withMaterial(_lease, callback) {
@@ -122,7 +152,7 @@ test('card material preflight is read once, never written to the page, and close
     assert.equal(result.cardMaterialReady, true);
     assert.equal(result.submitCalls, 0);
     assert.deepEqual(calls, [
-      ['open', 'browser-run:fixture', 'browser-nonpayment-preflight'],
+      ['open', 'browser-run:fixture', 'browser-nonpayment-preflight', 300_000],
       ['withMaterial'],
       ['close', 'lease-fixture'],
     ]);
@@ -144,6 +174,35 @@ test('page drift fails closed and records a redacted freeze reason', async () =>
     assert.equal(evidenceSink.events.at(-1).type, 'freeze');
     assert.equal(evidenceSink.events.at(-1).summary.reason, 'PAGE_DRIFT');
   });
+});
+
+test('LIVE recovery mode detaches instead of destroying the active-order Profile on failure', async () => {
+  const browser = await chromium.launch({ headless: true });
+  const context = await browser.newContext();
+  const calls = [];
+  const runtimeAdapter = {
+    async open() { calls.push('open'); return { context }; },
+    async detach() { calls.push('detach'); },
+    async close() { calls.push('close'); await context.close(); },
+  };
+  const executor = new BrowserExecutionService({
+    runtimeAdapter,
+    evidenceSink: new MemoryEvidenceSink(),
+    timeoutMs: 1_000,
+  });
+  try {
+    await assert.rejects(
+      () => executor.execute(
+        makeJob('<title>Unexpected page</title><main data-browser-mvp-marker>observe-only</main>'),
+        { assertLease: async () => true, preserveRuntimeOnFailure: true },
+      ),
+      (error) => error instanceof BrowserExecutionError && error.reason === 'PAGE_DRIFT',
+    );
+    assert.deepEqual(calls, ['open', 'detach']);
+  } finally {
+    await context.close().catch(() => undefined);
+    await browser.close();
+  }
 });
 
 test('lease loss after navigation fails closed before checkpoint', async () => {

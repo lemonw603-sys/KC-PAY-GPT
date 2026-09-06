@@ -1,5 +1,7 @@
 # AI充值业务｜唯一项目规划地图
 
+> **当前最高优先级（2026-09-06）**：Browser 主线从“重复重建现场”改为“活动订单连续完成”。本地候选已经禁止连接 Profile 时关页、禁止覆盖已有 Session、禁止失败/超时销毁活动 Profile、禁止付款前失败清空表单，并延长单次 Checkout 卡材料租约；尚未部署。下一步仅补脱敏填表阶段定位与终态清理，然后做一次单 Profile、一次上号、付款前停止的连续回归。事实源：`docs/BROWSER_ACTIVE_ORDER_CONTINUITY_2026-09-06.md`。
+
 > **2026-09-06 20X Browser 专用停止点（已部署）**：commit `af15932` 已发布为 `/opt/pojia/releases/20260906-manual-20x-af15932`。显式单订单 `MANUAL_20X_HANDOFF` 在 Plus 与卡交易确认后不取消续费、订单保持处理中、资源租约释放且 BitBrowser Profile 保持打开；人工升级后由后台明确动作收口。普通 Plus 默认行为不变。全新 MySQL 8.4 集成 7/7、Browser 164/155/9/0、v1 557/510/47/0；部署后 LIVE `--check=READY`，Browser Worker 与付款仍关闭，活动 Browser/资金为 0。证据见 `docs/BROWSER_MANUAL_20X_HANDOFF_2026-09-06.md`。 备用卡 `5501` 当前为 `152 USD / AVAILABLE / active`，无活动 assignment/consumption；运营者已确认实际余额确为 `$152`，数据库与业务事实一致。
 
 
