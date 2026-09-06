@@ -1,5 +1,7 @@
 # 当前生产状态快照｜2026-09-06
 
+> **2026-09-06 Browser LIVE P0 第二批最新边界**：本地提交 `bc8ee2f` 已实现可执行但默认失败关闭的单订单 LIVE Worker、路线化交易读取、卡级账单地址绑定，以及 UNKNOWN/付款已确认未收口的同 Profile 只读恢复。全量回归 Browser `151/147/4/0`、v1 `552/505/47/0`；本机 BitBrowser/代理 READY，Pilot Profile 访问 ChatGPT 为 HTTP 200、无 Cloudflare、0 submit。生产现场仍是 `/opt/pojia/releases/20260906-import-errors-c6e9f48`，Web/API Worker active，Browser Worker与旧自动开卡 inactive/disabled；`browser_payment_writes_enabled=false`，活动 Browser run、ACTIVE/UNKNOWN 充值资金、活动 dispatch、活动开卡任务均为 0。**代码完成不等于已部署或可真实付款**；详见 `docs/BROWSER_LIVE_P0_IMPLEMENTATION_2026-09-06.md`。
+
 > **2026-09-06 Browser LIVE P0 本地候选增量**：已从当前代码修正四个真实缺口：卡前 preflight 允许初始 VAT；付款 intent 延后到卡+地址+邮箱+严格零税重报价+最终复核之后；备用卡导入账单地址保留在 JIT 卡资料边界；Browser 卡源匹配改用 `orders.frozen_card_provider_account_id`。已有独立 LIVE 配置/组装候选和同源 Plus/取消续费核验器；Browser 全量 `142 total / 138 pass / 4 skip / 0 fail`，v1 受影响定向 `18/18`。这些都是本地未提交候选，生产仍是 `/opt/pojia/releases/20260906-import-errors-c6e9f48`，Browser Worker/付款/旧自动开卡仍关闭，本轮无付款。
 
 > **2026-09-06 Browser LIVE 执行边界纠偏**：现场核对当前 `main` 和生产 release 后确认，可运行的 `production-readonly-worker.js` 仍强制付款关闭，`payment-executor.js` 仍以 `LIVE_PAYMENT_ADAPTER_UNAVAILABLE` 拒绝 LIVE；独立 live click adapter 未接入生产 Worker，真实 Plus/取消观察器与付款未知调度也未完成运行组装。所以“付款状态机/协调器代码已部署”不等于“真实付款执行已可用”。当前 Browser Worker/Browser 付款仍关闭；先按 `docs/BROWSER_REAL_E2E_ACCEPTANCE_PLAN_2026-09-06.md` 修复 P0 缺口，再提交真实首单。

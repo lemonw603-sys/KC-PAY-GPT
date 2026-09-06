@@ -1519,3 +1519,14 @@
 - Browser 全量：142 total / 138 pass / 4 environment skip / 0 fail；v1 受影响定向 18/18。
 - 工作区仍保留用户 `docs/DECISIONS.md` 修改，本轮未触碰。未部署、未启动 Browser Worker、未付款。
 - 下一步：完成生产 LIVE entrypoint、route-aware transaction reader 和 UNKNOWN 真实调度，然后单 Profile 付款关闭回归。
+
+## 2026-09-06｜Browser LIVE P0 第二批运行组装
+
+- 代码提交 `bc8ee2f`：新增单订单 `production-live-worker.js`，`--check` 强制付款关闭且不要求订单确认，`--once` 同时要求进程/数据库/Profile 付款权限与订单绑定确认。
+- 新增 HNSKJ/手工卡路线化交易读取、实体卡级 MockAddress 稳定绑定、付款后专用 Session 来源和同 BitBrowser Profile 只读恢复。
+- 修正两个恢复级缺口：SQL 直接按批准订单过滤 due verification；付款确认与后续核验计划在同一事务建立，避免确认后崩溃形成无人接管状态。
+- 成功恢复可继续收口 Plus、取消续费、订单/attempt/run、消费账本、assignment 和 dispatch；无确定性拒付证据时不会仅因账号仍 FREE 而安全释放。
+- 回归：Browser `151 total / 147 pass / 4 skip / 0 fail`，v1 `552 / 505 / 47 / 0`，语法与 diff 检查通过。
+- 本机：代理和 BitBrowser API READY；Pilot Profile HTTP 200、无 Cloudflare、1 Context、0 submit。
+- 生产只读：仍为 release `c6e9f48`；Browser Worker/付款/旧自动开卡关闭，活动 Browser run、ACTIVE/UNKNOWN 充值资金、活动 dispatch、活动开卡任务均为 0。未部署、未创建订单、未填写卡片、未付款。
+- 详细证据：`docs/BROWSER_LIVE_P0_IMPLEMENTATION_2026-09-06.md`。下一步构建单一 commit 候选，以付款关闭方式部署并执行 LIVE `--check` 与订单级非付款回归。
