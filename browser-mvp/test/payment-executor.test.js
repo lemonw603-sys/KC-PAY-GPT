@@ -18,6 +18,7 @@ function harness({ outcome = 'CONFIRMED', plusActive = true, cancellationConfirm
     async commitPaymentSubmissionIntent(input) { calls.push(['intent', input]); return { executeExternal: true }; },
     async markPaymentUnknown(input) { calls.push(['unknown', input]); },
     async markPaymentConfirmed(input) { calls.push(['confirmed', input]); },
+    async schedulePostPaymentVerification(input) { calls.push(['schedule-verification', input]); },
     async recordPlusActivation(input) { calls.push(['plus-record', input]); },
     async recordCancellationConfirmed(input) { calls.push(['cancel-record', input]); },
   };

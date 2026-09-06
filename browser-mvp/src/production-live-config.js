@@ -48,13 +48,15 @@ export function loadProductionLiveBrowserConfig(env = process.env) {
   if (required(env, 'BROWSER_WORKER_MODE') !== 'PRODUCTION_LIVE') {
     throw new ProductionLiveConfigError('BROWSER_WORKER_MODE must be PRODUCTION_LIVE');
   }
-  const approvedOrderId = required(env, 'BROWSER_LIVE_ORDER_ID');
-  if (required(env, 'BROWSER_LIVE_OPERATION_CONFIRMATION')
+  const checkOnly = env.BROWSER_WORKER_CHECK_ONLY === 'true';
+  const approvedOrderId = checkOnly ? null : required(env, 'BROWSER_LIVE_ORDER_ID');
+  if (!checkOnly && required(env, 'BROWSER_LIVE_OPERATION_CONFIRMATION')
     !== `${PRODUCTION_LIVE_CONFIRMATION_PREFIX}${approvedOrderId}`) {
     throw new ProductionLiveConfigError('LIVE confirmation must be bound to the approved order ID');
   }
   for (const name of ['BROWSER_PAYMENT_WRITES_ENABLED', 'BROWSER_PAYMENT_EXECUTOR_ENABLED']) {
-    if (env[name] !== 'true') throw new ProductionLiveConfigError(`${name} must be exactly true`);
+    const expected = checkOnly ? 'false' : 'true';
+    if (env[name] !== expected) throw new ProductionLiveConfigError(`${name} must be exactly ${expected}`);
   }
   if (env.BROWSER_PAYMENT_EXECUTOR_MODE !== 'LIVE') {
     throw new ProductionLiveConfigError('BROWSER_PAYMENT_EXECUTOR_MODE must be exactly LIVE');
@@ -67,11 +69,14 @@ export function loadProductionLiveBrowserConfig(env = process.env) {
   }
   for (const name of [
     'CHATGPT_SESSION_COOKIE', 'CHATGPT_TOKEN', 'SESSION_JSON',
-    'CARD_NUMBER', 'CARD_EXPIRY', 'CARD_CVC', 'HNSKJ_API_KEY', 'ZZSHU_API_KEY',
+    'CARD_NUMBER', 'CARD_EXPIRY', 'CARD_CVC', 'ZZSHU_API_KEY',
   ]) {
     if (String(env[name] ?? '').trim()) {
       throw new ProductionLiveConfigError(`${name} must be absent from the LIVE Worker environment`);
     }
+  }
+  if (env.PROVIDER_READS_ENABLED !== 'true' && String(env.HNSKJ_API_KEY ?? '').trim()) {
+    throw new ProductionLiveConfigError('HNSKJ_API_KEY requires PROVIDER_READS_ENABLED=true');
   }
   const executablePath = required(env, 'BROWSER_CHROME_EXECUTABLE_PATH');
   try { accessSync(executablePath, constants.X_OK); } catch {
@@ -86,6 +91,7 @@ export function loadProductionLiveBrowserConfig(env = process.env) {
     throw new ProductionLiveConfigError('LIVE runtime, artifact, resource and material keys must be distinct');
   }
   return Object.freeze({
+    checkOnly,
     approvedOrderId,
     databaseUrl: required(env, 'DATABASE_URL'),
     databaseTls: env.DATABASE_TLS === 'true',
@@ -93,8 +99,16 @@ export function loadProductionLiveBrowserConfig(env = process.env) {
     executorProfileId: required(env, 'BROWSER_EXECUTOR_PROFILE_ID'),
     bitbrowserApiBaseUrl: localApiUrl(required(env, 'BITBROWSER_API_BASE_URL')),
     bitbrowserProfileId: required(env, 'BITBROWSER_PROFILE_ID'),
+    providerReadsEnabled: env.PROVIDER_READS_ENABLED === 'true',
+    hnskjApiBaseUrl: String(env.HNSKJ_API_BASE_URL || 'https://card.hnskj.vip/api/open/v1').trim(),
+    hnskjApiKey: env.PROVIDER_READS_ENABLED === 'true'
+      ? String(env.HNSKJ_API_KEY || '').trim() || null
+      : null,
+    billingAddressState: String(env.BROWSER_BILLING_ADDRESS_STATE || 'DE').trim().toUpperCase(),
+    billingAddressName: required(env, 'BROWSER_BILLING_ADDRESS_NAME'),
     executablePath,
     walPath: required(env, 'BROWSER_WAL_PATH'),
+    cardLeasePath: required(env, 'BROWSER_CARD_LEASE_PATH'),
     runtimeHmacKey, artifactKey, resourceHmacKey, materialEncryptionKey,
     leaseSeconds: integer(env, 'BROWSER_WORKER_LEASE_SECONDS', { min: 10, max: 3600, fallback: 60 }),
     executionTimeoutMs: integer(env, 'BROWSER_EXECUTION_TIMEOUT_MS', { min: 1_000, max: 300_000, fallback: 60_000 }),

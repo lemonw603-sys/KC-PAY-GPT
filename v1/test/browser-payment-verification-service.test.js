@@ -5,9 +5,11 @@ import { createBrowserPaymentVerificationService } from '../src/services/browser
 function harness({ row = {}, observation = { outcome: 'UNKNOWN' } } = {}) {
   const calls = [];
   const repository = {
-    async listPaymentVerificationsDue() { return [{ runId: 'run-1', verificationCheckCount: 1, ...row }]; },
+    async listPaymentVerificationsDue(input) { calls.push(['list', input]); return [{ runId: 'run-1', verificationCheckCount: 1, ...row }]; },
     async recordPaymentVerificationObservation(input) { calls.push(['observe', input]); },
     async markPaymentConfirmed(input) { calls.push(['confirmed', input]); },
+    async recordPlusActivation(input) { calls.push(['plus', input]); },
+    async recordCancellationConfirmed(input) { calls.push(['cancellation', input]); },
     async markPaymentDeclinedAfterVerification(input) { calls.push(['declined', input]); },
     async escalatePaymentVerification(input) { calls.push(['escalated', input]); },
   };
@@ -21,16 +23,26 @@ test('verification coordinator keeps short unknown results read-only and schedul
     clock: () => new Date('2026-09-06T00:00:00Z'),
   }).runOnce();
   assert.equal(result.status, 'PROCESSED');
-  assert.equal(h.calls[0][0], 'observe');
-  assert.equal(h.calls[0][1].outcome, 'UNKNOWN');
+  assert.equal(h.calls[1][0], 'observe');
+  assert.equal(h.calls[1][1].outcome, 'UNKNOWN');
 });
 
 test('verification coordinator confirms or declines without a second submit', async () => {
   for (const outcome of ['CONFIRMED', 'DECLINED']) {
-    const h = harness({ observation: { outcome } });
+    const h = harness({ row: { paymentState: 'PAYMENT_UNKNOWN' }, observation: { outcome } });
     await createBrowserPaymentVerificationService({ repository: h.repository, verifier: h.verifier }).runOnce();
-    assert.equal(h.calls[0][0], outcome === 'CONFIRMED' ? 'confirmed' : 'declined');
+    assert.equal(h.calls[1][0], outcome === 'CONFIRMED' ? 'confirmed' : 'declined');
   }
+});
+
+test('confirmed recovery completes Plus and cancellation without remarking an already confirmed payment', async () => {
+  const h = harness({
+    row: { paymentState: 'PAYMENT_CONFIRMED' },
+    observation: { outcome: 'CONFIRMED', postPaymentComplete: true,
+      evidence: { plus: { observed: true }, cancellation: { observed: true }, transactionHash: 'a'.repeat(64) } },
+  });
+  await createBrowserPaymentVerificationService({ repository: h.repository, verifier: h.verifier }).runOnce();
+  assert.deepEqual(h.calls.map(([name]) => name), ['list', 'plus', 'cancellation']);
 });
 
 test('verification deadline or conflict escalates exactly one case', async () => {
@@ -38,5 +50,13 @@ test('verification deadline or conflict escalates exactly one case', async () =>
     observation: { outcome: 'UNKNOWN' } });
   await createBrowserPaymentVerificationService({ repository: h.repository,
     verifier: h.verifier, clock: () => new Date('2026-09-06T00:00:00Z') }).runOnce();
-  assert.equal(h.calls[0][0], 'escalated');
+  assert.equal(h.calls[1][0], 'escalated');
+});
+
+test('verification coordinator constrains recovery to the explicitly approved order', async () => {
+  const h = harness();
+  await createBrowserPaymentVerificationService({
+    repository: h.repository, verifier: h.verifier, approvedOrderId: 'order-approved',
+  }).runOnce();
+  assert.equal(h.calls[0][1].orderId, 'order-approved');
 });

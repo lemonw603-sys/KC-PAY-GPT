@@ -292,24 +292,28 @@ function publicRun(row, extra = {}) {
 
 export function createBrowserExecutionRepository(pool) {
   return {
-    async listPaymentVerificationsDue({ now = new Date(), limit = 20 } = {}) {
+    async listPaymentVerificationsDue({ now = new Date(), limit = 20, orderId = null } = {}) {
       if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
         throw new BrowserExecutionError('limit must be between 1 and 100', 'INVALID_ARGUMENT');
       }
+      const approvedOrder = orderId == null ? null : required(orderId, 'orderId');
       const [rows] = await pool.query(
         `SELECT br.id AS run_id, br.verification_state,
                 br.verification_deadline_at, br.verification_next_check_at,
                 br.verification_check_count, br.payment_state,
+                br.post_payment_state,
                 rat.order_id, rat.executor_profile_id
          FROM browser_runs br
          INNER JOIN recharge_attempts rat ON rat.id = br.recharge_attempt_id
          INNER JOIN orders o ON o.id = rat.order_id
-         WHERE br.status = 'RECONCILE_ONLY'
-           AND br.payment_state = 'PAYMENT_UNKNOWN'
+         WHERE ((br.status = 'RECONCILE_ONLY' AND br.payment_state = 'PAYMENT_UNKNOWN')
+             OR (br.status = 'RUNNING' AND br.payment_state = 'PAYMENT_CONFIRMED'
+               AND br.post_payment_state IN ('PLUS_PENDING','CANCELLATION_PENDING')))
            AND br.verification_state = 'VERIFYING_PAYMENT'
            AND (br.verification_next_check_at IS NULL OR br.verification_next_check_at <= ?)
+           ${approvedOrder ? 'AND rat.order_id = ?' : ''}
          ORDER BY COALESCE(br.verification_next_check_at, br.verification_started_at), br.id
-         LIMIT ?`, [now, limit]
+         LIMIT ?`, [now, ...(approvedOrder ? [approvedOrder] : []), limit]
       );
       return rows.map((row) => ({
         runId: row.run_id,
@@ -318,9 +322,52 @@ export function createBrowserExecutionRepository(pool) {
         verificationNextCheckAt: row.verification_next_check_at,
         verificationCheckCount: Number(row.verification_check_count || 0),
         paymentState: row.payment_state,
+        postPaymentState: row.post_payment_state,
         orderId: row.order_id,
         executorProfileId: row.executor_profile_id,
       }));
+    },
+
+    async schedulePostPaymentVerification({ runId, operationId, reasonCode,
+      verificationDeadline, verificationNextCheckAt = null, now = new Date() }) {
+      const run = required(runId, 'runId');
+      const operation = required(operationId, 'operationId');
+      const reason = requireCode(reasonCode, 'reasonCode');
+      const deadline = new Date(verificationDeadline);
+      const nextCheck = verificationNextCheckAt == null ? now : new Date(verificationNextCheckAt);
+      if (!Number.isFinite(deadline.getTime()) || deadline.getTime() <= now.getTime()
+        || !Number.isFinite(nextCheck.getTime()) || nextCheck.getTime() > deadline.getTime()) {
+        throw new BrowserExecutionError('post-payment verification schedule is invalid', 'INVALID_ARGUMENT');
+      }
+      return inTransaction(pool, async (connection) => {
+        const prior = await existingOperation(connection, run, operation);
+        if (prior) return publicRun(await lockRunContext(connection, run), { idempotentReplay: true });
+        const row = await lockRunContext(connection, run);
+        if (row.run_status !== 'RUNNING' || row.payment_state !== 'PAYMENT_CONFIRMED'
+          || !['PLUS_PENDING', 'CANCELLATION_PENDING'].includes(row.post_payment_state)) {
+          throw new BrowserExecutionError('post-payment lifecycle is not pending', 'POST_PAYMENT_NOT_PENDING');
+        }
+        await connection.query(
+          `INSERT INTO browser_operations
+           (browser_run_id, operation_id, operation_type, status, result_code,
+            public_result_json, prepared_at, completed_at)
+           VALUES (?, ?, 'POST_PAYMENT_VERIFICATION_SCHEDULED', 'COMMITTED', ?, ?, ?, ?)`,
+          [run, operation, reason, json({ reasonCode: reason }), now, now]
+        );
+        await connection.query(
+          `UPDATE browser_runs
+           SET verification_state='VERIFYING_PAYMENT',
+               verification_started_at=COALESCE(verification_started_at, ?),
+               verification_deadline_at=?, verification_next_check_at=?,
+               last_error_code=?, updated_at=?
+           WHERE id=? AND status='RUNNING' AND payment_state='PAYMENT_CONFIRMED'`,
+          [now, deadline, nextCheck, reason, now, run]
+        );
+        return publicRun({ ...row, verification_state: 'VERIFYING_PAYMENT',
+          verification_started_at: row.verification_started_at || now,
+          verification_deadline_at: deadline, verification_next_check_at: nextCheck },
+        { idempotentReplay: false });
+      });
     },
     async beginRun({
       attemptId,
@@ -963,10 +1010,18 @@ export function createBrowserExecutionRepository(pool) {
       });
     },
 
-    async markPaymentConfirmed({ runId, operationId, evidenceHash, now = new Date() }) {
+    async markPaymentConfirmed({ runId, operationId, evidenceHash,
+      verificationDeadline = null, verificationNextCheckAt = null, now = new Date() }) {
       const run = required(runId, 'runId');
       const operation = required(operationId, 'operationId');
       const evidence = requireHash(evidenceHash, 'evidenceHash');
+      const deadline = verificationDeadline == null
+        ? new Date(now.getTime() + 5 * 60_000) : new Date(verificationDeadline);
+      const nextCheck = verificationNextCheckAt == null ? now : new Date(verificationNextCheckAt);
+      if (!Number.isFinite(deadline.getTime()) || deadline.getTime() <= now.getTime()
+        || !Number.isFinite(nextCheck.getTime()) || nextCheck.getTime() > deadline.getTime()) {
+        throw new BrowserExecutionError('post-payment verification schedule is invalid', 'INVALID_ARGUMENT');
+      }
 
       return inTransaction(pool, async (connection) => {
         const prior = await existingOperation(connection, run, operation);
@@ -1001,14 +1056,16 @@ export function createBrowserExecutionRepository(pool) {
         const [updated] = await connection.query(
           `UPDATE browser_runs
            SET status = 'RUNNING', payment_state = 'PAYMENT_CONFIRMED',
-               verification_state = 'RESOLVED', verification_next_check_at = NULL,
+               verification_state = 'VERIFYING_PAYMENT',
+               verification_started_at = COALESCE(verification_started_at, ?),
+               verification_deadline_at = ?, verification_next_check_at = ?,
                post_payment_state = 'PLUS_PENDING',
                last_checkpoint_sequence = ?, last_checkpoint_kind = 'PAYMENT_CONFIRMED',
                updated_at = ?
            WHERE id = ? AND ((status = 'RUNNING' AND payment_state = 'PAYMENT_SUBMITTING')
              OR (status = 'RECONCILE_ONLY' AND payment_state = 'PAYMENT_UNKNOWN'
                AND verification_state = 'VERIFYING_PAYMENT'))`,
-          [sequence, now, run]
+          [now, deadline, nextCheck, sequence, now, run]
         );
         if (updated.affectedRows !== 1) {
           throw new BrowserExecutionError('Browser run changed concurrently', 'RUN_CONFLICT');
@@ -1056,7 +1113,9 @@ export function createBrowserExecutionRepository(pool) {
            WHERE o.id=?`, [now, row.order_id]
         );
         return publicRun({ ...row, payment_state: 'PAYMENT_CONFIRMED' }, {
-          runStatus: 'RUNNING', verificationState: 'RESOLVED',
+          runStatus: 'RUNNING', verificationState: 'VERIFYING_PAYMENT',
+          verificationStartedAt: row.verification_started_at || now,
+          verificationDeadlineAt: deadline, verificationNextCheckAt: nextCheck,
           attemptStatus: confirmingUnknown ? 'SUBMITTING' : row.attempt_status,
           fundsRiskState: confirmingUnknown ? 'ACTIVE' : row.funds_risk_state,
           orderStatus: confirmingUnknown ? 'RECHARGE_PROCESSING' : row.order_status,
@@ -1082,7 +1141,7 @@ export function createBrowserExecutionRepository(pool) {
         const prior = await existingOperation(connection, run, operation);
         if (prior) return { runId: run, outcome: result, idempotentReplay: true };
         const row = await lockRunContext(connection, run);
-        if (row.payment_state !== 'PAYMENT_UNKNOWN'
+        if (!['PAYMENT_UNKNOWN', 'PAYMENT_CONFIRMED'].includes(row.payment_state)
           || row.verification_state !== 'VERIFYING_PAYMENT') {
           throw new BrowserExecutionError('payment is not being verified', 'PAYMENT_NOT_VERIFYING');
         }
@@ -1123,7 +1182,7 @@ export function createBrowserExecutionRepository(pool) {
         const prior = await existingOperation(connection, run, operation);
         if (prior) return publicRun(await lockRunContext(connection, run), { idempotentReplay: true });
         const row = await lockRunContext(connection, run);
-        if (row.payment_state !== 'PAYMENT_UNKNOWN'
+        if (!['PAYMENT_UNKNOWN', 'PAYMENT_CONFIRMED'].includes(row.payment_state)
           || row.verification_state !== 'VERIFYING_PAYMENT') {
           throw new BrowserExecutionError('payment is not being verified', 'PAYMENT_NOT_VERIFYING');
         }
@@ -1138,7 +1197,8 @@ export function createBrowserExecutionRepository(pool) {
           `UPDATE browser_runs SET status='HUMAN_REQUIRED',
              verification_state='HUMAN_REQUIRED', verification_next_check_at=NULL,
              last_error_code=?, updated_at=?
-           WHERE id=? AND status='RECONCILE_ONLY'
+           WHERE id=? AND status IN ('RECONCILE_ONLY','RUNNING')
+             AND payment_state IN ('PAYMENT_UNKNOWN','PAYMENT_CONFIRMED')
              AND verification_state='VERIFYING_PAYMENT'`, [reason, now, run]
         );
         await connection.query(
@@ -1332,6 +1392,7 @@ export function createBrowserExecutionRepository(pool) {
         const [runUpdate] = await connection.query(
           `UPDATE browser_runs
            SET status = 'COMPLETED', post_payment_state = 'CANCELLATION_CONFIRMED',
+               verification_state = 'RESOLVED', verification_next_check_at = NULL,
                cancellation_confirmed_at = ?, last_checkpoint_sequence = ?,
                last_checkpoint_kind = 'CANCELLATION_CONFIRMED', finished_at = ?, updated_at = ?
            WHERE id = ? AND status = 'RUNNING' AND post_payment_state = 'CANCELLATION_PENDING'`,
@@ -1364,6 +1425,13 @@ export function createBrowserExecutionRepository(pool) {
            VALUES (?, 'RECHARGE_PROCESSING', 'RECHARGE_SUCCESS', 'SYSTEM', NULL,
              'Browser Plus activation and cancellation confirmed', ?, ?)`,
           [row.order_id, json({ browserRunId: run, attemptId: row.recharge_attempt_id, evidenceHash: evidence }), now]
+        );
+        await connection.query(
+          `UPDATE browser_dispatch_jobs
+           SET status='COMPLETED', completed_at=COALESCE(completed_at, ?),
+               lease_owner=NULL, lease_token_hash=NULL, lease_until=NULL, updated_at=?
+           WHERE recharge_attempt_id=? AND status IN ('QUEUED','CLAIMED')`,
+          [now, now, row.recharge_attempt_id]
         );
         return publicRun({
           ...row, run_status: 'COMPLETED', payment_state: 'PAYMENT_CONFIRMED',

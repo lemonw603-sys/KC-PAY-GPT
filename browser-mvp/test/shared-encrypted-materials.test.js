@@ -9,6 +9,7 @@ import {
   browserRunMaterialRef,
   SharedEncryptedCardMaterialSource,
   SharedEncryptedMaterialError,
+  SharedPostPaymentSessionSource,
   SharedEncryptedSessionSource,
 } from '../src/shared-encrypted-materials.js';
 
@@ -109,6 +110,20 @@ test('shared encrypted sources bind material to one active browser_run and short
   assert.equal(cardDb.calls.length, 1);
   assert.deepEqual(cardDb.calls[0].params, ['run-fixture']);
   await cardProvider.close(cardLease);
+});
+
+test('post-payment Session source accepts only the two authoritative reconciliation contexts', async () => {
+  for (const row of [
+    context({ run_status: 'RECONCILE_ONLY', payment_state: 'PAYMENT_UNKNOWN',
+      attempt_status: 'SUBMIT_UNKNOWN', funds_risk_state: 'UNKNOWN', order_status: 'SUBMIT_UNKNOWN' }),
+    context({ run_status: 'RUNNING', payment_state: 'PAYMENT_CONFIRMED',
+      attempt_status: 'SUBMITTING', funds_risk_state: 'ACTIVE', order_status: 'RECHARGE_PROCESSING' }),
+  ]) {
+    const source = new SharedPostPaymentSessionSource({ db: dbReturning(row), encryptionKey: key, now: () => nowMs });
+    assert.equal((await source.load('browser-run:run-fixture')).sessionToken, sessionFixture().sessionToken);
+  }
+  const source = new SharedPostPaymentSessionSource({ db: dbReturning(context()), encryptionKey: key, now: () => nowMs });
+  await assert.rejects(() => source.load('browser-run:run-fixture'), (error) => error.code === 'SESSION_INVALID');
 });
 
 test('shared card material preserves a valid imported billing address and rejects an invalid one', async () => {

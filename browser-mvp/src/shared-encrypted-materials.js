@@ -101,6 +101,29 @@ function assertPrePaymentContext(row, unavailableCode) {
   }
 }
 
+function assertPostPaymentContext(row, unavailableCode) {
+  const paymentUnknown = row.run_status === 'RECONCILE_ONLY'
+    && row.payment_state === 'PAYMENT_UNKNOWN'
+    && row.attempt_status === 'SUBMIT_UNKNOWN'
+    && row.funds_risk_state === 'UNKNOWN'
+    && row.order_status === 'SUBMIT_UNKNOWN';
+  const paymentConfirmed = row.run_status === 'RUNNING'
+    && row.payment_state === 'PAYMENT_CONFIRMED'
+    && row.attempt_status === 'SUBMITTING'
+    && row.funds_risk_state === 'ACTIVE'
+    && row.order_status === 'RECHARGE_PROCESSING';
+  if ((!paymentUnknown && !paymentConfirmed)
+    || row.executor_kind !== 'BROWSER' || row.route_executor_kind !== 'BROWSER'
+    || !row.run_profile_id || row.run_profile_id !== row.attempt_profile_id
+    || !row.route_id || row.attempt_route_id !== row.route_id
+    || row.order_route_id !== row.route_id) {
+    throw new SharedEncryptedMaterialError(
+      'shared Browser Session context is not awaiting post-payment verification',
+      unavailableCode,
+    );
+  }
+}
+
 function normalizeStoredCardCredentials(value) {
   const pan = String(value?.cardNumber ?? value?.pan ?? '').trim();
   const cvc = String(value?.cvv ?? value?.cvc ?? '').trim();
@@ -157,6 +180,32 @@ export class SharedEncryptedSessionSource {
         'SESSION_INVALID',
       );
       assertPrePaymentContext(row, 'SESSION_INVALID');
+      if (!row.session_ciphertext) {
+        throw new SharedEncryptedMaterialError('stored Session is unavailable', 'SESSION_INVALID');
+      }
+      const stored = JSON.parse(decryptSecret(row.session_ciphertext, this.encryptionKey));
+      const validated = validateChatGptSession(stored, { now: this.now });
+      return { sessionToken: validated.session.sessionToken };
+    } catch (error) {
+      if (error instanceof SharedEncryptedMaterialError || error instanceof ContractError) throw error;
+      throw new SharedEncryptedMaterialError('stored Session could not be opened', 'SESSION_INVALID');
+    }
+  }
+}
+
+/** Read-only Session source for an already-submitted Browser payment. */
+export class SharedPostPaymentSessionSource {
+  constructor({ db, encryptionKey, now = () => Date.now() } = {}) {
+    this.runQuery = queryRunner(db);
+    this.encryptionKey = key32(encryptionKey);
+    this.now = now;
+  }
+
+  async load(runRef) {
+    const runId = runIdFromRef(runRef);
+    try {
+      const row = await exactlyOne(this.runQuery, SHARED_SESSION_BY_RUN_SQL, runId, 'SESSION_INVALID');
+      assertPostPaymentContext(row, 'SESSION_INVALID');
       if (!row.session_ciphertext) {
         throw new SharedEncryptedMaterialError('stored Session is unavailable', 'SESSION_INVALID');
       }

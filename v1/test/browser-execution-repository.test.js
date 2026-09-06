@@ -421,6 +421,35 @@ test('recovery state becomes reconcile-only after a committed payment submit int
   assert.equal(result.recoveryMode, 'RECONCILE_ONLY');
 });
 
+test('confirmed payment schedules bounded post-payment recovery for only the approved order', async () => {
+  const pool = scriptedPool((sql) => {
+    if (/verification_next_check_at IS NULL/.test(sql)) return [[], []];
+    if (/FROM browser_operations/.test(sql)) return [[], []];
+    if (/FROM browser_runs br[\s\S]*INNER JOIN recharge_attempts/.test(sql)) {
+      return [[runContext({ payment_state: 'PAYMENT_CONFIRMED',
+        post_payment_state: 'PLUS_PENDING', attempt_status: 'SUBMITTING' })], []];
+    }
+    return updateOk();
+  });
+  const repository = createBrowserExecutionRepository(pool);
+  const scheduled = await repository.schedulePostPaymentVerification({
+    runId: 'run-1', operationId: 'schedule-post-payment:1',
+    reasonCode: 'PLUS_ACTIVATION_UNCONFIRMED',
+    verificationNextCheckAt: new Date('2026-08-22T00:02:05.000Z'),
+    verificationDeadline: new Date('2026-08-22T00:07:00.000Z'),
+    now: new Date('2026-08-22T00:02:00.000Z'),
+  });
+  assert.equal(scheduled.verificationState, 'VERIFYING_PAYMENT');
+  assert.match(pool.calls.map(({ sql }) => sql).join('\n'), /POST_PAYMENT_VERIFICATION_SCHEDULED/);
+
+  pool.calls.length = 0;
+  await repository.listPaymentVerificationsDue({
+    orderId: 'order-1', now: new Date('2026-08-22T00:03:00.000Z'), limit: 1,
+  });
+  assert.match(pool.calls[0].sql, /rat\.order_id = \?/);
+  assert.deepEqual(pool.calls[0].values, [new Date('2026-08-22T00:03:00.000Z'), 'order-1', 1]);
+});
+
 test('post-payment lifecycle requires activation and cancellation before final success', async () => {
   let phase = 0;
   const pool = scriptedPool((sql) => {

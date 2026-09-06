@@ -10,10 +10,12 @@ function digest(value) {
  * coordinator is the only component allowed to advance the durable state.
  */
 export function createBrowserPaymentVerificationService({ repository, verifier,
-  clock = () => new Date(), maxBatch = 20 } = {}) {
+  clock = () => new Date(), maxBatch = 20, approvedOrderId = null } = {}) {
   if (!repository || typeof repository.listPaymentVerificationsDue !== 'function'
     || typeof repository.recordPaymentVerificationObservation !== 'function'
     || typeof repository.markPaymentConfirmed !== 'function'
+    || typeof repository.recordPlusActivation !== 'function'
+    || typeof repository.recordCancellationConfirmed !== 'function'
     || typeof repository.markPaymentDeclinedAfterVerification !== 'function'
     || typeof repository.escalatePaymentVerification !== 'function') {
     throw new TypeError('repository does not implement payment verification contract');
@@ -24,7 +26,9 @@ export function createBrowserPaymentVerificationService({ repository, verifier,
   return {
     async runOnce() {
       const now = clock();
-      const rows = await repository.listPaymentVerificationsDue({ now, limit: maxBatch });
+      const rows = await repository.listPaymentVerificationsDue({
+        now, limit: maxBatch, orderId: approvedOrderId,
+      });
       const results = [];
       for (const row of rows) {
         const operationId = `payment-verification:${row.runId}:${row.verificationCheckCount || 0}`;
@@ -39,15 +43,31 @@ export function createBrowserPaymentVerificationService({ repository, verifier,
         const evidenceHash = digest({ runId: row.runId, outcome,
           evidence: observation?.evidence || null });
         if (outcome === 'CONFIRMED') {
-          await repository.markPaymentConfirmed({
-            runId: row.runId, operationId: `${operationId}:confirmed`, evidenceHash, now,
-          });
-        } else if (outcome === 'DECLINED') {
+          if (row.paymentState === 'PAYMENT_UNKNOWN') {
+            await repository.markPaymentConfirmed({
+              runId: row.runId, operationId: `${operationId}:confirmed`, evidenceHash, now,
+            });
+          }
+          if (observation.postPaymentComplete === true) {
+            await repository.recordPlusActivation({
+              runId: row.runId, operationId: `${operationId}:plus`,
+              evidenceHash: digest(observation.evidence?.plus || observation.evidence), now,
+            });
+            await repository.recordCancellationConfirmed({
+              runId: row.runId, operationId: `${operationId}:cancellation`,
+              evidenceHash: digest({
+                cancellation: observation.evidence?.cancellation || null,
+                transactionHash: observation.evidence?.transactionHash || null,
+                transactionEvidenceKind: observation.evidence?.transactionEvidenceKind || null,
+              }), now,
+            });
+          }
+        } else if (outcome === 'DECLINED' && row.paymentState === 'PAYMENT_UNKNOWN') {
           await repository.markPaymentDeclinedAfterVerification({
             runId: row.runId, operationId: `${operationId}:declined`,
             reasonCode: observation.reasonCode || 'PAYMENT_DECLINED_VERIFIED', evidenceHash, now,
           });
-        } else if (outcome === 'CONFLICT' || (row.verificationDeadlineAt
+        } else if (outcome === 'CONFLICT' || outcome === 'DECLINED' || (row.verificationDeadlineAt
           && new Date(row.verificationDeadlineAt).getTime() <= now.getTime())) {
           await repository.escalatePaymentVerification({
             runId: row.runId, operationId: `${operationId}:escalated`,

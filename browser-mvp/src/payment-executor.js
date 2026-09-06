@@ -99,7 +99,8 @@ export class BrowserPaymentExecutor {
   constructor({ integration, executionRepository, paymentAdapter, postPaymentVerifier,
     enabled = false, verificationWindowMs = 5 * 60_000, verificationIntervalMs = 5_000 } = {}) {
     if (!integration || typeof integration.issueAuthoritativePaymentPermit !== 'function') throw new TypeError('integration is required');
-    if (!executionRepository || typeof executionRepository.commitPaymentSubmissionIntent !== 'function') throw new TypeError('executionRepository is required');
+    if (!executionRepository || typeof executionRepository.commitPaymentSubmissionIntent !== 'function'
+      || typeof executionRepository.schedulePostPaymentVerification !== 'function') throw new TypeError('executionRepository is required');
     if (!paymentAdapter || typeof paymentAdapter.submit !== 'function') throw new TypeError('paymentAdapter is required');
     if (!postPaymentVerifier || typeof postPaymentVerifier.confirmPlus !== 'function'
       || typeof postPaymentVerifier.confirmCancellation !== 'function'
@@ -127,6 +128,13 @@ export class BrowserPaymentExecutor {
   } = {}) {
     if (!this.enabled) throw new BrowserPaymentExecutorError('Browser payment executor is disabled', 'PAYMENT_EXECUTOR_DISABLED');
     const op = required(operationId, 'operationId');
+    const schedulePostPaymentVerification = (reasonCode) => this.executionRepository.schedulePostPaymentVerification({
+      runId: required(run?.runId, 'run.runId'),
+      operationId: `${op}:post-payment-verification`,
+      reasonCode,
+      verificationDeadline: new Date(Date.now() + this.verificationWindowMs),
+      verificationNextCheckAt: new Date(Date.now() + this.verificationIntervalMs),
+    });
     if (!control || typeof control.assertLeaseBeforeAction !== 'function') throw new TypeError('control is required');
     await control.assertLeaseBeforeAction('PAYMENT_PERMIT');
     const permit = await this.integration.issueAuthoritativePaymentPermit({ control, run });
@@ -195,10 +203,15 @@ export class BrowserPaymentExecutor {
     const paymentEvidenceHash = digest({ operationId: op, providerCallRef: submission.providerCallRef, status: submission.status });
     await this.executionRepository.markPaymentConfirmed({
       runId: run.runId, operationId: `${op}:confirmed`, evidenceHash: paymentEvidenceHash,
+      verificationDeadline: new Date(Date.now() + this.verificationWindowMs),
+      verificationNextCheckAt: new Date(Date.now() + this.verificationIntervalMs),
     });
     try {
       const plus = await this.postPaymentVerifier.confirmPlus();
-      if (!plus?.confirmed) return { status: 'POST_PAYMENT_UNKNOWN', reasonCode: 'PLUS_ACTIVATION_UNCONFIRMED', paymentSubmitCalls: 1 };
+      if (!plus?.confirmed) {
+        await schedulePostPaymentVerification('PLUS_ACTIVATION_UNCONFIRMED');
+        return { status: 'POST_PAYMENT_UNKNOWN', reasonCode: 'PLUS_ACTIVATION_UNCONFIRMED', paymentSubmitCalls: 1 };
+      }
       await this.executionRepository.recordPlusActivation({
         runId: run.runId, operationId: `${op}:plus`, evidenceHash: digest(plus.evidence),
       });
@@ -206,6 +219,7 @@ export class BrowserPaymentExecutor {
       const transactions = await this.postPaymentVerifier.readCardTransactions();
       const reconciliation = await this.postPaymentVerifier.reconcile({ transactions });
       if (!cancellation?.confirmed || !reconciliation?.matched) {
+        await schedulePostPaymentVerification('POST_PAYMENT_RECONCILIATION_REQUIRED');
         return { status: 'POST_PAYMENT_UNKNOWN', reasonCode: 'POST_PAYMENT_RECONCILIATION_REQUIRED', paymentSubmitCalls: 1 };
       }
       await this.executionRepository.recordCancellationConfirmed({
@@ -215,6 +229,7 @@ export class BrowserPaymentExecutor {
     } catch (error) {
       // Payment is already confirmed; a verifier/recording failure must never
       // bubble into a retryable submit path. Leave the run for reconciliation.
+      await schedulePostPaymentVerification('POST_PAYMENT_RECONCILIATION_REQUIRED').catch(() => undefined);
       return {
         status: 'POST_PAYMENT_UNKNOWN',
         reasonCode: 'POST_PAYMENT_RECONCILIATION_REQUIRED',
