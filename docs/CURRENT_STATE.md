@@ -479,3 +479,4 @@
 - 生产 release `/opt/pojia/releases/20260906-cancel-browser-de0485b`，844 文件 manifest 和备份 `/var/backups/pojia/pojia-20260906T034454Z.sql.gz.enc` 均通过；Web ready。
 - 用户确认取消的旧订单 `PJV1-AH6M688B3Wfv5_vxISmp` 已 `CLOSED`，付款 submit/permit/run 均为 0，预留和 assignment 已释放。
 - 释放后常驻 API Worker 随即把尾号 `5501` 分配给另一张 2026-09-05 的旧等待订单 `PJV1-eqTeit7QVMx-qPqIfjJi`；已立即停止 `pojia-worker.service`，该单目前仅 `CARD_READY`，尚无新充值 attempt/Browser run/付款。是否取消这张不同订单必须再次由运营者确认。
+- 用户随后明确确认释放第二张历史订单；`PJV1-eqTeit7QVMx-qPqIfjJi` 已安全关闭。尾号 `5501` 当前 `AVAILABLE`，活动 assignment=0、RESERVED/RECONCILIATION 账本=0；备用卡源活动积压=0，全局 ACTIVE/UNKNOWN attempt=0、活动 Browser run=0、active/consumed permit=0。`pojia-worker.service` 暂时保持停止，等待 20X 新单准备完成后再按顺序恢复。

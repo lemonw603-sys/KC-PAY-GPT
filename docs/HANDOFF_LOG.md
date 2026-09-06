@@ -1568,3 +1568,4 @@
 - commit `de0485b` 已发布为 `/opt/pojia/releases/20260906-cancel-browser-de0485b`；844 文件 manifest OK；备份 `/var/backups/pojia/pojia-20260906T034454Z.sql.gz.enc` OK。
 - 指定旧单已 CLOSED；attempt/ledger/assignment 均已清除，付款 0 次。
 - 释放出的尾号 `5501` 被另一张旧等待单 `PJV1-eqTeit7QVMx-qPqIfjJi` 自动分配。已停止 `pojia-worker.service` 防止继续推进；该单现为 CARD_READY、无新 attempt/run/付款。不得把用户对第一张订单的取消确认扩张为对第二张订单的确认。
+- 用户随后单独确认“释放”。第二张订单已通过既有 CARD_READY 安全取消路径关闭；卡 `5501` 为 AVAILABLE，active assignment=0，active ledger=0，备用卡源活动积压=0。全局 ACTIVE/UNKNOWN attempt、活动 Browser run、active/consumed permit 均为 0；Worker 保持 inactive，Web ready。
