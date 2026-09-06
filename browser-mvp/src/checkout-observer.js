@@ -86,7 +86,9 @@ async function inspectCardFields(page, timeoutMs) {
 
 export const CHATGPT_PLUS_CHECKOUT_CONTRACT = Object.freeze({
   urlPrefix: 'https://chatgpt.com/checkout/',
-  planSelector: '[data-testid="checkout-summary-column"] h2',
+  // The live Checkout no longer consistently renders a dedicated h2. The
+  // summary container itself is the stable, unique plan/price boundary.
+  planSelector: '[data-testid="checkout-summary-column"]',
   currencySelector: null,
   amountSelector: null,
   summarySelector: '[data-testid="checkout-summary-column"]',

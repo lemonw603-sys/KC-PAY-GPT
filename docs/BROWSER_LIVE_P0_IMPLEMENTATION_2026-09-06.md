@@ -141,3 +141,13 @@ release_evidence=/var/backups/pojia/browser-live-deploy-20260906T013344Z
 LIVE `--check` 不需要订单确认，且强制进程与数据库付款开关为 false；本次没有创建/领取订单、注入 Session、解密或填写卡片、进入 Checkout 或付款。
 
 卡片权威核对仍未通过：HNSKJ 单卡只读请求现场返回维护期 `HTTP 403`；数据库 5980 快照仍为 `$16`，手工备用卡快照为 `$0/$2`，都不足 `$18`。因此订单级付款关闭回归等待卡片充值并取得最新权威资料后执行。
+
+## 8. 手工备用卡 `$20` 付款前真实页面观察
+
+- 生产订单 `PJV1-AH6M688B3Wfv5_vxISmp` 已冻结到 `manual_excel/backup-a`，分配卡尾号 `5501`；生产数据库余额 `$20`，卡片 `active/ACCEPTED/ASSIGNED`，唯一活动 assignment，唯一 `$16 RESERVED` 账本，attempt=`PREPARED/ACTIVE`，dispatch=`QUEUED`。
+- Browser 付款数据库开关保持 `false`，Browser systemd inactive/disabled；观察未创建 payment permit、未点击付款。
+- 本机 BitBrowser Pilot Profile + 菲律宾出口完成真实页面观察：Session 身份匹配、账号 FREE、账号接口 HTTP 200。
+- 初始报价为 `PHP ₱1100.00 / tax ₱117.86`；填入卡片、固定版本 MockAddress DE 地址与 Session 邮箱后，重报价为 `PHP ₱982.14 / tax ₱0.00`，唯一 Subscribe 控件可见且可用。
+- 卡字段 `3/3` 清空，Session Cookie 清理，Profile 关闭，`submitCalls=0`。
+- 现场暴露两项 drift：summary 不再稳定含 `h2`；Stripe 地址 iframe 延迟挂载且存在隐藏/跨 frame 控件。候选代码已改为 summary 容器识别、唯一可见控件定位及 hydration 等待；Browser 全量 `156 total / 149 pass / 7 environment skip / 0 fail`。
+- 脱敏证据：`artifacts/browser-manual-card-prepayment-20260906/`。修复部署并生产复核前仍不得付款。

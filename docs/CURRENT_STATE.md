@@ -464,3 +464,7 @@
 - 生产验收未开始；不得据此宣称 Browser 付款链路已上线或已真实付款。
 - 付款核实协调器已在本地候选接入，尚未接入生产调度进程；三类路线证据收敛仍待完成。
 - 路线化对账读取已在本地候选接入，生产只读核对尚未执行。
+
+## 2026-09-06｜备用卡 `$20` Browser 付款前状态
+
+生产订单 `PJV1-AH6M688B3Wfv5_vxISmp` 为 Browser/备用卡台 A，尾号 `5501` 余额 `$20`，attempt=`PREPARED/ACTIVE`、dispatch=`QUEUED`、账本=`RESERVED $16`。真实 BitBrowser 页面已证明身份匹配/FREE、MockAddress DE，并从 `PHP 1100/税117.86` 重报价到 `PHP 982.14/税0`；付款 0 次。发现的 Checkout summary 与 Stripe 地址 iframe 漂移已在本地修复并通过 Browser `156/0 fail`，待部署复核后进入唯一付款确认。

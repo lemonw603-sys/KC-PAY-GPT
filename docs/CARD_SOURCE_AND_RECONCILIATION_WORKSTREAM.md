@@ -122,3 +122,9 @@
 ## 9. 下一动作
 
 D6 已完成生产后台/API、Browser 卡源双向切换、不接管旧订单、备用卡完整快照和幂等重放验收，证据见 `CARD_SOURCE_D6_PRODUCTION_ACCEPTANCE_2026-09-06.md`。Browser LIVE P0 已发布为 `/opt/pojia/releases/20260906-browser-live-556ba97`；Browser `154/154/0/0` 隔离库回归和本机接生产库的 LIVE `--check=READY` 均完成，Browser Worker 与付款继续关闭。详见 `BROWSER_LIVE_P0_IMPLEMENTATION_2026-09-06.md`。HNSKJ 当前仍以维护 403 拒绝只读卡详情，数据库可见卡余额均低于 `$18`；下一动作是卡片充值后获取 HNSKJ 权威读证据或导入手工卡最新完整快照，再执行订单级付款关闭回归。通过后才提交真实 Browser 首单，并在最终 PHP 零税快照处单独确认付款。
+
+### 2026-09-06｜备用卡台 A `$20` 订单级付款前证明
+
+- 订单 `PJV1-AH6M688B3Wfv5_vxISmp` 已证明冻结并使用 `manual_excel/backup-a`，卡尾号 `5501`，生产余额 `$20`；没有调用 HNSKJ 卡资料接口。
+- Session 身份/FREE、MockAddress DE、PHP、零税、金额一致和唯一提交按钮均在真实 Checkout 通过：`₱1100/税117.86` → `₱982.14/税0`。
+- 本轮没有付款；修复 Stripe 地址 iframe/Checkout summary 漂移后需先部署复核，再进入唯一真实付款点。

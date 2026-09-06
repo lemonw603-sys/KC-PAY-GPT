@@ -1546,3 +1546,10 @@
 - Web/API Worker active/enabled，公网 plus/ops live/ready 均 200。API Worker窄充值权限保持 true，通用 Provider/卡片写 false。Browser Worker、Browser 付款、Profile 生产权限、旧每分钟自动开卡均保持关闭。
 - 本机通过 SSH 隧道连接生产库并使用本机 BitBrowser，正式 `production-live-worker.js --check` 返回 `READY`；无订单、Session、卡片或付款行为。
 - HNSKJ 单卡只读核对仍返回维护期 403；数据库 5980 余额 `$16`，手工备用卡 `$0/$2`，未证明任何卡达到 `$18`。因此未让客户提交新订单，下一步等待充值后的权威卡证据后执行订单级付款关闭回归。
+
+## 2026-09-06｜备用卡 `$20` Browser 付款前观察通过
+
+- 生产订单 `PJV1-AH6M688B3Wfv5_vxISmp`：Browser、`manual_excel/backup-a`、卡尾号 `5501`、余额 `$20`、attempt PREPARED/ACTIVE、dispatch QUEUED、账本 RESERVED `$16`。
+- BitBrowser 真实页面：身份匹配、FREE、MockAddress DE；初始 `PHP 1100/tax 117.86`，最终 `PHP 982.14/tax 0`；唯一 Subscribe 可见可用，未点击。
+- 发现并修复 summary `h2` 漂移及 Stripe 隐藏/跨 frame/延迟地址控件；全量 Browser 156 项、0 fail。脱敏证据在 `artifacts/browser-manual-card-prepayment-20260906/`。
+- 卡字段、Session Cookie、Profile 已清理；付款 0 次。下一步提交、部署修复并生产复核，然后进行唯一一次付款确认。
