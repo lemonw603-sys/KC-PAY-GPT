@@ -1,5 +1,6 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { redactSensitiveFields } from '../security/redaction.js';
+import { transitionCardConsumptionInTransaction } from './card-consumption-ledger-service.js';
 
 const RUN_STATUSES = new Set([
   'READY', 'RUNNING', 'RECONCILE_ONLY', 'HUMAN_REQUIRED', 'COMPLETED', 'FAILED_SAFE'
@@ -12,8 +13,10 @@ const CONTROL_STATES = new Set(['AUTOMATION', 'REQUESTED', 'FROZEN', 'TRANSFERRE
 const DISPATCH_STATUSES = new Set(['QUEUED', 'CLAIMED', 'COMPLETED', 'CANCELLED']);
 const CONTROL_ACTIONS = new Set([
   'REQUEST', 'FREEZE', 'TRANSFER', 'RELEASE_SAFE', 'MARK_PAYMENT_UNKNOWN',
-  'COMPLETE_20X', 'CANCEL'
+  'CONFIRM_MANUAL_PAYMENT', 'COMPLETE_20X', 'CANCEL'
 ]);
+// What the operator completed by hand after automation stalled before submit.
+const MANUAL_PAYMENT_OUTCOMES = new Set(['PLUS_ACTIVE', 'UPGRADED_20X']);
 const INTERVENTION_REASONS = new Set([
   'CAPTCHA', 'THREE_DS', 'PAGE_DRIFT', 'SESSION_REPAIR', 'OPERATOR_REVIEW',
   'PAYMENT_RECONCILIATION'
@@ -231,6 +234,41 @@ async function paymentSubmitExists(connection, runId) {
   return rows.length > 0;
 }
 
+async function manualPaymentEvidenceExists(connection, runId) {
+  const [rows] = await connection.query(
+    `SELECT id FROM browser_operations
+     WHERE browser_run_id = ? AND operation_type = 'MANUAL_PAYMENT_CONFIRMED'
+       AND status = 'COMMITTED'
+     LIMIT 1 FOR UPDATE`,
+    [runId]
+  );
+  return rows.length > 0;
+}
+
+async function consumedPermitExists(connection, runId) {
+  const [rows] = await connection.query(
+    `SELECT id FROM payment_permits
+     WHERE browser_run_id = ? AND status = 'CONSUMED'
+     LIMIT 1 FOR UPDATE`,
+    [runId]
+  );
+  return rows.length > 0;
+}
+
+async function lockOpenDispatchJob(connection, attemptId) {
+  const [rows] = await connection.query(
+    `SELECT id, status, lease_owner, lease_until FROM browser_dispatch_jobs
+     WHERE recharge_attempt_id = ? AND status IN ('QUEUED', 'CLAIMED')
+     LIMIT 1 FOR UPDATE`,
+    [attemptId]
+  );
+  return rows[0] || null;
+}
+
+function leaseIsLive(leaseUntil, now) {
+  return Boolean(leaseUntil) && new Date(leaseUntil).getTime() > now.getTime();
+}
+
 async function appendControlCheckpoint(connection, row, {
   action, operationId, actorId, reasonCode, now
 }) {
@@ -252,7 +290,8 @@ async function appendControlCheckpoint(connection, row, {
     [row.id, sequence, `CONTROL_${action}`,
       row.payment_state === 'PAYMENT_UNKNOWN' ? 'UNKNOWN'
         : row.payment_state === 'PAYMENT_SUBMITTING' ? 'SUBMITTING'
-          : row.payment_state === 'PAYMENT_ARMED' ? 'ARMED' : 'NONE',
+          : row.payment_state === 'PAYMENT_ARMED' ? 'ARMED'
+            : row.payment_state === 'PAYMENT_CONFIRMED' ? 'SETTLED' : 'NONE',
       operationId, json({ action, actorId, reasonCode }), now]
   );
   await connection.query(
@@ -497,6 +536,7 @@ export function createBrowserAdminService({
       TRANSFER: `转交人工 ${run}`,
       RELEASE_SAFE: `确认无付款动作并恢复 ${run}`,
       MARK_PAYMENT_UNKNOWN: `确认付款结果未知 ${run}`,
+      CONFIRM_MANUAL_PAYMENT: `确认人工付款已完成 ${run}`,
       COMPLETE_20X: `确认20X升级完成 ${run}`,
       CANCEL: `取消接管 ${run}`
     }[action];
@@ -510,6 +550,13 @@ export function createBrowserAdminService({
     }
     const humanOwnerId = action === 'TRANSFER'
       ? required(input.humanOwnerId, 'humanOwnerId', 128) : null;
+    const manualOutcome = action === 'CONFIRM_MANUAL_PAYMENT'
+      ? optionalEnum(input.manualOutcome, MANUAL_PAYMENT_OUTCOMES, 'INVALID_MANUAL_OUTCOME') : null;
+    if (action === 'CONFIRM_MANUAL_PAYMENT' && !manualOutcome) {
+      throw new BrowserAdminError('manualOutcome is required', 'INVALID_MANUAL_OUTCOME');
+    }
+    const evidenceNote = action === 'CONFIRM_MANUAL_PAYMENT'
+      ? required(input.evidenceNote, 'evidenceNote', 500) : null;
     const timestamp = input.now || now();
 
     return inTransaction(pool, async (connection) => {
@@ -582,6 +629,179 @@ export function createBrowserAdminService({
            WHERE id = ? AND control_state = 'FROZEN'`, [humanOwnerId, timestamp, run]
         );
         row.control_state = 'TRANSFERRED';
+      } else if (action === 'CONFIRM_MANUAL_PAYMENT') {
+        // The operator finished the Checkout by hand after automation stalled
+        // before submit. The system never clicked, so the only payment evidence
+        // is the operator's confirmation: record it as MANUAL_PAYMENT_CONFIRMED,
+        // never as a synthetic PAYMENT_SUBMIT, and close the same rows the
+        // automated confirmation path closes.
+        if (!['READY', 'RUNNING', 'HUMAN_REQUIRED'].includes(row.run_status)
+          || !SAFE_PAYMENT_STATES.has(row.payment_state)
+          || row.attempt_status !== 'PREPARED'
+          || row.funds_risk_state !== 'ACTIVE'
+          || row.order_status !== 'RECHARGE_PROCESSING') {
+          throw new BrowserAdminError('run is not at the Browser pre-payment boundary', 'CONTROL_STATE_CONFLICT', 409);
+        }
+        if (await paymentSubmitExists(connection, run) || await consumedPermitExists(connection, run)) {
+          throw new BrowserAdminError('automation payment evidence requires reconciliation', 'RECONCILE_ONLY', 409);
+        }
+        const automationStopped = ['FROZEN', 'TRANSFERRED'].includes(row.control_state)
+          || (row.control_state === 'AUTOMATION' && !leaseIsLive(row.worker_lease_until, timestamp));
+        if (!automationStopped) {
+          throw new BrowserAdminError('automation still holds a live run lease', 'AUTOMATION_STILL_ACTIVE', 409);
+        }
+        const dispatch = await lockOpenDispatchJob(connection, row.recharge_attempt_id);
+        if (dispatch?.status === 'CLAIMED' && leaseIsLive(dispatch.lease_until, timestamp)) {
+          throw new BrowserAdminError('automation still holds a live dispatch lease', 'AUTOMATION_STILL_ACTIVE', 409);
+        }
+        const upgraded = manualOutcome === 'UPGRADED_20X';
+        const resultCode = upgraded ? 'MANUAL_20X_COMPLETED' : 'MANUAL_PLUS_CONFIRMED';
+        const evidenceHash = createHash('sha256')
+          .update(`${run}:${manualOutcome}:${evidenceNote}`).digest('hex');
+        const evidence = { manualOutcome, actorId, evidenceNote, evidenceHash };
+        await connection.query(
+          `UPDATE payment_permits SET status = 'REVOKED', revoked_at = ?
+           WHERE browser_run_id = ? AND status = 'ISSUED'`, [timestamp, run]
+        );
+        // PLUS_ACTIVE keeps the intervention TRANSFERRED so COMPLETE_20X can
+        // close it later; UPGRADED_20X releases it in the same transaction.
+        const interventionStatus = upgraded ? 'RELEASED' : 'TRANSFERRED';
+        if (intervention) {
+          interventionId = intervention.id;
+          await connection.query(
+            `UPDATE browser_interventions
+             SET status = ?, human_owner_id = COALESCE(human_owner_id, ?),
+                 result_code = ?, public_note = ?,
+                 transferred_at = COALESCE(transferred_at, ?), finished_at = ?
+             WHERE id = ? AND status IN ('REQUESTED', 'FROZEN', 'TRANSFERRED')`,
+            [interventionStatus, actorId, resultCode, evidenceNote, timestamp,
+              upgraded ? timestamp : null, intervention.id]
+          );
+        } else {
+          interventionId = idFactory();
+          await connection.query(
+            `INSERT INTO browser_interventions
+             (id, browser_run_id, status, requested_by, automation_owner_id,
+              human_owner_id, reason_code, result_code, public_note,
+              requested_at, transferred_at, finished_at)
+             VALUES (?, ?, ?, ?, ?, ?, 'PAYMENT_RECONCILIATION', ?, ?, ?, ?, ?)`,
+            [interventionId, run, interventionStatus, actorId,
+              row.automation_owner_id || row.worker_id, actorId, resultCode,
+              evidenceNote, timestamp, timestamp, upgraded ? timestamp : null]
+          );
+        }
+        await connection.query(
+          `INSERT INTO browser_post_payment_observations
+           (browser_run_id, observation_kind, observation_status, evidence_hash,
+            evidence_json, observed_at)
+           VALUES (?, 'MANUAL_PAYMENT_CONFIRMED', 'PLUS_CONFIRMED', ?, ?, ?)`,
+          [run, evidenceHash, json(evidence), timestamp]
+        );
+        await connection.query(
+          `INSERT INTO browser_operations
+           (browser_run_id, operation_id, operation_type, status, result_code,
+            public_result_json, prepared_at, completed_at)
+           VALUES (?, ?, 'MANUAL_PAYMENT_CONFIRMED', 'COMMITTED', ?, ?, ?, ?)`,
+          [run, `${operationId}:evidence`, resultCode, json(evidence), timestamp, timestamp]
+        );
+        const [runUpdate] = await connection.query(
+          `UPDATE browser_runs
+           SET status = ?, control_state = ?, payment_state = 'PAYMENT_CONFIRMED',
+               post_payment_state = 'PLUS_CONFIRMED', verification_state = 'RESOLVED',
+               verification_next_check_at = NULL,
+               plus_activated_at = COALESCE(plus_activated_at, ?),
+               worker_id = NULL, worker_lease_token_hash = NULL, worker_lease_until = NULL,
+               automation_owner_id = NULL, human_owner_id = ?, requested_by = ?,
+               last_error_code = NULL, finished_at = ?, updated_at = ?
+           WHERE id = ? AND status IN ('READY', 'RUNNING', 'HUMAN_REQUIRED')
+             AND payment_state IN ('NOT_STARTED', 'PAYMENT_ARMED')`,
+          [upgraded ? 'COMPLETED' : 'HUMAN_REQUIRED', upgraded ? 'RELEASED' : 'TRANSFERRED',
+            timestamp, actorId, actorId, upgraded ? timestamp : null, timestamp, run]
+        );
+        if (runUpdate.affectedRows !== 1) {
+          throw new BrowserAdminError('run changed concurrently', 'RUN_CONFLICT', 409);
+        }
+        const [attemptUpdate] = await connection.query(
+          `UPDATE recharge_attempts
+           SET status = 'SUCCESS', funds_risk_state = 'SETTLED',
+               submitted_at = COALESCE(submitted_at, ?), finished_at = ?,
+               result_summary_json = ?, updated_at = ?
+           WHERE id = ? AND executor_kind = 'BROWSER'
+             AND status = 'PREPARED' AND funds_risk_state = 'ACTIVE'`,
+          [timestamp, timestamp,
+            json({ code: 'MANUAL_PAYMENT_CONFIRMED', manualOutcome, browserRunId: run }),
+            timestamp, row.recharge_attempt_id]
+        );
+        if (attemptUpdate.affectedRows !== 1) {
+          throw new BrowserAdminError('funds attempt changed concurrently', 'ATTEMPT_CONFLICT', 409);
+        }
+        const ledger = await transitionCardConsumptionInTransaction(connection, {
+          orderId: row.order_id,
+          rechargeAttemptId: row.recharge_attempt_id,
+          targetStatus: 'CONSUMED',
+          allowedCurrentStatuses: ['RESERVED', 'RECONCILIATION'],
+          requireActive: false,
+          now: timestamp,
+          evidence: { source: 'manual_payment_confirmed', browserRunId: run, manualOutcome, evidenceHash }
+        });
+        await connection.query(
+          `UPDATE card_assignment_history SET status = 'RELEASED', released_by = ?,
+             release_reason = 'manual payment confirmed; capacity ledger retains consumption',
+             released_at = ?
+           WHERE order_id = ? AND status = 'ACTIVE'`,
+          [`admin:${actorId}`, timestamp, row.order_id]
+        );
+        await connection.query(
+          `UPDATE cards c INNER JOIN orders o ON o.assigned_card_id = c.id
+           SET c.inventory_status = 'DEPLETED', c.current_balance = NULL,
+               c.last_transaction_synced_at = NULL, c.updated_at = ?
+           WHERE o.id = ?`, [timestamp, row.order_id]
+        );
+        await connection.query(
+          `UPDATE execution_resource_leases
+           SET released_at = ?, release_reason = 'MANUAL_PAYMENT_CONFIRMED'
+           WHERE browser_run_id = ? AND released_at IS NULL`, [timestamp, run]
+        );
+        await connection.query(
+          `UPDATE checkout_artifacts SET status = 'CONSUMED'
+           WHERE browser_run_id = ? AND status IN ('ACTIVE', 'REVIEW_REQUIRED')`, [run]
+        );
+        await connection.query(
+          `UPDATE browser_dispatch_jobs
+           SET status = 'COMPLETED', completed_at = COALESCE(completed_at, ?),
+               lease_owner = NULL, lease_token_hash = NULL, lease_until = NULL, updated_at = ?
+           WHERE recharge_attempt_id = ? AND status IN ('QUEUED', 'CLAIMED')`,
+          [timestamp, timestamp, row.recharge_attempt_id]
+        );
+        if (upgraded) {
+          const [orderUpdate] = await connection.query(
+            `UPDATE orders
+             SET status = 'RECHARGE_SUCCESS', version = version + 1,
+                 failure_code = NULL, failure_reason = NULL, customer_action_code = NULL,
+                 finished_at = ?, updated_at = ?
+             WHERE id = ? AND status = 'RECHARGE_PROCESSING' AND version = ?`,
+            [timestamp, timestamp, row.order_id, row.order_version]
+          );
+          if (orderUpdate.affectedRows !== 1) {
+            throw new BrowserAdminError('order changed concurrently', 'ORDER_CONFLICT', 409);
+          }
+        }
+        await connection.query(
+          `INSERT INTO order_events
+           (order_id, from_status, to_status, actor_type, actor_id, reason,
+            metadata_json, created_at)
+           VALUES (?, 'RECHARGE_PROCESSING', ?, 'ADMIN', ?, ?, ?, ?)`,
+          [row.order_id, upgraded ? 'RECHARGE_SUCCESS' : 'RECHARGE_PROCESSING', actorId,
+            upgraded
+              ? 'Manual Browser payment and 20X upgrade confirmed by operator'
+              : 'Manual Browser Plus payment confirmed by operator; awaiting manual 20X upgrade',
+            json({ browserRunId: run, attemptId: row.recharge_attempt_id, manualOutcome,
+              evidenceHash, ledgerStatus: ledger.status }), timestamp]
+        );
+        row.control_state = upgraded ? 'RELEASED' : 'TRANSFERRED';
+        row.run_status = upgraded ? 'COMPLETED' : 'HUMAN_REQUIRED';
+        row.payment_state = 'PAYMENT_CONFIRMED';
+        row.order_status = upgraded ? 'RECHARGE_SUCCESS' : 'RECHARGE_PROCESSING';
       } else if (action === 'COMPLETE_20X') {
         if (row.control_state !== 'TRANSFERRED' || intervention?.status !== 'TRANSFERRED'
           || row.run_status !== 'HUMAN_REQUIRED'
@@ -590,7 +810,8 @@ export function createBrowserAdminService({
           || row.attempt_status !== 'SUCCESS'
           || row.funds_risk_state !== 'SETTLED'
           || row.order_status !== 'RECHARGE_PROCESSING'
-          || !(await paymentSubmitExists(connection, run))) {
+          || !(await paymentSubmitExists(connection, run)
+            || await manualPaymentEvidenceExists(connection, run))) {
           throw new BrowserAdminError('run is not awaiting manual 20X completion', 'CONTROL_STATE_CONFLICT', 409);
         }
         await connection.query(

@@ -630,23 +630,36 @@ async function loadBrowserRuns() {
   elements.syncTime.textContent = `更新于 ${new Date().toLocaleTimeString('zh-CN', { hour12: false })}`;
 }
 
+// Offered only while the system has not submitted and automation is not live:
+// the operator finished the Checkout by hand, so the order must be closed from
+// their confirmation instead of staying RECHARGE_PROCESSING with the card held.
+function manualPaymentButton(run) {
+  const paymentUntouched = ['NOT_STARTED', 'PAYMENT_ARMED'].includes(run.paymentState);
+  const leaseLive = Boolean(run.worker?.leaseUntil) && new Date(run.worker.leaseUntil).getTime() > Date.now();
+  const automationStopped = ['FROZEN', 'TRANSFERRED'].includes(run.controlState)
+    || (run.controlState === 'AUTOMATION' && !leaseLive);
+  return paymentUntouched && automationStopped
+    ? '<button class="primary-small" type="button" data-browser-control="CONFIRM_MANUAL_PAYMENT">人工付款已完成</button>'
+    : '';
+}
+
 function browserControlButtons(run) {
   if (!['READY', 'RUNNING', 'HUMAN_REQUIRED'].includes(run.status)) return '';
   if (run.controlState === 'AUTOMATION') {
-    return '<button class="text-button" type="button" data-browser-control="REQUEST">请求人工接管</button>';
+    return `${manualPaymentButton(run)}<button class="text-button" type="button" data-browser-control="REQUEST">请求人工接管</button>`;
   }
   if (run.controlState === 'REQUESTED') {
     return '<button class="danger-small" type="button" data-browser-control="FREEZE">冻结自动化</button><button class="text-button" type="button" data-browser-control="CANCEL">取消请求</button>';
   }
   if (run.controlState === 'FROZEN') {
-    return '<button class="primary-small" type="button" data-browser-control="TRANSFER">转交人工</button><button class="danger-small" type="button" data-browser-control="MARK_PAYMENT_UNKNOWN">标记付款未知</button>';
+    return `${manualPaymentButton(run)}<button class="primary-small" type="button" data-browser-control="TRANSFER">转交人工</button><button class="danger-small" type="button" data-browser-control="MARK_PAYMENT_UNKNOWN">标记付款未知</button>`;
   }
   if (run.controlState === 'TRANSFERRED') {
     if (run.status === 'HUMAN_REQUIRED' && run.paymentState === 'PAYMENT_CONFIRMED'
       && run.postPaymentState === 'PLUS_CONFIRMED') {
       return '<button class="primary-small" type="button" data-browser-control="COMPLETE_20X">确认 20X 已升级</button>';
     }
-    return '<button class="primary-small" type="button" data-browser-control="RELEASE_SAFE">确认未付款并恢复</button><button class="danger-small" type="button" data-browser-control="MARK_PAYMENT_UNKNOWN">标记付款未知</button>';
+    return `${manualPaymentButton(run)}<button class="primary-small" type="button" data-browser-control="RELEASE_SAFE">确认未付款并恢复</button><button class="danger-small" type="button" data-browser-control="MARK_PAYMENT_UNKNOWN">标记付款未知</button>`;
   }
   return '';
 }
@@ -658,6 +671,7 @@ async function controlBrowserRun(run, action) {
     TRANSFER: `转交人工 ${run.id}`,
     RELEASE_SAFE: `确认无付款动作并恢复 ${run.id}`,
     MARK_PAYMENT_UNKNOWN: `确认付款结果未知 ${run.id}`,
+    CONFIRM_MANUAL_PAYMENT: `确认人工付款已完成 ${run.id}`,
     COMPLETE_20X: `确认20X升级完成 ${run.id}`,
     CANCEL: `取消接管 ${run.id}`
   };
@@ -667,6 +681,7 @@ async function controlBrowserRun(run, action) {
     TRANSFER: '确认自动化已经停手，并把同一个 run 转交给指定人工？',
     RELEASE_SAFE: '只有在确认人工没有点击、回车、提交表单、钱包或 3DS 最终确认时才能恢复自动化。',
     MARK_PAYMENT_UNKNOWN: '这会把 run、attempt 和订单锁为付款结果未知，只能对账，不能自动重付。',
+    CONFIRM_MANUAL_PAYMENT: '仅在你已经亲手完成付款、并看到订阅生效后点击。系统会把这笔单记为人工付款成功、释放卡片占用，之后不会再自动付款；系统本身没有点击过付款，不会伪造自动付款记录。',
     COMPLETE_20X: '仅在你已经亲眼确认 20X 升级完成后点击；系统会把客户订单收口为充值成功。',
     CANCEL: '只允许取消尚未冻结的接管请求。'
   };
@@ -684,12 +699,23 @@ async function controlBrowserRun(run, action) {
     input.humanOwnerId = window.prompt('输入人工操作者标识：', 'admin')?.trim();
     if (!input.humanOwnerId) return;
   }
+  if (action === 'CONFIRM_MANUAL_PAYMENT') {
+    const outcome = window.prompt('人工付款结果：输入 20X（Plus 与 20X 均已完成，订单收口为成功）或 PLUS（只完成 Plus，等待人工升级 20X）', '20X')?.trim().toUpperCase();
+    input.manualOutcome = outcome === '20X' ? 'UPGRADED_20X' : outcome === 'PLUS' ? 'PLUS_ACTIVE' : '';
+    if (!input.manualOutcome) return;
+    input.evidenceNote = window.prompt('你看到的付款证据（金额、卡尾号、时间等；不要输入完整卡号或安全码）：', '')?.trim();
+    if (!input.evidenceNote) return;
+  }
   await sensitiveApi(`/api/v1/admin/browser/runs/${encodeURIComponent(run.id)}/control`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input)
   });
   showNotice(action === 'MARK_PAYMENT_UNKNOWN'
     ? '已锁为付款结果未知；只能进入资金证据核对，禁止重付。'
-    : 'Browser 控制权状态已更新。', 'success');
+    : action === 'CONFIRM_MANUAL_PAYMENT'
+      ? (input.manualOutcome === 'UPGRADED_20X'
+        ? '人工付款与 20X 升级已记录，订单已收口为充值成功，卡片占用已释放。'
+        : '人工 Plus 付款已记录，卡片占用已释放；20X 升级完成后再点“确认 20X 已升级”。')
+      : 'Browser 控制权状态已更新。', 'success');
   await loadBrowserRuns();
   await openBrowserRun(run.id);
 }
@@ -723,9 +749,11 @@ async function openBrowserRun(runId) {
       <section class="detail-section"><h3>对账案件</h3><div class="mini-list">${data.reconciliationCases.length ? data.reconciliationCases.map((item) => `<div><span><strong>${escapeHtml(item.caseType)} · ${escapeHtml(item.status)}</strong><small>${escapeHtml(item.severity)} · ${formatTime(item.detectedAt)}</small></span></div>`).join('') : '<p class="empty-state">没有对账案件</p>'}</div></section>`;
     elements.detailContent.querySelectorAll('[data-browser-control]').forEach((button) => {
       button.addEventListener('click', () => controlBrowserRun(run, button.dataset.browserControl)
-        .catch((error) => showNotice(error.message === 'reconcile_only'
-          ? '检测到付款提交证据，只能进入对账，不能恢复自动化。'
-          : '控制权更新失败；原状态未改变。')));
+        .catch((error) => showNotice({
+          reconcile_only: '检测到付款提交证据，只能进入对账，不能恢复自动化。',
+          automation_still_active: '自动化租约仍在有效期内；等租约过期或先冻结自动化，再确认人工付款。',
+          control_state_conflict: '当前 run 不在可执行该动作的状态；请刷新后核对付款、attempt 与订单状态。'
+        }[error.message] || '控制权更新失败；原状态未改变。')));
     });
   } catch {
     elements.detailContent.innerHTML = '<p class="empty-state">Browser 运行详情读取失败，请稍后重试。</p>';

@@ -140,3 +140,25 @@ test('rejects invalid filters and control confirmations before database access',
   }), { code: 'CONTROL_CONFIRMATION_REQUIRED' });
   assert.equal(pool.queries.length, 0);
 });
+
+test('manual payment confirmation validates outcome and evidence before database access', async () => {
+  const pool = queuedPool();
+  const service = createBrowserAdminService({ pool });
+  const base = {
+    action: 'CONFIRM_MANUAL_PAYMENT', operationId: 'op-2',
+    confirmation: '确认人工付款已完成 run-1'
+  };
+  await assert.rejects(() => service.controlRun('run-1', { ...base, evidenceNote: 'seen' }),
+    { code: 'INVALID_MANUAL_OUTCOME' });
+  await assert.rejects(() => service.controlRun('run-1', { ...base, manualOutcome: 'PAID', evidenceNote: 'seen' }),
+    { code: 'INVALID_MANUAL_OUTCOME' });
+  await assert.rejects(() => service.controlRun('run-1', { ...base, manualOutcome: 'UPGRADED_20X' }),
+    { code: 'INVALID_ARGUMENT' });
+  await assert.rejects(() => service.controlRun('run-1', {
+    ...base, manualOutcome: 'PLUS_ACTIVE', evidenceNote: 'x'.repeat(501)
+  }), { code: 'INVALID_ARGUMENT' });
+  await assert.rejects(() => service.controlRun('run-1', {
+    ...base, confirmation: '确认20X升级完成 run-1', manualOutcome: 'UPGRADED_20X', evidenceNote: 'seen'
+  }), { code: 'CONTROL_CONFIRMATION_REQUIRED' });
+  assert.equal(pool.queries.length, 0);
+});
