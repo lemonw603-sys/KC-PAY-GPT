@@ -1,6 +1,6 @@
 # Browser 项目当前状态与接班点（2026-08-22）
 
-> **2026-09-06 20X 临时接管增量**：已实现 `MANUAL_20X_HANDOFF` 单订单模式；Plus 与卡交易确认后停止取消续费，订单保持处理中，Profile 保留供人工升级；后台显式确认后才进入最终成功。普通 Plus 默认流程不变。实现、状态合同与验证见 `docs/BROWSER_MANUAL_20X_HANDOFF_2026-09-06.md`。当前尚未部署，生产付款仍关闭。
+> **2026-09-06 20X 临时接管增量**：`MANUAL_20X_HANDOFF` 已由 commit `af15932` 发布为 `/opt/pojia/releases/20260906-manual-20x-af15932`；Plus 与卡交易确认后不取消续费，订单保持处理中，Profile 保留供人工升级，后台显式确认后才最终成功。普通 Plus 默认流程不变。部署后 LIVE `--check=READY`，Browser Worker 与付款仍关闭，活动 Browser/资金为 0。实现、状态合同与验证见 `docs/BROWSER_MANUAL_20X_HANDOFF_2026-09-06.md`。
 
 
 > **2026-08-31 兼容性更新：** 基于 `main@9d3d5f4` 复核一卡多单、自动补余额、全局默认充值方式和 15 分钟交易证据门槛时，发现 Browser adapter 仍按 `cards.order_id = orders.id` 绑定卡片，会拒绝 `orders.assigned_card_id` 指向历史订单卡片的合法复用场景。现已改为 `assigned_card_id + RESERVED 消费账本` 权威绑定并保留旧数据回退；Browser 109/105/0/4、共享定向 55/55、隔离 MySQL 复用卡 2/2 与完整非付款 dry-run 1/1 通过。未部署、未接生产、未付款。证据：`docs/browser-research/BROWSER_CARD_REUSE_COMPATIBILITY_2026-08-31.md`。

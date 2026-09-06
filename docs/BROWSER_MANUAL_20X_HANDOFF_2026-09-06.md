@@ -85,6 +85,18 @@ MySQL 实证覆盖：默认 Plus 完成、20X 接管不取消、订单不提前�
 
 部署前调用链审查另外发现并修复：生产入口最初没有把 `postPlusAction` 传入付款 Worker，付款后恢复器也会落回普通取消续费逻辑。现已补齐 LIVE Worker、恢复协调器和 Profile detach 的端到端传递，并新增组件、恢复与全新 MySQL 回归，证明直接路径和 UNKNOWN 恢复路径均不调用取消续费且付款提交仍为 1。
 
-## 当前运行事实
+## 生产发布与当前停止点
 
-实现阶段没有创建订单、没有读取客户 Session/卡资料、没有访问 Checkout、没有调用卡台写接口、没有付款。部署必须保持 Browser Worker disabled/inactive、`browser_payment_writes_enabled=false`；部署后完成生产只读复核，才可以另行通知是否可提交 20X 订单。
+- 功能 commit：`af1593285421810564303b99a0eb6505722be0ef`；
+- 生产 release：`/opt/pojia/releases/20260906-manual-20x-af15932`；
+- 回滚 release：`/opt/pojia/releases/20260906-cancel-browser-de0485b`；
+- 845 个 tracked 文件 manifest：通过；
+- 归档 SHA-256：`a3041a8620b7893732ffef3a5ac7a6f92860f13f16c2a73866a509d7d7b11ca0`；
+- 部署前数据库备份：`/var/backups/pojia/pojia-20260906T042623Z.sql.gz.enc`，完整性通过；
+- Web active；公网 plus live/ready 与 ops ready 均 HTTP 200；
+- API Worker、Browser Worker、旧自动开卡均 inactive，Browser Worker disabled；
+- `browser_payment_writes_enabled=false`，Browser Profile `productionWritesEnabled=false`；
+- migration 048 存在；活动 Browser run/dispatch、ACTIVE/UNKNOWN 资金、active/consumed permit 均为 0；
+- 本机通过生产数据库隧道和本机 BitBrowser 执行正式 LIVE `--check`，结果 `READY`。`--check` 按合同使用默认 `CANCEL_RENEWAL`，不会领取订单或执行付款。
+
+本轮没有创建订单、没有读取客户 Session/卡资料、没有访问 Checkout、没有调用卡台写接口、没有付款。下一步可提交唯一 20X 订单；提交后先从生产数据库确认订单、路线、卡源、卡资料和资金状态，再仅对该订单运行 `MANUAL_20X_HANDOFF`。
