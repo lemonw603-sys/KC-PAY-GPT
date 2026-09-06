@@ -196,15 +196,15 @@
 
 ## 12. 证据索引
 
-- 当前代码/生产矩阵：`docs/2026-08-31_runtime-code-production-alignment-matrix.md`
-- 地图权威纠偏：`docs/2026-08-31_project-map-authoritative-reconciliation.md`
-- 全栈对抗审查：`docs/2026-08-31_project-map-full-stack-adversarial-audit.md`
-- 两笔真实订单审查：`docs/2026-08-31_two-real-orders_full-chain-audit.md`
-- 付款前 hold：`docs/2026-08-31_production-prepayment-hold-rehearsal.md`
-- 自动补余额候选：`docs/2026-08-31_order-driven-card-funding-production-candidate.md`
-- 卡同步机制：`docs/2026-08-30_card-sync-mechanism-audit.md`
-- Browser 最新生产非付款结果：`docs/2026-08-30_browser-production-nonpayment-window-result.md`
-- Browser 门禁审查：`docs/2026-08-29_browser-gate-adversarial-review.md`
+- 当前代码/生产矩阵：`docs/archive/2026-08/2026-08-31_runtime-code-production-alignment-matrix.md`
+- 地图权威纠偏：`docs/archive/2026-08/2026-08-31_project-map-authoritative-reconciliation.md`
+- 全栈对抗审查：`docs/archive/2026-08/2026-08-31_project-map-full-stack-adversarial-audit.md`
+- 两笔真实订单审查：`docs/archive/2026-08/2026-08-31_two-real-orders_full-chain-audit.md`
+- 付款前 hold：`docs/archive/2026-08/2026-08-31_production-prepayment-hold-rehearsal.md`
+- 自动补余额候选：`docs/archive/2026-08/2026-08-31_order-driven-card-funding-production-candidate.md`
+- 卡同步机制：`docs/archive/2026-08/2026-08-30_card-sync-mechanism-audit.md`
+- Browser 最新生产非付款结果：`docs/archive/2026-08/2026-08-30_browser-production-nonpayment-window-result.md`
+- Browser 门禁审查：`docs/archive/2026-08/2026-08-29_browser-gate-adversarial-review.md`
 
 ## 2026-09-05｜就绪声明的证据门禁（新增）
 

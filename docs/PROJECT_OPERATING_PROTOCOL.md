@@ -6,9 +6,9 @@
 
 每次开始工作先读取：
 
-1. `docs/SINGLE_SOURCE_OF_TRUTH_2026-08-21.md`
+1. `docs/archive/2026-08/SINGLE_SOURCE_OF_TRUTH_2026-08-21.md`
 2. `docs/DECISIONS.md`
-3. `docs/EVIDENCE_MATRIX_2026-08-23.md`
+3. `docs/archive/2026-08/EVIDENCE_MATRIX_2026-08-23.md`
 4. `progress.md`
 5. 当前阶段对应的路线图/验收文档
 

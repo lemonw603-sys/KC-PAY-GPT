@@ -59,7 +59,7 @@ Checkout 不确定 → 自动换代理或 Browser lane
 
 ## 事实来源
 
-- `/Users/lemon/.codex/worktrees/c566/AI充值业务/docs/2026-08-22_adversarial-review-browser-multi-lane-report.md`
+- `/Users/lemon/.codex/worktrees/c566/AI充值业务/docs/archive/2026-08/2026-08-22_adversarial-review-browser-multi-lane-report.md`
 - `/Users/lemon/.codex/worktrees/c566/AI充值业务/docs/contracts/2026-08-22_browser-attempt-post-payment-contract.md`
 - `/Users/lemon/.codex/worktrees/c566/AI充值业务/docs/contracts/2026-08-22_browser-multi-lane-experiment-contract.md`
 - 当前 `browser-mvp` 的 `contracts.js`、`executor.js`、`wal.js`、`recovery.js` 测试。

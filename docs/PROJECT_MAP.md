@@ -1,21 +1,21 @@
 # AI充值业务｜唯一项目规划地图
 
-> **当前最高优先级（2026-09-06）**：Browser 主线从“重复重建现场”改为“活动订单连续完成”。本地候选已经禁止连接 Profile 时关页、禁止覆盖已有 Session、禁止失败/超时销毁活动 Profile、禁止付款前失败清空表单，并延长单次 Checkout 卡材料租约；尚未部署。下一步仅补脱敏填表阶段定位与终态清理，然后做一次单 Profile、一次上号、付款前停止的连续回归。事实源：`docs/BROWSER_ACTIVE_ORDER_CONTINUITY_2026-09-06.md`。
+> **当前最高优先级（2026-09-06）**：Browser 主线从“重复重建现场”改为“活动订单连续完成”。本地候选已经禁止连接 Profile 时关页、禁止覆盖已有 Session、禁止失败/超时销毁活动 Profile、禁止付款前失败清空表单，并延长单次 Checkout 卡材料租约；尚未部署。下一步仅补脱敏填表阶段定位与终态清理，然后做一次单 Profile、一次上号、付款前停止的连续回归。事实源：`docs/archive/2026-09/BROWSER_ACTIVE_ORDER_CONTINUITY_2026-09-06.md`。
 
-> **2026-09-06 20X Browser 专用停止点（已部署）**：commit `af15932` 已发布为 `/opt/pojia/releases/20260906-manual-20x-af15932`。显式单订单 `MANUAL_20X_HANDOFF` 在 Plus 与卡交易确认后不取消续费、订单保持处理中、资源租约释放且 BitBrowser Profile 保持打开；人工升级后由后台明确动作收口。普通 Plus 默认行为不变。全新 MySQL 8.4 集成 7/7、Browser 164/155/9/0、v1 557/510/47/0；部署后 LIVE `--check=READY`，Browser Worker 与付款仍关闭，活动 Browser/资金为 0。证据见 `docs/BROWSER_MANUAL_20X_HANDOFF_2026-09-06.md`。 备用卡 `5501` 当前为 `152 USD / AVAILABLE / active`，无活动 assignment/consumption；运营者已确认实际余额确为 `$152`，数据库与业务事实一致。
+> **2026-09-06 20X Browser 专用停止点（已部署）**：commit `af15932` 已发布为 `/opt/pojia/releases/20260906-manual-20x-af15932`。显式单订单 `MANUAL_20X_HANDOFF` 在 Plus 与卡交易确认后不取消续费、订单保持处理中、资源租约释放且 BitBrowser Profile 保持打开；人工升级后由后台明确动作收口。普通 Plus 默认行为不变。全新 MySQL 8.4 集成 7/7、Browser 164/155/9/0、v1 557/510/47/0；部署后 LIVE `--check=READY`，Browser Worker 与付款仍关闭，活动 Browser/资金为 0。证据见 `docs/archive/2026-09/BROWSER_MANUAL_20X_HANDOFF_2026-09-06.md`。 备用卡 `5501` 当前为 `152 USD / AVAILABLE / active`，无活动 assignment/consumption；运营者已确认实际余额确为 `$152`，数据库与业务事实一致。
 
 
 > **2026-09-06 Browser LIVE P0 第四批（生产发布）**：当前 HEAD `556ba97` 已从单一 commit 构建为 841 文件候选并发布到 `/opt/pojia/releases/20260906-browser-live-556ba97`，回滚点为 `20260906-import-errors-c6e9f48`。Web/API Worker、内外网 live/ready 通过；Browser Worker/旧自动开卡继续关闭，数据库付款开关和 Profile 生产权限均为 false，活动 Browser/资金为 0。本机正式 LIVE `--check` 已同时通过生产数据库、BitBrowser Local API 和 Pilot Profile。HNSKJ 只读卡查询仍被卡台维护 403 阻断，数据库 5980 仍 `$16`、手工备用卡仍 `$0/$2`；所以下一步不是提交订单，而是卡片充值后取得最新权威卡资料，再直接执行订单级付款关闭回归。
 
 > **2026-09-06 Browser LIVE P0 第三批（提交 `ff34feb`）**：已在临时 MySQL 8.4 隔离库执行完整 Browser 套件，`154/154/0/0`。对抗审查先复现了旧夹具缺少订单冻结卡源、相反付款开关用例并行互扰等失败，再修复测试合同和串行 smoke；新增 UNKNOWN 恢复、付款已确认未收口恢复、UNKNOWN 超时三条 MySQL 证明，均保持 `PAYMENT_SUBMIT=1`、恢复阶段新增付款调用 `0`。生产仍未部署；下一步从当前 HEAD 构建候选 release，部署时继续保持 Browser Worker 与付款关闭，再执行生产 LIVE `--check`。
 
-> **2026-09-06 Browser LIVE P0 第二批（代码提交 `bc8ee2f`）**：已新增独立 `production-live-worker.js` 的安全 `--check/--once` 双模式、HNSKJ/手工卡路线化交易核验、实体卡级账单地址稳定绑定、付款 UNKNOWN/付款已确认未收口的专用 Session 与同 Profile 只读恢复；付款确认现在原子建立后续核验计划，恢复 SQL 精确限制批准订单，成功后收口订单/attempt/run/账本/assignment/dispatch。Browser `151/147/4/0`、v1 `552/505/47/0`，本机 Pilot Profile HTTP 200、无 Cloudflare、0 submit。生产只读复核仍为 release `c6e9f48`、Browser Worker/付款/旧自动开卡关闭、活动 Browser/资金/派发为 0；**尚未部署，也尚未完成隔离 MySQL 跳过项和订单级非付款回归**。下一步按 `docs/BROWSER_LIVE_P0_IMPLEMENTATION_2026-09-06.md` 构建候选并以付款关闭状态部署核验。
+> **2026-09-06 Browser LIVE P0 第二批（代码提交 `bc8ee2f`）**：已新增独立 `production-live-worker.js` 的安全 `--check/--once` 双模式、HNSKJ/手工卡路线化交易核验、实体卡级账单地址稳定绑定、付款 UNKNOWN/付款已确认未收口的专用 Session 与同 Profile 只读恢复；付款确认现在原子建立后续核验计划，恢复 SQL 精确限制批准订单，成功后收口订单/attempt/run/账本/assignment/dispatch。Browser `151/147/4/0`、v1 `552/505/47/0`，本机 Pilot Profile HTTP 200、无 Cloudflare、0 submit。生产只读复核仍为 release `c6e9f48`、Browser Worker/付款/旧自动开卡关闭、活动 Browser/资金/派发为 0；**尚未部署，也尚未完成隔离 MySQL 跳过项和订单级非付款回归**。下一步按 `docs/archive/2026-09/BROWSER_LIVE_P0_IMPLEMENTATION_2026-09-06.md` 构建候选并以付款关闭状态部署核验。
 
 > **2026-09-06 Browser LIVE P0 实现进度（本地候选）**：已修正卡前 preflight 零税时序，保留最终付款前 `PHP+零税+算术一致` 强校验；手工备用卡的账单地址不再被解密层丢弃；Browser 上游投影已改为以订单冻结卡源而非旧路线卡台为权威。新增单订单绑定的 LIVE 配置/组装边界、真实 Plus+取消续费核验器，并把资金时序改为“填写+重报价+最终复核后才落 payment intent，随后单次点击”。Browser 全量 `138 pass / 4 skip / 0 fail`，v1 定向 `18 pass / 0 fail`。仍未完成生产 LIVE 进程、付款 UNKNOWN 真实调度和单 Profile 非付款候选回归；未部署、未启用付款。
 
-> **2026-09-06 Browser 真实首单验收计划**：已基于当前代码和生产现场落盘 `docs/BROWSER_REAL_E2E_ACCEPTANCE_PLAN_2026-09-06.md`。重新核对发现当前仍只有可运行的 readonly Worker；`payment-executor.js` 会拒绝 LIVE，真实 Plus/取消观察器仍为 mock，付款未知协调器也未接入生产调度。因此不得在充卡后立即提交订单；下一动作先收口 LIVE Worker、填卡后零税闸门和付款后观察/未知核实，付款保持关闭完成单 Profile 非付款回归后，再提交新 CDK + Session。
+> **2026-09-06 Browser 真实首单验收计划**：已基于当前代码和生产现场落盘 `docs/archive/2026-09/BROWSER_REAL_E2E_ACCEPTANCE_PLAN_2026-09-06.md`。重新核对发现当前仍只有可运行的 readonly Worker；`payment-executor.js` 会拒绝 LIVE，真实 Plus/取消观察器仍为 mock，付款未知协调器也未接入生产调度。因此不得在充卡后立即提交订单；下一动作先收口 LIVE Worker、填卡后零税闸门和付款后观察/未知核实，付款保持关闭完成单 Profile 非付款回归后，再提交新 CDK + Session。
 
-> **2026-09-06 D6 卡源生产验收进行中（当前最高优先级）**：生产后台/API、Browser 卡源 HNSKJ↔备用 A 双向切换、不接管旧订单、切换审计、2 卡完整快照与幂等重放均已实测。页面误导已由 `c9f482e` 修复；空/损坏卡文件已由 `c6e9f48` 稳定分类为客户端错误。当前生产 release 为 `/opt/pojia/releases/20260906-import-errors-c6e9f48`，827 文件 manifest 通过，空文件接口实测返回 `HTTP 400 manual_card_file_invalid`。最终卡源已恢复 HNSKJ；备用两卡余额均低于 `$18`，不会被 Plus 分配。Browser Worker、付款、旧自动开卡继续关闭；969 条 stock jobs 跨完整周期未增长。下一步为有达到 `$18` 门槛的卡后执行真实 Browser 订单验收，当前不能宣称付款链路完成。证据见 `docs/CARD_SOURCE_D6_PRODUCTION_ACCEPTANCE_2026-09-06.md`。
+> **2026-09-06 D6 卡源生产验收进行中（当前最高优先级）**：生产后台/API、Browser 卡源 HNSKJ↔备用 A 双向切换、不接管旧订单、切换审计、2 卡完整快照与幂等重放均已实测。页面误导已由 `c9f482e` 修复；空/损坏卡文件已由 `c6e9f48` 稳定分类为客户端错误。当前生产 release 为 `/opt/pojia/releases/20260906-import-errors-c6e9f48`，827 文件 manifest 通过，空文件接口实测返回 `HTTP 400 manual_card_file_invalid`。最终卡源已恢复 HNSKJ；备用两卡余额均低于 `$18`，不会被 Plus 分配。Browser Worker、付款、旧自动开卡继续关闭；969 条 stock jobs 跨完整周期未增长。下一步为有达到 `$18` 门槛的卡后执行真实 Browser 订单验收，当前不能宣称付款链路完成。证据见 `docs/archive/2026-09/CARD_SOURCE_D6_PRODUCTION_ACCEPTANCE_2026-09-06.md`。
 
 > **2026-09-05 订单可观测性纠偏（重要）**：本轮曾误判“客户提交结果只停留在客户页面、系统没有跨窗口订单发现机制”。现场复核证明该判断不成立：订单创建事务已持久化 `orders`、`order_events` 和对应 `tasks`，Browser 路线还会写入 `BROWSER_PREFLIGHT` 任务；本次新订单 `PJV1-AH6M688B3Wfv5_vxISmp` 已在生产数据库落库，状态为 `WAITING_FOR_CARD`、路线 `BROWSER`，`ASSIGN_CARD` 任务为 `PENDING`（最近错误 `CARD_STOCK_EMPTY`）。此前“查不到”是执行窗口误用了本机无 `mysql` 客户端并在未读到生产数据库前做了结论，不是系统漏写订单。已停止残留的本地测试进程，并将缺失的 Browser 建单任务写入生产候选 `/opt/pojia/releases/20260905-order-preflight-130349` 后重启 Web、复验 `ready`；后续先用生产 Node/mysql2 只读查询或后台订单查询接口核对，再回答订单是否存在；不新增重复的“订单收件箱”模块，避免过度设计。
 
@@ -90,7 +90,7 @@
 
 ### 最新拒付的证据边界
 
-订单 `PJV1-412JIT_yfiuBpZeC39_m` 已现场复查：ZZSHU 订单 `8849` 明确返回 `failed`/“卡片被拒，请换卡后重提”，目标账号套餐为 `free`；HNSKJ 卡 `1839/1013` 为 `active`、`$16`、资料完整且无 PURCHASE 交易。故障已收敛到“上游支付处理方拒绝该卡”，不能从现有响应进一步断言具体银行、3DS、CVV、BIN、地区或余额原因。订单已清账，不得自动换卡重付。证据报告：`docs/2026-09-01_order-412JIT-card-decline-investigation.md`。
+订单 `PJV1-412JIT_yfiuBpZeC39_m` 已现场复查：ZZSHU 订单 `8849` 明确返回 `failed`/“卡片被拒，请换卡后重提”，目标账号套餐为 `free`；HNSKJ 卡 `1839/1013` 为 `active`、`$16`、资料完整且无 PURCHASE 交易。故障已收敛到“上游支付处理方拒绝该卡”，不能从现有响应进一步断言具体银行、3DS、CVV、BIN、地区或余额原因。订单已清账，不得自动换卡重付。证据报告：`docs/archive/2026-09/2026-09-01_order-412JIT-card-decline-investigation.md`。
 
 用户已在卡台删除/停用该卡；最新只读状态为 `invalidating/$0.01`，本地已同步。失败订单的 ACTIVE assignment 仍保留作为审计证据，不参与新订单资格计算。
 
@@ -209,11 +209,11 @@
 
 ## 8. 当前全系统体检入口（2026-09-04）
 
-本轮同步频率与 P0 对抗式复查已落盘：`docs/2026-09-04-sync-frequency-and-p0-review.md`。结论是 timer 频率本身不是主要问题，库存同步队列的优先级/失败隔离/单任务吞吐才是 P0；该同步可靠性修正与自动补余额、无卡自动开卡生产闭环应作为同一批 P0 推进。
+本轮同步频率与 P0 对抗式复查已落盘：`docs/archive/2026-09/2026-09-04-sync-frequency-and-p0-review.md`。结论是 timer 频率本身不是主要问题，库存同步队列的优先级/失败隔离/单任务吞吐才是 P0；该同步可靠性修正与自动补余额、无卡自动开卡生产闭环应作为同一批 P0 推进。
 
 2026-09-04：同步 P0 release `/opt/pojia/releases/20260904-sync-p0-6aff7fe` 已部署；迁移 045、优先级/待复核隔离、轻量指标和最多 4（硬上限 6）并发 runner 已上线。生产 Web/Worker/read-sync timer active，`/health/ready=ready`；未执行资金写入。
 
-下一笔 Browser 真实订单前，必须按 `docs/2026-09-04_full-system-preflight-scope.md` 一次性核对客户充值页、运营后台（含 Browser）、订单/资金、库存/卡台/自动补给、后端共享核心及生产部署。该体检不创建订单、不调用 Provider 写接口、不付款；结果必须区分实时证据、代码证据、历史快照和未验证。统筹按板块定时汇报“已完成/进行中/下一块/阻塞”，不以微步骤反复打断。
+下一笔 Browser 真实订单前，必须按 `docs/archive/2026-09/2026-09-04_full-system-preflight-scope.md` 一次性核对客户充值页、运营后台（含 Browser）、订单/资金、库存/卡台/自动补给、后端共享核心及生产部署。该体检不创建订单、不调用 Provider 写接口、不付款；结果必须区分实时证据、代码证据、历史快照和未验证。统筹按板块定时汇报“已完成/进行中/下一块/阻塞”，不以微步骤反复打断。
 
 ## 9. 地图维护纪律
 
@@ -241,7 +241,7 @@
 ### 2026-09-04 对齐审查增量
 
 - 已完成 MockAddress/Browser 对齐的代码级审查并修正 migration 047：地址池不足时允许最低使用次数复用，避免“尽可能一张卡一个地址”与数据库唯一槽位约束冲突。
-- 证据报告：`docs/2026-09-04_browser-mockaddress-alignment-audit.md`。当前仍未部署 046/047，Browser 分支尚未完整合入生产主线。
+- 证据报告：`docs/archive/2026-09/2026-09-04_browser-mockaddress-alignment-audit.md`。当前仍未部署 046/047，Browser 分支尚未完整合入生产主线。
 
 ### 2026-09-04 回归修复状态
 
@@ -307,7 +307,7 @@ Browser 候选对齐后发现 v1 客户首页静态 `sendFile` 在候选 worktre
 
 - 现场确认旧闸门不是全链路验证；已补强 `scripts/agent-evidence-gate.sh browser-order`，额外检查本地只读 Worker、SSH DB 隧道、生产 Browser schema 和 heartbeat。
 - 本轮实际结果：本地前置依赖 READY；生产 Browser Worker 仍 inactive/disabled、target=LOCAL_FIXTURE；Provider 写权限关闭；最新订单仍 API `WAITING_FOR_CARD`。因此只能进入真实 Browser 订单的准备阶段，不能宣称 Browser 充值已跑通。
-- 完整审查记录：`docs/BROWSER_PREFLIGHT_ADVERSARIAL_AUDIT_2026-09-05.md`。
+- 完整审查记录：`docs/archive/2026-09/BROWSER_PREFLIGHT_ADVERSARIAL_AUDIT_2026-09-05.md`。
 
 ### 2026-09-05 生产默认路线现场纠正（最新）
 
@@ -361,23 +361,23 @@ Browser 候选对齐后发现 v1 客户首页静态 `sendFile` 在候选 worktre
 
 > **2026-09-06 多卡源方案纠偏（待现场核查）**：此前讨论稿未经后台/生产核对，错误引入“切换失败拦截”和“单订单切换”假设。用户已明确：卡台切换应由运营者直接决定，系统只能告知目标卡台的能力/健康/库存风险，不得阻止切换；不把单订单切换作为日常方案。此前入口和流程设计全部退回讨论，后续必须先核对真实后台、代码和生产，再重新设计。
 
-> **2026-09-06 多卡源现场核查完成（只读）**：已核对本地代码与生产 release，证实当前“卡台路线”入口实际切换的是 `fulfillment_routes.accepts_new_orders`（充值/接单路线），后端和前端均以健康条件拦截切换；生产尚无 `fulfillment_route_card_sources` 表，备用卡源策略未上线，API/Browser 当前均绑定 `legacy-primary`。此前关于独立当前卡台和单订单切换的设计均不能视为现状。完整证据：`docs/2026-09-06_card-source-current-system-audit.md`。下一步先基于事实重新讨论入口与切换语义，不实现、不部署。
+> **2026-09-06 多卡源现场核查完成（只读）**：已核对本地代码与生产 release，证实当前“卡台路线”入口实际切换的是 `fulfillment_routes.accepts_new_orders`（充值/接单路线），后端和前端均以健康条件拦截切换；生产尚无 `fulfillment_route_card_sources` 表，备用卡源策略未上线，API/Browser 当前均绑定 `legacy-primary`。此前关于独立当前卡台和单订单切换的设计均不能视为现状。完整证据：`docs/archive/2026-09/2026-09-06_card-source-current-system-audit.md`。下一步先基于事实重新讨论入口与切换语义，不实现、不部署。
 
 > **2026-09-06 深查增量**：进一步比对发现本地卡源分配代码已引用 `fulfillment_route_card_sources`，但生产 current release 的 `workflow-repository.js` 尚未包含该引用且生产不含 migration 048；备用卡源能力确实尚未进入生产。生产路线切换服务与本地一致，当前健康拦截仍真实存在。后续必须先基于此差异重新设计，不得只改页面文案。
 
-> **2026-09-06 多卡源讨论错误复盘**：对照真实前端、后端、建单/分卡事务和生产后，新增纠正十项错误判断。最重要修正：为了保证“切换只影响新订单”，Browser 当前卡台必须在订单创建事务中冻结，不能等到异步分卡时才读取；否则切换会错误影响已提交但等待卡片的订单。API 首版固定 HNSKJ，不做对称卡台切换；不做 AUTO/优先级/自动回退/日常单订单切换；健康与库存只告知、不阻止运营选择。完整复盘：`docs/2026-09-06_card-source-discussion-error-review.md`。整体方案仍在讨论，未实现、未部署。
+> **2026-09-06 多卡源讨论错误复盘**：对照真实前端、后端、建单/分卡事务和生产后，新增纠正十项错误判断。最重要修正：为了保证“切换只影响新订单”，Browser 当前卡台必须在订单创建事务中冻结，不能等到异步分卡时才读取；否则切换会错误影响已提交但等待卡片的订单。API 首版固定 HNSKJ，不做对称卡台切换；不做 AUTO/优先级/自动回退/日常单订单切换；健康与库存只告知、不阻止运营选择。完整复盘：`docs/archive/2026-09/2026-09-06_card-source-discussion-error-review.md`。整体方案仍在讨论，未实现、未部署。
 
 > **2026-09-06 Browser 卡台切换影响范围已确认**：全局切换默认只影响新订单；用户确认增加一个明确的可选动作，可在切换时一次性迁移“尚未真正开始”的等待订单，而不是逐单选择。候选必须无已分配卡、无活动消费预留、无 recharge attempt、无 Browser run/付款动作、无 UNKNOWN 资金状态；确认前显示候选数量，不满足条件的订单保持原卡源。该业务决策已落盘，整体方案仍在讨论，未实现、未部署。
 
 > **2026-09-06 卡台能力与完整快照规则确认**：用户明确备用卡台每次导出均包含该卡台全部卡片，因此导入按“完整快照”处理：本次缺失卡不删除历史，但停止进入新订单分配；若存在活动绑定/attempt/run/UNKNOWN 则保持锁定并核对。用户再次明确浏览器自动化充值可以使用 HNSKJ：HNSKJ 同时服务 API 和 Browser，Browser 也可切换到其他备用卡台；选 HNSKJ 时仍可使用其 API 同步/开卡/补余额能力，选无 API 来源时只使用已导入卡片。整体方案仍在讨论，未实现、未部署。
 
-> **2026-09-06 付款未知范围讨论（未最终冻结）**：用户指出网络延迟可能导致“已付款但未返回”，一笔未知不应暂停整个 Browser 链路。代码核对显示当前 UNKNOWN 主要锁定对应 run/attempt/order/card，其他订单任务仍可领取；但 executor 缺少点击后的有界 `VERIFYING_PAYMENT` 自动观察阶段，诊断 audit 又会把全局 UNKNOWN 列作 blocker，口径需收敛。建议保留同一未决订单不二次点击的局部互斥，同时让其他订单/Profile/卡台继续运行。详见 `docs/2026-09-06_payment-unknown-scope-discussion.md`；尚未实现、未部署。
+> **2026-09-06 付款未知范围讨论（未最终冻结）**：用户指出网络延迟可能导致“已付款但未返回”，一笔未知不应暂停整个 Browser 链路。代码核对显示当前 UNKNOWN 主要锁定对应 run/attempt/order/card，其他订单任务仍可领取；但 executor 缺少点击后的有界 `VERIFYING_PAYMENT` 自动观察阶段，诊断 audit 又会把全局 UNKNOWN 列作 blocker，口径需收敛。建议保留同一未决订单不二次点击的局部互斥，同时让其他订单/Profile/卡台继续运行。详见 `docs/archive/2026-09/2026-09-06_payment-unknown-scope-discussion.md`；尚未实现、未部署。
 
-> **2026-09-06 三方对账现场核查**：生产总览动态计算 4 个“三方对账异常”，但 `reconciliation_cases` 为 0；4 个全部是明确 `FAILED/DEFINITE_FAILURE` 后没有外部充值订单号的 CLOSED/RECHARGE_FAILED 单，属于现有投影误报。另发现对账 SQL仍使用旧 `cards.order_id`，不适配一卡跨订单复用；并硬编码 ZZSHU，不能作为 Browser + HNSKJ/手工卡台的统一证据模型。建议保留真实资金对账核心，删除误报口径，拆分为“付款核实中/证据待同步/需人工核对”，且一单未知不暂停全链路。详见 `docs/2026-09-06_three-way-reconciliation-audit.md`；未实现、未部署。
+> **2026-09-06 三方对账现场核查**：生产总览动态计算 4 个“三方对账异常”，但 `reconciliation_cases` 为 0；4 个全部是明确 `FAILED/DEFINITE_FAILURE` 后没有外部充值订单号的 CLOSED/RECHARGE_FAILED 单，属于现有投影误报。另发现对账 SQL仍使用旧 `cards.order_id`，不适配一卡跨订单复用；并硬编码 ZZSHU，不能作为 Browser + HNSKJ/手工卡台的统一证据模型。建议保留真实资金对账核心，删除误报口径，拆分为“付款核实中/证据待同步/需人工核对”，且一单未知不暂停全链路。详见 `docs/archive/2026-09/2026-09-06_three-way-reconciliation-audit.md`；未实现、未部署。
 
 > **2026-09-06 卡台来源与对账工作线防漂移机制启用**：新增唯一状态表 `docs/CARD_SOURCE_AND_RECONCILIATION_WORKSTREAM.md`，集中记录已确认、待冻结、已否定、生产差距、实现映射和部署验收；专项报告只能提供证据，不能自行改变决策。当前阶段 D1 方案讨论，未达到 D2 冻结前不得开始业务代码实现或生产部署。后续每项必须通过“决策 ID→代码→测试→release→生产证据”闭环，避免新模型从旧文档恢复已否定方案。
 
-> **2026-09-06 卡台运营方案确认并完成对抗审查**：用户确认首页只管充值方式、卡台管理页负责 Browser 当前来源/来源分组/完整快照、切换可选批量接管、安全局部付款核实及分路线对账。审查未推翻方向，但发现本地候选不可直接部署的 6 项：导入器写死单一来源；分卡仍按 enabled/priority 自动混选；完整快照把业务不可用卡误当数据错误；跨来源同 PAN 可重复入库；快照与分卡存在竞态；新增卡资格硬编码 `$16`。详见 `docs/2026-09-06_card-source-operating-design-adversarial-review.md` 和工作线唯一状态表。当前仍未实现/部署。
+> **2026-09-06 卡台运营方案确认并完成对抗审查**：用户确认首页只管充值方式、卡台管理页负责 Browser 当前来源/来源分组/完整快照、切换可选批量接管、安全局部付款核实及分路线对账。审查未推翻方向，但发现本地候选不可直接部署的 6 项：导入器写死单一来源；分卡仍按 enabled/priority 自动混选；完整快照把业务不可用卡误当数据错误；跨来源同 PAN 可重复入库；快照与分卡存在竞态；新增卡资格硬编码 `$16`。详见 `docs/archive/2026-09/2026-09-06_card-source-operating-design-adversarial-review.md` 和工作线唯一状态表。当前仍未实现/部署。
 
 > **2026-09-06 D2 最终冻结候选稿已形成**：已将确认需求、已否定方案、生产差距及对抗审查修正收敛到 `docs/CARD_SOURCE_AND_RECONCILIATION_FROZEN_SPEC.md` D2-RC1。工作线 D1 已完成，D2 为“候选待终审”；用户确认整份冻结稿前不得进入 D3 业务代码实现或生产部署。冻结稿包含后台职责、建单冻结、批量接管、完整快照、跨来源实体卡去重、付款 VERIFYING、分路线对账、并发、通知、非目标和15项最小验收矩阵。
 

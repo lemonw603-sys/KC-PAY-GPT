@@ -6,14 +6,14 @@
 
 > **2026-08-31 16:05 最终定向审查**：生产仍为 API 执行权限关闭的半开状态；独立开卡/补余额 runner 与 DB gate 已开，不得被 Worker 的卡片写=false 误判为关闭。当前有 1 张 `$16` 可立即分配卡；`6807/1477` 因 Provider `invalidating` + 历史 ACTIVE assignment 暂不会被系统分配。下文其他“当前/下一步”字样均是带日期的历史快照，不得单独执行。
 
-> **2026-08-31 13:30 最新纠正**：付款前 hold 演练已经完成并清理，生产 current 已变为 `/opt/pojia/releases/20260831-prepayment-hold-55b6ec4`；接单/派发仍开、默认 API，但 Worker `PROVIDER_RECHARGE_WRITES_ENABLED=false`，readiness 唯一 blocker 为 `api_recharge_execution_disabled`。下文所有较早的“权限已开启/readiness 通过/下一步直接做自动补余额实单”快照均已过期。当前先恢复已确认的 API 常驻最小权限，再做真实订单。准确矩阵见 `docs/2026-08-31_runtime-code-production-alignment-matrix.md`。
+> **2026-08-31 13:30 最新纠正**：付款前 hold 演练已经完成并清理，生产 current 已变为 `/opt/pojia/releases/20260831-prepayment-hold-55b6ec4`；接单/派发仍开、默认 API，但 Worker `PROVIDER_RECHARGE_WRITES_ENABLED=false`，readiness 唯一 blocker 为 `api_recharge_execution_disabled`。下文所有较早的“权限已开启/readiness 通过/下一步直接做自动补余额实单”快照均已过期。当前先恢复已确认的 API 常驻最小权限，再做真实订单。准确矩阵见 `docs/archive/2026-08/2026-08-31_runtime-code-production-alignment-matrix.md`。
 
-> 2026-08-28 起，跨模块当前执行顺序统一以 `docs/MASTER_EXECUTION_PLAN_2026-08-28.md` 为准；其对抗审查见 `docs/MASTER_EXECUTION_PLAN_ADVERSARIAL_REVIEW_2026-08-28.md`。本文继续保留阶段历史，不再从历史段落单独推导新的“下一步”。
+> 2026-08-28 起，跨模块当前执行顺序统一以 `docs/archive/2026-08/MASTER_EXECUTION_PLAN_2026-08-28.md` 为准；其对抗审查见 `docs/archive/2026-08/MASTER_EXECUTION_PLAN_ADVERSARIAL_REVIEW_2026-08-28.md`。本文继续保留阶段历史，不再从历史段落单独推导新的“下一步”。
 
 > **2026-08-31 当前执行顺序更正**：统一核查发现生产接单/派发/默认 API 已开启，但 Worker 的 API 真实充值权限仍关闭；同时空闲自动开卡 timer 每 60 秒重复刷新 Provider。当前先部署控制面/体检/空闲调用/提醒收敛候选，并单独确认是否长期开启最小 API 充值权限；随后才做首笔真实自动补余额与 3–5 单连续 API 验收。Browser 线继续并行但不自行真实付款。唯一顺序以 `docs/PROJECT_MAP.md` 为准。
 
-> 状态更正（2026-08-30）：Browser/API 路由硬断链、专用心跳、原子 attempt+job 和全局默认充值方式已部署。生产形态安全窗口已证明订单能冻结 Browser 路线，但当前因没有余额达到 `$16` 的可分配 Plus 卡，真实派发在 `WAITING_FOR_CARD` 停止，尚未形成 Browser job 或进入 Checkout。详见 `docs/2026-08-30_browser-production-nonpayment-window-result.md`。
-> `docs/BACKEND_RUNTIME_ALIGNMENT_AUDIT_2026-08-28.md` 是部署前历史快照；当前生产事实以 `docs/CURRENT_STATE.md` 和 `docs/PRE_INVENTORY_CONVERGENCE_SEAL_2026-08-28.md` 为准。
+> 状态更正（2026-08-30）：Browser/API 路由硬断链、专用心跳、原子 attempt+job 和全局默认充值方式已部署。生产形态安全窗口已证明订单能冻结 Browser 路线，但当前因没有余额达到 `$16` 的可分配 Plus 卡，真实派发在 `WAITING_FOR_CARD` 停止，尚未形成 Browser job 或进入 Checkout。详见 `docs/archive/2026-08/2026-08-30_browser-production-nonpayment-window-result.md`。
+> `docs/archive/2026-08/BACKEND_RUNTIME_ALIGNMENT_AUDIT_2026-08-28.md` 是部署前历史快照；当前生产事实以 `docs/CURRENT_STATE.md` 和 `docs/archive/2026-08/PRE_INVENTORY_CONVERGENCE_SEAL_2026-08-28.md` 为准。
 
 ## 当前执行快照（2026-08-30）
 
@@ -31,7 +31,7 @@
 - 2026-08-30 已完成一次生产形态安全窗口：Browser Worker READY/IDLE、路由切换和订单冻结均通过；真实库存无 `$16` 可分配卡，订单按正确门禁停在 `WAITING_FOR_CARD`，未创建 Browser job、未访问 ChatGPT。窗口已完整清理，Worker 回到 inactive/disabled。
 - 库存后台信息收敛已完成并部署生产；卡段人工刷新与持久默认选择已部署至 `/opt/pojia/releases/20260829-card-segment-58dfe0d`。
 - 架构约束：这是个人内部使用系统，后续卡片策略修复采用最小字段和最少流程，优先稳定与资金安全，不建设额外的复杂策略服务或过度敏感信息隔离层。
-- `docs/BROWSER_RECHARGE_MODULE_REPORT_2026-08-25.md` 已明确标注为历史快照，不得覆盖当前 Browser 状态源。
+- `docs/archive/2026-08/BROWSER_RECHARGE_MODULE_REPORT_2026-08-25.md` 已明确标注为历史快照，不得覆盖当前 Browser 状态源。
 
 > 2026-08-21 用户确认的后续实施顺序和阶段验收，以 `IMPLEMENTATION_PLAN_FINAL_2026-08-21.md` 为执行主线。本文保留历史阶段状态；两者冲突时按最终实施规划和当前有效决策执行。
 
@@ -41,7 +41,7 @@
 
 > Browser 当前主工程顺序：共享核心的 attempt/dispatch、Plus 激活/取消闭环、`RECHARGE_PROCESSING` 状态统一、permit 权威复核和付款前原子 safe-abort 已完成并通过隔离 MySQL。下一项是 Browser 独立 adapter 按 2026-08-26 合同接线，然后做非付款端到端联调和故障注入；最后才申请受控真实付款。
 
-> 2026-08-22 执行修订：业务方向不变，但在 Browser 真实观察或任何资金写入前，先完成 R0 生产只读基线、R1 可重建提交/事实源收敛、R2 v1 P0/P1 缺口和 R3 阶段四安全部署。具体退出条件见 `docs/EXECUTION_PLAN_REVISION_2026-08-22.md`。
+> 2026-08-22 执行修订：业务方向不变，但在 Browser 真实观察或任何资金写入前，先完成 R0 生产只读基线、R1 可重建提交/事实源收敛、R2 v1 P0/P1 缺口和 R3 阶段四安全部署。具体退出条件见 `docs/archive/2026-08/EXECUTION_PLAN_REVISION_2026-08-22.md`。
 
 > R0 状态更新（2026-08-22）：生产 VPS 只读核验已完成。当前为 stage3 release，接单/派发/Provider 写入均关闭；R1 可重建交付与事实源收敛为下一步。
 
@@ -195,7 +195,7 @@
 - [ ] 生产部署前完成候选 release 演练与只读验收
 - [ ] 单独确认 API Provider 写权限范围；Browser Worker/gate 继续独立控制
 
-记录：`docs/2026-08-30_order-driven-replenishment-implementation.md`。
+记录：`docs/archive/2026-08/2026-08-30_order-driven-replenishment-implementation.md`。
 
 ### 2026-08-29 只读真实观察最新结果
 
@@ -212,8 +212,8 @@
 - [x] 形成真实 Browser 付款前检查清单；仅作为门禁记录，不等于付款授权。
 - [x] 联调发现并修复 LIVE 适配器安全字段映射错误；补充 3DS/挑战异常后的清理回归。
 - [x] 收敛 Browser 付款门禁，区分硬性资金安全条件与按需触发的 3DS/验证码处理，避免人为增加流程障碍。
-- [x] 完成门禁收敛复查并记录测试结果（`docs/2026-08-29_browser-gate-simplification-review.md`）。
-- [x] 完成第二轮对抗审查，修复提交前错误分类和字段清理稳定性问题（`docs/2026-08-29_browser-gate-adversarial-review.md`）。
+- [x] 完成门禁收敛复查并记录测试结果（`docs/archive/2026-08/2026-08-29_browser-gate-simplification-review.md`）。
+- [x] 完成第二轮对抗审查，修复提交前错误分类和字段清理稳定性问题（`docs/archive/2026-08/2026-08-29_browser-gate-adversarial-review.md`）。
 - [x] 运行 Browser 离线 soak 验证，成功退出；生产写入保持关闭。
 - [x] 定位并修复 Checkout 导航假失败：允许表单外的计划升级按钮（仅打开 Checkout），仍拒绝表单内提交控件；需再做一次隔离端到端复验。
 
@@ -244,7 +244,7 @@
 - [x] 总览库存统计和控制台检查
 - [ ] 生产资金写入、真实开卡/卡充值/付款（仍需单独确认，当前禁止）
 
-证据报告：`docs/2026-08-29_card-inventory-readonly-sync-verification.md`。
+证据报告：`docs/archive/2026-08/2026-08-29_card-inventory-readonly-sync-verification.md`。
 
 ## 2026-08-29 卡段人工刷新部署
 
@@ -267,7 +267,7 @@
 - [ ] v1、Browser 全量回归及隔离集成测试
 - [ ] 生产部署（需单独确认）
 
-证据报告：`docs/2026-08-31_payment-preflight-transaction-evidence-fix.md`。
+证据报告：`docs/archive/2026-08/2026-08-31_payment-preflight-transaction-evidence-fix.md`。
 
 ## 2026-08-31 生产候选只读演练
 
@@ -276,7 +276,7 @@
 - [x] 恢复原 current，Web/Worker 健康检查通过，Browser Worker 保持 inactive/disabled
 - [x] 已切换候选 release `20260831-preflight-8da5127`；Web/Worker 健康检查通过，Browser Worker 仍关闭
 
-证据：`docs/2026-08-31_production-candidate-readonly-rehearsal.md`。
+证据：`docs/archive/2026-08/2026-08-31_production-candidate-readonly-rehearsal.md`。
 
 ## 2026-08-31 运营后台控制面盘点
 
@@ -284,7 +284,7 @@
 - [x] 形成最小收敛方案：默认充值方式 + 开始营业/暂停接单 + 就绪摘要
 - [ ] 按盘点结果改造后台首页控制面（不删除底层安全字段）
 
-证据：`docs/2026-08-31_admin-control-surface-audit.md`。
+证据：`docs/archive/2026-08/2026-08-31_admin-control-surface-audit.md`。
 
 ## 2026-08-31 控制面盘点对抗式复查
 
@@ -292,7 +292,7 @@
 - [x] 确立检查结果分类：自动恢复、直接跳转、明确确认、人工核对
 - [ ] 按分类实现开始营业结果页和最小操作入口
 
-证据：`docs/2026-08-31_admin-control-surface-adversarial-review.md`。
+证据：`docs/archive/2026-08/2026-08-31_admin-control-surface-adversarial-review.md`。
 
 ## 2026-08-31 控制面最小改造方案对抗式复查
 
@@ -300,14 +300,14 @@
 - [x] 确认稳定 checkId/actionId、幂等自动动作、Browser 未就绪保护和现有库存门禁不变
 - [x] 实现统一就绪结果与后台首页最小改造（候选已就绪，待生产切换）
 
-证据：`docs/2026-08-31_admin-control-surface-plan-adversarial-review.md`。
+证据：`docs/archive/2026-08/2026-08-31_admin-control-surface-plan-adversarial-review.md`。
 
 ## 当前工作线命名与顺序（2026-08-31）
 
 项目名称：**AI充值业务｜运营控制面收敛与自动补给**。
 
 经复查，自动补余额是高频运营和“开始营业”自动自愈的基础，优先于后台控制面收敛；但必须先完成代码、幂等、未知结果和受控生产验证，不得直接打开资金写权限。随后再实现统一就绪结果和首页入口。
-入口文件：`docs/ACTIVE_WORKSTREAM.md`。
+入口文件：`docs/archive/undated/ACTIVE_WORKSTREAM.md`。
 
 ## 2026-08-31 自动补余额代码复查修正
 

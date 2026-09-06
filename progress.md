@@ -73,7 +73,7 @@
 ### What was done
 - 由独立 Agent 对照路线图、验收基线和本轮交付执行对抗式审查。
 - 发现并修复告警重开不重复推送、环境变量大小写/空白绕过门禁、未来迁移版本误报三项 P1。
-- 审查报告保存于 `docs/ADVERSARIAL_AUDIT_2026-08-21.md`。
+- 审查报告保存于 `docs/archive/2026-08/ADVERSARIAL_AUDIT_2026-08-21.md`。
 ### Remaining
 - MySQL 8.4 迁移/并发领取实测、Bark Device Key 手机推送、DEAD 恢复演练仍待真实部署条件；均不需要也不会自动触发资金写入。
 - 已在临时 MySQL 8.4.11 容器完成迁移 `001–023` 首次执行、重放和 `alert_notifications` 表结构检查；未连接生产库。
@@ -82,11 +82,11 @@
 ## 2026-08-21 - Task: AI充值业务阶段性完结
 ### Status
 - 当前阶段冻结，等待真实订单；不再主动扩展功能。
-- 完成项、待办项、共识、证据和后续 AI 接手规则统一归档于 `docs/PROJECT_HANDOFF_2026-08-21.md`。
+- 完成项、待办项、共识、证据和后续 AI 接手规则统一归档于 `docs/archive/2026-08/PROJECT_HANDOFF_2026-08-21.md`。
 - 当前工作目录已从 `破甲` 改为 `AI充值业务`；`pojia` 生产技术标识有意保留。
 ### Next gate
 - 有生产访问条件时先做迁移、Bark 服务、只读体检和重启恢复演练。
-- 有真实订单时再按 `docs/SMALL_BATCH_RUNBOOK.md` 进入单笔资金验证。
+- 有真实订单时再按 `docs/archive/undated/SMALL_BATCH_RUNBOOK.md` 进入单笔资金验证。
 
 ## 2026-08-21 - Task: 阶段性完结后的二次对抗审查
 ### Result
@@ -142,7 +142,7 @@
 - 明确并落盘硬业务规则：Plus 是要购买的产品；目标账号当前为 Plus 时禁止充值，上游也不会接受。
 - 客户页自动轮询从 5 分钟延长为 30 分钟；失败状态已能从订单库同步到客户状态 API。
 - 真实测试后恢复所有接单、派发、Provider 账户和 Provider 进程写门禁为关闭。
-- 新增跨窗口单一事实源：`docs/SINGLE_SOURCE_OF_TRUTH_2026-08-21.md`。
+- 新增跨窗口单一事实源：`docs/archive/2026-08/SINGLE_SOURCE_OF_TRUTH_2026-08-21.md`。
 
 ### Evidence
 - 订单最终状态：`RECHARGE_FAILED`。
@@ -154,16 +154,16 @@
 - 下一次真实充值前必须完成目标账号 Plus 本地硬阻断、40030 失败字段映射、Provider 调用与充值尝试账本关联审计、统一多层写门禁和配置型任务恢复。
 # 2026-08-21 最终需求对齐与对抗式审查收口
 
-- 完成最终需求的第一性原理/冲突审查，报告：`docs/FINAL_REQUIREMENTS_ADVERSARIAL_REVIEW_2026-08-21.md`。
-- 用户确认审查修正方向，形成正式基线：`docs/FINAL_REQUIREMENTS_BASELINE_2026-08-21.md`。
+- 完成最终需求的第一性原理/冲突审查，报告：`docs/archive/2026-08/FINAL_REQUIREMENTS_ADVERSARIAL_REVIEW_2026-08-21.md`。
+- 用户确认审查修正方向，形成正式基线：`docs/archive/2026-08/FINAL_REQUIREMENTS_BASELINE_2026-08-21.md`。
 - `DECISIONS.md` 新增 D-029～D-035，并标明被替代的旧决策。
 - 正式方向：库存优先、人工与受限自动补卡并存；正常订单自动履约但保留资金栅栏；Session 原订单最多更换 3 次；支付成功且取消续费确认后才最终成功；退款仅保留原始同步和人工案件。
 - HNSKJ `POST /cards/{id}/recharge` 已由当前官方文档确认存在，v1 尚未实现；只用于未履约且余额不足的 active 库存卡，新开卡不重复补余额。
 - 卡片默认不跨订单复用；特殊情况保留受控人工口子，禁止系统自动复用，必须记录完整审计。
-- 完成当前 Plus 运营后台与最终需求的代码/API/线上静态资源对齐审查：`docs/ADMIN_ALIGNMENT_AUDIT_2026-08-21.md`。
+- 完成当前 Plus 运营后台与最终需求的代码/API/线上静态资源对齐审查：`docs/archive/2026-08/ADMIN_ALIGNMENT_AUDIT_2026-08-21.md`。
 - 生产只读证据：Web live/ready 正常、未登录后台 API 返回 401、线上 `admin.js` 与当前本地代码 SHA-256 一致；未使用登录会话读取生产业务数据。
 - 审查结论：后台认证、CDK、库存优先、卡台接管、订单/资金核对和资金栅栏可保留；逐单充值授权、成功终态、Session 更换、自动补卡、卡 recharge、退款自动识别、卡台人工切换和特殊复用入口需要按最终基线对齐。
-- 用户确认后续完整实施路径并落盘：`docs/IMPLEMENTATION_PLAN_FINAL_2026-08-21.md`；决策账本新增 D-036、D-037。
+- 用户确认后续完整实施路径并落盘：`docs/archive/2026-08/IMPLEMENTATION_PLAN_FINAL_2026-08-21.md`；决策账本新增 D-036、D-037。
 - Browser 自动化采用“现在独立窗口设计、阶段七稳定后实现接入”的双阶段策略；设计成果必须回写主项目，不得另建订单或资金账。
 
 ## 2026-08-21 - 阶段一追溯中心实施与对抗审查
@@ -171,7 +171,7 @@
 - 实施 Migration 024、卡片绑定历史、客户付款、备注、标签、PAN HMAC 和后台统一搜索。
 - 订单档案已联通 CDK/补发/交付/付款/卡片/Provider/交易/成本/人工记录。
 - 已修正对抗审查确认的敏感 GET 搜索、新库存卡无法分配、虚构客户付款时间、库存口径和浮点成本汇总问题。
-- 本地和隔离 MySQL 验收详见 `docs/STAGE1_TRACEABILITY_ACCEPTANCE_2026-08-21.md`。
+- 本地和隔离 MySQL 验收详见 `docs/archive/2026-08/STAGE1_TRACEABILITY_ACCEPTANCE_2026-08-21.md`。
 - 特殊人工复用入口和复用后交易归属仍属阶段四，未冒充为已完成。
 - 独立对抗审查最终结论：阶段一无剩余阻断项。
 - 生产发布 `/opt/pojia/releases/20260821-traceability-86d6282`；迁移、PAN 回填、6 项数据一致性检查、Web/Worker/Bark 健康和上线后只读体检全部通过。
@@ -185,7 +185,7 @@
 - Foundation v2 提交现在强制先建 `recharge_attempt`；legacy Permit 不能进入资金路径。
 - 修复 40030 后重新授权幂等键冲突、授权 claim/consume 恢复、lease-lost 和非 40030 明确拒绝僵尸订单。
 - 隔离 MySQL 8.4 全量测试 `313/313`，Migration 001–025 干净执行和 025 重放成功。
-- 独立对抗式终审未发现剩余 Stage 2 P0/P1 阻断；证据见 `docs/STAGE2_SESSION_FINALIZATION_ACCEPTANCE_2026-08-21.md`。
+- 独立对抗式终审未发现剩余 Stage 2 P0/P1 阻断；证据见 `docs/archive/2026-08/STAGE2_SESSION_FINALIZATION_ACCEPTANCE_2026-08-21.md`。
 - 尚未部署生产，本阶段没有任何 Provider 资金写调用。
 
 ## 2026-08-22 - 阶段二生产安全部署
@@ -219,18 +219,18 @@
 
 ## 2026-08-22 - 运营后台全量审计与发布候选包阶段
 
-- 用户要求对整个 Plus 运营后台做大块全量审计，不只修总览卡片；已建立并持续更新 `docs/ADMIN_FULL_AUDIT_2026-08-22.md`。
+- 用户要求对整个 Plus 运营后台做大块全量审计，不只修总览卡片；已建立并持续更新 `docs/archive/2026-08/ADMIN_FULL_AUDIT_2026-08-22.md`。
 - 已确认公网后台静态资源与本地代码漂移：公网 `/admin`、`admin.js`、`admin.css` 的大小和 SHA-256 均与本地不一致，公网仍引用旧版 `admin.css?v=8`。
 - 本地已修复/补齐：总览订单/Session/补卡/取消续费/自动补卡/对账/同步积压指标、CDK/退款状态分布、Provider 新鲜度、卡片接管验证/接管入口、耗尽卡统计、累计订单跳转和“历史卡数”歧义。
 - “卡台历史总卡数”已改为“卡台当前 active 卡数”，避免把上游目录总记录误称为成功开卡历史。
 - 隔离 MySQL 已执行迁移 028–036；v1 全量测试最新结果为 `401/401 pass, 0 fail, 0 skipped`。
 - 已生成本地发布候选包：`artifacts/release-candidate-20260822-f821305/`，包含 414 个文件和 `manifest.sha256`；未上传、未部署、未迁移生产。
-- 修复后的对抗式复核已落盘：`docs/ADMIN_REPAIR_ADVERSARIAL_REVIEW_2026-08-22.md`。
+- 修复后的对抗式复核已落盘：`docs/archive/2026-08/ADMIN_REPAIR_ADVERSARIAL_REVIEW_2026-08-22.md`。
 - 当前下一大阶段：生产服务器当前 release、服务器端清单与候选包只读对照；完成后再形成部署/回滚结论。生产部署仍需单独确认。
 
 ## 2026-08-22 - 交接完整性复核
 
-- 新增 `docs/HANDOFF_COMPLETENESS_AUDIT_2026-08-22.md`，复核聊天结论、代码提交、阶段文档、生产证据和候选包是否对齐。
+- 新增 `docs/archive/2026-08/HANDOFF_COMPLETENESS_AUDIT_2026-08-22.md`，复核聊天结论、代码提交、阶段文档、生产证据和候选包是否对齐。
 - 明确标记历史快照与最新公网证据的冲突：较早“线上 admin.js 与本地一致”不能覆盖 2026-08-22 最新公网哈希漂移证据。
 - 当前唯一有效状态：本地候选包已验收、未部署；公网仍旧资源；生产服务器端 release/清单本轮尚未取得新的只读终端证据。
 

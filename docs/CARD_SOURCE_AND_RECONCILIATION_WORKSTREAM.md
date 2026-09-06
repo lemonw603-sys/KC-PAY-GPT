@@ -77,7 +77,7 @@
 | AR-05 | 快照提交与 Worker 分卡可能竞态 | 来源/卡行事务锁；不暂停全局，活动卡不被快照释放 |
 | AR-06 | 新增卡资格硬编码 `$16`、更新卡读取动态设置 | 导入只记事实，资格统一由业务规则动态计算 |
 
-证据：`docs/2026-09-06_card-source-operating-design-adversarial-review.md`。
+证据：`docs/archive/2026-09/2026-09-06_card-source-operating-design-adversarial-review.md`。
 
 ## 6. 已核实的当前生产状态与剩余差距
 
@@ -91,12 +91,12 @@
 
 证据：
 
-- `docs/2026-09-06_card-source-current-system-audit.md`
-- `docs/2026-09-06_card-source-discussion-error-review.md`
-- `docs/2026-09-06_payment-unknown-scope-discussion.md`
-- `docs/2026-09-06_three-way-reconciliation-audit.md`
-- `docs/CARD_SOURCE_D4_PRODUCTION_ALIGNMENT_2026-09-06.md`
-- `docs/CARD_SOURCE_D5_PRODUCTION_DEPLOYMENT_2026-09-06.md`
+- `docs/archive/2026-09/2026-09-06_card-source-current-system-audit.md`
+- `docs/archive/2026-09/2026-09-06_card-source-discussion-error-review.md`
+- `docs/archive/2026-09/2026-09-06_payment-unknown-scope-discussion.md`
+- `docs/archive/2026-09/2026-09-06_three-way-reconciliation-audit.md`
+- `docs/archive/2026-09/CARD_SOURCE_D4_PRODUCTION_ALIGNMENT_2026-09-06.md`
+- `docs/archive/2026-09/CARD_SOURCE_D5_PRODUCTION_DEPLOYMENT_2026-09-06.md`
 
 ## 7. 实现追踪矩阵（D2 冻结后填写）
 

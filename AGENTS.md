@@ -19,14 +19,14 @@
 ## 开始工作前按顺序阅读
 
 1. `CLAUDE.md`
-2. `docs/AI_AGENT_ROLE_AND_READING_GUIDE_2026-08-21.md`
-3. `docs/FINAL_REQUIREMENTS_BASELINE_2026-08-21.md`
-4. `docs/BROWSER_RECHARGE_EXECUTOR_BASELINE_2026-08-21.md`
-5. `docs/BROWSER_CURRENT_STATUS_2026-08-22.md`
-6. `docs/IMPLEMENTATION_PLAN_FINAL_2026-08-21.md`
+2. `docs/archive/2026-08/AI_AGENT_ROLE_AND_READING_GUIDE_2026-08-21.md`
+3. `docs/archive/2026-08/FINAL_REQUIREMENTS_BASELINE_2026-08-21.md`
+4. `docs/archive/2026-08/BROWSER_RECHARGE_EXECUTOR_BASELINE_2026-08-21.md`
+5. `docs/archive/2026-08/BROWSER_CURRENT_STATUS_2026-08-22.md`
+6. `docs/archive/2026-08/IMPLEMENTATION_PLAN_FINAL_2026-08-21.md`
 7. `docs/DECISIONS.md`
 
-只有任务涉及生产事实、历史迁移或旧系统时，再读 `docs/SINGLE_SOURCE_OF_TRUTH_2026-08-21.md` 和历史交接文档。
+只有任务涉及生产事实、历史迁移或旧系统时，再读 `docs/archive/2026-08/SINGLE_SOURCE_OF_TRUTH_2026-08-21.md` 和历史交接文档。
 
 ## 默认忽略的噪音
 
@@ -35,7 +35,7 @@
 - 已被 `DECISIONS.md` 替代的旧方案；
 - 历史审查和交接中的旧结论，不能覆盖当前有效决策。
 
-当前共享业务核心在 `v1/`；Browser 设计单一事实源是 `docs/BROWSER_RECHARGE_EXECUTOR_BASELINE_2026-08-21.md`，准确停止点是 `docs/BROWSER_CURRENT_STATUS_2026-08-22.md`。
+当前共享业务核心在 `v1/`；Browser 设计单一事实源是 `docs/archive/2026-08/BROWSER_RECHARGE_EXECUTOR_BASELINE_2026-08-21.md`，准确停止点是 `docs/archive/2026-08/BROWSER_CURRENT_STATUS_2026-08-22.md`。
 
 ## 硬边界
 

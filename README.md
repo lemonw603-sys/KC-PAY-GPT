@@ -1,7 +1,7 @@
 # AI充值业务
 
 > [!NOTE]
-> AI/工程 Agent 接手入口：先读 [`AGENTS.md`](AGENTS.md) 和 [`docs/AI_AGENT_ROLE_AND_READING_GUIDE_2026-08-21.md`](docs/AI_AGENT_ROLE_AND_READING_GUIDE_2026-08-21.md)。当前共享业务核心在 `v1/`，Browser 主链路基线在 [`docs/BROWSER_RECHARGE_EXECUTOR_BASELINE_2026-08-21.md`](docs/BROWSER_RECHARGE_EXECUTOR_BASELINE_2026-08-21.md)。不要从下方 legacy 说明推断当前产品方向。
+> AI/工程 Agent 接手入口：先读 [`AGENTS.md`](AGENTS.md) 和 [`docs/archive/2026-08/AI_AGENT_ROLE_AND_READING_GUIDE_2026-08-21.md`](docs/archive/2026-08/AI_AGENT_ROLE_AND_READING_GUIDE_2026-08-21.md)。当前共享业务核心在 `v1/`，Browser 主链路基线在 [`docs/archive/2026-08/BROWSER_RECHARGE_EXECUTOR_BASELINE_2026-08-21.md`](docs/archive/2026-08/BROWSER_RECHARGE_EXECUTOR_BASELINE_2026-08-21.md)。不要从下方 legacy 说明推断当前产品方向。
 
 > [!IMPORTANT]
 > 本文件以下内容是 Fork 上游保留的 **legacy 浏览器自动化系统说明**，不代表 AI充值业务 v1 的生产架构。根目录 `npm start` 已改为启动隔离的 `v1/`；旧浏览器、Stripe、hCaptcha 和代理链即使运行 `npm run start:legacy` 也会被环境锁拒绝，只有显式设置 `ALLOW_LEGACY_RUNTIME=I_UNDERSTAND` 才能启动。旧 Docker 文件已改名为 `Dockerfile.legacy` 与 `docker-compose.legacy.yml`，不得用于 v1 部署。v1 说明见 [`v1/README.md`](v1/README.md)，当前规格见 [`docs/V1_SPEC.md`](docs/V1_SPEC.md)。
@@ -32,7 +32,7 @@
 
 啟用第三方代充 API 後，前台兌換會完全改走供應商代充流程，不再使用本地開通。
 
-阶段性接手与当前进度归档见 [`docs/PROJECT_HANDOFF_2026-08-21.md`](docs/PROJECT_HANDOFF_2026-08-21.md)。
+阶段性接手与当前进度归档见 [`docs/archive/2026-08/PROJECT_HANDOFF_2026-08-21.md`](docs/archive/2026-08/PROJECT_HANDOFF_2026-08-21.md)。
 
 > ⚠️ **仅供学习与研究**。使用前请确保符合目标平台 ToS 与所在地法律法规。**开发者不对任何滥用导致的封号、扣款、法律纠纷负责。**
 

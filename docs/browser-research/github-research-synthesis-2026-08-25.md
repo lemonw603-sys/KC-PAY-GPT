@@ -63,7 +63,7 @@
 
 ## 证据和边界
 
-- 原始研究报告位于 `docs/2026-08-22_browser-automation-github-expanded-research-report.md` 等文件；本页是归纳，不替代原文。
+- 原始研究报告位于 `docs/archive/2026-08/2026-08-22_browser-automation-github-expanded-research-report.md` 等文件；本页是归纳，不替代原文。
 - 原报告记载的仓库检查以固定提交、静态检查和离线测试为主，属于 L1/L2。
 - 没有公开项目被证明可以直接完成本项目的真实 Plus 充值。
 - 后续若要复用某个项目，必须重新核对许可证、固定 commit、依赖供应链、输入输出合同和本地无付款测试。
