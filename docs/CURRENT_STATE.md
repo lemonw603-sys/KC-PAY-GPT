@@ -1,5 +1,7 @@
 # 当前生产状态快照｜2026-09-06
 
+> **2026-09-06 Browser LIVE P0 第四批生产事实**：生产已切至 `/opt/pojia/releases/20260906-browser-live-556ba97`（commit `556ba974240ee168161a043177422c8b22c9b04a`，841 文件 manifest 通过），回滚点为 `20260906-import-errors-c6e9f48`，数据库备份 `pojia-20260906T013157Z.sql.gz.enc` 完整。Web/API Worker active/enabled，公网 plus/ops 的 live/ready 均 200；Browser Worker与旧自动开卡 inactive/disabled。数据库 migration 048，`browser_payment_writes_enabled=false`、Browser Profile `productionWritesEnabled=false`，活动 Browser run/dispatch与 ACTIVE/UNKNOWN 资金均为 0。本机连接生产库和本机 BitBrowser 执行正式 LIVE `--check=READY`。HNSKJ 单卡只读请求仍返回维护 403；数据库 5980 `$16`、手工卡 `$0/$2`，尚无达到 `$18` 的已核实卡，未执行订单级回归或付款。
+
 > **2026-09-06 Browser LIVE P0 第三批验证边界**：提交 `ff34feb` 已补齐真实 MySQL 付款/恢复证明；临时 MySQL 8.4 中 Browser 完整套件 `154/154/0/0`。UNKNOWN 恢复、付款已确认但后置未收口恢复均证明恢复不产生第二次付款；UNKNOWN 到期只把相关订单保留在人工处理和卡消费对账状态。生产仍是 `/opt/pojia/releases/20260906-import-errors-c6e9f48`，尚未包含 `bc8ee2f..ff34feb`，所以仍不可宣称 LIVE Worker 已上线或可以付款。
 
 > **2026-09-06 Browser LIVE P0 第二批最新边界**：本地提交 `bc8ee2f` 已实现可执行但默认失败关闭的单订单 LIVE Worker、路线化交易读取、卡级账单地址绑定，以及 UNKNOWN/付款已确认未收口的同 Profile 只读恢复。全量回归 Browser `151/147/4/0`、v1 `552/505/47/0`；本机 BitBrowser/代理 READY，Pilot Profile 访问 ChatGPT 为 HTTP 200、无 Cloudflare、0 submit。生产现场仍是 `/opt/pojia/releases/20260906-import-errors-c6e9f48`，Web/API Worker active，Browser Worker与旧自动开卡 inactive/disabled；`browser_payment_writes_enabled=false`，活动 Browser run、ACTIVE/UNKNOWN 充值资金、活动 dispatch、活动开卡任务均为 0。**代码完成不等于已部署或可真实付款**；详见 `docs/BROWSER_LIVE_P0_IMPLEMENTATION_2026-09-06.md`。

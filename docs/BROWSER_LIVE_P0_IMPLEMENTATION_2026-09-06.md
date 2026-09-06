@@ -115,3 +115,29 @@ UNKNOWN 超时：订单/资金/卡消费保持 UNKNOWN/RECONCILIATION，只创�
 ```
 
 本轮仍未访问生产付款路径、未写 Provider、未填写真实卡、未付款。
+
+## 7. 候选发布与付款关闭 LIVE 检查
+
+当前 HEAD `556ba97` 已用 `git archive` 构建单一提交候选并完成 841 个 tracked 文件全量 manifest 校验：
+
+```text
+release=/opt/pojia/releases/20260906-browser-live-556ba97
+commit=556ba974240ee168161a043177422c8b22c9b04a
+archive_sha256=49fa5298ff91d6297a70c13f5ada31f7c691b2d78ad48d986659b3653321ee8c
+rollback=/opt/pojia/releases/20260906-import-errors-c6e9f48
+backup=/var/backups/pojia/pojia-20260906T013157Z.sql.gz.enc
+release_evidence=/var/backups/pojia/browser-live-deploy-20260906T013344Z
+```
+
+部署后现场：
+
+- Web/API Worker `active/enabled`，公网与本机 `live/ready` 均为 200；
+- Browser Worker、旧每分钟自动开卡 timer 均 `inactive/disabled`；
+- 数据库 `browser_payment_writes_enabled=false`，Browser Profile `productionWritesEnabled=false`；
+- 活动 Browser run/dispatch、ACTIVE/UNKNOWN 充值资金、ACTIVE/UNKNOWN 补款资金均为 0；
+- API Worker 仍仅保留 `PROVIDER_RECHARGE_WRITES_ENABLED=true`，通用 Provider/卡片写为 false；
+- 本机以 SSH 隧道连接生产数据库并接管本机 BitBrowser，正式 LIVE `--check` 返回 `READY`。
+
+LIVE `--check` 不需要订单确认，且强制进程与数据库付款开关为 false；本次没有创建/领取订单、注入 Session、解密或填写卡片、进入 Checkout 或付款。
+
+卡片权威核对仍未通过：HNSKJ 单卡只读请求现场返回维护期 `HTTP 403`；数据库 5980 快照仍为 `$16`，手工备用卡快照为 `$0/$2`，都不足 `$18`。因此订单级付款关闭回归等待卡片充值并取得最新权威资料后执行。

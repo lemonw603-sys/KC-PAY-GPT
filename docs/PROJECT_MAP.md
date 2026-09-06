@@ -1,5 +1,7 @@
 # AI充值业务｜唯一项目规划地图
 
+> **2026-09-06 Browser LIVE P0 第四批（生产发布）**：当前 HEAD `556ba97` 已从单一 commit 构建为 841 文件候选并发布到 `/opt/pojia/releases/20260906-browser-live-556ba97`，回滚点为 `20260906-import-errors-c6e9f48`。Web/API Worker、内外网 live/ready 通过；Browser Worker/旧自动开卡继续关闭，数据库付款开关和 Profile 生产权限均为 false，活动 Browser/资金为 0。本机正式 LIVE `--check` 已同时通过生产数据库、BitBrowser Local API 和 Pilot Profile。HNSKJ 只读卡查询仍被卡台维护 403 阻断，数据库 5980 仍 `$16`、手工备用卡仍 `$0/$2`；所以下一步不是提交订单，而是卡片充值后取得最新权威卡资料，再直接执行订单级付款关闭回归。
+
 > **2026-09-06 Browser LIVE P0 第三批（提交 `ff34feb`）**：已在临时 MySQL 8.4 隔离库执行完整 Browser 套件，`154/154/0/0`。对抗审查先复现了旧夹具缺少订单冻结卡源、相反付款开关用例并行互扰等失败，再修复测试合同和串行 smoke；新增 UNKNOWN 恢复、付款已确认未收口恢复、UNKNOWN 超时三条 MySQL 证明，均保持 `PAYMENT_SUBMIT=1`、恢复阶段新增付款调用 `0`。生产仍未部署；下一步从当前 HEAD 构建候选 release，部署时继续保持 Browser Worker 与付款关闭，再执行生产 LIVE `--check`。
 
 > **2026-09-06 Browser LIVE P0 第二批（代码提交 `bc8ee2f`）**：已新增独立 `production-live-worker.js` 的安全 `--check/--once` 双模式、HNSKJ/手工卡路线化交易核验、实体卡级账单地址稳定绑定、付款 UNKNOWN/付款已确认未收口的专用 Session 与同 Profile 只读恢复；付款确认现在原子建立后续核验计划，恢复 SQL 精确限制批准订单，成功后收口订单/attempt/run/账本/assignment/dispatch。Browser `151/147/4/0`、v1 `552/505/47/0`，本机 Pilot Profile HTTP 200、无 Cloudflare、0 submit。生产只读复核仍为 release `c6e9f48`、Browser Worker/付款/旧自动开卡关闭、活动 Browser/资金/派发为 0；**尚未部署，也尚未完成隔离 MySQL 跳过项和订单级非付款回归**。下一步按 `docs/BROWSER_LIVE_P0_IMPLEMENTATION_2026-09-06.md` 构建候选并以付款关闭状态部署核验。

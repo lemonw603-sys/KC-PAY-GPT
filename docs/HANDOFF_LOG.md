@@ -1538,3 +1538,11 @@
 - 新增三条 MySQL 资金恢复证明：UNKNOWN 后确认收口、付款已确认但 Plus 未收口后恢复、UNKNOWN 到期只升级相关订单。
 - 临时 MySQL 8.4 完整 Browser 回归：`154 total / 154 pass / 0 skip / 0 fail`；恢复用例均为一条 `PAYMENT_SUBMIT`，恢复阶段 0 次新增付款。
 - 本轮未部署、未改变生产开关、未写 Provider、未填写真实卡、未付款。下一步从当前 HEAD 构建付款关闭的候选 release。
+
+## 2026-09-06｜Browser LIVE P0 第四批生产发布与 LIVE check
+
+- 从 commit `556ba974240ee168161a043177422c8b22c9b04a` 构建 841 tracked 文件不可变 release；归档 SHA-256 `49fa5298ff91d6297a70c13f5ada31f7c691b2d78ad48d986659b3653321ee8c`，服务器解包前 manifest 与归档哈希均通过。
+- 当前 release `/opt/pojia/releases/20260906-browser-live-556ba97`；回滚点 `/opt/pojia/releases/20260906-import-errors-c6e9f48`；部署前数据库备份 `/var/backups/pojia/pojia-20260906T013157Z.sql.gz.enc` 验证通过；发布证据保存在 `/var/backups/pojia/browser-live-deploy-20260906T013344Z`。
+- Web/API Worker active/enabled，公网 plus/ops live/ready 均 200。API Worker窄充值权限保持 true，通用 Provider/卡片写 false。Browser Worker、Browser 付款、Profile 生产权限、旧每分钟自动开卡均保持关闭。
+- 本机通过 SSH 隧道连接生产库并使用本机 BitBrowser，正式 `production-live-worker.js --check` 返回 `READY`；无订单、Session、卡片或付款行为。
+- HNSKJ 单卡只读核对仍返回维护期 403；数据库 5980 余额 `$16`，手工备用卡 `$0/$2`，未证明任何卡达到 `$18`。因此未让客户提交新订单，下一步等待充值后的权威卡证据后执行订单级付款关闭回归。

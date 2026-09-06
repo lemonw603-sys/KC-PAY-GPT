@@ -29,8 +29,8 @@
 
 尚未完成：
 
-- 从包含 `bc8ee2f..ff34feb` 的当前单一 HEAD 构建并部署候选 release；
-- 部署后付款关闭的 LIVE `--check` 与订单级卡→地址→邮箱→零税回归；
+- 取得余额至少 `$18` 且资料完整的权威卡片证据；
+- 订单级付款关闭的卡→地址→邮箱→零税回归；
 - 真实订单和唯一真实付款验收。
 
 第二批已完成：
@@ -41,6 +41,7 @@
 - 付款确认与后置核验计划原子建立，恢复按批准订单 SQL 限定；
 - 本机单 Profile 公开页面回归（HTTP 200、无 Cloudflare、0 submit）。
 - 隔离 MySQL 完整 Browser 回归：`154/154/0/0`；UNKNOWN 与付款已确认未收口均证明恢复阶段第二次付款调用为 0。
+- 当前 HEAD 已以单一 commit release `20260906-browser-live-556ba97` 部署；本机接生产库与本机 BitBrowser 的 LIVE `--check=READY`，付款和 Browser Worker继续关闭。
 
 证据与准确边界见 `docs/BROWSER_LIVE_P0_IMPLEMENTATION_2026-09-06.md`。
 

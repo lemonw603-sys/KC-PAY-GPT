@@ -121,4 +121,4 @@
 
 ## 9. 下一动作
 
-D6 已完成生产后台/API、Browser 卡源双向切换、不接管旧订单、备用卡完整快照和幂等重放验收，证据见 `CARD_SOURCE_D6_PRODUCTION_ACCEPTANCE_2026-09-06.md`。Browser LIVE P0 本地组装已在提交 `bc8ee2f` 完成；提交 `ff34feb` 又以临时 MySQL 8.4 完成 Browser `154/154/0/0` 回归，证明 HNSKJ/手工卡路线化收口、UNKNOWN/付款后未收口恢复不产生第二次付款。详见 `BROWSER_LIVE_P0_IMPLEMENTATION_2026-09-06.md`。生产尚未部署，Browser Worker 与付款继续关闭。下一动作是单一 commit 候选部署（付款关闭）→ LIVE `--check` → 订单级非付款回归 → 权威核对充值后的卡；以上通过后再提交真实 Browser 首单并在最终 PHP 零税快照处单独确认付款。
+D6 已完成生产后台/API、Browser 卡源双向切换、不接管旧订单、备用卡完整快照和幂等重放验收，证据见 `CARD_SOURCE_D6_PRODUCTION_ACCEPTANCE_2026-09-06.md`。Browser LIVE P0 已发布为 `/opt/pojia/releases/20260906-browser-live-556ba97`；Browser `154/154/0/0` 隔离库回归和本机接生产库的 LIVE `--check=READY` 均完成，Browser Worker 与付款继续关闭。详见 `BROWSER_LIVE_P0_IMPLEMENTATION_2026-09-06.md`。HNSKJ 当前仍以维护 403 拒绝只读卡详情，数据库可见卡余额均低于 `$18`；下一动作是卡片充值后获取 HNSKJ 权威读证据或导入手工卡最新完整快照，再执行订单级付款关闭回归。通过后才提交真实 Browser 首单，并在最终 PHP 零税快照处单独确认付款。
