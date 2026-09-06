@@ -312,6 +312,73 @@ export class SharedBrowserRuntimeIntegration {
       }
     }
   }
+
+  /** One-order LIVE lane. The dispatch query itself is constrained by orderId. */
+  async runPaymentOnce({ approvedOrderId } = {}) {
+    const orderId = required(approvedOrderId, 'approvedOrderId');
+    const claimed = await this.workerService.claim(this.workerId, {
+      executorProfileId: this.executorProfileId,
+      orderId,
+      leaseSeconds: this.leaseSeconds,
+    });
+    if (!claimed) return { status: 'IDLE', workerId: this.workerId, externalPaymentCalls: 0 };
+    if (claimed.status !== 'CLAIMED' || claimed.orderId !== orderId
+      || claimed.leaseOwner !== this.workerId || !claimed.leaseToken) {
+      throw new SharedBrowserRuntimeError('LIVE dispatch is not the approved owned job', 'LIVE_JOB_NOT_APPROVED');
+    }
+    const control = await this.workerService.runClaimedJob(claimed, {
+      workerId: this.workerId,
+      leaseToken: claimed.leaseToken,
+      leaseSeconds: this.leaseSeconds,
+    });
+    let run;
+    try {
+      run = await this.#effectiveRun(control);
+      const result = await control.perform('executePayment', (executePayment, actionContext) => (
+        executePayment({
+          claimedJob: claimed,
+          run,
+          control,
+          heartbeatRunLease: () => this.#heartbeatRun(run),
+        }, actionContext)
+      ), { actionTimeoutMs: 10 * 60_000 });
+      assertSafeObject(result, 'LIVE Browser result');
+      const payment = result?.paymentResult;
+      if (!payment || !Number.isInteger(payment.paymentSubmitCalls)
+        || payment.paymentSubmitCalls < 0 || payment.paymentSubmitCalls > 1) {
+        throw new SharedBrowserRuntimeError('LIVE runtime returned an invalid payment result', 'PAYMENT_RESULT_INVALID');
+      }
+      if (payment.status === 'COMPLETED') {
+        const dispatch = await control.complete();
+        return { status: 'COMPLETED', workerId: this.workerId, jobId: claimed.jobId,
+          runId: run.runId, dispatchStatus: dispatch.status, externalPaymentCalls: payment.paymentSubmitCalls };
+      }
+      if (['UNKNOWN', 'POST_PAYMENT_UNKNOWN', 'RECONCILE_ONLY'].includes(payment.status)) {
+        control.stop();
+        return { status: payment.status, workerId: this.workerId, jobId: claimed.jobId,
+          runId: run.runId, reasonCode: payment.reasonCode || null,
+          externalPaymentCalls: payment.paymentSubmitCalls };
+      }
+      if (payment.status === 'PRE_SUBMIT_FAILED') {
+        const closed = await this.abortForPrePaymentFailure({
+          control, run,
+          error: { code: payment.reasonCode || 'PRE_SUBMIT_FAILED' },
+        });
+        return { ...closed, workerId: this.workerId, jobId: claimed.jobId, runId: run.runId };
+      }
+      throw new SharedBrowserRuntimeError('LIVE payment result is unsupported', 'PAYMENT_RESULT_INVALID');
+    } catch (error) {
+      control.stop();
+      if (!run?.leaseToken) throw error;
+      const state = await this.executionRepository.getRecoveryState(run.runId).catch(() => null);
+      if (state?.recoveryMode === 'RECONCILE_ONLY') {
+        return { status: 'RECONCILE_ONLY', workerId: this.workerId, jobId: claimed.jobId,
+          runId: run.runId, reasonCode: operationalCode(error?.code, 'LIVE_RUNTIME_FAILURE'),
+          externalPaymentCalls: 0 };
+      }
+      throw error;
+    }
+  }
 }
 
 /**
@@ -348,6 +415,38 @@ export function createBrowserExecutionRuntime({ executionService, resolveExecuti
       });
       assertSafeObject(result, 'Browser execution result');
       return result;
+    },
+  });
+}
+
+/** Runtime bridge that keeps the page, Session and card lease alive through post-payment verification. */
+export function createBrowserPaymentExecutionRuntime({
+  executionService,
+  resolveExecutionContext,
+  createPaymentHandler,
+} = {}) {
+  if (!executionService || typeof executionService.execute !== 'function') throw new TypeError('executionService is required');
+  if (typeof resolveExecutionContext !== 'function') throw new TypeError('resolveExecutionContext is required');
+  if (typeof createPaymentHandler !== 'function') throw new TypeError('createPaymentHandler is required');
+  return Object.freeze({
+    async executePayment({ claimedJob, run, control, heartbeatRunLease }, { signal } = {}) {
+      const resolved = await resolveExecutionContext({ claimedJob, run });
+      if (!resolved?.job || resolved.job.state !== 'RUNNING'
+        || resolved.job.metadata?.browserRunRef !== `run:${run.runId}`) {
+        throw new ContractError('LIVE Browser job must be bound to the claimed run');
+      }
+      const assertLease = async () => {
+        if (signal?.aborted) return false;
+        await heartbeatRunLease();
+        return !signal?.aborted;
+      };
+      const paymentHandler = await createPaymentHandler({ claimedJob, run, control, assertLease });
+      return executionService.execute(resolved.job, {
+        ...(resolved.executionOptions || {}),
+        assertLease,
+        signal,
+        paymentHandler,
+      });
     },
   });
 }

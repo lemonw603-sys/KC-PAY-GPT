@@ -31,6 +31,7 @@ function projection(overrides = {}) {
     order: {
       id: 'ord-upstream-0001', status: 'RECHARGE_PROCESSING',
       fulfillmentRouteId: 'route:browser:0001',
+      frozenCardProviderAccountId: 'provider-account:hnskj:0001',
     },
     attempt: {
       id: 'att-upstream-0001', status: 'PREPARED', fundsRiskState: 'ACTIVE',
@@ -102,7 +103,7 @@ test('non-executable, mismatched, or non-browser bindings fail before dispatch',
   );
   assert.throws(
     () => projectUpstreamBrowserJob(projection({
-      route: { ...projection().route, cardProviderAccountId: 'provider-account:other:0001' },
+      order: { ...projection().order, frozenCardProviderAccountId: 'provider-account:other:0001' },
     }), { now }),
     ContractError,
   );

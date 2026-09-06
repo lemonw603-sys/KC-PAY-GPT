@@ -1,6 +1,6 @@
 # Browser 真实单订单全链路验收方案｜2026-09-06
 
-> 状态：已根据当前 `main`、生产 release、migration 048、本机 BitBrowser 和生产安全开关制定。
+> 状态：验收方案已冻结；Browser LIVE P0 本地实现进行中，尚未部署或启用付款。
 > 目标：用一张真实卡、一个真实 CDK 和一个真实 Session，尽可能一次覆盖从客户提交到 Plus 交付、取消续费、账本与对账的完整链路。
 > 资金边界：在付款前证据全部通过之前，Browser 付款开关保持关闭。最终点击付款是本次唯一需要的资金动作确认。
 
@@ -15,6 +15,24 @@
 5. 卡前 `BROWSER_PREFLIGHT` 复用了付款前的严格零税合同；但真实页面需在填卡+美国免税州地址+账单邮箱后才重报价为零税。卡前检查不应因初始 12% VAT 失败，零税必须放在填卡后、付款前强制检查。
 
 因此先完成一个独立的 LIVE Worker 组装，不放宽已有 readonly Worker。它必须接通：生产订单/dispatch/run、Session 短时解密、卡资料短租约、持久化账单地址分配、填卡后严格零税重报价、唯一付款 intent/permit、单次提交、真实结果观察、Plus 激活、取消续费和有界付款未知核实。
+
+### 2026-09-06 本地实现检查点
+
+已完成：
+
+- `BROWSER_PREFLIGHT` 改用卡前宽松税额合同，仍要求 PHP，不改动最终付款严格合同；
+- LIVE adapter 固定卡→地址→Session 邮箱→重报价→严格零税→最终复核→intent→单次点击顺序；
+- 非零税、非 PHP、算术不一致、控件漂移在 intent 之前停止，不制造假 UNKNOWN；
+- 新增真实同源 Plus 激活与取消续费确认器，access token 不离开页面上下文；
+- 备用卡账单地址已保留，Browser 卡源匹配已对齐订单冻结来源；
+- LIVE dispatch 支持在 SQL claim 层限制精确订单，不是领取后才检查。
+
+尚未完成：
+
+- 可执行的 `production-live-worker.js` 入口与安全 `--check/--once`；
+- 付款 UNKNOWN 时重开同一 Profile/Session 的真实只读 verifier 调度；
+- HNSKJ 交易匹配与手工卡 Browser+ledger 路线的正式 transaction reader；
+- 单 Profile 无付款候选回归、部署和真实订单。
 
 ### P0 退出标准
 

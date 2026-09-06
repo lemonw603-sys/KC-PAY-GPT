@@ -82,7 +82,10 @@ function projectFormalBinding(projection) {
   const cardId = requireRef(card.id, 'card.id');
   const routeId = requireRef(route.id, 'route.id');
   const cardProviderAccountId = requireRef(card.providerAccountId, 'card.providerAccountId');
-  const routeCardProviderAccountId = requireRef(route.cardProviderAccountId, 'route.cardProviderAccountId');
+  const frozenCardProviderAccountId = requireRef(
+    projection.order.frozenCardProviderAccountId,
+    'order.frozenCardProviderAccountId',
+  );
   if (projection.order.assignedCardId != null) {
     if (requireRef(projection.order.assignedCardId, 'order.assignedCardId') !== cardId) {
       throw new ContractError('order.assignedCardId must match card.id');
@@ -101,8 +104,8 @@ function projectFormalBinding(projection) {
   if (!BROWSER_ELIGIBLE_ROUTE_EXECUTOR_KINDS.includes(route.executorKind)) {
     throw new ContractError('route.executorKind must be BROWSER');
   }
-  if (cardProviderAccountId !== routeCardProviderAccountId) {
-    throw new ContractError('card Provider account must match the frozen route');
+  if (cardProviderAccountId !== frozenCardProviderAccountId) {
+    throw new ContractError('card Provider account must match the order-frozen card source');
   }
   const cardConsumptionId = requireRef(consumption.id, 'cardConsumption.id');
   if (consumption.status !== 'RESERVED') {

@@ -27,6 +27,7 @@ SELECT br.status AS run_status, br.payment_state,
        rat.fulfillment_route_id AS attempt_route_id,
        o.id AS order_id, o.status AS order_status,
        o.fulfillment_route_id AS order_route_id,
+       o.frozen_card_provider_account_id,
        c.id AS card_id, c.provider_account_id AS card_provider_account_id,
        c.sync_tier,
        c.card_credentials_ciphertext,
@@ -113,7 +114,25 @@ function normalizeStoredCardCredentials(value) {
     || !Number.isInteger(expYear) || expiryIndex < currentIndex) {
     throw new SharedEncryptedMaterialError('stored card material is invalid', 'CARD_NOT_READY');
   }
-  return { pan, expMonth, expYear, cvc };
+  const material = { pan, expMonth, expYear, cvc };
+  if (value?.billingAddress != null) {
+    const address = value.billingAddress;
+    const billingAddress = {
+      name: String(address?.name || '').trim(),
+      country: String(address?.country || '').trim().toUpperCase(),
+      state: String(address?.state || '').trim().toUpperCase(),
+      line1: String(address?.line1 || '').trim(),
+      city: String(address?.city || '').trim(),
+      postalCode: String(address?.postalCode || '').trim(),
+    };
+    if (billingAddress.country !== 'US' || !/^[A-Z]{2}$/.test(billingAddress.state)
+      || !billingAddress.name || !billingAddress.line1 || !billingAddress.city
+      || !billingAddress.postalCode) {
+      throw new SharedEncryptedMaterialError('stored billing address is invalid', 'CARD_NOT_READY');
+    }
+    material.billingAddress = billingAddress;
+  }
+  return material;
 }
 
 /**
@@ -173,8 +192,8 @@ export class SharedEncryptedCardMaterialSource {
       assertPrePaymentContext(row, 'CARD_NOT_READY');
       if (!row.card_id || !row.attempt_id || !row.order_id
         || !row.card_provider_account_id
-        || (!['MANUAL_IMPORT'].includes(String(row.sync_tier || ''))
-          && row.card_provider_account_id !== row.route_card_provider_account_id)
+        || !row.frozen_card_provider_account_id
+        || row.card_provider_account_id !== row.frozen_card_provider_account_id
         || row.consumption_status !== 'RESERVED'
         || row.consumption_attempt_id !== row.attempt_id
         || row.consumption_order_id !== row.order_id

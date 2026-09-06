@@ -1509,3 +1509,13 @@
 - 发现此前把“付款状态机代码已部署”说得过于接近“真实付款可用”。实际可运行的仍是 readonly Worker，payment executor 会拒绝 LIVE，live click adapter 未接入 Worker，真实 Plus/取消 verifier 与付款未知调度也未完成组装。
 - 另一个 P0 时序问题是：卡前 `BROWSER_PREFLIGHT` 不应强求零税，因为实测零税只在填卡+免税地址+Session 邮箱后重报价产生。卡前只验 Session/FREE/新 Checkout/表单；付款前再强制 PHP+零税+金额一致。
 - 当前不要提交新 CDK+Session。先完成 P0 组装与单 Profile 非付款回归，再用一笔新 Browser 订单做完整验收；本轮未启动 Worker、未付款。
+
+## 2026-09-06｜Browser LIVE P0 本地实现第一检查点
+
+- 修正 cardless preflight 误用最终零税合同；初始 12% VAT 不再阻断，最终付款仍强制 PHP/零税/算术一致。
+- 修正 payment intent 过早：现在完成填卡、账单地址、Session 邮箱、重报价和最终复核后才落 intent，随后立即单次点击。
+- 新增真实 Plus/取消续费核验器、单订单绑定 LIVE 配置与组装边界；仍未有可启动生产 LIVE entrypoint。
+- 修正备用卡密文中账单地址被丢弃，以及 Browser 上游投影仍使用旧 route 卡台而非订单冻结卡源的跨模块漂移。
+- Browser 全量：142 total / 138 pass / 4 environment skip / 0 fail；v1 受影响定向 18/18。
+- 工作区仍保留用户 `docs/DECISIONS.md` 修改，本轮未触碰。未部署、未启动 Browser Worker、未付款。
+- 下一步：完成生产 LIVE entrypoint、route-aware transaction reader 和 UNKNOWN 真实调度，然后单 Profile 付款关闭回归。

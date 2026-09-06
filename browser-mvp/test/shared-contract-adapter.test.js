@@ -12,7 +12,7 @@ import {
 
 function projection(overrides = {}) {
   return {
-    order: { id: 'ord-0001', status: 'RECHARGE_PROCESSING', fulfillmentRouteId: 'route-0001' },
+    order: { id: 'ord-0001', status: 'RECHARGE_PROCESSING', fulfillmentRouteId: 'route-0001', frozenCardProviderAccountId: 'provider-account-0001' },
     attempt: {
       id: 'att-0001', status: 'PREPARED', fundsRiskState: 'ACTIVE',
       executorKind: 'BROWSER', executorProfileId: 'prof-0001', fulfillmentRouteId: 'route-0001',

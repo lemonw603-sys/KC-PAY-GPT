@@ -25,6 +25,7 @@ SELECT
   o.id AS order_id,
   o.status AS order_status,
   o.fulfillment_route_id AS order_fulfillment_route_id,
+  o.frozen_card_provider_account_id AS order_frozen_card_provider_account_id,
   o.assigned_card_id AS order_assigned_card_id,
   c.id AS card_id,
   c.order_id AS card_order_id,
@@ -75,6 +76,10 @@ export function rowToProjection(row) {
       id: required(row.order_id, 'order_id'),
       status: required(row.order_status, 'order_status'),
       fulfillmentRouteId: required(row.order_fulfillment_route_id, 'order_fulfillment_route_id'),
+      frozenCardProviderAccountId: required(
+        row.order_frozen_card_provider_account_id,
+        'order_frozen_card_provider_account_id',
+      ),
       ...(row.order_assigned_card_id == null
         ? {}
         : { assignedCardId: required(row.order_assigned_card_id, 'order_assigned_card_id') }),

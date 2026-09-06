@@ -43,12 +43,17 @@ function context(overrides = {}) {
     order_id: 'order-fixture', order_status: 'RECHARGE_PROCESSING',
     order_route_id: 'route-fixture', route_id: 'route-fixture', route_executor_kind: 'BROWSER',
     card_id: 'card-fixture', card_provider_account_id: 'provider-fixture',
+    frozen_card_provider_account_id: 'provider-fixture',
     route_card_provider_account_id: 'provider-fixture', consumption_status: 'RESERVED',
     consumption_attempt_id: 'attempt-fixture', consumption_order_id: 'order-fixture',
     consumption_card_id: 'card-fixture',
     session_ciphertext: encryptSecret(JSON.stringify(sessionFixture()), key),
     card_credentials_ciphertext: encryptSecret(JSON.stringify({
       cardNumber: '4111111111111111', expMonth: 12, expYear: 2032, cvv: '123',
+      billingAddress: {
+        name: 'Fixture Name', country: 'US', state: 'DE',
+        line1: '100 Test St', city: 'Wilmington', postalCode: '19801',
+      },
     }), key),
     ...overrides,
   };
@@ -100,10 +105,35 @@ test('shared encrypted sources bind material to one active browser_run and short
     ready: true,
     fieldCount: Object.keys(material).length,
   }));
-  assert.deepEqual(safe, { ready: true, fieldCount: 4 });
+  assert.deepEqual(safe, { ready: true, fieldCount: 5 });
   assert.equal(cardDb.calls.length, 1);
   assert.deepEqual(cardDb.calls[0].params, ['run-fixture']);
   await cardProvider.close(cardLease);
+});
+
+test('shared card material preserves a valid imported billing address and rejects an invalid one', async () => {
+  const source = new SharedEncryptedCardMaterialSource({
+    db: dbReturning(context()), encryptionKey: key,
+  });
+  const material = await source.load(browserRunMaterialRef('run-fixture'));
+  assert.deepEqual(material.billingAddress, {
+    name: 'Fixture Name', country: 'US', state: 'DE',
+    line1: '100 Test St', city: 'Wilmington', postalCode: '19801',
+  });
+
+  const invalid = new SharedEncryptedCardMaterialSource({
+    db: dbReturning(context({
+      card_credentials_ciphertext: encryptSecret(JSON.stringify({
+        cardNumber: '4111111111111111', expMonth: 12, expYear: 2032, cvv: '123',
+        billingAddress: { name: 'Fixture Name', country: 'PH', state: 'DE' },
+      }), key),
+    })),
+    encryptionKey: key,
+  });
+  await assert.rejects(
+    () => invalid.load(browserRunMaterialRef('run-fixture')),
+    (error) => error.code === 'CARD_NOT_READY',
+  );
 });
 
 test('shared card material SQL resolves the assigned card instead of assuming card ownership by this order', async () => {
@@ -112,6 +142,7 @@ test('shared card material SQL resolves the assigned card instead of assuming ca
   await source.load(browserRunMaterialRef('run-fixture'));
   assert.match(cardDb.calls[0].sql, /c\.id = o\.assigned_card_id/);
   assert.match(cardDb.calls[0].sql, /o\.assigned_card_id IS NULL AND c\.order_id = o\.id/);
+  assert.match(cardDb.calls[0].sql, /o\.frozen_card_provider_account_id/);
 });
 
 test('shared encrypted material sources fail closed on state, reservation and ciphertext drift', async () => {
@@ -142,6 +173,15 @@ test('shared encrypted material sources fail closed on state, reservation and ci
   await assert.rejects(
     () => profileDrift.load('browser-run:run-fixture'),
     (error) => error.code === 'SESSION_INVALID',
+  );
+
+  const frozenSourceDrift = new SharedEncryptedCardMaterialSource({
+    db: dbReturning(context({ frozen_card_provider_account_id: 'another-provider' })),
+    encryptionKey: key,
+  });
+  await assert.rejects(
+    () => frozenSourceDrift.load('browser-run:run-fixture'),
+    (error) => error.code === 'CARD_NOT_READY',
   );
 
   const corrupt = new SharedEncryptedCardMaterialSource({

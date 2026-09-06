@@ -1,6 +1,8 @@
 import { ContractError } from './contracts.js';
 import { assertCardMaterial } from './card-material-lease.js';
 import { SECURE_CARD_FIELD_SELECTORS } from './nonpayment-card-fill.js';
+import { fillBillingAddress, fillTransientBillingEmail } from './billing-address-fill.js';
+import { observeCheckout } from './checkout-observer.js';
 
 export const LIVE_PAYMENT_CONFIRMATION = 'I-CONFIRM-LIVE-BROWSER-PAYMENT-ADAPTER';
 
@@ -34,6 +36,22 @@ async function oneVisible(page, selector, label) {
   }
 }
 
+async function observeStrictQuoteAfterReprice(page, checkoutContract, timeoutMs, assertContinue) {
+  const deadline = Date.now() + timeoutMs;
+  let lastError;
+  do {
+    await assertContinue();
+    try { return await observeCheckout(page, checkoutContract); } catch (error) {
+      lastError = error;
+      const pending = /tax is not zero|summary is incomplete|quote is incomplete|quote total does not match subtotal/i
+        .test(String(error?.message || ''));
+      if (!pending || Date.now() >= deadline) throw error;
+      await page.waitForTimeout(250);
+    }
+  } while (true);
+  throw lastError;
+}
+
 /**
  * Minimal LIVE adapter. It is inert unless both enabled=true and the exact
  * confirmation string are supplied by a separately controlled caller.
@@ -46,12 +64,30 @@ export class LiveChatGPTPaymentAdapter {
     this.outcomeObserver = outcomeObserver;
   }
 
-  async submit({ page, checkout, cardMaterial, operationId, assertContinue = async () => undefined } = {}) {
+  async submit({
+    page, checkout, checkoutContract, cardMaterial, billingEmail, operationId,
+    assertContinue = async () => undefined,
+    beforeSubmit = async () => undefined,
+    authorizeSubmit = null,
+    repriceTimeoutMs = 30_000,
+  } = {}) {
     if (!this.enabled) throw new LiveChatGPTPaymentAdapterError('LIVE Browser payment adapter is disabled', 'PAYMENT_EXECUTOR_DISABLED');
     if (!page || typeof page.frames !== 'function') throw new TypeError('page is required');
     const op = required(operationId, 'operationId');
     if (!checkout?.recognized || typeof checkout.submitControlSelector !== 'string' || !checkout.submitControlSelector.trim()) {
       throw new LiveChatGPTPaymentAdapterError('recognized Checkout contract is required', 'CHECKOUT_ADAPTER_MISMATCH');
+    }
+    if (!checkoutContract || checkoutContract.requiredCurrency !== 'PHP'
+      || checkoutContract.requireZeroTax !== true
+      || checkoutContract.requireQuoteConsistency !== true) {
+      throw new LiveChatGPTPaymentAdapterError('strict PHP zero-tax Checkout contract is required', 'CHECKOUT_ADAPTER_MISMATCH');
+    }
+    if (typeof assertContinue !== 'function' || typeof beforeSubmit !== 'function') {
+      throw new TypeError('assertContinue and beforeSubmit are required');
+    }
+    if (typeof authorizeSubmit !== 'function') throw new TypeError('authorizeSubmit is required');
+    if (!Number.isInteger(repriceTimeoutMs) || repriceTimeoutMs < 1_000 || repriceTimeoutMs > 60_000) {
+      throw new TypeError('repriceTimeoutMs must be between 1000 and 60000');
     }
     let submitted = false;
     try {
@@ -74,12 +110,29 @@ export class LiveChatGPTPaymentAdapter {
           if ((await field.inputValue()).trim()) throw new LiveChatGPTPaymentAdapterError(`${name} secure field is not empty`, 'CHECKOUT_DRIFT');
           await field.fill(values[name]);
         }
+        if (!cardMaterial.billingAddress) {
+          throw new LiveChatGPTPaymentAdapterError('billing address is required', 'CARD_MATERIAL_INVALID');
+        }
         await assertContinue();
-        const submit = await oneVisible(page, checkout.submitControlSelector, 'payment submit control');
+        await fillBillingAddress(page, cardMaterial.billingAddress, { timeoutMs: repriceTimeoutMs });
+        await assertContinue();
+        await fillTransientBillingEmail(page, billingEmail, { timeoutMs: repriceTimeoutMs, required: true });
+        const strictCheckout = await observeStrictQuoteAfterReprice(
+          page, checkoutContract, repriceTimeoutMs, assertContinue,
+        );
+        if (strictCheckout.submitControlSelector !== checkout.submitControlSelector) {
+          throw new LiveChatGPTPaymentAdapterError('payment submit selector changed after requote', 'CHECKOUT_DRIFT');
+        }
+        await assertContinue();
+        await beforeSubmit({ checkout: strictCheckout });
+        await assertContinue();
+        const submit = await oneVisible(page, strictCheckout.submitControlSelector, 'payment submit control');
         const shape = await submit.evaluate((element) => ({
           tag: element.tagName.toLowerCase(), type: element.getAttribute('type')?.toLowerCase() || null,
         }));
         if (shape.tag !== 'button' || shape.type !== 'submit') throw new ContractError('payment submit control shape drift');
+        const intent = await authorizeSubmit();
+        if (!intent?.executeExternal) return { status: 'RECONCILE_ONLY' };
         await submit.click();
         submitted = true;
         if (typeof this.outcomeObserver !== 'function') {
@@ -89,7 +142,14 @@ export class LiveChatGPTPaymentAdapter {
         if (outcome?.status !== 'CONFIRMED') {
           throw new LiveChatGPTPaymentAdapterError('payment outcome was not confirmed', 'PAYMENT_RESULT_UNKNOWN');
         }
-        return { status: 'CONFIRMED', providerCallRef: `browser:${op}` };
+        return {
+          status: 'CONFIRMED', providerCallRef: `browser:${op}`,
+          quote: {
+            currency: strictCheckout.currency,
+            amount: strictCheckout.amount,
+            estimatedTax: strictCheckout.estimatedTax,
+          },
+        };
       } finally {
         // Never leave card values in the page after success, failure, or an
         // unknown outcome. Cleanup is best effort because the page may have

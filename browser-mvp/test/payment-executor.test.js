@@ -34,6 +34,9 @@ test('payment executor is disabled by default and rejects live adapter mode', ()
   assert.equal(loadPaymentExecutorConfig({}).enabled, false);
   assert.equal(loadPaymentExecutorConfig({ BROWSER_PAYMENT_EXECUTOR_ENABLED: 'true' }).mode, 'MOCK');
   assert.throws(() => loadPaymentExecutorConfig({ BROWSER_PAYMENT_EXECUTOR_MODE: 'LIVE' }), (error) => error.code === 'LIVE_PAYMENT_ADAPTER_UNAVAILABLE');
+  assert.deepEqual(loadPaymentExecutorConfig({
+    BROWSER_PAYMENT_EXECUTOR_MODE: 'LIVE', BROWSER_PAYMENT_EXECUTOR_ENABLED: 'true',
+  }, { liveAdapterAvailable: true }), { enabled: true, mode: 'LIVE' });
   const { executor, control } = harness({ enabled: false });
   return assert.rejects(() => executor.execute({ control, run: { runId: 'run-1', leaseToken: 'lease-1' }, checkout: { kind: 'MOCK_CHECKOUT' }, cardMaterial: { ref: 'card-material' }, operationId: 'pay-1' }), (error) => error.code === 'PAYMENT_EXECUTOR_DISABLED');
 });
@@ -49,7 +52,7 @@ test('mock payment lane obtains authoritative permit, submits once, and verifies
   assert.equal(adapter.calls.length, 1);
   assert.deepEqual(verifier.calls, ['plus', 'cancellation', 'card-transactions', 'reconcile']);
   assert.deepEqual(calls.filter((value) => typeof value === 'string' && value.startsWith('lease:')), [
-    'lease:PAYMENT_PERMIT', 'lease:PAYMENT_SUBMIT', 'lease:PAYMENT_RESULT',
+    'lease:PAYMENT_PERMIT', 'lease:PAYMENT_SUBMIT', 'lease:PAYMENT_SUBMIT_INTENT', 'lease:PAYMENT_RESULT',
   ]);
 });
 
@@ -97,6 +100,7 @@ test('proven pre-submit drift is recoverable and does not mark payment UNKNOWN',
   });
   assert.deepEqual(result, { status: 'PRE_SUBMIT_FAILED', reasonCode: 'CHECKOUT_DRIFT', paymentSubmitCalls: 0 });
   assert.equal(calls.filter((value) => Array.isArray(value) && value[0] === 'unknown').length, 0);
+  assert.equal(calls.filter((value) => Array.isArray(value) && value[0] === 'intent').length, 0);
 });
 
 test('post-payment verifier errors become structured reconciliation state', async () => {

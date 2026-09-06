@@ -7,6 +7,7 @@ import {
   BrowserOrderEncryptedSessionSource,
   BrowserOrderPreflightRepository,
   browserOrderMaterialRef,
+  createCardlessPreflightObservation,
   summarizeBrowserPreflight,
 } from '../src/browser-order-preflight.js';
 
@@ -79,6 +80,24 @@ test('preflight summary keeps only non-payment operational evidence', () => {
   assert.equal(summary.checkout.amount, '982.14');
   assert.equal(summary.submitCalls, 0);
   assert.throws(() => summarizeBrowserPreflight({ submitCalls: 1 }), /payment submit call/);
+});
+
+test('cardless preflight permits the initial VAT quote without weakening the payment contract', () => {
+  const strictCheckoutContract = Object.freeze({
+    requiredCurrency: 'PHP',
+    requireZeroTax: true,
+    requireQuoteConsistency: true,
+  });
+  const observation = {
+    pageContract: { urlPrefix: 'https://chatgpt.com/' },
+    checkoutContract: strictCheckoutContract,
+  };
+  const preflight = createCardlessPreflightObservation(observation);
+  assert.equal(preflight.checkoutContract.requiredCurrency, 'PHP');
+  assert.equal(preflight.checkoutContract.requireZeroTax, false);
+  assert.equal(preflight.checkoutContract.requireQuoteConsistency, false);
+  assert.equal(strictCheckoutContract.requireZeroTax, true);
+  assert.equal(strictCheckoutContract.requireQuoteConsistency, true);
 });
 
 test('preflight repository claims only Browser preflight tasks with the database profile', async () => {

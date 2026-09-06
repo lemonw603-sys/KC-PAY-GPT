@@ -86,6 +86,21 @@ test('claim scopes unbound work to the configured Browser profile and freezes th
   assert.equal(result.executorProfileId, 'profile-readonly');
 });
 
+test('claim can be constrained to the one explicitly approved LIVE order', async () => {
+  const pool = poolFor((sql, values) => {
+    if (/FROM browser_dispatch_jobs bdj/.test(sql)) {
+      assert.match(sql, /bdj\.order_id = \?/);
+      assert.deepEqual(values.slice(1), ['profile-live', 'order-live']);
+      return [[], []];
+    }
+    throw new Error(`unexpected SQL: ${sql}`);
+  });
+  const result = await createBrowserDispatchRepository(pool).claim({
+    workerId: 'live-worker', executorProfileId: 'profile-live', orderId: 'order-live',
+  });
+  assert.equal(result, null);
+});
+
 test('enqueue retries a deadlock and commits the idempotent database operation once', async () => {
   let insertAttempts = 0;
   const pool = poolFor((sql) => {

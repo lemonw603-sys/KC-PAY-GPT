@@ -214,10 +214,11 @@ export function createBrowserDispatchRepository(pool, { transactionTimeoutMs = 5
       }, { timeoutMs: transactionTimeoutMs });
     },
 
-    async claim({ workerId, executorProfileId = null, leaseSeconds = 60, now = new Date() }) {
+    async claim({ workerId, executorProfileId = null, orderId = null, leaseSeconds = 60, now = new Date() }) {
       const worker = required(workerId, 'workerId');
       const profile = executorProfileId == null
         ? null : required(executorProfileId, 'executorProfileId');
+      const approvedOrder = orderId == null ? null : required(orderId, 'orderId');
       if (!Number.isInteger(leaseSeconds) || leaseSeconds < 10 || leaseSeconds > 3600) {
         throw new BrowserDispatchError('leaseSeconds must be between 10 and 3600', 'INVALID_ARGUMENT');
       }
@@ -229,6 +230,7 @@ export function createBrowserDispatchRepository(pool, { transactionTimeoutMs = 5
         const profilePredicate = profile
           ? 'AND (bdj.executor_profile_id IS NULL OR bdj.executor_profile_id = ?)'
           : '';
+        const orderPredicate = approvedOrder ? 'AND bdj.order_id = ?' : '';
         const [rows] = await connection.query(
           `SELECT bdj.id, bdj.job_key, bdj.recharge_attempt_id, bdj.order_id,
                   bdj.executor_profile_id, bdj.status, bdj.attempt_count
@@ -246,9 +248,10 @@ export function createBrowserDispatchRepository(pool, { transactionTimeoutMs = 5
                  AND browser_gate.setting_value = 'true'
              )
              ${profilePredicate}
+             ${orderPredicate}
            ORDER BY bdj.queued_at, bdj.id
            LIMIT 1 FOR UPDATE SKIP LOCKED`,
-          profile ? [now, profile] : [now]
+          [now, ...(profile ? [profile] : []), ...(approvedOrder ? [approvedOrder] : [])]
         );
         if (!rows.length) return null;
         const row = rows[0];

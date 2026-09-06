@@ -67,6 +67,7 @@ export class BrowserExecutionService {
     cardMaterialRef = null,
     validateCardMaterialOnly = false,
     fillCardFields = false,
+    paymentHandler = null,
   } = {}) {
     assertJobEnvelope(job);
     if (job.state !== 'RUNNING') throw new BrowserExecutionError('INVALID_STATE', 'job must be RUNNING before Browser execution');
@@ -79,6 +80,12 @@ export class BrowserExecutionService {
     }
     if (job.metadata?.accountProbeContract && !job.metadata?.sessionIdentity) {
       throw new ContractError('sessionIdentity is required when account probing is enabled');
+    }
+    if (paymentHandler != null && typeof paymentHandler !== 'function') {
+      throw new TypeError('paymentHandler must be a function');
+    }
+    if (paymentHandler && fillCardFields) {
+      throw new ContractError('paymentHandler and non-payment card fill are mutually exclusive');
     }
     const startedAt = this.clock();
     let evidenceSequence = 0;
@@ -211,7 +218,7 @@ export class BrowserExecutionService {
             assertCardMaterial(material);
           });
           cardMaterialReady = true;
-          if (!fillCardFields && ownedCardMaterialLease) {
+          if (!fillCardFields && !paymentHandler && ownedCardMaterialLease) {
             await cardMaterialLeaseProvider.close(cardMaterialLease);
             cardMaterialLease = null;
             ownedCardMaterialLease = false;
@@ -259,6 +266,7 @@ export class BrowserExecutionService {
       }
       let checkout = null;
       let checkoutBeforeBilling = null;
+      let paymentResult = null;
       if (job.metadata.checkoutContract) {
         try {
           checkoutBeforeBilling = await observeCheckout(page, {
@@ -300,6 +308,27 @@ export class BrowserExecutionService {
           throw new BrowserExecutionError('CARD_MATERIAL_FILL_FAILED', error.message, error);
         }
       }
+      if (paymentHandler) {
+        if (!cardMaterialLeaseProvider || !cardMaterialLease || !checkoutBeforeBilling
+          || !job.metadata.checkoutContract || !transientBillingEmail) {
+          throw new BrowserExecutionError('PAYMENT_RUNTIME_CONTRACT');
+        }
+        try {
+          paymentResult = await cardMaterialLeaseProvider.withMaterial(cardMaterialLease, (material) => (
+            paymentHandler({
+              page,
+              checkout: checkoutBeforeBilling,
+              checkoutContract: job.metadata.checkoutContract,
+              cardMaterial: material,
+              billingEmail: transientBillingEmail,
+              sessionIdentity,
+            })
+          ));
+        } catch (error) {
+          if (error instanceof BrowserExecutionError) throw error;
+          throw new BrowserExecutionError(error?.code || 'PAYMENT_EXECUTION_FAILED', error.message, error);
+        }
+      }
       const readonlyChecklist = job.metadata.accountProbeContract ? {
         loggedIn: sessionIdentity?.loggedIn === true,
         identityMatched: sessionIdentity?.identityMatched === true,
@@ -309,7 +338,8 @@ export class BrowserExecutionService {
         fieldsWritten: 0,
         submitCalls: 0,
       } : null;
-      return { status: 'OBSERVED', startedAt, finishedAt: this.clock(), submitCalls: 0, sessionBootstrapped, cardMaterialReady, sessionIdentity, checkoutNavigation, checkoutBeforeBilling, checkout, cardFill, readonlyChecklist };
+      const submitCalls = Number(paymentResult?.paymentSubmitCalls || 0);
+      return { status: paymentResult ? 'PAYMENT_EXECUTED' : 'OBSERVED', startedAt, finishedAt: this.clock(), submitCalls, sessionBootstrapped, cardMaterialReady, sessionIdentity, checkoutNavigation, checkoutBeforeBilling, checkout, cardFill, paymentResult, readonlyChecklist };
     } catch (error) {
       const failure = error instanceof BrowserExecutionError
         ? error

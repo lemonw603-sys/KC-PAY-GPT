@@ -8,13 +8,13 @@ export class BrowserPaymentExecutorError extends Error {
   }
 }
 
-export function loadPaymentExecutorConfig(env = process.env) {
+export function loadPaymentExecutorConfig(env = process.env, { liveAdapterAvailable = false } = {}) {
   const enabled = env.BROWSER_PAYMENT_EXECUTOR_ENABLED === 'true';
   const mode = String(env.BROWSER_PAYMENT_EXECUTOR_MODE || 'MOCK').trim().toUpperCase();
   if (!['MOCK', 'LIVE'].includes(mode)) {
     throw new BrowserPaymentExecutorError('BROWSER_PAYMENT_EXECUTOR_MODE must be MOCK or LIVE', 'INVALID_PAYMENT_EXECUTOR_MODE');
   }
-  if (mode === 'LIVE') {
+  if (mode === 'LIVE' && liveAdapterAvailable !== true) {
     throw new BrowserPaymentExecutorError('LIVE Browser payment adapter is not implemented in this release', 'LIVE_PAYMENT_ADAPTER_UNAVAILABLE');
   }
   return Object.freeze({ enabled, mode });
@@ -40,13 +40,16 @@ export class MockCheckoutPaymentAdapter {
     this.calls = [];
   }
 
-  async submit({ operationId, checkout, cardMaterial }) {
+  async submit({ operationId, checkout, cardMaterial, authorizeSubmit }) {
     if (!checkout || checkout.kind !== 'MOCK_CHECKOUT') {
       throw new BrowserPaymentExecutorError('mock adapter requires MOCK_CHECKOUT', 'CHECKOUT_ADAPTER_MISMATCH');
     }
     if (!cardMaterial || typeof cardMaterial !== 'object') {
       throw new BrowserPaymentExecutorError('card material must stay inside the adapter boundary', 'CARD_MATERIAL_REQUIRED');
     }
+    if (typeof authorizeSubmit !== 'function') throw new TypeError('authorizeSubmit is required');
+    const intent = await authorizeSubmit();
+    if (!intent?.executeExternal) return { status: 'RECONCILE_ONLY' };
     this.calls.push({ operationId: required(operationId, 'operationId') });
     if (this.outcome === 'UNKNOWN') throw new Error('mock checkout connection lost after submit');
     if (this.outcome === 'DECLINED') return { status: 'DECLINED', providerCallRef: `mock-call:${operationId}` };
@@ -118,34 +121,60 @@ export class BrowserPaymentExecutor {
     this.verificationIntervalMs = verificationIntervalMs;
   }
 
-  async execute({ control, run, page = null, checkout, cardMaterial, operationId } = {}) {
+  async execute({
+    control, run, page = null, checkout, checkoutContract = null, cardMaterial,
+    billingEmail = null, beforeSubmit = async () => undefined, operationId,
+  } = {}) {
     if (!this.enabled) throw new BrowserPaymentExecutorError('Browser payment executor is disabled', 'PAYMENT_EXECUTOR_DISABLED');
     const op = required(operationId, 'operationId');
     if (!control || typeof control.assertLeaseBeforeAction !== 'function') throw new TypeError('control is required');
     await control.assertLeaseBeforeAction('PAYMENT_PERMIT');
     const permit = await this.integration.issueAuthoritativePaymentPermit({ control, run });
-    const intent = await this.executionRepository.commitPaymentSubmissionIntent({
-      runId: required(run?.runId, 'run.runId'),
-      workerId: required(this.integration.workerId, 'workerId'),
-      leaseToken: required(run?.leaseToken, 'run.leaseToken'),
-      permitNonce: required(permit.permitNonce, 'permit.permitNonce'),
-      operationId: op,
-    });
-    if (!intent.executeExternal) {
-      return { status: 'RECONCILE_ONLY', idempotentReplay: true, paymentSubmitCalls: 0 };
-    }
+    let intent = null;
+    const authorizeSubmit = async () => {
+      if (intent) return intent;
+      await control.assertLeaseBeforeAction('PAYMENT_SUBMIT_INTENT');
+      intent = await this.executionRepository.commitPaymentSubmissionIntent({
+        runId: required(run?.runId, 'run.runId'),
+        workerId: required(this.integration.workerId, 'workerId'),
+        leaseToken: required(run?.leaseToken, 'run.leaseToken'),
+        permitNonce: required(permit.permitNonce, 'permit.permitNonce'),
+        operationId: op,
+      });
+      return intent;
+    };
 
     let submission;
     try {
       await control.assertLeaseBeforeAction('PAYMENT_SUBMIT');
-      submission = await this.paymentAdapter.submit({ page, operationId: op, checkout, cardMaterial, permit });
+      submission = await this.paymentAdapter.submit({
+        page, operationId: op, checkout, checkoutContract, cardMaterial,
+        billingEmail, permit, beforeSubmit, authorizeSubmit,
+        assertContinue: () => control.assertLeaseBeforeAction('PAYMENT_PAGE_ACTION'),
+      });
+      if (submission?.status === 'RECONCILE_ONLY') {
+        return { status: 'RECONCILE_ONLY', idempotentReplay: true, paymentSubmitCalls: 0 };
+      }
       await control.assertLeaseBeforeAction('PAYMENT_RESULT');
     } catch (error) {
       // Failures proven to occur before the submit click must not poison the
       // payment attempt as UNKNOWN; they are safe to correct/retry by the
       // caller. Only post-click failures consume the one-shot uncertainty path.
       if (['CHECKOUT_DRIFT', 'CARD_MATERIAL_INVALID', 'CHECKOUT_ADAPTER_MISMATCH', 'INVALID_ARGUMENT'].includes(error?.code)) {
+        if (intent?.executeExternal) {
+          await this.executionRepository.markPaymentUnknown({
+            runId: run.runId, operationId: `${op}:unknown`, reasonCode: 'PAYMENT_RESULT_UNKNOWN',
+            verificationDeadline: new Date(Date.now() + this.verificationWindowMs),
+            verificationNextCheckAt: new Date(Date.now() + this.verificationIntervalMs),
+          });
+          return { status: 'UNKNOWN', reasonCode: 'PAYMENT_RESULT_UNKNOWN', paymentSubmitCalls: 0 };
+        }
         return { status: 'PRE_SUBMIT_FAILED', reasonCode: error.code, paymentSubmitCalls: 0 };
+      }
+      // No intent means the adapter proved it never crossed the external
+      // submit boundary, so this remains a safe pre-submit failure.
+      if (!intent) {
+        return { status: 'PRE_SUBMIT_FAILED', reasonCode: error?.code || 'PRE_SUBMIT_FAILED', paymentSubmitCalls: 0 };
       }
       await this.executionRepository.markPaymentUnknown({
         runId: run.runId, operationId: `${op}:unknown`, reasonCode: 'PAYMENT_RESULT_UNKNOWN',

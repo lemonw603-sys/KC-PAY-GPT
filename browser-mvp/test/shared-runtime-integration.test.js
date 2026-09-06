@@ -18,7 +18,7 @@ const digest = (value) => createHash('sha256').update(value).digest('hex');
 
 function formalProjection(run, observation = undefined) {
   return {
-    order: { id: 'order-runtime-1', status: 'RECHARGE_PROCESSING', fulfillmentRouteId: 'route-runtime-1' },
+    order: { id: 'order-runtime-1', status: 'RECHARGE_PROCESSING', fulfillmentRouteId: 'route-runtime-1', frozenCardProviderAccountId: 'provider-runtime-1' },
     attempt: {
       id: 'attempt-runtime-1', status: 'PREPARED', fundsRiskState: 'ACTIVE',
       executorKind: 'BROWSER', executorProfileId: 'profile-runtime-1',

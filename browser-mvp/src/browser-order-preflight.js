@@ -24,6 +24,26 @@ const CUSTOMER_ACTION_CODES = new Map([
   ['ACCOUNT_ALREADY_PLUS', 'ACCOUNT_ALREADY_PLUS'],
 ]);
 
+/**
+ * Cardless preflight proves identity, FREE status, Checkout reachability and
+ * secure-field readiness only. Tax is authoritative only after card, billing
+ * address and billing email have been entered and the server has requoted.
+ */
+export function createCardlessPreflightObservation(observation) {
+  if (!observation || typeof observation !== 'object') {
+    throw new TypeError('observation is required');
+  }
+  if (!observation.checkoutContract) return { ...observation };
+  return {
+    ...observation,
+    checkoutContract: {
+      ...observation.checkoutContract,
+      requireZeroTax: false,
+      requireQuoteConsistency: false,
+    },
+  };
+}
+
 function required(value, name) {
   const normalized = String(value ?? '').trim();
   if (!normalized) throw new TypeError(`${name} is required`);
@@ -364,6 +384,7 @@ export function createBrowserOrderPreflightWorker({
   leaseSeconds = 120,
   executionTimeoutMs = 30_000,
 } = {}) {
+  const cardlessObservation = createCardlessPreflightObservation(observation);
   const repository = new BrowserOrderPreflightRepository({
     pool, workerId, executorProfileId, leaseSeconds,
   });
@@ -387,7 +408,7 @@ export function createBrowserOrderPreflightWorker({
           state: 'RUNNING',
           manifest,
           metadata: {
-            ...observation,
+            ...cardlessObservation,
             sessionRef: browserOrderMaterialRef(task.order_id),
             sessionIdentity: await repository.loadIdentity(task.order_id),
           },

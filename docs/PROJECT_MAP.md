@@ -1,5 +1,7 @@
 # AI充值业务｜唯一项目规划地图
 
+> **2026-09-06 Browser LIVE P0 实现进度（本地候选）**：已修正卡前 preflight 零税时序，保留最终付款前 `PHP+零税+算术一致` 强校验；手工备用卡的账单地址不再被解密层丢弃；Browser 上游投影已改为以订单冻结卡源而非旧路线卡台为权威。新增单订单绑定的 LIVE 配置/组装边界、真实 Plus+取消续费核验器，并把资金时序改为“填写+重报价+最终复核后才落 payment intent，随后单次点击”。Browser 全量 `138 pass / 4 skip / 0 fail`，v1 定向 `18 pass / 0 fail`。仍未完成生产 LIVE 进程、付款 UNKNOWN 真实调度和单 Profile 非付款候选回归；未部署、未启用付款。
+
 > **2026-09-06 Browser 真实首单验收计划**：已基于当前代码和生产现场落盘 `docs/BROWSER_REAL_E2E_ACCEPTANCE_PLAN_2026-09-06.md`。重新核对发现当前仍只有可运行的 readonly Worker；`payment-executor.js` 会拒绝 LIVE，真实 Plus/取消观察器仍为 mock，付款未知协调器也未接入生产调度。因此不得在充卡后立即提交订单；下一动作先收口 LIVE Worker、填卡后零税闸门和付款后观察/未知核实，付款保持关闭完成单 Profile 非付款回归后，再提交新 CDK + Session。
 
 > **2026-09-06 D6 卡源生产验收进行中（当前最高优先级）**：生产后台/API、Browser 卡源 HNSKJ↔备用 A 双向切换、不接管旧订单、切换审计、2 卡完整快照与幂等重放均已实测。页面误导已由 `c9f482e` 修复；空/损坏卡文件已由 `c6e9f48` 稳定分类为客户端错误。当前生产 release 为 `/opt/pojia/releases/20260906-import-errors-c6e9f48`，827 文件 manifest 通过，空文件接口实测返回 `HTTP 400 manual_card_file_invalid`。最终卡源已恢复 HNSKJ；备用两卡余额均低于 `$18`，不会被 Plus 分配。Browser Worker、付款、旧自动开卡继续关闭；969 条 stock jobs 跨完整周期未增长。下一步为有达到 `$18` 门槛的卡后执行真实 Browser 订单验收，当前不能宣称付款链路完成。证据见 `docs/CARD_SOURCE_D6_PRODUCTION_ACCEPTANCE_2026-09-06.md`。

@@ -33,7 +33,7 @@ test('session lease contract keeps raw material out of dispatch/evidence shapes'
 
 test('controlled runtime options carry only an opaque sessionRef, never session material', () => {
   const job = projectSharedBrowserJob({
-    order: { id: 'ord-session', status: 'RECHARGE_PROCESSING', fulfillmentRouteId: 'route-session' },
+    order: { id: 'ord-session', status: 'RECHARGE_PROCESSING', fulfillmentRouteId: 'route-session', frozenCardProviderAccountId: 'provider-session' },
     attempt: {
       id: 'att-session', status: 'PREPARED', fundsRiskState: 'ACTIVE',
       executorKind: 'BROWSER', executorProfileId: 'prof-session', fulfillmentRouteId: 'route-session',

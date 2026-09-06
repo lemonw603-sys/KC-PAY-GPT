@@ -1,5 +1,7 @@
 # 当前生产状态快照｜2026-09-06
 
+> **2026-09-06 Browser LIVE P0 本地候选增量**：已从当前代码修正四个真实缺口：卡前 preflight 允许初始 VAT；付款 intent 延后到卡+地址+邮箱+严格零税重报价+最终复核之后；备用卡导入账单地址保留在 JIT 卡资料边界；Browser 卡源匹配改用 `orders.frozen_card_provider_account_id`。已有独立 LIVE 配置/组装候选和同源 Plus/取消续费核验器；Browser 全量 `142 total / 138 pass / 4 skip / 0 fail`，v1 受影响定向 `18/18`。这些都是本地未提交候选，生产仍是 `/opt/pojia/releases/20260906-import-errors-c6e9f48`，Browser Worker/付款/旧自动开卡仍关闭，本轮无付款。
+
 > **2026-09-06 Browser LIVE 执行边界纠偏**：现场核对当前 `main` 和生产 release 后确认，可运行的 `production-readonly-worker.js` 仍强制付款关闭，`payment-executor.js` 仍以 `LIVE_PAYMENT_ADAPTER_UNAVAILABLE` 拒绝 LIVE；独立 live click adapter 未接入生产 Worker，真实 Plus/取消观察器与付款未知调度也未完成运行组装。所以“付款状态机/协调器代码已部署”不等于“真实付款执行已可用”。当前 Browser Worker/Browser 付款仍关闭；先按 `docs/BROWSER_REAL_E2E_ACCEPTANCE_PLAN_2026-09-06.md` 修复 P0 缺口，再提交真实首单。
 
 > **2026-09-06 D6 最新生产事实**：真实后台/API 验收发现并修复三项运营误导：自动开卡关闭却显示开启、同步失败率 100% 却显示正常、空备用卡台被统计为 1 张。修复 commit `c9f482e` 已上线；空/损坏卡文件分类修复 commit `c6e9f48` 已发布为当前 release `/opt/pojia/releases/20260906-import-errors-c6e9f48`，827 文件 manifest 通过，生产空文件请求实测返回 `HTTP 400 manual_card_file_invalid`。Browser 卡源已实测 HNSKJ→备用 A→HNSKJ，两次均不接管旧订单且有审计。备用 A 的 2 卡完整快照已原子导入，同文件重放幂等；两卡余额 `$0`–`$2`，低于 `$18` 门槛，可分配数 0。Web/API Worker active；Browser Worker/付款/旧自动开卡仍关闭，未发生资金动作。证据见 `docs/CARD_SOURCE_D6_PRODUCTION_ACCEPTANCE_2026-09-06.md`。
