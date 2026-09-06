@@ -1,6 +1,6 @@
 # AI充值业务｜唯一项目规划地图
 
-> **2026-09-06 20X Browser 专用停止点（已部署）**：commit `af15932` 已发布为 `/opt/pojia/releases/20260906-manual-20x-af15932`。显式单订单 `MANUAL_20X_HANDOFF` 在 Plus 与卡交易确认后不取消续费、订单保持处理中、资源租约释放且 BitBrowser Profile 保持打开；人工升级后由后台明确动作收口。普通 Plus 默认行为不变。全新 MySQL 8.4 集成 7/7、Browser 164/155/9/0、v1 557/510/47/0；部署后 LIVE `--check=READY`，Browser Worker 与付款仍关闭，活动 Browser/资金为 0。证据见 `docs/BROWSER_MANUAL_20X_HANDOFF_2026-09-06.md`。
+> **2026-09-06 20X Browser 专用停止点（已部署）**：commit `af15932` 已发布为 `/opt/pojia/releases/20260906-manual-20x-af15932`。显式单订单 `MANUAL_20X_HANDOFF` 在 Plus 与卡交易确认后不取消续费、订单保持处理中、资源租约释放且 BitBrowser Profile 保持打开；人工升级后由后台明确动作收口。普通 Plus 默认行为不变。全新 MySQL 8.4 集成 7/7、Browser 164/155/9/0、v1 557/510/47/0；部署后 LIVE `--check=READY`，Browser Worker 与付款仍关闭，活动 Browser/资金为 0。证据见 `docs/BROWSER_MANUAL_20X_HANDOFF_2026-09-06.md`。 备用卡 `5501` 当前无活动占用；数据库导入值 `152 USD` 与运营者确认实际约 `$20` 冲突，不得将 `152` 当成真实余额，付款确认后会强制置为 `DEPLETED/current_balance=NULL` 防止误复用。
 
 
 > **2026-09-06 Browser LIVE P0 第四批（生产发布）**：当前 HEAD `556ba97` 已从单一 commit 构建为 841 文件候选并发布到 `/opt/pojia/releases/20260906-browser-live-556ba97`，回滚点为 `20260906-import-errors-c6e9f48`。Web/API Worker、内外网 live/ready 通过；Browser Worker/旧自动开卡继续关闭，数据库付款开关和 Profile 生产权限均为 false，活动 Browser/资金为 0。本机正式 LIVE `--check` 已同时通过生产数据库、BitBrowser Local API 和 Pilot Profile。HNSKJ 只读卡查询仍被卡台维护 403 阻断，数据库 5980 仍 `$16`、手工备用卡仍 `$0/$2`；所以下一步不是提交订单，而是卡片充值后取得最新权威卡资料，再直接执行订单级付款关闭回归。

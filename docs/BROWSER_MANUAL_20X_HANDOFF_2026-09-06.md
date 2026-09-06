@@ -98,5 +98,6 @@ MySQL 实证覆盖：默认 Plus 完成、20X 接管不取消、订单不提前�
 - `browser_payment_writes_enabled=false`，Browser Profile `productionWritesEnabled=false`；
 - migration 048 存在；活动 Browser run/dispatch、ACTIVE/UNKNOWN 资金、active/consumed permit 均为 0；
 - 本机通过生产数据库隧道和本机 BitBrowser 执行正式 LIVE `--check`，结果 `READY`。`--check` 按合同使用默认 `CANCEL_RENEWAL`，不会领取订单或执行付款。
+- 备用卡尾号 `5501` 当前无活动 assignment/consumption，但导入快照显示 `152 USD`，与运营者确认的真实约 `$20` 冲突；不得把 `152` 当作真实美元余额。该冲突不改变 Checkout 的 PHP 零税金额判定，付款确认后状态机会把卡置为 `DEPLETED/current_balance=NULL`，避免按错误快照自动复用；后续仍需单独修正备用卡导出金额的币种语义。
 
 本轮没有创建订单、没有读取客户 Session/卡资料、没有访问 Checkout、没有调用卡台写接口、没有付款。下一步可提交唯一 20X 订单；提交后先从生产数据库确认订单、路线、卡源、卡资料和资金状态，再仅对该订单运行 `MANUAL_20X_HANDOFF`。
