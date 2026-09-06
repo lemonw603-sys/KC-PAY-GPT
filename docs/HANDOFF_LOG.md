@@ -1576,3 +1576,9 @@
 - 部署前调用链审查发现生产入口和付款后恢复路径最初遗漏传递 20X 模式；已在部署前修复，并增加 UNKNOWN 恢复、无取消续费、Profile detach 和单次付款的回归。Browser 164/155/9/0，v1 557/510/47/0，全新 MySQL 8.4 关键资金集成 7/7。
 - 已发布 `/opt/pojia/releases/20260906-manual-20x-af15932`，845 文件 manifest OK，回滚点 `/opt/pojia/releases/20260906-cancel-browser-de0485b`；备份 `/var/backups/pojia/pojia-20260906T042623Z.sql.gz.enc` 完整。
 - 部署后 Web 与公网健康 200；API Worker/Browser Worker/旧自动开卡 inactive，Browser Worker disabled；数据库付款开关/Profile 生产权限 false，活动 Browser run/dispatch/资金/permit 为 0；本机 LIVE `--check=READY`。未提交订单、未访问 Checkout、未付款。
+
+## 2026-09-06｜备用卡 `5501` 余额事实纠正
+
+- 运营者纠正此前“实际约 `$20`”说法，确认真实余额为 `$152`。
+- 同轮生产只读核对：`5501` 为 `152 USD / AVAILABLE / active`，活动 assignment=0、活动 consumption=0；数据库与运营事实一致。
+- 已撤销专项文档、当前状态和项目地图里的“152 与 20 冲突/币种解释错误”结论，不再把它当作待修问题。
