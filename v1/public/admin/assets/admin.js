@@ -1749,9 +1749,13 @@ elements.providerRoutesTable?.addEventListener('click', async (event) => {
       body: JSON.stringify({ providerAccountId: button.dataset.sourceId, takeoverWaiting: button.dataset.takeover === 'true' })
     });
     showNotice(`Browser 卡台已切换${result.actualTakeoverCount ? `，并安全接管 ${result.actualTakeoverCount} 单` : '；只影响之后的新订单'}${result.warnings?.length ? '。目标来源当前有提醒，请在卡台管理中查看' : ''}。`, 'success');
-    await loadProviderRoutes();
+    try {
+      await loadProviderRoutes();
+    } catch {
+      showNotice('Browser 卡台已切换，但列表刷新失败；请刷新查看，不要重复切换。', 'warning');
+    }
   } catch (error) {
-    showNotice('Browser 卡台切换失败，原选择未改变。');
+    showNotice('未能确认卡台切换结果，正在重新读取当前选择；请勿重复点击。', 'warning');
     await loadProviderRoutes().catch(() => {});
   } finally {
     button.disabled = false;
@@ -1781,7 +1785,7 @@ document.querySelector('#refresh-button').addEventListener('click', async (event
         : state.view === 'reconciliation' ? loadReconciliationCases()
           : state.view === 'card-funding' ? loadCardFundingAttempts()
           : state.view === 'provider-routes' ? loadProviderRoutes()
-          : state.view === 'browser' ? () => Promise.all([loadBrowserDispatchJobs(), loadBrowserRuns(), loadBillingAddressSettings()]) : loadOrders());
+          : state.view === 'browser' ? Promise.all([loadBrowserDispatchJobs(), loadBrowserRuns(), loadBillingAddressSettings()]) : loadOrders());
     showNotice('刷新完成。', 'success');
   } catch {
     showNotice('刷新失败，请稍后重试。');

@@ -56,3 +56,30 @@ test('billing address enrichment keeps imported addresses and fills only cards w
   assert.equal((await source.load('hnskj')).billingAddress, address);
   assert.equal(addressReads, 1);
 });
+
+ test('deferred reader passes the flat run identity and loads only after payment intent exists', async () => {
+  const { createDeferredTransactionReader } = await import('../src/browser-card-transaction-reader.js');
+  let calls=0; let intentAt=null;
+  const lazy=createDeferredTransactionReader(async (input)=>{
+    calls++;
+    assert.deepEqual(input,{runId:'run-fixture',orderId:'order-fixture',attemptId:'attempt-fixture'});
+    return new BrowserCardTransactionReader({sourceKind:'HNSKJ',runId:input.runId,
+      provider:{transactions:async()=>({data:{transactions:[],total:0,page:1,pageSize:50}})},
+      providerCardId:'card-fixture',submitIntentAt:intentAt});
+  },{runId:'run-fixture',orderId:'order-fixture',attemptId:'attempt-fixture'});
+  assert.equal(calls,0);
+  intentAt='2026-09-06T10:00:00Z';
+  assert.deepEqual(await lazy.read(),[]);
+  await lazy.reconcile({transactions:[]});
+  assert.equal(calls,1);
+ });
+ test('failed deferred evidence lookup can recover without creating another payment', async()=>{
+  const { createDeferredTransactionReader } = await import('../src/browser-card-transaction-reader.js');
+  let calls=0;
+  const lazy=createDeferredTransactionReader(async()=>{
+    if(++calls===1)throw Error('temporary database error');
+    return {read:async()=>[],reconcile:async()=>({matched:false})};
+  },{runId:'run-fixture'});
+  await assert.rejects(lazy.read(),/temporary database/);
+  assert.deepEqual(await lazy.read(),[]);assert.equal(calls,2);
+ });

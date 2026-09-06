@@ -1,0 +1,18 @@
+{
+  "mode": "FULL_48_MIGRATIONS_MYSQL_CONCURRENT_IMPORT",
+  "outcomes": [
+    {
+      "status": "fulfilled",
+      "error": null
+    },
+    {
+      "status": "rejected",
+      "error": "ER_LOCK_DEADLOCK"
+    }
+  ],
+  "stored": {
+    "n": 1,
+    "sources": 1
+  },
+  "note": "Single simultaneous race sample, not exhaustive timing proof; no Provider."
+}

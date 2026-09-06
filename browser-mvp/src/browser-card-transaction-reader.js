@@ -111,3 +111,29 @@ export class BillingAddressEnrichedCardMaterialSource {
     ) };
   }
 }
+
+/** Construct the transaction reader only when post-payment evidence is needed.
+ * A failed factory call is not cached, so later verification can recover.
+ */
+export function createDeferredTransactionReader(factory, { runId, orderId, attemptId } = {}) {
+  if (typeof factory !== 'function' || !String(runId || '').trim()) {
+    throw new TypeError('transaction reader factory and runId are required');
+  }
+  const input = Object.freeze({ runId, orderId, attemptId });
+  let pending;
+  async function resolve() {
+    if (!pending) {
+      pending = Promise.resolve().then(() => factory(input)).then((reader) => {
+        if (!reader || typeof reader.read !== 'function' || typeof reader.reconcile !== 'function') {
+          throw new TypeError('transaction reader read/reconcile are required');
+        }
+        return reader;
+      }).catch((error) => { pending = null; throw error; });
+    }
+    return pending;
+  }
+  return {
+    async read() { return (await resolve()).read(); },
+    async reconcile(input) { return (await resolve()).reconcile(input); },
+  };
+}

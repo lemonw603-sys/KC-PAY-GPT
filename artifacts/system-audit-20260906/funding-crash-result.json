@@ -1,0 +1,12 @@
+{
+  "mode": "ISOLATED_MYSQL_REAL_CHILD_SIGKILL",
+  "state": {
+    "status": "SUBMITTING",
+    "funds_risk_state": "ACTIVE"
+  },
+  "nextPrepared": null,
+  "nextPending": null,
+  "manualCode": "CARD_FUNDING_NOT_UNKNOWN",
+  "providerRequests": 0,
+  "limits": "Minimal schema; actual repository and manual service; no external debit or full production runner."
+}

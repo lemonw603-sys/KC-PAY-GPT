@@ -1,0 +1,11 @@
+import fs from 'node:fs';import vm from 'node:vm';import assert from 'node:assert/strict';
+const source=fs.readFileSync('v1/public/admin/assets/admin.js','utf8');
+const start=source.indexOf("document.querySelector('#refresh-button').addEventListener");
+const end=source.indexOf('\n});',start)+4;
+let handler;const calls=[];const notices=[];
+const context={document:{querySelector(){return{addEventListener(_type,fn){handler=fn;}}}},state:{view:'browser'},elements:{syncTime:{}},hideNotice(){},showNotice(m){notices.push(m)},Promise};
+for(const n of ['resetCdkBatchPaging','loadOverview','loadStock','loadCdkBatches','loadReconciliationCases','loadCardFundingAttempts','loadProviderRoutes','loadBrowserDispatchJobs','loadBrowserRuns','loadBillingAddressSettings','loadOrders'])context[n]=async()=>calls.push(n);
+vm.runInNewContext(source.slice(start,end),context);
+await handler({currentTarget:{disabled:false,classList:{add(){},remove(){}}}});
+assert.deepEqual(calls,[]);assert(notices.includes('刷新完成。'));
+console.log(JSON.stringify({mode:'ACTUAL_HANDLER_MOCK_DOM_NO_NETWORK',view:'browser',loaderCalls:calls,notices,bug:'await receives function instead of invoking Browser refresh'},null,2));

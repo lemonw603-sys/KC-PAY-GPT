@@ -1,0 +1,9 @@
+{
+  "mode": "ACTUAL_HANDLER_MOCK_API",
+  "successfulMutationCalls": 1,
+  "messages": [
+    "Browser 卡台已切换；只影响之后的新订单。",
+    "Browser 卡台切换失败，原选择未改变。"
+  ],
+  "bug": "read failure after successful write incorrectly reports unchanged selection"
+}

@@ -1,0 +1,43 @@
+{
+  "mode": "OFFLINE_NO_CUSTOMER_NO_PAYMENT",
+  "results": [
+    {
+      "id": "G01",
+      "reproduced": true,
+      "withoutProviderReads": [
+        "ASSIGN_CARD",
+        "PREPARE_RECHARGE"
+      ],
+      "withProviderReads": [
+        "ASSIGN_CARD",
+        "PREPARE_RECHARGE",
+        "SUBMIT_RECHARGE"
+      ]
+    },
+    {
+      "id": "G03",
+      "reproduced": true,
+      "missingReference": {
+        "status": "EVIDENCE_PENDING",
+        "code": "BROWSER_EXTERNAL_ORDER_NOT_APPLICABLE",
+        "issue": false
+      },
+      "presentReference": {
+        "status": "REVIEW_REQUIRED",
+        "code": "PAYMENT_AMOUNT_MISMATCH",
+        "issue": true
+      }
+    },
+    {
+      "id": "A07",
+      "reproduced": true,
+      "identicalRequestInsertCount": 2,
+      "note": "Actual service with fake database; proves no service-level replay suppression, not real duplicate delivery."
+    },
+    {
+      "id": "A11",
+      "reproduced": true,
+      "note": "Reader rejects absent intent; full LIVE timing integration still pending."
+    }
+  ]
+}

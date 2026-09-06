@@ -1,3 +1,4 @@
+import { createDeferredTransactionReader } from './browser-card-transaction-reader.js';
 import { createHmac } from 'node:crypto';
 
 import { createBrowserDispatchRepository } from '../../v1/src/db/repositories/browser-dispatch-repository.js';
@@ -113,7 +114,9 @@ export function createSharedLivePaymentWorker({
         expectedIdentity: await resolveSessionIdentity({
           orderId: claimedJob.orderId, attemptId: claimedJob.attemptId, runId: run.runId,
         }),
-        transactionReader: await transactionReaderFactory({ claimedJob, run }),
+        transactionReader: createDeferredTransactionReader(transactionReaderFactory, {
+          runId: run.runId, orderId: claimedJob.orderId, attemptId: claimedJob.attemptId,
+        }),
         timeoutMs: verificationWindowMs,
         pollIntervalMs: verificationIntervalMs,
       });

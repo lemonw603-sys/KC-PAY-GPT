@@ -1,0 +1,8 @@
+{
+  "mode": "ISOLATED_MYSQL_MINIMAL_SCHEMA",
+  "concurrentBeginSuccesses": 1,
+  "concurrentBeginRejections": 1,
+  "providerIntentRows": 1,
+  "returnedCardIdentity": "internal-card-uuid",
+  "notes": "Actual repository begin with minimal schema; no Provider invoked. Not full import/assignment concurrency coverage."
+}

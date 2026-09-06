@@ -1,0 +1,24 @@
+{
+  "mode": "SYNTHETIC_WORKBOOK_NO_SECRETS",
+  "currentMonthExpiry": {
+    "expiry": "09/26",
+    "classification": [
+      "EXPIRED_CARD"
+    ]
+  },
+  "samePanDifferentSequence": {
+    "rows": 2,
+    "structuralErrorCounts": [
+      0,
+      0
+    ]
+  },
+  "headersOnly": {
+    "acceptedRows": 0
+  },
+  "blankMoney": {
+    "balance": 0,
+    "structuralErrors": []
+  },
+  "limits": "Parser behavior only. Duplicate PAN database commit/allocation and zero-row snapshot mutations not executed."
+}
