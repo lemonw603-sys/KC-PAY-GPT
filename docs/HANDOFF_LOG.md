@@ -1560,3 +1560,11 @@
 - Web/API Worker active，live/ready OK；Browser Worker和旧自动开卡 timer inactive/disabled，付款开关 false。
 - LIVE `--check=READY`；订单仍 PREPARED/ACTIVE、dispatch QUEUED、ledger RESERVED，run=0、permit=0。
 - 下一动作是唯一真实付款确认，随后只对该订单短时开启付款并完成全链路收口。
+
+## 2026-09-06｜安全取消旧 Browser preparation
+
+- 生产前证明：订单 `PJV1-AH6M688B3Wfv5_vxISmp` 为 PREPARED/ACTIVE + QUEUED，Browser run=0、PAYMENT_SUBMIT=0、active/consumed permit=0、Provider 外部调用=0。
+- 新增生产可用的事务取消分支和两项反例测试；定向 8/8、v1 全量 555 total / 508 pass / 47 environment-skip / 0 fail。
+- commit `de0485b` 已发布为 `/opt/pojia/releases/20260906-cancel-browser-de0485b`；844 文件 manifest OK；备份 `/var/backups/pojia/pojia-20260906T034454Z.sql.gz.enc` OK。
+- 指定旧单已 CLOSED；attempt/ledger/assignment 均已清除，付款 0 次。
+- 释放出的尾号 `5501` 被另一张旧等待单 `PJV1-eqTeit7QVMx-qPqIfjJi` 自动分配。已停止 `pojia-worker.service` 防止继续推进；该单现为 CARD_READY、无新 attempt/run/付款。不得把用户对第一张订单的取消确认扩张为对第二张订单的确认。

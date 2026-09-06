@@ -375,6 +375,8 @@ Browser 候选对齐后发现 v1 客户首页静态 `sendFile` 在候选 worktre
 
 > **2026-09-06 D2 最终冻结候选稿已形成**：已将确认需求、已否定方案、生产差距及对抗审查修正收敛到 `docs/CARD_SOURCE_AND_RECONCILIATION_FROZEN_SPEC.md` D2-RC1。工作线 D1 已完成，D2 为“候选待终审”；用户确认整份冻结稿前不得进入 D3 业务代码实现或生产部署。冻结稿包含后台职责、建单冻结、批量接管、完整快照、跨来源实体卡去重、付款 VERIFYING、分路线对账、并发、通知、非目标和15项最小验收矩阵。
 
+> **2026-09-06 旧 Browser 订单取消进展**：安全取消 queued Browser preparation 的机制已以 commit `de0485b` 发布到 `/opt/pojia/releases/20260906-cancel-browser-de0485b`。指定旧单 `PJV1-AH6M688B3Wfv5_vxISmp` 已在零 run/submit/permit/Provider 调用证据下关闭并释放。释放后另一张历史等待单 `PJV1-eqTeit7QVMx-qPqIfjJi` 被常驻 Worker 自动分到尾号 `5501`；Worker 已临时停止，该单停在 `CARD_READY` 且尚无新 attempt。20X 新单提交前需先由运营确认是否取消这张不同的历史订单，并完成 Plus 后手工升级的停止边界。
+
 > **2026-09-06 卡台来源与对账方案 D2 正式冻结**：用户确认 `docs/CARD_SOURCE_AND_RECONCILIATION_FROZEN_SPEC.md` D2-FINAL，无异议。后续实现必须遵守冻结合同；任何方向性偏离须先更新冻结稿并重新确认。当前未修改业务代码、未部署、生产不变。下一阶段为 D3：先建立“决策 ID→migration/后端/前端/测试/生产验收”映射，再一次性实施，禁止从旧报告恢复已否定方案。
 
 > **2026-09-06 D3 本地候选回归最新状态**：卡源目录/完整快照/订单冻结来源/Browser 卡台管理/基础对账实现已完成本地回归；`v1` 540 项测试为 493 通过、47 个隔离数据库套件跳过、0 失败，多来源 MySQL 回归通过；`browser-mvp` 132 项为 128 通过、4 跳过、0 失败。付款未知已改为有界 `VERIFYING_PAYMENT`：短时阶段只读核实，不立即制造人工案例；明确拒绝可安全释放，超时或冲突才升级人工案例。当前未部署、未开卡、未补余额、未启动 Browser 付款。下一块是接入只读核实调度并完成三类路线证据收敛，然后进入 D4 生产差异核对。

@@ -472,3 +472,10 @@
 ### 2026-09-06 Stripe drift 修复已部署
 
 当前生产 release 为 `/opt/pojia/releases/20260906-stripe-live-a9e65e3`（commit `a9e65e3`），844 文件 manifest、备份、Web/API Worker、live/ready 和本机 LIVE check 均通过。Browser Worker与付款仍关闭；目标订单状态未漂移，run/permit 均为 0。可在一次最终确认后进入唯一真实付款点。
+
+### 2026-09-06｜旧 Browser 付款前订单取消与重新分配阻断
+
+- 新增并发布安全取消分支 `de0485b`：仅允许取消 `RECHARGE_PROCESSING` 中恰好一个 `PREPARED/ACTIVE` Browser attempt、一个 QUEUED dispatch、零 Browser run、零付款 submit/permit、零 Provider 外部调用的订单；事务内关闭 dispatch/attempt/order并释放授权、消费预留和卡片 assignment。
+- 生产 release `/opt/pojia/releases/20260906-cancel-browser-de0485b`，844 文件 manifest 和备份 `/var/backups/pojia/pojia-20260906T034454Z.sql.gz.enc` 均通过；Web ready。
+- 用户确认取消的旧订单 `PJV1-AH6M688B3Wfv5_vxISmp` 已 `CLOSED`，付款 submit/permit/run 均为 0，预留和 assignment 已释放。
+- 释放后常驻 API Worker 随即把尾号 `5501` 分配给另一张 2026-09-05 的旧等待订单 `PJV1-eqTeit7QVMx-qPqIfjJi`；已立即停止 `pojia-worker.service`，该单目前仅 `CARD_READY`，尚无新充值 attempt/Browser run/付款。是否取消这张不同订单必须再次由运营者确认。
