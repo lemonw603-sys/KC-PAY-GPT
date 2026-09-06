@@ -353,6 +353,12 @@ export class SharedBrowserRuntimeIntegration {
         return { status: 'COMPLETED', workerId: this.workerId, jobId: claimed.jobId,
           runId: run.runId, dispatchStatus: dispatch.status, externalPaymentCalls: payment.paymentSubmitCalls };
       }
+      if (['MANUAL_20X_HANDOFF', 'MANUAL_20X_REVIEW_REQUIRED'].includes(payment.status)) {
+        control.stop();
+        return { status: payment.status, workerId: this.workerId,
+          jobId: claimed.jobId, runId: run.runId,
+          externalPaymentCalls: payment.paymentSubmitCalls, profilePreserved: true };
+      }
       if (['UNKNOWN', 'POST_PAYMENT_UNKNOWN', 'RECONCILE_ONLY'].includes(payment.status)) {
         control.stop();
         return { status: payment.status, workerId: this.workerId, jobId: claimed.jobId,
@@ -424,6 +430,7 @@ export function createBrowserPaymentExecutionRuntime({
   executionService,
   resolveExecutionContext,
   createPaymentHandler,
+  preserveRuntimeOnManualHandoff = false,
 } = {}) {
   if (!executionService || typeof executionService.execute !== 'function') throw new TypeError('executionService is required');
   if (typeof resolveExecutionContext !== 'function') throw new TypeError('resolveExecutionContext is required');
@@ -446,6 +453,7 @@ export function createBrowserPaymentExecutionRuntime({
         assertLease,
         signal,
         paymentHandler,
+        preserveRuntimeOnManualHandoff,
       });
     },
   });

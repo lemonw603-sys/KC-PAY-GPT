@@ -34,12 +34,28 @@ test('LIVE config requires explicit gates and binds consent to one order', () =>
   const config = loadProductionLiveBrowserConfig(env());
   assert.equal(config.approvedOrderId, 'order-live-1');
   assert.equal(config.bitbrowserApiBaseUrl, 'http://127.0.0.1:54345');
+  assert.equal(config.postPlusAction, 'CANCEL_RENEWAL');
   for (const bad of [
     { BROWSER_PAYMENT_WRITES_ENABLED: 'false' },
     { BROWSER_PAYMENT_EXECUTOR_ENABLED: 'false' },
     { BROWSER_PAYMENT_EXECUTOR_MODE: 'MOCK' },
     { BROWSER_LIVE_OPERATION_CONFIRMATION: `${PRODUCTION_LIVE_CONFIRMATION_PREFIX}another-order` },
   ]) assert.throws(() => loadProductionLiveBrowserConfig(env(bad)));
+});
+
+test('manual 20X handoff is explicit and only valid for a bound LIVE run', () => {
+  assert.equal(loadProductionLiveBrowserConfig(env({
+    BROWSER_POST_PLUS_ACTION: 'MANUAL_20X_HANDOFF',
+  })).postPlusAction, 'MANUAL_20X_HANDOFF');
+  assert.throws(() => loadProductionLiveBrowserConfig(env({
+    BROWSER_POST_PLUS_ACTION: 'UNKNOWN_ACTION',
+  })));
+  assert.throws(() => loadProductionLiveBrowserConfig(env({
+    BROWSER_WORKER_CHECK_ONLY: 'true',
+    BROWSER_LIVE_ORDER_ID: '', BROWSER_LIVE_OPERATION_CONFIRMATION: '',
+    BROWSER_PAYMENT_WRITES_ENABLED: 'false', BROWSER_PAYMENT_EXECUTOR_ENABLED: 'false',
+    BROWSER_POST_PLUS_ACTION: 'MANUAL_20X_HANDOFF',
+  })));
 });
 
 test('LIVE check mode is non-paying and does not require an order confirmation', () => {

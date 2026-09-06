@@ -1,5 +1,8 @@
 # 当前生产状态快照｜2026-09-06
 
+> **2026-09-06 20X Browser 本地候选**：代码已增加仅限显式单订单 LIVE `--once` 的 `MANUAL_20X_HANDOFF`。Plus 和卡交易确认后不会取消续费，不会提前把订单置为成功；run 转 `HUMAN_REQUIRED/TRANSFERRED`，资源租约释放、BitBrowser Profile 保留，人工升级后由后台“确认 20X 已升级”收口。默认普通 Plus 仍为 `CANCEL_RENEWAL`。全新 MySQL 8.4 集成 7/7、Browser 164/155/9/0、v1 557/510/47/0。当前生产现场仍为 `/opt/pojia/releases/20260906-cancel-browser-de0485b`，Web active、API Worker/Browser Worker/旧自动开卡均 inactive，Browser 付款 false，活动 Browser/dispatch/资金/permit 均为 0；本轮尚未部署或付款。
+
+
 > **2026-09-06 Browser LIVE P0 第四批生产事实**：生产已切至 `/opt/pojia/releases/20260906-browser-live-556ba97`（commit `556ba974240ee168161a043177422c8b22c9b04a`，841 文件 manifest 通过），回滚点为 `20260906-import-errors-c6e9f48`，数据库备份 `pojia-20260906T013157Z.sql.gz.enc` 完整。Web/API Worker active/enabled，公网 plus/ops 的 live/ready 均 200；Browser Worker与旧自动开卡 inactive/disabled。数据库 migration 048，`browser_payment_writes_enabled=false`、Browser Profile `productionWritesEnabled=false`，活动 Browser run/dispatch与 ACTIVE/UNKNOWN 资金均为 0。本机连接生产库和本机 BitBrowser 执行正式 LIVE `--check=READY`。HNSKJ 单卡只读请求仍返回维护 403；数据库 5980 `$16`、手工卡 `$0/$2`，尚无达到 `$18` 的已核实卡，未执行订单级回归或付款。
 
 > **2026-09-06 Browser LIVE P0 第三批验证边界**：提交 `ff34feb` 已补齐真实 MySQL 付款/恢复证明；临时 MySQL 8.4 中 Browser 完整套件 `154/154/0/0`。UNKNOWN 恢复、付款已确认但后置未收口恢复均证明恢复不产生第二次付款；UNKNOWN 到期只把相关订单保留在人工处理和卡消费对账状态。生产仍是 `/opt/pojia/releases/20260906-import-errors-c6e9f48`，尚未包含 `bc8ee2f..ff34feb`，所以仍不可宣称 LIVE Worker 已上线或可以付款。

@@ -50,6 +50,7 @@ export function createSharedLivePaymentWorker({
   executionTimeoutMs = 60_000,
   verificationWindowMs = 300_000,
   verificationIntervalMs = 5_000,
+  postPlusAction = 'CANCEL_RENEWAL',
 } = {}) {
   if (!pool?.query || !pool?.getConnection) throw new TypeError('mysql2-like pool is required');
   if (!runtimeAdapter?.open || !runtimeAdapter?.close) throw new TypeError('runtimeAdapter is required');
@@ -103,6 +104,7 @@ export function createSharedLivePaymentWorker({
   const runtime = createBrowserPaymentExecutionRuntime({
     executionService,
     resolveExecutionContext,
+    preserveRuntimeOnManualHandoff: postPlusAction === 'MANUAL_20X_HANDOFF',
     createPaymentHandler: async ({ claimedJob, run, control }) => async ({
       page, checkout, checkoutContract, cardMaterial, billingEmail,
     }) => {
@@ -123,6 +125,7 @@ export function createSharedLivePaymentWorker({
       return new BrowserPaymentExecutor({
         integration, executionRepository, paymentAdapter: adapter,
         postPaymentVerifier: verifier, enabled: true,
+        postPlusAction,
         verificationWindowMs, verificationIntervalMs,
       }).execute({
         control, run, page, checkout, checkoutContract, cardMaterial, billingEmail,

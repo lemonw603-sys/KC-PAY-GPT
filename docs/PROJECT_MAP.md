@@ -1,5 +1,8 @@
 # AI充值业务｜唯一项目规划地图
 
+> **2026-09-06 20X Browser 专用停止点（本地候选）**：已实现显式单订单 `MANUAL_20X_HANDOFF`：购买 Plus 后必须确认 Plus 与卡交易，绝不取消续费，订单保持处理中，自动化控制与敏感租约释放但 BitBrowser Profile 保持打开；人工升级完成后由运营后台明确动作收口。普通 Plus 默认行为不变。全新 MySQL 8.4 集成 7/7、Browser 164/155/9/0、v1 557/510/47/0。尚未部署；生产仍保持 Browser Worker 与付款关闭。证据见 `docs/BROWSER_MANUAL_20X_HANDOFF_2026-09-06.md`。
+
+
 > **2026-09-06 Browser LIVE P0 第四批（生产发布）**：当前 HEAD `556ba97` 已从单一 commit 构建为 841 文件候选并发布到 `/opt/pojia/releases/20260906-browser-live-556ba97`，回滚点为 `20260906-import-errors-c6e9f48`。Web/API Worker、内外网 live/ready 通过；Browser Worker/旧自动开卡继续关闭，数据库付款开关和 Profile 生产权限均为 false，活动 Browser/资金为 0。本机正式 LIVE `--check` 已同时通过生产数据库、BitBrowser Local API 和 Pilot Profile。HNSKJ 只读卡查询仍被卡台维护 403 阻断，数据库 5980 仍 `$16`、手工备用卡仍 `$0/$2`；所以下一步不是提交订单，而是卡片充值后取得最新权威卡资料，再直接执行订单级付款关闭回归。
 
 > **2026-09-06 Browser LIVE P0 第三批（提交 `ff34feb`）**：已在临时 MySQL 8.4 隔离库执行完整 Browser 套件，`154/154/0/0`。对抗审查先复现了旧夹具缺少订单冻结卡源、相反付款开关用例并行互扰等失败，再修复测试合同和串行 smoke；新增 UNKNOWN 恢复、付款已确认未收口恢复、UNKNOWN 超时三条 MySQL 证明，均保持 `PAYMENT_SUBMIT=1`、恢复阶段新增付款调用 `0`。生产仍未部署；下一步从当前 HEAD 构建候选 release，部署时继续保持 Browser Worker 与付款关闭，再执行生产 LIVE `--check`。

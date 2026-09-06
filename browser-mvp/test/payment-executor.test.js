@@ -8,7 +8,8 @@ import {
   loadPaymentExecutorConfig,
 } from '../src/payment-executor.js';
 
-function harness({ outcome = 'CONFIRMED', plusActive = true, cancellationConfirmed = true, enabled = true } = {}) {
+function harness({ outcome = 'CONFIRMED', plusActive = true, cancellationConfirmed = true,
+  reconciliationMatched = true, enabled = true, postPlusAction = 'CANCEL_RENEWAL' } = {}) {
   const calls = [];
   const integration = {
     workerId: 'worker-1',
@@ -20,13 +21,20 @@ function harness({ outcome = 'CONFIRMED', plusActive = true, cancellationConfirm
     async markPaymentConfirmed(input) { calls.push(['confirmed', input]); },
     async schedulePostPaymentVerification(input) { calls.push(['schedule-verification', input]); },
     async recordPlusActivation(input) { calls.push(['plus-record', input]); },
+    async recordManual20xHandoff(input) { calls.push(['manual-20x-handoff', input]); },
+    async recordManual20xReviewRequired(input) { calls.push(['manual-20x-review', input]); },
     async recordCancellationConfirmed(input) { calls.push(['cancel-record', input]); },
   };
   const control = { async assertLeaseBeforeAction(action) { calls.push(`lease:${action}`); } };
   const verifier = new MockPostPaymentVerifier({ plusActive, cancellationConfirmed });
+  if (!reconciliationMatched) verifier.reconcile = async () => {
+    verifier.calls.push('reconcile');
+    return { matched: false };
+  };
   const adapter = new MockCheckoutPaymentAdapter({ outcome });
   const executor = new BrowserPaymentExecutor({
-    integration, executionRepository, paymentAdapter: adapter, postPaymentVerifier: verifier, enabled,
+    integration, executionRepository, paymentAdapter: adapter, postPaymentVerifier: verifier,
+    enabled, postPlusAction,
   });
   return { executor, control, executionRepository, adapter, verifier, calls };
 }
@@ -79,6 +87,46 @@ test('post-payment mismatch never attempts another payment', async () => {
   assert.equal(result.status, 'POST_PAYMENT_UNKNOWN');
   assert.equal(adapter.calls.length, 1);
   assert.equal(calls.filter((value) => Array.isArray(value) && value[0] === 'unknown').length, 0);
+});
+
+test('manual 20X mode confirms Plus and card transaction, never cancels renewal', async () => {
+  const { executor, control, calls, adapter, verifier } = harness({
+    postPlusAction: 'MANUAL_20X_HANDOFF',
+  });
+  const result = await executor.execute({
+    control, run: { runId: 'run-20x', leaseToken: 'lease-20x' },
+    checkout: { kind: 'MOCK_CHECKOUT' }, cardMaterial: { ref: 'card-material' },
+    operationId: 'pay-20x',
+  });
+  assert.deepEqual(result, {
+    status: 'MANUAL_20X_HANDOFF', paymentSubmitCalls: 1,
+    cardTransactionCount: 1, preserveProfile: true,
+  });
+  assert.equal(adapter.calls.length, 1);
+  assert.deepEqual(verifier.calls, ['plus', 'card-transactions', 'reconcile']);
+  assert.equal(calls.filter((value) => Array.isArray(value)
+    && value[0] === 'manual-20x-handoff').length, 1);
+  assert.equal(calls.filter((value) => Array.isArray(value)
+    && value[0] === 'cancel-record').length, 0);
+});
+
+test('manual 20X mode does not claim handoff success when card reconciliation mismatches', async () => {
+  const { executor, control, calls, adapter, verifier } = harness({
+    postPlusAction: 'MANUAL_20X_HANDOFF', reconciliationMatched: false,
+  });
+  const result = await executor.execute({
+    control, run: { runId: 'run-20x-review', leaseToken: 'lease-20x-review' },
+    checkout: { kind: 'MOCK_CHECKOUT' }, cardMaterial: { ref: 'card-material' },
+    operationId: 'pay-20x-review',
+  });
+  assert.equal(result.status, 'MANUAL_20X_REVIEW_REQUIRED');
+  assert.equal(result.preserveProfile, true);
+  assert.equal(adapter.calls.length, 1);
+  assert.deepEqual(verifier.calls, ['plus', 'card-transactions', 'reconcile']);
+  assert.equal(calls.filter((value) => Array.isArray(value)
+    && value[0] === 'manual-20x-handoff').length, 0);
+  assert.equal(calls.filter((value) => Array.isArray(value)
+    && value[0] === 'manual-20x-review').length, 1);
 });
 
 test('mock adapter rejects non-mock checkout before any external action', async () => {

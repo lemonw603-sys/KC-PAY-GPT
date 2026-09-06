@@ -16,12 +16,21 @@ export class LivePostPaymentRecoveryVerifier {
     navigationTimeoutMs = 60_000,
     verificationWindowMs = 300_000,
     verificationIntervalMs = 5_000,
+    postPlusAction = 'CANCEL_RENEWAL',
+    verifierFactory = (input) => new ChatGptPostPaymentVerifier(input),
   } = {}) {
     if (!runtimeAdapter?.open || !runtimeAdapter?.close) throw new TypeError('runtimeAdapter is required');
     if (!manifest || manifest.allowWrites !== false) throw new TypeError('read-only manifest is required');
     if (!sessionProvider?.open || !sessionProvider?.bootstrap || !sessionProvider?.close) throw new TypeError('sessionProvider is required');
     if (typeof resolveSessionIdentity !== 'function') throw new TypeError('resolveSessionIdentity is required');
     if (typeof transactionReaderFactory !== 'function') throw new TypeError('transactionReaderFactory is required');
+    if (typeof verifierFactory !== 'function') throw new TypeError('verifierFactory is required');
+    if (!['CANCEL_RENEWAL', 'MANUAL_20X_HANDOFF'].includes(postPlusAction)) {
+      throw new TypeError('postPlusAction must be CANCEL_RENEWAL or MANUAL_20X_HANDOFF');
+    }
+    if (postPlusAction === 'MANUAL_20X_HANDOFF' && typeof runtimeAdapter.detach !== 'function') {
+      throw new TypeError('runtimeAdapter.detach is required for MANUAL_20X_HANDOFF');
+    }
     this.runtimeAdapter = runtimeAdapter;
     this.manifest = manifest;
     this.sessionProvider = sessionProvider;
@@ -30,11 +39,14 @@ export class LivePostPaymentRecoveryVerifier {
     this.navigationTimeoutMs = navigationTimeoutMs;
     this.verificationWindowMs = verificationWindowMs;
     this.verificationIntervalMs = verificationIntervalMs;
+    this.postPlusAction = postPlusAction;
+    this.verifierFactory = verifierFactory;
   }
 
   async verify(row) {
     let runtime;
     let sessionLease;
+    let preserveProfile = false;
     try {
       runtime = await this.runtimeAdapter.open(this.manifest, {
         profileRef: `profile:${row.executorProfileId}`,
@@ -49,7 +61,7 @@ export class LivePostPaymentRecoveryVerifier {
       await page.goto('https://chatgpt.com/', {
         waitUntil: 'domcontentloaded', timeout: this.navigationTimeoutMs,
       });
-      const verifier = new ChatGptPostPaymentVerifier({
+      const verifier = this.verifierFactory({
         page,
         expectedIdentity: await this.resolveSessionIdentity(row),
         transactionReader: await this.transactionReaderFactory(row),
@@ -59,6 +71,22 @@ export class LivePostPaymentRecoveryVerifier {
       const plus = await verifier.confirmPlus();
       if (!plus.confirmed) {
         return { outcome: 'UNKNOWN', reasonCode: 'PLUS_ACTIVATION_UNCONFIRMED', evidence: plus.evidence };
+      }
+      if (this.postPlusAction === 'MANUAL_20X_HANDOFF') {
+        const transactions = await verifier.readCardTransactions();
+        const reconciliation = await verifier.reconcile({ transactions });
+        preserveProfile = true;
+        return {
+          outcome: 'CONFIRMED', postPaymentComplete: true,
+          manual20xState: reconciliation.matched ? 'HANDOFF' : 'REVIEW_REQUIRED',
+          reasonCode: reconciliation.matched ? null : 'MANUAL_20X_RECONCILIATION_REQUIRED',
+          evidence: {
+            plus: plus.evidence,
+            transactionEvidenceKind: reconciliation.evidenceKind || null,
+            transactionHash: reconciliation.transactionHash || null,
+            transactionCandidateCount: reconciliation.candidateCount ?? null,
+          },
+        };
       }
       const cancellation = await verifier.confirmCancellation();
       const transactions = await verifier.readCardTransactions();
@@ -85,7 +113,10 @@ export class LivePostPaymentRecoveryVerifier {
       };
     } finally {
       if (sessionLease) await this.sessionProvider.close(sessionLease).catch(() => undefined);
-      if (runtime) await this.runtimeAdapter.close(runtime).catch(() => undefined);
+      if (runtime) {
+        if (preserveProfile) await this.runtimeAdapter.detach(runtime).catch(() => undefined);
+        else await this.runtimeAdapter.close(runtime).catch(() => undefined);
+      }
     }
   }
 }

@@ -642,6 +642,10 @@ function browserControlButtons(run) {
     return '<button class="primary-small" type="button" data-browser-control="TRANSFER">转交人工</button><button class="danger-small" type="button" data-browser-control="MARK_PAYMENT_UNKNOWN">标记付款未知</button>';
   }
   if (run.controlState === 'TRANSFERRED') {
+    if (run.status === 'HUMAN_REQUIRED' && run.paymentState === 'PAYMENT_CONFIRMED'
+      && run.postPaymentState === 'PLUS_CONFIRMED') {
+      return '<button class="primary-small" type="button" data-browser-control="COMPLETE_20X">确认 20X 已升级</button>';
+    }
     return '<button class="primary-small" type="button" data-browser-control="RELEASE_SAFE">确认未付款并恢复</button><button class="danger-small" type="button" data-browser-control="MARK_PAYMENT_UNKNOWN">标记付款未知</button>';
   }
   return '';
@@ -654,6 +658,7 @@ async function controlBrowserRun(run, action) {
     TRANSFER: `转交人工 ${run.id}`,
     RELEASE_SAFE: `确认无付款动作并恢复 ${run.id}`,
     MARK_PAYMENT_UNKNOWN: `确认付款结果未知 ${run.id}`,
+    COMPLETE_20X: `确认20X升级完成 ${run.id}`,
     CANCEL: `取消接管 ${run.id}`
   };
   const warnings = {
@@ -662,6 +667,7 @@ async function controlBrowserRun(run, action) {
     TRANSFER: '确认自动化已经停手，并把同一个 run 转交给指定人工？',
     RELEASE_SAFE: '只有在确认人工没有点击、回车、提交表单、钱包或 3DS 最终确认时才能恢复自动化。',
     MARK_PAYMENT_UNKNOWN: '这会把 run、attempt 和订单锁为付款结果未知，只能对账，不能自动重付。',
+    COMPLETE_20X: '仅在你已经亲眼确认 20X 升级完成后点击；系统会把客户订单收口为充值成功。',
     CANCEL: '只允许取消尚未冻结的接管请求。'
   };
   if (!window.confirm(warnings[action])) return;
@@ -701,6 +707,7 @@ async function openBrowserRun(runId) {
         ['订单查询码', run.publicNo], ['Run ID', run.id], ['Attempt ID', run.rechargeAttemptId],
         ['运行状态', BROWSER_RUN_LABELS[run.status] || run.status],
         ['付款状态', BROWSER_PAYMENT_LABELS[run.paymentState] || run.paymentState],
+        ['付款后阶段', run.postPaymentState],
         ['资金风险', run.fundsRiskState], ['订单状态', run.orderStatus],
         ['控制权', BROWSER_CONTROL_LABELS[run.controlState] || run.controlState],
         ['自动化 owner', run.automationOwnerId], ['人工 owner', run.humanOwnerId],

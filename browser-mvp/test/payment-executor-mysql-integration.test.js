@@ -5,6 +5,7 @@ import mysql from 'mysql2/promise';
 
 import { createBrowserExecutionRepository } from '../../v1/src/db/repositories/browser-execution-repository.js';
 import { createBrowserPaymentVerificationService } from '../../v1/src/services/browser-payment-verification-service.js';
+import { createBrowserAdminService } from '../../v1/src/services/browser-admin-service.js';
 import {
   BrowserPaymentExecutor,
   MockCheckoutPaymentAdapter,
@@ -78,6 +79,7 @@ async function createFixture(pool, label) {
 async function cleanup(pool, ids) {
   await pool.query('DELETE FROM reconciliation_cases WHERE recharge_attempt_id = ?', [ids.attemptId]);
   await pool.query('DELETE FROM order_events WHERE order_id = ?', [ids.orderId]);
+  await pool.query('DELETE FROM browser_interventions WHERE browser_run_id = ?', [ids.runId]);
   await pool.query('DELETE FROM browser_post_payment_observations WHERE browser_run_id = ?', [ids.runId]);
   await pool.query('DELETE FROM payment_permits WHERE recharge_attempt_id = ?', [ids.attemptId]);
   await pool.query('DELETE FROM browser_checkpoints WHERE browser_run_id = ?', [ids.runId]);
@@ -143,6 +145,69 @@ test('shared MySQL permit and post-payment state machine complete only through m
       order: 'RECHARGE_SUCCESS', attempt: 'SUCCESS', funds: 'SETTLED', run: 'COMPLETED',
       payment: 'PAYMENT_CONFIRMED', post: 'CANCELLATION_CONFIRMED', submits: 1,
     });
+  } finally {
+    if (fixture) await cleanup(pool, fixture.ids);
+    await pool.query("UPDATE app_settings SET setting_value = 'false' WHERE setting_key = 'browser_payment_writes_enabled'");
+    await pool.end();
+  }
+});
+
+test('manual 20X mode transfers after Plus without cancellation and closes only after operator confirmation', {
+  skip: !databaseUrl && 'TEST_DATABASE_URL is required for isolated mock payment integration',
+}, async () => {
+  const pool = mysql.createPool({ uri: databaseUrl, connectionLimit: 6, timezone: 'Z' });
+  let fixture;
+  try {
+    await pool.query("UPDATE app_settings SET setting_value = 'true' WHERE setting_key = 'browser_payment_writes_enabled'");
+    fixture = await createFixture(pool, 'manual-20x');
+    const { executor, control, adapter } = executorFor({ ...fixture, outcome: 'CONFIRMED' });
+    executor.postPlusAction = 'MANUAL_20X_HANDOFF';
+    const result = await executor.execute({
+      control, run: fixture.run, checkout: { kind: 'MOCK_CHECKOUT' },
+      cardMaterial: { isolatedFixture: true }, operationId: `mock-submit:${fixture.ids.attemptId}`,
+    });
+    assert.equal(result.status, 'MANUAL_20X_HANDOFF');
+    assert.equal(adapter.calls.length, 1);
+    const [[handoff]] = await pool.query(
+      `SELECT o.status AS order_status, rat.status AS attempt_status, rat.funds_risk_state,
+              br.status AS run_status, br.payment_state, br.post_payment_state, br.control_state,
+              (SELECT COUNT(*) FROM browser_operations bo WHERE bo.browser_run_id=br.id
+                AND bo.operation_type='PAYMENT_SUBMIT') AS submit_count,
+              (SELECT COUNT(*) FROM browser_operations bo WHERE bo.browser_run_id=br.id
+                AND bo.operation_type='CANCELLATION_CONFIRMED') AS cancellation_count,
+              (SELECT COUNT(*) FROM browser_interventions bi WHERE bi.browser_run_id=br.id
+                AND bi.status='TRANSFERRED') AS transferred_count
+       FROM orders o JOIN recharge_attempts rat ON rat.order_id=o.id
+       JOIN browser_runs br ON br.recharge_attempt_id=rat.id WHERE o.id=?`,
+      [fixture.ids.orderId],
+    );
+    assert.deepEqual({
+      order: handoff.order_status, attempt: handoff.attempt_status, funds: handoff.funds_risk_state,
+      run: handoff.run_status, payment: handoff.payment_state, post: handoff.post_payment_state,
+      control: handoff.control_state, submits: Number(handoff.submit_count),
+      cancellations: Number(handoff.cancellation_count), transferred: Number(handoff.transferred_count),
+    }, {
+      order: 'RECHARGE_PROCESSING', attempt: 'SUCCESS', funds: 'SETTLED',
+      run: 'HUMAN_REQUIRED', payment: 'PAYMENT_CONFIRMED', post: 'PLUS_CONFIRMED',
+      control: 'TRANSFERRED', submits: 1, cancellations: 0, transferred: 1,
+    });
+
+    const completed = await createBrowserAdminService({ pool }).controlRun(fixture.ids.runId, {
+      action: 'COMPLETE_20X', operationId: `manual-20x-complete:${fixture.ids.runId}`,
+      confirmation: `确认20X升级完成 ${fixture.ids.runId}`, actorId: 'admin',
+    });
+    assert.equal(completed.runStatus, 'COMPLETED');
+    const [[closed]] = await pool.query(
+      `SELECT o.status AS order_status, br.status AS run_status, br.control_state,
+              (SELECT COUNT(*) FROM browser_operations bo WHERE bo.browser_run_id=br.id
+                AND bo.operation_type='PAYMENT_SUBMIT') AS submit_count
+       FROM orders o JOIN recharge_attempts rat ON rat.order_id=o.id
+       JOIN browser_runs br ON br.recharge_attempt_id=rat.id WHERE o.id=?`,
+      [fixture.ids.orderId],
+    );
+    assert.deepEqual({ order: closed.order_status, run: closed.run_status,
+      control: closed.control_state, submits: Number(closed.submit_count) },
+    { order: 'RECHARGE_SUCCESS', run: 'COMPLETED', control: 'RELEASED', submits: 1 });
   } finally {
     if (fixture) await cleanup(pool, fixture.ids);
     await pool.query("UPDATE app_settings SET setting_value = 'false' WHERE setting_key = 'browser_payment_writes_enabled'");
@@ -249,6 +314,65 @@ test('UNKNOWN recovery completes the same run without a second payment submit', 
       order: 'RECHARGE_SUCCESS', attempt: 'SUCCESS', funds: 'SETTLED', run: 'COMPLETED',
       payment: 'PAYMENT_CONFIRMED', post: 'CANCELLATION_CONFIRMED',
       consumption: 'CONSUMED', submits: 1,
+    });
+  } finally {
+    if (fixture) await cleanup(pool, fixture.ids);
+    await pool.query("UPDATE app_settings SET setting_value = 'false' WHERE setting_key = 'browser_payment_writes_enabled'");
+    await pool.end();
+  }
+});
+
+test('UNKNOWN recovery in manual 20X mode hands off without cancellation or a second submit', {
+  skip: !databaseUrl && 'TEST_DATABASE_URL is required for isolated mock payment integration',
+}, async () => {
+  const pool = mysql.createPool({ uri: databaseUrl, connectionLimit: 6, timezone: 'Z' });
+  let fixture;
+  try {
+    await pool.query("UPDATE app_settings SET setting_value = 'true' WHERE setting_key = 'browser_payment_writes_enabled'");
+    fixture = await createFixture(pool, 'unknown-20x-recovered');
+    const { executor, control, adapter } = executorFor({ ...fixture, outcome: 'UNKNOWN' });
+    const first = await executor.execute({
+      control, run: fixture.run, checkout: { kind: 'MOCK_CHECKOUT' },
+      cardMaterial: { isolatedFixture: true }, operationId: `mock-submit:${fixture.ids.attemptId}`,
+    });
+    assert.equal(first.status, 'UNKNOWN');
+    assert.equal(adapter.calls.length, 1);
+
+    const [[schedule]] = await pool.query(
+      'SELECT verification_next_check_at FROM browser_runs WHERE id=?', [fixture.ids.runId],
+    );
+    const recovered = await createBrowserPaymentVerificationService({
+      repository: fixture.repository,
+      verifier: { async verify() {
+        return { outcome: 'CONFIRMED', postPaymentComplete: true, manual20xState: 'HANDOFF',
+          evidence: { plus: { active: true }, transactionHash: 'b'.repeat(64) } };
+      } },
+      postPlusAction: 'MANUAL_20X_HANDOFF',
+      approvedOrderId: fixture.ids.orderId, maxBatch: 1,
+      clock: () => new Date(new Date(schedule.verification_next_check_at).getTime() + 1_000),
+    }).runOnce();
+    assert.equal(recovered.status, 'PROCESSED');
+    assert.equal(adapter.calls.length, 1);
+    const [[stored]] = await pool.query(
+      `SELECT o.status AS order_status, rat.status AS attempt_status, rat.funds_risk_state,
+              br.status AS run_status, br.payment_state, br.post_payment_state, br.control_state,
+              (SELECT COUNT(*) FROM browser_operations bo WHERE bo.browser_run_id=br.id
+                AND bo.operation_type='PAYMENT_SUBMIT') AS submit_count,
+              (SELECT COUNT(*) FROM browser_operations bo WHERE bo.browser_run_id=br.id
+                AND bo.operation_type='CANCELLATION_CONFIRMED') AS cancellation_count
+       FROM orders o JOIN recharge_attempts rat ON rat.order_id=o.id
+       JOIN browser_runs br ON br.recharge_attempt_id=rat.id WHERE o.id=?`,
+      [fixture.ids.orderId],
+    );
+    assert.deepEqual({
+      order: stored.order_status, attempt: stored.attempt_status, funds: stored.funds_risk_state,
+      run: stored.run_status, payment: stored.payment_state, post: stored.post_payment_state,
+      control: stored.control_state, submits: Number(stored.submit_count),
+      cancellations: Number(stored.cancellation_count),
+    }, {
+      order: 'RECHARGE_PROCESSING', attempt: 'SUCCESS', funds: 'SETTLED',
+      run: 'HUMAN_REQUIRED', payment: 'PAYMENT_CONFIRMED', post: 'PLUS_CONFIRMED',
+      control: 'TRANSFERRED', submits: 1, cancellations: 0,
     });
   } finally {
     if (fixture) await cleanup(pool, fixture.ids);

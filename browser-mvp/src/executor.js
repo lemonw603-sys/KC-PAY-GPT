@@ -68,6 +68,7 @@ export class BrowserExecutionService {
     validateCardMaterialOnly = false,
     fillCardFields = false,
     paymentHandler = null,
+    preserveRuntimeOnManualHandoff = false,
   } = {}) {
     assertJobEnvelope(job);
     if (job.state !== 'RUNNING') throw new BrowserExecutionError('INVALID_STATE', 'job must be RUNNING before Browser execution');
@@ -84,6 +85,10 @@ export class BrowserExecutionService {
     if (paymentHandler != null && typeof paymentHandler !== 'function') {
       throw new TypeError('paymentHandler must be a function');
     }
+    if (preserveRuntimeOnManualHandoff
+      && typeof this.runtimeAdapter.detach !== 'function') {
+      throw new ContractError('runtimeAdapter.detach is required to preserve a manual handoff Profile');
+    }
     if (paymentHandler && fillCardFields) {
       throw new ContractError('paymentHandler and non-payment card fill are mutually exclusive');
     }
@@ -95,6 +100,7 @@ export class BrowserExecutionService {
     let sessionBootstrapped = false;
     let ownedCardMaterialLease = false;
     let abortRuntime;
+    let preserveRuntime = false;
     try {
       if (signal?.aborted) throw new BrowserExecutionError('LEASE_LOST');
       if (freezeRequested()) throw new BrowserExecutionError('MANUAL_FREEZE');
@@ -324,6 +330,8 @@ export class BrowserExecutionService {
               sessionIdentity,
             })
           ));
+          preserveRuntime = preserveRuntimeOnManualHandoff
+            && paymentResult?.preserveProfile === true;
         } catch (error) {
           if (error instanceof BrowserExecutionError) throw error;
           throw new BrowserExecutionError(error?.code || 'PAYMENT_EXECUTION_FAILED', error.message, error);
@@ -348,7 +356,10 @@ export class BrowserExecutionService {
       throw failure;
     } finally {
       if (abortRuntime) signal?.removeEventListener('abort', abortRuntime);
-      if (runtime) await this.runtimeAdapter.close(runtime).catch(() => undefined);
+      if (runtime) {
+        if (preserveRuntime) await this.runtimeAdapter.detach(runtime).catch(() => undefined);
+        else await this.runtimeAdapter.close(runtime).catch(() => undefined);
+      }
       if (sessionLease && this.sessionProvider) await this.sessionProvider.close(sessionLease).catch(() => undefined);
       if (ownedCardMaterialLease && cardMaterialLease && cardMaterialLeaseProvider) {
         await cardMaterialLeaseProvider.close(cardMaterialLease).catch(() => undefined);

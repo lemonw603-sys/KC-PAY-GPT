@@ -118,6 +118,22 @@ export class BitBrowserControlRuntimeAdapter extends RuntimeAdapter {
     if (runtime.browser) await runtime.browser.close().catch(() => undefined);
     await this.request('/browser/close', { id: runtime.bitbrowserProfileId }).catch(() => undefined);
   }
+
+  /**
+   * Relinquish automation ownership without closing the persistent Profile.
+   * The one-shot Worker exits immediately after this call, which drops the CDP
+   * transport while leaving the visible BitBrowser window for the operator.
+   */
+  async detach(runtime) {
+    if (!runtime?.context || !runtime?.profileRef || !runtime?.bitbrowserProfileId) {
+      throw new TypeError('BitBrowser runtime handle is required');
+    }
+    // connectOverCDP() gives this Browser object its own Playwright transport.
+    // Closing that client disconnects CDP but does not call BitBrowser's
+    // /browser/close endpoint and therefore does not terminate the Profile.
+    if (runtime.browser) await runtime.browser.close().catch(() => undefined);
+    runtime.detached = true;
+  }
 }
 
 export { DEFAULT_API_BASE_URL };

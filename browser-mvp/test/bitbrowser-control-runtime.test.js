@@ -31,7 +31,7 @@ function fakeBrowser() {
   };
   return {
     contexts: () => [context],
-    close: async () => {},
+    close: async () => { closed.push('browser-client'); },
     context,
   };
 }
@@ -51,6 +51,21 @@ test('BitBrowser adapter opens an approved ChatGPT profile through CDP and close
   assert.deepEqual(browser.context.closed, ['old-1', 'old-2']);
   await adapter.close(runtime);
   assert.deepEqual(calls.map((call) => call.path), ['/health', '/browser/list', '/browser/open', '/browser/close']);
+});
+
+test('BitBrowser adapter can detach automation without closing the persistent Profile', async () => {
+  const calls = [];
+  const browser = fakeBrowser();
+  const adapter = new BitBrowserControlRuntimeAdapter({
+    bitbrowserProfileId: profileId,
+    browserType: { connectOverCDP: async () => browser },
+    fetchImpl: fakeFetch(calls),
+  });
+  const runtime = await adapter.open(manifest, { profileRef: 'profile:database-uuid' });
+  await adapter.detach(runtime);
+  assert.equal(runtime.detached, true);
+  assert.equal(browser.context.closed.includes('browser-client'), true);
+  assert.deepEqual(calls.map((call) => call.path), ['/health', '/browser/list', '/browser/open']);
 });
 
 test('BitBrowser adapter rejects an unapproved profile before opening it', async () => {

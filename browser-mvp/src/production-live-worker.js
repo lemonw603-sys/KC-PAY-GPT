@@ -184,6 +184,22 @@ export async function runProductionLiveBrowserWorker({ env = process.env, browse
     await checkProductionLiveDatabase(pool, config);
     await checkProductionLiveBitBrowser(config);
     if (config.checkOnly) return { status: 'READY' };
+    if (config.postPlusAction === 'MANUAL_20X_HANDOFF') {
+      const [[existing]] = await pool.query(
+        `SELECT COUNT(*) AS count
+         FROM browser_runs br
+         INNER JOIN recharge_attempts rat ON rat.id=br.recharge_attempt_id
+         WHERE rat.order_id<>?
+           AND br.status='HUMAN_REQUIRED'
+           AND br.control_state='TRANSFERRED'
+           AND br.payment_state='PAYMENT_CONFIRMED'
+           AND br.post_payment_state='PLUS_CONFIRMED'`,
+        [config.approvedOrderId],
+      );
+      if (Number(existing?.count || 0) !== 0) {
+        throw new Error('another manual 20X handoff is still active');
+      }
+    }
 
     const wal = await new AppendOnlyWal({ filePath: config.walPath }).init();
     await wal.verify();
@@ -237,10 +253,12 @@ export async function runProductionLiveBrowserWorker({ env = process.env, browse
       navigationTimeoutMs: config.executionTimeoutMs,
       verificationWindowMs: config.verificationWindowMs,
       verificationIntervalMs: config.verificationIntervalMs,
+      postPlusAction: config.postPlusAction,
     });
     const verification = createBrowserPaymentVerificationService({
       repository: createBrowserExecutionRepository(pool), verifier: recoveryVerifier,
       approvedOrderId: config.approvedOrderId, maxBatch: 1,
+      postPlusAction: config.postPlusAction,
     });
     const verificationResult = await verification.runOnce();
     if (verificationResult.status !== 'IDLE') return verificationResult;
@@ -259,6 +277,7 @@ export async function runProductionLiveBrowserWorker({ env = process.env, browse
       leaseSeconds: config.leaseSeconds, executionTimeoutMs: config.executionTimeoutMs,
       verificationWindowMs: config.verificationWindowMs,
       verificationIntervalMs: config.verificationIntervalMs,
+      postPlusAction: config.postPlusAction,
     });
     return worker.runOnce();
   } finally {

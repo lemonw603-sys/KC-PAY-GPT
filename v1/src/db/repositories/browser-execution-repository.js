@@ -1352,6 +1352,200 @@ export function createBrowserExecutionRepository(pool) {
       });
     },
 
+    async recordManual20xReviewRequired({ runId, operationId, evidenceHash,
+      humanOwnerId = 'admin', now = new Date() }) {
+      const run = required(runId, 'runId');
+      const operation = required(operationId, 'operationId');
+      const evidence = requireHash(evidenceHash, 'evidenceHash');
+      const humanOwner = required(humanOwnerId, 'humanOwnerId');
+      return inTransaction(pool, async (connection) => {
+        const prior = await existingOperation(connection, run, operation);
+        if (prior) {
+          if (prior.operation_type !== 'MANUAL_20X_REVIEW_REQUIRED') {
+            throw new BrowserExecutionError('operation ID has another type', 'OPERATION_CONFLICT');
+          }
+          return publicRun(await lockRunContext(connection, run), { idempotentReplay: true });
+        }
+        const row = await lockRunContext(connection, run);
+        if (row.run_status !== 'RUNNING'
+          || row.payment_state !== 'PAYMENT_CONFIRMED'
+          || row.post_payment_state !== 'CANCELLATION_PENDING'
+          || row.attempt_status !== 'SUBMITTING'
+          || row.funds_risk_state !== 'ACTIVE'
+          || row.order_status !== 'RECHARGE_PROCESSING') {
+          throw new BrowserExecutionError('20X review is not ready', 'MANUAL_20X_REVIEW_NOT_READY');
+        }
+        const sequence = await appendCheckpoint(connection, row, {
+          kind: 'MANUAL_20X_REVIEW_REQUIRED', risk: 'SETTLED', operationId: operation,
+          now, evidence: { evidenceHash: evidence }
+        });
+        await connection.query(
+          `INSERT INTO browser_operations
+           (browser_run_id, operation_id, operation_type, status, result_code,
+            public_result_json, prepared_at, completed_at)
+           VALUES (?, ?, 'MANUAL_20X_REVIEW_REQUIRED', 'COMMITTED',
+             'CARD_RECONCILIATION_REQUIRED', ?, ?, ?)`,
+          [run, operation, json({ evidenceHash: evidence, humanOwnerId: humanOwner }), now, now]
+        );
+        await connection.query(
+          `INSERT INTO browser_interventions
+           (id, browser_run_id, status, requested_by, automation_owner_id,
+            human_owner_id, reason_code, result_code, requested_at, transferred_at)
+           VALUES (?, ?, 'TRANSFERRED', 'SYSTEM', ?, ?, 'PAYMENT_RECONCILIATION',
+             'MANUAL_20X_RECONCILIATION_REQUIRED', ?, ?)`,
+          [randomUUID(), run, row.automation_owner_id || row.worker_id,
+            humanOwner, now, now]
+        );
+        await connection.query(
+          `UPDATE browser_runs
+           SET status='HUMAN_REQUIRED', post_payment_state='PLUS_CONFIRMED',
+               verification_state='HUMAN_REQUIRED', verification_next_check_at=NULL,
+               control_state='TRANSFERRED', human_owner_id=?, requested_by='SYSTEM',
+               worker_id=NULL, worker_lease_token_hash=NULL, worker_lease_until=NULL,
+               automation_owner_id=NULL, last_checkpoint_sequence=?,
+               last_checkpoint_kind='MANUAL_20X_REVIEW_REQUIRED',
+               last_error_code='MANUAL_20X_RECONCILIATION_REQUIRED', updated_at=?
+           WHERE id=? AND status='RUNNING' AND payment_state='PAYMENT_CONFIRMED'
+             AND post_payment_state='CANCELLATION_PENDING'`,
+          [humanOwner, sequence, now, run]
+        );
+        await connection.query(
+          `UPDATE execution_resource_leases
+           SET released_at=?, release_reason='MANUAL_20X_REVIEW_REQUIRED'
+           WHERE browser_run_id=? AND released_at IS NULL`, [now, run]
+        );
+        await connection.query(
+          `UPDATE checkout_artifacts
+           SET status='CONSUMED'
+           WHERE browser_run_id=? AND status IN ('ACTIVE','REVIEW_REQUIRED')`, [run]
+        );
+        await connection.query(
+          `UPDATE browser_dispatch_jobs
+           SET status='COMPLETED', completed_at=COALESCE(completed_at, ?),
+               lease_owner=NULL, lease_token_hash=NULL, lease_until=NULL, updated_at=?
+           WHERE recharge_attempt_id=? AND status IN ('QUEUED','CLAIMED')`,
+          [now, now, row.recharge_attempt_id]
+        );
+        return publicRun({ ...row, run_status: 'HUMAN_REQUIRED',
+          post_payment_state: 'PLUS_CONFIRMED', verification_state: 'HUMAN_REQUIRED',
+          control_state: 'TRANSFERRED' }, {
+          humanOwnerId: humanOwner, reasonCode: 'MANUAL_20X_RECONCILIATION_REQUIRED',
+          idempotentReplay: false
+        });
+      });
+    },
+
+    async recordManual20xHandoff({ runId, operationId, evidenceHash,
+      humanOwnerId = 'admin', now = new Date() }) {
+      const run = required(runId, 'runId');
+      const operation = required(operationId, 'operationId');
+      const evidence = requireHash(evidenceHash, 'evidenceHash');
+      const humanOwner = required(humanOwnerId, 'humanOwnerId');
+      return inTransaction(pool, async (connection) => {
+        const prior = await existingOperation(connection, run, operation);
+        if (prior) {
+          if (prior.operation_type !== 'MANUAL_20X_HANDOFF') {
+            throw new BrowserExecutionError('operation ID has another type', 'OPERATION_CONFLICT');
+          }
+          return publicRun(await lockRunContext(connection, run), { idempotentReplay: true });
+        }
+        const row = await lockRunContext(connection, run);
+        if (row.run_status !== 'RUNNING'
+          || row.payment_state !== 'PAYMENT_CONFIRMED'
+          || row.post_payment_state !== 'CANCELLATION_PENDING'
+          || row.attempt_status !== 'SUBMITTING'
+          || row.funds_risk_state !== 'ACTIVE'
+          || row.order_status !== 'RECHARGE_PROCESSING') {
+          throw new BrowserExecutionError('20X handoff is not ready', 'MANUAL_20X_HANDOFF_NOT_READY');
+        }
+        const sequence = await appendCheckpoint(connection, row, {
+          kind: 'MANUAL_20X_HANDOFF', risk: 'SETTLED', operationId: operation,
+          now, evidence: { evidenceHash: evidence }
+        });
+        await connection.query(
+          `INSERT INTO browser_post_payment_observations
+           (browser_run_id, observation_kind, observation_status, evidence_hash, evidence_json, observed_at)
+           VALUES (?, 'MANUAL_20X_HANDOFF', 'PLUS_CONFIRMED', ?, ?, ?)`,
+          [run, evidence, json({ evidenceHash: evidence }), now]
+        );
+        await connection.query(
+          `INSERT INTO browser_operations
+           (browser_run_id, operation_id, operation_type, status, result_code,
+            public_result_json, prepared_at, completed_at)
+           VALUES (?, ?, 'MANUAL_20X_HANDOFF', 'COMMITTED', 'AWAITING_MANUAL_20X_UPGRADE', ?, ?, ?)`,
+          [run, operation, json({ evidenceHash: evidence, humanOwnerId: humanOwner }), now, now]
+        );
+        await connection.query(
+          `INSERT INTO browser_interventions
+           (id, browser_run_id, status, requested_by, automation_owner_id,
+            human_owner_id, reason_code, result_code, requested_at, transferred_at)
+           VALUES (?, ?, 'TRANSFERRED', 'SYSTEM', ?, ?, 'MANUAL_20X_HANDOFF',
+             'PLUS_CONFIRMED', ?, ?)`,
+          [randomUUID(), run, row.automation_owner_id || row.worker_id,
+            humanOwner, now, now]
+        );
+        const [runUpdate] = await connection.query(
+          `UPDATE browser_runs
+           SET status='HUMAN_REQUIRED', post_payment_state='PLUS_CONFIRMED',
+               verification_state='RESOLVED', verification_next_check_at=NULL,
+               control_state='TRANSFERRED', human_owner_id=?, requested_by='SYSTEM',
+               worker_id=NULL, worker_lease_token_hash=NULL, worker_lease_until=NULL,
+               automation_owner_id=NULL, last_checkpoint_sequence=?,
+               last_checkpoint_kind='MANUAL_20X_HANDOFF', last_error_code=NULL,
+               updated_at=?
+           WHERE id=? AND status='RUNNING' AND payment_state='PAYMENT_CONFIRMED'
+             AND post_payment_state='CANCELLATION_PENDING'`,
+          [humanOwner, sequence, now, run]
+        );
+        if (runUpdate.affectedRows !== 1) {
+          throw new BrowserExecutionError('Browser run changed concurrently', 'RUN_CONFLICT');
+        }
+        const [attemptUpdate] = await connection.query(
+          `UPDATE recharge_attempts
+           SET status='SUCCESS', funds_risk_state='SETTLED',
+               result_summary_json=?, finished_at=?, updated_at=?
+           WHERE id=? AND executor_kind='BROWSER'
+             AND status='SUBMITTING' AND funds_risk_state='ACTIVE'`,
+          [json({ code: 'PLUS_CONFIRMED_AWAITING_MANUAL_20X', browserRunId: run }),
+            now, now, row.recharge_attempt_id]
+        );
+        if (attemptUpdate.affectedRows !== 1) {
+          throw new BrowserExecutionError('funds attempt changed concurrently', 'ATTEMPT_CONFLICT');
+        }
+        await connection.query(
+          `UPDATE execution_resource_leases
+           SET released_at=?, release_reason='MANUAL_20X_HANDOFF'
+           WHERE browser_run_id=? AND released_at IS NULL`, [now, run]
+        );
+        await connection.query(
+          `UPDATE checkout_artifacts
+           SET status='CONSUMED'
+           WHERE browser_run_id=? AND status IN ('ACTIVE','REVIEW_REQUIRED')`, [run]
+        );
+        await connection.query(
+          `UPDATE browser_dispatch_jobs
+           SET status='COMPLETED', completed_at=COALESCE(completed_at, ?),
+               lease_owner=NULL, lease_token_hash=NULL, lease_until=NULL, updated_at=?
+           WHERE recharge_attempt_id=? AND status IN ('QUEUED','CLAIMED')`,
+          [now, now, row.recharge_attempt_id]
+        );
+        await connection.query(
+          `INSERT INTO order_events
+           (order_id, from_status, to_status, actor_type, actor_id, reason,
+            metadata_json, created_at)
+           VALUES (?, 'RECHARGE_PROCESSING', 'RECHARGE_PROCESSING', 'SYSTEM', NULL,
+             'Browser Plus confirmed; transferred for manual 20X upgrade', ?, ?)`,
+          [row.order_id, json({ browserRunId: run, attemptId: row.recharge_attempt_id,
+            evidenceHash: evidence }), now]
+        );
+        return publicRun({ ...row, run_status: 'HUMAN_REQUIRED',
+          post_payment_state: 'PLUS_CONFIRMED', attempt_status: 'SUCCESS',
+          funds_risk_state: 'SETTLED', control_state: 'TRANSFERRED' }, {
+          humanOwnerId: humanOwner, idempotentReplay: false
+        });
+      });
+    },
+
     async recordCancellationConfirmed({ runId, operationId, evidenceHash, now = new Date() }) {
       const run = required(runId, 'runId');
       const operation = required(operationId, 'operationId');

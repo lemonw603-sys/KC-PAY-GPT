@@ -10,6 +10,8 @@ function harness({ row = {}, observation = { outcome: 'UNKNOWN' } } = {}) {
     async markPaymentConfirmed(input) { calls.push(['confirmed', input]); },
     async recordPlusActivation(input) { calls.push(['plus', input]); },
     async recordCancellationConfirmed(input) { calls.push(['cancellation', input]); },
+    async recordManual20xHandoff(input) { calls.push(['20x-handoff', input]); },
+    async recordManual20xReviewRequired(input) { calls.push(['20x-review', input]); },
     async markPaymentDeclinedAfterVerification(input) { calls.push(['declined', input]); },
     async escalatePaymentVerification(input) { calls.push(['escalated', input]); },
   };
@@ -43,6 +45,32 @@ test('confirmed recovery completes Plus and cancellation without remarking an al
   });
   await createBrowserPaymentVerificationService({ repository: h.repository, verifier: h.verifier }).runOnce();
   assert.deepEqual(h.calls.map(([name]) => name), ['list', 'plus', 'cancellation']);
+});
+
+test('20X recovery confirms Plus and hands off without cancelling renewal', async () => {
+  const h = harness({
+    row: { paymentState: 'PAYMENT_CONFIRMED' },
+    observation: { outcome: 'CONFIRMED', postPaymentComplete: true,
+      manual20xState: 'HANDOFF', evidence: { plus: { observed: true }, transactionHash: 'a'.repeat(64) } },
+  });
+  await createBrowserPaymentVerificationService({
+    repository: h.repository, verifier: h.verifier, postPlusAction: 'MANUAL_20X_HANDOFF',
+  }).runOnce();
+  assert.deepEqual(h.calls.map(([name]) => name), ['list', 'plus', '20x-handoff']);
+  assert.equal(h.calls.some(([name]) => name === 'cancellation'), false);
+});
+
+test('20X recovery routes unmatched card evidence to review without cancelling renewal', async () => {
+  const h = harness({
+    row: { paymentState: 'PAYMENT_CONFIRMED' },
+    observation: { outcome: 'CONFIRMED', postPaymentComplete: true,
+      manual20xState: 'REVIEW_REQUIRED', evidence: { plus: { observed: true }, transactionCandidateCount: 0 } },
+  });
+  await createBrowserPaymentVerificationService({
+    repository: h.repository, verifier: h.verifier, postPlusAction: 'MANUAL_20X_HANDOFF',
+  }).runOnce();
+  assert.deepEqual(h.calls.map(([name]) => name), ['list', 'plus', '20x-review']);
+  assert.equal(h.calls.some(([name]) => name === 'cancellation'), false);
 });
 
 test('verification deadline or conflict escalates exactly one case', async () => {

@@ -11,7 +11,8 @@ const PAYMENT_STATES = new Set([
 const CONTROL_STATES = new Set(['AUTOMATION', 'REQUESTED', 'FROZEN', 'TRANSFERRED', 'RELEASED']);
 const DISPATCH_STATUSES = new Set(['QUEUED', 'CLAIMED', 'COMPLETED', 'CANCELLED']);
 const CONTROL_ACTIONS = new Set([
-  'REQUEST', 'FREEZE', 'TRANSFER', 'RELEASE_SAFE', 'MARK_PAYMENT_UNKNOWN', 'CANCEL'
+  'REQUEST', 'FREEZE', 'TRANSFER', 'RELEASE_SAFE', 'MARK_PAYMENT_UNKNOWN',
+  'COMPLETE_20X', 'CANCEL'
 ]);
 const INTERVENTION_REASONS = new Set([
   'CAPTCHA', 'THREE_DS', 'PAGE_DRIFT', 'SESSION_REPAIR', 'OPERATOR_REVIEW',
@@ -75,6 +76,7 @@ function publicRun(row) {
     runNo: Number(row.run_no),
     status: row.run_status ?? row.status,
     paymentState: row.payment_state,
+    postPaymentState: row.post_payment_state,
     controlState: row.control_state,
     worker: row.worker_id ? {
       id: row.worker_id,
@@ -337,7 +339,7 @@ export function createBrowserAdminService({
     const offset = (page - 1) * pageSize;
     const [rows] = await pool.query(
       `SELECT br.id AS run_id, br.recharge_attempt_id, br.run_no,
-              br.status AS run_status, br.payment_state, br.control_state,
+              br.status AS run_status, br.payment_state, br.post_payment_state, br.control_state,
               br.worker_id, br.worker_lease_until, br.automation_owner_id,
               br.human_owner_id, br.selected_lane, br.last_checkpoint_sequence,
               br.last_checkpoint_kind, br.last_error_code,
@@ -378,7 +380,7 @@ export function createBrowserAdminService({
     const run = required(runId, 'runId', 64);
     const [rows] = await pool.query(
       `SELECT br.id AS run_id, br.recharge_attempt_id, br.run_no,
-              br.status AS run_status, br.payment_state, br.control_state,
+              br.status AS run_status, br.payment_state, br.post_payment_state, br.control_state,
               br.worker_id, br.worker_lease_until, br.automation_owner_id,
               br.human_owner_id, br.selected_lane, br.last_checkpoint_sequence,
               br.last_checkpoint_kind, br.last_error_code,
@@ -495,6 +497,7 @@ export function createBrowserAdminService({
       TRANSFER: `转交人工 ${run}`,
       RELEASE_SAFE: `确认无付款动作并恢复 ${run}`,
       MARK_PAYMENT_UNKNOWN: `确认付款结果未知 ${run}`,
+      COMPLETE_20X: `确认20X升级完成 ${run}`,
       CANCEL: `取消接管 ${run}`
     }[action];
     if (String(input.confirmation || '') !== expectedConfirmation) {
@@ -579,6 +582,52 @@ export function createBrowserAdminService({
            WHERE id = ? AND control_state = 'FROZEN'`, [humanOwnerId, timestamp, run]
         );
         row.control_state = 'TRANSFERRED';
+      } else if (action === 'COMPLETE_20X') {
+        if (row.control_state !== 'TRANSFERRED' || intervention?.status !== 'TRANSFERRED'
+          || row.run_status !== 'HUMAN_REQUIRED'
+          || row.payment_state !== 'PAYMENT_CONFIRMED'
+          || row.post_payment_state !== 'PLUS_CONFIRMED'
+          || row.attempt_status !== 'SUCCESS'
+          || row.funds_risk_state !== 'SETTLED'
+          || row.order_status !== 'RECHARGE_PROCESSING'
+          || !(await paymentSubmitExists(connection, run))) {
+          throw new BrowserAdminError('run is not awaiting manual 20X completion', 'CONTROL_STATE_CONFLICT', 409);
+        }
+        await connection.query(
+          `UPDATE browser_interventions
+           SET status='RELEASED', result_code='MANUAL_20X_COMPLETED', finished_at=?
+           WHERE id=? AND status='TRANSFERRED'`, [timestamp, intervention.id]
+        );
+        await connection.query(
+          `UPDATE browser_runs
+           SET status='COMPLETED', control_state='RELEASED',
+               last_error_code=NULL, finished_at=?, updated_at=?
+           WHERE id=? AND status='HUMAN_REQUIRED' AND control_state='TRANSFERRED'
+             AND payment_state='PAYMENT_CONFIRMED' AND post_payment_state='PLUS_CONFIRMED'`,
+          [timestamp, timestamp, run]
+        );
+        const [orderUpdate] = await connection.query(
+          `UPDATE orders
+           SET status='RECHARGE_SUCCESS', version=version+1,
+               finished_at=?, updated_at=?
+           WHERE id=? AND status='RECHARGE_PROCESSING' AND version=?`,
+          [timestamp, timestamp, row.order_id, row.order_version]
+        );
+        if (orderUpdate.affectedRows !== 1) {
+          throw new BrowserAdminError('order changed concurrently', 'ORDER_CONFLICT', 409);
+        }
+        await connection.query(
+          `INSERT INTO order_events
+           (order_id, from_status, to_status, actor_type, actor_id, reason,
+            metadata_json, created_at)
+           VALUES (?, 'RECHARGE_PROCESSING', 'RECHARGE_SUCCESS', 'ADMIN', ?,
+             'Manual 20X upgrade confirmed by operator', ?, ?)`,
+          [row.order_id, actorId, json({ browserRunId: run,
+            attemptId: row.recharge_attempt_id }), timestamp]
+        );
+        row.control_state = 'RELEASED';
+        row.run_status = 'COMPLETED';
+        row.order_status = 'RECHARGE_SUCCESS';
       } else if (action === 'RELEASE_SAFE') {
         if (row.control_state !== 'TRANSFERRED' || intervention?.status !== 'TRANSFERRED') {
           throw new BrowserAdminError('intervention is not transferred', 'CONTROL_STATE_CONFLICT', 409);

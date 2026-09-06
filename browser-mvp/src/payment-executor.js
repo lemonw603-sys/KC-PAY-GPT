@@ -97,7 +97,8 @@ export class MockPostPaymentVerifier {
  */
 export class BrowserPaymentExecutor {
   constructor({ integration, executionRepository, paymentAdapter, postPaymentVerifier,
-    enabled = false, verificationWindowMs = 5 * 60_000, verificationIntervalMs = 5_000 } = {}) {
+    enabled = false, postPlusAction = 'CANCEL_RENEWAL',
+    verificationWindowMs = 5 * 60_000, verificationIntervalMs = 5_000 } = {}) {
     if (!integration || typeof integration.issueAuthoritativePaymentPermit !== 'function') throw new TypeError('integration is required');
     if (!executionRepository || typeof executionRepository.commitPaymentSubmissionIntent !== 'function'
       || typeof executionRepository.schedulePostPaymentVerification !== 'function') throw new TypeError('executionRepository is required');
@@ -111,6 +112,15 @@ export class BrowserPaymentExecutor {
     this.paymentAdapter = paymentAdapter;
     this.postPaymentVerifier = postPaymentVerifier;
     this.enabled = enabled === true;
+    if (!['CANCEL_RENEWAL', 'MANUAL_20X_HANDOFF'].includes(postPlusAction)) {
+      throw new TypeError('postPlusAction must be CANCEL_RENEWAL or MANUAL_20X_HANDOFF');
+    }
+    if (postPlusAction === 'MANUAL_20X_HANDOFF'
+      && (typeof executionRepository.recordManual20xHandoff !== 'function'
+        || typeof executionRepository.recordManual20xReviewRequired !== 'function')) {
+      throw new TypeError('manual 20X repository methods are required for MANUAL_20X_HANDOFF');
+    }
+    this.postPlusAction = postPlusAction;
     if (!Number.isInteger(verificationWindowMs) || verificationWindowMs < 1_000) {
       throw new TypeError('verificationWindowMs must be an integer >= 1000');
     }
@@ -215,6 +225,36 @@ export class BrowserPaymentExecutor {
       await this.executionRepository.recordPlusActivation({
         runId: run.runId, operationId: `${op}:plus`, evidenceHash: digest(plus.evidence),
       });
+      if (this.postPlusAction === 'MANUAL_20X_HANDOFF') {
+        const transactions = await this.postPaymentVerifier.readCardTransactions();
+        const reconciliation = await this.postPaymentVerifier.reconcile({ transactions });
+        if (!reconciliation?.matched) {
+          await this.executionRepository.recordManual20xReviewRequired({
+            runId: run.runId,
+            operationId: `${op}:manual-20x-review`,
+            evidenceHash: digest({ plus: plus.evidence, transactions }),
+            humanOwnerId: 'admin',
+          });
+          return {
+            status: 'MANUAL_20X_REVIEW_REQUIRED',
+            reasonCode: 'MANUAL_20X_RECONCILIATION_REQUIRED',
+            paymentSubmitCalls: 1,
+            preserveProfile: true,
+          };
+        }
+        await this.executionRepository.recordManual20xHandoff({
+          runId: run.runId,
+          operationId: `${op}:manual-20x-handoff`,
+          evidenceHash: digest({ plus: plus.evidence, transactions }),
+          humanOwnerId: 'admin',
+        });
+        return {
+          status: 'MANUAL_20X_HANDOFF',
+          paymentSubmitCalls: 1,
+          cardTransactionCount: transactions.length,
+          preserveProfile: true,
+        };
+      }
       const cancellation = await this.postPaymentVerifier.confirmCancellation();
       const transactions = await this.postPaymentVerifier.readCardTransactions();
       const reconciliation = await this.postPaymentVerifier.reconcile({ transactions });

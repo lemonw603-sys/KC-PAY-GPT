@@ -1,6 +1,10 @@
 import { accessSync, constants } from 'node:fs';
 
 export const PRODUCTION_LIVE_CONFIRMATION_PREFIX = 'I-CONFIRM-ONE-LIVE-BROWSER-PAYMENT:';
+export const BROWSER_POST_PLUS_ACTIONS = Object.freeze({
+  CANCEL_RENEWAL: 'CANCEL_RENEWAL',
+  MANUAL_20X_HANDOFF: 'MANUAL_20X_HANDOFF',
+});
 
 export class ProductionLiveConfigError extends Error {
   constructor(message, code = 'INVALID_BROWSER_LIVE_CONFIG') {
@@ -50,6 +54,16 @@ export function loadProductionLiveBrowserConfig(env = process.env) {
   }
   const checkOnly = env.BROWSER_WORKER_CHECK_ONLY === 'true';
   const approvedOrderId = checkOnly ? null : required(env, 'BROWSER_LIVE_ORDER_ID');
+  const postPlusAction = String(env.BROWSER_POST_PLUS_ACTION
+    || BROWSER_POST_PLUS_ACTIONS.CANCEL_RENEWAL).trim().toUpperCase();
+  if (!Object.values(BROWSER_POST_PLUS_ACTIONS).includes(postPlusAction)) {
+    throw new ProductionLiveConfigError(
+      'BROWSER_POST_PLUS_ACTION must be CANCEL_RENEWAL or MANUAL_20X_HANDOFF'
+    );
+  }
+  if (checkOnly && postPlusAction !== BROWSER_POST_PLUS_ACTIONS.CANCEL_RENEWAL) {
+    throw new ProductionLiveConfigError('MANUAL_20X_HANDOFF is allowed only for a bound LIVE --once run');
+  }
   if (!checkOnly && required(env, 'BROWSER_LIVE_OPERATION_CONFIRMATION')
     !== `${PRODUCTION_LIVE_CONFIRMATION_PREFIX}${approvedOrderId}`) {
     throw new ProductionLiveConfigError('LIVE confirmation must be bound to the approved order ID');
@@ -93,6 +107,7 @@ export function loadProductionLiveBrowserConfig(env = process.env) {
   return Object.freeze({
     checkOnly,
     approvedOrderId,
+    postPlusAction,
     databaseUrl: required(env, 'DATABASE_URL'),
     databaseTls: env.DATABASE_TLS === 'true',
     workerId: required(env, 'BROWSER_WORKER_ID'),
