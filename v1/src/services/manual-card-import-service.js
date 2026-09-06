@@ -108,11 +108,15 @@ function publicRow(item, existing = false, conflict = false) {
     status: conflict ? 'CONFLICT' : item.structuralErrors.length ? 'REJECTED' : unavailable ? 'UNAVAILABLE' : (existing ? 'UPDATE' : 'INSERT'),
     state: item.row['州'], errors: [...item.structuralErrors, ...item.availabilityReasons, ...(conflict ? ['PAN_SOURCE_CONFLICT'] : [])] };
 }
+// A card is "at risk" only while money is still in flight. SETTLED is terminal:
+// its consumption already lives in the capacity ledger, and orders.assigned_card_id
+// is never cleared, so counting SETTLED here froze every card that had paid once
+// (it could never return to AVAILABLE on a later snapshot).
 function activeRiskSql(alias = 'cards') {
   return `(EXISTS (SELECT 1 FROM card_assignment_history h WHERE h.card_id=${alias}.id AND h.status='ACTIVE')
     OR EXISTS (SELECT 1 FROM recharge_attempts ra WHERE ra.order_id IN
       (SELECT o.id FROM orders o WHERE o.assigned_card_id=${alias}.id)
-      AND ra.funds_risk_state IN ('ACTIVE','UNKNOWN','SETTLED'))
+      AND ra.funds_risk_state IN ('ACTIVE','UNKNOWN'))
     OR EXISTS (SELECT 1 FROM browser_runs br
       INNER JOIN recharge_attempts bra ON bra.id=br.recharge_attempt_id
       INNER JOIN orders bro ON bro.id=bra.order_id

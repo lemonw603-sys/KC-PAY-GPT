@@ -74,3 +74,52 @@ integration('multi-source snapshots, order freeze and allocation share one autho
   const conflict=await importer.preview({providerAccountId:sourceB,fileBase64:duplicate.toString('base64')});
   assert.equal(conflict.conflictCount,1); assert.equal(conflict.commitAllowed,false);
 });
+
+// A manual card that already paid once (attempt SETTLED, assignment released) must come
+// back to AVAILABLE on the next full snapshot; only in-flight money (ACTIVE/UNKNOWN) freezes it.
+integration('full snapshot restores a settled manual card to AVAILABLE but keeps an in-flight card frozen', async (t) => {
+  const pool = mysql.createPool({ uri: databaseUrl, connectionLimit: 4, timezone: 'Z' });
+  t.after(() => pool.end());
+  const suffix = crypto.randomUUID().slice(0, 8);
+  const source = crypto.randomUUID();
+  await pool.query(`INSERT INTO provider_accounts
+    (id,provider_code,account_code,display_name,environment,purpose,source_adapter,
+     supports_browser_recharge,operational_enabled,read_enabled,write_enabled,max_concurrency)
+    VALUES (?, 'manual_excel', ?, 'Test C','PRODUCTION','CARD','backup_card_export_v1',1,1,0,0,1)`,
+  [source, `test-c-${suffix}`]);
+  const importer=createManualCardImportService({pool,encryptionKey:Buffer.alloc(32,5),panHmacKey:Buffer.alloc(32,6)});
+  const pan='4'+Array.from({length:15},()=>crypto.randomInt(0,10)).join('');
+  const seq=`c-${suffix}`;
+  const snapshot=async(balance)=>{ const bytes=workbook([card(seq,pan,balance)]);
+    const preview=await importer.preview({providerAccountId:source,fileBase64:bytes.toString('base64')});
+    await importer.commit({providerAccountId:source,fileBase64:bytes.toString('base64'),confirmation:preview.confirmation}); };
+  await snapshot('152');
+  const [[created]]=await pool.query('SELECT id,inventory_status FROM cards WHERE provider_account_id=? AND external_card_id=?',[source,seq]);
+  assert.equal(created.inventory_status,'AVAILABLE');
+
+  // Simulate one completed Browser payment on this card: order assigned, attempt SETTLED,
+  // card marked DEPLETED with unknown balance by the payment-confirmed path.
+  const cdkId=crypto.randomUUID(), orderId=crypto.randomUUID(), attemptId=crypto.randomUUID();
+  await pool.query(`INSERT INTO cdks (id,code_hash,hash_version,status,batch_no,plan_type) VALUES (?,?,'test-v2','REDEEMED',?,'plus')`,[cdkId,crypto.randomBytes(32).toString('hex'),`test-${suffix}`]);
+  await pool.query(`INSERT INTO orders
+    (id,public_no,cdk_id,status,card_type_id,open_card_amount,minimum_required_card_balance,session_ciphertext,
+     card_purchase_idempotency_key,product_id,fulfillment_route_id,frozen_card_provider_account_id,route_resolution_status,assigned_card_id)
+    VALUES (?,?,?,'RECHARGE_SUCCESS','7',16,16,?,?,'00000000-0000-4000-8000-000000000201','00000000-0000-4000-8000-000000000302',?,'RESOLVED',?)`,
+  [orderId,`SETTLED-${suffix}`,cdkId,Buffer.from('x'),`purchase-${suffix}`,source,created.id]);
+  await pool.query(`INSERT INTO recharge_attempts (id,order_id,fulfillment_route_id,executor_kind,status,funds_risk_state,idempotency_key,created_at,updated_at)
+    VALUES (?,?,'00000000-0000-4000-8000-000000000302','BROWSER','SUCCESS','SETTLED',?,CURRENT_TIMESTAMP(3),CURRENT_TIMESTAMP(3))`,
+  [attemptId,orderId,`settled-${suffix}`]);
+  await pool.query(`UPDATE cards SET inventory_status='DEPLETED', current_balance=NULL WHERE id=?`,[created.id]);
+
+  await snapshot('136');
+  const [[restored]]=await pool.query('SELECT inventory_status,current_balance FROM cards WHERE id=?',[created.id]);
+  assert.equal(restored.inventory_status,'AVAILABLE','settled payment must not freeze the card');
+  assert.equal(Number(restored.current_balance),136);
+
+  await pool.query(`UPDATE recharge_attempts SET status='SUBMITTING', funds_risk_state='ACTIVE' WHERE id=?`,[attemptId]);
+  await pool.query(`UPDATE cards SET inventory_status='DEPLETED' WHERE id=?`,[created.id]);
+  await snapshot('130');
+  const [[frozen]]=await pool.query('SELECT inventory_status,current_balance FROM cards WHERE id=?',[created.id]);
+  assert.equal(frozen.inventory_status,'DEPLETED','in-flight money must keep the card frozen');
+  assert.equal(Number(frozen.current_balance),130,'balance still refreshes from the snapshot');
+});
