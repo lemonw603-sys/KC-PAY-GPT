@@ -83,11 +83,8 @@ const elements = {
   syncTime: document.querySelector('#sync-time'),
   metrics: document.querySelector('#metrics-grid'),
   readinessList: document.querySelector('#admin-readiness-list'),
-  overviewCdkRefundStatus: document.querySelector('#overview-cdk-refund-status'),
-  overviewProviderHealth: document.querySelector('#overview-provider-health'),
-  statusList: document.querySelector('#status-list'),
-  settingList: document.querySelector('#setting-list'),
-  recentOrders: document.querySelector('#recent-orders'),
+  decisionsGrid: document.querySelector('#decisions-grid'),
+  attentionOrders: document.querySelector('#attention-orders'),
   ordersTable: document.querySelector('#orders-table'),
   filters: document.querySelector('#order-filters'),
   search: document.querySelector('#order-search'),
@@ -295,113 +292,53 @@ function orderRow(order, { selectable = false } = {}) {
   </tr>`;
 }
 
+function renderDecisions(overview, cardSources) {
+  if (!elements.decisionsGrid) return;
+  const d = overview.decisions || {};
+  state.decisions = d;
+  state.acceptingOrders = Boolean(d.acceptNewOrders);
+  const health = overview.providerHealth || {};
+  const intake = !d.acceptNewOrders ? 'stop' : d.dispatchNewRecharges ? 'run' : 'pause';
+  const intakeButton = (key, label) => `<button type="button" class="${intake === key ? 'primary-small' : 'ghost-button'}" data-intake="${key}" ${intake === key ? 'disabled' : ''}>${label}</button>`;
+  const rechargeMethod = String(health.rechargeMethod || '').toUpperCase();
+  const routeButton = (method, label, ready = true, title = '') => `<button class="${rechargeMethod === method ? 'primary-small' : 'ghost-button'} default-recharge-method" type="button" data-method="${method}" ${rechargeMethod === method || !ready ? 'disabled' : ''} title="${escapeHtml(title)}">${label}</button>`;
+  const sources = (cardSources?.sources || []).filter((item) => item.supportsBrowserRecharge && item.operationalEnabled);
+  const currentSource = cardSources?.browserProviderAccountId || '';
+  const sourceOptions = sources.map((item) => `<option value="${escapeHtml(item.id)}" ${item.id === currentSource ? 'selected' : ''}>${escapeHtml(item.displayName)}</option>`).join('');
+  const payOn = Boolean(d.browserPaymentWritesEnabled);
+  const payMismatch = d.browserProfileWritesEnabled != null && d.browserProfileWritesEnabled !== payOn;
+  const supplyOn = Boolean(d.supplyAutomationEnabled);
+  elements.decisionsGrid.innerHTML = `
+    <div class="decision"><strong>接不接单</strong><span class="segmented-actions">${intakeButton('run', '接单并处理')}${intakeButton('pause', '接单但暂停处理')}${intakeButton('stop', '停止接单')}</span><small>${intake === 'run' ? '新订单可以提交，规则通过后自动履约' : intake === 'pause' ? '新订单可以提交，但不派发充值，已有订单继续追踪' : '客户页拒绝新订单，已有订单继续追踪'}</small></div>
+    <div class="decision"><strong>走哪条路线</strong><span class="segmented-actions">${routeButton('API', 'API 充值')}${routeButton('BROWSER', '浏览器自动化充值', Boolean(health.browserRechargeReady), health.browserRechargeReady ? '' : 'Browser 执行器尚未就绪')}</span><small>只影响切换后新建的订单；执行中的订单保持原路线</small></div>
+    <div class="decision"><strong>用哪个卡台</strong><span class="segmented-actions"><select id="decision-card-source" aria-label="Browser 卡台">${sourceOptions || '<option value="">没有可用卡台</option>'}</select><button type="button" class="primary-small" id="decision-card-source-apply" ${sources.length ? '' : 'disabled'}>切换</button></span><small>Browser 路线的卡台；切换只影响之后的新订单，不自动回退</small></div>
+    <div class="decision"><strong>能不能付钱</strong><span class="segmented-actions"><em class="switch-state ${payOn ? 'is-on' : ''}">${payOn ? '允许自动付款' : '禁止自动付款'}</em><button type="button" class="${payOn ? 'danger-small' : 'primary-small'}" id="decision-payment" data-enabled="${payOn}">${payOn ? '关闭' : '开启'}</button></span><small>${payMismatch ? '执行器配置与开关不一致，点一次开启/关闭会同步' : payOn ? '浏览器会真实点击付款；每单仍受单笔许可与唯一提交保护' : '所有 Browser 单停在付款前，不会扣款'}</small></div>
+    <div class="decision"><strong>能不能开卡补钱</strong><span class="segmented-actions"><em class="switch-state ${supplyOn ? 'is-on' : ''}">${supplyOn ? '自动开卡与补余额' : d.supplyAutomationMixed ? '部分开启' : '全部人工'}</em><button type="button" class="${supplyOn ? 'danger-small' : 'primary-small'}" id="decision-supply" data-enabled="${supplyOn}">${supplyOn ? '关闭' : '开启'}</button></span><small>${supplyOn ? '没有合格卡时按真实订单需求自动开卡、自动补足余额' : '开卡与补余额都由人工在卡片页操作'}</small></div>`;
+}
+
 async function loadOverview() {
-  const [overview, recent, alertData] = await Promise.all([
+  const [overview, attention, alertData, cardSources] = await Promise.all([
     api('/api/v1/admin/overview'),
-    api('/api/v1/admin/orders?page=1&pageSize=6'),
-    api('/api/v1/admin/alerts?limit=10')
+    api('/api/v1/admin/orders?page=1&pageSize=8&status=REVIEW_REQUIRED'),
+    api('/api/v1/admin/alerts?limit=10'),
+    api('/api/v1/admin/card-sources').catch(() => ({ sources: [] }))
   ]);
   renderReadiness(overview.readiness);
-  const orderMetrics = [
-    { label: '累计订单', value: overview.metrics.totalOrders, note: '全部已创建订单', view: 'orders' },
-    { label: '今日订单', value: overview.metrics.todayOrders, note: '点击查看今天新订单', filter: 'TODAY' },
-    { label: '成功订单', value: overview.metrics.successfulOrders, note: '已完成 Plus 开通并结束续费', filter: 'RECHARGE_SUCCESS' },
-    { label: '自动处理中', value: overview.metrics.processingOrders, note: '系统正在自动流转', filter: 'PROCESSING' },
-    { label: '待执行充值', value: overview.metrics.awaitingConfirmationOrders, note: '正常模式由系统自动执行', filter: 'AWAITING_CONFIRMATION' },
-    { label: '需要关注', value: overview.metrics.reviewingOrders, note: '失败、未知或对账订单', filter: 'REVIEW_REQUIRED' },
-    { label: '需要人工核对', value: overview.metrics.reconciliationIssues, note: '与真实案例队列完全一致', filter: 'RECONCILIATION_ISSUES' },
-    { label: '等待 Session', value: overview.metrics.waitingForSession ?? 0, note: '客户可在原订单更换 Session', filter: 'WAITING_FOR_SESSION' },
-    { label: '等待卡片就绪', value: overview.metrics.waitingForCard ?? 0,
-      note: overview.cardStock?.needsFunding && overview.cardStock?.balanceFundingEnabled
-        ? `已有 ${overview.cardStock.needsFunding} 张卡可按订单需求自动补足余额`
-        : overview.cardStock?.autoReplenishmentEnabled
-          ? '没有合格卡时，系统会按真实订单需求自动开卡'
-          : '自动开卡已关闭；当前无合格卡时需要人工处理', filter: 'WAITING_FOR_CARD' },
-    { label: '取消续费处理中', value: overview.metrics.cancellationPending ?? 0, note: '充值成功后的终态确认', filter: 'CANCELLATION_PENDING' },
-    { label: '取消续费需复核', value: overview.metrics.cancellationReview ?? 0, note: '取消状态异常，需要人工处理', filter: 'CANCELLATION_REVIEW_REQUIRED' }
+  renderDecisions(overview, cardSources);
+  const metrics = [
+    { label: '今日订单', value: overview.metrics.todayOrders, note: '今天新建', filter: 'TODAY' },
+    { label: '自动处理中', value: overview.metrics.processingOrders, note: '正常模式由系统自动执行', filter: 'PROCESSING' },
+    { label: '需要处理', value: overview.metrics.reviewingOrders, note: '失败、未知或对账订单', filter: 'REVIEW_REQUIRED' },
+    { label: '等待 Session', value: overview.metrics.waitingForSession ?? 0, note: '客户可随时重新提供', filter: 'WAITING_FOR_SESSION' },
+    { label: 'Plus 可分配卡', value: overview.cardStock?.available ?? 0, note: overview.cardStock?.available ? '合格且未占用' : '没有合格卡，新订单会等卡', view: 'stock' }
   ];
-  const riskMetrics = [
-    { label: '资金结果未决', value: overview.operationalBacklog?.fundsRiskPending ?? 0,
-      note: '禁止自动重试或切换充值路线', filter: 'RECONCILIATION_ISSUES' },
-    { label: '卡余额充值待处理', value: overview.operationalBacklog?.cardFundingRiskPending ?? 0,
-      note: overview.operationalBacklog?.cardFundingManualReview
-        ? `${overview.operationalBacklog.cardFundingManualReview} 个需人工复核` : '只读对账或人工复核队列', filter: 'RECONCILIATION_ISSUES' }
-    ,{ label: '卡片同步', value: (overview.operationalBacklog?.cardSyncReviewRequired ?? 0) > 0
-        || (overview.operationalBacklog?.cardSyncFailureRate ?? 0) > 0
-        ? '需检查'
-        : (overview.operationalBacklog?.cardSyncOldestAgeSeconds ?? 0) > 120 ? '延迟' : '正常',
-      note: `最老 ${overview.operationalBacklog?.cardSyncOldestAgeSeconds ?? 0}s · 平均 ${overview.operationalBacklog?.cardSyncAvgLatencySeconds ?? 0}s · 失败率 ${overview.operationalBacklog?.cardSyncFailureRate ?? 0}%${overview.operationalBacklog?.cardSyncReviewRequired ? ` · ${overview.operationalBacklog.cardSyncReviewRequired} 条待复核` : ''}`, view: 'overview' }
-  ];
-  const inventoryMetrics = [
-    { label: 'Plus 可分配卡', value: overview.cardStock?.available ?? 0,
-      note: overview.cardStock?.needsFunding
-        ? overview.cardStock?.balanceFundingEnabled
-          ? `已有 ${overview.cardStock.needsFunding} 张卡，订单到达后会自动补足余额`
-          : `已有 ${overview.cardStock.needsFunding} 张卡余额不足，需要人工处理`
-        : overview.cardStock?.low
-          ? `自动开卡已关闭；当前低于库存线：${overview.cardStock?.lowThreshold ?? 5}`
-          : overview.cardStock?.autoReplenishmentEnabled
-            ? '没有合格卡时，系统会按真实订单需求自动开卡'
-            : '人工管理库存，不发送低库存提醒', view: 'stock' }
-  ];
-  const healthMetrics = [
-    { label: '订单 Worker',
-      value: overview.runtimeHealth?.workerHealthy && !(overview.runtimeHealth?.expiredTaskLeases || overview.runtimeHealth?.stalledProviderCalls) ? '正常' : '需检查',
-      note: overview.runtimeHealth?.stalledProviderCalls
-        ? `${overview.runtimeHealth.stalledProviderCalls} 个外部调用超时未决`
-        : overview.runtimeHealth?.expiredTaskLeases
-          ? `${overview.runtimeHealth.expiredTaskLeases} 个任务租约已过期`
-          : overview.runtimeHealth?.workerHealthy ? 'Worker 心跳正常' : 'Worker 心跳超过 1 分钟',
-      filter: 'RECONCILIATION_ISSUES' },
-    { label: '已完成订单成功率', value: overview.metrics.successRate == null ? '—' : `${overview.metrics.successRate}%`, note: overview.metrics.completedOrders ? `已完成 ${overview.metrics.completedOrders} 单，不计未完成订单` : '暂无已完成订单样本', filter: 'RECHARGE_SUCCESS' }
-  ];
-  const metricButton = (item, index) => `<button type="button" class="metric-card metric-${index + 1}" ${item.filter ? `data-order-filter="${item.filter}"` : `data-target-view="${item.view}"`}>
-    <span>${escapeHtml(item.label)}</span><strong>${escapeHtml(item.value)}</strong><small>${escapeHtml(item.note)}</small>
-  </button>`;
-  const groups = [
-    ['订单处理', orderMetrics],
-    ['资金与风险', riskMetrics],
-    ['库存运营', inventoryMetrics],
-    ['系统健康', healthMetrics]
-  ];
-  elements.metrics.innerHTML = groups.map(([title, items]) => `<section class="metric-group"><div class="metric-group-title">${title}</div><div class="metric-group-grid">${items.map((item, offset) => metricButton(item, offset)).join('')}</div></section>`).join('');
-  const distribution = (rows, labels) => rows?.length
-    ? rows.map((item) => `<div><span><strong>${escapeHtml(labels[item.status] || item.status)}</strong><small>${escapeHtml(item.status)}</small></span><em>${escapeHtml(item.count)}</em></div>`).join('')
-    : '<p class="empty-state">暂无记录</p>';
-  elements.overviewCdkRefundStatus.innerHTML = `<p class="mini-list-heading">CDK</p>${distribution(overview.cdkStatuses, { AVAILABLE: '未使用', REDEEMED: '已兑换', REVOKED: '已作废' })}<p class="mini-list-heading">退款观察</p>${distribution(overview.refundStatuses, { MONITORING: '观察中', DETECTED: '疑似退款', CONFIRMED: '已确认退款', WITHDRAWN: '已提取' })}`;
-  const health = overview.providerHealth || {};
-  // Catalog sync runs every five minutes; the admin health badge allows a
-  // small scheduling/jitter margin. Write paths still enforce strict freshness
-  // and refresh immediately before execution.
-  const providerFresh = health.syncedAt && Date.now() - Date.parse(health.syncedAt) <= 6 * 60 * 1000;
-  const providerTone = health.purchaseEnabled === true && providerFresh ? 'status-green' : 'status-orange';
-  const providerLabel = !health.syncedAt ? '未同步' : !providerFresh ? '规则已过期' : health.purchaseEnabled === true ? '允许开卡' : health.purchaseEnabled === false ? '禁止开卡' : '未知';
-  const providerBalance = health.accountBalance == null ? '—' : `${formatMoney(health.accountBalance)} ${escapeHtml(health.currency || 'USD')}`;
-  elements.overviewProviderHealth.innerHTML = `<div><span><strong>${escapeHtml(health.routeLabel || '当前 Plus 卡台路线')}</strong><small>${health.accountCode ? `账户 ${escapeHtml(health.accountCode)} · ` : ''}只读同步 ${formatTime(health.syncedAt)}</small></span><em class="status-chip ${providerTone}"><i></i>${providerLabel}</em></div><div><span><strong>卡台账户余额</strong><small>不是可分配卡片余额</small></span><em>${providerBalance}</em></div>`;
-  const maxCount = Math.max(1, ...overview.orderStatuses.map((item) => item.count));
-  elements.statusList.innerHTML = overview.orderStatuses.length
-    ? overview.orderStatuses.map((item) => `<button type="button" data-status="${escapeHtml(item.status)}">
-      <span>${statusChip(item.status)}<strong>${item.count}</strong></span>
-      <progress class="status-bar" max="${maxCount}" value="${item.count}" aria-label="${escapeHtml(item.status)} ${item.count} 单"></progress>
-    </button>`).join('')
-    : '<p class="empty-state">还没有订单数据</p>';
-  const rechargeMethod = String(health.rechargeMethod || '').toUpperCase();
-  const methodControl = `<div><span><strong>默认充值方式</strong><small>只影响切换后新建订单；执行中的订单保持原路线</small></span><span class="segmented-actions"><button class="${rechargeMethod === 'API' ? 'primary-small' : 'ghost-button'} default-recharge-method" type="button" data-method="API" ${rechargeMethod === 'API' ? 'disabled' : ''}>API 充值</button><button class="${rechargeMethod === 'BROWSER' ? 'primary-small' : 'ghost-button'} default-recharge-method" type="button" data-method="BROWSER" ${rechargeMethod === 'BROWSER' || !health.browserRechargeReady ? 'disabled' : ''} title="${health.browserRechargeReady ? '切换为浏览器自动化充值' : 'Browser 执行器尚未就绪'}">浏览器自动化充值</button></span></div>`;
-  elements.settingList.innerHTML = methodControl + overview.settings.map((setting) => {
-    const enabled = setting.value === 'true';
-    if (setting.key === 'accept_new_orders') state.acceptingOrders = enabled;
-    const control = setting.key === 'recharge_dispatch_mode'
-      ? `<em class="switch-state ${setting.value === 'AUTOMATIC' ? 'is-on' : ''}">${setting.value === 'AUTOMATIC' ? '正常自动' : '仅灰度许可'}</em>`
-      : setting.key === 'accept_new_orders'
-      ? `<button class="${enabled ? 'danger-small' : 'primary-small'}" type="button" id="toggle-order-acceptance" data-enabled="${enabled}">${enabled ? '停止接单' : '开始接单'}</button>`
-      : setting.key === 'dispatch_new_recharges'
-      ? `<button class="${enabled ? 'danger-small' : 'primary-small'}" type="button" id="toggle-recharge-dispatch" data-enabled="${enabled}">${enabled ? '停止自动充值' : '开始自动充值'}</button>`
-      : `<em class="switch-state ${enabled ? 'is-on' : ''}">${enabled ? '开启' : '关闭'}</em>`;
-    return `<div><span><strong>${escapeHtml(SETTING_META[setting.key] || setting.key)}</strong><small>${setting.key === 'accept_new_orders' ? (enabled ? '新订单可以提交；规则通过后自动履约' : '已停止新订单；已有订单仍可继续处理和轮询') : `${formatTime(setting.updatedAt)} 更新`}</small></span>${control}</div>`;
-  }).join('');
+  elements.metrics.innerHTML = metrics.map((item, index) => `<button type="button" class="metric-card metric-${index + 1}" ${item.filter ? `data-order-filter="${item.filter}"` : `data-target-view="${item.view}"`}><span>${escapeHtml(item.label)}</span><strong>${escapeHtml(item.value)}</strong><small>${escapeHtml(item.note)}</small></button>`).join('');
+  elements.attentionOrders.innerHTML = attention.orders?.length
+    ? attention.orders.map(orderRow).join('')
+    : '<tr><td colspan="6" class="empty-cell">没有需要处理的订单</td></tr>';
   const alerts = alertData.alerts || [];
   elements.alertsCard.hidden = alerts.length === 0;
-  elements.alertsList.innerHTML = alerts.map((alert) => `<div><span><strong>${escapeHtml(alert.title)}</strong><small>${escapeHtml(alert.message)}</small></span><span class="case-actions"><em>${formatTime(alert.createdAt)}</em><button type="button" class="text-button" data-close-alert="${escapeHtml(alert.id)}">关闭</button></span></div>`).join('');
+  elements.alertsList.innerHTML = alerts.map((alert) => `<div><span><strong>${escapeHtml(alert.title)}</strong><small>${escapeHtml(alert.message)}</small></span><span class="case-actions"><em>${formatTime(alert.createdAt)}</em><button type="button" class="ghost-button" data-close-alert="${escapeHtml(alert.id)}">关闭</button></span></div>`).join('');
   elements.alertsList.querySelectorAll('[data-close-alert]').forEach((button) => button.addEventListener('click', async () => {
     button.disabled = true;
     try {
@@ -413,9 +350,6 @@ async function loadOverview() {
       button.disabled = false;
     }
   }));
-  elements.recentOrders.innerHTML = recent.orders.length
-    ? recent.orders.map(orderRow).join('')
-    : '<tr><td colspan="6" class="empty-cell">还没有订单</td></tr>';
   elements.syncTime.textContent = `更新于 ${new Date().toLocaleTimeString('zh-CN', { hour12: false })}`;
 }
 
@@ -1660,10 +1594,6 @@ for (const [status, [label]] of Object.entries(STATUS_META)) {
 
 elements.navItems.forEach((item) => item.addEventListener('click', () => switchView(item.dataset.view).catch(() => showNotice('数据读取失败，请稍后重试。'))));
 document.querySelectorAll('[data-open-orders]').forEach((button) => button.addEventListener('click', () => switchView('orders')));
-elements.statusList.addEventListener('click', (event) => {
-  const button = event.target.closest('[data-status]');
-  if (button) switchView('orders', { status: button.dataset.status });
-});
 elements.metrics.addEventListener('click', (event) => {
   const filterButton = event.target.closest('[data-order-filter]');
   const viewButton = event.target.closest('[data-target-view]');
@@ -2118,20 +2048,64 @@ elements.manualCardImportForm?.addEventListener('submit', async (event) => {
     });
   } catch (error) { showNotice(manualCardImportErrorMessage(error)); }
 });
-document.addEventListener('click', (event) => {
+document.addEventListener('click', async (event) => {
+  const intakeButton = event.target.closest('[data-intake]');
+  if (intakeButton) {
+    const target = intakeButton.dataset.intake; const d = state.decisions || {};
+    const steps = [];
+    if (target === 'stop') { if (d.acceptNewOrders) steps.push(['order-acceptance', { enabled: false, confirmation: '停止接单' }]); }
+    else {
+      if (!d.acceptNewOrders) steps.push(['order-acceptance', { enabled: true, confirmation: '开始接单' }]);
+      const wantDispatch = target === 'run';
+      if (Boolean(d.dispatchNewRecharges) !== wantDispatch) steps.push(['recharge-dispatch', { enabled: wantDispatch, confirmation: wantDispatch ? '开始自动充值' : '停止自动充值' }]);
+    }
+    intakeButton.disabled = true;
+    try {
+      for (const [path, body] of steps) await api(`/api/v1/admin/operations/${path}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      showNotice('接单状态已更新。', 'success');
+    } catch { showNotice('接单状态更新失败，请刷新后重试。'); }
+    await loadOverview();
+    return;
+  }
+  const paymentButton = event.target.closest('#decision-payment');
+  if (paymentButton) {
+    const enable = paymentButton.dataset.enabled !== 'true';
+    if (!window.confirm(enable ? '开启后浏览器会真实点击付款并扣卡上的钱。确定开启？' : '关闭后所有 Browser 订单停在付款前。确定关闭？')) return;
+    paymentButton.disabled = true;
+    try {
+      await api('/api/v1/admin/operations/browser-payment', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: enable }) });
+      showNotice(enable ? '已允许自动付款。' : '已禁止自动付款。', 'success');
+    } catch { showNotice('付款开关更新失败，请刷新后重试。'); }
+    await loadOverview();
+    return;
+  }
+  const supplyButton = event.target.closest('#decision-supply');
+  if (supplyButton) {
+    const enable = supplyButton.dataset.enabled !== 'true';
+    supplyButton.disabled = true;
+    try {
+      await api('/api/v1/admin/operations/supply-automation', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: enable }) });
+      showNotice(enable ? '已开启自动开卡与补余额。' : '已关闭自动开卡与补余额。', 'success');
+    } catch { showNotice('供给开关更新失败，请刷新后重试。'); }
+    await loadOverview();
+    return;
+  }
+  const sourceApply = event.target.closest('#decision-card-source-apply');
+  if (sourceApply) {
+    const select = document.querySelector('#decision-card-source');
+    const providerAccountId = select?.value;
+    if (!providerAccountId) return showNotice('请先选择卡台。');
+    sourceApply.disabled = true;
+    try {
+      const result = await api('/api/v1/admin/card-sources/browser/current', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ providerAccountId, takeoverWaiting: false }) });
+      showNotice(`Browser 卡台已切换${result.warnings?.length ? '；目标卡台当前有提醒，请到卡片页查看' : '，只影响之后的新订单'}。`, 'success');
+    } catch { showNotice('卡台切换失败，请刷新后重试。'); }
+    await loadOverview();
+    return;
+  }
   const methodButton = event.target.closest('.default-recharge-method');
   if (methodButton) {
     setDefaultRechargeMethod(methodButton);
-    return;
-  }
-  const intakeButton = event.target.closest('#toggle-order-acceptance');
-  if (intakeButton) {
-    setOrderAcceptance(intakeButton);
-    return;
-  }
-  const dispatchButton = event.target.closest('#toggle-recharge-dispatch');
-  if (dispatchButton) {
-    setRechargeDispatch(dispatchButton);
     return;
   }
   const row = event.target.closest('tr[data-order]');

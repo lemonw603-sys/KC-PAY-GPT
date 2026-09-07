@@ -104,14 +104,15 @@ test('admin refresh feedback and inset dropdown arrows remain visible', () => {
   const html = fs.readFileSync(path.join(directory, 'admin', 'index.html'), 'utf8');
   const script = fs.readFileSync(path.join(directory, 'admin', 'assets', 'admin.js'), 'utf8');
   const styles = fs.readFileSync(path.join(directory, 'admin', 'assets', 'admin.css'), 'utf8');
-  assert.match(html, /admin\.css\?v=21/);
-  assert.match(html, /admin\.js\?v=27/);
+  assert.match(html, /admin\.css\?v=22/);
+  assert.match(html, /admin\.js\?v=28/);
   assert.match(script, /button\.textContent = '刷新中…'/);
   assert.match(script, /showNotice\('刷新完成。', 'success'\)/);
   assert.match(script, /showNotice\('刷新失败，请稍后重试。'\)/);
   assert.match(script, /等待 Session/);
   assert.match(script, /Plus 可分配卡/);
-  assert.match(script, /overview-provider-health/);
+  assert.match(script, /decisions-grid/);
+  assert.match(html, /五个决定/);
   assert.match(script, /card-stock\/minimum-balance/);
   assert.match(html, /最低所需卡余额/);
   assert.match(script, /card-intake\/.*\/validate/);

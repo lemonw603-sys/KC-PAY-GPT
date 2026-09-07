@@ -7,8 +7,8 @@
   <meta name="theme-color" content="#f5f8fc">
   <title>Plus 运营后台</title>
   <link rel="icon" href="/admin/assets/favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/admin/assets/admin.css?v=21">
-  <script src="/admin/assets/admin.js?v=27" defer></script>
+  <link rel="stylesheet" href="/admin/assets/admin.css?v=22">
+  <script src="/admin/assets/admin.js?v=28" defer></script>
 </head>
 <body>
   <div class="admin-shell">
@@ -49,35 +49,24 @@
       </header>
 
       <section id="overview-view" class="view" aria-labelledby="view-title">
-        <div class="metrics-grid" id="metrics-grid" aria-label="关键指标"></div>
-        <section class="card readiness-card" aria-labelledby="readiness-title">
-          <div class="card-heading"><div><p class="section-kicker">开工检查</p><h2 id="readiness-title">系统就绪情况</h2></div><span class="readonly-badge">只读</span></div>
-          <div class="readiness-list" id="admin-readiness-list"><p class="empty-state">正在检查…</p></div>
+        <section class="card decisions-card" aria-labelledby="decisions-title">
+          <div class="card-heading"><div><p class="section-kicker">五个决定</p><h2 id="decisions-title">现在怎么跑</h2></div><span class="write-badge">改动即生效，只影响之后的新订单</span></div>
+          <div class="decisions-grid" id="decisions-grid"><p class="empty-state">正在读取…</p></div>
         </section>
-        <div class="dashboard-grid overview-secondary-grid">
-          <section class="card status-card"><div class="card-heading"><div><p class="section-kicker">卡密与退款</p><h2>状态分布</h2></div><span class="readonly-badge">只读</span></div><div class="mini-list" id="overview-cdk-refund-status"></div></section>
-          <section class="card status-card"><div class="card-heading"><div><p class="section-kicker">卡台健康</p><h2>卡台状态</h2></div><span class="readonly-badge">只读</span></div><div class="mini-list" id="overview-provider-health"></div></section>
-        </div>
+        <div class="metrics-strip" id="metrics-grid" aria-label="今天的数字"></div>
+        <section class="card orders-card" aria-labelledby="attention-title">
+          <div class="card-heading"><div><p class="section-kicker">今天要处理的</p><h2 id="attention-title">需要处理的订单</h2></div><button class="text-button" type="button" data-open-orders>进入订单</button></div>
+          <div class="table-wrap"><table><thead><tr><th>订单查询码</th><th>账号</th><th>状态</th><th>卡片</th><th>退款观察</th><th>创建时间</th></tr></thead><tbody id="attention-orders"></tbody></table></div>
+        </section>
         <section class="card alerts-card" id="alerts-card" hidden>
           <div class="card-heading"><div><p class="section-kicker">需要核对</p><h2>内部提醒</h2></div><span class="readonly-badge">只读</span></div>
           <div class="mini-list" id="alerts-list"></div>
         </section>
-        <div class="dashboard-grid">
-          <section class="card status-card">
-            <div class="card-heading"><div><p class="section-kicker">订单分布</p><h2>处理状态</h2></div><button class="text-button" type="button" data-open-orders>查看全部</button></div>
-            <div class="status-list" id="status-list"></div>
-          </section>
-          <section class="card settings-card">
-            <div class="card-heading"><div><p class="section-kicker">运行控制</p><h2>系统开关</h2></div><span class="write-badge">人工控制</span></div>
-            <div class="setting-list" id="setting-list"></div>
-          </section>
-        </div>
-        <section class="card recent-card">
-          <div class="card-heading"><div><p class="section-kicker">最新动态</p><h2>最近订单</h2></div><button class="text-button" type="button" data-open-orders>进入订单中心</button></div>
-          <div class="table-wrap"><table><thead><tr><th>订单查询码</th><th>账号</th><th>状态</th><th>卡片</th><th>退款观察</th><th>更新时间</th></tr></thead><tbody id="recent-orders"></tbody></table></div>
+        <section class="card readiness-card" aria-labelledby="readiness-title">
+          <div class="card-heading"><div><p class="section-kicker">开工检查</p><h2 id="readiness-title">系统就绪情况</h2></div><span class="readonly-badge">只读</span></div>
+          <div class="readiness-list" id="admin-readiness-list"><p class="empty-state">正在检查…</p></div>
         </section>
       </section>
-
       <section id="orders-view" class="view" hidden>
         <section class="card orders-card">
           <div class="batch-toolbar">

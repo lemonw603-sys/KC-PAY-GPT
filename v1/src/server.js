@@ -251,6 +251,8 @@ const app = createApp({
   ,clearCardOperationalOverride: cardOperationalOverrideService.clear
   ,setAdminOrderAcceptance: adminOperationsService.setOrderAcceptance
   ,setAdminDispatch: adminOperationsService.setDispatch
+  ,setAdminBrowserPaymentWrites: (input) => adminOperationsService.setBrowserPaymentWrites(input)
+  ,setAdminSupplyAutomation: (input) => adminOperationsService.setSupplyAutomation(input)
   ,closeAdminAlert: adminOperationsService.closeAlert
   ,startAdminBusiness: startBusiness
   ,setAdminRechargePermit: async (publicNo, input = {}) => {

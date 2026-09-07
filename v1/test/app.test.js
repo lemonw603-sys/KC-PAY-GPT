@@ -90,12 +90,24 @@ test('labels local stock refresh separately from provider card synchronization',
 test('admin overview does not describe disabled automatic card opening as enabled', async () => {
   const html = await readFile(new URL('../public/admin/index.html', import.meta.url), 'utf8');
   const script = await readFile(new URL('../public/admin/assets/admin.js', import.meta.url), 'utf8');
-  assert.match(html, /admin\.js\?v=27/);
-  assert.match(script, /自动开卡已关闭；当前无合格卡时需要人工处理/);
-  assert.match(script, /自动开卡已关闭；当前低于库存线/);
-  assert.match(script, /cardSyncReviewRequired/);
-  assert.match(script, /cardSyncFailureRate/);
+  assert.match(html, /admin\.js\?v=28/);
+  assert.match(script, /supplyOn \? '自动开卡与补余额' : d\.supplyAutomationMixed \? '部分开启' : '全部人工'/);
+  assert.match(script, /开卡与补余额都由人工在卡片页操作/);
+  assert.match(script, /没有合格卡，新订单会等卡/);
   assert.doesNotMatch(script, /自动补卡已开启，已到库存线/);
+  assert.doesNotMatch(script, /自动开卡已关闭；当前无合格卡时需要人工处理/);
+});
+
+test('admin script only references elements it declares and ids that exist in the page', async () => {
+  const html = await readFile(new URL('../public/admin/index.html', import.meta.url), 'utf8');
+  const script = await readFile(new URL('../public/admin/assets/admin.js', import.meta.url), 'utf8');
+  const start = script.indexOf('const elements = {');
+  const block = script.slice(start, script.indexOf('\n};', start));
+  const declared = new Set([...block.matchAll(/(?:^|[\s,{])([A-Za-z0-9_]+):\s*(?:document|\[)/g)].map((m) => m[1]));
+  const used = [...new Set([...script.matchAll(/elements\.([A-Za-z0-9_]+)/g)].map((m) => m[1]))];
+  assert.deepEqual(used.filter((key) => !declared.has(key)), []);
+  const ids = [...new Set([...block.matchAll(/querySelector\('#([a-z0-9-]+)'\)/g)].map((m) => m[1]))];
+  assert.deepEqual(ids.filter((id) => !html.includes(`id="${id}"`)), []);
 });
 
 test('exposes the one-to-four card capacity setting in the admin UI', async () => {
@@ -1113,4 +1125,31 @@ test('order execution timeline is readable by an authenticated administrator onl
     assert.equal(body.publicNo, 'PJV1-TIMELINE');
     assert.equal(body.events[0].action, 'observe-page');
   });
+});
+
+test('the two home-page decision switches are guarded, boolean-only and audited through their services', async () => {
+  const adminAuth = createAdminSessionAuth({
+    passwordHash: await hashAdminPassword('fixture admin password', { salt: Buffer.alloc(16, 29) }),
+    sessionSecret: Buffer.alloc(32, 30), secureCookies: false
+  });
+  const calls = [];
+  const app = createApp({
+    adminAuth,
+    setAdminBrowserPaymentWrites: async (input) => { calls.push(['payment', input]); return { browserPaymentWritesEnabled: input.enabled, previous: !input.enabled, executorProfilesUpdated: 1 }; },
+    setAdminSupplyAutomation: async (input) => { calls.push(['supply', input]); return { supplyAutomationEnabled: input.enabled, cardAutoReplenishmentEnabled: input.enabled, cardBalanceRechargeEnabled: input.enabled }; }
+  });
+  await withServer(app, async (baseUrl) => {
+    const denied = await fetch(`${baseUrl}/api/v1/admin/operations/browser-payment`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: true }) });
+    assert.equal(denied.status, 401);
+    const login = await fetch(`${baseUrl}/api/v1/admin/session`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: 'fixture admin password' }) });
+    const cookie = login.headers.get('set-cookie').split(';')[0];
+    for (const path of ['browser-payment', 'supply-automation']) {
+      const bad = await fetch(`${baseUrl}/api/v1/admin/operations/${path}`, { method: 'POST', headers: { Cookie: cookie, Origin: baseUrl, 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: 'true' }) });
+      assert.equal(bad.status, 400);
+      assert.deepEqual(await bad.json(), { error: 'invalid_operation_state' });
+      const ok = await fetch(`${baseUrl}/api/v1/admin/operations/${path}`, { method: 'POST', headers: { Cookie: cookie, Origin: baseUrl, 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: false }) });
+      assert.equal(ok.status, 200);
+    }
+  });
+  assert.deepEqual(calls.map(([name, input]) => [name, input.enabled, input.actorId]), [['payment', false, 'admin'], ['supply', false, 'admin']]);
 });

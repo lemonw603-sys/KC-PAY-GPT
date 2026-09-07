@@ -260,3 +260,12 @@ tbody tr[data-order]:hover, tbody tr[data-order]:focus { background: #f7faff; }
 .timeline-item small { grid-column: 2; color: var(--muted, #666); }
 .timeline-freeze { border-left-color: var(--danger, #c0392b); }
 .timeline-checkpoint { border-left-color: var(--accent, #2f6fed); }
+
+/* home: five decisions */
+.decisions-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; }
+.decision { display: grid; gap: 8px; padding: 12px; border: 1px solid var(--line, #e3e3e3); border-radius: 10px; background: var(--card, #fff); }
+.decision strong { font-size: 14px; }
+.decision small { color: var(--muted, #666); line-height: 1.4; }
+.decision .segmented-actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.decision select { max-width: 100%; }
+.metrics-strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin: 12px 0; }

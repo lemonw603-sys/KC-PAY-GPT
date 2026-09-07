@@ -33,9 +33,17 @@ test('admin overview maps aggregate values without exposing raw records', async 
       { setting_key: 'card_auto_replenishment_enabled', setting_value: 'false' }],
     [{ card_intake_pending: 2, funds_risk_pending: 1,
       card_funding_risk_pending: 2, card_funding_manual_review: 1,
-      reconciliation_cases_open: 3, card_sync_backlog: 4, card_sync_review_required: 2 }]
+      reconciliation_cases_open: 3, card_sync_backlog: 4, card_sync_review_required: 2 }],
+    [{ active: 1, writes_on: 0 }]
   ]);
   const result = await createAdminReadService({ pool }).getOverview();
+  assert.deepEqual(result.decisions, {
+    acceptNewOrders: false, dispatchNewRecharges: false,
+    browserPaymentWritesEnabled: false, browserProfileWritesEnabled: false,
+    cardAutoReplenishmentEnabled: false, cardBalanceRechargeEnabled: false,
+    supplyAutomationEnabled: false, supplyAutomationMixed: false
+  });
+  assert.match(pool.queries.find(({ sql }) => /^\s*SELECT COUNT\(\*\) AS active/.test(sql)).sql, /productionWritesEnabled/);
   assert.equal(result.metrics.successRate, 80);
   assert.equal(result.metrics.todayOrders, 2);
   assert.equal(result.metrics.awaitingConfirmationOrders, 1);

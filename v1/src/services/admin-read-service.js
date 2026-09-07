@@ -490,7 +490,7 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
       pool.query('SELECT status, COUNT(*) AS count FROM orders GROUP BY status ORDER BY status'),
       pool.query('SELECT status, COUNT(*) AS count FROM cdks GROUP BY status ORDER BY status'),
       pool.query(`SELECT setting_key, setting_value, updated_at FROM app_settings
-        WHERE setting_key IN ('accept_new_orders','dispatch_new_recharges','recharge_dispatch_mode','poll_existing_orders','sync_card_transactions','worker_heartbeat_at','worker_recharge_writes_enabled','card_balance_recharge_enabled')
+        WHERE setting_key IN ('accept_new_orders','dispatch_new_recharges','recharge_dispatch_mode','poll_existing_orders','sync_card_transactions','worker_heartbeat_at','worker_recharge_writes_enabled','card_balance_recharge_enabled','browser_payment_writes_enabled','card_auto_replenishment_enabled')
         ORDER BY setting_key`),
       pool.query(`SELECT status, COUNT(*) AS count FROM refund_cases
         WHERE status <> 'WITHDRAWN' GROUP BY status ORDER BY status`)
@@ -596,7 +596,24 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
     const rechargeWritesEnabled = settingsRows.some(
       (row) => row.setting_key === 'worker_recharge_writes_enabled' && row.setting_value === 'true'
     );
+    const settingOn = (key) => settingsRows.some((row) => row.setting_key === key && String(row.setting_value) === 'true');
+    const [[browserProfile]] = await pool.query(
+      `SELECT COUNT(*) AS active,
+              SUM(JSON_UNQUOTE(JSON_EXTRACT(config_public_json, '$.productionWritesEnabled')) = 'true') AS writes_on
+       FROM executor_profiles WHERE executor_kind = 'BROWSER' AND status = 'ACTIVE'`
+    );
+    const decisions = {
+      acceptNewOrders: settingOn('accept_new_orders'),
+      dispatchNewRecharges: settingOn('dispatch_new_recharges'),
+      browserPaymentWritesEnabled: settingOn('browser_payment_writes_enabled'),
+      browserProfileWritesEnabled: count(browserProfile?.active) > 0 && count(browserProfile?.writes_on) === count(browserProfile?.active),
+      cardAutoReplenishmentEnabled: settingOn('card_auto_replenishment_enabled'),
+      cardBalanceRechargeEnabled: settingOn('card_balance_recharge_enabled'),
+    };
+    decisions.supplyAutomationEnabled = decisions.cardAutoReplenishmentEnabled && decisions.cardBalanceRechargeEnabled;
+    decisions.supplyAutomationMixed = decisions.cardAutoReplenishmentEnabled !== decisions.cardBalanceRechargeEnabled;
     return {
+      decisions,
       metrics: {
         totalOrders: total,
         todayOrders: count(orderCounts[0]?.today),

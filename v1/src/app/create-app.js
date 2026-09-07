@@ -78,6 +78,8 @@ export function createApp({
   clearCardOperationalOverride = null,
   setAdminOrderAcceptance = null,
   setAdminDispatch = null,
+  setAdminBrowserPaymentWrites = null,
+  setAdminSupplyAutomation = null,
   setAdminRechargePermit = null,
   createAdminRechargeAuthorization = null,
   revokeAdminRechargeAuthorization = null,
@@ -558,6 +560,18 @@ export function createApp({
   if (typeof setAdminDispatch === 'function') {
     app.post('/api/v1/admin/operations/recharge-dispatch', ...adminWriteGuards, async (req, res) => {
       res.json(await setAdminDispatch(req.body));
+    });
+  }
+  if (typeof setAdminBrowserPaymentWrites === 'function') {
+    app.post('/api/v1/admin/operations/browser-payment', ...adminWriteGuards, async (req, res) => {
+      if (typeof req.body?.enabled !== 'boolean') return res.status(400).json({ error: 'invalid_operation_state' });
+      res.json(await setAdminBrowserPaymentWrites({ enabled: req.body.enabled, actorId: req.admin?.id || 'admin' }));
+    });
+  }
+  if (typeof setAdminSupplyAutomation === 'function') {
+    app.post('/api/v1/admin/operations/supply-automation', ...adminWriteGuards, async (req, res) => {
+      if (typeof req.body?.enabled !== 'boolean') return res.status(400).json({ error: 'invalid_operation_state' });
+      res.json(await setAdminSupplyAutomation({ enabled: req.body.enabled, actorId: req.admin?.id || 'admin' }));
     });
   }
   if (typeof setAdminRechargePermit === 'function') {
