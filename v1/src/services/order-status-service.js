@@ -102,8 +102,8 @@ export function createOrderStatusService({
         actionRequired: action,
         sessionReplacement: {
           used: Number(order.session_replacement_count || 0),
-          remaining: Math.max(0, 3 - Number(order.session_replacement_count || 0)),
-          expiresAt: isoDate(order.session_repair_expires_at)
+          remaining: null,
+          expiresAt: null
         }
       } : {})
     };

@@ -38,7 +38,7 @@ test('replaces Session on the same order and records metadata without retaining 
   });
   assert.deepEqual(await service({ publicNo: 'PJV1-ABCDEFGHIJKLMNOPQRST', session }), {
     publicNo: 'PJV1-ABCDEFGHIJKLMNOPQRST', status: 'PROCESSING',
-    replacementCount: 1, replacementsRemaining: 2
+    replacementCount: 1, replacementsRemaining: null
   });
   assert.match(queries[2].sql, /INSERT INTO order_session_replacements/);
   assert.match(queries[3].sql, /status = \?/);
@@ -60,19 +60,17 @@ test('returns a cardless Browser order to WAITING_FOR_CARD after Session replace
   assert.equal(queries[5].values[1], 'WAITING_FOR_CARD');
 });
 
-test('enforces three replacements and the original repair deadline', async () => {
-  const session = sessionFixture({ nowMs, lifetimeSeconds: 7200 });
-  const atLimit = fixturePool({ count: 3 });
-  await assert.rejects(() => createSessionReplacementService({
-    pool: atLimit.pool, sessionEncryptionKey: Buffer.alloc(32, 12),
-    cdkHashKey: Buffer.alloc(32, 13), now: () => nowMs
-  })({ publicNo: 'PJV1-ABCDEFGHIJKLMNOPQRST', session }),
-  (error) => error.code === 'SESSION_REPLACEMENT_LIMIT_REACHED');
-
-  const expired = fixturePool({ expiresAt: '2026-08-21T02:59:59.000Z' });
-  await assert.rejects(() => createSessionReplacementService({
-    pool: expired.pool, sessionEncryptionKey: Buffer.alloc(32, 12),
-    cdkHashKey: Buffer.alloc(32, 13), now: () => nowMs
-  })({ publicNo: 'PJV1-ABCDEFGHIJKLMNOPQRST', session }),
-  (error) => error.code === 'SESSION_REPLACEMENT_EXPIRED');
+test('a customer may replace the Session any number of times and after the old repair deadline', async () => {
+  for (const scenario of [{ count: 3 }, { expiresAt: '2026-08-20T03:00:00.000Z' }, { count: 12, expiresAt: '2026-08-01T00:00:00.000Z' }]) {
+    const { pool, queries } = fixturePool(scenario);
+    const session = sessionFixture({ nowMs, lifetimeSeconds: 7200 });
+    const service = createSessionReplacementService({
+      pool, sessionEncryptionKey: Buffer.alloc(32, 12), cdkHashKey: Buffer.alloc(32, 13), now: () => nowMs
+    });
+    const result = await service({ publicNo: 'PJV1-ABCDEFGHIJKLMNOPQRST', session });
+    assert.equal(result.status, 'PROCESSING');
+    assert.equal(result.replacementsRemaining, null);
+    assert.equal(result.replacementCount, (scenario.count || 0) + 1);
+    assert.ok(queries.some(({ sql }) => /INSERT INTO order_session_replacements/.test(sql)));
+  }
 });

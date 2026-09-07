@@ -269,8 +269,9 @@
     // 需更换表单
     el.replaceForm.hidden = !canReplace;
     if (canReplace) {
-      el.replaceLimit.textContent = `还可更换 ${replacement.remaining} 次` +
-        (replacement.expiresAt ? ` · 截止 ${fmtTime(replacement.expiresAt)}` : '');
+      el.replaceLimit.textContent = replacement.remaining == null
+        ? '可随时重新提供，不限次数；订单会继续等待。'
+        : `还可更换 ${replacement.remaining} 次` + (replacement.expiresAt ? ` · 截止 ${fmtTime(replacement.expiresAt)}` : '');
     }
 
     // 失败求助

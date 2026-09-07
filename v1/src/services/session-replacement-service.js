@@ -68,14 +68,8 @@ export function createSessionReplacementService({
       if (order.status !== 'WAITING_FOR_SESSION') {
         throw replacementError('SESSION_REPLACEMENT_NOT_ALLOWED');
       }
-      const maxCount = 3;
-      if (Number(order.session_replacement_count) >= maxCount) {
-        throw replacementError('SESSION_REPLACEMENT_LIMIT_REACHED');
-      }
-      const expiresAt = new Date(order.session_repair_expires_at).getTime();
-      if (!Number.isFinite(expiresAt) || expiresAt <= now()) {
-        throw replacementError('SESSION_REPLACEMENT_EXPIRED');
-      }
+      // A customer may re-submit a Session as many times as it takes and
+      // whenever they get to it: the order waits, the CDK stays bound.
       const [riskRows] = await connection.query(
         `SELECT COUNT(*) AS count FROM recharge_attempts
          WHERE order_id = ? AND funds_risk_state IN ('ACTIVE','UNKNOWN','SETTLED')`,
@@ -133,7 +127,7 @@ export function createSessionReplacementService({
         publicNo: order.public_no,
         status: 'PROCESSING',
         replacementCount: replacementNo,
-        replacementsRemaining: maxCount - replacementNo
+        replacementsRemaining: null
       };
     } catch (error) {
       await connection.rollback();

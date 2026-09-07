@@ -1,4 +1,5 @@
 import { transitionCardConsumptionInTransaction } from './card-consumption-ledger-service.js';
+import { returnCdkForOrderInTransaction } from '../db/repositories/cdk-return-repository.js';
 
 export class OrderCancellationError extends Error {
   constructor(message, code, status = 409) {
@@ -156,6 +157,9 @@ export function createOrderCancellationService({ pool }) {
              AND (order_id=? OR dedupe_key=?)`,
           [order.id, `order-waiting-card:${order.id}`]
         );
+        await returnCdkForOrderInTransaction(connection, {
+          orderId: order.id, reason: `order cancelled before payment: ${reason}`, actorType: 'ADMIN', actorId: 'admin',
+        });
         await connection.commit();
         return { publicNo: order.public_no, status: 'CLOSED', cardReleased: false,
           cardInventoryStatus: null, replayed: false };
@@ -266,6 +270,9 @@ export function createOrderCancellationService({ pool }) {
               rechargeAttemptId: order.browser_prepared_attempt_id,
               noExternalPaymentAction: true })]
         );
+        await returnCdkForOrderInTransaction(connection, {
+          orderId: order.id, reason: `order cancelled before payment: ${reason}`, actorType: 'ADMIN', actorId: 'admin',
+        });
         await connection.commit();
         return { publicNo: order.public_no, status: 'CLOSED', cardReleased: true,
           cardInventoryStatus: Number(order.current_balance) >= Number(order.minimum_required_card_balance)
@@ -361,6 +368,9 @@ export function createOrderCancellationService({ pool }) {
           reason, cardId: order.card_id, cardTypeId: order.card_type_id
         })]
       );
+      await returnCdkForOrderInTransaction(connection, {
+        orderId: order.id, reason: `order cancelled before payment: ${reason}`, actorType: 'ADMIN', actorId: 'admin',
+      });
       await connection.commit();
       const cardInventoryStatus = Number(order.current_balance) >= Number(order.minimum_required_card_balance)
         ? 'AVAILABLE' : 'DEPLETED';

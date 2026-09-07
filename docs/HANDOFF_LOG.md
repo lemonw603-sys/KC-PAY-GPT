@@ -1745,3 +1745,10 @@
 - 导航合同加 `plans`：plus / pro_5x / pro_20x，Pro 先点档位（5x/20x）再点「Upgrade to Pro」；executor 按 `job.metadata.plan` 选套餐，套餐由 `resolveOrderPlan`（products.product_code → 或 orders.plan_type）解析并经 projection 透传。Pro 产品在生产 products 表尚未存在，未实跑。
 - 时间线：迁移 `049_browser_run_events`；`MysqlEvidenceSink`（INSERT IGNORE，order_id 取自 orderRef 或 jobId 第二段，run_id 取自 runRef）与 WAL 组成 `CompositeEvidenceSink`，接入单订单 LIVE、常驻池、只读预检三个 Worker；LIVE 必需迁移列表加入 049。测试：sink 3 条、导航 Pro 1 条；v1 非库 517/517，browser-mvp 197/188/0/9。
 - 发布：`deploy-release.sh` 新增 `migrate <name>` 阶段；`prepare b8a005a` → `migrate`（第二遍 already applied）→ `switch`。复核：`schema_migrations` 最新 049，`browser_run_events` 列齐全，Web active 无错误。数据库仅新增空表。
+
+## 2026-09-07｜CDK 规则按基线落地（未付款退回、同码返回原单、Session 不限次重贴）
+
+- 新增 `v1/src/db/repositories/cdk-return-repository.js`：事务内退回——先查付款证据（`recharge_attempts` UNKNOWN/SETTLED/SUCCESS、账本 CONSUMED/RECONCILIATION、`browser_operations` PAYMENT_SUBMIT），任一存在则不退；否则 `cdks` 回 AVAILABLE、解绑 `order_id`、清 `redeemed_at`，写 `cdk_delivery_events` `RETURNED`。
+- 接入点：Browser `abortBeforePayment` 到 RECHARGE_FAILED；后台取消的三条 CLOSED 路径；客户提交时若码已绑定：原单未付款终态 → 先退回再按新单处理；原单进行中且同账号（account id 或邮箱）→ 直接返回原单（`reused: true`）；不同账号 → 仍拒绝。
+- Session 重贴：去掉 3 次上限与修复窗口检查，状态接口 `remaining/expiresAt` 置空，客户页显示「可随时重新提供，不限次数」。
+- 测试：退回仓库 2 条、intake 3 条、取消与重贴测试改为新语义；v1 非库全量通过。数据库集成测试未在本机跑（无 TEST_DATABASE_URL）。

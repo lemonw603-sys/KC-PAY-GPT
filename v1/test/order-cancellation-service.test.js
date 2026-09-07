@@ -13,6 +13,10 @@ function fakePool(responses) {
       if (/UPDATE card_funding_attempts/.test(sql)) return [{ affectedRows: 1 }, []];
       if (/UPDATE card_stock_jobs/.test(sql)) return [{ affectedRows: 1 }, []];
       if (/UPDATE operator_alerts/.test(sql)) return [{ affectedRows: 1 }, []];
+      if (/cdk-return payment evidence/.test(sql)) return [[{ payment_evidence: 0 }], []];
+      if (/FROM cdks WHERE order_id/.test(sql)) return [[{ id: 'cdk-1', batch_no: 'B-1' }], []];
+      if (/UPDATE cdks SET status = 'AVAILABLE'/.test(sql)) return [{ affectedRows: 1 }, []];
+      if (/INSERT INTO cdk_delivery_events/.test(sql)) return [{ affectedRows: 1 }, []];
       const response = responses.shift();
       if (response === undefined) throw new Error(`Unexpected query: ${sql}`);
       return response;
@@ -54,6 +58,8 @@ test('cancellation safely closes a queued Browser order before any run or paymen
   assert.equal(pool.queries.some(({ sql }) => /UPDATE browser_dispatch_jobs/.test(sql)), true);
   assert.equal(pool.queries.some(({ sql }) => /UPDATE recharge_attempts/.test(sql)), true);
   assert.equal(pool.queries.some(({ sql }) => /noExternalPaymentAction/.test(sql)), true);
+  assert.equal(pool.queries.some(({ sql }) => /UPDATE cdks SET status = 'AVAILABLE'/.test(sql)), true, 'a no-payment cancellation hands the CDK back');
+  assert.equal(pool.queries.some(({ sql }) => /INSERT INTO cdk_delivery_events/.test(sql) ), true);
 });
 
 test('cancellation refuses a Browser order after a run exists', async () => {

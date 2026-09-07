@@ -1,6 +1,7 @@
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { redactSensitiveText } from '../../security/redaction.js';
 import { transitionCardConsumptionInTransaction } from '../../services/card-consumption-ledger-service.js';
+import { returnCdkForOrderInTransaction } from './cdk-return-repository.js';
 
 const HEX_64 = /^[a-f0-9]{64}$/i;
 const ACTIVE_RUN_STATUSES = new Set(['READY', 'RUNNING', 'RECONCILE_ONLY', 'HUMAN_REQUIRED']);
@@ -879,6 +880,11 @@ export function createBrowserExecutionRepository(pool) {
              WHERE order_id = ? AND task_type = 'SUBMIT_RECHARGE'`,
             [reason, publicReason, now, row.order_id]
           );
+          // Ended before any payment action: the paid entitlement goes back.
+          await returnCdkForOrderInTransaction(connection, {
+            orderId: row.order_id, reason: `Browser pre-payment abort: ${reason}`,
+            actorType: 'WORKER', actorId: worker, metadata: { browserRunId: run },
+          });
         }
         await connection.query(
           `INSERT INTO order_events

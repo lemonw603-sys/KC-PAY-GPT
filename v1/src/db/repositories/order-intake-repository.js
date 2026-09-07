@@ -1,5 +1,6 @@
 import { OrderIntakeError } from '../../domain/order-intake-error.js';
 import { OrderStatus } from '../../domain/order-status.js';
+import { CDK_RETURN_ORDER_STATUSES, returnCdkForOrderInTransaction } from './cdk-return-repository.js';
 
 const REQUIRED_SETTINGS = Object.freeze([
   'accept_new_orders',
@@ -75,6 +76,32 @@ export async function createOrderFromCdk(pool, input) {
         input.cdkLookup.legacy.version, input.cdkLookup.legacy.hash
       ]
     );
+    if (cdkRows.length === 1 && cdkRows[0].status === 'REDEEMED') {
+      // A bound CDK belongs to one order. The same customer submitting the
+      // same code again gets that order back instead of a rejection; an
+      // order that already ended without any payment hands the CDK back so
+      // the submission below can proceed as a fresh order.
+      const [boundOrders] = await connection.query(
+        `SELECT id, public_no, status, customer_email, chatgpt_account_id
+         FROM orders WHERE id = (SELECT order_id FROM cdks WHERE id = ?) LIMIT 1 FOR UPDATE`,
+        [cdkRows[0].id]
+      );
+      const bound = boundOrders[0] || null;
+      const sameAccount = bound && (
+        (input.chatgptAccountId && bound.chatgpt_account_id === input.chatgptAccountId)
+        || (input.customerEmail && String(bound.customer_email || '').toLowerCase() === String(input.customerEmail).toLowerCase())
+      );
+      if (bound && CDK_RETURN_ORDER_STATUSES.includes(bound.status)) {
+        const released = await returnCdkForOrderInTransaction(connection, {
+          orderId: bound.id, reason: 'customer resubmitted the code after a no-payment ending',
+          actorType: 'CUSTOMER', actorId: 'customer', metadata: { publicNo: bound.public_no },
+        });
+        if (released.returned) cdkRows[0] = { ...cdkRows[0], status: 'AVAILABLE' };
+      } else if (bound && sameAccount) {
+        await connection.commit();
+        return { orderId: bound.id, publicNo: bound.public_no, status: bound.status, reused: true };
+      }
+    }
     if (cdkRows.length !== 1 || cdkRows[0].status !== 'AVAILABLE') {
       throw new OrderIntakeError('CDK is invalid or unavailable', {
         code: 'CDK_UNAVAILABLE',

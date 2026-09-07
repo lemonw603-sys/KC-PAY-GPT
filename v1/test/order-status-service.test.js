@@ -46,10 +46,12 @@ test('exposes only allowlisted customer actions and bounded Session replacement 
     code: 'ACCOUNT_ALREADY_PLUS',
     message: '当前账号已是 Plus，请更换一个免费账号的 Session。'
   });
+  // Replacement is unlimited and never expires (baseline 2026-09-07): the
+  // customer page only needs to know the order is waiting for a Session.
   assert.deepEqual(result.sessionReplacement, {
     used: 1,
-    remaining: 2,
-    expiresAt: '2026-08-24T10:00:00.000Z'
+    remaining: null,
+    expiresAt: null
   });
 
   const hidden = createOrderStatusService({
