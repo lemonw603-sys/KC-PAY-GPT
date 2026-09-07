@@ -1859,3 +1859,11 @@
 - 生产复验：switch 后 web 无错误；生产库跑 `getOrder` 与 `listPaymentVerificationsDue` 正常（到期核实 0）。
 - **下一步（需要用户）**：① 把测试 Plus 账号的 Session 用上号器扩展贴进 Lane 3（BitBrowser 窗口里点扩展 → 粘贴 `__Secure-next-auth.session-token` 值或完整 JSON → 替换）；② 我跑 `BITBROWSER_PROFILE_ID=8f126430af0c4be4b2cfc576de82d214 node browser-mvp/scripts/poc-plan-change-dialog-readonly.mjs pro_20x --probe-recovery`（零成本：先验证清 cookie 不伤会话，再走到弹窗读数字，不点 Pay now，`--cancel` 可关闭）；③ 卡片页重新预览并提交导入（余额 16）；④ CDK 页生成一张 **Pro 20X** 的 CDK；⑤ 新免费账号 Session 提交那张 CDK；⑥ 服务器 Worker 短启推到派发边界 → 本机 `run-live-pool.sh check pay` → 首页开浏览器真实付款 → `run pay`。
 
+## 2026-09-07｜Lane 3 首次只读演练（23:41 UTC）：阶梯验证通过；贴进来的是免费账号，Upgrade 走的是新结账页
+
+- 用户已重新导入备用卡快照（`卡片列表 (3).xls`，2 行更新、0 拒绝）：5501 余额 16.04、AVAILABLE，首页可分配 1。
+- 演练命令：`BITBROWSER_PROFILE_ID=8f126430… node browser-mvp/scripts/poc-plan-change-dialog-readonly.mjs pro_20x --probe-recovery`。结果：会话健康；**恢复阶梯第二级（清 14 条页面登录态 cookie → 回首页）后会话仍有效**——D-134 第二级首次真实验证通过；导航到定价页、选 20x、点 Upgrade 后 45 秒未出现弹窗，超时。
+- 现场核对：Lane 3 里的账号是 **免费账号**（accounts/check：has_active=false、plan=chatgptfreeplan、origin=chatgpt_not_purchased），不是已 Plus 的测试账号；Upgrade 点击在新标签页打开了全新 Pro 结账 `chatgpt.com/checkout/…`（按钮「5x more usage than Plus ₱6,490/month」「20x … ₱9,990/month」「Subscribe」）。已只读关闭该标签页（未创建订阅、未点任何付款控件）。
+- 结论：「Confirm plan changes」弹窗只在账号已有有效 Plus 时出现；免费账号走新结账页（与 09-07 接口层 PoC 一致）。导航器已补该分支（`state: checkout-popup`，交人工，不碰 Subscribe），单测 57 通过。
+- 待用户确认：贴进 Lane 3 的是哪一个账号。若本意是已 Plus 的测试账号，需换贴；若这是准备做真实单的新免费账号，它的 Session 已在 Lane 3（真实单提交前我会清掉 Lane 3 登录态）。
+
