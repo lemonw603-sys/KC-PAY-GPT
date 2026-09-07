@@ -59,7 +59,7 @@
 
 - release、服务、开关、路线、卡台、订单终态变化：同一提交更新本文 §3 与 `docs/CURRENT_STATE.md`；方向变化更新 `docs/DECISIONS.md`；过程追加到 `docs/HANDOFF_LOG.md`。
 - 本文保持一页：只留当前有效状态，不在顶部堆叠历史引用块；历史进归档。
-- 外部审查（Codex 审查员、分板块核查）按 `docs/REVIEW_PROTOCOL.md`；审查报告落在 `docs/reviews/`，处置结论由执行者追加在同一文件。
+- 外部审查（Codex 审查员、分板块核查）按 `docs/REVIEW_PROTOCOL.md`；审查记录 `docs/reviews/REVIEW_RECORD.md` 只由审查员写，处置记录 `docs/reviews/DISPOSITIONS.md` 只由执行者写。
 - 生产发布只从单一提交构建并全量校验：`scripts/deploy-release.sh prepare <commit> <name>` → 复核 → `switch <name>`（内部调用 `build-production-release.sh` / `verify-production-release.sh`，含备份、manifest 校验、健康检查与回滚命令）。
 - 数据库集成测试串行运行（`--test-concurrency=1`）。
 - 不得绕过正式连接池直连生产库写入。

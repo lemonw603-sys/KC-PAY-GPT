@@ -1697,3 +1697,4 @@
 - 用户确认：保留常驻身份池，每单清登录态留设备，不为每单新建窗口；封控细节由 Codex 另行研究后再调整。已写入 `PROJECT_MAP` §6、`CORE_SPEC` §5、研究笔记。
 - 对齐缺口修补：两阶段部署脚本此前只在会话临时目录，已入库为 `scripts/deploy-release.sh`（仓库路径改为按脚本位置推导），`PROJECT_MAP` §7 与 `AGENTS.md` 完成节点改为指向它。
 - 新增 `docs/REVIEW_PROTOCOL.md`：外部审查员（Codex）角色边界、输入禁区、发现格式、处置流程、六个链路板块与核查问题、可粘贴的对话框开场；报告目录 `docs/reviews/`。`AGENTS.md` 加「审查员角色」指向。
+- 按 Codex 的协作方案修订协议：审查记录与处置记录分离（`REVIEW_RECORD.md` / `DISPOSITIONS.md`）；发现增加影响条件、反证与不确定性、参考验证办法；P0/P1 必须书面处置，拒绝 P0 由用户裁决；批次以「可审版本 <commit>」触发。**可审版本：本节提交。**
