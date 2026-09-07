@@ -1641,3 +1641,9 @@
 - 现状缺口：`session-bootstrap` 只要发现 Profile 里已有 session cookie 就不覆盖（保护同一客户被轮换过的会话），但没有任何终态清理，下一位客户在同一身份上必然 `SESSION_IDENTITY_MISMATCH`。PoC 用测试账号登入 Lane 3 之后，下一笔真实单就会撞上这条。
 - 实现：`bootstrap(lease, context, { replaceExisting })` 与 `clearSession(context)`，清理只按 session cookie 名过滤，不碰 Cloudflare/代理 cookie；executor 在身份探测返回 `SESSION_INVALID`/`SESSION_IDENTITY_MISMATCH` 且本次是「保留了常驻会话」时，用本单令牌替换一次、重载、再探测，仍不匹配才失败关闭；同一客户被轮换的会话首次探测即匹配，不会被替换。会话租约现在保持到探测结束后再关闭。
 - 测试：`session-bootstrap` 新增替换/清理单测；`executor` 新增两条端到端（可切换身份的本地夹具）：替换后通过、替换后仍不匹配则失败且只替换一次。browser-mvp 全量 171/162/0/9。
+
+## 2026-09-07｜发布 release 20260907-admin-daily-b1c32f4
+
+- 从单一提交 `b1c32f4` 构建，881 文件 manifest OK；部署前备份 `/var/backups/pojia/pojia-20260907T005617Z.sql.gz.enc` 完整；仅重启 Web；回滚点 `20260907-manual-payment-1699197`。
+- 内容：备用卡导入不再因结清冻结卡片（`45f953c`）；CDK 五个操作免密码、生成结果不再自动清空、告警可关闭（新路由 `POST /api/v1/admin/alerts/:id/close`）、阈值 0 不再生成库存告警、隐藏两个死控件；`admin.js?v=24`。
+- 复核：公网 plus/ops 200；新路由未登录 401；线上前端无 `cdkClearTimer`、含 `data-close-alert`、CDK 生成不再经 `sensitiveApi`；生产文件含两处后端修复；systemd 与部署前一致；Web 重启日志无错误。数据库未写入。

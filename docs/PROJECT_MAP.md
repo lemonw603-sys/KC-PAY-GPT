@@ -2,7 +2,7 @@
 
 只回答四件事：目标、当前生产事实、已完成/未完成、唯一执行顺序。过程记录在 `docs/HANDOFF_LOG.md`，决策在 `docs/DECISIONS.md`，改造基线在 `docs/PRODUCT_SIMPLIFICATION_DISCUSSION.md` 末尾「接班实施基线」。2026-09-07 之前的旧版地图原文：`docs/archive/2026-09/PROJECT_MAP_snapshot_2026-09-07.md`。
 
-最后核对：2026-09-06 16:41 UTC（生产库只读 + SSH）。
+最后核对：2026-09-07 00:58 UTC（部署后公网、SSH、生产文件复核）。
 
 ## 1. 目标与不变原则
 
@@ -17,11 +17,11 @@
 
 客户提交 CDK + Session → 建单并冻结路线与卡台 → 卡资格与余额 → 唯一 attempt / 资金栅栏 → API 或 Browser 执行 → 确认 Plus（20X 再升级）→ 取消续费 → 账本、对账、通知。
 
-## 3. 当前生产事实（2026-09-06 16:41 UTC）
+## 3. 当前生产事实（2026-09-07 00:58 UTC）
 
 | 项目 | 事实 |
 |---|---|
-| release | `/opt/pojia/releases/20260907-manual-payment-1699197`；回滚点 `20260906-manual-20x-af15932` |
+| release | `/opt/pojia/releases/20260907-admin-daily-b1c32f4`（09-07 00:57 UTC）；回滚点 `20260907-manual-payment-1699197` |
 | 服务 | Web active；API Worker inactive（09-06 03:46 UTC 人为停止）；Browser Worker inactive/disabled；补余额与读同步 timer active；旧自动开卡 timer disabled |
 | 开关 | 接单 true；自动派发 true；默认路线 Browser；Browser 卡台 = 备用卡台 A；Browser 付款开关 false；自动开卡 false；自动补余额 true；每卡成功次数 3 |
 | 卡 | HNSKJ `5980` $16 AVAILABLE（唯一可分配）；备用 A：`5501` $8.87 DEPLETED、`0237` $0 → 备用卡台可分配 0 |
@@ -40,7 +40,7 @@
 
 ## 5. 唯一执行顺序（2026-09-07，用户确认）
 
-0. 已完成（本地，待发布/待真实单验证）：悬空订单收口（已上线）；历史文档归档；备用卡导入「结清即冻结」修复 `45f953c`；后台小修 `96008d4`（CDK 免密码/不清空、告警可关、阈值 0 不告警、藏死控件）；executor 填表顺序修复 `5a570f6`（09-06 未填表根因）；常驻会话属他人时自动替换 `fc20e9a`；上号器已装入全部 BitBrowser 身份；只读验证脚本备好等测试账号 Session。
+0. 已完成：悬空订单收口、备用卡导入修复 `45f953c`、后台小修 `96008d4` 均已上线（release `b1c32f4`）；历史文档归档；executor 填表顺序修复 `5a570f6` 与常驻会话替换 `fc20e9a` 在本机 Browser 路径，待真实单验证；上号器已装入全部 BitBrowser 身份；只读验证脚本备好等测试账号 Session。
 1. 两个只读验证（用户提供的测试账号，不付款）：结账接口能否在常驻浏览器身份内调用；Pro 能否免 Plus 直接购买。
 2. 两页规格，一天出：订单生命周期（阶段、CDK 绑定与退回、N 阶段付款、按产品供给）；执行流程形状（接口优先、浏览器只填 Stripe 表单、身份常驻、停在付款前）；五个决定的数据模型。真实单跑通前只是草稿。
 3. 按规格实现新流程 → 测试账号跑到付款前 → 一笔真实付款 → 删除旧编排。完成标准：旧实现已删除。
