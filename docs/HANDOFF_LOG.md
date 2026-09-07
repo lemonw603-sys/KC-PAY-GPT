@@ -1810,3 +1810,11 @@
 - 验证：538 tests（新增卡片页结构静态断言）；公网 `admin.js?v=31`/`admin.css?v=24` 200，含合并加载、无 `replenishment-settings`/`请输入确认词`；web 无错误日志。备份 `pojia-20260907T153826Z`。
 - 下一步：第 4 步诊断页（Browser 控制面、跨单资金证据核对、CSV 导出、开工检查原始项、Worker 心跳并入一页），随后第 5 步导航收成 5 项并删旧视图。
 
+## 2026-09-07｜后台五页第 4/5 步：诊断页 + 导航收成五页（`20260907-fivepages-6f1217f`）
+
+- 导航：首页 / 订单 / CDK / 卡片 / 诊断。删除「异常队列」（= 订单页「需要处理」筛选）、「资金证据核对」「Browser 执行」三个视图；其 DOM（对账队列、账单地址、派发队列、run 列表）原样迁入诊断页，处理函数与 id 不变。
+- 诊断页新增：Worker 心跳块（API Worker 心跳时间、Browser Worker 心跳时间与可派发、过期任务租约、卡住的卡台调用、浏览器真实付款/profile 写权限、Worker 直充写权限）；开工检查原始项（`renderReadiness(readiness, target)` 复用首页渲染）；CSV 导出（订单、对账案例；订单导出按钮从订单页搬来）。后端 `providerHealth.browserWorkerHeartbeatAt` 新增。CDK 页删「交付记录能力」说明。
+- 生产复验：API Worker 心跳 14:36 UTC（离线，人为停止）；Browser Worker 心跳 12:21 UTC（未就绪）；过期租约 0、卡住调用 0；web 无错误日志。备份 `pojia-20260907T154558Z`。
+- 部署插曲：prepare 首次被主机掐断新 SSH 连接（ControlMaster 180s 已过期），重建 600s 的 master 后一次通过；`deploy-release.sh` 的 ControlPersist 可考虑加长。
+- 剩余：第 7 步删无消费者接口（先列调用链）；订单抽屉「补录付款」四连 prompt 未改；首页「开卡补钱」部分开启态缺「关闭」按钮（已记在第 1 步待补）。
+
