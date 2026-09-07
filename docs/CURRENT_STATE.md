@@ -4,10 +4,10 @@
 
 | 项目 | 当前值 | 核对时间（UTC） | 证据方式 |
 |---|---|---|---|
-| 生产 release | `/opt/pojia/releases/20260908-pro-0073d45`（commit `0073d45`，Pro 两阶段产品 + 按产品 CDK/最低余额） | 2026-09-07 19:17 | `readlink -f /opt/pojia/current`；switch 输出 |
-| 回滚点 | `/opt/pojia/releases/20260908-importwarn-370c7ce`（再前 `20260908-importwhy-ba2db48`；回滚不撤 050 迁移，050 只增行不改结构） | 同上 | 部署记录 |
-| 最新数据库备份 | `/var/backups/pojia/pojia-20260907T191544Z.sql.gz.enc`，完整性 OK | 19:15 | `pojia-ops backup/verify`（prepare 阶段） |
-| pojia-web | active（19:17 随 release 切换重启，无错误日志） | 19:17 | systemctl / journalctl |
+| 生产 release | `/opt/pojia/releases/20260908-upgrade-42073c7`（commit `42073c7`，Pro 第二阶段到弹窗停 + 会话恢复阶梯） | 2026-09-07 19:41 | `readlink -f /opt/pojia/current`；switch 输出；生产只读跑 getOrder / listPaymentVerificationsDue 正常 |
+| 回滚点 | `/opt/pojia/releases/20260908-pro-0073d45`（再前 `20260908-importwarn-370c7ce`；050 迁移只增行不改结构） | 同上 | 部署记录 |
+| 最新数据库备份 | `/var/backups/pojia/pojia-20260907T194041Z.sql.gz.enc`，完整性 OK | 19:40 | `pojia-ops backup/verify`（prepare 阶段） |
+| pojia-web | active（19:41 随 release 切换重启，无错误日志） | 19:41 | systemctl / journalctl |
 | pojia-worker（API） | inactive（09-06 03:46 UTC 人为停止；09-07 09:28 UTC 短启约 10 秒推进测试单后再次停止） | 09-07 09:29 | systemctl |
 | pojia-browser-worker | inactive / disabled | 16:35 | systemctl |
 | pojia-card-funding.timer | active | 16:35 | systemctl |

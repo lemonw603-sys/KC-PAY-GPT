@@ -1851,3 +1851,11 @@
 - 真实付款准备清单更新：① 用户在卡片页重新预览并提交导入（余额 16）；② 后台 CDK 页生成一张 **Pro 20X** 的 CDK（不是 Plus）；③ 新免费账号 Session；④ 测试 Plus 账号 Session 贴进 Lane 3 供第二阶段只读演练（用上号器扩展，粘贴 `__Secure-next-auth.session-token` 值或完整 JSON，点替换）。
 - 待做（Stage C）：执行器 `UPGRADE_DIALOG_STOP` 动作、verifier 会话恢复钩子、常驻池按套餐选动作（plus→取消续费，pro→升级弹窗停）、`recordManual20xHandoff` 记录弹窗事实；随后在测试 Plus 账号上演练。
 
+## 2026-09-07｜Stage C：Pro 第二阶段自动到弹窗停 + 会话恢复阶梯上线（`20260908-upgrade-42073c7`）
+
+- browser-mvp：`payment-executor` 新动作 `UPGRADE_DIALOG_STOP`（Plus 确认 → 卡交易对账 → `verifier.openUpgradeDialog()` → `recordManual20xHandoff(publicResult)`；弹窗打不开也交人工，永不第二次付款）；`ChatGptPostPaymentVerifier` 加 `sessionRecovery` 钩子（身份探测抛 SESSION_INVALID 或会话阶段失败时最多一次阶梯）、`openUpgradeDialog`、`recoveryReport`；`LivePostPaymentRecoveryVerifier`/组合层/验证服务的 `postPlusAction` 支持按套餐函数；常驻池 plus→CANCEL_RENEWAL、pro→UPGRADE_DIALOG_STOP，`BROWSER_UPGRADE_STAGE` 只接受 STOP_BEFORE_PAY。
+- v1：`listPaymentVerificationsDue` 带 `plan`；`recordManual20xHandoff` 记 `publicResult`；抽屉「付款操作」显示「升级弹窗已停在 Pay now 前：今日应付 … 卡 … 尾号 …」与会话恢复步骤（`admin.js?v=36`）。
+- 测试：browser-mvp 全量 209（含真实 Chromium 弹窗读取、MySQL 集成）；v1 545；两处坑：verifier 夹具页未声明 UTF-8 导致 ₱ 乱码（夹具问题，真实页面声明 UTF-8）；MySQL 集成 teardown 因终态提醒外键删单失败并把整套挂住（已补 `operator_alerts` 清理，测试库残留 9 单已清）。
+- 生产复验：switch 后 web 无错误；生产库跑 `getOrder` 与 `listPaymentVerificationsDue` 正常（到期核实 0）。
+- **下一步（需要用户）**：① 把测试 Plus 账号的 Session 用上号器扩展贴进 Lane 3（BitBrowser 窗口里点扩展 → 粘贴 `__Secure-next-auth.session-token` 值或完整 JSON → 替换）；② 我跑 `BITBROWSER_PROFILE_ID=8f126430af0c4be4b2cfc576de82d214 node browser-mvp/scripts/poc-plan-change-dialog-readonly.mjs pro_20x --probe-recovery`（零成本：先验证清 cookie 不伤会话，再走到弹窗读数字，不点 Pay now，`--cancel` 可关闭）；③ 卡片页重新预览并提交导入（余额 16）；④ CDK 页生成一张 **Pro 20X** 的 CDK；⑤ 新免费账号 Session 提交那张 CDK；⑥ 服务器 Worker 短启推到派发边界 → 本机 `run-live-pool.sh check pay` → 首页开浏览器真实付款 → `run pay`。
+
