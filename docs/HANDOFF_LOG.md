@@ -1715,3 +1715,12 @@
 - 发布：从 `ed40c94` 构建，891 文件 manifest OK；备份 `pojia-20260907T063400Z` 完整；仅重启 Web；回滚点 `20260907-import-confirm-6948b02`。复核：未登录 401，线上 `admin.js?v=26` 含 `card-stock/minimum-balance`，plus 200，Web 日志无错误。数据库设置未改（仍 16），改动由用户在后台操作。
 - 风险说明：门槛降低期间，任何新订单都可能分到余额不足的卡；当前付款开关为 false、API Worker 停止，最坏是该单在真实付款时被拒付而失败，不会损失资金。两单旧的等 Session 订单若恰好补 Session 会先于测试单拿卡。
 - 08:28 UTC：用户同意后，在服务器上经应用自身的 `createCardStockService().setMinimumRequiredCardBalance(8)`（正式连接池与服务层）把 `default_minimum_required_card_balance` 从 16 改为 8.00。目的：让 `5501` 具备分配资格供测试单演练；测试单分到卡后恢复 16。
+
+## 2026-09-07｜测试账号跑到付款前：演练成功（PRE_SUBMIT_STOPPED，PHP 982.14 / 税 0.00）
+
+- 测试单 `PJV1--j4AnE7fvfgkvaceSr0Z`（08:32 UTC 客户页提交，Browser 路线，备用卡台 A）。
+- 预检两次失败 `CHECKOUT_NAVIGATION_FAILED`。根因：网页端多了一层客户端登录态——`/api/auth/session` 与 `/backend-api/me` 200，但 SSR `authStatus=logged_out`，会话体带 `error: RefreshAccessTokenError`（会话链已失效，很可能是我早上把同一会话复制到 Lane 2 并发使用造成的轮换冲突），页面按未登录渲染、没有升级入口。修复 `b7e73c5`：身份探测把会话体内的 `error` 判为 `SESSION_INVALID`（新增测试）。第三次预检 PASSED（executor 走替换路径，用订单里的令牌替换失效的常驻会话，订单令牌仍有效）。
+- 09:28 UTC 服务器 `pojia-worker` 短启约 10 秒：ASSIGN_CARD（5501）→ PREPARE → SUBMIT_RECHARGE → 派发 QUEUED、attempt PREPARED/ACTIVE、账本 RESERVED；随即停止。09:33 门槛恢复 16。
+- 演练首跑失败：`secure card fields did not become ready`——Playwright 经 BitBrowser CDP 能看到 Stripe 支付元素框架及 `cc-number/cc-exp/cc-csc`，只是挂载超过 10 秒；观察合同 `secureFieldTimeoutMs` 10s→45s，adapter 控件等待同步放宽（上限 90s）。失败时 run 保持 RUNNING、Profile 保留，租约过期后续跑按 RESUMABLE 恢复。
+- 续跑成功：`PRE_SUBMIT_STOPPED`，报价 `{PHP, 982.14, 0.00}`；Stripe 字段已填（16/5/3 位），摘要显示 Tax (0%) ₱0.00、Due today ₱982.14，Subscribe 可点但未点。数据库：订单 CARD_READY（`BROWSER_REHEARSAL_STOPPED`）、attempt CLEARED、派发 CANCELLED、run FAILED_SAFE/RELEASED/PRE_PAYMENT_ABORT、账本 RELEASED、permit 0、PAYMENT_SUBMIT 0；卡 5501 assignment 仍 ACTIVE，SUBMIT_RECHARGE 任务 PENDING（Worker 启动即会重新派发）。
+- 教训写进规则：同一账号会话不得同时在两个身份使用；演练/真实单前先确认常驻身份的登录态是 `authStatus=logged_in`。**可审版本：本节提交。**

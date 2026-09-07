@@ -20,8 +20,8 @@ function required(value, name) {
   return normalized;
 }
 
-async function oneVisible(page, selector, label) {
-  const deadline = Date.now() + 10_000;
+async function oneVisible(page, selector, label, timeoutMs = 45_000) {
+  const deadline = Date.now() + timeoutMs;
   while (true) {
     const matches = [];
     for (const frame of page.frames()) {

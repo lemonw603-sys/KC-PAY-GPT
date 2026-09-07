@@ -99,7 +99,11 @@ export const CHATGPT_PLUS_CHECKOUT_CONTRACT = Object.freeze({
   submitControlSelector: '[data-testid="checkout-summary-column"] button[type="submit"]',
   inspectSecureCardFields: true,
   requireSecureCardFields: true,
-  secureFieldTimeoutMs: 10_000,
+  // Stripe's Payment Element mounts its card inputs well after the Checkout
+  // page is ready (observed 2026-09-07 through the PH exit: >10 s). Ten
+  // seconds made a healthy page fail as "secure card fields did not become
+  // ready"; the fields are only inspected, never written, so waiting is cheap.
+  secureFieldTimeoutMs: 45_000,
   requiredCurrency: 'PHP',
   requireZeroTax: true,
   requireQuoteConsistency: true,
@@ -126,8 +130,8 @@ export async function observeCheckout(page, {
 } = {}) {
   if (!page || typeof page.url !== 'function') throw new TypeError('page is required');
   if (typeof urlPrefix !== 'string' || !urlPrefix) throw new ContractError('checkout urlPrefix is required');
-  if (inspectSecureCardFields && (!Number.isInteger(secureFieldTimeoutMs) || secureFieldTimeoutMs < 0 || secureFieldTimeoutMs > 30_000)) {
-    throw new ContractError('secureFieldTimeoutMs must be between 0 and 30000');
+  if (inspectSecureCardFields && (!Number.isInteger(secureFieldTimeoutMs) || secureFieldTimeoutMs < 0 || secureFieldTimeoutMs > 90_000)) {
+    throw new ContractError('secureFieldTimeoutMs must be between 0 and 90000');
   }
   if (!page.url().startsWith(urlPrefix)) throw new ContractError('checkout page URL drift');
   let [plan, currency, amount] = await Promise.all([
