@@ -289,12 +289,17 @@ export class BrowserExecutionService {
           submitCalls: 0,
         });
       }
-      if (!fillCardFields && cardMaterialLease && cardMaterialLeaseProvider && typeof cardMaterialLeaseProvider.withMaterial === 'function') {
+      // With a paymentHandler the LIVE adapter owns the single pass of
+      // card → address → email → requote → submit. Filling address/email here
+      // first and then demanding a strict zero-tax requote before the card
+      // existed is exactly what stalled the 2026-09-06 real order at Checkout.
+      const observeOnly = !fillCardFields && !paymentHandler;
+      if (observeOnly && cardMaterialLease && cardMaterialLeaseProvider && typeof cardMaterialLeaseProvider.withMaterial === 'function') {
         await cardMaterialLeaseProvider.withMaterial(cardMaterialLease, async (material) => {
           if (material?.billingAddress) await fillBillingAddress(page, material.billingAddress, { timeoutMs: this.timeoutMs });
         });
       }
-      if (!fillCardFields && transientBillingEmail) {
+      if (observeOnly && transientBillingEmail) {
         await fillTransientBillingEmail(page, transientBillingEmail, { timeoutMs: this.timeoutMs });
       }
       let checkout = null;
@@ -307,7 +312,7 @@ export class BrowserExecutionService {
             requireZeroTax: false,
             requireQuoteConsistency: false,
           });
-          if (!fillCardFields) checkout = await observeCheckoutAfterRequote(page, job.metadata.checkoutContract, this.timeoutMs);
+          if (observeOnly) checkout = await observeCheckoutAfterRequote(page, job.metadata.checkoutContract, this.timeoutMs);
         } catch (error) {
           throw new BrowserExecutionError('CHECKOUT_OBSERVATION_FAILED', error.message, error);
         }

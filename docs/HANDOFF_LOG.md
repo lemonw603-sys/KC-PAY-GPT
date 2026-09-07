@@ -1628,3 +1628,10 @@
 - 库存提醒阈值为 0 时不再生成「剩余 0 张，阈值为 0」告警（三处判断加 `threshold > 0`）。
 - 隐藏库存页两个已废弃控件：提醒阈值、每日自动补卡上限（旧自动开卡架构已停）。后台脚本版本 `?v=24`。
 - v1 全量（不含库）567/515/0/52；新增路由测试 1 条；CDK 生成测试改为登录即授权。与 `45f953c`（备用卡导入不再因结清冻结）一起等待下一次发布。
+
+## 2026-09-07｜09-06 真实单未填表的根因已定位并修复（本地）
+
+- 通读 `payment-executor.js`、`live-chatgpt-payment-adapter.js`、`session-bootstrap.js`、`executor.js` 后确认：`executor.js` 在存在 paymentHandler 时仍先填地址/邮箱，并调用严格零税重报价观察；卡尚未填入时零税不可能出现，等满超时后抛 `CHECKOUT_OBSERVATION_FAILED`，LIVE adapter 根本没被调用。这与整改矩阵 A02 一致，是 09-06 「到了 Checkout 一个字段没填」的直接原因。
+- 修复：有 paymentHandler 时 executor 只做非严格观察并直接交给 adapter，由 adapter 完成卡 → 地址 → 邮箱 → 重报价 → 单次点击的唯一一遍；无 paymentHandler 的只读观察路径行为不变。新增端到端回归（本地 HTTP 夹具：身份接口 + 含 12% VAT 的结账页）证明处理器在 2.5 秒内拿到非严格报价且 executor 不再自行等待零税。executor 11/11，browser-mvp 全量 168/159/0/9。
+- 规格 `docs/CORE_SPEC_2026-09-07.md` §5.1 新增现有 Browser 代码的删/留清单。
+- 未部署：Browser Worker 在本机运行，此修复在下一次真实单（付款前停止模式）时生效；生产 release 不含 browser-mvp 运行路径。

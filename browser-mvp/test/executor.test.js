@@ -253,3 +253,81 @@ test('manual freeze and navigation timeout both fail closed', async () => {
     await once(server, 'close');
   }
 });
+
+// Regression for the 2026-09-06 real order: with a paymentHandler present the
+// executor used to fill address/email itself and then block on a strict
+// zero-tax requote before any card existed, timing out with
+// CHECKOUT_OBSERVATION_FAILED so the LIVE adapter never ran. Now it hands the
+// non-strict observation straight to the handler, which owns the single pass.
+test('payment handler receives the checkout without a pre-card strict zero-tax requote', async () => {
+  const checkoutHtml = `<title>ChatGPT fixture</title><main data-testid="checkout-page-content"><form data-testid="checkout-form"><iframe srcdoc='<input autocomplete="cc-number"><input autocomplete="cc-exp"><input autocomplete="cc-csc">'></iframe></form><section data-testid="checkout-summary-column"><h2>ChatGPT Plus</h2><div><span>Monthly subscription</span><span>₱982.14</span></div><div><span>VAT (12%)</span><span>₱117.86</span></div><div><span>Due today</span><span>₱1,100.00</span></div><button type="submit">Subscribe</button></section></main>`;
+  const server = createServer((request, response) => {
+    if (request.url === '/api/auth/session') {
+      response.writeHead(200, { 'content-type': 'application/json' });
+      return response.end(JSON.stringify({ user: { id: 'user-001', email: 'buyer@example.test' }, account: { id: 'acct-001' }, accessToken: 'fixture-token' }));
+    }
+    if (request.url === '/backend-api/accounts/check/v4-fixture') {
+      response.writeHead(200, { 'content-type': 'application/json' });
+      return response.end(JSON.stringify({ accounts: { default: { entitlement: { has_active_subscription: false, subscription_plan: 'chatgptplusplan' } } } }));
+    }
+    response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+    response.end(checkoutHtml);
+  });
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  const base = `http://127.0.0.1:${server.address().port}/`;
+  try {
+    await withExecutor(async (executor, evidenceSink) => {
+      const { CHATGPT_PLUS_CHECKOUT_CONTRACT } = await import('../src/checkout-observer.js');
+      const job = createSyntheticJob({
+        state: 'RUNNING',
+        metadata: {
+          source: 'playwright-fixture',
+          pageContract: { urlPrefix: base, title: 'ChatGPT fixture', requiredSelector: 'main[data-testid="checkout-page-content"]', markerText: '' },
+          accountProbeContract: { accountCheckPath: '/backend-api/accounts/check/v4-fixture' },
+          sessionIdentity: { email: 'buyer@example.test', accountId: 'acct-001', userId: 'user-001' },
+          checkoutContract: { ...CHATGPT_PLUS_CHECKOUT_CONTRACT, urlPrefix: base },
+        },
+      });
+      const provider = {
+        async open(ref) { return { leaseId: 'lease-fixture', cardRef: ref, expiresAt: Date.now() + 60_000 }; },
+        async withMaterial(_lease, callback) {
+          return callback({ pan: '4111111111111111', expMonth: 12, expYear: 2032, cvc: '123', billingAddress: { line1: '1 Main St', city: 'Wilmington', state: 'DE', postalCode: '19801', country: 'US', name: 'Test User' } });
+        },
+        async close() {},
+      };
+      const handlerCalls = [];
+      const startedAt = Date.now();
+      const result = await executor.execute(job, {
+        assertLease: async () => true,
+        cardMaterialLeaseProvider: provider,
+        cardMaterialRef: 'browser-run:fixture',
+        paymentHandler: async ({ page, checkout, checkoutContract, cardMaterial, billingEmail }) => {
+          handlerCalls.push({
+            recognized: checkout?.recognized, estimatedTax: checkout?.estimatedTax, currency: checkout?.currency,
+            strictContract: checkoutContract?.requireZeroTax, hasCard: Boolean(cardMaterial?.pan), billingEmail,
+            // the handler owns the single fill pass: fields must still be untouched here
+            emailFieldPresent: await page.locator('input[type="email"]').count(),
+          });
+          return { status: 'COMPLETED', paymentSubmitCalls: 0 };
+        },
+      });
+      const elapsedMs = Date.now() - startedAt;
+      assert.equal(result.status, 'PAYMENT_EXECUTED');
+      assert.equal(handlerCalls.length, 1);
+      assert.equal(handlerCalls[0].recognized, true);
+      assert.equal(handlerCalls[0].currency, 'PHP');
+      assert.notEqual(Number(handlerCalls[0].estimatedTax), 0, 'handler must get the pre-card quote even though VAT is not yet zero');
+      assert.equal(handlerCalls[0].strictContract, true, 'the strict contract is still passed down for the adapter to enforce after the fill');
+      assert.equal(handlerCalls[0].hasCard, true);
+      assert.equal(handlerCalls[0].billingEmail, 'buyer@example.test');
+      assert.equal(result.checkout, null, 'no strict requote is observed by the executor itself');
+      assert.ok(elapsedMs < 2_500, `executor must not block on a zero-tax requote before the card (took ${elapsedMs}ms)`);
+      assert.equal(evidenceSink.events.some((event) => event.type === 'freeze'), false);
+      assert.equal(JSON.stringify(evidenceSink.events).includes('4111111111111111'), false);
+    });
+  } finally {
+    server.close();
+    await once(server, 'close');
+  }
+});

@@ -35,7 +35,7 @@
 | 最近真实单 | `PJV1-RCbAiI0IkGMy-hCBgMSn`：自动化到 Checkout 未填表 → 运营者手工付 Plus + 20X（143.13）→ 09-06 16:40 以「人工付款已完成」收口为 RECHARGE_SUCCESS；`PAYMENT_SUBMIT=0`，证据 `MANUAL_PAYMENT_CONFIRMED` | 16:41 | orders / browser_runs / browser_operations |
 | 告警 | OPEN 10：8 条 09-01 起的「卡台余额变化」info 噪音、1 条 CARD_STOCK_LOW（阈值 0）、1 条 ORDER_WAITING_FOR_CARD；无关闭入口 | 13:31 | operator_alerts |
 | 本机 | BitBrowser Local API + mihomo（launchd 单实例）；SSH 隧道 13306→3306 常驻；LIVE Worker 无常驻进程 | 13:40 | pgrep |
-| 已提交未发布 | `45f953c` 备用卡导入不再因 SETTLED 冻结卡片 | 09-07 | git |
+| 已提交未发布 | `45f953c` 备用卡导入不再因 SETTLED 冻结卡片；`96008d4` 后台小修（CDK 免密码/不清空、告警可关、阈值 0 不告警、藏死控件）；executor 有付款处理器时不再在填卡前苦等零税重报价（09-06 未填表根因） | 09-07 | git |
 | 已知未修 | 本机绕过连接池直连写入造成该单 attempt/dispatch/账本 `created_at` 偏后 8 小时；后台控制事务并发时可能 `ER_LOCK_DEADLOCK`（失败关闭，需重试） | 09-07 | HANDOFF_LOG |
 
 ## 事实表之外
