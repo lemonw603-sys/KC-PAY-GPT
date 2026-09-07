@@ -1852,9 +1852,23 @@ elements.manualCardImportForm?.addEventListener('submit', async (event) => {
   if (!file || !providerAccountId) return showNotice('请先选择备用卡台和完整快照文件。');
   const bytes = new Uint8Array(await file.arrayBuffer());
   let binary = ''; for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  // Row issue codes come from the server parser; only REJECTED (structure) and
+  // CONFLICT (same card under another source) block the commit.
+  const issueText = {
+    BALANCE_MISMATCH: '累计充值 − 累计消费 ≠ 余额（差额超过 0.02）', INVALID_BALANCE: '金额不是数字或为负',
+    INVALID_CARD_NUMBER: '卡号无效', INVALID_CVC: 'CVC 无效', INVALID_EXPIRY: '有效期不是 MM/YY',
+    MISSING_SEQUENCE: '缺卡序列号', DUPLICATE_SEQUENCE: '卡序列号重复',
+    CARD_NOT_ACTIVE: '开卡状态不是可用（不阻止提交）', EXPIRED_CARD: '已过期（不阻止提交）'
+  };
+  const statusText = { INSERT: '新增', UPDATE: '更新', UNAVAILABLE: '业务不可用', CONFLICT: '跨来源冲突', REJECTED: '结构错误' };
+  elements.manualCardImportPreview.innerHTML = '<p class="loading-state">正在解析文件…</p>';
   try {
     const preview = await api('/api/v1/admin/manual-cards/preview', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ providerAccountId, filename: file.name, fileBase64: btoa(binary) }) });
-    elements.manualCardImportPreview.innerHTML = `<p>${escapeHtml(preview.sourceName)} · 共 ${preview.rowCount} 行：新增 ${preview.insertCount}，更新 ${preview.updateCount}，业务不可用 ${preview.unavailableCount}，快照缺失 ${preview.missingCount}，活动风险 ${preview.activeRiskCount}，跨来源冲突 ${preview.conflictCount}，结构错误 ${preview.rejectedCount}</p>${preview.rows.map((row) => `<div><span><strong>序列号 ${escapeHtml(row.sequence)}… · 尾号 ${escapeHtml(row.last4 || '—')}</strong><small>余额 $${escapeHtml(row.balance || '—')} · ${escapeHtml(row.state || '—')}${row.errors.length ? ` · ${escapeHtml(row.errors.join('、'))}` : ''}</small></span><em>${escapeHtml(row.status)}</em></div>`).join('')}<button class="danger-button" type="button" id="commit-manual-card-import" ${preview.commitAllowed ? '' : 'disabled'}>提交完整快照（${preview.rowCount} 张）</button>`;
+    const blockers = (preview.rows || []).filter((row) => row.status === 'REJECTED' || row.status === 'CONFLICT');
+    const blockLine = preview.commitAllowed
+      ? '<p class="drawer-hint">可以提交：文件结构正确，没有跨来源冲突。余额不足、停用、过期的卡会照常记录，只是不参与分配。</p>'
+      : `<p class="drawer-action-line">不能提交：${preview.rejectedCount ? `${preview.rejectedCount} 行结构错误` : ''}${preview.rejectedCount && preview.conflictCount ? '，' : ''}${preview.conflictCount ? `${preview.conflictCount} 行跨来源冲突` : ''}。${blockers.map((row) => `第 ${escapeHtml(row.row ?? '?')} 行（尾号 ${escapeHtml(row.last4 || '—')}）：${escapeHtml((row.errors || []).map((code) => issueText[code] || code).join('；') || statusText[row.status] || row.status)}`).join('；')}。修正 Excel 后重新预览；只有结构错误和跨来源冲突会阻止提交。</p>`;
+    elements.manualCardImportPreview.innerHTML = `<p>${escapeHtml(preview.sourceName)} · 共 ${preview.rowCount} 行：新增 ${preview.insertCount}，更新 ${preview.updateCount}，业务不可用 ${preview.unavailableCount}，快照缺失 ${preview.missingCount}，活动风险 ${preview.activeRiskCount}，跨来源冲突 ${preview.conflictCount}，结构错误 ${preview.rejectedCount}</p>${blockLine}${(preview.rows || []).map((row) => `<div><span><strong>序列号 ${escapeHtml(row.sequence)}… · 尾号 ${escapeHtml(row.last4 || '—')}</strong><small>余额 $${escapeHtml(row.balance || '—')} · ${escapeHtml(row.state || '—')}${row.errors?.length ? ` · ${escapeHtml(row.errors.map((code) => issueText[code] || code).join('、'))}` : ''}</small></span><em>${escapeHtml(statusText[row.status] || row.status)}</em></div>`).join('')}<button class="danger-button" type="button" id="commit-manual-card-import" ${preview.commitAllowed ? '' : 'disabled'}>提交完整快照（${preview.rowCount} 张）</button>`;
     elements.manualCardImportPreview.querySelector('#commit-manual-card-import')?.addEventListener('click', async () => {
       if (!window.confirm(`提交「${preview.sourceName}」的完整快照（${preview.rowCount} 张）？\n该卡台库存将整体替换为本文件内容，其他卡台不受影响。`)) return;
       // The confirmation string comes from the preview itself: it proves the
@@ -1862,7 +1876,11 @@ elements.manualCardImportForm?.addEventListener('submit', async (event) => {
       try { await api('/api/v1/admin/manual-cards/import', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ providerAccountId, filename: file.name, fileBase64: btoa(binary), confirmation: preview.confirmation }) }); showNotice('完整快照已原子更新；其他卡台未受影响。', 'success'); await Promise.all([loadProviderRoutes(), loadStock()]); }
       catch (error) { showNotice(manualCardImportErrorMessage(error)); }
     });
-  } catch (error) { showNotice(manualCardImportErrorMessage(error)); }
+  } catch (error) {
+    const message = manualCardImportErrorMessage(error);
+    elements.manualCardImportPreview.innerHTML = `<p class="drawer-action-line">${escapeHtml(message)}</p>`;
+    showNotice(message);
+  }
 });
 document.addEventListener('click', async (event) => {
   const intakeButton = event.target.closest('[data-intake]');

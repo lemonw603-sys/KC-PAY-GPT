@@ -25,3 +25,27 @@ test('lost source-switch response does not claim the selection was unchanged',as
  await handler({target:{closest:()=>({disabled:false,dataset:{sourceId:'fixture'}})}});
  assert.equal(reads,1);assert(messages.some(x=>x.includes('未能确认')));assert(!messages.some(x=>x.includes('原选择未改变')));
 });
+test('manual card import preview explains why the commit is blocked and translates row issues',async()=>{
+ let handler;const notices=[];const panel={innerHTML:'',querySelector(){return null}};
+ const preview={sourceName:'备用卡台 A',rowCount:2,insertCount:0,updateCount:1,unavailableCount:0,missingCount:0,activeRiskCount:0,conflictCount:0,rejectedCount:1,commitAllowed:false,confirmation:'x',
+  rows:[{row:1,sequence:'ABC123',last4:'5501',balance:'16.00',state:'正常',status:'REJECTED',errors:['BALANCE_MISMATCH']},{row:2,sequence:'DEF456',last4:'0237',balance:'0.00',state:'正常',status:'UPDATE',errors:[]}]};
+ const ctx={elements:{manualCardImportForm:{addEventListener(_,fn){handler=fn}},manualCardImportFile:{files:[{name:'cards.xlsx',arrayBuffer:async()=>new Uint8Array([1,2,3]).buffer}]},manualCardImportSource:{value:'src-1'},manualCardImportPreview:panel},
+  api:async()=>preview,escapeHtml:(v)=>String(v??''),showNotice:(x)=>notices.push(x),manualCardImportErrorMessage:(e)=>String(e),btoa:(b)=>Buffer.from(b,'binary').toString('base64'),Uint8Array,String,window:{confirm:()=>false},Promise,loadProviderRoutes:async()=>{},loadStock:async()=>{}};
+ vm.runInNewContext(snippet("elements.manualCardImportForm?.addEventListener('submit'"),ctx);
+ await handler({preventDefault(){}});
+ assert.match(panel.innerHTML,/不能提交：1 行结构错误/);
+ assert.match(panel.innerHTML,/第 1 行（尾号 5501）：累计充值 − 累计消费 ≠ 余额/);
+ assert.match(panel.innerHTML,/<em>结构错误<\/em>/);
+ assert.match(panel.innerHTML,/id="commit-manual-card-import" disabled/);
+ assert.doesNotMatch(panel.innerHTML,/BALANCE_MISMATCH/);
+ assert.equal(notices.length,0);
+ ctx.api=async()=>({...preview,rejectedCount:0,commitAllowed:true,rows:[preview.rows[1]]});
+ await handler({preventDefault(){}});
+ assert.match(panel.innerHTML,/可以提交/);
+ assert.match(panel.innerHTML,/id="commit-manual-card-import" >/);
+ ctx.api=async()=>{throw new Error('manual_card_file_invalid')};
+ await handler({preventDefault(){}});
+ assert.match(panel.innerHTML,/manual_card_file_invalid/);
+ assert.equal(notices.length,1);
+});
+
