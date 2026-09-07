@@ -446,3 +446,66 @@ test('executor still fails closed when the replaced session does not match eithe
     await once(server, 'close');
   }
 });
+
+test('a rehearsal stop before submit detaches the identity instead of closing it and reports PRE_SUBMIT_STOPPED', async () => {
+  const checkoutHtml = `<title>ChatGPT fixture</title><main data-testid="checkout-page-content"><form data-testid="checkout-form"><iframe srcdoc='<input autocomplete="cc-number"><input autocomplete="cc-exp"><input autocomplete="cc-csc">'></iframe></form><section data-testid="checkout-summary-column"><h2>ChatGPT Plus</h2><div><span>Monthly subscription</span><span>₱982.14</span></div><div><span>VAT (12%)</span><span>₱117.86</span></div><div><span>Due today</span><span>₱1,100.00</span></div><button type="submit">Subscribe</button></section></main>`;
+  const server = createServer((request, response) => {
+    if (request.url === '/api/auth/session') {
+      response.writeHead(200, { 'content-type': 'application/json' });
+      return response.end(JSON.stringify({ user: { id: 'user-001', email: 'buyer@example.test' }, account: { id: 'acct-001' }, accessToken: 'fixture-token' }));
+    }
+    if (request.url === '/backend-api/accounts/check/v4-fixture') {
+      response.writeHead(200, { 'content-type': 'application/json' });
+      return response.end(JSON.stringify({ accounts: { default: { entitlement: { has_active_subscription: false, subscription_plan: 'chatgptplusplan' } } } }));
+    }
+    response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+    response.end(checkoutHtml);
+  });
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  const base = `http://127.0.0.1:${server.address().port}/`;
+  const browser = await chromium.launch({ headless: true });
+  const context = await browser.newContext();
+  const calls = [];
+  const runtimeAdapter = {
+    async open() { calls.push('open'); return { context }; },
+    async detach() { calls.push('detach'); },
+    async close() { calls.push('close'); await context.close(); },
+  };
+  try {
+    const { CHATGPT_PLUS_CHECKOUT_CONTRACT } = await import('../src/checkout-observer.js');
+    const executor = new BrowserExecutionService({ runtimeAdapter, evidenceSink: new MemoryEvidenceSink(), timeoutMs: 3_000 });
+    const job = createSyntheticJob({
+      state: 'RUNNING',
+      metadata: {
+        source: 'playwright-fixture',
+        pageContract: { urlPrefix: base, title: 'ChatGPT fixture', requiredSelector: 'main[data-testid="checkout-page-content"]', markerText: '' },
+        accountProbeContract: { accountCheckPath: '/backend-api/accounts/check/v4-fixture' },
+        sessionIdentity: { email: 'buyer@example.test', accountId: 'acct-001', userId: 'user-001' },
+        checkoutContract: { ...CHATGPT_PLUS_CHECKOUT_CONTRACT, urlPrefix: base },
+      },
+    });
+    const provider = {
+      async open(ref) { return { leaseId: 'lease-fixture', cardRef: ref, expiresAt: Date.now() + 60_000 }; },
+      async withMaterial(_lease, callback) {
+        return callback({ pan: '4111111111111111', expMonth: 12, expYear: 2032, cvc: '123', billingAddress: { line1: '1 Main St', city: 'Wilmington', state: 'DE', postalCode: '19801', country: 'US', name: 'Test User' } });
+      },
+      async close() {},
+    };
+    const result = await executor.execute(job, {
+      assertLease: async () => true,
+      cardMaterialLeaseProvider: provider,
+      cardMaterialRef: 'browser-run:fixture',
+      preserveRuntimeOnFailure: true,
+      paymentHandler: async () => ({ status: 'PRE_SUBMIT_STOPPED', reasonCode: 'STOP_BEFORE_SUBMIT', paymentSubmitCalls: 0, preserveProfile: true }),
+    });
+    assert.equal(result.status, 'PRE_SUBMIT_STOPPED');
+    assert.equal(result.submitCalls, 0);
+    assert.deepEqual(calls, ['open', 'detach'], 'the filled Checkout stays open in the identity for inspection');
+  } finally {
+    await context.close().catch(() => undefined);
+    await browser.close();
+    server.close();
+    await once(server, 'close');
+  }
+});

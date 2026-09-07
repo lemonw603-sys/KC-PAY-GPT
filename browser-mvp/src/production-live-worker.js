@@ -80,7 +80,7 @@ export async function checkProductionLiveDatabase(pool, config) {
      WHERE setting_key IN ('browser_dispatch_enabled','browser_payment_writes_enabled')`,
   );
   const values = new Map(settings.map((row) => [row.setting_key, String(row.setting_value).toLowerCase()]));
-  const expectedPayment = config.checkOnly ? 'false' : 'true';
+  const expectedPayment = config.checkOnly || config.stopBeforeSubmit ? 'false' : 'true';
   if (values.get('browser_payment_writes_enabled') !== expectedPayment) {
     throw new Error(`database browser_payment_writes_enabled must be ${expectedPayment}`);
   }
@@ -216,6 +216,9 @@ export async function runProductionLiveBrowserWorker({ env = process.env, browse
     const runtimeAdapter = new BitBrowserControlRuntimeAdapter({
       browserType, apiBaseUrl: config.bitbrowserApiBaseUrl,
       bitbrowserProfileId: config.bitbrowserProfileId,
+      // Resident identity: the Profile window stays open between orders; the
+      // worker only detaches CDP. Login state is cleared per order, not the window.
+      residentProfile: true,
     });
     const manifest = createBitBrowserControlManifest();
     const addressSource = new MockAddressBillingAddressSource({
@@ -288,6 +291,7 @@ export async function runProductionLiveBrowserWorker({ env = process.env, browse
       verificationWindowMs: config.verificationWindowMs,
       verificationIntervalMs: config.verificationIntervalMs,
       postPlusAction: config.postPlusAction,
+      stopBeforeSubmit: config.stopBeforeSubmit,
     });
     // Await inside the try. Returning the promise directly runs `finally`
     // immediately, closing the shared MySQL pool while dispatch is starting.
@@ -318,6 +322,7 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
   });
   console.log('browser production-live worker stopped', {
     status: result.status, reasonCode: result.reasonCode || null,
+    ...(result.quote ? { quote: result.quote } : {}),
   });
 }
 

@@ -393,8 +393,8 @@ export class BrowserExecutionService {
               sessionIdentity,
             })
           ));
-          preserveRuntime = preserveRuntimeOnManualHandoff
-            && paymentResult?.preserveProfile === true;
+          preserveRuntime = (preserveRuntimeOnManualHandoff && paymentResult?.preserveProfile === true)
+            || (paymentResult?.status === 'PRE_SUBMIT_STOPPED' && typeof this.runtimeAdapter.detach === 'function');
         } catch (error) {
           if (error instanceof BrowserExecutionError) throw error;
           throw new BrowserExecutionError(error?.code || 'PAYMENT_EXECUTION_FAILED', error.message, error);
@@ -410,7 +410,9 @@ export class BrowserExecutionService {
         submitCalls: 0,
       } : null;
       const submitCalls = Number(paymentResult?.paymentSubmitCalls || 0);
-      return { status: paymentResult ? 'PAYMENT_EXECUTED' : 'OBSERVED', startedAt, finishedAt: this.clock(), submitCalls, sessionBootstrapped, cardMaterialReady, sessionIdentity, checkoutNavigation, checkoutBeforeBilling, checkout, cardFill, paymentResult, readonlyChecklist };
+      const status = !paymentResult ? 'OBSERVED'
+        : paymentResult.status === 'PRE_SUBMIT_STOPPED' ? 'PRE_SUBMIT_STOPPED' : 'PAYMENT_EXECUTED';
+      return { status, startedAt, finishedAt: this.clock(), submitCalls, sessionBootstrapped, cardMaterialReady, sessionIdentity, checkoutNavigation, checkoutBeforeBilling, checkout, cardFill, paymentResult, readonlyChecklist };
     } catch (error) {
       const failure = error instanceof BrowserExecutionError
         ? error

@@ -139,7 +139,12 @@ export class LiveChatGPTPaymentAdapter {
         }));
         if (shape.tag !== 'button' || shape.type !== 'submit') throw new ContractError('payment submit control shape drift');
         const intent = await authorizeSubmit();
-        if (!intent?.executeExternal) return { status: 'RECONCILE_ONLY' };
+        if (!intent?.executeExternal) {
+          return {
+            status: 'RECONCILE_ONLY',
+            quote: { currency: strictCheckout.currency, amount: strictCheckout.amount, estimatedTax: strictCheckout.estimatedTax },
+          };
+        }
         stage = 'submit-payment';
         await submit.click();
         submitted = true;

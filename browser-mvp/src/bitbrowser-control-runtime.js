@@ -33,6 +33,10 @@ export class BitBrowserControlRuntimeAdapter extends RuntimeAdapter {
     // Chromium profile. Ten seconds was shorter than the observed cold-open
     // path and caused false timeouts before CDP became available.
     timeoutMs = 20_000,
+    // Resident identities are never closed by the worker: close() only drops
+    // the CDP transport, exactly like detach(). Non-resident (legacy) mode
+    // still calls /browser/close.
+    residentProfile = false,
   } = {}) {
     super();
     if (!browserType || typeof browserType.connectOverCDP !== 'function') throw new TypeError('browserType.connectOverCDP is required');
@@ -43,6 +47,7 @@ export class BitBrowserControlRuntimeAdapter extends RuntimeAdapter {
     this.apiBaseUrl = normalizeBaseUrl(apiBaseUrl);
     this.fetchImpl = fetchImpl;
     this.timeoutMs = timeoutMs;
+    this.residentProfile = residentProfile === true;
   }
 
   async request(path, body = {}) {
@@ -106,6 +111,7 @@ export class BitBrowserControlRuntimeAdapter extends RuntimeAdapter {
     if (!runtime?.context || !runtime?.profileRef || !runtime?.bitbrowserProfileId) {
       throw new TypeError('BitBrowser runtime handle is required');
     }
+    if (this.residentProfile) return this.detach(runtime);
     await runtime.context.close().catch(() => undefined);
     if (runtime.browser) await runtime.browser.close().catch(() => undefined);
     await this.request('/browser/close', { id: runtime.bitbrowserProfileId }).catch(() => undefined);

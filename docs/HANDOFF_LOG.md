@@ -1698,3 +1698,11 @@
 - 对齐缺口修补：两阶段部署脚本此前只在会话临时目录，已入库为 `scripts/deploy-release.sh`（仓库路径改为按脚本位置推导），`PROJECT_MAP` §7 与 `AGENTS.md` 完成节点改为指向它。
 - 新增 `docs/REVIEW_PROTOCOL.md`：外部审查员（Codex）角色边界、输入禁区、发现格式、处置流程、六个链路板块与核查问题、可粘贴的对话框开场；报告目录 `docs/reviews/`。`AGENTS.md` 加「审查员角色」指向。
 - 按 Codex 的协作方案修订协议：审查记录与处置记录分离（`REVIEW_RECORD.md` / `DISPOSITIONS.md`）；发现增加影响条件、反证与不确定性、参考验证办法；P0/P1 必须书面处置，拒绝 P0 由用户裁决；批次以「可审版本 <commit>」触发。**可审版本：本节提交。**
+
+## 2026-09-07｜第 3 步开工：LIVE 演练模式（停在付款点击前）与常驻身份
+
+- 通读后确认：现有 LIVE 链路（`production-live-worker` → `shared-live-composition` → `executor` → `chatgpt-checkout-navigator` 点定价弹窗 → `live-chatgpt-payment-adapter` 单遍填卡/地址/邮箱/零税重报价/单次点击 → `payment-executor` permit/意图/未知锁定）已经是规格 §5 的形状；结账创建本来就由页面点击触发，不受裸调签名头问题影响。缺的是「跑到付款前」的模式：`--once` 强制要求付款开关为 true，`--check` 又不碰订单。
+- 新增：`BROWSER_LIVE_STOP_BEFORE=SUBMIT` 演练模式。进程与数据库付款开关必须为 false，确认词前缀 `I-CONFIRM-ONE-LIVE-BROWSER-REHEARSAL:<orderId>`，不允许 20X 交接。`runPreSubmitRehearsal` 用同一个 LIVE adapter 走完填写与最终复核，`authorizeSubmit` 恒返回不执行，因此不申请 permit、不落付款意图、不可能点击；结果 `PRE_SUBMIT_STOPPED` 带严格报价（币种/金额/税）。集成层把它当安全预付款中止：清资金栅栏、订单回 `CARD_READY`（下一次真实付款可直接领取），身份页面保留（executor 只 detach）。
+- 新增：runtime `residentProfile=true`，生产 Worker 的 close 只断 CDP，不再 `/browser/close`（常驻身份，省每日打开次数）。
+- 测试：配置 1 条、组合 2 条、集成 2 条、executor 1 条；browser-mvp 全量 182/173/0/9。
+- 下一步：用测试账号建一笔测试订单（客户页提交 CDK + Session），本机 `--once` 演练；通过后翻付款开关做一笔真实付款；之后按 §5.1 删旧编排。**可审版本：本节提交。**

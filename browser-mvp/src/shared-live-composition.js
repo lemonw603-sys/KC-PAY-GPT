@@ -26,6 +26,40 @@ function hmac(key, namespace, value) {
   return createHmac('sha256', key).update(`${namespace}:${required(value, namespace)}`).digest('hex');
 }
 
+/**
+ * Rehearsal of the exact LIVE single pass (card → address → email → zero-tax
+ * requote → final recheck) that stops before the submit click. It never asks
+ * for a permit or a submission intent, so the adapter cannot cross the
+ * external boundary: authorizeSubmit always answers "do not execute".
+ */
+export async function runPreSubmitRehearsal({
+  adapter, control, page, checkout, checkoutContract, cardMaterial, billingEmail, operationId,
+} = {}) {
+  if (!adapter || typeof adapter.submit !== 'function') throw new TypeError('adapter is required');
+  if (!control || typeof control.assertLeaseBeforeAction !== 'function') throw new TypeError('control is required');
+  const op = required(operationId, 'operationId');
+  try {
+    const result = await adapter.submit({
+      page, operationId: op, checkout, checkoutContract, cardMaterial, billingEmail,
+      assertContinue: () => control.assertLeaseBeforeAction('PAYMENT_PAGE_ACTION'),
+      beforeSubmit: () => control.assertLeaseBeforeAction('FINAL_PRE_SUBMIT_RECHECK'),
+      authorizeSubmit: async () => ({ executeExternal: false, rehearsal: true }),
+    });
+    if (result?.status !== 'RECONCILE_ONLY') {
+      throw Object.assign(new Error('rehearsal adapter returned an unexpected status'), { code: 'REHEARSAL_RESULT_INVALID' });
+    }
+    return {
+      status: 'PRE_SUBMIT_STOPPED', reasonCode: 'STOP_BEFORE_SUBMIT', paymentSubmitCalls: 0,
+      quote: result.quote || null, preserveProfile: true,
+    };
+  } catch (error) {
+    // Without authorization the adapter never clicks; an UNKNOWN here would be
+    // a contract violation and must surface, never be softened.
+    if (error?.code === 'PAYMENT_RESULT_UNKNOWN') throw error;
+    return { status: 'PRE_SUBMIT_FAILED', reasonCode: error?.code || 'PRE_SUBMIT_FAILED', paymentSubmitCalls: 0 };
+  }
+}
+
 /** Production-shaped LIVE composition. Construction alone performs no payment action. */
 export function createSharedLivePaymentWorker({
   pool,
@@ -51,8 +85,12 @@ export function createSharedLivePaymentWorker({
   verificationWindowMs = 300_000,
   verificationIntervalMs = 5_000,
   postPlusAction = 'CANCEL_RENEWAL',
+  stopBeforeSubmit = false,
 } = {}) {
   if (!pool?.query || !pool?.getConnection) throw new TypeError('mysql2-like pool is required');
+  if (stopBeforeSubmit === true && postPlusAction !== 'CANCEL_RENEWAL') {
+    throw new TypeError('a rehearsal cannot carry a manual 20X handoff');
+  }
   if (!runtimeAdapter?.open || !runtimeAdapter?.close) throw new TypeError('runtimeAdapter is required');
   if (!manifest || manifest.allowWrites !== false) throw new TypeError('reviewed Browser manifest is required');
   if (!observation?.pageContract || !observation?.checkoutContract) throw new TypeError('LIVE observation contracts are required');
@@ -108,6 +146,16 @@ export function createSharedLivePaymentWorker({
     createPaymentHandler: async ({ claimedJob, run, control }) => async ({
       page, checkout, checkoutContract, cardMaterial, billingEmail,
     }) => {
+      if (stopBeforeSubmit === true) {
+        return runPreSubmitRehearsal({
+          adapter: new LiveChatGPTPaymentAdapter({
+            enabled: true, confirmation: LIVE_PAYMENT_CONFIRMATION,
+            outcomeObserver: async () => { throw new Error('rehearsal never observes a payment outcome'); },
+          }),
+          control, page, checkout, checkoutContract, cardMaterial, billingEmail,
+          operationId: `browser-live-rehearsal:${run.runId}`,
+        });
+      }
       const verifier = new ChatGptPostPaymentVerifier({
         page,
         expectedIdentity: await resolveSessionIdentity({
@@ -150,6 +198,7 @@ export function createSharedLivePaymentWorker({
   return Object.freeze({
     workerId: worker,
     approvedOrderId: approvedOrder,
+    stopBeforeSubmit: stopBeforeSubmit === true,
     runOnce: () => integration.runPaymentOnce({ approvedOrderId: approvedOrder }),
   });
 }

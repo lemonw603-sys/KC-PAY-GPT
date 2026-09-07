@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { loadProductionLiveBrowserConfig, PRODUCTION_LIVE_CONFIRMATION_PREFIX } from '../src/production-live-config.js';
+import { loadProductionLiveBrowserConfig, PRODUCTION_LIVE_CONFIRMATION_PREFIX, PRODUCTION_LIVE_REHEARSAL_CONFIRMATION_PREFIX } from '../src/production-live-config.js';
 
 const key = (byte) => Buffer.alloc(32, byte).toString('base64');
 function env(overrides = {}) {
@@ -79,4 +79,26 @@ test('LIVE config rejects Provider writes, raw secrets and non-local BitBrowser 
   assert.throws(() => loadProductionLiveBrowserConfig(env({ PROVIDER_CARD_WRITES_ENABLED: 'true' })));
   assert.throws(() => loadProductionLiveBrowserConfig(env({ CARD_NUMBER: '4111111111111111' })));
   assert.throws(() => loadProductionLiveBrowserConfig(env({ BITBROWSER_API_BASE_URL: 'https://example.test/api' })));
+});
+
+test('rehearsal mode (stop before submit) is a non-paying bound run with its own confirmation', () => {
+  const rehearsal = env({
+    BROWSER_LIVE_STOP_BEFORE: 'SUBMIT',
+    BROWSER_LIVE_OPERATION_CONFIRMATION: `${PRODUCTION_LIVE_REHEARSAL_CONFIRMATION_PREFIX}order-live-1`,
+    BROWSER_PAYMENT_WRITES_ENABLED: 'false', BROWSER_PAYMENT_EXECUTOR_ENABLED: 'false',
+  });
+  const config = loadProductionLiveBrowserConfig(rehearsal);
+  assert.equal(config.stopBeforeSubmit, true);
+  assert.equal(config.checkOnly, false);
+  assert.equal(config.approvedOrderId, 'order-live-1');
+  // The paying confirmation word does not unlock a rehearsal, and vice versa.
+  assert.throws(() => loadProductionLiveBrowserConfig({ ...rehearsal, BROWSER_LIVE_OPERATION_CONFIRMATION: `${PRODUCTION_LIVE_CONFIRMATION_PREFIX}order-live-1` }), /rehearsal confirmation/);
+  assert.throws(() => loadProductionLiveBrowserConfig(env({ BROWSER_LIVE_OPERATION_CONFIRMATION: `${PRODUCTION_LIVE_REHEARSAL_CONFIRMATION_PREFIX}order-live-1` })), /LIVE confirmation/);
+  // A rehearsal process never carries payment gates or a manual 20X handoff.
+  assert.throws(() => loadProductionLiveBrowserConfig({ ...rehearsal, BROWSER_PAYMENT_WRITES_ENABLED: 'true' }), /BROWSER_PAYMENT_WRITES_ENABLED must be exactly false/);
+  assert.throws(() => loadProductionLiveBrowserConfig({ ...rehearsal, BROWSER_PAYMENT_EXECUTOR_ENABLED: 'true' }), /BROWSER_PAYMENT_EXECUTOR_ENABLED must be exactly false/);
+  assert.throws(() => loadProductionLiveBrowserConfig({ ...rehearsal, BROWSER_POST_PLUS_ACTION: 'MANUAL_20X_HANDOFF' }), /paying LIVE --once run/);
+  assert.throws(() => loadProductionLiveBrowserConfig({ ...rehearsal, BROWSER_LIVE_STOP_BEFORE: 'CLICK' }), /SUBMIT or absent/);
+  // --check ignores the stop flag and stays what it was.
+  assert.equal(loadProductionLiveBrowserConfig(env({ BROWSER_WORKER_CHECK_ONLY: 'true', BROWSER_LIVE_STOP_BEFORE: 'SUBMIT', BROWSER_PAYMENT_WRITES_ENABLED: 'false', BROWSER_PAYMENT_EXECUTOR_ENABLED: 'false' })).stopBeforeSubmit, false);
 });

@@ -1,6 +1,11 @@
 import { accessSync, constants } from 'node:fs';
 
 export const PRODUCTION_LIVE_CONFIRMATION_PREFIX = 'I-CONFIRM-ONE-LIVE-BROWSER-PAYMENT:';
+// Rehearsal: the exact production path (Session → identity → pricing modal →
+// Checkout → card/address/email → zero-tax requote → final recheck) that stops
+// before the single submit click. No permit, no submission intent, no payment.
+export const PRODUCTION_LIVE_REHEARSAL_CONFIRMATION_PREFIX = 'I-CONFIRM-ONE-LIVE-BROWSER-REHEARSAL:';
+export const BROWSER_LIVE_STOP_BEFORE_SUBMIT = 'SUBMIT';
 export const BROWSER_POST_PLUS_ACTIONS = Object.freeze({
   CANCEL_RENEWAL: 'CANCEL_RENEWAL',
   MANUAL_20X_HANDOFF: 'MANUAL_20X_HANDOFF',
@@ -53,6 +58,11 @@ export function loadProductionLiveBrowserConfig(env = process.env) {
     throw new ProductionLiveConfigError('BROWSER_WORKER_MODE must be PRODUCTION_LIVE');
   }
   const checkOnly = env.BROWSER_WORKER_CHECK_ONLY === 'true';
+  const stopBefore = String(env.BROWSER_LIVE_STOP_BEFORE ?? '').trim().toUpperCase();
+  if (stopBefore && stopBefore !== BROWSER_LIVE_STOP_BEFORE_SUBMIT) {
+    throw new ProductionLiveConfigError('BROWSER_LIVE_STOP_BEFORE must be SUBMIT or absent');
+  }
+  const stopBeforeSubmit = !checkOnly && stopBefore === BROWSER_LIVE_STOP_BEFORE_SUBMIT;
   const approvedOrderId = checkOnly ? null : required(env, 'BROWSER_LIVE_ORDER_ID');
   const postPlusAction = String(env.BROWSER_POST_PLUS_ACTION
     || BROWSER_POST_PLUS_ACTIONS.CANCEL_RENEWAL).trim().toUpperCase();
@@ -61,15 +71,20 @@ export function loadProductionLiveBrowserConfig(env = process.env) {
       'BROWSER_POST_PLUS_ACTION must be CANCEL_RENEWAL or MANUAL_20X_HANDOFF'
     );
   }
-  if (checkOnly && postPlusAction !== BROWSER_POST_PLUS_ACTIONS.CANCEL_RENEWAL) {
-    throw new ProductionLiveConfigError('MANUAL_20X_HANDOFF is allowed only for a bound LIVE --once run');
+  if ((checkOnly || stopBeforeSubmit) && postPlusAction !== BROWSER_POST_PLUS_ACTIONS.CANCEL_RENEWAL) {
+    throw new ProductionLiveConfigError('MANUAL_20X_HANDOFF is allowed only for a bound paying LIVE --once run');
   }
-  if (!checkOnly && required(env, 'BROWSER_LIVE_OPERATION_CONFIRMATION')
-    !== `${PRODUCTION_LIVE_CONFIRMATION_PREFIX}${approvedOrderId}`) {
-    throw new ProductionLiveConfigError('LIVE confirmation must be bound to the approved order ID');
+  if (!checkOnly) {
+    const prefix = stopBeforeSubmit ? PRODUCTION_LIVE_REHEARSAL_CONFIRMATION_PREFIX : PRODUCTION_LIVE_CONFIRMATION_PREFIX;
+    if (required(env, 'BROWSER_LIVE_OPERATION_CONFIRMATION') !== `${prefix}${approvedOrderId}`) {
+      throw new ProductionLiveConfigError(stopBeforeSubmit
+        ? 'rehearsal confirmation must be bound to the approved order ID'
+        : 'LIVE confirmation must be bound to the approved order ID');
+    }
   }
   for (const name of ['BROWSER_PAYMENT_WRITES_ENABLED', 'BROWSER_PAYMENT_EXECUTOR_ENABLED']) {
-    const expected = checkOnly ? 'false' : 'true';
+    // A rehearsal is a non-paying process: both gates stay false.
+    const expected = checkOnly || stopBeforeSubmit ? 'false' : 'true';
     if (env[name] !== expected) throw new ProductionLiveConfigError(`${name} must be exactly ${expected}`);
   }
   if (env.BROWSER_PAYMENT_EXECUTOR_MODE !== 'LIVE') {
@@ -106,6 +121,7 @@ export function loadProductionLiveBrowserConfig(env = process.env) {
   }
   return Object.freeze({
     checkOnly,
+    stopBeforeSubmit,
     approvedOrderId,
     postPlusAction,
     databaseUrl: required(env, 'DATABASE_URL'),

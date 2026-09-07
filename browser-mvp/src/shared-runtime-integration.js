@@ -359,6 +359,24 @@ export class SharedBrowserRuntimeIntegration {
           jobId: claimed.jobId, runId: run.runId,
           externalPaymentCalls: payment.paymentSubmitCalls, profilePreserved: true };
       }
+      if (payment.status === 'PRE_SUBMIT_STOPPED') {
+        if (payment.paymentSubmitCalls !== 0) {
+          throw new SharedBrowserRuntimeError('rehearsal reported a submit click', 'PAYMENT_RESULT_INVALID');
+        }
+        // The rehearsal proved the page path up to the click. Clear the funds
+        // fence and return the order to CARD_READY so the paying run can
+        // claim it later; the identity keeps its filled Checkout for inspection.
+        const closed = await this.#abort(control, run, {
+          targetOrderStatus: 'CARD_READY',
+          reasonCode: 'BROWSER_REHEARSAL_STOPPED',
+          customerActionCode: null,
+          failureReason: 'Browser rehearsal stopped before the payment submit by configuration',
+        });
+        return { status: 'PRE_SUBMIT_STOPPED', reasonCode: 'BROWSER_REHEARSAL_STOPPED',
+          workerId: this.workerId, jobId: claimed.jobId, runId: run.runId,
+          targetOrderStatus: closed.orderStatus, fundsRiskState: closed.fundsRiskState,
+          quote: payment.quote || null, externalPaymentCalls: 0, profilePreserved: true };
+      }
       if (['UNKNOWN', 'POST_PAYMENT_UNKNOWN', 'RECONCILE_ONLY'].includes(payment.status)) {
         control.stop();
         return { status: payment.status, workerId: this.workerId, jobId: claimed.jobId,

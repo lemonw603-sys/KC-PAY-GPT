@@ -303,3 +303,62 @@ test('non-payment adapter never leaves an issued permit or active funds fence', 
   assert.equal(harness.state.attemptStatus, 'CLEARED');
   assert.equal(harness.state.fundsRiskState, 'CLEARED');
 });
+
+function rehearsalHarness(paymentResult) {
+  const calls = { aborts: [], stops: 0, completes: 0, heartbeats: 0 };
+  const run = {
+    runId: 'run-rehearsal-1', leaseToken: 'run-lease-1', runStatus: 'RUNNING', orderStatus: 'RECHARGE_PROCESSING',
+    attemptStatus: 'PREPARED', fundsRiskState: 'ACTIVE', paymentState: 'NOT_STARTED',
+  };
+  const control = {
+    run,
+    stop: () => { calls.stops += 1; },
+    complete: async () => { calls.completes += 1; return { status: 'COMPLETED' }; },
+    assertLeaseBeforeAction: async () => undefined,
+    perform: async (name, callback) => callback(async () => ({ paymentResult }), { signal: null }),
+  };
+  const workerService = {
+    claim: async (workerId, { orderId }) => ({ status: 'CLAIMED', orderId, leaseOwner: workerId, leaseToken: 'job-lease-1', jobId: 'job-rehearsal-1' }),
+    runClaimedJob: async () => control,
+  };
+  const executionRepository = {
+    abortBeforePayment: async (args) => { calls.aborts.push(args); return { fundsRiskState: 'CLEARED', attemptStatus: 'CLEARED', orderStatus: args.targetOrderStatus }; },
+    issuePaymentPermit: async () => { throw new Error('a rehearsal never issues a permit'); },
+    getRecoveryState: async () => null,
+  };
+  const recoveryRepository = {
+    acquireRunResources: async () => undefined,
+    heartbeatRunResources: async () => { calls.heartbeats += 1; },
+    recoverExpiredRun: async () => { throw new Error('not used'); },
+  };
+  const integration = new SharedBrowserRuntimeIntegration({ workerService, executionRepository, recoveryRepository, workerId: 'worker-rehearsal', leaseSeconds: 60 });
+  return { integration, calls };
+}
+
+test('rehearsal stop before submit clears the funds fence, returns the order to CARD_READY and keeps the profile', async () => {
+  const { integration, calls } = rehearsalHarness({
+    status: 'PRE_SUBMIT_STOPPED', reasonCode: 'STOP_BEFORE_SUBMIT', paymentSubmitCalls: 0,
+    quote: { currency: 'PHP', amount: '982.14', estimatedTax: '0.00' }, preserveProfile: true,
+  });
+  const result = await integration.runPaymentOnce({ approvedOrderId: 'order-rehearsal-1' });
+  assert.equal(result.status, 'PRE_SUBMIT_STOPPED');
+  assert.equal(result.reasonCode, 'BROWSER_REHEARSAL_STOPPED');
+  assert.equal(result.externalPaymentCalls, 0);
+  assert.equal(result.profilePreserved, true);
+  assert.equal(result.targetOrderStatus, 'CARD_READY');
+  assert.equal(result.fundsRiskState, 'CLEARED');
+  assert.deepEqual(result.quote, { currency: 'PHP', amount: '982.14', estimatedTax: '0.00' });
+  assert.equal(calls.aborts.length, 1);
+  assert.equal(calls.aborts[0].targetOrderStatus, 'CARD_READY');
+  assert.equal(calls.aborts[0].reasonCode, 'BROWSER_REHEARSAL_STOPPED');
+  assert.equal(calls.aborts[0].customerActionCode, null);
+  assert.equal(calls.stops, 1);
+  assert.equal(calls.completes, 0, 'a rehearsal never completes the dispatch as a paid order');
+});
+
+test('a rehearsal that reports a submit click is rejected as an invalid payment result', async () => {
+  const { integration, calls } = rehearsalHarness({ status: 'PRE_SUBMIT_STOPPED', paymentSubmitCalls: 1 });
+  await assert.rejects(() => integration.runPaymentOnce({ approvedOrderId: 'order-rehearsal-2' }), (error) => error.code === 'PAYMENT_RESULT_INVALID');
+  assert.equal(calls.aborts.length, 0);
+  assert.equal(calls.stops, 1);
+});
