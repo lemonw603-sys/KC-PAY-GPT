@@ -86,6 +86,7 @@ export function createSharedLivePaymentWorker({
   verificationIntervalMs = 5_000,
   postPlusAction = 'CANCEL_RENEWAL',
   stopBeforeSubmit = false,
+  releaseSessionOnComplete = false,
 } = {}) {
   if (!pool?.query || !pool?.getConnection) throw new TypeError('mysql2-like pool is required');
   if (stopBeforeSubmit === true && postPlusAction !== 'CANCEL_RENEWAL') {
@@ -106,7 +107,8 @@ export function createSharedLivePaymentWorker({
   }
   const worker = required(workerId, 'workerId');
   const profile = required(executorProfileId, 'executorProfileId');
-  const approvedOrder = required(approvedOrderId, 'approvedOrderId');
+  // null = resident lane serving any queued Browser job of this executor profile.
+  const approvedOrder = approvedOrderId == null ? null : required(approvedOrderId, 'approvedOrderId');
   const runtimeKey = key32(runtimeHmacKey, 'runtimeHmacKey');
   const recoveryArtifactKey = key32(artifactKey, 'artifactKey');
   const recoveryResourceKey = key32(resourceHmacKey, 'resourceHmacKey');
@@ -121,7 +123,7 @@ export function createSharedLivePaymentWorker({
     runtimeAdapter, evidenceSink, sessionProvider, timeoutMs: executionTimeoutMs,
   });
   const resolveExecutionContext = async ({ claimedJob, run }) => {
-    if (claimedJob.orderId !== approvedOrder) throw new Error('claimed order is not approved for LIVE payment');
+    if (approvedOrder && claimedJob.orderId !== approvedOrder) throw new Error('claimed order is not approved for LIVE payment');
     const sessionIdentity = await resolveSessionIdentity({
       orderId: claimedJob.orderId, attemptId: claimedJob.attemptId, runId: run.runId,
     });
@@ -143,6 +145,7 @@ export function createSharedLivePaymentWorker({
     executionService,
     resolveExecutionContext,
     preserveRuntimeOnManualHandoff: postPlusAction === 'MANUAL_20X_HANDOFF',
+    releaseSessionOnComplete: releaseSessionOnComplete === true,
     createPaymentHandler: async ({ claimedJob, run, control }) => async ({
       page, checkout, checkoutContract, cardMaterial, billingEmail,
     }) => {
@@ -200,5 +203,6 @@ export function createSharedLivePaymentWorker({
     approvedOrderId: approvedOrder,
     stopBeforeSubmit: stopBeforeSubmit === true,
     runOnce: () => integration.runPaymentOnce({ approvedOrderId: approvedOrder }),
+    resident: approvedOrder == null,
   });
 }

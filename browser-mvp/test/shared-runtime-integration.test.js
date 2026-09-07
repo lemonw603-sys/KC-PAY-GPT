@@ -362,3 +362,22 @@ test('a rehearsal that reports a submit click is rejected as an invalid payment 
   assert.equal(calls.aborts.length, 0);
   assert.equal(calls.stops, 1);
 });
+
+test('a resident lane claims the next queued job when no order is bound and reports which order it served', async () => {
+  const claims = [];
+  const { integration } = (() => {
+    const h = rehearsalHarness({ status: 'PRE_SUBMIT_STOPPED', reasonCode: 'STOP_BEFORE_SUBMIT', paymentSubmitCalls: 0, quote: null, preserveProfile: true });
+    const original = h.integration.workerService.claim;
+    h.integration.workerService.claim = async (workerId, options) => { claims.push(options); return original(workerId, { ...options, orderId: options.orderId || 'order-next-in-queue' }); };
+    return h;
+  })();
+  const result = await integration.runPaymentOnce();
+  assert.equal(result.status, 'PRE_SUBMIT_STOPPED');
+  assert.equal(result.orderId, 'order-next-in-queue');
+  assert.equal(claims.length, 1);
+  assert.equal('orderId' in claims[0], false, 'an unbound lane must not filter the claim by order');
+  // A bound run still refuses a job for another order.
+  const bound = rehearsalHarness({ status: 'PRE_SUBMIT_STOPPED', paymentSubmitCalls: 0 });
+  bound.integration.workerService.claim = async (workerId) => ({ status: 'CLAIMED', orderId: 'order-other', leaseOwner: workerId, leaseToken: 'lt', jobId: 'job-x' });
+  await assert.rejects(() => bound.integration.runPaymentOnce({ approvedOrderId: 'order-bound' }), (e) => e.code === 'LIVE_JOB_NOT_APPROVED');
+});

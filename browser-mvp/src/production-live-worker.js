@@ -124,7 +124,7 @@ export async function checkProductionLiveDatabase(pool, config) {
   return { ready: true, checkOnly: config.checkOnly, approvedOrderId: config.approvedOrderId };
 }
 
-async function resolveIdentity(pool, { orderId }) {
+export async function resolveIdentity(pool, { orderId }) {
   const [[row]] = await pool.query(
     `SELECT NULLIF(TRIM(chatgpt_account_id),'') AS account_id,
             NULLIF(LOWER(TRIM(customer_email)),'') AS email
@@ -138,7 +138,7 @@ async function resolveIdentity(pool, { orderId }) {
   return identity;
 }
 
-async function resolveAccountKey(pool, { orderId }) {
+export async function resolveAccountKey(pool, { orderId }) {
   const [[row]] = await pool.query(
     `SELECT COALESCE(NULLIF(TRIM(chatgpt_account_id),''), NULLIF(LOWER(TRIM(customer_email)),'')) AS account_key
      FROM orders WHERE id=? LIMIT 1`, [orderId],
@@ -147,7 +147,7 @@ async function resolveAccountKey(pool, { orderId }) {
   return String(row.account_key);
 }
 
-async function resolveCardContext(pool, runId) {
+export async function resolveCardContext(pool, runId) {
   const [[row]] = await pool.query(
     `SELECT c.id AS card_id, c.provider_card_id, c.sync_tier, pa.provider_code,
             MIN(bo.prepared_at) AS submit_intent_at
@@ -163,7 +163,7 @@ async function resolveCardContext(pool, runId) {
   return row;
 }
 
-function observation() {
+export function observation() {
   return {
     pageContract: { urlPrefix: 'https://chatgpt.com/', title: 'ChatGPT', requiredSelector: 'body', markerText: '' },
     accountProbeContract: {},

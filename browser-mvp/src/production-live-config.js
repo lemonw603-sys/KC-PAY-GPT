@@ -19,13 +19,13 @@ export class ProductionLiveConfigError extends Error {
   }
 }
 
-function required(env, name) {
+export function required(env, name) {
   const value = String(env[name] ?? '').trim();
   if (!value) throw new ProductionLiveConfigError(`${name} is required`);
   return value;
 }
 
-function integer(env, name, { min, max, fallback }) {
+export function integer(env, name, { min, max, fallback }) {
   const value = Number(String(env[name] ?? fallback));
   if (!Number.isInteger(value) || value < min || value > max) {
     throw new ProductionLiveConfigError(`${name} must be an integer between ${min} and ${max}`);
@@ -33,7 +33,7 @@ function integer(env, name, { min, max, fallback }) {
   return value;
 }
 
-function key32(env, name) {
+export function key32(env, name) {
   const raw = required(env, name);
   const value = Buffer.from(raw, 'base64');
   if (value.length !== 32 || value.toString('base64') !== raw) {
@@ -42,7 +42,7 @@ function key32(env, name) {
   return value;
 }
 
-function localApiUrl(raw) {
+export function localApiUrl(raw) {
   let value;
   try { value = new URL(raw); } catch { throw new ProductionLiveConfigError('BITBROWSER_API_BASE_URL must be a valid URL'); }
   if (value.protocol !== 'http:' || !['127.0.0.1', 'localhost'].includes(value.hostname)

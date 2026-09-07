@@ -86,6 +86,10 @@ export class BrowserExecutionService {
     paymentHandler = null,
     preserveRuntimeOnManualHandoff = false,
     preserveRuntimeOnFailure = false,
+    // Resident identity: once the order is COMPLETED the next customer must
+    // not inherit this login. Only the session/login cookies go; the device
+    // and Cloudflare cookies stay (see session-bootstrap.clearSession).
+    releaseSessionOnComplete = false,
   } = {}) {
     assertJobEnvelope(job);
     if (job.state !== 'RUNNING') throw new BrowserExecutionError('INVALID_STATE', 'job must be RUNNING before Browser execution');
@@ -399,6 +403,15 @@ export class BrowserExecutionService {
           if (error instanceof BrowserExecutionError) throw error;
           throw new BrowserExecutionError(error?.code || 'PAYMENT_EXECUTION_FAILED', error.message, error);
         }
+      }
+      if (releaseSessionOnComplete && paymentResult?.status === 'COMPLETED'
+        && this.sessionProvider && typeof this.sessionProvider.clearSession === 'function') {
+        const released = await this.sessionProvider.clearSession(runtime.context).catch(() => null);
+        await this._event(job, 'checkpoint', ++evidenceSequence, {
+          action: 'session-released',
+          clearedCookieCount: released?.clearedCookieCount ?? null,
+          clearedLoginCookieCount: released?.clearedLoginCookieCount ?? null,
+        });
       }
       const readonlyChecklist = job.metadata.accountProbeContract ? {
         loggedIn: sessionIdentity?.loggedIn === true,

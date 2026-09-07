@@ -314,15 +314,19 @@ export class SharedBrowserRuntimeIntegration {
   }
 
   /** One-order LIVE lane. The dispatch query itself is constrained by orderId. */
-  async runPaymentOnce({ approvedOrderId } = {}) {
-    const orderId = required(approvedOrderId, 'approvedOrderId');
+  // approvedOrderId binds the run to one order (the single-order LIVE tool);
+  // null lets a resident lane claim the next queued Browser job of its
+  // executor profile. Payment authority never comes from this argument: it is
+  // the database flag, the permit and the unique PAYMENT_SUBMIT operation.
+  async runPaymentOnce({ approvedOrderId = null } = {}) {
+    const orderId = approvedOrderId == null ? null : required(approvedOrderId, 'approvedOrderId');
     const claimed = await this.workerService.claim(this.workerId, {
       executorProfileId: this.executorProfileId,
-      orderId,
+      ...(orderId ? { orderId } : {}),
       leaseSeconds: this.leaseSeconds,
     });
     if (!claimed) return { status: 'IDLE', workerId: this.workerId, externalPaymentCalls: 0 };
-    if (claimed.status !== 'CLAIMED' || claimed.orderId !== orderId
+    if (claimed.status !== 'CLAIMED' || (orderId && claimed.orderId !== orderId)
       || claimed.leaseOwner !== this.workerId || !claimed.leaseToken) {
       throw new SharedBrowserRuntimeError('LIVE dispatch is not the approved owned job', 'LIVE_JOB_NOT_APPROVED');
     }
@@ -350,13 +354,13 @@ export class SharedBrowserRuntimeIntegration {
       }
       if (payment.status === 'COMPLETED') {
         const dispatch = await control.complete();
-        return { status: 'COMPLETED', workerId: this.workerId, jobId: claimed.jobId,
+        return { status: 'COMPLETED', workerId: this.workerId, jobId: claimed.jobId, orderId: claimed.orderId,
           runId: run.runId, dispatchStatus: dispatch.status, externalPaymentCalls: payment.paymentSubmitCalls };
       }
       if (['MANUAL_20X_HANDOFF', 'MANUAL_20X_REVIEW_REQUIRED'].includes(payment.status)) {
         control.stop();
         return { status: payment.status, workerId: this.workerId,
-          jobId: claimed.jobId, runId: run.runId,
+          jobId: claimed.jobId, orderId: claimed.orderId, runId: run.runId,
           externalPaymentCalls: payment.paymentSubmitCalls, profilePreserved: true };
       }
       if (payment.status === 'PRE_SUBMIT_STOPPED') {
@@ -373,13 +377,13 @@ export class SharedBrowserRuntimeIntegration {
           failureReason: 'Browser rehearsal stopped before the payment submit by configuration',
         });
         return { status: 'PRE_SUBMIT_STOPPED', reasonCode: 'BROWSER_REHEARSAL_STOPPED',
-          workerId: this.workerId, jobId: claimed.jobId, runId: run.runId,
+          workerId: this.workerId, jobId: claimed.jobId, orderId: claimed.orderId, runId: run.runId,
           targetOrderStatus: closed.orderStatus, fundsRiskState: closed.fundsRiskState,
           quote: payment.quote || null, externalPaymentCalls: 0, profilePreserved: true };
       }
       if (['UNKNOWN', 'POST_PAYMENT_UNKNOWN', 'RECONCILE_ONLY'].includes(payment.status)) {
         control.stop();
-        return { status: payment.status, workerId: this.workerId, jobId: claimed.jobId,
+        return { status: payment.status, workerId: this.workerId, jobId: claimed.jobId, orderId: claimed.orderId,
           runId: run.runId, reasonCode: payment.reasonCode || null,
           externalPaymentCalls: payment.paymentSubmitCalls };
       }
@@ -388,7 +392,7 @@ export class SharedBrowserRuntimeIntegration {
           control, run,
           error: { code: payment.reasonCode || 'PRE_SUBMIT_FAILED' },
         });
-        return { ...closed, workerId: this.workerId, jobId: claimed.jobId, runId: run.runId };
+        return { ...closed, workerId: this.workerId, jobId: claimed.jobId, orderId: claimed.orderId, runId: run.runId };
       }
       throw new SharedBrowserRuntimeError('LIVE payment result is unsupported', 'PAYMENT_RESULT_INVALID');
     } catch (error) {
@@ -449,6 +453,7 @@ export function createBrowserPaymentExecutionRuntime({
   resolveExecutionContext,
   createPaymentHandler,
   preserveRuntimeOnManualHandoff = false,
+  releaseSessionOnComplete = false,
 } = {}) {
   if (!executionService || typeof executionService.execute !== 'function') throw new TypeError('executionService is required');
   if (typeof resolveExecutionContext !== 'function') throw new TypeError('resolveExecutionContext is required');
@@ -473,6 +478,7 @@ export function createBrowserPaymentExecutionRuntime({
         paymentHandler,
         preserveRuntimeOnManualHandoff,
         preserveRuntimeOnFailure: true,
+        releaseSessionOnComplete,
       });
     },
   });

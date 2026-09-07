@@ -509,3 +509,35 @@ test('a rehearsal stop before submit detaches the identity instead of closing it
     await once(server, 'close');
   }
 });
+
+test('a completed order releases the identity login state when releaseSessionOnComplete is set', async () => {
+  const checkoutHtml = `<title>ChatGPT fixture</title><main data-testid="checkout-page-content"><form data-testid="checkout-form"><iframe srcdoc='<input autocomplete="cc-number"><input autocomplete="cc-exp"><input autocomplete="cc-csc">'></iframe></form><section data-testid="checkout-summary-column"><h2>ChatGPT Plus</h2><div><span>Monthly subscription</span><span>₱982.14</span></div><div><span>VAT (12%)</span><span>₱117.86</span></div><div><span>Due today</span><span>₱1,100.00</span></div><button type="submit">Subscribe</button></section></main>`;
+  const server = createServer((request, response) => {
+    if (request.url === '/api/auth/session') { response.writeHead(200, { 'content-type': 'application/json' }); return response.end(JSON.stringify({ user: { id: 'user-001', email: 'buyer@example.test' }, account: { id: 'acct-001' }, accessToken: 'fixture-token' })); }
+    if (request.url === '/backend-api/accounts/check/v4-fixture') { response.writeHead(200, { 'content-type': 'application/json' }); return response.end(JSON.stringify({ accounts: { default: { entitlement: { has_active_subscription: false, subscription_plan: 'chatgptplusplan' } } } })); }
+    response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }); response.end(checkoutHtml);
+  });
+  server.listen(0, '127.0.0.1'); await once(server, 'listening');
+  const base = `http://127.0.0.1:${server.address().port}/`;
+  const browser = await chromium.launch({ headless: true });
+  const context = await browser.newContext();
+  const released = [];
+  const sessionProvider = { async open() { throw new Error('not used'); }, async bootstrap() { throw new Error('not used'); }, async close() {}, async clearSession(ctx) { released.push(ctx === context); return { clearedCookieCount: 2, clearedLoginCookieCount: 3 }; } };
+  const evidenceSink = new MemoryEvidenceSink();
+  const runtimeAdapter = { async open() { return { context }; }, async detach() {}, async close() {} };
+  try {
+    const { CHATGPT_PLUS_CHECKOUT_CONTRACT } = await import('../src/checkout-observer.js');
+    const executor = new BrowserExecutionService({ runtimeAdapter, evidenceSink, sessionProvider, timeoutMs: 3_000 });
+    const job = createSyntheticJob({ state: 'RUNNING', metadata: { source: 'playwright-fixture', pageContract: { urlPrefix: base, title: 'ChatGPT fixture', requiredSelector: 'main[data-testid="checkout-page-content"]', markerText: '' }, accountProbeContract: { accountCheckPath: '/backend-api/accounts/check/v4-fixture' }, sessionIdentity: { email: 'buyer@example.test', accountId: 'acct-001', userId: 'user-001' }, checkoutContract: { ...CHATGPT_PLUS_CHECKOUT_CONTRACT, urlPrefix: base } } });
+    const provider = { async open(ref) { return { leaseId: 'lease-fixture', cardRef: ref, expiresAt: Date.now() + 60_000 }; }, async withMaterial(_lease, callback) { return callback({ pan: '4111111111111111', expMonth: 12, expYear: 2032, cvc: '123', billingAddress: { line1: '1 Main St', city: 'Wilmington', state: 'DE', postalCode: '19801', country: 'US', name: 'Test User' } }); }, async close() {} };
+    const result = await executor.execute(job, { assertLease: async () => true, cardMaterialLeaseProvider: provider, cardMaterialRef: 'browser-run:fixture', releaseSessionOnComplete: true, paymentHandler: async () => ({ status: 'COMPLETED', paymentSubmitCalls: 1 }) });
+    assert.equal(result.status, 'PAYMENT_EXECUTED');
+    assert.deepEqual(released, [true]);
+    const event = evidenceSink.events.find((e) => e.summary?.action === 'session-released');
+    assert.deepEqual(event?.summary, { action: 'session-released', clearedCookieCount: 2, clearedLoginCookieCount: 3 });
+    // Without the flag nothing is released.
+    released.length = 0;
+    await executor.execute(job, { assertLease: async () => true, cardMaterialLeaseProvider: provider, cardMaterialRef: 'browser-run:fixture', paymentHandler: async () => ({ status: 'COMPLETED', paymentSubmitCalls: 1 }) });
+    assert.deepEqual(released, []);
+  } finally { await context.close().catch(() => undefined); await browser.close(); server.close(); await once(server, 'close'); }
+});

@@ -1724,3 +1724,10 @@
 - 演练首跑失败：`secure card fields did not become ready`——Playwright 经 BitBrowser CDP 能看到 Stripe 支付元素框架及 `cc-number/cc-exp/cc-csc`，只是挂载超过 10 秒；观察合同 `secureFieldTimeoutMs` 10s→45s，adapter 控件等待同步放宽（上限 90s）。失败时 run 保持 RUNNING、Profile 保留，租约过期后续跑按 RESUMABLE 恢复。
 - 续跑成功：`PRE_SUBMIT_STOPPED`，报价 `{PHP, 982.14, 0.00}`；Stripe 字段已填（16/5/3 位），摘要显示 Tax (0%) ₱0.00、Due today ₱982.14，Subscribe 可点但未点。数据库：订单 CARD_READY（`BROWSER_REHEARSAL_STOPPED`）、attempt CLEARED、派发 CANCELLED、run FAILED_SAFE/RELEASED/PRE_PAYMENT_ABORT、账本 RELEASED、permit 0、PAYMENT_SUBMIT 0；卡 5501 assignment 仍 ACTIVE，SUBMIT_RECHARGE 任务 PENDING（Worker 启动即会重新派发）。
 - 教训写进规则：同一账号会话不得同时在两个身份使用；演练/真实单前先确认常驻身份的登录态是 `authStatus=logged_in`。**可审版本：本节提交。**
+
+## 2026-09-07｜常驻多身份 Worker（第 4 步）实现并冒烟
+
+- 集成层 `runPaymentOnce` 的订单绑定改为可选（null = 领取本执行器 profile 的下一个排队 Browser 派发），结果带 `orderId`；组合层同样可不绑单；executor 新增 `releaseSessionOnComplete`（COMPLETED 后清身份登录态，事件 `session-released`）。
+- 新增 `production-live-pool-worker.js`：lane 解析（1–6，唯一）、模式确认词（REHEARSAL/PAY）与进程/数据库开关一致性校验、`runLaneLoop`（核实 → 预检 → 领单，纯函数可测）、每 lane 独立 WAL/卡租约/runtime（`residentProfile`）、心跳写 `browser_worker_heartbeat_at`、SIGINT/SIGTERM 优雅停止。启动脚本 `run-live-pool.sh`。
+- 测试：pool 3 条、集成 1 条（不绑单领取）、executor 1 条（释放登录态）；browser-mvp 全量 189/180/0/9。
+- 冒烟：`check rehearsal` READY；`run rehearsal` Lane 3 45 秒 9 轮空转（队列无活）、心跳更新、SIGINT 停止、窗口保持打开。尚未在有排队订单时跑过。**可审版本：本节提交。**
