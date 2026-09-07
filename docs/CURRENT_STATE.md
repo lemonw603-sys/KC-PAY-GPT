@@ -4,10 +4,10 @@
 
 | 项目 | 当前值 | 核对时间（UTC） | 证据方式 |
 |---|---|---|---|
-| 生产 release | `/opt/pojia/releases/20260907-cancel-cardless-ae68195`（commit `ae68195`） | 2026-09-07 14:42 | `readlink -f /opt/pojia/current` |
-| 回滚点 | `/opt/pojia/releases/20260907-timeline-ui-af188c9` | 同上 | 部署记录 |
-| 最新数据库备份 | `/var/backups/pojia/pojia-20260907T063400Z.sql.gz.enc`，完整性 OK | 06:34 | `pojia-ops backup/verify` |
-| pojia-web | active（06:35 随 release 切换重启） | 06:35 | systemctl |
+| 生产 release | `/opt/pojia/releases/20260907-home-2bc0e12`（commit `2bc0e12`，后台首页五个决定） | 2026-09-07 15:01 | `readlink -f /opt/pojia/current`；switch 输出 |
+| 回滚点 | `/opt/pojia/releases/20260907-cancel-cardless-ae68195` | 同上 | 部署记录 |
+| 最新数据库备份 | `/var/backups/pojia/pojia-20260907T150048Z.sql.gz.enc`，完整性 OK | 15:00 | `pojia-ops backup/verify`（prepare 阶段） |
+| pojia-web | active（15:01 随 release 切换重启，无错误日志） | 15:01 | systemctl / journalctl |
 | pojia-worker（API） | inactive（09-06 03:46 UTC 人为停止；09-07 09:28 UTC 短启约 10 秒推进测试单后再次停止） | 09-07 09:29 | systemctl |
 | pojia-browser-worker | inactive / disabled | 16:35 | systemctl |
 | pojia-card-funding.timer | active | 16:35 | systemctl |

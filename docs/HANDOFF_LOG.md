@@ -1781,3 +1781,15 @@
 - ① 14:33 UTC 启动 Worker 前核对：全库只剩一个待处理任务（该单的 POLL_RECHARGE）。5 秒内 POLL 确认直充成功：订单 → CANCELLATION_PENDING，实付 982.14 PHP，attempt SUCCESS/SETTLED，账本 CONSUMED，卡 5980 占用释放（余额 0.31，DEPLETED），CDK 保持 REDEEMED（已交付）。随后 RECHECK_CANCELLATION 反复 `CANCELLATION_PENDING`（ZZSHU 取消续费未完成），14:36 停 Worker；该任务留待下次 Worker 运行或用户在账号内手动关闭自动续费。
 - ② 取消服务原本拒绝无卡的等 Session 订单（`ORDER_CANCELLATION_REVIEW_REQUIRED`）。新增分支：无卡、无资金尝试、无卡台调用的等 Session 订单可关单（杀任务、退回 CDK、CLOSED/CANCELLED_PRE_SUBMISSION），发布 release `20260907-cancel-cardless-ae68195`（回滚点 `20260907-timeline-ui-af188c9`）。两单 `PJV1-lxez72TytHc1O6QZxjNd`、`PJV1-kIPF1w9XEePjjxcKx9Qz` 已 CLOSED，各自 CDK 回到 AVAILABLE 且解绑——这是 CDK 退回规则第一次在生产订单上生效。
 - 现在全库待处理任务只剩该 API 单的 RECHECK_CANCELLATION；WAITING_FOR_SESSION 0。
+
+## 2026-09-07｜后台五页第 1 步：首页「五个决定」上线（release `20260907-home-2bc0e12`）
+
+- 后端：概览接口新增 `decisions`（accept/dispatch/browserPaymentWrites/browserProfileWrites/autoReplenishment/balanceRecharge + supplyAutomationEnabled/Mixed，其中 profile 写开关来自 `executor_profiles` 新查询）；新增 `POST /api/v1/admin/operations/browser-payment` 与 `/supply-automation`（布尔 `enabled`，非布尔 400 `invalid_operation_state`；写 `app_settings` 并落 `admin_setting_events`；browser-payment 同步 ACTIVE BROWSER profile 的 `productionWritesEnabled`）。
+- 前端：首页改为决定一行（接单/自动充值/浏览器真实付款/开卡补钱/当前卡台）+ 五个数字（今日、自动处理中、需要处理、等 Session、Plus 可分配卡）+ REVIEW_REQUIRED 订单表（沿用 `orderRow`，行点击走全局 `tr[data-order]` 委托）+ 提醒 + 开工检查；`admin.js?v=28`、`admin.css?v=22`。
+- 发现并修掉一个会让整页失效的 bug：脚本仍对已删除的 `elements.statusList` 绑定 click（脚本加载即 TypeError）。新增静态测试：`elements.*` 用到的键必须在声明块里，声明块引用的 `#id` 必须在 `index.html` 里存在。
+- 测试：527 通过（`--test-concurrency=1`，排除挂起的 mysql-integration）。
+- 部署：`prepare` 两次被 `Connection closed by 144.34.180.184 port 22` 打断（主机对连续新建 SSH/SCP 连接掐断）；`deploy-release.sh` 改为 ControlMaster 复用一条连接（`/tmp/pojia-deploy-%C`，ControlPersist 180s）后一次通过。备份 `pojia-20260907T150048Z`；switch 15:01 UTC；健康 200/ready；web 无错误日志。
+- 生产复验（只读）：`executor_profiles` 决策查询在生产库可执行（active 1、writes_on 0）；开关现值 接单 true / 自动派发 true / 浏览器付款 false / 自动开卡 false / 自动补余额 true / 最低余额 16.00；需处理订单 8。首页「开卡补钱」将显示「部分开启」（两设置不一致）——当前只给「开启」按钮，缺「关闭」，随第 2 步一起补。
+- 公网：`admin.js?v=28`/`admin.css?v=22` 200，含 `decisions-grid` 等标记、无 `statusList` 残留；两个新开关接口未登录 401。
+- 下一步：五页第 2 步订单页（列表列改造 + 抽屉分区 + 删除标签/备注/补发/灰度许可控件）。
+

@@ -10,7 +10,10 @@ set -euo pipefail
 
 HOST=root@144.34.180.184
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SSH="ssh -o BatchMode=yes -o ConnectTimeout=20 ${HOST}"
+# One multiplexed TCP connection for the whole phase: the host drops rapid successive
+# SSH/SCP connections ("Connection closed by ... port 22"), so every call shares a master.
+SSH_OPTS="-o BatchMode=yes -o ConnectTimeout=20 -o ControlMaster=auto -o ControlPath=/tmp/pojia-deploy-%C -o ControlPersist=180"
+SSH="ssh ${SSH_OPTS} ${HOST}"
 
 phase=${1:-}; shift || true
 
@@ -29,7 +32,7 @@ prepare() {
   fi
   echo "== upload bundle =="
   ${SSH} "mkdir -p /opt/pojia/release-bundles/${name}"
-  scp -q -o BatchMode=yes "${bundle}/source.tar.gz" "${bundle}/source.tar.gz.sha256" \
+  scp -q ${SSH_OPTS} "${bundle}/source.tar.gz" "${bundle}/source.tar.gz.sha256" \
       "${bundle}/source-manifest.sha256" "${bundle}/release-metadata.json" \
       "${HOST}:/opt/pojia/release-bundles/${name}/"
   ${SSH} bash -s "${name}" <<'REMOTE'
