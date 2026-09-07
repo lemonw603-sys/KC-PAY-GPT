@@ -24,7 +24,7 @@
 | release | `/opt/pojia/releases/20260907-import-confirm-6948b02`（09-07 01:24 UTC）；回滚点 `20260907-admin-daily-b1c32f4` |
 | 服务 | Web active；API Worker inactive（09-06 03:46 UTC 人为停止）；Browser Worker inactive/disabled；补余额与读同步 timer active；旧自动开卡 timer disabled |
 | 开关 | 接单 true；自动派发 true；默认路线 Browser；Browser 卡台 = 备用卡台 A；Browser 付款开关 false；自动开卡 false；自动补余额 true；每卡成功次数 3 |
-| 卡 | HNSKJ `5980` $16 AVAILABLE（唯一可分配）；备用 A：`5501` $8.87 DEPLETED、`0237` $0 → 备用卡台可分配 0 |
+| 卡 | 可分配 0：HNSKJ `5980` $16 但交易同步已过 15 分钟（卡台故障）不合格；备用 A `5501` $8.87 低于最低 16、`0237` $0 |
 | 订单 | 成功 2（含 09-06 人工 20X）、失败 7、关闭 8、API 路线等卡 1、等 Session 2；活动资金/run/队列/租约/许可全部 0 |
 | 迁移 | 048 |
 | Browser 自动化 | 生产从未自动完成过一笔付款；21 个 run 中 20 个为 09-01 的 CHATGPT_ACCESS_BLOCKED，1 个 09-06 到 Checkout 未填表后人工完成 |

@@ -27,9 +27,9 @@
 | card_max_successful_payments | 3 | 13:31 | app_settings |
 | default_open_card_amount / minimum | 16 / 16（全局值，待改为按产品） | 13:31 | app_settings |
 | Worker 进程写权限 | worker：`PROVIDER_RECHARGE_WRITES_ENABLED=true`（drop-in），通用/卡片写 false；funding 单元：`PROVIDER_CARD_WRITES_ENABLED=true`；env 文件 `PROVIDER_READS_ENABLED=true` | 16:35 | `systemctl cat` |
-| HNSKJ 卡 | `5980` $16 AVAILABLE（唯一可分配）；其余 5 张 ASSIGNED 于历史订单且 ≤ $0.01；5 张 DEPLETED | 13:31 | cards |
-| 备用卡 A | `5501` $8.87 DEPLETED（09-06 付款 143.13 后）；`0237` $0 AVAILABLE；可分配 0 | 16:54（快照导入） | cards / manual_card_import_batches |
-| HNSKJ 卡台 | 09-05 起返回维护响应（success=false），只读同步 5 分钟退避；开卡与补余额不可用 | 09-06 | HANDOFF_LOG |
+| HNSKJ 卡 | `5980` $16 inventory AVAILABLE，但分配资格要求交易同步 15 分钟内（`last_transaction_synced_at` 09-06 22:00 UTC，HNSKJ 故障期间不再刷新）→ **当前不可分配**；其余 5 张 ASSIGNED 于历史订单且 ≤ $0.01；5 张 DEPLETED | 09-07 02:30 | cards + `card-inventory-eligibility.js` 规则 |
+| 备用卡 A | `5501` $8.87 DEPLETED（09-06 付款 143.13 后；用量 1/3，无占用、无退款、无覆盖项，只差余额 ≥ 最低 16）；`0237` $0 AVAILABLE；可分配 0。**全系统当前可分配卡为 0** | 09-07 02:30 | cards / 资格规则各分项查询 |
+| HNSKJ 卡台 | 09-05 起维护/故障（success=false），只读同步 5 分钟退避；开卡与补余额不可用；用户 09-07 确认卡台服务器故障，备用卡台暂无资金 | 09-07 | HANDOFF_LOG + 用户 |
 | 订单总况 | RECHARGE_SUCCESS 2 / RECHARGE_FAILED 7 / CLOSED 8 / WAITING_FOR_CARD 1（API 路线 `PJV1-7EYSr3AZfjVl5JZQwTZt`，每分钟重试等卡）/ WAITING_FOR_SESSION 2 | 16:40 | orders |
 | 活动资金与运行 | ACTIVE/UNKNOWN attempt 0；open run 0；open dispatch 0；RESERVED 账本 0；open lease 0；ISSUED permit 0 | 16:41 | 只读聚合查询 |
 | 最近真实单 | `PJV1-RCbAiI0IkGMy-hCBgMSn`：自动化到 Checkout 未填表 → 运营者手工付 Plus + 20X（143.13）→ 09-06 16:40 以「人工付款已完成」收口为 RECHARGE_SUCCESS；`PAYMENT_SUBMIT=0`，证据 `MANUAL_PAYMENT_CONFIRMED` | 16:41 | orders / browser_runs / browser_operations |
