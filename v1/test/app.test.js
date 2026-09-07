@@ -90,7 +90,7 @@ test('labels local stock refresh separately from provider card synchronization',
 test('admin overview does not describe disabled automatic card opening as enabled', async () => {
   const html = await readFile(new URL('../public/admin/index.html', import.meta.url), 'utf8');
   const script = await readFile(new URL('../public/admin/assets/admin.js', import.meta.url), 'utf8');
-  assert.match(html, /admin\.js\?v=23/);
+  assert.match(html, /admin\.js\?v=24/);
   assert.match(script, /自动开卡已关闭；当前无合格卡时需要人工处理/);
   assert.match(script, /自动开卡已关闭；当前低于库存线/);
   assert.match(script, /cardSyncReviewRequired/);
@@ -406,15 +406,9 @@ test('generates CDKs only for an authenticated administrator', async () => {
       body: JSON.stringify({ password: 'fixture admin password' })
     });
     const sessionCookie = login.headers.get('set-cookie').split(';')[0];
-    const stepUpRequired = await fetch(`${baseUrl}/api/v1/admin/cdks/generate`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Cookie: sessionCookie,
-        Origin: baseUrl, 'Idempotency-Key': 'fixture-idempotency-001' },
-      body: JSON.stringify({ count: 1 })
-    });
-    assert.equal(stepUpRequired.status, 403);
-    assert.deepEqual(await stepUpRequired.json(), { error: 'admin_step_up_required' });
-    const sensitiveCookie = await stepUp(baseUrl, sessionCookie);
+    // Daily CDK operations are authorized by the admin login itself; no
+    // repeated password (step-up) prompt.
+    const sensitiveCookie = sessionCookie;
     const generated = await fetch(`${baseUrl}/api/v1/admin/cdks/generate`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Cookie: sensitiveCookie,
@@ -969,5 +963,37 @@ test('keeps Browser timelines read-only and requires origin plus step-up for con
         confirmation: '请求人工接管 run-1', reasonCode: 'OPERATOR_REVIEW'
       }
     });
+  });
+});
+
+test('closes an open internal alert through the guarded admin route without step-up', async () => {
+  const adminAuth = createAdminSessionAuth({
+    passwordHash: await hashAdminPassword('fixture admin password', { salt: Buffer.alloc(16, 14) }),
+    sessionSecret: Buffer.alloc(32, 15),
+    secureCookies: false
+  });
+  const closed = [];
+  const app = createApp({
+    adminAuth,
+    closeAdminAlert: async (alertId) => { closed.push(alertId); return { alertId, closed: alertId === 'alert-1' }; }
+  });
+  await withServer(app, async (baseUrl) => {
+    const denied = await fetch(`${baseUrl}/api/v1/admin/alerts/alert-1/close`, { method: 'POST' });
+    assert.equal(denied.status, 401);
+    const login = await fetch(`${baseUrl}/api/v1/admin/session`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: 'fixture admin password' })
+    });
+    const sessionCookie = login.headers.get('set-cookie').split(';')[0];
+    const ok = await fetch(`${baseUrl}/api/v1/admin/alerts/alert-1/close`, {
+      method: 'POST', headers: { Cookie: sessionCookie, Origin: baseUrl }
+    });
+    assert.equal(ok.status, 200);
+    assert.deepEqual(await ok.json(), { alertId: 'alert-1', closed: true });
+    const missing = await fetch(`${baseUrl}/api/v1/admin/alerts/alert-9/close`, {
+      method: 'POST', headers: { Cookie: sessionCookie, Origin: baseUrl }
+    });
+    assert.equal(missing.status, 404);
+    assert.deepEqual(closed, ['alert-1', 'alert-9']);
   });
 });

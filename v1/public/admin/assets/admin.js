@@ -71,7 +71,7 @@ const state = {
   view: 'overview', nav: 'overview', page: 1, pageSize: 20, total: 0, status: '', query: '',
   from: '', to: '', timeField: 'CREATED',
   stockProvider: null, stockCatalog: null, stockCardTypeId: '', acceptingOrders: false,
-  cdkClearTimer: null, cdkLoadSequence: 0, cdkBatchCursor: null, cdkBatchRows: [],
+  cdkLoadSequence: 0, cdkBatchCursor: null, cdkBatchRows: [],
   selectedOrders: new Set(), reconciliationPage: 1, reconciliationTotal: 0,
   browserPage: 1, browserTotal: 0, cardFundingPage: 1, cardFundingTotal: 0
 };
@@ -400,7 +400,18 @@ async function loadOverview() {
   }).join('');
   const alerts = alertData.alerts || [];
   elements.alertsCard.hidden = alerts.length === 0;
-  elements.alertsList.innerHTML = alerts.map((alert) => `<div><span><strong>${escapeHtml(alert.title)}</strong><small>${escapeHtml(alert.message)}</small></span><em>${formatTime(alert.createdAt)}</em></div>`).join('');
+  elements.alertsList.innerHTML = alerts.map((alert) => `<div><span><strong>${escapeHtml(alert.title)}</strong><small>${escapeHtml(alert.message)}</small></span><span class="case-actions"><em>${formatTime(alert.createdAt)}</em><button type="button" class="text-button" data-close-alert="${escapeHtml(alert.id)}">关闭</button></span></div>`).join('');
+  elements.alertsList.querySelectorAll('[data-close-alert]').forEach((button) => button.addEventListener('click', async () => {
+    button.disabled = true;
+    try {
+      await api(`/api/v1/admin/alerts/${encodeURIComponent(button.dataset.closeAlert)}/close`, { method: 'POST' });
+      showNotice('提醒已关闭；不会改变任何订单、卡片或开关。', 'success');
+      await loadOverview();
+    } catch {
+      showNotice('提醒关闭失败，请刷新后重试。');
+      button.disabled = false;
+    }
+  }));
   elements.recentOrders.innerHTML = recent.orders.length
     ? recent.orders.map(orderRow).join('')
     : '<tr><td colspan="6" class="empty-cell">还没有订单</td></tr>';
@@ -443,7 +454,7 @@ async function recordCdkDelivery(cdkId, batchNo) {
   if (!recipientReference) return false;
   const channel = window.prompt('输入交付渠道（例如 wechat、alipay、manual）：', 'manual')?.trim();
   if (!channel) return false;
-  await sensitiveApi('/api/v1/admin/cdks/deliveries', {
+  await api('/api/v1/admin/cdks/deliveries', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ cdkId, batchNo: batchNo || undefined,
       eventType: 'DELIVERED', channel, recipientReference })
@@ -796,13 +807,6 @@ function downloadCdkStatusCsv(payload) {
   URL.revokeObjectURL(url);
 }
 
-function clearGeneratedCdks() {
-  window.clearTimeout(state.cdkClearTimer);
-  state.cdkClearTimer = null;
-  elements.generatedCdks.value = '';
-  elements.cdkResult.hidden = true;
-}
-
 async function loadCdkBatches() {
   const sequence = ++state.cdkLoadSequence;
   const query = new URLSearchParams({ limit: '50' });
@@ -849,7 +853,7 @@ async function downloadStoredBatch(batchNo, button) {
   )) return;
   button.disabled = true;
   try {
-    const payload = await sensitiveApi(`/api/v1/admin/cdks/${encodeURIComponent(batchNo)}/download`, {
+    const payload = await api(`/api/v1/admin/cdks/${encodeURIComponent(batchNo)}/download`, {
       method: 'POST'
     });
     downloadCodes(payload.batchNo, payload.codes);
@@ -862,7 +866,7 @@ async function downloadStoredBatch(batchNo, button) {
 async function downloadStoredBatchStatus(batchNo, button) {
   button.disabled = true;
   try {
-    const payload = await sensitiveApi(`/api/v1/admin/cdks/${encodeURIComponent(batchNo)}/status-report`, {
+    const payload = await api(`/api/v1/admin/cdks/${encodeURIComponent(batchNo)}/status-report`, {
       method: 'POST'
     });
     downloadCdkStatusCsv(payload);
@@ -877,7 +881,7 @@ async function revokeStoredBatch(batchNo, button) {
   button.disabled = true;
   let result;
   try {
-    result = await sensitiveApi(`/api/v1/admin/cdks/${encodeURIComponent(batchNo)}/revoke`, {
+    result = await api(`/api/v1/admin/cdks/${encodeURIComponent(batchNo)}/revoke`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ reason: '后台批次作废' })
     });
@@ -1495,7 +1499,6 @@ function setActiveNav(navId) {
 }
 
 async function switchView(view, { status = '' } = {}) {
-  if (state.view === 'cdks' && view !== 'cdks') clearGeneratedCdks();
   if (state.view === 'orders' && view !== 'orders') state.selectedOrders.clear();
   setActiveNav(view);
   state.view = view === 'exceptions' ? 'orders' : view;
@@ -1986,7 +1989,7 @@ elements.cdkForm.addEventListener('submit', async (event) => {
   sessionStorage.setItem('cdk-generation-request', JSON.stringify({ count, key: requestKey }));
   let payload;
   try {
-    payload = await sensitiveApi('/api/v1/admin/cdks/generate', {
+    payload = await api('/api/v1/admin/cdks/generate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Idempotency-Key': requestKey },
       body: JSON.stringify({ count })
@@ -1996,11 +1999,6 @@ elements.cdkForm.addEventListener('submit', async (event) => {
     elements.cdkBatchLabel.textContent = `批次 ${payload.batchNo} · ${payload.count} 个`;
     elements.cdkResult.hidden = false;
     sessionStorage.removeItem('cdk-generation-request');
-    window.clearTimeout(state.cdkClearTimer);
-    state.cdkClearTimer = window.setTimeout(() => {
-      clearGeneratedCdks();
-      showNotice('CDK 明文已从页面自动清除；需要时可从批次记录重新下载。', 'warning');
-    }, 10 * 60 * 1000);
   } catch (error) {
     showNotice(cdkErrorMessage(error, 'CDK 生成'));
     button.disabled = false;

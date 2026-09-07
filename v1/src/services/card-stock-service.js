@@ -172,7 +172,8 @@ export function createCardStockService({ pool, sessionEncryptionKey, panHmacKey 
     const autoReplenishmentEnabled = thresholdRows.some((row) => row.setting_key === 'card_auto_replenishment_enabled' && row.setting_value === 'true');
     const available = Number(stockRows[0]?.count || 0);
     const key = `card-stock-low:${providerAccountId}:plus`;
-    if (available <= threshold && !autoReplenishmentEnabled) {
+    // threshold 0 means the reminder is switched off; "0 left, threshold 0" was pure noise.
+    if (threshold > 0 && available <= threshold && !autoReplenishmentEnabled) {
       await connection.query(
         `INSERT INTO operator_alerts
          (id, alert_type, dedupe_key, severity, title, message, status)
@@ -190,7 +191,7 @@ export function createCardStockService({ pool, sessionEncryptionKey, panHmacKey 
         [key]
       );
     }
-    return { available, threshold, low: available <= threshold && !autoReplenishmentEnabled };
+    return { available, threshold, low: threshold > 0 && available <= threshold && !autoReplenishmentEnabled };
   }
 
   async function register(card) {
@@ -507,7 +508,7 @@ export function createCardStockService({ pool, sessionEncryptionKey, panHmacKey 
         assigned: Number(row.assigned || 0),
         depleted: Number(row.depleted || 0),
         held: Number(row.held || 0),
-        low: !autoReplenishmentEnabled && Number(row.available || 0) <= threshold
+        low: threshold > 0 && !autoReplenishmentEnabled && Number(row.available || 0) <= threshold
       })),
         cards: allCards
     };

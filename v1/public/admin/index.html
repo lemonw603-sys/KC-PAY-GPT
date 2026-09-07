@@ -8,7 +8,7 @@
   <title>Plus 运营后台</title>
   <link rel="icon" href="/admin/assets/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/admin/assets/admin.css?v=20">
-  <script src="/admin/assets/admin.js?v=23" defer></script>
+  <script src="/admin/assets/admin.js?v=24" defer></script>
 </head>
 <body>
   <div class="admin-shell">
@@ -250,11 +250,11 @@
             <details class="stock-settings-details">
               <summary>提醒与自动补卡设置</summary>
               <div class="stock-settings-body">
-                <form class="threshold-form" id="stock-threshold-form">
+                <form class="threshold-form" id="stock-threshold-form" hidden>
                   <label for="stock-threshold">剩余多少张时提醒</label>
                   <div><input id="stock-threshold" type="number" min="0" max="10000" required><button class="primary-small" type="submit">保存阈值</button></div>
                 </form>
-                <form class="threshold-form" id="replenishment-limit-form">
+                <form class="threshold-form" id="replenishment-limit-form" hidden>
                   <label for="replenishment-daily-limit">每日自动补卡上限</label>
                   <div><input id="replenishment-daily-limit" type="number" min="0" max="500" required><button class="primary-small" type="submit">保存上限</button></div>
                   <p class="form-hint" id="replenishment-usage">今日已使用：—，剩余：—</p>

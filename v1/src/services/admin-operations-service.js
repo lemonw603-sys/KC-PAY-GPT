@@ -84,5 +84,19 @@ export function createAdminOperationsService({ pool }) {
     });
   }
 
-  return { setOrderAcceptance, setDispatch };
+  async function closeAlert(alertId) {
+    const id = String(alertId || '').trim();
+    if (!id || id.length > 64) {
+      throw new PublicApiError('Alert id is required', { code: 'INVALID_ALERT_ID', status: 400 });
+    }
+    const [result] = await pool.query(
+      `UPDATE operator_alerts
+       SET status = 'RESOLVED', acknowledged_at = COALESCE(acknowledged_at, CURRENT_TIMESTAMP(3))
+       WHERE id = ? AND status = 'OPEN'`,
+      [id]
+    );
+    return { alertId: id, closed: result.affectedRows === 1 };
+  }
+
+  return { setOrderAcceptance, setDispatch, closeAlert };
 }

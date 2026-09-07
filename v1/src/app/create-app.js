@@ -40,6 +40,7 @@ export function createApp({
   addAdminOrderTag = null,
   completeAdminCustomerPayment = null,
   listAdminAlerts = null,
+  closeAdminAlert = null,
   requestCardTransactionSync = null,
   getAdminCard = null,
   getAdminCardConsumption = null,
@@ -292,6 +293,14 @@ export function createApp({
   if (typeof listAdminAlerts === 'function') {
     app.get('/api/v1/admin/alerts', noStore, requireAdminApi, async (req, res) => {
       res.json(await listAdminAlerts(req.query));
+    });
+  }
+  if (typeof closeAdminAlert === 'function') {
+    // Operator dismissal of an OPEN internal alert. It only marks the alert
+    // RESOLVED; it never changes orders, cards or settings.
+    app.post('/api/v1/admin/alerts/:alertId/close', ...adminWriteGuards, async (req, res) => {
+      const result = await closeAdminAlert(req.params.alertId);
+      return res.status(result.closed ? 200 : 404).json(result);
     });
   }
   if (typeof requestCardTransactionSync === 'function') {
@@ -602,7 +611,7 @@ export function createApp({
     });
   }
   if (typeof createAdminCdkBatch === 'function') {
-    app.post('/api/v1/admin/cdks/generate', ...sensitiveAdminGuards, async (req, res) => {
+    app.post('/api/v1/admin/cdks/generate', ...adminWriteGuards, async (req, res) => {
       try {
         const result = await createAdminCdkBatch({
           ...req.body,
@@ -623,7 +632,7 @@ export function createApp({
     });
   }
   if (typeof downloadAdminCdkBatch === 'function') {
-    app.post('/api/v1/admin/cdks/:batchNo/download', ...sensitiveAdminGuards, async (req, res) => {
+    app.post('/api/v1/admin/cdks/:batchNo/download', ...adminWriteGuards, async (req, res) => {
       try {
         res.json(await downloadAdminCdkBatch(req.params.batchNo));
       } catch (error) {
@@ -635,7 +644,7 @@ export function createApp({
     });
   }
   if (typeof inspectAdminCdkBatch === 'function') {
-    app.post('/api/v1/admin/cdks/:batchNo/status-report', ...sensitiveAdminGuards, async (req, res) => {
+    app.post('/api/v1/admin/cdks/:batchNo/status-report', ...adminWriteGuards, async (req, res) => {
       try {
         res.json(await inspectAdminCdkBatch(req.params.batchNo));
       } catch (error) {
@@ -647,7 +656,7 @@ export function createApp({
     });
   }
   if (typeof revokeAdminCdkBatch === 'function') {
-    app.post('/api/v1/admin/cdks/:batchNo/revoke', ...sensitiveAdminGuards, async (req, res) => {
+    app.post('/api/v1/admin/cdks/:batchNo/revoke', ...adminWriteGuards, async (req, res) => {
       try {
         const result = await revokeAdminCdkBatch(req.params.batchNo, req.body?.reason);
         return res.json(result);
@@ -660,7 +669,7 @@ export function createApp({
     });
   }
   if (typeof recordAdminCdkDelivery === 'function') {
-    app.post('/api/v1/admin/cdks/deliveries', ...sensitiveAdminGuards, async (req, res) => {
+    app.post('/api/v1/admin/cdks/deliveries', ...adminWriteGuards, async (req, res) => {
       try {
         return res.status(201).json(await recordAdminCdkDelivery(req.body || {}));
       } catch (error) {

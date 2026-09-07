@@ -1619,3 +1619,12 @@
 - 操作副作用：一次 AppleScript 快捷键误发到 Lane 2 网页窗口，在其「查找」栏留下路径文本，无害，按 Esc 即消；`~/Downloads` 下三个临时文件（zip、目录副本、图标 PNG）待用户决定是否删除。
 - 新增脚本：`browser-mvp/scripts/poc-checkout-api-readonly.mjs`（在已登录身份内用页面自身请求调 `/api/auth/session`、账户检查、`backend-api/payments/checkout` 三个套餐；`--observe` 打开返回的结账页读价格税额；不填卡不付款），`browser-mvp/scripts/check-profile-extensions.mjs`（列 CDP 扩展目标）。首次跑 Lane 3 因未登录停在身份步；等用户用上号器写入测试账号 Session 后再跑。
 - 结论重申：自动流程不用上号器，Worker 用 CDP 写同一个 cookie（`session-bootstrap`）；上号器仅用于人工场景。
+
+## 2026-09-07｜后台穿插小修（本地已提交，待发布）
+
+- CDK 生成/下载/状态清单/作废/交付记录五个接口从 step-up 密码守卫改为普通登录写守卫；前端对应调用去掉密码弹窗。
+- 取消 CDK 生成结果 10 分钟自动清空与切页清空；登录期间可回到本批次继续复制。
+- 新增 `POST /api/v1/admin/alerts/:alertId/close`（登录即可，只把 OPEN 告警置为 RESOLVED，不动订单/卡/开关）；首页「内部提醒」每条加「关闭」按钮。
+- 库存提醒阈值为 0 时不再生成「剩余 0 张，阈值为 0」告警（三处判断加 `threshold > 0`）。
+- 隐藏库存页两个已废弃控件：提醒阈值、每日自动补卡上限（旧自动开卡架构已停）。后台脚本版本 `?v=24`。
+- v1 全量（不含库）567/515/0/52；新增路由测试 1 条；CDK 生成测试改为登录即授权。与 `45f953c`（备用卡导入不再因结清冻结）一起等待下一次发布。

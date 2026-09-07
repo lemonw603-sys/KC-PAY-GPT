@@ -249,6 +249,7 @@ const app = createApp({
   ,clearCardOperationalOverride: cardOperationalOverrideService.clear
   ,setAdminOrderAcceptance: adminOperationsService.setOrderAcceptance
   ,setAdminDispatch: adminOperationsService.setDispatch
+  ,closeAdminAlert: adminOperationsService.closeAlert
   ,startAdminBusiness: startBusiness
   ,setAdminRechargePermit: async (publicNo, input = {}) => {
     const action = String(input.action || '');
