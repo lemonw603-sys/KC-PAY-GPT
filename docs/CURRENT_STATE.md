@@ -4,10 +4,10 @@
 
 | 项目 | 当前值 | 核对时间（UTC） | 证据方式 |
 |---|---|---|---|
-| 生产 release | `/opt/pojia/releases/20260907-apiclean-5687598`（commit `5687598`，删无消费者接口） | 2026-09-07 15:57 | `readlink -f /opt/pojia/current`；switch 输出 |
-| 回滚点 | `/opt/pojia/releases/20260907-fivepages-6f1217f`（再前 `20260907-cards-91bd4f9`） | 同上 | 部署记录 |
-| 最新数据库备份 | `/var/backups/pojia/pojia-20260907T155608Z.sql.gz.enc`，完整性 OK | 15:56 | `pojia-ops backup/verify`（prepare 阶段） |
-| pojia-web | active（15:57 随 release 切换重启，无错误日志） | 15:57 | systemctl / journalctl |
+| 生产 release | `/opt/pojia/releases/20260908-cardrelease-fbba5fe`（commit `fbba5fe`，付款前失败释放卡 + 浏览器终态提醒） | 2026-09-07 16:52 | `readlink -f /opt/pojia/current`；switch 输出 |
+| 回滚点 | `/opt/pojia/releases/20260907-apiclean-5687598`（再前 `20260907-fivepages-6f1217f`） | 同上 | 部署记录 |
+| 最新数据库备份 | `/var/backups/pojia/pojia-20260907T165215Z.sql.gz.enc`，完整性 OK | 16:52 | `pojia-ops backup/verify`（prepare 阶段） |
+| pojia-web | active（16:52 随 release 切换重启，无错误日志） | 16:52 | systemctl / journalctl |
 | pojia-worker（API） | inactive（09-06 03:46 UTC 人为停止；09-07 09:28 UTC 短启约 10 秒推进测试单后再次停止） | 09-07 09:29 | systemctl |
 | pojia-browser-worker | inactive / disabled | 16:35 | systemctl |
 | pojia-card-funding.timer | active | 16:35 | systemctl |

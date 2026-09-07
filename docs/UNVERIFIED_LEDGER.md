@@ -16,7 +16,7 @@
 
 - 备用卡付款后对账为空：`browser-card-transaction-reader.js` 对 `MANUAL_IMPORT` 返回固定标记 `MANUAL_CARD_BROWSER_CONFIRMED`，对账恒匹配，只靠 Plus 确认，无独立扣款证据。
 - HNSKJ 自动开卡、自动补余额自 09-05 卡台故障起未运行。
-- 一卡多单顺序复用（Plus 上限 3）未在真实付款中跑过；按产品的开卡金额/最低余额未实现（现为全局值）。
+- 一卡多单顺序复用（Plus 上限 3）未在真实付款中跑过；按产品的开卡金额/最低余额未实现（现为全局值）。付款前失败释放卡绑定（D-131）09-07 上线，只在真实 schema 集成测试与 5501 修复中验证，未在真实自动中止里触发过。
 
 ## 客户链
 
@@ -43,7 +43,7 @@
 
 - Browser 自动化整条链在本机：SSH 隧道手拉（09-07 断过三次）、Worker 手起、BitBrowser 免费版每日 50 次打开额度；服务器 Browser Worker inactive；常开机器未建。
 - 服务器 API Worker 停着时订单不会从 CREATED 前进；09-07 手动短启 10 秒。
-- Browser 路线的失败通知链路未核实。
+- Browser 路线终态提醒/Bark（D-132，`fbba5fe`）已实现，未在真实 run 上触发过；09-07 前 Browser 终态完全不发通知。
 - 数据库备份只验过完整性，未做恢复演练。
 
 ## 最先会咬人的三条

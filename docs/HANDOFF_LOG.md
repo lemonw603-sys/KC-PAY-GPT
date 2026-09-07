@@ -1825,3 +1825,14 @@
 - 测试：536 通过；路由测试改为断言删除路径 404；`stepUp` 助手改为直返会话 cookie。公网复验：10 条删除路径 404，保留路径未登录 401；web active、无错误日志。备份 `pojia-20260907T155608Z`。
 - 至此五页新版（首页/订单/CDK/卡片/诊断）与接口清理全部上线；今日 7 个 release：home → orders → orders2 → cards → fivepages → apiclean。
 
+## 2026-09-07｜真实付款前置：付款前失败释放卡（5501 修复）+ 浏览器终态提醒（`20260908-cardrelease-fbba5fe`）
+
+- 用户问「现在生成 CDK 有没有问题」：代码显示生成接口只认 `plus`，前端只发数量；生产 products 仅 chatgpt_plus，接单路线仅 Browser v1（API 路线 accepts_new_orders=0），Browser 卡台 = 备用卡台 A；可用 CDK 4 张（含 09-07 16:07 UTC 生成的一张）。结论：可以生成，全是 Plus，下单只走 Browser + 备用卡台 A。
+- 发现缺口：`abortBeforePayment` 到 RECHARGE_FAILED 时退 CDK、释放账本，但不释放 `card_assignment_history`，卡的 `inventory_status` 留在 ASSIGNED；5501 因此被 09-07 演练失败单 `PJV1--j4AnE7fvfgkvaceSr0Z` 永久占住；取消服务对 RECHARGE_FAILED 无入口。用户同意释放。
+- 修复：新增 `card-release-repository`（D-131）接入 abort 分支；`scripts/release-failed-order-card.js` 只对无付款证据（attempt 无 ACTIVE/UNKNOWN/SETTLED、账本无 RESERVED/CONSUMED/RECONCILIATION、run 无 SUBMITTING/UNKNOWN/CONFIRMED、无 zzshu 非失败调用）的 RECHARGE_FAILED 单生效。生产先 `--dry-run`（证据全 0、活动分配 1）再执行：5501 活动分配 0、DEPLETED（8.87 < 16）、assigned_at 清、MANUAL_IMPORT 保留、order_events 落 ADMIN 事件。`cards.order_id` 仍指向 09-06 的首单（COALESCE 从未覆盖的旧指针，不参与资格判断），未清。
+- 附带发现：取消服务释放卡时会把余额达标的卡 `sync_tier` 改成 AVAILABLE，对 MANUAL_IMPORT 卡会破坏免同步资格（当时 5501 余额不足所以没触发）；本次 helper 已避开，取消服务那两处未改，记为待修。
+- 提醒（D-132）：`browser-alert-repository` 在付款已确认 / 充值完成 / 付款前终止 / 付款被拒 / 付款结果不明 / 核实需人工 / 20X 转人工 八个落点写 `operator_alerts`；`pojia-bark-notifications.service` 常驻（active）推所有 OPEN 提醒。生产此前 Browser 终态零通知。
+- 测试：539 单测 + 真实 schema 集成 2 个（补卡释放断言；第一个集成用例 teardown 补 operator_alerts 清理，否则外键阻止删单）。切换后 web 无错误；首页 cardStock available 0（余额未补）。
+- 真实付款准备清单（给用户）：新免费账号 Session；5501 充到 ≥ $20（两单 ≥ $40）；充值后**必须重新导入备用卡台快照**（无 API，系统看不到新余额）；服务器 API Worker 保持运行；本机 `run-live-pool.sh check pay` → 首页开「浏览器真实付款」→ `run pay`。顺带验证：新账号弹窗路径、打回→重贴闭环、同码同账号返回原单、付款后导入快照对账、无人值守、终态 Bark。
+- 20X「余额不足去点付款、拒付即成功」评估：不建议（无 20X 订单载体只能裸点、审计断；刚买 Plus 立刻升级且拒付会给账号/身份留风控记录；验证不到 20X 真正要验的升级后核实与收口）。替代：这次顺带做 Pro 20X 只读到点击前；真实升级等按产品 CDK 与 Pro 产品入库后用真实单做。
+
