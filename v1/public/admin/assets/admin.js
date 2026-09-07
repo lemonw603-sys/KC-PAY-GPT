@@ -116,6 +116,7 @@ const elements = {
   stockThresholdForm: document.querySelector('#stock-threshold-form'), stockThreshold: document.querySelector('#stock-threshold'),
   replenishmentLimitForm: document.querySelector('#replenishment-limit-form'), replenishmentDailyLimit: document.querySelector('#replenishment-daily-limit'), replenishmentUsage: document.querySelector('#replenishment-usage'),
   cardCapacityForm: document.querySelector('#card-capacity-form'), cardCapacity: document.querySelector('#card-capacity'),
+  minimumBalanceForm: document.querySelector('#minimum-balance-form'), minimumBalance: document.querySelector('#minimum-balance'),
   stockOpenForm: document.querySelector('#stock-open-form'), stockOpenCount: document.querySelector('#stock-open-count'),
   stockOpenAmount: document.querySelector('#stock-open-amount'), stockCardType: document.querySelector('#stock-card-type'),
   refreshCardProviderRules: document.querySelector('#refresh-card-provider-rules'),
@@ -953,6 +954,7 @@ async function loadStock() {
   ].map(([label, value]) => `<div><span>${label}</span><strong>${value}</strong></div>`).join('');
   elements.stockThreshold.value = payload.threshold;
   elements.cardCapacity.value = String(payload.maxSuccessfulPayments || 3);
+  if (elements.minimumBalance && payload.minimumRequiredCardBalance != null) elements.minimumBalance.value = String(payload.minimumRequiredCardBalance);
   const provider = state.stockProvider;
   const catalog = state.stockCatalog || {};
   const cardTypes = provider?.cardTypes || [];
@@ -1892,6 +1894,19 @@ elements.cardCapacityForm?.addEventListener('submit', async (event) => {
     showNotice('每张卡的成功充值次数上限已更新，只影响后续分配。', 'success');
     await loadStock();
   } catch (error) { showNotice(error.message); }
+});
+elements.minimumBalanceForm?.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const amount = Number(elements.minimumBalance.value);
+  if (!Number.isFinite(amount) || amount < 0 || amount > 1000) return showNotice('最低余额必须是 0 到 1000 之间的金额。');
+  try {
+    await api('/api/v1/admin/card-stock/minimum-balance', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ amount: Math.round(amount * 100) / 100 })
+    });
+    showNotice('最低所需卡余额已更新，只影响之后的分配。', 'success');
+    await loadStock();
+  } catch (error) { showNotice(error.message === 'invalid_minimum_balance' ? '金额无效，最多两位小数。' : '保存失败，请稍后重试。'); }
 });
 elements.replenishmentLimitForm?.addEventListener('submit', async (event) => {
   event.preventDefault();

@@ -8,7 +8,7 @@
   <title>Plus 运营后台</title>
   <link rel="icon" href="/admin/assets/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/admin/assets/admin.css?v=20">
-  <script src="/admin/assets/admin.js?v=25" defer></script>
+  <script src="/admin/assets/admin.js?v=26" defer></script>
 </head>
 <body>
   <div class="admin-shell">
@@ -266,6 +266,11 @@
                     <option value="3">3 次</option><option value="4">4 次</option>
                   </select><button class="primary-small" type="submit">保存次数</button></div>
                   <p class="form-hint">达到上限后不再分配；修改只影响后续订单，不改写历史。</p>
+                </form>
+                <form class="threshold-form" id="minimum-balance-form">
+                  <label for="minimum-balance">最低所需卡余额（USD）</label>
+                  <div><input id="minimum-balance" type="number" min="0" max="1000" step="0.01" required><button class="primary-small" type="submit">保存余额门槛</button></div>
+                  <p class="form-hint">余额低于此值的卡不参与分配；只影响之后的分配，不影响付款。</p>
                 </form>
               </div>
             </details>

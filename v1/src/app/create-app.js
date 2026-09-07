@@ -55,6 +55,7 @@ export function createApp({
   startAdminBusiness = null,
   setAdminCardStockThreshold = null,
   setAdminCardMaxSuccessfulPayments = null,
+  setAdminCardMinimumBalance = null,
   createAdminCardStockJob = null,
   getAdminReplenishmentSettings = null,
   setAdminReplenishmentDailyLimit = null,
@@ -382,6 +383,16 @@ export function createApp({
         return res.status(400).json({ error: 'invalid_card_capacity' });
       }
       res.json(await setAdminCardMaxSuccessfulPayments(count));
+    });
+  }
+  if (typeof setAdminCardMinimumBalance === 'function') {
+    app.post('/api/v1/admin/card-stock/minimum-balance', ...adminWriteGuards, async (req, res) => {
+      const amount = req.body?.amount;
+      if (typeof amount !== 'number' || !Number.isFinite(amount) || amount < 0 || amount > 1000
+        || Math.round(amount * 100) !== amount * 100) {
+        return res.status(400).json({ error: 'invalid_minimum_balance' });
+      }
+      res.json(await setAdminCardMinimumBalance(amount));
     });
   }
   if (typeof createAdminCardStockJob === 'function') {

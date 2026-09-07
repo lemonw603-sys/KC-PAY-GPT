@@ -90,7 +90,7 @@ test('labels local stock refresh separately from provider card synchronization',
 test('admin overview does not describe disabled automatic card opening as enabled', async () => {
   const html = await readFile(new URL('../public/admin/index.html', import.meta.url), 'utf8');
   const script = await readFile(new URL('../public/admin/assets/admin.js', import.meta.url), 'utf8');
-  assert.match(html, /admin\.js\?v=25/);
+  assert.match(html, /admin\.js\?v=26/);
   assert.match(script, /自动开卡已关闭；当前无合格卡时需要人工处理/);
   assert.match(script, /自动开卡已关闭；当前低于库存线/);
   assert.match(script, /cardSyncReviewRequired/);
@@ -1049,4 +1049,45 @@ test('backup card snapshot import commits with the admin login alone and echoes 
     assert.equal(committed.confirmation, '确认提交 2 张卡的完整快照');
     assert.equal(committed.requestedBy, 'admin');
   });
+});
+
+test('updates the minimum required card balance through the guarded admin route', async () => {
+  const adminAuth = createAdminSessionAuth({
+    passwordHash: await hashAdminPassword('fixture admin password', { salt: Buffer.alloc(16, 25) }),
+    sessionSecret: Buffer.alloc(32, 26), secureCookies: false
+  });
+  const writes = [];
+  const app = createApp({
+    adminAuth,
+    getAdminCardStock: async () => ({ maxSuccessfulPayments: 3, minimumRequiredCardBalance: writes.at(-1) || '16.00' }),
+    setAdminCardMinimumBalance: async (amount) => { const normalized = amount.toFixed(2); writes.push(normalized); return { minimumRequiredCardBalance: normalized }; }
+  });
+  await withServer(app, async (baseUrl) => {
+    const denied = await fetch(`${baseUrl}/api/v1/admin/card-stock/minimum-balance`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ amount: 8 })
+    });
+    assert.equal(denied.status, 401);
+    const login = await fetch(`${baseUrl}/api/v1/admin/session`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: 'fixture admin password' })
+    });
+    const cookie = login.headers.get('set-cookie').split(';')[0];
+    for (const invalid of [-1, 1000.01, 8.001, '8', null, true, Number.NaN]) {
+      const response = await fetch(`${baseUrl}/api/v1/admin/card-stock/minimum-balance`, {
+        method: 'POST', headers: { Cookie: cookie, Origin: baseUrl, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ amount: invalid })
+      });
+      assert.equal(response.status, 400, `amount ${String(invalid)} must be rejected`);
+      assert.deepEqual(await response.json(), { error: 'invalid_minimum_balance' });
+    }
+    const updated = await fetch(`${baseUrl}/api/v1/admin/card-stock/minimum-balance`, {
+      method: 'POST', headers: { Cookie: cookie, Origin: baseUrl, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ amount: 8 })
+    });
+    assert.equal(updated.status, 200);
+    assert.deepEqual(await updated.json(), { minimumRequiredCardBalance: '8.00' });
+    const stock = await fetch(`${baseUrl}/api/v1/admin/card-stock`, { headers: { Cookie: cookie } });
+    assert.deepEqual(await stock.json(), { maxSuccessfulPayments: 3, minimumRequiredCardBalance: '8.00' });
+  });
+  assert.deepEqual(writes, ['8.00']);
 });
