@@ -53,12 +53,13 @@
 
 ## 6. 明确不做
 
-逐单选路线或卡台；卡台自动回退；每身份每日上限、延后取消续费等无依据限速；为未出现的风控加闸门；第二套订单或资金账；删历史证据；把测试通过说成生产可用。
+逐单选路线或卡台；卡台自动回退；每身份每日上限、延后取消续费等无依据限速；为每单新建浏览器窗口（常驻身份每单清登录态、留设备，09-07 用户确认；封控细节由 Codex 另行研究）；裸调结账接口（由页面点击触发）；为未出现的风控加闸门；第二套订单或资金账；删历史证据；把测试通过说成生产可用。
 
 ## 7. 维护纪律
 
 - release、服务、开关、路线、卡台、订单终态变化：同一提交更新本文 §3 与 `docs/CURRENT_STATE.md`；方向变化更新 `docs/DECISIONS.md`；过程追加到 `docs/HANDOFF_LOG.md`。
 - 本文保持一页：只留当前有效状态，不在顶部堆叠历史引用块；历史进归档。
-- 生产发布只从单一提交用 `scripts/build-production-release.sh` 构建并全量校验。
+- 外部审查（Codex 审查员、分板块核查）按 `docs/REVIEW_PROTOCOL.md`；审查报告落在 `docs/reviews/`，处置结论由执行者追加在同一文件。
+- 生产发布只从单一提交构建并全量校验：`scripts/deploy-release.sh prepare <commit> <name>` → 复核 → `switch <name>`（内部调用 `build-production-release.sh` / `verify-production-release.sh`，含备份、manifest 校验、健康检查与回滚命令）。
 - 数据库集成测试串行运行（`--test-concurrency=1`）。
 - 不得绕过正式连接池直连生产库写入。
