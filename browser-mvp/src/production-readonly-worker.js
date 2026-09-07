@@ -12,6 +12,7 @@ import { GoogleChromeControlRuntimeAdapter } from './chrome-control-runtime.js';
 import { BitBrowserControlRuntimeAdapter } from './bitbrowser-control-runtime.js';
 import { createBrowserOrderPreflightWorker } from './browser-order-preflight.js';
 import { AppendOnlyWal, WalEvidenceSink } from './wal.js';
+import { CompositeEvidenceSink, MysqlEvidenceSink } from './mysql-evidence-sink.js';
 import { createSharedNonPaymentDryRun, SHARED_NONPAYMENT_DRY_RUN_CONFIRMATION } from './shared-dry-run-composition.js';
 import { loadProductionReadonlyBrowserConfig } from './production-readonly-config.js';
 import { CookieSessionBootstrapAdapter } from './session-bootstrap.js';
@@ -216,7 +217,7 @@ export async function runProductionReadonlyBrowserWorker({
       runtimeHmacKey: config.runtimeHmacKey,
       artifactKey: config.artifactKey,
       resourceHmacKey: config.resourceHmacKey,
-      evidenceSink: new WalEvidenceSink(wal),
+      evidenceSink: new CompositeEvidenceSink([new WalEvidenceSink(wal), new MysqlEvidenceSink({ pool, workerId: config.workerId })]),
       leaseSeconds: config.leaseSeconds,
       executionTimeoutMs: config.executionTimeoutMs,
     });
@@ -231,7 +232,7 @@ export async function runProductionReadonlyBrowserWorker({
           : createChromeControlManifest(),
         observation: config.observation,
         encryptionKey: config.sharedMaterialEncryptionKey,
-        evidenceSink: new WalEvidenceSink(wal),
+        evidenceSink: new CompositeEvidenceSink([new WalEvidenceSink(wal), new MysqlEvidenceSink({ pool, workerId: config.workerId })]),
         leaseSeconds: config.leaseSeconds,
         executionTimeoutMs: config.executionTimeoutMs,
       })

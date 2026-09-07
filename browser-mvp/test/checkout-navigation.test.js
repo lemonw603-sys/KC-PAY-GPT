@@ -328,3 +328,33 @@ test('navigator reports a session-expired overlay as SESSION_INVALID instead of 
     );
   } finally { await browser.close(); server.close(); await once(server, 'close'); }
 });
+
+test('navigator selects the Pro tier before pressing Upgrade to Pro, and refuses unknown plans', async () => {
+  const html = `<title>ChatGPT Plans</title>
+    <section role="dialog">
+      <button type="button" disabled>Your current plan</button>
+      <button type="button">Rejoin Plus</button>
+      <button type="button" id="tier-5x" aria-pressed="true" onclick="document.body.dataset.tier='5x'">5x</button>
+      <button type="button" id="tier-20x" aria-pressed="false" onclick="document.body.dataset.tier='20x'">20x</button>
+      <button type="button" id="upgrade-pro" onclick="document.body.dataset.upgraded=document.body.dataset.tier; document.querySelector('[data-testid=checkout-page-content]').hidden=false; history.replaceState(null, '', '/checkout/oaics_pro')">Upgrade to Pro</button>
+    </section>
+    <main data-testid="checkout-page-content" hidden>checkout</main>`;
+  const { navigateToChatGPTCheckout, CHATGPT_PLUS_CHECKOUT_NAVIGATION_CONTRACT, resolvePlanSpec } = await import('../src/chatgpt-checkout-navigator.js');
+  assert.deepEqual(resolvePlanSpec(CHATGPT_PLUS_CHECKOUT_NAVIGATION_CONTRACT, 'pro_20x').tierLabels, ['20x']);
+  assert.throws(() => resolvePlanSpec(CHATGPT_PLUS_CHECKOUT_NAVIGATION_CONTRACT, 'team'), /no plan spec/);
+  const { chromium } = await import('playwright');
+  const { createServer } = await import('node:http');
+  const { once } = await import('node:events');
+  const server = createServer((request, response) => { response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }); response.end(html); });
+  server.listen(0, '127.0.0.1'); await once(server, 'listening');
+  const base = `http://127.0.0.1:${server.address().port}/`;
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage();
+    await page.goto(`${base}#pricing`, { waitUntil: 'domcontentloaded' });
+    const result = await navigateToChatGPTCheckout(page, { ...CHATGPT_PLUS_CHECKOUT_NAVIGATION_CONTRACT, homeUrlPrefix: base, checkoutUrlPrefix: `${base}checkout/` }, { timeoutMs: 5_000, plan: 'pro_20x' });
+    assert.equal(result.plan, 'pro_20x');
+    assert.deepEqual(result.actions, ['pricing-already-open', 'tier-selected:20x', 'upgrade-requested']);
+    assert.equal(await page.evaluate(() => document.body.dataset.upgraded), '20x');
+  } finally { await browser.close(); server.close(); await once(server, 'close'); }
+});

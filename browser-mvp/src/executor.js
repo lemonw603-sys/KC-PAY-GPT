@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { assertJobEnvelope, ContractError } from './contracts.js';
 import { probeSessionIdentity } from './session-identity-probe.js';
 import { observeCheckout } from './checkout-observer.js';
-import { navigateToChatGPTPlusCheckout } from './chatgpt-checkout-navigator.js';
+import { navigateToChatGPTCheckout } from './chatgpt-checkout-navigator.js';
 import { fillSecureCardFieldsNonPayment } from './nonpayment-card-fill.js';
 import { fillBillingAddress, fillTransientBillingEmail } from './billing-address-fill.js';
 import { assertCardMaterial } from './card-material-lease.js';
@@ -317,9 +317,10 @@ export class BrowserExecutionService {
           if (!(await assertLease())) throw new BrowserExecutionError('LEASE_LOST');
         };
         try {
-          checkoutNavigation = await navigateToChatGPTPlusCheckout(page, job.metadata.checkoutNavigationContract, {
+          checkoutNavigation = await navigateToChatGPTCheckout(page, job.metadata.checkoutNavigationContract, {
             timeoutMs: this.timeoutMs,
             assertContinue,
+            plan: job.metadata.plan || 'plus',
           });
         } catch (error) {
           if (error instanceof BrowserExecutionError) throw error;
@@ -328,6 +329,7 @@ export class BrowserExecutionService {
         }
         await this._event(job, 'checkpoint', ++evidenceSequence, {
           action: 'checkout-navigation',
+          plan: checkoutNavigation.plan || 'plus',
           checkoutCreated: checkoutNavigation.checkoutCreated,
           questionnaireSkipped: checkoutNavigation.questionnaireSkipped,
           checkoutUrlDigest: checkoutNavigation.checkoutUrlDigest,
@@ -490,6 +492,9 @@ export class BrowserExecutionService {
       sequence,
       payloadDigest: digest(`${job.jobId}:${type}:${sequence}:${JSON.stringify(summary)}`),
       summary,
+      // Timeline keys for database sinks; opaque refs, never material.
+      ...(typeof job.orderRef === 'string' ? { orderRef: job.orderRef } : {}),
+      ...(typeof job.metadata?.browserRunRef === 'string' ? { runRef: job.metadata.browserRunRef } : {}),
     });
   }
 }

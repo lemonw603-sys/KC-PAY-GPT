@@ -85,6 +85,7 @@ export function createSharedLivePaymentWorker({
   verificationWindowMs = 300_000,
   verificationIntervalMs = 5_000,
   postPlusAction = 'CANCEL_RENEWAL',
+  resolvePlan = null,
   stopBeforeSubmit = false,
   releaseSessionOnComplete = false,
   // Resident lanes close failed pre-payment runs themselves (classified safe
@@ -130,8 +131,10 @@ export function createSharedLivePaymentWorker({
     const sessionIdentity = await resolveSessionIdentity({
       orderId: claimedJob.orderId, attemptId: claimedJob.attemptId, runId: run.runId,
     });
+    const plan = typeof resolvePlan === 'function'
+      ? await resolvePlan({ orderId: claimedJob.orderId, attemptId: claimedJob.attemptId, runId: run.runId }) : 'plus';
     const loaded = await upstreamAdapter.load({
-      runId: run.runId, manifest, observation: { ...observation, sessionIdentity },
+      runId: run.runId, manifest, observation: { ...observation, sessionIdentity, plan },
       sessionRef: await resolveSessionRef({ orderId: claimedJob.orderId, attemptId: claimedJob.attemptId, runId: run.runId }),
     });
     return {

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Two-phase production release for AI充值业务 (Web-only change; no migration).
-# Usage: scripts/deploy-release.sh prepare <commit> <release-name>; then scripts/deploy-release.sh switch <release-name>.
+# Production release for AI充值业务: prepare (build/upload/backup/stage) → [migrate] → switch.
+# Usage: scripts/deploy-release.sh prepare <commit> <name>; [scripts/deploy-release.sh migrate <name>]; scripts/deploy-release.sh switch <name>.
 # Needs SSH access to the production host (see docs/PRODUCTION_PREP_RUNBOOK.md). Never run against a dirty or unpushed commit.
 #   prepare <commit> <release-name>  build bundle from one commit, upload, backup DB,
 #                                    extract, verify manifest, install deps. No switch.
@@ -56,6 +56,20 @@ echo "previous=$(readlink -f /opt/pojia/current)"
 REMOTE
 }
 
+# Apply pending migrations from the staged release before switching to it.
+# Runs twice on purpose: the second pass must only report "already applied".
+migrate() {
+  local name=$1
+  echo "== migrate from /opt/pojia/releases/${name} =="
+  ${SSH} "set -e; cd /opt/pojia/releases/${name}/v1 && set -a && . /etc/pojia/migration.env && set +a \
+    && npm run migrate --silent && echo '-- second pass --' && npm run migrate --silent"
+  ${SSH} "cd /opt/pojia/current/v1 && set -a && . /etc/pojia/runtime.env && set +a && node --input-type=module -e \"
+import { loadRuntimeDatabaseConfig } from './src/config.js'; import { createDatabasePool } from './src/db/pool.js';
+const pool = createDatabasePool(loadRuntimeDatabaseConfig(process.env));
+const [rows] = await pool.query('SELECT version FROM schema_migrations ORDER BY version DESC LIMIT 3');
+console.log('schema_migrations latest:', rows.map((r) => r.version).join(', ')); await pool.end();\"" 2>/dev/null | grep -v Warning
+}
+
 switch() {
   local name=$1
   ${SSH} bash -s "${name}" <<'REMOTE'
@@ -82,6 +96,7 @@ REMOTE
 
 case "${phase}" in
   prepare) prepare "$@" ;;
+  migrate) migrate "$@" ;;
   switch) switch "$@" ;;
-  *) echo "usage: $0 prepare <commit> <release-name> | switch <release-name>" >&2; exit 2 ;;
+  *) echo "usage: $0 prepare <commit> <release-name> | migrate <release-name> | switch <release-name>" >&2; exit 2 ;;
 esac

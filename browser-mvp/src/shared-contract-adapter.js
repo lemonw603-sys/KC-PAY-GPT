@@ -187,6 +187,7 @@ export function projectSharedBrowserJob(projection, {
       ? {} : { checkoutNavigationContract: projection.observation.checkoutNavigationContract }),
     ...(projection.observation?.checkoutContract == null
       ? {} : { checkoutContract: projection.observation.checkoutContract }),
+    ...(projection.observation?.plan == null ? {} : { plan: String(projection.observation.plan) }),
   };
   assertSafeObject(metadata, 'shared Browser runtime metadata');
   const job = {

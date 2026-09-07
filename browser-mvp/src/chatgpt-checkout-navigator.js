@@ -187,6 +187,13 @@ export const CHATGPT_PLUS_CHECKOUT_NAVIGATION_CONTRACT = Object.freeze({
   upgradeLabels: Object.freeze(['升级至 Plus', 'Upgrade to Plus', '重新订阅 Plus', 'Rejoin Plus']),
   // Any of these identifies the plan picker dialog even when the Plus button is absent.
   planMarkerLabels: Object.freeze(['Upgrade to Pro', 'Upgrade to Go', 'Your current plan', '升级至 Pro', '当前套餐']),
+  // Per-plan controls inside the picker. Pro shares one "Upgrade to Pro"
+  // button and selects its tier (5x / 20x) with a toggle first.
+  plans: Object.freeze({
+    plus: Object.freeze({ tierLabels: Object.freeze([]), upgradeLabels: Object.freeze(['升级至 Plus', 'Upgrade to Plus', '重新订阅 Plus', 'Rejoin Plus']) }),
+    pro_5x: Object.freeze({ tierLabels: Object.freeze(['5x']), upgradeLabels: Object.freeze(['升级至 Pro', 'Upgrade to Pro', '重新订阅 Pro', 'Rejoin Pro']) }),
+    pro_20x: Object.freeze({ tierLabels: Object.freeze(['20x']), upgradeLabels: Object.freeze(['升级至 Pro', 'Upgrade to Pro', '重新订阅 Pro', 'Rejoin Pro']) }),
+  }),
   questionnaireSkipLabels: Object.freeze(['跳过', 'Skip']),
   checkoutReadySelector: '[data-testid="checkout-page-content"]',
   maxUpgradeAttempts: 2,
@@ -196,11 +203,21 @@ export const CHATGPT_PLUS_CHECKOUT_NAVIGATION_CONTRACT = Object.freeze({
  * Opens a Plus Checkout Session and stops before payment material or submit.
  * Every allowed click is checked to ensure it cannot submit a form.
  */
-export async function navigateToChatGPTPlusCheckout(page, contract = CHATGPT_PLUS_CHECKOUT_NAVIGATION_CONTRACT, {
+export function resolvePlanSpec(contract, plan = 'plus') {
+  const key = String(plan || 'plus').trim().toLowerCase();
+  const spec = contract?.plans?.[key];
+  if (spec) return { plan: key, tierLabels: [...(spec.tierLabels || [])], upgradeLabels: [...(spec.upgradeLabels || [])] };
+  if (key === 'plus') return { plan: 'plus', tierLabels: [], upgradeLabels: [...(contract?.upgradeLabels || [])] };
+  throw new ContractError(`checkout navigation has no plan spec for ${key}`);
+}
+
+export async function navigateToChatGPTCheckout(page, contract = CHATGPT_PLUS_CHECKOUT_NAVIGATION_CONTRACT, {
   timeoutMs = 20_000,
   assertContinue = async () => undefined,
+  plan = 'plus',
 } = {}) {
   if (!page || typeof page.url !== 'function') throw new TypeError('page is required');
+  const planSpec = resolvePlanSpec(contract, plan);
   if (!contract || typeof contract !== 'object') throw new ContractError('checkout navigation contract is required');
   if (typeof contract.homeUrlPrefix !== 'string' || !contract.homeUrlPrefix) throw new ContractError('homeUrlPrefix is required');
   if (typeof contract.checkoutUrlPrefix !== 'string' || !contract.checkoutUrlPrefix) throw new ContractError('checkoutUrlPrefix is required');
@@ -267,9 +284,16 @@ export async function navigateToChatGPTPlusCheckout(page, contract = CHATGPT_PLU
       await assertNoSessionExpiredDialog(page);
       const dialog = pricingDialog(page, contract);
       if (await visibleCount(dialog) !== 1) throw new ContractError('pricing dialog drift');
-      const upgrade = await uniqueVisibleButton(dialog, contract.upgradeLabels, 'Plus upgrade control');
+      if (planSpec.tierLabels.length) {
+        // Pro tier toggle (5x / 20x). It only changes the picker's selection.
+        const tier = await uniqueVisibleButton(dialog, planSpec.tierLabels, `${planSpec.plan} tier control`);
+        await safeClick(tier, `${planSpec.plan} tier control`, assertContinue, timeoutMs);
+        actions.push(`tier-selected:${planSpec.tierLabels[0]}`);
+        await page.waitForTimeout(250);
+      }
+      const upgrade = await uniqueVisibleButton(dialog, planSpec.upgradeLabels, `${planSpec.plan} upgrade control`);
       try {
-        await safeClick(upgrade, 'Plus upgrade control', assertContinue, timeoutMs);
+        await safeClick(upgrade, `${planSpec.plan} upgrade control`, assertContinue, timeoutMs);
       } catch (error) {
         await assertNoSessionExpiredDialog(page);
         // The recommendation questionnaire can hydrate after the pricing
@@ -329,6 +353,7 @@ export async function navigateToChatGPTPlusCheckout(page, contract = CHATGPT_PLU
   await waitForState(page, () => checkoutReady(page, contract), { timeoutMs, label: 'Checkout readiness' });
   await assertContinue();
   return {
+    plan: planSpec.plan,
     plusEntryPresent: true,
     checkoutCreated: actions.includes('upgrade-requested'),
     questionnaireSkipped: actions.includes('questionnaire-skipped'),
@@ -336,4 +361,9 @@ export async function navigateToChatGPTPlusCheckout(page, contract = CHATGPT_PLU
     checkoutUrlDigest: digest(page.url()),
     submitCalls: 0,
   };
+}
+
+/** Plus-only entry kept for existing callers and tests. */
+export function navigateToChatGPTPlusCheckout(page, contract, options = {}) {
+  return navigateToChatGPTCheckout(page, contract, { ...options, plan: 'plus' });
 }

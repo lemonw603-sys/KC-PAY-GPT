@@ -28,6 +28,7 @@ import {
 } from './shared-encrypted-materials.js';
 import { createSharedLivePaymentWorker } from './shared-live-composition.js';
 import { AppendOnlyWal, WalEvidenceSink } from './wal.js';
+import { CompositeEvidenceSink, MysqlEvidenceSink } from './mysql-evidence-sink.js';
 
 export const REQUIRED_PRODUCTION_LIVE_MIGRATIONS = Object.freeze([
   '039_card_consumption_attempt_link', '040_card_operational_overrides',
@@ -136,6 +137,20 @@ export async function resolveIdentity(pool, { orderId }) {
   };
   if (!Object.keys(identity).length) throw new Error('order has no stable ChatGPT identity');
   return identity;
+}
+
+const PLAN_BY_PRODUCT_CODE = Object.freeze({ chatgpt_plus: 'plus', chatgpt_pro_5x: 'pro_5x', chatgpt_pro_20x: 'pro_20x' });
+const PLAN_BY_LEGACY_TYPE = Object.freeze({ plus: 'plus', pro_5x: 'pro_5x', pro_20x: 'pro_20x', '5x': 'pro_5x', '20x': 'pro_20x' });
+
+/** Which plan picker button this order buys: from the product code, else the legacy plan type. */
+export async function resolveOrderPlan(pool, { orderId }) {
+  const [[row]] = await pool.query(
+    `SELECT LOWER(TRIM(o.plan_type)) AS plan_type, LOWER(TRIM(p.product_code)) AS product_code
+     FROM orders o LEFT JOIN products p ON p.id = o.product_id WHERE o.id=? LIMIT 1`, [orderId],
+  );
+  const plan = PLAN_BY_PRODUCT_CODE[row?.product_code] || PLAN_BY_LEGACY_TYPE[row?.plan_type];
+  if (!plan) throw new Error('order product is not a supported Browser plan');
+  return plan;
 }
 
 export async function resolveAccountKey(pool, { orderId }) {
@@ -282,11 +297,13 @@ export async function runProductionLiveBrowserWorker({ env = process.env, browse
       observation: observation(), sessionProvider, cardMaterialLeaseProvider,
       resolveAccountKey: (input) => resolveAccountKey(pool, input),
       resolveSessionIdentity: (input) => resolveIdentity(pool, input),
+      resolvePlan: (input) => resolveOrderPlan(pool, input),
       resolveSessionRef: ({ runId }) => browserRunMaterialRef(runId),
       resolveCardMaterialRef: ({ runId }) => browserRunMaterialRef(runId),
       transactionReaderFactory,
       runtimeHmacKey: config.runtimeHmacKey, artifactKey: config.artifactKey,
-      resourceHmacKey: config.resourceHmacKey, evidenceSink: new WalEvidenceSink(wal),
+      resourceHmacKey: config.resourceHmacKey,
+      evidenceSink: new CompositeEvidenceSink([new WalEvidenceSink(wal), new MysqlEvidenceSink({ pool, workerId: config.workerId })]),
       leaseSeconds: config.leaseSeconds, executionTimeoutMs: config.executionTimeoutMs,
       verificationWindowMs: config.verificationWindowMs,
       verificationIntervalMs: config.verificationIntervalMs,

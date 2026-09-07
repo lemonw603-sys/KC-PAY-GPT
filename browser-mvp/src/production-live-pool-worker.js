@@ -19,7 +19,7 @@ import {
 } from './production-live-config.js';
 import {
   REQUIRED_PRODUCTION_LIVE_MIGRATIONS, checkProductionLiveBitBrowser, observation,
-  resolveAccountKey, resolveCardContext, resolveIdentity, withPoolLifecycle,
+  resolveAccountKey, resolveCardContext, resolveIdentity, resolveOrderPlan, withPoolLifecycle,
 } from './production-live-worker.js';
 import { CookieSessionBootstrapAdapter } from './session-bootstrap.js';
 import {
@@ -27,6 +27,7 @@ import {
 } from './shared-encrypted-materials.js';
 import { createSharedLivePaymentWorker } from './shared-live-composition.js';
 import { AppendOnlyWal, WalEvidenceSink } from './wal.js';
+import { CompositeEvidenceSink, MysqlEvidenceSink } from './mysql-evidence-sink.js';
 
 export const POOL_CONFIRMATION_PREFIX = 'I-CONFIRM-RESIDENT-BROWSER-POOL:';
 export const POOL_MODES = Object.freeze({ PAY: 'PAY', REHEARSAL: 'REHEARSAL' });
@@ -179,6 +180,8 @@ export async function createLaneWorker({ lane, config, pool, browserType, shared
   const cardLeasePath = `${config.stateDir}/${lane.laneId}-card-leases.json`;
   const wal = await new AppendOnlyWal({ filePath: walPath }).init();
   await wal.verify();
+  // Integrity stays in the lane's WAL; the operator timeline lands in the database.
+  const evidenceSink = new CompositeEvidenceSink([new WalEvidenceSink(wal), new MysqlEvidenceSink({ pool, workerId })]);
   const runtimeAdapter = new BitBrowserControlRuntimeAdapter({
     browserType, apiBaseUrl: config.bitbrowserApiBaseUrl, bitbrowserProfileId: lane.bitbrowserProfileId, residentProfile: true,
   });
@@ -201,16 +204,16 @@ export async function createLaneWorker({ lane, config, pool, browserType, shared
   });
   const preflight = createBrowserOrderPreflightWorker({
     pool, workerId, executorProfileId: config.executorProfileId, runtimeAdapter, manifest, observation: observation(),
-    encryptionKey: config.materialEncryptionKey, evidenceSink: new WalEvidenceSink(wal), leaseSeconds: config.leaseSeconds,
+    encryptionKey: config.materialEncryptionKey, evidenceSink, leaseSeconds: config.leaseSeconds,
     executionTimeoutMs: config.executionTimeoutMs,
   });
   const live = createSharedLivePaymentWorker({
     pool, workerId, executorProfileId: config.executorProfileId, approvedOrderId: null, runtimeAdapter, manifest,
     observation: observation(), sessionProvider: shared.sessionProvider, cardMaterialLeaseProvider,
-    resolveAccountKey: (input) => resolveAccountKey(pool, input), resolveSessionIdentity: (input) => resolveIdentity(pool, input),
+    resolveAccountKey: (input) => resolveAccountKey(pool, input), resolveSessionIdentity: (input) => resolveIdentity(pool, input), resolvePlan: (input) => resolveOrderPlan(pool, input),
     resolveSessionRef: ({ runId }) => browserRunMaterialRef(runId), resolveCardMaterialRef: ({ runId }) => browserRunMaterialRef(runId),
     transactionReaderFactory, runtimeHmacKey: config.runtimeHmacKey, artifactKey: config.artifactKey, resourceHmacKey: config.resourceHmacKey,
-    evidenceSink: new WalEvidenceSink(wal), leaseSeconds: config.leaseSeconds, executionTimeoutMs: config.executionTimeoutMs,
+    evidenceSink, leaseSeconds: config.leaseSeconds, executionTimeoutMs: config.executionTimeoutMs,
     verificationWindowMs: config.verificationWindowMs, verificationIntervalMs: config.verificationIntervalMs,
     postPlusAction: 'CANCEL_RENEWAL', stopBeforeSubmit: config.stopBeforeSubmit, releaseSessionOnComplete: true, safeAbortOnFailure: true,
   });
