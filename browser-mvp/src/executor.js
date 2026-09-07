@@ -90,6 +90,11 @@ export class BrowserExecutionService {
     // not inherit this login. Only the session/login cookies go; the device
     // and Cloudflare cookies stay (see session-bootstrap.clearSession).
     releaseSessionOnComplete = false,
+    // A fresh run (not a lease-recovered resume) must not inherit whatever the
+    // resident identity's page still shows from the previous job, e.g. a
+    // Checkout with filled Stripe fields after a rehearsal stop: start from
+    // the home page so identity probe and pricing modal begin clean.
+    startFresh = false,
   } = {}) {
     assertJobEnvelope(job);
     if (job.state !== 'RUNNING') throw new BrowserExecutionError('INVALID_STATE', 'job must be RUNNING before Browser execution');
@@ -182,6 +187,10 @@ export class BrowserExecutionService {
       const page = await activeOrderPage(
         runtime.context, job.metadata.pageContract.urlPrefix, this.timeoutMs,
       );
+      if (startFresh && page.url() !== job.metadata.pageContract.urlPrefix) {
+        await page.goto(job.metadata.pageContract.urlPrefix, { waitUntil: 'domcontentloaded', timeout: this.timeoutMs });
+        await this._event(job, 'checkpoint', ++evidenceSequence, { action: 'page-reset', urlPrefix: job.metadata.pageContract.urlPrefix });
+      }
       if (freezeRequested()) throw new BrowserExecutionError('MANUAL_FREEZE');
       if (!(await assertLease())) throw new BrowserExecutionError('LEASE_LOST');
       let sessionIdentity = null;
@@ -314,6 +323,7 @@ export class BrowserExecutionService {
           });
         } catch (error) {
           if (error instanceof BrowserExecutionError) throw error;
+          if (error?.code === 'SESSION_INVALID') throw new BrowserExecutionError('SESSION_INVALID', error.message, error);
           throw new BrowserExecutionError('CHECKOUT_NAVIGATION_FAILED', error.message, error);
         }
         await this._event(job, 'checkpoint', ++evidenceSequence, {
@@ -460,8 +470,12 @@ export class BrowserExecutionService {
     }
     if (await marker.count() !== 1) throw new BrowserExecutionError('PAGE_DRIFT');
     const title = await page.title();
+    // ChatGPT titles its app "ChatGPT", the plan picker "ChatGPT Plans" and
+    // the marketing shell "ChatGPT: ...". A resumed run may legitimately sit
+    // on the plan picker, so any "ChatGPT"-prefixed title is the same app;
+    // logged-out shells are rejected by the identity probe, not by the title.
     const titleMatches = contract.title === 'ChatGPT'
-      ? title === contract.title || title.startsWith(`${contract.title}:`)
+      ? title === contract.title || title.startsWith(`${contract.title}:`) || title.startsWith(`${contract.title} `)
       : title === contract.title;
     if (!titleMatches) throw new BrowserExecutionError('PAGE_DRIFT');
     const text = await marker.textContent();

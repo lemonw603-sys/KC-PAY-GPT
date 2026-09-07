@@ -381,3 +381,28 @@ test('a resident lane claims the next queued job when no order is bound and repo
   bound.integration.workerService.claim = async (workerId) => ({ status: 'CLAIMED', orderId: 'order-other', leaseOwner: workerId, leaseToken: 'lt', jobId: 'job-x' });
   await assert.rejects(() => bound.integration.runPaymentOnce({ approvedOrderId: 'order-bound' }), (e) => e.code === 'LIVE_JOB_NOT_APPROVED');
 });
+
+test('a resident lane converts a thrown pre-payment execution failure into a classified safe-abort and stops requeueing after the retry limit', async () => {
+  const build = (attemptCount, thrown) => {
+    const h = rehearsalHarness(null);
+    h.integration.workerService.claim = async (workerId, { orderId }) => ({ status: 'CLAIMED', orderId: orderId || 'order-lane', leaseOwner: workerId, leaseToken: 'lt', jobId: 'job-lane', attemptCount });
+    h.integration.workerService.runClaimedJob = async () => ({ ...(await (async () => { const c = {}; return c; })()), run: { runId: 'run-lane', leaseToken: 'rl', runStatus: 'RUNNING', orderStatus: 'RECHARGE_PROCESSING', attemptStatus: 'PREPARED', fundsRiskState: 'ACTIVE', paymentState: 'NOT_STARTED' }, stop: () => { h.calls.stops += 1; }, complete: async () => { h.calls.completes += 1; }, assertLeaseBeforeAction: async () => undefined, perform: async () => { throw thrown; } });
+    h.integration.executionRepository.getRecoveryState = async () => ({ paymentState: 'NOT_STARTED', recoveryMode: 'RESUMABLE', runStatus: 'RUNNING' });
+    return h;
+  };
+  // Session problem on the page -> customer action, page kept.
+  const sessionCase = build(1, Object.assign(new Error('ChatGPT reports the session has expired'), { reason: 'SESSION_INVALID' }));
+  const closed = await sessionCase.integration.runPaymentOnce({ safeAbortOnFailure: true });
+  assert.equal(closed.status, 'SAFE_ABORTED'); assert.equal(closed.reasonCode, 'SESSION_INVALID'); assert.equal(closed.targetOrderStatus, 'WAITING_FOR_SESSION');
+  assert.equal(closed.orderId, 'order-lane'); assert.equal(closed.profilePreserved, true); assert.equal(closed.externalPaymentCalls, 0);
+  assert.equal(sessionCase.calls.aborts[0].customerActionCode, 'SESSION_INVALID');
+  // Third failed dispatch attempt -> terminal, no more requeue.
+  const exhausted = build(3, Object.assign(new Error('nav'), { reason: 'CHECKOUT_NAVIGATION_FAILED' }));
+  const terminal = await exhausted.integration.runPaymentOnce({ safeAbortOnFailure: true });
+  assert.equal(terminal.status, 'SAFE_ABORTED'); assert.equal(terminal.reasonCode, 'BROWSER_RETRY_LIMIT'); assert.equal(terminal.targetOrderStatus, 'RECHARGE_FAILED');
+  assert.equal(terminal.failure, 'CHECKOUT_NAVIGATION_FAILED');
+  // The single-order tool keeps the old behaviour: the failure surfaces, the run stays for a human.
+  const manual = build(1, Object.assign(new Error('nav'), { reason: 'CHECKOUT_NAVIGATION_FAILED' }));
+  await assert.rejects(() => manual.integration.runPaymentOnce({ approvedOrderId: 'order-lane' }), /nav/);
+  assert.equal(manual.calls.aborts.length, 0);
+});

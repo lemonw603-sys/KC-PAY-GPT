@@ -87,6 +87,9 @@ export function createSharedLivePaymentWorker({
   postPlusAction = 'CANCEL_RENEWAL',
   stopBeforeSubmit = false,
   releaseSessionOnComplete = false,
+  // Resident lanes close failed pre-payment runs themselves (classified safe
+  // abort, bounded retries); the single-order tool leaves them for a human.
+  safeAbortOnFailure = false,
 } = {}) {
   if (!pool?.query || !pool?.getConnection) throw new TypeError('mysql2-like pool is required');
   if (stopBeforeSubmit === true && postPlusAction !== 'CANCEL_RENEWAL') {
@@ -202,7 +205,7 @@ export function createSharedLivePaymentWorker({
     workerId: worker,
     approvedOrderId: approvedOrder,
     stopBeforeSubmit: stopBeforeSubmit === true,
-    runOnce: () => integration.runPaymentOnce({ approvedOrderId: approvedOrder }),
+    runOnce: () => integration.runPaymentOnce({ approvedOrderId: approvedOrder, safeAbortOnFailure: safeAbortOnFailure === true }),
     resident: approvedOrder == null,
   });
 }

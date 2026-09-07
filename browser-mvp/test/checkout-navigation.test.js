@@ -277,3 +277,54 @@ test('executor refuses Checkout navigation without a read-only observer contract
   await assert.rejects(() => executor.execute(job, { assertLease: async () => true }), ContractError);
   assert.equal(opened, false);
 });
+
+test('navigator skips the covered header control when the plan picker is already open', async () => {
+  const html = `<title>ChatGPT Plans</title>
+    <button type="button" aria-label="Upgrade" onclick="document.body.dataset.headerClicked='1'">Upgrade</button>
+    <section role="dialog"><p>See what’s new</p></section>
+    <section role="dialog">
+      <button type="button" disabled>Your current plan</button>
+      <button type="button" id="upgrade-plus" onclick="document.querySelector('[data-testid=checkout-page-content]').hidden=false; history.replaceState(null, '', '/checkout/oaics_new')">Rejoin Plus</button>
+    </section>
+    <main data-testid="checkout-page-content" hidden>checkout</main>`;
+  const { navigateToChatGPTPlusCheckout, CHATGPT_PLUS_CHECKOUT_NAVIGATION_CONTRACT } = await import('../src/chatgpt-checkout-navigator.js');
+  const { chromium } = await import('playwright');
+  const { createServer } = await import('node:http');
+  const { once } = await import('node:events');
+  const server = createServer((request, response) => { response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }); response.end(html); });
+  server.listen(0, '127.0.0.1'); await once(server, 'listening');
+  const base = `http://127.0.0.1:${server.address().port}/`;
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage();
+    await page.goto(`${base}#pricing`, { waitUntil: 'domcontentloaded' });
+    const result = await navigateToChatGPTPlusCheckout(page, {
+      ...CHATGPT_PLUS_CHECKOUT_NAVIGATION_CONTRACT, homeUrlPrefix: base, checkoutUrlPrefix: `${base}checkout/`,
+    }, { timeoutMs: 5_000 });
+    assert.deepEqual(result.actions, ['pricing-already-open', 'upgrade-requested']);
+    assert.equal(result.checkoutCreated, true);
+    assert.equal(await page.evaluate(() => document.body.dataset.headerClicked || null), null, 'header control must not be clicked behind the modal');
+  } finally { await browser.close(); server.close(); await once(server, 'close'); }
+});
+
+test('navigator reports a session-expired overlay as SESSION_INVALID instead of navigation drift', async () => {
+  const html = `<title>ChatGPT Plans</title>
+    <section role="dialog"><button type="button" disabled>Your current plan</button><button type="button">Rejoin Plus</button></section>
+    <div role="dialog" style="position:fixed;inset:0;background:#fff">Your session has expired. Please log in again to continue using ChatGPT.</div>`;
+  const { navigateToChatGPTPlusCheckout, CHATGPT_PLUS_CHECKOUT_NAVIGATION_CONTRACT } = await import('../src/chatgpt-checkout-navigator.js');
+  const { chromium } = await import('playwright');
+  const { createServer } = await import('node:http');
+  const { once } = await import('node:events');
+  const server = createServer((request, response) => { response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }); response.end(html); });
+  server.listen(0, '127.0.0.1'); await once(server, 'listening');
+  const base = `http://127.0.0.1:${server.address().port}/`;
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage();
+    await page.goto(`${base}#pricing`, { waitUntil: 'domcontentloaded' });
+    await assert.rejects(
+      () => navigateToChatGPTPlusCheckout(page, { ...CHATGPT_PLUS_CHECKOUT_NAVIGATION_CONTRACT, homeUrlPrefix: base, checkoutUrlPrefix: `${base}checkout/` }, { timeoutMs: 3_000 }),
+      (error) => error.code === 'SESSION_INVALID',
+    );
+  } finally { await browser.close(); server.close(); await once(server, 'close'); }
+});

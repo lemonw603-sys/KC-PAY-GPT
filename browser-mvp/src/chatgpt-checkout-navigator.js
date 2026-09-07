@@ -50,13 +50,19 @@ async function lastVisibleNavigationSelector(page, selectors, label, { optional 
   return matches.at(-1);
 }
 
+function escapeRegExp(value) { return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+
+// The live pricing modal's accessible names do not match getByRole(exact)
+// reliably (nested dialogs, decorated labels), while the visible text does.
+// Match the trimmed visible text exactly and hand back a resolved element so
+// a re-render between lookup and click cannot turn into a 30 s locator wait.
 async function uniqueVisibleButton(scope, labels, label, { optional = false } = {}) {
   const matches = [];
   for (const name of labels || []) {
-    const locator = scope.getByRole('button', { name, exact: true });
+    const locator = scope.locator('button, [role="button"]', { hasText: new RegExp(`^\\s*${escapeRegExp(name)}\\s*$`) });
     for (let index = 0; index < await locator.count(); index += 1) {
       const candidate = locator.nth(index);
-      if (await candidate.isVisible()) matches.push(candidate);
+      if (await candidate.isVisible().catch(() => false)) matches.push(candidate);
     }
   }
   if (optional && matches.length === 0) return null;
@@ -103,18 +109,43 @@ async function assertSafeNavigationControl(locator, label) {
 
 async function safeClick(locator, label, assertContinue, timeoutMs) {
   await assertContinue();
-  await assertSafeNavigationControl(locator, label);
+  let handle;
   try {
-    await locator.click({ timeout: Math.min(timeoutMs, 5_000) });
+    handle = await locator.elementHandle({ timeout: Math.min(timeoutMs, 5_000) });
+  } catch (error) {
+    throw new ContractError(`${label} disappeared before it could be clicked`);
+  }
+  if (!handle) throw new ContractError(`${label} disappeared before it could be clicked`);
+  await assertSafeNavigationControl(handle, label);
+  try {
+    await handle.click({ timeout: Math.min(timeoutMs, 5_000) });
   } catch (error) {
     throw new ContractError(`${label} click failed: ${String(error.message || error).split('\n')[0]}`);
+  } finally {
+    await handle.dispose().catch(() => undefined);
   }
+}
+
+export class SessionExpiredOnPageError extends ContractError {
+  constructor(message = 'ChatGPT reports the session has expired') { super(message); this.name = 'SessionExpiredOnPageError'; this.code = 'SESSION_INVALID'; }
+}
+
+const SESSION_EXPIRED_PATTERN = /session has expired|log in again|会话已过期|请重新登录|登录已过期/i;
+
+// ChatGPT overlays "Your session has expired. Please log in again" as a
+// dialog above the plan picker; every control underneath stops being
+// clickable. That is a customer Session problem and must abort as such.
+async function assertNoSessionExpiredDialog(page) {
+  let texts = [];
+  try { texts = await page.locator('[role="dialog"]').allInnerTexts(); } catch { return; }
+  if (texts.some((text) => SESSION_EXPIRED_PATTERN.test(text))) throw new SessionExpiredOnPageError();
 }
 
 async function waitForState(page, predicate, { timeoutMs, label }) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    const state = await predicate();
+    let state = null;
+    try { state = await predicate(); } catch { state = null; } // navigating: keep waiting
     if (state) return state;
     await page.waitForTimeout(100);
   }
@@ -122,9 +153,27 @@ async function waitForState(page, predicate, { timeoutMs, label }) {
 }
 
 async function checkoutReady(page, contract) {
-  if (!page.url().startsWith(contract.checkoutUrlPrefix)) return false;
-  const marker = page.locator(contract.checkoutReadySelector);
-  return (await marker.count()) === 1 && await marker.isVisible();
+  try {
+    if (!page.url().startsWith(contract.checkoutUrlPrefix)) return false;
+    const marker = page.locator(contract.checkoutReadySelector);
+    return (await marker.count()) === 1 && await marker.isVisible();
+  } catch {
+    // Mid-navigation (execution context replaced) is "not ready yet", not drift.
+    return false;
+  }
+}
+
+// ChatGPT stacks an announcement dialog on top of the plan picker; both are
+// role=dialog and visible. The plan picker is the one holding a plan button.
+function pricingDialog(page, contract) {
+  const anyPlanButton = page.locator('button, [role="button"]', {
+    hasText: new RegExp(`^\\s*(${[...(contract.upgradeLabels || []), ...(contract.planMarkerLabels || [])].map(escapeRegExp).join('|')})\\s*$`),
+  });
+  return page.locator(contract.pricingDialogSelector).filter({ has: anyPlanButton });
+}
+
+async function pricingDialogVisible(page, contract) {
+  try { return (await visibleCount(pricingDialog(page, contract))) >= 1; } catch { return false; }
 }
 
 export const CHATGPT_PLUS_CHECKOUT_NAVIGATION_CONTRACT = Object.freeze({
@@ -136,6 +185,8 @@ export const CHATGPT_PLUS_CHECKOUT_NAVIGATION_CONTRACT = Object.freeze({
   profileUpgradeLabels: Object.freeze(['升级套餐', 'Upgrade plan']),
   pricingDialogSelector: '[role="dialog"]',
   upgradeLabels: Object.freeze(['升级至 Plus', 'Upgrade to Plus', '重新订阅 Plus', 'Rejoin Plus']),
+  // Any of these identifies the plan picker dialog even when the Plus button is absent.
+  planMarkerLabels: Object.freeze(['Upgrade to Pro', 'Upgrade to Go', 'Your current plan', '升级至 Pro', '当前套餐']),
   questionnaireSkipLabels: Object.freeze(['跳过', 'Skip']),
   checkoutReadySelector: '[data-testid="checkout-page-content"]',
   maxUpgradeAttempts: 2,
@@ -159,14 +210,18 @@ export async function navigateToChatGPTPlusCheckout(page, contract = CHATGPT_PLU
   if (!page.url().startsWith(contract.homeUrlPrefix)) throw new ContractError('checkout navigation start URL drift');
 
   const actions = [];
+  await assertNoSessionExpiredDialog(page);
   if (!await checkoutReady(page, contract)) {
-    let openPricing = await lastVisibleNavigationSelector(
+    // A resumed run may already sit on the open plan picker; the header
+    // control behind the modal is then covered and must not be clicked.
+    const pickerAlreadyOpen = await pricingDialogVisible(page, contract);
+    let openPricing = pickerAlreadyOpen ? null : await lastVisibleNavigationSelector(
       page,
       contract.openPricingSelectors,
       'open pricing control',
       { optional: true },
     );
-    if (!openPricing) {
+    if (!openPricing && !pickerAlreadyOpen) {
       const profileMenu = await lastVisibleNavigationSelector(
         page,
         contract.profileMenuSelectors,
@@ -180,13 +235,16 @@ export async function navigateToChatGPTPlusCheckout(page, contract = CHATGPT_PLU
         return uniqueVisibleMenuItem(page, contract.profileUpgradeLabels, 'profile upgrade control', { optional: true });
       }, { timeoutMs, label: 'profile upgrade control' });
     }
-    await safeClick(openPricing, 'open pricing control', assertContinue, timeoutMs);
-    actions.push('pricing-opened');
-    await waitForState(page, async () => {
-      if (await checkoutReady(page, contract)) return 'checkout';
-      const dialog = page.locator(contract.pricingDialogSelector);
-      return (await visibleCount(dialog)) === 1 ? 'pricing' : null;
-    }, { timeoutMs, label: 'pricing dialog' });
+    if (pickerAlreadyOpen) {
+      actions.push('pricing-already-open');
+    } else {
+      await safeClick(openPricing, 'open pricing control', assertContinue, timeoutMs);
+      actions.push('pricing-opened');
+      await waitForState(page, async () => {
+        if (await checkoutReady(page, contract)) return 'checkout';
+        return (await pricingDialogVisible(page, contract)) ? 'pricing' : null;
+      }, { timeoutMs, label: 'pricing dialog' });
+    }
 
     let questionnaireRaceRecoveries = 0;
     for (let attempt = 1; attempt <= contract.maxUpgradeAttempts; attempt += 1) {
@@ -203,16 +261,17 @@ export async function navigateToChatGPTPlusCheckout(page, contract = CHATGPT_PLU
         await waitForState(page, async () => {
           const remaining = await uniqueVisibleButton(page, contract.questionnaireSkipLabels, 'questionnaire skip control', { optional: true });
           if (remaining) return null;
-          const currentDialog = page.locator(contract.pricingDialogSelector);
-          return (await visibleCount(currentDialog)) === 1 ? 'pricing' : null;
+          return (await pricingDialogVisible(page, contract)) ? 'pricing' : null;
         }, { timeoutMs, label: 'pre-existing questionnaire dismissal' });
       }
-      const dialog = page.locator(contract.pricingDialogSelector);
+      await assertNoSessionExpiredDialog(page);
+      const dialog = pricingDialog(page, contract);
       if (await visibleCount(dialog) !== 1) throw new ContractError('pricing dialog drift');
       const upgrade = await uniqueVisibleButton(dialog, contract.upgradeLabels, 'Plus upgrade control');
       try {
         await safeClick(upgrade, 'Plus upgrade control', assertContinue, timeoutMs);
       } catch (error) {
+        await assertNoSessionExpiredDialog(page);
         // The recommendation questionnaire can hydrate after the pricing
         // button was located but before Playwright dispatches the click. If it
         // is now visibly blocking the page, dismiss it and retry the same
@@ -249,7 +308,7 @@ export async function navigateToChatGPTPlusCheckout(page, contract = CHATGPT_PLU
         // bounded; never retry after the URL has entered Checkout.
         if (attempt < contract.maxUpgradeAttempts
           && page.url().startsWith(contract.homeUrlPrefix)
-          && await visibleCount(page.locator(contract.pricingDialogSelector)) === 1) {
+          && await pricingDialogVisible(page, contract)) {
           continue;
         }
         throw error;
@@ -262,8 +321,7 @@ export async function navigateToChatGPTPlusCheckout(page, contract = CHATGPT_PLU
       await waitForState(page, async () => {
         const remaining = await uniqueVisibleButton(page, contract.questionnaireSkipLabels, 'questionnaire skip control', { optional: true });
         if (remaining) return null;
-        const currentDialog = page.locator(contract.pricingDialogSelector);
-        return (await visibleCount(currentDialog)) === 1 ? 'pricing' : null;
+        return (await pricingDialogVisible(page, contract)) ? 'pricing' : null;
       }, { timeoutMs, label: 'questionnaire dismissal' });
     }
   }

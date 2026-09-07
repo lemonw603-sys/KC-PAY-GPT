@@ -318,7 +318,7 @@ export class SharedBrowserRuntimeIntegration {
   // null lets a resident lane claim the next queued Browser job of its
   // executor profile. Payment authority never comes from this argument: it is
   // the database flag, the permit and the unique PAYMENT_SUBMIT operation.
-  async runPaymentOnce({ approvedOrderId = null } = {}) {
+  async runPaymentOnce({ approvedOrderId = null, safeAbortOnFailure = false, maxDispatchAttempts = 3 } = {}) {
     const orderId = approvedOrderId == null ? null : required(approvedOrderId, 'approvedOrderId');
     const claimed = await this.workerService.claim(this.workerId, {
       executorProfileId: this.executorProfileId,
@@ -396,14 +396,29 @@ export class SharedBrowserRuntimeIntegration {
       }
       throw new SharedBrowserRuntimeError('LIVE payment result is unsupported', 'PAYMENT_RESULT_INVALID');
     } catch (error) {
-      control.stop();
-      if (!run?.leaseToken) throw error;
+      if (!run?.leaseToken) { control.stop(); throw error; }
       const state = await this.executionRepository.getRecoveryState(run.runId).catch(() => null);
       if (state?.recoveryMode === 'RECONCILE_ONLY') {
-        return { status: 'RECONCILE_ONLY', workerId: this.workerId, jobId: claimed.jobId,
+        control.stop();
+        return { status: 'RECONCILE_ONLY', workerId: this.workerId, jobId: claimed.jobId, orderId: claimed.orderId,
           runId: run.runId, reasonCode: operationalCode(error?.code, 'LIVE_RUNTIME_FAILURE'),
           externalPaymentCalls: 0 };
       }
+      // A resident lane cannot leave a failed run RUNNING for a human: with no
+      // submission intent it is provably pre-payment, so close it with the
+      // classified safe-abort (Session problems go back to the customer,
+      // access blocks are terminal, card facts requeue) and keep the page.
+      // Repeated failures of one dispatch stop requeueing after a few tries.
+      const prePayment = state?.recoveryMode === 'RESUMABLE' && state?.runStatus === 'RUNNING'
+        && (state.paymentState == null || ['NOT_STARTED', 'PAYMENT_ARMED'].includes(state.paymentState));
+      if (safeAbortOnFailure && prePayment) {
+        const exhausted = Number(claimed.attemptCount || 0) >= maxDispatchAttempts;
+        const abortError = exhausted ? { code: 'BROWSER_RETRY_LIMIT', message: 'dispatch attempts exhausted' } : { code: error?.reason || error?.code, message: error?.message };
+        const closed = await this.abortForPrePaymentFailure({ control, run, error: abortError });
+        return { ...closed, workerId: this.workerId, jobId: claimed.jobId, orderId: claimed.orderId, runId: run.runId,
+          failure: operationalCode(error?.reason || error?.code, 'LIVE_RUNTIME_FAILURE'), profilePreserved: true };
+      }
+      control.stop();
       throw error;
     }
   }
@@ -479,6 +494,7 @@ export function createBrowserPaymentExecutionRuntime({
         preserveRuntimeOnManualHandoff,
         preserveRuntimeOnFailure: true,
         releaseSessionOnComplete,
+        startFresh: run?.recovered !== true,
       });
     },
   });

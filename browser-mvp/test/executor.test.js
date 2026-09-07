@@ -541,3 +541,28 @@ test('a completed order releases the identity login state when releaseSessionOnC
     assert.deepEqual(released, []);
   } finally { await context.close().catch(() => undefined); await browser.close(); server.close(); await once(server, 'close'); }
 });
+
+test('a fresh run resets a resident page left on a previous Checkout, a recovered run keeps it', async () => {
+  const server = createServer((request, response) => {
+    response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+    response.end(request.url.startsWith('/checkout/') ? '<title>Browser MVP fixture</title><main data-browser-mvp-marker>observe-only</main><p>stale checkout</p>' : '<title>Browser MVP fixture</title><main data-browser-mvp-marker>observe-only</main>');
+  });
+  server.listen(0, '127.0.0.1'); await once(server, 'listening');
+  const base = `http://127.0.0.1:${server.address().port}/`;
+  const browser = await chromium.launch({ headless: true });
+  const context = await browser.newContext();
+  const stale = await context.newPage();
+  await stale.goto(`${base}checkout/oaics_previous`, { waitUntil: 'domcontentloaded' });
+  const runtimeAdapter = { async open() { return { context }; }, async detach() {}, async close() {} };
+  const evidenceSink = new MemoryEvidenceSink();
+  const executor = new BrowserExecutionService({ runtimeAdapter, evidenceSink, timeoutMs: 3_000 });
+  const job = createSyntheticJob({ state: 'RUNNING', metadata: { source: 'playwright-fixture', pageContract: { ...pageContract, urlPrefix: base } } });
+  try {
+    await executor.execute(job, { assertLease: async () => true, startFresh: true });
+    assert.equal(stale.url(), base, 'fresh run navigates the reused page back to the home prefix');
+    assert.ok(evidenceSink.events.some((e) => e.summary?.action === 'page-reset'));
+    await stale.goto(`${base}checkout/oaics_previous`, { waitUntil: 'domcontentloaded' });
+    await executor.execute(job, { assertLease: async () => true });
+    assert.equal(stale.url(), `${base}checkout/oaics_previous`, 'a resumed run keeps the page it recovered');
+  } finally { await context.close().catch(() => undefined); await browser.close(); server.close(); await once(server, 'close'); }
+});

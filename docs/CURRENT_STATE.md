@@ -30,7 +30,7 @@
 | HNSKJ 卡 | `5980` $16 inventory AVAILABLE，但分配资格要求交易同步 15 分钟内（`last_transaction_synced_at` 09-06 22:00 UTC，HNSKJ 故障期间不再刷新）→ **当前不可分配**；其余 5 张 ASSIGNED 于历史订单且 ≤ $0.01；5 张 DEPLETED | 09-07 02:30 | cards + `card-inventory-eligibility.js` 规则 |
 | 备用卡 A | `5501` $8.87（分配给测试单，assignment ACTIVE；演练已释放资金占用）；`0237` $0；门槛恢复 16 后可分配 0 | 09-07 09:40 | cards / card_assignment_history |
 | HNSKJ 卡台 | 09-05 起维护/故障（success=false），只读同步 5 分钟退避；开卡与补余额不可用；用户 09-07 确认卡台服务器故障，备用卡台暂无资金 | 09-07 | HANDOFF_LOG + 用户 |
-| 订单总况 | RECHARGE_SUCCESS 2 / RECHARGE_FAILED 7 / CLOSED 8 / WAITING_FOR_CARD 1（API 路线 `PJV1-7EYSr3AZfjVl5JZQwTZt`）/ WAITING_FOR_SESSION 2 / CARD_READY 1（测试单 `PJV1--j4AnE7fvfgkvaceSr0Z`，演练后 `BROWSER_REHEARSAL_STOPPED`，卡 5501 仍分配，SUBMIT_RECHARGE PENDING 等 Worker） | 09-07 09:40 | orders / tasks |
+| 订单总况 | RECHARGE_SUCCESS 2 / RECHARGE_FAILED 7 / CLOSED 8 / WAITING_FOR_CARD 1（API 路线 `PJV1-7EYSr3AZfjVl5JZQwTZt`）/ WAITING_FOR_SESSION 2 / RECHARGE_FAILED +1（测试单 `PJV1--j4AnE7fvfgkvaceSr0Z`：演练成功后，常驻池实跑因会话过期累计到重试上限 `BROWSER_RETRY_LIMIT` 终态；卡 5501 占用已释放） | 09-07 09:40 | orders / tasks |
 | 活动资金与运行 | ACTIVE/UNKNOWN attempt 0；open run 0；open dispatch 0；RESERVED 账本 0；open lease 0；ISSUED permit 0 | 16:41 | 只读聚合查询 |
 | 最近 Browser 运行 | 09-07 09:29–09:35 UTC 测试单演练：run `84686b57…` FAILED_SAFE / RELEASED / `PRE_PAYMENT_ABORT` / `BROWSER_REHEARSAL_STOPPED`；`PAYMENT_SUBMIT=0`、permit 0；报价 PHP 982.14 / 税 0.00；Lane 3 保留填好的结账页 | 09:40 | browser_runs / 本机 live.wal |
 | 最近真实单 | `PJV1-RCbAiI0IkGMy-hCBgMSn`：自动化到 Checkout 未填表 → 运营者手工付 Plus + 20X（143.13）→ 09-06 16:40 以「人工付款已完成」收口为 RECHARGE_SUCCESS；`PAYMENT_SUBMIT=0`，证据 `MANUAL_PAYMENT_CONFIRMED` | 16:41 | orders / browser_runs / browser_operations |

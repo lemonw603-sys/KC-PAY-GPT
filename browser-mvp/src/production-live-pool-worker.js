@@ -212,7 +212,7 @@ export async function createLaneWorker({ lane, config, pool, browserType, shared
     transactionReaderFactory, runtimeHmacKey: config.runtimeHmacKey, artifactKey: config.artifactKey, resourceHmacKey: config.resourceHmacKey,
     evidenceSink: new WalEvidenceSink(wal), leaseSeconds: config.leaseSeconds, executionTimeoutMs: config.executionTimeoutMs,
     verificationWindowMs: config.verificationWindowMs, verificationIntervalMs: config.verificationIntervalMs,
-    postPlusAction: 'CANCEL_RENEWAL', stopBeforeSubmit: config.stopBeforeSubmit, releaseSessionOnComplete: true,
+    postPlusAction: 'CANCEL_RENEWAL', stopBeforeSubmit: config.stopBeforeSubmit, releaseSessionOnComplete: true, safeAbortOnFailure: true,
   });
   return Object.freeze({
     laneId: lane.laneId, workerId,

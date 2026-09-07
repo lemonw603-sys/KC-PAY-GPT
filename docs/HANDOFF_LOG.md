@@ -1731,3 +1731,11 @@
 - 新增 `production-live-pool-worker.js`：lane 解析（1–6，唯一）、模式确认词（REHEARSAL/PAY）与进程/数据库开关一致性校验、`runLaneLoop`（核实 → 预检 → 领单，纯函数可测）、每 lane 独立 WAL/卡租约/runtime（`residentProfile`）、心跳写 `browser_worker_heartbeat_at`、SIGINT/SIGTERM 优雅停止。启动脚本 `run-live-pool.sh`。
 - 测试：pool 3 条、集成 1 条（不绑单领取）、executor 1 条（释放登录态）；browser-mvp 全量 189/180/0/9。
 - 冒烟：`check rehearsal` READY；`run rehearsal` Lane 3 45 秒 9 轮空转（队列无活）、心跳更新、SIGINT 停止、窗口保持打开。尚未在有排队订单时跑过。**可审版本：本节提交。**
+
+## 2026-09-07｜常驻池真实排队单首跑：三处导航缺口修掉，最终按重试上限安全收口
+
+- 服务器 Worker 再次短启 5 秒给测试单建新派发（QUEUED），随后 `run-live-pool.sh run rehearsal` 领单。连续暴露并修掉：① 定价弹窗上叠着公告弹窗，`getByRole(exact)` 找不到「Rejoin Plus」、`visibleCount(dialog)===1` 失效——改为按可见文本精确匹配并解析成 ElementHandle 再点，弹窗按「含套餐按钮」筛选，导航等待容忍页面跳转中的求值错误；② 续跑时页面标题「ChatGPT Plans」被判 PAGE_DRIFT——`ChatGPT` 前缀标题一律视为同一应用；③ 续跑时定价弹窗已开，仍去点被盖住的顶栏 Upgrade——弹窗已开则跳过。
+- 最后一个断点是页面上的「Your session has expired」弹窗盖住了套餐按钮：测试账号会话链再次失效。根因是早上复制到 Lane 2 的同一账号会话在后台标签页里持续刷新，轮换掉了 Lane 3 的令牌。已清空 Lane 2 的会话与登录态、关闭其窗口。导航器新增识别「会话过期」弹窗 → `SESSION_INVALID`；executor 透传该码。
+- 常驻池不能把失败 run 留给人：`runPaymentOnce({ safeAbortOnFailure })` 在无付款意图（RESUMABLE / NOT_STARTED|PAYMENT_ARMED）时把执行异常转成分类安全中止（Session 问题回客户、访问阻断终态、卡事实回队列），派发 `attempt_count ≥ 3` 则 `BROWSER_RETRY_LIMIT` 终态；单订单工具保持原行为。测试：集成 1 条、导航 2 条；browser-mvp 全量通过。
+- 实跑结果：池领到派发（attempt_count 已累计到 5）→ `SAFE_ABORTED / BROWSER_RETRY_LIMIT`，测试单 RECHARGE_FAILED、run FAILED_SAFE、账本 RELEASED、许可 0；Lane 3 页面保留（会话过期弹窗）。
+- 下一次验证需要：测试账号重新登录取新 Session（此后只放进一个身份）、新建测试单；同时卡上有钱才能做真实付款。**可审版本：本节提交。**
