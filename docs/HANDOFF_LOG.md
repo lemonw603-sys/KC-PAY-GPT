@@ -1612,3 +1612,10 @@
 - `AGENTS.md` 阅读顺序缩为四份（CLAUDE.md → PROJECT_MAP → CURRENT_STATE → 接班实施基线）；`CLAUDE.md` 事实源清单从 37 条缩为 8 条，「仅支持 Plus」改为「当前生产仅启用 Plus，5X/20X 按基线顺序启用」。
 - 备用卡导入缺陷修复 `45f953c`（SETTLED 不再冻结卡片，新增隔离 MySQL 回归 2/2）本地已提交，随下一次发布上线。
 - 用户已提供免费测试账号用于只读验证（凭证按需提供，不入仓库）；Browser 卡台下一单用 HNSKJ 还是给备用卡充值待用户决定。
+
+## 2026-09-07｜上号器装入全部 BitBrowser 身份；只读验证脚本备好
+
+- 用户要求六个身份都有上号器。BitBrowser 本地接口无扩展管理端点；通过其客户端「扩展中心 → 添加本地扩展」上传仓库内 `browser-mvp/extensions/nuohuisheng-session-loader`（为绕开中文路径先复制到 `~/Downloads/nuohuisheng-session-loader`），开启方式设为「所有窗口」。结果：BitBrowser 存于 `BitExtensions/384ef55b-0fc0-4462-84a7-7a0162c5e115`，七个身份 `extendIds` 均指向 `4028808ca05fedeb01a0790b64711c3e`；Lane 3 重开后 Chromium 启动参数含 `--load-extension=…/384ef55b-…`，实证已加载。该扩展只有弹窗无后台脚本，CDP 看不到 service worker 属正常。
+- 操作副作用：一次 AppleScript 快捷键误发到 Lane 2 网页窗口，在其「查找」栏留下路径文本，无害，按 Esc 即消；`~/Downloads` 下三个临时文件（zip、目录副本、图标 PNG）待用户决定是否删除。
+- 新增脚本：`browser-mvp/scripts/poc-checkout-api-readonly.mjs`（在已登录身份内用页面自身请求调 `/api/auth/session`、账户检查、`backend-api/payments/checkout` 三个套餐；`--observe` 打开返回的结账页读价格税额；不填卡不付款），`browser-mvp/scripts/check-profile-extensions.mjs`（列 CDP 扩展目标）。首次跑 Lane 3 因未登录停在身份步；等用户用上号器写入测试账号 Session 后再跑。
+- 结论重申：自动流程不用上号器，Worker 用 CDP 写同一个 cookie（`session-bootstrap`）；上号器仅用于人工场景。
