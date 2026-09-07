@@ -21,11 +21,11 @@
 
 | 项目 | 事实 |
 |---|---|
-| release | `/opt/pojia/releases/20260907-timeline-ui-af188c9`（09-07 15:xx UTC）；回滚点 `20260907-cdk-rules-44b00cd` |
+| release | `/opt/pojia/releases/20260907-cancel-cardless-ae68195`（09-07 14:42 UTC）；回滚点 `20260907-timeline-ui-af188c9` |
 | 服务 | Web active；API Worker inactive（09-06 03:46 UTC 人为停止）；Browser Worker inactive/disabled；补余额与读同步 timer active；旧自动开卡 timer disabled |
 | 开关 | 接单 true；自动派发 true；默认路线 Browser；Browser 卡台 = 备用卡台 A；Browser 付款开关 false；自动开卡 false；自动补余额 true；每卡成功次数 3；最低卡余额 16（09-07 08:28–09:33 UTC 曾临时 8） |
-| 卡 | HNSKJ 已恢复；`5980` 余额 $0.31 且占用于上述 API 单；备用 A `5501` $8.87 低于门槛 16、`0237` $0 → 可分配 0 |
-| 订单 | 成功 2、失败 8（含今日测试单）、关闭 8、等 Session 2；**API 路线 1 单 RECHARGE_PROCESSING 待收口（09-07 12:07 UTC 误触发直充，5980 扣 $15.69，见 HANDOFF_LOG 事故节）**；活动资金栅栏 1（该单） |
+| 卡 | HNSKJ 已恢复但 `5980` 只剩 $0.31；备用 A `5501` $8.87 低于门槛 16、`0237` $0 → 可分配 0 |
+| 订单 | 成功 2、失败 8、关闭 10、等 Session 0；API 路线 1 单 CANCELLATION_PENDING（09-07 误触发直充已按正常流程结单，实付 982.14 PHP，只剩取消续费待跑）；活动资金栅栏 0 |
 | 迁移 | 049（`browser_run_events` 每单阶段时间线） |
 | Browser 自动化 | 生产从未自动完成过一笔付款；09-07 演练首次自动走完填卡/地址/邮箱/零税报价并停在点击前（run FAILED_SAFE/PRE_PAYMENT_ABORT，0 许可 0 点击）；此前 21 个 run 中 20 个为 09-01 的 CHATGPT_ACCESS_BLOCKED，1 个 09-06 到 Checkout 未填表后人工完成 |
 | 本机 | BitBrowser + mihomo（launchd）；LIVE Worker 靠手动 `--once`，无常驻；SSH 隧道 13306→3306（掉线时 `ssh -f -N -L 13306:127.0.0.1:3306 root@<host>`）；启动脚本：单订单 `run-live-rehearsal.sh check｜once <orderId>`、预检 `run-browser-preflight.sh check｜once`、常驻池 `run-live-pool.sh check｜run rehearsal｜pay`（密钥运行时经 SSH 取入进程，不落盘） |

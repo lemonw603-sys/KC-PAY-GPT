@@ -4,8 +4,8 @@
 
 | 项目 | 当前值 | 核对时间（UTC） | 证据方式 |
 |---|---|---|---|
-| 生产 release | `/opt/pojia/releases/20260907-timeline-ui-af188c9`（commit `af188c9`） | 2026-09-07 15:xx | `readlink -f /opt/pojia/current` |
-| 回滚点 | `/opt/pojia/releases/20260907-cdk-rules-44b00cd` | 同上 | 部署记录 |
+| 生产 release | `/opt/pojia/releases/20260907-cancel-cardless-ae68195`（commit `ae68195`） | 2026-09-07 14:42 | `readlink -f /opt/pojia/current` |
+| 回滚点 | `/opt/pojia/releases/20260907-timeline-ui-af188c9` | 同上 | 部署记录 |
 | 最新数据库备份 | `/var/backups/pojia/pojia-20260907T063400Z.sql.gz.enc`，完整性 OK | 06:34 | `pojia-ops backup/verify` |
 | pojia-web | active（06:35 随 release 切换重启） | 06:35 | systemctl |
 | pojia-worker（API） | inactive（09-06 03:46 UTC 人为停止；09-07 09:28 UTC 短启约 10 秒推进测试单后再次停止） | 09-07 09:29 | systemctl |
@@ -27,16 +27,16 @@
 | card_max_successful_payments | 3 | 13:31 | app_settings |
 | default_open_card_amount / minimum | 16 / 16（09-07 08:28–09:33 UTC 曾临时 8.00 供演练单分卡；已恢复） | 09:33 | app_settings（经服务层 `setMinimumRequiredCardBalance`） |
 | Worker 进程写权限 | worker：`PROVIDER_RECHARGE_WRITES_ENABLED=true`（drop-in），通用/卡片写 false；funding 单元：`PROVIDER_CARD_WRITES_ENABLED=true`；env 文件 `PROVIDER_READS_ENABLED=true` | 16:35 | `systemctl cat` |
-| HNSKJ 卡 | `5980` ASSIGNED 给 API 路线订单 `PJV1-7EYSr3AZfjVl5JZQwTZt`，余额 $0.31（09-07 12:07 UTC 被 ZZSHU 直充扣 $15.69，事故见 HANDOFF_LOG）；其余 5 张 ASSIGNED 于历史订单且 ≤ $0.01；5 张 DEPLETED | 09-07 14:00 | cards / card_transactions |
+| HNSKJ 卡 | `5980` DEPLETED，余额 $0.31（09-07 12:07 UTC 直充扣 $15.69，占用已释放）；其余 5 张 ASSIGNED 于历史订单且 ≤ $0.01；5 张 DEPLETED；HNSKJ 可分配 0 | 09-07 14:42 | cards |
 | 备用卡 A | `5501` $8.87（分配给测试单，assignment ACTIVE；演练已释放资金占用）；`0237` $0；门槛恢复 16 后可分配 0 | 09-07 09:40 | cards / card_assignment_history |
 | HNSKJ 卡台 | 09-05 起故障；09-07 12:06 UTC 前已恢复（读同步与交易同步成功，`provider_calls` SUCCESS）；开卡/补余额未再验证 | 09-07 14:00 | provider_calls / cards.last_transaction_synced_at |
-| 订单总况 | RECHARGE_SUCCESS 2 / RECHARGE_FAILED 8（含测试单 `PJV1--j4AnE7fvfgkvaceSr0Z`）/ CLOSED 8 / **RECHARGE_PROCESSING 1（API 路线 `PJV1-7EYSr3AZfjVl5JZQwTZt`，09-07 12:07 UTC 误触发直充，attempt PROCESSING/ACTIVE，POLL_RECHARGE 待跑，待收口）** / WAITING_FOR_SESSION 2 | 09-07 14:xx | orders / tasks |
+| 订单总况 | RECHARGE_SUCCESS 2 / RECHARGE_FAILED 8 / CLOSED 10（含 09-07 取消的两单遗留等 Session 单，CDK 已退回）/ CANCELLATION_PENDING 1（API 路线 `PJV1-7EYSr3AZfjVl5JZQwTZt`：09-07 12:07 UTC 误触发直充，14:33 POLL 确认成功，实付 982.14 PHP，账本 CONSUMED；取消续费 RECHECK 待 Worker）/ WAITING_FOR_SESSION 0 | 09-07 14:42 | orders / tasks |
 | 活动资金与运行 | ACTIVE/UNKNOWN attempt 0；open run 0；open dispatch 0；RESERVED 账本 0；open lease 0；ISSUED permit 0 | 16:41 | 只读聚合查询 |
 | 最近 Browser 运行 | 09-07 09:29–09:35 UTC 测试单演练：run `84686b57…` FAILED_SAFE / RELEASED / `PRE_PAYMENT_ABORT` / `BROWSER_REHEARSAL_STOPPED`；`PAYMENT_SUBMIT=0`、permit 0；报价 PHP 982.14 / 税 0.00；Lane 3 保留填好的结账页 | 09:40 | browser_runs / 本机 live.wal |
 | 最近真实单 | `PJV1-RCbAiI0IkGMy-hCBgMSn`：自动化到 Checkout 未填表 → 运营者手工付 Plus + 20X（143.13）→ 09-06 16:40 以「人工付款已完成」收口为 RECHARGE_SUCCESS；`PAYMENT_SUBMIT=0`，证据 `MANUAL_PAYMENT_CONFIRMED` | 16:41 | orders / browser_runs / browser_operations |
 | 告警 | OPEN 10：8 条 09-01 起的「卡台余额变化」info 噪音（后台不显示）、1 条 CARD_STOCK_LOW（阈值 0，修复后不再新生成）、1 条 ORDER_WAITING_FOR_CARD；首页已可关闭 | 09-06 13:31 | operator_alerts |
 | 本机 | BitBrowser Local API + mihomo（launchd 单实例）；SSH 隧道 13306→3306 由会话后台任务保持（掉线需重拉）；无常驻 Worker 进程（常驻池脚本已备好，未长期运行）；Lane 3 窗口开着并保留演练结账页 | 09-07 12:05 | pgrep / BitBrowser list |
-| 已上线（本次 release） | `af188c9`：订单详情抽屉「执行时间线」（`GET /api/v1/admin/orders/:publicNo/timeline`，`admin.js?v=27`、`admin.css?v=21`）。复核：未登录 401、线上资产含面板、Web 无错误。`browser_run_events` 目前 0 行：今天的 Browser 运行都发生在迁移 049 之前，下一次运行起落库 | 15:xx | curl + SSH |
+| 已上线（本次 release） | `ae68195`：无卡的等 Session 订单可取消（退回 CDK）。复核：两单遗留订单取消成功、CDK 回 AVAILABLE；Web 200 | 14:42 | 服务层调用结果 |
 | 已知未修 | 本机绕过连接池直连写入造成该单 attempt/dispatch/账本 `created_at` 偏后 8 小时；后台控制事务并发时可能 `ER_LOCK_DEADLOCK`（失败关闭，需重试） | 09-07 | HANDOFF_LOG |
 
 ## 事实表之外

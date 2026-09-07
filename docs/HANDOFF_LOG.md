@@ -1774,3 +1774,10 @@
 - 现状：订单 RECHARGE_PROCESSING、attempt PROCESSING/ACTIVE、账本 RESERVED、`POLL_RECHARGE` PENDING（`RECHARGE_PENDING`，Worker 已停）；ZZSHU `query_status` 12:07:03 成功但未结单。测试账号已是 Plus，后续 Browser 演练不能再用它买 Plus。
 - 收口建议（待用户确认）：先把两单遗留 WAITING_FOR_SESSION 订单与其他遗留任务核对一遍，再短启 Worker 让 `POLL_RECHARGE` 确认直充结果并按 API 路线正常收口（RECHARGE_SUCCESS、账本 CONSUMED、取消续费检查）；或由用户决定其他处理。
 - 规则补充：启动任何 Worker 前，列出所有待处理任务并按**当时**的卡资格重新判断；遗留的 API 路线订单在默认路线切到 Browser 后应先取消，不留在队列里等卡。
+
+## 2026-09-07｜事故收口：API 单按正常流程结单；两单遗留等 Session 订单取消（CDK 首次在生产退回）
+
+- 用户决定：① 短启 Worker 让 POLL 收口；② 取消两单遗留 WAITING_FOR_SESSION。
+- ① 14:33 UTC 启动 Worker 前核对：全库只剩一个待处理任务（该单的 POLL_RECHARGE）。5 秒内 POLL 确认直充成功：订单 → CANCELLATION_PENDING，实付 982.14 PHP，attempt SUCCESS/SETTLED，账本 CONSUMED，卡 5980 占用释放（余额 0.31，DEPLETED），CDK 保持 REDEEMED（已交付）。随后 RECHECK_CANCELLATION 反复 `CANCELLATION_PENDING`（ZZSHU 取消续费未完成），14:36 停 Worker；该任务留待下次 Worker 运行或用户在账号内手动关闭自动续费。
+- ② 取消服务原本拒绝无卡的等 Session 订单（`ORDER_CANCELLATION_REVIEW_REQUIRED`）。新增分支：无卡、无资金尝试、无卡台调用的等 Session 订单可关单（杀任务、退回 CDK、CLOSED/CANCELLED_PRE_SUBMISSION），发布 release `20260907-cancel-cardless-ae68195`（回滚点 `20260907-timeline-ui-af188c9`）。两单 `PJV1-lxez72TytHc1O6QZxjNd`、`PJV1-kIPF1w9XEePjjxcKx9Qz` 已 CLOSED，各自 CDK 回到 AVAILABLE 且解绑——这是 CDK 退回规则第一次在生产订单上生效。
+- 现在全库待处理任务只剩该 API 单的 RECHECK_CANCELLATION；WAITING_FOR_SESSION 0。
