@@ -1818,3 +1818,10 @@
 - 部署插曲：prepare 首次被主机掐断新 SSH 连接（ControlMaster 180s 已过期），重建 600s 的 master 后一次通过；`deploy-release.sh` 的 ControlPersist 可考虑加长。
 - 剩余：第 7 步删无消费者接口（先列调用链）；订单抽屉「补录付款」四连 prompt 未改；首页「开卡补钱」部分开启态缺「关闭」按钮（已记在第 1 步待补）。
 
+## 2026-09-07｜后台五页第 7 步：删无消费者接口（`20260907-apiclean-5687598`）——五页新版收工
+
+- 调用链核对：以 `admin.js` 实际调用的路径为准，对照 `create-app.js` 全部 admin 路由；另查 `deploy/`、`scripts/`、`browser-mvp/scripts/` 无外部调用（灰度许可 CLI `pojia-recharge-gate` 直接走服务层）。
+- 删除 14 条：`orders/:publicNo/{notes,tags,recharge-permit,compensation}`、`recharge-authorizations`（含 revoke）、`cdks/deliveries`、`card-stock/threshold`、`card-stock/replenishment-settings`（GET/POST）、`provider-routes`（含 switch）、`card-consumption`、`operations/readiness`、`step-up`；`server.js` 去掉对应 wiring 与只被它们用的 import（补偿服务、补卡上限设置服务、V2 授权与旧许可 helper）。保留 `card-operational-overrides`。
+- 测试：536 通过；路由测试改为断言删除路径 404；`stepUp` 助手改为直返会话 cookie。公网复验：10 条删除路径 404，保留路径未登录 401；web active、无错误日志。备份 `pojia-20260907T155608Z`。
+- 至此五页新版（首页/订单/CDK/卡片/诊断）与接口清理全部上线；今日 7 个 release：home → orders → orders2 → cards → fivepages → apiclean。
+
