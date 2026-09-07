@@ -21,12 +21,12 @@
 
 | 项目 | 事实 |
 |---|---|
-| release | `/opt/pojia/releases/20260908-importwhy-ba2db48`（09-07 17:14 UTC，导入预览说明为何不能提交）；回滚点 `20260908-cardrelease-fbba5fe`（再前 `20260907-apiclean-5687598`） |
+| release | `/opt/pojia/releases/20260908-pro-0073d45`（09-07 19:17 UTC，Pro 5X/20X 两阶段产品 + 按产品 CDK/最低余额 + 导入余额不一致降为提示）；回滚点 `20260908-importwarn-370c7ce`（再前 `20260908-importwhy-ba2db48`） |
 | 服务 | Web active；API Worker inactive（09-06 03:46 UTC 人为停止）；Browser Worker inactive/disabled；补余额与读同步 timer active；旧自动开卡 timer disabled |
 | 开关 | 接单 true；自动派发 true；默认路线 Browser；Browser 卡台 = 备用卡台 A；Browser 付款开关 false；自动开卡 false；自动补余额 true；每卡成功次数 3；最低卡余额 16（09-07 08:28–09:33 UTC 曾临时 8） |
 | 卡 | HNSKJ 已恢复但 `5980` 只剩 $0.31；备用 A `5501` $8.87 低于门槛 16（09-07 16:53 UTC 已从死单 `PJV1--j4AnE7fvfgkvaceSr0Z` 释放，DEPLETED，充值并重新导入快照后即可分配）、`0237` $0 → 可分配 0 |
 | 订单 | 成功 2、失败 8、关闭 10、等 Session 0；API 路线 1 单 CANCELLATION_PENDING（09-07 误触发直充已按正常流程结单，实付 982.14 PHP，只剩取消续费待跑）；活动资金栅栏 0 |
-| 迁移 | 049（`browser_run_events` 每单阶段时间线） |
+| 迁移 | 050（Pro 5X/20X 产品、Browser 路线、卡台选择、按产品最低余额；09-07 19:16 UTC 两遍应用） |
 | Browser 自动化 | 生产从未自动完成过一笔付款；09-07 演练首次自动走完填卡/地址/邮箱/零税报价并停在点击前（run FAILED_SAFE/PRE_PAYMENT_ABORT，0 许可 0 点击）；此前 21 个 run 中 20 个为 09-01 的 CHATGPT_ACCESS_BLOCKED，1 个 09-06 到 Checkout 未填表后人工完成 |
 | 本机 | BitBrowser + mihomo（launchd）；LIVE Worker 靠手动 `--once`，无常驻；SSH 隧道 13306→3306（掉线时 `ssh -f -N -L 13306:127.0.0.1:3306 root@<host>`）；启动脚本：单订单 `run-live-rehearsal.sh check｜once <orderId>`、预检 `run-browser-preflight.sh check｜once`、常驻池 `run-live-pool.sh check｜run rehearsal｜pay`（密钥运行时经 SSH 取入进程，不落盘） |
 
@@ -46,7 +46,7 @@
 3. 按规格实现新流程 → 测试账号跑到付款前 → 一笔真实付款 → 删除旧编排。完成标准：旧实现已删除。**进度（09-07 09:35 UTC）：测试账号已用生产链路跑到付款点击前**——测试单 `PJV1--j4AnE7fvfgkvaceSr0Z`（备用卡 `5501`）：本机预检 PASSED → 服务器 Worker 短启把订单推到派发边界 → 本机 LIVE 演练 `BROWSER_LIVE_STOP_BEFORE=SUBMIT`：会话替换、身份核对、定价弹窗建结账、卡/地址/邮箱填入、零税重报价 PHP 982.14 / 税 0.00、最终复核后停止；未申请许可、未点击；订单回 CARD_READY、资金栅栏清、卡占用释放。下一步：卡上有钱后，同一订单翻付款开关做一笔真实付款。
 4. 并行：六个身份——**常驻多身份 Worker 已实现并在真实排队单上跑过一次闭环**（`production-live-pool-worker.js`，`run-live-pool.sh check|run rehearsal|pay`；领单 → 执行 → 分类安全中止/重试上限；窗口不关、心跳落库；有效会话下的 PRE_SUBMIT_STOPPED 与多 lane 并行未跑；出口隔离仍缺）；供给自动化（按产品）；Browser Worker 搬到常开机器（BitBrowser Windows 版）；**每单阶段时间线入库已实现**（迁移 049，三个 Worker 的证据事件 WAL + 数据库并写；后台展示待第 5 步）；结账导航已支持 Pro 5x/20x 按钮（Pro 产品未入库、未实跑）。
 5. 后台五页新版与 CDK 页；密码与手打确认词全部取消。**进度（09-07）**：CDK 规则已按基线实现并上线 `44b00cd`（未付款终态自动退回、同码同账号返回原单、Session 重贴不限次数不限时间），生产订单上未验证；五页新版：结构稿 `docs/ADMIN_FIVE_PAGES_2026-09-07.md` 已确认；第 1 步首页已上线 `2bc0e12`（五个决定一行 + 五个数字 + 需要处理的订单 + 提醒 + 开工检查；新增 `operations/browser-payment`、`operations/supply-automation` 两个开关接口）；第 2 步订单页已上线 `9ccd2a7`+`0238601`（列表七列：订单/产品/当前阶段/需要我做什么/卡尾号/身份/创建时间；筛选 全部/需要处理/进行中/已完成；抽屉 动作区→执行时间线→资金与结果→客户与会话→卡片→身份与运行→技术证据；阶段由 `src/services/order-stage.js` 按 CORE_SPEC §1 投影；删除标签/备注/补发/灰度许可/退款观察列；二次密码已移除）；第 3 步卡片页已上线 `91bd4f9`（库存概况+两个设置 / 卡台管理+新增备用卡台 / 导入备用卡 / 卡片列表 / 人工开卡、卡余额充值队列、补卡记录、新卡接管记录折叠；删除提醒阈值与每日自动补卡上限死控件；手打确认词全部取消）；第 4/5 步已上线 `6f1217f`（导航只剩 首页/订单/CDK/卡片/诊断；诊断页 = Worker 心跳 + 开工检查原始项 + CSV 导出 + 跨单资金证据核对 + Browser 控制面；异常队列/资金证据核对/Browser 执行三个旧视图删除）。第 7 步已上线 `5687598`：删除 notes/tags/recharge-permit/compensation/recharge-authorizations/cdks deliveries/card-stock threshold 与 replenishment-settings/provider-routes/card-consumption/operations readiness/step-up 共 14 条路由及 wiring（清单见 `docs/contracts/ADMIN_PANEL.md`）；保留 card-operational-overrides（运营覆盖项）。**五页新版与 CDK 页全部完成。** 小尾巴：首页「开卡补钱」部分开启态缺「关闭」按钮；抽屉「补录付款」仍是四连 prompt。
-6. 20X 启用第二付款阶段。
+6. 20X 第二付款阶段。**进度（09-07）**：用户决定走「先 Plus 再在同一账号升级 20X」路线（免费账号直购 Pro 可能拒付）；Pro 5X/20X 已作为两阶段产品入库上线 `0073d45`（CDK 按产品生成、按产品最低余额、客户页按产品措辞）；第二阶段自动化目标：付款后不重新登录（会话恢复阶梯）走到「Confirm plan changes」弹窗停下，等真实客户时再点 Pay now。导航器与只读演练脚本已提交 `1e8449c`；执行器接入与常驻池按套餐选择动作进行中。
 7. 删除零使用接口与旧表，删前查调用链。
 
 穿插不动结构的小修：告警可关闭；CDK 去密码、去 10 分钟清空；备用卡导入去密码去手打确认词并显示真实失败原因；最低所需卡余额可在库存页设置；隐藏死控件；客户页等待承诺按真实队列与开关计算；Session 密文交付后清理；首页与待办列表适配手机。

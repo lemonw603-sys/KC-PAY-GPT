@@ -4,17 +4,17 @@
 
 | 项目 | 当前值 | 核对时间（UTC） | 证据方式 |
 |---|---|---|---|
-| 生产 release | `/opt/pojia/releases/20260908-importwhy-ba2db48`（commit `ba2db48`，导入预览说明为何不能提交） | 2026-09-07 17:14 | `readlink -f /opt/pojia/current`；switch 输出 |
-| 回滚点 | `/opt/pojia/releases/20260908-cardrelease-fbba5fe`（再前 `20260907-apiclean-5687598`） | 同上 | 部署记录 |
-| 最新数据库备份 | `/var/backups/pojia/pojia-20260907T171356Z.sql.gz.enc`，完整性 OK | 17:13 | `pojia-ops backup/verify`（prepare 阶段） |
-| pojia-web | active（17:14 随 release 切换重启） | 17:14 | systemctl |
+| 生产 release | `/opt/pojia/releases/20260908-pro-0073d45`（commit `0073d45`，Pro 两阶段产品 + 按产品 CDK/最低余额） | 2026-09-07 19:17 | `readlink -f /opt/pojia/current`；switch 输出 |
+| 回滚点 | `/opt/pojia/releases/20260908-importwarn-370c7ce`（再前 `20260908-importwhy-ba2db48`；回滚不撤 050 迁移，050 只增行不改结构） | 同上 | 部署记录 |
+| 最新数据库备份 | `/var/backups/pojia/pojia-20260907T191544Z.sql.gz.enc`，完整性 OK | 19:15 | `pojia-ops backup/verify`（prepare 阶段） |
+| pojia-web | active（19:17 随 release 切换重启，无错误日志） | 19:17 | systemctl / journalctl |
 | pojia-worker（API） | inactive（09-06 03:46 UTC 人为停止；09-07 09:28 UTC 短启约 10 秒推进测试单后再次停止） | 09-07 09:29 | systemctl |
 | pojia-browser-worker | inactive / disabled | 16:35 | systemctl |
 | pojia-card-funding.timer | active | 16:35 | systemctl |
 | pojia-card-read-sync.timer | active | 16:35 | systemctl |
 | pojia-card-stock-runner.timer | inactive / disabled（旧每分钟自动开卡架构已废弃） | 16:35 | systemctl |
 | 健康 | `127.0.0.1:3100` live 200 / ready 200；公网 plus 与 ops 200 | 16:36 | curl |
-| 数据库迁移 | `049_browser_run_events`（09-07 经 `deploy-release.sh migrate` 两遍应用） | 09-07 12:5x | schema_migrations |
+| 数据库迁移 | `050_pro_products`（09-07 19:16 经 `deploy-release.sh migrate` 两遍应用；生产核对：products 3 个、Browser 路线 3 条接单、Pro 卡台选择 = backup-a、`minimum_required_card_balance:pro_5x/pro_20x` = 16.00） | 09-07 19:16 | schema_migrations / 只读查询 |
 | accept_new_orders | true | 13:31 | app_settings |
 | dispatch_new_recharges / 模式 | true / AUTOMATIC | 13:31 | app_settings |
 | 默认路线 | Browser（`CHATGPT_PLUS_BROWSER_V1` accepts_new_orders=1，API=0） | 13:31 | fulfillment_routes |

@@ -1842,3 +1842,12 @@
 - **导入「无法点击提交」**：用户已导入最新 Excel，但生产库最近一次 `manual_card_import_batches` 仍是 09-06 16:54 UTC，5501 仍 $8.87；服务不记请求行、无 nginx 访问日志，无法从服务器侧确认预览请求。代码显示提交按钮只在 `commitAllowed=false`（结构错误行或跨来源冲突行 > 0）时禁用，原因只在行内小字且是英文码。最可疑：充值后导出的「累计充值/累计消费/余额」三者不一致触发 `BALANCE_MISMATCH`（容差 0.02），或文件不是 xlsx 容器（解析器只认 zip 魔数）。已改：预览面板顶部明确「不能提交：N 行结构错误：第 x 行（尾号）：原因」，错误码译中文，解析失败也写进面板。**待用户重新预览后读出原因**（或提供文件本地跑同一解析器，只输出行状态不输出卡号）。若确认是 BALANCE_MISMATCH 且平台字段本身就不自洽，下一步把它降为警告（余额列才是分配依据）。
 - **5X/20X 先做再直接测 20X**：用户提议以 20X 作为第一笔真实付款。评估见回复：需先做 Pro 产品入库、路线与卡台选择、CDK 按产品生成、付款后核实的套餐判定（现只认 plus）、按产品最低余额；首笔真实点击的未知项（3DS/验证码/付款后核实）用约 16 美元验证比用 Pro 价位验证便宱得多；建议 Plus 先跑通，紧接着做 Pro 产品并用 20X 真实单验证。等用户拍板。
 
+## 2026-09-07｜用户拍板：Plus → 20X 两阶段，20X 停在弹窗；Pro 产品上线（`20260908-pro-0073d45`）+ 导入余额不一致降为提示
+
+- 用户提供一手信息：手动上号付过 1 单并手动升到 20X，同一出口无 3DS/验证码；升级前被踢到登录页（不是注入 Session 特有）；截图「Confirm plan changes」：Pro 订阅 ₱8,919.64、Plus 抵扣 −₱973.87、今日应付 ₱7,945.77、支付卡 VISA *5980、按钮 Cancel / Pay now。用户判断免费账号直购 20X 可能拒付，要求走 Plus → 升级路线，20X 这次停在弹窗，尽量不重新登录。
+- 导入卡住原因确认：预览显示「第 1 行（尾号 5501）累计充值 − 累计消费 ≠ 余额」。已把 BALANCE_MISMATCH 降为提示，按余额列导入（`370c7ce`）。**用户需重新预览并提交**，5501 才会更新到新余额。
+- Stage B（`1e8449c`，未部署，browser-mvp 本地代码）：导航器 `expect:'plan-change'` + `readPlanChangeDialog`/`cancelPlanChangeDialog`；`post-payment-session-recovery.js` 阶梯（D-134）；`scripts/poc-plan-change-dialog-readonly.mjs`（`BITBROWSER_PROFILE_ID=<Lane 3> node … pro_20x [--cancel] [--probe-recovery]`）。13 tests（含真实 Chromium 夹具）。
+- Stage A（`0073d45`，已部署）：迁移 050（首次在本机测试库跑出两处 SQL 错误——`ON DUPLICATE KEY UPDATE product_id` 二义、`INSERT INTO app_settings … SELECT FROM app_settings` 自引用——修正后两遍幂等通过；生产两遍应用）；CDK 按产品；下单按产品取最低余额；卡片页最低余额按产品；客户页 `product{planType,label}` + 「Plus」替换为产品短名；`customer.js?v=11`（plus./pay.vibebridge.top 均已核对）、`admin.js?v=35`。544 单测 + 5 真实 schema 集成通过。
+- 真实付款准备清单更新：① 用户在卡片页重新预览并提交导入（余额 16）；② 后台 CDK 页生成一张 **Pro 20X** 的 CDK（不是 Plus）；③ 新免费账号 Session；④ 测试 Plus 账号 Session 贴进 Lane 3 供第二阶段只读演练（用上号器扩展，粘贴 `__Secure-next-auth.session-token` 值或完整 JSON，点替换）。
+- 待做（Stage C）：执行器 `UPGRADE_DIALOG_STOP` 动作、verifier 会话恢复钩子、常驻池按套餐选动作（plus→取消续费，pro→升级弹窗停）、`recordManual20xHandoff` 记录弹窗事实；随后在测试 Plus 账号上演练。
+
