@@ -1793,3 +1793,13 @@
 - 公网：`admin.js?v=28`/`admin.css?v=22` 200，含 `decisions-grid` 等标记、无 `statusList` 残留；两个新开关接口未登录 401。
 - 下一步：五页第 2 步订单页（列表列改造 + 抽屉分区 + 删除标签/备注/补发/灰度许可控件）。
 
+## 2026-09-07｜后台五页第 2 步：订单页「一张表 + 一个抽屉」上线（`20260907-orders-9ccd2a7` → `20260907-orders2-0238601`）
+
+- 阶段投影：新增 `v1/src/services/order-stage.js`（`deriveOrderStage`），把 `orders / recharge_attempts / browser_runs` 投影为 CORE_SPEC §1 的 12 个阶段并给出「需要我做什么」一句话；9 个单元测试覆盖付款不明优先、已付款未交付、等 Session 打回原因、等待自动执行超时、人工接管/安全停止、20X 升级。
+- 列表接口：`LEFT JOIN LATERAL` 取每单最新 attempt 与最新 Browser run（含 executor_profiles.profile_code），`LEFT JOIN products`；返回 `stage / attempt / browserRun / productName`；新增 `ACTIVE`（进行中 = 非终态）与 `FINISHED`（已完成 = RECHARGE_SUCCESS/RECHARGE_FAILED/CLOSED）筛选。详情接口新增 `stage / browserRun / money{attempts, ledger, operations} / reconciliationCases`。LATERAL SQL 在本地 MySQL 8（54741）与生产 8.4 上都实际执行过。
+- 页面：列表七列（订单/产品/当前阶段/需要我做什么/卡尾号/身份/创建时间）；筛选只剩 全部/需要处理/进行中/已完成（+首页数字链接用的 今日/自动处理中/等 Session）；抽屉：动作区（取消并释放卡 / 人工付款已完成 / 确认 20X 已升级 / 同步卡交易 / 关闭对账案例）→ 执行时间线 → 资金与结果 → 客户与会话 → 卡片 → 身份与运行 → 技术证据折叠。人工付款/20X 复用 Browser run 控制接口（`controlBrowserRun(run, action, { after })`）。
+- 删除：批量灰度许可与勾选列、单笔灰度许可/撤销、补发 CDK、标签、备注、记录交付、时间类型与日期筛选、退款观察列；`requestSensitiveAccess` 密码弹窗删除，`sensitiveApi` 直通；后端 `sensitiveAdminGuards` 不再含 step-up（D-129）。接口（tags/notes/compensation/recharge-permit/step-up）保留到第 7 步。
+- 生产事实核对后的两处修正（`0238601`）：① `browser_runs.selected_lane` 从未被写入，常驻池身份只存在于 `worker_id = pool:<lane>`，身份列改为按此显示，执行档案（`CHATGPT_PLUS_BROWSER_V1`）单列；② 旧「需要处理」把 8 单历史 API 失败单算进去，而阶段引擎判它们为付款前关闭、无动作——改为 D-128 的付款证据判定，列表与首页计数共用同一 SQL。切换后生产只读复验：需处理 0 / 进行中 1（API 单 VERIFYING，等取消续费复查）/ 已完成 21 / 今日 1 / 可分配卡 0；web 无错误日志。
+- 测试：537 通过；新增静态断言：订单页无灰度/标签/备注/补发/密码控件，七列表头与三项筛选存在；元素一致性测试继续生效。
+- 未做/留待：抽屉「补录付款」仍用四连 prompt（在技术证据折叠里）；导出 CSV 暂留订单页；`ORDER_FILTER_TITLES` 以外的状态值仍可通过 URL/首页数字进入但下拉不显示对应项。下一步：第 3 步卡片页（卡台管理、导入、卡余额充值三块并入库存页）。
+
