@@ -1,5 +1,5 @@
 import { parseSessionInput, SUPPORTED_SESSION_COOKIE_NAMES } from "./token.mjs";
-import { isSessionCookieName, splitSessionCookie } from "./cookie-chunks.mjs";
+import { isSessionCookieName, sessionCookieRemovals, splitSessionCookie } from "./cookie-chunks.mjs";
 
 const CHATGPT_URL = "https://chatgpt.com/";
 
@@ -58,15 +58,31 @@ async function writeSessionCookie(name, value) {
   }
 }
 
-async function writeSessionCookies(name, value) {
-  const existing = (await chrome.cookies.getAll({ domain: "chatgpt.com" }))
+// Manual tool: pressing "write" means "log this Profile in as this account".
+// Any session already there (the previous customer's, or one ChatGPT rotated)
+// is removed first, otherwise the browser keeps sending the old identity.
+async function closeChatGptTabs() {
+  const tabs = await chrome.tabs.query({ url: ["https://chatgpt.com/*", "https://*.chatgpt.com/*"] });
+  if (tabs.length > 0) await chrome.tabs.remove(tabs.map((tab) => tab.id));
+  return tabs.length;
+}
+
+async function removeExistingSessionCookies() {
+  const existing = await chrome.cookies.getAll({ domain: "chatgpt.com" });
+  const removals = sessionCookieRemovals(existing, SUPPORTED_SESSION_COOKIE_NAMES);
+  for (const target of removals) await chrome.cookies.remove(target);
+  const leftover = (await chrome.cookies.getAll({ domain: "chatgpt.com" }))
     .filter((cookie) => isSessionCookieName(cookie.name, SUPPORTED_SESSION_COOKIE_NAMES));
-  if (existing.length > 0) {
-    return { chunkCount: existing.length, existingSessionPreserved: true };
-  }
+  if (leftover.length > 0) throw new Error("旧会话 Cookie 未能清除，请关闭 ChatGPT 标签页后重试。");
+  return removals.length;
+}
+
+async function writeSessionCookies(name, value) {
+  const closedTabs = await closeChatGptTabs();
+  const replacedCount = await removeExistingSessionCookies();
   const chunks = splitSessionCookie(name, value);
   for (const chunk of chunks) await writeSessionCookie(chunk.name, chunk.value);
-  return { chunkCount: chunks.length, existingSessionPreserved: false };
+  return { chunkCount: chunks.length, replacedCount, closedTabs };
 }
 
 toggleToken.addEventListener("click", () => {
@@ -87,8 +103,8 @@ loginForm.addEventListener("submit", async (event) => {
     const written = await writeSessionCookies(name, value);
 
     tokenInput.value = "";
-    setStatus(written.existingSessionPreserved
-      ? "当前 Profile 已有会话，已保留原登录并打开 ChatGPT。请在订单完成后再清理或更换客户。"
+    setStatus(written.replacedCount > 0
+      ? `已替换原会话（清除 ${written.replacedCount} 条旧 Cookie），正在打开 ChatGPT。`
       : "会话已写入，正在打开 ChatGPT。", "success");
     await refreshSessionBadge();
     await chrome.tabs.create({ url: CHATGPT_URL });

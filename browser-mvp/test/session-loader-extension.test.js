@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { isSessionCookieName, splitSessionCookie } from '../extensions/nuohuisheng-session-loader/cookie-chunks.mjs';
+import { isSessionCookieName, sessionCookieRemovals, splitSessionCookie } from '../extensions/nuohuisheng-session-loader/cookie-chunks.mjs';
 import { parseSessionInput, SUPPORTED_SESSION_COOKIE_NAMES } from '../extensions/nuohuisheng-session-loader/token.mjs';
 
 test('derived session loader parses JSON and chunks long NextAuth tokens', () => {
@@ -49,4 +49,21 @@ test('derived session loader recovers the token from non-strict or partially cop
   assert.throws(() => parseSessionInput(`{"sessionToken":"${token.slice(0, 40)}`), /不完整/);
   // Unparseable text without any token key: explains what to paste.
   assert.throws(() => parseSessionInput('{"user":{"id":"user-1"},"accessTo'), /找不到 sessionToken/);
+});
+
+test('derived session loader removes every existing session cookie variant before writing a replacement', () => {
+  const existing = [
+    { name: '__Secure-next-auth.session-token.0', domain: '.chatgpt.com', path: '/' },
+    { name: '__Secure-next-auth.session-token.1', domain: '.chatgpt.com', path: '/' },
+    { name: '__Secure-next-auth.session-token', domain: 'chatgpt.com', path: '/' },
+    { name: '__Secure-authjs.session-token', domain: '.chatgpt.com', path: '/api' },
+    { name: '__cf_bm', domain: '.chatgpt.com', path: '/' },
+    { name: '__Secure-next-auth.session-token.0', domain: '.chatgpt.com', path: '/' }
+  ];
+  assert.deepEqual(sessionCookieRemovals(existing, SUPPORTED_SESSION_COOKIE_NAMES), [
+    { url: 'https://chatgpt.com/', name: '__Secure-next-auth.session-token.0' },
+    { url: 'https://chatgpt.com/', name: '__Secure-next-auth.session-token.1' },
+    { url: 'https://chatgpt.com/', name: '__Secure-next-auth.session-token' },
+    { url: 'https://chatgpt.com/api', name: '__Secure-authjs.session-token' }
+  ]);
 });

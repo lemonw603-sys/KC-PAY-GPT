@@ -13,3 +13,17 @@ export function splitSessionCookie(name, value, chunkSize = SESSION_COOKIE_CHUNK
   }
   return chunks;
 }
+
+// Every existing session cookie (base name or .N chunk, any domain variant) that
+// must be removed before a replacement is written; chrome.cookies.remove needs
+// a URL that matches the cookie's own domain and path.
+export function sessionCookieRemovals(cookies, supportedNames) {
+  const targets = new Map();
+  for (const cookie of cookies) {
+    if (!isSessionCookieName(cookie.name, supportedNames)) continue;
+    const host = String(cookie.domain || "chatgpt.com").replace(/^\./, "");
+    const url = `https://${host}${cookie.path || "/"}`;
+    targets.set(`${url}|${cookie.name}`, { url, name: cookie.name });
+  }
+  return [...targets.values()];
+}

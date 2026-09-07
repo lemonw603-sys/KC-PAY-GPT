@@ -1,6 +1,6 @@
 # 诺汇盛专用上号器（Edge / Chrome 扩展）
 
-> Browser MVP 派生版本 `1.1.1`：保留原始 `1.1.0` 不变，增加 NextAuth/Auth.js 长 Session Cookie 分块写入与分块会话识别，用于项目专用 Chrome Profile。
+> Browser MVP 派生版本 `1.2.0`：保留原始 `1.1.0` 不变，增加 NextAuth/Auth.js 长 Session Cookie 分块写入与分块会话识别；`1.2.0` 起「写入」即替换 Profile 里已有的会话（先关闭 ChatGPT 标签页、清除旧 session Cookie 及其分块，再写入新令牌），并能从不规范或不完整的 JSON 中抓取 sessionToken。用于项目专用 Chrome Profile。
 
 这是一个本地 Edge 插件，可把你本人账号的 ChatGPT Session 令牌写入 `chatgpt.com` 的安全 Cookie，然后打开 ChatGPT。
 

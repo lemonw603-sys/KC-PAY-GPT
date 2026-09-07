@@ -1668,3 +1668,10 @@
 - 结论：待验证 A「接口能否在常驻身份内调用」成立（拿到的是后端业务响应，不是 403/Cloudflare）；「能否取回结账 URL」与待验证 B 都因账号已是 Plus 无法验证。plus 的「unusual activity」无法区分是同套餐重复购买被拒还是风控，未重复调用。
 - 附带事实：已 Plus 账号对 Pro 套餐直接「already paid」→ 20X 第二阶段（Plus→Pro）不走同一 checkout 入口，升级路径需单独只读探测；不得自动点击升级按钮（订阅升级可能立即扣款）。
 - 下一步：需要一个未订阅（Free）的测试账号 Session 写入 Lane 3 后重跑。
+
+## 2026-09-07｜上号器换账号无效的根因：已有会话时「保留原登录」
+
+- 现象：用户在 Lane 3 用上号器写入第二个（免费）账号的 Session 后，打开的仍是原 Plus 账号。只读检查（`browser-mvp/scripts/list-session-cookies-readonly.mjs`，只列名称/域/长度/过期）：Profile 内只有一套 `__Secure-next-auth.session-token.0/.1`（`.chatgpt.com`，服务端 01:45 UTC 续期），没有第二套。
+- 根因：`popup.js` 的 `writeSessionCookies` 在已有 session cookie 时直接返回「已保留原登录」，新令牌根本没写；提示还是绿色成功样式。这是 Codex 为「同一客户被轮换的会话」加的保护，对人工换账号场景是错的。
+- 修复 `1.2.0`：写入前先关闭该 Profile 的 chatgpt.com 标签页（防旧页面把轮换后的旧令牌写回来）、按每条 cookie 自身的域/路径清除所有 session cookie 及分块、再写入；清不干净则报错不写。manifest 增加 `tabs` 权限。纯函数 `sessionCookieRemovals` 单测覆盖分块、域变体、去重；6/6。已同步到 `BitExtensions/384ef55b-…`，并通过 Local API 关闭/重开 Lane 3 让新版生效。
+- Worker 自动流程不受影响：`session-bootstrap` 走 CDP，替换逻辑在 `fc20e9a` 已单独实现。
