@@ -145,3 +145,12 @@
 
 | D-117 | 内部提醒只展示需要运营采取动作的 warning/critical。卡台余额变化继续发 Bark 并保留审计，但 info 历史不占后台提醒；订单等待卡提醒必须绑定订单并随取消/终态关闭；自动补给已开启时，低库存由系统按订单恢复，不再发送要求人工处理的低库存提醒。 | 已实现并部署 | migration 044 已关闭历史陈旧等待卡/低库存提醒；余额 info 证据继续保留。 |
 | D-118 | 默认 API 路线长期开放 Worker 的最小真实充值权限：只设 `PROVIDER_RECHARGE_WRITES_ENABLED=true`；`PROVIDER_WRITES_ENABLED=false`、`PROVIDER_CARD_WRITES_ENABLED=false` 和 Browser 付款门禁继续独立关闭。 | 已确认并部署 | 用户在本次候选部署前明确确认；生产以独立 systemd drop-in 落地，Worker 进程环境和心跳已复核。 |
+
+| D-119 | 2026-09-07 接班基线（用户确认）：系统目标是简单、稳定、好用；运营者只做五个决定（接单/路线/卡台/能否付钱/能否开卡补钱）、三件日常（发 CDK/处理订单/管卡片）；后台 9 页收成 5 页；密码与手打确认词全部取消；不设人为限速，不为未出现的风控加闸门。改动可以大，交接不能断：入口文件与地图始终反映当前事实，搬移改名留旧→新索引，保留回滚点。 | 进行中，见 `docs/PROJECT_MAP.md` §5 |
+| D-120 | CDK 是付过钱的凭证：下单时绑定（REDEEMED），未付款终态（RECHARGE_FAILED/CLOSED）自动退回 AVAILABLE；任何付款证据（资金 UNKNOWN/SETTLED、账本 CONSUMED/RECONCILIATION、PAYMENT_SUBMIT）都不退回；同码同账号在原单进行中再提交返回原单；Session 重贴不限次数不限时间。 | 已实现并部署 `44b00cd`，生产订单未验证 |
+| D-121 | Browser 结账创建由页面自身点击触发，不裸调 `backend-api/payments/checkout`（裸调缺页面签名头，Plus 返回「unusual activity」；实测页面点击同一请求体 200）。custom 模式无结账 URL，付款靠页面内嵌 Stripe（`client_secret`）。 | 已实测，规格 §5 步骤 2 |
+| D-122 | 常驻身份策略：六个常驻 BitBrowser 身份顺序服务多单，不为每单新建窗口；每单结束清 session 与登录态 cookie（`oai-client-auth-info` 等），保留设备与 Cloudflare cookie；同一账号会话不得同时存在于两个身份。降低跨客户关联的投入顺序：一卡一单 > 出口 IP 数 > 窗口数。封控细节由 Codex 另行研究后再调整。 | 用户确认；实现见 `session-bootstrap`、上号器 1.2.1、常驻池 Worker |
+| D-123 | 演练模式 `BROWSER_LIVE_STOP_BEFORE=SUBMIT`：同一条 LIVE 填写路径停在点击前，不申请 permit、不落付款意图；订单回 CARD_READY、资金栅栏清、身份页面保留。常驻池对失败 run 做分类安全中止，同一派发失败 3 次终态 `BROWSER_RETRY_LIMIT`。 | 已实现；09-07 一次演练成功停在点击前 |
+| D-124 | 外部审查按 `docs/REVIEW_PROTOCOL.md`：Codex 审查员只读、有证据、分板块、有版本边界；审查记录与执行者处置记录分离；P0/P1 必须书面处置，拒绝 P0 由用户裁决；每批每板块不超过 10 条。 | 已建立，等第一批审查 |
+| D-125 | 最低所需卡余额改为运营者可在库存页设置的正式设置项（只影响分配资格，不影响付款）；卡台双故障时可临时下调让备用卡具备资格跑演练，用完即恢复。 | 已实现并部署 `ed40c94`；09-07 临时 8 → 已恢复 16 |
+| D-126 | 两个窗口曾并行执行于同一仓库与生产环境；用户指定分叉窗口继续执行，原会话停止。以后同一时间只允许一个执行窗口对生产与工作区动手，审查窗口只读。 | 已收口，见 `HANDOFF_LOG` 2026-09-07 末节 |
