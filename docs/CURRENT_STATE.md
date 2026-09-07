@@ -25,7 +25,7 @@
 | card_auto_replenishment_enabled | false | 13:31 | app_settings |
 | card_balance_recharge_enabled | true | 13:31 | app_settings |
 | card_max_successful_payments | 3 | 13:31 | app_settings |
-| default_open_card_amount / minimum | 16 / 16（全局值，待改为按产品；最低余额自 `ed40c94` 起可在库存页设置，只影响分配资格） | 06:36 | app_settings |
+| default_open_card_amount / minimum | 16 / **8.00（09-07 08:28 UTC 临时降低，用户同意，供 `5501` 跑演练；演练单分到卡后恢复 16）** | 08:28 | app_settings（经服务层 `setMinimumRequiredCardBalance`） |
 | Worker 进程写权限 | worker：`PROVIDER_RECHARGE_WRITES_ENABLED=true`（drop-in），通用/卡片写 false；funding 单元：`PROVIDER_CARD_WRITES_ENABLED=true`；env 文件 `PROVIDER_READS_ENABLED=true` | 16:35 | `systemctl cat` |
 | HNSKJ 卡 | `5980` $16 inventory AVAILABLE，但分配资格要求交易同步 15 分钟内（`last_transaction_synced_at` 09-06 22:00 UTC，HNSKJ 故障期间不再刷新）→ **当前不可分配**；其余 5 张 ASSIGNED 于历史订单且 ≤ $0.01；5 张 DEPLETED | 09-07 02:30 | cards + `card-inventory-eligibility.js` 规则 |
 | 备用卡 A | `5501` $8.87 DEPLETED（09-06 付款 143.13 后；用量 1/3，无占用、无退款、无覆盖项，只差余额 ≥ 最低 16）；`0237` $0 AVAILABLE；可分配 0。**全系统当前可分配卡为 0** | 09-07 02:30 | cards / 资格规则各分项查询 |

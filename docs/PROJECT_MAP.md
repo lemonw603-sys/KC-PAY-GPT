@@ -23,7 +23,7 @@
 |---|---|
 | release | `/opt/pojia/releases/20260907-min-balance-ed40c94`（09-07 06:35 UTC）；回滚点 `20260907-import-confirm-6948b02` |
 | 服务 | Web active；API Worker inactive（09-06 03:46 UTC 人为停止）；Browser Worker inactive/disabled；补余额与读同步 timer active；旧自动开卡 timer disabled |
-| 开关 | 接单 true；自动派发 true；默认路线 Browser；Browser 卡台 = 备用卡台 A；Browser 付款开关 false；自动开卡 false；自动补余额 true；每卡成功次数 3 |
+| 开关 | 接单 true；自动派发 true；默认路线 Browser；Browser 卡台 = 备用卡台 A；Browser 付款开关 false；自动开卡 false；自动补余额 true；每卡成功次数 3；**最低卡余额临时 8（09-07 08:28，演练用，待恢复 16）** |
 | 卡 | 可分配 0：HNSKJ `5980` $16 但交易同步已过 15 分钟（卡台故障）不合格；备用 A `5501` $8.87 低于最低 16、`0237` $0 |
 | 订单 | 成功 2（含 09-06 人工 20X）、失败 7、关闭 8、API 路线等卡 1、等 Session 2；活动资金/run/队列/租约/许可全部 0 |
 | 迁移 | 048 |
