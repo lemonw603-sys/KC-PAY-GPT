@@ -86,7 +86,7 @@ test('labels local stock refresh separately from provider card synchronization',
 test('admin overview does not describe disabled automatic card opening as enabled', async () => {
   const html = await readFile(new URL('../public/admin/index.html', import.meta.url), 'utf8');
   const script = await readFile(new URL('../public/admin/assets/admin.js', import.meta.url), 'utf8');
-  assert.match(html, /admin\.js\?v=33/);
+  assert.match(html, /admin\.js\?v=34/);
   assert.match(script, /supplyOn \? '自动开卡与补余额' : d\.supplyAutomationMixed \? '部分开启' : '全部人工'/);
   assert.match(script, /开卡与补余额都由人工在卡片页操作/);
   assert.match(script, /没有合格卡，新订单会等卡/);

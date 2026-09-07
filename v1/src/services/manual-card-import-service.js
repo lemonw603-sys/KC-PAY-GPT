@@ -32,7 +32,7 @@ function parseRows(bytes) {
 function money(value) { const n = Number(String(value).replace(/[$,]/g, '')); return Number.isFinite(n) ? n : NaN; }
 function normalizeRow(values, index, now = new Date()) {
   const row = Object.fromEntries(REQUIRED_HEADERS.map((h, i) => [h, String(values[i] ?? '').trim()]));
-  const structuralErrors = []; const availabilityReasons = [];
+  const structuralErrors = []; const availabilityReasons = []; const warnings = [];
   const sequence = row['卡序列号']; const pan = row['卡号'].replace(/[\s-]/g, '');
   if (!sequence) structuralErrors.push('MISSING_SEQUENCE');
   if (!/^\d{12,19}$/.test(pan)) structuralErrors.push('INVALID_CARD_NUMBER');
@@ -48,8 +48,10 @@ function normalizeRow(values, index, now = new Date()) {
   for (const h of ['FirstName','LastName','州','城市','街道','邮编']) if (!row[h]) availabilityReasons.push(`MISSING_${h}`);
   const loaded = money(row['累计充值']); const spent = money(row['累计消费']); const balance = money(row['余额']);
   if (![loaded, spent, balance].every(Number.isFinite) || loaded < 0 || spent < 0 || balance < 0) structuralErrors.push('INVALID_BALANCE');
-  else if (Math.abs((loaded - spent) - balance) > 0.02) structuralErrors.push('BALANCE_MISMATCH');
-  return { index, row, pan, expMonth: exp ? Number(exp[1]) : null, expYear: exp ? 2000 + Number(exp[2]) : null, balance, structuralErrors, availabilityReasons };
+  // The platform's running totals do not always reconcile (top-up fees, rounding).
+  // The 余额 column is what allocation uses, so a mismatch is reported, not blocking.
+  else if (Math.abs((loaded - spent) - balance) > 0.02) warnings.push('BALANCE_MISMATCH');
+  return { index, row, pan, expMonth: exp ? Number(exp[1]) : null, expYear: exp ? 2000 + Number(exp[2]) : null, balance, structuralErrors, availabilityReasons, warnings };
 }
 
 export function parseManualCardWorkbook(input) {
@@ -106,7 +108,8 @@ function publicRow(item, existing = false, conflict = false) {
   return { row: item.index, sequence: item.row['卡序列号'].slice(0, 6), last4: item.pan.slice(-4),
     balance: Number.isFinite(item.balance) ? item.balance.toFixed(2) : null,
     status: conflict ? 'CONFLICT' : item.structuralErrors.length ? 'REJECTED' : unavailable ? 'UNAVAILABLE' : (existing ? 'UPDATE' : 'INSERT'),
-    state: item.row['州'], errors: [...item.structuralErrors, ...item.availabilityReasons, ...(conflict ? ['PAN_SOURCE_CONFLICT'] : [])] };
+    state: item.row['州'], errors: [...item.structuralErrors, ...item.availabilityReasons, ...(conflict ? ['PAN_SOURCE_CONFLICT'] : [])],
+    warnings: [...(item.warnings || [])] };
 }
 // A card is "at risk" only while money is still in flight. SETTLED is terminal:
 // its consumption already lives in the capacity ledger, and orders.assigned_card_id

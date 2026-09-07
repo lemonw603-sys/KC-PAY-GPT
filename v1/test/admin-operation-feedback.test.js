@@ -34,7 +34,7 @@ test('manual card import preview explains why the commit is blocked and translat
  vm.runInNewContext(snippet("elements.manualCardImportForm?.addEventListener('submit'"),ctx);
  await handler({preventDefault(){}});
  assert.match(panel.innerHTML,/不能提交：1 行结构错误/);
- assert.match(panel.innerHTML,/第 1 行（尾号 5501）：累计充值 − 累计消费 ≠ 余额/);
+ assert.match(panel.innerHTML,/第 1 行（尾号 5501）：累计充值 − 累计消费 ≠ 余额（仅提示，按余额列导入）/);
  assert.match(panel.innerHTML,/<em>结构错误<\/em>/);
  assert.match(panel.innerHTML,/id="commit-manual-card-import" disabled/);
  assert.doesNotMatch(panel.innerHTML,/BALANCE_MISMATCH/);

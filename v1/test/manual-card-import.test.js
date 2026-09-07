@@ -60,7 +60,8 @@ test('preview is source-scoped and does not hard-code a product minimum balance'
   const bytes = workbook([
     ['title', ...Array(16).fill('')], headers,
     ['seq-1','2','0','2','4111' + '1111'.repeat(3),'1' + '23','12/29','已激活','x','Test','One','DE','Wilmington','1 Main St','19801','',''],
-    ['seq-2','20','0','20','5555' + '5555'.repeat(2) + '4444','4' + '56','12/29','停用','x','Test','Two','DE','Wilmington','2 Main St','19801','','']
+    ['seq-2','20','0','20','5555' + '5555'.repeat(2) + '4444','4' + '56','12/29','停用','x','Test','Two','DE','Wilmington','2 Main St','19801','',''],
+    ['seq-3','20','3.5','16','4242' + '4242'.repeat(3),'7' + '89','12/29','已激活','x','Test','Three','DE','Wilmington','3 Main St','19801','','']
   ]);
   const pool = { async getConnection() { throw new Error('not used'); }, async query(sql) {
     if (/FROM provider_accounts/.test(sql)) return [[{ id: 'source-a', provider_code: 'manual_excel', account_code: 'a', display_name: 'A', source_adapter: 'backup_card_export_v1', supports_browser_recharge: 1 }]];
@@ -70,9 +71,13 @@ test('preview is source-scoped and does not hard-code a product minimum balance'
   } };
   const service = createManualCardImportService({ pool, encryptionKey: Buffer.alloc(32, 1), panHmacKey: Buffer.alloc(32, 2) });
   const result = await service.preview({ providerAccountId: 'source-a', fileBase64: bytes.toString('base64') });
-  assert.equal(result.insertCount, 1);
+  assert.equal(result.insertCount, 2);
   assert.equal(result.unavailableCount, 1);
   assert.equal(result.rejectedCount, 0);
   assert.equal(result.commitAllowed, true);
+  // 20 − 3.5 ≠ 16: the platform's totals disagree with the balance column; the row
+  // still imports at balance 16 and only carries a warning.
+  const mismatch = result.rows.find((row) => row.last4 === '4242');
+  assert.deepEqual([mismatch.status, mismatch.balance, mismatch.errors, mismatch.warnings], ['INSERT', '16.00', [], ['BALANCE_MISMATCH']]);
   assert.match(result.confirmation, /完整快照/);
 });
