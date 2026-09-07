@@ -196,8 +196,87 @@ export const CHATGPT_PLUS_CHECKOUT_NAVIGATION_CONTRACT = Object.freeze({
   }),
   questionnaireSkipLabels: Object.freeze(['跳过', 'Skip']),
   checkoutReadySelector: '[data-testid="checkout-page-content"]',
+  // An account that already subscribes does not get a Checkout page: the
+  // picker opens a "Confirm plan changes" dialog whose Pay button charges the
+  // card on file immediately. The navigator can stop on that dialog.
+  planChangeDialogLabels: Object.freeze(['Confirm plan changes', '确认套餐变更', '确认方案变更', '确认计划变更']),
+  planChangePayLabels: Object.freeze(['Pay now', '立即支付', '立即付款', '现在支付']),
+  planChangeCancelLabels: Object.freeze(['Cancel', '取消']),
   maxUpgradeAttempts: 2,
 });
+
+function planChangeDialog(page, contract) {
+  const labels = contract.planChangeDialogLabels || [];
+  if (!labels.length) throw new ContractError('planChangeDialogLabels is required for plan-change navigation');
+  return page.locator(contract.pricingDialogSelector).filter({
+    hasText: new RegExp(`(${labels.map(escapeRegExp).join('|')})`),
+  });
+}
+
+async function planChangeDialogVisible(page, contract) {
+  try { return (await visibleCount(planChangeDialog(page, contract))) >= 1; } catch { return false; }
+}
+
+async function targetReady(page, contract, expect) {
+  if (expect === 'plan-change') return planChangeDialogVisible(page, contract);
+  return checkoutReady(page, contract);
+}
+
+const AMOUNT_PATTERN = /[-−]?\s?(?:₱|PHP|\$|USD|€|£)\s?[\d,]+(?:\.\d{2})?/;
+
+function amountIn(line) {
+  const match = String(line || '').match(AMOUNT_PATTERN);
+  return match ? match[0].replace(/\s+/g, '').replace('−', '-') : null;
+}
+
+/**
+ * Reads the visible "Confirm plan changes" dialog without touching it. Amounts,
+ * the card brand and last four digits are the only values kept; nothing else on
+ * the dialog (and never anything outside it) is returned.
+ */
+export async function readPlanChangeDialog(page, contract = CHATGPT_PLUS_CHECKOUT_NAVIGATION_CONTRACT) {
+  const dialog = planChangeDialog(page, contract);
+  if (await visibleCount(dialog) !== 1) throw new ContractError('plan change dialog drift');
+  const text = String(await dialog.first().innerText());
+  const lines = text.split(/\r?\n/).map((line) => line.replace(/\s+/g, ' ').trim()).filter(Boolean);
+  const find = (patterns) => lines.findIndex((line) => patterns.some((pattern) => pattern.test(line)));
+  const amountAt = (index) => {
+    if (index < 0) return null;
+    return amountIn(lines[index]) || amountIn(lines[index + 1]) || null;
+  };
+  const subscriptionIndex = find([/subscription/i, /订阅/]);
+  const adjustmentIndex = find([/adjustment/i, /抵扣|调整|折抵/]);
+  const totalIndex = find([/total due/i, /今日应付|应付|合计/]);
+  const paymentIndex = find([/payment method/i, /支付方式|付款方式/]);
+  const paymentLine = paymentIndex >= 0 ? `${lines[paymentIndex]} ${lines[paymentIndex + 1] || ''}` : '';
+  const card = paymentLine.match(/([A-Za-z]{2,20})\s*\*+\s?(\d{4})/);
+  const pay = await uniqueVisibleButton(dialog.first(), contract.planChangePayLabels || [], 'plan change pay control', { optional: true });
+  const cancel = await uniqueVisibleButton(dialog.first(), contract.planChangeCancelLabels || [], 'plan change cancel control', { optional: true });
+  return {
+    title: lines.find((line) => (contract.planChangeDialogLabels || []).some((label) => line.includes(label))) || null,
+    subscriptionLine: subscriptionIndex >= 0 ? lines[subscriptionIndex] : null,
+    subscriptionAmount: amountAt(subscriptionIndex),
+    adjustmentAmount: amountAt(adjustmentIndex),
+    totalDueToday: amountAt(totalIndex),
+    paymentMethod: card ? { brand: card[1].toUpperCase(), last4: card[2] } : null,
+    payButtonPresent: Boolean(pay),
+    cancelButtonPresent: Boolean(cancel),
+    lineCount: lines.length,
+  };
+}
+
+/** Closes the plan-change dialog with its own Cancel control. Never touches Pay. */
+export async function cancelPlanChangeDialog(page, contract = CHATGPT_PLUS_CHECKOUT_NAVIGATION_CONTRACT, {
+  timeoutMs = 10_000, assertContinue = async () => undefined,
+} = {}) {
+  const dialog = planChangeDialog(page, contract);
+  if (await visibleCount(dialog) !== 1) throw new ContractError('plan change dialog drift');
+  const cancel = await uniqueVisibleButton(dialog.first(), contract.planChangeCancelLabels || [], 'plan change cancel control');
+  await safeClick(cancel, 'plan change cancel control', assertContinue, timeoutMs);
+  await waitForState(page, async () => ((await planChangeDialogVisible(page, contract)) ? null : 'closed'),
+    { timeoutMs, label: 'plan change dialog dismissal' });
+  return { cancelled: true };
+}
 
 /**
  * Opens a Plus Checkout Session and stops before payment material or submit.
@@ -215,8 +294,10 @@ export async function navigateToChatGPTCheckout(page, contract = CHATGPT_PLUS_CH
   timeoutMs = 20_000,
   assertContinue = async () => undefined,
   plan = 'plus',
+  expect = 'checkout',
 } = {}) {
   if (!page || typeof page.url !== 'function') throw new TypeError('page is required');
+  if (!['checkout', 'plan-change'].includes(expect)) throw new ContractError('expect must be checkout or plan-change');
   const planSpec = resolvePlanSpec(contract, plan);
   if (!contract || typeof contract !== 'object') throw new ContractError('checkout navigation contract is required');
   if (typeof contract.homeUrlPrefix !== 'string' || !contract.homeUrlPrefix) throw new ContractError('homeUrlPrefix is required');
@@ -228,7 +309,7 @@ export async function navigateToChatGPTCheckout(page, contract = CHATGPT_PLUS_CH
 
   const actions = [];
   await assertNoSessionExpiredDialog(page);
-  if (!await checkoutReady(page, contract)) {
+  if (!await targetReady(page, contract, expect)) {
     // A resumed run may already sit on the open plan picker; the header
     // control behind the modal is then covered and must not be clicked.
     const pickerAlreadyOpen = await pricingDialogVisible(page, contract);
@@ -258,14 +339,14 @@ export async function navigateToChatGPTCheckout(page, contract = CHATGPT_PLUS_CH
       await safeClick(openPricing, 'open pricing control', assertContinue, timeoutMs);
       actions.push('pricing-opened');
       await waitForState(page, async () => {
-        if (await checkoutReady(page, contract)) return 'checkout';
+        if (await targetReady(page, contract, expect)) return 'target';
         return (await pricingDialogVisible(page, contract)) ? 'pricing' : null;
       }, { timeoutMs, label: 'pricing dialog' });
     }
 
     let questionnaireRaceRecoveries = 0;
     for (let attempt = 1; attempt <= contract.maxUpgradeAttempts; attempt += 1) {
-      if (await checkoutReady(page, contract)) break;
+      if (await targetReady(page, contract, expect)) break;
       const preExistingQuestionnaire = await uniqueVisibleButton(
         page,
         contract.questionnaireSkipLabels,
@@ -321,10 +402,10 @@ export async function navigateToChatGPTCheckout(page, contract = CHATGPT_PLUS_CH
       let state;
       try {
         state = await waitForState(page, async () => {
-          if (await checkoutReady(page, contract)) return 'checkout';
+          if (await targetReady(page, contract, expect)) return 'target';
           const skip = await uniqueVisibleButton(page, contract.questionnaireSkipLabels, 'questionnaire skip control', { optional: true });
           return skip ? 'questionnaire' : null;
-        }, { timeoutMs, label: 'checkout or questionnaire transition' });
+        }, { timeoutMs, label: `${expect} or questionnaire transition` });
       } catch (error) {
         // The live pricing dialog can render its text before the React action
         // is fully hydrated. A click may then be accepted by the DOM without
@@ -337,7 +418,7 @@ export async function navigateToChatGPTCheckout(page, contract = CHATGPT_PLUS_CH
         }
         throw error;
       }
-      if (state === 'checkout') break;
+      if (state === 'target') break;
 
       const skip = await uniqueVisibleButton(page, contract.questionnaireSkipLabels, 'questionnaire skip control');
       await safeClick(skip, 'questionnaire skip control', assertContinue, timeoutMs);
@@ -350,10 +431,23 @@ export async function navigateToChatGPTCheckout(page, contract = CHATGPT_PLUS_CH
     }
   }
 
-  await waitForState(page, () => checkoutReady(page, contract), { timeoutMs, label: 'Checkout readiness' });
+  await waitForState(page, () => targetReady(page, contract, expect), { timeoutMs, label: `${expect} readiness` });
   await assertContinue();
+  if (expect === 'plan-change') {
+    return {
+      plan: planSpec.plan,
+      state: 'plan-change',
+      plusEntryPresent: true,
+      checkoutCreated: false,
+      questionnaireSkipped: actions.includes('questionnaire-skipped'),
+      actions,
+      planChange: await readPlanChangeDialog(page, contract),
+      submitCalls: 0,
+    };
+  }
   return {
     plan: planSpec.plan,
+    state: 'checkout',
     plusEntryPresent: true,
     checkoutCreated: actions.includes('upgrade-requested'),
     questionnaireSkipped: actions.includes('questionnaire-skipped'),

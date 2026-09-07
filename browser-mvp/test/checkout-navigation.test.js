@@ -358,3 +358,49 @@ test('navigator selects the Pro tier before pressing Upgrade to Pro, and refuses
     assert.equal(await page.evaluate(() => document.body.dataset.upgraded), '20x');
   } finally { await browser.close(); server.close(); await once(server, 'close'); }
 });
+
+test('navigator can stop on the Confirm plan changes dialog of a subscribed account and never presses Pay now', async () => {
+  const html = `<title>ChatGPT Plans</title>
+    <section role="dialog" id="picker">
+      <button type="button" disabled>Your current plan</button>
+      <button type="button" id="tier-5x" aria-pressed="true" onclick="document.body.dataset.tier='5x'">5x</button>
+      <button type="button" id="tier-20x" aria-pressed="false" onclick="document.body.dataset.tier='20x'">20x</button>
+      <button type="button" id="upgrade-pro" onclick="document.body.dataset.upgraded=document.body.dataset.tier; document.getElementById('confirm').hidden=false">Upgrade to Pro</button>
+    </section>
+    <section role="dialog" id="confirm" hidden>
+      <h2>Confirm plan changes</h2>
+      <p>ChatGPT Pro subscription</p><p>₱8,919.64</p>
+      <p>Billed monthly, starting today</p>
+      <p>Adjustment</p><p>-₱973.87</p>
+      <p>Prorated credit for the remainder of your Plus subscription</p>
+      <p>Total due today</p><p>₱7,945.77</p>
+      <p>Payment method</p><p>VISA *5980</p>
+      <button type="button" id="cancel" onclick="document.getElementById('confirm').hidden=true">Cancel</button>
+      <button type="button" id="pay" onclick="document.body.dataset.paid='yes'">Pay now</button>
+    </section>`;
+  const { navigateToChatGPTCheckout, cancelPlanChangeDialog, CHATGPT_PLUS_CHECKOUT_NAVIGATION_CONTRACT } = await import('../src/chatgpt-checkout-navigator.js');
+  const server = createServer((request, response) => { response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }); response.end(html); });
+  server.listen(0, '127.0.0.1'); await once(server, 'listening');
+  const base = `http://127.0.0.1:${server.address().port}/`;
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage();
+    await page.goto(`${base}#pricing`, { waitUntil: 'domcontentloaded' });
+    const contract = { ...CHATGPT_PLUS_CHECKOUT_NAVIGATION_CONTRACT, homeUrlPrefix: base, checkoutUrlPrefix: `${base}checkout/` };
+    await assert.rejects(() => navigateToChatGPTCheckout(page, contract, { plan: 'pro_20x', expect: 'pay' }), /expect must be/);
+    const result = await navigateToChatGPTCheckout(page, contract, { timeoutMs: 5_000, plan: 'pro_20x', expect: 'plan-change' });
+    assert.equal(result.state, 'plan-change');
+    assert.equal(result.checkoutCreated, false);
+    assert.deepEqual(result.actions, ['pricing-already-open', 'tier-selected:20x', 'upgrade-requested']);
+    assert.deepEqual(result.planChange, {
+      title: 'Confirm plan changes', subscriptionLine: 'ChatGPT Pro subscription', subscriptionAmount: '₱8,919.64',
+      adjustmentAmount: '-₱973.87', totalDueToday: '₱7,945.77', paymentMethod: { brand: 'VISA', last4: '5980' },
+      payButtonPresent: true, cancelButtonPresent: true, lineCount: 12,
+    });
+    assert.equal(await page.evaluate(() => document.body.dataset.paid), undefined);
+    assert.deepEqual(await cancelPlanChangeDialog(page, contract, { timeoutMs: 5_000 }), { cancelled: true });
+    assert.equal(await page.evaluate(() => document.getElementById('confirm').hidden), true);
+    assert.equal(await page.evaluate(() => document.body.dataset.paid), undefined);
+  } finally { await browser.close(); server.close(); await once(server, 'close'); }
+});
+

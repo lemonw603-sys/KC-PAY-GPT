@@ -70,7 +70,7 @@ async function clearSessionCookies(context) {
 // makes backend-api reject the access token ("Could not parse your
 // authentication token", verified 2026-09-07 on Lane 2). So when one identity
 // switches accounts, the whole previous login state goes, never the device.
-async function clearStaleLoginCookies(context) {
+export async function clearStaleLoginCookies(context) {
   const stale = await listStaleLoginCookies(context);
   for (const name of new Set(stale.map((cookie) => cookie.name))) await context.clearCookies({ name });
   return stale.length;
