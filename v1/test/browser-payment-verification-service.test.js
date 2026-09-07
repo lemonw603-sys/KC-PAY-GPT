@@ -88,3 +88,25 @@ test('verification coordinator constrains recovery to the explicitly approved or
   }).runOnce();
   assert.equal(h.calls[0][1].orderId, 'order-approved');
 });
+
+test('a plan-aware post-Plus action hands Pro rows off with the upgrade dialog facts and keeps Plus rows on renewal cancellation', async () => {
+  const byPlan = (row) => (row.plan === 'plus' ? 'CANCEL_RENEWAL' : 'UPGRADE_DIALOG_STOP');
+  const pro = harness({
+    row: { paymentState: 'PAYMENT_CONFIRMED', plan: 'pro_20x' },
+    observation: { outcome: 'CONFIRMED', postPaymentComplete: true, manual20xState: 'HANDOFF',
+      publicResult: { upgradeDialog: { totalDueToday: '₱7,945.77', stoppedBefore: 'PAY_NOW' }, upgradeReason: null },
+      evidence: { plus: { observed: true }, transactionHash: 'a'.repeat(64), upgradeDialog: { totalDueToday: '₱7,945.77' } } },
+  });
+  await createBrowserPaymentVerificationService({ repository: pro.repository, verifier: pro.verifier, postPlusAction: byPlan }).runOnce();
+  assert.deepEqual(pro.calls.map(([name]) => name), ['list', 'plus', '20x-handoff']);
+  assert.deepEqual(pro.calls[2][1].publicResult, { upgradeDialog: { totalDueToday: '₱7,945.77', stoppedBefore: 'PAY_NOW' }, upgradeReason: null });
+  const plus = harness({
+    row: { paymentState: 'PAYMENT_CONFIRMED', plan: 'plus' },
+    observation: { outcome: 'CONFIRMED', postPaymentComplete: true,
+      evidence: { plus: { observed: true }, cancellation: { observed: true }, transactionHash: 'a'.repeat(64) } },
+  });
+  await createBrowserPaymentVerificationService({ repository: plus.repository, verifier: plus.verifier, postPlusAction: byPlan }).runOnce();
+  assert.deepEqual(plus.calls.map(([name]) => name), ['list', 'plus', 'cancellation']);
+  assert.throws(() => createBrowserPaymentVerificationService({ repository: plus.repository, verifier: plus.verifier, postPlusAction: 'UPGRADE_PAY' }), /postPlusAction must be/);
+});
+

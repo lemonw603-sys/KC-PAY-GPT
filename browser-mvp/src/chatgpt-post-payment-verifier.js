@@ -1,4 +1,6 @@
 import { createHash } from 'node:crypto';
+import { CHATGPT_PLUS_CHECKOUT_NAVIGATION_CONTRACT, navigateToChatGPTCheckout } from './chatgpt-checkout-navigator.js';
+import { checkSessionHealth } from './post-payment-session-recovery.js';
 
 import { ContractError } from './contracts.js';
 import { probeSessionIdentity } from './session-identity-probe.js';
@@ -94,7 +96,22 @@ export class ChatGptPostPaymentVerifier {
     cancelPath = DEFAULT_CANCEL_PATH,
     timeoutMs = 60_000,
     pollIntervalMs = 1_000,
+    // Post-payment session ladder (D-134): async (page, { reason }) => { recovered, ... }.
+    // Runs at most once per verifier; never touches a payment control.
+    sessionRecovery = null,
+    // Stage 2 of a Pro order: which picker plan to open (pro_5x / pro_20x).
+    upgradePlan = null,
+    navigationContract = CHATGPT_PLUS_CHECKOUT_NAVIGATION_CONTRACT,
+    navigationTimeoutMs = 45_000,
   } = {}) {
+    if (sessionRecovery != null && typeof sessionRecovery !== 'function') throw new TypeError('sessionRecovery must be a function');
+    if (upgradePlan != null && !/^pro_(5x|20x)$/.test(String(upgradePlan))) throw new TypeError('upgradePlan must be pro_5x or pro_20x');
+    this.sessionRecovery = sessionRecovery;
+    this.upgradePlan = upgradePlan == null ? null : String(upgradePlan);
+    this.navigationContract = navigationContract;
+    this.navigationTimeoutMs = boundedInteger(navigationTimeoutMs, 'navigationTimeoutMs', { min: 1_000, max: 300_000 });
+    this.recoveryAttempted = false;
+    this.lastRecovery = null;
     if (!page || typeof page.evaluate !== 'function') throw new TypeError('page is required');
     if (!expectedIdentity || typeof expectedIdentity !== 'object') throw new TypeError('expectedIdentity is required');
     if (!transactionReader || typeof transactionReader.read !== 'function'
@@ -111,10 +128,42 @@ export class ChatGptPostPaymentVerifier {
   }
 
   async #verifiedIdentity() {
-    return probeSessionIdentity(this.page, this.expectedIdentity, {
+    const probe = () => probeSessionIdentity(this.page, this.expectedIdentity, {
       accountCheckPath: this.accountCheckPath,
       stabilizationTimeoutMs: Math.min(this.timeoutMs, 15_000),
     });
+    try {
+      return await probe();
+    } catch (error) {
+      // A dead session right after payment (login bounce) gets one ladder attempt.
+      if (error?.code !== 'SESSION_INVALID' || !this.sessionRecovery || this.recoveryAttempted) throw error;
+      await this.#recoverOnce('session-invalid-before-verification');
+      return probe();
+    }
+  }
+
+  async #recoverOnce(reason) {
+    if (!this.sessionRecovery || this.recoveryAttempted) return null;
+    this.recoveryAttempted = true;
+    try {
+      this.lastRecovery = await this.sessionRecovery(this.page, { reason });
+    } catch (error) {
+      this.lastRecovery = { recovered: false, errorCode: error?.code || 'SESSION_RECOVERY_FAILED' };
+    }
+    return this.lastRecovery;
+  }
+
+  recoveryReport() {
+    const recovery = this.lastRecovery;
+    if (!recovery) return null;
+    return {
+      recovered: recovery.recovered === true,
+      recoveryStep: recovery.recoveryStep || null,
+      errorCode: recovery.errorCode || null,
+      steps: Array.isArray(recovery.steps)
+        ? recovery.steps.map((step) => ({ step: step.step, ok: step.ok === true, status: step.status ?? null, errorCode: step.errorCode || null, onLoginPage: step.onLoginPage === true }))
+        : [],
+    };
   }
 
   async #poll(readiness) {
@@ -123,9 +172,41 @@ export class ChatGptPostPaymentVerifier {
     do {
       last = await readSubscription(this.page, this.accountCheckPath);
       if (readiness(last)) return last;
+      // The session endpoint stopped answering with a token (login bounce after
+      // payment). One ladder attempt, then keep polling within the same window.
+      if (last?.ok === false && last?.stage === 'session' && this.sessionRecovery && !this.recoveryAttempted) {
+        await this.#recoverOnce('session-unavailable-during-verification');
+        continue;
+      }
       if (Date.now() >= deadline) return last;
       await this.page.waitForTimeout(this.pollIntervalMs);
     } while (true);
+  }
+
+  /**
+   * Stage 2 of a Pro order on an account that now has Plus: open the picker,
+   * select the tier, press Upgrade and stop on "Confirm plan changes". Only the
+   * dialog's amounts and card last four are returned; Pay now is never pressed.
+   */
+  async openUpgradeDialog() {
+    if (!this.upgradePlan) throw new TypeError('upgradePlan is required to open the upgrade dialog');
+    const home = this.navigationContract.homeUrlPrefix;
+    let health = await checkSessionHealth(this.page);
+    if (!health.ok) {
+      await this.#recoverOnce('session-unavailable-before-upgrade');
+      health = await checkSessionHealth(this.page);
+    }
+    if (!health.ok) {
+      return { ok: false, reasonCode: 'SESSION_INVALID_AFTER_PAYMENT', health, recovery: this.recoveryReport() };
+    }
+    await this.page.goto(home, { waitUntil: 'domcontentloaded', timeout: this.navigationTimeoutMs });
+    const navigation = await navigateToChatGPTCheckout(this.page, this.navigationContract, {
+      plan: this.upgradePlan, expect: 'plan-change', timeoutMs: this.navigationTimeoutMs,
+    });
+    return {
+      ok: true, plan: navigation.plan, actions: navigation.actions,
+      planChange: navigation.planChange, recovery: this.recoveryReport(),
+    };
   }
 
   async confirmPlus() {

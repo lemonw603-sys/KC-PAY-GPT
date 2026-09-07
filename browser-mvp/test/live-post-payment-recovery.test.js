@@ -63,3 +63,31 @@ test('manual 20X recovery preserves Profile and requests review when card eviden
   assert.equal(h.calls.includes('cancellation'), false);
   assert.equal(h.calls.at(-1), 'detach');
 });
+
+test('a plan-aware action stops Pro orders on the upgrade dialog and keeps Plus orders on renewal cancellation', async () => {
+  const factoryInputs = [];
+  const build = (row) => {
+    const h = harness({ postPlusAction: (plan) => (plan === 'plus' ? 'CANCEL_RENEWAL' : 'UPGRADE_DIALOG_STOP') });
+    const factory = h.verifier.verifierFactory;
+    h.verifier.verifierFactory = (input) => {
+      factoryInputs.push({ upgradePlan: input.upgradePlan, hasRecovery: typeof input.sessionRecovery === 'function' });
+      const verifier = factory(input);
+      verifier.openUpgradeDialog = async () => { h.calls.push('upgrade-dialog'); return { ok: true, plan: 'pro_20x', actions: ['upgrade-requested'],
+        planChange: { totalDueToday: '₱7,945.77', paymentMethod: { brand: 'VISA', last4: '5501' } }, recovery: null }; };
+      return verifier;
+    };
+    return h;
+  };
+  const pro = build();
+  const proResult = await pro.verifier.verify({ runId: 'run-pro', executorProfileId: 'profile', plan: 'pro_20x' });
+  assert.equal(proResult.manual20xState, 'HANDOFF');
+  assert.deepEqual([proResult.publicResult.upgradeDialog.totalDueToday, proResult.publicResult.upgradeDialog.stoppedBefore, proResult.publicResult.upgradeReason], ['₱7,945.77', 'PAY_NOW', null]);
+  assert.equal(pro.calls.includes('cancellation'), false);
+  assert.equal(pro.calls.at(-1), 'detach');
+  const plus = build();
+  const plusResult = await plus.verifier.verify({ runId: 'run-plus', executorProfileId: 'profile', plan: 'plus' });
+  assert.equal(plusResult.postPaymentComplete, true);
+  assert.equal(plus.calls.includes('cancellation'), true);
+  assert.equal(plus.calls.includes('upgrade-dialog'), false);
+  assert.deepEqual(factoryInputs, [{ upgradePlan: 'pro_20x', hasRecovery: true }, { upgradePlan: null, hasRecovery: true }]);
+});

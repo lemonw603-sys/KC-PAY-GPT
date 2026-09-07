@@ -165,6 +165,28 @@ function reconciliationFromRow(row) {
   });
 }
 
+// Stage 2 of a Pro order stops on ChatGPT's "Confirm plan changes" dialog; the
+// handoff operation keeps its amounts and the card's last four digits.
+function upgradeDialogFromOperation(publicResultJson) {
+  if (publicResultJson == null) return null;
+  let parsed = publicResultJson;
+  if (typeof parsed === 'string') { try { parsed = JSON.parse(parsed); } catch { return null; } }
+  const result = parsed?.publicResult;
+  if (!result || typeof result !== 'object') return null;
+  const dialog = result.upgradeDialog && typeof result.upgradeDialog === 'object' ? result.upgradeDialog : null;
+  return {
+    reason: result.upgradeReason || null,
+    plan: dialog?.plan || null,
+    subscriptionAmount: dialog?.subscriptionAmount || null,
+    adjustmentAmount: dialog?.adjustmentAmount || null,
+    totalDueToday: dialog?.totalDueToday || null,
+    paymentMethod: dialog?.paymentMethod && typeof dialog.paymentMethod === 'object'
+      ? { brand: dialog.paymentMethod.brand || null, last4: dialog.paymentMethod.last4 || null } : null,
+    stoppedBefore: dialog?.stoppedBefore || null,
+    recoveryStep: dialog?.recovery?.recoveryStep || null
+  };
+}
+
 function iso(value) {
   return value instanceof Date ? value.toISOString() : value || null;
 }
@@ -1162,7 +1184,8 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
           FROM card_consumption_ledger l INNER JOIN orders o ON o.id = l.order_id
           WHERE BINARY o.public_no = ? ORDER BY l.created_at DESC, l.id DESC LIMIT 20`, [publicNo])
       ,pool.query(`SELECT bo.browser_run_id, bo.operation_type, bo.status, bo.result_code,
-            bo.prepared_at, bo.completed_at
+            bo.prepared_at, bo.completed_at,
+            CASE WHEN bo.operation_type = 'MANUAL_20X_HANDOFF' THEN bo.public_result_json ELSE NULL END AS public_result_json
           FROM browser_operations bo
           INNER JOIN browser_runs br ON br.id = bo.browser_run_id
           INNER JOIN recharge_attempts ra ON ra.id = br.recharge_attempt_id
@@ -1298,7 +1321,8 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
         operations: operationRows.map((operation) => ({
           runId: operation.browser_run_id, type: operation.operation_type, status: operation.status,
           resultCode: operation.result_code, preparedAt: iso(operation.prepared_at),
-          completedAt: iso(operation.completed_at)
+          completedAt: iso(operation.completed_at),
+          upgradeDialog: upgradeDialogFromOperation(operation.public_result_json)
         }))
       },
       reconciliationCases: caseRows.map((item) => ({

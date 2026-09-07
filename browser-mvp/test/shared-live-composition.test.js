@@ -84,3 +84,12 @@ test('pre-submit rehearsal drives the adapter without authorization and reports 
   assert.deepEqual(clicked, { status: 'PRE_SUBMIT_FAILED', reasonCode: 'REHEARSAL_RESULT_INVALID', paymentSubmitCalls: 0 });
   await assert.rejects(() => runPreSubmitRehearsal({ adapter: { async submit() { throw Object.assign(new Error('unknown'), { code: 'PAYMENT_RESULT_UNKNOWN' }); } }, control, operationId: 'op-4' }), (e) => e.code === 'PAYMENT_RESULT_UNKNOWN');
 });
+
+test('LIVE composition accepts a plan-aware post-Plus action, even on a rehearsal, and the upgrade-dialog stop', () => {
+  const values = input();
+  const byPlan = (plan) => (plan === 'plus' ? 'CANCEL_RENEWAL' : 'UPGRADE_DIALOG_STOP');
+  assert.equal(createSharedLivePaymentWorker({ ...values, stopBeforeSubmit: true, postPlusAction: byPlan }).stopBeforeSubmit, true);
+  assert.equal(createSharedLivePaymentWorker({ ...values, postPlusAction: 'UPGRADE_DIALOG_STOP' }).stopBeforeSubmit, false);
+  assert.throws(() => createSharedLivePaymentWorker({ ...values, postPlusAction: 'UPGRADE_PAY' }), /postPlusAction must be/);
+  assert.equal(values.queryCount(), 0);
+});

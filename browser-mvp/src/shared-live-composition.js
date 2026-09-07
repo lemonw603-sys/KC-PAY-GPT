@@ -9,6 +9,7 @@ import { createMysqlUpstreamProjectionAdapter } from './mysql-upstream-adapter.j
 import { BrowserPaymentExecutor } from './payment-executor.js';
 import { LiveChatGPTPaymentAdapter, LIVE_PAYMENT_CONFIRMATION } from './live-chatgpt-payment-adapter.js';
 import { ChatGptPostPaymentVerifier } from './chatgpt-post-payment-verifier.js';
+import { recoverSessionAfterPayment } from './post-payment-session-recovery.js';
 import { createBrowserPaymentExecutionRuntime, SharedBrowserRuntimeIntegration } from './shared-runtime-integration.js';
 
 function required(value, name) {
@@ -93,9 +94,13 @@ export function createSharedLivePaymentWorker({
   safeAbortOnFailure = false,
 } = {}) {
   if (!pool?.query || !pool?.getConnection) throw new TypeError('mysql2-like pool is required');
-  if (stopBeforeSubmit === true && postPlusAction !== 'CANCEL_RENEWAL') {
+  if (typeof postPlusAction !== 'function' && !['CANCEL_RENEWAL', 'MANUAL_20X_HANDOFF', 'UPGRADE_DIALOG_STOP'].includes(postPlusAction)) {
+    throw new TypeError('postPlusAction must be CANCEL_RENEWAL, MANUAL_20X_HANDOFF, UPGRADE_DIALOG_STOP or a function of the plan');
+  }
+  if (stopBeforeSubmit === true && typeof postPlusAction === 'string' && postPlusAction !== 'CANCEL_RENEWAL') {
     throw new TypeError('a rehearsal cannot carry a manual 20X handoff');
   }
+  const resolvePostPlusAction = (plan) => (typeof postPlusAction === 'function' ? postPlusAction(plan) : postPlusAction);
   if (!runtimeAdapter?.open || !runtimeAdapter?.close) throw new TypeError('runtimeAdapter is required');
   if (!manifest || manifest.allowWrites !== false) throw new TypeError('reviewed Browser manifest is required');
   if (!observation?.pageContract || !observation?.checkoutContract) throw new TypeError('LIVE observation contracts are required');
@@ -150,7 +155,7 @@ export function createSharedLivePaymentWorker({
   const runtime = createBrowserPaymentExecutionRuntime({
     executionService,
     resolveExecutionContext,
-    preserveRuntimeOnManualHandoff: postPlusAction === 'MANUAL_20X_HANDOFF',
+    preserveRuntimeOnManualHandoff: typeof postPlusAction === 'function' || postPlusAction !== 'CANCEL_RENEWAL',
     releaseSessionOnComplete: releaseSessionOnComplete === true,
     createPaymentHandler: async ({ claimedJob, run, control }) => async ({
       page, checkout, checkoutContract, cardMaterial, billingEmail,
@@ -165,14 +170,27 @@ export function createSharedLivePaymentWorker({
           operationId: `browser-live-rehearsal:${run.runId}`,
         });
       }
+      const plan = typeof resolvePlan === 'function'
+        ? await resolvePlan({ orderId: claimedJob.orderId, attemptId: claimedJob.attemptId, runId: run.runId }) : 'plus';
+      const action = resolvePostPlusAction(plan);
+      const sessionRefInput = { orderId: claimedJob.orderId, attemptId: claimedJob.attemptId, runId: run.runId };
       const verifier = new ChatGptPostPaymentVerifier({
         page,
-        expectedIdentity: await resolveSessionIdentity({
-          orderId: claimedJob.orderId, attemptId: claimedJob.attemptId, runId: run.runId,
-        }),
+        expectedIdentity: await resolveSessionIdentity(sessionRefInput),
         transactionReader: await transactionReaderFactory({ claimedJob, run }),
         timeoutMs: verificationWindowMs,
         pollIntervalMs: verificationIntervalMs,
+        upgradePlan: action === 'UPGRADE_DIALOG_STOP' ? plan : null,
+        navigationTimeoutMs: executionTimeoutMs,
+        // D-134 ladder: clear page login cookies, then re-inject the run's own session material.
+        sessionRecovery: (targetPage) => recoverSessionAfterPayment(targetPage, {
+          navigationTimeoutMs: executionTimeoutMs,
+          reinjectSession: async (context) => {
+            const lease = await sessionProvider.open(await resolveSessionRef(sessionRefInput), { purpose: 'post-payment-recovery' });
+            try { return await sessionProvider.bootstrap(lease, context, { replaceExisting: true }); }
+            finally { await sessionProvider.close(lease).catch(() => undefined); }
+          },
+        }),
       });
       const adapter = new LiveChatGPTPaymentAdapter({
         enabled: true,
@@ -182,7 +200,7 @@ export function createSharedLivePaymentWorker({
       return new BrowserPaymentExecutor({
         integration, executionRepository, paymentAdapter: adapter,
         postPaymentVerifier: verifier, enabled: true,
-        postPlusAction,
+        postPlusAction: action,
         verificationWindowMs, verificationIntervalMs,
       }).execute({
         control, run, page, checkout, checkoutContract, cardMaterial, billingEmail,

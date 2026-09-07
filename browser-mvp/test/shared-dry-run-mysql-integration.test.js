@@ -255,7 +255,9 @@ test('real MySQL dispatch/run executes a local Browser dry-run and clears every 
     }
     await pool.query('DELETE FROM tasks WHERE order_id = ?', [orderId]);
     await pool.query('DELETE FROM cards WHERE id = ?', [cardId]);
+    await pool.query('DELETE FROM operator_alerts WHERE order_id = ?', [orderId]);
     await pool.query('DELETE FROM orders WHERE id = ?', [orderId]);
+    await pool.query('DELETE FROM operator_alerts WHERE order_id = ?', [ownerOrderId]);
     await pool.query('DELETE FROM orders WHERE id = ?', [ownerOrderId]);
     await pool.query('DELETE FROM cdks WHERE id = ?', [cdkId]);
     await pool.query('DELETE FROM cdks WHERE id = ?', [ownerCdkId]);

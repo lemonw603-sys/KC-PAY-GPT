@@ -87,6 +87,17 @@ export class MockPostPaymentVerifier {
     this.calls.push('reconcile');
     return { matched: Array.isArray(transactions) && transactions.length > 0 };
   }
+
+  async openUpgradeDialog() {
+    this.calls.push('upgrade-dialog');
+    if (this.upgradeDialogOutcome === 'unavailable') return { ok: false, reasonCode: 'SESSION_INVALID_AFTER_PAYMENT', recovery: { recovered: false } };
+    return {
+      ok: true, plan: 'pro_20x', actions: ['pricing-opened', 'tier-selected:20x', 'upgrade-requested'],
+      planChange: { title: 'Confirm plan changes', subscriptionAmount: '₱8,919.64', adjustmentAmount: '-₱973.87',
+        totalDueToday: '₱7,945.77', paymentMethod: { brand: 'VISA', last4: '4242' }, payButtonPresent: true, cancelButtonPresent: true },
+      recovery: null,
+    };
+  }
 }
 
 /**
@@ -95,6 +106,12 @@ export class MockPostPaymentVerifier {
  * called. After that point every non-confirmed result is UNKNOWN and is never
  * retried or switched to another card.
  */
+// CANCEL_RENEWAL: Plus order, cancel auto-renew and finish.
+// MANUAL_20X_HANDOFF: Plus confirmed, a person performs the Pro upgrade.
+// UPGRADE_DIALOG_STOP: Plus confirmed, automation opens the Pro upgrade dialog and
+// stops before Pay now (D-133); the run hands off exactly like MANUAL_20X_HANDOFF.
+export const POST_PLUS_ACTIONS = Object.freeze(['CANCEL_RENEWAL', 'MANUAL_20X_HANDOFF', 'UPGRADE_DIALOG_STOP']);
+
 export class BrowserPaymentExecutor {
   constructor({ integration, executionRepository, paymentAdapter, postPaymentVerifier,
     enabled = false, postPlusAction = 'CANCEL_RENEWAL',
@@ -112,13 +129,16 @@ export class BrowserPaymentExecutor {
     this.paymentAdapter = paymentAdapter;
     this.postPaymentVerifier = postPaymentVerifier;
     this.enabled = enabled === true;
-    if (!['CANCEL_RENEWAL', 'MANUAL_20X_HANDOFF'].includes(postPlusAction)) {
-      throw new TypeError('postPlusAction must be CANCEL_RENEWAL or MANUAL_20X_HANDOFF');
+    if (!POST_PLUS_ACTIONS.includes(postPlusAction)) {
+      throw new TypeError('postPlusAction must be CANCEL_RENEWAL, MANUAL_20X_HANDOFF or UPGRADE_DIALOG_STOP');
     }
-    if (postPlusAction === 'MANUAL_20X_HANDOFF'
+    if (postPlusAction !== 'CANCEL_RENEWAL'
       && (typeof executionRepository.recordManual20xHandoff !== 'function'
         || typeof executionRepository.recordManual20xReviewRequired !== 'function')) {
       throw new TypeError('manual 20X repository methods are required for MANUAL_20X_HANDOFF');
+    }
+    if (postPlusAction === 'UPGRADE_DIALOG_STOP' && typeof postPaymentVerifier.openUpgradeDialog !== 'function') {
+      throw new TypeError('postPaymentVerifier.openUpgradeDialog is required for UPGRADE_DIALOG_STOP');
     }
     this.postPlusAction = postPlusAction;
     if (!Number.isInteger(verificationWindowMs) || verificationWindowMs < 1_000) {
@@ -225,7 +245,7 @@ export class BrowserPaymentExecutor {
       await this.executionRepository.recordPlusActivation({
         runId: run.runId, operationId: `${op}:plus`, evidenceHash: digest(plus.evidence),
       });
-      if (this.postPlusAction === 'MANUAL_20X_HANDOFF') {
+      if (this.postPlusAction === 'MANUAL_20X_HANDOFF' || this.postPlusAction === 'UPGRADE_DIALOG_STOP') {
         const transactions = await this.postPaymentVerifier.readCardTransactions();
         const reconciliation = await this.postPaymentVerifier.reconcile({ transactions });
         if (!reconciliation?.matched) {
@@ -242,17 +262,38 @@ export class BrowserPaymentExecutor {
             preserveProfile: true,
           };
         }
+        let upgradeDialog = null;
+        let upgradeReason = null;
+        if (this.postPlusAction === 'UPGRADE_DIALOG_STOP') {
+          // Stage 2 stops on the dialog. A failure here is not a payment failure:
+          // Plus is paid and confirmed, so the run still hands off to a person.
+          try {
+            const opened = await this.postPaymentVerifier.openUpgradeDialog();
+            if (opened?.ok) {
+              upgradeDialog = { plan: opened.plan, actions: opened.actions, ...(opened.planChange || {}),
+                stoppedBefore: 'PAY_NOW', recovery: opened.recovery || null };
+            } else {
+              upgradeReason = opened?.reasonCode || 'UPGRADE_DIALOG_UNAVAILABLE';
+              upgradeDialog = { recovery: opened?.recovery || null };
+            }
+          } catch (error) {
+            upgradeReason = error?.code || 'UPGRADE_DIALOG_FAILED';
+          }
+        }
+        const publicResult = this.postPlusAction === 'UPGRADE_DIALOG_STOP' ? { upgradeDialog, upgradeReason } : undefined;
         await this.executionRepository.recordManual20xHandoff({
           runId: run.runId,
           operationId: `${op}:manual-20x-handoff`,
-          evidenceHash: digest({ plus: plus.evidence, transactions }),
+          evidenceHash: digest({ plus: plus.evidence, transactions, upgradeDialog, upgradeReason }),
           humanOwnerId: 'admin',
+          ...(publicResult ? { publicResult } : {}),
         });
         return {
           status: 'MANUAL_20X_HANDOFF',
           paymentSubmitCalls: 1,
           cardTransactionCount: transactions.length,
           preserveProfile: true,
+          ...(publicResult ? { upgradeDialog, upgradeReason } : {}),
         };
       }
       const cancellation = await this.postPaymentVerifier.confirmCancellation();

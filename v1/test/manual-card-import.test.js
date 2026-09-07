@@ -86,7 +86,7 @@ test('migration 050 seeds the two Pro products on the Browser route with the Plu
   const sql = fs.readFileSync(new URL('../migrations/050_pro_products.sql', import.meta.url), 'utf8');
   for (const marker of ["'chatgpt_pro_5x', 'ChatGPT Pro 5X', 'pro_5x', 'ACTIVE'", "'chatgpt_pro_20x', 'ChatGPT Pro 20X', 'pro_20x', 'ACTIVE'",
     "'CHATGPT_PRO_5X_BROWSER_V1'", "'CHATGPT_PRO_20X_BROWSER_V1'", "'BROWSER', 1, 1)", "INSERT INTO browser_card_source_selections",
-    "plus.product_code = 'chatgpt_plus'", "CONCAT('minimum_required_card_balance:', plan)"]) {
+    "plus.product_code = 'chatgpt_plus'", "CONCAT('minimum_required_card_balance:', plans.plan)"]) {
     assert.ok(sql.includes(marker), marker);
   }
 });

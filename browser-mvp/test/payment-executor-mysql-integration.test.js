@@ -89,6 +89,7 @@ async function cleanup(pool, ids) {
   await pool.query('DELETE FROM card_consumption_ledger WHERE recharge_attempt_id = ?', [ids.attemptId]);
   await pool.query('DELETE FROM recharge_attempts WHERE id = ?', [ids.attemptId]);
   await pool.query('DELETE FROM cards WHERE id = ?', [ids.cardId]);
+  await pool.query('DELETE FROM operator_alerts WHERE order_id = ?', [ids.orderId]);
   await pool.query('DELETE FROM orders WHERE id = ?', [ids.orderId]);
   await pool.query('DELETE FROM cdks WHERE id = ?', [ids.cdkId]);
   await pool.query('DELETE FROM executor_profiles WHERE id = ?', [ids.profileId]);

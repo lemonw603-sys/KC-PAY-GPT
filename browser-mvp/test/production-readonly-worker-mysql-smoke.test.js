@@ -206,6 +206,7 @@ test('production readonly entry claims MySQL dispatch, opens Chrome, and safe-ab
     await pool.query('DELETE FROM card_consumption_ledger WHERE recharge_attempt_id = ?', [attemptId]);
     await pool.query('DELETE FROM recharge_attempts WHERE id = ?', [attemptId]);
     await pool.query('DELETE FROM cards WHERE id = ?', [cardId]);
+    await pool.query('DELETE FROM operator_alerts WHERE order_id = ?', [orderId]);
     await pool.query('DELETE FROM orders WHERE id = ?', [orderId]);
     await pool.query('DELETE FROM cdks WHERE id = ?', [cdkId]);
     await pool.query('DELETE FROM executor_profiles WHERE id = ?', [profileId]);

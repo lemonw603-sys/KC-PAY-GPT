@@ -22,14 +22,17 @@ export function createBrowserPaymentVerificationService({ repository, verifier,
     throw new TypeError('repository does not implement payment verification contract');
   }
   if (!verifier || typeof verifier.verify !== 'function') throw new TypeError('verifier is required');
-  if (!['CANCEL_RENEWAL', 'MANUAL_20X_HANDOFF'].includes(postPlusAction)) {
-    throw new TypeError('postPlusAction must be CANCEL_RENEWAL or MANUAL_20X_HANDOFF');
+  // A string applies to every row; a function receives the due row (with `plan`)
+  // and returns CANCEL_RENEWAL, MANUAL_20X_HANDOFF or UPGRADE_DIALOG_STOP.
+  if (typeof postPlusAction !== 'function' && !['CANCEL_RENEWAL', 'MANUAL_20X_HANDOFF', 'UPGRADE_DIALOG_STOP'].includes(postPlusAction)) {
+    throw new TypeError('postPlusAction must be CANCEL_RENEWAL, MANUAL_20X_HANDOFF, UPGRADE_DIALOG_STOP or a function');
   }
-  if (postPlusAction === 'MANUAL_20X_HANDOFF'
+  if (postPlusAction !== 'CANCEL_RENEWAL'
     && (typeof repository.recordManual20xHandoff !== 'function'
       || typeof repository.recordManual20xReviewRequired !== 'function')) {
     throw new TypeError('manual 20X repository methods are required for MANUAL_20X_HANDOFF');
   }
+  const actionFor = (row) => (typeof postPlusAction === 'function' ? postPlusAction(row) : postPlusAction);
   if (!Number.isInteger(maxBatch) || maxBatch < 1 || maxBatch > 100) throw new TypeError('maxBatch must be 1..100');
 
   return {
@@ -62,7 +65,7 @@ export function createBrowserPaymentVerificationService({ repository, verifier,
               runId: row.runId, operationId: `${operationId}:plus`,
               evidenceHash: digest(observation.evidence?.plus || observation.evidence), now,
             });
-            if (postPlusAction === 'MANUAL_20X_HANDOFF') {
+            if (actionFor(row) !== 'CANCEL_RENEWAL') {
               const method = observation.manual20xState === 'HANDOFF'
                 ? 'recordManual20xHandoff'
                 : observation.manual20xState === 'REVIEW_REQUIRED'
@@ -75,7 +78,10 @@ export function createBrowserPaymentVerificationService({ repository, verifier,
                   transactionHash: observation.evidence?.transactionHash || null,
                   transactionEvidenceKind: observation.evidence?.transactionEvidenceKind || null,
                   transactionCandidateCount: observation.evidence?.transactionCandidateCount ?? null,
+                  upgradeDialog: observation.evidence?.upgradeDialog ?? null,
+                  upgradeReason: observation.evidence?.upgradeReason ?? null,
                 }),
+                ...(method === 'recordManual20xHandoff' && observation.publicResult ? { publicResult: observation.publicResult } : {}),
                 now,
               });
             } else {

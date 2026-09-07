@@ -171,7 +171,12 @@ test('admin order detail exposes the full PAN but not CVV or Session', async () 
     [{ status: 'RESERVED', amount: '20.000000', currency: 'USD', provider_transaction_id: null,
       reserved_at: new Date(nowMs), consumed_at: null, released_at: null, release_reason: null,
       recharge_attempt_id: 'attempt-1' }],
-    [], [{ id: 'case-1', case_type: 'SUBMIT_UNKNOWN', status: 'OPEN', severity: 'warning',
+    [{ browser_run_id: 'run-1', operation_type: 'MANUAL_20X_HANDOFF', status: 'COMMITTED', result_code: 'AWAITING_MANUAL_20X_UPGRADE',
+      prepared_at: new Date(nowMs), completed_at: new Date(nowMs),
+      public_result_json: JSON.stringify({ evidenceHash: 'x', humanOwnerId: 'admin', publicResult: { upgradeReason: null,
+        upgradeDialog: { plan: 'pro_20x', subscriptionAmount: '₱8,919.64', adjustmentAmount: '-₱973.87', totalDueToday: '₱7,945.77',
+          paymentMethod: { brand: 'VISA', last4: '5501' }, stoppedBefore: 'PAY_NOW', recovery: { recovered: true, recoveryStep: 'clear-login-cookies' } } } }) }],
+    [{ id: 'case-1', case_type: 'SUBMIT_UNKNOWN', status: 'OPEN', severity: 'warning',
       assigned_to: null, resolution_note: null, detected_at: new Date(nowMs), last_seen_at: new Date(nowMs),
       resolved_at: null }]
   ]);
@@ -185,7 +190,10 @@ test('admin order detail exposes the full PAN but not CVV or Session', async () 
     [['attempt-1', 'PREPARED', 'CLEARED']]);
   assert.deepEqual(result.money.ledger.map((item) => [item.status, item.amount, item.currency]),
     [['RESERVED', '20.000000', 'USD']]);
-  assert.deepEqual(result.money.operations, []);
+  assert.deepEqual(result.money.operations.map((item) => [item.type, item.upgradeDialog]), [['MANUAL_20X_HANDOFF', {
+    reason: null, plan: 'pro_20x', subscriptionAmount: '₱8,919.64', adjustmentAmount: '-₱973.87', totalDueToday: '₱7,945.77',
+    paymentMethod: { brand: 'VISA', last4: '5501' }, stoppedBefore: 'PAY_NOW', recoveryStep: 'clear-login-cookies'
+  }]]);
   assert.deepEqual(result.reconciliationCases.map((item) => [item.id, item.status]), [['case-1', 'OPEN']]);
   assert.match(pool.queries.find(({ sql }) => /FROM card_consumption_ledger l/.test(sql)).sql, /BINARY o\.public_no = \?/);
   assert.match(pool.queries[0].sql, /LEFT JOIN LATERAL/);

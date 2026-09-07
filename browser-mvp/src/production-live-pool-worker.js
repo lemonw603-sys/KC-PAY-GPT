@@ -80,6 +80,10 @@ export function loadProductionLivePoolConfig(env = process.env) {
     if (String(env[name] ?? '').trim()) throw new ProductionLiveConfigError(`${name} must be absent from the pool Worker environment`);
   }
   if (env.PROVIDER_READS_ENABLED !== 'true' && String(env.HNSKJ_API_KEY ?? '').trim()) throw new ProductionLiveConfigError('HNSKJ_API_KEY requires PROVIDER_READS_ENABLED=true');
+  // Stage 2 of Pro orders. STOP_BEFORE_PAY (default): open the upgrade dialog and
+  // hand off before Pay now. PAY is not implemented yet and is refused.
+  const upgradeStage = String(env.BROWSER_UPGRADE_STAGE || 'STOP_BEFORE_PAY').trim().toUpperCase();
+  if (upgradeStage !== 'STOP_BEFORE_PAY') throw new ProductionLiveConfigError('BROWSER_UPGRADE_STAGE must be STOP_BEFORE_PAY (PAY is not implemented)');
   const lanes = parsePoolLanes(env.BROWSER_POOL_LANES);
   const runtimeHmacKey = key32(env, 'BROWSER_RUNTIME_HMAC_KEY_BASE64');
   const artifactKey = key32(env, 'BROWSER_ARTIFACT_KEY_BASE64');
@@ -89,7 +93,7 @@ export function loadProductionLivePoolConfig(env = process.env) {
     throw new ProductionLiveConfigError('pool runtime, artifact, resource and material keys must be distinct');
   }
   return Object.freeze({
-    checkOnly, mode, paying, stopBeforeSubmit: mode === POOL_MODES.REHEARSAL, lanes,
+    checkOnly, mode, paying, stopBeforeSubmit: mode === POOL_MODES.REHEARSAL, lanes, upgradeStage,
     databaseUrl: required(env, 'DATABASE_URL'), databaseTls: env.DATABASE_TLS === 'true',
     workerIdPrefix: String(env.BROWSER_WORKER_ID || 'pool').trim() || 'pool',
     executorProfileId: required(env, 'BROWSER_EXECUTOR_PROFILE_ID'),
@@ -193,14 +197,17 @@ export async function createLaneWorker({ lane, config, pool, browserType, shared
     if (sourceKind === 'HNSKJ' && (!config.providerReadsEnabled || !shared.provider)) throw new Error('HNSKJ transaction verification requires explicit Provider read credentials');
     return new BrowserCardTransactionReader({ sourceKind, provider: shared.provider, providerCardId: card.provider_card_id, runId, submitIntentAt: card.submit_intent_at, matchWindowMs: config.verificationWindowMs });
   };
+  // Plus orders finish by cancelling auto-renew; Pro orders stop on the upgrade dialog (D-133).
+  const postPlusActionForPlan = (plan) => (String(plan || 'plus') === 'plus' ? 'CANCEL_RENEWAL' : 'UPGRADE_DIALOG_STOP');
   const recoveryVerifier = new LivePostPaymentRecoveryVerifier({
     runtimeAdapter, manifest, sessionProvider: shared.postPaymentSessionProvider,
     resolveSessionIdentity: ({ orderId }) => resolveIdentity(pool, { orderId }), transactionReaderFactory,
     navigationTimeoutMs: config.executionTimeoutMs, verificationWindowMs: config.verificationWindowMs,
-    verificationIntervalMs: config.verificationIntervalMs, postPlusAction: 'CANCEL_RENEWAL',
+    verificationIntervalMs: config.verificationIntervalMs, postPlusAction: postPlusActionForPlan,
   });
   const verification = createBrowserPaymentVerificationService({
-    repository: createBrowserExecutionRepository(pool), verifier: recoveryVerifier, maxBatch: 1, postPlusAction: 'CANCEL_RENEWAL',
+    repository: createBrowserExecutionRepository(pool), verifier: recoveryVerifier, maxBatch: 1,
+    postPlusAction: (row) => postPlusActionForPlan(row.plan),
   });
   const preflight = createBrowserOrderPreflightWorker({
     pool, workerId, executorProfileId: config.executorProfileId, runtimeAdapter, manifest, observation: observation(),
@@ -215,7 +222,7 @@ export async function createLaneWorker({ lane, config, pool, browserType, shared
     transactionReaderFactory, runtimeHmacKey: config.runtimeHmacKey, artifactKey: config.artifactKey, resourceHmacKey: config.resourceHmacKey,
     evidenceSink, leaseSeconds: config.leaseSeconds, executionTimeoutMs: config.executionTimeoutMs,
     verificationWindowMs: config.verificationWindowMs, verificationIntervalMs: config.verificationIntervalMs,
-    postPlusAction: 'CANCEL_RENEWAL', stopBeforeSubmit: config.stopBeforeSubmit, releaseSessionOnComplete: true, safeAbortOnFailure: true,
+    postPlusAction: postPlusActionForPlan, stopBeforeSubmit: config.stopBeforeSubmit, releaseSessionOnComplete: true, safeAbortOnFailure: true,
   });
   return Object.freeze({
     laneId: lane.laneId, workerId,

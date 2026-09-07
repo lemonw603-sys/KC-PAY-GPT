@@ -76,3 +76,9 @@ test('lane loop runs verification, preflight and live in order, restarts after w
   assert.deepEqual(calls, ['verify', 'preflight', 'verify', 'preflight', 'live', 'verify', 'preflight', 'live', 'verify', 'preflight', 'live']);
   assert.deepEqual(summary, { laneId: 'lane-3', ticks: 4, results: 2, errors: 1 });
 });
+
+test('pool config stops Pro orders on the upgrade dialog by default and refuses the unimplemented PAY stage', () => {
+  assert.equal(loadProductionLivePoolConfig(env()).upgradeStage, 'STOP_BEFORE_PAY');
+  assert.equal(loadProductionLivePoolConfig(env({ BROWSER_UPGRADE_STAGE: 'stop_before_pay' })).upgradeStage, 'STOP_BEFORE_PAY');
+  assert.throws(() => loadProductionLivePoolConfig(env({ BROWSER_UPGRADE_STAGE: 'PAY' })), /PAY is not implemented/);
+});

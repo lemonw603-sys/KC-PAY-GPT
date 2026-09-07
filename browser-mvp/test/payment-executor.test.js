@@ -183,3 +183,39 @@ test('payment executor forwards the Browser page only to the payment adapter bou
   assert.equal(observedPage, page);
   assert.equal(result.status, 'UNKNOWN');
 });
+
+test('upgrade-dialog stop mode confirms Plus, opens the Pro upgrade dialog, records its facts and hands off before Pay now', async () => {
+  const { executor, control, calls, adapter, verifier } = harness({ postPlusAction: 'UPGRADE_DIALOG_STOP' });
+  const result = await executor.execute({
+    control, run: { runId: 'run-upgrade', leaseToken: 'lease-upgrade' },
+    checkout: { kind: 'MOCK_CHECKOUT' }, cardMaterial: { ref: 'card-material' },
+    operationId: 'pay-upgrade',
+  });
+  assert.equal(result.status, 'MANUAL_20X_HANDOFF');
+  assert.equal(result.paymentSubmitCalls, 1);
+  assert.equal(result.preserveProfile, true);
+  assert.equal(result.upgradeReason, null);
+  assert.deepEqual([result.upgradeDialog.totalDueToday, result.upgradeDialog.paymentMethod, result.upgradeDialog.stoppedBefore],
+    ['₱7,945.77', { brand: 'VISA', last4: '4242' }, 'PAY_NOW']);
+  assert.equal(adapter.calls.length, 1);
+  assert.deepEqual(verifier.calls, ['plus', 'card-transactions', 'reconcile', 'upgrade-dialog']);
+  const handoff = calls.find((value) => Array.isArray(value) && value[0] === 'manual-20x-handoff');
+  assert.equal(handoff[1].publicResult.upgradeDialog.totalDueToday, '₱7,945.77');
+  assert.equal(calls.filter((value) => Array.isArray(value) && value[0] === 'cancel-record').length, 0);
+});
+
+test('upgrade-dialog stop mode still hands off when the dialog cannot be opened, without any second payment', async () => {
+  const { executor, control, calls, verifier } = harness({ postPlusAction: 'UPGRADE_DIALOG_STOP' });
+  verifier.upgradeDialogOutcome = 'unavailable';
+  const result = await executor.execute({
+    control, run: { runId: 'run-upgrade-fail', leaseToken: 'lease-upgrade-fail' },
+    checkout: { kind: 'MOCK_CHECKOUT' }, cardMaterial: { ref: 'card-material' },
+    operationId: 'pay-upgrade-fail',
+  });
+  assert.equal(result.status, 'MANUAL_20X_HANDOFF');
+  assert.equal(result.upgradeReason, 'SESSION_INVALID_AFTER_PAYMENT');
+  assert.equal(result.paymentSubmitCalls, 1);
+  const handoff = calls.find((value) => Array.isArray(value) && value[0] === 'manual-20x-handoff');
+  assert.equal(handoff[1].publicResult.upgradeReason, 'SESSION_INVALID_AFTER_PAYMENT');
+  assert.throws(() => harness({ postPlusAction: 'UPGRADE_PAY' }), /postPlusAction must be/);
+});

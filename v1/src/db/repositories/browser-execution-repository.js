@@ -5,6 +5,10 @@ import { returnCdkForOrderInTransaction } from './cdk-return-repository.js';
 import { releaseCardForFailedOrderInTransaction } from './card-release-repository.js';
 import { upsertBrowserAlertInTransaction } from './browser-alert-repository.js';
 
+// Which picker plan a run's order buys (mirrors browser-mvp resolveOrderPlan).
+const PLAN_BY_PRODUCT_CODE = Object.freeze({ chatgpt_plus: 'plus', chatgpt_pro_5x: 'pro_5x', chatgpt_pro_20x: 'pro_20x' });
+const PLAN_BY_LEGACY_TYPE = Object.freeze({ plus: 'plus', pro_5x: 'pro_5x', pro_20x: 'pro_20x', '5x': 'pro_5x', '20x': 'pro_20x' });
+
 const HEX_64 = /^[a-f0-9]{64}$/i;
 const ACTIVE_RUN_STATUSES = new Set(['READY', 'RUNNING', 'RECONCILE_ONLY', 'HUMAN_REQUIRED']);
 const PAYMENT_READY_CARD_STATUSES = new Set(['active', 'available', 'usable', 'ready']);
@@ -302,6 +306,7 @@ export function createBrowserExecutionRepository(pool) {
       const approvedOrder = orderId == null ? null : required(orderId, 'orderId');
       const [rows] = await pool.query(
         `SELECT br.id AS run_id, br.verification_state,
+                o.plan_type AS order_plan_type, verification_product.product_code AS order_product_code,
                 br.verification_deadline_at, br.verification_next_check_at,
                 br.verification_check_count, br.payment_state,
                 br.post_payment_state,
@@ -309,6 +314,7 @@ export function createBrowserExecutionRepository(pool) {
          FROM browser_runs br
          INNER JOIN recharge_attempts rat ON rat.id = br.recharge_attempt_id
          INNER JOIN orders o ON o.id = rat.order_id
+         LEFT JOIN products verification_product ON verification_product.id = o.product_id
          WHERE ((br.status = 'RECONCILE_ONLY' AND br.payment_state = 'PAYMENT_UNKNOWN')
              OR (br.status = 'RUNNING' AND br.payment_state = 'PAYMENT_CONFIRMED'
                AND br.post_payment_state IN ('PLUS_PENDING','CANCELLATION_PENDING')))
@@ -320,6 +326,7 @@ export function createBrowserExecutionRepository(pool) {
       );
       return rows.map((row) => ({
         runId: row.run_id,
+        plan: PLAN_BY_PRODUCT_CODE[row.order_product_code] || PLAN_BY_LEGACY_TYPE[String(row.order_plan_type || '').toLowerCase()] || 'plus',
         verificationState: row.verification_state,
         verificationDeadlineAt: row.verification_deadline_at,
         verificationNextCheckAt: row.verification_next_check_at,
@@ -1474,7 +1481,10 @@ export function createBrowserExecutionRepository(pool) {
     },
 
     async recordManual20xHandoff({ runId, operationId, evidenceHash,
-      humanOwnerId = 'admin', now = new Date() }) {
+      humanOwnerId = 'admin', publicResult = null, now = new Date() }) {
+      if (publicResult != null && (typeof publicResult !== 'object' || Array.isArray(publicResult))) {
+        throw new BrowserExecutionError('publicResult must be an object', 'INVALID_ARGUMENT');
+      }
       const run = required(runId, 'runId');
       const operation = required(operationId, 'operationId');
       const evidence = requireHash(evidenceHash, 'evidenceHash');
@@ -1504,14 +1514,14 @@ export function createBrowserExecutionRepository(pool) {
           `INSERT INTO browser_post_payment_observations
            (browser_run_id, observation_kind, observation_status, evidence_hash, evidence_json, observed_at)
            VALUES (?, 'MANUAL_20X_HANDOFF', 'PLUS_CONFIRMED', ?, ?, ?)`,
-          [run, evidence, json({ evidenceHash: evidence }), now]
+          [run, evidence, json({ evidenceHash: evidence, ...(publicResult ? { publicResult } : {}) }), now]
         );
         await connection.query(
           `INSERT INTO browser_operations
            (browser_run_id, operation_id, operation_type, status, result_code,
             public_result_json, prepared_at, completed_at)
            VALUES (?, ?, 'MANUAL_20X_HANDOFF', 'COMMITTED', 'AWAITING_MANUAL_20X_UPGRADE', ?, ?, ?)`,
-          [run, operation, json({ evidenceHash: evidence, humanOwnerId: humanOwner }), now, now]
+          [run, operation, json({ evidenceHash: evidence, humanOwnerId: humanOwner, ...(publicResult ? { publicResult } : {}) }), now, now]
         );
         await connection.query(
           `INSERT INTO browser_interventions
