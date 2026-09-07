@@ -27,3 +27,19 @@ export function sessionCookieRemovals(cookies, supportedNames) {
   }
   return [...targets.values()];
 }
+
+
+// Device / network cookies that survive an account switch; every other
+// chatgpt.com cookie is login state of the previous account.
+export const DEVICE_COOKIE_NAMES = Object.freeze(["cf_clearance", "__cf_bm", "_cfuvid", "__cflb", "__oailb", "oai-did", "__stripe_mid"]);
+
+export function staleLoginCookieRemovals(cookies, supportedNames) {
+  const targets = new Map();
+  for (const cookie of cookies) {
+    if (isSessionCookieName(cookie.name, supportedNames) || DEVICE_COOKIE_NAMES.includes(cookie.name)) continue;
+    const host = String(cookie.domain || "chatgpt.com").replace(/^\\./, "");
+    const url = `https://${host}${cookie.path || "/"}`;
+    targets.set(`${url}|${cookie.name}`, { url, name: cookie.name });
+  }
+  return [...targets.values()];
+}

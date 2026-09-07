@@ -1,0 +1,47 @@
+{
+  "startedAt": "2026-09-07T02:03:42.498Z",
+  "profileIdDigest": "17b92518e1b4f84d",
+  "country": "PH",
+  "currency": "PHP",
+  "steps": [
+    {
+      "step": "page",
+      "at": "2026-09-07T02:03:42.620Z",
+      "url": "https://chatgpt.com/",
+      "title": "ChatGPT"
+    },
+    {
+      "step": "session",
+      "at": "2026-09-07T02:03:43.249Z",
+      "status": 200,
+      "hasToken": true,
+      "emailDigest": "4699aca020ed8ec8",
+      "expires": "2026-12-06T02:03:45.008Z"
+    },
+    {
+      "step": "account",
+      "at": "2026-09-07T02:03:45.684Z",
+      "status": 200,
+      "plan": "free",
+      "hasActive": false,
+      "keys": [
+        "accounts",
+        "account_ordering"
+      ]
+    },
+    {
+      "step": "checkout:plus",
+      "at": "2026-09-07T02:03:47.233Z",
+      "planName": "chatgptplusplan",
+      "status": 400,
+      "keys": [
+        "detail"
+      ],
+      "hasSessionId": false,
+      "urlHost": null,
+      "urlDigest": null,
+      "detail": "Our systems have detected unusual activity. Please try again later."
+    }
+  ],
+  "finishedAt": "2026-09-07T02:03:47.237Z"
+}

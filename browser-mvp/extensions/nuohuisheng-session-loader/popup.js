@@ -1,5 +1,5 @@
 import { parseSessionInput, SUPPORTED_SESSION_COOKIE_NAMES } from "./token.mjs";
-import { isSessionCookieName, sessionCookieRemovals, splitSessionCookie } from "./cookie-chunks.mjs";
+import { isSessionCookieName, sessionCookieRemovals, splitSessionCookie, staleLoginCookieRemovals } from "./cookie-chunks.mjs";
 
 const CHATGPT_URL = "https://chatgpt.com/";
 
@@ -71,6 +71,10 @@ async function removeExistingSessionCookies() {
   const existing = await chrome.cookies.getAll({ domain: "chatgpt.com" });
   const removals = sessionCookieRemovals(existing, SUPPORTED_SESSION_COOKIE_NAMES);
   for (const target of removals) await chrome.cookies.remove(target);
+  // The previous account's client-auth state (oai-client-auth-info, session
+  // epoch, callback-url, ...) must go too, or the new session's access token
+  // is rejected by backend-api. Device / Cloudflare cookies are kept.
+  if (removals.length > 0) for (const target of staleLoginCookieRemovals(existing, SUPPORTED_SESSION_COOKIE_NAMES)) await chrome.cookies.remove(target);
   const leftover = (await chrome.cookies.getAll({ domain: "chatgpt.com" }))
     .filter((cookie) => isSessionCookieName(cookie.name, SUPPORTED_SESSION_COOKIE_NAMES));
   if (leftover.length > 0) throw new Error("旧会话 Cookie 未能清除，请关闭 ChatGPT 标签页后重试。");

@@ -50,9 +50,30 @@ async function listSessionCookies(context) {
   return cookies.filter((cookie) => SESSION_COOKIE_NAME_PATTERN.test(cookie.name));
 }
 
+// Cookies that describe the device / network path rather than the login:
+// Cloudflare clearance and bot cookies, load balancer, ChatGPT device id,
+// Stripe device id. Everything else on chatgpt.com is login state.
+const DEVICE_COOKIE_NAME_PATTERN = /^(cf_clearance|__cf_bm|_cfuvid|__cflb|__oailb|oai-did|__stripe_mid)$/;
+
+async function listStaleLoginCookies(context) {
+  const cookies = await context.cookies(CHATGPT_URL);
+  return cookies.filter((cookie) => !SESSION_COOKIE_NAME_PATTERN.test(cookie.name) && !DEVICE_COOKIE_NAME_PATTERN.test(cookie.name));
+}
+
 async function clearSessionCookies(context) {
-  // Only the session token (and its chunks). Cloudflare/proxy cookies stay.
+  // The session token (and its chunks). Cloudflare/proxy/device cookies stay.
   await context.clearCookies({ name: SESSION_COOKIE_NAME_PATTERN });
+}
+
+// A new account's session paired with the previous account's client-auth
+// cookies (oai-client-auth-info, oai-client-session-epoch, callback-url, ...)
+// makes backend-api reject the access token ("Could not parse your
+// authentication token", verified 2026-09-07 on Lane 2). So when one identity
+// switches accounts, the whole previous login state goes, never the device.
+async function clearStaleLoginCookies(context) {
+  const stale = await listStaleLoginCookies(context);
+  for (const name of new Set(stale.map((cookie) => cookie.name))) await context.clearCookies({ name });
+  return stale.length;
 }
 
 function toPlaywrightCookie(cookie) {
@@ -129,24 +150,30 @@ export class CookieSessionBootstrapAdapter extends SessionProviderPort {
         sessionDigest: sessionLease.sessionDigest,
       };
     }
-    if (staleSessionCookies.length > 0) await clearSessionCookies(context);
+    let clearedLoginCookieCount = 0;
+    if (staleSessionCookies.length > 0) {
+      await clearSessionCookies(context);
+      clearedLoginCookieCount = await clearStaleLoginCookies(context);
+    }
     await context.addCookies(entry.cookies);
     return {
       cookieCount: entry.cookies.length,
       replacedCookieCount: staleSessionCookies.length,
+      clearedLoginCookieCount,
       existingSessionPreserved: false,
       sessionDigest: sessionLease.sessionDigest,
     };
   }
 
-  /** Terminal release of an identity: drop only the ChatGPT session cookies, nothing else. */
+  /** Terminal release of an identity: drop the ChatGPT session and login-state cookies; device/network cookies stay. */
   async clearSession(context) {
     if (!context || typeof context.cookies !== 'function' || typeof context.clearCookies !== 'function') {
       throw new TypeError('BrowserContext cookie read/write methods are required');
     }
     const stale = await listSessionCookies(context);
     if (stale.length > 0) await clearSessionCookies(context);
-    return { clearedCookieCount: stale.length };
+    const clearedLoginCookieCount = await clearStaleLoginCookies(context);
+    return { clearedCookieCount: stale.length, clearedLoginCookieCount };
   }
 
   async close(sessionLease) {

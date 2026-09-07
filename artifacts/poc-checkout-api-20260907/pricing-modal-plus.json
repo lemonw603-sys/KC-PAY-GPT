@@ -1,0 +1,111 @@
+{
+  "startedAt": "2026-09-07T02:09:36.491Z",
+  "profileIdDigest": "17b92518e1b4f84d",
+  "steps": [
+    {
+      "step": "page",
+      "at": "2026-09-07T02:09:43.990Z",
+      "url": "https://chatgpt.com/",
+      "title": "ChatGPT Plans"
+    },
+    {
+      "step": "pricing-modal",
+      "at": "2026-09-07T02:09:44.017Z",
+      "visible": true,
+      "text": "See what’s new with ChatGPT Plus Plus now has enhanced Voice, Work mode to take actions in your favorite apps, and our latest advanced models. Personal Business Free Try ChatGPT See how AI can help find answers, explore ideas, and get things done in life and work. Your current plan Start with the basics: Unlimited everyday text chats Limited access to image creation Limited memory and storage Limited voice chats Ad supported Have an existing plan? See billing help ChatGPT Go Expanded access Write, learn, create, and chat more with extended usage of core intelligence. Upgrade to Go Everything i"
+    },
+    {
+      "step": "buttons",
+      "at": "2026-09-07T02:09:44.060Z",
+      "labels": [
+        "Personal",
+        "Business",
+        "Your current plan",
+        "Upgrade to Go",
+        "Rejoin Plus",
+        "5x",
+        "20x",
+        "Upgrade to Pro",
+        "Philippines"
+      ]
+    },
+    {
+      "step": "click",
+      "at": "2026-09-07T02:09:44.080Z",
+      "label": "Rejoin Plus"
+    },
+    {
+      "step": "after-click",
+      "at": "2026-09-07T02:09:52.305Z",
+      "url": "https://chatgpt.com/#pricing",
+      "title": "ChatGPT Plans",
+      "checkoutCalls": 0,
+      "popups": []
+    },
+    {
+      "step": "alerts",
+      "at": "2026-09-07T02:09:52.328Z",
+      "texts": [
+        "The payments page encountered an error. Please try again. If the problem continues, please visit help.openai.com."
+      ]
+    },
+    {
+      "step": "request-shape",
+      "at": "2026-09-07T02:09:52.328Z",
+      "method": "POST",
+      "path": "/backend-api/payments/checkout",
+      "query": null,
+      "body": {
+        "entry_point": "all_plans_pricing_modal",
+        "plan_name": "chatgptplusplan",
+        "billing_details": {
+          "country": "PH",
+          "currency": "PHP"
+        },
+        "checkout_ui_mode": "custom"
+      },
+      "headersShown": {
+        "accept": "*/*",
+        "origin": "https://chatgpt.com",
+        "referer": "https://chatgpt.com/",
+        "x-oai-is-client-observation": "v1.r.m",
+        "content-type": "application/json",
+        "oai-client-build-number": "10379027",
+        "oai-client-version": "prod-8b282ae6b2e95fa180d7bde7b664e1446691fac0",
+        "oai-device-id": "f686cb72-c33d-46ea-b82f-32865a327793",
+        "oai-language": "en-US",
+        "oai-session-id": "b45fdaab-d995-4576-9bb7-d45d39a031b4",
+        "oai-telemetry": "[1,null]",
+        "oai-web-deployment-attestation": "<291 chars>",
+        "openai-sentinel-token": "{\"e\":\"k9d4s6v3b2\"}"
+      },
+      "otherHeaders": [
+        "cookie:6781",
+        "dnt:1",
+        "user-agent:117",
+        "x-openai-target-path:30",
+        "x-openai-target-route:30",
+        "authorization:1913",
+        "sec-ch-ua:65",
+        "sec-ch-ua-arch:5",
+        "sec-ch-ua-bitness:4",
+        "sec-ch-ua-full-version:16",
+        "sec-ch-ua-full-version-list:93",
+        "sec-ch-ua-mobile:2",
+        "sec-ch-ua-model:2",
+        "sec-ch-ua-platform:7",
+        "sec-ch-ua-platform-version:8"
+      ]
+    },
+    {
+      "step": "visible-price-lines",
+      "at": "2026-09-07T02:09:52.340Z",
+      "lines": [
+        "₱",
+        "₱",
+        "₱",
+        "₱"
+      ]
+    }
+  ]
+}

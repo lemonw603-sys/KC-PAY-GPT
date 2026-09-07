@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Browser MVP 上号器",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "将本人 ChatGPT Session 令牌写入安全 Cookie（替换 Profile 里已有的会话），并打开 ChatGPT。令牌不会保存在插件中。",
   "permissions": [
     "cookies",

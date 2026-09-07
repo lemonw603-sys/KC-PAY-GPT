@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { isSessionCookieName, sessionCookieRemovals, splitSessionCookie } from '../extensions/nuohuisheng-session-loader/cookie-chunks.mjs';
+import { isSessionCookieName, sessionCookieRemovals, splitSessionCookie, staleLoginCookieRemovals } from '../extensions/nuohuisheng-session-loader/cookie-chunks.mjs';
 import { parseSessionInput, SUPPORTED_SESSION_COOKIE_NAMES } from '../extensions/nuohuisheng-session-loader/token.mjs';
 
 test('derived session loader parses JSON and chunks long NextAuth tokens', () => {
@@ -65,5 +65,23 @@ test('derived session loader removes every existing session cookie variant befor
     { url: 'https://chatgpt.com/', name: '__Secure-next-auth.session-token.1' },
     { url: 'https://chatgpt.com/', name: '__Secure-next-auth.session-token' },
     { url: 'https://chatgpt.com/api', name: '__Secure-authjs.session-token' }
+  ]);
+});
+
+
+test('derived session loader drops the previous login state but keeps device and Cloudflare cookies', () => {
+  const existing = [
+    { name: '__Secure-next-auth.session-token.0', domain: '.chatgpt.com', path: '/' },
+    { name: 'oai-client-auth-info', domain: 'chatgpt.com', path: '/' },
+    { name: 'oai-client-session-epoch', domain: '.chatgpt.com', path: '/' },
+    { name: '__Secure-next-auth.callback-url', domain: 'chatgpt.com', path: '/' },
+    { name: '__Host-next-auth.csrf-token', domain: 'chatgpt.com', path: '/' },
+    { name: 'cf_clearance', domain: '.chatgpt.com', path: '/' },
+    { name: '__cf_bm', domain: '.chatgpt.com', path: '/' },
+    { name: 'oai-did', domain: '.chatgpt.com', path: '/' },
+    { name: '__stripe_mid', domain: '.chatgpt.com', path: '/' }
+  ];
+  assert.deepEqual(staleLoginCookieRemovals(existing, SUPPORTED_SESSION_COOKIE_NAMES).map((t) => t.name).sort(), [
+    '__Host-next-auth.csrf-token', '__Secure-next-auth.callback-url', 'oai-client-auth-info', 'oai-client-session-epoch'
   ]);
 });

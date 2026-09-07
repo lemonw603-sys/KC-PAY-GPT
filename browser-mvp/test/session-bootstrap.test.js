@@ -69,7 +69,13 @@ test('CookieSessionBootstrapAdapter replaces a foreign resident session only whe
     cookies: async () => [
       { name: '__Secure-next-auth.session-token.0', domain: '.chatgpt.com', path: '/' },
       { name: '__Secure-next-auth.session-token.1', domain: '.chatgpt.com', path: '/' },
+      { name: 'oai-client-auth-info', domain: 'chatgpt.com', path: '/' },
+      { name: 'oai-client-session-epoch', domain: '.chatgpt.com', path: '/' },
+      { name: '__Secure-next-auth.callback-url', domain: 'chatgpt.com', path: '/' },
       { name: '__cf_bm', domain: '.chatgpt.com', path: '/' },
+      { name: 'cf_clearance', domain: '.chatgpt.com', path: '/' },
+      { name: 'oai-did', domain: '.chatgpt.com', path: '/' },
+      { name: '__stripe_mid', domain: '.chatgpt.com', path: '/' },
     ],
     clearCookies: async (filter) => cleared.push(filter),
     addCookies: async (cookies) => added.push(...cookies),
@@ -77,11 +83,17 @@ test('CookieSessionBootstrapAdapter replaces a foreign resident session only whe
   const result = await adapter.bootstrap(lease, context, { replaceExisting: true });
   assert.equal(result.existingSessionPreserved, false);
   assert.equal(result.replacedCookieCount, 2);
+  assert.equal(result.clearedLoginCookieCount, 3);
   assert.equal(result.cookieCount, 1);
-  assert.equal(cleared.length, 1);
-  assert.ok(cleared[0].name instanceof RegExp, 'clearing is filtered by session cookie name, never a blanket clear');
-  assert.equal(cleared[0].name.test('__Secure-next-auth.session-token.1'), true);
-  assert.equal(cleared[0].name.test('__cf_bm'), false);
+  const clearedNames = (filter) => (filter.name instanceof RegExp ? [filter.name] : [filter.name]);
+  assert.ok(cleared.every((filter) => filter.name !== undefined), 'clearing is always filtered by cookie name, never a blanket clear');
+  assert.ok(cleared[0].name instanceof RegExp && cleared[0].name.test('__Secure-next-auth.session-token.1'));
+  const explicitlyCleared = cleared.slice(1).map((filter) => filter.name);
+  assert.deepEqual(explicitlyCleared.sort(), ['__Secure-next-auth.callback-url', 'oai-client-auth-info', 'oai-client-session-epoch']);
+  for (const kept of ['__cf_bm', 'cf_clearance', 'oai-did', '__stripe_mid']) {
+    assert.ok(!explicitlyCleared.includes(kept) && !cleared[0].name.test(kept), `${kept} is a device/network cookie and must survive an account switch`);
+  }
+  void clearedNames;
   assert.deepEqual(added.map((cookie) => cookie.name), ['__Secure-next-auth.session-token']);
   assert.equal(added[0].value, 'new-token');
   await adapter.close(lease);
@@ -89,7 +101,11 @@ test('CookieSessionBootstrapAdapter replaces a foreign resident session only whe
   cleared.length = 0;
   const releaseResult = await adapter.clearSession(context);
   assert.equal(releaseResult.clearedCookieCount, 2);
-  assert.equal(cleared.length, 1);
-  const untouched = await adapter.clearSession({ ...context, cookies: async () => [{ name: '__cf_bm' }] });
+  assert.equal(releaseResult.clearedLoginCookieCount, 3);
+  assert.equal(cleared.length, 4);
+  cleared.length = 0;
+  const untouched = await adapter.clearSession({ ...context, cookies: async () => [{ name: '__cf_bm' }, { name: 'oai-did' }] });
   assert.equal(untouched.clearedCookieCount, 0);
+  assert.equal(untouched.clearedLoginCookieCount, 0);
+  assert.equal(cleared.length, 0, 'a profile holding only device/network cookies is left untouched');
 });

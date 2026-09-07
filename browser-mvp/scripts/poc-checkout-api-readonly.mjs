@@ -9,17 +9,22 @@
 // Usage:
 //   BITBROWSER_PROFILE_ID=<id> node browser-mvp/scripts/poc-checkout-api-readonly.mjs [--observe]
 //   --observe  also open each returned checkout URL in a new tab and read the visible price
+//   POC_PLANS=plus,pro_5x,pro_20x  subset of plans to try (default all)
 //              lines (subtotal / tax / total), then close that tab.
 import { createHash } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
+const EVIDENCE_DIR = fileURLToPath(new URL('../../artifacts/poc-checkout-api-20260907/', import.meta.url));
 
 const API = process.env.BITBROWSER_API_BASE_URL || 'http://127.0.0.1:54345';
 const PROFILE = process.env.BITBROWSER_PROFILE_ID;
 const OBSERVE = process.argv.includes('--observe');
 const COUNTRY = process.env.POC_COUNTRY || 'PH';
 const CURRENCY = process.env.POC_CURRENCY || 'PHP';
-const PLANS = { plus: 'chatgptplusplan', pro_5x: 'chatgptprolite', pro_20x: 'chatgptpro' };
+const ALL_PLANS = { plus: 'chatgptplusplan', pro_5x: 'chatgptprolite', pro_20x: 'chatgptpro' };
+// POC_PLANS=plus,pro_5x limits which checkouts are created (default: all three).
+const PLANS = Object.fromEntries(Object.entries(ALL_PLANS).filter(([k]) => !process.env.POC_PLANS || process.env.POC_PLANS.split(',').includes(k)));
 if (!PROFILE) { console.error('BITBROWSER_PROFILE_ID is required'); process.exit(2); }
 
 const digest = (v) => createHash('sha256').update(String(v)).digest('hex').slice(0, 16);
