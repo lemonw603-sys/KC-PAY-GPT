@@ -5,13 +5,9 @@ import { fileURLToPath } from 'node:url';
 import { readFile } from 'node:fs/promises';
 import { PublicApiError } from '../domain/public-api-error.js';
 import { CdkBatchError } from '../services/cdk-service.js';
-import { RechargePermitError } from '../services/recharge-permit-service.js';
-import { RechargeAuthorizationV2Error } from '../services/recharge-authorization-v2-service.js';
-import { OrderCompensationError } from '../services/order-compensation-service.js';
 import { OrderCancellationError } from '../services/order-cancellation-service.js';
 import { ReconciliationCaseError } from '../services/reconciliation-case-service.js';
 import { OperationsCsvExportError } from '../services/operations-csv-export-service.js';
-import { CdkDeliveryError } from '../services/cdk-delivery-service.js';
 import { TraceabilityOperationError } from '../services/traceability-operations-service.js';
 import { BrowserAdminError } from '../services/browser-admin-service.js';
 import { createFixedWindowRateLimit } from './fixed-window-rate-limit.js';
@@ -33,18 +29,14 @@ export function createApp({
   replaceCustomerSession = null,
   adminAuth = null,
   getAdminOverview = null,
-  getAdminReadinessSummary = null,
   listAdminOrders = null,
   getAdminOrder = null,
   getAdminOrderTimeline = null,
-  addAdminOrderNote = null,
-  addAdminOrderTag = null,
   completeAdminCustomerPayment = null,
   listAdminAlerts = null,
   closeAdminAlert = null,
   requestCardTransactionSync = null,
   getAdminCard = null,
-  getAdminCardConsumption = null,
   requestAdminCardSync = null,
   discoverAdminCards = null,
   validateAdminCardIntake = null,
@@ -54,16 +46,11 @@ export function createApp({
   refreshAdminCardStockProvider = null,
   setAdminCardStockDefaultCardType = null,
   startAdminBusiness = null,
-  setAdminCardStockThreshold = null,
   setAdminCardMaxSuccessfulPayments = null,
   setAdminCardMinimumBalance = null,
   createAdminCardStockJob = null,
-  getAdminReplenishmentSettings = null,
-  setAdminReplenishmentDailyLimit = null,
   listAdminCardFundingAttempts = null,
   resolveAdminCardFundingUnknown = null,
-  listAdminProviderRoutes = null,
-  switchAdminProviderRoute = null,
   setAdminDefaultRechargeMethod = null,
   listAdminCardSources = null,
   createAdminManualCardSource = null,
@@ -80,17 +67,12 @@ export function createApp({
   setAdminDispatch = null,
   setAdminBrowserPaymentWrites = null,
   setAdminSupplyAutomation = null,
-  setAdminRechargePermit = null,
-  createAdminRechargeAuthorization = null,
-  revokeAdminRechargeAuthorization = null,
-  compensateAdminOrder = null,
   cancelAdminOrder = null,
   createAdminCdkBatch = null,
   listAdminCdkBatches = null,
   downloadAdminCdkBatch = null,
   inspectAdminCdkBatch = null,
   revokeAdminCdkBatch = null,
-  recordAdminCdkDelivery = null,
   listAdminReconciliationCases = null,
   assignAdminReconciliationCase = null,
   resolveAdminReconciliationCase = null,
@@ -103,8 +85,7 @@ export function createApp({
   orderRateLimit = createFixedWindowRateLimit(),
   orderStatusRateLimit = createFixedWindowRateLimit({ limit: 30 }),
   adminLoginRateLimit = createFixedWindowRateLimit({ limit: 5, windowMs: 15 * 60 * 1000 }),
-  adminWriteRateLimit = createFixedWindowRateLimit({ limit: 60, windowMs: 15 * 60 * 1000 }),
-  adminStepUpRateLimit = createFixedWindowRateLimit({ limit: 5, windowMs: 15 * 60 * 1000 })
+  adminWriteRateLimit = createFixedWindowRateLimit({ limit: 60, windowMs: 15 * 60 * 1000 })
 } = {}) {
   const app = express();
 
@@ -192,17 +173,10 @@ export function createApp({
     }
     return next();
   };
-  const requireAdminStepUp = async (req, res, next) => {
-    if (!adminAuth || !await adminAuth.hasStepUp(req)) {
-      return res.status(403).json({ error: 'admin_step_up_required' });
-    }
-    return next();
-  };
   const adminWriteGuards = [noStore, requireAdminApi, requireAdminOrigin, adminWriteRateLimit];
-  // D-119: no second password for money/production actions; the same-origin session
-  // write guards apply. Step-up route and helper stay until the API cleanup step.
+  // D-119/D-129: money and production actions use the same same-origin session write
+  // guards; the operator confirms once in the page dialog, never with a second password.
   const sensitiveAdminGuards = [...adminWriteGuards];
-  void requireAdminStepUp;
 
   app.get('/admin/login', noStore, async (req, res) => {
     if (adminAuth && await adminAuth.authenticateRequest(req)) return res.redirect(302, '/admin');
@@ -219,14 +193,6 @@ export function createApp({
     return res.status(204).end();
   });
 
-  app.post('/api/v1/admin/step-up', noStore, requireAdminApi, requireAdminOrigin,
-    adminStepUpRateLimit, async (req, res) => {
-      const token = await adminAuth.issueStepUp(req, req.body?.password);
-      if (!token) return res.status(401).json({ error: 'invalid_admin_credentials' });
-      adminAuth.setStepUpCookie(res, token);
-      return res.status(204).end();
-    });
-
   app.get('/api/v1/admin/session', noStore, requireAdminApi, (_req, res) => {
     res.json({ authenticated: true });
   });
@@ -240,11 +206,6 @@ export function createApp({
   if (typeof getAdminOverview === 'function') {
     app.get('/api/v1/admin/overview', noStore, requireAdminApi, async (_req, res) => {
       res.json(await getAdminOverview());
-    });
-  }
-  if (typeof getAdminReadinessSummary === 'function') {
-    app.get('/api/v1/admin/operations/readiness', noStore, requireAdminApi, async (_req, res) => {
-      res.json(await getAdminReadinessSummary());
     });
   }
   if (typeof listAdminOrders === 'function') {
@@ -264,30 +225,6 @@ export function createApp({
   if (typeof getAdminOrderTimeline === 'function') {
     app.get('/api/v1/admin/orders/:publicNo/timeline', noStore, requireAdminApi, async (req, res) => {
       res.json(await getAdminOrderTimeline(req.params.publicNo));
-    });
-  }
-  if (typeof addAdminOrderNote === 'function') {
-    app.post('/api/v1/admin/orders/:publicNo/notes', ...adminWriteGuards, async (req, res) => {
-      try {
-        return res.status(201).json(await addAdminOrderNote(req.params.publicNo, req.body || {}));
-      } catch (error) {
-        if (error instanceof TraceabilityOperationError) {
-          return res.status(error.status).json({ error: error.code.toLowerCase() });
-        }
-        throw error;
-      }
-    });
-  }
-  if (typeof addAdminOrderTag === 'function') {
-    app.post('/api/v1/admin/orders/:publicNo/tags', ...adminWriteGuards, async (req, res) => {
-      try {
-        return res.status(201).json(await addAdminOrderTag(req.params.publicNo, req.body || {}));
-      } catch (error) {
-        if (error instanceof TraceabilityOperationError) {
-          return res.status(error.status).json({ error: error.code.toLowerCase() });
-        }
-        throw error;
-      }
     });
   }
   if (typeof completeAdminCustomerPayment === 'function') {
@@ -324,11 +261,6 @@ export function createApp({
   if (typeof getAdminCard === 'function') {
     app.get('/api/v1/admin/cards/:providerCardId', noStore, requireAdminApi, async (req, res) => {
       res.json(await getAdminCard(req.params.providerCardId, req.query || {}));
-    });
-  }
-  if (typeof getAdminCardConsumption === 'function') {
-    app.get('/api/v1/admin/card-consumption', noStore, requireAdminApi, async (req, res) => {
-      res.json(await getAdminCardConsumption(req.query || {}));
     });
   }
   if (typeof requestAdminCardSync === 'function') {
@@ -382,11 +314,6 @@ export function createApp({
       return res.json(result);
     });
   }
-  if (typeof setAdminCardStockThreshold === 'function') {
-    app.post('/api/v1/admin/card-stock/threshold', ...adminWriteGuards, async (req, res) => {
-      res.json(await setAdminCardStockThreshold(req.body?.count));
-    });
-  }
   if (typeof setAdminCardMaxSuccessfulPayments === 'function') {
     app.post('/api/v1/admin/card-stock/max-successful-payments', ...adminWriteGuards, async (req, res) => {
       const count = req.body?.count;
@@ -412,11 +339,6 @@ export function createApp({
       return res.status(202).json({ job });
     });
   }
-  if (typeof getAdminReplenishmentSettings === 'function') {
-    app.get('/api/v1/admin/card-stock/replenishment-settings', noStore, requireAdminApi, async (req, res) => {
-      res.json(await getAdminReplenishmentSettings());
-    });
-  }
   if (typeof listAdminCardFundingAttempts === 'function') {
     app.get('/api/v1/admin/card-funding-attempts', noStore, requireAdminApi, async (req, res) => {
       try {
@@ -437,28 +359,6 @@ export function createApp({
           action: req.body?.action,
           actorId: req.admin?.id || 'admin',
           note: req.body?.note,
-          confirmation: req.body?.confirmation
-        }));
-      } catch (error) {
-        if (error instanceof PublicApiError) {
-          return res.status(error.status || 400).json({ error: error.code.toLowerCase() });
-        }
-        throw error;
-      }
-    });
-  }
-  if (typeof listAdminProviderRoutes === 'function') {
-    app.get('/api/v1/admin/provider-routes', noStore, requireAdminApi, async (_req, res) => {
-      res.json(await listAdminProviderRoutes());
-    });
-  }
-  if (typeof switchAdminProviderRoute === 'function') {
-    app.post('/api/v1/admin/provider-routes/:routeId/switch', ...sensitiveAdminGuards, async (req, res) => {
-      try {
-        return res.json(await switchAdminProviderRoute({
-          routeId: req.params.routeId,
-          actorId: req.admin?.id || 'admin',
-          operatorNote: req.body?.note,
           confirmation: req.body?.confirmation
         }));
       } catch (error) {
@@ -546,15 +446,6 @@ export function createApp({
       res.json(await clearCardOperationalOverride(req.body || {}));
     });
   }
-  if (typeof setAdminReplenishmentDailyLimit === 'function') {
-    app.post('/api/v1/admin/card-stock/replenishment-settings', ...sensitiveAdminGuards, async (req, res) => {
-      res.json(await setAdminReplenishmentDailyLimit({
-        value: req.body?.dailyLimit,
-        actorId: 'admin',
-        reason: req.body?.reason
-      }));
-    });
-  }
   if (typeof setAdminOrderAcceptance === 'function') {
     app.post('/api/v1/admin/operations/order-acceptance', ...adminWriteGuards, async (req, res) => {
       res.json(await setAdminOrderAcceptance(req.body));
@@ -575,61 +466,6 @@ export function createApp({
     app.post('/api/v1/admin/operations/supply-automation', ...adminWriteGuards, async (req, res) => {
       if (typeof req.body?.enabled !== 'boolean') return res.status(400).json({ error: 'invalid_operation_state' });
       res.json(await setAdminSupplyAutomation({ enabled: req.body.enabled, actorId: req.admin?.id || 'admin' }));
-    });
-  }
-  if (typeof setAdminRechargePermit === 'function') {
-    app.post('/api/v1/admin/orders/:publicNo/recharge-permit', ...sensitiveAdminGuards, async (req, res) => {
-      try {
-        const result = await setAdminRechargePermit(req.params.publicNo, req.body);
-        return res.status(req.body?.action === 'arm' ? 202 : 200).json(result);
-      } catch (error) {
-        if (error instanceof RechargePermitError || error instanceof RechargeAuthorizationV2Error || [
-          'RECHARGE_CONFIRMATION_REQUIRED', 'INVALID_RECHARGE_PERMIT_ACTION'
-        ].includes(error?.code)) {
-          return res.status(400).json({ error: String(error.code).toLowerCase() });
-        }
-        throw error;
-      }
-    });
-  }
-  if (typeof createAdminRechargeAuthorization === 'function') {
-    app.post('/api/v1/admin/recharge-authorizations', ...sensitiveAdminGuards, async (req, res) => {
-      try {
-        return res.status(201).json(await createAdminRechargeAuthorization(req.body || {}));
-      } catch (error) {
-        if (error instanceof RechargeAuthorizationV2Error || error instanceof RechargePermitError) {
-          return res.status(400).json({ error: error.code.toLowerCase(), details: error.details });
-        }
-        throw error;
-      }
-    });
-  }
-  if (typeof revokeAdminRechargeAuthorization === 'function') {
-    app.post('/api/v1/admin/recharge-authorizations/:authorizationId/revoke',
-      ...sensitiveAdminGuards, async (req, res) => {
-        try {
-          return res.json(await revokeAdminRechargeAuthorization({
-            authorizationId: req.params.authorizationId,
-            ...(req.body || {})
-          }));
-        } catch (error) {
-          if (error instanceof RechargeAuthorizationV2Error) {
-            return res.status(400).json({ error: error.code.toLowerCase(), details: error.details });
-          }
-          throw error;
-        }
-      });
-  }
-  if (typeof compensateAdminOrder === 'function') {
-    app.post('/api/v1/admin/orders/:publicNo/compensation', ...sensitiveAdminGuards, async (req, res) => {
-      try {
-        res.json(await compensateAdminOrder(req.params.publicNo, req.body));
-      } catch (error) {
-        if (error instanceof OrderCompensationError) {
-          return res.status(error.status).json({ error: error.code.toLowerCase() });
-        }
-        throw error;
-      }
     });
   }
   if (typeof cancelAdminOrder === 'function') {
@@ -697,18 +533,6 @@ export function createApp({
       } catch (error) {
         if (error instanceof CdkBatchError) {
           return res.status(400).json({ error: error.code.toLowerCase() });
-        }
-        throw error;
-      }
-    });
-  }
-  if (typeof recordAdminCdkDelivery === 'function') {
-    app.post('/api/v1/admin/cdks/deliveries', ...adminWriteGuards, async (req, res) => {
-      try {
-        return res.status(201).json(await recordAdminCdkDelivery(req.body || {}));
-      } catch (error) {
-        if (error instanceof CdkDeliveryError) {
-          return res.status(400).json({ error: error.code.toLowerCase(), details: error.details });
         }
         throw error;
       }

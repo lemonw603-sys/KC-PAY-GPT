@@ -62,10 +62,9 @@ pbpaste | npm --prefix v1 run admin:configure-local
 - `POST /api/v1/admin/cdks/:batchNo/download`
 - `POST /api/v1/admin/cdks/:batchNo/revoke` （管理员写入；仅作废该批次仍为 `AVAILABLE` 的 CDK）
 - `GET /api/v1/admin/card-stock`
-- `POST /api/v1/admin/card-stock/threshold`
 - `POST /api/v1/admin/card-stock/jobs`（产生真实开卡费用）
 - `POST /api/v1/admin/operations/order-acceptance`（仅接受精确确认词“开始接单”或“停止接单”）
-- `POST /api/v1/admin/orders/:publicNo/recharge-permit`（`arm` 或 `revoke`；仅用于灰度/特殊放行，不能为已有资金尝试的订单重新付款）
+- 2026-09-07 已删除（五页新版无消费者，D-119/D-128/D-129/D-130）：`orders/:publicNo/notes`、`orders/:publicNo/tags`、`orders/:publicNo/recharge-permit`、`orders/:publicNo/compensation`、`recharge-authorizations`（含 `/:id/revoke`）、`cdks/deliveries`、`card-stock/threshold`、`card-stock/replenishment-settings`（GET/POST）、`provider-routes`（含 `/:routeId/switch`）、`card-consumption`、`operations/readiness`（readiness 随 `overview` 返回）、`step-up`。灰度许可仍可用服务器上的 `pojia-recharge-gate` CLI 操作。
 
 全部响应设置 `Cache-Control: no-store`，未登录统一返回 `401 admin_auth_required`。
 手动同步若已有运行中任务则不重复入队；成功入队返回 `202`。

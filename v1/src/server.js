@@ -14,21 +14,10 @@ import {
 import { createAdminSessionAuth } from './security/admin-session.js';
 import { createCardStockService } from './services/card-stock-service.js';
 import { createCardStockJobService } from './services/card-stock-job-service.js';
-import { createCardReplenishmentSettingsService } from './services/card-replenishment-settings-service.js';
 import { createCardFundingAdminService } from './services/card-funding-admin-service.js';
 import { createProviderRouteAdminService } from './services/provider-route-admin-service.js';
 import { createCardSyncJobService } from './services/card-sync-job-service.js';
 import { createAdminOperationsService } from './services/admin-operations-service.js';
-import {
-  RechargePermitError,
-  revokeRechargePermit
-} from './services/recharge-permit-service.js';
-import {
-  createRechargeAuthorization,
-  getRechargeAuthorizationStatus,
-  revokeRechargeAuthorization
-} from './services/recharge-authorization-v2-service.js';
-import { createOrderCompensationService } from './services/order-compensation-service.js';
 import { createOrderCancellationService } from './services/order-cancellation-service.js';
 import { HnskjCardProvider } from './providers/index.js';
 import { createCardIntakeService } from './services/card-intake-service.js';
@@ -81,7 +70,6 @@ const cardStockService = createCardStockService({
   providerAccountId: currentCardProviderAccountId
 });
 const cardStockJobService = createCardStockJobService({ pool });
-const replenishmentSettingsService = createCardReplenishmentSettingsService({ pool });
 const cardFundingAdminService = createCardFundingAdminService({ pool });
 const providerRouteAdminService = createProviderRouteAdminService({ pool });
 const cardSourceAdminService = createCardSourceAdminService({ pool });
@@ -133,11 +121,6 @@ const createAdminCdkBatch = createAdminCdkService({
 });
 const adminOperationsService = createAdminOperationsService({ pool });
 const startBusiness = createAdminStartBusinessService({ adminReadService, cardStockService, adminOperationsService });
-const compensateAdminOrder = createOrderCompensationService({
-  pool,
-  cdkHashKey: config.cdkHashKey,
-  cdkRecoveryKey: config.cdkRecoveryKey
-});
 const cancelAdminOrder = createOrderCancellationService({ pool });
 const reconciliationCases = createReconciliationCaseService({ pool });
 const browserAdmin = createBrowserAdminService({ pool });
@@ -179,17 +162,13 @@ const app = createApp({
   adminAuth,
   adminHost: config.adminHost,
   getAdminOverview: getAdminOverviewWithReadiness,
-  getAdminReadinessSummary: async () => (await getAdminOverviewWithReadiness()).readiness,
   listAdminOrders: adminReadService.listOrders,
   getAdminOrder: adminReadService.getOrder,
   getAdminOrderTimeline: adminReadService.getOrderTimeline,
-  addAdminOrderNote: traceabilityOperations.addOrderNote,
-  addAdminOrderTag: traceabilityOperations.addOrderTag,
   completeAdminCustomerPayment: traceabilityOperations.completeCustomerPayment,
   listAdminAlerts: adminReadService.listAlerts,
   requestCardTransactionSync: adminReadService.requestCardTransactionSync
   ,getAdminCard: adminReadService.getCard
-  ,getAdminCardConsumption: adminReadService.getCardConsumption
   ,requestAdminCardSync: cardSyncJobService.createJobs
   ,discoverAdminCards: cardIntakeProvider ? async () => {
     const service = await configuredCardIntake();
@@ -232,15 +211,11 @@ const app = createApp({
       };
     } : null
   ,setAdminCardStockDefaultCardType: cardStockService.setDefaultCardType
-  ,setAdminCardStockThreshold: (value) => cardStockService.setThreshold(value)
   ,setAdminCardMaxSuccessfulPayments: (value) => cardStockService.setMaxSuccessfulPayments(value)
   ,setAdminCardMinimumBalance: (value) => cardStockService.setMinimumRequiredCardBalance(value)
   ,createAdminCardStockJob: cardStockJobService.createJob
-  ,getAdminReplenishmentSettings: replenishmentSettingsService.get
-  ,setAdminReplenishmentDailyLimit: replenishmentSettingsService.setDailyLimit
   ,listAdminCardFundingAttempts: cardFundingAdminService.list
   ,resolveAdminCardFundingUnknown: cardFundingAdminService.resolveUnknown
-  ,listAdminProviderRoutes: providerRouteAdminService.list
   ,setAdminDefaultRechargeMethod: providerRouteAdminService.setDefaultRechargeMethod
   ,listAdminCardSources: cardSourceAdminService.list
   ,createAdminManualCardSource: cardSourceAdminService.createManualSource
@@ -255,53 +230,6 @@ const app = createApp({
   ,setAdminSupplyAutomation: (input) => adminOperationsService.setSupplyAutomation(input)
   ,closeAdminAlert: adminOperationsService.closeAlert
   ,startAdminBusiness: startBusiness
-  ,setAdminRechargePermit: async (publicNo, input = {}) => {
-    const action = String(input.action || '');
-    const confirmation = String(input.confirmation || '');
-    if (action === 'arm') {
-      if (confirmation !== `确认充值 ${publicNo}`) {
-        throw new RechargePermitError('Recharge confirmation mismatch', 'RECHARGE_CONFIRMATION_REQUIRED');
-      }
-      return createRechargeAuthorization(pool, {
-        publicNos: [publicNo],
-        authorizedBy: 'admin',
-        ttlMinutes: 10,
-        reason: 'single order recharge authorization from admin'
-      });
-    }
-    if (action === 'revoke') {
-      if (confirmation !== `撤销充值 ${publicNo}`) {
-        throw new RechargePermitError('Recharge revocation confirmation mismatch', 'RECHARGE_CONFIRMATION_REQUIRED');
-      }
-      const status = await getRechargeAuthorizationStatus(pool, { publicNo });
-      if (status.authorization?.id && status.authorization.itemStatus === 'PENDING') {
-        return revokeRechargeAuthorization(pool, {
-          authorizationId: status.authorization.id,
-          revokedBy: 'admin'
-        });
-      }
-      // Rolling-deploy compatibility for permits armed before Foundation v2.
-      return revokeRechargePermit(pool, { publicNo, revokedBy: 'admin' });
-    }
-    throw new RechargePermitError('Invalid recharge permit action', 'INVALID_RECHARGE_PERMIT_ACTION');
-  }
-  ,createAdminRechargeAuthorization: async (input = {}) => {
-    const publicNos = Array.isArray(input.publicNos) ? input.publicNos : [];
-    if (String(input.confirmation || '') !== `确认充值${publicNos.length}单`) {
-      throw new RechargePermitError('Recharge confirmation mismatch', 'RECHARGE_CONFIRMATION_REQUIRED');
-    }
-    return createRechargeAuthorization(pool, {
-      publicNos,
-      ttlMinutes: input.ttlMinutes ?? 10,
-      authorizedBy: 'admin',
-      reason: input.reason || 'explicit batch recharge authorization from admin'
-    });
-  }
-  ,revokeAdminRechargeAuthorization: (input) => revokeRechargeAuthorization(pool, {
-    authorizationId: input.authorizationId,
-    revokedBy: 'admin'
-  })
-  ,compensateAdminOrder
   ,cancelAdminOrder
   ,createAdminCdkBatch
   ,listAdminCdkBatches: async (input) => ({
@@ -313,15 +241,6 @@ const app = createApp({
     pool, batchNo, config.cdkHashKey, config.cdkRecoveryKey
   )
   ,revokeAdminCdkBatch: (batchNo, reason) => revokeCdkBatch(pool, batchNo, reason)
-  ,recordAdminCdkDelivery: cdkDelivery ? async (input = {}) => {
-    const common = {
-      ...input,
-      actorId: 'admin'
-    };
-    return Array.isArray(input.cdkIds)
-      ? cdkDelivery.recordBatchDelivery(common)
-      : cdkDelivery.recordDelivery(common);
-  } : null
   ,listAdminReconciliationCases: reconciliationCases.listCases
   ,assignAdminReconciliationCase: reconciliationCases.assign
   ,resolveAdminReconciliationCase: reconciliationCases.resolve

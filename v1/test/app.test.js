@@ -20,14 +20,10 @@ async function withServer(app, run) {
   }
 }
 
-async function stepUp(baseUrl, sessionCookie, password = 'fixture admin password') {
-  const response = await fetch(`${baseUrl}/api/v1/admin/step-up`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Cookie: sessionCookie, Origin: baseUrl },
-    body: JSON.stringify({ password })
-  });
-  assert.equal(response.status, 204);
-  return `${sessionCookie}; ${response.headers.get('set-cookie').split(';')[0]}`;
+// D-129: there is no step-up password any more; sensitive routes accept the plain
+// admin session. Kept as a no-op so the route tests read unchanged.
+async function stepUp(_baseUrl, sessionCookie) {
+  return sessionCookie;
 }
 
 async function requestWithHost(baseUrl, path, host) {
@@ -680,7 +676,7 @@ test('discovers manual cards through authenticated quarantine intake routes', as
   });
 });
 
-test('changes intake and one-order recharge permits only through authenticated admin routes', async () => {
+test('changes intake and default recharge method only through authenticated admin routes', async () => {
   const adminAuth = createAdminSessionAuth({
     passwordHash: await hashAdminPassword('fixture admin password', { salt: Buffer.alloc(16, 11) }),
     sessionSecret: Buffer.alloc(32, 12),
@@ -696,10 +692,6 @@ test('changes intake and one-order recharge permits only through authenticated a
     setAdminDefaultRechargeMethod: async (input) => {
       received.push(['method', input]);
       return { method: input.method, changed: true };
-    },
-    setAdminRechargePermit: async (publicNo, input) => {
-      received.push(['permit', publicNo, input]);
-      return { publicNo, status: 'ARMED', expiresAt: '2026-08-19T12:00:00.000Z' };
     }
   });
   await withServer(app, async (baseUrl) => {
@@ -721,119 +713,19 @@ test('changes intake and one-order recharge permits only through authenticated a
       body: JSON.stringify({ method: 'BROWSER', confirmation: '切换默认充值方式为 BROWSER' })
     });
     assert.equal(method.status, 200);
-    const sensitiveCookie = await stepUp(baseUrl, cookie);
     const permit = await fetch(`${baseUrl}/api/v1/admin/orders/PJV1-DEMO/recharge-permit`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: sensitiveCookie, Origin: baseUrl },
+      method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cookie, Origin: baseUrl },
       body: JSON.stringify({ action: 'arm', confirmation: '确认充值 PJV1-DEMO' })
     });
-    assert.equal(permit.status, 202);
+    assert.equal(permit.status, 404);
     assert.deepEqual(received, [
       ['intake', { enabled: true, confirmation: '开始接单' }],
-      ['method', { method: 'BROWSER', actorId: 'admin', confirmation: '切换默认充值方式为 BROWSER' }],
-      ['permit', 'PJV1-DEMO', { action: 'arm', confirmation: '确认充值 PJV1-DEMO' }]
+      ['method', { method: 'BROWSER', actorId: 'admin', confirmation: '切换默认充值方式为 BROWSER' }]
     ]);
   });
 });
 
-test('issues an order compensation only through the guarded admin route', async () => {
-  const adminAuth = createAdminSessionAuth({
-    passwordHash: await hashAdminPassword('fixture admin password', { salt: Buffer.alloc(16, 15) }),
-    sessionSecret: Buffer.alloc(32, 16), secureCookies: false
-  });
-  let received;
-  const app = createApp({
-    adminAuth,
-    compensateAdminOrder: async (publicNo, input) => {
-      received = { publicNo, input };
-      return { publicNo, planType: 'plus', code: 'PJ-COMPENSATIONFIXTURE', replayed: false };
-    }
-  });
-  await withServer(app, async (baseUrl) => {
-    assert.equal((await fetch(`${baseUrl}/api/v1/admin/orders/PJV1-DEMO/compensation`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}'
-    })).status, 401);
-    const login = await fetch(`${baseUrl}/api/v1/admin/session`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ password: 'fixture admin password' })
-    });
-    const cookie = login.headers.get('set-cookie').split(';')[0];
-    const sensitiveCookie = await stepUp(baseUrl, cookie);
-    const response = await fetch(`${baseUrl}/api/v1/admin/orders/PJV1-DEMO/compensation`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: sensitiveCookie, Origin: baseUrl },
-      body: JSON.stringify({ confirmation: '补发 PJV1-DEMO' })
-    });
-    assert.equal(response.status, 200);
-    assert.equal((await response.json()).code, 'PJ-COMPENSATIONFIXTURE');
-    assert.deepEqual(received, {
-      publicNo: 'PJV1-DEMO', input: { confirmation: '补发 PJV1-DEMO' }
-    });
-  });
-});
-
-test('cancels an unsubmitted order only through the guarded admin route', async () => {
-  const adminAuth = createAdminSessionAuth({
-    passwordHash: await hashAdminPassword('fixture admin password', { salt: Buffer.alloc(16, 17) }),
-    sessionSecret: Buffer.alloc(32, 18), secureCookies: false
-  });
-  let received;
-  const app = createApp({
-    adminAuth,
-    cancelAdminOrder: async (publicNo, input) => {
-      received = { publicNo, input };
-      return { publicNo, status: 'CLOSED', cardReleased: true, replayed: false };
-    }
-  });
-  await withServer(app, async (baseUrl) => {
-    assert.equal((await fetch(`${baseUrl}/api/v1/admin/orders/PJV1-DEMO/cancellation`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}'
-    })).status, 401);
-    const login = await fetch(`${baseUrl}/api/v1/admin/session`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ password: 'fixture admin password' })
-    });
-    const cookie = login.headers.get('set-cookie').split(';')[0];
-    const sensitiveCookie = await stepUp(baseUrl, cookie);
-    const response = await fetch(`${baseUrl}/api/v1/admin/orders/PJV1-DEMO/cancellation`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: sensitiveCookie, Origin: baseUrl },
-      body: JSON.stringify({ confirmation: '取消订单 PJV1-DEMO' })
-    });
-    assert.equal(response.status, 200);
-    assert.equal((await response.json()).cardReleased, true);
-    assert.deepEqual(received, {
-      publicNo: 'PJV1-DEMO', input: { confirmation: '取消订单 PJV1-DEMO' }
-    });
-  });
-});
-
-test('rejects authenticated admin writes from a different origin', async () => {
-  const adminAuth = createAdminSessionAuth({
-    passwordHash: await hashAdminPassword('fixture admin password', { salt: Buffer.alloc(16, 13) }),
-    sessionSecret: Buffer.alloc(32, 14),
-    secureCookies: false
-  });
-  let called = false;
-  const app = createApp({
-    adminAuth,
-    setAdminOrderAcceptance: async () => { called = true; return {}; }
-  });
-  await withServer(app, async (baseUrl) => {
-    const login = await fetch(`${baseUrl}/api/v1/admin/session`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ password: 'fixture admin password' })
-    });
-    const cookie = login.headers.get('set-cookie').split(';')[0];
-    const response = await fetch(`${baseUrl}/api/v1/admin/operations/order-acceptance`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cookie,
-        Origin: 'https://attacker.example' },
-      body: JSON.stringify({ enabled: false, confirmation: '停止接单' })
-    });
-    assert.equal(response.status, 403);
-    assert.deepEqual(await response.json(), { error: 'admin_origin_required' });
-    assert.equal(called, false);
-  });
-});
-
-test('guards batch recharge authorization and exposes reconciliation, delivery, and safe CSV operations', async () => {
+test('exposes reconciliation cases and safe CSV operations; batch authorization and delivery routes are gone', async () => {
   const adminAuth = createAdminSessionAuth({
     passwordHash: await hashAdminPassword('fixture admin password', { salt: Buffer.alloc(16, 21) }),
     sessionSecret: Buffer.alloc(32, 22), secureCookies: false
@@ -841,14 +733,6 @@ test('guards batch recharge authorization and exposes reconciliation, delivery, 
   const received = {};
   const app = createApp({
     adminAuth,
-    createAdminRechargeAuthorization: async (input) => {
-      received.authorization = input;
-      return { id: 'auth-1', itemCount: input.publicNos.length };
-    },
-    recordAdminCdkDelivery: async (input) => {
-      received.delivery = input;
-      return { recordedCount: input.cdkIds.length };
-    },
     listAdminReconciliationCases: async (input) => ({ page: Number(input.page), total: 1, cases: [{ id: 'case-1' }] }),
     assignAdminReconciliationCase: async (input) => ({ ...input, status: 'ASSIGNED' }),
     resolveAdminReconciliationCase: async (input) => ({ ...input, status: 'RESOLVED' }),
@@ -866,19 +750,14 @@ test('guards batch recharge authorization and exposes reconciliation, delivery, 
     const sessionCookie = login.headers.get('set-cookie').split(';')[0];
     const sensitiveCookie = await stepUp(baseUrl, sessionCookie);
 
-    const authorization = await fetch(`${baseUrl}/api/v1/admin/recharge-authorizations`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: sensitiveCookie, Origin: baseUrl },
-      body: JSON.stringify({ publicNos: ['PJV2-1', 'PJV2-2'], confirmation: '确认充值2单' })
-    });
-    assert.equal(authorization.status, 201);
-    assert.deepEqual(received.authorization, { publicNos: ['PJV2-1', 'PJV2-2'], confirmation: '确认充值2单' });
-
-    const delivery = await fetch(`${baseUrl}/api/v1/admin/cdks/deliveries`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: sensitiveCookie, Origin: baseUrl },
-      body: JSON.stringify({ batchNo: 'B-1', cdkIds: ['00000000-0000-4000-8000-000000000001'], recipientReference: 'order:1' })
-    });
-    assert.equal(delivery.status, 201);
-    assert.equal((await delivery.json()).recordedCount, 1);
+    for (const gone of ['recharge-authorizations', 'cdks/deliveries', 'orders/PJV2-1/compensation', 'orders/PJV2-1/tags',
+      'orders/PJV2-1/notes', 'card-stock/threshold', 'card-stock/replenishment-settings', 'step-up']) {
+      const response = await fetch(`${baseUrl}/api/v1/admin/${gone}`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: sensitiveCookie, Origin: baseUrl }, body: '{}'
+      });
+      assert.equal(response.status, 404, gone);
+    }
+    assert.equal(received.authorization, undefined);
 
     const cases = await fetch(`${baseUrl}/api/v1/admin/reconciliation-cases?page=1`, { headers: { Cookie: sessionCookie } });
     assert.equal(cases.status, 200);
