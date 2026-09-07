@@ -101,6 +101,10 @@ export async function probeSessionIdentity(page, expectedIdentity, {
       return {
         ok: response.ok,
         status: response.status,
+        // NextAuth reports a dead refresh chain (e.g. RefreshAccessTokenError)
+        // inside a 200 body while still echoing the cached user: the web app
+        // then renders logged out and every purchase control is gone.
+        sessionError: typeof body?.error === 'string' && body.error.trim() ? body.error.trim().slice(0, 64) : null,
         contentType: response.headers.get('content-type') || '',
         server: response.headers.get('server') || '',
         hasCfRay: Boolean(response.headers.get('cf-ray')),
@@ -139,6 +143,13 @@ export async function probeSessionIdentity(page, expectedIdentity, {
       `session identity probe returned HTTP ${observed?.status ?? 'unknown'}`,
       'SESSION_INVALID',
       { stage: 'session-endpoint', httpStatus: Number(observed?.status) || null, contentType: String(observed?.contentType || '').slice(0, 80), server: String(observed?.server || '').slice(0, 80), hasCfRay: observed?.hasCfRay === true },
+    );
+  }
+  if (observed.sessionError) {
+    throw new SessionIdentityProbeError(
+      `session is no longer refreshable (${observed.sessionError})`,
+      'SESSION_INVALID',
+      { stage: 'session-error', httpStatus: observed.status, sessionError: observed.sessionError },
     );
   }
   const observedDigests = {
