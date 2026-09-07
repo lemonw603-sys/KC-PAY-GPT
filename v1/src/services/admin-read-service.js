@@ -29,8 +29,19 @@ const ORDER_STATUSES = new Set([
   'RECONCILIATION_REQUIRED',
   'CLOSED'
 ]);
-const REVIEW_STATUSES = ['CARD_FAILED', 'WAITING_FOR_SESSION', 'SUBMIT_UNKNOWN', 'RECHARGE_FAILED',
+// Stage-aware review set (CORE_SPEC §1): a RECHARGE_FAILED order only needs a person
+// when there is payment evidence (FAILED_AFTER_PAYMENT); a pre-payment failure is
+// CLOSED_NO_PAYMENT, its CDK is already returned and nothing is left to do.
+const REVIEW_STATUSES = ['CARD_FAILED', 'WAITING_FOR_SESSION', 'SUBMIT_UNKNOWN',
   'CANCELLATION_REVIEW_REQUIRED', 'RECONCILIATION_REQUIRED'];
+const FAILED_AFTER_PAYMENT_SQL = `(o.status = 'RECHARGE_FAILED' AND (EXISTS (
+          SELECT 1 FROM recharge_attempts fap_ra WHERE fap_ra.order_id = o.id
+            AND fap_ra.funds_risk_state IN ('UNKNOWN','SETTLED'))
+        OR EXISTS (
+          SELECT 1 FROM browser_runs fap_br
+          INNER JOIN recharge_attempts fap_bra ON fap_bra.id = fap_br.recharge_attempt_id
+          WHERE fap_bra.order_id = o.id
+            AND fap_br.payment_state IN ('PAYMENT_CONFIRMED','PAYMENT_UNKNOWN'))))`;
 const PROCESSING_STATUSES = ['CREATED', 'WAITING_FOR_CARD', 'CARD_PURCHASING', 'CARD_PROVISIONING', 'SUBMITTING',
   'RECHARGE_PROCESSING', 'CANCELLATION_PENDING'];
 const FINISHED_STATUSES = ['RECHARGE_SUCCESS', 'RECHARGE_FAILED', 'CLOSED'];
@@ -541,7 +552,8 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
           SELECT 1 FROM tasks st WHERE st.order_id = o.id
             AND st.task_type = 'SUBMIT_RECHARGE' AND st.status = 'PENDING' AND st.attempts = 0
         )) AS awaiting_confirmation,
-        SUM(o.status IN ('CARD_FAILED','SUBMIT_UNKNOWN','RECHARGE_FAILED','RECONCILIATION_REQUIRED')
+        SUM(o.status IN ('CARD_FAILED','SUBMIT_UNKNOWN','RECONCILIATION_REQUIRED','CANCELLATION_REVIEW_REQUIRED')
+            OR ${FAILED_AFTER_PAYMENT_SQL}
             OR o.cancellation_review_required = 1 OR (${STALE_CREATE_ATTEMPT_SQL})) AS reviewing
         ,SUM(o.status = 'WAITING_FOR_SESSION') AS waiting_for_session
         ,SUM(o.status = 'WAITING_FOR_CARD') AS waiting_for_card
@@ -795,6 +807,7 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
     let exactCdkLookup = null;
     if (status === 'REVIEW_REQUIRED') {
       conditions.push(`(o.status IN (${REVIEW_STATUSES.map(() => '?').join(', ')})
+        OR ${FAILED_AFTER_PAYMENT_SQL}
         OR o.cancellation_review_required = 1 OR (${STALE_CREATE_ATTEMPT_SQL}))`);
       values.push(...REVIEW_STATUSES);
     } else if (status === 'RECONCILIATION_ISSUES') {

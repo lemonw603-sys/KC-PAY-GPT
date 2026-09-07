@@ -37,6 +37,8 @@ test('admin overview maps aggregate values without exposing raw records', async 
     [{ active: 1, writes_on: 0 }]
   ]);
   const result = await createAdminReadService({ pool }).getOverview();
+  assert.match(pool.queries[0].sql, /o\.status = 'RECHARGE_FAILED' AND \(EXISTS \(/);
+  assert.doesNotMatch(pool.queries[0].sql, /'CARD_FAILED','SUBMIT_UNKNOWN','RECHARGE_FAILED'/);
   assert.deepEqual(result.decisions, {
     acceptNewOrders: false, dispatchNewRecharges: false,
     browserPaymentWritesEnabled: false, browserProfileWritesEnabled: false,
@@ -110,13 +112,16 @@ test('admin order list validates filters, maps card summaries, and supports CDK 
   assert.match(pool.queries[1].sql, /LEFT JOIN LATERAL[\s\S]*FROM browser_runs lbr/);
   assert.match(pool.queries[1].sql, /LEFT JOIN products prod ON prod\.id = o\.product_id/);
   assert.deepEqual(result.cdkMatches, []);
-  assert.deepEqual(pool.queries[0].values.slice(0, 6), [
-    'CARD_FAILED', 'WAITING_FOR_SESSION', 'SUBMIT_UNKNOWN', 'RECHARGE_FAILED',
+  assert.deepEqual(pool.queries[0].values.slice(0, 5), [
+    'CARD_FAILED', 'WAITING_FOR_SESSION', 'SUBMIT_UNKNOWN',
     'CANCELLATION_REVIEW_REQUIRED', 'RECONCILIATION_REQUIRED'
   ]);
+  assert.match(pool.queries[0].sql, /o\.status = 'RECHARGE_FAILED' AND \(EXISTS \(/);
+  assert.match(pool.queries[0].sql, /funds_risk_state IN \('UNKNOWN','SETTLED'\)/);
+  assert.match(pool.queries[0].sql, /payment_state IN \('PAYMENT_CONFIRMED','PAYMENT_UNKNOWN'\)/);
   assert.equal(pool.queries.some(({ sql }) => /session_ciphertext|recharge_card_key/i.test(sql)), false);
   assert.match(pool.queries[0].sql, /EXISTS \(\s*SELECT 1 FROM cdks cdk/i);
-  assert.equal(pool.queries[0].values.length, 23);
+  assert.equal(pool.queries[0].values.length, 22);
   assert.match(pool.queries[0].sql, /card_assignment_history/i);
   assert.match(pool.queries[0].sql, /customer_payments/i);
 

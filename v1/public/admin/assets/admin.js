@@ -282,10 +282,18 @@ function productLabel(order) {
   return order.productName || (order.planType ? String(order.planType).toUpperCase() : '—');
 }
 
+// The resident pool writes the identity into worker_id as `pool:<lane>`; the
+// read-only worker writes its own name; selected_lane is not written today.
+function identityLabel(run) {
+  const worker = String(run?.workerId || '');
+  if (worker.startsWith('pool:')) return worker.slice('pool:'.length);
+  return worker || run?.lane || run?.profileCode || '—';
+}
+
 function identityCell(order) {
   const run = order.browserRun;
   if (run) {
-    return `<span class="cell-main">${escapeHtml(run.profileCode || run.lane || '—')}</span><small>${escapeHtml(BROWSER_RUN_LABELS[run.status] || run.status)}${run.lane && run.profileCode ? ` · ${escapeHtml(run.lane)}` : ''}</small>`;
+    return `<span class="cell-main">${escapeHtml(identityLabel(run))}</span><small>${escapeHtml(BROWSER_RUN_LABELS[run.status] || run.status)}${run.profileCode ? ` · ${escapeHtml(run.profileCode)}` : ''}</small>`;
   }
   if (order.attempt?.executorKind === 'API') return '<span class="cell-main">API 路线</span>';
   return '<span class="cell-main">—</span>';
@@ -1270,7 +1278,7 @@ async function openOrder(publicNo) {
         ['最后同步', formatTime(data.card.lastSyncedAt)]
       ]) : '<p class="empty-state">尚未绑定卡片</p>'}</section>
       <section class="detail-section"><h3>身份与运行</h3>${run ? renderKeyValues([
-        ['身份', run.profileCode || run.lane || '—'], ['通道', run.lane],
+        ['身份', identityLabel(run)], ['执行档案', run.profileCode],
         ['运行状态', BROWSER_RUN_LABELS[run.status] || run.status],
         ['付款状态', BROWSER_PAYMENT_LABELS[run.paymentState] || run.paymentState],
         ['控制权', BROWSER_CONTROL_LABELS[run.controlState] || run.controlState],
