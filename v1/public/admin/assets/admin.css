@@ -275,3 +275,10 @@ tbody tr[data-order]:hover, tbody tr[data-order]:focus { background: #f7faff; }
 .drawer-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .drawer-actions > small { color: #8c9aaa; font-size: 11px; }
 .drawer-hint { display: block; margin-top: 8px; color: #718398; font-size: 11px; }
+.stock-settings-inline { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; padding-top: 14px; border-top: 1px solid var(--line); }
+.stock-inline-details { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 12px; }
+.stock-inline-details > summary { cursor: pointer; color: #405873; font-size: 13px; font-weight: 800; }
+.stock-inline-details[open] > summary { margin-bottom: 12px; }
+.filters-two { grid-template-columns: minmax(200px, 1fr) minmax(200px, 1fr) auto; }
+.stock-advanced-details > .filters { margin-top: 4px; }
+

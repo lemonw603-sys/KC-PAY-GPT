@@ -127,15 +127,12 @@ const elements = {
   cdkBatchFilters: document.querySelector('#cdk-batch-filters'), cdkBatchPlan: document.querySelector('#cdk-batch-plan'), cdkBatchStatus: document.querySelector('#cdk-batch-status'), cdkBatchFrom: document.querySelector('#cdk-batch-from'), cdkBatchTo: document.querySelector('#cdk-batch-to'), cdkBatchMore: document.querySelector('#cdk-batch-more'), cdkBatchPageInfo: document.querySelector('#cdk-batch-page-info'), exportCdkBatches: document.querySelector('#export-cdk-batches'), exportCdkTrace: document.querySelector('#export-cdk-trace'),
   stockSummary: document.querySelector('#stock-summary'), stockJobs: document.querySelector('#stock-jobs'),
   stockCards: document.querySelector('#stock-cards'), providerSummary: document.querySelector('#provider-summary'),
-  stockThresholdForm: document.querySelector('#stock-threshold-form'), stockThreshold: document.querySelector('#stock-threshold'),
-  replenishmentLimitForm: document.querySelector('#replenishment-limit-form'), replenishmentDailyLimit: document.querySelector('#replenishment-daily-limit'), replenishmentUsage: document.querySelector('#replenishment-usage'),
   cardCapacityForm: document.querySelector('#card-capacity-form'), cardCapacity: document.querySelector('#card-capacity'),
   minimumBalanceForm: document.querySelector('#minimum-balance-form'), minimumBalance: document.querySelector('#minimum-balance'),
   stockOpenForm: document.querySelector('#stock-open-form'), stockOpenCount: document.querySelector('#stock-open-count'),
   stockOpenAmount: document.querySelector('#stock-open-amount'), stockCardType: document.querySelector('#stock-card-type'),
   refreshCardProviderRules: document.querySelector('#refresh-card-provider-rules'),
   stockCardProfile: document.querySelector('#stock-card-profile'),
-  stockConfirmation: document.querySelector('#stock-confirmation'), stockConfirmHint: document.querySelector('#stock-confirm-hint'),
   stockCost: document.querySelector('#stock-cost'),
   cardIntakeList: document.querySelector('#card-intake-list'),
   discoverNewCards: document.querySelector('#discover-new-cards'),
@@ -851,9 +848,6 @@ function renderSelectedStockCardType({ resetInvalidAmount = false } = {}) {
 
 async function loadStock() {
   const payload = await api('/api/v1/admin/card-stock');
-  const replenishment = await api('/api/v1/admin/card-stock/replenishment-settings');
-  elements.replenishmentDailyLimit.value = replenishment.dailyLimit;
-  elements.replenishmentUsage.textContent = `今日已使用：${replenishment.usedToday}，剩余：${replenishment.remainingToday}`;
   state.stockProvider = payload.provider || null;
   state.stockCatalog = payload.catalog || null;
   const summary = payload.operationalSummary || { ready: 0, inUse: 0, blocked: 0, retired: 0 };
@@ -861,7 +855,6 @@ async function loadStock() {
     ['可分配', summary.ready], ['使用中', summary.inUse],
     ['暂不可用', summary.blocked], ['永久停用', summary.retired]
   ].map(([label, value]) => `<div><span>${label}</span><strong>${value}</strong></div>`).join('');
-  elements.stockThreshold.value = payload.threshold;
   elements.cardCapacity.value = String(payload.maxSuccessfulPayments || 3);
   if (elements.minimumBalance && payload.minimumRequiredCardBalance != null) elements.minimumBalance.value = String(payload.minimumRequiredCardBalance);
   const provider = state.stockProvider;
@@ -927,11 +920,10 @@ elements.cardIntakeList?.addEventListener('click', async (event) => {
       showNotice('卡片批次已加入验证队列。', 'success');
     } else {
       const ids = [...elements.cardIntakeList.querySelectorAll('[data-intake-id]')].map((item) => item.dataset.intakeId);
-      const confirmation = window.prompt(`请输入确认词：接管卡片 ${batchId}`)?.trim();
-      if (!confirmation) return;
+      if (!window.confirm(`接管批次 ${batchId} 中已通过验证的 ${ids.length} 张卡进入库存？`)) return;
       await sensitiveApi(`/api/v1/admin/card-intake/${encodeURIComponent(batchId)}/accept`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ discoveryIds: ids, confirmation })
+        body: JSON.stringify({ discoveryIds: ids })
       });
       showNotice('已接管通过验证的卡片。', 'success');
     }
@@ -1043,7 +1035,6 @@ function updateStockEstimate() {
     <small>${validAmount
       ? `当前余额 $${Number.isFinite(balance) ? balance.toFixed(2) : '—'} · 按实时规则最多安全开 ${affordable} 张`
       : `当前卡段金额必须为 $${formatMoney(selected?.minimumAmount)}–$${formatMoney(selected?.maximumAmount)} 的整数`}</small>`;
-  elements.stockConfirmHint.textContent = `开${count}张`;
   const submit = elements.stockOpenForm.querySelector('button[type="submit"]');
   submit.disabled = !valid;
   document.querySelectorAll('.stock-preset').forEach((button) => {
@@ -1359,21 +1350,13 @@ async function switchView(view, { status = '' } = {}) {
     elements.viewTitle.textContent = '生成客户兑换码';
     await loadCdkBatches();
   } else if (view === 'stock') {
-    elements.viewKicker.textContent = '资金与库存';
-    elements.viewTitle.textContent = '卡片库存与人工补卡';
-    await loadStock();
+    elements.viewKicker.textContent = '卡片';
+    elements.viewTitle.textContent = '库存、卡台、导入、补钱';
+    await Promise.all([loadStock(), loadProviderRoutes(), loadCardFundingAttempts()]);
   } else if (view === 'reconciliation') {
     elements.viewKicker.textContent = '运营核对';
     elements.viewTitle.textContent = '对账案例队列';
     await loadReconciliationCases();
-  } else if (view === 'card-funding') {
-    elements.viewKicker.textContent = '资金安全';
-    elements.viewTitle.textContent = '卡余额充值队列';
-    await loadCardFundingAttempts();
-  } else if (view === 'provider-routes') {
-    elements.viewKicker.textContent = '来源与库存';
-    elements.viewTitle.textContent = '卡台管理';
-    await loadProviderRoutes();
   } else if (view === 'browser') {
     elements.viewKicker.textContent = 'Browser 控制面';
     elements.viewTitle.textContent = '运行、租约与人工接管';
@@ -1440,8 +1423,9 @@ elements.cardFundingTable?.addEventListener('click', async (event) => {
   const button = event.target.closest('.card-funding-resolve');
   if (!button) return;
   const attemptId = button.dataset.attemptId;
-  const confirmation = window.prompt(`请输入确认词：确认卡充值对账 ${attemptId}`)?.trim();
-  if (!confirmation) return;
+  if (!window.confirm(`把卡充值尝试 ${attemptId} 记为「${button.dataset.action === 'SETTLED' ? '已扣款' : '未扣款'}」？只保存结论，不会重充或退款。`)) return;
+  // Server still checks the literal word; the dialog above is the one confirmation.
+  const confirmation = `确认卡充值对账 ${attemptId}`;
   const note = window.prompt('请输入对账依据（至少 10 个字符；只记录结论，不会自动重充）：')?.trim();
   if (!note) return;
   button.disabled = true;
@@ -1690,17 +1674,6 @@ elements.stockCardType?.addEventListener('change', () => {
   }).then(() => showNotice('默认卡段已保存。', 'success'))
     .catch(() => showNotice('默认卡段保存失败。'));
 });
-elements.stockThresholdForm?.addEventListener('submit', async (event) => {
-  event.preventDefault();
-  try {
-    await api('/api/v1/admin/card-stock/threshold', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ count: Number(elements.stockThreshold.value) })
-    });
-    showNotice('补卡提醒阈值已保存。');
-    await loadStock();
-  } catch { showNotice('阈值保存失败。'); }
-});
 elements.cardCapacityForm?.addEventListener('submit', async (event) => {
   event.preventDefault();
   try {
@@ -1725,34 +1698,14 @@ elements.minimumBalanceForm?.addEventListener('submit', async (event) => {
     await loadStock();
   } catch (error) { showNotice(error.message === 'invalid_minimum_balance' ? '金额无效，最多两位小数。' : '保存失败，请稍后重试。'); }
 });
-elements.replenishmentLimitForm?.addEventListener('submit', async (event) => {
-  event.preventDefault();
-  const dailyLimit = Number(elements.replenishmentDailyLimit.value);
-  if (!Number.isInteger(dailyLimit) || dailyLimit < 0 || dailyLimit > 500) {
-    showNotice('每日上限必须是 0 到 500 的整数。');
-    return;
-  }
-  if (!window.confirm(`确认将每日自动补卡上限调整为 ${dailyLimit} 张？\n\n只影响后续自动补卡，不影响已创建任务。`)) return;
-  try {
-    await sensitiveApi('/api/v1/admin/card-stock/replenishment-settings', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ dailyLimit, reason: 'admin replenishment policy update' })
-    });
-    showNotice('每日自动补卡上限已保存。');
-    await loadStock();
-  } catch { showNotice('每日自动补卡上限保存失败。'); }
-});
 elements.stockOpenForm?.addEventListener('submit', async (event) => {
   event.preventDefault();
   const count = Number(elements.stockOpenCount.value);
   const amount = Number(elements.stockOpenAmount.value);
   const cardTypeId = state.stockCardTypeId;
   const cardTypeName = selectedStockCardType()?.name || `卡段 ${cardTypeId}`;
+  // Server still validates the literal `开N张` word; the dialog below is the one confirmation.
   const expected = `开${count}张`;
-  if (elements.stockConfirmation.value.trim() !== expected) {
-    showNotice(`请输入确认词“${expected}”。`);
-    return;
-  }
   const riskThreshold = Number(state.stockProvider?.riskConfirmThreshold || 10);
   const largeBatchConfirmed = count > riskThreshold;
   const confirmationMessage = largeBatchConfirmed
@@ -1766,7 +1719,6 @@ elements.stockOpenForm?.addEventListener('submit', async (event) => {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ count, amount, cardTypeId, confirmation: expected, largeBatchConfirmed })
     });
-    elements.stockConfirmation.value = '';
     showNotice('开卡任务已创建，服务器将在约 10 秒内开始执行。');
     await loadStock();
   } catch (error) {

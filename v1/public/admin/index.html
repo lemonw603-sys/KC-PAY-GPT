@@ -7,8 +7,8 @@
   <meta name="theme-color" content="#f5f8fc">
   <title>Plus 运营后台</title>
   <link rel="icon" href="/admin/assets/favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/admin/assets/admin.css?v=23">
-  <script src="/admin/assets/admin.js?v=30" defer></script>
+  <link rel="stylesheet" href="/admin/assets/admin.css?v=24">
+  <script src="/admin/assets/admin.js?v=31" defer></script>
 </head>
 <body>
   <div class="admin-shell">
@@ -23,10 +23,8 @@
         <button class="nav-item" type="button" data-view="orders"><span aria-hidden="true">≡</span>订单</button>
         <button class="nav-item" type="button" data-view="exceptions"><span aria-hidden="true">!</span>异常队列</button>
         <button class="nav-item" type="button" data-view="reconciliation"><span aria-hidden="true">✓</span>资金证据核对</button>
-        <button class="nav-item" type="button" data-view="card-funding"><span aria-hidden="true">$</span>卡余额充值</button>
-        <button class="nav-item" type="button" data-view="provider-routes"><span aria-hidden="true">⇄</span>卡台管理</button>
         <button class="nav-item" type="button" data-view="browser"><span aria-hidden="true">◎</span>Browser 执行</button>
-        <button class="nav-item" type="button" data-view="stock"><span aria-hidden="true">▣</span>卡片库存</button>
+        <button class="nav-item" type="button" data-view="stock"><span aria-hidden="true">▣</span>卡片</button>
         <button class="nav-item" type="button" data-view="cdks"><span aria-hidden="true">#</span>CDK 管理</button>
       </nav>
       <div class="sidebar-foot">
@@ -102,46 +100,6 @@
           </form>
           <div class="table-wrap"><table><thead><tr><th>案例</th><th>订单</th><th>类型 / 等级</th><th>状态</th><th>负责人</th><th>最后发现</th><th>操作</th></tr></thead><tbody id="reconciliation-table"></tbody></table></div>
           <div class="pagination"><span id="reconciliation-count">0 个案例</span><div><button id="reconciliation-prev" type="button">上一页</button><span id="reconciliation-page">第 1 页</span><button id="reconciliation-next" type="button">下一页</button></div></div>
-        </section>
-      </section>
-
-      <section id="card-funding-view" class="view" hidden>
-        <section class="card orders-card">
-          <div class="card-heading"><div><p class="section-kicker">资金安全</p><h2>卡余额充值队列</h2></div><span class="write-badge">人工核对</span></div>
-          <p class="card-description">这里只展示卡余额充值尝试及 Provider 结果。PENDING、UNKNOWN 和人工复核状态不会自动重试；UNKNOWN 只能由人工核对后记录“已扣款”或“未扣款”结论，不会在此自动重充或退款。</p>
-          <form class="filters" id="card-funding-filters">
-            <label><span class="sr-only">状态</span><select id="card-funding-status"><option value="">全部状态</option><option value="PENDING">处理中</option><option value="MANUAL_REVIEW">人工复核</option><option value="UNKNOWN">未知风险</option><option value="SETTLED">已确认</option><option value="FAILED">失败</option></select></label>
-            <button class="primary-small" type="submit">筛选</button>
-          </form>
-          <div class="table-wrap"><table><thead><tr><th>尝试</th><th>卡片</th><th>金额</th><th>状态</th><th>Provider 结果</th><th>订单</th><th>时间</th></tr></thead><tbody id="card-funding-table"></tbody></table></div>
-          <div class="pagination"><span id="card-funding-count">0 条记录</span><div><button id="card-funding-prev" type="button">上一页</button><span id="card-funding-page">第 1 页</span><button id="card-funding-next" type="button">下一页</button></div></div>
-        </section>
-      </section>
-
-      <section id="provider-routes-view" class="view" hidden>
-        <section class="card orders-card">
-          <div class="card-heading"><div><p class="section-kicker">来源与库存</p><h2>卡台管理</h2></div><span class="write-badge">人工指定</span></div>
-          <p class="card-description">API 充值固定使用 HNSKJ。浏览器自动化充值可直接指定任一卡台；异常只提醒、不阻止保存，也不会自动回退。默认只影响之后创建的新订单。</p>
-          <div id="card-source-summary" class="mini-list"></div>
-          <div class="table-wrap"><table><thead><tr><th>卡台</th><th>能力</th><th>库存快照</th><th>告知状态</th><th>Browser 操作</th></tr></thead><tbody id="provider-routes-table"></tbody></table></div>
-        </section>
-        <section class="card compact-card">
-          <div class="card-heading"><div><p class="section-kicker">扩展来源</p><h2>新增备用卡台</h2></div><span class="write-badge">配置</span></div>
-          <form id="manual-card-source-form" class="filters">
-            <label><span>内部代号</span><input id="manual-card-source-code" maxlength="64" placeholder="backup-b" required></label>
-            <label><span>显示名称</span><input id="manual-card-source-name" maxlength="128" placeholder="备用卡台 B" required></label>
-            <button class="primary-small" type="submit">新增卡台</button>
-          </form>
-        </section>
-        <section class="card stock-card" id="manual-card-import-card">
-          <div class="card-heading"><div><p class="section-kicker">完整快照</p><h2>导入备用卡</h2></div><span class="readonly-badge">仅供 Browser</span></div>
-          <p class="card-description">每次文件代表所选卡台的全部卡片。结构错误或跨卡台同卡冲突会阻止整批提交；停用、过期和余额不足仍会记录，但不会参与新订单分配。</p>
-          <form id="manual-card-import-form" class="filters">
-            <label><span>备用卡台</span><select id="manual-card-import-source" required><option value="">请先读取卡台</option></select></label>
-            <label><span>卡片文件</span><input id="manual-card-import-file" type="file" accept=".xls,.xlsx" required></label>
-            <button class="primary-small" type="submit">预览完整快照</button>
-          </form>
-          <div id="manual-card-import-preview" class="mini-list"></div>
         </section>
       </section>
 
@@ -230,70 +188,90 @@
             <p class="card-description stock-definition">“可分配”指现在就能安全绑定 Plus 订单的卡。余额不足或资料待同步只属于“暂不可用”，不代表卡已失效。</p>
             <div class="stock-summary" id="stock-summary"></div>
             <div class="provider-summary" id="provider-summary"></div>
-            <details class="stock-settings-details">
-              <summary>提醒与自动补卡设置</summary>
-              <div class="stock-settings-body">
-                <form class="threshold-form" id="stock-threshold-form" hidden>
-                  <label for="stock-threshold">剩余多少张时提醒</label>
-                  <div><input id="stock-threshold" type="number" min="0" max="10000" required><button class="primary-small" type="submit">保存阈值</button></div>
-                </form>
-                <form class="threshold-form" id="replenishment-limit-form" hidden>
-                  <label for="replenishment-daily-limit">每日自动补卡上限</label>
-                  <div><input id="replenishment-daily-limit" type="number" min="0" max="500" required><button class="primary-small" type="submit">保存上限</button></div>
-                  <p class="form-hint" id="replenishment-usage">今日已使用：—，剩余：—</p>
-                </form>
-                <form class="threshold-form" id="card-capacity-form">
-                  <label for="card-capacity">每张卡最多成功充值次数</label>
-                  <div><select id="card-capacity" required>
-                    <option value="1">1 次</option><option value="2">2 次</option>
-                    <option value="3">3 次</option><option value="4">4 次</option>
-                  </select><button class="primary-small" type="submit">保存次数</button></div>
-                  <p class="form-hint">达到上限后不再分配；修改只影响后续订单，不改写历史。</p>
-                </form>
-                <form class="threshold-form" id="minimum-balance-form">
-                  <label for="minimum-balance">最低所需卡余额（USD）</label>
-                  <div><input id="minimum-balance" type="number" min="0" max="1000" step="0.01" required><button class="primary-small" type="submit">保存余额门槛</button></div>
-                  <p class="form-hint">余额低于此值的卡不参与分配；只影响之后的分配，不影响付款。</p>
-                </form>
-              </div>
-            </details>
+            <div class="stock-settings-inline">
+              <form class="threshold-form" id="card-capacity-form">
+                <label for="card-capacity">每张卡最多成功充值次数</label>
+                <div><select id="card-capacity" required>
+                  <option value="1">1 次</option><option value="2">2 次</option>
+                  <option value="3">3 次</option><option value="4">4 次</option>
+                </select><button class="primary-small" type="submit">保存次数</button></div>
+                <p class="form-hint">达到上限后不再分配；修改只影响后续订单，不改写历史。</p>
+              </form>
+              <form class="threshold-form" id="minimum-balance-form">
+                <label for="minimum-balance">最低所需卡余额（USD）</label>
+                <div><input id="minimum-balance" type="number" min="0" max="1000" step="0.01" required><button class="primary-small" type="submit">保存余额门槛</button></div>
+                <p class="form-hint">余额低于此值的卡不参与分配；只影响之后的分配，不影响付款。</p>
+              </form>
+            </div>
           </section>
           <section class="card stock-card">
-            <div class="card-heading"><div><p class="section-kicker">人工补卡</p><h2>创建开卡任务</h2></div><span class="write-badge">产生费用</span></div>
-            <p class="card-description">提交后由服务器安全执行。每张卡使用独立幂等键；任务异常时停止并等待人工核对。</p>
-            <form class="stock-open-form" id="stock-open-form">
-              <div class="stock-presets" role="group" aria-label="快捷选择开卡数量">
-                <span>快捷选择</span>
-                <button class="stock-preset" type="button" data-count="1" aria-pressed="false">1 张</button>
-                <button class="stock-preset is-active" type="button" data-count="2" aria-pressed="true">2 张</button>
-                <button class="stock-preset" type="button" data-count="5" aria-pressed="false">5 张</button>
-                <button class="stock-preset" type="button" data-count="10" aria-pressed="false">10 张</button>
-              </div>
-              <label>数量（超过 10 张需额外确认）<input id="stock-open-count" type="number" min="1" max="10000" value="2" required></label>
-              <label>单卡金额（USD）<input id="stock-open-amount" type="number" min="1" max="200" value="16" required></label>
-              <label class="stock-card-type-label" for="stock-card-type">卡片类型（来自卡台实时卡段）
-                <select id="stock-card-type" required disabled><option value="">正在读取卡台规则</option></select>
-              </label>
-              <button class="text-button" id="refresh-card-provider-rules" type="button">刷新卡段规则</button>
-              <div class="stock-card-profile" id="stock-card-profile">
-                <div><span>卡段名称</span><strong>正在读取</strong></div>
-                <div><span>卡段 ID / BIN</span><strong>—</strong></div>
-                <div><span>允许金额</span><strong>—</strong></div>
-                <p>提交时服务器会再次校验卡段 ID 和实时规则</p>
-              </div>
-              <div class="stock-cost" id="stock-cost">正在计算实际费用…</div>
-              <label class="stock-confirm-label">输入确认词 <strong id="stock-confirm-hint">开2张</strong><input id="stock-confirmation" type="text" autocomplete="off" required></label>
-              <button class="danger-button" type="submit">确认并创建开卡任务</button>
-            </form>
+            <div class="card-heading"><div><p class="section-kicker">来源</p><h2>卡台管理</h2></div><span class="write-badge">人工指定</span></div>
+            <p class="card-description">API 充值固定使用 HNSKJ。浏览器自动化充值可直接指定任一卡台；异常只提醒、不阻止保存，也不会自动回退。默认只影响之后创建的新订单。</p>
+            <div id="card-source-summary" class="mini-list"></div>
+            <div class="table-wrap"><table><thead><tr><th>卡台</th><th>能力</th><th>库存快照</th><th>告知状态</th><th>Browser 操作</th></tr></thead><tbody id="provider-routes-table"></tbody></table></div>
+            <details class="stock-inline-details">
+              <summary>新增备用卡台</summary>
+              <form id="manual-card-source-form" class="filters filters-two">
+                <label><span>内部代号</span><input id="manual-card-source-code" maxlength="64" placeholder="backup-b" required></label>
+                <label><span>显示名称</span><input id="manual-card-source-name" maxlength="128" placeholder="备用卡台 B" required></label>
+                <button class="primary-small" type="submit">新增卡台</button>
+              </form>
+            </details>
           </section>
         </div>
+        <section class="card stock-card" id="manual-card-import-card">
+          <div class="card-heading"><div><p class="section-kicker">完整快照</p><h2>导入备用卡</h2></div><span class="readonly-badge">仅供 Browser</span></div>
+          <p class="card-description">每次文件代表所选卡台的全部卡片。结构错误或跨卡台同卡冲突会阻止整批提交；停用、过期和余额不足仍会记录，但不会参与新订单分配。预览后一键提交，不需要密码或确认词。</p>
+          <form id="manual-card-import-form" class="filters filters-two">
+            <label><span>备用卡台</span><select id="manual-card-import-source" required><option value="">请先读取卡台</option></select></label>
+            <label><span>卡片文件</span><input id="manual-card-import-file" type="file" accept=".xls,.xlsx" required></label>
+            <button class="primary-small" type="submit">预览完整快照</button>
+          </form>
+          <div id="manual-card-import-preview" class="mini-list"></div>
+        </section>
         <section class="card stock-card">
-          <div class="card-heading"><div><p class="section-kicker">运营明细</p><h2>卡片列表</h2></div><div class="stock-card-actions"><button class="text-button" id="sync-all-cards" type="button">同步卡台余额和交易</button><button class="primary-small" id="discover-new-cards" type="button">同步并接管新卡</button> <span class="write-badge">完整卡号</span></div></div>
+          <div class="card-heading"><div><p class="section-kicker">运营明细</p><h2>卡片列表</h2></div><div class="stock-card-actions"><button class="text-button" id="refresh-stock" type="button">刷新本地列表</button><button class="text-button" id="sync-all-cards" type="button">同步卡台余额和交易</button><button class="primary-small" id="discover-new-cards" type="button">同步并接管新卡</button> <span class="write-badge">完整卡号</span></div></div>
           <div class="mini-list stock-card-list" id="stock-cards"></div>
         </section>
         <details class="card stock-card stock-advanced-details">
+          <summary>人工开卡（产生费用）</summary>
+          <div class="advanced-heading"><p>提交后由服务器安全执行。每张卡使用独立幂等键；任务异常时停止并等待人工核对。自动开卡由首页「能不能开卡补钱」决定。</p><button class="text-button" id="refresh-card-provider-rules" type="button">刷新卡段规则</button></div>
+          <form class="stock-open-form" id="stock-open-form">
+            <div class="stock-presets" role="group" aria-label="快捷选择开卡数量">
+              <span>快捷选择</span>
+              <button class="stock-preset" type="button" data-count="1" aria-pressed="false">1 张</button>
+              <button class="stock-preset is-active" type="button" data-count="2" aria-pressed="true">2 张</button>
+              <button class="stock-preset" type="button" data-count="5" aria-pressed="false">5 张</button>
+              <button class="stock-preset" type="button" data-count="10" aria-pressed="false">10 张</button>
+            </div>
+            <label>数量（超过 10 张需额外确认）<input id="stock-open-count" type="number" min="1" max="10000" value="2" required></label>
+            <label>单卡金额（USD）<input id="stock-open-amount" type="number" min="1" max="200" value="16" required></label>
+            <label class="stock-card-type-label" for="stock-card-type">卡片类型（来自卡台实时卡段）
+              <select id="stock-card-type" required disabled><option value="">正在读取卡台规则</option></select>
+            </label>
+            <div class="stock-card-profile" id="stock-card-profile">
+              <div><span>卡段名称</span><strong>正在读取</strong></div>
+              <div><span>卡段 ID / BIN</span><strong>—</strong></div>
+              <div><span>允许金额</span><strong>—</strong></div>
+              <p>提交时服务器会再次校验卡段 ID 和实时规则</p>
+            </div>
+            <div class="stock-cost" id="stock-cost">正在计算实际费用…</div>
+            <button class="danger-button" type="submit">确认并创建开卡任务</button>
+          </form>
+        </details>
+        <details class="card stock-card stock-advanced-details">
+          <summary>卡余额充值队列（人工核实）</summary>
+          <div class="advanced-heading"><p>只展示卡余额充值尝试及 Provider 结果。PENDING、UNKNOWN 和人工复核状态不会自动重试；UNKNOWN 只能由人工核对后记录“已扣款”或“未扣款”结论，不会在此自动重充或退款。</p></div>
+          <form class="filters filters-two" id="card-funding-filters">
+            <label><span class="sr-only">状态</span><select id="card-funding-status"><option value="">全部状态</option><option value="PENDING">处理中</option><option value="MANUAL_REVIEW">人工复核</option><option value="UNKNOWN">未知风险</option><option value="SETTLED">已确认</option><option value="FAILED">失败</option></select></label>
+            <button class="primary-small" type="submit">筛选</button>
+          </form>
+          <div class="table-wrap"><table><thead><tr><th>尝试</th><th>卡片</th><th>金额</th><th>状态</th><th>Provider 结果</th><th>订单</th><th>时间</th></tr></thead><tbody id="card-funding-table"></tbody></table></div>
+          <div class="pagination"><span id="card-funding-count">0 条记录</span><div><button id="card-funding-prev" type="button">上一页</button><span id="card-funding-page">第 1 页</span><button id="card-funding-next" type="button">下一页</button></div></div>
+        </details>
+        <details class="card stock-card stock-advanced-details">
           <summary>补卡执行记录</summary>
-          <div class="advanced-heading"><p>只在查看开卡任务或排查异常时使用。</p><button class="text-button" id="refresh-stock" type="button">刷新本地列表</button></div>
+          <div class="advanced-heading"><p>只在查看开卡任务或排查异常时使用。</p></div>
           <div class="mini-list" id="stock-jobs"></div>
         </details>
         <details class="card stock-card stock-advanced-details">

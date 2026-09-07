@@ -104,8 +104,8 @@ test('admin refresh feedback and inset dropdown arrows remain visible', () => {
   const html = fs.readFileSync(path.join(directory, 'admin', 'index.html'), 'utf8');
   const script = fs.readFileSync(path.join(directory, 'admin', 'assets', 'admin.js'), 'utf8');
   const styles = fs.readFileSync(path.join(directory, 'admin', 'assets', 'admin.css'), 'utf8');
-  assert.match(html, /admin\.css\?v=23/);
-  assert.match(html, /admin\.js\?v=30/);
+  assert.match(html, /admin\.css\?v=24/);
+  assert.match(html, /admin\.js\?v=31/);
   assert.match(script, /button\.textContent = '刷新中…'/);
   assert.match(script, /showNotice\('刷新完成。', 'success'\)/);
   assert.match(script, /showNotice\('刷新失败，请稍后重试。'\)/);
@@ -148,6 +148,20 @@ test('admin separates recharge method from audited Browser card-source switching
   assert.match(script, /Browser 卡台已切换/);
   assert.match(html, /只影响之后创建的新订单/);
   assert.doesNotMatch(`${html}\n${script}`, /secretRef|navigationUrl|leaseToken|resourceKeyHmac|card_credentials_ciphertext|recharge_card_key/i);
+});
+
+test('admin card page folds card sources, import, and balance funding into one view', () => {
+  const html = fs.readFileSync(path.join(directory, 'admin', 'index.html'), 'utf8');
+  const script = fs.readFileSync(path.join(directory, 'admin', 'assets', 'admin.js'), 'utf8');
+  const stockView = html.slice(html.indexOf('id="stock-view"'), html.indexOf('id="page-notice"'));
+  for (const id of ['stock-summary', 'card-capacity-form', 'minimum-balance-form', 'provider-routes-table', 'manual-card-source-form',
+    'manual-card-import-form', 'stock-cards', 'stock-open-form', 'card-funding-table', 'stock-jobs', 'card-intake-list']) {
+    assert.match(stockView, new RegExp(`id="${id}"`), id);
+  }
+  assert.doesNotMatch(html, /data-view="provider-routes"|data-view="card-funding"|id="provider-routes-view"|id="card-funding-view"/);
+  assert.doesNotMatch(html, /stock-threshold-form|replenishment-limit-form|stock-confirmation|stock-confirm-hint|提醒与自动补卡设置/);
+  assert.doesNotMatch(script, /replenishment-settings|stockConfirmation|请输入确认词/);
+  assert.match(script, /Promise\.all\(\[loadStock\(\), loadProviderRoutes\(\), loadCardFundingAttempts\(\)\]\)/);
 });
 
 test('admin orders page is one table plus one drawer without permits, tags, notes or resend', () => {
