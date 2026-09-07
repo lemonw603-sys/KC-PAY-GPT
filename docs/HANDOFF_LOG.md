@@ -1739,3 +1739,9 @@
 - 常驻池不能把失败 run 留给人：`runPaymentOnce({ safeAbortOnFailure })` 在无付款意图（RESUMABLE / NOT_STARTED|PAYMENT_ARMED）时把执行异常转成分类安全中止（Session 问题回客户、访问阻断终态、卡事实回队列），派发 `attempt_count ≥ 3` 则 `BROWSER_RETRY_LIMIT` 终态；单订单工具保持原行为。测试：集成 1 条、导航 2 条；browser-mvp 全量通过。
 - 实跑结果：池领到派发（attempt_count 已累计到 5）→ `SAFE_ABORTED / BROWSER_RETRY_LIMIT`，测试单 RECHARGE_FAILED、run FAILED_SAFE、账本 RELEASED、许可 0；Lane 3 页面保留（会话过期弹窗）。
 - 下一次验证需要：测试账号重新登录取新 Session（此后只放进一个身份）、新建测试单；同时卡上有钱才能做真实付款。**可审版本：本节提交。**
+
+## 2026-09-07｜Pro 5x/20x 导航支持、每单时间线入库（迁移 049），发布 release 20260907-timeline-b8a005a
+
+- 导航合同加 `plans`：plus / pro_5x / pro_20x，Pro 先点档位（5x/20x）再点「Upgrade to Pro」；executor 按 `job.metadata.plan` 选套餐，套餐由 `resolveOrderPlan`（products.product_code → 或 orders.plan_type）解析并经 projection 透传。Pro 产品在生产 products 表尚未存在，未实跑。
+- 时间线：迁移 `049_browser_run_events`；`MysqlEvidenceSink`（INSERT IGNORE，order_id 取自 orderRef 或 jobId 第二段，run_id 取自 runRef）与 WAL 组成 `CompositeEvidenceSink`，接入单订单 LIVE、常驻池、只读预检三个 Worker；LIVE 必需迁移列表加入 049。测试：sink 3 条、导航 Pro 1 条；v1 非库 517/517，browser-mvp 197/188/0/9。
+- 发布：`deploy-release.sh` 新增 `migrate <name>` 阶段；`prepare b8a005a` → `migrate`（第二遍 already applied）→ `switch`。复核：`schema_migrations` 最新 049，`browser_run_events` 列齐全，Web active 无错误。数据库仅新增空表。

@@ -33,7 +33,7 @@ import { CompositeEvidenceSink, MysqlEvidenceSink } from './mysql-evidence-sink.
 export const REQUIRED_PRODUCTION_LIVE_MIGRATIONS = Object.freeze([
   '039_card_consumption_attempt_link', '040_card_operational_overrides',
   '041_browser_worker_heartbeat', '047_browser_billing_address_assignments',
-  '048_manual_backup_card_import',
+  '048_manual_backup_card_import', '049_browser_run_events',
 ]);
 
 function sha256(value) { return createHash('sha256').update(String(value), 'utf8').digest('hex'); }

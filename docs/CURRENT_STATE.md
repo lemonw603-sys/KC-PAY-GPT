@@ -4,8 +4,8 @@
 
 | 项目 | 当前值 | 核对时间（UTC） | 证据方式 |
 |---|---|---|---|
-| 生产 release | `/opt/pojia/releases/20260907-min-balance-ed40c94`（commit `ed40c94`，891 文件 manifest OK） | 2026-09-07 06:35 | `readlink -f /opt/pojia/current` |
-| 回滚点 | `/opt/pojia/releases/20260907-import-confirm-6948b02` | 同上 | 部署记录 |
+| 生产 release | `/opt/pojia/releases/20260907-timeline-b8a005a`（commit `b8a005a`，900 文件 manifest OK） | 2026-09-07 12:5x | `readlink -f /opt/pojia/current` |
+| 回滚点 | `/opt/pojia/releases/20260907-min-balance-ed40c94`（回滚不回退迁移 049，表为新增，无影响） | 同上 | 部署记录 |
 | 最新数据库备份 | `/var/backups/pojia/pojia-20260907T063400Z.sql.gz.enc`，完整性 OK | 06:34 | `pojia-ops backup/verify` |
 | pojia-web | active（06:35 随 release 切换重启） | 06:35 | systemctl |
 | pojia-worker（API） | inactive（09-06 03:46 UTC 人为停止；09-07 09:28 UTC 短启约 10 秒推进测试单后再次停止） | 09-07 09:29 | systemctl |
@@ -14,7 +14,7 @@
 | pojia-card-read-sync.timer | active | 16:35 | systemctl |
 | pojia-card-stock-runner.timer | inactive / disabled（旧每分钟自动开卡架构已废弃） | 16:35 | systemctl |
 | 健康 | `127.0.0.1:3100` live 200 / ready 200；公网 plus 与 ops 200 | 16:36 | curl |
-| 数据库迁移 | `048_manual_backup_card_import` | 13:31 | schema_migrations |
+| 数据库迁移 | `049_browser_run_events`（09-07 经 `deploy-release.sh migrate` 两遍应用） | 09-07 12:5x | schema_migrations |
 | accept_new_orders | true | 13:31 | app_settings |
 | dispatch_new_recharges / 模式 | true / AUTOMATIC | 13:31 | app_settings |
 | 默认路线 | Browser（`CHATGPT_PLUS_BROWSER_V1` accepts_new_orders=1，API=0） | 13:31 | fulfillment_routes |
@@ -36,7 +36,7 @@
 | 最近真实单 | `PJV1-RCbAiI0IkGMy-hCBgMSn`：自动化到 Checkout 未填表 → 运营者手工付 Plus + 20X（143.13）→ 09-06 16:40 以「人工付款已完成」收口为 RECHARGE_SUCCESS；`PAYMENT_SUBMIT=0`，证据 `MANUAL_PAYMENT_CONFIRMED` | 16:41 | orders / browser_runs / browser_operations |
 | 告警 | OPEN 10：8 条 09-01 起的「卡台余额变化」info 噪音（后台不显示）、1 条 CARD_STOCK_LOW（阈值 0，修复后不再新生成）、1 条 ORDER_WAITING_FOR_CARD；首页已可关闭 | 09-06 13:31 | operator_alerts |
 | 本机 | BitBrowser Local API + mihomo（launchd 单实例）；SSH 隧道 13306→3306 由会话后台任务保持（掉线需重拉）；无常驻 Worker 进程（常驻池脚本已备好，未长期运行）；Lane 3 窗口开着并保留演练结账页 | 09-07 12:05 | pgrep / BitBrowser list |
-| 已上线（本次 release） | `ed40c94` 最低所需卡余额后台可设（`POST /api/v1/admin/card-stock/minimum-balance`，库存页表单，`admin.js?v=26`）。此前 release 内容保持。公网复核：未登录 401、线上 `admin.js?v=26` 含新接口、plus 200、Web 重启无错误 | 06:36 | curl + 生产文件 grep |
+| 已上线（本次 release） | `b8a005a`：迁移 049 `browser_run_events`；Web 代码无功能变化（Browser 侧变更在本机 Worker：时间线 sink、Pro 导航、常驻池）。复核：迁移第二遍 already applied、表列齐全、Web active 无错误 | 13:00 | SSH |
 | 已知未修 | 本机绕过连接池直连写入造成该单 attempt/dispatch/账本 `created_at` 偏后 8 小时；后台控制事务并发时可能 `ER_LOCK_DEADLOCK`（失败关闭，需重试） | 09-07 | HANDOFF_LOG |
 
 ## 事实表之外

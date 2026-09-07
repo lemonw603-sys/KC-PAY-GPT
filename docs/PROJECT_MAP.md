@@ -2,7 +2,7 @@
 
 只回答四件事：目标、当前生产事实、已完成/未完成、唯一执行顺序。过程记录在 `docs/HANDOFF_LOG.md`，决策在 `docs/DECISIONS.md`，改造基线在 `docs/PRODUCT_SIMPLIFICATION_DISCUSSION.md` 末尾「接班实施基线」。2026-09-07 之前的旧版地图原文：`docs/archive/2026-09/PROJECT_MAP_snapshot_2026-09-07.md`。
 
-最后核对：2026-09-07 09:40 UTC（演练后数据库只读复核）。
+最后核对：2026-09-07 13:00 UTC（发布后 SSH 复核）。
 
 ## 1. 目标与不变原则
 
@@ -17,16 +17,16 @@
 
 客户提交 CDK + Session → 建单并冻结路线与卡台 → 卡资格与余额 → 唯一 attempt / 资金栅栏 → API 或 Browser 执行 → 确认 Plus（20X 再升级）→ 取消续费 → 账本、对账、通知。
 
-## 3. 当前生产事实（2026-09-07 09:40 UTC）
+## 3. 当前生产事实（2026-09-07 13:00 UTC）
 
 | 项目 | 事实 |
 |---|---|
-| release | `/opt/pojia/releases/20260907-min-balance-ed40c94`（09-07 06:35 UTC）；回滚点 `20260907-import-confirm-6948b02` |
+| release | `/opt/pojia/releases/20260907-timeline-b8a005a`（09-07 12:5x UTC，含迁移 049）；回滚点 `20260907-min-balance-ed40c94` |
 | 服务 | Web active；API Worker inactive（09-06 03:46 UTC 人为停止）；Browser Worker inactive/disabled；补余额与读同步 timer active；旧自动开卡 timer disabled |
 | 开关 | 接单 true；自动派发 true；默认路线 Browser；Browser 卡台 = 备用卡台 A；Browser 付款开关 false；自动开卡 false；自动补余额 true；每卡成功次数 3；最低卡余额 16（09-07 08:28–09:33 UTC 曾临时 8） |
 | 卡 | 可分配 0：HNSKJ `5980` $16 但交易同步已过 15 分钟（卡台故障）不合格；备用 A `5501` $8.87 低于最低 16、`0237` $0 |
 | 订单 | 成功 2（含 09-06 人工 20X）、失败 7、关闭 8、API 路线等卡 1、等 Session 2、测试单已 RECHARGE_FAILED（重试上限）；活动资金/run/队列/租约/许可全部 0 |
-| 迁移 | 048 |
+| 迁移 | 049（`browser_run_events` 每单阶段时间线） |
 | Browser 自动化 | 生产从未自动完成过一笔付款；09-07 演练首次自动走完填卡/地址/邮箱/零税报价并停在点击前（run FAILED_SAFE/PRE_PAYMENT_ABORT，0 许可 0 点击）；此前 21 个 run 中 20 个为 09-01 的 CHATGPT_ACCESS_BLOCKED，1 个 09-06 到 Checkout 未填表后人工完成 |
 | 本机 | BitBrowser + mihomo（launchd）；LIVE Worker 靠手动 `--once`，无常驻；SSH 隧道 13306→3306（掉线时 `ssh -f -N -L 13306:127.0.0.1:3306 root@<host>`）；启动脚本：单订单 `run-live-rehearsal.sh check｜once <orderId>`、预检 `run-browser-preflight.sh check｜once`、常驻池 `run-live-pool.sh check｜run rehearsal｜pay`（密钥运行时经 SSH 取入进程，不落盘） |
 
@@ -44,7 +44,7 @@
 1. 两个只读验证（09-07 完成，Lane 2/3，不付款）：结账在常驻身份内可创建，但必须由页面点击触发（裸调 Plus 被拒「unusual activity」，差别只在页面签名头）；免费账号可直接创建 Pro 5x/20x 结账（阶段数 1）；custom 模式返回 client_secret 而非 URL；同一身份换账号必须清上一账号登录态 cookie（已修）。身份策略分析：`docs/browser-research/IDENTITY_STRATEGY_RESEARCH_2026-09-07.md`。
 2. 两页规格，一天出：订单生命周期（阶段、CDK 绑定与退回、N 阶段付款、按产品供给）；执行流程形状（接口优先、浏览器只填 Stripe 表单、身份常驻、停在付款前）；五个决定的数据模型。真实单跑通前只是草稿。
 3. 按规格实现新流程 → 测试账号跑到付款前 → 一笔真实付款 → 删除旧编排。完成标准：旧实现已删除。**进度（09-07 09:35 UTC）：测试账号已用生产链路跑到付款点击前**——测试单 `PJV1--j4AnE7fvfgkvaceSr0Z`（备用卡 `5501`）：本机预检 PASSED → 服务器 Worker 短启把订单推到派发边界 → 本机 LIVE 演练 `BROWSER_LIVE_STOP_BEFORE=SUBMIT`：会话替换、身份核对、定价弹窗建结账、卡/地址/邮箱填入、零税重报价 PHP 982.14 / 税 0.00、最终复核后停止；未申请许可、未点击；订单回 CARD_READY、资金栅栏清、卡占用释放。下一步：卡上有钱后，同一订单翻付款开关做一笔真实付款。
-4. 并行：六个身份——**常驻多身份 Worker 已实现并在真实排队单上跑过一次闭环**（`production-live-pool-worker.js`，`run-live-pool.sh check|run rehearsal|pay`；领单 → 执行 → 分类安全中止/重试上限；窗口不关、心跳落库；有效会话下的 PRE_SUBMIT_STOPPED 与多 lane 并行未跑；出口隔离仍缺）；供给自动化（按产品）；Browser Worker 搬到常开机器（BitBrowser Windows 版）；每单阶段时间线入库。
+4. 并行：六个身份——**常驻多身份 Worker 已实现并在真实排队单上跑过一次闭环**（`production-live-pool-worker.js`，`run-live-pool.sh check|run rehearsal|pay`；领单 → 执行 → 分类安全中止/重试上限；窗口不关、心跳落库；有效会话下的 PRE_SUBMIT_STOPPED 与多 lane 并行未跑；出口隔离仍缺）；供给自动化（按产品）；Browser Worker 搬到常开机器（BitBrowser Windows 版）；**每单阶段时间线入库已实现**（迁移 049，三个 Worker 的证据事件 WAL + 数据库并写；后台展示待第 5 步）；结账导航已支持 Pro 5x/20x 按钮（Pro 产品未入库、未实跑）。
 5. 后台五页新版与 CDK 页；密码与手打确认词全部取消。
 6. 20X 启用第二付款阶段。
 7. 删除零使用接口与旧表，删前查调用链。
