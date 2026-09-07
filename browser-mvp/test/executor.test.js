@@ -331,3 +331,118 @@ test('payment handler receives the checkout without a pre-card strict zero-tax r
     await once(server, 'close');
   }
 });
+
+// One resident identity serves customers one after another. When the profile
+// still holds the previous customer's session, the identity probe fails and the
+// executor must replace that session once with this order's token, reload and
+// probe again, instead of failing the order with SESSION_IDENTITY_MISMATCH.
+test('executor replaces a resident session that belongs to another customer, once, then proceeds', async () => {
+  let residentIdentity = { id: 'user-prev', email: 'previous@example.test', accountId: 'acct-prev' };
+  const server = createServer((request, response) => {
+    if (request.url === '/api/auth/session') {
+      response.writeHead(200, { 'content-type': 'application/json; charset=utf-8' });
+      return response.end(JSON.stringify({ user: { id: residentIdentity.id, email: residentIdentity.email }, account: { id: residentIdentity.accountId }, accessToken: 'fixture-token' }));
+    }
+    if (request.url === '/backend-api/accounts/check/v4-fixture') {
+      response.writeHead(200, { 'content-type': 'application/json; charset=utf-8' });
+      return response.end(JSON.stringify({ accounts: { default: { entitlement: { has_active_subscription: false, subscription_plan: 'chatgptplusplan' } } } }));
+    }
+    response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+    response.end('<title>ChatGPT fixture</title><main data-browser-mvp-marker>logged in</main>');
+  });
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  const base = `http://127.0.0.1:${server.address().port}/`;
+  const bootstrapCalls = [];
+  let closed = 0;
+  const sessionProvider = {
+    async open() { return { leaseId: 'lease-replace', sessionDigest: 'a'.repeat(64), expiresAt: Date.now() + 60_000, purpose: 'browser-observe' }; },
+    async bootstrap(_lease, _context, options = {}) {
+      bootstrapCalls.push(options.replaceExisting === true ? 'replace' : 'preserve');
+      if (options.replaceExisting) {
+        // the new token now logs in as this order's customer
+        residentIdentity = { id: 'user-001', email: 'buyer@example.test', accountId: 'acct-001' };
+        return { cookieCount: 1, replacedCookieCount: 1, existingSessionPreserved: false, sessionDigest: 'b'.repeat(64) };
+      }
+      return { cookieCount: 1, replacedCookieCount: 0, existingSessionPreserved: true, sessionDigest: 'a'.repeat(64) };
+    },
+    async close() { closed += 1; },
+  };
+  try {
+    const runtimeAdapter = new LocalPlaywrightRuntimeAdapter({ browserType: chromium });
+    const evidenceSink = new MemoryEvidenceSink();
+    const executor = new BrowserExecutionService({ runtimeAdapter, evidenceSink, sessionProvider, timeoutMs: 3_000 });
+    const job = createSyntheticJob({
+      state: 'RUNNING',
+      metadata: {
+        source: 'playwright-fixture',
+        sessionRef: 'session-ref:replace',
+        pageContract: { urlPrefix: base, title: 'ChatGPT fixture', requiredSelector: '[data-browser-mvp-marker]', markerText: '' },
+        accountProbeContract: { accountCheckPath: '/backend-api/accounts/check/v4-fixture' },
+        sessionIdentity: { email: 'buyer@example.test', accountId: 'acct-001', userId: 'user-001' },
+      },
+    });
+    const result = await executor.execute(job, { assertLease: async () => true });
+    assert.equal(result.status, 'OBSERVED');
+    assert.equal(result.sessionBootstrapped, true);
+    assert.equal(result.sessionIdentity.identityMatched, true);
+    assert.deepEqual(bootstrapCalls, ['preserve', 'replace']);
+    assert.equal(closed, 1, 'the session lease is closed exactly once after the probe settles');
+    const actions = evidenceSink.events.map((event) => event.summary.action);
+    assert.deepEqual(actions.filter((action) => ['session-bootstrap', 'session-replaced', 'account-readonly-probe'].includes(action)),
+      ['session-bootstrap', 'session-replaced', 'account-readonly-probe']);
+    assert.equal(JSON.stringify(evidenceSink.events).includes('fixture-token'), false);
+  } finally {
+    server.close();
+    await once(server, 'close');
+  }
+});
+
+test('executor still fails closed when the replaced session does not match either', async () => {
+  const server = createServer((request, response) => {
+    if (request.url === '/api/auth/session') {
+      response.writeHead(200, { 'content-type': 'application/json; charset=utf-8' });
+      return response.end(JSON.stringify({ user: { id: 'user-prev', email: 'previous@example.test' }, account: { id: 'acct-prev' }, accessToken: 'fixture-token' }));
+    }
+    response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+    response.end('<title>ChatGPT fixture</title><main data-browser-mvp-marker>logged in</main>');
+  });
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  const base = `http://127.0.0.1:${server.address().port}/`;
+  const bootstrapCalls = [];
+  const sessionProvider = {
+    async open() { return { leaseId: 'lease-replace-2', sessionDigest: 'a'.repeat(64), expiresAt: Date.now() + 60_000, purpose: 'browser-observe' }; },
+    async bootstrap(_lease, _context, options = {}) {
+      bootstrapCalls.push(options.replaceExisting === true ? 'replace' : 'preserve');
+      return options.replaceExisting
+        ? { cookieCount: 1, replacedCookieCount: 1, existingSessionPreserved: false, sessionDigest: 'b'.repeat(64) }
+        : { cookieCount: 1, replacedCookieCount: 0, existingSessionPreserved: true, sessionDigest: 'a'.repeat(64) };
+    },
+    async close() {},
+  };
+  try {
+    const executor = new BrowserExecutionService({
+      runtimeAdapter: new LocalPlaywrightRuntimeAdapter({ browserType: chromium }),
+      evidenceSink: new MemoryEvidenceSink(), sessionProvider, timeoutMs: 3_000,
+    });
+    const job = createSyntheticJob({
+      state: 'RUNNING',
+      metadata: {
+        source: 'playwright-fixture',
+        sessionRef: 'session-ref:replace-2',
+        pageContract: { urlPrefix: base, title: 'ChatGPT fixture', requiredSelector: '[data-browser-mvp-marker]', markerText: '' },
+        accountProbeContract: { accountCheckPath: '/backend-api/accounts/check/v4-fixture' },
+        sessionIdentity: { email: 'buyer@example.test', accountId: 'acct-001', userId: 'user-001' },
+      },
+    });
+    await assert.rejects(
+      () => executor.execute(job, { assertLease: async () => true }),
+      (error) => error instanceof BrowserExecutionError && error.reason === 'SESSION_IDENTITY_MISMATCH',
+    );
+    assert.deepEqual(bootstrapCalls, ['preserve', 'replace'], 'exactly one replacement attempt, never a loop');
+  } finally {
+    server.close();
+    await once(server, 'close');
+  }
+});

@@ -144,8 +144,12 @@ export class BrowserExecutionService {
           sessionLease = await this.sessionProvider.open(job.metadata.sessionRef, { purpose: 'browser-observe' });
           sessionResult = await this.sessionProvider.bootstrap(sessionLease, runtime.context);
           sessionBootstrapped = true;
-          await this.sessionProvider.close(sessionLease);
-          sessionLease = null;
+          // Keep the lease while an identity probe may still need to replace a
+          // resident session that belongs to a previous customer.
+          if (!sessionResult?.existingSessionPreserved || !job.metadata?.sessionIdentity) {
+            await this.sessionProvider.close(sessionLease);
+            sessionLease = null;
+          }
         } catch (error) {
           const sessionReasons = [
             'BROWSER_PREFLIGHT_CONTEXT_UNAVAILABLE', 'BROWSER_PREFLIGHT_SOURCE_UNAVAILABLE',
@@ -179,25 +183,52 @@ export class BrowserExecutionService {
       let sessionIdentity = null;
       let transientBillingEmail = null;
       if (job.metadata.sessionIdentity) {
+        const probe = () => probeSessionIdentity(
+          page,
+          job.metadata.sessionIdentity,
+          {
+            ...(job.metadata.accountProbeContract || {}),
+            stabilizationTimeoutMs: Math.min(this.timeoutMs, 15_000),
+            onVerifiedEmail: (email) => { transientBillingEmail = email; },
+          },
+        );
+        const classify = (error) => ([
+          'SESSION_INVALID',
+          'SESSION_IDENTITY_MISMATCH',
+          'ACCOUNT_STATUS_UNKNOWN',
+          'CHATGPT_ACCESS_BLOCKED',
+        ].includes(error?.code) ? error.code : 'SESSION_IDENTITY_MISMATCH');
         try {
-          sessionIdentity = await probeSessionIdentity(
-            page,
-            job.metadata.sessionIdentity,
-            {
-              ...(job.metadata.accountProbeContract || {}),
-              stabilizationTimeoutMs: Math.min(this.timeoutMs, 15_000),
-              onVerifiedEmail: (email) => { transientBillingEmail = email; },
-            },
-          );
+          sessionIdentity = await probe();
         } catch (error) {
-          const reason = [
-            'SESSION_INVALID',
-            'SESSION_IDENTITY_MISMATCH',
-            'ACCOUNT_STATUS_UNKNOWN',
-            'CHATGPT_ACCESS_BLOCKED',
-          ].includes(error?.code)
-            ? error.code : 'SESSION_IDENTITY_MISMATCH';
-          throw new BrowserExecutionError(reason, error.message, error);
+          const reason = classify(error);
+          // A resident session that is dead or belongs to another customer is
+          // not this order's session: replace it once with this order's own
+          // token and probe again. A rotated-but-matching session never reaches
+          // here because the first probe succeeds.
+          const foreignResident = sessionLease
+            && ['SESSION_INVALID', 'SESSION_IDENTITY_MISMATCH'].includes(reason);
+          if (!foreignResident) throw new BrowserExecutionError(reason, error.message, error);
+          if (!(await assertLease())) throw new BrowserExecutionError('LEASE_LOST');
+          const replaced = await this.sessionProvider.bootstrap(sessionLease, runtime.context, { replaceExisting: true });
+          await this._event(job, 'checkpoint', ++evidenceSequence, {
+            action: 'session-replaced',
+            previousReason: reason,
+            replacedCookieCount: replaced.replacedCookieCount,
+            cookieCount: replaced.cookieCount,
+            sessionDigest: replaced.sessionDigest,
+          });
+          await page.goto(job.metadata.pageContract.urlPrefix, { waitUntil: 'domcontentloaded', timeout: this.timeoutMs });
+          try {
+            sessionIdentity = await probe();
+          } catch (retryError) {
+            throw new BrowserExecutionError(classify(retryError), retryError.message, retryError);
+          }
+        } finally {
+          if (sessionLease && this.sessionProvider) {
+            await this.sessionProvider.close(sessionLease).catch(() => undefined);
+            sessionLease = null;
+          }
         }
         await this._event(job, 'checkpoint', ++evidenceSequence, {
           action: 'account-readonly-probe',

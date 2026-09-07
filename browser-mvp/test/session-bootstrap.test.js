@@ -58,3 +58,38 @@ test('CookieSessionBootstrapAdapter chunks long session tokens using NextAuth co
   assert.equal(added[0].value.length, 3_936);
   assert.equal(added[1].value.length, 164);
 });
+
+test('CookieSessionBootstrapAdapter replaces a foreign resident session only when asked, and clearSession drops only session cookies', async () => {
+  const source = { async load() { return { sessionToken: 'new-token' }; } };
+  const adapter = new CookieSessionBootstrapAdapter({ source, clock: () => 10_000 });
+  const lease = await adapter.open('session-ref:replace', { ttlMs: 5_000 });
+  const added = [];
+  const cleared = [];
+  const context = {
+    cookies: async () => [
+      { name: '__Secure-next-auth.session-token.0', domain: '.chatgpt.com', path: '/' },
+      { name: '__Secure-next-auth.session-token.1', domain: '.chatgpt.com', path: '/' },
+      { name: '__cf_bm', domain: '.chatgpt.com', path: '/' },
+    ],
+    clearCookies: async (filter) => cleared.push(filter),
+    addCookies: async (cookies) => added.push(...cookies),
+  };
+  const result = await adapter.bootstrap(lease, context, { replaceExisting: true });
+  assert.equal(result.existingSessionPreserved, false);
+  assert.equal(result.replacedCookieCount, 2);
+  assert.equal(result.cookieCount, 1);
+  assert.equal(cleared.length, 1);
+  assert.ok(cleared[0].name instanceof RegExp, 'clearing is filtered by session cookie name, never a blanket clear');
+  assert.equal(cleared[0].name.test('__Secure-next-auth.session-token.1'), true);
+  assert.equal(cleared[0].name.test('__cf_bm'), false);
+  assert.deepEqual(added.map((cookie) => cookie.name), ['__Secure-next-auth.session-token']);
+  assert.equal(added[0].value, 'new-token');
+  await adapter.close(lease);
+
+  cleared.length = 0;
+  const releaseResult = await adapter.clearSession(context);
+  assert.equal(releaseResult.clearedCookieCount, 2);
+  assert.equal(cleared.length, 1);
+  const untouched = await adapter.clearSession({ ...context, cookies: async () => [{ name: '__cf_bm' }] });
+  assert.equal(untouched.clearedCookieCount, 0);
+});

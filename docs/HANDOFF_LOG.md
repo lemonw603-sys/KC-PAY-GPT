@@ -1635,3 +1635,9 @@
 - 修复：有 paymentHandler 时 executor 只做非严格观察并直接交给 adapter，由 adapter 完成卡 → 地址 → 邮箱 → 重报价 → 单次点击的唯一一遍；无 paymentHandler 的只读观察路径行为不变。新增端到端回归（本地 HTTP 夹具：身份接口 + 含 12% VAT 的结账页）证明处理器在 2.5 秒内拿到非严格报价且 executor 不再自行等待零税。executor 11/11，browser-mvp 全量 168/159/0/9。
 - 规格 `docs/CORE_SPEC_2026-09-07.md` §5.1 新增现有 Browser 代码的删/留清单。
 - 未部署：Browser Worker 在本机运行，此修复在下一次真实单（付款前停止模式）时生效；生产 release 不含 browser-mvp 运行路径。
+
+## 2026-09-07｜一个身份连续服务多位客户：常驻会话属于他人时自动替换
+
+- 现状缺口：`session-bootstrap` 只要发现 Profile 里已有 session cookie 就不覆盖（保护同一客户被轮换过的会话），但没有任何终态清理，下一位客户在同一身份上必然 `SESSION_IDENTITY_MISMATCH`。PoC 用测试账号登入 Lane 3 之后，下一笔真实单就会撞上这条。
+- 实现：`bootstrap(lease, context, { replaceExisting })` 与 `clearSession(context)`，清理只按 session cookie 名过滤，不碰 Cloudflare/代理 cookie；executor 在身份探测返回 `SESSION_INVALID`/`SESSION_IDENTITY_MISMATCH` 且本次是「保留了常驻会话」时，用本单令牌替换一次、重载、再探测，仍不匹配才失败关闭；同一客户被轮换的会话首次探测即匹配，不会被替换。会话租约现在保持到探测结束后再关闭。
+- 测试：`session-bootstrap` 新增替换/清理单测；`executor` 新增两条端到端（可切换身份的本地夹具）：替换后通过、替换后仍不匹配则失败且只替换一次。browser-mvp 全量 171/162/0/9。

@@ -43,6 +43,18 @@ function normalizeCookies(material) {
   throw new ContractError('session source must provide cookieHeader or cookies');
 }
 
+const SESSION_COOKIE_NAME_PATTERN = /^__Secure-next-auth\.session-token(\.\d+)?$/;
+
+async function listSessionCookies(context) {
+  const cookies = await context.cookies(CHATGPT_URL);
+  return cookies.filter((cookie) => SESSION_COOKIE_NAME_PATTERN.test(cookie.name));
+}
+
+async function clearSessionCookies(context) {
+  // Only the session token (and its chunks). Cloudflare/proxy cookies stay.
+  await context.clearCookies({ name: SESSION_COOKIE_NAME_PATTERN });
+}
+
 function toPlaywrightCookie(cookie) {
   const name = String(cookie.name).trim();
   const value = String(cookie.value).replace(/[\r\n\0]/g, '').trim();
@@ -93,7 +105,7 @@ export class CookieSessionBootstrapAdapter extends SessionProviderPort {
     return lease;
   }
 
-  async bootstrap(sessionLease, context) {
+  async bootstrap(sessionLease, context, { replaceExisting = false } = {}) {
     assertSessionLease(sessionLease);
     if (!context || typeof context.addCookies !== 'function'
       || typeof context.cookies !== 'function' || typeof context.clearCookies !== 'function') {
@@ -101,16 +113,15 @@ export class CookieSessionBootstrapAdapter extends SessionProviderPort {
     }
     const entry = this.leases.get(sessionLease.leaseId);
     if (!entry || entry.expiresAt <= this.clock()) throw new ContractError('session lease is expired or unknown');
-    const existingCookies = await context.cookies(CHATGPT_URL);
-    const staleSessionCookies = existingCookies.filter((cookie) => (
-      cookie.name === SESSION_COOKIE_BASE || cookie.name.startsWith(`${SESSION_COOKIE_BASE}.`)
-    ));
-    // Do not overwrite an authenticated active-order Profile. ChatGPT may
-    // rotate its Session after login or purchase, so replaying the originally
-    // submitted token can destroy a healthy session. Identity probing after
-    // bootstrap remains authoritative. A different customer is admitted only
-    // after terminal lifecycle cleanup removes the previous Session.
-    if (staleSessionCookies.length > 0) {
+    const staleSessionCookies = await listSessionCookies(context);
+    // By default do not overwrite an authenticated Profile: ChatGPT may rotate
+    // its Session after login or purchase, so replaying the originally
+    // submitted token can destroy a healthy session for the SAME customer.
+    // The executor probes identity after bootstrap; only when that probe says
+    // the resident session belongs to someone else (or is dead) does it call
+    // back with replaceExisting=true, which is how one identity serves
+    // customers one after another.
+    if (staleSessionCookies.length > 0 && !replaceExisting) {
       return {
         cookieCount: staleSessionCookies.length,
         replacedCookieCount: 0,
@@ -118,13 +129,24 @@ export class CookieSessionBootstrapAdapter extends SessionProviderPort {
         sessionDigest: sessionLease.sessionDigest,
       };
     }
+    if (staleSessionCookies.length > 0) await clearSessionCookies(context);
     await context.addCookies(entry.cookies);
     return {
       cookieCount: entry.cookies.length,
-      replacedCookieCount: 0,
+      replacedCookieCount: staleSessionCookies.length,
       existingSessionPreserved: false,
       sessionDigest: sessionLease.sessionDigest,
     };
+  }
+
+  /** Terminal release of an identity: drop only the ChatGPT session cookies, nothing else. */
+  async clearSession(context) {
+    if (!context || typeof context.cookies !== 'function' || typeof context.clearCookies !== 'function') {
+      throw new TypeError('BrowserContext cookie read/write methods are required');
+    }
+    const stale = await listSessionCookies(context);
+    if (stale.length > 0) await clearSessionCookies(context);
+    return { clearedCookieCount: stale.length };
   }
 
   async close(sessionLease) {
