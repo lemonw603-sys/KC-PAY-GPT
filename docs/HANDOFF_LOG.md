@@ -1660,3 +1660,11 @@
 
 - 用户报错原文「粘贴的 JSON 格式不完整，请重新复制全部内容。」＝输入以 `{` 开头但 `JSON.parse` 失败；输入框无 `maxlength`，不是被截断。可能是卖家手写格式（无引号键/单引号）、JSON 前后带说明文字，或复制不完整。用户实际粘贴内容未见。
 - 修复（未部署，扩展只在本机 BitBrowser）：`token.mjs` 三级解析——严格 JSON → 截取首个 `{`/`[` 到末个 `}`/`]` 重试 → 正则直接抓 `sessionToken`/`session_token`/Cookie 名后的值；不以 `{` 开头但含这些键名的文本同样抓取；token 需为 5 段 JWE，截断到 token 中间报「令牌不完整」，三段实心 `eyJ` 判为 accessToken。测试 5/5，browser-mvp 全量除本条外无失败。已同步到 `BitExtensions/384ef55b-…`（diff 为空），下次打开窗口生效。
+
+## 2026-09-07｜Lane 3 只读验证首跑：接口可达，测试账号已是 Plus
+
+- 用户用上号器把测试账号 Session 写入「Plus Browser PH Lane 3」（新版解析生效）。01:40 UTC 跑 `poc-checkout-api-readonly.mjs --observe`，证据 `artifacts/poc-checkout-api-20260907/result.json`（只含摘要与哈希，无令牌与邮箱）。
+- 观察：`/api/auth/session` 200，hasToken，过期 2026-12-06；`accounts/check` 200，plan=plus，hasActive=true；`payments/checkout` plus → 400「Our systems have detected unusual activity. Please try again later.」；pro_5x / pro_20x → 400「User is already paid」；三次都没有 checkout URL，`--observe` 无页面可看。
+- 结论：待验证 A「接口能否在常驻身份内调用」成立（拿到的是后端业务响应，不是 403/Cloudflare）；「能否取回结账 URL」与待验证 B 都因账号已是 Plus 无法验证。plus 的「unusual activity」无法区分是同套餐重复购买被拒还是风控，未重复调用。
+- 附带事实：已 Plus 账号对 Pro 套餐直接「already paid」→ 20X 第二阶段（Plus→Pro）不走同一 checkout 入口，升级路径需单独只读探测；不得自动点击升级按钮（订阅升级可能立即扣款）。
+- 下一步：需要一个未订阅（Free）的测试账号 Session 写入 Lane 3 后重跑。

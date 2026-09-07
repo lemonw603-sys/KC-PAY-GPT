@@ -1,0 +1,73 @@
+{
+  "startedAt": "2026-09-07T01:40:09.906Z",
+  "profileIdDigest": "9d7445fffc27ffc9",
+  "country": "PH",
+  "currency": "PHP",
+  "steps": [
+    {
+      "step": "page",
+      "at": "2026-09-07T01:40:10.139Z",
+      "url": "https://chatgpt.com/",
+      "title": "ChatGPT"
+    },
+    {
+      "step": "session",
+      "at": "2026-09-07T01:40:11.057Z",
+      "status": 200,
+      "hasToken": true,
+      "emailDigest": "80d5592e352d1da9",
+      "expires": "2026-12-06T01:40:12.796Z"
+    },
+    {
+      "step": "account",
+      "at": "2026-09-07T01:40:13.938Z",
+      "status": 200,
+      "plan": "plus",
+      "hasActive": true,
+      "keys": [
+        "accounts",
+        "account_ordering"
+      ]
+    },
+    {
+      "step": "checkout:plus",
+      "at": "2026-09-07T01:40:15.871Z",
+      "planName": "chatgptplusplan",
+      "status": 400,
+      "keys": [
+        "detail"
+      ],
+      "hasSessionId": false,
+      "urlHost": null,
+      "urlDigest": null,
+      "detail": "Our systems have detected unusual activity. Please try again later."
+    },
+    {
+      "step": "checkout:pro_5x",
+      "at": "2026-09-07T01:40:17.716Z",
+      "planName": "chatgptprolite",
+      "status": 400,
+      "keys": [
+        "detail"
+      ],
+      "hasSessionId": false,
+      "urlHost": null,
+      "urlDigest": null,
+      "detail": "User is already paid"
+    },
+    {
+      "step": "checkout:pro_20x",
+      "at": "2026-09-07T01:40:19.815Z",
+      "planName": "chatgptpro",
+      "status": 400,
+      "keys": [
+        "detail"
+      ],
+      "hasSessionId": false,
+      "urlHost": null,
+      "urlDigest": null,
+      "detail": "User is already paid"
+    }
+  ],
+  "finishedAt": "2026-09-07T01:40:19.827Z"
+}
