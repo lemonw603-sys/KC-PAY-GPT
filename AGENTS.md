@@ -19,7 +19,7 @@
 3. `docs/CURRENT_STATE.md`：生产事实表。
 4. `docs/PRODUCT_SIMPLIFICATION_DISCUSSION.md` 末尾「接班实施基线」：改造方向，用户已确认。
 
-然后看 `docs/HANDOFF_LOG.md` 最后两节和 `git log --oneline -20`。
+然后看 `docs/HANDOFF_LOG.md` 最后两节、`docs/UNVERIFIED_LEDGER.md`（做了但没证明的事）和 `git log --oneline -20`。
 
 决策历史：`docs/DECISIONS.md`。活动工作线：`docs/CARD_SOURCE_AND_RECONCILIATION_WORKSTREAM.md`。历史报告、审查、交接全部在 `docs/archive/`（索引 `docs/archive/INDEX.md`），只在任务需要时查，不作为当前事实。
 
