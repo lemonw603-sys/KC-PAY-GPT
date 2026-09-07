@@ -2,6 +2,8 @@ import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypt
 import { redactSensitiveText } from '../../security/redaction.js';
 import { transitionCardConsumptionInTransaction } from '../../services/card-consumption-ledger-service.js';
 import { returnCdkForOrderInTransaction } from './cdk-return-repository.js';
+import { releaseCardForFailedOrderInTransaction } from './card-release-repository.js';
+import { upsertBrowserAlertInTransaction } from './browser-alert-repository.js';
 
 const HEX_64 = /^[a-f0-9]{64}$/i;
 const ACTIVE_RUN_STATUSES = new Set(['READY', 'RUNNING', 'RECONCILE_ONLY', 'HUMAN_REQUIRED']);
@@ -885,6 +887,16 @@ export function createBrowserExecutionRepository(pool) {
             orderId: row.order_id, reason: `Browser pre-payment abort: ${reason}`,
             actorType: 'WORKER', actorId: worker, metadata: { browserRunId: run },
           });
+          // No payment action happened (fence CLEARED, ledger RELEASED above), so the
+          // card must not stay bound to a dead order.
+          await releaseCardForFailedOrderInTransaction(connection, {
+            orderId: row.order_id, releasedBy: 'browser:pre-payment-abort',
+            reason: `pre-payment abort: ${reason}`, now
+          });
+          await upsertBrowserAlertInTransaction(connection, {
+            type: 'BROWSER_ORDER_FAILED', orderId: row.order_id, title: '浏览器充值在付款前终止',
+            message: `原因 ${reason}；未点击付款，CDK 已退回，卡片已释放。`
+          });
         }
         await connection.query(
           `INSERT INTO order_events
@@ -960,6 +972,10 @@ export function createBrowserExecutionRepository(pool) {
            WHERE id = ? AND status = 'RUNNING' AND payment_state = 'PAYMENT_SUBMITTING'`,
           [now, deadline, nextCheck, sequence, reason, now, run]
         );
+        await upsertBrowserAlertInTransaction(connection, {
+          type: 'BROWSER_PAYMENT_UNKNOWN', orderId: row.order_id, title: '浏览器付款结果不明，禁止重付',
+          message: `run ${run}：${reason}；已锁为只能对账，需要人工核实卡交易与账号套餐。`
+        });
         if (runUpdate.affectedRows !== 1) {
           throw new BrowserExecutionError('Browser run changed concurrently', 'RUN_CONFLICT');
         }
@@ -1118,6 +1134,10 @@ export function createBrowserExecutionRepository(pool) {
                c.last_transaction_synced_at=NULL, c.updated_at=?
            WHERE o.id=?`, [now, row.order_id]
         );
+        await upsertBrowserAlertInTransaction(connection, {
+          type: 'BROWSER_PAYMENT_CONFIRMED', orderId: row.order_id, title: '浏览器付款已确认',
+          message: '付款已确认，正在核实 Plus 开通并取消自动续费。'
+        });
         return publicRun({ ...row, payment_state: 'PAYMENT_CONFIRMED' }, {
           runStatus: 'RUNNING', verificationState: 'VERIFYING_PAYMENT',
           verificationStartedAt: row.verification_started_at || now,
@@ -1199,6 +1219,10 @@ export function createBrowserExecutionRepository(pool) {
            VALUES (?, ?, 'PAYMENT_VERIFICATION_ESCALATED', 'COMMITTED', ?, ?, ?, ?)`,
           [run, operation, reason, json({ evidenceHash: evidence }), now, now]
         );
+        await upsertBrowserAlertInTransaction(connection, {
+          type: 'BROWSER_HUMAN_REQUIRED', orderId: row.order_id, title: '浏览器付款核实需要人工',
+          message: `run ${run}：${reason}；自动核实已升级为人工处理。`
+        });
         await connection.query(
           `UPDATE browser_runs SET status='HUMAN_REQUIRED',
              verification_state='HUMAN_REQUIRED', verification_next_check_at=NULL,
@@ -1281,6 +1305,10 @@ export function createBrowserExecutionRepository(pool) {
            WHERE order_id=? AND status='ACTIVE'`,
           ['payment decline verified with account still free', now, row.order_id]
         );
+        await upsertBrowserAlertInTransaction(connection, {
+          type: 'BROWSER_ORDER_FAILED', orderId: row.order_id, title: '浏览器付款被拒绝',
+          message: `原因 ${reason}；账号仍为免费，未扣款，卡片已释放。`
+        });
         const [orderUpdate] = await connection.query(
           `UPDATE orders SET status='RECHARGE_FAILED', version=version+1,
              failure_code=?, failure_reason='Browser payment was definitively declined',
@@ -1402,6 +1430,10 @@ export function createBrowserExecutionRepository(pool) {
           [randomUUID(), run, row.automation_owner_id || row.worker_id,
             humanOwner, now, now]
         );
+        await upsertBrowserAlertInTransaction(connection, {
+          type: 'BROWSER_UPGRADE_HANDOFF', orderId: row.order_id, title: 'Plus 已开通，20X 升级转人工',
+          message: '付款与 Plus 已确认；20X 升级由人工完成后在订单抽屉点「确认 20X 已升级」。'
+        });
         await connection.query(
           `UPDATE browser_runs
            SET status='HUMAN_REQUIRED', post_payment_state='PLUS_CONFIRMED',
@@ -1503,6 +1535,10 @@ export function createBrowserExecutionRepository(pool) {
              AND post_payment_state='CANCELLATION_PENDING'`,
           [humanOwner, sequence, now, run]
         );
+        await upsertBrowserAlertInTransaction(connection, {
+          type: 'BROWSER_UPGRADE_HANDOFF', orderId: row.order_id, title: 'Plus 已开通，20X 升级转人工',
+          message: '付款与 Plus 已确认；20X 升级由人工完成后在订单抽屉点「确认 20X 已升级」。'
+        });
         if (runUpdate.affectedRows !== 1) {
           throw new BrowserExecutionError('Browser run changed concurrently', 'RUN_CONFLICT');
         }
@@ -1616,6 +1652,10 @@ export function createBrowserExecutionRepository(pool) {
            WHERE id = ? AND status = 'RECHARGE_PROCESSING' AND version = ?`,
           [now, now, row.order_id, row.order_version]
         );
+        await upsertBrowserAlertInTransaction(connection, {
+          type: 'BROWSER_ORDER_COMPLETED', orderId: row.order_id, title: '浏览器充值完成',
+          message: 'Plus 已开通并收口为充值成功。'
+        });
         if (orderUpdate.affectedRows !== 1) {
           throw new BrowserExecutionError('order changed concurrently', 'ORDER_CONFLICT');
         }

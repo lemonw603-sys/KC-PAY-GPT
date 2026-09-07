@@ -4,6 +4,7 @@ import test from 'node:test';
 import mysql from 'mysql2/promise';
 import { createBrowserExecutionRepository } from '../src/db/repositories/browser-execution-repository.js';
 import { returnCdkForOrderInTransaction } from '../src/db/repositories/cdk-return-repository.js';
+import { releaseCardForFailedOrderInTransaction } from '../src/db/repositories/card-release-repository.js';
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
 const productId = '00000000-0000-4000-8000-000000000201';
@@ -187,6 +188,7 @@ test('Browser MySQL mapping preserves one payment action and locks unknown resul
     await pool.query('DELETE FROM recharge_attempts WHERE id = ?', [attemptId]);
     await pool.query('DELETE FROM card_assignment_history WHERE order_id = ?', [orderId]);
     await pool.query('DELETE FROM cards WHERE id = ?', [cardId]);
+    await pool.query('DELETE FROM operator_alerts WHERE order_id = ?', [orderId]);
     await pool.query('DELETE FROM orders WHERE id = ?', [orderId]);
     await pool.query('DELETE FROM orders WHERE id = ?', [ownerOrderId]);
     await pool.query('DELETE FROM cdks WHERE id = ?', [cdkId]);
@@ -386,7 +388,37 @@ test('Browser MySQL pre-payment abort releases every runtime and funds fence ato
       `SELECT event_type, channel, actor_id, JSON_UNQUOTE(JSON_EXTRACT(metadata_json, '$.orderId')) AS order_id
        FROM cdk_delivery_events WHERE cdk_id = ? ORDER BY created_at DESC LIMIT 1`, [cdkId]);
     assert.deepEqual(returnEvent, { event_type: 'RETURNED', channel: 'order', actor_id: 'browser-safe-abort-worker', order_id: orderId });
+
+    // A pre-payment failure must also hand the card back: ACTIVE assignment released,
+    // manual-import tier preserved, pointer and assigned_at cleared.
+    await pool.query(
+      `INSERT INTO card_assignment_history
+       (id, card_id, order_id, assignment_kind, status, assigned_by, assignment_reason, assigned_at)
+       VALUES (UUID(), ?, ?, 'NORMAL', 'ACTIVE', 'integration', 'card release check', CURRENT_TIMESTAMP(3))`,
+      [cardId, orderId]);
+    await pool.query(`UPDATE cards SET inventory_status = 'ASSIGNED', assigned_at = CURRENT_TIMESTAMP(3), sync_tier = 'MANUAL_IMPORT' WHERE id = ?`, [cardId]);
+    await pool.query('UPDATE orders SET assigned_card_id = ? WHERE id = ?', [cardId, orderId]);
+    const releaseConnection = await pool.getConnection();
+    let released;
+    try {
+      await releaseConnection.beginTransaction();
+      released = await releaseCardForFailedOrderInTransaction(releaseConnection, {
+        orderId, releasedBy: 'integration', reason: 'card release check'
+      });
+      await releaseConnection.commit();
+    } finally { releaseConnection.release(); }
+    assert.deepEqual([released.releasedAssignments, released.resetCards], [1, 1]);
+    const [[freedCard]] = await pool.query('SELECT inventory_status, assigned_at, order_id, sync_tier FROM cards WHERE id = ?', [cardId]);
+    assert.deepEqual(freedCard, {
+      inventory_status: Number(released.minimumBalance) <= 20 ? 'AVAILABLE' : 'DEPLETED',
+      assigned_at: null, order_id: null, sync_tier: 'MANUAL_IMPORT'
+    });
+    const [[freedAssignment]] = await pool.query(
+      'SELECT status, released_by, release_reason FROM card_assignment_history WHERE card_id = ? AND order_id = ? ORDER BY assigned_at DESC LIMIT 1', [cardId, orderId]);
+    assert.deepEqual(freedAssignment, { status: 'RELEASED', released_by: 'integration', release_reason: 'card release check' });
   } finally {
+    await pool.query('DELETE FROM card_assignment_history WHERE card_id = ?', [cardId]);
+    await pool.query('DELETE FROM operator_alerts WHERE order_id = ?', [orderId]);
     await pool.query('DELETE FROM cdk_delivery_events WHERE cdk_id = ?', [cdkId]);
     await pool.query('DELETE FROM order_events WHERE order_id = ?', [orderId]);
     await pool.query('DELETE FROM payment_permits WHERE recharge_attempt_id = ?', [attemptId]);
