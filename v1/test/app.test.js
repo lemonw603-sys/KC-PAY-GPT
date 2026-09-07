@@ -90,7 +90,7 @@ test('labels local stock refresh separately from provider card synchronization',
 test('admin overview does not describe disabled automatic card opening as enabled', async () => {
   const html = await readFile(new URL('../public/admin/index.html', import.meta.url), 'utf8');
   const script = await readFile(new URL('../public/admin/assets/admin.js', import.meta.url), 'utf8');
-  assert.match(html, /admin\.js\?v=26/);
+  assert.match(html, /admin\.js\?v=27/);
   assert.match(script, /自动开卡已关闭；当前无合格卡时需要人工处理/);
   assert.match(script, /自动开卡已关闭；当前低于库存线/);
   assert.match(script, /cardSyncReviewRequired/);
@@ -1090,4 +1090,27 @@ test('updates the minimum required card balance through the guarded admin route'
     assert.deepEqual(await stock.json(), { maxSuccessfulPayments: 3, minimumRequiredCardBalance: '8.00' });
   });
   assert.deepEqual(writes, ['8.00']);
+});
+
+test('order execution timeline is readable by an authenticated administrator only', async () => {
+  const adminAuth = createAdminSessionAuth({
+    passwordHash: await hashAdminPassword('fixture admin password', { salt: Buffer.alloc(16, 27) }),
+    sessionSecret: Buffer.alloc(32, 28), secureCookies: false
+  });
+  const app = createApp({
+    adminAuth,
+    getAdminOrderTimeline: async (publicNo) => ({ publicNo, events: [{ at: '2026-09-07T09:29:15.000Z', sequence: 1, type: 'intent', action: 'observe-page', jobKind: 'run', runId: 'run-1', workerId: 'pool:lane-3', facts: {} }] })
+  });
+  await withServer(app, async (baseUrl) => {
+    const denied = await fetch(`${baseUrl}/api/v1/admin/orders/PJV1-TIMELINE/timeline`);
+    assert.equal(denied.status, 401);
+    const login = await fetch(`${baseUrl}/api/v1/admin/session`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: 'fixture admin password' }) });
+    const cookie = login.headers.get('set-cookie').split(';')[0];
+    const response = await fetch(`${baseUrl}/api/v1/admin/orders/PJV1-TIMELINE/timeline`, { headers: { Cookie: cookie } });
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get('cache-control'), 'no-store');
+    const body = await response.json();
+    assert.equal(body.publicNo, 'PJV1-TIMELINE');
+    assert.equal(body.events[0].action, 'observe-page');
+  });
 });

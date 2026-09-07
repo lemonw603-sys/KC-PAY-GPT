@@ -36,6 +36,7 @@ export function createApp({
   getAdminReadinessSummary = null,
   listAdminOrders = null,
   getAdminOrder = null,
+  getAdminOrderTimeline = null,
   addAdminOrderNote = null,
   addAdminOrderTag = null,
   completeAdminCustomerPayment = null,
@@ -253,6 +254,11 @@ export function createApp({
   if (typeof getAdminOrder === 'function') {
     app.get('/api/v1/admin/orders/:publicNo', noStore, requireAdminApi, async (req, res) => {
       res.json(await getAdminOrder(req.params.publicNo));
+    });
+  }
+  if (typeof getAdminOrderTimeline === 'function') {
+    app.get('/api/v1/admin/orders/:publicNo/timeline', noStore, requireAdminApi, async (req, res) => {
+      res.json(await getAdminOrderTimeline(req.params.publicNo));
     });
   }
   if (typeof addAdminOrderNote === 'function') {

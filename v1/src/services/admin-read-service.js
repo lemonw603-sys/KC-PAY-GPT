@@ -216,6 +216,26 @@ function cardNumber(row, key) {
   }
 }
 
+const TIMELINE_JOB_KINDS = Object.freeze({ brjob: 'run', brpreflight: 'preflight' });
+
+/** One Browser stage event as the operator sees it: time, what happened, digests and counts only. */
+export function mapBrowserTimelineRow(row) {
+  let summary = {};
+  try { summary = typeof row.summary_json === 'string' ? JSON.parse(row.summary_json) : (row.summary_json || {}); } catch { summary = {}; }
+  const { action: _ignored, ...facts } = summary;
+  const jobKind = TIMELINE_JOB_KINDS[String(row.job_id || '').split(':')[0]] || 'other';
+  return {
+    at: row.created_at instanceof Date ? row.created_at.toISOString() : row.created_at || null,
+    sequence: Number(row.sequence_no || 0),
+    type: row.event_type,
+    action: row.action || null,
+    jobKind,
+    runId: row.browser_run_id || null,
+    workerId: row.worker_id || null,
+    facts,
+  };
+}
+
 export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkHashKey = null,
   panHmacKey = null, deliveryTrackingEnabled = false, now = () => Date.now() }) {
   async function getCard(providerCardId, input = {}) {
@@ -1315,5 +1335,19 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
     };
   }
 
-  return { getCard, getCardConsumption, getOrder, getOverview, listOrders, listAlerts, requestCardTransactionSync };
+  async function getOrderTimeline(publicNo) {
+    if (typeof publicNo !== 'string' || publicNo.length < 8 || publicNo.length > 64) {
+      throw new PublicApiError('Invalid public number', { code: 'INVALID_ADMIN_QUERY', status: 400 });
+    }
+    const [[order]] = await pool.query('SELECT id, public_no FROM orders WHERE public_no = ? LIMIT 1', [publicNo]);
+    if (!order) throw new PublicApiError('Order not found', { code: 'ADMIN_ORDER_NOT_FOUND', status: 404 });
+    const [rows] = await pool.query(
+      `SELECT job_id, browser_run_id, sequence_no, event_type, action, summary_json, worker_id, created_at
+       FROM browser_run_events WHERE order_id = ? ORDER BY created_at ASC, sequence_no ASC LIMIT 500`,
+      [order.id],
+    );
+    return { publicNo: order.public_no, events: rows.map(mapBrowserTimelineRow) };
+  }
+
+  return { getCard, getCardConsumption, getOrder, getOrderTimeline, getOverview, listOrders, listAlerts, requestCardTransactionSync };
 }

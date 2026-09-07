@@ -1319,6 +1319,35 @@ async function setRechargePermit(publicNo, action, button) {
   }
 }
 
+const TIMELINE_ACTION_LABELS = {
+  'observe-page': '开始执行', 'session-bootstrap': '注入会话', 'session-replaced': '替换常驻会话', 'page-reset': '页面复位',
+  'account-readonly-probe': '身份核对', 'page-signature': '页面签名', 'card-material-preflight': '卡资料就绪',
+  'checkout-navigation': '创建结账', 'session-released': '释放登录态', 'fail-closed': '安全停止',
+};
+function timelineFacts(facts = {}) {
+  const parts = [];
+  if (facts.reason) parts.push(`原因 ${facts.reason}`);
+  if (facts.previousReason) parts.push(`原会话 ${facts.previousReason}`);
+  if (facts.plan) parts.push(`套餐 ${facts.plan}`);
+  if (facts.checkoutCreated != null) parts.push(facts.checkoutCreated ? '已建新结账' : '沿用结账');
+  if (facts.identityMatched != null) parts.push(facts.identityMatched ? '身份一致' : '身份不一致');
+  if (facts.subscriptionStatus) parts.push(`套餐状态 ${facts.subscriptionStatus}`);
+  if (facts.cookieCount != null) parts.push(`cookie ${facts.cookieCount}`);
+  if (facts.clearedLoginCookieCount != null) parts.push(`清登录态 ${facts.clearedLoginCookieCount}`);
+  if (facts.ready != null) parts.push(facts.ready ? '资料就绪' : '资料未就绪');
+  return parts.join(' · ');
+}
+async function renderOrderTimeline(publicNo) {
+  const host = elements.detailContent.querySelector('#order-timeline');
+  if (!host) return;
+  try {
+    const data = await api(`/api/v1/admin/orders/${encodeURIComponent(publicNo)}/timeline`);
+    const events = Array.isArray(data.events) ? data.events : [];
+    host.innerHTML = events.length
+      ? `<ol class="timeline">${events.map((event) => `<li class="timeline-item timeline-${escapeHtml(event.type)}"><time>${escapeHtml(formatTime(event.at))}</time><strong>${escapeHtml(TIMELINE_ACTION_LABELS[event.action] || event.action || event.type)}</strong><small>${escapeHtml([event.jobKind === 'preflight' ? '预检' : event.jobKind === 'run' ? '执行' : '', event.workerId || '', timelineFacts(event.facts)].filter(Boolean).join(' · '))}</small></li>`).join('')}</ol>`
+      : '<p class="empty-state">还没有 Browser 执行记录。</p>';
+  } catch { host.innerHTML = '<p class="empty-state">执行时间线读取失败。</p>'; }
+}
 async function openOrder(publicNo) {
   elements.detailKicker.textContent = '订单详情';
   elements.detailTitle.textContent = publicNo;
@@ -1370,6 +1399,7 @@ async function openOrder(publicNo) {
     const moneyList = (items) => items?.length
       ? items.map((item) => `${item.amount} ${item.currency}`).join('；') : '没有已记录金额';
     elements.detailContent.innerHTML = `
+      <section class="detail-section"><div class="detail-section-heading"><h3>执行时间线</h3></div><div id="order-timeline"><p class="loading-state">正在读取…</p></div></section>
       <section class="detail-section"><div class="detail-section-heading"><h3>自动履约与资金栅栏</h3>${permitButton}</div>${renderKeyValues([
         ['付款前检查', paymentGate.prepaymentReady ? '已就绪' : '未就绪'],
         ['正常执行', paymentGate.prepaymentReady ? '规则通过后由系统自动执行' : '等待付款前准备'],
@@ -1427,6 +1457,7 @@ async function openOrder(publicNo) {
       <section class="detail-section"><h3>卡片交易</h3><div class="mini-list">${data.transactions?.length ? data.transactions.map((transaction) => `<div><span><strong>${escapeHtml(transaction.type)} · ${escapeHtml(transaction.amount)} ${escapeHtml(transaction.currency)}</strong><small>${escapeHtml(transaction.merchantName || transaction.relatedTransactionId || transaction.providerTransactionId)} · ${escapeHtml(transaction.tradeTimeRaw || formatTime(transaction.firstSeenAt))}</small></span><em>${escapeHtml(transaction.status)}</em></div>`).join('') : '<p class="empty-state">暂无已同步交易</p>'}</div></section>
       <section class="detail-section"><h3>订单时间线</h3><div class="timeline">${data.events.length ? data.events.map((event) => `<article><i></i><div><strong>${escapeHtml(STATUS_META[event.toStatus]?.[0] || event.toStatus)}</strong><p>${escapeHtml(event.reason)}</p><small>${formatTime(event.createdAt)} · ${escapeHtml(event.actorType)}</small></div></article>`).join('') : '<p class="empty-state">暂无事件</p>'}</div></section>
       <section class="detail-section"><h3>后台任务</h3><div class="mini-list">${data.tasks.length ? data.tasks.map((task) => `<div><span><strong>${escapeHtml(TASK_LABELS[task.type] || task.type)}</strong><small>${task.attempts}/${task.maxAttempts} 次尝试</small></span><em>${escapeHtml(TASK_STATUS_LABELS[task.status] || task.status)}</em></div>`).join('') : '<p class="empty-state">暂无任务</p>'}</div></section>`;
+    renderOrderTimeline(publicNo);
     // Keep the operational summary compact while retaining every audit record.
     // Secondary evidence remains in the DOM and is available on demand.
     const detailSections = [...elements.detailContent.querySelectorAll(':scope > .detail-section')];

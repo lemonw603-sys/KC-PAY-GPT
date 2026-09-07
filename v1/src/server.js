@@ -182,6 +182,7 @@ const app = createApp({
   getAdminReadinessSummary: async () => (await getAdminOverviewWithReadiness()).readiness,
   listAdminOrders: adminReadService.listOrders,
   getAdminOrder: adminReadService.getOrder,
+  getAdminOrderTimeline: adminReadService.getOrderTimeline,
   addAdminOrderNote: traceabilityOperations.addOrderNote,
   addAdminOrderTag: traceabilityOperations.addOrderTag,
   completeAdminCustomerPayment: traceabilityOperations.completeCustomerPayment,
