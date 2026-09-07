@@ -21,7 +21,7 @@
 
 | 项目 | 事实 |
 |---|---|
-| release | `/opt/pojia/releases/20260908-cardrelease-fbba5fe`（09-07 16:52 UTC，付款前失败释放卡 + 浏览器终态提醒/Bark）；回滚点 `20260907-apiclean-5687598`（再前 `20260907-fivepages-6f1217f`） |
+| release | `/opt/pojia/releases/20260908-importwhy-ba2db48`（09-07 17:14 UTC，导入预览说明为何不能提交）；回滚点 `20260908-cardrelease-fbba5fe`（再前 `20260907-apiclean-5687598`） |
 | 服务 | Web active；API Worker inactive（09-06 03:46 UTC 人为停止）；Browser Worker inactive/disabled；补余额与读同步 timer active；旧自动开卡 timer disabled |
 | 开关 | 接单 true；自动派发 true；默认路线 Browser；Browser 卡台 = 备用卡台 A；Browser 付款开关 false；自动开卡 false；自动补余额 true；每卡成功次数 3；最低卡余额 16（09-07 08:28–09:33 UTC 曾临时 8） |
 | 卡 | HNSKJ 已恢复但 `5980` 只剩 $0.31；备用 A `5501` $8.87 低于门槛 16（09-07 16:53 UTC 已从死单 `PJV1--j4AnE7fvfgkvaceSr0Z` 释放，DEPLETED，充值并重新导入快照后即可分配）、`0237` $0 → 可分配 0 |
