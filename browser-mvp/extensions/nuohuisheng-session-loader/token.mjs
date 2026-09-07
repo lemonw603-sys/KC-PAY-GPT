@@ -46,18 +46,34 @@ function findSessionTokenDeep(node, depth = 0) {
   return null;
 }
 
+const TOKEN_KEY_PATTERN = /(?:"|')?(?:__Secure-next-auth\.session-token|__Secure-authjs\.session-token|session[_-]?token)(?:"|')?\s*[:=]\s*(?:"|')?([A-Za-z0-9._~%-]{20,})/i;
+
+// Loose fallback for sellers' hand-made formats and partial copies: pull the
+// token value out of the raw text even when JSON.parse cannot accept it.
+function findSessionTokenLoose(input) {
+  const match = input.match(TOKEN_KEY_PATTERN);
+  return match ? match[1] : null;
+}
+
 function findSessionTokenInJson(input) {
   if (!input.startsWith("{") && !input.startsWith("[")) return null;
 
-  let parsed;
+  let parsed = null;
   try {
     parsed = JSON.parse(input);
   } catch {
-    throw new Error("粘贴的 JSON 格式不完整，请重新复制全部内容。");
+    const open = input.search(/[{[]/);
+    const close = Math.max(input.lastIndexOf("}"), input.lastIndexOf("]"));
+    if (open >= 0 && close > open) {
+      try { parsed = JSON.parse(input.slice(open, close + 1)); } catch { parsed = null; }
+    }
   }
 
-  const token = findSessionTokenDeep(parsed);
+  const token = parsed ? findSessionTokenDeep(parsed) : findSessionTokenLoose(input);
   if (!token) {
+    if (!parsed) {
+      throw new Error("粘贴的 JSON 无法解析，且其中找不到 sessionToken。请改为粘贴 Cookie「__Secure-next-auth.session-token」的值。");
+    }
     throw new Error("JSON 中没有 sessionToken 字段。请改为粘贴 Cookie「__Secure-next-auth.session-token」的值；accessToken 不是 Session 令牌。");
   }
 
@@ -77,6 +93,9 @@ export function parseSessionInput(rawInput, selectedName = "auto") {
 
   const jsonSessionToken = findSessionTokenInJson(input);
   const namedCookie = jsonSessionToken ? null : findSupportedCookie(input);
+  // Text that merely contains a session-token field (notes around a JSON,
+  // a seller's hand-written format) still yields the value.
+  const looseToken = jsonSessionToken || namedCookie ? null : findSessionTokenLoose(input);
   const chosenName = selectedName === "auto" ? null : selectedName;
 
   if (chosenName && !SUPPORTED_SESSION_COOKIE_NAMES.includes(chosenName)) {
@@ -84,9 +103,9 @@ export function parseSessionInput(rawInput, selectedName = "auto") {
   }
 
   let name = chosenName || namedCookie?.name || DEFAULT_SESSION_COOKIE_NAME;
-  let value = namedCookie?.value || jsonSessionToken || input;
+  let value = namedCookie?.value || jsonSessionToken || looseToken || input;
 
-  if (!namedCookie && input.includes("=")) {
+  if (!namedCookie && !looseToken && input.includes("=")) {
     const firstSeparator = input.indexOf("=");
     const possibleName = input.slice(0, firstSeparator).trim();
     const possibleValue = input.slice(firstSeparator + 1);
@@ -105,8 +124,15 @@ export function parseSessionInput(rawInput, selectedName = "auto") {
     throw new Error("令牌过短，请检查是否复制完整。");
   }
 
-  if (value.startsWith("eyJ") && value.split(".").length === 3) {
+  const segments = value.split(".");
+  // A JWT access token is header.payload.signature with every part filled;
+  // a truncated JWE prefix can also show 3 parts but with an empty middle.
+  if (value.startsWith("eyJ") && segments.length === 3 && segments.every(Boolean)) {
     throw new Error("这是 accessToken（JWT），不是 Session 令牌；请粘贴 Cookie「__Secure-next-auth.session-token」的值。");
+  }
+
+  if (value.startsWith("eyJ") && segments.length !== 5) {
+    throw new Error("令牌不完整：Session 令牌应为以点分隔的 5 段，请重新复制完整的 Cookie 值。");
   }
 
   if (/[^\x21-\x7E]/.test(value) || /[",;\\]/.test(value)) {

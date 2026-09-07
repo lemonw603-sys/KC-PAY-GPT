@@ -1655,3 +1655,8 @@
 - 修复 `6948b02`：提交改为普通确认框，确认字符串由预览结果自动带上（服务端仍校验行数一致，防止预览后换文件）；`POST /api/v1/admin/manual-cards/import` 从 step-up 改为登录写守卫，与 CDK 一致；前端把 confirmation_required / snapshot_invalid / source_unavailable / file_invalid 翻译成可操作提示。新增路由测试（手打错词仍 400、登录即可提交）。v1 非库全量 516/516。
 - 上号器：`token.mjs` 递归查找嵌套 JSON 里的 `sessionToken`/`session_token`；三段式 `eyJ` JWT 判定为 accessToken 并提示改贴 Cookie `__Secure-next-auth.session-token` 的值；JSON 缺字段的报错也改为指明该 Cookie。新增 2 条解析测试（4/4）。已同步到 BitBrowser 已安装副本 `BitExtensions/384ef55b-…`（与仓库 diff 为空），下次打开窗口生效。用户实际粘贴的内容与确切报错文案尚未拿到，不能断言就是这两种情况。
 - 发布：从 `6948b02` 构建，881 文件 manifest OK；备份 `/var/backups/pojia/pojia-20260907T012348Z.sql.gz.enc` 完整；仅重启 Web；回滚点 `20260907-admin-daily-b1c32f4`。复核：`/opt/pojia/current` 指向新 release；线上 `admin.js?v=25` 含新逻辑且无旧 prompt / `sensitiveApi` 导入调用；import 未登录 401；生产 `create-app.js` 第 507 行为 `adminWriteGuards`。数据库未写入。
+
+## 2026-09-07｜上号器报「JSON 格式不完整」：解析改为宽容抓取
+
+- 用户报错原文「粘贴的 JSON 格式不完整，请重新复制全部内容。」＝输入以 `{` 开头但 `JSON.parse` 失败；输入框无 `maxlength`，不是被截断。可能是卖家手写格式（无引号键/单引号）、JSON 前后带说明文字，或复制不完整。用户实际粘贴内容未见。
+- 修复（未部署，扩展只在本机 BitBrowser）：`token.mjs` 三级解析——严格 JSON → 截取首个 `{`/`[` 到末个 `}`/`]` 重试 → 正则直接抓 `sessionToken`/`session_token`/Cookie 名后的值；不以 `{` 开头但含这些键名的文本同样抓取；token 需为 5 段 JWE，截断到 token 中间报「令牌不完整」，三段实心 `eyJ` 判为 accessToken。测试 5/5，browser-mvp 全量除本条外无失败。已同步到 `BitExtensions/384ef55b-…`（diff 为空），下次打开窗口生效。

@@ -36,3 +36,17 @@ test('derived session loader rejects an accessToken JWT and explains what to pas
   const sessionToken = 'eyJhbGciOiJkaXIi.' + 'q'.repeat(60) + '.r.s.t';
   assert.equal(parseSessionInput(sessionToken).value, sessionToken);
 });
+
+test('derived session loader recovers the token from non-strict or partially copied JSON', () => {
+  const token = 'eyJhbGciOiJkaXIi..' + 'v'.repeat(60) + '.w.x';
+  // Explanatory text around the JSON, as sellers often paste it.
+  assert.equal(parseSessionInput(`账号信息：{"sessionToken":"${token}","accessToken":"eyJ.a.b"} 请勿外传`).value, token);
+  // Unquoted key and single quotes: JSON.parse fails, the loose scan still finds the value.
+  assert.equal(parseSessionInput(`{sessionToken: '${token}', user: {id: 'user-1'}}`).value, token);
+  // Copy cut off after the token: the token itself is intact, so it is accepted.
+  assert.equal(parseSessionInput(`{"user":{"id":"user-1"},"sessionToken":"${token}","expi`).value, token);
+  // Copy cut off inside the token: rejected with an "incomplete" hint instead of a bad cookie.
+  assert.throws(() => parseSessionInput(`{"sessionToken":"${token.slice(0, 40)}`), /不完整/);
+  // Unparseable text without any token key: explains what to paste.
+  assert.throws(() => parseSessionInput('{"user":{"id":"user-1"},"accessTo'), /找不到 sessionToken/);
+});
