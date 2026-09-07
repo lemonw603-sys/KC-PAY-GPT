@@ -90,7 +90,7 @@ test('labels local stock refresh separately from provider card synchronization',
 test('admin overview does not describe disabled automatic card opening as enabled', async () => {
   const html = await readFile(new URL('../public/admin/index.html', import.meta.url), 'utf8');
   const script = await readFile(new URL('../public/admin/assets/admin.js', import.meta.url), 'utf8');
-  assert.match(html, /admin\.js\?v=24/);
+  assert.match(html, /admin\.js\?v=25/);
   assert.match(script, /自动开卡已关闭；当前无合格卡时需要人工处理/);
   assert.match(script, /自动开卡已关闭；当前低于库存线/);
   assert.match(script, /cardSyncReviewRequired/);
@@ -995,5 +995,58 @@ test('closes an open internal alert through the guarded admin route without step
     });
     assert.equal(missing.status, 404);
     assert.deepEqual(closed, ['alert-1', 'alert-9']);
+  });
+});
+
+test('backup card snapshot import commits with the admin login alone and echoes the preview confirmation', async () => {
+  const adminAuth = createAdminSessionAuth({
+    passwordHash: await hashAdminPassword('fixture admin password', { salt: Buffer.alloc(16, 7) }),
+    sessionSecret: Buffer.alloc(32, 8),
+    secureCookies: false
+  });
+  let committed = null;
+  const app = createApp({
+    adminAuth,
+    previewManualCardImport: async () => ({
+      sourceName: '备用卡台 A', rowCount: 2, confirmation: '确认提交 2 张卡的完整快照', rows: [], commitAllowed: true
+    }),
+    commitManualCardImport: async (input) => {
+      if (input.confirmation !== '确认提交 2 张卡的完整快照') throw new PublicApiError('import confirmation mismatch', { code: 'MANUAL_CARD_IMPORT_CONFIRMATION_REQUIRED', status: 400 });
+      committed = input;
+      return { batchId: 'batch-fixture', rowCount: 2 };
+    }
+  });
+  await withServer(app, async (baseUrl) => {
+    const login = await fetch(`${baseUrl}/api/v1/admin/session`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: 'fixture admin password' })
+    });
+    const cookie = login.headers.get('set-cookie').split(';')[0];
+    const body = { providerAccountId: 'backup-a', filename: 'cards.xlsx', fileBase64: 'AAAA' };
+    const preview = await fetch(`${baseUrl}/api/v1/admin/manual-cards/preview`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cookie, Origin: baseUrl },
+      body: JSON.stringify(body)
+    });
+    assert.equal(preview.status, 200);
+    const { confirmation } = await preview.json();
+
+    // A mistyped word is still rejected server-side with a specific code the UI can explain.
+    const mismatch = await fetch(`${baseUrl}/api/v1/admin/manual-cards/import`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cookie, Origin: baseUrl },
+      body: JSON.stringify({ ...body, confirmation: '确认提交2张卡的完整快照' })
+    });
+    assert.equal(mismatch.status, 400);
+    assert.deepEqual(await mismatch.json(), { error: 'manual_card_import_confirmation_required' });
+    assert.equal(committed, null);
+
+    // No step-up (password) round trip: the login session authorizes the commit.
+    const imported = await fetch(`${baseUrl}/api/v1/admin/manual-cards/import`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cookie, Origin: baseUrl },
+      body: JSON.stringify({ ...body, confirmation })
+    });
+    assert.equal(imported.status, 200);
+    assert.deepEqual(await imported.json(), { batchId: 'batch-fixture', rowCount: 2 });
+    assert.equal(committed.confirmation, '确认提交 2 张卡的完整快照');
+    assert.equal(committed.requestedBy, 'admin');
   });
 });

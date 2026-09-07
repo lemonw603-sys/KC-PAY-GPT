@@ -2043,6 +2043,16 @@ elements.copyCdks.addEventListener('click', async () => {
     showNotice('自动复制失败，已选中卡密，请手动复制。');
   }
 });
+function manualCardImportErrorMessage(error) {
+  const messages = {
+    manual_card_import_confirmation_required: '预览已过期或文件已变化，库存没有改变；请重新选择文件预览后再提交。',
+    manual_card_snapshot_invalid: '文件中有结构错误的行，库存没有改变；请修正 Excel 后重新导入。',
+    manual_card_source_unavailable: '该备用卡台不可用，库存没有改变。',
+    manual_card_file_invalid: '文件解析失败，请确认是备用卡台导出的 Excel。',
+    admin_auth_required: '登录已过期，请重新登录后再导入。'
+  };
+  return messages[error?.message] || `备用卡导入失败（${error?.message || '未知原因'}），库存没有改变。`;
+}
 elements.manualCardImportForm?.addEventListener('submit', async (event) => {
   event.preventDefault();
   const file = elements.manualCardImportFile?.files?.[0];
@@ -2054,11 +2064,13 @@ elements.manualCardImportForm?.addEventListener('submit', async (event) => {
     const preview = await api('/api/v1/admin/manual-cards/preview', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ providerAccountId, filename: file.name, fileBase64: btoa(binary) }) });
     elements.manualCardImportPreview.innerHTML = `<p>${escapeHtml(preview.sourceName)} · 共 ${preview.rowCount} 行：新增 ${preview.insertCount}，更新 ${preview.updateCount}，业务不可用 ${preview.unavailableCount}，快照缺失 ${preview.missingCount}，活动风险 ${preview.activeRiskCount}，跨来源冲突 ${preview.conflictCount}，结构错误 ${preview.rejectedCount}</p>${preview.rows.map((row) => `<div><span><strong>序列号 ${escapeHtml(row.sequence)}… · 尾号 ${escapeHtml(row.last4 || '—')}</strong><small>余额 $${escapeHtml(row.balance || '—')} · ${escapeHtml(row.state || '—')}${row.errors.length ? ` · ${escapeHtml(row.errors.join('、'))}` : ''}</small></span><em>${escapeHtml(row.status)}</em></div>`).join('')}<button class="danger-button" type="button" id="commit-manual-card-import" ${preview.commitAllowed ? '' : 'disabled'}>提交完整快照（${preview.rowCount} 张）</button>`;
     elements.manualCardImportPreview.querySelector('#commit-manual-card-import')?.addEventListener('click', async () => {
-      const confirmation = window.prompt(`请输入确认词：${preview.confirmation}`)?.trim(); if (!confirmation) return;
-      try { await sensitiveApi('/api/v1/admin/manual-cards/import', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ providerAccountId, filename: file.name, fileBase64: btoa(binary), confirmation }) }); showNotice('完整快照已原子更新；其他卡台未受影响。', 'success'); await Promise.all([loadProviderRoutes(), loadStock()]); }
-      catch { showNotice('备用卡导入失败，库存没有改变。'); }
+      if (!window.confirm(`提交「${preview.sourceName}」的完整快照（${preview.rowCount} 张）？\n该卡台库存将整体替换为本文件内容，其他卡台不受影响。`)) return;
+      // The confirmation string comes from the preview itself: it proves the
+      // committed file still has the row count the operator just reviewed.
+      try { await api('/api/v1/admin/manual-cards/import', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ providerAccountId, filename: file.name, fileBase64: btoa(binary), confirmation: preview.confirmation }) }); showNotice('完整快照已原子更新；其他卡台未受影响。', 'success'); await Promise.all([loadProviderRoutes(), loadStock()]); }
+      catch (error) { showNotice(manualCardImportErrorMessage(error)); }
     });
-  } catch { showNotice('文件解析失败，请确认是备用卡台导出的 Excel。'); }
+  } catch (error) { showNotice(manualCardImportErrorMessage(error)); }
 });
 document.addEventListener('click', (event) => {
   const methodButton = event.target.closest('.default-recharge-method');

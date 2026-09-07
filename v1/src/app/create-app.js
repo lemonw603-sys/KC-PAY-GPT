@@ -504,7 +504,7 @@ export function createApp({
     });
   }
   if (typeof commitManualCardImport === 'function') {
-    app.post('/api/v1/admin/manual-cards/import', ...sensitiveAdminGuards, async (req, res) => {
+    app.post('/api/v1/admin/manual-cards/import', ...adminWriteGuards, async (req, res) => {
       try { return res.json(await commitManualCardImport({ ...(req.body || {}), requestedBy: req.admin?.id || 'admin' })); }
       catch (error) { if (error instanceof PublicApiError) return res.status(error.status || 400).json({ error: error.code.toLowerCase() }); throw error; }
     });
