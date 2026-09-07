@@ -161,3 +161,21 @@ test('cancellation keeps a waiting-for-session card locked when funds are not pr
   );
   assert.equal(pool.queries.some(({ sql }) => /UPDATE cards/.test(sql)), false);
 });
+
+test('cancellation closes a cardless waiting-for-session order and hands its CDK back', async () => {
+  const pool = fakePool([
+    [[eligibleRow({ status: 'WAITING_FOR_SESSION', card_id: null, submit_task_id: null, submit_task_status: null })], []],
+    [[], []],                 // no zzshu create_direct call
+    [{ affectedRows: 1 }, []], // tasks -> DEAD
+    [{ affectedRows: 1 }, []], // orders -> CLOSED
+    [{ affectedRows: 1 }, []], // order_events
+  ]);
+  const result = await createOrderCancellationService({ pool })('PJV1-DEMO', { confirmation: '取消订单 PJV1-DEMO', reason: 'stale' });
+  assert.deepEqual(result, { publicNo: 'PJV1-DEMO', status: 'CLOSED', cardReleased: false, cardInventoryStatus: null, replayed: false });
+  assert.equal(pool.queries.some(({ sql }) => /UPDATE cdks SET status = 'AVAILABLE'/.test(sql)), true);
+  assert.equal(pool.queries.some(({ sql }) => /UPDATE cards/.test(sql)), false, 'no card to release');
+  assert.equal(pool.queries.some(({ sql }) => /status = 'CLOSED'/.test(sql) && /WAITING_FOR_SESSION/.test(sql)), true);
+  // Any funds or provider trace still refuses.
+  const risky = fakePool([[[eligibleRow({ status: 'WAITING_FOR_SESSION', card_id: null, submit_task_id: null, unsafe_attempt_count: 1 })], []]]);
+  await assert.rejects(() => createOrderCancellationService({ pool: risky })('PJV1-DEMO', { confirmation: '取消订单 PJV1-DEMO', reason: 'stale' }), (e) => e.code === 'ORDER_CANCELLATION_SUBMISSION_RISK');
+});

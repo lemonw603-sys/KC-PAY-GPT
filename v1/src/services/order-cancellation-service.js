@@ -282,6 +282,50 @@ export function createOrderCancellationService({ pool }) {
       if (!waitingForReplacement && order.status !== 'CARD_READY') {
         throw new OrderCancellationError('Order is not awaiting recharge', 'ORDER_CANCELLATION_NOT_ELIGIBLE');
       }
+      if (waitingForReplacement && !order.card_id) {
+        // A Session-waiting order that never got a card holds nothing but its
+        // CDK: no card, no funds attempt, no provider call. Closing it only
+        // kills its tasks and hands the CDK back.
+        if (Number(order.unsafe_attempt_count || 0) !== 0 || Number(order.unsafe_provider_call_count || 0) !== 0
+          || order.recharge_order_no || order.recharge_card_key) {
+          throw new OrderCancellationError('Recharge may have started', 'ORDER_CANCELLATION_SUBMISSION_RISK');
+        }
+        const [cardlessCalls] = await connection.query(
+          `SELECT id FROM provider_calls
+           WHERE order_id = ? AND provider = 'zzshu' AND operation = 'create_direct'
+             AND outcome <> 'DEFINITE_FAILURE'
+           LIMIT 1 FOR UPDATE`, [order.id]
+        );
+        if (cardlessCalls.length) {
+          throw new OrderCancellationError('Recharge provider was already called', 'ORDER_CANCELLATION_SUBMISSION_RISK');
+        }
+        await connection.query(
+          `UPDATE tasks SET status = 'DEAD', leased_until = NULL, leased_by = NULL,
+             last_error_code = 'CANCELLED_BY_ADMIN', last_error_message = ?,
+             updated_at = CURRENT_TIMESTAMP(3)
+           WHERE order_id = ? AND status = 'PENDING'`, [reason, order.id]
+        );
+        await returnCdkForOrderInTransaction(connection, {
+          orderId: order.id, reason: `order cancelled before payment: ${reason}`, actorType: 'ADMIN', actorId: 'admin',
+        });
+        const [closedCardless] = await connection.query(
+          `UPDATE orders SET status = 'CLOSED', failure_code = 'CANCELLED_PRE_SUBMISSION',
+             failure_reason = ?, version = version + 1, finished_at = CURRENT_TIMESTAMP(3),
+             updated_at = CURRENT_TIMESTAMP(3)
+           WHERE id = ? AND status = 'WAITING_FOR_SESSION'`, [reason, order.id]
+        );
+        if (Number(closedCardless.affectedRows) !== 1) {
+          throw new OrderCancellationError('Order changed concurrently', 'ORDER_CANCELLATION_ORDER_CHANGED');
+        }
+        await connection.query(
+          `INSERT INTO order_events
+           (order_id, from_status, to_status, actor_type, actor_id, reason, metadata_json)
+           VALUES (?, 'WAITING_FOR_SESSION', 'CLOSED', 'ADMIN', 'admin', ?, ?)`,
+          [order.id, 'cardless Session-waiting order closed; no card, no funds, no provider call', JSON.stringify({ reason })]
+        );
+        await connection.commit();
+        return { publicNo: order.public_no, status: 'CLOSED', cardReleased: false, cardInventoryStatus: null, replayed: false };
+      }
       if (!order.card_id || !order.submit_task_id) {
         throw new OrderCancellationError('Order state is incomplete', 'ORDER_CANCELLATION_REVIEW_REQUIRED');
       }
