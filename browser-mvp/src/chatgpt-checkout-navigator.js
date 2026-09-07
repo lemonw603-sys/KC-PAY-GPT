@@ -217,9 +217,28 @@ async function planChangeDialogVisible(page, contract) {
   try { return (await visibleCount(planChangeDialog(page, contract))) >= 1; } catch { return false; }
 }
 
-async function targetReady(page, contract, expect) {
-  if (expect === 'plan-change') return planChangeDialogVisible(page, contract);
+async function targetReady(page, contract, expect, popups = null) {
+  if (expect === 'plan-change') {
+    if (await planChangeDialogVisible(page, contract)) return true;
+    // An account without an active subscription gets a fresh Pro Checkout (often
+    // in a new tab) instead of the plan-change dialog. That is a stop point too.
+    if (popups && popups.some((popup) => popup.url().startsWith(contract.checkoutUrlPrefix))) return true;
+    return page.url().startsWith(contract.checkoutUrlPrefix);
+  }
   return checkoutReady(page, contract);
+}
+
+/** Read-only facts about a Pro Checkout that opened instead of the plan-change dialog. */
+async function readCheckoutInsteadOfDialog(target, contract) {
+  await target.waitForLoadState('domcontentloaded', { timeout: 10_000 }).catch(() => undefined);
+  const labels = await target.locator('button:visible').allInnerTexts().catch(() => []);
+  const cleaned = labels.map((label) => label.replace(/\s+/g, ' ').trim()).filter(Boolean);
+  return {
+    urlDigest: digest(target.url()),
+    tierLabels: cleaned.filter((label) => AMOUNT_PATTERN.test(label)).slice(0, 4),
+    subscribePresent: cleaned.some((label) => /^(subscribe|订阅|立即订阅)$/i.test(label)),
+    payButtonPresent: cleaned.some((label) => /^(pay now|立即支付|立即付款)$/i.test(label)),
+  };
 }
 
 const AMOUNT_PATTERN = /[-−]?\s?(?:₱|PHP|\$|USD|€|£)\s?[\d,]+(?:\.\d{2})?/;
@@ -308,8 +327,14 @@ export async function navigateToChatGPTCheckout(page, contract = CHATGPT_PLUS_CH
   if (!page.url().startsWith(contract.homeUrlPrefix)) throw new ContractError('checkout navigation start URL drift');
 
   const actions = [];
+  // plan-change mode: a fresh Checkout may open in a new tab on the upgrade click.
+  const popups = [];
+  const context = expect === 'plan-change' && typeof page.context === 'function' ? page.context() : null;
+  const onPopup = (popup) => popups.push(popup);
+  if (context?.on) context.on('page', onPopup);
+  try {
   await assertNoSessionExpiredDialog(page);
-  if (!await targetReady(page, contract, expect)) {
+  if (!await targetReady(page, contract, expect, popups)) {
     // A resumed run may already sit on the open plan picker; the header
     // control behind the modal is then covered and must not be clicked.
     const pickerAlreadyOpen = await pricingDialogVisible(page, contract);
@@ -339,14 +364,14 @@ export async function navigateToChatGPTCheckout(page, contract = CHATGPT_PLUS_CH
       await safeClick(openPricing, 'open pricing control', assertContinue, timeoutMs);
       actions.push('pricing-opened');
       await waitForState(page, async () => {
-        if (await targetReady(page, contract, expect)) return 'target';
+        if (await targetReady(page, contract, expect, popups)) return 'target';
         return (await pricingDialogVisible(page, contract)) ? 'pricing' : null;
       }, { timeoutMs, label: 'pricing dialog' });
     }
 
     let questionnaireRaceRecoveries = 0;
     for (let attempt = 1; attempt <= contract.maxUpgradeAttempts; attempt += 1) {
-      if (await targetReady(page, contract, expect)) break;
+      if (await targetReady(page, contract, expect, popups)) break;
       const preExistingQuestionnaire = await uniqueVisibleButton(
         page,
         contract.questionnaireSkipLabels,
@@ -402,7 +427,7 @@ export async function navigateToChatGPTCheckout(page, contract = CHATGPT_PLUS_CH
       let state;
       try {
         state = await waitForState(page, async () => {
-          if (await targetReady(page, contract, expect)) return 'target';
+          if (await targetReady(page, contract, expect, popups)) return 'target';
           const skip = await uniqueVisibleButton(page, contract.questionnaireSkipLabels, 'questionnaire skip control', { optional: true });
           return skip ? 'questionnaire' : null;
         }, { timeoutMs, label: `${expect} or questionnaire transition` });
@@ -431,17 +456,31 @@ export async function navigateToChatGPTCheckout(page, contract = CHATGPT_PLUS_CH
     }
   }
 
-  await waitForState(page, () => targetReady(page, contract, expect), { timeoutMs, label: `${expect} readiness` });
+  await waitForState(page, () => targetReady(page, contract, expect, popups), { timeoutMs, label: `${expect} readiness` });
   await assertContinue();
   if (expect === 'plan-change') {
+    if (await planChangeDialogVisible(page, contract)) {
+      return {
+        plan: planSpec.plan,
+        state: 'plan-change',
+        plusEntryPresent: true,
+        checkoutCreated: false,
+        questionnaireSkipped: actions.includes('questionnaire-skipped'),
+        actions,
+        planChange: await readPlanChangeDialog(page, contract),
+        submitCalls: 0,
+      };
+    }
+    const popup = popups.find((candidate) => candidate.url().startsWith(contract.checkoutUrlPrefix));
+    const target = popup || page;
     return {
       plan: planSpec.plan,
-      state: 'plan-change',
+      state: popup ? 'checkout-popup' : 'checkout-same-page',
       plusEntryPresent: true,
-      checkoutCreated: false,
+      checkoutCreated: true,
       questionnaireSkipped: actions.includes('questionnaire-skipped'),
       actions,
-      planChange: await readPlanChangeDialog(page, contract),
+      checkoutInsteadOfDialog: await readCheckoutInsteadOfDialog(target, contract),
       submitCalls: 0,
     };
   }
@@ -455,6 +494,9 @@ export async function navigateToChatGPTCheckout(page, contract = CHATGPT_PLUS_CH
     checkoutUrlDigest: digest(page.url()),
     submitCalls: 0,
   };
+  } finally {
+    if (context?.off) context.off('page', onPopup);
+  }
 }
 
 /** Plus-only entry kept for existing callers and tests. */

@@ -203,6 +203,14 @@ export class ChatGptPostPaymentVerifier {
     const navigation = await navigateToChatGPTCheckout(this.page, this.navigationContract, {
       plan: this.upgradePlan, expect: 'plan-change', timeoutMs: this.navigationTimeoutMs,
     });
+    if (navigation.state !== 'plan-change') {
+      // No active Plus on the account (or ChatGPT chose a fresh Checkout): that is
+      // a hand-off, never a click on Subscribe.
+      return {
+        ok: false, reasonCode: 'UPGRADE_OPENED_CHECKOUT_NOT_DIALOG', plan: navigation.plan,
+        actions: navigation.actions, checkout: navigation.checkoutInsteadOfDialog || null, recovery: this.recoveryReport(),
+      };
+    }
     return {
       ok: true, plan: navigation.plan, actions: navigation.actions,
       planChange: navigation.planChange, recovery: this.recoveryReport(),

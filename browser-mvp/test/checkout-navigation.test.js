@@ -404,3 +404,39 @@ test('navigator can stop on the Confirm plan changes dialog of a subscribed acco
   } finally { await browser.close(); server.close(); await once(server, 'close'); }
 });
 
+test('plan-change navigation recognises a fresh Pro Checkout opening in a new tab and stops without touching Subscribe', async () => {
+  const picker = (base) => `<title>ChatGPT Plans</title>
+    <section role="dialog">
+      <button type="button" disabled>Your current plan</button>
+      <button type="button" aria-pressed="true">5x</button>
+      <button type="button" aria-pressed="false" onclick="document.body.dataset.tier='20x'">20x</button>
+      <button type="button" onclick="window.open('${base}checkout/openai_llc/oaics_fixture', '_blank')">Upgrade to Pro</button>
+    </section>`;
+  const checkout = `<title>ChatGPT</title><main data-testid="checkout-page-content">
+    <button type="button">5x more usage than Plus ₱6,490/month</button><button type="button">20x more usage than Plus ₱9,990/month</button>
+    <button type="button" onclick="document.body.dataset.subscribed='yes'">Subscribe</button></main>`;
+  let base;
+  const server = createServer((request, response) => {
+    response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+    response.end(request.url.startsWith('/checkout/') ? checkout : picker(base));
+  });
+  server.listen(0, '127.0.0.1'); await once(server, 'listening');
+  base = `http://127.0.0.1:${server.address().port}/`;
+  const { navigateToChatGPTCheckout } = await import('../src/chatgpt-checkout-navigator.js');
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    await page.goto(`${base}#pricing`, { waitUntil: 'domcontentloaded' });
+    const contract = { ...CHATGPT_PLUS_CHECKOUT_NAVIGATION_CONTRACT, homeUrlPrefix: base, checkoutUrlPrefix: `${base}checkout/` };
+    const result = await navigateToChatGPTCheckout(page, contract, { timeoutMs: 5_000, plan: 'pro_20x', expect: 'plan-change' });
+    assert.equal(result.state, 'checkout-popup');
+    assert.deepEqual(result.actions, ['pricing-already-open', 'tier-selected:20x', 'upgrade-requested']);
+    assert.deepEqual(result.checkoutInsteadOfDialog.tierLabels, ['5x more usage than Plus ₱6,490/month', '20x more usage than Plus ₱9,990/month']);
+    assert.equal(result.checkoutInsteadOfDialog.subscribePresent, true);
+    assert.equal(result.checkoutInsteadOfDialog.payButtonPresent, false);
+    const popup = context.pages().find((candidate) => candidate.url().includes('/checkout/'));
+    assert.equal(await popup.evaluate(() => document.body.dataset.subscribed), undefined);
+  } finally { await browser.close(); server.close(); await once(server, 'close'); }
+});
+

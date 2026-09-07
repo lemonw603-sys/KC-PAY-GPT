@@ -274,7 +274,7 @@ export class BrowserPaymentExecutor {
                 stoppedBefore: 'PAY_NOW', recovery: opened.recovery || null };
             } else {
               upgradeReason = opened?.reasonCode || 'UPGRADE_DIALOG_UNAVAILABLE';
-              upgradeDialog = { recovery: opened?.recovery || null };
+              upgradeDialog = { plan: opened?.plan || null, actions: opened?.actions || [], checkout: opened?.checkout || null, recovery: opened?.recovery || null };
             }
           } catch (error) {
             upgradeReason = error?.code || 'UPGRADE_DIALOG_FAILED';
