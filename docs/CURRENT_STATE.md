@@ -4,10 +4,10 @@
 
 | 项目 | 当前值 | 核对时间（UTC） | 证据方式 |
 |---|---|---|---|
-| 生产 release | `/opt/pojia/releases/20260907-import-confirm-6948b02`（commit `6948b02`，881 文件 manifest OK） | 2026-09-07 01:24 | `readlink -f /opt/pojia/current` |
-| 回滚点 | `/opt/pojia/releases/20260907-admin-daily-b1c32f4` | 同上 | 部署记录 |
-| 最新数据库备份 | `/var/backups/pojia/pojia-20260907T012348Z.sql.gz.enc`，完整性 OK | 01:23 | `pojia-ops backup/verify` |
-| pojia-web | active（01:24 随 release 切换重启） | 01:24 | systemctl |
+| 生产 release | `/opt/pojia/releases/20260907-min-balance-ed40c94`（commit `ed40c94`，891 文件 manifest OK） | 2026-09-07 06:35 | `readlink -f /opt/pojia/current` |
+| 回滚点 | `/opt/pojia/releases/20260907-import-confirm-6948b02` | 同上 | 部署记录 |
+| 最新数据库备份 | `/var/backups/pojia/pojia-20260907T063400Z.sql.gz.enc`，完整性 OK | 06:34 | `pojia-ops backup/verify` |
+| pojia-web | active（06:35 随 release 切换重启） | 06:35 | systemctl |
 | pojia-worker（API） | inactive（09-06 03:46 UTC 人为 SIGTERM，防历史任务抢卡） | 16:35 | systemctl + journal |
 | pojia-browser-worker | inactive / disabled | 16:35 | systemctl |
 | pojia-card-funding.timer | active | 16:35 | systemctl |
@@ -25,7 +25,7 @@
 | card_auto_replenishment_enabled | false | 13:31 | app_settings |
 | card_balance_recharge_enabled | true | 13:31 | app_settings |
 | card_max_successful_payments | 3 | 13:31 | app_settings |
-| default_open_card_amount / minimum | 16 / 16（全局值，待改为按产品） | 13:31 | app_settings |
+| default_open_card_amount / minimum | 16 / 16（全局值，待改为按产品；最低余额自 `ed40c94` 起可在库存页设置，只影响分配资格） | 06:36 | app_settings |
 | Worker 进程写权限 | worker：`PROVIDER_RECHARGE_WRITES_ENABLED=true`（drop-in），通用/卡片写 false；funding 单元：`PROVIDER_CARD_WRITES_ENABLED=true`；env 文件 `PROVIDER_READS_ENABLED=true` | 16:35 | `systemctl cat` |
 | HNSKJ 卡 | `5980` $16 inventory AVAILABLE，但分配资格要求交易同步 15 分钟内（`last_transaction_synced_at` 09-06 22:00 UTC，HNSKJ 故障期间不再刷新）→ **当前不可分配**；其余 5 张 ASSIGNED 于历史订单且 ≤ $0.01；5 张 DEPLETED | 09-07 02:30 | cards + `card-inventory-eligibility.js` 规则 |
 | 备用卡 A | `5501` $8.87 DEPLETED（09-06 付款 143.13 后；用量 1/3，无占用、无退款、无覆盖项，只差余额 ≥ 最低 16）；`0237` $0 AVAILABLE；可分配 0。**全系统当前可分配卡为 0** | 09-07 02:30 | cards / 资格规则各分项查询 |
@@ -35,7 +35,7 @@
 | 最近真实单 | `PJV1-RCbAiI0IkGMy-hCBgMSn`：自动化到 Checkout 未填表 → 运营者手工付 Plus + 20X（143.13）→ 09-06 16:40 以「人工付款已完成」收口为 RECHARGE_SUCCESS；`PAYMENT_SUBMIT=0`，证据 `MANUAL_PAYMENT_CONFIRMED` | 16:41 | orders / browser_runs / browser_operations |
 | 告警 | OPEN 10：8 条 09-01 起的「卡台余额变化」info 噪音（后台不显示）、1 条 CARD_STOCK_LOW（阈值 0，修复后不再新生成）、1 条 ORDER_WAITING_FOR_CARD；首页已可关闭 | 09-06 13:31 | operator_alerts |
 | 本机 | BitBrowser Local API + mihomo（launchd 单实例）；SSH 隧道 13306→3306 常驻；LIVE Worker 无常驻进程 | 13:40 | pgrep |
-| 已上线（本次 release） | `6948b02` 备用卡导入：提交改普通确认框、确认字符串由预览自动带上、路由从 step-up 改登录写守卫、失败提示翻译错误码（`admin.js?v=25`）。此前 release 内容（`45f953c`、`96008d4`）保持。公网复核：线上 `admin.js?v=25` 含新逻辑、无手打确认词与 `sensitiveApi` 导入调用；import 未登录 401 | 01:26 | curl + 生产文件 grep |
+| 已上线（本次 release） | `ed40c94` 最低所需卡余额后台可设（`POST /api/v1/admin/card-stock/minimum-balance`，库存页表单，`admin.js?v=26`）。此前 release 内容保持。公网复核：未登录 401、线上 `admin.js?v=26` 含新接口、plus 200、Web 重启无错误 | 06:36 | curl + 生产文件 grep |
 | 已知未修 | 本机绕过连接池直连写入造成该单 attempt/dispatch/账本 `created_at` 偏后 8 小时；后台控制事务并发时可能 `ER_LOCK_DEADLOCK`（失败关闭，需重试） | 09-07 | HANDOFF_LOG |
 
 ## 事实表之外

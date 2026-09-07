@@ -2,7 +2,7 @@
 
 只回答四件事：目标、当前生产事实、已完成/未完成、唯一执行顺序。过程记录在 `docs/HANDOFF_LOG.md`，决策在 `docs/DECISIONS.md`，改造基线在 `docs/PRODUCT_SIMPLIFICATION_DISCUSSION.md` 末尾「接班实施基线」。2026-09-07 之前的旧版地图原文：`docs/archive/2026-09/PROJECT_MAP_snapshot_2026-09-07.md`。
 
-最后核对：2026-09-07 01:26 UTC（部署后公网、SSH、生产文件复核）。
+最后核对：2026-09-07 06:36 UTC（部署后公网、SSH、生产文件复核）。
 
 ## 1. 目标与不变原则
 
@@ -17,11 +17,11 @@
 
 客户提交 CDK + Session → 建单并冻结路线与卡台 → 卡资格与余额 → 唯一 attempt / 资金栅栏 → API 或 Browser 执行 → 确认 Plus（20X 再升级）→ 取消续费 → 账本、对账、通知。
 
-## 3. 当前生产事实（2026-09-07 01:26 UTC）
+## 3. 当前生产事实（2026-09-07 06:36 UTC）
 
 | 项目 | 事实 |
 |---|---|
-| release | `/opt/pojia/releases/20260907-import-confirm-6948b02`（09-07 01:24 UTC）；回滚点 `20260907-admin-daily-b1c32f4` |
+| release | `/opt/pojia/releases/20260907-min-balance-ed40c94`（09-07 06:35 UTC）；回滚点 `20260907-import-confirm-6948b02` |
 | 服务 | Web active；API Worker inactive（09-06 03:46 UTC 人为停止）；Browser Worker inactive/disabled；补余额与读同步 timer active；旧自动开卡 timer disabled |
 | 开关 | 接单 true；自动派发 true；默认路线 Browser；Browser 卡台 = 备用卡台 A；Browser 付款开关 false；自动开卡 false；自动补余额 true；每卡成功次数 3 |
 | 卡 | 可分配 0：HNSKJ `5980` $16 但交易同步已过 15 分钟（卡台故障）不合格；备用 A `5501` $8.87 低于最低 16、`0237` $0 |
@@ -49,7 +49,7 @@
 6. 20X 启用第二付款阶段。
 7. 删除零使用接口与旧表，删前查调用链。
 
-穿插不动结构的小修：告警可关闭；CDK 去密码、去 10 分钟清空；备用卡导入去密码去手打确认词并显示真实失败原因；隐藏死控件；客户页等待承诺按真实队列与开关计算；Session 密文交付后清理；首页与待办列表适配手机。
+穿插不动结构的小修：告警可关闭；CDK 去密码、去 10 分钟清空；备用卡导入去密码去手打确认词并显示真实失败原因；最低所需卡余额可在库存页设置；隐藏死控件；客户页等待承诺按真实队列与开关计算；Session 密文交付后清理；首页与待办列表适配手机。
 
 ## 6. 明确不做
 

@@ -1707,3 +1707,10 @@
 - 测试：配置 1 条、组合 2 条、集成 2 条、executor 1 条；browser-mvp 全量 182/173/0/9。
 - 下一步：用测试账号建一笔测试订单（客户页提交 CDK + Session），本机 `--once` 演练；通过后翻付款开关做一笔真实付款；之后按 §5.1 删旧编排。**可审版本：本节提交。**
 - 新增 `browser-mvp/scripts/run-live-rehearsal.sh`：`check` 只验配置（付款开关必须 false）、`once <orderId>` 跑演练；密钥从 `/etc/pojia/runtime.env`、`browser-readonly.env` 经 SSH 取入进程环境，DATABASE_URL 改指隧道，WAL/租约文件放 `~/Library/Application Support/pojia-browser-live/`。本机隧道当时已断，重新拉起后 `check` 返回 READY（迁移 048、数据库付款开关 false、执行器 profile writes false、Lane 3 Profile 在列）。
+
+## 2026-09-07｜卡台双故障下的演练路径：最低余额门槛后台可设，发布 release 20260907-min-balance-ed40c94
+
+- 现场：用户确认 HNSKJ 卡台服务器故障、备用卡台暂无资金。核对分配资格规则（`card-inventory-eligibility.js`）：非手工导入卡要求 `last_transaction_synced_at` 在 15 分钟内 → `5980` 在故障期间不合格；手工卡只要余额 ≥ 最低门槛（16），`5501` 余额 8.87、用量 1/3、无占用/退款/覆盖项，只差余额；资格 SQL 允许 inventory DEPLETED。全系统可分配 0，事实表已修正。
+- 演练不付款，不需要卡上有钱。方案：临时把最低门槛降到 8 让 `5501` 具备资格 → 建测试单 → 演练 → 恢复 16。后台原本没有修改该门槛的入口，只展示，故新增：`setMinimumRequiredCardBalance`（0–1000，两位小数）、路由 `POST /api/v1/admin/card-stock/minimum-balance`（登录写守卫）、库存页表单、概览返回 `minimumRequiredCardBalance`。v1 非库全量 517/517。
+- 发布：从 `ed40c94` 构建，891 文件 manifest OK；备份 `pojia-20260907T063400Z` 完整；仅重启 Web；回滚点 `20260907-import-confirm-6948b02`。复核：未登录 401，线上 `admin.js?v=26` 含 `card-stock/minimum-balance`，plus 200，Web 日志无错误。数据库设置未改（仍 16），改动由用户在后台操作。
+- 风险说明：门槛降低期间，任何新订单都可能分到余额不足的卡；当前付款开关为 false、API Worker 停止，最坏是该单在真实付款时被拒付而失败，不会损失资金。两单旧的等 Session 订单若恰好补 Session 会先于测试单拿卡。
