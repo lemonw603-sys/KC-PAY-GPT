@@ -104,8 +104,8 @@ test('admin refresh feedback and inset dropdown arrows remain visible', () => {
   const html = fs.readFileSync(path.join(directory, 'admin', 'index.html'), 'utf8');
   const script = fs.readFileSync(path.join(directory, 'admin', 'assets', 'admin.js'), 'utf8');
   const styles = fs.readFileSync(path.join(directory, 'admin', 'assets', 'admin.css'), 'utf8');
-  assert.match(html, /admin\.css\?v=24/);
-  assert.match(html, /admin\.js\?v=31/);
+  assert.match(html, /admin\.css\?v=25/);
+  assert.match(html, /admin\.js\?v=32/);
   assert.match(script, /button\.textContent = '刷新中…'/);
   assert.match(script, /showNotice\('刷新完成。', 'success'\)/);
   assert.match(script, /showNotice\('刷新失败，请稍后重试。'\)/);
@@ -131,7 +131,7 @@ test('admin refresh feedback and inset dropdown arrows remain visible', () => {
 test('admin Browser view exposes operational metadata but no authority recovery field', () => {
   const html = fs.readFileSync(path.join(directory, 'admin', 'index.html'), 'utf8');
   const script = fs.readFileSync(path.join(directory, 'admin', 'assets', 'admin.js'), 'utf8');
-  assert.match(html, /Browser 执行/);
+  assert.match(html, /data-view="diagnostics"/);
   assert.match(html, /authority 不可见/);
   assert.match(script, /\/api\/v1\/admin\/browser\/runs/);
   assert.match(script, /确认付款结果未知/);
@@ -162,6 +162,20 @@ test('admin card page folds card sources, import, and balance funding into one v
   assert.doesNotMatch(html, /stock-threshold-form|replenishment-limit-form|stock-confirmation|stock-confirm-hint|提醒与自动补卡设置/);
   assert.doesNotMatch(script, /replenishment-settings|stockConfirmation|请输入确认词/);
   assert.match(script, /Promise\.all\(\[loadStock\(\), loadProviderRoutes\(\), loadCardFundingAttempts\(\)\]\)/);
+});
+
+test('admin navigation is exactly five pages and old views are gone', () => {
+  const html = fs.readFileSync(path.join(directory, 'admin', 'index.html'), 'utf8');
+  const script = fs.readFileSync(path.join(directory, 'admin', 'assets', 'admin.js'), 'utf8');
+  const nav = html.slice(html.indexOf('<nav aria-label="后台导航">'), html.indexOf('</nav>'));
+  assert.deepEqual([...nav.matchAll(/data-view="([a-z-]+)"/g)].map((m) => m[1]), ['overview', 'orders', 'cdks', 'stock', 'diagnostics']);
+  assert.doesNotMatch(html, /id="exceptions-view"|id="browser-view"|id="reconciliation-view"|data-view="exceptions"|data-view="browser"|data-view="reconciliation"/);
+  const diagnostics = html.slice(html.indexOf('id="diagnostics-view"'), html.indexOf('id="page-notice"'));
+  for (const id of ['diagnostics-heartbeat', 'diagnostics-readiness-list', 'export-orders', 'reconciliation-table', 'browser-runs-table', 'browser-dispatch-table', 'billing-address-settings']) {
+    assert.match(diagnostics, new RegExp(`id="${id}"`), id);
+  }
+  assert.doesNotMatch(html, /cdk-delivery-capability/);
+  assert.doesNotMatch(script, /'card-funding'|'provider-routes'|'exceptions'|view === 'browser'|view === 'reconciliation'/);
 });
 
 test('admin orders page is one table plus one drawer without permits, tags, notes or resend', () => {

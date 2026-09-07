@@ -767,6 +767,10 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
         purchaseEnabled: stockRows[0]?.provider_purchase_enabled == null
           ? null : String(stockRows[0].provider_purchase_enabled) === 'true'
         ,rechargeMethod: stockRows[0]?.recharge_executor_kind || null
+        ,browserWorkerHeartbeatAt: (() => {
+          const heartbeatAt = Date.parse(stockRows[0]?.browser_worker_heartbeat_at || '');
+          return Number.isFinite(heartbeatAt) ? new Date(heartbeatAt).toISOString() : null;
+        })()
         ,browserRechargeReady: (() => {
           const heartbeatAt = Date.parse(stockRows[0]?.browser_worker_heartbeat_at || '');
           return stockRows[0]?.browser_dispatch_enabled === 'true'

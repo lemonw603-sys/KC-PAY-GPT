@@ -281,4 +281,5 @@ tbody tr[data-order]:hover, tbody tr[data-order]:focus { background: #f7faff; }
 .stock-inline-details[open] > summary { margin-bottom: 12px; }
 .filters-two { grid-template-columns: minmax(200px, 1fr) minmax(200px, 1fr) auto; }
 .stock-advanced-details > .filters { margin-top: 4px; }
-
+#diagnostics-heartbeat { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+#diagnostics-heartbeat small { display: block; margin-top: 4px; }

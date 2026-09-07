@@ -103,6 +103,8 @@ const elements = {
   syncTime: document.querySelector('#sync-time'),
   metrics: document.querySelector('#metrics-grid'),
   readinessList: document.querySelector('#admin-readiness-list'),
+  diagnosticsReadiness: document.querySelector('#diagnostics-readiness-list'),
+  diagnosticsHeartbeat: document.querySelector('#diagnostics-heartbeat'),
   decisionsGrid: document.querySelector('#decisions-grid'),
   attentionOrders: document.querySelector('#attention-orders'),
   ordersTable: document.querySelector('#orders-table'),
@@ -233,16 +235,17 @@ async function api(url, options) {
   return payload;
 }
 
-function renderReadiness(readiness = {}) {
-  if (!elements.readinessList) return;
+function renderReadiness(readiness = {}, target = elements.readinessList) {
+  if (!target) return;
   const statusLabels = { READY: '已就绪', AUTO_HEAL: '自动处理', ACTION_REQUIRED: '需要处理', BLOCKED: '暂不可用' };
+  // Five pages only: card matters go to 卡片, execution and reconciliation to 诊断.
   const actionViews = {
-    REFRESH_PROVIDER_RULES: 'stock', OPEN_CARD_STOCK: 'stock', OPEN_CARD_FUNDING: 'card-funding',
-    OPEN_BROWSER_STATUS: 'browser', OPEN_RECONCILIATION: 'reconciliation',
-    OPEN_PROVIDER_ROUTES: 'provider-routes'
+    REFRESH_PROVIDER_RULES: 'stock', OPEN_CARD_STOCK: 'stock', OPEN_CARD_FUNDING: 'stock',
+    OPEN_BROWSER_STATUS: 'diagnostics', OPEN_RECONCILIATION: 'diagnostics',
+    OPEN_PROVIDER_ROUTES: 'stock'
   };
-  elements.readinessList.innerHTML = (readiness.checks || []).map((item) => `<div class="readiness-row readiness-${String(item.status || '').toLowerCase()}"><span><strong>${escapeHtml(item.message || item.checkId)}</strong><small>${escapeHtml(statusLabels[item.status] || item.status || '未知')}</small></span>${item.actionId ? `<button type="button" class="text-button readiness-action" data-readiness-action="${escapeHtml(item.actionId)}">去处理</button>` : '<span class="readiness-ok">✓</span>'}</div>`).join('') || '<p class="empty-state">暂无检查项</p>';
-  elements.readinessList.querySelectorAll('[data-readiness-action]').forEach((button) => button.addEventListener('click', () => {
+  target.innerHTML = (readiness.checks || []).map((item) => `<div class="readiness-row readiness-${String(item.status || '').toLowerCase()}"><span><strong>${escapeHtml(item.message || item.checkId)}</strong><small>${escapeHtml(statusLabels[item.status] || item.status || '未知')}</small></span>${item.actionId ? `<button type="button" class="text-button readiness-action" data-readiness-action="${escapeHtml(item.actionId)}">去处理</button>` : '<span class="readiness-ok">✓</span>'}</div>`).join('') || '<p class="empty-state">暂无检查项</p>';
+  target.querySelectorAll('[data-readiness-action]').forEach((button) => button.addEventListener('click', () => {
     const target = actionViews[button.dataset.readinessAction];
     if (target) document.querySelector(`.nav-item[data-view="${target}"]`)?.click();
   }));
@@ -726,10 +729,6 @@ async function loadCdkBatches() {
   if (sequence !== state.cdkLoadSequence) return;
   state.cdkBatchRows = state.cdkBatchCursor ? [...state.cdkBatchRows, ...payload.batches] : payload.batches;
   state.cdkBatchCursor = payload.nextCursor || null;
-  const deliveryCapability = document.querySelector('#cdk-delivery-capability');
-  if (deliveryCapability) deliveryCapability.textContent = payload.deliveryTrackingEnabled
-    ? '交付记录接口已启用；只有明确的“记录交付”动作才算交付。'
-    : '当前尚未启用客户交付记录；下载、复制均不会被记为已交付。';
   elements.cdkBatches.innerHTML = state.cdkBatchRows.length
     ? state.cdkBatchRows.map((batch) => {
       const fullyRevoked = batch.revokedCount > 0 && batch.revokedCount === batch.totalCount;
@@ -1335,10 +1334,25 @@ function setActiveNav(navId) {
   elements.navItems.forEach((item) => item.classList.toggle('is-active', item.dataset.view === navId));
 }
 
+async function loadDiagnostics() {
+  const overview = await api('/api/v1/admin/overview');
+  renderReadiness(overview.readiness, elements.diagnosticsReadiness);
+  const runtime = overview.runtimeHealth || {};
+  const provider = overview.providerHealth || {};
+  const decisions = overview.decisions || {};
+  elements.diagnosticsHeartbeat.innerHTML = `
+    <div><span>API Worker 心跳</span><strong>${runtime.workerHealthy ? '在线' : '离线'}</strong><small>${formatTime(runtime.workerHeartbeatAt)}</small></div>
+    <div><span>Browser Worker 心跳</span><strong>${provider.browserRechargeReady ? '在线且可派发' : '未就绪'}</strong><small>${formatTime(provider.browserWorkerHeartbeatAt)}</small></div>
+    <div><span>过期任务租约</span><strong>${runtime.expiredTaskLeases ?? 0}</strong></div>
+    <div><span>卡住的卡台调用</span><strong>${runtime.stalledProviderCalls ?? 0}</strong></div>
+    <div><span>浏览器真实付款</span><strong>${decisions.browserPaymentWritesEnabled ? '已开启' : '关闭'}</strong><small>profile ${decisions.browserProfileWritesEnabled ? '允许写' : '只读'}</small></div>
+    <div><span>Worker 直充写权限</span><strong>${runtime.rechargeWritesEnabled ? '已开启' : '关闭'}</strong></div>`;
+}
+
 async function switchView(view, { status = '' } = {}) {
   setActiveNav(view);
-  state.view = view === 'exceptions' ? 'orders' : view;
-  state.status = view === 'exceptions' ? 'REVIEW_REQUIRED' : status;
+  state.view = view;
+  state.status = status;
   state.page = 1;
   elements.views.forEach((panel) => { panel.hidden = panel.id !== `${state.view}-view`; });
   if (view === 'overview') {
@@ -1353,14 +1367,10 @@ async function switchView(view, { status = '' } = {}) {
     elements.viewKicker.textContent = '卡片';
     elements.viewTitle.textContent = '库存、卡台、导入、补钱';
     await Promise.all([loadStock(), loadProviderRoutes(), loadCardFundingAttempts()]);
-  } else if (view === 'reconciliation') {
-    elements.viewKicker.textContent = '运营核对';
-    elements.viewTitle.textContent = '对账案例队列';
-    await loadReconciliationCases();
-  } else if (view === 'browser') {
-    elements.viewKicker.textContent = 'Browser 控制面';
-    elements.viewTitle.textContent = '运行、租约与人工接管';
-    await Promise.all([loadBrowserDispatchJobs(), loadBrowserRuns()]);
+  } else if (view === 'diagnostics') {
+    elements.viewKicker.textContent = '诊断';
+    elements.viewTitle.textContent = '低频、只读为主';
+    await Promise.all([loadDiagnostics(), loadReconciliationCases(), loadBrowserDispatchJobs(), loadBrowserRuns(), loadBillingAddressSettings()]);
   } else {
     elements.viewKicker.textContent = '订单';
     elements.viewTitle.textContent = ORDER_FILTER_TITLES[state.status] || '全部订单';
@@ -1472,6 +1482,7 @@ elements.prevPage.addEventListener('click', () => { if (state.page > 1) { state.
 elements.nextPage.addEventListener('click', () => { if (state.page * state.pageSize < state.total) { state.page += 1; loadOrders(); } });
 document.querySelector('#export-orders')?.addEventListener('click', () => downloadOperationsCsv('orders').catch(() => showNotice('订单导出失败。')));
 document.querySelector('#export-reconciliation')?.addEventListener('click', () => downloadOperationsCsv('reconciliation_cases').catch(() => showNotice('对账案例导出失败。')));
+document.querySelector('#export-reconciliation-diag')?.addEventListener('click', () => downloadOperationsCsv('reconciliation_cases').catch(() => showNotice('对账案例导出失败。')));
 document.querySelector('#reconciliation-filters')?.addEventListener('submit', (event) => {
   event.preventDefault();
   state.reconciliationPage = 1;
@@ -1588,10 +1599,8 @@ document.querySelector('#refresh-button').addEventListener('click', async (event
     await (state.view === 'overview' ? loadOverview()
     : state.view === 'stock' ? loadStock()
       : state.view === 'cdks' ? loadCdkBatches()
-        : state.view === 'reconciliation' ? loadReconciliationCases()
-          : state.view === 'card-funding' ? loadCardFundingAttempts()
-          : state.view === 'provider-routes' ? loadProviderRoutes()
-          : state.view === 'browser' ? Promise.all([loadBrowserDispatchJobs(), loadBrowserRuns(), loadBillingAddressSettings()]) : loadOrders());
+        : state.view === 'diagnostics' ? Promise.all([loadDiagnostics(), loadReconciliationCases(), loadBrowserDispatchJobs(), loadBrowserRuns(), loadBillingAddressSettings()])
+          : loadOrders());
     showNotice('刷新完成。', 'success');
   } catch {
     showNotice('刷新失败，请稍后重试。');
@@ -1750,9 +1759,8 @@ window.setInterval(() => {
     : state.view === 'orders' ? loadOrders
       : state.view === 'stock' ? loadStock
         : state.view === 'cdks' ? loadCdkBatches
-          : state.view === 'reconciliation' ? loadReconciliationCases
-            : state.view === 'browser'
-              ? () => Promise.all([loadBrowserDispatchJobs(), loadBrowserRuns()]) : null;
+          : state.view === 'diagnostics'
+            ? () => Promise.all([loadReconciliationCases(), loadBrowserDispatchJobs(), loadBrowserRuns()]) : null;
   refresh?.().catch(() => {});
 }, 10_000);
 elements.cdkForm.addEventListener('submit', async (event) => {

@@ -7,8 +7,8 @@
   <meta name="theme-color" content="#f5f8fc">
   <title>Plus 运营后台</title>
   <link rel="icon" href="/admin/assets/favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/admin/assets/admin.css?v=24">
-  <script src="/admin/assets/admin.js?v=31" defer></script>
+  <link rel="stylesheet" href="/admin/assets/admin.css?v=25">
+  <script src="/admin/assets/admin.js?v=32" defer></script>
 </head>
 <body>
   <div class="admin-shell">
@@ -19,13 +19,11 @@
         <small>内部管理中心</small>
       </a>
       <nav aria-label="后台导航">
-        <button class="nav-item is-active" type="button" data-view="overview"><span aria-hidden="true">⌂</span>总览</button>
+        <button class="nav-item is-active" type="button" data-view="overview"><span aria-hidden="true">⌂</span>首页</button>
         <button class="nav-item" type="button" data-view="orders"><span aria-hidden="true">≡</span>订单</button>
-        <button class="nav-item" type="button" data-view="exceptions"><span aria-hidden="true">!</span>异常队列</button>
-        <button class="nav-item" type="button" data-view="reconciliation"><span aria-hidden="true">✓</span>资金证据核对</button>
-        <button class="nav-item" type="button" data-view="browser"><span aria-hidden="true">◎</span>Browser 执行</button>
+        <button class="nav-item" type="button" data-view="cdks"><span aria-hidden="true">#</span>CDK</button>
         <button class="nav-item" type="button" data-view="stock"><span aria-hidden="true">▣</span>卡片</button>
-        <button class="nav-item" type="button" data-view="cdks"><span aria-hidden="true">#</span>CDK 管理</button>
+        <button class="nav-item" type="button" data-view="diagnostics"><span aria-hidden="true">◎</span>诊断</button>
       </nav>
       <div class="sidebar-foot">
         <span class="session-state"><i aria-hidden="true"></i><b>管理员已登录</b><small>人工确认模式</small></span>
@@ -79,67 +77,13 @@
               <option value="WAITING_FOR_SESSION">等 Session</option>
             </select></label>
             <button class="primary-small" type="submit">查询</button>
-            <button class="text-button" id="export-orders" type="button">导出 CSV</button>
           </form>
           <div class="table-wrap"><table><thead><tr><th>订单</th><th>产品</th><th>当前阶段</th><th>需要我做什么</th><th>卡尾号</th><th>身份</th><th>创建时间</th></tr></thead><tbody id="orders-table"></tbody></table></div>
           <div class="pagination"><span id="order-count">0 条订单</span><div><button id="prev-page" type="button">上一页</button><span id="page-label">第 1 页</span><button id="next-page" type="button">下一页</button></div></div>
         </section>
       </section>
 
-      <section id="reconciliation-view" class="view" hidden>
-        <section class="card orders-card">
-          <div class="card-heading">
-            <div><p class="section-kicker">运营核对</p><h2>资金证据核对队列</h2></div>
-            <button class="text-button" id="export-reconciliation" type="button">导出安全 CSV</button>
-          </div>
-          <p class="card-description">只有自动核实超时或证据真正冲突时，系统才会在这里留下可追溯的人工核对案例。普通付款核实中、证据同步中和明确失败不会进入此队列。<strong>点“解决”只保存核对结论，不会自动重充、退款或扣款。</strong></p>
-          <form class="filters reconciliation-filters" id="reconciliation-filters">
-            <label><span class="sr-only">案例状态</span><select id="reconciliation-status"><option value="">全部状态</option><option value="OPEN">待处理</option><option value="ASSIGNED">已分配</option><option value="RESOLVED">已解决</option></select></label>
-            <label><span class="sr-only">严重程度</span><select id="reconciliation-severity"><option value="">全部等级</option><option value="critical">严重</option><option value="warning">警告</option><option value="info">提示</option></select></label>
-            <button class="primary-small" type="submit">筛选</button>
-          </form>
-          <div class="table-wrap"><table><thead><tr><th>案例</th><th>订单</th><th>类型 / 等级</th><th>状态</th><th>负责人</th><th>最后发现</th><th>操作</th></tr></thead><tbody id="reconciliation-table"></tbody></table></div>
-          <div class="pagination"><span id="reconciliation-count">0 个案例</span><div><button id="reconciliation-prev" type="button">上一页</button><span id="reconciliation-page">第 1 页</span><button id="reconciliation-next" type="button">下一页</button></div></div>
-        </section>
-      </section>
 
-      <section id="browser-view" class="view" hidden>
-        <section class="card orders-card">
-          <div class="card-heading">
-            <div><p class="section-kicker">Browser 控制面</p><h2>运行、租约与人工接管</h2></div>
-            <span class="readonly-badge">authority 不可见</span>
-          </div>
-          <p class="card-description">这里只展示订单、attempt、run、检查点、资源租约、artifact 状态和对账关系，不展示 Checkout URL、Session、卡片凭据、密文引用或租约令牌。人工控制只转移同一个 run 的所有权；付款结果未知时只能锁入对账，不能在这里重付、换卡或重建 Checkout。</p>
-          <section class="card compact-card" aria-labelledby="billing-address-title">
-            <div class="card-heading"><div><p class="section-kicker">账单资料</p><h3 id="billing-address-title">MockAddress 免税州地址</h3></div><span class="readonly-badge">仅地址</span></div>
-            <p class="card-description">使用固定版本的本地地址数据；不会生成或替换卡号。填入后仍以 Checkout 实际税额为准。</p>
-            <form id="billing-address-settings" class="filters">
-              <label><span>状态</span><select id="billing-address-enabled"><option value="false">关闭</option><option value="true">启用</option></select></label>
-              <label><span>州</span><select id="billing-address-state"><option>AK</option><option selected>DE</option><option>MT</option><option>NH</option><option>OR</option></select></label>
-              <label class="search-field"><span>账单姓名</span><input id="billing-address-name" maxlength="120" autocomplete="off"></label>
-              <button class="primary-small" type="submit">保存设置</button>
-            </form>
-            <small id="billing-address-meta"></small>
-          </section>
-          <form class="filters" id="browser-filters">
-            <label class="search-field"><span class="sr-only">订单查询码</span><input id="browser-public-no" type="search" maxlength="64" placeholder="精确订单查询码"></label>
-            <label><span class="sr-only">运行状态</span><select id="browser-status"><option value="">全部运行状态</option><option value="RUNNING">运行中</option><option value="HUMAN_REQUIRED">等待人工</option><option value="RECONCILE_ONLY">仅可对账</option><option value="READY">待运行</option><option value="COMPLETED">已完成</option><option value="FAILED_SAFE">安全失败</option></select></label>
-            <label><span class="sr-only">付款状态</span><select id="browser-payment-state"><option value="">全部付款状态</option><option value="NOT_STARTED">未开始</option><option value="PAYMENT_ARMED">已许可</option><option value="PAYMENT_SUBMITTING">提交中</option><option value="PAYMENT_UNKNOWN">结果未知</option><option value="PAYMENT_DECLINED">已拒绝</option><option value="PAYMENT_CONFIRMED">已确认</option></select></label>
-            <label><span class="sr-only">控制权</span><select id="browser-control-state"><option value="">全部控制权</option><option value="AUTOMATION">自动化</option><option value="REQUESTED">已请求人工</option><option value="FROZEN">已冻结</option><option value="TRANSFERRED">已转交人工</option><option value="RELEASED">已释放待对账</option></select></label>
-            <button class="primary-small" type="submit">筛选</button>
-          </form>
-          <div class="card-heading compact-heading">
-            <div><p class="section-kicker">Dispatch 队列</p><h3>领取、租约与重投递</h3></div>
-            <span id="browser-dispatch-count" class="readonly-badge">0 个任务</span>
-          </div>
-          <div class="table-wrap"><table><thead><tr><th>订单 / Dispatch</th><th>队列状态</th><th>Attempt / 资金</th><th>Worker 租约</th><th>执行配置 / Run</th><th>排队 / 更新时间</th></tr></thead><tbody id="browser-dispatch-table"></tbody></table></div>
-          <div class="card-heading compact-heading">
-            <div><p class="section-kicker">执行记录</p><h3>Run、检查点与人工接管</h3></div>
-          </div>
-          <div class="table-wrap"><table><thead><tr><th>订单 / Run</th><th>运行状态</th><th>付款 / 资金</th><th>控制权</th><th>Worker 租约</th><th>Checkout artifact</th><th>更新时间</th></tr></thead><tbody id="browser-runs-table"></tbody></table></div>
-          <div class="pagination"><span id="browser-runs-count">0 个 run</span><div><button id="browser-runs-prev" type="button">上一页</button><span id="browser-runs-page">第 1 页</span><button id="browser-runs-next" type="button">下一页</button></div></div>
-        </section>
-      </section>
 
       <section id="cdks-view" class="view" hidden>
         <section class="card cdk-card">
@@ -166,7 +110,7 @@
             <div><p class="section-kicker">批次记录</p><h2>最近 CDK 批次</h2></div>
             <button class="text-button" id="refresh-cdk-batches" type="button">刷新批次列表</button>
           </div>
-          <p class="card-description">每个新版批次可单独下载原始 TXT 和带状态的 CSV 留档；作废只影响尚未兑换的卡密，记录会保留便于倒查。<span id="cdk-delivery-capability">正在读取交付记录能力…</span></p>
+          <p class="card-description">每个新版批次可单独下载原始 TXT 和带状态的 CSV 留档；作废只影响尚未兑换的卡密，记录会保留便于倒查。</p>
           <form class="filters cdk-batch-filters" id="cdk-batch-filters">
             <label><span class="sr-only">产品</span><select id="cdk-batch-plan"><option value="">全部产品</option><option value="plus">Plus</option></select></label>
             <label><span class="sr-only">状态</span><select id="cdk-batch-status"><option value="">全部状态</option><option value="AVAILABLE">含未使用</option><option value="REDEEMED">含已兑换</option><option value="REVOKED">含已作废</option></select></label>
@@ -279,6 +223,70 @@
           <div class="advanced-heading"><p>手动开新卡后才需要点一次同步；这不是卡台实时库存数。</p></div>
           <div class="mini-list" id="card-intake-list"><p class="empty-state">正在读取接管状态…</p></div>
         </details>
+      </section>
+
+      <section id="diagnostics-view" class="view" hidden>
+        <div class="stock-grid">
+          <section class="card stock-card">
+            <div class="card-heading"><div><p class="section-kicker">运行状况</p><h2>Worker 心跳与开工检查</h2></div><span class="readonly-badge">只读</span></div>
+            <div class="provider-summary" id="diagnostics-heartbeat"><p class="empty-state">正在读取…</p></div>
+            <div class="readiness-list" id="diagnostics-readiness-list"><p class="empty-state">正在检查…</p></div>
+          </section>
+          <section class="card stock-card">
+            <div class="card-heading"><div><p class="section-kicker">留档</p><h2>CSV 导出</h2></div><span class="readonly-badge">脱敏</span></div>
+            <p class="card-description">导出只含运营字段，不含 Session、完整卡号、密文引用或令牌；单次最多 10000 行。</p>
+            <div class="drawer-actions"><button class="ghost-button" id="export-orders" type="button">导出订单 CSV</button><button class="ghost-button" id="export-reconciliation-diag" type="button">导出对账案例 CSV</button></div>
+          </section>
+        </div>
+        <section class="card orders-card">
+          <div class="card-heading">
+            <div><p class="section-kicker">运营核对</p><h2>资金证据核对队列</h2></div>
+            <button class="text-button" id="export-reconciliation" type="button">导出安全 CSV</button>
+          </div>
+          <p class="card-description">只有自动核实超时或证据真正冲突时，系统才会在这里留下可追溯的人工核对案例。普通付款核实中、证据同步中和明确失败不会进入此队列。<strong>点“解决”只保存核对结论，不会自动重充、退款或扣款。</strong></p>
+          <form class="filters reconciliation-filters" id="reconciliation-filters">
+            <label><span class="sr-only">案例状态</span><select id="reconciliation-status"><option value="">全部状态</option><option value="OPEN">待处理</option><option value="ASSIGNED">已分配</option><option value="RESOLVED">已解决</option></select></label>
+            <label><span class="sr-only">严重程度</span><select id="reconciliation-severity"><option value="">全部等级</option><option value="critical">严重</option><option value="warning">警告</option><option value="info">提示</option></select></label>
+            <button class="primary-small" type="submit">筛选</button>
+          </form>
+          <div class="table-wrap"><table><thead><tr><th>案例</th><th>订单</th><th>类型 / 等级</th><th>状态</th><th>负责人</th><th>最后发现</th><th>操作</th></tr></thead><tbody id="reconciliation-table"></tbody></table></div>
+          <div class="pagination"><span id="reconciliation-count">0 个案例</span><div><button id="reconciliation-prev" type="button">上一页</button><span id="reconciliation-page">第 1 页</span><button id="reconciliation-next" type="button">下一页</button></div></div>
+        </section>
+        <section class="card orders-card">
+          <div class="card-heading">
+            <div><p class="section-kicker">Browser 控制面</p><h2>运行、租约与人工接管</h2></div>
+            <span class="readonly-badge">authority 不可见</span>
+          </div>
+          <p class="card-description">这里只展示订单、attempt、run、检查点、资源租约、artifact 状态和对账关系，不展示 Checkout URL、Session、卡片凭据、密文引用或租约令牌。人工控制只转移同一个 run 的所有权；付款结果未知时只能锁入对账，不能在这里重付、换卡或重建 Checkout。</p>
+          <section class="card compact-card" aria-labelledby="billing-address-title">
+            <div class="card-heading"><div><p class="section-kicker">账单资料</p><h3 id="billing-address-title">MockAddress 免税州地址</h3></div><span class="readonly-badge">仅地址</span></div>
+            <p class="card-description">使用固定版本的本地地址数据；不会生成或替换卡号。填入后仍以 Checkout 实际税额为准。</p>
+            <form id="billing-address-settings" class="filters">
+              <label><span>状态</span><select id="billing-address-enabled"><option value="false">关闭</option><option value="true">启用</option></select></label>
+              <label><span>州</span><select id="billing-address-state"><option>AK</option><option selected>DE</option><option>MT</option><option>NH</option><option>OR</option></select></label>
+              <label class="search-field"><span>账单姓名</span><input id="billing-address-name" maxlength="120" autocomplete="off"></label>
+              <button class="primary-small" type="submit">保存设置</button>
+            </form>
+            <small id="billing-address-meta"></small>
+          </section>
+          <form class="filters" id="browser-filters">
+            <label class="search-field"><span class="sr-only">订单查询码</span><input id="browser-public-no" type="search" maxlength="64" placeholder="精确订单查询码"></label>
+            <label><span class="sr-only">运行状态</span><select id="browser-status"><option value="">全部运行状态</option><option value="RUNNING">运行中</option><option value="HUMAN_REQUIRED">等待人工</option><option value="RECONCILE_ONLY">仅可对账</option><option value="READY">待运行</option><option value="COMPLETED">已完成</option><option value="FAILED_SAFE">安全失败</option></select></label>
+            <label><span class="sr-only">付款状态</span><select id="browser-payment-state"><option value="">全部付款状态</option><option value="NOT_STARTED">未开始</option><option value="PAYMENT_ARMED">已许可</option><option value="PAYMENT_SUBMITTING">提交中</option><option value="PAYMENT_UNKNOWN">结果未知</option><option value="PAYMENT_DECLINED">已拒绝</option><option value="PAYMENT_CONFIRMED">已确认</option></select></label>
+            <label><span class="sr-only">控制权</span><select id="browser-control-state"><option value="">全部控制权</option><option value="AUTOMATION">自动化</option><option value="REQUESTED">已请求人工</option><option value="FROZEN">已冻结</option><option value="TRANSFERRED">已转交人工</option><option value="RELEASED">已释放待对账</option></select></label>
+            <button class="primary-small" type="submit">筛选</button>
+          </form>
+          <div class="card-heading compact-heading">
+            <div><p class="section-kicker">Dispatch 队列</p><h3>领取、租约与重投递</h3></div>
+            <span id="browser-dispatch-count" class="readonly-badge">0 个任务</span>
+          </div>
+          <div class="table-wrap"><table><thead><tr><th>订单 / Dispatch</th><th>队列状态</th><th>Attempt / 资金</th><th>Worker 租约</th><th>执行配置 / Run</th><th>排队 / 更新时间</th></tr></thead><tbody id="browser-dispatch-table"></tbody></table></div>
+          <div class="card-heading compact-heading">
+            <div><p class="section-kicker">执行记录</p><h3>Run、检查点与人工接管</h3></div>
+          </div>
+          <div class="table-wrap"><table><thead><tr><th>订单 / Run</th><th>运行状态</th><th>付款 / 资金</th><th>控制权</th><th>Worker 租约</th><th>Checkout artifact</th><th>更新时间</th></tr></thead><tbody id="browser-runs-table"></tbody></table></div>
+          <div class="pagination"><span id="browser-runs-count">0 个 run</span><div><button id="browser-runs-prev" type="button">上一页</button><span id="browser-runs-page">第 1 页</span><button id="browser-runs-next" type="button">下一页</button></div></div>
+        </section>
       </section>
 
       <div class="page-notice" id="page-notice" role="status" aria-live="polite" hidden></div>
