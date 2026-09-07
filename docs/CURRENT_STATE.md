@@ -4,8 +4,8 @@
 
 | 项目 | 当前值 | 核对时间（UTC） | 证据方式 |
 |---|---|---|---|
-| 生产 release | `/opt/pojia/releases/20260907-cdk-rules-44b00cd`（commit `44b00cd`） | 2026-09-07 14:xx | `readlink -f /opt/pojia/current` |
-| 回滚点 | `/opt/pojia/releases/20260907-timeline-b8a005a` | 同上 | 部署记录 |
+| 生产 release | `/opt/pojia/releases/20260907-timeline-ui-af188c9`（commit `af188c9`） | 2026-09-07 15:xx | `readlink -f /opt/pojia/current` |
+| 回滚点 | `/opt/pojia/releases/20260907-cdk-rules-44b00cd` | 同上 | 部署记录 |
 | 最新数据库备份 | `/var/backups/pojia/pojia-20260907T063400Z.sql.gz.enc`，完整性 OK | 06:34 | `pojia-ops backup/verify` |
 | pojia-web | active（06:35 随 release 切换重启） | 06:35 | systemctl |
 | pojia-worker（API） | inactive（09-06 03:46 UTC 人为停止；09-07 09:28 UTC 短启约 10 秒推进测试单后再次停止） | 09-07 09:29 | systemctl |
@@ -36,7 +36,7 @@
 | 最近真实单 | `PJV1-RCbAiI0IkGMy-hCBgMSn`：自动化到 Checkout 未填表 → 运营者手工付 Plus + 20X（143.13）→ 09-06 16:40 以「人工付款已完成」收口为 RECHARGE_SUCCESS；`PAYMENT_SUBMIT=0`，证据 `MANUAL_PAYMENT_CONFIRMED` | 16:41 | orders / browser_runs / browser_operations |
 | 告警 | OPEN 10：8 条 09-01 起的「卡台余额变化」info 噪音（后台不显示）、1 条 CARD_STOCK_LOW（阈值 0，修复后不再新生成）、1 条 ORDER_WAITING_FOR_CARD；首页已可关闭 | 09-06 13:31 | operator_alerts |
 | 本机 | BitBrowser Local API + mihomo（launchd 单实例）；SSH 隧道 13306→3306 由会话后台任务保持（掉线需重拉）；无常驻 Worker 进程（常驻池脚本已备好，未长期运行）；Lane 3 窗口开着并保留演练结账页 | 09-07 12:05 | pgrep / BitBrowser list |
-| 已上线（本次 release） | `44b00cd`：CDK 规则（未付款终态退回、同码同账号返回原单、Session 重贴不限次数）。复核：plus 200、线上 customer.js 含新文案、三处接入文件已含退回调用、Web 无错误。历史订单的已绑定 CDK 不会自动退回，客户再次提交同码时按新规则处理 | 14:xx | curl + SSH grep |
+| 已上线（本次 release） | `af188c9`：订单详情抽屉「执行时间线」（`GET /api/v1/admin/orders/:publicNo/timeline`，`admin.js?v=27`、`admin.css?v=21`）。复核：未登录 401、线上资产含面板、Web 无错误。`browser_run_events` 目前 0 行：今天的 Browser 运行都发生在迁移 049 之前，下一次运行起落库 | 15:xx | curl + SSH |
 | 已知未修 | 本机绕过连接池直连写入造成该单 attempt/dispatch/账本 `created_at` 偏后 8 小时；后台控制事务并发时可能 `ER_LOCK_DEADLOCK`（失败关闭，需重试） | 09-07 | HANDOFF_LOG |
 
 ## 事实表之外
