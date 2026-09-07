@@ -1766,3 +1766,11 @@
 - 按原会话交接（`f2c5725`）由本窗口继续执行；`git pull` 后工作区干净。决策账本补记 D-119～D-126（`8ac6821`）。
 - 后台：订单详情抽屉顶部新增「执行时间线」面板，读 `browser_run_events`（`GET /api/v1/admin/orders/:publicNo/timeline`，只登录守卫），动作中文标签、只显示摘要与计数。发布 release `20260907-timeline-ui-af188c9`，回滚点 `20260907-cdk-rules-44b00cd`。测试单目前 0 行时间线（运行早于迁移）。
 - 五页结构稿 `docs/ADMIN_FIVE_PAGES_2026-09-07.md`：9 页去向、每页内容、删除项、六步动手顺序；待用户确认后按顺序实施。
+
+## 2026-09-07｜事故：12:07 UTC 误触发旧 API 路线直充，HNSKJ 卡 5980 被扣 $15.69
+
+- 经过：为了给 Browser 测试单建派发，本窗口 12:06:57 UTC 第二次短启 `pojia-worker`（约 6 秒）。此时 HNSKJ 卡台已恢复（读同步刷新，`5980` 交易同步为新鲜、余额 16 ≥ 门槛 16），09-05 遗留的 API 路线订单 `PJV1-7EYSr3AZfjVl5JZQwTZt`（WAITING_FOR_CARD，目标账号 = 测试账号，邮箱摘要 4699aca0…）在同一轮被处理：ASSIGN_CARD 分到 `5980` → PREPARE → SUBMIT_RECHARGE → ZZSHU 直充单 `9859` 12:07:00 已受理 → 卡交易 PURCHASE $15.69（PHP 982.14，OPENAI，12:07:29，PROCESSING）→ 测试账号开通 Plus。卡余额 16 → 0.31。
+- 根因：本窗口启动 Worker 前只在 09:28 判断过「无合格 HNSKJ 卡」，12:06 未重新核对卡台已恢复；Worker 单元带 `PROVIDER_RECHARGE_WRITES_ENABLED=true`，遗留 API 单一旦拿到卡就会真实直充。这是执行者的失误，不是系统故障；系统按设计执行了旧路线。
+- 现状：订单 RECHARGE_PROCESSING、attempt PROCESSING/ACTIVE、账本 RESERVED、`POLL_RECHARGE` PENDING（`RECHARGE_PENDING`，Worker 已停）；ZZSHU `query_status` 12:07:03 成功但未结单。测试账号已是 Plus，后续 Browser 演练不能再用它买 Plus。
+- 收口建议（待用户确认）：先把两单遗留 WAITING_FOR_SESSION 订单与其他遗留任务核对一遍，再短启 Worker 让 `POLL_RECHARGE` 确认直充结果并按 API 路线正常收口（RECHARGE_SUCCESS、账本 CONSUMED、取消续费检查）；或由用户决定其他处理。
+- 规则补充：启动任何 Worker 前，列出所有待处理任务并按**当时**的卡资格重新判断；遗留的 API 路线订单在默认路线切到 Browser 后应先取消，不留在队列里等卡。

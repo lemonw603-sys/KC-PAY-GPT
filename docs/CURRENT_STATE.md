@@ -27,10 +27,10 @@
 | card_max_successful_payments | 3 | 13:31 | app_settings |
 | default_open_card_amount / minimum | 16 / 16（09-07 08:28–09:33 UTC 曾临时 8.00 供演练单分卡；已恢复） | 09:33 | app_settings（经服务层 `setMinimumRequiredCardBalance`） |
 | Worker 进程写权限 | worker：`PROVIDER_RECHARGE_WRITES_ENABLED=true`（drop-in），通用/卡片写 false；funding 单元：`PROVIDER_CARD_WRITES_ENABLED=true`；env 文件 `PROVIDER_READS_ENABLED=true` | 16:35 | `systemctl cat` |
-| HNSKJ 卡 | `5980` $16 inventory AVAILABLE，但分配资格要求交易同步 15 分钟内（`last_transaction_synced_at` 09-06 22:00 UTC，HNSKJ 故障期间不再刷新）→ **当前不可分配**；其余 5 张 ASSIGNED 于历史订单且 ≤ $0.01；5 张 DEPLETED | 09-07 02:30 | cards + `card-inventory-eligibility.js` 规则 |
+| HNSKJ 卡 | `5980` ASSIGNED 给 API 路线订单 `PJV1-7EYSr3AZfjVl5JZQwTZt`，余额 $0.31（09-07 12:07 UTC 被 ZZSHU 直充扣 $15.69，事故见 HANDOFF_LOG）；其余 5 张 ASSIGNED 于历史订单且 ≤ $0.01；5 张 DEPLETED | 09-07 14:00 | cards / card_transactions |
 | 备用卡 A | `5501` $8.87（分配给测试单，assignment ACTIVE；演练已释放资金占用）；`0237` $0；门槛恢复 16 后可分配 0 | 09-07 09:40 | cards / card_assignment_history |
-| HNSKJ 卡台 | 09-05 起维护/故障（success=false），只读同步 5 分钟退避；开卡与补余额不可用；用户 09-07 确认卡台服务器故障，备用卡台暂无资金 | 09-07 | HANDOFF_LOG + 用户 |
-| 订单总况 | RECHARGE_SUCCESS 2 / RECHARGE_FAILED 7 / CLOSED 8 / WAITING_FOR_CARD 1（API 路线 `PJV1-7EYSr3AZfjVl5JZQwTZt`）/ WAITING_FOR_SESSION 2 / RECHARGE_FAILED +1（测试单 `PJV1--j4AnE7fvfgkvaceSr0Z`：演练成功后，常驻池实跑因会话过期累计到重试上限 `BROWSER_RETRY_LIMIT` 终态；卡 5501 占用已释放） | 09-07 09:40 | orders / tasks |
+| HNSKJ 卡台 | 09-05 起故障；09-07 12:06 UTC 前已恢复（读同步与交易同步成功，`provider_calls` SUCCESS）；开卡/补余额未再验证 | 09-07 14:00 | provider_calls / cards.last_transaction_synced_at |
+| 订单总况 | RECHARGE_SUCCESS 2 / RECHARGE_FAILED 8（含测试单 `PJV1--j4AnE7fvfgkvaceSr0Z`）/ CLOSED 8 / **RECHARGE_PROCESSING 1（API 路线 `PJV1-7EYSr3AZfjVl5JZQwTZt`，09-07 12:07 UTC 误触发直充，attempt PROCESSING/ACTIVE，POLL_RECHARGE 待跑，待收口）** / WAITING_FOR_SESSION 2 | 09-07 14:xx | orders / tasks |
 | 活动资金与运行 | ACTIVE/UNKNOWN attempt 0；open run 0；open dispatch 0；RESERVED 账本 0；open lease 0；ISSUED permit 0 | 16:41 | 只读聚合查询 |
 | 最近 Browser 运行 | 09-07 09:29–09:35 UTC 测试单演练：run `84686b57…` FAILED_SAFE / RELEASED / `PRE_PAYMENT_ABORT` / `BROWSER_REHEARSAL_STOPPED`；`PAYMENT_SUBMIT=0`、permit 0；报价 PHP 982.14 / 税 0.00；Lane 3 保留填好的结账页 | 09:40 | browser_runs / 本机 live.wal |
 | 最近真实单 | `PJV1-RCbAiI0IkGMy-hCBgMSn`：自动化到 Checkout 未填表 → 运营者手工付 Plus + 20X（143.13）→ 09-06 16:40 以「人工付款已完成」收口为 RECHARGE_SUCCESS；`PAYMENT_SUBMIT=0`，证据 `MANUAL_PAYMENT_CONFIRMED` | 16:41 | orders / browser_runs / browser_operations |
