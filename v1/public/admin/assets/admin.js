@@ -131,6 +131,7 @@ const elements = {
   stockCards: document.querySelector('#stock-cards'), providerSummary: document.querySelector('#provider-summary'),
   cardCapacityForm: document.querySelector('#card-capacity-form'), cardCapacity: document.querySelector('#card-capacity'),
   minimumBalanceForm: document.querySelector('#minimum-balance-form'), minimumBalance: document.querySelector('#minimum-balance'),
+  minimumBalancePlan: document.querySelector('#minimum-balance-plan'), cdkPlan: document.querySelector('#cdk-plan'),
   stockOpenForm: document.querySelector('#stock-open-form'), stockOpenCount: document.querySelector('#stock-open-count'),
   stockOpenAmount: document.querySelector('#stock-open-amount'), stockCardType: document.querySelector('#stock-card-type'),
   refreshCardProviderRules: document.querySelector('#refresh-card-provider-rules'),
@@ -855,7 +856,11 @@ async function loadStock() {
     ['暂不可用', summary.blocked], ['永久停用', summary.retired]
   ].map(([label, value]) => `<div><span>${label}</span><strong>${value}</strong></div>`).join('');
   elements.cardCapacity.value = String(payload.maxSuccessfulPayments || 3);
-  if (elements.minimumBalance && payload.minimumRequiredCardBalance != null) elements.minimumBalance.value = String(payload.minimumRequiredCardBalance);
+  state.minimumRequiredCardBalanceByPlan = payload.minimumRequiredCardBalanceByPlan || { plus: payload.minimumRequiredCardBalance };
+  if (elements.minimumBalance && payload.minimumRequiredCardBalance != null) {
+    const plan = elements.minimumBalancePlan?.value || 'plus';
+    elements.minimumBalance.value = String(state.minimumRequiredCardBalanceByPlan[plan] ?? payload.minimumRequiredCardBalance);
+  }
   const provider = state.stockProvider;
   const catalog = state.stockCatalog || {};
   const cardTypes = provider?.cardTypes || [];
@@ -1694,16 +1699,22 @@ elements.cardCapacityForm?.addEventListener('submit', async (event) => {
     await loadStock();
   } catch (error) { showNotice(error.message); }
 });
+elements.minimumBalancePlan?.addEventListener('change', () => {
+  const plan = elements.minimumBalancePlan.value;
+  const value = state.minimumRequiredCardBalanceByPlan?.[plan];
+  if (value != null) elements.minimumBalance.value = String(value);
+});
 elements.minimumBalanceForm?.addEventListener('submit', async (event) => {
   event.preventDefault();
   const amount = Number(elements.minimumBalance.value);
+  const planType = elements.minimumBalancePlan?.value || 'plus';
   if (!Number.isFinite(amount) || amount < 0 || amount > 1000) return showNotice('最低余额必须是 0 到 1000 之间的金额。');
   try {
     await api('/api/v1/admin/card-stock/minimum-balance', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ amount: Math.round(amount * 100) / 100 })
+      body: JSON.stringify({ amount: Math.round(amount * 100) / 100, planType })
     });
-    showNotice('最低所需卡余额已更新，只影响之后的分配。', 'success');
+    showNotice(`${{ plus: 'Plus', pro_5x: 'Pro 5X', pro_20x: 'Pro 20X' }[planType]} 的最低所需卡余额已更新，只影响之后的分配。`, 'success');
     await loadStock();
   } catch (error) { showNotice(error.message === 'invalid_minimum_balance' ? '金额无效，最多两位小数。' : '保存失败，请稍后重试。'); }
 });
@@ -1775,16 +1786,17 @@ elements.cdkForm.addEventListener('submit', async (event) => {
     button.textContent = '生成 CDK';
     return;
   }
+  const planType = elements.cdkPlan?.value || 'plus';
   const storedRequest = JSON.parse(sessionStorage.getItem('cdk-generation-request') || 'null');
-  const requestKey = storedRequest?.count === count
+  const requestKey = storedRequest?.count === count && (storedRequest.planType || 'plus') === planType
     ? storedRequest.key : crypto.randomUUID();
-  sessionStorage.setItem('cdk-generation-request', JSON.stringify({ count, key: requestKey }));
+  sessionStorage.setItem('cdk-generation-request', JSON.stringify({ count, planType, key: requestKey }));
   let payload;
   try {
     payload = await api('/api/v1/admin/cdks/generate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Idempotency-Key': requestKey },
-      body: JSON.stringify({ count })
+      body: JSON.stringify({ count, planType })
     });
     elements.generatedCdks.value = payload.codes.join('\n');
     elements.generatedCdks.rows = Math.min(Math.max(payload.codes.length, 3), 18);

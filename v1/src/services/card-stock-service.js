@@ -332,7 +332,7 @@ export function createCardStockService({ pool, sessionEncryptionKey, panHmacKey 
          FROM cards GROUP BY card_type_id ORDER BY card_type_id`
       ),
       pool.query(`SELECT setting_key, setting_value FROM app_settings
-        WHERE setting_key IN ('default_card_type_id','default_open_card_amount','card_max_successful_payments','default_minimum_required_card_balance')`),
+        WHERE setting_key IN ('default_card_type_id','default_open_card_amount','card_max_successful_payments','default_minimum_required_card_balance','minimum_required_card_balance:pro_5x','minimum_required_card_balance:pro_20x')`),
       pool.query(`SELECT c.provider_account_id, pa.provider_code, pa.account_code,
           c.provider_card_id, c.card_type_id, c.last4, c.status, c.inventory_status,
           c.funded_amount, c.current_balance, c.currency, c.sync_tier, active_assignment.order_id AS active_order_id,
@@ -378,6 +378,11 @@ export function createCardStockService({ pool, sessionEncryptionKey, panHmacKey 
     const maxSuccessfulPayments = Math.min(4, Math.max(1,
       Number(settingMap.get('card_max_successful_payments') || 3)));
     const minimumRequiredCardBalance = String(settingMap.get('default_minimum_required_card_balance') || '');
+    const minimumRequiredCardBalanceByPlan = {
+      plus: minimumRequiredCardBalance,
+      pro_5x: String(settingMap.get('minimum_required_card_balance:pro_5x') || minimumRequiredCardBalance),
+      pro_20x: String(settingMap.get('minimum_required_card_balance:pro_20x') || minimumRequiredCardBalance)
+    };
     const selectedCardType = providerSnapshot?.cardTypes?.find(
       (item) => String(item.id) === defaultCardTypeId
     ) || null;
@@ -470,6 +475,7 @@ export function createCardStockService({ pool, sessionEncryptionKey, panHmacKey 
       autoReplenishmentEnabled,
       maxSuccessfulPayments,
       minimumRequiredCardBalance,
+      minimumRequiredCardBalanceByPlan,
       operationalSummary,
       provider: {
         syncedAt: providerSnapshot?.syncedAt || null,
@@ -549,20 +555,33 @@ export function createCardStockService({ pool, sessionEncryptionKey, panHmacKey 
 
   // Operator-set floor for card allocation eligibility (USD). Only affects
   // which cards may be assigned from now on; never touches payments.
-  async function setMinimumRequiredCardBalance(value) {
+  // Plus keeps the historical key; Pro tiers get their own so a Pro order can
+  // demand a card that covers Plus plus the upgrade.
+  const MINIMUM_BALANCE_KEYS = Object.freeze({
+    plus: 'default_minimum_required_card_balance',
+    pro_5x: 'minimum_required_card_balance:pro_5x',
+    pro_20x: 'minimum_required_card_balance:pro_20x'
+  });
+
+  async function setMinimumRequiredCardBalance(value, planType = 'plus') {
     const amount = Number(value);
     if (!Number.isFinite(amount) || amount < 0 || amount > 1000 || Math.round(amount * 100) !== amount * 100) {
       throw new Error('Minimum required card balance must be between 0 and 1000 with at most two decimals');
     }
+    const plan = String(planType || 'plus').trim().toLowerCase();
+    const key = MINIMUM_BALANCE_KEYS[plan];
+    if (!key) throw new Error('Unknown plan type for minimum card balance');
     const normalized = amount.toFixed(2);
     await pool.query(
       `INSERT INTO app_settings (setting_key, setting_value)
-       VALUES ('default_minimum_required_card_balance', ?)
+       VALUES (?, ?)
        ON DUPLICATE KEY UPDATE setting_value=VALUES(setting_value),
          updated_at=CURRENT_TIMESTAMP(3)`,
-      [normalized]
+      [key, normalized]
     );
-    return { minimumRequiredCardBalance: normalized };
+    return plan === 'plus'
+      ? { minimumRequiredCardBalance: normalized, planType: plan }
+      : { minimumRequiredCardBalance: normalized, planType: plan };
   }
 
   async function setDefaultCardType(cardTypeId) {

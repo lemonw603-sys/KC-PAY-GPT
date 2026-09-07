@@ -105,7 +105,7 @@ test('admin refresh feedback and inset dropdown arrows remain visible', () => {
   const script = fs.readFileSync(path.join(directory, 'admin', 'assets', 'admin.js'), 'utf8');
   const styles = fs.readFileSync(path.join(directory, 'admin', 'assets', 'admin.css'), 'utf8');
   assert.match(html, /admin\.css\?v=25/);
-  assert.match(html, /admin\.js\?v=34/);
+  assert.match(html, /admin\.js\?v=35/);
   assert.match(script, /button\.textContent = '刷新中…'/);
   assert.match(script, /showNotice\('刷新完成。', 'success'\)/);
   assert.match(script, /showNotice\('刷新失败，请稍后重试。'\)/);
@@ -162,6 +162,19 @@ test('admin card page folds card sources, import, and balance funding into one v
   assert.doesNotMatch(html, /stock-threshold-form|replenishment-limit-form|stock-confirmation|stock-confirm-hint|提醒与自动补卡设置/);
   assert.doesNotMatch(script, /replenishment-settings|stockConfirmation|请输入确认词/);
   assert.match(script, /Promise\.all\(\[loadStock\(\), loadProviderRoutes\(\), loadCardFundingAttempts\(\)\]\)/);
+});
+
+test('CDK page generates per product and the card page sets the minimum balance per product', () => {
+  const html = fs.readFileSync(path.join(directory, 'admin', 'index.html'), 'utf8');
+  const script = fs.readFileSync(path.join(directory, 'admin', 'assets', 'admin.js'), 'utf8');
+  assert.match(html, /id="cdk-plan"[^>]*>[\s\S]*?<option value="pro_20x">Pro 20X<\/option>/);
+  assert.match(html, /id="cdk-batch-plan">[\s\S]*?<option value="pro_5x">Pro 5X<\/option>/);
+  assert.match(html, /id="minimum-balance-plan"/);
+  assert.doesNotMatch(html, /当前仅支持 Plus/);
+  assert.match(script, /body: JSON\.stringify\(\{ count, planType \}\)/);
+  assert.match(script, /body: JSON\.stringify\(\{ amount: Math\.round\(amount \* 100\) \/ 100, planType \}\)/);
+  const customer = fs.readFileSync(path.join(directory, 'assets', 'customer.js'), 'utf8');
+  assert.match(customer, /function withProduct\(text, order\)/);
 });
 
 test('admin navigation is exactly five pages and old views are gone', () => {

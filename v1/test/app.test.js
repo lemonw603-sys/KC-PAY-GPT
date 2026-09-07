@@ -86,7 +86,7 @@ test('labels local stock refresh separately from provider card synchronization',
 test('admin overview does not describe disabled automatic card opening as enabled', async () => {
   const html = await readFile(new URL('../public/admin/index.html', import.meta.url), 'utf8');
   const script = await readFile(new URL('../public/admin/assets/admin.js', import.meta.url), 'utf8');
-  assert.match(html, /admin\.js\?v=34/);
+  assert.match(html, /admin\.js\?v=35/);
   assert.match(script, /supplyOn \? '自动开卡与补余额' : d\.supplyAutomationMixed \? '部分开启' : '全部人工'/);
   assert.match(script, /开卡与补余额都由人工在卡片页操作/);
   assert.match(script, /没有合格卡，新订单会等卡/);
@@ -944,8 +944,8 @@ test('updates the minimum required card balance through the guarded admin route'
   const writes = [];
   const app = createApp({
     adminAuth,
-    getAdminCardStock: async () => ({ maxSuccessfulPayments: 3, minimumRequiredCardBalance: writes.at(-1) || '16.00' }),
-    setAdminCardMinimumBalance: async (amount) => { const normalized = amount.toFixed(2); writes.push(normalized); return { minimumRequiredCardBalance: normalized }; }
+    getAdminCardStock: async () => ({ maxSuccessfulPayments: 3, minimumRequiredCardBalance: writes.at(-1)?.split(':')[1] || '16.00' }),
+    setAdminCardMinimumBalance: async (amount, planType) => { const normalized = amount.toFixed(2); writes.push(`${planType}:${normalized}`); return { minimumRequiredCardBalance: normalized, planType }; }
   });
   await withServer(app, async (baseUrl) => {
     const denied = await fetch(`${baseUrl}/api/v1/admin/card-stock/minimum-balance`, {
@@ -970,11 +970,21 @@ test('updates the minimum required card balance through the guarded admin route'
       body: JSON.stringify({ amount: 8 })
     });
     assert.equal(updated.status, 200);
-    assert.deepEqual(await updated.json(), { minimumRequiredCardBalance: '8.00' });
+    assert.deepEqual(await updated.json(), { minimumRequiredCardBalance: '8.00', planType: 'plus' });
+    const pro = await fetch(`${baseUrl}/api/v1/admin/card-stock/minimum-balance`, {
+      method: 'POST', headers: { Cookie: cookie, Origin: baseUrl, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ amount: 145.5, planType: 'pro_20x' })
+    });
+    assert.deepEqual(await pro.json(), { minimumRequiredCardBalance: '145.50', planType: 'pro_20x' });
+    const badPlan = await fetch(`${baseUrl}/api/v1/admin/card-stock/minimum-balance`, {
+      method: 'POST', headers: { Cookie: cookie, Origin: baseUrl, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ amount: 8, planType: 'team' })
+    });
+    assert.deepEqual([badPlan.status, await badPlan.json()], [400, { error: 'invalid_plan_type' }]);
     const stock = await fetch(`${baseUrl}/api/v1/admin/card-stock`, { headers: { Cookie: cookie } });
-    assert.deepEqual(await stock.json(), { maxSuccessfulPayments: 3, minimumRequiredCardBalance: '8.00' });
+    assert.deepEqual(await stock.json(), { maxSuccessfulPayments: 3, minimumRequiredCardBalance: '145.50' });
   });
-  assert.deepEqual(writes, ['8.00']);
+  assert.deepEqual(writes, ['plus:8.00', 'pro_20x:145.50']);
 });
 
 test('order execution timeline is readable by an authenticated administrator only', async () => {

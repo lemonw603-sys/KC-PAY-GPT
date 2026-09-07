@@ -10,7 +10,7 @@ const CDK_PREFIX = 'PJ-';
 const CDK_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
 const CDK_RANDOM_LENGTH = 20;
 const MAX_BATCH_SIZE = 1_000;
-const PLAN_TYPES = new Set(['plus']);
+export const PLAN_TYPES = new Set(['plus', 'pro_5x', 'pro_20x']);
 
 export class CdkBatchError extends Error {
   constructor(message, code) {

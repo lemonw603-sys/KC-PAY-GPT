@@ -20,8 +20,10 @@ const SELECT_ORDER = `
            ) END,
            o.status
          ) AS effective_status,
-         o.customer_email, o.finished_at, o.id AS internal_order_id
-  FROM orders o`;
+         o.customer_email, o.finished_at, o.id AS internal_order_id,
+         o.plan_type, product.product_code, product.display_name AS product_name
+  FROM orders o
+  LEFT JOIN products product ON product.id = o.product_id`;
 
 export async function findCustomerOrder(pool, lookup) {
   let sql;

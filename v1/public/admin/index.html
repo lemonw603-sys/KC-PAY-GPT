@@ -8,7 +8,7 @@
   <title>Plus 运营后台</title>
   <link rel="icon" href="/admin/assets/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/admin/assets/admin.css?v=25">
-  <script src="/admin/assets/admin.js?v=34" defer></script>
+  <script src="/admin/assets/admin.js?v=35" defer></script>
 </head>
 <body>
   <div class="admin-shell">
@@ -91,11 +91,12 @@
             <div><p class="section-kicker">订单入口</p><h2>生成 CDK 卡密</h2></div>
             <span class="write-badge">内部写入</span>
           </div>
-          <p class="card-description">当前仅支持 Plus。一次可生成 1–1000 个 CDK；生成后由你另行选择复制或下载 TXT，不会自动下载。数据库保存不可逆 HMAC，批次恢复副本加密保存。生成卡密不会触发开卡或充值。外部付款只记录“已确认”，实际金额和付款时间可在订单详情中补录；未补录时导出显示“未记录”。<strong>下载文件不代表已经交付客户。</strong></p>
+          <p class="card-description">产品：Plus、Pro 5X、Pro 20X（Pro 是两阶段：先开通 Plus，再在同一账号里升级）。一次可生成 1–1000 个 CDK；生成后由你另行选择复制或下载 TXT，不会自动下载。数据库保存不可逆 HMAC，批次恢复副本加密保存。生成卡密不会触发开卡或充值。外部付款只记录“已确认”，实际金额和付款时间可在订单详情中补录；未补录时导出显示“未记录”。<strong>下载文件不代表已经交付客户。</strong></p>
           <form class="cdk-form" id="cdk-form">
-            <label for="cdk-count">生成数量</label>
+            <label for="cdk-count">生成数量与产品</label>
             <div>
               <input id="cdk-count" name="count" type="number" min="1" max="1000" value="1" required>
+              <select id="cdk-plan" name="planType" aria-label="产品"><option value="plus">Plus</option><option value="pro_5x">Pro 5X</option><option value="pro_20x">Pro 20X</option></select>
               <button class="primary-button" type="submit">生成 CDK</button>
             </div>
           </form>
@@ -112,7 +113,7 @@
           </div>
           <p class="card-description">每个新版批次可单独下载原始 TXT 和带状态的 CSV 留档；作废只影响尚未兑换的卡密，记录会保留便于倒查。</p>
           <form class="filters cdk-batch-filters" id="cdk-batch-filters">
-            <label><span class="sr-only">产品</span><select id="cdk-batch-plan"><option value="">全部产品</option><option value="plus">Plus</option></select></label>
+            <label><span class="sr-only">产品</span><select id="cdk-batch-plan"><option value="">全部产品</option><option value="plus">Plus</option><option value="pro_5x">Pro 5X</option><option value="pro_20x">Pro 20X</option></select></label>
             <label><span class="sr-only">状态</span><select id="cdk-batch-status"><option value="">全部状态</option><option value="AVAILABLE">含未使用</option><option value="REDEEMED">含已兑换</option><option value="REVOKED">含已作废</option></select></label>
             <label><span class="sr-only">开始日期</span><input id="cdk-batch-from" type="date"></label>
             <label><span class="sr-only">结束日期</span><input id="cdk-batch-to" type="date"></label>
@@ -142,9 +143,9 @@
                 <p class="form-hint">达到上限后不再分配；修改只影响后续订单，不改写历史。</p>
               </form>
               <form class="threshold-form" id="minimum-balance-form">
-                <label for="minimum-balance">最低所需卡余额（USD）</label>
-                <div><input id="minimum-balance" type="number" min="0" max="1000" step="0.01" required><button class="primary-small" type="submit">保存余额门槛</button></div>
-                <p class="form-hint">余额低于此值的卡不参与分配；只影响之后的分配，不影响付款。</p>
+                <label for="minimum-balance">最低所需卡余额（USD，按产品）</label>
+                <div><select id="minimum-balance-plan" aria-label="产品"><option value="plus">Plus</option><option value="pro_5x">Pro 5X</option><option value="pro_20x">Pro 20X</option></select><input id="minimum-balance" type="number" min="0" max="1000" step="0.01" required><button class="primary-small" type="submit">保存余额门槛</button></div>
+                <p class="form-hint">余额低于此值的卡不参与该产品的分配；Pro 要覆盖 Plus 加升级两笔。只影响之后的分配，不影响付款。</p>
               </form>
             </div>
           </section>

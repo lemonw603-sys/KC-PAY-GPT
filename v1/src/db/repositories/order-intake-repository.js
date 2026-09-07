@@ -8,6 +8,20 @@ const REQUIRED_SETTINGS = Object.freeze([
   'default_open_card_amount',
   'default_minimum_required_card_balance'
 ]);
+// Per-product minimum card balance (Pro stages charge more than Plus). Optional:
+// a missing or malformed value falls back to the Plus default.
+const PLAN_MINIMUM_SETTINGS = Object.freeze({
+  pro_5x: 'minimum_required_card_balance:pro_5x',
+  pro_20x: 'minimum_required_card_balance:pro_20x'
+});
+const INTAKE_SETTING_KEYS = Object.freeze([...REQUIRED_SETTINGS, ...Object.values(PLAN_MINIMUM_SETTINGS)]);
+const MINIMUM_PATTERN = /^\d+(?:\.\d{1,6})?$/;
+
+export function minimumRequiredCardBalanceForPlan(settings, planType) {
+  const key = PLAN_MINIMUM_SETTINGS[String(planType || '').trim().toLowerCase()];
+  const override = key ? settings.minimumRequiredCardBalanceByPlan?.[key.split(':')[1]] : null;
+  return override || settings.minimumRequiredCardBalance;
+}
 
 export function parseOrderIntakeSettings(rows) {
   const values = new Map(rows.map((row) => [row.setting_key, row.setting_value]));
@@ -47,10 +61,16 @@ export function parseOrderIntakeSettings(rows) {
       status: 503
     });
   }
+  const minimumRequiredCardBalanceByPlan = {};
+  for (const [plan, key] of Object.entries(PLAN_MINIMUM_SETTINGS)) {
+    const text = String(values.get(key) || '').trim();
+    if (MINIMUM_PATTERN.test(text) && Number(text) > 0 && Number(text) <= 100000) minimumRequiredCardBalanceByPlan[plan] = text;
+  }
   return {
     cardTypeId,
     openCardAmount: amountText,
-    minimumRequiredCardBalance: minimumBalanceText
+    minimumRequiredCardBalance: minimumBalanceText,
+    minimumRequiredCardBalanceByPlan
   };
 }
 
@@ -58,11 +78,11 @@ export async function createOrderFromCdk(pool, input) {
   const connection = await pool.getConnection();
   try {
     await connection.beginTransaction();
-    const placeholders = REQUIRED_SETTINGS.map(() => '?').join(', ');
+    const placeholders = INTAKE_SETTING_KEYS.map(() => '?').join(', ');
     const [settingRows] = await connection.query(
       `SELECT setting_key, setting_value FROM app_settings
        WHERE setting_key IN (${placeholders}) FOR UPDATE`,
-      REQUIRED_SETTINGS
+      INTAKE_SETTING_KEYS
     );
     const settings = parseOrderIntakeSettings(settingRows);
 
@@ -157,7 +177,7 @@ export async function createOrderFromCdk(pool, input) {
         input.chatgptAccountId,
         settings.cardTypeId,
         settings.openCardAmount,
-        settings.minimumRequiredCardBalance,
+        minimumRequiredCardBalanceForPlan(settings, cdkRows[0].plan_type || 'plus'),
         input.sessionCiphertext,
         input.cardPurchaseIdempotencyKey
       ]

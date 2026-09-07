@@ -212,7 +212,7 @@ const app = createApp({
     } : null
   ,setAdminCardStockDefaultCardType: cardStockService.setDefaultCardType
   ,setAdminCardMaxSuccessfulPayments: (value) => cardStockService.setMaxSuccessfulPayments(value)
-  ,setAdminCardMinimumBalance: (value) => cardStockService.setMinimumRequiredCardBalance(value)
+  ,setAdminCardMinimumBalance: (value, planType) => cardStockService.setMinimumRequiredCardBalance(value, planType)
   ,createAdminCardStockJob: cardStockJobService.createJob
   ,listAdminCardFundingAttempts: cardFundingAdminService.list
   ,resolveAdminCardFundingUnknown: cardFundingAdminService.resolveUnknown

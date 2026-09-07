@@ -220,17 +220,28 @@
       const state = i < idx ? 'done' : (i === idx ? (terminal ? 'done' : 'current') : 'future');
       return `<div class="hp__node" data-state="${state}"><span class="hp__dot" aria-hidden="true"></span><span class="hp__lbl">${escapeHtml(STEP_SHORT[s])}</span></div>`;
     }).join('');
-    el.progressCur.textContent = (STATUS[cur] && STATUS[cur].title) || TL_LABEL[cur] || '';
+    el.progressCur.textContent = withProduct((STATUS[cur] && STATUS[cur].title) || TL_LABEL[cur] || '', currentOrder);
     el.progressStep.textContent = `第 ${idx + 1} / ${CANON.length} 步`;
     const target = PROGRESS_PCT[cur] || Math.round((idx + 1) / CANON.length * 100);
     animateProgress(lastPct, target);
     lastPct = target;
   }
 
+  // 文案默认写 Plus；Pro 订单把「Plus」换成产品短名（后端 product.label 如 "ChatGPT Pro 20X"）。
+  function productShortName(order) {
+    const label = String(order?.product?.label || '');
+    return label.replace(/^ChatGPT\s+/i, '').trim() || 'Plus';
+  }
+  function withProduct(text, order) {
+    const short = productShortName(order);
+    return short === 'Plus' ? text : String(text).replace(/Plus/g, short);
+  }
+
   // ---------------- 渲染状态卡 ----------------
   function renderStatus(order, { scroll = true } = {}) {
     currentOrder = order;
-    const meta = STATUS[order.status] || STATUS.REVIEWING || STATUS.PROCESSING;
+    const base = STATUS[order.status] || STATUS.REVIEWING || STATUS.PROCESSING;
+    const meta = { ...base, title: withProduct(base.title, order), desc: withProduct(base.desc, order) };
     const terminal = meta.terminal;
     const success = order.status === 'SUCCESS';
     const failed = order.status === 'FAILED';

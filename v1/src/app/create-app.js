@@ -330,7 +330,9 @@ export function createApp({
         || Math.round(amount * 100) !== amount * 100) {
         return res.status(400).json({ error: 'invalid_minimum_balance' });
       }
-      res.json(await setAdminCardMinimumBalance(amount));
+      const planType = req.body?.planType == null ? 'plus' : String(req.body.planType).trim().toLowerCase();
+      if (!['plus', 'pro_5x', 'pro_20x'].includes(planType)) return res.status(400).json({ error: 'invalid_plan_type' });
+      res.json(await setAdminCardMinimumBalance(amount, planType));
     });
   }
   if (typeof createAdminCardStockJob === 'function') {

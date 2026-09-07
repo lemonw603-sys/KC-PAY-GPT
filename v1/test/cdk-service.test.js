@@ -48,8 +48,11 @@ test('validates count and creates traceable bounded batch identifiers', () => {
   }), 'B-20260817102030123-A1B2C3');
 });
 
-test('keeps the first release explicitly Plus-only', () => {
+test('accepts Plus and the two Pro tiers, nothing else', () => {
   assert.equal(normalizePlanType(), 'plus');
   assert.equal(normalizePlanType('PLUS'), 'plus');
-  assert.throws(() => normalizePlanType('pro_5x'), (error) => error.code === 'INVALID_PLAN_TYPE');
+  assert.equal(normalizePlanType('pro_5x'), 'pro_5x');
+  assert.equal(normalizePlanType(' PRO_20X '), 'pro_20x');
+  assert.throws(() => normalizePlanType('team'), (error) => error.code === 'INVALID_PLAN_TYPE');
+  assert.throws(() => normalizePlanType('20x'), (error) => error.code === 'INVALID_PLAN_TYPE');
 });

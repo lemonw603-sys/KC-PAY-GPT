@@ -16,7 +16,8 @@ test('order intake snapshots independent open-card and minimum-balance settings'
   assert.deepEqual(parsed, {
     cardTypeId: '1',
     openCardAmount: '16',
-    minimumRequiredCardBalance: '15.5'
+    minimumRequiredCardBalance: '15.5',
+    minimumRequiredCardBalanceByPlan: {}
   });
 });
 
@@ -133,3 +134,18 @@ test('a bound code used by a different account on a live order is still rejected
   const connection = boundCdkConnection({ boundOrder: { id: 'order-old', public_no: 'PJV1-OLD', status: 'CARD_READY', customer_email: 'someone-else@example.com', chatgpt_account_id: 'account-2' } });
   await assert.rejects(() => createOrderFromCdk({ getConnection: async () => connection }, intakeInput()), (error) => error.code === 'CDK_UNAVAILABLE');
 });
+
+test('intake applies a per-product minimum card balance for Pro CDKs and falls back to the Plus default', async () => {
+  const { minimumRequiredCardBalanceForPlan } = await import('../src/db/repositories/order-intake-repository.js');
+  const parsed = parseOrderIntakeSettings(settings({
+    accept_new_orders: 'true', default_card_type_id: '1', default_open_card_amount: '16',
+    default_minimum_required_card_balance: '16', 'minimum_required_card_balance:pro_20x': '145.5',
+    'minimum_required_card_balance:pro_5x': 'not-a-number'
+  }));
+  assert.deepEqual(parsed.minimumRequiredCardBalanceByPlan, { pro_20x: '145.5' });
+  assert.equal(minimumRequiredCardBalanceForPlan(parsed, 'pro_20x'), '145.5');
+  assert.equal(minimumRequiredCardBalanceForPlan(parsed, 'pro_5x'), '16');
+  assert.equal(minimumRequiredCardBalanceForPlan(parsed, 'plus'), '16');
+  assert.equal(minimumRequiredCardBalanceForPlan(parsed, undefined), '16');
+});
+

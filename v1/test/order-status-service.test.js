@@ -141,3 +141,21 @@ test('rejects ambiguous query bodies and hides missing lookup details', async ()
     (error) => error.code === 'ORDER_NOT_FOUND' && error.status === 404
   );
 });
+
+test('customer status names the product for Pro orders and stays Plus-shaped for legacy rows', async () => {
+  const service = createOrderStatusService({
+    pool: {}, cdkHashKey: Buffer.alloc(32, 7),
+    repository: {
+      findCustomerOrder: async (_pool, lookup) => (lookup.publicNo === 'PJV1-PRO00000000000000000'
+        ? { public_no: lookup.publicNo, status: 'RECHARGE_PROCESSING', effective_status: 'RECHARGE_PROCESSING',
+          updated_at: '2026-09-08T10:00:00.000Z', plan_type: 'pro_20x', product_name: 'ChatGPT Pro 20X' }
+        : { public_no: lookup.publicNo, status: 'RECHARGE_PROCESSING', effective_status: 'RECHARGE_PROCESSING',
+          updated_at: '2026-09-08T10:00:00.000Z', plan_type: 'plus', product_name: null })
+    }
+  });
+  const pro = await service({ publicNo: 'PJV1-PRO00000000000000000' });
+  assert.deepEqual(pro.product, { planType: 'pro_20x', label: 'ChatGPT Pro 20X' });
+  const plus = await service({ publicNo: 'PJV1-PLUS0000000000000000' });
+  assert.deepEqual(plus.product, { planType: 'plus', label: 'ChatGPT Plus' });
+});
+
