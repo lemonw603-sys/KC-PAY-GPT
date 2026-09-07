@@ -325,3 +325,31 @@ test('session identity probe treats a refresh error inside a 200 session body as
     await once(server, 'close');
   }
 });
+
+test('session identity probe treats a logged-out web client auth status as SESSION_INVALID even with a live session endpoint', async () => {
+  const server = createServer((request, response) => {
+    if (request.url === '/api/auth/session') {
+      response.writeHead(200, { 'content-type': 'application/json' });
+      response.end(JSON.stringify({ user: { id: 'user-001', email: 'buyer@example.test' }, account: { id: 'acct-001' }, accessToken: 'fixture-access-token' }));
+      return;
+    }
+    response.writeHead(200, { 'content-type': 'text/html' });
+    response.end('<title>ChatGPT</title><script>window.__reactRouterContext={"state":{"authStatus":"logged_out"}}</script><main>Log in</main>');
+  });
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  const address = server.address();
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage();
+    await page.goto(`http://127.0.0.1:${address.port}/`, { waitUntil: 'domcontentloaded' });
+    await assert.rejects(
+      () => probeSessionIdentity(page, { email: 'buyer@example.test' }),
+      (error) => error.code === 'SESSION_INVALID' && error.details?.stage === 'client-auth' && error.details?.authStatus === 'logged_out',
+    );
+  } finally {
+    await browser.close();
+    server.close();
+    await once(server, 'close');
+  }
+});

@@ -152,6 +152,22 @@ export async function probeSessionIdentity(page, expectedIdentity, {
       { stage: 'session-error', httpStatus: observed.status, sessionError: observed.sessionError },
     );
   }
+  // The web app carries its own client login state in the server-rendered
+  // payload. With a session cookie but a dead client auth, it renders the
+  // logged-out shell (no upgrade entry, "Welcome back" account chooser) even
+  // though the session endpoint still answers 200. Verified 2026-09-07.
+  const clientAuth = await page.evaluate(() => {
+    const scripts = Array.from(document.scripts).map((script) => script.textContent || '').join('\n');
+    const match = scripts.match(/"authStatus":"([a-z_]+)"/);
+    return { authStatus: match ? match[1] : null };
+  }).catch(() => ({ authStatus: null }));
+  if (clientAuth.authStatus && clientAuth.authStatus !== 'logged_in') {
+    throw new SessionIdentityProbeError(
+      `web client auth status is ${clientAuth.authStatus}`,
+      'SESSION_INVALID',
+      { stage: 'client-auth', httpStatus: observed.status, authStatus: clientAuth.authStatus },
+    );
+  }
   const observedDigests = {
     emailDigest: observed.email ? digest(observed.email) : '',
     accountIdDigest: observed.accountId ? digest(observed.accountId) : '',
