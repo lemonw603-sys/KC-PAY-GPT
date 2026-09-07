@@ -1675,3 +1675,10 @@
 - 根因：`popup.js` 的 `writeSessionCookies` 在已有 session cookie 时直接返回「已保留原登录」，新令牌根本没写；提示还是绿色成功样式。这是 Codex 为「同一客户被轮换的会话」加的保护，对人工换账号场景是错的。
 - 修复 `1.2.0`：写入前先关闭该 Profile 的 chatgpt.com 标签页（防旧页面把轮换后的旧令牌写回来）、按每条 cookie 自身的域/路径清除所有 session cookie 及分块、再写入；清不干净则报错不写。manifest 增加 `tabs` 权限。纯函数 `sessionCookieRemovals` 单测覆盖分块、域变体、去重；6/6。已同步到 `BitExtensions/384ef55b-…`，并通过 Local API 关闭/重开 Lane 3 让新版生效。
 - Worker 自动流程不受影响：`session-bootstrap` 走 CDP，替换逻辑在 `fc20e9a` 已单独实现。
+
+## 2026-09-07｜Lane 3 只读验证第二跑（免费账号）：Pro 可直购，Plus 被拒，custom 模式无 URL
+
+- 01:53 UTC，上号器 1.2.0 替换为免费账号后重跑。观察：session 200；`accounts/check` plan=free；checkout plus → 400「Our systems have detected unusual activity. Please try again later.」；pro_5x（chatgptprolite）→ 200；pro_20x（chatgptpro）→ 200，两者返回 `checkout_session_id`、`client_secret`、`publishable_key`、`checkout_ui_mode`、`automatic_tax_enabled`、`payment_method_types` 等 36 个键，`url` 为空。证据文件只存键名与哈希。
+- 结论：待验证 B 接口层成立——免费账号不需要先买 Plus 就能创建 Pro 结账，规格阶段数改为 1；待验证 A 成立但形状不同——custom 模式不给结账 URL，付款靠页面内嵌 Stripe（client_secret），规格步骤 2 已改。
+- 未定：Plus 在同一身份上对已 Plus 账号和免费账号都返回「unusual activity」，而 Pro 正常；说明与账号无关。候选原因：该身份/出口在 09-06 创建过 Plus 结账并人工付款、短时间内重复创建结账、套餐级风控。未重试，避免加重标记；下一步用另一身份（Lane 2）+ 同一免费账号只跑 plus 一次分离变量。
+- 附带：Local API 关闭/重开 Lane 3 各一次；BitBrowser 有「今日打开窗口次数」额度（09-02 曾触顶），后续尽量不重复开关。
