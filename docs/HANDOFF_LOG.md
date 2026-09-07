@@ -1706,3 +1706,4 @@
 - 新增：runtime `residentProfile=true`，生产 Worker 的 close 只断 CDP，不再 `/browser/close`（常驻身份，省每日打开次数）。
 - 测试：配置 1 条、组合 2 条、集成 2 条、executor 1 条；browser-mvp 全量 182/173/0/9。
 - 下一步：用测试账号建一笔测试订单（客户页提交 CDK + Session），本机 `--once` 演练；通过后翻付款开关做一笔真实付款；之后按 §5.1 删旧编排。**可审版本：本节提交。**
+- 新增 `browser-mvp/scripts/run-live-rehearsal.sh`：`check` 只验配置（付款开关必须 false）、`once <orderId>` 跑演练；密钥从 `/etc/pojia/runtime.env`、`browser-readonly.env` 经 SSH 取入进程环境，DATABASE_URL 改指隧道，WAL/租约文件放 `~/Library/Application Support/pojia-browser-live/`。本机隧道当时已断，重新拉起后 `check` 返回 READY（迁移 048、数据库付款开关 false、执行器 profile writes false、Lane 3 Profile 在列）。

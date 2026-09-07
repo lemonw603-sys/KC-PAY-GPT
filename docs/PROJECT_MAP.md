@@ -28,7 +28,7 @@
 | 订单 | 成功 2（含 09-06 人工 20X）、失败 7、关闭 8、API 路线等卡 1、等 Session 2；活动资金/run/队列/租约/许可全部 0 |
 | 迁移 | 048 |
 | Browser 自动化 | 生产从未自动完成过一笔付款；21 个 run 中 20 个为 09-01 的 CHATGPT_ACCESS_BLOCKED，1 个 09-06 到 Checkout 未填表后人工完成 |
-| 本机 | BitBrowser + mihomo（launchd）；LIVE Worker 靠手动 `--once`，无常驻；SSH 隧道 13306→3306 |
+| 本机 | BitBrowser + mihomo（launchd）；LIVE Worker 靠手动 `--once`，无常驻；SSH 隧道 13306→3306（掉线时 `ssh -f -N -L 13306:127.0.0.1:3306 root@<host>`）；演练/LIVE 启动脚本 `browser-mvp/scripts/run-live-rehearsal.sh check｜once <orderId>`（密钥运行时经 SSH 取入进程，不落盘；09-07 `check` 返回 READY） |
 
 详细事实表见 `docs/CURRENT_STATE.md`。
 
