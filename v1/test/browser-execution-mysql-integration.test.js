@@ -3,6 +3,7 @@ import crypto from 'node:crypto';
 import test from 'node:test';
 import mysql from 'mysql2/promise';
 import { createBrowserExecutionRepository } from '../src/db/repositories/browser-execution-repository.js';
+import { returnCdkForOrderInTransaction } from '../src/db/repositories/cdk-return-repository.js';
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
 const productId = '00000000-0000-4000-8000-000000000201';
@@ -364,7 +365,29 @@ test('Browser MySQL pre-payment abort releases every runtime and funds fence ato
     assert.equal(stored.ciphertext, null);
     assert.ok(stored.released_at);
     assert.equal(permit.snapshotHash.length, 64);
+
+    // WAITING_FOR_SESSION keeps the paid entitlement bound (the customer will
+    // re-submit); only a no-payment ending hands it back. Exercise the return
+    // helper on the real schema: no payment evidence exists in this scenario.
+    const [[boundCdk]] = await pool.query('SELECT status, order_id FROM cdks WHERE id = ?', [cdkId]);
+    assert.deepEqual(boundCdk, { status: 'REDEEMED', order_id: orderId });
+    const connection = await pool.getConnection();
+    try {
+      await connection.beginTransaction();
+      const returned = await returnCdkForOrderInTransaction(connection, {
+        orderId, reason: 'integration: no-payment ending', actorType: 'WORKER', actorId: 'browser-safe-abort-worker',
+      });
+      await connection.commit();
+      assert.deepEqual(returned, { returned: true, reasonCode: null, cdkId });
+    } finally { connection.release(); }
+    const [[freedCdk]] = await pool.query('SELECT status, order_id, redeemed_at FROM cdks WHERE id = ?', [cdkId]);
+    assert.deepEqual(freedCdk, { status: 'AVAILABLE', order_id: null, redeemed_at: null });
+    const [[returnEvent]] = await pool.query(
+      `SELECT event_type, channel, actor_id, JSON_UNQUOTE(JSON_EXTRACT(metadata_json, '$.orderId')) AS order_id
+       FROM cdk_delivery_events WHERE cdk_id = ? ORDER BY created_at DESC LIMIT 1`, [cdkId]);
+    assert.deepEqual(returnEvent, { event_type: 'RETURNED', channel: 'order', actor_id: 'browser-safe-abort-worker', order_id: orderId });
   } finally {
+    await pool.query('DELETE FROM cdk_delivery_events WHERE cdk_id = ?', [cdkId]);
     await pool.query('DELETE FROM order_events WHERE order_id = ?', [orderId]);
     await pool.query('DELETE FROM payment_permits WHERE recharge_attempt_id = ?', [attemptId]);
     await pool.query('DELETE FROM browser_checkpoints WHERE browser_run_id = ?', [runId]);

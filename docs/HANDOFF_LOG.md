@@ -1752,3 +1752,4 @@
 - 接入点：Browser `abortBeforePayment` 到 RECHARGE_FAILED；后台取消的三条 CLOSED 路径；客户提交时若码已绑定：原单未付款终态 → 先退回再按新单处理；原单进行中且同账号（account id 或邮箱）→ 直接返回原单（`reused: true`）；不同账号 → 仍拒绝。
 - Session 重贴：去掉 3 次上限与修复窗口检查，状态接口 `remaining/expiresAt` 置空，客户页显示「可随时重新提供，不限次数」。
 - 测试：退回仓库 2 条、intake 3 条、取消与重贴测试改为新语义；v1 非库全量通过。数据库集成测试未在本机跑（无 TEST_DATABASE_URL）。
+- 集成验证：本机测试库（`127.0.0.1:54741/pojia_test`）先补跑迁移到 049；Browser 执行集成测试新增「WAITING_FOR_SESSION 保持绑定、无付款证据时退回并记 RETURNED」的真实表结构断言，执行/卡源/人工付款套件 8/8。通用套件 `mysql-integration.test.js` 存在 048 之前的旧夹具问题并会挂住，已记入未验证清单；本轮一次误把 `git stash` 放进了会挂住的命令链，及时中止，工作区未受影响——以后不在可能挂住的命令里做 stash。

@@ -35,6 +35,10 @@
 
 - 常驻多身份 Worker 已在真实排队单上完成一次「领单 → 执行 → 分类安全中止」闭环（终态 BROWSER_RETRY_LIMIT），尚未在有效会话下跑到 PRE_SUBMIT_STOPPED；多 lane 并行未跑。
 
+## 测试基建
+
+- `v1/test/mysql-integration.test.js`（通用集成套件）在本机测试库上有 048 之前的旧夹具（`CARD_SOURCE_MISMATCH`）且会挂住，09-07 未跑通；其余 Browser/卡源/账本/人工付款集成套件在迁移到 049 的测试库上通过。该套件需要按 048 冻结卡源模型修夹具。
+
 ## 运行与部署
 
 - Browser 自动化整条链在本机：SSH 隧道手拉（09-07 断过三次）、Worker 手起、BitBrowser 免费版每日 50 次打开额度；服务器 Browser Worker inactive；常开机器未建。
