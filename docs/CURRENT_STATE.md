@@ -4,10 +4,10 @@
 
 | 项目 | 当前值 | 核对时间（UTC） | 证据方式 |
 |---|---|---|---|
-| 生产 release | `/opt/pojia/releases/20260907-admin-daily-b1c32f4`（commit `b1c32f4`，881 文件 manifest OK） | 2026-09-07 00:57 | `readlink -f /opt/pojia/current` |
-| 回滚点 | `/opt/pojia/releases/20260907-manual-payment-1699197` | 同上 | 部署记录 |
-| 最新数据库备份 | `/var/backups/pojia/pojia-20260907T005617Z.sql.gz.enc`，完整性 OK | 00:56 | `pojia-ops backup/verify` |
-| pojia-web | active | 16:35 | systemctl |
+| 生产 release | `/opt/pojia/releases/20260907-import-confirm-6948b02`（commit `6948b02`，881 文件 manifest OK） | 2026-09-07 01:24 | `readlink -f /opt/pojia/current` |
+| 回滚点 | `/opt/pojia/releases/20260907-admin-daily-b1c32f4` | 同上 | 部署记录 |
+| 最新数据库备份 | `/var/backups/pojia/pojia-20260907T012348Z.sql.gz.enc`，完整性 OK | 01:23 | `pojia-ops backup/verify` |
+| pojia-web | active（01:24 随 release 切换重启） | 01:24 | systemctl |
 | pojia-worker（API） | inactive（09-06 03:46 UTC 人为 SIGTERM，防历史任务抢卡） | 16:35 | systemctl + journal |
 | pojia-browser-worker | inactive / disabled | 16:35 | systemctl |
 | pojia-card-funding.timer | active | 16:35 | systemctl |
@@ -35,7 +35,7 @@
 | 最近真实单 | `PJV1-RCbAiI0IkGMy-hCBgMSn`：自动化到 Checkout 未填表 → 运营者手工付 Plus + 20X（143.13）→ 09-06 16:40 以「人工付款已完成」收口为 RECHARGE_SUCCESS；`PAYMENT_SUBMIT=0`，证据 `MANUAL_PAYMENT_CONFIRMED` | 16:41 | orders / browser_runs / browser_operations |
 | 告警 | OPEN 10：8 条 09-01 起的「卡台余额变化」info 噪音（后台不显示）、1 条 CARD_STOCK_LOW（阈值 0，修复后不再新生成）、1 条 ORDER_WAITING_FOR_CARD；首页已可关闭 | 09-06 13:31 | operator_alerts |
 | 本机 | BitBrowser Local API + mihomo（launchd 单实例）；SSH 隧道 13306→3306 常驻；LIVE Worker 无常驻进程 | 13:40 | pgrep |
-| 已上线（本次 release） | `45f953c` 备用卡导入不再因 SETTLED 冻结卡片；`96008d4` 后台小修（CDK 免密码/不清空、告警可关、阈值 0 不告警、藏死控件、`admin.js?v=24`）。公网复核：alerts/close 未登录 401、前端无 10 分钟清空、CDK 不走密码 | 00:58 | curl + 生产文件 grep |
+| 已上线（本次 release） | `6948b02` 备用卡导入：提交改普通确认框、确认字符串由预览自动带上、路由从 step-up 改登录写守卫、失败提示翻译错误码（`admin.js?v=25`）。此前 release 内容（`45f953c`、`96008d4`）保持。公网复核：线上 `admin.js?v=25` 含新逻辑、无手打确认词与 `sensitiveApi` 导入调用；import 未登录 401 | 01:26 | curl + 生产文件 grep |
 | 已知未修 | 本机绕过连接池直连写入造成该单 attempt/dispatch/账本 `created_at` 偏后 8 小时；后台控制事务并发时可能 `ER_LOCK_DEADLOCK`（失败关闭，需重试） | 09-07 | HANDOFF_LOG |
 
 ## 事实表之外

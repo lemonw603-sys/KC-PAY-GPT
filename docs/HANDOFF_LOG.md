@@ -1647,3 +1647,11 @@
 - 从单一提交 `b1c32f4` 构建，881 文件 manifest OK；部署前备份 `/var/backups/pojia/pojia-20260907T005617Z.sql.gz.enc` 完整；仅重启 Web；回滚点 `20260907-manual-payment-1699197`。
 - 内容：备用卡导入不再因结清冻结卡片（`45f953c`）；CDK 五个操作免密码、生成结果不再自动清空、告警可关闭（新路由 `POST /api/v1/admin/alerts/:id/close`）、阈值 0 不再生成库存告警、隐藏两个死控件；`admin.js?v=24`。
 - 复核：公网 plus/ops 200；新路由未登录 401；线上前端无 `cdkClearTimer`、含 `data-close-alert`、CDK 生成不再经 `sensitiveApi`；生产文件含两处后端修复；systemd 与部署前一致；Web 重启日志无错误。数据库未写入。
+
+## 2026-09-07｜备用卡导入失败与上号器格式报错的根因，发布 release 20260907-import-confirm-6948b02
+
+- 现象：用户导入备用卡 Excel 报「导入失败」；上号器粘贴测试账号提示格式不正确。
+- 导入根因（ops 访问日志 01:13–01:14 UTC）：preview 200 ×2 → import 403（要求密码）→ step-up 204 → import 400，响应 52 字节恰为 `manual_card_import_confirmation_required`：手打的 `确认提交 N 张卡的完整快照` 与服务端字符串不完全一致（空格/数字）。库存未变，最新批次仍是 09-06 16:54 的 `2bb5ee81`。前端此前对所有失败只显示同一句「导入失败」。
+- 修复 `6948b02`：提交改为普通确认框，确认字符串由预览结果自动带上（服务端仍校验行数一致，防止预览后换文件）；`POST /api/v1/admin/manual-cards/import` 从 step-up 改为登录写守卫，与 CDK 一致；前端把 confirmation_required / snapshot_invalid / source_unavailable / file_invalid 翻译成可操作提示。新增路由测试（手打错词仍 400、登录即可提交）。v1 非库全量 516/516。
+- 上号器：`token.mjs` 递归查找嵌套 JSON 里的 `sessionToken`/`session_token`；三段式 `eyJ` JWT 判定为 accessToken 并提示改贴 Cookie `__Secure-next-auth.session-token` 的值；JSON 缺字段的报错也改为指明该 Cookie。新增 2 条解析测试（4/4）。已同步到 BitBrowser 已安装副本 `BitExtensions/384ef55b-…`（与仓库 diff 为空），下次打开窗口生效。用户实际粘贴的内容与确切报错文案尚未拿到，不能断言就是这两种情况。
+- 发布：从 `6948b02` 构建，881 文件 manifest OK；备份 `/var/backups/pojia/pojia-20260907T012348Z.sql.gz.enc` 完整；仅重启 Web；回滚点 `20260907-admin-daily-b1c32f4`。复核：`/opt/pojia/current` 指向新 release；线上 `admin.js?v=25` 含新逻辑且无旧 prompt / `sensitiveApi` 导入调用；import 未登录 401；生产 `create-app.js` 第 507 行为 `adminWriteGuards`。数据库未写入。
