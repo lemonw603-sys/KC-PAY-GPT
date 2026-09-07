@@ -104,6 +104,11 @@ test('admin order list validates filters, maps card summaries, and supports CDK 
   });
   assert.equal(result.orders[0].actualPaymentAmount, '1150.000000');
   assert.equal(result.orders[0].actualPaymentCurrency, 'PHP');
+  assert.equal(result.orders[0].stage.stage, 'PAYMENT_UNKNOWN');
+  assert.match(result.orders[0].stage.action, /先对账/);
+  assert.equal(result.orders[0].browserRun, null);
+  assert.match(pool.queries[1].sql, /LEFT JOIN LATERAL[\s\S]*FROM browser_runs lbr/);
+  assert.match(pool.queries[1].sql, /LEFT JOIN products prod ON prod\.id = o\.product_id/);
   assert.deepEqual(result.cdkMatches, []);
   assert.deepEqual(pool.queries[0].values.slice(0, 6), [
     'CARD_FAILED', 'WAITING_FOR_SESSION', 'SUBMIT_UNKNOWN', 'RECHARGE_FAILED',
@@ -119,6 +124,16 @@ test('admin order list validates filters, maps card summaries, and supports CDK 
     () => createAdminReadService({ pool: queuedPool([]) }).listOrders({ status: 'NOT_A_STATUS' }),
     /Invalid status/
   );
+});
+
+test('admin order list supports the 进行中 / 已完成 virtual filters', async () => {
+  const active = queuedPool([[{ total: 0 }], []]);
+  await createAdminReadService({ pool: active }).listOrders({ status: 'ACTIVE' });
+  assert.match(active.queries[0].sql, /o\.status NOT IN \(\?, \?, \?\)/);
+  assert.deepEqual(active.queries[0].values.slice(0, 3), ['RECHARGE_SUCCESS', 'RECHARGE_FAILED', 'CLOSED']);
+  const finished = queuedPool([[{ total: 0 }], []]);
+  await createAdminReadService({ pool: finished }).listOrders({ status: 'FINISHED' });
+  assert.match(finished.queries[0].sql, /o\.status IN \(\?, \?, \?\)/);
 });
 
 test('admin order detail exposes the full PAN but not CVV or Session', async () => {
@@ -144,12 +159,31 @@ test('admin order detail exposes the full PAN but not CVV or Session', async () 
     }, {
       task_type: 'SUBMIT_RECHARGE', status: 'PENDING', attempts: 0, max_attempts: 5,
       permit_status: null, permit_expires_at: null
-    }], [], [], [], [], [], [], [], [], [], [], [], [], []
+    }], [], [], [], [], [], [], [], [], [], [], [], [], [],
+    [{ id: 'attempt-1', executor_kind: 'BROWSER', status: 'PREPARED', funds_risk_state: 'CLEARED',
+      external_order_id: null, submit_intent_at: null, submitted_at: null, last_reconciled_at: null,
+      finished_at: null, created_at: new Date(nowMs) }],
+    [{ status: 'RESERVED', amount: '20.000000', currency: 'USD', provider_transaction_id: null,
+      reserved_at: new Date(nowMs), consumed_at: null, released_at: null, release_reason: null,
+      recharge_attempt_id: 'attempt-1' }],
+    [], [{ id: 'case-1', case_type: 'SUBMIT_UNKNOWN', status: 'OPEN', severity: 'warning',
+      assigned_to: null, resolution_note: null, detected_at: new Date(nowMs), last_seen_at: new Date(nowMs),
+      resolved_at: null }]
   ]);
   const result = await createAdminReadService({
     pool, sessionEncryptionKey: adminCardKey, now: () => nowMs
   }).getOrder('PJV1-DEMO');
   assert.equal(result.order.publicNo, 'PJV1-DEMO');
+  assert.equal(result.stage.stage, 'QUEUED');
+  assert.equal(result.browserRun, null);
+  assert.deepEqual(result.money.attempts.map((item) => [item.id, item.status, item.fundsRiskState]),
+    [['attempt-1', 'PREPARED', 'CLEARED']]);
+  assert.deepEqual(result.money.ledger.map((item) => [item.status, item.amount, item.currency]),
+    [['RESERVED', '20.000000', 'USD']]);
+  assert.deepEqual(result.money.operations, []);
+  assert.deepEqual(result.reconciliationCases.map((item) => [item.id, item.status]), [['case-1', 'OPEN']]);
+  assert.match(pool.queries.find(({ sql }) => /FROM card_consumption_ledger l/.test(sql)).sql, /BINARY o\.public_no = \?/);
+  assert.match(pool.queries[0].sql, /LEFT JOIN LATERAL/);
   assert.equal(result.order.minimumRequiredCardBalance, '15.500000');
   assert.equal(result.card.cardNumber, '4242424242424242');
   assert.equal(Object.hasOwn(result.card, 'cvv'), false);
@@ -207,10 +241,11 @@ test('admin order detail prefers the Provider attempt failure reason over a gene
       created_at: new Date(nowMs - 60_000), updated_at: new Date(nowMs),
       finished_at: new Date(nowMs)
     }],
-    [], [], [], [], [], [], [], [], [], [], [], [], [], [], []
+    [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], []
   ]);
   const result = await createAdminReadService({ pool, now: () => nowMs })
     .getOrder('PJV1-FAILED');
+  assert.equal(result.stage.stage, 'CLOSED_NO_PAYMENT');
   assert.equal(result.order.failureCode, 'PROVIDER_CONFIRMED_FAILURE');
   assert.equal(result.order.failureReason, '卡片被拒，请换卡后重提');
   assert.equal(result.order.failureReasonSource, 'PROVIDER_ATTEMPT');

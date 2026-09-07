@@ -199,7 +199,10 @@ export function createApp({
     return next();
   };
   const adminWriteGuards = [noStore, requireAdminApi, requireAdminOrigin, adminWriteRateLimit];
-  const sensitiveAdminGuards = [...adminWriteGuards, requireAdminStepUp];
+  // D-119: no second password for money/production actions; the same-origin session
+  // write guards apply. Step-up route and helper stay until the API cleanup step.
+  const sensitiveAdminGuards = [...adminWriteGuards];
+  void requireAdminStepUp;
 
   app.get('/admin/login', noStore, async (req, res) => {
     if (adminAuth && await adminAuth.authenticateRequest(req)) return res.redirect(302, '/admin');

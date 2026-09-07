@@ -90,7 +90,7 @@ test('labels local stock refresh separately from provider card synchronization',
 test('admin overview does not describe disabled automatic card opening as enabled', async () => {
   const html = await readFile(new URL('../public/admin/index.html', import.meta.url), 'utf8');
   const script = await readFile(new URL('../public/admin/assets/admin.js', import.meta.url), 'utf8');
-  assert.match(html, /admin\.js\?v=28/);
+  assert.match(html, /admin\.js\?v=29/);
   assert.match(script, /supplyOn \? '自动开卡与补余额' : d\.supplyAutomationMixed \? '部分开启' : '全部人工'/);
   assert.match(script, /开卡与补余额都由人工在卡片页操作/);
   assert.match(script, /没有合格卡，新订单会等卡/);
@@ -903,7 +903,7 @@ test('guards batch recharge authorization and exposes reconciliation, delivery, 
   });
 });
 
-test('keeps Browser timelines read-only and requires origin plus step-up for control transfer', async () => {
+test('keeps Browser timelines read-only and requires same-origin for control transfer', async () => {
   const adminAuth = createAdminSessionAuth({
     passwordHash: await hashAdminPassword('fixture admin password', { salt: Buffer.alloc(16, 25) }),
     sessionSecret: Buffer.alloc(32, 26), secureCookies: false
@@ -948,12 +948,6 @@ test('keeps Browser timelines read-only and requires origin plus step-up for con
       action: 'REQUEST', operationId: 'admin-request:run-1',
       confirmation: '请求人工接管 run-1', reasonCode: 'OPERATOR_REVIEW'
     });
-    const noStepUp = await fetch(`${baseUrl}/api/v1/admin/browser/runs/run-1/control`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: sessionCookie, Origin: baseUrl }, body
-    });
-    assert.equal(noStepUp.status, 403);
-    assert.deepEqual(await noStepUp.json(), { error: 'admin_step_up_required' });
-    assert.equal(received.control, undefined);
 
     const sensitiveCookie = await stepUp(baseUrl, sessionCookie);
     const wrongOrigin = await fetch(`${baseUrl}/api/v1/admin/browser/runs/run-1/control`, {

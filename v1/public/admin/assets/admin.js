@@ -34,6 +34,26 @@ const TASK_LABELS = Object.freeze({
   RECHECK_CANCELLATION: '复查续费取消', SYNC_CARD_TRANSACTIONS: '同步卡片交易'
 });
 const TASK_STATUS_LABELS = Object.freeze({ PENDING: '等待执行', RUNNING: '执行中', COMPLETED: '已完成', DEAD: '需要人工处理' });
+const STAGE_LABELS = Object.freeze({
+  RECEIVED: ['已收到', 'blue'], SESSION_INVALID: ['等客户重贴 Session', 'orange'], QUEUED: ['排队中', 'blue'],
+  LOGIN: ['登录核对中', 'blue'], CHECKOUT: ['填写结账中', 'blue'], PAYING: ['付款中', 'blue'],
+  VERIFYING: ['核实开通中', 'blue'], UPGRADING: ['升级 Pro 中', 'blue'], DONE: ['已完成', 'green'],
+  CLOSED_NO_PAYMENT: ['付款前关闭', 'gray'], PAYMENT_UNKNOWN: ['付款结果不明', 'orange'],
+  FAILED_AFTER_PAYMENT: ['已付款未交付', 'red']
+});
+const CUSTOMER_ACTION_LABELS = Object.freeze({
+  ACCOUNT_ALREADY_PLUS: '账号已是 Plus，需换免费账号', SESSION_INVALID: 'Session 无效'
+});
+const ATTEMPT_STATUS_LABELS = Object.freeze({
+  PREPARED: '已准备', SUBMITTED: '已提交', UNKNOWN: '结果未知', SUCCESS: '成功', FAILED: '失败', SETTLED: '已结算'
+});
+const LEDGER_STATUS_LABELS = Object.freeze({
+  RESERVED: '已占用', CONSUMED: '已消费', RECONCILIATION: '对账中', RELEASED: '已释放'
+});
+const ORDER_FILTER_TITLES = Object.freeze({
+  REVIEW_REQUIRED: '需要处理的订单', ACTIVE: '进行中的订单', FINISHED: '已完成的订单', TODAY: '今日订单',
+  PROCESSING: '自动处理中的订单', WAITING_FOR_SESSION: '等 Session 的订单'
+});
 const REFUND_LABELS = Object.freeze({ MONITORING: '观察中', DETECTED: '疑似退款', CONFIRMED: '已确认退款', WITHDRAWN: '已提取' });
 const INVENTORY_LABELS = Object.freeze({ AVAILABLE: '可分配', ASSIGNED: '已分配', DEPLETED: '已耗尽', PROVISIONING: '核对中', FAILED: '已失效', HELD_FOR_REVIEW: '已隔离，禁止自动复用', RETIRED: '永久停用', PRODUCT_ONLY: '限定产品' });
 const STOCK_CATEGORY_LABELS = Object.freeze({ READY: '可分配', IN_USE: '使用中', BLOCKED: '暂不可用', RETIRED: '永久停用' });
@@ -72,7 +92,7 @@ const state = {
   from: '', to: '', timeField: 'CREATED',
   stockProvider: null, stockCatalog: null, stockCardTypeId: '', acceptingOrders: false,
   cdkLoadSequence: 0, cdkBatchCursor: null, cdkBatchRows: [],
-  selectedOrders: new Set(), reconciliationPage: 1, reconciliationTotal: 0,
+  reconciliationPage: 1, reconciliationTotal: 0,
   browserPage: 1, browserTotal: 0, cardFundingPage: 1, cardFundingTotal: 0
 };
 const elements = {
@@ -88,9 +108,6 @@ const elements = {
   ordersTable: document.querySelector('#orders-table'),
   filters: document.querySelector('#order-filters'),
   search: document.querySelector('#order-search'),
-  orderFrom: document.querySelector('#order-from'),
-  orderTo: document.querySelector('#order-to'),
-  orderTimeField: document.querySelector('#order-time-field'),
   statusFilter: document.querySelector('#status-filter'),
   orderCount: document.querySelector('#order-count'),
   pageLabel: document.querySelector('#page-label'),
@@ -122,9 +139,6 @@ const elements = {
   stockCost: document.querySelector('#stock-cost'),
   cardIntakeList: document.querySelector('#card-intake-list'),
   discoverNewCards: document.querySelector('#discover-new-cards'),
-  selectedOrderCount: document.querySelector('#selected-order-count'),
-  batchAuthorizeRecharge: document.querySelector('#batch-authorize-recharge'),
-  selectPageOrders: document.querySelector('#select-page-orders'),
   reconciliationTable: document.querySelector('#reconciliation-table'),
   reconciliationCount: document.querySelector('#reconciliation-count'),
   reconciliationPage: document.querySelector('#reconciliation-page'),
@@ -237,17 +251,6 @@ function renderReadiness(readiness = {}) {
   }));
 }
 
-async function requestSensitiveAccess() {
-  const password = window.prompt('请输入后台密码确认敏感操作：\n\n验证后 30 分钟内的受保护操作不再重复询问。');
-  if (!password) throw new Error('admin_step_up_cancelled');
-  const response = await fetch('/api/v1/admin/step-up', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ password })
-  });
-  const payload = await response.json().catch(() => null);
-  if (!response.ok) throw new Error(payload?.error || 'admin_step_up_failed');
-}
 
 function cdkErrorMessage(error, action) {
   const messages = {
@@ -265,29 +268,38 @@ function cdkErrorMessage(error, action) {
   return messages[error?.message] || `${action}失败，服务器未确认操作结果；请先刷新批次列表，不要重复点击。`;
 }
 
+// D-119: money and production actions confirm once in the dialog; no second password.
 async function sensitiveApi(url, options) {
-  try {
-    return await api(url, options);
-  } catch (error) {
-    if (error.message !== 'admin_step_up_required') throw error;
-    await requestSensitiveAccess();
-    return api(url, options);
-  }
+  return api(url, options);
 }
 
-function orderRow(order, { selectable = false } = {}) {
-  const account = order.customerEmail || order.chatgptAccountId || '—';
-  const card = order.card?.cardNumber
-    ? escapeHtml(order.card.cardNumber)
-    : order.card?.last4 ? escapeHtml(order.card.last4) : '—';
-  const canAuthorize = order.status === 'CARD_READY' && order.requiresRechargeConfirmation;
+function stageChip(stage = {}) {
+  const [label, tone] = STAGE_LABELS[stage.stage] || [stage.label || '未知', stage.tone || 'gray'];
+  return `<span class="status-chip status-${tone}"><i></i>${escapeHtml(label)}</span>`;
+}
+
+function productLabel(order) {
+  return order.productName || (order.planType ? String(order.planType).toUpperCase() : '—');
+}
+
+function identityCell(order) {
+  const run = order.browserRun;
+  if (run) {
+    return `<span class="cell-main">${escapeHtml(run.profileCode || run.lane || '—')}</span><small>${escapeHtml(BROWSER_RUN_LABELS[run.status] || run.status)}${run.lane && run.profileCode ? ` · ${escapeHtml(run.lane)}` : ''}</small>`;
+  }
+  if (order.attempt?.executorKind === 'API') return '<span class="cell-main">API 路线</span>';
+  return '<span class="cell-main">—</span>';
+}
+
+function orderRow(order) {
+  const stage = order.stage || {};
   return `<tr data-order="${escapeHtml(order.publicNo)}" tabindex="0">
-    ${selectable ? `<td><input type="checkbox" data-select-order value="${escapeHtml(order.publicNo)}" aria-label="选择订单 ${escapeHtml(order.publicNo)}" ${state.selectedOrders.has(order.publicNo) ? 'checked' : ''} ${canAuthorize ? '' : 'disabled title="仅付款前已就绪订单可加入灰度许可"'}></td>` : ''}
-    <td><strong class="order-link">${escapeHtml(order.publicNo)}</strong></td>
-    <td><span class="cell-main">${escapeHtml(account)}</span>${order.rechargeOrderNo ? `<small>${escapeHtml(order.rechargeOrderNo)}</small>` : ''}</td>
-    <td>${statusChip(order.status)}${order.requiresRechargeConfirmation ? `<small class="attention-note">${escapeHtml(waitingText(order.confirmationReadyAt))}</small>` : order.cancellationReviewRequired ? '<small class="attention-note">续费需处理</small>' : ''}<small class="${order.reconciliation?.issue ? 'attention-note' : ''}">${escapeHtml(ORDER_RECONCILIATION_LABELS[order.reconciliation?.status] || order.reconciliation?.status || '—')}</small></td>
-    <td>${card}</td>
-    <td>${order.card?.refundStatus ? escapeHtml(REFUND_LABELS[order.card.refundStatus] || order.card.refundStatus) : '—'}</td>
+    <td><strong class="order-link">${escapeHtml(order.publicNo)}</strong><small>${escapeHtml(order.customerEmail || order.chatgptAccountId || '—')}</small></td>
+    <td>${escapeHtml(productLabel(order))}</td>
+    <td>${stageChip(stage)}</td>
+    <td>${stage.action ? `<small class="attention-note">${escapeHtml(stage.action)}</small>` : '<small>—</small>'}</td>
+    <td>${order.card?.last4 ? `尾号 ${escapeHtml(order.card.last4)}` : '—'}</td>
+    <td>${identityCell(order)}</td>
     <td>${formatTime(order.createdAt)}</td>
   </tr>`;
 }
@@ -365,48 +377,19 @@ async function loadOrders() {
   });
   state.total = payload.total;
   elements.ordersTable.innerHTML = payload.orders.length
-    ? payload.orders.map((order) => orderRow(order, { selectable: true })).join('')
+    ? payload.orders.map((order) => orderRow(order)).join('')
     : payload.cdkMatches?.length
-      ? payload.cdkMatches.map((cdk) => `<tr><td></td><td><strong>CDK 精确匹配</strong><small>批次 ${escapeHtml(cdk.batchNo || '—')}</small></td><td>${escapeHtml(cdk.planType || '—')}</td><td>${escapeHtml(cdk.status)}</td><td>尚未关联卡片</td><td>${payload.deliveryTrackingEnabled && cdk.status !== 'REVOKED' ? `<button type="button" class="text-button" data-search-cdk-delivery="${escapeHtml(cdk.id)}" data-cdk-batch="${escapeHtml(cdk.batchNo || '')}">记录交付</button>` : '—'}</td><td>${formatTime(cdk.createdAt)}</td></tr>`).join('')
+      ? payload.cdkMatches.map((cdk) => `<tr><td><strong>CDK 精确匹配</strong><small>批次 ${escapeHtml(cdk.batchNo || '—')}</small></td><td>${escapeHtml(String(cdk.planType || '—').toUpperCase())}</td><td>${escapeHtml(cdk.status)}</td><td>${cdk.orderPublicNo ? '已被订单使用' : '尚未下单'}</td><td>—</td><td>—</td><td>${formatTime(cdk.createdAt)}</td></tr>`).join('')
       : '<tr><td colspan="7" class="empty-cell">没有符合条件的订单或 CDK</td></tr>';
   const totalPages = Math.max(1, Math.ceil(payload.total / state.pageSize));
   elements.orderCount.textContent = `${payload.total} 条订单`;
   elements.pageLabel.textContent = `第 ${state.page} / ${totalPages} 页`;
   elements.prevPage.disabled = state.page <= 1;
   elements.nextPage.disabled = state.page >= totalPages;
-  elements.ordersTable.querySelectorAll('[data-search-cdk-delivery]').forEach((button) => {
-    button.addEventListener('click', async () => {
-      await recordCdkDelivery(button.dataset.searchCdkDelivery, button.dataset.cdkBatch);
-      await loadOrders();
-    });
-  });
-  updateSelectedOrders();
   elements.syncTime.textContent = `更新于 ${new Date().toLocaleTimeString('zh-CN', { hour12: false })}`;
 }
 
-async function recordCdkDelivery(cdkId, batchNo) {
-  const recipientReference = window.prompt('输入客户收件标识（邮箱、手机号或内部客户号；数据库只保存 HMAC）：')?.trim();
-  if (!recipientReference) return false;
-  const channel = window.prompt('输入交付渠道（例如 wechat、alipay、manual）：', 'manual')?.trim();
-  if (!channel) return false;
-  await api('/api/v1/admin/cdks/deliveries', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ cdkId, batchNo: batchNo || undefined,
-      eventType: 'DELIVERED', channel, recipientReference })
-  });
-  showNotice('CDK 交付记录已保存。', 'success');
-  return true;
-}
 
-function updateSelectedOrders() {
-  const count = state.selectedOrders.size;
-  elements.selectedOrderCount.textContent = `已选 ${count} 单`;
-  elements.batchAuthorizeRecharge.disabled = count === 0;
-  const pageBoxes = [...elements.ordersTable.querySelectorAll('[data-select-order]:not(:disabled)')];
-  elements.selectPageOrders.disabled = pageBoxes.length === 0;
-  elements.selectPageOrders.checked = pageBoxes.length > 0 && pageBoxes.every((box) => box.checked);
-  elements.selectPageOrders.indeterminate = pageBoxes.some((box) => box.checked) && !elements.selectPageOrders.checked;
-}
 
 async function downloadOperationsCsv(dataset) {
   const response = await fetch(`/api/v1/admin/exports/${encodeURIComponent(dataset)}.csv?limit=10000`);
@@ -433,30 +416,6 @@ async function downloadOperationsCsv(dataset) {
     : `已导出 ${rowCount} 行。`, reachedLimit ? 'warning' : 'success');
 }
 
-async function authorizeSelectedOrders() {
-  const publicNos = [...state.selectedOrders];
-  if (!publicNos.length) return;
-  if (!window.confirm(`确认为以下 ${publicNos.length} 个特殊/灰度订单创建一次性充值许可？\n\n${publicNos.join('\n')}\n\n正常订单不需要此操作。许可 10 分钟内有效；每单只允许一个资金风险活动尝试。`)) return;
-  elements.batchAuthorizeRecharge.disabled = true;
-  try {
-    const result = await sensitiveApi('/api/v1/admin/recharge-authorizations', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ publicNos, ttlMinutes: 10, confirmation: `确认充值${publicNos.length}单` })
-    });
-    state.selectedOrders.clear();
-    showNotice(`已创建灰度充值许可，共 ${result.itemCount ?? publicNos.length} 单。`, 'success');
-    await loadOrders();
-  } catch (error) {
-    const messages = {
-      order_not_eligible: '所选订单中有不可充值订单，请刷新并只选择付款前已就绪订单。',
-      authorization_exists: '部分订单已有有效充值许可，请刷新后核对。',
-      funds_fence_exists: '部分订单已有资金风险尝试，禁止重复授权。',
-      recharge_confirmation_required: '批量确认信息不匹配，没有创建许可。'
-    };
-    showNotice(messages[error.message] || '批量充值许可未创建，请刷新订单状态后重试。');
-    updateSelectedOrders();
-  }
-}
 
 const RECONCILIATION_STATUS_LABELS = Object.freeze({ OPEN: '待处理', ASSIGNED: '已分配', RESOLVED: '已解决' });
 const RECONCILIATION_SEVERITY_LABELS = Object.freeze({ critical: '严重', warning: '警告', info: '提示' });
@@ -504,14 +463,14 @@ async function assignReconciliationCase(caseId) {
   await loadReconciliationCases();
 }
 
-async function resolveReconciliationCase(caseId) {
+async function resolveReconciliationCase(caseId, { after = null } = {}) {
   const resolutionNote = window.prompt('填写处理结论（必填）：')?.trim();
   if (!resolutionNote) return;
   await sensitiveApi(`/api/v1/admin/reconciliation-cases/${encodeURIComponent(caseId)}/resolve`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ resolutionNote })
   });
   showNotice('案例已解决并保留处理结论。', 'success');
-  await loadReconciliationCases();
+  if (after) await after(); else await loadReconciliationCases();
 }
 
 const BROWSER_RUN_LABELS = Object.freeze({
@@ -579,14 +538,21 @@ async function loadBrowserRuns() {
 // Offered only while the system has not submitted and automation is not live:
 // the operator finished the Checkout by hand, so the order must be closed from
 // their confirmation instead of staying RECHARGE_PROCESSING with the card held.
-function manualPaymentButton(run) {
+function manualPaymentEligible(run) {
   const paymentUntouched = ['NOT_STARTED', 'PAYMENT_ARMED'].includes(run.paymentState);
   const leaseLive = Boolean(run.worker?.leaseUntil) && new Date(run.worker.leaseUntil).getTime() > Date.now();
   const automationStopped = ['FROZEN', 'TRANSFERRED'].includes(run.controlState)
     || (run.controlState === 'AUTOMATION' && !leaseLive);
-  return paymentUntouched && automationStopped
+  return paymentUntouched && automationStopped;
+}
+function manualPaymentButton(run) {
+  return manualPaymentEligible(run)
     ? '<button class="primary-small" type="button" data-browser-control="CONFIRM_MANUAL_PAYMENT">人工付款已完成</button>'
     : '';
+}
+function upgradeConfirmEligible(run) {
+  return run.controlState === 'TRANSFERRED' && run.status === 'HUMAN_REQUIRED'
+    && run.paymentState === 'PAYMENT_CONFIRMED' && run.postPaymentState === 'PLUS_CONFIRMED';
 }
 
 function browserControlButtons(run) {
@@ -610,7 +576,7 @@ function browserControlButtons(run) {
   return '';
 }
 
-async function controlBrowserRun(run, action) {
+async function controlBrowserRun(run, action, { after = null } = {}) {
   const confirmations = {
     REQUEST: `请求人工接管 ${run.id}`,
     FREEZE: `冻结自动化 ${run.id}`,
@@ -662,6 +628,7 @@ async function controlBrowserRun(run, action) {
         ? '人工付款与 20X 升级已记录，订单已收口为充值成功，卡片占用已释放。'
         : '人工 Plus 付款已记录，卡片占用已释放；20X 升级完成后再点“确认 20X 已升级”。')
       : 'Browser 控制权状态已更新。', 'success');
+  if (after) { await after(); return; }
   await loadBrowserRuns();
   await openBrowserRun(run.id);
 }
@@ -1097,32 +1064,6 @@ async function requestTransactionSync(publicNo, button) {
   }
 }
 
-async function issueCompensation(publicNo, button) {
-  const confirmation = `补发 ${publicNo}`;
-  if (!window.confirm(`确认给订单 ${publicNo} 补发 1 个同套餐 CDK？\n\n系统将再次核对：没有卡片、没有上游调用、任务已明确失败。原订单会关闭，且只能补发一次。`)) return;
-  button.disabled = true;
-  button.textContent = '核对并补发中…';
-  try {
-    const result = await sensitiveApi(`/api/v1/admin/orders/${encodeURIComponent(publicNo)}/compensation`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ confirmation })
-    });
-    downloadCodes(`补发-${publicNo}`, [result.code]);
-    await navigator.clipboard?.writeText(result.code).catch(() => {});
-    showNotice(result.replayed ? '已取回此前补发的 CDK，并重新下载。' : '补发成功，CDK 已下载并尝试复制。');
-    await openOrder(publicNo);
-  } catch (error) {
-    const messages = {
-      compensation_side_effect_risk: '订单已经进入开卡或充值链路，禁止补发。',
-      compensation_not_eligible: '订单尚未明确失败，禁止补发。',
-      compensation_order_changed: '订单状态刚刚发生变化，请刷新后重新核对。'
-    };
-    showNotice(messages[error.message] || '补发被服务器拒绝，未生成新 CDK。');
-    button.disabled = false;
-    button.textContent = '补发 CDK';
-  }
-}
 
 async function cancelOrder(publicNo, button) {
   if (!window.confirm(`确认取消订单 ${publicNo}？\n\n服务器会再次确认充值从未提交。订单关闭后，卡片将释放回可用库存。此操作不可撤销。`)) return;
@@ -1219,39 +1160,6 @@ async function setDefaultRechargeMethod(button) {
   }
 }
 
-async function setRechargePermit(publicNo, action, button) {
-  const arming = action === 'arm';
-  const confirmation = `${arming ? '确认充值' : '撤销充值'} ${publicNo}`;
-  const customer = button.dataset.customer || '—';
-  const card = button.dataset.card || '—';
-  const balance = button.dataset.balance || '—';
-  const tokenExpiry = button.dataset.tokenExpiry || '—';
-  const message = arming
-    ? `确认允许订单 ${publicNo} 发起一次真实充值？\n\n客户：${customer}\n卡片：${card}\n当前余额：$${balance}\nAccess Token 有效至：${tokenExpiry}\n\n凭证 10 分钟内有效，一旦调用上游就不会自动第二次提交。该操作可能产生真实费用。`
-    : `确认撤销订单 ${publicNo} 未使用的充值凭证？`;
-  if (!window.confirm(message)) return;
-  button.disabled = true;
-  try {
-    await sensitiveApi(`/api/v1/admin/orders/${encodeURIComponent(publicNo)}/recharge-permit`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action, confirmation })
-    });
-    showNotice(arming ? '该订单已一次性放行，服务器将在数秒内执行。' : '未使用的充值凭证已撤销。');
-    elements.detail.close();
-    await openOrder(publicNo);
-  } catch (error) {
-    const messages = {
-      order_not_eligible: '该订单当前不能放行充值。',
-      create_already_attempted: '该订单已调用过充值接口，禁止再次提交。',
-      another_permit_active: '另一个订单已在放行中，请等它完成后再试。',
-      session_invalid: '客户 Session 已失效或即将过期，请让客户重新提交后再充值。',
-      card_check_stale: '卡片状态超过 15 分钟未核对，等待自动同步后再试。',
-      card_not_ready: '卡片已失效、余额不足或资料不完整，未发起充值。'
-    };
-    showNotice(messages[error.message] || '充值凭证操作失败，未发起新的充值请求。');
-    button.disabled = false;
-  }
-}
 
 const TIMELINE_ACTION_LABELS = {
   'observe-page': '开始执行', 'session-bootstrap': '注入会话', 'session-replaced': '替换常驻会话', 'page-reset': '页面复位',
@@ -1283,157 +1191,120 @@ async function renderOrderTimeline(publicNo) {
   } catch { host.innerHTML = '<p class="empty-state">执行时间线读取失败。</p>'; }
 }
 async function openOrder(publicNo) {
-  elements.detailKicker.textContent = '订单详情';
+  elements.detailKicker.textContent = '订单';
   elements.detailTitle.textContent = publicNo;
   elements.detailContent.innerHTML = '<p class="loading-state">正在读取订单详情…</p>';
   if (!elements.detail.open) elements.detail.showModal();
   try {
     const data = await api(`/api/v1/admin/orders/${encodeURIComponent(publicNo)}`);
     const order = data.order;
-    const paymentGate = data.paymentGate || {};
-    const permitStatus = paymentGate.permitStatus || 'LOCKED';
-    const canArmRecharge = paymentGate.prepaymentReady
-      && paymentGate.submissionTaskStatus === 'PENDING'
-      && Number(paymentGate.submissionAttempts || 0) === 0
-      && paymentGate.sessionValid
-      && paymentGate.cardReady
-      && paymentGate.cardCheckFresh
-      && permitStatus !== 'ARMED';
-    const permitButton = permitStatus === 'ARMED'
-      ? '<button type="button" class="danger-small" id="revoke-recharge-permit">撤销灰度许可</button>'
-      : canArmRecharge ? `<button type="button" class="danger-small" id="arm-recharge-permit"
-          data-customer="${escapeHtml(order.customerEmail || order.chatgptAccountId || '—')}"
-          data-card="${escapeHtml(data.card?.cardNumber || data.card?.last4 || '—')}"
-          data-balance="${formatMoney(data.card?.currentBalance)}"
-          data-token-expiry="${escapeHtml(formatTime(paymentGate.accessTokenExpiresAt))}">灰度单笔许可</button>` : '';
-    const compensation = data.compensation || {};
-    const compensationButton = compensation.eligible || compensation.alreadyIssued
-      ? `<button type="button" class="danger-small" id="issue-compensation">${compensation.alreadyIssued ? '重新下载补发 CDK' : '补发 CDK'}</button>`
-      : '';
-    const compensationLabels = {
-      COMPENSATION_ELIGIBLE: '符合条件：无卡片、无上游调用、任务已明确失败',
-      COMPENSATION_ALREADY_ISSUED: `已经补发 · ${formatTime(compensation.issuedAt)} · 新 CDK ${compensation.replacementStatus || '—'}`,
-      COMPENSATION_ORDER_STILL_ACTIVE: '订单仍在处理，禁止补发',
-      COMPENSATION_NOT_TERMINALLY_FAILED: '订单未明确失败，禁止补发',
-      COMPENSATION_SIDE_EFFECT_RISK: '已进入开卡或充值链路，禁止补发'
-    };
-    const cancellation = data.cancellation || {};
-    const cancellationButton = cancellation.eligible
-      ? '<button type="button" class="danger-small" id="cancel-order">取消并释放卡片</button>' : '';
-    const cancellationLabels = {
-      ORDER_CANCELLATION_ELIGIBLE: '可以安全取消：充值未提交，卡片将解除绑定并进入隔离区，不会自动复用',
-      ORDER_CANCELLATION_ALREADY_COMPLETED: '订单已经取消，卡片已进入隔离区',
-      ORDER_CANCELLATION_REVIEW_REQUIRED: '订单或卡片关系不完整，需要人工核对',
-      ORDER_CANCELLATION_SUBMISSION_RISK: '充值可能已经开始，禁止取消',
-      ORDER_CANCELLATION_NOT_ELIGIBLE: '当前订单状态不能取消'
-    };
-    const reconciliation = data.reconciliation || {};
+    const stage = data.stage || {};
+    const run = data.browserRun || null;
+    const controlRun = run ? { ...run, publicNo, worker: { id: run.workerId, leaseUntil: run.leaseUntil } } : null;
+    const gate = data.paymentGate || {};
+    const money = data.money || { attempts: [], ledger: [], operations: [] };
+    const cases = data.reconciliationCases || [];
+    const openCases = cases.filter((item) => item.status !== 'RESOLVED');
     const trace = data.traceability || {};
     const cost = trace.fulfillmentCost || {};
+    const cancellation = data.cancellation || {};
+    const reconciliation = data.reconciliation || {};
+    const runLive = controlRun && ['READY', 'RUNNING', 'HUMAN_REQUIRED'].includes(controlRun.status);
     const moneyList = (items) => items?.length
       ? items.map((item) => `${item.amount} ${item.currency}`).join('；') : '没有已记录金额';
+    const actions = [];
+    if (cancellation.eligible) actions.push('<button type="button" class="danger-small" id="cancel-order">取消并释放卡</button>');
+    if (runLive && manualPaymentEligible(controlRun)) actions.push('<button type="button" class="primary-small" data-order-run-control="CONFIRM_MANUAL_PAYMENT">人工付款已完成</button>');
+    if (runLive && upgradeConfirmEligible(controlRun)) actions.push('<button type="button" class="primary-small" data-order-run-control="COMPLETE_20X">确认 20X 已升级</button>');
+    if (data.card) actions.push('<button type="button" class="ghost-button" id="sync-transactions">同步卡交易</button>');
+    openCases.forEach((item) => actions.push(`<button type="button" class="ghost-button" data-resolve-order-case="${escapeHtml(item.id)}">关闭对账案例：${escapeHtml(RECONCILIATION_TYPE_LABELS[item.caseType] || item.caseType)}</button>`));
+    const cancellationLabels = {
+      ORDER_CANCELLATION_ELIGIBLE: '可以安全取消：付款未提交，卡片解除绑定并进入隔离区',
+      ORDER_CANCELLATION_ALREADY_COMPLETED: '订单已经取消',
+      ORDER_CANCELLATION_REVIEW_REQUIRED: '订单或卡片关系不完整，需要人工核对后才能取消',
+      ORDER_CANCELLATION_SUBMISSION_RISK: '付款可能已经开始，禁止取消',
+      ORDER_CANCELLATION_NOT_ELIGIBLE: ''
+    };
     elements.detailContent.innerHTML = `
+      <section class="detail-section drawer-summary">
+        <div class="detail-status">${stageChip(stage)}<span>${escapeHtml(productLabel(order))} · 创建 ${formatTime(order.createdAt)}</span></div>
+        <p class="${stage.action ? 'drawer-action-line' : 'empty-state'}">${escapeHtml(stage.action || '当前不需要人工动作')}</p>
+        <div class="drawer-actions">${actions.join('') || '<small>没有可执行的动作</small>'}</div>
+        ${cancellationLabels[cancellation.code] ? `<small class="drawer-hint">${escapeHtml(cancellationLabels[cancellation.code])}</small>` : ''}
+      </section>
       <section class="detail-section"><div class="detail-section-heading"><h3>执行时间线</h3></div><div id="order-timeline"><p class="loading-state">正在读取…</p></div></section>
-      <section class="detail-section"><div class="detail-section-heading"><h3>自动履约与资金栅栏</h3>${permitButton}</div>${renderKeyValues([
-        ['付款前检查', paymentGate.prepaymentReady ? '已就绪' : '未就绪'],
-        ['正常执行', paymentGate.prepaymentReady ? '规则通过后由系统自动执行' : '等待付款前准备'],
-        ['灰度许可', paymentGate.permitStatus || 'LOCKED'],
-        ['直充任务', paymentGate.submissionTaskStatus],
-        ['直充执行次数', paymentGate.submissionAttempts ?? 0],
-        ['灰度许可过期时间', formatTime(paymentGate.permitExpiresAt)],
-        ['Session 检查', paymentGate.sessionValid ? '有效' : `不可用（${paymentGate.sessionCode || '未知原因'}）`],
-        ['Session 过期时间', formatTime(paymentGate.sessionExpiresAt)],
-        ['Access Token 过期时间', formatTime(paymentGate.accessTokenExpiresAt)],
-        ['卡片资格', paymentGate.cardReady ? '状态、余额和资料均正常' : '不可用'],
-        ['卡片核对', paymentGate.cardCheckFresh ? '15 分钟内已更新' : '数据已过期']
-      ])}</section>
-      <section class="detail-section"><div class="detail-section-heading"><h3>取消未充值订单</h3>${cancellationButton}</div><p class="empty-state">${escapeHtml(cancellationLabels[cancellation.code] || '当前不可取消')}</p></section>
-      <section class="detail-section"><div class="detail-section-heading"><h3>失败补偿</h3>${compensationButton}</div><p class="empty-state">${escapeHtml(compensationLabels[compensation.code] || '当前不可补发')}</p></section>
-      <section class="detail-section"><h3>资金证据状态</h3>${renderKeyValues([
-        ['对账结果', ORDER_RECONCILIATION_LABELS[reconciliation.status] || reconciliation.status],
+      <section class="detail-section"><h3>资金与结果</h3>${renderKeyValues([
+        ['对账结论', ORDER_RECONCILIATION_LABELS[reconciliation.status] || reconciliation.status],
         ['判定依据', ORDER_RECONCILIATION_CODES[reconciliation.code] || reconciliation.code],
-        ['充值平台订单号', order.rechargeOrderNo],
-        ['充值平台确认金额', order.actualPaymentAmount ? `${order.actualPaymentAmount} ${order.actualPaymentCurrency || ''}` : null],
-        ['卡片交易同步', formatTime(data.card?.lastTransactionSyncedAt)]
-      ])}</section>
-      <section class="detail-section"><div class="detail-status">${statusChip(order.status)}<span>${formatTime(order.updatedAt)}</span></div>${renderKeyValues([
-        ['客户邮箱', order.customerEmail], ['ChatGPT 账号 ID', order.chatgptAccountId],
-        ['直充订单号', order.rechargeOrderNo], ['卡段 ID', order.cardTypeId],
-        ['开卡金额', order.openCardAmount], ['最低所需卡余额', order.minimumRequiredCardBalance],
-        ['实际支付', order.actualPaymentAmount ? `${order.actualPaymentAmount} ${order.actualPaymentCurrency || ''}` : null],
+        ['许可', PERMIT_LABELS[gate.permitStatus] || gate.permitStatus || '—'],
+        ['资金栅栏', gate.fundsRiskState || '—'],
+        ['外部订单号', order.rechargeOrderNo],
+        ['确认金额', order.actualPaymentAmount ? `${order.actualPaymentAmount} ${order.actualPaymentCurrency || ''}` : null],
         ['自动续费', order.subscriptionCancelled === 1 ? '已取消' : order.cancellationReviewRequired ? '需要人工处理' : order.subscriptionCancelled === 0 ? '等待确认' : '未开始'],
-        ['续费复查时间', formatTime(order.cancellationCheckedAt)],
-        ['客户操作原因', order.customerActionCode],
-        ['Session 更换次数', `${order.sessionReplacementCount || 0} / 3`],
-        ['Session 修复窗口开始', formatTime(order.sessionRepairStartedAt)],
-        ['Session 修复截止', formatTime(order.sessionRepairExpiresAt)],
-        ['最近更换 Session', formatTime(order.lastSessionReplacedAt)],
+        ['卡片交易同步', formatTime(data.card?.lastTransactionSyncedAt)]
+      ])}
+        <p class="mini-list-heading">付款尝试</p><div class="mini-list">${money.attempts?.length ? money.attempts.map((item) => `<div><span><strong>${escapeHtml(item.executorKind || '—')} · ${escapeHtml(ATTEMPT_STATUS_LABELS[item.status] || item.status)} · 资金 ${escapeHtml(item.fundsRiskState || '—')}</strong><small>${escapeHtml(item.id)}${item.externalOrderId ? ` · 外部 ${escapeHtml(item.externalOrderId)}` : ''} · 意图 ${formatTime(item.submitIntentAt)} · 提交 ${formatTime(item.submittedAt)} · 结束 ${formatTime(item.finishedAt)}</small></span></div>`).join('') : '<p class="empty-state">没有付款尝试</p>'}</div>
+        <p class="mini-list-heading">消费账本</p><div class="mini-list">${money.ledger?.length ? money.ledger.map((item) => `<div><span><strong>${escapeHtml(LEDGER_STATUS_LABELS[item.status] || item.status)} · ${escapeHtml(item.amount || '—')} ${escapeHtml(item.currency || '')}</strong><small>占用 ${formatTime(item.reservedAt)} · 消费 ${formatTime(item.consumedAt)} · 释放 ${formatTime(item.releasedAt)}${item.releaseReason ? ` · ${escapeHtml(item.releaseReason)}` : ''}${item.providerTransactionId ? ` · 交易 ${escapeHtml(item.providerTransactionId)}` : ''}</small></span></div>`).join('') : '<p class="empty-state">没有账本记录</p>'}</div>
+        <p class="mini-list-heading">付款操作</p><div class="mini-list">${money.operations?.length ? money.operations.map((item) => `<div><span><strong>${escapeHtml(item.type)} · ${escapeHtml(item.status)}</strong><small>${escapeHtml(item.resultCode || '—')} · Run ${escapeHtml(item.runId)} · ${formatTime(item.completedAt || item.preparedAt)}</small></span></div>`).join('') : '<p class="empty-state">系统没有点击过付款</p>'}</div>
+        ${cases.length ? `<p class="mini-list-heading">对账案例</p><div class="mini-list">${cases.map((item) => `<div><span><strong>${escapeHtml(RECONCILIATION_TYPE_LABELS[item.caseType] || item.caseType)} · ${escapeHtml(RECONCILIATION_STATUS_LABELS[item.status] || item.status)}</strong><small>${escapeHtml(RECONCILIATION_SEVERITY_LABELS[item.severity] || item.severity)} · 发现 ${formatTime(item.detectedAt)}${item.resolutionNote ? ` · ${escapeHtml(item.resolutionNote)}` : ''}</small></span></div>`).join('')}</div>` : ''}
+      </section>
+      <section class="detail-section"><h3>客户与会话</h3>${renderKeyValues([
+        ['客户邮箱', order.customerEmail], ['ChatGPT 账号 ID', order.chatgptAccountId],
+        ['Session', gate.sessionValid ? '有效' : `不可用（${gate.sessionCode || '未知原因'}）`],
+        ['Access Token 到期', formatTime(gate.accessTokenExpiresAt)],
+        ['打回原因', CUSTOMER_ACTION_LABELS[order.customerActionCode] || order.customerActionCode],
+        ['开始等待重贴', formatTime(order.sessionRepairStartedAt)],
+        ['重贴次数', order.sessionReplacementCount || 0],
+        ['最近重贴', formatTime(order.lastSessionReplacedAt)],
         ['失败代码', order.failureCode],
         [order.failureReasonSource === 'PROVIDER_ATTEMPT' ? 'Provider 返回原因' : '失败原因', order.failureReason]
-      ])}</section>
-      <section class="detail-section"><div class="detail-section-heading"><h3>卡片与退款</h3>${data.card ? '<button type="button" class="primary-small" id="sync-transactions">同步交易</button>' : ''}</div>${data.card ? renderKeyValues([
-        ['卡台卡片 ID', data.card.providerCardId], ['完整卡号', data.card.cardNumber || data.card.last4],
-        ['卡片状态', INVENTORY_LABELS[data.card.status] || data.card.status], ['开卡金额', `${formatMoney(data.card.fundedAmount)} ${data.card.currency || ''}`],
-        ['当前余额', `${formatMoney(data.card.currentBalance)} ${data.card.currency || ''}`], ['退款观察', REFUND_LABELS[data.card.refundStatus] || data.card.refundStatus],
+      ])}
+        <p class="mini-list-heading">重贴记录</p><div class="mini-list">${trace.sessionReplacements?.length ? trace.sessionReplacements.map((replacement) => `<div><span><strong>第 ${replacement.replacementNo} 次 · ${escapeHtml(replacement.reasonCode || '客户重新提交')}</strong><small>${escapeHtml(replacement.previousCustomerEmail || replacement.previousChatgptAccountId || '原账号未识别')} → ${escapeHtml(replacement.newCustomerEmail || replacement.newChatgptAccountId || '新账号未识别')} · ${formatTime(replacement.createdAt)}</small></span></div>`).join('') : '<p class="empty-state">没有重贴记录</p>'}</div>
+        <p class="mini-list-heading">CDK</p><div class="mini-list">${trace.cdks?.length ? trace.cdks.map((cdk) => `<div><span><strong>${escapeHtml(cdk.relationship === 'REPLACEMENT' ? '补发 CDK' : 'CDK')} · ${escapeHtml(cdk.status)}</strong><small>批次 ${escapeHtml(cdk.batchId || '—')} · 兑换 ${formatTime(cdk.redeemedAt)}${cdk.redeemedOrderPublicNo ? ` · 订单 ${escapeHtml(cdk.redeemedOrderPublicNo)}` : ''}</small></span>${cdk.redeemedOrderPublicNo && cdk.redeemedOrderPublicNo !== publicNo ? `<button type="button" class="text-button" data-related-order="${escapeHtml(cdk.redeemedOrderPublicNo)}">打开后续订单</button>` : ''}</div>`).join('') : '<p class="empty-state">没有 CDK 关系记录</p>'}</div>
+      </section>
+      <section class="detail-section"><h3>卡片</h3>${data.card ? renderKeyValues([
+        ['卡号', data.card.cardNumber || data.card.last4], ['卡台卡片 ID', data.card.providerCardId],
+        ['卡片状态', INVENTORY_LABELS[data.card.status] || data.card.status],
+        ['当前余额', `${formatMoney(data.card.currentBalance)} ${data.card.currency || ''}`],
+        ['开卡金额', `${formatMoney(data.card.fundedAmount)} ${data.card.currency || ''}`],
         ['最后同步', formatTime(data.card.lastSyncedAt)]
       ]) : '<p class="empty-state">尚未绑定卡片</p>'}</section>
-      <section class="detail-section"><h3>CDK、补发关系与客户付款</h3><div class="mini-list">${trace.cdks?.length ? trace.cdks.map((cdk) => `<div><span><strong>${escapeHtml(cdk.relationship === 'REPLACEMENT' ? '补发 CDK' : '原始 CDK')} · ${escapeHtml(cdk.status)}</strong><small>批次 ${escapeHtml(cdk.batchId || '—')} · 创建 ${formatTime(cdk.createdAt)} · 兑换 ${formatTime(cdk.redeemedAt)}${cdk.redeemedOrderPublicNo ? ` · 订单 ${escapeHtml(cdk.redeemedOrderPublicNo)}` : ''}</small></span>${cdk.redeemedOrderPublicNo && cdk.redeemedOrderPublicNo !== publicNo ? `<button type="button" class="text-button" data-related-order="${escapeHtml(cdk.redeemedOrderPublicNo)}">打开后续订单</button>` : trace.deliveryTrackingEnabled && cdk.status !== 'REVOKED' ? `<button type="button" class="text-button" data-record-cdk-delivery="${escapeHtml(cdk.id)}" data-cdk-batch="${escapeHtml(cdk.batchId || '')}">记录交付</button>` : ''}</div>`).join('') : '<p class="empty-state">没有 CDK 关系记录</p>'}${trace.orderRelationships?.length ? trace.orderRelationships.map((relation) => `<div><span><strong>补发链路</strong><small>原订单 ${escapeHtml(relation.originalPublicNo)} · 后续订单 ${escapeHtml(relation.replacementPublicNo || '尚未兑换')} · ${formatTime(relation.createdAt)}</small></span>${relation.originalPublicNo !== publicNo ? `<button type="button" class="text-button" data-related-order="${escapeHtml(relation.originalPublicNo)}">打开原订单</button>` : relation.replacementPublicNo ? `<button type="button" class="text-button" data-related-order="${escapeHtml(relation.replacementPublicNo)}">打开后续订单</button>` : ''}</div>`).join('') : ''}${trace.customerPayments?.length ? trace.customerPayments.map((payment) => `<div><span><strong>客户付款 · ${escapeHtml(payment.status)} · ${escapeHtml(payment.amount || '金额未记录')} ${escapeHtml(payment.currency || '')}</strong><small>${escapeHtml(payment.channel)} · ${escapeHtml(payment.externalReference || '无外部参考号')} · ${payment.paidAt ? `实际付款 ${formatTime(payment.paidAt)}` : `确认记录 ${formatTime(payment.createdAt)}（实际付款时间未补录）`}</small></span>${payment.amount == null ? '<button type="button" class="text-button" data-complete-customer-payment>补录付款</button>' : ''}</div>`).join('') : '<p class="empty-state">客户在系统外付款；当前尚未补录付款金额</p>'}${trace.deliveries?.length ? trace.deliveries.map((delivery) => `<div><span><strong>CDK ${escapeHtml(delivery.type)} · ${escapeHtml(delivery.channel || '未注明渠道')}</strong><small>收件人仅保存隐私哈希 · ${formatTime(delivery.createdAt)}</small></span></div>`).join('') : ''}</div></section>
-      <section class="detail-section"><h3>卡片分配历史</h3><div class="mini-list">${trace.cardAssignments?.length ? trace.cardAssignments.map((assignment) => `<div data-trace-card="${escapeHtml(assignment.providerCardId)}" data-trace-card-account="${escapeHtml(assignment.providerAccountId || '')}" role="button" tabindex="0"><span><strong>${escapeHtml(assignment.cardNumber || assignment.last4 || assignment.providerCardId)} · ${escapeHtml(assignment.kind)}</strong><small>分配 ${formatTime(assignment.assignedAt)}${assignment.releasedAt ? ` · 释放 ${formatTime(assignment.releasedAt)}` : ' · 当前绑定'} · ${escapeHtml(assignment.assignmentReason || assignment.releaseReason || '')}</small></span><em>${escapeHtml(assignment.status)}</em></div>`).join('') : '<p class="empty-state">尚无卡片分配历史</p>'}</div></section>
-      <section class="detail-section"><h3>Session 更换记录</h3><div class="mini-list">${trace.sessionReplacements?.length ? trace.sessionReplacements.map((replacement) => `<div><span><strong>第 ${replacement.replacementNo} 次更换 · ${escapeHtml(replacement.reasonCode || '客户重新提交')}</strong><small>${escapeHtml(replacement.previousCustomerEmail || replacement.previousChatgptAccountId || '原账号未识别')} → ${escapeHtml(replacement.newCustomerEmail || replacement.newChatgptAccountId || '新账号未识别')} · ${formatTime(replacement.createdAt)}</small></span></div>`).join('') : '<p class="empty-state">尚无 Session 更换记录</p>'}</div></section>
-      <section class="detail-section"><h3>客户收款与履约成本（原币种）</h3>${renderKeyValues([
-        ['客户付款', moneyList(cost.customerPayments)],
-        ['卡片开卡/入金', moneyList(cost.cardFundedAmount)],
-        ['充值平台确认支付', moneyList(cost.providerConfirmedPayment)],
-        ['卡片成功消费', moneyList(cost.successfulCardPurchases)],
-        ['卡片交易手续费', moneyList(cost.cardTransactionFees)]
-      ])}<p class="empty-state">${escapeHtml(cost.note || '不同币种不自动换算。')}</p></section>
-      <section class="detail-section"><div class="detail-section-heading"><h3>运营标签与备注</h3><span><button type="button" class="text-button" id="add-order-tag">添加标签</button><button type="button" class="text-button" id="add-order-note">添加备注</button></span></div><div class="mini-list">${trace.tags?.length ? trace.tags.map((item) => `<div><span><strong>${escapeHtml(item.tag)}</strong><small>${formatTime(item.createdAt)} · ${escapeHtml(item.createdBy)}</small></span></div>`).join('') : '<p class="empty-state">暂无标签</p>'}${trace.notes?.length ? trace.notes.map((note) => `<div><span><strong>${escapeHtml(note.text)}</strong><small>${formatTime(note.createdAt)} · ${escapeHtml(note.createdBy)}</small></span></div>`).join('') : '<p class="empty-state">暂无备注</p>'}</div></section>
-      <section class="detail-section"><h3>卡片交易</h3><div class="mini-list">${data.transactions?.length ? data.transactions.map((transaction) => `<div><span><strong>${escapeHtml(transaction.type)} · ${escapeHtml(transaction.amount)} ${escapeHtml(transaction.currency)}</strong><small>${escapeHtml(transaction.merchantName || transaction.relatedTransactionId || transaction.providerTransactionId)} · ${escapeHtml(transaction.tradeTimeRaw || formatTime(transaction.firstSeenAt))}</small></span><em>${escapeHtml(transaction.status)}</em></div>`).join('') : '<p class="empty-state">暂无已同步交易</p>'}</div></section>
-      <section class="detail-section"><h3>订单时间线</h3><div class="timeline">${data.events.length ? data.events.map((event) => `<article><i></i><div><strong>${escapeHtml(STATUS_META[event.toStatus]?.[0] || event.toStatus)}</strong><p>${escapeHtml(event.reason)}</p><small>${formatTime(event.createdAt)} · ${escapeHtml(event.actorType)}</small></div></article>`).join('') : '<p class="empty-state">暂无事件</p>'}</div></section>
-      <section class="detail-section"><h3>后台任务</h3><div class="mini-list">${data.tasks.length ? data.tasks.map((task) => `<div><span><strong>${escapeHtml(TASK_LABELS[task.type] || task.type)}</strong><small>${task.attempts}/${task.maxAttempts} 次尝试</small></span><em>${escapeHtml(TASK_STATUS_LABELS[task.status] || task.status)}</em></div>`).join('') : '<p class="empty-state">暂无任务</p>'}</div></section>`;
+      <section class="detail-section"><h3>身份与运行</h3>${run ? renderKeyValues([
+        ['身份', run.profileCode || run.lane || '—'], ['通道', run.lane],
+        ['运行状态', BROWSER_RUN_LABELS[run.status] || run.status],
+        ['付款状态', BROWSER_PAYMENT_LABELS[run.paymentState] || run.paymentState],
+        ['控制权', BROWSER_CONTROL_LABELS[run.controlState] || run.controlState],
+        ['最近检查点', run.lastCheckpointKind], ['最近错误', run.lastErrorCode],
+        ['Worker', run.workerId], ['租约到期', formatTime(run.leaseUntil)]
+      ]) + `<p class="empty-state"><button type="button" class="text-button" data-open-run="${escapeHtml(run.id)}">打开 Browser 运行详情</button></p>` : '<p class="empty-state">尚未创建浏览器运行</p>'}</section>
+      <details class="detail-evidence"><summary>技术证据（事件、任务、分配、客户付款、交易）</summary>
+        <section class="detail-section"><h3>状态事件</h3><div class="timeline">${data.events.length ? data.events.map((event) => `<article><i></i><div><strong>${escapeHtml(STATUS_META[event.toStatus]?.[0] || event.toStatus)}</strong><p>${escapeHtml(event.reason)}</p><small>${formatTime(event.createdAt)} · ${escapeHtml(event.actorType)}</small></div></article>`).join('') : '<p class="empty-state">暂无事件</p>'}</div></section>
+        <section class="detail-section"><h3>后台任务</h3><div class="mini-list">${data.tasks.length ? data.tasks.map((task) => `<div><span><strong>${escapeHtml(TASK_LABELS[task.type] || task.type)}</strong><small>${task.attempts}/${task.maxAttempts} 次尝试${task.lastErrorCode ? ` · ${escapeHtml(task.lastErrorCode)}` : ''}</small></span><em>${escapeHtml(TASK_STATUS_LABELS[task.status] || task.status)}</em></div>`).join('') : '<p class="empty-state">暂无任务</p>'}</div></section>
+        <section class="detail-section"><h3>卡片分配历史</h3><div class="mini-list">${trace.cardAssignments?.length ? trace.cardAssignments.map((assignment) => `<div data-trace-card="${escapeHtml(assignment.providerCardId)}" data-trace-card-account="${escapeHtml(assignment.providerAccountId || '')}" role="button" tabindex="0"><span><strong>尾号 ${escapeHtml(assignment.last4 || assignment.providerCardId)} · ${escapeHtml(assignment.kind)}</strong><small>分配 ${formatTime(assignment.assignedAt)}${assignment.releasedAt ? ` · 释放 ${formatTime(assignment.releasedAt)}` : ' · 当前绑定'} · ${escapeHtml(assignment.assignmentReason || assignment.releaseReason || '')}</small></span><em>${escapeHtml(assignment.status)}</em></div>`).join('') : '<p class="empty-state">尚无卡片分配历史</p>'}</div></section>
+        <section class="detail-section"><h3>客户付款与履约成本（原币种）</h3>${renderKeyValues([
+          ['客户付款', moneyList(cost.customerPayments)],
+          ['卡片开卡/入金', moneyList(cost.cardFundedAmount)],
+          ['平台确认支付', moneyList(cost.providerConfirmedPayment)],
+          ['卡片成功消费', moneyList(cost.successfulCardPurchases)],
+          ['卡片交易手续费', moneyList(cost.cardTransactionFees)]
+        ])}<div class="mini-list">${trace.customerPayments?.length ? trace.customerPayments.map((payment) => `<div><span><strong>客户付款 · ${escapeHtml(payment.status)} · ${escapeHtml(payment.amount || '金额未记录')} ${escapeHtml(payment.currency || '')}</strong><small>${escapeHtml(payment.channel)} · ${escapeHtml(payment.externalReference || '无外部参考号')} · ${payment.paidAt ? `实际付款 ${formatTime(payment.paidAt)}` : `确认记录 ${formatTime(payment.createdAt)}`}</small></span>${payment.amount == null ? '<button type="button" class="text-button" data-complete-customer-payment>补录付款</button>' : ''}</div>`).join('') : '<p class="empty-state">客户在系统外付款；尚未补录付款金额</p>'}</div></section>
+        <section class="detail-section"><h3>卡片交易</h3><div class="mini-list">${data.transactions?.length ? data.transactions.map((transaction) => `<div><span><strong>${escapeHtml(transaction.type)} · ${escapeHtml(transaction.amount)} ${escapeHtml(transaction.currency)}</strong><small>${escapeHtml(transaction.merchantName || transaction.relatedTransactionId || transaction.providerTransactionId)} · ${escapeHtml(transaction.tradeTimeRaw || formatTime(transaction.firstSeenAt))}</small></span><em>${escapeHtml(transaction.status)}</em></div>`).join('') : '<p class="empty-state">暂无已同步交易</p>'}</div></section>
+      </details>`;
     renderOrderTimeline(publicNo);
-    // Keep the operational summary compact while retaining every audit record.
-    // Secondary evidence remains in the DOM and is available on demand.
-    const detailSections = [...elements.detailContent.querySelectorAll(':scope > .detail-section')];
-    if (detailSections.length > 6) {
-      const evidence = document.createElement('details');
-      evidence.className = 'detail-evidence';
-      evidence.innerHTML = '<summary>技术证据（事件、任务、分配与历史记录）</summary>';
-      detailSections.slice(6).forEach((section) => evidence.appendChild(section));
-      elements.detailContent.appendChild(evidence);
-    }
+    const reopen = () => openOrder(publicNo);
     document.querySelector('#sync-transactions')?.addEventListener('click', (event) => requestTransactionSync(publicNo, event.currentTarget));
-    document.querySelector('#arm-recharge-permit')?.addEventListener('click', (event) => setRechargePermit(publicNo, 'arm', event.currentTarget));
-    document.querySelector('#revoke-recharge-permit')?.addEventListener('click', (event) => setRechargePermit(publicNo, 'revoke', event.currentTarget));
-    document.querySelector('#issue-compensation')?.addEventListener('click', (event) => issueCompensation(publicNo, event.currentTarget));
     document.querySelector('#cancel-order')?.addEventListener('click', (event) => cancelOrder(publicNo, event.currentTarget));
-    document.querySelector('#add-order-tag')?.addEventListener('click', async () => {
-      const tag = window.prompt('输入订单标签（最多 64 个字符）：')?.trim();
-      if (!tag) return;
-      await api(`/api/v1/admin/orders/${encodeURIComponent(publicNo)}/tags`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tag })
-      });
-      showNotice('标签已保存。', 'success');
-      await openOrder(publicNo);
+    elements.detailContent.querySelectorAll('[data-order-run-control]').forEach((button) => {
+      button.addEventListener('click', () => controlBrowserRun(controlRun, button.dataset.orderRunControl, { after: reopen })
+        .catch(() => showNotice('操作没有完成，订单没有改变。')));
     });
-    document.querySelector('#add-order-note')?.addEventListener('click', async () => {
-      const note = window.prompt('输入运营备注（最多 2000 个字符）：')?.trim();
-      if (!note) return;
-      await api(`/api/v1/admin/orders/${encodeURIComponent(publicNo)}/notes`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ note })
-      });
-      showNotice('备注已追加。', 'success');
-      await openOrder(publicNo);
+    elements.detailContent.querySelectorAll('[data-resolve-order-case]').forEach((button) => {
+      button.addEventListener('click', () => resolveReconciliationCase(button.dataset.resolveOrderCase, { after: reopen })
+        .catch(() => showNotice('对账案例没有关闭。')));
     });
+    elements.detailContent.querySelector('[data-open-run]')?.addEventListener('click', (event) => openBrowserRun(event.currentTarget.dataset.openRun));
     elements.detailContent.querySelectorAll('[data-trace-card]').forEach((item) => {
       item.addEventListener('click', () => openCard(item.dataset.traceCard, item.dataset.traceCardAccount));
-    });
-    elements.detailContent.querySelectorAll('[data-record-cdk-delivery]').forEach((button) => {
-      button.addEventListener('click', async () => {
-        if (await recordCdkDelivery(button.dataset.recordCdkDelivery, button.dataset.cdkBatch)) {
-          await openOrder(publicNo);
-        }
-      });
     });
     elements.detailContent.querySelectorAll('[data-related-order]').forEach((button) => {
       button.addEventListener('click', () => openOrder(button.dataset.relatedOrder));
@@ -1466,7 +1337,6 @@ function setActiveNav(navId) {
 }
 
 async function switchView(view, { status = '' } = {}) {
-  if (state.view === 'orders' && view !== 'orders') state.selectedOrders.clear();
   setActiveNav(view);
   state.view = view === 'exceptions' ? 'orders' : view;
   state.status = view === 'exceptions' ? 'REVIEW_REQUIRED' : status;
@@ -1501,8 +1371,8 @@ async function switchView(view, { status = '' } = {}) {
     elements.viewTitle.textContent = '运行、租约与人工接管';
     await Promise.all([loadBrowserDispatchJobs(), loadBrowserRuns()]);
   } else {
-    elements.viewKicker.textContent = state.nav === 'exceptions' ? '人工处理' : '订单中心';
-    elements.viewTitle.textContent = state.nav === 'exceptions' ? '需要关注的订单' : '全部订单';
+    elements.viewKicker.textContent = '订单';
+    elements.viewTitle.textContent = ORDER_FILTER_TITLES[state.status] || '全部订单';
     elements.statusFilter.value = state.status;
     await loadOrders();
   }
@@ -1588,10 +1458,6 @@ elements.cardFundingTable?.addEventListener('click', async (event) => {
   }
 });
 
-for (const [status, [label]] of Object.entries(STATUS_META)) {
-  elements.statusFilter.insertAdjacentHTML('beforeend', `<option value="${status}">${escapeHtml(label)}</option>`);
-}
-
 elements.navItems.forEach((item) => item.addEventListener('click', () => switchView(item.dataset.view).catch(() => showNotice('数据读取失败，请稍后重试。'))));
 document.querySelectorAll('[data-open-orders]').forEach((button) => button.addEventListener('click', () => switchView('orders')));
 elements.metrics.addEventListener('click', (event) => {
@@ -1602,34 +1468,16 @@ elements.metrics.addEventListener('click', (event) => {
 });
 elements.filters.addEventListener('submit', (event) => {
   event.preventDefault();
-  state.selectedOrders.clear();
   state.page = 1;
   state.query = elements.search.value.trim();
   state.status = elements.statusFilter.value;
-  state.from = elements.orderFrom.value;
-  state.to = elements.orderTo.value;
-  state.timeField = elements.orderTimeField.value;
-  if (state.nav !== 'orders') { setActiveNav('orders'); elements.viewKicker.textContent = '订单中心'; elements.viewTitle.textContent = '全部订单'; }
+  if (state.nav !== 'orders') setActiveNav('orders');
+  elements.viewKicker.textContent = '订单';
+  elements.viewTitle.textContent = ORDER_FILTER_TITLES[state.status] || '全部订单';
   loadOrders().catch(() => showNotice('订单查询失败，请稍后重试。'));
 });
 elements.prevPage.addEventListener('click', () => { if (state.page > 1) { state.page -= 1; loadOrders(); } });
 elements.nextPage.addEventListener('click', () => { if (state.page * state.pageSize < state.total) { state.page += 1; loadOrders(); } });
-elements.ordersTable.addEventListener('change', (event) => {
-  const checkbox = event.target.closest('[data-select-order]');
-  if (!checkbox) return;
-  if (checkbox.checked) state.selectedOrders.add(checkbox.value);
-  else state.selectedOrders.delete(checkbox.value);
-  updateSelectedOrders();
-});
-elements.selectPageOrders.addEventListener('change', () => {
-  elements.ordersTable.querySelectorAll('[data-select-order]:not(:disabled)').forEach((checkbox) => {
-    checkbox.checked = elements.selectPageOrders.checked;
-    if (checkbox.checked) state.selectedOrders.add(checkbox.value);
-    else state.selectedOrders.delete(checkbox.value);
-  });
-  updateSelectedOrders();
-});
-elements.batchAuthorizeRecharge.addEventListener('click', () => authorizeSelectedOrders());
 document.querySelector('#export-orders')?.addEventListener('click', () => downloadOperationsCsv('orders').catch(() => showNotice('订单导出失败。')));
 document.querySelector('#export-reconciliation')?.addEventListener('click', () => downloadOperationsCsv('reconciliation_cases').catch(() => showNotice('对账案例导出失败。')));
 document.querySelector('#reconciliation-filters')?.addEventListener('submit', (event) => {

@@ -5,6 +5,7 @@ import { validateChatGptSession } from '../domain/session-validation.js';
 import { reconcileByRoute } from '../domain/route-reconciliation.js';
 import { createCdkLookup } from '../security/cdk-code.js';
 import { redactSensitiveText } from '../security/redaction.js';
+import { deriveOrderStage } from './order-stage.js';
 import {
   eligibleInventoryCardSql,
   fundableInventoryCardSql
@@ -32,9 +33,71 @@ const REVIEW_STATUSES = ['CARD_FAILED', 'WAITING_FOR_SESSION', 'SUBMIT_UNKNOWN',
   'CANCELLATION_REVIEW_REQUIRED', 'RECONCILIATION_REQUIRED'];
 const PROCESSING_STATUSES = ['CREATED', 'WAITING_FOR_CARD', 'CARD_PURCHASING', 'CARD_PROVISIONING', 'SUBMITTING',
   'RECHARGE_PROCESSING', 'CANCELLATION_PENDING'];
+const FINISHED_STATUSES = ['RECHARGE_SUCCESS', 'RECHARGE_FAILED', 'CLOSED'];
 const VIRTUAL_FILTERS = new Set([
-  'TODAY', 'PROCESSING', 'AWAITING_CONFIRMATION', 'REVIEW_REQUIRED', 'RECONCILIATION_ISSUES'
+  'TODAY', 'PROCESSING', 'AWAITING_CONFIRMATION', 'REVIEW_REQUIRED', 'RECONCILIATION_ISSUES',
+  'ACTIVE', 'FINISHED'
 ]);
+// Latest recharge attempt and latest Browser run for one order row (MySQL 8 LATERAL).
+const LATEST_ATTEMPT_LATERAL = `LEFT JOIN LATERAL (
+          SELECT lra.status AS attempt_status, lra.funds_risk_state AS attempt_funds_risk_state,
+                 lra.executor_kind AS executor_kind
+          FROM recharge_attempts lra WHERE lra.order_id = o.id
+          ORDER BY lra.created_at DESC, lra.id DESC LIMIT 1) latest_attempt ON TRUE`;
+const LATEST_RUN_LATERAL = `LEFT JOIN LATERAL (
+          SELECT lbr.id AS run_id, lbr.status AS run_status, lbr.payment_state AS run_payment_state,
+                 lbr.post_payment_state AS run_post_payment_state, lbr.control_state AS run_control_state,
+                 lbr.selected_lane AS run_lane, lbr.last_checkpoint_kind AS run_last_checkpoint_kind,
+                 lbr.last_error_code AS run_last_error_code, lbr.human_owner_id AS run_human_owner_id,
+                 lbr.worker_id AS run_worker_id, lbr.worker_lease_until AS run_lease_until,
+                 lbr.updated_at AS run_updated_at, lep.profile_code AS run_profile_code
+          FROM browser_runs lbr
+          INNER JOIN recharge_attempts lbra ON lbra.id = lbr.recharge_attempt_id
+          LEFT JOIN executor_profiles lep ON lep.id = lbr.executor_profile_id
+          WHERE lbra.order_id = o.id
+          ORDER BY lbr.created_at DESC, lbr.id DESC LIMIT 1) latest_run ON TRUE`;
+
+function attemptFromRow(row) {
+  return row.attempt_status || row.attempt_funds_risk_state || row.executor_kind ? {
+    status: row.attempt_status || null,
+    fundsRiskState: row.attempt_funds_risk_state || null,
+    executorKind: row.executor_kind || null
+  } : null;
+}
+
+function runFromRow(row) {
+  return row.run_id ? {
+    id: row.run_id,
+    status: row.run_status,
+    paymentState: row.run_payment_state,
+    postPaymentState: row.run_post_payment_state,
+    controlState: row.run_control_state,
+    lane: row.run_lane,
+    profileCode: row.run_profile_code || null,
+    lastCheckpointKind: row.run_last_checkpoint_kind,
+    lastErrorCode: row.run_last_error_code,
+    humanOwnerId: row.run_human_owner_id,
+    workerId: row.run_worker_id,
+    leaseUntil: iso(row.run_lease_until),
+    updatedAt: iso(row.run_updated_at)
+  } : null;
+}
+
+function stageFromRow(row, { reconciliation, now }) {
+  return deriveOrderStage({
+    status: row.status,
+    failureCode: row.failure_code,
+    customerActionCode: row.customer_action_code,
+    planType: row.plan_type,
+    cancellationReviewRequired: Boolean(row.cancellation_review_required),
+    requiresRechargeConfirmation: Boolean(row.requires_recharge_confirmation),
+    confirmationReadyAt: iso(row.confirmation_ready_at),
+    reconciliationIssue: Boolean(reconciliation?.issue),
+    attempt: attemptFromRow(row),
+    run: runFromRow(row),
+    now
+  });
+}
 const TIME_FIELDS = new Set(['CREATED', 'UPDATED', 'FINISHED', 'PAID', 'RECHARGE']);
 
 const CREATE_ATTEMPTED_SQL = `EXISTS (SELECT 1 FROM provider_calls rpc
@@ -749,6 +812,12 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
       )`);
     } else if (status === 'TODAY') {
       conditions.push(`o.created_at >= TIMESTAMP(DATE(CONVERT_TZ(UTC_TIMESTAMP(), '+00:00', '+08:00'))) - INTERVAL 8 HOUR`);
+    } else if (status === 'ACTIVE') {
+      conditions.push(`o.status NOT IN (${FINISHED_STATUSES.map(() => '?').join(', ')})`);
+      values.push(...FINISHED_STATUSES);
+    } else if (status === 'FINISHED') {
+      conditions.push(`o.status IN (${FINISHED_STATUSES.map(() => '?').join(', ')})`);
+      values.push(...FINISHED_STATUSES);
     } else if (status) {
       conditions.push('o.status = ?');
       values.push(status);
@@ -826,6 +895,12 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
           o.recharge_order_no, o.failure_code, o.created_at, o.updated_at, o.finished_at,
           o.actual_payment_amount, o.actual_payment_currency,
           o.subscription_cancelled, o.cancellation_checked_at, o.cancellation_review_required,
+          o.plan_type, o.customer_action_code, prod.display_name AS product_name,
+          latest_attempt.attempt_status, latest_attempt.attempt_funds_risk_state, latest_attempt.executor_kind,
+          latest_run.run_id, latest_run.run_status, latest_run.run_payment_state, latest_run.run_post_payment_state,
+          latest_run.run_control_state, latest_run.run_lane, latest_run.run_last_checkpoint_kind,
+          latest_run.run_last_error_code, latest_run.run_human_owner_id, latest_run.run_worker_id,
+          latest_run.run_lease_until, latest_run.run_updated_at, latest_run.run_profile_code,
           c.last4, c.current_balance, c.currency, c.refund_status,
           c.card_number_ciphertext, c.card_credentials_ciphertext,
           (o.status = 'CARD_READY' AND EXISTS (
@@ -844,12 +919,13 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
           (${SUCCESSFUL_PURCHASE_SQL}) AS successful_purchase_exists,
           (${PAYMENT_MATCH_SQL}) AS payment_matched,
           (${PAYMENT_SETTLED_SQL}) AS payment_settled
-          ,(SELECT rat.executor_kind FROM recharge_attempts rat
-             WHERE rat.order_id = o.id ORDER BY rat.created_at DESC, rat.id DESC LIMIT 1) AS executor_kind
           ,(SELECT CASE WHEN pa.source_adapter = 'backup_card_export_v1' THEN 'MANUAL_IMPORT' ELSE 'API' END
              FROM cards source_card LEFT JOIN provider_accounts pa ON pa.id = source_card.provider_account_id
              WHERE source_card.id = o.assigned_card_id LIMIT 1) AS card_source_kind
         FROM orders o LEFT JOIN cards c ON (c.id = o.assigned_card_id OR (o.assigned_card_id IS NULL AND c.order_id = o.id))
+        LEFT JOIN products prod ON prod.id = o.product_id
+        ${LATEST_ATTEMPT_LATERAL}
+        ${LATEST_RUN_LATERAL}
         ${where}
         ORDER BY o.created_at DESC, o.id DESC
         LIMIT ? OFFSET ?`, [...values, pageSize, (page - 1) * pageSize]),
@@ -875,9 +951,17 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
         orderPublicNo: cdk.public_no || null, createdAt: iso(cdk.created_at),
         redeemedAt: iso(cdk.redeemed_at), revokedAt: iso(cdk.revoked_at)
       })),
-      orders: rows.map((row) => ({
+      orders: rows.map((row) => {
+        const reconciliation = reconciliationFromRow(row);
+        return {
         publicNo: row.public_no,
         status: row.status,
+        planType: row.plan_type || null,
+        productName: row.product_name || null,
+        customerActionCode: row.customer_action_code || null,
+        stage: stageFromRow(row, { reconciliation, now: now() }),
+        attempt: attemptFromRow(row),
+        browserRun: runFromRow(row),
         customerEmail: row.customer_email,
         chatgptAccountId: row.chatgpt_account_id,
         rechargeOrderNo: row.recharge_order_no,
@@ -889,7 +973,7 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
         cancellationReviewRequired: Boolean(row.cancellation_review_required),
         requiresRechargeConfirmation: Boolean(row.requires_recharge_confirmation),
         confirmationReadyAt: iso(row.confirmation_ready_at),
-        reconciliation: reconciliationFromRow(row),
+        reconciliation,
         card: row.last4 ? {
           cardNumber: cardNumber(row, sessionEncryptionKey),
           last4: row.last4,
@@ -900,7 +984,8 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
         createdAt: iso(row.created_at),
         updatedAt: iso(row.updated_at),
         finishedAt: iso(row.finished_at)
-      }))
+        };
+      })
     };
   }
 
@@ -910,7 +995,8 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
     }
     const [[orderRows], [eventRows], [taskRows], [callRows], [refundRows], [transactionRows],
       [compensationRows], [authorizationRows], [cdkRows], [deliveryRows], [paymentRows],
-      [assignmentRows], [noteRows], [tagRows], [relationshipRows], [sessionReplacementRows]] = await Promise.all([
+      [assignmentRows], [noteRows], [tagRows], [relationshipRows], [sessionReplacementRows],
+      [attemptRows], [ledgerRows], [operationRows], [caseRows]] = await Promise.all([
       pool.query(`SELECT o.id, o.public_no, o.status, o.plan_type, o.customer_email,
           o.chatgpt_account_id, o.card_type_id, o.open_card_amount,
           o.minimum_required_card_balance, o.actual_payment_amount, o.actual_payment_currency,
@@ -926,13 +1012,20 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
           c.provider_card_id, c.last4, c.status AS card_status, c.funded_amount,
           c.current_balance, c.currency, c.refund_status, c.last_synced_at,
           c.last_transaction_synced_at,
-          c.card_number_ciphertext, c.card_credentials_ciphertext
-          ,(SELECT rat.executor_kind FROM recharge_attempts rat
-             WHERE rat.order_id = o.id ORDER BY rat.created_at DESC, rat.id DESC LIMIT 1) AS executor_kind
+          c.card_number_ciphertext, c.card_credentials_ciphertext,
+          prod.display_name AS product_name,
+          latest_attempt.attempt_status, latest_attempt.attempt_funds_risk_state, latest_attempt.executor_kind,
+          latest_run.run_id, latest_run.run_status, latest_run.run_payment_state, latest_run.run_post_payment_state,
+          latest_run.run_control_state, latest_run.run_lane, latest_run.run_last_checkpoint_kind,
+          latest_run.run_last_error_code, latest_run.run_human_owner_id, latest_run.run_worker_id,
+          latest_run.run_lease_until, latest_run.run_updated_at, latest_run.run_profile_code
           ,(SELECT CASE WHEN pa.source_adapter = 'backup_card_export_v1' THEN 'MANUAL_IMPORT' ELSE 'API' END
              FROM cards source_card LEFT JOIN provider_accounts pa ON pa.id = source_card.provider_account_id
              WHERE source_card.id = o.assigned_card_id LIMIT 1) AS card_source_kind
         FROM orders o LEFT JOIN cards c ON (c.id = o.assigned_card_id OR (o.assigned_card_id IS NULL AND c.order_id = o.id))
+        LEFT JOIN products prod ON prod.id = o.product_id
+        ${LATEST_ATTEMPT_LATERAL}
+        ${LATEST_RUN_LATERAL}
         WHERE BINARY o.public_no = ? LIMIT 1`, [publicNo]),
       pool.query(`SELECT oe.from_status, oe.to_status, oe.actor_type, oe.actor_id,
           oe.reason, oe.created_at FROM order_events oe
@@ -1042,6 +1135,28 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
           FROM order_session_replacements sr
           INNER JOIN orders o ON o.id = sr.order_id
           WHERE BINARY o.public_no = ? ORDER BY sr.replacement_no DESC`, [publicNo])
+      ,pool.query(`SELECT ra.id, ra.executor_kind, ra.status, ra.funds_risk_state,
+            ra.external_order_id, ra.submit_intent_at, ra.submitted_at, ra.last_reconciled_at,
+            ra.finished_at, ra.created_at
+          FROM recharge_attempts ra INNER JOIN orders o ON o.id = ra.order_id
+          WHERE BINARY o.public_no = ? ORDER BY ra.created_at DESC, ra.id DESC LIMIT 20`, [publicNo])
+      ,pool.query(`SELECT l.status, l.amount, l.currency, l.provider_transaction_id,
+            l.reserved_at, l.consumed_at, l.released_at, l.release_reason, l.recharge_attempt_id
+          FROM card_consumption_ledger l INNER JOIN orders o ON o.id = l.order_id
+          WHERE BINARY o.public_no = ? ORDER BY l.created_at DESC, l.id DESC LIMIT 20`, [publicNo])
+      ,pool.query(`SELECT bo.browser_run_id, bo.operation_type, bo.status, bo.result_code,
+            bo.prepared_at, bo.completed_at
+          FROM browser_operations bo
+          INNER JOIN browser_runs br ON br.id = bo.browser_run_id
+          INNER JOIN recharge_attempts ra ON ra.id = br.recharge_attempt_id
+          INNER JOIN orders o ON o.id = ra.order_id
+          WHERE BINARY o.public_no = ?
+            AND bo.operation_type IN ('PAYMENT_SUBMIT','PAYMENT_UNKNOWN','MANUAL_CONTROL','MANUAL_PAYMENT_CONFIRMED')
+          ORDER BY bo.prepared_at DESC, bo.id DESC LIMIT 20`, [publicNo])
+      ,pool.query(`SELECT rc.id, rc.case_type, rc.status, rc.severity, rc.assigned_to,
+            rc.resolution_note, rc.detected_at, rc.last_seen_at, rc.resolved_at
+          FROM reconciliation_cases rc INNER JOIN orders o ON o.id = rc.order_id
+          WHERE BINARY o.public_no = ? ORDER BY FIELD(rc.status, 'OPEN', 'ASSIGNED', 'RESOLVED'), rc.detected_at DESC LIMIT 20`, [publicNo])
     ]);
     const row = orderRows[0];
     if (!row) throw new PublicApiError('Order not found', { code: 'ADMIN_ORDER_NOT_FOUND', status: 404 });
@@ -1147,10 +1262,38 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
       cancellationCode = 'ORDER_CANCELLATION_SUBMISSION_RISK';
     }
     return {
+      stage: stageFromRow(row, { reconciliation, now: now() }),
+      browserRun: runFromRow(row),
+      money: {
+        attempts: attemptRows.map((attempt) => ({
+          id: attempt.id, executorKind: attempt.executor_kind, status: attempt.status,
+          fundsRiskState: attempt.funds_risk_state, externalOrderId: attempt.external_order_id,
+          submitIntentAt: iso(attempt.submit_intent_at), submittedAt: iso(attempt.submitted_at),
+          lastReconciledAt: iso(attempt.last_reconciled_at), finishedAt: iso(attempt.finished_at),
+          createdAt: iso(attempt.created_at)
+        })),
+        ledger: ledgerRows.map((entry) => ({
+          status: entry.status, amount: decimal(entry.amount), currency: entry.currency,
+          providerTransactionId: entry.provider_transaction_id, rechargeAttemptId: entry.recharge_attempt_id,
+          reservedAt: iso(entry.reserved_at), consumedAt: iso(entry.consumed_at),
+          releasedAt: iso(entry.released_at), releaseReason: entry.release_reason
+        })),
+        operations: operationRows.map((operation) => ({
+          runId: operation.browser_run_id, type: operation.operation_type, status: operation.status,
+          resultCode: operation.result_code, preparedAt: iso(operation.prepared_at),
+          completedAt: iso(operation.completed_at)
+        }))
+      },
+      reconciliationCases: caseRows.map((item) => ({
+        id: item.id, caseType: item.case_type, status: item.status, severity: item.severity,
+        assignedTo: item.assigned_to, resolutionNote: item.resolution_note,
+        detectedAt: iso(item.detected_at), lastSeenAt: iso(item.last_seen_at), resolvedAt: iso(item.resolved_at)
+      })),
       order: {
         publicNo: row.public_no,
         status: row.status,
         planType: row.plan_type,
+        productName: row.product_name || null,
         customerEmail: row.customer_email,
         chatgptAccountId: row.chatgpt_account_id,
         cardTypeId: row.card_type_id,

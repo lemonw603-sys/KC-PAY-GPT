@@ -104,8 +104,8 @@ test('admin refresh feedback and inset dropdown arrows remain visible', () => {
   const html = fs.readFileSync(path.join(directory, 'admin', 'index.html'), 'utf8');
   const script = fs.readFileSync(path.join(directory, 'admin', 'assets', 'admin.js'), 'utf8');
   const styles = fs.readFileSync(path.join(directory, 'admin', 'assets', 'admin.css'), 'utf8');
-  assert.match(html, /admin\.css\?v=22/);
-  assert.match(html, /admin\.js\?v=28/);
+  assert.match(html, /admin\.css\?v=23/);
+  assert.match(html, /admin\.js\?v=29/);
   assert.match(script, /button\.textContent = '刷新中…'/);
   assert.match(script, /showNotice\('刷新完成。', 'success'\)/);
   assert.match(script, /showNotice\('刷新失败，请稍后重试。'\)/);
@@ -150,12 +150,20 @@ test('admin separates recharge method from audited Browser card-source switching
   assert.doesNotMatch(`${html}\n${script}`, /secretRef|navigationUrl|leaseToken|resourceKeyHmac|card_credentials_ciphertext|recharge_card_key/i);
 });
 
-test('admin describes automatic fulfillment and keeps permits explicitly gray-only', () => {
+test('admin orders page is one table plus one drawer without permits, tags, notes or resend', () => {
   const html = fs.readFileSync(path.join(directory, 'admin', 'index.html'), 'utf8');
   const script = fs.readFileSync(path.join(directory, 'admin', 'assets', 'admin.js'), 'utf8');
-  assert.match(html, /灰度批量许可/);
-  assert.match(html, /待执行充值/);
+  assert.match(html, /<th>订单<\/th><th>产品<\/th><th>当前阶段<\/th><th>需要我做什么<\/th><th>卡尾号<\/th><th>身份<\/th><th>创建时间<\/th>/);
+  assert.match(html, /<option value="REVIEW_REQUIRED">需要处理<\/option>/);
+  assert.match(html, /<option value="ACTIVE">进行中<\/option>/);
+  assert.match(html, /<option value="FINISHED">已完成<\/option>/);
   assert.match(script, /正常模式由系统自动执行/);
-  assert.match(script, /正常订单不需要此操作/);
+  assert.match(script, /取消并释放卡/);
+  assert.match(script, /人工付款已完成/);
+  assert.match(script, /确认 20X 已升级/);
+  assert.match(script, /关闭对账案例/);
+  assert.doesNotMatch(`${html}\n${script}`, /灰度批量许可|灰度单笔许可|撤销灰度许可|添加标签|添加备注|请输入后台密码/);
+  assert.doesNotMatch(script, /#issue-compensation|#add-order-tag|#add-order-note|#arm-recharge-permit|#revoke-recharge-permit|data-record-cdk-delivery|data-search-cdk-delivery|data-select-order/);
+  assert.doesNotMatch(html, /退款观察<\/th>|batch-authorize-recharge|select-page-orders|order-time-field/);
   assert.doesNotMatch(`${html}\n${script}`, /逐单确认|待确认充值/);
 });

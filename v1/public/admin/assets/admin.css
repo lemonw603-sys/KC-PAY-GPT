@@ -269,3 +269,9 @@ tbody tr[data-order]:hover, tbody tr[data-order]:focus { background: #f7faff; }
 .decision .segmented-actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .decision select { max-width: 100%; }
 .metrics-strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin: 12px 0; }
+.filters-compact { grid-template-columns: minmax(260px, 1fr) 170px auto auto; align-items: center; }
+.drawer-summary .detail-status { margin-bottom: 10px; }
+.drawer-action-line { margin: 0 0 12px; padding: 10px 12px; border-radius: 10px; background: #fff4ed; color: #b42318; font-size: 12px; font-weight: 800; line-height: 1.5; }
+.drawer-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.drawer-actions > small { color: #8c9aaa; font-size: 11px; }
+.drawer-hint { display: block; margin-top: 8px; color: #718398; font-size: 11px; }
