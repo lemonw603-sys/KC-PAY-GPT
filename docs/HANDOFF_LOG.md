@@ -1874,3 +1874,12 @@
 - 收尾：用 Cancel 关闭弹窗；清掉 Lane 3 的 session 与登录态 cookie（17 条），保留设备/Cloudflare cookie（cf_clearance、oai-did、__stripe_mid、_cfuvid、__cflb、__oailb、__cf_bm），`/api/auth/session` 已无 token。
 - 至此第二阶段三条分支都有证据：已 Plus → 弹窗（真实）、免费 → 新结账页（真实）、会话失效 → 阶梯（第二级真实验证）。真实单只剩：用户生成 Pro 20X CDK + 新免费账号 Session 在客户页提交。
 
+
+## 2026-09-08｜客户页重提同一 Pro 20X CDK 报「操作未完成」：根因是 `orders.cdk_id` 唯一索引，已修并上线（`20260908-cdkreuse-bf2f25c`）
+
+- 现象：用户取消误提交（已 Plus 测试账号）的 PJV1-1llPonXqruRkU71jurLQ 后，用同一 CDK + 免费账号 Session 在客户页重提，只见红色提示「操作未完成，请稍后重试。」；服务端无新订单、journal 无错误、CDK 仍 AVAILABLE。
+- 根因（生产核对）：被取消的订单 CLOSED 后仍持有 `orders.cdk_id = 80a83a76…`；001 迁移的 `uq_orders_cdk_id` 让第二单 INSERT 撞唯一键；全局错误处理器把未预期错误统一成 500 `internal_error` 且不打日志，客户页对该码无映射走兜底文案。09-07 加的 CDK 退回机制与这条唯一索引互相矛盾，之前从未在生产走到「同一 CDK 第二单」。
+- 修复 `bf2f25c`：迁移 051 先加普通索引再删唯一键（FK `fk_orders_cdk` 保留）；抽屉 CDK 行改按 `cdks.order_id` 找当前持有订单；500 打 method/path/错误标识；新增集成用例「退回的 CDK 绑定第二单」（把旧唯一索引临时加回测试库，用例按预期失败，证明它守住这条回归）。附带 `37ceaff`：首页「浏览器真实付款」开关写 `executor_profiles` 时去掉不存在的 `updated_at`（真实单前曾因此改用内联 SQL 开启）。
+- 发布：prepare → migrate（051 applied）→ switch，01:25 UTC；生产复验 `SHOW INDEX` 仅 `idx_orders_cdk_id`（非唯一），FK 仍在，pojia-web/worker active，journal 只有优雅重启。
+- 测试事实：本机 `mysql-integration.test.js` 在 HEAD~1（`46f88ce`）干净库上就有 18 个既有失败（Bark 偶发、旧 fake-provider/直插订单夹具未按订单驱动路由改写、`removeOrder` 不删 `cdk_delivery_events` 导致 FK 清理失败并让进程挂起）；本次改动后失败集是其子集（无新增）。顺手修了清理顺序、并发入口断言（同账号第二次并发提交现在返回 reused，不再是 CDK_UNAVAILABLE）与一 CDK 一单断言（改到 `cdks.order_id`）。其余既有失败仍待专项清理，未纳入本次。
+- 下一步：用户在客户页重新点「确认无误，创建订单」；订单创建后先核对账号摘要 ≠ 已 Plus 测试账号（4699aca020ed），再启动本机 `run-live-pool.sh run pay`。

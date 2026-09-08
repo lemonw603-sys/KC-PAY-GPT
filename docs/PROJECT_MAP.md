@@ -21,7 +21,7 @@
 
 | 项目 | 事实 |
 |---|---|
-| release | `/opt/pojia/releases/20260908-upgrade-42073c7`（09-07 19:41 UTC，Pro 第二阶段到弹窗停 + 会话恢复阶梯 + 抽屉显示弹窗事实）；回滚点 `20260908-pro-0073d45`（再前 `20260908-importwarn-370c7ce`） |
+| release | `/opt/pojia/releases/20260908-cdkreuse-bf2f25c`（09-08 01:25 UTC，退回后的 CDK 可再次下单：迁移 051 把 `orders.cdk_id` 唯一索引改普通索引；500 补日志；首页付款开关修复）；回滚点 `20260908-upgrade-42073c7`（再前 `20260908-pro-0073d45`；回滚到它之前无需回退 051，普通索引对旧代码无影响） |
 | 服务 | Web active；API Worker inactive（09-06 03:46 UTC 人为停止）；Browser Worker inactive/disabled；补余额与读同步 timer active；旧自动开卡 timer disabled |
 | 开关 | 接单 true；自动派发 true；默认路线 Browser；Browser 卡台 = 备用卡台 A；Browser 付款开关 false；自动开卡 false；自动补余额 true；每卡成功次数 3；最低卡余额 16（09-07 08:28–09:33 UTC 曾临时 8） |
 | 卡 | HNSKJ 已恢复但 `5980` 只剩 $0.31；备用 A `5501` $8.87 低于门槛 16（09-07 16:53 UTC 已从死单 `PJV1--j4AnE7fvfgkvaceSr0Z` 释放，DEPLETED，充值并重新导入快照后即可分配）、`0237` $0 → 可分配 0 |
