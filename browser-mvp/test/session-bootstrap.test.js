@@ -109,3 +109,47 @@ test('CookieSessionBootstrapAdapter replaces a foreign resident session only whe
   assert.equal(untouched.clearedLoginCookieCount, 0);
   assert.equal(cleared.length, 0, 'a profile holding only device/network cookies is left untouched');
 });
+
+test('CookieSessionBootstrapAdapter injects the full auth layer (usc_/unified_session_manifest) cross-domain, and drops non-auth cookies', async () => {
+  // A complete session export (D-136 fallback): app-layer + auth.openai.com auth
+  // layer + a device cookie + an analytics cookie that must NOT be injected.
+  const material = {
+    cookies: [
+      { name: '__Secure-next-auth.session-token', value: 'app-token', domain: '.chatgpt.com', httpOnly: true, secure: true },
+      { name: '__Host-next-auth.csrf-token', value: 'csrf', httpOnly: true, secure: true },
+      { name: 'usc_ABC123', value: 'persistent-auth', domain: '.auth.openai.com', httpOnly: true, secure: true, expires: 1900000000 },
+      { name: 'unified_session_manifest', value: 'manifest', domain: '.auth.openai.com', httpOnly: true, secure: true },
+      { name: 'oai-client-auth-session', value: 'client-auth', domain: '.auth.openai.com', secure: true },
+      { name: '_ga', value: 'analytics', domain: '.openai.com' }, // must be filtered out
+    ],
+  };
+  const adapter = new CookieSessionBootstrapAdapter({ source: { load: async () => material } });
+  const lease = await adapter.open('session-ref:full');
+  const added = [];
+  await adapter.bootstrap(lease, {
+    cookies: async () => [],
+    clearCookies: async () => undefined,
+    addCookies: async (cookies) => added.push(...cookies),
+  });
+  const byName = new Map(added.map((c) => [c.name, c]));
+  // auth layer present, on the right domain
+  assert.ok(byName.has('usc_ABC123'), 'usc_ auth cookie injected');
+  assert.equal(byName.get('usc_ABC123').domain, '.auth.openai.com');
+  assert.equal(byName.get('usc_ABC123').expires, 1900000000);
+  assert.ok(byName.has('unified_session_manifest'));
+  assert.equal(byName.get('unified_session_manifest').domain, '.auth.openai.com');
+  assert.ok(byName.has('oai-client-auth-session'));
+  // app layer present, defaults to chatgpt.com url when no domain given
+  assert.ok(byName.has('__Secure-next-auth.session-token'));
+  assert.ok(byName.has('__Host-next-auth.csrf-token'));
+  assert.equal(byName.get('__Host-next-auth.csrf-token').url, 'https://chatgpt.com');
+  // analytics cookie must be rejected/filtered
+  assert.ok(!byName.has('_ga'), 'analytics cookie not injected');
+});
+
+test('CookieSessionBootstrapAdapter still rejects a full export missing the app session token', async () => {
+  const adapter = new CookieSessionBootstrapAdapter({
+    source: { load: async () => ({ cookies: [{ name: 'usc_X', value: 'a', domain: '.auth.openai.com' }] }) },
+  });
+  await assert.rejects(adapter.open('session-ref:no-app'), (e) => e instanceof ContractError);
+});

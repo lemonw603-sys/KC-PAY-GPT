@@ -76,21 +76,50 @@ export async function clearStaleLoginCookies(context) {
   return stale.length;
 }
 
+// Cookies the bootstrap is allowed to inject. Two layers matter after a
+// subscription payment (D-136): the chatgpt.com APPLICATION session, and the
+// auth.openai.com AUTH layer (usc_*, unified_session_manifest, oai-client-auth-*)
+// that lets the front-end silently re-issue an application session when payment
+// revokes the old one — the layer a bare /api/auth/session JSON export lacks.
+const INJECTABLE_COOKIE_PATTERNS = [
+  /^__Secure-next-auth\.session-token(\.\d+)?$/, // application session (chatgpt.com)
+  /^__Secure-next-auth\.callback-url$/,
+  /^__Host-next-auth\.csrf-token$/,
+  /^usc_/, // persistent auth session (auth.openai.com)
+  /^unified_session_manifest$/, // persistent auth manifest (auth.openai.com)
+  /^oai-client-auth-session$/, // auth-layer client session
+  /^oai-client-auth-info$/, // auth-layer client info
+  /^oai-client-session-epoch$/,
+  /^__Secure-oai-is$/,
+];
+
 function toPlaywrightCookie(cookie) {
   const name = String(cookie.name).trim();
   const value = String(cookie.value).replace(/[\r\n\0]/g, '').trim();
   if (!name || !value) throw new ContractError('session cookie name/value is required');
-  if (!name.includes('session-token') && !name.startsWith('__Secure-')) {
-    throw new ContractError('session bootstrap accepts only secure ChatGPT session cookies');
+  if (!INJECTABLE_COOKIE_PATTERNS.some((pattern) => pattern.test(name))) {
+    throw new ContractError(`session bootstrap does not inject cookie ${name}`);
   }
-  return {
+  const sameSite = cookie.sameSite === 'none' || cookie.sameSite === 'None'
+    ? 'None'
+    : (cookie.sameSite === 'strict' || cookie.sameSite === 'Strict' ? 'Strict' : 'Lax');
+  // Playwright accepts {url} OR {domain,path}. A cross-site auth-layer cookie
+  // (auth.openai.com) must use domain+path so it lands on the right host; the
+  // app-layer cookies without a domain default to chatgpt.com.
+  const host = cookie.domain ? String(cookie.domain).replace(/^\./, '') : null;
+  const placement = host
+    ? { domain: `.${host}`, path: cookie.path || '/' }
+    : { url: CHATGPT_URL };
+  const out = {
     name,
     value,
-    url: CHATGPT_URL,
-    secure: true,
+    ...placement,
+    secure: cookie.secure !== false,
     httpOnly: cookie.httpOnly !== false,
-    sameSite: cookie.sameSite === 'none' ? 'None' : 'Lax',
+    sameSite,
   };
+  if (Number.isFinite(cookie.expires) && cookie.expires > 0) out.expires = cookie.expires;
+  return out;
 }
 
 /**
@@ -110,8 +139,8 @@ export class CookieSessionBootstrapAdapter extends SessionProviderPort {
     assertRef(sessionRef, 'sessionRef');
     if (!Number.isInteger(ttlMs) || ttlMs < 1_000) throw new TypeError('ttlMs must be at least 1000ms');
     const material = await this.source.load(sessionRef);
-    const cookies = normalizeCookies(material).filter((cookie) => cookie.name === SESSION_COOKIE_BASE || cookie.name.startsWith(`${SESSION_COOKIE_BASE}.`));
-    if (cookies.length === 0) {
+    const cookies = normalizeCookies(material).filter((cookie) => INJECTABLE_COOKIE_PATTERNS.some((pattern) => pattern.test(cookie.name)));
+    if (!cookies.some((cookie) => SESSION_COOKIE_NAME_PATTERN.test(cookie.name))) {
       throw new ContractError('session source did not provide a ChatGPT session token cookie');
     }
     const serialized = JSON.stringify(cookies);
