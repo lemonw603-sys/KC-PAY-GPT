@@ -179,7 +179,7 @@ export function createSharedLivePaymentWorker({
       const verifier = new ChatGptPostPaymentVerifier({
         page,
         expectedIdentity: await resolveSessionIdentity(sessionRefInput),
-        transactionReader: await transactionReaderFactory({ claimedJob, run }),
+        transactionReader: await transactionReaderFactory({ runId: run.runId }),
         timeoutMs: verificationWindowMs,
         pollIntervalMs: verificationIntervalMs,
         upgradePlan: action === 'UPGRADE_DIALOG_STOP' ? plan : null,
