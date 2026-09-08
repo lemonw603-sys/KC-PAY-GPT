@@ -344,13 +344,25 @@ export async function navigateToChatGPTCheckout(page, contract = CHATGPT_PLUS_CH
   if (!await targetReady(page, contract, expect, popups)) {
     // A resumed run may already sit on the open plan picker; the header
     // control behind the modal is then covered and must not be clicked.
-    const pickerAlreadyOpen = await pricingDialogVisible(page, contract);
+    let pickerAlreadyOpen = await pricingDialogVisible(page, contract);
     let openPricing = pickerAlreadyOpen ? null : await lastVisibleNavigationSelector(
       page,
       contract.openPricingSelectors,
       'open pricing control',
       { optional: true },
     );
+    // Plus accounts have no header "Upgrade" button and no "Upgrade plan" item in
+    // the profile menu; their plan picker opens via the #pricing hash instead.
+    // Try that first (covers Plus->Pro stage 2), then fall back to the
+    // free-account profile-menu path below.
+    if (!openPricing && !pickerAlreadyOpen) {
+      await page.goto(`${contract.homeUrlPrefix}#pricing`, { waitUntil: 'domcontentloaded', timeout: timeoutMs }).catch(() => undefined);
+      pickerAlreadyOpen = await waitForState(
+        page,
+        async () => ((await pricingDialogVisible(page, contract)) ? true : null),
+        { timeoutMs: Math.min(timeoutMs, 15_000), label: 'pricing dialog via #pricing' },
+      ).then(() => true).catch(() => false);
+    }
     if (!openPricing && !pickerAlreadyOpen) {
       // The app shell renders asynchronously after a freshly injected session
       // navigates home; the profile menu (the pricing entry point) can appear a
