@@ -90,6 +90,7 @@ export class LiveChatGPTPaymentAdapter {
       throw new TypeError('repriceTimeoutMs must be between 1000 and 60000');
     }
     let submitted = false;
+    let holdForReconcile = false;
     let stage = 'validate-card-material';
     try {
       assertCardMaterial(cardMaterial);
@@ -140,6 +141,9 @@ export class LiveChatGPTPaymentAdapter {
         if (shape.tag !== 'button' || shape.type !== 'submit') throw new ContractError('payment submit control shape drift');
         const intent = await authorizeSubmit();
         if (!intent?.executeExternal) {
+          // Intentional in-attempt hold: no external submit happens, so keep the
+          // filled form for the reconcile/requote path (do not clear below).
+          holdForReconcile = true;
           return {
             status: 'RECONCILE_ONLY',
             quote: { currency: strictCheckout.currency, amount: strictCheckout.amount, estimatedTax: strictCheckout.estimatedTax },
@@ -165,11 +169,15 @@ export class LiveChatGPTPaymentAdapter {
           },
         };
       } finally {
-        // Before submit, the page still belongs to the same active order. Keep
-        // its form intact so a requote/page-recovery does not force another
-        // card/address entry. After the external submit boundary, cleanup is
-        // still best effort because the page may have navigated or challenged.
-        if (submitted) {
+        // Clear the secure card fields on every exit EXCEPT the intentional
+        // reconcile hold (holdForReconcile), which deliberately keeps the filled
+        // form for an in-attempt requote. This covers both the post-submit
+        // boundary (submitted) and — critically — a pre-submit failure (drift/
+        // timeout/lease loss): leaving the PAN in the field would keep card data
+        // resident in a reusable page and poison any retry that reuses the same
+        // checkout, which then fails the "secure field is not empty" guard
+        // forever. Cleanup is best effort; after submit the page may have moved.
+        if (submitted || !holdForReconcile) {
           for (const field of Object.values(fields)) {
             try { await field.fill(''); } catch {
               await field.evaluate((element) => { element.value = ''; element.dispatchEvent(new Event('input', { bubbles: true })); }).catch(() => undefined);

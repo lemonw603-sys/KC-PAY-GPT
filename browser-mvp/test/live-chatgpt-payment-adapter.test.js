@@ -83,7 +83,11 @@ test('LIVE adapter never submits a non-zero-tax quote', async () => {
     }), (error) => error.code === 'CHECKOUT_DRIFT'
       && error.message === 'LIVE Browser payment failed at wait-for-zero-tax-requote');
     assert.equal(await page.evaluate(() => window.clicked || 0), 0);
-    assert.equal(await page.locator('input[autocomplete="cc-number"]').inputValue(), card.pan);
+    // On a pre-submit drift the secure card number must NOT stay in the field:
+    // leftover PAN would keep card data resident in a reusable page and poison
+    // any retry that reuses the same checkout (it would trip the "secure field
+    // is not empty" guard). Billing address / email are non-PAN and are kept.
+    assert.equal(await page.locator('input[autocomplete="cc-number"]').inputValue(), '');
     assert.equal(await page.locator('input[name="locality"]').inputValue(), card.billingAddress.city);
     assert.equal(await page.locator('input[autocomplete="billing email"]').inputValue(), 'fixture@example.test');
   } finally { await browser.close(); }
