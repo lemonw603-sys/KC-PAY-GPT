@@ -1901,3 +1901,10 @@
 - 根因：两阶段方案里 stage 1 应买 Plus（与 preflight 一致），stage 2 才升级 20X。`shared-live-composition.resolveExecutionContext` 把订单 plan 传给了 checkout 导航。修复 `<commit>`：checkout 导航 plan 固定 plus；stage 2 upgradePlan 仍用订单 plan（UPGRADE_DIALOG_STOP）。测试 shared-live-composition/production-live-pool-worker 9/9 通过。
 - 该单又安全收口：RECHARGE_FAILED、CDK 退回 AVAILABLE、未扣款。付款开关仍 ON。
 - 下一步：用户第三次用同一 CDK 重提；修复后 preflight 与 submit 都走 plus，navigator 应成功创建 Plus checkout 并首次走到真实付款（stage 1 买 Plus ~\$15.69），stage 2 停 20X 弹窗。这是首次会真实走到付款执行器（LiveChatGPTPaymentAdapter）的真实单。
+
+## 2026-09-08｜真实单逐层攻克：stage1 plan 与 card-context 两个「首次真实付款」bug 已修
+
+第三、四次重提（PJV1-_Oh83…、PJV1-ZlQY9…）逐层暴露并修复，均付款前安全中止、未扣款、CDK 退回：
+- **stage 1 结账错用 pro_20x plan**（`e27ac92`）：navigator 去点「20x」档位（免费账号 Plus 弹窗无此控件）超时。改为 stage 1 固定买 Plus。
+- **card context unavailable**（`ff35923`）：付款路径以 { claimedJob, run } 调 transactionReaderFactory，工厂解构 { runId } → undefined → resolveCardContext 查不到卡。改调用为 { runId: run.runId }。付款后恢复路径传 row.runId 本就正确。
+规律：每个 bug 都只在「首次真实走到该阶段」暴露（preflight reload → checkout plan → card context → …），演练/只读复现都过。已修阶段：preflight 通过、submit checkout 导航通过、card context 解析通过。下一未验证阶段：付款执行器实际填卡→requote→（真实 pay 会点付款）。付款开关仍 ON。
