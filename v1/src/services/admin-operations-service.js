@@ -124,8 +124,7 @@ export function createAdminOperationsService({ pool }) {
       });
       const [profiles] = await connection.query(
         `UPDATE executor_profiles
-         SET config_public_json = JSON_SET(COALESCE(config_public_json, JSON_OBJECT()), '$.productionWritesEnabled', CAST(? AS JSON)),
-             updated_at = CURRENT_TIMESTAMP(3)
+         SET config_public_json = JSON_SET(COALESCE(config_public_json, JSON_OBJECT()), '$.productionWritesEnabled', CAST(? AS JSON))
          WHERE executor_kind = 'BROWSER' AND status = 'ACTIVE'`,
         [value ? 'true' : 'false']
       );
