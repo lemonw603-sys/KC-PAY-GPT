@@ -1883,3 +1883,13 @@
 - 发布：prepare → migrate（051 applied）→ switch，01:25 UTC；生产复验 `SHOW INDEX` 仅 `idx_orders_cdk_id`（非唯一），FK 仍在，pojia-web/worker active，journal 只有优雅重启。
 - 测试事实：本机 `mysql-integration.test.js` 在 HEAD~1（`46f88ce`）干净库上就有 18 个既有失败（Bark 偶发、旧 fake-provider/直插订单夹具未按订单驱动路由改写、`removeOrder` 不删 `cdk_delivery_events` 导致 FK 清理失败并让进程挂起）；本次改动后失败集是其子集（无新增）。顺手修了清理顺序、并发入口断言（同账号第二次并发提交现在返回 reused，不再是 CDK_UNAVAILABLE）与一 CDK 一单断言（改到 `cdks.order_id`）。其余既有失败仍待专项清理，未纳入本次。
 - 下一步：用户在客户页重新点「确认无误，创建订单」；订单创建后先核对账号摘要 ≠ 已 Plus 测试账号（4699aca020ed），再启动本机 `run-live-pool.sh run pay`。
+
+## 2026-09-08｜首个真实 Pro 20X 单排障：CDK 二次下单、手动卡 tier、executor 复用标签三处 bug 已修；preflight 通过；submit 偶发待观察
+
+- 客户用同一 Pro 20X CDK 重提成功建单 PJV1-S8Lw4c3DjBAmmIduJWmM（免费账号，摘要 email d61eeffeefc6 / account 8dd16df66497，与已 Plus 测试账号不同）。
+- **卡分配卡住（CARD_STOCK_EMPTY）**：卡 5501（HG…，余额 $16.04）此前被取消单 PJV1-1llPon… 释放时，取消服务把 sync_tier 从 MANUAL_IMPORT 无条件重置为 AVAILABLE；手动卡台无 API 同步，`eligibleInventoryCardSql` 要求 MANUAL_IMPORT 或 15 分钟内有交易同步，于是不可分配。手动恢复 tier（留 card_state_events 审计）后立即分配成功；根因修复 `bad14cc`（取消服务保留 MANUAL_IMPORT，与 card-release-repository 一致）。
+- **preflight 一直 CHECKOUT_NAVIGATION_FAILED**：executor.activeOrderPage 复用已存在的 chatgpt 标签但不 reload；该标签是注入 session 前加载的登出页，URL 恰为 chatgpt.com/ 与目标前缀相等，连 startFresh 的 goto 也跳过 → navigator 在登出 DOM 找不到头像菜单（诊断 message 从「must resolve」到加 waitForState 后「timed out」）。只读 playwright 复现证明：注入同一 session + reload + 等 9s → 页面登录、头像菜单与 Upgrade 均可见、/api/auth/session plan=free。根因修复 `3615729`（注入 session 后强制 reload 复用标签）。修复后 preflight COMPLETED、checkoutCreated:true。
+- **submit 仍偶发 CHECKOUT_NAVIGATION_FAILED**：preflight 通过后紧接的 submit（带卡付款）在 navigator 阶段安全中止（SAFE_ABORTED、submitCalls:0、funds_risk_state CLEARED，**未扣款**）。只读复现单次与连续两次 navigator 均成功，从外部未复现 submit 失败；已给 preflight 与 SAFE_ABORTED 都加 diagnosticMessage（`3615729`），下次真实单可在 pool 日志看到 navigator 确切 message。怀疑方向：preflight 创建 checkout 的副作用或 BitBrowser adapter/时机；待下次数据。
+- **收口确认**：订单 RECHARGE_FAILED；CDK 80a83a76 已 RETURNED 回 AVAILABLE（可再提交）；卡 5501 AVAILABLE 且 sync_tier 保留 MANUAL_IMPORT（RECHARGE_FAILED 走 card-release-repository 保留）；ledger RELEASED、attempt CLEARED、assignment RELEASED——全程未扣款。
+- **发布**：`20260908-cdkreuse-bf2f25c`（CDK 二次下单+500 日志，含迁移 051）与 `20260908-cancelfix-bad14cc`（取消保留手动卡 tier）已上线。browser-mvp 改动本机直接生效。付款开关仍 ON、pojia-worker active——重试或收尾后需按需关闭/停机。
+- **下一步**：用户用同一 CDK 重新提交；本机 `run-live-pool.sh run pay` 重跑，看 submit 的 diagnosticMessage 定位偶发失败。submit 在付款前失败不扣款，重试无资金损失。

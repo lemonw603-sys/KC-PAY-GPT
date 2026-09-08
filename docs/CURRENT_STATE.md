@@ -4,7 +4,7 @@
 
 | 项目 | 当前值 | 核对时间（UTC） | 证据方式 |
 |---|---|---|---|
-| 生产 release | `/opt/pojia/releases/20260908-cdkreuse-bf2f25c`（commit `bf2f25c`，退回后的 CDK 可绑定新订单：`orders.cdk_id` 唯一索引改普通索引（迁移 051）+ 500 打日志 + 首页付款开关 `updated_at` 修复 `37ceaff`） | 2026-09-08 01:25 | `readlink -f /opt/pojia/current`；switch 输出；`SHOW INDEX FROM orders` 仅 `idx_orders_cdk_id`（非唯一），`fk_orders_cdk` 仍在；journal 无错误 |
+| 生产 release | `/opt/pojia/releases/20260908-cancelfix-bad14cc`（commit `bad14cc`，取消释放卡保留 MANUAL_IMPORT 同步等级；含 `bf2f25c` CDK 二次下单修复与 `37ceaff` 付款开关修复） | 2026-09-08 02:3x | `readlink -f /opt/pojia/current`；switch live/ready/admin 均 200 |
 | 回滚点 | `/opt/pojia/releases/20260908-pro-0073d45`（再前 `20260908-importwarn-370c7ce`；050 迁移只增行不改结构） | 同上 | 部署记录 |
 | 最新数据库备份 | `/var/backups/pojia/pojia-20260907T194041Z.sql.gz.enc`，完整性 OK | 19:40 | `pojia-ops backup/verify`（prepare 阶段） |
 | pojia-web | active（19:41 随 release 切换重启，无错误日志） | 19:41 | systemctl / journalctl |
