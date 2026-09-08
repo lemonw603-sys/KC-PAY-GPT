@@ -136,10 +136,12 @@ export function createSharedLivePaymentWorker({
     const sessionIdentity = await resolveSessionIdentity({
       orderId: claimedJob.orderId, attemptId: claimedJob.attemptId, runId: run.runId,
     });
-    const plan = typeof resolvePlan === 'function'
-      ? await resolvePlan({ orderId: claimedJob.orderId, attemptId: claimedJob.attemptId, runId: run.runId }) : 'plus';
+    // Two-stage Pro (pro_5x/pro_20x): stage 1 always buys Plus in Checkout; the Pro
+    // upgrade runs after payment (UPGRADE_DIALOG_STOP). A free account cannot buy Pro
+    // directly, and the Pro tier toggle is absent on the Plus purchase dialog, so the
+    // checkout navigation plan is fixed to plus; only the post-payment upgrade uses the order plan.
     const loaded = await upstreamAdapter.load({
-      runId: run.runId, manifest, observation: { ...observation, sessionIdentity, plan },
+      runId: run.runId, manifest, observation: { ...observation, sessionIdentity, plan: 'plus' },
       sessionRef: await resolveSessionRef({ orderId: claimedJob.orderId, attemptId: claimedJob.attemptId, runId: run.runId }),
     });
     return {
