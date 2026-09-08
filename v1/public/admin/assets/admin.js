@@ -329,12 +329,20 @@ function renderDecisions(overview, cardSources) {
   const payOn = Boolean(d.browserPaymentWritesEnabled);
   const payMismatch = d.browserProfileWritesEnabled != null && d.browserProfileWritesEnabled !== payOn;
   const supplyOn = Boolean(d.supplyAutomationEnabled);
+  const supplyMixed = Boolean(d.supplyAutomationMixed);
+  // Server toggle is all-or-nothing (both auto-open + auto-topup). In the mixed
+  // state (one on, one off) offer BOTH resolutions so the on-half can be turned
+  // off too, not only turned fully on.
+  const supplyBtn = (enable) => `<button type="button" class="${enable ? 'primary-small' : 'danger-small'}" data-supply-toggle data-enable="${enable}">${enable ? '开启' : '关闭'}</button>`;
+  const supplyControls = supplyOn ? supplyBtn(false) : (supplyMixed ? `${supplyBtn(true)}${supplyBtn(false)}` : supplyBtn(true));
+  const supplyLabel = supplyOn ? '自动开卡与补余额' : (supplyMixed ? '部分开启' : '全部人工');
+  const supplyHint = supplyOn ? '没有合格卡时按真实订单需求自动开卡、自动补足余额' : (supplyMixed ? '开卡与补余额一个开一个关；「开启」两个都开，「关闭」两个都关' : '开卡与补余额都由人工在卡片页操作');
   elements.decisionsGrid.innerHTML = `
     <div class="decision"><strong>接不接单</strong><span class="segmented-actions">${intakeButton('run', '接单并处理')}${intakeButton('pause', '接单但暂停处理')}${intakeButton('stop', '停止接单')}</span><small>${intake === 'run' ? '新订单可以提交，规则通过后自动履约' : intake === 'pause' ? '新订单可以提交，但不派发充值，已有订单继续追踪' : '客户页拒绝新订单，已有订单继续追踪'}</small></div>
     <div class="decision"><strong>走哪条路线</strong><span class="segmented-actions">${routeButton('API', 'API 充值')}${routeButton('BROWSER', '浏览器自动化充值', Boolean(health.browserRechargeReady), health.browserRechargeReady ? '' : 'Browser 执行器尚未就绪')}</span><small>只影响切换后新建的订单；执行中的订单保持原路线</small></div>
     <div class="decision"><strong>用哪个卡台</strong><span class="segmented-actions"><select id="decision-card-source" aria-label="Browser 卡台">${sourceOptions || '<option value="">没有可用卡台</option>'}</select><button type="button" class="primary-small" id="decision-card-source-apply" ${sources.length ? '' : 'disabled'}>切换</button></span><small>Browser 路线的卡台；切换只影响之后的新订单，不自动回退</small></div>
     <div class="decision"><strong>能不能付钱</strong><span class="segmented-actions"><em class="switch-state ${payOn ? 'is-on' : ''}">${payOn ? '允许自动付款' : '禁止自动付款'}</em><button type="button" class="${payOn ? 'danger-small' : 'primary-small'}" id="decision-payment" data-enabled="${payOn}">${payOn ? '关闭' : '开启'}</button></span><small>${payMismatch ? '执行器配置与开关不一致，点一次开启/关闭会同步' : payOn ? '浏览器会真实点击付款；每单仍受单笔许可与唯一提交保护' : '所有 Browser 单停在付款前，不会扣款'}</small></div>
-    <div class="decision"><strong>能不能开卡补钱</strong><span class="segmented-actions"><em class="switch-state ${supplyOn ? 'is-on' : ''}">${supplyOn ? '自动开卡与补余额' : d.supplyAutomationMixed ? '部分开启' : '全部人工'}</em><button type="button" class="${supplyOn ? 'danger-small' : 'primary-small'}" id="decision-supply" data-enabled="${supplyOn}">${supplyOn ? '关闭' : '开启'}</button></span><small>${supplyOn ? '没有合格卡时按真实订单需求自动开卡、自动补足余额' : '开卡与补余额都由人工在卡片页操作'}</small></div>`;
+    <div class="decision"><strong>能不能开卡补钱</strong><span class="segmented-actions"><em class="switch-state ${supplyOn ? 'is-on' : ''}">${supplyLabel}</em>${supplyControls}</span><small>${supplyHint}</small></div>`;
 }
 
 async function loadOverview() {
@@ -1925,9 +1933,9 @@ document.addEventListener('click', async (event) => {
     await loadOverview();
     return;
   }
-  const supplyButton = event.target.closest('#decision-supply');
+  const supplyButton = event.target.closest('[data-supply-toggle]');
   if (supplyButton) {
-    const enable = supplyButton.dataset.enabled !== 'true';
+    const enable = supplyButton.dataset.enable === 'true';
     supplyButton.disabled = true;
     try {
       await api('/api/v1/admin/operations/supply-automation', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: enable }) });
