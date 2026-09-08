@@ -20,17 +20,17 @@
 | 默认路线 | Browser（`CHATGPT_PLUS_BROWSER_V1` accepts_new_orders=1，API=0） | 13:31 | fulfillment_routes |
 | Browser 当前卡台 | 备用卡台 A（`manual_excel` / `backup-a`） | 13:31 | browser_card_source_selections |
 | browser_dispatch_enabled | true | 13:31 | app_settings |
-| browser_payment_writes_enabled | false | 13:31 | app_settings |
-| Browser Profile productionWritesEnabled | false | 13:31 | executor_profiles |
+| browser_payment_writes_enabled | true（09-08 用户确认留开待命；本机无常驻 worker，来单需人工拉） | 09-08 晚 | app_settings |
+| Browser Profile productionWritesEnabled | true（随付款开关同步） | 09-08 晚 | executor_profiles config_public_json |
 | card_auto_replenishment_enabled | false | 13:31 | app_settings |
 | card_balance_recharge_enabled | true | 13:31 | app_settings |
 | card_max_successful_payments | 3 | 13:31 | app_settings |
 | default_open_card_amount / minimum | 16 / 16（09-07 08:28–09:33 UTC 曾临时 8.00 供演练单分卡；已恢复） | 09:33 | app_settings（经服务层 `setMinimumRequiredCardBalance`） |
 | Worker 进程写权限 | worker：`PROVIDER_RECHARGE_WRITES_ENABLED=true`（drop-in），通用/卡片写 false；funding 单元：`PROVIDER_CARD_WRITES_ENABLED=true`；env 文件 `PROVIDER_READS_ENABLED=true` | 16:35 | `systemctl cat` |
 | HNSKJ 卡 | `5980` DEPLETED，余额 $0.31（09-07 12:07 UTC 直充扣 $15.69，占用已释放）；其余 5 张 ASSIGNED 于历史订单且 ≤ $0.01；5 张 DEPLETED；HNSKJ 可分配 0 | 09-07 14:42 | cards |
-| 备用卡 A | `5501` $8.87（分配给测试单，assignment ACTIVE；演练已释放资金占用）；`0237` $0；门槛恢复 16 后可分配 0 | 09-07 09:40 | cards / card_assignment_history |
+| 备用卡（manual_excel） | 可分配仅 `7402` $49（09-08 导入，NORMAL/AVAILABLE）。5 张手动测试卡 `0601/2911/7428/5501/0237` 已打 `RETIRED` override（拒付未付成/耗尽/余额已提现回卡台，09-08 清理收尾），退出分配池 | 09-08 晚 | cards / card_operational_overrides |
 | HNSKJ 卡台 | 09-05 起故障；09-07 12:06 UTC 前已恢复（读同步与交易同步成功，`provider_calls` SUCCESS）；开卡/补余额未再验证 | 09-07 14:00 | provider_calls / cards.last_transaction_synced_at |
-| 订单总况 | RECHARGE_SUCCESS 2 / RECHARGE_FAILED 8 / CLOSED 10（含 09-07 取消的两单遗留等 Session 单，CDK 已退回）/ CANCELLATION_PENDING 1（API 路线 `PJV1-7EYSr3AZfjVl5JZQwTZt`：09-07 12:07 UTC 误触发直充，14:33 POLL 确认成功，实付 982.14 PHP，账本 CONSUMED；取消续费 RECHECK 待 Worker）/ WAITING_FOR_SESSION 0 | 09-07 14:42 | orders / tasks |
+| 订单总况 | RECHARGE_SUCCESS 4 / RECHARGE_FAILED 15 / CLOSED 12 / CANCELLATION_REVIEW_REQUIRED 1（`PJV1-7EYSr3AZfjVl5JZQwTZt`：已付 Plus 982.14 PHP，取消续费复核待处理）/ WAITING_FOR_SESSION 0。失败数上升系 09-08 大量 Browser 测试单（付款前 drift/declined，均未扣款、CDK 退回、卡释放）；attempt funds_risk 全 CLEARED/SETTLED，无 ACTIVE/UNKNOWN | 09-08 晚 | orders / recharge_attempts |
 | 活动资金与运行 | ACTIVE/UNKNOWN attempt 0；open run 0；open dispatch 0；RESERVED 账本 0；open lease 0；ISSUED permit 0 | 16:41 | 只读聚合查询 |
 | 最近 Browser 运行 | 09-07 09:29–09:35 UTC 测试单演练：run `84686b57…` FAILED_SAFE / RELEASED / `PRE_PAYMENT_ABORT` / `BROWSER_REHEARSAL_STOPPED`；`PAYMENT_SUBMIT=0`、permit 0；报价 PHP 982.14 / 税 0.00；Lane 3 保留填好的结账页 | 09:40 | browser_runs / 本机 live.wal |
 | 最近真实单 | `PJV1-RCbAiI0IkGMy-hCBgMSn`：自动化到 Checkout 未填表 → 运营者手工付 Plus + 20X（143.13）→ 09-06 16:40 以「人工付款已完成」收口为 RECHARGE_SUCCESS；`PAYMENT_SUBMIT=0`，证据 `MANUAL_PAYMENT_CONFIRMED` | 16:41 | orders / browser_runs / browser_operations |
