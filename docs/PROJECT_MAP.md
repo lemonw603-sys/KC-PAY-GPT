@@ -2,7 +2,7 @@
 
 只回答四件事：目标、当前生产事实、已完成/未完成、唯一执行顺序。过程记录在 `docs/HANDOFF_LOG.md`，决策在 `docs/DECISIONS.md`，改造基线在 `docs/PRODUCT_SIMPLIFICATION_DISCUSSION.md` 末尾「接班实施基线」。2026-09-07 之前的旧版地图原文：`docs/archive/2026-09/PROJECT_MAP_snapshot_2026-09-07.md`。
 
-最后核对：2026-09-07 14:xx UTC（发布后公网与 SSH 复核）。
+最后核对：2026-09-08 晚（本机 SSH + 生产 DB 只读复核）。
 
 ## 1. 目标与不变原则
 
@@ -17,18 +17,18 @@
 
 客户提交 CDK + Session → 建单并冻结路线与卡台 → 卡资格与余额 → 唯一 attempt / 资金栅栏 → API 或 Browser 执行 → 确认 Plus（20X 再升级）→ 取消续费 → 账本、对账、通知。
 
-## 3. 当前生产事实（2026-09-07 13:00 UTC）
+## 3. 当前生产事实（2026-09-08 晚复核）
 
 | 项目 | 事实 |
 |---|---|
-| release | `/opt/pojia/releases/20260908-cdkreuse-bf2f25c`（09-08 01:25 UTC，退回后的 CDK 可再次下单：迁移 051 把 `orders.cdk_id` 唯一索引改普通索引；500 补日志；首页付款开关修复）；回滚点 `20260908-upgrade-42073c7`（再前 `20260908-pro-0073d45`；回滚到它之前无需回退 051，普通索引对旧代码无影响） |
-| 服务 | Web active；API Worker inactive（09-06 03:46 UTC 人为停止）；Browser Worker inactive/disabled；补余额与读同步 timer active；旧自动开卡 timer disabled |
-| 开关 | 接单 true；自动派发 true；默认路线 Browser；Browser 卡台 = 备用卡台 A；Browser 付款开关 false；自动开卡 false；自动补余额 true；每卡成功次数 3；最低卡余额 16（09-07 08:28–09:33 UTC 曾临时 8） |
-| 卡 | HNSKJ 已恢复但 `5980` 只剩 $0.31；备用 A `5501` $8.87 低于门槛 16（09-07 16:53 UTC 已从死单 `PJV1--j4AnE7fvfgkvaceSr0Z` 释放，DEPLETED，充值并重新导入快照后即可分配）、`0237` $0 → 可分配 0 |
-| 订单 | 成功 2、失败 8、关闭 10、等 Session 0；API 路线 1 单 CANCELLATION_PENDING（09-07 误触发直充已按正常流程结单，实付 982.14 PHP，只剩取消续费待跑）；活动资金栅栏 0 |
+| release | 当前 `20260908-cancelfix-bad14cc`（取消并释放卡时保留手动卡 MANUAL_IMPORT 免同步 tier）；回滚点上一版 `20260908-cdkreuse-bf2f25c`（CDK 退回可再下单/迁移 051 普通索引），再前 `20260908-upgrade-42073c7`。注：browser-mvp 的 D-137 修复（付款前 drift 清空安全卡字段、防残留 PAN 与重试中毒，`fee5f9a` + 测试）在本机池 Worker 源码，不经 v1 release |
+| 服务 | Web active；v1 Worker active；Bark active（均 09-08 SSH 复核）；Browser 池 Worker 本机非常驻——来单人工拉（见「本机」行）；补余额与读同步 timer active；旧自动开卡 timer disabled |
+| 开关 | 接单 true；自动派发 true；订单追踪 true；默认路线 Browser（Plus/5X/20X 均走 Browser，旧 API 路线 accepts_new_orders=0 不接单）；**Browser 付款开关 true**（09-08 用户确认留开待命，但本机无常驻 worker，来单需人工拉才会付款）；自动开卡 false；自动补余额 true；每卡成功次数 3；最低卡余额 16 |
+| 卡 | 可分配仅 1 张：手动 `7402` $49（09-08 导入的备用卡，NORMAL/AVAILABLE）。5 张手动测试卡 `0601/2911/7428/5501/0237` 已打 `RETIRED` override 退出分配池（拒付未付成/耗尽/余额已提现回卡台，09-08 清理收尾）。HNSKJ 卡今日未复核余额（此前 `5980` 低余额不可分配）|
+| 订单 | 成功 4、失败 15、关闭 12、取消复核 1（`PJV1-7EYSr3` 已付 Plus ₱982.14 PHP，待取消续费复核）；活动资金栅栏 0（attempt 全 CLEARED/SETTLED，无 ACTIVE/UNKNOWN；今日测试单均付款前安全中止未扣款）。失败数上升系今日大量 Browser 测试单（付款前 drift/declined，均未扣款、CDK 退回、卡释放）|
 | 迁移 | 050（Pro 5X/20X 产品、Browser 路线、卡台选择、按产品最低余额；09-07 19:16 UTC 两遍应用） |
-| Browser 自动化 | 生产从未自动完成过一笔付款；09-07 演练首次自动走完填卡/地址/邮箱/零税报价并停在点击前（run FAILED_SAFE/PRE_PAYMENT_ABORT，0 许可 0 点击）；此前 21 个 run 中 20 个为 09-01 的 CHATGPT_ACCESS_BLOCKED，1 个 09-06 到 Checkout 未填表后人工完成 |
-| 本机 | BitBrowser + mihomo（launchd）；LIVE Worker 靠手动 `--once`，无常驻；SSH 隧道 13306→3306（掉线时 `ssh -f -N -L 13306:127.0.0.1:3306 root@<host>`）；启动脚本：单订单 `run-live-rehearsal.sh check｜once <orderId>`、预检 `run-browser-preflight.sh check｜once`、常驻池 `run-live-pool.sh check｜run rehearsal｜pay`（密钥运行时经 SSH 取入进程，不落盘） |
+| Browser 自动化 | 生产仍 **0 笔全自动付款**（里程碑未达）；09-08 用户**手动**在比特浏览器第一窗口完成 Plus+20X 两阶段真实付款（卡0601/账号 wozaijiaoju1649，未退登），**验证 Direction B「付款后不需客户重新登录」**（自动 navigator 亦走到「Confirm plan changes」弹窗）；同日修复 D-137「付款前 drift 残留卡号→重试中毒」bug。自动化差的一步=用干净免费号跑通第一笔全自动 Plus 付款（当前缺干净账号）|
+| 本机 | BitBrowser + mihomo（launchd）；Browser 池 Worker **来单人工拉、不常驻**（用户 09-08 确认）；SSH 隧道 13306→3306（掉线时 `ssh -f -N -L 13306:127.0.0.1:3306 root@<host>`）；启动脚本：常驻池 `run-live-pool.sh run pay`（需隧道 + 本机 BitBrowser API + `BROWSER_POOL_LANES` 指定干净窗口）、单订单 `run-live-rehearsal.sh check｜once <orderId>`、预检 `run-browser-preflight.sh check｜once`（密钥运行时经 SSH 取入进程，不落盘） |
 
 详细事实表见 `docs/CURRENT_STATE.md`。
 
