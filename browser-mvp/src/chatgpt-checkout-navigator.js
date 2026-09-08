@@ -253,9 +253,16 @@ function amountIn(line) {
  * the card brand and last four digits are the only values kept; nothing else on
  * the dialog (and never anything outside it) is returned.
  */
-export async function readPlanChangeDialog(page, contract = CHATGPT_PLUS_CHECKOUT_NAVIGATION_CONTRACT) {
+export async function readPlanChangeDialog(page, contract = CHATGPT_PLUS_CHECKOUT_NAVIGATION_CONTRACT, { readyTimeoutMs = 15_000 } = {}) {
   const dialog = planChangeDialog(page, contract);
   if (await visibleCount(dialog) !== 1) throw new ContractError('plan change dialog drift');
+  // The dialog paints its title first and fetches the amounts afterwards
+  // (observed live 2026-09-08: only the title was present at open time).
+  await waitForState(page, async () => {
+    const current = String(await dialog.first().innerText().catch(() => ''));
+    const payVisible = await uniqueVisibleButton(dialog.first(), contract.planChangePayLabels || [], 'plan change pay control', { optional: true });
+    return (AMOUNT_PATTERN.test(current) && payVisible) ? 'ready' : null;
+  }, { timeoutMs: readyTimeoutMs, label: 'plan change dialog content' });
   const text = String(await dialog.first().innerText());
   const lines = text.split(/\r?\n/).map((line) => line.replace(/\s+/g, ' ').trim()).filter(Boolean);
   const find = (patterns) => lines.findIndex((line) => patterns.some((pattern) => pattern.test(line)));
@@ -467,7 +474,7 @@ export async function navigateToChatGPTCheckout(page, contract = CHATGPT_PLUS_CH
         checkoutCreated: false,
         questionnaireSkipped: actions.includes('questionnaire-skipped'),
         actions,
-        planChange: await readPlanChangeDialog(page, contract),
+        planChange: await readPlanChangeDialog(page, contract, { readyTimeoutMs: timeoutMs }),
         submitCalls: 0,
       };
     }

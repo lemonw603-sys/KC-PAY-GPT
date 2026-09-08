@@ -365,10 +365,11 @@ test('navigator can stop on the Confirm plan changes dialog of a subscribed acco
       <button type="button" disabled>Your current plan</button>
       <button type="button" id="tier-5x" aria-pressed="true" onclick="document.body.dataset.tier='5x'">5x</button>
       <button type="button" id="tier-20x" aria-pressed="false" onclick="document.body.dataset.tier='20x'">20x</button>
-      <button type="button" id="upgrade-pro" onclick="document.body.dataset.upgraded=document.body.dataset.tier; document.getElementById('confirm').hidden=false">Upgrade to Pro</button>
+      <button type="button" id="upgrade-pro" onclick="document.body.dataset.upgraded=document.body.dataset.tier; document.getElementById('confirm').hidden=false; setTimeout(() => document.getElementById('late').hidden=false, 700)">Upgrade to Pro</button>
     </section>
     <section role="dialog" id="confirm" hidden>
       <h2>Confirm plan changes</h2>
+      <div id="late" hidden>
       <p>ChatGPT Pro subscription</p><p>₱8,919.64</p>
       <p>Billed monthly, starting today</p>
       <p>Adjustment</p><p>-₱973.87</p>
@@ -377,6 +378,7 @@ test('navigator can stop on the Confirm plan changes dialog of a subscribed acco
       <p>Payment method</p><p>VISA *5980</p>
       <button type="button" id="cancel" onclick="document.getElementById('confirm').hidden=true">Cancel</button>
       <button type="button" id="pay" onclick="document.body.dataset.paid='yes'">Pay now</button>
+      </div>
     </section>`;
   const { navigateToChatGPTCheckout, cancelPlanChangeDialog, CHATGPT_PLUS_CHECKOUT_NAVIGATION_CONTRACT } = await import('../src/chatgpt-checkout-navigator.js');
   const server = createServer((request, response) => { response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }); response.end(html); });
