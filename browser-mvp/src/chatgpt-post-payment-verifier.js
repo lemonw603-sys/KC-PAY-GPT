@@ -218,6 +218,30 @@ export class ChatGptPostPaymentVerifier {
   }
 
   async confirmPlus() {
+    // D-136 direction-B probe: BEFORE any recovery/identity step touches the
+    // page, capture whether the backend left a usable session right after
+    // checkout. accounts/check 200 => the post-payment session is valid (the
+    // backend issued/kept a working session; no customer re-login needed).
+    // 401 => the submitted session was revoked and nothing usable replaced it.
+    try {
+      const snap = await this.page.evaluate(async () => {
+        const s = await fetch('/api/auth/session', { credentials: 'include' }).then((r) => r.json()).catch(() => null);
+        const at = typeof s?.accessToken === 'string' ? s.accessToken : '';
+        let accountsCheck = null;
+        if (at) {
+          const r = await fetch('/backend-api/accounts/check/v4-2023-04-27?timezone_offset_min=0', {
+            credentials: 'include', headers: { Authorization: `Bearer ${at}` },
+          });
+          accountsCheck = r.status;
+        }
+        return { hasAccessToken: at.length > 0, planType: s?.account?.planType || null, accountsCheck };
+      });
+      this.postPaymentSnapshot = snap;
+      console.error('[direction-B] post-payment session snapshot:', JSON.stringify(snap));
+    } catch (error) {
+      this.postPaymentSnapshot = { error: String(error?.message || '').slice(0, 80) };
+      console.error('[direction-B] post-payment snapshot failed:', this.postPaymentSnapshot.error);
+    }
     const identity = await this.#verifiedIdentity();
     const state = await this.#poll((value) => value?.ok && value.hasActive
       && String(value.plan).includes('plus'));
