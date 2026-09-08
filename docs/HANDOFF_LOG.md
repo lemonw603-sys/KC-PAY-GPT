@@ -1967,3 +1967,8 @@
 - 卡 7428、2911 一直拒付、一次未付成，余额已提现回卡台；连同 0601/5501/0237 共 **5 张废卡全部 RETIRED**。2911 系统快照已从 $16 降到 $1（用户提现）。
 - 新增备用卡 **7402（$49）已入库、AVAILABLE、NORMAL**；当前唯一可分配手动卡=7402。
 - ec93e582 的 20X 单（PJV1-1UfN 等）系统显示失败属正常（自动链路未记录用户手动付款），已加现实备注，不强行对账。
+
+### 运行约定(2026-09-08,用户确认)
+- **Browser pool worker 不常驻**:默认接单路线是 Browser,但本机 Browser worker 只在「来单时人工拉起盯着处理」,不挂无人值守自动付款(Browser 链路刚验证 Direction B + 修 D-137,未到常驻成熟度)。付款开关 `browser_payment_writes_enabled` 保持 true 待命。
+- **20X 单卡余额**:唯一可分配手动卡 7402($49)够 Plus、不够 20X 全额(≈$142);用户会在 20X 来单前自行往备用卡充够。
+- 拉 worker 命令(来单时):`browser-mvp/scripts/run-live-pool.sh run pay`(需 SSH 隧道 13306 + 本机 BitBrowser API + BROWSER_POOL_LANES 指定干净窗口)。
