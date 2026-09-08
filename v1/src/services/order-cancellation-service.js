@@ -361,8 +361,10 @@ export function createOrderCancellationService({ pool }) {
         `UPDATE cards SET inventory_status = CASE
              WHEN current_balance >= ? THEN 'AVAILABLE' ELSE 'DEPLETED' END,
            assigned_at = NULL,
-           sync_tier = CASE WHEN current_balance >= ? THEN 'AVAILABLE' ELSE sync_tier END,
-           next_sync_at = CASE WHEN current_balance >= ? THEN CURRENT_TIMESTAMP(3) ELSE next_sync_at END,
+           sync_tier = CASE WHEN sync_tier = 'MANUAL_IMPORT' THEN sync_tier
+                            WHEN current_balance >= ? THEN 'AVAILABLE' ELSE sync_tier END,
+           next_sync_at = CASE WHEN sync_tier = 'MANUAL_IMPORT' THEN next_sync_at
+                               WHEN current_balance >= ? THEN CURRENT_TIMESTAMP(3) ELSE next_sync_at END,
            updated_at = CURRENT_TIMESTAMP(3)
          WHERE id = ?`, [String(order.minimum_required_card_balance),
           String(order.minimum_required_card_balance), String(order.minimum_required_card_balance),
