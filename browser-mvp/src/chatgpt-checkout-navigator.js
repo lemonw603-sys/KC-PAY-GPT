@@ -352,10 +352,13 @@ export async function navigateToChatGPTCheckout(page, contract = CHATGPT_PLUS_CH
       { optional: true },
     );
     if (!openPricing && !pickerAlreadyOpen) {
-      const profileMenu = await lastVisibleNavigationSelector(
+      // The app shell renders asynchronously after a freshly injected session
+      // navigates home; the profile menu (the pricing entry point) can appear a
+      // beat later. Wait for it instead of failing on the first empty DOM read.
+      const profileMenu = await waitForState(
         page,
-        contract.profileMenuSelectors,
-        'profile menu control',
+        async () => lastVisibleNavigationSelector(page, contract.profileMenuSelectors, 'profile menu control', { optional: true }),
+        { timeoutMs, label: 'profile menu control' },
       );
       await safeClick(profileMenu, 'profile menu control', assertContinue, timeoutMs);
       actions.push('profile-menu-opened');

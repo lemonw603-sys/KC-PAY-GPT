@@ -269,7 +269,7 @@ export async function runProductionLivePoolWorker({ env = process.env, browserTy
     console.log('browser pool worker started', { mode: config.mode, lanes: lanes.map((lane) => lane.workerId) });
     const summaries = await Promise.all(lanes.map((lane) => runLaneLoop({
       laneId: lane.laneId, steps: lane.steps, pollIntervalMs: config.pollIntervalMs, signal, heartbeat,
-      onResult: async ({ laneId, step, result }) => laneLogger(laneId)(step, { status: result.status, reasonCode: result.reasonCode || null, orderId: result.orderId || null, ...(result.quote ? { quote: result.quote } : {}) }),
+      onResult: async ({ laneId, step, result }) => laneLogger(laneId)(step, { status: result.status, reasonCode: result.reasonCode || null, orderId: result.orderId || null, ...(result.diagnosticMessage ? { diagnosticMessage: result.diagnosticMessage } : {}), ...(result.quote ? { quote: result.quote } : {}) }),
       onError: async ({ laneId, error }) => laneLogger(laneId)('error', { code: error?.code || 'LANE_FAILURE', message: String(error?.message || '').slice(0, 200) }),
     })));
     return { status: 'STOPPED', mode: config.mode, lanes: summaries };

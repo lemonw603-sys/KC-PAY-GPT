@@ -222,6 +222,7 @@ export class SharedBrowserRuntimeIntegration {
     return {
       status: 'SAFE_ABORTED',
       reasonCode: abort.reasonCode,
+      diagnosticMessage: String(error?.message || '').slice(0, 300),
       targetOrderStatus: closed.orderStatus,
       fundsRiskState: closed.fundsRiskState,
       externalPaymentCalls: 0,

@@ -187,7 +187,12 @@ export class BrowserExecutionService {
       const page = await activeOrderPage(
         runtime.context, job.metadata.pageContract.urlPrefix, this.timeoutMs,
       );
-      if (startFresh && page.url() !== job.metadata.pageContract.urlPrefix) {
+      // A reused tab was loaded before this order's session cookies were injected,
+      // so its DOM still shows the previous (logged-out) state even when its URL
+      // already matches. Reload it after bootstrap so the injected session takes
+      // effect before the page is read; a freshly created tab was already navigated
+      // with the cookies in place.
+      if (sessionBootstrapped || (startFresh && page.url() !== job.metadata.pageContract.urlPrefix)) {
         await page.goto(job.metadata.pageContract.urlPrefix, { waitUntil: 'domcontentloaded', timeout: this.timeoutMs });
         await this._event(job, 'checkpoint', ++evidenceSequence, { action: 'page-reset', urlPrefix: job.metadata.pageContract.urlPrefix });
       }

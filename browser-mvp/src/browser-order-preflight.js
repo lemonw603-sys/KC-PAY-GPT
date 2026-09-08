@@ -427,7 +427,7 @@ export function createBrowserOrderPreflightWorker({
         return { status: 'COMPLETED', taskId: task.task_id, summary, externalPaymentCalls: 0 };
       } catch (error) {
         const outcome = await repository.fail(task, error);
-        return { ...outcome, taskId: task.task_id, externalPaymentCalls: 0 };
+        return { ...outcome, taskId: task.task_id, diagnosticMessage: String(error?.message || '').slice(0, 300), externalPaymentCalls: 0 };
       }
     },
   });
