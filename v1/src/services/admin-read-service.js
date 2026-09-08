@@ -1118,7 +1118,7 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
             SELECT 1 FROM order_compensations oc
             WHERE oc.original_order_id = o.id AND oc.replacement_cdk_id = c.id
           )
-          LEFT JOIN orders redeemed_order ON redeemed_order.cdk_id = c.id
+          LEFT JOIN orders redeemed_order ON redeemed_order.id = c.order_id
           WHERE BINARY o.public_no = ? ORDER BY c.created_at`, [publicNo])
       ,pool.query(`SELECT de.cdk_id, de.event_type, de.channel,
             de.recipient_note, de.actor_id, de.delivered_at

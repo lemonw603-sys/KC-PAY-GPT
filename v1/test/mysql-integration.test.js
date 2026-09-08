@@ -170,6 +170,7 @@ async function removeOrder(pool, { cdkId, orderId }) {
   }
   await pool.query('DELETE FROM cards WHERE order_id = ?', [orderId]);
   await pool.query('DELETE FROM orders WHERE id = ?', [orderId]);
+  await pool.query('DELETE FROM cdk_delivery_events WHERE cdk_id = ?', [cdkId]);
   await pool.query('DELETE FROM cdks WHERE id = ?', [cdkId]);
 }
 
@@ -646,19 +647,13 @@ test('MySQL enforces one CDK per order and records transitions atomically', {
     assert.equal(order.status, OrderStatus.CARD_PURCHASING);
     assert.equal(order.version, 2);
 
+    // One CDK per live order is enforced on cdks.order_id (uq_cdks_order_id): a second
+    // CDK cannot be bound to the same order. orders.cdk_id is deliberately not unique
+    // since 051 (a CDK handed back after a no-payment ending binds a later order).
     await assert.rejects(
       pool.query(
-        `INSERT INTO orders
-         (id, public_no, cdk_id, status, session_ciphertext, card_purchase_idempotency_key)
-         VALUES (?, ?, ?, ?, ?, ?)`,
-        [
-          id(),
-          `DUP-${id()}`,
-          fixture.cdkId,
-          OrderStatus.CREATED,
-          Buffer.from('encrypted'),
-          `purchase-${id()}`
-        ]
+        `INSERT INTO cdks (id, code_hash, status, order_id) VALUES (?, ?, 'REDEEMED', ?)`,
+        [id(), crypto.createHash('sha256').update(`dup-${id()}`).digest('hex'), fixture.orderId]
       ),
       (error) => error?.code === 'ER_DUP_ENTRY'
     );
@@ -1949,11 +1944,16 @@ test('order intake atomically redeems one CDK and creates an encrypted queued or
       createCustomerOrder({ cdk, session }),
       createCustomerOrder({ cdk, session })
     ]);
-    assert.equal(concurrent.filter((result) => result.status === 'fulfilled').length, 1);
-    assert.equal(concurrent.filter((result) => (
-      result.status === 'rejected' && result.reason?.code === 'CDK_UNAVAILABLE'
-    )).length, 1);
-    created = concurrent.find((result) => result.status === 'fulfilled').value;
+    // The loser of the race either sees CDK_UNAVAILABLE or, being the same
+    // account, gets the winner's order back (reused): exactly one order exists.
+    const fulfilled = concurrent.filter((result) => result.status === 'fulfilled').map((result) => result.value);
+    assert.ok(fulfilled.length >= 1);
+    assert.equal(new Set(fulfilled.map((result) => result.orderId)).size, 1);
+    assert.equal(fulfilled.filter((result) => !result.reused).length, 1);
+    for (const result of concurrent.filter((result) => result.status === 'rejected')) {
+      assert.equal(result.reason?.code, 'CDK_UNAVAILABLE');
+    }
+    created = fulfilled.find((result) => !result.reused);
     assert.equal(created.status, OrderStatus.CREATED);
     assert.match(created.publicNo, /^PJV1-[A-Za-z0-9_-]{20}$/);
 
@@ -2007,11 +2007,12 @@ test('order intake atomically redeems one CDK and creates an encrypted queued or
          'default_minimum_required_card_balance'
        )`
     );
-    if (created) {
-      await removeOrder(pool, { cdkId, orderId: created.orderId });
-    } else {
-      await pool.query('DELETE FROM cdks WHERE id = ?', [cdkId]);
+    // Clean up whatever the race left behind so a failed assertion is not masked by FK errors.
+    const [holders] = await pool.query('SELECT id FROM orders WHERE cdk_id = ?', [cdkId]);
+    for (const [index, holder] of holders.entries()) {
+      await removeOrder(pool, { cdkId: index === holders.length - 1 ? cdkId : `none-${cdkId}`, orderId: holder.id });
     }
+    if (!holders.length) await pool.query('DELETE FROM cdks WHERE id = ?', [cdkId]);
     await pool.end();
   }
 });
@@ -3139,6 +3140,81 @@ test('customer replaces Session on the original MySQL order at most through the 
   } finally {
     await pool.query('DELETE FROM order_session_replacements WHERE order_id = ?', [fixture.orderId]);
     await removeOrder(pool, fixture);
+    await pool.end();
+  }
+});
+
+test('a CDK handed back by a no-payment order can bind a second order (orders.cdk_id is not one-to-one)', {
+  skip: !databaseUrl && 'TEST_DATABASE_URL 未配置；完整 MySQL 套件在服务器隔离数据库运行'
+}, async () => {
+  const pool = mysql.createPool({ uri: databaseUrl, connectionLimit: 4, timezone: 'Z' });
+  const cdkId = id();
+  const cdk = `CDK-${id()}`;
+  const cdkHash = crypto.createHash('sha256').update(cdk).digest('hex');
+  const nowMs = Date.parse('2026-09-08T00:00:00.000Z');
+  const session = sessionFixture({ nowMs });
+  const createCustomerOrder = createOrderIntakeService({
+    pool, sessionEncryptionKey: integrationSessionKey, cdkHashKey: integrationCdkHashKey, now: () => nowMs
+  });
+  const created = [];
+  await pool.query(`INSERT INTO cdks (id, code_hash, status) VALUES (?, ?, 'AVAILABLE')`, [cdkId, cdkHash]);
+  await pool.query(
+    `UPDATE app_settings SET setting_value = CASE setting_key
+       WHEN 'accept_new_orders' THEN 'true'
+       WHEN 'default_card_type_id' THEN '7'
+       WHEN 'default_open_card_amount' THEN '25'
+       WHEN 'default_minimum_required_card_balance' THEN '16'
+       ELSE setting_value END
+     WHERE setting_key IN ('accept_new_orders', 'default_card_type_id', 'default_open_card_amount',
+       'default_minimum_required_card_balance')`
+  );
+  try {
+    const first = await createCustomerOrder({ cdk, session });
+    created.push(first.orderId);
+    // The order ends before any payment action (what admin cancel / pre-payment failure produce).
+    await pool.query(
+      `UPDATE orders SET status = 'CLOSED', finished_at = CURRENT_TIMESTAMP(3) WHERE id = ?`, [first.orderId]
+    );
+
+    // Customer submits the same code again: the intake returns the CDK and opens a fresh order.
+    const second = await createCustomerOrder({ cdk, session });
+    created.push(second.orderId);
+    assert.notEqual(second.orderId, first.orderId);
+    assert.equal(second.reused, undefined);
+    assert.equal(second.status, OrderStatus.CREATED);
+
+    const [[binding]] = await pool.query('SELECT status, order_id FROM cdks WHERE id = ?', [cdkId]);
+    assert.deepEqual(binding, { status: 'REDEEMED', order_id: second.orderId });
+    const [holders] = await pool.query(
+      'SELECT id, status FROM orders WHERE cdk_id = ? ORDER BY created_at, id', [cdkId]
+    );
+    assert.deepEqual(holders.map((row) => row.status).sort(), ['CLOSED', 'CREATED']);
+    const [returnedEvents] = await pool.query(
+      `SELECT event_type FROM cdk_delivery_events WHERE cdk_id = ? AND event_type = 'RETURNED'`, [cdkId]
+    );
+    assert.equal(returnedEvents.length, 1);
+
+    // Admin drawer: the CDK row of the closed order points at the order that holds the CDK now.
+    const adminRead = createAdminReadService({ pool });
+    const [[firstRow]] = await pool.query('SELECT public_no FROM orders WHERE id = ?', [first.orderId]);
+    const detail = await adminRead.getOrder(firstRow.public_no);
+    const cdkRows = detail.cdks || detail.traceability?.cdks || [];
+    if (cdkRows.length) {
+      assert.equal(cdkRows.length, 1);
+    }
+  } finally {
+    await pool.query(
+      `UPDATE app_settings SET setting_value = CASE setting_key
+         WHEN 'accept_new_orders' THEN 'false' ELSE '' END
+       WHERE setting_key IN ('accept_new_orders', 'default_card_type_id', 'default_open_card_amount',
+         'default_minimum_required_card_balance')`
+    );
+    await pool.query('DELETE FROM cdk_delivery_events WHERE cdk_id = ?', [cdkId]);
+    // Both orders reference the CDK: drop the orders first, the CDK with the last one.
+    for (const [index, orderId] of [...created].reverse().entries()) {
+      await removeOrder(pool, { cdkId: index === created.length - 1 ? cdkId : `none-${cdkId}`, orderId });
+    }
+    if (!created.length) await pool.query('DELETE FROM cdks WHERE id = ?', [cdkId]);
     await pool.end();
   }
 });

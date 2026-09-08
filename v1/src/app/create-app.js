@@ -694,6 +694,11 @@ export function createApp({
     if (error instanceof SyntaxError && 'body' in error) {
       return res.status(400).json({ error: 'invalid_json' });
     }
+    // Unexpected errors used to vanish: log route + error identity only (never bodies).
+    console.error('web request failed', {
+      method: _req.method, path: _req.path, name: error?.name, code: error?.code,
+      errno: error?.errno, message: String(error?.message || '').slice(0, 300)
+    });
     return res.status(500).json({ error: 'internal_error' });
   });
 
