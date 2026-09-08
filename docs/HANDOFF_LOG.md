@@ -1893,3 +1893,11 @@
 - **收口确认**：订单 RECHARGE_FAILED；CDK 80a83a76 已 RETURNED 回 AVAILABLE（可再提交）；卡 5501 AVAILABLE 且 sync_tier 保留 MANUAL_IMPORT（RECHARGE_FAILED 走 card-release-repository 保留）；ledger RELEASED、attempt CLEARED、assignment RELEASED——全程未扣款。
 - **发布**：`20260908-cdkreuse-bf2f25c`（CDK 二次下单+500 日志，含迁移 051）与 `20260908-cancelfix-bad14cc`（取消保留手动卡 tier）已上线。browser-mvp 改动本机直接生效。付款开关仍 ON、pojia-worker active——重试或收尾后需按需关闭/停机。
 - **下一步**：用户用同一 CDK 重新提交；本机 `run-live-pool.sh run pay` 重跑，看 submit 的 diagnosticMessage 定位偶发失败。submit 在付款前失败不扣款，重试无资金损失。
+
+## 2026-09-08｜真实单 submit 根因：两阶段 stage 1 结账错用 pro_20x plan，已修（`shared-live-composition`）
+
+- 第二次重提 PJV1-_Oh83-7Kb73bfARusefj 直接到 CARD_READY（卡 tier 修复生效，无需手动干预），preflight 通过（reload 修复生效）。
+- submit 带诊断跑出确切原因：`pro_20x tier control click failed: elementHandle.click Timeout`。submit 的 checkout 导航用了订单 plan_type=pro_20x，navigator 去点「20x」档位 +「Upgrade to Pro」；但免费账号的 Plus 购买弹窗没有 Pro 档位切换，点击超时→安全中止（未扣款）。
+- 根因：两阶段方案里 stage 1 应买 Plus（与 preflight 一致），stage 2 才升级 20X。`shared-live-composition.resolveExecutionContext` 把订单 plan 传给了 checkout 导航。修复 `<commit>`：checkout 导航 plan 固定 plus；stage 2 upgradePlan 仍用订单 plan（UPGRADE_DIALOG_STOP）。测试 shared-live-composition/production-live-pool-worker 9/9 通过。
+- 该单又安全收口：RECHARGE_FAILED、CDK 退回 AVAILABLE、未扣款。付款开关仍 ON。
+- 下一步：用户第三次用同一 CDK 重提；修复后 preflight 与 submit 都走 plus，navigator 应成功创建 Plus checkout 并首次走到真实付款（stage 1 买 Plus ~\$15.69），stage 2 停 20X 弹窗。这是首次会真实走到付款执行器（LiveChatGPTPaymentAdapter）的真实单。
