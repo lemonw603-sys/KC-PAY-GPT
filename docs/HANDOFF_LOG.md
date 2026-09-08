@@ -1944,3 +1944,20 @@
 - 付款开关 browser_payment_writes_enabled=**false**(已关,含 executor_profiles),pojia-worker/web active;本机无常驻 worker。
 - Lane 4 干净窗口已建(菲律宾 Manila);新卡 7428($146, AK Girdwood)已导入、AVAILABLE;卡 2911 DEPLETED(用户手动调余额)。
 - 待续:用户换全新干净免费账号 + 新卡 7428 + Lane4 重试 stage1 付款;付款前需重开付款开关。
+
+## 2026-09-08 晚 — Plus drift 根因 + D-137 修复 + 手动两阶段验证 + 测试卡收尾
+
+### 退款测试账号 Plus 单 drift:非扣款、机制正常、修了重试中毒 Bug
+- 退款后测试号 `8dd16df66497` 的 Plus 单 PJV1-gEKsTevDVt6dnCvMs9Jr 连续 4 次 CHECKOUT_DRIFT、**未扣款**(attempt CLEARED、`noExternalPaymentAction`、卡 2911 余额未动;订单 RECHARGE_FAILED、卡释放、CDK 退回)。
+- 现场把该结账页拉起来实测:零税机制正常(填 AK/US 账单地址,VAT 12% ₱117.86→0%,₱1,100→₱982.14=历史成功额)、卡/账单/邮箱字段各 1、提交控件 `button[type=submit]` 齐全。判定 attempt-1 为瞬时渲染时序抖动,不是结构问题。
+- **根因放大器 = 重试中毒 Bug**:LIVE 适配器付款前失败时只在 `submitted` 才清卡字段,导致卡号残留在可复用结账页,后续重试撞「secure field is not empty」→ 把一次抖动放大成硬 4 连败,且 PAN 留在浏览器字段。已修(`fee5f9a`,D-137):付款前失败也清卡字段,保留 RECONCILE_ONLY 保表单原意;单测更新,live+nonpayment+executor 22 测通过。残留 PAN 已从 Lane4 页面清除。
+
+### 用户手动两阶段 20X:再次验证 Direction B(付款后不重登)
+- 用户用比特浏览器第一个窗口(Lane 3)、新卡 0601,手动完成 free→Plus($15.72)→20X 补差价($127.01),**中间未退出登录**。卡台后台两笔 PENDING/APPROVE:19:18:40 $15.72(OPENAI SAN FRANCISC…)、19:21:57 $127.01(OPENAI *CHATGPT SUB…)。卡 0601 导入快照 $146,余额剩 $3.27,与 $142.73 消费吻合。
+- 意义:真人手动两阶段升级不需重登,再次坐实 D-136「付款后不需要客户重新登录,只要 session 采集时是新鲜登录态」。
+
+### 手动测试卡收尾(清理方向,用户确认)
+- 手动导入卡系统不同步卡台交易(非卡台开卡),对其真实消费"盲",余额仅导入快照;无法用系统数据独立核实重复付款。
+- 已给 4 张已耗尽/已消费手动卡打 `RETIRED` override 退出分配池:0601($3.27)、7428($1)、5501($0.07)、0237($0)。**2911($16,未消费)保留 NORMAL**,待用户定。
+- PJV1-_VjIN(账号 e4938aca)的 RECHARGE_SUCCESS 系上个 session 为释放账号槽手动设,非自动化确认,已在 order_events 加诚实备注(付款证据在用户卡台后台、系统未同步,不作正式自动化成功样本)。未强行对账为正式订单。
+- 疑点(待用户答):用户手动升级的账号是否即 e4938aca?若是,则白天系统标的「卡5501 Plus成功」与今晚卡0601 Plus 可能重复付 Plus,需用户从卡台后台确认。
