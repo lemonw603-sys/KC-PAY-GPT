@@ -184,14 +184,16 @@ export function createSharedLivePaymentWorker({
         pollIntervalMs: verificationIntervalMs,
         upgradePlan: action === 'UPGRADE_DIALOG_STOP' ? plan : null,
         navigationTimeoutMs: executionTimeoutMs,
-        // D-134 ladder: clear page login cookies, then re-inject the run's own session material.
+        // D-134 (2026-09-08 root cause): payment rotates the ChatGPT session. The
+        // backend sets a FRESH session-token (Plus, with a live accessToken) in the
+        // browser after checkout succeeds. The order only holds the PRE-payment
+        // token (Free, expired accessToken, no auth.openai.com layer to refresh).
+        // Reinjecting that old token overwrote the fresh one and forced a false
+        // "session expired". Recovery must NOT reinject: it only reloads so the
+        // front-end re-establishes login from the post-payment token the browser
+        // already holds.
         sessionRecovery: (targetPage) => recoverSessionAfterPayment(targetPage, {
           navigationTimeoutMs: executionTimeoutMs,
-          reinjectSession: async (context) => {
-            const lease = await sessionProvider.open(await resolveSessionRef(sessionRefInput), { purpose: 'post-payment-recovery' });
-            try { return await sessionProvider.bootstrap(lease, context, { replaceExisting: true }); }
-            finally { await sessionProvider.close(lease).catch(() => undefined); }
-          },
         }),
       });
       const adapter = new LiveChatGPTPaymentAdapter({
