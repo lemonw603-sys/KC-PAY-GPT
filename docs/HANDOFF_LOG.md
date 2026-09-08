@@ -1972,3 +1972,11 @@
 - **Browser pool worker 不常驻**:默认接单路线是 Browser,但本机 Browser worker 只在「来单时人工拉起盯着处理」,不挂无人值守自动付款(Browser 链路刚验证 Direction B + 修 D-137,未到常驻成熟度)。付款开关 `browser_payment_writes_enabled` 保持 true 待命。
 - **20X 单卡余额**:唯一可分配手动卡 7402($49)够 Plus、不够 20X 全额(≈$142);用户会在 20X 来单前自行往备用卡充够。
 - 拉 worker 命令(来单时):`browser-mvp/scripts/run-live-pool.sh run pay`(需 SSH 隧道 13306 + 本机 BitBrowser API + BROWSER_POOL_LANES 指定干净窗口)。
+
+### 上号前体检(2026-09-08 晚，无账号也能查的部分)
+用户提醒「别等有号才查出一堆问题」，做了一次上号前审计：
+- **全量单测**：browser-mvp 212 项，203 通过 0 失败 9 跳过（跳过=需真库的 MySQL 集成）。D-137 修复健康。
+- **防重复扣款不变量（核对状态机源码，确认正确）**：`permit→PAYMENT_ARMED`→`commitPaymentSubmissionIntent→PAYMENT_SUBMITTING`（在点击前）→`click`→`markPaymentConfirmed→PAYMENT_CONFIRMED`。安全重排/重试只在 `{NOT_STARTED,PAYMENT_ARMED}`（点击前可证）触发；一旦 intent 提交为 `PAYMENT_SUBMITTING` 即排除出重排，崩溃后经 recovery 落 `RECONCILE_ONLY/PAYMENT_UNKNOWN`，绝不自动重付。付款后任何 verifier/记账失败一律 `POST_PAYMENT_UNKNOWN` 转对账、不重试。
+- **卡 7402 首单就绪（解密核对 billingAddress，只看地址不看 PAN/CVV）**：US/OR(Portland,97220)、字段完整、exp 02/2028、`RUNTIME_VALID=true`（会把菲律宾 12% VAT 归零）；$49 够 Plus、不够 20X（20X 前用户自充）。手动导入强制 17 列表头精确匹配且地址六字段非空才 AVAILABLE，country 硬编码 US。
+- **仍只能等真实干净账号才能验的**：第一笔全自动付款；干净新号是否仍被风控 declined；付款后 session 新鲜度（D-136）在真实订单上的端到端。这些是账号资源门槛，不是代码问题。
+- 菲律宾出口：用户 VPN 的马尼拉节点=38.60.246.34（即之前 Lane4 出口），固定 IP 但机房级(SS 商业 VPN)，非住宅；够预筛/演练，长期生产住宅 sticky 更稳。
