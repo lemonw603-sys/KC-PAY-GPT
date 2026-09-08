@@ -1908,3 +1908,13 @@
 - **stage 1 结账错用 pro_20x plan**（`e27ac92`）：navigator 去点「20x」档位（免费账号 Plus 弹窗无此控件）超时。改为 stage 1 固定买 Plus。
 - **card context unavailable**（`ff35923`）：付款路径以 { claimedJob, run } 调 transactionReaderFactory，工厂解构 { runId } → undefined → resolveCardContext 查不到卡。改调用为 { runId: run.runId }。付款后恢复路径传 row.runId 本就正确。
 规律：每个 bug 都只在「首次真实走到该阶段」暴露（preflight reload → checkout plan → card context → …），演练/只读复现都过。已修阶段：preflight 通过、submit checkout 导航通过、card context 解析通过。下一未验证阶段：付款执行器实际填卡→requote→（真实 pay 会点付款）。付款开关仍 ON。
+
+## 2026-09-08｜真实单端到端跑通:stage 1 买 Plus 成功 + stage 2 到 20X 弹窗;「付款后重登」根因确证并根治
+
+- **stage 1 成功(铁证)**:PJV1-_VjINYXkOLLdiBrjpSZo 自动付款买 Plus 成功——ChatGPT 计费页 Plus(10-08 续订)、OpenAI 邮件、卡台 $-15.72 APPROVE。系统一度标 SUBMIT_UNKNOWN 是验证 bug,非付款失败。
+- **根因确证(D-136)**:客户 session 只有 chatgpt.com 应用层 token,accessToken 短命且刷不了(auth.openai.com 域实测只有 Cloudflare cookie,无认证 session)。accessToken 过期→accounts/check 401→前端 free→验证/升级失败。付款走前端结账页所以成功,付款后用 accessToken 的步骤失败。这不是「付款轮换 session」,是 session 本身缺刷新能力 + accessToken 过期。
+- **根治**:①恢复阶梯删掉重注入订单旧 token(那步覆盖了付款后的有效登录态);②navigator 支持 Plus 账号经 #pricing 开套餐弹窗;③session 取用姿势=从活跃已登录页刷新后再取。
+- **stage 2 验证(有效 session)**:accounts/check 200/chatgptplusplan;navigator 从首页自动 #pricing→选 20x→Upgrade to Pro→「Confirm plan changes」弹窗(ChatGPT Pro ₱8,919.64 / 抵扣 -₱980 / 今日应付 ₱7,939.40 / MASTERCARD 5501),Cancel 关闭、未点 Pay now。
+- **关键结论(回应用户诉求)**:付款后**不需要**客户重新登录。用户「从已登录页刷新后重新取 session」得到的就是有效 session(accessToken 新鲜)。业务上只要保证客户提交的是新鲜登录态即可;付款后自动化用浏览器里付款后的登录态继续,不再被旧 token 破坏。
+- **提交**:`96ac467`(删重注入)、`58db552`(navigator Plus #pricing)。测试 navigator 10/10、recovery/verifier/composition 17/17、payment/preflight 34。
+- **待办**:这单 SUBMIT_UNKNOWN 需收口(付款已确认成功:消耗卡 5501 容量、关 critical 告警、订单对齐);付款开关仍 ON、需按需关闭/停机;下次真实单可验证「付款后自动捕获登录态」全自动无人工。
