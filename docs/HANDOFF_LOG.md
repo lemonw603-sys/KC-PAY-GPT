@@ -1918,3 +1918,10 @@
 - **关键结论(回应用户诉求)**:付款后**不需要**客户重新登录。用户「从已登录页刷新后重新取 session」得到的就是有效 session(accessToken 新鲜)。业务上只要保证客户提交的是新鲜登录态即可;付款后自动化用浏览器里付款后的登录态继续,不再被旧 token 破坏。
 - **提交**:`96ac467`(删重注入)、`58db552`(navigator Plus #pricing)。测试 navigator 10/10、recovery/verifier/composition 17/17、payment/preflight 34。
 - **待办**:这单 SUBMIT_UNKNOWN 需收口(付款已确认成功:消耗卡 5501 容量、关 critical 告警、订单对齐);付款开关仍 ON、需按需关闭/停机;下次真实单可验证「付款后自动捕获登录态」全自动无人工。
+
+## 2026-09-08｜真实单 PJV1-_VjINYXkOLLdiBrjpSZo 收口完成(付款成功已对账)
+
+- 付款成功由铁证确认(ChatGPT 计费页 Plus + OpenAI 邮件 sub_1UDGY0C6h1nxGol336qmD6zp + 卡台 $-15.72 APPROVE),并用有效 session 复验账号 accounts/check 200/chatgptplusplan。
+- 事务收口(带 order_events + browser_operations MANUAL_PAYMENT_CONFIRMED 审计):ledger RECONCILIATION→CONSUMED(卡 5501 消耗 1 次,used 2/3)、attempt SUBMIT_UNKNOWN→SUCCESS/SETTLED、run PAYMENT_UNKNOWN→PAYMENT_CONFIRMED+PLUS_CONFIRMED+HUMAN_REQUIRED、order SUBMIT_UNKNOWN→RECHARGE_PROCESSING、BROWSER_PAYMENT_UNKNOWN 告警 RESOLVED。
+- 订单现处 stage 2 人工待办态(升级 Pro 中):Plus 已交付,20X 弹窗已到达并 Cancel(未付 20X,按用户方案"以后有客户再实际升级");publicResult 存了弹窗数字(今日应付 ₱7,939.40 / 卡 5501)。
+- 待处理:付款开关仍 ON(建议按需关闭);Lane 3 仍是该测试账号 Plus 登录态(用户可自行清理);下次真实单可验证「付款后全自动捕获登录态、无人工」。
