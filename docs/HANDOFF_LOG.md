@@ -1867,3 +1867,10 @@
 - 结论：「Confirm plan changes」弹窗只在账号已有有效 Plus 时出现；免费账号走新结账页（与 09-07 接口层 PoC 一致）。导航器已补该分支（`state: checkout-popup`，交人工，不碰 Subscribe），单测 57 通过。
 - 待用户确认：贴进 Lane 3 的是哪一个账号。若本意是已 Plus 的测试账号，需换贴；若这是准备做真实单的新免费账号，它的 Session 已在 Lane 3（真实单提交前我会清掉 Lane 3 登录态）。
 
+## 2026-09-08｜Lane 3 第二次只读演练（00:06–00:2x UTC）：真实 Plus 账号走到「Confirm plan changes」并读到数字
+
+- 用户把已 Plus 的测试账号贴进 Lane 3。首跑到达弹窗但只读到标题（弹窗先画标题、金额后到）；补「等金额与 Pay now 渲染」后重跑：`actions = profile-menu-opened → pricing-opened → tier-selected:20x → upgrade-requested`，弹窗读取：Pro 订阅 ₱8,919.64、Plus 抵扣 −₱965.75、今日应付 ₱7,953.89、支付卡 VISA *5980、Pay now / Cancel 均在；未点 Pay now；前后会话均健康。证据 `artifacts/poc-plan-change-20260908/`。
+- 观察：该账号的定价页 Plus 标价 ₱1,100/月（含 VAT）；抵扣随时间递减（两次相差 ₱0.04）。
+- 收尾：用 Cancel 关闭弹窗；清掉 Lane 3 的 session 与登录态 cookie（17 条），保留设备/Cloudflare cookie（cf_clearance、oai-did、__stripe_mid、_cfuvid、__cflb、__oailb、__cf_bm），`/api/auth/session` 已无 token。
+- 至此第二阶段三条分支都有证据：已 Plus → 弹窗（真实）、免费 → 新结账页（真实）、会话失效 → 阶梯（第二级真实验证）。真实单只剩：用户生成 Pro 20X CDK + 新免费账号 Session 在客户页提交。
+
