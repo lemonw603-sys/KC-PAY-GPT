@@ -1925,3 +1925,22 @@
 - 事务收口(带 order_events + browser_operations MANUAL_PAYMENT_CONFIRMED 审计):ledger RECONCILIATION→CONSUMED(卡 5501 消耗 1 次,used 2/3)、attempt SUBMIT_UNKNOWN→SUCCESS/SETTLED、run PAYMENT_UNKNOWN→PAYMENT_CONFIRMED+PLUS_CONFIRMED+HUMAN_REQUIRED、order SUBMIT_UNKNOWN→RECHARGE_PROCESSING、BROWSER_PAYMENT_UNKNOWN 告警 RESOLVED。
 - 订单现处 stage 2 人工待办态(升级 Pro 中):Plus 已交付,20X 弹窗已到达并 Cancel(未付 20X,按用户方案"以后有客户再实际升级");publicResult 存了弹窗数字(今日应付 ₱7,939.40 / 卡 5501)。
 - 待处理:付款开关仍 ON(建议按需关闭);Lane 3 仍是该测试账号 Plus 登录态(用户可自行清理);下次真实单可验证「付款后全自动捕获登录态、无人工」。
+
+## 2026-09-08｜真实单深挖:方向B(付款后不需重登)坐实;declined 根因=账号风控;付款开关已关暂停
+
+### 重大成果:方向B成立(核心诉求解决)
+- 客户只提交一次应用层 session,**付款后不需要客户重新登录**。付款成功后 ChatGPT 后端在浏览器保留可用 session:三次真实单付款后第一时间抓 accounts/check 均返回 **200**(诊断加在 confirmPlus 开头,`chatgpt-post-payment-verifier.js`)。
+- 根因(D-136):付款后作废的是"提交付款那次的旧 session_id",不是 accessToken 过期(accessToken 有 10 天有效期,但 revoke 后即使未过期也 401)。修复=恢复阶梯删掉重注入订单旧 token(`96ac467`),付款后直接用浏览器保留的可用 session。
+- 退路(采集 auth.openai.com 认证层 usc_/unified_session_manifest 静默重认证)已实现注入侧(`e57025c` bootstrap 支持完整 cookie 跨域),但**认证层是 httpOnly、只有扩展能读,客户不能装扩展 → 退路搁置**。方向B已够用,退路暂不需要。
+
+### stage 2 与 navigator
+- Plus 账号升级 20X 的入口是 chatgpt.com/#pricing(免费账号的 header Upgrade/头像菜单对 Plus 账号无效);navigator 已支持(`58db552`),有效 session 下实测自动跑到「Confirm plan changes」弹窗、Cancel 收尾。
+
+### declined 根因:账号风控(非卡/窗口/地址)
+- 真实单 stage 1 买 Plus($15.69,金额正确)连续 3 次被 Stripe declined。逐一排除:换卡(2911→7428 不同 BIN)、换窗口(Lane3→新建干净 Lane4 `51e915e3298b4a02bbd7468b39749c9e`,菲律宾 Manila 出口)、账单地址(卡自带真实 AK 地址,AVS 匹配)、付款金额(Plus 非 20X)——全部排除。**唯一未换的变量是账号**:三次 declined 都用 `4f2b3a6dcff2`,而唯一成功那单用的是 `8dd16df66497`。结论:该账号被风控标记。下一步=换全新干净账号重试。
+- 手动卡 declined 的对账盲区:手动卡台无 API 同步,系统 DB 的"未扣款"判断不反映卡台真实余额;本次经用户确认卡余额变动是手动调整、declined 确实未扣款(拒付不扣)。三张 declined 单已按 CARD_DECLINED 收口(付款守卫确认 settled/consumed=0,释放卡+退 CDK)。
+
+### 当前状态(收尾)
+- 付款开关 browser_payment_writes_enabled=**false**(已关,含 executor_profiles),pojia-worker/web active;本机无常驻 worker。
+- Lane 4 干净窗口已建(菲律宾 Manila);新卡 7428($146, AK Girdwood)已导入、AVAILABLE;卡 2911 DEPLETED(用户手动调余额)。
+- 待续:用户换全新干净免费账号 + 新卡 7428 + Lane4 重试 stage1 付款;付款前需重开付款开关。
