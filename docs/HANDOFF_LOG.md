@@ -2114,3 +2114,14 @@ D-138 后目标收敛：下一笔真实订单即闭环验证。当前待命状�
 - `PJV1-7EYSr3`：用户已通过新发布的「已在账号里取消续费」按钮收口（07:06 UTC，order_events ADMIN 事件）→ 新动作在生产端到端验证通过。
 - `ready-check.sh` 新增：可分配卡数（Plus 门槛）与"非终态占卡订单"提示，0 张即警告并指向收口脚本。
 - **SOP 补充**：rehearsal 完成且不准备真付的单，要用 `close-rehearsal-order.mjs` 收口释放卡，否则它按设计停在 CARD_READY 持卡等真付，会挡住后续新单。
+
+### 接班快照（2026-09-09 晚，本窗口收尾；新窗口先读本段再读 PROJECT_MAP）
+**现在的状态**：等真实订单。系统待命态干净：付款开关 **false**（真单时 `browser-mvp/scripts/go-live.sh --arm` 开并拉 worker，收工 `stop-live.sh`）；非终态订单 0；可分配手动卡 1 张（7402，$49，够 Plus、不够 20X）；mihomo/SSH 隧道 launchd 守护；`ready-check.sh` 充前自检（自动开比特浏览器、查开关/账号槽/可分配卡/占卡单）。线上 release `20260909-askform-cc3bba0`。
+
+**来单流程**：用户 充卡（20X 需 ≥150）→ 上传 Excel（上传即生效，无需同步）→ 客户页提交 → 告知单号 → 执行者 `ready-check.sh pay` → `go-live.sh --arm` → 盯 preflight(本机) → stage1 自动付 Plus（付款后只在页内每 5s 轮询 accounts/check 最多 5 分钟，不刷新不跳页）→ 20X 单自动开「Confirm plan changes」弹窗**停下**（用户核对卡尾号后手动 Pay now，再后台「确认 20X 已升级」）→ 看到终态后等 worker 自行收尾再 `stop-live.sh`。rehearsal 完不真付的单用 `v1/scripts/close-rehearsal-order.mjs` 收口释放卡。
+
+**已定不做**：Plus→20X 升级自动化（D-138）；常驻 worker；手动卡付款后交易录入入口（先不做）；住宅 IP（现无）。**保留**：付款后 session 恢复阶梯第 2 级（清页面登录 cookie+刷新），第 3 级重注入旧 session 已删（96ac467）。
+
+**已验证 vs 未验证（关键）**：付款前全自动链路 rehearsal 2 次通过；付款后同一浏览器登录态存活（不重登）已验证；**"抓取付款后新 session 存回订单"未实现未验证**（A2，用户同意先不做，真单后视情况）。**从没跑过**：全自动真实付款那一下 + 付款后半段 + 20X 闭环——下一笔真单即验证。
+
+**今日教训（已固化）**：生产写操作必须事后独立查询核实（门槛曾误报已改）；不替用户猜页面形状（20X 第二阶段=确认小窗 B，用已绑卡，不再填卡）；rehearsal 单次用 `run-live-rehearsal.sh once`，看到 STOPPED 等收尾再停 worker。
