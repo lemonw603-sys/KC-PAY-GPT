@@ -16,8 +16,12 @@ if lsof -nP -iTCP:17897 -sTCP:LISTEN 2>/dev/null | grep -q LISTEN; then say "[OK
 fi
 OUT=$(curl -s --proxy http://127.0.0.1:17897 -m 15 https://api.ipify.org 2>/dev/null)
 [ "$OUT" = "38.60.246.34" ] && say "[OK]  出口=菲律宾 $OUT" || { say "[警告] 出口=$OUT 非预期菲律宾IP"; warn=1; }
-curl -s -m 8 -X POST http://127.0.0.1:54345/health -H 'Content-Type: application/json' -d '{}' 2>/dev/null | grep -q . \
-  && say "[OK]  BitBrowser 本地API" || { say "[需操作] 打开比特浏览器客户端"; warn=1; }
+bb(){ curl -s -m 6 -X POST http://127.0.0.1:54345/health -H 'Content-Type: application/json' -d '{}' 2>/dev/null | grep -q .; }
+if bb; then say "[OK]  BitBrowser 本地API"; else
+  open "/Applications/比特浏览器.app" 2>/dev/null || open -a "比特浏览器" 2>/dev/null
+  for i in 1 2 3 4 5 6 7 8 9; do sleep 5; bb && break; done
+  bb && say "[修复] 比特浏览器已自动启动" || { say "[需操作] 比特浏览器起不来（可能停在登录页）"; warn=1; }
+fi
 svc=$(ssh -o BatchMode=yes -o ConnectTimeout=8 "$HOST" 'systemctl is-active pojia-web pojia-worker 2>/dev/null|tr "\n" " "' 2>/dev/null)
 echo "$svc" | grep -q "active active" && say "[OK]  生产服务 $svc" || { say "[警告] 生产服务 $svc"; warn=1; }
 pgrep -f production-live-pool-worker >/dev/null && say "[警告] 有残留 worker 在跑" || say "[OK]  无残留 worker"
