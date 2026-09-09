@@ -2137,3 +2137,10 @@ D-138 后目标收敛：下一笔真实订单即闭环验证。当前待命状�
 顺手修的坏指向：`PRODUCTION_PREP_RUNBOOK` 指向不存在的 `./SMALL_BATCH_RUNBOOK.md` → 改指 RUNBOOK §1 + 归档稿；`README` 接手入口改按 AGENTS 顺序（原指向 2026-08 归档件）；`progress.md` 加历史横幅；`REVIEW_PROTOCOL` 事实源列表加 HANDOFF_NOW / 标注 CURRENT_STATE 唯一。
 未动：`docs/archive/` 一字未改；HANDOFF_LOG 早期章节顺序未重排；工作线/冻结稿正文未删。
 下一步：等真单；等单期间可做 `project-kickoff` 技能（用户倾向）。
+
+## 2026-09-09｜清理终态单残留（13:10 UTC，用户授权"没用就清掉"）
+**是什么**：`browser_dispatch_jobs` 里 5 条 QUEUED/CLAIMED（job 28 挂 `PJV1-_VjIN` 成功单；30/31/32 挂 09-08 三张 declined 测试单；36 挂已 CLOSED 演练单）和 `card_assignment_history` 里 6 条 ACTIVE（HNSKJ 1666/6807/6185/1013/4643 挂 8-21~9-02 老单；5501 挂 `_VjIN`），订单全部终态。
+**为何无用（已核代码+现场）**：领取 SQL（`browser-dispatch-repository.js` claim）要求 `o.status='RECHARGE_PROCESSING'`，终态单永远领不到；资格 SQL 与这些卡无关（余额 ≤$0.07、HNSKJ 卡台 101 而新单冻结 103、1666/5501 RETIRED）。唯一效果：后台 Browser 控制面显示"排队中/已领取"（用户 09-09 看到的"有一单在排队"就是 job 36），首页/卡片页"已分配"虚高 6，卡 `inventory_status` 卡在 ASSIGNED。
+**根因**：不是正式代码——`browser-execution-repository.js` 四处终态写都正确关 job。是 09-08 两次手工 SQL 收口（order_events 里 actor ADMIN、reason 乱码那几条）没关 job/没释放分配，加上 `close-rehearsal-order.mjs` 漏关 job（36）；8 月 4 条是 API 路线老逻辑。
+**做法**：新脚本 `v1/scripts/close-stale-residue.mjs`（正式连接池、复用 `releaseCardForFailedOrderInTransaction`、守卫 attempt ACTIVE/UNKNOWN 或 open run 即跳过、不动消费账本、每单写 order_events）。`--dry-run` 10 单/0 拒绝 → 真跑 → 新连接核实：dispatch open 0、ACTIVE 分配 0、ASSIGNED 卡 0、events 10、CONSUMED 账本 4 未变；6 张卡按余额归 DEPLETED。
+**顺手**：`close-rehearsal-order.mjs` 补关 dispatch job；RUNBOOK §3 加用法；CURRENT_STATE「活动资金与运行」「已知未修」改行。

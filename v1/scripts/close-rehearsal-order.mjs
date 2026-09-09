@@ -52,6 +52,12 @@ try {
     allowedCurrentStatuses: ['RESERVED'], requireActive: false, evidence: { source: 'close_rehearsal_order' },
   });
   const card = await releaseCardForFailedOrderInTransaction(connection, { orderId: order.id, releasedBy: 'admin', reason });
+  // The dispatch job would otherwise stay QUEUED forever and show as 排队中 on the control panel.
+  const [dispatch] = await connection.query(
+    `UPDATE browser_dispatch_jobs SET status = 'CANCELLED', last_error_code = 'CANCELLED_PRE_SUBMISSION',
+       completed_at = CURRENT_TIMESTAMP(3), lease_owner = NULL, lease_token_hash = NULL, lease_until = NULL,
+       updated_at = CURRENT_TIMESTAMP(3)
+     WHERE order_id = ? AND status IN ('QUEUED','CLAIMED')`, [order.id]);
   const [closed] = await connection.query(
     `UPDATE orders SET status = 'CLOSED', assigned_card_id = NULL,
        failure_code = 'CANCELLED_PRE_SUBMISSION', failure_reason = ?,
@@ -66,7 +72,7 @@ try {
     orderId: order.id, reason: `order closed after rehearsal before payment: ${reason}`,
     actorType: 'ADMIN', actorId: 'admin', metadata: { closeRehearsalOrder: true },
   });
-  const summary = { publicNo, dryRun, evidence, ledger, card, cdk };
+  const summary = { publicNo, dryRun, evidence, ledger, card, dispatchJobs: dispatch.affectedRows, cdk };
   if (dryRun) { await connection.rollback(); console.log('DRY RUN (rolled back)', JSON.stringify(summary)); }
   else { await connection.commit(); console.log('CLOSED', JSON.stringify(summary)); }
 } catch (error) {

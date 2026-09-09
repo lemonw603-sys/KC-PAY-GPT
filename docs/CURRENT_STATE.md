@@ -32,14 +32,14 @@
 | 可分配卡（资格 SQL，Plus 门槛 16） | **1 张**（7402）。非终态订单 0，无占卡单 | 2026-09-09 11:46 UTC | `ready-check.sh` 同口径查询 |
 | HNSKJ 卡台 | 09-05 起故障；09-07 12:06 UTC 前已恢复（读同步与交易同步成功，`provider_calls` SUCCESS）；开卡/补余额未再验证 | 09-07 14:00 | provider_calls / cards.last_transaction_synced_at |
 | 订单总况 | RECHARGE_SUCCESS 4 / RECHARGE_FAILED 15 / CLOSED 12 / CANCELLATION_REVIEW_REQUIRED 1（`PJV1-7EYSr3AZfjVl5JZQwTZt`：已付 Plus 982.14 PHP，取消续费复核待处理）/ WAITING_FOR_SESSION 0。失败数上升系 09-08 大量 Browser 测试单（付款前 drift/declined，均未扣款、CDK 退回、卡释放）；attempt funds_risk 全 CLEARED/SETTLED，无 ACTIVE/UNKNOWN | 09-08 晚 | orders / recharge_attempts |
-| 活动资金与运行 | ACTIVE/UNKNOWN attempt 0；open run 0；账号槽 active_runs 0；RESERVED 账本 0。**陈旧记录**：dispatch QUEUED/CLAIMED 5（全在终态单上，不可领取：job 28/30/31/32 CLAIMED 于 09-08 测试单，job 36 QUEUED 于已 CLOSED 演练单）；ACTIVE 卡分配 6（HNSKJ 1666/6807/6185/1013/4643 挂 8-21~9-02 老单，5501 挂 PJV1-_VjIN 手动标成功单）——见「已知未修」 | 2026-09-09 11:46 UTC | 只读聚合查询 |
+| 活动资金与运行 | ACTIVE/UNKNOWN attempt 0；open run 0；账号槽 active_runs 0；RESERVED 账本 0；dispatch QUEUED/CLAIMED 0；ACTIVE 卡分配 0；`cards.inventory_status=ASSIGNED` 0（09-09 13:10 UTC 用 `close-stale-residue.mjs` 清掉终态单上残留的 5 条 job / 6 条分配，order_events 审计 10 条，消费账本未动） | 2026-09-09 13:12 UTC | 只读聚合查询（写后新连接独立核实） |
 | 最近 Browser 运行 | 09-09 04:2x UTC rehearsal `PJV1-zLUtyjBjxrYnQsLeTpBN`（free 账号 e4938aca，Lane4）：preflight COMPLETED → `PRE_SUBMIT_STOPPED/BROWSER_REHEARSAL_STOPPED`，报价 PHP 982.14 / 税 0.00，run payment_state NOT_STARTED、PAYMENT_SUBMIT 0；随后以 `close-rehearsal-order.mjs` 收口 CLOSED 释放卡 | 2026-09-09 11:46 UTC | browser_runs / order_events |
 | Browser 自动化里程碑 | 生产**全自动真实付款 0 次**；付款前全自动链路 rehearsal 2 次通过（09-07、09-09）；付款后同一浏览器登录态存活已验证（D-136）；下一笔真单即闭环验证 | 2026-09-09 11:46 UTC | UNVERIFIED_LEDGER / HANDOFF_LOG |
 | 最近真实单 | API 路线 `PJV1-7EYSr3AZfjVl5JZQwTZt`（09-07 付 Plus 982.14 PHP，卡 5980；取消续费供应商未确认→09-09 07:06 UTC 用户经后台「已在账号里取消续费」收口 RECHARGE_SUCCESS）；Browser 路线 `PJV1-_VjINYXkOLLdiBrjpSZo`（09-08 stage1 付 Plus 卡 5501，SUBMIT_UNKNOWN 后手动核对为成功，20X 未付，account e4938aca 现为 free）；用户手动两阶段 wozaijiaoju1649（09-08 卡 0601：Plus $15.72 + 20X $127.01，系统外） | 2026-09-09 11:46 UTC | orders / order_events / 用户卡台后台 |
 | 告警 | OPEN 16：PROVIDER_BALANCE_CHANGED 11（info 噪音，后台不显示）、BROWSER_ORDER_FAILED 4（09-08 测试单付款前失败）、CARD_STOCK_LOW 1 | 2026-09-09 11:46 UTC | operator_alerts |
 | 本机 | BitBrowser Local API（`ready-check.sh` 发现未开会自动启动）+ mihomo（launchd `com.pojia.mihomo-ph` KeepAlive，出口锁菲律宾 38.60.246.34）；SSH 隧道 13306→3306 由 launchd `com.pojia.ssh-tunnel-13306` 守护；无常驻 Worker（来单 `go-live.sh --arm` 拉、`stop-live.sh` 收）；Lane4 clean 窗口 `51e915e` 为付款/演练身份 | 09-09 | launchctl / lsof / curl |
 | 已上线（本次 release） | `20260909-askform-cc3bba0`：后台全部连环 prompt → askForm 对话框；「已在账号里取消续费」动作与路由 `/orders/:publicNo/cancellation-confirmed`；开卡补钱「关闭」按钮。复验：新资源版本已服务、新路由未登录 401、登录页 200 | 2026-09-09 06:35 UTC | 服务器本机 curl + ADMIN_HOST |
-| 已知未修 | ①终态单上残留 dispatch job 5 条（CLAIMED/QUEUED）与 ACTIVE 卡分配 6 条（见上），不影响新单分配，但污染派发队列/活动分配计数——待用户定是否清理（生产写）；②本机绕过连接池直连写入曾造成某单 attempt/dispatch/账本 `created_at` 偏后 8 小时（09-07）；③后台控制事务并发时可能 `ER_LOCK_DEADLOCK`（失败关闭，需重试）；④手动卡付款后无独立卡侧扣款证据（对账恒匹配，靠 Plus 确认） | 2026-09-09 11:46 UTC | 本表 + HANDOFF_LOG |
+| 已知未修 | ①本机绕过连接池直连写入曾造成某单 attempt/dispatch/账本 `created_at` 偏后 8 小时（09-07），09-08 的手工 SQL 收口还留下了终态单残留（09-09 已清，见上；规则已固化：写库只走正式路径）；②后台控制事务并发时可能 `ER_LOCK_DEADLOCK`（失败关闭，需重试）；③手动卡付款后无独立卡侧扣款证据（对账恒匹配，靠 Plus 确认） | 2026-09-09 13:12 UTC | 本表 + HANDOFF_LOG |
 
 ## 事实表之外
 

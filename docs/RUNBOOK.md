@@ -46,12 +46,17 @@ ssh root@144.34.180.184 'set -a; . /etc/pojia/runtime.env; set +a; cd /opt/pojia
 ```
 （守卫：任何付款痕迹即拒；释放账本/卡分配、订单 CLOSED、退回 CDK。）
 
-## 3. 付款前失败的死单释放卡
+## 3. 死单残留清理
 
 订单已是 RECHARGE_FAILED 但卡仍绑定（2026-09-08 前的旧行为）：
 ```bash
 ssh root@144.34.180.184 'set -a; . /etc/pojia/runtime.env; set +a; cd /opt/pojia/current/v1 && node scripts/release-failed-order-card.js <PUBLIC_NO> --dry-run'
 ```
+终态单（SUCCESS/FAILED/CLOSED）上还挂着 QUEUED/CLAIMED 派发任务或 ACTIVE 卡分配（后台显示"排队中/已领取"、"已分配"虚高）——只会由绕过正式路径的手工 SQL 产生：
+```bash
+ssh root@144.34.180.184 'set -a; . /etc/pojia/runtime.env; set +a; cd /opt/pojia/current/v1 && node scripts/close-stale-residue.mjs --dry-run'
+```
+（全库扫描；守卫：attempt 仍 ACTIVE/UNKNOWN 或有 open run 的单跳过；不动消费账本；去掉 `--dry-run` 才写。脚本不在 release 包内时先 `scp v1/scripts/close-stale-residue.mjs root@144.34.180.184:/opt/pojia/current/v1/scripts/`。）
 
 ## 4. 查库（只读）
 
