@@ -1,4 +1,4 @@
-
+> **历史文件（2026-08 上游/直充 API 时期的进度流水）**，自 2026-09-07 归档整理后不再更新。当前状态看 `docs/HANDOFF_NOW.md`，过程记录只追加到 `docs/HANDOFF_LOG.md`。
 
 ## 2026-08-14 - Task: 修復 GPT 代充 API 協議代理傳參
 ### What was done

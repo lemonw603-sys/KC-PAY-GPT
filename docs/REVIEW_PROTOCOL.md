@@ -12,7 +12,7 @@
 
 ## 2. 输入与禁区
 
-- 事实源只认：`CLAUDE.md`、`docs/PROJECT_MAP.md`、`docs/CURRENT_STATE.md`、`docs/CORE_SPEC_2026-09-07.md`、`docs/PRODUCT_SIMPLIFICATION_DISCUSSION.md` 末尾基线、当前代码、只读生产证据（release 目录、systemd、只读 SQL、访问日志）。
+- 事实源只认：`CLAUDE.md`、`docs/HANDOFF_NOW.md`（当前状态与已验证/未验证边界）、`docs/PROJECT_MAP.md`、`docs/CURRENT_STATE.md`（唯一生产事实表）、`docs/CORE_SPEC_2026-09-07.md`、`docs/PRODUCT_SIMPLIFICATION_DISCUSSION.md` 末尾基线、当前代码、只读生产证据（release 目录、systemd、只读 SQL、访问日志）。
 - `docs/archive/` 与聊天摘要不是事实；引用必须注明「历史」。
 - 每条发现必须附可复现证据：文件路径与行号、执行过的只读命令与输出、或生产只读查询结果。没有证据的写进「疑问」而不是「发现」。
 - 不为了找问题而找问题：与硬约束、基线、事实源无冲突且无用户影响的风格差异不列为发现。

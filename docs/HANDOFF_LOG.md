@@ -2131,3 +2131,9 @@ D-138 后目标收敛：下一笔真实订单即闭环验证。当前待命状�
 ## 2026-09-09｜文档体系改造计划（用户同意，逐步提交）
 诊断：落盘规则写在 5 处（CLAUDE/AGENTS/地图§7/运行模型§11/协议）；生产事实写在两处（地图§3 + CURRENT_STATE）导致漂移；HANDOFF_LOG 顺序混杂（前段新在上、后段新在下，8 处倒序）；接班入口重（2100 行流水 + 4 份必读）；日常运维无手册；工作线文档已停更仍标"活动"；演练证据目录未入库。
 方案（不删内容、搬动留旧→新指向、一步一提交）：①`HANDOFF_NOW.md` 一屏接班、收尾覆盖重写；②`RUNBOOK.md` 日常运维；③事实只留 CURRENT_STATE，地图§3 改指向、§4 只留里程碑，未完成只留 UNVERIFIED_LEDGER；④规则合并到 CLAUDE.md（补：写后独立核实、不替用户猜界面、写库只走正式池脚本、时间带时区），AGENTS 只管阅读顺序+收尾清单，运行模型§11/地图§7 改指向；⑤`state-check.sh` 现场事实 vs CURRENT_STATE 比对；⑥HANDOFF_LOG 不重排，加顺序说明，09-09 的三级条目改为规范日期章节；⑦工作线文档加"已并入"横幅，演练证据入库。用户已同意：地图§3 改为指向；流水不重排。
+
+## 2026-09-09｜文档体系改造完成（2026-09-09 11:53 UTC，提交 797c7e7 / 98ee695 / 3932f2b + 收尾提交）
+落地结果：①`HANDOFF_NOW.md`（接班一屏，收尾覆盖重写）②`RUNBOOK.md`（自检/来单/演练/死单释放/查库/发布回滚/本机依赖/事实源同步）③生产事实只留 `CURRENT_STATE.md`（地图 §3、运行模型 §11 改指向；表按 09-09 现场重写 37 行）④落盘规则唯一权威 = `CLAUDE.md` 开发纪律（地图 §7 改指向；新增：生产写操作独立核实、prod-query 只读、不替用户下结论、时间带时区）⑤`browser-mvp/scripts/state-check.sh`（现场 vs 状态表 10 项比对，全部一致；取值失败按漂移）⑥`HANDOFF_LOG` 不重排、加顺序说明、09-09 的 13 个 `###` 归一为 `## 日期｜标题` ⑦工作线文档加"已并入"横幅、stage2 演练证据 `artifacts/poc-plan-change-20260908/` 入库（3 个 JSON，无敏感字段）。
+顺手修的坏指向：`PRODUCTION_PREP_RUNBOOK` 指向不存在的 `./SMALL_BATCH_RUNBOOK.md` → 改指 RUNBOOK §1 + 归档稿；`README` 接手入口改按 AGENTS 顺序（原指向 2026-08 归档件）；`progress.md` 加历史横幅；`REVIEW_PROTOCOL` 事实源列表加 HANDOFF_NOW / 标注 CURRENT_STATE 唯一。
+未动：`docs/archive/` 一字未改；HANDOFF_LOG 早期章节顺序未重排；工作线/冻结稿正文未删。
+下一步：等真单；等单期间可做 `project-kickoff` 技能（用户倾向）。

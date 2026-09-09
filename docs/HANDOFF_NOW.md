@@ -14,7 +14,8 @@
 
 1. **真单来了**：按 `RUNBOOK.md`「来单」一节执行（用户：充卡→传 Excel→提交→给单号；执行者：`ready-check.sh pay` → `go-live.sh --arm` → 盯到终态 → `stop-live.sh`）。20X 第二阶段自动停在「Confirm plan changes」小窗（用已绑卡、不填卡），**用户核对卡尾号后手动 Pay now**，再后台「确认 20X 已升级」。
 2. 真单跑完：把 `UNVERIFIED_LEDGER.md`「付款后半段」按实际证据改行；重写本文。
-3. 文档体系改造（2026-09-09 计划，见 HANDOFF_LOG 同日章节）：进行中，完成后本节删除此条。
+3. 等单期间可做：`project-kickoff` 技能（把本项目的落盘体系抽成模板，用户倾向做；先于新项目）。
+4. 待用户决定：终态订单上残留的 5 条 open dispatch job / 6 条 ACTIVE assignment 要不要清（见 `CURRENT_STATE.md`「已知未修」；不影响当前分配，因为资格 SQL 已排除终态占用）。
 
 ## 已定不做 / 已定保留
 

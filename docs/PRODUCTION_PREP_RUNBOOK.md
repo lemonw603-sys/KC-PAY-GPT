@@ -125,4 +125,4 @@ npm run preflight:readiness
 - 所有 Provider 写开关关闭；
 - 没有活动 Permit、UNKNOWN 或资金风险尝试。
 
-真实订单必须另按 [SMALL_BATCH_RUNBOOK.md](./SMALL_BATCH_RUNBOOK.md) 单笔、并发 1、人工确认执行。
+真实订单按 [RUNBOOK.md](./RUNBOOK.md)「1. 来单」执行（单笔、Lane4 单窗口、付款开关当次开当次关）。早期小批量稿已归档：[archive/undated/SMALL_BATCH_RUNBOOK.md](./archive/undated/SMALL_BATCH_RUNBOOK.md)（历史，只作追溯）。
