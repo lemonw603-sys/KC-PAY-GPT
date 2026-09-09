@@ -2167,3 +2167,9 @@ D-138 后目标收敛：下一笔真实订单即闭环验证。当前待命状�
 **推论**：下午真单是同一机制的单 cookie 版本（客户 token 3901 字节不分块：host-only 1 个 + 网站 1 个），主站接口碰巧容忍，结账页 SSR 不容忍。
 **修复（本机工作区）**：`session-bootstrap.js` 无 domain 的 cookie 一律 `domain: .chatgpt.com`（`__Host-` 前缀保持 host-only，否则浏览器拒收）；`chatgpt-checkout-navigator.js` openPricingSelectors 加 "Rejoin Plus"/"重新订阅 Plus"；单测：旧断言改域 + 新增回归测试。token 临时文件已删；实验截图在会话 scratchpad。
 **未验证**：真单全自动付款仍 0 次；修复只在"到结账页"验证过。
+
+## 2026-09-10｜全链路审计（用户要求"从生成 CDK 到订阅成功彻底查一遍"，16:30–17:40 UTC，只读）
+报告：`docs/reviews/FULL_CHAIN_AUDIT_2026-09-10.md`。方法：沿真单路径读 v1 + browser-mvp ~30 个文件，主线找"真单会走、演练没走过"的路。
+P0：F-5 `customer.js:259` `Number(replacement.remaining||0)>0` 而接口返回 `remaining:null` → 重贴表单永远隐藏（ssh 核对线上 release 同一行）；F-1 预检 max 5/30s 退避、LEASE_LOST 也计数、DEAD 后无重置入口（全库只有换 session 会重置）且无告警类型、客户页无限期"准备中"；F-10 等待期客户用账号 → token 失效 → 打回 → F-5 死单（CORE_SPEC 的"贴码即验"未实现）。
+P1：F-3 取消续费接口从未真调、失败终态后台按钮不认；F-4 付款前瞬时失败一律终态+退 CDK；F-6 手动卡付一单即 DEPLETED/NULL；F-7 后台取消对跑过 Browser 的单一律拒；F-8 客户页文案。P2：F-11 PHP/零税假设、F-12 语言、F-13 3DS、F-14 证据表只落首轮、F-15 单出口。
+核对无问题：三道门/防重付、CDK 规则、建单、卡资格、D-131/137/140。未改任何代码。
