@@ -2153,3 +2153,8 @@ D-138 后目标收敛：下一笔真实订单即闭环验证。当前待命状�
 **没做/没验证**：403 根因；用户手动路径与我们路径的差异（未问到细节）；租约 900s 在成功路径的表现。`browser_run_events` 只落了第 1 次尝试（唯一键 job_id+sequence），后续在本机 `pool/lane-4.wal`。
 **教训（已落 D-139 + RUNBOOK §1 硬规则）**：真单失败一次就该立刻交人工，事后再查；这次执行者在真单上边修边查了 ~20 分钟，用户明确不满。预检租约默认改 900s（`run-live-pool.sh`）。ready-check 的"唯一卡被待跑单占着"改为信息项。
 **用户原话**："为什么我手动就可以，你自动就不行？"——诚实回答：我们路径在结账页被拒，手动路径差异不知道，不猜，要问。
+
+## 2026-09-09｜403 根因分析（15:35–15:50 UTC，只读，未改代码）
+用户口述：上号器用 6 号窗口（`68275a10…` "AI Recharge Browser Lane 6"），全是页面点击，同一菲律宾出口。同 IP、同账号、同操作都能成，差异只剩登录态进浏览器的方式。
+证据：①三张单（真单 VHl_、演练 zLUt、测试 1UfN）存库 session 形状完全一样 = `/api/auth/session` JSON（sessionToken + accessToken），材料源恒返回 `{sessionToken}` → `session-bootstrap.js normalizeCookies` 恒生成 1 个 cookie，按 `{url}` 放置 = host-only `chatgpt.com`。②WAL 全量统计：此前所有到过 `checkout-navigation` 的任务 `session-bootstrap cookieCount=4` 且无 `session-replaced` = 常驻登录态被保留（上号器 1.2.1 装的），从没真正用过注入的 cookie 去结账；今天任务 135 第 1 次 `session-replaced`（删 4 注 1），第 4–5 次 bootstrap=2（我们的 + 网站下发的并存）。③CDP 读 Lane4：两个 `__Secure-next-auth.session-token`——`chatgpt.com` host-only、无过期、len 3901（我们的）；`.chatgpt.com`、90 天、len 3921（网站 15:16 下发/续期）。④6 号窗口 36 个 cookie，含 auth.openai.com 层（usc_、unified_session_manifest、oai-client-auth-info@.auth）；Lane4 24 个，无 auth 层。⑤主站接口在双 cookie 下身份核对通过；结账页文档 403，刷新 500（Cloudflare 前置，非 API 子请求）。
+结论（假设级）：双 session-token 并存最可能是结账页 SSR 拒绝的直接原因；auth 层缺失是次要/付款后问题（D-134 已知）。修法候选：注入改 `domain: '.chatgpt.com'`；或首屏后删 host-only 副本；或走已有 `extension-session-runtime.js`（上号器扩展）。**未做对照实验，未改代码**——实验需一个 free 号，只到结账页不填卡。
