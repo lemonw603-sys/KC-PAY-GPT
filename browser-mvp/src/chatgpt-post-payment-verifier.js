@@ -167,7 +167,8 @@ export class ChatGptPostPaymentVerifier {
   }
 
   async #poll(readiness) {
-    const deadline = Date.now() + this.timeoutMs;
+    const startedAt = Date.now();
+    const deadline = startedAt + this.timeoutMs;
     let last = null;
     do {
       last = await readSubscription(this.page, this.accountCheckPath);
@@ -179,7 +180,13 @@ export class ChatGptPostPaymentVerifier {
         continue;
       }
       if (Date.now() >= deadline) return last;
-      await this.page.waitForTimeout(this.pollIntervalMs);
+      // Normal path: Plus activates within seconds, so the first 30s keep the
+      // configured cadence (delivery speed untouched). Only a slow activation
+      // backs off to 3x (capped 5s) so accounts/check is not hammered for minutes.
+      const interval = Date.now() - startedAt < 30_000
+        ? this.pollIntervalMs
+        : Math.min(this.pollIntervalMs * 3, Math.max(this.pollIntervalMs, 5_000));
+      await this.page.waitForTimeout(interval);
     } while (true);
   }
 
@@ -236,11 +243,10 @@ export class ChatGptPostPaymentVerifier {
         }
         return { hasAccessToken: at.length > 0, planType: s?.account?.planType || null, accountsCheck };
       });
+      // Kept as run evidence (postPaymentSnapshot); no longer printed to stderr.
       this.postPaymentSnapshot = snap;
-      console.error('[direction-B] post-payment session snapshot:', JSON.stringify(snap));
     } catch (error) {
       this.postPaymentSnapshot = { error: String(error?.message || '').slice(0, 80) };
-      console.error('[direction-B] post-payment snapshot failed:', this.postPaymentSnapshot.error);
     }
     const identity = await this.#verifiedIdentity();
     const state = await this.#poll((value) => value?.ok && value.hasActive

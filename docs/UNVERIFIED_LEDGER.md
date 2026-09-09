@@ -5,6 +5,11 @@
 ## 已验证（对照用）
 
 - 付款前自动填写链路：09-07 测试单一次，本机手工串联（预检 → 服务器 Worker 短启 → LIVE 演练）；证据 `browser_runs` FAILED_SAFE/PRE_PAYMENT_ABORT、报价 PHP 982.14 / 税 0.00、许可 0、点击 0。
+- 付款前自动填写链路（第 2 次，09-09）：free 账号 e4938aca、Lane4 clean、常驻池 rehearsal：preflight COMPLETED → PRE_SUBMIT_STOPPED，报价 PHP 982.14 / 税 0.00，run payment_state NOT_STARTED、0 次 PAYMENT_SUBMIT、卡余额未动；付款后账号 free 的判定由 preflight 现场证实。
+- 付款后不需客户重新登录（D-136）：09-08 用户手动两阶段（Plus→20X，未退登，卡台后台两笔）+ 自动 navigator 在有效会话下走到「Confirm plan changes」弹窗。
+- D-137 付款前 drift 清空安全卡字段：单测锁定，全量 212 项 0 失败。
+- 「已在账号里取消续费」收口动作：09-09 发布后用户在生产上对 PJV1-7EYSr3 实用一次（order_events ADMIN）。
+- 比特浏览器 webRTC=0（官方文档：0 替换/1 允许/2 禁用）→ 用代理 IP 顶替，不漏真实 IP；8 号窗口时区/语言/定位均「基于 IP 生成」。
 
 ## 付款后半段（真实付款那一次会一起验）
 
@@ -16,7 +21,7 @@
 
 - 备用卡付款后对账为空：`browser-card-transaction-reader.js` 对 `MANUAL_IMPORT` 返回固定标记 `MANUAL_CARD_BROWSER_CONFIRMED`，对账恒匹配，只靠 Plus 确认，无独立扣款证据。
 - HNSKJ 自动开卡、自动补余额自 09-05 卡台故障起未运行。
-- 一卡多单顺序复用（Plus 上限 3）未在真实付款中跑过；按产品的开卡金额/最低余额未实现（现为全局值）。付款前失败释放卡绑定（D-131）09-07 上线，只在真实 schema 集成测试与 5501 修复中验证，未在真实自动中止里触发过。
+- 一卡多单顺序复用（Plus 上限 3）未在真实付款中跑过；按产品最低余额已实现（`minimum_required_card_balance:<product>`，09-09 pro_20x 调 150；pro_5x 仍 16，上线前调）；开卡金额仍全局值。付款前失败释放卡绑定（D-131）09-07 上线；09-09 演练残单（CARD_READY 持卡）需 `close-rehearsal-order.mjs` 收口，自检已加占卡提示。
 
 ## 客户链
 
@@ -33,7 +38,7 @@
 
 ## 常驻池（09-07 新增）
 
-- 常驻多身份 Worker 已在真实排队单上完成一次「领单 → 执行 → 分类安全中止」闭环（终态 BROWSER_RETRY_LIMIT），尚未在有效会话下跑到 PRE_SUBMIT_STOPPED；多 lane 并行未跑。
+- 常驻多身份 Worker：09-07 完成「领单 → 执行 → 分类安全中止」闭环；**09-09 已在有效会话下跑到 PRE_SUBMIT_STOPPED**（resident 反复 claim 产生 3 个 attempt，单次验证应改用 `run-live-rehearsal.sh once`）；多 lane 并行未跑。
 
 ## 测试基建
 
@@ -41,7 +46,7 @@
 
 ## 运行与部署
 
-- Browser 自动化整条链在本机：SSH 隧道手拉（09-07 断过三次）、Worker 手起、BitBrowser 免费版每日 50 次打开额度；服务器 Browser Worker inactive；常开机器未建。
+- Browser 自动化整条链在本机：SSH 隧道与 mihomo 已交 launchd 守护（09-09），Worker 由 `go-live.sh --arm`/`stop-live.sh` 拉起收工，`ready-check.sh` 充前自检（含自动开比特浏览器、付款开关、账号槽、可分配卡）；BitBrowser 免费版每日 50 次打开额度；常开机器未建（本机睡眠/关机即停）。
 - 服务器 API Worker 停着时订单不会从 CREATED 前进；09-07 手动短启 10 秒。
 - Browser 路线终态提醒/Bark（D-132，`fbba5fe`）已实现，未在真实 run 上触发过；09-07 前 Browser 终态完全不发通知。
 - 数据库备份只验过完整性，未做恢复演练。
