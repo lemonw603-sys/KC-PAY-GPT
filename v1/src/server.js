@@ -19,6 +19,7 @@ import { createProviderRouteAdminService } from './services/provider-route-admin
 import { createCardSyncJobService } from './services/card-sync-job-service.js';
 import { createAdminOperationsService } from './services/admin-operations-service.js';
 import { createOrderCancellationService } from './services/order-cancellation-service.js';
+import { createManualCancellationService } from './services/manual-cancellation-service.js';
 import { HnskjCardProvider } from './providers/index.js';
 import { createCardIntakeService } from './services/card-intake-service.js';
 import { createCardIntakeRepository } from './db/repositories/card-intake-repository.js';
@@ -122,6 +123,7 @@ const createAdminCdkBatch = createAdminCdkService({
 const adminOperationsService = createAdminOperationsService({ pool });
 const startBusiness = createAdminStartBusinessService({ adminReadService, cardStockService, adminOperationsService });
 const cancelAdminOrder = createOrderCancellationService({ pool });
+const confirmManualCancellation = createManualCancellationService({ pool });
 const reconciliationCases = createReconciliationCaseService({ pool });
 const browserAdmin = createBrowserAdminService({ pool });
 const browserBillingAddressAdmin = createBrowserBillingAddressAdminService({ pool });
@@ -231,6 +233,7 @@ const app = createApp({
   ,closeAdminAlert: adminOperationsService.closeAlert
   ,startAdminBusiness: startBusiness
   ,cancelAdminOrder
+  ,confirmManualCancellation
   ,createAdminCdkBatch
   ,listAdminCdkBatches: async (input) => ({
     ...await listCdkBatches(pool, input),

@@ -471,7 +471,9 @@ async function loadReconciliationCases() {
 }
 
 async function assignReconciliationCase(caseId) {
-  const assignedTo = window.prompt('输入负责人名称：', 'admin')?.trim();
+  const assignedTo = (await askForm({
+    title: '分配对账案例', fields: [{ name: 'assignedTo', label: '负责人名称', type: 'text', value: 'admin', required: true }], confirmLabel: '分配'
+  }))?.assignedTo;
   if (!assignedTo) return;
   await api(`/api/v1/admin/reconciliation-cases/${encodeURIComponent(caseId)}/assign`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ assignedTo })
@@ -481,7 +483,9 @@ async function assignReconciliationCase(caseId) {
 }
 
 async function resolveReconciliationCase(caseId, { after = null } = {}) {
-  const resolutionNote = window.prompt('填写处理结论（必填）：')?.trim();
+  const resolutionNote = (await askForm({
+    title: '关闭对账案例', fields: [{ name: 'note', label: '处理结论（必填）', type: 'textarea', required: true }], confirmLabel: '关闭案例'
+  }))?.note;
   if (!resolutionNote) return;
   await sensitiveApi(`/api/v1/admin/reconciliation-cases/${encodeURIComponent(caseId)}/resolve`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ resolutionNote })
@@ -593,6 +597,56 @@ function browserControlButtons(run) {
   return '';
 }
 
+// 一个对话框收完一次操作需要的全部输入（替代连环 window.confirm/prompt）。
+// 返回 {字段: 值} 或 null（取消/Esc）。required 字段为空时不允许提交。
+let askDialogElement = null;
+function askForm({ title, message = '', fields = [], confirmLabel = '确认', danger = false }) {
+  return new Promise((resolve) => {
+    if (!askDialogElement) {
+      askDialogElement = document.createElement('dialog');
+      askDialogElement.className = 'ask-dialog';
+      document.body.appendChild(askDialogElement);
+    }
+    const dialog = askDialogElement;
+    const control = (field) => {
+      const id = `ask-${field.name}`;
+      const required = field.required ? ' required' : '';
+      if (field.type === 'select') {
+        return `<label class="ask-field" for="${id}">${escapeHtml(field.label)}<select id="${id}" name="${escapeHtml(field.name)}"${required}>${
+          (field.options || []).map((option) => `<option value="${escapeHtml(option.value)}"${option.value === field.value ? ' selected' : ''}>${escapeHtml(option.label)}</option>`).join('')
+        }</select></label>`;
+      }
+      if (field.type === 'textarea') {
+        return `<label class="ask-field" for="${id}">${escapeHtml(field.label)}<textarea id="${id}" name="${escapeHtml(field.name)}" rows="3" placeholder="${escapeHtml(field.placeholder || '')}"${required}>${escapeHtml(field.value || '')}</textarea></label>`;
+      }
+      return `<label class="ask-field" for="${id}">${escapeHtml(field.label)}<input id="${id}" name="${escapeHtml(field.name)}" type="text" value="${escapeHtml(field.value || '')}" placeholder="${escapeHtml(field.placeholder || '')}"${required}></label>`;
+    };
+    dialog.innerHTML = `<form class="ask-form">
+      <h3>${escapeHtml(title)}</h3>
+      ${message ? `<p class="ask-message">${escapeHtml(message)}</p>` : ''}
+      ${fields.map(control).join('')}
+      <div class="ask-actions"><button type="button" class="ghost-button" data-ask-cancel>取消</button><button type="submit" class="${danger ? 'danger-small' : 'primary-small'}">${escapeHtml(confirmLabel)}</button></div>
+    </form>`;
+    const form = dialog.querySelector('form');
+    const finish = (value) => { dialog.removeEventListener('cancel', onCancel); if (dialog.open) dialog.close(); resolve(value); };
+    const onCancel = (event) => { event.preventDefault(); finish(null); };
+    dialog.addEventListener('cancel', onCancel);
+    dialog.querySelector('[data-ask-cancel]').addEventListener('click', () => finish(null));
+    form.addEventListener('submit', (event) => {
+      event.preventDefault();
+      const answers = {};
+      for (const field of fields) {
+        const value = String(form.elements[field.name]?.value ?? '').trim();
+        if (field.required && !value) { form.elements[field.name].focus(); return; }
+        answers[field.name] = value;
+      }
+      finish(answers);
+    });
+    dialog.showModal();
+    (dialog.querySelector('select, input, textarea') || dialog.querySelector('button[type="submit"]'))?.focus();
+  });
+}
+
 async function controlBrowserRun(run, action, { after = null } = {}) {
   const confirmations = {
     REQUEST: `请求人工接管 ${run.id}`,
@@ -614,26 +668,38 @@ async function controlBrowserRun(run, action, { after = null } = {}) {
     COMPLETE_20X: '仅在你已经亲眼确认 20X 升级完成后点击；系统会把客户订单收口为充值成功。',
     CANCEL: '只允许取消尚未冻结的接管请求。'
   };
-  if (!window.confirm(warnings[action])) return;
+  const fieldsByAction = {
+    REQUEST: [{
+      name: 'reasonCode', label: '接管原因', type: 'select', value: 'OPERATOR_REVIEW', required: true,
+      options: ['CAPTCHA', 'THREE_DS', 'PAGE_DRIFT', 'SESSION_REPAIR', 'OPERATOR_REVIEW', 'PAYMENT_RECONCILIATION'].map((value) => ({ value, label: value }))
+    }],
+    TRANSFER: [{ name: 'humanOwnerId', label: '人工操作者标识', type: 'text', value: 'admin', required: true }],
+    CONFIRM_MANUAL_PAYMENT: [
+      {
+        name: 'manualOutcome', label: '人工付款结果', type: 'select', value: 'UPGRADED_20X', required: true,
+        options: [
+          { value: 'UPGRADED_20X', label: '20X：Plus 与 20X 均已完成，订单收口为成功' },
+          { value: 'PLUS_ACTIVE', label: 'PLUS：只完成 Plus，等待人工升级 20X' }
+        ]
+      },
+      { name: 'evidenceNote', label: '你看到的付款证据（金额、卡尾号、时间；不要输入完整卡号或安全码）', type: 'textarea', required: true }
+    ]
+  };
+  const answers = await askForm({
+    title: confirmations[action], message: warnings[action], fields: fieldsByAction[action] || [],
+    confirmLabel: '确认执行', danger: ['FREEZE', 'MARK_PAYMENT_UNKNOWN'].includes(action)
+  });
+  if (!answers) return;
   const input = {
     action,
     operationId: `admin-browser:${action.toLowerCase()}:${crypto.randomUUID()}`,
     confirmation: confirmations[action]
   };
-  if (action === 'REQUEST') {
-    input.reasonCode = window.prompt('输入接管原因代码：CAPTCHA、THREE_DS、PAGE_DRIFT、SESSION_REPAIR、OPERATOR_REVIEW 或 PAYMENT_RECONCILIATION', 'OPERATOR_REVIEW')?.trim().toUpperCase();
-    if (!input.reasonCode) return;
-  }
-  if (action === 'TRANSFER') {
-    input.humanOwnerId = window.prompt('输入人工操作者标识：', 'admin')?.trim();
-    if (!input.humanOwnerId) return;
-  }
+  if (action === 'REQUEST') input.reasonCode = answers.reasonCode.toUpperCase();
+  if (action === 'TRANSFER') input.humanOwnerId = answers.humanOwnerId;
   if (action === 'CONFIRM_MANUAL_PAYMENT') {
-    const outcome = window.prompt('人工付款结果：输入 20X（Plus 与 20X 均已完成，订单收口为成功）或 PLUS（只完成 Plus，等待人工升级 20X）', '20X')?.trim().toUpperCase();
-    input.manualOutcome = outcome === '20X' ? 'UPGRADED_20X' : outcome === 'PLUS' ? 'PLUS_ACTIVE' : '';
-    if (!input.manualOutcome) return;
-    input.evidenceNote = window.prompt('你看到的付款证据（金额、卡尾号、时间等；不要输入完整卡号或安全码）：', '')?.trim();
-    if (!input.evidenceNote) return;
+    input.manualOutcome = answers.manualOutcome;
+    input.evidenceNote = answers.evidenceNote;
   }
   await sensitiveApi(`/api/v1/admin/browser/runs/${encodeURIComponent(run.id)}/control`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input)
@@ -1076,6 +1142,25 @@ async function requestTransactionSync(publicNo, button) {
 }
 
 
+// 付款已成功但自动取消续费没被确认的单：运营亲自在账号里关掉续费后，在这里记录事实并收口。
+async function confirmManualCancellation(publicNo, { after = null } = {}) {
+  const answers = await askForm({
+    title: `已在账号里取消续费 ${publicNo}`,
+    message: '仅在你已经亲自在这个 ChatGPT 账号的订阅设置里关闭自动续费、并看到生效后确认。系统只记录这一事实并把订单收口为成功，不会再去问供应商或碰页面。',
+    fields: [{ name: 'note', label: '备注（可选：账号邮箱、取消时间等）', type: 'text' }],
+    confirmLabel: '确认已取消续费'
+  });
+  if (!answers) return;
+  const result = await sensitiveApi(`/api/v1/admin/orders/${encodeURIComponent(publicNo)}/cancellation-confirmed`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ confirmation: `已取消续费 ${publicNo}`, note: answers.note })
+  });
+  showNotice(result.replayed ? '该订单此前已记录为已取消续费。' : '已记录：自动续费已人工取消，订单收口为成功。', 'success');
+  if (after) { await after(); return; }
+  await openOrder(publicNo);
+  await loadOrders();
+}
+
 async function cancelOrder(publicNo, button) {
   if (!window.confirm(`确认取消订单 ${publicNo}？\n\n服务器会再次确认充值从未提交。订单关闭后，卡片将释放回可用库存。此操作不可撤销。`)) return;
   button.disabled = true;
@@ -1225,6 +1310,9 @@ async function openOrder(publicNo) {
       ? items.map((item) => `${item.amount} ${item.currency}`).join('；') : '没有已记录金额';
     const actions = [];
     if (cancellation.eligible) actions.push('<button type="button" class="danger-small" id="cancel-order">取消并释放卡</button>');
+    if (order.cancellationReviewRequired === 1 || order.status === 'CANCELLATION_REVIEW_REQUIRED') {
+      actions.push('<button type="button" class="primary-small" id="confirm-manual-cancellation">已在账号里取消续费</button>');
+    }
     if (runLive && manualPaymentEligible(controlRun)) actions.push('<button type="button" class="primary-small" data-order-run-control="CONFIRM_MANUAL_PAYMENT">人工付款已完成</button>');
     if (runLive && upgradeConfirmEligible(controlRun)) actions.push('<button type="button" class="primary-small" data-order-run-control="COMPLETE_20X">确认 20X 已升级</button>');
     if (data.card) actions.push('<button type="button" class="ghost-button" id="sync-transactions">同步卡交易</button>');
@@ -1305,6 +1393,8 @@ async function openOrder(publicNo) {
     const reopen = () => openOrder(publicNo);
     document.querySelector('#sync-transactions')?.addEventListener('click', (event) => requestTransactionSync(publicNo, event.currentTarget));
     document.querySelector('#cancel-order')?.addEventListener('click', (event) => cancelOrder(publicNo, event.currentTarget));
+    document.querySelector('#confirm-manual-cancellation')?.addEventListener('click', () => confirmManualCancellation(publicNo, { after: reopen })
+      .catch((error) => showNotice(error?.message === 'manual_cancellation_not_eligible' ? '该订单当前不能这样收口。' : '没有记录，订单没有改变。')));
     elements.detailContent.querySelectorAll('[data-order-run-control]').forEach((button) => {
       button.addEventListener('click', () => controlBrowserRun(controlRun, button.dataset.orderRunControl, { after: reopen })
         .catch(() => showNotice('操作没有完成，订单没有改变。')));
@@ -1321,18 +1411,23 @@ async function openOrder(publicNo) {
       button.addEventListener('click', () => openOrder(button.dataset.relatedOrder));
     });
     elements.detailContent.querySelector('[data-complete-customer-payment]')?.addEventListener('click', async () => {
-      const amount = window.prompt('输入客户实际付款金额：')?.trim();
-      if (!amount) return;
-      const currency = window.prompt('输入付款币种（例如 CNY）：', 'CNY')?.trim();
-      if (!currency) return;
-      const channel = window.prompt('输入付款渠道（例如 ALIPAY、WECHAT）：', 'ALIPAY')?.trim();
-      if (!channel) return;
-      const paidAt = window.prompt('输入实际付款时间（必须包含时区，例如 2026-08-21T12:30:00+08:00）：')?.trim();
-      if (!paidAt) return;
-      const externalReference = window.prompt('输入外部交易参考号（可留空；只保存 HMAC 和尾号）：', '')?.trim() || '';
+      const answers = await askForm({
+        title: `补录客户付款 ${publicNo}`,
+        message: '记录客户实际付给我们的款项（不是我们付给 ChatGPT 的）。外部参考号只保存 HMAC 和尾号。',
+        fields: [
+          { name: 'amount', label: '客户实际付款金额', type: 'text', required: true, placeholder: '例如 168.00' },
+          { name: 'currency', label: '付款币种', type: 'text', value: 'CNY', required: true },
+          { name: 'channel', label: '付款渠道', type: 'select', value: 'ALIPAY', required: true,
+            options: [{ value: 'ALIPAY', label: '支付宝 ALIPAY' }, { value: 'WECHAT', label: '微信 WECHAT' }, { value: 'OTHER', label: '其他 OTHER' }] },
+          { name: 'paidAt', label: '实际付款时间（必须含时区，例如 2026-08-21T12:30:00+08:00）', type: 'text', required: true },
+          { name: 'externalReference', label: '外部交易参考号（可留空）', type: 'text' }
+        ],
+        confirmLabel: '补录'
+      });
+      if (!answers) return;
       await sensitiveApi(`/api/v1/admin/orders/${encodeURIComponent(publicNo)}/customer-payment`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ amount, currency, channel, paidAt, externalReference })
+        body: JSON.stringify({ amount: answers.amount, currency: answers.currency, channel: answers.channel, paidAt: answers.paidAt, externalReference: answers.externalReference || '' })
       });
       showNotice('客户付款详情已补录。', 'success');
       await openOrder(publicNo);
@@ -1446,10 +1541,15 @@ elements.cardFundingTable?.addEventListener('click', async (event) => {
   const button = event.target.closest('.card-funding-resolve');
   if (!button) return;
   const attemptId = button.dataset.attemptId;
-  if (!window.confirm(`把卡充值尝试 ${attemptId} 记为「${button.dataset.action === 'SETTLED' ? '已扣款' : '未扣款'}」？只保存结论，不会重充或退款。`)) return;
+  const actionLabel = button.dataset.action === 'SETTLED' ? '已扣款' : '未扣款';
   // Server still checks the literal word; the dialog above is the one confirmation.
   const confirmation = `确认卡充值对账 ${attemptId}`;
-  const note = window.prompt('请输入对账依据（至少 10 个字符；只记录结论，不会自动重充）：')?.trim();
+  const note = (await askForm({
+    title: `卡充值对账 ${attemptId}`,
+    message: `把这次卡充值尝试记为「${actionLabel}」。只保存结论，不会自动重充或退款。`,
+    fields: [{ name: 'note', label: '对账依据（至少 10 个字符）', type: 'textarea', required: true }],
+    confirmLabel: '保存结论'
+  }))?.note;
   if (!note) return;
   button.disabled = true;
   try {

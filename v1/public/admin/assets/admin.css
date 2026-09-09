@@ -283,3 +283,16 @@ tbody tr[data-order]:hover, tbody tr[data-order]:focus { background: #f7faff; }
 .stock-advanced-details > .filters { margin-top: 4px; }
 #diagnostics-heartbeat { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 #diagnostics-heartbeat small { display: block; margin-top: 4px; }
+
+/* askForm：单个对话框收完一次操作的全部输入（替代连环 confirm/prompt） */
+.ask-dialog { width: min(480px, calc(100% - 32px)); padding: 0; border: 0; border-radius: 16px; background: white; box-shadow: 0 24px 60px rgba(23,40,62,.22); }
+.ask-dialog::backdrop { background: rgba(23,40,62,.28); }
+.ask-form { display: grid; gap: 14px; padding: 22px 24px 20px; }
+.ask-form h3 { margin: 0; font-size: 16px; color: #17283e; }
+.ask-message { margin: 0; font-size: 13px; line-height: 1.6; color: #405873; }
+.ask-field { display: grid; gap: 6px; font-size: 12px; font-weight: 700; color: #405873; }
+.ask-field input, .ask-field select, .ask-field textarea { width: 100%; padding: 9px 11px; border: 1px solid var(--line); border-radius: 10px; font: inherit; font-weight: 500; color: #17283e; background: #fbfcfe; }
+.ask-field textarea { resize: vertical; min-height: 72px; }
+.ask-field input:focus, .ask-field select:focus, .ask-field textarea:focus { outline: 2px solid #9fc0f5; border-color: #2f7aeb; }
+.ask-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 4px; }
+.ask-actions .primary-small, .ask-actions .danger-small { min-height: 36px; }

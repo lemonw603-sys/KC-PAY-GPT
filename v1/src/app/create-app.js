@@ -68,6 +68,7 @@ export function createApp({
   setAdminBrowserPaymentWrites = null,
   setAdminSupplyAutomation = null,
   cancelAdminOrder = null,
+  confirmManualCancellation = null,
   createAdminCdkBatch = null,
   listAdminCdkBatches = null,
   downloadAdminCdkBatch = null,
@@ -476,6 +477,19 @@ export function createApp({
         res.json(await cancelAdminOrder(req.params.publicNo, req.body));
       } catch (error) {
         if (error instanceof OrderCancellationError) {
+          return res.status(error.status).json({ error: error.code.toLowerCase() });
+        }
+        throw error;
+      }
+    });
+  }
+  if (typeof confirmManualCancellation === 'function') {
+    // 运营亲自在账号里关闭自动续费后，记录事实并收口（付款已成功、取消续费待人工的单）。
+    app.post('/api/v1/admin/orders/:publicNo/cancellation-confirmed', ...sensitiveAdminGuards, async (req, res) => {
+      try {
+        res.json(await confirmManualCancellation(req.params.publicNo, { ...req.body, actorId: req.admin?.id || 'admin' }));
+      } catch (error) {
+        if (error?.name === 'ManualCancellationError') {
           return res.status(error.status).json({ error: error.code.toLowerCase() });
         }
         throw error;
