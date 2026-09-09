@@ -57,6 +57,9 @@ pbpaste | npm --prefix v1 run admin:configure-local
 - `GET /api/v1/admin/orders/:publicNo`
 - `GET /api/v1/admin/alerts?limit=50`（只读，返回未处理内部提醒）
 - `POST /api/v1/admin/orders/:publicNo/sync-transactions`（只读同步任务，需已绑定卡片）
+- `POST /api/v1/admin/orders/:publicNo/cancellation`（付款前取消并释放卡；服务器校验字面 `取消订单 <publicNo>`，前端自动填）
+- `POST /api/v1/admin/orders/:publicNo/customer-payment`（补录客户付给我们的款项）
+- `POST /api/v1/admin/orders/:publicNo/cancellation-confirmed`（运营亲自在账号里关闭自动续费后记录事实并收口：仅 CANCELLATION_REVIEW_REQUIRED / RECHARGE_SUCCESS+待复核 可用；字面 `已取消续费 <publicNo>` 前端自动填；幂等；写 order_events）
 - `POST /api/v1/admin/cdks/generate` （管理员写入，必须带 `Idempotency-Key`；当前 `planType` 仅接受 `plus`）
 - `GET /api/v1/admin/cdks/batches`
 - `POST /api/v1/admin/cdks/:batchNo/download`
