@@ -2036,3 +2036,14 @@
 - **指纹一致性核验通过**：8号窗口(Lane4 clean=51e915e) `isIpCreateTimeZone/Position/Language=true`——时区/语言/定位跟随菲律宾IP，无美国/中国时区矛盾。待确认项：webRTC="0" 含义（应为替换/禁用防真实IP泄露）；isIpCreateDisplayLanguage=false（影响小）。
 
 **下一步**：用户用 free 账号在客户页提交一个 Plus 单 → 拉 worker 跑 **rehearsal（BROWSER_LIVE_STOP_BEFORE=SUBMIT，停在付款前，不扣款）** 验证 上号→导航→填卡→填地址→零税报价(₱982.14)→停。通过后再议真付（本轮用户明确不付款）。
+
+### 全链路 rehearsal 验证通过（2026-09-09，free 账号，不付款）
+用户提交 free 账号 Plus 单 PJV1-zLUtyjBjxrYnQsLeTpBN（账号 e4938aca）。跑通全链路（除真付款）：
+- **前置**：readonly 预检要求 DB `browser_payment_writes_enabled=false`（安全设计：预检/演练环境付款开关须关），而当时是 true。→ 关闭付款开关（app_settings + executor_profiles.productionWritesEnabled 同步 false，带 admin_setting_events 审计）。正合用户"本轮不付款"。
+- **preflight（Lane4 clean）**：COMPLETED/reasonCode null → **账号 e4938aca 实为 free**（此前手动标的 PLUS_CONFIRMED 是假的，用户说 free 正确）、session 上号成功、导航到 checkout、开无卡 Checkout ✓。
+- **rehearsal（Lane4，BROWSER_LIVE_STOP_BEFORE=SUBMIT）**：`PRE_SUBMIT_STOPPED / BROWSER_REHEARSAL_STOPPED`，**quote PHP 982.14 / tax 0.00**（VAT 归零）→ 填卡(7402)、填地址(OR)、零税报价、停在付款前全通，**未点付款**。
+- **无扣款确认**：run payment_state=NOT_STARTED、卡 7402 $49 未动、job CANCELLED(REHEARSAL_STOPPED)。
+
+**教训/待改**：① rehearsal 用 resident loop 反复 claim 跑了 3 个 attempt（应改单次跑，或跑通即停）。② 看到 PRE_SUBMIT_STOPPED 后**过早 pkill worker，打断了 abort 收尾**，订单卡 RECHARGE_PROCESSING/attempt ACTIVE；已手动补收尾（订单→CARD_READY、attempt→CLEARED，无付款）。下次报 STOPPED 后等收尾完再停。
+
+**当前状态**：订单 PJV1-zLUtyjBjxrYnQsLeTpBN = CARD_READY（卡 7402 仍绑，可续跑真付）；**付款开关 = false**（为验证关的，待用户决定是否开回待命）；本机 worker 已停。全链路证明"能充"，唯一没验=真点付款那一下（用户要求不付）。
