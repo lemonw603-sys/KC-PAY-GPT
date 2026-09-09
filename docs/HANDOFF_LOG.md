@@ -2067,3 +2067,16 @@
 9. **菲律宾住宅 IP**（放量前）：现机房 IP 可能是 declined 因素之一。
 10. **BitBrowser 客户端自启**：现需手动开；可加登录项，但客户端可能要登录，暂留人工。
 11. **卡 BIN 优化**（用户侧）：选付 ChatGPT 成功率高的美国赞助行 BIN。
+
+### 20X 路径 + 付款后流程不付款审查（2026-09-09）
+用户问：20X 会不会犯 Plus 踩的坑？先在不付款前提下检查付款前+付款后流程。
+
+**20X = Plus 的 stage1（买 Plus）+ 额外 stage2（Plus→升 20X）。**
+- **通用坑（报错失明/依赖易失/脚本用错/收尾被打断）已治，与产品无关，20X 同样受益、不会再犯。**
+- **stage1（到付款前）**：与 Plus 同一路径，刚用 Plus 单 rehearsal 验过（上号→导航→填卡→填地址→零税报价 ₱982.14→停）。20X 的 stage1 同此。
+- **stage2 代码审查（不付款）**：navigateToChatGPTCheckout(plan=pro_20x, expect=plan-change) 逻辑完善——#pricing 入口（Plus 账号无 header Upgrade）、问卷 race 恢复、tier(20x) 选择、maxUpgradeAttempts 重试、popup 新 tab 兼容；readPlanChangeDialog 只读金额/卡尾不触碰；cancelPlanChangeDialog 取消不点 Pay now。post-payment session 恢复（#verifiedIdentity/#recoverOnce/recoverSessionAfterPayment）健壮：付款后 session 死给一次阶梯、不重复、失败记录。payment-executor post-confirm 段所有失败转 reconcile 不重试。**审查未发现 D-137 类新 bug。** 09-08 曾真实演练走到 plan-change 弹窗一次。
+- **20X 门槛**：`minimum_required_card_balance:pro_20x` 16→150（覆盖 Plus+补差价≈$143+buffer）。pro_5x 仍 16，5X 上线前同调。
+
+**不付款验不了的（客观，本质要真付款）**：①stage1 真付 Plus 那一下；②付款后 session 是否真保持到能开升级弹窗（D-136 只在有效 session 下验过，未在"本流程真付 Plus 后"端到端验）；③stage2 补差价 Pay now。**整个 20X 闭环（stage1 真付→session 保持→stage2 升级→补差价付）从没端到端真跑过。**
+
+**不付款下可补验一步**：用一个"已是 Plus（未升级）"的账号跑 stage2 到 Confirm plan changes 弹窗停下（不点 Pay now、不花钱），验证 stage2 导航+读弹窗+session。需用户提供已 Plus 账号（当前 e4938aca=free、wozaijiaoju1649=已 20X，都不合适）。
