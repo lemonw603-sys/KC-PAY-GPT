@@ -2088,3 +2088,8 @@ D-138 后目标收敛：下一笔真实订单即闭环验证。当前待命状�
 **来单时（执行者）**：`ready-check.sh pay` → 开付款开关（app_settings + executor profile 同步 true，落 admin_setting_events）→ 拉 `run-live-pool.sh run pay`（BROWSER_POOL_LANES=lane-4）→ 盯 preflight(本机)→ stage1 自动付 Plus → confirmPlus。
 **20X stage2 当前设计（D-133，未改）**：付完 Plus 后自动开「Confirm plan changes」弹窗并**停下（MANUAL_20X_HANDOFF）**，**由用户在窗口里手动点 Pay now** 付补差价，再在后台点「确认 20X 已升级」收尾。不是全自动点 Pay now——首单谨慎，且符合用户"手动可覆盖"偏好；稳了再议自动。
 **收尾**：对账、取消续费、关付款开关（不再有单时）。看到终态后**等 worker 自行收尾再停**，不过早 pkill。
+
+### 来单启动固化 + 门槛误报修正（2026-09-09）
+- **误报修正**：此前记录"pro_20x 门槛已调 150"实际**未生效**（事务未提交，用同一命令混杂输出误当确认；audit 也不存在）。已重做：单语句 UPDATE + audit，**独立新连接核实** `pro_20x=150.00 updated_at=09-09 05:33`。教训固化：任何生产写操作必须事后用独立查询核实，不用同批输出。
+- **新增** `go-live.sh --arm`：ready-check → 开付款开关（app_settings+executor profile 同步、落审计）→ 独立核实 → `ready-check pay` 全绿 → 拉 pay worker(Lane4)，日志落 `~/Library/Application Support/pojia-browser-live/go-live-*.log`。`stop-live.sh`：停 worker → 关开关 → 核实。来单 SOP 执行者侧收敛为这两条命令。
+- 现场核验（pay 模式）：隧道/mihomo菲律宾出口/BitBrowser/生产服务/账号槽全绿，仅付款开关 false（设计如此，go-live 时开）。前置仍需用户：20X 单卡余额≥150（7402 现 $49）。
