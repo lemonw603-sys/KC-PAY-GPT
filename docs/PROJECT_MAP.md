@@ -1,6 +1,6 @@
 # AI充值业务｜项目地图
 
-只回答四件事：目标、当前生产事实、已完成/未完成、唯一执行顺序。过程记录在 `docs/HANDOFF_LOG.md`，决策在 `docs/DECISIONS.md`，改造基线在 `docs/PRODUCT_SIMPLIFICATION_DISCUSSION.md` 末尾「接班实施基线」。2026-09-07 之前的旧版地图原文：`docs/archive/2026-09/PROJECT_MAP_snapshot_2026-09-07.md`。
+只回答四件事：目标、当前生产事实（指向 CURRENT_STATE）、已完成/未完成（里程碑级）、唯一执行顺序。新窗口先读 `docs/HANDOFF_NOW.md`。过程记录在 `docs/HANDOFF_LOG.md`，决策在 `docs/DECISIONS.md`，改造基线在 `docs/PRODUCT_SIMPLIFICATION_DISCUSSION.md` 末尾「接班实施基线」。2026-09-07 之前的旧版地图原文：`docs/archive/2026-09/PROJECT_MAP_snapshot_2026-09-07.md`。
 
 最后核对：2026-09-08 晚（本机 SSH + 生产 DB 只读复核）。
 
@@ -17,20 +17,9 @@
 
 客户提交 CDK + Session → 建单并冻结路线与卡台 → 卡资格与余额 → 唯一 attempt / 资金栅栏 → API 或 Browser 执行 → 确认 Plus（20X 再升级）→ 取消续费 → 账本、对账、通知。
 
-## 3. 当前生产事实（2026-09-08 晚复核）
+## 3. 当前生产事实
 
-| 项目 | 事实 |
-|---|---|
-| release | 当前 `20260909-askform-cc3bba0`（09-09：后台连环 prompt 改单个 askForm 对话框、新增「已在账号里取消续费」收口动作与路由、开卡补钱「关闭」按钮；无新迁移）；回滚点上一版 `20260908-cancelfix-bad14cc`，再前 `20260908-cdkreuse-bf2f25c`。注：browser-mvp 的 D-137 修复（付款前 drift 清空安全卡字段、防残留 PAN 与重试中毒，`fee5f9a` + 测试）在本机池 Worker 源码，不经 v1 release |
-| 服务 | Web active；v1 Worker active；Bark active（均 09-08 SSH 复核）；Browser 池 Worker 本机非常驻——来单人工拉（见「本机」行）；补余额与读同步 timer active；旧自动开卡 timer disabled |
-| 开关 | 接单 true；自动派发 true；订单追踪 true；默认路线 Browser（Plus/5X/20X 均走 Browser，旧 API 路线 accepts_new_orders=0 不接单）；**Browser 付款开关 true**（09-08 用户确认留开待命，但本机无常驻 worker，来单需人工拉才会付款）；自动开卡 false；自动补余额 true；每卡成功次数 3；最低卡余额 16 |
-| 卡 | 可分配仅 1 张：手动 `7402` $49（09-08 导入的备用卡，NORMAL/AVAILABLE）。5 张手动测试卡 `0601/2911/7428/5501/0237` 已打 `RETIRED` override 退出分配池（拒付未付成/耗尽/余额已提现回卡台，09-08 清理收尾）。HNSKJ 卡今日未复核余额（此前 `5980` 低余额不可分配）|
-| 订单 | 成功 4、失败 15、关闭 12、取消复核 1（`PJV1-7EYSr3` 已付 Plus ₱982.14 PHP，待取消续费复核）；活动资金栅栏 0（attempt 全 CLEARED/SETTLED，无 ACTIVE/UNKNOWN；今日测试单均付款前安全中止未扣款）。失败数上升系今日大量 Browser 测试单（付款前 drift/declined，均未扣款、CDK 退回、卡释放）|
-| 迁移 | 050（Pro 5X/20X 产品、Browser 路线、卡台选择、按产品最低余额；09-07 19:16 UTC 两遍应用） |
-| Browser 自动化 | 生产仍 **0 笔全自动付款**（里程碑未达）；09-08 用户**手动**在比特浏览器第一窗口完成 Plus+20X 两阶段真实付款（卡0601/账号 wozaijiaoju1649，未退登），**验证 Direction B「付款后不需客户重新登录」**（自动 navigator 亦走到「Confirm plan changes」弹窗）；同日修复 D-137「付款前 drift 残留卡号→重试中毒」bug。自动化差的一步=用干净免费号跑通第一笔全自动 Plus 付款（当前缺干净账号）|
-| 本机 | BitBrowser + mihomo（launchd）；Browser 池 Worker **来单人工拉、不常驻**（用户 09-08 确认）；SSH 隧道 13306→3306（掉线时 `ssh -f -N -L 13306:127.0.0.1:3306 root@<host>`）；启动脚本：常驻池 `run-live-pool.sh run pay`（需隧道 + 本机 BitBrowser API + `BROWSER_POOL_LANES` 指定干净窗口）、单订单 `run-live-rehearsal.sh check｜once <orderId>`、预检 `run-browser-preflight.sh check｜once`（密钥运行时经 SSH 取入进程，不落盘） |
-
-详细事实表见 `docs/CURRENT_STATE.md`。
+**只在一处维护：`docs/CURRENT_STATE.md`**（每行一个事实，带核对时间与证据方式；`browser-mvp/scripts/state-check.sh` 可把现场值与其比对）。本文不再复制事实表，避免两处漂移（2026-09-09 改造，用户同意）。
 
 ## 4. 已完成 / 未完成
 
@@ -57,7 +46,7 @@
 
 ## 7. 维护纪律
 
-- release、服务、开关、路线、卡台、订单终态变化：同一提交更新本文 §3 与 `docs/CURRENT_STATE.md`；方向变化更新 `docs/DECISIONS.md`；过程追加到 `docs/HANDOFF_LOG.md`。
+- 落盘规则唯一权威：`CLAUDE.md`「开发纪律」；阅读顺序与收尾清单：`AGENTS.md`。事实改 `CURRENT_STATE.md`，方向改 `DECISIONS.md`，过程追加 `HANDOFF_LOG.md`，收尾重写 `HANDOFF_NOW.md`。
 - 本文保持一页：只留当前有效状态，不在顶部堆叠历史引用块；历史进归档。
 - 外部审查（Codex 审查员、分板块核查）按 `docs/REVIEW_PROTOCOL.md`；审查记录 `docs/reviews/REVIEW_RECORD.md` 只由审查员写，处置记录 `docs/reviews/DISPOSITIONS.md` 只由执行者写。
 - 生产发布只从单一提交构建并全量校验：`scripts/deploy-release.sh prepare <commit> <name>` → 复核 → `switch <name>`（内部调用 `build-production-release.sh` / `verify-production-release.sh`，含备份、manifest 校验、健康检查与回滚命令）。
