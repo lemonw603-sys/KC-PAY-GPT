@@ -1,5 +1,7 @@
 # 交接记录
 
+> 顺序说明（2026-09-09）：本文前段（约前 140 行，2026-09-05/06）曾"新在上"追加，第 144 行起改为"新在下"追加，历史不重排；**当前规则：只在文件末尾追加 `## YYYY-MM-DD｜标题` 章节**。接班先读 `HANDOFF_NOW.md`，本文只作过程流水。
+
 ## 2026-09-06｜Browser 活动订单连续性纠偏
 
 - 用户手工完成本次 Plus；自动化没有完成邮箱/账单/付款，因此不得记为 Browser 自动全链路成功，20X 最终结果也尚未核实。
@@ -1981,7 +1983,7 @@
 - **仍只能等真实干净账号才能验的**：第一笔全自动付款；干净新号是否仍被风控 declined；付款后 session 新鲜度（D-136）在真实订单上的端到端。这些是账号资源门槛，不是代码问题。
 - 菲律宾出口：用户 VPN 的马尼拉节点=38.60.246.34（即之前 Lane4 出口），固定 IP 但机房级(SS 商业 VPN)，非住宅；够预筛/演练，长期生产住宅 sticky 更稳。
 
-### 链路与出口深度体检(2026-09-09，用户三问 + 窗口质疑）
+## 2026-09-09｜链路与出口深度体检(2026-09-09，用户三问 + 窗口质疑）
 用户问：①付款前账单地址从哪来会不会选错 ②多卡时按什么选 ③Free→Plus→20X 之间做什么会不会触发风控；并观察到"除8外窗口都没开、8没显示固定出口"。逐条查证：
 
 **链路1 账单地址来源（代码已验证）**：`BillingAddressEnrichedCardMaterialSource.load`（browser-mvp/src/browser-card-transaction-reader.js:105）——`if (material?.billingAddress) return material`，卡自带地址就直接用、不覆盖；只有卡没地址才补 fallback（`MockAddressBillingAddressSource`，env `BROWSER_BILLING_ADDRESS_STATE`）。手动导入卡（如 7402）地址=excel 持卡人地址（解密确认 7402=US/OR/Portland，RUNTIME_VALID）；HNSKJ 开卡无地址→统一免税州 fallback。跟卡一一对应，不会错配。runtime 要求 US+2 字母州，否则 CARD_NOT_READY。
@@ -1995,7 +1997,7 @@
 **比特浏览器出口真相（实测+配置已验证）**：8 个窗口除 7 号(noproxy 直连)外**全部代理 = http 127.0.0.1:17897 = 本机 mihomo**。出口不是窗口各自固定，是**全局跟 mihomo 走**。mihomo(pid 存活,mixed-port 17897)配置 `bitbrowser-proxy/config.yaml`：proxy-provider filter `(?i)(菲律宾|philippines|manila|MNL)` 只留菲律宾节点，订阅仅 1 个菲律宾节点(MNL1)，select 组实际唯一→**出口锁死**。实测 `curl --proxy 127.0.0.1:17897` 出口=38.60.246.34/菲律宾马尼拉/Kaopu Cloud/hosting:true。8 号(Lane4 clean=51e915e)出口其实也对，截图无 IP 只是 BitBrowser 没检测。
 - ⚠️隐患：①**出口隔离缺失**——所有窗口共享同一 PH 出口 IP，并行多 lane 会同 IP 关联（与身份隔离目标冲突，PROJECT_MAP 已记"出口隔离仍缺"）。②机房 IP 非住宅，风控更敏感。③强依赖 mihomo 存活+订阅有效；mihomo 挂掉时 BitBrowser 对 127.0.0.1:17897 的 fallback 行为**未验证**（是连接失败还是暴露真实 IP，需测）。④窗口命名混乱：1 号标"禁止付款"却被手动拿来付款；lane 命名与 profileId 对应不清，易用错窗口。
 
-### 联网调研:多账号防关联 + declined 根因认知修正(2026-09-09，tvly）
+## 2026-09-09｜联网调研:多账号防关联 + declined 根因认知修正(2026-09-09，tvly）
 装了 tavily-cli（uv，keyless）。用户让先看别人经验再判断指纹一致性是否有影响。三组检索（来源含反检测浏览器厂商/代理商博客/OpenAI 社区，厂商数字有商业夸大成分，但技术共识点可信）：
 
 **① 指纹时区/语言必须匹配代理 IP 地区（技术共识，非商业夸大）**：时区/语言/locale 与代理 IP 地区不一致（如美国时区配菲律宾 IP）是反欺诈系统毫秒级可检测的矛盾，触发关联封号。→ 用户直觉"影响不大"被证据推翻；窗口指纹时区/语言/geo 必须跟随菲律宾 IP（待 BitBrowser API 恢复后现场核验；比特浏览器有"基于 IP 生成时区/语言/位置"开关）。
@@ -2010,7 +2012,7 @@
 
 来源示例：donutbrowser/gologin(时区)、owlproxy/proxy-cheap(住宅vs机房)、photonpay/aifreeapi(ChatGPT 卡拒付 BIN 过滤)。
 
-### 联网调研续:美国卡+菲律宾IP 约束下的付款成功率(2026-09-09，tvly，用户确认只有美国卡+菲律宾优惠必须）
+## 2026-09-09｜联网调研续:美国卡+菲律宾IP 约束下的付款成功率(2026-09-09，tvly，用户确认只有美国卡+菲律宾优惠必须）
 用户约束定死：只有美国卡、菲律宾低价必须。矛盾组合无法靠换卡/换IP消除，转"补偿其他可控因子提高通过率"。调研（来源多为虚拟卡商/VPN商博客，有推销利益；跨来源一致的技术点可信）：
 
 **成功付款四要素**：①卡BIN来自支持国——**美国 Visa/MC 成功率最高**（含用美国赞助行的虚拟卡 BIN，如 Patriot/Sutton/Stride）→ **好消息：美国卡 BIN 不是劣势，反而是最优类别**；②账单地址完全过 AVS（街道号+ZIP 精确匹配发卡行记录）；③IP 显得与卡同国且信誉干净——**用住宅代理或稳定出口，别用共享机房 VPN；Stripe 会标记便宜 VPN 出口节点**；④足够余额覆盖 $1-25 预授权+月费。
@@ -2023,7 +2025,7 @@
 
 来源示例：gpaynow/halocard/rdvcc（虚拟卡+AVS+BIN）、note.com/vpnguide（VPN 省钱实测）。
 
-### 全链路就绪体检 + 根治"能充时充不上"（2026-09-09）
+## 2026-09-09｜全链路就绪体检 + 根治"能充时充不上"（2026-09-09）
 用户提供 free 账号可测、要求先全链路验证、明确本轮不付款。体检发现会话重启后本地依赖散架，逐一恢复+根治：
 
 **根因**：本地三依赖（SSH 隧道 13306 / mihomo 出口 / BitBrowser 客户端）易失、无守护——会话断/重启/进程崩就没了，全挂即"充不上"。本次实测：隧道断、**mihomo 进程没了且根本没被 launchd 托管（纯手动启动）**、BitBrowser 客户端关。
@@ -2037,7 +2039,7 @@
 
 **下一步**：用户用 free 账号在客户页提交一个 Plus 单 → 拉 worker 跑 **rehearsal（BROWSER_LIVE_STOP_BEFORE=SUBMIT，停在付款前，不扣款）** 验证 上号→导航→填卡→填地址→零税报价(₱982.14)→停。通过后再议真付（本轮用户明确不付款）。
 
-### 全链路 rehearsal 验证通过（2026-09-09，free 账号，不付款）
+## 2026-09-09｜全链路 rehearsal 验证通过（2026-09-09，free 账号，不付款）
 用户提交 free 账号 Plus 单 PJV1-zLUtyjBjxrYnQsLeTpBN（账号 e4938aca）。跑通全链路（除真付款）：
 - **前置**：readonly 预检要求 DB `browser_payment_writes_enabled=false`（安全设计：预检/演练环境付款开关须关），而当时是 true。→ 关闭付款开关（app_settings + executor_profiles.productionWritesEnabled 同步 false，带 admin_setting_events 审计）。正合用户"本轮不付款"。
 - **preflight（Lane4 clean）**：COMPLETED/reasonCode null → **账号 e4938aca 实为 free**（此前手动标的 PLUS_CONFIRMED 是假的，用户说 free 正确）、session 上号成功、导航到 checkout、开无卡 Checkout ✓。
@@ -2048,7 +2050,7 @@
 
 **当前状态**：订单 PJV1-zLUtyjBjxrYnQsLeTpBN = CARD_READY（卡 7402 仍绑，可续跑真付）；**付款开关 = false**（为验证关的，待用户决定是否开回待命）；本机 worker 已停。全链路证明"能充"，唯一没验=真点付款那一下（用户要求不付）。
 
-### 问题复盘与优化落地（2026-09-09，用户要求趁验证把坑堵上）
+## 2026-09-09｜问题复盘与优化落地（2026-09-09，用户要求趁验证把坑堵上）
 本次全链路验证踩的坑，逐项优化：
 
 **已落地（代码/脚本/守护）**：
@@ -2068,7 +2070,7 @@
 10. **BitBrowser 客户端自启**：现需手动开；可加登录项，但客户端可能要登录，暂留人工。
 11. **卡 BIN 优化**（用户侧）：选付 ChatGPT 成功率高的美国赞助行 BIN。
 
-### 20X 路径 + 付款后流程不付款审查（2026-09-09）
+## 2026-09-09｜20X 路径 + 付款后流程不付款审查（2026-09-09）
 用户问：20X 会不会犯 Plus 踩的坑？先在不付款前提下检查付款前+付款后流程。
 
 **20X = Plus 的 stage1（买 Plus）+ 额外 stage2（Plus→升 20X）。**
@@ -2081,7 +2083,7 @@
 
 **不付款下可补验一步**：用一个"已是 Plus（未升级）"的账号跑 stage2 到 Confirm plan changes 弹窗停下（不点 Pay now、不花钱），验证 stage2 导航+读弹窗+session。需用户提供已 Plus 账号（当前 e4938aca=free、wozaijiaoju1649=已 20X，都不合适）。
 
-### 真单来单 SOP（2026-09-09 定，等今明真实 20X/Plus 单）
+## 2026-09-09｜真单来单 SOP（2026-09-09 定，等今明真实 20X/Plus 单）
 D-138 后目标收敛：下一笔真实订单即闭环验证。当前待命状态：付款开关 **false**（为演练关的）、本机无 worker、Lane4 干净、mihomo/隧道 launchd 守护、卡 7402 $49。
 
 **来单前（用户）**：①20X 单需卡余额 ≥150（门槛已调），7402 只有 $49——**先充够或导入新卡**，否则订单卡 WAITING_FOR_CARD；②客户页提交 CDK + free 账号 session；③把单号告诉执行者。
@@ -2089,33 +2091,33 @@ D-138 后目标收敛：下一笔真实订单即闭环验证。当前待命状�
 **20X stage2 当前设计（D-133，未改）**：付完 Plus 后自动开「Confirm plan changes」弹窗并**停下（MANUAL_20X_HANDOFF）**，**由用户在窗口里手动点 Pay now** 付补差价，再在后台点「确认 20X 已升级」收尾。不是全自动点 Pay now——首单谨慎，且符合用户"手动可覆盖"偏好；稳了再议自动。
 **收尾**：对账、取消续费、关付款开关（不再有单时）。看到终态后**等 worker 自行收尾再停**，不过早 pkill。
 
-### 来单启动固化 + 门槛误报修正（2026-09-09）
+## 2026-09-09｜来单启动固化 + 门槛误报修正（2026-09-09）
 - **误报修正**：此前记录"pro_20x 门槛已调 150"实际**未生效**（事务未提交，用同一命令混杂输出误当确认；audit 也不存在）。已重做：单语句 UPDATE + audit，**独立新连接核实** `pro_20x=150.00 updated_at=09-09 05:33`。教训固化：任何生产写操作必须事后用独立查询核实，不用同批输出。
 - **新增** `go-live.sh --arm`：ready-check → 开付款开关（app_settings+executor profile 同步、落审计）→ 独立核实 → `ready-check pay` 全绿 → 拉 pay worker(Lane4)，日志落 `~/Library/Application Support/pojia-browser-live/go-live-*.log`。`stop-live.sh`：停 worker → 关开关 → 核实。来单 SOP 执行者侧收敛为这两条命令。
 - 现场核验（pay 模式）：隧道/mihomo菲律宾出口/BitBrowser/生产服务/账号槽全绿，仅付款开关 false（设计如此，go-live 时开）。前置仍需用户：20X 单卡余额≥150（7402 现 $49）。
 
-### 等单期间：取消续费收口动作 + 后台对话框（2026-09-09，c7288c1，未部署）
+## 2026-09-09｜等单期间：取消续费收口动作 + 后台对话框（2026-09-09，c7288c1，未部署）
 - **发现**：PJV1-7EYSr3（fadadadacai2027，API 路线 09-07 付 Plus ₱982.14，卡 5980）自动续费**从未被取消**——API 路线只轮询供应商 isSubscriptionCancelled，60 次均为 0 后转人工；后台对 CANCELLATION_REVIEW_REQUIRED 只显示状态、**没有任何收口动作**，单会永远挂在"需要处理"。用户已同意亲自在账号里关续费。
 - **新增正规动作**：`POST /api/v1/admin/orders/:publicNo/cancellation-confirmed`（sensitiveAdminGuards，confirmation 字面 `已取消续费 <publicNo>` 由前端自动填）→ `manual-cancellation-service.js`：仅允许 CANCELLATION_REVIEW_REQUIRED 或 RECHARGE_SUCCESS+review=1；置 subscription_cancelled=1、review=0、status=RECHARGE_SUCCESS、finished_at，写 order_events(ADMIN)；已记录则幂等 replayed；付款前/未知状态一律拒。单测 4 例。抽屉出现「已在账号里取消续费」按钮。
 - **askForm 对话框**（前端）：一个 `<dialog>` 收完一次操作全部输入，替换掉后台**全部** `window.prompt`（人工接管原因/操作者、人工付款结果+证据、补录客户付款五项、对账案例分配/结论、卡充值对账依据）。必填为空拦截、Esc/取消返回 null。资源版本 admin.js v37 / admin.css v26。
 - **验证**：node --check 通过；v1 admin 相关单测 18/18；Playwright 无头起本地静态 v1/public 打开后台页，原生调用 askForm 渲染三种对话框截图正常、必填拦截/提交/Esc 行为正确、零 pageerror（不连生产）。
 - **未部署**：与 3b182f0（开卡补钱关闭按钮）一起等一版 v1 release；发布前后台仍是旧版（连环 prompt、无收口按钮）。收口 PJV1-7EYSr3 若在发布前，可用同一服务逻辑脚本化（带 order_events）。
 
-### 发布 `20260909-askform-cc3bba0`（2026-09-09 06:34 UTC，用户批准）
+## 2026-09-09｜发布 `20260909-askform-cc3bba0`（2026-09-09 06:34 UTC，用户批准）
 - prepare：bundle 由 cc3bba0 构建，manifest 922 文件 OK，DB 备份 `pojia-20260909T063405Z.sql.gz.enc` 完整性 OK，依赖无变化；无新迁移（仓库最新仍 051）。
 - switch：`current=20260909-askform-cc3bba0`，live/ready 200，登录页 200；回滚：`ln -sfn /opt/pojia/releases/20260908-cancelfix-bad14cc /opt/pojia/current && systemctl restart pojia-web.service`。
 - 复验（服务器本机 3100 + ADMIN_HOST）：`admin.js?v=37` 含 askForm/cancellation-confirmed 标记、`admin.css?v=26` 含 ask-dialog、`POST …/cancellation-confirmed` 未登录 401（与旧路由一致，路由已挂）、web 5 分钟内无错误日志。注：`/admin/index.html` 路径直接 curl 无内容（后台入口是 `/admin/login`），部署脚本按磁盘文件核 index.html 版本。
 - 内容：后台全部连环 prompt → askForm 对话框；「已在账号里取消续费」收口动作+路由；开卡补钱「关闭」按钮（3b182f0）。PJV1-7EYSr3 待用户关闭续费后，用抽屉新按钮收口。
 - 事实源同步：PROJECT_MAP §3 release 行、CURRENT_STATE release/回滚点/付款开关(false)/profile/本机 行、ADMIN_PANEL 路由清单。
 
-### 排队残单占卡 → 收口 + 自检补检（2026-09-09）
+## 2026-09-09｜排队残单占卡 → 收口 + 自检补检（2026-09-09）
 - 用户发现后台有一单"排队中"：`PJV1-zLUtyjBjxrYnQsLeTpBN`（昨夜 free 账号 rehearsal 单，CARD_READY）。核实：它仍持有卡 7402 的 ACTIVE 分配 + 账本 RESERVED（昨夜手动补收尾只清了 attempt/订单状态，漏了分配与账本）→ 资格 SQL 下**可分配卡=0，新单会卡在等卡**。用户直觉正确。
 - 后台「取消并释放卡」对 CARD_READY 要求 SUBMIT_RECHARGE 未跑过（submit_attempts=0），演练单已跑过一次 → 会拒（SUBMISSION_RISK）。新增 `v1/scripts/close-rehearsal-order.mjs`：付款痕迹守卫（attempt 无 ACTIVE/UNKNOWN/SETTLED、账本无 CONSUMED/RECONCILIATION、run 全 NOT_STARTED、0 次 PAYMENT_SUBMIT、无 open run）→ 账本 RELEASED → `releaseCardForFailedOrderInTransaction` → 订单 CLOSED(CANCELLED_PRE_SUBMISSION) → order_events(ADMIN) → `returnCdkForOrderInTransaction`；`--dry-run` 回滚。在生产主机以发布目录仓库函数 + 正式 mysql2 池执行（不再用 prod-query 直连写）。dry-run 干净后真跑：订单 CLOSED、7402 AVAILABLE/无占用、账本 RELEASED、CDK AVAILABLE，**可分配卡 1**，非终态订单 0。
 - `PJV1-7EYSr3`：用户已通过新发布的「已在账号里取消续费」按钮收口（07:06 UTC，order_events ADMIN 事件）→ 新动作在生产端到端验证通过。
 - `ready-check.sh` 新增：可分配卡数（Plus 门槛）与"非终态占卡订单"提示，0 张即警告并指向收口脚本。
 - **SOP 补充**：rehearsal 完成且不准备真付的单，要用 `close-rehearsal-order.mjs` 收口释放卡，否则它按设计停在 CARD_READY 持卡等真付，会挡住后续新单。
 
-### 接班快照（2026-09-09 晚，本窗口收尾；新窗口先读本段再读 PROJECT_MAP）
+## 2026-09-09｜接班快照（2026-09-09 晚，本窗口收尾；新窗口先读本段再读 PROJECT_MAP）
 **现在的状态**：等真实订单。系统待命态干净：付款开关 **false**（真单时 `browser-mvp/scripts/go-live.sh --arm` 开并拉 worker，收工 `stop-live.sh`）；非终态订单 0；可分配手动卡 1 张（7402，$49，够 Plus、不够 20X）；mihomo/SSH 隧道 launchd 守护；`ready-check.sh` 充前自检（自动开比特浏览器、查开关/账号槽/可分配卡/占卡单）。线上 release `20260909-askform-cc3bba0`。
 
 **来单流程**：用户 充卡（20X 需 ≥150）→ 上传 Excel（上传即生效，无需同步）→ 客户页提交 → 告知单号 → 执行者 `ready-check.sh pay` → `go-live.sh --arm` → 盯 preflight(本机) → stage1 自动付 Plus（付款后只在页内每 5s 轮询 accounts/check 最多 5 分钟，不刷新不跳页）→ 20X 单自动开「Confirm plan changes」弹窗**停下**（用户核对卡尾号后手动 Pay now，再后台「确认 20X 已升级」）→ 看到终态后等 worker 自行收尾再 `stop-live.sh`。rehearsal 完不真付的单用 `v1/scripts/close-rehearsal-order.mjs` 收口释放卡。

@@ -1,0 +1,61 @@
+{
+  "startedAt": "2026-09-08T00:06:18.344Z",
+  "profileIdDigest": "9d7445fffc27ffc9",
+  "plan": "pro_20x",
+  "cancel": false,
+  "probeRecovery": false,
+  "steps": [
+    {
+      "step": "page",
+      "at": "2026-09-08T00:06:24.045Z",
+      "url": "https://chatgpt.com/",
+      "title": "ChatGPT"
+    },
+    {
+      "step": "session-before",
+      "at": "2026-09-08T00:06:24.728Z",
+      "ok": true,
+      "status": 200,
+      "hasAccessToken": true,
+      "errorCode": null,
+      "onLoginPage": false
+    },
+    {
+      "step": "plan-change-dialog",
+      "at": "2026-09-08T00:06:26.520Z",
+      "state": "plan-change",
+      "actions": [
+        "profile-menu-opened",
+        "pricing-opened",
+        "tier-selected:20x",
+        "upgrade-requested"
+      ],
+      "planChange": {
+        "title": "Confirm plan changes",
+        "subscriptionLine": null,
+        "subscriptionAmount": null,
+        "adjustmentAmount": null,
+        "totalDueToday": null,
+        "paymentMethod": null,
+        "payButtonPresent": false,
+        "cancelButtonPresent": false,
+        "lineCount": 1
+      }
+    },
+    {
+      "step": "left-open",
+      "at": "2026-09-08T00:06:26.520Z",
+      "message": "dialog left open; Pay now was not clicked"
+    },
+    {
+      "step": "session-after",
+      "at": "2026-09-08T00:06:27.290Z",
+      "ok": true,
+      "status": 200,
+      "hasAccessToken": true,
+      "errorCode": null,
+      "onLoginPage": false
+    }
+  ],
+  "finishedAt": "2026-09-08T00:06:27.290Z"
+}

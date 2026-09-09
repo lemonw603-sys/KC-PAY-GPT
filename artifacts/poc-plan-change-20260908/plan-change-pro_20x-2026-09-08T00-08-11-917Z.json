@@ -1,0 +1,64 @@
+{
+  "startedAt": "2026-09-08T00:08:11.917Z",
+  "profileIdDigest": "9d7445fffc27ffc9",
+  "plan": "pro_20x",
+  "cancel": false,
+  "probeRecovery": false,
+  "steps": [
+    {
+      "step": "page",
+      "at": "2026-09-08T00:08:17.925Z",
+      "url": "https://chatgpt.com/",
+      "title": "ChatGPT"
+    },
+    {
+      "step": "session-before",
+      "at": "2026-09-08T00:08:18.794Z",
+      "ok": true,
+      "status": 200,
+      "hasAccessToken": true,
+      "errorCode": null,
+      "onLoginPage": false
+    },
+    {
+      "step": "plan-change-dialog",
+      "at": "2026-09-08T00:08:22.647Z",
+      "state": "plan-change",
+      "actions": [
+        "profile-menu-opened",
+        "pricing-opened",
+        "tier-selected:20x",
+        "upgrade-requested"
+      ],
+      "planChange": {
+        "title": "Confirm plan changes",
+        "subscriptionLine": "ChatGPT Pro subscription",
+        "subscriptionAmount": "₱8,919.64",
+        "adjustmentAmount": "-₱965.75",
+        "totalDueToday": "₱7,953.89",
+        "paymentMethod": {
+          "brand": "VISA",
+          "last4": "5980"
+        },
+        "payButtonPresent": true,
+        "cancelButtonPresent": true,
+        "lineCount": 14
+      }
+    },
+    {
+      "step": "left-open",
+      "at": "2026-09-08T00:08:22.649Z",
+      "message": "dialog left open; Pay now was not clicked"
+    },
+    {
+      "step": "session-after",
+      "at": "2026-09-08T00:08:23.523Z",
+      "ok": true,
+      "status": 200,
+      "hasAccessToken": true,
+      "errorCode": null,
+      "onLoginPage": false
+    }
+  ],
+  "finishedAt": "2026-09-08T00:08:23.523Z"
+}

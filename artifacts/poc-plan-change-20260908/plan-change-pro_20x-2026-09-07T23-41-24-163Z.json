@@ -1,0 +1,56 @@
+{
+  "startedAt": "2026-09-07T23:41:24.163Z",
+  "profileIdDigest": "9d7445fffc27ffc9",
+  "plan": "pro_20x",
+  "cancel": false,
+  "probeRecovery": true,
+  "steps": [
+    {
+      "step": "page",
+      "at": "2026-09-07T23:41:29.929Z",
+      "url": "https://chatgpt.com/",
+      "title": "ChatGPT"
+    },
+    {
+      "step": "session-before",
+      "at": "2026-09-07T23:41:30.541Z",
+      "ok": true,
+      "status": 200,
+      "hasAccessToken": true,
+      "errorCode": null,
+      "onLoginPage": false
+    },
+    {
+      "step": "recovery-ladder",
+      "at": "2026-09-07T23:41:33.098Z",
+      "recovered": true,
+      "recoveryStep": "clear-login-cookies",
+      "steps": [
+        {
+          "step": "probe",
+          "ok": true,
+          "status": 200,
+          "hasAccessToken": true,
+          "errorCode": null,
+          "onLoginPage": false
+        },
+        {
+          "step": "clear-login-cookies",
+          "clearedLoginCookieCount": 14,
+          "ok": true,
+          "status": 200,
+          "hasAccessToken": true,
+          "errorCode": null,
+          "onLoginPage": false
+        }
+      ]
+    },
+    {
+      "step": "error",
+      "at": "2026-09-07T23:42:26.387Z",
+      "code": null,
+      "message": "plan-change or questionnaire transition timed out"
+    }
+  ],
+  "finishedAt": "2026-09-07T23:42:26.388Z"
+}
