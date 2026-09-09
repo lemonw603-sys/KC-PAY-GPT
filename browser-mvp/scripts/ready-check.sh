@@ -30,6 +30,10 @@ if nc -z 127.0.0.1 13306 2>/dev/null; then
   RUNS=$("$DIR/prod-query.sh" "SELECT COUNT(*) FROM browser_runs WHERE active_account_key_hmac IS NOT NULL" 2>/dev/null | tr -d '[:space:]')
   say "[信息] 付款开关=${PAY:-?}（预检/rehearsal 需 false；真付需 true）"
   [ "$RUNS" = "0" ] && say "[OK]  账号槽空闲 active_runs=0" || { say "[警告] active_runs=${RUNS}（可能卡 RUN_NOT_ACTIONABLE）"; warn=1; }
+  ELIG=$("$DIR/prod-query.sh" "SELECT COUNT(*) FROM cards c WHERE c.inventory_status IN ('AVAILABLE','ASSIGNED','DEPLETED') AND c.current_balance>=16 AND c.card_credentials_ciphertext IS NOT NULL AND (c.sync_tier='MANUAL_IMPORT' OR (c.last_transaction_synced_at IS NOT NULL AND c.last_transaction_synced_at >= DATE_SUB(CURRENT_TIMESTAMP(3), INTERVAL 15 MINUTE))) AND NOT EXISTS (SELECT 1 FROM card_assignment_history h WHERE h.card_id=c.id AND h.status='ACTIVE') AND NOT EXISTS (SELECT 1 FROM card_operational_overrides co WHERE co.provider_account_id=c.provider_account_id AND BINARY co.external_card_id=BINARY c.external_card_id AND co.allocation_policy='RETIRED')" 2>/dev/null | tr -d '[:space:]')
+  HOLD=$("$DIR/prod-query.sh" "SELECT GROUP_CONCAT(CONCAT(public_no,'(',status,')')) FROM orders WHERE status NOT IN ('RECHARGE_SUCCESS','RECHARGE_FAILED','CLOSED') AND assigned_card_id IS NOT NULL" 2>/dev/null | tr -d '[:space:]')
+  [ "${ELIG:-0}" -ge 1 ] 2>/dev/null && say "[OK]  可分配卡 ${ELIG} 张（Plus 门槛16）" || { say "[警告] 可分配卡 0 张——新单会卡在等卡${HOLD:+；占卡的非终态单: $HOLD（演练残单用 v1/scripts/close-rehearsal-order.mjs 收口）}"; warn=1; }
+  [ -n "$HOLD" ] && [ "$HOLD" != "NULL" ] && say "[信息] 非终态占卡订单: $HOLD"
   if [ "$MODE" = rehearsal ] && [ "$PAY" != "false" ]; then say "[阻断] rehearsal/预检要求付款开关=false，当前=$PAY"; warn=1; fi
   if [ "$MODE" = pay ] && [ "$PAY" != "true" ]; then say "[阻断] 真付要求付款开关=true，当前=$PAY"; warn=1; fi
 fi

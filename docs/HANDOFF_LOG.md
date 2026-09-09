@@ -2107,3 +2107,10 @@ D-138 后目标收敛：下一笔真实订单即闭环验证。当前待命状�
 - 复验（服务器本机 3100 + ADMIN_HOST）：`admin.js?v=37` 含 askForm/cancellation-confirmed 标记、`admin.css?v=26` 含 ask-dialog、`POST …/cancellation-confirmed` 未登录 401（与旧路由一致，路由已挂）、web 5 分钟内无错误日志。注：`/admin/index.html` 路径直接 curl 无内容（后台入口是 `/admin/login`），部署脚本按磁盘文件核 index.html 版本。
 - 内容：后台全部连环 prompt → askForm 对话框；「已在账号里取消续费」收口动作+路由；开卡补钱「关闭」按钮（3b182f0）。PJV1-7EYSr3 待用户关闭续费后，用抽屉新按钮收口。
 - 事实源同步：PROJECT_MAP §3 release 行、CURRENT_STATE release/回滚点/付款开关(false)/profile/本机 行、ADMIN_PANEL 路由清单。
+
+### 排队残单占卡 → 收口 + 自检补检（2026-09-09）
+- 用户发现后台有一单"排队中"：`PJV1-zLUtyjBjxrYnQsLeTpBN`（昨夜 free 账号 rehearsal 单，CARD_READY）。核实：它仍持有卡 7402 的 ACTIVE 分配 + 账本 RESERVED（昨夜手动补收尾只清了 attempt/订单状态，漏了分配与账本）→ 资格 SQL 下**可分配卡=0，新单会卡在等卡**。用户直觉正确。
+- 后台「取消并释放卡」对 CARD_READY 要求 SUBMIT_RECHARGE 未跑过（submit_attempts=0），演练单已跑过一次 → 会拒（SUBMISSION_RISK）。新增 `v1/scripts/close-rehearsal-order.mjs`：付款痕迹守卫（attempt 无 ACTIVE/UNKNOWN/SETTLED、账本无 CONSUMED/RECONCILIATION、run 全 NOT_STARTED、0 次 PAYMENT_SUBMIT、无 open run）→ 账本 RELEASED → `releaseCardForFailedOrderInTransaction` → 订单 CLOSED(CANCELLED_PRE_SUBMISSION) → order_events(ADMIN) → `returnCdkForOrderInTransaction`；`--dry-run` 回滚。在生产主机以发布目录仓库函数 + 正式 mysql2 池执行（不再用 prod-query 直连写）。dry-run 干净后真跑：订单 CLOSED、7402 AVAILABLE/无占用、账本 RELEASED、CDK AVAILABLE，**可分配卡 1**，非终态订单 0。
+- `PJV1-7EYSr3`：用户已通过新发布的「已在账号里取消续费」按钮收口（07:06 UTC，order_events ADMIN 事件）→ 新动作在生产端到端验证通过。
+- `ready-check.sh` 新增：可分配卡数（Plus 门槛）与"非终态占卡订单"提示，0 张即警告并指向收口脚本。
+- **SOP 补充**：rehearsal 完成且不准备真付的单，要用 `close-rehearsal-order.mjs` 收口释放卡，否则它按设计停在 CARD_READY 持卡等真付，会挡住后续新单。
