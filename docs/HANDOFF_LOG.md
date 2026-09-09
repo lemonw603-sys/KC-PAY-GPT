@@ -2093,3 +2093,10 @@ D-138 后目标收敛：下一笔真实订单即闭环验证。当前待命状�
 - **误报修正**：此前记录"pro_20x 门槛已调 150"实际**未生效**（事务未提交，用同一命令混杂输出误当确认；audit 也不存在）。已重做：单语句 UPDATE + audit，**独立新连接核实** `pro_20x=150.00 updated_at=09-09 05:33`。教训固化：任何生产写操作必须事后用独立查询核实，不用同批输出。
 - **新增** `go-live.sh --arm`：ready-check → 开付款开关（app_settings+executor profile 同步、落审计）→ 独立核实 → `ready-check pay` 全绿 → 拉 pay worker(Lane4)，日志落 `~/Library/Application Support/pojia-browser-live/go-live-*.log`。`stop-live.sh`：停 worker → 关开关 → 核实。来单 SOP 执行者侧收敛为这两条命令。
 - 现场核验（pay 模式）：隧道/mihomo菲律宾出口/BitBrowser/生产服务/账号槽全绿，仅付款开关 false（设计如此，go-live 时开）。前置仍需用户：20X 单卡余额≥150（7402 现 $49）。
+
+### 等单期间：取消续费收口动作 + 后台对话框（2026-09-09，c7288c1，未部署）
+- **发现**：PJV1-7EYSr3（fadadadacai2027，API 路线 09-07 付 Plus ₱982.14，卡 5980）自动续费**从未被取消**——API 路线只轮询供应商 isSubscriptionCancelled，60 次均为 0 后转人工；后台对 CANCELLATION_REVIEW_REQUIRED 只显示状态、**没有任何收口动作**，单会永远挂在"需要处理"。用户已同意亲自在账号里关续费。
+- **新增正规动作**：`POST /api/v1/admin/orders/:publicNo/cancellation-confirmed`（sensitiveAdminGuards，confirmation 字面 `已取消续费 <publicNo>` 由前端自动填）→ `manual-cancellation-service.js`：仅允许 CANCELLATION_REVIEW_REQUIRED 或 RECHARGE_SUCCESS+review=1；置 subscription_cancelled=1、review=0、status=RECHARGE_SUCCESS、finished_at，写 order_events(ADMIN)；已记录则幂等 replayed；付款前/未知状态一律拒。单测 4 例。抽屉出现「已在账号里取消续费」按钮。
+- **askForm 对话框**（前端）：一个 `<dialog>` 收完一次操作全部输入，替换掉后台**全部** `window.prompt`（人工接管原因/操作者、人工付款结果+证据、补录客户付款五项、对账案例分配/结论、卡充值对账依据）。必填为空拦截、Esc/取消返回 null。资源版本 admin.js v37 / admin.css v26。
+- **验证**：node --check 通过；v1 admin 相关单测 18/18；Playwright 无头起本地静态 v1/public 打开后台页，原生调用 askForm 渲染三种对话框截图正常、必填拦截/提交/Esc 行为正确、零 pageerror（不连生产）。
+- **未部署**：与 3b182f0（开卡补钱关闭按钮）一起等一版 v1 release；发布前后台仍是旧版（连环 prompt、无收口按钮）。收口 PJV1-7EYSr3 若在发布前，可用同一服务逻辑脚本化（带 order_events）。
