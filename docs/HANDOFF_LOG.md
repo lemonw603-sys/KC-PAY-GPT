@@ -2047,3 +2047,23 @@
 **教训/待改**：① rehearsal 用 resident loop 反复 claim 跑了 3 个 attempt（应改单次跑，或跑通即停）。② 看到 PRE_SUBMIT_STOPPED 后**过早 pkill worker，打断了 abort 收尾**，订单卡 RECHARGE_PROCESSING/attempt ACTIVE；已手动补收尾（订单→CARD_READY、attempt→CLEARED，无付款）。下次报 STOPPED 后等收尾完再停。
 
 **当前状态**：订单 PJV1-zLUtyjBjxrYnQsLeTpBN = CARD_READY（卡 7402 仍绑，可续跑真付）；**付款开关 = false**（为验证关的，待用户决定是否开回待命）；本机 worker 已停。全链路证明"能充"，唯一没验=真点付款那一下（用户要求不付）。
+
+### 问题复盘与优化落地（2026-09-09，用户要求趁验证把坑堵上）
+本次全链路验证踩的坑，逐项优化：
+
+**已落地（代码/脚本/守护）**：
+1. **worker 报错不再失明**：readonly / live worker 顶层 catch 原来只打 name/code、吞了 message（这次"BROWSER_WORKER_FAILED"查不到原因绕了好几轮，真因是"browser_payment_writes_enabled must be false"）。现默认打 message。pool worker 本已有。
+2. **SSH 隧道 launchd 守护** `com.pojia.ssh-tunnel-13306`（KeepAlive+ServerAlive），隧道断了自动重连（这次断了 2 次要手动重开）。mihomo 守护上一轮已做。
+3. **prod-query.sh 固化**到 `browser-mvp/scripts/`（替代易失的 scratchpad q.sh，会话重启就没）。
+4. **ready-check.sh 增强**：加 DB 付款开关 + 账号槽检查，支持 `ready-check.sh rehearsal|pay` 模式校验付款开关（rehearsal 需 false / 真付需 true），预检起不来这类问题充前就拦住。
+
+**流程改进（SOP，避免再犯）**：
+5. **单次验证用 `run-live-rehearsal.sh once <orderId>`**，不要用 `run-live-pool.sh run rehearsal`（resident 反复 claim，这次跑出 3 个 attempt）。
+6. **看到 PRE_SUBMIT_STOPPED 后等 worker 自行 abort 收尾再停**，不要过早 pkill（这次打断收尾，订单卡 RECHARGE_PROCESSING、attempt ACTIVE，手动补收尾）。
+7. **充前固定流程**：`ready-check.sh rehearsal`（或 pay）绿了再拉 worker。
+
+**待办（需用户/以后，非本次）**：
+8. **20X 最低余额门槛** `minimum_required_card_balance:pro_20x=16` → 调到覆盖 20X 实付（~$150）。20X 上线前必改，否则会选中够门槛但付不起的卡。
+9. **菲律宾住宅 IP**（放量前）：现机房 IP 可能是 declined 因素之一。
+10. **BitBrowser 客户端自启**：现需手动开；可加登录项，但客户端可能要登录，暂留人工。
+11. **卡 BIN 优化**（用户侧）：选付 ChatGPT 成功率高的美国赞助行 BIN。
