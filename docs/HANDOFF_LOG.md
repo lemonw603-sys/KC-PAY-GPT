@@ -2144,3 +2144,6 @@ D-138 后目标收敛：下一笔真实订单即闭环验证。当前待命状�
 **根因**：不是正式代码——`browser-execution-repository.js` 四处终态写都正确关 job。是 09-08 两次手工 SQL 收口（order_events 里 actor ADMIN、reason 乱码那几条）没关 job/没释放分配，加上 `close-rehearsal-order.mjs` 漏关 job（36）；8 月 4 条是 API 路线老逻辑。
 **做法**：新脚本 `v1/scripts/close-stale-residue.mjs`（正式连接池、复用 `releaseCardForFailedOrderInTransaction`、守卫 attempt ACTIVE/UNKNOWN 或 open run 即跳过、不动消费账本、每单写 order_events）。`--dry-run` 10 单/0 拒绝 → 真跑 → 新连接核实：dispatch open 0、ACTIVE 分配 0、ASSIGNED 卡 0、events 10、CONSUMED 账本 4 未变；6 张卡按余额归 DEPLETED。
 **顺手**：`close-rehearsal-order.mjs` 补关 dispatch job；RUNBOOK §3 加用法；CURRENT_STATE「活动资金与运行」「已知未修」改行。
+
+## 2026-09-09｜project-kickoff 技能（13:40 UTC，用户同意放全局）
+把本项目改造后的落盘体系抽成 `~/.claude/skills/project-kickoff/`：SKILL.md（模式一新项目开工：定位→建目录 git init→摆 7 本→登记 PROJECTS.md→首次提交→三句话用法；模式二只读体检旧项目）+ `templates/`（CLAUDE.md、docs/HANDOFF_NOW/ROADMAP/CURRENT_STATE/RUNBOOK/DECISIONS/HANDOFF_LOG）。设计过程用户三次收敛：撤掉"3 问定档"（前期不知项目会不会变大、"手动操作"难判断）→撤掉"按信号长本子"（靠模型自觉不靠谱）→撤掉"收尾检查脚本/hook"（越复杂越不稳定）。最终：本子一次建齐（空的写"暂无"）、CLAUDE.md 写死开头读交接页/收尾重写交接页、0～1 个问题（碰不碰真钱/客户/线上，从描述判断）。模板渲染试跑占位符全替换。

@@ -14,7 +14,7 @@
 
 1. **真单来了**：按 `RUNBOOK.md`「来单」一节执行（用户：充卡→传 Excel→提交→给单号；执行者：`ready-check.sh pay` → `go-live.sh --arm` → 盯到终态 → `stop-live.sh`）。20X 第二阶段自动停在「Confirm plan changes」小窗（用已绑卡、不填卡），**用户核对卡尾号后手动 Pay now**，再后台「确认 20X 已升级」。
 2. 真单跑完：把 `UNVERIFIED_LEDGER.md`「付款后半段」按实际证据改行；重写本文。
-3. 等单期间可做：`project-kickoff` 技能（把本项目的落盘体系抽成模板，用户倾向做；先于新项目）。
+3. （已做）`project-kickoff` 技能已建在 `~/.claude/skills/project-kickoff/`（本项目落盘体系的最简模板：7 本 + CLAUDE.md 写死开头/收尾两句；无脚本无 hook，用户 09-09 定的）。新项目说"新项目开工，叫 xxx"即用。
 
 ## 已定不做 / 已定保留
 
