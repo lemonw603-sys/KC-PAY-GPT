@@ -179,7 +179,10 @@ async function pricingDialogVisible(page, contract) {
 export const CHATGPT_PLUS_CHECKOUT_NAVIGATION_CONTRACT = Object.freeze({
   homeUrlPrefix: 'https://chatgpt.com/',
   checkoutUrlPrefix: 'https://chatgpt.com/checkout/',
-  openPricingSelectors: Object.freeze(['button[aria-label="升级"]', 'button[aria-label="Upgrade"]']),
+  // A free account that once had Plus shows "Rejoin Plus" instead of "Upgrade" in
+  // the header (seen 2026-09-09 on the e4938aca test account); it opens the same
+  // plan picker.
+  openPricingSelectors: Object.freeze(['button[aria-label="升级"]', 'button[aria-label="Upgrade"]', 'button:has-text("Rejoin Plus")', 'button:has-text("重新订阅 Plus")']),
   profileMenuSelectors: Object.freeze(['[data-testid="accounts-profile-button"]']),
   profileUpgradeSelectors: Object.freeze(['button[aria-label="升级"]', 'button[aria-label="Upgrade"]']),
   profileUpgradeLabels: Object.freeze(['升级套餐', 'Upgrade plan']),

@@ -59,6 +59,29 @@ test('CookieSessionBootstrapAdapter chunks long session tokens using NextAuth co
   assert.equal(added[1].value.length, 164);
 });
 
+// D-140 (2026-09-09 first real order): a token-only Session placed by {url} became a
+// HOST-ONLY cookie; ChatGPT rotates its own token on ".chatgpt.com", the two coexisted
+// and the account read as expired / Checkout answered 403. Same account, same window,
+// domain placement: rotation overwrote in place and Checkout opened with the PHP quote.
+test('CookieSessionBootstrapAdapter places a token-only Session on .chatgpt.com, never host-only', async () => {
+  const adapter = new CookieSessionBootstrapAdapter({ source: { load: async () => ({ sessionToken: 'y'.repeat(4_100) }) } });
+  const lease = await adapter.open('session-ref:domain');
+  const added = [];
+  await adapter.bootstrap(lease, {
+    cookies: async () => [],
+    clearCookies: async () => undefined,
+    addCookies: async (cookies) => added.push(...cookies),
+  });
+  assert.equal(added.length, 2);
+  for (const cookie of added) {
+    assert.equal(cookie.domain, '.chatgpt.com');
+    assert.equal(cookie.path, '/');
+    assert.equal(cookie.url, undefined);
+    assert.equal(cookie.secure, true);
+    assert.equal(cookie.httpOnly, true);
+  }
+});
+
 test('CookieSessionBootstrapAdapter replaces a foreign resident session only when asked, and clearSession drops only session cookies', async () => {
   const source = { async load() { return { sessionToken: 'new-token' }; } };
   const adapter = new CookieSessionBootstrapAdapter({ source, clock: () => 10_000 });
@@ -139,10 +162,14 @@ test('CookieSessionBootstrapAdapter injects the full auth layer (usc_/unified_se
   assert.ok(byName.has('unified_session_manifest'));
   assert.equal(byName.get('unified_session_manifest').domain, '.auth.openai.com');
   assert.ok(byName.has('oai-client-auth-session'));
-  // app layer present, defaults to chatgpt.com url when no domain given
+  // app layer present: no-domain cookies go on ".chatgpt.com" (never host-only,
+  // D-140), except "__Host-" names which must stay host-only
   assert.ok(byName.has('__Secure-next-auth.session-token'));
+  assert.equal(byName.get('__Secure-next-auth.session-token').domain, '.chatgpt.com');
+  assert.equal(byName.get('__Secure-next-auth.session-token').url, undefined);
   assert.ok(byName.has('__Host-next-auth.csrf-token'));
   assert.equal(byName.get('__Host-next-auth.csrf-token').url, 'https://chatgpt.com');
+  assert.equal(byName.get('__Host-next-auth.csrf-token').domain, undefined);
   // analytics cookie must be rejected/filtered
   assert.ok(!byName.has('_ga'), 'analytics cookie not injected');
 });

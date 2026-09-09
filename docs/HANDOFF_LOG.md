@@ -2158,3 +2158,12 @@ D-138 后目标收敛：下一笔真实订单即闭环验证。当前待命状�
 用户口述：上号器用 6 号窗口（`68275a10…` "AI Recharge Browser Lane 6"），全是页面点击，同一菲律宾出口。同 IP、同账号、同操作都能成，差异只剩登录态进浏览器的方式。
 证据：①三张单（真单 VHl_、演练 zLUt、测试 1UfN）存库 session 形状完全一样 = `/api/auth/session` JSON（sessionToken + accessToken），材料源恒返回 `{sessionToken}` → `session-bootstrap.js normalizeCookies` 恒生成 1 个 cookie，按 `{url}` 放置 = host-only `chatgpt.com`。②WAL 全量统计：此前所有到过 `checkout-navigation` 的任务 `session-bootstrap cookieCount=4` 且无 `session-replaced` = 常驻登录态被保留（上号器 1.2.1 装的），从没真正用过注入的 cookie 去结账；今天任务 135 第 1 次 `session-replaced`（删 4 注 1），第 4–5 次 bootstrap=2（我们的 + 网站下发的并存）。③CDP 读 Lane4：两个 `__Secure-next-auth.session-token`——`chatgpt.com` host-only、无过期、len 3901（我们的）；`.chatgpt.com`、90 天、len 3921（网站 15:16 下发/续期）。④6 号窗口 36 个 cookie，含 auth.openai.com 层（usc_、unified_session_manifest、oai-client-auth-info@.auth）；Lane4 24 个，无 auth 层。⑤主站接口在双 cookie 下身份核对通过；结账页文档 403，刷新 500（Cloudflare 前置，非 API 子请求）。
 结论（假设级）：双 session-token 并存最可能是结账页 SSR 拒绝的直接原因；auth 层缺失是次要/付款后问题（D-134 已知）。修法候选：注入改 `domain: '.chatgpt.com'`；或首屏后删 host-only 副本；或走已有 `extension-session-runtime.js`（上号器扩展）。**未做对照实验，未改代码**——实验需一个 free 号，只到结账页不填卡。
+
+## 2026-09-09｜403 根因对照实验 → 定位 → 修复（15:55–16:25 UTC，用户提供 free 测试号 session，不付款）
+**实验（Lane4 `51e915e`，菲律宾出口 38.60.246.34，导航用生产 `navigateToChatGPTCheckout` + 生产 `CookieSessionBootstrapAdapter`）**：
+①现有代码注入（token 4592 字节 → 2 个 host-only 块 `tok.0/.1@chatgpt.com`）→ 首页加载后网站又下发 `tok.0/.1@.chatgpt.com`（长度不同 = 轮换后的新 token）→ 4 个 session cookie 并存 → 导航器报 "ChatGPT reports the session has expired"，`/backend-api/me`、`accounts/check` 等全部 403。
+②清登录态，改 `domain: .chatgpt.com` 注入同一 token → 首页后只剩 `tok.0/.1@.chatgpt.com`（网站轮换原地覆盖，长度变化、带过期）→ 会话正常；导航器停在"profile upgrade control timed out"——该号曾买过 Plus，首页按钮是 "Rejoin Plus"，`openPricingSelectors` 只认 aria-label Upgrade（与 cookie 无关的合同缺口）。
+③保留②的登录态，合同加 `button:has-text("Rejoin Plus")` → 定价弹窗打开 → 结账页 `chatgpt.com/checkout/openai_llc/cs_live_…` 打开，"Configure your plan / Payment method / ChatGPT Plus"，₱ 报价出现，无任何 4xx/5xx。停在结账页，未填任何字段，随后退回首页。
+**推论**：下午真单是同一机制的单 cookie 版本（客户 token 3901 字节不分块：host-only 1 个 + 网站 1 个），主站接口碰巧容忍，结账页 SSR 不容忍。
+**修复（本机工作区）**：`session-bootstrap.js` 无 domain 的 cookie 一律 `domain: .chatgpt.com`（`__Host-` 前缀保持 host-only，否则浏览器拒收）；`chatgpt-checkout-navigator.js` openPricingSelectors 加 "Rejoin Plus"/"重新订阅 Plus"；单测：旧断言改域 + 新增回归测试。token 临时文件已删；实验截图在会话 scratchpad。
+**未验证**：真单全自动付款仍 0 次；修复只在"到结账页"验证过。

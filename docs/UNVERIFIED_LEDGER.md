@@ -63,3 +63,4 @@
 - 真实客户账号上**失败**：结账页加载——文档 403，刷新 500（证据：CDP 现场截图 `scratchpad/lane4.png` 只有 "403"、network 捕获 500 GET checkout 文档）。根因未查。
 - 仍未验证：自动点付款、付款后半段、20X；租约 900s 在完整成功路径上；`close-manually-fulfilled-order.mjs --card-used` 分支（本次走的是未用卡分支）。
 - 403 根因假设"注入 host-only cookie 与网站 `.chatgpt.com` 同名 cookie 并存 → 结账页拒"：证据链见 HANDOFF_LOG 09-09「403 根因分析」；**对照实验未做**（需 free 号，两步都停在结账页）。修法未写、未测。
+- （更新）403 根因**已由对照实验坐实并修复**（D-140，HANDOFF_LOG 09-09「对照实验」）：修复后到结账页出 ₱ 报价已验证；**从结账页到自动点付款、付款后半段仍 0 次**。

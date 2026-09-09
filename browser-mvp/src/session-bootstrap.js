@@ -103,13 +103,20 @@ function toPlaywrightCookie(cookie) {
   const sameSite = cookie.sameSite === 'none' || cookie.sameSite === 'None'
     ? 'None'
     : (cookie.sameSite === 'strict' || cookie.sameSite === 'Strict' ? 'Strict' : 'Lax');
-  // Playwright accepts {url} OR {domain,path}. A cross-site auth-layer cookie
-  // (auth.openai.com) must use domain+path so it lands on the right host; the
-  // app-layer cookies without a domain default to chatgpt.com.
-  const host = cookie.domain ? String(cookie.domain).replace(/^\./, '') : null;
-  const placement = host
-    ? { domain: `.${host}`, path: cookie.path || '/' }
-    : { url: CHATGPT_URL };
+  // Playwright accepts {url} OR {domain,path}. Always place by domain, never by
+  // {url}: {url} creates a HOST-ONLY cookie (domain "chatgpt.com"), while the
+  // site itself sets/rotates the session token on ".chatgpt.com". The two do not
+  // overwrite each other, so after the first page load the browser carried TWO
+  // "__Secure-next-auth.session-token" cookies and ChatGPT treated the session
+  // as expired / refused the Checkout page (2026-09-09 first real order, 403;
+  // reproduced and fixed in a same-account controlled experiment, D-140).
+  // Placing on ".chatgpt.com" lets the site's rotation overwrite ours in place.
+  // "__Host-" cookies are host-only by definition (a Domain attribute makes the
+  // browser reject them) and the site sets them host-only too, so no duplicate.
+  const host = cookie.domain ? String(cookie.domain).replace(/^\./, '') : new URL(CHATGPT_URL).hostname;
+  const placement = name.startsWith('__Host-')
+    ? { url: CHATGPT_URL }
+    : { domain: `.${host}`, path: cookie.path || '/' };
   const out = {
     name,
     value,
