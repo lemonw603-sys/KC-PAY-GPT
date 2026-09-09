@@ -2022,3 +2022,17 @@
 **约束下的补偿优先级**：🔴换菲律宾住宅sticky（替代易被标记的机房节点）→ 🟡卡BIN质量（US赞助行好BIN）+ AVS精确匹配 → 🟢指纹时区=菲律宾/干净号/不重试（已做或待核验）。残余拒付率是矛盾组合的固有成本，靠"换干净账号兜底"（非同账号快速重试）。两阶段(Plus小额→升级差价)本身也把大额拆小，利于通过。
 
 来源示例：gpaynow/halocard/rdvcc（虚拟卡+AVS+BIN）、note.com/vpnguide（VPN 省钱实测）。
+
+### 全链路就绪体检 + 根治"能充时充不上"（2026-09-09）
+用户提供 free 账号可测、要求先全链路验证、明确本轮不付款。体检发现会话重启后本地依赖散架，逐一恢复+根治：
+
+**根因**：本地三依赖（SSH 隧道 13306 / mihomo 出口 / BitBrowser 客户端）易失、无守护——会话断/重启/进程崩就没了，全挂即"充不上"。本次实测：隧道断、**mihomo 进程没了且根本没被 launchd 托管（纯手动启动）**、BitBrowser 客户端关。
+
+**已根治**：
+- mihomo 加 launchd 守护：`~/Library/LaunchAgents/com.pojia.mihomo-ph.plist`（KeepAlive+RunAtLoad），崩溃自动重拉、开机自启。已托管运行（出口复测 38.60.246.34 菲律宾✓）。
+- 新增充前一键自检脚本 `browser-mvp/scripts/ready-check.sh`（e74cf01）：检查并自动拉起隧道/mihomo，核对出口=菲律宾、BitBrowser API、生产服务、残留 worker。
+
+**当前就绪快照（现场核验）**：隧道✓ / mihomo菲律宾出口✓（launchd托管）/ BitBrowser API+8窗口✓ / 生产服务 active✓ / 无残留worker✓ / DB 开关全开、active_runs=0、卡7402 $49 AVAILABLE✓ / D-137+navigator(Pro文案，用户确认max=口语实为pro)✓。
+- **指纹一致性核验通过**：8号窗口(Lane4 clean=51e915e) `isIpCreateTimeZone/Position/Language=true`——时区/语言/定位跟随菲律宾IP，无美国/中国时区矛盾。待确认项：webRTC="0" 含义（应为替换/禁用防真实IP泄露）；isIpCreateDisplayLanguage=false（影响小）。
+
+**下一步**：用户用 free 账号在客户页提交一个 Plus 单 → 拉 worker 跑 **rehearsal（BROWSER_LIVE_STOP_BEFORE=SUBMIT，停在付款前，不扣款）** 验证 上号→导航→填卡→填地址→零税报价(₱982.14)→停。通过后再议真付（本轮用户明确不付款）。
