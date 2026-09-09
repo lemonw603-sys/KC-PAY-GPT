@@ -4,8 +4,8 @@
 
 | 项目 | 当前值 | 核对时间（UTC） | 证据方式 |
 |---|---|---|---|
-| 生产 release | `/opt/pojia/releases/20260908-cancelfix-bad14cc`（commit `bad14cc`，取消释放卡保留 MANUAL_IMPORT 同步等级；含 `bf2f25c` CDK 二次下单修复与 `37ceaff` 付款开关修复） | 2026-09-08 02:3x | `readlink -f /opt/pojia/current`；switch live/ready/admin 均 200 |
-| 回滚点 | `/opt/pojia/releases/20260908-pro-0073d45`（再前 `20260908-importwarn-370c7ce`；050 迁移只增行不改结构） | 同上 | 部署记录 |
+| 生产 release | `/opt/pojia/releases/20260909-askform-cc3bba0`（commit `cc3bba0`，后台 askForm 对话框 + 「已在账号里取消续费」收口动作/路由 + 开卡补钱「关闭」按钮；无新迁移；回滚点 `20260908-cancelfix-bad14cc`） | 2026-09-09 06:3x UTC | `readlink -f /opt/pojia/current`；switch live/ready/admin 均 200；公网复验见 HANDOFF |
+| 回滚点 | `/opt/pojia/releases/20260908-cancelfix-bad14cc`（再前 `20260908-cdkreuse-bf2f25c`；本版无迁移，直接切回即可） | 2026-09-09 06:3x UTC | 部署记录（switch 输出 ROLLBACK 命令） |
 | 最新数据库备份 | `/var/backups/pojia/pojia-20260907T194041Z.sql.gz.enc`，完整性 OK | 19:40 | `pojia-ops backup/verify`（prepare 阶段） |
 | pojia-web | active（19:41 随 release 切换重启，无错误日志） | 19:41 | systemctl / journalctl |
 | pojia-worker（API） | inactive（09-06 03:46 UTC 人为停止；09-07 09:28 UTC 短启约 10 秒推进测试单后再次停止） | 09-07 09:29 | systemctl |
@@ -20,8 +20,8 @@
 | 默认路线 | Browser（`CHATGPT_PLUS_BROWSER_V1` accepts_new_orders=1，API=0） | 13:31 | fulfillment_routes |
 | Browser 当前卡台 | 备用卡台 A（`manual_excel` / `backup-a`） | 13:31 | browser_card_source_selections |
 | browser_dispatch_enabled | true | 13:31 | app_settings |
-| browser_payment_writes_enabled | true（09-08 用户确认留开待命；本机无常驻 worker，来单需人工拉） | 09-08 晚 | app_settings |
-| Browser Profile productionWritesEnabled | true（随付款开关同步） | 09-08 晚 | executor_profiles config_public_json |
+| browser_payment_writes_enabled | **false**（09-09 为 rehearsal/预检关闭并带审计；真单来时 `go-live.sh --arm` 开回） | 09-09 | app_settings / admin_setting_events |
+| Browser Profile productionWritesEnabled | false（随付款开关同步） | 09-09 | executor_profiles config_public_json |
 | card_auto_replenishment_enabled | false | 13:31 | app_settings |
 | card_balance_recharge_enabled | true | 13:31 | app_settings |
 | card_max_successful_payments | 3 | 13:31 | app_settings |
@@ -35,7 +35,7 @@
 | 最近 Browser 运行 | 09-07 09:29–09:35 UTC 测试单演练：run `84686b57…` FAILED_SAFE / RELEASED / `PRE_PAYMENT_ABORT` / `BROWSER_REHEARSAL_STOPPED`；`PAYMENT_SUBMIT=0`、permit 0；报价 PHP 982.14 / 税 0.00；Lane 3 保留填好的结账页 | 09:40 | browser_runs / 本机 live.wal |
 | 最近真实单 | `PJV1-RCbAiI0IkGMy-hCBgMSn`：自动化到 Checkout 未填表 → 运营者手工付 Plus + 20X（143.13）→ 09-06 16:40 以「人工付款已完成」收口为 RECHARGE_SUCCESS；`PAYMENT_SUBMIT=0`，证据 `MANUAL_PAYMENT_CONFIRMED` | 16:41 | orders / browser_runs / browser_operations |
 | 告警 | OPEN 10：8 条 09-01 起的「卡台余额变化」info 噪音（后台不显示）、1 条 CARD_STOCK_LOW（阈值 0，修复后不再新生成）、1 条 ORDER_WAITING_FOR_CARD；首页已可关闭 | 09-06 13:31 | operator_alerts |
-| 本机 | BitBrowser Local API + mihomo（launchd 单实例）；SSH 隧道 13306→3306 由会话后台任务保持（掉线需重拉）；无常驻 Worker 进程（常驻池脚本已备好，未长期运行）；Lane 3 窗口开着并保留演练结账页 | 09-07 12:05 | pgrep / BitBrowser list |
+| 本机 | BitBrowser Local API（`ready-check.sh` 发现未开会自动启动）+ mihomo（launchd `com.pojia.mihomo-ph` KeepAlive，出口锁菲律宾 38.60.246.34）；SSH 隧道 13306→3306 由 launchd `com.pojia.ssh-tunnel-13306` 守护；无常驻 Worker（来单 `go-live.sh --arm` 拉、`stop-live.sh` 收）；Lane4 clean 窗口 `51e915e` 为付款/演练身份 | 09-09 | launchctl / lsof / curl |
 | 已上线（本次 release） | `ae68195`：无卡的等 Session 订单可取消（退回 CDK）。复核：两单遗留订单取消成功、CDK 回 AVAILABLE；Web 200 | 14:42 | 服务层调用结果 |
 | 已知未修 | 本机绕过连接池直连写入造成该单 attempt/dispatch/账本 `created_at` 偏后 8 小时；后台控制事务并发时可能 `ER_LOCK_DEADLOCK`（失败关闭，需重试） | 09-07 | HANDOFF_LOG |
 

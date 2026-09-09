@@ -2100,3 +2100,10 @@ D-138 后目标收敛：下一笔真实订单即闭环验证。当前待命状�
 - **askForm 对话框**（前端）：一个 `<dialog>` 收完一次操作全部输入，替换掉后台**全部** `window.prompt`（人工接管原因/操作者、人工付款结果+证据、补录客户付款五项、对账案例分配/结论、卡充值对账依据）。必填为空拦截、Esc/取消返回 null。资源版本 admin.js v37 / admin.css v26。
 - **验证**：node --check 通过；v1 admin 相关单测 18/18；Playwright 无头起本地静态 v1/public 打开后台页，原生调用 askForm 渲染三种对话框截图正常、必填拦截/提交/Esc 行为正确、零 pageerror（不连生产）。
 - **未部署**：与 3b182f0（开卡补钱关闭按钮）一起等一版 v1 release；发布前后台仍是旧版（连环 prompt、无收口按钮）。收口 PJV1-7EYSr3 若在发布前，可用同一服务逻辑脚本化（带 order_events）。
+
+### 发布 `20260909-askform-cc3bba0`（2026-09-09 06:34 UTC，用户批准）
+- prepare：bundle 由 cc3bba0 构建，manifest 922 文件 OK，DB 备份 `pojia-20260909T063405Z.sql.gz.enc` 完整性 OK，依赖无变化；无新迁移（仓库最新仍 051）。
+- switch：`current=20260909-askform-cc3bba0`，live/ready 200，登录页 200；回滚：`ln -sfn /opt/pojia/releases/20260908-cancelfix-bad14cc /opt/pojia/current && systemctl restart pojia-web.service`。
+- 复验（服务器本机 3100 + ADMIN_HOST）：`admin.js?v=37` 含 askForm/cancellation-confirmed 标记、`admin.css?v=26` 含 ask-dialog、`POST …/cancellation-confirmed` 未登录 401（与旧路由一致，路由已挂）、web 5 分钟内无错误日志。注：`/admin/index.html` 路径直接 curl 无内容（后台入口是 `/admin/login`），部署脚本按磁盘文件核 index.html 版本。
+- 内容：后台全部连环 prompt → askForm 对话框；「已在账号里取消续费」收口动作+路由；开卡补钱「关闭」按钮（3b182f0）。PJV1-7EYSr3 待用户关闭续费后，用抽屉新按钮收口。
+- 事实源同步：PROJECT_MAP §3 release 行、CURRENT_STATE release/回滚点/付款开关(false)/profile/本机 行、ADMIN_PANEL 路由清单。

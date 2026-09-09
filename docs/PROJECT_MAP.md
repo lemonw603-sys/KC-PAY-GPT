@@ -21,7 +21,7 @@
 
 | 项目 | 事实 |
 |---|---|
-| release | 当前 `20260908-cancelfix-bad14cc`（取消并释放卡时保留手动卡 MANUAL_IMPORT 免同步 tier）；回滚点上一版 `20260908-cdkreuse-bf2f25c`（CDK 退回可再下单/迁移 051 普通索引），再前 `20260908-upgrade-42073c7`。注：browser-mvp 的 D-137 修复（付款前 drift 清空安全卡字段、防残留 PAN 与重试中毒，`fee5f9a` + 测试）在本机池 Worker 源码，不经 v1 release |
+| release | 当前 `20260909-askform-cc3bba0`（09-09：后台连环 prompt 改单个 askForm 对话框、新增「已在账号里取消续费」收口动作与路由、开卡补钱「关闭」按钮；无新迁移）；回滚点上一版 `20260908-cancelfix-bad14cc`，再前 `20260908-cdkreuse-bf2f25c`。注：browser-mvp 的 D-137 修复（付款前 drift 清空安全卡字段、防残留 PAN 与重试中毒，`fee5f9a` + 测试）在本机池 Worker 源码，不经 v1 release |
 | 服务 | Web active；v1 Worker active；Bark active（均 09-08 SSH 复核）；Browser 池 Worker 本机非常驻——来单人工拉（见「本机」行）；补余额与读同步 timer active；旧自动开卡 timer disabled |
 | 开关 | 接单 true；自动派发 true；订单追踪 true；默认路线 Browser（Plus/5X/20X 均走 Browser，旧 API 路线 accepts_new_orders=0 不接单）；**Browser 付款开关 true**（09-08 用户确认留开待命，但本机无常驻 worker，来单需人工拉才会付款）；自动开卡 false；自动补余额 true；每卡成功次数 3；最低卡余额 16 |
 | 卡 | 可分配仅 1 张：手动 `7402` $49（09-08 导入的备用卡，NORMAL/AVAILABLE）。5 张手动测试卡 `0601/2911/7428/5501/0237` 已打 `RETIRED` override 退出分配池（拒付未付成/耗尽/余额已提现回卡台，09-08 清理收尾）。HNSKJ 卡今日未复核余额（此前 `5980` 低余额不可分配）|
