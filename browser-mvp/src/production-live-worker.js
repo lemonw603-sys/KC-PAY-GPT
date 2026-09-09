@@ -347,6 +347,7 @@ if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) 
   main().catch((error) => {
     console.error('browser production-live worker failed', {
       name: error?.name || 'Error', code: error?.code || 'BROWSER_LIVE_WORKER_FAILED',
+      message: String(error?.message || '').slice(0, 300),
       ...(process.env.BROWSER_LIVE_DIAGNOSTIC === 'true'
         ? { diagnostic: liveFailureDiagnostic(error) } : {}),
     });

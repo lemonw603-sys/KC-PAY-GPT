@@ -296,6 +296,7 @@ if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) 
     console.error('browser production-readonly worker failed', {
       name: error?.name || 'Error',
       code: error?.code || 'BROWSER_WORKER_FAILED',
+      message: String(error?.message || '').slice(0, 300),
     });
     process.exitCode = 1;
   });
