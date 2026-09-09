@@ -30,6 +30,14 @@ tail -f "$HOME/Library/Application Support/pojia-browser-live/go-live-*.log"
 browser-mvp/scripts/stop-live.sh                # 停 worker → 关付款开关(审计) → 核实
 ```
 
+**硬规则（D-139，09-09 真单教训）**：真单自动化**失败一次**（预检 DEAD、run 失败、或任何一步卡超过 5 分钟）→ 立刻 `stop-live.sh`，把窗口交给用户手动充，**事后再查**，不在真单上边修边试。用户手动充完后收口：
+```bash
+scp v1/scripts/close-manually-fulfilled-order.mjs root@144.34.180.184:/opt/pojia/current/v1/scripts/   # release 包里没有时
+ssh root@144.34.180.184 'set -a; . /etc/pojia/runtime.env; set +a; cd /opt/pojia/current/v1 && node scripts/close-manually-fulfilled-order.mjs <PUBLIC_NO> --dry-run'
+ssh root@144.34.180.184 'set -a; . /etc/pojia/runtime.env; set +a; cd /opt/pojia/current/v1 && node scripts/close-manually-fulfilled-order.mjs <PUBLIC_NO> [--card-used]'
+```
+（守卫：系统有任何付款痕迹即拒。默认视为分配的卡**没用**→释放；手动用的就是这张卡则加 `--card-used`→账本 CONSUMED、卡 DEPLETED。订单 RECHARGE_SUCCESS、CDK 保持已用、取消续费留「已在账号里取消续费」复核。）**09-09 起自动付款不再上真单，直到结账页 403 根因查清**。
+
 ## 2. 演练（停在付款前，不扣款）
 
 前提：付款开关 = false（`ready-check.sh rehearsal` 全绿）。
