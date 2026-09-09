@@ -96,3 +96,29 @@
 6. **F-11**：真单前用测试号确认非 PH 地区账号在 PH 出口下的计价币种。
 
 以上 1–2 不做，下一笔真单只要在预检阶段出任何问题，仍然是死单 + 客户无法自救 + 运营看不到。
+
+## 五、第二轮补读（2026-09-10 17:50–18:40 UTC）：run 控制面、恢复仓库、attempt 守卫、付款后核实 lane、卡材料租约
+
+读了 `browser-admin-service.js`（全）、`browser-recovery-repository.js`（全）、`recharge-attempt-repository.js`（`beginAuthorizedAttempt` 全部守卫）、`reconciliation-case-service.js`（resolve）、`live-post-payment-recovery.js`、`post-payment-session-recovery.js`、`session-identity-probe.js`、`bitbrowser-control-runtime.js`、`browser-card-transaction-reader.js`、`mockaddress-billing-address-source.js`、`billing-address-fill.js`、`durable-card-material-lease.js`。
+
+### 核对无问题的
+- 恢复仓库：租约（ACCOUNT/ORDER/CARD/CHECKOUT_ARTIFACT）按 HMAC 唯一键互斥；过期接管只在无 PAYMENT_SUBMIT、付款态 NOT_STARTED/ARMED、资金非 UNKNOWN 时允许，否则 RECONCILE_ONLY；结账 URL 以 AES-GCM + AAD 封存、过期只标 REVIEW 不当作已失效。**与硬约束一致。**
+- attempt 守卫：手动卡（MANUAL_IMPORT）豁免 15 分钟同步/交易新鲜度检查；余额 < 最低要求 / 凭证缺失 → CARD_NOT_READY；已有资金栅栏时 Browser 只允许幂等复用同一 PREPARED attempt，否则 FUNDS_FENCE_EXISTS。**对。**
+- 身份探测：能分辨 Cloudflare/403 页（CHATGPT_ACCESS_BLOCKED）、NextAuth 的 RefreshAccessTokenError、服务端渲染的 `authStatus` 非 logged_in——三种"看似 200 其实没登录"的情况都抓了。
+- 账单地址：卡自带地址优先，否则按卡固定槽位取免税州假地址；填表要求 country/state 下拉存在（演练验证过）。
+
+### 新增问题
+
+| 级别 | 编号 | 一句话 | 证据 |
+|---|---|---|---|
+| **P1** | **F-16** | **付款结果不明 / 升级人工后，没有任何正式收口入口。** 后台「取消」只处理 CLOSED/WAITING_FOR_CARD/RECHARGE_PROCESSING/WAITING_FOR_SESSION/CARD_READY 五种；对账 case 的 resolve 只改 case 不改订单；run 控制面里 `CONFIRM_MANUAL_PAYMENT` 要求付款态 NOT_STARTED/ARMED（不明态不行），`MARK_PAYMENT_UNKNOWN`（人工标不明）**不写核实排程字段**（`verification_state/next_check_at`），自动核实永远不会再看它；核实到期 `escalatePaymentVerification` 只把 run 标 HUMAN_REQUIRED + 开 case，订单停在 RECHARGE_PROCESSING/SUBMIT_UNKNOWN。人工确认"已扣款、Plus 已开"后**没有按钮**——只能手工 SQL。09-08 那几条乱码 ADMIN 事件就是这么来的。 | `order-cancellation-service.js:93-282`；`reconciliation-case-service.js:238`；`browser-admin-service.js:638-656, 876-942`；`browser-execution-repository.js:1208-1255`；`listPaymentVerificationsDue` 只取 `verification_state='VERIFYING_PAYMENT'` |
+| **P1** | **F-18** | **"重注入旧 token"那一级阶梯只在付款路径删了，付款后核实 lane 里还在。** `96ac467` 只改了 `shared-live-composition.js`；`live-post-payment-recovery.js:77-84` 仍把订单存的**付款前** token 以 `replaceExisting:true` 重注入。核实 lane 处理的正是"付款后不明/待确认"的 run——一旦清 cookie 那级没救回来，就会用旧 token 覆盖浏览器里付款后签发的新 session，制造 D-134 描述的假"会话过期" → 升级人工。 | `git show 96ac467 --stat`；`live-post-payment-recovery.js:77-84`；`post-payment-session-recovery.js:61-67` |
+| P1 | F-3 补充 | Plus 已开通但取消续费失败 → 到期升级人工后，唯一能把订单推到 RECHARGE_SUCCESS 的是走 REQUEST→FREEZE→TRANSFER→`COMPLETE_20X` 四步（它只查"有付款证据 + PLUS_CONFIRMED"，不查产品），事件文案会写成"Manual 20X upgrade confirmed"，且**不置 `cancellation_review_required`**——续费没关这件事从此没有任何提醒。 | `browser-admin-service.js:805-851` |
+| P2 | F-19 | 核实 lane 不绑定付款时所用的比特浏览器窗口：`listPaymentVerificationsDue` 任何 lane 都能领，`runtimeAdapter` 却是本 lane 的窗口。多 lane 时会用别的窗口（里面是别的客户的登录态）去核实，身份必然不匹配 → VERIFICATION_READ_FAILED 反复 → 到期升级人工。现在只有 1 条 lane，暂不触发；池子设计是 1–6 条。 | `production-live-pool-worker.js:202-211, 194-199`；`live-post-payment-recovery.js:54-60` |
+| P2 | F-20 | 卡材料租约文件：worker 进程重启后所有 ACTIVE 租约变 RECOVERY_REQUIRED，未过期前（最长 5 分钟）同一张卡不能再开租约 → CARD_NOT_READY → 回 CARD_READY 重试；`recover()` 没有任何调用方。今天停/重启 worker 就会碰到；一卡一单时影响 5 分钟，重启频繁时会吃掉派发重试次数（3 次）→ RECHARGE_FAILED。 | `durable-card-material-lease.js:36, 46-49, 81`；`shared-runtime-integration.js:416` |
+| P2 | F-23 | 人工接管的前提是 run 还开着：`CONFIRM_MANUAL_PAYMENT` 要求 run RUNNING/HUMAN_REQUIRED 且自动化已停（FROZEN/TRANSFERRED 或租约过期）。常驻池对付款前失败会**自己**把 run 收成 FAILED_SAFE、订单终态，运营看到时已无 run 可接管；若只是停了 worker，租约现在是 900s，"租约过期"这条路要等 15 分钟——除非先 REQUEST→FREEZE。RUNBOOK 的 D-139 流程里没写这一步。 | `browser-admin-service.js:638-656`；`shared-runtime-integration.js:415-421` |
+| P2 | F-21 | HNSKJ 交易对账写死金额区间（USD 14–22 / PHP 900–1200）和商户名 openai/chatgpt；价格或商户描述一变就对不上 → 人工。现在只用手动卡，暂不触发。 | `browser-card-transaction-reader.js:15-30` |
+
+### 结论更新
+- 第一轮的 3 个 P0 不变。第二轮把"真单出事后运营靠什么收口"看完了：**答案是靠不上**——不明态/升级人工态没有正式收口（F-16），Plus 已开但续费没关的收口是个借道的四步（F-3 补充），核实 lane 还带着会弄坏会话的旧阶梯（F-18）。这三条合起来，意味着任何一笔走到"付款后不确定"的真单，最后都会回到手工 SQL。
+- 修复顺序建议调整为：F-5（一行）→ F-1 → **F-16 + F-3（一个"人工核实后收口"动作，覆盖不明态/已开通未关续费两种）** → F-18（删 `live-post-payment-recovery.js` 的 reinject，与 96ac467 对齐）→ F-10 → 其余。
