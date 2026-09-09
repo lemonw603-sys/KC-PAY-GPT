@@ -2080,3 +2080,11 @@
 **不付款验不了的（客观，本质要真付款）**：①stage1 真付 Plus 那一下；②付款后 session 是否真保持到能开升级弹窗（D-136 只在有效 session 下验过，未在"本流程真付 Plus 后"端到端验）；③stage2 补差价 Pay now。**整个 20X 闭环（stage1 真付→session 保持→stage2 升级→补差价付）从没端到端真跑过。**
 
 **不付款下可补验一步**：用一个"已是 Plus（未升级）"的账号跑 stage2 到 Confirm plan changes 弹窗停下（不点 Pay now、不花钱），验证 stage2 导航+读弹窗+session。需用户提供已 Plus 账号（当前 e4938aca=free、wozaijiaoju1649=已 20X，都不合适）。
+
+### 真单来单 SOP（2026-09-09 定，等今明真实 20X/Plus 单）
+D-138 后目标收敛：下一笔真实订单即闭环验证。当前待命状态：付款开关 **false**（为演练关的）、本机无 worker、Lane4 干净、mihomo/隧道 launchd 守护、卡 7402 $49。
+
+**来单前（用户）**：①20X 单需卡余额 ≥150（门槛已调），7402 只有 $49——**先充够或导入新卡**，否则订单卡 WAITING_FOR_CARD；②客户页提交 CDK + free 账号 session；③把单号告诉执行者。
+**来单时（执行者）**：`ready-check.sh pay` → 开付款开关（app_settings + executor profile 同步 true，落 admin_setting_events）→ 拉 `run-live-pool.sh run pay`（BROWSER_POOL_LANES=lane-4）→ 盯 preflight(本机)→ stage1 自动付 Plus → confirmPlus。
+**20X stage2 当前设计（D-133，未改）**：付完 Plus 后自动开「Confirm plan changes」弹窗并**停下（MANUAL_20X_HANDOFF）**，**由用户在窗口里手动点 Pay now** 付补差价，再在后台点「确认 20X 已升级」收尾。不是全自动点 Pay now——首单谨慎，且符合用户"手动可覆盖"偏好；稳了再议自动。
+**收尾**：对账、取消续费、关付款开关（不再有单时）。看到终态后**等 worker 自行收尾再停**，不过早 pkill。
