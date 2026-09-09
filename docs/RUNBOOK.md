@@ -36,7 +36,14 @@ scp v1/scripts/close-manually-fulfilled-order.mjs root@144.34.180.184:/opt/pojia
 ssh root@144.34.180.184 'set -a; . /etc/pojia/runtime.env; set +a; cd /opt/pojia/current/v1 && node scripts/close-manually-fulfilled-order.mjs <PUBLIC_NO> --dry-run'
 ssh root@144.34.180.184 'set -a; . /etc/pojia/runtime.env; set +a; cd /opt/pojia/current/v1 && node scripts/close-manually-fulfilled-order.mjs <PUBLIC_NO> [--card-used]'
 ```
-（守卫：系统有任何付款痕迹即拒。默认视为分配的卡**没用**→释放；手动用的就是这张卡则加 `--card-used`→账本 CONSUMED、卡 DEPLETED。订单 RECHARGE_SUCCESS、CDK 保持已用、取消续费留「已在账号里取消续费」复核。）**09-09 起自动付款不再上真单，直到结账页 403 根因查清**。
+（守卫：系统有任何付款痕迹即拒。默认视为分配的卡**没用**→释放；手动用的就是这张卡则加 `--card-used`→账本 CONSUMED、卡 DEPLETED。订单 RECHARGE_SUCCESS、CDK 保持已用、取消续费留「已在账号里取消续费」复核。）403 根因 09-09 已定位修复（D-140），真单未验。
+
+**失败应对（按发生阶段，2026-09-10 定，真单前必读）**：
+- **①预检失败**（订单仍 CARD_READY，没有 run；预检 5 次即 DEAD，无自动重开）：`stop-live.sh` → 用户手动充 → `close-manually-fulfilled-order.mjs <单号>`。09-09 走过。
+- **②付款前失败**（live run 已起、未点击）：常驻池会**自己**安全中止——卡类/租约问题回 CARD_READY 重试；其余一律 RECHARGE_FAILED + CDK 退回 + 卡释放（审计 F-4）。用户若手动充了：订单 CARD_READY 用上面脚本；订单已 RECHARGE_FAILED 的**脚本目前不接**（待扩，审计 B6），先记单号事后收。
+- **③点击付款之后**（run `payment_state` 不是 NOT_STARTED/ARMED）：**任何人都不许手动重付**。等最多 5 分钟自动核实：账号仍 free → 判拒付 → RECHARGE_FAILED 放卡；确认 Plus → 取消续费 → 成功；核实到期 → run HUMAN_REQUIRED + 对账 case，订单停 RECHARGE_PROCESSING（审计 F-16：目前只能走 run 控制面 REQUEST→FREEZE→TRANSFER→COMPLETE_20X 收成功，续费要人工到账号里关；或等 F-16 做完）。
+- **客户被打回**（WAITING_FOR_SESSION）：客户页的重贴表单目前不显示（审计 F-5 未修）。兜底：客户把新 session JSON 交给用户，执行者在服务器本机用公开接口替客户提交（`POST /api/v1/orders/session`，body `{"publicNo":"<单号>","session":<JSON>}`，对 127.0.0.1:3100 发、Host 头用客户页域名，见 `/etc/pojia/runtime.env`）。**未演练**。
+- **跑单纪律**：跑单期间客户不要使用该账号；不要把该账号登进任何其他比特浏览器窗口（同一账号两处登录会挤掉注入的 session，09-07 观察到）。
 
 ## 2. 演练（停在付款前，不扣款）
 
