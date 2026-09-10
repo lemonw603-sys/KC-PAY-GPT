@@ -104,6 +104,50 @@ test('cardless preflight permits the initial VAT quote without weakening the pay
   assert.equal(strictCheckoutContract.requireQuoteConsistency, true);
 });
 
+function failHarness({ attempts, maxAttempts = 5, orderStatus = 'CARD_READY' }) {
+  const calls = [];
+  const connection = {
+    async beginTransaction() {}, async commit() {}, async rollback() {}, release() {},
+    async query(sql, params) {
+      calls.push({ sql, params });
+      if (sql.includes('SELECT status,version FROM orders')) return [[{ status: orderStatus, version: 1 }]];
+      if (sql.includes('SELECT attempts,max_attempts FROM tasks')) return [[{ attempts, max_attempts: maxAttempts }]];
+      return [{ affectedRows: 1 }];
+    },
+  };
+  const repository = new BrowserOrderPreflightRepository({
+    pool: { getConnection: async () => connection, query: async () => [[]] },
+    workerId: 'worker-1', executorProfileId: 'database-profile', leaseSeconds: 120,
+  });
+  return { repository, calls };
+}
+
+// F-1: a lost lease is the worker's problem; it must not eat the order's attempt budget.
+test('preflight lease loss requeues without counting an attempt, even at the last attempt', async () => {
+  const { repository, calls } = failHarness({ attempts: 5 });
+  const outcome = await repository.fail({ task_id: 9, order_id: 'order-1' }, Object.assign(new Error('lease lost'), { reason: 'LEASE_LOST' }));
+  assert.deepEqual(outcome, { status: 'PENDING', reasonCode: 'LEASE_LOST', attemptCounted: false });
+  const update = calls.find(({ sql }) => sql.includes('UPDATE tasks SET status=?'));
+  assert.equal(update.params[0], 'PENDING');
+  assert.equal(update.params[2], 1, 'attempt refunded');
+  assert.equal(calls.some(({ sql }) => sql.includes('operator_alerts')), false);
+});
+
+// F-1: the fifth real failure used to write one order_event and nothing else; nobody was told.
+test('preflight exhaustion raises a critical operator alert and points at the reopen script', async () => {
+  const { repository, calls } = failHarness({ attempts: 5 });
+  const outcome = await repository.fail({ task_id: 9, order_id: 'order-1' }, Object.assign(new Error('checkout 403'), { reason: 'CHECKOUT_NAVIGATION_FAILED' }));
+  assert.deepEqual(outcome, { status: 'DEAD', reasonCode: 'CHECKOUT_NAVIGATION_FAILED', attemptCounted: true });
+  const update = calls.find(({ sql }) => sql.includes('UPDATE tasks SET status=?'));
+  assert.equal(update.params[0], 'DEAD');
+  assert.equal(update.params[2], 0, 'a real failure is counted');
+  const alert = calls.find(({ sql }) => sql.includes('INSERT INTO operator_alerts'));
+  assert.ok(alert, 'operator alert written in the same transaction');
+  assert.equal(alert.params[0], 'BROWSER_HUMAN_REQUIRED');
+  assert.match(alert.params[5], /reopen-browser-preflight/);
+  assert.ok(calls.some(({ sql }) => sql.includes('Browser preflight exhausted without payment')));
+});
+
 test('preflight repository claims only Browser preflight tasks with the database profile', async () => {
   const calls = [];
   const connection = {

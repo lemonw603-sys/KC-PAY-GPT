@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 
 import { decryptSecret } from '../../v1/src/security/secret-box.js';
 import { validateChatGptSession } from '../../v1/src/domain/session-validation.js';
+import { upsertBrowserAlertInTransaction } from '../../v1/src/db/repositories/browser-alert-repository.js';
 import { assertRef, assertSafeObject } from './contracts.js';
 import { BrowserExecutionService } from './executor.js';
 import { CookieSessionBootstrapAdapter } from './session-bootstrap.js';
@@ -347,16 +348,21 @@ export class BrowserOrderPreflightRepository {
         await connection.commit();
         return { status: 'CUSTOMER_ACTION_REQUIRED', reasonCode: code };
       }
-      const exhausted = Number(leased.attempts) >= Number(leased.max_attempts);
+      // A lost lease is the worker's problem, not the order's: it does not
+      // count against the attempt budget (the 2026-09-09 real order spent 3 of
+      // its 5 attempts on 120-second lease expiries alone, audit F-1).
+      const leaseLost = code.includes('LEASE');
+      const exhausted = !leaseLost && Number(leased.attempts) >= Number(leased.max_attempts);
       const nextStatus = exhausted ? 'DEAD' : 'PENDING';
       await connection.query(
         `UPDATE tasks SET status=?,available_at=IF(?='PENDING',
              DATE_ADD(CURRENT_TIMESTAMP(3),INTERVAL 30 SECOND),available_at),
+           attempts=IF(?,GREATEST(attempts-1,0),attempts),
            leased_by=NULL,leased_until=NULL,last_error_code=?,
            last_error_message='Browser preflight stopped safely before payment',
            updated_at=CURRENT_TIMESTAMP(3)
          WHERE id=?`,
-        [nextStatus, nextStatus, code, task.task_id],
+        [nextStatus, nextStatus, leaseLost ? 1 : 0, code, task.task_id],
       );
       if (exhausted) {
         await connection.query(
@@ -366,9 +372,15 @@ export class BrowserOrderPreflightRepository {
           [task.order_id, order.status, order.status, this.workerId,
             JSON.stringify({ taskId: task.task_id, reasonCode: code })],
         );
+        // Without this the order sat in "准备中" forever with nobody told
+        // (audit F-1). Critical alerts reach the home page and Bark.
+        await upsertBrowserAlertInTransaction(connection, {
+          type: 'BROWSER_HUMAN_REQUIRED', orderId: task.order_id, title: '浏览器预检多次失败，需人工',
+          message: `预检 ${leased.max_attempts} 次失败（最后原因 ${code}），订单停在准备中。查清后用 v1/scripts/reopen-browser-preflight.mjs 重开预检，或交人工充值后收口。`,
+        });
       }
       await connection.commit();
-      return { status: nextStatus, reasonCode: code };
+      return { status: nextStatus, reasonCode: code, attemptCounted: !leaseLost };
     } catch (failure) {
       await connection.rollback();
       throw failure;
