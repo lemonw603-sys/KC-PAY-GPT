@@ -146,6 +146,7 @@ const elements = {
   highvccVidSelect: document.querySelector('#highvcc-vid-select'),
   highvccDetails: document.querySelector('#highvcc-open-form')?.closest('details'),
   highvccRefreshWallet: document.querySelector('#highvcc-refresh-wallet'),
+  highvccOpenSite: document.querySelector('#highvcc-open-site'),
   cardIntakeList: document.querySelector('#card-intake-list'),
   discoverNewCards: document.querySelector('#discover-new-cards'),
   reconciliationTable: document.querySelector('#reconciliation-table'),
@@ -1908,6 +1909,9 @@ elements.stockOpenForm?.addEventListener('submit', async (event) => {
   }
   finally { button.disabled = false; }
 });
+elements.highvccOpenSite?.addEventListener('click', () => {
+  window.open('https://www.highvcc.com', '_blank', 'noopener,noreferrer');
+});
 elements.highvccRefreshWallet?.addEventListener('click', async () => {
   elements.highvccRefreshWallet.disabled = true;
   try { await loadHighvccStatus(); } finally { elements.highvccRefreshWallet.disabled = false; }
@@ -2232,6 +2236,27 @@ document.addEventListener('keydown', (event) => {
   }
 });
 
+// One-click highvcc token refresh: the bookmarklet on highvcc.com reads its own
+// localStorage token and redirects the browser here with it in a URL *fragment* — fragments
+// are never sent to any server (ours or highvcc's), so the token never crosses the network as
+// part of this hand-off. We only need to read it client-side and forward it, same-origin, to
+// the existing authenticated /token route. The hash is cleared immediately either way so it
+// never lingers in the address bar or browser history.
+async function consumeHighvccTokenFromHash() {
+  const match = /(?:^|[#&])highvcc-token=([^&]+)/.exec(location.hash);
+  if (!match) return;
+  const token = decodeURIComponent(match[1]);
+  history.replaceState(null, '', location.pathname + location.search);
+  try {
+    await sensitiveApi('/api/v1/admin/backup-cards/highvcc/token', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token })
+    });
+    showNotice('highvcc 登录 token 已自动更新。', 'success');
+  } catch {
+    showNotice('highvcc token 自动更新失败，请到"卡片"页手动粘贴保存。');
+  }
+}
+
 api('/api/v1/admin/session')
-  .then(() => switchView('overview'))
+  .then(() => { switchView('overview'); return consumeHighvccTokenFromHash(); })
   .catch((error) => { if (error.message !== 'admin_auth_required') showNotice('后台暂时无法加载。'); });
