@@ -2,69 +2,54 @@
 
 > 规则：**每次窗口收尾覆盖重写本文**（不追加）；过程流水在 `HANDOFF_LOG.md`（只追加）。新窗口按 `AGENTS.md` 顺序：先读本文，再读 `PROJECT_MAP.md`、`CURRENT_STATE.md`。本文只写"现在"和"下一步"，不写历史。
 
-**上次收尾**：2026-09-10 19:05 UTC（03:05 UTC+8 09-11），窗口 `68c73cc7`（该窗口历经 Opus 4.8→Opus 5.1→Fable 5.1 多次换模型，已收尾退出）。
+**上次更新**：2026-09-10 01:5x UTC（09:5x UTC+8），窗口 Fable 5.1（本窗口，进行中）。上一窗口 `68c73cc7` 实际收尾时间为 2026-09-10 00:12 UTC（提交 `a367bcf`），其原写的"19:05 UTC"是时间标注错误（审查 F-39）。
 
-> **给新窗口**：用户计划开一个只用 Fable 5.1 的新窗口，要求它**把整个项目了解清楚**，再**审**本窗口留下的审计与清单，用户点头后才动手。已定决策（D-138/139/140）不重开，有异议按"规划是 X、建议 Y、理由 Z"提。同一时间只有一个执行窗口。用户明确要求：**别添油加醋、别边修边试、真单失败一次即人工。**
+> **给新窗口**（若本窗口中断，下一窗口仍按此进入）：用户要求接班者**把整个项目了解清楚**，再**审**，用户点头后才动手。已定决策（D-138/139/140）不重开，有异议按"规划是 X、建议 Y、理由 Z"提。同一时间只有一个执行窗口。用户明确要求：**别添油加醋、别边修边试、真单失败一次即人工。**
 >
-> **深读清单（按序，全部读完再开口；不读 `docs/archive/`、不读 HANDOFF_LOG 09-06 之前、不读根目录 legacy 文件 README 下半/progress.md/DEPLOY.md）**：
-> 1. `CLAUDE.md`、`AGENTS.md` —— 规矩与入口
-> 2. 本文 —— 现在
-> 3. `docs/PROJECT_MAP.md` —— 目标、里程碑、唯一执行顺序
-> 4. `docs/CURRENT_STATE.md` + 跑 `browser-mvp/scripts/state-check.sh` —— 事实，且自己对一遍现场
-> 5. `docs/PRODUCT_SIMPLIFICATION_DISCUSSION.md` 末尾「接班实施基线」—— 方向（用户确认过的）
-> 6. `docs/CORE_SPEC_2026-09-07.md` —— 订单生命周期、执行流程形状、五个决定
-> 7. `docs/DECISIONS.md` 全部 —— 140 条，为什么是现在这样；D-131 起尤其重要
-> 8. `docs/UNVERIFIED_LEDGER.md` —— 做了但没证明的
-> 9. `docs/PROJECT_OPERATING_MODEL.md` —— 全链路与状态机总册（长，按目录挑与订单/资金/Browser 相关的章节）
-> 10. `docs/HANDOFF_LOG.md` 从「2026-09-06」章节读到末尾 —— 最近一周每天发生了什么、踩了什么坑
-> 11. `docs/reviews/FULL_CHAIN_AUDIT_2026-09-10.md` —— 两轮审计；§二 同时是真单路径的**代码地图**（每一段对应哪个文件、哪几行）
-> 12. `docs/RUNBOOK.md` —— 怎么操作、失败怎么办
-> 13. 代码：按审计 §二 的顺序把对应文件真的打开读一遍（v1：intake → session-validation → task-repository → workflow-handlers → browser-execution-repository 的付款后部分；browser-mvp：browser-order-preflight → session-bootstrap → executor → chatgpt-checkout-navigator → live-chatgpt-payment-adapter → payment-executor → chatgpt-post-payment-verifier → shared-runtime-integration → production-live-pool-worker）
+> **深读清单（按序；不读 `docs/archive/`、不读 HANDOFF_LOG 09-06 之前、不读根目录 legacy 文件）**：1 `CLAUDE.md`、`AGENTS.md`；2 本文；3 `docs/PROJECT_MAP.md`；4 `docs/CURRENT_STATE.md` + 跑 `browser-mvp/scripts/state-check.sh`；5 `docs/PRODUCT_SIMPLIFICATION_DISCUSSION.md` 末尾「接班实施基线」；6 `docs/CORE_SPEC_2026-09-07.md`；7 `docs/DECISIONS.md` 全部；8 `docs/UNVERIFIED_LEDGER.md`；9 `docs/PROJECT_OPERATING_MODEL.md`；10 `docs/HANDOFF_LOG.md` 从「2026-09-06」到末尾；11 `docs/reviews/FULL_CHAIN_AUDIT_2026-09-10.md`（§二是真单路径代码地图）；12 `docs/RUNBOOK.md`；13 代码按审计 §二顺序真的打开读（v1：intake → session-validation → task-repository → workflow-handlers → browser-execution-repository；browser-mvp：browser-order-preflight → session-bootstrap → executor → chatgpt-checkout-navigator → live-chatgpt-payment-adapter → payment-executor → chatgpt-post-payment-verifier → shared-runtime-integration → production-live-pool-worker）。读完先交一份"我理解的项目"（六问：给谁做什么；一单从 CDK 到订阅成功经过哪些环节、各在哪个进程；做到哪、哪些已验证、哪些从没在真单跑过；资金安全靠哪几道门；接下来做什么、为什么这个顺序；最大风险）。
 >
-> **读完先交一份"我理解的项目"**（用自己的话，不抄文档）：①这系统给谁做什么；②一笔单从 CDK 到订阅成功经过哪些环节、每个环节在哪个进程/机器上跑；③现在做到哪、哪些已验证、哪些从没在真单上跑过；④资金安全靠哪几道门；⑤接下来该做什么、为什么是这个顺序；⑥你认为最大的风险是什么。用户看完这份再让你审。
->
-> **审的范围不只是最后那份方案**：用户要求审 2026-09-07 基线以来落到代码里的**全部改动**。范围与每项的验证程度已列在 `docs/reviews/REVIEW_SCOPE_2026-09-10.md`（39 个运行文件、40 余次提交，按 Browser 链 / 资金与订单 / 后台 / 迁移 / 文档 分组，并给了审查顺序）。按 `docs/REVIEW_PROTOCOL.md` 只读审，报告落 `docs/reviews/REVIEW_RECORD.md`。
+> **审查**：范围 `docs/reviews/REVIEW_SCOPE_2026-09-10.md`（39 个文件），按 `docs/REVIEW_PROTOCOL.md` 只读审，记录落 `docs/reviews/REVIEW_RECORD.md`，处置落 `docs/reviews/DISPOSITIONS.md`。**批次 1（真单路径）已完成**，第二批（后台五页、迁移与生产 schema、文档一致性）未做。
 
 ## 现在的状态
 
-- **第一笔 Browser 真单自动付款失败，用户手动完成**。`PJV1-VHl_hgWctg78JwDajOVR`（Plus，14:51 UTC 创建，卡 7402）：预检 3 次因租约 120s 到期重来（真实客户账号要清旧登录态+换 session+核身份，超 120s）→ 改 900s 后 2 次到**结账页被 OpenAI 拒**（文档 403，刷新 500「Application Error」；登录、身份核对、点升级建结账都正常）→ 任务 DEAD。~15:15 UTC 用户用上号器手动充好；15:24 UTC 以 `v1/scripts/close-manually-fulfilled-order.mjs` 收口：RECHARGE_SUCCESS、7402 按"未用"释放、CDK 保持已用、**取消续费待用户点「已在账号里取消续费」**。系统未付一分钱。
-- 系统待命：付款开关 **false**、无 worker、非终态订单 0、active_runs 0、可分配卡 1（7402 $49）。
-- **D-139**：真单自动化失败一次即转人工。**403 根因已定位并修复（D-140）**：注入的 session cookie 曾是 host-only，与网站 `.chatgpt.com` 的同名 cookie 并存；对照实验（用户给的 free 测试号、同窗口同出口、不付款）复现 + 修复后结账页打开出 ₱ 报价。代码已改（`session-bootstrap.js`）+ 单测通过，**真单未验证**。下一笔真单可按自动化跑（D-139 兜底），上不上由用户定。
+- **系统待命**：付款开关 **false**、本机无 worker、非终态订单 0、active_runs 0、可分配卡 1（7402 $49，够 Plus 不够 20X）。线上 release `20260909-askform-cc3bba0`。`state-check.sh` 本窗口跑过，与状态表一致。
+- **本窗口已落地（本机工作区，pool worker 从工作区启动即生效，无需服务器发布）**：
+  - `dad5244`（B5 扩展版）：付款后核实 lane 不再重注入订单付款前 token（F-18）；核实完关闭自己开的页面，20X 交接除外（F-24）；UNKNOWN 结果按 `verificationIntervalMs` 退避再查，不再每 tick 重开浏览器（F-24）。browser-mvp 全量 205 通过 0 失败；v1 服务测试 9/9。**只有单测，真库集成用例因本机测试库未开没跑，真单未验。**
+  - `1854729`（B6）：`v1/scripts/close-manually-fulfilled-order.mjs` 接 RECHARGE_FAILED 单，重绑仍 AVAILABLE 的 CDK、否则拒绝；PAYMENT_ARMED 不算付款痕迹；该状态拒绝 `--card-used`。生产 dry-run 三例通过（失败单可收、有付款痕迹拒、成功单拒）。**真跑要在生产主机上做，脚本尚未 scp 到 release 目录。**
+  - RUNBOOK §1：D-139 硬规则限定"付款点击之前"；③新增"PAYMENT_SUBMIT 落库后 10 分钟内不得 stop-live / kill"（F-26）；打回段补"客户重提同码不更新 Session、换账号 409，唯一兜底是执行者代提交"（F-34/35）；跑单纪律加"不在后台关付款开关"（F-25）。
+  - D-140 措辞降级为"候选修复，根因未坐实"（DECISIONS 行末更正、CURRENT_STATE 已知未修①），决策不重开。
+- **审查批次 1 结论**（`docs/reviews/REVIEW_RECORD.md`）：新增 F-24 到 F-39，其中 P1 五条（F-24/25/26 已按上面处理或定纪律；F-34/35 真单后与 F-5 同批发布）。对照上一窗口审计：结论一致，漏判 9 条，无误判，D-140 一处降级。核实 lane、自动确认 Plus、自动取消续费、核实到期转人工在生产各 0 次成功样本。
 
-## 下一可执行项（用户 09-10 定：今天再做一次真单测试；下面这份"真单前/后"清单已给用户，**待用户点头**）
+## 下一可执行项（用户 09-10 定：今天再做一次真单；已按审查建议推进到此）
 
-**全链路审计两轮已出**（`docs/reviews/FULL_CHAIN_AUDIT_2026-09-10.md`）：P0——F-5 客户页永远不让重贴 Session（一行 bug，线上同源）、F-1 预检 DEAD 无重开入口无告警、F-10 等待期 session 失效→打回→撞 F-5；P1——F-16 付款不明/升级人工后无正式收口（只能手工 SQL）、F-18 核实 lane 仍重注入旧 token（96ac467 只删了付款路径）、F-3/F-4/F-6/F-7/F-8；P2 若干。修复顺序见报告 §五末尾。
-
-**真单前（只验 + 定规矩 + 两处可退的小改动）**
-- A1 用测试号（e4938aca，free，首页显示 "Rejoin Plus"）走真单同路径演练：客户页提交 → `run-browser-preflight.sh once` → `run-live-rehearsal.sh once <orderId>` 到零税报价停 → `close-rehearsal-order.mjs` 收口。目的：在 worker 真跑的路径上验 D-140 域修复、900s 租约、Rejoin Plus 入口——昨天的洞就是"演练走的路和真单不一样"。
-- A2 三段失败应对已写进 RUNBOOK §1（预检失败 / 付款前失败 / 点击后绝不手动重付 / 客户打回的接口兜底 / 跑单纪律）。
-- A3 跑单纪律：客户不用账号；不登进 6 号窗口。
+**真单前**
+- **A1 演练（需要用户）**：用户用测试号 e4938aca（free，首页显示 "Rejoin Plus"）+ 一张 Plus CDK 在客户页提交演练单，把单号给执行者。执行者：`ready-check.sh rehearsal` → `BITBROWSER_PROFILE_ID=51e915e3298b4a02bbd7468b39749c9e browser-mvp/scripts/run-browser-preflight.sh once` → 等服务器 worker 推到派发 → `browser-mvp/scripts/run-live-rehearsal.sh once <orderId>` 到零税报价停 → `close-rehearsal-order.mjs` 收口释放卡。目的：在 worker 真跑的路径上验 D-140 域放置与 Rejoin Plus 入口。预检 900s 租约这条路验不到（`run-browser-preflight.sh` 写死 120s，F-33），真单首次验。
+- A2 失败应对见 RUNBOOK §1（三段 + 打回兜底 + 跑单纪律，本窗口已更新）。
+- A3 跑单纪律：客户不用账号；不登进 6 号窗口；**不在后台关付款开关**；**点击付款后 10 分钟内不 stop-live**。
 - A4 `ready-check.sh pay`；Plus 用 7402（$49）；20X 需先充到 ≥150 且第二阶段人工 Pay now。
-- B5（待点头）F-18：删 `browser-mvp/src/live-post-payment-recovery.js:77-84` 的 `reinjectSession`，跑全套测试。纯删除。
-- B6（待点头）`close-manually-fulfilled-order.mjs` 增加对 RECHARGE_FAILED（付款前终态、无付款证据）单的收口。只改脚本。
-- 真单前**不做**：F-5（需发布；兜底见 RUNBOOK）、F-1 代码、F-16、F-10、其余。
+- B5、B6 已做（见上）。真单前**不做**：F-5/F-34/F-35（需发布）、F-1、F-16、F-10、F-25/F-26 代码、其余。
 
-**真单后**：F-5 发布（一行）→ F-1（告警 + 重开预检 + 租约超时不计次）→ F-16+F-3（"人工核实后收口"动作）→ F-10（贴码即验）→ F-4/F-7/F-8 → P2；把真单证据写入 UNVERIFIED_LEDGER「付款后半段」。
+**真单后**：F-5 + F-34 + F-35（一次 v1 发布）→ F-1（告警 + 重开预检 + 租约超时不计次）→ F-16 + F-3（"人工核实后收口"动作）→ F-25/F-26 代码（关开关回 CARD_READY；PAYMENT_SUBMITTING 的 run 设核实排程）→ F-10 → F-4/F-7/F-8 → 审查第二批 → P2。把真单证据写入 UNVERIFIED_LEDGER「付款后半段」。
 
-**其他待办**：上一单 `PJV1-VHl_` 若已在账号里关了续费 → 后台点「已在账号里取消续费」。租约 900s 与 ready-check 改动已提交、未在成功路径验证。Lane4 窗口现在留着测试号 e4938aca 的登录态，来单时执行器会自动清掉换成客户的。
+**其他待办**：上一单 `PJV1-VHl_` 若已在账号里关了续费 → 后台点「已在账号里取消续费」。Lane4 窗口现在留着测试号 e4938aca 的登录态，来单时执行器会自动清掉换成客户的。F-38（go-live/stop-live 直写库）待用户裁决。
 
 ## 已定不做 / 已定保留
 
-- 不做：Plus→20X 升级自动化（D-138）；常驻 worker；住宅 IP（现无）；A2 抓新 session。
-- 新增不做：真单上边修边试（D-139）。
-- 保留：付款后 session 恢复阶梯第 2 级。
+- 不做：Plus→20X 升级自动化（D-138）；常驻 worker；住宅 IP（现无）；A2 抓新 session；真单上边修边试（D-139）。
+- 保留：付款后 session 恢复阶梯第 1、2 级（探测、清页面登录 cookie 后刷新）；第 3 级"重注入旧 token"已在付款路径（`96ac467`）与核实路径（`dad5244`）都删除。
 
-## 已验证 / 未验证的边界（详见 UNVERIFIED_LEDGER）
+## 已验证 / 未验证的边界（详见 UNVERIFIED_LEDGER 与 REVIEW_RECORD 批次 1）
 
-- 真实客户账号上已验证通过：session 注入、清旧登录态换 session、身份核对、点升级创建结账（都在 09-09 真单上跑过）。
-- 真实客户账号上失败：结账页加载（403/500）。
-- 仍 0 次：自动点付款 + 付款后半段 + 20X 闭环。rehearsal（free 账号）到零税报价 2 次是另一回事，不能当真单证据。
+- 真实客户账号上已验证通过：session 注入、清旧登录态换 session、身份核对、点升级创建结账（09-09 真单）。
+- 真实客户账号上失败：结账页加载（403/500）。D-140 修复只在 free 测试号对照实验验到结账页出报价；本机 WAL 显示 09-07/09-08 有 7 次同样并存却成功，"并存即 403"不成立（F-27）。真单再 403 → 转人工，不沿此方向再查。
+- 仍 0 次：从点击到 RECHARGE_SUCCESS 的自动闭环、自动确认 Plus、自动取消续费、核实到期转人工、20X 闭环。09-08 有 4 次自动点击（1 成功 3 拒付），成功那次付款后是人工收口。
+- 本窗口改动（dad5244、1854729）：只有单测与生产 dry-run，真单未验。
 
 ## 暂停 / 恢复记录
 
 ```text
-暂停原因：真单自动付款在结账页被拒（403/500），根因未清
-允许继续：人工来单流程；只读查根因（CDP 看 Lane4 页面、比对用户手动路径）
-禁止操作：未查清前不 go-live --arm 真单；付款结果不明不重付不换卡
-恢复后的第一步：ready-check；先问用户手动路径细节再动
+暂停原因：等用户提交 A1 演练单；真单是否上由用户定
+允许继续：A1 演练全流程（不付款）；只读查证
+禁止操作：未经用户放行不 go-live --arm；付款结果不明不重付不换卡；跑单期间不关付款开关；点击后 10 分钟内不 kill worker
+恢复后的第一步：ready-check.sh rehearsal → A1；真单前 ready-check.sh pay
 ```
