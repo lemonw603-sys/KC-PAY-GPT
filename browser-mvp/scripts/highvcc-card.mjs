@@ -3,14 +3,19 @@
 // 不碰登录（登录要密码+图形验证码，由人完成），只用本机文件里的 Bearer token。
 //
 //   node browser-mvp/scripts/highvcc-card.mjs ranges                      # 卡段：vid、最低充值、费率说明
-//   node browser-mvp/scripts/highvcc-card.mjs cost   --vid V --amount 50  # 只读算费
-//   node browser-mvp/scripts/highvcc-card.mjs list   [--page 1]           # 卡列表（只打印非敏感字段）
-//   node browser-mvp/scripts/highvcc-card.mjs detail --card-id ID         # 卡详情（只打印尾号/有效期/地址）
-//   node browser-mvp/scripts/highvcc-card.mjs open   --vid V --amount 50 --first NAME --last NAME [--state OR] \
-//                                                     --confirm "开卡 V 50"  # 真开卡：先算费再开；无 --confirm 只算费
-//   node browser-mvp/scripts/highvcc-card.mjs export --card-id ID [--out PATH]   # 生成后台「导入备用卡」用的 xlsx
+//   node browser-mvp/scripts/highvcc-card.mjs cost   --amount 50 [--vid V]         # 只读算费
+//   node browser-mvp/scripts/highvcc-card.mjs list   [--page 1]                    # 卡列表（只打印非敏感字段）
+//   node browser-mvp/scripts/highvcc-card.mjs detail --card-id ID                  # 卡详情（只打印尾号/有效期/地址）
+//   node browser-mvp/scripts/highvcc-card.mjs open   --amount 50 --confirm "开卡 708 50" [--vid V] [--first N --last N] [--state OR]
+//                                                     # 真开卡：vid 不给时用默认卡段（DEFAULT_VID，当前 708/513989）；
+//                                                     # 姓名不给时用卡台自己的 autoCard 生成；先算费再开；无 --confirm 只算费不下单。
+//   node browser-mvp/scripts/highvcc-card.mjs export --card-id ID [--out PATH]     # 生成后台「导入备用卡」用的 xlsx
 //
 // token 文件：~/Library/Application Support/AI充值业务/highvcc.env（0600），HIGHVCC_ACCESS_TOKEN=...
+// token 过期/失效时任何命令会直接报「HIGHVCC token expired...」并给出修复命令，不会把过期当成别的错误。
+// 刷新 token（登录着 highvcc.com 的 Chrome 里，F12 → Console）：
+//   copy(localStorage.getItem('access_token'))
+//   然后终端：browser-mvp/scripts/save-highvcc-token.sh access
 // 任何输出都不含 token、完整卡号、CVC；导入表只落到本机文件。
 import { readFile, writeFile, mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { execFile } from 'node:child_process';
@@ -23,6 +28,9 @@ import { MockAddressBillingAddressSource } from '../src/mockaddress-billing-addr
 const run = promisify(execFile);
 const ENV_PATH = join(process.env.HOME, 'Library/Application Support/AI充值业务/highvcc.env');
 const BASE = (process.env.HIGHVCC_API_BASE || 'https://www.highvcc.com').replace(/\/$/, '');
+// 513989 / MasterCard：这个账户已有多张同卡段卡，2026-09-10 与 Lemon 确认过的默认卡段；
+// 换默认不改代码，跑的时候 HIGHVCC_DEFAULT_VID=<vid> 或每次显式传 --vid 都行。
+const DEFAULT_VID = process.env.HIGHVCC_DEFAULT_VID || '708';
 
 function arg(name, fallback = null) {
   const i = process.argv.indexOf(`--${name}`);
@@ -38,27 +46,63 @@ async function token() {
   return value;
 }
 
-async function api(method, path, { query = null, body = null } = {}) {
+async function api(method, path, { query = null, body = null, form = false } = {}) {
   const url = new URL(BASE + path);
   if (query) for (const [k, v] of Object.entries(query)) if (v != null) url.searchParams.set(k, String(v));
+  const { requestBody, contentType } = buildRequestInit(body, form);
   const response = await fetch(url, {
     method,
     headers: {
       Authorization: `Bearer ${await token()}`,
       Accept: 'application/json',
-      ...(body ? { 'Content-Type': 'application/json' } : {}),
+      ...(contentType ? { 'Content-Type': contentType } : {}),
       'User-Agent': 'Mozilla/5.0',
     },
-    body: body ? JSON.stringify(body) : undefined,
+    body: requestBody,
   });
   let json = null;
   try { json = await response.json(); } catch { json = null; }
+  if (isAuthTrouble(response.status, json)) {
+    throw new Error([
+      `HIGHVCC token expired or invalid (HTTP ${response.status}${json?.msg ? ` ${json.msg}` : ''}).`,
+      `Fix: in the logged-in Chrome, on any highvcc.com page, F12 -> Console:`,
+      `  copy(localStorage.getItem('access_token'))`,
+      `then: browser-mvp/scripts/save-highvcc-token.sh access`,
+    ].join('\n'));
+  }
   if (!response.ok) throw new Error(`${method} ${path} -> HTTP ${response.status}${json?.msg ? ` ${json.msg}` : ''}`);
   if (json?.code !== 200) throw new Error(`${method} ${path} -> code ${json?.code} ${json?.msg || ''}`);
   return json;
 }
 
-const cents = (dollars) => String(Math.round(Number(dollars) * 100));
+// The live front end posts these as application/x-www-form-urlencoded, not JSON (confirmed
+// 2026-09-10 by capturing the real openCardCost XHR from the logged-in session); a JSON body
+// reaches the server as effectively empty and comes back as an unrelated validation error
+// ("支付钱包不能为空") instead of the real one. Kept as a pure function so the encoding choice
+// has a direct regression test instead of relying on hitting the live API again.
+function buildRequestInit(body, form) {
+  if (!body) return { requestBody: undefined, contentType: undefined };
+  if (form) {
+    const params = new URLSearchParams();
+    for (const [k, v] of Object.entries(body)) if (v != null && v !== '') params.set(k, String(v));
+    return { requestBody: params.toString(), contentType: 'application/x-www-form-urlencoded;charset=UTF-8' };
+  }
+  return { requestBody: JSON.stringify(body), contentType: 'application/json' };
+}
+
+// HTTP 401/403, or an HTTP-200-wrapped { code: 401 } / a message that reads like a session
+// timeout: this platform's own axios interceptor treats all three as "go back to login",
+// so we surface one clear fix instead of a generic HTTP/code error the operator has to decode.
+function isAuthTrouble(status, json) {
+  return status === 401 || status === 403
+    || Boolean(json && (json.code === 401 || /登录|过期|token/i.test(String(json.msg || ''))));
+}
+
+function cents(dollars) {
+  const n = Number(dollars);
+  if (!Number.isFinite(n) || n <= 0) throw new Error(`--amount must be a positive number of US dollars, got ${JSON.stringify(dollars)}`);
+  return String(Math.round(n * 100));
+}
 const mask = (pan) => (pan ? `****${String(pan).replace(/\s/g, '').slice(-4)}` : null);
 
 function safeCardRow(row) {
@@ -85,7 +129,7 @@ async function ranges() {
 }
 
 async function cost(vid, amount) {
-  const r = await api('POST', '/api/card/openCardCost', { body: { vid, amount: cents(amount), payUnit: 'USD', couponId: null } });
+  const r = await api('POST', '/api/card/openCardCost', { body: { vid, amount: cents(amount), payUnit: 'USD' }, form: true });
   return r.data;
 }
 
@@ -98,7 +142,7 @@ async function list(page = 1) {
 }
 
 async function detail(cardId) {
-  const r = await api('POST', '/api/card/detail', { body: { cardId } });
+  const r = await api('POST', '/api/card/detail', { body: { cardId }, form: true });
   return r.data;
 }
 
@@ -134,7 +178,7 @@ async function open({ vid, amount, first, last, state, confirm }) {
     vid, firstName: first, lastName: last, street: address.line1, city: address.city, state: address.state, zipCode: address.postalCode,
     unit: 'USD', rechargeAmount: cents(amount), tags: '', gid: null, couponId: null,
   };
-  const r = await api('POST', '/api/card/newCard', { body: payload });
+  const r = await api('POST', '/api/card/newCard', { body: payload, form: true });
   console.log(JSON.stringify({ step: 'opened', msg: r.msg ?? null, data: r.data == null ? null : (typeof r.data === 'object' ? Object.keys(r.data) : String(r.data)) }));
 }
 
@@ -183,16 +227,16 @@ async function exportCard(cardId, outPath) {
   console.log(JSON.stringify({ step: 'exported', out: outPath, last4: mask(c.number), expires, balance: String(balance), holder: `${c.firstName || ''} ${c.lastName || ''}`.trim() }));
 }
 
-export { writeImportWorkbook, HEADERS as IMPORT_HEADERS };
+export { writeImportWorkbook, HEADERS as IMPORT_HEADERS, cents, buildRequestInit, isAuthTrouble };
 
 if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {
   const cmd = process.argv[2];
   try {
     if (cmd === 'ranges') await ranges();
-    else if (cmd === 'cost') console.log(JSON.stringify(await cost(arg('vid'), arg('amount'))));
+    else if (cmd === 'cost') console.log(JSON.stringify(await cost(arg('vid', DEFAULT_VID), arg('amount'))));
     else if (cmd === 'list') await list(Number(arg('page', 1)));
     else if (cmd === 'detail') printDetail(await detail(arg('card-id')));
-    else if (cmd === 'open') await open({ vid: arg('vid'), amount: arg('amount'), first: arg('first'), last: arg('last'), state: arg('state', 'OR'), confirm: arg('confirm') });
+    else if (cmd === 'open') await open({ vid: arg('vid', DEFAULT_VID), amount: arg('amount'), first: arg('first'), last: arg('last'), state: arg('state', 'OR'), confirm: arg('confirm') });
     else if (cmd === 'export') await exportCard(arg('card-id'), arg('out', join(process.env.HOME, 'Downloads', `highvcc-import-${Date.now()}.xlsx`)));
     else { console.error('usage: ranges | cost | list | detail | open | export'); process.exitCode = 2; }
   } catch (error) {
