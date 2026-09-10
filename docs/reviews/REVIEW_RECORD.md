@@ -220,3 +220,23 @@ F-3 补充证据：生产 `browser_operations` 按类型统计无 `CANCELLATION_
 - 证据：`v1/src/db/repositories/order-intake-repository.js:214-221`；`v1/src/services/order-cancellation-service.js:131-137`；生产 `PJV1-LiucIQwmhk_Sph65-6Ja` 取消后 `tasks`：ASSIGN_CARD DEAD、BROWSER_PREFLIGHT PENDING（2026-09-10 03:2x UTC）。`[现场已证]`
 - 建议：取消的各分支统一 `UPDATE tasks SET status='DEAD' WHERE order_id=? AND status IN ('PENDING','RUNNING')`（其他分支已是这样写的）。
 - 置信度：高
+
+## 批次 2A｜2026-09-10 23:30 UTC｜commit d76d193｜release 20260910-highvcc-ui-feedback-cdcf42e｜板块 D/A/E 交接点
+
+接班者独立只读核查，完整观察、证据、影响条件、反证、建议与置信度见 `docs/reviews/RECOVERY_CHAIN_REVIEW_2026-09-11.md`。未改业务或部署。
+
+### F-42 EXTENSION 没接入预检，不能把预检失败当作扩展对照结果
+- P1 / D；`production-live-pool-worker.js:222-227,262-269` 与 `browser-order-preflight.js:409-414`。原提交 5397d3d 同样写死 Cookie。离线 factory 实测 EXTENSION 环境下仍实例化 CookieSessionBootstrapAdapter；历史独立人工扩展操作无法排除。置信度：代码高。
+
+### F-43 付款后核实先受旧订单 access token 五分钟门槛限制
+- P1 / D；`live-post-payment-recovery.js:57-64` → `session-bootstrap.js:145-149` → `shared-encrypted-materials.js:212-214` → `session-validation.js:48-86`。合成材料 3600s/299s 单变量对照，后者浏览器 cookie 读取/confirmPlus 均 0，SESSION_INVALID。不会重付，但可阻断自动核实；真实发生率未知。置信度：离线高。
+
+### 旧发现更新
+F-16/F-3 后端代码线上已存在，UI 入口未接；预检 F-1 告警与重开已有实现，不能再按旧“完全没有”重复修。具体证据、测试与限制见本批报告。
+
+### 未能核实的事项
+Sentinel 根因、历史独立扩展动作、真实付款后闭环。
+### 与事实源冲突但无法判断谁对
+历史扩展对照叙述缺适配器运行证据；现有接线不能支撑该归因，不能据此推断扩展有效或无效。
+### 本次未覆盖范围
+非 Browser 供给、后台完整 UI、生产 schema 全量验证、全项目历史逐条核对；本批不是全面审查完成。

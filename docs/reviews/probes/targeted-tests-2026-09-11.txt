@@ -1,0 +1,33 @@
+✔ order-scoped Session source accepts only a pre-payment Browser order (4.260583ms)
+✔ order-scoped Session source rejects API and post-payment orders without blaming the Session (0.309292ms)
+✔ order-scoped Session source does not misclassify a database outage as customer Session invalid (0.120667ms)
+✔ preflight summary keeps only non-payment operational evidence (0.236ms)
+✔ cardless preflight permits the initial VAT quote without weakening the payment contract (0.099917ms)
+✔ preflight lease loss requeues without counting an attempt, even at the last attempt (0.394417ms)
+✔ preflight exhaustion raises a critical operator alert and points at the reopen script (0.260667ms)
+✔ preflight repository claims only Browser preflight tasks with the database profile (0.18075ms)
+✔ ExtensionSessionBootstrapAdapter preserves an existing active Profile session without opening the popup (1.722625ms)
+✔ ExtensionSessionBootstrapAdapter rejects sources with no session material (0.308125ms)
+✔ ExtensionSessionBootstrapAdapter drives the popup to replace a session and reports the extension-backed shape (0.309667ms)
+✔ ExtensionSessionBootstrapAdapter surfaces the popup's own error message instead of hanging on a rejected token (0.245458ms)
+✔ ExtensionSessionBootstrapAdapter fails closed when the popup controls are missing (wrong extension version or not loaded) (0.170125ms)
+✔ ExtensionSessionBootstrapAdapter clearSession drops only session/login cookies, same as the direct-cookie adapter (0.255709ms)
+✔ ExtensionSessionBootstrapAdapter rejects bootstrap after the lease is closed (0.214834ms)
+✔ post-payment recovery never owns a submit adapter and always closes Session/runtime on failure (1.09925ms)
+✔ manual 20X recovery verifies Plus and card evidence, never cancels, and detaches Profile (0.244625ms)
+✔ manual 20X recovery preserves Profile and requests review when card evidence is unmatched (0.111667ms)
+✔ a plan-aware action stops Pro orders on the upgrade dialog and keeps Plus orders on renewal cancellation (0.630083ms)
+✔ a verification check closes the page it opened unless it hands the Profile to a person, and never re-injects the order Session (0.344959ms)
+✔ shared encrypted sources bind material to one active browser_run and short opaque leases (6.483917ms)
+✔ post-payment Session source accepts only the two authoritative reconciliation contexts (1.230667ms)
+✔ shared card material preserves a valid imported billing address and rejects an invalid one (0.309667ms)
+✔ shared card material SQL resolves the assigned card instead of assuming card ownership by this order (0.199583ms)
+✔ shared encrypted material sources fail closed on state, reservation and ciphertext drift (0.485541ms)
+ℹ tests 25
+ℹ suites 0
+ℹ pass 25
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 311.670334

@@ -1,0 +1,23 @@
+{
+  "preflightProvider": "CookieSessionBootstrapAdapter",
+  "recoveryFresh": {
+    "lifetimeSeconds": 3600,
+    "browserCookieReads": 1,
+    "confirmCalls": 1,
+    "result": {
+      "outcome": "UNKNOWN",
+      "reasonCode": "PLUS_ACTIVATION_UNCONFIRMED",
+      "evidence": {
+        "synthetic": true
+      }
+    }
+  },
+  "recoveryNearExpiry": {
+    "lifetimeSeconds": 299,
+    "browserCookieReads": 0,
+    "confirmCalls": 0,
+    "result": {
+      "error": "SESSION_INVALID"
+    }
+  }
+}
