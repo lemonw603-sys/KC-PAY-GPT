@@ -111,7 +111,18 @@ function printDetail(d) {
     cardKeys: Object.keys(c).filter((k) => !/number|cvc|cvv|pin/i.test(k)), topKeys: Object.keys(d) }));
 }
 
+/** Cardholder name: the platform's own generator (GET /api/card/autoCard) when none is given; its address is discarded in favour of our tax-free one. */
+async function holderName(first, last) {
+  if (first && last) return { first, last, source: 'cli' };
+  const r = await api('GET', '/api/card/autoCard');
+  const f = String(r.data?.firstName || '').trim(); const l = String(r.data?.lastName || '').trim();
+  if (!/^[A-Za-z][A-Za-z' -]{0,30}$/.test(f) || !/^[A-Za-z][A-Za-z' -]{0,30}$/.test(l)) throw new Error('platform autoCard returned no usable holder name; pass --first/--last');
+  return { first: f, last: l, source: 'platform-autoCard' };
+}
+
 async function open({ vid, amount, first, last, state, confirm }) {
+  const holder = await holderName(first, last); first = holder.first; last = holder.last;
+  console.log(JSON.stringify({ step: 'holder', name: `${first} ${last}`, source: holder.source }));
   const address = await new MockAddressBillingAddressSource({ state, name: `${first} ${last}` }).load(`highvcc:${vid}:${Date.now()}`);
   const feeInfo = await cost(vid, amount);
   console.log(JSON.stringify({ step: 'cost', vid, amount: Number(amount), unit: 'USD', feeDetail: feeInfo?.feeDetail ?? feeInfo,
