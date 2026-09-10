@@ -1950,9 +1950,12 @@ elements.highvccOpenForm?.addEventListener('submit', async (event) => {
       highvcc_open_confirmation_required: '确认词不匹配，没有开卡，请重试。',
       highvcc_open_duplicate_card: '卡台已开出这张卡，但它已经在库存里了（重复调用）；请去卡片列表核实，不要重复点击。',
       highvcc_invalid_amount: '金额超出允许范围（$1–200）。',
+      // 钱已经花了、卡也真的开出来了，只是还没录进库存——detail 里已经是完整、可直接展示的说明
+      // （含卡 ID 和补记命令），这里绝不能套用"没有扣款"的措辞，会跟 detail 自相矛盾。
+      highvcc_open_no_pan: error.payload?.detail || '卡已经开出但录入失败，请联系执行者手动核对，不要重复点击。',
     };
     // A code we recognize is the clearest; next best is the platform's own reason text
-    // (present whenever the platform cleanly rejected the request — no charge happened);
+    // (present whenever the platform cleanly rejected the request before spending anything);
     // only fall back to the "might have been charged" warning when neither is available.
     if (messages[error.message]) showNotice(messages[error.message]);
     else if (error.payload?.detail) showNotice(`卡台拒绝了这次开卡（没有扣款）：${error.payload.detail}`);

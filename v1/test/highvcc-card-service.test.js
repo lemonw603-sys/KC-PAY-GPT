@@ -194,3 +194,71 @@ test('openCard: an amount outside the sane range is rejected before any network 
   await assert.rejects(service.openCard({ amount: -1, confirmation: '开卡 708 -1' }), (e) => e.code === 'HIGHVCC_INVALID_AMOUNT');
   await assert.rejects(service.openCard({ amount: 5000, confirmation: '开卡 708 5000' }), (e) => e.code === 'HIGHVCC_INVALID_AMOUNT');
 });
+
+// Real production incident 2026-09-10: a card opened successfully (money spent, visible on the
+// platform) but never made it into `cards` because detail() came back incomplete every retry —
+// the operator only saw "unknown reason, check if you were charged", with no way to know money
+// really was spent or how to fix it. This pins the fix: a specific, actionable .detail naming
+// the exact card id, plus a working reconciliation path that finishes recording it later.
+test('openCard: when the card never finishes provisioning, the error names the exact card id and says money was spent', async () => {
+  const pool = fakePool();
+  const fetchImpl = fakeFetch({
+    '/api/card/autoCard': () => ({ status: 200, body: { code: 200, data: { firstName: 'Jamie', lastName: 'Winder' } } }),
+    '/api/card/openCardCost': () => ({ status: 200, body: { code: 200, data: { feeDetail: '$5.50' } } }),
+    '/api/card/newCard': () => ({ status: 200, body: { code: 200, data: 'HGstuck123' } }),
+    '/api/card/detail': () => ({ status: 200, body: { code: 200, data: { card: {}, adress: {} } } }), // never finishes provisioning
+  });
+  const service = createHighvccCardService({ pool, encryptionKey, panHmacKey, fetchImpl, sleep: async () => {} });
+  await service.setToken({ token: 'a'.repeat(32) });
+  await assert.rejects(service.openCard({ amount: 5, confirmation: '开卡 708 5' }), (e) => {
+    assert.equal(e.code, 'HIGHVCC_OPEN_NO_PAN');
+    assert.match(e.detail, /HGstuck123/);
+    assert.match(e.detail, /钱已经扣了/);
+    assert.match(e.detail, /reconcile-highvcc-card/);
+    return true;
+  });
+  assert.equal(pool.cardsInserted.length, 0); // nothing written — recordExistingCard finishes this later
+});
+
+test('recordExistingCard: finishes recording a card the platform already created (the reconciliation path)', async () => {
+  const pool = fakePool();
+  const fetchImpl = fakeFetch({
+    '/api/card/detail': () => ({ status: 200, body: { code: 200, data: {
+      card: { cardId: 'HGstuck123', number: '4111111111111111', cvc: '123', expMonth: 2, expYear: 2029, firstName: 'Jamie', lastName: 'Winder', balance: 300 },
+      adress: { street: '1 St', city: 'X', state: 'OR', zipCode: '00000' },
+    } } }),
+  });
+  const service = createHighvccCardService({ pool, encryptionKey, panHmacKey, fetchImpl });
+  await service.setToken({ token: 'a'.repeat(32) });
+  const result = await service.recordExistingCard({ cardId: 'HGstuck123' });
+  assert.equal(result.cardId, 'HGstuck123');
+  assert.equal(result.last4, '1111');
+  assert.equal(result.balance, '3.00');
+  assert.equal(pool.cardsInserted.length, 1);
+  assert.equal(pool.cardsInserted[0][1], 'HGstuck123'); // provider_card_id
+});
+
+test('recordExistingCard: refuses when the platform still has no complete detail, instead of writing a partial row', async () => {
+  const pool = fakePool();
+  const fetchImpl = fakeFetch({
+    '/api/card/detail': () => ({ status: 200, body: { code: 200, data: { card: {}, adress: {} } } }),
+  });
+  const service = createHighvccCardService({ pool, encryptionKey, panHmacKey, fetchImpl });
+  await service.setToken({ token: 'a'.repeat(32) });
+  await assert.rejects(service.recordExistingCard({ cardId: 'HGstuck123' }), (e) => e.code === 'HIGHVCC_RECONCILE_NOT_READY');
+  assert.equal(pool.cardsInserted.length, 0);
+});
+
+test('recordExistingCard: a card already recorded (replayed reconciliation) is refused, not duplicated', async () => {
+  const pool = fakePool({ existingCardWithSamePan: true });
+  const fetchImpl = fakeFetch({
+    '/api/card/detail': () => ({ status: 200, body: { code: 200, data: {
+      card: { cardId: 'HGstuck123', number: '4111111111111111', cvc: '123', expMonth: 2, expYear: 2029, firstName: 'Jamie', lastName: 'Winder', balance: 300 },
+      adress: { street: '1 St', city: 'X', state: 'OR', zipCode: '00000' },
+    } } }),
+  });
+  const service = createHighvccCardService({ pool, encryptionKey, panHmacKey, fetchImpl });
+  await service.setToken({ token: 'a'.repeat(32) });
+  await assert.rejects(service.recordExistingCard({ cardId: 'HGstuck123' }), (e) => e.code === 'HIGHVCC_OPEN_DUPLICATE_CARD');
+  assert.equal(pool.cardsInserted.length, 0);
+});

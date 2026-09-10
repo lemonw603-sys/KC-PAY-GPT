@@ -110,3 +110,48 @@ test('provider.open: refuses without a complete address instead of sending a par
     (e) => e instanceof HighvccProviderError && e.code === 'HIGHVCC_ADDRESS_INCOMPLETE'
   );
 });
+
+// Real failure hit in production 2026-09-10: newCard succeeded (money spent, card genuinely
+// created), but the immediate detail() call came back with no card.number yet — the platform
+// was still provisioning it. The caller had no PAN to store despite the card being real.
+test('provider.open: retries detail() when the just-created card is still provisioning', async () => {
+  let detailCalls = 0;
+  const sleeps = [];
+  const { fetch: fetchImpl } = fakeFetch({
+    '/api/card/openCardCost': () => ({ status: 200, body: { code: 200, data: { feeDetail: '$5.50' } } }),
+    '/api/card/newCard': () => ({ status: 200, body: { code: 200, data: 'HGnew' } }),
+    '/api/card/detail': () => {
+      detailCalls += 1;
+      if (detailCalls < 3) return { status: 200, body: { code: 200, data: { card: {}, adress: {} } } }; // still provisioning
+      return { status: 200, body: { code: 200, data: {
+        card: { cardId: 'HGnew', number: '4111111111111111', cvc: '123', expMonth: 2, expYear: 2029, firstName: 'A', lastName: 'B', balance: 300 },
+        adress: { street: '1 St', city: 'X', state: 'OR', zipCode: '00000' },
+      } } };
+    },
+  });
+  const provider = createHighvccCardProvider({
+    getAccessToken: async () => 'tok', fetchImpl, sleep: async (ms) => { sleeps.push(ms); },
+  });
+  const result = await provider.open({
+    vid: '708', amount: 5, firstName: 'A', lastName: 'B',
+    address: { line1: '1 St', city: 'X', state: 'OR', postalCode: '00000' },
+  });
+  assert.equal(detailCalls, 3);
+  assert.deepEqual(sleeps, [1500, 1500]);
+  assert.equal(result.detail.card.number, '4111111111111111');
+});
+
+test('provider.open: gives up after retrying and returns the incomplete detail rather than hanging forever', async () => {
+  const { fetch: fetchImpl } = fakeFetch({
+    '/api/card/openCardCost': () => ({ status: 200, body: { code: 200, data: { feeDetail: '$5.50' } } }),
+    '/api/card/newCard': () => ({ status: 200, body: { code: 200, data: 'HGstuck' } }),
+    '/api/card/detail': () => ({ status: 200, body: { code: 200, data: { card: {}, adress: {} } } }),
+  });
+  const provider = createHighvccCardProvider({ getAccessToken: async () => 'tok', fetchImpl, sleep: async () => {} });
+  const result = await provider.open({
+    vid: '708', amount: 5, firstName: 'A', lastName: 'B',
+    address: { line1: '1 St', city: 'X', state: 'OR', postalCode: '00000' },
+  });
+  assert.equal(result.cardId, 'HGstuck');
+  assert.equal(result.detail.card.number, undefined); // caller must handle this, not hang or crash
+});

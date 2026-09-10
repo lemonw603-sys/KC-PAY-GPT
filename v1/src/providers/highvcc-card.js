@@ -50,7 +50,10 @@ export function isAuthTrouble(status, json) {
 
 const HOLDER_NAME_RE = /^[A-Za-z][A-Za-z' -]{0,30}$/;
 
-export function createHighvccCardProvider({ getAccessToken, fetchImpl = fetch, baseUrl = 'https://www.highvcc.com' } = {}) {
+export function createHighvccCardProvider({
+  getAccessToken, fetchImpl = fetch, baseUrl = 'https://www.highvcc.com',
+  sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+} = {}) {
   if (typeof getAccessToken !== 'function') throw new TypeError('getAccessToken is required');
   const BASE = String(baseUrl).replace(/\/$/, '');
 
@@ -122,7 +125,15 @@ export function createHighvccCardProvider({ getAccessToken, fetchImpl = fetch, b
     const r = await api('POST', '/api/card/newCard', { body: payload, form: true });
     const cardId = typeof r.data === 'string' ? r.data : r.data?.cardId;
     if (!cardId) throw new HighvccProviderError('newCard did not return a card id', 'HIGHVCC_OPEN_NO_CARD_ID');
-    const openedDetail = await detail(cardId);
+    // Confirmed in production 2026-09-10: right after newCard succeeds (money already spent),
+    // the platform can still be provisioning the card — detail() comes back with no card.number
+    // for a few seconds. Retry briefly instead of handing back an incomplete card: the caller
+    // would otherwise have no PAN to store even though a real, chargeable card now exists.
+    let openedDetail = await detail(cardId);
+    for (let attempt = 0; attempt < 4 && !openedDetail?.card?.number; attempt += 1) {
+      await sleep(1500);
+      openedDetail = await detail(cardId);
+    }
     return { feeInfo, holder, requestedAddress: address, cardId, detail: openedDetail };
   }
 
