@@ -4,10 +4,11 @@
 
 | 项目 | 当前值 | 核对时间（UTC） | 证据方式 |
 |---|---|---|---|
-| 生产 release | `/opt/pojia/releases/20260910-highvcc-open-session-resubmit-0b5639c`（commit `0b5639c`，highvcc 备用卡台 A 一键开卡后台集成（provider/service/4 条路由/卡片页 UI，token 尚未配置）+ F-5 客户重贴表单 remaining=null 显示 + F-34/F-35 打回单重提同码/换账号即重贴 Session；无新迁移；回滚点 `20260909-askform-cc3bba0`） | 2026-09-10 09:09 UTC | `readlink -f /opt/pojia/current`；switch live/ready/admin 均 200；highvcc 新路由未登录 401 已复验；customer.js v=12/canReplace 已复验 |
-| 回滚点 | `/opt/pojia/releases/20260909-askform-cc3bba0`（再前 `20260908-cancelfix-bad14cc`；本版无迁移，直接切回即可） | 2026-09-10 09:09 UTC | 部署记录（switch 输出 ROLLBACK 命令） |
-| 最新数据库备份 | `/var/backups/pojia/pojia-20260910T090733Z.sql.gz.enc`，完整性 OK（release prepare 阶段） | 2026-09-10 09:07 UTC | deploy-release prepare 输出 |
-| pojia-web | active（09-10 09:0x UTC 随 release 切换重启） | 2026-09-10 09:10 UTC | systemctl |
+| 生产 release | `/opt/pojia/releases/20260910-highvcc-error-detail-ed08e7c`（commit `ed08e7c`，highvcc 一键开卡失败时后台显示卡台真实原因（`.detail`），而不止是错误码；上一版 `0b5639c` 内容（highvcc 集成 token 已配置 + F-5 + F-34/F-35）叠加在内；无新迁移；回滚点 `20260910-highvcc-open-session-resubmit-0b5639c`） | 2026-09-10 09:34 UTC | `readlink -f /opt/pojia/current`；switch live/ready/admin 均 200；served admin.js 含"没有扣款"字样已复验 |
+| 回滚点 | `/opt/pojia/releases/20260910-highvcc-open-session-resubmit-0b5639c`（再前 `20260909-askform-cc3bba0`；本版无迁移，直接切回即可） | 2026-09-10 09:34 UTC | 部署记录（switch 输出 ROLLBACK 命令） |
+| 最新数据库备份 | `/var/backups/pojia/pojia-20260910T093415Z.sql.gz.enc`，完整性 OK（release prepare 阶段） | 2026-09-10 09:34 UTC | deploy-release prepare 输出 |
+| pojia-web | active（09-10 09:3x UTC 随 release 切换重启） | 2026-09-10 09:34 UTC | systemctl |
+| highvcc 备用卡台 A token | 已配置进生产（`app_settings.highvcc_access_token_ciphertext`，加密存储，09-10 09:17 UTC 写入）；USD 钱包余额约 $29.88（09-10 09:34 UTC 页面读取，非精确同步值） | 2026-09-10 09:34 UTC | `v1/scripts/set-highvcc-token.mjs` 输出 + 平台页面 |
 | pojia-worker（v1 任务 Worker） | active（处理 ASSIGN_CARD/PREPARE/SUBMIT_RECHARGE/POLL 等；Browser 路线的 BROWSER_PREFLIGHT 与付款由本机 worker 跑） | 2026-09-09 11:46 UTC | systemctl |
 | pojia-browser-worker | inactive / disabled（Browser 执行在本机，来单人工拉） | 2026-09-09 11:46 UTC | systemctl |
 | pojia-card-funding.timer | active | 2026-09-09 11:46 UTC | systemctl |

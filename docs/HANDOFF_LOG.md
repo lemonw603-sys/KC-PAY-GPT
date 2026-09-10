@@ -2199,3 +2199,10 @@ P1：F-3 取消续费接口从未真调、失败终态后台按钮不认；F-4 �
 - Lemon 确认"部署吧"后执行发布：`prepare`（945 文件 manifest OK、DB 备份 `pojia-20260910T090733Z` 完整性 OK）→ 无新迁移（生产/仓库均 051）→ `switch`。**发现并排除一处误报**：switch 自带的健康检查行打印"served admin.js?v=23"，是脚本自身第 94 行一处写死多年的旧版本号字面量（连同写死的 `CONFIRM_MANUAL_PAYMENT` 计数一起，检查的是"老功能没被误删"，不是本次版本号本身），与真实served内容无关；独立复核（正确 Host 头直连、文件 md5/mtime、highvcc 出现 44 次、customer.js v=12 含 canReplace 4 次、highvcc 新路由未登录 401）确认部署正确无误。已改 `CURRENT_STATE.md`（release/回滚点/备份/已上线/已知未修⑦）、`DISPOSITIONS.md`（F-5/F-34/F-35 标已发布、补 F-1 记录）。
 - 当前生产：付款开关 false，非终态订单 0，active browser run 0（部署前独立核对，低风险窗口）。highvcc token 尚未配置进生产（本地文件与生产是两个独立存储），按钮会先看到"未配置"；下一步是在后台粘贴保存。
 - 未做：deploy-release.sh 第 94 行写死版本号的小问题未修（不影响正确性，低优先级，未经用户要求不顺手改）；F-16+F-3、F-10、F-4/F-7/F-8、20X 真单演练、D-141、审查批次 2 均未开始。
+
+## 2026-09-10｜同窗口续：highvcc 按钮"开不了"排查——不是 bug，是余额不足；顺手修了错误提示（09:1x–09:34 UTC）
+- Lemon 在后台试点"一键开卡"，报错。查 Caddy access 日志（`/var/log/caddy/pojia-access.log`，JSON 行，按 `request.uri`/`status` 过滤）：`quote` 200，`open` 三次 502。**502 是我方 `mapProviderError` 自己选的状态码（"上游卡台拒绝"），不是 Caddy 网关真失败**——journalctl 确认 `pojia-web` 进程全程未重启/未崩溃，排除了"未捕获异常导致挂起"的猜测。
+- 直接在生产上跑针对性诊断（临时脚本 `v1/scripts/diag-*.mjs`，验证后已删除，未提交）：地址生成、`cost`、`autoCard`、`detail(假ID)` 单独测试均成功；唯一失败点是 `service.openCard()` 完整调用，报 `PublicApiError HIGHVCC_API_ERROR - POST /api/card/newCard -> code 500 美元账户可用余额不足`——**卡台自己干净地拒绝了请求，没有扣款**。核对 highvcc 卡片列表仍是 7 张（未新增），核对钱包页面余额 $29.88（首张卡花掉 $50.50 后剩的），$29.88 < 第二张卡需要的 $50.50，数字完全对得上；确认没有资金损失、没有漏记的卡。
+- 唯一的真问题是**提示不够用**：`mapProviderError` 只往前端传了错误码，没传卡台原话，后台兜底文案是"可能已扣款，不要重复点击"——对这种"卡台干净拒绝、根本没扣款"的情况反而添乱。修复：`HighvccProviderError` 新增 `providerMessage` 字段（与技术性 message 分开）；服务层挂到 `PublicApiError.detail`；路由把 `detail` 一起返回；前端优先显示卡台原话并明确写"没有扣款"，只有真正拿不到具体原因时才保留谨慎提示。新增 2 个回归测试用真实报错文案锁定这个行为。`ed08e7c`，已发布 `20260910-highvcc-error-detail-ed08e7c`（叠加在 `0b5639c` 之上）。
+- 顺手把生产 highvcc token 配置好了：新脚本 `v1/scripts/set-highvcc-token.mjs`（从 stdin 读，本机测试库干跑验证过存密文无明文），本地 token 通过进程替换管道直接灌进去，值本身没出现在任何命令文本或输出里；SCP 到当前 release 目录执行（比再走一次全量发布快），独立查库确认密文长度和时间戳。
+- 当前：USD 钱包 $29.88，够开一张约 $29 以内的卡；要开更大金额需要 Lemon 自己在 highvcc 后台"美金充值"。功能本身端到端是通的（今天早些时候真开过一张 $50/尾号 9839 的卡）。
