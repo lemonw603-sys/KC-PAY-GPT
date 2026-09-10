@@ -144,3 +144,13 @@ D6 已完成生产后台/API、Browser 卡源双向切换、不接管旧订单�
 - 默认卡段定为 `708`（513989，MasterCard）：这个账户 6 张卡里已有 4 张同卡段，2026-09-10 与 Lemon 确认过，`cost`/`open` 不传 `--vid` 时用它；可用 `HIGHVCC_DEFAULT_VID` 环境变量或 `--vid` 覆盖。
 - 首张真实卡：`open --amount 50` 全流程验证——持卡人用卡台自己的 `autoCard` 生成器出名（未再编造姓名），账单地址复用项目既有免税地址源（`MockAddressBillingAddressSource`，本次 OR 州）。结果：卡尾号 `9839`，有效期 `09/28`，Jamie Winder，Portland OR 97202，充值 $50、总扣费 $50.50，扣自 highvcc USD 钱包（扣前 $80.38）。已导出 xlsx 发给 Lemon；**尚未导入生产 `cards` 表**——沿用既有流程由 Lemon 在后台「导入备用卡」手工上传，本次没有新建生产写路径去自动完成这一步。
 - 平台自身有标准风控提示（"禁止恶意退款、拒付…违规者封号处理且禁止余额提现"），通用政策文案，非本次专属；记在这里供以后批量开卡时留意，不是本次异常。
+
+### 2026-09-10｜备用卡台 A 一键开卡集成进后台（未部署，待发布确认）
+
+- Lemon 确认"前期可以手动登录"（token 刷新仍是人工一步）并要求"导入自动化"+"整个开卡能力按钮集成到我们后台"。评估过把它并入 `card_stock_jobs`/`createJob`（首页"人工开卡"用的那一套）：那一套的前置条件（`readProviderSnapshot`/`readCardCatalogSnapshot` 新鲜度、无未核对活跃卡）是为 HNSKJ 这种限速、易漂移的卡台设计的，highvcc 是随时可查的同步接口，不需要也不该硬套；而且 `card_stock_jobs` 目前只有 `createJob` 侧，`claimCardStockJob` 从未被任何 worker 调用过（生产没有消费者），不是"沿用已跑通的东西"。因此新开一条独立、同步的路径，不touch 现有 `card_stock_jobs`。
+- 新增 `v1/src/providers/highvcc-card.js`（纯函数 + 可注入 token 的 provider，独立于 `browser-mvp/scripts/highvcc-card.mjs`，两边各自维护，不跨包依赖运行时代码）、`v1/src/services/highvcc-card-service.js`（token 加密存取、`quote`、`openCard`）。地址生成复用 `browser-mvp/src/mockaddress-billing-address-source.js` 的 `MockAddressBillingAddressSource`/`MysqlBillingAddressAssignmentStore`（v1 首次跨包引用 browser-mvp 的 src 代码——判断是重新实现防碰撞逻辑的正确性风险大于跨包耦合，且复用的是同一张生产表 `browser_billing_address_assignments`，migration 047）。
+- token 加密存 `app_settings`（复用 `sessionEncryptionKey`，不新增迁移），只经正式服务写入，从不进日志/对话；`app_settings.setting_value` 是 `VARCHAR(255)`，写入前显式校验密文长度，超限拒绝而不是截断。
+- 开出的卡按与 `manual-card-import-service.js` 相同的字段写入 `cards`：`card_type_id='MANUAL_BACKUP'`、`provider_account_id` 复用现有备用卡台 A 的 `00000000-0000-4000-8000-000000000103`，与手工快照导入的卡同一个库存池；卡台返回余额是"分"，入库前换算成"元"（用本轮真实 $50 开卡样本核对过单位）；`sync_tier='MANUAL_IMPORT'`——本轮不建自动余额同步，后续要余额自动刷新是单独任务。
+- 后台新增一节"备用卡台 A 一键开卡"（卡片页，`index.html`/`admin.js` v=38）：查费用→原生 confirm 弹窗二次确认→开卡，服务器仍校验字面确认词 `开卡 <vid> <amount>`（双重保险，不只信前端弹窗）；同页可更新 token。四条新路由：`GET .../status`、`POST .../token|quote|open`（quote 只需登录，token/open 走 `sensitiveAdminGuards`，同源校验测试覆盖了跨源伪造请求被拒）。
+- 测试：`v1/test/highvcc-card-provider.test.js`（8 例，纯 provider）、`v1/test/highvcc-card-service.test.js`（8 例，含金额换算、重复卡拒绝、确认词校验）、`v1/test/app.test.js` 新增路由鉴权用例；v1 全量 580 个测试跑过（578 过 2 败，2 败是既有版本号断言过期的 F-40，与本次改动无关，改动前后失败数不变）。
+- **未部署**：改动只到本地 commit；上线需要走 `deploy-release.sh prepare/switch`，与已排队的 F-5+F-34+F-35 一起，需要用户确认后再做。部署前 token 尚未配置，按钮会先看到"还没有配置 token"。
