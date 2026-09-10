@@ -1,6 +1,7 @@
 import { OrderIntakeError } from '../../domain/order-intake-error.js';
 import { OrderStatus } from '../../domain/order-status.js';
 import { CDK_RETURN_ORDER_STATUSES, returnCdkForOrderInTransaction } from './cdk-return-repository.js';
+import { replaceCustomerSessionInTransaction } from './session-replacement-repository.js';
 
 const REQUIRED_SETTINGS = Object.freeze([
   'accept_new_orders',
@@ -102,7 +103,8 @@ export async function createOrderFromCdk(pool, input) {
       // order that already ended without any payment hands the CDK back so
       // the submission below can proceed as a fresh order.
       const [boundOrders] = await connection.query(
-        `SELECT id, public_no, status, customer_email, chatgpt_account_id
+        `SELECT id, public_no, status, version, customer_email, chatgpt_account_id,
+                customer_action_code, session_replacement_count, assigned_card_id
          FROM orders WHERE id = (SELECT order_id FROM cdks WHERE id = ?) LIMIT 1 FOR UPDATE`,
         [cdkRows[0].id]
       );
@@ -117,6 +119,26 @@ export async function createOrderFromCdk(pool, input) {
           actorType: 'CUSTOMER', actorId: 'customer', metadata: { publicNo: bound.public_no },
         });
         if (released.returned) cdkRows[0] = { ...cdkRows[0], status: 'AVAILABLE' };
+      } else if (bound && bound.status === 'WAITING_FOR_SESSION') {
+        // F-34 / F-35: the order was sent back for a new Session. Whatever the
+        // customer submits now with the same code IS the replacement, from the
+        // same account or from another free account. Same code, same order:
+        // no second order, no dropped Session.
+        let replaced;
+        try {
+          replaced = await replaceCustomerSessionInTransaction(connection, {
+            order: bound, sessionCiphertext: input.sessionCiphertext,
+            customerEmail: input.customerEmail, chatgptAccountId: input.chatgptAccountId,
+            actorType: 'CUSTOMER', reason: 'customer resubmitted the code with a new Session',
+          });
+        } catch (error) {
+          if (['FUNDS_STATE_UNSAFE', 'SESSION_REPLACEMENT_CONFLICT'].includes(error?.code)) {
+            throw new OrderIntakeError('CDK is invalid or unavailable', { code: 'CDK_UNAVAILABLE', status: 409 });
+          }
+          throw error;
+        }
+        await connection.commit();
+        return { orderId: bound.id, publicNo: bound.public_no, status: replaced.resumeStatus, reused: true, sessionReplaced: true };
       } else if (bound && sameAccount) {
         await connection.commit();
         return { orderId: bound.id, publicNo: bound.public_no, status: bound.status, reused: true };

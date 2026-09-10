@@ -1,5 +1,5 @@
-import crypto from 'node:crypto';
 import { PublicApiError } from '../domain/public-api-error.js';
+import { replaceCustomerSessionInTransaction } from '../db/repositories/session-replacement-repository.js';
 import { validateChatGptSession } from '../domain/session-validation.js';
 import { createCdkLookup } from '../security/cdk-code.js';
 import { encryptSecret } from '../security/secret-box.js';
@@ -68,65 +68,24 @@ export function createSessionReplacementService({
       if (order.status !== 'WAITING_FOR_SESSION') {
         throw replacementError('SESSION_REPLACEMENT_NOT_ALLOWED');
       }
-      // A customer may re-submit a Session as many times as it takes and
-      // whenever they get to it: the order waits, the CDK stays bound.
-      const [riskRows] = await connection.query(
-        `SELECT COUNT(*) AS count FROM recharge_attempts
-         WHERE order_id = ? AND funds_risk_state IN ('ACTIVE','UNKNOWN','SETTLED')`,
-        [order.id]
-      );
-      if (Number(riskRows[0]?.count || 0) !== 0) throw replacementError('FUNDS_STATE_UNSAFE');
-
-      const replacementNo = Number(order.session_replacement_count) + 1;
-      const resumeStatus = order.assigned_card_id ? 'CARD_READY' : 'WAITING_FOR_CARD';
-      await connection.query(
-        `INSERT INTO order_session_replacements
-         (id, order_id, replacement_no, reason_code,
-          previous_customer_email, previous_chatgpt_account_id,
-          new_customer_email, new_chatgpt_account_id)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        [crypto.randomUUID(), order.id, replacementNo,
-          order.customer_action_code || 'SESSION_REPLACEMENT_REQUIRED',
-          order.customer_email, order.chatgpt_account_id,
-          validated.customerEmail, validated.chatgptAccountId]
-      );
-      const [updated] = await connection.query(
-        `UPDATE orders SET status = ?, session_ciphertext = ?,
-           customer_email = ?, chatgpt_account_id = ?,
-           session_replacement_count = ?, last_session_replaced_at = CURRENT_TIMESTAMP(3),
-           customer_action_code = NULL, failure_code = NULL, failure_reason = NULL,
-           version = version + 1, updated_at = CURRENT_TIMESTAMP(3)
-         WHERE id = ? AND version = ? AND status = 'WAITING_FOR_SESSION'`,
-        [resumeStatus, sessionCiphertext, validated.customerEmail, validated.chatgptAccountId,
-          replacementNo, order.id, order.version]
-      );
-      if (Number(updated.affectedRows) !== 1) {
-        throw new Error(`Concurrent Session replacement detected: ${order.id}`);
+      // Shared with order intake (a sent-back customer resubmitting the same
+      // code is also a replacement): funds check, replacement row, order
+      // update, task reset, order event.
+      let replaced;
+      try {
+        replaced = await replaceCustomerSessionInTransaction(connection, {
+          order, sessionCiphertext,
+          customerEmail: validated.customerEmail, chatgptAccountId: validated.chatgptAccountId,
+        });
+      } catch (error) {
+        if (error?.code === 'FUNDS_STATE_UNSAFE') throw replacementError('FUNDS_STATE_UNSAFE');
+        throw error;
       }
-      await connection.query(
-        `UPDATE tasks SET status = 'PENDING', attempts = 0, available_at = CURRENT_TIMESTAMP(3),
-           leased_by = NULL, leased_until = NULL, last_error_code = NULL, last_error_message = NULL,
-           completed_at = NULL,
-           payload_json = CASE WHEN task_type = 'SUBMIT_RECHARGE'
-             THEN JSON_REMOVE(COALESCE(payload_json, JSON_OBJECT()), '$.rechargePermit')
-             ELSE payload_json END,
-           updated_at = CURRENT_TIMESTAMP(3)
-         WHERE order_id = ? AND task_type IN ('BROWSER_PREFLIGHT','PREPARE_RECHARGE','SUBMIT_RECHARGE')`,
-        [order.id]
-      );
-      await connection.query(
-        `INSERT INTO order_events
-         (order_id, from_status, to_status, actor_type, actor_id, reason, metadata_json)
-         VALUES (?, 'WAITING_FOR_SESSION', ?, 'customer', NULL,
-           'customer replaced Session on the original order', ?)`,
-        [order.id, resumeStatus, JSON.stringify({ replacementNo,
-          accountChanged: order.chatgpt_account_id !== validated.chatgptAccountId })]
-      );
       await connection.commit();
       return {
         publicNo: order.public_no,
         status: 'PROCESSING',
-        replacementCount: replacementNo,
+        replacementCount: replaced.replacementNo,
         replacementsRemaining: null
       };
     } catch (error) {

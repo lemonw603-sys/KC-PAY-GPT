@@ -115,11 +115,45 @@ function boundCdkConnection({ boundOrder }) {
 }
 
 test('the same customer submitting a bound code again gets the existing open order back', async () => {
-  const connection = boundCdkConnection({ boundOrder: { id: 'order-old', public_no: 'PJV1-OLDOLDOLDOLDOLDOLDOLD', status: 'WAITING_FOR_SESSION', customer_email: 'Customer@Example.com', chatgpt_account_id: 'account-1' } });
+  const connection = boundCdkConnection({ boundOrder: { id: 'order-old', public_no: 'PJV1-OLDOLDOLDOLDOLDOLDOLD', status: 'CARD_READY', customer_email: 'Customer@Example.com', chatgpt_account_id: 'account-1' } });
   const result = await createOrderFromCdk({ getConnection: async () => connection }, intakeInput());
-  assert.deepEqual(result, { orderId: 'order-old', publicNo: 'PJV1-OLDOLDOLDOLDOLDOLDOLD', status: 'WAITING_FOR_SESSION', reused: true });
+  assert.deepEqual(result, { orderId: 'order-old', publicNo: 'PJV1-OLDOLDOLDOLDOLDOLDOLD', status: 'CARD_READY', reused: true });
   assert.equal(connection.calls.some(({ sql }) => sql.includes('INSERT INTO orders')), false);
+  assert.equal(connection.calls.some(({ sql }) => sql.includes('INSERT INTO order_session_replacements')), false);
   assert.equal(connection.committed, 1);
+});
+
+// F-34: a customer sent back for a new Session who does the natural thing, resubmitting the
+// same code with a new Session, used to get the old order back untouched (new Session dropped).
+test('a sent-back order receiving the same code again gets its Session replaced and resumes', async () => {
+  const connection = boundCdkConnection({ boundOrder: {
+    id: 'order-old', public_no: 'PJV1-OLDOLDOLDOLDOLDOLDOLD', status: 'WAITING_FOR_SESSION', version: 3,
+    customer_email: 'customer@example.com', chatgpt_account_id: 'account-1',
+    customer_action_code: 'SESSION_INVALID', session_replacement_count: 0, assigned_card_id: 'card-1',
+  } });
+  const result = await createOrderFromCdk({ getConnection: async () => connection }, intakeInput({ sessionCiphertext: 'encrypted-session-2' }));
+  assert.deepEqual(result, { orderId: 'order-old', publicNo: 'PJV1-OLDOLDOLDOLDOLDOLDOLD', status: 'CARD_READY', reused: true, sessionReplaced: true });
+  assert.equal(connection.calls.some(({ sql }) => sql.includes('INSERT INTO orders')), false);
+  assert.ok(connection.calls.some(({ sql }) => sql.includes('INSERT INTO order_session_replacements')));
+  const update = connection.calls.find(({ sql }) => /UPDATE orders SET status = \?, session_ciphertext = \?/.test(sql));
+  assert.deepEqual(update.values.slice(0, 4), ['CARD_READY', 'encrypted-session-2', 'customer@example.com', 'account-1']);
+  assert.ok(connection.calls.some(({ sql }) => /UPDATE tasks SET status = 'PENDING'/.test(sql) && sql.includes("'BROWSER_PREFLIGHT'")));
+  assert.equal(connection.committed, 1);
+});
+
+// F-35: "please switch to a free account" must be possible with the same code.
+test('a different free account resubmitting the same code on a sent-back order replaces the Session instead of a 409', async () => {
+  const connection = boundCdkConnection({ boundOrder: {
+    id: 'order-old', public_no: 'PJV1-OLDOLDOLDOLDOLDOLDOLD', status: 'WAITING_FOR_SESSION', version: 5,
+    customer_email: 'plus-account@example.com', chatgpt_account_id: 'account-plus',
+    customer_action_code: 'ACCOUNT_ALREADY_PLUS', session_replacement_count: 1, assigned_card_id: null,
+  } });
+  const result = await createOrderFromCdk({ getConnection: async () => connection }, intakeInput({ customerEmail: 'free@example.com', chatgptAccountId: 'account-free' }));
+  assert.equal(result.status, 'WAITING_FOR_CARD');
+  assert.equal(result.sessionReplaced, true);
+  const event = connection.calls.find(({ sql }) => sql.includes('INSERT INTO order_events') && sql.includes("'WAITING_FOR_SESSION', ?"));
+  assert.match(event.values.at(-1), /"accountChanged":true/);
+  assert.match(event.values.at(-1), /"replacementNo":2/);
 });
 
 test('a bound code whose order already ended without payment is handed back and accepted as a fresh order', async () => {
