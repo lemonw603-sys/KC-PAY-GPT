@@ -1,0 +1,38 @@
+{
+  "scope": "actual service; simulated successful SQL; not persisted DB",
+  "results": [
+    {
+      "input": false,
+      "inputType": "boolean",
+      "committed": true,
+      "runStatus": "COMPLETED",
+      "requestedOrderStatus": "CANCELLATION_REVIEW_REQUIRED",
+      "requestedCancellationReview": 1,
+      "writesSubscriptionCancelled": false,
+      "selectsProduct": false,
+      "writesPlusConfirmed": true
+    },
+    {
+      "input": "false",
+      "inputType": "string",
+      "committed": true,
+      "runStatus": "COMPLETED",
+      "requestedOrderStatus": "RECHARGE_SUCCESS",
+      "requestedCancellationReview": 0,
+      "writesSubscriptionCancelled": false,
+      "selectsProduct": false,
+      "writesPlusConfirmed": true
+    },
+    {
+      "input": true,
+      "inputType": "boolean",
+      "committed": true,
+      "runStatus": "COMPLETED",
+      "requestedOrderStatus": "RECHARGE_SUCCESS",
+      "requestedCancellationReview": 0,
+      "writesSubscriptionCancelled": false,
+      "selectsProduct": false,
+      "writesPlusConfirmed": true
+    }
+  ]
+}

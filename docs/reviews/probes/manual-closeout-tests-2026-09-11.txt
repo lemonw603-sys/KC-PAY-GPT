@@ -1,0 +1,19 @@
+✔ lists queued and claimed Browser dispatch jobs without lease authority (7.276666ms)
+✔ dispatch list includes a QUEUED job before a Browser run exists (0.1835ms)
+✔ lists Browser runs without selecting authority, lease hashes, or account HMACs (0.387167ms)
+✔ Browser run detail redacts evidence and omits every authority-bearing column (0.93175ms)
+✔ rejects invalid filters and control confirmations before database access (0.802625ms)
+✔ manual payment confirmation validates outcome and evidence before database access (0.285584ms)
+✔ resolve-unknown-payment validates outcome, confirmation, and evidence before database access (0.229792ms)
+✔ records a manual cancellation for a CANCELLATION_REVIEW_REQUIRED order (1.469708ms)
+✔ is idempotent once the order already records a cancelled subscription (0.293333ms)
+✔ refuses orders that never paid or are still unknown (1.549459ms)
+✔ requires the exact confirmation literal and a known order (0.205542ms)
+ℹ tests 11
+ℹ suites 0
+ℹ pass 11
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 118.564292

@@ -240,3 +240,23 @@ Sentinel 根因、历史独立扩展动作、真实付款后闭环。
 历史扩展对照叙述缺适配器运行证据；现有接线不能支撑该归因，不能据此推断扩展有效或无效。
 ### 本次未覆盖范围
 非 Browser 供给、后台完整 UI、生产 schema 全量验证、全项目历史逐条核对；本批不是全面审查完成。
+
+## 批次 2B｜2026-09-10 23:44 UTC｜commit 9cad431｜板块 D/E 人工收口
+
+完整证据、反证、影响条件、建议及置信度见 `docs/reviews/MANUAL_CLOSEOUT_REVIEW_2026-09-11.md`。纯源码与离线模拟 SQL，未改业务或生产。
+
+### F-44 P1：字符串 false 被当成续费已取消
+`browser-admin-service.js:573,1071-1081`；实际服务模拟 SQL 对照 false 与 "false"，后者请求 RECHARGE_SUCCESS、review=0。需要管理员调用与合格状态，非越权。
+
+### F-45 P1：CHARGED 不按订单产品核对最终套餐
+`browser-admin-service.js:203-219,974-994,1023-1034,1071`；未查产品、无条件 PLUS_CONFIRMED，Pro stage1 卡住时可能提前成功。只证明代码/SQL 意图，非真实 Pro 数据库复现。
+
+### F-46 P2：已取消续费收口没有同步取消字段
+新动作 true 分支不写 subscription_cancelled/cancellation_checked_at；后台仍读这些字段。可能显示成功却等待确认，且 review=0 无补记入口。详见报告；未测 UI。
+
+### 未能核实的事项
+真实 Pro/取消接口/生产调用与历史影响。
+### 与事实源冲突但无法判断谁对
+旧“已修”不能替代缺失的组合验收；不因此否定已验证的 Plus 夹具。
+### 本次未覆盖范围
+完整供给、后台全页、历史全量、schema/并发集成。
