@@ -11,7 +11,14 @@ function digest(value) {
  */
 export function createBrowserPaymentVerificationService({ repository, verifier,
   clock = () => new Date(), maxBatch = 20, approvedOrderId = null,
-  postPlusAction = 'CANCEL_RENEWAL' } = {}) {
+  postPlusAction = 'CANCEL_RENEWAL',
+  // Backoff for an UNKNOWN check that names no nextCheckAt of its own. Without
+  // it the row stays due immediately (next_check_at NULL) and the lane re-opens
+  // the browser every tick until the deadline.
+  verificationIntervalMs = 5_000 } = {}) {
+  if (!Number.isInteger(verificationIntervalMs) || verificationIntervalMs < 250 || verificationIntervalMs > 3_600_000) {
+    throw new TypeError('verificationIntervalMs must be an integer between 250 and 3600000');
+  }
   if (!repository || typeof repository.listPaymentVerificationsDue !== 'function'
     || typeof repository.recordPaymentVerificationObservation !== 'function'
     || typeof repository.markPaymentConfirmed !== 'function'
@@ -109,7 +116,7 @@ export function createBrowserPaymentVerificationService({ repository, verifier,
         } else {
           await repository.recordPaymentVerificationObservation({
             runId: row.runId, operationId, outcome: 'UNKNOWN', evidenceHash,
-            nextCheckAt: observation.nextCheckAt || null, now,
+            nextCheckAt: observation.nextCheckAt || new Date(now.getTime() + verificationIntervalMs), now,
           });
         }
         results.push({ runId: row.runId, outcome });

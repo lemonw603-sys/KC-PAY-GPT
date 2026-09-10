@@ -29,6 +29,20 @@ test('verification coordinator keeps short unknown results read-only and schedul
   assert.equal(h.calls[1][1].outcome, 'UNKNOWN');
 });
 
+test('an UNKNOWN check without its own nextCheckAt is rescheduled one interval later, never immediately', async () => {
+  const h = harness({ observation: { outcome: 'UNKNOWN' } });
+  await createBrowserPaymentVerificationService({
+    repository: h.repository, verifier: h.verifier,
+    clock: () => new Date('2026-09-06T00:00:00Z'), verificationIntervalMs: 7_000,
+  }).runOnce();
+  assert.equal(h.calls[1][0], 'observe');
+  assert.equal(h.calls[1][1].outcome, 'UNKNOWN');
+  assert.equal(h.calls[1][1].nextCheckAt.toISOString(), '2026-09-06T00:00:07.000Z');
+  assert.throws(() => createBrowserPaymentVerificationService({
+    repository: h.repository, verifier: h.verifier, verificationIntervalMs: 0,
+  }), /verificationIntervalMs/);
+});
+
 test('verification coordinator confirms or declines without a second submit', async () => {
   for (const outcome of ['CONFIRMED', 'DECLINED']) {
     const h = harness({ row: { paymentState: 'PAYMENT_UNKNOWN' }, observation: { outcome } });

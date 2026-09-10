@@ -287,6 +287,7 @@ export async function runProductionLiveBrowserWorker({ env = process.env, browse
       repository: createBrowserExecutionRepository(pool), verifier: recoveryVerifier,
       approvedOrderId: config.approvedOrderId, maxBatch: 1,
       postPlusAction: config.postPlusAction,
+      verificationIntervalMs: config.verificationIntervalMs,
     });
     const verificationResult = await verification.runOnce();
     if (verificationResult.status !== 'IDLE') return verificationResult;

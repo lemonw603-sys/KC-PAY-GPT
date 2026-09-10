@@ -208,6 +208,7 @@ export async function createLaneWorker({ lane, config, pool, browserType, shared
   const verification = createBrowserPaymentVerificationService({
     repository: createBrowserExecutionRepository(pool), verifier: recoveryVerifier, maxBatch: 1,
     postPlusAction: (row) => postPlusActionForPlan(row.plan),
+    verificationIntervalMs: config.verificationIntervalMs,
   });
   const preflight = createBrowserOrderPreflightWorker({
     pool, workerId, executorProfileId: config.executorProfileId, runtimeAdapter, manifest, observation: observation(),

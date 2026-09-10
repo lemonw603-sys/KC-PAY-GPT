@@ -49,6 +49,7 @@ export class LivePostPaymentRecoveryVerifier {
   async verify(row) {
     let runtime;
     let sessionLease;
+    let page = null;
     let preserveProfile = false;
     try {
       runtime = await this.runtimeAdapter.open(this.manifest, {
@@ -60,12 +61,16 @@ export class LivePostPaymentRecoveryVerifier {
       await this.sessionProvider.bootstrap(sessionLease, runtime.context);
       await this.sessionProvider.close(sessionLease);
       sessionLease = null;
-      const page = await runtime.context.newPage();
+      // This page belongs to the verification only. A resident identity keeps
+      // its window between checks, so the page is closed in `finally` unless
+      // the run hands the Profile to a person (20X dialog): otherwise every
+      // check would leave one more chatgpt.com tab behind and the executor's
+      // single-page reuse would refuse the window (PROFILE_PAGE_AMBIGUOUS).
+      page = await runtime.context.newPage();
       await page.goto('https://chatgpt.com/', {
         waitUntil: 'domcontentloaded', timeout: this.navigationTimeoutMs,
       });
       const action = typeof this.postPlusAction === 'function' ? this.postPlusAction(row.plan || 'plus') : this.postPlusAction;
-      const materialRef = browserRunMaterialRef(row.runId);
       const verifier = this.verifierFactory({
         page,
         expectedIdentity: await this.resolveSessionIdentity(row),
@@ -74,13 +79,13 @@ export class LivePostPaymentRecoveryVerifier {
         pollIntervalMs: this.verificationIntervalMs,
         upgradePlan: action === 'UPGRADE_DIALOG_STOP' ? row.plan : null,
         navigationTimeoutMs: this.navigationTimeoutMs,
+        // D-134 / D-136: payment rotates the ChatGPT session and the order only
+        // holds the PRE-payment token. The ladder may clear page login cookies
+        // and reload, but it must never re-inject that old token over the
+        // post-payment session the browser already holds (96ac467 removed it
+        // from the payment lane; this is the verification lane's copy).
         sessionRecovery: (targetPage) => recoverSessionAfterPayment(targetPage, {
           navigationTimeoutMs: this.navigationTimeoutMs,
-          reinjectSession: async (context) => {
-            const lease = await this.sessionProvider.open(materialRef, { purpose: 'post-payment-recovery' });
-            try { return await this.sessionProvider.bootstrap(lease, context, { replaceExisting: true }); }
-            finally { await this.sessionProvider.close(lease).catch(() => undefined); }
-          },
         }),
       });
       const plus = await verifier.confirmPlus();
@@ -139,6 +144,11 @@ export class LivePostPaymentRecoveryVerifier {
       };
     } finally {
       if (sessionLease) await this.sessionProvider.close(sessionLease).catch(() => undefined);
+      // Close the verification page while CDP is still attached; a hand-off
+      // keeps it (the person continues on that page).
+      if (page && !preserveProfile && typeof page.close === 'function' && !page.isClosed?.()) {
+        await page.close().catch(() => undefined);
+      }
       if (runtime) {
         if (preserveProfile) await this.runtimeAdapter.detach(runtime).catch(() => undefined);
         else await this.runtimeAdapter.close(runtime).catch(() => undefined);

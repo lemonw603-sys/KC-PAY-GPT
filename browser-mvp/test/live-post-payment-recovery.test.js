@@ -6,8 +6,13 @@ import { LivePostPaymentRecoveryVerifier } from '../src/live-post-payment-recove
 function harness({ plus = true, cancelled = true, matched = true,
   postPlusAction = 'CANCEL_RENEWAL' } = {}) {
   const calls = [];
-  const page = { async goto(url) { calls.push(['goto', url]); } };
-  const runtime = { context: { async newPage() { return page; } } };
+  const page = {
+    closed: false,
+    async goto(url) { calls.push(['goto', url]); },
+    async close() { this.closed = true; calls.push('page-close'); },
+    isClosed() { return this.closed; },
+  };
+  const runtime = { context: { async newPage() { calls.push('new-page'); return page; } } };
   const verifier = new LivePostPaymentRecoveryVerifier({
     runtimeAdapter: {
       async open() { calls.push('open'); return runtime; },
@@ -90,4 +95,33 @@ test('a plan-aware action stops Pro orders on the upgrade dialog and keeps Plus 
   assert.equal(plus.calls.includes('cancellation'), true);
   assert.equal(plus.calls.includes('upgrade-dialog'), false);
   assert.deepEqual(factoryInputs, [{ upgradePlan: 'pro_20x', hasRecovery: true }, { upgradePlan: null, hasRecovery: true }]);
+});
+
+// F-24: every check used to leave one more chatgpt.com tab in the resident window,
+// and the executor refuses a window with more than one matching page. A finished
+// check closes its own page before detaching; a 20X hand-off keeps the page for
+// the person. F-18: the verification lane no longer re-injects the order's
+// pre-payment token (only one Session lease is ever opened per check).
+test('a verification check closes the page it opened unless it hands the Profile to a person, and never re-injects the order Session', async () => {
+  const plus = harness({ postPlusAction: 'CANCEL_RENEWAL' });
+  await plus.verifier.verify({ runId: 'run-close', executorProfileId: 'profile' });
+  assert.equal(plus.calls.filter((item) => item === 'new-page').length, 1);
+  assert.equal(plus.calls.includes('page-close'), true);
+  assert.ok(plus.calls.indexOf('page-close') < plus.calls.indexOf('close'), 'page closes while CDP is still attached');
+  assert.equal(plus.calls.filter((item) => Array.isArray(item) && item[0] === 'session-open').length, 1);
+
+  const unknown = harness({ plus: false });
+  const result = await unknown.verifier.verify({ runId: 'run-unknown', executorProfileId: 'profile' });
+  assert.equal(result.outcome, 'UNKNOWN');
+  assert.equal(unknown.calls.includes('page-close'), true);
+
+  const handoff = harness({ postPlusAction: 'MANUAL_20X_HANDOFF' });
+  await handoff.verifier.verify({ runId: 'run-handoff', executorProfileId: 'profile' });
+  assert.equal(handoff.calls.includes('page-close'), false);
+  assert.equal(handoff.calls.at(-1), 'detach');
+
+  const failed = harness();
+  failed.verifier.resolveSessionIdentity = async () => { throw new Error('fixture read failed'); };
+  await assert.rejects(() => failed.verifier.verify({ runId: 'run-fail', executorProfileId: 'profile' }));
+  assert.equal(failed.calls.includes('page-close'), true);
 });
