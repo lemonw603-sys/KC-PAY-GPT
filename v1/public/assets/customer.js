@@ -256,7 +256,11 @@
     // 需更换账号：优先用后端 actionRequired.message
     const replacement = order.sessionReplacement || {};
     const expired = replacement.expiresAt && new Date(replacement.expiresAt).getTime() <= Date.now();
-    const canReplace = order.status === 'ACTION_REQUIRED' && Number(replacement.remaining || 0) > 0 && !expired;
+    // remaining === null means "no limit" (D-120: unlimited re-submission); a
+    // number is a leftover quota. Treating null as 0 hid the form for every
+    // customer who was sent back (audit F-5).
+    const canReplace = order.status === 'ACTION_REQUIRED' && !expired
+      && (replacement.remaining == null || Number(replacement.remaining) > 0);
     el.desc.textContent = (order.status === 'ACTION_REQUIRED' && !canReplace)
       ? '更换次数或时间窗口已用完，请保留查询码联系人工处理。'
       : (order.actionRequired && order.actionRequired.message) || meta.desc;

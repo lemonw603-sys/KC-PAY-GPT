@@ -177,6 +177,17 @@ test('CDK page generates per product and the card page sets the minimum balance 
   assert.match(customer, /function withProduct\(text, order\)/);
 });
 
+// F-5: the status API answers sessionReplacement.remaining = null for "no limit"
+// (D-120). Reading null as 0 hid the re-submit form for every customer who was
+// sent back; null must be treated as "may replace".
+test('customer page shows the Session re-submit form when remaining is null (unlimited)', () => {
+  const customer = fs.readFileSync(path.join(directory, 'assets', 'customer.js'), 'utf8');
+  assert.match(customer, /replacement\.remaining == null \|\| Number\(replacement\.remaining\) > 0/);
+  assert.doesNotMatch(customer, /Number\(replacement\.remaining \|\| 0\) > 0/);
+  const html = fs.readFileSync(path.join(directory, 'index.html'), 'utf8');
+  assert.match(html, /customer\.js\?v=12/);
+});
+
 test('admin navigation is exactly five pages and old views are gone', () => {
   const html = fs.readFileSync(path.join(directory, 'admin', 'index.html'), 'utf8');
   const script = fs.readFileSync(path.join(directory, 'admin', 'assets', 'admin.js'), 'utf8');
