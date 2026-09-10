@@ -491,6 +491,64 @@ test('creates paid card stock jobs only through an authenticated admin route', a
   });
 });
 
+test('highvcc backup-card routes require login for status/quote, and sensitive guards for token/open', async () => {
+  const adminAuth = createAdminSessionAuth({
+    passwordHash: await hashAdminPassword('fixture admin password', { salt: Buffer.alloc(16, 11) }),
+    sessionSecret: Buffer.alloc(32, 12), secureCookies: false
+  });
+  let tokenReceived; let openReceived;
+  const app = createApp({
+    adminAuth,
+    getHighvccCardStatus: async () => ({ configured: false, updatedAt: null }),
+    setHighvccCardToken: async (input) => { tokenReceived = input; return { configured: true, updatedAt: '2026-09-10T08:00:00.000Z' }; },
+    quoteHighvccCard: async ({ vid, amount }) => ({ vid: vid || '708', amount, feeDetail: '$50.50', popMsg: null }),
+    openHighvccCard: async (input) => { openReceived = input; return { cardId: 'HGabc123', last4: '1111', balance: '50.00' }; },
+  });
+  await withServer(app, async (baseUrl) => {
+    assert.equal((await fetch(`${baseUrl}/api/v1/admin/backup-cards/highvcc/status`)).status, 401);
+    assert.equal((await fetch(`${baseUrl}/api/v1/admin/backup-cards/highvcc/quote`, { method: 'POST' })).status, 401);
+    const login = await fetch(`${baseUrl}/api/v1/admin/session`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: 'fixture admin password' })
+    });
+    const cookie = login.headers.get('set-cookie').split(';')[0];
+
+    const status = await fetch(`${baseUrl}/api/v1/admin/backup-cards/highvcc/status`, { headers: { Cookie: cookie } });
+    assert.deepEqual(await status.json(), { configured: false, updatedAt: null });
+
+    // quote does not spend money and only needs the plain session, no Origin/step-up
+    const quote = await fetch(`${baseUrl}/api/v1/admin/backup-cards/highvcc/quote`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cookie },
+      body: JSON.stringify({ amount: 50 })
+    });
+    assert.deepEqual(await quote.json(), { vid: '708', amount: 50, feeDetail: '$50.50', popMsg: null });
+
+    // token and open are money/secret actions: same-origin + sensitive guard required
+    const sensitiveCookie = await stepUp(baseUrl, cookie);
+    const tokenSet = await fetch(`${baseUrl}/api/v1/admin/backup-cards/highvcc/token`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: sensitiveCookie, Origin: baseUrl },
+      body: JSON.stringify({ token: 'a'.repeat(32) })
+    });
+    assert.equal(tokenSet.status, 200);
+    assert.equal(tokenReceived.token, 'a'.repeat(32));
+
+    const open = await fetch(`${baseUrl}/api/v1/admin/backup-cards/highvcc/open`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: sensitiveCookie, Origin: baseUrl },
+      body: JSON.stringify({ amount: 50, confirmation: '开卡 708 50' })
+    });
+    assert.equal(open.status, 201);
+    assert.deepEqual(await open.json(), { cardId: 'HGabc123', last4: '1111', balance: '50.00' });
+    assert.equal(openReceived.confirmation, '开卡 708 50');
+
+    // a mismatched Origin (cross-site write attempt) is refused even with a valid session
+    const forged = await fetch(`${baseUrl}/api/v1/admin/backup-cards/highvcc/open`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: sensitiveCookie, Origin: 'https://evil.example' },
+      body: JSON.stringify({ amount: 50, confirmation: '开卡 708 50' })
+    });
+    assert.equal(forged.status, 403);
+  });
+});
+
 test('exposes guarded provider refresh and default card type routes', async () => {
   const adminAuth = createAdminSessionAuth({
     passwordHash: await hashAdminPassword('fixture admin password', { salt: Buffer.alloc(16, 19) }),

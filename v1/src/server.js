@@ -14,6 +14,7 @@ import {
 import { createAdminSessionAuth } from './security/admin-session.js';
 import { createCardStockService } from './services/card-stock-service.js';
 import { createCardStockJobService } from './services/card-stock-job-service.js';
+import { createHighvccCardService } from './services/highvcc-card-service.js';
 import { createCardFundingAdminService } from './services/card-funding-admin-service.js';
 import { createProviderRouteAdminService } from './services/provider-route-admin-service.js';
 import { createCardSyncJobService } from './services/card-sync-job-service.js';
@@ -71,6 +72,9 @@ const cardStockService = createCardStockService({
   providerAccountId: currentCardProviderAccountId
 });
 const cardStockJobService = createCardStockJobService({ pool });
+const highvccCardService = createHighvccCardService({
+  pool, encryptionKey: config.sessionEncryptionKey, panHmacKey: config.cardIntakePanHmacKey
+});
 const cardFundingAdminService = createCardFundingAdminService({ pool });
 const providerRouteAdminService = createProviderRouteAdminService({ pool });
 const cardSourceAdminService = createCardSourceAdminService({ pool });
@@ -216,6 +220,10 @@ const app = createApp({
   ,setAdminCardMaxSuccessfulPayments: (value) => cardStockService.setMaxSuccessfulPayments(value)
   ,setAdminCardMinimumBalance: (value, planType) => cardStockService.setMinimumRequiredCardBalance(value, planType)
   ,createAdminCardStockJob: cardStockJobService.createJob
+  ,getHighvccCardStatus: highvccCardService.tokenStatus
+  ,setHighvccCardToken: highvccCardService.setToken
+  ,quoteHighvccCard: highvccCardService.quote
+  ,openHighvccCard: highvccCardService.openCard
   ,listAdminCardFundingAttempts: cardFundingAdminService.list
   ,resolveAdminCardFundingUnknown: cardFundingAdminService.resolveUnknown
   ,setAdminDefaultRechargeMethod: providerRouteAdminService.setDefaultRechargeMethod

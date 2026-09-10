@@ -137,6 +137,11 @@ const elements = {
   refreshCardProviderRules: document.querySelector('#refresh-card-provider-rules'),
   stockCardProfile: document.querySelector('#stock-card-profile'),
   stockCost: document.querySelector('#stock-cost'),
+  highvccTokenStatus: document.querySelector('#highvcc-token-status'),
+  highvccTokenForm: document.querySelector('#highvcc-token-form'), highvccTokenInput: document.querySelector('#highvcc-token-input'),
+  highvccOpenForm: document.querySelector('#highvcc-open-form'), highvccOpenAmount: document.querySelector('#highvcc-open-amount'),
+  highvccCost: document.querySelector('#highvcc-cost'), highvccQuoteButton: document.querySelector('#highvcc-quote-button'),
+  highvccOpenButton: document.querySelector('#highvcc-open-button'),
   cardIntakeList: document.querySelector('#card-intake-list'),
   discoverNewCards: document.querySelector('#discover-new-cards'),
   reconciliationTable: document.querySelector('#reconciliation-table'),
@@ -971,7 +976,18 @@ async function loadStock() {
   await loadCardIntake().catch(() => {
     elements.cardIntakeList.innerHTML = '<p class="empty-state">新卡接管状态读取失败，请稍后刷新。</p>';
   });
+  await loadHighvccStatus().catch(() => {
+    if (elements.highvccTokenStatus) elements.highvccTokenStatus.innerHTML = '<p class="empty-state">highvcc token 状态读取失败，请稍后刷新。</p>';
+  });
   elements.syncTime.textContent = `更新于 ${new Date().toLocaleTimeString('zh-CN', { hour12: false })}`;
+}
+
+async function loadHighvccStatus() {
+  if (!elements.highvccTokenStatus) return;
+  const status = await api('/api/v1/admin/backup-cards/highvcc/status');
+  elements.highvccTokenStatus.innerHTML = status.configured
+    ? `<div><span><strong>token 已配置</strong><small>上次更新 ${formatTime(status.updatedAt)}；2 小时不活动会过期，届时开卡会明确报错。</small></span></div>`
+    : '<div><span><strong>还没有配置 token</strong><small>先在下方粘贴并保存，才能查询费用或开卡。</small></span></div>';
 }
 
 async function loadCardIntake() {
@@ -1865,6 +1881,81 @@ elements.stockOpenForm?.addEventListener('submit', async (event) => {
   }
   finally { button.disabled = false; }
 });
+elements.highvccTokenForm?.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const token = elements.highvccTokenInput.value.trim();
+  if (!token) return;
+  const button = elements.highvccTokenForm.querySelector('button[type="submit"]');
+  button.disabled = true;
+  try {
+    await sensitiveApi('/api/v1/admin/backup-cards/highvcc/token', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token })
+    });
+    elements.highvccTokenInput.value = '';
+    showNotice('token 已保存。', 'success');
+    await loadHighvccStatus();
+  } catch (error) {
+    showNotice(error.message === 'highvcc_token_invalid' ? 'token 格式不对（太短或包含空白），请重新复制。' : 'token 保存失败。');
+  }
+  finally { button.disabled = false; }
+});
+
+elements.highvccQuoteButton?.addEventListener('click', async () => {
+  const amount = Number(elements.highvccOpenAmount.value);
+  if (!(amount > 0)) return;
+  elements.highvccQuoteButton.disabled = true;
+  elements.highvccOpenButton.disabled = true;
+  elements.highvccCost.textContent = '正在查询…';
+  try {
+    const quote = await api('/api/v1/admin/backup-cards/highvcc/quote', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ amount })
+    });
+    elements.highvccCost.textContent = quote.feeDetail || `预计充值 $${amount}`;
+    state.highvccQuotedAmount = amount;
+    state.highvccQuoteFee = quote.feeDetail || `$${amount}`;
+    elements.highvccOpenButton.disabled = false;
+  } catch (error) {
+    const messages = {
+      highvcc_token_missing: '还没有配置 token，请先在上方保存。',
+      highvcc_token_expired: 'token 已过期，请重新获取并保存。',
+    };
+    elements.highvccCost.textContent = messages[error.message] || '查询失败，请稍后重试。';
+    state.highvccQuotedAmount = null;
+  }
+  finally { elements.highvccQuoteButton.disabled = false; }
+});
+
+elements.highvccOpenForm?.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const amount = Number(elements.highvccOpenAmount.value);
+  if (state.highvccQuotedAmount !== amount) {
+    showNotice('金额和上次查询的费用不一致，请重新点击"查询费用"。');
+    return;
+  }
+  const confirmation = `开卡 708 ${amount}`;
+  if (!window.confirm(`确认在备用卡台 A（highvcc.com，卡段 513989）开一张 $${amount} 的卡？\n\n${state.highvccQuoteFee}\n\n持卡人和地址由系统生成，开出后立即计入库存。`)) return;
+  elements.highvccOpenButton.disabled = true;
+  try {
+    const result = await sensitiveApi('/api/v1/admin/backup-cards/highvcc/open', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ amount, confirmation })
+    });
+    showNotice(`开卡成功：尾号 ${result.last4}，${result.holder}，余额 $${result.balance}。已计入库存。`, 'success');
+    state.highvccQuotedAmount = null;
+    elements.highvccCost.textContent = '点击"查询费用"查看实际扣款，金额改动后需要重新查询';
+    await loadStock();
+  } catch (error) {
+    const messages = {
+      highvcc_token_missing: '还没有配置 token，请先在上方保存。',
+      highvcc_token_expired: 'token 已过期，请重新获取并保存；这一步没有产生任何费用。',
+      highvcc_open_confirmation_required: '确认词不匹配，没有开卡，请重试。',
+      highvcc_open_duplicate_card: '卡台已开出这张卡，但它已经在库存里了（重复调用）；请去卡片列表核实，不要重复点击。',
+      highvcc_invalid_amount: '金额超出允许范围（$1–200）。',
+    };
+    showNotice(messages[error.message] || '开卡请求失败；如果卡台侧已经扣款，请核对卡台余额记录，不要重复点击。');
+    elements.highvccOpenButton.disabled = false;
+  }
+});
+
 document.querySelector('#logout-button').addEventListener('click', async () => {
   await fetch('/api/v1/admin/session', { method: 'DELETE' }).catch(() => {});
   window.location.replace('/admin/login');

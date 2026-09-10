@@ -49,6 +49,10 @@ export function createApp({
   setAdminCardMaxSuccessfulPayments = null,
   setAdminCardMinimumBalance = null,
   createAdminCardStockJob = null,
+  getHighvccCardStatus = null,
+  setHighvccCardToken = null,
+  quoteHighvccCard = null,
+  openHighvccCard = null,
   listAdminCardFundingAttempts = null,
   resolveAdminCardFundingUnknown = null,
   setAdminDefaultRechargeMethod = null,
@@ -340,6 +344,49 @@ export function createApp({
     app.post('/api/v1/admin/card-stock/jobs', ...sensitiveAdminGuards, async (req, res) => {
       const job = await createAdminCardStockJob(req.body);
       return res.status(202).json({ job });
+    });
+  }
+  // Backup card platform A (highvcc.com): a separate, synchronous open — not routed through
+  // card_stock_jobs, whose createJob preconditions (provider snapshot / catalog freshness)
+  // exist for HNSKJ's rate-limited, drift-prone catalog and don't apply to a live, always-
+  // queryable API. One click = one card, executed and returned in the same request.
+  if (typeof getHighvccCardStatus === 'function') {
+    app.get('/api/v1/admin/backup-cards/highvcc/status', noStore, requireAdminApi, async (_req, res) => {
+      res.json(await getHighvccCardStatus());
+    });
+  }
+  if (typeof setHighvccCardToken === 'function') {
+    app.post('/api/v1/admin/backup-cards/highvcc/token', ...sensitiveAdminGuards, async (req, res) => {
+      try {
+        return res.json(await setHighvccCardToken({ token: req.body?.token, requestedBy: req.admin?.id || 'admin' }));
+      } catch (error) {
+        if (error instanceof PublicApiError) return res.status(error.status || 400).json({ error: error.code.toLowerCase() });
+        throw error;
+      }
+    });
+  }
+  if (typeof quoteHighvccCard === 'function') {
+    app.post('/api/v1/admin/backup-cards/highvcc/quote', noStore, requireAdminApi, async (req, res) => {
+      try {
+        return res.json(await quoteHighvccCard({ vid: req.body?.vid, amount: req.body?.amount }));
+      } catch (error) {
+        if (error instanceof PublicApiError) return res.status(error.status || 400).json({ error: error.code.toLowerCase() });
+        throw error;
+      }
+    });
+  }
+  if (typeof openHighvccCard === 'function') {
+    app.post('/api/v1/admin/backup-cards/highvcc/open', ...sensitiveAdminGuards, async (req, res) => {
+      try {
+        const result = await openHighvccCard({
+          vid: req.body?.vid, amount: req.body?.amount, confirmation: req.body?.confirmation,
+          requestedBy: req.admin?.id || 'admin',
+        });
+        return res.status(201).json(result);
+      } catch (error) {
+        if (error instanceof PublicApiError) return res.status(error.status || 400).json({ error: error.code.toLowerCase() });
+        throw error;
+      }
     });
   }
   if (typeof listAdminCardFundingAttempts === 'function') {
