@@ -237,6 +237,32 @@ test('authoritative permit rejects card balance/status/sync and route drift, the
   }
 });
 
+// F-26: a worker killed after the submit intent leaves the run RUNNING/PAYMENT_SUBMITTING;
+// re-claiming it must lock the payment as unknown for the verification lane, never resume,
+// never safe-abort (the click may have happened), never click again.
+test('a re-claimed run that lost its worker after the submit intent is locked as payment-unknown, not resumed', async () => {
+  const harness = makeHarness({ replayRun: true });
+  harness.state.paymentState = 'PAYMENT_SUBMITTING';
+  harness.state.attemptStatus = 'SUBMITTING';
+  const unknownCalls = [];
+  harness.executionRepository.markPaymentUnknown = async (input) => {
+    unknownCalls.push(input);
+    harness.state.runStatus = 'RECONCILE_ONLY';
+    harness.state.paymentState = 'PAYMENT_UNKNOWN';
+    return { runId: input.runId, runStatus: 'RECONCILE_ONLY', paymentState: 'PAYMENT_UNKNOWN' };
+  };
+  await assert.rejects(
+    () => harness.integration.runPaymentOnce({ safeAbortOnFailure: true }),
+    (error) => error.code === 'RUN_NOT_RESUMABLE' && error.details?.recoveryMode === 'RECONCILE_ONLY',
+  );
+  assert.equal(unknownCalls.length, 1);
+  assert.equal(unknownCalls[0].operationId, 'browser-recovery-unknown:run-runtime-1');
+  assert.equal(unknownCalls[0].reasonCode, 'WORKER_LOST_AFTER_SUBMIT_INTENT');
+  assert.equal(harness.state.recovered, 0, 'recoverExpiredRun must not be attempted');
+  assert.equal(harness.state.aborts.length, 0, 'no safe-abort after a submit intent');
+  assert.equal(harness.state.externalPaymentCalls, 0);
+});
+
 test('lease loss before a page action safe-aborts without any external payment', async () => {
   const harness = makeHarness({ loseDispatchLeaseAt: 1 });
   const result = await harness.integration.runNonPaymentOnce();

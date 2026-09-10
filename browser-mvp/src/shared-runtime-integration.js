@@ -155,6 +155,25 @@ export class SharedBrowserRuntimeIntegration {
   }
 
   async #effectiveRun(control) {
+    // F-26: a worker that died after committing the submit intent (the click
+    // may or may not have happened) leaves the run RUNNING/PAYMENT_SUBMITTING.
+    // Nothing moves it from there: the verification lane only looks at
+    // PAYMENT_UNKNOWN / PAYMENT_CONFIRMED, and the resumability guard below
+    // would reject it every tick. Lock it as unknown (attempt UNKNOWN, ledger
+    // RECONCILIATION, order SUBMIT_UNKNOWN, verification scheduled) so the
+    // verification lane takes over. It is never resumed or re-clicked.
+    if (control.run?.idempotentReplay && control.run.paymentState === 'PAYMENT_SUBMITTING'
+      && typeof this.executionRepository.markPaymentUnknown === 'function') {
+      await this.executionRepository.markPaymentUnknown({
+        runId: control.run.runId,
+        operationId: `browser-recovery-unknown:${control.run.runId}`,
+        reasonCode: 'WORKER_LOST_AFTER_SUBMIT_INTENT',
+      });
+      throw new SharedBrowserRuntimeError(
+        'run lost its worker after the submit intent; locked for payment verification',
+        'RUN_NOT_RESUMABLE', { recoveryMode: 'RECONCILE_ONLY' },
+      );
+    }
     assertFormalRun(control.run);
     if (control.run.leaseToken) {
       await this.recoveryRepository.acquireRunResources({
