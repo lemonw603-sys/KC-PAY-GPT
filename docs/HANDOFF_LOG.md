@@ -2238,3 +2238,16 @@ P1：F-3 取消续费接口从未真调、失败终态后台按钮不认；F-4 �
 - 逐条核对 Lemon 给的清单（首页入口无反馈、开工检查位置怪、订单页看不懂、CDK 产品不清楚/结果框不消失/生成逻辑无产品前缀/批次记录乱/卡片列表无逻辑、诊断页没用/CSV不明/资金证据没用过/免税州地址不清楚/领取租约没折叠、开始营业和刷新按钮）against 实际代码（`index.html`/`admin.js`/`admin.css`/`cdk-service.js`），每一条都找到具体代码位置坐实、纠正（如免税州地址的真实用途）或标为"需要他当面指认具体指哪块"（订单页、批次记录想要的功能、卡片列表归属）。没有脱离他原话另造新条目，只是把每条模糊描述落到确切文件位置和代码行为。写入 `docs/UX_PUNCHLIST_2026-09-10.md`（持久来源）+ 对应 Artifact（可视化，供 Lemon 触发式勾选，本地不存服务器）。
 - 证据最扎实、值得优先看的几条：**"开始营业"按钮与首页「五个决定→接单并处理」调的是同一组开关接口，现在系统模型已经是"持续在线靠开关"，不是"每天开工"**；CDK 生成结果框 `hidden=false` 全文件只赋值一次、没有对应隐藏逻辑；CDK 码固定 `PJ-` 前缀、生成函数根本不接收 planType，光看码认不出产品；诊断页的资金证据核对/Browser 控制面完全没用卡片页已经在用的 `<details>` 折叠模式。
 - 未动一行代码、未部署；本次是纯核实+落盘，等功能主线告一段落后再由 Lemon 拍板要改哪些。
+
+## 2026-09-10 14:29–22:2x UTC｜今天的真单：卡在 sentinel，接了上号器扩展做对照
+
+- 用户新账号提交 Plus CDK（`PJV1-DqcnqHF0tPlxDhygTtAA`，卡 7402 分配）。讨论后放弃"先演练再真单"，直接当一次连续真实尝试（理由：演练验证不了付款那一步，且系统自身的失败保护已经能兜住风险，见对话）；`ready-check.sh pay` 全绿 → `go-live.sh --arm` 上线（付款开关 true 独立核实、lane-4 pay worker 起）。
+- `BROWSER_PREFLIGHT` 连续 4 次 `CHECKOUT_NAVIGATION_FAILED`（上限 5），任务仍 `PENDING`。现场排查（`bitbrowser-control-runtime.js` 同款只读 CDP 连接，未参与真实流程、未提交任何卡号/付款信息）：
+  - 登录、身份核对每次都过（`account-readonly-probe: loggedIn=true, identityMatched=true`），D-140 的域名修复在这个全新账号上有效。
+  - 卡住在点"Upgrade to Plus"之后：定价弹窗和按钮完全正常，点击本身无 JS 报错、无异常；但网络层面看到 `backend-api/sentinel/frame.html` + `backend-api/sentinel/req`（OpenAI 反自动化系统），随后没有任何 checkout 创建请求；1.5 秒后 ChatGPT 自己弹出"The payments page encountered an error. Please try again.”，几秒后自动消失。
+  - 手动在同一账号上又点了 3 次做对照：2 次复现 sentinel+报错，1 次完全没有触发 sentinel 也没报错——说明这套风控本身的判定不稳定，不是每次都一样。
+- 用户提出"是不是上号流程跟上号器不一样"。核实：项目已装的"诺汇盛"扩展（`browser-mvp/extensions/nuohuisheng-session-loader`）和用户刚给的新扩展（"猫咪上号助手"），manifest 都只声明 `chatgpt.com` host_permission，没有 `auth.openai.com`，跟我们自己的注入是同一类机制，不存在"上号器有特殊认证权限"这回事——这点跟项目自己早前的静态分析结论（D-048）一致。
+- 但翻到 09-09 当天一个窗口已经做过的对照（本记录 2158-2160 行）：用户手动用 6 号窗口（`AI Recharge Browser Lane 6`）能成，6 号窗口当时就带着 `usc_`/`unified_session_manifest`（auth.openai.com 认证层），自动化用的窗口没有。现场重新核实（今天，非 09-09 的旧数据）：查了当前全部 8 个 BitBrowser 身份的 cookie，**只有 6 号窗口带这层认证 cookie，其余 7 个（含 Plus Browser PH Lane 3/2/4/Pilot、AI Recharge Lane 4/5）全部没有**，包括今天用的 Lane4 (clean)。
+- 用户确认自己上次手动成功用的是"1 号"窗口——核对序号后是 `Plus Browser PH Pilot`，这个窗口 auth.openai.com 层同样是空的。**这直接反驳了"暖窗口"能完全解释差异的假说**：冷窗口一样能手动成功。用户据此判断：应该直接接上号器路径做真实对照，而不是继续在"为什么"上猜。
+- 落地：新增 `browser-mvp/src/extension-session-bootstrap.js`（`ExtensionSessionBootstrapAdapter`，实现同一个 `SessionProviderPort` 接口：`open/bootstrap/clearSession/close`），驱动已装进全部 BitBrowser 身份的上号器扩展弹窗（用 `extensionIdFromPath()` 对已确认的真实加载路径算出扩展 ID，现场验证过弹窗可正常打开、`#sessionToken`/`#loginButton` 字段都在）来建立登录态，不再直接写 cookie。`production-live-pool-worker.js` 加 `BROWSER_SESSION_PROVIDER` 开关（`COOKIE`默认 / `EXTENSION`），执行器代码不用改。7 个新单测 + browser-mvp 全量 233 个（224 过 9 跳过 0 败）。提交 `5397d3d`。
+- **状态诚实说明**：这是一条 A/B 对照路径，不是"已确认修好"。今天这个账号已经被诊断过程里连续 7 次点击"用脏"，不适合再拿它验证上号器路径是否真的能绕开 sentinel——需要一个新的干净账号才能做出有意义的对照。订单 `PJV1-DqcnqHF0tPlxDhygTtAA` 目前停在 `CARD_READY`，`BROWSER_PREFLIGHT` 还剩 1 次自动重试机会（未 DEAD），卡 7402 仍占用中，未收口，worker 已停。真单是否继续、要不要先用新账号测上号器路径，由用户定。
