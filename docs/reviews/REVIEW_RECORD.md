@@ -198,3 +198,18 @@ F-3 补充证据：生产 `browser_operations` 按类型统计无 `CANCELLATION_
 - 测试文件只看了 `session-bootstrap.test.js` 的 D-140 用例与 `live-chatgpt-payment-adapter.test.js` 用例名。
 - 20X 第二阶段（`UPGRADE_DIALOG_STOP`、弹窗读取）代码已读但不在今天 Plus 真单路径，未逐条列证。
 - HNSKJ 自动开卡、补余额、API 路线未审。
+
+### 批次 1 补充｜2026-09-10 02:3x UTC｜自测时发现
+
+### F-40 v1 全量单测有 2 个既有失败：后台静态断言写死资源版本号，09-09 发布升版后未同步
+- 板块 / 严重度：E / P3
+- 观察：`v1/test/public-isolation.test.js:107-108` 断言 `admin.css?v=25`、`admin.js?v=36`；`v1/public/admin/index.html` 自 `c7288c1`（09-09）起为 `v=26`、`v=37`。两个用例（"admin overview does not describe disabled automatic card opening as enabled"、"admin refresh feedback and inset dropdown arrows remain visible"）因此失败。
+- 证据：`node --test --test-concurrency=1`（v1）603 项 548 通过 2 失败 53 跳过；`git log -S'admin\.css\?v=25' -- v1/test/public-isolation.test.js` → `6f1217f`（09-07）；`git log -- v1/public/admin/index.html` → `c7288c1`。`[代码显示]`
+- 影响条件：只影响测试套件是否全绿，不影响运行。
+- 建议：把两处断言改为当前版本号，或改为只断言存在版本参数。
+- 置信度：高
+
+### 自测记录（不是发现）
+- `ready-check.sh rehearsal` 全绿；`run-live-pool.sh check rehearsal`（Lane4）READY；`run-live-rehearsal.sh check` READY。
+- 单测：browser-mvp 214 项 205 通过 0 失败 9 跳过；v1 603 项 548 通过 2 失败（F-40）53 跳过。
+- 真库集成（本机 Docker `pojia-stage1-mysql`，`pojia_test` 迁移至 051）：v1 `browser-execution / browser-recovery / browser-manual-payment / card-consumption-ledger / card-source` 五套 10/10；browser-mvp `payment-executor-mysql-integration / shared-dry-run-mysql-integration / production-readonly-worker-mysql-smoke` 三套 9/9。覆盖 `dad5244` 的核实服务写库路径与付款执行器状态机。`mysql-integration.test.js` 通用套件按 UNVERIFIED_LEDGER 记录（旧夹具会挂）未跑。
