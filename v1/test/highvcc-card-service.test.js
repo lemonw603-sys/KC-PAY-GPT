@@ -262,3 +262,23 @@ test('recordExistingCard: a card already recorded (replayed reconciliation) is r
   await assert.rejects(service.recordExistingCard({ cardId: 'HGstuck123' }), (e) => e.code === 'HIGHVCC_OPEN_DUPLICATE_CARD');
   assert.equal(pool.cardsInserted.length, 0);
 });
+
+test('listRanges: returns the segment picker list', async () => {
+  const pool = fakePool();
+  const fetchImpl = fakeFetch({
+    '/api/card/rangeList': () => ({ status: 200, body: { code: 200, data: [{ vid: 708, name: '513989' }, { vid: 713, name: '543156' }] } }),
+  });
+  const service = createHighvccCardService({ pool, encryptionKey, panHmacKey, fetchImpl });
+  await service.setToken({ token: 'a'.repeat(32) });
+  assert.deepEqual(await service.listRanges(), { ranges: [{ vid: '708', name: '513989' }, { vid: '713', name: '543156' }] });
+});
+
+test('walletStatus: converts cents to a dollar string for display', async () => {
+  const pool = fakePool();
+  const fetchImpl = fakeFetch({
+    '/api/user/wallet': () => ({ status: 200, body: { code: 200, data: { usdBalance: 2088, usdDeposit: 64480, usdConsume: 0 } } }),
+  });
+  const service = createHighvccCardService({ pool, encryptionKey, panHmacKey, fetchImpl });
+  await service.setToken({ token: 'a'.repeat(32) });
+  assert.deepEqual(await service.walletStatus(), { usdBalance: '20.88', usdDeposit: '644.80', usdConsume: '0.00' });
+});

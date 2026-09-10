@@ -93,6 +93,25 @@ export function createHighvccCardProvider({
     return r.data;
   }
 
+  async function ranges() {
+    const r = await api('GET', '/api/card/rangeList');
+    const rows = Array.isArray(r.data) ? r.data : (r.data?.data || []);
+    return rows.map((s) => ({
+      vid: String(s.vid), name: s.name ?? s.segment ?? s.cardRange ?? null,
+      minTopupAmountCents: s.newCardMinTopupAmount?.amount ?? null,
+    }));
+  }
+
+  // { usdBalanceCents, usdDepositCents, usdConsumeCents } — usdDeposit's exact business meaning
+  // (a per-card hold vs. a cumulative historical figure) is not independently confirmed; expose
+  // the raw fields and let the caller decide how to present them rather than asserting a
+  // computed "真实可开卡余额" that might not match what the operator actually means by it.
+  async function wallet() {
+    const r = await api('GET', '/api/user/wallet');
+    const d = r.data || {};
+    return { usdBalanceCents: d.usdBalance ?? null, usdDepositCents: d.usdDeposit ?? null, usdConsumeCents: d.usdConsume ?? null };
+  }
+
   async function autoCardHolderName() {
     const r = await api('GET', '/api/card/autoCard');
     const first = String(r.data?.firstName || '').trim();
@@ -137,5 +156,5 @@ export function createHighvccCardProvider({
     return { feeInfo, holder, requestedAddress: address, cardId, detail: openedDetail };
   }
 
-  return { cost, autoCardHolderName, detail, open };
+  return { cost, autoCardHolderName, detail, open, ranges, wallet };
 }

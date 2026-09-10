@@ -224,6 +224,8 @@ const app = createApp({
   ,setHighvccCardToken: highvccCardService.setToken
   ,quoteHighvccCard: highvccCardService.quote
   ,openHighvccCard: highvccCardService.openCard
+  ,listHighvccCardRanges: highvccCardService.listRanges
+  ,getHighvccWalletStatus: highvccCardService.walletStatus
   ,listAdminCardFundingAttempts: cardFundingAdminService.list
   ,resolveAdminCardFundingUnknown: cardFundingAdminService.resolveUnknown
   ,setAdminDefaultRechargeMethod: providerRouteAdminService.setDefaultRechargeMethod

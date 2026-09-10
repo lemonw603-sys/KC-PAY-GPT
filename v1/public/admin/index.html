@@ -8,7 +8,7 @@
   <title>Plus 运营后台</title>
   <link rel="icon" href="/admin/assets/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/admin/assets/admin.css?v=26">
-  <script src="/admin/assets/admin.js?v=40" defer></script>
+  <script src="/admin/assets/admin.js?v=41" defer></script>
 </head>
 <body>
   <div class="admin-shell">
@@ -174,10 +174,6 @@
           </form>
           <div id="manual-card-import-preview" class="mini-list"></div>
         </section>
-        <section class="card stock-card">
-          <div class="card-heading"><div><p class="section-kicker">运营明细</p><h2>卡片列表</h2></div><div class="stock-card-actions"><button class="text-button" id="refresh-stock" type="button">刷新本地列表</button><button class="text-button" id="sync-all-cards" type="button">同步卡台余额和交易</button><button class="primary-small" id="discover-new-cards" type="button">同步并接管新卡</button> <span class="write-badge">完整卡号</span></div></div>
-          <div class="mini-list stock-card-list" id="stock-cards"></div>
-        </section>
         <details class="card stock-card stock-advanced-details">
           <summary>人工开卡（产生费用）</summary>
           <div class="advanced-heading"><p>提交后由服务器安全执行。每张卡使用独立幂等键；任务异常时停止并等待人工核对。自动开卡由首页「能不能开卡补钱」决定。</p><button class="text-button" id="refresh-card-provider-rules" type="button">刷新卡段规则</button></div>
@@ -206,21 +202,27 @@
         </details>
         <details class="card stock-card stock-advanced-details">
           <summary>备用卡台 A 一键开卡（highvcc.com，产生费用）</summary>
-          <div class="advanced-heading"><p>直接调用卡台自己的接口开卡，不经过浏览器，几秒内完成；持卡人姓名由卡台生成，账单地址用项目已有免税地址库；开出后立即计入库存，不需要再手工导入表格。</p></div>
+          <div class="advanced-heading"><p>直接调用卡台自己的接口开卡，不经过浏览器，几秒内完成；持卡人姓名由卡台生成，账单地址用项目已有免税地址库；开出后立即计入库存，不需要再手工导入表格。展开后自动查询一次费用，改卡段或金额会自动重新查询。</p></div>
           <div id="highvcc-token-status" class="mini-list"></div>
+          <div id="highvcc-wallet-status" class="mini-list"></div>
           <form class="filters filters-two" id="highvcc-token-form">
             <label><span>更新登录 token</span><input id="highvcc-token-input" type="password" maxlength="4096" placeholder="从已登录的 highvcc.com 页面 Console 执行 copy(localStorage.getItem('access_token')) 后粘贴" autocomplete="off"></label>
             <button class="text-button" type="submit">保存 token</button>
           </form>
           <form class="stock-open-form" id="highvcc-open-form">
+            <label>卡段<select id="highvcc-vid-select"><option value="708">513989（默认）</option></select></label>
             <label>单卡金额（USD）<input id="highvcc-open-amount" type="number" min="1" max="200" step="1" value="50" required></label>
-            <div class="stock-cost" id="highvcc-cost">点击"查询费用"查看实际扣款，金额改动后需要重新查询</div>
+            <div class="stock-cost" id="highvcc-cost">展开后自动查询费用…</div>
             <div class="stock-presets" role="group">
-              <button class="stock-preset" type="button" id="highvcc-quote-button">查询费用</button>
+              <button class="stock-preset" type="button" id="highvcc-quote-button">重新查询</button>
               <button class="danger-button" type="submit" id="highvcc-open-button" disabled>确认开卡</button>
             </div>
           </form>
         </details>
+        <section class="card stock-card">
+          <div class="card-heading"><div><p class="section-kicker">运营明细</p><h2>卡片列表</h2></div><div class="stock-card-actions"><button class="text-button" id="refresh-stock" type="button">刷新本地列表</button><button class="text-button" id="sync-all-cards" type="button">同步卡台余额和交易</button><button class="primary-small" id="discover-new-cards" type="button">同步并接管新卡</button> <span class="write-badge">完整卡号</span></div></div>
+          <div class="mini-list stock-card-list" id="stock-cards"></div>
+        </section>
         <details class="card stock-card stock-advanced-details">
           <summary>卡余额充值队列（人工核实）</summary>
           <div class="advanced-heading"><p>只展示卡余额充值尝试及 Provider 结果。PENDING、UNKNOWN 和人工复核状态不会自动重试；UNKNOWN 只能由人工核对后记录“已扣款”或“未扣款”结论，不会在此自动重充或退款。</p></div>

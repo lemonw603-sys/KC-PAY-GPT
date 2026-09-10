@@ -53,6 +53,8 @@ export function createApp({
   setHighvccCardToken = null,
   quoteHighvccCard = null,
   openHighvccCard = null,
+  listHighvccCardRanges = null,
+  getHighvccWalletStatus = null,
   listAdminCardFundingAttempts = null,
   resolveAdminCardFundingUnknown = null,
   setAdminDefaultRechargeMethod = null,
@@ -353,6 +355,26 @@ export function createApp({
   if (typeof getHighvccCardStatus === 'function') {
     app.get('/api/v1/admin/backup-cards/highvcc/status', noStore, requireAdminApi, async (_req, res) => {
       res.json(await getHighvccCardStatus());
+    });
+  }
+  if (typeof listHighvccCardRanges === 'function') {
+    app.get('/api/v1/admin/backup-cards/highvcc/ranges', noStore, requireAdminApi, async (_req, res) => {
+      try {
+        return res.json(await listHighvccCardRanges());
+      } catch (error) {
+        if (error instanceof PublicApiError) return res.status(error.status || 400).json({ error: error.code.toLowerCase(), detail: error.detail || null });
+        throw error;
+      }
+    });
+  }
+  if (typeof getHighvccWalletStatus === 'function') {
+    app.get('/api/v1/admin/backup-cards/highvcc/wallet', noStore, requireAdminApi, async (_req, res) => {
+      try {
+        return res.json(await getHighvccWalletStatus());
+      } catch (error) {
+        if (error instanceof PublicApiError) return res.status(error.status || 400).json({ error: error.code.toLowerCase(), detail: error.detail || null });
+        throw error;
+      }
     });
   }
   if (typeof setHighvccCardToken === 'function') {

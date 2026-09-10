@@ -155,3 +155,24 @@ test('provider.open: gives up after retrying and returns the incomplete detail r
   assert.equal(result.cardId, 'HGstuck');
   assert.equal(result.detail.card.number, undefined); // caller must handle this, not hang or crash
 });
+
+test('provider.ranges: maps the live segment list to {vid, name}', async () => {
+  const { fetch: fetchImpl } = fakeFetch({
+    '/api/card/rangeList': () => ({ status: 200, body: { code: 200, data: [
+      { vid: 708, name: '513989', newCardMinTopupAmount: { amount: 200 } },
+      { vid: 713, name: '543156', newCardMinTopupAmount: { amount: 200 } },
+    ] } }),
+  });
+  const provider = createHighvccCardProvider({ getAccessToken: async () => 'tok', fetchImpl });
+  const rows = await provider.ranges();
+  assert.deepEqual(rows.map((r) => [r.vid, r.name]), [['708', '513989'], ['713', '543156']]);
+});
+
+test('provider.wallet: exposes the raw cents fields without asserting what "deposit" means', async () => {
+  const { fetch: fetchImpl } = fakeFetch({
+    '/api/user/wallet': () => ({ status: 200, body: { code: 200, data: { usdBalance: 2088, usdDeposit: 64480, usdConsume: 0 } } }),
+  });
+  const provider = createHighvccCardProvider({ getAccessToken: async () => 'tok', fetchImpl });
+  const w = await provider.wallet();
+  assert.deepEqual(w, { usdBalanceCents: 2088, usdDepositCents: 64480, usdConsumeCents: 0 });
+});

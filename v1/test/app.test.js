@@ -503,10 +503,14 @@ test('highvcc backup-card routes require login for status/quote, and sensitive g
     setHighvccCardToken: async (input) => { tokenReceived = input; return { configured: true, updatedAt: '2026-09-10T08:00:00.000Z' }; },
     quoteHighvccCard: async ({ vid, amount }) => ({ vid: vid || '708', amount, feeDetail: '$50.50', popMsg: null }),
     openHighvccCard: async (input) => { openReceived = input; return { cardId: 'HGabc123', last4: '1111', balance: '50.00' }; },
+    listHighvccCardRanges: async () => ({ ranges: [{ vid: '708', name: '513989' }] }),
+    getHighvccWalletStatus: async () => ({ usdBalance: '20.88', usdDeposit: '644.80', usdConsume: '0.00' }),
   });
   await withServer(app, async (baseUrl) => {
     assert.equal((await fetch(`${baseUrl}/api/v1/admin/backup-cards/highvcc/status`)).status, 401);
     assert.equal((await fetch(`${baseUrl}/api/v1/admin/backup-cards/highvcc/quote`, { method: 'POST' })).status, 401);
+    assert.equal((await fetch(`${baseUrl}/api/v1/admin/backup-cards/highvcc/ranges`)).status, 401);
+    assert.equal((await fetch(`${baseUrl}/api/v1/admin/backup-cards/highvcc/wallet`)).status, 401);
     const login = await fetch(`${baseUrl}/api/v1/admin/session`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ password: 'fixture admin password' })
@@ -515,6 +519,11 @@ test('highvcc backup-card routes require login for status/quote, and sensitive g
 
     const status = await fetch(`${baseUrl}/api/v1/admin/backup-cards/highvcc/status`, { headers: { Cookie: cookie } });
     assert.deepEqual(await status.json(), { configured: false, updatedAt: null });
+
+    const ranges = await fetch(`${baseUrl}/api/v1/admin/backup-cards/highvcc/ranges`, { headers: { Cookie: cookie } });
+    assert.deepEqual(await ranges.json(), { ranges: [{ vid: '708', name: '513989' }] });
+    const wallet = await fetch(`${baseUrl}/api/v1/admin/backup-cards/highvcc/wallet`, { headers: { Cookie: cookie } });
+    assert.deepEqual(await wallet.json(), { usdBalance: '20.88', usdDeposit: '644.80', usdConsume: '0.00' });
 
     // quote does not spend money and only needs the plain session, no Origin/step-up
     const quote = await fetch(`${baseUrl}/api/v1/admin/backup-cards/highvcc/quote`, {

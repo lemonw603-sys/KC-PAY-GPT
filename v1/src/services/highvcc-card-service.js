@@ -111,6 +111,28 @@ export function createHighvccCardService({
 
   const provider = createHighvccCardProvider({ getAccessToken, fetchImpl, sleep });
 
+  async function listRanges() {
+    try {
+      const rows = await provider.ranges();
+      return { ranges: rows.map((r) => ({ vid: r.vid, name: r.name })) };
+    } catch (error) {
+      throw mapProviderError(error);
+    }
+  }
+
+  async function walletStatus() {
+    try {
+      const w = await provider.wallet();
+      return {
+        usdBalance: w.usdBalanceCents == null ? null : (w.usdBalanceCents / 100).toFixed(2),
+        usdDeposit: w.usdDepositCents == null ? null : (w.usdDepositCents / 100).toFixed(2),
+        usdConsume: w.usdConsumeCents == null ? null : (w.usdConsumeCents / 100).toFixed(2),
+      };
+    } catch (error) {
+      throw mapProviderError(error);
+    }
+  }
+
   async function quote({ vid, amount } = {}) {
     const v = requireVid(vid);
     const a = requirePositiveAmount(amount);
@@ -240,5 +262,5 @@ export function createHighvccCardService({
     return recordOpenedCard({ opened, requestedBy });
   }
 
-  return { tokenStatus, setToken, quote, openCard, recordExistingCard };
+  return { tokenStatus, setToken, quote, openCard, recordExistingCard, listRanges, walletStatus };
 }

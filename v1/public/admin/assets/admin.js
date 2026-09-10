@@ -142,6 +142,9 @@ const elements = {
   highvccOpenForm: document.querySelector('#highvcc-open-form'), highvccOpenAmount: document.querySelector('#highvcc-open-amount'),
   highvccCost: document.querySelector('#highvcc-cost'), highvccQuoteButton: document.querySelector('#highvcc-quote-button'),
   highvccOpenButton: document.querySelector('#highvcc-open-button'),
+  highvccWalletStatus: document.querySelector('#highvcc-wallet-status'),
+  highvccVidSelect: document.querySelector('#highvcc-vid-select'),
+  highvccDetails: document.querySelector('#highvcc-open-form')?.closest('details'),
   cardIntakeList: document.querySelector('#card-intake-list'),
   discoverNewCards: document.querySelector('#discover-new-cards'),
   reconciliationTable: document.querySelector('#reconciliation-table'),
@@ -988,6 +991,29 @@ async function loadHighvccStatus() {
   elements.highvccTokenStatus.innerHTML = status.configured
     ? `<div><span><strong>token 已配置</strong><small>上次更新 ${formatTime(status.updatedAt)}；2 小时不活动会过期，届时开卡会明确报错。</small></span></div>`
     : '<div><span><strong>还没有配置 token</strong><small>先在下方粘贴并保存，才能查询费用或开卡。</small></span></div>';
+  if (!status.configured) {
+    if (elements.highvccWalletStatus) elements.highvccWalletStatus.innerHTML = '';
+    return;
+  }
+  if (elements.highvccWalletStatus) {
+    try {
+      const wallet = await api('/api/v1/admin/backup-cards/highvcc/wallet');
+      elements.highvccWalletStatus.innerHTML = `<div><span><strong>卡台美元钱包 $${wallet.usdBalance}</strong>`
+        + `<small>卡台自己的"押金"字段累计 $${wallet.usdDeposit}（含义未完全确认，实际能开多大金额以卡台报价为准，不代表这个数字能直接减）；已消费 $${wallet.usdConsume}</small></span></div>`;
+    } catch {
+      elements.highvccWalletStatus.innerHTML = '<div><span><strong>钱包余额读取失败</strong><small>不影响开卡，稍后刷新再看。</small></span></div>';
+    }
+  }
+  if (elements.highvccVidSelect && elements.highvccVidSelect.dataset.loaded !== '1') {
+    try {
+      const { ranges } = await api('/api/v1/admin/backup-cards/highvcc/ranges');
+      if (ranges?.length) {
+        elements.highvccVidSelect.innerHTML = ranges.map((r) => `<option value="${escapeHtml(r.vid)}">${escapeHtml(r.name || r.vid)}${r.vid === '708' ? '（默认）' : ''}</option>`).join('');
+        elements.highvccVidSelect.value = '708';
+        elements.highvccVidSelect.dataset.loaded = '1';
+      }
+    } catch { /* keep the single default option; segment picking is a convenience, not required */ }
+  }
 }
 
 async function loadCardIntake() {
@@ -1900,18 +1926,22 @@ elements.highvccTokenForm?.addEventListener('submit', async (event) => {
   finally { button.disabled = false; }
 });
 
-elements.highvccQuoteButton?.addEventListener('click', async () => {
+let highvccQuoteTimer = null;
+async function runHighvccQuote() {
+  if (!elements.highvccOpenAmount) return;
   const amount = Number(elements.highvccOpenAmount.value);
+  const vid = elements.highvccVidSelect?.value || '708';
   if (!(amount > 0)) return;
   elements.highvccQuoteButton.disabled = true;
   elements.highvccOpenButton.disabled = true;
   elements.highvccCost.textContent = '正在查询…';
   try {
     const quote = await api('/api/v1/admin/backup-cards/highvcc/quote', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ amount })
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ vid, amount })
     });
     elements.highvccCost.textContent = quote.feeDetail || `预计充值 $${amount}`;
     state.highvccQuotedAmount = amount;
+    state.highvccQuotedVid = vid;
     state.highvccQuoteFee = quote.feeDetail || `$${amount}`;
     elements.highvccOpenButton.disabled = false;
   } catch (error) {
@@ -1921,28 +1951,46 @@ elements.highvccQuoteButton?.addEventListener('click', async () => {
     };
     elements.highvccCost.textContent = messages[error.message] || error.payload?.detail || '查询失败，请稍后重试。';
     state.highvccQuotedAmount = null;
+    state.highvccQuotedVid = null;
   }
   finally { elements.highvccQuoteButton.disabled = false; }
+}
+elements.highvccQuoteButton?.addEventListener('click', runHighvccQuote);
+// Auto-quote so the operator doesn't have to remember to click a separate button first:
+// re-query (debounced) whenever the amount or segment changes, and once when the section is
+// first expanded (it starts collapsed, so there is nothing to quote before that).
+elements.highvccOpenAmount?.addEventListener('input', () => {
+  clearTimeout(highvccQuoteTimer);
+  elements.highvccOpenButton.disabled = true;
+  highvccQuoteTimer = setTimeout(runHighvccQuote, 500);
+});
+elements.highvccVidSelect?.addEventListener('change', runHighvccQuote);
+elements.highvccDetails?.addEventListener('toggle', () => {
+  if (elements.highvccDetails.open && state.highvccQuotedAmount == null) runHighvccQuote();
 });
 
 elements.highvccOpenForm?.addEventListener('submit', async (event) => {
   event.preventDefault();
   const amount = Number(elements.highvccOpenAmount.value);
-  if (state.highvccQuotedAmount !== amount) {
-    showNotice('金额和上次查询的费用不一致，请重新点击"查询费用"。');
+  const vid = elements.highvccVidSelect?.value || '708';
+  if (state.highvccQuotedAmount !== amount || state.highvccQuotedVid !== vid) {
+    showNotice('金额或卡段和上次查询的不一致，请重新查询费用。');
     return;
   }
-  const confirmation = `开卡 708 ${amount}`;
-  if (!window.confirm(`确认在备用卡台 A（highvcc.com，卡段 513989）开一张 $${amount} 的卡？\n\n${state.highvccQuoteFee}\n\n持卡人和地址由系统生成，开出后立即计入库存。`)) return;
+  const confirmation = `开卡 ${vid} ${amount}`;
+  const segmentLabel = elements.highvccVidSelect?.selectedOptions?.[0]?.textContent || vid;
+  if (!window.confirm(`确认在备用卡台 A（highvcc.com，卡段 ${segmentLabel}）开一张 $${amount} 的卡？\n\n${state.highvccQuoteFee}\n\n持卡人和地址由系统生成，开出后立即计入库存。`)) return;
   elements.highvccOpenButton.disabled = true;
   try {
     const result = await sensitiveApi('/api/v1/admin/backup-cards/highvcc/open', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ amount, confirmation })
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ vid, amount, confirmation })
     });
     showNotice(`开卡成功：尾号 ${result.last4}，${result.holder}，余额 $${result.balance}。已计入库存。`, 'success');
     state.highvccQuotedAmount = null;
-    elements.highvccCost.textContent = '点击"查询费用"查看实际扣款，金额改动后需要重新查询';
+    state.highvccQuotedVid = null;
+    elements.highvccCost.textContent = '展开后自动查询费用…';
     await loadStock();
+    await loadHighvccStatus(); // wallet balance just changed
   } catch (error) {
     const messages = {
       highvcc_token_missing: '还没有配置 token，请先在上方保存。',
