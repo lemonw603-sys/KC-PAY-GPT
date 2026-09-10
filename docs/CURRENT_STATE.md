@@ -4,10 +4,10 @@
 
 | 项目 | 当前值 | 核对时间（UTC） | 证据方式 |
 |---|---|---|---|
-| 生产 release | `/opt/pojia/releases/20260910-highvcc-reconcile-102fa94`（commit `102fa94`，openCard() 对 detail() 退避重试 + 新增 recordExistingCard 补记路径 + 错误提示不再对"钱已扣但未录入"套用"没有扣款"；上两版内容叠加在内；无新迁移；回滚点 `20260910-highvcc-error-detail-ed08e7c`） | 2026-09-10 09:52 UTC | `readlink -f /opt/pojia/current`；switch live/ready/admin 均 200 |
-| 回滚点 | `/opt/pojia/releases/20260910-highvcc-error-detail-ed08e7c`（再前 `20260910-highvcc-open-session-resubmit-0b5639c`；本版无迁移，直接切回即可） | 2026-09-10 09:52 UTC | 部署记录（switch 输出 ROLLBACK 命令） |
-| 最新数据库备份 | `/var/backups/pojia/pojia-20260910T095152Z.sql.gz.enc`，完整性 OK（release prepare 阶段） | 2026-09-10 09:52 UTC | deploy-release prepare 输出 |
-| pojia-web | active（09-10 09:5x UTC 随 release 切换重启） | 2026-09-10 09:52 UTC | systemctl |
+| 生产 release | `/opt/pojia/releases/20260910-highvcc-ux-feedback-fdfe467`（commit `fdfe467`，highvcc 卡段可选 + 钱包余额展示 + 展开/改值自动查费用 + 页面重排（开卡两节移到卡片列表之前）；上几版内容叠加在内；无新迁移；回滚点 `20260910-highvcc-reconcile-102fa94`） | 2026-09-10 10:11 UTC | `readlink -f /opt/pojia/current`；switch live/ready/admin 均 200；served admin.js 含新函数名已复验 |
+| 回滚点 | `/opt/pojia/releases/20260910-highvcc-reconcile-102fa94`（再前 `20260910-highvcc-error-detail-ed08e7c`；本版无迁移，直接切回即可） | 2026-09-10 10:11 UTC | 部署记录（switch 输出 ROLLBACK 命令） |
+| 最新数据库备份 | `/var/backups/pojia/pojia-20260910T101112Z.sql.gz.enc`，完整性 OK（release prepare 阶段） | 2026-09-10 10:11 UTC | deploy-release prepare 输出 |
+| pojia-web | active（09-10 10:1x UTC 随 release 切换重启） | 2026-09-10 10:11 UTC | systemctl |
 | highvcc 备用卡台 A token | 已配置进生产（`app_settings.highvcc_access_token_ciphertext`，加密存储，09-10 09:17 UTC 写入） | 2026-09-10 09:52 UTC | `v1/scripts/set-highvcc-token.mjs` 输出 |
 | highvcc 备用卡台 A 已开卡片（本窗口） | 3 张：尾号 9839（$50，08:xx）、9354（$5，09:19）、3241（$3，09:35，开卡时因 detail() 竞态未即时入库，09:53 用 `reconcile-highvcc-card.mjs` 补记）；账户另有 $20 押金要从钱包余额里先扣，才是真实可开卡余额（Lemon 提供） | 2026-09-10 09:52 UTC | 平台卡片列表 + `cards` 表独立核对 |
 | pojia-worker（v1 任务 Worker） | active（处理 ASSIGN_CARD/PREPARE/SUBMIT_RECHARGE/POLL 等；Browser 路线的 BROWSER_PREFLIGHT 与付款由本机 worker 跑） | 2026-09-09 11:46 UTC | systemctl |
