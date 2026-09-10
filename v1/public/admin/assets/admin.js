@@ -145,6 +145,7 @@ const elements = {
   highvccWalletStatus: document.querySelector('#highvcc-wallet-status'),
   highvccVidSelect: document.querySelector('#highvcc-vid-select'),
   highvccDetails: document.querySelector('#highvcc-open-form')?.closest('details'),
+  highvccRefreshWallet: document.querySelector('#highvcc-refresh-wallet'),
   cardIntakeList: document.querySelector('#card-intake-list'),
   discoverNewCards: document.querySelector('#discover-new-cards'),
   reconciliationTable: document.querySelector('#reconciliation-table'),
@@ -1906,6 +1907,10 @@ elements.stockOpenForm?.addEventListener('submit', async (event) => {
     showNotice(messages[error.message] || '任务创建失败，未产生新的开卡请求。');
   }
   finally { button.disabled = false; }
+});
+elements.highvccRefreshWallet?.addEventListener('click', async () => {
+  elements.highvccRefreshWallet.disabled = true;
+  try { await loadHighvccStatus(); } finally { elements.highvccRefreshWallet.disabled = false; }
 });
 elements.highvccTokenForm?.addEventListener('submit', async (event) => {
   event.preventDefault();

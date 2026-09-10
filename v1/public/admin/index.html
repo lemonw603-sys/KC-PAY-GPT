@@ -8,7 +8,7 @@
   <title>Plus 运营后台</title>
   <link rel="icon" href="/admin/assets/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/admin/assets/admin.css?v=26">
-  <script src="/admin/assets/admin.js?v=41" defer></script>
+  <script src="/admin/assets/admin.js?v=42" defer></script>
 </head>
 <body>
   <div class="admin-shell">
@@ -204,7 +204,7 @@
           <summary>备用卡台 A 一键开卡（highvcc.com，产生费用）</summary>
           <div class="advanced-heading"><p>直接调用卡台自己的接口开卡，不经过浏览器，几秒内完成；持卡人姓名由卡台生成，账单地址用项目已有免税地址库；开出后立即计入库存，不需要再手工导入表格。展开后自动查询一次费用，改卡段或金额会自动重新查询。</p></div>
           <div id="highvcc-token-status" class="mini-list"></div>
-          <div id="highvcc-wallet-status" class="mini-list"></div>
+          <div class="advanced-heading"><div id="highvcc-wallet-status" class="mini-list"></div><button class="text-button" id="highvcc-refresh-wallet" type="button">刷新余额</button></div>
           <form class="filters filters-two" id="highvcc-token-form">
             <label><span>更新登录 token</span><input id="highvcc-token-input" type="password" maxlength="4096" placeholder="从已登录的 highvcc.com 页面 Console 执行 copy(localStorage.getItem('access_token')) 后粘贴" autocomplete="off"></label>
             <button class="text-button" type="submit">保存 token</button>
@@ -214,7 +214,7 @@
             <label>单卡金额（USD）<input id="highvcc-open-amount" type="number" min="1" max="200" step="1" value="50" required></label>
             <div class="stock-cost" id="highvcc-cost">展开后自动查询费用…</div>
             <div class="stock-presets" role="group">
-              <button class="stock-preset" type="button" id="highvcc-quote-button">重新查询</button>
+              <button class="stock-preset" type="button" id="highvcc-quote-button">重新查询费用</button>
               <button class="danger-button" type="submit" id="highvcc-open-button" disabled>确认开卡</button>
             </div>
           </form>
