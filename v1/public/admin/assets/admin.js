@@ -1914,12 +1914,19 @@ elements.highvccOpenSite?.addEventListener('click', () => {
 });
 elements.highvccRefreshWallet?.addEventListener('click', async () => {
   elements.highvccRefreshWallet.disabled = true;
-  try { await loadHighvccStatus(); } finally { elements.highvccRefreshWallet.disabled = false; }
+  try {
+    await loadHighvccStatus();
+    showNotice('余额已刷新。', 'success');
+  } catch {
+    showNotice('余额刷新失败，请稍后重试。');
+  } finally {
+    elements.highvccRefreshWallet.disabled = false;
+  }
 });
 elements.highvccTokenForm?.addEventListener('submit', async (event) => {
   event.preventDefault();
   const token = elements.highvccTokenInput.value.trim();
-  if (!token) return;
+  if (!token) return showNotice('请先粘贴 token。');
   const button = elements.highvccTokenForm.querySelector('button[type="submit"]');
   button.disabled = true;
   try {
