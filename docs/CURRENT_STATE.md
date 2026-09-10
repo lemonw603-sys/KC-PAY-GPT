@@ -4,10 +4,10 @@
 
 | 项目 | 当前值 | 核对时间（UTC） | 证据方式 |
 |---|---|---|---|
-| 生产 release | `/opt/pojia/releases/20260910-bookmarklet-label-21a7f80`（commit `21a7f80`；bookmarklet 默认书签名改成"刷新卡台登录"，仅影响以后重新拖拽的默认名，不改 Lemon 已放进收藏栏的那个；上一版 `1738627` 内容叠加在内：highvcc token 一键刷新书签脚本（URL fragment 传递，不经服务器）+ 修掉资产隔离违规（裸 `href="https://..."`）；**F-16+F-3 的 `RESOLVE_UNKNOWN_PAYMENT` 后台能力已在 `487b51a` 提交但尚未随任何 release 部署**；无新迁移；回滚点 `20260910-highvcc-bookmarklet-1738627`） | 2026-09-10 12:26 UTC | `readlink -f /opt/pojia/current`；switch live/ready/admin 均 200；文件内容直接核对已复验；本机 v1 全量 598/596（2 败为既有 F-40） |
-| 回滚点 | `/opt/pojia/releases/20260910-highvcc-bookmarklet-1738627`（再前 `20260910-highvcc-jumplink-e27df13`；本版无迁移，直接切回即可） | 2026-09-10 12:26 UTC | 部署记录（switch 输出 ROLLBACK 命令） |
-| 最新数据库备份 | `/var/backups/pojia/pojia-20260910T122640Z.sql.gz.enc`，完整性 OK（release prepare 阶段） | 2026-09-10 12:26 UTC | deploy-release prepare 输出 |
-| pojia-web | active（09-10 12:2x UTC 随 release 切换重启） | 2026-09-10 12:26 UTC | systemctl |
+| 生产 release | `/opt/pojia/releases/20260910-highvcc-ui-feedback-cdcf42e`（commit `cdcf42e`；highvcc「刷新余额」按钮补上成功/失败提示，「保存 token」输入框为空时补上提示（此前两者点击后台面均无反应）；admin.js 升到 v=44；**F-16+F-3 的 `RESOLVE_UNKNOWN_PAYMENT` 后台能力仍停在 `487b51a`，尚未随任何 release 部署**；无新迁移；回滚点 `20260910-bookmarklet-label-21a7f80`） | 2026-09-10 12:45 UTC | `readlink -f /opt/pojia/current`；switch live/ready/admin 均 200；服务器本机独立 curl 已核对 admin.js 新增的三处 showNotice 文本均在生产返回内容中；本机 v1 全量 641 个断言/583 通过/2 败（均为既有 F-40 版本号断言未同步，与本次改动无关） |
+| 回滚点 | `/opt/pojia/releases/20260910-bookmarklet-label-21a7f80`（再前 `20260910-highvcc-bookmarklet-1738627`；本版无迁移，直接切回即可） | 2026-09-10 12:45 UTC | 部署记录（switch 输出 ROLLBACK 命令） |
+| 最新数据库备份 | `/var/backups/pojia/pojia-20260910T124348Z.sql.gz.enc`，完整性 OK（release prepare 阶段） | 2026-09-10 12:45 UTC | deploy-release prepare 输出 |
+| pojia-web | active（09-10 12:4x UTC 随 release 切换重启） | 2026-09-10 12:45 UTC | systemctl |
 | highvcc 备用卡台 A token | 已配置进生产（`app_settings.highvcc_access_token_ciphertext`，加密存储，09-10 09:17 UTC 写入） | 2026-09-10 09:52 UTC | `v1/scripts/set-highvcc-token.mjs` 输出 |
 | highvcc 备用卡台 A 已开卡片（本窗口） | 3 张：尾号 9839（$50，08:xx）、9354（$5，09:19）、3241（$3，09:35，开卡时因 detail() 竞态未即时入库，09:53 用 `reconcile-highvcc-card.mjs` 补记）；账户另有 $20 押金要从钱包余额里先扣，才是真实可开卡余额（Lemon 提供） | 2026-09-10 09:52 UTC | 平台卡片列表 + `cards` 表独立核对 |
 | pojia-worker（v1 任务 Worker） | active（处理 ASSIGN_CARD/PREPARE/SUBMIT_RECHARGE/POLL 等；Browser 路线的 BROWSER_PREFLIGHT 与付款由本机 worker 跑） | 2026-09-09 11:46 UTC | systemctl |
