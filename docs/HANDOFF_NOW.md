@@ -21,7 +21,9 @@
 > 12. `docs/RUNBOOK.md` —— 怎么操作、失败怎么办
 > 13. 代码：按审计 §二 的顺序把对应文件真的打开读一遍（v1：intake → session-validation → task-repository → workflow-handlers → browser-execution-repository 的付款后部分；browser-mvp：browser-order-preflight → session-bootstrap → executor → chatgpt-checkout-navigator → live-chatgpt-payment-adapter → payment-executor → chatgpt-post-payment-verifier → shared-runtime-integration → production-live-pool-worker）
 >
-> **读完先交一份"我理解的项目"**（用自己的话，不抄文档）：①这系统给谁做什么；②一笔单从 CDK 到订阅成功经过哪些环节、每个环节在哪个进程/机器上跑；③现在做到哪、哪些已验证、哪些从没在真单上跑过；④资金安全靠哪几道门；⑤接下来该做什么、为什么是这个顺序；⑥你认为最大的风险是什么。用户看完这份再让你审计划。
+> **读完先交一份"我理解的项目"**（用自己的话，不抄文档）：①这系统给谁做什么；②一笔单从 CDK 到订阅成功经过哪些环节、每个环节在哪个进程/机器上跑；③现在做到哪、哪些已验证、哪些从没在真单上跑过；④资金安全靠哪几道门；⑤接下来该做什么、为什么是这个顺序；⑥你认为最大的风险是什么。用户看完这份再让你审。
+>
+> **审的范围不只是最后那份方案**：用户要求审 2026-09-07 基线以来落到代码里的**全部改动**。范围与每项的验证程度已列在 `docs/reviews/REVIEW_SCOPE_2026-09-10.md`（39 个运行文件、40 余次提交，按 Browser 链 / 资金与订单 / 后台 / 迁移 / 文档 分组，并给了审查顺序）。按 `docs/REVIEW_PROTOCOL.md` 只读审，报告落 `docs/reviews/REVIEW_RECORD.md`。
 
 ## 现在的状态
 
