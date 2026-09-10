@@ -6,7 +6,14 @@
 //   node scripts/close-manually-fulfilled-order.mjs <public-no> [--card-used] [--dry-run] [--reason "..."]
 //   Needs DATABASE_URL (run on the production host with /etc/pojia/runtime.env sourced).
 //   Refuses when ANY system payment evidence exists (that case is a reconcile, not a closeout).
+//
+// RECHARGE_FAILED (pre-payment terminal, D-131): the abort already released the card and
+// the ledger and handed the CDK back. Closing such an order as manually fulfilled binds the
+// CDK to it again, and refuses when the CDK is no longer free (another order took it, or it
+// was revoked). --card-used is not accepted for these orders: their ledger row is RELEASED
+// and cannot be turned into CONSUMED safely by a script.
 import mysql from 'mysql2/promise';
+import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
@@ -22,7 +29,7 @@ const reasonIndex = rest.indexOf('--reason');
 const reason = reasonIndex >= 0 ? String(rest[reasonIndex + 1] || '').trim() : 'fulfilled manually outside the system by operator; system made no payment';
 if (!process.env.DATABASE_URL) { console.error('DATABASE_URL is required'); process.exit(2); }
 
-const CLOSABLE = ['CREATED', 'CARD_READY', 'WAITING_FOR_SESSION'];
+const CLOSABLE = ['CREATED', 'CARD_READY', 'WAITING_FOR_SESSION', 'RECHARGE_FAILED'];
 const pool = mysql.createPool({ uri: process.env.DATABASE_URL, connectionLimit: 2, timezone: 'Z' });
 const connection = await pool.getConnection();
 try {
@@ -31,12 +38,19 @@ try {
     'SELECT id, status, version, assigned_card_id, cdk_id FROM orders WHERE BINARY public_no = ? LIMIT 1 FOR UPDATE', [publicNo]);
   if (!order) throw new Error('order not found');
   if (!CLOSABLE.includes(order.status)) throw new Error(`order is ${order.status}; only ${CLOSABLE.join('/')} can be closed as manually fulfilled`);
+  const failedBeforePayment = order.status === 'RECHARGE_FAILED';
+  if (failedBeforePayment && cardUsed) {
+    throw new Error('RECHARGE_FAILED orders already released their card and ledger; --card-used cannot be recorded here, reconcile the card by hand');
+  }
+  // Payment evidence guard. PAYMENT_ARMED means a permit was issued but no PAYMENT_SUBMIT
+  // was ever committed (checked separately below); the executor's own pre-payment abort
+  // treats that state as safe, so does this closeout.
   const [[evidence]] = await connection.query(
     `SELECT
        (SELECT COUNT(*) FROM recharge_attempts ra WHERE ra.order_id = o.id AND ra.funds_risk_state IN ('ACTIVE','UNKNOWN','SETTLED')) AS live_or_paid_attempts,
        (SELECT COUNT(*) FROM card_consumption_ledger l WHERE l.order_id = o.id AND l.status IN ('CONSUMED','RECONCILIATION')) AS consumed_ledger,
        (SELECT COUNT(*) FROM browser_runs br INNER JOIN recharge_attempts bra ON bra.id = br.recharge_attempt_id
-          WHERE bra.order_id = o.id AND br.payment_state <> 'NOT_STARTED') AS runs_past_arming,
+          WHERE bra.order_id = o.id AND br.payment_state NOT IN ('NOT_STARTED','PAYMENT_ARMED')) AS runs_past_arming,
        (SELECT COUNT(*) FROM browser_operations bo INNER JOIN browser_runs br ON br.id = bo.browser_run_id
           INNER JOIN recharge_attempts bra ON bra.id = br.recharge_attempt_id
           WHERE bra.order_id = o.id AND bo.operation_type = 'PAYMENT_SUBMIT') AS payment_submits,
@@ -47,8 +61,36 @@ try {
   const blockers = Object.entries(evidence).filter(([, value]) => (typeof value === 'number' ? value > 0 : Boolean(value)));
   if (blockers.length) throw new Error(`system payment evidence present, refusing: ${JSON.stringify(Object.fromEntries(blockers))}`);
 
+  // CDK: a pre-payment failure handed it back (cdk-return-repository). The customer was
+  // served by hand, so the code must belong to this order again, and to nobody else.
+  let cdkOutcome = 'kept REDEEMED';
+  if (failedBeforePayment) {
+    const [[cdk]] = await connection.query(
+      'SELECT id, status, order_id, batch_no FROM cdks WHERE id = ? LIMIT 1 FOR UPDATE', [order.cdk_id]);
+    if (!cdk) throw new Error('order has no CDK to rebind');
+    if (cdk.status === 'REDEEMED' && cdk.order_id === order.id) {
+      cdkOutcome = 'already bound to this order';
+    } else {
+      if (cdk.status !== 'AVAILABLE' || cdk.order_id) {
+        throw new Error(`CDK is ${cdk.status}${cdk.order_id ? ' and bound to another order' : ''}; refusing to close as fulfilled (needs a person)`);
+      }
+      const [rebound] = await connection.query(
+        `UPDATE cdks SET status = 'REDEEMED', order_id = ?, redeemed_at = CURRENT_TIMESTAMP(3)
+         WHERE id = ? AND status = 'AVAILABLE' AND order_id IS NULL`, [order.id, cdk.id]);
+      if (Number(rebound.affectedRows) !== 1) throw new Error('CDK changed concurrently');
+      await connection.query(
+        `INSERT INTO cdk_delivery_events (id, cdk_id, batch_no, event_type, channel, actor_id, metadata_json)
+         VALUES (?, ?, ?, 'REBOUND', 'order', 'close-manually-fulfilled', ?)`,
+        [randomUUID(), cdk.id, cdk.batch_no || null,
+          JSON.stringify({ orderId: order.id, publicNo, reason: reason.slice(0, 300), previousOrderStatus: order.status })]);
+      cdkOutcome = 'rebound REDEEMED';
+    }
+  }
+
   const [[card]] = await connection.query(
     'SELECT id, last4, sync_tier FROM cards WHERE id = ? LIMIT 1 FOR UPDATE', [order.assigned_card_id]);
+  // For a RECHARGE_FAILED order the ledger row is already RELEASED: this transition then
+  // matches nothing and reports missing:true, which is the expected no-op.
   const ledger = await transitionCardConsumptionInTransaction(connection, {
     orderId: order.id, targetStatus: cardUsed ? 'CONSUMED' : 'RELEASED',
     reason: `Order fulfilled manually outside the system; assigned card ${cardUsed ? 'WAS used by hand' : 'was NOT used'}: ${reason}`,
@@ -80,8 +122,8 @@ try {
   await connection.query(
     `INSERT INTO order_events (order_id, from_status, to_status, actor_type, actor_id, reason, metadata_json)
      VALUES (?, ?, 'RECHARGE_SUCCESS', 'ADMIN', 'close-manually-fulfilled', ?, ?)`,
-    [order.id, order.status, reason, JSON.stringify({ closeManuallyFulfilled: true, cardUsed, cardLast4: card?.last4 || null, evidence, ledger, release, deadTasks: tasks.affectedRows, cancelledDispatch: dispatch.affectedRows })]);
-  const summary = { publicNo, dryRun, cardUsed, cardLast4: card?.last4 || null, ledger, release, deadTasks: tasks.affectedRows, cancelledDispatch: dispatch.affectedRows, cdk: 'kept REDEEMED', next: 'operator confirms 取消续费 via 「已在账号里取消续费」' };
+    [order.id, order.status, reason, JSON.stringify({ closeManuallyFulfilled: true, cardUsed, cardLast4: card?.last4 || null, cdk: cdkOutcome, evidence, ledger, release, deadTasks: tasks.affectedRows, cancelledDispatch: dispatch.affectedRows })]);
+  const summary = { publicNo, previousStatus: order.status, dryRun, cardUsed, cardLast4: card?.last4 || null, ledger, release, deadTasks: tasks.affectedRows, cancelledDispatch: dispatch.affectedRows, cdk: cdkOutcome, next: 'operator confirms 取消续费 via 「已在账号里取消续费」' };
   if (dryRun) { await connection.rollback(); console.log('DRY RUN (rolled back)', JSON.stringify(summary)); }
   else { await connection.commit(); console.log('CLOSED', JSON.stringify(summary)); }
 } catch (error) {
