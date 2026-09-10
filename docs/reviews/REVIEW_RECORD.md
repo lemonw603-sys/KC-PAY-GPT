@@ -213,3 +213,10 @@ F-3 补充证据：生产 `browser_operations` 按类型统计无 `CANCELLATION_
 - `ready-check.sh rehearsal` 全绿；`run-live-pool.sh check rehearsal`（Lane4）READY；`run-live-rehearsal.sh check` READY。
 - 单测：browser-mvp 214 项 205 通过 0 失败 9 跳过；v1 603 项 548 通过 2 失败（F-40）53 跳过。
 - 真库集成（本机 Docker `pojia-stage1-mysql`，`pojia_test` 迁移至 051）：v1 `browser-execution / browser-recovery / browser-manual-payment / card-consumption-ledger / card-source` 五套 10/10；browser-mvp `payment-executor-mysql-integration / shared-dry-run-mysql-integration / production-readonly-worker-mysql-smoke` 三套 9/9。覆盖 `dad5244` 的核实服务写库路径与付款执行器状态机。`mysql-integration.test.js` 通用套件按 UNVERIFIED_LEDGER 记录（旧夹具会挂）未跑。
+
+### F-41 后台取消等卡订单时不关 BROWSER_PREFLIGHT 任务，留下一条 PENDING 残留
+- 板块 / 严重度：A / P3
+- 观察：`order-cancellation-service.js` WAITING_FOR_CARD 分支只把 `assign_task_id` 那条任务置 DEAD；Browser 路线建单时另插的 `BROWSER_PREFLIGHT` 任务保持 PENDING。预检 claim 要求订单处于 CREATED/WAITING_FOR_CARD/CARD_READY，CLOSED 单不会被领，无运行影响；只是任务表脏。
+- 证据：`v1/src/db/repositories/order-intake-repository.js:214-221`；`v1/src/services/order-cancellation-service.js:131-137`；生产 `PJV1-LiucIQwmhk_Sph65-6Ja` 取消后 `tasks`：ASSIGN_CARD DEAD、BROWSER_PREFLIGHT PENDING（2026-09-10 03:2x UTC）。`[现场已证]`
+- 建议：取消的各分支统一 `UPDATE tasks SET status='DEAD' WHERE order_id=? AND status IN ('PENDING','RUNNING')`（其他分支已是这样写的）。
+- 置信度：高
