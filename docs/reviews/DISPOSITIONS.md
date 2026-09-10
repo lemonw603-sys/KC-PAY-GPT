@@ -27,16 +27,17 @@
 
 ### 上一轮审计（FULL_CHAIN_AUDIT）P0/P1 的处置沿用 HANDOFF_NOW 既定顺序
 
-真单前不做：F-5、F-1、F-16、F-10、F-3、F-4、F-6、F-7、F-8。真单后顺序：F-5+F-34+F-35（一次发布）→ F-1 → F-24 已修 → F-16+F-3 → F-10 → F-4/F-7/F-8 → F-25/F-26 代码 → P2。
+真单前不做：F-16、F-10、F-3、F-4、F-6、F-7、F-8（未做）。已完成且脱离"真单前不做"名单：F-5+F-34+F-35（已发布 `20260910-highvcc-open-session-resubmit-0b5639c`）、F-1（`23c70e3`，本机代码）、F-24（`dad5244`）、F-25/F-26（本机代码即生效）——这些均不涉及真单支付本身，接受两天期限内提前做。剩余顺序：F-16+F-3 → F-10 → F-4/F-7/F-8 → P2。
 - F-40 后台静态断言版本号不同步（既有失败）：待用户定；不影响真单，建议真单后随 F-5 那次发布一起改。
 
 ### 批次 1 处置更新｜2026-09-10 04:xx UTC（用户定两天内完成，第一天项已开始）
 
 | 编号 | 处置 | 关联 |
 |---|---|---|
-| F-5 客户页重贴表单永远隐藏 | 已修（remaining 为 null 显示表单；customer.js v=12；静态断言） | `22ca2d5`，待发布 |
-| F-34 重提同码丢 Session | 已修（打回态订单收到同码即当作重贴，写库逻辑抽为 `session-replacement-repository.js`，公开重贴接口共用） | `03c82ce`，待发布 |
-| F-35 换账号重提 409 | 已修（同上，换账号也接受，记 accountChanged） | `03c82ce`，待发布 |
+| F-5 客户页重贴表单永远隐藏 | 已修（remaining 为 null 显示表单；customer.js v=12；静态断言） | `22ca2d5`，已发布 `20260910-highvcc-open-session-resubmit-0b5639c` |
+| F-34 重提同码丢 Session | 已修（打回态订单收到同码即当作重贴，写库逻辑抽为 `session-replacement-repository.js`，公开重贴接口共用） | `03c82ce`，已发布 `20260910-highvcc-open-session-resubmit-0b5639c` |
+| F-35 换账号重提 409 | 已修（同上，换账号也接受，记 accountChanged） | `03c82ce`，已发布 `20260910-highvcc-open-session-resubmit-0b5639c` |
 | F-25 中途关付款开关判失败 | 已修（`BROWSER_PAYMENT_WRITES_DISABLED` 归为回 CARD_READY 等待） | `ec75676`，本机 worker 即生效 |
 | F-26 点击后丢 worker 无核实 | 已修（重新领到 PAYMENT_SUBMITTING 的 run 直接 `markPaymentUnknown` 交核实 lane，不再空转） | `d35960c`，本机 worker 即生效；真库集成 7/7 |
+| F-1 预检租约丢失计次、耗尽无告警 | 已修（租约丢失不计次；5 次用尽写 `BROWSER_HUMAN_REQUIRED` 告警；新增 `reopen-browser-preflight.mjs` 重开 DEAD 预检，守卫付款痕迹） | `23c70e3`，browser-mvp 本机代码，pool worker 下次启动即生效；单测 8/8 |
 | F-41 取消等卡单不关预检任务 | 待做（P3，随 F-16 那次一起） | |
