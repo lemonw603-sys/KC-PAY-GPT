@@ -4,7 +4,24 @@
 
 **上次收尾**：2026-09-10 19:05 UTC（03:05 UTC+8 09-11），窗口 `68c73cc7`（该窗口历经 Opus 4.8→Opus 5.1→Fable 5.1 多次换模型，已收尾退出）。
 
-> **给新窗口**：用户计划开一个只用 Fable 5.1 的新窗口。**先审后做**：按 `AGENTS.md` 顺序读完后，读 `docs/reviews/FULL_CHAIN_AUDIT_2026-09-10.md`（两轮审计）与本文「下一可执行项」，先给用户挑毛病、给结论，用户点头再动手。已定决策（D-138/139/140）不重开，有异议按"规划是 X、建议 Y、理由 Z"提。同一时间只有一个执行窗口。用户明确要求：**别添油加醋、别边修边试、真单失败一次即人工。**
+> **给新窗口**：用户计划开一个只用 Fable 5.1 的新窗口，要求它**把整个项目了解清楚**，再**审**本窗口留下的审计与清单，用户点头后才动手。已定决策（D-138/139/140）不重开，有异议按"规划是 X、建议 Y、理由 Z"提。同一时间只有一个执行窗口。用户明确要求：**别添油加醋、别边修边试、真单失败一次即人工。**
+>
+> **深读清单（按序，全部读完再开口；不读 `docs/archive/`、不读 HANDOFF_LOG 09-06 之前、不读根目录 legacy 文件 README 下半/progress.md/DEPLOY.md）**：
+> 1. `CLAUDE.md`、`AGENTS.md` —— 规矩与入口
+> 2. 本文 —— 现在
+> 3. `docs/PROJECT_MAP.md` —— 目标、里程碑、唯一执行顺序
+> 4. `docs/CURRENT_STATE.md` + 跑 `browser-mvp/scripts/state-check.sh` —— 事实，且自己对一遍现场
+> 5. `docs/PRODUCT_SIMPLIFICATION_DISCUSSION.md` 末尾「接班实施基线」—— 方向（用户确认过的）
+> 6. `docs/CORE_SPEC_2026-09-07.md` —— 订单生命周期、执行流程形状、五个决定
+> 7. `docs/DECISIONS.md` 全部 —— 140 条，为什么是现在这样；D-131 起尤其重要
+> 8. `docs/UNVERIFIED_LEDGER.md` —— 做了但没证明的
+> 9. `docs/PROJECT_OPERATING_MODEL.md` —— 全链路与状态机总册（长，按目录挑与订单/资金/Browser 相关的章节）
+> 10. `docs/HANDOFF_LOG.md` 从「2026-09-06」章节读到末尾 —— 最近一周每天发生了什么、踩了什么坑
+> 11. `docs/reviews/FULL_CHAIN_AUDIT_2026-09-10.md` —— 两轮审计；§二 同时是真单路径的**代码地图**（每一段对应哪个文件、哪几行）
+> 12. `docs/RUNBOOK.md` —— 怎么操作、失败怎么办
+> 13. 代码：按审计 §二 的顺序把对应文件真的打开读一遍（v1：intake → session-validation → task-repository → workflow-handlers → browser-execution-repository 的付款后部分；browser-mvp：browser-order-preflight → session-bootstrap → executor → chatgpt-checkout-navigator → live-chatgpt-payment-adapter → payment-executor → chatgpt-post-payment-verifier → shared-runtime-integration → production-live-pool-worker）
+>
+> **读完先交一份"我理解的项目"**（用自己的话，不抄文档）：①这系统给谁做什么；②一笔单从 CDK 到订阅成功经过哪些环节、每个环节在哪个进程/机器上跑；③现在做到哪、哪些已验证、哪些从没在真单上跑过；④资金安全靠哪几道门；⑤接下来该做什么、为什么是这个顺序；⑥你认为最大的风险是什么。用户看完这份再让你审计划。
 
 ## 现在的状态
 
