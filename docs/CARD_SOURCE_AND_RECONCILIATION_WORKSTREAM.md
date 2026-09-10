@@ -134,3 +134,13 @@ D6 已完成生产后台/API、Browser 卡源双向切换、不接管旧订单�
 ### 2026-09-06｜备用卡 Browser 付款前修复已发布
 
 `a9e65e3` 已完整发布并通过 844 文件 manifest、备份、服务健康和 LIVE check。目标订单仍冻结 `manual_excel/backup-a`，卡 `5501/$20`，无 Browser run/permit。真实付款确认后，手工卡以 Browser Plus 确认+共享账本收口，不调用 HNSKJ 对账。
+
+### 2026-09-10｜备用卡台 A（highvcc.com 舜捷跨境）开卡脚本化
+
+- 新增 `browser-mvp/scripts/highvcc-card.mjs`（`ranges | cost | list | detail | open | export`）：直接走 highvcc.com 自己的登录态 JSON 接口，不碰它的登录（密码+图形验证码，由人完成）；`export` 生成后台「导入备用卡」能直接吃的 xlsx。token 存本机 `~/Library/Application Support/AI充值业务/highvcc.env`（0600），`browser-mvp/scripts/save-highvcc-token.sh` 从剪贴板写入，全程不进对话/不进日志；token 过期（2 小时不活动）时任何命令直接报出修复命令，不会当成别的错误误判。
+- 首次真实调用命中两个未曾核实过的真实 bug，已修复并补了针对性回归测试（`browser-mvp/test/highvcc-card.test.js`，9/9 通过；`browser-mvp` 全量 226/226 通过[9 个既有 skip]）：
+  1. 算费/开卡接口线上实际吃 `application/x-www-form-urlencoded`，脚本原先发 JSON，服务端把整个 body 当空处理，报出无关的「支付钱包不能为空」——用真实登录会话抓包 `openCardCost` 的 XHR 才定位到，不是字段名问题。
+  2. `--amount` 缺失/非法时原先会静默算成 `NaN` 分再发请求；现在开卡/算费前先校验，非正数直接拒绝。
+- 默认卡段定为 `708`（513989，MasterCard）：这个账户 6 张卡里已有 4 张同卡段，2026-09-10 与 Lemon 确认过，`cost`/`open` 不传 `--vid` 时用它；可用 `HIGHVCC_DEFAULT_VID` 环境变量或 `--vid` 覆盖。
+- 首张真实卡：`open --amount 50` 全流程验证——持卡人用卡台自己的 `autoCard` 生成器出名（未再编造姓名），账单地址复用项目既有免税地址源（`MockAddressBillingAddressSource`，本次 OR 州）。结果：卡尾号 `9839`，有效期 `09/28`，Jamie Winder，Portland OR 97202，充值 $50、总扣费 $50.50，扣自 highvcc USD 钱包（扣前 $80.38）。已导出 xlsx 发给 Lemon；**尚未导入生产 `cards` 表**——沿用既有流程由 Lemon 在后台「导入备用卡」手工上传，本次没有新建生产写路径去自动完成这一步。
+- 平台自身有标准风控提示（"禁止恶意退款、拒付…违规者封号处理且禁止余额提现"），通用政策文案，非本次专属；记在这里供以后批量开卡时留意，不是本次异常。
