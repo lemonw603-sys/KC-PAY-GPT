@@ -2251,3 +2251,7 @@ P1：F-3 取消续费接口从未真调、失败终态后台按钮不认；F-4 �
 - 用户确认自己上次手动成功用的是"1 号"窗口——核对序号后是 `Plus Browser PH Pilot`，这个窗口 auth.openai.com 层同样是空的。**这直接反驳了"暖窗口"能完全解释差异的假说**：冷窗口一样能手动成功。用户据此判断：应该直接接上号器路径做真实对照，而不是继续在"为什么"上猜。
 - 落地：新增 `browser-mvp/src/extension-session-bootstrap.js`（`ExtensionSessionBootstrapAdapter`，实现同一个 `SessionProviderPort` 接口：`open/bootstrap/clearSession/close`），驱动已装进全部 BitBrowser 身份的上号器扩展弹窗（用 `extensionIdFromPath()` 对已确认的真实加载路径算出扩展 ID，现场验证过弹窗可正常打开、`#sessionToken`/`#loginButton` 字段都在）来建立登录态，不再直接写 cookie。`production-live-pool-worker.js` 加 `BROWSER_SESSION_PROVIDER` 开关（`COOKIE`默认 / `EXTENSION`），执行器代码不用改。7 个新单测 + browser-mvp 全量 233 个（224 过 9 跳过 0 败）。提交 `5397d3d`。
 - **状态诚实说明**：这是一条 A/B 对照路径，不是"已确认修好"。今天这个账号已经被诊断过程里连续 7 次点击"用脏"，不适合再拿它验证上号器路径是否真的能绕开 sentinel——需要一个新的干净账号才能做出有意义的对照。订单 `PJV1-DqcnqHF0tPlxDhygTtAA` 目前停在 `CARD_READY`，`BROWSER_PREFLIGHT` 还剩 1 次自动重试机会（未 DEAD），卡 7402 仍占用中，未收口，worker 已停。真单是否继续、要不要先用新账号测上号器路径，由用户定。
+
+## 2026-09-10 22:4x UTC｜Browser 自动化充值模块交接给 Codex
+
+用户决定 Browser 自动化充值（sentinel 卡点排查）这一块交给 Codex 接手，明确要求交接材料只给可核实的原始事实，不能把本窗口自己的推断包装成结论去影响 Codex 的判断，允许 Codex 推翻本窗口的任何猜测。交接文档：`docs/BROWSER_AUTOMATION_HANDOFF_CODEX_2026-09-11.md`（现场安全状态、两次真实尝试的原始日志/网络请求记录、三条假设及各自被推翻或未被证实的依据、今天的代码改动与 commit、指向项目原始记录的清单、留给接手人的开放问题）。本窗口在这一模块上的工作到此为止；其余模块（后台、CDK、highvcc 卡台等）不受影响。
