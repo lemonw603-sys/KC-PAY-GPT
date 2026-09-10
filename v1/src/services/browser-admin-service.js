@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { redactSensitiveFields } from '../security/redaction.js';
 import { transitionCardConsumptionInTransaction } from './card-consumption-ledger-service.js';
+import { returnCdkForOrderInTransaction } from '../db/repositories/cdk-return-repository.js';
 
 const RUN_STATUSES = new Set([
   'READY', 'RUNNING', 'RECONCILE_ONLY', 'HUMAN_REQUIRED', 'COMPLETED', 'FAILED_SAFE'
@@ -13,10 +14,14 @@ const CONTROL_STATES = new Set(['AUTOMATION', 'REQUESTED', 'FROZEN', 'TRANSFERRE
 const DISPATCH_STATUSES = new Set(['QUEUED', 'CLAIMED', 'COMPLETED', 'CANCELLED']);
 const CONTROL_ACTIONS = new Set([
   'REQUEST', 'FREEZE', 'TRANSFER', 'RELEASE_SAFE', 'MARK_PAYMENT_UNKNOWN',
-  'CONFIRM_MANUAL_PAYMENT', 'COMPLETE_20X', 'CANCEL'
+  'CONFIRM_MANUAL_PAYMENT', 'COMPLETE_20X', 'CANCEL', 'RESOLVE_UNKNOWN_PAYMENT'
 ]);
 // What the operator completed by hand after automation stalled before submit.
 const MANUAL_PAYMENT_OUTCOMES = new Set(['PLUS_ACTIVE', 'UPGRADED_20X']);
+// F-16/F-3: what the operator found after manually checking the ChatGPT account/card
+// transaction for a run whose payment result is unknown or was escalated to human. This is
+// the *only* formal closeout for that state — before it, only a hand-run SQL statement could.
+const VERIFIED_PAYMENT_OUTCOMES = new Set(['CHARGED', 'NOT_CHARGED']);
 const INTERVENTION_REASONS = new Set([
   'CAPTCHA', 'THREE_DS', 'PAGE_DRIFT', 'SESSION_REPAIR', 'OPERATOR_REVIEW',
   'PAYMENT_RECONCILIATION'
@@ -538,7 +543,8 @@ export function createBrowserAdminService({
       MARK_PAYMENT_UNKNOWN: `确认付款结果未知 ${run}`,
       CONFIRM_MANUAL_PAYMENT: `确认人工付款已完成 ${run}`,
       COMPLETE_20X: `确认20X升级完成 ${run}`,
-      CANCEL: `取消接管 ${run}`
+      CANCEL: `取消接管 ${run}`,
+      RESOLVE_UNKNOWN_PAYMENT: `确认核实结果 ${run}`
     }[action];
     if (String(input.confirmation || '') !== expectedConfirmation) {
       throw new BrowserAdminError('control confirmation mismatch', 'CONTROL_CONFIRMATION_REQUIRED');
@@ -555,7 +561,17 @@ export function createBrowserAdminService({
     if (action === 'CONFIRM_MANUAL_PAYMENT' && !manualOutcome) {
       throw new BrowserAdminError('manualOutcome is required', 'INVALID_MANUAL_OUTCOME');
     }
-    const evidenceNote = action === 'CONFIRM_MANUAL_PAYMENT'
+    const verifiedOutcome = action === 'RESOLVE_UNKNOWN_PAYMENT'
+      ? optionalEnum(input.verifiedOutcome, VERIFIED_PAYMENT_OUTCOMES, 'INVALID_VERIFIED_OUTCOME') : null;
+    if (action === 'RESOLVE_UNKNOWN_PAYMENT' && !verifiedOutcome) {
+      throw new BrowserAdminError('verifiedOutcome is required', 'INVALID_VERIFIED_OUTCOME');
+    }
+    // Only meaningful when verifiedOutcome is CHARGED; ignored otherwise. Lets the operator
+    // record the F-3 renewal-cancellation fact in the same click when they already checked it
+    // while looking at the account — if not, the order goes to CANCELLATION_REVIEW_REQUIRED and
+    // the existing confirmManualCancellation flow finishes it later, same as any other order.
+    const renewalCancelled = action === 'RESOLVE_UNKNOWN_PAYMENT' ? Boolean(input.renewalCancelled) : false;
+    const evidenceNote = (action === 'CONFIRM_MANUAL_PAYMENT' || action === 'RESOLVE_UNKNOWN_PAYMENT')
       ? required(input.evidenceNote, 'evidenceNote', 500) : null;
     const timestamp = input.now || now();
 
@@ -955,6 +971,187 @@ export function createBrowserAdminService({
            WHERE id = ? AND control_state = 'REQUESTED'`, [timestamp, run]
         );
         row.control_state = 'AUTOMATION';
+      } else if (action === 'RESOLVE_UNKNOWN_PAYMENT') {
+        // F-16/F-3: the only formal closeout for "payment result unknown" or "escalated to
+        // human" — reachable however the run got there (MARK_PAYMENT_UNKNOWN never sets
+        // verification_state; the automated lane's escalatePaymentVerification sets it to
+        // HUMAN_REQUIRED). The operator has looked at the actual ChatGPT account / card
+        // transaction themselves; this only records what they found, it never re-derives it.
+        if (!['RECONCILE_ONLY', 'HUMAN_REQUIRED'].includes(row.run_status)
+          || !['PAYMENT_UNKNOWN', 'PAYMENT_CONFIRMED'].includes(row.payment_state)) {
+          throw new BrowserAdminError('run is not awaiting a manual payment-result verification', 'CONTROL_STATE_CONFLICT', 409);
+        }
+        if (verifiedOutcome === 'NOT_CHARGED' && row.payment_state !== 'PAYMENT_UNKNOWN') {
+          // PAYMENT_CONFIRMED means a submit was already confirmed by the automated lane
+          // before it lost track of Plus activation — "not charged" would contradict that.
+          throw new BrowserAdminError('a confirmed-charged run cannot be closed as not charged', 'PAYMENT_STATE_CONFLICT', 409);
+        }
+        if (!['RECHARGE_PROCESSING', 'SUBMIT_UNKNOWN'].includes(row.order_status)) {
+          throw new BrowserAdminError('order is not awaiting payment resolution', 'ORDER_STATE_CONFLICT', 409);
+        }
+        const evidenceHash = createHash('sha256')
+          .update(`${run}:${verifiedOutcome}:${evidenceNote}`).digest('hex');
+        const evidence = { verifiedOutcome, actorId, evidenceNote, evidenceHash,
+          renewalCancelled: verifiedOutcome === 'CHARGED' ? renewalCancelled : null };
+        if (intervention) {
+          interventionId = intervention.id;
+          await connection.query(
+            `UPDATE browser_interventions SET status = 'RELEASED', result_code = ?,
+               public_note = ?, human_owner_id = COALESCE(human_owner_id, ?), finished_at = ?
+             WHERE id = ? AND status IN ('REQUESTED', 'FROZEN', 'TRANSFERRED')`,
+            [`MANUAL_VERIFICATION_${verifiedOutcome}`, evidenceNote, actorId, timestamp, intervention.id]
+          );
+        }
+        await connection.query(
+          `UPDATE payment_permits SET status = 'REVOKED', revoked_at = ?
+           WHERE browser_run_id = ? AND status = 'ISSUED'`, [timestamp, run]
+        );
+        await connection.query(
+          `INSERT INTO browser_operations
+           (browser_run_id, operation_id, operation_type, status, result_code,
+            public_result_json, prepared_at, completed_at)
+           VALUES (?, ?, 'MANUAL_VERIFICATION_RESOLVED', 'COMMITTED', ?, ?, ?, ?)`,
+          // ":evidence" suffix, same convention as CONFIRM_MANUAL_PAYMENT — appendControlCheckpoint
+          // below inserts its own MANUAL_CONTROL row under the bare operationId, so this row
+          // needs a distinct id or it collides on (browser_run_id, operation_id).
+          [run, `${operationId}:evidence`, `MANUAL_VERIFICATION_${verifiedOutcome}`, json(evidence), timestamp, timestamp]
+        );
+
+        if (verifiedOutcome === 'CHARGED') {
+          await connection.query(
+            `INSERT INTO browser_post_payment_observations
+             (browser_run_id, observation_kind, observation_status, evidence_hash, evidence_json, observed_at)
+             VALUES (?, 'MANUAL_VERIFICATION_RESOLVED', 'PLUS_CONFIRMED', ?, ?, ?)`,
+            [run, evidenceHash, json(evidence), timestamp]
+          );
+          const [runUpdate] = await connection.query(
+            `UPDATE browser_runs
+             SET status = 'COMPLETED', control_state = 'RELEASED', payment_state = 'PAYMENT_CONFIRMED',
+                 verification_state = 'RESOLVED', verification_next_check_at = NULL,
+                 post_payment_state = 'PLUS_CONFIRMED', plus_activated_at = COALESCE(plus_activated_at, ?),
+                 worker_id = NULL, worker_lease_token_hash = NULL, worker_lease_until = NULL,
+                 automation_owner_id = NULL, human_owner_id = ?, requested_by = ?,
+                 last_error_code = NULL, finished_at = ?, updated_at = ?
+             WHERE id = ? AND status IN ('RECONCILE_ONLY', 'HUMAN_REQUIRED')
+               AND payment_state IN ('PAYMENT_UNKNOWN', 'PAYMENT_CONFIRMED')`,
+            [timestamp, actorId, actorId, timestamp, timestamp, run]
+          );
+          if (runUpdate.affectedRows !== 1) throw new BrowserAdminError('run changed concurrently', 'RUN_CONFLICT', 409);
+          const [attemptUpdate] = await connection.query(
+            `UPDATE recharge_attempts
+             SET status = 'SUCCESS', funds_risk_state = 'SETTLED',
+                 submitted_at = COALESCE(submitted_at, ?), finished_at = ?,
+                 result_summary_json = ?, updated_at = ?
+             WHERE id = ? AND executor_kind = 'BROWSER' AND status IN ('SUBMITTING', 'SUBMIT_UNKNOWN')`,
+            [timestamp, timestamp, json({ code: 'MANUAL_VERIFICATION_CHARGED', browserRunId: run, evidenceHash }),
+              timestamp, row.recharge_attempt_id]
+          );
+          if (attemptUpdate.affectedRows !== 1) throw new BrowserAdminError('funds attempt changed concurrently', 'ATTEMPT_CONFLICT', 409);
+          await transitionCardConsumptionInTransaction(connection, {
+            orderId: row.order_id, rechargeAttemptId: row.recharge_attempt_id, targetStatus: 'CONSUMED',
+            allowedCurrentStatuses: ['RESERVED', 'RECONCILIATION'], requireActive: false,
+            now: timestamp, evidence: { source: 'manual_verification_resolved', browserRunId: run, evidenceHash }
+          });
+          await connection.query(
+            `UPDATE card_assignment_history SET status = 'RELEASED', released_by = ?,
+               release_reason = 'manual verification confirmed charge; capacity ledger retains consumption',
+               released_at = ?
+             WHERE order_id = ? AND status = 'ACTIVE'`,
+            [`admin:${actorId}`, timestamp, row.order_id]
+          );
+          await connection.query(
+            `UPDATE cards c INNER JOIN orders o ON o.assigned_card_id = c.id
+             SET c.inventory_status = 'DEPLETED', c.current_balance = NULL,
+                 c.last_transaction_synced_at = NULL, c.updated_at = ?
+             WHERE o.id = ?`, [timestamp, row.order_id]
+          );
+          const orderNextStatus = renewalCancelled ? 'RECHARGE_SUCCESS' : 'CANCELLATION_REVIEW_REQUIRED';
+          const [orderUpdate] = await connection.query(
+            `UPDATE orders SET status = ?, cancellation_review_required = ?, version = version + 1,
+                 failure_code = NULL, failure_reason = NULL, customer_action_code = NULL,
+                 finished_at = COALESCE(finished_at, ?), updated_at = ?
+             WHERE id = ? AND status IN ('RECHARGE_PROCESSING', 'SUBMIT_UNKNOWN') AND version = ?`,
+            [orderNextStatus, renewalCancelled ? 0 : 1, timestamp, timestamp, row.order_id, row.order_version]
+          );
+          if (orderUpdate.affectedRows !== 1) throw new BrowserAdminError('order changed concurrently', 'ORDER_CONFLICT', 409);
+          await connection.query(
+            `INSERT INTO order_events (order_id, from_status, to_status, actor_type, actor_id, reason, metadata_json)
+             VALUES (?, ?, ?, 'ADMIN', ?, ?, ?)`,
+            [row.order_id, row.order_status, orderNextStatus, actorId,
+              'Operator manually verified the payment went through after the result was unknown or escalated',
+              json({ browserRunId: run, evidenceHash, renewalCancelled })]
+          );
+          row.run_status = 'COMPLETED'; row.control_state = 'RELEASED';
+          row.payment_state = 'PAYMENT_CONFIRMED'; row.order_status = orderNextStatus;
+        } else {
+          // NOT_CHARGED: closes the same way order-cancellation-service does for a Browser
+          // order with no external payment action — release the card, return the CDK, close.
+          const [runUpdate] = await connection.query(
+            `UPDATE browser_runs
+             SET status = 'FAILED_SAFE', control_state = 'RELEASED', payment_state = 'PAYMENT_DECLINED',
+                 verification_state = 'RESOLVED', verification_next_check_at = NULL,
+                 worker_id = NULL, worker_lease_token_hash = NULL, worker_lease_until = NULL,
+                 automation_owner_id = NULL, human_owner_id = ?, requested_by = ?,
+                 last_error_code = 'HUMAN_VERIFIED_NOT_CHARGED', finished_at = ?, updated_at = ?
+             WHERE id = ? AND status IN ('RECONCILE_ONLY', 'HUMAN_REQUIRED') AND payment_state = 'PAYMENT_UNKNOWN'`,
+            [actorId, actorId, timestamp, timestamp, run]
+          );
+          if (runUpdate.affectedRows !== 1) throw new BrowserAdminError('run changed concurrently', 'RUN_CONFLICT', 409);
+          const [attemptUpdate] = await connection.query(
+            `UPDATE recharge_attempts SET status = 'FAILED', funds_risk_state = 'CLEARED',
+                 result_summary_json = ?, finished_at = ?, updated_at = ?
+             WHERE id = ? AND executor_kind = 'BROWSER' AND status IN ('SUBMITTING', 'SUBMIT_UNKNOWN')`,
+            [json({ code: 'HUMAN_VERIFIED_NOT_CHARGED', browserRunId: run, evidenceHash }),
+              timestamp, timestamp, row.recharge_attempt_id]
+          );
+          if (attemptUpdate.affectedRows !== 1) throw new BrowserAdminError('funds attempt changed concurrently', 'ATTEMPT_CONFLICT', 409);
+          await transitionCardConsumptionInTransaction(connection, {
+            orderId: row.order_id, rechargeAttemptId: row.recharge_attempt_id, targetStatus: 'RELEASED',
+            reason: `Manual verification confirmed no payment went through: ${evidenceNote}`,
+            allowedCurrentStatuses: ['RESERVED', 'RECONCILIATION'], requireActive: false,
+            evidence: { source: 'manual_verification_resolved', browserRunId: run, evidenceHash }
+          });
+          const [[cardRow]] = await connection.query(
+            `SELECT o.assigned_card_id AS card_id, o.minimum_required_card_balance
+             FROM orders o WHERE o.id = ? FOR UPDATE`, [row.order_id]
+          );
+          if (cardRow?.card_id) {
+            await connection.query(
+              `UPDATE card_assignment_history SET status = 'RELEASED', released_by = ?,
+                 release_reason = 'manual verification confirmed no payment went through', released_at = ?
+               WHERE card_id = ? AND order_id = ? AND status = 'ACTIVE'`,
+              [`admin:${actorId}`, timestamp, cardRow.card_id, row.order_id]
+            );
+            await connection.query(
+              `UPDATE cards SET inventory_status = CASE WHEN current_balance >= ? THEN 'AVAILABLE' ELSE 'DEPLETED' END,
+                   assigned_at = NULL, updated_at = ?
+               WHERE id = ?`,
+              [String(cardRow.minimum_required_card_balance), timestamp, cardRow.card_id]
+            );
+          }
+          const [orderUpdate] = await connection.query(
+            `UPDATE orders SET status = 'CLOSED', assigned_card_id = NULL,
+                 failure_code = 'HUMAN_VERIFIED_NOT_CHARGED', failure_reason = ?,
+                 version = version + 1, finished_at = COALESCE(finished_at, ?), updated_at = ?
+             WHERE id = ? AND status IN ('RECHARGE_PROCESSING', 'SUBMIT_UNKNOWN') AND version = ?`,
+            [evidenceNote, timestamp, timestamp, row.order_id, row.order_version]
+          );
+          if (orderUpdate.affectedRows !== 1) throw new BrowserAdminError('order changed concurrently', 'ORDER_CONFLICT', 409);
+          await connection.query(
+            `INSERT INTO order_events (order_id, from_status, to_status, actor_type, actor_id, reason, metadata_json)
+             VALUES (?, ?, 'CLOSED', 'ADMIN', ?, ?, ?)`,
+            [row.order_id, row.order_status, actorId,
+              'Operator manually verified no payment went through after the result was unknown',
+              json({ browserRunId: run, evidenceHash })]
+          );
+          await returnCdkForOrderInTransaction(connection, {
+            orderId: row.order_id,
+            reason: `manual verification confirmed no payment went through: ${evidenceNote}`,
+            actorType: 'ADMIN', actorId,
+          });
+          row.run_status = 'FAILED_SAFE'; row.control_state = 'RELEASED';
+          row.payment_state = 'PAYMENT_DECLINED'; row.order_status = 'CLOSED';
+        }
       }
 
       const { sequence } = await appendControlCheckpoint(connection, row, {

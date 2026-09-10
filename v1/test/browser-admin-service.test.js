@@ -162,3 +162,26 @@ test('manual payment confirmation validates outcome and evidence before database
   }), { code: 'CONTROL_CONFIRMATION_REQUIRED' });
   assert.equal(pool.queries.length, 0);
 });
+
+// F-16/F-3: the only formal closeout for a payment-result-unknown or escalated-to-human run.
+test('resolve-unknown-payment validates outcome, confirmation, and evidence before database access', async () => {
+  const pool = queuedPool();
+  const service = createBrowserAdminService({ pool });
+  const base = {
+    action: 'RESOLVE_UNKNOWN_PAYMENT', operationId: 'op-3',
+    confirmation: '确认核实结果 run-1'
+  };
+  await assert.rejects(() => service.controlRun('run-1', { ...base, evidenceNote: 'checked the account' }),
+    { code: 'INVALID_VERIFIED_OUTCOME' });
+  await assert.rejects(() => service.controlRun('run-1', { ...base, verifiedOutcome: 'MAYBE', evidenceNote: 'x' }),
+    { code: 'INVALID_VERIFIED_OUTCOME' });
+  await assert.rejects(() => service.controlRun('run-1', { ...base, verifiedOutcome: 'CHARGED' }),
+    { code: 'INVALID_ARGUMENT' }); // evidenceNote required
+  await assert.rejects(() => service.controlRun('run-1', {
+    ...base, verifiedOutcome: 'CHARGED', evidenceNote: 'x'.repeat(501)
+  }), { code: 'INVALID_ARGUMENT' });
+  await assert.rejects(() => service.controlRun('run-1', {
+    ...base, confirmation: '确认付款结果未知 run-1', verifiedOutcome: 'CHARGED', evidenceNote: 'seen'
+  }), { code: 'CONTROL_CONFIRMATION_REQUIRED' });
+  assert.equal(pool.queries.length, 0);
+});
