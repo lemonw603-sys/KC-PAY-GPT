@@ -370,7 +370,7 @@ export function createApp({
       try {
         return res.json(await quoteHighvccCard({ vid: req.body?.vid, amount: req.body?.amount }));
       } catch (error) {
-        if (error instanceof PublicApiError) return res.status(error.status || 400).json({ error: error.code.toLowerCase() });
+        if (error instanceof PublicApiError) return res.status(error.status || 400).json({ error: error.code.toLowerCase(), detail: error.detail || null });
         throw error;
       }
     });
@@ -384,7 +384,7 @@ export function createApp({
         });
         return res.status(201).json(result);
       } catch (error) {
-        if (error instanceof PublicApiError) return res.status(error.status || 400).json({ error: error.code.toLowerCase() });
+        if (error instanceof PublicApiError) return res.status(error.status || 400).json({ error: error.code.toLowerCase(), detail: error.detail || null });
         throw error;
       }
     });

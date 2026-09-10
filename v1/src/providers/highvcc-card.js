@@ -14,10 +14,14 @@
 // encoding. card.balance / cost amounts are in integer USD cents.
 
 export class HighvccProviderError extends Error {
-  constructor(message, code) {
+  constructor(message, code, providerMessage = null) {
     super(message);
     this.name = 'HighvccProviderError';
     this.code = code;
+    // The platform's own business-reason text (e.g. "美元账户可用余额不足"), kept separate
+    // from `message` (which also carries the method/path/HTTP-code for logs) so a caller can
+    // show the operator the clean reason instead of a technical string.
+    this.providerMessage = providerMessage;
   }
 }
 
@@ -73,10 +77,10 @@ export function createHighvccCardProvider({ getAccessToken, fetchImpl = fetch, b
       );
     }
     if (!response.ok) {
-      throw new HighvccProviderError(`${method} ${path} -> HTTP ${response.status}${json?.msg ? ` ${json.msg}` : ''}`, 'HIGHVCC_HTTP_ERROR');
+      throw new HighvccProviderError(`${method} ${path} -> HTTP ${response.status}${json?.msg ? ` ${json.msg}` : ''}`, 'HIGHVCC_HTTP_ERROR', json?.msg || null);
     }
     if (json?.code !== 200) {
-      throw new HighvccProviderError(`${method} ${path} -> code ${json?.code} ${json?.msg || ''}`, 'HIGHVCC_API_ERROR');
+      throw new HighvccProviderError(`${method} ${path} -> code ${json?.code} ${json?.msg || ''}`, 'HIGHVCC_API_ERROR', json?.msg || null);
     }
     return json;
   }

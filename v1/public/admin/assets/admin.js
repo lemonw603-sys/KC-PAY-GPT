@@ -1919,7 +1919,7 @@ elements.highvccQuoteButton?.addEventListener('click', async () => {
       highvcc_token_missing: '还没有配置 token，请先在上方保存。',
       highvcc_token_expired: 'token 已过期，请重新获取并保存。',
     };
-    elements.highvccCost.textContent = messages[error.message] || '查询失败，请稍后重试。';
+    elements.highvccCost.textContent = messages[error.message] || error.payload?.detail || '查询失败，请稍后重试。';
     state.highvccQuotedAmount = null;
   }
   finally { elements.highvccQuoteButton.disabled = false; }
@@ -1951,7 +1951,12 @@ elements.highvccOpenForm?.addEventListener('submit', async (event) => {
       highvcc_open_duplicate_card: '卡台已开出这张卡，但它已经在库存里了（重复调用）；请去卡片列表核实，不要重复点击。',
       highvcc_invalid_amount: '金额超出允许范围（$1–200）。',
     };
-    showNotice(messages[error.message] || '开卡请求失败；如果卡台侧已经扣款，请核对卡台余额记录，不要重复点击。');
+    // A code we recognize is the clearest; next best is the platform's own reason text
+    // (present whenever the platform cleanly rejected the request — no charge happened);
+    // only fall back to the "might have been charged" warning when neither is available.
+    if (messages[error.message]) showNotice(messages[error.message]);
+    else if (error.payload?.detail) showNotice(`卡台拒绝了这次开卡（没有扣款）：${error.payload.detail}`);
+    else showNotice('开卡请求失败，原因未知；如果卡台侧已经扣款，请核对卡台余额记录，不要重复点击。');
     elements.highvccOpenButton.disabled = false;
   }
 });

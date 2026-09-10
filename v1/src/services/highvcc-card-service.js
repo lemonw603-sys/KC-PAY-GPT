@@ -40,7 +40,11 @@ function panHmac(pan, key) {
 function mapProviderError(error) {
   if (error instanceof HighvccProviderError) {
     const status = error.code === 'HIGHVCC_TOKEN_MISSING' || error.code === 'HIGHVCC_TOKEN_EXPIRED' ? 409 : 502;
-    return new PublicApiError(error.message, { code: error.code, status });
+    const mapped = new PublicApiError(error.message, { code: error.code, status });
+    // The platform's own clean business-reason text (e.g. "美元账户可用余额不足"), so the
+    // admin UI can show the operator the real reason instead of a generic fallback.
+    mapped.detail = error.providerMessage || null;
+    return mapped;
   }
   return error;
 }

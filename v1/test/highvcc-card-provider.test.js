@@ -64,6 +64,22 @@ test('provider.cost: an expired-token response is classified, not a generic HTTP
   await assert.rejects(provider.cost({ vid: '708', amount: 50 }), (e) => e instanceof HighvccProviderError && e.code === 'HIGHVCC_TOKEN_EXPIRED');
 });
 
+// Real failure hit in production 2026-09-10: newCard was cleanly rejected ("美元账户可用
+// 余额不足" — insufficient USD wallet balance), a normal business rejection, not a bug — but
+// the admin UI had no way to show the operator *why* without this.
+test('provider.cost: a clean platform rejection carries the business reason separately from the technical message', async () => {
+  const { fetch: fetchImpl } = fakeFetch({
+    '/api/card/openCardCost': () => ({ status: 200, body: { code: 500, msg: '美元账户可用余额不足' } }),
+  });
+  const provider = createHighvccCardProvider({ getAccessToken: async () => 'tok', fetchImpl });
+  await assert.rejects(provider.cost({ vid: '708', amount: 50 }), (e) => {
+    assert.ok(e instanceof HighvccProviderError);
+    assert.equal(e.code, 'HIGHVCC_API_ERROR');
+    assert.equal(e.providerMessage, '美元账户可用余额不足');
+    return true;
+  });
+});
+
 test('provider.open: quotes cost, opens with the given address, fetches detail, and never re-decides intent', async () => {
   const { fetch: fetchImpl, calls } = fakeFetch({
     '/api/card/openCardCost': () => ({ status: 200, body: { code: 200, data: { feeDetail: '$50.50' } } }),

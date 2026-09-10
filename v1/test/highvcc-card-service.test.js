@@ -102,6 +102,29 @@ test('quote: defaults vid and returns the fee readout once a token is set', asyn
   assert.equal(quote.feeDetail, '$50.50');
 });
 
+// Real production failure 2026-09-10: newCard rejected with "美元账户可用余额不足"
+// (insufficient USD wallet balance) — a normal rejection, not a bug, but the admin UI had
+// nothing to show beyond a generic "failed" message. The route must be able to surface the
+// platform's own reason via `.detail` instead of only a bare error code.
+test('openCard: a clean platform rejection (e.g. insufficient balance) surfaces the real reason via .detail, not just a code', async () => {
+  const pool = fakePool();
+  const fetchImpl = fakeFetch({
+    '/api/card/autoCard': () => ({ status: 200, body: { code: 200, data: { firstName: 'Jamie', lastName: 'Winder' } } }),
+    '/api/card/openCardCost': () => ({ status: 200, body: { code: 200, data: { feeDetail: '$50.50' } } }),
+    '/api/card/newCard': () => ({ status: 200, body: { code: 500, msg: '美元账户可用余额不足' } }),
+  });
+  const service = createHighvccCardService({ pool, encryptionKey, panHmacKey, fetchImpl });
+  await service.setToken({ token: 'a'.repeat(32) });
+  await assert.rejects(service.openCard({ amount: 50, confirmation: '开卡 708 50' }), (e) => {
+    assert.equal(e.code, 'HIGHVCC_API_ERROR');
+    assert.equal(e.status, 502);
+    assert.equal(e.detail, '美元账户可用余额不足');
+    return true;
+  });
+  // rejected before newCard ever produced a card id: no partial/duplicate row written
+  assert.equal(pool.cardsInserted.length, 0);
+});
+
 test('openCard: requires the exact confirmation phrase before spending anything', async () => {
   const pool = fakePool();
   const service = createHighvccCardService({ pool, encryptionKey, panHmacKey, fetchImpl: async () => { throw new Error('must not fetch'); } });
