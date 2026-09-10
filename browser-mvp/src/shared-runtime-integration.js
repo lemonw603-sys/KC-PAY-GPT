@@ -71,6 +71,18 @@ function classifySafeAbort(error) {
       failureReason: 'Authoritative card or route facts are not ready for Browser payment',
     };
   }
+  // The operator's "can we pay" switch is a pause, not a verdict on the order
+  // (CORE_SPEC §6). Without this branch a switch flipped mid-run ended the
+  // order as RECHARGE_FAILED, handed the CDK back and released the card
+  // (audit F-25). The order waits at CARD_READY until the switch is on again.
+  if (sourceCode === 'BROWSER_PAYMENT_WRITES_DISABLED') {
+    return {
+      targetOrderStatus: 'CARD_READY',
+      reasonCode: sourceCode,
+      customerActionCode: null,
+      failureReason: 'Browser payment writes are switched off; the order waits for the switch',
+    };
+  }
   if (sourceCode.includes('LEASE')) {
     return {
       targetOrderStatus: 'CARD_READY',

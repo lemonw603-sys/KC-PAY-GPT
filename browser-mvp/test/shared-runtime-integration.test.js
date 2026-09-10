@@ -211,6 +211,8 @@ test('authoritative permit rejects card balance/status/sync and route drift, the
   for (const code of [
     'CARD_BALANCE_INSUFFICIENT', 'CARD_NOT_READY', 'CARD_CHECK_STALE',
     'ROUTE_BINDING_MISMATCH', 'CARD_PROVIDER_MISMATCH', 'PAYMENT_SNAPSHOT_CHANGED',
+    // F-25: the payment switch flipped off mid-run is a pause, not a failed order.
+    'BROWSER_PAYMENT_WRITES_DISABLED',
   ]) {
     const harness = makeHarness({ permitError: code });
     const claimed = await harness.workerService.claim('worker-runtime-1', { leaseSeconds: 10 });
