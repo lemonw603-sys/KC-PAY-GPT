@@ -205,7 +205,7 @@
           <div class="advanced-heading"><p>直接调用卡台自己的接口开卡，不经过浏览器，几秒内完成；持卡人姓名由卡台生成，账单地址用项目已有免税地址库；开出后立即计入库存，不需要再手工导入表格。展开后自动查询一次费用，改卡段或金额会自动重新查询。</p></div>
           <div id="highvcc-token-status" class="mini-list"></div>
           <p><button class="text-button" type="button" id="highvcc-open-site">去 highvcc.com 登录 →</button>　登录过期时先点这个登录一下</p>
-          <p class="form-hint">一次性设置：把下面这个按钮拖到浏览器收藏栏（不是点，是按住拖上去）。以后 token 过期，先点上面登录，登完再点一下收藏栏里这个按钮，token 自动存进后台，不用再告诉任何人。　<a class="text-button" href="javascript:(function(){var t=localStorage.getItem('access_token');if(!t){alert('没有读到登录信息，请先在这个页面登录 highvcc.com');return;}location.href='https://ops.vibebridge.top/admin#highvcc-token='+encodeURIComponent(t);})();" onclick="return confirm('这个按钮要拖到收藏栏才能用，直接点击不会生效。仍要继续吗？');">📌 刷新 highvcc token（拖我）</a></p>
+          <p class="form-hint">一次性设置：把下面这个按钮拖到浏览器收藏栏（不是点，是按住拖上去）。以后 token 过期，先点上面登录，登完再点一下收藏栏里这个按钮，token 自动存进后台，不用再告诉任何人。　<a class="text-button" href="javascript:(function(){var t=localStorage.getItem('access_token');if(!t){alert('没有读到登录信息，请先在这个页面登录 highvcc.com');return;}location.href='https://ops.vibebridge.top/admin#highvcc-token='+encodeURIComponent(t);})();" onclick="return confirm('这个按钮要拖到收藏栏才能用，直接点击不会生效。仍要继续吗？');">📌 刷新卡台登录（拖我）</a></p>
           <div class="advanced-heading"><div id="highvcc-wallet-status" class="mini-list"></div><button class="text-button" id="highvcc-refresh-wallet" type="button">刷新余额</button></div>
           <form class="filters filters-two" id="highvcc-token-form">
             <label><span>更新登录 token</span><input id="highvcc-token-input" type="password" maxlength="4096" placeholder="从已登录的 highvcc.com 页面 Console 执行 copy(localStorage.getItem('access_token')) 后粘贴" autocomplete="off"></label>
