@@ -21,6 +21,7 @@ import {
   REQUIRED_PRODUCTION_LIVE_MIGRATIONS, checkProductionLiveBitBrowser, observation,
   resolveAccountKey, resolveCardContext, resolveIdentity, resolveOrderPlan, withPoolLifecycle,
 } from './production-live-worker.js';
+import { ExtensionSessionBootstrapAdapter } from './extension-session-bootstrap.js';
 import { CookieSessionBootstrapAdapter } from './session-bootstrap.js';
 import {
   browserRunMaterialRef, SharedEncryptedCardMaterialSource, SharedEncryptedSessionSource, SharedPostPaymentSessionSource,
@@ -84,6 +85,14 @@ export function loadProductionLivePoolConfig(env = process.env) {
   // hand off before Pay now. PAY is not implemented yet and is refused.
   const upgradeStage = String(env.BROWSER_UPGRADE_STAGE || 'STOP_BEFORE_PAY').trim().toUpperCase();
   if (upgradeStage !== 'STOP_BEFORE_PAY') throw new ProductionLiveConfigError('BROWSER_UPGRADE_STAGE must be STOP_BEFORE_PAY (PAY is not implemented)');
+  // A/B lane, not a promoted default: CookieSessionBootstrapAdapter writes the
+  // session cookie directly; EXTENSION drives the already-installed 上号器
+  // popup instead (see extension-session-bootstrap.js for why). Comparison is
+  // ongoing (docs/HANDOFF_LOG.md 2026-09-10/11) — default stays COOKIE.
+  const sessionProviderMode = String(env.BROWSER_SESSION_PROVIDER || 'COOKIE').trim().toUpperCase();
+  if (sessionProviderMode !== 'COOKIE' && sessionProviderMode !== 'EXTENSION') {
+    throw new ProductionLiveConfigError('BROWSER_SESSION_PROVIDER must be COOKIE or EXTENSION');
+  }
   const lanes = parsePoolLanes(env.BROWSER_POOL_LANES);
   const runtimeHmacKey = key32(env, 'BROWSER_RUNTIME_HMAC_KEY_BASE64');
   const artifactKey = key32(env, 'BROWSER_ARTIFACT_KEY_BASE64');
@@ -93,7 +102,7 @@ export function loadProductionLivePoolConfig(env = process.env) {
     throw new ProductionLiveConfigError('pool runtime, artifact, resource and material keys must be distinct');
   }
   return Object.freeze({
-    checkOnly, mode, paying, stopBeforeSubmit: mode === POOL_MODES.REHEARSAL, lanes, upgradeStage,
+    checkOnly, mode, paying, stopBeforeSubmit: mode === POOL_MODES.REHEARSAL, lanes, upgradeStage, sessionProviderMode,
     databaseUrl: required(env, 'DATABASE_URL'), databaseTls: env.DATABASE_TLS === 'true',
     workerIdPrefix: String(env.BROWSER_WORKER_ID || 'pool').trim() || 'pool',
     executorProfileId: required(env, 'BROWSER_EXECUTOR_PROFILE_ID'),
@@ -250,13 +259,14 @@ export async function runProductionLivePoolWorker({ env = process.env, browserTy
     if (config.checkOnly) return { status: 'READY', mode: config.mode, lanes: laneChecks.map((item) => item.bitbrowserProfileId), database: dbCheck };
     const addressSource = new MockAddressBillingAddressSource({ state: config.billingAddressState, name: config.billingAddressName, assignmentStore: new MysqlBillingAddressAssignmentStore({ pool }) });
     const rawCardSource = new SharedEncryptedCardMaterialSource({ db: pool, encryptionKey: config.materialEncryptionKey });
+    const SessionProviderAdapter = config.sessionProviderMode === 'EXTENSION' ? ExtensionSessionBootstrapAdapter : CookieSessionBootstrapAdapter;
     const shared = {
       enrichedCardSource: new BillingAddressEnrichedCardMaterialSource({
         cardSource: rawCardSource, billingAddressSource: addressSource,
         resolveBillingAddressRef: async (runRef) => `card:${(await resolveCardContext(pool, String(runRef).replace(/^browser-run:/, ''))).card_id}`,
       }),
-      sessionProvider: new CookieSessionBootstrapAdapter({ source: new SharedEncryptedSessionSource({ db: pool, encryptionKey: config.materialEncryptionKey }) }),
-      postPaymentSessionProvider: new CookieSessionBootstrapAdapter({ source: new SharedPostPaymentSessionSource({ db: pool, encryptionKey: config.materialEncryptionKey }) }),
+      sessionProvider: new SessionProviderAdapter({ source: new SharedEncryptedSessionSource({ db: pool, encryptionKey: config.materialEncryptionKey }) }),
+      postPaymentSessionProvider: new SessionProviderAdapter({ source: new SharedPostPaymentSessionSource({ db: pool, encryptionKey: config.materialEncryptionKey }) }),
       provider: config.hnskjApiKey ? new HnskjCardProvider({ baseUrl: config.hnskjApiBaseUrl, apiKey: config.hnskjApiKey }) : null,
     };
     let lastHeartbeat = 0;

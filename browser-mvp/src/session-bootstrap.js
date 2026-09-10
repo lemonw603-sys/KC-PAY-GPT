@@ -45,7 +45,7 @@ function normalizeCookies(material) {
 
 const SESSION_COOKIE_NAME_PATTERN = /^__Secure-next-auth\.session-token(\.\d+)?$/;
 
-async function listSessionCookies(context) {
+export async function listSessionCookies(context) {
   const cookies = await context.cookies(CHATGPT_URL);
   return cookies.filter((cookie) => SESSION_COOKIE_NAME_PATTERN.test(cookie.name));
 }
@@ -60,7 +60,7 @@ async function listStaleLoginCookies(context) {
   return cookies.filter((cookie) => !SESSION_COOKIE_NAME_PATTERN.test(cookie.name) && !DEVICE_COOKIE_NAME_PATTERN.test(cookie.name));
 }
 
-async function clearSessionCookies(context) {
+export async function clearSessionCookies(context) {
   // The session token (and its chunks). Cloudflare/proxy/device cookies stay.
   await context.clearCookies({ name: SESSION_COOKIE_NAME_PATTERN });
 }
