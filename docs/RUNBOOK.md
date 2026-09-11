@@ -45,6 +45,13 @@ ssh root@144.34.180.184 'set -a; . /etc/pojia/runtime.env; set +a; cd /opt/pojia
 - **客户被打回**（WAITING_FOR_SESSION）：客户页的重贴表单目前不显示（审计 F-5 未修）；客户自己"重新提交同一 CDK"也**不会**更新 Session（同码同账号返回原单，审查 F-34），换账号提交会被 409 拒（F-35）。唯一兜底：客户把新 session JSON 交给用户，执行者在服务器本机用公开接口替客户提交（`POST /api/v1/orders/session`，body `{"publicNo":"<单号>","session":<JSON>}`，对 127.0.0.1:3100 发、Host 头用客户页域名，见 `/etc/pojia/runtime.env`）。**未演练**。
 - **跑单纪律**：跑单期间客户不要使用该账号；不要把该账号登进任何其他比特浏览器窗口（同一账号两处登录会挤掉注入的 session，09-07 观察到）；跑单期间**不在后台首页关"浏览器真实付款"开关**，收工只用 `stop-live.sh`（中途关开关会把正在跑的单判成 RECHARGE_FAILED 并退码放卡，审查 F-25）。
 
+**测试账号单失败后的收口（2026-09-11 核对代码与生产；测试单不手动充，收口后另一个账号重新提交新单）**：
+- 预检 DEAD（订单 CARD_READY、卡仍绑定、无 run/attempt/dispatch）：后台「取消」。代码放行条件 = 付款任务 PENDING 且 attempts=0、permit 未消费（`order-cancellation-service.js` untouchedCardReady）→ 卡回池、CDK 回 AVAILABLE。**生产未走过**（09-09 是手动充后 close-manually-fulfilled）。
+- 付款前中止（live run 起、未点击）：worker 自动 RECHARGE_FAILED + CDK 退回 + 卡释放（D-131）。生产走过 2 次。
+- 拒付（点击后 DECLINED）：run 停 RECONCILE_ONLY/PAYMENT_UNKNOWN → 后台「确认核实结果」选 NOT_CHARGED → 卡释放、CDK 退回、RECHARGE_FAILED。**新按钮生产未点过**（历史 3 次拒付由一次性脚本 `claude-declined-closeout` 收）。
+- 换账号 = 新订单：另一个 AVAILABLE CDK + 新账号的 Session；合格卡当前仅 9839，拒付后若要换卡需补余额/开卡（资金动作，先确认）。
+- 跑单期间该账号不得在任何其他窗口登录（含上号器手动登录），否则挤掉注入 Session；Session 提交后尽快跑（accessToken 剩余 <5 分钟即拒）。
+
 ## 2. 演练（停在付款前，不扣款）
 
 前提：付款开关 = false（`ready-check.sh rehearsal` 全绿）。
