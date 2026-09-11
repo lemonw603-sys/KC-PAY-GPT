@@ -130,7 +130,10 @@ export class LiveChatGPTPaymentAdapter {
         await fillBillingAddress(page, cardMaterial.billingAddress, { timeoutMs: repriceTimeoutMs });
         stage = 'fill-billing-email';
         await assertContinue();
-        await fillTransientBillingEmail(page, billingEmail, { timeoutMs: repriceTimeoutMs, required: true });
+        // Not every Checkout implementation asks for a receipt email (see
+        // fillTransientBillingEmail). A page that does ask still must resolve to
+        // exactly one field, so this cannot silently skip a real requirement.
+        await fillTransientBillingEmail(page, billingEmail, { timeoutMs: repriceTimeoutMs });
         stage = 'wait-for-zero-tax-requote';
         const strictCheckout = await observeStrictQuoteAfterReprice(
           page, checkoutContract, repriceTimeoutMs, assertContinue,

@@ -61,17 +61,32 @@ export async function fillBillingAddress(page, address, { timeoutMs = 5000 } = {
 export { SELECTORS as BILLING_ADDRESS_SELECTORS };
 
 /** Fills the transient Session email in the payment form; never persists it. */
+/**
+ * ChatGPT serves more than one Checkout implementation. The Stripe-hosted one
+ * (`/checkout/.../cs_live_…`) asks for a receipt email; the newer OpenAI one
+ * (`/checkout/.../oaics_…`, observed 2026-09-11) has no email control at all and
+ * bills the account's own address. So "no email field" is a legitimate page, not
+ * drift — but an email field we failed to recognise is NOT: the broadened match
+ * below means a page that does ask for one can never be silently skipped.
+ */
+const BILLING_EMAIL_SELECTOR = [
+  'input[autocomplete="billing email"]',
+  'input[autocomplete="email"]',
+  'input[type="email"]',
+  'input[name="email"]',
+].join(', ');
+
 export async function fillTransientBillingEmail(page, email, { timeoutMs = 5000, required = false } = {}) {
   const value = String(email || '').trim().toLowerCase();
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) throw new ContractError('billing email is invalid');
   const matches = [];
   for (const frame of page.frames()) {
-    const locator = frame.locator('input[autocomplete="billing email"]');
+    const locator = frame.locator(BILLING_EMAIL_SELECTOR);
     for (let i = 0; i < await locator.count(); i += 1) if (await locator.nth(i).isVisible()) matches.push(locator.nth(i));
   }
-  if (matches.length === 0 && !required) return { fieldsFilled: 0, paymentClicked: false, submitCalls: 0 };
+  if (matches.length === 0 && !required) return { fieldsFilled: 0, paymentClicked: false, submitCalls: 0, emailFieldPresent: false };
   if (matches.length !== 1) throw new ContractError('billing email field must resolve to one visible input');
   await matches[0].fill(value, { timeout: timeoutMs });
   await matches[0].blur();
-  return { fieldsFilled: 1, paymentClicked: false, submitCalls: 0 };
+  return { fieldsFilled: 1, paymentClicked: false, submitCalls: 0, emailFieldPresent: true };
 }

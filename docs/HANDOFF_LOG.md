@@ -2335,3 +2335,11 @@ Lemon 在 Pilot 窗口截图：结账页 `chatgpt.com/checkout/openai_llc/cs_liv
 - **F-48（新）**：NOT_CHARGED 收口调用了 `returnCdkForOrderInTransaction`，但该函数只要存在 `PAYMENT_SUBMIT` 记录就返回 `PAYMENT_EVIDENCE` 不退 CDK，且调用方丢弃了返回值——本单 CDK 仍 REDEEMED。对真实客户意味着"卡密已用、服务没给、也没自动退回"。归入真单后集中整治，或按 Lemon 要求提前处理。
 - 半自动接力已实现并全绿（D-155）。真单前需 `BROWSER_HUMAN_VERIFICATION_WAIT_MS` 生效（pool 脚本已默认 300000）。
 
+## 2026-09-11 09:53 UTC｜第二单 PJV1-fQfm9fp_JZ2J10gGPzcL（账号 mengx612，Pilot 窗口）：付款前安全中止，未扣款
+
+- 09:35 提交 → CARD_READY（卡 9839）；Session 有效、身份匹配；清窗口登录态（清 19 个登录 cookie，保留设备/CF/Stripe 设备 id）；预检一次过（PASSED、`checkoutCreated=false`、submitCalls=0）。
+- 首次 `go-live --arm` 被自检拦下："有残留 worker"——实为大脑自己的监控命令行里含 `production-live-pool-worker` 字样被 `pgrep -f` 自匹配，非真实 worker（`node src/production-live*` 计数为 0）。杀掉监控进程后重试成功。**教训：监控命令不要包含 worker 进程名。**
+- 09:44:58 run 开始 → 09:46:4x `FAILED_SAFE` / `PRE_PAYMENT_ABORT` / `CHECKOUT_DRIFT`；`browser_operations` 只有 BEGIN_RUN 与 PRE_PAYMENT_ABORT，**无 PAYMENT_SUBMIT**。订单 RECHARGE_FAILED，CDK 回 AVAILABLE，卡 9839 回池。未扣款。
+- 根因见 D-157：`oaics_` 版结账页没有邮箱字段，而代码要求必填。已修复并全绿。
+- 本次未走到人机验证那一步，**半自动接力仍未在真单验证过**。
+

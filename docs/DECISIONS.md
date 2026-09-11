@@ -243,3 +243,11 @@
 - **修复**：把证据拆成"资金账本证据"（attempt SETTLED/UNKNOWN/SUCCESS、账本 CONSUMED/RECONCILIATION）与"提交点击证据"两类。新增参数 `paymentSubmitAdjudicated`（默认 false，其余五个调用方行为不变）：仅当人已核实未扣款时，清掉点击这一项；资金账本证据仍无条件拦截。收口分支改为断言返回值，遇资金证据即抛 `PAYMENT_STATE_CONFLICT` 让整笔收口回滚。
 - **测试**：单元 2 条（点击证据在未裁决前仍拦截；人工裁决不能越过资金账本证据）+ 集成 2 条（复刻真单形状：有 PAYMENT_SUBMIT 仍退回；确认收口按"先清资金栅栏再退 CDK"的顺序）。已验证：去掉修复这 2 条集成测试立刻失败。v1 全套 660/597/0/63。
 
+## D-157（2026-09-11 09:53 UTC）ChatGPT 存在两套结账页实现；收据邮箱改为"有才填"
+
+- **现场事实**：同一账号、同一窗口、同一出口，两单拿到**不同的结账页实现**。第一单 `/checkout/openai_llc/cs_live_…`（Stripe 托管版，英文，有 Email / Mobile number / Full name(optional) / link 区块）；第二单 `/checkout/openai_llc/oaics_…`（OpenAI 自有版，界面为他加禄语，有 Apple Pay 按钮、卡区块、Subscribe 按钮，**完全没有邮箱输入框**）。哪一套由服务端决定，我们无法选择。
+- **第二单失败根因**：适配器把"填收据邮箱"写成必须（`required: true`），`oaics_` 页没有该字段 → 抛错 → 付款前安全中止 `CHECKOUT_DRIFT`。卡与地址都已填好（截图可见 Jamie Winder），失败后卡字段按设计被清空。**未点付款、未扣款**，CDK 与卡均自动退回（D-131 路径生效）。
+- **Lemon 确认**：该页邮箱由 ChatGPT 自动带入，不需要我们填。
+- **修复**：`fillTransientBillingEmail` 的候选选择器扩为 `billing email / email / type=email / name=email`；页面没有邮箱控件时正常跳过并记 `emailFieldPresent:false`；出现 1 个仍必须填；出现 2 个以上仍视为看不懂该页而中止。适配器改为不强制。回归 251/242/0/9。
+- **同时验证为正常的**：`oaics_` 页的卡三件套、地址六项、`checkout-summary-column`、`button[type=submit]` 均各自唯一可见；摘要 `Tax (0%)` 能被既有 `label (` 前缀匹配解析；报价 ₱982.14、税 ₱0.00。
+
