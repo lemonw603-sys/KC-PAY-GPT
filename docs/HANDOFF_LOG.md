@@ -2301,3 +2301,9 @@ P1：F-3 取消续费接口从未真调、失败终态后台按钮不认；F-4 �
 - 执行顺序：Lemon 提交 → 服务器 worker 分卡到 CARD_READY → 本机 `BITBROWSER_PROFILE_ID=<Pilot> run-browser-preflight.sh once`（新预检首次真实运行，先看结果）→ Lemon 当次确认开开关 → `BROWSER_POOL_LANES=lane-1=<Pilot> go-live.sh --arm`（pool 预检 lane 只领 PENDING，不会重跑）→ 观察 → 终态后 `stop-live.sh`。
 - 已识别、未能提前消除的风险：① sentinel 拦点 Upgrade（实验目的本身；失败自动 RECHARGE_FAILED+退 CDK+释放卡）；② 拒付（run 停 RECONCILE_ONLY，用 B1 按钮 NOT_CHARGED 收口，按钮生产首次）；③ 付款成功但确认 Plus/取消续费未在同会话完成 → 补核 lane 可能撞 F-43 门槛 → 人工 B1 CHARGED；④ 卡 9839 材料首次在 live 解密填写（导入时已校验格式；坏则付款前中止自动收口，但浪费一次 Upgrade 点击）；⑤ 账单地址来自地址池 state=DE（美国特拉华）+ 名字 "Browser Billing"，与 Lemon 手动付款时填的地址可能不同（未列入差异维度）；⑥ Pilot 窗口首次跑自动化 live；⑦ 新预检代码仅单测覆盖，首次真实运行放在 once 步骤单独观察。
 
+## 2026-09-11 07:08 UTC｜Lemon 三问的核实结果
+
+- **Pilot 窗口未清理过**。只读列表：当前登着一个 ChatGPT 账号（session cookie 07:04 UTC 刷新，活跃），1 个 chatgpt.com 标签页；窗口由大脑打开后已关闭。计划：Lemon 提交订单后、跑预检前，用 `clear-lane-session.mjs` 清 session token 与登录 cookie、关 chatgpt 标签页，**保留设备/Cloudflare cookie**（不做 BitBrowser 全量清缓存，以保留手动成功过的设备身份）。放在提交后做，避免 Lemon 正用该窗口取 Session。
+- **账单地址**：`MockAddressBillingAddressSource` 只接受 AK/DE/MT/NH/OR（美国五个无州销售税州），构造时校验；DE=特拉华；数据集 `data/mockaddress-us-taxfree-v20260426.json`（DE 888 行）；按订单 bindingRef 哈希取行并记录到 `browser_billing_address_assignments`；付款前有零税重报价校验。结论：免税州由代码强制。
+- **取消续费**：真单为自动（`confirmCancellation` → `cancelSubscription` 调 ChatGPT 取消接口 → 轮询 will_renew=false）。Dqcn 单库存 Session 仍有效（session expires 2026-12-09，accessToken exp 2026-09-20 02:23 UTC；服务器只读校验，未打印秘密），可由大脑在真单后用同一函数在非 Pilot 窗口执行并用「已在账号里取消续费」收口（Lemon 已让大脑做）。
+
