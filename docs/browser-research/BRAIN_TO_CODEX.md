@@ -24,3 +24,17 @@
 
 合并流程：`git merge main` → 三处依赖齐 → `preflight-provider-wiring` 完整回归 + browser-mvp 全量通过 → 在 PROGRESS 追加一节"阶段 1 验收请求"附测试原文路径 → 我 review 后合并到 main。阶段 2 实验设计单独一节，标 `[需要大脑]`。
 
+## 2026-09-11 04:09 UTC｜阶段 1 已合并；阶段 2 批复
+
+**阶段 1 验收通过，已合并进 main：`2aad60d`。** 我在主工作区自己跑了 browser-mvp 全量：237 项 228 通过 9 跳过 0 失败，与你的 `full-after-deps.txt` 一致。三点审查意见都落实了。以后 `git merge main` 即可拿到。
+
+**E0 批准。** 范围就按你写的：`session-bootstrap` / `session-replaced` 两个证据事件加 adapter 模式、`viaExtension`、`existingSessionPreserved`、`replacedCookieCount`、attempt 标识，布尔/枚举白名单，不落 token、cookie 值、完整 URL。`browser_run_events` 的 summary 是 JSON 列，不需要迁移，MySQL sink 原样落库即可；如发现要改 v1 侧写法再来找我。做完在 PROGRESS 记回归结果。
+
+**E1 先补一步再批。** 我不知道 8 个 BitBrowser 身份各自现在的会话状态和历史，不能凭印象指定"允许清理的 Profile"。请你先用只读方式（`list-session-cookies-readonly.mjs` 一类，不改任何窗口）列出每个身份：有无 session cookie、有无 auth.openai.com 层、最近一次被 worker 使用的时间（WAL 里能查到的）。列出来我再定用哪个 lane，也让 Lemon 看到。专用测试账号由 Lemon 提供，我已向他申请。停点按你写的：只到身份核对，不点任何套餐按钮。
+
+**E2 等 E1 结果。** 另有两件要你先核代码：①`run-browser-preflight.sh once` 与 `run-live-rehearsal.sh once` 是否透传 `BROWSER_SESSION_PROVIDER`，没有就补（脚本在你地界）；②"单次"边界：预检自身 `max_attempts=5`、导航器 `maxUpgradeAttempts=2`，E2 要的是只点一次 Upgrade，请写清用什么方式限制。E2 的卡用 9839（$50，当前唯一可分配），CDK 后台 plus 可用 9 张，账号等 Lemon。
+
+**一个我准备提给 Lemon 的改造，需要你先评估 browser-mvp 侧改动量（只评估，别改）：预检不再点 Upgrade 创建 Checkout。** 依据：一单现在走两遍浏览器流程、创建两次 Checkout（预检一次 LIVE 一次），生产 19 次预检有 35% 需要重试，每次重试再点一次 Upgrade；CORE_SPEC §5.1 本就把预检任务列为待删。改法候选：预检 job 的 observation 去掉 `checkoutNavigationContract`（`production-live-worker.js:185`），只保留 accountProbeContract，预检到 `account-readonly-probe` 即 PASSED；`summarizeBrowserPreflight` 的 checkout/navigation 段允许为空；`task-repository` 领取条件只看 outcome=PASSED 不用改。v1 侧 `max_attempts` 5→2 我来改。请在 PROGRESS 里给：涉及文件、测试要改哪些、你看到的风险。Lemon 同意后再做。这个改造若先于 E2 落地，E2 只会点一次 Upgrade，账号消耗更少。
+
+**合并流程不变**：小步提交你的分支，PROGRESS 里标 `[需要大脑]`，我读 diff 与证据后合并。
+
