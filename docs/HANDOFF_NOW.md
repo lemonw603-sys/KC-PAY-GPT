@@ -14,7 +14,7 @@
 - 付款开关 false（09-10 22:47 关）；本机无 worker；release `20260910-highvcc-ui-feedback-cdcf42e`。
 - 订单 `PJV1-DqcnqHF0tPlxDhygTtAA` CARD_READY，预检 DEAD 5/5，卡 7402 $49 ASSIGNED 未收口。可分配卡 0；`state-check.sh` 在 0 张时误报 1 张（GROUP_CONCAT 空集返回 NULL 被 awk 数成一项），脚本未修。
 - **F-42 已由大脑独立核对代码为真**：`BROWSER_SESSION_PROVIDER=EXTENSION` 未接预检，昨天第 5 次"扩展对照"实际仍走 cookie。上号器路径在自动化里从未真正跑过；交接文档相应结论作废。
-- **卡台侧已核（highvcc `list`，只读）**：9839 已激活余额 $50.00、9354 已激活余额 $5.00，均不在 `cards` 表，是记账缺口不是资金损失，可用 `reconcile-highvcc-card.mjs` 按 cardId 补记（生产写，待 Lemon 确认）。**7402 卡台余额 $1.08，`cards` 表记 $49.00，差 $47.92，原因未查清**；5501 卡台 $1.79、表记 $0.07。7402 是 Dqcn 单占用的唯一够 Plus 的卡，余额不对则该单无法按现状重跑。其余 0601/7428/2911/0237/3241 两侧一致。
+- **卡台侧已核（highvcc `list`，只读）**：9839 已激活余额 $50.00、9354 已激活余额 $5.00，均不在 `cards` 表，是记账缺口不是资金损失，可用 `reconcile-highvcc-card.mjs` 按 cardId 补记（生产写，待 Lemon 确认）。**7402 卡台余额 $1.08，`cards` 表记 $49.00，差 $47.92，原因未查清**；卡台 detail 原始字段 7402 `consume=0 / deposit=17400`（分），5501 `balance=179 / consume=0 / deposit=16700`，两字段业务含义未确认，不据此推断。系统侧：7402 消费账本仅 RESERVED/RELEASED 无 CONSUMED，`card_state_events` 为空（手动导入卡从未同步余额，$49 为 09-08 导入时静态值）。**7402 余额弄清前 Dqcn 单不得重跑。**7402 是 Dqcn 单占用的唯一够 Plus 的卡，余额不对则该单无法按现状重跑。其余 0601/7428/2911/0237/3241 两侧一致。
 
 ## 下一可执行项
 
