@@ -28,7 +28,7 @@
 ## 暂停 / 恢复
 
 ```text
-暂停原因：真单 PJV1-9TN0gGX 付款未知已停（开关 false、worker 退出）；等 Lemon 后台点「确认核实结果」→未扣款；证据见 HANDOFF_LOG 2026-09-11 08:00 UTC
+暂停原因：真单被 hCaptcha 拦、未扣款；D-154 大脑不做绕过，全自动在本路径无法交付，等 Lemon 定方向；订单待后台「确认核实结果」→未扣款（2026-09-11 08:08 UTC）
 允许继续：只读核对；browser-mvp/v1 代码与测试；rehearsal 模式；发布 A2
 禁止操作：未经 Lemon 当次确认不 go-live --arm、不消耗真实账号；快照同步可随时跑（Lemon 09-11 授权自动化），仍先 preview 再 --commit
 恢复第一步：读本文 → 读 BRAIN_UNDERSTANDING §5 看 Lemon 确认了哪些 → 读 CODEX_PROGRESS.md 看有无 [需要大脑]
