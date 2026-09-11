@@ -4,16 +4,17 @@
 
 | 项目 | 当前值 | 核对时间（UTC） | 证据方式 |
 |---|---|---|---|
-| 生产 release | `/opt/pojia/releases/20260910-highvcc-ui-feedback-cdcf42e`（commit `cdcf42e`；highvcc「刷新余额」按钮补上成功/失败提示，「保存 token」输入框为空时补上提示（此前两者点击后台面均无反应）；admin.js 升到 v=44；**2026-09-10 23:2x UTC 独立核对：本 release 的 browser-admin-service.js 已含 `RESOLVE_UNKNOWN_PAYMENT`（第 974 行）；此前“尚未部署”记载错误。仅证实代码存在，未调用动作、未验收端到端/UI**；无新迁移；回滚点 `20260910-bookmarklet-label-21a7f80`） | 2026-09-10 12:45 UTC | `readlink -f /opt/pojia/current`；switch live/ready/admin 均 200；服务器本机独立 curl 已核对 admin.js 新增的三处 showNotice 文本均在生产返回内容中；本机 v1 全量 641 个断言/583 通过/2 败（均为既有 F-40 版本号断言未同步，与本次改动无关） |
-| 回滚点 | `/opt/pojia/releases/20260910-bookmarklet-label-21a7f80`（再前 `20260910-highvcc-bookmarklet-1738627`；本版无迁移，直接切回即可） | 2026-09-10 12:45 UTC | 部署记录（switch 输出 ROLLBACK 命令） |
-| 最新数据库备份 | `/var/backups/pojia/pojia-20260910T124348Z.sql.gz.enc`，完整性 OK（release prepare 阶段） | 2026-09-10 12:45 UTC | deploy-release prepare 输出 |
-| pojia-web | active（09-10 12:4x UTC 随 release 切换重启） | 2026-09-10 12:45 UTC | systemctl |
+| 生产 release | `/opt/pojia/releases/20260911-highvcc-snapshot-sync-275f6e7`（commit `275f6e7`；新增备用卡台 A 快照同步服务+脚本+timer 单元、provider list/listAll、token reader 抽出；顺带带上 09-11 前 main 上的 browser-mvp 扩展 SessionProvider 代码（服务器不跑 Browser worker，无影响）与 `find-order-by-cdk.mjs`；无新迁移；回滚点 `20260910-highvcc-ui-feedback-cdcf42e`） | 2026-09-11 03:40 UTC | `deploy-release.sh prepare`（manifest 971 文件 OK、备份 OK）→ `switch`（live/ready 200、登录页 200）；`readlink -f /opt/pojia/current` |
+| 回滚点 | `/opt/pojia/releases/20260910-highvcc-ui-feedback-cdcf42e`（再前 `20260910-bookmarklet-label-21a7f80`；本版无迁移，直接切回即可；timer 回滚：`systemctl disable --now pojia-highvcc-snapshot-sync.timer`） | 2026-09-11 03:40 UTC | switch 输出 ROLLBACK 命令 |
+| 最新数据库备份 | `/var/backups/pojia/pojia-20260911T033813Z.sql.gz.enc`，完整性 OK（release prepare 阶段） | 2026-09-11 03:40 UTC | deploy-release prepare 输出 |
+| pojia-web | active（2026-09-11 03:40 UTC 随 release 切换重启） | 2026-09-11 03:40 UTC | switch 输出 + curl live/ready 200 |
 | highvcc 备用卡台 A token | 已配置进生产（`app_settings.highvcc_access_token_ciphertext`，加密存储，09-10 09:17 UTC 写入） | 2026-09-10 09:52 UTC | `v1/scripts/set-highvcc-token.mjs` 输出 |
 | highvcc 备用卡台 A 已开卡片（本窗口） | 3 张：尾号 9839（$50，08:xx）、9354（$5，09:19）、3241（$3，09:35，开卡时因 detail() 竞态未即时入库，09:53 用 `reconcile-highvcc-card.mjs` 补记）；账户另有 $20 押金要从钱包余额里先扣，才是真实可开卡余额（Lemon 提供） | 2026-09-10 09:52 UTC | 平台卡片列表 + `cards` 表独立核对 |
 | pojia-worker（v1 任务 Worker） | active（处理 ASSIGN_CARD/PREPARE/SUBMIT_RECHARGE/POLL 等；Browser 路线的 BROWSER_PREFLIGHT 与付款由本机 worker 跑） | 2026-09-09 11:46 UTC | systemctl |
 | pojia-browser-worker | inactive / disabled（Browser 执行在本机，来单人工拉） | 2026-09-09 11:46 UTC | systemctl |
 | pojia-card-funding.timer | active | 2026-09-09 11:46 UTC | systemctl |
 | pojia-card-read-sync.timer | active | 2026-09-09 11:46 UTC | systemctl |
+| pojia-highvcc-snapshot-sync.timer（新） | active / enabled，每 10 分钟 oneshot 跑 `v1/scripts/sync-highvcc-snapshot.mjs --commit`（pojia 用户，runtime.env）；首次手动 run exit 0，批次 `23584a48`（9 更新，因表格与本机 02:53 那次的字节不同：固定 mtime 是之后才加的）；**数据未变时应重放不写，待下一次触发（03:49 UTC）核实** | 2026-09-11 03:40 UTC | ssh：`systemctl is-active/is-enabled`、`journalctl -u`、`list-timers`；隧道新连接查 manual_card_import_batches |
 | pojia-card-stock-runner.timer | inactive / disabled（旧每分钟自动开卡架构已废弃） | 2026-09-09 11:46 UTC | systemctl |
 | 健康 | `127.0.0.1:3100` live 200 / ready 200；后台登录页 200（ADMIN_HOST） | 2026-09-09 06:35 UTC | curl（服务器本机） |
 | 数据库迁移 | 最新 `051_orders_cdk_id_reusable`（09-08 01:25 UTC 应用；050 于 09-07 19:16 UTC）；仓库最新亦为 051，无待应用迁移 | 2026-09-09 11:46 UTC | schema_migrations / 仓库 v1/migrations |
@@ -30,8 +31,8 @@
 | 最低所需卡余额 | default 16 / pro_5x 16 / **pro_20x 150**（09-09 05:33 UTC 调，独立核实；5X 上线前同调） | 2026-09-09 11:46 UTC | app_settings（`minimum_required_card_balance:*`）+ admin_setting_events |
 | Worker 进程写权限 | worker：`PROVIDER_RECHARGE_WRITES_ENABLED=true`（drop-in），通用/卡片写 false；funding 单元：`PROVIDER_CARD_WRITES_ENABLED=true`；env 文件 `PROVIDER_READS_ENABLED=true` | 16:35 | `systemctl cat` |
 | HNSKJ 卡 | `5980` DEPLETED，余额 $0.31（09-07 12:07 UTC 直充扣 $15.69，占用已释放）；其余 5 张 ASSIGNED 于历史订单且 ≤ $0.01；5 张 DEPLETED；HNSKJ 可分配 0 | 09-07 14:42 | cards |
-| 备用卡（备用卡台 A = highvcc，manual_excel 导入与一键开卡同池，sync_tier=MANUAL_IMPORT） | **2026-09-11 02:55 UTC 首次快照自动同步已提交**（`v1/scripts/sync-highvcc-snapshot.mjs --commit`，走 manual-card-import 正式路径，批次 `211a4ad6`，9 行：新增 9839 $50.00 / 9354 $5.00，更新 7 张）。库中余额现与卡台一致：9839 50.00、9354 5.00、3241 3.00、5501 1.79、0601 1.27、7402 1.08、2911 1.00、7428 1.00、0237 0.00，全部 AVAILABLE / source_present=1（5501 由 DEPLETED 按事实回 AVAILABLE）。5 张 RETIRED override（0601/2911/7428/5501/0237）不变，仍退出分配池。**同步尚未接 timer，需要时手动跑；接 timer 随下次 release** | 2026-09-11 02:55 UTC | 脚本 preview→门控→commit 输出；隧道新连接独立 SELECT cards / manual_card_import_batches |
-| 可分配卡（资格 SQL，Plus 门槛 16） | **1 张**（9839 $50.00）。非终态订单 0。7402 已按卡台刷成 $1.08，不再合格。系统缺口仍在：资格 SQL 对 MANUAL_IMPORT 卡信任静态余额，只是现在有了 `sync-highvcc-snapshot.mjs` 可随时刷新；未接 timer 前每次来单/开卡后应手动跑一次。state-check 在 0 张时误报 1 张（NULL 计数 bug，脚本未修） | 2026-09-11 02:55 UTC | 资格 SQL 直接查 = 9839 |
+| 备用卡（备用卡台 A = highvcc，manual_excel 导入与一键开卡同池，sync_tier=MANUAL_IMPORT） | **2026-09-11 02:55 UTC 首次快照自动同步已提交**（`v1/scripts/sync-highvcc-snapshot.mjs --commit`，走 manual-card-import 正式路径，批次 `211a4ad6`，9 行：新增 9839 $50.00 / 9354 $5.00，更新 7 张）。库中余额现与卡台一致：9839 50.00、9354 5.00、3241 3.00、5501 1.79、0601 1.27、7402 1.08、2911 1.00、7428 1.00、0237 0.00，全部 AVAILABLE / source_present=1（5501 由 DEPLETED 按事实回 AVAILABLE）。5 张 RETIRED override（0601/2911/7428/5501/0237）不变，仍退出分配池。**同步已接 timer（`pojia-highvcc-snapshot-sync.timer`，每 10 分钟），release `275f6e7` 起自动** | 2026-09-11 02:55 UTC | 脚本 preview→门控→commit 输出；隧道新连接独立 SELECT cards / manual_card_import_batches |
+| 可分配卡（资格 SQL，Plus 门槛 16） | **1 张**（9839 $50.00）。非终态订单 0。7402 已按卡台刷成 $1.08，不再合格。系统缺口仍在：资格 SQL 对 MANUAL_IMPORT 卡信任静态余额，只是现在有了 `sync-highvcc-snapshot.mjs` 可随时刷新；timer 每 10 分钟自动刷新，最坏 10 分钟滞后。state-check 在 0 张时误报 1 张（NULL 计数 bug，脚本未修） | 2026-09-11 02:55 UTC | 资格 SQL 直接查 = 9839 |
 | HNSKJ 卡台 | 09-05 起故障；09-07 12:06 UTC 前已恢复（读同步与交易同步成功，`provider_calls` SUCCESS）；开卡/补余额未再验证 | 09-07 14:00 | provider_calls / cards.last_transaction_synced_at |
 | 订单总况 | RECHARGE_SUCCESS 7 / RECHARGE_FAILED 15 / CLOSED 14 / 非终态 0。待 Lemon 复核取消续费：Dqcn（本次）；VHl_ 09-09 那条按前表仍为 1 未核 | 2026-09-11 02:38 UTC | orders GROUP BY status 推算（收口前 6/15/14/1 + 本次 1 转成功） |
 | 活动资金与运行 | active_runs 0；Dqcnq 存在 ACTIVE 卡分配 1，不再是“全库无活动分配”。其余全库资金/dispatch/账本聚合本轮未完整重验，旧 09-09 清零快照不能代表现在 | 2026-09-10 23:23 UTC | browser_runs active_account_key_hmac COUNT=0；卡分配查询 |

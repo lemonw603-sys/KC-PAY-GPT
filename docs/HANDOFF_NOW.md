@@ -11,14 +11,14 @@
 
 ## 现在状态（已验证，UTC）
 
-- 付款开关 false（09-10 22:47 关）；本机无 worker；release `20260910-highvcc-ui-feedback-cdcf42e`。
+- 付款开关 false（09-10 22:47 关）；本机无 worker；release **`20260911-highvcc-snapshot-sync-275f6e7`**（2026-09-11 03:40 UTC 切换，live/ready 200，回滚点 cdcf42e）。
 - 订单 `PJV1-DqcnqHF0tPlxDhygTtAA` **已于 2026-09-11 02:38 UTC 人工履约收口 → RECHARGE_SUCCESS**（Lemon 系统外手工充值），7402 已释放并按卡台刷成 $1.08。待 Lemon 点「已在账号里取消续费」。可分配卡 0；`state-check.sh` 在 0 张时误报 1 张（GROUP_CONCAT 空集返回 NULL 被 awk 数成一项），脚本未修。
 - **F-42 已由大脑独立核对代码为真**：`BROWSER_SESSION_PROVIDER=EXTENSION` 未接预检，昨天第 5 次"扩展对照"实际仍走 cookie。上号器路径在自动化里从未真正跑过；交接文档相应结论作废。
-- **备用卡台快照自动同步已落地并首跑（2026-09-11 02:55 UTC）**：`v1/src/services/highvcc-snapshot-sync-service.js` + `v1/scripts/sync-highvcc-snapshot.mjs`（默认 preview 只读，`--commit` 才写；走 manual-card-import 正式路径；本机跑法=照 `run-live-pool.sh` 拉生产 runtime.env 走隧道）。首跑批次 `211a4ad6`：9839/9354 入库，7402 刷成 $1.08，9 张与卡台一致。可分配卡现为 9839（$50）。未接 timer；`browser-mvp/scripts/highvcc-card.mjs export` 把分当元写余额的 bug 未修（Codex 地界，已记）。资格 SQL 信任 MANUAL_IMPORT 静态余额的根因未改，同步是补偿手段。
+- **备用卡台快照自动同步已落地并首跑（2026-09-11 02:55 UTC）**：`v1/src/services/highvcc-snapshot-sync-service.js` + `v1/scripts/sync-highvcc-snapshot.mjs`（默认 preview 只读，`--commit` 才写；走 manual-card-import 正式路径；本机跑法=照 `run-live-pool.sh` 拉生产 runtime.env 走隧道）。首跑批次 `211a4ad6`：9839/9354 入库，7402 刷成 $1.08，9 张与卡台一致。可分配卡现为 9839（$50）。**timer 已装并启用（`pojia-highvcc-snapshot-sync.timer`，每 10 分钟；2026-09-11 03:40 UTC）**，首跑批次 `23584a48`，下一次触发若数据未变应重放不新增批次（待核）；`browser-mvp/scripts/highvcc-card.mjs export` 把分当元写余额的 bug 未修（Codex 地界，已记）。资格 SQL 信任 MANUAL_IMPORT 静态余额的根因未改，同步是补偿手段。
 
 ## 下一可执行项
 
-- 大脑：①Dqcn 已收口、快照同步已首跑。**接下来**：读透项目 → 差异版理解稿 → 重排 PROJECT_MAP §5（高位候选：快照同步接 systemd timer 并随 release 上服务器；资格 SQL 对 highvcc 卡改为按同步新鲜度；Codex F-42 修复合并）；②把「highvcc 卡余额 API 同步、资格 SQL 不再信任手动卡静态余额」列入重排后的执行顺序高位；③读透项目 → 差异版理解稿 → 重排 PROJECT_MAP §5 → 交 Lemon。
+- 大脑：①Dqcn 已收口、快照同步已首跑。**接下来**：读透项目 → 差异版理解稿 → 重排 PROJECT_MAP §5（高位候选：资格 SQL 对 highvcc 卡改为按同步新鲜度（timer 已上，现在有依据）；token 过期时 timer 静默失败→加 operator_alert；Codex F-42 修复合并）；②把「highvcc 卡余额 API 同步、资格 SQL 不再信任手动卡静态余额」列入重排后的执行顺序高位；③读透项目 → 差异版理解稿 → 重排 PROJECT_MAP §5 → 交 Lemon。
 - Codex：任务书阶段 1（修 F-42 并回归测试；差异维度清单），不消耗账号。
 
 ## 已定不做
