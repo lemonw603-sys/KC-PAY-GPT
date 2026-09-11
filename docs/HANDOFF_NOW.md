@@ -18,7 +18,7 @@
 
 ## 下一可执行项
 
-- 大脑：**理解稿已交** `docs/BRAIN_UNDERSTANDING_2026-09-11.md`（六问差异版 + 资金九道门行号 + 执行顺序重排提案 §5 + 以前做错的 §7），**重排待 Lemon 确认**。等 Lemon 答：A2 预检改造、E1/E2 测试账号、常开机器与住宅出口是否启动、F-38 裁决、UX 五条是否现在做。确认后按 §5 顺序执行，B1（F-44/45/46 修 + RESOLVE_UNKNOWN_PAYMENT 接 UI）是我下一件要动手的。
+- 大脑：**理解稿已交并经 Lemon 确认**（§7 八条全部成立；重排已写进 PROJECT_MAP §5，D-142～D-145 落账本）。**只剩一项等 Lemon 一字确认：A2 预检改造**。Lemon 09-11 答复：不买住宅出口；常开机器暂无；F-38 改走后台接口；后台体检等真单通后集中做；E1/E2 账号他各注册一个 free 号。**大脑当前动手项：B1**（F-44/45/46 修 + `RESOLVE_UNKNOWN_PAYMENT` 接后台按钮 + 发布）。
 - Codex：**阶段 1 已验收合并 `2aad60d`**（F-42 修复 + 回归 + 差异维度清单）。阶段 2：E0 已批（离线路径标记）；E1 待 Codex 只读列出 8 身份会话状态后由大脑定 lane、账号待 Lemon；E2 待 E1。批复在 `BRAIN_TO_CODEX.md` 2026-09-11 04:09 UTC 节。
 
 ## 已定不做
@@ -28,7 +28,7 @@
 ## 暂停 / 恢复
 
 ```text
-暂停原因：理解稿与重排提案已交，等 Lemon 确认（2026-09-11 04:09 UTC）；Codex 阶段 2 E0 进行中、E1 等账号
+暂停原因：B1 开发中；A2 等 Lemon 一字；E1 等 Codex 列身份状态与 Lemon 账号（2026-09-11 04:09 UTC）；Codex 阶段 2 E0 进行中、E1 等账号
 允许继续：只读核对；Codex 地界内代码与测试；rehearsal 模式
 禁止操作：未经 Lemon 当次确认不 go-live --arm、不消耗真实账号；快照同步可随时跑（Lemon 09-11 授权自动化），仍先 preview 再 --commit
 恢复第一步：读本文 → 读 BRAIN_UNDERSTANDING §5 看 Lemon 确认了哪些 → 读 CODEX_PROGRESS.md 看有无 [需要大脑]
