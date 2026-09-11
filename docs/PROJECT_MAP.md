@@ -34,7 +34,7 @@
 **主线（现在做）**
 - A1 F-42 预检接入 SessionProvider：已合并 `2aad60d`。
 - A2 预检改造（D-150）：**代码已完成，待发布**——预检不点 Upgrade、不建 Checkout，只保留登录/身份/free 判定；`max_attempts` 5→1。大脑做（Codex 已退出，D-152）。
-- A3 真实订单演练（D-150/D-152，大脑执行）：Lemon 用测试账号 A 走客户入口提交 CDK+Session；窗口 `Plus Browser PH Pilot`；Cookie 注入；一次尝试失败即停；模式（rehearsal 停付款前 / 直接真付）由 Lemon 当次选。账号 B 按 A 的结果只变一个维度。
+- ~~A3 真实订单演练~~ **已完成（D-164，2026-09-11）**：第 4 单全链路跑通并打标签 `e2e-first-success-20260911`。主线目标「Browser 链路跑通」达成。
 - A4 rehearsal 到 PRE_SUBMIT_STOPPED → Lemon 放行一笔真单到 RECHARGE_SUCCESS。D-139 不变：真单失败一次即人工。
 - ~~B2 F-43~~ **已移出主线（D-148）**：付款→确认 Plus→确认取消续费在同一浏览器会话内完成，不经过旧 token 门槛；F-43 只影响付款后的自动补核，归入真单之后的集中整治。
 - 已完成：B1 `RESOLVE_UNKNOWN_PAYMENT` 三 bug 修好并接按钮（`3d4936d`，release `20260911-resolve-unknown-ui-3d4936d`）。其中 Pro 分支随 D-146 搁置暂不会用到，保留不删。
