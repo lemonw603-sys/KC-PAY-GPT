@@ -4,7 +4,7 @@
 
 | 项目 | 当前值 | 核对时间（UTC） | 证据方式 |
 |---|---|---|---|
-| 生产 release | `/opt/pojia/releases/20260911-drop-preflight-24bcbde`（commit `24bcbde`；D-158 取消独立预检，身份与 free 判定并入正式流程）。回滚 `20260911-cdk-return-fix-bfacbe1`。`pojia-worker` 已随本次重启（派工闸门在 worker 侧） | 2026-09-11 10:02 UTC | `deploy-release.sh prepare`（981 文件 manifest OK、备份 OK）→ `switch`；服务器本机独立 curl：served admin.js 含 RESOLVE_UNKNOWN_PAYMENT×8 / 确认核实结果×3 / 严格布尔发送×1，service 文件含 strictBoolean 与 MANUAL_VERIFICATION_RESOLVED 证据检查，控制路由未登录 401，live/ready 200，web 无错误日志 |
+| 生产 release | `/opt/pojia/releases/20260911-card-bin-c65727f`（commit `c65727f`；D-168 卡段标注 + 迁移 052_cards_bin）。回滚 `20260911-drop-preflight-24bcbde` | 2026-09-11 13:30 UTC | `deploy-release.sh prepare`（981 文件 manifest OK、备份 OK）→ `switch`；服务器本机独立 curl：served admin.js 含 RESOLVE_UNKNOWN_PAYMENT×8 / 确认核实结果×3 / 严格布尔发送×1，service 文件含 strictBoolean 与 MANUAL_VERIFICATION_RESOLVED 证据检查，控制路由未登录 401，live/ready 200，web 无错误日志 |
 | 回滚点 | `/opt/pojia/releases/20260911-highvcc-snapshot-sync-275f6e7`（再前 `20260910-highvcc-ui-feedback-cdcf42e`；本版无迁移，直接切回即可；timer 单元不随 release 变化） | 2026-09-11 04:42 UTC | switch 输出 ROLLBACK 命令 |
 | 最新数据库备份 | `/var/backups/pojia/pojia-20260911T044030Z.sql.gz.enc`，完整性 OK（release prepare 阶段） | 2026-09-11 04:42 UTC | deploy-release prepare 输出 |
 | pojia-web | active（2026-09-11 04:42 UTC 随 release 切换重启） | 2026-09-11 04:42 UTC | switch 输出 + 服务器本机 curl live/ready 200 |

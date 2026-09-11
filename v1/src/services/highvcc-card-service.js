@@ -118,6 +118,12 @@ export function createHighvccCardService({
    * choosing one. Counts come from real orders, never from the card platform.
    * A segment with too few attempts is labelled as such rather than accused: one
    * decline must not condemn a segment.
+   *
+   * A success here means the payment went through on that card — including the
+   * ones a person verified afterwards, because a charge that landed is a charge
+   * that landed whoever confirmed it. That is a different denominator from
+   * `run-stats.sh`, which asks a different question: how often the system carries
+   * an order end to end with nobody watching.
    */
   const MIN_ATTEMPTS_FOR_VERDICT = 3;
 
