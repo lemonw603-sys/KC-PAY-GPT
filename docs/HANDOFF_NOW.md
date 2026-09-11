@@ -53,6 +53,13 @@ browser-mvp/scripts/run-stats.sh          # 随时看累计成功率
 ```
 日志出现 `需要人工验证` → 去 Pilot 窗口勾选，自动化自行继续。**监控命令不要包含 `production-live-pool-worker` 字样**，会被 `pgrep -f` 自匹配成"残留 worker"。
 
+## 收尾自检（说"做完了"之前必须跑）
+
+```bash
+scripts/wrapup-check.sh                      # 工作区/推送/现场一致/接班一屏是否过期
+browser-mvp/scripts/contract-probe.mjs       # 卡台字段契约（改动涉及卡台时跑）
+```
+
 ## 暂停 / 恢复
 
 ```text
