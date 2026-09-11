@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { parseProductionLiveArgs, withPoolLifecycle } from '../src/production-live-worker.js';
+import { parseProductionLiveArgs, withPoolLifecycle, observation, preflightObservation } from '../src/production-live-worker.js';
 
 test('production LIVE entrypoint requires one explicit safe mode', () => {
   assert.deepEqual(parseProductionLiveArgs(['--check']), { checkOnly: true });
@@ -27,4 +27,14 @@ test('production LIVE pool stays open until the worker operation settles', async
   release();
   assert.deepEqual(await running, { status: 'DONE' });
   assert.deepEqual(calls, ['worker-start', 'worker-finish', 'pool-end']);
+});
+
+test('D-150: order preflight observation carries no Checkout contracts while live keeps them', () => {
+  const live = observation();
+  const preflight = preflightObservation();
+  assert.ok(live.checkoutNavigationContract && live.checkoutContract);
+  assert.equal(preflight.checkoutNavigationContract, undefined);
+  assert.equal(preflight.checkoutContract, undefined);
+  assert.deepEqual(preflight.pageContract, live.pageContract);
+  assert.deepEqual(preflight.accountProbeContract, live.accountProbeContract);
 });

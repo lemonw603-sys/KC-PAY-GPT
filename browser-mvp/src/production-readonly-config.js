@@ -173,8 +173,8 @@ export function loadProductionReadonlyBrowserConfig(env = process.env) {
         path: '/api/auth/session',
         accountCheckPath: '/backend-api/accounts/check/v4-2023-04-27?timezone_offset_min=0',
       },
-      checkoutNavigationContract: CHATGPT_PLUS_CHECKOUT_NAVIGATION_CONTRACT,
-      checkoutContract: CHATGPT_PLUS_CHECKOUT_CONTRACT,
+      // D-150: preflight must not click Upgrade or create a Checkout. It only
+      // proves the Session logs in, the identity matches, and the plan is free.
     } : {}),
   };
   const sharedSessionEnabled = sharedMaterialsMode === 'SHARED_ENCRYPTED_NONPAYMENT';

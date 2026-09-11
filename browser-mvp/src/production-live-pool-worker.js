@@ -18,7 +18,7 @@ import {
   BROWSER_LIVE_STOP_BEFORE_SUBMIT, ProductionLiveConfigError, integer, key32, localApiUrl, required,
 } from './production-live-config.js';
 import {
-  REQUIRED_PRODUCTION_LIVE_MIGRATIONS, checkProductionLiveBitBrowser, observation,
+  REQUIRED_PRODUCTION_LIVE_MIGRATIONS, checkProductionLiveBitBrowser, observation, preflightObservation,
   resolveAccountKey, resolveCardContext, resolveIdentity, resolveOrderPlan, withPoolLifecycle,
 } from './production-live-worker.js';
 import { ExtensionSessionBootstrapAdapter } from './extension-session-bootstrap.js';
@@ -222,7 +222,7 @@ export async function createLaneWorker({ lane, config, pool, browserType, shared
   const PreflightSessionAdapter = config.sessionProviderMode === 'EXTENSION'
     ? ExtensionSessionBootstrapAdapter : CookieSessionBootstrapAdapter;
   const preflight = createBrowserOrderPreflightWorker({
-    pool, workerId, executorProfileId: config.executorProfileId, runtimeAdapter, manifest, observation: observation(),
+    pool, workerId, executorProfileId: config.executorProfileId, runtimeAdapter, manifest, observation: preflightObservation(),
     encryptionKey: config.materialEncryptionKey, evidenceSink, leaseSeconds: config.leaseSeconds,
     executionTimeoutMs: config.executionTimeoutMs,
     sessionProvider: new PreflightSessionAdapter({

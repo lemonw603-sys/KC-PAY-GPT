@@ -237,7 +237,7 @@ export async function createOrderFromCdk(pool, input) {
       await connection.query(
         `INSERT INTO tasks
          (order_id, task_type, status, dedupe_key, max_attempts)
-         VALUES (?, 'BROWSER_PREFLIGHT', 'PENDING', ?, 5)`,
+         VALUES (?, 'BROWSER_PREFLIGHT', 'PENDING', ?, 1)`,
         [input.orderId, `browser-preflight:${input.orderId}`]
       );
     }

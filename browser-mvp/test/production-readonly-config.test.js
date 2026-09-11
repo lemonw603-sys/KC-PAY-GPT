@@ -147,8 +147,10 @@ test('ChatGPT account/Checkout harness is explicit, exact-origin and Session-onl
   const config = loadProductionReadonlyBrowserConfig(chatGptEnv);
   assert.equal(config.readonlyHarness, 'CHATGPT_ACCOUNT_CHECKOUT');
   assert.equal(config.observation.accountProbeContract.path, '/api/auth/session');
-  assert.equal(config.observation.checkoutNavigationContract.homeUrlPrefix, 'https://chatgpt.com/');
-  assert.equal(config.observation.checkoutContract.urlPrefix, 'https://chatgpt.com/checkout/');
+  // D-150: preflight never navigates to or observes Checkout.
+  assert.equal(config.observation.checkoutNavigationContract, undefined);
+  assert.equal(config.observation.checkoutContract, undefined);
+  assert.equal(config.observation.accountProbeContract.path, '/api/auth/session');
   assert.deepEqual(config.materialPolicy, {
     sharedSessionEnabled: true,
     sharedCardPreflightEnabled: false,

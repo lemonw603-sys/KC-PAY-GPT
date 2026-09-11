@@ -5,7 +5,7 @@
 ## 分工（2026-09-11 Lemon 定）
 
 - **大脑**：本窗口。全项目理解、排序、任务书、验收、四份事实源（本文、CURRENT_STATE、DECISIONS、PROJECT_MAP）、所有生产动作。
-- **Browser 专职**：Codex。地界 `browser-mvp/**`、`docs/browser-research/**`；工作区 `~/.codex/worktrees/browser-live/AI充值业务`，分支 `codex/browser-live-20260911`；任务书 `docs/browser-research/CODEX_BRIEF_2026-09-11.md`；通信 `BRAIN_TO_CODEX.md` / `CODEX_PROGRESS.md`。回流经分支，大脑合并。
+- **Browser 侧**：Codex 已退出（D-152，Lemon 2026-09-11）；大脑直接实施与操作。Codex 分支 `codex/browser-live-20260911` 已合并部分保留，`BRAIN_TO_CODEX.md` 停更。
 - **短命窗口**：按需开，worktree 隔离，做完即关。只派边界明确、验收可机器检查、不需全项目上下文的任务。
 - 09-11 早上并行的 Sonnet 接班窗口已按 Lemon 要求关闭。其提交 `d76d193`、`9cad431`、`1675b3a` 保留；发现 F-42 到 F-46 待大脑逐条核；其自写处置违反 REVIEW_PROTOCOL 角色分离，处置由大脑重做。
 
@@ -18,8 +18,8 @@
 
 ## 下一可执行项
 
-- 大脑：B1 已发布。**Lemon 2026-09-11 04:58 UTC 二次收缩方向（D-146/147）**：Pro 搁置、只做 Plus、不做重；PROJECT_MAP §5 已按此重写。**D-150（2026-09-11 05:45 UTC）推翻 D-149：预检改造恢复并前置（不点 Upgrade、重试 1）；E1 取消；两账号走真流程 A/B。** 大脑下一件：Codex 交预检改造后合并，改 v1 `max_attempts` 5→1 并发布；然后账号 A 真单当天生产动作。
-- Codex：**阶段 1 已验收合并 `2aad60d`**（F-42 修复 + 回归 + 差异维度清单）。阶段 2：E0 已批（离线路径标记）；E1 待 Codex 只读列出 8 身份会话状态后由大脑定 lane、账号待 Lemon；E2 待 E1。批复在 `BRAIN_TO_CODEX.md` 2026-09-11 04:09 UTC 起的三节（含 D-146/147 对实验范围的影响：Pro 维度出局，E2 只做 Plus）。Codex 截至 05:20 UTC 仍停在 `9375228`、未合并 main、未读批复。
+- 大脑：B1 已发布。**Lemon 2026-09-11 04:58 UTC 二次收缩方向（D-146/147）**：Pro 搁置、只做 Plus、不做重；PROJECT_MAP §5 已按此重写。**D-152（2026-09-11 06:31 UTC）Codex 退出，大脑接手：A2 预检改造代码已完成（browser-mvp 238/229 绿、v1 目标 32/32 绿），待 v1 全套与发布；接着做 A3 真实订单演练，模式等 Lemon 选。**
+- 事故待办：大脑窗口一条 ssh 命令把 `DATABASE_URL`（含 pojia_app 密码）打印进本机会话记录（D-152）；真单结束后经 Lemon 确认轮换密码。
 
 ## 已定不做
 
@@ -28,8 +28,8 @@
 ## 暂停 / 恢复
 
 ```text
-暂停原因：B1 已发布；A2 预检改造前置（D-150）；E1 等 Codex 列身份状态与 Lemon 账号；F-43 移出主线（D-148）；大脑低耗待命，等 Codex 预检改造与 Pilot lane 配置（D-150；两个 free 号已就位）（2026-09-11 05:16 UTC）（2026-09-11 04:09 UTC）；Codex 阶段 2 E0 进行中、E1 等账号
-允许继续：只读核对；Codex 地界内代码与测试；rehearsal 模式
+暂停原因：A2 代码完成待发布；A3 等 Lemon 选模式并提交账号 A 订单（2026-09-11 06:31 UTC）
+允许继续：只读核对；browser-mvp/v1 代码与测试；rehearsal 模式；发布 A2
 禁止操作：未经 Lemon 当次确认不 go-live --arm、不消耗真实账号；快照同步可随时跑（Lemon 09-11 授权自动化），仍先 preview 再 --commit
 恢复第一步：读本文 → 读 BRAIN_UNDERSTANDING §5 看 Lemon 确认了哪些 → 读 CODEX_PROGRESS.md 看有无 [需要大脑]
 ```

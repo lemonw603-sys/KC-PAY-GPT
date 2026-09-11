@@ -187,6 +187,12 @@ export function observation() {
   };
 }
 
+/** D-150: order preflight proves login/identity/free only; no Upgrade click, no Checkout. */
+export function preflightObservation() {
+  const { checkoutNavigationContract, checkoutContract, ...rest } = observation();
+  return rest;
+}
+
 export async function withPoolLifecycle(pool, operation) {
   if (!pool || typeof pool.end !== 'function') throw new TypeError('pool.end is required');
   if (typeof operation !== 'function') throw new TypeError('operation is required');
