@@ -11,6 +11,13 @@ import { randomUUID } from 'node:crypto';
  */
 export async function returnCdkForOrderInTransaction(connection, {
   orderId, reason, actorType = 'SYSTEM', actorId = 'system', metadata = {},
+  // F-48 (2026-09-11): a submit click alone blocks the return, which is right
+  // while nobody knows whether money moved. It stops being right once a person
+  // has looked at the account and the card and recorded "not charged"
+  // (RESOLVE_UNKNOWN_PAYMENT / NOT_CHARGED): the customer then holds a spent CDK
+  // for a service they never got. That verdict — and only that — clears the
+  // click; the funds-ledger evidence below still blocks unconditionally.
+  paymentSubmitAdjudicated = false,
 } = {}) {
   const order = String(orderId || '').trim();
   if (!order) throw new TypeError('orderId is required');
@@ -19,14 +26,17 @@ export async function returnCdkForOrderInTransaction(connection, {
         (SELECT COUNT(*) FROM recharge_attempts
           WHERE order_id = ? AND (funds_risk_state IN ('UNKNOWN','SETTLED') OR status = 'SUCCESS'))
       + (SELECT COUNT(*) FROM card_consumption_ledger
-          WHERE order_id = ? AND status IN ('CONSUMED','RECONCILIATION'))
-      + (SELECT COUNT(*) FROM browser_operations bo
+          WHERE order_id = ? AND status IN ('CONSUMED','RECONCILIATION')) AS funds_evidence,
+        (SELECT COUNT(*) FROM browser_operations bo
           INNER JOIN browser_runs br ON br.id = bo.browser_run_id
           INNER JOIN recharge_attempts rat ON rat.id = br.recharge_attempt_id
-          WHERE rat.order_id = ? AND bo.operation_type = 'PAYMENT_SUBMIT') AS payment_evidence`,
+          WHERE rat.order_id = ? AND bo.operation_type = 'PAYMENT_SUBMIT') AS submit_evidence`,
     [order, order, order],
   );
-  if (Number(evidence?.payment_evidence || 0) > 0) {
+  if (Number(evidence?.funds_evidence || 0) > 0) {
+    return { returned: false, reasonCode: 'PAYMENT_EVIDENCE', cdkId: null };
+  }
+  if (!paymentSubmitAdjudicated && Number(evidence?.submit_evidence || 0) > 0) {
     return { returned: false, reasonCode: 'PAYMENT_EVIDENCE', cdkId: null };
   }
   const [bound] = await connection.query(

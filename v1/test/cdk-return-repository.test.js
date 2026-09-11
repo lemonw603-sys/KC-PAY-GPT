@@ -2,13 +2,18 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { returnCdkForOrderInTransaction } from '../src/db/repositories/cdk-return-repository.js';
 
-function connection({ evidence = 0, bound = true, updated = 1 } = {}) {
+function connection({ evidence = 0, funds = null, submits = null, bound = true, updated = 1 } = {}) {
   const queries = [];
   return {
     queries,
     async query(sql, values) {
       queries.push({ sql, values });
-      if (/cdk-return payment evidence/.test(sql)) return [[{ payment_evidence: evidence }], []];
+      if (/cdk-return payment evidence/.test(sql)) {
+        return [[{
+          funds_evidence: funds == null ? evidence : funds,
+          submit_evidence: submits == null ? 0 : submits,
+        }], []];
+      }
       if (/FROM cdks WHERE order_id/.test(sql)) return [bound ? [{ id: 'cdk-1', batch_no: 'B-1' }] : [], []];
       if (/UPDATE cdks SET status = 'AVAILABLE'/.test(sql)) return [{ affectedRows: updated }, []];
       if (/INSERT INTO cdk_delivery_events/.test(sql)) return [{ affectedRows: 1 }, []];
@@ -38,3 +43,33 @@ test('any payment evidence keeps the CDK bound, and an unbound CDK is left alone
   assert.deepEqual(await returnCdkForOrderInTransaction(unbound, { orderId: 'order-3', reason: 'x' }), { returned: false, reasonCode: 'CDK_NOT_BOUND', cdkId: null });
   await assert.rejects(() => returnCdkForOrderInTransaction(connection(), { orderId: '' }), TypeError);
 });
+
+test('F-48: a submit click alone blocks the return until a person adjudicates it', async () => {
+  const blocked = connection({ funds: 0, submits: 1 });
+  assert.deepEqual(
+    await returnCdkForOrderInTransaction(blocked, { orderId: 'order-9', reason: 'pre-payment abort' }),
+    { returned: false, reasonCode: 'PAYMENT_EVIDENCE', cdkId: null },
+  );
+  assert.equal(blocked.queries.filter(({ sql }) => /UPDATE cdks/.test(sql)).length, 0);
+
+  const adjudicated = connection({ funds: 0, submits: 1 });
+  const result = await returnCdkForOrderInTransaction(adjudicated, {
+    orderId: 'order-9', reason: 'manual verification confirmed no payment went through',
+    actorType: 'ADMIN', actorId: 'admin', paymentSubmitAdjudicated: true,
+  });
+  assert.deepEqual(result, { returned: true, reasonCode: null, cdkId: 'cdk-1' });
+});
+
+test('F-48: a human verdict never overrides funds-ledger evidence', async () => {
+  for (const funds of [1, 2]) {
+    const c = connection({ funds, submits: 1 });
+    assert.deepEqual(
+      await returnCdkForOrderInTransaction(c, {
+        orderId: 'order-10', reason: 'claimed not charged', paymentSubmitAdjudicated: true,
+      }),
+      { returned: false, reasonCode: 'PAYMENT_EVIDENCE', cdkId: null },
+    );
+    assert.equal(c.queries.filter(({ sql }) => /UPDATE cdks/.test(sql)).length, 0);
+  }
+});
+

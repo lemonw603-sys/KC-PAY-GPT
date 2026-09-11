@@ -237,3 +237,9 @@
 - 付款点击仍然只有一次：门在点击之后，只等待不重试。
 - 回归：browser-mvp 248/239 通过 0 失败（新增 gate 8 条 + adapter 2 条）。
 
+## D-156（2026-09-11 09:10 UTC）F-48 修复：人工核实"未扣款"后，CDK 必须退回
+
+- **问题**：`returnCdkForOrderInTransaction` 只要订单下存在 `PAYMENT_SUBMIT` 记录就拒绝退 CDK，且「确认核实结果→未扣款」分支丢弃了返回值。结果 2026-09-11 真单收口后客户的 CDK 仍 REDEEMED——卡密已用、服务没给、也没退回。旧集成测试的 fixture 没有 `PAYMENT_SUBMIT` 行，所以从未覆盖真实形状。
+- **修复**：把证据拆成"资金账本证据"（attempt SETTLED/UNKNOWN/SUCCESS、账本 CONSUMED/RECONCILIATION）与"提交点击证据"两类。新增参数 `paymentSubmitAdjudicated`（默认 false，其余五个调用方行为不变）：仅当人已核实未扣款时，清掉点击这一项；资金账本证据仍无条件拦截。收口分支改为断言返回值，遇资金证据即抛 `PAYMENT_STATE_CONFLICT` 让整笔收口回滚。
+- **测试**：单元 2 条（点击证据在未裁决前仍拦截；人工裁决不能越过资金账本证据）+ 集成 2 条（复刻真单形状：有 PAYMENT_SUBMIT 仍退回；确认收口按"先清资金栅栏再退 CDK"的顺序）。已验证：去掉修复这 2 条集成测试立刻失败。v1 全套 660/597/0/63。
+

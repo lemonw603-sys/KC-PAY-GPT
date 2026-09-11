@@ -378,3 +378,54 @@ test('a string renewalCancelled is refused and leaves every row untouched', { sk
   }
 });
 
+test('F-48: the real shape — a submit click happened — still hands the CDK back on NOT_CHARGED', { skip }, async () => {
+  let fixture;
+  try {
+    fixture = await createFixture(pool, 'submitted-not-charged');
+    await moveToStuck(pool, fixture.ids, { runStatus: 'HUMAN_REQUIRED', verificationState: 'HUMAN_REQUIRED', orderStatus: 'SUBMIT_UNKNOWN' });
+    // This is what 2026-09-11's order looked like: one payment submit click, no charge.
+    await pool.query(
+      `INSERT INTO browser_operations (browser_run_id, operation_id, operation_type, status, result_code, prepared_at, completed_at)
+       VALUES (?, ?, 'PAYMENT_SUBMIT', 'COMMITTED', 'EXTERNAL_ACTION_AUTHORIZED', NOW(3), NOW(3))`,
+      [fixture.ids.runId, `submit:${fixture.ids.runId}`]
+    );
+    const result = await resolve(pool, fixture.ids, {
+      action: 'RESOLVE_UNKNOWN_PAYMENT', operationId: `resolve:${fixture.ids.runId}`,
+      verifiedOutcome: 'NOT_CHARGED', evidenceNote: 'hCaptcha blocked the checkout; account still free and card balance unchanged'
+    });
+    assert.equal(result.runStatus, 'FAILED_SAFE');
+    const after = await snapshot(pool, fixture.ids);
+    assert.equal(after.order_status, 'CLOSED');
+    assert.equal(after.cdk_status, 'AVAILABLE', 'the customer must not be left holding a spent CDK');
+    assert.equal(after.cdk_order_id, null);
+    assert.equal(after.assignment_status, 'RELEASED');
+  } finally {
+    if (fixture) await cleanup(pool, fixture.ids);
+  }
+});
+
+test('F-48: the not-charged close-out clears the funds fence before handing the CDK back', { skip }, async () => {
+  let fixture;
+  try {
+    fixture = await createFixture(pool, 'fence-order');
+    await moveToStuck(pool, fixture.ids, { runStatus: 'HUMAN_REQUIRED', verificationState: 'HUMAN_REQUIRED', orderStatus: 'SUBMIT_UNKNOWN' });
+    await pool.query(
+      `INSERT INTO browser_operations (browser_run_id, operation_id, operation_type, status, result_code, prepared_at, completed_at)
+       VALUES (?, ?, 'PAYMENT_SUBMIT', 'COMMITTED', 'EXTERNAL_ACTION_AUTHORIZED', NOW(3), NOW(3))`,
+      [fixture.ids.runId, `submit-fence:${fixture.ids.runId}`]
+    );
+    await resolve(pool, fixture.ids, {
+      action: 'RESOLVE_UNKNOWN_PAYMENT', operationId: `resolve:${fixture.ids.runId}`,
+      verifiedOutcome: 'NOT_CHARGED', evidenceNote: 'verified free account and unchanged card balance'
+    });
+    const after = await snapshot(pool, fixture.ids);
+    // Order matters: the attempt fence and the ledger are cleared first, so the CDK
+    // return sees no funds evidence and only the adjudicated submit click remains.
+    assert.equal(after.funds_risk_state, 'CLEARED');
+    assert.equal(after.ledger_status, 'RELEASED');
+    assert.equal(after.cdk_status, 'AVAILABLE');
+  } finally {
+    if (fixture) await cleanup(pool, fixture.ids);
+  }
+});
+

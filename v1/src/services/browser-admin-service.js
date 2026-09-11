@@ -1244,11 +1244,24 @@ export function createBrowserAdminService({
              WHERE recharge_attempt_id = ? AND status IN ('QUEUED', 'CLAIMED')`,
             [timestamp, timestamp, row.recharge_attempt_id]
           );
-          await returnCdkForOrderInTransaction(connection, {
+          // F-48: the operator has verified the charge never happened, so the submit
+          // click must not keep the customer's CDK spent. The result is asserted —
+          // silently swallowing it is how the CDK stayed REDEEMED on 2026-09-11.
+          // PAYMENT_EVIDENCE here means real funds evidence (a settled/unknown
+          // attempt or a consumed ledger row) contradicts "not charged": refuse the
+          // whole close-out rather than close an order on a contradiction.
+          const cdkReturn = await returnCdkForOrderInTransaction(connection, {
             orderId: row.order_id,
             reason: `manual verification confirmed no payment went through: ${evidenceNote}`,
             actorType: 'ADMIN', actorId,
+            paymentSubmitAdjudicated: true,
           });
+          if (!cdkReturn.returned && cdkReturn.reasonCode === 'PAYMENT_EVIDENCE') {
+            throw new BrowserAdminError(
+              'funds evidence contradicts a not-charged verdict; the CDK cannot be handed back',
+              'PAYMENT_STATE_CONFLICT', 409,
+            );
+          }
           row.run_status = 'FAILED_SAFE'; row.control_state = 'RELEASED';
           row.payment_state = 'PAYMENT_DECLINED'; row.order_status = 'CLOSED';
         }
