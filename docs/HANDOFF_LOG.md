@@ -2287,3 +2287,10 @@ P1：F-3 取消续费接口从未真调、失败终态后台按钮不认；F-4 �
 - 预检改造落地（D-150/A2）：`production-readonly-config.js` 的 CHATGPT_ACCOUNT_CHECKOUT 观察不再带 checkout 两个合同（once 预检）；`production-live-worker.js` 新增 `preflightObservation()`，pool 预检 lane 改用它，live 仍用完整 `observation()`；v1 `order-intake-repository.js` 预检 `max_attempts` 5→1。browser-mvp 238/229 通过 9 skipped；v1 目标测试 32/32（含 NOT_CHARGED 收口集成测试）。
 - 事故：查生产域名时 ssh 命令打印了 `DATABASE_URL` 含密码到本机会话记录（D-152 记录，待 Lemon 确认后轮换）。
 - Pilot 窗口只读核实：BitBrowser `/browser/detail` 存在，名称 `Plus Browser PH Pilot`，代理 http 127.0.0.1:17897。
+
+## 2026-09-11 06:36 UTC｜发布 A2：预检不点 Upgrade、重试 1
+
+- v1 全套 656/595/0/61（与基线一致；带 TEST_DATABASE_URL 全跑时 `test/mysql-integration.test.js` 结束后不关连接池导致进程挂起，既有问题，记入巡检）。
+- `deploy-release.sh prepare 0396bb8 20260911-preflight-noupgrade-0396bb8` → `switch`；独立核实：current → 新 release，web/worker/sync-timer active，live=200，ready=200。备份 `/var/backups/pojia/pojia-20260911T063427Z.sql.gz.enc`。
+- 观察：`pojia-worker` ActiveEnterTimestamp 2026-09-08 00:25 UTC，历次 switch 均未重启 worker；本次改动在 web 下单路径不受影响，但 worker 侧改动若有需单独重启（记入真单后巡检）。
+
