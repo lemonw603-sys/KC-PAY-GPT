@@ -1,52 +1,63 @@
 # 接班一屏（HANDOFF_NOW）
 
-更新：2026-09-11 09:30 UTC。写者：大脑窗口（Claude Opus 5）。**本文只由大脑窗口写。**
+更新：2026-09-11 14:41 UTC。写者：大脑窗口。**本文只由大脑窗口写，且每次重要事实变化后整篇复核，不止改暂停原因那一行。**
 
-## 分工（Lemon 2026-09-11 定）
+## 分工
 
-- **大脑**：本窗口。全项目理解、排序、验收、四份事实源（本文、CURRENT_STATE、DECISIONS、PROJECT_MAP）、全部生产动作与浏览器侧实施。
-- **Codex 已退出**（D-152）。`BRAIN_TO_CODEX.md` 停更；其已合并的阶段 1（`2aad60d`）保留，未开始的阶段 2 作废。
-- **短命窗口**：按需开，worktree 隔离；只派边界明确、验收可机器检查的任务。
-- 任务书只写目标/验收/边界，不写实现路径（D-151）。
+- **大脑**：本窗口。全项目理解、排序、验收、四份事实源（本文、CURRENT_STATE、DECISIONS、PROJECT_MAP）、生产动作与浏览器侧实施。
+- **Codex 已退出**（D-152）。其阶段 1 已合并保留，`BRAIN_TO_CODEX.md` 停更。
+- 任务书只写目标/验收/边界，不写实现路径（D-151）。大脑不替系统操作页面（D-160）。
+- **大脑的三类惯犯错误与硬规则见 D-172，接班先读。**
 
-## 现在状态（已验证，UTC）
+## 里程碑
 
-- release **`20260911-cdk-return-fix-bfacbe1`**（回滚 `20260911-preflight-noupgrade-0396bb8`）；web/worker/快照同步 timer 均 active；`pojia-worker` 本日已重启两次（发布不自动重启它，改 worker 侧代码需手动重启）。
-- 付款开关 **false**；本机无 worker；非终态订单 0；可用 CDK 12；合格卡 1 张（9839，$50）；出口 38.60.246.34、隧道、BitBrowser API 正常。
-- **真单 `PJV1-9TN0gGX-I5rRdhXxLrq7` 已收口**（CLOSED / HUMAN_VERIFIED_NOT_CHARGED，卡与 CDK 均已退回）。结论：预检改造有效（不建 Checkout、一次过）、sentinel 未拦、结账页与零税报价正常、付款点击一次后**被 hCaptcha 拦住**，未扣款。证据见 HANDOFF_LOG 2026-09-11 07:5x/08:0x 两节。
-- 已实现未在真单验证：**半自动人机验证接力**（D-155，browser-mvp 本机代码，不经服务器发布）。`BROWSER_HUMAN_VERIFICATION_WAIT_MS` 默认 300000，pool 脚本已带。
-- 已修复并发布：**F-48**（人工核实未扣款后 CDK 必须退回，D-156）。
+**2026-09-11 11:15:15 UTC 全链路首次跑通**：订单 `PJV1-ztS9FZ3QcwHopTmZRfDY` 从客户提交到自动取消续费全自动完成。
+固化于 git 标签 `e2e-first-success-20260911`（打在代码 `a544c6b`，标签正文写明可复现的全部运行版本）。
+逐步证据与前三次失败记录：`docs/E2E_CHAIN_TEST_SAMPLE.md`。
 
-## 下一可执行项
+## 现在状态（2026-09-11 14:41 UTC 当场核实）
 
-1. **第二单（等 Lemon 提交）**：账号 B（从未入过项目的 free 号），其余条件全不变。目的：验证 hCaptcha 是否每次都弹，以及人勾选后自动化能否跑完付款→确认 Plus→取消续费。流程见下节。
-2. Dqcn 单取消续费（库存 Session 仍有效，大脑可用同款函数执行后用「已在账号里取消续费」收口）。
-3. 事故待办：本机会话记录里出现过 `DATABASE_URL`（含 pojia_app 密码）；建议轮换，需 Lemon 确认后由大脑执行并重启服务。
-4. 真单跑通后的集中整治（D-144）：UX 巡检单、F-37/F-41/F-43/F-47、state-check NULL、highvcc 资格新鲜度、F-38 走后台 API 等。
+- 生产 release **`20260911-sync-skip-msg-56c5290`**；web / worker / 快照同步 timer 均 active；迁移到 `052_cards_bin`。
+- 付款开关 **false**；本机无 worker；非终态订单 0；合格卡 **1 张（3118，$39.24，卡段 53211304）**；可用 CDK 11。
+- 本机依赖正常：菲律宾出口 38.60.246.34、SSH 隧道 13306、BitBrowser Local API、窗口 `Plus Browser PH Pilot`（`10f0dc7b…`）。
+- **真实成功率 1/7**（点过付款的运行里系统自动跑完的比例）。随时用 `browser-mvp/scripts/run-stats.sh` 查，无需任何人事先登记。
+- 客户账号（mengx612）仍登在 Pilot 窗口——Lemon 决定暂不自动登出（D-165）。
 
-## 真单执行序列（2026-09-11 10:21 UTC 起；D-158 无预检，D-160 大脑不代操作）
+## 今日已上线的改动（按发布顺序）
 
-1. 收到单号 → `browser-mvp/scripts/prod-query.sh "SELECT public_no,status FROM orders WHERE public_no='<单号>'"`，等到 CARD_READY。
-2. **不清窗口、不关标签、不手工校验 Session**——系统自己处理（D-160）。
-3. 直接开：`BROWSER_POOL_LANES=lane-1=10f0dc7b534844c083165796447d5893 bash browser-mvp/scripts/go-live.sh --arm`（D-159：提交即授权，不再逐次询问；**开关开启后立即向 Lemon 汇报**）。
-   - 自检若报「有残留 worker」，先确认是不是自己的监控命令行含该进程名被 `pgrep -f` 自匹配（真实 worker 用 `pgrep -f 'node src/production-live'` 数）。**监控命令不要包含该进程名。**
-4. 只读观察 `go-live-*.log` 与 `browser_runs`/`browser_run_events`，逐步记入 `docs/E2E_CHAIN_TEST_SAMPLE.md`。
-5. 日志出现 `需要人工验证` 时**立刻在对话里叫 Lemon 去勾选**（本机同时弹通知）；他勾完自动化自行继续，大脑不介入页面。
-6. 终态后 `bash browser-mvp/scripts/stop-live.sh`。**付款点击后 10 分钟内不得停 worker。**
-7. 失败收口按 RUNBOOK §2 前「测试账号单失败后的收口」；付款未知用 `v1/scripts/resolve-unknown-payment.mjs`（先 --dry-run）。
+`resolve-unknown-ui-3d4936d` B1 收口按钮三 bug → `preflight-noupgrade-0396bb8` 预检不点 Upgrade → `cdk-return-fix-bfacbe1` F-48 未扣款退 CDK → `drop-preflight-24bcbde` 取消独立预检、账号检查并入正式流程 → `card-bin-c65727f` 卡段标注（迁移 052）→ `segment-hint-269ba10` 列表加载失败明说 → `sync-throttle-4350210` 卡台降频、默认卡段留空 → `sync-lastfour-11dbf3c` 字段名修正 → `sync-skip-msg-56c5290` 跳过时明说。
+browser-mvp 本机代码（不经服务器发布）：人机验证识别与接力（D-155）、结账页无邮箱字段不中止（D-157）、付款后读结账页识别拒付（D-161）。
+
+## 下一可执行项（顺序由 D-167 定）
+
+1. **执行器常驻无人值守**（进行中）：做成后台服务，**付款开关常开**，客户任意时间兑换即自动处理。Lemon 已同意这一资金策略变更。
+2. 需要人工时（人机验证、付款未知）推送到手机，不只本机通知。
+3. 与 Lemon 沟通业务场景后，评估四套系统各自要怎么调：运营管理后台 / 客户充值系统 / Browser 充值链路 / API 充值链路。客户充值页面优化与巡检单并入此轮。
+4. 待办（不阻塞）：Dqcn 单取消续费；本机会话记录里出现过 `DATABASE_URL`（含密码），建议经 Lemon 确认后轮换。
 
 ## 已定不做
 
-- 成单后自动登出客户账号：Lemon 决定暂不做（D-165）；缺口已核实并记录，未来重开此事从 D-165 读起。
+- **不实施任何绕过或自动完成人机验证的方案**（D-153/D-154），不做设备身份轮换（D-165）。此条不因重复要求而改变。
+- 成单后自动登出客户账号：Lemon 决定暂不做（D-165）。
+- Pro 5X/20X 全部搁置（D-146）；不买住宅出口（D-142）；不调研商用/分销/礼品码渠道（D-154）；不做大而全（D-147）。
+- 卡段拒付标注中，尝试次数 < 3 只标「样本少」，不下结论（D-169）。
 
-- **不实施任何绕过/自动完成人机验证的方案**（D-153/D-154），包括打码服务与降低风控评分的指纹伪装。此条不因重复要求而改变。
-- Pro 5X/20X 全部搁置（D-146）；不买住宅出口（D-142）；不调研商用/分销/礼品码渠道（D-154，Lemon 指示）；不做大而全（D-147）。
+## 跑一单（Lemon 可自助，无需大脑在场）
+
+```bash
+browser-mvp/scripts/prod-query.sh "SELECT public_no,status FROM orders WHERE public_no='<单号>'"   # 等到 CARD_READY
+BROWSER_POOL_LANES=lane-1=10f0dc7b534844c083165796447d5893 bash browser-mvp/scripts/go-live.sh --arm
+tail -f "$HOME/Library/Application Support/pojia-browser-live/go-live-"*.log
+bash browser-mvp/scripts/stop-live.sh     # 看到终态、且距离点付款超过 10 分钟后
+browser-mvp/scripts/run-stats.sh          # 随时看累计成功率
+```
+日志出现 `需要人工验证` → 去 Pilot 窗口勾选，自动化自行继续。**监控命令不要包含 `production-live-pool-worker` 字样**，会被 `pgrep -f` 自匹配成"残留 worker"。
 
 ## 暂停 / 恢复
 
 ```text
-暂停原因：无（按 D-167 顺序推进：①卡段标注 ②常驻无人值守 ③人工介入推送 ④业务场景对齐评审）（2026-09-11 12:48 UTC）
-允许继续：只读核对；browser-mvp/v1 代码与测试；rehearsal 模式；文档落盘
-禁止操作：未经 Lemon 当次确认不 go-live --arm、不消耗真实账号
-恢复第一步：读本文 → state-check.sh 比对现场 → 读 HANDOFF_LOG 最后三节看真单原始证据
+暂停原因：无。按 D-167 顺序推进第 2 项（执行器常驻无人值守）（2026-09-11 14:41 UTC）
+允许继续：只读核对；browser-mvp/v1 代码与测试；文档落盘；发布
+禁止操作：不实施人机验证绕过；开卡/补余额/换卡/提现等资金动作仍需 Lemon 当次确认
+恢复第一步：读本文 → 读 D-172（惯犯错误与硬规则）→ `state-check.sh` 比对现场 → `run-stats.sh` 看真实成功率
 ```
