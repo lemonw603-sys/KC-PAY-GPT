@@ -1104,3 +1104,67 @@ test('the two home-page decision switches are guarded, boolean-only and audited 
   });
   assert.deepEqual(calls.map(([name, input]) => [name, input.enabled, input.actorId]), [['payment', false, 'admin'], ['supply', false, 'admin']]);
 });
+
+test('verifies a CDK before the customer is asked for a Session', async () => {
+  let received;
+  const app = createApp({
+    verifyCustomerCdk: async (body) => {
+      received = body;
+      return { state: 'VALID', product: { planType: 'plus', label: 'ChatGPT Plus' } };
+    }
+  });
+  await withServer(app, async (baseUrl) => {
+    const response = await fetch(`${baseUrl}/api/v1/cdks/verify`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cdk: 'fixture-cdk' })
+    });
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get('cache-control'), 'no-store');
+    assert.deepEqual(await response.json(), {
+      cdk: { state: 'VALID', product: { planType: 'plus', label: 'ChatGPT Plus' } }
+    });
+    assert.deepEqual(received, { cdk: 'fixture-cdk' });
+  });
+});
+
+test('the verify route does not exist until the service is wired', async () => {
+  await withServer(createApp({}), async (baseUrl) => {
+    const response = await fetch(`${baseUrl}/api/v1/cdks/verify`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cdk: 'fixture-cdk' })
+    });
+    assert.equal(response.status, 404);
+  });
+});
+
+test('CDK verification is rate limited so the code space cannot be probed freely', async () => {
+  const app = createApp({
+    verifyCustomerCdk: async () => ({ state: 'INVALID' }),
+    cdkVerifyRateLimit: createFixedWindowRateLimit({ limit: 2, windowMs: 60_000 })
+  });
+  await withServer(app, async (baseUrl) => {
+    const attempt = () => fetch(`${baseUrl}/api/v1/cdks/verify`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cdk: 'fixture-cdk' })
+    });
+    assert.equal((await attempt()).status, 200);
+    assert.equal((await attempt()).status, 200);
+    const limited = await attempt();
+    assert.equal(limited.status, 429);
+    assert.deepEqual(await limited.json(), { error: 'rate_limited' });
+  });
+});
+
+test('the admin host serves no customer CDK route', async () => {
+  const app = createApp({
+    adminHost: 'admin.example.test',
+    verifyCustomerCdk: async () => ({ state: 'VALID' })
+  });
+  await withServer(app, async (baseUrl) => {
+    const blocked = await requestWithHost(baseUrl, '/api/v1/cdks/verify', 'admin.example.test');
+    assert.equal(blocked.statusCode, 404);
+  });
+});

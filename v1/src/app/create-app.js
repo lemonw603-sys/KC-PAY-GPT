@@ -26,6 +26,7 @@ export function createApp({
   readiness = async () => ({ ready: true }),
   createCustomerOrder = null,
   getCustomerOrderStatus = null,
+  verifyCustomerCdk = null,
   replaceCustomerSession = null,
   adminAuth = null,
   getAdminOverview = null,
@@ -90,6 +91,7 @@ export function createApp({
   exportAdminOperationsCsv = null,
   adminHost = null,
   orderRateLimit = createFixedWindowRateLimit(),
+  cdkVerifyRateLimit = createFixedWindowRateLimit({ limit: 10, windowMs: 60 * 1000 }),
   orderStatusRateLimit = createFixedWindowRateLimit({ limit: 30 }),
   adminLoginRateLimit = createFixedWindowRateLimit({ limit: 5, windowMs: 15 * 60 * 1000 }),
   adminWriteRateLimit = createFixedWindowRateLimit({ limit: 60, windowMs: 15 * 60 * 1000 })
@@ -108,6 +110,7 @@ export function createApp({
     if (adminPath && host !== expected) return res.status(404).json({ error: 'not_found' });
     if (host === expected && req.path === '/') return res.redirect(302, '/admin');
     if (host === expected && (req.path === '/api/v1/orders' || req.path.startsWith('/api/v1/orders/')
+      || req.path.startsWith('/api/v1/cdks/')
       || req.path === '/assets' || req.path.startsWith('/assets/'))) {
       return res.status(404).json({ error: 'not_found' });
     }
@@ -139,6 +142,20 @@ export function createApp({
           status: order.status
         }
       });
+    });
+  }
+
+  if (typeof verifyCustomerCdk === 'function') {
+    // The first screen of the customer flow: check the code before asking for a
+    // Session, so a bad code fails in two seconds instead of after the customer
+    // has fetched and pasted a Session. Read-only — it changes nothing, and
+    // intake re-decides everything under lock when the order is actually placed.
+    app.post('/api/v1/cdks/verify', (_req, res, next) => {
+      res.setHeader('Cache-Control', 'no-store');
+      next();
+    }, cdkVerifyRateLimit, async (req, res) => {
+      const cdk = await verifyCustomerCdk(req.body || {});
+      return res.json({ cdk });
     });
   }
 

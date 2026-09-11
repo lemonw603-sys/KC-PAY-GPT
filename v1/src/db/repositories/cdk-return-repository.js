@@ -1,6 +1,40 @@
 import { randomUUID } from 'node:crypto';
 
 /**
+ * Read-only: the payment evidence that decides whether a CDK may go back.
+ * Runs on any connection or pool — it writes nothing and takes no locks, so the
+ * customer-facing verify path can ask the same question the intake transaction
+ * will ask later under FOR UPDATE. One source for the rule, two callers.
+ */
+export async function readCdkReturnEvidence(connection, orderId) {
+  const order = String(orderId || '').trim();
+  if (!order) throw new TypeError('orderId is required');
+  const [[row]] = await connection.query(
+    `SELECT /* cdk-return payment evidence */
+        (SELECT COUNT(*) FROM recharge_attempts
+          WHERE order_id = ? AND (funds_risk_state IN ('UNKNOWN','SETTLED') OR status = 'SUCCESS'))
+      + (SELECT COUNT(*) FROM card_consumption_ledger
+          WHERE order_id = ? AND status IN ('CONSUMED','RECONCILIATION')) AS funds_evidence,
+        (SELECT COUNT(*) FROM browser_operations bo
+          INNER JOIN browser_runs br ON br.id = bo.browser_run_id
+          INNER JOIN recharge_attempts rat ON rat.id = br.recharge_attempt_id
+          WHERE rat.order_id = ? AND bo.operation_type = 'PAYMENT_SUBMIT') AS submit_evidence`,
+    [order, order, order],
+  );
+  return {
+    fundsEvidence: Number(row?.funds_evidence || 0),
+    submitEvidence: Number(row?.submit_evidence || 0),
+  };
+}
+
+/** Read-only verdict over that evidence. Funds evidence blocks unconditionally. */
+export function cdkReturnBlockedBy(evidence, { paymentSubmitAdjudicated = false } = {}) {
+  if (Number(evidence?.fundsEvidence || 0) > 0) return true;
+  if (!paymentSubmitAdjudicated && Number(evidence?.submitEvidence || 0) > 0) return true;
+  return false;
+}
+
+/**
  * A CDK is a paid entitlement. It is bound to an order at intake (REDEEMED)
  * and only consumed by delivery. When an order ends without any payment
  * action, the CDK goes back to AVAILABLE so the customer can submit again.
@@ -21,22 +55,8 @@ export async function returnCdkForOrderInTransaction(connection, {
 } = {}) {
   const order = String(orderId || '').trim();
   if (!order) throw new TypeError('orderId is required');
-  const [[evidence]] = await connection.query(
-    `SELECT /* cdk-return payment evidence */
-        (SELECT COUNT(*) FROM recharge_attempts
-          WHERE order_id = ? AND (funds_risk_state IN ('UNKNOWN','SETTLED') OR status = 'SUCCESS'))
-      + (SELECT COUNT(*) FROM card_consumption_ledger
-          WHERE order_id = ? AND status IN ('CONSUMED','RECONCILIATION')) AS funds_evidence,
-        (SELECT COUNT(*) FROM browser_operations bo
-          INNER JOIN browser_runs br ON br.id = bo.browser_run_id
-          INNER JOIN recharge_attempts rat ON rat.id = br.recharge_attempt_id
-          WHERE rat.order_id = ? AND bo.operation_type = 'PAYMENT_SUBMIT') AS submit_evidence`,
-    [order, order, order],
-  );
-  if (Number(evidence?.funds_evidence || 0) > 0) {
-    return { returned: false, reasonCode: 'PAYMENT_EVIDENCE', cdkId: null };
-  }
-  if (!paymentSubmitAdjudicated && Number(evidence?.submit_evidence || 0) > 0) {
+  const evidence = await readCdkReturnEvidence(connection, order);
+  if (cdkReturnBlockedBy(evidence, { paymentSubmitAdjudicated })) {
     return { returned: false, reasonCode: 'PAYMENT_EVIDENCE', cdkId: null };
   }
   const [bound] = await connection.query(

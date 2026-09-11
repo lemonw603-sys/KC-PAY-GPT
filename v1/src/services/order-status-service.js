@@ -1,6 +1,7 @@
 import { findCustomerOrder } from '../db/repositories/order-status-query-repository.js';
 import { PublicApiError } from '../domain/public-api-error.js';
 import { createCdkLookup } from '../security/cdk-code.js';
+import { productLabel } from '../domain/product-labels.js';
 
 const PUBLIC_NO_PATTERN = /^PJV1-[A-Za-z0-9_-]{20}$/;
 
@@ -25,7 +26,6 @@ const CUSTOMER_STATUS = Object.freeze({
   RECHARGE_FAILED: 'FAILED'
 });
 
-const PRODUCT_LABELS = Object.freeze({ plus: 'ChatGPT Plus', pro_5x: 'ChatGPT Pro 5X', pro_20x: 'ChatGPT Pro 20X' });
 
 const CUSTOMER_ACTIONS = Object.freeze({
   ACCOUNT_ALREADY_PLUS: {
@@ -101,7 +101,7 @@ export function createOrderStatusService({
       updatedAt: isoDate(order.updated_at),
       ...(order.plan_type ? { product: {
         planType: String(order.plan_type),
-        label: order.product_name || PRODUCT_LABELS[String(order.plan_type).toLowerCase()] || 'ChatGPT Plus'
+        label: order.product_name || productLabel(order.plan_type)
       } } : {}),
       ...(Array.isArray(order.events) ? { timeline: customerTimeline(order.events) } : {}),
       ...(action ? {

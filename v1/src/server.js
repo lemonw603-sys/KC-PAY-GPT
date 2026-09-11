@@ -3,6 +3,7 @@ import { loadConfig } from './config.js';
 import { checkDatabaseReady, createDatabasePool } from './db/pool.js';
 import { createOrderIntakeService } from './services/order-intake-service.js';
 import { createOrderStatusService } from './services/order-status-service.js';
+import { createCdkVerifyService } from './services/cdk-verify-service.js';
 import { createAdminReadService } from './services/admin-read-service.js';
 import {
   createAdminCdkService,
@@ -53,6 +54,7 @@ const createCustomerOrder = createOrderIntakeService({
   cdkHashKey: config.cdkHashKey
 });
 const getCustomerOrderStatus = createOrderStatusService({ pool, cdkHashKey: config.cdkHashKey });
+const verifyCustomerCdk = createCdkVerifyService({ pool, cdkHashKey: config.cdkHashKey });
 const replaceCustomerSession = createSessionReplacementService({
   pool,
   sessionEncryptionKey: config.sessionEncryptionKey,
@@ -164,6 +166,7 @@ const app = createApp({
   readiness: () => checkDatabaseReady(pool),
   createCustomerOrder,
   getCustomerOrderStatus,
+  verifyCustomerCdk,
   replaceCustomerSession,
   adminAuth,
   adminHost: config.adminHost,
