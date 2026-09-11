@@ -33,3 +33,17 @@
 禁止操作：未经 Lemon 当次确认不 go-live --arm、不消耗真实账号；快照同步可随时跑（Lemon 09-11 授权自动化），仍先 preview 再 --commit
 恢复第一步：读本文 → 读 BRAIN_UNDERSTANDING §5 看 Lemon 确认了哪些 → 读 CODEX_PROGRESS.md 看有无 [需要大脑]
 ```
+
+## 真单执行序列（2026-09-11 07:15 UTC 写定；换模型/换窗口接手可直接照做，每步一条命令，本机在仓库根目录）
+
+前提已满足：release `0396bb8` 在线、pojia-worker 已重启、开关 accept/dispatch=true、payment=false、合格卡 9839、Pilot 窗口已关闭、三条路径 check READY。模式 2（直接真付，Lemon 选定）。账号 A 由 Lemon 像客户一样提交 CDK+Session。
+
+1. 收到单号 → 只读确认到卡已备好：`browser-mvp/scripts/prod-query.sh "SELECT public_no,status,assigned_card_id IS NOT NULL card FROM orders WHERE public_no='<单号>'"`（期望 CARD_READY、card=1；未到则等服务器 worker，最多几分钟）。
+2. 清 Pilot 登录态（保留设备/CF cookie）：`cd browser-mvp && BITBROWSER_PROFILE_ID=10f0dc7b534844c083165796447d5893 node scripts/clear-lane-session.mjs && cd ..`
+3. 预检一次（不点 Upgrade）：`BITBROWSER_PROFILE_ID=10f0dc7b534844c083165796447d5893 bash browser-mvp/scripts/run-browser-preflight.sh once`；核实：`prod-query.sh "SELECT status,attempts,last_error_code,JSON_EXTRACT(payload_json,'$.outcome') FROM tasks WHERE task_type='BROWSER_PREFLIGHT' AND order_id=(SELECT id FROM orders WHERE public_no='<单号>')"` 期望 COMPLETED/PASSED。失败 → 停，按 RUNBOOK §1 末"预检 DEAD"收口（后台取消），不重试。
+4. **向 Lemon 当次确认"开付款开关"**，得到肯定后：`BROWSER_POOL_LANES=lane-1=10f0dc7b534844c083165796447d5893 bash browser-mvp/scripts/go-live.sh --arm`
+5. 观察：`tail -f "$HOME/Library/Application Support/pojia-browser-live/go-live-"*.log`；库：`prod-query.sh "SELECT status,payment_state,post_payment_state,last_error_code FROM browser_runs ORDER BY created_at DESC LIMIT 1"`、`"SELECT status,failure_code,subscription_cancelled,cancellation_review_required FROM orders WHERE public_no='<单号>'"`。
+6. 终态（RECHARGE_SUCCESS / RECHARGE_FAILED / SUBMIT_UNKNOWN）→ 等 worker 自行收尾 → `bash browser-mvp/scripts/stop-live.sh`（核实开关回 false）。付款点击之后 10 分钟内不得 stop/kill（RUNBOOK §1 ③）。
+7. 失败收口按 RUNBOOK §1 末"测试账号单失败后的收口"三条路径；成功则核对取消续费字段，需复核时由大脑用 Dqcn 同法处理。
+8. 事后：CURRENT_STATE（最近真实单、卡、release 行）、HANDOFF_LOG 记录原始观察；Dqcn 取消续费；密码轮换（Lemon 确认后）。
+
