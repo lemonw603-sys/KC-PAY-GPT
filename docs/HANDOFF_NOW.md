@@ -17,7 +17,7 @@
 
 ## 现在状态（2026-09-11 14:41 UTC 当场核实）
 
-- 生产 release **`20260911-sync-skip-msg-56c5290`**；web / worker / 快照同步 timer 均 active；迁移到 `052_cards_bin`。
+- 生产 release **`20260911-alerts-342ad5f`**；web / worker / 快照同步 timer 均 active；迁移到 `052_cards_bin`。
 - 付款开关 **false**；本机无 worker；非终态订单 0；合格卡 **1 张（3118，$39.24，卡段 53211304）**；可用 CDK 11。
 - 本机依赖正常：菲律宾出口 38.60.246.34、SSH 隧道 13306、BitBrowser Local API、窗口 `Plus Browser PH Pilot`（`10f0dc7b…`）。
 - **真实成功率 1/7**（点过付款的运行里系统自动跑完的比例）。随时用 `browser-mvp/scripts/run-stats.sh` 查，无需任何人事先登记。
@@ -25,7 +25,7 @@
 
 ## 今日已上线的改动（按发布顺序）
 
-`resolve-unknown-ui-3d4936d` B1 收口按钮三 bug → `preflight-noupgrade-0396bb8` 预检不点 Upgrade → `cdk-return-fix-bfacbe1` F-48 未扣款退 CDK → `drop-preflight-24bcbde` 取消独立预检、账号检查并入正式流程 → `card-bin-c65727f` 卡段标注（迁移 052）→ `segment-hint-269ba10` 列表加载失败明说 → `sync-throttle-4350210` 卡台降频、默认卡段留空 → `sync-lastfour-11dbf3c` 字段名修正 → `sync-skip-msg-56c5290` 跳过时明说。
+`resolve-unknown-ui-3d4936d` B1 收口按钮三 bug → `preflight-noupgrade-0396bb8` 预检不点 Upgrade → `cdk-return-fix-bfacbe1` F-48 未扣款退 CDK → `drop-preflight-24bcbde` 取消独立预检、账号检查并入正式流程 → `card-bin-c65727f` 卡段标注（迁移 052）→ `segment-hint-269ba10` 列表加载失败明说 → `sync-throttle-4350210` 卡台降频、默认卡段留空 → `sync-lastfour-11dbf3c` 字段名修正 → `sync-skip-msg-56c5290` 跳过时明说 → `alerts-342ad5f` 通知改造与排队超时告警（新 timer `pojia-stalled-order-watch`，每分钟查、排队超 3 分钟即推）。
 browser-mvp 本机代码（不经服务器发布）：人机验证识别与接力（D-155）、结账页无邮箱字段不中止（D-157）、付款后读结账页识别拒付（D-161）。
 
 ## 下一可执行项（顺序由 D-167 定）
