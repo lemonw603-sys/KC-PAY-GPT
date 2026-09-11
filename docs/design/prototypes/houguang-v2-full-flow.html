@@ -1,0 +1,567 @@
+<title>候光 · 完整流程</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+  :root{
+    --bg:hsl(168,16%,97%); --ink:hsl(176,18%,11%); --ink2:hsl(170,10%,38%); --ink3:hsl(168,9%,50%);
+    --line:hsl(168,14%,90%); --accent:hsl(163,72%,26%); --panel:hsl(0,0%,100%);
+    --fd:"Familjen Grotesk","PingFang SC","Hiragino Sans GB",system-ui,sans-serif;
+    --fb:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",system-ui,sans-serif;
+    --fm:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+  }
+  @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+    --bg:hsl(215,14%,10%); --ink:hsl(210,20%,92%); --ink2:hsl(212,10%,66%); --ink3:hsl(212,8%,54%);
+    --line:hsl(214,13%,22%); --accent:hsl(162,58%,49%); --panel:hsl(215,15%,14%);}}
+  :root[data-theme="dark"]{
+    --bg:hsl(215,14%,10%); --ink:hsl(210,20%,92%); --ink2:hsl(212,10%,66%); --ink3:hsl(212,8%,54%);
+    --line:hsl(214,13%,22%); --accent:hsl(162,58%,49%); --panel:hsl(215,15%,14%);}
+
+  *{box-sizing:border-box}
+  body{background:var(--bg);color:var(--ink);font-family:var(--fb);line-height:1.6;margin:0;
+       -webkit-font-smoothing:antialiased;padding:40px 24px 80px}
+  .wrap{max-width:980px;margin:0 auto;display:flex;flex-direction:column;gap:28px}
+  header{display:flex;flex-direction:column;gap:10px;max-width:62ch}
+  .eyebrow{font-family:var(--fd);font-size:12px;letter-spacing:.05em;text-transform:uppercase;
+           color:var(--accent);font-weight:600;margin:0}
+  h1{font-family:var(--fd);font-size:32px;line-height:1.15;margin:0;font-weight:600;letter-spacing:-.018em}
+  .lede{color:var(--ink2);font-size:16px;margin:0}
+  .toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+  .tb{font-family:var(--fd);font-size:14px;font-weight:600;padding:7px 14px;border-radius:999px;
+      border:1px solid var(--line);background:var(--panel);color:var(--ink2);cursor:pointer}
+  .tb[aria-pressed="true"],.tb.go{background:var(--accent);border-color:var(--accent);color:#fff}
+  .tb:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+  /* ================= 样张框 ================= */
+  .frame{border-radius:20px;overflow:hidden;box-shadow:0 15px 35px hsla(200,25%,10%,.2)}
+  .app{--a:hsl(163,72%,26%);--a-soft:hsl(163,44%,93%);--a-ink:hsl(163,76%,22%);
+       --t:hsl(176,18%,11%);--t2:hsl(170,10%,38%);--t2b:hsl(172,12%,30%);--t3:hsl(168,9%,50%);
+       --s:hsl(0,0%,100%);--s2:hsl(168,20%,97%);--s3:hsl(168,16%,95%);--bd:hsl(168,14%,88%);
+       --warn:hsl(32,72%,40%);--warn-soft:hsl(38,78%,94%);--gold:hsl(38,46%,42%);
+       --glow:hsl(163,62%,62%);
+       background:linear-gradient(150deg,hsl(163,26%,94%) 0%,hsl(168,16%,96%) 48%,hsl(168,14%,97%) 100%);
+       color:var(--t);padding:32px;position:relative;isolation:isolate;min-height:600px}
+  .app[data-t="slate"]{--a:hsl(162,58%,49%);--a-soft:hsl(163,40%,16%);--a-ink:hsl(162,58%,58%);
+       --t:hsl(210,20%,92%);--t2:hsl(212,10%,66%);--t2b:hsl(210,14%,76%);--t3:hsl(212,8%,54%);
+       --s:hsl(215,15%,14%);--s2:hsl(215,15%,12%);--s3:hsl(215,15%,17%);--bd:hsl(214,13%,22%);
+       --warn:hsl(38,62%,62%);--warn-soft:hsl(34,30%,15%);--gold:hsl(38,48%,62%);
+       --glow:hsl(162,58%,42%);background:hsl(215,14%,10%)}
+
+  .glow{position:absolute;inset:0;z-index:-1;pointer-events:none;opacity:0;transition:opacity .6s ease}
+  .app[data-screen="run"] .glow,.app[data-screen="done"] .glow,.app[data-screen="stuck"] .glow{opacity:1}
+  .glow::after{content:"";position:absolute;left:50%;top:150px;width:380px;height:380px;
+    transform:translateX(-50%);border-radius:50%;filter:blur(56px);
+    background:radial-gradient(circle,var(--glow),transparent 68%);
+    animation:breathe 5.5s ease-in-out infinite}
+  @keyframes breathe{0%,100%{transform:translateX(-50%) scale(.94);opacity:.34}
+                     50%{transform:translateX(-50%) scale(1.06);opacity:.58}}
+
+  .top{display:flex;justify-content:space-between;align-items:center;margin-bottom:28px}
+  .bl{display:flex;align-items:center;gap:12px;font-size:16px;font-weight:600;letter-spacing:-.01em}
+  .nav{display:flex;gap:4px}
+  .nav button{font-size:14px;padding:5px 11px;border-radius:999px;border:0;background:transparent;
+              color:var(--t2);cursor:pointer;font-family:var(--fb)}
+  .nav button:hover{background:var(--s3);color:var(--t)}
+  .chip{font-size:14px;padding:4px 12px;border-radius:999px;font-weight:600;display:flex;align-items:center;gap:7px;
+        background:var(--a-soft);color:var(--a-ink)}
+  .pulse{width:7px;height:7px;border-radius:50%;background:currentColor;animation:pulse 1.6s ease-in-out infinite}
+  @keyframes pulse{0%,100%{opacity:.3;transform:scale(.8)}50%{opacity:1;transform:scale(1)}}
+
+  .rail{display:flex;align-items:center;margin-bottom:32px}
+  .st{display:flex;flex-direction:column;align-items:center;gap:8px;width:92px;flex:0 0 auto}
+  .st b{width:24px;height:24px;border-radius:50%;display:grid;place-items:center;font-size:12px;
+        font-weight:600;font-family:var(--fm);background:var(--s);color:var(--t3);
+        box-shadow:inset 0 0 0 2px var(--bd);transition:.4s ease}
+  .st span{font-size:14px;white-space:nowrap;color:var(--t3);transition:.4s ease}
+  .st.cur b{background:var(--t);color:var(--s);box-shadow:none}
+  .st.cur span{color:var(--t);font-weight:600}
+  .st.done b{background:var(--a);color:#fff;box-shadow:none}
+  .st.done span{color:var(--t2)}
+  .app[data-t="slate"] .st.done b,.app[data-t="slate"] .st.cur b{color:hsl(215,14%,10%)}
+  .ln{flex:1;height:2px;border-radius:2px;margin-bottom:22px;background:var(--bd);position:relative;overflow:hidden}
+  .ln i{position:absolute;inset:0;background:var(--a);transform-origin:left;transform:scaleX(0);transition:transform .6s ease}
+  .ln.on i{transform:scaleX(1)}
+
+  .screen{display:none;animation:in .32s ease both}
+  .screen.on{display:block}
+  @keyframes in{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+
+  .card{background:var(--s);border-radius:14px;padding:28px;
+        box-shadow:inset 0 1px 0 hsla(0,0%,100%,.85),0 1px 2px hsla(176,25%,10%,.06),0 14px 30px -14px hsla(176,25%,10%,.22)}
+  .app[data-t="slate"] .card{box-shadow:inset 0 1px 0 hsla(0,0%,100%,.06),0 10px 24px hsla(0,0%,0%,.5)}
+  .card h2{font-family:var(--fd);font-size:20px;margin:0 0 4px;font-weight:600;letter-spacing:-.01em}
+  .card .cs{font-size:14px;color:var(--t2);margin:0 0 24px}
+  label{display:block;font-size:14px;font-weight:600;margin-bottom:8px}
+  input[type=text],textarea{width:100%;font-family:var(--fm);font-size:14px;padding:12px 14px;
+    border-radius:10px;border:2px solid var(--bd);background:var(--s2);color:var(--t);resize:vertical}
+  input[type=text]::placeholder,textarea::placeholder{color:var(--t3)}
+  input[type=text]:focus,textarea:focus{outline:0;border-color:var(--a)}
+  .hint{font-size:14px;color:var(--t3);margin:8px 0 0}
+  .btn{width:100%;font-family:var(--fd);font-size:16px;font-weight:600;padding:13px;border-radius:10px;
+       border:0;background:var(--a);color:#fff;cursor:pointer;margin-top:24px;transition:filter .2s}
+  .dlg .btn{background:var(--accent);color:#fff;margin-top:20px}
+  .app[data-t="slate"] .btn{color:hsl(215,14%,10%)}
+  .btn:hover{filter:brightness(1.08)}
+  .btn:focus-visible{outline:2px solid var(--a);outline-offset:3px}
+  .btn.ghost{background:transparent;color:var(--t2);box-shadow:inset 0 0 0 2px var(--bd);margin-top:12px}
+  .lnk{background:0;border:0;color:var(--a-ink);font-size:14px;font-weight:600;cursor:pointer;
+       font-family:var(--fb);padding:4px 10px;border-radius:999px;background:var(--a-soft);
+       animation:nudge 1.6s ease-in-out infinite}
+  .lnk:hover{animation:none;filter:brightness(1.06)}
+  @keyframes nudge{0%,62%,100%{transform:translateY(0)}72%{transform:translateY(-3px)}84%{transform:translateY(-1px)}}
+  .row-head{display:flex;justify-content:space-between;align-items:baseline}
+
+  .ok{display:flex;align-items:center;gap:12px;background:var(--a-soft);border-radius:10px;padding:14px 16px;margin-top:16px}
+  .ok svg{flex:0 0 auto}
+  .ok div{min-width:0}
+  .ok b{display:block;font-size:14px;font-family:var(--fm);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .ok span{font-size:14px;color:var(--t2)}
+
+  .rows{display:flex;flex-direction:column;border-radius:10px;overflow:hidden;background:var(--s2)}
+  .r{display:flex;justify-content:space-between;align-items:baseline;padding:12px 16px;font-size:14px;gap:16px}
+  .r:nth-child(even){background:var(--s3)}
+  .r span{color:var(--t3);flex:0 0 auto}
+  .r b{font-weight:500;font-family:var(--fm);font-size:14px;text-align:right;overflow:hidden;text-overflow:ellipsis}
+  .note{display:flex;gap:10px;font-size:14px;color:var(--warn);background:var(--warn-soft);
+        border-radius:10px;padding:12px 14px;margin-top:16px;line-height:1.5}
+
+  /* 进度环 */
+  .hero{display:flex;flex-direction:column;align-items:center;margin-bottom:28px}
+  .ring{position:relative;width:196px;height:196px}
+  .ring>svg{width:100%;height:100%;transform:rotate(-90deg)}
+  .ring circle{fill:none;stroke-linecap:round}
+  .num{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
+       transition:opacity .4s ease}
+  .num b{font-family:var(--fm);font-size:44px;font-weight:600;letter-spacing:-.03em;
+         font-variant-numeric:tabular-nums;line-height:1}
+  .num i{font-style:normal;font-family:var(--fd);font-size:12px;letter-spacing:.08em;text-transform:uppercase;
+         font-weight:600;color:var(--t3)}
+  .tick{position:absolute;inset:0;display:grid;place-items:center;opacity:0;transform:scale(.6);
+        transition:opacity .5s ease,transform .5s cubic-bezier(.2,1.4,.4,1)}
+  .tick.on{opacity:1;transform:scale(1)}
+  .stage{font-size:22px;font-weight:600;letter-spacing:-.012em;margin:16px 0 0;
+         transition:opacity .3s ease,transform .3s ease}
+  .stage.swap{opacity:0;transform:translateY(6px)}
+  .shint{font-size:16px;font-weight:400;color:var(--t2);margin:10px 0 0;text-align:center;max-width:36ch;line-height:1.65;transition:opacity .3s}
+
+  .seal{display:inline-flex;align-items:center;gap:7px;font-size:14px;font-weight:600;color:var(--gold);
+        box-shadow:inset 0 0 0 1.5px var(--gold);border-radius:999px;padding:5px 13px;margin-top:14px}
+
+  .sublink{display:flex;flex-direction:column;gap:4px;margin-top:20px;padding:16px 18px;border-radius:12px;
+           background:var(--a-soft);box-shadow:inset 0 0 0 2px var(--a);text-decoration:none;color:var(--t);
+           transition:transform .18s ease,box-shadow .18s ease}
+  .sublink:hover{transform:translateY(-1px);box-shadow:inset 0 0 0 2px var(--a),0 8px 18px -10px var(--a)}
+  .sublink__main{display:flex;align-items:center;gap:10px;font-size:17px;font-weight:600;color:var(--a-ink)}
+  .sublink__hint{font-size:14px;color:var(--a-ink);opacity:.72;padding-left:28px}
+
+  /* ——— 教程：沿用候光的底色渐层与光感，演示当主角 ——— */
+  .demo{position:relative;border-radius:14px;overflow:hidden;background:hsl(176,18%,11%);
+        box-shadow:0 14px 30px -14px hsla(176,25%,10%,.5)}
+  .demo__bar{display:flex;align-items:center;gap:6px;padding:11px 14px;background:hsla(0,0%,100%,.06)}
+  .demo__bar i{width:8px;height:8px;border-radius:50%;background:hsla(0,0%,100%,.22)}
+  .demo__url{margin-left:10px;font-family:var(--fm);font-size:12px;color:hsl(163,30%,72%)}
+  .demo__body{position:relative;padding:14px 14px 18px;font-family:var(--fm);font-size:12px;line-height:1.85;
+              color:hsl(168,14%,74%);word-break:break-all}
+  .demo__sel{position:absolute;inset:13px 11px;border-radius:7px;background:hsl(163,62%,52%);opacity:0;
+             animation:sel 6s ease-in-out infinite}
+  @keyframes sel{0%,40%{opacity:0}50%,72%{opacity:.24}82%,100%{opacity:0}}
+  .demo__copied{position:absolute;right:14px;bottom:14px;font-family:var(--fd);font-size:12px;font-weight:600;
+                background:hsl(163,62%,52%);color:hsl(176,18%,11%);padding:5px 12px;border-radius:999px;opacity:0;
+                animation:copied 6s ease-in-out infinite}
+  @keyframes copied{0%,62%{opacity:0;transform:translateY(4px) scale(.94)}72%,84%{opacity:1;transform:none}92%,100%{opacity:0}}
+
+  /* 两步是有先后的：编号 + 箭头 + 同一条时间线上的依次点亮，让顺序不用读字就看得出来 */
+  .path{display:flex;align-items:stretch;gap:8px;margin:16px 0 0;flex-wrap:wrap}
+  .glink{flex:1 1 190px;position:relative;display:flex;align-items:center;gap:10px;
+         font-family:var(--fd);font-size:15px;font-weight:600;padding:13px 14px;border-radius:11px;
+         text-decoration:none;color:var(--ink);background:var(--panel);
+         box-shadow:inset 0 0 0 2px var(--line);transition:transform .18s ease,box-shadow .18s ease}
+  .glink em{font-style:normal;flex:0 0 auto;width:22px;height:22px;border-radius:50%;
+            background:var(--line);color:var(--ink2);display:grid;place-items:center;
+            font-family:var(--fm);font-size:12px;font-weight:600;transition:.35s ease}
+  .glink:hover{transform:translateY(-1px);box-shadow:inset 0 0 0 2px var(--accent);color:var(--accent)}
+  .glink.s1{animation:beat 6s ease-in-out infinite}
+  .glink.s2{animation:beat 6s ease-in-out infinite 1.7s}
+  @keyframes beat{
+    0%,100%{box-shadow:inset 0 0 0 2px var(--line)}
+    6%{box-shadow:inset 0 0 0 2px var(--accent),0 6px 16px -10px var(--accent)}
+    22%{box-shadow:inset 0 0 0 2px var(--accent),0 6px 16px -10px var(--accent)}
+    32%{box-shadow:inset 0 0 0 2px var(--line)}}
+  .glink.s1 em{animation:beatnum 6s ease-in-out infinite}
+  .glink.s2 em{animation:beatnum 6s ease-in-out infinite 1.7s}
+  @keyframes beatnum{
+    0%,100%{background:var(--line);color:var(--ink2)}
+    6%,22%{background:var(--accent);color:#fff}
+    32%{background:var(--line);color:var(--ink2)}}
+  .arrow{flex:0 0 auto;align-self:center;color:var(--ink3);display:grid;place-items:center;
+         animation:slide 6s ease-in-out infinite}
+  @keyframes slide{0%,14%{transform:translateX(-3px);opacity:.35}
+                   22%{transform:translateX(3px);opacity:1}
+                   34%,100%{transform:translateX(-3px);opacity:.35}}
+  @media (max-width:520px){.arrow{transform:rotate(90deg)}}
+
+  .gkeys{margin-top:18px;padding:14px 16px;border-radius:10px;background:var(--bg);
+         display:flex;flex-direction:column;gap:9px}
+  .gkeys__cap{font-family:var(--fd);font-size:12px;letter-spacing:.05em;text-transform:uppercase;
+              font-weight:600;color:var(--ink3)}
+  .gkeys__row{display:grid;grid-template-columns:72px auto auto auto;align-items:center;
+              gap:10px;justify-content:start}
+  .gkeys__row b{font-size:14px;font-weight:600;color:var(--ink2)}
+  .gkeys__row em{font-style:normal;font-size:13px;color:var(--ink3)}
+  .keys{display:inline-flex;align-items:center;gap:4px}
+  .keys i{font-style:normal;font-size:12px;color:var(--ink3)}
+  kbd{font-family:var(--fm);font-size:12px;font-weight:500;color:var(--ink);background:var(--panel);
+      min-width:26px;text-align:center;padding:4px 7px;border-radius:6px;
+      box-shadow:inset 0 0 0 1px var(--line),0 1px 2px hsla(200,20%,10%,.06)}
+
+  .dclose{position:absolute;top:18px;right:18px;width:32px;height:32px;border-radius:50%;border:0;
+          background:hsla(176,18%,11%,.06);color:var(--ink2);cursor:pointer;display:grid;place-items:center;z-index:2}
+  .dclose:hover{background:hsla(176,18%,11%,.12);color:var(--ink)}
+  .dclose:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+  dialog{border:0;border-radius:20px;padding:0;max-width:500px;width:calc(100% - 48px);
+         background:linear-gradient(160deg,hsl(163,26%,95%) 0%,hsl(168,16%,97%) 52%,hsl(0,0%,100%) 100%);
+         color:var(--ink);box-shadow:0 15px 35px hsla(200,25%,10%,.38)}
+  :root[data-theme="dark"] dialog{background:var(--panel)}
+  @media (prefers-color-scheme:dark){:root:not([data-theme="light"]) dialog{background:var(--panel)}}
+  dialog::backdrop{background:hsla(200,20%,8%,.5)}
+  .dlg{padding:26px;position:relative}
+  .dlg h3{font-family:var(--fd);font-size:20px;margin:0 0 4px;font-weight:600;padding-right:36px}
+  .dlg p{font-size:14px;color:var(--ink2);margin:0 0 16px;line-height:1.55}
+  .dlg ol{margin:0;padding-left:22px;display:flex;flex-direction:column;gap:12px;font-size:15px}
+  .dlg code{font-family:var(--fm);font-size:13px;background:var(--bg);padding:2px 6px;border-radius:5px}
+
+  footer{border-top:1px solid var(--line);padding-top:26px;display:flex;flex-direction:column;gap:10px}
+  footer h3{font-family:var(--fd);font-size:20px;margin:0;font-weight:600}
+  footer p{margin:0;font-size:15px;color:var(--ink2);max-width:68ch}
+  footer ul{margin:2px 0 0;padding-left:20px;color:var(--ink2);font-size:15px;display:flex;flex-direction:column;gap:6px}
+
+  @media (prefers-reduced-motion:reduce){
+    .glow::after,.pulse{animation:none}
+    .screen,.stage,.ln i,.tick,.st b,.st span,.num,.lnk,.demo__sel,.demo__copied,
+    .glink,.glink em,.arrow{animation:none;transition:none}
+  }
+</style>
+
+<div class="wrap">
+  <header>
+    <p class="eyebrow">候光 · 完整流程</p>
+    <h1>候光,四步走完</h1>
+    <p class="lede">可以直接点。验证卡密 → 核对账号 → 确认兑换 → 开通处理 → 订阅成功,加上教程弹层、出问题状态和订单查询。两个主题都能切。</p>
+    <div class="toolbar">
+      <button class="tb go" type="button" data-jump="cdk">从头走一遍</button>
+      <button class="tb" type="button" data-jump="stuck">看出问题的样子</button>
+      <button class="tb" type="button" data-jump="query">看订单查询</button>
+      <span style="width:12px"></span>
+      <button class="tb" type="button" id="th-mist" aria-pressed="true">晨雾</button>
+      <button class="tb" type="button" id="th-slate" aria-pressed="false">石板</button>
+    </div>
+  </header>
+
+  <div class="frame">
+    <div class="app" id="app" data-t="mist" data-screen="cdk">
+      <div class="glow"></div>
+
+      <div class="top">
+        <div class="bl">
+          <svg width="28" height="28" viewBox="0 0 24 24" aria-hidden="true"><rect width="24" height="24" rx="12" fill="var(--t)"/><g transform="translate(3.6 3.6) scale(.7)"><path fill="var(--s)" d="M22.2819 9.8211a5.9847 5.9847 0 0 0-.5157-4.9108 6.0462 6.0462 0 0 0-6.5098-2.9A6.0651 6.0651 0 0 0 4.9807 4.1818a5.9847 5.9847 0 0 0-3.9977 2.9 6.0462 6.0462 0 0 0 .7427 7.0966 5.98 5.98 0 0 0 .511 4.9107 6.051 6.051 0 0 0 6.5146 2.9001A5.9847 5.9847 0 0 0 13.2599 24a6.0557 6.0557 0 0 0 5.7718-4.2058 5.9894 5.9894 0 0 0 3.9977-2.9001 6.0557 6.0557 0 0 0-.7475-7.0729zm-9.022 12.6081a4.4755 4.4755 0 0 1-2.8764-1.0408l.1419-.0804 4.7783-2.7582a.7948.7948 0 0 0 .3927-.6813v-6.7369l2.02 1.1686a.071.071 0 0 1 .038.052v5.5826a4.504 4.504 0 0 1-4.4945 4.494zm-9.6607-4.1254a4.4708 4.4708 0 0 1-.5346-3.0137l.142.0852 4.783 2.7582a.7712.7712 0 0 0 .7806 0l5.8428-3.3685v2.3324a.0804.0804 0 0 1-.0332.0615L9.74 19.9502a4.4992 4.4992 0 0 1-6.1408-1.6464zM2.3408 7.8956a4.485 4.485 0 0 1 2.3655-1.9728V11.6a.7664.7664 0 0 0 .3879.6765l5.8144 3.3543-2.0201 1.1685a.0757.0757 0 0 1-.071 0l-4.8303-2.7865A4.504 4.504 0 0 1 2.3408 7.872zm16.5963 3.8558L13.1038 8.364 15.1192 7.2a.0757.0757 0 0 1 .071 0l4.8303 2.7913a4.4944 4.4944 0 0 1-.6765 8.1042v-5.6772a.79.79 0 0 0-.407-.667zm2.0107-3.0231l-.142-.0852-4.7735-2.7818a.7759.7759 0 0 0-.7854 0L9.409 9.2297V6.8974a.0662.0662 0 0 1 .0284-.0615l4.8303-2.7866a4.4992 4.4992 0 0 1 6.6802 4.66zM8.3065 12.863l-2.02-1.1638a.0804.0804 0 0 1-.038-.0567V6.0742a4.4992 4.4992 0 0 1 7.3757-3.4537l-.142.0805L8.704 5.459a.7948.7948 0 0 0-.3927.6813zm1.0976-2.3654l2.602-1.4998 2.6069 1.4998v2.9994l-2.5974 1.4997-2.6067-1.4997Z"/></g></svg>
+          ChatGPT 充值中心
+        </div>
+        <div class="nav">
+          <button type="button" data-jump="query">订单查询</button>
+          <button type="button" id="open-guide">使用教程</button>
+        </div>
+      </div>
+
+      <div class="rail" id="rail">
+        <div class="st cur"><b>1</b><span>验证卡密</span></div>
+        <div class="ln"><i></i></div>
+        <div class="st"><b>2</b><span>核对账号</span></div>
+        <div class="ln"><i></i></div>
+        <div class="st"><b>3</b><span>确认兑换</span></div>
+        <div class="ln"><i></i></div>
+        <div class="st"><b>4</b><span>开通完成</span></div>
+      </div>
+
+      <!-- 1 验证卡密 -->
+      <section class="screen on" data-screen="cdk">
+        <div class="card">
+          <h2>输入卡密</h2>
+          <p class="cs">购买后收到的那串兑换码。</p>
+          <label for="cdk">卡密</label>
+          <input type="text" id="cdk" value="PLUS-THEBAT8942X4YMW5" spellcheck="false">
+          <p class="hint">请输入卡密(Plus、Pro 5X、Pro 20X)</p>
+          <button class="btn" type="button" data-go="session">验证并继续</button>
+        </div>
+      </section>
+
+      <!-- 2 核对账号 -->
+      <section class="screen" data-screen="session">
+        <div class="card">
+          <div class="row-head"><h2>粘贴账号 Session</h2><button class="lnk" type="button" id="open-guide-2">怎么拿?</button></div>
+          <p class="cs">打开 Token 页面,把整页内容复制过来,我们据此确认是哪个账号。</p>
+          <label for="sess">账号 Session</label>
+          <textarea id="sess" rows="5" spellcheck="false">{"user":{"email":"mengx612@gmail.com","name":"周牛政"},"accessToken":"eyJhbGciOi…","expires":"2026-12-10T05:27:59.518Z"}</textarea>
+          <div class="ok">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--a-ink)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+            <div><b>mengx612@gmail.com</b><span>周牛政 · 当前为免费账号,可以开通</span></div>
+          </div>
+          <button class="btn" type="button" data-go="confirm">校验并继续</button>
+          <button class="btn ghost" type="button" data-go="cdk">上一步</button>
+        </div>
+      </section>
+
+      <!-- 3 确认兑换 -->
+      <section class="screen" data-screen="confirm">
+        <div class="card">
+          <h2>确认兑换</h2>
+          <p class="cs">核对下面的信息,确认后开始开通。</p>
+          <div class="rows">
+            <div class="r"><span>卡密</span><b>PLUS-THEBAT…YMW5</b></div>
+            <div class="r"><span>订阅方案</span><b style="font-family:var(--fb)">ChatGPT Plus</b></div>
+            <div class="r"><span>目标账号</span><b>mengx612@gmail.com</b></div>
+            <div class="r"><span>账号昵称</span><b style="font-family:var(--fb)">周牛政</b></div>
+          </div>
+          <div class="note">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="flex:0 0 auto;margin-top:2px"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/></svg>
+            兑换完成前请不要退出 ChatGPT 登录状态,否则可能导致订阅失效。
+          </div>
+          <button class="btn" type="button" data-go="run">立即兑换</button>
+          <button class="btn ghost" type="button" data-go="session">上一步</button>
+        </div>
+      </section>
+
+      <!-- 4 开通处理 -->
+      <section class="screen" data-screen="run">
+        <div class="hero">
+          <div class="ring">
+            <svg viewBox="0 0 200 200">
+              <circle cx="100" cy="100" r="88" stroke="var(--bd)" stroke-width="10"/>
+              <circle class="fg" id="ring" cx="100" cy="100" r="88" stroke="var(--a)" stroke-width="10"
+                      stroke-dasharray="552.9" stroke-dashoffset="552.9"/>
+            </svg>
+            <div class="num" id="num"><b id="pct">0</b><i>percent</i></div>
+          </div>
+          <p class="stage" id="stage">已收到订单</p>
+          <p class="shint" id="shint">已收到你的卡密和账号,正在安排开通。请保持本页打开,通常几分钟之内完成。</p>
+        </div>
+        <div class="rows">
+          <div class="r"><span>订单</span><b>PJV1-ztS9FZ3Qcw</b></div>
+          <div class="r"><span>账号</span><b>mengx612@gmail.com</b></div>
+          <div class="r"><span>方案</span><b style="font-family:var(--fb)">ChatGPT Plus</b></div>
+        </div>
+      </section>
+
+      <!-- 5 订阅成功 -->
+      <section class="screen" data-screen="done">
+        <div class="hero">
+          <div class="ring">
+            <svg viewBox="0 0 200 200">
+              <circle cx="100" cy="100" r="88" stroke="var(--bd)" stroke-width="10"/>
+              <circle cx="100" cy="100" r="88" stroke="var(--a)" stroke-width="10" stroke-dasharray="552.9" stroke-dashoffset="0"/>
+            </svg>
+            <div class="tick on">
+              <svg width="104" height="104" viewBox="0 0 24 24" fill="none" stroke="var(--a)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+            </div>
+          </div>
+          <p class="stage">订阅成功</p>
+          <p class="shint">Plus 已开通,现在就可以用了。</p>
+        </div>
+        <div class="rows">
+          <div class="r"><span>订阅方案</span><b style="font-family:var(--fb)">ChatGPT Plus</b></div>
+          <div class="r"><span>账号</span><b>mengx612@gmail.com</b></div>
+          <div class="r"><span>到期时间</span><b>2026-10-11</b></div>
+          <div class="r"><span>查询码</span><b>PJV1-ztS9FZ3Qcw</b></div>
+        </div>
+        <a class="sublink" href="#" onclick="return false">
+          <span class="sublink__main">
+            <svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M10 2l6 2.4v4.5c0 3.7-2.5 6.6-6 7.9-3.5-1.3-6-4.2-6-7.9V4.4L10 2z"/><path d="m7.2 9.8 1.9 1.9 3.7-3.7" stroke-linecap="round"/></svg>
+            去 ChatGPT 官网确认订阅状态
+          </span>
+          <span class="sublink__hint">登录后在「设置 → 订阅」查看,本页不经手账号订阅信息 ↗</span>
+        </a>
+        <div class="note" style="margin-top:14px">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="flex:0 0 auto;margin-top:2px"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/></svg>
+          <span><b>订阅已生效,不用再做任何操作。</b>请不要在 ChatGPT 设置里的「升级套餐」中点击升级,这类操作容易触发官方风控。</span>
+        </div>
+        <button class="btn ghost" type="button">复制查询码</button>
+      </section>
+
+      <!-- 6 遇到问题 -->
+      <section class="screen" data-screen="stuck">
+        <div class="hero">
+          <div class="ring">
+            <svg viewBox="0 0 200 200">
+              <circle cx="100" cy="100" r="88" stroke="var(--bd)" stroke-width="10"/>
+              <circle cx="100" cy="100" r="88" stroke="var(--warn)" stroke-width="10" stroke-dasharray="552.9" stroke-dashoffset="155"/>
+            </svg>
+            <div class="num"><b style="color:var(--warn)">72</b><i>percent</i></div>
+          </div>
+          <p class="stage">正在提交支付</p>
+          <p class="shint">遇到点问题,我们已经收到通知在处理。本页会自动更新,你也可以记下查询码稍后回来看。</p>
+        </div>
+        <div class="rows">
+          <div class="r"><span>订单</span><b>PJV1-ztS9FZ3Qcw</b></div>
+          <div class="r"><span>账号</span><b>mengx612@gmail.com</b></div>
+          <div class="r"><span>查询码</span><b>PJV1-ztS9FZ3Qcw</b></div>
+        </div>
+        <button class="btn ghost" type="button">复制查询码</button>
+      </section>
+
+      <!-- 7 订单查询 -->
+      <section class="screen" data-screen="query">
+        <div class="card">
+          <h2>订单查询</h2>
+          <p class="cs">用查询码看这一单的结果,不需要再贴一次账号。</p>
+          <label for="tk">查询码</label>
+          <input type="text" id="tk" value="PJV1-ztS9FZ3Qcw" spellcheck="false">
+          <div class="ok" style="margin-top:20px">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--a-ink)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+            <div><b style="font-family:var(--fb)">ChatGPT Plus 已开通</b><span>到期 2026-10-11</span></div>
+          </div>
+          <div class="note" style="margin-top:16px">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="flex:0 0 auto;margin-top:2px"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/></svg>
+            <span>请不要在 ChatGPT 设置里的「升级套餐」中点击升级,这类操作容易触发官方风控。</span>
+          </div>
+          <button class="btn" type="button" data-go="cdk">回到兑换</button>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <dialog id="guide">
+    <div class="dlg">
+      <button class="dclose" type="button" id="x-guide" aria-label="关闭">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+      <h3>怎么拿账号 Session</h3>
+      <p><b>先登录要充值的账号,再打开 Token 页面</b>,把整段内容复制回来。下面就是你会看到的样子。</p>
+      <div class="demo">
+        <div class="demo__bar"><i></i><i></i><i></i><span class="demo__url">chatgpt.com/api/auth/session</span></div>
+        <div class="demo__body">
+          <div class="demo__sel"></div>
+          {"user":{"id":"user-7Kd…","email":"you@example.com"},"accessToken":"eyJhbGciOiJSUzI1…","expires":"2026-12-10T05:27:59Z"}
+          <span class="demo__copied">已复制</span>
+        </div>
+      </div>
+      <div class="path">
+        <a class="glink s1" href="https://chatgpt.com/" target="_blank" rel="noopener noreferrer">
+          <em>1</em>先登录 ChatGPT ↗</a>
+        <span class="arrow" aria-hidden="true">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h13M13 6l6 6-6 6"/></svg>
+        </span>
+        <a class="glink s2" href="https://chatgpt.com/api/auth/session" target="_blank" rel="noopener noreferrer">
+          <em>2</em>再打开 Token 页面 ↗</a>
+      </div>
+      <div class="gkeys">
+        <span class="gkeys__cap">整页全选,再复制</span>
+        <div class="gkeys__row">
+          <b>Windows</b>
+          <span class="keys"><kbd>Ctrl</kbd><i>+</i><kbd>A</kbd></span>
+          <em>然后</em>
+          <span class="keys"><kbd>Ctrl</kbd><i>+</i><kbd>C</kbd></span>
+        </div>
+        <div class="gkeys__row">
+          <b>Mac</b>
+          <span class="keys"><kbd>⌘</kbd><i>+</i><kbd>A</kbd></span>
+          <em>然后</em>
+          <span class="keys"><kbd>⌘</kbd><i>+</i><kbd>C</kbd></span>
+        </div>
+      </div>
+      <button class="btn" type="button" id="close-guide">我知道了,去粘贴</button>
+    </div>
+  </dialog>
+
+  <footer>
+    <h3>百分比不会提前冲线</h3>
+    <p>这是你提的那个尴尬场景。每个阶段有自己的上限,阶段内用衰减曲线逼近上限但永远到不了——停留越久爬得越慢。只有真正"订阅成功"那一刻才置 100。</p>
+    <ul>
+      <li>正常跑:每进一个阶段,数字连续推到新区间,全程在动。</li>
+      <li>某一步卡住:数字继续极缓慢地爬,永远不会到达下一阶段的起点,更不会到 100。</li>
+      <li>出问题:环变琥珀色、停在当前值,文案换成「遇到点问题,我们已经收到通知在处理」。</li>
+      <li>对勾方向已修正(上一版被旋转规则连带转了 90 度)。</li>
+    </ul>
+  </footer>
+</div>
+
+<script>
+(function(){
+  var app=document.getElementById('app');
+  var STAGES=[
+    ['已收到订单',10,'已收到你的卡密和账号,正在安排开通。'],
+    ['正在准备支付卡',22,'正在为这笔订单准备专用支付卡。'],
+    ['正在排队',32,'已进入开通队列,马上开始。'],
+    ['正在验证账号',46,'正在登录并核对账号,确认可以开通。'],
+    ['正在获取支付信息',60,'正在打开官方购买页面。'],
+    ['正在提交支付',74,'支付信息已填好,正在提交。'],
+    ['正在等待支付结果',88,'已提交,正在等待官方返回结果。'],
+    ['正在确认订阅',97,'支付成功,正在确认订阅已生效。']
+  ];
+  var RAIL_AT={cdk:0,session:1,confirm:2,run:3,done:3,stuck:3,query:-1};
+  var C=2*Math.PI*88, raf=null, timers=[];
+
+  function show(name){
+    app.dataset.screen=name;
+    [].forEach.call(app.querySelectorAll('.screen'),function(s){ s.classList.toggle('on',s.dataset.screen===name); });
+    var idx=RAIL_AT[name];
+    var rail=document.getElementById('rail');
+    rail.style.display=idx<0?'none':'flex';
+    [].forEach.call(rail.querySelectorAll('.st'),function(st,i){
+      st.classList.toggle('done', name==='done'? true : i<idx);
+      st.classList.toggle('cur', name==='done'? false : i===idx);
+    });
+    [].forEach.call(rail.querySelectorAll('.ln'),function(ln,i){ ln.classList.toggle('on', name==='done'? true : i<idx); });
+    stop();
+    if(name==='run') runSequence();
+  }
+
+  function stop(){ if(raf) cancelAnimationFrame(raf); raf=null; timers.forEach(clearTimeout); timers=[]; }
+
+  function runSequence(){
+    var ring=document.getElementById('ring'), pct=document.getElementById('pct');
+    var stage=document.getElementById('stage'), shint=document.getElementById('shint');
+    var t0=performance.now(), SEG=2600;
+
+    STAGES.forEach(function(s,i){
+      timers.push(setTimeout(function(){
+        stage.classList.add('swap');
+        setTimeout(function(){ stage.textContent=s[0]; stage.classList.remove('swap'); },170);
+        shint.style.opacity='.35';
+        setTimeout(function(){ shint.textContent=s[2]+'请保持本页打开,通常几分钟之内完成。'; shint.style.opacity='1'; },170);
+      }, i*SEG));
+    });
+
+    function frame(now){
+      var t=now-t0;
+      var i=Math.min(STAGES.length-1,Math.floor(t/SEG));
+      var floor=i===0?0:STAGES[i-1][1], ceil=STAGES[i][1];
+      var local=(t-i*SEG)/SEG;
+      // 衰减逼近：越久爬得越慢，永远到不了本阶段上限，因此不可能提前冲线。
+      var p=floor+(ceil-floor)*(1-Math.exp(-2.6*local));
+      pct.textContent=Math.round(p);
+      ring.style.strokeDashoffset=C*(1-p/100);
+      raf=requestAnimationFrame(frame);
+    }
+    raf=requestAnimationFrame(frame);
+    // 真正"订阅成功"到达时才置 100 —— 这里用一次模拟的完成事件代替。
+    timers.push(setTimeout(function(){ stop(); show('done'); }, STAGES.length*SEG+1400));
+  }
+
+  [].forEach.call(document.querySelectorAll('[data-go],[data-jump]'),function(b){
+    b.addEventListener('click',function(){ show(b.dataset.go||b.dataset.jump); });
+  });
+  var dlg=document.getElementById('guide');
+  document.getElementById('open-guide').addEventListener('click',function(){ dlg.showModal(); });
+  document.getElementById('open-guide-2').addEventListener('click',function(){ dlg.showModal(); });
+  document.getElementById('close-guide').addEventListener('click',function(){ dlg.close(); });
+  document.getElementById('x-guide').addEventListener('click',function(){ dlg.close(); });
+
+  function theme(t){
+    app.dataset.t=t;
+    document.getElementById('th-mist').setAttribute('aria-pressed',String(t==='mist'));
+    document.getElementById('th-slate').setAttribute('aria-pressed',String(t==='slate'));
+  }
+  document.getElementById('th-mist').addEventListener('click',function(){ theme('mist'); });
+  document.getElementById('th-slate').addEventListener('click',function(){ theme('slate'); });
+
+  show('cdk');
+})();
+</script>
