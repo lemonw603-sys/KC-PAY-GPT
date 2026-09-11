@@ -8,7 +8,7 @@
 ## 工作区
 
 - 路径 `/Users/lemon/.codex/worktrees/browser-live/AI充值业务`，分支 `codex/browser-live-20260911`，从 main 最新切出（`git log -1` 可见基线）。
-- 首次进入：根目录 `npm ci`，再 `cd browser-mvp && npm ci`。运行配置由脚本从服务器拉取；本机状态目录 `~/Library/Application Support/pojia-browser-live/pool` 与主工作区共用。
+- 首次进入：三处依赖都装：根目录 `npm ci`、`(cd v1 && npm ci)`、`(cd browser-mvp && npm ci)`。browser-mvp 会导入 `v1/` 的模块，v1 缺依赖时连既有测试都会在配置模块报错（Zod 版本）。`node_modules/` 是 gitignored 的本地依赖，不在下面"不可写 `v1/**`"的范围内。运行配置由脚本从服务器拉取；本机状态目录 `~/Library/Application Support/pojia-browser-live/pool` 与主工作区共用。
 - 可写：`browser-mvp/**`、`docs/browser-research/**`、`docs/contracts/` 下 Browser 相关合同。
 - 不可写：`v1/**`、`docs/HANDOFF_NOW.md`、`docs/CURRENT_STATE.md`、`docs/DECISIONS.md`、`docs/PROJECT_MAP.md`、`docs/HANDOFF_LOG.md`、`docs/reviews/**`、`AGENTS.md`、`CLAUDE.md`。需要 v1 配合的改动写成需求给大脑。
 - 回流：小步 commit 到自己分支；每个可验证阶段结束在 `CODEX_PROGRESS.md` 追加一节，观察与结论分开，附证据文件路径或 SQL。大脑读 diff 和证据后合并进 main。要同步 main 时 `git merge main`，不 rebase。
