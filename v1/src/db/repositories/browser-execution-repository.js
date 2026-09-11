@@ -901,8 +901,8 @@ export function createBrowserExecutionRepository(pool) {
             reason: `pre-payment abort: ${reason}`, now
           });
           await upsertBrowserAlertInTransaction(connection, {
-            type: 'BROWSER_ORDER_FAILED', orderId: row.order_id, title: '浏览器充值在付款前终止',
-            message: `原因 ${reason}；未点击付款，CDK 已退回，卡片已释放。`
+            type: 'BROWSER_ORDER_FAILED', orderId: row.order_id, title: '充值失败，客户未扣款',
+            message: `没走到付款就停了（${reason}）。钱没动，CDK 已自动退回、卡已释放，客户可以直接重新兑换。`
           });
         }
         await connection.query(
@@ -980,8 +980,8 @@ export function createBrowserExecutionRepository(pool) {
           [now, deadline, nextCheck, sequence, reason, now, run]
         );
         await upsertBrowserAlertInTransaction(connection, {
-          type: 'BROWSER_PAYMENT_UNKNOWN', orderId: row.order_id, title: '浏览器付款结果不明，禁止重付',
-          message: `run ${run}：${reason}；已锁为只能对账，需要人工核实卡交易与账号套餐。`
+          type: 'BROWSER_PAYMENT_UNKNOWN', orderId: row.order_id, title: '付款点了但没拿到结果，等你核实',
+          message: `已点一次付款、没等到确认（${reason}）。系统已锁死，不会重付也不会换卡。请看一眼客户账号是不是 Plus、卡有没有被扣，然后在后台点「确认核实结果」。`
         });
         if (runUpdate.affectedRows !== 1) {
           throw new BrowserExecutionError('Browser run changed concurrently', 'RUN_CONFLICT');
@@ -1227,8 +1227,8 @@ export function createBrowserExecutionRepository(pool) {
           [run, operation, reason, json({ evidenceHash: evidence }), now, now]
         );
         await upsertBrowserAlertInTransaction(connection, {
-          type: 'BROWSER_HUMAN_REQUIRED', orderId: row.order_id, title: '浏览器付款核实需要人工',
-          message: `run ${run}：${reason}；自动核实已升级为人工处理。`
+          type: 'BROWSER_HUMAN_REQUIRED', orderId: row.order_id, title: '自动核实查不出来，需要你看一眼',
+          message: `付款后系统自己查了几次仍无法确定结果（${reason}）。请看客户账号是不是 Plus、卡有没有被扣，然后在后台点「确认核实结果」。`
         });
         await connection.query(
           `UPDATE browser_runs SET status='HUMAN_REQUIRED',
@@ -1663,8 +1663,8 @@ export function createBrowserExecutionRepository(pool) {
           [now, now, row.order_id, row.order_version]
         );
         await upsertBrowserAlertInTransaction(connection, {
-          type: 'BROWSER_ORDER_COMPLETED', orderId: row.order_id, title: '浏览器充值完成',
-          message: 'Plus 已开通并收口为充值成功。'
+          type: 'BROWSER_ORDER_COMPLETED', orderId: row.order_id, title: '充值完成',
+          message: 'Plus 已开通，续费已自动取消，订单收为成功。客户可以用了。'
         });
         if (orderUpdate.affectedRows !== 1) {
           throw new BrowserExecutionError('order changed concurrently', 'ORDER_CONFLICT');

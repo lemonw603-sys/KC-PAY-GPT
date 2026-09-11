@@ -1,0 +1,15 @@
+[Unit]
+Description=AI充值业务 客户卡住告警（排队超时没人处理）
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=pojia
+WorkingDirectory=/opt/pojia/current/v1
+EnvironmentFile=/etc/pojia/runtime.env
+ExecStart=/usr/bin/node scripts/stalled-order-watch.mjs
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/pojia

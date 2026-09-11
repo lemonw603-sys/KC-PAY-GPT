@@ -1,6 +1,7 @@
 import { OrderIntakeError } from '../../domain/order-intake-error.js';
 import { OrderStatus } from '../../domain/order-status.js';
 import { CDK_RETURN_ORDER_STATUSES, returnCdkForOrderInTransaction } from './cdk-return-repository.js';
+import { upsertBrowserAlertInTransaction } from './browser-alert-repository.js';
 import { replaceCustomerSessionInTransaction } from './session-replacement-repository.js';
 
 const REQUIRED_SETTINGS = Object.freeze([
@@ -237,6 +238,17 @@ export async function createOrderFromCdk(pool, input) {
     // account, closed it, and the live run logged in again minutes later — two
     // logins per order for checks the live run now performs itself in its own
     // session (identity match, free-plan guard). Fewer logins, one session.
+
+    // D-175: Lemon wants to know the moment a customer redeems, not only when it
+    // ends. A CDK is redeemed at a time of the customer's choosing, so this is the
+    // first point at which anyone knows a recharge is under way at all.
+    if (route.executor_kind === 'BROWSER') {
+      await upsertBrowserAlertInTransaction(connection, {
+        type: 'BROWSER_ORDER_SUBMITTED', orderId: input.orderId,
+        title: '客户提交了充值',
+        message: '已收到 CDK 与账号，正在分卡并排队执行。跑完会再推一条结果。'
+      });
+    }
 
     await connection.commit();
     return {
