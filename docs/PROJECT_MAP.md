@@ -33,8 +33,8 @@
 
 **主线（现在做）**
 - A1 F-42 预检接入 SessionProvider：已合并 `2aad60d`。
-- ~~A2 预检改造~~ **不做（D-149）**：预检保持现状；"预检不创建 Checkout、max_attempts 5→2"降为 E2 拒付后的候选变量，有证据再改。
-- A3 阶段 2 实验：E0 离线路径标记（已批）→ E1 一个 free 账号两条建会话路线只读配对（Lemon 注册；Codex 先只读列 8 身份会话状态，大脑定 lane）→ E2 另一个 free 账号一次 rehearsal（Lemon 注册；卡 9839、后台 plus CDK 可用）。
+- A2 预检改造（**D-150，跑账号前必做**）：预检不点 Upgrade、不建 Checkout，只保留登录/身份/free 判定（Codex）；`max_attempts` 5→1（大脑）。
+- A3 两账号真流程（D-150）：账号 A 走客户入口提交 CDK+Session，lane 指 `Plus Browser PH Pilot`，完整流程到真付款，Codex 只读旁观留证；账号 B 按 A 结果只变一个维度。E1 取消，E0 顺手做。每账号一次尝试，失败即停。
 - A4 rehearsal 到 PRE_SUBMIT_STOPPED → Lemon 放行一笔真单到 RECHARGE_SUCCESS。D-139 不变：真单失败一次即人工。
 - ~~B2 F-43~~ **已移出主线（D-148）**：付款→确认 Plus→确认取消续费在同一浏览器会话内完成，不经过旧 token 门槛；F-43 只影响付款后的自动补核，归入真单之后的集中整治。
 - 已完成：B1 `RESOLVE_UNKNOWN_PAYMENT` 三 bug 修好并接按钮（`3d4936d`，release `20260911-resolve-unknown-ui-3d4936d`）。其中 Pro 分支随 D-146 搁置暂不会用到，保留不删。

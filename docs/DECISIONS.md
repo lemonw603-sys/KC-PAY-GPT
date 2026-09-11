@@ -189,3 +189,15 @@
 - **依据**：生产只读显示 3 次 CARD_DECLINED 的 run 均已过预检、进入付款环节（`payment_state=PAYMENT_UNKNOWN`、`last_error_code=CARD_DECLINED`），预检不是失败点；两次 Checkout 与拒付的关系只是假设。实验前先复现现状再逐维度变，改在实验前会让 E2 结果与历史真单不可比，还要 Codex 与大脑各改一处并回归，不符合 D-147。
 - **账号**：Lemon 两个 free 号已就位（2026-09-11 05:32 UTC）。E1 用其一（只读，0 Checkout）；E2 用另一个从未入过项目的号做一次 rehearsal。账号密码只在 Lemon 与 Codex 之间交付，不入代码/日志/commit/聊天记录；Session 材料只走系统正式提交入口与加密材料路径。
 
+## D-150（2026-09-11 05:45 UTC）推翻 D-149：预检改造恢复并前置；取消 E1；两账号走真流程
+
+- **推翻理由**：D-149 只看了 3 次 CARD_DECLINED，漏掉了 2026-09-10 真单的实际卡点。生产只读：19 次预检里 8 次一遍过、7 次靠重试过、2 次 5 次全败于 `CHECKOUT_NAVIGATION_FAILED`（点 Upgrade 后被 sentinel 拦、结账页不创建）。预检从未挡下一单 live 阶段本来挡不住的失败（同一 sentinel 在 live 点 Upgrade 时一样会出现，live 本身有付款前中止），却让每单多点一次 Upgrade，失败后自动重试到 5 次——Dqcn 账号就是这样被连续 7 次点击点脏的。对只有两个测试账号的现状，这是最大的浪费源。
+- **预检处置**：保留登录、身份核对、free 判定（只读），**不再点 Upgrade、不创建 Checkout**（browser-mvp 侧 Codex 去掉 `checkoutNavigationContract`）；`max_attempts` 5→1（v1 `order-intake-repository.js` 一行，大脑）。不删预检步骤，v1 耦合 4 处不动。
+- **上号器 vs 预检**：不是同一层面。上号器=把账号登进浏览器的方式（Cookie 直塞 / 扩展弹窗），预检=登录后付款前的探路步骤。自动化每次都能登录、身份核对都过；卡点在点 Upgrade 之后的 sentinel。扩展 manifest 只声明 chatgpt.com，与 Cookie 注入同类机制，"上号器有特殊权限"不成立（2026-09-10 核实）。"手动成、自动败"的差异**尚未定位**，候选：自动化点击痕迹、窗口指纹、节奏、账号被反复点脏；均未证明。
+- **取消 E1**：E1 是只读建会话对照，测不到 sentinel（它只在点 Upgrade 后出现），登录从来不是失败点。E0 可做，不占账号。
+- **两账号方案**（每账号只允许一次自动化尝试：预检 1 次 + live 1 次，失败即停，不重试不换卡）：
+  - 账号 A：Lemon 像客户一样在后台提交 CDK+Session（沿用手动成功时的 Session 导出方式），自动化 lane 指到 Lemon 手动成功过的窗口 `Plus Browser PH Pilot`，完整流程到真付款。Codex 用只读 CDP 旁观、留脱敏网络证据。成功→链路通；sentinel 拦→自动化操作痕迹是主因、窗口不是；拒付→进入卡维度。
+  - 账号 B：按 A 的结果只变一个维度（sentinel→点击方式/上号器登录，Codex 提案大脑批；拒付→卡/账单地址）。
+- **不需要账号密码**：Codex 不接触任何账号信息。D-149 中关于密码交付的表述作废。
+- 真付款当天按既有规则：`ready-check.sh pay` → 资金确认 → `go-live.sh --arm`。
+

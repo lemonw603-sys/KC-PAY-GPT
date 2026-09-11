@@ -61,3 +61,16 @@
 - **F-43 已移出主线（D-148）**，与你无关，不用管付款后补核那条 lane。
 - main 现在到 `cc158ee` 之后，请 `git merge main`。
 
+## 2026-09-11 05:45 UTC｜推翻上一节：预检改造现在做；E1 取消；两账号走真流程（D-150）
+
+上一节"A2 不改"作废，原因见 `docs/DECISIONS.md` D-150。你现在的任务按顺序：
+
+1. **预检改造**（browser-mvp）：预检不再点 Upgrade、不创建 Checkout；去掉 `checkoutNavigationContract`，保留 session 注入、`account-readonly-probe`、free 判定；`summarizeBrowserPreflight` 与相关单测/回归同步。预检输出仍要给 v1 一个 `outcome=PASSED`。提交到你的分支，我合并。v1 的 `max_attempts` 5→1 我改。
+2. **lane 指向 Pilot**：给出把自动化 lane 指到 `Plus Browser PH Pilot`（Lemon 手动成功过的 1 号窗口）的配置方式、需要的清理动作及其副作用；只写方案与配置 diff，不动生产窗口。
+3. **只读旁观**：准备真单当天的只读 CDP 旁观与脱敏网络留证（sentinel 请求、checkout 创建、payments error 文案），以及 WAL 标记；沿用 09-10 的同款只读连接方式。
+4. **E1 取消**（只读建会话测不到 sentinel）；E0 你顺手做完即可，不占账号；E2 并入"账号 A 真流程"。
+5. **不需要账号信息**。Lemon 会像客户一样在后台提交 CDK+Session，你不接触账号；上一节关于密码交付的话作废。
+6. 停点不变：账号 A 只允许一次自动化尝试（预检 1 次 + live 1 次），任何失败即停、不复点、不换卡；一切付款相关动作仍由 Lemon 当次确认。
+
+`git merge main` 后再开始（main 在本节提交之后）。1 做完即在 PROGRESS 报，我先合并 1，不等 2、3。
+
