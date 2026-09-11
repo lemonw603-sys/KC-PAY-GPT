@@ -7,6 +7,8 @@ import { createBrowserWorkerService } from '../../v1/src/services/browser-worker
 import { BrowserExecutionService } from './executor.js';
 import { createMysqlUpstreamProjectionAdapter } from './mysql-upstream-adapter.js';
 import { BrowserPaymentExecutor } from './payment-executor.js';
+import { createHumanVerificationGate } from './human-verification-gate.js';
+import { createLocalOperatorNotifier } from './local-operator-notify.js';
 import { LiveChatGPTPaymentAdapter, LIVE_PAYMENT_CONFIRMATION } from './live-chatgpt-payment-adapter.js';
 import { ChatGptPostPaymentVerifier } from './chatgpt-post-payment-verifier.js';
 import { recoverSessionAfterPayment } from './post-payment-session-recovery.js';
@@ -85,6 +87,10 @@ export function createSharedLivePaymentWorker({
   executionTimeoutMs = 60_000,
   verificationWindowMs = 300_000,
   verificationIntervalMs = 5_000,
+  // D-154: how long to hold the clicked checkout page while a person satisfies a
+  // human-verification challenge. 0 = do not wait (only detect and report).
+  humanVerificationWaitMs = 0,
+  notifyOperator = createLocalOperatorNotifier(),
   postPlusAction = 'CANCEL_RENEWAL',
   resolvePlan = null,
   stopBeforeSubmit = false,
@@ -199,6 +205,20 @@ export function createSharedLivePaymentWorker({
       const adapter = new LiveChatGPTPaymentAdapter({
         enabled: true,
         confirmation: LIVE_PAYMENT_CONFIRMATION,
+        // D-154: detect a human-verification challenge raised by the submit click,
+        // tell the operator, and wait for a person to satisfy it in the window.
+        // Never satisfied here; `humanVerificationWaitMs = 0` keeps the old
+        // behaviour except that the reason is now recorded.
+        challengeGate: createHumanVerificationGate({
+          waitMs: humanVerificationWaitMs,
+          pollIntervalMs: verificationIntervalMs,
+          notify: async ({ waitMs }) => notifyOperator({
+            title: '充值需要人工验证',
+            message: waitMs > 0
+              ? `结账页出现人机验证。请在比特浏览器窗口勾选，${Math.round(waitMs / 1000)} 秒内勾选自动继续；超时表单保留，可自行完成`
+              : '结账页出现人机验证。自动化不处理该验证，本单已停并保留现场',
+          }),
+        }),
         outcomeObserver: async () => ({ status: (await verifier.confirmPlus()).confirmed ? 'CONFIRMED' : 'UNKNOWN' }),
       });
       return new BrowserPaymentExecutor({

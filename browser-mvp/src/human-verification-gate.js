@@ -1,0 +1,78 @@
+/**
+ * Human-verification gate (D-154).
+ *
+ * ChatGPT can answer the single payment submit click with a human-verification
+ * challenge ("One more step before you're done — I am human", hCaptcha). The
+ * challenge exists to keep automation out of the purchase, so this module never
+ * touches it: it only DETECTS the challenge, tells the operator, and waits for a
+ * person to satisfy it in the visible browser window. No clicking, no solving,
+ * no third-party solver, no attempt to avoid triggering it.
+ *
+ * The payment button has already been clicked once when this runs. Waiting adds
+ * no second click and no new funds risk: the page is left exactly as the click
+ * left it, which is also what lets the operator finish it by hand.
+ */
+
+const CHALLENGE_PROBE = () => {
+  const frames = Array.from(document.querySelectorAll('iframe'));
+  const vendorFrame = frames.some((frame) => {
+    const src = String(frame.getAttribute('src') || '');
+    return /(^|\.)hcaptcha\.com|recaptcha|turnstile|challenges\.cloudflare\.com/i.test(src);
+  });
+  const widget = Boolean(document.querySelector('.h-captcha, [data-hcaptcha-widget-id], [data-sitekey]'));
+  const body = String(document.body?.innerText || '');
+  // Matched as a presence signal only; the text is never acted on as instructions.
+  const prompt = /one more step before you'?re done|select the checkbox below|i am human|verify you are human/i.test(body);
+  return { vendorFrame, widget, prompt };
+};
+
+/** Read-only: is a human-verification challenge on screen right now? */
+export async function detectHumanVerification(page) {
+  try {
+    const probe = await page.evaluate(CHALLENGE_PROBE);
+    const present = Boolean(probe.vendorFrame || (probe.widget && probe.prompt) || probe.prompt);
+    return { present, signals: probe };
+  } catch (error) {
+    // A navigating/closing page is not evidence of a challenge.
+    return { present: false, signals: null, probeError: String(error?.message || '').slice(0, 120) };
+  }
+}
+
+/**
+ * Builds the gate the payment adapter calls right after its single submit click.
+ * `waitMs <= 0` disables waiting: the gate still reports a detected challenge so
+ * the run records why it stalled instead of failing silently.
+ */
+export function createHumanVerificationGate({
+  waitMs = 0,
+  pollIntervalMs = 3_000,
+  clearedStableMs = 2_000,
+  notify = async () => undefined,
+  now = () => Date.now(),
+  sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+} = {}) {
+  const wait = Number.isFinite(waitMs) ? Math.max(0, Math.trunc(waitMs)) : 0;
+  const interval = Math.min(Math.max(500, Math.trunc(pollIntervalMs) || 3_000), 15_000);
+  return async function humanVerificationGate({ page, operationId, assertContinue } = {}) {
+    if (!page) throw new TypeError('page is required');
+    const first = await detectHumanVerification(page);
+    if (!first.present) return { challenged: false, cleared: true, waitedMs: 0 };
+    const startedAt = now();
+    await notify({ operationId: operationId || null, waitMs: wait, signals: first.signals });
+    if (wait === 0) return { challenged: true, cleared: false, waitedMs: 0, reason: 'HUMAN_VERIFICATION_WAIT_DISABLED' };
+    const deadline = startedAt + wait;
+    let clearedSince = null;
+    while (now() < deadline) {
+      await sleep(interval);
+      if (typeof assertContinue === 'function') await assertContinue();
+      const probe = await detectHumanVerification(page);
+      if (probe.present) { clearedSince = null; continue; }
+      // Require the challenge to stay gone briefly: hCaptcha re-renders between steps.
+      if (clearedSince == null) clearedSince = now();
+      if (now() - clearedSince >= clearedStableMs) {
+        return { challenged: true, cleared: true, waitedMs: now() - startedAt };
+      }
+    }
+    return { challenged: true, cleared: false, waitedMs: now() - startedAt, reason: 'HUMAN_VERIFICATION_TIMEOUT' };
+  };
+}

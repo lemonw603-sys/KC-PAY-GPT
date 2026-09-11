@@ -119,6 +119,9 @@ export function loadProductionLivePoolConfig(env = process.env) {
     executionTimeoutMs: integer(env, 'BROWSER_EXECUTION_TIMEOUT_MS', { min: 1_000, max: 300_000, fallback: 120_000 }),
     verificationWindowMs: integer(env, 'BROWSER_PAYMENT_VERIFICATION_WINDOW_MS', { min: 30_000, max: 3_600_000, fallback: 300_000 }),
     verificationIntervalMs: integer(env, 'BROWSER_PAYMENT_VERIFICATION_INTERVAL_MS', { min: 1_000, max: 60_000, fallback: 5_000 }),
+    // D-154: seconds a clicked checkout is held while a PERSON satisfies a human
+    // verification challenge. 0 (default) only detects and reports it.
+    humanVerificationWaitMs: integer(env, 'BROWSER_HUMAN_VERIFICATION_WAIT_MS', { min: 0, max: 900_000, fallback: 0 }),
   });
 }
 
@@ -237,6 +240,7 @@ export async function createLaneWorker({ lane, config, pool, browserType, shared
     transactionReaderFactory, runtimeHmacKey: config.runtimeHmacKey, artifactKey: config.artifactKey, resourceHmacKey: config.resourceHmacKey,
     evidenceSink, leaseSeconds: config.leaseSeconds, executionTimeoutMs: config.executionTimeoutMs,
     verificationWindowMs: config.verificationWindowMs, verificationIntervalMs: config.verificationIntervalMs,
+    humanVerificationWaitMs: config.humanVerificationWaitMs,
     postPlusAction: postPlusActionForPlan, stopBeforeSubmit: config.stopBeforeSubmit, releaseSessionOnComplete: true, safeAbortOnFailure: true,
   });
   return Object.freeze({

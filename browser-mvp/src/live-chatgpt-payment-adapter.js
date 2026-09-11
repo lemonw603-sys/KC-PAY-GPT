@@ -59,9 +59,12 @@ async function observeStrictQuoteAfterReprice(page, checkoutContract, timeoutMs,
  * outcome observer, otherwise the result is deliberately UNKNOWN.
  */
 export class LiveChatGPTPaymentAdapter {
-  constructor({ enabled = false, confirmation = '', outcomeObserver = null } = {}) {
+  constructor({ enabled = false, confirmation = '', outcomeObserver = null, challengeGate = null } = {}) {
     this.enabled = enabled === true && confirmation === LIVE_PAYMENT_CONFIRMATION;
     this.outcomeObserver = outcomeObserver;
+    // D-154: optional human-verification gate. It only observes and waits; it
+    // never satisfies the challenge and never issues a second submit click.
+    this.challengeGate = challengeGate;
   }
 
   async submit({
@@ -91,6 +94,11 @@ export class LiveChatGPTPaymentAdapter {
     }
     let submitted = false;
     let holdForReconcile = false;
+    // D-154: set only when a human-verification challenge raised by our single
+    // submit click is still unanswered when we let go. The filled form is then
+    // left for the PERSON who has to satisfy that challenge; clearing it would
+    // strand them with an empty card form and no way to finish the purchase.
+    let holdForHumanVerification = false;
     let stage = 'validate-card-material';
     try {
       assertCardMaterial(cardMaterial);
@@ -155,8 +163,23 @@ export class LiveChatGPTPaymentAdapter {
         if (typeof this.outcomeObserver !== 'function') {
           throw new LiveChatGPTPaymentAdapterError('payment outcome observer is required after submit', 'PAYMENT_RESULT_UNKNOWN');
         }
+        let challenge = null;
+        if (typeof this.challengeGate === 'function') {
+          stage = 'human-verification-gate';
+          challenge = await this.challengeGate({ page, operationId: op, assertContinue });
+          if (challenge?.challenged && !challenge.cleared) {
+            holdForHumanVerification = true;
+            // The click already happened, so this stays an UNKNOWN result: the
+            // page may still settle after we let go. The reason is recorded so
+            // the run says "a person had to verify" instead of nothing at all.
+            throw new LiveChatGPTPaymentAdapterError(
+              `payment is waiting on human verification (${challenge.reason || 'HUMAN_VERIFICATION_REQUIRED'})`,
+              'PAYMENT_RESULT_UNKNOWN',
+            );
+          }
+        }
         stage = 'observe-payment-outcome';
-        const outcome = await this.outcomeObserver({ page, operationId: op });
+        const outcome = await this.outcomeObserver({ page, operationId: op, challenge });
         if (outcome?.status !== 'CONFIRMED') {
           throw new LiveChatGPTPaymentAdapterError('payment outcome was not confirmed', 'PAYMENT_RESULT_UNKNOWN');
         }
@@ -177,7 +200,10 @@ export class LiveChatGPTPaymentAdapter {
         // resident in a reusable page and poison any retry that reuses the same
         // checkout, which then fails the "secure field is not empty" guard
         // forever. Cleanup is best effort; after submit the page may have moved.
-        if (submitted || !holdForReconcile) {
+        // The one exception is holdForHumanVerification (D-154): the challenge is
+        // still on screen and only a person can clear it, so the form stays. The
+        // next order navigates to its own checkout, so nothing is reused.
+        if ((submitted || !holdForReconcile) && !holdForHumanVerification) {
           for (const field of Object.values(fields)) {
             try { await field.fill(''); } catch {
               await field.evaluate((element) => { element.value = ''; element.dispatchEvent(new Event('input', { bubbles: true })); }).catch(() => undefined);

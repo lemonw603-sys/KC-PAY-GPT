@@ -2329,3 +2329,9 @@ Lemon 在 Pilot 窗口截图：结账页 `chatgpt.com/checkout/openai_llc/cs_liv
 - 顺带证实：菲律宾出口生效（PHP 计价），免税地址生效（税 ₱0.00），卡字段在运行结束时按设计已清空。
 - **这是本项目"全自动"的真正硬边界，不是代码 bug。** 大脑不实施任何绕过或自动完成人机验证的方案（这条不因要求重复而改变）。可做的替代见下一节决策。
 
+## 2026-09-11 08:24 UTC｜订单收口 + 半自动接力实现
+
+- `PJV1-9TN0gGX-I5rRdhXxLrq7` 已收口：新增 `v1/scripts/resolve-unknown-payment.mjs`（复用后台同一个 `browser-admin-service.controlRun`，非手写 SQL，带 --dry-run），先 dry-run 后执行 NOT_CHARGED。独立核实：订单 CLOSED / `HUMAN_VERIFIED_NOT_CHARGED`、卡 9839 回 AVAILABLE $50、派工与卡分配残留 0、非终态订单 0。
+- **F-48（新）**：NOT_CHARGED 收口调用了 `returnCdkForOrderInTransaction`，但该函数只要存在 `PAYMENT_SUBMIT` 记录就返回 `PAYMENT_EVIDENCE` 不退 CDK，且调用方丢弃了返回值——本单 CDK 仍 REDEEMED。对真实客户意味着"卡密已用、服务没给、也没自动退回"。归入真单后集中整治，或按 Lemon 要求提前处理。
+- 半自动接力已实现并全绿（D-155）。真单前需 `BROWSER_HUMAN_VERIFICATION_WAIT_MS` 生效（pool 脚本已默认 300000）。
+

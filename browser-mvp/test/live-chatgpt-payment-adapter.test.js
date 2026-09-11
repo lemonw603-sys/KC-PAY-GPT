@@ -114,3 +114,53 @@ test('LIVE adapter exposes only the strict quote to the final authoritative rech
     assert.equal(await page.evaluate(() => window.clicked || 0), 1);
   } finally { await browser.close(); }
 });
+
+test('D-154: an unanswered human verification keeps the filled form for the person and clicks nothing', async () => {
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage();
+    await page.setContent(html());
+    let gateCalls = 0;
+    const adapter = new LiveChatGPTPaymentAdapter({
+      enabled: true,
+      confirmation: LIVE_PAYMENT_CONFIRMATION,
+      challengeGate: async () => { gateCalls += 1; return { challenged: true, cleared: false, reason: 'HUMAN_VERIFICATION_TIMEOUT' }; },
+      outcomeObserver: async () => { throw new Error('outcome observer must not run while verification is pending'); },
+    });
+    await assert.rejects(
+      () => adapter.submit({
+        page, checkout, checkoutContract, cardMaterial: card, billingEmail: 'fixture@example.test',
+        operationId: 'op-hv-1', authorizeSubmit: async () => ({ executeExternal: true }), beforeSubmit: async () => undefined,
+      }),
+      (e) => e.code === 'PAYMENT_RESULT_UNKNOWN' && /human verification/i.test(e.message),
+    );
+    assert.equal(gateCalls, 1);
+    assert.equal(await page.evaluate(() => window.clicked || 0), 1, 'exactly one submit click');
+    assert.equal(await page.locator('input[autocomplete="cc-number"]').inputValue(), card.pan, 'card form is preserved for the operator');
+  } finally { await browser.close(); }
+});
+
+test('D-154: a verification cleared by a person lets the run continue and still clears the card fields', async () => {
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage();
+    await page.setContent(html());
+    const adapter = new LiveChatGPTPaymentAdapter({
+      enabled: true,
+      confirmation: LIVE_PAYMENT_CONFIRMATION,
+      challengeGate: async () => ({ challenged: true, cleared: true, waitedMs: 4_000 }),
+      outcomeObserver: async ({ challenge }) => {
+        assert.equal(challenge.cleared, true);
+        return { status: 'CONFIRMED' };
+      },
+    });
+    const result = await adapter.submit({
+      page, checkout, checkoutContract, cardMaterial: card, billingEmail: 'fixture@example.test',
+      operationId: 'op-hv-2', authorizeSubmit: async () => ({ executeExternal: true }), beforeSubmit: async () => undefined,
+    });
+    assert.equal(result.status, 'CONFIRMED');
+    assert.equal(await page.evaluate(() => window.clicked || 0), 1, 'still exactly one submit click');
+    assert.equal(await page.locator('input[autocomplete="cc-number"]').inputValue(), '');
+  } finally { await browser.close(); }
+});
+

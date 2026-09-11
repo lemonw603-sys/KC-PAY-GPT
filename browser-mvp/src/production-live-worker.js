@@ -314,6 +314,7 @@ export async function runProductionLiveBrowserWorker({ env = process.env, browse
       leaseSeconds: config.leaseSeconds, executionTimeoutMs: config.executionTimeoutMs,
       verificationWindowMs: config.verificationWindowMs,
       verificationIntervalMs: config.verificationIntervalMs,
+      humanVerificationWaitMs: config.humanVerificationWaitMs,
       postPlusAction: config.postPlusAction,
       stopBeforeSubmit: config.stopBeforeSubmit,
     });
