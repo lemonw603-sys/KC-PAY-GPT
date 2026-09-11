@@ -4,7 +4,7 @@
 
 | 项目 | 当前值 | 核对时间（UTC） | 证据方式 |
 |---|---|---|---|
-| 生产 release | `/opt/pojia/releases/20260911-card-bin-c65727f`（commit `c65727f`；D-168 卡段标注 + 迁移 052_cards_bin）。回滚 `20260911-drop-preflight-24bcbde` | 2026-09-11 13:30 UTC | `deploy-release.sh prepare`（981 文件 manifest OK、备份 OK）→ `switch`；服务器本机独立 curl：served admin.js 含 RESOLVE_UNKNOWN_PAYMENT×8 / 确认核实结果×3 / 严格布尔发送×1，service 文件含 strictBoolean 与 MANUAL_VERIFICATION_RESOLVED 证据检查，控制路由未登录 401，live/ready 200，web 无错误日志 |
+| 生产 release | `/opt/pojia/releases/20260911-sync-throttle-4350210`（commit `4350210`；D-169 卡台请求降频 + 开卡不默认坏卡段）。回滚 `20260911-segment-hint-269ba10` | 2026-09-11 14:21 UTC | `deploy-release.sh prepare`（981 文件 manifest OK、备份 OK）→ `switch`；服务器本机独立 curl：served admin.js 含 RESOLVE_UNKNOWN_PAYMENT×8 / 确认核实结果×3 / 严格布尔发送×1，service 文件含 strictBoolean 与 MANUAL_VERIFICATION_RESOLVED 证据检查，控制路由未登录 401，live/ready 200，web 无错误日志 |
 | 回滚点 | `/opt/pojia/releases/20260911-highvcc-snapshot-sync-275f6e7`（再前 `20260910-highvcc-ui-feedback-cdcf42e`；本版无迁移，直接切回即可；timer 单元不随 release 变化） | 2026-09-11 04:42 UTC | switch 输出 ROLLBACK 命令 |
 | 最新数据库备份 | `/var/backups/pojia/pojia-20260911T044030Z.sql.gz.enc`，完整性 OK（release prepare 阶段） | 2026-09-11 04:42 UTC | deploy-release prepare 输出 |
 | pojia-web | active（2026-09-11 04:42 UTC 随 release 切换重启） | 2026-09-11 04:42 UTC | switch 输出 + 服务器本机 curl live/ready 200 |
@@ -12,7 +12,7 @@
 | highvcc 备用卡台 A 已开卡片（本窗口） | 3 张：尾号 9839（$50，08:xx）、9354（$5，09:19）、3241（$3，09:35，开卡时因 detail() 竞态未即时入库，09:53 用 `reconcile-highvcc-card.mjs` 补记）；账户另有 $20 押金要从钱包余额里先扣，才是真实可开卡余额（Lemon 提供） | 2026-09-10 09:52 UTC | 平台卡片列表 + `cards` 表独立核对 |
 | pojia-worker（v1 任务 Worker） | active（处理 ASSIGN_CARD/PREPARE/SUBMIT_RECHARGE/POLL 等；Browser 路线的 BROWSER_PREFLIGHT 与付款由本机 worker 跑） | 2026-09-09 11:46 UTC | systemctl |
 | pojia-browser-worker | inactive / disabled（Browser 执行在本机，来单人工拉） | 2026-09-09 11:46 UTC | systemctl |
-| pojia-card-funding.timer | active | 2026-09-09 11:46 UTC | systemctl |
+| pojia-card-funding.timer | `pojia-highvcc-snapshot-sync.timer` 已改为每 1 小时（D-169），无变化时只发 1 次列表请求、不发逐卡详情 | 2026-09-11 14:21 UTC | systemctl |
 | pojia-card-read-sync.timer | active | 2026-09-09 11:46 UTC | systemctl |
 | pojia-highvcc-snapshot-sync.timer | active / enabled，每 10 分钟 oneshot 跑 `v1/scripts/sync-highvcc-snapshot.mjs --commit`（pojia 用户，runtime.env）；首次手动 run exit 0，批次 `23584a48`（9 更新，因表格与本机 02:53 那次的字节不同：固定 mtime 是之后才加的）；**03:49:13 UTC 定时触发已核实：数据未变 → `replay:true`、沿用批次 `23584a48`、批次表无新增、exit 0** | 2026-09-11 03:40 UTC | ssh：`systemctl is-active/is-enabled`、`journalctl -u`、`list-timers`；隧道新连接查 manual_card_import_batches |
 | pojia-card-stock-runner.timer | inactive / disabled（旧每分钟自动开卡架构已废弃） | 2026-09-09 11:46 UTC | systemctl |
