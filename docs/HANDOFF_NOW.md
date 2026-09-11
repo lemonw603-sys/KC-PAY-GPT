@@ -11,14 +11,14 @@
 
 ## 现在状态（已验证，UTC）
 
-- 付款开关 false（09-10 22:47 关）；本机无 worker；release **`20260911-highvcc-snapshot-sync-275f6e7`**（2026-09-11 03:40 UTC 切换，live/ready 200，回滚点 cdcf42e）。
+- 付款开关 false（09-10 22:47 关）；本机无 worker；release **`20260911-resolve-unknown-ui-3d4936d`**（2026-09-11 03:40 UTC 切换，live/ready 200，回滚点 cdcf42e）。
 - 订单 `PJV1-DqcnqHF0tPlxDhygTtAA` **已于 2026-09-11 02:38 UTC 人工履约收口 → RECHARGE_SUCCESS**（Lemon 系统外手工充值），7402 已释放并按卡台刷成 $1.08。待 Lemon 点「已在账号里取消续费」。可分配卡 0；`state-check.sh` 在 0 张时误报 1 张（GROUP_CONCAT 空集返回 NULL 被 awk 数成一项），脚本未修。
 - **F-42 已由大脑独立核对代码为真**：`BROWSER_SESSION_PROVIDER=EXTENSION` 未接预检，昨天第 5 次"扩展对照"实际仍走 cookie。上号器路径在自动化里从未真正跑过；交接文档相应结论作废。
 - **备用卡台快照自动同步已落地并首跑（2026-09-11 02:55 UTC）**：`v1/src/services/highvcc-snapshot-sync-service.js` + `v1/scripts/sync-highvcc-snapshot.mjs`（默认 preview 只读，`--commit` 才写；走 manual-card-import 正式路径；本机跑法=照 `run-live-pool.sh` 拉生产 runtime.env 走隧道）。首跑批次 `211a4ad6`：9839/9354 入库，7402 刷成 $1.08，9 张与卡台一致。可分配卡现为 9839（$50）。**timer 已装并启用（`pojia-highvcc-snapshot-sync.timer`，每 10 分钟；2026-09-11 03:40 UTC）**，首跑批次 `23584a48`；03:49 UTC 定时触发已核实数据未变即重放不写（批次表仍 2 条）；`browser-mvp/scripts/highvcc-card.mjs export` 把分当元写余额的 bug 未修（Codex 地界，已记）。资格 SQL 信任 MANUAL_IMPORT 静态余额的根因未改，同步是补偿手段。
 
 ## 下一可执行项
 
-- 大脑：**理解稿已交并经 Lemon 确认**（§7 八条全部成立；重排已写进 PROJECT_MAP §5，D-142～D-145 落账本）。**只剩一项等 Lemon 一字确认：A2 预检改造**。Lemon 09-11 答复：不买住宅出口；常开机器暂无；F-38 改走后台接口；后台体检等真单通后集中做；E1/E2 账号他各注册一个 free 号。**大脑当前动手项：B1**（F-44/45/46 修 + `RESOLVE_UNKNOWN_PAYMENT` 接后台按钮 + 发布）。
+- 大脑：重排已确认并写进 PROJECT_MAP §5。**B1 完成并发布（2026-09-11 04:42 UTC）**：`RESOLVE_UNKNOWN_PAYMENT` 三 bug 修好、接按钮、F-40 清掉，v1 全量首次 0 失败。**只剩 A2 预检改造等 Lemon 一字。** 下一件：B2（F-43 核实 lane 被旧 token 五分钟门槛挡住）→ B3（F-19）→ C 段。
 - Codex：**阶段 1 已验收合并 `2aad60d`**（F-42 修复 + 回归 + 差异维度清单）。阶段 2：E0 已批（离线路径标记）；E1 待 Codex 只读列出 8 身份会话状态后由大脑定 lane、账号待 Lemon；E2 待 E1。批复在 `BRAIN_TO_CODEX.md` 2026-09-11 04:09 UTC 节。
 
 ## 已定不做
@@ -28,7 +28,7 @@
 ## 暂停 / 恢复
 
 ```text
-暂停原因：B1 开发中；A2 等 Lemon 一字；E1 等 Codex 列身份状态与 Lemon 账号（2026-09-11 04:09 UTC）；Codex 阶段 2 E0 进行中、E1 等账号
+暂停原因：B1 已发布；A2 等 Lemon 一字；E1 等 Codex 列身份状态与 Lemon 账号；大脑下一件 B2（2026-09-11 04:42 UTC）（2026-09-11 04:09 UTC）；Codex 阶段 2 E0 进行中、E1 等账号
 允许继续：只读核对；Codex 地界内代码与测试；rehearsal 模式
 禁止操作：未经 Lemon 当次确认不 go-live --arm、不消耗真实账号；快照同步可随时跑（Lemon 09-11 授权自动化），仍先 preview 再 --commit
 恢复第一步：读本文 → 读 BRAIN_UNDERSTANDING §5 看 Lemon 确认了哪些 → 读 CODEX_PROGRESS.md 看有无 [需要大脑]

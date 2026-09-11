@@ -66,3 +66,19 @@
 | F-44 | 接受离线类型转换事实，修改待批准 | false 与字符串 false 的 SQL 目标不同；未发生产动作。 |
 | F-45 | 接受缺产品校验事实；Pro DB 复现待验证 | 不把 SQL 意图测试说成真实 Pro 误交付；限定 Plus 还是补产品分支由后续方案明确。 |
 | F-46 | 接受字段不同步的代码事实，UI 待验证 | 自动取消也有同类投影问题，修复应统一口径；本轮不改。 |
+
+## B1 处置｜2026-09-11 04:42 UTC｜执行者：大脑窗口（Fable 5.1）｜release `20260911-resolve-unknown-ui-3d4936d`（commit `3d4936d`）
+
+Lemon 09-11 确认执行顺序重排后 B 段第一件。审查记录批次 2B 的三条由 Sonnet 窗口发现，处置由大脑独立重做（不沿用其自审自处置）。
+
+| 编号 | 处置 | 关联 |
+|---|---|---|
+| F-44 字符串 `"false"` 被当 true | 已修：`strictBoolean`，非布尔一律 `INVALID_RENEWAL_CANCELLED`，缺省 false；前端 select 转真布尔再发 | 单测 7 种非法值拒绝且零查库；真库用例"字符串 false 零写入" |
+| F-45 CHARGED 不按产品核对 | 已修：`lockRun` 带 `plan_type`；Pro 单 CHARGED → run HUMAN_REQUIRED / TRANSFERRED / PLUS_CONFIRMED，订单保持（或从 SUBMIT_UNKNOWN 回到）RECHARGE_PROCESSING，intervention TRANSFERRED，写 `BROWSER_UPGRADE_HANDOFF` 告警，renewalCancelled 忽略；`COMPLETE_20X` 的人工证据检查加认 `MANUAL_VERIFICATION_RESOLVED` | 真库用例：Pro 交接后 COMPLETE_20X 接续到 RECHARGE_SUCCESS；Pro 自 SUBMIT_UNKNOWN |
+| F-46 取消字段不同步 | 已修：Plus 单 CHARGED+renewalCancelled 写 `orders.subscription_cancelled=1 / cancellation_checked_at`（COALESCE 不覆盖旧值）与 `browser_runs.cancellation_confirmed_at / post_payment_state=CANCELLATION_CONFIRMED` | 真库用例断言 |
+| F-16 UI 未接 | 已修：「确认核实结果」按钮 + askForm 三字段（结果 / 续费是否已关 / 证据） | served admin.js v=45 复验 |
+| F-40 版本号断言 | 已修：public-isolation 与 app.test 对齐 v=26 / v=45；app.test 三元断言对齐 `3b182f0` 的 `supplyMixed` 写法。**v1 全量 656 项 595 通过 0 失败 61 跳过，首次全绿** | |
+| 顺带（非编号） | CHARGED/NOT_CHARGED 两分支补关 `browser_dispatch_jobs` / `execution_resource_leases` / `checkout_artifacts`，与 CONFIRM_MANUAL_PAYMENT 一致（09-09 清过的残留同类） | 真库用例断言 dispatch COMPLETED |
+
+未做：F-43（B2）、F-19（B3）、F-41。生产上该动作尚未被真实点击。
+
