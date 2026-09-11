@@ -410,3 +410,12 @@ Lemon 要求整理清楚、不许再犯。以下按发生顺序列出**全部**�
 
 **没做的与理由**：不拆 `DECISIONS.md`（D-142～D-173 线性增长但可检索，拆分只带来搬运成本）；不加自动化定时巡检（现在单量低，人工触发足够，定时任务本身也要维护）。
 
+## D-174（2026-09-11 14:57 UTC）常驻无人值守：监督层已就绪，LaunchAgent 待 Lemon 确认后安装
+
+- **为什么加一层监督脚本而不是让 launchd 直接跑 worker**：worker 对启动条件是严格断言——付款开关不是 true、隧道不通、比特浏览器没开，一律直接退出。`KeepAlive` 会把这些正常的"条件还没齐"变成秒级崩溃循环。`browser-mvp/scripts/live-pool-supervisor.sh` 先等条件齐再把 worker 拉到前台，worker 退出就回到等待。
+- **付款开关仍是人的总闸**：监督脚本**只读**它，不会自己打开。关掉即只等不跑。
+- **实测发现并修掉的 bug**：`ready-check.sh` 把付款开关归为 `[信息]` 而非阻断项，监督脚本若只看它的严重级别就会误判"条件已齐"，每 15 秒拉起一次 worker 又被 worker 拒掉（实测复现）。已改为自己单独查开关。修后实测：开关 false 时只打一行日志安静等待，无 worker 进程、无残留、未改动任何开关。
+- **worker 自身的资金闸门经此验证有效**：开关为 false 时它拒绝以 PAY 模式启动，报 `browser_payment_writes_enabled must be true`。
+- **LaunchAgent 模板**：`deploy/local/com.pojia.browser-pool.plist`（与既有 `com.pojia.mihomo-ph`、`com.pojia.ssh-tunnel-13306` 同一套做法）。**尚未安装**——安装 LaunchAgent 属于改本机配置，须 Lemon 确认。
+- **安装后仍需 Lemon 自己决定的两件**：① 把付款开关置 true 并保持（无人值守下允许真实扣款，他已原则同意，但需当次确认执行）；② Mac 不能休眠，且比特浏览器要保持开着——否则条件不齐，监督脚本只会安静等待，客户的单不会被处理。
+

@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- 常驻 Browser 充值池（D-167 第 2 项）。与既有的 com.pojia.mihomo-ph / com.pojia.ssh-tunnel-13306 同一套做法。
+     安装：cp 到 ~/Library/LaunchAgents/ 后 launchctl load -w；停用：launchctl unload -w。
+     注意：它会在开机后自动开始接单，付款开关为 true 时即可真实扣款。关掉付款开关即可让它只等不跑。 -->
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.pojia.browser-pool</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>/Users/lemon/code/AI充值业务/browser-mvp/scripts/live-pool-supervisor.sh</string>
+  </array>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>ThrottleInterval</key><integer>30</integer>
+  <key>StandardOutPath</key><string>/Users/lemon/Library/Application Support/pojia-browser-live/supervisor.log</string>
+  <key>StandardErrorPath</key><string>/Users/lemon/Library/Application Support/pojia-browser-live/supervisor.log</string>
+</dict>
+</plist>
