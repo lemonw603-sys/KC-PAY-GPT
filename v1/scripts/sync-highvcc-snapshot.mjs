@@ -17,7 +17,9 @@ for (const name of ['DATABASE_URL', 'SESSION_ENCRYPTION_KEY_BASE64', 'CARD_INTAK
   if (!process.env[name]) { console.error(`${name} is required`); process.exit(2); }
 }
 
-const summarize = (p) => ({
+// D-169: a run that found nothing changed did no work at all — say so plainly instead
+// of printing a shape full of zeros and empty arrays that reads like a failure.
+const summarize = (p) => (p.skipped ? { skipped: true, reason: p.reason, cardCount: p.cardCount } : {
   sourceName: p.sourceName, filename: p.filename, rowCount: p.rowCount,
   insertCount: p.insertCount, updateCount: p.updateCount, unavailableCount: p.unavailableCount,
   missingCount: p.missingCount, activeRiskCount: p.activeRiskCount,
