@@ -1057,11 +1057,28 @@ async function loadHighvccStatus() {
     try {
       const { ranges } = await api('/api/v1/admin/backup-cards/highvcc/ranges');
       if (ranges?.length) {
-        elements.highvccVidSelect.innerHTML = ranges.map((r) => `<option value="${escapeHtml(r.vid)}">${escapeHtml(r.name || r.vid)}${r.vid === '708' ? '（默认）' : ''}</option>`).join('');
+        elements.highvccVidSelect.innerHTML = ranges.map((r) => `<option value="${escapeHtml(r.vid)}">${escapeHtml(r.name || r.vid)}${segmentVerdictLabel(r)}${r.vid === '708' ? '（默认）' : ''}</option>`).join('');
         elements.highvccVidSelect.value = '708';
         elements.highvccVidSelect.dataset.loaded = '1';
       }
     } catch { /* keep the single default option; segment picking is a convenience, not required */ }
+  }
+}
+
+// D-162: what this operator's own orders did on cards of this segment. Counts come from
+// real payment attempts, so a segment nobody has paid with says nothing at all, and a
+// segment with one or two attempts is marked "样本少" rather than condemned.
+function segmentVerdictLabel(range) {
+  const attempts = Number(range?.attempts) || 0;
+  if (!attempts) return '';
+  const ok = Number(range?.paidOk) || 0;
+  const failed = Number(range?.paidFailed) || 0;
+  switch (range?.verdict) {
+    case 'HIGH_DECLINE': return `（高拒付 ${failed}/${attempts}）`;
+    case 'MIXED': return `（拒付 ${failed}/${attempts}）`;
+    case 'GOOD': return `（成功 ${ok}/${attempts}）`;
+    case 'INSUFFICIENT': return `（样本少 ${ok}成/${failed}拒）`;
+    default: return '';
   }
 }
 

@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import { unzipSync, strFromU8 } from 'fflate';
 import { encryptSecret } from '../security/secret-box.js';
 import { PublicApiError } from '../domain/public-api-error.js';
+import { cardBin } from '../domain/card-bin.js';
 
 export const REQUIRED_HEADERS = ['卡序列号','累计充值','累计消费','余额','卡号','CVC','有效期','开卡状态','开卡时间','FirstName','LastName','州','城市','街道','邮编','标签','分组名称'];
 const STRUCTURAL_ERRORS = new Set(['MISSING_SEQUENCE','INVALID_CARD_NUMBER','INVALID_CVC','INVALID_EXPIRY','INVALID_BALANCE','BALANCE_MISMATCH','DUPLICATE_SEQUENCE']);
@@ -201,20 +202,21 @@ export function createManualCardImportService({ pool, encryptionKey, panHmacKey 
             inventory_status=IF(${activeRiskSql('cards')}, inventory_status, ?), intake_status='ACCEPTED',
             sync_tier='MANUAL_IMPORT', source_present=1, source_operational_status=?,
             last_manual_snapshot_batch_id=?, card_credentials_ciphertext=?, card_number_ciphertext=?,
-            pan_hmac=?, pan_hmac_version=1, last_synced_at=CURRENT_TIMESTAMP(3), updated_at=CURRENT_TIMESTAMP(3)
+            pan_hmac=?, pan_hmac_version=1, card_bin=?,
+            last_synced_at=CURRENT_TIMESTAMP(3), updated_at=CURRENT_TIMESTAMP(3)
             WHERE id=?`, [item.pan.slice(-4), isAvailableByFacts ? 'active' : 'unavailable', item.balance,
             isAvailableByFacts ? 'AVAILABLE' : 'HELD_FOR_REVIEW', operationalStatus, batchId, encrypted,
-            encryptSecret(item.pan, encryptionKey), hmac(item.pan, panHmacKey), existing.id]);
+            encryptSecret(item.pan, encryptionKey), hmac(item.pan, panHmacKey), cardBin(item.pan), existing.id]);
           updated += 1;
         } else {
           await connection.query(`INSERT INTO cards
-            (id, order_id, inventory_status, provider_card_id, card_type_id, last4, status,
+            (id, order_id, inventory_status, provider_card_id, card_type_id, last4, card_bin, status,
              funded_amount, current_balance, currency, refund_status, card_credentials_ciphertext,
              card_number_ciphertext, pan_hmac, pan_hmac_version, provider_account_id, external_card_id,
              intake_status, sync_tier, source_present, source_operational_status,
              last_manual_snapshot_batch_id, last_synced_at)
-            VALUES (UUID(),NULL,?,?,?,?,?,?,?,'USD','MONITORING',?,?,?,?,?,?,'ACCEPTED','MANUAL_IMPORT',1,?,?,CURRENT_TIMESTAMP(3))`,
-          [isAvailableByFacts ? 'AVAILABLE' : 'HELD_FOR_REVIEW', sequence, 'MANUAL_BACKUP', item.pan.slice(-4),
+            VALUES (UUID(),NULL,?,?,?,?,?,?,?,?,'USD','MONITORING',?,?,?,?,?,?,'ACCEPTED','MANUAL_IMPORT',1,?,?,CURRENT_TIMESTAMP(3))`,
+          [isAvailableByFacts ? 'AVAILABLE' : 'HELD_FOR_REVIEW', sequence, 'MANUAL_BACKUP', item.pan.slice(-4), cardBin(item.pan),
             isAvailableByFacts ? 'active' : 'unavailable', item.balance, item.balance, encrypted,
             encryptSecret(item.pan, encryptionKey), hmac(item.pan, panHmacKey), 1, state.source.id, sequence,
             operationalStatus, batchId]);

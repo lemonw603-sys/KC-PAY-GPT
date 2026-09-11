@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import { encryptSecret, decryptSecret } from '../security/secret-box.js';
+import { cardBin, binMatchesSegment } from '../domain/card-bin.js';
 import { PublicApiError } from '../domain/public-api-error.js';
 import { createHighvccCardProvider, HighvccProviderError } from '../providers/highvcc-card.js';
 // Reused as-is rather than re-implemented: the deterministic per-state row picker and the
@@ -111,13 +112,61 @@ export function createHighvccCardService({
 
   const provider = createHighvccCardProvider({ getAccessToken, fetchImpl, sleep });
 
+  /**
+   * D-162: each segment carries this operator's OWN payment history for cards of
+   * that BIN, so a segment that keeps getting declined is visible at the moment of
+   * choosing one. Counts come from real orders, never from the card platform.
+   * A segment with too few attempts is labelled as such rather than accused: one
+   * decline must not condemn a segment.
+   */
+  const MIN_ATTEMPTS_FOR_VERDICT = 3;
+
+  async function segmentPaymentHistory() {
+    if (!pool?.query) return new Map();
+    const [rows] = await pool.query(
+      `SELECT c.card_bin AS bin,
+              SUM(r.plus_activated_at IS NOT NULL) AS ok,
+              SUM(r.payment_state IN ('PAYMENT_DECLINED','PAYMENT_UNKNOWN')
+                  AND r.plus_activated_at IS NULL) AS bad
+         FROM browser_runs r
+         INNER JOIN recharge_attempts ra ON ra.id = r.recharge_attempt_id
+         INNER JOIN card_assignment_history h ON h.order_id = ra.order_id
+         INNER JOIN cards c ON c.id = h.card_id
+        WHERE c.card_bin IS NOT NULL
+          AND EXISTS (SELECT 1 FROM browser_operations bo
+                       WHERE bo.browser_run_id = r.id AND bo.operation_type = 'PAYMENT_SUBMIT')
+        GROUP BY c.card_bin`
+    );
+    return new Map(rows.map((row) => [String(row.bin), {
+      ok: Number(row.ok) || 0, bad: Number(row.bad) || 0,
+    }]));
+  }
+
   async function listRanges() {
+    let rows;
     try {
-      const rows = await provider.ranges();
-      return { ranges: rows.map((r) => ({ vid: r.vid, name: r.name })) };
+      rows = await provider.ranges();
     } catch (error) {
       throw mapProviderError(error);
     }
+    // A statistics failure must never stop the operator from opening a card.
+    const history = await segmentPaymentHistory().catch(() => new Map());
+    return {
+      ranges: rows.map((r) => {
+        let ok = 0; let bad = 0;
+        for (const [bin, stat] of history) {
+          if (binMatchesSegment(bin, r.name)) { ok += stat.ok; bad += stat.bad; }
+        }
+        const attempts = ok + bad;
+        let verdict = null;
+        if (attempts === 0) verdict = null;
+        else if (attempts < MIN_ATTEMPTS_FOR_VERDICT) verdict = 'INSUFFICIENT';
+        else if (bad === 0) verdict = 'GOOD';
+        else if (ok === 0) verdict = 'HIGH_DECLINE';
+        else verdict = 'MIXED';
+        return { vid: r.vid, name: r.name, paidOk: ok, paidFailed: bad, attempts, verdict };
+      }),
+    };
   }
 
   async function walletStatus() {
@@ -188,13 +237,13 @@ export function createHighvccCardService({
       }
       await connection.query(
         `INSERT INTO cards
-         (id, order_id, inventory_status, provider_card_id, card_type_id, last4, status,
+         (id, order_id, inventory_status, provider_card_id, card_type_id, last4, card_bin, status,
           funded_amount, current_balance, currency, refund_status, card_credentials_ciphertext,
           card_number_ciphertext, pan_hmac, pan_hmac_version, provider_account_id, external_card_id,
           intake_status, sync_tier, source_present, source_operational_status, last_synced_at)
-         VALUES (?,NULL,'AVAILABLE',?,?,?, 'active', ?,?,'USD','MONITORING',?,?,?,1,?,?,
+         VALUES (?,NULL,'AVAILABLE',?,?,?,?, 'active', ?,?,'USD','MONITORING',?,?,?,1,?,?,
                  'ACCEPTED','MANUAL_IMPORT',1,'ACTIVE',CURRENT_TIMESTAMP(3))`,
-        [cardUuid, opened.cardId, 'MANUAL_BACKUP', pan.slice(-4), balanceDollars, balanceDollars,
+        [cardUuid, opened.cardId, 'MANUAL_BACKUP', pan.slice(-4), cardBin(pan), balanceDollars, balanceDollars,
           encryptedCredentials, encryptedPan, hmac, BACKUP_A_PROVIDER_ACCOUNT_ID, opened.cardId]
       );
       await connection.commit();

@@ -163,12 +163,13 @@ test('openCard: full flow inserts one card row with cents converted to dollars a
   assert.equal(params[1], 'HGabc123'); // provider_card_id
   assert.equal(params[2], 'MANUAL_BACKUP'); // card_type_id — same inventory pool as spreadsheet-imported backup-A cards
   assert.equal(params[3], '1111'); // last4
-  assert.equal(params[4], 50); // funded_amount, dollars not cents
-  assert.equal(params[5], 50); // current_balance, dollars not cents
-  assert.equal(Buffer.isBuffer(params[6]), true); // card_credentials_ciphertext
-  assert.equal(Buffer.isBuffer(params[7]), true); // card_number_ciphertext
-  assert.equal(params[9], BACKUP_A_PROVIDER_ACCOUNT_ID);
-  assert.equal(params[10], 'HGabc123'); // external_card_id
+  assert.equal(params[4], '41111111'); // card_bin — D-162, lets declines be attributed to a segment
+  assert.equal(params[5], 50); // funded_amount, dollars not cents
+  assert.equal(params[6], 50); // current_balance, dollars not cents
+  assert.equal(Buffer.isBuffer(params[7]), true); // card_credentials_ciphertext
+  assert.equal(Buffer.isBuffer(params[8]), true); // card_number_ciphertext
+  assert.equal(params[10], BACKUP_A_PROVIDER_ACCOUNT_ID);
+  assert.equal(params[11], 'HGabc123'); // external_card_id
   // never a plaintext PAN/CVC anywhere in the returned result
   assert.equal(JSON.stringify(result).includes('4111111111111111'), false);
   assert.equal(JSON.stringify(result).includes('123'), true); // "123" also matches other digits; explicit CVC field check instead
@@ -270,7 +271,47 @@ test('listRanges: returns the segment picker list', async () => {
   });
   const service = createHighvccCardService({ pool, encryptionKey, panHmacKey, fetchImpl });
   await service.setToken({ token: 'a'.repeat(32) });
-  assert.deepEqual(await service.listRanges(), { ranges: [{ vid: '708', name: '513989' }, { vid: '713', name: '543156' }] });
+  // D-162: a segment nobody has paid with carries no verdict at all.
+  assert.deepEqual(await service.listRanges(), {
+    ranges: [
+      { vid: '708', name: '513989', paidOk: 0, paidFailed: 0, attempts: 0, verdict: null },
+      { vid: '713', name: '543156', paidOk: 0, paidFailed: 0, attempts: 0, verdict: null },
+    ],
+  });
+});
+
+test('listRanges: a segment that keeps getting declined is labelled, one that has barely been tried is not', async () => {
+  const pool = fakePool();
+  const basePoolQuery = pool.query.bind(pool);
+  pool.query = async (sql, params) => (/card_bin/.test(String(sql))
+    ? [[{ bin: '51398996', ok: 0, bad: 4 }, { bin: '54315601', ok: 0, bad: 1 }]]
+    : basePoolQuery(sql, params));
+  const fetchImpl = fakeFetch({
+    '/api/card/rangeList': () => ({ status: 200, body: { code: 200, data: [{ vid: 708, name: '513989' }, { vid: 713, name: '543156' }] } }),
+  });
+  const service = createHighvccCardService({ pool, encryptionKey, panHmacKey, fetchImpl });
+  await service.setToken({ token: 'a'.repeat(32) });
+  const { ranges } = await service.listRanges();
+  assert.deepEqual(ranges[0], { vid: '708', name: '513989', paidOk: 0, paidFailed: 4, attempts: 4, verdict: 'HIGH_DECLINE' });
+  assert.deepEqual(ranges[1], { vid: '713', name: '543156', paidOk: 0, paidFailed: 1, attempts: 1, verdict: 'INSUFFICIENT' },
+    'one decline must not condemn a segment');
+});
+
+test('listRanges: a statistics failure never blocks opening a card', async () => {
+  const pool = fakePool();
+  const basePoolQuery = pool.query.bind(pool);
+  pool.query = async (sql, params) => {
+    if (/card_bin/.test(String(sql))) throw new Error('stats query exploded');
+    return basePoolQuery(sql, params);
+  };
+  const fetchImpl = fakeFetch({
+    '/api/card/rangeList': () => ({ status: 200, body: { code: 200, data: [{ vid: 708, name: '513989' }] } }),
+  });
+  const service = createHighvccCardService({ pool, encryptionKey, panHmacKey, fetchImpl });
+  await service.setToken({ token: 'a'.repeat(32) });
+  const { ranges } = await service.listRanges();
+  assert.equal(ranges.length, 1);
+  assert.equal(ranges[0].verdict, null);
 });
 
 test('walletStatus: converts cents to a dollar string for display', async () => {
