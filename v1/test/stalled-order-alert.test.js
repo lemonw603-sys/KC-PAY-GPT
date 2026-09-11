@@ -45,3 +45,15 @@ test('an unknown alert type is refused rather than silently pushed', async () =>
     /unknown browser alert type/,
   );
 });
+
+test('D-176: the two intermediate states never reach the phone, everything else does', async () => {
+  const { createAlertNotificationRepository } = await import('../src/db/repositories/alert-notification-repository.js');
+  const queries = [];
+  const pool = { async query(sql, params) { queries.push({ sql, params }); return [{ affectedRows: 0 }]; } };
+  await createAlertNotificationRepository(pool).enqueueOpenAlerts();
+  const insert = queries.find(({ sql }) => /INSERT IGNORE INTO alert_notifications/.test(sql));
+  assert.match(insert.sql, /alert_type NOT IN \(\?, \?\)/);
+  assert.deepEqual(insert.params, ['BROWSER_PAYMENT_UNKNOWN', 'BROWSER_PAYMENT_CONFIRMED'],
+    '一单成功却先收到「付款结果未知」是谎报军情；「付款已确认」与「充值完成」相隔数秒重复');
+});
+

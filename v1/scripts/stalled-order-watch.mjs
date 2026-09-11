@@ -34,13 +34,38 @@ try {
         AND o.status NOT IN ('RECHARGE_SUCCESS','RECHARGE_FAILED','CLOSED','CARD_FAILED')`,
     [minutes]
   );
-  const found = stalled.map((row) => ({ publicNo: row.public_no, waitedMinutes: Number(row.waited) }));
+  // 第二种卡住：点过付款、结果一直没落定，而且连自动核实升级为人工都没发生
+  // （多半是 worker 中途死了）。阈值比核实窗口（5 分钟）长，让正常升级先走完，
+  // 避免同一单既推这条又推「需要人工」。
+  const [stuckRuns] = await connection.query(
+    `SELECT o.id, o.public_no,
+            TIMESTAMPDIFF(MINUTE, r.updated_at, CURRENT_TIMESTAMP(3)) AS waited
+       FROM browser_runs r
+       INNER JOIN recharge_attempts ra ON ra.id = r.recharge_attempt_id
+       INNER JOIN orders o ON o.id = ra.order_id
+      WHERE r.payment_state = 'PAYMENT_UNKNOWN'
+        AND r.status <> 'HUMAN_REQUIRED'
+        AND r.updated_at < CURRENT_TIMESTAMP(3) - INTERVAL ? MINUTE
+        AND o.status NOT IN ('RECHARGE_SUCCESS','RECHARGE_FAILED','CLOSED','CARD_FAILED')`,
+    [minutes + 5]
+  );
+  const found = {
+    queued: stalled.map((row) => ({ publicNo: row.public_no, waitedMinutes: Number(row.waited) })),
+    unresolvedPayment: stuckRuns.map((row) => ({ publicNo: row.public_no, waitedMinutes: Number(row.waited) })),
+  };
   if (!dryRun) {
     for (const row of stalled) {
       await upsertBrowserAlertInTransaction(connection, {
         type: 'BROWSER_ORDER_STALLED', orderId: row.id,
         title: '客户卡住了，没人在处理',
         message: `已排队 ${row.waited} 分钟没有被执行。多半是本机没在跑：Mac 睡了、比特浏览器关了、隧道断了，或者付款开关没开。客户很快会来问。`,
+      });
+    }
+    for (const row of stuckRuns) {
+      await upsertBrowserAlertInTransaction(connection, {
+        type: 'BROWSER_ORDER_STALLED', orderId: row.id,
+        title: '客户卡住了，付款结果一直没落定',
+        message: `已点过一次付款、${row.waited} 分钟没有结果，自动核实也没接上（多半是本机执行器中途停了）。系统不会重付。请看客户账号是不是 Plus、卡有没有被扣，然后在后台点「确认核实结果」。`,
       });
     }
   }

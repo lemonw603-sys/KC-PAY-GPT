@@ -1,10 +1,20 @@
 import { redactSensitiveText } from '../../security/redaction.js';
 
 export function createAlertNotificationRepository(pool) {
+  // D-176：不是每个告警都值得响手机。这两类是链路的中间态，不是要运营做什么：
+  //   BROWSER_PAYMENT_UNKNOWN —— 点了付款还没拿到结果。付款后核实通道经常在一分钟内
+  //     自己确认成功（2026-09-11 唯一一次成功就走的这条路），立刻推等于谎报军情；
+  //     真的卡住会由 BROWSER_HUMAN_REQUIRED 或排队超时告警接手。
+  //   BROWSER_PAYMENT_CONFIRMED —— 与 BROWSER_ORDER_COMPLETED 相隔数秒，重复。
+  // 两者仍写入 operator_alerts，后台面板照常能看到，只是不再占用手机。
+  const PHONE_SILENT_TYPES = ['BROWSER_PAYMENT_UNKNOWN', 'BROWSER_PAYMENT_CONFIRMED'];
+
   async function enqueueOpenAlerts() {
     await pool.query(
       `INSERT IGNORE INTO alert_notifications (alert_id, channel, status, source_updated_at)
-       SELECT id, 'BARK', 'PENDING', updated_at FROM operator_alerts WHERE status = 'OPEN'`
+       SELECT id, 'BARK', 'PENDING', updated_at FROM operator_alerts
+        WHERE status = 'OPEN' AND alert_type NOT IN (?, ?)`,
+      PHONE_SILENT_TYPES
     );
     await pool.query(
       `UPDATE alert_notifications n
