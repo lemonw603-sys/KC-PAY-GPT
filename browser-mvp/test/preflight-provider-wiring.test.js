@@ -79,4 +79,5 @@ test('standalone preflight retains COOKIE default and rejects a malformed inject
   const base={pool:{getConnection(){},query(){}},workerId:'test',executorProfileId:'fixture',encryptionKey:Buffer.alloc(32,7),runtimeAdapter:{open(){},close(){}},observation:{},evidenceSink:{append(){}}};
   assert.doesNotThrow(()=>createBrowserOrderPreflightWorker(base));
   assert.throws(()=>createBrowserOrderPreflightWorker({...base,sessionProvider:{}}),/sessionProvider.open/);
+  assert.throws(()=>createBrowserOrderPreflightWorker({...base,sessionProvider:{open(){},bootstrap(){},close(){}}}),/sessionProvider.clearSession/);
 });

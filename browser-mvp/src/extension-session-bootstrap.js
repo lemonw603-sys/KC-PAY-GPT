@@ -22,16 +22,12 @@ const DEFAULT_EXTENSION_PATH = '/Users/lemon/Library/Application Support/BitBrow
  * (open/bootstrap/clearSession/close return the same shapes) so the executor
  * needs no changes to use either provider.
  *
- * Why this exists: CookieSessionBootstrapAdapter and the extension write the
- * identical cookie via different code paths (context.addCookies vs the
- * extension's own chrome.cookies.set), and the extension additionally wipes
- * the whole chatgpt.com origin (cache/localStorage/indexedDB/service workers)
- * before writing — see extensions/nuohuisheng-session-loader/background
- * equivalent behavior. 2026-09-10/11 investigation found real orders succeed
- * on profiles with real login history and fail on freshly-provisioned ones
- * regardless of which of the two cookie-writing paths was used, so this
- * adapter is a controlled comparison lane, not a presumed fix — see
- * docs/DECISIONS.md D-140 and docs/HANDOFF_LOG.md 2026-09-10/11.
+ * This is a comparison adapter, not a presumed fix. The bundled extension
+ * clears login cookies and closes/reopens ChatGPT tabs; its manifest and code
+ * do not establish localStorage, IndexedDB or service-worker cleanup.
+ * Existing sessions are preserved unless replacement is explicitly requested.
+ * Selecting EXTENSION therefore does not prove the popup ran: inspect the
+ * bootstrap result (viaExtension / existingSessionPreserved) for that attempt.
  */
 export class ExtensionSessionBootstrapAdapter extends SessionProviderPort {
   constructor({ source, extensionPath = DEFAULT_EXTENSION_PATH, clock = () => Date.now(), timeoutMs = 15_000 } = {}) {

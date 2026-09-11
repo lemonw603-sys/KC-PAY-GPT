@@ -34,3 +34,6 @@
 - 接线已修改：pool 将按模式构造的、绑定 order-scoped source 的 provider 传给预检；未动付款许可/卡/订单状态机；独立调用默认 Cookie。
 - 直接注入回归及扩展单测 16/16，通过；完整 pool wiring 用例已写，依赖环境阻塞，**尚未证明 pool EXTENSION 回归通过，因此阶段 1 未验收**。
 - 无真实账号实验；“穷尽”条件远未达到，未判自动化不可行。
+
+## 2026-09-11 更新
+大脑已批准安装 v1/node_modules；已安装完成。完整 pool wiring 定向回归现为 23/23（含 COOKIE/EXTENSION 真实 adapter.open/bootstrap，模拟 UI/DB），见 targeted-after-deps.txt；前面的依赖阻塞记录保留历史。扩展不实清缓存注释选择修正描述，不添加清缓存行为，避免把 F-42 接线修复扩大成新的实验变量。全量结果与验收请求见 CODEX_PROGRESS 末尾。

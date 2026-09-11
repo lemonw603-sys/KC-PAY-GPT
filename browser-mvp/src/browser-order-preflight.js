@@ -412,7 +412,7 @@ export function createBrowserOrderPreflightWorker({
   const effectiveSessionProvider = sessionProvider ?? new CookieSessionBootstrapAdapter({
     source: new BrowserOrderEncryptedSessionSource({ db: pool, encryptionKey }),
   });
-  for (const method of ['open', 'bootstrap', 'close']) {
+  for (const method of ['open', 'bootstrap', 'clearSession', 'close']) {
     if (typeof effectiveSessionProvider[method] !== 'function') {
       throw new TypeError(`preflight sessionProvider.${method} is required`);
     }

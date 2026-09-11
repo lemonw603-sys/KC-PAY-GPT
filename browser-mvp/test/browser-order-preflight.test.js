@@ -180,6 +180,7 @@ test('preflight passes the injected provider into the executor instead of constr
     open: async (ref) => { calls.push(ref); return { leaseId: 'fixture' }; },
     bootstrap: async () => { calls.push('injected-bootstrap'); return {}; },
     close: async () => { calls.push('closed'); },
+    clearSession: async () => {},
   };
   t.mock.method(BrowserOrderPreflightRepository.prototype, 'claim', async () => ({ task_id:'fixture', order_id:'order-1' }));
   t.mock.method(BrowserOrderPreflightRepository.prototype, 'loadIdentity', async () => ({}));

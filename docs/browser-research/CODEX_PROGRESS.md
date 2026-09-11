@@ -19,3 +19,35 @@
 
 ### [需要大脑]
 请在独立工作区安装 v1 的锁定依赖，或明确允许本次执行 `(cd v1 && npm ci)` **仅写忽略的 v1/node_modules，不改源码/锁文件**。原因：根 npm ci 装的是 legacy Zod3，v1/config.js 的 Zod4 Schema 无法导入，连既有 pool 测试也失败。任务书禁止写 v1/**，所以没有自行安装或借用主工作区 node_modules。依赖准备后立即运行完整 pool wiring 回归与 Browser 全量测试；在此之前不开始真实账号阶段。
+
+## 2026-09-11 04:01 UTC｜阶段 1 验收请求
+
+### 观察
+按用户先 merge main，无冲突，合并提交 9ac838d（main 包含 09e8695 的审查意见）。已按批准在独立工作区执行 v1/npm ci：80 packages，2 moderate audit 提示，未 audit fix、未改锁文件。根/v1/browser-mvp 三处依赖均已安装。
+
+审查三点：①provider 校验补 clearSession，增加缺方法拒绝用例；②阶段 2 设计明确先清批准 lane 且 remainingSession 为空、实际 viaExtension/existingSessionPreserved 等证据落盘为实验前置；③选择仅纠正 extension adapter 注释，真实扩展只清登录 Cookie、关闭/新建 ChatGPT tabs，不宣称清 localStorage/IndexedDB/service worker，不添加新副作用。
+
+定向回归 23/23、0 skip；包括实际 createLaneWorker→预检→order-scoped source→所选 adapter.open/bootstrap，模拟数据库/UI，验证扩展 popup 点击一次而直接 addCookies=0。Browser 全量 237 项：228 pass、9 skip、0 fail。9 项跳过不计数据库验收。未启动业务 worker、未操作真实账号、未清共享 lane 会话、未触碰 Dqcnq/7402；仅本机临时测试目录。
+
+### 结论
+阶段 1 所需接线回归与差异清单已齐，申请大脑验收并合并。这里只证明依赖接线与模拟交互，不证明已加载扩展能在真实账号开 Checkout，也不改变现有 sentinel 未证实结论。无需 v1 源码配合；F-43 等不在本阶段顺手修改。
+
+### 证据路径/SQL
+`docs/browser-research/evidence/stage1-20260911/targeted-after-deps.txt`（23/23）、`full-after-deps.txt`（228 pass/9 skip/0 fail）；初次依赖失败原文 `targeted-tests.txt` 保留。`browser-mvp/test/preflight-provider-wiring.test.js` 与 `browser-order-preflight.test.js`；`DIFFERENCE_DIMENSIONS_STAGE1_2026-09-11.md`；无生产 SQL。测试命令均取消 DATABASE_URL/TEST_DATABASE_URL；full 使用 browser-mvp 下 `node --test --test-concurrency=1`。
+
+### [需要大脑]
+请 review 本次补丁与完整测试原文，按既定流程合并到 main。阶段 1 代码不由我自行在主工作区合并或启动实际 worker。
+
+## 2026-09-11 04:01 UTC｜阶段 2 实验设计（单独申请）
+
+### 观察
+当前真实尝试未证明扩展路径；选择 EXTENSION 也可能保留现有 Cookie 而不打开扩展。清 lane 工具会关 ChatGPT tabs，属于会话变更。
+
+### 结论
+先 E0 离线落盘实际路径标记并回归；再申请 E1 一个专用账号的两条 AUTH_READ_ONLY 路线，0 Checkout；E2 另一个新账号做一次 EXTENSION rehearsal，单独放行，不将它冒称因果对照。最多两个账号分步申请，当前 0 个消耗。任何失败不追加重试，不动既有客户单。
+
+### 证据路径/SQL
+`docs/browser-research/STAGE2_EXPERIMENT_DESIGN_2026-09-11.md`，含变量、预期、判据、账号数、清理副作用、WAL 标记、脱敏网络证据、单次停止条件。无实验 SQL。
+
+### [需要大脑]
+批准 E0 范围后实施实际路径标记；E1 请指定允许清理的 Profile、专用测试账号及停点；E2 另行批准并指定新订单/卡和单次编排。E0/E1/E2 尚未执行，未请求 PAY 权限。
