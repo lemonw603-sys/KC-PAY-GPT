@@ -11,14 +11,14 @@
 
 ## 现在状态（已验证，UTC）
 
-- 付款开关 false（09-10 22:47 关）；本机无 worker；release `20260910-highvcc-ui-feedback-cdcf42e`。
-- 订单 `PJV1-DqcnqHF0tPlxDhygTtAA` CARD_READY，预检 DEAD 5/5，卡 7402 $49 ASSIGNED 未收口。可分配卡 0；`state-check.sh` 在 0 张时误报 1 张（GROUP_CONCAT 空集返回 NULL 被 awk 数成一项），脚本未修。
+- 付款开关 false（09-10 22:47 关）；本机无 worker；release **`20260911-highvcc-snapshot-sync-275f6e7`**（2026-09-11 03:40 UTC 切换，live/ready 200，回滚点 cdcf42e）。
+- 订单 `PJV1-DqcnqHF0tPlxDhygTtAA` **已于 2026-09-11 02:38 UTC 人工履约收口 → RECHARGE_SUCCESS**（Lemon 系统外手工充值），7402 已释放并按卡台刷成 $1.08。待 Lemon 点「已在账号里取消续费」。可分配卡 0；`state-check.sh` 在 0 张时误报 1 张（GROUP_CONCAT 空集返回 NULL 被 awk 数成一项），脚本未修。
 - **F-42 已由大脑独立核对代码为真**：`BROWSER_SESSION_PROVIDER=EXTENSION` 未接预检，昨天第 5 次"扩展对照"实际仍走 cookie。上号器路径在自动化里从未真正跑过；交接文档相应结论作废。
-- **卡台侧已核（highvcc `list`，只读）**：9839 已激活余额 $50.00、9354 已激活余额 $5.00，均不在 `cards` 表，是记账缺口不是资金损失，可用 `reconcile-highvcc-card.mjs` 按 cardId 补记（生产写，待 Lemon 确认）。**7402 卡台余额 $1.08，`cards` 表记 $49.00，差 $47.92，原因未查清**；5501 卡台 $1.79、表记 $0.07。7402 是 Dqcn 单占用的唯一够 Plus 的卡，余额不对则该单无法按现状重跑。其余 0601/7428/2911/0237/3241 两侧一致。
+- **备用卡台快照自动同步已落地并首跑（2026-09-11 02:55 UTC）**：`v1/src/services/highvcc-snapshot-sync-service.js` + `v1/scripts/sync-highvcc-snapshot.mjs`（默认 preview 只读，`--commit` 才写；走 manual-card-import 正式路径；本机跑法=照 `run-live-pool.sh` 拉生产 runtime.env 走隧道）。首跑批次 `211a4ad6`：9839/9354 入库，7402 刷成 $1.08，9 张与卡台一致。可分配卡现为 9839（$50）。**timer 已装并启用（`pojia-highvcc-snapshot-sync.timer`，每 10 分钟；2026-09-11 03:40 UTC）**，首跑批次 `23584a48`；03:49 UTC 定时触发已核实数据未变即重放不写（批次表仍 2 条）；`browser-mvp/scripts/highvcc-card.mjs export` 把分当元写余额的 bug 未修（Codex 地界，已记）。资格 SQL 信任 MANUAL_IMPORT 静态余额的根因未改，同步是补偿手段。
 
 ## 下一可执行项
 
-- 大脑：读透项目（DECISIONS 全文、HANDOFF_LOG 09-06 起、审计报告代码地图、主链源码）→ 差异版理解稿 → 重排 PROJECT_MAP §5 → Dqcn/7402 收口方案 → 9839/9354 补记方案 → 交 Lemon 确认。
+- 大脑：①Dqcn 已收口、快照同步已首跑。**接下来**：读透项目 → 差异版理解稿 → 重排 PROJECT_MAP §5（高位候选：资格 SQL 对 highvcc 卡改为按同步新鲜度（timer 已上，现在有依据）；token 过期时 timer 静默失败→加 operator_alert；Codex F-42 修复合并）；②把「highvcc 卡余额 API 同步、资格 SQL 不再信任手动卡静态余额」列入重排后的执行顺序高位；③读透项目 → 差异版理解稿 → 重排 PROJECT_MAP §5 → 交 Lemon。
 - Codex：任务书阶段 1（修 F-42 并回归测试；差异维度清单），不消耗账号。
 
 ## 已定不做
@@ -30,6 +30,6 @@
 ```text
 暂停原因：大脑深读中；Codex 阶段 1 进行中
 允许继续：只读核对；Codex 地界内代码与测试；rehearsal 模式
-禁止操作：未经 Lemon 当次确认不 go-live --arm、不动 Dqcn/7402、不消耗真实账号、不补记卡
+禁止操作：未经 Lemon 当次确认不 go-live --arm、不消耗真实账号；快照同步可随时跑（Lemon 09-11 授权自动化），仍先 preview 再 --commit
 恢复第一步：读本文 → 读 CODEX_PROGRESS.md 看有无 [需要大脑]
 ```

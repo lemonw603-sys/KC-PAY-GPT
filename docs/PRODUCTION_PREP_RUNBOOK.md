@@ -21,7 +21,7 @@ scripts/verify-production-release.sh \
 date -u
 readlink -f /opt/pojia/current
 systemctl is-active pojia-web.service pojia-worker.service \\
-  pojia-card-read-sync.timer \\
+  pojia-card-read-sync.timer pojia-highvcc-snapshot-sync.timer \\
   pojia-card-catalog-sync.timer pojia-bark-notifications.service
 pojia-ops status
 ```
@@ -83,8 +83,10 @@ npm run migrate
 
 ```bash
 systemctl start pojia-web.service
-systemctl start pojia-card-read-sync.timer pojia-card-catalog-sync.timer
+systemctl start pojia-card-read-sync.timer pojia-card-catalog-sync.timer pojia-highvcc-snapshot-sync.timer
 ```
+
+`pojia-highvcc-snapshot-sync.timer`（2026-09-11 起）：每 10 分钟把备用卡台 A（highvcc）全部卡片余额走「导入备用卡」正式路径同步进 `cards`，数据未变时按文件哈希重放不写。单元文件在 `deploy/server/`，发布脚本不会安装它；新机器或单元变更时：复制两个文件到 `/etc/systemd/system/` → `systemctl daemon-reload` → `systemctl enable --now pojia-highvcc-snapshot-sync.timer`。需要立刻刷新时 `systemctl start pojia-highvcc-snapshot-sync.service`；失败（多为 highvcc token 过期）只在 `journalctl -u pojia-highvcc-snapshot-sync.service` 可见，后台首页 token 状态会显示过期。
 
 客户接单开关保持关闭，数据库中的 `dispatch_new_recharges` 保持关闭。
 
