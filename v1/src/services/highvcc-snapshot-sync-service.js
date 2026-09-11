@@ -21,10 +21,12 @@ export function centsToMoney(cents) {
   return (n / 100).toFixed(2);
 }
 
+/** MM/YY for the import parser. The platform sends expYear as either "28" or 2028; both are accepted. */
 function expiry(card) {
   const m = Number(card?.expMonth); const y = Number(card?.expYear);
-  if (!Number.isInteger(m) || m < 1 || m > 12 || !Number.isInteger(y) || y < 2000) return '';
-  return `${String(m).padStart(2, '0')}/${String(y).slice(-2)}`;
+  if (!Number.isInteger(m) || m < 1 || m > 12 || !Number.isInteger(y) || y < 0) return '';
+  const yy = y >= 100 ? y % 100 : y;
+  return `${String(m).padStart(2, '0')}/${String(yy).padStart(2, '0')}`;
 }
 
 function openedAt(obj) {
@@ -40,22 +42,25 @@ function openedAt(obj) {
  * mismatch as a warning, never a rejection.
  */
 export function buildSnapshotRow({ listRow = {}, detail = {} } = {}) {
-  const card = detail.card || {}; const address = detail.adress || detail.address || {};
-  const balanceCents = card.balance ?? listRow.balance;
-  const depositCents = card.deposit ?? listRow.deposit ?? balanceCents;
-  const consumeCents = card.consume ?? listRow.consume ?? 0;
+  // Both /api/card/page rows and /api/card/detail come back wrapped as { card, adress, tags };
+  // accept a bare card object too so callers and tests can pass either shape.
+  const listCard = listRow.card || listRow; const listAddress = listRow.adress || listRow.address || {};
+  const card = detail.card || (detail.number ? detail : {}); const address = detail.adress || detail.address || listAddress;
+  const balanceCents = card.balance ?? listCard.balance;
+  const depositCents = card.deposit ?? listCard.deposit ?? balanceCents;
+  const consumeCents = card.consume ?? listCard.consume ?? 0;
   return [
-    String(card.cardSeqNo ?? listRow.cardSeqNo ?? card.cardId ?? listRow.cardId ?? ''),
+    String(card.cardSeqNo ?? listCard.cardSeqNo ?? card.cardId ?? listCard.cardId ?? ''),
     centsToMoney(depositCents) ?? '',
     centsToMoney(consumeCents) ?? '',
     centsToMoney(balanceCents) ?? '',
     String(card.number ?? ''),
     String(card.cvc ?? ''),
     expiry(card),
-    String(card.statusText ?? listRow.statusText ?? listRow.status ?? ''),
+    String(card.statusText ?? listCard.statusText ?? listCard.status ?? ''),
     openedAt(card) || openedAt(listRow),
-    String(card.firstName ?? listRow.firstName ?? ''),
-    String(card.lastName ?? listRow.lastName ?? ''),
+    String(card.firstName ?? listCard.firstName ?? ''),
+    String(card.lastName ?? listCard.lastName ?? ''),
     String(address.state ?? ''), String(address.city ?? ''), String(address.street ?? ''), String(address.zipCode ?? ''),
     '', '',
   ];
@@ -101,7 +106,9 @@ export function createHighvccSnapshotSyncService({
     const listRows = await cardProvider.listAll();
     const rows = []; const summary = [];
     for (const listRow of listRows) {
-      const cardId = listRow.cardId ?? listRow.id;
+      const listCard = listRow.card || listRow;
+      const cardId = listCard.cardId ?? listCard.id;
+      if (!cardId) throw new Error('platform card list row has no cardId');
       const detail = await cardProvider.detail(cardId);
       const row = buildSnapshotRow({ listRow, detail });
       rows.push(row);

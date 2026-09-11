@@ -122,10 +122,12 @@ export function createHighvccCardProvider({
     return { first, last };
   }
 
-  // One page of the platform's card list (GET /api/card/page). Rows are the platform's raw
-  // card objects (cardId, cardSeqNo, lastFour, balance in cents, statusText, ...); no PAN/CVC.
+  // One page of the platform's card list (GET /api/card/page). Each row is wrapped like detail():
+  // { card: { cardId, cardSeqNo, lastFour, balance (cents), statusText, ... }, adress: {...}, tags }.
   async function list({ pageNo = 1, pageSize = 20 } = {}) {
-    const r = await api('GET', `/api/card/page?pageNo=${Number(pageNo)}&pageSize=${Number(pageSize)}`);
+    // The platform rejects pageSize < 6 ("must be greater than or equal to 6"); clamp rather than fail.
+    const size = Math.max(6, Number(pageSize) || 20);
+    const r = await api('GET', `/api/card/page?pageNo=${Number(pageNo)}&pageSize=${size}`);
     const rows = r.data?.data || r.data?.records || r.data?.list || (Array.isArray(r.data) ? r.data : []);
     return { total: Number(r.data?.total ?? rows.length), rows };
   }
