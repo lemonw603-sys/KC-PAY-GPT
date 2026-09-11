@@ -32,7 +32,7 @@
 | Worker 进程写权限 | worker：`PROVIDER_RECHARGE_WRITES_ENABLED=true`（drop-in），通用/卡片写 false；funding 单元：`PROVIDER_CARD_WRITES_ENABLED=true`；env 文件 `PROVIDER_READS_ENABLED=true` | 16:35 | `systemctl cat` |
 | HNSKJ 卡 | `5980` DEPLETED，余额 $0.31（09-07 12:07 UTC 直充扣 $15.69，占用已释放）；其余 5 张 ASSIGNED 于历史订单且 ≤ $0.01；5 张 DEPLETED；HNSKJ 可分配 0 | 09-07 14:42 | cards |
 | 备用卡（备用卡台 A = highvcc，manual_excel 导入与一键开卡同池，sync_tier=MANUAL_IMPORT） | 卡台现存 5 张（3118 $60 / 7402 $1.08 / 0601 $1.27 / 5501 $1.79 / 0237 $0）；库内另有 3241、9354 于 10:50 同步时仍在、之后消失，尚未被下一次快照标记。10 分钟自动快照同步正常工作（3118 开卡后 2 分钟内入库并 ACCEPTED） | 2026-09-11 10:58 UTC | 脚本 preview→门控→commit 输出；隧道新连接独立 SELECT cards / manual_card_import_batches |
-| 可分配卡（资格 SQL，Plus 门槛 16） | **0 张**（3118 已消费 $15.76 余 $44.24，按账本已结算；其余在库卡余额均 < 16）。非终态订单 0 | 2026-09-11 11:30 UTC | 资格 SQL 直接查 = 9839 |
+| 可分配卡（资格 SQL，Plus 门槛 16） | **1 张：3118（$44.24，卡段 53211304，已成功服务 1 单，仍在全局 1–4 次上限内）**。非终态订单 0。其余在库卡余额均 < 16 | 2026-09-11 11:32 UTC | 资格 SQL 直接查 = 9839 |
 | HNSKJ 卡台 | 09-05 起故障；09-07 12:06 UTC 前已恢复（读同步与交易同步成功，`provider_calls` SUCCESS）；开卡/补余额未再验证 | 09-07 14:00 | provider_calls / cards.last_transaction_synced_at |
 | 订单总况 | RECHARGE_SUCCESS 7 / RECHARGE_FAILED 15 / CLOSED 14 / 非终态 0。待 Lemon 复核取消续费：Dqcn（本次）；VHl_ 09-09 那条按前表仍为 1 未核 | 2026-09-11 02:38 UTC | orders GROUP BY status 推算（收口前 6/15/14/1 + 本次 1 转成功） |
 | 活动资金与运行 | active_runs 0；Dqcnq 存在 ACTIVE 卡分配 1，不再是“全库无活动分配”。其余全库资金/dispatch/账本聚合本轮未完整重验，旧 09-09 清零快照不能代表现在 | 2026-09-10 23:23 UTC | browser_runs active_account_key_hmac COUNT=0；卡分配查询 |
