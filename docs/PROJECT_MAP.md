@@ -27,45 +27,30 @@
 
 未完成（详见 `docs/UNVERIFIED_LEDGER.md`）：Browser **全自动**真实付款与付款后半段（0 次；付款前填写已演练 2 次）——下一笔真单即验证；20X 闭环（stage1 真付→session 保持→弹窗→人工 Pay now→确认 20X）；付款未知(UNKNOWN)真实页面恢复路径；hCaptcha/`requires_manual_approval` 真点击后行为；供给自动化（HNSKJ 维护中，自动开卡已停）；出口隔离/住宅 IP（放量前）；账号风险数据（0）。明确不做：Plus→20X 升级自动化（D-138）、Worker 常驻（来单人工拉）。
 
-## 5. 唯一执行顺序（2026-09-11 重排，Lemon 确认；09-07 版原文见 `docs/archive/2026-09/PROJECT_MAP_section5_snapshot_2026-09-11.md`）
+## 5. 唯一执行顺序（2026-09-11 二次收缩，Lemon 定：简单、稳定、好用，D-147；09-07 版原文见 `docs/archive/2026-09/PROJECT_MAP_section5_snapshot_2026-09-11.md`）
 
-排序原则只有一条：什么在阻塞"一天几十上百单"就排前面。分工：大脑（Claude 主窗口）管全局与 v1，Codex 管 `browser-mvp`，短命窗口做边界清楚的机械活。细目与理由见 `docs/BRAIN_UNDERSTANDING_2026-09-11.md` §5。
+只有一件核心事：**自动把客户的 Plus 充值做完。** 其余只补"缺了它自动化就完成不了、或会记错账"的部分，剩下全部放到真单跑通之后。Pro 5X/20X 搁置（D-146）。
 
-**A. Browser 主链路跑通（唯一阻塞北极星）**
+**主线（现在做）**
 - A1 F-42 预检接入 SessionProvider：已合并 `2aad60d`。
-- A2 预检改造：预检不再点 Upgrade 创建 Checkout，只做注入、身份核对、free 判定；`BROWSER_PREFLIGHT` `max_attempts` 5→2。browser-mvp 侧 Codex，v1 侧大脑。**待 Lemon 一字确认**（09-11 已解释目的与代价）。
-- A3 阶段 2 实验：E0 离线路径标记（已批）→ E1 一个专用 free 测试账号两条建会话路线只读配对（Lemon 注册账号；Codex 先只读列 8 身份会话状态，大脑定 lane）→ E2 另一个从未用过的 free 账号一次 rehearsal（Lemon 注册；卡 9839、CDK 后台 plus 可用）。
+- A2 预检改造：预检不再点 Upgrade 创建 Checkout，只做注入、身份核对、free 判定；`max_attempts` 5→2。browser-mvp 侧 Codex，v1 侧大脑。**待 Lemon 一字确认。**
+- A3 阶段 2 实验：E0 离线路径标记（已批）→ E1 一个 free 账号两条建会话路线只读配对（Lemon 注册；Codex 先只读列 8 身份会话状态，大脑定 lane）→ E2 另一个 free 账号一次 rehearsal（Lemon 注册；卡 9839、后台 plus CDK 可用）。
 - A4 rehearsal 到 PRE_SUBMIT_STOPPED → Lemon 放行一笔真单到 RECHARGE_SUCCESS。D-139 不变：真单失败一次即人工。
+- B2 F-43：付款后核实 lane 被订单里旧 token 五分钟门槛挡住，自动核实在读浏览器之前就判 SESSION_INVALID。**缺了它，付款成功也要人工确认 Plus、人工关续费，自动化等于没完成**，所以留在主线。大脑做。
+- 已完成：B1 `RESOLVE_UNKNOWN_PAYMENT` 三 bug 修好并接按钮（`3d4936d`，release `20260911-resolve-unknown-ui-3d4936d`）。其中 Pro 分支随 D-146 搁置暂不会用到，保留不删。
 
-**B. 真单前必修（大脑，v1）**
-- B1 `RESOLVE_UNKNOWN_PAYMENT` 三个 bug（F-44 字符串 false、F-45 不核对产品、F-46 取消字段不同步）修好，接后台按钮，发布。
-- B2 F-43 核实 lane 被旧 token 五分钟门槛挡住。
-- B3 F-19 多 lane 核实不绑窗口（开第二条 lane 前）。
+**真单跑通之后（按需，不预先做）**
+- 供给与运维：资格 SQL 对 highvcc 卡按同步新鲜度（C1）；timer 失败告警（C2）；自检脚本同口径与 NULL 计数（C3）；`highvcc-card.mjs export` 分当元（C4）；F-38 go-live 改走后台接口（C5，D-143）；F-40 已随 B1 修；F-41。
+- 多 lane：F-19 核实不绑窗口（B3）→ 多 lane 并行验证（D3）。
+- 常开机器（D1，Lemon 暂无）；住宅出口不做（D-142）。
+- 集中体检（D-144，E 段）：UX 清单全部 + 遗留 bug + 真实登录后台全面走查。
+- 清理（F 段）：F-4/7/8/10；删旧编排（CORE_SPEC §5.1）；零使用接口与旧表；审查第二批。
 
-**C. 供给与运维根因（大脑）**
-- C1 资格 SQL 对 highvcc 卡按同步新鲜度判定，不再信任静态余额（timer 已上，09-11）。
-- C2 快照同步失败（token 过期）写 operator_alert。
-- C3 F-37 自检脚本与资格 SQL 同口径；state-check NULL 计数 bug。
-- C4 `highvcc-card.mjs export` 分当元写余额（收回大脑地界）。
-- C5 F-38：`go-live.sh` / `stop-live.sh` 改走后台接口，不再直写生产库（Lemon 09-11 同意）。
-- C6 F-40、F-41（短命窗口）。
-
-**D. 规模化前置（真单通后）**
-- D1 Worker 搬常开机器：Lemon 暂无常开 Windows 机，本机继续；规模化前再议。
-- D2 住宅菲律宾出口：**不做**（Lemon 09-11 判断：一两个固定出口够用，09-08 三次拒付不归因出口）。
-- D3 多 lane 并行验证（B3 之后）。
-- D4 Free 直购 20X（D-141），Plus 闭环稳定后。
-- D5 审查第二批（后台五页、schema、文档一致性）。
-
-**E. 真单通后集中体检（Lemon 09-11 定）**
-- 真单跑完且无问题后，集中时间做一轮：`docs/UX_PUNCHLIST_2026-09-10.md` 全部条目、遗留 bug、以及一次真实登录后台的全面走查找出未发现的问题。做的过程中能顺带解决的小问题可以顺带，但不为此打断 A 段。
-
-**F. 清理（最后）**
-- F-4/7/8/10；删旧编排（CORE_SPEC §5.1 清单）；零使用接口与旧表，删前查调用链。
+**搁置**：Pro 5X/20X 两阶段与 Free 直购（D-146）。
 
 ## 6. 明确不做
 
-住宅菲律宾出口 / 出口隔离采购（Lemon 2026-09-11：不需要）；逐单选路线或卡台；卡台自动回退；每身份每日上限、延后取消续费等无依据限速；为每单新建浏览器窗口（常驻身份每单清登录态、留设备，09-07 用户确认；封控细节由 Codex 另行研究）；裸调结账接口（由页面点击触发）；为未出现的风控加闸门；第二套订单或资金账；删历史证据；把测试通过说成生产可用。
+住宅菲律宾出口 / 出口隔离采购（Lemon 2026-09-11：不需要）；Pro 5X/20X 任何路线（D-146 搁置，官方恢复且 Plus 稳定后再议）；逐单选路线或卡台；卡台自动回退；每身份每日上限、延后取消续费等无依据限速；为每单新建浏览器窗口（常驻身份每单清登录态、留设备，09-07 用户确认；封控细节由 Codex 另行研究）；裸调结账接口（由页面点击触发）；为未出现的风控加闸门；第二套订单或资金账；删历史证据；把测试通过说成生产可用。
 
 ## 7. 维护纪律
 
