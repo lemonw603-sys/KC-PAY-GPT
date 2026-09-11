@@ -1058,7 +1058,12 @@ async function loadHighvccStatus() {
       const { ranges } = await api('/api/v1/admin/backup-cards/highvcc/ranges');
       if (ranges?.length) {
         elements.highvccVidSelect.innerHTML = ranges.map((r) => `<option value="${escapeHtml(r.vid)}">${escapeHtml(r.name || r.vid)}${segmentVerdictLabel(r)}${r.vid === '708' ? '（默认）' : ''}</option>`).join('');
-        elements.highvccVidSelect.value = '708';
+        // D-169: no preselected segment. 708 (513989) was the built-in default and is
+        // the segment that declined 5 of 6 real payments, so defaulting to it quietly
+        // spent money on the worst option. The operator now picks, with each segment's
+        // own decline record printed next to it.
+        elements.highvccVidSelect.insertAdjacentHTML('afterbegin', '<option value="">请选择卡段</option>');
+        elements.highvccVidSelect.value = '';
         elements.highvccVidSelect.dataset.loaded = '1';
       }
     } catch {
@@ -2021,8 +2026,9 @@ let highvccQuoteTimer = null;
 async function runHighvccQuote() {
   if (!elements.highvccOpenAmount) return;
   const amount = Number(elements.highvccOpenAmount.value);
-  const vid = elements.highvccVidSelect?.value || '708';
+  const vid = elements.highvccVidSelect?.value || '';
   if (!(amount > 0)) return;
+  if (!vid) { elements.highvccCost.textContent = '请先选择卡段（每个卡段后面是它的真实拒付战绩）'; return; }
   elements.highvccQuoteButton.disabled = true;
   elements.highvccOpenButton.disabled = true;
   elements.highvccCost.textContent = '正在查询…';
@@ -2063,7 +2069,8 @@ elements.highvccDetails?.addEventListener('toggle', () => {
 elements.highvccOpenForm?.addEventListener('submit', async (event) => {
   event.preventDefault();
   const amount = Number(elements.highvccOpenAmount.value);
-  const vid = elements.highvccVidSelect?.value || '708';
+  const vid = elements.highvccVidSelect?.value || '';
+  if (!vid) { showNotice('请先选择卡段，不再默认使用 513989。'); return; }
   if (state.highvccQuotedAmount !== amount || state.highvccQuotedVid !== vid) {
     showNotice('金额或卡段和上次查询的不一致，请重新查询费用。');
     return;

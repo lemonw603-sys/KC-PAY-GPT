@@ -106,8 +106,8 @@ export function createHighvccSnapshotSyncService({
   const imports = importService || createManualCardImportService({ pool, encryptionKey, panHmacKey });
 
   /** list + detail for every card. `rows` carries PAN/CVC and must not be logged; `summary` is safe. */
-  async function collect() {
-    const listRows = await cardProvider.listAll();
+  async function collect(preFetchedListRows = null) {
+    const listRows = preFetchedListRows || await cardProvider.listAll();
     const rows = []; const summary = [];
     for (const listRow of listRows) {
       const listCard = listRow.card || listRow;
@@ -121,24 +121,69 @@ export function createHighvccSnapshotSyncService({
     return { rows, summary };
   }
 
+  /**
+   * One cheap list call decides whether the expensive part is needed at all.
+   *
+   * A full snapshot costs 1 list request plus one detail request PER CARD, and it
+   * ran every 10 minutes — roughly 860 requests a day at 5 cards, almost all of
+   * them to learn that nothing had changed. The card platform has no idea why we
+   * poll it. The list alone already carries every field that can move between
+   * runs (which cards exist, their balance, their status); PAN/CVC/address cannot
+   * change for a card that is still there. So when the list matches what the
+   * database already holds, there is nothing a snapshot could correct, and we stop.
+   */
+  async function unchangedAgainstDatabase(listRows) {
+    const fromPlatform = new Map();
+    for (const listRow of listRows) {
+      const card = listRow.card || listRow;
+      const last4 = String(card.cardNo ?? card.last4 ?? '').slice(-4);
+      if (!last4) return null; // cannot compare safely — fall through to a full snapshot
+      fromPlatform.set(last4, Number(card.balance));
+    }
+    const [stored] = await pool.query(
+      `SELECT last4, current_balance, source_present FROM cards
+        WHERE provider_account_id = ? AND sync_tier = 'MANUAL_IMPORT'`, [providerAccountId]
+    );
+    const present = stored.filter((row) => Number(row.source_present) === 1);
+    if (present.length !== fromPlatform.size) return null;
+    for (const row of present) {
+      const platformCents = fromPlatform.get(String(row.last4));
+      if (platformCents === undefined || !Number.isFinite(platformCents)) return null;
+      // Stored balance is dollars, the platform reports cents.
+      if (Math.round(Number(row.current_balance) * 100) !== Math.round(platformCents)) return null;
+    }
+    return { cardCount: present.length };
+  }
+
   const filename = () => `highvcc-snapshot-${now().toISOString().replace(/[:.]/g, '-')}.xlsx`;
 
   // Shared by preview() and commit(). Keeps fileBase64 (contains PAN/CVC) out of anything a caller might print.
-  async function prepare() {
-    const { rows, summary } = await collect();
+  async function prepare({ force = false } = {}) {
+    // The list is fetched once and reused: probing with a second list call would
+    // have added a request instead of removing any.
+    let listRows = null;
+    if (!force) {
+      listRows = await cardProvider.listAll();
+      const unchanged = await unchangedAgainstDatabase(listRows).catch(() => null);
+      if (unchanged) {
+        return { fileBase64: null, result: { skipped: true, reason: 'NO_CHANGE', ...unchanged, platformCards: [] } };
+      }
+    }
+    const { rows, summary } = await collect(listRows);
     const fileBase64 = buildSnapshotWorkbook(rows).toString('base64');
     const name = filename();
     const result = await imports.preview({ providerAccountId, filename: name, fileBase64 });
     return { fileBase64, result: { ...result, filename: name, platformCards: summary } };
   }
 
-  async function preview() {
-    const { result } = await prepare();
+  async function preview({ force = false } = {}) {
+    const { result } = await prepare({ force });
     return result;
   }
 
-  async function commit({ requestedBy = 'highvcc-snapshot-sync' } = {}) {
-    const { fileBase64, result } = await prepare();
+  async function commit({ requestedBy = 'highvcc-snapshot-sync', force = false } = {}) {
+    const { fileBase64, result } = await prepare({ force });
+    if (result.skipped) return { preview: result, committed: null };
     if (!result.commitAllowed) {
       const error = new Error(`snapshot not committable: ${result.rejectedCount} rejected, ${result.conflictCount} conflicts`);
       error.code = 'HIGHVCC_SNAPSHOT_NOT_COMMITTABLE'; error.preview = result;

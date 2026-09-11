@@ -165,3 +165,56 @@ test('buildSnapshotRow also accepts a bare card object (no { card } wrapper) and
   assert.equal(by['累计充值'], '1.08', 'deposit falls back to the list row');
   assert.equal(by['州'], '', 'no address anywhere → empty, parser will flag MISSING_州');
 });
+
+test('nothing changed on the platform: one list call, zero detail calls, no snapshot built', async () => {
+  const calls = [];
+  const listCard = { cardId: 'HGaaa', cardSeqNo: 'HGaaa', cardNo: '5321130411112222', balance: 6000 };
+  const provider = {
+    async listAll() { calls.push('listAll'); return [{ card: listCard, adress: {}, tags: [] }]; },
+    async detail(id) { calls.push(`detail:${id}`); throw new Error('detail must not be called when nothing changed'); },
+  };
+  const importService = {
+    async preview() { throw new Error('no snapshot should be built'); },
+    async commit() { throw new Error('no snapshot should be committed'); },
+  };
+  // The database already holds this exact card at this exact balance (dollars vs the platform's cents).
+  const pool = { getConnection() { throw new Error('not used'); },
+    async query() { return [[{ last4: '2222', current_balance: '60.000000', source_present: 1 }]]; } };
+  const service = createHighvccSnapshotSyncService({ pool, ...keys, provider, importService });
+
+  const preview = await service.preview();
+  assert.deepEqual(calls, ['listAll'], 'the expensive per-card detail calls are skipped entirely');
+  assert.equal(preview.skipped, true);
+  assert.equal(preview.reason, 'NO_CHANGE');
+  assert.equal(preview.cardCount, 1);
+
+  const committed = await service.commit();
+  assert.equal(committed.committed, null, 'a no-change run writes nothing');
+});
+
+test('a balance that moved, or a card that vanished, still triggers the full snapshot', async () => {
+  const listCard = { cardId: 'HGaaa', cardSeqNo: 'HGaaa', cardNo: '5321130411112222', balance: 4424 };
+  const mkProvider = () => {
+    const calls = [];
+    return { calls,
+      async listAll() { calls.push('listAll'); return [{ card: listCard, adress: {}, tags: [] }]; },
+      async detail(id) { calls.push(`detail:${id}`); return { card: { ...listCard, cvv: '123', expMonth: '09', expYear: '28' }, adress: {} }; } };
+  };
+  const importService = { async preview() { return { commitAllowed: true, rejectedCount: 0, conflictCount: 0, confirmation: 'c' }; },
+    async commit() { return { batchId: 'b1' }; } };
+
+  for (const stored of [
+    [{ last4: '2222', current_balance: '60.000000', source_present: 1 }],   // balance moved
+    [],                                                                      // card is new to us
+    [{ last4: '9999', current_balance: '44.240000', source_present: 1 }],    // a different card
+  ]) {
+    const provider = mkProvider();
+    const pool = { getConnection() { throw new Error('not used'); }, async query() { return [stored]; } };
+    const service = createHighvccSnapshotSyncService({ pool, ...keys, provider, importService });
+    const preview = await service.preview();
+    assert.notEqual(preview.skipped, true, JSON.stringify(stored));
+    assert.ok(provider.calls.includes('detail:HGaaa'), JSON.stringify(stored));
+    assert.equal(provider.calls.filter((c) => c === 'listAll').length, 1, 'the list is fetched once, not twice');
+  }
+});
+

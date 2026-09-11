@@ -3,7 +3,7 @@ Description=每 10 分钟同步一次备用卡台 A（highvcc）卡片余额到 
 
 [Timer]
 OnBootSec=2min
-OnUnitActiveSec=10min
+OnUnitActiveSec=1h
 AccuracySec=30s
 Unit=pojia-highvcc-snapshot-sync.service
 
