@@ -2267,3 +2267,11 @@ P1：F-3 取消续费接口从未真调、失败终态后台按钮不认；F-4 �
 ## 2026-09-11｜继续：人工收口交付判据审查（2026-09-10 23:47 UTC）
 
 用户要求继续。只读检查人工收口、付款核实、取消续费投影；F-44 实际服务+模拟 SQL 证明字符串 false 被当 true 而请求整单成功；F-45 缺目标套餐校验，可使 Pro 第一阶段被当整单成功（代码/SQL 意图，未做 Pro DB 复现）；F-46 取消已确认却未同步展示字段（代码，UI 待验）。11 项定向测试通过。只读生产文件核对同样逻辑；state-check 仍仅已知库存误算漂移。未执行生产动作、未改业务、未启动 worker；报告在 docs/reviews/MANUAL_CLOSEOUT_REVIEW_2026-09-11.md，探针/输出在 probes。全部登记为待批准修改/待验证，不声称真实错单或全项目完成。HANDOFF_NOW 重写。
+
+## 2026-09-11｜大脑窗口接管：分工落盘、Codex 独立工作区、F-42 核实、7402 对账、Dqcn 收口（2026-09-11 02:38 UTC 前后）
+
+- Lemon 定分工：本窗口为大脑（全项目、事实源、生产动作），Codex 专职 Browser 自动化（worktree `~/.codex/worktrees/browser-live`，分支 `codex/browser-live-20260911`，任务书 `docs/browser-research/CODEX_BRIEF_2026-09-11.md`），短命窗口按需。并行的 Sonnet 接班窗口按 Lemon 要求关闭（pid 退出前工作区干净，其提交保留）。
+- 独立核对 Sonnet 审查 F-42 为真：`BROWSER_SESSION_PROVIDER=EXTENSION` 只接 live/付款后核实，预检写死 Cookie；09-10 第 5 次"扩展对照"实际仍走 cookie，上号器路径从未在自动化里真跑。已写进 Codex 任务书作阶段 1 首项。
+- 卡台只读核对（highvcc `list`/`detail`）：9839 $50、9354 $5 在卡台已激活但不在 `cards` 表；7402 卡台 $1.08 vs 表 $49，Lemon 提供交易截图：$15.75（09-09 15:13 UTC）+ $142.87（09-10 03:47 UTC）两笔系统外 OpenAI 消费，系统账本零消费。根因：资格 SQL 对 MANUAL_IMPORT 卡信任静态余额，highvcc 卡入库即标 MANUAL_IMPORT；Dqcn 建单时分到的已是空卡。
+- Dqcn 收口：Lemon 告知已系统外手工充值，故不走「取消并释放卡」（会退 CDK），改走 `close-manually-fulfilled-order.mjs` 默认分支：生产主机 dry-run → 真跑 → 隧道新连接独立核实 RECHARGE_SUCCESS / CDK REDEEMED / 7402 RELEASED+AVAILABLE / 非终态 0。取消续费待 Lemon 复核。
+- Lemon 决定：备用卡台快照导入做成自动化，不再手动导表。下一步即实现并首跑。
