@@ -15,9 +15,16 @@
 
 const CHALLENGE_PROBE = () => {
   const frames = Array.from(document.querySelectorAll('iframe'));
+  // A vendor frame counts only when it is actually on screen. Invisible/zero-size
+  // challenge frames are routinely embedded for passive scoring; treating those as
+  // a challenge would stall every payment waiting for a checkbox nobody can see.
   const vendorFrame = frames.some((frame) => {
     const src = String(frame.getAttribute('src') || '');
-    return /(^|\.)hcaptcha\.com|recaptcha|turnstile|challenges\.cloudflare\.com/i.test(src);
+    if (!/(^|\.)hcaptcha\.com|recaptcha|turnstile|challenges\.cloudflare\.com/i.test(src)) return false;
+    const style = window.getComputedStyle(frame);
+    if (style.display === 'none' || style.visibility === 'hidden' || Number(style.opacity) === 0) return false;
+    const box = frame.getBoundingClientRect();
+    return box.width > 40 && box.height > 40;
   });
   const widget = Boolean(document.querySelector('.h-captcha, [data-hcaptcha-widget-id], [data-sitekey]'));
   const body = String(document.body?.innerText || '');
