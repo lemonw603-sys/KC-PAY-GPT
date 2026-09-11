@@ -53,6 +53,25 @@ ssh root@144.34.180.184 'set -a; . /etc/pojia/runtime.env; set +a; cd /opt/pojia
 - 换账号 = 新订单：另一个 AVAILABLE CDK + 新账号的 Session；合格卡当前仅 9839，拒付后若要换卡需补余额/开卡（资金动作，先确认）。
 - 跑单期间该账号不得在任何其他窗口登录（含上号器手动登录），否则挤掉注入 Session；Session 提交后尽快跑（accessToken 剩余 <5 分钟即拒）。
 
+## 1.5 攒数据：自己跑一单 + 看成功率（2026-09-11 12:39 UTC 起）
+
+**不需要事先向任何人登记**：系统每次运行都会把时间线、点击次数、结果、原因落库。跑过就有，没跑就没有。
+
+自己跑一单（客户提交后）：
+```bash
+browser-mvp/scripts/prod-query.sh "SELECT public_no,status FROM orders WHERE public_no='<单号>'"   # 等到 CARD_READY
+BROWSER_POOL_LANES=lane-1=10f0dc7b534844c083165796447d5893 bash browser-mvp/scripts/go-live.sh --arm
+tail -f "$HOME/Library/Application Support/pojia-browser-live/go-live-"*.log
+bash browser-mvp/scripts/stop-live.sh     # 看到终态、且距离点付款已超过 10 分钟后
+```
+日志里出现 `需要人工验证` 说明结账页弹了人机验证，去 1 号窗口勾一下复选框，自动化会自己继续。
+
+随时看累计数据：
+```bash
+browser-mvp/scripts/run-stats.sh        # 逐单明细 + 成功率 + 失败原因分布
+```
+口径：`OK-auto` 才算系统自动跑完（系统自己确认过 Plus 且该次运行没有任何人工操作）；`OK-manual` 是人工收口的，不计入。判断能不能上量，看「点过付款的单里系统自动跑完的比例」这一行。
+
 ## 2. 演练（停在付款前，不扣款）
 
 前提：付款开关 = false（`ready-check.sh rehearsal` 全绿）。
