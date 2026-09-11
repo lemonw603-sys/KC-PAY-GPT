@@ -164,3 +164,25 @@ test('D-154: a verification cleared by a person lets the run continue and still 
   } finally { await browser.close(); }
 });
 
+test('F-47: a Checkout that states the card was declined is reported as DECLINED, not bare unknown', async () => {
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage();
+    await page.setContent(html());
+    const adapter = new LiveChatGPTPaymentAdapter({
+      enabled: true,
+      confirmation: LIVE_PAYMENT_CONFIRMATION,
+      outcomeObserver: async () => ({ status: 'DECLINED', reasonCode: 'CARD_DECLINED', observedText: 'Tinanggihan ang iyong kard.' }),
+    });
+    const result = await adapter.submit({
+      page, checkout, checkoutContract, cardMaterial: card, billingEmail: 'fixture@example.test',
+      operationId: 'op-decline', authorizeSubmit: async () => ({ executeExternal: true }), beforeSubmit: async () => undefined,
+    });
+    assert.equal(result.status, 'DECLINED');
+    assert.equal(result.reasonCode, 'CARD_DECLINED');
+    assert.equal(result.observedText, 'Tinanggihan ang iyong kard.');
+    assert.equal(await page.evaluate(() => window.clicked || 0), 1, 'a decline must not produce a second click');
+    assert.equal(await page.locator('input[autocomplete="cc-number"]').inputValue(), '', 'card fields are cleared after a decline');
+  } finally { await browser.close(); }
+});
+

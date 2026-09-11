@@ -8,6 +8,7 @@ import { BrowserExecutionService } from './executor.js';
 import { createMysqlUpstreamProjectionAdapter } from './mysql-upstream-adapter.js';
 import { BrowserPaymentExecutor } from './payment-executor.js';
 import { createHumanVerificationGate } from './human-verification-gate.js';
+import { createPostSubmitWatch } from './post-submit-outcome-watch.js';
 import { createLocalOperatorNotifier } from './local-operator-notify.js';
 import { LiveChatGPTPaymentAdapter, LIVE_PAYMENT_CONFIRMATION } from './live-chatgpt-payment-adapter.js';
 import { ChatGptPostPaymentVerifier } from './chatgpt-post-payment-verifier.js';
@@ -91,6 +92,9 @@ export function createSharedLivePaymentWorker({
   // human-verification challenge. 0 = do not wait (only detect and report).
   humanVerificationWaitMs = 0,
   notifyOperator = createLocalOperatorNotifier(),
+  // F-47: how long to read the Checkout for a definite answer before falling
+  // back to polling the account. A decline shows up in seconds.
+  postSubmitWatchMs = 60_000,
   postPlusAction = 'CANCEL_RENEWAL',
   resolvePlan = null,
   stopBeforeSubmit = false,
@@ -202,6 +206,10 @@ export function createSharedLivePaymentWorker({
           navigationTimeoutMs: executionTimeoutMs,
         }),
       });
+      const watchPostSubmit = createPostSubmitWatch({
+        windowMs: postSubmitWatchMs,
+        pollIntervalMs: Math.min(verificationIntervalMs, 5_000),
+      });
       const adapter = new LiveChatGPTPaymentAdapter({
         enabled: true,
         confirmation: LIVE_PAYMENT_CONFIRMATION,
@@ -219,7 +227,18 @@ export function createSharedLivePaymentWorker({
               : '结账页出现人机验证。自动化不处理该验证，本单已停并保留现场',
           }),
         }),
-        outcomeObserver: async () => ({ status: (await verifier.confirmPlus()).confirmed ? 'CONFIRMED' : 'UNKNOWN' }),
+        // F-47: before spending the whole verification window polling the account,
+        // read what the Checkout itself is saying. A declined card is visible on
+        // the page within seconds; the old path waited five minutes and then
+        // reported "unknown" with no reason at all. This only reads — the funds
+        // verdict still goes through the normal unknown/operator-verify path.
+        outcomeObserver: async ({ page: submittedPage }) => {
+          const observed = await watchPostSubmit(submittedPage).catch(() => ({ state: 'UNREADABLE' }));
+          if (observed.state === 'DECLINED' || observed.state === 'PAGE_ERROR') {
+            return { status: 'DECLINED', reasonCode: observed.reasonCode, observedText: observed.observedText };
+          }
+          return { status: (await verifier.confirmPlus()).confirmed ? 'CONFIRMED' : 'UNKNOWN' };
+        },
       });
       return new BrowserPaymentExecutor({
         integration, executionRepository, paymentAdapter: adapter,

@@ -183,6 +183,22 @@ export class LiveChatGPTPaymentAdapter {
         }
         stage = 'observe-payment-outcome';
         const outcome = await this.outcomeObserver({ page, operationId: op, challenge });
+        if (outcome?.status === 'DECLINED') {
+          // F-47: the Checkout stated the outcome itself. Returning it (instead of
+          // throwing a bare "unknown") carries the reason to the run record. The
+          // funds semantics are unchanged: anything that is not CONFIRMED still
+          // locks the attempt for an operator to verify — no retry, no card swap.
+          return {
+            status: 'DECLINED',
+            reasonCode: outcome.reasonCode || 'CARD_DECLINED',
+            observedText: outcome.observedText || null,
+            quote: {
+              currency: strictCheckout.currency,
+              amount: strictCheckout.amount,
+              estimatedTax: strictCheckout.estimatedTax,
+            },
+          };
+        }
         if (outcome?.status !== 'CONFIRMED') {
           throw new LiveChatGPTPaymentAdapterError('payment outcome was not confirmed', 'PAYMENT_RESULT_UNKNOWN');
         }
