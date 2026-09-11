@@ -136,7 +136,10 @@ export function createHighvccSnapshotSyncService({
     const fromPlatform = new Map();
     for (const listRow of listRows) {
       const card = listRow.card || listRow;
-      const last4 = String(card.cardNo ?? card.last4 ?? '').slice(-4);
+      // The platform's list row calls it `lastFour`; `number` is the full PAN and is
+      // never used here. Reading a field that does not exist silently disabled the
+      // whole short circuit once already — verified against the live shape 2026-09-11.
+      const last4 = String(card.lastFour ?? card.number ?? '').slice(-4);
       if (!last4) return null; // cannot compare safely — fall through to a full snapshot
       fromPlatform.set(last4, Number(card.balance));
     }

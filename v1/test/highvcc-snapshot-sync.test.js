@@ -168,7 +168,7 @@ test('buildSnapshotRow also accepts a bare card object (no { card } wrapper) and
 
 test('nothing changed on the platform: one list call, zero detail calls, no snapshot built', async () => {
   const calls = [];
-  const listCard = { cardId: 'HGaaa', cardSeqNo: 'HGaaa', cardNo: '5321130411112222', balance: 6000 };
+  const listCard = { cardId: 'HGaaa', cardSeqNo: 'HGaaa', lastFour: '2222', number: '5321130411112222', balance: 6000 };
   const provider = {
     async listAll() { calls.push('listAll'); return [{ card: listCard, adress: {}, tags: [] }]; },
     async detail(id) { calls.push(`detail:${id}`); throw new Error('detail must not be called when nothing changed'); },
@@ -193,7 +193,7 @@ test('nothing changed on the platform: one list call, zero detail calls, no snap
 });
 
 test('a balance that moved, or a card that vanished, still triggers the full snapshot', async () => {
-  const listCard = { cardId: 'HGaaa', cardSeqNo: 'HGaaa', cardNo: '5321130411112222', balance: 4424 };
+  const listCard = { cardId: 'HGaaa', cardSeqNo: 'HGaaa', lastFour: '2222', number: '5321130411112222', balance: 4424 };
   const mkProvider = () => {
     const calls = [];
     return { calls,
