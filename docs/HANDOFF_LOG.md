@@ -2321,3 +2321,11 @@ P1：F-3 取消续费接口从未真调、失败终态后台按钮不认；F-4 �
 - 订单 `SUBMIT_UNKNOWN`、run `HUMAN_REQUIRED`/`PAYMENT_UNKNOWN`、卡 9839 仍 ASSIGNED、CDK 仍 REDEEMED。收口 = 后台「确认核实结果」→ 未扣款（Lemon 点，大脑无后台账号）。
 - **新发现的自动化缺口（F-47）**：付款失败无页面级原因，一律落 UNKNOWN 需人工。要做到全自动，必须在点击后读结账页的拒付/错误文案并分类。
 
+### 2026-09-11 08:05 UTC｜补：失败原因是结账页弹出 hCaptcha（Lemon 截图）
+
+Lemon 在 Pilot 窗口截图：结账页 `chatgpt.com/checkout/openai_llc/cs_live_…`，点付款后弹出 hCaptcha 模态框「One more step before you're done — Select the checkbox below / I am human」，付款按钮在模态框后面转圈。报价 ₱982.14、税 ₱0.00、账单姓名 Jamie Winder、邮箱 shichuan003@gmail.com。
+
+- 与既有证据一致：点击一次 → 人机验证拦住 → 账号始终未变 Plus → 5 分钟后判 UNKNOWN → 卡台余额未变、ChatGPT 显示 `chatgpt_not_purchased`。**确认未扣款。**
+- 顺带证实：菲律宾出口生效（PHP 计价），免税地址生效（税 ₱0.00），卡字段在运行结束时按设计已清空。
+- **这是本项目"全自动"的真正硬边界，不是代码 bug。** 大脑不实施任何绕过或自动完成人机验证的方案（这条不因要求重复而改变）。可做的替代见下一节决策。
+
