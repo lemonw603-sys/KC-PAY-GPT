@@ -1061,7 +1061,17 @@ async function loadHighvccStatus() {
         elements.highvccVidSelect.value = '708';
         elements.highvccVidSelect.dataset.loaded = '1';
       }
-    } catch { /* keep the single default option; segment picking is a convenience, not required */ }
+    } catch {
+      // Never block opening a card — but never let the fallback option pass for a
+      // loaded list either. Silently keeping "513989（默认）" made the operator
+      // believe the segment statistics had failed to deploy (2026-09-11), when in
+      // truth the card platform token had expired and the list was never fetched.
+      const option = elements.highvccVidSelect.querySelector('option');
+      if (option && !option.dataset.unloadedMarked) {
+        option.textContent = `${option.textContent}｜卡段列表未加载，无拒付统计（多半是卡台 token 过期）`;
+        option.dataset.unloadedMarked = '1';
+      }
+    }
   }
 }
 
