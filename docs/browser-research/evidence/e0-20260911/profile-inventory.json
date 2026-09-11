@@ -1,0 +1,101 @@
+{
+  "observedAt": "2026-09-11T05:13:46.446Z",
+  "profiles": [
+    {
+      "id": "10f0dc7b534844c083165796447d5893",
+      "seq": 1,
+      "name": "Plus Browser PH Pilot",
+      "status": 0,
+      "savedCookieParseable": false,
+      "savedSession": null,
+      "savedAuthLayer": null,
+      "currentSession": null,
+      "currentAuthLayer": null,
+      "reason": "list returns saved metadata only; live CDP not opened"
+    },
+    {
+      "id": "3b3c12977be347c0bcaa9411219173b7",
+      "seq": 2,
+      "name": "Plus Browser PH Lane 2",
+      "status": 0,
+      "savedCookieParseable": false,
+      "savedSession": null,
+      "savedAuthLayer": null,
+      "currentSession": null,
+      "currentAuthLayer": null,
+      "reason": "list returns saved metadata only; live CDP not opened"
+    },
+    {
+      "id": "8f126430af0c4be4b2cfc576de82d214",
+      "seq": 3,
+      "name": "Plus Browser PH Lane 3",
+      "status": 0,
+      "savedCookieParseable": false,
+      "savedSession": null,
+      "savedAuthLayer": null,
+      "currentSession": null,
+      "currentAuthLayer": null,
+      "reason": "list returns saved metadata only; live CDP not opened"
+    },
+    {
+      "id": "512ac425d608441e84e9bbd80172271a",
+      "seq": 4,
+      "name": "AI Recharge Browser Lane 4",
+      "status": 0,
+      "savedCookieParseable": false,
+      "savedSession": null,
+      "savedAuthLayer": null,
+      "currentSession": null,
+      "currentAuthLayer": null,
+      "reason": "list returns saved metadata only; live CDP not opened"
+    },
+    {
+      "id": "22f20bd927a54d8fb8603f85e7a17d78",
+      "seq": 5,
+      "name": "AI Recharge Browser Lane 5",
+      "status": 0,
+      "savedCookieParseable": false,
+      "savedSession": null,
+      "savedAuthLayer": null,
+      "currentSession": null,
+      "currentAuthLayer": null,
+      "reason": "list returns saved metadata only; live CDP not opened"
+    },
+    {
+      "id": "68275a10b70443c0aeaeaf2520a37624",
+      "seq": 6,
+      "name": "AI Recharge Browser Lane 6",
+      "status": 0,
+      "savedCookieParseable": false,
+      "savedSession": null,
+      "savedAuthLayer": null,
+      "currentSession": null,
+      "currentAuthLayer": null,
+      "reason": "list returns saved metadata only; live CDP not opened"
+    },
+    {
+      "id": "6335d9e30bec49f6821b3be79b0e2db0",
+      "seq": 7,
+      "name": "US-TAX-AB-20260904",
+      "status": 0,
+      "savedCookieParseable": false,
+      "savedSession": null,
+      "savedAuthLayer": null,
+      "currentSession": null,
+      "currentAuthLayer": null,
+      "reason": "list returns saved metadata only; live CDP not opened"
+    },
+    {
+      "id": "51e915e3298b4a02bbd7468b39749c9e",
+      "seq": 8,
+      "name": "Plus Browser PH Lane 4 (clean)",
+      "status": 0,
+      "savedCookieParseable": false,
+      "savedSession": null,
+      "savedAuthLayer": null,
+      "currentSession": null,
+      "currentAuthLayer": null,
+      "reason": "list returns saved metadata only; live CDP not opened"
+    }
+  ]
+}

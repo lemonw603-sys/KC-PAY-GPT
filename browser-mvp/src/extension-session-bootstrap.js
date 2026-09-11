@@ -35,6 +35,7 @@ export class ExtensionSessionBootstrapAdapter extends SessionProviderPort {
     if (!source || typeof source.load !== 'function') throw new TypeError('session source.load is required');
     if (typeof extensionPath !== 'string' || extensionPath.length === 0) throw new TypeError('extensionPath is required');
     this.source = source;
+    this.adapterMode = 'EXTENSION';
     this.extensionPath = extensionPath;
     this.clock = clock;
     this.timeoutMs = timeoutMs;

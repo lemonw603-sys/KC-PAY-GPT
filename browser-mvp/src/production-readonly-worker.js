@@ -10,12 +10,12 @@ import { createDatabasePool } from '../../v1/src/db/pool.js';
 import { createBitBrowserControlManifest, createChromeControlManifest } from './fixtures.js';
 import { GoogleChromeControlRuntimeAdapter } from './chrome-control-runtime.js';
 import { BitBrowserControlRuntimeAdapter } from './bitbrowser-control-runtime.js';
-import { createBrowserOrderPreflightWorker } from './browser-order-preflight.js';
+import { BrowserOrderEncryptedSessionSource, createBrowserOrderPreflightWorker } from './browser-order-preflight.js';
 import { AppendOnlyWal, WalEvidenceSink } from './wal.js';
 import { CompositeEvidenceSink, MysqlEvidenceSink } from './mysql-evidence-sink.js';
 import { createSharedNonPaymentDryRun, SHARED_NONPAYMENT_DRY_RUN_CONFIRMATION } from './shared-dry-run-composition.js';
 import { loadProductionReadonlyBrowserConfig } from './production-readonly-config.js';
-import { CookieSessionBootstrapAdapter } from './session-bootstrap.js';
+import { sessionProviderClass } from './session-provider-selection.js';
 import { InMemoryCardMaterialLeaseProvider } from './card-material-lease.js';
 import {
   browserRunMaterialRef,
@@ -132,6 +132,7 @@ export async function runProductionReadonlyBrowserWorker({
     reasonCode: result.reasonCode || null,
   }),
 } = {}) {
+  const SessionProviderAdapter = sessionProviderClass(env.BROWSER_SESSION_PROVIDER);
   const config = loadProductionReadonlyBrowserConfig(env);
   const database = loadRuntimeDatabaseConfig({
     NODE_ENV: env.NODE_ENV || 'production',
@@ -172,7 +173,7 @@ export async function runProductionReadonlyBrowserWorker({
     const sharedCardPreflightEnabled = config.materialPolicy.sharedCardPreflightEnabled;
     const chatGptReadonlyHarness = config.readonlyHarness === 'CHATGPT_ACCOUNT_CHECKOUT';
     const sessionProvider = sharedMaterialsEnabled
-      ? new CookieSessionBootstrapAdapter({
+      ? new SessionProviderAdapter({
         source: new SharedEncryptedSessionSource({
           db: pool,
           encryptionKey: config.sharedMaterialEncryptionKey,
@@ -232,6 +233,7 @@ export async function runProductionReadonlyBrowserWorker({
           : createChromeControlManifest(),
         observation: config.observation,
         encryptionKey: config.sharedMaterialEncryptionKey,
+        sessionProvider: new SessionProviderAdapter({ source: new BrowserOrderEncryptedSessionSource({ db: pool, encryptionKey: config.sharedMaterialEncryptionKey }) }),
         evidenceSink: new CompositeEvidenceSink([new WalEvidenceSink(wal), new MysqlEvidenceSink({ pool, workerId: config.workerId })]),
         leaseSeconds: config.leaseSeconds,
         executionTimeoutMs: config.executionTimeoutMs,

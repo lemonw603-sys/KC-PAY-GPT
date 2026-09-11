@@ -6,6 +6,8 @@
 #   browser-mvp/scripts/run-browser-preflight.sh check | once
 # Secrets are read from the production host over SSH into this process only.
 set -euo pipefail
+export BROWSER_SESSION_PROVIDER="${BROWSER_SESSION_PROVIDER:-COOKIE}"
+case "$BROWSER_SESSION_PROVIDER" in COOKIE|EXTENSION) ;; *) echo "BROWSER_SESSION_PROVIDER must be COOKIE or EXTENSION" >&2; exit 2 ;; esac
 mode=${1:-}; case "$mode" in check|once) ;; *) echo "usage: $0 check | once" >&2; exit 2 ;; esac
 HOST=root@144.34.180.184
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"

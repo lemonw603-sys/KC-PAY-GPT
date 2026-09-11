@@ -138,6 +138,7 @@ export class CookieSessionBootstrapAdapter extends SessionProviderPort {
     super();
     if (!source || typeof source.load !== 'function') throw new TypeError('session source.load is required');
     this.source = source;
+    this.adapterMode = 'COOKIE';
     this.clock = clock;
     this.leases = new Map();
   }

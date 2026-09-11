@@ -19,7 +19,7 @@ import { createBitBrowserControlManifest } from './fixtures.js';
 import { LivePostPaymentRecoveryVerifier } from './live-post-payment-recovery.js';
 import { MockAddressBillingAddressSource, MysqlBillingAddressAssignmentStore } from './mockaddress-billing-address-source.js';
 import { loadProductionLiveBrowserConfig } from './production-live-config.js';
-import { CookieSessionBootstrapAdapter } from './session-bootstrap.js';
+import { sessionProviderClass } from './session-provider-selection.js';
 import {
   browserRunMaterialRef,
   SharedEncryptedCardMaterialSource,
@@ -198,6 +198,7 @@ export async function withPoolLifecycle(pool, operation) {
 }
 
 export async function runProductionLiveBrowserWorker({ env = process.env, browserType = chromium } = {}) {
+  const SessionProviderAdapter = sessionProviderClass(env.BROWSER_SESSION_PROVIDER);
   const config = loadProductionLiveBrowserConfig(env);
   const database = loadRuntimeDatabaseConfig({
     NODE_ENV: env.NODE_ENV || 'production', DATABASE_URL: config.databaseUrl,
@@ -252,10 +253,10 @@ export async function runProductionLiveBrowserWorker({ env = process.env, browse
     const cardMaterialLeaseProvider = await new DurableCardMaterialLeaseProvider({
       source: enrichedCardSource, filePath: config.cardLeasePath,
     }).init();
-    const sessionProvider = new CookieSessionBootstrapAdapter({
+    const sessionProvider = new SessionProviderAdapter({
       source: new SharedEncryptedSessionSource({ db: pool, encryptionKey: config.materialEncryptionKey }),
     });
-    const postPaymentSessionProvider = new CookieSessionBootstrapAdapter({
+    const postPaymentSessionProvider = new SessionProviderAdapter({
       source: new SharedPostPaymentSessionSource({ db: pool, encryptionKey: config.materialEncryptionKey }),
     });
     const provider = config.hnskjApiKey

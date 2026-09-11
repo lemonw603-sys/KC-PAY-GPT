@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 
 import { assertJobEnvelope, ContractError } from './contracts.js';
 import { probeSessionIdentity } from './session-identity-probe.js';
@@ -63,6 +63,17 @@ async function activeOrderPage(context, urlPrefix, timeoutMs) {
   return page;
 }
 
+export function sessionBootstrapEvidence(provider, result, executionAttemptId) {
+  const count = result?.replacedCookieCount;
+  return {
+    adapterMode: ['COOKIE', 'EXTENSION'].includes(provider?.adapterMode) ? provider.adapterMode : 'UNKNOWN',
+    viaExtension: result?.viaExtension === true,
+    existingSessionPreserved: result?.existingSessionPreserved === true,
+    replacedCookieCount: Number.isSafeInteger(count) && count >= 0 ? count : 0,
+    executionAttemptId,
+  };
+}
+
 export class BrowserExecutionService {
   constructor({ runtimeAdapter, evidenceSink, sessionProvider = null, clock = () => Date.now(), timeoutMs = 5_000 } = {}) {
     if (!runtimeAdapter || typeof runtimeAdapter.open !== 'function' || typeof runtimeAdapter.close !== 'function') throw new TypeError('runtimeAdapter is required');
@@ -97,6 +108,7 @@ export class BrowserExecutionService {
     startFresh = false,
   } = {}) {
     assertJobEnvelope(job);
+    const executionAttemptId = randomUUID();
     if (job.state !== 'RUNNING') throw new BrowserExecutionError('INVALID_STATE', 'job must be RUNNING before Browser execution');
     if (typeof assertLease !== 'function') throw new TypeError('assertLease callback is required');
     assertReadOnlyPageContract(job.metadata?.pageContract, {
@@ -178,6 +190,7 @@ export class BrowserExecutionService {
         }
         await this._event(job, 'checkpoint', ++evidenceSequence, {
           action: 'session-bootstrap',
+          ...sessionBootstrapEvidence(this.sessionProvider, sessionResult, executionAttemptId),
           sessionDigest: sessionResult.sessionDigest,
           cookieCount: sessionResult.cookieCount,
         });
@@ -231,8 +244,8 @@ export class BrowserExecutionService {
           const replaced = await this.sessionProvider.bootstrap(sessionLease, runtime.context, { replaceExisting: true });
           await this._event(job, 'checkpoint', ++evidenceSequence, {
             action: 'session-replaced',
+            ...sessionBootstrapEvidence(this.sessionProvider, replaced, executionAttemptId),
             previousReason: reason,
-            replacedCookieCount: replaced.replacedCookieCount,
             cookieCount: replaced.cookieCount,
             sessionDigest: replaced.sessionDigest,
           });

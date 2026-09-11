@@ -1,0 +1,26 @@
+[
+  {
+    "path": "/Users/lemon/Library/Application Support/pojia-browser-live/live.wal",
+    "sha256": "7e7e741b3f5bf4cc469789884a8b0a1ac205da29dd54d67b54ada342166fde15",
+    "lastEventUtc": "2026-09-07T09:34:29.575000+00:00",
+    "bindingNote": "lane-3 maps to profile seq3; lane-4 maps to seq8 per reviewed pool configuration; live/readonly filenames alone do not identify profile"
+  },
+  {
+    "path": "/Users/lemon/Library/Application Support/pojia-browser-live/readonly.wal",
+    "sha256": "14f58b941b4eea5427f4ab429871f971f991ccdd45e3892b7875c1d16e4ab3b9",
+    "lastEventUtc": "2026-09-09T04:25:32.399000+00:00",
+    "bindingNote": "lane-3 maps to profile seq3; lane-4 maps to seq8 per reviewed pool configuration; live/readonly filenames alone do not identify profile"
+  },
+  {
+    "path": "/Users/lemon/Library/Application Support/pojia-browser-live/pool/lane-4.wal",
+    "sha256": "64c03e331fc42cf135b859fd630a59fefc0ffc25fa3a519859c3d5d5dd8f796d",
+    "lastEventUtc": "2026-09-10T22:45:54.819000+00:00",
+    "bindingNote": "lane-3 maps to profile seq3; lane-4 maps to seq8 per reviewed pool configuration; live/readonly filenames alone do not identify profile"
+  },
+  {
+    "path": "/Users/lemon/Library/Application Support/pojia-browser-live/pool/lane-3.wal",
+    "sha256": "889a0bcefaf73ddd1b3b638b5b5ab378ca505c9c3366be05490569c24f60a782",
+    "lastEventUtc": "2026-09-08T07:05:11.816000+00:00",
+    "bindingNote": "lane-3 maps to profile seq3; lane-4 maps to seq8 per reviewed pool configuration; live/readonly filenames alone do not identify profile"
+  }
+]

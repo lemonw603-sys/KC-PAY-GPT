@@ -4,7 +4,7 @@ import { chromium } from 'playwright';
 import { createServer } from 'node:http';
 import { once } from 'node:events';
 
-import { BrowserExecutionError, BrowserExecutionService } from '../src/executor.js';
+import { BrowserExecutionError, BrowserExecutionService, sessionBootstrapEvidence } from '../src/executor.js';
 import { MemoryEvidenceSink } from '../src/evidence-sink.js';
 import { LocalPlaywrightRuntimeAdapter } from '../src/runtime-adapter.js';
 import { CookieSessionBootstrapAdapter } from '../src/session-bootstrap.js';
@@ -101,6 +101,9 @@ test('executor bootstraps an opaque Session lease before page observation', asyn
   assert.equal(result.sessionBootstrapped, true);
   assert.equal(result.submitCalls, 0);
   assert.equal(evidenceSink.events[1].summary.action, 'session-bootstrap');
+  assert.equal(evidenceSink.events[1].summary.adapterMode, 'COOKIE');
+  assert.equal(evidenceSink.events[1].summary.viaExtension, false);
+  assert.match(evidenceSink.events[1].summary.executionAttemptId, /^[0-9a-f-]{36}$/);
   assert.equal(evidenceSink.events[1].summary.sessionDigest.length, 64);
   assert.equal(sessionProvider.leases.size, 0);
 });
@@ -565,4 +568,13 @@ test('a fresh run resets a resident page left on a previous Checkout, a recovere
     await executor.execute(job, { assertLease: async () => true });
     assert.equal(stale.url(), `${base}checkout/oaics_previous`, 'a resumed run keeps the page it recovered');
   } finally { await context.close().catch(() => undefined); await browser.close(); server.close(); await once(server, 'close'); }
+});
+
+
+test('bootstrap evidence whitelists adapter mode and actual branch without copying secrets', () => {
+  const result = sessionBootstrapEvidence({adapterMode:'EXTENSION'}, {viaExtension:true,existingSessionPreserved:false,replacedCookieCount:2,token:'must-not-copy',url:'must-not-copy'}, 'attempt-test');
+  assert.deepEqual(result,{adapterMode:'EXTENSION',viaExtension:true,existingSessionPreserved:false,replacedCookieCount:2,executionAttemptId:'attempt-test'});
+  const preserved = sessionBootstrapEvidence({adapterMode:'EXTENSION'}, {existingSessionPreserved:true}, 'attempt-test');
+  assert.equal(preserved.viaExtension,false); assert.equal(preserved.existingSessionPreserved,true);
+  assert.equal(sessionBootstrapEvidence({adapterMode:'secret'}, {viaExtension:'true',replacedCookieCount:-1},'attempt-test').adapterMode,'UNKNOWN');
 });

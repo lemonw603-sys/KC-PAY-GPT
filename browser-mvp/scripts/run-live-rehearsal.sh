@@ -10,6 +10,8 @@
 # environment only; nothing is written to disk. Requires the SSH tunnel
 # 127.0.0.1:13306 → production MySQL and the BitBrowser Local API.
 set -euo pipefail
+export BROWSER_SESSION_PROVIDER="${BROWSER_SESSION_PROVIDER:-COOKIE}"
+case "$BROWSER_SESSION_PROVIDER" in COOKIE|EXTENSION) ;; *) echo "BROWSER_SESSION_PROVIDER must be COOKIE or EXTENSION" >&2; exit 2 ;; esac
 
 mode=${1:-}; order=${2:-}
 case "$mode" in

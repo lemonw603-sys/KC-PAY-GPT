@@ -1,0 +1,30 @@
+✔ local BrowserContext observes a page and never exposes a submit operation (607.652125ms)
+✔ page checkpoint waits for client hydration before checking the final title (235.151417ms)
+✔ executor reuses the sole active-order page instead of opening another tab (171.248667ms)
+✔ executor bootstraps an opaque Session lease before page observation (184.767959ms)
+✔ lease loss immediately before Session material access is not misclassified and reads nothing (103.852959ms)
+✔ card material preflight is read once, never written to the page, and closed immediately (180.856125ms)
+✔ page drift fails closed and records a redacted freeze reason (168.235958ms)
+✔ LIVE recovery mode detaches instead of destroying the active-order Profile on failure (174.141334ms)
+✔ lease loss after navigation fails closed before checkpoint (140.263292ms)
+✔ manual freeze and navigation timeout both fail closed (167.614083ms)
+✔ payment handler receives the checkout without a pre-card strict zero-tax requote (314.121958ms)
+✔ executor replaces a resident session that belongs to another customer, once, then proceeds (187.076458ms)
+✔ executor still fails closed when the replaced session does not match either (162.764625ms)
+✔ a rehearsal stop before submit detaches the identity instead of closing it and reports PRE_SUBMIT_STOPPED (255.327041ms)
+✔ a completed order releases the identity login state when releaseSessionOnComplete is set (322.850791ms)
+✔ a fresh run resets a resident page left on a previous Checkout, a recovered run keeps it (170.087583ms)
+✔ bootstrap evidence whitelists adapter mode and actual branch without copying secrets (0.173667ms)
+✔ pool COOKIE preflight invokes the selected adapter with order-scoped material (179.046125ms)
+✔ pool EXTENSION preflight invokes the selected adapter with order-scoped material (3.742292ms)
+✔ standalone preflight retains COOKIE default and rejects a malformed injected provider (0.450958ms)
+✔ single-worker provider selection defaults COOKIE, selects EXTENSION, rejects invalid mode (0.472208ms)
+✔ actual branch evidence reaches WAL and MySQL JSON unchanged (4.440292ms)
+ℹ tests 22
+ℹ suites 0
+ℹ pass 22
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 4093.823833
