@@ -40,7 +40,7 @@ test('order intake fails closed when minimum balance is missing or exceeds fundi
   );
 });
 
-test('Browser order intake atomically creates card assignment and preflight tasks', async () => {
+test('D-158: Browser order intake creates only the card assignment task, no separate preflight', async () => {
   const calls = [];
   const connection = {
     async beginTransaction() {}, async commit() {}, async rollback() {}, release() {},
@@ -72,9 +72,9 @@ test('Browser order intake atomically creates card assignment and preflight task
     sessionCiphertext: 'encrypted-session', cardPurchaseIdempotencyKey: 'purchase-key',
   });
   const taskCalls = calls.filter(({ sql }) => sql.includes('INSERT INTO tasks'));
-  assert.equal(taskCalls.length, 2);
+  assert.equal(taskCalls.length, 1, 'a second login for a separate preflight is no longer scheduled');
   assert.match(taskCalls[0].sql, /'ASSIGN_CARD'/);
-  assert.match(taskCalls[1].sql, /'BROWSER_PREFLIGHT'/);
+  assert.equal(calls.some(({ sql }) => sql.includes('BROWSER_PREFLIGHT')), false);
   const insert = calls.find(({ sql }) => sql.includes('INSERT INTO orders'));
   assert.match(insert.sql, /frozen_card_provider_account_id/);
   assert.equal(insert.values.includes('manual-source-a'), true);

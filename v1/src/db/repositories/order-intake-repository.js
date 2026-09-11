@@ -233,14 +233,11 @@ export async function createOrderFromCdk(pool, input) {
        VALUES (?, 'ASSIGN_CARD', 'PENDING', ?, 10080)`,
       [input.orderId, `assign-card:${input.orderId}`]
     );
-    if (route.executor_kind === 'BROWSER') {
-      await connection.query(
-        `INSERT INTO tasks
-         (order_id, task_type, status, dedupe_key, max_attempts)
-         VALUES (?, 'BROWSER_PREFLIGHT', 'PENDING', ?, 1)`,
-        [input.orderId, `browser-preflight:${input.orderId}`]
-      );
-    }
+    // D-158: no separate BROWSER_PREFLIGHT task. It logged into the customer's
+    // account, closed it, and the live run logged in again minutes later — two
+    // logins per order for checks the live run now performs itself in its own
+    // session (identity match, free-plan guard). Fewer logins, one session.
+
     await connection.commit();
     return {
       orderId: input.orderId,

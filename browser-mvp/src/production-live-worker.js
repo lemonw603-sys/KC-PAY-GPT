@@ -178,10 +178,22 @@ export async function resolveCardContext(pool, runId) {
   return row;
 }
 
+/**
+ * D-158: the live run carries the same read-only account probe the old separate
+ * preflight used to run. Without `accountCheckPath` the probe cannot see the
+ * plan, so `alreadyPlus` stayed null and the executor's "target account is not a
+ * free account" guard could never fire on the live path — the guard only worked
+ * because a second, separate login ran first. One login now does both.
+ */
+export const CHATGPT_ACCOUNT_PROBE_CONTRACT = Object.freeze({
+  path: '/api/auth/session',
+  accountCheckPath: '/backend-api/accounts/check/v4-2023-04-27?timezone_offset_min=0',
+});
+
 export function observation() {
   return {
     pageContract: { urlPrefix: 'https://chatgpt.com/', title: 'ChatGPT', requiredSelector: 'body', markerText: '' },
-    accountProbeContract: {},
+    accountProbeContract: { ...CHATGPT_ACCOUNT_PROBE_CONTRACT },
     checkoutNavigationContract: CHATGPT_PLUS_CHECKOUT_NAVIGATION_CONTRACT,
     checkoutContract: CHATGPT_PLUS_CHECKOUT_CONTRACT,
   };

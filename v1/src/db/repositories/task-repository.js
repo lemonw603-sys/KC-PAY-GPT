@@ -24,6 +24,10 @@ export async function claimNextTask(pool, {
   const connection = await pool.getConnection();
   try {
     await connection.beginTransaction();
+    // D-158: a Browser order no longer waits on a separate pre-attempt login.
+    // Its two checks — session identity match and "account is still free" —
+    // now run inside the live attempt's own session and abort it safely
+    // before any payment, so one login covers what two used to.
     const [rows] = await connection.query(
       `SELECT id, order_id, task_type, attempts, max_attempts, payload_json
        FROM tasks
@@ -63,16 +67,6 @@ export async function claimNextTask(pool, {
                        WHERE browser_profile.executor_kind = 'BROWSER'
                          AND browser_profile.status = 'ACTIVE'
                      )
-                   )
-                 )
-                 AND (
-                   fr.executor_kind <> 'BROWSER'
-                   OR EXISTS (
-                     SELECT 1 FROM tasks browser_preflight
-                     WHERE browser_preflight.order_id = o.id
-                       AND browser_preflight.task_type = 'BROWSER_PREFLIGHT'
-                       AND browser_preflight.status = 'COMPLETED'
-                       AND JSON_UNQUOTE(JSON_EXTRACT(browser_preflight.payload_json, '$.outcome')) = 'PASSED'
                    )
                  )
                  AND EXISTS (
