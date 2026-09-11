@@ -29,9 +29,9 @@
 1. 收到单号 → `browser-mvp/scripts/prod-query.sh "SELECT public_no,status FROM orders WHERE public_no='<单号>'"`，等到 CARD_READY 且派工任务已排出。
 2. 核实客户 Session 未过期（服务器上解密只读校验，不打印秘密；写法见 HANDOFF_LOG 2026-09-11 07:2x 节）。
 3. 清窗口登录态：`cd browser-mvp && BITBROWSER_PROFILE_ID=10f0dc7b534844c083165796447d5893 node scripts/clear-lane-session.mjs`
-4. **向 Lemon 当次确认开付款开关**，得到肯定后：`BROWSER_POOL_LANES=lane-1=10f0dc7b534844c083165796447d5893 bash browser-mvp/scripts/go-live.sh --arm`
+4. 直接开：`BROWSER_POOL_LANES=lane-1=10f0dc7b534844c083165796447d5893 bash browser-mvp/scripts/go-live.sh --arm`（D-159：提交订单即为授权，不再逐次询问；**开关开启后立即向 Lemon 汇报**）
    - 自检若报「有残留 worker」，先确认是不是自己的监控命令行含该进程名被 `pgrep -f` 自匹配（真实 worker 用 `pgrep -f 'node src/production-live'` 数）。**监控命令不要包含该进程名。**
-5. 观察 `go-live-*.log` 与 `browser_runs`；正式流程自己做身份核对与 free 判定，失败即付款前安全中止。
+5. 观察 `go-live-*.log` 与 `browser_runs`；正式流程自己做身份核对与 free 判定，失败即付款前安全中止。**日志出现 `需要人工验证` 时立刻在对话里叫 Lemon 去勾选**（本机同时弹通知），他勾完自动化自行继续。
 6. 终态后 `bash browser-mvp/scripts/stop-live.sh`。**付款点击后 10 分钟内不得停 worker。**
 7. 失败收口按 RUNBOOK §2 前「测试账号单失败后的收口」；付款未知用 `v1/scripts/resolve-unknown-payment.mjs`（先 --dry-run）。
 
@@ -43,7 +43,7 @@
 ## 暂停 / 恢复
 
 ```text
-暂停原因：D-157/D-158 已发布（2026-09-11 10:01 UTC）；等 Lemon 用 mengx612 重跑第三单
+暂停原因：D-157/D-158/D-159 已就绪；等 Lemon 用 mengx612 提交第三单，收到单号即一步跑到底（2026-09-11 10:08 UTC）
 允许继续：只读核对；browser-mvp/v1 代码与测试；rehearsal 模式；文档落盘
 禁止操作：未经 Lemon 当次确认不 go-live --arm、不消耗真实账号
 恢复第一步：读本文 → state-check.sh 比对现场 → 读 HANDOFF_LOG 最后三节看真单原始证据
