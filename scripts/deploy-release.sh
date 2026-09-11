@@ -84,10 +84,17 @@ prev=$(readlink -f /opt/pojia/current)
 echo "previous=$prev"
 ln -sfn "$r" /opt/pojia/current
 systemctl restart pojia-web.service
-sleep 2
 systemctl is-active pojia-web.service
 echo "current=$(readlink -f /opt/pojia/current)"
-curl -s -o /dev/null -w "live=%{http_code}\n" http://127.0.0.1:3100/health/live
+# Wait for the port instead of guessing: a single check after `sleep 2` raced the
+# server's own startup and printed a false live=000 during the 2026-09-11 release,
+# which reads exactly like a broken deploy. Give it up to 30s, then report honestly.
+for _ in $(seq 1 30); do
+  code=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:3100/health/live || true)
+  [ "$code" = "200" ] && break
+  sleep 1
+done
+echo "live=$code"
 curl -s -w " ready=%{http_code}\n" http://127.0.0.1:3100/health/ready
 h=$(grep -oE "^ADMIN_HOST=.*" /etc/pojia/runtime.env | cut -d= -f2-)
 echo "index.html on disk references: $(grep -oE 'admin\.js\?v=[0-9]+' /opt/pojia/current/v1/public/admin/index.html)"
