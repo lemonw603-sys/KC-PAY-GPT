@@ -39,17 +39,21 @@ test('customer assets contain no remote or legacy runtime dependencies', () => {
   }
 
   const html = fs.readFileSync(path.join(directory, 'index.html'), 'utf8');
-  const externalLinks = [...html.matchAll(/href="(https?:\/\/[^"#]+)"/g)].map((match) => match[1]);
-  assert.deepEqual(externalLinks.sort(), [
-    'https://chatgpt.com/',
-    'https://chatgpt.com/',
-    'https://chatgpt.com/api/auth/session'
-  ]);
-  assert.match(html, /id="session-help-open"/);
-  assert.match(html, /id="subscription-link"/);
+  // 每一条外链都必须落在 chatgpt.com。断具体清单会随改版失效，而且旧的
+  // 正则把带锚点的地址整条漏掉了（成功屏那条 #settings/Subscription 就
+  // 在漏网里），所以这里连锚点一起抓，只断域。
+  const externalLinks = [...html.matchAll(/href="(https?:\/\/[^"]+)"/g)].map((match) => match[1]);
+  assert.ok(externalLinks.length >= 3, 'the guide and the success screen link out');
+  for (const link of externalLinks) {
+    assert.equal(new URL(link).origin, 'https://chatgpt.com', `${link} leaves chatgpt.com`);
+  }
+  assert.match(html, /id="session-guide-open"/);
+  assert.match(html, /id="run-sublink"/);
   assert.match(html, /rel="noopener noreferrer"/);
-  assert.match(html, /"account":\{"id":"account-…"\}/);
-  assert.match(html, /"sessionToken":"…"/);
+  // 教程示例要让客户认出自己屏幕上的东西，又不能像一份真的凭证：
+  // 关键字段在，值一律省略号收尾。
+  assert.match(html, /"accessToken":"[^"]*…"/);
+  assert.match(html, /"email":"you@example\.com"/);
   assert.doesNotMatch(html, /已由人工接手核对/);
 
   const customerScript = fs.readFileSync(path.join(directory, 'assets', 'customer.js'), 'utf8');
@@ -189,8 +193,17 @@ test('customer page shows the Session re-submit form when remaining is null (unl
   const customer = fs.readFileSync(path.join(directory, 'assets', 'customer.js'), 'utf8');
   assert.match(customer, /replacement\.remaining == null \|\| Number\(replacement\.remaining\) > 0/);
   assert.doesNotMatch(customer, /Number\(replacement\.remaining \|\| 0\) > 0/);
+  // 缓存版本号：改了脚本必须让客户拿到新文件，否则修好的东西在浏览器里
+  // 看着还是坏的。写死某一个数字会让这条断言每次改版都挂，反过来诱导人去
+  // 改断言；这里只守住真正要守的三件事——两个资源都带版本、版本一致、
+  // 只能往上走。
   const html = fs.readFileSync(path.join(directory, 'index.html'), 'utf8');
-  assert.match(html, /customer\.js\?v=12/);
+  const scriptVersion = html.match(/customer\.js\?v=(\d+)/);
+  const styleVersion = html.match(/customer\.css\?v=(\d+)/);
+  assert.ok(scriptVersion, 'index.html must load customer.js with a ?v= cache version');
+  assert.ok(styleVersion, 'index.html must load customer.css with a ?v= cache version');
+  assert.equal(scriptVersion[1], styleVersion[1], 'both assets ship together, so they share a version');
+  assert.ok(Number(scriptVersion[1]) >= 20, 'the asset version only ever moves forward');
 });
 
 test('admin navigation is exactly five pages and old views are gone', () => {

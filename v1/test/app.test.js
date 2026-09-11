@@ -65,8 +65,10 @@ test('serves the isolated v1 customer page and local assets', async () => {
     assert.equal(page.status, 200);
     assert.equal(page.headers.get('cache-control'), 'no-store');
     assert.match(page.headers.get('content-security-policy'), /script-src 'self'/);
-    assert.match(html, /id="submit-form"/);
-    assert.match(html, /id="query-form"/);
+    // 候光四步：验证卡密 → 粘贴 Session → 确认兑换 → 开通处理，外加订单查询。
+    for (const id of ['form-cdk', 'form-session', 'view-confirm', 'view-run', 'form-query']) {
+      assert.match(html, new RegExp(`id="${id}"`), `customer page is missing ${id}`);
+    }
 
     const script = await fetch(`${baseUrl}/assets/customer.js`);
     assert.equal(script.status, 200);

@@ -478,3 +478,50 @@ Lemon 的反馈逐条落地：
 - **诚实说明（重要）**：配置里那几条 `ask` 例外（go-live、开卡、补余额、发布切换）是尽力而为——`bypassPermissions` 是否仍会对 `ask` 规则弹窗，我没有验证过，**不能当成保障**。
 - **真正的闸门是规则，不是机器**：`CLAUDE.md` 的「资金和生产动作先确认」已加一条前置说明——机器不再拦，所以开卡、补余额、真实充值、提现、发布、生产写库之前必须开口问，不得因为"技术上能直接执行"就直接执行。本轮全程即按此执行（开付款开关、NOT_CHARGED 收口前都先问过 Lemon）。
 
+
+## D-182（2026-09-12 04:20 UTC）候光实施：卡密校验接口、九阶段、客户页重做
+
+按 D-180 进入实施，三块都已完成并通过全量测试（720 项，0 失败）。**尚未发布**——改的是客户可见的线上页面，等 Lemon 看过再发。
+
+### 1. 卡密校验接口 `POST /api/v1/cdks/verify`（拆屏的前提）
+
+只读，不改任何状态；真正的裁决仍在下单事务里 `FOR UPDATE` 重做一遍。四个答案：`VALID` / `NEEDS_SESSION`（已有订单在等换号，F-34/F-35）/ `BOUND_TO_ORDER`（带订单号，去查进度）/ `INVALID`。
+
+- **比 Lemon 原话多一个状态**：原话是"只回答 有效/无效/已被使用"，多出的 `NEEDS_SESSION` 对应真实存在的换号分支，不给它会让被退回的客户卡死。
+- **关键一点：`REDEEMED` 不等于不可用**。订单在 `RECHARGE_FAILED`/`CLOSED` 且没有资金证据时，下单会把码退回。所以把资金证据那段 SQL 从 `cdk-return-repository` 抽成只读的 `readCdkReturnEvidence` + `cdkReturnBlockedBy`，校验与退回两条路径共用一份规则，不会漂移。
+- 限流 10 次/分钟/IP；后台域名不提供该路由；`INVALID` 不带订单号和商品名。
+- **核过的边界**：`test/public-isolation.test.js` 的禁止清单里有 `/api/verify-cdk`。查证（`c91a0de`，与 stripe/hcaptcha/puppeteer 同批引入）它护的是"不把上游 KC-PAY-GPT 的 legacy 运行时拖回来"，不是"不许校验卡密"——上游本来就是先验码再继续（见 `docs/archive/2026-08/BROWSER_RECHARGE_MODULE_REPORT_2026-08-25.md:91`）。新路径不同、规则自己的，禁令保留。
+
+### 2. 九阶段映射到真实数据
+
+`/api/v1/orders/status` 增加 `stage` 字段（index/code/label/total/floor/ceiling/since），旧的六步 `status` 一字未动。
+
+- **为什么需要**：2026-09-11 那次成功单，`order.status` 从 11:10:04 到 11:15:15 一直是 `RECHARGE_PROCESSING`。只按订单状态画进度，客户要盯一个不动的条看 4 分 49 秒。
+- **映射全部来自 2026-09-12 对生产库的实查**：`order_events.to_status` 14 个真实值、`browser_run_events.action` 7 个（session-bootstrap / account-readonly-probe / card-material-preflight / checkout-navigation…）、`browser_operations.operation_type` 12 个。
+- **不用 `browser_runs.last_checkpoint_kind`**：它只留最后一个检查点，那单的 `PLUS_ACTIVATED` 被随后的 `CANCELLATION_CONFIRMED` 覆盖了，完整轨迹只在 `browser_operations` 里。这条纠正了 D-180 当时"阶段来自 browser_runs 检查点"的说法。
+- **取最远证据而非最新证据**。真实时间轴是 `SUBMIT_UNKNOWN → RECHARGE_PROCESSING → RECHARGE_SUCCESS`，只读当前状态会在交付前 20 秒把客户从第 7 阶段退回第 3 阶段。用那条真实时间轴做测试夹具，逐行断言不倒退。
+- 证据查询失败只损失 `stage` 字段，不影响订单状态返回。
+
+### 3. 客户页整页重做（候光）
+
+四步流程（验证卡密 → 核对账号 → 确认兑换 → 开通完成）+ 订单查询 + 教程弹层；进度环逐帧插值、呼吸光晕、九阶段文案。旧页面的每一项能力都保留（本地解析不发请求、恰好一次建单、Session 不回显且建单后清空、换号表单、查询、复制查询码、pageshow 清理、错误码映射、Pro 文案替换）。
+
+**自测中发现并修掉的真问题**（本机 mock 服务器 + 浏览器实跑，桌面与 375px 两种尺寸、明暗两主题）：
+
+| 问题 | 原因 |
+|---|---|
+| 百分比会精确等于阶段上限 | `exp(-2.6t)` 在一个阶段停留超过一小时后双精度下溢为 0；`Math.round(59.5)` 又抬回上限。现钳在上限下方整一个百分点 |
+| 曲线一分钟就到顶不再动 | 段长 26 秒太短。按真实阶段时长（22 秒到 2 分 36 秒）改为 90 秒 |
+| 页面切后台后进度完全不更新 | 原来 `document.hidden` 直接跳过轮询。客户提交完常常切走等着，而嵌入式浏览器/iframe 里 `visibilitychange` 未必触发。改为后台降频到 30 秒而非停掉 |
+| 每次轮询都重放进入动画并滚回顶部 | `showView` 无条件重放。改为只在视图真的切换时重放 |
+| 出问题时环已转琥珀、光晕还是绿的 | 两个元素在同时说相反的话。光晕改为跟随 tone |
+| 375px 上顶栏三块各自折行 | 品牌名与两个入口挤不下。收紧字号内距并加 nowrap |
+| 教程里箭头在窄屏没转向下 | 媒体查询的 `rotate(90deg)` 被 `slide` 动画的 transform 覆盖。改用竖向关键帧 |
+| 窄屏快捷键最后一个键被切掉 | grid 列宽不够。平台名改为独占一行 |
+| 窄屏「查询码」标签被挤成竖排 | 24 位码撑爆 flex。标签独占一行，码可折行不省略 |
+
+**一处有意偏离原型**：原型从 Google Fonts 取 Familjen Grotesk 与 IBM Plex Mono。客户在国内，那个域名多半加载不出来、还会吊住首屏，改用系统字体栈，变量名保留，日后自托管只改两行。
+
+**顺手修的既有测试缺陷**：外链白名单的正则 `[^"#]+` 把带锚点的地址整条漏掉（成功屏那条 `#settings/Subscription` 就在漏网里），改为连锚点一起抓、只断域；资源版本号断言写死 `v=12`，每次改版都挂、反过来诱导人去改断言，改为"两个资源都带版本、版本一致、只能往上走"。
+
+**新增 `test/customer-page-houguang.test.js`（16 项）**：把六条文案硬规则和六条踩坑清单逐条变成断言，包括 `.ring>svg` 必须是子选择器、`选择器, @media{}` 不得出现、字重不得低于 400 且必须是整百档、不得出现具体时长承诺、不得出现"自动续费"和"会话数据"、不引入远程字体。
