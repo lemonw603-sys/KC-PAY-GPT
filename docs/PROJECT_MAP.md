@@ -33,7 +33,7 @@
 
 **主线（现在做）**
 - A1 F-42 预检接入 SessionProvider：已合并 `2aad60d`。
-- A2 预检改造：预检不再点 Upgrade 创建 Checkout，只做注入、身份核对、free 判定；`max_attempts` 5→2。browser-mvp 侧 Codex，v1 侧大脑。**待 Lemon 一字确认。**
+- ~~A2 预检改造~~ **不做（D-149）**：预检保持现状；"预检不创建 Checkout、max_attempts 5→2"降为 E2 拒付后的候选变量，有证据再改。
 - A3 阶段 2 实验：E0 离线路径标记（已批）→ E1 一个 free 账号两条建会话路线只读配对（Lemon 注册；Codex 先只读列 8 身份会话状态，大脑定 lane）→ E2 另一个 free 账号一次 rehearsal（Lemon 注册；卡 9839、后台 plus CDK 可用）。
 - A4 rehearsal 到 PRE_SUBMIT_STOPPED → Lemon 放行一笔真单到 RECHARGE_SUCCESS。D-139 不变：真单失败一次即人工。
 - ~~B2 F-43~~ **已移出主线（D-148）**：付款→确认 Plus→确认取消续费在同一浏览器会话内完成，不经过旧 token 门槛；F-43 只影响付款后的自动补核，归入真单之后的集中整治。
