@@ -2294,3 +2294,10 @@ P1：F-3 取消续费接口从未真调、失败终态后台按钮不认；F-4 �
 - `deploy-release.sh prepare 0396bb8 20260911-preflight-noupgrade-0396bb8` → `switch`；独立核实：current → 新 release，web/worker/sync-timer active，live=200，ready=200。备份 `/var/backups/pojia/pojia-20260911T063427Z.sql.gz.enc`。
 - 观察：`pojia-worker` ActiveEnterTimestamp 2026-09-08 00:25 UTC，历次 switch 均未重启 worker；本次改动在 web 下单路径不受影响，但 worker 侧改动若有需单独重启（记入真单后巡检）。
 
+## 2026-09-11 06:58 UTC｜真单前排查（模式 2 直接真付，Lemon 选定）
+
+- 生产：release `0396bb8` 在线；`pojia-worker` 已于 06:56:50 UTC 重启（此前跑 09-08 代码，worker 加载的 `order-cancellation-service.js` 在其后有改动）；开关 accept_new_orders=true、browser_dispatch_enabled=true、payment_writes=false；Plus 路线 `CHATGPT_PLUS_BROWSER_V1` BROWSER、accepts_new_orders=1；卡 9839 active/AVAILABLE/ACCEPTED $50、材料 ciphertext 齐、未占用。
+- 本机：出口 38.60.246.34、隧道、BitBrowser API、mihomo 全绿；Pilot 窗口未运行（无多 tab 风险）；预检 once / 演练 once / pool 三条路径用 Pilot 做 check 全 READY；lane 参数无 DB 依赖。
+- 执行顺序：Lemon 提交 → 服务器 worker 分卡到 CARD_READY → 本机 `BITBROWSER_PROFILE_ID=<Pilot> run-browser-preflight.sh once`（新预检首次真实运行，先看结果）→ Lemon 当次确认开开关 → `BROWSER_POOL_LANES=lane-1=<Pilot> go-live.sh --arm`（pool 预检 lane 只领 PENDING，不会重跑）→ 观察 → 终态后 `stop-live.sh`。
+- 已识别、未能提前消除的风险：① sentinel 拦点 Upgrade（实验目的本身；失败自动 RECHARGE_FAILED+退 CDK+释放卡）；② 拒付（run 停 RECONCILE_ONLY，用 B1 按钮 NOT_CHARGED 收口，按钮生产首次）；③ 付款成功但确认 Plus/取消续费未在同会话完成 → 补核 lane 可能撞 F-43 门槛 → 人工 B1 CHARGED；④ 卡 9839 材料首次在 live 解密填写（导入时已校验格式；坏则付款前中止自动收口，但浪费一次 Upgrade 点击）；⑤ 账单地址来自地址池 state=DE（美国特拉华）+ 名字 "Browser Billing"，与 Lemon 手动付款时填的地址可能不同（未列入差异维度）；⑥ Pilot 窗口首次跑自动化 live；⑦ 新预检代码仅单测覆盖，首次真实运行放在 once 步骤单独观察。
+

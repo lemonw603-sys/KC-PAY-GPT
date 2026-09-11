@@ -28,7 +28,7 @@
 ## 暂停 / 恢复
 
 ```text
-暂停原因：A2 已发布；A3 等 Lemon 选模式并提交账号 A 订单（2026-09-11 06:36 UTC）
+暂停原因：模式 2 已选；排查完成（见 HANDOFF_LOG 2026-09-11 06:58 UTC）；等 Lemon 提交账号 A 订单并发单号
 允许继续：只读核对；browser-mvp/v1 代码与测试；rehearsal 模式；发布 A2
 禁止操作：未经 Lemon 当次确认不 go-live --arm、不消耗真实账号；快照同步可随时跑（Lemon 09-11 授权自动化），仍先 preview 再 --commit
 恢复第一步：读本文 → 读 BRAIN_UNDERSTANDING §5 看 Lemon 确认了哪些 → 读 CODEX_PROGRESS.md 看有无 [需要大脑]
