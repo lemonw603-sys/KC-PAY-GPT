@@ -2307,3 +2307,17 @@ P1：F-3 取消续费接口从未真调、失败终态后台按钮不认；F-4 �
 - **账单地址**：`MockAddressBillingAddressSource` 只接受 AK/DE/MT/NH/OR（美国五个无州销售税州），构造时校验；DE=特拉华；数据集 `data/mockaddress-us-taxfree-v20260426.json`（DE 888 行）；按订单 bindingRef 哈希取行并记录到 `browser_billing_address_assignments`；付款前有零税重报价校验。结论：免税州由代码强制。
 - **取消续费**：真单为自动（`confirmCancellation` → `cancelSubscription` 调 ChatGPT 取消接口 → 轮询 will_renew=false）。Dqcn 单库存 Session 仍有效（session expires 2026-12-09，accessToken exp 2026-09-20 02:23 UTC；服务器只读校验，未打印秘密），可由大脑在真单后用同一函数在非 Pilot 窗口执行并用「已在账号里取消续费」收口（Lemon 已让大脑做）。
 
+## 2026-09-11 08:00 UTC｜真单 PJV1-9TN0gGX-I5rRdhXxLrq7（账号 A，Pilot 窗口）：付款点击一次，结果未知，账号未升级
+
+时间线（UTC）：07:18:25 提交 → CARD_READY，卡 9839；07:3x 清 Pilot 登录态（清 session+21 个登录 cookie，保留 oai-did/cf_clearance/__stripe_mid）；预检 once **一次通过**（loggedIn/identityMatched=true、FREE、**checkoutCreated=false**、submitCalls=0、attempts=1）；07:37 开付款开关 + 起 pool（lane-1=Pilot）；07:38:54 BEGIN_RUN；07:40:36 PAYMENT_SUBMIT COMMITTED（EXTERNAL_ACTION_AUTHORIZED，permit 6e704e11）；07:45:44 PAYMENT_UNKNOWN；07:45:50 自动核实一次 = UNKNOWN；07:50:44 核实窗口到期；07:54 stop-live（开关回 false，独立核实）；07:56:29 worker 干净退出，run → HUMAN_REQUIRED。
+
+原始证据：
+- **Sentinel 未拦**：WAL 与 `browser_run_events` 均有 `checkout-navigation checkoutCreated=true`（09-10 那次是 CHECKOUT_NAVIGATION_FAILED）。填卡、账单地址、邮箱、零税重报价、`final-pre-submit-check` 全部通过，否则不会提交 intent。
+- **点击一次**：`browser_operations` 仅一条 PAYMENT_SUBMIT COMMITTED，`paymentSubmitCalls=1`，无第二次。
+- **未扣款（两个独立来源）**：① ChatGPT 账号 `db35acdf…`（shichuan003@gmail.com）现读 `has_active_subscription=false`、`subscription_plan=chatgptfreeplan`、`purchase_origin_platform=chatgpt_not_purchased`（用系统同款带 Bearer 的 accounts/check 读法，只读）；② highvcc 卡台卡 9839 余额仍 5000 分（$50.00），与开卡时一致。
+- **系统为何判未知**：`live-chatgpt-payment-adapter.js` 点击后调 `outcomeObserver`，而 pool 的 observer 就是 `verifier.confirmPlus()`（`shared-live-composition.js:202`）——只看账号是否变 Plus，**不读页面拒付提示**。Plus 未出现即 UNKNOWN。因此本次拿不到"为什么没成"的页面级原因。
+
+结论与待办：
+- 订单 `SUBMIT_UNKNOWN`、run `HUMAN_REQUIRED`/`PAYMENT_UNKNOWN`、卡 9839 仍 ASSIGNED、CDK 仍 REDEEMED。收口 = 后台「确认核实结果」→ 未扣款（Lemon 点，大脑无后台账号）。
+- **新发现的自动化缺口（F-47）**：付款失败无页面级原因，一律落 UNKNOWN 需人工。要做到全自动，必须在点击后读结账页的拒付/错误文案并分类。
+
