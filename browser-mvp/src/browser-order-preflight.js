@@ -401,16 +401,24 @@ export function createBrowserOrderPreflightWorker({
   evidenceSink,
   leaseSeconds = 120,
   executionTimeoutMs = 30_000,
+  sessionProvider = null,
 } = {}) {
   const cardlessObservation = createCardlessPreflightObservation(observation);
   const repository = new BrowserOrderPreflightRepository({
     pool, workerId, executorProfileId, leaseSeconds,
   });
-  const sessionProvider = new CookieSessionBootstrapAdapter({
+  // Standalone callers keep COOKIE; the pool injects its selected adapter
+  // backed by order-scoped material, never a run-scoped payment source.
+  const effectiveSessionProvider = sessionProvider ?? new CookieSessionBootstrapAdapter({
     source: new BrowserOrderEncryptedSessionSource({ db: pool, encryptionKey }),
   });
+  for (const method of ['open', 'bootstrap', 'clearSession', 'close']) {
+    if (typeof effectiveSessionProvider[method] !== 'function') {
+      throw new TypeError(`preflight sessionProvider.${method} is required`);
+    }
+  }
   const executor = new BrowserExecutionService({
-    runtimeAdapter, sessionProvider, evidenceSink, timeoutMs: executionTimeoutMs,
+    runtimeAdapter, sessionProvider: effectiveSessionProvider, evidenceSink, timeoutMs: executionTimeoutMs,
   });
   return Object.freeze({
     async runOnce() {

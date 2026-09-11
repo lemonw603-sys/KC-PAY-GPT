@@ -1,0 +1,31 @@
+✔ order-scoped Session source accepts only a pre-payment Browser order (4.670666ms)
+✔ order-scoped Session source rejects API and post-payment orders without blaming the Session (0.288417ms)
+✔ order-scoped Session source does not misclassify a database outage as customer Session invalid (0.116791ms)
+✔ preflight summary keeps only non-payment operational evidence (0.230791ms)
+✔ cardless preflight permits the initial VAT quote without weakening the payment contract (0.101959ms)
+✔ preflight lease loss requeues without counting an attempt, even at the last attempt (0.356375ms)
+✔ preflight exhaustion raises a critical operator alert and points at the reopen script (0.259417ms)
+✔ preflight repository claims only Browser preflight tasks with the database profile (0.20525ms)
+✔ preflight passes the injected provider into the executor instead of constructing COOKIE (0.910208ms)
+✔ ExtensionSessionBootstrapAdapter preserves an existing active Profile session without opening the popup (2.262792ms)
+✔ ExtensionSessionBootstrapAdapter rejects sources with no session material (0.417584ms)
+✔ ExtensionSessionBootstrapAdapter drives the popup to replace a session and reports the extension-backed shape (0.507167ms)
+✔ ExtensionSessionBootstrapAdapter surfaces the popup's own error message instead of hanging on a rejected token (0.259833ms)
+✔ ExtensionSessionBootstrapAdapter fails closed when the popup controls are missing (wrong extension version or not loaded) (0.175917ms)
+✔ ExtensionSessionBootstrapAdapter clearSession drops only session/login cookies, same as the direct-cookie adapter (0.262541ms)
+✔ ExtensionSessionBootstrapAdapter rejects bootstrap after the lease is closed (0.16525ms)
+✔ pool COOKIE preflight invokes the selected adapter with order-scoped material (553.389166ms)
+✔ pool EXTENSION preflight invokes the selected adapter with order-scoped material (5.488417ms)
+✔ standalone preflight retains COOKIE default and rejects a malformed injected provider (0.464542ms)
+✔ pool lanes are parsed as unique laneId=profileId pairs, one to six (1.181959ms)
+✔ REHEARSAL pool is non-paying and PAY pool requires both process gates and no stop flag (0.70025ms)
+✔ lane loop runs verification, preflight and live in order, restarts after work and sleeps when idle (0.33225ms)
+✔ pool config stops Pro orders on the upgrade dialog by default and refuses the unimplemented PAY stage (0.251458ms)
+ℹ tests 23
+ℹ suites 0
+ℹ pass 23
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1093.662834
