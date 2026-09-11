@@ -1,0 +1,24 @@
+[Unit]
+Description=AI充值业务 备用卡台 A（highvcc）余额快照同步——拉卡台全量，走 manual-card-import 正式路径，数据未变时重放不写
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=pojia
+Group=pojia
+WorkingDirectory=/opt/pojia/current/v1
+EnvironmentFile=/etc/pojia/runtime.env
+ExecStart=/usr/bin/node scripts/sync-highvcc-snapshot.mjs --commit
+NoNewPrivileges=true
+PrivateDevices=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+UMask=0077
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+LockPersonality=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+CapabilityBoundingSet=
+AmbientCapabilities=

@@ -87,8 +87,12 @@ export function buildSnapshotWorkbook(rows) {
     'xl/worksheets/sheet1.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>${rowsXml}</sheetData></worksheet>`,
     'xl/sharedStrings.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="${strings.length}" uniqueCount="${strings.length}">${strings.map((s) => `<si><t xml:space="preserve">${xmlEsc(s)}</t></si>`).join('')}</sst>`,
   };
-  const entries = Object.fromEntries(Object.entries(files).map(([name, xml]) => [name, strToU8(xml)]));
-  return Buffer.from(zipSync(entries, { level: 6 }));
+  // Fixed mtime so identical card data yields byte-identical files: the import service keys its
+  // replay check on sha256(bytes), so an unchanged platform state commits nothing (no batch row,
+  // no UPDATEs) — which is what lets a timer run this every few minutes without piling up audit rows.
+  const mtime = new Date('2026-01-01T00:00:00Z');
+  const entries = Object.fromEntries(Object.entries(files).map(([name, xml]) => [name, [strToU8(xml), { mtime }]]));
+  return Buffer.from(zipSync(entries, { level: 6, mtime }));
 }
 
 export function createHighvccSnapshotSyncService({

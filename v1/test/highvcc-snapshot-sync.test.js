@@ -58,6 +58,16 @@ test('buildSnapshotWorkbook round-trips through parseManualCardWorkbook: no stru
   assert.ok(r.warnings.includes('BALANCE_MISMATCH'));
 });
 
+test('buildSnapshotWorkbook is byte-deterministic for identical rows, so an unchanged platform state replays instead of re-importing', async () => {
+  const row = buildSnapshotRow({ listRow, detail });
+  const a = buildSnapshotWorkbook([row]);
+  await new Promise((r) => setTimeout(r, 1100)); // cross a zip mtime second boundary
+  const b = buildSnapshotWorkbook([row]);
+  assert.equal(a.toString('hex'), b.toString('hex'));
+  const c = buildSnapshotWorkbook([buildSnapshotRow({ listRow, detail: { ...detail, card: { ...detail.card, balance: 107 } } })]);
+  assert.notEqual(a.toString('hex'), c.toString('hex'), 'a balance change must change the bytes');
+});
+
 test('buildSnapshotWorkbook: a row missing PAN/CVC is a structural rejection at parse time, not a silent import', () => {
   const rows = parseManualCardWorkbook(buildSnapshotWorkbook([buildSnapshotRow({ listRow, detail: { card: { ...detail.card, number: '', cvc: '' }, adress: detail.adress } })]));
   assert.ok(rows[0].structuralErrors.includes('INVALID_CARD_NUMBER'));
