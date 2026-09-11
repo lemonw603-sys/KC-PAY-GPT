@@ -586,23 +586,39 @@ function upgradeConfirmEligible(run) {
     && run.paymentState === 'PAYMENT_CONFIRMED' && run.postPaymentState === 'PLUS_CONFIRMED';
 }
 
+// F-16/F-3: a run whose payment result is unknown, or was escalated to a person, is closed by
+// the operator recording what they saw on the account. Not offered while a 20X hand-off is
+// waiting for 确认 20X 已升级 (that path has its own button).
+function resolveUnknownEligible(run) {
+  return ['RECONCILE_ONLY', 'HUMAN_REQUIRED'].includes(run.status)
+    && ['PAYMENT_UNKNOWN', 'PAYMENT_CONFIRMED'].includes(run.paymentState)
+    && !upgradeConfirmEligible(run);
+}
+function resolveUnknownButton(run) {
+  return resolveUnknownEligible(run)
+    ? '<button class="primary-small" type="button" data-browser-control="RESOLVE_UNKNOWN_PAYMENT">确认核实结果</button>'
+    : '';
+}
+
 function browserControlButtons(run) {
-  if (!['READY', 'RUNNING', 'HUMAN_REQUIRED'].includes(run.status)) return '';
+  if (!['READY', 'RUNNING', 'HUMAN_REQUIRED', 'RECONCILE_ONLY'].includes(run.status)) return '';
+  const resolve = resolveUnknownButton(run);
+  if (run.status === 'RECONCILE_ONLY') return resolve;
   if (run.controlState === 'AUTOMATION') {
-    return `${manualPaymentButton(run)}<button class="text-button" type="button" data-browser-control="REQUEST">请求人工接管</button>`;
+    return `${resolve}${manualPaymentButton(run)}<button class="text-button" type="button" data-browser-control="REQUEST">请求人工接管</button>`;
   }
   if (run.controlState === 'REQUESTED') {
-    return '<button class="danger-small" type="button" data-browser-control="FREEZE">冻结自动化</button><button class="text-button" type="button" data-browser-control="CANCEL">取消请求</button>';
+    return resolve + '<button class="danger-small" type="button" data-browser-control="FREEZE">冻结自动化</button><button class="text-button" type="button" data-browser-control="CANCEL">取消请求</button>';
   }
   if (run.controlState === 'FROZEN') {
-    return `${manualPaymentButton(run)}<button class="primary-small" type="button" data-browser-control="TRANSFER">转交人工</button><button class="danger-small" type="button" data-browser-control="MARK_PAYMENT_UNKNOWN">标记付款未知</button>`;
+    return `${resolve}${manualPaymentButton(run)}<button class="primary-small" type="button" data-browser-control="TRANSFER">转交人工</button><button class="danger-small" type="button" data-browser-control="MARK_PAYMENT_UNKNOWN">标记付款未知</button>`;
   }
   if (run.controlState === 'TRANSFERRED') {
     if (run.status === 'HUMAN_REQUIRED' && run.paymentState === 'PAYMENT_CONFIRMED'
       && run.postPaymentState === 'PLUS_CONFIRMED') {
       return '<button class="primary-small" type="button" data-browser-control="COMPLETE_20X">确认 20X 已升级</button>';
     }
-    return `${manualPaymentButton(run)}<button class="primary-small" type="button" data-browser-control="RELEASE_SAFE">确认未付款并恢复</button><button class="danger-small" type="button" data-browser-control="MARK_PAYMENT_UNKNOWN">标记付款未知</button>`;
+    return `${resolve}${manualPaymentButton(run)}<button class="primary-small" type="button" data-browser-control="RELEASE_SAFE">确认未付款并恢复</button><button class="danger-small" type="button" data-browser-control="MARK_PAYMENT_UNKNOWN">标记付款未知</button>`;
   }
   return '';
 }
@@ -666,6 +682,7 @@ async function controlBrowserRun(run, action, { after = null } = {}) {
     MARK_PAYMENT_UNKNOWN: `确认付款结果未知 ${run.id}`,
     CONFIRM_MANUAL_PAYMENT: `确认人工付款已完成 ${run.id}`,
     COMPLETE_20X: `确认20X升级完成 ${run.id}`,
+    RESOLVE_UNKNOWN_PAYMENT: `确认核实结果 ${run.id}`,
     CANCEL: `取消接管 ${run.id}`
   };
   const warnings = {
@@ -676,6 +693,7 @@ async function controlBrowserRun(run, action, { after = null } = {}) {
     MARK_PAYMENT_UNKNOWN: '这会把 run、attempt 和订单锁为付款结果未知，只能对账，不能自动重付。',
     CONFIRM_MANUAL_PAYMENT: '仅在你已经亲手完成付款、并看到订阅生效后点击。系统会把这笔单记为人工付款成功、释放卡片占用，之后不会再自动付款；系统本身没有点击过付款，不会伪造自动付款记录。',
     COMPLETE_20X: '仅在你已经亲眼确认 20X 升级完成后点击；系统会把客户订单收口为充值成功。',
+    RESOLVE_UNKNOWN_PAYMENT: '付款结果不明或已转人工的单，只有你亲自看过 ChatGPT 账号和卡台交易后才点。「已扣款」：Plus 单记成功并释放卡（续费没关会进"待复核"）；Pro 单只记 Plus 阶段完成，等你手动升 20X 后再点「确认 20X 已升级」。「未扣款」：关单、释放卡、CDK 退回客户。系统不会重付。',
     CANCEL: '只允许取消尚未冻结的接管请求。'
   };
   const fieldsByAction = {
@@ -693,11 +711,28 @@ async function controlBrowserRun(run, action, { after = null } = {}) {
         ]
       },
       { name: 'evidenceNote', label: '你看到的付款证据（金额、卡尾号、时间；不要输入完整卡号或安全码）', type: 'textarea', required: true }
+    ],
+    RESOLVE_UNKNOWN_PAYMENT: [
+      {
+        name: 'verifiedOutcome', label: '你核实到的结果', type: 'select', value: 'CHARGED', required: true,
+        options: [
+          { value: 'CHARGED', label: '已扣款：账号已开通 Plus，卡台有这笔交易' },
+          { value: 'NOT_CHARGED', label: '未扣款：账号仍是 free，卡台没有这笔交易' }
+        ]
+      },
+      {
+        name: 'renewalCancelled', label: '续费已在账号里关掉了吗（只对 Plus 单已扣款有意义）', type: 'select', value: 'false', required: true,
+        options: [
+          { value: 'false', label: '没看 / 没关：订单进入"待复核续费"，关掉后再点「已在账号里取消续费」' },
+          { value: 'true', label: '已关：订单直接记为充值成功' }
+        ]
+      },
+      { name: 'evidenceNote', label: '你看到的证据（账号套餐、卡台交易金额与时间；不要输入完整卡号或安全码）', type: 'textarea', required: true }
     ]
   };
   const answers = await askForm({
     title: confirmations[action], message: warnings[action], fields: fieldsByAction[action] || [],
-    confirmLabel: '确认执行', danger: ['FREEZE', 'MARK_PAYMENT_UNKNOWN'].includes(action)
+    confirmLabel: '确认执行', danger: ['FREEZE', 'MARK_PAYMENT_UNKNOWN', 'RESOLVE_UNKNOWN_PAYMENT'].includes(action)
   });
   if (!answers) return;
   const input = {
@@ -711,11 +746,23 @@ async function controlBrowserRun(run, action, { after = null } = {}) {
     input.manualOutcome = answers.manualOutcome;
     input.evidenceNote = answers.evidenceNote;
   }
+  if (action === 'RESOLVE_UNKNOWN_PAYMENT') {
+    input.verifiedOutcome = answers.verifiedOutcome;
+    // F-44: the server refuses non-boolean values; send a real boolean, never the select's string.
+    input.renewalCancelled = answers.renewalCancelled === 'true';
+    input.evidenceNote = answers.evidenceNote;
+  }
   await sensitiveApi(`/api/v1/admin/browser/runs/${encodeURIComponent(run.id)}/control`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input)
   });
   showNotice(action === 'MARK_PAYMENT_UNKNOWN'
     ? '已锁为付款结果未知；只能进入资金证据核对，禁止重付。'
+    : action === 'RESOLVE_UNKNOWN_PAYMENT'
+      ? (input.verifiedOutcome === 'NOT_CHARGED'
+        ? '已按"未扣款"收口：订单关闭，卡片释放，CDK 已退回客户。'
+        : (input.renewalCancelled
+          ? '已按"已扣款、续费已关"收口。Plus 单已记为充值成功；Pro 单等你手动升级后再点「确认 20X 已升级」。'
+          : '已按"已扣款"记录。Plus 单进入"待复核续费"，关掉续费后点「已在账号里取消续费」；Pro 单等你手动升级后再点「确认 20X 已升级」。'))
     : action === 'CONFIRM_MANUAL_PAYMENT'
       ? (input.manualOutcome === 'UPGRADED_20X'
         ? '人工付款与 20X 升级已记录，订单已收口为充值成功，卡片占用已释放。'
@@ -1357,6 +1404,7 @@ async function openOrder(publicNo) {
     if (order.cancellationReviewRequired === 1 || order.status === 'CANCELLATION_REVIEW_REQUIRED') {
       actions.push('<button type="button" class="primary-small" id="confirm-manual-cancellation">已在账号里取消续费</button>');
     }
+    if (controlRun && resolveUnknownEligible(controlRun)) actions.push('<button type="button" class="primary-small" data-order-run-control="RESOLVE_UNKNOWN_PAYMENT">确认核实结果</button>');
     if (runLive && manualPaymentEligible(controlRun)) actions.push('<button type="button" class="primary-small" data-order-run-control="CONFIRM_MANUAL_PAYMENT">人工付款已完成</button>');
     if (runLive && upgradeConfirmEligible(controlRun)) actions.push('<button type="button" class="primary-small" data-order-run-control="COMPLETE_20X">确认 20X 已升级</button>');
     if (data.card) actions.push('<button type="button" class="ghost-button" id="sync-transactions">同步卡交易</button>');

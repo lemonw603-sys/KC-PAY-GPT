@@ -104,8 +104,8 @@ test('admin refresh feedback and inset dropdown arrows remain visible', () => {
   const html = fs.readFileSync(path.join(directory, 'admin', 'index.html'), 'utf8');
   const script = fs.readFileSync(path.join(directory, 'admin', 'assets', 'admin.js'), 'utf8');
   const styles = fs.readFileSync(path.join(directory, 'admin', 'assets', 'admin.css'), 'utf8');
-  assert.match(html, /admin\.css\?v=25/);
-  assert.match(html, /admin\.js\?v=36/);
+  assert.match(html, /admin\.css\?v=26/);
+  assert.match(html, /admin\.js\?v=45/);
   assert.match(script, /button\.textContent = '刷新中…'/);
   assert.match(script, /showNotice\('刷新完成。', 'success'\)/);
   assert.match(script, /showNotice\('刷新失败，请稍后重试。'\)/);
@@ -114,6 +114,11 @@ test('admin refresh feedback and inset dropdown arrows remain visible', () => {
   assert.match(script, /decisions-grid/);
   assert.match(html, /五个决定/);
   assert.match(script, /card-stock\/minimum-balance/);
+  // F-16/F-3 close-out for payment-result-unknown runs is reachable from the UI (run panel + order drawer),
+  // and the client sends renewalCancelled as a real boolean (F-44).
+  assert.match(script, /data-browser-control="RESOLVE_UNKNOWN_PAYMENT">确认核实结果</);
+  assert.match(script, /data-order-run-control="RESOLVE_UNKNOWN_PAYMENT">确认核实结果</);
+  assert.match(script, /input\.renewalCancelled = answers\.renewalCancelled === 'true'/);
   assert.match(html, /最低所需卡余额/);
   assert.match(script, /card-intake\/.*\/validate/);
   assert.match(script, /card-intake\/.*\/accept/);

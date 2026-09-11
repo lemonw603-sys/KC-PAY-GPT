@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { redactSensitiveFields } from '../security/redaction.js';
 import { transitionCardConsumptionInTransaction } from './card-consumption-ledger-service.js';
 import { returnCdkForOrderInTransaction } from '../db/repositories/cdk-return-repository.js';
+import { upsertBrowserAlertInTransaction } from '../db/repositories/browser-alert-repository.js';
 
 const RUN_STATUSES = new Set([
   'READY', 'RUNNING', 'RECONCILE_ONLY', 'HUMAN_REQUIRED', 'COMPLETED', 'FAILED_SAFE'
@@ -22,6 +23,14 @@ const MANUAL_PAYMENT_OUTCOMES = new Set(['PLUS_ACTIVE', 'UPGRADED_20X']);
 // transaction for a run whose payment result is unknown or was escalated to human. This is
 // the *only* formal closeout for that state — before it, only a hand-run SQL statement could.
 const VERIFIED_PAYMENT_OUTCOMES = new Set(['CHARGED', 'NOT_CHARGED']);
+
+// F-44: a JSON string "false" must never be read as true. Absent means false; anything that is
+// not a real boolean is a client bug and is refused rather than coerced.
+function strictBoolean(value, name, code) {
+  if (value === undefined || value === null) return false;
+  if (typeof value !== 'boolean') throw new BrowserAdminError(`${name} must be a boolean`, code);
+  return value;
+}
 const INTERVENTION_REASONS = new Set([
   'CAPTCHA', 'THREE_DS', 'PAGE_DRIFT', 'SESSION_REPAIR', 'OPERATOR_REVIEW',
   'PAYMENT_RECONCILIATION'
@@ -204,7 +213,7 @@ async function lockRun(connection, runId) {
   const [rows] = await connection.query(
     `SELECT br.*, br.status AS run_status,
             rat.order_id, rat.status AS attempt_status, rat.funds_risk_state,
-            o.public_no, o.status AS order_status, o.version AS order_version,
+            o.public_no, o.status AS order_status, o.version AS order_version, o.plan_type,
             ep.profile_code, ep.profile_version, ep.runtime_id, ep.adapter_version
      FROM browser_runs br
      INNER JOIN recharge_attempts rat ON rat.id = br.recharge_attempt_id
@@ -239,10 +248,13 @@ async function paymentSubmitExists(connection, runId) {
   return rows.length > 0;
 }
 
+// Payment evidence a person recorded: the operator finished Checkout by hand
+// (MANUAL_PAYMENT_CONFIRMED) or verified an unknown/escalated result as charged
+// (MANUAL_VERIFICATION_RESOLVED, F-45). Both let COMPLETE_20X finish a Pro order.
 async function manualPaymentEvidenceExists(connection, runId) {
   const [rows] = await connection.query(
     `SELECT id FROM browser_operations
-     WHERE browser_run_id = ? AND operation_type = 'MANUAL_PAYMENT_CONFIRMED'
+     WHERE browser_run_id = ? AND operation_type IN ('MANUAL_PAYMENT_CONFIRMED', 'MANUAL_VERIFICATION_RESOLVED')
        AND status = 'COMMITTED'
      LIMIT 1 FOR UPDATE`,
     [runId]
@@ -570,7 +582,8 @@ export function createBrowserAdminService({
     // record the F-3 renewal-cancellation fact in the same click when they already checked it
     // while looking at the account — if not, the order goes to CANCELLATION_REVIEW_REQUIRED and
     // the existing confirmManualCancellation flow finishes it later, same as any other order.
-    const renewalCancelled = action === 'RESOLVE_UNKNOWN_PAYMENT' ? Boolean(input.renewalCancelled) : false;
+    const renewalCancelled = action === 'RESOLVE_UNKNOWN_PAYMENT'
+      ? strictBoolean(input.renewalCancelled, 'renewalCancelled', 'INVALID_RENEWAL_CANCELLED') : false;
     const evidenceNote = (action === 'CONFIRM_MANUAL_PAYMENT' || action === 'RESOLVE_UNKNOWN_PAYMENT')
       ? required(input.evidenceNote, 'evidenceNote', 500) : null;
     const timestamp = input.now || now();
@@ -989,17 +1002,35 @@ export function createBrowserAdminService({
         if (!['RECHARGE_PROCESSING', 'SUBMIT_UNKNOWN'].includes(row.order_status)) {
           throw new BrowserAdminError('order is not awaiting payment resolution', 'ORDER_STATE_CONFLICT', 409);
         }
+        // F-45: a Pro order (pro_5x / pro_20x) is two stages (D-133). "Charged" here can only
+        // mean the Plus stage went through; the final plan is still ahead, so the run must land
+        // in the same hand-off shape the automated lane uses (recordManual20xHandoff) and the
+        // order must stay RECHARGE_PROCESSING until COMPLETE_20X. Only a Plus order closes here.
+        const proOrder = String(row.plan_type || 'plus').trim().toLowerCase() !== 'plus';
+        const proCharged = verifiedOutcome === 'CHARGED' && proOrder;
         const evidenceHash = createHash('sha256')
           .update(`${run}:${verifiedOutcome}:${evidenceNote}`).digest('hex');
-        const evidence = { verifiedOutcome, actorId, evidenceNote, evidenceHash,
-          renewalCancelled: verifiedOutcome === 'CHARGED' ? renewalCancelled : null };
+        const evidence = { verifiedOutcome, actorId, evidenceNote, evidenceHash, planType: row.plan_type || 'plus',
+          renewalCancelled: verifiedOutcome === 'CHARGED' && !proOrder ? renewalCancelled : null };
         if (intervention) {
           interventionId = intervention.id;
+          // A Pro order keeps the intervention TRANSFERRED so COMPLETE_20X can close it later.
           await connection.query(
-            `UPDATE browser_interventions SET status = 'RELEASED', result_code = ?,
-               public_note = ?, human_owner_id = COALESCE(human_owner_id, ?), finished_at = ?
+            `UPDATE browser_interventions SET status = ?, result_code = ?,
+               public_note = ?, human_owner_id = COALESCE(human_owner_id, ?),
+               transferred_at = COALESCE(transferred_at, ?), finished_at = ?
              WHERE id = ? AND status IN ('REQUESTED', 'FROZEN', 'TRANSFERRED')`,
-            [`MANUAL_VERIFICATION_${verifiedOutcome}`, evidenceNote, actorId, timestamp, intervention.id]
+            [proCharged ? 'TRANSFERRED' : 'RELEASED', `MANUAL_VERIFICATION_${verifiedOutcome}`, evidenceNote, actorId,
+              timestamp, proCharged ? null : timestamp, intervention.id]
+          );
+        } else if (proCharged) {
+          interventionId = idFactory();
+          await connection.query(
+            `INSERT INTO browser_interventions
+             (id, browser_run_id, status, requested_by, automation_owner_id, human_owner_id,
+              reason_code, result_code, public_note, requested_at, transferred_at)
+             VALUES (?, ?, 'TRANSFERRED', ?, ?, ?, 'MANUAL_20X_HANDOFF', 'PLUS_CONFIRMED', ?, ?, ?)`,
+            [interventionId, run, actorId, row.automation_owner_id || row.worker_id, actorId, evidenceNote, timestamp, timestamp]
           );
         }
         await connection.query(
@@ -1024,17 +1055,25 @@ export function createBrowserAdminService({
              VALUES (?, 'MANUAL_VERIFICATION_RESOLVED', 'PLUS_CONFIRMED', ?, ?, ?)`,
             [run, evidenceHash, json(evidence), timestamp]
           );
+          // F-46: when the operator also confirmed renewal is off, write the same fields the
+          // automated path (recordCancellationConfirmed) and manual-cancellation-service write,
+          // so the order drawer shows 已取消 rather than 等待确认 on a successful order.
+          const cancellationConfirmed = !proOrder && renewalCancelled;
           const [runUpdate] = await connection.query(
             `UPDATE browser_runs
-             SET status = 'COMPLETED', control_state = 'RELEASED', payment_state = 'PAYMENT_CONFIRMED',
+             SET status = ?, control_state = ?, payment_state = 'PAYMENT_CONFIRMED',
                  verification_state = 'RESOLVED', verification_next_check_at = NULL,
-                 post_payment_state = 'PLUS_CONFIRMED', plus_activated_at = COALESCE(plus_activated_at, ?),
+                 post_payment_state = ?, plus_activated_at = COALESCE(plus_activated_at, ?),
+                 cancellation_confirmed_at = COALESCE(cancellation_confirmed_at, ?),
                  worker_id = NULL, worker_lease_token_hash = NULL, worker_lease_until = NULL,
                  automation_owner_id = NULL, human_owner_id = ?, requested_by = ?,
                  last_error_code = NULL, finished_at = ?, updated_at = ?
              WHERE id = ? AND status IN ('RECONCILE_ONLY', 'HUMAN_REQUIRED')
                AND payment_state IN ('PAYMENT_UNKNOWN', 'PAYMENT_CONFIRMED')`,
-            [timestamp, actorId, actorId, timestamp, timestamp, run]
+            [proOrder ? 'HUMAN_REQUIRED' : 'COMPLETED', proOrder ? 'TRANSFERRED' : 'RELEASED',
+              cancellationConfirmed ? 'CANCELLATION_CONFIRMED' : 'PLUS_CONFIRMED', timestamp,
+              cancellationConfirmed ? timestamp : null,
+              actorId, actorId, proOrder ? null : timestamp, timestamp, run]
           );
           if (runUpdate.affectedRows !== 1) throw new BrowserAdminError('run changed concurrently', 'RUN_CONFLICT', 409);
           const [attemptUpdate] = await connection.query(
@@ -1065,24 +1104,70 @@ export function createBrowserAdminService({
                  c.last_transaction_synced_at = NULL, c.updated_at = ?
              WHERE o.id = ?`, [timestamp, row.order_id]
           );
-          const orderNextStatus = renewalCancelled ? 'RECHARGE_SUCCESS' : 'CANCELLATION_REVIEW_REQUIRED';
-          const [orderUpdate] = await connection.query(
-            `UPDATE orders SET status = ?, cancellation_review_required = ?, version = version + 1,
-                 failure_code = NULL, failure_reason = NULL, customer_action_code = NULL,
-                 finished_at = COALESCE(finished_at, ?), updated_at = ?
-             WHERE id = ? AND status IN ('RECHARGE_PROCESSING', 'SUBMIT_UNKNOWN') AND version = ?`,
-            [orderNextStatus, renewalCancelled ? 0 : 1, timestamp, timestamp, row.order_id, row.order_version]
-          );
-          if (orderUpdate.affectedRows !== 1) throw new BrowserAdminError('order changed concurrently', 'ORDER_CONFLICT', 409);
+          // Same tail as CONFIRM_MANUAL_PAYMENT: a closed run must not leave a CLAIMED/QUEUED
+          // dispatch job or open leases behind (the 2026-09-09 residue cleanup was exactly this).
           await connection.query(
-            `INSERT INTO order_events (order_id, from_status, to_status, actor_type, actor_id, reason, metadata_json)
-             VALUES (?, ?, ?, 'ADMIN', ?, ?, ?)`,
-            [row.order_id, row.order_status, orderNextStatus, actorId,
-              'Operator manually verified the payment went through after the result was unknown or escalated',
-              json({ browserRunId: run, evidenceHash, renewalCancelled })]
+            `UPDATE execution_resource_leases SET released_at = ?, release_reason = 'MANUAL_VERIFICATION_RESOLVED'
+             WHERE browser_run_id = ? AND released_at IS NULL`, [timestamp, run]
           );
-          row.run_status = 'COMPLETED'; row.control_state = 'RELEASED';
-          row.payment_state = 'PAYMENT_CONFIRMED'; row.order_status = orderNextStatus;
+          await connection.query(
+            `UPDATE checkout_artifacts SET status = 'CONSUMED'
+             WHERE browser_run_id = ? AND status IN ('ACTIVE', 'REVIEW_REQUIRED')`, [run]
+          );
+          await connection.query(
+            `UPDATE browser_dispatch_jobs
+             SET status = 'COMPLETED', completed_at = COALESCE(completed_at, ?),
+                 lease_owner = NULL, lease_token_hash = NULL, lease_until = NULL, updated_at = ?
+             WHERE recharge_attempt_id = ? AND status IN ('QUEUED', 'CLAIMED')`,
+            [timestamp, timestamp, row.recharge_attempt_id]
+          );
+          if (proOrder) {
+            if (row.order_status !== 'RECHARGE_PROCESSING') {
+              const [orderUpdate] = await connection.query(
+                `UPDATE orders SET status = 'RECHARGE_PROCESSING', version = version + 1,
+                     failure_code = NULL, failure_reason = NULL, customer_action_code = NULL, updated_at = ?
+                 WHERE id = ? AND status = 'SUBMIT_UNKNOWN' AND version = ?`,
+                [timestamp, row.order_id, row.order_version]
+              );
+              if (orderUpdate.affectedRows !== 1) throw new BrowserAdminError('order changed concurrently', 'ORDER_CONFLICT', 409);
+            }
+            await connection.query(
+              `INSERT INTO order_events (order_id, from_status, to_status, actor_type, actor_id, reason, metadata_json)
+               VALUES (?, ?, 'RECHARGE_PROCESSING', 'ADMIN', ?, ?, ?)`,
+              [row.order_id, row.order_status, actorId,
+                'Operator verified the Plus stage was charged after the result was unknown or escalated; awaiting manual 20X upgrade',
+                json({ browserRunId: run, evidenceHash, planType: row.plan_type })]
+            );
+            await upsertBrowserAlertInTransaction(connection, {
+              type: 'BROWSER_UPGRADE_HANDOFF', orderId: row.order_id, title: 'Plus 已开通（人工核实），20X 升级转人工',
+              message: '运营已核实 Plus 阶段扣款成功；20X 升级由人工完成后在订单抽屉点「确认 20X 已升级」。'
+            });
+            row.run_status = 'HUMAN_REQUIRED'; row.control_state = 'TRANSFERRED';
+            row.payment_state = 'PAYMENT_CONFIRMED'; row.order_status = 'RECHARGE_PROCESSING';
+          } else {
+            const orderNextStatus = renewalCancelled ? 'RECHARGE_SUCCESS' : 'CANCELLATION_REVIEW_REQUIRED';
+            const [orderUpdate] = await connection.query(
+              `UPDATE orders SET status = ?, cancellation_review_required = ?,
+                   subscription_cancelled = COALESCE(?, subscription_cancelled),
+                   cancellation_checked_at = COALESCE(?, cancellation_checked_at),
+                   version = version + 1, failure_code = NULL, failure_reason = NULL, customer_action_code = NULL,
+                   finished_at = COALESCE(finished_at, ?), updated_at = ?
+               WHERE id = ? AND status IN ('RECHARGE_PROCESSING', 'SUBMIT_UNKNOWN') AND version = ?`,
+              [orderNextStatus, renewalCancelled ? 0 : 1,
+                renewalCancelled ? 1 : null, renewalCancelled ? timestamp : null,
+                timestamp, timestamp, row.order_id, row.order_version]
+            );
+            if (orderUpdate.affectedRows !== 1) throw new BrowserAdminError('order changed concurrently', 'ORDER_CONFLICT', 409);
+            await connection.query(
+              `INSERT INTO order_events (order_id, from_status, to_status, actor_type, actor_id, reason, metadata_json)
+               VALUES (?, ?, ?, 'ADMIN', ?, ?, ?)`,
+              [row.order_id, row.order_status, orderNextStatus, actorId,
+                'Operator manually verified the payment went through after the result was unknown or escalated',
+                json({ browserRunId: run, evidenceHash, renewalCancelled })]
+            );
+            row.run_status = 'COMPLETED'; row.control_state = 'RELEASED';
+            row.payment_state = 'PAYMENT_CONFIRMED'; row.order_status = orderNextStatus;
+          }
         } else {
           // NOT_CHARGED: closes the same way order-cancellation-service does for a Browser
           // order with no external payment action — release the card, return the CDK, close.
@@ -1143,6 +1228,21 @@ export function createBrowserAdminService({
             [row.order_id, row.order_status, actorId,
               'Operator manually verified no payment went through after the result was unknown',
               json({ browserRunId: run, evidenceHash })]
+          );
+          await connection.query(
+            `UPDATE execution_resource_leases SET released_at = ?, release_reason = 'MANUAL_VERIFICATION_RESOLVED'
+             WHERE browser_run_id = ? AND released_at IS NULL`, [timestamp, run]
+          );
+          await connection.query(
+            `UPDATE checkout_artifacts SET status = 'CONSUMED'
+             WHERE browser_run_id = ? AND status IN ('ACTIVE', 'REVIEW_REQUIRED')`, [run]
+          );
+          await connection.query(
+            `UPDATE browser_dispatch_jobs
+             SET status = 'COMPLETED', completed_at = COALESCE(completed_at, ?),
+                 lease_owner = NULL, lease_token_hash = NULL, lease_until = NULL, updated_at = ?
+             WHERE recharge_attempt_id = ? AND status IN ('QUEUED', 'CLAIMED')`,
+            [timestamp, timestamp, row.recharge_attempt_id]
           );
           await returnCdkForOrderInTransaction(connection, {
             orderId: row.order_id,

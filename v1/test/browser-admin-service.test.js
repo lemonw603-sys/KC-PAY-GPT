@@ -185,3 +185,19 @@ test('resolve-unknown-payment validates outcome, confirmation, and evidence befo
   }), { code: 'CONTROL_CONFIRMATION_REQUIRED' });
   assert.equal(pool.queries.length, 0);
 });
+
+// F-44: a JSON string "false" was Boolean()-coerced to true and closed the order as
+// RECHARGE_SUCCESS with the renewal review skipped. Only real booleans are accepted.
+test('resolve-unknown-payment refuses a non-boolean renewalCancelled before database access', async () => {
+  const pool = queuedPool();
+  const service = createBrowserAdminService({ pool });
+  const base = {
+    action: 'RESOLVE_UNKNOWN_PAYMENT', operationId: 'op-4',
+    confirmation: '确认核实结果 run-1', verifiedOutcome: 'CHARGED', evidenceNote: 'account shows Plus'
+  };
+  for (const bad of ['false', 'true', 1, 0, 'yes', {}, []]) {
+    await assert.rejects(() => service.controlRun('run-1', { ...base, renewalCancelled: bad }),
+      { code: 'INVALID_RENEWAL_CANCELLED' }, `renewalCancelled=${JSON.stringify(bad)} must be refused`);
+  }
+  assert.equal(pool.queries.length, 0);
+});

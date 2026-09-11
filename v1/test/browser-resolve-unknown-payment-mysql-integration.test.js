@@ -83,6 +83,14 @@ async function createFixture(pool, label) {
      VALUES (?, ?, ?, ?, ?, 'RESERVED', 16, 'USD')`,
     [crypto.randomUUID(), ids.cardId, ids.orderId, ids.attemptId, productId]
   );
+  await pool.query(
+    `INSERT INTO browser_dispatch_jobs
+     (job_key, recharge_attempt_id, order_id, executor_profile_id, status,
+      lease_owner, lease_token_hash, lease_until, attempt_count, claimed_at)
+     VALUES (?, ?, ?, ?, 'CLAIMED', ?, ?, ?, 1, CURRENT_TIMESTAMP(3))`,
+    [`browser-attempt:${ids.attemptId}`, ids.attemptId, ids.orderId, ids.profileId,
+      workerId, 'a'.repeat(64), new Date(Date.now() + 10 * 60_000)]
+  );
   const repository = createBrowserExecutionRepository(pool);
   await repository.beginRun({
     attemptId: ids.attemptId, executorProfileId: ids.profileId,
@@ -112,14 +120,19 @@ async function moveToStuck(pool, ids, { runStatus, verificationState, paymentSta
 async function snapshot(pool, ids) {
   const [[row]] = await pool.query(
     `SELECT o.status AS order_status, o.version AS order_version, o.cancellation_review_required,
+            o.plan_type, o.subscription_cancelled, o.cancellation_checked_at,
             rat.status AS attempt_status, rat.funds_risk_state,
             br.status AS run_status, br.payment_state, br.verification_state, br.control_state,
+            br.post_payment_state, br.cancellation_confirmed_at,
             ccl.status AS ledger_status,
             c.inventory_status, c.current_balance,
             (SELECT status FROM card_assignment_history WHERE id = ?) AS assignment_status,
             (SELECT status FROM cdks WHERE id = ?) AS cdk_status,
             (SELECT order_id FROM cdks WHERE id = ?) AS cdk_order_id,
-            (SELECT COUNT(*) FROM order_events WHERE order_id = o.id) AS event_count
+            (SELECT COUNT(*) FROM order_events WHERE order_id = o.id) AS event_count,
+            (SELECT status FROM browser_dispatch_jobs WHERE recharge_attempt_id = rat.id LIMIT 1) AS dispatch_status,
+            (SELECT status FROM browser_interventions WHERE browser_run_id = br.id ORDER BY requested_at DESC LIMIT 1) AS intervention_status,
+            (SELECT alert_type FROM operator_alerts WHERE order_id = o.id ORDER BY created_at DESC LIMIT 1) AS alert_type
      FROM orders o
      JOIN recharge_attempts rat ON rat.order_id = o.id
      JOIN browser_runs br ON br.recharge_attempt_id = rat.id
@@ -132,6 +145,11 @@ async function snapshot(pool, ids) {
 }
 
 async function cleanup(pool, ids) {
+  await pool.query('DELETE FROM alert_notifications WHERE alert_id IN (SELECT id FROM operator_alerts WHERE order_id = ?)', [ids.orderId]);
+  await pool.query('DELETE FROM operator_alerts WHERE order_id = ?', [ids.orderId]);
+  await pool.query('DELETE FROM browser_dispatch_jobs WHERE recharge_attempt_id = ?', [ids.attemptId]);
+  await pool.query('DELETE FROM execution_resource_leases WHERE browser_run_id = ?', [ids.runId]);
+  await pool.query('DELETE FROM checkout_artifacts WHERE browser_run_id = ?', [ids.runId]);
   await pool.query('DELETE FROM order_events WHERE order_id = ?', [ids.orderId]);
   await pool.query('DELETE FROM browser_interventions WHERE browser_run_id = ?', [ids.runId]);
   await pool.query('DELETE FROM browser_post_payment_observations WHERE browser_run_id = ?', [ids.runId]);
@@ -177,6 +195,13 @@ test('CHARGED + renewal already cancelled closes straight to RECHARGE_SUCCESS', 
     assert.equal(after.ledger_status, 'CONSUMED');
     assert.equal(after.assignment_status, 'RELEASED');
     assert.equal(after.inventory_status, 'DEPLETED');
+    // F-46: the renewal fact the operator confirmed is written where the drawer and
+    // manual-cancellation-service read it, on both the order and the run.
+    assert.equal(Number(after.subscription_cancelled), 1);
+    assert.ok(after.cancellation_checked_at, 'cancellation_checked_at must be set');
+    assert.equal(after.post_payment_state, 'CANCELLATION_CONFIRMED');
+    assert.ok(after.cancellation_confirmed_at, 'run.cancellation_confirmed_at must be set');
+    assert.equal(after.dispatch_status, 'COMPLETED', 'a closed run must not leave a CLAIMED dispatch job');
     // replay with the same operationId must not double-write
     const replay = await resolve(pool, fixture.ids, {
       action: 'RESOLVE_UNKNOWN_PAYMENT', operationId: `resolve:${fixture.ids.runId}`,
@@ -204,6 +229,10 @@ test('CHARGED without a renewal check goes to CANCELLATION_REVIEW_REQUIRED, not 
     const after = await snapshot(pool, fixture.ids);
     assert.equal(after.order_status, 'CANCELLATION_REVIEW_REQUIRED');
     assert.equal(after.cancellation_review_required, 1);
+    assert.equal(after.subscription_cancelled, null, 'no renewal fact was confirmed, none may be written');
+    assert.equal(after.post_payment_state, 'PLUS_CONFIRMED');
+    assert.equal(after.cancellation_confirmed_at, null);
+    assert.equal(after.dispatch_status, 'COMPLETED');
   } finally {
     if (fixture) await cleanup(pool, fixture.ids);
   }
@@ -229,6 +258,7 @@ test('NOT_CHARGED closes the order, releases the card, and returns the CDK when 
     assert.equal(after.inventory_status, 'AVAILABLE'); // current_balance 152 >= minimum 16
     assert.equal(after.cdk_status, 'AVAILABLE');
     assert.equal(after.cdk_order_id, null);
+    assert.equal(after.dispatch_status, 'COMPLETED', 'a closed run must not leave a CLAIMED dispatch job');
   } finally {
     if (fixture) await cleanup(pool, fixture.ids);
   }
@@ -266,3 +296,85 @@ test('refuses a run that is not actually stuck awaiting verification', { skip },
     if (fixture) await cleanup(pool, fixture.ids);
   }
 });
+
+// F-45: a Pro order is two stages (D-133). "Charged" can only mean the Plus stage; the run must
+// land in the same hand-off shape recordManual20xHandoff produces, the order must stay
+// RECHARGE_PROCESSING, and the existing COMPLETE_20X action must be able to finish it.
+test('CHARGED on a Pro order records the Plus stage and hands off for 20X instead of closing the order', { skip }, async () => {
+  let fixture;
+  try {
+    fixture = await createFixture(pool, 'pro-charged');
+    await pool.query("UPDATE orders SET plan_type = 'pro_20x' WHERE id = ?", [fixture.ids.orderId]);
+    await moveToStuck(pool, fixture.ids, { runStatus: 'HUMAN_REQUIRED', verificationState: 'HUMAN_REQUIRED' });
+    const result = await resolve(pool, fixture.ids, {
+      action: 'RESOLVE_UNKNOWN_PAYMENT', operationId: `resolve:${fixture.ids.runId}`,
+      verifiedOutcome: 'CHARGED', evidenceNote: 'card shows the Plus charge; account is Plus, not yet Pro',
+      renewalCancelled: true // meaningless for a Pro order and must be ignored, never close the order
+    });
+    assert.equal(result.runStatus, 'HUMAN_REQUIRED');
+    assert.equal(result.controlState, 'TRANSFERRED');
+    assert.equal(result.paymentState, 'PAYMENT_CONFIRMED');
+    const after = await snapshot(pool, fixture.ids);
+    assert.equal(after.order_status, 'RECHARGE_PROCESSING', 'a Pro order is not delivered after the Plus stage');
+    assert.equal(after.cancellation_review_required, 0);
+    assert.equal(after.subscription_cancelled, null);
+    assert.equal(after.post_payment_state, 'PLUS_CONFIRMED');
+    assert.equal(after.cancellation_confirmed_at, null);
+    assert.equal(after.attempt_status, 'SUCCESS');
+    assert.equal(after.funds_risk_state, 'SETTLED');
+    assert.equal(after.ledger_status, 'CONSUMED');
+    assert.equal(after.assignment_status, 'RELEASED');
+    assert.equal(after.inventory_status, 'DEPLETED');
+    assert.equal(after.intervention_status, 'TRANSFERRED', 'COMPLETE_20X needs a TRANSFERRED intervention');
+    assert.equal(after.alert_type, 'BROWSER_UPGRADE_HANDOFF');
+    assert.equal(after.dispatch_status, 'COMPLETED');
+    // The hand-off must be finishable by the existing COMPLETE_20X action.
+    const completed = await createBrowserAdminService({ pool }).controlRun(fixture.ids.runId, {
+      action: 'COMPLETE_20X', operationId: `complete20x:${fixture.ids.runId}`,
+      confirmation: `确认20X升级完成 ${fixture.ids.runId}`, actorId: 'admin'
+    });
+    assert.equal(completed.runStatus, 'COMPLETED');
+    const done = await snapshot(pool, fixture.ids);
+    assert.equal(done.order_status, 'RECHARGE_SUCCESS');
+  } finally {
+    if (fixture) await cleanup(pool, fixture.ids);
+  }
+});
+
+test('CHARGED on a Pro order stuck as SUBMIT_UNKNOWN moves the order back to RECHARGE_PROCESSING', { skip }, async () => {
+  let fixture;
+  try {
+    fixture = await createFixture(pool, 'pro-unknown');
+    await pool.query("UPDATE orders SET plan_type = 'pro_5x' WHERE id = ?", [fixture.ids.orderId]);
+    await moveToStuck(pool, fixture.ids, { runStatus: 'RECONCILE_ONLY', verificationState: 'NOT_REQUIRED', orderStatus: 'SUBMIT_UNKNOWN' });
+    await resolve(pool, fixture.ids, {
+      action: 'RESOLVE_UNKNOWN_PAYMENT', operationId: `resolve:${fixture.ids.runId}`,
+      verifiedOutcome: 'CHARGED', evidenceNote: 'Plus stage charged'
+    });
+    const after = await snapshot(pool, fixture.ids);
+    assert.equal(after.order_status, 'RECHARGE_PROCESSING');
+    assert.equal(after.run_status, 'HUMAN_REQUIRED');
+    assert.equal(after.control_state, 'TRANSFERRED');
+  } finally {
+    if (fixture) await cleanup(pool, fixture.ids);
+  }
+});
+
+// F-44 against the real database: the string "false" is refused before any write.
+test('a string renewalCancelled is refused and leaves every row untouched', { skip }, async () => {
+  let fixture;
+  try {
+    fixture = await createFixture(pool, 'string-bool');
+    await moveToStuck(pool, fixture.ids, { runStatus: 'RECONCILE_ONLY', verificationState: 'NOT_REQUIRED' });
+    const before = await snapshot(pool, fixture.ids);
+    await assert.rejects(() => resolve(pool, fixture.ids, {
+      action: 'RESOLVE_UNKNOWN_PAYMENT', operationId: `resolve:${fixture.ids.runId}`,
+      verifiedOutcome: 'CHARGED', evidenceNote: 'Plus active', renewalCancelled: 'false'
+    }), { code: 'INVALID_RENEWAL_CANCELLED' });
+    const after = await snapshot(pool, fixture.ids);
+    assert.deepEqual(after, before);
+  } finally {
+    if (fixture) await cleanup(pool, fixture.ids);
+  }
+});
+
