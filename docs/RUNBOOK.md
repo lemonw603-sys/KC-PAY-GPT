@@ -13,7 +13,7 @@ browser-mvp/scripts/ready-check.sh pay        # 真付：要求付款开关=true
 
 ## 1. 来单（真实付款）
 
-用户侧：①20X 单先把卡充到 ≥150（Plus $16 即可）→ ②后台上传 Excel（**上传即写库、即生效**，不需同步）→ ③客户页提交 CDK + session → ④把单号发给执行者。顺序反了（先提交后传卡）订单会停在"等卡"，传完卡后由执行者推一下。
+用户侧：①20X 单先把卡充到 ≥150（Plus $16 即可）→ ②备用卡台 A（highvcc）的卡**不用再传 Excel**：服务器 `pojia-highvcc-snapshot-sync.timer` 每 10 分钟自动把卡台余额同步进库（最坏滞后 10 分钟；急用时执行者 `ssh root@144.34.180.184 systemctl start pojia-highvcc-snapshot-sync.service` 立刻刷）；其他来源的卡仍走后台上传 Excel（**上传即写库、即生效**）→ ③客户页提交 CDK + session → ④把单号发给执行者。顺序反了（先提交、卡还没到位）订单会停在"等卡"，卡到位后由执行者推一下。
 
 执行者：
 ```bash
