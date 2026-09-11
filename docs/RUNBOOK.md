@@ -17,6 +17,7 @@ browser-mvp/scripts/ready-check.sh pay        # 真付：要求付款开关=true
 
 执行者：
 ```bash
+# D-158 起不再跑独立预检：订单到 CARD_READY 后服务器自动排派工，直接 go-live
 browser-mvp/scripts/ready-check.sh pay          # 会因开关=false 报阻断，属预期
 browser-mvp/scripts/go-live.sh --arm            # 自检→开付款开关(同步 executor profile+审计)→独立核实→拉 pay worker(Lane4)
 tail -f "$HOME/Library/Application Support/pojia-browser-live/go-live-*.log"

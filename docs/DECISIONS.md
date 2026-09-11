@@ -251,3 +251,11 @@
 - **修复**：`fillTransientBillingEmail` 的候选选择器扩为 `billing email / email / type=email / name=email`；页面没有邮箱控件时正常跳过并记 `emailFieldPresent:false`；出现 1 个仍必须填；出现 2 个以上仍视为看不懂该页而中止。适配器改为不强制。回归 251/242/0/9。
 - **同时验证为正常的**：`oaics_` 页的卡三件套、地址六项、`checkout-summary-column`、`button[type=submit]` 均各自唯一可见；摘要 `Tax (0%)` 能被既有 `label (` 前缀匹配解析；报价 ₱982.14、税 ₱0.00。
 
+## D-158（2026-09-11 10:01 UTC）取消独立预检：一单只登一次账号
+
+- **Lemon 的理由**：预检会登进客户账号、核对完就关掉，几分钟后正式流程再登一次。同一账号短时间内两次登录/登出有被风控标记的风险，而预检本身不产生价值。
+- **核实预检实际还守着什么**（改造后它已不再点 Upgrade）：只剩两条——会话身份与订单是否一致、账号是否已经是 Plus。
+- **发现**：正式流程的账号探测一直没配 `accountCheckPath`（`observation()` 里 accountProbeContract 是空对象），所以 `alreadyPlus` 恒为 null，执行器里那条「目标账号不是免费账号就中止」的保护**在正式链路上从未生效过**，一直靠预检代劳。
+- **处置**：把 `CHATGPT_ACCOUNT_PROBE_CONTRACT` 配进正式流程的观察项，两条检查改为在正式流程自己的会话里完成（失败即付款前安全中止）；v1 不再创建 `BROWSER_PREFLIGHT` 任务，`SUBMIT_RECHARGE` 也不再以预检通过为前提。账号读不到订阅状态时抛 `ACCOUNT_STATUS_UNKNOWN`，仍是付款前中止，不会误判成免费。
+- **影响**：一单一次登录；订单提交后由服务器 worker 直接排出浏览器派工任务，本机拉起 pool 即开始执行。预检脚本与 pool 的预检通道保留但不再有任务（claim 不到即空转，不开浏览器）。
+- 回归：v1 660/597/0/63，browser-mvp 251/242/0/9。发布 `20260911-drop-preflight-24bcbde`，`pojia-worker` 已重启（派工闸门在 worker 侧，不重启不生效）。
