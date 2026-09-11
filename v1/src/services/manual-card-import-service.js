@@ -3,7 +3,7 @@ import { unzipSync, strFromU8 } from 'fflate';
 import { encryptSecret } from '../security/secret-box.js';
 import { PublicApiError } from '../domain/public-api-error.js';
 
-const REQUIRED_HEADERS = ['卡序列号','累计充值','累计消费','余额','卡号','CVC','有效期','开卡状态','开卡时间','FirstName','LastName','州','城市','街道','邮编','标签','分组名称'];
+export const REQUIRED_HEADERS = ['卡序列号','累计充值','累计消费','余额','卡号','CVC','有效期','开卡状态','开卡时间','FirstName','LastName','州','城市','街道','邮编','标签','分组名称'];
 const STRUCTURAL_ERRORS = new Set(['MISSING_SEQUENCE','INVALID_CARD_NUMBER','INVALID_CVC','INVALID_EXPIRY','INVALID_BALANCE','BALANCE_MISMATCH','DUPLICATE_SEQUENCE']);
 const MAX_FILE_BYTES = 2 * 1024 * 1024;
 const MAX_ROWS = 1000;

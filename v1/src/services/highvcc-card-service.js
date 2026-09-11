@@ -12,7 +12,7 @@ import {
   MysqlBillingAddressAssignmentStore,
 } from '../../../browser-mvp/src/mockaddress-billing-address-source.js';
 
-const TOKEN_SETTING_KEY = 'highvcc_access_token_ciphertext';
+export const TOKEN_SETTING_KEY = 'highvcc_access_token_ciphertext';
 const MAX_SETTING_VALUE_LENGTH = 255; // app_settings.setting_value is VARCHAR(255) — see migration 001.
 // 513989 / MasterCard, backup card platform A's existing provider_accounts row (migration 048).
 // Cards opened here land in the exact same inventory pool as its manual-excel-imported cards.
@@ -263,4 +263,21 @@ export function createHighvccCardService({
   }
 
   return { tokenStatus, setToken, quote, openCard, recordExistingCard, listRanges, walletStatus };
+}
+
+/**
+ * Reads the encrypted highvcc token from app_settings; null when unset or undecryptable, never
+ * throws. Same semantics as the card service's private getAccessToken(); exported so the
+ * snapshot sync (highvcc-snapshot-sync-service.js) can build a provider without duplicating
+ * the setting key or the decrypt rule.
+ */
+export function createHighvccAccessTokenReader({ pool, encryptionKey } = {}) {
+  if (!pool?.query) throw new TypeError('pool is required');
+  if (!Buffer.isBuffer(encryptionKey) || encryptionKey.length !== 32) throw new TypeError('encryptionKey must be 32 bytes');
+  return async function getAccessToken() {
+    const [rows] = await pool.query(`SELECT setting_value FROM app_settings WHERE setting_key = ? LIMIT 1`, [TOKEN_SETTING_KEY]);
+    const value = rows[0]?.setting_value;
+    if (!value) return null;
+    try { return decryptSecret(Buffer.from(value, 'base64'), encryptionKey); } catch { return null; }
+  };
 }

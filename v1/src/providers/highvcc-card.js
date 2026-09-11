@@ -122,6 +122,24 @@ export function createHighvccCardProvider({
     return { first, last };
   }
 
+  // One page of the platform's card list (GET /api/card/page). Rows are the platform's raw
+  // card objects (cardId, cardSeqNo, lastFour, balance in cents, statusText, ...); no PAN/CVC.
+  async function list({ pageNo = 1, pageSize = 20 } = {}) {
+    const r = await api('GET', `/api/card/page?pageNo=${Number(pageNo)}&pageSize=${Number(pageSize)}`);
+    const rows = r.data?.data || r.data?.records || r.data?.list || (Array.isArray(r.data) ? r.data : []);
+    return { total: Number(r.data?.total ?? rows.length), rows };
+  }
+  // Every card on the platform, walking pages until `total` is reached (bounded by maxPages).
+  async function listAll({ pageSize = 20, maxPages = 50 } = {}) {
+    const all = [];
+    for (let pageNo = 1; pageNo <= maxPages; pageNo += 1) {
+      const { total, rows } = await list({ pageNo, pageSize });
+      all.push(...rows);
+      if (!rows.length || all.length >= total) break;
+    }
+    return all;
+  }
+
   async function detail(cardId) {
     const r = await api('POST', '/api/card/detail', { body: { cardId }, form: true });
     return r.data;
@@ -156,5 +174,5 @@ export function createHighvccCardProvider({
     return { feeInfo, holder, requestedAddress: address, cardId, detail: openedDetail };
   }
 
-  return { cost, autoCardHolderName, detail, open, ranges, wallet };
+  return { cost, autoCardHolderName, detail, list, listAll, open, ranges, wallet };
 }
