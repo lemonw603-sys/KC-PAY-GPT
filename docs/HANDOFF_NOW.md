@@ -14,11 +14,11 @@
 - 付款开关 false（09-10 22:47 关）；本机无 worker；release `20260910-highvcc-ui-feedback-cdcf42e`。
 - 订单 `PJV1-DqcnqHF0tPlxDhygTtAA` CARD_READY，预检 DEAD 5/5，卡 7402 $49 ASSIGNED 未收口。可分配卡 0；`state-check.sh` 在 0 张时误报 1 张（GROUP_CONCAT 空集返回 NULL 被 awk 数成一项），脚本未修。
 - **F-42 已由大脑独立核对代码为真**：`BROWSER_SESSION_PROVIDER=EXTENSION` 未接预检，昨天第 5 次"扩展对照"实际仍走 cookie。上号器路径在自动化里从未真正跑过；交接文档相应结论作废。
-- **卡台侧已核（highvcc `list`，只读）**：9839 已激活余额 $50.00、9354 已激活余额 $5.00，均不在 `cards` 表，是记账缺口不是资金损失，可用 `reconcile-highvcc-card.mjs` 按 cardId 补记（生产写，待 Lemon 确认）。**7402 卡台余额 $1.08，`cards` 表记 $49.00，差 $47.92，原因未查清**；卡台 detail 原始字段 7402 `consume=0 / deposit=17400`（分），5501 `balance=179 / consume=0 / deposit=16700`，两字段业务含义未确认，不据此推断。系统侧：7402 消费账本仅 RESERVED/RELEASED 无 CONSUMED，`card_state_events` 为空（手动导入卡从未同步余额，$49 为 09-08 导入时静态值）。**7402 余额弄清前 Dqcn 单不得重跑。**7402 是 Dqcn 单占用的唯一够 Plus 的卡，余额不对则该单无法按现状重跑。其余 0601/7428/2911/0237/3241 两侧一致。
+- **7402 差额已解释（Lemon 截图）**：卡台两笔 OpenAI 消费 $15.75（09-09 15:13 UTC）+ $142.87（09-10 03:47 UTC），均系统外；系统账本零消费。9839 $50 / 9354 $5 在卡台已激活、不在 `cards` 表。**系统缺口**：资格 SQL 对 MANUAL_IMPORT 卡信任静态余额，highvcc 卡入库即标 MANUAL_IMPORT，Dqcn 建单时分到的 7402 实际只剩 $1.08。后台无补记按钮、卡片列表读系统库；补记只有 `reconcile-highvcc-card.mjs`（须在生产主机跑）。手动卡余额修正唯一正式路径=重导入全量快照（`manual-card-import-service.js:200`）。
 
 ## 下一可执行项
 
-- 大脑：读透项目（DECISIONS 全文、HANDOFF_LOG 09-06 起、审计报告代码地图、主链源码）→ 差异版理解稿 → 重排 PROJECT_MAP §5 → Dqcn/7402 收口方案 → 9839/9354 补记方案 → 交 Lemon 确认。
+- 大脑：①待 Lemon 答 Dqcn 客户现状后，按序执行「重导入快照修 7402 余额 → 后台取消并释放卡收口 Dqcn（符合 untouchedCardReady）→ 生产主机补记 9839/9354」；②把「highvcc 卡余额 API 同步、资格 SQL 不再信任手动卡静态余额」列入重排后的执行顺序高位；③读透项目 → 差异版理解稿 → 重排 PROJECT_MAP §5 → 交 Lemon。
 - Codex：任务书阶段 1（修 F-42 并回归测试；差异维度清单），不消耗账号。
 
 ## 已定不做
