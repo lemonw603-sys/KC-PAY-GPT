@@ -1,0 +1,11 @@
+[Unit]
+Description=每分钟巡视：客户卡住、付款未落定、可分配卡见底
+
+[Timer]
+OnBootSec=90s
+OnUnitActiveSec=1min
+AccuracySec=10s
+Unit=pojia-operator-watch.service
+
+[Install]
+WantedBy=timers.target

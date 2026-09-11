@@ -57,3 +57,12 @@ test('D-176: the two intermediate states never reach the phone, everything else 
     '一单成功却先收到「付款结果未知」是谎报军情；「付款已确认」与「充值完成」相隔数秒重复');
 });
 
+test('D-177: an empty card stock alert is not tied to any order and clears itself when cards come back', async () => {
+  const { eligibleInventoryCardSql } = await import('../src/services/card-inventory-eligibility.js');
+  // 复用的是权威资格实现，不是另拼的 SQL——这条断言就是为了防止有人把它替换成自拼版本。
+  const sql = eligibleInventoryCardSql('cards', '?');
+  assert.match(sql, /card_consumption_ledger/, '成功次数上限是资格的一部分');
+  assert.match(sql, /card_assignment_history/, '已被占用的卡不算可分配');
+  assert.doesNotMatch(sql, /order_id IS NULL/, '卡可以服务过订单后继续可用，不能用 order_id 判断');
+});
+
