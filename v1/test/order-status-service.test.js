@@ -159,3 +159,61 @@ test('customer status names the product for Pro orders and stays Plus-shaped for
   assert.deepEqual(plus.product, { planType: 'plus', label: 'ChatGPT Plus' });
 });
 
+
+test('the customer status carries the nine-stage reading, built from execution evidence', async () => {
+  const service = createOrderStatusService({
+    pool: {},
+    repository: {
+      findCustomerOrder: async () => ({
+        public_no: 'PJV1-ABCDEFGHIJKLMNOPQRST',
+        internal_order_id: 'order-1',
+        effective_status: 'RECHARGE_PROCESSING',
+        updated_at: new Date('2026-09-11T11:13:40.000Z'),
+        events: [
+          { to_status: 'CREATED', created_at: new Date('2026-09-11T11:10:03.646Z') },
+          { to_status: 'RECHARGE_PROCESSING', created_at: new Date('2026-09-11T11:10:04.256Z') }
+        ]
+      }),
+      findStageEvidence: async (_pool, orderId) => {
+        assert.equal(orderId, 'order-1');
+        return [
+          { kind: 'event', token: 'session-bootstrap', at: '2026-09-11T11:12:46.022Z' },
+          { kind: 'event', token: 'checkout-navigation', at: '2026-09-11T11:13:36.882Z' }
+        ];
+      }
+    }
+  });
+  const order = await service({ publicNo: 'PJV1-ABCDEFGHIJKLMNOPQRST' });
+  assert.deepEqual(order.stage, {
+    index: 5,
+    code: 'CHECKOUT_LOADING',
+    label: '正在获取支付信息',
+    total: 9,
+    floor: 46,
+    ceiling: 60,
+    since: '2026-09-11T11:13:36.882Z'
+  });
+  // The six-step vocabulary stays exactly as it was: the stage is additional.
+  assert.equal(order.status, 'ACTIVATING');
+});
+
+test('evidence that will not load costs the stage, never the order status', async () => {
+  const service = createOrderStatusService({
+    pool: {},
+    repository: {
+      findCustomerOrder: async () => ({
+        public_no: 'PJV1-ABCDEFGHIJKLMNOPQRST',
+        internal_order_id: 'order-1',
+        effective_status: 'RECHARGE_SUCCESS',
+        customer_email: 'customer@example.com',
+        updated_at: new Date('2026-09-11T11:15:15.961Z'),
+        events: []
+      }),
+      findStageEvidence: async () => { throw new Error('browser_run_events unavailable'); }
+    }
+  });
+  const order = await service({ publicNo: 'PJV1-ABCDEFGHIJKLMNOPQRST' });
+  assert.equal(order.status, 'SUCCESS');
+  assert.equal(order.customerEmail, 'customer@example.com');
+  assert.equal('stage' in order, false);
+});

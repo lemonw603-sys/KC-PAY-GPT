@@ -2,6 +2,8 @@ import { findCustomerOrder } from '../db/repositories/order-status-query-reposit
 import { PublicApiError } from '../domain/public-api-error.js';
 import { createCdkLookup } from '../security/cdk-code.js';
 import { productLabel } from '../domain/product-labels.js';
+import { CUSTOMER_STAGES, resolveCustomerStage } from '../domain/customer-stage.js';
+import { findStageEvidence } from '../db/repositories/customer-stage-repository.js';
 
 const PUBLIC_NO_PATTERN = /^PJV1-[A-Za-z0-9_-]{20}$/;
 
@@ -83,7 +85,7 @@ function customerTimeline(events = []) {
 export function createOrderStatusService({
   pool,
   cdkHashKey,
-  repository = { findCustomerOrder }
+  repository = { findCustomerOrder, findStageEvidence }
 }) {
   return async function getCustomerOrderStatus(input) {
     const lookup = normalizeLookup(input, cdkHashKey);
@@ -95,10 +97,40 @@ export function createOrderStatusService({
       });
     }
     const action = CUSTOMER_ACTIONS[order.customer_action_code] || null;
+
+    // The nine stages: what the executor is actually doing inside the five
+    // minutes the order status calls RECHARGE_PROCESSING. Evidence failing to
+    // load must never take the status response down with it — the customer
+    // still gets their order, just without the finer-grained stage.
+    let stage = null;
+    try {
+      const evidence = [
+        ...(Array.isArray(order.events) ? order.events : [])
+          .map((event) => ({ kind: 'order', token: event.to_status, at: event.created_at })),
+        ...await repository.findStageEvidence(pool, order.internal_order_id)
+      ];
+      const resolved = resolveCustomerStage({ orderStatus: order.effective_status, evidence });
+      const floor = resolved.stage.index === 1 ? 0 : CUSTOMER_STAGES[resolved.stage.index - 2].ceiling;
+      stage = {
+        index: resolved.stage.index,
+        code: resolved.stage.code,
+        label: resolved.stage.label,
+        total: CUSTOMER_STAGES.length,
+        floor,
+        ceiling: resolved.stage.ceiling,
+        since: isoDate(resolved.since)
+      };
+    } catch (error) {
+      console.error('customer stage resolution failed', {
+        publicNo: order.public_no, name: error?.name, code: error?.code
+      });
+    }
+
     const response = {
       publicNo: order.public_no,
       status: mapCustomerOrderStatus(order.effective_status),
       updatedAt: isoDate(order.updated_at),
+      ...(stage ? { stage } : {}),
       ...(order.plan_type ? { product: {
         planType: String(order.plan_type),
         label: order.product_name || productLabel(order.plan_type)
