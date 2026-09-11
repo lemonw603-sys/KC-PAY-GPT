@@ -17,7 +17,7 @@
 | pojia-highvcc-snapshot-sync.timer | active / enabled，每 10 分钟 oneshot 跑 `v1/scripts/sync-highvcc-snapshot.mjs --commit`（pojia 用户，runtime.env）；首次手动 run exit 0，批次 `23584a48`（9 更新，因表格与本机 02:53 那次的字节不同：固定 mtime 是之后才加的）；**03:49:13 UTC 定时触发已核实：数据未变 → `replay:true`、沿用批次 `23584a48`、批次表无新增、exit 0** | 2026-09-11 03:40 UTC | ssh：`systemctl is-active/is-enabled`、`journalctl -u`、`list-timers`；隧道新连接查 manual_card_import_batches |
 | pojia-card-stock-runner.timer | inactive / disabled（旧每分钟自动开卡架构已废弃） | 2026-09-09 11:46 UTC | systemctl |
 | 健康 | `127.0.0.1:3100` live 200 / ready 200；后台登录页 200（ADMIN_HOST） | 2026-09-09 06:35 UTC | curl（服务器本机） |
-| 数据库迁移 | 最新 `051_orders_cdk_id_reusable`（09-08 01:25 UTC 应用；050 于 09-07 19:16 UTC）；仓库最新亦为 051，无待应用迁移 | 2026-09-09 11:46 UTC | schema_migrations / 仓库 v1/migrations |
+| 数据库迁移 | 最新 `052_cards_bin`（cards 增 card_bin，D-168；051 于 09-08 01:25 UTC，050 于 09-07 19:16 UTC） | 2026-09-11 13:32 UTC | schema_migrations / 仓库 v1/migrations |
 | accept_new_orders | true | 2026-09-09 11:46 UTC | app_settings |
 | dispatch_new_recharges / 模式 | true / AUTOMATIC | 2026-09-09 11:46 UTC | app_settings |
 | 默认路线 | Browser（`CHATGPT_PLUS_BROWSER_V1`/`PRO_5X`/`PRO_20X` accepts_new_orders=1，旧 API 路线=0） | 2026-09-09 11:46 UTC | fulfillment_routes |
