@@ -1,0 +1,286 @@
+{
+  "source": "/Users/lemon/Library/Application Support/pojia-browser-live/pool/lane-4.wal",
+  "sha256": "64c03e331fc42cf135b859fd630a59fefc0ffc25fa3a519859c3d5d5dd8f796d",
+  "records": [
+    {
+      "sequence": 91,
+      "appendedAt": 1789050942462,
+      "type": "intent",
+      "summary": {
+        "action": "observe-page"
+      }
+    },
+    {
+      "sequence": 92,
+      "appendedAt": 1789050944018,
+      "type": "checkpoint",
+      "summary": {
+        "action": "session-bootstrap",
+        "cookieCount": 2
+      }
+    },
+    {
+      "sequence": 93,
+      "appendedAt": 1789050959642,
+      "type": "checkpoint",
+      "summary": {
+        "action": "page-reset"
+      }
+    },
+    {
+      "sequence": 94,
+      "appendedAt": 1789050960993,
+      "type": "checkpoint",
+      "summary": {
+        "action": "account-readonly-probe",
+        "loggedIn": true,
+        "identityMatched": true,
+        "subscriptionStatus": null,
+        "alreadyPlus": null,
+        "submitCalls": 0
+      }
+    },
+    {
+      "sequence": 95,
+      "appendedAt": 1789050961319,
+      "type": "checkpoint",
+      "summary": {
+        "action": "page-signature",
+        "frameCount": 1
+      }
+    },
+    {
+      "sequence": 96,
+      "appendedAt": 1789051208839,
+      "type": "freeze",
+      "summary": {
+        "action": "fail-closed",
+        "reason": "CHECKOUT_NAVIGATION_FAILED"
+      }
+    },
+    {
+      "sequence": 97,
+      "appendedAt": 1789051245363,
+      "type": "intent",
+      "summary": {
+        "action": "observe-page"
+      }
+    },
+    {
+      "sequence": 98,
+      "appendedAt": 1789051246942,
+      "type": "checkpoint",
+      "summary": {
+        "action": "session-bootstrap",
+        "cookieCount": 2
+      }
+    },
+    {
+      "sequence": 99,
+      "appendedAt": 1789051249993,
+      "type": "checkpoint",
+      "summary": {
+        "action": "page-reset"
+      }
+    },
+    {
+      "sequence": 100,
+      "appendedAt": 1789051254466,
+      "type": "checkpoint",
+      "summary": {
+        "action": "account-readonly-probe",
+        "loggedIn": true,
+        "identityMatched": true,
+        "subscriptionStatus": null,
+        "alreadyPlus": null,
+        "submitCalls": 0
+      }
+    },
+    {
+      "sequence": 101,
+      "appendedAt": 1789051254781,
+      "type": "checkpoint",
+      "summary": {
+        "action": "page-signature",
+        "frameCount": 1
+      }
+    },
+    {
+      "sequence": 102,
+      "appendedAt": 1789051498519,
+      "type": "freeze",
+      "summary": {
+        "action": "fail-closed",
+        "reason": "CHECKOUT_NAVIGATION_FAILED"
+      }
+    },
+    {
+      "sequence": 103,
+      "appendedAt": 1789051532146,
+      "type": "intent",
+      "summary": {
+        "action": "observe-page"
+      }
+    },
+    {
+      "sequence": 104,
+      "appendedAt": 1789051533996,
+      "type": "checkpoint",
+      "summary": {
+        "action": "session-bootstrap",
+        "cookieCount": 2
+      }
+    },
+    {
+      "sequence": 105,
+      "appendedAt": 1789051543709,
+      "type": "checkpoint",
+      "summary": {
+        "action": "page-reset"
+      }
+    },
+    {
+      "sequence": 106,
+      "appendedAt": 1789051547612,
+      "type": "checkpoint",
+      "summary": {
+        "action": "account-readonly-probe",
+        "loggedIn": true,
+        "identityMatched": true,
+        "subscriptionStatus": null,
+        "alreadyPlus": null,
+        "submitCalls": 0
+      }
+    },
+    {
+      "sequence": 107,
+      "appendedAt": 1789051547964,
+      "type": "checkpoint",
+      "summary": {
+        "action": "page-signature",
+        "frameCount": 1
+      }
+    },
+    {
+      "sequence": 108,
+      "appendedAt": 1789051792364,
+      "type": "freeze",
+      "summary": {
+        "action": "fail-closed",
+        "reason": "CHECKOUT_NAVIGATION_FAILED"
+      }
+    },
+    {
+      "sequence": 109,
+      "appendedAt": 1789051827327,
+      "type": "intent",
+      "summary": {
+        "action": "observe-page"
+      }
+    },
+    {
+      "sequence": 110,
+      "appendedAt": 1789051829456,
+      "type": "checkpoint",
+      "summary": {
+        "action": "session-bootstrap",
+        "cookieCount": 2
+      }
+    },
+    {
+      "sequence": 111,
+      "appendedAt": 1789051835534,
+      "type": "checkpoint",
+      "summary": {
+        "action": "page-reset"
+      }
+    },
+    {
+      "sequence": 112,
+      "appendedAt": 1789051841025,
+      "type": "checkpoint",
+      "summary": {
+        "action": "account-readonly-probe",
+        "loggedIn": true,
+        "identityMatched": true,
+        "subscriptionStatus": null,
+        "alreadyPlus": null,
+        "submitCalls": 0
+      }
+    },
+    {
+      "sequence": 113,
+      "appendedAt": 1789051841332,
+      "type": "checkpoint",
+      "summary": {
+        "action": "page-signature",
+        "frameCount": 2
+      }
+    },
+    {
+      "sequence": 114,
+      "appendedAt": 1789052084535,
+      "type": "freeze",
+      "summary": {
+        "action": "fail-closed",
+        "reason": "CHECKOUT_NAVIGATION_FAILED"
+      }
+    },
+    {
+      "sequence": 115,
+      "appendedAt": 1789080101422,
+      "type": "intent",
+      "summary": {
+        "action": "observe-page"
+      }
+    },
+    {
+      "sequence": 116,
+      "appendedAt": 1789080103013,
+      "type": "checkpoint",
+      "summary": {
+        "action": "session-bootstrap",
+        "cookieCount": 2
+      }
+    },
+    {
+      "sequence": 117,
+      "appendedAt": 1789080107776,
+      "type": "checkpoint",
+      "summary": {
+        "action": "page-reset"
+      }
+    },
+    {
+      "sequence": 118,
+      "appendedAt": 1789080109925,
+      "type": "checkpoint",
+      "summary": {
+        "action": "account-readonly-probe",
+        "loggedIn": true,
+        "identityMatched": true,
+        "subscriptionStatus": null,
+        "alreadyPlus": null,
+        "submitCalls": 0
+      }
+    },
+    {
+      "sequence": 119,
+      "appendedAt": 1789080110479,
+      "type": "checkpoint",
+      "summary": {
+        "action": "page-signature",
+        "frameCount": 1
+      }
+    },
+    {
+      "sequence": 120,
+      "appendedAt": 1789080354819,
+      "type": "freeze",
+      "summary": {
+        "action": "fail-closed",
+        "reason": "CHECKOUT_NAVIGATION_FAILED"
+      }
+    }
+  ]
+}

@@ -1,0 +1,24 @@
+✔ order-scoped Session source accepts only a pre-payment Browser order (4.099791ms)
+✔ order-scoped Session source rejects API and post-payment orders without blaming the Session (0.615708ms)
+✔ order-scoped Session source does not misclassify a database outage as customer Session invalid (0.419ms)
+✔ preflight summary keeps only non-payment operational evidence (0.370584ms)
+✔ cardless preflight permits the initial VAT quote without weakening the payment contract (0.15775ms)
+✔ preflight lease loss requeues without counting an attempt, even at the last attempt (0.509375ms)
+✔ preflight exhaustion raises a critical operator alert and points at the reopen script (0.309583ms)
+✔ preflight repository claims only Browser preflight tasks with the database profile (0.221417ms)
+✔ preflight passes the injected provider into the executor instead of constructing COOKIE (1.144792ms)
+✔ ExtensionSessionBootstrapAdapter preserves an existing active Profile session without opening the popup (1.195958ms)
+✔ ExtensionSessionBootstrapAdapter rejects sources with no session material (0.273167ms)
+✔ ExtensionSessionBootstrapAdapter drives the popup to replace a session and reports the extension-backed shape (0.286667ms)
+✔ ExtensionSessionBootstrapAdapter surfaces the popup's own error message instead of hanging on a rejected token (0.238458ms)
+✔ ExtensionSessionBootstrapAdapter fails closed when the popup controls are missing (wrong extension version or not loaded) (0.171458ms)
+✔ ExtensionSessionBootstrapAdapter clearSession drops only session/login cookies, same as the direct-cookie adapter (0.246459ms)
+✔ ExtensionSessionBootstrapAdapter rejects bootstrap after the lease is closed (0.15425ms)
+ℹ tests 16
+ℹ suites 0
+ℹ pass 16
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 172.493292

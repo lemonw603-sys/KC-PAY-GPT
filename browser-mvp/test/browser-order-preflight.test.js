@@ -8,6 +8,7 @@ import {
   BrowserOrderPreflightRepository,
   browserOrderMaterialRef,
   createCardlessPreflightObservation,
+  createBrowserOrderPreflightWorker,
   summarizeBrowserPreflight,
 } from '../src/browser-order-preflight.js';
 
@@ -169,4 +170,33 @@ test('preflight repository claims only Browser preflight tasks with the database
   assert.deepEqual(calls[0].params, ['database-profile', 'BROWSER_PREFLIGHT']);
   assert.match(calls[0].sql, /o\.status IN \('CREATED','WAITING_FOR_CARD','CARD_READY'\)/);
   assert.match(calls[0].sql, /fr\.executor_kind = 'BROWSER'/);
+});
+
+
+test('preflight passes the injected provider into the executor instead of constructing COOKIE', async (t) => {
+  const { BrowserExecutionService } = await import('../src/executor.js');
+  const calls = [];
+  const provider = {
+    open: async (ref) => { calls.push(ref); return { leaseId: 'fixture' }; },
+    bootstrap: async () => { calls.push('injected-bootstrap'); return {}; },
+    close: async () => { calls.push('closed'); },
+  };
+  t.mock.method(BrowserOrderPreflightRepository.prototype, 'claim', async () => ({ task_id:'fixture', order_id:'order-1' }));
+  t.mock.method(BrowserOrderPreflightRepository.prototype, 'loadIdentity', async () => ({}));
+  t.mock.method(BrowserOrderPreflightRepository.prototype, 'complete', async () => {});
+  t.mock.method(BrowserOrderPreflightRepository.prototype, 'fail', async (_task,error) => { throw error; });
+  t.mock.method(BrowserExecutionService.prototype, 'execute', async function(job) {
+    assert.equal(this.sessionProvider, provider);
+    const lease = await this.sessionProvider.open(job.metadata.sessionRef);
+    await this.sessionProvider.bootstrap(lease, {});
+    await this.sessionProvider.close(lease);
+    return { submitCalls:0 };
+  });
+  const worker = createBrowserOrderPreflightWorker({
+    pool:{query(){throw Error('unexpected DB');},getConnection(){throw Error('unexpected DB');}},
+    workerId:'fixture',executorProfileId:'fixture',runtimeAdapter:{open(){},close(){}},
+    observation:{},evidenceSink:{append(){}},sessionProvider:provider,
+  });
+  assert.equal((await worker.runOnce()).status,'COMPLETED');
+  assert.deepEqual(calls,['browser-order:order-1','injected-bootstrap','closed']);
 });

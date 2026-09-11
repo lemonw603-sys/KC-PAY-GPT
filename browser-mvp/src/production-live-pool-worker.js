@@ -9,7 +9,7 @@ import { HnskjCardProvider } from '../../v1/src/providers/hnskj-card.js';
 import { createBrowserPaymentVerificationService } from '../../v1/src/services/browser-payment-verification-service.js';
 import { BillingAddressEnrichedCardMaterialSource, BrowserCardTransactionReader } from './browser-card-transaction-reader.js';
 import { BitBrowserControlRuntimeAdapter } from './bitbrowser-control-runtime.js';
-import { createBrowserOrderPreflightWorker } from './browser-order-preflight.js';
+import { BrowserOrderEncryptedSessionSource, createBrowserOrderPreflightWorker } from './browser-order-preflight.js';
 import { DurableCardMaterialLeaseProvider } from './durable-card-material-lease.js';
 import { createBitBrowserControlManifest } from './fixtures.js';
 import { LivePostPaymentRecoveryVerifier } from './live-post-payment-recovery.js';
@@ -219,10 +219,15 @@ export async function createLaneWorker({ lane, config, pool, browserType, shared
     postPlusAction: (row) => postPlusActionForPlan(row.plan),
     verificationIntervalMs: config.verificationIntervalMs,
   });
+  const PreflightSessionAdapter = config.sessionProviderMode === 'EXTENSION'
+    ? ExtensionSessionBootstrapAdapter : CookieSessionBootstrapAdapter;
   const preflight = createBrowserOrderPreflightWorker({
     pool, workerId, executorProfileId: config.executorProfileId, runtimeAdapter, manifest, observation: observation(),
     encryptionKey: config.materialEncryptionKey, evidenceSink, leaseSeconds: config.leaseSeconds,
     executionTimeoutMs: config.executionTimeoutMs,
+    sessionProvider: new PreflightSessionAdapter({
+      source: new BrowserOrderEncryptedSessionSource({ db: pool, encryptionKey: config.materialEncryptionKey }),
+    }),
   });
   const live = createSharedLivePaymentWorker({
     pool, workerId, executorProfileId: config.executorProfileId, approvedOrderId: null, runtimeAdapter, manifest,

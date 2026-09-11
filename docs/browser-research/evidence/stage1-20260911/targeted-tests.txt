@@ -1,0 +1,57 @@
+✔ order-scoped Session source accepts only a pre-payment Browser order (5.896542ms)
+✔ order-scoped Session source rejects API and post-payment orders without blaming the Session (0.306084ms)
+✔ order-scoped Session source does not misclassify a database outage as customer Session invalid (0.12525ms)
+✔ preflight summary keeps only non-payment operational evidence (0.27ms)
+✔ cardless preflight permits the initial VAT quote without weakening the payment contract (0.099458ms)
+✔ preflight lease loss requeues without counting an attempt, even at the last attempt (0.504542ms)
+✔ preflight exhaustion raises a critical operator alert and points at the reopen script (0.27075ms)
+✔ preflight repository claims only Browser preflight tasks with the database profile (0.184375ms)
+✔ ExtensionSessionBootstrapAdapter preserves an existing active Profile session without opening the popup (1.800625ms)
+✔ ExtensionSessionBootstrapAdapter rejects sources with no session material (0.311042ms)
+✔ ExtensionSessionBootstrapAdapter drives the popup to replace a session and reports the extension-backed shape (0.318ms)
+✔ ExtensionSessionBootstrapAdapter surfaces the popup's own error message instead of hanging on a rejected token (0.241167ms)
+✔ ExtensionSessionBootstrapAdapter fails closed when the popup controls are missing (wrong extension version or not loaded) (0.168209ms)
+✔ ExtensionSessionBootstrapAdapter clearSession drops only session/login cookies, same as the direct-cookie adapter (0.249708ms)
+✔ ExtensionSessionBootstrapAdapter rejects bootstrap after the lease is closed (0.158666ms)
+file:///Users/lemon/.codex/worktrees/browser-live/AI%E5%85%85%E5%80%BC%E4%B8%9A%E5%8A%A1/v1/src/config.js:62
+const barkNotificationSchema = runtimeDatabaseSchema.extend({
+                                                     ^
+
+TypeError: runtimeDatabaseSchema.extend is not a function
+    at file:///Users/lemon/.codex/worktrees/browser-live/AI%E5%85%85%E5%80%BC%E4%B8%9A%E5%8A%A1/v1/src/config.js:62:54
+    at ModuleJob.run (node:internal/modules/esm/module_job:430:25)
+    at async onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:661:26)
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5)
+
+Node.js v24.14.0
+✖ browser-mvp/test/preflight-provider-wiring.test.js (252.557625ms)
+file:///Users/lemon/.codex/worktrees/browser-live/AI%E5%85%85%E5%80%BC%E4%B8%9A%E5%8A%A1/v1/src/config.js:62
+const barkNotificationSchema = runtimeDatabaseSchema.extend({
+                                                     ^
+
+TypeError: runtimeDatabaseSchema.extend is not a function
+    at file:///Users/lemon/.codex/worktrees/browser-live/AI%E5%85%85%E5%80%BC%E4%B8%9A%E5%8A%A1/v1/src/config.js:62:54
+    at ModuleJob.run (node:internal/modules/esm/module_job:430:25)
+    at async onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:661:26)
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5)
+
+Node.js v24.14.0
+✖ browser-mvp/test/production-live-pool-worker.test.js (196.061041ms)
+ℹ tests 17
+ℹ suites 0
+ℹ pass 15
+ℹ fail 2
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 588.08025
+
+✖ failing tests:
+
+test at browser-mvp/test/preflight-provider-wiring.test.js:1:1
+✖ browser-mvp/test/preflight-provider-wiring.test.js (252.557625ms)
+  'test failed'
+
+test at browser-mvp/test/production-live-pool-worker.test.js:1:1
+✖ browser-mvp/test/production-live-pool-worker.test.js (196.061041ms)
+  'test failed'
