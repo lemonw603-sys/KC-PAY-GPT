@@ -251,9 +251,6 @@
       view.classList.add('screen');
     }
     setRail(RAIL_AT[name], { allDone });
-    // 首页不挂「使用教程」：那篇教程讲的是怎么取 Session，客户还没走到那一
-    // 步，先看见只会发懵（2026-09-12 Lemon）。需要它的两屏各自有就近入口。
-    el.navGuide.hidden = name === 'cdk';
     el.glow.dataset.on = name === 'run' ? '1' : '0';
     if (changed) {
       clearToast();
@@ -348,6 +345,9 @@
 
     el.run.dataset.tone = view.tone;
     el.glow.dataset.tone = view.tone;
+    // 成功屏把环缩小、风控提醒提到明细上方：13 寸笔记本的可视高度约 750px，
+    // 原来那条提醒落在 856px，客户根本看不到，而它是硬规则要求必须看到的。
+    el.run.classList.toggle('is-done', success);
 
     // 标题永远是当前阶段名——出问题时也是，客户要知道卡在哪一步。
     // 换掉的只有下面那行说明。

@@ -91,7 +91,7 @@ body{
 
 /* ---------- 顶栏 ---------- */
 .top{display:flex;justify-content:space-between;align-items:center;gap:16px;margin-bottom:24px}
-.brand{display:flex;align-items:center;gap:12px;font-size:18px;font-weight:600;letter-spacing:-.01em;
+.brand{display:flex;align-items:center;gap:12px;font-size:20px;font-weight:600;letter-spacing:-.01em;
        color:var(--t);text-decoration:none;min-width:0;white-space:nowrap;overflow:hidden;
        text-overflow:ellipsis}
 .brand svg{flex:0 0 auto}
@@ -215,6 +215,16 @@ input[type=text]:focus,textarea:focus{outline:0;border-color:var(--a)}
 .stage-name.is-swapping{opacity:0;transform:translateY(6px)}
 .stage-hint{font-size:16px;color:var(--t2);margin:10px 0 0;text-align:center;max-width:36ch;
             line-height:1.65;transition:opacity .3s ease}
+
+/* 订阅成功这一屏：环已经完成使命，缩小让位，风控提醒才进得了首屏。
+   13 寸笔记本可视高度约 750px，原来那条提醒落在 856px。 */
+.run.is-done .ring{width:150px;height:150px}
+.run.is-done .ring__tick svg{width:74px;height:74px}
+.run.is-done .hero{margin-bottom:20px}
+.run.is-done .stage-name{margin-top:12px}
+.run.is-done .note{margin-top:0;margin-bottom:14px}
+.run.is-done .sublink{margin-top:14px}
+.run.is-done .btn{margin-top:14px}
 
 /* 出问题 / 需换号：环停住并转琥珀 */
 .run[data-tone="warn"] .ring__fg{stroke:var(--warn)}
