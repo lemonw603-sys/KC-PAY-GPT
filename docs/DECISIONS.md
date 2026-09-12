@@ -992,10 +992,12 @@ Lemon 提出的判定标准，用排队打比方：「排到他办业务的时�
 
 **C. 现在谁都没管的三样**：
 1. **`orders.assigned_card_id` 释放卡时不清**（`card-release-repository.js` 只动 `cards` 与
-   `card_assignment_history`）。**这是正确性 bug 级别的坑**：客户回来时
-   `session-replacement-repository.js:43` 的 `resumeStatus = order.assigned_card_id ? 'CARD_READY' : ...`
-   会看见它非空而判 `CARD_READY`，可那张卡早分给别人了——两单指向同一张卡。任何人动这块都必须
-   连它一起清。
+   `card_assignment_history`）。**现在不触发**——当前 `WAITING_FOR_SESSION` 时卡根本不释放，
+   该字段与实际占用一致。它是**实施「等客户立刻释放」那天必须一起改的前置项**：一旦卡被释放
+   而此字段仍留着，客户回来时 `session-replacement-repository.js:43` 的
+   `resumeStatus = order.assigned_card_id ? 'CARD_READY' : ...` 会看见它非空而判 `CARD_READY`，
+   可那张卡早分给别人了——两单指向同一张卡。（2026-09-12 12:2x UTC 更正：初稿写成「正确性
+   bug 级别的坑」，措辞重了，当下并不在流血。）
 2. **`orders.session_ciphertext` 从不清除**：全代码库没有一处把它置空。那是能登录客户 ChatGPT
    账号的东西，订单终态后没有理由留着。
 3. **BitBrowser 窗口里的登录态**不在库里，上述机制都管不到。D-187 之后下一单开始会替换，但
