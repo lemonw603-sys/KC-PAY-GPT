@@ -145,6 +145,10 @@ export function createOrderStatusService({
         }
       } : {})
     };
+    // 等待中也给出账号：客户在进度屏要能确认这一单是给哪个号充的（设计稿
+    // 的明细是「订单 / 账号 / 方案」三行）。查询本来就需要查询码或卡密，
+    // 多这一个字段不增加暴露面——它正是客户自己刚提交的那个邮箱。
+    if (order.customer_email) response.customerEmail = order.customer_email;
     if (response.status === 'SUCCESS') {
       response.customerEmail = order.customer_email || null;
       response.finishedAt = isoDate(order.finished_at || order.updated_at);

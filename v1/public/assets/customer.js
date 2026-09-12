@@ -116,7 +116,7 @@
     confirmSubmit: $('confirm-submit'), confirmBack: $('confirm-back'),
     run: $('view-run'), ringFg: $('ring-fg'), ringNum: $('ring-num'), ringPct: $('ring-pct'),
     ringTick: $('ring-tick'), stageName: $('stage-name'), stageHint: $('stage-hint'),
-    stageStep: $('stage-step'), runSeal: $('run-seal'), runRows: $('run-rows'),
+    runSeal: $('run-seal'), runRows: $('run-rows'),
     runSublink: $('run-sublink'), runRisk: $('run-risk'),
     ticketCode: $('ticket-code'), ticketCopy: $('ticket-copy'),
     formReplace: $('form-replace'), replaceSession: $('replace-session'), fieldReplace: $('field-replace'),
@@ -347,14 +347,6 @@
         : `${base || ''}${base ? KEEP_OPEN : ''}`.trim() || KEEP_OPEN;
     }
     swapStageText(withProduct(name || '处理中', order), withProduct(hint, order));
-
-    // 「第几步 / 共九步」：卡住时这行比百分比更能说明还在哪一环。
-    if (stage && !success) {
-      el.stageStep.hidden = false;
-      el.stageStep.textContent = `第 ${stage.index} 步 / 共 ${stage.total} 步`;
-    } else {
-      el.stageStep.hidden = true;
-    }
 
     // 进度环
     el.ringNum.hidden = success;

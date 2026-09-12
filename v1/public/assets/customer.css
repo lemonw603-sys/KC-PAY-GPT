@@ -2,14 +2,27 @@
    候光 · 客户充值页
    定稿见 docs/design/README.md（2026-09-11 Lemon 确认）。
 
-   与原型的唯一有意偏离：原型从 Google Fonts 取 Familjen Grotesk 与 IBM
-   Plex Mono。客户在国内，那个域名多半加载不出来，页面会静默回落到系统字
-   体、且首屏被吊住。这里直接用系统字体栈，变量名保留，日后要自托管字体只
-   改这两行。
+   字体与设计稿一致：Familjen Grotesk 与 IBM Plex Mono，自托管在本站而不走
+   Google 域名（国内连不上）。拉丁子集共 48 KB，见 assets/fonts/README.md。
 
    令牌刻度（refactoring-ui）：字号 12/14/16/18/20/24/30/36，
    间距 4/8/12/16/24/32/48，颜色写 HSL，弱化用颜色和字号、不用更细的字重。
    ========================================================================= */
+
+/* 设计稿指定的两款字体，自托管在本站，不经 Google 域名。
+   两款均为 SIL Open Font License 1.1（2026-09-12 对上游核实）：
+   Familjen Grotesk © Familjen STHLM AB，IBM Plex Mono © IBM Corp。
+   只带拉丁子集，中文照旧走系统字体，与原型行为一致。
+   font-display:swap —— 字体没到之前先用系统字体渲染，不吊住首屏。
+   Familjen Grotesk 是可变字体，一个文件覆盖 400–700。 */
+@font-face{font-family:"Familjen Grotesk";font-style:normal;font-weight:400 700;font-display:swap;
+  src:url(/assets/fonts/familjen-grotesk.woff2) format("woff2")}
+@font-face{font-family:"IBM Plex Mono";font-style:normal;font-weight:400;font-display:swap;
+  src:url(/assets/fonts/ibm-plex-mono-400.woff2) format("woff2")}
+@font-face{font-family:"IBM Plex Mono";font-style:normal;font-weight:500;font-display:swap;
+  src:url(/assets/fonts/ibm-plex-mono-500.woff2) format("woff2")}
+@font-face{font-family:"IBM Plex Mono";font-style:normal;font-weight:600;font-display:swap;
+  src:url(/assets/fonts/ibm-plex-mono-600.woff2) format("woff2")}
 
 :root{
   /* 候光 · 晨雾 */
@@ -23,10 +36,9 @@
   --demo-bg:hsl(176,18%,11%); --demo-ink:hsl(168,14%,74%); --demo-url:hsl(163,30%,72%);
   --shadow-card:inset 0 1px 0 hsla(0,0%,100%,.85),0 1px 2px hsla(176,25%,10%,.06),
                  0 14px 30px -14px hsla(176,25%,10%,.22);
-  --fd:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB",
-       "Microsoft YaHei",system-ui,sans-serif;
-  --fb:var(--fd);
-  --fm:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  --fd:"Familjen Grotesk","PingFang SC","Hiragino Sans GB",system-ui,sans-serif;
+  --fb:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",system-ui,sans-serif;
+  --fm:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
 }
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
   /* 候光 · 石板 */
@@ -55,17 +67,17 @@ html{-webkit-text-size-adjust:100%}
 body{
   margin:0;min-height:100vh;background:var(--bg);background-image:var(--bg-wash);
   background-attachment:fixed;color:var(--t);font-family:var(--fb);font-size:16px;line-height:1.6;
-  -webkit-font-smoothing:antialiased;padding:24px 16px 64px;
+  -webkit-font-smoothing:antialiased;padding:40px 24px 80px;
 }
 [hidden]{display:none !important}
 
-.shell{max-width:620px;margin:0 auto;position:relative;isolation:isolate}
+.shell{max-width:916px;margin:0 auto;position:relative;isolation:isolate}
 
 /* 呼吸光晕：只在处理/结果屏亮起，告诉客户还在动 */
 .glow{position:fixed;inset:0;z-index:-1;pointer-events:none;opacity:0;transition:opacity .6s ease}
 .shell[data-glow="on"] ~ .glow,.glow[data-on="1"]{opacity:1}
 .glow::after{
-  content:"";position:absolute;left:50%;top:220px;width:380px;height:380px;
+  content:"";position:absolute;left:50%;top:260px;width:380px;height:380px;
   transform:translateX(-50%);border-radius:50%;filter:blur(56px);
   background:radial-gradient(circle,var(--glow),transparent 68%);
   animation:breathe 5.5s ease-in-out infinite;
@@ -91,7 +103,7 @@ body{
 
 /* ---------- 四步导轨 ---------- */
 .rail{display:flex;align-items:center;margin-bottom:32px}
-.rail__st{display:flex;flex-direction:column;align-items:center;gap:8px;width:84px;flex:0 0 auto}
+.rail__st{display:flex;flex-direction:column;align-items:center;gap:8px;width:92px;flex:0 0 auto}
 .rail__st b{width:24px;height:24px;border-radius:50%;display:grid;place-items:center;font-size:12px;
             font-weight:600;font-family:var(--fm);background:var(--s);color:var(--t3);
             box-shadow:inset 0 0 0 2px var(--bd);transition:.4s ease}
@@ -196,8 +208,6 @@ input[type=text]:focus,textarea:focus{outline:0;border-color:var(--a)}
 .stage-name.is-swapping{opacity:0;transform:translateY(6px)}
 .stage-hint{font-size:16px;color:var(--t2);margin:10px 0 0;text-align:center;max-width:36ch;
             line-height:1.65;transition:opacity .3s ease}
-.stage-step{font-family:var(--fm);font-size:12px;letter-spacing:.06em;color:var(--t3);
-            margin:10px 0 0;font-variant-numeric:tabular-nums}
 
 /* 出问题 / 需换号：环停住并转琥珀 */
 .run[data-tone="warn"] .ring__fg{stroke:var(--warn)}

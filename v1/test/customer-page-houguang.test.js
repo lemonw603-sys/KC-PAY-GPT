@@ -114,10 +114,27 @@ test('减少动态效果时关掉全部动画', () => {
   assert.match(js, /prefers-reduced-motion: reduce/);
 });
 
-test('不引入远程字体：国内客户加载不到 Google Fonts，会吊住首屏', () => {
+test('字体与设计稿同款，但自托管、不走 Google 域名', () => {
+  // 国内连不上 fonts.googleapis.com：直接引用会静默回落成系统字体，
+  // 页面就会像 2026-09-12 那版一样「小了一号、没那么高级」。
   assert.doesNotMatch(all, /fonts\.googleapis\.com/);
   assert.doesNotMatch(all, /fonts\.gstatic\.com/);
-  assert.match(css, /--fm:ui-monospace/);
+  assert.match(css, /--fd:"Familjen Grotesk"/);
+  assert.match(css, /--fm:"IBM Plex Mono"/);
+  const faces = [...css.matchAll(/url\((\/assets\/fonts\/[^)]+)\)/g)].map((m) => m[1]);
+  assert.ok(faces.length >= 4, '两款字体的 @font-face 都要在');
+  for (const href of faces) {
+    assert.ok(fs.existsSync(path.join(publicDir, href.slice(1))), `${href} 指向的文件不存在`);
+  }
+  // 字体没到之前先用系统字体渲染，不把首屏吊住。逐块检查，别去数全文
+  // 出现次数——注释里也会写到这个词。
+  const blocks = css.split('@font-face').slice(1);
+  assert.equal(blocks.length, faces.length);
+  for (const block of blocks) assert.match(block.slice(0, 240), /font-display:swap/);
+});
+
+test('内容宽度与设计稿一致：原型卡片 916px，窄了就会显得局促', () => {
+  assert.match(css, /\.shell\{max-width:916px/);
 });
 
 test('Session 全文不回显，建单成功后立刻清空', () => {
