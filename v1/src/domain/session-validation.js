@@ -1,6 +1,16 @@
 import { z } from 'zod';
 import { OrderIntakeError } from './order-intake-error.js';
 
+/**
+ * 一份完整 Session 必须带的字段。客户页在「核对账号」那一屏用同一份清单
+ * 做本地预检——纯本地，不发请求——这样内容不完整能当场说，而不是等客户
+ * 走到确认屏点了「立即兑换」才被服务端拒绝。
+ * 两边靠 test/customer-page-houguang.test.js 断言不漂移。
+ */
+export const REQUIRED_SESSION_FIELDS = Object.freeze([
+  'user.id', 'user.email', 'account.id', 'accessToken', 'sessionToken', 'expires'
+]);
+
 const sessionSchema = z.object({
   user: z.object({
     id: z.string().min(1).max(191).refine((value) => value.trim().length > 0),

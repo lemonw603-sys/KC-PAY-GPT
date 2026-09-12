@@ -14,11 +14,18 @@ const css = fs.readFileSync(path.join(publicDir, 'assets', 'customer.css'), 'utf
 const js = fs.readFileSync(path.join(publicDir, 'assets', 'customer.js'), 'utf8');
 const all = `${html}\n${css}\n${js}`;
 
+/** 面向客户的文案：剥掉注释，注释里写具体数值是给维护者看的，不是承诺。 */
+const prose = [html, css, js]
+  .join('\n')
+  .replace(/\/\*[\s\S]*?\*\//g, ' ')
+  .replace(/<!--[\s\S]*?-->/g, ' ')
+  .replace(/(^|[^:])\/\/[^\n]*/g, '$1 ');
+
 test('不承诺具体秒数：只说「通常几分钟之内完成」', () => {
   assert.match(js, /通常几分钟之内完成/);
   // 「一两分钟」「约 3 分钟」「30 秒」这类具体时长都违反规则；真实一单
   // 约 5 分钟且依赖本机执行器在跑，写死时间就是在给客户一个会破的承诺。
-  const promises = all.match(/[一二两三四五六七八九十\d]+\s*[-~到]?\s*[一二两三四五六七八九十\d]*\s*(秒钟|秒|分钟)(之内|以内|内|左右|完成)?/g) || [];
+  const promises = prose.match(/[一二两三四五六七八九十\d]+\s*[-~到]?\s*[一二两三四五六七八九十\d]*\s*(秒钟|秒|分钟)(之内|以内|内|左右|完成)?/g) || [];
   const offending = promises.filter((text) => !/几分钟/.test(text));
   assert.deepEqual(offending, [], `页面出现了具体时长承诺：${offending.join(' / ')}`);
 });
@@ -172,4 +179,27 @@ test('查询屏就地给答案，不把客户推进完整进度页', () => {
   const queryScreen = html.slice(html.indexOf('id="view-query"'), html.indexOf('</section>', html.indexOf('id="view-query"')));
   assert.match(queryScreen, /升级套餐/);
   assert.match(js, /已开通/);
+});
+
+test('核对账号那一屏用服务端同一套规则做本地预检，两边不漂移', async () => {
+  const { REQUIRED_SESSION_FIELDS } = await import('../src/domain/session-validation.js');
+  const start = js.indexOf('function checkSession');
+  const end = js.indexOf('function refreshSessionPreview');
+  assert.ok(start > 0 && end > start, '找不到本地预检函数');
+  const check = js.slice(start, end);
+  for (const field of REQUIRED_SESSION_FIELDS) {
+    const leaf = field.split('.').pop();
+    assert.match(check, new RegExp(`\\b${leaf}\\b`), `本地预检没有覆盖 ${field}`);
+  }
+  // 与服务端同一个门槛：剩余不足 5 分钟就别开始。
+  assert.match(check, /payload\.exp - nowSeconds < 300/);
+  // 不变量 1：填写页只在本地解析，绝不发请求。
+  assert.doesNotMatch(check, /fetch\(|api\./);
+});
+
+test('不对客户断言我们没有检查过的事', () => {
+  // 设计稿那句「当前为免费账号,可以开通」要真的查过账号才能说。现在只做
+  // 了本地结构预检，所以只说结构完整。等联网检查上线再换回设计稿原话。
+  assert.match(js, /账号信息完整,可以继续/);
+  assert.doesNotMatch(js, /当前为免费账号/);
 });

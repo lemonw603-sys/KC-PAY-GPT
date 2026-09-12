@@ -203,7 +203,7 @@ test('customer page shows the Session re-submit form when remaining is null (unl
   assert.ok(scriptVersion, 'index.html must load customer.js with a ?v= cache version');
   assert.ok(styleVersion, 'index.html must load customer.css with a ?v= cache version');
   assert.equal(scriptVersion[1], styleVersion[1], 'both assets ship together, so they share a version');
-  assert.ok(Number(scriptVersion[1]) >= 23, 'the asset version only ever moves forward');
+  assert.ok(Number(scriptVersion[1]) >= 25, 'the asset version only ever moves forward');
 });
 
 test('admin navigation is exactly five pages and old views are gone', () => {

@@ -466,37 +466,101 @@
   });
 
   // ------------------------------------------------- 屏 2 粘贴 Session
-  function refreshSessionPreview() {
-    let email = null;
-    let name = '';
+  // 本地预检，与后端 src/domain/session-validation.js 同一套规则。纯本地、
+  // 不发任何请求。以前这里只看 user.email，缺字段或 token 过期的内容会一路
+  // 绿灯放到确认屏，客户点了「立即兑换」才被服务端拒绝——问题该在粘贴的
+  // 那一刻就说出来。
+  // 必需字段：user.id / user.email / account.id / accessToken / sessionToken / expires
+  const nonEmpty = (value) => typeof value === 'string' && value.trim() !== '';
+
+  function jwtPayload(token) {
+    const parts = String(token).split('.');
+    if (parts.length !== 3 || parts.some((part) => !part)) return null;
     try {
-      const parsed = parseSessionInput(el.session.value);
-      const session = parsed.value;
-      if (session && typeof session === 'object' && !Array.isArray(session)
-          && session.user && typeof session.user.email === 'string' && session.user.email) {
-        email = session.user.email;
-        name = typeof session.user.name === 'string' ? session.user.name : '';
-        if (parsed.hadTrailingText) el.session.value = JSON.stringify(session);
-        pending = { cdk: verified?.cdk || '', session, email, name };
-      }
-    } catch { /* 还没粘完，安静等着 */ }
-    if (!email) pending = null;
-    el.sessionOk.hidden = !email;
-    if (email) {
-      el.sessionEmail.textContent = email;
-      el.sessionName.textContent = name ? `${name} · 确认是要开通的这个账号` : '确认是要开通的这个账号';
-    }
-    el.sessionSubmit.disabled = !email;
-    return email;
+      const json = atob(parts[1].replace(/-/g, '+').replace(/_/g, '/'));
+      const payload = JSON.parse(decodeURIComponent(escape(json)));
+      return payload && typeof payload === 'object' && !Array.isArray(payload) ? payload : null;
+    } catch { return null; }
   }
-  el.session.addEventListener('input', refreshSessionPreview);
+
+  const INCOMPLETE = '内容不完整。请在 Token 页面整页全选再复制一次,不要只复制一部分。';
+
+  function checkSession(session) {
+    if (!session || typeof session !== 'object' || Array.isArray(session)) return { error: INCOMPLETE };
+    if (!session.user || !nonEmpty(session.user.id) || !nonEmpty(session.user.email)) return { error: INCOMPLETE };
+    if (!session.account || !nonEmpty(session.account.id)) return { error: INCOMPLETE };
+    if (!nonEmpty(session.accessToken) || !nonEmpty(session.sessionToken) || !nonEmpty(session.expires)) {
+      return { error: INCOMPLETE };
+    }
+    const sessionParts = String(session.sessionToken).split('.');
+    if (sessionParts.length !== 5 || [0, 2, 3, 4].some((i) => !sessionParts[i])) return { error: INCOMPLETE };
+    const expiresAt = Date.parse(session.expires);
+    if (!Number.isFinite(expiresAt)) return { error: INCOMPLETE };
+    if (expiresAt <= Date.now()) {
+      return { error: '这份 Session 已经过期了,请重新打开 Token 页面复制一次。' };
+    }
+    const payload = jwtPayload(session.accessToken);
+    if (!payload || !Number.isInteger(payload.exp)) return { error: INCOMPLETE };
+    const nowSeconds = Math.floor(Date.now() / 1000);
+    if (payload.exp <= nowSeconds) {
+      return { error: '这份 Session 已经过期了,请重新打开 Token 页面复制一次。' };
+    }
+    // 与后端同一门槛：剩余不足 5 分钟就别开始了，跑到一半过期更难处理。
+    if (payload.exp - nowSeconds < 300) {
+      return { error: '这份 Session 马上就要过期了,请重新复制一次再提交。' };
+    }
+    return {
+      email: session.user.email,
+      name: typeof session.user.name === 'string' ? session.user.name : ''
+    };
+  }
+
+  function refreshSessionPreview({ quiet = true } = {}) {
+    let parsed = null;
+    try { parsed = parseSessionInput(el.session.value); }
+    catch {
+      pending = null;
+      el.sessionOk.hidden = true;
+      el.sessionSubmit.disabled = true;
+      // 还没粘完整时不报错，等客户粘完
+      if (!quiet) fieldError(el.fieldSession, INCOMPLETE);
+      return null;
+    }
+    if (parsed.hadTrailingText) el.session.value = JSON.stringify(parsed.value);
+    const result = checkSession(parsed.value);
+    if (result.error) {
+      pending = null;
+      el.sessionOk.hidden = true;
+      el.sessionSubmit.disabled = true;
+      // 过期这类问题即使还在输入也要立刻说——再粘几次也不会变好。
+      if (!quiet || result.error !== INCOMPLETE) fieldError(el.fieldSession, result.error);
+      return null;
+    }
+    fieldError(el.fieldSession, '');
+    pending = { cdk: verified?.cdk || '', session: parsed.value, email: result.email, name: result.name };
+    el.sessionEmail.textContent = result.email;
+    el.sessionName.textContent = result.name
+      ? `${result.name} · 账号信息完整,可以继续`
+      : '账号信息完整,可以继续';
+    el.sessionOk.hidden = false;
+    el.sessionSubmit.disabled = false;
+    return result.email;
+  }
+  // 粘贴过程中不打扰（一半内容当然是不完整的），停手 700 毫秒后如果还是不
+  // 完整就明说——否则客户只看到按钮灰着，不知道为什么。
+  let sessionHintTimer = null;
+  el.session.addEventListener('input', () => {
+    refreshSessionPreview();
+    if (sessionHintTimer) clearTimeout(sessionHintTimer);
+    sessionHintTimer = setTimeout(() => {
+      if (el.session.value.trim()) refreshSessionPreview({ quiet: false });
+    }, 700);
+  });
 
   el.formSession.addEventListener('submit', (event) => {
     event.preventDefault();
     fieldError(el.fieldSession, '');
-    if (!refreshSessionPreview() || !pending) {
-      return fieldError(el.fieldSession, '账号 Session 不完整,请确认复制了整页内容。');
-    }
+    if (!refreshSessionPreview({ quiet: false }) || !pending) return;
     el.confirmCdk.textContent = maskCdk(pending.cdk);
     el.confirmPlan.textContent = verified?.product?.label || 'ChatGPT Plus';
     el.confirmEmail.textContent = pending.email;
