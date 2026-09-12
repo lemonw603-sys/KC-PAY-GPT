@@ -56,6 +56,34 @@
 卡的 `current_balance` 是**导入时的快照**，不是实时值，`last_transaction_synced_at` 为 NULL。
 判断「有没有扣款」时不能只信这个数。
 
+### 关于「自动续期」：查过了，此路不通（2026-09-12）
+
+Lemon 要求免掉「每次过期人工 F12 取 token」。最彻底的办法是用 refresh_token 自动换新的
+access token，为此读了卡台前端包（`https://www.highvcc.com/js/app.f77d29e8.js`，与
+`highvcc-card.mjs` 当初摸接口合同同一方法）。结论是**没有证据支持这条路**：
+
+- `changeRefreshToken` 在整个包里**只出现一次（定义处），没有任何调用点**——前端自己都没启用
+  自动刷新。它的合同倒是完整的：`POST`，headers 带 `Authorization: Basic …`（前端硬编码的
+  OAuth2 客户端凭证）与 `auth: "0"`，params 为
+  `{grant_type:"refresh_token", scope:"all", type:"account", refresh_token:…}`。
+- `/api/user/` 下 31 个端点**没有一个与 token/refresh 有关**（登录、验证码、改密、钱包、概览……）。
+  也就是说连该往哪个 URL 发都无从得知。
+
+服务端是否支持标准 OAuth2 刷新端点，只能拿生产账号盲试才知道，可能撞风控。**不做。**
+
+**替代方案（已实现）**：让 BitBrowser 有一个窗口常驻登录 highvcc，用 CDP 直接读 token 同步。
+登录态比 access token 活得久得多，人只在登录态真失效时登一次。
+
+```bash
+node browser-mvp/scripts/sync-highvcc-token.mjs --profile <BitBrowser窗口ID>
+```
+
+主机侧由 `v1/scripts/set-highvcc-token.mjs` 走后台同一个 service 加密入库，存完立刻打一次只读
+`walletStatus` 验证这份 token 真能用。token 全程不落盘、不打印、不进命令行参数，只走 ssh stdin。
+
+顺带查到的有用副产品：卡台前端把过期时间也写在 `localStorage.access_overtime`，同步脚本已读它
+并报告剩余有效期——不用等接口报「登录已失效」才发现。
+
 ## 三、按板块的能力索引
 
 - **五个决定 / 开工检查**：`operations/*`（付款开关、接单开关、派工、默认充值方式、供给自动化、开始营业）

@@ -32,7 +32,21 @@ try {
     page = await context.newPage();
     await page.goto('https://highvcc.com/', { waitUntil: 'domcontentloaded', timeout: 30_000 });
   }
-  const token = await page.evaluate(() => window.localStorage.getItem('access_token') || '');
+  const { token, overtime } = await page.evaluate(() => ({
+    token: window.localStorage.getItem('access_token') || '',
+    // 卡台自己把过期时间也存在 localStorage（前端 setToken 写的），拿来提前预警，
+    // 不用等接口报「登录已失效」才发现（2026-09-12 查前端包得到）。
+    overtime: window.localStorage.getItem('access_overtime') || '',
+  }));
+  if (overtime) {
+    const at = Number(overtime);
+    const ms = Number.isFinite(at) ? (at > 1e12 ? at : at * 1000) - Date.now() : NaN;
+    if (Number.isFinite(ms)) {
+      console.log(ms > 0
+        ? `token 剩余有效期约 ${Math.floor(ms / 3600000)} 小时`
+        : `注意：这份 token 已过期 ${Math.floor(-ms / 3600000)} 小时，同步上去也用不了，请先在该窗口重新登录`);
+    }
+  }
   if (!token) {
     console.error('该窗口里没有读到登录信息——多半是这个窗口还没登录 highvcc.com，或登录态已过期。请在这个窗口里登录一次。');
     process.exit(1);
