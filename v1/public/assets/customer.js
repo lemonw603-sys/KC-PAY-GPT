@@ -251,6 +251,9 @@
       view.classList.add('screen');
     }
     setRail(RAIL_AT[name], { allDone });
+    // 首页不挂「使用教程」：那篇教程讲的是怎么取 Session，客户还没走到那一
+    // 步，先看见只会发懵（2026-09-12 Lemon）。需要它的两屏各自有就近入口。
+    el.navGuide.hidden = name === 'cdk';
     el.glow.dataset.on = name === 'run' ? '1' : '0';
     if (changed) {
       clearToast();
