@@ -24,7 +24,7 @@
 | Browser 当前卡台 | 备用卡台 A（`manual_excel` / `backup-a`） | 13:31 | browser_card_source_selections |
 | browser_dispatch_enabled | true | 2026-09-09 11:46 UTC | app_settings |
 | browser_payment_writes_enabled | **true**（2026-09-12 04:47:58 UTC 由 Lemon 在后台开启，进入无人值守：客户任意时间兑换即自动处理，**会真实扣卡上的钱**。关闭方式同一处按钮；关掉后常驻执行器退回「只等不跑」，订单停在付款前） | 2026-09-12 | app_settings / admin_setting_events；常驻 LaunchAgent `com.pojia.browser-pool` 于 04:49:00 自动拉起 worker，心跳持续推进 |
-| **菲律宾出口对 ChatGPT 的可达性** | **不可达（2026-09-12 09:35 UTC 起实测）**：`38.60.246.34` 访问 chatgpt.com 首页/会话接口/后端接口**全部 403**（Cloudflare 拦截页），同一出口访问 google.com 200。IP 归属 AS138915 Kaopu Cloud HK Limited，**机房地址段**。**后果：浏览器充值链路当前跑不通**，每单在 37 秒后安全中止（不扣款、卡密退回）。见 D-187 | 2026-09-12 09:35 UTC | 本机经 mihomo 出口 curl 三个路径 + ipinfo 归属查询 |
+| **菲律宾出口对 ChatGPT 的可达性** | **未定论**。裸 curl 经出口访问 chatgpt.com 返回 403 Cloudflare 拦截页，但 **curl 不能用来判断 Cloudflare 是否封禁**（无 TLS 指纹、不执行 JS，会被单独拦）。**Lemon 当场在 BitBrowser 窗口里看到的是 ChatGPT 的退出登录页面，说明页面打得开、出口没被整站封**。真实根因转向「Session 没能登录上」，见 D-187 | 2026-09-12 09:40 UTC | 反例证据来自 Lemon 直接观察窗口；curl 测试已作废 |
 | Browser Profile productionWritesEnabled | false（随付款开关同步） | 09-09 | executor_profiles config_public_json |
 | card_auto_replenishment_enabled | false（与补余额构成首页「开卡补钱」的"部分开启"态） | 2026-09-09 11:46 UTC | app_settings |
 | card_balance_recharge_enabled | true（对手动卡无效） | 2026-09-09 11:46 UTC | app_settings |
