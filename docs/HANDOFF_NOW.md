@@ -1,6 +1,6 @@
 # 接班一屏（HANDOFF_NOW）
 
-更新：2026-09-12 10:05 UTC。写者：大脑窗口。**本文只由大脑窗口写，且每次重要事实变化后整篇复核，不止改暂停原因那一行。**
+更新：2026-09-12 10:58 UTC。写者：大脑窗口。**本文只由大脑窗口写，且每次重要事实变化后整篇复核，不止改暂停原因那一行。**
 
 ## 分工
 
@@ -15,19 +15,20 @@
 固化于 git 标签 `e2e-first-success-20260911`（打在代码 `a544c6b`，标签正文写明可复现的全部运行版本）。
 逐步证据与前三次失败记录：`docs/E2E_CHAIN_TEST_SAMPLE.md`。
 
-## 现在状态（2026-09-12 10:02 UTC 当场核实，`state-check.sh` 十项全一致）
+## 现在状态（2026-09-12 10:53 UTC 当场核实，`state-check.sh` 十项全一致）
 
-- 生产 release **`20260912-session-replace-04d311b`**（2026-09-12 09:55 UTC 切换）；web / worker / 快照同步 timer 均 active；迁移仍在 `052_cards_bin`（本次无新迁移）。回滚点 `20260912-customer-page-624487c`。
+- 生产 release **`20260912-failed-retry-03b926c`**（2026-09-12 10:55 UTC 切换）；web / worker / 快照同步 timer 均 active；迁移仍在 `052_cards_bin`（本次无新迁移）。回滚点 `20260912-session-replace-04d311b`。
 - 付款开关 **true**，接单开关 **true**（无人值守生效中）；**非终态订单 0、active_runs 0**；合格卡 **1 张（卡段 `53211304`，$39.24）**。
 - 本机常驻执行器：supervisor PID 23949、worker PID 24745（2026-09-12 09:57:33 UTC 拉起）。菲律宾出口 38.60.246.34、SSH 隧道 13306、BitBrowser Local API 均正常。
 - **真实成功率 1/7（14%）**，当场重查确认（总运行 39、点过付款 7、系统自动成功 1）。**这个分母有问题，别按 14% 规划**：7 次里 6 次用的是已知坏卡段 `51398996`，唯一成功的那次用的是 `53211304`（D-185）。先用好卡段跑几单，才有可用的成功率。
 - 点过付款后未成功的原因分布：`CARD_DECLINED` 3、`HUMAN_VERIFIED_NOT_CHARGED` 2、无记录 1。
+- **失败单客户有自助出路了**（D-188，2026-09-12 10:55 UTC 上线）：付款前中止的单，页面直说「卡密可以直接重新兑换」并给按钮；点过付款、结果不明的仍走「联系客服」。生产已复验——真实失败单 `PJV1--wEBaAETWx_pKBpTZVp9` 的状态接口返回 `canRetry: true`。
 - 客户账号（mengx612）仍登在 Pilot 窗口——Lemon 决定暂不自动登出（D-165）。**注意**：自 D-187 起执行器每次运行都会把窗口里的登录态整个替换成当单客户的 Session，不再保留常驻登录。
 
 ## 今日已上线的改动（按发布顺序）
 
 `resolve-unknown-ui-3d4936d` B1 收口按钮三 bug → `preflight-noupgrade-0396bb8` 预检不点 Upgrade → `cdk-return-fix-bfacbe1` F-48 未扣款退 CDK → `drop-preflight-24bcbde` 取消独立预检、账号检查并入正式流程 → `card-bin-c65727f` 卡段标注（迁移 052）→ `segment-hint-269ba10` 列表加载失败明说 → `sync-throttle-4350210` 卡台降频、默认卡段留空 → `sync-lastfour-11dbf3c` 字段名修正 → `sync-skip-msg-56c5290` 跳过时明说 → `alerts-342ad5f` 通知改造 → `alert-noise-d924563` 中间态不响手机 → `card-stock-alert-69946b0` 缺卡提醒（timer `pojia-operator-watch`，每分钟巡视排队/付款未落定/缺卡）。
-→ `customer-page-624487c` 候光客户充值页（九阶段、卡密先验、四步流程）→ `session-replace-04d311b` 执行器首次注入即替换窗口登录态、删除永不执行的替换重试路径，九阶段与后台补事件名 `page-reload-after-inject`（D-187）。
+→ `customer-page-624487c` 候光客户充值页（九阶段、卡密先验、四步流程）→ `session-replace-04d311b` 执行器首次注入即替换窗口登录态、删除永不执行的替换重试路径，九阶段与后台补事件名 `page-reload-after-inject`（D-187）→ `failed-retry-03b926c` 失败单返回 `canRetry`、页面给「重新兑换」入口（D-188）。
 browser-mvp 本机代码（不经服务器发布）：人机验证识别与接力（D-155）、结账页无邮箱字段不中止（D-157）、付款后读结账页识别拒付（D-161）。
 
 ## 下一可执行项（顺序由 D-167 定）
@@ -82,7 +83,7 @@ browser-mvp/scripts/contract-probe.mjs       # 卡台字段契约（改动涉及
 ## 暂停 / 恢复
 
 ```text
-暂停原因：无。D-187 已发布并生效（release `20260912-session-replace-04d311b`，执行器 09:57:33 UTC 重启）。
+暂停原因：无。D-187、D-188 均已发布并生效（当前 release `20260912-failed-retry-03b926c`）。
 允许继续：只读核对；browser-mvp/v1 代码与测试；文档落盘；发布
 禁止操作：不实施人机验证绕过；开卡/补余额/换卡/提现等资金动作仍需 Lemon 当次确认
 恢复第一步：读本文 → 读 D-172（惯犯错误与硬规则）→ `state-check.sh` 比对现场 → `run-stats.sh` 看真实成功率

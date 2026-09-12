@@ -4,10 +4,10 @@
 
 | 项目 | 当前值 | 核对时间（UTC） | 证据方式 |
 |---|---|---|---|
-| 生产 release | `/opt/pojia/releases/20260912-session-replace-04d311b`（commit `04d311b`；执行器首次注入直接替换窗口登录态、删除永不执行的替换重试路径；九阶段与后台补事件名 `page-reload-after-inject`；D-187 定案）。回滚 `20260912-customer-page-624487c` | 2026-09-12 09:55 UTC | `customer-sql-probe.sh` 五条全通过 → `prepare`（1021 文件 manifest OK、库备份 `pojia-20260912T095413Z.sql.gz.enc` 完整性 OK）→ `switch`（live 200、ready 200、admin 登录页 200）。服务器本机 curl 以正确 Host `ops.vibebridge.top` 复验：`/admin/assets/admin.js` 200、163713 字节、含 `page-reload-after-inject` 与旧名 `page-reset` 各 1 次；`current/v1/src/domain/customer-stage.js` 第 51–52 行新旧事件名并存。**注意**：`deploy-release.sh:101` 那行 `admin.js?v=23` / `grep -c CONFIRM_MANUAL_PAYMENT` 是上次发布留下的一次性检查，已与当前内容无关，勿当作本次证据 |
-| 回滚点 | `/opt/pojia/releases/20260912-customer-page-624487c`（再前 `20260911-card-stock-alert-69946b0`；本版无迁移，直接切回即可；timer 单元不随 release 变化） | 2026-09-12 09:55 UTC | switch 输出 ROLLBACK 命令 |
-| 最新数据库备份 | `/var/backups/pojia/pojia-20260912T095413Z.sql.gz.enc`，完整性 OK（release prepare 阶段） | 2026-09-12 09:54 UTC | deploy-release prepare 输出 |
-| pojia-web | active（2026-09-12 09:55 UTC 随 release 切换重启） | 2026-09-12 09:55 UTC | switch 输出 + 服务器本机 curl live/ready 200 |
+| 生产 release | `/opt/pojia/releases/20260912-failed-retry-03b926c`（commit `03b926c`；失败单返回 `canRetry` 并在页面给「重新兑换」入口；D-188）。回滚 `20260912-session-replace-04d311b` | 2026-09-12 10:55 UTC | `customer-sql-probe.sh` 五条全通过 → `prepare`（1021 文件 manifest OK、库备份 `pojia-20260912T105342Z.sql.gz.enc` 完整性 OK）→ `switch`（live 200、ready 200、admin 登录页 200）。服务器本机 curl 复验：服务出去的 `index.html` 引用 `customer.js?v=36` 且含 `id="retry-order"`；`customer.js` 200/37033 字节、含 `canRetry` 5 处与 `retryOrder` 4 处；**对真实失败单 `PJV1--wEBaAETWx_pKBpTZVp9` 调 `POST /api/v1/orders/status` 返回 `canRetry: true`**（该单卡密已于 09:26:38 UTC 退回，审计事件 `RETURNED`）。**注意**：`deploy-release.sh:101` 那行 `admin.js?v=23` / `grep -c CONFIRM_MANUAL_PAYMENT` 是上次发布留下的一次性检查，与当前内容无关，勿当作证据 |
+| 回滚点 | `/opt/pojia/releases/20260912-session-replace-04d311b`（再前 `20260912-customer-page-624487c`；本版无迁移，直接切回即可；timer 单元不随 release 变化） | 2026-09-12 10:55 UTC | switch 输出 ROLLBACK 命令 |
+| 最新数据库备份 | `/var/backups/pojia/pojia-20260912T105342Z.sql.gz.enc`，完整性 OK（release prepare 阶段） | 2026-09-12 10:54 UTC | deploy-release prepare 输出 |
+| pojia-web | active（2026-09-12 10:55 UTC 随 release 切换重启） | 2026-09-12 10:55 UTC | switch 输出 + 服务器本机 curl live/ready 200 |
 | highvcc 备用卡台 A token | 已配置进生产（`app_settings.highvcc_access_token_ciphertext`，加密存储，09-10 09:17 UTC 写入） | 2026-09-10 09:52 UTC | `v1/scripts/set-highvcc-token.mjs` 输出 |
 | highvcc 备用卡台 A 已开卡片（本窗口） | 3 张：尾号 9839（$50，08:xx）、9354（$5，09:19）、3241（$3，09:35，开卡时因 detail() 竞态未即时入库，09:53 用 `reconcile-highvcc-card.mjs` 补记）；账户另有 $20 押金要从钱包余额里先扣，才是真实可开卡余额（Lemon 提供） | 2026-09-10 09:52 UTC | 平台卡片列表 + `cards` 表独立核对 |
 | pojia-worker（v1 任务 Worker） | active（处理 ASSIGN_CARD/PREPARE/SUBMIT_RECHARGE/POLL 等；Browser 路线的 BROWSER_PREFLIGHT 与付款由本机 worker 跑） | 2026-09-09 11:46 UTC | systemctl |
