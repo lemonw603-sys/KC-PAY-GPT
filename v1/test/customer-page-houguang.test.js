@@ -182,7 +182,8 @@ test('查询屏就地给答案，不把客户推进完整进度页', () => {
 });
 
 test('核对账号那一屏用服务端同一套规则做本地预检，两边不漂移', async () => {
-  const { REQUIRED_SESSION_FIELDS } = await import('../src/domain/session-validation.js');
+  const { REQUIRED_SESSION_FIELDS, MINIMUM_ACCESS_TOKEN_LIFETIME_SECONDS }
+    = await import('../src/domain/session-validation.js');
   const start = js.indexOf('function checkSession');
   const end = js.indexOf('function refreshSessionPreview');
   assert.ok(start > 0 && end > start, '找不到本地预检函数');
@@ -191,8 +192,8 @@ test('核对账号那一屏用服务端同一套规则做本地预检，两边�
     const leaf = field.split('.').pop();
     assert.match(check, new RegExp(`\\b${leaf}\\b`), `本地预检没有覆盖 ${field}`);
   }
-  // 与服务端同一个门槛：剩余不足 5 分钟就别开始。
-  assert.match(check, /payload\.exp - nowSeconds < 300/);
+  // 与服务端同一个门槛，两边必须是同一个数。
+  assert.match(check, new RegExp(`payload\\.exp - nowSeconds < ${MINIMUM_ACCESS_TOKEN_LIFETIME_SECONDS}`));
   // 不变量 1：填写页只在本地解析，绝不发请求。
   assert.doesNotMatch(check, /fetch\(|api\./);
 });

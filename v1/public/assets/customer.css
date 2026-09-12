@@ -214,6 +214,10 @@ input[type=text]:focus,textarea:focus{outline:0;border-color:var(--a)}
 .run[data-tone="warn"] .ring__num b{color:var(--warn)}
 
 
+/* 成功屏的金边徽章（原型 CSS 里就有的 .seal，Lemon 2026-09-12 确认启用） */
+.seal{display:inline-flex;align-items:center;gap:7px;font-size:14px;font-weight:600;color:var(--gold);
+      box-shadow:inset 0 0 0 1.5px var(--gold);border-radius:999px;padding:5px 13px;margin-top:14px}
+
 .sublink{display:flex;flex-direction:column;gap:4px;margin-top:20px;padding:16px 18px;border-radius:12px;
          background:var(--a-soft);box-shadow:inset 0 0 0 2px var(--a);text-decoration:none;color:var(--t)}
 .sublink:hover{transform:translateY(-1px);box-shadow:inset 0 0 0 2px var(--a),0 8px 18px -10px var(--a)}

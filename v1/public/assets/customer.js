@@ -117,7 +117,8 @@
     confirmSubmit: $('confirm-submit'), confirmBack: $('confirm-back'),
     run: $('view-run'), ringFg: $('ring-fg'), ringNum: $('ring-num'), ringPct: $('ring-pct'),
     ringTick: $('ring-tick'), stageName: $('stage-name'), stageHint: $('stage-hint'),
-    runRows: $('run-rows'), runSublink: $('run-sublink'), runRisk: $('run-risk'),
+    runSeal: $('run-seal'), runRows: $('run-rows'),
+    runSublink: $('run-sublink'), runRisk: $('run-risk'),
     ticketCopy: $('ticket-copy'),
     formReplace: $('form-replace'), replaceSession: $('replace-session'), fieldReplace: $('field-replace'),
     replaceCheck: $('replace-check'), replaceSubmit: $('replace-submit'), replaceLimit: $('replace-limit'),
@@ -374,6 +375,7 @@
     }
     shownStageCode = stage ? stage.code : null;
 
+    el.runSeal.hidden = !success;
     el.runSublink.hidden = !success;
     el.runRisk.hidden = !success;
     el.ticketCopy.hidden = !view.ticket;
@@ -505,8 +507,9 @@
     if (payload.exp <= nowSeconds) {
       return { error: '这份 Session 已经过期了,请重新打开 Token 页面复制一次。' };
     }
-    // 与后端同一门槛：剩余不足 5 分钟就别开始了，跑到一半过期更难处理。
-    if (payload.exp - nowSeconds < 300) {
+    // 与后端 minimumAccessTokenLifetimeSeconds 同一门槛：剩余不足半小时就
+    // 别开始了，跑到一半过期更难处理。
+    if (payload.exp - nowSeconds < 1800) {
       return { error: '这份 Session 马上就要过期了,请重新复制一次再提交。' };
     }
     return {

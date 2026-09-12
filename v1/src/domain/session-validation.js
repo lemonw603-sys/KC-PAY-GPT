@@ -7,6 +7,9 @@ import { OrderIntakeError } from './order-intake-error.js';
  * 走到确认屏点了「立即兑换」才被服务端拒绝。
  * 两边靠 test/customer-page-houguang.test.js 断言不漂移。
  */
+/** 凭证剩余寿命门槛。前端本地预检用同一个数，测试断言两边不漂移。 */
+export const MINIMUM_ACCESS_TOKEN_LIFETIME_SECONDS = 1800;
+
 export const REQUIRED_SESSION_FIELDS = Object.freeze([
   'user.id', 'user.email', 'account.id', 'accessToken', 'sessionToken', 'expires'
 ]);
@@ -46,9 +49,13 @@ function parseJwtPayload(token) {
   }
 }
 
+// 门槛 1800 秒（30 分钟），2026-09-12 由 Lemon 定，原为 300 秒。
+// 自动跑完一单实测 312 秒，300 秒的门槛正好卡在边缘：剩 5 分零几秒的凭证
+// 能通过校验，却会在跑到一半时失效。30 分钟留足余量，而正常客户刚复制的
+// 凭证通常还剩好几天，不会被这条拦住。
 export function validateChatGptSession(value, {
   now = () => Date.now(),
-  minimumAccessTokenLifetimeSeconds = 300
+  minimumAccessTokenLifetimeSeconds = MINIMUM_ACCESS_TOKEN_LIFETIME_SECONDS
 } = {}) {
   const parsed = sessionSchema.safeParse(value);
   if (!parsed.success) fail('INCOMPLETE_SESSION');
