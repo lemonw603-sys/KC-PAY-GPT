@@ -20,7 +20,12 @@ const CHALLENGE_PROBE = () => {
   // a challenge would stall every payment waiting for a checkbox nobody can see.
   const vendorFrame = frames.some((frame) => {
     const src = String(frame.getAttribute('src') || '');
-    if (!/(^|\.)hcaptcha\.com|recaptcha|turnstile|challenges\.cloudflare\.com/i.test(src)) return false;
+    // Stripe 代理托管 hCaptcha：真实挑战的 src 是 js.stripe.com/v3/hcaptcha-inner-…，
+    // 域名里根本没有 hcaptcha.com，所以只匹配厂商域名会漏掉 ChatGPT 结账页上的每一次
+    // 挑战——2026-09-12 真单卡在验证弹窗上，这里三个信号全部没命中（D-190 续）。
+    // 路径形态一并匹配；被动评分的 hcaptcha-invisible-… 虽然也会命中，但它是 1280x1、
+    // hidden，被下面的可见性与尺寸过滤挡掉，这个分工不变。
+    if (!/(^|\.)hcaptcha\.com|hcaptcha[-_]|recaptcha|turnstile|challenges\.cloudflare\.com/i.test(src)) return false;
     const style = window.getComputedStyle(frame);
     if (style.display === 'none' || style.visibility === 'hidden' || Number(style.opacity) === 0) return false;
     const box = frame.getBoundingClientRect();

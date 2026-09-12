@@ -922,7 +922,7 @@ export function createBrowserExecutionRepository(pool) {
       });
     },
 
-    async markPaymentUnknown({ runId, operationId, reasonCode,
+    async markPaymentUnknown({ runId, operationId, reasonCode, humanVerification = null,
       verificationDeadline, verificationNextCheckAt = null, now = new Date() }) {
       const run = required(runId, 'runId');
       const operation = required(operationId, 'operationId');
@@ -979,7 +979,16 @@ export function createBrowserExecutionRepository(pool) {
            WHERE id = ? AND status = 'RUNNING' AND payment_state = 'PAYMENT_SUBMITTING'`,
           [now, deadline, nextCheck, sequence, reason, now, run]
         );
-        await upsertBrowserAlertInTransaction(connection, {
+        // 「在等人点人机验证」和「不知道付款结果」要分开报：前者只有人能解，必须响手机；
+        // 后者是中间态，按 D-176 静音。2026-09-12 真单卡在验证弹窗上，两者混在一起，
+        // 运营什么通知都没收到（D-190 续）。资金语义不受影响，两条路都照样锁死。
+        await upsertBrowserAlertInTransaction(connection, humanVerification ? {
+          type: 'BROWSER_HUMAN_VERIFICATION', orderId: row.order_id,
+          title: '卡在人机验证，只有你能点',
+          message: `付款已经点过一次，ChatGPT 弹出了人机验证（${humanVerification}），系统按规矩不碰它。`
+            + `请打开浏览器窗口勾选「I am human」，点完这一单会自己继续。`
+            + `订单已锁死，不会重付也不会换卡；一直没人点就会转为等你核实。`
+        } : {
           type: 'BROWSER_PAYMENT_UNKNOWN', orderId: row.order_id, title: '付款点了但没拿到结果，等你核实',
           message: `已点一次付款、没等到确认（${reason}）。系统已锁死，不会重付也不会换卡。请看一眼客户账号是不是 Plus、卡有没有被扣，然后在后台点「确认核实结果」。`
         });
@@ -1247,7 +1256,8 @@ export function createBrowserExecutionRepository(pool) {
              evidence_json=VALUES(evidence_json), updated_at=VALUES(updated_at)`,
           [randomUUID(), `browser-payment-unknown:${row.recharge_attempt_id}`,
             row.order_id, row.recharge_attempt_id,
-            json({ browserRunId: run, reasonCode: reason, evidenceHash: evidence }), now, now]
+            json({ browserRunId: run, reasonCode: reason, evidenceHash: evidence,
+              ...(humanVerification ? { humanVerification } : {}) }), now, now]
         );
         return publicRun({ ...row, run_status: 'HUMAN_REQUIRED',
           verification_state: 'HUMAN_REQUIRED' }, { idempotentReplay: false });

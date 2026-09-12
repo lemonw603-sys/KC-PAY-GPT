@@ -175,10 +175,15 @@ export class LiveChatGPTPaymentAdapter {
             // The click already happened, so this stays an UNKNOWN result: the
             // page may still settle after we let go. The reason is recorded so
             // the run says "a person had to verify" instead of nothing at all.
-            throw new LiveChatGPTPaymentAdapterError(
+            const waiting = new LiveChatGPTPaymentAdapterError(
               `payment is waiting on human verification (${challenge.reason || 'HUMAN_VERIFICATION_REQUIRED'})`,
               'PAYMENT_RESULT_UNKNOWN',
             );
+            // 结构化标识，别让上游去解析 message：只有人能过这一关，运营必须被叫醒。
+            // 2026-09-12 真单卡在验证弹窗上，v1 侧只收到一个笼统的 PAYMENT_RESULT_UNKNOWN，
+            // 于是告警落进「中间态不响手机」的静音名单，运营什么也没收到（D-190 续）。
+            waiting.humanVerification = challenge.reason || 'HUMAN_VERIFICATION_REQUIRED';
+            throw waiting;
           }
         }
         stage = 'observe-payment-outcome';

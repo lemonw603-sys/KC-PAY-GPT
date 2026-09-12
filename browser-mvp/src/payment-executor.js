@@ -216,6 +216,9 @@ export class BrowserPaymentExecutor {
       }
       await this.executionRepository.markPaymentUnknown({
         runId: run.runId, operationId: `${op}:unknown`, reasonCode: 'PAYMENT_RESULT_UNKNOWN',
+        // 资金语义不变（仍是 UNKNOWN、仍锁死），但要让 v1 分得清「在等人点验证」和
+        // 「不知道付款结果」——前者只有人能解，必须响手机。
+        humanVerification: error?.humanVerification || null,
         verificationDeadline: new Date(Date.now() + this.verificationWindowMs),
         verificationNextCheckAt: new Date(Date.now() + this.verificationIntervalMs),
       });
