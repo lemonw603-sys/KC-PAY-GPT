@@ -70,8 +70,8 @@
     ACTION_REQUIRED: { tone: 'warn', poll: 30000, ticket: true,
       hint: '当前账号不能开通,请在下方换一个免费账号的 Session,订单会继续处理。' },
     SUCCESS:         { tone: 'ok',   poll: null, ticket: true },
-    FAILED:          { tone: 'warn', poll: null, ticket: true,
-      hint: '这一单没有完成,不会产生扣费。请记下查询码联系客服核对。' }
+    // FAILED 的说明不写死在这里：能不能重新兑换要看后端的 canRetry，见 renderOrder。
+    FAILED:          { tone: 'warn', poll: null, ticket: true }
   };
 
   const ERRORS = {
@@ -108,6 +108,7 @@
       cdk: $('view-cdk'), session: $('view-session'), confirm: $('view-confirm'),
       run: $('view-run'), query: $('view-query')
     },
+    retryOrder: $('retry-order'),
     formCdk: $('form-cdk'), cdk: $('cdk'), fieldCdk: $('field-cdk'), cdkSubmit: $('cdk-submit'),
     formSession: $('form-session'), session: $('session'), fieldSession: $('field-session'),
     sessionSubmit: $('session-submit'), sessionBack: $('session-back'), sessionSub: $('session-sub'),
@@ -353,6 +354,14 @@
     // 换掉的只有下面那行说明。
     const name = stage ? stage.label : '处理中';
     let hint = view.hint;
+    // 失败单分两种：钱没动的，卡密已经退回（或提交时会当场退回），客户自己就能
+    // 再来一次；点过付款、结果不明的，卡密留在原单上等人工核对，只能找客服。
+    const canRetry = order.status === 'FAILED' && order.canRetry === true;
+    if (order.status === 'FAILED') {
+      hint = canRetry
+        ? '这一单没有完成,没有扣费。你的卡密可以直接重新兑换。'
+        : '这一单没有完成。请记下查询码联系客服核对。';
+    }
     if (!hint) {
       const base = stage ? STAGE_HINT[stage.code] : '';
       hint = success ? withProduct(STAGE_HINT.SUBSCRIPTION_ACTIVE, order)
@@ -393,6 +402,7 @@
     const canReplace = order.status === 'ACTION_REQUIRED' && !expired
       && (replacement.remaining == null || Number(replacement.remaining) > 0);
     el.formReplace.hidden = !canReplace;
+    el.retryOrder.hidden = !canRetry;
     if (canReplace) {
       const reason = order.actionRequired?.message;
       if (reason) el.stageHint.textContent = reason;
@@ -625,6 +635,25 @@
   });
 
   // ---------------------------------------------------- 屏 4 换号 / 复制
+  // 重新兑换：失败单里钱没动的那种，客户点一下就回到第一步。卡密不回填——
+  // 客户可能是拿查询码查到这一屏的，我们手上不一定有那串码，留个空框比填错强。
+  el.retryOrder.addEventListener('click', () => {
+    stopPoll();
+    stopRing();
+    currentOrder = null;
+    verified = null;
+    pending = null;
+    el.cdk.value = '';
+    el.session.value = '';
+    el.sessionOk.hidden = true;
+    el.sessionSubmit.disabled = true;
+    fieldError(el.fieldCdk, '');
+    fieldError(el.fieldSession, '');
+    el.retryOrder.hidden = true;
+    showView('cdk');
+    el.cdk.focus();
+  });
+
   el.formReplace.addEventListener('submit', async (event) => {
     event.preventDefault();
     fieldError(el.fieldReplace, '');
@@ -684,9 +713,9 @@
           ? `开通时间 ${fmtTime(order.finishedAt || order.updatedAt)}` : '';
         el.queryResult.hidden = false;
         el.queryRisk.hidden = false;
-      } else if (order.status === 'FAILED') {
+      } else if (order.status === 'FAILED' && order.canRetry !== true) {
         el.queryResultTitle.textContent = '这一单没有完成';
-        el.queryResultSub.textContent = '不会产生扣费。请记下查询码联系客服核对。';
+        el.queryResultSub.textContent = '请记下查询码联系客服核对。';
         el.queryResult.hidden = false;
       } else {
         pollStart = Date.now();

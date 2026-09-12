@@ -217,3 +217,70 @@ test('evidence that will not load costs the stage, never the order status', asyn
   assert.equal(order.customerEmail, 'customer@example.com');
   assert.equal('stage' in order, false);
 });
+
+test('a failed order says whether the customer can just redeem the code again', async () => {
+  const asked = [];
+  const make = (blocked) => createOrderStatusService({
+    pool: {},
+    repository: {
+      findCustomerOrder: async () => ({
+        public_no: 'PJV1-ABCDEFGHIJKLMNOPQRST',
+        internal_order_id: 'order-1',
+        effective_status: 'RECHARGE_FAILED',
+        updated_at: new Date('2026-09-12T09:26:31.000Z')
+      }),
+      cdkReturnWouldBeBlocked: async (_pool, orderId) => { asked.push(orderId); return blocked; }
+    }
+  });
+
+  // 付款前就停了：卡密退得回来，客户自己再兑一次就行。
+  const open = await make(false)({ publicNo: 'PJV1-ABCDEFGHIJKLMNOPQRST' });
+  assert.equal(open.status, 'FAILED');
+  assert.equal(open.canRetry, true);
+
+  // 点过付款、结果不明：卡密留在原单上等人工核对，不能许诺重来。
+  const held = await make(true)({ publicNo: 'PJV1-ABCDEFGHIJKLMNOPQRST' });
+  assert.equal(held.canRetry, false);
+
+  assert.deepEqual(asked, ['order-1', 'order-1'], '问的是订单自己的 id，不是查询码');
+});
+
+test('retry eligibility fails closed when it cannot be determined', async () => {
+  const service = createOrderStatusService({
+    pool: {},
+    repository: {
+      findCustomerOrder: async () => ({
+        public_no: 'PJV1-ABCDEFGHIJKLMNOPQRST',
+        internal_order_id: 'order-1',
+        effective_status: 'RECHARGE_FAILED',
+        updated_at: new Date('2026-09-12T09:26:31.000Z')
+      }),
+      cdkReturnWouldBeBlocked: async () => { throw new Error('db is down'); }
+    }
+  });
+  const result = await service({ publicNo: 'PJV1-ABCDEFGHIJKLMNOPQRST' });
+  // 查不出来就说不能重来：宁可让客户找客服，也不能许诺一个兑不掉的重来。
+  assert.equal(result.status, 'FAILED');
+  assert.equal(result.canRetry, false);
+});
+
+test('orders that have not failed carry no retry field at all', async () => {
+  let asked = 0;
+  const service = createOrderStatusService({
+    pool: {},
+    repository: {
+      findCustomerOrder: async () => ({
+        public_no: 'PJV1-ABCDEFGHIJKLMNOPQRST',
+        internal_order_id: 'order-1',
+        effective_status: 'RECHARGE_SUCCESS',
+        customer_email: 'buyer@example.test',
+        updated_at: new Date('2026-09-12T09:26:31.000Z')
+      }),
+      cdkReturnWouldBeBlocked: async () => { asked += 1; return false; }
+    }
+  });
+  const result = await service({ publicNo: 'PJV1-ABCDEFGHIJKLMNOPQRST' });
+  assert.equal(result.status, 'SUCCESS');
+  assert.equal('canRetry' in result, false);
+  assert.equal(asked, 0, '成功单不去问卡密退回，白跑一次查询');
+});

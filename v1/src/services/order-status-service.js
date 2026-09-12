@@ -4,6 +4,7 @@ import { createCdkLookup } from '../security/cdk-code.js';
 import { productLabel } from '../domain/product-labels.js';
 import { CUSTOMER_STAGES, resolveCustomerStage } from '../domain/customer-stage.js';
 import { findStageEvidence } from '../db/repositories/customer-stage-repository.js';
+import { cdkReturnWouldBeBlocked } from '../db/repositories/cdk-verify-repository.js';
 
 const PUBLIC_NO_PATTERN = /^PJV1-[A-Za-z0-9_-]{20}$/;
 
@@ -85,7 +86,7 @@ function customerTimeline(events = []) {
 export function createOrderStatusService({
   pool,
   cdkHashKey,
-  repository = { findCustomerOrder, findStageEvidence }
+  repository = { findCustomerOrder, findStageEvidence, cdkReturnWouldBeBlocked }
 }) {
   return async function getCustomerOrderStatus(input) {
     const lookup = normalizeLookup(input, cdkHashKey);
@@ -152,6 +153,21 @@ export function createOrderStatusService({
     if (response.status === 'SUCCESS') {
       response.customerEmail = order.customer_email || null;
       response.finishedAt = isoDate(order.finished_at || order.updated_at);
+    }
+    // 失败单：客户能不能拿同一张卡密再来一次。问的是 `cdkReturnWouldBeBlocked`——
+    // 和客户在第一步校验卡密时问的是同一个函数，所以失败页说的和校验接口稍后
+    // 给的答案不会前后矛盾。没动过钱就能重来（卡密已退回，或 intake 会当场退）；
+    // 点过付款、结果不明的，卡密留在原单上等人工核对，不能让客户再兑一次。
+    // 查不出来时按不能重来处理：宁可让客户找客服，也不能许诺一个兑不掉的重来。
+    if (response.status === 'FAILED') {
+      try {
+        response.canRetry = !(await repository.cdkReturnWouldBeBlocked(pool, order.internal_order_id));
+      } catch (error) {
+        console.error('cdk retry eligibility lookup failed', {
+          publicNo: order.public_no, name: error?.name, code: error?.code
+        });
+        response.canRetry = false;
+      }
     }
     return response;
   };

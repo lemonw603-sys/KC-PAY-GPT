@@ -8,8 +8,8 @@
   <meta name="description" content="ChatGPT 订阅自助开通：验证卡密、核对账号、确认兑换，全程可见进度。">
   <title>ChatGPT 充值中心</title>
   <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/assets/customer.css?v=35">
-  <script src="/assets/customer.js?v=35" defer></script>
+  <link rel="stylesheet" href="/assets/customer.css?v=36">
+  <script src="/assets/customer.js?v=36" defer></script>
 </head>
 <body>
   <div class="glow" id="glow" aria-hidden="true"></div>
@@ -171,6 +171,9 @@
           </label>
           <button class="btn" type="submit" id="replace-submit">提交新账号</button>
         </form>
+
+        <!-- 失败、且这张卡密还能再用时出现（付款前就停了，钱没动） -->
+        <button class="btn" type="button" id="retry-order" hidden>重新兑换</button>
 
         <button class="btn is-ghost" type="button" id="ticket-copy" hidden>复制查询码</button>
       </section>
