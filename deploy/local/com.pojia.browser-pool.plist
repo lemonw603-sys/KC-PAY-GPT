@@ -11,6 +11,13 @@
     <string>/bin/bash</string>
     <string>/Users/lemon/code/AI充值业务/browser-mvp/scripts/live-pool-supervisor.sh</string>
   </array>
+  <!-- launchd 的默认 PATH 只有 /usr/bin:/bin:/usr/sbin:/sbin，取不到 Homebrew 装的 mysql，
+       prod-query.sh 就查不出付款开关，supervisor 会永远停在「只等不跑」——开了开关也不动。
+       2026-09-12 实测踩到，装上后必须看一眼日志里写的是 false 还是「取不到」。 -->
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key><string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+  </dict>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
   <key>ThrottleInterval</key><integer>30</integer>
