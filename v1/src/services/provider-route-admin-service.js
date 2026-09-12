@@ -86,8 +86,15 @@ export function createProviderRouteAdminService({ pool }) {
       );
       const previousId = active[0]?.id || null;
       await connection.query(
-        `UPDATE fulfillment_routes SET accepts_new_orders = 0
-         WHERE product_id = (SELECT product_id FROM fulfillment_routes WHERE id = ?)`, [id]
+        // MySQL 不允许在 UPDATE 的子查询里再查同一张表（ERROR 1093），原来那句
+        // `WHERE product_id = (SELECT product_id FROM fulfillment_routes ...)`
+        // 一执行就报错。它一直没被发现，因为 switchRoute 没有挂到任何路由——
+        // 生产上那几条切换事件是 setDefaultRechargeMethod 写的，它用的正是下面
+        // 这种 JOIN 写法。2026-09-12 由 SQL 探针扫出（sql-probe.sh）。
+        `UPDATE fulfillment_routes fr
+         INNER JOIN fulfillment_routes target ON target.product_id = fr.product_id
+         SET fr.accepts_new_orders = 0
+         WHERE target.id = ?`, [id]
       );
       await connection.query(
         `UPDATE fulfillment_routes SET accepts_new_orders = 1 WHERE id = ?`, [id]
