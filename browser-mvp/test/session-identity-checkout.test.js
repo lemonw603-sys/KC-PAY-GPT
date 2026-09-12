@@ -287,10 +287,12 @@ test('live Checkout contract fails closed when Stripe secure fields never become
 });
 
 // A NextAuth session whose refresh chain died (RefreshAccessTokenError) still
-// answers 200 with the cached user and an access token, but the ChatGPT web
-// app renders logged out and offers no purchase controls. The probe must
-// classify it as a customer Session problem, not as a logged-in identity.
-test('session identity probe treats a refresh error inside a 200 session body as SESSION_INVALID', async () => {
+// answers 200 with the cached user and an access token. Whether that session is
+// usable is decided by the page's own render state, not by the error field:
+// when the app cannot confirm it is logged in, treat it as a customer Session
+// problem. (2026-09-12: the opposite case — logged_in with the error present —
+// is real and must proceed; see the next test and D-190.)
+test('a refresh error is fatal when the page cannot confirm it is logged in', async () => {
   const server = createServer((request, response) => {
     if (request.url === '/api/auth/session') {
       response.writeHead(200, { 'content-type': 'application/json' });
@@ -319,6 +321,41 @@ test('session identity probe treats a refresh error inside a 200 session body as
         && error.details?.sessionError === 'RefreshAccessTokenError'
         && !String(error.message).includes('fixture-access-token'),
     );
+  } finally {
+    await browser.close();
+    server.close();
+    await once(server, 'close');
+  }
+});
+
+test('a refresh error is not fatal while the page still renders as logged in', async () => {
+  // 2026-09-12 真单：/api/auth/session 带 RefreshAccessTokenError，但 authStatus=logged_in、
+  // 页面上 3 个升级入口都在。原来一见 error 就判死，把一单能跑的活会话挡在门外（D-190）。
+  const server = createServer((request, response) => {
+    if (request.url === '/api/auth/session') {
+      response.writeHead(200, { 'content-type': 'application/json' });
+      response.end(JSON.stringify({
+        user: { id: 'user-001', email: 'buyer@example.test' },
+        account: { id: 'acct-001' },
+        accessToken: 'fixture-access-token',
+        error: 'RefreshAccessTokenError',
+      }));
+      return;
+    }
+    response.writeHead(200, { 'content-type': 'text/html' });
+    response.end('<title>ChatGPT fixture</title><script>window.__d={"authStatus":"logged_in"}</script><main>logged in</main>');
+  });
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  const address = server.address();
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage();
+    await page.goto(`http://127.0.0.1:${address.port}/`, { waitUntil: 'domcontentloaded' });
+    const result = await probeSessionIdentity(page, { email: 'buyer@example.test' });
+    assert.equal(result.verified, true, '页面说自己已登录，就该放行');
+    assert.equal(result.sessionError, 'RefreshAccessTokenError', '降级状态必须留在证据里，不是悄悄放过');
+    assert.equal(JSON.stringify(result).includes('fixture-access-token'), false, 'token 不得进结果');
   } finally {
     await browser.close();
     server.close();

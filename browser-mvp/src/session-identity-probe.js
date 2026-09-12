@@ -145,13 +145,6 @@ export async function probeSessionIdentity(page, expectedIdentity, {
       { stage: 'session-endpoint', httpStatus: Number(observed?.status) || null, contentType: String(observed?.contentType || '').slice(0, 80), server: String(observed?.server || '').slice(0, 80), hasCfRay: observed?.hasCfRay === true },
     );
   }
-  if (observed.sessionError) {
-    throw new SessionIdentityProbeError(
-      `session is no longer refreshable (${observed.sessionError})`,
-      'SESSION_INVALID',
-      { stage: 'session-error', httpStatus: observed.status, sessionError: observed.sessionError },
-    );
-  }
   // The web app carries its own client login state in the server-rendered
   // payload. With a session cookie but a dead client auth, it renders the
   // logged-out shell (no upgrade entry, "Welcome back" account chooser) even
@@ -166,6 +159,22 @@ export async function probeSessionIdentity(page, expectedIdentity, {
       `web client auth status is ${clientAuth.authStatus}`,
       'SESSION_INVALID',
       { stage: 'client-auth', httpStatus: observed.status, authStatus: clientAuth.authStatus },
+    );
+  }
+  // `error` 在 200 响应里（典型是 RefreshAccessTokenError）只说明刷新链断了——
+  // 当前 accessToken 仍然有效，还能完成这一单。原来一见 error 就判死，依据是
+  // 「web app 会渲染成登出、购买控件全部消失」；2026-09-12 真单证伪了这个前提：
+  // 同一时刻 authStatus=logged_in、页面上 3 个升级入口都在（D-190）。
+  // 所以判据改成页面自己的渲染状态：只有当 authStatus 没有明确说「已登录」时，
+  // error 才是致命的。这不是忽略 error——它照常落进证据。
+  if (observed.sessionError && clientAuth.authStatus !== 'logged_in') {
+    throw new SessionIdentityProbeError(
+      `session is no longer refreshable (${observed.sessionError})`,
+      'SESSION_INVALID',
+      {
+        stage: 'session-error', httpStatus: observed.status,
+        sessionError: observed.sessionError, authStatus: clientAuth.authStatus,
+      },
     );
   }
   const observedDigests = {
@@ -187,6 +196,8 @@ export async function probeSessionIdentity(page, expectedIdentity, {
   // included in the returned shared result or persisted by this module.
   if (onVerifiedEmail && observed.email) await onVerifiedEmail(observed.email);
   return {
+    // 刷新链断了但仍放行时，把它带出去——这一单是在降级状态下跑的，证据要留下。
+    sessionError: observed.sessionError || null,
     verified: true,
     loggedIn: true,
     identityMatched: true,

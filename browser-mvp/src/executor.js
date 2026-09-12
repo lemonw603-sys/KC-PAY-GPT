@@ -250,6 +250,8 @@ export class BrowserExecutionService {
         await this._event(job, 'checkpoint', ++evidenceSequence, {
           action: 'account-readonly-probe',
           loggedIn: sessionIdentity.loggedIn,
+          // 非空表示这一单是在「刷新链已断但页面仍登录」的降级状态下跑的（D-190）。
+          sessionError: sessionIdentity.sessionError ?? null,
           identityMatched: sessionIdentity.identityMatched,
           subscriptionStatus: sessionIdentity.subscriptionStatus || null,
           alreadyPlus: sessionIdentity.alreadyPlus ?? null,
