@@ -109,6 +109,12 @@ browser-mvp/scripts/prod-query.sh "SELECT ..."   # 经隧道，凭证运行时�
 
 ## 5. 发布与回滚
 
+**发布前必跑**（客户链路的 SQL 对着生产只读实跑；2026-09-12 曾因列名写错导致九阶段
+整个失效而测试全绿，见 D-184）：
+```bash
+v1/scripts/customer-sql-probe.sh
+```
+
 ```bash
 scripts/deploy-release.sh prepare <commit> <YYYYMMDD-tag-shortsha>   # 构建/上传/备份/校验，不切换
 scripts/deploy-release.sh migrate <name>                             # 仅当仓库 v1/migrations 有新文件

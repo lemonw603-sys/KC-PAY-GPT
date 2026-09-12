@@ -30,6 +30,22 @@ const REAL_RUN_EVENTS = [
   { kind: 'event', token: 'checkout-navigation', at: '2026-09-11T11:13:36.882Z' }
 ];
 
+/**
+ * 同一单的 browser_operations 轨迹。之前的夹具只有订单事件和执行器检查点，
+ * 缺了这一段，于是第 6 到第 8 阶段的真实推进从来没被测到——而取这段数据的
+ * SQL 正好写错了列名（用了不存在的 created_at），生产上必然抛错，九阶段会
+ * 整个失效，测试却全绿。补上。
+ */
+const REAL_OPERATIONS = [
+  { kind: 'operation', token: 'BEGIN_RUN', at: '2026-09-11T11:12:33.412Z' },
+  { kind: 'operation', token: 'PAYMENT_SUBMIT', at: '2026-09-11T11:14:09.889Z' },
+  { kind: 'operation', token: 'PAYMENT_UNKNOWN', at: '2026-09-11T11:14:53.139Z' },
+  { kind: 'operation', token: 'PAYMENT_VERIFICATION', at: '2026-09-11T11:14:58.362Z' },
+  { kind: 'operation', token: 'PAYMENT_CONFIRMED', at: '2026-09-11T11:15:15.961Z' },
+  { kind: 'operation', token: 'PLUS_ACTIVATED', at: '2026-09-11T11:15:15.961Z' },
+  { kind: 'operation', token: 'CANCELLATION_CONFIRMED', at: '2026-09-11T11:15:15.961Z' }
+];
+
 test('nine stages, numbered and capped in order', () => {
   assert.equal(CUSTOMER_STAGES.length, 9);
   assert.deepEqual(CUSTOMER_STAGES.map((s) => s.index), [1, 2, 3, 4, 5, 6, 7, 8, 9]);
@@ -60,7 +76,7 @@ test('the card steps, the queue, and the run are distinct stages', () => {
 });
 
 test('replays the real delivery and never walks backwards', () => {
-  const merged = [...REAL_ORDER_EVENTS, ...REAL_RUN_EVENTS]
+  const merged = [...REAL_ORDER_EVENTS, ...REAL_RUN_EVENTS, ...REAL_OPERATIONS]
     .sort((a, b) => new Date(a.at) - new Date(b.at));
   let last = 0;
   const seen = [];
@@ -75,7 +91,16 @@ test('replays the real delivery and never walks backwards', () => {
   // The SUBMIT_UNKNOWN → RECHARGE_PROCESSING hop is exactly the case that would
   // drop a status-only reading from 7 back to 3, twenty seconds before delivery.
   assert.equal(seen.at(-1), 9);
-  assert.ok(seen.includes(5), 'checkout-navigation should reach stage 5');
+  // 这一单真实走过的每一步都要出现。缺任何一个都说明那一档的证据没被认出来。
+  for (const step of [1, 3, 4, 5, 6, 7, 9]) {
+    assert.ok(seen.includes(step), `第 ${step} 阶段在真实回放里没有出现`);
+  }
+  // 第 2 阶段（准备支付卡）这一单没经过：卡是现成的，0.5 秒就 CARD_READY。
+  assert.equal(seen.includes(2), false);
+  // 第 8 阶段（正在确认订阅）在这一单里一闪而过：PAYMENT_CONFIRMED、
+  // PLUS_ACTIVATED、CANCELLATION_CONFIRMED 和订单转成功都落在同一毫秒
+  // （11:15:15.961），交付那一刻客户直接看到成功。第 8 阶段本身能不能被
+  // 认出来，由上面那条 payment operations 的用例单独守着。
 });
 
 test('the executor checkpoints carry stages 4 and 5', () => {
