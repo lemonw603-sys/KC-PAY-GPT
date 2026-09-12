@@ -100,6 +100,16 @@ body{
             background:transparent;color:var(--t2);cursor:pointer;white-space:nowrap}
 .nav button:hover{background:var(--s3);color:var(--t)}
 .nav button:focus-visible{outline:2px solid var(--a);outline-offset:2px}
+/* 深浅切换：默认跟随系统，客户点一下就固定下来（存在他自己的浏览器里）。
+   图标画的是「点下去会变成什么」：浅色时显示月亮，深色时显示太阳。 */
+.nav__theme{display:grid;place-items:center;width:34px;height:30px;padding:0;flex:0 0 auto}
+.nav__theme .icon-sun{display:none}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .nav__theme .icon-sun{display:block}
+  :root:not([data-theme="light"]) .nav__theme .icon-moon{display:none}}
+:root[data-theme="dark"] .nav__theme .icon-sun{display:block}
+:root[data-theme="dark"] .nav__theme .icon-moon{display:none}
+:root[data-theme="light"] .nav__theme .icon-sun{display:none}
+:root[data-theme="light"] .nav__theme .icon-moon{display:block}
 
 /* ---------- 四步导轨 ---------- */
 .rail{display:flex;align-items:center;margin-bottom:32px}

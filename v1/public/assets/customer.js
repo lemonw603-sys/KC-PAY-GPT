@@ -126,7 +126,7 @@
     queryResult: $('query-result'), queryResultTitle: $('query-result-title'),
     queryResultSub: $('query-result-sub'), queryRisk: $('query-risk'),
     querySubmit: $('query-submit'), queryBack: $('query-back'),
-    navQuery: $('nav-query'), navGuide: $('nav-guide'),
+    navQuery: $('nav-query'), navGuide: $('nav-guide'), navTheme: $('nav-theme'),
     guide: $('guide'), guideClose: $('guide-close'), guideDone: $('guide-done'),
     sessionGuideOpen: $('session-guide-open'), replaceGuideOpen: $('replace-guide-open')
   };
@@ -452,9 +452,13 @@
         return fieldError(el.fieldCdk, '这张卡密无效或已作废,请核对后重新输入。');
       }
       if (result.state === 'BOUND_TO_ORDER') {
-        el.queryInput.value = result.order?.publicNo || cdk;
+        // 这张码已经有订单了。客户刚点过一次按钮，别让他到了新页面再点一次
+        // 「查询」——直接把结果查出来摆在他面前。
+        const lookup = result.order?.publicNo || cdk;
+        el.queryInput.value = lookup;
+        clearQueryResult();
         showView('query');
-        toast('这张卡密已经有订单了,下面可以直接查进度。', 'success');
+        await runQuery(lookup, { button: el.cdkSubmit });
         return;
       }
       verified = { cdk, product: result.product || null, state: result.state };
@@ -665,15 +669,8 @@
     el.queryRisk.hidden = true;
   }
 
-  el.formQuery.addEventListener('submit', async (event) => {
-    event.preventDefault();
-    fieldError(el.fieldQuery, '');
-    clearQueryResult();
-    clearToast();
-    stopPoll();
-    const value = el.queryInput.value.trim();
-    if (!value) return fieldError(el.fieldQuery, '请输入查询码或卡密。');
-    setBusy(el.querySubmit, true);
+  async function runQuery(value, { button = el.querySubmit } = {}) {
+    setBusy(button, true);
     try {
       const { order } = await api.getStatus(value.startsWith('PJV1-') ? { publicNo: value } : { cdk: value });
       currentOrder = order;
@@ -699,8 +696,19 @@
     } catch (error) {
       fieldError(el.fieldQuery, errText(error));
     } finally {
-      setBusy(el.querySubmit, false);
+      setBusy(button, false);
     }
+  }
+
+  el.formQuery.addEventListener('submit', (event) => {
+    event.preventDefault();
+    fieldError(el.fieldQuery, '');
+    clearQueryResult();
+    clearToast();
+    stopPoll();
+    const value = el.queryInput.value.trim();
+    if (!value) return fieldError(el.fieldQuery, '请输入查询码或卡密。');
+    return runQuery(value);
   });
   el.queryBack.addEventListener('click', () => { clearQueryResult(); showView('cdk'); });
   el.navQuery.addEventListener('click', () => { stopPoll(); clearQueryResult(); showView('query'); });
@@ -720,6 +728,26 @@
     if (document.hidden || !currentOrder) return;
     const view = STATUS_VIEW[currentOrder.status];
     if (view && view.poll !== null) schedulePoll(currentOrder.publicNo, { ...view, poll: 300 });
+  });
+
+  // --------------------------------------------------------- 深浅主题
+  // 默认跟随系统；客户点过就按他选的来，记在他自己浏览器里。隐私模式下
+  // localStorage 会抛错，读写都包起来，读不到就继续跟随系统。
+  const THEME_KEY = 'pojia:theme';
+  function currentTheme() {
+    const stamped = document.documentElement.dataset.theme;
+    if (stamped === 'light' || stamped === 'dark') return stamped;
+    return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
+      ? 'dark' : 'light';
+  }
+  try {
+    const saved = localStorage.getItem(THEME_KEY);
+    if (saved === 'light' || saved === 'dark') document.documentElement.dataset.theme = saved;
+  } catch { /* 存不了就跟随系统 */ }
+  el.navTheme.addEventListener('click', () => {
+    const next = currentTheme() === 'dark' ? 'light' : 'dark';
+    document.documentElement.dataset.theme = next;
+    try { localStorage.setItem(THEME_KEY, next); } catch { /* 这次生效，下次再说 */ }
   });
 
   // ------------------------------------------------------------- 初始
