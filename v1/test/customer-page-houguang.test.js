@@ -143,3 +143,33 @@ test('Session 全文不回显，建单成功后立刻清空', () => {
   // 页面只回显邮箱与昵称这两个供客户核对的字段。
   assert.doesNotMatch(js, /accessToken\s*[:=]\s*[^'"\s]/);
 });
+
+test('每一屏的明细与按钮照设计稿：等待中不给查询码，出问题才给', () => {
+  // 设计稿 run 屏只有「订单/账号/方案」，done 是「订阅方案/账号/开通时间/
+  // 查询码」，stuck 是「订单/账号/查询码」。正常等待几分钟不需要查询码，
+  // 给了反而像在说「可以关掉了」。
+  assert.match(js, /rows\.push\(\['订阅方案', label, true\]\)/);
+  assert.match(js, /if \(ticket\) rows\.push\(\['查询码', order\.publicNo\]\)/);
+  assert.match(js, /REVIEWING:\s*\{[^}]*ticket: true/);
+  assert.match(js, /SUCCESS:\s*\{[^}]*ticket: true/);
+  assert.match(js, /QUEUED:\s*\{(?![^}]*ticket)[^}]*\}/);
+  // 「兑换另一张卡密」没有业务依据（卡密一张一张卖，出问题时码会自动退回），
+  // 而且摆在等待屏会把客户带离进度页。
+  assert.doesNotMatch(all, /兑换另一张卡密/);
+});
+
+test('出问题时标题保留当前阶段名，客户要知道卡在哪一步', () => {
+  // 设计稿 stuck 屏的标题仍是「正在提交支付」，换掉的只是下面那行说明。
+  assert.match(js, /const name = stage \? stage\.label : '处理中';/);
+  assert.doesNotMatch(js, /name: '遇到点问题'/);
+  assert.match(js, /REVIEWING:[\s\S]{0,160}hint: '遇到点问题/);
+});
+
+test('查询屏就地给答案，不把客户推进完整进度页', () => {
+  assert.match(html, /id="query-result"/);
+  assert.match(html, /id="query-risk"/);
+  // 查询屏也带风控提醒，与设计稿一致
+  const queryScreen = html.slice(html.indexOf('id="view-query"'), html.indexOf('</section>', html.indexOf('id="view-query"')));
+  assert.match(queryScreen, /升级套餐/);
+  assert.match(js, /已开通/);
+});

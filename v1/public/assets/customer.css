@@ -173,7 +173,7 @@ input[type=text]:focus,textarea:focus{outline:0;border-color:var(--a)}
 .ok div{min-width:0}
 .ok b{display:block;font-size:14px;font-family:var(--fm);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ok span{font-size:14px;color:var(--t2)}
-.ok.is-plain b{font-family:var(--fb)}
+.ok b.is-plain{font-family:var(--fb)}
 
 /* 明细行 */
 .rows{display:flex;flex-direction:column;border-radius:10px;overflow:hidden;background:var(--s2)}
@@ -213,8 +213,6 @@ input[type=text]:focus,textarea:focus{outline:0;border-color:var(--a)}
 .run[data-tone="warn"] .ring__fg{stroke:var(--warn)}
 .run[data-tone="warn"] .ring__num b{color:var(--warn)}
 
-.seal{display:inline-flex;align-items:center;gap:7px;font-size:14px;font-weight:600;color:var(--gold);
-      box-shadow:inset 0 0 0 1.5px var(--gold);border-radius:999px;padding:5px 13px;margin-top:14px}
 
 .sublink{display:flex;flex-direction:column;gap:4px;margin-top:20px;padding:16px 18px;border-radius:12px;
          background:var(--a-soft);box-shadow:inset 0 0 0 2px var(--a);text-decoration:none;color:var(--t)}
@@ -223,19 +221,6 @@ input[type=text]:focus,textarea:focus{outline:0;border-color:var(--a)}
 .sublink__main{display:flex;align-items:center;gap:10px;font-size:17px;font-weight:600;color:var(--a-ink)}
 .sublink__hint{font-size:14px;color:var(--a-ink);opacity:.72;padding-left:28px}
 
-/* 查询码 */
-.ticket{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:16px;
-        padding:14px 16px;border-radius:10px;background:var(--s2);box-shadow:inset 0 0 0 1px var(--bd)}
-.ticket__label{font-size:14px;color:var(--t3);white-space:nowrap;flex:0 0 auto}
-/* 查询码要能整串抄下来，宁可折行也不省略 */
-.ticket__code{font-family:var(--fm);font-size:16px;font-weight:600;letter-spacing:.01em;
-              flex:1 1 auto;min-width:0;word-break:break-all}
-.ticket__copy{flex:0 0 auto;font-family:var(--fb);font-size:14px;font-weight:600;padding:6px 12px;
-              border-radius:999px;border:0;background:var(--a-soft);color:var(--a-ink);cursor:pointer}
-.ticket__copy:focus-visible{outline:2px solid var(--a);outline-offset:2px}
-.ticket__copy.is-done{background:var(--a);color:var(--a-on)}
-
-.poll-note{font-size:14px;color:var(--t3);margin:16px 0 0;text-align:center}
 
 /* 换号表单 */
 .replace{margin-top:24px;padding-top:24px;border-top:1px solid var(--bd)}
@@ -344,9 +329,6 @@ kbd{font-family:var(--fm);font-size:12px;font-weight:500;color:var(--t);backgrou
   /* 375px 上「平台名 + 两组键」挤不下，最后一个键会被切掉。让平台名独占一行。 */
   .gkeys__row{grid-template-columns:auto auto auto;gap:8px}
   .gkeys__row b{grid-column:1 / -1}
-  /* 24 位查询码在 375px 上撑得标签竖排。标签单独一行，码和按钮一行。 */
-  .ticket{flex-wrap:wrap;gap:8px}
-  .ticket__label{width:100%}
 }
 
 @media (prefers-reduced-motion:reduce){

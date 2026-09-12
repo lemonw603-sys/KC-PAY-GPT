@@ -55,21 +55,22 @@
   const KEEP_OPEN = '请保持本页打开,通常几分钟之内完成。';
 
   // 后端映射态 → 本页呈现方式。poll 为 null 表示终态，停止轮询。
+  // 设计稿的「遇到问题」屏标题仍是当前阶段名（例如「正在提交支付」），
+  // 换掉的只是下面那行说明——客户要知道卡在哪一步，不是只知道"出问题了"。
+  // ticket 为 true 表示这一屏要给查询码：正常等待几分钟不需要，需要等或
+  // 需要客户动手时才给。
   const STATUS_VIEW = {
     QUEUED:          { tone: 'ok',   poll: 5000 },
     PREPARING:       { tone: 'ok',   poll: 5000 },
     PAYING:          { tone: 'ok',   poll: 4000 },
     ACTIVATING:      { tone: 'ok',   poll: 5000 },
     CONFIRMING:      { tone: 'ok',   poll: 6000 },
-    REVIEWING:       { tone: 'warn', poll: 30000,
-      name: '遇到点问题',
+    REVIEWING:       { tone: 'warn', poll: 30000, ticket: true,
       hint: '遇到点问题,我们已经收到通知在处理。本页会自动更新,你也可以记下查询码稍后回来看。' },
-    ACTION_REQUIRED: { tone: 'warn', poll: 30000,
-      name: '需要换一个账号',
+    ACTION_REQUIRED: { tone: 'warn', poll: 30000, ticket: true,
       hint: '当前账号不能开通,请在下方换一个免费账号的 Session,订单会继续处理。' },
-    SUCCESS:         { tone: 'ok',   poll: null, name: '订阅成功' },
-    FAILED:          { tone: 'warn', poll: null,
-      name: '本次未能完成',
+    SUCCESS:         { tone: 'ok',   poll: null, ticket: true },
+    FAILED:          { tone: 'warn', poll: null, ticket: true,
       hint: '这一单没有完成,不会产生扣费。请记下查询码联系客服核对。' }
   };
 
@@ -116,13 +117,13 @@
     confirmSubmit: $('confirm-submit'), confirmBack: $('confirm-back'),
     run: $('view-run'), ringFg: $('ring-fg'), ringNum: $('ring-num'), ringPct: $('ring-pct'),
     ringTick: $('ring-tick'), stageName: $('stage-name'), stageHint: $('stage-hint'),
-    runSeal: $('run-seal'), runRows: $('run-rows'),
-    runSublink: $('run-sublink'), runRisk: $('run-risk'),
-    ticketCode: $('ticket-code'), ticketCopy: $('ticket-copy'),
+    runRows: $('run-rows'), runSublink: $('run-sublink'), runRisk: $('run-risk'),
+    ticketCopy: $('ticket-copy'),
     formReplace: $('form-replace'), replaceSession: $('replace-session'), fieldReplace: $('field-replace'),
     replaceCheck: $('replace-check'), replaceSubmit: $('replace-submit'), replaceLimit: $('replace-limit'),
-    pollNote: $('poll-note'), runNew: $('run-new'),
     formQuery: $('form-query'), queryInput: $('query-input'), fieldQuery: $('field-query'),
+    queryResult: $('query-result'), queryResultTitle: $('query-result-title'),
+    queryResultSub: $('query-result-sub'), queryRisk: $('query-risk'),
     querySubmit: $('query-submit'), queryBack: $('query-back'),
     navQuery: $('nav-query'), navGuide: $('nav-guide'),
     guide: $('guide'), guideClose: $('guide-close'), guideDone: $('guide-done'),
@@ -306,15 +307,22 @@
   }
 
   // ------------------------------------------------------------- 订单渲染
-  function renderRows(order) {
+  // 每一屏的明细逐字照设计稿：等待中是「订单/账号/方案」，成功是
+  // 「订阅方案/账号/开通时间/查询码」，出问题是「订单/账号/查询码」。
+  function renderRows(order, { ticket = false } = {}) {
     const rows = [];
-    rows.push(['订单', order.publicNo]);
-    if (order.customerEmail) rows.push(['账号', order.customerEmail]);
     const label = order.product?.label || verified?.product?.label;
-    if (label) rows.push(['方案', label, true]);
-    if (order.status === 'SUCCESS' && order.finishedAt) {
-      rows.push(['开通时间', fmtTime(order.finishedAt), true]);
+    const success = order.status === 'SUCCESS';
+    if (success) {
+      if (label) rows.push(['订阅方案', label, true]);
+      if (order.customerEmail) rows.push(['账号', order.customerEmail]);
+      rows.push(['开通时间', fmtTime(order.finishedAt || order.updatedAt) || '—', true]);
+    } else {
+      rows.push(['订单', order.publicNo]);
+      if (order.customerEmail) rows.push(['账号', order.customerEmail]);
+      if (!ticket && label) rows.push(['方案', label, true]);
     }
+    if (ticket) rows.push(['查询码', order.publicNo]);
     el.runRows.innerHTML = rows.map(([name, value, isText]) => {
       const div = document.createElement('div');
       div.className = 'rows__r';
@@ -337,16 +345,16 @@
     el.run.dataset.tone = view.tone;
     el.glow.dataset.tone = view.tone;
 
-    // 阶段文案：正常链路用九阶段，异常分支用本页自己的说法。
-    let name = view.name;
+    // 标题永远是当前阶段名——出问题时也是，客户要知道卡在哪一步。
+    // 换掉的只有下面那行说明。
+    const name = stage ? stage.label : '处理中';
     let hint = view.hint;
-    if (!name && stage) name = stage.label;
     if (!hint) {
       const base = stage ? STAGE_HINT[stage.code] : '';
       hint = success ? withProduct(STAGE_HINT.SUBSCRIPTION_ACTIVE, order)
         : `${base || ''}${base ? KEEP_OPEN : ''}`.trim() || KEEP_OPEN;
     }
-    swapStageText(withProduct(name || '处理中', order), withProduct(hint, order));
+    swapStageText(withProduct(name, order), withProduct(hint, order));
 
     // 进度环
     el.ringNum.hidden = success;
@@ -366,14 +374,13 @@
     }
     shownStageCode = stage ? stage.code : null;
 
-    el.runSeal.hidden = !success;
     el.runSublink.hidden = !success;
     el.runRisk.hidden = !success;
+    el.ticketCopy.hidden = !view.ticket;
 
-    el.ticketCode.textContent = order.publicNo;
     el.queryInput.value = order.publicNo;
     rememberPublicNo(order.publicNo);
-    renderRows(order);
+    renderRows(order, { ticket: Boolean(view.ticket) });
 
     // 换号表单：remaining 为 null 表示不限次数（D-120），不能当成 0。
     const replacement = order.sessionReplacement || {};
@@ -392,10 +399,6 @@
       el.stageHint.textContent = '更换次数或时间已经用完,请保留查询码联系客服处理。';
     }
 
-    el.pollNote.textContent = view.poll === null
-      ? '这一单已经结束,页面不再自动刷新。'
-      : '页面会自动刷新进度,不用手动操作。';
-
     showView('run', { allDone: success });
     if (scroll) window.scrollTo({ top: 0, behavior: reduceMotion() ? 'auto' : 'smooth' });
     schedulePoll(order.publicNo, view);
@@ -411,7 +414,7 @@
     if (!view || view.poll === null) return;
     if (!pollStart) pollStart = Date.now();
     if (Date.now() - pollStart > 30 * 60 * 1000) {
-      el.pollNote.textContent = '自动刷新已暂停,可以到「订单查询」继续查。';
+      toast('自动刷新已暂停,可以用查询码到「订单查询」继续看。');
       return;
     }
     // 页面在后台时降频而不是停掉：客户提交完常常切走等着，而有些环境
@@ -423,7 +426,7 @@
         const { order } = await api.getStatus({ publicNo });
         renderOrder(order);
       } catch {
-        el.pollNote.textContent = '自动刷新暂时失败,稍后会再试。';
+        // 静默重试：一次刷新没成功不值得打扰客户，下一轮通常就好了。
         pollTimer = setTimeout(() => schedulePoll(publicNo, view), 6000);
       }
     }, delay);
@@ -511,7 +514,9 @@
     setBusy(el.confirmSubmit, true);
     try {
       const { order } = await api.createOrder({ cdk: pending.cdk, session: pending.session });
-      // 建单成功，立刻切断 Session 的一切回显路径
+      // 邮箱要留下来显示在进度屏（设计稿明细是「订单/账号/方案」三行），
+      // Session 全文则在这里彻底切断回显路径。
+      const submittedEmail = pending.email;
       el.session.value = '';
       el.sessionOk.hidden = true;
       pending.session = null;
@@ -522,6 +527,7 @@
         publicNo: order.publicNo,
         status: 'QUEUED',
         updatedAt: new Date().toISOString(),
+        customerEmail: submittedEmail,
         product: verified?.product || null,
         stage: { index: 1, code: 'ORDER_RECEIVED', label: '已收到订单', total: 9, floor: 0, ceiling: 10, since: null }
       });
@@ -571,39 +577,25 @@
   });
 
   el.ticketCopy.addEventListener('click', async () => {
-    const value = el.ticketCode.textContent;
+    const value = currentOrder?.publicNo;
     if (!value) return;
     try {
       await navigator.clipboard.writeText(value);
       el.ticketCopy.textContent = '已复制';
-      el.ticketCopy.classList.add('is-done');
-      setTimeout(() => {
-        el.ticketCopy.textContent = '复制';
-        el.ticketCopy.classList.remove('is-done');
-      }, 1600);
+      setTimeout(() => { el.ticketCopy.textContent = '复制查询码'; }, 1600);
     } catch { toast('复制失败,请手动选中查询码。'); }
   });
 
-  el.runNew.addEventListener('click', () => {
-    stopPoll();
-    stopRing();
-    verified = null;
-    pending = null;
-    currentOrder = null;
-    stageSeenAt = new Map();
-    el.cdk.value = '';
-    el.session.value = '';
-    el.sessionOk.hidden = true;
-    el.sessionSubmit.disabled = true;
-    fieldError(el.fieldCdk, '');
-    fieldError(el.fieldSession, '');
-    showView('cdk');
-  });
-
   // ---------------------------------------------------- 屏 5 订单查询
+  function clearQueryResult() {
+    el.queryResult.hidden = true;
+    el.queryRisk.hidden = true;
+  }
+
   el.formQuery.addEventListener('submit', async (event) => {
     event.preventDefault();
     fieldError(el.fieldQuery, '');
+    clearQueryResult();
     clearToast();
     stopPoll();
     const value = el.queryInput.value.trim();
@@ -611,17 +603,34 @@
     setBusy(el.querySubmit, true);
     try {
       const { order } = await api.getStatus(value.startsWith('PJV1-') ? { publicNo: value } : { cdk: value });
-      pollStart = Date.now();
-      stageSeenAt = new Map();
-      renderOrder(order, { scroll: true });
+      currentOrder = order;
+      rememberPublicNo(order.publicNo);
+      // 设计稿的查询屏就地给答案，不把客户推进完整的进度页。只有订单还在
+      // 跑的时候才跳过去——那时他要看的是实时进度，一个静态结论没用。
+      if (order.status === 'SUCCESS') {
+        const label = order.product?.label || 'ChatGPT Plus';
+        el.queryResultTitle.textContent = `${label} 已开通`;
+        el.queryResultSub.textContent = fmtTime(order.finishedAt || order.updatedAt)
+          ? `开通时间 ${fmtTime(order.finishedAt || order.updatedAt)}` : '';
+        el.queryResult.hidden = false;
+        el.queryRisk.hidden = false;
+      } else if (order.status === 'FAILED') {
+        el.queryResultTitle.textContent = '这一单没有完成';
+        el.queryResultSub.textContent = '不会产生扣费。请记下查询码联系客服核对。';
+        el.queryResult.hidden = false;
+      } else {
+        pollStart = Date.now();
+        stageSeenAt = new Map();
+        renderOrder(order, { scroll: true });
+      }
     } catch (error) {
       fieldError(el.fieldQuery, errText(error));
     } finally {
       setBusy(el.querySubmit, false);
     }
   });
-  el.queryBack.addEventListener('click', () => showView('cdk'));
-  el.navQuery.addEventListener('click', () => { stopPoll(); showView('query'); });
+  el.queryBack.addEventListener('click', () => { clearQueryResult(); showView('cdk'); });
+  el.navQuery.addEventListener('click', () => { stopPoll(); clearQueryResult(); showView('query'); });
 
   // ------------------------------------------------------------- 教程
   function openGuide() { el.guide?.showModal?.(); }
