@@ -23,7 +23,7 @@
 | 默认路线 | Browser（`CHATGPT_PLUS_BROWSER_V1`/`PRO_5X`/`PRO_20X` accepts_new_orders=1，旧 API 路线=0） | 2026-09-09 11:46 UTC | fulfillment_routes |
 | Browser 当前卡台 | 备用卡台 A（`manual_excel` / `backup-a`） | 13:31 | browser_card_source_selections |
 | browser_dispatch_enabled | true | 2026-09-09 11:46 UTC | app_settings |
-| browser_payment_writes_enabled | **false**（09-09 为 rehearsal/预检关闭并带审计；真单来时 `go-live.sh --arm` 开回） | 09-09 | app_settings / admin_setting_events |
+| browser_payment_writes_enabled | **true**（2026-09-12 04:47:58 UTC 由 Lemon 在后台开启，进入无人值守：客户任意时间兑换即自动处理，**会真实扣卡上的钱**。关闭方式同一处按钮；关掉后常驻执行器退回「只等不跑」，订单停在付款前） | 2026-09-12 | app_settings / admin_setting_events；常驻 LaunchAgent `com.pojia.browser-pool` 于 04:49:00 自动拉起 worker，心跳持续推进 |
 | Browser Profile productionWritesEnabled | false（随付款开关同步） | 09-09 | executor_profiles config_public_json |
 | card_auto_replenishment_enabled | false（与补余额构成首页「开卡补钱」的"部分开启"态） | 2026-09-09 11:46 UTC | app_settings |
 | card_balance_recharge_enabled | true（对手动卡无效） | 2026-09-09 11:46 UTC | app_settings |

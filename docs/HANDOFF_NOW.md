@@ -1,6 +1,6 @@
 # 接班一屏（HANDOFF_NOW）
 
-更新：2026-09-12 13:15 UTC。写者：大脑窗口。**本文只由大脑窗口写，且每次重要事实变化后整篇复核，不止改暂停原因那一行。**
+更新：2026-09-12 13:25 UTC。写者：大脑窗口。**本文只由大脑窗口写，且每次重要事实变化后整篇复核，不止改暂停原因那一行。**
 
 ## 分工
 
@@ -18,7 +18,7 @@
 ## 现在状态（2026-09-11 14:41 UTC 当场核实）
 
 - 生产 release **`20260912-customer-page-624487c`**（候光客户页已上线，2026-09-12 12:55 UTC）；web / worker / 快照同步 timer 均 active；迁移仍在 `052_cards_bin`（本次无新迁移）。
-- 付款开关 **false**；本机无 worker；非终态订单 0；合格卡 **1 张（3118，$39.24，卡段 53211304）**；可用 CDK 11。
+- 付款开关 **true**（无人值守已生效）；本机 worker 由常驻 LaunchAgent 拉起并持续心跳；非终态订单 0；合格卡 **1 张（3118，$39.24，卡段 53211304）**；可用 CDK 11。
 - 本机依赖正常：菲律宾出口 38.60.246.34、SSH 隧道 13306、BitBrowser Local API、窗口 `Plus Browser PH Pilot`（`10f0dc7b…`）。
 - **常驻执行器已装**（2026-09-12 13:15 UTC）：LaunchAgent `com.pojia.browser-pool`，开机自启、崩溃自愈（强杀后 30 秒内被 launchd 拉回，实测）。付款开关关着时它只写一行日志然后安静等待，不会拉起 worker。日志 `~/Library/Application Support/pojia-browser-live/supervisor.log`。
   停用：`launchctl unload -w ~/Library/LaunchAgents/com.pojia.browser-pool.plist`。
@@ -33,11 +33,14 @@ browser-mvp 本机代码（不经服务器发布）：人机验证识别与接�
 
 ## 下一可执行项（顺序由 D-167 定）
 
-1. **执行器常驻无人值守**（**常驻已装好，只差开付款开关**）：LaunchAgent 已安装并验证（见上）。
-   剩下的一步是把 `browser_payment_writes_enabled` 打开，**这一步要 Lemon 本人在后台点**——
-   正式路径是后台接口 `POST /api/v1/admin/operations/browser-payment`，带登录态守卫，
-   而 AI 不输入密码做认证。位置：后台首页「浏览器真实付款」那一项，点击会弹确认框
-   「开启后浏览器会真实点击付款并扣卡上的钱」。开启后 60 秒内 supervisor 会自动拉起 worker。
+1. ~~执行器常驻无人值守~~ **已完成（2026-09-12 13:25 UTC）**。LaunchAgent `com.pojia.browser-pool`
+   开机自启、崩溃自愈（强杀后 30 秒内被拉回，实测）；Lemon 于 04:47:58 UTC 在后台开启付款开关，
+   常驻在 04:49:00 自动拉起 worker（62 秒，符合 60 秒轮询），心跳持续推进、无报错。
+   **系统现在是无人值守的：客户任意时间兑换都会自动走到真实付款。**
+   两级停止：后台关付款开关（常驻退回只等不跑，订单停在付款前）；
+   或 `launchctl unload -w ~/Library/LaunchAgents/com.pojia.browser-pool.plist`（整个常驻停掉）。
+   **接下来要盯**：第一单真实客户订单走完整条链路；连续多单不重启的长时间稳定性。
+
 2. ~~需要人工时推送到手机~~ **已完成（D-175）**：四条旧通知改写为看得懂并带订单号；新增「客户提交了充值」与「客户卡住了，没人在处理」（服务器侧，排队超 3 分钟即推，覆盖 Mac 睡眠/浏览器关闭/断网）。
 3. ~~客户充值页改造~~ **已上线（2026-09-12 12:55 UTC，release `20260912-customer-page-624487c`）**。
    候光七屏全部实现并经 Lemon 逐项拍板；发布前审查查出并修掉一个致命问题——九阶段取证据的 SQL
