@@ -18,12 +18,22 @@ const files = roots.flatMap((dir) => fs.existsSync(dir)
   ? fs.readdirSync(dir).filter((f) => f.endsWith('.js')).map((f) => path.join(dir, f))
   : []);
 
-const SQL_HEAD = /\b(SELECT|INSERT\s+(?:INTO|IGNORE)|UPDATE|DELETE\s+FROM|REPLACE\s+INTO)\b/i;
+// 必须以这些关键字**开头**才是可独立执行的语句。只是「包含」不行——
+// 源码里大量的 `EXISTS (SELECT 1 FROM ...)`、`o.status = ? AND ...` 是拼进
+// 大查询的条件片段，单独拿去 PREPARE 必然报语法错，全是假警报。
+// 2026-09-12 第四次修这个提取器：嵌套模板、驱动批量插入语法、注释里的 SQL、
+// 条件片段，每一次都是边界没想清楚就先跑起来。
+const SQL_HEAD = /^\s*\(?\s*(SELECT|INSERT\s+(?:INTO|IGNORE)|UPDATE|DELETE\s+FROM|REPLACE\s+INTO)\b/i;
 const out = [];
 const skipped = [];
 
 for (const file of files) {
-  const src = fs.readFileSync(file, 'utf8');
+  // 先剥注释再提取：注释里常常抄着 SQL（比如修复时留下的「原来那句」），
+  // 那些不是会执行的语句，验证它们只会制造假警报。2026-09-12 亲测：
+  // 修了一条 SQL 并把旧写法写进注释，下一轮扫描就把注释里那句报成了错误。
+  const src = fs.readFileSync(file, 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, ' ')
+    .replace(/^[ \t]*\/\/.*$/gm, ' ');
   const lines = src.split('\n');
   for (const m of src.matchAll(/`([^`]*)`/gs)) {
     const body = m.group ? m.group(1) : m[1];

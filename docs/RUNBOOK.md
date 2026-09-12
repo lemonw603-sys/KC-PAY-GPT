@@ -109,10 +109,14 @@ browser-mvp/scripts/prod-query.sh "SELECT ..."   # 经隧道，凭证运行时�
 
 ## 5. 发布与回滚
 
-**发布前必跑**（客户链路的 SQL 对着生产只读实跑；2026-09-12 曾因列名写错导致九阶段
+**发布前必跑**（把 SQL 拿到生产 schema 上校验；2026-09-12 曾因列名写错导致九阶段
 整个失效而测试全绿，见 D-184）：
 ```bash
 v1/scripts/customer-sql-probe.sh
+```
+动到数据库结构、或做了大范围重构时，再跑一次全量（589 条，约 8 分钟，见 D-186）：
+```bash
+v1/scripts/sql-probe.sh
 ```
 
 ```bash
