@@ -54,6 +54,11 @@ test('customer assets contain no remote or legacy runtime dependencies', () => {
   // 关键字段在，值一律省略号收尾。
   assert.match(html, /"accessToken":"[^"]*…"/);
   assert.match(html, /"email":"you@example\.com"/);
+  // 示例必须画出真实结构：少画一个字段，客户就可能只复制一部分，直到
+  // 「核对账号」那一屏才被拦。原型的示例是简化版，照搬会误导。
+  for (const field of ['user', 'account', 'accessToken', 'sessionToken', 'expires']) {
+    assert.match(html, new RegExp(`"${field}"`), `教程示例缺少 ${field}`);
+  }
   assert.doesNotMatch(html, /已由人工接手核对/);
 
   const customerScript = fs.readFileSync(path.join(directory, 'assets', 'customer.js'), 'utf8');
@@ -203,7 +208,7 @@ test('customer page shows the Session re-submit form when remaining is null (unl
   assert.ok(scriptVersion, 'index.html must load customer.js with a ?v= cache version');
   assert.ok(styleVersion, 'index.html must load customer.css with a ?v= cache version');
   assert.equal(scriptVersion[1], styleVersion[1], 'both assets ship together, so they share a version');
-  assert.ok(Number(scriptVersion[1]) >= 26, 'the asset version only ever moves forward');
+  assert.ok(Number(scriptVersion[1]) >= 27, 'the asset version only ever moves forward');
 });
 
 test('admin navigation is exactly five pages and old views are gone', () => {
