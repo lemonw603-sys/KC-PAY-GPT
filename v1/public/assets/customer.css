@@ -222,7 +222,7 @@ input[type=text]:focus,textarea:focus{outline:0;border-color:var(--a)}
 .run.is-done .ring__tick svg{width:74px;height:74px}
 .run.is-done .hero{margin-bottom:20px}
 .run.is-done .stage-name{margin-top:12px}
-.run.is-done .note{margin-top:0;margin-bottom:14px}
+.run.is-done .note{margin-top:14px}
 .run.is-done .sublink{margin-top:14px}
 .run.is-done .btn{margin-top:14px}
 
@@ -235,12 +235,12 @@ input[type=text]:focus,textarea:focus{outline:0;border-color:var(--a)}
 .seal{display:inline-flex;align-items:center;gap:7px;font-size:14px;font-weight:600;color:var(--gold);
       box-shadow:inset 0 0 0 1.5px var(--gold);border-radius:999px;padding:5px 13px;margin-top:14px}
 
-.sublink{display:flex;flex-direction:column;gap:4px;margin-top:20px;padding:16px 18px;border-radius:12px;
+.sublink{display:flex;flex-direction:column;gap:2px;margin-top:14px;padding:12px 16px;border-radius:12px;
          background:var(--a-soft);box-shadow:inset 0 0 0 2px var(--a);text-decoration:none;color:var(--t)}
 .sublink:hover{transform:translateY(-1px);box-shadow:inset 0 0 0 2px var(--a),0 8px 18px -10px var(--a)}
 .sublink:focus-visible{outline:2px solid var(--a);outline-offset:3px}
-.sublink__main{display:flex;align-items:center;gap:10px;font-size:17px;font-weight:600;color:var(--a-ink)}
-.sublink__hint{font-size:14px;color:var(--a-ink);opacity:.72;padding-left:28px}
+.sublink__main{display:flex;align-items:center;gap:10px;font-size:16px;font-weight:600;color:var(--a-ink)}
+.sublink__hint{font-size:14px;color:var(--a-ink);opacity:.72;padding-left:26px}
 
 
 /* 换号表单 */

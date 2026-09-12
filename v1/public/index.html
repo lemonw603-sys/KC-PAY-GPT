@@ -8,8 +8,8 @@
   <meta name="description" content="ChatGPT 订阅自助开通：验证卡密、核对账号、确认兑换，全程可见进度。">
   <title>ChatGPT 充值中心</title>
   <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/assets/customer.css?v=33">
-  <script src="/assets/customer.js?v=33" defer></script>
+  <link rel="stylesheet" href="/assets/customer.css?v=34">
+  <script src="/assets/customer.js?v=34" defer></script>
 </head>
 <body>
   <div class="glow" id="glow" aria-hidden="true"></div>
@@ -131,11 +131,6 @@
           </span>
         </div>
 
-        <div class="note" id="run-risk" hidden>
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/></svg>
-          <span><b>订阅已生效,不用再做任何操作。</b>请不要在 ChatGPT 设置里的「升级套餐」中点击升级,这类操作容易触发官方风控。</span>
-        </div>
-
         <div class="rows" id="run-rows"></div>
 
         <a class="sublink" id="run-sublink" href="https://chatgpt.com/#settings/Subscription"
@@ -146,6 +141,11 @@
           </span>
           <span class="sublink__hint">登录后在「设置 → 订阅」查看,本页不经手账号订阅信息 ↗</span>
         </a>
+
+        <div class="note" id="run-risk" hidden>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/></svg>
+          <span><b>订阅已生效,不用再做任何操作。</b>请不要在 ChatGPT 设置里的「升级套餐」中点击升级,这类操作容易触发官方风控。</span>
+        </div>
 
 
         <!-- 需要更换账号时出现（订单被退回等待新 Session） -->
