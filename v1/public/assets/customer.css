@@ -122,9 +122,8 @@ body{
 .screen{animation:screen-in .32s ease both}
 @keyframes screen-in{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
 
-/* 首页的一句说明和三个标签（2026-09-12 Lemon 选方案 1 并要求加这句话）。
-   只出现在第一屏，后面几屏进入流程就不再重复。 */
-.lead{font-size:16px;color:var(--t2);margin:0 0 16px;max-width:52ch}
+/* 首页的四个标签（2026-09-12 Lemon 定）。原来还有一句流程说明，他看过三个
+   位置后决定不要，把「进度可见」做成标签承载同一个信息。只出现在第一屏。 */
 .tags{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}
 .tag{display:inline-flex;align-items:center;gap:6px;font-size:14px;font-weight:600;color:var(--t2);
      background:var(--s);border-radius:999px;padding:7px 14px;box-shadow:inset 0 0 0 1px var(--bd)}
