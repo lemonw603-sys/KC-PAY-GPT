@@ -47,6 +47,17 @@ function assertReadOnlyPageContract(contract, { identityProbeRequired = false } 
   if (!identityProbeRequired && contract.markerText.length === 0) throw new ContractError('pageContract.markerText is required');
 }
 
+/** 关掉这个 Profile 里所有指向目标站点的标签页，让随后的注入落在干净上下文里。 */
+async function closeStaleOrderPages(context, urlPrefix) {
+  if (typeof context.pages !== 'function') return 0;
+  const stale = context.pages().filter((page) => !page.isClosed?.() && page.url().startsWith(urlPrefix));
+  let closed = 0;
+  for (const page of stale) {
+    try { await page.close(); closed += 1; } catch { /* 关不掉就算了，不能因此中止这一单 */ }
+  }
+  return closed;
+}
+
 async function activeOrderPage(context, urlPrefix, timeoutMs) {
   const existing = typeof context.pages === 'function'
     ? context.pages().filter((page) => !page.isClosed?.() && page.url().startsWith(urlPrefix))
@@ -143,12 +154,30 @@ export class BrowserExecutionService {
       };
       signal?.addEventListener('abort', abortRuntime, { once: true });
       if (signal?.aborted) throw new BrowserExecutionError('LEASE_LOST');
+      let closedStaleTabCount = 0;
       if (job.metadata?.sessionRef) {
         if (!this.sessionProvider || typeof this.sessionProvider.open !== 'function' || typeof this.sessionProvider.bootstrap !== 'function') {
           throw new BrowserExecutionError('SESSION_PROVIDER_UNAVAILABLE');
         }
         let sessionResult;
         if (!(await assertLease())) throw new BrowserExecutionError('LEASE_LOST');
+        // 注入之前先把窗口里旧的 ChatGPT 标签页关掉，注入之后再新开一个。
+        //
+        // 这是照着上号器扩展的顺序来的（关标签页 → 写 cookie → 新建标签页）。它写的
+        // cookie 和我们完全一样（只有 __Secure-next-auth.session-token），但 Lemon 用它
+        // 手动充值屡次成功，而我们屡次失败在 RefreshAccessTokenError；2026-09-12 查下来
+        // 唯一的客观差异就是这里：我们原来复用旧标签页、注入后 reload（D-190 续）。
+        //
+        // 复用为什么可能致命：标签页的 JS 上下文是延续的，Service Worker 与 NextAuth
+        // 客户端内存里的会话状态还在，新 cookie 生效后客户端可能拿旧状态去刷新而失败。
+        // 新建标签页则是干净上下文，从零读 cookie。
+        //
+        // 原来复用的理由（注释写的）是「每次新建标签页是不必要的账号风险信号」——那是
+        // 猜测，而上号器每次都新建且每次都成，理由站不住。恢复运行不适用：那种情况要
+        // 保留现场页面，所以只在 startFresh 时关。
+        if (startFresh) closedStaleTabCount = await closeStaleOrderPages(
+          runtime.context, job.metadata.pageContract.urlPrefix,
+        );
         try {
           sessionLease = await this.sessionProvider.open(job.metadata.sessionRef, { purpose: 'browser-observe' });
           // 一上来就换掉窗口里的登录态，不先试着复用（2026-09-12 Lemon 定，D-187）。
@@ -195,10 +224,12 @@ export class BrowserExecutionService {
           // 2026-09-12 真单跑完也证明不了窗口真被清过（D-190）。都是计数，不含 cookie 值。
           replacedCookieCount: sessionResult.replacedCookieCount ?? null,
           clearedLoginCookieCount: sessionResult.clearedLoginCookieCount ?? null,
+          // 注入前关掉了几个旧标签页：为 0 说明这一单本来就是干净上下文。
+          closedStaleTabCount,
         });
       }
-      // Reuse the active order's sole ChatGPT page. Creating another tab on
-      // every retry was both wasteful and a needless account-risk signal.
+      // 全新运行时上面已经把旧标签页关掉了，这里必然走新建分支（与上号器一致）；
+      // 恢复运行仍复用现场页面，不破坏 recovered-run 的现场保全。
       const page = await activeOrderPage(
         runtime.context, job.metadata.pageContract.urlPrefix, this.timeoutMs,
       );

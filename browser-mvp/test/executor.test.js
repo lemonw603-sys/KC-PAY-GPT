@@ -550,6 +550,50 @@ test('a completed order releases the identity login state when releaseSessionOnC
   } finally { await context.close().catch(() => undefined); await browser.close(); server.close(); await once(server, 'close'); }
 });
 
+test('a session-injecting fresh run closes the resident tab first, so the injection lands in a clean context', async () => {
+  // 上号器的顺序是「关标签页 → 写 cookie → 新建标签页」，它写的 cookie 和我们一样却屡次
+  // 成功，而我们复用旧标签页 + reload 屡次栽在 RefreshAccessTokenError（D-190 续）。
+  // 复用会把 Service Worker 与 NextAuth 客户端的内存状态带过来，新 cookie 未必接管得了。
+  const server = createServer((request, response) => {
+    if (request.url === '/api/auth/session') {
+      response.writeHead(200, { 'content-type': 'application/json' });
+      return response.end(JSON.stringify({ user: { id: 'user-001', email: 'buyer@example.test' }, account: { id: 'acct-001' }, accessToken: 'fixture-token' }));
+    }
+    response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+    response.end('<title>Browser MVP fixture</title><main data-browser-mvp-marker>observe-only</main>');
+  });
+  server.listen(0, '127.0.0.1'); await once(server, 'listening');
+  const base = `http://127.0.0.1:${server.address().port}/`;
+  const browser = await chromium.launch({ headless: true });
+  const context = await browser.newContext();
+  const stale = await context.newPage();
+  await stale.goto(`${base}checkout/oaics_previous`, { waitUntil: 'domcontentloaded' });
+  const runtimeAdapter = { async open() { return { context }; }, async detach() {}, async close() {} };
+  const evidenceSink = new MemoryEvidenceSink();
+  const sessionProvider = {
+    async open() { return { leaseId: 'lease-tab', sessionDigest: 'c'.repeat(64), expiresAt: Date.now() + 60_000, purpose: 'browser-observe' }; },
+    async bootstrap() { return { cookieCount: 1, replacedCookieCount: 1, existingSessionPreserved: false, sessionDigest: 'c'.repeat(64) }; },
+    async close() {},
+  };
+  try {
+    const executor = new BrowserExecutionService({ runtimeAdapter, evidenceSink, sessionProvider, timeoutMs: 3_000 });
+    const job = createSyntheticJob({
+      state: 'RUNNING',
+      metadata: {
+        source: 'playwright-fixture', sessionRef: 'session-ref:tab',
+        pageContract: { urlPrefix: base, title: 'Browser MVP fixture', requiredSelector: '[data-browser-mvp-marker]', markerText: 'observe-only' },
+      },
+    });
+    await executor.execute(job, { assertLease: async () => true, startFresh: true });
+    assert.equal(stale.isClosed(), true, '注入前必须关掉旧标签页，而不是复用它');
+    const bootstrapEvent = evidenceSink.events.find((e) => e.summary?.action === 'session-bootstrap');
+    assert.equal(bootstrapEvent.summary.closedStaleTabCount, 1, '关了几个要留在证据里');
+  } finally {
+    await browser.close();
+    server.close(); await once(server, 'close');
+  }
+});
+
 test('a fresh run resets a resident page left on a previous Checkout, a recovered run keeps it', async () => {
   const server = createServer((request, response) => {
     response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
