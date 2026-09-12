@@ -4,7 +4,7 @@
 
 | 项目 | 当前值 | 核对时间（UTC） | 证据方式 |
 |---|---|---|---|
-| 生产 release | `/opt/pojia/releases/20260911-card-stock-alert-69946b0`（commit `69946b0`；D-175～D-177 通知改造、去噪、缺卡提醒）。回滚 `20260911-alert-noise-d924563` | 2026-09-11 15:38 UTC | `deploy-release.sh prepare`（981 文件 manifest OK、备份 OK）→ `switch`；服务器本机独立 curl：served admin.js 含 RESOLVE_UNKNOWN_PAYMENT×8 / 确认核实结果×3 / 严格布尔发送×1，service 文件含 strictBoolean 与 MANUAL_VERIFICATION_RESOLVED 证据检查，控制路由未登录 401，live/ready 200，web 无错误日志 |
+| 生产 release | `/opt/pojia/releases/20260912-customer-page-624487c`（commit `624487c`；候光客户充值页：卡密先验接口、九阶段、四步流程、新标志；D-182～D-184）。回滚 `20260911-card-stock-alert-69946b0` | 2026-09-12 12:55 UTC | `customer-sql-probe.sh` 五条 SQL 全通过 → `prepare`（1019 文件 manifest OK、库备份 OK）→ `switch`；服务器本机独立 curl 复验：客户页引用 `customer.js?v=35` 且实际服务的文件含 checkSession/navTheme/runQuery；`POST /api/v1/orders/status` 对真实成功单**返回 stage 字段**（index 9 / SUBSCRIPTION_ACTIVE，D-184 的修复生效）；`POST /api/v1/cdks/verify` 200、`Cache-Control: no-store`、`RateLimit-Limit: 10`、未知码返回 INVALID；admin 登录页 200、`/api/v1/admin/overview` 在非 admin host 下 404；web / worker / operator-watch.timer 均 active |
 | 回滚点 | `/opt/pojia/releases/20260911-highvcc-snapshot-sync-275f6e7`（再前 `20260910-highvcc-ui-feedback-cdcf42e`；本版无迁移，直接切回即可；timer 单元不随 release 变化） | 2026-09-11 04:42 UTC | switch 输出 ROLLBACK 命令 |
 | 最新数据库备份 | `/var/backups/pojia/pojia-20260911T044030Z.sql.gz.enc`，完整性 OK（release prepare 阶段） | 2026-09-11 04:42 UTC | deploy-release prepare 输出 |
 | pojia-web | active（2026-09-11 04:42 UTC 随 release 切换重启） | 2026-09-11 04:42 UTC | switch 输出 + 服务器本机 curl live/ready 200 |
