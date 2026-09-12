@@ -80,8 +80,16 @@ try {
     `SELECT COUNT(*) AS n FROM cards WHERE ${eligibleInventoryCardSql('cards', '?')}`, ['16']
   );
   const eligibleCards = Number(stock?.n) || 0;
+  // 合格卡为 0，未必等于「该补货了」——卡被正在跑的单占着也是 0，那张卡跑完就回来。
+  // 我们常态只有一两张卡，于是每提一单就归零一次：告警 RESOLVED→OPEN 翻一次，
+  // 手机就响一次，Lemon 每单收一条噪音（2026-09-12，D-190 续）。
+  // 真正该响的是「没卡可分，而且没有卡会回来」：没有任何活动占用。
+  const [[held]] = await connection.query(
+    "SELECT COUNT(*) AS n FROM card_assignment_history WHERE status = 'ACTIVE'"
+  );
+  const heldByRunningOrders = Number(held?.n) || 0;
   if (!dryRun) {
-    if (eligibleCards === 0) {
+    if (eligibleCards === 0 && heldByRunningOrders === 0) {
       await connection.query(
         `INSERT INTO operator_alerts (id, alert_type, dedupe_key, severity, title, message, status)
          VALUES (UUID(), 'CARD_STOCK_EMPTY', 'card-stock:no-eligible', 'critical',
@@ -92,7 +100,7 @@ try {
            acknowledged_at = IF(status = 'RESOLVED', NULL, acknowledged_at)`
       );
     } else {
-      // 有卡了就收掉，下次见底才会重新响——否则这条告警只会响一次，此后永远静默。
+      // 有卡、或有卡正被占着（跑完会回来）就收掉，下次真见底才重新响。
       await connection.query(
         `UPDATE operator_alerts SET status='RESOLVED', acknowledged_at=CURRENT_TIMESTAMP(3)
           WHERE dedupe_key='card-stock:no-eligible' AND status='OPEN'`
@@ -101,7 +109,8 @@ try {
   }
 
   await connection.commit();
-  console.log(JSON.stringify({ dryRun, thresholdMinutes: minutes, eligibleCards, stalled: found }));
+  console.log(JSON.stringify({ dryRun, thresholdMinutes: minutes, eligibleCards, heldByRunningOrders,
+    cardStockAlert: eligibleCards === 0 && heldByRunningOrders === 0 ? 'OPEN' : 'RESOLVED', stalled: found }));
 } catch (error) {
   await connection.rollback().catch(() => undefined);
   console.error(String(error?.message || error));
