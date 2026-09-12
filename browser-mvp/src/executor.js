@@ -191,6 +191,10 @@ export class BrowserExecutionService {
           action: 'session-bootstrap',
           sessionDigest: sessionResult.sessionDigest,
           cookieCount: sessionResult.cookieCount,
+          // D-187 的核心行为是「先把窗口里的旧登录态清掉再注入」，可这两个数字一直没落库，
+          // 2026-09-12 真单跑完也证明不了窗口真被清过（D-190）。都是计数，不含 cookie 值。
+          replacedCookieCount: sessionResult.replacedCookieCount ?? null,
+          clearedLoginCookieCount: sessionResult.clearedLoginCookieCount ?? null,
         });
       }
       // Reuse the active order's sole ChatGPT page. Creating another tab on
@@ -446,7 +450,10 @@ export class BrowserExecutionService {
         && !['SESSION_INVALID', 'SESSION_IDENTITY_MISMATCH'].includes(failure.reason)) {
         preserveRuntime = true;
       }
-      await this._event(job, 'freeze', ++evidenceSequence, { action: 'fail-closed', reason: failure.reason });
+      await this._event(job, 'freeze', ++evidenceSequence, {
+        action: 'fail-closed', reason: failure.reason,
+        ...(failure.evidenceDetail && typeof failure.evidenceDetail === 'object' ? failure.evidenceDetail : {}),
+      });
       throw failure;
     } finally {
       if (abortRuntime) signal?.removeEventListener('abort', abortRuntime);
@@ -461,16 +468,35 @@ export class BrowserExecutionService {
     }
   }
 
+  // PAGE_DRIFT 只说「页面对不上」，不说对不上哪一项、当时是什么值——2026-09-12 真单
+  // 撞上它时只能靠推测（D-190）。这里把判据带出来：哪一项失败、实际值、期望值。
+  // URL 只留 origin+pathname，query 可能带 token，不进证据。
+  #drift(check, detail) {
+    const error = new BrowserExecutionError('PAGE_DRIFT', `page signature mismatch on ${check}`);
+    error.evidenceDetail = { check, ...detail };
+    return error;
+  }
+
   async _checkPage(page, contract) {
     const url = page.url();
-    if (!url.startsWith(contract.urlPrefix)) throw new BrowserExecutionError('PAGE_DRIFT');
+    const safeUrl = (raw) => {
+      try { const u = new URL(raw); return `${u.origin}${u.pathname}`; } catch { return '(unparseable)'; }
+    };
+    if (!url.startsWith(contract.urlPrefix)) {
+      throw this.#drift('url', { actualUrl: safeUrl(url), expectedPrefix: contract.urlPrefix });
+    }
     const marker = page.locator(contract.requiredSelector);
     try {
       await marker.waitFor({ state: 'visible', timeout: this.timeoutMs });
     } catch (error) {
-      throw new BrowserExecutionError('PAGE_DRIFT', 'required page marker did not become visible', error);
+      const notVisible = this.#drift('marker-visible', { selector: contract.requiredSelector });
+      notVisible.cause = error;
+      throw notVisible;
     }
-    if (await marker.count() !== 1) throw new BrowserExecutionError('PAGE_DRIFT');
+    const markerCount = await marker.count();
+    if (markerCount !== 1) {
+      throw this.#drift('marker-count', { selector: contract.requiredSelector, actualCount: markerCount });
+    }
     const title = await page.title();
     // ChatGPT titles its app "ChatGPT", the plan picker "ChatGPT Plans" and
     // the marketing shell "ChatGPT: ...". A resumed run may legitimately sit
@@ -479,9 +505,15 @@ export class BrowserExecutionService {
     const titleMatches = contract.title === 'ChatGPT'
       ? title === contract.title || title.startsWith(`${contract.title}:`) || title.startsWith(`${contract.title} `)
       : title === contract.title;
-    if (!titleMatches) throw new BrowserExecutionError('PAGE_DRIFT');
+    if (!titleMatches) {
+      throw this.#drift('title', {
+        actualTitle: String(title).slice(0, 120), expectedTitle: contract.title, actualUrl: safeUrl(url),
+      });
+    }
     const text = await marker.textContent();
-    if (contract.markerText && !text?.includes(contract.markerText)) throw new BrowserExecutionError('PAGE_DRIFT');
+    if (contract.markerText && !text?.includes(contract.markerText)) {
+      throw this.#drift('marker-text', { selector: contract.requiredSelector, expectedText: contract.markerText });
+    }
     return { title, frameCount: page.frames().length };
   }
 

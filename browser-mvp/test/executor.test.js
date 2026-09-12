@@ -172,7 +172,15 @@ test('page drift fails closed and records a redacted freeze reason', async () =>
       (error) => error instanceof BrowserExecutionError && error.reason === 'PAGE_DRIFT',
     );
     assert.equal(evidenceSink.events.at(-1).type, 'freeze');
-    assert.equal(evidenceSink.events.at(-1).summary.reason, 'PAGE_DRIFT');
+    const freeze = evidenceSink.events.at(-1).summary;
+    assert.equal(freeze.reason, 'PAGE_DRIFT');
+    // 光说 PAGE_DRIFT 没法排查：2026-09-12 真单撞上它，只能靠推测是 URL 还是标题
+    // 对不上（D-190）。判据必须落进证据。
+    assert.equal(freeze.check, 'title', '要说清是哪一项判据失败');
+    assert.equal(freeze.actualTitle, 'Unexpected page', '要带上当时的实际标题');
+    assert.equal(freeze.expectedTitle, 'Browser MVP fixture');
+    // URL 只留 origin+pathname：query 可能带 token。
+    assert.ok(!String(freeze.actualUrl || '').includes('?'), 'URL 不得带 query');
   });
 });
 
