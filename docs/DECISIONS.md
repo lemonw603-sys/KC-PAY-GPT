@@ -1113,3 +1113,46 @@ Lemon 一直贴的是同一份，我早该发现却没有。
 ### 六、本轮所有改动
 
 `browser-mvp` 本机代码，pool worker 从工作区启动即生效，不需要服务器发布。测试 252 项 0 失败。
+
+## D-190 续（2026-09-12 14:25 UTC）第四单：手动走结账也付不出去，该账号按特殊情况作废
+
+第三单那个账号（有免费试用 offer 的新号）后续由 Lemon 手动走完了结账流程，结论是
+**手动也付不出去**。Lemon 判定这类账号属于特殊情况，**不列入当前讨论范围，本例作废**。
+
+### 只读观察器抓到的轨迹（原始日志存档 `docs/browser-research/MANUAL_CHECKOUT_TRACE_2026-09-12.log`）
+
+```
+13:52:16  400  POST /backend-api/payments/checkout/taxes
+13:52:35  200  POST https://api.stripe.com/v1/confirmation_tokens
+13:52:39  400  POST /backend-api/payments/checkout/confirm
+13:54:50  400  POST /backend-api/payments/checkout/taxes
+13:55:02  400  POST /backend-api/payments/checkout/taxes
+13:55:51  400  POST /backend-api/payments/checkout/taxes
+13:56:12  200  POST https://api.stripe.com/v1/confirmation_tokens
+13:56:15  400  POST /backend-api/payments/checkout/confirm
+```
+
+页面提示：`Check your billing details and try again.`
+
+**能确定的**：卡本身没问题——Stripe 两次都接受了卡并签发 `confirmation_token`（200）；
+拒绝来自 **ChatGPT 自己的后端**（`payments/checkout/confirm` 400），不是 Stripe、不是银行。
+税费接口在填卡之前就已反复 400。
+
+**未确定**：400 的具体原因。观察器出于安全只记 URL 与状态码，没抓响应体；`confirm` 前后
+各有一次 `sentinel/req`（ChatGPT 风控哨兵），是否与拒绝有关，**没有证据，不下结论**。
+我曾推测是账单地址国家不匹配（系统配的是美国 DE 州，`production-live-pool-worker.js:113`），
+Lemon 反馈**美国地址同样不行**，该推测不成立。
+
+### 记下来的两件事
+
+1. **只读观察器是有效的取证手段**：手动操作不入库、执行器日志也没有，但 CDP 侧挂一个被动
+   监听就能拿到完整轨迹。今天靠它才分清「卡被拒」和「ChatGPT 后端拒绝」。下次做同类验证
+   可复用（当时用的是临时脚本，跑完已删；要常用可以固化进 `browser-mvp/scripts/`）。
+2. **手动并不比自动化容易**：Lemon 曾问「直接点升级填账单付款不就行了，有这么难吗」。
+   实测下来手动同样走不通，且手动还缺一样东西——账单地址与卡是配对的，这个知识在系统里，
+   人不知道就会填错国家。
+
+### 免费试用 offer 的业务口径仍未定（与本例作废无关，下一个客户仍可能碰到）
+
+D-190 第五节那三个问题照旧待 Lemon 判断：客户自己能白领一个月、我们收钱只能替他点免费按钮
+算不算交付、是否在兑换入口就检测试用资格。**未实施任何改动。**
