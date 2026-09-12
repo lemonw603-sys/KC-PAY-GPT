@@ -1038,3 +1038,78 @@ browser 侧 abort 回 `CARD_READY` 时 `available_at` 直接传 `now`，**没有
 （`browser-execution-repository.js:879`）；而 v1 任务处理器那条路的 `CARD_NOT_READY` 带
 `delayMs: 60_000`。历史上观察到 `PJV1-zffo7WJvbKcPECKcCxzx` 的 `CARD_READY` 事件出现 42 次、
 间隔低至 47 毫秒——该观察同样来自有干预时期，只作代码事实的佐证，不作系统行为的结论。
+
+## D-190（2026-09-12 13:32 UTC）真单连跑三次：三个不同的失败原因，其中一个是我改错了
+
+D-187 上线后第一次连续真单。三次全部失败在付款之前，**资金每次都已核实安全**
+（`PAYMENT_SUBMIT` 0、`funds_risk_state` CLEARED、卡与账本 RELEASED、CDK 回 AVAILABLE）。
+三次原因互不相同，不可混为一谈。
+
+| 订单 | 卡在哪一步 | 原因 |
+| --- | --- | --- |
+| `PJV1--wEBaAETWx_pKBpTZVp9` | 身份探测前 | 窗口里是上一个客户的登录态——D-187 要修的正是它 |
+| `PJV1-sxfJAkvUwt9vimNTncgV` | 进结账时 | 同一份 Session 被重复使用，刷新令牌已耗尽 |
+| `PJV1-vEDBfk6iEHSuawpklHls` | **没有结账可进** | 账号有免费试用资格，定价页只给「Claim free offer」 |
+
+### 一、D-187 拿到了直接证据（此前只能推断）
+
+`session-bootstrap` 事件补上计数后，真单落库：
+`replacedCookieCount: 2`、`clearedLoginCookieCount: 10`。**窗口里的旧登录态确实被清掉了**，
+然后才注入这一单的 Session。此前只能从「没有 `session-replaced` 事件」反推，证明不了。
+
+同一次运行还验证了：只有一次 `session-bootstrap`（首次即替换生效）、`page-reload-after-inject`
+新事件名正常落库、身份对不上时直接 fail-closed 不重试。**D-187 的设计意图全部达成**——
+失败码从终态的 `CHATGPT_ACCESS_BLOCKED` 变成 `SESSION_INVALID`→`WAITING_FOR_SESSION`，
+客户在页面上换号后订单**自动接着跑**（12:46:01 换号 → 同一秒 `RECHARGE_PROCESSING`，无人推）。
+
+### 二、我改错了一次，代价是白创建一个 Stripe 结账会话
+
+`/api/auth/session` 在 200 响应里带 `error: RefreshAccessTokenError`，执行器判 `SESSION_INVALID`。
+我对窗口实测：user 完整、accessToken 有效期到 2026-12-11、`authStatus=logged_in`、
+页面上 3 个升级入口都在。据此认定原判断误判并放宽——**方向错了**。
+
+放宽后重跑，主站、身份、页面校验、卡料全过，却在进结账时被甩到
+`/auth/login?next=%2Fcheckout%2Fopenai_llc%2Fcs_live_…`：**ChatGPT 在结账流程要求重新认证，
+刷新链断了就换不来新授权。**
+
+所以原判断**结论对、理由错**：
+- 原注释的理由「web app 会渲染成登出、购买控件全部消失」——**证伪**，页面好好的。
+- 真实理由：**失败点在结账导航，不在主站页面。**
+
+判断已恢复，注释改写成真实链路。在探测阶段就停还有实际好处：不会白留一个用不上的
+`cs_live_…`。**教训**：一处判断的结论和它给出的理由要分开验证；证伪了理由不等于结论也错。
+
+### 三、根因：一份 Session 只够一次购买尝试
+
+刷新令牌只能换一次。同一份 Session 跑过一次之后必带 `RefreshAccessTokenError`，
+主站还能进、结账必被拦。**2026-09-12 那三次运行的 `sessionDigest` 完全相同**——
+Lemon 一直贴的是同一份，我早该发现却没有。
+
+**运营口径**：失败后必须让客户**重新导出**一份 Session，不能重复贴同一份。
+
+### 四、补上的观测缺口（三处，都是「改了行为却没让证据跟上」）
+
+1. `PAGE_DRIFT` 只有一个词，看不出是 URL 还是标题对不上、当时实际值是什么。现由 `#drift()`
+   构造，带 `check`（url / marker-visible / marker-count / title / marker-text）与实际值、期望值，
+   经 `error.evidenceDetail` 展开进 `fail-closed` 事件。URL 只留 origin+pathname（query 可能带 token）。
+2. `session-bootstrap` 补 `replacedCookieCount` / `clearedLoginCookieCount`（见第一节）。
+3. `account-readonly-probe` 补 `sessionError`——降级状态要留痕，不能悄悄放过。
+
+### 五、新发现：免费试用资格让付费链路无处可走（待 Lemon 判断）
+
+第三单用全新账号，定价页显示 **「Try Plus free for 1 month」，₱1100 划掉变 ₱0，按钮是
+「Claim free offer」**。**没有结账流程可走**，执行器报 `CHECKOUT_NAVIGATION_FAILED`。
+
+这不是 bug，是业务现实，且有三层影响：
+- **越干净的新号越可能拿到试用资格**，所以「用干净新号验证付费链路」这条路本身走不通；
+  要验证付费流程得用**没有试用资格**的号。
+- **业务问题**：客户自己就能白拿一个月，为什么要买卡密？反过来，若客户的号有试用资格，
+  我们收了钱却只能替他点一个免费按钮，这单算不算交付？**此问题待 Lemon 定，未实施任何改动。**
+- **绝不自动点那个按钮**：会消耗客户账号的试用资格，而客户买的是付费 Plus。
+
+技术上建议把这一类从笼统的 `CHECKOUT_NAVIGATION_FAILED` 里单独识别出来——「页面打不开」
+与「压根没有付款入口」的处置完全不同。是否做、以及是否前移到兑换入口就检测，等业务口径定了再说。
+
+### 六、本轮所有改动
+
+`browser-mvp` 本机代码，pool worker 从工作区启动即生效，不需要服务器发布。测试 252 项 0 失败。
