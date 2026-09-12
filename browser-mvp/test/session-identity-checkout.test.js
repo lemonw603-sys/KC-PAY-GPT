@@ -328,9 +328,11 @@ test('a refresh error is fatal when the page cannot confirm it is logged in', as
   }
 });
 
-test('a refresh error is not fatal while the page still renders as logged in', async () => {
-  // 2026-09-12 真单：/api/auth/session 带 RefreshAccessTokenError，但 authStatus=logged_in、
-  // 页面上 3 个升级入口都在。原来一见 error 就判死，把一单能跑的活会话挡在门外（D-190）。
+test('a refresh error is fatal even while the page still renders as logged in', async () => {
+  // 2026-09-12 两次真单的结论（D-190）：页面看起来完全正常——authStatus=logged_in、
+  // 3 个升级入口都在——但刷新链一断，进结账就被甩到 /auth/login?next=/checkout/…，
+  // 因为换不来新的授权。所以「页面看着能用」不是放行的理由，必须在这里停，
+  // 免得白创建一个用不上的 Stripe 结账会话。
   const server = createServer((request, response) => {
     if (request.url === '/api/auth/session') {
       response.writeHead(200, { 'content-type': 'application/json' });
@@ -352,10 +354,14 @@ test('a refresh error is not fatal while the page still renders as logged in', a
   try {
     const page = await browser.newPage();
     await page.goto(`http://127.0.0.1:${address.port}/`, { waitUntil: 'domcontentloaded' });
-    const result = await probeSessionIdentity(page, { email: 'buyer@example.test' });
-    assert.equal(result.verified, true, '页面说自己已登录，就该放行');
-    assert.equal(result.sessionError, 'RefreshAccessTokenError', '降级状态必须留在证据里，不是悄悄放过');
-    assert.equal(JSON.stringify(result).includes('fixture-access-token'), false, 'token 不得进结果');
+    await assert.rejects(
+      () => probeSessionIdentity(page, { email: 'buyer@example.test' }),
+      (error) => error.code === 'SESSION_INVALID'
+        && error.details?.stage === 'session-error'
+        && error.details?.sessionError === 'RefreshAccessTokenError'
+        && error.details?.authStatus === 'logged_in'
+        && !String(error.message).includes('fixture-access-token'),
+    );
   } finally {
     await browser.close();
     server.close();

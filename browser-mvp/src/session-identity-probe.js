@@ -161,13 +161,18 @@ export async function probeSessionIdentity(page, expectedIdentity, {
       { stage: 'client-auth', httpStatus: observed.status, authStatus: clientAuth.authStatus },
     );
   }
-  // `error` 在 200 响应里（典型是 RefreshAccessTokenError）只说明刷新链断了——
-  // 当前 accessToken 仍然有效，还能完成这一单。原来一见 error 就判死，依据是
-  // 「web app 会渲染成登出、购买控件全部消失」；2026-09-12 真单证伪了这个前提：
-  // 同一时刻 authStatus=logged_in、页面上 3 个升级入口都在（D-190）。
-  // 所以判据改成页面自己的渲染状态：只有当 authStatus 没有明确说「已登录」时，
-  // error 才是致命的。这不是忽略 error——它照常落进证据。
-  if (observed.sessionError && clientAuth.authStatus !== 'logged_in') {
+  // `error`（典型是 RefreshAccessTokenError）意味着刷新链已断。它是致命的——
+  // 但致命点不在这里。2026-09-12 两次真单把这件事查清楚了（D-190）：
+  //   · 原注释说「web app 会渲染成登出、购买控件全部消失」——这个前提是错的。
+  //     实测同一时刻 authStatus=logged_in，页面上 3 个升级入口都在。
+  //   · 据此放宽后重跑，主站、身份、卡料全过，却在进结账时被甩到
+  //     /auth/login?next=/checkout/...：ChatGPT 在结账流程要求重新认证，
+  //     而刷新链断了就换不来新的授权。CHECKOUT_NAVIGATION_FAILED。
+  // 结论：这种会话确实不能用，所以判断恢复；理由换成真实的那个。放在这里停，
+  // 是为了不白白创建一个用不上的 Stripe 结账会话（那次留下了 cs_live_…）。
+  // 根因是刷新令牌只能用一次：同一份 Session 跑过一次之后就带上 error，
+  // 必须让客户重新导出，不能重复使用。
+  if (observed.sessionError) {
     throw new SessionIdentityProbeError(
       `session is no longer refreshable (${observed.sessionError})`,
       'SESSION_INVALID',
