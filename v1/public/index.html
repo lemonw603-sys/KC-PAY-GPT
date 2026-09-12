@@ -8,8 +8,8 @@
   <meta name="description" content="ChatGPT 订阅自助开通：验证卡密、核对账号、确认兑换，全程可见进度。">
   <title>ChatGPT 充值中心</title>
   <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/assets/customer.css?v=29">
-  <script src="/assets/customer.js?v=29" defer></script>
+  <link rel="stylesheet" href="/assets/customer.css?v=30">
+  <script src="/assets/customer.js?v=30" defer></script>
 </head>
 <body>
   <div class="glow" id="glow" aria-hidden="true"></div>
@@ -46,6 +46,12 @@
 
       <!-- ============ 1 验证卡密 ============ -->
       <section class="screen" id="view-cdk">
+        <p class="lead">输入卡密、核对账号、确认兑换,全程进度可见。</p>
+        <div class="tags">
+          <span class="tag"><svg width="15" height="15" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" aria-hidden="true"><path d="M10 2l6 2.4v4.5c0 3.7-2.5 6.6-6 7.9-3.5-1.3-6-4.2-6-7.9V4.4L10 2z"/><path d="m7.6 9.9 1.7 1.7 3.3-3.3" stroke-linecap="round"/></svg>官方渠道</span>
+          <span class="tag"><svg width="15" height="15" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" aria-hidden="true"><path d="M10 2l6 2.4v4.5c0 3.7-2.5 6.6-6 7.9-3.5-1.3-6-4.2-6-7.9V4.4L10 2z"/><path d="m7.6 9.9 1.7 1.7 3.3-3.3" stroke-linecap="round"/></svg>全程加密</span>
+          <span class="tag"><svg width="15" height="15" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" aria-hidden="true"><path d="M10 2l6 2.4v4.5c0 3.7-2.5 6.6-6 7.9-3.5-1.3-6-4.2-6-7.9V4.4L10 2z"/><path d="m7.6 9.9 1.7 1.7 3.3-3.3" stroke-linecap="round"/></svg>失败可退</span>
+        </div>
         <form class="card" id="form-cdk" novalidate>
           <h2>输入卡密</h2>
           <p class="card__sub">购买后收到的那串兑换码。</p>
