@@ -336,7 +336,7 @@ test('payment handler receives the checkout without a pre-card strict zero-tax r
 // still holds the previous customer's session, the identity probe fails and the
 // executor must replace that session once with this order's token, reload and
 // probe again, instead of failing the order with SESSION_IDENTITY_MISMATCH.
-test('executor replaces a resident session that belongs to another customer, once, then proceeds', async () => {
+test('executor replaces whatever session is resident in the window up front, then proceeds', async () => {
   let residentIdentity = { id: 'user-prev', email: 'previous@example.test', accountId: 'acct-prev' };
   const server = createServer((request, response) => {
     if (request.url === '/api/auth/session') {
@@ -386,11 +386,11 @@ test('executor replaces a resident session that belongs to another customer, onc
     assert.equal(result.status, 'OBSERVED');
     assert.equal(result.sessionBootstrapped, true);
     assert.equal(result.sessionIdentity.identityMatched, true);
-    assert.deepEqual(bootstrapCalls, ['preserve', 'replace']);
-    assert.equal(closed, 1, 'the session lease is closed exactly once after the probe settles');
+    assert.deepEqual(bootstrapCalls, ['replace'], 'the resident session is replaced on the only injection, never probed first');
+    assert.equal(closed, 1, 'the session lease is closed exactly once after the injection');
     const actions = evidenceSink.events.map((event) => event.summary.action);
     assert.deepEqual(actions.filter((action) => ['session-bootstrap', 'session-replaced', 'account-readonly-probe'].includes(action)),
-      ['session-bootstrap', 'session-replaced', 'account-readonly-probe']);
+      ['session-bootstrap', 'account-readonly-probe']);
     assert.equal(JSON.stringify(evidenceSink.events).includes('fixture-token'), false);
   } finally {
     server.close();
@@ -440,7 +440,7 @@ test('executor still fails closed when the replaced session does not match eithe
       () => executor.execute(job, { assertLease: async () => true }),
       (error) => error instanceof BrowserExecutionError && error.reason === 'SESSION_IDENTITY_MISMATCH',
     );
-    assert.deepEqual(bootstrapCalls, ['preserve', 'replace'], 'exactly one replacement attempt, never a loop');
+    assert.deepEqual(bootstrapCalls, ['replace'], 'exactly one injection, never a retry loop');
   } finally {
     server.close();
     await once(server, 'close');
@@ -560,7 +560,7 @@ test('a fresh run resets a resident page left on a previous Checkout, a recovere
   try {
     await executor.execute(job, { assertLease: async () => true, startFresh: true });
     assert.equal(stale.url(), base, 'fresh run navigates the reused page back to the home prefix');
-    assert.ok(evidenceSink.events.some((e) => e.summary?.action === 'page-reset'));
+    assert.ok(evidenceSink.events.some((e) => e.summary?.action === 'page-reload-after-inject'));
     await stale.goto(`${base}checkout/oaics_previous`, { waitUntil: 'domcontentloaded' });
     await executor.execute(job, { assertLease: async () => true });
     assert.equal(stale.url(), `${base}checkout/oaics_previous`, 'a resumed run keeps the page it recovered');

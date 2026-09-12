@@ -831,7 +831,8 @@ Lemon 反问「难道不应该把窗口清干净然后走流程吗」，顺着�
 注入(保留旧的) → 探测 → SESSION_IDENTITY_MISMATCH → 替换重试 → 再探测
 ```
 
-第一单真实客户单正是这样，而多出来的那一轮请求正好撞上 403。
+第一单真实客户单正是这样：窗口里留着上一个账号的登录态，这一单的 Session 从没被注入过。
+（该单最终失败，但失败与这次多余请求之间的因果**没有证据**，不下结论。）
 
 ### 只解释了一半，另一半还没查清
 
@@ -847,3 +848,47 @@ Lemon 反问「难道不应该把窗口清干净然后走流程吗」，顺着�
 
 `page-reset` 这个检查点名字让人以为清理过窗口——我自己第一眼也是这么读的。改动时应一并改名
 （如 `page-reload-after-inject`），否则下一个人还会被它误导。
+
+## D-187 定案（2026-09-12 10:20 UTC）首次注入改为直接替换窗口登录态，删掉替换重试路径
+
+Lemon 对「要不要把首次注入改成直接替换，也就是先清干净再走流程」答复**同意**。已实施。
+
+### 改了什么
+
+| 位置 | 改动 |
+| --- | --- |
+| `browser-mvp/src/executor.js:167` | `bootstrap(lease, ctx)` → `bootstrap(lease, ctx, { replaceExisting: true })` |
+| `browser-mvp/src/executor.js` 探测失败分支 | **删除**替换重试（含 `session-replaced` 事件、重试后的 `goto` 与二次探测），改为直接 `throw classify(error)` |
+| `browser-mvp/src/executor.js` 注入后 | 无条件释放 `sessionLease`（不再有第二次注入要用它） |
+| 检查点 `page-reset` | 改名 `page-reload-after-inject`（旧名暗示清理过窗口，实际只是注入后重新导航） |
+| `v1/src/domain/customer-stage.js` | 九阶段映射补 `'page-reload-after-inject': 4`；`page-reset`/`session-replaced` **保留**，历史单的证据还要能解析 |
+| `v1/public/admin/assets/admin.js` | 事件中文名补「注入后刷新页面」，旧名同样保留 |
+
+### 为什么连重试路径一起删
+
+`session-bootstrap.js:181` 的保留分支只在 `replaceExisting` 为假时进入，因此首次即替换之后
+`existingSessionPreserved` 恒为 `false` → 租约注入后立即释放 → 重试分支的 `foreignResident`
+恒为 `false`，**那段代码永远不会执行**。留着它只有两种下场：没有测试覆盖，或者靠伪造
+provider 返回 `existingSessionPreserved: true` 去人工唤醒——后者正是「依赖是假的、代码从没
+真正执行过」的假覆盖。删掉，代码与测试一一对应。
+
+### 对客户的影响（改动的真正价值）
+
+Session 对不上时的失败码从终态的 `CHATGPT_ACCESS_BLOCKED` 变成 `SESSION_IDENTITY_MISMATCH`，
+经 `SESSION_ABORTS` 映射为 `WAITING_FOR_SESSION`——**客户在充值页上自己换个账号就能接着跑**，
+不必找客服。这比「少打一次 ChatGPT」更要紧。
+
+### 验证
+
+- `browser-mvp`：260 项，251 通过，0 失败，9 跳过。三个原本保护旧行为的测试改成断言新行为：
+  `bootstrapCalls` 由 `['preserve','replace']` 改为 `['replace']`；事件序列不再含 `session-replaced`；
+  `page-reset` 改名。**未放宽任何断言**——「替换后仍不匹配」一例仍要求 fail closed 且失败码为
+  `SESSION_IDENTITY_MISMATCH`。
+- `v1`：726 项，663 通过，0 失败，63 跳过。
+- `browser_run_events.action` 是 `VARCHAR(64) NULL`（`049_browser_run_events.sql:12`），无枚举、
+  无白名单，新事件名可直接落库。
+
+### 仍然没查清的（不要当成已解决）
+
+第一单真实客户单最终失败的**原因仍未确定**。本次改动消除了「多出来那一轮请求」这个变量，
+但没有证据表明那一轮就是失败原因。下一单跑之前不要把这条当成已修复的故障。

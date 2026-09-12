@@ -49,6 +49,7 @@ const RUN_EVENT_STAGE = Object.freeze({
   'observe-page': 4,
   'session-bootstrap': 4,
   'page-reset': 4,
+  'page-reload-after-inject': 4,
   'account-readonly-probe': 4,
   'page-signature': 4,
   'session-replaced': 4,

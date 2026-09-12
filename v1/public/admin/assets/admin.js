@@ -1381,7 +1381,7 @@ async function setDefaultRechargeMethod(button) {
 
 
 const TIMELINE_ACTION_LABELS = {
-  'observe-page': '开始执行', 'session-bootstrap': '注入会话', 'session-replaced': '替换常驻会话', 'page-reset': '页面复位',
+  'observe-page': '开始执行', 'session-bootstrap': '注入会话', 'session-replaced': '替换常驻会话', 'page-reset': '页面复位', 'page-reload-after-inject': '注入后刷新页面',
   'account-readonly-probe': '身份核对', 'page-signature': '页面签名', 'card-material-preflight': '卡资料就绪',
   'checkout-navigation': '创建结账', 'session-released': '释放登录态', 'fail-closed': '安全停止',
 };

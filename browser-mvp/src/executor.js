@@ -151,14 +151,25 @@ export class BrowserExecutionService {
         if (!(await assertLease())) throw new BrowserExecutionError('LEASE_LOST');
         try {
           sessionLease = await this.sessionProvider.open(job.metadata.sessionRef, { purpose: 'browser-observe' });
-          sessionResult = await this.sessionProvider.bootstrap(sessionLease, runtime.context);
+          // 一上来就换掉窗口里的登录态，不先试着复用（2026-09-12 Lemon 定，D-187）。
+          //
+          // 原来首次注入不传 replaceExisting，遇到窗口里已有登录 cookie 就保留旧的、
+          // 不注入这一单的 Session，等身份探测发现对不上再替换重试。那是为了照顾
+          // 「同一个客户的 Session 轮换过」的情况，但真实业务是不同客户依次提交，
+          // 连续两单同号的概率很低，于是几乎每单都要先失败一轮、多打一次 ChatGPT。
+          // 第一单真实客户单（PJV1--wEBaAETWx_pKBpTZVp9）就是这样：窗口里留着上一个
+          // 账号的登录态，这一单的 Session 从没被注入过。（该单最终失败，但失败与这次
+          // 多余请求之间的因果没有证据，未下结论。）
+          //
+          // 换成首次即替换还有一个更要紧的好处：身份真对不上时直接抛
+          // SESSION_IDENTITY_MISMATCH，订单转 WAITING_FOR_SESSION，客户能在页面上
+          // 自己换个账号接着跑；而原来的重试路径最后报 CHATGPT_ACCESS_BLOCKED，
+          // 那是终态失败，客户只能找客服。
+          sessionResult = await this.sessionProvider.bootstrap(sessionLease, runtime.context, { replaceExisting: true });
           sessionBootstrapped = true;
-          // Keep the lease while an identity probe may still need to replace a
-          // resident session that belongs to a previous customer.
-          if (!sessionResult?.existingSessionPreserved || !job.metadata?.sessionIdentity) {
-            await this.sessionProvider.close(sessionLease);
-            sessionLease = null;
-          }
+          // 注入完就不再需要租约：不会再有第二次注入，继续持有只是拖长占用。
+          await this.sessionProvider.close(sessionLease);
+          sessionLease = null;
         } catch (error) {
           const sessionReasons = [
             'BROWSER_PREFLIGHT_CONTEXT_UNAVAILABLE', 'BROWSER_PREFLIGHT_SOURCE_UNAVAILABLE',
@@ -194,7 +205,9 @@ export class BrowserExecutionService {
       // with the cookies in place.
       if (sessionBootstrapped || (startFresh && page.url() !== job.metadata.pageContract.urlPrefix)) {
         await page.goto(job.metadata.pageContract.urlPrefix, { waitUntil: 'domcontentloaded', timeout: this.timeoutMs });
-        await this._event(job, 'checkpoint', ++evidenceSequence, { action: 'page-reset', urlPrefix: job.metadata.pageContract.urlPrefix });
+        // 名字从 page-reset 改来：它只是注入后重新导航让 cookie 生效，不清任何东西。
+        // 旧名字让人以为窗口被清理过——2026-09-12 查根因时我自己先被它误导了一次。
+        await this._event(job, 'checkpoint', ++evidenceSequence, { action: 'page-reload-after-inject', urlPrefix: job.metadata.pageContract.urlPrefix });
       }
       if (freezeRequested()) throw new BrowserExecutionError('MANUAL_FREEZE');
       if (!(await assertLease())) throw new BrowserExecutionError('LEASE_LOST');
@@ -219,29 +232,11 @@ export class BrowserExecutionService {
         try {
           sessionIdentity = await probe();
         } catch (error) {
-          const reason = classify(error);
-          // A resident session that is dead or belongs to another customer is
-          // not this order's session: replace it once with this order's own
-          // token and probe again. A rotated-but-matching session never reaches
-          // here because the first probe succeeds.
-          const foreignResident = sessionLease
-            && ['SESSION_INVALID', 'SESSION_IDENTITY_MISMATCH'].includes(reason);
-          if (!foreignResident) throw new BrowserExecutionError(reason, error.message, error);
-          if (!(await assertLease())) throw new BrowserExecutionError('LEASE_LOST');
-          const replaced = await this.sessionProvider.bootstrap(sessionLease, runtime.context, { replaceExisting: true });
-          await this._event(job, 'checkpoint', ++evidenceSequence, {
-            action: 'session-replaced',
-            previousReason: reason,
-            replacedCookieCount: replaced.replacedCookieCount,
-            cookieCount: replaced.cookieCount,
-            sessionDigest: replaced.sessionDigest,
-          });
-          await page.goto(job.metadata.pageContract.urlPrefix, { waitUntil: 'domcontentloaded', timeout: this.timeoutMs });
-          try {
-            sessionIdentity = await probe();
-          } catch (retryError) {
-            throw new BrowserExecutionError(classify(retryError), retryError.message, retryError);
-          }
+          // 窗口里的登录态在上面已经被这一单的 Session 整个替掉了，探测还对不上身份，
+          // 就是客户提交的 Session 本身不对（或已失效）。不重试，直接 fail closed：
+          // SESSION_INVALID / SESSION_IDENTITY_MISMATCH 都映射成 WAITING_FOR_SESSION，
+          // 客户在充值页上自己换个账号就能接着跑（2026-09-12，D-187）。
+          throw new BrowserExecutionError(classify(error), error.message, error);
         } finally {
           if (sessionLease && this.sessionProvider) {
             await this.sessionProvider.close(sessionLease).catch(() => undefined);
