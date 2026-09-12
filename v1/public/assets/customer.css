@@ -91,7 +91,7 @@ body{
 
 /* ---------- 顶栏 ---------- */
 .top{display:flex;justify-content:space-between;align-items:center;gap:16px;margin-bottom:24px}
-.brand{display:flex;align-items:center;gap:12px;font-size:16px;font-weight:600;letter-spacing:-.01em;
+.brand{display:flex;align-items:center;gap:12px;font-size:18px;font-weight:600;letter-spacing:-.01em;
        color:var(--t);text-decoration:none;min-width:0;white-space:nowrap;overflow:hidden;
        text-overflow:ellipsis}
 .brand svg{flex:0 0 auto}
@@ -320,8 +320,8 @@ kbd{font-family:var(--fm);font-size:12px;font-weight:500;color:var(--t);backgrou
   .card{padding:20px}
   /* 375px 上「品牌 + 两个入口」会各自折行。收紧字号和内边距，一行放得下。 */
   .top{gap:8px;margin-bottom:20px}
-  .brand{font-size:15px;gap:8px}
-  .brand svg{width:24px;height:24px}
+  .brand{font-size:16px;gap:8px}
+  .brand svg{width:26px;height:26px}
   .nav{gap:0}
   .nav button{font-size:13px;padding:6px 8px}
   .rail__st{width:64px}
