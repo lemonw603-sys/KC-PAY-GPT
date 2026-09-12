@@ -1,3 +1,16 @@
+// 卡台 token 的中转站：书签把 token 放在 /admin 的 #hash 里，但未登录时服务器会 302 到
+// /admin/login，浏览器把 fragment 带到了这一页——而这一页原本完全不认识它，登录成功后
+// replace('/admin') 又不带 hash，token 就此丢失。2026-09-12 之前书签一直失灵就是这个原因
+// （第一次修错了地方：加在 admin.js 里，而这条路上 admin.js 根本没被加载过）。
+// 这里把它接住存进 sessionStorage，登录回到 /admin 后由 admin.js 完成保存。
+// 同源同标签页，sessionStorage 跨这次导航有效；URL 立刻清掉，token 不留在地址栏和历史里。
+(function stashHighvccTokenFromHash() {
+  const match = /(?:^|[#&])highvcc-token=([^&]+)/.exec(location.hash);
+  if (!match) return;
+  try { sessionStorage.setItem('highvcc-token-pending', decodeURIComponent(match[1])); } catch { /* 存不了就只能这次失败 */ }
+  history.replaceState(null, '', location.pathname + location.search);
+})();
+
 const form = document.querySelector('#login-form');
 const password = document.querySelector('#password');
 const button = document.querySelector('#login-button');
