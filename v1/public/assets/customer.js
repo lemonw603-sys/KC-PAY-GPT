@@ -546,12 +546,15 @@
     el.sessionSubmit.disabled = false;
     return result.email;
   }
-  // 粘贴过程中不打扰（一半内容当然是不完整的），停手 700 毫秒后如果还是不
-  // 完整就明说——否则客户只看到按钮灰着，不知道为什么。
+  // 客户的真实动作是在 Token 页面 Ctrl+A、Ctrl+C，回到这里 Ctrl+V —— 一次
+  // 性粘贴，粘完就是完整内容，没有"还在输入"这回事。所以粘贴后立刻给结论，
+  // 成功和失败都不等。只有真的在手工编辑时才留一点缓冲，免得边改边报错。
   let sessionHintTimer = null;
-  el.session.addEventListener('input', () => {
-    refreshSessionPreview();
+  el.session.addEventListener('input', (event) => {
+    const pasted = !event.inputType || event.inputType.startsWith('insertFromPaste');
     if (sessionHintTimer) clearTimeout(sessionHintTimer);
+    refreshSessionPreview({ quiet: !pasted });
+    if (pasted) return;
     sessionHintTimer = setTimeout(() => {
       if (el.session.value.trim()) refreshSessionPreview({ quiet: false });
     }, 700);
