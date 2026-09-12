@@ -91,7 +91,11 @@
 运行记录混在同一张表里。
 位置：`admin.js:597-601`（`resolveUnknownButton`，条件 `paymentState ∈ {PAYMENT_UNKNOWN, PAYMENT_CONFIRMED}`）。
 
-**（b）刷新卡台 token 有两条路，都不顺。** 书签那条要先把按钮**拖**到收藏栏（不是点），
+**（b）刷新卡台 token 有两条路，都不顺。** —— **根因已查明并修复（2026-09-12）**：
+`api()` 遇到 401 会 `window.location.replace('/admin/login')`，那一跳把 hash 连同 token
+一起丢掉；而 `admin_auth_required` 这一支恰好不给任何提示，于是整件事静默失败。
+已改为页面一加载就把 token 从 URL 挪进 `sessionStorage`（能跨过登录跳转活下来，登录回来
+自动完成保存），URL 也清得比原来更早。以下是修复前的记录： 书签那条要先把按钮**拖**到收藏栏（不是点），
 当天走完整个流程后数据库里的 token 并未更新（`app_settings.highvcc_access_token_ciphertext`
 的 `updated_at` 仍停在 09-10），原因没查出来——应用不记 access log，服务器侧看不到请求是否到达。
 备用那条是手动粘贴框，但它埋在「卡片 → 备用卡台 A 一键开卡」的折叠里。

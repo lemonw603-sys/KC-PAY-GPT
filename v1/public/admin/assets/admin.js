@@ -2331,11 +2331,26 @@ document.addEventListener('keydown', (event) => {
 // part of this hand-off. We only need to read it client-side and forward it, same-origin, to
 // the existing authenticated /token route. The hash is cleared immediately either way so it
 // never lingers in the address bar or browser history.
-async function consumeHighvccTokenFromHash() {
+// 2026-09-12：书签这条路一直失灵，原因是 api() 遇到 401 会 window.location.replace
+// ('/admin/login')，那一跳把 hash 连同 token 一起丢了——而且恰好 admin_auth_required 不给提示，
+// 于是整件事静默失败，Lemon 走完全流程什么都没看到（UX_PUNCHLIST 6.1b）。
+// 所以在任何 api 调用之前，先把 token 从 URL 挪进 sessionStorage：它能跨过那次跳转活下来，
+// 登录回来再完成保存。URL 也因此清得更早——比原来更不容易留在地址栏或历史里。
+const HIGHVCC_TOKEN_STASH = 'highvcc-token-pending';
+function stashHighvccTokenFromHash() {
   const match = /(?:^|[#&])highvcc-token=([^&]+)/.exec(location.hash);
   if (!match) return;
-  const token = decodeURIComponent(match[1]);
+  try { sessionStorage.setItem(HIGHVCC_TOKEN_STASH, decodeURIComponent(match[1])); } catch { /* 存不了就只能这次失败 */ }
   history.replaceState(null, '', location.pathname + location.search);
+}
+stashHighvccTokenFromHash();
+
+async function consumeHighvccTokenFromHash() {
+  let token = '';
+  try { token = sessionStorage.getItem(HIGHVCC_TOKEN_STASH) || ''; } catch { token = ''; }
+  if (!token) return;
+  // 先删再发：发送失败也不要让它留在 sessionStorage 里等下次莫名其妙地重放。
+  try { sessionStorage.removeItem(HIGHVCC_TOKEN_STASH); } catch { /* 删不掉也继续 */ }
   try {
     await sensitiveApi('/api/v1/admin/backup-cards/highvcc/token', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token })
