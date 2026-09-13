@@ -37,6 +37,42 @@ function hmac(key, namespace, value) {
  * for a permit or a submission intent, so the adapter cannot cross the
  * external boundary: authorizeSubmit always answers "do not execute".
  */
+/**
+ * D-210：付款前失败但现场被留在屏幕上时，给运营一段接手时间，**推迟**判失败。
+ *
+ * 为什么不能当场判失败：客户页一进终态就停止轮询，并显示「没有完成，没有扣费，
+ * 你的卡密可以直接重新兑换」。运营正要接手的那几分钟里，这句话会让客户拿同一张
+ * 卡密重新兑换——新订单、新卡、再付一次，我们出两份钱（2026-09-14 Lemon 指出）。
+ *
+ * 检测信号只认一个：账号真的变成了付费计划（复用付款后核实器，不自己发明判据）。
+ * 检测到也**不自动判成功**——worker 不知道运营用的是系统分配的卡还是另一张，
+ * 自动记账会记错。它只是停止等待并通知人，由人走正式收口。
+ */
+export async function awaitOperatorTakeover({
+  verifier, control, notify = null, windowMs = 8 * 60_000, pollIntervalMs = 15_000,
+  clock = () => Date.now(), sleep = (ms) => new Promise((r) => setTimeout(r, ms)),
+} = {}) {
+  if (!verifier || typeof verifier.confirmPlus !== 'function') throw new TypeError('verifier is required');
+  if (!Number.isInteger(windowMs) || windowMs < 1_000) throw new TypeError('windowMs must be at least 1000ms');
+  const deadline = clock() + windowMs;
+  if (notify) await notify({ windowMs }).catch(() => undefined);
+  let checks = 0;
+  while (clock() < deadline) {
+    // 租约没了就别再占着这一单：另一个 worker 可能已经接管。
+    if (control && typeof control.assertLeaseBeforeAction === 'function') {
+      try { await control.assertLeaseBeforeAction('OPERATOR_TAKEOVER_WATCH'); }
+      catch { return { takenOver: false, checks, reason: 'LEASE_LOST' }; }
+    }
+    checks += 1;
+    const seen = await verifier.confirmPlus().catch(() => ({ confirmed: false }));
+    if (seen?.confirmed === true) return { takenOver: true, checks, reason: 'PLUS_OBSERVED' };
+    const remaining = deadline - clock();
+    if (remaining <= 0) break;
+    await sleep(Math.min(pollIntervalMs, remaining));
+  }
+  return { takenOver: false, checks, reason: 'WINDOW_EXPIRED' };
+}
+
 export async function runPreSubmitRehearsal({
   adapter, control, page, checkout, checkoutContract, cardMaterial, billingEmail, operationId,
 } = {}) {
@@ -96,6 +132,9 @@ export function createSharedLivePaymentWorker({
   // F-47: how long to read the Checkout for a definite answer before falling
   // back to polling the account. A decline shows up in seconds.
   postSubmitWatchMs = 60_000,
+  // D-210：付款前失败且现场保留时，给运营多久接手。Lemon 2026-09-14 定 8 分钟
+  // （他上一次从失败到手动付成约 3~5 分钟），"等流程顺了再调短"。
+  operatorTakeoverWindowMs = 8 * 60_000,
   postPlusAction = 'CANCEL_RENEWAL',
   resolvePlan = null,
   stopBeforeSubmit = false,
@@ -254,7 +293,7 @@ export function createSharedLivePaymentWorker({
           return { status: (await verifier.confirmPlus()).confirmed ? 'CONFIRMED' : 'UNKNOWN' };
         },
       });
-      return new BrowserPaymentExecutor({
+      const paymentResult = await new BrowserPaymentExecutor({
         integration, executionRepository, paymentAdapter: adapter,
         postPaymentVerifier: verifier, enabled: true,
         postPlusAction: action,
@@ -265,6 +304,35 @@ export function createSharedLivePaymentWorker({
         beforeSubmit: () => control.assertLeaseBeforeAction('FINAL_PRE_SUBMIT_RECHECK'),
         onStage,  // D-208
       });
+      // D-210：付款前失败、但表单被留在屏幕上 → 先别判失败。判了客户就会看到
+      // 「没有完成，卡密可以直接重新兑换」并停止轮询，而运营这时正要接手；
+      // 客户照那句话做就是两张卡付两次钱。等一个窗口，只认"账号真的变成付费计划"。
+      if (paymentResult?.status === 'PRE_SUBMIT_FAILED' && paymentResult.sceneHeld === true
+        && operatorTakeoverWindowMs > 0) {
+        const watched = await awaitOperatorTakeover({
+          verifier, control, windowMs: operatorTakeoverWindowMs,
+          notify: async ({ windowMs }) => {
+            const minutes = Math.round(windowMs / 60_000);
+            const message = `自动化停在付款前，填好的卡和账单已留在 Pilot 窗口。`
+              + `你可以直接点订阅；${minutes} 分钟内没人接手才判失败退卡密。`;
+            await notifyOperator({ title: '有单等你接手', message }).catch(() => undefined);
+            try {
+              await upsertBrowserAlertInTransaction(pool, {
+                type: 'BROWSER_HUMAN_VERIFICATION',
+                orderId: claimedJob.orderId,
+                title: '有单等你接手（现场已保留）',
+                message,
+              });
+            } catch { /* 通知尽力而为，绝不影响这一单 */ }
+          },
+        }).catch(() => ({ takenOver: false, reason: 'WATCH_FAILED' }));
+        if (watched.takenOver) {
+          // 刻意不自己判成功：worker 不知道运营用的是系统分配的卡还是另一张，
+          // 自动记账会记错卡。交给正式收口（close-manually-fulfilled-order.mjs）。
+          return { status: 'UNKNOWN', reasonCode: 'OPERATOR_TAKEOVER_DETECTED', paymentSubmitCalls: 0 };
+        }
+      }
+      return paymentResult;
     },
   });
   const workerService = createBrowserWorkerService({

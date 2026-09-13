@@ -209,12 +209,16 @@ export class BrowserPaymentExecutor {
           });
           return { status: 'UNKNOWN', reasonCode: 'PAYMENT_RESULT_UNKNOWN', paymentSubmitCalls: 0 };
         }
-        return { status: 'PRE_SUBMIT_FAILED', reasonCode: error.code, paymentSubmitCalls: 0 };
+        // D-210：sceneHeld 说明 adapter 把填好的表单留在了屏幕上。这个标记必须
+        // 带出去——上层要据此给运营留接手时间，而不是立刻判失败退 CDK。
+        return { status: 'PRE_SUBMIT_FAILED', reasonCode: error.code, paymentSubmitCalls: 0,
+          sceneHeld: error?.sceneHeld === true };
       }
       // No intent means the adapter proved it never crossed the external
       // submit boundary, so this remains a safe pre-submit failure.
       if (!intent) {
-        return { status: 'PRE_SUBMIT_FAILED', reasonCode: error?.code || 'PRE_SUBMIT_FAILED', paymentSubmitCalls: 0 };
+        return { status: 'PRE_SUBMIT_FAILED', reasonCode: error?.code || 'PRE_SUBMIT_FAILED', paymentSubmitCalls: 0,
+          sceneHeld: error?.sceneHeld === true };
       }
       await this.executionRepository.markPaymentUnknown({
         runId: run.runId, operationId: `${op}:unknown`, reasonCode: 'PAYMENT_RESULT_UNKNOWN',

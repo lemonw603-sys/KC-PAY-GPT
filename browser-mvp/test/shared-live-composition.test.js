@@ -3,7 +3,7 @@ import test from 'node:test';
 
 import { MemoryEvidenceSink } from '../src/evidence-sink.js';
 import { createBitBrowserControlManifest } from '../src/fixtures.js';
-import { createSharedLivePaymentWorker, runPreSubmitRehearsal } from '../src/shared-live-composition.js';
+import { awaitOperatorTakeover, createSharedLivePaymentWorker, runPreSubmitRehearsal } from '../src/shared-live-composition.js';
 
 const key = (byte) => Buffer.alloc(32, byte);
 function input(overrides = {}) {
@@ -92,4 +92,46 @@ test('LIVE composition accepts a plan-aware post-Plus action, even on a rehearsa
   assert.equal(createSharedLivePaymentWorker({ ...values, postPlusAction: 'UPGRADE_DIALOG_STOP' }).stopBeforeSubmit, false);
   assert.throws(() => createSharedLivePaymentWorker({ ...values, postPlusAction: 'UPGRADE_PAY' }), /postPlusAction must be/);
   assert.equal(values.queryCount(), 0);
+});
+
+// D-210：付款前失败但现场留在屏幕上时，不能当场判失败——客户页一进终态就停止轮询，
+// 并显示「没有完成，卡密可以直接重新兑换」；运营正要接手的那几分钟里，客户照那句话
+// 做就是两张卡付两次钱。
+test('D-210: takeover watch stops as soon as the account turns paid', async () => {
+  let calls = 0;
+  const notified = [];
+  const result = await awaitOperatorTakeover({
+    verifier: { confirmPlus: async () => ({ confirmed: ++calls >= 3 }) },
+    control: { assertLeaseBeforeAction: async () => undefined },
+    notify: async (info) => { notified.push(info); },
+    windowMs: 60_000, pollIntervalMs: 10,
+    sleep: async () => undefined,
+  });
+  assert.equal(result.takenOver, true);
+  assert.equal(result.reason, 'PLUS_OBSERVED');
+  assert.equal(calls, 3);
+  assert.equal(notified.length, 1, '进入等待时必须通知运营一次，否则他不知道有单在等');
+});
+
+test('D-210: the window expires instead of waiting forever', async () => {
+  let now = 0;
+  const result = await awaitOperatorTakeover({
+    verifier: { confirmPlus: async () => ({ confirmed: false }) },
+    windowMs: 1_000, pollIntervalMs: 100,
+    clock: () => now,
+    sleep: async (ms) => { now += ms; },
+  });
+  assert.equal(result.takenOver, false);
+  assert.equal(result.reason, 'WINDOW_EXPIRED');
+});
+
+// 租约丢了说明这一单可能已被别的 worker 接管，必须立刻退出，不能继续占着。
+test('D-210: a lost lease ends the watch immediately', async () => {
+  const result = await awaitOperatorTakeover({
+    verifier: { confirmPlus: async () => ({ confirmed: true }) },
+    control: { assertLeaseBeforeAction: async () => { throw new Error('lease lost'); } },
+    windowMs: 60_000, pollIntervalMs: 10, sleep: async () => undefined,
+  });
+  assert.equal(result.takenOver, false);
+  assert.equal(result.reason, 'LEASE_LOST');
 });

@@ -127,6 +127,8 @@ export function loadProductionLivePoolConfig(env = process.env) {
     // D-154: seconds a clicked checkout is held while a PERSON satisfies a human
     // verification challenge. 0 (default) only detects and reports it.
     humanVerificationWaitMs: integer(env, 'BROWSER_HUMAN_VERIFICATION_WAIT_MS', { min: 0, max: 900_000, fallback: 0 }),
+    // D-210：现场保留后等运营接手的窗口。0 = 关掉这个行为，退回"当场判失败"。
+    operatorTakeoverWindowMs: integer(env, 'BROWSER_OPERATOR_TAKEOVER_WINDOW_MS', { min: 0, max: 1_800_000, fallback: 8 * 60_000 }),
   });
 }
 
@@ -246,6 +248,7 @@ export async function createLaneWorker({ lane, config, pool, browserType, shared
     evidenceSink, leaseSeconds: config.leaseSeconds, executionTimeoutMs: config.executionTimeoutMs,
     verificationWindowMs: config.verificationWindowMs, verificationIntervalMs: config.verificationIntervalMs,
     humanVerificationWaitMs: config.humanVerificationWaitMs,
+    operatorTakeoverWindowMs: config.operatorTakeoverWindowMs,
     postPlusAction: postPlusActionForPlan, stopBeforeSubmit: config.stopBeforeSubmit, releaseSessionOnComplete: true, safeAbortOnFailure: true,
   });
   return Object.freeze({

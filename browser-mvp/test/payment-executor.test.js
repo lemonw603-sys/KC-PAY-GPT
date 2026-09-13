@@ -147,7 +147,7 @@ test('proven pre-submit drift is recoverable and does not mark payment UNKNOWN',
     control, run: { runId: 'run-1', leaseToken: 'lease-1' }, checkout: { kind: 'MOCK_CHECKOUT' },
     cardMaterial: { ref: 'card-material' }, operationId: 'pay-drift',
   });
-  assert.deepEqual(result, { status: 'PRE_SUBMIT_FAILED', reasonCode: 'CHECKOUT_DRIFT', paymentSubmitCalls: 0 });
+  assert.deepEqual(result, { status: 'PRE_SUBMIT_FAILED', reasonCode: 'CHECKOUT_DRIFT', paymentSubmitCalls: 0, sceneHeld: false });
   assert.equal(calls.filter((value) => Array.isArray(value) && value[0] === 'unknown').length, 0);
   assert.equal(calls.filter((value) => Array.isArray(value) && value[0] === 'intent').length, 0);
 });

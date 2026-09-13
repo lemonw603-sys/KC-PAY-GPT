@@ -2429,3 +2429,68 @@ if (matches.length !== 1) throw new ContractError('billing email field must reso
 卡 5371 的余额**同步过了，真值 $2.84**——先前一直显示的 $34.28 是开卡时的静态值
 （`last_transaction_synced_at` 为空 = 从未同步）。它已低于门槛 16，不再合格。
 **HANDOFF_NOW 缺口 5 说的"判断卡够不够用时不要信库内余额"，今天又应验一次。**
+
+---
+
+## D-210（2026-09-14 07:45 CST / 2026-09-13 23:45 UTC）现场保留后给运营 8 分钟接手，别急着告诉客户"失败了、卡密可以重新兑换"
+
+### Lemon 问出来的窟窿
+
+他问：「客户的圆环是不是随着 CDK 被退回，也就取消了？」——这一问推翻了我前一条建议。
+
+查代码后的客户侧真相（`customer.js` + `order-status-service.js`）：
+
+| | 订单判 `RECHARGE_FAILED` 之后 |
+|---|---|
+| 圆环 | 冻结在当前位置（`frozen: true`），不是消失 |
+| 轮询 | **完全停止**（`poll: null`，终态） |
+| 文案 | 「这一单没有完成,没有扣费。**你的卡密可以直接重新兑换。**」 |
+
+`canRetry = !cdkReturnWouldBeBlocked`——今天这些付款前失败都没有付款证据，所以一律为真。
+
+**我原来的方案（失败后自动检测人工接手、后台改成成功）是错的**：客户页早已停止轮询，
+后台改了他也看不到；而那句"可以直接重新兑换"就摆在他眼前——运营正在接手的那几分钟里，
+客户照做就是**新订单、新卡、再付一次，我们出两份钱**。
+
+### 决定：把判失败往后推，而不是事后补救
+
+```
+付款前失败 + 现场被留在屏幕上（D-205 的 holdForOperator 条件）
+    ↓
+不判失败。订单维持 RECHARGE_PROCESSING，客户继续看到"处理中"、继续轮询
+    ↓
+推手机通知运营「有单等你接手，现场已保留」
+    ↓
+盯 8 分钟，只认一个信号：账号真的变成付费计划（复用 verifier.confirmPlus）
+    ├─ 检测到 → 停止等待，返回 OPERATOR_TAKEOVER_DETECTED
+    └─ 超时/租约丢失 → 照常判失败、退 CDK，客户看到的和现在一样
+```
+
+**8 分钟是 Lemon 定的**（他上次从失败到手动付成约 3~5 分钟），并说明「等流程顺了再调短」。
+环境变量 `BROWSER_OPERATOR_TAKEOVER_WINDOW_MS` 可调，**设 0 即关掉该行为**，退回旧语义。
+
+### 检测到接手后**不自动判成功**——这是有意的
+
+worker 不知道运营点的是系统分配的那张卡还是另一张，自动记账会记到错误的卡上
+（今天已经有 3 笔账本状态错标，见 D-207）。所以它只停止等待并通知人，
+由人走正式收口 `close-manually-fulfilled-order.mjs`。**worker 不做资金判定。**
+
+### 实现（四处，均不改付款控制流）
+
+1. adapter 的 catch 里给 error 打 `sceneHeld`（条件与 `holdForOperator` 完全一致）
+2. `payment-executor` 把 `sceneHeld` 带进 `PRE_SUBMIT_FAILED` 返回值
+3. `shared-live-composition` 新增 `awaitOperatorTakeover()`，在 `createPaymentHandler`
+   拿到 `PRE_SUBMIT_FAILED + sceneHeld` 时进入等待
+4. `production-live-pool-worker` 读环境变量，默认 8 分钟
+
+### 验证
+
+- 新增 3 条测试：检测到付费即停并通知一次、窗口到期不无限等、**租约丢失立刻退出**
+  （租约没了说明可能已被别的 worker 接管，不能继续占着）
+- 全量 `npm test`：**274 通过 / 0 失败 / 9 跳过**
+- worker 重启：**PID 91755**，起于 23:43:17 UTC，晚于最后一处改动 23:41:06 ✓
+
+### 一条自己的教训
+
+核对重启时我又抓到了**还没死的旧进程**（PID 68339），差点report成"已带新代码"。
+**这是今天第四次踩同一个坑。** 以后核对重启一律认 **PID 变化**，不认"进程存在"。

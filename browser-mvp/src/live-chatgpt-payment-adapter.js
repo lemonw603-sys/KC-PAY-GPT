@@ -254,6 +254,13 @@ export class LiveChatGPTPaymentAdapter {
         // broke" from "the price was wrong".
         policyRefusal = POLICY_REFUSAL_PATTERN.test(String(error?.message || ''))
           || POLICY_REFUSAL_PATTERN.test(String(error?.cause?.message || ''));
+        // D-210：现场会被下面的 finally 留在屏幕上（条件与 holdForOperator 一致）。
+        // 上层据此给运营留出接手时间，而不是当场判失败、退 CDK、告诉客户"没完成，
+        // 卡密可以重新兑换"——那句话在运营正要接手的几分钟里是危险的：客户照做就会
+        // 变成两张卡付两次钱。
+        if (cardFieldsFilled && !submitted && !policyRefusal) {
+          try { error.sceneHeld = true; } catch { /* 冻结过的错误对象就算了 */ }
+        }
         throw error;
       } finally {
         // Clear the secure card fields on every exit EXCEPT the intentional
