@@ -4,7 +4,7 @@
 
 | 项目 | 当前值 | 核对时间（UTC） | 证据方式 |
 |---|---|---|---|
-| 生产 release | `/opt/pojia/releases/20260913-customer-ux-4ccb8c7`（commit `4ccb8c7`；客户页四处返工 + 修掉「付款成功那几秒显示遇到点问题」：`SUBMIT_UNKNOWN` 从 `REVIEWING` 改映射到新客户态 `VERIFYING`（正常色、3 秒轮询），超 3 分钟才按停留时长降级；进度环换段逐帧追差、跑完 700ms 滑到 100；去掉查询码只留卡密；订阅方案显示短名 `Plus`。D-192）。回滚 `20260913-captcha-alert-6797fdc` | 2026-09-13 06:37 UTC | 发布前 `customer-sql-probe.sh` 五项全通过、v1 测试 733 项 0 失败；发布后独立核实（新 ssh 命令）：`readlink -f /opt/pojia/current` 是新 release、pojia-web/worker 均 active、**web 进程 cwd 指向新 release 目录**（06:37:11 UTC 启动）、服务器发出的 `customer.js?v=37` 含 `VERIFYING`/`glideTo`/`VERIFYING_PATIENCE_MS`、「复制查询码」0 处、服务器上的 `order-status-service.js:31` 是 `SUBMIT_UNKNOWN: 'VERIFYING'` |
+| 生产 release | `/opt/pojia/releases/20260913-steady-ring-5825d1c`（commit `5825d1c`；进度环改匀速：九阶段百分点按真实耗时占比重分 2/6/9/20/62/94/98/99/100，段内线性并各用自己的 `typicalMs`，超过典型耗时后剩 6% 指数逼近上限、永不停住。D-193）。回滚 `20260913-customer-ux-4ccb8c7` | 2026-09-13 07:16 UTC | 发布前 `customer-sql-probe.sh` 全通过、v1 测试 733 项 0 失败；发布后独立核实（新 ssh）：release 已切、web/worker active、**web 进程 cwd 指向新 release**、服务器上 `customer-stage.js` 九个 ceiling/typicalMs 为新值、发出的 `customer.js` 含 `reach * 0.94 * t` 且旧指数曲线 `exp(-2.6` 为 0 处、**状态接口实调返回 `floor:99 ceiling:100 typicalMs:1000`**（端到端证据） |
 | 回滚点 | `/opt/pojia/releases/20260912-token-bookmark-f467bd1`（再前 `20260912-captcha-alert-02210b2`；本批次无迁移，直接切回即可） | 2026-09-13 01:5x UTC | switch 输出 ROLLBACK 命令 |
 | 最新数据库备份 | `/var/backups/pojia/pojia-20260912T105342Z.sql.gz.enc`，完整性 OK（release prepare 阶段） | 2026-09-12 10:54 UTC | deploy-release prepare 输出 |
 | pojia-web | active（2026-09-12 10:55 UTC 随 release 切换重启） | 2026-09-12 10:55 UTC | switch 输出 + 服务器本机 curl live/ready 200 |
