@@ -195,7 +195,7 @@ test('the customer status carries the nine-stage reading, built from execution e
     code: 'CHECKOUT_LOADING',
     label: '正在获取支付信息',
     total: 9,
-    typicalMs: 82_500,
+    typicalMs: 78_600,
     floor: 20,
     ceiling: 62,
     since: '2026-09-11T11:13:36.882Z'

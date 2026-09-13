@@ -146,6 +146,10 @@
   let verified = null;      // 校验通过的卡密：{ cdk, product, state }
   let pending = null;       // 待确认：{ cdk, session, email, name } —— 尚未发请求
   let currentOrder = null;
+  // 客户看到的「订单号」就是他自己那张卡密（2026-09-13 Lemon 定）。状态接口不回传 CDK
+  // （凭证不该回传，这是对的），所以这里留住客户自己输入的那一份：兑换时是他在第一屏
+  // 输入的，查询时是他在查询框输入的。两条路都在前端，不经服务端。
+  let currentCdk = null;
   let pollTimer = null, pollStart = 0;
   let ringRaf = null, stageSeenAt = new Map(), shownStageCode = null, shownPct = 0;
 
@@ -357,6 +361,9 @@
       rows.push(['订阅方案', label, true]);
       if (order.customerEmail) rows.push(['账号', order.customerEmail]);
       rows.push(['开通时间', fmtTime(order.finishedAt || order.updatedAt) || '—', true]);
+      // 「订单号」给的是客户自己那张卡密——他手上本来就有，以后拿它就能查回这一单。
+      // 拿不到时（老客户用 PJV1- 订单号查进来的）整行不显示，不编一个假的给他。
+      if (currentCdk) rows.push(['订单号', currentCdk, true]);
     } else {
       if (order.customerEmail) rows.push(['账号', order.customerEmail]);
       if (!ticket) rows.push(['方案', label, true]);
@@ -664,6 +671,7 @@
       el.session.value = '';
       el.sessionOk.hidden = true;
       pending.session = null;
+      currentCdk = pending.cdk;
       pending = null;
       pollStart = Date.now();
       stageSeenAt = new Map();
@@ -698,6 +706,7 @@
     stopPoll();
     stopRing();
     currentOrder = null;
+    currentCdk = null;
     verified = null;
     pending = null;
     el.cdk.value = '';
@@ -748,7 +757,9 @@
   async function runQuery(value, { button = el.querySubmit } = {}) {
     setBusy(button, true);
     try {
-      const { order } = await api.getStatus(value.startsWith('PJV1-') ? { publicNo: value } : { cdk: value });
+      const byPublicNo = value.startsWith('PJV1-');
+      currentCdk = byPublicNo ? null : value;
+      const { order } = await api.getStatus(byPublicNo ? { publicNo: value } : { cdk: value });
       currentOrder = order;
       rememberPublicNo(order.publicNo);
       // 设计稿的查询屏就地给答案，不把客户推进完整的进度页。只有订单还在

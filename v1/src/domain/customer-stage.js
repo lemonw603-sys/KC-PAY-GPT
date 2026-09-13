@@ -43,17 +43,28 @@
    订单会停在 WAITING_FOR_CARD 很久。按占比它该拿 0 个点，那样客户等卡时环完全不动。
    给它 4 个点 + 15 秒的 typicalMs，等卡时环还能慢慢爬到 5，配合文案说明在做什么。
 
-   **样本只有两单，阶段 6 的波动已经很大（36.7s vs 96.5s）。** 攒够更多无干预成功单后
-   要回来重算——改这里只需改下表，前端从状态接口读 typicalMs，不另存一份。
+   **2026-09-13 08:xx 用三单重算了 typicalMs（ceiling 未动，重算后偏差在 1~2 个点内，不值得改）**：
+
+     阶段   单1      单2      单3      新 typicalMs   原值
+     4      24.8s    24.1s    29.8s    26.2s          24.5s
+     5      75.4s    89.6s    70.7s    78.6s          82.5s
+     6      36.7s    96.5s    40.9s    58.0s          66.6s   ← 单2 仍是离群值
+     7      8.9s     8.8s     10.8s    9.5s           8.85s
+
+   典型总时长 182.5s → **172.3s**。**这不是"把进度条调快"**——圆环走多久取决于流程本身
+   走多久，这里只是让它更贴合真实。要让客户等得更短，只能缩短流程（见 D-196 的分析）。
+
+   **样本仍只有三单，阶段 6 的波动依然很大（36.7s vs 96.5s）。** 每次攒到新的无干预成功单
+   就回来重算——改这里只需改下表，前端从状态接口读 typicalMs，不另存一份。
 */
 export const CUSTOMER_STAGES = Object.freeze([
   Object.freeze({ index: 1, code: 'ORDER_RECEIVED', label: '已收到订单', ceiling: 2, typicalMs: 1_000 }),
   Object.freeze({ index: 2, code: 'CARD_PREPARING', label: '正在准备支付卡', ceiling: 6, typicalMs: 15_000 }),
   Object.freeze({ index: 3, code: 'QUEUED_FOR_RUN', label: '正在排队', ceiling: 9, typicalMs: 3_000 }),
-  Object.freeze({ index: 4, code: 'ACCOUNT_VERIFYING', label: '正在验证账号', ceiling: 20, typicalMs: 24_500 }),
-  Object.freeze({ index: 5, code: 'CHECKOUT_LOADING', label: '正在获取支付信息', ceiling: 62, typicalMs: 82_500 }),
-  Object.freeze({ index: 6, code: 'PAYMENT_SUBMITTING', label: '正在提交支付', ceiling: 94, typicalMs: 66_600 }),
-  Object.freeze({ index: 7, code: 'PAYMENT_AWAITING', label: '正在等待支付结果', ceiling: 98, typicalMs: 8_850 }),
+  Object.freeze({ index: 4, code: 'ACCOUNT_VERIFYING', label: '正在验证账号', ceiling: 20, typicalMs: 26_200 }),
+  Object.freeze({ index: 5, code: 'CHECKOUT_LOADING', label: '正在获取支付信息', ceiling: 62, typicalMs: 78_600 }),
+  Object.freeze({ index: 6, code: 'PAYMENT_SUBMITTING', label: '正在提交支付', ceiling: 94, typicalMs: 58_000 }),
+  Object.freeze({ index: 7, code: 'PAYMENT_AWAITING', label: '正在等待支付结果', ceiling: 98, typicalMs: 9_500 }),
   Object.freeze({ index: 8, code: 'SUBSCRIPTION_CONFIRMING', label: '正在确认订阅', ceiling: 99, typicalMs: 1_000 }),
   Object.freeze({ index: 9, code: 'SUBSCRIPTION_ACTIVE', label: '订阅成功', ceiling: 100, typicalMs: 1_000 })
 ]);
