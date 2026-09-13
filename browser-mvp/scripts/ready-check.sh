@@ -23,8 +23,12 @@ if bb; then say "[OK]  BitBrowser 本地API"; else
   for i in 1 2 3 4 5 6 7 8 9; do sleep 5; bb && break; done
   bb && say "[修复] 比特浏览器已自动启动" || { say "[需操作] 比特浏览器起不来（可能停在登录页）"; warn=1; }
 fi
-svc=$(ssh -o BatchMode=yes -o ConnectTimeout=8 "$HOST" 'systemctl is-active pojia-web pojia-worker 2>/dev/null|tr "\n" " "' 2>/dev/null)
-echo "$svc" | grep -q "active active" && say "[OK]  生产服务 $svc" || { say "[警告] 生产服务 $svc"; warn=1; }
+# 这条 ssh 不走 prod-query.sh，所以要自己带连接复用，否则它就是那条"多出来的第 6 条"
+# 突发连接，被 sshd 拒掉后 svc 取空，再被下面播报成服务有问题（D-204 第三处）。
+svc=$(ssh -o BatchMode=yes -o ControlMaster=auto -o "ControlPath=/tmp/.pojia-cm-$(id -u)-%h-%p-%r" -o ControlPersist=30 -o ConnectTimeout=8 "$HOST" 'systemctl is-active pojia-web pojia-worker 2>/dev/null|tr "\n" " "' 2>/dev/null)
+if echo "$svc" | grep -q "active active"; then say "[OK]  生产服务 $svc"
+elif [ -z "$(printf '%s' "$svc" | tr -d '[:space:]')" ]; then say "[失败] 生产服务状态查不到（SSH 未返回）——查不到不等于服务挂了，先看连接再下结论"; warn=1
+else say "[警告] 生产服务 $svc"; warn=1; fi
 pgrep -f production-live-pool-worker >/dev/null && say "[警告] 有残留 worker 在跑" || say "[OK]  无残留 worker"
 if nc -z 127.0.0.1 13306 2>/dev/null; then
   PAY=$("$DIR/prod-query.sh" "SELECT setting_value FROM app_settings WHERE setting_key='browser_payment_writes_enabled'" 2>/dev/null | tr -d '[:space:]')
@@ -41,12 +45,18 @@ if nc -z 127.0.0.1 13306 2>/dev/null; then
     ELIG_SQL=$(cd "$ROOT/v1" && node -e 'import("./src/services/card-inventory-eligibility.js").then(m=>process.stdout.write(m.eligibleInventoryCardSql("c",process.argv[1])))' "$MINBAL" 2>/dev/null)
     if [ -z "$ELIG_SQL" ]; then say "[失败] 生成资格 SQL 失败（v1/src/services/card-inventory-eligibility.js 是否可加载）"; warn=1; else
       ELIG=$("$DIR/prod-query.sh" "SELECT COUNT(*) FROM cards c WHERE $ELIG_SQL" 2>/dev/null | tr -d '[:space:]')
+      # 查询失败会返回空，而 ${ELIG:-0} 会把它变成 0，于是"查不到"被播报成"没有卡"。
+      # 2026-09-13 实际踩到：SSH 连接被限流，这里取空 → 报「可分配卡 0 张」，
+      # 而同一时刻按正式口径实查是 1 张（卡 5371，余额 34.28）。假阴性会让人去开
+      # 根本不需要的卡。门槛那一半上午刚修过，这一半当时漏了。
+      case "$ELIG" in ''|*[!0-9]*) say "[失败] 资格查询没返回数字（ELIG='${ELIG}'）——查不到不等于没有卡，不要据此开卡"; warn=1; ELIG=""; ;; esac
     fi
   fi
   HOLD=$("$DIR/prod-query.sh" "SELECT GROUP_CONCAT(CONCAT(public_no,'(',status,')')) FROM orders WHERE status NOT IN ('RECHARGE_SUCCESS','RECHARGE_FAILED','CLOSED') AND assigned_card_id IS NOT NULL" 2>/dev/null | tr -d '[:space:]')
   [ "$HOLD" = "NULL" ] && HOLD=""
   # 卡被"待跑的非终态单"占着是正常态（来单后唯一那张卡就在它手里），不算阻断；只有既无可分配卡又无人占卡才是真没卡。
-  if [ "${ELIG:-0}" -ge 1 ] 2>/dev/null; then say "[OK]  可分配卡 ${ELIG} 张（Plus 门槛 $MINBAL，正式资格 SQL）"
+  if [ -z "$ELIG" ]; then :  # 上面已报 [失败]；取不到就不再假装能判断有没有卡
+  elif [ "$ELIG" -ge 1 ] 2>/dev/null; then say "[OK]  可分配卡 ${ELIG} 张（Plus 门槛 $MINBAL，正式资格 SQL）"
   elif [ -n "$HOLD" ]; then say "[信息] 可分配卡 0 张，但卡在待跑单手里: $HOLD（演练残单才需要 v1/scripts/close-rehearsal-order.mjs 收口）"
   else say "[警告] 可分配卡 0 张且无人占卡——新单会卡在等卡"; warn=1; fi
   [ -n "$HOLD" ] && say "[信息] 非终态占卡订单: $HOLD"

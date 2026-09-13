@@ -1914,3 +1914,408 @@ Link 的 iframe 里有现成控件：`Palitan`（更改）、`Alisin`（移除�
 
 抓现场时页面上有 hCaptcha 且处于 `Please try again` 状态。**人机验证一出现就该推手机
 （D-190 续），但 Lemon 没收到通知**——识别为何没生效尚未查明，记在这里不遗漏。
+
+---
+
+## D-202（2026-09-13 10:42–11:05 UTC）编号归属说明
+
+D-202 这个编号在代码注释里已被占用，指 **Stripe Link 接管**那次改动：新建
+`browser-mvp/src/stripe-link-picker.js`，把 Link 处理挪到 `observeCheckout` **之前**，
+落 `saved-payment-method` 埋点，超时改从契约的 `secureFieldTimeoutMs` 读（兜底
+`SAVED_METHOD_WAIT_MS = 15_000`）。过程与教训并入 D-201 正文，此处只留编号索引，
+避免账本出现悬空号。
+
+**2026-09-13 12:20 UTC 现场复验：这块已经生效。** 卡框顶部显示
+`Mag-log out sa Link`，卡的三个输入框（`cc-number` / `cc-exp` / `cc-csc`）全部
+挂载且可见——保存的付款方式确实让开了，Link 不再是阻塞点。
+
+---
+
+## D-203（2026-09-13 12:30 UTC）连环失败的真根因：第四处兜底 + 清空销毁失败现场
+
+### 起因
+
+Lemon 连问两遍同一个问题：「账单明明都填好了，就差点一个订阅，为什么点不了？」
+
+### 现场取证（12:20 UTC，lane-1 窗口，只读，未触碰页面）
+
+| 区域 | 实测 |
+|---|---|
+| 账单姓名 / 地址 | 已填 |
+| 价格 | ₱982.14，Tax 0%，Due today ₱982.14 |
+| Subscribe 按钮 | 存在、`disabled=false` |
+| 卡号 / 有效期 / CVV | 三框**均挂载、均可见、均为空** |
+
+### 两条当场收回的推断
+
+1. **hCaptcha 不是拦路的。** 页面上确有 hCaptcha 处于 `Please try again` 状态，
+   但实测其 frame 屏幕位置 **y = -8645**，在可视区外，不在支付路径上。上一节
+   「今天这单还有一个未解释的因素」据此作废——它不是本单失败的因素。
+   （推手机通知为何没触发，是独立问题，仍未查明。）
+2. **「执行器一个字都没填进去」是错的。** 卡**填进去过**，是失败后被 finally
+   清掉的。我拿清空后的空框当成了"从没填过"，据此向 Lemon 报了错误根因。
+
+### 真实链路
+
+1. `fillSecureCardFieldsNonPayment` 填入卡号 / 有效期 / CVV——**成功**
+2. `whileFilled` 回调：填账单地址 → 填邮箱 → `observeCheckoutAfterRequote`
+3. requote 观察抛 `locator.count: Target page, context or browser has been closed`
+4. `executor.js` 该处 catch **没判瞬时故障**，包成 `CHECKOUT_OBSERVATION_FAILED`
+   → 终态失败 → **退 CDK**
+5. `nonpayment-card-fill.js` 的 finally 无条件清空三个卡字段
+6. 运营看到的：账单在、价格对、按钮亮、**卡框空**——「就差点一下」
+
+`isTransientPageError` 的正则（`executor.js:62`）本来就能匹配那条措辞。漏的不是
+匹配，是**这一处 catch 根本没调它**。
+
+### 决定一：补上第四处瞬时故障判定
+
+`executor.js` 中 `whileFilled` 内的 requote 观察 catch 加
+`isTransientPageError(error) ? 'BROWSER_TRANSIENT_PAGE_ERROR' : 'CHECKOUT_OBSERVATION_FAILED'`。
+
+`BROWSER_TRANSIENT_PAGE_ERROR` 已在 `SAFE_CARD_RETRY_CODES` 内（D-198），因此断连
+将回到 `CARD_READY` 等重试，**不再退 CDK**。
+
+**这是同一教训当天第四次。** D-198 改了两处 Session catch，D-202 补了观察器首次
+调用那处，这是第三处漏网的兄弟。每次都是"只改了眼前看到的那一处"。
+
+### 决定二：失败现场原样保留（Lemon 要求）
+
+> 「点确认订阅前那一步出问题就把卡资料全清空，那个没有必要做，遇到问题停住就好了」
+
+改法不是"永不清空"，而是按**失败发生的位置**分：
+
+| 场景 | 行为 | 理由 |
+|---|---|---|
+| 正常走完 | 清空 | 原行为，不留卡数据 |
+| **填卡中途**失败（租约丢失/过期） | 清空 | 半张表单帮不了任何人；原有测试守着这条 |
+| **填完之后**失败（账单/requote） | **保留** | 完整现场：卡、账单、价格都在，运营可直接接手 |
+
+实现：`allFieldsWritten && !finishedCleanly` 时跳过清空。
+
+**安全边界（已验证，非推断）**：下一单以 `startFresh: true` 运行
+（`shared-runtime-integration.js:556`，`run?.recovered !== true`），会先调用
+`closeStaleOrderPages` 关掉这个 checkout 页面，**卡号不会带进下一个客户的现场**。
+
+### 为什么这条比听起来重要
+
+清空**销毁了失败现场的证据**，让「填了又被清」和「从没填进去」在事后无法区分——
+我今天就是这样判错根因并向 Lemon 报了错的。Lemon 提这条是为了能手动接手；实际
+收益更大的是：**排查不再面对一个被擦干净的犯罪现场。**
+
+### 验证
+
+- `test/nonpayment-card-fill.test.js` 新增 `whileFilled failure holds the filled
+  scene for the operator`，断言三个字段在 whileFilled 抛错后仍非空
+- 该文件 5/5 通过（含两条原有的"失败仍清空"用例，未破）
+- `test/executor.test.js` 17/17 通过
+- 全量 `npm test`：277 项，**268 通过 / 0 失败 / 9 跳过**
+
+### 尚未验证
+
+代码已改、测试全绿，但**生产 worker 尚未重启**，因此以上行为在生产**未生效**。
+重启时机交 Lemon 决定（他此前明确要求跑单期间不重启）。
+
+---
+
+## D-204（2026-09-13 12:50 UTC）supervisor 每分钟自己把自己挡在门外：SSH 连接风暴 + 三处「查不到」被播报成「坏了」
+
+### 症状
+
+D-203 改完重启 worker，旧进程正常停止，**新进程 13 分钟没起来**。supervisor 日志循环：
+
+```
+12:41:07Z 付款开关为 取不到，只等不跑
+12:43:02Z 等待条件就绪：[警告] 生产服务
+12:44:07Z 付款开关为 取不到，只等不跑
+```
+
+### 两次错误判断，都当场证伪
+
+1. **「可分配卡 0 张，所以 supervisor 不拉 worker」**——按正式资格口径实查是
+   **1 张（卡 5371，余额 34.28，门槛 16.00）**。卡一直够。
+2. **「SSH 被限流，因为我排查时查得太密」**——裸 `ssh 'echo OK'` 当场成功，
+   紧接着的 `prod-query.sh` 却失败。不是我查得密，是**工具自己的调用模式**。
+
+### 根因：一轮 6 条 SSH 突发
+
+- `prod-query.sh` 每次调用都新开一条 SSH 去 `cat /etc/pojia/runtime.env` 取凭证
+- `ready-check.sh` 一轮调它 **5 次**，外加第 26 行一条独立的 `ssh` 查 systemctl
+- supervisor 每轮：查付款开关 1 条 + ready-check 6 条 = **每分钟 7 条突发连接**
+
+实测单条成功率约 **75%**（8 次探测失败 2 次），而网络层 **ping 0% 丢包、RTT 0.678ms**
+——排除网络，是 sshd 未认证并发上限在随机拒连。一轮全过的概率 ≈ 0.75⁷ ≈ **13%**。
+
+**supervisor 每分钟自己制造一次连接风暴，然后被自己造的风暴挡在门外。**
+
+### 修复一：复用连接
+
+`prod-query.sh` 与 `ready-check.sh:26` 的 ssh 都加
+`ControlMaster=auto` + `ControlPath=/tmp/.pojia-cm-$(id -u)-%h-%p-%r` + `ControlPersist=30`。
+
+`ControlPersist` 只留 30 秒：够覆盖一轮查询，不让一条 root 连接长期驻留。
+socket 由 ssh 自建为 0600。
+
+**验证**：改前一轮全过 ~13%，改后连打 6 次 **6/6**，完整 ready-check **全部就绪 ✓**，
+其中 `生产服务 active active`——服务从头到尾都是好的。
+
+### 修复二：三处「查不到」不再冒充「坏了」
+
+同一个坑今天踩了三次，每次都是 `2>/dev/null` 吞掉错误后拿空值当业务结论：
+
+| 位置 | 原行为 | 危害 |
+|---|---|---|
+| 余额门槛 | 取空静默按 0 | 上午已修 |
+| **可分配卡 ELIG** | 取空 → `${ELIG:-0}` → 报「0 张且无人占卡」 | **会让人去开一张根本不需要的卡** |
+| **生产服务 svc** | 取空 → 报「[警告] 生产服务 」 | 让人以为线上服务挂了 |
+
+后两处已改为：取不到就报 `[失败]`，并把话说明白——
+「查不到不等于没有卡，不要据此开卡」「查不到不等于服务挂了，先看连接再下结论」。
+
+### 教训
+
+判断工具的**失败模式**和它的**判断规则**一样重要。规则抄错会误判，
+错误处理写错会**用最自信的语气播报一个纯属虚构的结论**——而人会照着它去开卡、去重启服务。
+
+`grep -rn "2>/dev/null" scripts/` 里每一处都该问一句：查不到的时候，你打算说什么？
+
+---
+
+## D-205（2026-09-13 13:15 UTC）清空卡资料的是**两处** finally，D-203 只改了不出事的那处
+
+### Lemon 的原话（第二次，同一个问题）
+
+> 「还是出现之前的问题，你根本没有修复好，所有的账单信息全部都填写完整了之后，
+> 你就一下子把它全清空了，就没有点订阅」
+
+他是对的。
+
+### 我错在哪
+
+这条链路上有**两个**"填卡 → 用完清空"的地方：
+
+| 文件 | 阶段 | D-203 |
+|---|---|---|
+| `nonpayment-card-fill.js` | 预检：填卡让页面重新报价，读完税就退 | ✅ 改了 |
+| **`live-chatgpt-payment-adapter.js`** | **真正付款：填卡 → 填账单 → 等零税 → 点订阅** | ❌ **没碰** |
+
+Lemon 说的从头到尾都是「点订阅前那一步」——那就是 adapter。我改的是它前面
+那个预检阶段。**D-203 的分析对，落点错。**
+
+证据：失败码 `CHECKOUT_DRIFT`，这个码只有 adapter 会抛
+（`submitted ? 'PAYMENT_RESULT_UNKNOWN' : 'CHECKOUT_DRIFT'`）。
+
+**这是"只改了眼前看到的那一处"当天第五次。** 前四次是 isTransientPageError
+（D-198 两处、D-202 一处、D-203 一处）。同一个动作，同一个错法。
+
+### 决定一：adapter 也保留现场，但分两类
+
+改的时候测试挡下一个我没想到的资金风险——`LIVE adapter never submits a
+non-zero-tax quote` 这条测试红了，而它是对的：
+
+**税不为零时保留现场 = 把人往违规付款上推。** 运营看到的会是一个填好的表单加一个
+亮着的订阅按钮，而价格是含税的 ₱1,100（免税价 ₱982.14）。手一点就多付 ₱117.86，
+正好违反「必须零税」这条硬约束。
+
+所以分界不是"卡填完没提交"，而是：
+
+| 失败类型 | 例子 | 行为 |
+|---|---|---|
+| **故障类** | 断连、超时、页面抖动 | **保留现场** — 该付没付成，运营接手点订阅 |
+| **规则拒绝类** | 税不为零、报价对不上、币种/按钮变了 | **清空** — 本来就不该付，空表单才是正确信号 |
+
+实现：内层 `catch` 在 `finally` 之前跑，用 `POLICY_REFUSAL_PATTERN` 给 finally 定性
+（按 message 匹配而非 code——这几种失败**都**是 CHECKOUT_DRIFT，code 分不开
+"页面坏了"和"价格不对"）。
+
+### 决定二：CHECKOUT_DRIFT 必须带 stage
+
+以前它抛出来是光秃秃的，`{status, reasonCode, orderId}` 三个字段，连死在哪一步
+都说不出——今天连着两单都是这样，我全程只能猜。现在 `error.stage` 精确到
+`fill-billing-address` / `wait-for-zero-tax-requote` / `final-pre-submit-check`。
+
+### 验证
+
+- `test/live-chatgpt-payment-adapter.test.js` **10/10**，新增
+  `D-205: a fault before submit holds the filled scene for the operator`
+  （同时断言 `error.stage === 'final-pre-submit-check'`）
+- 税不为零那条测试**恢复绿**，且语义正确：它现在证明的是"规则拒绝要清空"
+- 全量 `npm test`：278 项，**269 通过 / 0 失败 / 9 跳过**
+- worker 重启：PID 10503，起于 **13:12:59Z**，晚于 adapter 改动 13:11:11Z ✓
+- **重启只花 20 秒**（上一次 18 分钟）——D-204 的 SSH 连接复用见效
+
+### 给下一个接班人
+
+改行为之前，先 `grep -rn "fill('')" src/` 数一数**一共有几处**。
+今天两次都是找到一处就动手，然后被现场打脸。
+
+---
+
+## D-206（2026-09-13 13:45 UTC）运营手动走通一单的全程轨迹：执行器做不到的四件事，记录里看得见
+
+### 背景
+
+`chenxing66623@gmail.com` 这一单执行器跑了 12 次、近 3 小时全败（D-203/D-205）。
+Lemon：「你说有问题，但我能走过，你要全程记录清楚。」他在 Pilot（lane-1）窗口手动
+操作，我以 6 秒页面 / 18 秒数据库的频率只记变化，原文存
+`docs/evidence/manual-payment-trace-2026-09-13-chenxing.log`（30 行，无卡号/CVV，只记「有值/空」）。
+
+### 轨迹（UTC）
+
+| 时刻 | 页面 | 备注 |
+|---|---|---|
+| 13:27:29 | `#pricing` | 起点 |
+| **13:29:02** | **`/auth/login`** | **他重新登录了** |
+| 13:29:25 | `chatgpt.com/` | 登录后回首页 |
+| 13:30:58 | `/checkout/<id>` ₱982.14 按钮可点 | 进结账页 |
+| 13:31:11 | hCaptcha `Please try again` 出现 | 之后全程存在 |
+| 13:31:21 | 卡框 空/空/空 | 距进页 23 秒 |
+| 13:31:46 → 13:32:10 | 卡号 → 有效期 → CVV | 填卡 50 秒 |
+| 13:32:35 → 13:33:13 | 账单地址 → 姓名 Ashley | 填账单 63 秒 |
+| 13:33:46 | Tax (0%) ₱0.00，按钮禁用 | 提交中 |
+| 13:34:23 | 跳回 `chatgpt.com/` | 提交后 37 秒 |
+| 13:35:19 | `chatgpt.com/` 按钮可点 | 结束 |
+
+全程 3.5 分钟。执行器冲突告警一次没响（待跑单始终 0）。
+
+### 付款成功——**尚未独立核实**
+
+- 卡 5371 库内余额 34.28 未动，`last_transaction_synced_at` 为空（没同步过）
+- 卡台 `highvcc-card.mjs` token 过期，交易流水查不了
+- 事后探 Pilot 窗口：`/backend-api/me` 200 但 email 空，plan = **guest**——他已登出，
+  看不到 Plus 状态
+- 唯一证据是 `13:33:46 按钮禁用 → 13:34:23 跳回首页` 这条间接轨迹
+
+Lemon 口述付成了。落盘按「待核实」记，等卡台 token 刷新后查流水补硬证据。
+
+### 与执行器的四条已验证差别
+
+1. **他登录，执行器注入。** 13:29:02 走了 `/auth/login`。执行器从不登录，只注入客户交的
+   Session cookie；今天第 12 次失败（13:15）正是注入后探账号 403。他绕过了这一步。
+   这也解开了我们俩的分歧：我说「Session 失效」指那份 cookie，他说「不是失效」指账号——
+   **两句都对，说的不是一回事。**
+2. **hCaptcha 不拦路，第二次证实。** `Please try again` 从 13:31:11 挂到 13:33:46，他无视
+   照付。D-203 已实测它在屏幕外（y=-8645）。
+3. **他不断连。** 执行器 D-203 那次死在填完卡重读价格时 CDP 断连；人走鼠标键盘，无此通道。
+4. **节奏可对照**：进页→卡框 23s、填卡 50s、填账单 63s、提交→成功 37s。执行器各超时
+   （secureFieldTimeoutMs 45s、repriceTimeoutMs）在此节奏下应够——但那是**并行遍历所有
+   frame** 的探测，与人的**顺序操作**不是同一种压力。
+
+### 不能下的结论
+
+前 11 次执行器在结账阶段的确切 stage——D-205 之前不记这个字段，只有一次带诊断（断连）。
+一个样本不足以说"执行器为什么在结账页失败"。**下次执行器再跑会带 stage，届时才能与本轨迹逐步对齐。**
+
+### 待办（依赖 Lemon）
+
+- [x] 付款成功——Lemon 13:55 UTC 确认：账号已是 Plus，与客户确认过
+- [x] 登录方式——**上号器一键登录**，付完款账号立刻显示登出（解释了事后探到 guest）。
+      执行器默认 `BROWSER_SESSION_PROVIDER=COOKIE`（plist 与进程环境均未设），EXTENSION 模式代码在、有两个单测、
+      **无真单**。D-140 曾判"上号器与 Cookie 注入同类机制"，但今天是同账号、同窗口、同出口的直接对照：
+      注入探账号 403，一键登录 3.5 分钟付成。**是否切 EXTENSION，Lemon 定。**
+- [ ] 刷卡台 token → 查 5371 流水做硬证据（Lemon 在刷）
+- [x] **CDK 已锁回 REDEEMED**（13:58 UTC，`close-manually-fulfilled-order.mjs` 不带 `--card-used`，独立核实：
+      订单 `RECHARGE_SUCCESS`、CDK `REDEEMED`）。**账本未记**：脚本对 RECHARGE_FAILED 拒 `--card-used`，
+      仓库无正式记账写入工具，不自拼 SQL——**5371 与 3159 各欠 1 笔，记账方式待 Lemon 定**
+- [ ] 取消续费：Lemon 去账号里关，然后后台点「已在账号里取消续费」（与 qixuanyu03、810104104 同批）
+
+### EXTENSION 模式就绪度核实（2026-09-13 14:05 UTC，五项全通过）
+
+Lemon 说「上号器一键登录」之后立即核实这条路能不能走。**结论：前置条件全部满足，切换只差一个环境变量。**
+
+| 核实项 | 结果 |
+|---|---|
+| 代码路径 | `production-live-pool-worker.js:230/276` 按 `sessionProviderMode` 选 adapter，preflight 与 live 两处都接 |
+| 扩展路径 | `DEFAULT_EXTENSION_PATH` = `~/Library/Application Support/BitBrowser/BitExtensions/384ef55b-…`，**本机存在**，含 `manifest.json`/`popup.html`/`popup.js` |
+| worker 未传 `extensionPath` | **不影响**——构造函数有默认值（一度误判为"会抛 TypeError 起不来"，实测构造成功，收回） |
+| 扩展在 Pilot 窗口里 | **打开 `chrome-extension://cgiiojcebppjmambpplijjjhjiokjdgd/popup.html` 成功**，标题「诺汇盛专用上号器」，执行器要找的 `#sessionToken`/`#loginButton`/`#statusMessage` **三个控件全在**（只加载页面，未点任何按钮，看完即关） |
+| 单测 | `extension-session-bootstrap` + `session-loader-extension` **14/14** |
+
+**切换动作**：给 LaunchAgent plist 加 `BROWSER_SESSION_PROVIDER=EXTENSION` → `kickstart -k`（约 20 秒）。
+**回滚**：删掉该变量再 kickstart，同样 20 秒。
+**仍然未知**：EXTENSION 模式从未跑过真单。切了之后第一单就是它的真单验证，按 D-139「失败一次即转人工」。
+
+**等 Lemon 决定。** 改 plist 属于改运行配置，不在"直接执行"范围。
+
+---
+
+## D-207（2026-09-13 14:15 UTC）账本欠的不是"两笔记录"，是"两笔状态标错了"——并附今日自审：哪些是事实，哪些是我搞错的
+
+### 一、账本：先前的描述是错的
+
+文档里一直写着「手动付款那单 `card_consumption_ledger` **无对应行**」。**这是错的。**
+2026-09-13 14:10 UTC 实查：**今天每一个 `RECHARGE_SUCCESS` 订单都有且只有 1 行账本**，
+三笔手动付款（`PJV1-pom5NfWi…` / `PJV1-NnL3DWl…` / `PJV1-BUGAhkA…`）也都有行。
+
+真实问题是**状态**：这些行是 `RELEASED`（释放）而不是 `CONSUMED`（消费）——因为收口脚本
+`close-manually-fulfilled-order.mjs` 默认按"分配的卡没用过"处理，把卡释放了。
+
+而资格 SQL 的用量只数三种状态：
+
+```sql
+AND eligible_usage.status IN ('RESERVED','CONSUMED','RECONCILIATION')
+```
+
+`RELEASED` 不在内 → 用量少算。所以 3159 显示 2 实际 3，5371 显示 0 实际 1（16 行全是 RELEASED，
+其中 15 行是今天 12 次失败的真实释放，1 行是手动付款该记而没记成的）。
+
+### 二、建议的补法：新增 `RECONCILIATION` 行，**不动** `RELEASED` 行
+
+技术上能把 `RELEASED` 改回 `CONSUMED`（`transitionCardConsumptionInTransaction` 接受
+`allowedCurrentStatuses`），但**默认只允许 `RESERVED → CONSUMED`**，改它等于显式绕过状态机。
+不建议，理由：
+
+1. **`RELEASED` 是真事实**——系统确实释放了那张卡，抹掉它就是篡改审计链
+2. **`RECONCILIATION` 正是为这件事设计的状态**，且已被资格 SQL 计入用量
+3. 补完之后账本读起来是完整的因果："系统释放了 → 人工对账补记了一笔消费"，
+   而不是"这笔消费不知怎么就从释放变成了消费"
+
+**需要写一个正式脚本**（仓库现无此入口）：复用 `reserveCardConsumptionInTransaction` +
+`transitionCardConsumptionInTransaction(targetStatus:'RECONCILIATION')`，走正式连接池、
+带事务、带审计、默认 `--dry-run`，照 `v1/scripts/set-card-stock-threshold.mjs` 的样子。
+影响两张卡各 1 笔：3159 用量 2→3（到上限，本就已 DEPLETED）、5371 用量 0→1。
+
+**等 Lemon 点头再写。** 这是写资金账本。
+
+### 三、今日自审：Lemon 问「哪些是事实，哪些是你搞错的」
+
+#### A. 已验证的事实（可以沉淀，每条都有当场证据）
+
+| 事实 | 证据 |
+|---|---|
+| `executor.js` 填完卡后 requote 观察的 catch 漏判瞬时故障（第四处） | 代码 + 新增测试，全量 269 通过 |
+| 清空卡资料的 finally 有**两处**，出事的是 adapter 那处 | 失败码 `CHECKOUT_DRIFT` 只有 adapter 会抛 |
+| 税不为零时保留现场会诱导违规付含税价 | 已有测试当场变红挡住 |
+| supervisor 每轮开 7 条 SSH 撞并发上限，自己挡自己 | ping 0% 丢包、RTT 0.678ms，但 SSH 8 次失败 2 次；加 ControlMaster 后一轮 6/6 |
+| `ready-check.sh` 三处把"查不到"播报成"坏了" | 三处实测：可分配卡 0 张（实为 1）、生产服务空（实为 active active）、门槛取空 |
+| hCaptcha 不拦路 | 两次证实：frame 屏幕位置 y=-8645；Lemon 手动全程它挂着照样付成 |
+| 运营手动 3.5 分钟走通，四步节奏 | 30 行轨迹，`docs/evidence/manual-payment-trace-2026-09-13-chenxing.log` |
+| EXTENSION 模式五项前置全就绪 | popup 打开成功、三个控件在、单测 14/14 |
+| **账本没缺行，是状态错标** | 本条第一节 |
+
+#### B. 我搞错并已收回的（**都是"拿观察补原因"**）
+
+| 我说过 | 实际 | 怎么错的 |
+|---|---|---|
+| 「hCaptcha 挡住了订阅」 | 它在屏幕外 y=-8645 | 看到 `Please try again` 就当成拦路，没查位置 |
+| 「卡一个字都没填进去」 | 填了，失败后被 finally 清掉 | 拿清空后的空框当"从没填过"，**据此给 Lemon 报了错误根因** |
+| 「SSH 被我查太密限流了」 | 是 `prod-query.sh` 每次新建连接的设计 | 把自己当成原因，没对比裸 SSH |
+| 「可分配卡 0 张」 | 实为 1 张（5371，34.28） | 信了工具的假阴性，没跑正式口径复核 |
+| 「切 EXTENSION 会让 worker 起不来」 | 构造函数有默认路径，能起 | 看到断言就推断，没试 |
+| 「页面在两分钟内变了」 | 是我自己的 host 过滤把 iframe 滤没了 | 把工具缺陷当成现场变化 |
+| 「Session 失效了」 | **只对一半** | 那份 cookie 不能用是真的，但 Lemon 一键登录能进——**账号本身没失效**。我把"cookie 不能用"说成了"Session 失效"，听起来像客户的锅 |
+
+#### C. 未验证的推断（已在原文标注，不要当事实引用）
+
+- 「12 次反复重试可能触发了 ChatGPT 风控」——**无证据**，Lemon 随后手动一次就过，倾向于不成立
+- 「前 11 次执行器在结账页死在哪个 stage」——D-205 之前不记这个字段，**一个样本不下结论**
+- 「Lemon 手动付款成功」——2026-09-13 13:55 UTC Lemon 口头确认账号已 Plus、与客户核对过；
+  **卡台流水尚未核对**（token 在刷）
+
+### 四、这条自审本身的用处
+
+今天 B 栏七条，**七条全是同一个错法**：看到一个现象，立刻给它配一个原因，然后拿这个原因去回答 Lemon。
+D-172 第 2 条写的就是这件事（"不给观察补原因"），今天还是犯了七次。
+
+**下一个接班人读到这里请注意**：A 栏可以直接引用；B 栏的每一条都曾经以同样自信的语气写在对话里过。
+区别不在语气，在有没有当场去查那一下。

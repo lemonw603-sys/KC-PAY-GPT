@@ -39,9 +39,20 @@ function values(material) {
 }
 
 /**
- * Fills Stripe-like secure fields and immediately clears only fields written by
- * this call. This is a non-payment simulation primitive: it has no click or
- * submit operation and returns only counts/status, never card material.
+ * Fills Stripe-like secure fields and clears only fields written by this call.
+ * This is a non-payment simulation primitive: it has no click or submit
+ * operation and returns only counts/status, never card material.
+ *
+ * Clearing happens on the clean path and on a *partial* fill failure. It does
+ * NOT happen once every field is written and the failure comes from the
+ * whileFilled callback (billing address, requote observation): that page is a
+ * complete failure scene — card, billing and price all on screen — and it is
+ * left intact so an operator can take over and so the run can be diagnosed
+ * (D-203, requested by the operator 2026-09-13). Wiping it was actively
+ * misleading: it made "filled, then wiped" read as "never filled".
+ * Safety boundary: the next order runs with startFresh=true
+ * (shared-runtime-integration.js) which closes this checkout page before
+ * anything else, so the PAN never reaches the following customer's session.
  */
 export async function fillSecureCardFieldsNonPayment(page, {
   cardMaterialLeaseProvider,
@@ -62,6 +73,8 @@ export async function fillSecureCardFieldsNonPayment(page, {
     const inputValues = values(cardMaterial);
     const fields = {};
     const written = [];
+    let allFieldsWritten = false;
+    let finishedCleanly = false;
     for (const [name, selector] of Object.entries(FIELD_SELECTORS)) {
       fields[name] = await uniqueVisibleField(page, selector, name);
     }
@@ -77,11 +90,17 @@ export async function fillSecureCardFieldsNonPayment(page, {
       }
       if (material === undefined) cardMaterialLeaseProvider.assertActive(lease);
       await assertContinue();
+      allFieldsWritten = true;
       if (whileFilled) await whileFilled(cardMaterial);
+      finishedCleanly = true;
       return { status: 'FILLED_AND_CLEARED', fieldsFilled: written.length, fieldsCleared: 0, submitCalls: 0, paymentClicked: false };
     } finally {
+      // Hold the scene only when the card went in whole and the *later* step failed.
+      // A partial fill (lease lost/expired mid-field) is a half-written form that
+      // helps nobody, so it still gets wiped.
+      const holdForOperator = allFieldsWritten && !finishedCleanly;
       let fieldsCleared = 0;
-      for (const field of written) {
+      for (const field of holdForOperator ? [] : written) {
         try {
           await field.fill('', { timeout: timeoutMs });
           fieldsCleared += 1;

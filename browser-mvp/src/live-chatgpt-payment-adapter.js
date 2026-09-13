@@ -58,6 +58,9 @@ async function observeStrictQuoteAfterReprice(page, checkoutContract, timeoutMs,
  * The adapter never decides success from a click; the caller must provide an
  * outcome observer, otherwise the result is deliberately UNKNOWN.
  */
+// 「规则说不该付」的失败：留下填好的表单会诱导人违规付款，必须清空。
+const POLICY_REFUSAL_PATTERN = /tax is not zero|quote (total does not match|is incomplete)|submit selector changed|currency does not match|summary is incomplete/i;
+
 export class LiveChatGPTPaymentAdapter {
   constructor({ enabled = false, confirmation = '', outcomeObserver = null, challengeGate = null } = {}) {
     this.enabled = enabled === true && confirmation === LIVE_PAYMENT_CONFIRMATION;
@@ -94,6 +97,16 @@ export class LiveChatGPTPaymentAdapter {
     }
     let submitted = false;
     let holdForReconcile = false;
+    // D-205：卡三个字段都写进去了。之后任何失败都是"就差点一下"的完整现场，
+    // 清掉它等于毁掉运营接手的机会和排查的唯一证据。
+    let cardFieldsFilled = false;
+    // D-205：区分两类失败前失败。
+    //  - 故障类（超时、断连、页面抖动）：该付但没付成 → 留现场给运营接手。
+    //  - 规则拒绝类（税不为零、报价对不上、币种/按钮变了）：**本来就不该付**。
+    //    留一个填好的表单 + 亮着的订阅按钮，等于把人往违规付款上推：含税价
+    //    ₱1,100 vs 免税价 ₱982.14，一点下去就多付 ₱117.86，而「必须零税」
+    //    是项目硬约束。这类必须擦干净，让人看到空表单就知道有问题。
+    let policyRefusal = false;
     // D-154: set only when a human-verification challenge raised by our single
     // submit click is still unanswered when we let go. The filled form is then
     // left for the PERSON who has to satisfy that challenge; clearing it would
@@ -124,6 +137,7 @@ export class LiveChatGPTPaymentAdapter {
           if ((await field.inputValue()).trim()) throw new LiveChatGPTPaymentAdapterError(`${name} secure field is not empty`, 'CHECKOUT_DRIFT');
           await field.fill(values[name]);
         }
+        cardFieldsFilled = true;
         if (!cardMaterial.billingAddress) {
           throw new LiveChatGPTPaymentAdapterError('billing address is required', 'CARD_MATERIAL_INVALID');
         }
@@ -217,6 +231,14 @@ export class LiveChatGPTPaymentAdapter {
             estimatedTax: strictCheckout.estimatedTax,
           },
         };
+      } catch (error) {
+        // Runs before the finally below, so it can tell that block which kind of
+        // failure this was. Matching on message (not code) because all of these
+        // arrive as CHECKOUT_DRIFT — the code alone cannot separate "the page
+        // broke" from "the price was wrong".
+        policyRefusal = POLICY_REFUSAL_PATTERN.test(String(error?.message || ''))
+          || POLICY_REFUSAL_PATTERN.test(String(error?.cause?.message || ''));
+        throw error;
       } finally {
         // Clear the secure card fields on every exit EXCEPT the intentional
         // reconcile hold (holdForReconcile), which deliberately keeps the filled
@@ -229,7 +251,19 @@ export class LiveChatGPTPaymentAdapter {
         // The one exception is holdForHumanVerification (D-154): the challenge is
         // still on screen and only a person can clear it, so the form stays. The
         // next order navigates to its own checkout, so nothing is reused.
-        if ((submitted || !holdForReconcile) && !holdForHumanVerification) {
+        //
+        // D-205 adds a second exception, requested by the operator after watching
+        // it happen twice: the card went in whole, billing was filled, the price
+        // settled — and then a pre-submit step failed and this block wiped the
+        // lot. What the operator saw was a complete form emptying itself one step
+        // short of Subscribe. Every normal return below happens after
+        // submitted=true, so "filled but never submitted" is exactly the
+        // fail-before-payment case, and that scene now stays on screen.
+        // Same safety boundary as D-203: the next order runs startFresh=true and
+        // closes this checkout page first, so the PAN never reaches another
+        // customer's session.
+        const holdForOperator = cardFieldsFilled && !submitted && !policyRefusal;
+        if ((submitted || !holdForReconcile) && !holdForHumanVerification && !holdForOperator) {
           for (const field of Object.values(fields)) {
             try { await field.fill(''); } catch {
               await field.evaluate((element) => { element.value = ''; element.dispatchEvent(new Event('input', { bubbles: true })); }).catch(() => undefined);
@@ -238,11 +272,18 @@ export class LiveChatGPTPaymentAdapter {
         }
       }
     } catch (error) {
-      if (error instanceof LiveChatGPTPaymentAdapterError) throw error;
-      throw new LiveChatGPTPaymentAdapterError(
+      // D-205：不带 stage 抛出去，日志里就只剩一个光秃秃的 CHECKOUT_DRIFT，
+      // 连死在哪一步都说不出（2026-09-13 连着两单都是这样）。
+      if (error instanceof LiveChatGPTPaymentAdapterError) {
+        if (!error.stage) error.stage = stage;
+        throw error;
+      }
+      const failure = new LiveChatGPTPaymentAdapterError(
         `LIVE Browser payment failed at ${stage}`,
         submitted ? 'PAYMENT_RESULT_UNKNOWN' : 'CHECKOUT_DRIFT', error,
       );
+      failure.stage = stage;
+      throw failure;
     }
   }
 }

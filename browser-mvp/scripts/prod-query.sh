@@ -4,7 +4,13 @@
 set -euo pipefail
 HOST=root@144.34.180.184
 nc -z 127.0.0.1 13306 >/dev/null 2>&1 || { echo "tunnel 13306 down" >&2; exit 1; }
-prod_db="$(ssh -o BatchMode=yes "$HOST" 'cat /etc/pojia/runtime.env' | sed 's/^export //' | grep -m1 '^DATABASE_URL=' | cut -d= -f2- | tr -d '\r' | sed 's/^"//; s/"$//')"
+# 复用一条 SSH 连接（D-204）。每次调用各开一条时，ready-check 一轮 5 条 + supervisor
+# 查开关 1 条 = 每分钟 6 条突发，撞上 sshd 的未认证并发上限被随机拒连：实测单条成功率
+# 约 75%，一轮全过只剩 ~18%，于是 supervisor 反复报「付款开关取不到，只等不跑」——
+# 它每分钟自己把自己挡在门外。ControlPersist 只留 30 秒，刚够覆盖一轮查询就断开，
+# 不让一条 root 连接长期驻留。socket 由 ssh 自建为 0600。
+SSH_OPTS=(-o BatchMode=yes -o ControlMaster=auto -o "ControlPath=/tmp/.pojia-cm-$(id -u)-%h-%p-%r" -o ControlPersist=30)
+prod_db="$(ssh "${SSH_OPTS[@]}" "$HOST" 'cat /etc/pojia/runtime.env' | sed 's/^export //' | grep -m1 '^DATABASE_URL=' | cut -d= -f2- | tr -d '\r' | sed 's/^"//; s/"$//')"
 [ -n "$prod_db" ] || { echo "DATABASE_URL missing" >&2; exit 1; }
 creds="$(python3 - "$prod_db" <<'PY'
 import sys,urllib.parse

@@ -186,3 +186,30 @@ test('F-47: a Checkout that states the card was declined is reported as DECLINED
   } finally { await browser.close(); }
 });
 
+
+// D-205：运营看着它连着两单在同一个地方发生——卡填好、账单填好、价格结算好，
+// 然后提交前一步失败，这个表单就把自己清空了，停在离 Subscribe 一步的地方。
+// 故障类失败（页面断连/超时）必须把现场原样留下：运营要能直接接手点订阅，
+// 排查也要看得见失败那一刻的真实状态。
+test('D-205: a fault before submit holds the filled scene for the operator', async () => {
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage();
+    await page.setContent(html());
+    const adapter = new LiveChatGPTPaymentAdapter({
+      enabled: true, confirmation: LIVE_PAYMENT_CONFIRMATION,
+      outcomeObserver: async () => ({ status: 'CONFIRMED' }),
+    });
+    await assert.rejects(() => adapter.submit({
+      page, checkout, checkoutContract, cardMaterial: card,
+      billingEmail: 'fixture@example.test', operationId: 'op-hold',
+      authorizeSubmit: async () => { throw new Error('Target page, context or browser has been closed'); },
+      repriceTimeoutMs: 1_000,
+    }), (error) => error.code === 'CHECKOUT_DRIFT' && error.stage === 'final-pre-submit-check');
+    assert.equal(await page.evaluate(() => window.clicked || 0), 0, 'must not have clicked Subscribe');
+    assert.equal(await page.locator('input[autocomplete="cc-number"]').inputValue(), card.pan,
+      'card number must stay on screen for operator takeover');
+    assert.equal(await page.locator('input[autocomplete="cc-csc"]').inputValue(), card.cvc);
+    assert.equal(await page.locator('input[name="locality"]').inputValue(), card.billingAddress.city);
+  } finally { await browser.close(); }
+});

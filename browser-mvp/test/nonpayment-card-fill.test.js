@@ -116,3 +116,29 @@ test('card-material lease expiry stops before the next secure field', async () =
     await browser.close();
   }
 });
+
+// D-203：填完卡之后那一步失败（账单填写 / requote 观察），现场必须原样留着——
+// 运营要能直接接手点订阅，排查也要看得到失败那一刻的真实状态。
+// 2026-09-13 实例：清空把「填了又被清」伪装成「从没填进去」，害排查判错根因。
+test('whileFilled failure holds the filled scene for the operator', async () => {
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await makePage(browser);
+    const provider = new InMemoryCardMaterialLeaseProvider({ source: { load: async () => CARD } });
+    const lease = await provider.open('card:fixture-hold');
+    await assert.rejects(
+      () => fillSecureCardFieldsNonPayment(page, {
+        cardMaterialLeaseProvider: provider,
+        lease,
+        whileFilled: async () => {
+          throw new Error('Target page, context or browser has been closed');
+        },
+      }),
+      /Target page, context or browser has been closed/,
+    );
+    const values = await page.frames()[1].locator('input').evaluateAll((inputs) => inputs.map((input) => input.value));
+    assert.equal(values.every((value) => value.length > 0), true, 'card fields must stay filled for operator takeover');
+  } finally {
+    await browser.close();
+  }
+});

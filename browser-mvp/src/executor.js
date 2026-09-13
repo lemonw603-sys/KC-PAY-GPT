@@ -494,7 +494,15 @@ export class BrowserExecutionService {
               try {
                 checkout = await observeCheckoutAfterRequote(page, job.metadata.checkoutContract, this.timeoutMs);
               } catch (error) {
-                throw new BrowserExecutionError('CHECKOUT_OBSERVATION_FAILED', error.message, error);
+                // D-203：填完卡后的 requote 观察是**第四处**兜底，D-198/D-202 都漏了它。
+                // 2026-09-13 12:20 实查：真实失败走的正是这里——卡和账单都已填好，
+                // requote 时抛 `Target page, context or browser has been closed`，
+                // 被判成终态失败退了 CDK。页面其实还活着（当场连上读到了卡框和价格）。
+                throw new BrowserExecutionError(
+                  isTransientPageError(error) ? 'BROWSER_TRANSIENT_PAGE_ERROR' : 'CHECKOUT_OBSERVATION_FAILED',
+                  error.message,
+                  error,
+                );
               }
             },
           });
