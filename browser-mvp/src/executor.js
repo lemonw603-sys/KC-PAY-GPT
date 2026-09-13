@@ -525,6 +525,18 @@ export class BrowserExecutionService {
               cardMaterial: material,
               billingEmail: transientBillingEmail,
               sessionIdentity,
+              // D-208：付款这一趟以前是黑盒——最后一个事件是 checkout-navigation，
+              // 之后 56 秒（全流程 36%）没有任何痕迹，运营问「卡在哪」只能答不知道。
+              // 每跨一步落一条 checkpoint，**运行中就能看到**，不必等失败后读 stage。
+              // 刻意不 await：埋点慢一点也不能拖住付款，写失败也只是少一条观察。
+              onStage: ({ stage, previousStage, previousElapsedMs }) => {
+                void this._event(job, 'checkpoint', ++evidenceSequence, {
+                  action: 'payment-stage',
+                  stage,
+                  previousStage,
+                  previousElapsedMs,
+                }).catch(() => undefined);
+              },
             })
           ));
           preserveRuntime = (preserveRuntimeOnManualHandoff && paymentResult?.preserveProfile === true)

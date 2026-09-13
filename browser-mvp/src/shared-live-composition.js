@@ -171,7 +171,7 @@ export function createSharedLivePaymentWorker({
     preserveRuntimeOnManualHandoff: typeof postPlusAction === 'function' || postPlusAction !== 'CANCEL_RENEWAL',
     releaseSessionOnComplete: releaseSessionOnComplete === true,
     createPaymentHandler: async ({ claimedJob, run, control }) => async ({
-      page, checkout, checkoutContract, cardMaterial, billingEmail,
+      page, checkout, checkoutContract, cardMaterial, billingEmail, onStage = null,
     }) => {
       if (stopBeforeSubmit === true) {
         return runPreSubmitRehearsal({
@@ -263,6 +263,7 @@ export function createSharedLivePaymentWorker({
         control, run, page, checkout, checkoutContract, cardMaterial, billingEmail,
         operationId: `browser-live-payment:${run.runId}`,
         beforeSubmit: () => control.assertLeaseBeforeAction('FINAL_PRE_SUBMIT_RECHECK'),
+        onStage,  // D-208
       });
     },
   });

@@ -155,6 +155,7 @@ export class BrowserPaymentExecutor {
   async execute({
     control, run, page = null, checkout, checkoutContract = null, cardMaterial,
     billingEmail = null, beforeSubmit = async () => undefined, operationId,
+    onStage = null,  // D-208：付款分步埋点，透传给 adapter
   } = {}) {
     if (!this.enabled) throw new BrowserPaymentExecutorError('Browser payment executor is disabled', 'PAYMENT_EXECUTOR_DISABLED');
     const op = required(operationId, 'operationId');
@@ -189,6 +190,7 @@ export class BrowserPaymentExecutor {
         page, operationId: op, checkout, checkoutContract, cardMaterial,
         billingEmail, permit, beforeSubmit, authorizeSubmit,
         assertContinue: () => control.assertLeaseBeforeAction('PAYMENT_PAGE_ACTION'),
+        onStage,  // D-208：付款分步埋点，纯旁路观察
       });
       if (submission?.status === 'RECONCILE_ONLY') {
         return { status: 'RECONCILE_ONLY', idempotentReplay: true, paymentSubmitCalls: 0 };

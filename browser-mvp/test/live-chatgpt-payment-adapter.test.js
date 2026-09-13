@@ -213,3 +213,53 @@ test('D-205: a fault before submit holds the filled scene for the operator', asy
     assert.equal(await page.locator('input[name="locality"]').inputValue(), card.billingAddress.city);
   } finally { await browser.close(); }
 });
+
+// D-208：付款这一趟占全流程 73% 的时间却没有任何埋点，运营问「卡在哪」只能答不知道。
+// 每跨一步要报一次，且必须带上一步的耗时。
+test('D-208: onStage reports every step with the previous step duration', async () => {
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage();
+    await page.setContent(html());
+    const seen = [];
+    const adapter = new LiveChatGPTPaymentAdapter({
+      enabled: true, confirmation: LIVE_PAYMENT_CONFIRMATION,
+      outcomeObserver: async () => ({ status: 'CONFIRMED' }),
+    });
+    await adapter.submit({
+      page, checkout, checkoutContract, cardMaterial: card,
+      billingEmail: 'fixture@example.test', operationId: 'op-stage',
+      authorizeSubmit: async () => ({ executeExternal: true }), repriceTimeoutMs: 1_000,
+      onStage: (info) => seen.push(info),
+    });
+    const names = seen.map((s) => s.stage);
+    for (const expected of ['fill-secure-card-controls', 'fill-billing-address',
+      'wait-for-zero-tax-requote', 'final-pre-submit-check', 'submit-payment']) {
+      assert.ok(names.includes(expected), `missing stage ${expected}; got ${names.join(' → ')}`);
+    }
+    assert.equal(seen[0].previousStage, 'validate-card-material');
+    assert.ok(seen.every((s) => Number.isFinite(s.previousElapsedMs) && s.previousElapsedMs >= 0),
+      'every report must carry the previous step duration');
+  } finally { await browser.close(); }
+});
+
+// 埋点挂了绝不能让一单出错：丢一条观察 << 让付款失败。
+test('D-208: a throwing onStage cannot break the payment', async () => {
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage();
+    await page.setContent(html());
+    const adapter = new LiveChatGPTPaymentAdapter({
+      enabled: true, confirmation: LIVE_PAYMENT_CONFIRMATION,
+      outcomeObserver: async () => ({ status: 'CONFIRMED' }),
+    });
+    const result = await adapter.submit({
+      page, checkout, checkoutContract, cardMaterial: card,
+      billingEmail: 'fixture@example.test', operationId: 'op-stage-throw',
+      authorizeSubmit: async () => ({ executeExternal: true }), repriceTimeoutMs: 1_000,
+      onStage: () => { throw new Error('telemetry sink exploded'); },
+    });
+    assert.equal(result.status, 'CONFIRMED');
+    assert.equal(await page.evaluate(() => window.clicked || 0), 1);
+  } finally { await browser.close(); }
+});

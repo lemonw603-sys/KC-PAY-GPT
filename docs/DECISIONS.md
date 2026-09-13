@@ -2319,3 +2319,55 @@ D-172 第 2 条写的就是这件事（"不给观察补原因"），今天还是
 
 **下一个接班人读到这里请注意**：A 栏可以直接引用；B 栏的每一条都曾经以同样自信的语气写在对话里过。
 区别不在语气，在有没有当场去查那一下。
+
+---
+
+## D-208（2026-09-13 15:55 UTC）付款那一趟加分步埋点：运行中就能看到卡在哪，不必等失败
+
+### 为什么现在做（和 D-196 当初的理由不同）
+
+D-196 提这个埋点是为了**提速**（找出 73% 的时间花在哪，未实施）。今天 Lemon 重提，
+理由变了：「我们不能这样一直糊里糊涂的解决不了问题」。
+
+**今天加的 `stage`（D-205）解决不了他的问题**，两者覆盖的时刻不同：
+
+| | 什么时候有值 | 能回答什么 |
+|---|---|---|
+| `error.stage` | **失败抛出之后** | 「它死在 `wait-for-zero-tax-requote`」 |
+| `payment-stage` 埋点 | **运行中每跨一步** | 「它现在在填地址，已经 20 秒」 |
+
+今天 Lemon 至少三次说「卡住了，你盯一下」。那种时刻错误还没抛出来，`stage` 一点用没有——
+最后一个事件永远是 `checkout-navigation`，**之后 56 秒（全流程 36%）零痕迹**，只能答"不知道"。
+
+### 实现：纯旁路，四层透传
+
+`executor.js` → `shared-live-composition.js` → `payment-executor.js` → adapter，
+逐层透传一个可选的 `onStage` 回调。adapter 内把 9 处 `stage = 'xxx'` 换成 `setStage('xxx')`，
+每跨一步同步回调一次，带 `{ stage, previousStage, previousElapsedMs }`。
+
+覆盖：`resolve-secure-card-controls` / `fill-secure-card-controls` / `fill-billing-address` /
+`fill-billing-email` / `wait-for-zero-tax-requote` / `final-pre-submit-check` /
+`submit-payment` / `human-verification-gate` / `observe-payment-outcome`。
+
+**两条安全设计，都有测试守着：**
+
+1. **`setStage` 把回调整个 try 住**——埋点抛什么都咽掉。丢一条观察 << 让一单出错。
+   测试 `a throwing onStage cannot break the payment`：回调必抛，付款仍 `CONFIRMED`、仍只点一次。
+2. **`executor` 落事件刻意不 await**（`void ... .catch()`）——埋点写库慢或失败都不能拖住付款。
+
+### 验证
+
+- 新增两条测试：每一步都报且带上一步耗时、回调抛错不影响付款
+- adapter 测试 12/12，payment-executor 22/22
+- 全量 `npm test`：280 项，**271 通过 / 0 失败 / 9 跳过**
+- worker 重启：PID 68339，起于 **15:54:16 UTC**，晚于最后一处改动 15:52:55 ✓；**25 秒起来**
+
+### 这是今天第三次动付款路径
+
+D-196 自己写过「付款路径应该单独做、单独发、单独验」。这次确实单独做，但离 D-205 只隔两小时。
+风险靠"不改控制流 + 双重吞错 + 两条针对性测试"控制，**下一单是它的真单验证**。
+
+### 下一单该看什么
+
+失败时不再只有一个 `CHECKOUT_DRIFT`，而是：完整的分步耗时 + `stage` 指明死点 + 现场留在页面上。
+**三样齐了，"为什么停在马上订阅那一步"才第一次具备可回答的条件。**

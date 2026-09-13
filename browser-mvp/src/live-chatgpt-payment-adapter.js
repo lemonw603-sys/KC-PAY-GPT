@@ -76,6 +76,11 @@ export class LiveChatGPTPaymentAdapter {
     beforeSubmit = async () => undefined,
     authorizeSubmit = null,
     repriceTimeoutMs = 30_000,
+    // D-208：付款这一趟占全流程 73% 的时间，内部一个埋点都没有。运营问「卡在哪」
+    // 时错误还没抛出来，stage 帮不上忙——只能看到 checkout-navigation 之后 56 秒黑盒。
+    // 这个回调在每次跨步时同步调一次，由调用方落成事件。**它绝不能影响付款**：
+    // 下面的 setStage 把它整个 try 住，抛什么都咽掉。
+    onStage = null,
   } = {}) {
     if (!this.enabled) throw new LiveChatGPTPaymentAdapterError('LIVE Browser payment adapter is disabled', 'PAYMENT_EXECUTOR_DISABLED');
     if (!page || typeof page.frames !== 'function') throw new TypeError('page is required');
@@ -113,11 +118,22 @@ export class LiveChatGPTPaymentAdapter {
     // strand them with an empty card form and no way to finish the purchase.
     let holdForHumanVerification = false;
     let stage = 'validate-card-material';
+    let stageStartedAt = Date.now();
+    const setStage = (next) => {
+      const now = Date.now();
+      const previousStage = stage;
+      const previousElapsedMs = now - stageStartedAt;
+      stage = next;
+      stageStartedAt = now;
+      if (typeof onStage !== 'function') return;
+      try { onStage({ stage: next, previousStage, previousElapsedMs }); }
+      catch { /* 埋点失败绝不影响付款：丢一条观察 << 让一单出错 */ }
+    };
     try {
       assertCardMaterial(cardMaterial);
       // Stripe Link 的处理在 executor 的**观察之前**完成（D-201 修正）：观察器一旦发现
       // 卡字段缺失就判 CHECKOUT_OBSERVATION_FAILED，放在这里已经太晚。
-      stage = 'resolve-secure-card-controls';
+      setStage('resolve-secure-card-controls');
       const fields = {};
       for (const [name, selector] of Object.entries(SECURE_CARD_FIELD_SELECTORS)) {
         fields[name] = await oneVisible(page, selector, name);
@@ -131,7 +147,7 @@ export class LiveChatGPTPaymentAdapter {
         throw new LiveChatGPTPaymentAdapterError('card material format is invalid', 'CARD_MATERIAL_INVALID');
       }
       try {
-        stage = 'fill-secure-card-controls';
+        setStage('fill-secure-card-controls');
         for (const [name, field] of Object.entries(fields)) {
           await assertContinue();
           if ((await field.inputValue()).trim()) throw new LiveChatGPTPaymentAdapterError(`${name} secure field is not empty`, 'CHECKOUT_DRIFT');
@@ -141,23 +157,23 @@ export class LiveChatGPTPaymentAdapter {
         if (!cardMaterial.billingAddress) {
           throw new LiveChatGPTPaymentAdapterError('billing address is required', 'CARD_MATERIAL_INVALID');
         }
-        stage = 'fill-billing-address';
+        setStage('fill-billing-address');
         await assertContinue();
         await fillBillingAddress(page, cardMaterial.billingAddress, { timeoutMs: repriceTimeoutMs });
-        stage = 'fill-billing-email';
+        setStage('fill-billing-email');
         await assertContinue();
         // Not every Checkout implementation asks for a receipt email (see
         // fillTransientBillingEmail). A page that does ask still must resolve to
         // exactly one field, so this cannot silently skip a real requirement.
         await fillTransientBillingEmail(page, billingEmail, { timeoutMs: repriceTimeoutMs });
-        stage = 'wait-for-zero-tax-requote';
+        setStage('wait-for-zero-tax-requote');
         const strictCheckout = await observeStrictQuoteAfterReprice(
           page, checkoutContract, repriceTimeoutMs, assertContinue,
         );
         if (strictCheckout.submitControlSelector !== checkout.submitControlSelector) {
           throw new LiveChatGPTPaymentAdapterError('payment submit selector changed after requote', 'CHECKOUT_DRIFT');
         }
-        stage = 'final-pre-submit-check';
+        setStage('final-pre-submit-check');
         await assertContinue();
         await beforeSubmit({ checkout: strictCheckout });
         await assertContinue();
@@ -176,7 +192,7 @@ export class LiveChatGPTPaymentAdapter {
             quote: { currency: strictCheckout.currency, amount: strictCheckout.amount, estimatedTax: strictCheckout.estimatedTax },
           };
         }
-        stage = 'submit-payment';
+        setStage('submit-payment');
         await submit.click();
         submitted = true;
         if (typeof this.outcomeObserver !== 'function') {
@@ -184,7 +200,7 @@ export class LiveChatGPTPaymentAdapter {
         }
         let challenge = null;
         if (typeof this.challengeGate === 'function') {
-          stage = 'human-verification-gate';
+          setStage('human-verification-gate');
           challenge = await this.challengeGate({ page, operationId: op, assertContinue });
           if (challenge?.challenged && !challenge.cleared) {
             holdForHumanVerification = true;
@@ -202,7 +218,7 @@ export class LiveChatGPTPaymentAdapter {
             throw waiting;
           }
         }
-        stage = 'observe-payment-outcome';
+        setStage('observe-payment-outcome');
         const outcome = await this.outcomeObserver({ page, operationId: op, challenge });
         if (outcome?.status === 'DECLINED') {
           // F-47: the Checkout stated the outcome itself. Returning it (instead of
