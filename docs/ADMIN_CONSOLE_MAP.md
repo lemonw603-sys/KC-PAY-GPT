@@ -33,6 +33,26 @@
 | `COMPLETE_20X` | Pro 20X 两阶段的第二阶段 | 当前未启用 |
 | `CANCEL` | 取消 | 释放资源 |
 
+## 一·五、价格硬约束：零税，且金额不写死（2026-09-12 Lemon 重申，我一度说错）
+
+**结账价必须是免税价**，含税价一律拒付。Plus 当前免税报价是 **₱982.14**；**₱1,100 是含税价**，
+系统碰到它会在付款前中止（我曾把 ₱1,100 当成正常单价说给 Lemon，错的）。
+
+三道闸门，缺一不可：
+
+| 位置 | 把什么关 |
+| --- | --- |
+| `live-chatgpt-payment-adapter.js:83-87` | 契约必须是 `requiredCurrency:'PHP'` + `requireZeroTax:true` + `requireQuoteConsistency:true`，否则 `CHECKOUT_ADAPTER_MISMATCH`，**根本不进入付款流程** |
+| `checkout-observer.js:160-163` | 读结账页时税额 > 0.01 就抛 `checkout tax is not zero`，付款前中止 |
+| `checkout-observer.js:165-172` | 还要求 `总额 = 小计 + 税` 算得平，防止页面摆零税、实收含税价 |
+
+**设计上有意不把金额写死**（`billing-quote-readiness.js` 的注释）：汇率与 locale 会变，写死了
+汇率一动就全线中止。不变量是「税为零」与「算术自洽」，小计本身以当时的实时报价为准。
+
+零税从哪来：账单地址配在**美国 DE 州（特拉华，免销售税）**，
+见 `production-live-pool-worker.js:113` 的 `BROWSER_BILLING_ADDRESS_STATE`。
+这就是 UX_PUNCHLIST 4.4 里「免税州地址设置用途不清楚」那个设置的真实作用。
+
 ## 二、卡台凭证：两个卡台，两套凭证，位置不同
 
 **2026-09-12 我在这里判断错过一次**，记牢：
