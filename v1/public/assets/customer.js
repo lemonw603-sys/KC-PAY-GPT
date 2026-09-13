@@ -116,7 +116,7 @@
       cdk: $('view-cdk'), session: $('view-session'), confirm: $('view-confirm'),
       run: $('view-run'), query: $('view-query')
     },
-    retryOrder: $('retry-order'),
+    retryOrder: $('retry-order'), ticketCopy: $('ticket-copy'),
     formCdk: $('form-cdk'), cdk: $('cdk'), fieldCdk: $('field-cdk'), cdkSubmit: $('cdk-submit'),
     formSession: $('form-session'), session: $('session'), fieldSession: $('field-session'),
     sessionSubmit: $('session-submit'), sessionBack: $('session-back'), sessionSub: $('session-sub'),
@@ -357,19 +357,23 @@
     // 订阅方案显示短名：后端给的 label 是 'ChatGPT Plus'，客户页只要 'Plus'。
     const label = productShortName(order);
     const success = order.status === 'SUCCESS';
+    // 「订单号」给的是客户自己那张卡密——他手上本来就有，以后拿它就能查回这一单。
+    // 每屏**只给一行**：旧版在「出问题」屏同时给了「订单」和「查询码」，两行填的是同一个
+    // publicNo（2026-09-13 Lemon 指出多余）。拿不到卡密时（老客户用 PJV1- 查进来的）
+    // 整行不显示，不编一个假的给他。
     if (success) {
       rows.push(['订阅方案', label, true]);
       if (order.customerEmail) rows.push(['账号', order.customerEmail]);
       rows.push(['开通时间', fmtTime(order.finishedAt || order.updatedAt) || '—', true]);
-      // 「订单号」给的是客户自己那张卡密——他手上本来就有，以后拿它就能查回这一单。
-      // 拿不到时（老客户用 PJV1- 订单号查进来的）整行不显示，不编一个假的给他。
       if (currentCdk) rows.push(['订单号', currentCdk, true]);
     } else {
+      if (currentCdk) rows.push(['订单号', currentCdk, true]);
       if (order.customerEmail) rows.push(['账号', order.customerEmail]);
       if (!ticket) rows.push(['方案', label, true]);
     }
     // 不再显示订单号（旧称「查询码」）：客户手上本来就有卡密，回来查用卡密即可，
     // 不必再记一串码。客服侧不受影响——后台搜索与 find-order-by-cdk.mjs 都能按 CDK 查。
+    el.ticketCopy.hidden = !(ticket && currentCdk);
     el.runRows.innerHTML = rows.map(([name, value, isText]) => {
       const div = document.createElement('div');
       div.className = 'rows__r';
@@ -702,6 +706,17 @@
   // ---------------------------------------------------- 屏 4 换号 / 复制
   // 重新兑换：失败单里钱没动的那种，客户点一下就回到第一步。卡密不回填——
   // 客户可能是用卡密查到这一屏的，而卡密不经状态接口回传，我们手上不一定有它，留个空框比填错强。
+  // 卡密比订单号长，手抄容易错，给个复制按钮。只在「需要等或需要客户动手」的屏出现
+  // （view.ticket），且手上确实有卡密时才显示。
+  el.ticketCopy.addEventListener('click', async () => {
+    if (!currentCdk) return;
+    try {
+      await navigator.clipboard.writeText(currentCdk);
+      el.ticketCopy.textContent = '已复制';
+      setTimeout(() => { el.ticketCopy.textContent = '复制订单号'; }, 1600);
+    } catch { toast('复制失败,请手动选中订单号。'); }
+  });
+
   el.retryOrder.addEventListener('click', () => {
     stopPoll();
     stopRing();

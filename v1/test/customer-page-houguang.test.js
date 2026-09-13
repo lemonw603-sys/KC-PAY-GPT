@@ -158,14 +158,23 @@ test('Session 全文不回显，建单成功后立刻清空', () => {
   assert.doesNotMatch(js, /accessToken\s*[:=]\s*[^'"\s]/);
 });
 
-test('客户页不露订单号：只用卡密，方案显示短名', () => {
-  // 2026-09-13 Lemon 定：「客户的充值页面里边有很多查询码，我们不要查询码，
-  // 我们只保留 CDK 就好」。设计稿原来在 done/stuck 屏给查询码（= 订单号），
-  // 现在整条去掉——客户手上本来就有卡密，回来查用卡密即可，不必再记一串码。
-  // 客服侧不受影响：后台搜索与 find-order-by-cdk.mjs 都能按 CDK 查到单。
+test('「订单号」填的是客户自己的卡密，每屏只给一行', () => {
+  // 2026-09-13 Lemon 两次定调：先是「不要查询码，只保留 CDK」（去掉了内部订单号），
+  // 再是「其他需要订单号的地方也补回去，以前有的页有两个订单号，保留一个就好」。
+  // 结论：每屏都给一行「订单号」，值是客户自己那张卡密——他手上本来就有。
+  // 内部订单号 publicNo 不再露给客户；状态接口也不回传 CDK（凭证不该回传）。
   assert.doesNotMatch(js, /rows\.push\(\['查询码'/);
   assert.doesNotMatch(js, /rows\.push\(\['订单', order\.publicNo\]\)/);
-  assert.doesNotMatch(all, /复制查询码/);
+  // 旧版「出问题」屏同时给「订单」和「查询码」，两行填的是同一个 publicNo——多余。
+  assert.equal((js.match(/rows\.push\(\['订单号', currentCdk, true\]\)/g) || []).length, 2,
+    '成功屏一处、非成功屏一处，每屏各一行');
+  assert.match(js, /let currentCdk = null;/);
+  // 卡密只能来自客户自己的输入，不能从状态接口回传。
+  assert.match(js, /currentCdk = pending\.cdk;/);
+  assert.match(js, /currentCdk = byPublicNo \? null : value;/);
+  // 复制按钮复制的是卡密，且没有卡密时不显示。
+  assert.match(js, /el\.ticketCopy\.hidden = !\(ticket && currentCdk\);/);
+  assert.match(all, /复制订单号/);
   // 订阅方案给短名：后端 label 是 'ChatGPT Plus'，客户页只要 'Plus'（同日 Lemon 定）。
   assert.match(js, /rows\.push\(\['订阅方案', label, true\]\)/);
   assert.match(js, /const label = productShortName\(order\);/);
