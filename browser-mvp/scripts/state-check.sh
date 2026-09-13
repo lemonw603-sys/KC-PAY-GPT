@@ -9,7 +9,10 @@ say(){ printf '%s\n' "$*"; }
 row(){ grep -m1 -F "| $1 |" "$STATE" 2>/dev/null; }
 check(){ # check <行前缀> <现场值> <说明>
   local line; line="$(row "$1")"
-  if [ -z "$2" ] || [ "$2" = "NULL" ]; then say "[取值失败] $1：现场 $3 取不到值（查询或列名有误，按漂移处理）"; drift=1; return; fi
+  local bare; bare="$(printf '%s' "$2" | tr -d '[:space:]')"
+  # 现场值必须含数字或字母才能拿去做子串匹配。只剩单位词的残缺值（例如 " 张"）是 "1 张" 的
+  # 子串，会把"查不到"报成 [一致]——2026-09-13 实测把"没卡"报成"有卡"，真实是 0 张。
+  if [ -z "$bare" ] || [ "$2" = "NULL" ] || ! printf '%s' "$bare" | grep -q '[0-9A-Za-z]'; then say "[取值失败] $1：现场 $3 取不到值（查询或列名有误，按漂移处理）"; drift=1; return; fi
   if [ -z "$line" ]; then say "[缺行] $1（现场：$3=$2）"; drift=1; return; fi
   if printf '%s' "$line" | grep -qF -- "$2"; then say "[一致] $1 ⊇ $3=$2"; else say "[漂移] $1：现场 $3=$2；表中：$(printf '%s' "$line" | cut -c1-110)…"; drift=1; fi
 }
@@ -24,7 +27,9 @@ ACC=$(bash "$Q" "SELECT setting_value FROM app_settings WHERE setting_key='accep
 P20=$(bash "$Q" "SELECT CAST(setting_value AS DECIMAL(10,0)) FROM app_settings WHERE setting_key='minimum_required_card_balance:pro_20x'" 2>/dev/null | tr -d '[:space:]'); check "最低所需卡余额" "pro_20x $P20" "20X门槛"
 MIG=$(bash "$Q" "SELECT * FROM schema_migrations ORDER BY 1 DESC LIMIT 1" 2>/dev/null | cut -f1 | tr -d '[:space:]'); check "数据库迁移" "$MIG" "最新迁移"
 ELIG=$(bash "$Q" "SELECT GROUP_CONCAT(c.last4) FROM cards c WHERE c.inventory_status IN ('AVAILABLE','ASSIGNED','DEPLETED') AND c.card_credentials_ciphertext IS NOT NULL AND c.current_balance>=16 AND (c.sync_tier='MANUAL_IMPORT' OR (c.last_transaction_synced_at IS NOT NULL AND c.last_transaction_synced_at >= DATE_SUB(CURRENT_TIMESTAMP(3), INTERVAL 15 MINUTE))) AND NOT EXISTS (SELECT 1 FROM card_assignment_history h WHERE h.card_id=c.id AND h.status='ACTIVE') AND NOT EXISTS (SELECT 1 FROM card_operational_overrides co WHERE co.provider_account_id=c.provider_account_id AND BINARY co.external_card_id=BINARY c.external_card_id AND co.allocation_policy='RETIRED')" 2>/dev/null | tr -d '[:space:]')
-N=$(printf '%s' "$ELIG" | awk -F, '{print ($0==""?0:NF)}'); check "可分配卡（资格 SQL，Plus 门槛 16）" "${N} 张" "可分配卡数"
+# GROUP_CONCAT 零行返回字符串 "NULL"，不归零会被 awk 数成 1 张——2026-09-13 实测把"没卡"报成"有卡"。
+[ "$ELIG" = "NULL" ] && ELIG=""
+if [ -z "$ELIG" ]; then N=0; else N=$(printf '%s' "$ELIG" | tr ',' '\n' | grep -c .); fi; check "可分配卡（资格 SQL，Plus 门槛 16）" "${N} 张" "可分配卡数"
 RUNS=$(bash "$Q" "SELECT COUNT(*) FROM browser_runs WHERE active_account_key_hmac IS NOT NULL" 2>/dev/null | tr -d '[:space:]'); check "活动资金与运行" "active_runs $RUNS" "账号槽"
 OPEN=$(bash "$Q" "SELECT COUNT(*) FROM orders WHERE status NOT IN ('RECHARGE_SUCCESS','RECHARGE_FAILED','CLOSED')" 2>/dev/null | tr -d '[:space:]'); check "可分配卡（资格 SQL，Plus 门槛 16）" "非终态订单 $OPEN" "非终态订单"
 say ""; [ "$drift" -eq 0 ] && say "==> CURRENT_STATE 与现场一致 ✓" || say "==> 有漂移/缺行：改 docs/CURRENT_STATE.md 对应行（带核对时间与证据）"
