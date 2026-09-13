@@ -174,18 +174,25 @@ test('unknown tokens are ignored rather than guessed at', () => {
   assert.equal(stage.index, 3);
 });
 
-test('the percentage approaches its ceiling and never reaches it', () => {
-  const stage = CUSTOMER_STAGES[4];           // 正在获取支付信息, 46 → 60
-  assert.equal(Math.round(stagePercent(stage, 0)), 46);
-  const halfMinute = stagePercent(stage, 30_000);
-  const oneMinute = stagePercent(stage, 60_000);
+test('the percentage moves at a steady rate inside a stage and never reaches its ceiling', () => {
+  const stage = CUSTOMER_STAGES[4];           // 正在获取支付信息, 20 → 62, typical 82.5s
+  const floor = CUSTOMER_STAGES[3].ceiling;
+  assert.equal(Math.round(stagePercent(stage, 0)), floor);
+  const quarter = stagePercent(stage, stage.typicalMs / 4);
+  const half = stagePercent(stage, stage.typicalMs / 2);
+  const threeQuarters = stagePercent(stage, (stage.typicalMs * 3) / 4);
   const oneHour = stagePercent(stage, 3_600_000);
   const oneDay = stagePercent(stage, 86_400_000);
-  assert.ok(halfMinute > 46 && halfMinute < oneMinute, 'the bar must still be moving at 30s');
-  assert.ok(oneMinute < 60);
-  assert.ok(oneHour >= oneMinute && oneHour < 60);
-  // Rounded, not just raw: 59.5 would render as 60 and sit on the next floor.
-  assert.ok(Math.round(oneDay) < 60, 'a stuck stage must never reach the next stage floor');
+  // 匀速：等长的时间片推进等长的距离（2026-09-13 D-193）。指数曲线下第一片会走掉近一半。
+  const first = quarter - floor;
+  const second = half - quarter;
+  const third = threeQuarters - half;
+  assert.ok(Math.abs(first - second) < 0.01 && Math.abs(second - third) < 0.01,
+    `equal time slices must advance equally: ${first} / ${second} / ${third}`);
+  assert.ok(half > floor && half < stage.ceiling);
+  assert.ok(oneHour >= threeQuarters && oneHour < stage.ceiling);
+  // Rounded, not just raw: half a point would render as the next stage's floor.
+  assert.ok(Math.round(oneDay) < stage.ceiling, 'a stuck stage must never reach the next stage floor');
 });
 
 test('only a real subscription is 100', () => {

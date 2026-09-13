@@ -16,16 +16,46 @@
    只有 browser_operations 留下了完整轨迹。
    ========================================================================= */
 
+/*
+   ceiling 与 typicalMs 的来历（2026-09-13 改，D-193）——**必须一起读**：
+   百分点不是按"九个阶段"平均分的，是按**每个阶段真实占用多少时间**分的。
+   原分配（10/22/32/46/60/74/88/97/100）每段 9~14 个点，而真实耗时差 600 倍：
+   阶段 5+6 吃掉全程 80% 的时间却只分到 28 个点，阶段 1+2 几乎不花时间却占 22 个点。
+   客户看到的就是"开头唰一下冲到二十几，中段磨很久"——Lemon 2026-09-13 的原话是
+   "一段快一段慢，我希望尽可能是匀速从零到 100"。
+
+   分母写明：**两单**，2026-09-13 仅有的两次全自动无干预成功单
+   （`PJV1-KLZokl…` 总 150.3 秒、`PJV1-L_fKJY…` 总 220.5 秒），三张表对齐取的分段耗时：
+
+     阶段      单1       单2       平均      新跨度   速度(%/秒)
+     1         0.65s     0.16s     0.4s      2        —（太短，看不到）
+     2         0s        0s        0s        4        等卡的让步，见下
+     3         3.75s     1.34s     2.5s      3        —
+     4         24.8s     24.1s     24.5s     11       0.45
+     5         75.4s     89.6s     82.5s     42       0.51
+     6         36.7s     96.5s     66.6s     32       0.48
+     7         8.9s      8.8s      8.85s     4        0.45
+     8         0s        0s        0s        1        —（同事务提交，零停留）
+
+   阶段 4~7 占全程 99% 的时间，速度落在 0.45~0.51 %/秒——这就是"匀速"。
+
+   **阶段 2 是唯一的例外，是有意的**：成功单里它耗时为 0（有卡就直接过），但没卡时
+   订单会停在 WAITING_FOR_CARD 很久。按占比它该拿 0 个点，那样客户等卡时环完全不动。
+   给它 4 个点 + 15 秒的 typicalMs，等卡时环还能慢慢爬到 5，配合文案说明在做什么。
+
+   **样本只有两单，阶段 6 的波动已经很大（36.7s vs 96.5s）。** 攒够更多无干预成功单后
+   要回来重算——改这里只需改下表，前端从状态接口读 typicalMs，不另存一份。
+*/
 export const CUSTOMER_STAGES = Object.freeze([
-  Object.freeze({ index: 1, code: 'ORDER_RECEIVED', label: '已收到订单', ceiling: 10 }),
-  Object.freeze({ index: 2, code: 'CARD_PREPARING', label: '正在准备支付卡', ceiling: 22 }),
-  Object.freeze({ index: 3, code: 'QUEUED_FOR_RUN', label: '正在排队', ceiling: 32 }),
-  Object.freeze({ index: 4, code: 'ACCOUNT_VERIFYING', label: '正在验证账号', ceiling: 46 }),
-  Object.freeze({ index: 5, code: 'CHECKOUT_LOADING', label: '正在获取支付信息', ceiling: 60 }),
-  Object.freeze({ index: 6, code: 'PAYMENT_SUBMITTING', label: '正在提交支付', ceiling: 74 }),
-  Object.freeze({ index: 7, code: 'PAYMENT_AWAITING', label: '正在等待支付结果', ceiling: 88 }),
-  Object.freeze({ index: 8, code: 'SUBSCRIPTION_CONFIRMING', label: '正在确认订阅', ceiling: 97 }),
-  Object.freeze({ index: 9, code: 'SUBSCRIPTION_ACTIVE', label: '订阅成功', ceiling: 100 })
+  Object.freeze({ index: 1, code: 'ORDER_RECEIVED', label: '已收到订单', ceiling: 2, typicalMs: 1_000 }),
+  Object.freeze({ index: 2, code: 'CARD_PREPARING', label: '正在准备支付卡', ceiling: 6, typicalMs: 15_000 }),
+  Object.freeze({ index: 3, code: 'QUEUED_FOR_RUN', label: '正在排队', ceiling: 9, typicalMs: 3_000 }),
+  Object.freeze({ index: 4, code: 'ACCOUNT_VERIFYING', label: '正在验证账号', ceiling: 20, typicalMs: 24_500 }),
+  Object.freeze({ index: 5, code: 'CHECKOUT_LOADING', label: '正在获取支付信息', ceiling: 62, typicalMs: 82_500 }),
+  Object.freeze({ index: 6, code: 'PAYMENT_SUBMITTING', label: '正在提交支付', ceiling: 94, typicalMs: 66_600 }),
+  Object.freeze({ index: 7, code: 'PAYMENT_AWAITING', label: '正在等待支付结果', ceiling: 98, typicalMs: 8_850 }),
+  Object.freeze({ index: 8, code: 'SUBSCRIPTION_CONFIRMING', label: '正在确认订阅', ceiling: 99, typicalMs: 1_000 }),
+  Object.freeze({ index: 9, code: 'SUBSCRIPTION_ACTIVE', label: '订阅成功', ceiling: 100, typicalMs: 1_000 })
 ]);
 
 /** Order statuses, as they actually appear in order_events. */
@@ -124,32 +154,37 @@ export function resolveCustomerStage({ orderStatus = null, evidence = [] } = {})
 }
 
 /**
- * How long a stage "should" take, for curve purposes only — it is not a promise
- * and is never shown. Set from the real delivery of 2026-09-11, whose stages
- * ran from 22 seconds (the payment steps) to 2 minutes 36 (the queue): at 90
- * seconds the curve is still visibly moving across that whole range, which is
- * the entire job of the number.
+ * 兜底段长：阶段表里没给 typicalMs 时用它。正常路径不会走到——九个阶段都带了自己的
+ * 典型耗时（见 CUSTOMER_STAGES 上方那段来历）。
  */
 export const STAGE_SEGMENT_MS = 90_000;
 
 /**
- * The percentage to draw. Each stage owns a band and approaches its ceiling
- * without arriving: the longer a stage lasts the slower it creeps. Only a real
- * subscription sets 100 — "the bar finished but the order didn't" is worse
- * than a bar that crawls.
+ * 要画的百分比。**段内匀速**，按这一阶段自己的典型耗时走完自己的区间，
+ * 而不是所有阶段共用一条指数曲线。
+ *
+ * 为什么从指数改成线性（2026-09-13，D-193）：原曲线 1-e^(-2.6t) 在段内前 1/4 的时间就
+ * 走完近一半区间，越到后面越慢——叠加"百分点按阶段数平均分、而耗时差 600 倍"这个问题，
+ * 客户看到的是一段快一段慢。区间改按真实耗时占比分配之后，段内再匀速，整体就匀速。
+ *
+ * 不变的是安全语义：**永远停在本阶段上限下方一个百分点**，只有真正订阅成功才置 100。
+ * 一个阶段拖得比典型耗时久，就贴着上限等着——"字还写着正在提交支付，数字却已经是下一段"
+ * 比爬得慢更糟。
  */
-export function stagePercent(stage, elapsedMs, { segmentMs = STAGE_SEGMENT_MS } = {}) {
+export function stagePercent(stage, elapsedMs, { segmentMs } = {}) {
   if (!stage) return 0;
   if (stage.index === CUSTOMER_STAGES.length) return 100;
   const floor = stage.index === 1 ? 0 : CUSTOMER_STAGES[stage.index - 2].ceiling;
-  const span = stage.ceiling - floor;
-  const t = Math.max(0, Number(elapsedMs) || 0) / segmentMs;
-  const approached = floor + span * (1 - Math.exp(-2.6 * t));
-  // The curve never reaches the ceiling in algebra, but it does in doubles:
-  // exp(-2.6t) underflows to 0 somewhere past an hour in one stage, and the
-  // bar would then sit exactly on the next stage's floor while the wording
-  // still shows this stage. Hold it a full point short — half a point rounds
-  // back up to the ceiling — so the number the customer reads always stays
-  // inside the stage the words describe, however long the stage lasts.
-  return Math.min(approached, stage.ceiling - 1);
+  // 半个点会被四舍五入回上限，所以留满一个点：客户读到的数字永远在文字描述的那个阶段内。
+  const cap = stage.ceiling - 1;
+  const reach = cap - floor;
+  const budget = Number(segmentMs) || Number(stage.typicalMs) || STAGE_SEGMENT_MS;
+  const t = Math.max(0, Number(elapsedMs) || 0) / budget;
+  // 典型耗时之内：匀速走完这一段的 94%。
+  if (t <= 1) return floor + reach * 0.94 * t;
+  // 超过典型耗时：剩下那 6% 用指数逼近 cap，永远到不了。
+  // 为什么不干脆停住：这一单比典型慢是常事（两单样本里阶段 6 就差了 36.7s vs 96.5s），
+  // 停住的环和卡死的环长得一模一样。留一条越来越慢的尾巴，既照实说"比预期久了"，
+  // 数字又始终在变。
+  return floor + reach * (0.94 + 0.06 * (1 - Math.exp(-1.5 * (t - 1))));
 }

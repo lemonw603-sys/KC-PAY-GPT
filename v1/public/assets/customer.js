@@ -38,8 +38,8 @@
   });
 
   // ------------------------------------------------------------- 九阶段
-  // 阶段名与上限由后端 src/domain/customer-stage.js 给出；这里只提供每个阶段
-  // 的说明文案。段长与曲线常数必须与后端 STAGE_SEGMENT_MS 保持一致。
+  // 阶段名、上限、典型耗时都由后端 src/domain/customer-stage.js 给出；这里只提供每个
+  // 阶段的说明文案。SEGMENT_MS 只是后端没给 typicalMs 时的兜底，正常路径用不到。
   const SEGMENT_MS = 90000;
   const STAGE_HINT = {
     ORDER_RECEIVED: '已收到你的卡密和账号,正在安排开通。',
@@ -267,8 +267,13 @@
   }
 
   // ------------------------------------------------ 进度环（逐帧、连续）
-  // 与后端 stagePercent 同一条曲线：floor+(ceiling-floor)*(1-e^-2.6t)，
-  // 并同样钳在上限下方一个百分点——按段做 CSS 过渡再停住不是匀速的。
+  // 与后端 stagePercent 同一条曲线：**段内匀速**，按后端给的 typicalMs 走完本段区间，
+  // 并钳在上限下方一个百分点。
+  //
+  // 2026-09-13（D-193）从指数曲线改成线性：原来 1-e^(-2.6t) 在段内前 1/4 时间就走完
+  // 近一半区间，越往后越慢；叠加"百分点按阶段数平均分、而真实耗时差 600 倍"，客户看到
+  // 的是一段快一段慢。后端已按真实耗时占比重分了区间，这里段内再匀速，整体就匀速。
+  // typicalMs 只从后端读，前端不存第二份阶段表。
   function stopRing() {
     if (ringRaf) cancelAnimationFrame(ringRaf);
     ringRaf = null;
@@ -293,8 +298,14 @@
   function curve(stage, elapsedMs) {
     const floor = Number(stage.floor) || 0;
     const ceiling = Number(stage.ceiling) || 0;
-    const t = Math.max(0, elapsedMs) / SEGMENT_MS;
-    return Math.min(floor + (ceiling - floor) * (1 - Math.exp(-2.6 * t)), ceiling - 1);
+    const cap = ceiling - 1;
+    const reach = cap - floor;
+    const budget = Number(stage.typicalMs) || SEGMENT_MS;
+    const t = Math.max(0, elapsedMs) / budget;
+    // 典型耗时之内匀速走完 94%；超时后剩下的 6% 指数逼近 cap，永不到顶。
+    // 停住的环和卡死的环长得一样，所以宁可越来越慢，也不要静止。
+    if (t <= 1) return floor + reach * 0.94 * t;
+    return floor + reach * (0.94 + 0.06 * (1 - Math.exp(-1.5 * (t - 1))));
   }
   function runRing(stage, startedAt, { frozen = false } = {}) {
     stopRing();

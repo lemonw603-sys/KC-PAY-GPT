@@ -188,13 +188,16 @@ test('the customer status carries the nine-stage reading, built from execution e
     }
   });
   const order = await service({ publicNo: 'PJV1-ABCDEFGHIJKLMNOPQRST' });
+  // 区间与典型耗时在 2026-09-13（D-193）按真实耗时占比重分过，见 domain/customer-stage.js
+  // 上方那段来历。typicalMs 必须随 stage 一起下发——前端按它在段内匀速推进，不存副本。
   assert.deepEqual(order.stage, {
     index: 5,
     code: 'CHECKOUT_LOADING',
     label: '正在获取支付信息',
     total: 9,
-    floor: 46,
-    ceiling: 60,
+    typicalMs: 82_500,
+    floor: 20,
+    ceiling: 62,
     since: '2026-09-11T11:13:36.882Z'
   });
   // The six-step vocabulary stays exactly as it was: the stage is additional.

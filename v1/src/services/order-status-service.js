@@ -125,6 +125,9 @@ export function createOrderStatusService({
         total: CUSTOMER_STAGES.length,
         floor,
         ceiling: resolved.stage.ceiling,
+        // 这一阶段的典型耗时。前端按它在段内匀速推进，而不是自己存一份阶段表——
+        // 那份副本一旦和 CUSTOMER_STAGES 漂移，进度条就会和文字说的阶段对不上。
+        typicalMs: resolved.stage.typicalMs,
         since: isoDate(resolved.since)
       };
     } catch (error) {

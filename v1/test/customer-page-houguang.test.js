@@ -59,10 +59,17 @@ test('出问题时对客户说实话，不说「已转人工」也不给原因',
   assert.doesNotMatch(all, /已由人工接手核对/);
 });
 
-test('百分比逼近上限但不冲线，只有订阅成功才置 100', () => {
-  // 与后端 stagePercent 同一条曲线，并同样钳在上限下方一整个百分点。
-  assert.match(js, /1 - Math\.exp\(-2\.6 \* t\)/);
-  assert.match(js, /Math\.min\(.*, ceiling - 1\);/);
+test('百分比段内匀速、不冲线，只有订阅成功才置 100', () => {
+  // 与后端 stagePercent 同一条曲线：段内线性，按后端给的 typicalMs 走完本段区间
+  // （2026-09-13 D-193 从指数改线性，Lemon：「一段快一段慢，我希望尽可能是匀速」）。
+  assert.match(js, /const budget = Number\(stage\.typicalMs\) \|\| SEGMENT_MS;/);
+  assert.match(js, /if \(t <= 1\) return floor \+ reach \* 0\.94 \* t;/);
+  assert.doesNotMatch(js, /Math\.exp\(-2\.6/);
+  // 超时后仍要动：停住的环和卡死的环长得一样。
+  assert.match(js, /0\.94 \+ 0\.06 \* \(1 - Math\.exp\(-1\.5 \* \(t - 1\)\)\)/);
+  // 前端不存第二份阶段表——typicalMs 只能从后端给的 stage 上读。
+  assert.doesNotMatch(js, /ORDER_RECEIVED:\s*\{[^}]*ceiling/);
+  assert.match(js, /const cap = ceiling - 1;/);
   assert.match(js, /if \(stage\.index >= stage\.total\) \{ paintRing\(100\); return; \}/);
 });
 
