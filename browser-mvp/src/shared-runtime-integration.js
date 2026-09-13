@@ -276,7 +276,11 @@ export class SharedBrowserRuntimeIntegration {
     return {
       status: 'SAFE_ABORTED',
       reasonCode: abort.reasonCode,
-      diagnosticMessage: String(error?.message || '').slice(0, 300),
+      // 用 classifySafeAbort 沿 cause 链拼出来的那条（D-202 修正）。
+      // 外层 error 的 message 常常是空的——adapter 抛的
+      // `LIVE Browser payment failed at <stage>` 挂在 cause 上，只看最外层就什么都看不到，
+      // 2026-09-13 我加了诊断却仍然查不出原因，就是卡在这一行。
+      diagnosticMessage: abort.diagnosticMessage || String(error?.message || '').slice(0, 300) || null,
       targetOrderStatus: closed.orderStatus,
       fundsRiskState: closed.fundsRiskState,
       externalPaymentCalls: 0,
