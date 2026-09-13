@@ -108,6 +108,7 @@ export function classifySafeAbort(error) {
       reasonCode: sourceCode,
       customerActionCode: null,
       failureReason: 'Browser could not access or verify the ChatGPT checkout before payment',
+      diagnosticMessage: diagnosticOf(error),
     };
   }
   return {
@@ -115,7 +116,25 @@ export function classifySafeAbort(error) {
     reasonCode: sourceCode,
     customerActionCode: null,
     failureReason: 'Browser execution stopped safely before payment',
+    // 把原始消息带出去（D-202）。adapter 抛的错里写着
+    // `LIVE Browser payment failed at <stage>`——stage 精确到 fill-billing-address /
+    // wait-for-zero-tax-requote / submit-payment 这一级。以前这条消息在这里被丢掉，
+    // 只留下一句「stopped safely before payment」，2026-09-13 五次 CHECKOUT_DRIFT
+    // 我只查得出一次的真实原因，全天都在猜。
+    diagnosticMessage: diagnosticOf(error),
   };
+}
+
+/** 失败原因的可读摘要。只取消息本身，绝不带卡号/CVV/token——那些从不出现在 message 里。 */
+function diagnosticOf(error) {
+  const parts = [];
+  let current = error;
+  for (let depth = 0; current && depth < 3; depth += 1) {
+    const message = String(current.message || '').trim();
+    if (message && !parts.includes(message)) parts.push(message);
+    current = current.cause;
+  }
+  return parts.join(' ← ').slice(0, 300) || null;
 }
 
 /**
