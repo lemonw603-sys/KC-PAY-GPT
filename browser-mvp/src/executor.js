@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { assertJobEnvelope, ContractError } from './contracts.js';
 import { probeSessionIdentity } from './session-identity-probe.js';
 import { observeCheckout } from './checkout-observer.js';
+import { dismissSavedPaymentMethod } from './stripe-link-picker.js';
 import { navigateToChatGPTCheckout } from './chatgpt-checkout-navigator.js';
 import { fillSecureCardFieldsNonPayment } from './nonpayment-card-fill.js';
 import { fillBillingAddress, fillTransientBillingEmail } from './billing-address-fill.js';
@@ -425,6 +426,21 @@ export class BrowserExecutionService {
       let checkoutBeforeBilling = null;
       let paymentResult = null;
       if (job.metadata.checkoutContract) {
+        // Stripe Link 接管支付区时，卡号/有效期/CVV 三个框根本不渲染，**观察器会当场判
+        // CHECKOUT_OBSERVATION_FAILED**——所以必须在观察之前切到「新的付款方式」。
+        // 2026-09-13 我第一次把这一步挂在 LIVE adapter 里（填卡之前），那已经太晚：
+        // 观察早于 adapter，它先失败，我的代码压根没机会执行（D-201 修正）。
+        const savedMethod = await dismissSavedPaymentMethod(page, { timeoutMs: this.timeoutMs })
+          .catch((error) => ({ savedMethodDetected: null, switchedToNewMethod: null, failed: String(error?.message || '').slice(0, 120) }));
+        // 必须留证：上一版我把返回值丢了，于是这一步做没做、成没成全是黑盒，
+        // 整个 2026-09-13 都在猜（D-202）。
+        await this._event(job, 'checkpoint', ++evidenceSequence, {
+          action: 'saved-payment-method',
+          detected: savedMethod?.savedMethodDetected ?? null,
+          switched: savedMethod?.switchedToNewMethod ?? null,
+          ...(savedMethod?.failed ? { failed: savedMethod.failed } : {}),
+          submitCalls: 0,
+        });
         try {
           checkoutBeforeBilling = await observeCheckout(page, {
             ...job.metadata.checkoutContract,

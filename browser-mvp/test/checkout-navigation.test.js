@@ -131,6 +131,9 @@ test('executor navigates an optional questionnaire to Checkout and remains obser
     assert.equal(submitted, 0);
     assert.deepEqual(evidenceSink.events.map((event) => event.summary.action), [
       'observe-page', 'account-readonly-probe', 'page-signature', 'checkout-navigation',
+      // 每单都记：Stripe Link 有没有接管支付区、有没有切到新卡（D-202）。
+      // 上一版没留证，2026-09-13 整天查不出这一步到底做没做、成没成。
+      'saved-payment-method',
     ]);
   } finally {
     server.close();
