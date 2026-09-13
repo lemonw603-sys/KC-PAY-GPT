@@ -24,6 +24,10 @@ const SAFE_CARD_RETRY_CODES = new Set([
   'ROUTE_BINDING_MISMATCH',
   'EXECUTOR_KIND_MISMATCH',
   'PAYMENT_SNAPSHOT_CHANGED',
+  // 浏览器层的瞬时错误（页面正在导航时执行 JS、标签页被关等）。它既不是客户的 Session
+  // 有问题，也不是卡有问题——重跑一次通常就好。2026-09-13 一个真实客户单因为它被判成
+  // SESSION_INVALID，客户换了 Session 仍然过不去，因为换号根本解决不了（D-198）。
+  'BROWSER_TRANSIENT_PAGE_ERROR',
 ]);
 
 function required(value, name) {
@@ -50,7 +54,7 @@ function assertFormalRun(run) {
   return run;
 }
 
-function classifySafeAbort(error) {
+export function classifySafeAbort(error) {
   const sourceCode = operationalCode(error?.reason || error?.code, 'BROWSER_RUNTIME_FAILURE');
   const customerActionCode = SESSION_ABORTS.get(sourceCode) || null;
   if (customerActionCode) {

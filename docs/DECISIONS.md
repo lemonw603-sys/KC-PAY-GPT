@@ -1667,3 +1667,57 @@ D-192 按 Lemon 当时的指令把订单号整条去掉了，代价是成功页�
 多出来的是 09:02 新开的卡 5371。**差值的原因是库存真的变了，不是口径不同。**
 （仍把脚本改成调正式口径，因为抄一份就是将来漂移的隐患。）
 这正是 D-172 规则 A 的反面教材：我拿 30 分钟前的读数当成了"现在的事实"。
+
+## D-198（2026-09-13 09:40 UTC）浏览器的瞬时故障被当成「客户的 Session 无效」，害客户换号也过不去
+
+### 现象
+
+真实客户单 `PJV1-pom5NfWiskFl9u4Aspdm` 卡在 `WAITING_FOR_SESSION`，客户页显示
+「当前 Session 无效，请重新获取完整 Session」。Lemon 反馈「明明已经登上去了」——**他是对的**。
+他按提示换了一次 Session（`session_replacement_count=1`），**报的还是同一个错**。
+
+底层错误：
+
+```
+page.evaluate: Execution context was destroyed, most likely because of a navigation.
+```
+
+这是 Playwright 的瞬时故障：我们在页面导航的当口执行 JS，执行上下文被销毁。
+**跟客户的 Session 一点关系都没有。**
+
+### 根因：兜底归类把一切未知错误当成 Session 问题
+
+`executor.js:210`：
+
+```js
+const reason = sessionReasons.includes(error?.code) ? error.code : 'SESSION_INVALID';
+```
+
+那条 Playwright 错误**没有 `code`**，于是撞上兜底。后果是双重的：
+客户被要求换号，而换号解决不了；运营看着一个登得好好的账号被判「无效」，无从下手。
+**换几次都一样**——这是死循环，客户永远过不去。
+
+### 改法
+
+新增 `BROWSER_TRANSIENT_PAGE_ERROR`，归进 `SAFE_CARD_RETRY_CODES`：订单退回 `CARD_READY`
+由执行器自己重来，**客户什么都不用做**。
+
+识别范围只认四条 Playwright 的确定性措辞（`Execution context was destroyed`、
+`Target ... closed`、`frame was detached`、`Navigation failed because page was closed`），
+**宁可漏判也不误放**：漏判的代价是客户被要求换一次 Session（今天的老样子），
+误放的代价是把真的 Session 失效当成可重试、白重跑几次。两边都不致命，但前者已经发生。
+
+断言守两头：瞬时故障判 `CARD_READY` 且 `customerActionCode` 必须为 null；
+真的 `SESSION_INVALID` 仍judged 成 `WAITING_FOR_SESSION` 且要求客户换号——这条不能被顺带放宽。
+另外断言 `RefreshAccessTokenError`、`access token expired` 不被误认成瞬时故障。
+
+### 还欠一笔：客户页的文案也在误导
+
+`WAITING_FOR_SESSION` 的通用文案是「当前账号不能开通,请在下方换一个免费账号的 Session」。
+即便在真的 Session 失效时，"当前账号不能开通"也说重了——Session 过期不等于账号不能用。
+**本轮未改**（要发布，且当时有客户单在途）。下次发布客户页时一并处理。
+
+### 这单怎么收
+
+没有工具能把 `WAITING_FOR_SESSION` 直接推回队列，所以仍需客户再贴一次 Session。
+修复后若再遇到同样的瞬时故障，执行器会自己重试，不会再甩给客户。

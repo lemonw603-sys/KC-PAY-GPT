@@ -48,6 +48,21 @@ function assertReadOnlyPageContract(contract, { identityProbeRequired = false } 
 }
 
 /** 关掉这个 Profile 里所有指向目标站点的标签页，让随后的注入落在干净上下文里。 */
+/**
+ * 是不是浏览器层的瞬时故障——页面在我们执行 JS 的当口导航/关闭了。
+ *
+ * 只匹配这几条 Playwright 的确定性措辞，**宁可漏判也不误放**：漏判的代价是客户被要求
+ * 换一次 Session（今天的老样子），误放的代价是把真的 Session 失效当成可重试、
+ * 白白重跑几次。两边都不致命，但前者已经发生过，后者还没有。
+ */
+export function isTransientPageError(error) {
+  const message = String(error?.message || '');
+  return /Execution context was destroyed/i.test(message)
+    || /Target (page, context or browser has been )?closed/i.test(message)
+    || /frame was detached/i.test(message)
+    || /Navigation failed because page was closed/i.test(message);
+}
+
 async function closeStaleOrderPages(context, urlPrefix) {
   if (typeof context.pages !== 'function') return 0;
   const stale = context.pages().filter((page) => !page.isClosed?.() && page.url().startsWith(urlPrefix));
@@ -207,12 +222,24 @@ export class BrowserExecutionService {
             'INVALID_ACCESS_TOKEN', 'INVALID_ACCESS_TOKEN_CLAIMS', 'ACCESS_TOKEN_EXPIRED',
             'ACCESS_TOKEN_NEAR_EXPIRY',
           ];
-          const reason = sessionReasons.includes(error?.code) ? error.code : 'SESSION_INVALID';
+          // 认识的 Session 错误按原样传；**浏览器层的瞬时错误单独归类**，剩下的才兜底成
+          // SESSION_INVALID。
+          //
+          // 为什么要分出瞬时错误（2026-09-13，D-198）：Playwright 在页面导航途中执行 JS 会抛
+          // `Execution context was destroyed`，这个错误**没有 code**，于是撞上兜底被当成
+          // 「客户的 Session 无效」。那天一个真实客户单因此卡住，客户按提示换了一次 Session
+          // 还是同一个错——**换号根本解决不了浏览器层的瞬时故障**，而页面却一直让他换。
+          // 归进可重试集合后，订单退回 CARD_READY 由执行器自己重来，客户什么都不用做。
+          const reason = sessionReasons.includes(error?.code)
+            ? error.code
+            : (isTransientPageError(error) ? 'BROWSER_TRANSIENT_PAGE_ERROR' : 'SESSION_INVALID');
           throw new BrowserExecutionError(
             reason,
             reason === 'SESSION_INVALID'
               ? 'stored Browser Session is unavailable or invalid'
-              : 'Browser preflight Session source is temporarily unavailable',
+              : reason === 'BROWSER_TRANSIENT_PAGE_ERROR'
+                ? 'browser page went away mid-probe; safe to retry'
+                : 'Browser preflight Session source is temporarily unavailable',
             error,
           );
         }

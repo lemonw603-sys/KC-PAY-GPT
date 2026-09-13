@@ -4,6 +4,8 @@ import { createHash } from 'node:crypto';
 import { chromium } from 'playwright';
 
 import { createBrowserWorkerService } from '../../v1/src/services/browser-worker-service.js';
+import { classifySafeAbort } from '../src/shared-runtime-integration.js';
+import { isTransientPageError } from '../src/executor.js';
 import { MemoryEvidenceSink } from '../src/evidence-sink.js';
 import { BrowserExecutionService } from '../src/executor.js';
 import { LocalPlaywrightRuntimeAdapter } from '../src/runtime-adapter.js';
@@ -433,4 +435,27 @@ test('a resident lane converts a thrown pre-payment execution failure into a cla
   const manual = build(1, Object.assign(new Error('nav'), { reason: 'CHECKOUT_NAVIGATION_FAILED' }));
   await assert.rejects(() => manual.integration.runPaymentOnce({ approvedOrderId: 'order-lane' }), /nav/);
   assert.equal(manual.calls.aborts.length, 0);
+});
+
+test('浏览器瞬时故障判成可重试，不是「客户的 Session 无效」（D-198）', () => {
+  // 2026-09-13：Playwright 在页面导航途中执行 JS 抛 `Execution context was destroyed`，
+  // 这个错误没有 code，撞上 executor 的兜底被当成 SESSION_INVALID，于是客户页一直让客户
+  // 换 Session——而换号根本解决不了浏览器层的瞬时故障。那个真实客户单换了一次仍是同一个错。
+  const transient = classifySafeAbort({ code: 'BROWSER_TRANSIENT_PAGE_ERROR' });
+  assert.equal(transient.targetOrderStatus, 'CARD_READY', '应退回队列由执行器自己重来');
+  assert.equal(transient.customerActionCode, null, '不能要求客户做任何事');
+
+  // 真的 Session 失效仍然要客户换号，这条不能被顺带放宽。
+  const sessionDead = classifySafeAbort({ code: 'SESSION_INVALID' });
+  assert.equal(sessionDead.targetOrderStatus, 'WAITING_FOR_SESSION');
+  assert.equal(sessionDead.customerActionCode, 'SESSION_INVALID');
+
+  // 识别范围：只认这几条确定属于浏览器层的措辞，宁可漏判也不误放。
+  assert.ok(isTransientPageError({ message: 'page.evaluate: Execution context was destroyed, most likely because of a navigation.' }));
+  assert.ok(isTransientPageError({ message: 'Target page, context or browser has been closed' }));
+  assert.ok(isTransientPageError({ message: 'frame was detached' }));
+  // 这些是真的 Session 问题，绝不能被当成瞬时故障放过去。
+  assert.equal(isTransientPageError({ message: 'session is no longer refreshable (RefreshAccessTokenError)' }), false);
+  assert.equal(isTransientPageError({ message: 'access token expired' }), false);
+  assert.equal(isTransientPageError({}), false);
 });
