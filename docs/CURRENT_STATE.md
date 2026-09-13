@@ -4,7 +4,7 @@
 
 | 项目 | 当前值 | 核对时间（UTC） | 证据方式 |
 |---|---|---|---|
-| 生产 release | `/opt/pojia/releases/20260913-expyear-c3f664f`（commit `c3f664f`；开卡时把卡台返回的两位年份补成四位——写入侧修复，读取侧容错在本机 browser-mvp 不经发布。D-194）。回滚 `20260913-steady-ring-5825d1c` | 2026-09-13 07:53 UTC | 发布前 `customer-sql-probe.sh` 全通过、非终态订单 0；发布后独立核实（新 ssh）：release 已切、web/worker active、web 进程 cwd 指向新 release、服务器上 `highvcc-card-service.js` 含 `expYearRaw` 3 处 |
+| 生产 release | `/opt/pojia/releases/20260913-orderno-6dcb458`（commit `6dcb458`；客户页每屏给回一行「订单号」——填的是**客户自己那张卡密**，内部 `publicNo` 不再露给客户；复制按钮改复制卡密；圆环 `typicalMs` 按三单校准为 26.2/78.6/58.0/9.5 秒（典型总时长 172.3s）。D-196）。回滚 `20260913-expyear-c3f664f` | 2026-09-13 08:30 UTC | 发布前 `customer-sql-probe.sh` 全通过、v1 733 项 + browser-mvp 266 项 0 失败、非终态订单 0；发布后独立核实（新 ssh）：release 已切、web/worker active、web 进程 cwd 指向新 release、页面引用 `customer.js?v=38`、发出的 js 里「订单号」行恰好 2 处（成功屏与非成功屏各一，守住「每屏只给一行」）、服务器上 `customer-stage.js` 的四个 `typicalMs` 为校准后的值 |
 | 回滚点 | `/opt/pojia/releases/20260912-token-bookmark-f467bd1`（再前 `20260912-captcha-alert-02210b2`；本批次无迁移，直接切回即可） | 2026-09-13 01:5x UTC | switch 输出 ROLLBACK 命令 |
 | 最新数据库备份 | `/var/backups/pojia/pojia-20260912T105342Z.sql.gz.enc`，完整性 OK（release prepare 阶段） | 2026-09-12 10:54 UTC | deploy-release prepare 输出 |
 | pojia-web | active（2026-09-12 10:55 UTC 随 release 切换重启） | 2026-09-12 10:55 UTC | switch 输出 + 服务器本机 curl live/ready 200 |
