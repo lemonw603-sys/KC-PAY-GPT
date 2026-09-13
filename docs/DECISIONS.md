@@ -2371,3 +2371,61 @@ D-196 自己写过「付款路径应该单独做、单独发、单独验」。�
 
 失败时不再只有一个 `CHECKOUT_DRIFT`，而是：完整的分步耗时 + `stage` 指明死点 + 现场留在页面上。
 **三样齐了，"为什么停在马上订阅那一步"才第一次具备可回答的条件。**
+
+---
+
+## D-209（2026-09-14 01:20 UTC）埋点第一单就定位到了：死在 `fill-billing-email`；保留现场同一单内生效
+
+### 这一单同时验证了三样今天刚做的东西
+
+单号 `PJV1-G3Ni4WrwJERVUOg5tl3x`（客户 `w1131520942@gmail.com`，卡 1657），
+17:09:31 UTC 起跑，17:11:08 失败，Lemon 在保留下来的现场手动点订阅完成。
+
+### 一、D-208 埋点：第一次看见付款内部
+
+```
+17:11:03  resolve-secure-card-controls
+17:11:04  fill-secure-card-controls    上一步 334ms
+17:11:06  fill-billing-address        上一步 2446ms
+17:11:08  fill-billing-email          上一步 1824ms   ← 最后一条
+          （没有 wait-for-zero-tax-requote）
+```
+
+**下一个 `setStage` 没被调用，所以失败就在 `fillTransientBillingEmail` 里面。**
+填卡 0.3 秒、填地址 2.4 秒都很顺——今天 8 次 `CHECKOUT_DRIFT` 从来分不出的位置，
+第一单就定住了。
+
+### 二、D-205 保留现场：第一次产生实际作用
+
+失败后当场连 Pilot 窗口实查，卡框三格 **卡号/有效期/CVV 全部"有值"**。
+Lemon 不用重填，直接点订阅完成。**Stripe 发票 `LUEFGA76-0001`：
+`Nabayaran na ang invoice ₱982.14`（已支付），免税价，零税约束没破。**
+
+对照今天下午：同样的失败点，卡框被清空，运营看到的是"账单填好了却一步之遥点不了"。
+
+### 三、待验的假说（**不要当结论引用**）
+
+`fillTransientBillingEmail`（`billing-address-fill.js:88`）要求页面上可见邮箱框
+**恰好 1 个**：
+
+```js
+if (matches.length !== 1) throw new ContractError('billing email field must resolve to one visible input');
+```
+
+而今天走到这一步的单**都是 Stripe Link 接管成功之后**才死的（`detected:true, switched:true`）。
+**假说**：Link 带来了自己的登录邮箱框，页面上因此有 2 个可见邮箱框 → 抛错。
+
+**未验证**：去数的时候 Lemon 已接手，checkout 页已关。**下一单失败时第一时间数**。
+在数到之前，这只是一条候选，不是原因。
+
+### 四、收口
+
+`close-manually-fulfilled-order.mjs`（不带 `--card-used`，脚本对 `RECHARGE_FAILED` 拒收该参数），
+独立核实：订单 `RECHARGE_SUCCESS`、CDK `REDEEMED`。**账本第 3 笔状态错标**（同 D-207），
+卡 1657 用量少算 1。
+
+### 五、顺带纠正一个长期错误读数
+
+卡 5371 的余额**同步过了，真值 $2.84**——先前一直显示的 $34.28 是开卡时的静态值
+（`last_transaction_synced_at` 为空 = 从未同步）。它已低于门槛 16，不再合格。
+**HANDOFF_NOW 缺口 5 说的"判断卡够不够用时不要信库内余额"，今天又应验一次。**
