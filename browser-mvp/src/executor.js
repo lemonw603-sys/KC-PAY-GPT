@@ -449,7 +449,16 @@ export class BrowserExecutionService {
           });
           if (observeOnly) checkout = await observeCheckoutAfterRequote(page, job.metadata.checkoutContract, this.timeoutMs);
         } catch (error) {
-          throw new BrowserExecutionError('CHECKOUT_OBSERVATION_FAILED', error.message, error);
+          // 观察要遍历页面上所有 frame 去找卡字段，而 Stripe / hCaptcha 的 iframe 频繁
+          // 挂载卸载——正好撞上就抛 `Target page, context or browser has been closed`，
+          // 页面其实好端端的（2026-09-13 实查：结账页标签仍在）。这类瞬时故障必须可重试，
+          // 判成终态失败等于白扔一单。**这是同一教训当天第三次**：D-198 加了
+          // isTransientPageError 却只覆盖了两处 Session catch，观察这一处漏了。
+          throw new BrowserExecutionError(
+            isTransientPageError(error) ? 'BROWSER_TRANSIENT_PAGE_ERROR' : 'CHECKOUT_OBSERVATION_FAILED',
+            error.message,
+            error,
+          );
         }
       }
       let cardFill = null;

@@ -478,4 +478,21 @@ test('两处「未知错误」兜底都要先认瞬时故障，不能漏掉任�
   // SESSION_ABORTS 会把 SESSION_IDENTITY_MISMATCH 也变成客户看到的「Session 无效」，
   // 所以这两个码都要被守住，不能只盯 SESSION_INVALID。
   assert.equal(classifySafeAbort({ code: 'SESSION_IDENTITY_MISMATCH' }).customerActionCode, 'SESSION_INVALID');
+
+  // 2026-09-13 第三次漏：观察器遍历 frame 找卡字段时，Stripe/hCaptcha 的 iframe 卸载，
+  // 抛 `Target page … closed`，被判成 CHECKOUT_OBSERVATION_FAILED 终态失败——页面其实还在。
+  // 守住：executor 里**每一处**把错误归类成终态失败码的地方，都要先过 isTransientPageError。
+  const executorSource = readFileSync(new URL('../src/executor.js', import.meta.url), 'utf8');
+  for (const line of executorSource.split('\n')) {
+    const isComment = /^\s*(\/\/|\*)/.test(line);
+    // 转发一个**已知**的错误码（error?.code === 'X' 就原样抛 X）不需要瞬时判定——
+    // 那不是兜底，是如实传递。只有「不认识的错误归成某个终态码」才必须先认瞬时故障。
+    const isForwarding = /error\?\.code === /.test(line);
+    const isFallback = /\?[^:]*:\s*'(CHECKOUT_OBSERVATION_FAILED|SESSION_INVALID|SESSION_IDENTITY_MISMATCH)'/.test(line)
+      || /isTransientPageError\(error\)\s*\?/.test(line);
+    if (isFallback && !isComment && !isForwarding) {
+      assert.match(line, /isTransientPageError/,
+        `归类成终态失败前必须先认瞬时故障，这一行没有: ${line.trim().slice(0, 90)}`);
+    }
+  }
 });
