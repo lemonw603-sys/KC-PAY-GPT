@@ -15,7 +15,10 @@ const [publicNo, ...rest] = process.argv.slice(2);
 const windowMin = (() => { const i = rest.indexOf('--window-min'); return i >= 0 ? Number(rest[i + 1]) || 30 : 30; })();
 if (!publicNo) { console.error('usage: check-card-charge.mjs <public-no> [--window-min 30]'); process.exit(2); }
 
-const pool = mysql.createPool(process.env.DATABASE_URL);
+// timezone:'Z' 必须显式指定：库里 DATETIME 存的是 UTC，而 mysql2 默认按**本机**时区解析，
+// 在 UTC+8 的机器上会把 02:24 读成 18:24Z——整整偏 8 小时。2026-09-12 我正是被这个偏差
+// 误导，反推出「卡台时间是 UTC+8」的错误结论（见 highvcc-card.js 里的说明）。
+const pool = mysql.createPool({ uri: process.env.DATABASE_URL, timezone: 'Z' });
 try {
   const [[order]] = await pool.query(
     `SELECT o.id, o.public_no, o.status, o.assigned_card_id, c.last4, c.card_bin

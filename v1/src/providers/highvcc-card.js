@@ -183,20 +183,21 @@ export function createHighvccCardProvider({
   //   单条 = { cardAuthId, amount, cardId, desc, cardSeqNo, lastFour, tradeTime, approveTime,
   //            unit, status, reason, tags, merchantAmount, merchantCurrency, merchantCountry }
   //   amount 是**分**（1579 = $15.79）；status 见过 'COMPLETE'。
-  //   **tradeTime / approveTime 是按 UTC+8 墙上时间算的毫秒值，不是 UTC epoch**——
-  //   2026-09-12 用 9-11 那笔已知扣款坐实：付款提交 03:14:09Z，tradeTime 读作 UTC 是
-  //   11:14:30Z，差整整 480 分钟；按 UTC+8 还原成 03:14:30Z，比提交晚 21 秒，正是刷卡耗时。
-  //   直接当 UTC 解析会把「扣了钱」判成「没扣钱」——最危险的一种误判。用 toEpochMs() 转换。
+  //   **tradeTime / approveTime 就是 UTC epoch 毫秒，不要做任何时区平移。**
+  //   2026-09-13 用绝对基准核实：库里 PAYMENT_SUBMIT 存 11:14:09（数据库时区 = UTC，
+  //   以 NOW() 对真实 UTC 验证过），卡台 tradeTime 直读 11:14:30Z，差 21 秒，正是刷卡耗时。
+  //   （2026-09-12 我曾误判成 UTC+8 并减去 8 小时：当时用的数据库读数经 mysql2 按本地时区
+  //   解析，本身就偏了 8 小时，两个错误互相抵消，差值看着完美、双向测试全绿。教训是
+  //   「差值一致」只证明两边一致，不证明两边都对——必须对外部绝对基准校准。）
   //
   // 为什么要它：付款结果不明时，「卡上钱动没动」是判定的客观证据。在这之前
   // BrowserCardTransactionReader 对 MANUAL_IMPORT 卡返回的是占位假数据，
   // 验证 lane 因此永远走不出「不明」，每单都要人工核实（D-190 续 / ROADMAP）。
   const MIN_PAGE_SIZE = 6;
-  /** 卡台时间戳按 UTC+8 墙上时间编码，转成真正的 epoch 毫秒。 */
-  const HIGHVCC_UTC_OFFSET_MS = 8 * 60 * 60 * 1000;
+  /** 卡台时间戳已是 UTC epoch 毫秒；这里只做有效性归一，不做任何平移。 */
   function toEpochMs(value) {
     const raw = Number(value);
-    return Number.isFinite(raw) && raw > 0 ? raw - HIGHVCC_UTC_OFFSET_MS : null;
+    return Number.isFinite(raw) && raw > 0 ? raw : null;
   }
   async function transactions({ pageNo = 1, pageSize = 20 } = {}) {
     const size = Math.max(MIN_PAGE_SIZE, Math.min(200, Number(pageSize) || MIN_PAGE_SIZE));
@@ -204,7 +205,7 @@ export function createHighvccCardProvider({
     const r = await api('GET', `/api/cardTrade/authTrans/page?pageNo=${page}&pageSize=${size}`);
     const payload = r?.data || {};
     const rows = Array.isArray(payload.data) ? payload.data : [];
-    // 时间戳在这里就地归一，别让每个调用方各自记得减 8 小时——那种约定迟早会被漏掉。
+    // 就地归一成 *EpochMs 字段：调用方只认这两个，不去碰原始字段，免得将来又有人「顺手修时区」。
     const normalized = rows.map((row) => ({
       ...row,
       tradeTimeEpochMs: toEpochMs(row.tradeTime),

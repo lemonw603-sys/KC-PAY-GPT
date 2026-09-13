@@ -177,12 +177,13 @@ test('provider.wallet: exposes the raw cents fields without asserting what "depo
   assert.deepEqual(w, { usdBalanceCents: 2088, usdDepositCents: 64480, usdConsumeCents: 0 });
 });
 
-// 2026-09-12 对真实响应核实的合同：交易列表的时间戳按 UTC+8 墙上时间编码，不是 UTC epoch。
-// 用 9-11 那笔已知扣款坐实：付款提交 03:14:09Z，原始 tradeTime 直读是 11:14:30Z（差整 480 分钟），
-// 按 UTC+8 还原得 03:14:30Z——比提交晚 21 秒，正是刷卡耗时。
-// 这一条最容易在后续重构里被「简化」掉，而一旦直接当 UTC 解析，对账会把「扣了钱」判成
-// 「没扣钱」，进而退卡密让客户重兑、造成重复扣款。所以在这里钉死。
-test('transactions(): 时间戳按 UTC+8 归一，页长不足 6 会被抬到 6', async () => {
+// 2026-09-13 用绝对基准核实的合同：交易时间戳**就是 UTC epoch 毫秒，不做任何平移**。
+// 库里 PAYMENT_SUBMIT 存 11:14:09（数据库时区 = UTC，以 NOW() 对真实 UTC 校准过），
+// 卡台 tradeTime 直读 11:14:30Z，差 21 秒即刷卡耗时。
+// 前一版测试断言过「按 UTC+8 减 8 小时」，那是错的：当时的数据库读数经 mysql2 按本地时区解析，
+// 本身偏了 8 小时，两个错误抵消，差值看着完美、双向验证全绿。**差值一致只证明两边一致，
+// 不证明两边都对**——所以这里改用绝对时刻断言，而不是断言两者之差。
+test('transactions(): 时间戳原样是 UTC epoch，不做时区平移；页长不足 6 会被抬到 6', async () => {
   const seen = [];
   const provider = createHighvccCardProvider({
     getAccessToken: async () => 'fixture-token',
@@ -211,9 +212,9 @@ test('transactions(): 时间戳按 UTC+8 归一，页长不足 6 会被抬到 6'
   assert.match(seen[0], /pageSize=6/, '页长小于 6 会被卡台拒绝，必须抬到 6');
   assert.equal(total, 1);
   assert.equal(hasNext, false);
-  assert.equal(new Date(rows[0].tradeTimeEpochMs).toISOString(), '2026-09-11T03:14:30.000Z',
-    'tradeTime 必须按 UTC+8 还原，直接当 UTC 会整整差 8 小时');
-  assert.equal(new Date(rows[0].approveTimeEpochMs).toISOString(), '2026-09-12T06:59:25.000Z');
+  assert.equal(new Date(rows[0].tradeTimeEpochMs).toISOString(), '2026-09-11T11:14:30.000Z',
+    'tradeTime 原样就是 UTC，任何平移都会让对账偏掉整整 8 小时');
+  assert.equal(new Date(rows[0].approveTimeEpochMs).toISOString(), '2026-09-12T14:59:25.000Z');
   assert.equal(rows[0].amount, 1579, '金额是分，原样保留');
 });
 
