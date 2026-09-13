@@ -14,7 +14,17 @@ check(){ # check <行前缀> <现场值> <说明>
   # 子串，会把"查不到"报成 [一致]——2026-09-13 实测把"没卡"报成"有卡"，真实是 0 张。
   if [ -z "$bare" ] || [ "$2" = "NULL" ] || ! printf '%s' "$bare" | grep -q '[0-9A-Za-z]'; then say "[取值失败] $1：现场 $3 取不到值（查询或列名有误，按漂移处理）"; drift=1; return; fi
   if [ -z "$line" ]; then say "[缺行] $1（现场：$3=$2）"; drift=1; return; fi
-  if printf '%s' "$line" | grep -qF -- "$2"; then say "[一致] $1 ⊇ $3=$2"; else say "[漂移] $1：现场 $3=$2；表中：$(printf '%s' "$line" | cut -c1-110)…"; drift=1; fi
+  # 子串匹配对数字值不可靠：现场 "1 张" 会命中表里 "11 张卡"，把漂移报成一致
+  # （2026-09-13 当天被骗两次：先是 " 张"⊂"1 张"，补了守卫后又是 "1 张"⊂"11 张"）。
+  # 现场值以数字开头/结尾时，要求它在表里出现的那一侧不是数字。
+  if MATCH_LINE="$line" MATCH_VALUE="$2" python3 -c '
+import os, re, sys
+line, value = os.environ["MATCH_LINE"], os.environ["MATCH_VALUE"]
+pat = re.escape(value)
+if value[:1].isdigit(): pat = r"(?<!\d)" + pat
+if value[-1:].isdigit(): pat = pat + r"(?!\d)"
+sys.exit(0 if re.search(pat, line) else 1)
+'; then say "[一致] $1 ⊇ $3=$2"; else say "[漂移] $1：现场 $3=$2；表中：$(printf '%s' "$line" | cut -c1-110)…"; drift=1; fi
 }
 nc -z 127.0.0.1 13306 2>/dev/null || { say "隧道 13306 未通，先跑 ready-check.sh"; exit 1; }
 
