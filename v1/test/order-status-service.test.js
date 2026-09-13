@@ -20,7 +20,11 @@ test('maps internal states to the 6-step customer progress vocabulary', () => {
   // 异常分支单列，不混进正常进度条
   assert.equal(mapCustomerOrderStatus('WAITING_FOR_SESSION'), 'ACTION_REQUIRED');
   assert.equal(mapCustomerOrderStatus('CANCELLATION_REVIEW_REQUIRED'), 'REVIEWING');
-  assert.equal(mapCustomerOrderStatus('SUBMIT_UNKNOWN'), 'REVIEWING');
+  // 付款已提交、结果正在确认是**每一单必经的一步**（2026-09-13 两次全自动成功单各在此
+  // 停 8~9 秒），不是故障。它此前和 RECONCILIATION_REQUIRED 一起映射成 REVIEWING，
+  // 客户于是在钱已付掉、Plus 已开通的那几秒看到橙色「遇到点问题」，且前端轮询被降到
+  // 30 秒，成功要等下一轮才显示。真正需要人工对账的情况有自己的状态。
+  assert.equal(mapCustomerOrderStatus('SUBMIT_UNKNOWN'), 'VERIFYING');
   assert.equal(mapCustomerOrderStatus('RECONCILIATION_REQUIRED'), 'REVIEWING');
   assert.equal(mapCustomerOrderStatus('CARD_FAILED'), 'FAILED');
   assert.equal(mapCustomerOrderStatus('RECHARGE_FAILED'), 'FAILED');

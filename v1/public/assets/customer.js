@@ -57,16 +57,24 @@
   // 后端映射态 → 本页呈现方式。poll 为 null 表示终态，停止轮询。
   // 设计稿的「遇到问题」屏标题仍是当前阶段名（例如「正在提交支付」），
   // 换掉的只是下面那行说明——客户要知道卡在哪一步，不是只知道"出问题了"。
-  // ticket 为 true 表示这一屏要给查询码：正常等待几分钟不需要，需要等或
-  // 需要客户动手时才给。
+  // ticket 为 true 表示这一屏是「需要等或需要客户动手」的屏：它不显示方案那一行，
+  // 文案也改成让客户留着卡密回来查。（原先它还负责显示查询码，现已去掉。）
   const STATUS_VIEW = {
     QUEUED:          { tone: 'ok',   poll: 5000 },
     PREPARING:       { tone: 'ok',   poll: 5000 },
     PAYING:          { tone: 'ok',   poll: 4000 },
     ACTIVATING:      { tone: 'ok',   poll: 5000 },
-    CONFIRMING:      { tone: 'ok',   poll: 6000 },
+    // 付款已提交、正在确认结果。后端的 SUBMIT_UNKNOWN 映射到这里，它是每一单必经的
+    // 一步（2026-09-13 两单各停 8~9 秒），此前被当成「遇到点问题」+30 秒轮询，客户在
+    // 钱已付掉的那几秒看到橙色警告，成功还要等下一轮才显示。这里按正常态走、轮询压到
+    // 3 秒；真卡住不动由 stalledView() 按停留时长降级，不靠状态本身表达故障。
+    VERIFYING:       { tone: 'ok',   poll: 3000,
+      hint: '支付已提交,正在和 ChatGPT 核对开通结果。' + KEEP_OPEN },
+    // 确认订阅/取消续费这一段最快只有几秒（三个操作同事务提交），轮询别比它还慢，
+    // 否则成功要等下一轮才显示。
+    CONFIRMING:      { tone: 'ok',   poll: 3000 },
     REVIEWING:       { tone: 'warn', poll: 30000, ticket: true,
-      hint: '遇到点问题,我们已经收到通知在处理。本页会自动更新,你也可以记下查询码稍后回来看。' },
+      hint: '遇到点问题,我们已经收到通知在处理。本页会自动更新,你的卡密可以随时回来查。' },
     ACTION_REQUIRED: { tone: 'warn', poll: 30000, ticket: true,
       hint: '当前账号不能开通,请在下方换一个免费账号的 Session,订单会继续处理。' },
     SUCCESS:         { tone: 'ok',   poll: null, ticket: true },
@@ -89,11 +97,11 @@
     ordering_paused: '当前暂停接收新订单,请稍后再试。',
     ordering_not_configured: '当前暂时无法创建订单,请稍后再试。',
     order_route_unavailable: '当前暂时无法创建订单,请稍后再试。',
-    invalid_order_query: '请输入有效的查询码或卡密。',
+    invalid_order_query: '请输入有效的卡密。',
     order_not_found: '没有找到对应订单,请检查输入。',
     session_replacement_not_allowed: '当前订单不需要更换账号。',
-    session_replacement_expired: '更换时间已过,请保留查询码联系人工处理。',
-    session_replacement_limit_reached: '更换次数已用完,请保留查询码联系人工处理。',
+    session_replacement_expired: '更换时间已过,请保留卡密联系人工处理。',
+    session_replacement_limit_reached: '更换次数已用完,请保留卡密联系人工处理。',
     funds_state_unsafe: '订单正在复核,暂时不能更换账号。',
     rate_limited: '操作太频繁了,请稍等一会儿再试。',
     body_too_large: '粘贴的内容过大,请检查是否多复制了东西。',
@@ -120,7 +128,6 @@
     ringTick: $('ring-tick'), stageName: $('stage-name'), stageHint: $('stage-hint'),
     runSeal: $('run-seal'), runRows: $('run-rows'),
     runSublink: $('run-sublink'), runRisk: $('run-risk'),
-    ticketCopy: $('ticket-copy'),
     formReplace: $('form-replace'), replaceSession: $('replace-session'), fieldReplace: $('field-replace'),
     replaceCheck: $('replace-check'), replaceSubmit: $('replace-submit'), replaceLimit: $('replace-limit'),
     formQuery: $('form-query'), queryInput: $('query-input'), fieldQuery: $('field-query'),
@@ -140,7 +147,7 @@
   let pending = null;       // 待确认：{ cdk, session, email, name } —— 尚未发请求
   let currentOrder = null;
   let pollTimer = null, pollStart = 0;
-  let ringRaf = null, stageSeenAt = new Map(), shownStageCode = null;
+  let ringRaf = null, stageSeenAt = new Map(), shownStageCode = null, shownPct = 0;
 
   // ------------------------------------------------------------- 工具
   const reduceMotion = () => window.matchMedia
@@ -268,8 +275,20 @@
   }
   function paintRing(percent) {
     const clamped = Math.max(0, Math.min(100, percent));
+    shownPct = clamped;
     el.ringPct.textContent = String(Math.round(clamped));
     el.ringFg.style.strokeDashoffset = String(RING_C * (1 - clamped / 100));
+  }
+  // 一次性滑到某个值（用于跑完那一下：77% → 100%）。
+  function glideTo(target, ms = 700) {
+    stopRing();
+    const from = shownPct;
+    const t0 = performance.now();
+    (function frame(now) {
+      const k = Math.min(1, (now - t0) / ms);
+      paintRing(from + (target - from) * (1 - Math.pow(1 - k, 3)));
+      ringRaf = k < 1 ? requestAnimationFrame(frame) : null;
+    })(t0);
   }
   function curve(stage, elapsedMs) {
     const floor = Number(stage.floor) || 0;
@@ -283,7 +302,14 @@
     if (stage.index >= stage.total) { paintRing(100); return; }
     if (frozen || reduceMotion()) { paintRing(curve(stage, Date.now() - startedAt)); return; }
     (function frame() {
-      paintRing(curve(stage, Date.now() - startedAt));
+      const want = curve(stage, Date.now() - startedAt);
+      // 段内曲线本身是连续的，跳变出在**换段**：新段的 floor 高于上一段的钳位值，
+      // 而且阶段会跳级（2026-09-13 实测一单里 CREATED→CARD_READY 跳过阶段 2、
+      // checkout-navigation→PAYMENT_SUBMIT 之间阶段 4 只停 18 秒就被拽走，圆环从
+      // 37.6% 一下到 46%）。每帧只走掉差距的 12%，视觉上是一段加速爬升而不是闪跳；
+      // 差距小于 0.15 个百分点就直接对齐，免得永远在追而画不到位。
+      const gap = want - shownPct;
+      paintRing(Math.abs(gap) < 0.15 ? want : shownPct + gap * 0.12);
       ringRaf = requestAnimationFrame(frame);
     })();
   }
@@ -310,21 +336,22 @@
 
   // ------------------------------------------------------------- 订单渲染
   // 每一屏的明细逐字照设计稿：等待中是「订单/账号/方案」，成功是
-  // 「订阅方案/账号/开通时间/查询码」，出问题是「订单/账号/查询码」。
+  // 「订阅方案/账号/开通时间」，出问题是「账号」——订单号不再露给客户（只留卡密）。
   function renderRows(order, { ticket = false } = {}) {
     const rows = [];
-    const label = order.product?.label || verified?.product?.label;
+    // 订阅方案显示短名：后端给的 label 是 'ChatGPT Plus'，客户页只要 'Plus'。
+    const label = productShortName(order);
     const success = order.status === 'SUCCESS';
     if (success) {
-      if (label) rows.push(['订阅方案', label, true]);
+      rows.push(['订阅方案', label, true]);
       if (order.customerEmail) rows.push(['账号', order.customerEmail]);
       rows.push(['开通时间', fmtTime(order.finishedAt || order.updatedAt) || '—', true]);
     } else {
-      rows.push(['订单', order.publicNo]);
       if (order.customerEmail) rows.push(['账号', order.customerEmail]);
-      if (!ticket && label) rows.push(['方案', label, true]);
+      if (!ticket) rows.push(['方案', label, true]);
     }
-    if (ticket) rows.push(['查询码', order.publicNo]);
+    // 不再显示订单号（旧称「查询码」）：客户手上本来就有卡密，回来查用卡密即可，
+    // 不必再记一串码。客服侧不受影响——后台搜索与 find-order-by-cdk.mjs 都能按 CDK 查。
     el.runRows.innerHTML = rows.map(([name, value, isText]) => {
       const div = document.createElement('div');
       div.className = 'rows__r';
@@ -338,9 +365,25 @@
     }).join('');
   }
 
+  // 付款结果确认得太久就该照实说。VERIFYING 本身是正常态（每单必经、通常几秒），
+  // 但如果它迟迟不动，客户干等着看不出所以然比看到警告更糟。用阶段停留时长判断，
+  // 不新增后端字段：stage.since 就是这一阶段的起点。
+  const VERIFYING_PATIENCE_MS = 180000;
+  function resolveView(order) {
+    const view = STATUS_VIEW[order.status] || STATUS_VIEW.REVIEWING;
+    if (order.status !== 'VERIFYING') return view;
+    const since = order.stage?.since ? new Date(order.stage.since).getTime() : null;
+    const startedAt = Number.isFinite(since) && since
+      ? since
+      : (stageSeenAt.get(order.stage?.code) || Date.now());
+    if (Date.now() - startedAt <= VERIFYING_PATIENCE_MS) return view;
+    return { ...STATUS_VIEW.REVIEWING,
+      hint: '支付结果确认得比平时久,我们已经收到通知在核对。本页会自动更新,你的卡密可以随时回来查。' };
+  }
+
   function renderOrder(order, { scroll = false } = {}) {
     currentOrder = order;
-    const view = STATUS_VIEW[order.status] || STATUS_VIEW.REVIEWING;
+    const view = resolveView(order);
     const success = order.status === 'SUCCESS';
     const stage = order.stage || null;
 
@@ -360,7 +403,7 @@
     if (order.status === 'FAILED') {
       hint = canRetry
         ? '这一单没有完成,没有扣费。你的卡密可以直接重新兑换。'
-        : '这一单没有完成。请记下查询码联系客服核对。';
+        : '这一单没有完成。请保留卡密联系客服核对。';
     }
     if (!hint) {
       const base = stage ? STAGE_HINT[stage.code] : '';
@@ -373,8 +416,12 @@
     el.ringNum.hidden = success;
     el.ringTick.classList.toggle('is-on', success);
     if (success) {
-      stopRing();
-      paintRing(100);
+      // 最后一跳原来最刺眼：阶段 8「正在确认订阅」（88→97）根本没有停留时间——
+      // PAYMENT_CONFIRMED / PLUS_ACTIVATED / CANCELLATION_CONFIRMED 三个操作同事务
+      // 提交、时间戳完全相同，所以客户看到的是 77% 直接变 100%。滑过去而不是跳。
+      // 直接查到一个早已成功的单时（环还停在 0）不做这个动画，它没有"爬上来"的语境。
+      if (shownPct > 0 && shownPct < 100) glideTo(100);
+      else { stopRing(); paintRing(100); }
     } else if (stage) {
       // 后端给了阶段起点就用它；没有（阶段由订单状态推出）就用本地首见时间。
       const since = stage.since ? new Date(stage.since).getTime() : null;
@@ -390,7 +437,6 @@
     el.runSeal.hidden = !success;
     el.runSublink.hidden = !success;
     el.runRisk.hidden = !success;
-    el.ticketCopy.hidden = !view.ticket;
 
     el.queryInput.value = order.publicNo;
     rememberPublicNo(order.publicNo);
@@ -411,7 +457,7 @@
         : `还可以换 ${replacement.remaining} 次`
           + (replacement.expiresAt ? ` · 截止 ${fmtTime(replacement.expiresAt)}` : '');
     } else if (order.status === 'ACTION_REQUIRED') {
-      el.stageHint.textContent = '更换次数或时间已经用完,请保留查询码联系客服处理。';
+      el.stageHint.textContent = '更换次数或时间已经用完,请保留卡密联系客服处理。';
     }
 
     showView('run', { allDone: success });
@@ -429,7 +475,7 @@
     if (!view || view.poll === null) return;
     if (!pollStart) pollStart = Date.now();
     if (Date.now() - pollStart > 30 * 60 * 1000) {
-      toast('自动刷新已暂停,可以用查询码到「订单查询」继续看。');
+      toast('自动刷新已暂停,可以用卡密到「订单查询」继续看。');
       return;
     }
     // 页面在后台时降频而不是停掉：客户提交完常常切走等着，而有些环境
@@ -585,7 +631,7 @@
     fieldError(el.fieldSession, '');
     if (!refreshSessionPreview({ quiet: false }) || !pending) return;
     el.confirmCdk.textContent = maskCdk(pending.cdk);
-    el.confirmPlan.textContent = verified?.product?.label || 'ChatGPT Plus';
+    el.confirmPlan.textContent = productShortName(null);
     el.confirmEmail.textContent = pending.email;
     el.confirmName.textContent = pending.name || '';
     el.confirmNameRow.hidden = !pending.name;
@@ -618,7 +664,7 @@
         product: verified?.product || null,
         stage: { index: 1, code: 'ORDER_RECEIVED', label: '已收到订单', total: 9, floor: 0, ceiling: 10, since: null }
       });
-      toast('订单已创建,请记下下面的查询码。', 'success');
+      toast('订单已创建,正在处理。你的卡密可以随时回来查进度。', 'success');
     } catch (error) {
       const code = String(error?.code || error?.message || '').toLowerCase();
       if (code === 'cdk_unavailable') {
@@ -636,7 +682,7 @@
 
   // ---------------------------------------------------- 屏 4 换号 / 复制
   // 重新兑换：失败单里钱没动的那种，客户点一下就回到第一步。卡密不回填——
-  // 客户可能是拿查询码查到这一屏的，我们手上不一定有那串码，留个空框比填错强。
+  // 客户可能是用卡密查到这一屏的，而卡密不经状态接口回传，我们手上不一定有它，留个空框比填错强。
   el.retryOrder.addEventListener('click', () => {
     stopPoll();
     stopRing();
@@ -682,16 +728,6 @@
     }
   });
 
-  el.ticketCopy.addEventListener('click', async () => {
-    const value = currentOrder?.publicNo;
-    if (!value) return;
-    try {
-      await navigator.clipboard.writeText(value);
-      el.ticketCopy.textContent = '已复制';
-      setTimeout(() => { el.ticketCopy.textContent = '复制查询码'; }, 1600);
-    } catch { toast('复制失败,请手动选中查询码。'); }
-  });
-
   // ---------------------------------------------------- 屏 5 订单查询
   function clearQueryResult() {
     el.queryResult.hidden = true;
@@ -707,15 +743,14 @@
       // 设计稿的查询屏就地给答案，不把客户推进完整的进度页。只有订单还在
       // 跑的时候才跳过去——那时他要看的是实时进度，一个静态结论没用。
       if (order.status === 'SUCCESS') {
-        const label = order.product?.label || 'ChatGPT Plus';
-        el.queryResultTitle.textContent = `${label} 已开通`;
+        el.queryResultTitle.textContent = `${productShortName(order)} 已开通`;
         el.queryResultSub.textContent = fmtTime(order.finishedAt || order.updatedAt)
           ? `开通时间 ${fmtTime(order.finishedAt || order.updatedAt)}` : '';
         el.queryResult.hidden = false;
         el.queryRisk.hidden = false;
       } else if (order.status === 'FAILED' && order.canRetry !== true) {
         el.queryResultTitle.textContent = '这一单没有完成';
-        el.queryResultSub.textContent = '请记下查询码联系客服核对。';
+        el.queryResultSub.textContent = '请保留卡密联系客服核对。';
         el.queryResult.hidden = false;
       } else {
         pollStart = Date.now();
@@ -736,7 +771,7 @@
     clearToast();
     stopPoll();
     const value = el.queryInput.value.trim();
-    if (!value) return fieldError(el.fieldQuery, '请输入查询码或卡密。');
+    if (!value) return fieldError(el.fieldQuery, '请输入卡密。');
     return runQuery(value);
   });
   el.queryBack.addEventListener('click', () => { clearQueryResult(); showView('cdk'); });

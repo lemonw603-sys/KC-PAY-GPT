@@ -151,18 +151,44 @@ test('Session 全文不回显，建单成功后立刻清空', () => {
   assert.doesNotMatch(js, /accessToken\s*[:=]\s*[^'"\s]/);
 });
 
-test('每一屏的明细与按钮照设计稿：等待中不给查询码，出问题才给', () => {
-  // 设计稿 run 屏只有「订单/账号/方案」，done 是「订阅方案/账号/开通时间/
-  // 查询码」，stuck 是「订单/账号/查询码」。正常等待几分钟不需要查询码，
-  // 给了反而像在说「可以关掉了」。
+test('客户页不露订单号：只用卡密，方案显示短名', () => {
+  // 2026-09-13 Lemon 定：「客户的充值页面里边有很多查询码，我们不要查询码，
+  // 我们只保留 CDK 就好」。设计稿原来在 done/stuck 屏给查询码（= 订单号），
+  // 现在整条去掉——客户手上本来就有卡密，回来查用卡密即可，不必再记一串码。
+  // 客服侧不受影响：后台搜索与 find-order-by-cdk.mjs 都能按 CDK 查到单。
+  assert.doesNotMatch(js, /rows\.push\(\['查询码'/);
+  assert.doesNotMatch(js, /rows\.push\(\['订单', order\.publicNo\]\)/);
+  assert.doesNotMatch(all, /复制查询码/);
+  // 订阅方案给短名：后端 label 是 'ChatGPT Plus'，客户页只要 'Plus'（同日 Lemon 定）。
   assert.match(js, /rows\.push\(\['订阅方案', label, true\]\)/);
-  assert.match(js, /if \(ticket\) rows\.push\(\['查询码', order\.publicNo\]\)/);
+  assert.match(js, /const label = productShortName\(order\);/);
   assert.match(js, /REVIEWING:\s*\{[^}]*ticket: true/);
   assert.match(js, /SUCCESS:\s*\{[^}]*ticket: true/);
   assert.match(js, /QUEUED:\s*\{(?![^}]*ticket)[^}]*\}/);
   // 「兑换另一张卡密」没有业务依据（卡密一张一张卖，出问题时码会自动退回），
   // 而且摆在等待屏会把客户带离进度页。
   assert.doesNotMatch(all, /兑换另一张卡密/);
+});
+
+test('付款结果确认中是正常态，不是故障态（2026-09-13 修）', () => {
+  // 客户在钱已经付掉、Plus 已经开通的那几秒，不能看到橙色的「遇到点问题」。
+  // SUBMIT_UNKNOWN → VERIFYING（见 src/services/order-status-service.js），本页把它
+  // 按正常态渲染；轮询也不能比这一段本身还慢，否则成功要等下一轮才显示。
+  assert.match(js, /VERIFYING:\s*\{\s*tone: 'ok'/);
+  assert.match(js, /VERIFYING:[\s\S]{0,80}poll: 3000/);
+  assert.match(js, /CONFIRMING:\s*\{\s*tone: 'ok',\s*poll: 3000/);
+  // 但真卡住不动仍要照实说：按阶段停留时长降级，而不是靠状态本身表达故障。
+  assert.match(js, /VERIFYING_PATIENCE_MS/);
+  assert.match(js, /function resolveView/);
+});
+
+test('进度环不跳：换段与跑完都是过渡，不是瞬移', () => {
+  // 阶段会跳级，且各阶段实际停留时长差很多（2026-09-13 实测一单里阶段 4 只有 18 秒、
+  // 阶段 7 只有 8.8 秒，而阶段 8 三个操作同事务提交、完全没有停留时间），
+  // 直接画目标值就是一连串闪跳。换段按差距逐帧追，跑完那一下滑过去。
+  assert.match(js, /const gap = want - shownPct;/);
+  assert.match(js, /function glideTo/);
+  assert.match(js, /if \(shownPct > 0 && shownPct < 100\) glideTo\(100\);/);
 });
 
 test('出问题时标题保留当前阶段名，客户要知道卡在哪一步', () => {

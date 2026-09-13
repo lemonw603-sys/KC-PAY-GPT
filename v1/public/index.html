@@ -8,8 +8,8 @@
   <meta name="description" content="ChatGPT 订阅自助开通：验证卡密、核对账号、确认兑换，全程可见进度。">
   <title>ChatGPT 充值中心</title>
   <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/assets/customer.css?v=36">
-  <script src="/assets/customer.js?v=36" defer></script>
+  <link rel="stylesheet" href="/assets/customer.css?v=37">
+  <script src="/assets/customer.js?v=37" defer></script>
 </head>
 <body>
   <div class="glow" id="glow" aria-hidden="true"></div>
@@ -175,18 +175,17 @@
         <!-- 失败、且这张卡密还能再用时出现（付款前就停了，钱没动） -->
         <button class="btn" type="button" id="retry-order" hidden>重新兑换</button>
 
-        <button class="btn is-ghost" type="button" id="ticket-copy" hidden>复制查询码</button>
       </section>
 
       <!-- ============ 5 订单查询 ============ -->
       <section class="screen" id="view-query" hidden>
         <form class="card" id="form-query" novalidate>
           <h2>订单查询</h2>
-          <p class="card__sub">用查询码看这一单的结果,不需要再贴一次账号。</p>
+          <p class="card__sub">用你的卡密看这一单的结果,不需要再贴一次账号。</p>
           <div class="field" id="field-query">
-            <label for="query-input">查询码</label>
+            <label for="query-input">卡密</label>
             <input type="text" id="query-input" autocomplete="off" spellcheck="false"
-                   placeholder="PJV1-…,也可以用卡密查">
+                   placeholder="输入你的卡密">
             <p class="field__err" data-error></p>
           </div>
           <div class="ok" id="query-result" hidden>

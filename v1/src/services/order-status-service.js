@@ -22,7 +22,13 @@ const CUSTOMER_STATUS = Object.freeze({
   CANCELLATION_PENDING: 'CONFIRMING',
   RECHARGE_SUCCESS: 'SUCCESS',
   WAITING_FOR_SESSION: 'ACTION_REQUIRED',
-  SUBMIT_UNKNOWN: 'REVIEWING',
+  // 付款已提交、结果正在确认——这是**每一单必经的一步**，不是故障：2026-09-13 两次
+  // 全自动成功单各在此停 8~9 秒（PAYMENT_SUBMIT → PAYMENT_UNKNOWN → PAYMENT_CONFIRMED）。
+  // 它此前和 RECONCILIATION_REQUIRED 一起映射成 REVIEWING，后果是客户在钱已经付掉、
+  // Plus 已经开通的那几秒看到橙色的「遇到点问题，我们已经收到通知在处理」，而且前端把
+  // 轮询从 4 秒降到 30 秒，于是成功要等下一轮才显示。真正需要人工对账的情况有自己的
+  // 状态（RECONCILIATION_REQUIRED），不需要借这个状态表达。
+  SUBMIT_UNKNOWN: 'VERIFYING',
   RECONCILIATION_REQUIRED: 'REVIEWING',
   CANCELLATION_REVIEW_REQUIRED: 'REVIEWING',
   CARD_FAILED: 'FAILED',
