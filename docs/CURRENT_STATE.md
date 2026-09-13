@@ -4,7 +4,7 @@
 
 | 项目 | 当前值 | 核对时间（UTC） | 证据方式 |
 |---|---|---|---|
-| 生产 release | `/opt/pojia/releases/20260913-captcha-alert-6797fdc`（commit `6797fdc`；内容：人机验证在检测到的那一刻就推手机，不再只弹本机桌面通知，并把 `BROWSER_HUMAN_VERIFICATION` 补进 `BROWSER_ALERT_TYPES`（缺它会抛 unknown browser alert type）。D-190 续）。回滚 `20260912-token-login-616255c` | 2026-09-13 04:2x UTC | `state-check.sh` 现场读 `readlink -f /opt/pojia/current`；发布前 browser-mvp 253 项 + v1 731 项 0 失败，含一条"人机验证不得进 PHONE_SILENT_TYPES"的断言 |
+| 生产 release | `/opt/pojia/releases/20260913-customer-ux-4ccb8c7`（commit `4ccb8c7`；客户页四处返工 + 修掉「付款成功那几秒显示遇到点问题」：`SUBMIT_UNKNOWN` 从 `REVIEWING` 改映射到新客户态 `VERIFYING`（正常色、3 秒轮询），超 3 分钟才按停留时长降级；进度环换段逐帧追差、跑完 700ms 滑到 100；去掉查询码只留卡密；订阅方案显示短名 `Plus`。D-192）。回滚 `20260913-captcha-alert-6797fdc` | 2026-09-13 06:37 UTC | 发布前 `customer-sql-probe.sh` 五项全通过、v1 测试 733 项 0 失败；发布后独立核实（新 ssh 命令）：`readlink -f /opt/pojia/current` 是新 release、pojia-web/worker 均 active、**web 进程 cwd 指向新 release 目录**（06:37:11 UTC 启动）、服务器发出的 `customer.js?v=37` 含 `VERIFYING`/`glideTo`/`VERIFYING_PATIENCE_MS`、「复制查询码」0 处、服务器上的 `order-status-service.js:31` 是 `SUBMIT_UNKNOWN: 'VERIFYING'` |
 | 回滚点 | `/opt/pojia/releases/20260912-token-bookmark-f467bd1`（再前 `20260912-captcha-alert-02210b2`；本批次无迁移，直接切回即可） | 2026-09-13 01:5x UTC | switch 输出 ROLLBACK 命令 |
 | 最新数据库备份 | `/var/backups/pojia/pojia-20260912T105342Z.sql.gz.enc`，完整性 OK（release prepare 阶段） | 2026-09-12 10:54 UTC | deploy-release prepare 输出 |
 | pojia-web | active（2026-09-12 10:55 UTC 随 release 切换重启） | 2026-09-12 10:55 UTC | switch 输出 + 服务器本机 curl live/ready 200 |
