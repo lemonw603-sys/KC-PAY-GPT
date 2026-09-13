@@ -70,10 +70,47 @@ export async function clearSessionCookies(context) {
 // makes backend-api reject the access token ("Could not parse your
 // authentication token", verified 2026-09-07 on Lane 2). So when one identity
 // switches accounts, the whole previous login state goes, never the device.
+// Stripe Link 的登录态（D-200）。它不在 chatgpt.com 域上，所以 listStaleLoginCookies
+// 从来看不见它——而它的有效期是**一整年**。
+//
+// 后果有两层，2026-09-13 两层都撞上了：
+// 1) 运营手动付过一次款之后，Link 就在这个窗口里记住了那次的邮箱和卡。之后**任何**客户的
+//    单跑到结账页，Link 都自动登录成上一个人，占住「Pay with」的位置，新卡输入框不渲染，
+//    于是 `secure card fields did not become ready` / `CHECKOUT_DRIFT` 连环失败。
+// 2) 更严重：Link 绑的是邮箱。上一个客户 Link 里若存着**他自己的卡**，
+//    下一个客户的结账页就会显示出来（品牌、后四位、绑定邮箱）。这是跨客户的数据泄露。
+//
+// 这条修复完全符合本文件既有的原则——**设备/网络 cookie 留下，登录态全清**：
+// `__stripe_mid` 是设备 ID，继续保留；`__Host-LinkSession` / `__Secure-LinkSessionPresent`
+// 是登录态，必须跟着 ChatGPT 的登录态一起走。
+const LINK_SESSION_URLS = Object.freeze([
+  'https://stripe.com',
+  'https://merchant-ui-api.stripe.com',
+  'https://js.stripe.com',
+  'https://link.com',
+]);
+const LINK_SESSION_COOKIE_PATTERN = /^(__Host-LinkSession|__Secure-LinkSessionPresent|__Secure-LinkSession)$/;
+
+async function listStaleLinkCookies(context) {
+  const seen = new Map();
+  for (const url of LINK_SESSION_URLS) {
+    const cookies = await context.cookies(url).catch(() => []);
+    for (const cookie of cookies) {
+      if (LINK_SESSION_COOKIE_PATTERN.test(cookie.name)) seen.set(`${cookie.domain}|${cookie.name}`, cookie);
+    }
+  }
+  return Array.from(seen.values());
+}
+
 export async function clearStaleLoginCookies(context) {
   const stale = await listStaleLoginCookies(context);
   for (const name of new Set(stale.map((cookie) => cookie.name))) await context.clearCookies({ name });
-  return stale.length;
+  // Stripe Link 的登录态和 ChatGPT 的登录态是同一件事的两半，必须一起清。
+  const staleLink = await listStaleLinkCookies(context);
+  for (const name of new Set(staleLink.map((cookie) => cookie.name))) {
+    await context.clearCookies({ name }).catch(() => undefined);
+  }
+  return stale.length + staleLink.length;
 }
 
 // Cookies the bootstrap is allowed to inject. Two layers matter after a

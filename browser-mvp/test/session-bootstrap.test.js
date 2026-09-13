@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { ContractError } from '../src/contracts.js';
-import { CookieSessionBootstrapAdapter } from '../src/session-bootstrap.js';
+import { CookieSessionBootstrapAdapter, clearStaleLoginCookies } from '../src/session-bootstrap.js';
 
 test('CookieSessionBootstrapAdapter preserves an existing active Profile session', async () => {
   const source = {
@@ -179,4 +179,32 @@ test('CookieSessionBootstrapAdapter still rejects a full export missing the app 
     source: { load: async () => ({ cookies: [{ name: 'usc_X', value: 'a', domain: '.auth.openai.com' }] }) },
   });
   await assert.rejects(adapter.open('session-ref:no-app'), (e) => e instanceof ContractError);
+});
+
+test('换 Session 时连 Stripe Link 的登录态一起清，设备 ID 保留（D-200）', async () => {
+  // 2026-09-13：Link 的 __Host-LinkSession 在 stripe.com 域、有效期一整年，而清理只看
+  // chatgpt.com，于是运营手动付款一次之后，后面每个客户的结账页都被上一个人的 Link 接管
+  // ——新卡输入框不渲染（连环 CHECKOUT_DRIFT），且上一个客户的卡会显示给下一个客户。
+  const cleared = [];
+  const jar = {
+    'https://chatgpt.com': [
+      { name: '__Secure-next-auth.session-token', domain: 'chatgpt.com' },
+      { name: 'oai-client-auth-info', domain: 'chatgpt.com' },
+      { name: '__stripe_mid', domain: 'chatgpt.com' },      // 设备 ID：必须留
+      { name: 'cf_clearance', domain: 'chatgpt.com' },      // 设备/网络：必须留
+    ],
+    'https://stripe.com': [{ name: '__Secure-LinkSessionPresent', domain: '.stripe.com' }],
+    'https://merchant-ui-api.stripe.com': [{ name: '__Host-LinkSession', domain: 'merchant-ui-api.stripe.com' }],
+  };
+  const context = {
+    async cookies(url) { return jar[url] || []; },
+    async clearCookies(filter) { cleared.push(filter.name); },
+  };
+  const count = await clearStaleLoginCookies(context);
+  assert.ok(cleared.includes('__Host-LinkSession'), 'Link 的会话凭证必须清掉');
+  assert.ok(cleared.includes('__Secure-LinkSessionPresent'), 'Link 的存在标记必须清掉');
+  assert.ok(cleared.includes('oai-client-auth-info'), 'ChatGPT 的登录态照旧要清');
+  assert.equal(cleared.includes('__stripe_mid'), false, '设备 ID 不能清——清了会踩风控');
+  assert.equal(cleared.includes('cf_clearance'), false, '网络/设备 cookie 不能清');
+  assert.equal(count, 3, '两个 Link 凭证 + 一个 ChatGPT 登录态');
 });
