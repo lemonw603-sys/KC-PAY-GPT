@@ -2,7 +2,7 @@
 
 只回答四件事：目标、当前生产事实（指向 CURRENT_STATE）、已完成/未完成（里程碑级）、唯一执行顺序。新窗口先读 `docs/HANDOFF_NOW.md`。过程记录在 `docs/HANDOFF_LOG.md`，决策在 `docs/DECISIONS.md`，改造基线在 `docs/PRODUCT_SIMPLIFICATION_DISCUSSION.md` 末尾「接班实施基线」。2026-09-07 之前的旧版地图原文：`docs/archive/2026-09/PROJECT_MAP_snapshot_2026-09-07.md`。
 
-最后核对：2026-09-12（客户充值页上线 + 执行器常驻无人值守生效后，按现场重排 §4/§5/§6）。
+最后核对：2026-09-13（客户充值页上线 + 执行器常驻无人值守生效后，按现场重排 §4/§5/§6）。
 
 ## 1. 目标与不变原则
 

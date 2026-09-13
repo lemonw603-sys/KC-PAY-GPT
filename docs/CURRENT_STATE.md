@@ -4,8 +4,8 @@
 
 | 项目 | 当前值 | 核对时间（UTC） | 证据方式 |
 |---|---|---|---|
-| 生产 release | `/opt/pojia/releases/20260912-failed-retry-03b926c`（commit `03b926c`；失败单返回 `canRetry` 并在页面给「重新兑换」入口；D-188）。回滚 `20260912-session-replace-04d311b` | 2026-09-12 10:55 UTC | `customer-sql-probe.sh` 五条全通过 → `prepare`（1021 文件 manifest OK、库备份 `pojia-20260912T105342Z.sql.gz.enc` 完整性 OK）→ `switch`（live 200、ready 200、admin 登录页 200）。服务器本机 curl 复验：服务出去的 `index.html` 引用 `customer.js?v=36` 且含 `id="retry-order"`；`customer.js` 200/37033 字节、含 `canRetry` 5 处与 `retryOrder` 4 处；**对真实失败单 `PJV1--wEBaAETWx_pKBpTZVp9` 调 `POST /api/v1/orders/status` 返回 `canRetry: true`**（该单卡密已于 09:26:38 UTC 退回，审计事件 `RETURNED`）。**注意**：`deploy-release.sh:101` 那行 `admin.js?v=23` / `grep -c CONFIRM_MANUAL_PAYMENT` 是上次发布留下的一次性检查，与当前内容无关，勿当作证据 |
-| 回滚点 | `/opt/pojia/releases/20260912-session-replace-04d311b`（再前 `20260912-customer-page-624487c`；本版无迁移，直接切回即可；timer 单元不随 release 变化） | 2026-09-12 10:55 UTC | switch 输出 ROLLBACK 命令 |
+| 生产 release | `/opt/pojia/releases/20260912-token-login-616255c`（commit `616255c`；当天最后一次，累计发布 6 次：客户页 canRetry → 执行器首次即替换 → PAGE_DRIFT 判据与人机验证识别 → 缺卡告警只在没卡可回时响 → token 书签修复。D-187～D-190）。回滚 `20260912-token-bookmark-f467bd1` | 2026-09-13 01:5x UTC | 每次均 `customer-sql-probe.sh` 全通过 → `prepare`（manifest OK、库备份 OK）→ `switch`（live/ready/admin 登录页 200）。末次复验：登录页引用 `login.js?v=3` 且服务出去的文件含 token 接收代码；后台 `admin.js?v=49` 含 `stashHighvccTokenFromHash`。**注意**：`deploy-release.sh:101` 那行 `admin.js?v=23` / `grep -c CONFIRM_MANUAL_PAYMENT` 是旧的一次性检查，勿当证据 |
+| 回滚点 | `/opt/pojia/releases/20260912-token-bookmark-f467bd1`（再前 `20260912-captcha-alert-02210b2`；本批次无迁移，直接切回即可） | 2026-09-13 01:5x UTC | switch 输出 ROLLBACK 命令 |
 | 最新数据库备份 | `/var/backups/pojia/pojia-20260912T105342Z.sql.gz.enc`，完整性 OK（release prepare 阶段） | 2026-09-12 10:54 UTC | deploy-release prepare 输出 |
 | pojia-web | active（2026-09-12 10:55 UTC 随 release 切换重启） | 2026-09-12 10:55 UTC | switch 输出 + 服务器本机 curl live/ready 200 |
 | highvcc 备用卡台 A token | 已配置进生产（`app_settings.highvcc_access_token_ciphertext`，加密存储，09-10 09:17 UTC 写入） | 2026-09-10 09:52 UTC | `v1/scripts/set-highvcc-token.mjs` 输出 |
