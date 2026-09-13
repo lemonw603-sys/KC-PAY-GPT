@@ -2,6 +2,7 @@ import { ContractError } from './contracts.js';
 import { assertCardMaterial } from './card-material-lease.js';
 import { SECURE_CARD_FIELD_SELECTORS } from './nonpayment-card-fill.js';
 import { fillBillingAddress, fillTransientBillingEmail } from './billing-address-fill.js';
+import { dismissSavedPaymentMethod } from './stripe-link-picker.js';
 import { observeCheckout } from './checkout-observer.js';
 
 export const LIVE_PAYMENT_CONFIRMATION = 'I-CONFIRM-LIVE-BROWSER-PAYMENT-ADAPTER';
@@ -102,11 +103,16 @@ export class LiveChatGPTPaymentAdapter {
     let stage = 'validate-card-material';
     try {
       assertCardMaterial(cardMaterial);
+      // Stripe Link 若接管了支付区，卡号/有效期/CVV 根本不渲染，下一步必然失败（D-201）。
+      // 先切到「新的付款方式」。没被接管时这一步什么都不做。
+      stage = 'dismiss-saved-payment-method';
+      const savedMethod = await dismissSavedPaymentMethod(page, { timeoutMs: repriceTimeoutMs });
       stage = 'resolve-secure-card-controls';
       const fields = {};
       for (const [name, selector] of Object.entries(SECURE_CARD_FIELD_SELECTORS)) {
         fields[name] = await oneVisible(page, selector, name);
       }
+      void savedMethod; // 结果只作留证，不参与控制流
       const values = {
         cardNumber: String(cardMaterial.pan).replace(/\s+/g, ''),
         expiry: `${String(cardMaterial.expMonth).padStart(2, '0')} / ${String(cardMaterial.expYear).slice(-2)}`,
