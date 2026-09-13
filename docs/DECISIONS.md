@@ -1795,3 +1795,76 @@ E2E 第 6 次（账号 `running.da`，2026-09-13 03:39）**也带着历史绑卡
 我第一反应是「Lemon 09:47 手动付款把卡存进了那个账号，所以后面这单看到已保存的卡」。
 查 `customer_email` 证伪：手动付款那单是 `qixuanyu03@gmail.com`，本单是 `810104104@qq.com`，
 **不是同一个账号**。当场收回。
+
+## D-200（2026-09-13 10:32 UTC）Stripe Link 的登录态从来没被清过：一条跨客户泄露路径，也是今天连环失败的总根因
+
+### 怎么发现的
+
+Lemon 给了结账页截图并指出「左侧已经有一张卡绑定的记录，我们好像不能新增」。
+我先猜了两个方向（页面是菲律宾语、国家含税），**两个都被自己证伪**——选择器用的是
+`name` 属性不是文案；税是结果不是原因。直到连上浏览器读真实 DOM 才看见：
+
+```
+frame: js.stripe.com/v3/elements-inner-accessory-target-…
+"Mag-log out sa Link  /  Mastercard Credit •••• 5371  /  Palitan | I-update | Alisin"
+```
+
+**那不是 ChatGPT 的账号绑卡，是 Stripe Link 的已保存支付方式。** 主页面文案
+`Pay with … OR … Billing address` 说明 Link 占住了「Pay with」的位置，
+新卡输入框根本不渲染。
+
+再查 cookie，拿到确凿证据：
+
+| 域 | cookie | 过期 |
+| --- | --- | --- |
+| `merchant-ui-api.stripe.com` | **`__Host-LinkSession`** | 2027-09-13（一年）|
+| `.stripe.com` | **`__Secure-LinkSessionPresent`** | 2027-09-13 |
+
+而 `listStaleLoginCookies` 只读 `chatgpt.com` 域，**从来看不见它们**；
+`__stripe_mid` 还被显式列进设备 cookie 保留名单。
+
+### 两层后果，当天都撞上了
+
+1. **功能**：运营手动付款一次，Link 就在这个窗口里记住那次的邮箱和卡。之后**任何**客户的
+   单跑到结账页，Link 自动登录成上一个人 → 新卡输入框不渲染 →
+   `secure card fields did not become ready`（`PJV1-ZESq0lU8`）/
+   `CHECKOUT_DRIFT`（`PJV1-CsswKRT9`、`PJV1-uhk83YQy`、`PJV1-NnL3DWl9`、`PJV1-Kx8VXj3f`）连环失败。
+   **手动救一单 = 给后面所有单埋一个坑**，这是个会自我恶化的循环。
+2. **隐私**：Link 绑的是邮箱。上一个客户的 Link 里若存着**他自己的卡**，
+   下一个客户的结账页就会显示出来（品牌、后四位、绑定邮箱）。
+   今天显示的 5371 是我们自己的卡——**这是运气，不是设计**。
+
+### 修法：遵循本文件既有原则，只是补上漏掉的域
+
+`session-bootstrap.js` 的原则本来就是「设备/网络 cookie 留下，登录态全清」。
+`__stripe_mid` 是设备 ID 继续保留；`__Host-LinkSession` / `__Secure-LinkSessionPresent`
+是登录态，跟 ChatGPT 的登录态一起清。
+
+断言守两头：Link 两个凭证必须被清、`__stripe_mid` 与 `cf_clearance` 必须保留
+（清了会踩风控）。
+
+**当场在真实浏览器上验过**，不是只有测试绿：
+
+```
+清理前: m.stripe.com|m, .invoice.stripe.com|__stripe_mid,
+        merchant-ui-api.stripe.com|__Host-LinkSession, .stripe.com|__Secure-LinkSessionPresent
+清理后: m.stripe.com|m, .invoice.stripe.com|__stripe_mid      ← 两个 Link 凭证已清
+```
+
+### 两个没有证实的东西，不写成结论
+
+- **今天是否真的发生过跨客户显示**：最后一单的 ChatGPT 账号是 `chenxing66623@gmail.com`，
+  而截图里 Link 显示 `qixuanyu03@gmail.com`。但截图的时间点无法回溯到具体哪一单，
+  我去查时那个 Stripe iframe 已被 hCaptcha 取代。**泄露路径是确凿的，是否已发生未证实。**
+- **`CHECKOUT_DRIFT` 的确切抛出点**：库里只存 `reasonCode`，本机日志这条不带
+  `diagnosticMessage`，`browser_runs` 没有 `last_error_message` 列。
+  **今天 5 次失败我只查得出 1 次的真实原因**——这是取证缺口，仍未修。
+
+### 顺带记一条运营规矩（今天差点出事故）
+
+`10:04:18.000` 卡台扣款 / `10:04:18.356` 系统判 `CHECKOUT_DRIFT` 退回 CDK——**同一秒**。
+运营和执行器操作同一个浏览器窗口，互相打架：人点了订阅、自动化正在找它要点的控件，
+于是判定页面漂移、按设计付款前中止、退回卡密，**而钱已经扣了**。
+CDK 退回后客户可再兑换一次 = 重复扣款。已用 `close-manually-fulfilled-order.mjs` 收口堵住。
+
+**规矩**：执行器在跑时不要碰那个窗口。要人工接管，先等它停下、收口，再动手。
