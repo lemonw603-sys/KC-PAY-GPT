@@ -8,6 +8,7 @@ import { BrowserExecutionService } from './executor.js';
 import { createMysqlUpstreamProjectionAdapter } from './mysql-upstream-adapter.js';
 import { BrowserPaymentExecutor } from './payment-executor.js';
 import { createHumanVerificationGate } from './human-verification-gate.js';
+import { upsertBrowserAlertInTransaction } from '../../v1/src/db/repositories/browser-alert-repository.js';
 import { createPostSubmitWatch } from './post-submit-outcome-watch.js';
 import { createLocalOperatorNotifier } from './local-operator-notify.js';
 import { LiveChatGPTPaymentAdapter, LIVE_PAYMENT_CONFIRMATION } from './live-chatgpt-payment-adapter.js';
@@ -220,12 +221,25 @@ export function createSharedLivePaymentWorker({
         challengeGate: createHumanVerificationGate({
           waitMs: humanVerificationWaitMs,
           pollIntervalMs: verificationIntervalMs,
-          notify: async ({ waitMs }) => notifyOperator({
-            title: '充值需要人工验证',
-            message: waitMs > 0
+          notify: async ({ waitMs }) => {
+            const message = waitMs > 0
               ? `结账页出现人机验证。请在比特浏览器窗口勾选，${Math.round(waitMs / 1000)} 秒内勾选自动继续；超时表单保留，可自行完成`
-              : '结账页出现人机验证。自动化不处理该验证，本单已停并保留现场',
-          }),
+              : '结账页出现人机验证。自动化不处理该验证，本单已停并保留现场';
+            await notifyOperator({ title: '充值需要人工验证', message });
+            // notifyOperator 只弹 macOS 桌面通知（local-operator-notify.js 有意「不出本机」），
+            // 人不在电脑前就什么也收不到——2026-09-13 Lemon 真单卡在验证上、全程没收到通知。
+            // 这里补一条 operator_alerts：它不在 PHONE_SILENT_TYPES 里，会走既有 Bark 通道推手机。
+            // 时机是「检测到的那一刻」，不是 5 分钟后判定付款不明时——那时单早就卡死了。
+            // 写告警失败绝不能影响这一单：告警是安全信号，丢一条通知不该让付款流程出错。
+            try {
+              await upsertBrowserAlertInTransaction(pool, {
+                type: 'BROWSER_HUMAN_VERIFICATION',
+                orderId: claimedJob.orderId,
+                title: '卡在人机验证，只有你能点',
+                message: `${message}。系统不会重付，也不会绕过该验证。`,
+              });
+            } catch { /* 通知尽力而为 */ }
+          },
         }),
         // F-47: before spending the whole verification window polling the account,
         // read what the Checkout itself is saying. A declined card is visible on

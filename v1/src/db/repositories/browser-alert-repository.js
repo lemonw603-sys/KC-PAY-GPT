@@ -11,7 +11,12 @@ export const BROWSER_ALERT_TYPES = Object.freeze({
   BROWSER_UPGRADE_HANDOFF: 'warning',
   // D-175（Lemon 要的两个节点）：客户刚提交、以及客户卡在队列里没人处理。
   BROWSER_ORDER_SUBMITTED: 'info',
-  BROWSER_ORDER_STALLED: 'critical'
+  BROWSER_ORDER_STALLED: 'critical',
+  // 结账页弹出人机验证：只有人能过，而且要立刻知道——与「付款结果不明」分开，
+  // 因为后者在 PHONE_SILENT_TYPES 里静音（D-176），这一类必须响手机。
+  // 2026-09-13：先前加了用它的调用点却漏了这张表，类型不在表里会直接抛
+  // `unknown browser alert type`，等于告警写不进去；补上。
+  BROWSER_HUMAN_VERIFICATION: 'critical'
 });
 
 export async function upsertBrowserAlertInTransaction(connection, { type, orderId, title, message }) {
