@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import {
   POOL_CONFIRMATION_PREFIX, loadProductionLivePoolConfig, parsePoolLanes, parseProductionLivePoolArgs, runLaneLoop,
+  shouldRefreshCardBalances,
 } from '../src/production-live-pool-worker.js';
 
 const key = (byte) => Buffer.alloc(32, byte).toString('base64');
@@ -81,4 +82,23 @@ test('pool config stops Pro orders on the upgrade dialog by default and refuses 
   assert.equal(loadProductionLivePoolConfig(env()).upgradeStage, 'STOP_BEFORE_PAY');
   assert.equal(loadProductionLivePoolConfig(env({ BROWSER_UPGRADE_STAGE: 'stop_before_pay' })).upgradeStage, 'STOP_BEFORE_PAY');
   assert.throws(() => loadProductionLivePoolConfig(env({ BROWSER_UPGRADE_STAGE: 'PAY' })), /PAY is not implemented/);
+});
+
+test('付款前中止不去打卡台，动过钱的才回填余额（D-195）', () => {
+  // highvcc 的卡不在 pojia-card-read-sync 范围内（那个 runner 用 HnskjCardProvider，
+  // 且 manual_excel 账号 supports_api_sync=0），付款确认后余额只能等小时级快照回填，
+  // 这段时间卡不可分配——2026-09-13 第一个真实客户单跑完后系统整整一小时接不了下一单。
+  // 所以跑完一单立刻触发一次既有的正式快照同步。但要分清哪些单值得去问卡台：
+  assert.equal(shouldRefreshCardBalances('SAFE_ABORTED'), false, '付款前中止时钱没动，问了也是白问');
+  assert.equal(shouldRefreshCardBalances('IDLE'), false, '压根没跑活');
+  for (const status of ['PROCESSED', 'UNKNOWN', 'CONFIRMED', 'PRE_SUBMIT_STOPPED']) {
+    assert.equal(shouldRefreshCardBalances(status), true, status);
+  }
+});
+
+test('没配 PAN HMAC key 时回填静默关闭，不影响付款（D-195）', () => {
+  const withKey = loadProductionLivePoolConfig(env({ CARD_INTAKE_PAN_HMAC_KEY_BASE64: Buffer.alloc(32, 9).toString('base64') }));
+  assert.ok(Buffer.isBuffer(withKey.cardIntakePanHmacKey));
+  // 缺这把 key 只是退回小时级 timer，绝不能让执行器起不来——付款比回填重要。
+  assert.equal(loadProductionLivePoolConfig(env()).cardIntakePanHmacKey, null);
 });

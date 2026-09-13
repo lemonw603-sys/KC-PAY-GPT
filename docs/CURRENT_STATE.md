@@ -4,7 +4,7 @@
 
 | 项目 | 当前值 | 核对时间（UTC） | 证据方式 |
 |---|---|---|---|
-| 生产 release | `/opt/pojia/releases/20260913-steady-ring-5825d1c`（commit `5825d1c`；进度环改匀速：九阶段百分点按真实耗时占比重分 2/6/9/20/62/94/98/99/100，段内线性并各用自己的 `typicalMs`，超过典型耗时后剩 6% 指数逼近上限、永不停住。D-193）。回滚 `20260913-customer-ux-4ccb8c7` | 2026-09-13 07:16 UTC | 发布前 `customer-sql-probe.sh` 全通过、v1 测试 733 项 0 失败；发布后独立核实（新 ssh）：release 已切、web/worker active、**web 进程 cwd 指向新 release**、服务器上 `customer-stage.js` 九个 ceiling/typicalMs 为新值、发出的 `customer.js` 含 `reach * 0.94 * t` 且旧指数曲线 `exp(-2.6` 为 0 处、**状态接口实调返回 `floor:99 ceiling:100 typicalMs:1000`**（端到端证据） |
+| 生产 release | `/opt/pojia/releases/20260913-expyear-c3f664f`（commit `c3f664f`；开卡时把卡台返回的两位年份补成四位——写入侧修复，读取侧容错在本机 browser-mvp 不经发布。D-194）。回滚 `20260913-steady-ring-5825d1c` | 2026-09-13 07:53 UTC | 发布前 `customer-sql-probe.sh` 全通过、非终态订单 0；发布后独立核实（新 ssh）：release 已切、web/worker active、web 进程 cwd 指向新 release、服务器上 `highvcc-card-service.js` 含 `expYearRaw` 3 处 |
 | 回滚点 | `/opt/pojia/releases/20260912-token-bookmark-f467bd1`（再前 `20260912-captcha-alert-02210b2`；本批次无迁移，直接切回即可） | 2026-09-13 01:5x UTC | switch 输出 ROLLBACK 命令 |
 | 最新数据库备份 | `/var/backups/pojia/pojia-20260912T105342Z.sql.gz.enc`，完整性 OK（release prepare 阶段） | 2026-09-12 10:54 UTC | deploy-release prepare 输出 |
 | pojia-web | active（2026-09-12 10:55 UTC 随 release 切换重启） | 2026-09-12 10:55 UTC | switch 输出 + 服务器本机 curl live/ready 200 |

@@ -29,6 +29,7 @@ import {
 import { createSharedLivePaymentWorker } from './shared-live-composition.js';
 import { AppendOnlyWal, WalEvidenceSink } from './wal.js';
 import { CompositeEvidenceSink, MysqlEvidenceSink } from './mysql-evidence-sink.js';
+import { createHighvccSnapshotSyncService } from '../../v1/src/services/highvcc-snapshot-sync-service.js';
 
 export const POOL_CONFIRMATION_PREFIX = 'I-CONFIRM-RESIDENT-BROWSER-POOL:';
 export const POOL_MODES = Object.freeze({ PAY: 'PAY', REHEARSAL: 'REHEARSAL' });
@@ -98,6 +99,10 @@ export function loadProductionLivePoolConfig(env = process.env) {
   const artifactKey = key32(env, 'BROWSER_ARTIFACT_KEY_BASE64');
   const resourceHmacKey = key32(env, 'BROWSER_RESOURCE_HMAC_KEY_BASE64');
   const materialEncryptionKey = key32(env, 'SESSION_ENCRYPTION_KEY_BASE64');
+  // 付款后立刻回填卡余额用（D-195），**可选**：没配就退回小时级 timer，执行器照常启动。
+  // 付款比回填重要，绝不能因为少一把回填用的 key 就让整个池起不来。
+  const cardIntakePanHmacKey = env.CARD_INTAKE_PAN_HMAC_KEY_BASE64
+    ? key32(env, 'CARD_INTAKE_PAN_HMAC_KEY_BASE64') : null;
   if (new Set([runtimeHmacKey, artifactKey, resourceHmacKey, materialEncryptionKey].map((value) => value.toString('hex'))).size !== 4) {
     throw new ProductionLiveConfigError('pool runtime, artifact, resource and material keys must be distinct');
   }
@@ -113,7 +118,7 @@ export function loadProductionLivePoolConfig(env = process.env) {
     billingAddressState: String(env.BROWSER_BILLING_ADDRESS_STATE || 'DE').trim().toUpperCase(),
     billingAddressName: required(env, 'BROWSER_BILLING_ADDRESS_NAME'),
     stateDir: required(env, 'BROWSER_POOL_STATE_DIR'),
-    runtimeHmacKey, artifactKey, resourceHmacKey, materialEncryptionKey,
+    runtimeHmacKey, artifactKey, resourceHmacKey, materialEncryptionKey, cardIntakePanHmacKey,
     pollIntervalMs: integer(env, 'BROWSER_POOL_POLL_INTERVAL_MS', { min: 500, max: 60_000, fallback: 3_000 }),
     leaseSeconds: integer(env, 'BROWSER_WORKER_LEASE_SECONDS', { min: 10, max: 3600, fallback: 120 }),
     executionTimeoutMs: integer(env, 'BROWSER_EXECUTION_TIMEOUT_MS', { min: 1_000, max: 300_000, fallback: 120_000 }),
@@ -286,14 +291,60 @@ export async function runProductionLivePoolWorker({ env = process.env, browserTy
     };
     const lanes = [];
     for (const lane of config.lanes) lanes.push(await createLaneWorker({ lane, config, pool, browserType, shared }));
+    // 付款后立刻回填卡余额（D-195，方向由 D-169 定：「单量上来后再按订单驱动」）。
+    // 为什么需要：付款确认会把卡置成 DEPLETED、current_balance=NULL，而 highvcc 的卡
+    // （sync_tier=MANUAL_IMPORT）不在 pojia-card-read-sync 的范围内——那个 runner 用的是
+    // HnskjCardProvider，且 manual_excel 账号 supports_api_sync=0。于是余额只能等
+    // pojia-highvcc-snapshot-sync 那个**小时级** timer 回填，这段时间里卡不可分配。
+    // 2026-09-13 第一个真实客户单跑完后，系统整整一小时接不了下一单。
+    //
+    // 这里不新增任何写余额的代码路径——只是把既有的正式快照同步提前触发一次。
+    // 多一条写资金数据的路径就多一份漂移风险，当天的两位年份事故就是这么来的（D-194）。
+    const refreshCardBalances = config.cardIntakePanHmacKey
+      ? createHighvccSnapshotSyncService({
+        pool,
+        encryptionKey: config.materialEncryptionKey,
+        panHmacKey: config.cardIntakePanHmacKey,
+      })
+      : null;
+    if (!refreshCardBalances) {
+      console.log('card balance refresh disabled', { reason: 'CARD_INTAKE_PAN_HMAC_KEY_BASE64 not set' });
+    }
+    const refreshAfterPayment = async (laneId) => {
+      if (!refreshCardBalances) return;
+      try {
+        const { preview } = await refreshCardBalances.commit({ requestedBy: 'browser-pool:after-payment' });
+        laneLogger(laneId)('card-balance-refresh', preview?.skipped
+          ? { skipped: true, reason: preview.reason }
+          : { updated: preview?.updateCount ?? null, cards: preview?.rowCount ?? null });
+      } catch (error) {
+        // 尽力而为：回填失败只是退回小时级 timer，绝不能影响已经完成的付款。
+        laneLogger(laneId)('card-balance-refresh', { failed: String(error?.code || error?.message || '').slice(0, 120) });
+      }
+    };
     console.log('browser pool worker started', { mode: config.mode, lanes: lanes.map((lane) => lane.workerId) });
     const summaries = await Promise.all(lanes.map((lane) => runLaneLoop({
       laneId: lane.laneId, steps: lane.steps, pollIntervalMs: config.pollIntervalMs, signal, heartbeat,
-      onResult: async ({ laneId, step, result }) => laneLogger(laneId)(step, { status: result.status, reasonCode: result.reasonCode || null, orderId: result.orderId || null, ...(result.diagnosticMessage ? { diagnosticMessage: result.diagnosticMessage } : {}), ...(result.quote ? { quote: result.quote } : {}) }),
+      onResult: async ({ laneId, step, result }) => {
+        laneLogger(laneId)(step, { status: result.status, reasonCode: result.reasonCode || null, orderId: result.orderId || null, ...(result.diagnosticMessage ? { diagnosticMessage: result.diagnosticMessage } : {}), ...(result.quote ? { quote: result.quote } : {}) });
+        if (shouldRefreshCardBalances(result.status)) await refreshAfterPayment(laneId);
+      },
       onError: async ({ laneId, error }) => laneLogger(laneId)('error', { code: error?.code || 'LANE_FAILURE', message: String(error?.message || '').slice(0, 200) }),
     })));
     return { status: 'STOPPED', mode: config.mode, lanes: summaries };
   });
+}
+
+/**
+ * 跑完一单之后要不要立刻回填卡余额（D-195）。
+ *
+ * `SAFE_ABORTED` 是**付款前**中止——卡上的钱一分没动，去问卡台纯属白打。
+ * 2026-09-13 那个真实客户单因为卡材料预检失败连续中止 10 轮（D-194），
+ * 不区分的话就是 10 次无谓的卡台请求。`IDLE` 根本没跑活。
+ * 其余状态（PROCESSED / UNKNOWN / CONFIRMED / …）都可能已经动过钱，回填一次。
+ */
+export function shouldRefreshCardBalances(status) {
+  return status !== 'SAFE_ABORTED' && status !== 'IDLE';
 }
 
 export function parseProductionLivePoolArgs(argv = []) {

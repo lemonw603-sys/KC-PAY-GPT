@@ -1498,3 +1498,61 @@ Lemon：「你是一段一段的一块一段快一段慢。我希望尽可能是
 
 **真实成功率当场重查：33%（4/12）**（总运行 60、付款前中止 46、点过付款 12、
 系统自动成功 4、已自动退订 4）。
+
+## D-195（2026-09-13 08:05 UTC）跑完一单立刻回填卡余额，不再等小时级快照
+
+Lemon 拍板：「改成立刻」。方向早在 D-169 就定了——「单量上来后再按订单驱动（分卡前触发一次），
+不是现在」。第一个真实客户单跑通，就是"单量上来"的时候。
+
+### 问题
+
+付款确认会把卡置成 `DEPLETED`、`current_balance=NULL`（`browser-execution-repository.js:1139`）。
+而 highvcc 的卡 `sync_tier='MANUAL_IMPORT'`，**不在 `pojia-card-read-sync` 的范围内**：
+那个每 15 秒的 runner 用的是 `HnskjCardProvider`，且 `manual_excel` 账号 `supports_api_sync=0`。
+于是余额只能等 `pojia-highvcc-snapshot-sync` 那个**小时级** timer 回填。
+
+2026-09-13 实测：07:32 付款完成 → 07:22 那次同步早于付款（判 `NO_CHANGE` 没写）→
+下一次要等 08:22。**系统整整一小时接不了下一单**，而库存本来就只有这一张卡。
+
+### 改法：不新增任何写余额的代码路径
+
+跑完一单后，把**既有的正式快照同步**提前触发一次（`createHighvccSnapshotSyncService().commit()`），
+挂在 pool worker 的 `onResult` 上。
+
+**为什么不直接按实扣金额扣减本地余额**——那样更"立刻"也更省一次 API：
+因为多一条写资金数据的路径就多一份格式漂移的风险。**当天的两位年份事故（D-194）
+正是"同一个字段两条写入路径、格式不一致"造成的**，而那条路径当时看起来也很无害。
+快照同步这条路已经带审计批次、带 `NO_CHANGE` 短路、被 timer 每天跑 24 次验证过。
+
+### 哪些单值得去问卡台
+
+`shouldRefreshCardBalances(status)`：`SAFE_ABORTED`（付款前中止，钱没动）和 `IDLE` 不触发，
+其余都触发。**这个区分是必要的**：2026-09-13 那单因为卡材料预检失败连续中止 10 轮，
+不区分就是 10 次无谓的卡台请求。提成了导出的纯函数，有断言守着。
+
+### 代价与边界
+
+- **每单跑完多 2.5 秒**（实测 `commit()` 往返 2517ms）。换掉最多 1 小时的等待。
+- **需要给执行器加一把 key**：`CARD_INTAKE_PAN_HMAC_KEY_BASE64`（快照走 manual-card-import
+  正式路径要它做 PAN 去重），已加进 `run-live-pool.sh`。
+  **它是可选的**：没配就打一行日志退回小时级 timer，执行器照常启动——
+  付款比回填重要，绝不能因为少一把回填用的 key 就让整个池起不来。
+- **回填失败不影响付款**：整段 try/catch 吞掉，只记日志。
+- 小时级 timer **保留不动**，它仍是兜底。
+
+### 过程中的两个坑
+
+1. **改错了文件**：`loadProductionLivePoolConfig` 在 `production-live-pool-worker.js` 里有
+   **自己的一份** key 加载逻辑，`production-live-config.js` 那份是 single worker 用的。
+   先加到了后者，pool worker 读不到。**这本身又是"同一概念两份实现"的例子**，与 D-191、
+   D-194 同源。误改已撤回，不留死代码。
+2. **时序骗了我一次**：重启后日志仍报 `card balance refresh disabled`，查进程环境发现
+   key **已经拿到**了——是 worker 在 15:58:15 启动、而 config 改完是 15:59:59，
+   它加载的是旧代码。差点当成 bug 去查环境变量。**当场查进程真实环境**戳破了它。
+
+### 验证
+
+用与 worker 内部完全一致的构造方式实跑一次：2517ms、`skipped NO_CHANGE cardCount=6`
+（刚同步过所以无变化，不写库）。重启后的 worker 启动日志中 `card balance refresh disabled`
+一行消失，即 key 已就位、能力已启用。**真实效果要等下一单跑完才算完整验证**，届时应在
+执行器日志看到 `card-balance-refresh` 一行。
