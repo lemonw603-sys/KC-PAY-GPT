@@ -219,8 +219,14 @@ export function createHighvccCardService({
     }
     const balanceDollars = Number.isFinite(Number(card.balance)) ? Number(card.balance) / 100 : (amountForFallback ?? 0);
     const address = opened.detail?.adress || opened.detail?.address || opened.requestedAddress;
+    // 卡台返回的是两位年（07/28）。存两位会让读取侧把 28*12+7 当成过期时间点，
+    // 一张好卡被判过期（2026-09-13 卡 3159 卡住一个真实客户单）。这里存四位，
+    // 读取侧也补了容错，两边都不依赖对方。
+    const expYearRaw = Number(card.expYear);
+    const expYear = Number.isInteger(expYearRaw) && expYearRaw >= 0 && expYearRaw < 100
+      ? 2000 + expYearRaw : expYearRaw;
     const credentials = {
-      cardNumber: pan, cvv: card.cvc, cvc: card.cvc, expMonth: card.expMonth, expYear: card.expYear,
+      cardNumber: pan, cvv: card.cvc, cvc: card.cvc, expMonth: card.expMonth, expYear,
       billingAddress: {
         name: `${card.firstName || opened.holder.first} ${card.lastName || opened.holder.last}`.trim(),
         country: 'US', state: address?.state, city: address?.city, line1: address?.street, postalCode: address?.zipCode,

@@ -211,3 +211,41 @@ test('shared encrypted material sources fail closed on state, reservation and ci
   );
   await assert.rejects(() => corrupt.load('order:wrong-namespace'), ContractError);
 });
+
+test('两位年份的卡不能被判成过期（2026-09-13 卡 3159 卡住真实客户单）', async () => {
+  // highvcc 开卡接口返回的年份是两位（卡面就印 07/28），Excel 导入那条路径自己补过
+  // 2000、开卡那条没补。读取侧统一补齐，否则 28*12+7=343 远小于当前的 24321，
+  // 一张好卡会被判过期，执行器拒绝付款、订单停在 CARD_NOT_READY 上反复重试。
+  const twoDigit = new SharedEncryptedCardMaterialSource({
+    db: dbReturning(context({
+      card_credentials_ciphertext: encryptSecret(JSON.stringify({
+        cardNumber: '5321130412343159', expMonth: 7, expYear: 28, cvv: '123',
+        billingAddress: {
+          name: 'Fixture Name', country: 'US', state: 'OR',
+          line1: '100 Test St', city: 'Portland', postalCode: '97201',
+        },
+      }), key),
+    })),
+    encryptionKey: key,
+  });
+  const material = await twoDigit.load(browserRunMaterialRef('run-fixture'));
+  assert.equal(material.expYear, 2028, '两位年必须补成四位，否则好卡被判过期');
+
+  // 四位年原样通过，不被二次加工。
+  const fourDigit = new SharedEncryptedCardMaterialSource({
+    db: dbReturning(context()), encryptionKey: key,
+  });
+  assert.equal((await fourDigit.load(browserRunMaterialRef('run-fixture'))).expYear, 2032);
+
+  // 容错不是放行：真过期的卡照样拒绝。
+  const expired = new SharedEncryptedCardMaterialSource({
+    db: dbReturning(context({
+      card_credentials_ciphertext: encryptSecret(JSON.stringify({
+        cardNumber: '5321130412343159', expMonth: 1, expYear: 20, cvv: '123',
+      }), key),
+    })),
+    encryptionKey: key,
+  });
+  await assert.rejects(() => expired.load(browserRunMaterialRef('run-fixture')),
+    (error) => error.code === 'CARD_NOT_READY');
+});

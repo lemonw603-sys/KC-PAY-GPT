@@ -128,7 +128,13 @@ function normalizeStoredCardCredentials(value) {
   const pan = String(value?.cardNumber ?? value?.pan ?? '').trim();
   const cvc = String(value?.cvv ?? value?.cvc ?? '').trim();
   const expMonth = Number(value?.expMonth ?? value?.expiryMonth);
-  const expYear = Number(value?.expYear ?? value?.expiryYear);
+  // 卡面印的年份是两位（07/28），highvcc 开卡接口也原样返回两位；Excel 导入那条路径
+  // 自己补过 2000，开卡那条没补。两条写入路径格式不一致，所以在读取侧统一补齐——
+  // 否则两位年算出的 expiryIndex（28*12+7=343）远小于当前（2026*12+9=24321），
+  // 一张好卡会被判成过期而拒绝付款。2026-09-13 卡 3159 就是这么卡住一个真实客户单的。
+  // 只补 0~99：信用卡有效期不会落在 1900 或 2100，四位年原样通过。
+  const rawYear = Number(value?.expYear ?? value?.expiryYear);
+  const expYear = Number.isInteger(rawYear) && rawYear >= 0 && rawYear < 100 ? 2000 + rawYear : rawYear;
   const current = new Date();
   const expiryIndex = expYear * 12 + expMonth;
   const currentIndex = current.getUTCFullYear() * 12 + current.getUTCMonth() + 1;
