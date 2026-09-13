@@ -285,12 +285,20 @@ export class BrowserExecutionService {
             onVerifiedEmail: (email) => { transientBillingEmail = email; },
           },
         );
-        const classify = (error) => ([
-          'SESSION_INVALID',
-          'SESSION_IDENTITY_MISMATCH',
-          'ACCOUNT_STATUS_UNKNOWN',
-          'CHATGPT_ACCESS_BLOCKED',
-        ].includes(error?.code) ? error.code : 'SESSION_IDENTITY_MISMATCH');
+        // 与 session-bootstrap 那处同理（D-198）：**先认浏览器层的瞬时故障**，
+        // 否则 Playwright 的 `Execution context was destroyed` 会落进兜底的
+        // SESSION_IDENTITY_MISMATCH，经 classifySafeAbort 变成客户可见的
+        // 「Session 无效，请换号」——而换号解决不了页面导航这类瞬时问题。
+        // 2026-09-13 那个真实客户单换了两次 Session、报的都是同一个错，就是卡在这一处。
+        const classify = (error) => {
+          if ([
+            'SESSION_INVALID',
+            'SESSION_IDENTITY_MISMATCH',
+            'ACCOUNT_STATUS_UNKNOWN',
+            'CHATGPT_ACCESS_BLOCKED',
+          ].includes(error?.code)) return error.code;
+          return isTransientPageError(error) ? 'BROWSER_TRANSIENT_PAGE_ERROR' : 'SESSION_IDENTITY_MISMATCH';
+        };
         try {
           sessionIdentity = await probe();
         } catch (error) {

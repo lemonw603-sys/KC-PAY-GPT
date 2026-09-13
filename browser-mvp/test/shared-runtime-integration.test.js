@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { chromium } from 'playwright';
 
 import { createBrowserWorkerService } from '../../v1/src/services/browser-worker-service.js';
@@ -458,4 +459,23 @@ test('浏览器瞬时故障判成可重试，不是「客户的 Session 无效�
   assert.equal(isTransientPageError({ message: 'session is no longer refreshable (RefreshAccessTokenError)' }), false);
   assert.equal(isTransientPageError({ message: 'access token expired' }), false);
   assert.equal(isTransientPageError({}), false);
+});
+
+test('两处「未知错误」兜底都要先认瞬时故障，不能漏掉任何一处（D-198）', () => {
+  // 2026-09-13 我第一次只改了 session-bootstrap 那处，而真实客户单失败在 account-readonly-probe
+  // 那处的兜底上（它兜到 SESSION_IDENTITY_MISMATCH，经 SESSION_ABORTS 映射成客户可见的
+  // SESSION_INVALID）——客户又白换了一次 Session。这条断言守住「executor 里每一处把未知错误
+  // 归类成 Session 问题的地方，都必须先过 isTransientPageError」。
+  const source = readFileSync(new URL('../src/executor.js', import.meta.url), 'utf8');
+  const fallbacks = source.match(/:\s*'SESSION_(INVALID|IDENTITY_MISMATCH)'/g) || [];
+  assert.ok(fallbacks.length >= 2, '至少有两处兜底');
+  for (const line of source.split('\n')) {
+    if (/:\s*'SESSION_(INVALID|IDENTITY_MISMATCH)'/.test(line)) {
+      assert.match(line, /isTransientPageError/,
+        `兜底成 Session 问题之前必须先认瞬时故障，这一行没有: ${line.trim()}`);
+    }
+  }
+  // SESSION_ABORTS 会把 SESSION_IDENTITY_MISMATCH 也变成客户看到的「Session 无效」，
+  // 所以这两个码都要被守住，不能只盯 SESSION_INVALID。
+  assert.equal(classifySafeAbort({ code: 'SESSION_IDENTITY_MISMATCH' }).customerActionCode, 'SESSION_INVALID');
 });
