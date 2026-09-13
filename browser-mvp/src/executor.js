@@ -64,6 +64,9 @@ export function isTransientPageError(error) {
     || /Navigation failed because page was closed/i.test(message);
 }
 
+// 契约没给 secureFieldTimeoutMs 时的兜底上限（D-202）。
+const SAVED_METHOD_WAIT_MS = 15_000;
+
 async function closeStaleOrderPages(context, urlPrefix) {
   if (typeof context.pages !== 'function') return 0;
   const stale = context.pages().filter((page) => !page.isClosed?.() && page.url().startsWith(urlPrefix));
@@ -430,7 +433,14 @@ export class BrowserExecutionService {
         // CHECKOUT_OBSERVATION_FAILED**——所以必须在观察之前切到「新的付款方式」。
         // 2026-09-13 我第一次把这一步挂在 LIVE adapter 里（填卡之前），那已经太晚：
         // 观察早于 adapter，它先失败，我的代码压根没机会执行（D-201 修正）。
-        const savedMethod = await dismissSavedPaymentMethod(page, { timeoutMs: this.timeoutMs })
+        // 等支付区就绪的上限直接用契约里的 secureFieldTimeoutMs——观察器等卡字段用的
+        // 就是它（注释写明 Stripe 的 Payment Element 常要 >10 秒才挂上，2026-09-07 实测）。
+        // **不另立一个数**：口径不一致就会出现「我等 6 秒说没有 Link，观察器等 45 秒说没有
+        // 卡字段」这种自相矛盾的结论，2026-09-13 就是这么误判的。
+        // 卡字段先出现就立刻返回，所以正常单不会因此多等。
+        const savedMethod = await dismissSavedPaymentMethod(page, {
+          timeoutMs: Number(job.metadata.checkoutContract.secureFieldTimeoutMs) || SAVED_METHOD_WAIT_MS,
+        })
           .catch((error) => ({ savedMethodDetected: null, switchedToNewMethod: null, failed: String(error?.message || '').slice(0, 120) }));
         // 必须留证：上一版我把返回值丢了，于是这一步做没做、成没成全是黑盒，
         // 整个 2026-09-13 都在猜（D-202）。
@@ -438,6 +448,9 @@ export class BrowserExecutionService {
           action: 'saved-payment-method',
           detected: savedMethod?.savedMethodDetected ?? null,
           switched: savedMethod?.switchedToNewMethod ?? null,
+          // 支付区就绪时看到的是什么：card-fields（干净表单）／saved-method（Link 接管）
+          // ／neither（等超时都没出现，多半是 hCaptcha 之类挡在前面）。
+          area: savedMethod?.area ?? null,
           ...(savedMethod?.failed ? { failed: savedMethod.failed } : {}),
           submitCalls: 0,
         });

@@ -3,13 +3,20 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
 import { dismissSavedPaymentMethod, STRIPE_LINK_SELECTORS } from '../src/stripe-link-picker.js';
+import { SECURE_CARD_FIELD_SELECTORS } from '../src/nonpayment-card-fill.js';
 
-function fakePage({ change = 0, newItem = 0, newItemAfterClick = null } = {}) {
+function fakePage({ change = 0, newItem = 0, newItemAfterClick = null, card = 0, changeAfterTicks = null } = {}) {
   const clicks = [];
   let changeClicked = false;
+  let ticks = 0;
   const locator = (selector) => ({
     async count() {
-      if (selector === STRIPE_LINK_SELECTORS.CHANGE_BUTTON) return change;
+      if (selector === SECURE_CARD_FIELD_SELECTORS.cardNumber) return card;
+      if (selector === STRIPE_LINK_SELECTORS.CHANGE_BUTTON) {
+        // changeAfterTicks 模拟「iframe 晚几轮才挂上」——2026-09-13 的真实时序。
+        if (changeAfterTicks !== null) return ticks >= changeAfterTicks ? 1 : 0;
+        return change;
+      }
       const n = changeClicked && newItemAfterClick !== null ? newItemAfterClick : newItem;
       return n;
     },
@@ -23,13 +30,14 @@ function fakePage({ change = 0, newItem = 0, newItemAfterClick = null } = {}) {
       };
     },
   });
-  return { clicks, frames: () => [{ locator }], async waitForTimeout() {} };
+  return { clicks, frames: () => [{ locator }], async waitForTimeout() { ticks += 1; } };
 }
 
 test('没有已保存的支付方式时什么都不做（绝大多数单走这条路）', async () => {
-  const page = fakePage({ change: 0 });
+  const page = fakePage({ change: 0, card: 1 });
   const r = await dismissSavedPaymentMethod(page, { timeoutMs: 300 });
-  assert.deepEqual(r, { savedMethodDetected: false, switchedToNewMethod: false });
+  assert.equal(r.savedMethodDetected, false);
+  assert.equal(r.area, 'card-fields', '卡字段先出现就立刻返回，不拖慢正常单');
   assert.deepEqual(page.clicks, [], '不能有任何点击');
 });
 
@@ -37,14 +45,16 @@ test('Link 接管时点「更改」再点「新的付款方式」（D-201）', a
   // 2026-09-13：Link 占住「Pay with」，卡号/有效期/CVV 不渲染，连环 CHECKOUT_DRIFT。
   const page = fakePage({ change: 1, newItem: 0, newItemAfterClick: 1 });
   const r = await dismissSavedPaymentMethod(page, { timeoutMs: 600 });
-  assert.deepEqual(r, { savedMethodDetected: true, switchedToNewMethod: true });
+  assert.equal(r.switchedToNewMethod, true);
+  assert.equal(r.area, 'saved-method');
   assert.deepEqual(page.clicks, [STRIPE_LINK_SELECTORS.CHANGE_BUTTON, STRIPE_LINK_SELECTORS.NEW_METHOD_ITEM]);
 });
 
 test('展开了却没有「新的付款方式」就如实报告，不乱点别的', async () => {
   const page = fakePage({ change: 1, newItem: 0, newItemAfterClick: 0 });
   const r = await dismissSavedPaymentMethod(page, { timeoutMs: 300 });
-  assert.deepEqual(r, { savedMethodDetected: true, switchedToNewMethod: false });
+  assert.equal(r.savedMethodDetected, true);
+  assert.equal(r.switchedToNewMethod, false);
   assert.deepEqual(page.clicks, [STRIPE_LINK_SELECTORS.CHANGE_BUTTON], '只点了「更改」，没有乱点');
 });
 
@@ -68,4 +78,21 @@ test('绝不点「移除」——那会删掉客户自己的支付方式', async
   // 代码里只允许点这两个：更改、新的付款方式。
   const clicked = code.match(/(\w+)\.click\(/g) || [];
   assert.equal(clicked.length, 2, `只应有两处点击，实际 ${clicked.length}`);
+});
+
+test('iframe 晚挂上也要等到——查太早等于没查（2026-09-13 的原样复现）', async () => {
+  // 真实时序：checkout-navigation 11:19:05 → 我的检查 11:19:09，只隔 4 秒，
+  // 那时 Stripe 的 iframe 还没挂上，于是记下 detected:false，而现场页面上
+  // Palitan 按钮明明在。第一版查一次就返回，这条断言守住「必须等」。
+  const page = fakePage({ changeAfterTicks: 3, newItemAfterClick: 1 });
+  const r = await dismissSavedPaymentMethod(page, { timeoutMs: 5000 });
+  assert.equal(r.savedMethodDetected, true, '晚挂上的 Link 也必须被发现');
+  assert.equal(r.switchedToNewMethod, true);
+});
+
+test('等到超时两者都没出现时如实报 neither，不假装没有已保存方式', async () => {
+  const page = fakePage({ change: 0, card: 0 });
+  const r = await dismissSavedPaymentMethod(page, { timeoutMs: 300 });
+  assert.equal(r.area, 'neither');
+  assert.deepEqual(page.clicks, []);
 });

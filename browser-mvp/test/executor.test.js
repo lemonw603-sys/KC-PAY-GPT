@@ -330,7 +330,10 @@ test('payment handler receives the checkout without a pre-card strict zero-tax r
       assert.equal(handlerCalls[0].hasCard, true);
       assert.equal(handlerCalls[0].billingEmail, 'buyer@example.test');
       assert.equal(result.checkout, null, 'no strict requote is observed by the executor itself');
-      assert.ok(elapsedMs < 2_500, `executor must not block on a zero-tax requote before the card (took ${elapsedMs}ms)`);
+      // 上限放宽到 9 秒：executor 现在会先等支付区就绪（最多 6 秒，D-202）——
+      // 这个 fixture 既没有卡字段也没有 Link，等满是预期的；真实页面上两者必有其一，
+      // 卡字段一出现就立刻返回。守住的仍是「不得在零税重算上阻塞」这件事本身。
+      assert.ok(elapsedMs < 9_000, `executor must not block on a zero-tax requote before the card (took ${elapsedMs}ms)`);
       assert.equal(evidenceSink.events.some((event) => event.type === 'freeze'), false);
       assert.equal(JSON.stringify(evidenceSink.events).includes('4111111111111111'), false);
     });

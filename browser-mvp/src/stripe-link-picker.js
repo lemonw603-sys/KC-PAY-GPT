@@ -19,6 +19,8 @@
    而且不动客户的数据，也不替客户承担删除责任。
    ========================================================================= */
 
+import { SECURE_CARD_FIELD_SELECTORS } from './nonpayment-card-fill.js';
+
 const CHANGE_BUTTON = 'button.p-PickerAction';
 const NEW_METHOD_ITEM = '[role=button].p-PickerItem--new';
 
@@ -40,10 +42,38 @@ async function oneVisibleOrNull(page, selector) {
  * 没有被接管时**什么都不做**——绝大多数单走的是这条路径，不能因为多了这一步就改变
  * 正常流程的行为。返回值只用于留证与断言，不影响调用方的控制流。
  */
+// 卡号框的选择器只用项目里那一份，不自己编（2026-09-13 我编了 input[name="number"]，
+// 与既有的 cc-number 口径不符，于是等支付区时永远等不到卡字段）。
+const CARD_NUMBER_FIELD = SECURE_CARD_FIELD_SELECTORS.cardNumber;
+
+/**
+ * 等到支付区**真正就绪**：要么卡号框出现（正常页面），要么「更改」按钮出现（Link 接管）。
+ *
+ * 为什么必须等（2026-09-13 教训）：第一版查一次找不到就返回 false，而结账页导航完
+ * 4 秒时 Stripe 的 iframe 还没挂上——埋点记着 detected:false，现场页面上 Palitan
+ * 按钮却明明在。判断做在页面就绪之前，等于没判断。
+ *
+ * 卡号框先出现就立刻返回，所以**正常单不会被这一步拖慢**。
+ */
+async function waitForPaymentArea(page, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  do {
+    const card = await oneVisibleOrNull(page, CARD_NUMBER_FIELD);
+    if (card) return 'card-fields';
+    const change = await oneVisibleOrNull(page, CHANGE_BUTTON);
+    if (change) return 'saved-method';
+    if (Date.now() >= deadline) return 'neither';
+    await page.waitForTimeout(200);
+  } while (true);
+}
+
 export async function dismissSavedPaymentMethod(page, { timeoutMs = 8000 } = {}) {
   if (!page || typeof page.frames !== 'function') throw new TypeError('page is required');
+  const area = await waitForPaymentArea(page, timeoutMs);
+  // 卡字段已经在了：支付区是干净的新卡表单，什么都不用做。
+  if (area === 'card-fields') return { savedMethodDetected: false, switchedToNewMethod: false, area };
   const changeButton = await oneVisibleOrNull(page, CHANGE_BUTTON);
-  if (!changeButton) return { savedMethodDetected: false, switchedToNewMethod: false };
+  if (!changeButton) return { savedMethodDetected: false, switchedToNewMethod: false, area };
 
   await changeButton.click({ timeout: timeoutMs });
 
@@ -59,10 +89,10 @@ export async function dismissSavedPaymentMethod(page, { timeoutMs = 8000 } = {})
 
   // 展开了却没有「新的付款方式」这一项：如实报告，让后续的卡字段检查按原样 fail closed，
   // 不在这里猜测页面形态、也不去点别的按钮。
-  if (!newMethod) return { savedMethodDetected: true, switchedToNewMethod: false };
+  if (!newMethod) return { savedMethodDetected: true, switchedToNewMethod: false, area };
 
   await newMethod.click({ timeout: timeoutMs });
-  return { savedMethodDetected: true, switchedToNewMethod: true };
+  return { savedMethodDetected: true, switchedToNewMethod: true, area };
 }
 
 export const STRIPE_LINK_SELECTORS = Object.freeze({ CHANGE_BUTTON, NEW_METHOD_ITEM });
