@@ -93,8 +93,13 @@ try {
       });
       const rows = await provider.allTransactions({ pageSize: 50 });
       const w = windowMin * 60_000;
+      // 卡台状态枚举（2026-09-13 实测）：刚授权是 PENDING，结算后才 COMPLETE。
+      // 只认 COMPLETE 会把「刚扣完的钱」判成「没扣钱」——最危险的假阴性（真发生过：
+      // PJV1-KLZokl 那单订单已 RECHARGE_SUCCESS、卡已 DEPLETED，工具却判 NO_CHARGE_FOUND）。
+      // 因此改成保守口径：**窗口内出现任何交易都不自动退**，状态原样交人判断。
+      // 两种错误代价不对等——漏判一个状态会重复扣款，多判只是多麻烦人一次。
+      // 等积累了足够的失败状态样本（DECLINED/REVERSED 之类）再考虑放宽，现在不猜。
       charges = rows.filter((t) => String(t.lastFour || '') === String(order.last4)
-        && String(t.status || '').toUpperCase() === 'COMPLETE'
         && Number(t.tradeTimeEpochMs) >= submitAt - w && Number(t.tradeTimeEpochMs) <= submitAt + w);
     } catch (e) { readError = String(e?.code || e?.message || e).slice(0, 120); }
   }
@@ -139,6 +144,8 @@ try {
     order: order.public_no, orderStatus: order.status, cardLast4: order.last4 || null,
     paymentSubmitAt: submitAt ? new Date(submitAt).toISOString() : null,
     verdict, chargesFound: charges ? charges.length : null, readError,
+    chargeDetails: charges ? charges.map((t) => ({ amountCents: t.amount, status: t.status,
+      at: new Date(Number(t.tradeTimeEpochMs)).toISOString() })) : null,
     accountSnapshot,
     // 这一条必须显示出来：卡台证据是客观的，账号证据只是付款前的快照。
     // 「卡没扣款」推不出「账号没开通」——免费 offer 就能让账号不花钱变 Plus。

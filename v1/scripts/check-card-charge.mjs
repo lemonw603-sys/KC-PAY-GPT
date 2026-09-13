@@ -57,7 +57,13 @@ try {
     const at = Number(t.tradeTimeEpochMs) || 0;
     return at >= submitAt - windowMs && at <= submitAt + windowMs;
   });
-  const successful = inWindow.filter((t) => String(t.status || '').toUpperCase() === 'COMPLETE');
+// 卡台状态枚举（2026-09-13 实测）：刚授权是 PENDING，结算后才 COMPLETE。
+// 只认 COMPLETE 会把「刚扣完的钱」判成「没扣钱」——最危险的假阴性（真发生过：
+// PJV1-KLZokl 那单订单已 RECHARGE_SUCCESS、卡已 DEPLETED，工具却判 NO_CHARGE_FOUND）。
+// 因此改成保守口径：**窗口内出现任何交易都不自动退**，状态原样交人判断。
+// 两种错误代价不对等——漏判一个状态会重复扣款，多判只是多麻烦人一次。
+// 等积累了足够的失败状态样本（DECLINED/REVERSED 之类）再考虑放宽，现在不猜。
+  const successful = inWindow;  // 窗口内任何交易都当作「钱可能动了」
 
   console.log(JSON.stringify({
     order: order.public_no, orderStatus: order.status,
