@@ -176,5 +176,53 @@ export function createHighvccCardProvider({
     return { feeInfo, holder, requestedAddress: address, cardId, detail: openedDetail };
   }
 
-  return { cost, autoCardHolderName, detail, list, listAll, open, ranges, wallet };
+  // 授权交易流水。合同 2026-09-12 对真实响应核实（不是从前端代码猜的）：
+  //   GET /api/cardTrade/authTrans/page?pageNo=&pageSize=   —— pageSize 小于 6 会被拒
+  //     （code 500 "must be greater than or equal to 6"），参数名不是 pageNum（"页码不能为空"）
+  //   data = { haveNext, totalNum, sumBalancePage, sumBalance, pageNum, pageSize, total, data: [...] }
+  //   单条 = { cardAuthId, amount, cardId, desc, cardSeqNo, lastFour, tradeTime, approveTime,
+  //            unit, status, reason, tags, merchantAmount, merchantCurrency, merchantCountry }
+  //   amount 是**分**（1579 = $15.79）；status 见过 'COMPLETE'。
+  //   **tradeTime / approveTime 是按 UTC+8 墙上时间算的毫秒值，不是 UTC epoch**——
+  //   2026-09-12 用 9-11 那笔已知扣款坐实：付款提交 03:14:09Z，tradeTime 读作 UTC 是
+  //   11:14:30Z，差整整 480 分钟；按 UTC+8 还原成 03:14:30Z，比提交晚 21 秒，正是刷卡耗时。
+  //   直接当 UTC 解析会把「扣了钱」判成「没扣钱」——最危险的一种误判。用 toEpochMs() 转换。
+  //
+  // 为什么要它：付款结果不明时，「卡上钱动没动」是判定的客观证据。在这之前
+  // BrowserCardTransactionReader 对 MANUAL_IMPORT 卡返回的是占位假数据，
+  // 验证 lane 因此永远走不出「不明」，每单都要人工核实（D-190 续 / ROADMAP）。
+  const MIN_PAGE_SIZE = 6;
+  /** 卡台时间戳按 UTC+8 墙上时间编码，转成真正的 epoch 毫秒。 */
+  const HIGHVCC_UTC_OFFSET_MS = 8 * 60 * 60 * 1000;
+  function toEpochMs(value) {
+    const raw = Number(value);
+    return Number.isFinite(raw) && raw > 0 ? raw - HIGHVCC_UTC_OFFSET_MS : null;
+  }
+  async function transactions({ pageNo = 1, pageSize = 20 } = {}) {
+    const size = Math.max(MIN_PAGE_SIZE, Math.min(200, Number(pageSize) || MIN_PAGE_SIZE));
+    const page = Math.max(1, Number(pageNo) || 1);
+    const r = await api('GET', `/api/cardTrade/authTrans/page?pageNo=${page}&pageSize=${size}`);
+    const payload = r?.data || {};
+    const rows = Array.isArray(payload.data) ? payload.data : [];
+    // 时间戳在这里就地归一，别让每个调用方各自记得减 8 小时——那种约定迟早会被漏掉。
+    const normalized = rows.map((row) => ({
+      ...row,
+      tradeTimeEpochMs: toEpochMs(row.tradeTime),
+      approveTimeEpochMs: toEpochMs(row.approveTime),
+    }));
+    return { rows: normalized, hasNext: Boolean(payload.haveNext), total: Number(payload.total) || 0 };
+  }
+
+  /** 翻完所有页。账户交易总量很小（2026-09-12 实测 total=10），但仍设上限防跑飞。 */
+  async function allTransactions({ pageSize = 50, maxPages = 20 } = {}) {
+    const out = [];
+    for (let page = 1; page <= maxPages; page += 1) {
+      const { rows, hasNext } = await transactions({ pageNo: page, pageSize });
+      out.push(...rows);
+      if (!hasNext || rows.length === 0) break;
+    }
+    return out;
+  }
+
+  return { cost, autoCardHolderName, detail, list, listAll, open, ranges, wallet, transactions, allTransactions };
 }

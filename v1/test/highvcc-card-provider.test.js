@@ -176,3 +176,56 @@ test('provider.wallet: exposes the raw cents fields without asserting what "depo
   const w = await provider.wallet();
   assert.deepEqual(w, { usdBalanceCents: 2088, usdDepositCents: 64480, usdConsumeCents: 0 });
 });
+
+// 2026-09-12 对真实响应核实的合同：交易列表的时间戳按 UTC+8 墙上时间编码，不是 UTC epoch。
+// 用 9-11 那笔已知扣款坐实：付款提交 03:14:09Z，原始 tradeTime 直读是 11:14:30Z（差整 480 分钟），
+// 按 UTC+8 还原得 03:14:30Z——比提交晚 21 秒，正是刷卡耗时。
+// 这一条最容易在后续重构里被「简化」掉，而一旦直接当 UTC 解析，对账会把「扣了钱」判成
+// 「没扣钱」，进而退卡密让客户重兑、造成重复扣款。所以在这里钉死。
+test('transactions(): 时间戳按 UTC+8 归一，页长不足 6 会被抬到 6', async () => {
+  const seen = [];
+  const provider = createHighvccCardProvider({
+    getAccessToken: async () => 'fixture-token',
+    fetchImpl: async (url) => {
+      seen.push(String(url));
+      return {
+        ok: true, status: 200,
+        json: async () => ({
+          code: 200,
+          data: {
+            haveNext: false, total: 1,
+            data: [{
+              cardAuthId: 'a1', amount: 1579, lastFour: '3118', status: 'COMPLETE',
+              // 卡台按 UTC+8 编码：这个值直读是 2026-09-11T11:14:30Z
+              tradeTime: Date.UTC(2026, 8, 11, 11, 14, 30),
+              approveTime: Date.UTC(2026, 8, 12, 14, 59, 25),
+            }],
+          },
+        }),
+      };
+    },
+  });
+
+  const { rows, total, hasNext } = await provider.transactions({ pageNo: 1, pageSize: 3 });
+  assert.match(seen[0], /pageNo=1/);
+  assert.match(seen[0], /pageSize=6/, '页长小于 6 会被卡台拒绝，必须抬到 6');
+  assert.equal(total, 1);
+  assert.equal(hasNext, false);
+  assert.equal(new Date(rows[0].tradeTimeEpochMs).toISOString(), '2026-09-11T03:14:30.000Z',
+    'tradeTime 必须按 UTC+8 还原，直接当 UTC 会整整差 8 小时');
+  assert.equal(new Date(rows[0].approveTimeEpochMs).toISOString(), '2026-09-12T06:59:25.000Z');
+  assert.equal(rows[0].amount, 1579, '金额是分，原样保留');
+});
+
+test('transactions(): 缺失或非法的时间戳归一成 null，不得退化成 0（0 会落进任何时间窗口）', async () => {
+  const provider = createHighvccCardProvider({
+    getAccessToken: async () => 'fixture-token',
+    fetchImpl: async () => ({
+      ok: true, status: 200,
+      json: async () => ({ code: 200, data: { data: [{ cardAuthId: 'a2', amount: 100, tradeTime: null, approveTime: 0 }] } }),
+    }),
+  });
+  const { rows } = await provider.transactions({});
+  assert.equal(rows[0].tradeTimeEpochMs, null);
+  assert.equal(rows[0].approveTimeEpochMs, null);
+});
