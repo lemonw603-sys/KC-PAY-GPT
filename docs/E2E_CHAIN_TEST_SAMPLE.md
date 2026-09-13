@@ -97,3 +97,86 @@
 
 轮询时把中间态 `RECONCILE_ONLY` 当成终态跳出循环，拿过期快照向 Lemon 报了「失败」，实际系统在 22 秒后已收为成功。**下结论前必须重新读一次当前状态**，这是既有规则，被违反了。
 
+
+## 第 5 次（2026-09-13，账号 chmilacml，Pilot 窗口，卡段 53211304）——**D-187 之后首次全自动跑通，2 分 30 秒**
+
+> 固定这一单的目的：**证明这条链路在当前代码下可以无人干预跑通**，并给出可复现的全部条件。
+> 当天前五单连续失败（原因各不相同，见 D-190），这是第六单，一次过、无人机验证、无任何人工介入。
+
+### 运行条件（复现必须对齐这些）
+
+| 项 | 值 |
+| --- | --- |
+| 生产 release | `20260912-token-login-616255c` |
+| 执行器代码 | `0243a26`（2026-09-13 01:05:15 +08:00）——进程于 **2026-09-12 17:58:42 UTC** 启动并加载 |
+| 执行器包含的关键修复 | D-187 首次即替换登录态（`04d311b`）、**注入前关掉旧标签页**（`c8f1dbf`）、刷新链断了就停（`88710ed`）、人机验证识别（`0243a26`） |
+| 窗口 | BitBrowser `Plus Browser PH Pilot`（`10f0dc7b…`），lane-1 |
+| 出口 | 菲律宾 38.60.246.34（mihomo 17897） |
+| 卡 | 卡段 `53211304`，余额 $39.24，`MANUAL_IMPORT` |
+| 账单地址 | 美国 DE 州（免销售税，`BROWSER_BILLING_ADDRESS_STATE`） |
+| 开关 | 付款 true、接单 true；非终态订单 0、账号槽 0 |
+| 客户账号 | `chmilacml@gmail.com`，付款前 `FREE` |
+
+### 全链路时间线（UTC）
+
+| 时刻 | 事件 | 证据 |
+| --- | --- | --- |
+| 02:56:57.784 | 客户提交，订单 `CREATED` | `order_events` |
+| 02:56:58.433 | 分卡完成 → `CARD_READY`（**0.6 秒**）| 同上 |
+| 02:56:58.479 | `RECHARGE_PROCESSING` | 同上 |
+| 02:57:08.237 | `observe-page`，BitBrowser 控制建立 | `browser_run_events` |
+| 02:57:14.879 | `session-bootstrap`：**关掉 1 个旧标签页**、清 8 个登录 cookie、替换 2 个 session cookie、注入 1 个 | `closedStaleTabCount:1, clearedLoginCookieCount:8, replacedCookieCount:2, cookieCount:1` |
+| 02:57:18.344 | `page-reload-after-inject` | 同上 |
+| 02:57:23.959 | `account-readonly-probe`：登录成功、身份匹配、**`sessionError: null`**、`FREE` | 同上 |
+| 02:57:24.273 | `page-signature` 通过 | 同上 |
+| 02:57:27.022 | `card-material-preflight` ready | 同上 |
+| 02:57:44.416 | `checkout-navigation`：**`checkoutCreated: true`**，未出现问卷 | 同上 |
+| 02:58:42.471 | **`PAYMENT_SUBMIT`**（仅一次）| `browser_operations` |
+| 02:59:19.139 | `PAYMENT_UNKNOWN` → 订单 `SUBMIT_UNKNOWN` | 同上 |
+| 02:59:28.066 | **`PAYMENT_CONFIRMED` + `PLUS_ACTIVATED` + `CANCELLATION_CONFIRMED`**（同一毫秒）| 同上 |
+| 02:59:28.066 | 订单 `RECHARGE_SUCCESS` | `order_events` |
+
+**总耗时 150 秒。全程无人干预，未出现人机验证。**
+
+注意 `SUBMIT_UNKNOWN` 只存在了 **9 秒**：付款后短暂判不确定，验证 lane 自己确认并落定。
+这说明判定链路本身很快——之前那些单卡在「不明」几分钟，是因为证据源缺失（D-190 / ROADMAP），
+不是机制慢。
+
+### 终态与资金
+
+| 项 | 值 |
+| --- | --- |
+| 订单 | `RECHARGE_SUCCESS`，`finished_at` 02:59:28 |
+| 资金 attempt | `SUCCESS` / `SETTLED` |
+| 消费账本 | `CONSUMED` $16.00 |
+| 卡分配 | `RELEASED`（成功后释放） |
+| CDK | `REDEEMED`（正确消耗，不退回） |
+| 卡台实扣 | **1572 分 = $15.72**，`status=PENDING`，交易时刻 02:58:56（距付款提交 **0 分钟**）|
+| 卡余额 | $39.24 → 用尽，卡转 `DEPLETED`（低于 Plus 门槛 $16，退出可分配） |
+
+卡台证据由 `v1/scripts/check-card-charge.mjs` 独立核实，与订单记录一致。
+
+### 与当天前五单的差异（为什么这次成了）
+
+前五单的失败原因互不相同，逐条对照：
+
+| 当天失败原因 | 这一单为何没遇到 |
+| --- | --- |
+| 窗口里是上个客户的登录态 | `closedStaleTabCount:1` + `replacedCookieCount:2`，注入前窗口被清干净（D-187 + `c8f1dbf`）|
+| Session 刷新链已断（`RefreshAccessTokenError`）| `sessionError: null`——Session 是当场导出、立刻提交的 |
+| 账号有免费试用资格，定价页只给「Claim free offer」| 该账号给的是正常付费入口，`checkoutCreated: true` |
+| 找不到唯一的升级按钮 | 同上，页面形态正常 |
+| 付款后卡在人机验证 | **本次未触发人机验证**——这一条是运气，不是能力（D-153/D-154 定死不绕过，触发了仍需人点）|
+
+**结论：链路本身可以跑通，当前代码下的失败都来自外部条件（账号形态、Session 新鲜度、风控抽样），
+不是链路缺陷。** 但人机验证是否触发不可控，这一项永远需要人在场兜底。
+
+### 可复现的前置检查（提单前做，当天教训）
+
+1. 在目标账号打开 `chatgpt.com/#pricing`：按钮是「Upgrade to Plus」才提；是「Claim free offer」
+   说明有免费试用资格，**没有结账流程可走**，换号。
+2. 打开 `chatgpt.com/api/auth/session`：返回里**不能有 `"error"` 字段**。
+   有 `RefreshAccessTokenError` 说明刷新链已断，提了必在进结账时被拦。
+3. Session 当场导出、立刻提交，导出后不要在别处再刷那个号（刷新令牌一次性）。
+4. 价格必须是**免税价 ₱982.14**；₱1,100 是含税价，系统会在付款前中止（三道闸门见
+   `docs/ADMIN_CONSOLE_MAP.md` 一·五）。
