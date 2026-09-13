@@ -55,11 +55,27 @@ try {
       cdkHashKey: Buffer.from(process.env.CDK_HASH_KEY_V1_BASE64, 'base64'),
       panHmacKey: Buffer.from(process.env.CARD_INTAKE_PAN_HMAC_KEY_BASE64, 'base64'),
     });
-    const found = await read.listOrders({ search: cdkCode, limit: 5 });
-    const rows = found?.orders || found?.rows || found?.items || [];
-    if (rows.length === 0) { out({ ok: false, reason: 'CDK_NOT_MATCHED', hint: '这串卡密没有匹配到任何订单——核对是不是卡密（不是订单查询码）' }); process.exit(1); }
-    if (rows.length > 1) { out({ ok: false, reason: 'CDK_MATCHED_MULTIPLE', count: rows.length, hint: '匹配到多个订单，请用 --order 指定' }); process.exit(1); }
-    publicNo = rows[0].publicNo || rows[0].public_no;
+    // 参数名是 q / pageSize（不是 search / limit）——2026-09-13 起初写错，参数被忽略、
+    // 返回了默认的前 20 条订单，还误报成「这个 CDK 匹配到多个订单」。与 find-order-by-cdk.mjs
+    // 对齐：它是已验证可用的同源调用。
+    // 优先用 cdkMatches：那是按 code_hash 的精确匹配；orders 是模糊搜索结果，不能当 CDK 匹配用。
+    const found = await read.listOrders({ q: cdkCode, pageSize: 5 });
+    const matches = found?.cdkMatches || [];
+    let rows = [];
+    if (matches.length > 0) {
+      const nos = matches.map((m) => m.orderPublicNo || m.publicNo || m.public_no).filter(Boolean);
+      rows = [...new Set(nos)].map((no) => ({ publicNo: no }));
+      if (rows.length === 0) {
+        out({ ok: false, reason: 'CDK_MATCHED_BUT_NO_ORDER', cdkMatches: matches.length,
+          hint: '这张卡密存在但还没有关联订单——可能从未被兑换，或兑换后已退回' });
+        process.exit(1);
+      }
+    } else {
+      out({ ok: false, reason: 'CDK_NOT_MATCHED', hint: '这串卡密没有匹配到任何订单——核对是不是卡密（不是订单查询码）' });
+      process.exit(1);
+    }
+    if (rows.length > 1) { out({ ok: false, reason: 'CDK_MATCHED_MULTIPLE', count: rows.length, orders: rows.map((r) => r.publicNo), hint: '这张卡密关联了多个订单（退回后重兑过），请用 --order 指定' }); process.exit(1); }
+    publicNo = rows[0].publicNo;
   }
 
   const [[order]] = await pool.query(
