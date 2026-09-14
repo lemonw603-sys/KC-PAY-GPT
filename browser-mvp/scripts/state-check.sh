@@ -42,8 +42,18 @@ MIG=$(bash "$Q" "SELECT * FROM schema_migrations ORDER BY 1 DESC LIMIT 1" 2>/dev
 MINBAL=$(bash "$Q" "SELECT setting_value FROM app_settings WHERE setting_key='default_minimum_required_card_balance'" 2>/dev/null | tr -d '[:space:]')
 case "$MINBAL" in ''|*[!0-9.]*) say "[取值失败] 可分配卡：门槛 default_minimum_required_card_balance 取不到数字（现场 '${MINBAL}'）"; drift=1; MINBAL=""; ;; esac
 if [ -n "$MINBAL" ]; then
-  ELIG_SQL=$(cd "$ROOT/v1" && node -e 'import("./src/services/card-inventory-eligibility.js").then(m=>process.stdout.write(m.eligibleInventoryCardSql("c",process.argv[1])))' "$MINBAL" 2>/dev/null)
-  if [ -z "$ELIG_SQL" ]; then say "[取值失败] 可分配卡：生成资格 SQL 失败（v1/src/services/card-inventory-eligibility.js 是否可加载）"; drift=1; else
+  # 规则必须取「生产 release 正在跑的那份」，不能用工作区那份：2026-09-14 工作区已含 D-217
+  # 账本推算而生产未发布，两份口径对同一张卡给出相反判定（卡 1652：生产算可分配、工作区算不可
+  # 分配）。本脚本自称现场比对，用工作区那份等于拿未发布代码冒充现场。取不到就报错，绝不回退本地。
+  ELIG_SRC="$(mktemp -t statecheck-elig)".mjs
+  ssh -o BatchMode=yes -o ConnectTimeout=10 "$HOST" 'cat /opt/pojia/current/v1/src/services/card-inventory-eligibility.js' > "$ELIG_SRC" 2>/dev/null
+  if [ ! -s "$ELIG_SRC" ]; then
+    say "[取值失败] 可分配卡：取不到生产 release 的资格规则（ssh $HOST:/opt/pojia/current/v1/src/services/card-inventory-eligibility.js）"; drift=1; ELIG_SQL=""
+  else
+    ELIG_SQL=$(node -e 'import(require("node:url").pathToFileURL(process.argv[2]).href).then(m=>process.stdout.write(m.eligibleInventoryCardSql("c",process.argv[1])))' "$MINBAL" "$ELIG_SRC" 2>/dev/null)
+  fi
+  rm -f "$ELIG_SRC"
+  if [ -z "$ELIG_SQL" ]; then say "[取值失败] 可分配卡：生成资格 SQL 失败（生产 release 的 card-inventory-eligibility.js 是否可加载）"; drift=1; else
   N=$(bash "$Q" "SELECT COUNT(*) FROM cards c WHERE $ELIG_SQL" 2>/dev/null | tr -d '[:space:]')
   check "可分配卡（正式资格 SQL）" "${N:-} 张" "可分配卡数（Plus 门槛 $MINBAL）"
   fi
