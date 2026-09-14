@@ -19,4 +19,4 @@ print(f"{urllib.parse.unquote(u.username or '')}\t{urllib.parse.unquote(u.passwo
 PY
 )"
 USER="$(printf '%s' "$creds" | cut -f1)"; PW="$(printf '%s' "$creds" | cut -f2)"; DB="$(printf '%s' "$creds" | cut -f3)"
-MYSQL_PWD="$PW" mysql --protocol=TCP -h 127.0.0.1 -P 13306 -u "$USER" "$DB" -N -e "$1"
+MYSQL_PWD="$PW" mysql --protocol=TCP --default-character-set=utf8mb4 -h 127.0.0.1 -P 13306 -u "$USER" "$DB" -N -e "$1"
