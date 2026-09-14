@@ -2696,3 +2696,68 @@ D-212 把等待窗口从 8 分钟收到 90 秒，是止血。真正的结构问�
 队列空时仍会占住 lane 最多 90 秒。彻底的解法是把等待挪出 lane 主循环（独立观察任务，
 或改用不依赖浏览器的信号如卡台流水）。**当前量级下不值得做**——90 秒 × 队列空 = 无人受损。
 量级上来后再看。
+
+---
+
+## D-214（2026-09-14 02:15 UTC）今天所有诊断努力卡在两行上：一个标记丢在包装里，一句消息丢在转手里
+
+### 真单实测暴露的两个 bug（都是我自己的实现缺陷）
+
+单号 `PJV1-zdprG5vkLzo7UKs8XEe1`（客户 `1710578962@qq.com`），第二次死在完全相同的位置：
+
+```
+02:04:55  fill-secure-card-controls     258ms
+02:04:57  fill-billing-address         2474ms
+02:04:58  fill-billing-email           1387ms  ← 和前一单同一步
+```
+
+**但两样本该生效的东西都没生效**：日志里仍然只有光秃秃三行，90 秒接手窗口**从未触发**
+（失败 10 秒就判终态、退了 CDK，而现场其实好端端留在屏幕上）。
+
+#### bug ①：`sceneHeld` 丢在错误包装里
+
+`fillTransientBillingEmail` 抛的是 `ContractError`；我把 `sceneHeld` 设在**它**身上。
+但 adapter 外层 catch 对非 Adapter 错误会**新建一个** `LiveChatGPTPaymentAdapterError`
+抛出去——新对象上没有这个标记。于是上层永远看不到"现场留着"，D-210/D-213 做的
+整个接手窗口**一次都没运行过**。
+
+#### bug ②：诊断消息丢在转手里
+
+```js
+// shared-runtime-integration.js:452（修复前）
+error: { code: payment.reasonCode || 'PRE_SUBMIT_FAILED' },
+```
+
+这里**凭 reasonCode 重造了一个空壳错误对象**，失败原因的文字整个丢掉。
+今天做的 `stage`（D-205）、「找到几个」（D-212）——**全部死在这一行**。
+我先前查 `diagnosticOf` 时判断"message 为空"，方向对但没走到底：不是取到空，
+是上游根本没传。
+
+### 修复
+
+1. adapter 外层 catch 包装时把 `sceneHeld` 带过去
+2. `payment-executor` 把 `diagnostic`（沿 cause 链拼的文字）带进 `PRE_SUBMIT_FAILED` 返回值
+3. `shared-runtime-integration` 不再造空壳，`message: payment.diagnostic` 一并传下去
+
+### 假说被推翻
+
+现场实数邮箱框：**只有 1 个**（`name=email`，srcdoc frame）。
+"Link 带来第二个邮箱框" **不成立，收回**。
+
+`matches.length !== 1` 排除了"多于 1 个"，**剩下的可能是 0 个**——即执行器去找的那一刻
+邮箱框还没挂载（填完地址仅 1.4 秒）。**这是时序问题而非数量问题，但仍是推断**：
+要等诊断真正打出来那一句话才能定。
+
+### 验证
+
+- 新增 2 条测试：**包装后 sceneHeld 必须还在**（同时断言现场真的留着、stage 正确）、
+  **规则拒绝不得带 sceneHeld**（否则上层白等一个窗口）
+- 全量 `npm test`：**282 通过 / 0 失败 / 9 跳过**
+- worker 重启：**PID 34932 → 43986**，起于 02:15:46 UTC，晚于改动 02:13:13 ✓
+
+### 这一轮的教训
+
+D-211 模式 B 的又一个变体：**我改了"设置标记"的地方，没改"传递标记"的地方**。
+数清楚"有几处设置"不够，还要数清楚"它要穿过几层才能到达使用者"。
+今天连着三次栽在同一种事上——stage 加了传不出来、sceneHeld 设了传不出来、
+诊断拼了传不出来。**加一个字段时，把它从产生点到消费点的每一次转手都走一遍。**

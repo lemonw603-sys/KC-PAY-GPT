@@ -263,3 +263,53 @@ test('D-208: a throwing onStage cannot break the payment', async () => {
     assert.equal(await page.evaluate(() => window.clicked || 0), 1);
   } finally { await browser.close(); }
 });
+
+// D-214：sceneHeld 原先只设在内层原始错误上，而外层 catch 新建了一个错误对象抛出去，
+// 标记就此丢失——上层永远看不到"现场留着"，90 秒接手窗口从来没触发过。
+// 2026-09-14 真单实测：失败 10 秒就判终态退了 CDK，而现场好端端留在屏幕上。
+test('D-214: sceneHeld survives the error wrapping', async () => {
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage();
+    // 账单邮箱框故意缺失 → fillTransientBillingEmail 之后那一步抛非 Adapter 错误
+    await page.setContent(html().replace('<input autocomplete="billing email">', ''));
+    const adapter = new LiveChatGPTPaymentAdapter({
+      enabled: true, confirmation: LIVE_PAYMENT_CONFIRMATION,
+      outcomeObserver: async () => ({ status: 'CONFIRMED' }),
+    });
+    await assert.rejects(() => adapter.submit({
+      page, checkout, checkoutContract, cardMaterial: card,
+      billingEmail: 'fixture@example.test', operationId: 'op-held',
+      authorizeSubmit: async () => { throw new Error('Target page, context or browser has been closed'); },
+      repriceTimeoutMs: 1_000,
+    }), (error) => {
+      assert.equal(error.code, 'CHECKOUT_DRIFT');
+      assert.equal(error.sceneHeld, true, '包装后必须仍带 sceneHeld，否则接手窗口永远不触发');
+      assert.equal(error.stage, 'final-pre-submit-check');
+      return true;
+    });
+    // 现场也必须真的留着
+    assert.equal(await page.locator('input[autocomplete="cc-number"]').inputValue(), card.pan);
+  } finally { await browser.close(); }
+});
+
+// 规则拒绝类（税不为零）不留现场，也就不该带 sceneHeld——否则上层会白等一个窗口。
+test('D-214: a policy refusal carries no sceneHeld', async () => {
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage();
+    await page.setContent(html({ tax: '117.86' }));
+    const adapter = new LiveChatGPTPaymentAdapter({
+      enabled: true, confirmation: LIVE_PAYMENT_CONFIRMATION,
+      outcomeObserver: async () => ({ status: 'CONFIRMED' }),
+    });
+    await assert.rejects(() => adapter.submit({
+      page, checkout, checkoutContract, cardMaterial: card,
+      billingEmail: 'fixture@example.test', operationId: 'op-tax2',
+      authorizeSubmit: async () => ({ executeExternal: true }), repriceTimeoutMs: 1_000,
+    }), (error) => {
+      assert.notEqual(error.sceneHeld, true, '规则拒绝不留现场，不能让上层白等');
+      return true;
+    });
+  } finally { await browser.close(); }
+});

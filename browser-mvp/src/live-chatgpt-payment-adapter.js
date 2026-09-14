@@ -312,6 +312,11 @@ export class LiveChatGPTPaymentAdapter {
         submitted ? 'PAYMENT_RESULT_UNKNOWN' : 'CHECKOUT_DRIFT', error,
       );
       failure.stage = stage;
+      // D-214：sceneHeld 原先只设在内层那个原始错误上（比如 fillTransientBillingEmail
+      // 抛的 ContractError），而这里**新建了一个错误对象**抛出去——标记就此丢失，
+      // 上层永远看不到"现场留着"，90 秒接手窗口从来没触发过。
+      // 2026-09-14 真单实测：失败 10 秒就判终态退了 CDK，而现场其实好端端留在屏幕上。
+      if (error?.sceneHeld === true) failure.sceneHeld = true;
       throw failure;
     }
   }

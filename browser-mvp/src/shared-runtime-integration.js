@@ -449,7 +449,10 @@ export class SharedBrowserRuntimeIntegration {
       if (payment.status === 'PRE_SUBMIT_FAILED') {
         const closed = await this.abortForPrePaymentFailure({
           control, run,
-          error: { code: payment.reasonCode || 'PRE_SUBMIT_FAILED' },
+          // D-214：这里原先只造了个 `{ code }`，把失败原因的文字整个丢掉——
+          // 今天做的 stage、「找到几个」全死在这一行。2026-09-14 两单实测：
+          // 日志里永远只有光秃秃的 status/reasonCode/orderId 三行。
+          error: { code: payment.reasonCode || 'PRE_SUBMIT_FAILED', message: payment.diagnostic || '' },
         });
         return { ...closed, workerId: this.workerId, jobId: claimed.jobId, orderId: claimed.orderId, runId: run.runId };
       }

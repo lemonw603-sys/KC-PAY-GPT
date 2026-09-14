@@ -112,6 +112,19 @@ export class MockPostPaymentVerifier {
 // stops before Pay now (D-133); the run hands off exactly like MANUAL_20X_HANDOFF.
 export const POST_PLUS_ACTIONS = Object.freeze(['CANCEL_RENEWAL', 'MANUAL_20X_HANDOFF', 'UPGRADE_DIALOG_STOP']);
 
+/** 沿 cause 链把消息拼出来。与 shared-runtime-integration 的 diagnosticOf 同口径：
+ *  真正有信息的那条常常挂在 cause 上，只看最外层等于什么都没看到。 */
+function diagnosticTextOf(error) {
+  const parts = [];
+  let current = error;
+  for (let depth = 0; current && depth < 3; depth += 1) {
+    const message = String(current.message || '').trim();
+    if (message && !parts.includes(message)) parts.push(message);
+    current = current.cause;
+  }
+  return parts.join(' ← ').slice(0, 300) || null;
+}
+
 export class BrowserPaymentExecutor {
   constructor({ integration, executionRepository, paymentAdapter, postPaymentVerifier,
     enabled = false, postPlusAction = 'CANCEL_RENEWAL',
@@ -212,13 +225,16 @@ export class BrowserPaymentExecutor {
         // D-210：sceneHeld 说明 adapter 把填好的表单留在了屏幕上。这个标记必须
         // 带出去——上层要据此给运营留接手时间，而不是立刻判失败退 CDK。
         return { status: 'PRE_SUBMIT_FAILED', reasonCode: error.code, paymentSubmitCalls: 0,
-          sceneHeld: error?.sceneHeld === true };
+          sceneHeld: error?.sceneHeld === true,
+          // D-214：不带出去的话，上层只能拿 reasonCode 重造一个空壳错误，
+          // 今天加的 stage 和「找到几个」全在那一步被扔掉。
+          diagnostic: diagnosticTextOf(error) };
       }
       // No intent means the adapter proved it never crossed the external
       // submit boundary, so this remains a safe pre-submit failure.
       if (!intent) {
         return { status: 'PRE_SUBMIT_FAILED', reasonCode: error?.code || 'PRE_SUBMIT_FAILED', paymentSubmitCalls: 0,
-          sceneHeld: error?.sceneHeld === true };
+          sceneHeld: error?.sceneHeld === true, diagnostic: diagnosticTextOf(error) };
       }
       await this.executionRepository.markPaymentUnknown({
         runId: run.runId, operationId: `${op}:unknown`, reasonCode: 'PAYMENT_RESULT_UNKNOWN',
