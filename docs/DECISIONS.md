@@ -2855,3 +2855,57 @@ if (matches.length === 0 && !required) return { ... emailFieldPresent: false };
 ### 未完成
 
 实现层逐条（9 项）、SSH ControlMaster 的安全面、客户侧观感，下一阶段继续。
+
+---
+
+## D-216（2026-09-14 05:00 UTC）免费试用账号：系统充不了、人也充不了，唯一一个业务层面无解的案例
+
+### 事实
+
+订单 `PJV1-_md1Qxt_rBopPGKMOkwB`（客户 `zhouyt2022@outlook.com`）：
+
+```
+reasonCode: CHECKOUT_NAVIGATION_FAILED
+diagnosticMessage: 'plus upgrade control must resolve to one visible button (找到 0 个)'
+```
+
+**这是 D-212 的诊断第一次在真实失败中给出答案**——今天之前这里只有一句
+`must resolve to one visible button`，要靠猜。
+
+Lemon 在现场看到结账页显示 **0 元**，页面带 `?promo_campaign=plus-1-month-free`，
+文案是 `Offer applied: ChatGPT Plus - 1 Month Free Trial`。价格行为
+`₱982.14 / ₱982.14 / ₱0.00 / ₱0.00`。
+
+**Lemon 手动试了几次也充不上**，已给客户退款，CDK 待作废
+（批次 `B-20260914044709524-D9EB06`，批内仅此一张）。
+
+### OpenAI 官方条款（帮助文档原文要点，非推断）
+
+- Most promotions **auto-renew to the standard ChatGPT Plus monthly rate** after the promo ends
+- cancel **at least 24 hours before renewal** to avoid an unwanted charge
+- Some promotions are **exclusively for new Plus subscribers**（从未订阅过 Plus 的账号）
+
+### 系统 fail-closed 是对的，这次它挡住了一个资金陷阱
+
+若自动点下那个 0 元 Subscribe：客户立刻拿到 1 个月 Plus（我们零成本），
+**但我们的卡被绑为付款方式，一个月后自动续费 ₱982.14 扣我们**。
+唯一的防线是"付款后取消续费"，而**今天已有多个账号的续费尚未取消**——这条防线是漏的。
+
+执行器找不到预期的升级入口就停下，没有把我们的卡绑进一个会自动扣款的订阅。
+
+### 待 Lemon 定的业务口径（D-190 第五节挂了很久，今天真实发生）
+
+客户付全款，而他自己本可免费领这一个月。三个方向：
+
+1. **兑换入口就拦**：检测到免费试用资格直接不接单，告诉客户可自行免费领
+2. **照常做**：零成本交付，风险全压在取消续费这道工序上
+3. **转人工**：停下推手机，逐单处理
+
+大脑建议 **1**：理由不是技术，是客户日后会发现本可免费领而我们收了全款；
+规模化后这是口碑风险，不是单笔得失。**决定权在 Lemon。**
+
+### 注意：这一单的"无解"不能推广到别的失败
+
+本单 `CHECKOUT_NAVIGATION_FAILED`（连结账页都没到）与今天主线的
+`CHECKOUT_DRIFT`（死在 `fill-billing-email`）**是两回事**。
+主线根因仍未定位，等下一单带诊断的真实失败。
