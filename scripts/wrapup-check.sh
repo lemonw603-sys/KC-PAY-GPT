@@ -38,8 +38,10 @@ hupd=$(grep -m1 '^更新：' docs/HANDOFF_NOW.md | sed 's/^更新：//' | cut -c
 note(){ printf '[提醒] %s — %s\n' "$1" "$2"; }
 
 # 5) 四份事实源之间的漂移：PROJECT_MAP 不必每轮改，但里程碑变了它没跟上就会误导接班
-hday=$(grep -m1 '^更新：' docs/HANDOFF_NOW.md | grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2}')
-mday=$(grep -m1 '最后核对：' docs/PROJECT_MAP.md | grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2}')
+# 只取该行第一个日期：那一行里可能还引用别的带日期的文件名（如 PLAN_2026-09-14），
+# 2026-09-14 实测 grep -o 吐出两行，两份同日也被报成不同日。
+hday=$(grep -m1 '^更新：' docs/HANDOFF_NOW.md | grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2}' | head -1)
+mday=$(grep -m1 '最后核对：' docs/PROJECT_MAP.md | grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2}' | head -1)
 if [ -n "$hday" ] && [ -n "$mday" ]; then
   if [ "$hday" = "$mday" ]; then
     ok "PROJECT_MAP 与接班一屏同日核对（$mday）"
