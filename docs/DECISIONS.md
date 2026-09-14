@@ -3177,3 +3177,35 @@ scripts/deploy-release.sh:86   systemctl restart pojia-web.service      ← 只�
 
 新加的 ssh 片段第一版在远端双引号里写了 `sed "s#/v1$##"`——`$#` 被展开成参数个数，sed 报 unterminated。
 改为 bash 参数展开 `${d%/v1}`。又一次「工具失败时说什么」没先想：这条要是不实跑，会把"取不到"当漂移。
+
+---
+
+## D-221（2026-09-14 14:50 UTC）每卡单数按产品：Plus 3 单、5X/20X 1 单，API 与 Browser 两路线一致（Lemon 定）
+
+### Lemon 的规则（原话要点）
+
+「API 卡台和 API 充值的逻辑已经变了：如果是 Plus，一卡 3 单；如果是 5X 和 20X，一卡一单。与我的 Browser 是一致的。」
+
+### 系统现状（当场核实，`app_settings` 全表 + 今天 4 单）
+
+| 项 | 现值 | 与规则的差 |
+|---|---|---|
+| `card_max_successful_payments` | **3，全局一个值**；后台只能设 1–4；资格 SQL 三处都读它 | Plus 对；5X/20X 需要 1，**没有按产品的位置** |
+| `default_open_card_amount` | **16，全局**；今天 4 单 `open_card_amount` 全是 16 | Plus 3 单需 ≥ $47.16（3 × $15.72）→ 应为 **50**；**没有任何后台端点能改它**（迁移 003 初始化为空，card-stock 端点只有 default-card-type / max-successful-payments / minimum-balance） |
+| `minimum_required_card_balance:*` | plus 16 / pro_5x 16 / pro_20x 150 | 已按产品 |
+| 历史 hnskj 卡 | 5 张各 $16 开、一单即 `DEPLETED` | 那是旧开卡金额下的结果，**不是规则** |
+
+**我上一轮说「hnskj 卡从来就是一卡一单」是把历史观察当成了规则，收回。**（惯犯 B：给观察补了一个规则。）
+
+### 影响
+
+- **D-218 选项 3 的代价修正**：不是"每单一张 $16 卡"，是"每 3 单一张 $50 卡"——与 Browser/highvcc 现状完全一致（`3159`、`5371` 各 $50 跑 3 单剩 $2.84）。
+- **hnskj 开卡金额 = $50**：Lemon 手动开照此（上次 `1652` 就是 $50，类型 20）。系统自动开卡（V2.0 卡供给自动化）之前必须把 `default_open_card_amount` 16 → 50，否则自动开出的卡只够一单。
+- **5X/20X 进 V2.1 时**，每卡单数必须按产品（Plus 3 / 5X 1 / 20X 1）；全局设置不够。V2 资源面加"按产品的每卡单数 + 开卡金额"，设置页对应改。
+- CLAUDE.md 硬约束「全局 1–4 次成功充值上限」改为按产品（本轮已改）。
+- `PLAN_2026-09-14.md` §2 的算术（每卡 3 单、$50/张、67 张/天）本来就按这个规则算，不变。
+
+### 待做
+
+1. `default_open_card_amount` 16 → 50：需要正式写路径——V2.0 设置页加"按产品开卡金额"端点，或先一次性正式脚本（带审计、可 dry-run）。**不用 prod-query 写。** 在此之前系统自动开卡不开。
+2. 5X/20X 按产品上限：V2.1 任务。

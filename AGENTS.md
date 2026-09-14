@@ -19,6 +19,7 @@
 3. `docs/PROJECT_MAP.md`：目标、里程碑级已完成/未完成、唯一执行顺序，一页。
 4. `docs/CURRENT_STATE.md`：**唯一**的生产事实表（可跑 `browser-mvp/scripts/state-check.sh` 与现场比对）。
 5. `docs/PRODUCT_SIMPLIFICATION_DISCUSSION.md` 末尾「接班实施基线」：改造方向，用户已确认。
+6. `docs/V2_ARCHITECTURE.md`（六个面、三阶段）与 `docs/PLAN_2026-09-14.md`（两天冲刺）：2026-09-14 起的改造方向。哪些已确认、哪些待确认，以 `docs/DECISIONS.md` 最新条目为准；任务级拆解在 `docs/tasks/`（V2 确认后才有）。
 
 然后看 `docs/UNVERIFIED_LEDGER.md`（做了但没证明的事）、`docs/HANDOFF_LOG.md` 末尾本周章节、`git log --oneline -20`。要动手运维（自检、来单、演练、收口、发布、回滚）看 `docs/RUNBOOK.md`。
 
