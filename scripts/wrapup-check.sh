@@ -71,6 +71,24 @@ else
   note "本机还有调试用的临时服务在跑，确认是否该停" "$(printf '%s' "$leftover" | sed 's/^/\n         /')"
 fi
 
+# 8) 吞掉的错误被「编成业务答案」：`2>/dev/null` 取到空值，再用 ${VAR:-0} 或数值比较
+#    把空当成 0/false，于是"查不到"被播报成一个确定的业务结论。
+#    2026-09-13 实际代价：ready-check 报"可分配卡 0 张"（实为 1 张，差点去开一张不
+#    需要的卡）、"生产服务异常"（实为 active active）。
+#    只查这一种形态——空值流进数值判断。空值只是拿去做字符串比对（比对不上会报
+#    漂移、能被发现）的不算，否则满屏提醒会变成狼来了。
+danger=""
+for f in browser-mvp/scripts/*.sh scripts/*.sh v1/scripts/*.sh; do
+  [ -f "$f" ] || continue
+  hits=$(grep -nE '\$\{[A-Za-z_][A-Za-z0-9_]*:-0\}[[:space:]]*"?[[:space:]]*-(ge|gt|le|lt|eq|ne)|\[[[:space:]]+"?\$\{?[A-Za-z_][A-Za-z0-9_]*\}?"?[[:space:]]+-(ge|gt|le|lt|eq|ne)' "$f" 2>/dev/null | head -3)
+  [ -n "$hits" ] && danger="$danger\n         $f\n$(printf '%s' "$hits" | sed 's/^/           /')"
+done
+if [ -z "$danger" ]; then
+  ok "没有「查不到被当成 0/false 参与数值判断」的地方"
+else
+  note "这些地方把空值当成数字用了——查不到会变成一个假的业务答案" "$(printf '%b' "$danger")"
+fi
+
 printf '\n'
 [ "$fail" = "0" ] && echo "==> 可以说做完了 ✓（[提醒] 不算失败，但要看一眼）" || echo "==> 还不能说做完 ✗"
 exit "$fail"
