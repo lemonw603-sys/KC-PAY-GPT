@@ -4,7 +4,7 @@
 # Needs SSH access to the production host (see docs/PRODUCTION_PREP_RUNBOOK.md). Never run against a dirty or unpushed commit.
 #   prepare <commit> <release-name>  build bundle from one commit, upload, backup DB,
 #                                    extract, verify manifest, install deps. No switch.
-#   switch  <release-name>           atomically point /opt/pojia/current, restart Web,
+#   switch  <release-name>           atomically point /opt/pojia/current, restart Web + Worker,
 #                                    health-check, print rollback command.
 set -euo pipefail
 
@@ -85,7 +85,14 @@ echo "previous=$prev"
 ln -sfn "$r" /opt/pojia/current
 systemctl restart pojia-web.service
 systemctl is-active pojia-web.service
+# worker 的 WorkingDirectory 是 /opt/pojia/current 这个符号链接，进程启动时解析成实际目录，
+# 之后切 release 它不跟——2026-09-14 发现 worker 在四次发布后仍跑着 09-11 的 release（D-220）。
+# worker 用租约 + 有界重试，重启安全；Lemon 2026-09-14 同意每次 switch 一起重启。
+systemctl restart pojia-worker.service
+systemctl is-active pojia-worker.service
+wpid=$(systemctl show pojia-worker -p MainPID --value)
 echo "current=$(readlink -f /opt/pojia/current)"
+echo "worker cwd=$(readlink -f /proc/${wpid}/cwd)"
 # Wait for the port instead of guessing: a single check after `sleep 2` raced the
 # server's own startup and printed a false live=000 during the 2026-09-11 release,
 # which reads exactly like a broken deploy. Give it up to 30s, then report honestly.
@@ -100,7 +107,7 @@ h=$(grep -oE "^ADMIN_HOST=.*" /etc/pojia/runtime.env | cut -d= -f2-)
 echo "index.html on disk references: $(grep -oE 'admin\.js\?v=[0-9]+' /opt/pojia/current/v1/public/admin/index.html)"
 echo "served admin.js?v=23 status/new-action count: $(curl -s -H "Host: $h" -o /tmp/adm.js -w '%{http_code}' 'http://127.0.0.1:3100/admin/assets/admin.js?v=23') / $(grep -c CONFIRM_MANUAL_PAYMENT /tmp/adm.js)"; rm -f /tmp/adm.js
 echo "admin login page: $(curl -s -o /dev/null -H "Host: $h" -w '%{http_code}' http://127.0.0.1:3100/admin/login)"
-echo "ROLLBACK: ln -sfn $prev /opt/pojia/current && systemctl restart pojia-web.service"
+echo "ROLLBACK: ln -sfn $prev /opt/pojia/current && systemctl restart pojia-web.service pojia-worker.service"
 REMOTE
 }
 
