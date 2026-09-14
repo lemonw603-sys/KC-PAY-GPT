@@ -11,7 +11,32 @@ export function eligibleInventoryCardSql(alias = 'c', minimumSql = '?', { produc
       ${alias}.last_transaction_synced_at IS NOT NULL
       AND ${alias}.last_transaction_synced_at >= DATE_SUB(CURRENT_TIMESTAMP(3), INTERVAL 15 MINUTE)
     ))
-    AND ${alias}.current_balance >= ${minimumSql}
+    -- D-217：可用额取「同步余额」与「按账本推算的余额」中的较小者。
+    -- 单看任一个都会放行一张钱不够的卡，2026-09-14 实测四张卡：
+    --   1657 同步 18.56 / 推算 18.00   两者接近
+    --   3159 同步 2.84  / 推算 2.00    账本更严，对
+    --   3118 同步 1.07  / 推算 12.00   ← 账本漏记了消费，只看账本会放行
+    --   5371 同步 2.84  / 推算 18.00   ← 同上，偏乐观 15 元
+    -- 取较小者让两种偏差互相兜底：同步滞后时账本补上，账本漏记时同步兜底。
+    --
+    -- 为什么必须有账本这一侧：卡台快照每小时才同步一次，付款后那一小时里
+    -- current_balance 仍是旧值，系统会把一张刚用掉大半的卡再分出去，下一单必然
+    -- 因余额不足失败（Lemon 2026-09-14 指出这个可预测的失败）。
+    --
+    -- RELEASED 要看订单：订单失败=卡真没用（不计），订单成功=卡用了但收口脚本
+    -- 记成了 RELEASED（必须计）。把所有 RELEASED 一律当消费会荒谬地保守——
+    -- 5371 有 7 笔失败单的 RELEASED，那样它会被算成用了 8 次。
+    AND LEAST(
+      ${alias}.current_balance,
+      ${alias}.funded_amount - COALESCE((
+        SELECT SUM(eligible_spend.amount) FROM card_consumption_ledger eligible_spend
+        LEFT JOIN orders eligible_spend_order ON eligible_spend_order.id = eligible_spend.order_id
+        WHERE eligible_spend.card_id = ${alias}.id
+          AND (eligible_spend.status IN ('RESERVED','CONSUMED','RECONCILIATION')
+            OR (eligible_spend.status = 'RELEASED'
+              AND eligible_spend_order.status = 'RECHARGE_SUCCESS'))
+      ), 0)
+    ) >= ${minimumSql}
     AND (SELECT COUNT(*) FROM card_consumption_ledger eligible_usage
       WHERE eligible_usage.card_id = ${alias}.id
         AND eligible_usage.status IN ('RESERVED','CONSUMED','RECONCILIATION'))

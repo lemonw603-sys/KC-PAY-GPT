@@ -14,7 +14,14 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 test('inventory predicate permits sequential reuse below capacity but excludes active assignment and disputes', () => {
   const sql = eligibleInventoryCardSql('cards', '?');
   assert.match(sql, /inventory_status IN \('AVAILABLE','ASSIGNED','DEPLETED'\)/);
-  assert.match(sql, /current_balance >= \?/);
+  // D-217：余额门槛改为「同步余额」与「按账本推算」取较小者。单看任一个都会放行
+  // 一张钱不够的卡：同步每小时一次，付款后那一小时里余额是旧的；而账本又可能漏记
+  // （2026-09-14 实测 3118 账本推算 12.00、卡台实际 1.07）。以下三条守住这个口径。
+  assert.match(sql, /LEAST\(/, '余额判断必须取两者较小值');
+  assert.match(sql, /funded_amount -/, '必须有按账本推算的那一侧');
+  assert.match(sql, /eligible_spend\.status = 'RELEASED'\s*\n?\s*AND eligible_spend_order\.status = 'RECHARGE_SUCCESS'/,
+    'RELEASED 必须看订单结局：订单失败=卡真没用（不计），订单成功=卡用了但被收口脚本记成 RELEASED（必须计）');
+  assert.match(sql, />= \?/, '门槛参数仍然要能传进来');
   assert.match(sql, /source_present/);
   assert.match(sql, /last_transaction_synced_at IS NOT NULL/);
   assert.match(sql, /INTERVAL 15 MINUTE/);
