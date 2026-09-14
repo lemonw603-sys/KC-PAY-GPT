@@ -3137,3 +3137,43 @@ Lemon 明确要"基础对账能力"。V2 稿五个面里没有它。现状：`ca
 ### 下一步
 
 修正 V2 文档（同轮），Lemon 认可后进 V2.0。整个项目的对抗式审查排在 V2.0 实现完之后。
+
+---
+
+## D-220（2026-09-14 14:05 UTC）服务器 worker 一直跑着 09-11 的 release：发布脚本只重启 web
+
+### 观察（新 ssh 独立核实）
+
+```
+current                 -> /opt/pojia/releases/20260913-orderno-6dcb458
+pojia-web    MainPID 3715151  cwd=/opt/pojia/releases/20260913-orderno-6dcb458/v1  起于 09-13 08:44 UTC
+pojia-worker MainPID 2149614  cwd=/opt/pojia/releases/20260911-alert-noise-d924563/v1  起于 09-11 15:31 UTC
+scripts/deploy-release.sh:86   systemctl restart pojia-web.service      ← 只有 web
+```
+
+`WorkingDirectory=/opt/pojia/current/v1` 是符号链接，进程启动时解析成实际目录，之后切 release 进程不跟。
+`HANDOFF_LOG` 09-11 06:36 UTC 那条就记过「历次 switch 均未重启 worker，worker 侧改动若有需单独重启」——
+记了，没人做，`state-check.sh` 也只比 `is-active`，所以四次发布都报"一致"。
+
+### 影响判定（有证据，不是估）
+
+`worker.js` 的 import 树共 33 个模块；09-11→09-13 两个 release 之间 `v1/src` 改了 15 个文件，交集只有 2 个：
+
+| 文件 | 改动 | worker 侧行为 |
+|---|---|---|
+| `db/repositories/cdk-return-repository.js` | 把证据查询抽成 `readCdkReturnEvidence` + `cdkReturnBlockedBy` 供客户页复用 | SQL 与判定逐字相同，**等价** |
+| `domain/session-validation.js` | 默认 `minimumAccessTokenLifetimeSeconds` 300→1800 | worker 侧更宽松；web 下单入口（新 release）已按 1800 把关，**不会多放进任何单** |
+
+**结论：当前无行为差异，不必紧急重启。** 今天 4 单（3 成 1 败）不受影响。
+
+### 处置
+
+1. `state-check.sh` 加「pojia-worker 进程实际 release」比对项，`CURRENT_STATE` 对应行写明现值——下次再漂就报出来（本轮已做）。
+2. **`deploy-release.sh switch` 是否改为同时重启 worker**：worker 用租约 + 有界重试，重启安全，但要在非终态订单 0 时做；
+   改脚本后每次发布 worker 都会重启一次。**待 Lemon 定**（不改 = 每次发布后由大脑判断要不要单独重启，靠人记）。
+3. 现在要不要把 worker 对齐到 09-13：非终态 0、active_runs 0，是安全窗口；但无行为差异，**不为对齐而重启**。等下次含 worker 侧改动的发布一起。
+
+### 顺带修掉
+
+新加的 ssh 片段第一版在远端双引号里写了 `sed "s#/v1$##"`——`$#` 被展开成参数个数，sed 报 unterminated。
+改为 bash 参数展开 `${d%/v1}`。又一次「工具失败时说什么」没先想：这条要是不实跑，会把"取不到"当漂移。

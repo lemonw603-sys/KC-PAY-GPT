@@ -32,6 +32,9 @@ REL=$(ssh -o BatchMode=yes -o ConnectTimeout=10 "$HOST" 'readlink -f /opt/pojia/
 check "生产 release" "$REL" "release"
 SVC=$(ssh -o BatchMode=yes -o ConnectTimeout=10 "$HOST" 'systemctl is-active pojia-web' 2>/dev/null); check "pojia-web" "$SVC" "状态"
 SVC=$(ssh -o BatchMode=yes -o ConnectTimeout=10 "$HOST" 'systemctl is-active pojia-worker' 2>/dev/null); check "pojia-worker（v1 任务 Worker）" "$SVC" "状态"
+# worker 进程实际跑的 release：deploy-release.sh switch 只重启 web，worker 的 cwd 停在它启动时解析到的那个
+# release 目录（2026-09-14 发现：current 是 09-13，worker 进程 cwd 仍是 09-11）。取不到值按漂移处理。
+WREL=$(ssh -o BatchMode=yes -o ConnectTimeout=10 "$HOST" 'pid=$(systemctl show pojia-worker -p MainPID --value); [ -n "$pid" ] && [ "$pid" != 0 ] && d=$(readlink -f /proc/$pid/cwd); d=${d#/opt/pojia/releases/}; echo ${d%/v1}' 2>/dev/null); check "pojia-worker（v1 任务 Worker）" "$WREL" "进程实际 release"
 PAY=$(bash "$Q" "SELECT setting_value FROM app_settings WHERE setting_key='browser_payment_writes_enabled'" 2>/dev/null | tr -d '[:space:]'); check "browser_payment_writes_enabled" "$PAY" "开关"
 ACC=$(bash "$Q" "SELECT setting_value FROM app_settings WHERE setting_key='accept_new_orders'" 2>/dev/null | tr -d '[:space:]'); check "accept_new_orders" "$ACC" "开关"
 P20=$(bash "$Q" "SELECT CAST(setting_value AS DECIMAL(10,0)) FROM app_settings WHERE setting_key='minimum_required_card_balance:pro_20x'" 2>/dev/null | tr -d '[:space:]'); check "最低所需卡余额" "pro_20x $P20" "20X门槛"

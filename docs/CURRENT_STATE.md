@@ -10,7 +10,7 @@
 | pojia-web | active（2026-09-12 10:55 UTC 随 release 切换重启） | 2026-09-12 10:55 UTC | switch 输出 + 服务器本机 curl live/ready 200 |
 | highvcc 备用卡台 A token | 已配置进生产（`app_settings.highvcc_access_token_ciphertext`，加密存储，09-10 09:17 UTC 写入） | 2026-09-10 09:52 UTC | `v1/scripts/set-highvcc-token.mjs` 输出 |
 | highvcc 备用卡台 A 已开卡片（本窗口） | 3 张：尾号 9839（$50，08:xx）、9354（$5，09:19）、3241（$3，09:35，开卡时因 detail() 竞态未即时入库，09:53 用 `reconcile-highvcc-card.mjs` 补记）；账户另有 $20 押金要从钱包余额里先扣，才是真实可开卡余额（Lemon 提供） | 2026-09-10 09:52 UTC | 平台卡片列表 + `cards` 表独立核对 |
-| pojia-worker（v1 任务 Worker） | active（处理 ASSIGN_CARD/PREPARE/SUBMIT_RECHARGE/POLL 等；Browser 路线的 BROWSER_PREFLIGHT 与付款由本机 worker 跑） | 2026-09-09 11:46 UTC | systemctl |
+| pojia-worker（v1 任务 Worker） | active（处理 ASSIGN_CARD/PREPARE/SUBMIT_RECHARGE/POLL 等；Browser 路线的 BROWSER_PREFLIGHT 与付款由本机 worker 跑）。**进程实际 release=`20260911-alert-noise-d924563`**（MainPID 2149614，起于 2026-09-11 15:31 UTC）——`deploy-release.sh switch` 只重启 web，worker 的 cwd 停在它启动时解析到的 release 目录。与 current（09-13）相比，worker.js 的 import 树（33 个模块）里只有 2 个文件不同：`cdk-return-repository.js`（等价重构，SQL 与判定未变）、`session-validation.js`（默认门槛 300→1800 秒，web 下单入口已按 1800 把关），**行为无差异，不必紧急重启**；但下次 v1 发布若含 worker 侧改动，必须 `systemctl restart pojia-worker`（D-220，`state-check.sh` 已加比对项） | 2026-09-14 14:05 UTC | ssh `readlink /proc/MainPID/cwd`；`git diff d924563..6dcb458 -- v1/src` 与 worker.js import 树求交集 |
 | pojia-browser-worker | inactive / disabled（Browser 执行在本机，来单人工拉） | 2026-09-09 11:46 UTC | systemctl |
 | pojia-card-funding.timer | `pojia-highvcc-snapshot-sync.timer` 已改为每 1 小时（D-169），无变化时只发 1 次列表请求、不发逐卡详情 | 2026-09-11 14:21 UTC | systemctl |
 | pojia-card-read-sync.timer | active | 2026-09-09 11:46 UTC | systemctl |
