@@ -1,3 +1,4 @@
+import { describeCandidates } from './locator-diagnostics.js';
 import { ContractError } from './contracts.js';
 
 const SELECTORS = Object.freeze({
@@ -82,11 +83,19 @@ export async function fillTransientBillingEmail(page, email, { timeoutMs = 5000,
   const matches = [];
   for (const frame of page.frames()) {
     const locator = frame.locator(BILLING_EMAIL_SELECTOR);
-    for (let i = 0; i < await locator.count(); i += 1) if (await locator.nth(i).isVisible()) matches.push(locator.nth(i));
+    for (let i = 0; i < await locator.count(); i += 1) {
+      if (await locator.nth(i).isVisible()) matches.push({ locator: locator.nth(i), frame });
+    }
   }
   if (matches.length === 0 && !required) return { fieldsFilled: 0, paymentClicked: false, submitCalls: 0, emailFieldPresent: false };
-  if (matches.length !== 1) throw new ContractError('billing email field must resolve to one visible input');
-  await matches[0].fill(value, { timeout: timeoutMs });
-  await matches[0].blur();
+  if (matches.length !== 1) {
+    // D-212：把"找到了几个、在哪个 frame、什么属性"写进消息本身。
+    // 2026-09-13 这一行抛了 8 次，每次只说"必须是一个"，查一整天说不出卡在哪——
+    // 而 matches.length 当时就在手里。怀疑是 Stripe Link 接管后带进了它自己的
+    // 登录邮箱框（页面上因此有 2 个），但那仍是假说：下一次失败的消息会直接说明。
+    throw new ContractError(`billing email field must resolve to one visible input (${await describeCandidates(matches)})`);
+  }
+  await matches[0].locator.fill(value, { timeout: timeoutMs });
+  await matches[0].locator.blur();
   return { fieldsFilled: 1, paymentClicked: false, submitCalls: 0, emailFieldPresent: true };
 }

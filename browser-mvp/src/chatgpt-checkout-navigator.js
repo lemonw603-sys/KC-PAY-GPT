@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 
+import { describeCandidates } from './locator-diagnostics.js';
 import { ContractError } from './contracts.js';
 
 function digest(value) {
@@ -28,8 +29,11 @@ async function visibleSelectorMatches(page, selectors) {
 
 async function uniqueVisibleSelector(page, selectors, label, { allowEquivalentMultiple = false } = {}) {
   const matches = await visibleSelectorMatches(page, selectors);
-  if (matches.length === 0) throw new ContractError(`${label} must resolve to one visible control`);
-  if (matches.length > 1 && !allowEquivalentMultiple) throw new ContractError(`${label} must resolve to one visible control`);
+  // D-212：0 个和 3 个是完全不同的故障，以前抛的是同一句话。
+  if (matches.length === 0) throw new ContractError(`${label} must resolve to one visible control (找到 0 个)`);
+  if (matches.length > 1 && !allowEquivalentMultiple) {
+    throw new ContractError(`${label} must resolve to one visible control (${await describeCandidates(matches)})`);
+  }
   if (matches.length > 1 && allowEquivalentMultiple) {
     // ChatGPT may render the same upgrade action in both header/sidebar.
     // Every candidate is still checked as a non-form navigation control.
@@ -67,8 +71,9 @@ async function uniqueVisibleButton(scope, labels, label, { optional = false } = 
   }
   if (optional && matches.length === 0) return null;
   if (matches.length !== 1) {
-    if (process.env.DEBUG_BROWSER_ERRORS === 'true') console.error('button mismatch', label, matches.length, labels);
-    throw new ContractError(`${label} must resolve to one visible button`);
+    // D-212：这个数字以前藏在 DEBUG_BROWSER_ERRORS 后面，而生产环境从不开它，
+    // 等于代码知道答案却不肯说。现在直接进消息。
+    throw new ContractError(`${label} must resolve to one visible button (${await describeCandidates(matches)})`);
   }
   return matches[0];
 }
@@ -83,7 +88,9 @@ async function uniqueVisibleMenuItem(scope, labels, label, { optional = false } 
     }
   }
   if (optional && matches.length === 0) return null;
-  if (matches.length !== 1) throw new ContractError(`${label} must resolve to one visible menu item`);
+  if (matches.length !== 1) {
+    throw new ContractError(`${label} must resolve to one visible menu item (${await describeCandidates(matches)})`);
+  }
   return matches[0];
 }
 

@@ -1,3 +1,4 @@
+import { describeCandidates } from './locator-diagnostics.js';
 import { ContractError } from './contracts.js';
 import { assertCardMaterial } from './card-material-lease.js';
 import { SECURE_CARD_FIELD_SELECTORS } from './nonpayment-card-fill.js';
@@ -27,11 +28,16 @@ async function oneVisible(page, selector, label, timeoutMs = 45_000) {
     for (const frame of page.frames()) {
       const locator = frame.locator(selector);
       for (let i = 0; i < await locator.count(); i += 1) {
-        if (await locator.nth(i).isVisible()) matches.push(locator.nth(i));
+        if (await locator.nth(i).isVisible()) matches.push({ locator: locator.nth(i), frame });
       }
     }
-    if (matches.length === 1) return matches[0];
-    if (Date.now() >= deadline) throw new LiveChatGPTPaymentAdapterError(`${label} must resolve to one visible control`, 'CHECKOUT_DRIFT');
+    if (matches.length === 1) return matches[0].locator;
+    // D-212：这里是等待循环，超时那一轮才抛。以前只说"必须是一个"，等于把整段
+    // 等待的结果压成一句没有信息的话——它到底是一直 0 个，还是突然变成 2 个？
+    if (Date.now() >= deadline) {
+      throw new LiveChatGPTPaymentAdapterError(
+        `${label} must resolve to one visible control (${await describeCandidates(matches)})`, 'CHECKOUT_DRIFT');
+    }
     await page.waitForTimeout(100);
   }
 }

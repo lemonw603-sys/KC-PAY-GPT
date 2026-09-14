@@ -49,7 +49,7 @@ function hmac(key, namespace, value) {
  * 自动记账会记错。它只是停止等待并通知人，由人走正式收口。
  */
 export async function awaitOperatorTakeover({
-  verifier, control, notify = null, windowMs = 8 * 60_000, pollIntervalMs = 15_000,
+  verifier, control, notify = null, windowMs = 90_000, pollIntervalMs = 10_000,
   clock = () => Date.now(), sleep = (ms) => new Promise((r) => setTimeout(r, ms)),
 } = {}) {
   if (!verifier || typeof verifier.confirmPlus !== 'function') throw new TypeError('verifier is required');
@@ -132,9 +132,12 @@ export function createSharedLivePaymentWorker({
   // F-47: how long to read the Checkout for a definite answer before falling
   // back to polling the account. A decline shows up in seconds.
   postSubmitWatchMs = 60_000,
-  // D-210：付款前失败且现场保留时，给运营多久接手。Lemon 2026-09-14 定 8 分钟
-  // （他上一次从失败到手动付成约 3~5 分钟），"等流程顺了再调短"。
-  operatorTakeoverWindowMs = 8 * 60_000,
+  // D-210：付款前失败且现场保留时，给运营多久接手。
+  // 2026-09-14 从 8 分钟收到 90 秒（D-212）：对抗式审查发现只有 1 条 lane、
+  // runLaneLoop 串行，等待期间后面的客户全在排队——8 分钟是我亲手加的吞吐瓶颈。
+  // 90 秒够检测到运营接手（上次点订阅到账号变 Plus 只要几十秒），队列代价可接受。
+  // 等"等待期释放 lane"做完，再考虑放长。
+  operatorTakeoverWindowMs = 90_000,
   postPlusAction = 'CANCEL_RENEWAL',
   resolvePlan = null,
   stopBeforeSubmit = false,

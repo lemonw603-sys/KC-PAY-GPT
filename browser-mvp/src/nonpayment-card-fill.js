@@ -1,3 +1,4 @@
+import { describeCandidates } from './locator-diagnostics.js';
 import { ContractError } from './contracts.js';
 import { assertCardMaterial } from './card-material-lease.js';
 
@@ -13,11 +14,14 @@ async function uniqueVisibleField(page, selector, name) {
     const locator = frame.locator(selector);
     for (let index = 0; index < await locator.count(); index += 1) {
       const candidate = locator.nth(index);
-      if (await candidate.isVisible()) matches.push(candidate);
+      if (await candidate.isVisible()) matches.push({ locator: candidate, frame });
     }
   }
-  if (matches.length !== 1) throw new ContractError(`${name} secure field must resolve to one visible input`);
-  return matches[0];
+  // D-212：数量和特征写进消息，别让排查的人对着"必须是一个"猜。
+  if (matches.length !== 1) {
+    throw new ContractError(`${name} secure field must resolve to one visible input (${await describeCandidates(matches)})`);
+  }
+  return matches[0].locator;
 }
 
 function formatExpiry(material) {

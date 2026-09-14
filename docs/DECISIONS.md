@@ -2586,3 +2586,64 @@ message。数不清楚不动手。
 对抗式审查也自查出 4 条真问题、排除 2 条虚警。
 
 **这套"查证—推翻—更正"是有效的，问题在于它应该发生在开口之前，而不是之后。**
+
+---
+
+## D-212（2026-09-14 01:35 UTC）窗口收到 90 秒止血；六处「知道数量却不说」的断言全部改口
+
+### 一、8 分钟 → 90 秒（止血，不是解决）
+
+对抗式审查发现：**lane 只有 1 条、`runLaneLoop` 串行**，D-210 的 8 分钟等待期间
+后面的客户全在排队。今天的量下约 30 分钟阻塞；按"一天几十上百单"的目标，
+这是我亲手加进去的吞吐瓶颈——**写它的时候完全没想过队列**。
+
+收到 90 秒：够检测到运营接手（上次点订阅到账号变 Plus 只要几十秒），队列代价可接受。
+轮询间隔同时从 15 秒收到 10 秒。**这是止血，不是解决**——真正的解法是"等待期释放 lane"，
+排在根因之后。
+
+改了 3 处默认值（worker fallback、helper 默认、composition 默认），改完 `grep "8 \* 60_000"` 确认无残留。
+
+### 二、根因方向：让断言自己把答案说出来
+
+今天 `fill-billing-email` 抛了 8 次 `must resolve to one visible input`，我查一整天
+说不出卡在哪——**而 `matches.length` 当时就在代码手里**。更糟的是
+`chatgpt-checkout-navigator.js` 把这个数字藏在 `DEBUG_BROWSER_ERRORS` 后面，
+生产环境从不开启，等于代码知道答案却不肯说。
+
+新增 `src/locator-diagnostics.js`：把"找到几个、在哪个 frame、什么属性、有没有值"
+写进错误消息本身。**只取结构特征，绝不取值**——邮箱、卡号、姓名都可能在 `value` 里，
+而这条消息会进日志和数据库。
+
+**六处全部改口**（先数后改，D-211 模式 B）：
+
+| 文件 | 断言 |
+|---|---|
+| `billing-address-fill.js` | 账单邮箱框（**今天的根因所在**） |
+| `nonpayment-card-fill.js` | 卡字段 |
+| `chatgpt-checkout-navigator.js` ×3 | 控件 0 个 / 控件多个 / 按钮 / 菜单项 |
+| `live-chatgpt-payment-adapter.js` | 等待循环超时那一轮 |
+
+**过程里又犯了一次模式 B**：第一遍我说"4 处"就动手，实际是 6 处——`grep -c` 当时
+就显示 navigator 有 4 条，我只改了 3 条。当场发现并补完，记在这里。
+
+### 三、测试夹具这次是对抗性的
+
+审查时自己指出的第 4 条问题：夹具是单页 HTML、只有 1 个邮箱框，**真实 bug 永远测不出来**。
+新测试直接造出真实形态——主文档一个邮箱框 + iframe 里一个：
+
+- `two visible email fields name both of them in the error`：消息必须说出"找到 2 个"
+  并分别认出 `name=email` 与 `name=linkEmail`
+- `diagnostics never leak the field value`：value 是 `secret-customer@...`，
+  断言消息里**不得出现**它，只能说"已有值"
+- `a broken candidate degrades instead of throwing`：诊断自己出错不能反过来弄坏流程
+
+### 四、验证
+
+- 全量 `npm test`：283 项，**277 通过 / 0 失败 / 9 跳过**
+- worker 重启：**PID 25346 → 27629**（认 PID 变化，不认"进程存在"——D-211 模式 C），
+  起于 01:35:17 UTC，晚于最后一处改动 01:33:37 ✓
+
+### 五、下一步
+
+**假说仍未证实**：Link 是否带来第二个邮箱框，要等下一次真实失败——但那时消息里会直接写着
+"找到 N 个，分别在哪个 frame"，不用再抢现场。这是从"猜"转到"等一条会自报家门的日志"。
