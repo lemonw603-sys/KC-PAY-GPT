@@ -50,14 +50,25 @@ function hmac(key, namespace, value) {
  */
 export async function awaitOperatorTakeover({
   verifier, control, notify = null, windowMs = 90_000, pollIntervalMs = 10_000,
+  // D-213：队列里有人在等就立刻让出 lane。这条 lane 是串行的
+  // （runLaneLoop 依次跑 steps，一个占住其余全停），硬等下去后面的客户全在排队。
+  // 而且那时候本来也留不住现场——下一单 startFresh 会关掉这个 checkout 页，
+  // 所以"有人排队还硬等"是纯亏：既堵了别人，又保不住自己要保的东西。
+  queueDepth = null,
   clock = () => Date.now(), sleep = (ms) => new Promise((r) => setTimeout(r, ms)),
 } = {}) {
   if (!verifier || typeof verifier.confirmPlus !== 'function') throw new TypeError('verifier is required');
   if (!Number.isInteger(windowMs) || windowMs < 1_000) throw new TypeError('windowMs must be at least 1000ms');
+  if (queueDepth != null && typeof queueDepth !== 'function') throw new TypeError('queueDepth must be a function');
   const deadline = clock() + windowMs;
   if (notify) await notify({ windowMs }).catch(() => undefined);
   let checks = 0;
   while (clock() < deadline) {
+    // 先让路再检测：让出去的代价是这一单少等几十秒，不让的代价是别人全等着。
+    if (queueDepth) {
+      const waiting = await queueDepth().catch(() => 0);
+      if (Number(waiting) > 0) return { takenOver: false, checks, reason: 'QUEUE_WAITING', waiting: Number(waiting) };
+    }
     // 租约没了就别再占着这一单：另一个 worker 可能已经接管。
     if (control && typeof control.assertLeaseBeforeAction === 'function') {
       try { await control.assertLeaseBeforeAction('OPERATOR_TAKEOVER_WATCH'); }
@@ -314,6 +325,12 @@ export function createSharedLivePaymentWorker({
         && operatorTakeoverWindowMs > 0) {
         const watched = await awaitOperatorTakeover({
           verifier, control, windowMs: operatorTakeoverWindowMs,
+          // D-213：每轮问一次"还有几单在等这条 lane"。排除自己——等待中的这一单
+          // 也是 RECHARGE_PROCESSING，不排除就会把自己数进去、立刻让路。
+          queueDepth: () => dispatchRepository.countClaimable({
+            excludeOrderId: claimedJob.orderId,
+            executorProfileId: profile,
+          }),
           notify: async ({ windowMs }) => {
             const minutes = Math.round(windowMs / 60_000);
             const message = `自动化停在付款前，填好的卡和账单已留在 Pilot 窗口。`

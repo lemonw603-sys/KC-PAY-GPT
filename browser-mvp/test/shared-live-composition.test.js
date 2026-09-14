@@ -135,3 +135,42 @@ test('D-210: a lost lease ends the watch immediately', async () => {
   assert.equal(result.takenOver, false);
   assert.equal(result.reason, 'LEASE_LOST');
 });
+
+// D-213：这条 lane 是串行的，等待期间后面的客户全在排队。而那时候本来也留不住现场
+// （下一单 startFresh 会关掉这个 checkout 页），所以"有人排队还硬等"是纯亏。
+test('D-213: the wait yields the lane as soon as someone is queued', async () => {
+  let probes = 0;
+  const result = await awaitOperatorTakeover({
+    verifier: { confirmPlus: async () => ({ confirmed: false }) },
+    queueDepth: async () => { probes += 1; return probes >= 2 ? 1 : 0; },
+    windowMs: 60_000, pollIntervalMs: 10, sleep: async () => undefined,
+  });
+  assert.equal(result.takenOver, false);
+  assert.equal(result.reason, 'QUEUE_WAITING');
+  assert.equal(result.waiting, 1);
+  assert.equal(probes, 2, '每轮都要问一次队列，不能只在开头问');
+});
+
+// 队列空就该等满窗口——这正是"保留现场"存在的意义。
+test('D-213: an empty queue still gets the full window', async () => {
+  let now = 0;
+  const result = await awaitOperatorTakeover({
+    verifier: { confirmPlus: async () => ({ confirmed: false }) },
+    queueDepth: async () => 0,
+    windowMs: 1_000, pollIntervalMs: 100,
+    clock: () => now, sleep: async (ms) => { now += ms; },
+  });
+  assert.equal(result.reason, 'WINDOW_EXPIRED');
+});
+
+// 队列查询自己挂了不能连累这一单：查不到就当没人排队，继续等。
+test('D-213: a failing queue probe does not abort the wait', async () => {
+  let now = 0;
+  const result = await awaitOperatorTakeover({
+    verifier: { confirmPlus: async () => ({ confirmed: false }) },
+    queueDepth: async () => { throw new Error('db down'); },
+    windowMs: 1_000, pollIntervalMs: 100,
+    clock: () => now, sleep: async (ms) => { now += ms; },
+  });
+  assert.equal(result.reason, 'WINDOW_EXPIRED');
+});

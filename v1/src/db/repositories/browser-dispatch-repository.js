@@ -150,8 +150,46 @@ function publicJob(row, extra = {}) {
   };
 }
 
+// 「这个 job 现在可被认领吗」的唯一定义。claim 和 countClaimable 必须共用同一份——
+// 两处各写一份近似条件，迟早会对不上（D-211：判断工具不许抄业务规则）。
+const CLAIMABLE_JOINS = `INNER JOIN recharge_attempts rat ON rat.id = bdj.recharge_attempt_id
+           INNER JOIN orders o ON o.id = bdj.order_id`;
+const CLAIMABLE_PREDICATE = `(bdj.status = 'QUEUED'
+                  OR (bdj.status = 'CLAIMED' AND bdj.lease_until <= ?))
+             AND rat.executor_kind = 'BROWSER'
+             AND rat.status = 'PREPARED' AND rat.funds_risk_state = 'ACTIVE'
+             AND o.status = 'RECHARGE_PROCESSING'
+             AND EXISTS (
+               SELECT 1 FROM app_settings browser_gate
+               WHERE browser_gate.setting_key = 'browser_dispatch_enabled'
+                 AND browser_gate.setting_value = 'true'
+             )`;
+
 export function createBrowserDispatchRepository(pool, { transactionTimeoutMs = 5000 } = {}) {
   return {
+    /**
+     * 还有几单在等这条 lane。D-213：付款前失败后等运营接手时，每轮问一次——
+     * 有人排队就立刻让出 lane，别为一单堵住所有人。
+     * excludeOrderId 必须传：等待中的那一单自己也是 RECHARGE_PROCESSING，
+     * 不排除就会把自己数进去，一进等待立刻让路，功能等于没做。
+     */
+    async countClaimable({ excludeOrderId = null, executorProfileId = null, now = new Date() } = {}) {
+      const profile = executorProfileId == null ? null : required(executorProfileId, 'executorProfileId');
+      const profilePredicate = profile
+        ? 'AND (bdj.executor_profile_id IS NULL OR bdj.executor_profile_id = ?)' : '';
+      const excludePredicate = excludeOrderId ? 'AND bdj.order_id <> ?' : '';
+      const [rows] = await pool.query(
+        `SELECT COUNT(*) AS waiting
+           FROM browser_dispatch_jobs bdj
+           ${CLAIMABLE_JOINS}
+          WHERE ${CLAIMABLE_PREDICATE}
+            ${profilePredicate}
+            ${excludePredicate}`,
+        [now, ...(profile ? [profile] : []), ...(excludeOrderId ? [excludeOrderId] : [])]
+      );
+      return Number(rows?.[0]?.waiting || 0);
+    },
+
     async enqueue({ jobKey, attemptId, orderId, executorProfileId = null, now = new Date() }) {
       const key = required(jobKey, 'jobKey');
       const attempt = required(attemptId, 'attemptId');
@@ -235,18 +273,8 @@ export function createBrowserDispatchRepository(pool, { transactionTimeoutMs = 5
           `SELECT bdj.id, bdj.job_key, bdj.recharge_attempt_id, bdj.order_id,
                   bdj.executor_profile_id, bdj.status, bdj.attempt_count
            FROM browser_dispatch_jobs bdj
-           INNER JOIN recharge_attempts rat ON rat.id = bdj.recharge_attempt_id
-           INNER JOIN orders o ON o.id = bdj.order_id
-           WHERE (bdj.status = 'QUEUED'
-                  OR (bdj.status = 'CLAIMED' AND bdj.lease_until <= ?))
-             AND rat.executor_kind = 'BROWSER'
-             AND rat.status = 'PREPARED' AND rat.funds_risk_state = 'ACTIVE'
-             AND o.status = 'RECHARGE_PROCESSING'
-             AND EXISTS (
-               SELECT 1 FROM app_settings browser_gate
-               WHERE browser_gate.setting_key = 'browser_dispatch_enabled'
-                 AND browser_gate.setting_value = 'true'
-             )
+           ${CLAIMABLE_JOINS}
+           WHERE ${CLAIMABLE_PREDICATE}
              ${profilePredicate}
              ${orderPredicate}
            ORDER BY bdj.queued_at, bdj.id
