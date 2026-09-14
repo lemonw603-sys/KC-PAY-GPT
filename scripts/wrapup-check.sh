@@ -71,22 +71,18 @@ else
   note "本机还有调试用的临时服务在跑，确认是否该停" "$(printf '%s' "$leftover" | sed 's/^/\n         /')"
 fi
 
-# 8) 吞掉的错误被「编成业务答案」：`2>/dev/null` 取到空值，再用 ${VAR:-0} 或数值比较
-#    把空当成 0/false，于是"查不到"被播报成一个确定的业务结论。
-#    2026-09-13 实际代价：ready-check 报"可分配卡 0 张"（实为 1 张，差点去开一张不
-#    需要的卡）、"生产服务异常"（实为 active active）。
-#    只查这一种形态——空值流进数值判断。空值只是拿去做字符串比对（比对不上会报
-#    漂移、能被发现）的不算，否则满屏提醒会变成狼来了。
-danger=""
-for f in browser-mvp/scripts/*.sh scripts/*.sh v1/scripts/*.sh; do
-  [ -f "$f" ] || continue
-  hits=$(grep -nE '\$\{[A-Za-z_][A-Za-z0-9_]*:-0\}[[:space:]]*"?[[:space:]]*-(ge|gt|le|lt|eq|ne)|\[[[:space:]]+"?\$\{?[A-Za-z_][A-Za-z0-9_]*\}?"?[[:space:]]+-(ge|gt|le|lt|eq|ne)' "$f" 2>/dev/null | head -3)
-  [ -n "$hits" ] && danger="$danger\n         $f\n$(printf '%s' "$hits" | sed 's/^/           /')"
-done
-if [ -z "$danger" ]; then
-  ok "没有「查不到被当成 0/false 参与数值判断」的地方"
+# 8) 「查不到」被编成业务答案：变量取自吞掉错误的命令、没判空、却直接参与数值判断。
+#    2026-09-13 真实代价：ready-check 把空值当 0，播报"可分配卡 0 张"（实为 1 张，
+#    差点去开一张不需要的卡）、"生产服务异常"（实为 active active）。
+#    三个条件必须同时成立才报，否则就是噪音——第一版只查"有没有判空"报出 7 处全是
+#    假阳性，第二版只查"有没有数值比较"报出 5 处也全是假阳性。判断工具的假阳性比
+#    报错危险：人会学会略过它。检查器自己的自测见 scripts/lib/find-swallowed-empties.py 顶部。
+swallow=$(python3 scripts/lib/find-swallowed-empties.py \
+  browser-mvp/scripts/*.sh scripts/*.sh v1/scripts/*.sh 2>/dev/null | head -6)
+if [ -z "$swallow" ]; then
+  ok "没有「查不到被编成业务答案」的地方"
 else
-  note "这些地方把空值当成数字用了——查不到会变成一个假的业务答案" "$(printf '%b' "$danger")"
+  note "这些变量取自吞错误的查询、没判空、却直接当数字用" "$(printf '%s' "$swallow" | sed 's/^/\n         /')"
 fi
 
 printf '\n'
