@@ -3504,3 +3504,26 @@ Lemon：备用卡台（highvcc / backup-a）**可以删除卡片，删除后余�
 
 客户输入 CDK 后就尽可能提醒，而不是跑到最后才说缺卡。现状：`cdk-verify-service` **只验 CDK 本身，完全不查卡**。
 处置（大脑定）：**属于 A 组的部分现在做**（新增 A6 卡可用性只读查询，否则 C 组会返工）；**完整前置清单与 UI 提示留 C 组统一排查**。
+
+---
+
+## D-230（2026-09-15 04:30 UTC）highvcc 数据两个缺口：交易从未同步、钱包余额从未入库（不是 token 问题）
+
+Lemon 在后台重新刷新了 highvcc token（`app_settings.highvcc_access_token_ciphertext` `updated_at=2026-09-15 03:49:27`，已生效）。借此当场查清了此前"Browser 路线费用后台空白"这个**没查清原因的结论**：
+
+### 缺口一：highvcc 交易从未同步（代码语义不兼容，与 token 无关）
+
+- **hnskj**：`transactions(cardId, query)` —— **按卡查**
+- **highvcc**：`transactions({pageNo,pageSize})` —— **按账户查全部流水**（`/api/cardTrade/authTrans/page`）
+- 同步器 `card-read-sync-runner.js:64` 调的是 `provider.transactions(job.provider_card_id, ...)`（按卡查签名）→ **highvcc 套不进这个调用**，其交易从来没进过 `card_transactions`（实测：legacy-primary 41 笔，backup-a **0 笔**）。
+- **要补**：新建 highvcc 交易同步（账户级流水 → 归属到卡 → 写 `card_transactions`）。**刷 token 解决不了。**
+- **影响**：B 组运营看板算不出 Browser 路线的花费/拒付/回收 → **B 组前置**。
+
+### 缺口二：highvcc 钱包余额从未入库
+
+- `provider_balance_snapshots` 里 backup-a **一条都没有**（hnskj 有）。钱包只有后台手动点查（`getHighvccWalletStatus`），**无定时同步**。
+- **影响**：**A3 自动开卡方案里的"钱包最低水位"判断没有数据源** —— 这是大脑方案里没考虑到的前置，**现在补进 A3**。
+
+### 方法论
+
+此前把"Browser 费用空白"写成结论但没查原因（差点归因到 token）。这次按"不给观察补原因"当场查到真因是**接口语义不兼容**。
