@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 
 import { assertJobEnvelope, ContractError } from './contracts.js';
-import { probeSessionIdentity } from './session-identity-probe.js';
+import { probeSessionIdentity, SessionIdentityProbeError } from './session-identity-probe.js';
 import { observeCheckout } from './checkout-observer.js';
 import { dismissSavedPaymentMethod } from './stripe-link-picker.js';
 import { navigateToChatGPTCheckout } from './chatgpt-checkout-navigator.js';
@@ -310,7 +310,20 @@ export class BrowserExecutionService {
           // 就是客户提交的 Session 本身不对（或已失效）。不重试，直接 fail closed：
           // SESSION_INVALID / SESSION_IDENTITY_MISMATCH 都映射成 WAITING_FOR_SESSION，
           // 客户在充值页上自己换个账号就能接着跑（2026-09-12，D-187）。
-          throw new BrowserExecutionError(classify(error), error.message, error);
+          const failure = new BrowserExecutionError(classify(error), error.message, error);
+          // Persist only typed, allowlisted probe facts through the existing fail-closed event.
+          // No response body, identity, token, arbitrary message or header is copied.
+          if (error instanceof SessionIdentityProbeError && error.details) {
+            const d = error.details;
+            failure.evidenceDetail = {
+              ...(['session-endpoint', 'client-auth', 'session-error', 'identity-compare'].includes(d.stage)
+                ? { probeStage: d.stage } : {}),
+              ...(Number.isInteger(d.httpStatus) && d.httpStatus >= 100 && d.httpStatus <= 599
+                ? { httpStatus: d.httpStatus } : {}),
+              ...(typeof d.hasCfRay === 'boolean' ? { hasCfRay: d.hasCfRay } : {}),
+            };
+          }
+          throw failure;
         } finally {
           if (sessionLease && this.sessionProvider) {
             await this.sessionProvider.close(sessionLease).catch(() => undefined);

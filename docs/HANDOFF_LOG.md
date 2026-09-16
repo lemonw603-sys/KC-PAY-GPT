@@ -2371,3 +2371,7 @@ Lemon 在 Pilot 窗口截图：结账页 `chatgpt.com/checkout/openai_llc/cs_liv
 ## 2026-09-16｜h9RKl 深查：浏览器历史403与当前正式核验（10:46 UTC）
 
 补齐上一轮未知：http403已由现有一号窗口的Performance Resource Timing坐实，不是429。页面同次生命周期的套餐接口200；当前DOM logged_in，有Plus升级入口。原probe函数对生产订单身份摘要核验成功、当前FREE。离线真实代码复现403只调用一次/等待零次，随后映射终态失败；details丢失处在executor包装与落证据之间。原始证据、查询、代码位置、边界和建议见 docs/incidents/2026-09-16-h9RKl-report.md。未操作付款、未改业务/重启，不声称修复或全链路验收；既有两个业务文件在途改动未动。
+
+## 2026-09-16｜Session诊断获批；重试未获批（10:56 UTC）
+
+用户同意第二项诊断，询问第一项重试的目的/复杂度及能否杜绝复发。结论：不能保证；仅证明约半小时后恢复，不能据此证明秒级重试有效。第一项不实施。本轮在executor身份probe catch中将类型化错误的stage/httpStatus/hasCfRay白名单映射进已有fail-closed事件；不新增表/任务/请求/重试，不改变错误分类，不复制正文/凭据。新增4个本地HTTP+Chromium→executor→evidence测试（403/429/401/503），验证每种仅1次请求、付款handler零调用、原分类保持、无敏感数据；含相邻套件34/34通过，输出 docs/incidents/2026-09-16-session-diagnostic-tests.txt。未重启worker，生产尚未加载，DB落库尚未真实验证。仅提交本轮修改，两个既有业务文件在途修改保持。

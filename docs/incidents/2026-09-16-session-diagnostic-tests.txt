@@ -1,0 +1,42 @@
+✔ local BrowserContext observes a page and never exposes a submit operation (792.918166ms)
+✔ page checkpoint waits for client hydration before checking the final title (453.2675ms)
+✔ executor reuses the sole active-order page instead of opening another tab (380.675416ms)
+✔ executor bootstraps an opaque Session lease before page observation (378.303584ms)
+✔ lease loss immediately before Session material access is not misclassified and reads nothing (190.549ms)
+✔ card material preflight is read once, never written to the page, and closed immediately (277.350042ms)
+✔ page drift fails closed and records a redacted freeze reason (294.763166ms)
+✔ LIVE recovery mode detaches instead of destroying the active-order Profile on failure (342.952667ms)
+✔ lease loss after navigation fails closed before checkpoint (256.082333ms)
+✔ manual freeze and navigation timeout both fail closed (263.966917ms)
+✔ payment handler receives the checkout without a pre-card strict zero-tax requote (481.0945ms)
+✔ executor replaces whatever session is resident in the window up front, then proceeds (273.968291ms)
+✔ executor still fails closed when the replaced session does not match either (287.041584ms)
+✔ a rehearsal stop before submit detaches the identity instead of closing it and reports PRE_SUBMIT_STOPPED (393.61375ms)
+✔ a completed order releases the identity login state when releaseSessionOnComplete is set (443.667375ms)
+✔ a session-injecting fresh run closes the resident tab first, so the injection lands in a clean context (221.360083ms)
+✔ a fresh run resets a resident page left on a previous Checkout, a recovered run keeps it (211.613833ms)
+✔ probe HTTP 403 persists safe facts without retrying or changing classification (775.956541ms)
+✔ probe HTTP 429 persists safe facts without retrying or changing classification (364.218ms)
+✔ probe HTTP 401 persists safe facts without retrying or changing classification (315.716375ms)
+✔ probe HTTP 503 persists safe facts without retrying or changing classification (336.440167ms)
+✔ session identity probe verifies the real session endpoint without returning raw session data (775.088708ms)
+✔ session identity probe waits for an initially empty hydrated Session response (392.83225ms)
+✔ live PHP quote parser handles thousands and rejects non-zero VAT (871.15875ms)
+✔ Session endpoint failures expose only bounded diagnostic metadata (235.01ms)
+✔ subscription probe classifies active Plus without returning account-check material (280.860334ms)
+✔ subscription schema drift is not misclassified as a customer Session replacement (268.489084ms)
+✔ Cloudflare access blocking is not misclassified as an invalid customer Session (311.679667ms)
+✔ checkout observer extracts plan, currency and amount without submitting payment (249.571125ms)
+✔ checkout observer matches the live ChatGPT Plus checkout shape without touching card fields (413.086042ms)
+✔ live Checkout contract fails closed when Stripe secure fields never become ready (540.36175ms)
+✔ a refresh error is fatal when the page cannot confirm it is logged in (336.282458ms)
+✔ a refresh error is fatal even while the page still renders as logged in (269.9165ms)
+✔ session identity probe treats a logged-out web client auth status as SESSION_INVALID even with a live session endpoint (227.038833ms)
+ℹ tests 34
+ℹ suites 0
+ℹ pass 34
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 6267.157458
