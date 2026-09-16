@@ -20,14 +20,14 @@
 | 数据库迁移 | 最新 `052_cards_bin`（cards 增 card_bin，D-168；051 于 09-08 01:25 UTC，050 于 09-07 19:16 UTC） | 2026-09-11 13:32 UTC | schema_migrations / 仓库 v1/migrations |
 | accept_new_orders | true | 2026-09-09 11:46 UTC | app_settings |
 | dispatch_new_recharges / 模式 | true / AUTOMATIC | 2026-09-09 11:46 UTC | app_settings |
-| 默认路线（Plus） | **API 路线 `LEGACY_HNSKJ_ZZSHU_V1` accepts_new_orders=1；`CHATGPT_PLUS_BROWSER_V1`=0**（2026-09-14 04:47 UTC 前后切换，与 `accept_new_orders` 同一时刻更新）。`PRO_5X`/`PRO_20X` 仍为 1。**注意：API 路线建单时冻结的卡源是 `fulfillment_routes.card_provider_account_id` = hnskj/legacy-primary，取不到 backup-a 的卡**（`order-intake-repository.js:156-172`） | 2026-09-14 08:45 UTC | fulfillment_routes 实跑 |
+| 默认路线（Plus） | Browser：CHATGPT_PLUS_BROWSER_V1 accepts_new_orders=1；LEGACY_HNSKJ_ZZSHU_V1=0（旧 09-14 API 默认已过期） | 2026-09-16 10:40 UTC | fulfillment_routes 按 route_code 只读 SELECT；本次 h9RKl 实际走 Browser |
 | Browser 当前卡台 | 备用卡台 A（`manual_excel` / `backup-a`） | 13:31 | browser_card_source_selections |
 | browser_dispatch_enabled | true | 2026-09-09 11:46 UTC | app_settings |
 | browser_payment_writes_enabled | **true**（2026-09-12 04:47:58 UTC 由 Lemon 在后台开启，进入无人值守：客户任意时间兑换即自动处理，**会真实扣卡上的钱**。关闭方式同一处按钮；关掉后常驻执行器退回「只等不跑」，订单停在付款前） | 2026-09-12 | app_settings / admin_setting_events；常驻 LaunchAgent `com.pojia.browser-pool` **2026-09-12 09:56 UTC 随 D-187 改动重启**：09:56:04 旧 worker SIGTERM 干净退出（lane-1 ticks 3707 / results 1 / errors 0），09:57:33 新 worker 拉起（PID 24745，父进程 supervisor 23949），空窗 89 秒。加载的是新 executor（`replaceExisting: true` 在 `src/executor.js:168`，`session-replaced` 出现 0 次）。**已知小瑕疵**：kickstart 时新 supervisor 第一轮 ready-check 必然撞上旧 worker 的退出过程，被 `pgrep -f production-live-pool-worker` 判为「有残留 worker」而多等一轮 60 秒；worker 正常运行后该检查同样会把自家 worker 报成残留——但 supervisor 只在 worker 退出后才回到检查，不受影响 |
 | **菲律宾出口对 ChatGPT 的可达性** | **未定论**。裸 curl 经出口访问 chatgpt.com 返回 403 Cloudflare 拦截页，但 **curl 不能用来判断 Cloudflare 是否封禁**（无 TLS 指纹、不执行 JS，会被单独拦）。**Lemon 当场在 BitBrowser 窗口里看到的是 ChatGPT 的退出登录页面，说明页面打得开、出口没被整站封**。真实根因转向「Session 没能登录上」，见 D-187 | 2026-09-12 09:40 UTC | 反例证据来自 Lemon 直接观察窗口；curl 测试已作废 |
 | Browser Profile productionWritesEnabled | false（随付款开关同步） | 09-09 | executor_profiles config_public_json |
 | card_auto_replenishment_enabled | false（与补余额构成首页「开卡补钱」的"部分开启"态） | 2026-09-09 11:46 UTC | app_settings |
-| card_balance_recharge_enabled | **true**——Lemon 2026-09-14 以为已在后台关闭，但 `admin_setting_events` 显示它 08-31 打开后**从未变更**（D-223）。后台 UI 把它与 `card_auto_replenishment_enabled` 捆成一个「自动开卡与补余额」开关，自动开卡已关故显示"部分开启"，Lemon 点合并开关没落成 false。今日 4 次 hnskj 补钱 400 由它触发。**待 Lemon 真正关闭**（与 D-218「放弃补钱只开新卡」一致） | 2026-09-14 15:05 UTC | admin_setting_events 审计 |
+| card_balance_recharge_enabled | false（此前 09-14 true 已过期；本轮未改开关） | 2026-09-16 10:38 UTC | app_settings 独立只读 SELECT |
 | card_max_successful_payments | 3 | 2026-09-09 11:46 UTC | app_settings |
 | 最低所需卡余额 | default 16 / pro_5x 16 / **pro_20x 150**（09-09 05:33 UTC 调，独立核实；5X 上线前同调） | 2026-09-09 11:46 UTC | app_settings（`minimum_required_card_balance:*`）+ admin_setting_events |
 | Worker 进程写权限 | worker：`PROVIDER_RECHARGE_WRITES_ENABLED=true`（drop-in），通用/卡片写 false；funding 单元：`PROVIDER_CARD_WRITES_ENABLED=true`；env 文件 `PROVIDER_READS_ENABLED=true` | 16:35 | `systemctl cat` |
@@ -44,6 +44,7 @@
 | 本机 | BitBrowser Local API（`ready-check.sh` 发现未开会自动启动）+ mihomo（launchd `com.pojia.mihomo-ph` KeepAlive，出口锁菲律宾 38.60.246.34）；SSH 隧道 13306→3306 由 launchd `com.pojia.ssh-tunnel-13306` 守护；无常驻 Worker（来单 `go-live.sh --arm` 拉、`stop-live.sh` 收）；Lane4 clean 窗口 `51e915e` 为付款/演练身份 | 09-09 | launchctl / lsof / curl |
 | 已上线（本次 release） | `20260911-drop-preflight-24bcbde`：一单只登一次客户账号（不再有独立预检任务与派工前置）。同批 browser-mvp 本机改动：结账页无收据邮箱字段时不再中止（D-157） | 2026-09-11 10:02 UTC | 服务器本机 curl 复验（见 release 行） |
 | 已知未修 | ①**结账页 403：候选修复已落代码（D-140），根因未坐实，真单未验证**：注入的 session cookie 曾按 `{url}` 放成 host-only，与网站在 `.chatgpt.com` 轮换的同名 cookie 并存；对照实验（同号同窗口同出口）复现 + 改 `.chatgpt.com` 域后结账页打开出 ₱ 报价。但本机 WAL 显示 09-07/09-08 有 7 次同样并存却到达结账页、1 次付款成功（审查 F-27），"并存即 403"不成立；真单再 403 按 D-139 转人工。修复在 `browser-mvp/src/session-bootstrap.js`（本机工作区，pool worker 从工作区启动即生效，无需服务器发布）；次要差异未处理：注入路径没有 auth.openai.com 层（付款后刷新依赖，D-134 已知）；②预检租约默认已改 900s（`run-live-pool.sh`），只在 09-09 第 4–5 次预检验证过"不再超时"，未在成功路径验证，A1 演练也验不到（F-33）；③`browser_run_events` 同一任务多次重试只落第 1 次（job_id+sequence 唯一键），后续尝试只在本机 WAL；④本机绕过连接池直连写入（09-07/08）遗留问题已清；⑤后台控制事务并发可能 `ER_LOCK_DEADLOCK`；⑥手动卡付款后无独立卡侧扣款证据；⑦审查批次 1 P1 处置更新：中途关付款开关即判失败（F-25）、点击后 kill 无核实排程（F-26）——已修，browser-mvp 本机代码，pool worker 下次启动即生效，不需要本次 v1 release；打回后重提同码丢 Session（F-34）、换账号重提 409（F-35）——已修且已随本次 release（`20260910-highvcc-open-session-resubmit-0b5639c`）发布到生产，未做真单复验 | 2026-09-10 09:10 UTC | 本表 + REVIEW_RECORD 批次 1 + 本次 release |
+
 
 ## 事实表之外
 

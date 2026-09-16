@@ -2358,3 +2358,12 @@ Lemon 在 Pilot 窗口截图：结账页 `chatgpt.com/checkout/openai_llc/cs_liv
 
 卡台现存 5 张（今早为 9 张）：9839、7428、2911、3241、9354 先后从卡台消失，系统按全量快照语义标记 `MISSING_FROM_SNAPSHOT` 并转 HELD_FOR_REVIEW。其中 **9839 账面仍记 $50**，待与 Lemon 核对是否本人销卡、余额是否已退回卡台钱包。
 
+
+## 2026-09-16｜单笔只读排障：h9RKl（10:39 UTC）
+
+- CDK 经生产 `createCdkLookup` 精确匹配到 cdk `61659521-9f37-4323-9a34-49a4e505c8a8`，对应订单 `PJV1-h9RKlXHNoWfTO01S8aGT`（不落完整兑换码）。
+- 10:16:35 UTC 建单、10:17:12 UTC 付款前失败：`RECHARGE_FAILED / CHATGPT_ACCESS_BLOCKED`。run `b454853c-6080-4b3f-9557-ad4beb1aa0bf` 为 `FAILED_SAFE / NOT_STARTED`；只有 BEGIN_RUN、PRE_PAYMENT_ABORT，无 PAYMENT_SUBMIT。CDK AVAILABLE/order_id NULL；退回审计明确 pre-payment abort；attempt CLEARED/CLEARED、卡 assignment RELEASED。
+- DB browser_run_events + 本机 lane-1.wal：session-bootstrap → page-reload-after-inject → fail-closed；supervisor.log 原因 `ChatGPT access was blocked before Session identity could be verified`。故失败点是 Session 身份接口，不是填邮箱/卡或付款。`session-identity-probe.js:121-132` 把 429 或带拦截特征的 403 归此类；具体 status/details 未持久化，不能断言哪一种、不能推断 IP 被封或客户 Session 失效。
+- release/服务现场核对仍为 current 20260913-orderno-6dcb458，web/worker active，worker cwd 20260911-alert-noise-d924563。本机既有常驻 worker PID 47109（10:09 UTC 启动），未重启或停止。
+- 只读核对补余额/自动开卡均 false，与 CURRENT_STATE 旧补余额 true 冲突，已更新该行。state-check 在最低余额后因 line 61 `MINBAL�: unbound variable` 中断，不宣称全绿或全量事实已刷新。
+- 未重新兑换、未操作客户浏览器、未付款、未部署。进入时 executor.js/payment-executor.js 已有未提交改动，原样保留、不代提交；后续如要定位 403/429 需补身份探测结构化诊断并经确认安排非付款验证。
