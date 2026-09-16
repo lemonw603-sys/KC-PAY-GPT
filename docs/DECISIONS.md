@@ -3690,3 +3690,15 @@ A4 原标"⚠️悬而未决真问题：Browser 主力但卡只能手动开,200�
 **测试缺口（诚实）**：executor 落该事件的 e2e 单测未加（executor.test.js 无付款路径框架，硬加需大量脚手架）。诊断内容正确性由 `locator-diagnostics` 测试守、演练失败带 diagnostic 由 `shared-live-composition` 测试守，只差"executor 把两环接起来"这一组装点无独测——下一次演练即实测。
 
 **未生效**：改了源码，需重启 worker（`launchctl kickstart -k com.pojia.browser-pool`）才加载。付款路径上生产，重启时机待 Lemon 确认。
+
+
+## D-240（2026-09-16）客户交付与内部收尾解耦、核验做减法、允许有界只读重试
+
+用户在本轮确认的方向（尚未实施）：
+1. 尽量删除重复核验请求，减轻负担；同一次可信身份/套餐观察可复用，不能删除跨账号检查、付款幂等保护、付款未知禁止重付和取消后的结果确认。
+2. Plus产品在确认本单付款关联和目标账号确已开通Plus后，立即持久化客户交付成功、圆环成功；后台继续取消续费和对账，**取消续费不展示给客户**。替代此前“取消/对账全部结束才向客户成功”的交付时点。不是未确认Plus先报成功；后台收尾必须持久化可恢复、失败进入内部待处理，不能将后台进程清理或资源释放也提前。仅此Plus范围，Pro第一阶段不能算整单交付。
+3. 用户接受给疑似暂时访问失败重试机会，避免一次失败立即退单。先限身份/套餐等只读请求，不能重跑整单/付款/开卡/换卡。403上游诱因仍未知，重试为体验策略不是根因已修。
+
+建议实施参数（执行者建议，非用户逐项拍板）：初次+最多2次，等待2秒/5秒，整体30秒截止；429遵循Retry-After、超预算暂停而非提前轰击，明确Session失效/身份不匹配不重试；租约/停机优先终止。重试耗尽进入可解释的安全停止，不无限回队列。
+
+代码核查依据：browser-execution-repository.js的recordCancellationConfirmed当前捆绑run完成/attempt成功/order成功；listPaymentVerificationsDue只调度特定run与verification状态，不能只提前改order.status。customer成功映射依赖RECHARGE_SUCCESS；后台收尾需要单独的可恢复生命周期，优先复用已有调度基础，不新增泛化框架。production只读11:27 UTC仍为上一单RECHARGE_SUCCESS/COMPLETED/CANCELLATION_CONFIRMED，当前行为未变。
