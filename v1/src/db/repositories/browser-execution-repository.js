@@ -195,7 +195,6 @@ async function lockRunContext(connection, runId) {
             rat.authorization_item_id,
             rat.fulfillment_route_id AS attempt_fulfillment_route_id,
             o.status AS order_status, o.version AS order_version,
-            o.plan_type AS order_plan_type, p.product_code AS order_product_code,
             o.fulfillment_route_id AS order_fulfillment_route_id,
             o.frozen_card_provider_account_id,
             o.assigned_card_id,
@@ -218,7 +217,6 @@ async function lockRunContext(connection, runId) {
      FROM browser_runs br
      INNER JOIN recharge_attempts rat ON rat.id = br.recharge_attempt_id
      INNER JOIN orders o ON o.id = rat.order_id
-     LEFT JOIN products p ON p.id = o.product_id
      LEFT JOIN cards c ON (c.id = o.assigned_card_id OR (o.assigned_card_id IS NULL AND c.order_id = o.id))
      LEFT JOIN card_consumption_ledger ccl
        ON ccl.recharge_attempt_id = rat.id
@@ -1401,31 +1399,7 @@ export function createBrowserExecutionRepository(pool) {
         if (updated.affectedRows !== 1) {
           throw new BrowserExecutionError('Browser run changed concurrently', 'RUN_CONFLICT');
         }
-        // Delivery is durable before internal cleanup. The run remains pending and
-        // recoverable; this must not release its browser/session or finish dispatch.
-        const isPlus = row.order_product_code === 'chatgpt_plus'
-          || (!row.order_product_code && row.order_plan_type === 'plus');
-        if (isPlus && !['RECHARGE_PROCESSING', 'RECHARGE_SUCCESS'].includes(row.order_status)) {
-          throw new BrowserExecutionError('order is not deliverable', 'ORDER_CONFLICT');
-        }
-        if (isPlus && row.order_status === 'RECHARGE_PROCESSING') {
-          const [delivered] = await connection.query(
-            `UPDATE orders SET status='RECHARGE_SUCCESS', version=version+1,
-               failure_code=NULL, failure_reason=NULL, finished_at=?, updated_at=?
-             WHERE id=? AND status='RECHARGE_PROCESSING' AND version=?`,
-            [now, now, row.order_id, row.order_version],
-          );
-          if (delivered.affectedRows !== 1) throw new BrowserExecutionError('order changed concurrently', 'ORDER_CONFLICT');
-          await connection.query(
-            `INSERT INTO order_events
-             (order_id, from_status, to_status, actor_type, actor_id, reason, metadata_json, created_at)
-             VALUES (?, 'RECHARGE_PROCESSING', 'RECHARGE_SUCCESS', 'SYSTEM', NULL,
-               'Plus delivered; internal cleanup pending', ?, ?)`,
-            [row.order_id, json({ browserRunId: run, evidenceHash: evidence }), now],
-          );
-        }
-        return publicRun({ ...row, payment_state: 'PAYMENT_CONFIRMED',
-          order_status: isPlus ? 'RECHARGE_SUCCESS' : row.order_status }, {
+        return publicRun({ ...row, payment_state: 'PAYMENT_CONFIRMED' }, {
           postPaymentState: 'CANCELLATION_PENDING', plusActivatedAt: row.plus_activated_at || now, idempotentReplay: false
         });
       });

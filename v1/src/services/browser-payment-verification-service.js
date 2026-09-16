@@ -52,39 +52,24 @@ export function createBrowserPaymentVerificationService({ repository, verifier,
       for (const row of rows) {
         const operationId = `payment-verification:${row.runId}:${row.verificationCheckCount || 0}`;
         let observation;
-        let plusRecorded = false;
-        let paymentConfirmed = row.paymentState === 'PAYMENT_CONFIRMED';
-        const onPlusConfirmed = async (plus) => {
-          if (plus?.confirmed !== true || plus.evidence?.identityMatched !== true) {
-            throw new TypeError('verified Plus identity evidence is required');
-          }
-          if (!paymentConfirmed) {
-            await repository.markPaymentConfirmed({ runId: row.runId,
-              operationId: `${operationId}:confirmed`, evidenceHash: digest(plus.evidence), now: clock() });
-            paymentConfirmed = true;
-          }
-          await repository.recordPlusActivation({ runId: row.runId,
-            operationId: `${operationId}:plus`, evidenceHash: digest(plus.evidence), now: clock() });
-          plusRecorded = true;
-        };
         try {
-          observation = await verifier.verify(row, { onPlusConfirmed });
+          observation = await verifier.verify(row);
         } catch (error) {
           observation = { outcome: 'UNKNOWN', reasonCode: 'VERIFICATION_READ_FAILED',
             evidence: { errorCode: error?.code || 'READ_FAILED' } };
         }
-        const now = clock(); // observed completion time, not the pre-network list timestamp
+        const now = clock(); // Timestamp after network verification completes.
         const outcome = String(observation?.outcome || 'UNKNOWN').toUpperCase();
         const evidenceHash = digest({ runId: row.runId, outcome,
           evidence: observation?.evidence || null });
         if (outcome === 'CONFIRMED') {
-          if (!paymentConfirmed && row.paymentState === 'PAYMENT_UNKNOWN') {
+          if (row.paymentState === 'PAYMENT_UNKNOWN') {
             await repository.markPaymentConfirmed({
               runId: row.runId, operationId: `${operationId}:confirmed`, evidenceHash, now,
             });
           }
           if (observation.postPaymentComplete === true) {
-            if (!plusRecorded) await repository.recordPlusActivation({
+            await repository.recordPlusActivation({
               runId: row.runId, operationId: `${operationId}:plus`,
               evidenceHash: digest(observation.evidence?.plus || observation.evidence), now,
             });
@@ -118,7 +103,7 @@ export function createBrowserPaymentVerificationService({ repository, verifier,
               });
             }
           }
-        } else if (outcome === 'DECLINED' && !paymentConfirmed && row.paymentState === 'PAYMENT_UNKNOWN') {
+        } else if (outcome === 'DECLINED' && row.paymentState === 'PAYMENT_UNKNOWN') {
           await repository.markPaymentDeclinedAfterVerification({
             runId: row.runId, operationId: `${operationId}:declined`,
             reasonCode: observation.reasonCode || 'PAYMENT_DECLINED_VERIFIED', evidenceHash, now,

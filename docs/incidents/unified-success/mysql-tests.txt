@@ -1,0 +1,17 @@
+✔ shared MySQL permit and post-payment state machine complete only through mock adapter (423.009208ms)
+✔ manual 20X mode transfers after Plus without cancellation and closes only after operator confirmation (234.804292ms)
+✔ mock submission crash becomes authoritative UNKNOWN and a replay cannot submit again (126.438958ms)
+✔ UNKNOWN recovery completes the same run without a second payment submit (195.679834ms)
+✔ UNKNOWN recovery in manual 20X mode hands off without cancellation or a second submit (168.235375ms)
+✔ confirmed payment with unfinished Plus observation recovers without another submit (165.136584ms)
+✔ UNKNOWN stays locked until deadline and then opens one reconciliation case (130.484875ms)
+✔ unified success only after cleanup: plus (142.269583ms)
+✔ unified success only after cleanup: pro_5x (67.490083ms)
+ℹ tests 9
+ℹ suites 0
+ℹ pass 9
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1931.307625
