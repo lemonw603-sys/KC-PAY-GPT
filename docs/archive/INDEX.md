@@ -232,3 +232,5 @@
 | `docs/UPSTREAM_ASSESSMENT.md` | `docs/archive/undated/UPSTREAM_ASSESSMENT.md` |
 | `docs/WORKSTREAM_COORDINATION_2026-08-25.md` | `docs/archive/2026-08/WORKSTREAM_COORDINATION_2026-08-25.md` |
 | `docs/security_best_practices_report.md` | `docs/archive/undated/security_best_practices_report.md` |
+
+- `2026-09/PROJECT_MAP_pre_D240_2026-09-16.md`：D-240发布后整理前的项目地图，仅供历史追溯，不是当前执行顺序。

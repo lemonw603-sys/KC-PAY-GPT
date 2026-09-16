@@ -2411,3 +2411,7 @@ state-check的$MINBAL紧邻中文括号、wrapup-check的$live/$mday紧邻中文
 发现基线D-217本次也会生效：正式资格对比旧2张(5371/1657)→新1张(5371)，1657同步17.83/账本余2.00；补余额及自动开卡false，原发布前提满足。已向用户明示，无开卡补钱。
 
 12:36:58暂停接单（正式service+pool、审计），新连接复验活动run/非终态/待收尾均0；bootout监督并让旧67720 SIGTERM干净退出；主工作区快进到b31。switch服务端→独立验证web2253812/worker2253822 cwd均新release、live/ready200；公网客户JS v39同哈希。重载原LaunchAgent，新Browser99137于12:39:21 UTC启动，supervisor98863，PAY/lane1，生产心跳推进。12:40:21恢复接单（正式服务及审计），12:40:41新连接验证true/true/true、活动run和订单均0。未新建充值或重付。回滚旧版前必须先清完新版本早交付待收尾run。细节与原始日志在docs/incidents/d240-deployment/。
+
+## 2026-09-16｜正式交接入口清理与再核对（12:48 UTC）
+
+用户要求做好落盘以便其他模型接手。现场复核release新版本、web/worker active、本机99137及心跳正常、活动run/非终态/发布后新单均0。重写PROJECT_MAP清除09-14待确认、旧UNKNOWN未跑、旧连续5单验收等过时当前口径，原文存archive/2026-09/PROJECT_MAP_pre_D240_2026-09-16.md并登记索引。HANDOFF_NOW补main/生产提交区别、隔离worktree仅追溯、下一首单验收步骤与禁止重付边界；D240任务文档删除“未合并/未部署”的过期当前段落，UNVERIFIED_LEDGER加最新覆盖与明确历史属性。CURRENT_STATE更新本轮真实核对，不把未查项刷新时间。未改业务、未重启、未新增自动化。
