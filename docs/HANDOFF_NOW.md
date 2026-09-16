@@ -2,6 +2,8 @@
 
 更新：2026-09-16 12:48 UTC（本轮现场复核）。生产事实唯一表：CURRENT_STATE.md。
 
+> **12:55 UTC新发现，优先级高于首单验收**：D-240早交付后的收尾恢复Session入口仍只接受RECHARGE_PROCESSING，RECHARGE_SUCCESS会被拒。已单变量夹具复现且生产文件hash一致；当前新版本订单0、活动run0，未发现受影响生产单。此前“恢复已测试”仅覆盖任务可发现，未覆盖真实Session源。先修并补组合测试、取得发布确认，再建议用新单验收。详见incidents/d240-followup/findings.md。本轮未停单或改业务。
+
 ## 当前状态
 - 用户批准D-240发布，单提交b31a88a已上线，release `20260916-d240-b31a88a`。
 - Web/服务器Worker已同步新release；本机Browser PID99137，supervisor98863，12:39:21 UTC启动。
@@ -11,7 +13,7 @@
 - 全量本地测试与27项真MySQL集成记录见docs/tasks/2026-09-16-D240-delivery.md；生产部署证据docs/incidents/d240-deployment/。
 
 ## 下一步
-1. 新版本首个客户订单到来时，现场按订单/运行/事件核对实际耗时、早交付及后台收尾；不能拿旧版成功单冒充新版本验收。
+1. 优先处理上述收尾恢复门控；修复验证并确认上线后，新版本首个客户订单到来时，现场按订单/运行/事件核对实际耗时、早交付及后台收尾；不能拿旧版成功单冒充新版本验收。
 2. 如有异常，优先看结构化HTTP诊断和payment-outcome-diagnostic；付款未知不重付。
 3. D-240运行验证后，再按PROJECT_MAP/V2.0_EXECUTION恢复V2其余工作。
 

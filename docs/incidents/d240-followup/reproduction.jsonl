@@ -1,0 +1,3 @@
+{"fixtureOnly":true,"orderStatus":"RECHARGE_PROCESSING","elapsedMs":0,"loaded":true}
+{"fixtureOnly":true,"orderStatus":"RECHARGE_SUCCESS","elapsedMs":0,"loaded":false,"code":"SESSION_INVALID","message":"shared Browser Session context is not awaiting post-payment verification"}
+{"fixtureOnly":true,"orderStatus":"RECHARGE_PROCESSING","elapsedMs":1860000,"loaded":false,"code":"SESSION_INVALID","message":"stored Session could not be opened"}

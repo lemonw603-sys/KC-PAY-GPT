@@ -2415,3 +2415,7 @@ state-check的$MINBAL紧邻中文括号、wrapup-check的$live/$mday紧邻中文
 ## 2026-09-16｜正式交接入口清理与再核对（12:48 UTC）
 
 用户要求做好落盘以便其他模型接手。现场复核release新版本、web/worker active、本机99137及心跳正常、活动run/非终态/发布后新单均0。重写PROJECT_MAP清除09-14待确认、旧UNKNOWN未跑、旧连续5单验收等过时当前口径，原文存archive/2026-09/PROJECT_MAP_pre_D240_2026-09-16.md并登记索引。HANDOFF_NOW补main/生产提交区别、隔离worktree仅追溯、下一首单验收步骤与禁止重付边界；D240任务文档删除“未合并/未部署”的过期当前段落，UNVERIFIED_LEDGER加最新覆盖与明确历史属性。CURRENT_STATE更新本轮真实核对，不把未查项刷新时间。未改业务、未重启、未新增自动化。
+
+## 2026-09-16｜接手剩余风险核查发现收尾恢复缺口（12:55 UTC）
+
+用户询问当前尚存问题。确认D-240遗漏：早交付订单SUCCESS与SharedPostPaymentSessionSource门控PROCESSING冲突，真实source单变量夹具复现；生产与本机hash一致。之前测试只证明任务恢复可发现，session provider替身掩盖衔接，本轮明确纠正验收范围。另复现原Session剩余29分钟被付款后材料源拒、确认MANUAL_IMPORT无独立扣款对账与恢复异常只存hash的诊断缺口。12:54:59UTC生产新版本单0/active_runs0，无受影响新单证据。仅记录和只读核查、未修改业务/停单/重启；建议优先修复再跑新单。证据docs/incidents/d240-followup/。
