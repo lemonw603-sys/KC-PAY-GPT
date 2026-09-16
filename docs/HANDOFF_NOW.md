@@ -12,7 +12,7 @@
 - release仍20260913-orderno-6dcb458；本机常驻PID67720未重启。
 - 12:09 UTC独立查询：非终态0、active_runs0、付款和接单开关true；生产事实以主工作区CURRENT_STATE为准。
 - 最近重提单PJV1-x-tIsPB5ICHu6R9bzsSO已在旧版本自动成功；不是新候选的验收样本。
-- state-check旧脚本line61变量错误尚未修；本轮不宣称全套收尾绿。
+- 只读自检脚本变量插值错误已修；现场可分配卡2张已更正，候选未推送，不称发布验收全绿。
 
 ## 下一步
 1. 用户确认上线后，按任务文档复核生产SQL、准备单提交release；Web/worker/本机Browser版本需协调。
