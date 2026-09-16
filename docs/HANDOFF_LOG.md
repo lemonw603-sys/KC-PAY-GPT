@@ -2375,3 +2375,7 @@ Lemon 在 Pilot 窗口截图：结账页 `chatgpt.com/checkout/openai_llc/cs_liv
 ## 2026-09-16｜Session诊断获批；重试未获批（10:56 UTC）
 
 用户同意第二项诊断，询问第一项重试的目的/复杂度及能否杜绝复发。结论：不能保证；仅证明约半小时后恢复，不能据此证明秒级重试有效。第一项不实施。本轮在executor身份probe catch中将类型化错误的stage/httpStatus/hasCfRay白名单映射进已有fail-closed事件；不新增表/任务/请求/重试，不改变错误分类，不复制正文/凭据。新增4个本地HTTP+Chromium→executor→evidence测试（403/429/401/503），验证每种仅1次请求、付款handler零调用、原分类保持、无敏感数据；含相邻套件34/34通过，输出 docs/incidents/2026-09-16-session-diagnostic-tests.txt。未重启worker，生产尚未加载，DB落库尚未真实验证。仅提交本轮修改，两个既有业务文件在途修改保持。
+
+## 2026-09-16｜用户确认加载诊断，常驻执行器重启（11:05 UTC）
+
+重启前独立查活动run=0、非终态订单=0；工作区Browser全量295项，286pass/9skip/0fail。核对既有executor/payment-executor在途差异仅付款诊断，保留未提交，重启源码hash与测试输出见docs/incidents/2026-09-16-restart-*。11:01:40 UTC向旧PID47109发SIGTERM，STOPPED/code0，未kill supervisor、未改付款/接单开关。supervisor首轮被包含worker名称的观察命令误判残留，观察命令结束后11:04:25 UTC自行恢复，新PID67720，PAY/pool:lane-1。11:05:07 UTC新连接复验：heartbeat11:04:57.474Z、开关true/true、active_runs0、非终态0、该CDK AVAILABLE/NULL；源码hash未变。state-check仍因line61 MINBAL变量错误中断，不宣称全绿。未提交订单、未代付款；生产诊断首次失败落库仍待真样本。
