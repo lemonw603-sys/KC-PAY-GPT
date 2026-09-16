@@ -2395,3 +2395,7 @@ Lemon 在 Pilot 窗口截图：结账页 `chatgpt.com/checkout/openai_llc/cs_liv
 ## 2026-09-16｜D-240本地候选交付，生产未动（12:14 UTC）
 
 隔离工作区 `/Users/lemon/.codex/worktrees/ai-recharge-d240`，分支codex/plus-delivery-d240，候选81c40ec；四项实现/用例/部署回滚约束见其docs/tasks/2026-09-16-D240-delivery.md。Browser304项295pass9skip，v1 741项675pass66skip，MySQL27/27串行；计数有重叠不可相加。测试使用本地Docker独立pojia_d240_test，不是生产。12:09UTC现场旧worker67720仍运行、非终态/active_runs均0，开关未变。未创建新业务worker、未部署/付款/重启，临时浏览器已关闭。state-check仍在旧line61异常，收尾不宣称全绿。主工作区原executor/payment-executor两处未提交修改保留，候选分支单独快照保留并一起测试；原文件未动。下一步要用户确认上线，再做单提交release、生产只读SQL验证和同步重启；回滚前必须清完早交付待收尾run。
+
+## 2026-09-16｜只读自检恢复（12:18 UTC）
+
+state-check的$MINBAL紧邻中文括号、wrapup-check的$live/$mday紧邻中文标点，被本机bash误解析为变量名而在set-u下退出。仅补${...}边界，未改查询/判定。重新实际运行已跑到末尾，发现正式资格SQL可分配2张（旧事实表1张）；已按12:18UTC现场更新CURRENT_STATE，非终态/active_runs仍0。修改不涉及生产服务/订单/卡写入。候选仍未推送/部署。

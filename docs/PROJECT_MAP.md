@@ -1,6 +1,6 @@
 # AI充值业务｜项目地图
 
-> **2026-09-16 当前优先项：D-240客户体验候选已在隔离分支81c40ec实现并通过本地测试，未上线；先等上线确认与生产验收，再恢复V2其余执行顺序。入口见HANDOFF_NOW。**
+> **2026-09-16 当前优先项：D-240客户体验候选已在隔离分支a42bf08（业务81c40ec）实现并通过本地测试，未上线；先等上线确认与生产验收，再恢复V2其余执行顺序。入口见HANDOFF_NOW。**
 
 只回答四件事：目标、当前生产事实（指向 CURRENT_STATE）、已完成/未完成（里程碑级）、唯一执行顺序。新窗口先读 `docs/HANDOFF_NOW.md`。过程记录在 `docs/HANDOFF_LOG.md`，决策在 `docs/DECISIONS.md`，改造基线在 `docs/PRODUCT_SIMPLIFICATION_DISCUSSION.md` 末尾「接班实施基线」。2026-09-07 之前的旧版地图原文：`docs/archive/2026-09/PROJECT_MAP_snapshot_2026-09-07.md`。
 

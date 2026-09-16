@@ -58,7 +58,7 @@ if [ -n "$MINBAL" ]; then
   rm -f "$ELIG_SRC"
   if [ -z "$ELIG_SQL" ]; then say "[取值失败] 可分配卡：生成资格 SQL 失败（生产 release 的 card-inventory-eligibility.js 是否可加载）"; drift=1; else
   N=$(bash "$Q" "SELECT COUNT(*) FROM cards c WHERE $ELIG_SQL" 2>/dev/null | tr -d '[:space:]')
-  check "可分配卡（正式资格 SQL）" "${N:-} 张" "可分配卡数（Plus 门槛 $MINBAL）"
+  check "可分配卡（正式资格 SQL）" "${N:-} 张" "可分配卡数（Plus 门槛 ${MINBAL}）"
   fi
 fi
 RUNS=$(bash "$Q" "SELECT COUNT(*) FROM browser_runs WHERE active_account_key_hmac IS NOT NULL" 2>/dev/null | tr -d '[:space:]'); check "活动资金与运行" "active_runs $RUNS" "账号槽"

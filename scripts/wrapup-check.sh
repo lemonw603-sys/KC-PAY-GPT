@@ -26,9 +26,9 @@ live=$(ssh -o BatchMode=yes -o ConnectTimeout=10 root@144.34.180.184 'basename $
 if [ -z "$live" ]; then
   bad "接班一屏指向当前 release" "取不到线上 release（ssh 不通？）"
 elif grep -q "$live" docs/HANDOFF_NOW.md; then
-  ok "接班一屏指向当前 release（$live）"
+  ok "接班一屏指向当前 release（${live}）"
 else
-  bad "接班一屏指向当前 release" "线上是 $live，docs/HANDOFF_NOW.md 里没有它"
+  bad "接班一屏指向当前 release" "线上是 ${live}，docs/HANDOFF_NOW.md 里没有它"
 fi
 
 # 4) 接班一屏的更新时间不早于最后一次提交太久
@@ -44,9 +44,9 @@ hday=$(grep -m1 '^更新：' docs/HANDOFF_NOW.md | grep -oE '[0-9]{4}-[0-9]{2}-[
 mday=$(grep -m1 '最后核对：' docs/PROJECT_MAP.md | grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2}' | head -1)
 if [ -n "$hday" ] && [ -n "$mday" ]; then
   if [ "$hday" = "$mday" ]; then
-    ok "PROJECT_MAP 与接班一屏同日核对（$mday）"
+    ok "PROJECT_MAP 与接班一屏同日核对（${mday}）"
   else
-    note "PROJECT_MAP 最后核对 $mday，接班一屏 $hday" "里程碑或执行顺序若已变化，顺手更新 §4/§5"
+    note "PROJECT_MAP 最后核对 ${mday}，接班一屏 $hday" "里程碑或执行顺序若已变化，顺手更新 §4/§5"
   fi
 else
   note "读不到两份文档的核对日期" "检查 HANDOFF_NOW 的「更新：」与 PROJECT_MAP 的「最后核对：」"
