@@ -4,6 +4,8 @@
 
 > **12:55 UTC新发现，优先级高于首单验收**：D-240早交付后的收尾恢复Session入口仍只接受RECHARGE_PROCESSING，RECHARGE_SUCCESS会被拒。已单变量夹具复现且生产文件hash一致；当前新版本订单0、活动run0，未发现受影响生产单。此前“恢复已测试”仅覆盖任务可发现，未覆盖真实Session源。先修并补组合测试、取得发布确认，再建议用新单验收。详见incidents/d240-followup/findings.md。本轮未停单或改业务。
 
+> **13:58 UTC用户最新要求**：先实际量清早交付能省多少，收益不明显就不拆分。历史Plus/取消落库差不是外部动作耗时，当前无法报准确秒数；新版本订单0。不要直接继续扩建收尾架构。测量方案见incidents/d240-followup/early-delivery-benefit.md；线上逻辑未回滚，恢复门控缺陷仍未修。
+
 ## 当前状态
 - 用户批准D-240发布，单提交b31a88a已上线，release `20260916-d240-b31a88a`。
 - Web/服务器Worker已同步新release；本机Browser PID99137，supervisor98863，12:39:21 UTC启动。
