@@ -16,7 +16,9 @@ const databaseUrl = process.env.TEST_DATABASE_URL;
 const productId = '00000000-0000-4000-8000-000000000201';
 const routeId = '00000000-0000-4000-8000-000000000302';
 
-async function createFixture(pool, label) {
+async function createFixture(pool, label, plan = 'plus') {
+  const productId = plan === 'pro_20x' ? '00000000-0000-4000-8000-000000000206' : '00000000-0000-4000-8000-000000000201';
+  const routeId = plan === 'pro_20x' ? '00000000-0000-4000-8000-000000000306' : '00000000-0000-4000-8000-000000000302';
   const ids = {
     cdkId: crypto.randomUUID(), orderId: crypto.randomUUID(), cardId: crypto.randomUUID(),
     attemptId: crypto.randomUUID(), profileId: crypto.randomUUID(), runId: crypto.randomUUID(),
@@ -42,6 +44,7 @@ async function createFixture(pool, label) {
     [ids.orderId, `MOCK-${label.slice(0, 8)}-${ids.orderId}`, ids.cdkId, Buffer.from('isolated-session'),
       `isolated-account-${ids.orderId}`, `mock-pay-purchase-${ids.orderId}`, productId, routeId],
   );
+  await pool.query('UPDATE orders SET plan_type=? WHERE id=?',[plan,ids.orderId]);
   await pool.query('UPDATE cdks SET order_id = ? WHERE id = ?', [ids.orderId, ids.cdkId]);
   await pool.query(
     `INSERT INTO cards
@@ -160,7 +163,7 @@ test('manual 20X mode transfers after Plus without cancellation and closes only 
   let fixture;
   try {
     await pool.query("UPDATE app_settings SET setting_value = 'true' WHERE setting_key = 'browser_payment_writes_enabled'");
-    fixture = await createFixture(pool, 'manual-20x');
+    fixture = await createFixture(pool, 'manual-20x', 'pro_20x');
     const { executor, control, adapter } = executorFor({ ...fixture, outcome: 'CONFIRMED' });
     executor.postPlusAction = 'MANUAL_20X_HANDOFF';
     const result = await executor.execute({
@@ -330,7 +333,7 @@ test('UNKNOWN recovery in manual 20X mode hands off without cancellation or a se
   let fixture;
   try {
     await pool.query("UPDATE app_settings SET setting_value = 'true' WHERE setting_key = 'browser_payment_writes_enabled'");
-    fixture = await createFixture(pool, 'unknown-20x-recovered');
+    fixture = await createFixture(pool, 'unknown-20x-recovered', 'pro_20x');
     const { executor, control, adapter } = executorFor({ ...fixture, outcome: 'UNKNOWN' });
     const first = await executor.execute({
       control, run: fixture.run, checkout: { kind: 'MOCK_CHECKOUT' },

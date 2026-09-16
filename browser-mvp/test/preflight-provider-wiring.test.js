@@ -37,9 +37,13 @@ for (const mode of ['COOKIE', 'EXTENSION']) {
       addCookies: async (values) => { cookieWrites++; cookieValues = values; },
       newPage: async () => popup, waitForEvent: async () => ({url:()=> 'https://chatgpt.com/'}),
     };
+    let pendingCleanup = 1;
     const pool = {
       getConnection() { throw Error('unexpected real task transaction'); },
       async query(sql, values) {
+        if (sql.includes("COUNT(*) AS count FROM browser_runs")) {
+          assert.deepEqual(values,["test:fixture-lane"]); return [[{count:pendingCleanup}]];
+        }
         assert.match(sql, /FROM orders o/);
         assert.doesNotMatch(sql, /FROM browser_runs/);
         assert.deepEqual(values, ['fixture-order']); sourceReads++;
@@ -67,6 +71,10 @@ for (const mode of ['COOKIE', 'EXTENSION']) {
       pool,browserType:{connectOverCDP:async()=>{throw Error('unexpected Browser connection');}},
       shared:{enrichedCardSource:{load:async()=>{throw Error('unexpected card read');}},sessionProvider:unusedProvider,postPaymentSessionProvider:unusedProvider},
     });
+    assert.equal((await lane.steps.find(step=>step.name==='order-preflight').run()).status,'IDLE');
+    assert.equal((await lane.steps.find(step=>step.name==='live').run()).status,'IDLE');
+    assert.equal(sourceReads,0);
+    pendingCleanup=0;
     const result = await lane.steps.find(step=>step.name==='order-preflight').run();
     assert.equal(result.status,'COMPLETED'); assert.equal(result.externalPaymentCalls,0);
     assert.equal(sourceReads,1); assert.equal(completed,1);

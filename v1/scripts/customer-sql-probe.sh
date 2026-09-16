@@ -41,7 +41,7 @@ probe "cdk-verify-repository · findCdkForVerification" \
     LIMIT 2"
 
 probe "customer-stage-repository · browser_run_events" \
-  "SELECT action, created_at FROM browser_run_events
+  "SELECT action, JSON_UNQUOTE(JSON_EXTRACT(summary_json, '$.stage')) AS payment_stage, created_at FROM browser_run_events
     WHERE order_id = '$OID' AND action IS NOT NULL
     ORDER BY created_at ASC, sequence_no ASC LIMIT 200"
 

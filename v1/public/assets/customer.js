@@ -68,11 +68,11 @@
     // 一步（2026-09-13 两单各停 8~9 秒），此前被当成「遇到点问题」+30 秒轮询，客户在
     // 钱已付掉的那几秒看到橙色警告，成功还要等下一轮才显示。这里按正常态走、轮询压到
     // 3 秒；真卡住不动由 stalledView() 按停留时长降级，不靠状态本身表达故障。
-    VERIFYING:       { tone: 'ok',   poll: 3000,
+    VERIFYING:       { tone: 'ok',   poll: 2000,
       hint: '支付已提交,正在和 ChatGPT 核对开通结果。' + KEEP_OPEN },
     // 确认订阅/取消续费这一段最快只有几秒（三个操作同事务提交），轮询别比它还慢，
     // 否则成功要等下一轮才显示。
-    CONFIRMING:      { tone: 'ok',   poll: 3000 },
+    CONFIRMING:      { tone: 'ok',   poll: 2000 },
     REVIEWING:       { tone: 'warn', poll: 30000, ticket: true,
       hint: '遇到点问题,我们已经收到通知在处理。本页会自动更新,你的卡密可以随时回来查。' },
     ACTION_REQUIRED: { tone: 'warn', poll: 30000, ticket: true,
@@ -503,7 +503,8 @@
     // 页面在后台时降频而不是停掉：客户提交完常常切走等着，而有些环境
     // （嵌入式浏览器、iframe）里 visibilitychange 不会如期触发，真停掉
     // 就会让进度永远停在第一步。
-    const delay = document.hidden ? Math.max(view.poll, 30000) : view.poll;
+    const foregroundDelay = currentOrder?.stage?.index >= 6 ? Math.min(view.poll, 2000) : view.poll;
+    const delay = document.hidden ? Math.max(foregroundDelay, 30000) : foregroundDelay;
     pollTimer = setTimeout(async () => {
       try {
         const { order } = await api.getStatus({ publicNo });

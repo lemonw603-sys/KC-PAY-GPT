@@ -1,0 +1,35 @@
+✔ shared MySQL permit and post-payment state machine complete only through mock adapter (145.2495ms)
+✔ manual 20X mode transfers after Plus without cancellation and closes only after operator confirmation (99.466458ms)
+✔ mock submission crash becomes authoritative UNKNOWN and a replay cannot submit again (62.256125ms)
+✔ UNKNOWN recovery completes the same run without a second payment submit (85.533875ms)
+✔ UNKNOWN recovery in manual 20X mode hands off without cancellation or a second submit (87.541125ms)
+✔ confirmed payment with unfinished Plus observation recovers without another submit (74.884542ms)
+✔ UNKNOWN stays locked until deadline and then opens one reconciliation case (67.752625ms)
+✔ Browser MySQL mapping preserves one payment action and locks unknown results for reconciliation (127.487209ms)
+✔ Browser MySQL pre-payment abort releases every runtime and funds fence atomically (129.175042ms)
+✔ manual payment confirmation refuses while automation still holds live leases (82.23825ms)
+✔ manual payment confirmation refuses when automation already submitted (69.991875ms)
+✔ UPGRADED_20X closes order, attempt, ledger, card, leases and dispatch in one transaction and replays idempotently (75.803ms)
+✔ PLUS_ACTIVE keeps the order processing until COMPLETE_20X closes it without a synthetic submit (83.074416ms)
+✔ artifact ciphertext and resource leases survive a worker-process restart without exposing authority (179.550708ms)
+✔ CHARGED + renewal already cancelled closes straight to RECHARGE_SUCCESS (90.794166ms)
+✔ CHARGED without a renewal check goes to CANCELLATION_REVIEW_REQUIRED, not straight to success (55.923875ms)
+✔ NOT_CHARGED closes the order, releases the card, and returns the CDK when no payment evidence exists (54.391583ms)
+✔ NOT_CHARGED is refused once the payment is already confirmed — cannot contradict a settled charge (46.715083ms)
+✔ refuses a run that is not actually stuck awaiting verification (37.151625ms)
+✔ CHARGED on a Pro order records the Plus stage and hands off for 20X instead of closing the order (68.814ms)
+✔ CHARGED on a Pro order stuck as SUBMIT_UNKNOWN moves the order back to RECHARGE_PROCESSING (64.025875ms)
+✔ a string renewalCancelled is refused and leaves every row untouched (47.611667ms)
+✔ F-48: the real shape — a submit click happened — still hands the CDK back on NOT_CHARGED (67.691209ms)
+✔ F-48: the not-charged close-out clears the funds fence before handing the CDK back (60.207833ms)
+✔ delivered Plus cleanup can be resolved internally without revoking delivery or recharging (55.489625ms)
+✔ durable early delivery and restart-safe cleanup: plus (93.318542ms)
+✔ durable early delivery and restart-safe cleanup: pro_5x (49.877042ms)
+ℹ tests 27
+ℹ suites 0
+ℹ pass 27
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 2669.814417

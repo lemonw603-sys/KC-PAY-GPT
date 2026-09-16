@@ -2399,3 +2399,7 @@ Lemon 在 Pilot 窗口截图：结账页 `chatgpt.com/checkout/openai_llc/cs_liv
 ## 2026-09-16｜只读自检恢复（12:18 UTC）
 
 state-check的$MINBAL紧邻中文括号、wrapup-check的$live/$mday紧邻中文标点，被本机bash误解析为变量名而在set-u下退出。仅补${...}边界，未改查询/判定。重新实际运行已跑到末尾，发现正式资格SQL可分配2张（旧事实表1张）；已按12:18UTC现场更新CURRENT_STATE，非终态/active_runs仍0。修改不涉及生产服务/订单/卡写入。候选仍未推送/部署。
+
+## 2026-09-16｜D-240发布准备（用户明确确认发布）
+
+主工作区两处原有付款诊断与已测试64d1d56逐字比对一致，先提交f836977留存；隔离发布worktree合并D-240与主线最新事实文档，冲突仅交接文档，保留主线当前状态与完整历史。客户SQL探针同步增加实际payment_stage JSON字段，避免旧探针漏检新查询。生产仍旧版，准备/测试不启动新业务worker。

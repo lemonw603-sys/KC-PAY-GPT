@@ -10,7 +10,7 @@ function digest(value) {
  * coordinator is the only component allowed to advance the durable state.
  */
 export function createBrowserPaymentVerificationService({ repository, verifier,
-  clock = () => new Date(), maxBatch = 20, approvedOrderId = null,
+  clock = () => new Date(), maxBatch = 20, approvedOrderId = null, workerId = null,
   postPlusAction = 'CANCEL_RENEWAL',
   // Backoff for an UNKNOWN check that names no nextCheckAt of its own. Without
   // it the row stays due immediately (next_check_at NULL) and the lane re-opens
@@ -46,29 +46,45 @@ export function createBrowserPaymentVerificationService({ repository, verifier,
     async runOnce() {
       const now = clock();
       const rows = await repository.listPaymentVerificationsDue({
-        now, limit: maxBatch, orderId: approvedOrderId,
+        now, limit: maxBatch, orderId: approvedOrderId, ...(workerId ? {workerId} : {}),
       });
       const results = [];
       for (const row of rows) {
         const operationId = `payment-verification:${row.runId}:${row.verificationCheckCount || 0}`;
         let observation;
+        let plusRecorded = false;
+        let paymentConfirmed = row.paymentState === 'PAYMENT_CONFIRMED';
+        const onPlusConfirmed = async (plus) => {
+          if (plus?.confirmed !== true || plus.evidence?.identityMatched !== true) {
+            throw new TypeError('verified Plus identity evidence is required');
+          }
+          if (!paymentConfirmed) {
+            await repository.markPaymentConfirmed({ runId: row.runId,
+              operationId: `${operationId}:confirmed`, evidenceHash: digest(plus.evidence), now: clock() });
+            paymentConfirmed = true;
+          }
+          await repository.recordPlusActivation({ runId: row.runId,
+            operationId: `${operationId}:plus`, evidenceHash: digest(plus.evidence), now: clock() });
+          plusRecorded = true;
+        };
         try {
-          observation = await verifier.verify(row);
+          observation = await verifier.verify(row, { onPlusConfirmed });
         } catch (error) {
           observation = { outcome: 'UNKNOWN', reasonCode: 'VERIFICATION_READ_FAILED',
             evidence: { errorCode: error?.code || 'READ_FAILED' } };
         }
+        const now = clock(); // observed completion time, not the pre-network list timestamp
         const outcome = String(observation?.outcome || 'UNKNOWN').toUpperCase();
         const evidenceHash = digest({ runId: row.runId, outcome,
           evidence: observation?.evidence || null });
         if (outcome === 'CONFIRMED') {
-          if (row.paymentState === 'PAYMENT_UNKNOWN') {
+          if (!paymentConfirmed && row.paymentState === 'PAYMENT_UNKNOWN') {
             await repository.markPaymentConfirmed({
               runId: row.runId, operationId: `${operationId}:confirmed`, evidenceHash, now,
             });
           }
           if (observation.postPaymentComplete === true) {
-            await repository.recordPlusActivation({
+            if (!plusRecorded) await repository.recordPlusActivation({
               runId: row.runId, operationId: `${operationId}:plus`,
               evidenceHash: digest(observation.evidence?.plus || observation.evidence), now,
             });
@@ -102,7 +118,7 @@ export function createBrowserPaymentVerificationService({ repository, verifier,
               });
             }
           }
-        } else if (outcome === 'DECLINED' && row.paymentState === 'PAYMENT_UNKNOWN') {
+        } else if (outcome === 'DECLINED' && !paymentConfirmed && row.paymentState === 'PAYMENT_UNKNOWN') {
           await repository.markPaymentDeclinedAfterVerification({
             runId: row.runId, operationId: `${operationId}:declined`,
             reasonCode: observation.reasonCode || 'PAYMENT_DECLINED_VERIFIED', evidenceHash, now,

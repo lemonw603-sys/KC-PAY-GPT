@@ -64,7 +64,7 @@ export function createBrowserWorkerService({
     });
 
     let stopped = false;
-    async function assertLeaseBeforeAction(actionKind) {
+    async function assertLeaseBeforeAction(actionKind, { readOnlyResult = false } = {}) {
       if (stopped) throw new BrowserWorkerError('Browser worker has stopped', 'WORKER_STOPPED');
       try {
         await dispatchRepository.heartbeat({
@@ -83,7 +83,10 @@ export function createBrowserWorkerService({
         );
       }
       const state = await executionRepository.getRecoveryState(run.runId);
-      if (state.recoveryMode !== 'RESUMABLE' || state.runStatus !== 'RUNNING') {
+      const resultReadAllowed = readOnlyResult && state.runStatus === 'RUNNING'
+        && state.recoveryMode === 'RECONCILE_ONLY'
+        && ['PAYMENT_SUBMITTING', 'PAYMENT_CONFIRMED'].includes(state.paymentState);
+      if (!resultReadAllowed && (state.recoveryMode !== 'RESUMABLE' || state.runStatus !== 'RUNNING')) {
         stopped = true;
         throw new BrowserWorkerError(
           `Browser action blocked by run state: ${actionKind}`,
@@ -173,7 +176,8 @@ export function createBrowserWorkerService({
     return {
       run,
       job,
-      assertLeaseBeforeAction,
+      assertLeaseBeforeAction: (kind) => assertLeaseBeforeAction(kind),
+      assertPaymentResultRead: () => assertLeaseBeforeAction('PAYMENT_RESULT', { readOnlyResult: true }),
       perform,
       complete,
       stop() { stopped = true; }

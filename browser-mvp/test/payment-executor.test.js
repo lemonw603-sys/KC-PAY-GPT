@@ -219,3 +219,14 @@ test('upgrade-dialog stop mode still hands off when the dialog cannot be opened,
   assert.equal(handoff[1].publicResult.upgradeReason, 'SESSION_INVALID_AFTER_PAYMENT');
   assert.throws(() => harness({ postPlusAction: 'UPGRADE_PAY' }), /postPlusAction must be/);
 });
+
+
+test('confirmed identity-bound Plus result is carried forward without another full Plus probe', async()=>{
+ const {executor,control,adapter,verifier,calls}=harness();
+ const submit=adapter.submit.bind(adapter);
+ adapter.submit=async(input)=>({...await submit(input),plusVerification:{confirmed:true,evidence:{identityMatched:true,kind:'PLUS_ACTIVE',observed:true}}});
+ const result=await executor.execute({control,run:{runId:'run-fast',leaseToken:'lease-fast'},checkout:{kind:'MOCK_CHECKOUT'},cardMaterial:{ref:'card-material'},operationId:'pay-fast'});
+ assert.equal(result.status,'COMPLETED');assert.equal(result.paymentSubmitCalls,1);
+ assert.equal(verifier.calls.includes('plus'),false);
+ assert.deepEqual(verifier.calls,['cancellation','card-transactions','reconcile']);
+});

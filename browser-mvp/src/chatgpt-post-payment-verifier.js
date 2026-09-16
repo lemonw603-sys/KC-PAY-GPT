@@ -128,9 +128,11 @@ export class ChatGptPostPaymentVerifier {
   }
 
   async #verifiedIdentity() {
+    this.verifiedSubscription = null;
     const probe = () => probeSessionIdentity(this.page, this.expectedIdentity, {
       accountCheckPath: this.accountCheckPath,
       stabilizationTimeoutMs: Math.min(this.timeoutMs, 15_000),
+      onVerifiedSubscription: (snapshot) => { this.verifiedSubscription = snapshot; },
     });
     try {
       return await probe();
@@ -166,12 +168,18 @@ export class ChatGptPostPaymentVerifier {
     };
   }
 
-  async #poll(readiness) {
+  async #poll(readiness, initial = null) {
     const startedAt = Date.now();
     const deadline = startedAt + this.timeoutMs;
     let last = null;
     do {
-      last = await readSubscription(this.page, this.accountCheckPath);
+      last = initial || await readSubscription(this.page, this.accountCheckPath);
+      initial = null;
+      // Reusing a verified observation must never accept another account after navigation/session rotation.
+      if (last?.ok && this.verifiedSubscription?.accountId
+        && last.accountId !== this.verifiedSubscription.accountId) {
+        throw new ContractError('subscription account changed during verification');
+      }
       if (readiness(last)) return last;
       // The session endpoint stopped answering with a token (login bounce after
       // payment). One ladder attempt, then keep polling within the same window.
@@ -225,32 +233,9 @@ export class ChatGptPostPaymentVerifier {
   }
 
   async confirmPlus() {
-    // D-136 direction-B probe: BEFORE any recovery/identity step touches the
-    // page, capture whether the backend left a usable session right after
-    // checkout. accounts/check 200 => the post-payment session is valid (the
-    // backend issued/kept a working session; no customer re-login needed).
-    // 401 => the submitted session was revoked and nothing usable replaced it.
-    try {
-      const snap = await this.page.evaluate(async () => {
-        const s = await fetch('/api/auth/session', { credentials: 'include' }).then((r) => r.json()).catch(() => null);
-        const at = typeof s?.accessToken === 'string' ? s.accessToken : '';
-        let accountsCheck = null;
-        if (at) {
-          const r = await fetch('/backend-api/accounts/check/v4-2023-04-27?timezone_offset_min=0', {
-            credentials: 'include', headers: { Authorization: `Bearer ${at}` },
-          });
-          accountsCheck = r.status;
-        }
-        return { hasAccessToken: at.length > 0, planType: s?.account?.planType || null, accountsCheck };
-      });
-      // Kept as run evidence (postPaymentSnapshot); no longer printed to stderr.
-      this.postPaymentSnapshot = snap;
-    } catch (error) {
-      this.postPaymentSnapshot = { error: String(error?.message || '').slice(0, 80) };
-    }
     const identity = await this.#verifiedIdentity();
     const state = await this.#poll((value) => value?.ok && value.hasActive
-      && String(value.plan).includes('plus'));
+      && String(value.plan).includes('plus'), this.verifiedSubscription);
     const confirmed = Boolean(state?.ok && state.hasActive && String(state.plan).includes('plus'));
     return {
       confirmed,
@@ -265,7 +250,7 @@ export class ChatGptPostPaymentVerifier {
 
   async confirmCancellation() {
     await this.#verifiedIdentity();
-    let state = await readSubscription(this.page, this.accountCheckPath);
+    let state = this.verifiedSubscription;
     const plus = state?.ok && state.hasActive && String(state.plan).includes('plus');
     if (!plus || !state.accountId) {
       return { confirmed: false, evidence: { kind: 'CANCELLATION_CONFIRMED', observed: false } };

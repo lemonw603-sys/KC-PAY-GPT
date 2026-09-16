@@ -124,3 +124,18 @@ test('a plan-aware post-Plus action hands Pro rows off with the upgrade dialog f
   assert.throws(() => createBrowserPaymentVerificationService({ repository: plus.repository, verifier: plus.verifier, postPlusAction: 'UPGRADE_PAY' }), /postPlusAction must be/);
 });
 
+
+
+test('Plus delivery callback precedes cleanup; cleanup exception stays recoverable with fresh timestamps',async()=>{
+  const h=harness({row:{paymentState:'PAYMENT_UNKNOWN'}});let time=1000;
+  h.verifier.verify=async(row,{onPlusConfirmed})=>{
+    time=5000;
+    await onPlusConfirmed({confirmed:true,evidence:{identityMatched:true,observed:true}});
+    assert.deepEqual(h.calls.map(x=>x[0]),['list','confirmed','plus']);
+    time=9000;throw Error('cleanup network failed');
+  };
+  await createBrowserPaymentVerificationService({repository:h.repository,verifier:h.verifier,clock:()=>new Date(time)}).runOnce();
+  assert.deepEqual(h.calls.map(x=>x[0]),['list','confirmed','plus','observe']);
+  assert.equal(h.calls[2][1].now.getTime(),5000);
+  assert.equal(h.calls[3][1].now.getTime(),9000);
+});

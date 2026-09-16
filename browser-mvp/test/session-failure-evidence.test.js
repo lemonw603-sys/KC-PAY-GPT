@@ -15,7 +15,7 @@ for (const [status, reason, target] of [
   [401, 'SESSION_INVALID', 'WAITING_FOR_SESSION'],
   [503, 'ACCOUNT_STATUS_UNKNOWN', 'RECHARGE_FAILED'],
 ]) {
-  test(`probe HTTP ${status} persists safe facts without retrying or changing classification`, async () => {
+  test(`probe HTTP ${status} persists safe facts with bounded retries and unchanged classification`, async () => {
     let requests = 0, paymentCalls = 0;
     const server = createServer((req, res) => {
       if (req.url === '/api/auth/session') {
@@ -48,10 +48,13 @@ for (const [status, reason, target] of [
         assert.equal(classifySafeAbort(e).targetOrderStatus, target);
         return true;
       });
-      assert.equal(requests, 1);
+      assert.equal(requests, status === 401 ? 1 : 3);
       assert.equal(paymentCalls, 0);
       const freeze = sink.events.find(e => e.summary.action === 'fail-closed');
-      assert.deepEqual(freeze.summary, {
+      assert.equal(freeze.summary.probeAttempts, requests);
+      assert.ok(freeze.summary.probeElapsedMs >= 0);
+      const {probeAttempts, probeElapsedMs, ...summary} = freeze.summary;
+      assert.deepEqual(summary, {
         action: 'fail-closed', reason, probeStage: 'session-endpoint', httpStatus: status, hasCfRay: true,
       });
       assert.equal(sink.events.filter(e => e.type === 'freeze').length, 1);

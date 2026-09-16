@@ -14,7 +14,7 @@ export async function findStageEvidence(pool, internalOrderId) {
   if (!orderId) return [];
   const [runEvents, operations] = await Promise.all([
     pool.query(
-      `SELECT action, created_at FROM browser_run_events
+      `SELECT action, JSON_UNQUOTE(JSON_EXTRACT(summary_json, '$.stage')) AS payment_stage, created_at FROM browser_run_events
         WHERE order_id = ? AND action IS NOT NULL
         ORDER BY created_at ASC, sequence_no ASC
         LIMIT 200`,
@@ -35,7 +35,8 @@ export async function findStageEvidence(pool, internalOrderId) {
     )
   ]);
   return [
-    ...(runEvents[0] || []).map((row) => ({ kind: 'event', token: row.action, at: row.created_at })),
+    ...(runEvents[0] || []).map((row) => ({ kind: 'event', token: row.action === 'payment-stage' && row.payment_stage
+      ? `payment-stage:${row.payment_stage}` : row.action, at: row.created_at })),
     ...(operations[0] || []).map((row) => ({ kind: 'operation', token: row.operation_type, at: row.at }))
   ];
 }

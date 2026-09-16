@@ -306,7 +306,8 @@ export function createSharedLivePaymentWorker({
           if (observed.state === 'DECLINED' || observed.state === 'PAGE_ERROR') {
             return { status: 'DECLINED', reasonCode: observed.reasonCode, observedText: observed.observedText };
           }
-          return { status: (await verifier.confirmPlus()).confirmed ? 'CONFIRMED' : 'UNKNOWN' };
+          const plusVerification = await verifier.confirmPlus();
+          return { status: plusVerification.confirmed ? 'CONFIRMED' : 'UNKNOWN', plusVerification };
         },
       });
       const paymentResult = await new BrowserPaymentExecutor({
