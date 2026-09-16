@@ -6,6 +6,8 @@
 
 > **13:58 UTC用户最新要求**：先实际量清早交付能省多少，收益不明显就不拆分。历史Plus/取消落库差不是外部动作耗时，当前无法报准确秒数；新版本订单0。不要直接继续扩建收尾架构。测量方案见incidents/d240-followup/early-delivery-benefit.md；线上逻辑未回滚，恢复门控缺陷仍未修。
 
+> **最新决定14:17 UTC**：用户同意撤回提前成功，保留其他提速。隔离分支codex/unified-success候选b8fd6e6已实现并测试；线上仍b31a88a，未回切。下一步确认发布该小范围改动，不继续扩建早交付恢复架构。证据 `/Users/lemon/.codex/worktrees/ai-recharge-unified/docs/incidents/unified-success/README.md`。
+
 ## 当前状态
 - 用户批准D-240发布，单提交b31a88a已上线，release `20260916-d240-b31a88a`。
 - Web/服务器Worker已同步新release；本机Browser PID99137，supervisor98863，12:39:21 UTC启动。
