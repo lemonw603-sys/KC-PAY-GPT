@@ -7,7 +7,7 @@ import {createOrderStatusService} from '../src/services/order-status-service.js'
 import {readCdkReturnEvidence,cdkReturnBlockedBy} from '../src/db/repositories/cdk-return-repository.js';
 const url=process.env.TEST_DATABASE_URL;
 const hash=x=>createHash('sha256').update(x).digest('hex');
-for(const plan of ['plus','pro_5x']) test(`durable early delivery and restart-safe cleanup: ${plan}`,{skip:!url},async()=>{
+for(const plan of ['plus','pro_5x']) test(`unified success only after cleanup: ${plan}`,{skip:!url},async()=>{
  const pool=mysql.createPool({uri:url,connectionLimit:2,timezone:'Z'});
  const [order,cdk,attempt,run,profile]=Array.from({length:5},()=>randomUUID());
  const evidenceHash=hash(run);
@@ -28,10 +28,10 @@ for(const plan of ['plus','pro_5x']) test(`durable early delivery and restart-sa
   const repo=createBrowserExecutionRepository(pool);
   await repo.recordPlusActivation({runId:run,operationId:'plus-'+run,evidenceHash});
   const [[first]]=await pool.query('SELECT status,finished_at FROM orders WHERE id=?',[order]);
-  assert.equal(first.status,plan==='plus'?'RECHARGE_SUCCESS':'RECHARGE_PROCESSING');
+  assert.equal(first.status,'RECHARGE_PROCESSING');
   const visible=await readStatus({publicNo});
-  assert.equal(visible.status,plan==='plus'?'SUCCESS':'ACTIVATING');
-  assert.equal(visible.stage.index,plan==='plus'?9:8);
+  assert.equal(visible.status,'ACTIVATING');
+  assert.equal(visible.stage.index,8);
   const [[pending]]=await pool.query('SELECT status,post_payment_state,active_account_key_hmac FROM browser_runs WHERE id=?',[run]);
   assert.equal(pending.status,'RUNNING');assert.equal(pending.post_payment_state,'CANCELLATION_PENDING');assert.ok(pending.active_account_key_hmac);
   assert.equal(cdkReturnBlockedBy(await readCdkReturnEvidence(pool,order)),true);
@@ -40,16 +40,16 @@ for(const plan of ['plus','pro_5x']) test(`durable early delivery and restart-sa
   const due=await restarted.listPaymentVerificationsDue({orderId:order});assert.equal(due.length,1);
   await restarted.recordPlusActivation({runId:run,operationId:'plus-'+run,evidenceHash});
   const [[deliveryEvents]]=await pool.query("SELECT COUNT(*) AS n FROM order_events WHERE order_id=? AND to_status='RECHARGE_SUCCESS'",[order]);
-  assert.equal(Number(deliveryEvents.n),plan==='plus'?1:0);
+  assert.equal(Number(deliveryEvents.n),0);
   if(plan==='plus'){
-    // Failed cleanup escalates internally but never revokes delivered success or CDK.
+    // Failed cleanup remains pending and never releases the CDK.
     await restarted.escalatePaymentVerification({runId:run,operationId:'escalate-'+run,reasonCode:'POST_PAYMENT_RECONCILIATION_REQUIRED',evidenceHash});
-    const [[still]]=await pool.query('SELECT status FROM orders WHERE id=?',[order]);assert.equal(still.status,'RECHARGE_SUCCESS');
+    const [[still]]=await pool.query('SELECT status FROM orders WHERE id=?',[order]);assert.equal(still.status,'RECHARGE_PROCESSING');
     // Simulate operator resuming the existing verification, never a payment replay.
     await pool.query("UPDATE browser_runs SET status='RUNNING',verification_state='VERIFYING_PAYMENT' WHERE id=?",[run]);
     await restarted.recordCancellationConfirmed({runId:run,operationId:'cancel-'+run,evidenceHash});
     await restarted.recordCancellationConfirmed({runId:run,operationId:'cancel-'+run,evidenceHash});
-    const [[end]]=await pool.query('SELECT status,finished_at FROM orders WHERE id=?',[order]);assert.equal(end.status,'RECHARGE_SUCCESS');assert.equal(+end.finished_at,+first.finished_at);
+    const [[end]]=await pool.query('SELECT status,finished_at FROM orders WHERE id=?',[order]);assert.equal(end.status,'RECHARGE_SUCCESS');assert.equal(first.finished_at,null);assert.ok(end.finished_at);
     const [[br]]=await pool.query('SELECT status,active_account_key_hmac FROM browser_runs WHERE id=?',[run]);assert.equal(br.status,'COMPLETED');assert.equal(br.active_account_key_hmac,null);
     const [[submits]]=await pool.query("SELECT COUNT(*) AS n FROM browser_operations WHERE browser_run_id=? AND operation_type='PAYMENT_SUBMIT'",[run]);assert.equal(Number(submits.n),1);
   }

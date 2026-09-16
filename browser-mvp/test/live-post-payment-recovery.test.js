@@ -125,13 +125,3 @@ test('a verification check closes the page it opened unless it hands the Profile
   await assert.rejects(() => failed.verifier.verify({ runId: 'run-fail', executorProfileId: 'profile' }));
   assert.equal(failed.calls.includes('page-close'), true);
 });
-
-test('recovery publishes Plus before cancellation and stops cleanup if durable delivery fails',async()=>{
- const row={runId:'run-early',executorProfileId:'profile-early',plan:'plus'};
- const h=harness();
- await h.verifier.verify(row,{onPlusConfirmed:async plus=>{assert.equal(plus.confirmed,true);assert.equal(h.calls.includes('cancellation'),false);h.calls.push('delivered')}});
- assert.ok(h.calls.indexOf('delivered')<h.calls.indexOf('cancellation'));
- const broken=harness();
- await assert.rejects(()=>broken.verifier.verify(row,{onPlusConfirmed:async()=>{throw Error('database unavailable')}}),/database unavailable/);
- assert.equal(broken.calls.includes('cancellation'),false);
-});
