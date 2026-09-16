@@ -6,7 +6,7 @@ import { createBrowserRecoveryRepository } from '../../v1/src/db/repositories/br
 import { createBrowserWorkerService } from '../../v1/src/services/browser-worker-service.js';
 import { BrowserExecutionService } from './executor.js';
 import { createMysqlUpstreamProjectionAdapter } from './mysql-upstream-adapter.js';
-import { BrowserPaymentExecutor } from './payment-executor.js';
+import { BrowserPaymentExecutor, diagnosticTextOf } from './payment-executor.js';
 import { createHumanVerificationGate } from './human-verification-gate.js';
 import { upsertBrowserAlertInTransaction } from '../../v1/src/db/repositories/browser-alert-repository.js';
 import { createPostSubmitWatch } from './post-submit-outcome-watch.js';
@@ -108,7 +108,9 @@ export async function runPreSubmitRehearsal({
     // Without authorization the adapter never clicks; an UNKNOWN here would be
     // a contract violation and must surface, never be softened.
     if (error?.code === 'PAYMENT_RESULT_UNKNOWN') throw error;
-    return { status: 'PRE_SUBMIT_FAILED', reasonCode: error?.code || 'PRE_SUBMIT_FAILED', paymentSubmitCalls: 0 };
+    // D-212 续：带上沿 cause 链拼的诊断（含 describeCandidates 的"找到几个框/什么属性/
+    // 还是 fill 超时"），让演练失败也落 pre-submit-failure-diagnostic 证据，与真实付款同口径。
+    return { status: 'PRE_SUBMIT_FAILED', reasonCode: error?.code || 'PRE_SUBMIT_FAILED', paymentSubmitCalls: 0, diagnostic: diagnosticTextOf(error) };
   }
 }
 

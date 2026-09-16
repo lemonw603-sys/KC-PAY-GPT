@@ -79,9 +79,10 @@ test('pre-submit rehearsal drives the adapter without authorization and reports 
   // Pre-click failures stay safe pre-submit failures; an adapter that claims it
   // clicked is a contract violation and must not be softened.
   const drift = await runPreSubmitRehearsal({ adapter: { async submit() { throw Object.assign(new Error('drift'), { code: 'CHECKOUT_DRIFT' }); } }, control, operationId: 'op-2' });
-  assert.deepEqual(drift, { status: 'PRE_SUBMIT_FAILED', reasonCode: 'CHECKOUT_DRIFT', paymentSubmitCalls: 0 });
+  // D-212 续：演练失败也带上诊断（沿 cause 链拼的文字），落 pre-submit-failure-diagnostic 证据。
+  assert.deepEqual(drift, { status: 'PRE_SUBMIT_FAILED', reasonCode: 'CHECKOUT_DRIFT', paymentSubmitCalls: 0, diagnostic: 'drift' });
   const clicked = await runPreSubmitRehearsal({ adapter: { async submit() { return { status: 'CONFIRMED' }; } }, control, operationId: 'op-3' });
-  assert.deepEqual(clicked, { status: 'PRE_SUBMIT_FAILED', reasonCode: 'REHEARSAL_RESULT_INVALID', paymentSubmitCalls: 0 });
+  assert.deepEqual(clicked, { status: 'PRE_SUBMIT_FAILED', reasonCode: 'REHEARSAL_RESULT_INVALID', paymentSubmitCalls: 0, diagnostic: 'rehearsal adapter returned an unexpected status' });
   await assert.rejects(() => runPreSubmitRehearsal({ adapter: { async submit() { throw Object.assign(new Error('unknown'), { code: 'PAYMENT_RESULT_UNKNOWN' }); } }, control, operationId: 'op-4' }), (e) => e.code === 'PAYMENT_RESULT_UNKNOWN');
 });
 

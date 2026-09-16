@@ -546,6 +546,19 @@ export class BrowserExecutionService {
           throw new BrowserExecutionError(error?.code || 'PAYMENT_EXECUTION_FAILED', error.message, error);
         }
       }
+      // D-212 续（2026-09-16）：付款前失败时把已拼好的诊断落一条证据，同时进 WAL 与
+      // browser_run_events。此前 payment.diagnostic（含"找到几个框/什么属性/还是 fill 超时"）
+      // 一路传到 abortForPrePaymentFailure 就丢了，browser_runs 只留笼统的 CHECKOUT_DRIFT，
+      // 于是 fill-billing-email 的三种死因从 D-209 起一直靠猜。落成事件后，grep WAL 或查
+      // browser_run_events（action='pre-submit-failure-diagnostic'）一眼分清，不再糊里糊涂。
+      // 诊断只含结构特征（describeCandidates 不取 value，locator-diagnostics 测试守着），安全留痕。
+      if (paymentResult?.status === 'PRE_SUBMIT_FAILED' && paymentResult.diagnostic) {
+        await this._event(job, 'checkpoint', ++evidenceSequence, {
+          action: 'pre-submit-failure-diagnostic',
+          reason: paymentResult.reasonCode || null,
+          diagnostic: String(paymentResult.diagnostic).slice(0, 500),
+        }).catch(() => undefined);
+      }
       if (releaseSessionOnComplete && paymentResult?.status === 'COMPLETED'
         && this.sessionProvider && typeof this.sessionProvider.clearSession === 'function') {
         const released = await this.sessionProvider.clearSession(runtime.context).catch(() => null);

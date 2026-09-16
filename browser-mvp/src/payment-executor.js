@@ -113,8 +113,10 @@ export class MockPostPaymentVerifier {
 export const POST_PLUS_ACTIONS = Object.freeze(['CANCEL_RENEWAL', 'MANUAL_20X_HANDOFF', 'UPGRADE_DIALOG_STOP']);
 
 /** 沿 cause 链把消息拼出来。与 shared-runtime-integration 的 diagnosticOf 同口径：
- *  真正有信息的那条常常挂在 cause 上，只看最外层等于什么都没看到。 */
-function diagnosticTextOf(error) {
+ *  真正有信息的那条常常挂在 cause 上，只看最外层等于什么都没看到。
+ *  export 给演练路径（shared-live-composition 的 runPreSubmitRehearsal）复用同一口径，
+ *  让演练失败也带上诊断文字，落进 pre-submit-failure-diagnostic 证据（D-212 续）。 */
+export function diagnosticTextOf(error) {
   const parts = [];
   let current = error;
   for (let depth = 0; current && depth < 3; depth += 1) {

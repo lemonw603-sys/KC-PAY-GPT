@@ -3637,3 +3637,56 @@ A4 原标"⚠️悬而未决真问题：Browser 主力但卡只能手动开,200�
 **工具调研结论**：planning-with-files（hook 强制落盘/走完步骤，有 benchmark）思路对但**不整个装**——它的三文件落盘系统与我们"单一事实源（四事实源+当轮落盘）"冲突（双落盘/双接班/双收尾/`progress.md` 撞名）。**取其"hook 强制"精华、弃其文件系统**：以后落实中发现某问题反复出、且能被简单 hook 对症拦住时，针对性加 hook，不凭空造一套。
 
 **付款内核体检状态（本次讨论触发，V2/A1 实质工作，进行中未完）**：已读实核心有防重复守卫（authorization-v2 FUNDS_FENCE / recharge-attempt transition 守卫 / browser-execution SQL WHERE 守卫）、`recharge_attempts` 两路线共用 → **核心是地基不是屎**。债 = funds_risk 状态机散落 ~15 处无单一定义。A1 拟从"收拢单一状态机定义"切入。**但"两套规则一致"打脸过（API 允许 UNKNOWN→SETTLED、Browser 不允许），所有转换尚未逐个读全对比——A1 落实前必须先把这张对比表读全，不能凭现有判断拍。**
+
+---
+
+## D-238（2026-09-16）Browser「停在提交前不点、要手动点」根治：fill-billing-email 的 ≥2 邮箱框从抛错改放行跳过（A 方案）
+
+> ⚠️ **同日修正（见 D-239）**：重走 fill-billing-email 之后的下游链路 + WAL/DB 证据显示，A 建立在**未坐实的假说**上——fill-billing-email 有三种死因（邮箱格式/≥2框/fill超时），现有证据全被 adapter 归成 `CHECKOUT_DRIFT`、分不出是哪种，而 A 只对"≥2框"有效。**故 A 暂不生效**，先做诊断落库（D-239）坐实真因，再定 A 对不对。下方分析仍有效，但结论"根治"降级为"待坐实"。
+
+> 高发遗留、改过多次没根治。这次按"供卡核查"颗粒度硬读代码 + 历史，定位到根因函数并落一处改动。排查全程见 scratchpad `browser-stall-rootcause.md`。
+
+**真机制（读实，非以往搞错的"点击后验证 / 演练模式"）**：
+- 生产常驻池 = **PAY 真付款模式**（`run-live-pool.sh:50-52` 实证：`BROWSER_POOL_CONFIRMATION=...:PAY` / `unset STOP_BEFORE` / `EXECUTOR_ENABLED=true`），**不走**演练 rehearsal（那条 `authorizeSubmit` 恒 false 的分支）。一开始怀疑是演练模式恒不点，被 run-live-pool.sh 实证推翻，就地改。
+- 「停住不点」= 付款前某 stage 返回 `PRE_SUBMIT_FAILED + sceneHeld`（`payment-executor.js:236`）→ `shared-live-composition.js:324-353` 现场保留、推运营"你可以直接点订阅"→ 等人手动点。是**返回值**不是抛异常，所以"干净停住"非"报错崩溃"，与 Lemon 描述逐字吻合。
+- 死点 = `fillTransientBillingEmail`（`billing-address-fill.js`，D-209 埋点实证 fill-billing-email 是最后一条 setStage）。
+- **唯一触发（当前代码）= `matches.length >= 2`（≥2 个可见邮箱框）**：0 个已放行（`:90`）、正好 1 个正常填、≥2 抛 ContractError。
+
+**为什么改了很多次没改好**：前几轮全在改**兜底与诊断**（D-205 保留现场 / D-208 埋点 / D-210 接手窗 / D-212 locator 诊断），**根因函数一行没修**（D-211 自认"看起来很勤奋，方向是偏的"）。
+
+**关键依据（有据）**：receipt email **非付款必需**——oaics_ Checkout 全无邮箱框也能付成（`billing-address-fill.js:68-70` + 0 框放行既有事实）。故"≥2 拿不准就整单停住要人工"是**过度严格的契约**，撞 Lemon 原则"别为一点风险要人工兜底"。
+
+**假说未坐实（诚实）**：≥2 框到底是什么（疑 Stripe Link 带进第 2 个登录邮箱框）**无真实 DOM 证据**——那 8 次失败在 D-212 诊断上线前，之后无新样本；连 `locator-diagnostics.test.js:14` 的 `linkEmail` fixture 都是**按假说造的**（不构成外部合同证明，D-172 模式3）。A 方案不依赖此假说，恰是"不知道是什么所以不猜、不填、跳过"。
+
+**改动（一处，Lemon 拍板 A）**：`fillTransientBillingEmail` 的 `matches.length !== 1` 分支——`required=true`（无调用点传，预留严格模式）带 D-212 诊断抛错；**默认 `required=false`（付款路径）放行跳过**（返回 `emailFieldPresent:false`，与 0 框同义）。不碰付款控制流、清空 finally（D-137/D-205）、防重复扣款不变量。
+- **风险有界且不劣于现状**：万一某变体确实必填 email，提交会在后续 stage 停住（仍要人工，但绝不重付）；上行=直接根治高发痛点。
+
+**验证**：billing-address-fill + locator-diagnostics 9/9（含新增"≥2 放行"+"required=true 仍抛诊断错误"两测）、adapter+executor 31/31（D-205/208/214 兜底全在）、**browser-mvp 全量 292：283 pass / 0 fail / 9 skip**。
+
+**未生效**：本机常驻 worker（PID 43986）ES import 在**启动时**加载旧代码，改源码不热更——需重启（`launchctl kickstart -k com.pojia.browser-pool`，supervisor 会重新拉起）才生效。**付款路径上生产，重启时机待 Lemon 确认。**
+
+---
+
+## D-239（2026-09-16）诊断落库：付款前失败的真因同时落 WAL + browser_run_events，先坐实再改 A
+
+> 起因：Lemon 追问"演练确定能解决吗"→ 重走链路发现 A（D-238）只赌了 fill-billing-email 三种死因（邮箱格式/≥2框/fill超时）里的 ②，而现有证据分不出是哪种。故先补诊断落库，坐实真因，再定 A 对不对——不再"给观察补原因"。
+
+**坐实"哪里"的证据（铁证）**：
+- WAL（`lane-1.wal`，Pilot 窗口）**2 次 run 的 stage 都停在 `fill-billing-email`**，之后一条 stage 都没有。
+- DB `browser_runs` 付款前失败（PAYMENT_ARMED）**7 次全是 `last_error_code=CHECKOUT_DRIFT`**（09-13～14）。
+
+**为什么"为什么"查不出（根本缺陷）**：
+- adapter catch（`live-chatgpt-payment-adapter.js:310-312`）把 ≥2框（ContractError）/ fill超时（TimeoutError）/ 格式非法**全包装成 `CHECKOUT_DRIFT`**，原始区别只留在 cause 链。
+- 全库无诊断文字列（`browser_runs` 只有 `last_error_code`；information_schema 查证）——**D-212 的 describeCandidates 诊断从未持久化**，一路传到 abortForPrePaymentFailure 就丢了。故三种死因从 D-209 起一直靠猜，A 也是猜出来的。
+
+**改动（4 处；同时落 WAL + browser_run_events，不改 schema、不改付款行为）**：
+1. `payment-executor.js`：`export diagnosticTextOf`（沿 cause 链拼，含"找到 N 个/属性/超时"）。
+2. `shared-live-composition.js`：import + `runPreSubmitRehearsal` 失败也带 `diagnostic`（**演练也能坐实**，不用花钱跑真单）。
+3. `executor.js`：`paymentResult` 为 `PRE_SUBMIT_FAILED` 时落一条 `pre-submit-failure-diagnostic` 事件。`evidenceSink=CompositeEvidenceSink([WAL, MysqlEvidenceSink])`→ **同时进 WAL 与 `browser_run_events`**（`summary_json` 存诊断，`action` 列可 SQL 过滤）。
+4. 测试：`shared-live-composition.test.js:82/84` 断言更新（演练失败带 diagnostic）。全量 **292：283 pass / 0 fail / 9 skip**。
+
+**怎么用坐实真因**：重启 worker 生效后，跑一次演练（不花钱）或下一个真单走到 fill-billing-email 失败 → `grep pre-submit-failure-diagnostic` WAL，或 `SELECT summary_json FROM browser_run_events WHERE action='pre-submit-failure-diagnostic' ORDER BY id DESC` → **一眼看清是 ②≥2框 还是 ③fill超时** → 再定 A 对不对（≥2框→A 对；fill超时→A 无效，改填不进去的根因）。
+
+**测试缺口（诚实）**：executor 落该事件的 e2e 单测未加（executor.test.js 无付款路径框架，硬加需大量脚手架）。诊断内容正确性由 `locator-diagnostics` 测试守、演练失败带 diagnostic 由 `shared-live-composition` 测试守，只差"executor 把两环接起来"这一组装点无独测——下一次演练即实测。
+
+**未生效**：改了源码，需重启 worker（`launchctl kickstart -k com.pojia.browser-pool`）才加载。付款路径上生产，重启时机待 Lemon 确认。
