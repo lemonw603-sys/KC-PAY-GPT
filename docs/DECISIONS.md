@@ -3702,3 +3702,7 @@ A4 原标"⚠️悬而未决真问题：Browser 主力但卡只能手动开,200�
 建议实施参数（执行者建议，非用户逐项拍板）：初次+最多2次，等待2秒/5秒，整体30秒截止；429遵循Retry-After、超预算暂停而非提前轰击，明确Session失效/身份不匹配不重试；租约/停机优先终止。重试耗尽进入可解释的安全停止，不无限回队列。
 
 代码核查依据：browser-execution-repository.js的recordCancellationConfirmed当前捆绑run完成/attempt成功/order成功；listPaymentVerificationsDue只调度特定run与verification状态，不能只提前改order.status。customer成功映射依赖RECHARGE_SUCCESS；后台收尾需要单独的可恢复生命周期，优先复用已有调度基础，不新增泛化框架。production只读11:27 UTC仍为上一单RECHARGE_SUCCESS/COMPLETED/CANCELLATION_CONFIRMED，当前行为未变。
+
+### D-240 实施记录（2026-09-16 12:14 UTC）
+
+用户后续「以上同意」确认实施。隔离候选分支codex/plus-delivery-d240：64d1d56保存主工作区既有付款诊断快照，81c40ec实现四项与测试；主工作区既有两文件未提交改动未动。任务/证据位于 `/Users/lemon/.codex/worktrees/ai-recharge-d240/docs/tasks/2026-09-16-D240-delivery.md`。Browser295通过/9跳过，v1 675通过/66跳过，隔离MySQL串行27通过，均0失败。未合并/推送/部署/重启。重试参数已落实初次+2次、2s/5s、30s预算；Retry-After超过预算时不提前再请求，沿既有安全失败收口，不新增长期重试队列。取消续费与对账沿原run持久化恢复，客户成功后不再等待；但单lane仍被未收尾/人工待处理run占用。生产新逻辑及真实节省耗时未验证，旧403上游诱因仍未知。
