@@ -2379,3 +2379,7 @@ Lemon 在 Pilot 窗口截图：结账页 `chatgpt.com/checkout/openai_llc/cs_liv
 ## 2026-09-16｜用户确认加载诊断，常驻执行器重启（11:05 UTC）
 
 重启前独立查活动run=0、非终态订单=0；工作区Browser全量295项，286pass/9skip/0fail。核对既有executor/payment-executor在途差异仅付款诊断，保留未提交，重启源码hash与测试输出见docs/incidents/2026-09-16-restart-*。11:01:40 UTC向旧PID47109发SIGTERM，STOPPED/code0，未kill supervisor、未改付款/接单开关。supervisor首轮被包含worker名称的观察命令误判残留，观察命令结束后11:04:25 UTC自行恢复，新PID67720，PAY/pool:lane-1。11:05:07 UTC新连接复验：heartbeat11:04:57.474Z、开关true/true、active_runs0、非终态0、该CDK AVAILABLE/NULL；源码hash未变。state-check仍因line61 MINBAL变量错误中断，不宣称全绿。未提交订单、未代付款；生产诊断首次失败落库仍待真样本。
+
+## 2026-09-16｜客户重提Plus成功，自动补核收口（11:12 UTC）
+
+新单PJV1-x-tIsPB5ICHu6R9bzsSO（id34754d6d-9aa4-40e2-89c2-a1c020dd39e0，run f181d993-46c7-467b-9ae3-f31b158e4a66）11:06:44 UTC提交；本轮只读观察，无手工付款/重试/刷新注入。DB身份核验通过，填卡/地址/邮箱/零税/提交均有stage。付款后先SUBMIT_UNKNOWN，diagnostic submitClicked=1、reason PAYMENT_RESULT_UNKNOWN、diagnostic null（付款异常原始原因仍未透出，不能宣称全部可诊断）。随后常驻核实lane自动确认Plus和取消续费，11:12 UTC独立查订单RECHARGE_SUCCESS，run COMPLETED/PAYMENT_CONFIRMED/RESOLVED/CANCELLATION_CONFIRMED，付款提交1条，CDK REDEEMED，卡分配RELEASED。证据 docs/incidents/2026-09-16-x-tIs-success-evidence.tsv。orders.subscription_cancelled仍NULL，当前生产recordCancellationConfirmed只更新run与订单status，属既有投影差异；取消以Browser确认记录为准。DB finished_at 11:09:34是核实runOnce开头captured now，不当真实完成墙钟（11:10查询仍UNKNOWN，11:11:34查询已SUCCESS）。当前成功只证明本单，不代表根治先前403。
