@@ -1,0 +1,21 @@
+== build bundle from HEAD ==
+release_manifest=OK tracked_files=1075
+release_commit=4334dc2a2752cee71ac4ed7ebd34d0b89b424de4
+release_bundle=/Users/lemon/.codex/worktrees/ai-recharge-unified-release/artifacts/release-candidate-20260916-unified-4334dc2
+release_manifest=/Users/lemon/.codex/worktrees/ai-recharge-unified-release/artifacts/release-candidate-20260916-unified-4334dc2/source-manifest.sha256
+== upload bundle ==
+== archive hash ==
+source.tar.gz: OK
+== database backup ==
+/var/backups/pojia/pojia-20260916T141936Z.sql.gz.enc: OK
+backup_integrity=OK
+backup_file=/var/backups/pojia/pojia-20260916T141936Z.sql.gz.enc
+/var/backups/pojia/pojia-20260916T141936Z.sql.gz.enc: OK
+backup_integrity=OK
+backup_file=/var/backups/pojia/pojia-20260916T141936Z.sql.gz.enc
+== extract ==
+== verify manifest (all tracked files) ==
+release_manifest=OK tracked_files=1075
+== install deps (lockfiles unchanged; same as previous releases) ==
+== ready to switch: /opt/pojia/releases/20260916-unified-4334dc2 ==
+previous=/opt/pojia/releases/20260916-d240-b31a88a

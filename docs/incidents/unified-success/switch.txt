@@ -1,0 +1,11 @@
+previous=/opt/pojia/releases/20260916-d240-b31a88a
+active
+active
+current=/opt/pojia/releases/20260916-unified-4334dc2
+worker cwd=/
+live=200
+{"status":"ready"} ready=200
+index.html on disk references: admin.js?v=49
+served admin.js?v=23 status/new-action count: 200 / 7
+admin login page: 200
+ROLLBACK: ln -sfn /opt/pojia/releases/20260916-d240-b31a88a /opt/pojia/current && systemctl restart pojia-web.service pojia-worker.service

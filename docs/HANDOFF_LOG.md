@@ -2427,3 +2427,7 @@ state-check的$MINBAL紧邻中文括号、wrapup-check的$live/$mday紧邻中文
 ## 2026-09-16｜撤回提前成功候选交接（14:17 UTC）
 
 用户要求改回。隔离worktree ai-recharge-unified / 分支codex/unified-success / b8fd6e6删除提前交付和回调，旧→新测试索引在其docs/incidents/unified-success/README.md。本地测试全部通过，生产只读14:15:46新订单/活动run/成功待取消run均0。主工作区未改业务、未部署；待发布确认，不能说线上已改回。
+
+## 2026-09-16｜中断后续完统一成功发布（15:36 UTC）
+
+断点在prepare完成、尚未switch。重新现场核实旧release/接单true/无在途，正式服务暂停接单并审计；旧99137正常退出，main快进4334dc2；switch到20260916-unified-4334dc2，Web2359155/Worker2359160独立cwd均新目录，健康200，两处核心文件服务端/本机SHA256一致。新Browser47905于15:35:18启动、15:36心跳正常；正式服务恢复接单并新连接验证true/付款true/非终态0。无付款、无迁移。1075文件manifest及备份完整性通过；原日志docs/incidents/unified-success/{prepare,switch,customer-sql}.txt。
