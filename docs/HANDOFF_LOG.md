@@ -2367,3 +2367,7 @@ Lemon 在 Pilot 窗口截图：结账页 `chatgpt.com/checkout/openai_llc/cs_liv
 - release/服务现场核对仍为 current 20260913-orderno-6dcb458，web/worker active，worker cwd 20260911-alert-noise-d924563。本机既有常驻 worker PID 47109（10:09 UTC 启动），未重启或停止。
 - 只读核对补余额/自动开卡均 false，与 CURRENT_STATE 旧补余额 true 冲突，已更新该行。state-check 在最低余额后因 line 61 `MINBAL�: unbound variable` 中断，不宣称全绿或全量事实已刷新。
 - 未重新兑换、未操作客户浏览器、未付款、未部署。进入时 executor.js/payment-executor.js 已有未提交改动，原样保留、不代提交；后续如要定位 403/429 需补身份探测结构化诊断并经确认安排非付款验证。
+
+## 2026-09-16｜h9RKl 深查：浏览器历史403与当前正式核验（10:46 UTC）
+
+补齐上一轮未知：http403已由现有一号窗口的Performance Resource Timing坐实，不是429。页面同次生命周期的套餐接口200；当前DOM logged_in，有Plus升级入口。原probe函数对生产订单身份摘要核验成功、当前FREE。离线真实代码复现403只调用一次/等待零次，随后映射终态失败；details丢失处在executor包装与落证据之间。原始证据、查询、代码位置、边界和建议见 docs/incidents/2026-09-16-h9RKl-report.md。未操作付款、未改业务/重启，不声称修复或全链路验收；既有两个业务文件在途改动未动。

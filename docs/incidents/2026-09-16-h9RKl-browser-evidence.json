@@ -1,0 +1,49 @@
+{
+  "profileId": "10f0dc7b534844c083165796447d5893",
+  "before": {
+    "at": "2026-09-16T10:44:35.958Z",
+    "title": "ChatGPT Plans",
+    "path": "/",
+    "timeOrigin": "2026-09-16T10:17:04.699Z",
+    "authStatus": "logged_in",
+    "planControls": [
+      "Upgrade",
+      "Upgrade",
+      "Upgrade to Go",
+      "Upgrade to Plus",
+      "Upgrade to Pro"
+    ],
+    "requests": [
+      {
+        "path": "/backend-api/accounts/check/v4-2023-04-27",
+        "status": 200,
+        "at": "2026-09-16T10:17:09.156Z",
+        "durationMs": 5429,
+        "transferSize": 1935
+      },
+      {
+        "path": "/api/auth/session",
+        "status": 403,
+        "at": "2026-09-16T10:17:11.366Z",
+        "durationMs": 912,
+        "transferSize": 5325
+      }
+    ]
+  },
+  "currentProbe": {
+    "at": "2026-09-16T10:44:52.853Z",
+    "status": 200,
+    "contentType": "application/json; charset=utf-8",
+    "server": "cloudflare",
+    "cfMitigated": null,
+    "hasCfRay": true,
+    "redirected": false,
+    "responsePath": "/api/auth/session",
+    "bodyLength": 6120,
+    "htmlTitle": null,
+    "hasChallengeMarkers": false,
+    "hasUser": true,
+    "hasAccessToken": true,
+    "sessionError": null
+  }
+}

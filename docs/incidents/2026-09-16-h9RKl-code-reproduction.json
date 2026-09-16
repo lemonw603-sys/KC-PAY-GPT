@@ -1,0 +1,23 @@
+{
+  "fixtureOnly": true,
+  "scenario": "403 then 200 available on next call",
+  "stabilizationTimeoutMs": 15000,
+  "actualEvaluateCalls": 1,
+  "actualWaitCalls": 0,
+  "errorCode": "CHATGPT_ACCESS_BLOCKED",
+  "errorDetails": {
+    "stage": "session-endpoint",
+    "httpStatus": 403,
+    "contentType": "text/html",
+    "server": "cloudflare",
+    "hasCfRay": true
+  },
+  "classification": {
+    "targetOrderStatus": "RECHARGE_FAILED",
+    "reasonCode": "CHATGPT_ACCESS_BLOCKED",
+    "customerActionCode": null,
+    "failureReason": "Browser could not access or verify the ChatGPT checkout before payment",
+    "diagnosticMessage": "ChatGPT access was blocked before Session identity could be verified"
+  },
+  "eventHasEvidenceDetail": false
+}

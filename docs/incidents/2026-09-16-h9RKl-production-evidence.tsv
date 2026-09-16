@@ -1,0 +1,9 @@
+2026-09-16 10:46:27
+PJV1-h9RKlXHNoWfTO01S8aGT	RECHARGE_FAILED	CHATGPT_ACCESS_BLOCKED	2026-09-16 10:17:12.973
+AVAILABLE	NULL
+1	observe-page	{"mode": "BITBROWSER_CONTROL", "action": "observe-page"}	2026-09-16 10:16:44.677
+2	session-bootstrap	{"action": "session-bootstrap", "cookieCount": 1, "sessionDigest": "5f3de3c2074198efd9e1bc3b5fca3f3c7e153493d7ec9e0f26b4fe15262b9421", "closedStaleTabCount": 1, "replacedCookieCount": 2, "clearedLoginCookieCount": 19}	2026-09-16 10:17:04.830
+3	page-reload-after-inject	{"action": "page-reload-after-inject", "urlPrefix": "https://chatgpt.com/"}	2026-09-16 10:17:09.906
+4	fail-closed	{"action": "fail-closed", "reason": "CHATGPT_ACCESS_BLOCKED"}	2026-09-16 10:17:14.505
+PRE_PAYMENT_ABORT	COMMITTED
+BEGIN_RUN	COMMITTED

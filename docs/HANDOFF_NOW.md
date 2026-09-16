@@ -4,7 +4,7 @@
 
 > **⚠️ 2026-09-16 阶段2收尾（先读这条）**：V2 阶段2大摸排 + 整体自查已完成（D-236）、供卡策略定了（D-235：主力 highvcc 手动 100张/天够用、hnskj 自动开卡只作故障补充）、**阶段3可进**——落实顺序 G1→…→C3 + "每面先读透"硬门槛见 `docs/V2.0_EXECUTION.md` §6。已核实的当前事实：开关（接单 true / 自动开卡 false / 补余额 false，2026-09-15 自查 [A6]）、Plus 以 Browser 为主（近14天 56/63 单）。**本文下方"现在状态 / 今天发生 / 缺口 / 下一步"仍是 09-14 Day1 快照，待阶段3开窗 state-check 后整篇重写。** 新窗口接手先读 `V2.0_EXECUTION.md`（§2.8 供卡 / §6 任务书）+ 本 banner。
 
-> **2026-09-16 10:39 UTC 单笔排障增补**：`PJV1-h9RKlXHNoWfTO01S8aGT` 在 Session 身份核验报 CHATGPT_ACCESS_BLOCKED，付款未开始，CDK 已自动退回。403/429 具体值未落证据，根因未细分，不建议盲目重兑。详见 HANDOFF_LOG 同日「单笔只读排障」。未改业务/生产/常驻 worker；进入时 executor.js、payment-executor.js 在途修改保留。state-check 因 line 61 MINBAL 变量错误中断，未完成全量复核；下一步为身份探测诊断与非付款验证，不是重新付款。
+> **2026-09-16 10:46 UTC 单笔排障更新**：h9RKl 的历史403已由一号窗口 Resource Timing 坐实（10:17:11Z /api/auth/session=403，套餐接口200）；当前正式probe比对生产订单身份成功、套餐FREE。代码只对200空身份等待，对403直接失败退码。详见 `docs/incidents/2026-09-16-h9RKl-report.md` 及4份脱敏证据。上游403诱因与付款后段仍未知；建议有限只读复核+诊断，尚未实施/重启/重兑。已有 executor.js/payment-executor.js 改动保留。state-check 已知 line61变量错误未修。
 
 ## 分工
 
