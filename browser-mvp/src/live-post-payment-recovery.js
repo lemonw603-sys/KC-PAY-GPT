@@ -46,7 +46,7 @@ export class LivePostPaymentRecoveryVerifier {
     this.verifierFactory = verifierFactory;
   }
 
-  async verify(row) {
+  async verify(row, { onPlusConfirmed = null } = {}) {
     let runtime;
     let sessionLease;
     let page = null;
@@ -92,6 +92,8 @@ export class LivePostPaymentRecoveryVerifier {
       if (!plus.confirmed) {
         return { outcome: 'UNKNOWN', reasonCode: 'PLUS_ACTIVATION_UNCONFIRMED', evidence: plus.evidence };
       }
+      // Publish verified Plus before cancellation/reconciliation can delay or fail.
+      if (action === 'CANCEL_RENEWAL' && onPlusConfirmed) await onPlusConfirmed(plus);
       if (action === 'MANUAL_20X_HANDOFF' || action === 'UPGRADE_DIALOG_STOP') {
         const transactions = await verifier.readCardTransactions();
         const reconciliation = await verifier.reconcile({ transactions });

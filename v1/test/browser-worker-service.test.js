@@ -158,3 +158,18 @@ test('Playwright navigation is aborted after lease loss without a submit event',
     await new Promise((resolve) => server.close(resolve));
   }
 });
+
+
+test('submitted payment allows only result-read under lease, never another write action',async()=>{
+ const h=setup({recovery:{recoveryMode:'RECONCILE_ONLY',runStatus:'RUNNING',paymentState:'PAYMENT_SUBMITTING'}});
+ const worker=await h.service.runClaimedJob({jobId:7,jobKey:'read-result',attemptId:'attempt-1',status:'CLAIMED',leaseOwner:'worker-1',leaseToken:'lease-token'},{workerId:'worker-1'});
+ await worker.assertPaymentResultRead();
+ await assert.rejects(()=>worker.assertLeaseBeforeAction('PAYMENT_SUBMIT'),e=>e.code==='RUN_NOT_ACTIONABLE');
+});
+
+test('payment result read remains blocked after lease loss',async()=>{
+ const h=setup({recovery:{recoveryMode:'RECONCILE_ONLY',runStatus:'RUNNING',paymentState:'PAYMENT_SUBMITTING'}});
+ const worker=await h.service.runClaimedJob({jobId:7,jobKey:'read-expired',attemptId:'attempt-1',status:'CLAIMED',leaseOwner:'worker-1',leaseToken:'lease-token'},{workerId:'worker-1'});
+ h.dispatchRepository.heartbeat=async()=>{throw Error('expired')};
+ await assert.rejects(()=>worker.assertPaymentResultRead(),e=>e.code==='LEASE_LOST_BEFORE_ACTION');
+});

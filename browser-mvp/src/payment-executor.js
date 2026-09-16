@@ -216,7 +216,10 @@ export class BrowserPaymentExecutor {
           diagnostic: `到"确认订阅"未点击：付款意图未放行外部点击（executeExternal=false${intent?.resultCode ? `，resultCode=${intent.resultCode}` : ''}${intent?.idempotentReplay ? '，重放/已提交过意图' : ''}）`,
         };
       }
-      await control.assertLeaseBeforeAction('PAYMENT_RESULT');
+      // Submission creates the durable no-repeat fence. Reading its result must
+      // retain the lease guard without requiring that a second submit be allowed.
+      if (control.assertPaymentResultRead) await control.assertPaymentResultRead();
+      else await control.assertLeaseBeforeAction('PAYMENT_RESULT');
     } catch (error) {
       // Failures proven to occur before the submit click must not poison the
       // payment attempt as UNKNOWN; they are safe to correct/retry by the
@@ -252,7 +255,7 @@ export class BrowserPaymentExecutor {
         verificationDeadline: new Date(Date.now() + this.verificationWindowMs),
         verificationNextCheckAt: new Date(Date.now() + this.verificationIntervalMs),
       });
-      return { status: 'UNKNOWN', reasonCode: 'PAYMENT_RESULT_UNKNOWN', paymentSubmitCalls: 1 };
+      return { status: 'UNKNOWN', reasonCode: 'PAYMENT_RESULT_UNKNOWN', paymentSubmitCalls: 1, diagnostic: diagnosticTextOf(error) };
     }
     if (submission?.status !== 'CONFIRMED') {
       await this.executionRepository.markPaymentUnknown({
@@ -270,7 +273,9 @@ export class BrowserPaymentExecutor {
       verificationNextCheckAt: new Date(Date.now() + this.verificationIntervalMs),
     });
     try {
-      const plus = await this.postPaymentVerifier.confirmPlus();
+      const plus = submission.plusVerification?.confirmed === true
+        && submission.plusVerification.evidence?.identityMatched === true
+        ? submission.plusVerification : await this.postPaymentVerifier.confirmPlus();
       if (!plus?.confirmed) {
         await schedulePostPaymentVerification('PLUS_ACTIVATION_UNCONFIRMED');
         return { status: 'POST_PAYMENT_UNKNOWN', reasonCode: 'PLUS_ACTIVATION_UNCONFIRMED', paymentSubmitCalls: 1 };

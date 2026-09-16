@@ -191,8 +191,8 @@ test('付款结果确认中是正常态，不是故障态（2026-09-13 修）', 
   // SUBMIT_UNKNOWN → VERIFYING（见 src/services/order-status-service.js），本页把它
   // 按正常态渲染；轮询也不能比这一段本身还慢，否则成功要等下一轮才显示。
   assert.match(js, /VERIFYING:\s*\{\s*tone: 'ok'/);
-  assert.match(js, /VERIFYING:[\s\S]{0,80}poll: 3000/);
-  assert.match(js, /CONFIRMING:\s*\{\s*tone: 'ok',\s*poll: 3000/);
+  assert.match(js, /VERIFYING:[\s\S]{0,80}poll: 2000/);
+  assert.match(js, /CONFIRMING:\s*\{\s*tone: 'ok',\s*poll: 2000/);
   // 但真卡住不动仍要照实说：按阶段停留时长降级，而不是靠状态本身表达故障。
   assert.match(js, /VERIFYING_PATIENCE_MS/);
   assert.match(js, /function resolveView/);

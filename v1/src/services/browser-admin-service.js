@@ -999,7 +999,13 @@ export function createBrowserAdminService({
           // before it lost track of Plus activation — "not charged" would contradict that.
           throw new BrowserAdminError('a confirmed-charged run cannot be closed as not charged', 'PAYMENT_STATE_CONFLICT', 409);
         }
-        if (!['RECHARGE_PROCESSING', 'SUBMIT_UNKNOWN'].includes(row.order_status)) {
+        const deliveredCleanup = row.order_status === 'RECHARGE_SUCCESS'
+          && row.payment_state === 'PAYMENT_CONFIRMED'
+          && row.post_payment_state === 'CANCELLATION_PENDING';
+        if (deliveredCleanup && (verifiedOutcome !== 'CHARGED' || renewalCancelled !== true)) {
+          throw new BrowserAdminError('delivered cleanup requires renewal-off confirmation', 'CLEANUP_CONFIRMATION_REQUIRED', 409);
+        }
+        if (!deliveredCleanup && !['RECHARGE_PROCESSING', 'SUBMIT_UNKNOWN'].includes(row.order_status)) {
           throw new BrowserAdminError('order is not awaiting payment resolution', 'ORDER_STATE_CONFLICT', 409);
         }
         // F-45: a Pro order (pro_5x / pro_20x) is two stages (D-133). "Charged" here can only
@@ -1152,7 +1158,7 @@ export function createBrowserAdminService({
                    cancellation_checked_at = COALESCE(?, cancellation_checked_at),
                    version = version + 1, failure_code = NULL, failure_reason = NULL, customer_action_code = NULL,
                    finished_at = COALESCE(finished_at, ?), updated_at = ?
-               WHERE id = ? AND status IN ('RECHARGE_PROCESSING', 'SUBMIT_UNKNOWN') AND version = ?`,
+               WHERE id = ? AND status IN ('RECHARGE_PROCESSING', 'SUBMIT_UNKNOWN', 'RECHARGE_SUCCESS') AND version = ?`,
               [orderNextStatus, renewalCancelled ? 0 : 1,
                 renewalCancelled ? 1 : null, renewalCancelled ? timestamp : null,
                 timestamp, timestamp, row.order_id, row.order_version]

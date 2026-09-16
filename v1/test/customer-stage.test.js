@@ -212,3 +212,11 @@ test('the percentage rises monotonically across a stage and across stages', () =
     }
   }
 });
+
+
+test('real billing substep advances past checkout loading and never asserts delivery',()=>{
+ const r=resolveCustomerStage({orderStatus:'RECHARGE_PROCESSING',evidence:[{kind:'event',token:'payment-stage:fill-billing-email',at:'2026-09-16T11:08:33Z'}]});
+ assert.equal(r.stage.index,6);
+ const done=resolveCustomerStage({orderStatus:'RECHARGE_SUCCESS',evidence:[{kind:'event',token:'payment-stage:fill-billing-email'}]});
+ assert.equal(done.stage.index,9);
+});

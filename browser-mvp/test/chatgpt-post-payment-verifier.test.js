@@ -134,3 +134,33 @@ test('verifier opens the Pro upgrade dialog on a subscribed account and stops be
     assert.equal(await page.evaluate(() => document.body.dataset.paid), undefined);
   } finally { await browser.close(); }
 });
+
+
+test('one trusted snapshot confirms Plus with only two GETs; cancellation still reads back independently', async () => {
+  const h = await fixture(); const requests=[];
+  h.page.on('request', r => requests.push([r.method(),new URL(r.url()).pathname]));
+  try {
+    const v=new ChatGptPostPaymentVerifier({page:h.page,expectedIdentity:identity,transactionReader:h.transactionReader});
+    assert.equal((await v.confirmPlus()).confirmed,true);
+    assert.equal(requests.length,2);
+    assert.equal((await v.confirmCancellation()).confirmed,true);
+    assert.equal(requests.length,8);
+    assert.equal(h.cancelCalls(),1);
+    assert.equal(requests.at(-1)[1],'/backend-api/accounts/check/v4-2023-04-27');
+  } finally {await h.browser.close()}
+});
+
+
+test('polling never turns another account becoming Plus into this order success',async()=>{
+ const h=await fixture();let reads=0;
+ try {
+  await h.page.route('**/backend-api/accounts/check/**',route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({accounts:{default:{
+    account:{account_id:++reads===1?identity.accountId:'other-account'},
+    entitlement:{has_active_subscription:reads>1,subscription_plan:'chatgptplusplan'},
+    last_active_subscription:{will_renew:true,purchase_origin_platform:'stripe'},
+  }}})}));
+  const v=new ChatGptPostPaymentVerifier({page:h.page,expectedIdentity:identity,transactionReader:h.transactionReader,pollIntervalMs:100});
+  await assert.rejects(()=>v.confirmPlus(),/account changed/);
+  assert.equal(h.cancelCalls(),0);
+ }finally{await h.browser.close()}
+});

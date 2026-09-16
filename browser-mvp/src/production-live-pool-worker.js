@@ -225,7 +225,7 @@ export async function createLaneWorker({ lane, config, pool, browserType, shared
     verificationIntervalMs: config.verificationIntervalMs, postPlusAction: postPlusActionForPlan,
   });
   const verification = createBrowserPaymentVerificationService({
-    repository: createBrowserExecutionRepository(pool), verifier: recoveryVerifier, maxBatch: 1,
+    repository: createBrowserExecutionRepository(pool), verifier: recoveryVerifier, maxBatch: 1, workerId,
     postPlusAction: (row) => postPlusActionForPlan(row.plan),
     verificationIntervalMs: config.verificationIntervalMs,
   });
@@ -251,12 +251,20 @@ export async function createLaneWorker({ lane, config, pool, browserType, shared
     operatorTakeoverWindowMs: config.operatorTakeoverWindowMs,
     postPlusAction: postPlusActionForPlan, stopBeforeSubmit: config.stopBeforeSubmit, releaseSessionOnComplete: true, safeAbortOnFailure: true,
   });
+  const withCleanupGuard = (step) => async () => {
+    const [[pending]] = await pool.query(
+      `SELECT COUNT(*) AS count FROM browser_runs WHERE worker_id=?
+         AND status IN ('RUNNING','RECONCILE_ONLY','HUMAN_REQUIRED')
+         AND payment_state IN ('PAYMENT_SUBMITTING','PAYMENT_UNKNOWN','PAYMENT_CONFIRMED')`, [workerId]);
+    if (Number(pending.count) > 0) return { status: 'IDLE' };
+    return step();
+  };
   return Object.freeze({
     laneId: lane.laneId, workerId,
     steps: Object.freeze([
       { name: 'post-payment-verification', run: () => verification.runOnce() },
-      { name: 'order-preflight', run: () => preflight.runOnce() },
-      { name: 'live', run: () => live.runOnce() },
+      { name: 'order-preflight', run: withCleanupGuard(() => preflight.runOnce()) },
+      { name: 'live', run: withCleanupGuard(() => live.runOnce()) },
     ]),
   });
 }

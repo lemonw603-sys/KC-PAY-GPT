@@ -195,6 +195,7 @@ async function lockRunContext(connection, runId) {
             rat.authorization_item_id,
             rat.fulfillment_route_id AS attempt_fulfillment_route_id,
             o.status AS order_status, o.version AS order_version,
+            o.plan_type AS order_plan_type, p.product_code AS order_product_code,
             o.fulfillment_route_id AS order_fulfillment_route_id,
             o.frozen_card_provider_account_id,
             o.assigned_card_id,
@@ -217,6 +218,7 @@ async function lockRunContext(connection, runId) {
      FROM browser_runs br
      INNER JOIN recharge_attempts rat ON rat.id = br.recharge_attempt_id
      INNER JOIN orders o ON o.id = rat.order_id
+     LEFT JOIN products p ON p.id = o.product_id
      LEFT JOIN cards c ON (c.id = o.assigned_card_id OR (o.assigned_card_id IS NULL AND c.order_id = o.id))
      LEFT JOIN card_consumption_ledger ccl
        ON ccl.recharge_attempt_id = rat.id
@@ -299,7 +301,7 @@ function publicRun(row, extra = {}) {
 
 export function createBrowserExecutionRepository(pool) {
   return {
-    async listPaymentVerificationsDue({ now = new Date(), limit = 20, orderId = null } = {}) {
+    async listPaymentVerificationsDue({ now = new Date(), limit = 20, orderId = null, workerId = null } = {}) {
       if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
         throw new BrowserExecutionError('limit must be between 1 and 100', 'INVALID_ARGUMENT');
       }
@@ -321,8 +323,9 @@ export function createBrowserExecutionRepository(pool) {
            AND br.verification_state = 'VERIFYING_PAYMENT'
            AND (br.verification_next_check_at IS NULL OR br.verification_next_check_at <= ?)
            ${approvedOrder ? 'AND rat.order_id = ?' : ''}
+           ${workerId ? 'AND br.worker_id = ?' : ''}
          ORDER BY COALESCE(br.verification_next_check_at, br.verification_started_at), br.id
-         LIMIT ?`, [now, ...(approvedOrder ? [approvedOrder] : []), limit]
+         LIMIT ?`, [now, ...(approvedOrder ? [approvedOrder] : []), ...(workerId ? [workerId] : []), limit]
       );
       return rows.map((row) => ({
         runId: row.run_id,
@@ -1093,7 +1096,7 @@ export function createBrowserExecutionRepository(pool) {
         );
         const [updated] = await connection.query(
           `UPDATE browser_runs
-           SET status = 'RUNNING', payment_state = 'PAYMENT_CONFIRMED',
+           SET status = 'RUNNING', payment_state = 'PAYMENT_CONFIRMED', last_error_code = NULL,
                verification_state = 'VERIFYING_PAYMENT',
                verification_started_at = COALESCE(verification_started_at, ?),
                verification_deadline_at = ?, verification_next_check_at = ?,
@@ -1236,8 +1239,10 @@ export function createBrowserExecutionRepository(pool) {
           [run, operation, reason, json({ evidenceHash: evidence }), now, now]
         );
         await upsertBrowserAlertInTransaction(connection, {
-          type: 'BROWSER_HUMAN_REQUIRED', orderId: row.order_id, title: '自动核实查不出来，需要你看一眼',
-          message: `付款后系统自己查了几次仍无法确定结果（${reason}）。请看客户账号是不是 Plus、卡有没有被扣，然后在后台点「确认核实结果」。`
+          type: 'BROWSER_HUMAN_REQUIRED', orderId: row.order_id, title: row.order_status === 'RECHARGE_SUCCESS' ? '已交付订单收尾需处理' : '自动核实查不出来，需要你看一眼',
+          message: row.order_status === 'RECHARGE_SUCCESS'
+            ? `客户已交付，内部取消续费或对账未完成（${reason}）。保留账号现场，不得重新付款。`
+            : `付款后系统自己查了几次仍无法确定结果（${reason}）。请看客户账号是不是 Plus、卡有没有被扣，然后在后台点「确认核实结果」。`
         });
         await connection.query(
           `UPDATE browser_runs SET status='HUMAN_REQUIRED',
@@ -1256,8 +1261,7 @@ export function createBrowserExecutionRepository(pool) {
              evidence_json=VALUES(evidence_json), updated_at=VALUES(updated_at)`,
           [randomUUID(), `browser-payment-unknown:${row.recharge_attempt_id}`,
             row.order_id, row.recharge_attempt_id,
-            json({ browserRunId: run, reasonCode: reason, evidenceHash: evidence,
-              ...(humanVerification ? { humanVerification } : {}) }), now, now]
+            json({ browserRunId: run, reasonCode: reason, evidenceHash: evidence }), now, now]
         );
         return publicRun({ ...row, run_status: 'HUMAN_REQUIRED',
           verification_state: 'HUMAN_REQUIRED' }, { idempotentReplay: false });
@@ -1388,7 +1392,7 @@ export function createBrowserExecutionRepository(pool) {
         );
         const [updated] = await connection.query(
           `UPDATE browser_runs
-           SET post_payment_state = 'CANCELLATION_PENDING', plus_activated_at = ?,
+           SET post_payment_state = 'CANCELLATION_PENDING', plus_activated_at = COALESCE(plus_activated_at, ?),
                last_checkpoint_sequence = ?, last_checkpoint_kind = 'PLUS_ACTIVATED', updated_at = ?
            WHERE id = ? AND payment_state = 'PAYMENT_CONFIRMED'
              AND post_payment_state IN ('PLUS_PENDING', 'CANCELLATION_PENDING')`,
@@ -1397,8 +1401,32 @@ export function createBrowserExecutionRepository(pool) {
         if (updated.affectedRows !== 1) {
           throw new BrowserExecutionError('Browser run changed concurrently', 'RUN_CONFLICT');
         }
-        return publicRun({ ...row, payment_state: 'PAYMENT_CONFIRMED' }, {
-          postPaymentState: 'CANCELLATION_PENDING', plusActivatedAt: now, idempotentReplay: false
+        // Delivery is durable before internal cleanup. The run remains pending and
+        // recoverable; this must not release its browser/session or finish dispatch.
+        const isPlus = row.order_product_code === 'chatgpt_plus'
+          || (!row.order_product_code && row.order_plan_type === 'plus');
+        if (isPlus && !['RECHARGE_PROCESSING', 'RECHARGE_SUCCESS'].includes(row.order_status)) {
+          throw new BrowserExecutionError('order is not deliverable', 'ORDER_CONFLICT');
+        }
+        if (isPlus && row.order_status === 'RECHARGE_PROCESSING') {
+          const [delivered] = await connection.query(
+            `UPDATE orders SET status='RECHARGE_SUCCESS', version=version+1,
+               failure_code=NULL, failure_reason=NULL, finished_at=?, updated_at=?
+             WHERE id=? AND status='RECHARGE_PROCESSING' AND version=?`,
+            [now, now, row.order_id, row.order_version],
+          );
+          if (delivered.affectedRows !== 1) throw new BrowserExecutionError('order changed concurrently', 'ORDER_CONFLICT');
+          await connection.query(
+            `INSERT INTO order_events
+             (order_id, from_status, to_status, actor_type, actor_id, reason, metadata_json, created_at)
+             VALUES (?, 'RECHARGE_PROCESSING', 'RECHARGE_SUCCESS', 'SYSTEM', NULL,
+               'Plus delivered; internal cleanup pending', ?, ?)`,
+            [row.order_id, json({ browserRunId: run, evidenceHash: evidence }), now],
+          );
+        }
+        return publicRun({ ...row, payment_state: 'PAYMENT_CONFIRMED',
+          order_status: isPlus ? 'RECHARGE_SUCCESS' : row.order_status }, {
+          postPaymentState: 'CANCELLATION_PENDING', plusActivatedAt: row.plus_activated_at || now, idempotentReplay: false
         });
       });
     },
@@ -1666,32 +1694,39 @@ export function createBrowserExecutionRepository(pool) {
         if (attemptUpdate.affectedRows !== 1) {
           throw new BrowserExecutionError('funds attempt changed concurrently', 'ATTEMPT_CONFLICT');
         }
-        const [orderUpdate] = await connection.query(
-          `UPDATE orders
-           SET status = 'RECHARGE_SUCCESS', version = version + 1, finished_at = ?, updated_at = ?
-           WHERE id = ? AND status = 'RECHARGE_PROCESSING' AND version = ?`,
-          [now, now, row.order_id, row.order_version]
-        );
-        await upsertBrowserAlertInTransaction(connection, {
-          type: 'BROWSER_ORDER_COMPLETED', orderId: row.order_id, title: '充值完成',
-          message: 'Plus 已开通，续费已自动取消，订单收为成功。客户可以用了。'
-        });
-        if (orderUpdate.affectedRows !== 1) {
-          throw new BrowserExecutionError('order changed concurrently', 'ORDER_CONFLICT');
+        if (row.order_status !== 'RECHARGE_SUCCESS') {
+          const [orderUpdate] = await connection.query(
+            `UPDATE orders
+             SET status = 'RECHARGE_SUCCESS', version = version + 1, finished_at = ?, updated_at = ?
+             WHERE id = ? AND status = 'RECHARGE_PROCESSING' AND version = ?`,
+            [now, now, row.order_id, row.order_version]
+          );
+          if (orderUpdate.affectedRows !== 1) {
+            throw new BrowserExecutionError('order changed concurrently', 'ORDER_CONFLICT');
+          }
+          await connection.query(
+            `INSERT INTO order_events
+             (order_id, from_status, to_status, actor_type, actor_id, reason, metadata_json, created_at)
+             VALUES (?, 'RECHARGE_PROCESSING', 'RECHARGE_SUCCESS', 'SYSTEM', NULL,
+               'Browser Plus activation and cancellation confirmed', ?, ?)`,
+            [row.order_id, json({ browserRunId: run, attemptId: row.recharge_attempt_id, evidenceHash: evidence }), now]
+          );
         }
-        await connection.query(
-          `INSERT INTO order_events
-           (order_id, from_status, to_status, actor_type, actor_id, reason, metadata_json, created_at)
-           VALUES (?, 'RECHARGE_PROCESSING', 'RECHARGE_SUCCESS', 'SYSTEM', NULL,
-             'Browser Plus activation and cancellation confirmed', ?, ?)`,
-          [row.order_id, json({ browserRunId: run, attemptId: row.recharge_attempt_id, evidenceHash: evidence }), now]
-        );
         await connection.query(
           `UPDATE browser_dispatch_jobs
            SET status='COMPLETED', completed_at=COALESCE(completed_at, ?),
                lease_owner=NULL, lease_token_hash=NULL, lease_until=NULL, updated_at=?
            WHERE recharge_attempt_id=? AND status IN ('QUEUED','CLAIMED')`,
           [now, now, row.recharge_attempt_id]
+        );
+        await upsertBrowserAlertInTransaction(connection, {
+          type: 'BROWSER_ORDER_COMPLETED', orderId: row.order_id, title: '内部收尾完成',
+          message: '客户已交付；取消续费与对账已确认。'
+        });
+        await connection.query(
+          `UPDATE orders SET subscription_cancelled=1, cancellation_review_required=0,
+             cancellation_checked_at=?, updated_at=? WHERE id=? AND status='RECHARGE_SUCCESS'`,
+          [now, now, row.order_id],
         );
         return publicRun({
           ...row, run_status: 'COMPLETED', payment_state: 'PAYMENT_CONFIRMED',

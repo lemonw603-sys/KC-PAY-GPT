@@ -247,6 +247,7 @@ export class LiveChatGPTPaymentAdapter {
         }
         return {
           status: 'CONFIRMED', providerCallRef: `browser:${op}`,
+          plusVerification: outcome.plusVerification,
           quote: {
             currency: strictCheckout.currency,
             amount: strictCheckout.amount,

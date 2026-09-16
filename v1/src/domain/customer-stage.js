@@ -63,7 +63,7 @@ export const CUSTOMER_STAGES = Object.freeze([
   Object.freeze({ index: 3, code: 'QUEUED_FOR_RUN', label: '正在排队', ceiling: 9, typicalMs: 3_000 }),
   Object.freeze({ index: 4, code: 'ACCOUNT_VERIFYING', label: '正在验证账号', ceiling: 20, typicalMs: 26_200 }),
   Object.freeze({ index: 5, code: 'CHECKOUT_LOADING', label: '正在获取支付信息', ceiling: 62, typicalMs: 78_600 }),
-  Object.freeze({ index: 6, code: 'PAYMENT_SUBMITTING', label: '正在提交支付', ceiling: 94, typicalMs: 58_000 }),
+  Object.freeze({ index: 6, code: 'PAYMENT_SUBMITTING', label: '正在准备并提交支付', ceiling: 94, typicalMs: 58_000 }),
   Object.freeze({ index: 7, code: 'PAYMENT_AWAITING', label: '正在等待支付结果', ceiling: 98, typicalMs: 9_500 }),
   Object.freeze({ index: 8, code: 'SUBSCRIPTION_CONFIRMING', label: '正在确认订阅', ceiling: 99, typicalMs: 1_000 }),
   Object.freeze({ index: 9, code: 'SUBSCRIPTION_ACTIVE', label: '订阅成功', ceiling: 100, typicalMs: 1_000 })
@@ -95,7 +95,16 @@ const RUN_EVENT_STAGE = Object.freeze({
   'page-signature': 4,
   'session-replaced': 4,
   'card-material-preflight': 5,
-  'checkout-navigation': 5
+  'checkout-navigation': 5,
+  'payment-stage:resolve-secure-card-controls': 6,
+  'payment-stage:fill-secure-card-controls': 6,
+  'payment-stage:fill-billing-address': 6,
+  'payment-stage:fill-billing-email': 6,
+  'payment-stage:wait-for-zero-tax-requote': 6,
+  'payment-stage:final-pre-submit-check': 6,
+  'payment-stage:submit-payment': 6,
+  'payment-stage:human-verification-gate': 7,
+  'payment-stage:observe-payment-outcome': 7
 });
 
 /** browser_operations.operation_type — everything from the payment click on. */

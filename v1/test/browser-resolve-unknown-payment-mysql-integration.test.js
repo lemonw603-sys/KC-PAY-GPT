@@ -429,3 +429,21 @@ test('F-48: the not-charged close-out clears the funds fence before handing the 
   }
 });
 
+
+test('delivered Plus cleanup can be resolved internally without revoking delivery or recharging', { skip }, async()=>{
+ let fixture;
+ try {
+  fixture=await createFixture(pool,'delivered-cleanup'); const {ids}=fixture;
+  await pool.query("UPDATE orders SET status='RECHARGE_SUCCESS',finished_at='2026-09-16 00:00:00' WHERE id=?",[ids.orderId]);
+  await pool.query("UPDATE browser_runs SET status='HUMAN_REQUIRED',payment_state='PAYMENT_CONFIRMED',post_payment_state='CANCELLATION_PENDING',verification_state='HUMAN_REQUIRED' WHERE id=?",[ids.runId]);
+  await pool.query("UPDATE recharge_attempts SET status='SUBMITTING',funds_risk_state='ACTIVE' WHERE id=?",[ids.attemptId]);
+  await pool.query("UPDATE card_consumption_ledger SET status='CONSUMED' WHERE recharge_attempt_id=?",[ids.attemptId]);
+  const input={action:'RESOLVE_UNKNOWN_PAYMENT',operationId:`cleanup:${ids.runId}`,verifiedOutcome:'CHARGED',evidenceNote:'Plus and card charge verified, renewal is now disabled'};
+  await assert.rejects(()=>resolve(pool,ids,{...input,renewalCancelled:false}),e=>e.code==='CLEANUP_CONFIRMATION_REQUIRED');
+  await resolve(pool,ids,{...input,renewalCancelled:true});
+  const [[row]]=await pool.query('SELECT status,subscription_cancelled,finished_at FROM orders WHERE id=?',[ids.orderId]);
+  assert.equal(row.status,'RECHARGE_SUCCESS');assert.equal(row.subscription_cancelled,1);
+  assert.equal(row.finished_at.toISOString(),'2026-09-16T00:00:00.000Z');
+  const [[run]]=await pool.query('SELECT status FROM browser_runs WHERE id=?',[ids.runId]);assert.equal(run.status,'COMPLETED');
+ } finally {if(fixture)await cleanup(pool,fixture.ids)}
+});
