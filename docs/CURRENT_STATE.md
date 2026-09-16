@@ -18,12 +18,12 @@
 | pojia-card-stock-runner.timer | inactive / disabled（旧每分钟自动开卡架构已废弃） | 2026-09-09 11:46 UTC | systemctl |
 | 健康 | 服务器本机live/ready 200；admin登录页200；公网客户JS v39的SHA256与单提交发布包一致；历史成功单状态API返回SUCCESS/stage9。 | 2026-09-16 12:41 UTC | 发布日志、独立SSH/DB/API/公网哈希复验（docs/incidents/d240-deployment/） |
 | 数据库迁移 | 最新 `052_cards_bin`（cards 增 card_bin，D-168；051 于 09-08 01:25 UTC，050 于 09-07 19:16 UTC） | 2026-09-11 13:32 UTC | schema_migrations / 仓库 v1/migrations |
-| accept_new_orders | true；本次维护短暂停接单后已通过正式服务恢复，付款开关未变。 | 2026-09-16 15:36 UTC | 独立SSH/进程/DB查询与发布清单；docs/incidents/unified-success/ |
+| accept_new_orders | true；统一成功维护已结束，无待恢复接单操作。 | 2026-09-16 22:50 UTC | app_settings独立SELECT |
 | dispatch_new_recharges / 模式 | true / AUTOMATIC | 2026-09-09 11:46 UTC | app_settings |
 | 默认路线（Plus） | Browser：CHATGPT_PLUS_BROWSER_V1 accepts_new_orders=1；LEGACY_HNSKJ_ZZSHU_V1=0（旧 09-14 API 默认已过期） | 2026-09-16 10:40 UTC | fulfillment_routes 按 route_code 只读 SELECT；本次 h9RKl 实际走 Browser |
 | Browser 当前卡台 | 备用卡台 A（`manual_excel` / `backup-a`） | 13:31 | browser_card_source_selections |
 | browser_dispatch_enabled | true | 2026-09-09 11:46 UTC | app_settings |
-| browser_payment_writes_enabled | true（本次发布全程未改，已有自动付款权限保持）。 | 2026-09-16 12:41 UTC | 发布日志、独立SSH/DB/API/公网哈希复验（docs/incidents/d240-deployment/） |
+| browser_payment_writes_enabled | true；本轮整理未改。 | 2026-09-16 22:50 UTC | app_settings独立SELECT |
 | **菲律宾出口对 ChatGPT 的可达性** | **未定论**。裸 curl 经出口访问 chatgpt.com 返回 403 Cloudflare 拦截页，但 **curl 不能用来判断 Cloudflare 是否封禁**（无 TLS 指纹、不执行 JS，会被单独拦）。**Lemon 当场在 BitBrowser 窗口里看到的是 ChatGPT 的退出登录页面，说明页面打得开、出口没被整站封**。真实根因转向「Session 没能登录上」，见 D-187 | 2026-09-12 09:40 UTC | 反例证据来自 Lemon 直接观察窗口；curl 测试已作废 |
 | Browser Profile productionWritesEnabled | true（CHATGPT_PLUS_BROWSER_V1；正式启动检查与DB读取一致）。 | 2026-09-16 12:41 UTC | 发布日志、独立SSH/DB/API/公网哈希复验（docs/incidents/d240-deployment/） |
 | card_auto_replenishment_enabled | false（与补余额构成首页「开卡补钱」的"部分开启"态） | 2026-09-09 11:46 UTC | app_settings |
@@ -36,7 +36,7 @@
 | 可分配卡（正式资格 SQL） | 1 张：`5371`（Plus门槛16.00，按新生产release正式资格SQL）；非终态订单 0。`1657`同步17.83但账本推算2.00，新口径排除；不推断差异来源。 | 2026-09-16 12:41 UTC | 发布日志、独立SSH/DB/API/公网哈希复验（docs/incidents/d240-deployment/） |
 | HNSKJ 卡台 | **2026-09-14 服务器故障、开不了卡**（Lemon 报；此前钱包余额 **$106.09**（11:38 快照；今日 $18.25 → 07:02 $121.77 → 08:47 $71.52 → **09:17 $106.09**，最后一跳是 `1652` 退回的 $34.57）。卡台共 14 张卡（13 active），`providerOnlyActiveCount=0`。**卡余额只能靠同步读到，手动补钱后要等一次 `card-read-sync`**（今日实测滞后 5 分 34 秒，由订单的按需同步触发）。今日 4 次 `card_recharge`（自动补余额）HTTP 400 `DO_NOT_RETRY`（06:40/06:43/08:58/09:02），由 `card_balance_recharge_enabled=true` 触发（D-223）。**开卡故障是卡台侧，恢复时间未知**——直接影响 API 路线供卡 | 2026-09-14 15:05 UTC | Lemon 报 + provider_calls + admin_setting_events |
 | 订单总况 | RECHARGE_SUCCESS 20 / RECHARGE_FAILED 37 / CLOSED 18 / 非终态0（含历史人工/自动，不把20全算自动成功）。 | 2026-09-16 12:41 UTC | 发布日志、独立SSH/DB/API/公网哈希复验（docs/incidents/d240-deployment/） |
-| 活动资金与运行 | active_runs 0；非终态订单0；切换前SUCCESS待收尾run0。本次没有创建充值或付款。 | 2026-09-16 15:36 UTC | 独立SSH/进程/DB查询与发布清单；docs/incidents/unified-success/ |
+| 活动资金与运行 | active_runs 0；非终态订单0；统一成功发布后新建订单0。当前版本真实单时延/重试效果仍未验。 | 2026-09-16 22:50 UTC | 独立SELECT orders/browser_runs |
 | 最近 Browser 运行 | 最近付款样本见「最近真实单」行；本次D-240仅重启和只读校验，新版本尚无真实付款验收样本。 | 2026-09-16 12:41 UTC | 发布日志、独立SSH/DB/API/公网哈希复验（docs/incidents/d240-deployment/） |
 | Browser 自动化里程碑 | 已有真实自动成功样本（不是0）；09-16重提单由旧版自动补核收口。D-240部署验证已通过，真实提速与异常恢复效果待新样本。 | 2026-09-16 12:41 UTC | 发布日志、独立SSH/DB/API/公网哈希复验（docs/incidents/d240-deployment/） |
 | 最近真实单 | PJV1-x-tIsPB5ICHu6R9bzsSO（09-16 11:06:44 UTC提交）：RECHARGE_SUCCESS；Browser COMPLETED/PAYMENT_CONFIRMED/RESOLVED/CANCELLATION_CONFIRMED；PAYMENT_SUBMIT仅1条，CDK REDEEMED，卡分配RELEASED。先UNKNOWN，后自动补核成功。orders.subscription_cancelled仍NULL，Browser取消续费确认记录存在（投影差异）。 | 2026-09-16 11:12 UTC | 独立查询，docs/incidents/2026-09-16-x-tIs-success-evidence.tsv |

@@ -2431,3 +2431,7 @@ state-check的$MINBAL紧邻中文括号、wrapup-check的$live/$mday紧邻中文
 ## 2026-09-16｜中断后续完统一成功发布（15:36 UTC）
 
 断点在prepare完成、尚未switch。重新现场核实旧release/接单true/无在途，正式服务暂停接单并审计；旧99137正常退出，main快进4334dc2；switch到20260916-unified-4334dc2，Web2359155/Worker2359160独立cwd均新目录，健康200，两处核心文件服务端/本机SHA256一致。新Browser47905于15:35:18启动、15:36心跳正常；正式服务恢复接单并新连接验证true/付款true/非终态0。无付款、无迁移。1075文件manifest及备份完整性通过；原日志docs/incidents/unified-success/{prepare,switch,customer-sql}.txt。
+
+## 2026-09-17｜按CLAUDE原格式整理最终交接（06:50 UTC+8）
+
+用户要求便于原执行模型接手。本轮保留CLAUDE规定单一事实源，不新建平行交接体系；整篇复核HANDOFF_NOW/PROJECT_MAP，删除当前段落仍写早交付有效/门控待扩建的矛盾；D-240旧任务标历史和撤销，最终统一成功README改成当前入口；UNVERIFIED_LEDGER区分撤销触发条件和仍存问题。明确main/业务发布提交/隔离历史工作区区别、实现代码位置、测试版本及下一步，旧证据保留不删。22:50UTC现场release4334dc2、web/worker active、心跳新鲜、接单/付款true、活动/非终态/统一版后新单均0。本轮未改业务或操作生产。
