@@ -208,7 +208,13 @@ export class BrowserPaymentExecutor {
         onStage,  // D-208：付款分步埋点，纯旁路观察
       });
       if (submission?.status === 'RECONCILE_ONLY') {
-        return { status: 'RECONCILE_ONLY', idempotentReplay: true, paymentSubmitCalls: 0 };
+        // "到确认订阅按钮但系统未点"：authorizeSubmit 判定不放行外部点击。真实付款下
+        // 只可能是 commitPaymentSubmissionIntent 命中重放（这单之前已提交过付款意图），
+        // 防重复扣款故意不重复点。把"为什么不点"落进 diagnostic，executor 记进证据。
+        return {
+          status: 'RECONCILE_ONLY', idempotentReplay: true, paymentSubmitCalls: 0,
+          diagnostic: `到"确认订阅"未点击：付款意图未放行外部点击（executeExternal=false${intent?.resultCode ? `，resultCode=${intent.resultCode}` : ''}${intent?.idempotentReplay ? '，重放/已提交过意图' : ''}）`,
+        };
       }
       await control.assertLeaseBeforeAction('PAYMENT_RESULT');
     } catch (error) {
