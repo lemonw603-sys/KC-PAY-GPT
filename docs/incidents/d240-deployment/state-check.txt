@@ -1,0 +1,13 @@
+[一致] 生产 release ⊇ release=20260916-d240-b31a88a
+[一致] pojia-web ⊇ 状态=active
+[一致] pojia-worker（v1 任务 Worker） ⊇ 状态=active
+[一致] pojia-worker（v1 任务 Worker） ⊇ 进程实际 release=20260916-d240-b31a88a
+[一致] browser_payment_writes_enabled ⊇ 开关=true
+[一致] accept_new_orders ⊇ 开关=true
+[一致] 最低所需卡余额 ⊇ 20X门槛=pro_20x 150
+[一致] 数据库迁移 ⊇ 最新迁移=052_cards_bin
+[一致] 可分配卡（正式资格 SQL） ⊇ 可分配卡数（Plus 门槛 16.00）=1 张
+[一致] 活动资金与运行 ⊇ 账号槽=active_runs 0
+[一致] 可分配卡（正式资格 SQL） ⊇ 非终态订单=非终态订单 0
+
+==> CURRENT_STATE 与现场一致 ✓

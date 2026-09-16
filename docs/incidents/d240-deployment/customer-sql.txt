@@ -1,0 +1,7 @@
+[通过] cdk-verify-repository · findCdkForVerification
+[通过] customer-stage-repository · browser_run_events
+[通过] customer-stage-repository · browser_operations
+[通过] cdk-return-repository · readCdkReturnEvidence
+[通过] order-status-query-repository · findCustomerOrder
+
+==> 客户链路 SQL 全部可执行 ✓
