@@ -1,0 +1,26 @@
+[
+  {
+    "at": "2026-09-16T11:08:34Z",
+    "lastPaymentStep": "fill-billing-email",
+    "stage": {
+      "index": 5,
+      "code": "CHECKOUT_LOADING",
+      "label": "正在获取支付信息",
+      "ceiling": 62,
+      "typicalMs": 78600
+    },
+    "since": "2026-09-16T11:07:28.344Z"
+  },
+  {
+    "at": "2026-09-16T11:08:50Z",
+    "lastPaymentStep": "human-verification-gate",
+    "stage": {
+      "index": 6,
+      "code": "PAYMENT_SUBMITTING",
+      "label": "正在提交支付",
+      "ceiling": 94,
+      "typicalMs": 58000
+    },
+    "since": "2026-09-16T11:08:43.997Z"
+  }
+]

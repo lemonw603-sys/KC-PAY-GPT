@@ -2383,3 +2383,7 @@ Lemon 在 Pilot 窗口截图：结账页 `chatgpt.com/checkout/openai_llc/cs_liv
 ## 2026-09-16｜客户重提Plus成功，自动补核收口（11:12 UTC）
 
 新单PJV1-x-tIsPB5ICHu6R9bzsSO（id34754d6d-9aa4-40e2-89c2-a1c020dd39e0，run f181d993-46c7-467b-9ae3-f31b158e4a66）11:06:44 UTC提交；本轮只读观察，无手工付款/重试/刷新注入。DB身份核验通过，填卡/地址/邮箱/零税/提交均有stage。付款后先SUBMIT_UNKNOWN，diagnostic submitClicked=1、reason PAYMENT_RESULT_UNKNOWN、diagnostic null（付款异常原始原因仍未透出，不能宣称全部可诊断）。随后常驻核实lane自动确认Plus和取消续费，11:12 UTC独立查订单RECHARGE_SUCCESS，run COMPLETED/PAYMENT_CONFIRMED/RESOLVED/CANCELLATION_CONFIRMED，付款提交1条，CDK REDEEMED，卡分配RELEASED。证据 docs/incidents/2026-09-16-x-tIs-success-evidence.tsv。orders.subscription_cancelled仍NULL，当前生产recordCancellationConfirmed只更新run与订单status，属既有投影差异；取消以Browser确认记录为准。DB finished_at 11:09:34是核实runOnce开头captured now，不当真实完成墙钟（11:10查询仍UNKNOWN，11:11:34查询已SUCCESS）。当前成功只证明本单，不代表根治先前403。
+
+## 2026-09-16｜客户进度与付款后延迟只读分析（11:20 UTC）
+
+用户询问旧根因与圆环/已Plus但客户页延后。已核对实际服务customer.js与生产文件hash、Caddy同客户端请求序列、Browser观察created_at、阶段映射与核实源码。确认：payment-stage未入客户映射；confirmPlus在立即Plus夹具仍6请求，正常链两次Plus+取消共20请求（离线计数非本单网络数）；恢复链等取消和对账后才写Plus；runOnce复用核实开始now造成完成时间倒填；本次客户轮询约3–5秒而非1分钟。实际提交阶段到取消确认落库约85秒，外部首次Plus时间未知。方案只作建议，未改业务/上线。详见docs/incidents/2026-09-16-customer-latency-analysis.md及关联证据。旧403上游根因与本单UNKNOWN原始异常仍未知，不因成功而宣称已修复。

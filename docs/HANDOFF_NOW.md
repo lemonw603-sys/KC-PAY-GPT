@@ -10,6 +10,8 @@
 
 > **2026-09-16 11:12 UTC 重提单结果**：PJV1-x-tIsPB5ICHu6R9bzsSO已由常驻自动补核收口RECHARGE_SUCCESS，Plus/取消续费均有Browser确认，付款提交仅1条。没有人工代付或重试。证据见CURRENT_STATE最近真实单与HANDOFF_LOG末节；旧403未根治、付款UNKNOWN分支原始diagnostic仍缺，不能宣称全链路所有故障均可解释。
 
+> **2026-09-16 客户体验待优化**：完成只读耗时拆解，见 `docs/incidents/2026-09-16-customer-latency-analysis.md`。优先候选为去重复核验/修真实时间、接入已有付款子阶段；已开通与收尾分开显示待确认。未改业务/部署，具体节省秒数未验证。
+
 ## 分工
 
 - **大脑**：本窗口。全项目理解、排序、验收、四份事实源（本文、CURRENT_STATE、DECISIONS、PROJECT_MAP）、生产动作与浏览器侧实施。

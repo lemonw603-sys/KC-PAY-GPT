@@ -1,0 +1,320 @@
+{
+  "attribution": "same remote_ip and User-Agent as unique create in time window; POST body and response body not logged, not definitive order attribution",
+  "requests": [
+    {
+      "utc": "2026-09-16T11:06:44.498614+00:00",
+      "path": "/api/v1/orders",
+      "status": 201,
+      "durationMs": 243,
+      "size": 69
+    },
+    {
+      "utc": "2026-09-16T11:06:49.744720+00:00",
+      "path": "/api/v1/orders/status",
+      "status": 200,
+      "durationMs": 9,
+      "size": 363
+    },
+    {
+      "utc": "2026-09-16T11:06:54.997670+00:00",
+      "path": "/api/v1/orders/status",
+      "status": 200,
+      "durationMs": 9,
+      "size": 363
+    },
+    {
+      "utc": "2026-09-16T11:07:00.290755+00:00",
+      "path": "/api/v1/orders/status",
+      "status": 200,
+      "durationMs": 9,
+      "size": 363
+    },
+    {
+      "utc": "2026-09-16T11:07:06.129918+00:00",
+      "path": "/api/v1/orders/status",
+      "status": 200,
+      "durationMs": 11,
+      "size": 363
+    },
+    {
+      "utc": "2026-09-16T11:07:11.380360+00:00",
+      "path": "/api/v1/orders/status",
+      "status": 200,
+      "durationMs": 9,
+      "size": 363
+    },
+    {
+      "utc": "2026-09-16T11:07:16.616341+00:00",
+      "path": "/api/v1/orders/status",
+      "status": 200,
+      "durationMs": 7,
+      "size": 363
+    },
+    {
+      "utc": "2026-09-16T11:07:21.861545+00:00",
+      "path": "/api/v1/orders/status",
+      "status": 200,
+      "durationMs": 12,
+      "size": 363
+    },
+    {
+      "utc": "2026-09-16T11:07:27.111954+00:00",
+      "path": "/api/v1/orders/status",
+      "status": 200,
+      "durationMs": 18,
+      "size": 363
+    },
+    {
+      "utc": "2026-09-16T11:07:32.479523+00:00",
+      "path": "/api/v1/orders/status",
+      "status": 200,
+      "durationMs": 13,
+      "size": 378
+    },
+    {
+      "utc": "2026-09-16T11:07:37.722801+00:00",
+      "path": "/api/v1/orders/status",
+      "status": 200,
+      "durationMs": 9,
+      "size": 378
+    },
+    {
+      "utc": "2026-09-16T11:07:42.968122+00:00",
+      "path": "/api/v1/orders/status",
+      "status": 200,
+      "durationMs": 10,
+      "size": 378
+    },
+    {
+      "utc": "2026-09-16T11:07:48.219031+00:00",
+      "path": "/api/v1/orders/status",
+      "status": 200,
+      "durationMs": 12,
+      "size": 378
+    },
+    {
+      "utc": "2026-09-16T11:07:53.472679+00:00",
+      "path": "/api/v1/orders/status",
+      "status": 200,
+      "durationMs": 10,
+      "size": 378
+    },
+    {
+      "utc": "2026-09-16T11:07:58.714571+00:00",
+      "path": "/api/v1/orders/status",
+      "status": 200,
+      "durationMs": 9,
+      "size": 378
+    },
+    {
+      "utc": "2026-09-16T11:08:04.064703+00:00",
+      "path": "/api/v1/orders/status",
+      "status": 200,
+      "durationMs": 17,
+      "size": 378
+    },
+    {
+      "utc": "2026-09-16T11:08:09.305726+00:00",
+      "path": "/api/v1/orders/status",
+      "status": 200,
+      "durationMs": 10,
+      "size": 378
+    },
+    {
+      "utc": "2026-09-16T11:08:14.546200+00:00",
+      "path": "/api/v1/orders/status",
+      "status": 200,
+      "durationMs": 11,
+      "size": 378
+    },
+    {
+      "utc": "2026-09-16T11:08:19.786273+00:00",
+      "path": "/api/v1/orders/status",
+      "status": 200,
+      "durationMs": 8,
+      "size": 378
+    },
+    {
+      "utc": "2026-09-16T11:08:25.067418+00:00",
+      "path": "/api/v1/orders/status",
+      "status": 200,
+      "durationMs": 44,
+      "size": 378
+    },
+    {
+      "utc": "2026-09-16T11:08:30.371946+00:00",
+      "path": "/api/v1/orders/status",
+      "status": 200,
+      "durationMs": 9,
+      "size": 378
+    },
+    {
+      "utc": "2026-09-16T11:08:35.842790+00:00",
+      "path": "/api/v1/orders/status",
+      "status": 200,
+      "durationMs": 225,
+      "size": 378
+    },
+    {
+      "utc": "2026-09-16T11:08:41.142635+00:00",
+      "path": "/api/v1/orders/status",
+      "status": 200,
+      "durationMs": 30,
+      "size": 378
+    },
+    {
+      "utc": "2026-09-16T11:08:46.393040+00:00",
+      "path": "/api/v1/orders/status",
+      "status": 200,
+      "durationMs": 10,
+      "size": 378
+    },
+    {
+      "utc": "2026-09-16T11:08:51.635450+00:00",
+      "path": "/api/v1/orders/status",
+      "status": 200,
+      "durationMs": 9,
+      "size": 368
+    },
+    {
+      "utc": "2026-09-16T11:08:56.884629+00:00",
+      "path": "/api/v1/orders/status",
+      "status": 200,
+      "durationMs": 22,
+      "size": 368
+    },
+    {
+      "utc": "2026-09-16T11:09:02.127243+00:00",
+      "path": "/api/v1/orders/status",
+      "status": 200,
+      "durationMs": 10,
+      "size": 368
+    },
+    {
+      "utc": "2026-09-16T11:09:07.384432+00:00",
+      "path": "/api/v1/orders/status",
+      "status": 200,
+      "durationMs": 28,
+      "size": 368
+    },
+    {
+      "utc": "2026-09-16T11:09:12.643229+00:00",
+      "path": "/api/v1/orders/status",
+      "status": 200,
+      "durationMs": 28,
+      "size": 368
+    },
+    {
+      "utc": "2026-09-16T11:09:17.885136+00:00",
+      "path": "/api/v1/orders/status",
+      "status": 200,
+      "durationMs": 11,
+      "size": 368
+    },
+    {
+      "utc": "2026-09-16T11:09:23.132908+00:00",
+      "path": "/api/v1/orders/status",
+      "status": 200,
+      "durationMs": 16,
+      "size": 368
+    },
+    {
+      "utc": "2026-09-16T11:09:28.382384+00:00",
+      "path": "/api/v1/orders/status",
+      "status": 200,
+      "durationMs": 13,
+      "size": 368
+    },
+    {
+      "utc": "2026-09-16T11:09:33.640064+00:00",
+      "path": "/api/v1/orders/status",
+      "status": 200,
+      "durationMs": 13,
+      "size": 368
+    },
+    {
+      "utc": "2026-09-16T11:09:38.884667+00:00",
+      "path": "/api/v1/orders/status",
+      "status": 200,
+      "durationMs": 10,
+      "size": 386
+    },
+    {
+      "utc": "2026-09-16T11:09:42.263461+00:00",
+      "path": "/api/v1/orders/status",
+      "status": 200,
+      "durationMs": 11,
+      "size": 386
+    },
+    {
+      "utc": "2026-09-16T11:09:45.507585+00:00",
+      "path": "/api/v1/orders/status",
+      "status": 200,
+      "durationMs": 9,
+      "size": 386
+    },
+    {
+      "utc": "2026-09-16T11:09:48.745618+00:00",
+      "path": "/api/v1/orders/status",
+      "status": 200,
+      "durationMs": 8,
+      "size": 386
+    },
+    {
+      "utc": "2026-09-16T11:09:51.990622+00:00",
+      "path": "/api/v1/orders/status",
+      "status": 200,
+      "durationMs": 9,
+      "size": 386
+    },
+    {
+      "utc": "2026-09-16T11:09:55.237137+00:00",
+      "path": "/api/v1/orders/status",
+      "status": 200,
+      "durationMs": 9,
+      "size": 386
+    },
+    {
+      "utc": "2026-09-16T11:09:58.490301+00:00",
+      "path": "/api/v1/orders/status",
+      "status": 200,
+      "durationMs": 9,
+      "size": 386
+    },
+    {
+      "utc": "2026-09-16T11:10:01.832312+00:00",
+      "path": "/api/v1/orders/status",
+      "status": 200,
+      "durationMs": 108,
+      "size": 386
+    },
+    {
+      "utc": "2026-09-16T11:10:05.075837+00:00",
+      "path": "/api/v1/orders/status",
+      "status": 200,
+      "durationMs": 12,
+      "size": 386
+    },
+    {
+      "utc": "2026-09-16T11:10:08.314295+00:00",
+      "path": "/api/v1/orders/status",
+      "status": 200,
+      "durationMs": 7,
+      "size": 386
+    },
+    {
+      "utc": "2026-09-16T11:10:11.552928+00:00",
+      "path": "/api/v1/orders/status",
+      "status": 200,
+      "durationMs": 8,
+      "size": 397
+    },
+    {
+      "utc": "2026-09-16T11:10:16.866461+00:00",
+      "path": "/api/v1/orders/status",
+      "status": 200,
+      "durationMs": 89,
+      "size": 401
+    }
+  ]
+}

@@ -1,0 +1,104 @@
+{
+  "fixtureOnly": true,
+  "steps": [
+    {
+      "method": "confirmPlus",
+      "confirmed": true,
+      "requests": [
+        {
+          "method": "GET",
+          "path": "/api/auth/session"
+        },
+        {
+          "method": "GET",
+          "path": "/backend-api/accounts/check/v4-2023-04-27?timezone_offset_min=0"
+        },
+        {
+          "method": "GET",
+          "path": "/api/auth/session"
+        },
+        {
+          "method": "GET",
+          "path": "/backend-api/accounts/check/v4-2023-04-27?timezone_offset_min=0"
+        },
+        {
+          "method": "GET",
+          "path": "/api/auth/session"
+        },
+        {
+          "method": "GET",
+          "path": "/backend-api/accounts/check/v4-2023-04-27?timezone_offset_min=0"
+        }
+      ]
+    },
+    {
+      "method": "confirmPlus",
+      "confirmed": true,
+      "requests": [
+        {
+          "method": "GET",
+          "path": "/api/auth/session"
+        },
+        {
+          "method": "GET",
+          "path": "/backend-api/accounts/check/v4-2023-04-27?timezone_offset_min=0"
+        },
+        {
+          "method": "GET",
+          "path": "/api/auth/session"
+        },
+        {
+          "method": "GET",
+          "path": "/backend-api/accounts/check/v4-2023-04-27?timezone_offset_min=0"
+        },
+        {
+          "method": "GET",
+          "path": "/api/auth/session"
+        },
+        {
+          "method": "GET",
+          "path": "/backend-api/accounts/check/v4-2023-04-27?timezone_offset_min=0"
+        }
+      ]
+    },
+    {
+      "method": "confirmCancellation",
+      "confirmed": true,
+      "requests": [
+        {
+          "method": "GET",
+          "path": "/api/auth/session"
+        },
+        {
+          "method": "GET",
+          "path": "/backend-api/accounts/check/v4-2023-04-27?timezone_offset_min=0"
+        },
+        {
+          "method": "GET",
+          "path": "/api/auth/session"
+        },
+        {
+          "method": "GET",
+          "path": "/backend-api/accounts/check/v4-2023-04-27?timezone_offset_min=0"
+        },
+        {
+          "method": "GET",
+          "path": "/api/auth/session"
+        },
+        {
+          "method": "POST",
+          "path": "/backend-api/subscriptions/cancel"
+        },
+        {
+          "method": "GET",
+          "path": "/api/auth/session"
+        },
+        {
+          "method": "GET",
+          "path": "/backend-api/accounts/check/v4-2023-04-27?timezone_offset_min=0"
+        }
+      ]
+    }
+  ],
+  "total": 20
+}
