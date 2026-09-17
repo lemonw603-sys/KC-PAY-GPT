@@ -2435,3 +2435,15 @@ state-check的$MINBAL紧邻中文括号、wrapup-check的$live/$mday紧邻中文
 ## 2026-09-17｜按CLAUDE原格式整理最终交接（06:50 UTC+8）
 
 用户要求便于原执行模型接手。本轮保留CLAUDE规定单一事实源，不新建平行交接体系；整篇复核HANDOFF_NOW/PROJECT_MAP，删除当前段落仍写早交付有效/门控待扩建的矛盾；D-240旧任务标历史和撤销，最终统一成功README改成当前入口；UNVERIFIED_LEDGER区分撤销触发条件和仍存问题。明确main/业务发布提交/隔离历史工作区区别、实现代码位置、测试版本及下一步，旧证据保留不删。22:50UTC现场release4334dc2、web/worker active、心跳新鲜、接单/付款true、活动/非终态/统一版后新单均0。本轮未改业务或操作生产。
+
+## 2026-09-17｜Fable 5.1 接手核对（D-243 第一步，05:30–06:10 UTC）
+
+按 `docs/tasks/2026-09-17-handover-verification.md` 做。全程只读：没改生产、没开卡、没切路线、没发布、没动账本。
+
+- **读事实源**：CLAUDE → HANDOFF_NOW → PROJECT_MAP → CURRENT_STATE → 基线 → V2_ARCHITECTURE / V2.0_EXECUTION 全文 → DECISIONS D-219～D-243 全文 → UNVERIFIED_LEDGER → HANDOFF_LOG 09-16 章节 → A 组审查任务书。
+- **核生产**：`state-check.sh` 11 项一致（exit 0）；另用 `prod-query.sh` 查 provider_accounts / fulfillment_routes / browser_card_source_selections / app_settings 17 项 / orders 按路线×状态 / cards 按卡台 / cdks / operator_alerts / card_sync_jobs / card_transactions / provider_balance_snapshots / products / executor_profiles；ssh 查 timer 7 个、worker 三层 env 与 `/proc/pid/environ`、journal、`uptime -s`；本机 ps/launchctl。
+- **走代码主线**：intake（`order-intake-repository.js`）→ 分卡（`workflow-repository.js:195-400`、`card-inventory-eligibility.js`）→ `workflow-handlers.js` 全文（分叉 :228/:270）→ API 收口（`commitRechargeSuccess`）→ Browser（`production-live-pool-worker.js` 三步、`shared-live-composition.js`、`payment-executor.js`、`executor.js` 事件序、`live-chatgpt-payment-adapter.js` 9 个 stage、`recovery.js`、`live-post-payment-recovery.js`、`browser-payment-verification-service.js`、`browser-execution-repository.js:1613`）→ 客户态映射（`order-status-service.js`、`customer-stage.js`）→ 路线切换（`provider-route-admin-service.js`、`provider-route-service.js`）→ 卡台（`hnskj-card.js`、`highvcc-card.js`、`highvcc-snapshot-sync-service.js`、`zzshu-recharge.js`）→ 同步节奏（`card-sync-policy.js`、`card-sync-job-service.js:78`）。
+- **产出**：`docs/tasks/2026-09-17-handover-understanding.md`。
+- **查出的对不上（生产 vs 文档）**：①5X/20X 路线 305/306 `accepts_new_orders=1`、products ACTIVE、20X CDK 可用 2 张，与 CLAUDE.md「仅启用 Plus」冲突；②正式资格 SQL 合格卡是 29bb（103）不是 5276（5276 同步窗口已过）；③hnskj AVAILABLE 卡实际每小时同步一次（`scheduleDueCardSyncJobs` 默认 staleMinutes=60 把 10 分钟策略拉长）；④worker `PROVIDER_READS_ENABLED=true` 来自 `/etc/pojia/provider.env`（runtime.env 是 false）；⑤服务器 09-16 23:36:10 UTC 重启过（唯一 boot），web 起来时 DB 未就绪崩一次 systemd 拉起，原因无记录；⑥CURRENT_STATE 若干行陈旧（告警 16→116、备用卡 5→9+5、备份、PID、快照 timer 10min/1h 自相矛盾、card-funding.timer 行内容错位）。
+- **CURRENT_STATE 改了 9 行**（只改文档，值取自本轮现场）。HANDOFF_NOW 覆盖重写。
+- 未做：清账本（等 Lemon 核对理解文档）；20X 路线不动；解耦不讨论。
