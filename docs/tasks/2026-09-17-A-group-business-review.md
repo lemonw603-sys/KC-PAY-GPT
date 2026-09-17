@@ -8,7 +8,14 @@
 ## 错判样板（照这个颗粒度审其余每一项）
 **A4 供卡策略**：账本 §3.A 原判"主力 highvcc 手动够用、hnskj 自动开卡只作故障补充 / 非阻塞 / 排后"，Lemon 2026-09-17 当场纠正——**hnskj 与 highvcc 两台同等重要、经常来回切**（D-242、记忆 `two-card-platforms-equal`）。→ ① hnskj 自动开卡不能排后，要与 highvcc 一样自动、随时供得上；② A1 切换解耦分量加重。**A4 首先按"两台并重"重写；A1 的权重相应上调。**
 
-> **2026-09-17 A4 审已起头（上一窗口做出第一个坐实产出，见账本 §3.A 的 A4 📋 标注）**：审出 highvcc **有**程序化开卡接口（`highvcc-card-service.js` 的 wallet/ranges/cost/`openCard`→newCard，09-10 生产开过卡）——账本 §2.1"highvcc 无官方 API、手动开"措辞不准。A4 地基结论改为"**两台都有程序化开卡、技术上都可做成自动**，token/key 维护才需人"。**新窗口接着做**：A4 重写细节（两台自动开卡的水位/日限/token 过期兜底）+ 待验（highvcc 自动开卡可靠性）+ 其余项（A1/A2/G1/G2/A3/A5/A6）。这就是每项要走的动作模板。
+> **2026-09-17 A 组已审 5 项 + 自审（上一窗口，详见账本 §3.A 各 📋 标注 + D-242）：**
+> - **A1（重磅）**：现两套卡台机制并存 + `resolveCurrentCardProviderAccount:16` 写死 hnskj；**Lemon 的"卡台↔支付方式解耦"设计技术可行**（ZZSHU `buildDirectOrderRequest` 不认卡台、highvcc 卡凭证齐、Browser 也不认）。**自审订正**：原写"切换健康检查错位"有误（挂死代码 `switchRoute`，没挂路由），真问题是**生产切换 `setDefaultRechargeMethod` 根本不查卡池/卡台**（切 API 完全不查、切 Browser 只查 worker）→ A2 切换前校验是从无到有的真缺口。**待 Lemon 实测**：highvcc BIN 卡走 ZZSHU 能否真支付成功（黑盒）。
+> - **A4**：highvcc 有程序化开卡（`openCard`→newCard，09-10 生产确认）→ 两台都可自动开卡；A4 按"两台并重"重写（原"highvcc 手动/hnskj 排后"作废）。
+> - **A2**：账本基本对，补两点——付款不明两条路线两套机制（API `pollRecharge` 查 ZZSHU / Browser confirmPlus + 崩溃 `reconcile`）、Browser 崩溃单落 `RECONCILE_ONLY` 人工兜底（自审坐实 Browser 不走 pollRecharge）。
+> - **A3**：全局 `default_open_card_amount=16` 与 `card_max_successful_payments=3` 打架（允许 3 单只放 1 单的钱）→ 按产品化正好修。
+> - **A5**：hnskj 开卡+销卡都有 API；highvcc 开卡有 API、**销卡无 API**（手动删）。
+>
+> **新窗口从这里续**：① 剩 **A6**（卡可用查询，今天验证 `eligibleInventoryCardSql` 可按卡台查、基本成立）、**G1**（highvcc 交易/钱包接口已确认存在 `transactions`/`wallet`，入库可行）、**G2**（账本计数，未细审）；② 然后 **B/C 组**。动作模板：账本原方案 vs 真实、揪错判、每个"对不上"要真证据、拿不准问 Lemon。**⚠️ 自审教训：别照死代码/字段推——先核到底"用没用、验没验"**（A1 的"错位"就是照死代码 switchRoute 推出来的假问题，自审才揪回）。
 
 ## 今天（09-17）救火摸到的真实素材（审时对进方案）
 - **A2 切换前校验（半成品实证）**：手动切回 API 前查了——目标路线 `executor_kind` 唯一、卡池可分配 > 0（正式资格 `eligibleInventoryCardSql`）、provider `circuit_state=CLOSED`/`read_enabled=1`、`route_version` 对得上。**这套就是 A2「切换前校验」要自动化的清单**（`provider-route-admin-service.js` 的 `switchRoute`/`setDefaultRechargeMethod` 已有骨架）。
