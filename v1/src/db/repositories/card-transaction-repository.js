@@ -59,6 +59,41 @@ async function persistRefundCandidate(connection, { cardId, orderId, transaction
   );
 }
 
+/**
+ * 只把一条交易行写进 `card_transactions`，不做任何别的事。
+ *
+ * 从 persistCardTransactions 里原样提出来的（SQL 与参数一字未改），因为开卡费用行
+ * 需要「只插这一行」：persistCardTransactions 还会刷 cards.last_transaction_synced_at，
+ * 而那个时间戳是非 MANUAL_IMPORT 卡的分配资格判据（card-inventory-eligibility.js）。
+ * 开卡时我们并没有同步这张卡的交易，把它刷新等于伪造一个「刚对过账」的新鲜度。
+ */
+export async function insertCardTransactionRow(connection, { cardId, transaction }) {
+  await connection.query(
+    `INSERT INTO card_transactions
+     (card_id, provider_transaction_id, transaction_type, status,
+      amount, currency, fee, trade_time_raw, related_txn_id,
+      settlement_status, original_amount, original_currency,
+      merchant_name, merchant_country, merchant_mcc, occurred_at, raw_hash)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)
+     ON DUPLICATE KEY UPDATE
+       transaction_type = VALUES(transaction_type), status = VALUES(status),
+       amount = VALUES(amount), currency = VALUES(currency),
+       fee = VALUES(fee), trade_time_raw = VALUES(trade_time_raw),
+       related_txn_id = VALUES(related_txn_id), settlement_status = VALUES(settlement_status),
+       original_amount = VALUES(original_amount), original_currency = VALUES(original_currency),
+       merchant_name = VALUES(merchant_name), merchant_country = VALUES(merchant_country),
+       merchant_mcc = VALUES(merchant_mcc), raw_hash = VALUES(raw_hash),
+       last_seen_at = CURRENT_TIMESTAMP(3)`,
+    [cardId, transaction.id, transaction.type, transaction.status,
+      transaction.amount, transaction.currency, transaction.fee ?? null,
+      transaction.tradeTime ?? null, transaction.relatedTxnId || null,
+      transaction.settlementStatus || null, transaction.originalAmount ?? null,
+      transaction.originalCurrency || null, transaction.merchantName || null,
+      transaction.merchantCountry || null, transaction.merchantMcc || null,
+      transaction.rawHash]
+  );
+}
+
 export async function persistCardTransactions(connection, {
   cardId,
   orderId = null,
@@ -66,30 +101,7 @@ export async function persistCardTransactions(connection, {
   cardSnapshot = null
 }) {
   for (const transaction of transactions) {
-    await connection.query(
-      `INSERT INTO card_transactions
-       (card_id, provider_transaction_id, transaction_type, status,
-        amount, currency, fee, trade_time_raw, related_txn_id,
-        settlement_status, original_amount, original_currency,
-        merchant_name, merchant_country, merchant_mcc, occurred_at, raw_hash)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)
-       ON DUPLICATE KEY UPDATE
-         transaction_type = VALUES(transaction_type), status = VALUES(status),
-         amount = VALUES(amount), currency = VALUES(currency),
-         fee = VALUES(fee), trade_time_raw = VALUES(trade_time_raw),
-         related_txn_id = VALUES(related_txn_id), settlement_status = VALUES(settlement_status),
-         original_amount = VALUES(original_amount), original_currency = VALUES(original_currency),
-         merchant_name = VALUES(merchant_name), merchant_country = VALUES(merchant_country),
-         merchant_mcc = VALUES(merchant_mcc), raw_hash = VALUES(raw_hash),
-         last_seen_at = CURRENT_TIMESTAMP(3)`,
-      [cardId, transaction.id, transaction.type, transaction.status,
-        transaction.amount, transaction.currency, transaction.fee ?? null,
-        transaction.tradeTime ?? null, transaction.relatedTxnId || null,
-        transaction.settlementStatus || null, transaction.originalAmount ?? null,
-        transaction.originalCurrency || null, transaction.merchantName || null,
-        transaction.merchantCountry || null, transaction.merchantMcc || null,
-        transaction.rawHash]
-    );
+    await insertCardTransactionRow(connection, { cardId, transaction });
   }
   for (const transaction of transactions) {
     await persistRefundCandidate(connection, { cardId, orderId, transaction });

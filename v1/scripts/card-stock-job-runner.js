@@ -18,6 +18,7 @@ import { createProviderBalanceSnapshotService } from '../src/services/provider-b
 import { scheduleAutomaticStockJob } from '../src/services/card-stock-runner-service.js';
 import { openStockCards, syncProvisioningStock } from './card-stock.js';
 import { resolveCurrentCardProviderAccountId } from '../src/services/provider-route-service.js';
+import { recordIssueFee } from '../src/services/card-issue-fee-service.js';
 
 if (isEnvTrue(process.env.PROVIDER_WRITES_ENABLED) || !isEnvTrue(process.env.PROVIDER_CARD_WRITES_ENABLED)) {
   throw new Error('Card stock runner requires only PROVIDER_CARD_WRITES_ENABLED=true');
@@ -59,6 +60,11 @@ try {
         count: remaining,
         expectedCardTypeName: rules?.cardType?.name || null
       });
+      // 开卡真实成本 = 开卡前后账户余额之差 − 开进卡里的金额（D-249 面四② T2）。
+      // 开卡「前」那次读数本来就有：beforeCard 里的 refreshSnapshot() 会问卡台要余额
+      // 并写进 provider_balance_snapshots。这里把它的结果留下来，开卡后再读一次即可。
+      let balanceBeforeCard = null;
+      const issueFees = [];
       const result = await openStockCards({
         provider,
         stock,
@@ -73,12 +79,32 @@ try {
             count: cardsRemaining,
             expectedCardTypeName: rules?.cardType?.name || null
           });
+          balanceBeforeCard = live?.accountBalance ?? null;
         },
-        onCardOpened: ({ index }) => updateCardStockJobProgress(pool, {
-          jobId: job.id,
-          workerId,
-          openedCount: job.openedCount + index
-        })
+        onCardOpened: async ({ index, providerCardId }) => {
+          await updateCardStockJobProgress(pool, {
+            jobId: job.id,
+            workerId,
+            openedCount: job.openedCount + index
+          });
+          // 这一段绝不能让开卡 job 失败：卡已经开出来、钱已经花了，此时因为一次
+          // 只读查询出错而把 job 标成失败，会让人以为卡没开出来。最坏情况只是
+          // 「这张卡的成本没算出来」，如实记下来即可。
+          try {
+            const after = await refreshSnapshot();
+            issueFees.push(await recordIssueFee(pool, {
+              providerAccountId: currentCardProviderAccountId,
+              providerCardId,
+              balanceBefore: balanceBeforeCard,
+              balanceAfter: after?.accountBalance ?? null,
+              openCardAmount: Number(job.amount),
+              currency: after?.currency || 'USD'
+            }));
+            balanceBeforeCard = after?.accountBalance ?? null;
+          } catch (error) {
+            issueFees.push({ providerCardId, recorded: false, reason: error?.code || 'ISSUE_FEE_STEP_FAILED' });
+          }
+        }
       });
       await completeCardStockJob(pool, {
         jobId: job.id,
@@ -86,7 +112,7 @@ try {
         openedCount: job.openedCount + result.opened
       });
       console.log(JSON.stringify({ handled: true, jobId: job.id, source: job.source,
-        status: 'COMPLETED', opened: result.opened, automatic }));
+        status: 'COMPLETED', opened: result.opened, automatic, issueFees }));
     } catch (error) {
       const failure = await failCardStockJob(pool, { jobId: job.id, workerId, error });
       console.error(JSON.stringify({ handled: true, jobId: job.id,
