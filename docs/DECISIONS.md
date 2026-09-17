@@ -3785,3 +3785,17 @@ Lemon 确认开 1 张 16 刀。**执行路径澄清（先误判后查清）**：
 - 系统必须足够稳定，不要臃肿。
 - B/C 组和 A 组一样，都要一起梳理「是否是我们想要的、应该如何实现、是否有更好的方法」；之前的方案是之前的 AI 定的，接手模型可以有不同想法，方案更好就用新的。
 → 对 D-243 五步的含义：「清账本」不是把旧方案整理干净就完，而是**逐面重问需求**（要什么、为什么、最简怎么做），旧方案只是输入之一。
+
+## D-245（2026-09-17 07:40 UTC）「先 Plus 后升级 20X」两阶段方案退休：ChatGPT 现在可从 Free 直接升级到 20X（Lemon 手动充值实操观察）
+
+**Lemon 定**：①D-244 里的「10X」是笔误，指 20X。②「现在实际是可以从 free 直接升级到 20X，之前做的先 Plus 后升级 20X 的方案已经可以退休了。」
+
+**来源与边界**：这是 Lemon 在比特浏览器手动充值时的实操观察，不是本仓库的 PoC 证据。代码里的旧观察相反（`shared-live-composition.js:206`「A free account cannot buy Pro directly, and the Pro tier toggle is absent on the Plus purchase dialog」，D-133/D-136 时期）。**按 CLAUDE.md，页面行为要先经非付款 PoC 冻结到 `docs/contracts/` 才能写进执行器**；Lemon 的观察是方向依据，PoC 是实现依据。
+
+**退休的东西（代码级清单，落实时删）**：`postPlusAction` 的 `UPGRADE_DIALOG_STOP` / `MANUAL_20X_HANDOFF` 分支（`payment-executor.js`、`shared-live-composition.js`、`live-post-payment-recovery.js`、`browser-payment-verification-service.js`、`production-live-pool-worker.js:postPlusActionForPlan`）、`ChatGptPostPaymentVerifier.openUpgradeDialog`、navigator 的 `plan-change` 期望（`chatgpt-checkout-navigator.js:210-231`）、仓库的 `recordManual20xHandoff/recordManual20xReviewRequired`、基线「5X/20X 自动化前置」第 2 条「资金模型改为一单两阶段」、UNVERIFIED_LEDGER 全部两阶段条目、PROJECT_MAP §5「Pro 不能把 Plus 首阶段当整单交付」。**Pro 单变成和 Plus 同型：一次付款、一次确认、一次取消续费，只是 Checkout 里选的套餐不同**——这正是 Lemon 说的「跟 Plus 的区别只有选择的套餐不同」。
+
+**当前生产的资金风险（本轮核实，未动）**：路线 306 `accepts_new_orders=1`，组合层结账计划固定 `plus`（:210），`resolvePlan` 只用于付款后动作。**一张 20X 码现在下单 → Browser 自动买 Plus（≈$15.72）→ 停在升级对话框交人**。生产有 2 张 20X 码 AVAILABLE（批次 B-20260908070237580 / B-20260910030601731）、历史 20X 单 9 单全在 09-08～09-10。**待 Lemon 定**：这两张码在谁手里；方案改完之前是否先把 305/306 接单位关掉（生产动作，先问）。
+
+**对 V2 的影响**：A1「执行面接口的 `fromPlan` 参数」和 V2 §3.1「Free→5X 和 Plus→5X 走同一接口按 fromPlan 分支」简化为只有一个分支（Free→目标套餐）；5X/20X 进 Browser 自动化的工作量从「两阶段+对话框」降为「Checkout 选套餐 + 报价/金额/每卡单数按产品」。基线「5X/20X 自动化前置」5 条里第 1（付款后凭证刷新）、3（升级页只读观察）、4（最终套餐成功后才取消续费）随之重写或作废，保留第 5（按产品开卡金额、一卡一单）。
+
+**CLAUDE.md 硬约束改写**（同轮）：原「当前生产仅启用 ChatGPT Plus；5X/20X 按基线顺序启用，Plus 自动化跑通之前不开放」→ 见 CLAUDE.md 新文。
