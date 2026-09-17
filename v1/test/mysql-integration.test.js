@@ -1573,7 +1573,8 @@ test('supply scheduler measures per account × product, refuses while a paid job
   try {
     await pool.query(`INSERT INTO app_settings (setting_key, setting_value) VALUES ('card_auto_replenishment_enabled','true')
       ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)`);
-    await pool.query(`UPDATE card_supply_policies SET target_available = 1, daily_open_limit = 2
+    // 干净测试库的 app_settings 没有 default_card_type_id，101 的默认卡段是 NULL：策略行显式给卡段。
+    await pool.query(`UPDATE card_supply_policies SET target_available = 1, daily_open_limit = 2, card_segment = '7'
       WHERE provider_account_id = ? AND product_code = 'plus'`, [legacyCardProviderAccountId]);
     await pool.query(`UPDATE card_supply_policies SET target_available = 0 WHERE provider_account_id <> ?`, [legacyCardProviderAccountId]);
     const reviewJobId = id();
@@ -1604,7 +1605,7 @@ test('supply scheduler measures per account × product, refuses while a paid job
   } finally {
     if (created.length) await pool.query(`DELETE FROM card_stock_jobs WHERE id IN (${created.map(() => '?').join(',')})`, created);
     if (originalPolicy) {
-      await pool.query(`UPDATE card_supply_policies SET target_available = ?, daily_open_limit = ? WHERE provider_account_id = ? AND product_code = 'plus'`,
+      await pool.query(`UPDATE card_supply_policies SET target_available = ?, daily_open_limit = ?, card_segment = NULL WHERE provider_account_id = ? AND product_code = 'plus'`,
         [originalPolicy.target_available, originalPolicy.daily_open_limit, legacyCardProviderAccountId]);
       await pool.query(`UPDATE card_supply_policies SET target_available = 2 WHERE provider_account_id <> ? AND product_code = 'plus'`, [legacyCardProviderAccountId]);
     }

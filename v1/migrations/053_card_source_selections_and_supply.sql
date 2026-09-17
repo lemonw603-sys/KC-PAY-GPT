@@ -115,7 +115,7 @@ ALTER TABLE card_stock_jobs
   ADD INDEX idx_card_stock_jobs_account_created (provider_account_id, created_at);
 
 -- 历史 job 全部是旧架构在 hnskj 上按全局 default_open_card_amount 开的 Plus 卡
---（旧 runner 只装了 HnskjCardProvider，没有别的可能），回填成事实而不是留 NULL 让日限算不到它们。
+-- （旧 runner 只装了 HnskjCardProvider，没有别的可能），回填成事实而不是留 NULL 让日限算不到它们。
 UPDATE card_stock_jobs
 SET provider_account_id = '00000000-0000-4000-8000-000000000101', product_code = 'plus'
 WHERE provider_account_id IS NULL;
