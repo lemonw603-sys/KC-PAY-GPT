@@ -2455,3 +2455,11 @@ state-check的$MINBAL紧邻中文括号、wrapup-check的$live/$mday紧邻中文
 - **生产写操作 1 次**：Lemon 授权关闭 305/306 接单位。一次性脚本（事务+断言+审计），dry-run→apply，新连接复核 305=0/306=0、事件 2 条、非终态 0。回滚同法改回 1。
 - CLAUDE.md 产品硬约束改写；PROJECT_MAP §5、UNVERIFIED 顶注、CURRENT_STATE、理解文档、HANDOFF_NOW 同步。
 - 下一步：D-243 五步之①清账本，按「逐面重问需求」做，第一面卡台与路线关系。
+
+## 2026-09-17｜清账本五面 + 整体连贯审 + 落实第①步 C2（07:35–14:20 UTC）
+
+- 按 D-243/D-244「逐面重问」做清账本：每面一页讨论稿（现在是什么/你说过要什么/真正问题/建议+问题）→ Lemon 答 → 大白话复述 → 拍板 → 写进账本 §3.A。面一卡台与路线（D-246）、面二供卡（D-247）、面三执行与交付（D-248）、面四通知与对账（D-249）、面五展示与控制（D-250）、token 每日时段（D-251）、整体连贯审 5 打架 11 缝 + 落实顺序 8 步（D-252）。旧 A1-A6/B1-B4/C1-C3/G1-G2 全部作废或并入。
+- 核出并落盘的新事实：ZZSHU 文档支持 pro5/pro20（API 能充 Pro）、`对接api.md` 是 KCCatk 文档非 ZZSHU；930 条旧开卡残留卡死自动开卡调度器；worker PURCHASE_CARD 死线；D-176 静音未生效（原因未查清）；D-219「缺卡告警没推」是误读；账本 20 单成功只记 12；card-intake 是 hnskj 新卡自动录入链路（保留）；highvcc token 约 2 小时失效、登录含滑块；服务器 09-16 重启系欠费（Lemon）。
+- 生产写 3 次（均 Lemon 当次同意）：关 305/306（D-245）；两次手动触发 highvcc 快照同步（token 过期后重贴恢复）；**C2 直调 ZZSHU 用 highvcc 卡 0601 真付一单 → 40020「该卡头暂不支持」被拒、未扣款（D-253）**；Lemon 定 API 固定 hnskj、不加 BIN。
+- 产出：`docs/tasks/2026-09-17-ledger-face-{1..5}-*.md`、`coherence-review.md`、`impl-step2-data-sources.md`（第②步任务书）、`contracts/2026-09-17_zzshu-third-party-api-plans-excerpt.md`；CLAUDE.md 产品硬约束改写（D-245）；CURRENT_STATE 多行按现场改。
+- 未做：任何代码改动、发布、删表。下一步：开落实窗口做第②步。
