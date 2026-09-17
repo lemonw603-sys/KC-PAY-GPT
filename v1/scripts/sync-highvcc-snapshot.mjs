@@ -6,6 +6,15 @@
 //   node v1/scripts/sync-highvcc-snapshot.mjs            # preview: what would change
 //   node v1/scripts/sync-highvcc-snapshot.mjs --commit   # apply the snapshot
 //
+// --commit 这一趟同时把授权流水写进 card_transactions、钱包余额写进
+// provider_balance_snapshots（D-249 面四② T1，与「每日时段」模式同一趟）。
+//
+// 这两件**不能**挂在快照内部：prepare() 有个 NO_CHANGE 短路，卡片数据没变就整个
+// collect() 都不跑（生产实见 2026-09-17 14:52:22 就是 skipped:NO_CHANGE）。挂进去等于
+// 大部分时间不同步流水。所以放在这里，与快照结果无关地各跑一次。
+// 三段互相独立：一段失败不挡另两段，但只要有一段失败整趟就是失败（exit 1），
+// token 失效会让三段一起失败，正是「该时段任务失败、叫一次」要的效果。
+//
 // Needs DATABASE_URL, SESSION_ENCRYPTION_KEY_BASE64, CARD_INTAKE_PAN_HMAC_KEY_BASE64
 // (on the host: source /etc/pojia/runtime.env; from the Mac: pull them the way
 // browser-mvp/scripts/run-live-pool.sh does and point DATABASE_URL at the 13306 tunnel).
@@ -40,8 +49,26 @@ try {
     const preview = await service.preview();
     console.log(JSON.stringify({ mode: 'preview', ...summarize(preview) }, null, 2));
   } else {
-    const result = await service.commit({ requestedBy: 'sync-highvcc-snapshot.mjs' });
-    console.log(JSON.stringify({ mode: 'commit', preview: summarize(result.preview), committed: result.committed }, null, 2));
+    const out = { mode: 'commit' };
+    const failures = [];
+    const step = async (name, run) => {
+      try { out[name] = await run(); }
+      catch (error) {
+        out[name] = { failed: true, code: error.code || error.constructor.name, message: error.message };
+        failures.push(name);
+      }
+    };
+    await step('snapshot', async () => {
+      const result = await service.commit({ requestedBy: 'sync-highvcc-snapshot.mjs' });
+      return { preview: summarize(result.preview), committed: result.committed };
+    });
+    await step('wallet', () => service.syncWallet());
+    await step('transactions', () => service.syncTransactions());
+    console.log(JSON.stringify(out, null, 2));
+    if (failures.length) {
+      console.error('failed steps:', failures.join(','));
+      process.exitCode = 1;
+    }
   }
 } catch (error) {
   console.error('failed:', error.code || error.constructor.name, '-', error.message);

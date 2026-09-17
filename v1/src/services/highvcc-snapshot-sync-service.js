@@ -12,6 +12,9 @@ import { zipSync, strToU8 } from 'fflate';
 import { createHighvccCardProvider } from '../providers/highvcc-card.js';
 import { createHighvccAccessTokenReader, BACKUP_A_PROVIDER_ACCOUNT_ID } from './highvcc-card-service.js';
 import { createManualCardImportService, REQUIRED_HEADERS } from './manual-card-import-service.js';
+import { commitCardTransactionsForCard } from '../db/repositories/card-transaction-repository.js';
+import { recordProviderBalanceSnapshot, sha256Payload } from './provider-balance-snapshot-service.js';
+import { classifyCardTransaction } from '../domain/card-transaction-classification.js';
 
 /** Platform integers are USD cents; the import parser reads dollar strings ("1.08"). */
 export function centsToMoney(cents) {
@@ -95,10 +98,93 @@ export function buildSnapshotWorkbook(rows) {
   return Buffer.from(zipSync(entries, { level: 6, mtime }));
 }
 
+// ---------------------------------------------------------------------------
+// 授权流水与钱包入库（D-249 面四②「数据源三件」T1）
+//
+// 在这之前 highvcc 的交易一条都没进过 `card_transactions`（生产实查 2026-09-17：
+// 账户 103 共 0 行），所以「付款结果不明时卡上钱动没动」这条客观证据在 Browser
+// 路线上根本取不到，对账看板也算不出这条路线花了多少钱。
+//
+// 字段形状对 2026-09-17 15:0x UTC 的一次真实响应核实过（22 笔，不是照夹具写的）：
+//   { cardAuthId, amount(整数分), cardId, desc, cardSeqNo, lastFour, tradeTime(UTC epoch ms),
+//     approveTime, unit:'USD', status, reason:'APPROVE', tags, merchantAmount(整数分),
+//     merchantCurrency:'PHP'|'USD', merchantCountry:'US'|null }
+//   status 实际见到两种：COMPLETE(19) / PENDING(3)。provider 注释原先只记了 COMPLETE。
+//   merchantCountry 可以是 null；tags 实际是 null 而不是数组。
+// ---------------------------------------------------------------------------
+
+/**
+ * 整数分 → DECIMAL 定点字符串，全程整数与字符串运算。
+ * 不复用本文件的 centsToMoney()：那个用 `n / 100` 走 JS 浮点，给 xlsx 显示够用，
+ * 但这里的值要直接落进 card_transactions.amount 参与对账（CLAUDE.md：金额不用浮点结算）。
+ */
+export function centsToFixedString(value) {
+  if (value === null || value === undefined || value === '') return null;
+  const n = Number(value);
+  if (!Number.isInteger(n)) return null;
+  const digits = String(Math.abs(n)).padStart(3, '0');
+  return `${n < 0 ? '-' : ''}${digits.slice(0, -2)}.${digits.slice(-2)}`;
+}
+
+/**
+ * 一条 highvcc 授权流水 → persistCardTransactions 认的行形状。
+ *
+ * type 固定 'PURCHASE'：这个接口（/api/cardTrade/authTrans/page）返回的就是刷卡授权，
+ * 每条都是一次消费授权，不是充值/退款/风控记录——不是从某个字段推断出来的分类。
+ * status 原样存卡台的值（COMPLETE/PENDING），不翻译成系统内的 success：hnskj 那边
+ * 库里同样是原样存（success/SUCCESS/SETTLED 并存），保持「观察是观察」。
+ * 代价是 card-consumption-audit 现有的 LOWER(status)='success' 判据认不出 COMPLETE，
+ * 见本块收尾「发现」段，判据要不要放宽由 Lemon 定，本次不动那个脚本。
+ */
+export function toCardTransactionRow(row = {}) {
+  const id = row.cardAuthId == null ? null : String(row.cardAuthId).trim();
+  if (!id) return null;
+  const amount = centsToFixedString(row.amount);
+  if (amount === null) return null;
+  const currency = String(row.unit || '').trim().toUpperCase();
+  if (!/^[A-Z]{3}$/.test(currency)) return null;
+  const merchantCurrency = String(row.merchantCurrency || '').trim().toUpperCase();
+  const transaction = {
+    id,
+    type: 'PURCHASE',
+    status: row.status == null ? '' : String(row.status),
+    amount,
+    currency,
+    // 这个接口不返回任何手续费字段（对真实响应核实过）：留 null 表示「卡台没给」，
+    // 不是 0（0 会被读成「确认没有手续费」）。
+    fee: null,
+    // 卡台给的是 UTC epoch 毫秒，provider 已归一成 *EpochMs 且明令不做时区平移。
+    // 这里落成 ISO UTC 字符串：可读、可排序，且不会再被人「顺手修时区」。
+    // 注意与 hnskj 不同——hnskj 那边落的是卡台给的 UTC+8 本地串（生产实见
+    // "2026-09-17 09:34:34" 对应 01:34 UTC）。两边格式不统一是卡台本来就不同，
+    // 统一口径属于对账面的活，不在本块范围。
+    tradeTime: row.tradeTimeEpochMs ? new Date(row.tradeTimeEpochMs).toISOString() : null,
+    relatedTxnId: null,
+    // 卡台的授权结论（实见 'APPROVE'），原样存，不翻译。
+    settlementStatus: row.reason == null ? null : String(row.reason),
+    // 商户侧原币金额：菲律宾账号结账是 PHP（实见 98214 = 982.14 PHP）。
+    originalAmount: centsToFixedString(row.merchantAmount),
+    originalCurrency: /^[A-Z]{3}$/.test(merchantCurrency) ? merchantCurrency : null,
+    merchantName: row.desc == null ? null : String(row.desc).trim().slice(0, 255) || null,
+    merchantCountry: row.merchantCountry == null ? null : String(row.merchantCountry),
+    merchantMcc: null,
+    rawHash: sha256Payload(row),
+  };
+  // persistRefundCandidate 只对 classification==='REFUND_CANDIDATE' 动作（会插 refund_cases
+  // 和 operator_alerts）。PURCHASE 算出来是 UNKNOWN，不会触发——显式算一次而不是留空，
+  // 免得将来有人改了分类规则这里却悄悄不跟着变。
+  transaction.classification = classifyCardTransaction(transaction);
+  return transaction;
+}
+
 export function createHighvccSnapshotSyncService({
   pool, encryptionKey, panHmacKey, fetchImpl = fetch,
   providerAccountId = BACKUP_A_PROVIDER_ACCOUNT_ID,
   provider = null, importService = null, now = () => new Date(),
+  // 与上面的 provider/importService 同一风格的注入点：测试要断言「写了什么」，
+  // 而 ESM 导出不可重定义、mock 不掉这两个函数。
+  writeCardTransactions = commitCardTransactionsForCard,
+  writeBalanceSnapshot = recordProviderBalanceSnapshot,
 } = {}) {
   if (!pool?.getConnection) throw new TypeError('pool is required');
   const cardProvider = provider
@@ -196,5 +282,69 @@ export function createHighvccSnapshotSyncService({
     return { preview: result, committed };
   }
 
-  return Object.freeze({ collect, preview, commit });
+  /**
+   * 把卡台的授权流水归到库内卡上写进 card_transactions。
+   *
+   * 归卡靠 highvcc 的 cardId 对 `cards.external_card_id`（生产实查一致：两边都是
+   * HG+32 位十六进制）。归不到的行不猜、不按 lastFour 兜底——lastFour 会重复，
+   * 猜错就是把一张卡的扣款记到另一张卡头上。归不到只报数，交人看。
+   *
+   * 只读卡台、只写 card_transactions（cardSnapshot 传 null，不碰 cards.current_balance，
+   * 那是 manual-card-import 的活）。写入仍会刷该卡的 last_transaction_synced_at，
+   * 但 MANUAL_IMPORT 卡的分配资格走 card-inventory-eligibility.js 的 sync_tier 分支，
+   * 不看这个时间戳，所以不改变谁可分配（2026-09-17 对生产资格 SQL 实测过）。
+   */
+  async function syncTransactions() {
+    const rows = await cardProvider.allTransactions({ pageSize: 50 });
+    const [cards] = await pool.query(
+      `SELECT id, external_card_id FROM cards WHERE provider_account_id = ?`, [providerAccountId]
+    );
+    const byExternalId = new Map(cards.map((row) => [String(row.external_card_id), row.id]));
+    const grouped = new Map();
+    const unmatched = [];
+    let skipped = 0;
+    for (const row of rows) {
+      const cardId = byExternalId.get(String(row.cardId ?? ''));
+      if (!cardId) { unmatched.push(String(row.cardAuthId ?? '')); continue; }
+      const transaction = toCardTransactionRow(row);
+      if (!transaction) { skipped += 1; continue; }
+      if (!grouped.has(cardId)) grouped.set(cardId, []);
+      grouped.get(cardId).push(transaction);
+    }
+    for (const [cardId, transactions] of grouped) {
+      await writeCardTransactions(pool, { cardId, transactions, cardSnapshot: null });
+    }
+    return {
+      fetched: rows.length,
+      cardCount: grouped.size,
+      written: [...grouped.values()].reduce((total, list) => total + list.length, 0),
+      unmatchedCount: unmatched.length,
+      unmatchedAuthIds: unmatched,
+      skippedCount: skipped,
+    };
+  }
+
+  /**
+   * 钱包余额入 provider_balance_snapshots。
+   *
+   * 只入 usdBalance（可用余额）。usdDeposit 的业务含义卡台没说清（按卡冻结？历史累计？
+   * provider 注释也标了未确认），把它填进 pendingBalance 等于替卡台下结论——留给面二⑤
+   * 钱包预检那块先把含义问清。完整响应进 payloadHash，原值不落盘。
+   */
+  async function syncWallet({ observedAt = now() } = {}) {
+    const wallet = await cardProvider.wallet();
+    const availableBalance = centsToFixedString(wallet.usdBalanceCents);
+    if (availableBalance === null) {
+      const error = new Error('highvcc wallet returned no usable usdBalance');
+      error.code = 'HIGHVCC_WALLET_UNUSABLE';
+      throw error;
+    }
+    const snapshot = await writeBalanceSnapshot(pool, {
+      providerAccountId, currency: 'USD', availableBalance, pendingBalance: null,
+      observedAt, rawPayload: wallet,
+    });
+    return { availableBalance, inserted: snapshot.inserted, observedAt: snapshot.observedAt };
+  }
+
+  return Object.freeze({ collect, preview, commit, syncTransactions, syncWallet });
 }
