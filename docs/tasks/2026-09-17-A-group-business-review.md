@@ -8,6 +8,8 @@
 ## 错判样板（照这个颗粒度审其余每一项）
 **A4 供卡策略**：账本 §3.A 原判"主力 highvcc 手动够用、hnskj 自动开卡只作故障补充 / 非阻塞 / 排后"，Lemon 2026-09-17 当场纠正——**hnskj 与 highvcc 两台同等重要、经常来回切**（D-242、记忆 `two-card-platforms-equal`）。→ ① hnskj 自动开卡不能排后，要与 highvcc 一样自动、随时供得上；② A1 切换解耦分量加重。**A4 首先按"两台并重"重写；A1 的权重相应上调。**
 
+> **2026-09-17 A4 审已起头（上一窗口做出第一个坐实产出，见账本 §3.A 的 A4 📋 标注）**：审出 highvcc **有**程序化开卡接口（`highvcc-card-service.js` 的 wallet/ranges/cost/`openCard`→newCard，09-10 生产开过卡）——账本 §2.1"highvcc 无官方 API、手动开"措辞不准。A4 地基结论改为"**两台都有程序化开卡、技术上都可做成自动**，token/key 维护才需人"。**新窗口接着做**：A4 重写细节（两台自动开卡的水位/日限/token 过期兜底）+ 待验（highvcc 自动开卡可靠性）+ 其余项（A1/A2/G1/G2/A3/A5/A6）。这就是每项要走的动作模板。
+
 ## 今天（09-17）救火摸到的真实素材（审时对进方案）
 - **A2 切换前校验（半成品实证）**：手动切回 API 前查了——目标路线 `executor_kind` 唯一、卡池可分配 > 0（正式资格 `eligibleInventoryCardSql`）、provider `circuit_state=CLOSED`/`read_enabled=1`、`route_version` 对得上。**这套就是 A2「切换前校验」要自动化的清单**（`provider-route-admin-service.js` 的 `switchRoute`/`setDefaultRechargeMethod` 已有骨架）。
 - **A1 切换解耦（实证）**：`setDefaultRechargeMethod` 切路线时没连带动卡台——但今天是"恰好"（API 固定 hnskj、Browser 固定 highvcc），A1 要把这"恰好"做成"设计"（卡台=执行器属性，D-219 发现 5）。
