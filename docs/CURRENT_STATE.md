@@ -20,7 +20,7 @@
 | 数据库迁移 | 最新 `052_cards_bin`（cards 增 card_bin，D-168；051 于 09-08 01:25 UTC，050 于 09-07 19:16 UTC） | 2026-09-11 13:32 UTC | schema_migrations / 仓库 v1/migrations |
 | accept_new_orders | true；统一成功维护已结束，无待恢复接单操作。 | 2026-09-16 22:50 UTC | app_settings独立SELECT |
 | dispatch_new_recharges / 模式 | true / AUTOMATIC | 2026-09-09 11:46 UTC | app_settings |
-| 默认路线（Plus） | Browser：CHATGPT_PLUS_BROWSER_V1 accepts_new_orders=1；LEGACY_HNSKJ_ZZSHU_V1=0（旧 09-14 API 默认已过期） | 2026-09-16 10:40 UTC | fulfillment_routes 按 route_code 只读 SELECT；本次 h9RKl 实际走 Browser |
+| 默认路线（Plus） | **API：LEGACY_HNSKJ_ZZSHU_V1 accepts_new_orders=1；CHATGPT_PLUS_BROWSER_V1=0**（2026-09-17 01:47 从 Browser 切回 API，setDefaultRechargeMethod，事件 55e62934；仅影响切换后新单） | 2026-09-17 01:47 UTC | fulfillment_routes 独立 SELECT（API=1/Browser=0）+ provider_route_switch_events |
 | Browser 当前卡台 | 备用卡台 A（`manual_excel` / `backup-a`） | 13:31 | browser_card_source_selections |
 | browser_dispatch_enabled | true | 2026-09-09 11:46 UTC | app_settings |
 | browser_payment_writes_enabled | true；本轮整理未改。 | 2026-09-16 22:50 UTC | app_settings独立SELECT |
@@ -31,10 +31,10 @@
 | card_max_successful_payments | 3 | 2026-09-09 11:46 UTC | app_settings |
 | 最低所需卡余额 | default 16 / pro_5x 16 / **pro_20x 150**（09-09 05:33 UTC 调，独立核实；5X 上线前同调） | 2026-09-09 11:46 UTC | app_settings（`minimum_required_card_balance:*`）+ admin_setting_events |
 | Worker 进程写权限 | worker：`PROVIDER_RECHARGE_WRITES_ENABLED=true`（drop-in），通用/卡片写 false；funding 单元：`PROVIDER_CARD_WRITES_ENABLED=true`；env 文件 `PROVIDER_READS_ENABLED=true` | 16:35 | `systemctl cat` |
-| HNSKJ 卡 | `5980` DEPLETED，余额 $0.31（09-07 12:07 UTC 直充扣 $15.69，占用已释放）；其余 5 张 ASSIGNED 于历史订单且 ≤ $0.01；5 张 DEPLETED；HNSKJ 可分配 0 | 09-07 14:42 | cards |
+| HNSKJ 卡 | `5276` AVAILABLE/active，余额 $16（2026-09-17 01:34 新开，段 23）；旧卡 12 张均 FAILED/invalid/REFUND_WATCH 余额 $0；HNSKJ 可分配 1 | 2026-09-17 01:37 UTC | cards 独立 SELECT |
 | 备用卡（备用卡台 A = highvcc，manual_excel 导入与一键开卡同池，sync_tier=MANUAL_IMPORT） | 卡台现存 5 张（3118 $60 / 7402 $1.08 / 0601 $1.27 / 5501 $1.79 / 0237 $0）；库内另有 3241、9354 于 10:50 同步时仍在、之后消失，尚未被下一次快照标记。10 分钟自动快照同步正常工作（3118 开卡后 2 分钟内入库并 ACCEPTED） | 2026-09-11 10:58 UTC | 脚本 preview→门控→commit 输出；隧道新连接独立 SELECT cards / manual_card_import_batches |
-| 可分配卡（正式资格 SQL） | 1 张：`5371`（Plus门槛16.00，按新生产release正式资格SQL）；非终态订单 0。`1657`同步17.83但账本推算2.00，新口径排除；不推断差异来源。 | 2026-09-16 12:41 UTC | 发布日志、独立SSH/DB/API/公网哈希复验（docs/incidents/d240-deployment/） |
-| HNSKJ 卡台 | **2026-09-14 服务器故障、开不了卡**（Lemon 报；此前钱包余额 **$106.09**（11:38 快照；今日 $18.25 → 07:02 $121.77 → 08:47 $71.52 → **09:17 $106.09**，最后一跳是 `1652` 退回的 $34.57）。卡台共 14 张卡（13 active），`providerOnlyActiveCount=0`。**卡余额只能靠同步读到，手动补钱后要等一次 `card-read-sync`**（今日实测滞后 5 分 34 秒，由订单的按需同步触发）。今日 4 次 `card_recharge`（自动补余额）HTTP 400 `DO_NOT_RETRY`（06:40/06:43/08:58/09:02），由 `card_balance_recharge_enabled=true` 触发（D-223）。**开卡故障是卡台侧，恢复时间未知**——直接影响 API 路线供卡 | 2026-09-14 15:05 UTC | Lemon 报 + provider_calls + admin_setting_events |
+| 可分配卡（正式资格 SQL） | 1 张：`5276`（2026-09-17 新开，16 刀，段 23，Plus门槛16.00 正式资格SQL）；非终态订单 0。 | 2026-09-17 01:37 UTC | eligibleInventoryCardSql 独立查询（隧道新连接） |
+| HNSKJ 卡台 | **2026-09-17 开卡已恢复**。根因是默认卡段失效：卡台 09-14 后换新段（现有效段 7 个，id 23-29「新—VISA-…」），旧默认段 18 失效致就绪判定 false、人工开卡建不了任务（D-241）；已改 `default_card_type_id` 18→23。开出 1 张卡 5276（16刀），账户余额 106.06→**89.48**（扣 16.58）。手动开卡执行器 `v1/scripts/card-stock-job-runner.js` 无常驻服务/timer，需按需手动跑并带 `PROVIDER_CARD_WRITES_ENABLED=true`；后台"人工开卡"只建 PENDING job、不自动执行。`card_provider_snapshots` 由 `pojia-card-catalog-sync.timer` 每 5 分钟刷新。 | 2026-09-17 01:47 UTC | card_provider_snapshots + cards + admin_setting_events + D-241 |
 | 订单总况 | RECHARGE_SUCCESS 20 / RECHARGE_FAILED 37 / CLOSED 18 / 非终态0（含历史人工/自动，不把20全算自动成功）。 | 2026-09-16 12:41 UTC | 发布日志、独立SSH/DB/API/公网哈希复验（docs/incidents/d240-deployment/） |
 | 活动资金与运行 | active_runs 0；非终态订单0；统一成功发布后新建订单0。当前版本真实单时延/重试效果仍未验。 | 2026-09-16 22:50 UTC | 独立SELECT orders/browser_runs |
 | 最近 Browser 运行 | 最近付款样本见「最近真实单」行；本次D-240仅重启和只读校验，新版本尚无真实付款验收样本。 | 2026-09-16 12:41 UTC | 发布日志、独立SSH/DB/API/公网哈希复验（docs/incidents/d240-deployment/） |

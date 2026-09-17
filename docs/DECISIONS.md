@@ -3721,3 +3721,26 @@ A4 原标"⚠️悬而未决真问题：Browser 主力但卡只能手动开,200�
 
 ### 统一成功已发布（2026-09-16 15:36 UTC）
 用户确认发布，中断后继续完成4334dc2。撤回早交付，成功仍在取消和内部核对后；保留其余提速。切换前无活动run/订单/早交付待收尾run，无需状态迁移。接单已恢复，未真实充值。
+
+## D-241（2026-09-17）hnskj 默认卡段失效致人工开卡卡死；修复 default_card_type_id 18→23；开卡执行仍受写开关闸控
+
+> 起因：Lemon 要把 Plus 切回 API+hnskj，先在运营后台"人工开卡"却创建不了任务。
+
+**根因（实查坐实，非连通性问题）**：卡台在 2026-09-14 后把卡段整批换新——当前有效段 id `23-29`（名字全是"新—VISA-..."），而旧默认 `default_card_type_id=18`（9-14 07:00 设）已不在有效段里。
+- 就绪判定：server.js:161 / admin-start-business-service.js:8 `defaultCardTypeReady = cardTypes.some(id===18)` = false → 页面"未就绪"。
+- 创建任务：card-stock-job-service.js:80 未指定时默认用 `18` → card-provider-snapshot-service.js:75 `evaluateCardStockRequest` 找不到 → 抛 409 `CARD_STOCK_CARD_TYPE_UNAVAILABLE`「卡段不可用或已变更」。
+- 佐证 API 本身正常：`card_provider_snapshots(hnskj)` payload `cardTypes=[23-29]`、`purchaseEnabled=true`、`accountBalance=106.06 USD`，快照由 `pojia-card-catalog-sync.timer` 每 5 分钟刷新保持 fresh；Key/余额/连通均正常，唯默认段 id 过期。
+
+**修复**：`default_card_type_id` 18→23（新—VISA-40024200）。复用生产 `setDefaultCardType`（自带 6 分钟 fresh + 卡段存在校验，不抄第二份规则），本地经隧道连库、先 dry-run 再 apply，独立查询复核（值=23、`admin_setting_events` old18/new23），临时脚本跑完删、工作区干净。
+
+**开卡执行仍有第二道闸（本轮未动，待 Lemon 决策）**：worker 进程 `PROVIDER_CARD_WRITES_ENABLED=false` 且 `PROVIDER_WRITES_ENABLED=false`（worker.service ExecStart 显式）。worker-runtime.js:13：这两个全 false 时 worker 不认领 `PURCHASE_CARD` 任务，开卡任务会一直 PENDING 不执行。真开卡须打开写开关并重启 worker——改系统服务配置 + 授权真实开卡（花钱），须 Lemon 明确确认。切回 API 前应先核 hnskj 是否尚有可分配卡（有则不必开卡）。
+
+### D-241 开卡执行（2026-09-17 01:34 UTC）
+
+Lemon 确认开 1 张 16 刀。**执行路径澄清（先误判后查清）**：手动开卡的执行器是独立脚本 `v1/scripts/card-stock-job-runner.js`——一次性运行，门槛 `PROVIDER_WRITES_ENABLED=false` 且 `PROVIDER_CARD_WRITES_ENABLED=true`（:22），**不是常驻 worker，也无 timer 触发**。worker 的 `PURCHASE_CARD` 是订单驱动开卡（workflow task），与手动 `card_stock_jobs` 是两条独立线；曾误判为 worker 执行、临时打开 worker CARD_WRITES，任务 PENDING 不动才查清——该 worker 改动多余，已回滚恢复 `CARD_WRITES=false`。
+
+流程：`createJob`（jobId 829d0925，dry-run 预估 16.58）→ 服务器按门槛 env 跑 runner → claim → `openStockCards` → COMPLETED opened=1。
+
+结果（独立复查）：新卡 **5276** active/AVAILABLE/余额 16/段 23/刚读同步；正式资格口径 hnskj 可分配 **1 张**；账户余额 106.06→**89.48**（扣 16.58）；worker 已回滚。开卡前置 `card_auto_replenishment_enabled=false`（不会失控自动开卡）、在途订单 0（重启安全）均已核。
+
+**遗留改进**：(1) 默认卡段被卡台换段作废时，就绪判定只给笼统"未就绪"，未点名失效的 `default_card_type_id`，排查困难。(2) 手动开卡执行器 `card-stock-job-runner.js` 无常驻服务/timer，需按需手动跑且要显式带 `PROVIDER_CARD_WRITES_ENABLED=true`——后台"人工开卡"只建 PENDING job，不会自动执行，这个断点值得在文档/后台提示里点明。两项后续 V2 处理，勿在本轮扩建。
