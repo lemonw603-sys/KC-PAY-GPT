@@ -3883,3 +3883,7 @@ Lemon：highvcc 网站登录 = 账号密码 + 随机位置滑动块。→ **系�
 ### D-253 补记（2026-09-17 14:05 UTC）：Lemon 定「接受 API 路线只走 hnskj，客服不加 BIN」
 
 → 卡台↔支付方式解耦（D-243 起的方向节点）**结论：Browser 路线可用任何卡台（已成立）；API 路线固定 hnskj（ZZSHU 认 BIN，不扩）。** 面一选择表保留「产品 × 执行器 → 卡台」结构，API 行固定 101、后台不给选择控件（减法）；面一 C1 ②③④、切换四项校验不变。C2 脚本作废。
+
+## D-254（2026-09-17 14:40 UTC）browser-mvp 改动纪律（Lemon 顾虑：Browser 自动化代码脆弱）
+
+落实 8 块里只有③④轻碰（非付款）、⑦碰付款链路（排最后、前置非付款 PoC）；②⑤⑥⑧不碰。规则：碰的任务书列文件白名单、越界即停；付款前三件（`billing-address-fill` / `live-chatgpt-payment-adapter` / `payment-executor` submit 段）任何块不许改除非 Lemon 单独批；一动就全量测试 + rehearsal 演练；worker 重启前问；每块收尾含 Browser 演练。已写进账本「做的顺序」下。第②步任务书已含「不碰 browser-mvp」边界。
