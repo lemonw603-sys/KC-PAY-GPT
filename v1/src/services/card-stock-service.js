@@ -155,43 +155,19 @@ export function createCardStockService({ pool, sessionEncryptionKey, panHmacKey 
     );
   }
 
-  async function refreshLowStockAlert(connection) {
-    const [thresholdRows] = await connection.query(
-      `SELECT setting_key, setting_value FROM app_settings
-       WHERE setting_key IN ('card_stock_low_threshold', 'card_auto_replenishment_enabled')`
-    );
+  /**
+   * 入库后把该台的 Plus 可分配数报回去。库存偏低的告警不在这里写了：
+   * 它按台 × 产品由供卡调度器每分钟唯一产生（card-supply-scheduler-service），阈值 = 水位。
+   */
+  async function countAvailableStock(connection) {
     const [stockRows] = await connection.query(
       `SELECT COUNT(*) AS count FROM cards
        WHERE ${eligibleInventoryCardSql('cards', `COALESCE((SELECT CAST(setting_value AS DECIMAL(18,6))
            FROM app_settings WHERE setting_key = 'default_minimum_required_card_balance' LIMIT 1), 999999999)`)}
-         AND provider_account_id = ?
-        `,
+         AND provider_account_id = ?`,
       [providerAccountId]
     );
-    const threshold = Math.max(0, Number(thresholdRows.find((row) => row.setting_key === 'card_stock_low_threshold')?.setting_value || 5));
-    const autoReplenishmentEnabled = thresholdRows.some((row) => row.setting_key === 'card_auto_replenishment_enabled' && row.setting_value === 'true');
-    const available = Number(stockRows[0]?.count || 0);
-    const key = `card-stock-low:${providerAccountId}:plus`;
-    // threshold 0 means the reminder is switched off; "0 left, threshold 0" was pure noise.
-    if (threshold > 0 && available <= threshold && !autoReplenishmentEnabled) {
-      await connection.query(
-        `INSERT INTO operator_alerts
-         (id, alert_type, dedupe_key, severity, title, message, status)
-         VALUES (UUID(), 'CARD_STOCK_LOW', ?, 'warning', '可用卡库存偏低', ?, 'OPEN')
-         ON DUPLICATE KEY UPDATE severity = VALUES(severity), title = VALUES(title),
-           message = VALUES(message),
-           status = IF(status = 'RESOLVED', 'OPEN', status),
-           acknowledged_at = IF(status = 'RESOLVED', NULL, acknowledged_at)`,
-        [key, `Plus 可直接分配卡剩余 ${available} 张，阈值为 ${threshold}。`]
-      );
-    } else {
-      await connection.query(
-        `UPDATE operator_alerts SET status = 'RESOLVED', acknowledged_at = CURRENT_TIMESTAMP(3)
-         WHERE dedupe_key = ? AND status = 'OPEN'`,
-        [key]
-      );
-    }
-    return { available, threshold, low: threshold > 0 && available <= threshold && !autoReplenishmentEnabled };
+    return { available: Number(stockRows[0]?.count || 0) };
   }
 
   async function register(card) {
@@ -297,7 +273,7 @@ export function createCardStockService({ pool, sessionEncryptionKey, panHmacKey 
           currentBalance: card.currentBalance, currency: card.currency
         }
       });
-      const stock = await refreshLowStockAlert(connection);
+      const stock = await countAvailableStock(connection);
       await connection.commit();
       return { providerCardId: card.providerCardId, inventoryStatus, ...stock };
     } catch (error) {
@@ -534,7 +510,6 @@ export function createCardStockService({ pool, sessionEncryptionKey, panHmacKey 
          updated_at = CURRENT_TIMESTAMP(3)`,
       [String(threshold)]
     );
-    await refreshLowStockAlert(pool);
     return { threshold };
   }
 

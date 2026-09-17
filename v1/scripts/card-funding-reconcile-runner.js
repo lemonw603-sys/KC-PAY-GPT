@@ -3,7 +3,7 @@ import { isEnvTrue, loadConfig } from '../src/config.js';
 import { createDatabasePool } from '../src/db/pool.js';
 import { HnskjCardProvider } from '../src/providers/index.js';
 import { createCardFundingRepository } from '../src/db/repositories/card-funding-repository.js';
-import { resolveCurrentCardProviderAccountId } from '../src/services/provider-route-service.js';
+import { CARD_ADAPTER_HNSKJ, resolveCardProviderAccountIdForAdapter } from '../src/services/provider-route-service.js';
 import { createCardStockService } from '../src/services/card-stock-service.js';
 import { reconcileNextCardFundingAttempt } from '../src/services/card-funding-reconcile-service.js';
 
@@ -15,8 +15,8 @@ if (isEnvTrue(process.env.PROVIDER_WRITES_ENABLED)
 
 const config = loadConfig();
 const pool = createDatabasePool(config.database);
-const providerAccountId = await resolveCurrentCardProviderAccountId(pool);
-if (!providerAccountId) throw new Error('No active production card provider route');
+const providerAccountId = await resolveCardProviderAccountIdForAdapter(pool, CARD_ADAPTER_HNSKJ);
+if (!providerAccountId) throw new Error('No healthy card provider account is served by the hnskj adapter');
 const provider = new HnskjCardProvider({ baseUrl: config.hnskjApiBaseUrl, apiKey: config.hnskjApiKey });
 const repository = createCardFundingRepository(pool);
 const stock = createCardStockService({

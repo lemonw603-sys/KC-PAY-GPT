@@ -4,7 +4,7 @@ import { createDatabasePool } from '../src/db/pool.js';
 import { HnskjCardProvider } from '../src/providers/index.js';
 import { createCardFundingRepository } from '../src/db/repositories/card-funding-repository.js';
 import { executeCardFundingAttempt } from '../src/services/card-funding-executor.js';
-import { resolveCurrentCardProviderAccountId } from '../src/services/provider-route-service.js';
+import { CARD_ADAPTER_HNSKJ, resolveCardProviderAccountIdForAdapter } from '../src/services/provider-route-service.js';
 
 if (!isEnvTrue(process.env.CARD_FUNDING_EXECUTION_ENABLED)) {
   throw new Error('Card funding runner is disabled by CARD_FUNDING_EXECUTION_ENABLED');
@@ -17,8 +17,8 @@ if (isEnvTrue(process.env.PROVIDER_WRITES_ENABLED)
 
 const config = loadConfig();
 const pool = createDatabasePool(config.database);
-const providerAccountId = await resolveCurrentCardProviderAccountId(pool);
-if (!providerAccountId) throw new Error('No active production card provider route');
+const providerAccountId = await resolveCardProviderAccountIdForAdapter(pool, CARD_ADAPTER_HNSKJ);
+if (!providerAccountId) throw new Error('No healthy card provider account is served by the hnskj adapter');
 const provider = new HnskjCardProvider({ baseUrl: config.hnskjApiBaseUrl, apiKey: config.hnskjApiKey });
 const repository = createCardFundingRepository(pool);
 

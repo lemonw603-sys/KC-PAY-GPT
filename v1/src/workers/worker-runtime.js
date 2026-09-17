@@ -9,15 +9,15 @@ export function allowedTaskTypesFor(settings, {
   providerRechargeWritesEnabled = false
 } = {}) {
   const types = [];
-  if (settings.dispatchNewRecharges) types.push(TaskType.ASSIGN_CARD);
-  if (settings.dispatchNewRecharges && (providerWritesEnabled || providerCardWritesEnabled)) types.push(TaskType.PURCHASE_CARD);
-  if (settings.dispatchNewRecharges) types.push(TaskType.PREPARE_RECHARGE);
+  // 开卡不再是订单任务：供卡由水位调度器 + card-stock-job-runner 做（D-247 面二③），
+  // worker 只分库存卡。providerCardWritesEnabled 因此不再解锁任何任务类型。
+  if (settings.dispatchNewRecharges) types.push(TaskType.ASSIGN_CARD, TaskType.PREPARE_RECHARGE);
   if (settings.dispatchNewRecharges && providerReadsEnabled
     && (providerWritesEnabled || providerRechargeWritesEnabled || settings.browserDispatchEnabled)) {
     types.push(TaskType.SUBMIT_RECHARGE);
   }
   if (settings.pollExistingOrders && providerReadsEnabled) {
-    types.push(TaskType.VERIFY_CARD, TaskType.POLL_RECHARGE, TaskType.RECHECK_CANCELLATION);
+    types.push(TaskType.POLL_RECHARGE, TaskType.RECHECK_CANCELLATION);
   }
   if (settings.syncCardTransactions && providerReadsEnabled) {
     types.push(TaskType.SYNC_CARD_TRANSACTIONS);

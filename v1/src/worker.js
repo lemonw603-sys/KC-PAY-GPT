@@ -7,7 +7,6 @@ import { createBrowserDispatchRepository } from './db/repositories/browser-dispa
 import {
   HnskjCardProvider,
   ZzshuRechargeProvider,
-  mapPurchasedCard,
   mapCardCredentials,
   mapCardProvisioning
 } from './providers/index.js';
@@ -35,16 +34,8 @@ const hnskjReadProvider = (config.providerReadsEnabled || config.providerCardWri
       apiKey: config.hnskjApiKey
     })
   : null;
+// worker 对卡台只读：付款前查一次卡详情、付款后同步流水。开卡在 card-stock-job-runner。
 const cardProvider = {
-  cardTypes: hnskjReadProvider
-    ? hnskjReadProvider.cardTypes.bind(hnskjReadProvider)
-    : unavailable('card types'),
-  cards: hnskjReadProvider
-    ? hnskjReadProvider.cards.bind(hnskjReadProvider)
-    : unavailable('cards list'),
-  purchaseCard: config.providerCardWritesEnabled
-    ? hnskjReadProvider?.purchaseCard.bind(hnskjReadProvider) || unavailable('card purchase provider')
-    : unavailable('card purchase'),
   card: hnskjReadProvider
     ? hnskjReadProvider.card.bind(hnskjReadProvider)
     : unavailable('card details'),
@@ -77,7 +68,6 @@ const handlers = createWorkflowHandlers({
   cardProvider,
   rechargeProvider,
   recordCall: (input) => recordProviderCall({ pool, ...input }),
-  mapPurchasedCard,
   mapCardProvisioning,
   mapCardCredentials,
   buildDirectOrderRequest,

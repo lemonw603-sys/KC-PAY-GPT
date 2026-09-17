@@ -32,7 +32,7 @@ import { createTraceabilityOperationsService } from './services/traceability-ope
 import { createSessionReplacementService } from './services/session-replacement-service.js';
 import { createBrowserAdminService } from './services/browser-admin-service.js';
 import { createBrowserBillingAddressAdminService } from './services/browser-billing-address-admin-service.js';
-import { resolveCurrentCardProviderAccountId } from './services/provider-route-service.js';
+import { CARD_ADAPTER_HNSKJ, resolveCardProviderAccountIdForAdapter } from './services/provider-route-service.js';
 import {
   providerSupportedCardTypeIds,
   readProviderSnapshot,
@@ -46,8 +46,8 @@ import { createCardSourceAdminService } from './services/card-source-admin-servi
 
 const config = loadConfig();
 const pool = createDatabasePool(config.database);
-const currentCardProviderAccountId = await resolveCurrentCardProviderAccountId(pool);
-if (!currentCardProviderAccountId) throw new Error('No active production card provider route');
+const currentCardProviderAccountId = await resolveCardProviderAccountIdForAdapter(pool, CARD_ADAPTER_HNSKJ);
+if (!currentCardProviderAccountId) throw new Error('No healthy card provider account is served by the hnskj adapter');
 const createCustomerOrder = createOrderIntakeService({
   pool,
   sessionEncryptionKey: config.sessionEncryptionKey,

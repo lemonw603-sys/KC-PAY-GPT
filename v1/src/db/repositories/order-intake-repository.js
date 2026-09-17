@@ -153,20 +153,20 @@ export async function createOrderFromCdk(pool, input) {
     }
     const cdkId = cdkRows[0].id;
 
+    // 冻结卡台只从「产品 × 执行器 → 卡台」选择表取（D-246 面一 C1）。路线表那一列和
+    // browser_card_source_selections 不再是真相；API 行固定 hnskj 是选择表里的一行
+    // （locked=1），不再在这里写死 provider_code。
     const [routeRows] = await connection.query(
       `SELECT p.id AS product_id, fr.id AS fulfillment_route_id, fr.executor_kind,
-              CASE WHEN fr.executor_kind='API' THEN fr.card_provider_account_id
-                   ELSE bcs.provider_account_id END AS frozen_card_provider_account_id
+              css.provider_account_id AS frozen_card_provider_account_id
        FROM products p INNER JOIN fulfillment_routes fr ON fr.product_id = p.id
-       LEFT JOIN browser_card_source_selections bcs ON bcs.product_id=p.id
-       INNER JOIN provider_accounts cpa ON cpa.id=CASE
-         WHEN fr.executor_kind='API' THEN fr.card_provider_account_id
-         ELSE bcs.provider_account_id END
+       INNER JOIN card_source_selections css
+         ON css.product_id = p.id AND css.executor_kind = fr.executor_kind
+       INNER JOIN provider_accounts cpa ON cpa.id = css.provider_account_id
        WHERE BINARY p.legacy_plan_type = BINARY ?
          AND p.status = 'ACTIVE' AND fr.accepts_new_orders = 1
          AND fr.retired_at IS NULL
-         AND ((fr.executor_kind='API' AND cpa.provider_code='hnskj'
-               AND cpa.supports_api_recharge=1)
+         AND ((fr.executor_kind='API' AND cpa.supports_api_recharge=1)
            OR (fr.executor_kind='BROWSER' AND cpa.supports_browser_recharge=1))
        ORDER BY fr.route_version DESC LIMIT 2 FOR SHARE`,
       [cdkRows[0].plan_type || 'plus']

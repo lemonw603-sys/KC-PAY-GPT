@@ -84,7 +84,6 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
     async loadOrderContext(orderId) {
       const [rows] = await pool.query(
         `SELECT o.*,
-                fr.card_provider_account_id,
                 fr.recharge_provider_account_id,
                 fr.executor_kind AS recharge_executor_kind,
                 c.id AS local_card_id,
@@ -93,6 +92,7 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
                 c.card_type_id AS stored_card_type_id,
                 c.sync_tier AS card_sync_tier,
                 card_pa.provider_code AS card_provider_code,
+                card_pa.supports_api_sync AS card_supports_api_sync,
                 c.last4,
                 c.status AS card_status,
                 c.current_balance AS card_current_balance,
@@ -123,6 +123,7 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
           card_type_id: row.stored_card_type_id,
           sync_tier: row.card_sync_tier,
           provider_code: row.card_provider_code,
+          supports_api_sync: Number(row.card_supports_api_sync) === 1,
           last4: row.last4,
           status: row.card_status,
           current_balance: row.card_current_balance,
@@ -443,238 +444,20 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
            ON DUPLICATE KEY UPDATE updated_at = CURRENT_TIMESTAMP(3)`,
           [orderId, `prepare-recharge:${orderId}`, orderId, `submit-recharge:${orderId}`]
         );
-        const [thresholdRows] = await connection.query(
-          `SELECT setting_key, setting_value FROM app_settings
-           WHERE setting_key IN ('card_stock_low_threshold', 'card_auto_replenishment_enabled')`
-        );
+        // 库存偏低的告警按台 × 产品由供卡调度器每分钟唯一产生（card-supply-scheduler-service），
+        // 这里只把剩余数报回去，不再自己写库存偏低告警（旧实现只算一台、阈值全局）。
         const [stockRows] = await connection.query(
           `SELECT COUNT(*) AS count FROM cards
            WHERE ${eligibleInventoryCardSql('cards', '?')}
              AND provider_account_id = ?`,
           [String(order.minimum_required_card_balance), order.card_provider_account_id]
         );
-        const threshold = Math.max(0, Number(thresholdRows.find((row) => row.setting_key === 'card_stock_low_threshold')?.setting_value || 5));
-        const autoReplenishmentEnabled = Boolean(source.supports_auto_open)
-          && thresholdRows.some((row) => row.setting_key === 'card_auto_replenishment_enabled' && row.setting_value === 'true');
         const remaining = Number(stockRows[0]?.count || 0);
-        if (remaining <= threshold && !autoReplenishmentEnabled) {
-          await connection.query(
-            `INSERT INTO operator_alerts
-             (id, alert_type, dedupe_key, severity, title, message, status)
-             VALUES (UUID(), 'CARD_STOCK_LOW', ?, 'warning', '可用卡库存偏低', ?, 'OPEN')
-             ON DUPLICATE KEY UPDATE severity = VALUES(severity), title = VALUES(title),
-               message = VALUES(message),
-               status = IF(status = 'RESOLVED', 'OPEN', status),
-               acknowledged_at = IF(status = 'RESOLVED', NULL, acknowledged_at)`,
-            [`card-stock-low:${order.card_provider_account_id}:plus`,
-              `Plus 可直接分配卡剩余 ${remaining} 张，阈值为 ${threshold}。`]
-          );
-        } else {
-          await connection.query(
-            `UPDATE operator_alerts SET status='RESOLVED',
-               acknowledged_at=COALESCE(acknowledged_at, CURRENT_TIMESTAMP(3))
-             WHERE dedupe_key=? AND status='OPEN'`,
-            [`card-stock-low:${order.card_provider_account_id}:plus`]
-          );
-        }
         return {
           providerCardId: String(card.provider_card_id),
           currentBalance: String(card.current_balance),
           remaining
         };
-      });
-    },
-
-    async beginCardPurchase(orderId, taskId, baseline) {
-      return inTransaction(pool, async (connection) => {
-        const [rows] = await connection.query(
-          'SELECT status, version FROM orders WHERE id = ? FOR UPDATE', [orderId]
-        );
-        if (rows.length !== 1) throw new Error(`Order not found: ${orderId}`);
-        const order = rows[0];
-        if (order.status !== OrderStatus.CREATED) {
-          throw new Error(`Cannot begin card purchase from ${order.status}`);
-        }
-        const [result] = await connection.query(
-          `UPDATE orders SET status = ?, version = version + 1,
-             updated_at = CURRENT_TIMESTAMP(3) WHERE id = ? AND version = ?`,
-          [OrderStatus.CARD_PURCHASING, orderId, order.version]
-        );
-        if (result.affectedRows !== 1) throw new Error(`Concurrent card purchase detected: ${orderId}`);
-        await connection.query(
-          `UPDATE tasks SET payload_json = ?, updated_at = CURRENT_TIMESTAMP(3)
-           WHERE id = ? AND order_id = ? AND task_type = 'PURCHASE_CARD'`,
-          [JSON.stringify({ ...baseline, phase: 'PURCHASE_STARTING' }), taskId, orderId]
-        );
-        await insertEvent(connection, {
-          orderId,
-          fromStatus: OrderStatus.CREATED,
-          toStatus: OrderStatus.CARD_PURCHASING,
-          reason: 'card purchase baseline persisted before provider write',
-          metadata: {
-            cardTypeId: String(baseline.cardTypeId),
-            existingCardCount: baseline.existingCardIds.length
-          }
-        });
-      });
-    },
-
-    async markCardPurchaseAccepted(orderId, taskId, baseline) {
-      await pool.query(
-        `UPDATE tasks SET payload_json = ?, updated_at = CURRENT_TIMESTAMP(3)
-         WHERE id = ? AND order_id = ? AND task_type = 'PURCHASE_CARD'`,
-        [JSON.stringify({ ...baseline, phase: 'PURCHASE_ACCEPTED' }), taskId, orderId]
-      );
-    },
-
-    reviewCardPurchase(orderId, reason, metadata = null) {
-      return this.transition(orderId, OrderStatus.RECONCILIATION_REQUIRED, reason, metadata);
-    },
-
-    async commitPurchasedCard(orderId, card) {
-      return inTransaction(pool, async (connection) => {
-        const [rows] = await connection.query(
-          `SELECT o.status, o.version, o.product_id, o.open_card_amount,
-                  o.frozen_card_provider_account_id AS card_provider_account_id
-           FROM orders o
-           WHERE o.id = ? FOR UPDATE`,
-          [orderId]
-        );
-        if (rows.length !== 1) throw new Error(`Order not found: ${orderId}`);
-        const order = rows[0];
-        if (order.status !== OrderStatus.CARD_PURCHASING) {
-          throw new Error(`Cannot commit card from order state ${order.status}`);
-        }
-        if (!order.card_provider_account_id) {
-          throw new Error(`Order route has no card provider account: ${orderId}`);
-        }
-
-        await connection.query(
-          `INSERT INTO cards
-           (id, provider_account_id, order_id, inventory_status, intake_status, assigned_at,
-            provider_card_id, external_card_id, card_type_id, last4, status,
-            funded_amount, current_balance, currency, refund_status, sync_tier)
-           VALUES (UUID(), ?, ?, 'ASSIGNED', 'ACCEPTED', CURRENT_TIMESTAMP(3),
-             ?, ?, ?, ?, ?, ?, ?, ?, 'MONITORING', 'PROVISIONING')`,
-          [
-            order.card_provider_account_id,
-            orderId,
-            String(card.providerCardId),
-            String(card.providerCardId),
-            String(card.cardTypeId),
-            card.last4 || null,
-            card.status || 'PROVISIONING',
-            String(card.fundedAmount),
-            card.currentBalance == null ? null : String(card.currentBalance),
-            card.currency || 'USD'
-          ]
-        );
-        const [insertedCards] = await connection.query(
-          `SELECT id FROM cards
-           WHERE provider_account_id = ? AND BINARY external_card_id = BINARY ?
-           LIMIT 1 FOR UPDATE`,
-          [order.card_provider_account_id, String(card.providerCardId)]
-        );
-        if (insertedCards.length !== 1) {
-          throw new Error(`Purchased card cannot be resolved after insert: ${card.providerCardId}`);
-        }
-        await connection.query(
-          `INSERT INTO card_assignment_history
-           (id, card_id, order_id, assignment_kind, status, assigned_by,
-            assignment_reason, assigned_at, evidence_json)
-           VALUES (UUID(), ?, ?, 'PURCHASED_FOR_ORDER', 'ACTIVE', 'worker:purchase-card',
-             'card purchased for this order', CURRENT_TIMESTAMP(3), ?)`,
-          [insertedCards[0].id, orderId, JSON.stringify({
-            providerCardId: String(card.providerCardId),
-            fundedAmount: String(card.fundedAmount),
-            currency: card.currency || 'USD'
-          })]
-        );
-        const [[capacitySetting]] = await connection.query(
-          `SELECT setting_value FROM app_settings
-           WHERE setting_key='card_max_successful_payments' LIMIT 1 FOR SHARE`
-        );
-        await reserveCardConsumptionInTransaction(connection, {
-          cardId: insertedCards[0].id,
-          orderId,
-          productId: order.product_id,
-          amount: order.open_card_amount,
-          currency: card.currency || 'USD',
-          maxPayments: Number(capacitySetting?.setting_value || 3),
-          evidence: { source: 'card_purchase_assignment', providerCardId: String(card.providerCardId) }
-        });
-        const [updateResult] = await connection.query(
-          `UPDATE orders SET status = ?, assigned_card_id = ?, version = version + 1,
-             updated_at = CURRENT_TIMESTAMP(3)
-           WHERE id = ? AND version = ?`,
-          [OrderStatus.CARD_PROVISIONING, insertedCards[0].id, orderId, order.version]
-        );
-        if (updateResult.affectedRows !== 1) {
-          throw new Error(`Concurrent card commit detected: ${orderId}`);
-        }
-        await insertEvent(connection, {
-          orderId,
-          fromStatus: OrderStatus.CARD_PURCHASING,
-          toStatus: OrderStatus.CARD_PROVISIONING,
-          reason: 'card purchase committed; awaiting final card readiness',
-          metadata: { providerCardId: String(card.providerCardId), last4: card.last4 || null }
-        });
-        await connection.query(
-          `INSERT INTO tasks
-           (order_id, task_type, status, dedupe_key, max_attempts)
-           VALUES (?, 'VERIFY_CARD', 'PENDING', ?, 240)`,
-          [orderId, `verify-card:${orderId}`]
-        );
-      });
-    },
-
-    async commitCardReady(orderId, snapshot, credentials) {
-      return inTransaction(pool, async (connection) => {
-        const [rows] = await connection.query(
-          'SELECT status, version FROM orders WHERE id = ? FOR UPDATE', [orderId]
-        );
-        if (rows.length !== 1) throw new Error(`Order not found: ${orderId}`);
-        const order = rows[0];
-        if (order.status !== OrderStatus.CARD_PROVISIONING) {
-          throw new Error(`Cannot commit ready card from ${order.status}`);
-        }
-        const normalizedPan = String(credentials.cardNumber || '').replace(/[\s-]/g, '');
-        const panHmac = Buffer.isBuffer(panHmacKey) && /^\d{12,19}$/.test(normalizedPan)
-          ? crypto.createHmac('sha256', panHmacKey).update(normalizedPan).digest('hex') : null;
-        await connection.query(
-          `UPDATE cards SET status = ?, last4 = COALESCE(?, last4),
-             current_balance = ?, currency = ?, last_synced_at = CURRENT_TIMESTAMP(3),
-             card_credentials_ciphertext = ?, card_number_ciphertext = ?,
-             pan_hmac = COALESCE(?, pan_hmac),
-             pan_hmac_version = CASE WHEN ? IS NULL THEN pan_hmac_version ELSE 1 END,
-             updated_at = CURRENT_TIMESTAMP(3) WHERE id = (
-               SELECT assigned_card_id FROM orders WHERE id = ?
-             )`,
-          [snapshot.status, snapshot.last4 || null, String(snapshot.currentBalance),
-            snapshot.currency || 'USD', encryptSecret(JSON.stringify(credentials), sessionEncryptionKey),
-            encryptSecret(credentials.cardNumber, sessionEncryptionKey), panHmac, panHmac, orderId]
-        );
-        const [result] = await connection.query(
-          `UPDATE orders SET status = ?, version = version + 1,
-             updated_at = CURRENT_TIMESTAMP(3) WHERE id = ? AND version = ?`,
-          [OrderStatus.CARD_READY, orderId, order.version]
-        );
-        if (result.affectedRows !== 1) throw new Error(`Concurrent card readiness commit detected: ${orderId}`);
-        await insertEvent(connection, {
-          orderId, fromStatus: OrderStatus.CARD_PROVISIONING, toStatus: OrderStatus.CARD_READY,
-          reason: 'card status, balance and credentials confirmed',
-          metadata: { last4: snapshot.last4 || null, currentBalance: String(snapshot.currentBalance) }
-        });
-        await connection.query(
-          `INSERT INTO tasks (order_id, task_type, status, dedupe_key, max_attempts)
-           VALUES (?, 'PREPARE_RECHARGE', 'PENDING', ?, 5)`,
-          [orderId, `prepare-recharge:${orderId}`]
-        );
-        await connection.query(
-          `INSERT INTO tasks (order_id, task_type, status, dedupe_key, max_attempts)
-           VALUES (?, 'SUBMIT_RECHARGE', 'PENDING', ?, 5)`,
-          [orderId, `submit-recharge:${orderId}`]
-        );
       });
     },
 
@@ -832,42 +615,6 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
           providerCall: { id: call.insertId, startedAt: now }
         };
       });
-    },
-
-    async failCardProvisioning(orderId, snapshot) {
-      return inTransaction(pool, async (connection) => {
-        const [rows] = await connection.query(
-          'SELECT status, version FROM orders WHERE id = ? FOR UPDATE', [orderId]
-        );
-        if (rows.length !== 1) throw new Error(`Order not found: ${orderId}`);
-        const order = rows[0];
-        if (order.status !== OrderStatus.CARD_PROVISIONING) {
-          throw new Error(`Cannot fail card from ${order.status}`);
-        }
-        await connection.query(
-          `UPDATE cards SET status = ?, current_balance = COALESCE(?, current_balance),
-             last_synced_at = CURRENT_TIMESTAMP(3), updated_at = CURRENT_TIMESTAMP(3)
-           WHERE order_id = ?`,
-          [snapshot.status || 'FAILED', snapshot.currentBalance == null ? null : String(snapshot.currentBalance), orderId]
-        );
-        const [result] = await connection.query(
-          `UPDATE orders SET status = ?, failure_code = ?, failure_reason = ?,
-             version = version + 1, updated_at = CURRENT_TIMESTAMP(3)
-           WHERE id = ? AND version = ?`,
-          [OrderStatus.CARD_FAILED, snapshot.failureCode || 'CARD_PROVISIONING_FAILED',
-            snapshot.failureReason || 'Card provisioning failed', orderId, order.version]
-        );
-        if (result.affectedRows !== 1) throw new Error(`Concurrent card failure detected: ${orderId}`);
-        await insertEvent(connection, {
-          orderId, fromStatus: OrderStatus.CARD_PROVISIONING, toStatus: OrderStatus.CARD_FAILED,
-          reason: snapshot.failureReason || 'card provisioning failed',
-          metadata: { cardStatus: snapshot.status || 'FAILED' }
-        });
-      });
-    },
-
-    async reviewCardProvisioning(orderId, reason = 'card provisioning timed out') {
-      return this.transition(orderId, OrderStatus.RECONCILIATION_REQUIRED, reason);
     },
 
     async commitRechargeSubmission(orderId, submission) {

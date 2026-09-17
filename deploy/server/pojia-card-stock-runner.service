@@ -1,5 +1,5 @@
 [Unit]
-Description=AI充值业务库存卡后台任务执行器
+Description=AI充值业务供卡执行器：水位调度 + 开卡 job（hnskj / highvcc 同一执行者）
 After=network-online.target docker.service
 Wants=network-online.target
 Requires=docker.service

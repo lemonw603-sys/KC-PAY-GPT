@@ -464,11 +464,13 @@ export function createApp({
         return res.json(await setAdminDefaultRechargeMethod({
           method: req.body?.method,
           actorId: req.admin?.id || 'admin',
-          confirmation: req.body?.confirmation
+          confirmation: req.body?.confirmation,
+          expectedCurrentMethod: req.body?.expectedCurrentMethod
         }));
       } catch (error) {
         if (error instanceof PublicApiError) {
-          return res.status(error.status || 400).json({ error: error.code.toLowerCase() });
+          // 四项校验的逐项结果一起交回：拒切要说清楚是哪一项没过（D-246 面一 C1 ③）。
+          return res.status(error.status || 400).json({ error: error.code.toLowerCase(), checks: error.checks || null });
         }
         throw error;
       }
@@ -492,11 +494,19 @@ export function createApp({
   }
   if (typeof switchAdminBrowserCardSource === 'function') {
     app.post('/api/v1/admin/card-sources/browser/current', ...adminWriteGuards, async (req, res) => {
-      res.json(await switchAdminBrowserCardSource({
-        providerAccountId: req.body?.providerAccountId,
-        takeoverWaiting: req.body?.takeoverWaiting === true,
-        actorId: req.admin?.id || 'admin'
-      }));
+      try {
+        return res.json(await switchAdminBrowserCardSource({
+          providerAccountId: req.body?.providerAccountId,
+          expectedVersion: req.body?.expectedVersion,
+          takeoverWaiting: req.body?.takeoverWaiting === true,
+          actorId: req.admin?.id || 'admin'
+        }));
+      } catch (error) {
+        if (error instanceof PublicApiError) {
+          return res.status(error.status || 400).json({ error: error.code.toLowerCase(), checks: error.checks || null });
+        }
+        throw error;
+      }
     });
   }
   if (typeof getAdminBillingAddressSettings === 'function') {

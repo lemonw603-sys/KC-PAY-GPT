@@ -19,25 +19,25 @@ test('runtime settings and process gates jointly control task eligibility', () =
   assert.deepEqual(allowedTaskTypesFor(allSettings), [TaskType.ASSIGN_CARD, TaskType.PREPARE_RECHARGE]);
   assert.deepEqual(
     allowedTaskTypesFor(allSettings, { providerReadsEnabled: true }),
-    [TaskType.ASSIGN_CARD, TaskType.PREPARE_RECHARGE, TaskType.VERIFY_CARD, TaskType.POLL_RECHARGE, TaskType.RECHECK_CANCELLATION, TaskType.SYNC_CARD_TRANSACTIONS]
+    [TaskType.ASSIGN_CARD, TaskType.PREPARE_RECHARGE, TaskType.POLL_RECHARGE, TaskType.RECHECK_CANCELLATION, TaskType.SYNC_CARD_TRANSACTIONS]
   );
   assert.deepEqual(
     allowedTaskTypesFor(allSettings, {
       providerReadsEnabled: true,
       providerWritesEnabled: true
     }),
-    [TaskType.ASSIGN_CARD, TaskType.PURCHASE_CARD, TaskType.PREPARE_RECHARGE, TaskType.SUBMIT_RECHARGE, TaskType.VERIFY_CARD, TaskType.POLL_RECHARGE, TaskType.RECHECK_CANCELLATION, TaskType.SYNC_CARD_TRANSACTIONS]
+    [TaskType.ASSIGN_CARD, TaskType.PREPARE_RECHARGE, TaskType.SUBMIT_RECHARGE, TaskType.POLL_RECHARGE, TaskType.RECHECK_CANCELLATION, TaskType.SYNC_CARD_TRANSACTIONS]
   );
   assert.deepEqual(
     allowedTaskTypesFor({ ...allSettings, dispatchNewRecharges: false }, {
       providerReadsEnabled: true,
       providerWritesEnabled: true
     }),
-    [TaskType.VERIFY_CARD, TaskType.POLL_RECHARGE, TaskType.RECHECK_CANCELLATION, TaskType.SYNC_CARD_TRANSACTIONS]
+    [TaskType.POLL_RECHARGE, TaskType.RECHECK_CANCELLATION, TaskType.SYNC_CARD_TRANSACTIONS]
   );
   assert.deepEqual(
     allowedTaskTypesFor(allSettings, { providerReadsEnabled: true, providerCardWritesEnabled: true }),
-    [TaskType.ASSIGN_CARD, TaskType.PURCHASE_CARD, TaskType.PREPARE_RECHARGE, TaskType.VERIFY_CARD, TaskType.POLL_RECHARGE, TaskType.RECHECK_CANCELLATION, TaskType.SYNC_CARD_TRANSACTIONS]
+    [TaskType.ASSIGN_CARD, TaskType.PREPARE_RECHARGE, TaskType.POLL_RECHARGE, TaskType.RECHECK_CANCELLATION, TaskType.SYNC_CARD_TRANSACTIONS]
   );
   assert.equal(
     allowedTaskTypesFor(allSettings, { providerReadsEnabled: true, providerRechargeWritesEnabled: true }).includes(TaskType.SUBMIT_RECHARGE),
@@ -72,7 +72,7 @@ test('one worker iteration passes only eligible task types to the runner', async
   assert.equal(result.handled, false);
   assert.equal(input.rechargeDispatchMode, 'AUTOMATIC');
   assert.deepEqual(input.allowedRechargeExecutorKinds, []);
-  assert.deepEqual(input.allowedTaskTypes, [TaskType.ASSIGN_CARD, TaskType.PREPARE_RECHARGE, TaskType.VERIFY_CARD, TaskType.POLL_RECHARGE, TaskType.RECHECK_CANCELLATION, TaskType.SYNC_CARD_TRANSACTIONS]);
+  assert.deepEqual(input.allowedTaskTypes, [TaskType.ASSIGN_CARD, TaskType.PREPARE_RECHARGE, TaskType.POLL_RECHARGE, TaskType.RECHECK_CANCELLATION, TaskType.SYNC_CARD_TRANSACTIONS]);
 });
 
 test('worker passes only executable recharge kinds to task claiming', async () => {

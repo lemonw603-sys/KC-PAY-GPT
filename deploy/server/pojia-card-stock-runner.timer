@@ -1,0 +1,11 @@
+[Unit]
+Description=每分钟一次：按水位调度开卡 + 执行一个开卡 job（两台同一执行者，D-247 面二③）
+
+[Timer]
+OnBootSec=90s
+OnUnitActiveSec=60s
+AccuracySec=5s
+Unit=pojia-card-stock-runner.service
+
+[Install]
+WantedBy=timers.target

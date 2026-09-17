@@ -1,13 +1,6 @@
 import crypto from 'node:crypto';
 import { PublicApiError } from '../domain/public-api-error.js';
-
-function note(value) {
-  const text = String(value || '').trim();
-  if (text.length < 10) throw new PublicApiError('Route switch note is required', {
-    code: 'ROUTE_SWITCH_NOTE_REQUIRED', status: 400
-  });
-  return text.slice(0, 2000);
-}
+import { runCardSourceSwitchChecks } from './card-source-selection-service.js';
 
 function rechargeMethod(value) {
   const method = String(value || '').trim().toUpperCase();
@@ -24,11 +17,12 @@ export function createProviderRouteAdminService({ pool }) {
     const [rows] = await pool.query(
       `SELECT fr.id, fr.route_code, fr.route_version, fr.executor_kind,
               fr.accepts_new_orders, fr.retired_at,
-              pa.id AS card_provider_account_id, pa.account_code, pa.read_enabled,
+              css.provider_account_id AS card_provider_account_id, pa.account_code, pa.read_enabled,
               pa.write_enabled, pa.circuit_state, pa.retry_after_until
        FROM fulfillment_routes fr
        INNER JOIN products p ON p.id = fr.product_id
-       LEFT JOIN provider_accounts pa ON pa.id = fr.card_provider_account_id
+       LEFT JOIN card_source_selections css ON css.product_id = p.id AND css.executor_kind = fr.executor_kind
+       LEFT JOIN provider_accounts pa ON pa.id = css.provider_account_id
        WHERE p.product_code = 'chatgpt_plus'
        ORDER BY fr.route_version DESC, fr.created_at DESC`
     );
@@ -48,74 +42,15 @@ export function createProviderRouteAdminService({ pool }) {
     })) };
   }
 
-  async function switchRoute({ routeId, actorId, operatorNote, confirmation }) {
-    const id = String(routeId || '').trim();
-    const actor = String(actorId || '').trim() || 'admin';
-    const text = note(operatorNote);
-    const connection = await pool.getConnection();
-    try {
-      await connection.beginTransaction();
-      const [rows] = await connection.query(
-        `SELECT fr.id, fr.route_code, fr.route_version, fr.accepts_new_orders,
-                pa.read_enabled, pa.circuit_state, pa.retry_after_until
-         FROM fulfillment_routes fr
-         INNER JOIN products p ON p.id = fr.product_id
-         INNER JOIN provider_accounts pa ON pa.id = fr.card_provider_account_id
-         WHERE fr.id = ? AND p.product_code = 'chatgpt_plus'
-         LIMIT 1 FOR UPDATE`, [id]
-      );
-      const route = rows[0];
-      if (!route) throw new PublicApiError('Provider route not found', { code: 'ROUTE_NOT_FOUND', status: 404 });
-      const expected = `切换卡台 ${route.route_code}:${route.route_version}`;
-      if (String(confirmation || '').trim() !== expected) {
-        throw new PublicApiError('Route switch confirmation mismatch', {
-          code: 'ROUTE_SWITCH_CONFIRMATION_REQUIRED', status: 400
-        });
-      }
-      if (!route.read_enabled || route.circuit_state !== 'CLOSED'
-        || (route.retry_after_until && new Date(route.retry_after_until) > new Date())) {
-        throw new PublicApiError('Provider route is not healthy for new orders', {
-          code: 'ROUTE_NOT_HEALTHY', status: 409
-        });
-      }
-      const [active] = await connection.query(
-        `SELECT id FROM fulfillment_routes
-         WHERE product_id = (SELECT product_id FROM fulfillment_routes WHERE id = ?)
-           AND accepts_new_orders = 1 AND retired_at IS NULL
-         ORDER BY route_version DESC LIMIT 1 FOR UPDATE`, [id]
-      );
-      const previousId = active[0]?.id || null;
-      await connection.query(
-        // MySQL 不允许在 UPDATE 的子查询里再查同一张表（ERROR 1093），原来那句
-        // `WHERE product_id = (SELECT product_id FROM fulfillment_routes ...)`
-        // 一执行就报错。它一直没被发现，因为 switchRoute 没有挂到任何路由——
-        // 生产上那几条切换事件是 setDefaultRechargeMethod 写的，它用的正是下面
-        // 这种 JOIN 写法。2026-09-12 由 SQL 探针扫出（sql-probe.sh）。
-        `UPDATE fulfillment_routes fr
-         INNER JOIN fulfillment_routes target ON target.product_id = fr.product_id
-         SET fr.accepts_new_orders = 0
-         WHERE target.id = ?`, [id]
-      );
-      await connection.query(
-        `UPDATE fulfillment_routes SET accepts_new_orders = 1 WHERE id = ?`, [id]
-      );
-      const eventId = crypto.randomUUID();
-      await connection.query(
-        `INSERT INTO provider_route_switch_events
-         (id, route_id, previous_route_id, actor_id, operator_note)
-         VALUES (?, ?, ?, ?, ?)`, [eventId, id, previousId === id ? null : previousId, actor, text]
-      );
-      await connection.commit();
-      return { routeId: id, previousRouteId: previousId === id ? null : previousId, eventId };
-    } catch (error) {
-      await connection.rollback();
-      throw error;
-    } finally {
-      connection.release();
-    }
-  }
-
-  async function setDefaultRechargeMethod({ method, actorId, confirmation }) {
+  /**
+   * 切 Plus 默认充值方式（只翻 accepts_new_orders，不动卡台——卡台在选择表里各选各的）。
+   *
+   * D-246 面一 C1 ③：切之前跑四项校验，不过即拒并说原因：
+   *   ROUTE_UNIQUE 目标执行器的路线恰 1 条 · SOURCE_HEALTHY 目标执行器的卡台健康且有该能力 ·
+   *   TARGET_POOL_AVAILABLE 目标卡台按 Plus 门槛可分配 > 0 · VERSION_MATCH 调用方看到的当前方式与实际一致。
+   * 之前切 API 什么都不查、切 Browser 只查 dispatch 开关 + profile + 心跳；Browser 那三项仍保留。
+   */
+  async function setDefaultRechargeMethod({ method, actorId, confirmation, expectedCurrentMethod }) {
     const selectedMethod = rechargeMethod(method);
     const actor = String(actorId || '').trim() || 'admin';
     const expected = `切换默认充值方式为 ${selectedMethod}`;
@@ -127,20 +62,50 @@ export function createProviderRouteAdminService({ pool }) {
     const connection = await pool.getConnection();
     try {
       await connection.beginTransaction();
+      const [products] = await connection.query(
+        `SELECT id, legacy_plan_type FROM products WHERE product_code = 'chatgpt_plus' AND status = 'ACTIVE' LIMIT 1 FOR UPDATE`
+      );
+      const product = products[0];
+      if (!product) throw new PublicApiError('product unavailable', { code: 'PRODUCT_UNAVAILABLE', status: 409 });
       const [routes] = await connection.query(
         `SELECT fr.id, fr.executor_kind, fr.accepts_new_orders
          FROM fulfillment_routes fr
-         INNER JOIN products p ON p.id = fr.product_id
-         WHERE p.product_code = 'chatgpt_plus' AND p.status = 'ACTIVE'
-           AND fr.retired_at IS NULL
+         WHERE fr.product_id = ? AND fr.retired_at IS NULL
          ORDER BY fr.route_version DESC, fr.created_at DESC
-         FOR UPDATE`
+         FOR UPDATE`, [product.id]
       );
       const candidates = routes.filter((route) => route.executor_kind === selectedMethod);
       if (candidates.length !== 1) {
         throw new PublicApiError('Default recharge route is unavailable', {
           code: 'DEFAULT_RECHARGE_ROUTE_UNAVAILABLE', status: 409
         });
+      }
+      const [selections] = await connection.query(
+        `SELECT provider_account_id, version FROM card_source_selections
+          WHERE product_id = ? AND executor_kind = ? LIMIT 1 FOR SHARE`, [product.id, selectedMethod]
+      );
+      if (!selections[0]) {
+        throw new PublicApiError('card source selection row is missing', { code: 'CARD_SOURCE_SELECTION_MISSING', status: 409 });
+      }
+      const previous = routes.find((route) => Number(route.accepts_new_orders) === 1) || null;
+      const currentMethod = previous?.executor_kind || null;
+      const checkResult = await runCardSourceSwitchChecks(connection, {
+        productId: product.id, productCode: product.legacy_plan_type || 'plus', executorKind: selectedMethod,
+        targetAccountId: selections[0].provider_account_id,
+        expectedVersion: selections[0].version, currentVersion: selections[0].version
+      });
+      const expectedMethod = expectedCurrentMethod == null ? null : String(expectedCurrentMethod).trim().toUpperCase();
+      const methodOk = expectedMethod != null && expectedMethod === (currentMethod || 'NONE');
+      const checks = checkResult.checks.map((item) => (item.code === 'VERSION_MATCH' ? {
+        code: 'VERSION_MATCH', ok: methodOk,
+        detail: methodOk ? `当前默认方式 ${currentMethod || '无'}` : `调用方看到的当前方式 ${expectedMethod ?? '（未提供）'}，实际 ${currentMethod || '无'}；请刷新后再切`
+      } : item));
+      if (!checks.every((item) => item.ok)) {
+        const error = new PublicApiError('Default recharge method switch rejected', {
+          code: 'DEFAULT_RECHARGE_METHOD_REJECTED', status: 409
+        });
+        error.checks = checks;
+        throw error;
       }
       if (selectedMethod === 'BROWSER') {
         const [settings] = await connection.query(
@@ -164,16 +129,12 @@ export function createProviderRouteAdminService({ pool }) {
         }
       }
       const target = candidates[0];
-      const previous = routes.find((route) => Number(route.accepts_new_orders) === 1) || null;
       if (previous?.id === target.id) {
         await connection.commit();
-        return { method: selectedMethod, routeId: target.id, changed: false, eventId: null };
+        return { method: selectedMethod, routeId: target.id, changed: false, eventId: null, checks };
       }
       await connection.query(
-        `UPDATE fulfillment_routes fr
-         INNER JOIN products p ON p.id = fr.product_id
-         SET fr.accepts_new_orders = 0
-         WHERE p.product_code = 'chatgpt_plus'`,
+        `UPDATE fulfillment_routes SET accepts_new_orders = 0 WHERE product_id = ?`, [product.id]
       );
       const [updated] = await connection.query(
         `UPDATE fulfillment_routes SET accepts_new_orders = 1
@@ -190,7 +151,7 @@ export function createProviderRouteAdminService({ pool }) {
          (id, route_id, previous_route_id, actor_id, operator_note)
          VALUES (?, ?, ?, ?, ?)`,
         [eventId, target.id, previous?.id || null, actor,
-          `默认充值方式切换为 ${selectedMethod}；仅影响切换后新建订单`]
+          `默认充值方式切换为 ${selectedMethod}；仅影响切换后新建订单；四项校验通过`]
       );
       await connection.commit();
       return {
@@ -198,7 +159,8 @@ export function createProviderRouteAdminService({ pool }) {
         routeId: target.id,
         previousRouteId: previous?.id || null,
         changed: true,
-        eventId
+        eventId,
+        checks
       };
     } catch (error) {
       await connection.rollback();
@@ -208,5 +170,5 @@ export function createProviderRouteAdminService({ pool }) {
     }
   }
 
-  return { list, switchRoute, setDefaultRechargeMethod };
+  return { list, setDefaultRechargeMethod };
 }

@@ -50,14 +50,14 @@ integration('multi-source snapshots, order freeze and allocation share one autho
     ELSE setting_value END WHERE setting_key IN
     ('accept_new_orders','default_card_type_id','default_open_card_amount','default_minimum_required_card_balance')`);
   await pool.query(`UPDATE fulfillment_routes SET accepts_new_orders=(executor_kind='BROWSER') WHERE product_id=?`,[productId]);
-  await pool.query(`UPDATE browser_card_source_selections SET provider_account_id=?,version=version+1 WHERE product_id=?`,[sourceA,productId]);
+  await pool.query(`UPDATE card_source_selections SET provider_account_id=?,version=version+1 WHERE product_id=? AND executor_kind='BROWSER'`,[sourceA,productId]);
   const cdkId=crypto.randomUUID(), orderId=crypto.randomUUID();
   await pool.query(`INSERT INTO cdks (id,code_hash,hash_version,status,batch_no,plan_type) VALUES (?,?,'test-v2','AVAILABLE',?,'plus')`,[cdkId,crypto.randomBytes(32).toString('hex'),`test-${suffix}`]);
   const [[cdk]]=await pool.query('SELECT code_hash FROM cdks WHERE id=?',[cdkId]);
   await createOrderFromCdk(pool,{orderId,publicNo:`TEST-${suffix}`,cdkLookup:{current:{version:'test-v2',hash:cdk.code_hash},legacy:{version:'none',hash:'0'.repeat(64)}},customerEmail:'test@example.invalid',chatgptAccountId:`acct-${suffix}`,sessionCiphertext:'not-read-during-assignment',cardPurchaseIdempotencyKey:`purchase-${suffix}`});
   const [[created]]=await pool.query('SELECT frozen_card_provider_account_id FROM orders WHERE id=?',[orderId]);
   assert.equal(created.frozen_card_provider_account_id,sourceA);
-  await pool.query(`UPDATE browser_card_source_selections SET provider_account_id=?,version=version+1 WHERE product_id=?`,[sourceB,productId]);
+  await pool.query(`UPDATE card_source_selections SET provider_account_id=?,version=version+1 WHERE product_id=? AND executor_kind='BROWSER'`,[sourceB,productId]);
   const assigned=await createWorkflowRepository(pool,{sessionEncryptionKey:encryptionKey,panHmacKey}).assignAvailableCard(orderId);
   assert.equal(assigned.providerCardId,`a-${suffix}`);
   const [[bound]]=await pool.query(`SELECT c.provider_account_id FROM orders o INNER JOIN cards c ON c.id=o.assigned_card_id WHERE o.id=?`,[orderId]);

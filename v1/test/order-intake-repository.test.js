@@ -78,6 +78,10 @@ test('D-158: Browser order intake creates only the card assignment task, no sepa
   const insert = calls.find(({ sql }) => sql.includes('INSERT INTO orders'));
   assert.match(insert.sql, /frozen_card_provider_account_id/);
   assert.equal(insert.values.includes('manual-source-a'), true);
+  // D-246 面一 C1：冻结卡台只从「产品 × 执行器 → 卡台」选择表取；不再读路线表旧列、不再写死卡台名字。
+  const routeQuery = calls.find(({ sql }) => sql.includes('INSERT INTO orders') === false && sql.includes('FROM products p INNER JOIN fulfillment_routes fr'));
+  assert.match(routeQuery.sql, /INNER JOIN card_source_selections css\s+ON css\.product_id = p\.id AND css\.executor_kind = fr\.executor_kind/);
+  assert.doesNotMatch(routeQuery.sql, /browser_card_source_selections|fr\.card_provider_account_id|'hnskj'|manual_excel/);
 });
 
 function intakeInput(overrides = {}) {

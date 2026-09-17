@@ -212,7 +212,8 @@ export async function createLaneWorker({ lane, config, pool, browserType, shared
   const cardMaterialLeaseProvider = await new DurableCardMaterialLeaseProvider({ source: shared.enrichedCardSource, filePath: cardLeasePath }).init();
   const transactionReaderFactory = async ({ runId }) => {
     const card = await resolveCardContext(pool, runId);
-    const sourceKind = card.sync_tier === 'MANUAL_IMPORT' || card.provider_code === 'manual_excel' ? 'MANUAL_IMPORT' : 'HNSKJ';
+    // D-246 面一 C1：交易读取器按卡的来源层标记（sync_tier）判，不看卡台名字。
+    const sourceKind = card.sync_tier === 'MANUAL_IMPORT' ? 'MANUAL_IMPORT' : 'HNSKJ';
     if (sourceKind === 'HNSKJ' && (!config.providerReadsEnabled || !shared.provider)) throw new Error('HNSKJ transaction verification requires explicit Provider read credentials');
     return new BrowserCardTransactionReader({ sourceKind, provider: shared.provider, providerCardId: card.provider_card_id, runId, submitIntentAt: card.submit_intent_at, matchWindowMs: config.verificationWindowMs });
   };

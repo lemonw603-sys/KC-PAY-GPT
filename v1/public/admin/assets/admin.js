@@ -332,6 +332,9 @@ function renderDecisions(overview, cardSources) {
   const intake = !d.acceptNewOrders ? 'stop' : d.dispatchNewRecharges ? 'run' : 'pause';
   const intakeButton = (key, label) => `<button type="button" class="${intake === key ? 'primary-small' : 'ghost-button'}" data-intake="${key}" ${intake === key ? 'disabled' : ''}>${label}</button>`;
   const rechargeMethod = String(health.rechargeMethod || '').toUpperCase();
+  // 切换端点要求带上「我看到的当前值」（四项校验之「版本对」，D-246 面一 C1 ③）。
+  state.rechargeMethod = rechargeMethod || 'NONE';
+  state.browserSelectionVersion = Number(cardSources?.browserSelectionVersion || 0);
   const routeButton = (method, label, ready = true, title = '') => `<button class="${rechargeMethod === method ? 'primary-small' : 'ghost-button'} default-recharge-method" type="button" data-method="${method}" ${rechargeMethod === method || !ready ? 'disabled' : ''} title="${escapeHtml(title)}">${label}</button>`;
   const sources = (cardSources?.sources || []).filter((item) => item.supportsBrowserRecharge && item.operationalEnabled);
   const currentSource = cardSources?.browserProviderAccountId || '';
@@ -1353,6 +1356,14 @@ async function setRechargeDispatch(button) {
   }
 }
 
+// 四项校验（路线唯一 / 目标卡池可分配 / 卡台健康 / 版本对）里没过的那几项，原样给运营看。
+function switchCheckReasons(error) {
+  const checks = Array.isArray(error?.payload?.checks) ? error.payload.checks : [];
+  const failed = checks.filter((item) => item && item.ok === false);
+  if (!failed.length) return '原因未返回，请刷新后重试';
+  return failed.map((item) => item.detail || item.code).join('；');
+}
+
 async function setDefaultRechargeMethod(button) {
   const method = String(button.dataset.method || '').toUpperCase();
   if (!['API', 'BROWSER'].includes(method)) return;
@@ -1362,7 +1373,7 @@ async function setDefaultRechargeMethod(button) {
   try {
     await api('/api/v1/admin/operations/default-recharge-method', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ method, confirmation: `切换默认充值方式为 ${method}` })
+      body: JSON.stringify({ method, confirmation: `切换默认充值方式为 ${method}`, expectedCurrentMethod: state.rechargeMethod || 'NONE' })
     });
     showNotice(`默认充值方式已切换为${label}；只影响之后新建的订单。`, 'success');
     await loadOverview();
@@ -1370,7 +1381,8 @@ async function setDefaultRechargeMethod(button) {
     const messages = {
       browser_recharge_not_ready: 'Browser 执行器尚未就绪，默认充值方式没有改变。',
       default_recharge_route_unavailable: '对应充值路线不可用，默认充值方式没有改变。',
-      default_recharge_method_confirmation_required: '确认信息不匹配，默认充值方式没有改变。'
+      default_recharge_method_confirmation_required: '确认信息不匹配，默认充值方式没有改变。',
+      default_recharge_method_rejected: `切换被拒绝，默认充值方式没有改变：${switchCheckReasons(error)}`
     };
     showNotice(messages[error.message] || '默认充值方式切换失败，原设置未改变。');
     await loadOverview().catch(() => {});
@@ -1635,7 +1647,7 @@ async function loadProviderRoutes() {
       <td>${escapeHtml(capabilities)}</td>
       <td>${source.cardCount} 张历史卡 · ${source.presentCount} 张在当前快照<small>最近完整快照 ${formatTime(source.lastFullSnapshotAt)}</small></td>
       <td><span class="status-chip ${tone}"><i></i>${escapeHtml(health)}</span></td>
-      <td>${!source.supportsBrowserRecharge ? '<small>不支持 Browser</small>' : active ? '<small>Browser 新订单使用中</small>' : `<span class="segmented-actions"><button class="primary-small route-switch-button" type="button" data-source-id="${escapeHtml(source.id)}">设为当前</button>${Number(estimate.count || 0) ? `<button class="ghost-button route-switch-button" type="button" data-source-id="${escapeHtml(source.id)}" data-takeover="true">同时接管 ${Number(estimate.count)} 单</button>` : ''}</span>`}</td>
+      <td>${!source.supportsBrowserRecharge ? '<small>不支持 Browser</small>' : active ? '<small>Browser 新订单使用中</small>' : `<span class="segmented-actions"><button class="primary-small route-switch-button" type="button" data-source-id="${escapeHtml(source.id)}" data-expected-version="${Number(payload.browserSelectionVersion || 0)}">设为当前</button>${Number(estimate.count || 0) ? `<button class="ghost-button route-switch-button" type="button" data-source-id="${escapeHtml(source.id)}" data-takeover="true" data-expected-version="${Number(payload.browserSelectionVersion || 0)}">同时接管 ${Number(estimate.count)} 单</button>` : ''}</span>`}</td>
     </tr>`;
   }).join('') : '<tr><td colspan="5" class="empty-state">暂无卡台配置</td></tr>';
 }
@@ -1800,16 +1812,23 @@ elements.providerRoutesTable?.addEventListener('click', async (event) => {
   try {
     const result = await api('/api/v1/admin/card-sources/browser/current', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ providerAccountId: button.dataset.sourceId, takeoverWaiting: button.dataset.takeover === 'true' })
+      body: JSON.stringify({ providerAccountId: button.dataset.sourceId, takeoverWaiting: button.dataset.takeover === 'true',
+        expectedVersion: Number(button.dataset.expectedVersion || 0) })
     });
-    showNotice(`Browser 卡台已切换${result.actualTakeoverCount ? `，并安全接管 ${result.actualTakeoverCount} 单` : '；只影响之后的新订单'}${result.warnings?.length ? '。目标来源当前有提醒，请在卡台管理中查看' : ''}。`, 'success');
+    showNotice(`Browser 卡台已切换${result.actualTakeoverCount ? `，并安全接管 ${result.actualTakeoverCount} 单` : '；只影响之后的新订单'}。`, 'success');
     try {
       await loadProviderRoutes();
     } catch {
       showNotice('Browser 卡台已切换，但列表刷新失败；请刷新查看，不要重复切换。', 'warning');
     }
   } catch (error) {
-    showNotice('未能确认卡台切换结果，正在重新读取当前选择；请勿重复点击。', 'warning');
+    if (error.message === 'card_source_switch_rejected') {
+      showNotice(`切换被拒绝，卡台没有改变：${switchCheckReasons(error)}`, 'warning');
+    } else if (error.message === 'card_source_selection_locked') {
+      showNotice('这一行的卡台是固定的（API 只走 hnskj），不能切换。', 'warning');
+    } else {
+      showNotice('未能确认卡台切换结果，正在重新读取当前选择；请勿重复点击。', 'warning');
+    }
     await loadProviderRoutes().catch(() => {});
   } finally {
     button.disabled = false;
@@ -1971,7 +1990,7 @@ elements.stockOpenForm?.addEventListener('submit', async (event) => {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ count, amount, cardTypeId, confirmation: expected, largeBatchConfirmed })
     });
-    showNotice('开卡任务已创建，服务器将在约 10 秒内开始执行。');
+    showNotice('开卡任务已创建，供卡执行器每分钟领一次，稍后在下方任务列表看结果。');
     await loadStock();
   } catch (error) {
     const messages = {
@@ -2296,9 +2315,11 @@ document.addEventListener('click', async (event) => {
     if (!providerAccountId) return showNotice('请先选择卡台。');
     sourceApply.disabled = true;
     try {
-      const result = await api('/api/v1/admin/card-sources/browser/current', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ providerAccountId, takeoverWaiting: false }) });
-      showNotice(`Browser 卡台已切换${result.warnings?.length ? '；目标卡台当前有提醒，请到卡片页查看' : '，只影响之后的新订单'}。`, 'success');
-    } catch { showNotice('卡台切换失败，请刷新后重试。'); }
+      await api('/api/v1/admin/card-sources/browser/current', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ providerAccountId, takeoverWaiting: false, expectedVersion: state.browserSelectionVersion || 0 }) });
+      showNotice('Browser 卡台已切换，只影响之后的新订单。', 'success');
+    } catch (error) {
+      showNotice(error.message === 'card_source_switch_rejected' ? `切换被拒绝，卡台没有改变：${switchCheckReasons(error)}` : '卡台切换失败，请刷新后重试。');
+    }
     await loadOverview();
     return;
   }

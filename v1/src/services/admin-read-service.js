@@ -633,7 +633,8 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
             WHERE executor_kind = 'BROWSER' AND status = 'ACTIVE') AS browser_profile_active,
           (SELECT pa.account_code
              FROM fulfillment_routes fr INNER JOIN products p ON p.id = fr.product_id
-             INNER JOIN provider_accounts pa ON pa.id = fr.card_provider_account_id
+             INNER JOIN card_source_selections css ON css.product_id = p.id AND css.executor_kind = fr.executor_kind
+             INNER JOIN provider_accounts pa ON pa.id = css.provider_account_id
             WHERE p.product_code = 'chatgpt_plus' AND p.status = 'ACTIVE'
               AND fr.accepts_new_orders = 1 AND fr.retired_at IS NULL
             ORDER BY fr.route_version DESC, fr.created_at DESC LIMIT 1) AS provider_account_code,

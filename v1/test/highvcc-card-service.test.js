@@ -323,3 +323,81 @@ test('walletStatus: converts cents to a dollar string for display', async () => 
   await service.setToken({ token: 'a'.repeat(32) });
   assert.deepEqual(await service.walletStatus(), { usdBalance: '20.88', usdDeposit: '644.80', usdConsume: '0.00' });
 });
+
+// ---- 供卡调度接入（D-247 面二③）：无确认词、NO_PAN 自动补记、贴 token 清故障态 ----
+
+test('openCardForSupply: opens without a confirmation phrase and records the card like the admin path', async () => {
+  const pool = fakePool();
+  const service = createHighvccCardService({ pool, encryptionKey, panHmacKey, fetchImpl: fakeFetch(openHandlers({ balanceCents: 5000 })) });
+  await service.setToken({ token: 'a'.repeat(32) });
+  const result = await service.openCardForSupply({ vid: '708', amount: 50, requestedBy: 'card-supply:job-1' });
+  assert.equal(result.cardId, 'HGabc123');
+  assert.equal(result.balance, '50.00');
+  assert.equal(pool.cardsInserted.length, 1);
+  assert.equal(pool.cardsInserted[0].includes(BACKUP_A_PROVIDER_ACCOUNT_ID), true);
+});
+
+// 生产 2026-09-10 真实发生：newCard 成功（钱已扣）但 detail() 几秒内没有卡号。以前交人跑
+// reconcile 脚本；现在调度器路径自己用同一个 cardId 补记，绝不重开。
+test('openCardForSupply: HIGHVCC_OPEN_NO_PAN is reconciled with the same card id, never re-opened', async () => {
+  const pool = fakePool();
+  let details = 0; let newCards = 0;
+  const fetchImpl = fakeFetch({
+    '/api/card/autoCard': () => ({ status: 200, body: { code: 200, data: { firstName: 'Jamie', lastName: 'Winder' } } }),
+    '/api/card/openCardCost': () => ({ status: 200, body: { code: 200, data: { feeDetail: '$5.50' } } }),
+    '/api/card/newCard': () => { newCards += 1; return { status: 200, body: { code: 200, data: 'HGlate' } }; },
+    '/api/card/detail': () => {
+      details += 1;
+      // 开卡后的 5 次 detail（provider 内部 1 + 4 重试）都没卡号；补记路径第 2 次才拿到。
+      if (details <= 6) return { status: 200, body: { code: 200, data: { card: {}, adress: {} } } };
+      return { status: 200, body: { code: 200, data: {
+        card: { cardId: 'HGlate', number: '4111111111111111', cvc: '123', expMonth: 2, expYear: 2029, firstName: 'Jamie', lastName: 'Winder', balance: 300 },
+        adress: { street: '1 St', city: 'X', state: 'OR', zipCode: '00000' },
+      } } };
+    },
+  });
+  const service = createHighvccCardService({ pool, encryptionKey, panHmacKey, fetchImpl, sleep: async () => {} });
+  await service.setToken({ token: 'a'.repeat(32) });
+  const result = await service.openCardForSupply({ vid: '708', amount: 3, reconcileDelayMs: 0 });
+  assert.equal(newCards, 1, '钱只花一次');
+  assert.equal(result.cardId, 'HGlate');
+  assert.equal(result.reconciledAfterNoPan, 2);
+  assert.equal(pool.cardsInserted.length, 1);
+});
+
+test('openCardForSupply: when reconciliation keeps failing the error still carries the card id for a human', async () => {
+  const pool = fakePool();
+  const fetchImpl = fakeFetch({
+    '/api/card/autoCard': () => ({ status: 200, body: { code: 200, data: { firstName: 'A', lastName: 'B' } } }),
+    '/api/card/openCardCost': () => ({ status: 200, body: { code: 200, data: { feeDetail: '$5.50' } } }),
+    '/api/card/newCard': () => ({ status: 200, body: { code: 200, data: 'HGstuck' } }),
+    '/api/card/detail': () => ({ status: 200, body: { code: 200, data: { card: {}, adress: {} } } }),
+  });
+  const service = createHighvccCardService({ pool, encryptionKey, panHmacKey, fetchImpl, sleep: async () => {} });
+  await service.setToken({ token: 'a'.repeat(32) });
+  await assert.rejects(service.openCardForSupply({ vid: '708', amount: 3, reconcileAttempts: 2, reconcileDelayMs: 0 }),
+    (e) => e.cardId === 'HGstuck' && ['HIGHVCC_RECONCILE_NOT_READY', 'HIGHVCC_OPEN_NO_PAN'].includes(e.code));
+  assert.equal(pool.cardsInserted.length, 0);
+});
+
+test('walletBalance: real wallet shape (integer cents) becomes a fixed-point dollar string', async () => {
+  const pool = fakePool();
+  const service = createHighvccCardService({ pool, encryptionKey, panHmacKey, fetchImpl: fakeFetch({
+    // 2026-09-17 15:52 UTC 生产真实值：usdBalance 2368 分 = $23.68
+    '/api/user/wallet': () => ({ status: 200, body: { code: 200, data: { usdBalance: 2368, usdDeposit: 2000, usdConsume: 0 } } }),
+  }) });
+  await service.setToken({ token: 'a'.repeat(32) });
+  const wallet = await service.walletBalance();
+  assert.equal(wallet.availableBalance, '23.68');
+  assert.equal(wallet.currency, 'USD');
+});
+
+test('setToken clears a token-caused supply fault on backup A, and only that kind of fault', async () => {
+  const pool = fakePool();
+  const service = createHighvccCardService({ pool, encryptionKey, panHmacKey });
+  await service.setToken({ token: 'a'.repeat(32) });
+  const clear = pool.poolQueries.find((q) => q.sql.includes("supply_fault_state = 'OK'"));
+  assert.ok(clear, 'a fault-clearing update was issued');
+  assert.match(clear.sql, /supply_fault_reason LIKE 'HIGHVCC_TOKEN%'/);
+  assert.deepEqual(clear.params, [BACKUP_A_PROVIDER_ACCOUNT_ID]);
+});

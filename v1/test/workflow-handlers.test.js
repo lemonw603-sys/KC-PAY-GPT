@@ -8,7 +8,7 @@ import { sessionFixture } from '../test-support/session-fixture.js';
 function setup({ status = OrderStatus.CARD_READY, executorKind = 'API', rechargeStatuses = [],
   rechargeAttemptRepository = null, browserDispatchRepository = null,
   rechargeWritesEnabled = true, browserDispatchEnabled = true,
-  cardSyncTier = 'FULL', cardProviderCode = 'hnskj' } = {}) {
+  cardSupportsApiSync = true } = {}) {
   const calls = [];
   const providerCalls = [];
   const context = {
@@ -22,7 +22,7 @@ function setup({ status = OrderStatus.CARD_READY, executorKind = 'API', recharge
       recharge_card_key: 'DIRECT-fixture'
       ,recharge_executor_kind: executorKind
     },
-    card: { provider_card_id: 'card-1', sync_tier: cardSyncTier, provider_code: cardProviderCode },
+    card: { provider_card_id: 'card-1', supports_api_sync: cardSupportsApiSync },
     session: sessionFixture()
   };
   const workflow = {
@@ -33,14 +33,7 @@ function setup({ status = OrderStatus.CARD_READY, executorKind = 'API', recharge
     },
     transition: async (...args) => calls.push(['transition', ...args]),
     markSessionReplacementRequired: async (...args) => calls.push(['session-required', ...args]),
-    beginCardPurchase: async (...args) => calls.push(['begin-card', ...args]),
-    markCardPurchaseAccepted: async (...args) => calls.push(['purchase-accepted', ...args]),
-    reviewCardPurchase: async (...args) => calls.push(['review-purchase', ...args]),
-    commitPurchasedCard: async (...args) => calls.push(['card', ...args]),
-    commitCardReady: async (...args) => calls.push(['ready', ...args]),
     refreshAssignedCardForRecharge: async (...args) => calls.push(['refresh-card', ...args]),
-    failCardProvisioning: async (...args) => calls.push(['failed-card', ...args]),
-    reviewCardProvisioning: async (...args) => calls.push(['review-card', ...args]),
     commitRechargeSubmission: async (...args) => calls.push(['submission', ...args]),
     commitRechargeSuccess: async (...args) => calls.push(['success', ...args]),
     commitRechargeFailure: async (...args) => calls.push(['recharge-failure', ...args]),
@@ -53,9 +46,6 @@ function setup({ status = OrderStatus.CARD_READY, executorKind = 'API', recharge
     }
   };
   const cardProvider = {
-    cardTypes: async () => ({ data: { purchaseEnabled: true, cardTypes: [{ id: 7, cardType: 'Z-TEST' }] } }),
-    cards: async ({ page = 1, pageSize = 50 } = {}) => ({ data: { cards: [], total: 0, page, pageSize } }),
-    purchaseCard: async () => ({ data: { card: { id: 'card-1' } } }),
     card: async () => ({ data: { number: '4242424242424242', cvv: '123' } }),
     transactions: async (_cardId, { page = 1, pageSize = 50 } = {}) => ({
       data: { transactions: [], total: 0, page, pageSize }
@@ -84,7 +74,6 @@ function setup({ status = OrderStatus.CARD_READY, executorKind = 'API', recharge
     cardProvider,
     rechargeProvider,
     recordCall,
-    mapPurchasedCard: (value) => value.data.card.id,
     mapCardProvisioning: (value) => value.data.status === 'failed'
       ? { state: 'failed', status: 'failed', failureReason: 'provider failed' }
       : value.data.status === 'pending'
@@ -133,7 +122,8 @@ test('Browser submit hands off a durable dispatch job and never calls the rechar
 test('manual Browser card starts from its committed snapshot without calling HNSKJ card details', async () => {
   const dispatches = [];
   const state = setup({
-    executorKind: 'BROWSER', cardSyncTier: 'MANUAL_IMPORT', cardProviderCode: 'manual_excel',
+    // 按能力位：这张卡所属账户没有 API 同步能力（备用卡台 A supports_api_sync=0），不看名字。
+    executorKind: 'BROWSER', cardSupportsApiSync: false,
     rechargeAttemptRepository: {
       beginAuthorizedAttempt: async () => ({
         id: 'manual-browser-attempt-1', executorKind: 'BROWSER', startedAt: new Date()
@@ -263,17 +253,6 @@ test('does not create a funds attempt when the fresh assigned-card check is not 
   assert.equal(state.calls.some(([name]) => name === 'refresh-card'), true);
 });
 
-test('purchases a card with the persisted idempotency key and commits one binding', async () => {
-  const state = setup({ status: OrderStatus.CREATED });
-  await state.handlers.PURCHASE_CARD({ id: 1, order_id: 'order-1', attempts: 1 });
-  assert.equal(state.calls[0][0], 'begin-card');
-  assert.deepEqual(state.calls[1], [
-    'card',
-    'order-1',
-    { providerCardId: 'card-1', cardTypeId: 7, fundedAmount: 25 }
-  ]);
-});
-
 test('assigns an existing inventory card without calling a paid provider operation', async () => {
   const state = setup({ status: OrderStatus.CREATED });
   await state.handlers.ASSIGN_CARD({ id: 8, order_id: 'order-1', attempts: 1 });
@@ -284,14 +263,13 @@ test('assigns an existing inventory card without calling a paid provider operati
 test('waits safely when inventory is empty and never opens a card', async () => {
   const state = setup({ status: OrderStatus.CREATED });
   state.workflow.assignAvailableCard = async () => null;
-  let purchases = 0;
-  state.cardProvider.purchaseCard = async () => { purchases += 1; };
   await assert.rejects(
     state.handlers.ASSIGN_CARD({ id: 8, order_id: 'order-1', attempts: 1 }),
     (error) => error.code === 'CARD_STOCK_EMPTY' && error.retryable === true
       && error.refundAttempt === true
   );
-  assert.equal(purchases, 0);
+  assert.equal(state.providerCalls.length, 0, '缺卡时 worker 不再自己开卡（开卡归供卡调度器）');
+  assert.equal('PURCHASE_CARD' in state.handlers, false);
 });
 
 test('retries quickly while automatic replenishment is pending', async () => {
@@ -306,36 +284,6 @@ test('retries quickly while automatic replenishment is pending', async () => {
       && error.retryable === true
       && error.delayMs === 5_000
   );
-});
-
-test('recovers a missing purchase response ID from the persisted before-list without repurchasing', async () => {
-  const state = setup({ status: OrderStatus.CARD_PURCHASING });
-  let purchaseCalls = 0;
-  state.cardProvider.purchaseCard = async () => { purchaseCalls += 1; };
-  state.cardProvider.cards = async ({ page = 1, pageSize = 50 } = {}) => ({
-    data: {
-      cards: [{ id: 'old-card', cardType: 'Z-TEST' }, { id: 'new-card', cardType: 'Z-TEST' }],
-      total: 2, page, pageSize
-    }
-  });
-  await state.handlers.PURCHASE_CARD({
-    id: 1,
-    order_id: 'order-1',
-    attempts: 2,
-    max_attempts: 240,
-    payload_json: {
-      phase: 'PURCHASE_ACCEPTED',
-      cardTypeId: '7',
-      cardTypeName: 'Z-TEST',
-      fundedAmount: '25',
-      existingCardIds: ['old-card']
-    }
-  });
-  assert.equal(purchaseCalls, 0);
-  assert.deepEqual(state.calls.at(-1), [
-    'card', 'order-1',
-    { providerCardId: 'new-card', cardTypeId: '7', fundedAmount: '25' }
-  ]);
 });
 
 test('prepares and records a redacted recharge request without submitting it', async () => {
@@ -376,32 +324,6 @@ test('Browser preparation records checkout evidence without a ZZSHU direct reque
       submitted: false
     }
   ]);
-});
-
-test('keeps a slow card in provisioning without submitting recharge', async () => {
-  const state = setup({ status: OrderStatus.CARD_PROVISIONING });
-  state.cardProvider.card = async () => ({ data: { status: 'pending' } });
-  await assert.rejects(
-    state.handlers.VERIFY_CARD({ id: 1, order_id: 'order-1', attempts: 1, max_attempts: 240 }),
-    (error) => error.code === 'CARD_PROVISIONING_PENDING' && error.retryable === true
-  );
-  assert.equal(state.calls.some(([name]) => name === 'ready' || name === 'failed-card'), false);
-});
-
-test('isolates a terminal card failure from the rest of the batch', async () => {
-  const state = setup({ status: OrderStatus.CARD_PROVISIONING });
-  state.cardProvider.card = async () => ({ data: { status: 'failed', cardBalance: '0.000000' } });
-  await state.handlers.VERIFY_CARD({ id: 1, order_id: 'order-1', attempts: 1, max_attempts: 240 });
-  assert.equal(state.calls.at(-1)[0], 'failed-card');
-  assert.equal(state.calls.some(([name]) => name === 'submission'), false);
-});
-
-test('moves an overlong card provisioning wait to manual review', async () => {
-  const state = setup({ status: OrderStatus.CARD_PROVISIONING });
-  state.cardProvider.card = async () => ({ data: { status: 'pending' } });
-  await state.handlers.VERIFY_CARD({ id: 1, order_id: 'order-1', attempts: 240, max_attempts: 240 });
-  assert.equal(state.calls.at(-1)[0], 'review-card');
-  assert.equal(state.calls.some(([name]) => name === 'submission'), false);
 });
 
 test('maps an ambiguous create failure to SUBMIT_UNKNOWN', async () => {

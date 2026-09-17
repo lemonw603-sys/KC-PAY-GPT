@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import { encryptSecret, decryptSecret } from '../security/secret-box.js';
 import { cardBin, binMatchesSegment } from '../domain/card-bin.js';
 import { PublicApiError } from '../domain/public-api-error.js';
+import { fromCents } from '../domain/card-issue-fee.js';
 import { createHighvccCardProvider, HighvccProviderError } from '../providers/highvcc-card.js';
 // Reused as-is rather than re-implemented: the deterministic per-state row picker and the
 // collision-avoiding assignment store already exist, are tested, and already back the same
@@ -107,6 +108,12 @@ export function createHighvccCardService({
        ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)`,
       [TOKEN_SETTING_KEY, encoded]
     );
+    // 贴了新 token = 「token 要用而没有」这个故障已解除；只清 token 造成的故障，别的原因不动。
+    await pool.query(
+      `UPDATE provider_accounts SET supply_fault_state = 'OK', supply_fault_reason = NULL, supply_fault_at = NULL
+        WHERE id = ? AND supply_fault_state <> 'OK' AND supply_fault_reason LIKE 'HIGHVCC_TOKEN%'`,
+      [BACKUP_A_PROVIDER_ACCOUNT_ID]
+    );
     return tokenStatus();
   }
 
@@ -175,6 +182,21 @@ export function createHighvccCardService({
     };
   }
 
+  /** 钱包可用余额，定点字符串（供卡预检用；分→美元不走浮点）。 */
+  async function walletBalance() {
+    let w;
+    try {
+      w = await provider.wallet();
+    } catch (error) {
+      throw mapProviderError(error);
+    }
+    const cents = Number(w.usdBalanceCents);
+    if (!Number.isInteger(cents)) {
+      throw new PublicApiError('highvcc wallet returned no usable usdBalance', { code: 'HIGHVCC_WALLET_UNUSABLE', status: 502 });
+    }
+    return { availableBalance: fromCents(cents), currency: 'USD', raw: w };
+  }
+
   async function walletStatus() {
     try {
       const w = await provider.wallet();
@@ -215,6 +237,7 @@ export function createHighvccCardService({
       // charged", so say so plainly and hand back the exact id needed to finish recording it.
       err.detail = `卡台已经开出这张卡（ID ${opened.cardId}），钱已经扣了，但暂时还没能拿到完整卡号入库；`
         + `请稍等几秒后用 v1/scripts/reconcile-highvcc-card.mjs ${opened.cardId} 补记，不要重新开卡。`;
+      err.cardId = opened.cardId;
       throw err;
     }
     const balanceDollars = Number.isFinite(Number(card.balance)) ? Number(card.balance) / 100 : (amountForFallback ?? 0);
@@ -280,6 +303,40 @@ export function createHighvccCardService({
     if (confirmation !== expected) {
       throw new PublicApiError('Confirmation mismatch', { code: 'HIGHVCC_OPEN_CONFIRMATION_REQUIRED', status: 400 });
     }
+    return openOnce({ v, a, requestedBy, firstName, lastName });
+  }
+
+  /**
+   * 供卡调度器用的开卡入口（D-247 面二③：highvcc openCard 接调度）。
+   * 与后台按钮同一条开卡路径，只是不要确认词——确认在调度器的预检（水位/日限/钱包）里。
+   * `HIGHVCC_OPEN_NO_PAN`（钱已扣、卡号还没出来）不再交人：自动用同一个 cardId 补记几次，
+   * 补不上才把带 cardId 的错误抛回去，让 job 进 REVIEW_REQUIRED——绝不重开。
+   */
+  async function openCardForSupply({ vid, amount, requestedBy = 'card-supply', reconcileAttempts = 3, reconcileDelayMs = 2000 } = {}) {
+    const v = requireVid(vid);
+    const a = requirePositiveAmount(amount);
+    try {
+      return await openOnce({ v, a, requestedBy });
+    } catch (error) {
+      if (error?.code !== 'HIGHVCC_OPEN_NO_PAN' || !error.cardId) throw error;
+      let last = error;
+      for (let attempt = 0; attempt < reconcileAttempts; attempt += 1) {
+        await sleep(reconcileDelayMs);
+        try {
+          const recorded = await recordExistingCard({ cardId: error.cardId, requestedBy });
+          return { ...recorded, vid: v, amountRequested: a, reconciledAfterNoPan: attempt + 1 };
+        } catch (retryError) {
+          last = retryError;
+          if (retryError?.code !== 'HIGHVCC_RECONCILE_NOT_READY') break;
+        }
+      }
+      const failure = last instanceof PublicApiError ? last : error;
+      failure.cardId = error.cardId;
+      throw failure;
+    }
+  }
+
+  async function openOnce({ v, a, requestedBy, firstName, lastName }) {
     const cardRef = crypto.randomUUID();
     let opened;
     try {
@@ -323,7 +380,7 @@ export function createHighvccCardService({
     return recordOpenedCard({ opened, requestedBy });
   }
 
-  return { tokenStatus, setToken, quote, openCard, recordExistingCard, listRanges, walletStatus };
+  return { tokenStatus, setToken, quote, openCard, openCardForSupply, recordExistingCard, listRanges, walletStatus, walletBalance };
 }
 
 /**

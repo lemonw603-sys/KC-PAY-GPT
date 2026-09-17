@@ -4,7 +4,7 @@ import { isEnvTrue, loadConfig } from '../src/config.js';
 import { createDatabasePool } from '../src/db/pool.js';
 import { HnskjCardProvider, mapPurchasedCard } from '../src/providers/index.js';
 import { createCardStockService, mapStockCard } from '../src/services/card-stock-service.js';
-import { resolveCurrentCardProviderAccountId } from '../src/services/provider-route-service.js';
+import { CARD_ADAPTER_HNSKJ, resolveCardProviderAccountIdForAdapter } from '../src/services/provider-route-service.js';
 
 function option(name) {
   const index = process.argv.indexOf(`--${name}`);
@@ -169,8 +169,8 @@ export async function runCardStockCli({ env = process.env } = {}) {
   }
   const config = loadConfig(env);
   const pool = createDatabasePool(config.database);
-  const providerAccountId = await resolveCurrentCardProviderAccountId(pool);
-  if (!providerAccountId) throw new Error('No active production card provider route');
+  const providerAccountId = await resolveCardProviderAccountIdForAdapter(pool, CARD_ADAPTER_HNSKJ);
+  if (!providerAccountId) throw new Error('No healthy card provider account is served by the hnskj adapter');
   const stock = createCardStockService({ pool, sessionEncryptionKey: config.sessionEncryptionKey,
     panHmacKey: config.cardIntakePanHmacKey, providerAccountId });
   const provider = ['status', 'threshold'].includes(command) ? null : new HnskjCardProvider({

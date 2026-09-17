@@ -16,7 +16,6 @@ export function createWorkflowHandlers({
   cardProvider,
   rechargeProvider,
   recordCall,
-  mapPurchasedCard,
   mapCardProvisioning,
   mapCardCredentials,
   buildDirectOrderRequest,
@@ -40,11 +39,6 @@ export function createWorkflowHandlers({
     return safe;
   }
 
-  function cardIdFromListRecord(record) {
-    const value = record?.id ?? record?.cardId ?? record?.card_id;
-    return value == null || String(value).trim() === '' ? null : String(value).trim();
-  }
-
   async function requireFreshCustomerSession(orderId, session) {
     try {
       validateChatGptSession(session);
@@ -58,135 +52,6 @@ export function createWorkflowHandlers({
         code: 'SESSION_INVALID', retryable: false
       });
     }
-  }
-
-  function cardTypeMatches(record, baseline) {
-    const typeId = record?.cardTypeId ?? record?.card_type_id;
-    const typeName = record?.cardType ?? record?.card_type;
-    return (typeId != null && String(typeId) === String(baseline.cardTypeId))
-      || (typeName != null && String(typeName) === String(baseline.cardTypeName));
-  }
-
-  async function loadAllCards() {
-    const first = await cardProvider.cards({ page: 1, pageSize: 50 });
-    const cards = [...first.data.cards];
-    const pages = Math.ceil(first.data.total / first.data.pageSize);
-    for (let page = 2; page <= pages; page += 1) {
-      const next = await cardProvider.cards({ page, pageSize: first.data.pageSize });
-      cards.push(...next.data.cards);
-    }
-    return cards;
-  }
-
-  async function identifyPurchasedCard(task, baseline) {
-    const existing = new Set((baseline.existingCardIds || []).map(String));
-    const candidates = (await loadAllCards())
-      .filter((record) => cardTypeMatches(record, baseline))
-      .map(cardIdFromListRecord)
-      .filter((id) => id && !existing.has(id));
-    const unique = [...new Set(candidates)];
-    if (unique.length === 1) {
-      await workflow.commitPurchasedCard(task.order_id, {
-        providerCardId: unique[0],
-        cardTypeId: baseline.cardTypeId,
-        fundedAmount: baseline.fundedAmount
-      });
-      return;
-    }
-    if (unique.length > 1) {
-      await workflow.reviewCardPurchase(
-        task.order_id,
-        'multiple new cards matched purchase baseline; automatic rebuy forbidden',
-        { candidateCount: unique.length }
-      );
-      return;
-    }
-    if (task.attempts >= task.max_attempts) {
-      await workflow.reviewCardPurchase(
-        task.order_id,
-        'purchased card could not be identified before recovery timeout; automatic rebuy forbidden'
-      );
-      return;
-    }
-    throw new TaskExecutionError('Purchased card is not visible in card list yet', {
-      code: 'CARD_IDENTIFICATION_PENDING', retryable: true, delayMs: pollDelayMs
-    });
-  }
-
-  async function purchaseCard(task) {
-    const context = await workflow.loadOrderContext(task.order_id);
-    if (context.order.status === OrderStatus.CREATED) {
-      const cardTypes = await cardProvider.cardTypes();
-      const selected = cardTypes.data.cardTypes.find(
-        (item) => String(item.id) === String(context.order.card_type_id)
-      );
-      if (!selected || !cardTypes.data.purchaseEnabled) {
-        throw new TaskExecutionError('Configured card type is unavailable for purchase', {
-          code: 'CARD_TYPE_UNAVAILABLE'
-        });
-      }
-      const baseline = {
-        cardTypeId: String(context.order.card_type_id),
-        cardTypeName: selected.cardType,
-        fundedAmount: String(context.order.open_card_amount),
-        existingCardIds: (await loadAllCards()).map(cardIdFromListRecord).filter(Boolean)
-      };
-      await workflow.beginCardPurchase(task.order_id, task.id, baseline);
-      task.payload_json = { ...baseline, phase: 'PURCHASE_STARTING' };
-    } else if (context.order.status !== OrderStatus.CARD_PURCHASING) {
-      throw new TaskExecutionError(`Order cannot purchase card from ${context.order.status}`, {
-        code: 'ORDER_STATE_MISMATCH'
-      });
-    } else {
-      const baseline = typeof task.payload_json === 'string'
-        ? JSON.parse(task.payload_json) : task.payload_json;
-      if (!baseline?.existingCardIds || !baseline?.cardTypeId) {
-        await workflow.reviewCardPurchase(
-          task.order_id,
-          'card purchase state lacks recovery baseline; automatic rebuy forbidden'
-        );
-        return;
-      }
-      await identifyPurchasedCard(task, baseline);
-      return;
-    }
-
-    const baseline = task.payload_json;
-    const result = await recordCall({
-      orderId: task.order_id,
-      provider: 'hnskj',
-      operation: 'purchase_card',
-      requestKey: context.order.card_purchase_idempotency_key,
-      attemptNo: task.attempts,
-      sideEffecting: true,
-      action: () => cardProvider.purchaseCard({
-        cardTypeId: context.order.card_type_id,
-        openCardAmount: context.order.open_card_amount,
-        idempotencyKey: context.order.card_purchase_idempotency_key,
-        remark: context.order.public_no
-      }),
-      summarize: (value) => {
-        try {
-          return { accepted: true, providerCardId: mapPurchasedCard(value) };
-        } catch {
-          return { accepted: true, providerCardId: null, recoveryRequired: true };
-        }
-      }
-    });
-    let providerCardId;
-    try {
-      providerCardId = mapPurchasedCard(result);
-    } catch (error) {
-      if (!error?.uncertain || error?.provider !== 'hnskj') throw error;
-      await workflow.markCardPurchaseAccepted(task.order_id, task.id, baseline);
-      await identifyPurchasedCard(task, { ...baseline, phase: 'PURCHASE_ACCEPTED' });
-      return;
-    }
-    await workflow.commitPurchasedCard(task.order_id, {
-      providerCardId,
-      cardTypeId: context.order.card_type_id,
-      fundedAmount: context.order.open_card_amount
-    });
   }
 
   async function assignCard(task) {
@@ -297,10 +162,11 @@ export function createWorkflowHandlers({
         code: 'CARD_NOT_READY', retryable: true, delayMs: 60_000, refundAttempt: true
       });
     }
-    const manualSnapshotCard = context.card.sync_tier === 'MANUAL_IMPORT'
-      || context.card.provider_code === 'manual_excel';
+    // 付款前要不要再问卡台要一次卡详情，看的是这张卡所属账户有没有 API 同步能力（能力位），
+    // 不看卡台名字：没有只读 API 的卡台（备用卡台 A）只能用库内凭证与快照余额。
+    const cardSourceHasApiSync = Boolean(context.card.supports_api_sync);
     let credentials = context.card.credentials;
-    if (!manualSnapshotCard) {
+    if (cardSourceHasApiSync) {
       const cardEnvelope = await recordCall({
         orderId: task.order_id,
         provider: 'hnskj',
@@ -467,41 +333,6 @@ export function createWorkflowHandlers({
     }
   }
 
-  async function verifyCard(task) {
-    const context = await workflow.loadOrderContext(task.order_id);
-    if (context.order.status !== OrderStatus.CARD_PROVISIONING) {
-      throw new TaskExecutionError(`Order cannot verify card from ${context.order.status}`, {
-        code: 'ORDER_STATE_MISMATCH'
-      });
-    }
-    const envelope = await recordCall({
-      orderId: task.order_id,
-      provider: 'hnskj',
-      operation: 'card_readiness',
-      requestKey: `card-readiness:${task.order_id}`,
-      attemptNo: task.attempts,
-      action: () => cardProvider.card(context.card.provider_card_id),
-      summarize: (value) => mapCardProvisioning(value, context.order.minimum_required_card_balance)
-    });
-    const snapshot = mapCardProvisioning(envelope, context.order.minimum_required_card_balance);
-    if (snapshot.state === 'ready') {
-      const credentials = mapCardCredentials(envelope);
-      await workflow.commitCardReady(task.order_id, snapshot, credentials);
-      return;
-    }
-    if (snapshot.state === 'failed') {
-      await workflow.failCardProvisioning(task.order_id, snapshot);
-      return;
-    }
-    if (task.attempts >= task.max_attempts) {
-      await workflow.reviewCardProvisioning(task.order_id, 'card readiness timed out; manual review required');
-      return;
-    }
-    throw new TaskExecutionError('Card is still provisioning', {
-      code: 'CARD_PROVISIONING_PENDING', retryable: true, delayMs: pollDelayMs
-    });
-  }
-
   async function queryRecharge(task, attemptNo, {
     includeSession = false,
     operation = 'query_status',
@@ -641,8 +472,6 @@ export function createWorkflowHandlers({
 
   return {
     ASSIGN_CARD: assignCard,
-    PURCHASE_CARD: purchaseCard,
-    VERIFY_CARD: verifyCard,
     PREPARE_RECHARGE: prepareRecharge,
     SUBMIT_RECHARGE: submitRecharge,
     POLL_RECHARGE: pollRecharge,
