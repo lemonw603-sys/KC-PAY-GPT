@@ -9,7 +9,7 @@
 - 本窗口生产写操作 3 次（均 Lemon 当次同意）：关 305/306（D-245）、两次手动触发 highvcc 快照同步、C2 直调 ZZSHU 一次（被拒、未扣款）。无发布。
 
 ## 证据从哪里看
-1. `docs/V2.0_EXECUTION.md` §3.A：五面定稿 + 补丁 + 落实顺序（唯一）。
+1. `docs/V2.0_EXECUTION.md` §3.A：五面定稿 + 补丁 + 落实顺序（唯一）。**账本顶部有阅读指引：§2/§4/§5 是 09-15 过程证据，与定稿冲突以定稿为准，不凭旧行号改代码。**
 2. `docs/tasks/2026-09-17-ledger-face-{1..5}-*.md` + `2026-09-17-coherence-review.md`：每面讨论稿、Lemon 原话、证据位置。
 3. `docs/tasks/2026-09-17-handover-understanding.md`：主线图与接手核对。
 4. `docs/DECISIONS.md` D-244～D-253：本窗口全部决定。
