@@ -3799,3 +3799,11 @@ Lemon 确认开 1 张 16 刀。**执行路径澄清（先误判后查清）**：
 **对 V2 的影响**：A1「执行面接口的 `fromPlan` 参数」和 V2 §3.1「Free→5X 和 Plus→5X 走同一接口按 fromPlan 分支」简化为只有一个分支（Free→目标套餐）；5X/20X 进 Browser 自动化的工作量从「两阶段+对话框」降为「Checkout 选套餐 + 报价/金额/每卡单数按产品」。基线「5X/20X 自动化前置」5 条里第 1（付款后凭证刷新）、3（升级页只读观察）、4（最终套餐成功后才取消续费）随之重写或作废，保留第 5（按产品开卡金额、一卡一单）。
 
 **CLAUDE.md 硬约束改写**（同轮）：原「当前生产仅启用 ChatGPT Plus；5X/20X 按基线顺序启用，Plus 自动化跑通之前不开放」→ 见 CLAUDE.md 新文。
+
+### D-245 执行（2026-09-17 07:28 UTC）：305/306 接单位已关
+
+Lemon：「先关掉 305 和 306 吧；CDK 在我手上，不必担心；以上同意。」
+- 路径：本地经隧道、一次性 mjs（mysql2 事务）：`FOR UPDATE` 读两条路线 → 断言 `accepts_new_orders=1 且未退役` → 断言两路线无非终态订单（0）→ `UPDATE ... SET accepts_new_orders=0`（affectedRows 必须 =2）→ 每条写一条 `provider_route_switch_events`（route_id=previous_route_id=本路线，actor `lemon-via-fable`，note 写明 D-245 原因）→ commit。先 `--dry-run` 后 `--apply`，脚本跑完已删。
+- 独立复核（新连接 `prod-query.sh`）：`fulfillment_routes` 301=1 / 302=0 / 305=0 / 306=0；事件 9186026b（305）07:28:51.238、a31f2b1c（306）07:28:51.570；非终态 0。
+- 效果：20X/5X 码下单 → intake 找不到接单路线 → `ORDER_ROUTE_UNAVAILABLE` 503；已发出的 2 张 20X 可用码在 Lemon 手上。**回滚**：同法把两条 `accepts_new_orders` 改回 1 并写审计。
+- 没动：products、bcs、CDK、任何开关。

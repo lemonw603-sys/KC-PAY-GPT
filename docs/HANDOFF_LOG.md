@@ -2447,3 +2447,11 @@ state-check的$MINBAL紧邻中文括号、wrapup-check的$live/$mday紧邻中文
 - **查出的对不上（生产 vs 文档）**：①5X/20X 路线 305/306 `accepts_new_orders=1`、products ACTIVE、20X CDK 可用 2 张，与 CLAUDE.md「仅启用 Plus」冲突；②正式资格 SQL 合格卡是 29bb（103）不是 5276（5276 同步窗口已过）；③hnskj AVAILABLE 卡实际每小时同步一次（`scheduleDueCardSyncJobs` 默认 staleMinutes=60 把 10 分钟策略拉长）；④worker `PROVIDER_READS_ENABLED=true` 来自 `/etc/pojia/provider.env`（runtime.env 是 false）；⑤服务器 09-16 23:36:10 UTC 重启过（唯一 boot），web 起来时 DB 未就绪崩一次 systemd 拉起，原因无记录；⑥CURRENT_STATE 若干行陈旧（告警 16→116、备用卡 5→9+5、备份、PID、快照 timer 10min/1h 自相矛盾、card-funding.timer 行内容错位）。
 - **CURRENT_STATE 改了 9 行**（只改文档，值取自本轮现场）。HANDOFF_NOW 覆盖重写。
 - 未做：清账本（等 Lemon 核对理解文档）；20X 路线不动；解耦不讨论。
+
+## 2026-09-17｜Lemon 核对回复 + 两阶段退休 + 关 Pro 路线（07:00–07:35 UTC）
+
+- Lemon 回复接手理解文档：5X/20X 是产品、路线有意开着（D-244）；hnskj 限流 60 次/分钟（实测均值 4.6 峰值 22）；服务器重启是欠费已续；API 绑其他卡台是想法未试；协作方式不拘泥过往、需求一起梳理、稳定不臃肿、B/C 逐面重问。
+- 第二轮：「10X」=20X；**ChatGPT 可从 Free 直升 20X，两阶段方案退休（D-245）**。核出风险：组合层结账固定 plus（`shared-live-composition.js:210`），20X 码下单会自动买 Plus；生产 2 张 20X 可用码在 Lemon 手上。
+- **生产写操作 1 次**：Lemon 授权关闭 305/306 接单位。一次性脚本（事务+断言+审计），dry-run→apply，新连接复核 305=0/306=0、事件 2 条、非终态 0。回滚同法改回 1。
+- CLAUDE.md 产品硬约束改写；PROJECT_MAP §5、UNVERIFIED 顶注、CURRENT_STATE、理解文档、HANDOFF_NOW 同步。
+- 下一步：D-243 五步之①清账本，按「逐面重问需求」做，第一面卡台与路线关系。
