@@ -3829,3 +3829,16 @@ Lemon：「先关掉 305 和 306 吧；CDK 在我手上，不必担心；以上�
 **本轮核出的地基事实**（写进账本 §2）：①生产 930 条旧架构 `card_stock_jobs REVIEW_REQUIRED`（924 PROVIDER）命中 `scheduleAutomaticJob` 的「未解决付费任务」检查 → 自动开卡开关一打开即永远 `FUNDS_REVIEW_REQUIRED`；②worker `PURCHASE_CARD` 无任何创建点，死线；③后台「人工开卡」建的 job 无执行者，靠人 ssh 跑 runner；④`CARD_STOCK_LOW` 只算 hnskj、阈值 1；⑤24 次等卡平均 9～12 小时、13 单最终关闭。
 
 **接手模型对①的建议**：资金效率杠杆是销卡回笼（钱躺在卡上的时间），不是少保几张；Pro 水位 0 + 订单驱动兜底。故障切换在 API 路线上依赖 C2。
+
+## D-248（2026-09-17 10:30 UTC）清账本·面三「执行与交付」Lemon 五答；ZZSHU 支持 Pro 正价开通（API 也能充 Pro）；「需要我处理」边界勾选（三处待确认）
+
+讨论稿：`docs/tasks/2026-09-17-ledger-face-3-execution-delivery.md`（§1 交付判据/付款不明/成功单谁收口/失败分布/人工点清单、§4 E1-E4、§6 五答与理解）。
+
+**Lemon 定**：①A1「接口三段统一」不做，改三张契约表（交付判据 / 付款不明 / 人工兜底点）；④付款前抓取类失败先攒 D-239 样本再改；⑤客户页第一步提示「Session 至少剩 30 分钟」；②Pro 也要能走 Browser，并让我查 ZZSHU 文档。
+
+**核实（新事实）**：ZZSHU 三方接口 `planType` 支持 `plus` / `pro5` / `pro20` / `plus_to_5x` / `renew_20x`，`pro5` / `pro20` 为免费账号正价开通（摘录存 `docs/contracts/2026-09-17_zzshu-third-party-api-plans-excerpt.md`）。→ **Pro 两条路都能走**；API 侧只需 `pro_5x→pro5`、`pro_20x→pro20` 映射 + 真单验证。**纠错**：仓库 `对接api.md` 是 GPT-KCCatk（gogpt.id88.icu）的文档，不是 ZZSHU，此前 `PROVIDER_BASELINE.md:19`「固定 planType=plus」是按当时实现写的，不是上游限制。
+
+**③「需要我处理」勾选**（A 必须叫 / B 系统自己解决 / C 不该出现）：Session 无效 B · 已是 Plus B · 付款前失败现场保留 A · 人机验证 A · **付款不明补核定不了 C** · **取消续费未确认 C** · 崩溃 B · 缺卡 A（开不出才叫）· token/卡台故障 A · **ZZSHU 零原因失败 A**。
+**接手模型的理解（待 Lemon 确认三处）**：C = 补核必须靠「账号状态 + 卡台扣款记录」两路证据自动定，G1 成为前置、窗口放长；取消续费 = 重试到成功，API 单复用 Browser 取消能力（ZZSHU 回传 Session）；ZZSHU 零原因 A = (a) 退码+通知 还是 (b) 停单等看。
+
+**账本写入**：待三处确认后写面三定稿。
