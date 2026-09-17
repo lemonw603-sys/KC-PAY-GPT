@@ -1,31 +1,54 @@
 # 接班一屏（HANDOFF_NOW）
 
-更新：2026-09-17 22:20 UTC+8（14:20 UTC，Fable 5.1 接手窗口收尾）。按 CLAUDE.md 约定维护，接手者从 main 继续，不另起项目。
+更新：2026-09-17 23:5x UTC+8（15:5x UTC，落实第②步窗口收尾）。按 CLAUDE.md 约定维护，接手者从 main 继续，不另起项目。
 
 ## 现在是什么
-- **V2 方向工作全部完成（D-243 步①②③）**：接手核对（理解文档）→ 清账本五面逐面重问、Lemon 逐面拍板（D-246～D-251）→ 整体连贯审（D-252）。**账本 `docs/V2.0_EXECUTION.md` §3.A 是唯一定稿**：面一卡台与路线 / 面二供卡 / 面三执行与交付 / 面四通知与对账 / 面五展示与控制 + 连贯审补丁 + 落实顺序 8 步；旧 A/B/C/G 全部作废或并入。
-- **落实（步④）已开始**：第①步 C2 已跑出结论（D-253：ZZSHU 拒 highvcc 卡 40020，认 BIN；Lemon 定 API 固定 hnskj、不加 BIN；解耦结论 = Browser 任意卡台 / API 固定 hnskj）。**下一件 = 第②步「数据源三件」，任务书 `docs/tasks/2026-09-17-impl-step2-data-sources.md`，开专门落实窗口做。**
-- 生产：release `20260916-unified-4334dc2`；Plus 默认路线 API（301=1）；**305/306（Pro）接单位已关**（D-245，方案改完再开）；接单/派单/付款 true；非终态 0；本机 Browser PID 47905 常驻；highvcc token 12:47 UTC 重贴、同步已恢复。具体值只看 CURRENT_STATE。
-- 本窗口生产写操作 3 次（均 Lemon 当次同意）：关 305/306（D-245）、两次手动触发 highvcc 快照同步、C2 直调 ZZSHU 一次（被拒、未扣款）。无发布。
+
+- **V2 方向工作已全部完成**（D-243 步①②③）。**落实（步④）按账本 §3.A「做的顺序」8 步走，第①②步已完成。**
+- **第①步 C2 已出结论**（D-253）：ZZSHU 按 BIN 白名单放行、拒 highvcc 卡 40020 → Lemon 定「API 固定 hnskj、不加 BIN」。解耦结论 = Browser 任意卡台 / API 固定 hnskj。
+- **第②步「数据源三件」代码已上生产**（release `20260917-datasources-c1a026a`，2026-09-17 15:28:44 UTC）：
+  - **T1** highvcc 授权流水入 `card_transactions` + 钱包入 `provider_balance_snapshots` — 已随 timer 自然写入生产。
+  - **T2** 开卡真实成本记账（D-255 Lemon 选 B「观察余额差」而非按费率表推算）— 代码已上线，**真实开卡时才执行，尚无真实样本**，第③步两台各开一张时验。
+  - **T3** 账本补记脚本 — dry-run 可跑，**apply 还没做，等 Lemon 看过 dry-run 确认**。
+- **browser-mvp 一个字没碰**（D-254 边界）：`git diff --stat 4334dc2..HEAD -- browser-mvp/` 为空。
+- 生产：接单/派单/付款 true；Plus 默认路线 API（301=1）；305/306（Pro）接单位仍关（D-245）；非终态订单 0；本机 Browser 常驻 PID 47905 未动。具体值只看 `CURRENT_STATE`。
 
 ## 证据从哪里看
-1. `docs/V2.0_EXECUTION.md` §3.A：五面定稿 + 补丁 + 落实顺序（唯一）。**账本顶部有阅读指引：§2/§4/§5 是 09-15 过程证据，与定稿冲突以定稿为准，不凭旧行号改代码。**
-2. `docs/tasks/2026-09-17-ledger-face-{1..5}-*.md` + `2026-09-17-coherence-review.md`：每面讨论稿、Lemon 原话、证据位置。
-3. `docs/tasks/2026-09-17-handover-understanding.md`：主线图与接手核对。
-4. `docs/DECISIONS.md` D-244～D-253：本窗口全部决定。
-5. `docs/contracts/2026-09-17_zzshu-third-party-api-plans-excerpt.md`：ZZSHU 套餐文档摘录（pro5/pro20 支持）。
+
+1. `docs/V2.0_EXECUTION.md` **§6 第②步那节**：发布/测试/对真实响应的核实/7 条范围外发现，全在那里。
+2. `docs/V2.0_EXECUTION.md` §3.A：五面定稿 + 补丁 + 落实顺序（唯一有效的方案）。**顶部有阅读指引：§2/§4/§5 是 09-15 过程证据，与定稿冲突以定稿为准，不凭旧行号改代码。**
+3. `docs/DECISIONS.md` **D-255 / D-256**：本窗口两个决定（T2 选 B；补记 8→7 单）。
+4. 提交：`4f5e158`(T1) · `50384e2`(T3 脚本) · `c1a026a`(T2) · `69a67fe`(落盘)。
 
 ## 接下来做什么
-1. **开落实窗口做第②步**（任务书见上）：T1 highvcc 交易/钱包入库、T2 hnskj 开卡费、T3 账本补记 8 单 + 人工收口写账本。T3 补记 apply 前把 dry-run 摆给 Lemon。
-2. 之后按账本「做的顺序」③～⑧逐块开窗口；每块做完放回主线验。
-3. 运营侧待 Lemon：每天固定时段贴 highvcc token（D-251）；两批旧卡标终态在第③步一并做。
-4. 正常来单仍按 RUNBOOK；当前 Plus 走 API + hnskj（5276 一张，合格窗口每小时 15 分钟，见 CURRENT_STATE）。
+
+1. **先把 T3 收尾**（本块唯一未完项）：跑 `node v1/scripts/backfill-consumption-ledger-d249.mjs --dry-run`，把结果摆给 Lemon，他确认后 `--apply`。**apply 是生产写，必须当次确认。**
+2. **然后开第③步窗口**：任务书 `docs/tasks/2026-09-17-impl-step3-card-source-and-supply.md`（卡台选择表 + 供卡调度）。它会碰 browser-mvp 两处，白名单已在任务书里列死。
+3. 之后按账本「做的顺序」④～⑧逐块开窗口；每块做完放回主线验。
+4. 运营侧待 Lemon：每天固定时段贴 highvcc token（D-251）；两批旧卡标终态在第③步一并做。
+5. 正常来单仍按 RUNBOOK；当前 Plus 走 API + hnskj。
+
+## 已定不做 / 别再重开的
+
+- 卡台↔支付方式解耦：**已有结论**（D-253 补记），别再当开放问题讨论。
+- T2 不按费率表算（D-255）：费率只作对照，代码只信余额差。
+- `card-consumption-audit.js` 的判据放宽：**Lemon 定排到第⑤步**对账那块做，第②步不动它。
+- 305/306 在 Pro 落实（顺序第⑦步）前不重开。
+
+## 未验证边界（别说成已完成）
+
+- **T2 尚无真实样本**：代码在生产，但只有真开一张卡才会执行。第③步开卡时才算验收。
+- **T1 的「抽一张卡与卡台后台一致」还没让 Lemon 看**：库内数字已对得上逐单比对，但任务书要求的「Lemon 看一眼卡台后台」没做。
+- **hnskj 的 `trade_time_raw` 是 UTC+8** 属于两点推断（非卡台文档确认），所以 T3 对 hnskj 那单标 `BACKFILL_NEEDS_HUMAN_CHECK`，不自动断言。
+- **Dqcn 那单为什么在 7402 上找不到流水，原因未知**（D-256），没查。
 
 ## 分支、运行与禁止事项
-- main 是接手入口；本窗口只有文档提交与上述 3 次生产写，没有代码改动、没有发布。
-- 常驻 Browser 不要当残留杀掉。305/306 在 Pro 落实（顺序第⑦步）前**不重开**。
-- 付款未知禁止重付/换卡；开卡/补余额/切路线/发布/账本补记先开口问。
-- C2 脚本在 scratchpad（会话级临时目录），Session 文件已删；ZZSHU 对 highvcc BIN 不支持，不再试。
+
+- main 是接手入口；本窗口 4 个提交已全部推送 origin。
+- 常驻 Browser（本机 PID 47905）不要当残留杀掉。
+- 付款未知禁止重付/换卡；开卡/补余额/切路线/发布/账本补记 **先开口问**。
+- 范围外发现只报不改（D-254）：写进收尾「发现」段 + 登记账本/DECISIONS，修不修 Lemon 定。
 
 ## 暂停/恢复记录
-- 本窗口无暂停。highvcc 快照同步 08:38～12:38 因 token 过期失败 4 次，12:47 重贴、12:53 恢复。
+
+- 本窗口无暂停。发布后 timer 按小时正常跑。

@@ -2463,3 +2463,17 @@ state-check的$MINBAL紧邻中文括号、wrapup-check的$live/$mday紧邻中文
 - 生产写 3 次（均 Lemon 当次同意）：关 305/306（D-245）；两次手动触发 highvcc 快照同步（token 过期后重贴恢复）；**C2 直调 ZZSHU 用 highvcc 卡 0601 真付一单 → 40020「该卡头暂不支持」被拒、未扣款（D-253）**；Lemon 定 API 固定 hnskj、不加 BIN。
 - 产出：`docs/tasks/2026-09-17-ledger-face-{1..5}-*.md`、`coherence-review.md`、`impl-step2-data-sources.md`（第②步任务书）、`contracts/2026-09-17_zzshu-third-party-api-plans-excerpt.md`；CLAUDE.md 产品硬约束改写（D-245）；CURRENT_STATE 多行按现场改。
 - 未做：任何代码改动、发布、删表。下一步：开落实窗口做第②步。
+
+## 2026-09-17｜落实第②步「数据源三件」：代码上生产，T3 待确认（14:45–16:0x UTC）
+
+- **先重查再动代码**（任务书要求）：把任务书提到的每个文件与每条生产数据重查一遍，**查出 6 处与任务书对不上**，全部先报 Lemon 再动手 ——
+  ①7 单 RELEASED 不是「收口分支漏写」（三条人工收口分支当前代码都写账本），真因是 `close-manually-fulfilled-order.mjs:42-44` 明确拒绝给 RECHARGE_FAILED 单记 `--card-used`；②FqFn 是 API 全自动成功单、早于账本机制上线（账本最早行 08-29 05:50:22），不是人工收口；③金额不能用 `orders.actual_payment_amount`（那列是商户侧原币，实见 982.14 PHP）；④「fee 全 0」只对 `card_recharge` 成立，全表有 1 行非 0；⑤`provider_calls.response_summary_json` 不存原始响应，任务书给的 T2 取证路径走不通；⑥验收「补记后 hnskj 差异归零」做不到，只对 6807 一张成立。
+- **T2 的真实响应核实没发请求就做到了**：`fee=0` 与 `fee=NULL` 的区别本身就是证据（卡台没给 fee 的记录落库是 NULL，`card_recharge` 落的是 0 → 卡台确实返回了 fee=0）；再用 `provider_balance_snapshots` 两个干净样本（开卡 $16 扣 16.58、补值 $50 扣 50.25）坐实费率结构。
+- **Lemon 的三个决定**：T2 选 B「观察余额差」（D-255，他问「会不会臃肿和不稳定」→ 核实后答：开卡前的余额读取与入库本来就有，B 只加一行；两个不稳定点用 try/catch + 合理性闸门处理）；T1+T2 一起发一次版；audit 判据放宽排到第⑤步。
+- **逐单比对 22 笔真实流水**，补记从 8 单改成 7 单（D-256）：6 单 highvcc 精确落在窗口内（pom5 那笔与 Lemon 当时写在 `order_events` 的备注逐字对上）、1 单 hnskj 标人工复核、**Dqcn 无流水证据不补**（7402 卡在其窗口内一笔都没有，唯一的 09-10 流水是 03:47 的 $142.87，早 11 小时且是 Pro 价位；原因未知待查）。
+- **抓到一个会静默失效的接线**：`card-stock-service.register()` 返回 `{providerCardId, inventoryStatus, ...stock}` **没有 id**，我原先写的 `registered?.id` 恒为 undefined，而单测传假 id 照样全绿（D-172 惯犯 3 原样重演）。改为服务自己按 `providerCardId` 查 `cards.id`，并加一条断言「确实去查了卡」的测试挡住回退。
+- **发布**：`20260917-datasources-c1a026a`，15:28:44 UTC 切换。无迁移。发布前备份 `pojia-20260917T152820Z.sql.gz.enc`（完整性已验）。新连接独立核实 current/PID/cwd。`state-check` 11 项全一致。v1 全量 **771 项 0 失败**（新增 30 项）。`git diff --stat 4334dc2..HEAD -- browser-mvp/` **为空**。
+- **生产写**：本窗口只有 T1 随 timer 的自然写入（`card_transactions` + `provider_balance_snapshots`，只增行、不改卡余额、不改谁可分配——已对生产资格 SQL 实测）。**T3 apply 没做，等 Lemon 看 dry-run。**
+- **范围外发现 7 条**只报未改，登记在账本 §6 第②步那节（audit 假阴性、3 笔无主扣款、1 处反向缺口、close-manually 的拒绝、`card_stock_jobs` 实为 965 条而非 930、两张卡台表实查矛盾、卡的三种叫法混用）。
+- **产出**：第③步任务书 `docs/tasks/2026-09-17-impl-step3-card-source-and-supply.md`。
+- 未做：T3 apply；T2 真实样本（要等真开卡）；删表；通知白名单。
