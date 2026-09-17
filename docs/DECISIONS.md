@@ -3872,3 +3872,10 @@ Lemon：highvcc 网站登录 = 账号密码 + 随机位置滑动块。→ **系�
 
 连贯审：`docs/tasks/2026-09-17-coherence-review.md`（5 打架 / 11 缝 / 顺序 8 步 / 红线 / 横切）。**Lemon 定**：①付款不明要拉 highvcc 流水算时段外突发例外（token 有效就拉、失效才叫、带证据）；②时段外 Browser 缺 highvcc 卡**自动用 hnskj 开一张顶上**（故障转台双向、按「该台此刻能不能开」判）；③Session 门槛统一 30 分钟不动。其余打架 3～5、缝 a～k 按连贯审处置写进账本「连贯审补丁」。
 **账本状态**：五面定稿 + 补丁 + 落实顺序齐；旧 A/B/C/G 全部作废或并入。**D-243 步①②③完成，进步④：按顺序开落实窗口，第一件 C2 真单 + Pro 映射验证（需 Lemon 提供 free 测试号 Session、当次确认）。**
+
+## D-253（2026-09-17 13:55 UTC）C2 结果：ZZSHU 拒绝 highvcc 卡（40020「该卡头暂不支持提交，请联系客服添加支持」）——ZZSHU 认 BIN，解耦的技术前提不成立
+
+**执行**：Lemon 提供 free 测试号 Session（shichuan003@gmail.com，free，accessToken 有效至 09-21）；卡用 highvcc 尾号 0601（BIN 53211304，Lemon 充至 $15.99，手动触发快照核实）；planType `plus`；13:54:45 UTC 隔离直调 `POST /third-party/orders/direct` 一次。
+**结果**：HTTP 400、业务码 **40020**「该卡头暂不支持提交，请联系客服添加支持」。`uncertain=false`（ZZSHU 语义：创建前校验拒绝，未创建订单）。**未扣款**（卡台余额下次快照/时段同步核）。Session 文件已删。
+**含义**：①「ZZSHU 不认卡台」（D-246 时的技术判断）**错**——ZZSHU 按卡 BIN 白名单放行，highvcc 的 BIN 53211304 不在名单；3336 那张（BIN 54317796）未试、大概率同样。②**面一选择表 API 行白名单初值 = 只有 101（hnskj）**；解耦到 API 路线的路只剩「找 ZZSHU 客服把 highvcc 的 BIN 加进支持名单」（商务动作，Lemon 定）。③面二⑦故障转台：API 路线不转，维持。④D-252 打架 2「时段外 Browser 缺卡自动用 hnskj」不受影响（Browser 不认 BIN）。
+**下一步待 Lemon 定**：找 ZZSHU 客服加 BIN（53211304 / 54317796）后再试一次，还是接受 API 只走 hnskj。
