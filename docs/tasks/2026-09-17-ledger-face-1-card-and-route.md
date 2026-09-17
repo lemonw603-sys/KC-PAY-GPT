@@ -83,3 +83,23 @@
 2. **hnskj 卡走 Browser**：你手动用比特浏览器充时用过 hnskj 的卡吗、成功过吗？系统里 0 次付款。
 3. **C 方案要不要走？** 走的话 C2 那一单 highvcc 卡走 ZZSHU 什么时候安排（真付，约 $16）。
 4. hnskj 卡「每小时同步一次、只有 15 分钟合格」——这是要改成"分卡时按需同步、不看时间窗"的，还是现状可接受？它不属于这一面，但决定你切到 API 后来单会不会先等卡，我想先知道你的态度。
+
+## 6. Lemon 的回答（2026-09-17）与 C 的修订
+
+**回答**：①切路线时切卡台「只是顺手」；②hnskj 卡走 Browser 手动能成功，**任何能开出卡的卡台几乎都能走 Browser，未来新卡台也要能复用**；③highvcc 卡走 API 近期可以试，预估可以；④hnskj 卡同步改为**按需同步**。
+
+**C 要改四处：**
+
+1. **选择表定为「产品 × 执行器 → 卡台」，各选各的**（由①定）。运营在首页看到的是「当前路线用的卡台」一个值；切路线不动卡台，切卡台只改当前路线那一行。不做「两路共用一个卡台」——C2 之前 API 只能 hnskj，共用会逼运营改两次。
+2. **「卡台可插拔」升级为设计原则，不只是 C1 ④ 的一句话**（由②定）。当场统计：v1/src + browser-mvp/src 里按卡台名字硬分支（`'hnskj'` / `'manual_excel'` / `'MANUAL_IMPORT'` 字面量，不含 provider 自身实现）**52 处、20 个文件**（workflow-handlers 8、admin-read 7、card-provider-snapshot 5、recharge-attempt-repository 4、其余 1～3）。原则：**分派只看 `provider_accounts` 能力位，不看名字**；新卡台 = 一行账户 + 一个适配器，业务代码不改。C1 只清「选卡台 → 分卡 → 付款前查卡 → 交易核对」这条路上的（intake、provider-route-service、workflow-handlers 的 `card_details`/`SYNC`、pool worker 的 `transactionReaderFactory` sourceKind、shared-encrypted-materials 校验）；admin-read / snapshot / release / cancellation 里的归第二面（供卡）与对账面。
+3. **C2 提前到 C1 之前、用隔离直调验证**（由③定）。不等 C1 放开白名单：写一个一次性脚本复用 `ZzshuRechargeProvider.createDirectOrder`，拿一张 highvcc 卡 + 一个 free 测试账号 Session 直接调 ZZSHU，不进订单系统、不经资金栅栏，事后人工记消费账本。代价：一张卡约 $16、一个测试号 Session、Lemon 当次确认。**结果直接决定 C1 选择表 API 行的初值**（成 → 101+103；败 → 101），C1 不用留分叉。
+4. **按需同步归第二面（供卡），但 C1 的切换校验「目标卡池可分配 > 0」必须用按需同步后的口径**（由④定）。否则切到 API 时若 5276 在 15 分钟窗口外，校验会误报「没卡」拒切。缝记在这里，第二面落方案时闭合。
+
+**不变**：C1 是减法（删三处硬写、合两表一）；不改付款行为、不改资格规则本身；hnskj 限流不受影响。
+
+**我理解的这一面的决定（请核对）**：
+- 「用哪个卡台」在两条路上都要有，按产品 × 执行器各选各的。
+- 卡台可插拔是原则；能力位驱动，去名字分支。
+- highvcc 卡走 ZZSHU 近期真付一单验证，隔离直调，Lemon 当次确认。
+- hnskj 卡分卡时按需同步，不看 15 分钟窗口（第二面落）。
+- A1 拆成「切换解耦卡台（=C）」和「执行面接口三段（另审）」两件事；A2 并入 C1；A4 供给两台并重的「自动动作只认 hnskj」部分归 C1 ④ 与第二面。
