@@ -88,6 +88,25 @@ ssh root@144.34.180.184 'set -a; . /etc/pojia/runtime.env; set +a; cd /opt/pojia
 ```
 （守卫：任何付款痕迹即拒；释放账本/卡分配、订单 CLOSED、退回 CDK。）
 
+## 2.5 供卡（第③步起，2026-09-18）
+
+供卡由 `pojia-card-stock-runner` 一个执行器管两台：每次先按「卡台 × 产品」水位调度，再领一个开卡 job 按该台的适配器开一张（hnskj Open API / highvcc API）。**人工开卡不再 ssh 手跑 runner**。
+
+```bash
+# 看现在的水位、可用、缺口、钱包：跑一次执行器（总闸关着只刷告警不开卡）
+ssh root@144.34.180.184 'systemctl start pojia-card-stock-runner.service; journalctl -u pojia-card-stock-runner -n 3 --no-pager'
+# 水位 / 开卡金额 / 每日上限 / 卡段（按台按产品；第⑥步设置页做出来前只能查库改库）
+browser-mvp/scripts/prod-query.sh "SELECT * FROM card_supply_policies"
+# 卡台钱包底线 / 告警线 / 故障态
+browser-mvp/scripts/prod-query.sh "SELECT id, open_adapter, default_card_segment, wallet_floor, wallet_alert_threshold, supply_fault_state, supply_fault_reason FROM provider_accounts WHERE purpose='CARD'"
+```
+
+- **自动开卡总闸** = `card_auto_replenishment_enabled`（只开这一个；后台「开启」按钮会连补余额一起开）。timer 启用后每 60 秒一轮，一轮最多建一张卡的 job。
+- **hnskj 人工开一张**：后台「人工开卡」建 job（或 `createJob`），然后 `systemctl start pojia-card-stock-runner.service`（timer 启用后不用手动）。
+- **highvcc**：时段内先贴 token，钱包要 ≥ 底线 20 + 开卡金额 + 手续费估计（无观察时按金额 10% + $1）；后台「备用卡台 A 开卡」仍可同步直开。
+- **开卡失败**：job 进 `REVIEW_REQUIRED`（可能已扣款）→ 推手机 `CARD_SUPPLY_OPEN_FAILED`，人工核对前调度器不再自动开；该台标 `supply_fault_state=FAULT`，15 分钟后允许再试；Browser 需求会转另一台开一张顶上，API 需求不转。
+- **归档残留**：`node scripts/archive-legacy-card-stock-jobs.mjs [--apply]`（2026-09-18 已归档 965 条）。
+
 ## 3. 死单残留清理
 
 订单已是 RECHARGE_FAILED 但卡仍绑定（2026-09-08 前的旧行为）：

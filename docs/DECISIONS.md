@@ -3929,3 +3929,22 @@ Lemon：highvcc 网站登录 = 账号密码 + 随机位置滑动块。→ **系�
 **但那 14 个失败是既有的**：串行跑（`--test-concurrency=1`）结果相同，不是并行干扰。失败集中在同一类报错 `Order route cannot assign a card`（订单没绑上路线）。**根因未查**（超出本块范围，只报不修）。按 `v1/README.md` 写的方式跑，没有别的准备步骤；种子数据齐（4 routes / 3 accounts / 3 products，与生产一致）。
 **含义**：这道发布门槛实际上过不了，此前的发布多半也没真跑过它。**Lemon 同意立项**，不排进第③步（它不挡 V2 落实，但挡的是「发布前能不能真验证」）。
 **顺带**：`v1/README.md:44` 说「12 个数据库集成用例会跳过」，实际 66 个，文档过时。
+
+## D-259（2026-09-18 00:05 UTC）库存水位统计不能用分卡的资格 SQL——Lemon 在放行调度器前问出来的
+
+**问题**（Lemon）：水位判「缺几张」如果套现在那条资格 SQL，hnskj 的 5276 每小时只有 15 分钟合格，窗口外调度器会以为缺 2 张开 2 张。
+**核实**：确实如此。第一版 `countEligibleCards` 直接套 `eligibleInventoryCardSql`，其中「非 MANUAL_IMPORT 卡须 15 分钟内同步过流水」对 5276（`sync_tier=AVAILABLE`）生效；00:19:42 UTC 实测（5276 上次同步 00:00:12）：旧口径 hnskj 0 张，实际库里有 1 张 $16 好卡。
+**改法**：水位统计与切换校验改用**库存口径** `stockCountingCardSql` = 正式资格规则去掉那一句新鲜度（换成「至少同步过一次」），余额门槛 / 每卡单数上限 / 活动分配 / 资金与退款风险 / RETIRED / PRODUCT_ONLY 全部保留；**分卡本身不动**（客户单仍等同步窗口，「分卡时当场同步这一张」是面二⑨，归第④块）。不复制规则：从 `eligibleInventoryCardSql` 生成后只替换那一句，找不到就抛错；测试锁住「只少一个 AND 条件」。
+**大白话**：以前数的是「此刻能分出去的卡」，现在数的是「还能服务新单的卡」。同一时刻实测：旧口径 0 / 库存口径 1（提交 `ba28273`，随第③步 release 上线）。
+
+## D-260（2026-09-18 00:19 UTC）965 条旧架构开卡残留已归档（不删行）
+
+Lemon 看过 dry-run 清单后确认 `--apply`：`REVIEW_REQUIRED AND opened_count=0 AND created_at < 2026-09-06` 共 965 条（PROVIDER 924 / CARD_TYPE_UNAVAILABLE 23 / BALANCE_INSUFFICIENT 12 / SCHEMA 5 / TIMEOUT 1）→ `status=ARCHIVED_LEGACY`，写 `archived_at`/`archive_reason`，`error_code`/`error_message` 原样。新连接核实：ARCHIVED_LEGACY 965、REVIEW_REQUIRED 0、调度器「花过钱没人核对」检查从命中变为 0。账本 §3.A 写的 930 是「卡住调度器的那部分」，965 是全部残留，两个数分母不同、都对。
+
+## D-261（2026-09-18）browser-mvp 白名单两处按 `sync_tier` 判而不按 provider_accounts 能力位——为什么
+
+任务书要求「按能力位」。实查：那两处的输入是同文件 `resolveCardContext`（`production-live-worker.js:165-179`）的 SQL，只查 `c.sync_tier` 和 `pa.provider_code`，**没查 `supports_api_sync`**；真按能力位判必须改那段 SQL 加一列，而它在 D-254 白名单外（白名单只列了 :215 和 :283-284 两处判定）。选择：白名单内能做到的是去掉 `provider_code === 'manual_excel'` 这个名字分支，只按 `sync_tier`——它是卡资料来源层的标记（`MANUAL_IMPORT` = 凭证来自导入/highvcc API 直录，没有 hnskj 那种可回查的流水接口），语义上就是「这张卡能不能用 hnskj 读取器核交易」，与 `supports_api_sync` 同义但落在卡上而不是账户上。**没有扩白名单是为了守 D-254**；要不要把 :165 那段 SQL 一并改成读 `pa.supports_api_sync`，Lemon 定（本块列为待定项，已报）。副作用：v1 侧付款前查卡（`workflow-handlers.js`）已改为按 `context.card.supports_api_sync`（`loadOrderContext` 新增这一列），两边判据暂时一个按卡一个按账户，现有两台数据下结论相同（103 的卡全是 MANUAL_IMPORT 且 103 supports_api_sync=0）。
+
+## D-262（2026-09-18 00:27 UTC）第③步 D：hnskj 真开一张，T2 第一个真实样本 $0.75
+
+Lemon 逐项看过预检（钱包 $89.48、卡段 23 未维护、$50、预估总扣 $50.75、扣完 ≥ 底线 30）后说「开」。走人工 job（不经调度器，总闸仍 false）+ 手动 `systemctl start pojia-card-stock-runner.service`：开出 5622（尾 6754，$50，AVAILABLE），钱包 89.48 → 38.73，`CARD_ISSUE_FEE` 行 `LOCAL_ISSUE_FEE_5622` = **$0.75**（差 50.75 − 50；与卡台报价 0.5 + 0.5% 吻合，但记的是余额差观察，D-255 选 B 至此有真实样本）。highvcc 那张 Lemon 定先不开（钱包 $23.65 < 20 + 50 + 手续费，且要在时段内贴 token）。
