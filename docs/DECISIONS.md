@@ -3957,3 +3957,12 @@ Lemon 逐项看过预检（钱包 $89.48、卡段 23 未维护、$50、预估总
 **总闸打开后那轮**：`reason=WALLET_BELOW_FLOOR`，**没建任何 job**（`card_stock_jobs` 自 00:50 起 0 行）。调度器真去读了 highvcc 钱包（$23.65，新快照 00:50:59 写入，token 当时有效），算出 `23.65 − 50 − 6（保守估手续费）= -32.35 < 底线 20` → 不开、推两条告警（`CARD_SUPPLY_WALLET_LOW` critical + `PROVIDER_WALLET_LOW` warning）。两台 `supply_fault_state` 仍 OK——**钱不够不是卡台故障**，没误标、没误转台。
 **Lemon 侧的后续**：充到 ≥ $76 并在时段内贴 token 后，下一轮调度器自己开那张，不用叫人。
 **hnskj 那边不动**：plus 2/2 不缺（0577 + 00:27 新开的 5622），不会开卡。
+
+## D-264（2026-09-18 01:0x～01:46 UTC）第③步 E：browser-mvp 一动就演练——两次都停在付款前，报价段未验；两个既有缺口顺手坐实
+
+**流程（Lemon 逐步批）**：切默认方式 API→BROWSER（四项校验全过，这是校验在生产的第一次实证）→ `stop-live.sh` 停常驻池 47905 + 关付款开关 → 用正式建单函数建演练单 → 关接单 → `run-live-rehearsal.sh once`。**顺序上纠正了 Opus 5 先提出的方案**：必须先切路线再停池，因为切 BROWSER 要求常驻池心跳 60 秒内新鲜。
+**第一次**（`PJV1-08VhIP9rOVWJgM2k-2sQ`）：注入后身份探测回 `RefreshAccessTokenError`，fail-closed。Session 的 accessToken 签发于 09-11 05:29 UTC，就是 D-253 C2 直调 ZZSHU 用过的那份；D-190 既有结论「刷新令牌一次性，用过的 Session 不能复用」再次成立。
+**第二次**（`PJV1-DE68qse66RbfNDVkpmmE`，Lemon 重导出的 Session，accessToken 同一个、sessionToken 新）：身份探测过（loggedIn / FREE / identityMatched）、页面签名、卡料预检 ready，**进结账找不到 Plus 升级按钮**（`CHECKOUT_NAVIGATION_FAILED`，找到 0 个）。Lemon 看窗口确认：是「ChatGPT Plus - 1 Month Free Trial / 0 元」offer 页，与 D-216 同一情况；**用的 CDK 正是 D-216 那张「待作废」的码**（批次 `B-20260914044709524-D9EB06`），至今仍 AVAILABLE——本次作废（`revokeCdkBatch`，REVOKED 1）。
+**结论（如实）**：演练证明了 browser-mvp 能加载、会话注入 / 身份探测 / 页面签名 / 卡料预检这一段没被本次两行改动波及；**结账报价段没走到，未验**。那两行改的是付款后交易读取器，演练本来也走不到；它们的验证靠 browser-mvp 单测（303/294/0）和下一单真实付款后的核对。Lemon 定：等有无试用资格的 free 号再补一次演练，不阻塞本块收尾。
+**顺手坐实的两个缺口**（只报，修不修 Lemon 定）：①`close-rehearsal-order.mjs` 只认 CARD_READY，D-158 后演练单到 dispatch 已是 RECHARGE_PROCESSING，脚本前提过时；后台控制面没有「付款前失败、放弃并放卡」动作（RELEASE_SAFE 是恢复自动化），worker 的 abort 又要租约——**本次扩了脚本一处**（多接这种形态，按 worker PRE_PAYMENT_ABORT 同一顺序收，守卫不放松，提交 `ac4f8ab`），两单都用它收口并新连接核实。②D-239 的 `pre-submit-failure-diagnostic` 只在「点击前填写失败」落，进结账前找不到按钮这一步不落，诊断只有一句 reason。
+**恢复**：两单 CLOSED / CDK 退回后作废 / 3336 回池 AVAILABLE $145 / 账号槽 0 / 非终态 0；切回 API（事件 2b954ae0）；接单开；付款开关开（同步 profile）；常驻池由 supervisor 自动拉起 PID 74272，心跳恢复。Session 副本服务器与本机均已删。
