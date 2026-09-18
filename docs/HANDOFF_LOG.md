@@ -2477,3 +2477,14 @@ state-check的$MINBAL紧邻中文括号、wrapup-check的$live/$mday紧邻中文
 - **范围外发现 7 条**只报未改，登记在账本 §6 第②步那节（audit 假阴性、3 笔无主扣款、1 处反向缺口、close-manually 的拒绝、`card_stock_jobs` 实为 965 条而非 930、两张卡台表实查矛盾、卡的三种叫法混用）。
 - **产出**：第③步任务书 `docs/tasks/2026-09-17-impl-step3-card-source-and-supply.md`。
 - 未做：T3 apply；T2 真实样本（要等真开卡）；删表；通知白名单。
+
+## 2026-09-18｜落实第③步「卡台选择表 + 供卡调度」：A/B/C/D 上生产，E 演练两次停在付款前（2026-09-17 16:2x → 2026-09-18 01:5x UTC）
+
+- **先做四项前置核查再动代码**（任务书要求），查出 6 处与任务书不同、全部先报 Lemon：两张卡台表不矛盾（intake 本就各读一半，路线表 BROWSER 行的 101 撑着 8 个 hnskj runner，只能「新表成真相、旧列不再读」）；965 vs 930 分母不同；`shared-encrypted-materials` 无名字分支不用改；browser-mvp 两处只能按 `sync_tier`（白名单限制，D-261）；缝 e 对 stock-job 路径不适用；103 `read_enabled=0` 是「没这个能力」不是「停用」。
+- **代码**：迁移 053（选择表 / 策略表 / 账户能力列 / job 加列，只加不删）；按能力位解析账户（`resolveCurrentCardProviderAccount` 删）；四项校验；调度器（水位 / 日限 / 钱包预检 / 双向转台）；适配器注册表（hnskj / highvcc）；runner 三线合一 + T2 两台通用；highvcc `openCardForSupply`（NO_PAN 自动补记）；worker PURCHASE_CARD/VERIFY_CARD 线删；旧 `CARD_STOCK_LOW` 两处删；前端切换带版本 / 拒切显示原因。测试 v1 809/743/0、browser-mvp 303/294/0；集成测试本机与服务器两套对照，当前版独有失败 0。
+- **Lemon 放行 C 前问了水位口径**：确实用了分卡的资格 SQL，5276 窗口外会被数成 0 → 改库存口径（去掉 15 分钟新鲜度那一句，D-259），00:19 UTC 生产实测旧 0 / 新 1。
+- **生产动作（每步 Lemon 批、每步贴证据）**：A 发布 `20260918-step3-supply-ba28273`（迁移六行先贴再 switch，state-check 一致）；B 归档 965（dry-run → apply，新连接核实）；D hnskj 真开 5622（人工 job + 手动跑执行器，成本观察 $0.75）；C timer enable + 只开总闸（新脚本 `set-supply-scheduler-flag.mjs`），首轮按设计因钱包不够拒开并推告警，0 job；E 切 BROWSER（四项校验生产首实证）→ 停池 → 关开关 → 建单 → 演练 ×2 → 收口 ×2（扩 `close-rehearsal-order.mjs` 接新形态，D-264）→ 作废 D-216 那张免费试用码 → 切回 API → 开回 → 常驻池自动拉起 PID 74272。
+- **演练结论如实**：两次都停在付款前（Session 复用 / 免费试用 offer 页），报价段未验；等无试用资格的 free 号补验，Lemon 定不阻塞收尾。
+- **范围外发现 12 条**（只报未改，账本 §6）：含 `setOrderAcceptance` 不写审计、D-239 诊断只落填写失败、collation 混用、supervisor 残留判据误触发等。
+- **落盘**：CURRENT_STATE 十余行、RUNBOOK §2.5、D-259~D-264、账本 §6、PROJECT_MAP、第④步任务书、HANDOFF_NOW 重写。
+- **未做**：highvcc 那张（等充值 + token）；rehearsal 报价段；两批旧卡标终态（归第④步）。
