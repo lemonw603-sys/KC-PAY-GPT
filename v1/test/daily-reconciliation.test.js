@@ -5,8 +5,8 @@ import {
 } from '../src/domain/card-transaction-audit.js';
 import {
   AmountFinding, CountFinding, UnverifiableReason, fingerprintOf, isRealDiscrepancy,
-  isCriticalEligibleFinding, reconcileCard, signedAmountCents, summaryMessage,
-  createDailyReconciliationService, reconciliationAlertPlan, RECON_ALERT_KEY
+  isCriticalEligibleFinding, inputVerified, reconcileCard, signedAmountCents, summaryMessage,
+  createDailyReconciliationService, reconciliationAlertPlan, reconciliationAlertKey
 } from '../src/services/daily-reconciliation-service.js';
 
 // 下面每一行的形状都抄自 2026-09-18 生产 `card_transactions` 的真实行，不是自造的。
@@ -247,7 +247,8 @@ function reconServicePool({ cards = [], transactions = [], lastReport = null }) 
 
 const ledgerAheadCard = (over = {}) => ({
   id: 'c1', last4: '9001', provider_account_id: 'a', funded_amount: '50', current_balance: '34',
-  inventory_status: 'AVAILABLE', ledger_consumed: 3, ledger_reconciliation: 0, manual_use_registered: 0, ...over
+  inventory_status: 'AVAILABLE', sync_tier: 'LEGACY', sync_consecutive_failures: 0,
+  ledger_consumed: 3, ledger_reconciliation: 0, manual_use_registered: 0, ...over
 });
 const oneCharge = [{ card_id: 'c1', transaction_type: 'PURCHASE', status: 'COMPLETE', amount: '15', currency: 'USD' }];
 
@@ -262,11 +263,35 @@ test('反例 首跑后立即只读 GET（F-50）：只读不推进「连续两�
   }
 });
 
-test('反例 同步失败跨日（F-51）：没有新正式批次时，跨日只读也不升级', async () => {
+test('首跑后只读 GET 的跨日版：只读不推进（F-50 补充）', async () => {
   const pool = reconServicePool({ cards: [ledgerAheadCard()], transactions: oneCharge });
   await createDailyReconciliationService({ pool, clock: () => new Date('2026-09-18T04:00:00Z') }).run({ persist: true });
   const r = await createDailyReconciliationService({ pool, clock: () => new Date('2026-09-19T04:00:00Z') }).run({ persist: false });
-  assert.equal(r.persistentCount, 0, '只读不推进，即使跨日、即使读到的是同一份旧数据');
+  assert.equal(r.persistentCount, 0, '只读不推进，即使跨日');
+});
+
+test('反例 同步失败跨日（F-51/F-58）：正式 timer 面对输入存疑的卡，连续两天也不自动升级', async () => {
+  // 真实 timer 路径是 persist:true。同步失败时 sync_consecutive_failures>0（hnskj），或 MANUAL_IMPORT
+  // 无成功水位（highvcc）——两天都拿同一份旧数据，不能当成两次有效核验。旧版单测把次日设 persist:false
+  // 绕开了这条路径（F-58），这里用真实 persist:true 覆盖。
+  const staleHnskj = ledgerAheadCard({ sync_consecutive_failures: 3 });
+  const poolA = reconServicePool({ cards: [staleHnskj], transactions: oneCharge });
+  await createDailyReconciliationService({ pool: poolA, clock: () => new Date('2026-09-18T04:00:00Z') }).run({ persist: true });
+  const a = await createDailyReconciliationService({ pool: poolA, clock: () => new Date('2026-09-19T04:00:00Z') }).run({ persist: true });
+  assert.equal(a.persistentCount, 0, '同步连续失败：正式 timer 也不升级');
+  assert.equal(a.inputUnverifiedCount, 1, '进报告、标输入存疑');
+
+  const highvcc = ledgerAheadCard({ sync_tier: 'MANUAL_IMPORT', sync_consecutive_failures: 0 });
+  const poolB = reconServicePool({ cards: [highvcc], transactions: oneCharge });
+  await createDailyReconciliationService({ pool: poolB, clock: () => new Date('2026-09-18T04:00:00Z') }).run({ persist: true });
+  const b = await createDailyReconciliationService({ pool: poolB, clock: () => new Date('2026-09-19T04:00:00Z') }).run({ persist: true });
+  assert.equal(b.persistentCount, 0, 'MANUAL_IMPORT 无成功水位：正式 timer 也不升级');
+});
+
+test('inputVerified：MANUAL_IMPORT 与连续失败判存疑，正常 hnskj 判可信（F-51）', () => {
+  assert.equal(inputVerified({ sync_tier: 'MANUAL_IMPORT', sync_consecutive_failures: 0 }), false);
+  assert.equal(inputVerified({ sync_tier: 'LEGACY', sync_consecutive_failures: 2 }), false);
+  assert.equal(inputVerified({ sync_tier: 'LEGACY', sync_consecutive_failures: 0 }), true);
 });
 
 test('连续两次由正式批次推进：够格差异连续两个正式批次 → 升 critical', async () => {
@@ -335,18 +360,26 @@ test('风平浪静那天的汇总也是一句话读完', () => {
   assert.doesNotMatch(message, /连续两天/);
 });
 
-test('反例 异常次日恢复（F-54）：日报固定 dedupe_key，昨天 OPEN 今天无差异 → RESOLVE 同一 key', () => {
+test('反例 异常次日恢复（F-54/F-56/F-59）：按天 key + 每次收掉除今天外的历史日报', () => {
   const base = {
     cardCount: 1, persistentCount: 0, pendingRegistrationCount: 0,
-    unexplainedChargeCount: 0, unverifiableAmountCount: 0, retirementDueCount: 0
+    unexplainedChargeCount: 0, unverifiableAmountCount: 0, inputUnverifiedCount: 0, retirementDueCount: 0
   };
-  const withDiff = reconciliationAlertPlan({ ...base, discrepancyCount: 1, reconciliationDate: '2026-09-18' });
-  assert.equal(withDiff.action, 'upsert');
-  assert.equal(withDiff.key, RECON_ALERT_KEY);
+  const day18 = reconciliationAlertPlan({ ...base, discrepancyCount: 1, reconciliationDate: '2026-09-18' });
+  assert.equal(day18.action, 'upsert');
+  assert.equal(day18.key, reconciliationAlertKey('2026-09-18'));
+  assert.equal(day18.historyLike, 'daily-reconciliation%');
 
-  const nextDayClean = reconciliationAlertPlan({ ...base, discrepancyCount: 0, reconciliationDate: '2026-09-19' });
-  assert.equal(nextDayClean.action, 'resolve');
-  assert.equal(nextDayClean.key, RECON_ALERT_KEY, '固定 key：今天的 RESOLVE 正好收掉昨天那条 OPEN');
+  // 次日持续差异升 critical：新 key → 新通知行 → 能重推到手机（F-56，固定 key 会只推一次）。
+  const day19 = reconciliationAlertPlan({ ...base, discrepancyCount: 1, persistentCount: 1, reconciliationDate: '2026-09-19' });
+  assert.equal(day19.key, reconciliationAlertKey('2026-09-19'));
+  assert.notEqual(day19.key, day18.key);
+  assert.equal(day19.severity, 'critical');
+
+  // 无内容那天：连今天的也 resolve；runner 再用 historyLike 收掉昨天与生产遗留旧 key（F-54/F-59）。
+  const clean = reconciliationAlertPlan({ ...base, discrepancyCount: 0, reconciliationDate: '2026-09-20' });
+  assert.equal(clean.action, 'resolve');
+  assert.equal(clean.historyLike, 'daily-reconciliation%');
 });
 
 test('reconciliationAlertPlan：够格差异连续两天 → critical；只有无主扣款 → info', () => {

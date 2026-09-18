@@ -77,7 +77,9 @@ async function persistRefundCandidate(connection, { cardId, orderId, transaction
  * 只对**本次新插入**的流水行告警，否则每次同步都会把历史拒付重推一遍。
  * 拒付手续费（`chargeback_fee`）不单独推，金额并进同一条消息由运营在后台看。
  */
-const CHARGEBACK_TYPES = new Set(['CHARGEBACK', 'CHARGE_BACK', 'DISPUTE']);
+// 只留生产真实见过的（D-277）：CHARGE_BACK / DISPUTE 是猜出来的名字、无样本，删掉——按类型判就不能
+// 塞没见过的值。highvcc 侧拒付告警等首个真实样本再按真值加。
+const CHARGEBACK_TYPES = new Set(['CHARGEBACK']);
 
 async function persistChargebackAlert(connection, { cardId, transaction }) {
   const type = String(transaction?.type ?? '').trim().toUpperCase();

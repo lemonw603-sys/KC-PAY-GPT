@@ -60,7 +60,7 @@ D-250 原话：**工作台要用起来舒服、交互好，V1 太差。**
 1. 后台「库存阈值」控件（`card_stock_low_threshold` / `setThreshold`）**已不驱动任何告警**；`card_replenishment_daily_limit` 全局日限被策略表按台日限取代，但设置服务与总览仍读它 → 设置页重做时清掉（第③步发现 2）。
 2. 后台无「付款前失败、放弃并放卡」动作，现在只能跑 `close-rehearsal-order.mjs` → 契约表三 #3 的按钮（第③步发现 8）。
 3. **建演练单没有正式脚本**（第④步 D-270 ②：上次用底层 `storeCdkBatch` 造码漏了 `cdk_batches` 行）→ 要不要做成带批次的正式运维工具。
-3b. **运营手动用卡登记入口 = 给卡标 RETIRED + 原因**（`card_operational_overrides`，已有端点 `POST /api/v1/admin/card-retirement/confirm`，`note` 带 `manual-used` 标识）——**Lemon 已定要做，归本块**（D-272 ③ / D-275 ⑦）。**不新建表、不收客户/套餐/金额字段**。⑤b 后日对账已按此判：已登记 `manual-used` 的归 `pendingRegistration`（生产现只剩 3336），没登记的那类扣款报 `UNEXPLAINED_CHARGE` 无主扣款差异（生产现 6 张：8590/0237/0601/5371/5501/7402）；入口上线让运营自助登记，把无主扣款里真属手动用卡的收掉。RUNBOOK §2.7 有手动命令，本块把它搬进工作台「卡片」区。
+3b. **运营手动用卡登记入口 = 给卡标 RETIRED override + 原因**（`POST /api/v1/admin/card-operational-overrides`，`set RETIRED`，`reason` 带 `manual-used` 标识）——**Lemon 已定要做，归本块**（D-272 ③ / D-275 ⑦；与上面 D-280 第 6 条一致）。**不新建表、不收客户/套餐/金额字段**。⚠️ **别用 `/card-retirement/confirm`**（那是「已在卡台销卡」的确认，会改 `inventory_status=RETIRED` 把卡移出待销、误记已销，F-57）——手动用卡只标 override：卡不再分配、但**仍在待销清单**等去卡台真销。⑤b 后日对账已按此判：已登记 `manual-used` 的归 `pendingRegistration`（生产现只剩 3336），没登记的报 `UNEXPLAINED_CHARGE` 无主扣款差异（生产现 6 张：8590/0237/0601/5371/5501/7402）。RUNBOOK §2.7 有命令。
 4. **`pojia-bark-notifications` 在生产是哑的**：整个 boot 内 journal 一条日志都没有（Node 非 TTY 下 stdout 块缓冲）。推送出问题无从查 → 运维工具那一档（第⑤步发现 1）。
 5. **`ORDER_WAITING_FOR_CARD` 两处产生点共用同一 dedupe_key**（`workflow-repository:480` critical「开不出卡」vs `card-stock-job-service:354` warning「会继续尝试」），同一行被互相覆盖 severity，白名单只能按类型收、两种语义一起推 → 要不要拆成两个告警类型（第⑤步发现 2）。
 6. **ZZSHU 零原因失败「停单不退码」仍未做**（契约表三 #11，现状仍是判失败退码）→ 与队列一起做。

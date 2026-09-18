@@ -1,6 +1,6 @@
 # 接班一屏（HANDOFF_NOW）
 
-更新：2026-09-18 21:xx UTC+8（13:xx UTC，⑤b「第⑤块收窄」代码完成、单测绿、生产只读复验达标；**F-47 押金修复等 Lemon 批发布**）。按 CLAUDE.md 约定维护，接手者从 main 继续。
+更新：2026-09-18 22:xx UTC+8（14:xx UTC，⑤b 收窄 + Codex 复审补修 F-56~F-60 全做完、单测绿、生产只读复验达标；**F-47 押金修复等 Lemon 批发布**）。按 CLAUDE.md 约定维护，接手者从 main 继续。
 
 ## 现在是什么
 
@@ -11,8 +11,9 @@
   3. **未知扣款分开**：已登记手动用卡（RETIRED override reason 带 `manual-used`）→ `PENDING_MANUAL_REGISTRATION`；其余多扣 → `UNEXPLAINED_CHARGE`（是差异、进报告、不隐藏、不升级）。
   4. **连续两次只认正式批次**：`persist:false`（GET/dry-run）不推进、沿用上一个正式批次结论；同日重跑幂等（F-50）。
   5. **拿掉撑不住的**：删 `DAILY_DIGEST`/`provider_balance_change_push_mode`（F-52 空开关）；`countPushesByType`→`countAlertInstancesByType`（F-55）；日报固定 dedupe_key、不按天堆积（F-54）。
-  6. **手动用卡=标 RETIRED**：`POST /api/v1/admin/card-retirement/confirm` 已可用（未新建），note 带 `manual-used`；写进 RUNBOOK §2.7。第⑥块把入口搬进工作台。
-- **测试**：v1 全量 **899/833/0/66**（基线 885/819/0/66，+14 全绿）。六条反例各成单测。`git diff -- browser-mvp/` 为空。
+  6. **手动用卡=标 RETIRED override**：用 `POST /api/v1/admin/card-operational-overrides`（set RETIRED，reason 带 `manual-used`）——**不是** `/card-retirement/confirm`（那会把卡移出待销、误记已销，F-57 已修）。只标 override：卡不再分配、仍留待销。写进 RUNBOOK §2.7；第⑥块把入口搬进工作台。
+- **测试**：v1 全量 **901/835/0/66**（含 Codex 复审补修）。六条反例各成单测（「同步失败跨日」已改真实 persist:true）。`git diff -- browser-mvp/` 为空。
+- **Codex 复审 F-56~F-60 全部采纳修复**（账本 §6「⑤b 复审补修」）：F-56 日报改回按天 key + 前缀收历史（固定 key 会让升 critical 不重推）；F-57 手动用卡改用 `card-operational-overrides` 端点（confirmRetired 会误把卡移出待销）；F-58/F-51 加 `inputVerified`（同步失败 / highvcc 无水位的卡不自动升级）；F-59 随 F-56 收掉旧 key；F-60 删猜测拒付类型 `CHARGE_BACK`/`DISPUTE`。
 - **生产只读 dry-run（新代码经隧道，`persist:false` 不写）达标**：差异 6 张全 `UNEXPLAINED_CHARGE`、逐条有解释；1657/3159 落 `UNVERIFIABLE`；待登记只剩 3336。金额 30 张全 `UNVERIFIABLE`、无假差异。
 - **生产未变**：release 仍 `740bc1d`，三个常驻服务未重启，timer 照常。本窗口对生产只做了三次**只读**（override 查询 / 新代码 dry-run / F-47 生产 release 纯函数复现）。具体生产值只看 `CURRENT_STATE`。
 

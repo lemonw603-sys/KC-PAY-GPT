@@ -11,7 +11,7 @@
 import { loadRuntimeDatabaseConfig } from '../src/config.js';
 import { createDatabasePool } from '../src/db/pool.js';
 import { createDailyReconciliationService, reconciliationAlertPlan } from '../src/services/daily-reconciliation-service.js';
-import { upsertSupplyAlert, resolveSupplyAlert } from '../src/services/card-supply-scheduler-service.js';
+import { upsertSupplyAlert, resolveSupplyAlert, resolveSupplyAlertsByPrefix } from '../src/services/card-supply-scheduler-service.js';
 
 const dryRun = process.argv.includes('--dry-run');
 const HEARTBEAT_SETTING = 'daily_reconciliation_heartbeat_at';
@@ -30,16 +30,17 @@ try {
        ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)`,
       [HEARTBEAT_SETTING, report.generatedAt]
     );
-    // 一条「当前对账状态」告警（固定 dedupe_key，不按天堆积，F-54）：有差异 upsert 覆盖，
-    // 没差异 RESOLVE——因为 key 固定，今天的 RESOLVE 正好收掉昨天那条 OPEN。
+    // 日报按天 key（F-56：升 critical 是新行、能重推）。每次先收掉「除今天外的历史日报」——昨天、
+    // 更早、上线前遗留的旧固定/旧日期 key（F-54/F-59），保证当前只有今天这一条 OPEN。
     const plan = reconciliationAlertPlan(report);
-    if (plan.action === 'resolve') {
-      await resolveSupplyAlert(pool, plan.key);
-    } else {
+    await resolveSupplyAlertsByPrefix(pool, plan.historyLike, plan.key);
+    if (plan.action === 'upsert') {
       await upsertSupplyAlert(pool, {
         type: SUMMARY_TYPE, key: plan.key,
         severity: plan.severity, title: plan.title, message: plan.message
       });
+    } else {
+      await resolveSupplyAlert(pool, plan.key);
     }
   }
   if (report.persistentCount > 0) process.exitCode = 0; // 差异不是执行失败，不用非零退出吓人

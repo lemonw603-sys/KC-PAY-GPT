@@ -52,6 +52,19 @@ export async function resolveSupplyAlert(queryable, key) {
   );
 }
 
+/**
+ * 关掉一个前缀下、除 `exceptKey` 外的所有 OPEN 告警。日报用它每次跑先收掉「除今天外的历史汇总」
+ * （昨天、更早、上线前遗留的旧固定 key），保证同一时刻只有当天那一条 OPEN（F-54/F-56/F-59）。
+ * `prefixLike` 是 SQL LIKE 模式（如 `daily-reconciliation%`）。
+ */
+export async function resolveSupplyAlertsByPrefix(queryable, prefixLike, exceptKey) {
+  await queryable.query(
+    `UPDATE operator_alerts SET status = 'RESOLVED', acknowledged_at = COALESCE(acknowledged_at, CURRENT_TIMESTAMP(3))
+      WHERE dedupe_key LIKE ? AND dedupe_key <> ? AND status = 'OPEN'`,
+    [prefixLike, exceptKey]
+  );
+}
+
 /** 卡台故障告警的 dedupe_key。一段故障期只有这一行，所以只推一次（第⑤步，契约表三 #10）。 */
 export function supplyFaultAlertKey(providerAccountId) {
   return `card-supply-fault:${providerAccountId}`;

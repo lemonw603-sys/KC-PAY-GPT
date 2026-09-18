@@ -2576,3 +2576,17 @@ state-check的$MINBAL紧邻中文括号、wrapup-check的$live/$mday紧邻中文
 **本窗口对生产只做只读**（override 查询 / dry-run / F-47 复现），未写生产、未发布、未重启服务。发布 F-47 停在「先问」。
 
 **一处笔误**：一个 Edit 的 file_path 打成繁体「業務」（应「业务」），报 File does not exist，当场用正确路径重做，无副作用。
+
+## 2026-09-18｜⑤b 复审补修（Codex F-56~F-60）
+
+Lemon 让 Codex 复审 ⑤b（`docs/reviews/STEP5B_REVIEW_2026-09-18.md`），提 5 条。逐条独立核过后**全部采纳**（Lemon 认全部 + F-51 完整修复一起做）：
+
+- **F-56（我引入的回归）**：固定 key 修 F-54 时修过头——`enqueueOpenAlerts` 只复活 CANCELLED、SENT 不重排，固定 key 的告警一旦 SENT 就不再推，持续差异只推一次、升 critical 也不重推。改回**按天 key**（每天新行、升级能重推）+ runner 每次 `resolveSupplyAlertsByPrefix` 收掉除今天外的历史。
+- **F-57（我选错端点）**：件 6 原文是 `card_operational_overrides.set(RETIRED)`，我确认成了 `confirmRetired`（已销卡确认）——它会改 `inventory_status=RETIRED` 把卡移出待销、误记已销。改用 `POST /card-operational-overrides`（只标 override，卡不再分配但仍留待销）。RUNBOOK/账本/HANDOFF/step6 都改。
+- **F-58/F-51**：我那条「同步失败跨日」单测用 persist:false 绕开了真实 timer（persist:true）——名不副实。加 `inputVerified` 判据：MANUAL_IMPORT（highvcc 无成功水位）+ `sync_consecutive_failures>0`（hnskj 正在失败）的卡连续两天也不自动升 critical，标 `inputUnverifiedCount` 进报告；单测改真实 persist:true。只用现有字段、不新建表（highvcc 一律保守不升级）。
+- **F-59**：随 F-56 前缀 resolve 一起修（上线首跑收掉生产遗留的 `daily-reconciliation:2026-09-18`）。
+- **F-60（我漏做）**：⑤b 任务书第 7 条（D-277，我开工时任务书只六件、这条是后加的）要删猜测拒付类型 `CHARGE_BACK`/`DISPUTE`，两处 `CHARGEBACK_TYPES` 只留 `CHARGEBACK`。
+
+**测试**：v1 全量 901/835/0/66。**生产只读复验（新代码 persist:false）**：分类不变（6 无主 / 1 待登记 3336 / 1657·3159 无法核对）；`inputVerified` 判对（8590 hnskj=true、5 张 highvcc=false）；`inputUnverifiedCount=0`；alertPlan 按天 key `daily-reconciliation:2026-09-18`。
+
+**诚实一句**：这轮暴露我 ⑤b 有真缺口（选错端点、固定 key 回归、测试名不副实 + 漏第 7 条），Codex 复审戳中了。都在本窗口修完、单测 + 生产只读复验过。范围外发现只报未改，未发布、未写生产。

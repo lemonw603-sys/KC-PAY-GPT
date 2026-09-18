@@ -75,7 +75,10 @@ export function countsAsCharge(row) {
 }
 
 /** 拒付与拒付手续费：算的是「钱出去了多少」，不算购买次数。 */
-const CHARGEBACK_TYPES = new Set(['CHARGEBACK', 'CHARGE_BACK', 'DISPUTE']);
+// 只留生产真实见过的类型（D-277）：`CHARGE_BACK` / `DISPUTE` 是当时猜出来的名字、没有样本，删掉——
+// 判据里多写一个没见过的值就是替卡台下结论（和状态判据同一条纪律）。highvcc 侧的拒付告警等首个
+// 真实样本出现，再按真值加，不提前猜。
+const CHARGEBACK_TYPES = new Set(['CHARGEBACK']);
 const CHARGEBACK_FEE_TYPES = new Set(['CHARGEBACK_FEE']);
 
 export function isChargeback(row) {
