@@ -2511,3 +2511,13 @@ state-check的$MINBAL紧邻中文括号、wrapup-check的$live/$mday紧邻中文
 - `run-live-pool.sh` 加 30 分钟核实窗口变量；常驻池未重启（等演练一起）。
 - CURRENT_STATE 十行改；账本 §6 补执行段；HANDOFF_NOW 重写。
 - **未做**：rehearsal（要新鲜 Session + CDK）、常驻池重启、第二张卡补记。
+
+## 2026-09-18｜第④步 rehearsal + 补记收尾：报价段跑通，生产全部恢复（06:4x → 07:2x UTC）
+
+- Lemon「补记」「都你来做」：先补记 `HG3c6ea2…`（尾号 8718，$50 入库）。**发现补记脚本不认识第③步的 job/故障态/告警**——卡能用了但调度器仍每轮 `FUNDS_REVIEW_REQUIRED`。写正式结清入口 `resolveReviewedCardStockJob` + `resolve-reviewed-stock-job.mjs`（四项硬校验、dry-run 默认、结清后无其他未解决付费 job 才清故障态），dry-run → apply → 调度器回 `NO_DEMAND`。
+- **rehearsal（D-270）**：切 BROWSER → 停池 + 关付款 → 正式 intake 建单（Lemon 给的 free 号新鲜 Session）→ 关接单 → 演练 → 收口 → 切回 API → 开回两个开关 → supervisor 拉起新池 67131。**结果 `PRE_SUBMIT_STOPPED`、报价 PHP 982.14 / 税 0.00，付款提交 0 次** —— D-264 遗留的报价段补上了。
+- 演练顺手坐实三件：收口脚本守卫认不出「worker 自己走完付款前中止、订单被重新提交」的新形态（已扩守卫，**不收口的话开回付款开关这单会被真付**）；我建演练 CDK 用了底层函数漏批次行，退回 CDK 撞外键（加 `--skip-cdk-return`，注明客户码不可用）；supervisor 的残留判据被我自己的 `pgrep` 误触发（第③步发现 12 重演）。
+- 备用卡台真证据路径演练走不到，另做生产真实流水只读验证：1657 窗口内匹配 / 窗口外不匹配 / 3336 的 Pro 价位不匹配，三例全对。**发现 `plausiblePlusAmount` 对 Pro 不适用 → 第⑦块。**
+- 生产写操作：补记 1、结清 job 1、切路线 2、开关 4（关付款/关接单/开接单/开付款）、收口 1。每步 dry-run 或先贴证据，全部新连接核实。
+- 测试：v1 844/778/0、browser-mvp 308/299/0；`state-check` 一致；`wrapup-check` 全绿。
+- 落盘：D-269/D-270、账本 §6 执行段与发现 7~9、CURRENT_STATE 六行、UNVERIFIED、RUNBOOK §2.6、HANDOFF_NOW 重写。

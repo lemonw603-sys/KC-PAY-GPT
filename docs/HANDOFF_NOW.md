@@ -1,14 +1,15 @@
 # 接班一屏（HANDOFF_NOW）
 
-更新：2026-09-18 14:4x UTC+8（2026-09-18 06:4x UTC，第④步已发布、apply 已做，演练与池重启待做）。按 CLAUDE.md 约定维护，接手者从 main 继续，不另起项目。
+更新：2026-09-18 15:2x UTC+8（2026-09-18 07:2x UTC，第④步全部完成：发布 + apply + 演练 + 池重启）。按 CLAUDE.md 约定维护，接手者从 main 继续，不另起项目。
 
 ## 现在是什么
 
-- **V2 落实 8 步：①②③④已上生产**（第④步 release `20260918-step4-251a441`，2026-09-18 06:26:47 UTC 切换，迁移 054），⑤任务书已写（`docs/tasks/2026-09-18-impl-step5-notification-whitelist-daily-reconciliation.md`）。
-- **第④步做了什么（D-267/D-269）**：分卡时候选卡过期 → 当场同步再按同一条资格规则判；定时同步 AVAILABLE 卡 3 小时、不再排 highvcc 卡；待销清单派生查询 + 两端点；取消续费超时不卡单（照常成功 + 提醒 + 卡进待销）；API 付款不明两路证据自动收口 / 交人带证据 / 后台 RESOLVE；Browser 崩溃后进补核、叫人带证据、备用卡台走 `card_transactions` 真证据（**常驻池重启后才生效**）。
-- **已 apply**：hnskj 12 张 + highvcc 8 张 + 3336（Lemon 手动付 20X）共 21 张 RETIRED；`card_sync_jobs` 307 条归档。
-- **现场事件（06:27 UTC）**：Lemon 充值后调度器自动开 highvcc **4022**（$50，可分配）；**第二张 `HG3c6ea2…`（尾号 8718）卡台已开出、$50、钱已扣（钱包 41.49），库里没入（`HIGHVCC_RECONCILE_NOT_READY`）→ 103 FAULT、调度器停开、`CARD_SUPPLY_OPEN_FAILED` OPEN。补记等 Lemon 一句：`ssh … node scripts/reconcile-highvcc-card.mjs HG3c6ea2018a0444659e947ea5e7161eca`。**
-- 生产：接单 / 派单 / 付款开关 true；Plus 走 API；hnskj 2 张（窗口外由分卡当场同步）；非终态 0；常驻 Browser 池本机 PID 74272（**旧代码、旧 5 分钟窗口**，未重启）。具体值只看 `CURRENT_STATE`。
+- **V2 落实 8 步：①②③④已上生产并验完**（第④步 release `20260918-step4-251a441`，06:26:47 UTC 切换，迁移 054），⑤任务书已写（`docs/tasks/2026-09-18-impl-step5-notification-whitelist-daily-reconciliation.md`）。
+- **第④步做了什么（D-267/D-269/D-270）**：分卡时候选卡过期 → 当场同步再按同一条资格规则判；定时同步 AVAILABLE 卡 3 小时、不再排 highvcc 卡；待销清单派生查询 + 两端点；取消续费超时不卡单；API 付款不明两路证据自动收口 / 交人带证据 / 后台 RESOLVE；Browser 崩溃后进补核、叫人带证据；**备用卡台的「卡台侧扣款」改读 `card_transactions` 真证据、假 marker 已删**。
+- **已 apply**：hnskj 12 张 + highvcc 8 张 + 3336 共 21 张 RETIRED；`card_sync_jobs` 307 条归档。
+- **rehearsal 报价段跑通**（D-270，补上 D-264 遗留）：`PRE_SUBMIT_STOPPED`，PHP 982.14 / 税 0.00，付款提交 0 次，演练单已收口。
+- **highvcc 自动开卡首次生产实跑**：4022（调度器自动开）+ 8718（卡台已开出、人工补记 + 新脚本结清 job）。
+- 生产：接单 / 派单 / 付款开关 true；Plus 走 API；可分配 4 张（hnskj 2 + highvcc 2）；非终态 0；常驻 Browser 池 **PID 67131**（新代码 + 30 分钟核实窗口）。具体值只看 `CURRENT_STATE`。
 
 ## 证据从哪里看
 
@@ -19,10 +20,9 @@
 
 ## 接下来做什么（顺序）
 
-1. **补记第二张 highvcc 卡**（Lemon 一句）：服务器 `reconcile-highvcc-card.mjs HG3c6ea2018a0444659e947ea5e7161eca`；补记后新连接核实 cards 多一张 8718、103 `supply_fault_state` 回 OK、`CARD_SUPPLY_OPEN_FAILED` 关。
-2. **rehearsal 演练**（browser-mvp 动了）：要 Lemon 给一个无试用资格 free 号的**新鲜** Session + 一张 CDK。流程同 D-264：切 BROWSER → `stop-live.sh` → 建单 → `run-live-rehearsal.sh once` → `close-rehearsal-order.mjs` 收口 → 切回 API → 开回付款开关（supervisor 自动拉起的新池即带新代码 + 30 分钟窗口 = 第 4 步一并完成）。
-3. 发布后用一张窗口外 hnskj 卡 + 一单验「分卡不再等卡」（`provider_calls` 出现 `order-demand-sync:` 两条读）。
-4. 然后开第⑤步窗口。
+1. **开第⑤步窗口**：任务书已写（推送白名单 + 日对账，先坐实 D-176 静音根因）。它还带着第③④步归过来的发现，任务书里列了。
+2. 真单来时顺手看两件（都还没有样本）：分卡当场同步在 `provider_calls` 留下 `order-demand-sync:` 前缀的两条读；付款后备用卡台真证据路径被 worker 自动调用。
+3. Lemon 侧运营：highvcc token 过期了（本机那份，06:5x 实测），下次要用 `browser-mvp/scripts/highvcc-card.mjs` 前先贴。
 
 ## 已定不做 / 别再重开的
 
@@ -34,8 +34,8 @@
 
 ## 未验证边界（别说成已完成）
 
-- **第④步代码已在生产但无真单样本**：分卡当场同步、API 付款不明、Browser 崩溃进补核都没有真单走过；待销端点未在生产调过（口径 SQL 已实跑）。
-- highvcc 卡「卡台扣款」真证据一路：代码已在 main + 服务器，但**常驻池 PID 74272 仍是旧代码**，重启前仍是旧 marker 恒匹配。
+- **第④步代码已在生产但无真单样本**：分卡当场同步、API 付款不明、Browser 崩溃进补核、备用卡台真证据被 worker 自动调用，四件都没有真单走过；待销清单两个端点未在生产调过（口径 SQL 已实跑，真证据路径另做过生产流水只读验证三例）。
+- `plausiblePlusAmount` 只认 Plus 价位，Pro 单扣款会被判成不匹配（第⑦块处理，D-270 发现 8）。
 - rehearsal 报价段仍未验（第③步遗留）；highvcc 自动开卡未跑过；故障转台未发生过；集成测试既有失败（D-258，本块本机基线 15 条、改后名单见账本）。
 
 ## 分支、运行与禁止事项
