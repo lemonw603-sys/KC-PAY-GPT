@@ -4146,3 +4146,16 @@ Lemon 直观三条（生成后结果分不清新旧；码前缀按产品 PLUS-/5
 ## D-280（2026-09-18）卡片页八条需求进第⑥块（Lemon 定）；导入备用卡能力保留、页面降高级；两条硬约束
 
 Lemon 痛点：卡列表又多又长没用、金额不准要去卡台看、信息不全（余额/卡台/几单/每笔消费/状态）；问开卡与同步按钮去哪、导入备用卡要不要留。Fable 评估：全部是已有数据与端点换摆法，无难点、不臃肿；新增只有三个小端点（作废单张码、按产品前缀生成、触发 highvcc 快照）。**两条硬约束**：状态复用资格/待销规则不另写；流水↔订单只显示账本明确记的关联、不按时间窗推断。导入备用卡＝highvcc 入库正式路径 + 无 API 卡台接入方式，保留能力、降高级入口。全部写进第⑥块任务书。
+
+## D-281（2026-09-18 13:xx UTC）⑤b 复审补修（Codex F-56~F-60 全采纳，含 F-51 一起做）+ F-47 与收窄一起发（受控打破 D-275 ⑥）；已发布
+
+**Codex 复审 `docs/reviews/STEP5B_REVIEW_2026-09-18.md`（F-56~F-60）**，逐条独立核过后 Lemon 认全部、F-51 完整修复一起做：
+
+- **F-56/F-59**：⑤b 用固定 dedupe_key 修 F-54 时修过头——`enqueueOpenAlerts` 只复活 CANCELLED、SENT 不重排，固定 key 一旦 SENT 就持续差异只推一次、升 critical 也不重推。改回**按天 key** + runner 每次前缀 resolve 收掉除今天外的历史（顺带关掉生产遗留的旧日期 key，F-59）。
+- **F-57**：手动用卡登记选错端点——`/card-retirement/confirm`（已销卡确认）会改 `inventory_status=RETIRED` 把卡移出待销、误记已销。改用 `POST /api/v1/admin/card-operational-overrides`（set RETIRED：只标 override，卡不再分配但仍留待销）。RUNBOOK/账本/HANDOFF/step6 都改。
+- **F-58/F-51**：「同步失败跨日」单测用 persist:false 绕开了真实 timer。加 `inputVerified` 判据（**收窄里的一处加法，Lemon 定一起做**）：MANUAL_IMPORT（highvcc 无成功同步水位）+ `sync_consecutive_failures>0`（hnskj 正在连续失败）的卡即使连续两天也不自动升 critical，标 `inputUnverifiedCount` 进报告。只用现有字段、不新建表；highvcc 一律保守不升级（备用卡台量小，差异仍进报告）。
+- **F-60**：⑤b 任务书第 7 条（D-277，开工时任务书只六件、后加的）要删猜测拒付类型，`card-transaction-audit` + `card-transaction-repository` 两处 `CHARGEBACK_TYPES` 只留 `CHARGEBACK`。
+
+**受控打破 D-275 ⑥**（原「F-47 押金修复单独发一版」）：F-47 与收窄+补修同属⑤系列修复、无迁移、可回滚、非 UI 大包，Lemon 确认一起发、省一次重启。
+
+**已发布**：release `20260918-step5b-b0a36d4`（2026-09-18 13:07 UTC 切换，Lemon 确认「切」），无迁移，回滚点 `20260918-step5-740bc1d`。发布后独立核实：三服务都在新 release、F-47 复现 `ok=true/25.50`、日对账新代码 dry-run 分类不变（6 无主 / 1 待登记 3336 / 1657·3159 无法核对 / persistent 0）。全量 901/835/0/66。证据见账本 §6「⑤b 复审补修」+ CURRENT_STATE。
