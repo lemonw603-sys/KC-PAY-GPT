@@ -1,6 +1,6 @@
 # 接班一屏（HANDOFF_NOW）
 
-更新：2026-09-19 UTC（第⑥步「工作台」C 精修**已上生产**：release `20260919-step6-8cd6d7e`，无迁移；三服务新连接独立核实 + getOverview 按台聚合只读复验通过）。按 CLAUDE.md 约定维护，接手者从 main 继续。
+更新：2026-09-19 UTC（第⑥步「工作台」step6 发布后**当天回滚**——工作台做偏设计图：营业条被改成五决定按钮组而非原型的 toggle 开关、sidebar/顶栏未换候光皮、残留「开始营业/刷新」，Lemon 不满意；生产已回 ⑤b 旧后台，**正对照原型 `docs/design/prototypes/step6-workbench-compare.html` 重做**。可复用代码在 commit `8cd6d7e`）。按 CLAUDE.md 约定维护，接手者从 main 继续。
 
 ## 现在是什么
 
