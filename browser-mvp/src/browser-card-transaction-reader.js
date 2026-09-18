@@ -1,4 +1,41 @@
 import { readAllCardTransactions } from '../../v1/src/services/card-transaction-reader.js';
+import { createHighvccSnapshotSyncService } from '../../v1/src/services/highvcc-snapshot-sync-service.js';
+
+/**
+ * 第④步（D-268 ①，Lemon 2026-09-18 批）：MANUAL_IMPORT（备用卡台 A / highvcc）卡的「卡台侧扣款」证据源。
+ * listPurchases 读 v1 `card_transactions`（T1 每小时随快照入库）；refresh 在窗口内无候选时用 token
+ * 再拉一次（时段外的突发例外），token 失效抛 `HIGHVCC_TOKEN_EXPIRED`，由 reader 记进证据、不谎报匹配。
+ */
+export function createCardLedgerSource({ pool, refresh = null } = {}) {
+  if (!pool || typeof pool.query !== 'function') throw new TypeError('pool.query is required');
+  if (refresh != null && typeof refresh !== 'function') throw new TypeError('refresh must be a function');
+  return {
+    async listPurchases({ cardId, since = null, until = null } = {}) {
+      if (!cardId) throw new TypeError('cardId is required');
+      const clauses = ['card_id = ?'];
+      const params = [String(cardId)];
+      if (since) { clauses.push('(occurred_at >= ? OR occurred_at IS NULL)'); params.push(new Date(since)); }
+      if (until) { clauses.push('(occurred_at <= ? OR occurred_at IS NULL)'); params.push(new Date(until)); }
+      const [rows] = await pool.query(
+        `SELECT provider_transaction_id, transaction_type, status, amount, currency, original_amount, original_currency,
+                merchant_name, settlement_status, trade_time_raw, occurred_at, first_seen_at, raw_hash
+           FROM card_transactions WHERE ${clauses.join(' AND ')} ORDER BY first_seen_at ASC, id ASC LIMIT 200`, params,
+      );
+      return rows;
+    },
+    ...(refresh ? { refresh } : {}),
+  };
+}
+
+/** highvcc 流水再拉一次并归卡入库（与每日时段那趟同一段实现）。 */
+export function createHighvccLedgerRefresh({ pool, encryptionKey, panHmacKey }) {
+  let service = null;
+  return async () => {
+    service ||= createHighvccSnapshotSyncService({ pool, encryptionKey, panHmacKey });
+    const result = await service.syncTransactions();
+    return { written: result.written, fetched: result.fetched, unmatchedCount: result.unmatchedCount };
+  };
+}
 
 function decimal(value) {
   const match = /^(-?)(\d+)(?:\.(\d{1,6}))?$/.exec(String(value ?? '').trim());
@@ -43,10 +80,10 @@ function withinIntentWindow(transaction, intentAt, matchWindowMs) {
  * 第④步（面三③ 表二，D-248）：MANUAL_IMPORT（备用卡台 A / highvcc）的卡也要有真正的
  * 「卡台侧扣款」证据。以前这一路是个假 marker（read() 自己造一条 MANUAL_CARD_BROWSER_CONFIRMED，
  * reconcile 恒匹配）——等于卡台那一路永远说「对」，D-248 说的「谎报」就来自这里。
- * 现在：注入 `ledgerSource`（读 v1 `card_transactions`，T1 已入库；可选 `refresh()` 在窗口内
- * 无候选时用 token 再拉一次——时段外的「突发例外」，token 失效就把 tokenExpired 带回证据）
- * 时按与 hnskj 同一套规则（成功状态 + OpenAI 商户 + Plus 金额 + 提交时间窗）判；
- * 没注入 ledgerSource 时保留旧 marker 行为（过渡：工厂在 D-254 白名单外，等 Lemon 批那一行）。
+ * 现在：必须注入 `ledgerSource`（读 v1 `card_transactions`，T1 已入库；可选 `refresh()` 在窗口内
+ * 无候选时用 token 再拉一次——时段外的「突发例外」，token 失效就把 tokenExpired 带回证据），
+ * 按与 hnskj 同一套规则（成功状态 + OpenAI 商户 + Plus 金额 + 提交时间窗）判。假 marker 已删
+ * （D-268 ① Lemon 2026-09-18 批工厂注入后删）。
  */
 export class BrowserCardTransactionReader {
   constructor({ sourceKind, provider = null, providerCardId = null, runId,
@@ -70,10 +107,8 @@ export class BrowserCardTransactionReader {
       }
     } else if (this.sourceKind !== 'MANUAL_IMPORT') {
       throw new TypeError('sourceKind must be HNSKJ or MANUAL_IMPORT');
-    } else if (ledgerSource) {
-      if (typeof ledgerSource.listPurchases !== 'function' || !this.cardId) {
-        throw new TypeError('ledgerSource.listPurchases and cardId are required for MANUAL_IMPORT ledger evidence');
-      }
+    } else if (!ledgerSource || typeof ledgerSource.listPurchases !== 'function' || !this.cardId || !this.submitIntentAt) {
+      throw new TypeError('MANUAL_IMPORT evidence requires ledgerSource.listPurchases, cardId and submitIntentAt');
     }
   }
 
@@ -102,7 +137,6 @@ export class BrowserCardTransactionReader {
 
   async read() {
     if (this.sourceKind === 'MANUAL_IMPORT') {
-      if (!this.ledgerSource) return [{ kind: 'MANUAL_CARD_BROWSER_CONFIRMED', runId: this.runId }];
       const window = this.#ledgerWindow();
       let rows = await this.ledgerSource.listPurchases(window);
       let refreshed = null;
@@ -132,11 +166,6 @@ export class BrowserCardTransactionReader {
 
   async reconcile({ transactions }) {
     if (!Array.isArray(transactions)) return { matched: false, reasonCode: 'TRANSACTION_EVIDENCE_INVALID' };
-    if (this.sourceKind === 'MANUAL_IMPORT' && !this.ledgerSource) {
-      const markers = transactions.filter((item) => item?.kind === 'MANUAL_CARD_BROWSER_CONFIRMED'
-        && item.runId === this.runId);
-      return { matched: markers.length === 1, evidenceKind: 'BROWSER_PLUS_AND_LEDGER' };
-    }
     if (this.sourceKind === 'MANUAL_IMPORT') {
       const candidates = transactions.filter((item) => item?.kind === 'LEDGER_TRANSACTION' && this.#isPlusPurchase(item));
       const refreshed = transactions.refreshed || null;

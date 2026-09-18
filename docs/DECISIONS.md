@@ -3998,3 +3998,11 @@ Lemon 逐项看过预检（钱包 $89.48、卡段 23 未维护、$50、预估总
 1. **`production-live-worker.js` 一行**（白名单外）：`transactionReaderFactory` 给 MANUAL_IMPORT 卡注入 `ledgerSource`（`listPurchases` 读 v1 `card_transactions`；`refresh` 调 highvcc `syncTransactions`，token 失效抛 `HIGHVCC_TOKEN_EXPIRED`）+ `cardId`。不批 → highvcc 卡的「卡台扣款」一路仍是旧 marker 恒匹配（D-248「谎报」根源之一未闭合）；批 → 同时删 reader 里的 marker 分支，且本块「browser-mvp 一动 = 全量 + rehearsal」照做。
 2. **Browser 付款后核实窗口放长**：默认 5 分钟在 `production-live-config.js`（白名单外）；可不改代码，`run-live-pool.sh` 环境加 `BROWSER_PAYMENT_VERIFICATION_WINDOW_MS=1800000`，常驻 worker 重启前问。
 3. **highvcc HELD_FOR_REVIEW 8 张里哪几张是你注销的**：清单（尾号 / 账面余额 / 最后一次在快照里 / 首次缺席）——5501 $1.79（09-17 12:53 / 13:52）、2911 $1.00（09-11 03:39 / 10:50）、7428 $1.00（同 2911）、3241 $1.00（09-11 10:50 / 11:00）、9354 $1.00（同 3241）、9839 $50.00（同 2911）、3118 $1.01（同 5501）、5371 $1.75（同 5501）。勾了的走 `retire-legacy-cards.mjs --batch highvcc-cancelled --last4 …`（dry-run → 你看 → apply）；没勾的保持 HELD_FOR_REVIEW。hnskj 12 张 $0 批 dry-run 已出（12 张全对上），apply 同样等你一句。
+
+## D-269（2026-09-18 06:xx UTC）Lemon 对 D-268 的答复与处置
+
+1. **highvcc HELD_FOR_REVIEW 8 张**：Lemon「这几天注销了很多张卡，后台没有就是注销了，不记得具体哪几张」→ **8 张全部按「已注销」标终态**；**3336 一起标 RETIRED**（Lemon：余额 145 → 2.46 是他手动用这张卡给客户付了一笔 20X，没经过 Browser 和 API；记「Lemon 手动付 20X」）。hnskj 12 张按「卡台已作废」标终态。apply 前再 dry-run 一次贴给 Lemon。
+2. **工厂注入真证据（白名单外）**：批。已做：`production-live-pool-worker.js` 与 `production-live-worker.js` 两处 `transactionReaderFactory` 各加 `cardId` + `ledgerSource`（Lemon 批的是「那一行」，实际是两份同样的工厂各三行，如实记）；`browser-card-transaction-reader.js` 加 `createCardLedgerSource`（读 `card_transactions`）与 `createHighvccLedgerRefresh`（token 有效时再拉一次），**假 marker 分支已删**，MANUAL_IMPORT 卡不带证据源直接构造失败。测试 browser-mvp 308/299/0、v1 842/776/0、`npm run check` 过。
+3. **Browser 核实窗口放长**：批。`run-live-pool.sh` 环境加 `BROWSER_PAYMENT_VERIFICATION_WINDOW_MS=1800000`，常驻 worker 重启前问。
+4. 发布 / apply / rehearsal：可以，每步先问。
+5. **发现的处置**（Lemon「按你建议的来」）：scheduler 60 分钟桶 → 第⑤块；reader 对 hnskj 卡时区偏 8 小时 → 第⑦块（碰 browser-mvp 的块）；`recovery.js` 死代码 → 第⑧步清理；`card_sync_jobs` 307 条历史 REVIEW_REQUIRED → 像 965 条一样归档（dry-run 后问）；ZZSHU 零原因失败停单 → 第⑤/⑥块。

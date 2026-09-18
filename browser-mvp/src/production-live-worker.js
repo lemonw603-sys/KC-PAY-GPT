@@ -10,7 +10,7 @@ import { createDatabasePool } from '../../v1/src/db/pool.js';
 import { createBrowserExecutionRepository } from '../../v1/src/db/repositories/browser-execution-repository.js';
 import { HnskjCardProvider } from '../../v1/src/providers/hnskj-card.js';
 import { createBrowserPaymentVerificationService } from '../../v1/src/services/browser-payment-verification-service.js';
-import { BillingAddressEnrichedCardMaterialSource, BrowserCardTransactionReader } from './browser-card-transaction-reader.js';
+import { BillingAddressEnrichedCardMaterialSource, BrowserCardTransactionReader, createCardLedgerSource, createHighvccLedgerRefresh } from './browser-card-transaction-reader.js';
 import { BitBrowserControlRuntimeAdapter } from './bitbrowser-control-runtime.js';
 import { CHATGPT_PLUS_CHECKOUT_NAVIGATION_CONTRACT } from './chatgpt-checkout-navigator.js';
 import { CHATGPT_PLUS_CHECKOUT_CONTRACT } from './checkout-observer.js';
@@ -278,6 +278,8 @@ export async function runProductionLiveBrowserWorker({ env = process.env, browse
     });
     const provider = config.hnskjApiKey
       ? new HnskjCardProvider({ baseUrl: config.hnskjApiBaseUrl, apiKey: config.hnskjApiKey }) : null;
+    // 第④步（D-268 ①）：备用卡台 A 的卡走 card_transactions 真证据；无候选时用 token 再拉一次。
+    const highvccLedgerRefresh = createHighvccLedgerRefresh({ pool, encryptionKey: config.materialEncryptionKey, panHmacKey: Buffer.from(String(process.env.CARD_INTAKE_PAN_HMAC_KEY_BASE64 || ''), 'base64') });
     const transactionReaderFactory = async ({ runId }) => {
       const card = await resolveCardContext(pool, runId);
       // D-246 面一 C1：交易读取器按卡的来源层标记（sync_tier）判，不看卡台名字。
@@ -289,6 +291,8 @@ export async function runProductionLiveBrowserWorker({ env = process.env, browse
         sourceKind, provider, providerCardId: card.provider_card_id,
         runId, submitIntentAt: card.submit_intent_at,
         matchWindowMs: config.verificationWindowMs,
+        cardId: card.card_id,
+        ledgerSource: sourceKind === 'MANUAL_IMPORT' ? createCardLedgerSource({ pool, refresh: highvccLedgerRefresh }) : null,
       });
     };
 

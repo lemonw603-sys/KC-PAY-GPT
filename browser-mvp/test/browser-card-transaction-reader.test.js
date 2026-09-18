@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { BillingAddressEnrichedCardMaterialSource, BrowserCardTransactionReader } from '../src/browser-card-transaction-reader.js';
+import { BillingAddressEnrichedCardMaterialSource, BrowserCardTransactionReader, createCardLedgerSource } from '../src/browser-card-transaction-reader.js';
 
 test('HNSKJ reconciliation requires exactly one recent successful plausible Plus purchase', async () => {
   const provider = { async transactions(_cardId, { page }) {
@@ -37,11 +37,20 @@ test('HNSKJ reconciliation rejects unrelated, ambiguous or implausible transacti
   assert.equal((await reader.reconcile({ transactions: [{ ...base, tradeTime: '2026-09-06T12:01:00Z' }] })).matched, false);
 });
 
-test('manual card reconciliation explicitly binds Browser confirmation to one run', async () => {
-  const reader = new BrowserCardTransactionReader({ sourceKind: 'MANUAL_IMPORT', runId: 'run-1' });
-  const transactions = await reader.read();
-  assert.deepEqual(await reader.reconcile({ transactions }), { matched: true, evidenceKind: 'BROWSER_PLUS_AND_LEDGER' });
-  assert.equal((await reader.reconcile({ transactions: [{ ...transactions[0], runId: 'another-run' }] })).matched, false);
+test('manual card evidence can no longer be a self-made marker: a ledger source, cardId and intent time are required (D-268 ①)', () => {
+  assert.throws(() => new BrowserCardTransactionReader({ sourceKind: 'MANUAL_IMPORT', runId: 'run-1' }), /ledgerSource/);
+  assert.throws(() => new BrowserCardTransactionReader({ sourceKind: 'MANUAL_IMPORT', runId: 'run-1', cardId: 'c', ledgerSource: { async listPurchases() {} } }), /submitIntentAt/);
+});
+
+test('createCardLedgerSource reads card_transactions by card and intent window, keeping rows whose occurred_at is unknown', async () => {
+  const queries = [];
+  const source = createCardLedgerSource({ pool: { async query(sql, params) { queries.push({ sql: sql.replace(/\s+/g, ' '), params }); return [[{ provider_transaction_id: 'x' }]]; } } });
+  const rows = await source.listPurchases({ cardId: 'card-uuid', since: '2026-09-06T09:55:00Z', until: '2026-09-06T11:05:00Z' });
+  assert.equal(rows.length, 1);
+  assert.match(queries[0].sql, /FROM card_transactions WHERE card_id = \? AND \(occurred_at >= \? OR occurred_at IS NULL\) AND \(occurred_at <= \? OR occurred_at IS NULL\)/);
+  assert.equal(queries[0].params[0], 'card-uuid');
+  assert.equal('refresh' in source, false);
+  assert.equal(typeof createCardLedgerSource({ pool: { async query() {} }, refresh: async () => ({}) }).refresh, 'function');
 });
 
 test('billing address enrichment keeps imported addresses and fills only cards without one', async () => {
@@ -108,5 +117,5 @@ test('manual card: a successful refresh re-reads the ledger and can then match',
   const result = await reader.reconcile({ transactions: await reader.read() });
   assert.equal(result.matched, true);
   assert.equal(result.evidence.refreshed.ok, true);
-  assert.throws(() => new BrowserCardTransactionReader({ sourceKind: 'MANUAL_IMPORT', runId: 'r', ledgerSource: { async listPurchases() {} } }), /cardId/);
+  assert.throws(() => new BrowserCardTransactionReader({ sourceKind: 'MANUAL_IMPORT', runId: 'r', submitIntentAt: '2026-09-06T10:00:00Z', ledgerSource: { async listPurchases() {} } }), /cardId/);
 });

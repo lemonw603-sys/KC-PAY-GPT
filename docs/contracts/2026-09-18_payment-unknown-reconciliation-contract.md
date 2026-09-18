@@ -55,7 +55,7 @@
 
 ## 4. 前置与未完成
 
-- highvcc 卡的「卡台扣款」一路要 `transactionReaderFactory` 注入 `ledgerSource`（读 `card_transactions` + 可选 `refresh`）。`browser-card-transaction-reader.js`（白名单内）已支持；**工厂在 `production-live-worker.js`（白名单外，D-254），未改**——未注入时保留旧 marker 行为（恒匹配）。**这一行等 Lemon 批**（见账本 §6 第④步「待 Lemon 定」）。
+- highvcc 卡的「卡台扣款」一路：**已接**（D-269 ②，Lemon 批）。两个 worker 的 `transactionReaderFactory` 给 MANUAL_IMPORT 卡注入 `createCardLedgerSource({ pool, refresh: createHighvccLedgerRefresh(...) })` + `cardId`；假 marker 已删，MANUAL_IMPORT 卡不带证据源直接构造失败。生产上要常驻 worker 重启后才生效。
 - Browser 核实窗口放长同样在白名单外的 config 默认值上，可用环境变量 `BROWSER_PAYMENT_VERIFICATION_WINDOW_MS` 放长而不改代码。
 - `browser-mvp/src/recovery.js`（本地 dispatch-store 的 `reconcileIncompleteJobs`）实查**无调用者**（死代码），崩溃进补核的真正落点是 v1 `recoverExpiredRun`；未动它。
 
