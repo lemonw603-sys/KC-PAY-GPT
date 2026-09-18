@@ -2593,7 +2593,7 @@ Lemon 让 Codex 复审 ⑤b（`docs/reviews/STEP5B_REVIEW_2026-09-18.md`），�
 
 **发布（同窗口，Lemon 确认「切」后执行）**：push `b0a36d4` → `prepare`（候选包 SHA256 与本机逐字节一致、F-47 在包、备份 `pojia-20260918T130636Z` integrity OK）→ 复核停下给 Lemon 看 → Lemon「切」→ `switch 20260918-step5b-b0a36d4`（13:07 UTC）。发布后新连接独立核实：三服务 web 1376393 / worker 1376398 / bark 1376490 都在新 release、active、NRestarts=0；F-47 `walletPreflight`=`ok=true/25.50`；日对账新代码 dry-run 6 无主 / 1 待登记 3336 / 1657·3159 无法核对 / persistent 0。switch 打印 `bark cwd=/` 又是打印时机假值，新连接核实真实 cwd 在新 release（账本发现 13 老毛病，独立核实兜住）。`prepare` 首次 `scp: Connection closed` 瞬时断连、测 SSH 通后重试即过。**受控打破 D-275 ⑥**（F-47 本要单独发）：与收窄+补修同属⑤系列修复、一起发省一次重启，Lemon 认。CURRENT_STATE / HANDOFF_NOW / PROJECT_MAP / 账本已同步。
 
-## 2026-09-19｜第⑥步工作台：C 精修实现（代码 + 测试完成，待部署）
+## 2026-09-19｜第⑥步工作台：C 精修实现 + 已上生产
 
 第⑥步四页（工作台/CDK/卡片/设置）的第一页。三版比稿（`docs/design/prototypes/step6-workbench-compare.html`，可切 A/B/C + 日夜）Lemon 挑定 **C 看板优先·精修**（删中间「两路线耗时」、订单表整宽、留今日订单表；D-283）。导航采纳 6 个一级页（保留订单页，理由见 D-283）。前端不换栈（D-281）：候光令牌新皮 `workbench.css`（`wb-` 前缀 + `.workbench` 作用域，不碰 admin.css/旧页），重构 `index.html` overview 段 + `admin.js` 渲染函数；渐进拆分——先在单文件内重构工作台，物理拆 common.js 等四页做完再做。
 
@@ -2603,4 +2603,6 @@ Lemon 让 Codex 复审 ⑤b（`docs/reviews/STEP5B_REVIEW_2026-09-18.md`），�
 
 **测试闭环**（改核心 getOverview 波及 4 类测试，全负责任修、无一靠改测试掩盖）：admin-read-service mock 错位（我的按台查询偷了 browserProfile 的返回 → 补 providerStockRows mock + 验 cardStockByProvider 映射）· 悬空 elements 引用（删了 index.html 旧 id 但 admin.js 还 querySelector → 清 metrics/decisionsGrid/attentionOrders/alertsCard/alertsList + renderReadiness 默认参数改 null）· 内联 `style=` 真问题（renderWbRecon 空态 → 挪进 workbench.css）· 版本号 v50→v51 + 旧 overview 文案随 UI 同步（保留「关闭的自动开卡不显示成开启」意图）。**v1 全量单元测试 831/831 绿**（node --check + node --test，未含需 DB 的集成）。
 
-**未做（工作台收尾续做）**：今日花费按台 / 自动完成率 / highvcc 钱包水位三个聚合 · sidebar 加「设置」第 6 项 · 待销确认/手动用卡登记的完整处理（属卡片页 D-280）。**其余三页**（CDK D-279 / 卡片 D-280 / 设置页）未动。Lemon 确认「队列真处理补完再部署」→ 补完 → 确认走部署流程。
+**未做（工作台收尾续做）**：今日花费按台 / 自动完成率 / highvcc 钱包水位三个聚合 · sidebar 加「设置」第 6 项 · 待销确认/手动用卡登记的完整处理（属卡片页 D-280）。**其余三页**（CDK D-279 / 卡片 D-280 / 设置页）未动。
+
+**发布**（Lemon 确认「队列真处理补完再部署」→ 补完 → 复核候选包 → Lemon「切」）：`prepare 8cd6d7e 20260919-step6-8cd6d7e`（1142 files manifest OK、备份 `pojia-20260918T214120Z` integrity OK、无迁移）→ 复核停下给 Lemon → 「切」→ `switch 20260919-step6-8cd6d7e`（2026-09-19 UTC，回滚点 `20260918-step5b-b0a36d4`）。**新连接独立核实**：web 1681208 / worker 1681215 / bark 1681232 三者 `readlink /proc/<pid>/cwd` 均在新 release、active、NRestarts=0（bark 真实 cwd 兜住 switch 打印的 `/` 假值）；**getOverview 按台聚合生产只读复验 hnskj 0 / backup-a 2**（对上部署前）；/health 200、admin 页 200、index.html 引用 v51。CURRENT_STATE 已同步。
