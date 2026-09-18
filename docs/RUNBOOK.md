@@ -159,13 +159,30 @@ ssh root@144.34.180.184 'journalctl -u pojia-daily-reconciliation -n 50 --no-pag
 ```bash
 DATABASE_URL=<隧道 13306 的连接串> node v1/scripts/daily-reconciliation-runner.js --dry-run
 ```
-**怎么读报告**：`discrepancies` 才是要看的差异；下面三组**不是**差异，只是列出来——
-`pendingRegistration`（卡台扣了、系统没记：多半是手动用卡，登记入口归第⑥块）、
-`fundingIncomplete`（开卡金额比扣款合计还小，公式立不起来）、
-`CARD_IN_TERMINAL_STATE` / `AWAITING_RESOLUTION`（卡已作废 / 账本占位等收口）。
-**连续两次日对账还在**的差异才 `persistent:true`，那条汇总才升 critical。
+**怎么读报告**（⑤b 收窄后，D-275）：`discrepancies` 才是要看的差异，只有两类——
+`UNEXPLAINED_CHARGE`（卡台扣了、账本没记、也没登记手动用卡 = 无主扣款，进报告待核），
+以及有可验证期初基准时的次数/金额真差异（`LEDGER_AHEAD` / `UNKNOWN_STATUS` / `AMOUNT_DIFF`）。
+下面这些**不是**差异，只列出来：
+`pendingRegistration`（已登记手动用卡的卡台扣款，等第⑥块入口回填账本）、
+金额 `UNVERIFIABLE`（没有可信的期初入卡金额，本轮金额只对次数——D-274：`funded_amount` 是下单额不是入卡额）、
+`AWAITING_RESOLUTION`（账本 RECONCILIATION 占位，等收口）。
+**连续两个正式批次都还在**的「够格升级」差异才 `persistent:true` 并把汇总升 critical——
+只读 GET / dry-run 不推进连续性（D-275 ③）；无主扣款进报告但不升级（D-275 ②）。
 
-推手机的只有一条汇总（`DAILY_RECONCILIATION_SUMMARY`），**待销到期数并在里面**，不单推（D-272）。
+推手机的只有一条汇总（`DAILY_RECONCILIATION_SUMMARY`，固定 dedupe_key `daily-reconciliation`，不按天堆积），
+**待销到期数并在里面**，不单推（D-272）。
+
+**运营手动用卡后必须做的一步**（D-275 ②⑦）：Lemon 手动拿某张卡给客户付款（没走 Browser / API）后，
+要**立刻把这张卡标 RETIRED**——否则系统继续把它算进可分配，日对账也会把那笔扣款报成「无主扣款」差异。
+登记走和待销**同一个端点**（确认词仍是 `已销卡 <last4>`），但 `note` 要带 `manual-used` 标识，
+日对账据此把这笔归 `pendingRegistration` 而不是无主扣款：
+```bash
+curl -s -b <admin-cookie> -X POST https://<admin>/api/v1/admin/card-retirement/confirm -H 'content-type: application/json' \
+  -d '{"last4":"3336","providerAccountId":"…103","externalCardId":"HG…","confirmation":"已销卡 3336","note":"manual-used: 手动付 20X"}'
+```
+标完：卡不再进分配（`inventory_status=RETIRED` + RETIRED override），日对账把那笔扣款归「待登记」。
+第⑥块把这个入口搬进工作台「卡片」区（不新建表、不收客户/套餐/金额字段）。判据只认 `manual-used` 英文标识
+（2026-09-18 只读实查：全部 RETIRED override 里只命中 3336），中文「手动」不作数，别只写「手动用卡」四个字。
 
 ## 3. 死单残留清理
 

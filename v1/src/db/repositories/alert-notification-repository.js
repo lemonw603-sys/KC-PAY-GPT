@@ -1,7 +1,5 @@
 import { redactSensitiveText } from '../../security/redaction.js';
-import {
-  BALANCE_CHANGE_PUSH_MODE_SETTING, PUSH_MODE_EACH, phonePushTypes
-} from '../../domain/alert-push-policy.js';
+import { phonePushTypes } from '../../domain/alert-push-policy.js';
 
 export function createAlertNotificationRepository(pool) {
   // 第⑤步（面四①，D-249）：排除法 → 白名单。谁该响手机由 `alert-push-policy.js` 一处说了算，
@@ -9,12 +7,9 @@ export function createAlertNotificationRepository(pool) {
   //
   // D-271：这段代码在生产上「写了没生效」了五天——不是它错，是 pojia-bark-notifications 这个
   // 常驻进程不在发布重启名单里，一直跑旧 release。**改完这里若不重启该服务，照样不生效。**
+  // 谁该响手机由 alert-push-policy.js 一处白名单说了算（D-275 ④：撤掉 DAILY_DIGEST 开关后不再读设置）。
   async function currentPushTypes() {
-    const [rows] = await pool.query(
-      'SELECT setting_value FROM app_settings WHERE setting_key = ? LIMIT 1',
-      [BALANCE_CHANGE_PUSH_MODE_SETTING]
-    );
-    return phonePushTypes({ balanceChangePushMode: rows[0]?.setting_value || PUSH_MODE_EACH });
+    return phonePushTypes();
   }
 
   async function enqueueOpenAlerts() {
@@ -122,11 +117,13 @@ export function createAlertNotificationRepository(pool) {
   }
 
   /**
-   * 缝 d：「今天叫了几次、为什么」——按 `alert_notifications.sent_at` 统计，不是按 operator_alerts。
-   * 只有真推到手机的才算「叫」。第⑥块看板的数据源；本块的每日汇总也用它。
-   * `sinceUtc` / `untilUtc` 是半开区间 [since, until)。
+   * 按类型统计一段时间内**保留下来的告警通知行数**——F-55：这**不是**精确的「发送次数」。
+   * `alert_notifications` 每类通知一行、复活时 `sent_at` 被清空覆盖，所以同一 dedupe_key 的告警
+   * 一天里失效→恢复→再失效，最后只留最后一次的行——真实推了两次，这里只数得到一次。要精确的
+   * 发送次数得按不可覆盖的投递事件另存（本块不做）。函数名点明数的是「告警实例」，不承诺发送次数
+   * （D-275 ⑤）。`sinceUtc` / `untilUtc` 是半开区间 [since, until)。
    */
-  async function countPushesByType({ sinceUtc, untilUtc }) {
+  async function countAlertInstancesByType({ sinceUtc, untilUtc }) {
     const [rows] = await pool.query(
       `SELECT a.alert_type, a.severity, COUNT(*) AS pushes, MAX(n.sent_at) AS last_sent_at
          FROM alert_notifications n JOIN operator_alerts a ON a.id = n.alert_id
@@ -144,5 +141,5 @@ export function createAlertNotificationRepository(pool) {
     }));
   }
 
-  return { enqueueOpenAlerts, claimNext, markSent, markFailed, countPushesByType };
+  return { enqueueOpenAlerts, claimNext, markSent, markFailed, countAlertInstancesByType };
 }

@@ -2556,3 +2556,23 @@ state-check的$MINBAL紧邻中文括号、wrapup-check的$live/$mday紧邻中文
 同一个库顺手补了**生产验不了的白名单两条**：白名单外 `BROWSER_PAYMENT_UNKNOWN` 入队 0 行 / 白名单内 `BROWSER_HUMAN_REQUIRED` 入队 1 行；手工给白名单外那条塞一行 `PENDING` 模拟收窄前的遗留队列，`claimNext` 连领三次都没领走它。
 
 验完 `DROP DATABASE pojia_step5_recon`，同实例其余 12 个历史测试库一个没动。**顺带发现**：这个容器已经跑了 7 天，而上一窗口 `HANDOFF_NOW` 写的是「本机临时 MySQL 容器已删」，`wrapup-check.sh` 的「本机没有遗留的调试服务」也没抓到它（账本发现 14，只报未改——容器不是我起的）。
+
+## 2026-09-18｜⑤b 第⑤块收窄（D-275，Codex F-47~F-55）
+
+**背景**：⑤上线后 Codex 审查（`STEP5_REVIEW_2026-09-18.md`）出 9 条，Lemon 认 → D-275。开小块 ⑤b 做六件减法，只做这块、不碰 browser-mvp、不删表、不改付款、不动白名单四类。
+
+**先复现再改（任务书规矩 1）**：Codex 附录 A 三段反例在改前 main（`791a4d8`）逐字复现——一单两笔扣款被隐藏成「待登记」（`PENDING_MANUAL_REGISTRATION MATCHED false`）、只读被当连续两次（`persistentCount 0→1→1`）、负余额 abs 成一致（`MATCHED balance10.00 delta0`）。贴了输出确认在当前代码仍复现，才动手。
+
+**六件做完**（逐件证据见账本 §6「第⑤b 步」）：① F-47 押金修复代码已在 main（`31b5639`），本窗口只做发布前纯函数复现：生产 `740bc1d` `ok=false/-1035.94`（多扣 held 押金），本地新 `ok=true/25.50`，**等 Lemon 批发布**；② 金额降级 `UNVERIFIABLE`（无可验证期初基准就不判）+ 余额有符号（F-53）；③ 未知扣款分 `UNEXPLAINED_CHARGE`（无主，进差异）vs `PENDING_MANUAL_REGISTRATION`（已登记 manual-used）；④ 连续两次只认正式批次、只读不推进、同日幂等（F-50）；⑤ 删 DAILY_DIGEST 空开关（F-52）、`countPushesByType`→`countAlertInstancesByType`（F-55）、日报固定 dedupe_key（F-54）；⑥ 手动用卡=标 RETIRED（确认 confirm 端点可用 + 写进 RUNBOOK §2.7）。
+
+**验真外部字段**：动手前只读实查 23 张 RETIRED override 的 reason，确认判据 `manual-used|manual used|manually` 只命中 3336（其余 hnskj-voided/highvcc-cancelled 都不含 manual；0237/0601 是双重编码乱码的「手动测试卡」、英文判据不误伤）。没凭「手动」二字拍脑袋——外部字段先验真（three-failure-patterns）。
+
+**测试**：v1 全量 899/833/0/66（基线 885/819/0/66，+14 全绿）。六条反例（一单两笔扣款 / 消费后导入 / 负余额 / 首跑后立即 GET / 同步失败跨日 / 异常次日恢复）各成单测。
+
+**生产只读 dry-run（新代码经隧道 13306，`persist:false` 不写）**：差异 6 张全 `UNEXPLAINED_CHARGE`（8590/0237/0601/5371/5501/7402，逐条有解释）；1657/3159 落 `UNVERIFIABLE`；待登记只剩 3336；金额 30 张全 `UNVERIFIABLE`。验收「差异只剩已知项」达成——收窄前 4 条「没解释」里，1657/3159 归无法核对、0237/8590 归无主扣款待核。
+
+**连带更新**：`alert-notification-repository.test.js` 的 enqueue query 数 4→3（撤掉设置读的直接后果，enqueue 行为不变）。第⑥块任务书正文改自洽——原来只加了个「以本段为准」覆盖段、正文没改，正文与覆盖段打架（正是评审 F-50 那类文档漂移），这次删「叫了几次/汇总选项/待登记栏」三依赖、加「手动用卡入口=RETIRED」，让整篇自洽。
+
+**本窗口对生产只做只读**（override 查询 / dry-run / F-47 复现），未写生产、未发布、未重启服务。发布 F-47 停在「先问」。
+
+**一处笔误**：一个 Edit 的 file_path 打成繁体「業務」（应「业务」），报 File does not exist，当场用正确路径重做，无副作用。

@@ -10,7 +10,7 @@
 //   node v1/scripts/daily-reconciliation-runner.js --dry-run  # 只打报告，什么都不写
 import { loadRuntimeDatabaseConfig } from '../src/config.js';
 import { createDatabasePool } from '../src/db/pool.js';
-import { createDailyReconciliationService, summaryMessage } from '../src/services/daily-reconciliation-service.js';
+import { createDailyReconciliationService, reconciliationAlertPlan } from '../src/services/daily-reconciliation-service.js';
 import { upsertSupplyAlert, resolveSupplyAlert } from '../src/services/card-supply-scheduler-service.js';
 
 const dryRun = process.argv.includes('--dry-run');
@@ -30,22 +30,16 @@ try {
        ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)`,
       [HEARTBEAT_SETTING, report.generatedAt]
     );
-    // 汇总每天换一个 dedupe_key（按 UTC 日期），所以每天推一条、同一天重跑不重复推。
-    const day = report.generatedAt.slice(0, 10);
-    const hasSomething = report.discrepancyCount > 0
-      || report.pendingRegistrationCount > 0
-      || report.retirementDueCount > 0;
-    if (hasSomething) {
-      await upsertSupplyAlert(pool, {
-        type: SUMMARY_TYPE,
-        key: `daily-reconciliation:${day}`,
-        severity: report.persistentCount > 0 ? 'critical' : 'info',
-        title: report.persistentCount > 0 ? '对账差异连续两天还在' : '今日对账汇总',
-        message: summaryMessage(report)
-      });
+    // 一条「当前对账状态」告警（固定 dedupe_key，不按天堆积，F-54）：有差异 upsert 覆盖，
+    // 没差异 RESOLVE——因为 key 固定，今天的 RESOLVE 正好收掉昨天那条 OPEN。
+    const plan = reconciliationAlertPlan(report);
+    if (plan.action === 'resolve') {
+      await resolveSupplyAlert(pool, plan.key);
     } else {
-      // 全对上的那天不推，也把昨天那条收掉，免得后台一直挂着旧汇总。
-      await resolveSupplyAlert(pool, `daily-reconciliation:${day}`);
+      await upsertSupplyAlert(pool, {
+        type: SUMMARY_TYPE, key: plan.key,
+        severity: plan.severity, title: plan.title, message: plan.message
+      });
     }
   }
   if (report.persistentCount > 0) process.exitCode = 0; // 差异不是执行失败，不用非零退出吓人

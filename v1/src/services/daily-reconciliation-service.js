@@ -6,55 +6,67 @@ import { createCardRetirementService } from './card-retirement-service.js';
 
 /**
  * 第⑤步（面四③，D-249）：**每日一次对账，次数与金额分开**。
+ * 第⑤b 块收窄（D-275，2026-09-18，Lemon 认，起因 Codex 审查 F-47～F-55）：
  *
- * 为什么分开：它们坏掉的方式不一样。次数对不上说明「这张卡付过的单系统没记全」——影响每卡上限
- * 与待销判断；金额对不上说明「钱的去向对不上账」——影响的是资金本身。混成一个数，两边都看不清。
+ *   ① 金额对账降级（F-49/F-53）：`funded_amount` 对多数卡不是「卡里实际到账的钱」，而是**下单金额**
+ *      （D-274：1657/3159 差的正是开卡费）。建在不可靠起点上的自动金额判断＝「给观察补原因」。
+ *      所以除非这张卡有**可验证的期初入卡金额**（Lemon 核实过的基准），金额一律 `UNVERIFIABLE`，
+ *      既不判异常也不判一致。当前没有任何来源提供这个基准 → 所有卡都 `UNVERIFIABLE`，只对次数。
+ *      余额改**有符号**解析：负余额含义未知，明确标 `NEGATIVE_BALANCE`，不再取绝对值算成正数。
+ *   ② 未知扣款分开（F-48）：卡台扣得比账本多时，只有**已登记手动用卡**的卡（RETIRED override，
+ *      reason 带 `manual-used` 标识，如 3336）算 `PENDING_MANUAL_REGISTRATION`（待补登记、不算差异）；
+ *      其余一律 `UNEXPLAINED_CHARGE`（无主扣款）——**是差异、进报告、不隐藏**，但先不升级 critical。
+ *   ③ 「连续两次」只由**正式批次**推进（F-50）：只读 GET / dry-run 沿用上一个正式批次已算好的
+ *      persistent 结论，绝不因为多读一次就把当次差异当成「第二次出现」；同日重跑正式批次幂等。
  *
- * **只读**：这个服务一行都不写业务表（唯一的写是把本次报告指纹存进 app_settings，用来判断
- * 「连续两次」）。差异前期只进看板 + 每日一条汇总推；**连续两次日对账仍在**才够格进「需要我处理」
- * （D-249：Lemon 担心误判和延迟造成的误推）。
+ * **只读**：这个服务一行都不写业务表（唯一的写是把本次报告指纹存进 app_settings）。
+ * 差异前期只进看板 + 每日一条汇总推；**够格升级的差异连续两次仍在**才升 critical（D-249）。
  *
  * 判据在 `domain/card-transaction-audit.js`，那里写明了每个取值来自哪次生产实查。
- *
- * ## 三类「不算差异」的东西（列出来，但不猜原因）
- *
- * - `PENDING_MANUAL_REGISTRATION`：卡台扣款多于账本。运营手动拿卡付款系统不知道（3336 那笔
- *   142.54，D-270 发现 7）。登记入口归第⑥块；在它上线之前这类只列出、不算差异（Lemon 定）。
- * - `FUNDING_SOURCE_INCOMPLETE`：`funded_amount` 比卡台扣款合计还小，金额公式根本立不起来。
- *   2026-09-18 实跑：5501 funded 2.00 / 扣款 159.16，7402 funded 49 / 扣款 158.62，
- *   0601 funded 3.27 / 扣款 143.01。**原因未知**，本服务只如实列出。
- * - `NO_TRANSACTION_COVERAGE`：这张卡在 `card_transactions` 里一行都没有，没东西可对。
- * - `CARD_IN_TERMINAL_STATE`：卡已作废/用尽/已销，余额被清零或退回，金额公式不适用。
- * - `AWAITING_RESOLUTION`：差的那几笔正是账本里 RECONCILIATION 的占位行，等人收口，不是对账问题。
  */
 
 export const LAST_REPORT_SETTING = 'daily_reconciliation_last_report';
 
+/**
+ * 手动用卡登记的机器标识（D-275 ②⑦）：运营手动拿卡付款后，按 RUNBOOK 用
+ * `POST /api/v1/admin/card-retirement/confirm` 把卡标 RETIRED，reason 里带 `manual-used`
+ * 标识——3336 就是这么标的（`retire-legacy-cards:highvcc-manual-used ... paid ... manually`）。
+ * 判据只认这个英文标识，**不认自然语言「手动」**：否则既漏 3336（英文 reason），又会误伤早期
+ * 「手动测试卡」（0237/0601 的 reason 解码后含「手动」但不是手动用卡付款）。2026-09-18 只读实查：
+ * 全部 23 张 RETIRED override 里这条 REGEXP 只命中 3336。
+ */
+export const MANUAL_USE_REASON_REGEXP = 'manual-used|manual used|manually';
+
 export const CountFinding = Object.freeze({
   MATCHED: 'MATCHED',
-  PENDING_MANUAL_REGISTRATION: 'PENDING_MANUAL_REGISTRATION',
+  PENDING_MANUAL_REGISTRATION: 'PENDING_MANUAL_REGISTRATION', // 已确认手动用卡、待补登记——不算差异（D-275 ②）
+  UNEXPLAINED_CHARGE: 'UNEXPLAINED_CHARGE',                   // 无主扣款——是差异、进报告、不隐藏、先不升级（D-275 ②）
   LEDGER_AHEAD: 'LEDGER_AHEAD',
   AWAITING_RESOLUTION: 'AWAITING_RESOLUTION',
   UNKNOWN_STATUS: 'UNKNOWN_STATUS'
 });
 
 export const AmountFinding = Object.freeze({
-  MATCHED: 'MATCHED',
-  AMOUNT_DIFF: 'AMOUNT_DIFF',
-  FUNDING_SOURCE_INCOMPLETE: 'FUNDING_SOURCE_INCOMPLETE',
-  NO_TRANSACTION_COVERAGE: 'NO_TRANSACTION_COVERAGE',
-  CARD_IN_TERMINAL_STATE: 'CARD_IN_TERMINAL_STATE'
+  UNVERIFIABLE: 'UNVERIFIABLE', // 没有可验证的期初入卡金额 → 不判异常也不判一致（D-275 ①，D-274）
+  MATCHED: 'MATCHED',           // 仅当这张卡有 Lemon 核实过的期初基准且对得上
+  AMOUNT_DIFF: 'AMOUNT_DIFF'    // 仅当有可验证基准且对不上
 });
 
-/**
- * 卡进了终态（卡台作废 / 余额用尽 / 已销）之后，余额被卡台清零或退回钱包，
- * 「开卡金额 − 扣款 = 余额」这条式子就不成立了 —— 2026-09-18 首次生产实跑，11 条差异里
- * 有 7 条是这么来的（1013/1284/1666/4643/5980/7705/9051，全是 hnskj 那 12 张作废旧卡）。
- * 对一张已经作废的卡算「余额少了 16 块」没有意义，所以不对它们做金额对账。
- */
-const TERMINAL_INVENTORY_STATUSES = new Set(['RETIRED', 'DEPLETED', 'FAILED']);
+/** 为什么这张卡的金额「无法核对」——给报告解释，不替它下结论。 */
+export const UnverifiableReason = Object.freeze({
+  NO_VERIFIABLE_BASELINE: 'NO_VERIFIABLE_BASELINE', // funded_amount 是下单额不是入卡额（D-274），无独立入金凭证
+  UNREADABLE_BALANCE: 'UNREADABLE_BALANCE',         // 余额读不出
+  NEGATIVE_BALANCE: 'NEGATIVE_BALANCE'              // 余额为负、含义未知——明确标未知，不取绝对值（F-53）
+});
 
+// 进「需要看」的差异。已确认手动（PENDING_MANUAL_REGISTRATION）与无法核对（UNVERIFIABLE）不在其列。
 const REAL_DISCREPANCIES = new Set([
+  CountFinding.LEDGER_AHEAD, CountFinding.UNKNOWN_STATUS,
+  CountFinding.UNEXPLAINED_CHARGE, AmountFinding.AMOUNT_DIFF
+]);
+
+// 够格把「连续两天还在」升成 critical 的差异。无主扣款先不升级（D-275 ②：保留差异属性、先不升级推送）。
+const CRITICAL_ELIGIBLE_FINDINGS = new Set([
   CountFinding.LEDGER_AHEAD, CountFinding.UNKNOWN_STATUS, AmountFinding.AMOUNT_DIFF
 ]);
 
@@ -62,13 +74,35 @@ export function isRealDiscrepancy(finding) {
   return REAL_DISCREPANCIES.has(finding);
 }
 
+export function isCriticalEligibleFinding(finding) {
+  return CRITICAL_ELIGIBLE_FINDINGS.has(finding);
+}
+
+/**
+ * 卡余额的**有符号**整数分。读不出返回 null；负数保留符号（F-53：余额不取绝对值——
+ * 流水判据 `absoluteAmountCents` 归一化的是消费方向，不能推广到余额；负债/透支变正余额会
+ * 把「真实少了 20 块」算成「正好对上」）。
+ */
+export function signedAmountCents(amount) {
+  const text = String(amount ?? '').trim();
+  if (!text) return null;
+  const value = Number(text);
+  if (!Number.isFinite(value)) return null;
+  return Math.round(value * 100);
+}
+
 /**
  * 一张卡的两种对账。纯函数，方便对着真实行做单测。
  *
  * `transactions` 是这张卡的全部流水行（原始库行形状）；`ledgerConsumed` 是账本里确认消费的条数，
- * `ledgerReconciliation` 是「付款未知、资金锁着」的占位条数——两者分开数，见下面的注释。
+ * `ledgerReconciliation` 是「付款未知、资金锁着」的占位条数。
+ * `manualUseRegistered` 为 true 表示这张卡已登记为运营手动用卡（RETIRED override + manual-used）。
+ * `verifiableBaselineCents` 是这张卡经核实的期初入卡金额（整数分）；给了才做金额核对，否则一律无法核对。
  */
-export function reconcileCard({ card, transactions = [], ledgerConsumed = 0, ledgerReconciliation = 0 }) {
+export function reconcileCard({
+  card, transactions = [], ledgerConsumed = 0, ledgerReconciliation = 0,
+  manualUseRegistered = false, verifiableBaselineCents = null
+}) {
   let settled = 0;
   let pending = 0;
   let unknownStatus = 0;
@@ -99,36 +133,39 @@ export function reconcileCard({ card, transactions = [], ledgerConsumed = 0, led
 
   const providerCharges = settled + pending;
   // 账本的 RECONCILIATION 行是「付款结果未知、资金锁着」的占位，**不是**已确认的一次消费
-  // （生产 2 行，都在 hnskj 的 1013/4643 上）。拿它当消费会把这两张卡永远报成「账本多于卡台」。
-  // 所以确认消费只数 CONSUMED，占位单独算一档 AWAITING_RESOLUTION —— 等人收口，不是差异。
+  // （生产 2 行，都在 hnskj 的 1013/4643 上）。确认消费只数 CONSUMED，占位单列 AWAITING_RESOLUTION。
   const ledgerUsed = ledgerConsumed + ledgerReconciliation;
   let countFinding = CountFinding.MATCHED;
-  if (unknownStatus > 0) countFinding = CountFinding.UNKNOWN_STATUS;
-  else if (providerCharges > ledgerUsed) countFinding = CountFinding.PENDING_MANUAL_REGISTRATION;
-  else if (ledgerConsumed > providerCharges) countFinding = CountFinding.LEDGER_AHEAD;
-  else if (ledgerReconciliation > 0 && ledgerUsed > providerCharges) countFinding = CountFinding.AWAITING_RESOLUTION;
+  if (unknownStatus > 0) {
+    countFinding = CountFinding.UNKNOWN_STATUS;
+  } else if (providerCharges > ledgerUsed) {
+    // 卡台扣得比账本多：已登记手动用卡 → 待登记（不算差异）；否则无主扣款（是差异，D-275 ②）。
+    countFinding = manualUseRegistered
+      ? CountFinding.PENDING_MANUAL_REGISTRATION
+      : CountFinding.UNEXPLAINED_CHARGE;
+  } else if (ledgerConsumed > providerCharges) {
+    countFinding = CountFinding.LEDGER_AHEAD;
+  } else if (ledgerReconciliation > 0 && ledgerUsed > providerCharges) {
+    countFinding = CountFinding.AWAITING_RESOLUTION;
+  }
 
-  const fundedCents = absoluteAmountCents(card.funded_amount);
-  const balanceCents = absoluteAmountCents(card.current_balance);
+  // 金额：默认无法核对（D-275 ①）。只有拿到可验证期初基准、余额可读且非负，才真去比。
+  const fundedCents = signedAmountCents(card.funded_amount);   // 仅作观察值展示，有符号，不参与判断
+  const balanceCents = signedAmountCents(card.current_balance); // 有符号（F-53）
   const spentCents = chargeCents + chargebackCents;
-  let amountFinding;
+  let amountFinding = AmountFinding.UNVERIFIABLE;
+  let unverifiableReason = UnverifiableReason.NO_VERIFIABLE_BASELINE;
   let expectedCents = null;
   let deltaCents = null;
-  if (TERMINAL_INVENTORY_STATUSES.has(String(card.inventory_status || '').toUpperCase())) {
-    amountFinding = AmountFinding.CARD_IN_TERMINAL_STATE;
-  } else if (!transactions.length) {
-    amountFinding = AmountFinding.NO_TRANSACTION_COVERAGE;
-  } else if (fundedCents === null || balanceCents === null) {
-    amountFinding = AmountFinding.FUNDING_SOURCE_INCOMPLETE;
-  } else if (fundedCents < spentCents) {
-    // 开卡金额比已经扣掉的还少：入金记录不全，这个公式立不起来。不硬算出一个「差异」来吓人。
-    amountFinding = AmountFinding.FUNDING_SOURCE_INCOMPLETE;
-    expectedCents = fundedCents - spentCents;
-    deltaCents = balanceCents - expectedCents;
-  } else {
-    expectedCents = fundedCents - spentCents;
+  if (balanceCents === null) {
+    unverifiableReason = UnverifiableReason.UNREADABLE_BALANCE;
+  } else if (balanceCents < 0) {
+    unverifiableReason = UnverifiableReason.NEGATIVE_BALANCE;
+  } else if (verifiableBaselineCents != null) {
+    expectedCents = verifiableBaselineCents - spentCents;
     deltaCents = balanceCents - expectedCents;
     amountFinding = deltaCents === 0 ? AmountFinding.MATCHED : AmountFinding.AMOUNT_DIFF;
+    unverifiableReason = null;
   }
 
   return {
@@ -152,13 +189,15 @@ export function reconcileCard({ card, transactions = [], ledgerConsumed = 0, led
     },
     amount: {
       finding: amountFinding,
+      unverifiableReason,
       funded: fundedCents === null ? null : fromCents(fundedCents),
       charged: fromCents(chargeCents),
       chargebacks: fromCents(chargebackCents),
       balance: balanceCents === null ? null : fromCents(balanceCents),
       expected: expectedCents === null ? null : fromCents(expectedCents),
       delta: deltaCents === null ? null : fromCents(deltaCents),
-      negativeRows
+      negativeRows,
+      manualUseRegistered
     }
   };
 }
@@ -166,6 +205,11 @@ export function reconcileCard({ card, transactions = [], ledgerConsumed = 0, led
 /** 差异指纹：卡 + 两个结论。用它判断「同一个差异是不是连续两天都在」。 */
 export function fingerprintOf(card) {
   return `${card.cardId}:${card.count.finding}:${card.amount.finding}`;
+}
+
+/** 报告的 UTC 日期（周期标识），「同日重跑正式批次幂等」靠它。 */
+export function utcDateOf(date) {
+  return date.toISOString().slice(0, 10);
 }
 
 export function createDailyReconciliationService({ pool, clock = () => new Date() }) {
@@ -178,7 +222,12 @@ export function createDailyReconciliationService({ pool, clock = () => new Date(
               (SELECT COUNT(*) FROM card_consumption_ledger l
                 WHERE l.card_id = c.id AND l.status = 'CONSUMED') AS ledger_consumed,
               (SELECT COUNT(*) FROM card_consumption_ledger l
-                WHERE l.card_id = c.id AND l.status = 'RECONCILIATION') AS ledger_reconciliation
+                WHERE l.card_id = c.id AND l.status = 'RECONCILIATION') AS ledger_reconciliation,
+              EXISTS (SELECT 1 FROM card_operational_overrides o
+                WHERE o.provider_account_id = c.provider_account_id
+                  AND BINARY o.external_card_id = BINARY c.external_card_id
+                  AND o.allocation_policy = 'RETIRED'
+                  AND LOWER(o.reason) REGEXP '${MANUAL_USE_REASON_REGEXP}') AS manual_use_registered
          FROM cards c ORDER BY c.provider_account_id, c.last4`
     );
     return rows;
@@ -215,56 +264,89 @@ export function createDailyReconciliationService({ pool, clock = () => new Date(
   }
 
   /**
-   * 跑一次日对账。`persist` 为 false 时不写指纹（演练 / 只读复验用），
-   * 「连续两次」的判断仍然照常基于上一次存下的指纹。
+   * 跑一次日对账。`persist` 为 false（只读 GET / dry-run）时不写指纹，且**不推进**「连续两次」——
+   * 直接沿用上一个正式批次已经算好的 persistent 结论。只有 `persist:true` 的正式批次推进连续性，
+   * 同日重跑幂等（D-275 ③，F-50）。
    */
   async function run({ persist = true } = {}) {
     const now = clock();
     const [cards, transactionsByCard, previous] = await Promise.all([
       loadCards(), loadTransactions(), readLastReport()
     ]);
-    const previousFingerprints = new Set(previous?.discrepancyFingerprints || []);
 
     const results = cards.map((card) => reconcileCard({
       card,
       transactions: transactionsByCard.get(card.id) || [],
       ledgerConsumed: Number(card.ledger_consumed) || 0,
-      ledgerReconciliation: Number(card.ledger_reconciliation) || 0
+      ledgerReconciliation: Number(card.ledger_reconciliation) || 0,
+      manualUseRegistered: Number(card.manual_use_registered) === 1
     }));
 
-    const discrepancies = results.filter(
+    const realDiscrepancies = results.filter(
       (card) => isRealDiscrepancy(card.count.finding) || isRealDiscrepancy(card.amount.finding)
-    ).map((card) => {
+    );
+
+    // 「连续两次」的连续性只由正式批次推进；只读沿用上一个正式批次的结论（D-275 ③）。
+    const today = utcDateOf(now);
+    let persistentFingerprints;
+    if (persist) {
+      if (previous?.date === today) {
+        // 同日重跑正式批次：幂等，不把当天的差异错当成「连续两天」。
+        persistentFingerprints = new Set(previous.persistentFingerprints || []);
+      } else {
+        const prevDiscrepancies = new Set(previous?.discrepancyFingerprints || []);
+        persistentFingerprints = new Set(
+          realDiscrepancies.map(fingerprintOf).filter((fp) => prevDiscrepancies.has(fp))
+        );
+      }
+    } else {
+      persistentFingerprints = new Set(previous?.persistentFingerprints || []);
+    }
+
+    const discrepancies = realDiscrepancies.map((card) => {
       const fingerprint = fingerprintOf(card);
-      return { ...card, fingerprint, persistent: previousFingerprints.has(fingerprint) };
+      return { ...card, fingerprint, persistent: persistentFingerprints.has(fingerprint) };
     });
     const pendingRegistration = results.filter(
       (card) => card.count.finding === CountFinding.PENDING_MANUAL_REGISTRATION
     );
-    const fundingIncomplete = results.filter(
-      (card) => card.amount.finding === AmountFinding.FUNDING_SOURCE_INCOMPLETE
+    const unexplainedCharges = results.filter(
+      (card) => card.count.finding === CountFinding.UNEXPLAINED_CHARGE
     );
+    const unverifiableAmount = results.filter(
+      (card) => card.amount.finding === AmountFinding.UNVERIFIABLE
+    );
+
+    // 只有「够格升级」的差异连续两天在，才升 critical。无主扣款连续也不升（D-275 ②）。
+    const persistentCriticalCount = discrepancies.filter(
+      (card) => card.persistent
+        && (isCriticalEligibleFinding(card.count.finding) || isCriticalEligibleFinding(card.amount.finding))
+    ).length;
 
     const retirementList = await retirement.list();
     const report = {
       readOnly: true,
       generatedAt: now.toISOString(),
+      reconciliationDate: today,
       cardCount: results.length,
       discrepancyCount: discrepancies.length,
-      persistentCount: discrepancies.filter((card) => card.persistent).length,
+      persistentCount: persistentCriticalCount,
       pendingRegistrationCount: pendingRegistration.length,
-      fundingIncompleteCount: fundingIncomplete.length,
+      unexplainedChargeCount: unexplainedCharges.length,
+      unverifiableAmountCount: unverifiableAmount.length,
       retirementDueCount: retirementList.due.length,
       discrepancies,
       pendingRegistration,
-      fundingIncomplete,
+      unexplainedCharges,
       cards: results
     };
 
     if (persist) {
       await writeLastReport({
+        date: today,
         generatedAt: report.generatedAt,
-        discrepancyFingerprints: discrepancies.map((card) => card.fingerprint)
+        discrepancyFingerprints: discrepancies.map((card) => card.fingerprint),
+        persistentFingerprints: [...persistentFingerprints]
       });
     }
     return report;
@@ -279,14 +361,43 @@ export function createDailyReconciliationService({ pool, clock = () => new Date(
  */
 export function summaryMessage(report) {
   const lines = [];
-  lines.push(`对账 ${report.cardCount} 张卡：差异 ${report.discrepancyCount} 张`
-    + `${report.persistentCount ? `（其中 ${report.persistentCount} 张连续两天还在，要处理）` : ''}。`);
-  if (report.pendingRegistrationCount) {
-    lines.push(`卡台扣了但系统没记的 ${report.pendingRegistrationCount} 张：多半是手动用卡，等登记入口（第⑥块）。`);
+  const persistentNote = report.persistentCount
+    ? `（其中 ${report.persistentCount} 张连续两天还在，要处理）` : '';
+  lines.push(`对账 ${report.cardCount} 张卡：差异 ${report.discrepancyCount} 张${persistentNote}。`);
+  if (report.unexplainedChargeCount) {
+    lines.push(`无主扣款 ${report.unexplainedChargeCount} 张：卡台扣了、账本没记、也没登记手动用卡，进报告待核。`);
   }
-  if (report.fundingIncompleteCount) {
-    lines.push(`开卡金额对不上扣款合计的 ${report.fundingIncompleteCount} 张：金额公式立不起来，原因未查。`);
+  if (report.pendingRegistrationCount) {
+    lines.push(`已登记手动用卡的 ${report.pendingRegistrationCount} 张：待补进账本（第⑥块）。`);
+  }
+  if (report.unverifiableAmountCount) {
+    lines.push(`金额无法核对 ${report.unverifiableAmountCount} 张：没有可信的期初入卡金额，本轮只对次数。`);
   }
   lines.push(`待销到期 ${report.retirementDueCount} 张${report.retirementDueCount ? '，到存活期可以去卡台删了。' : '。'}`);
   return lines.join('');
+}
+
+/** 固定的对账汇总 dedupe_key：一条「当前对账状态」，有差异就更新、没差异就 RESOLVE，不按天堆积（F-54）。 */
+export const RECON_ALERT_KEY = 'daily-reconciliation';
+
+/**
+ * 每日汇总告警要做的动作（F-54）。收窄前按 UTC 日期换 dedupe_key，导致「昨天 OPEN、今天正常」时
+ * 昨天那条一直挂着（resolve 传的是今天的新 key，关不掉昨天）。改成**固定 key**：今天没差异就
+ * RESOLVE 掉这一条（把昨天的收掉），有差异就 upsert 覆盖同一行。日期留档进标题/文案，不进 key。
+ */
+export function reconciliationAlertPlan(report) {
+  const hasSomething = report.discrepancyCount > 0
+    || report.pendingRegistrationCount > 0
+    || report.unexplainedChargeCount > 0
+    || report.retirementDueCount > 0;
+  if (!hasSomething) return { action: 'resolve', key: RECON_ALERT_KEY };
+  return {
+    action: 'upsert',
+    key: RECON_ALERT_KEY,
+    severity: report.persistentCount > 0 ? 'critical' : 'info',
+    title: report.persistentCount > 0
+      ? `对账差异连续两天还在（${report.reconciliationDate}）`
+      : `今日对账汇总（${report.reconciliationDate}）`,
+    message: summaryMessage(report)
+  };
 }

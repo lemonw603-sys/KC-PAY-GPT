@@ -4,7 +4,9 @@ import {
   ChargeKind, classifyCharge, countsAsCharge, isChargeback, isChargebackFee
 } from '../src/domain/card-transaction-audit.js';
 import {
-  AmountFinding, CountFinding, fingerprintOf, isRealDiscrepancy, reconcileCard, summaryMessage
+  AmountFinding, CountFinding, UnverifiableReason, fingerprintOf, isRealDiscrepancy,
+  isCriticalEligibleFinding, reconcileCard, signedAmountCents, summaryMessage,
+  createDailyReconciliationService, reconciliationAlertPlan, RECON_ALERT_KEY
 } from '../src/services/daily-reconciliation-service.js';
 
 // 下面每一行的形状都抄自 2026-09-18 生产 `card_transactions` 的真实行，不是自造的。
@@ -23,6 +25,8 @@ const rows = {
   issueFee: { transaction_type: 'CARD_ISSUE_FEE', status: 'OBSERVED', amount: '0.750000', currency: 'USD' },
   unknownStatus: { transaction_type: 'PURCHASE', status: 'SOMETHING_NEW', amount: '15.750000', currency: 'USD' }
 };
+
+// ————— 次数判据（domain/card-transaction-audit.js）：收窄没动这一半 —————
 
 test('旧判据漏掉的那三种，现在都算扣款', () => {
   assert.equal(classifyCharge(rows.hnskjUpperSettled), ChargeKind.SETTLED);
@@ -55,9 +59,10 @@ test('非购买类流水不会混进扣款计数', () => {
 });
 
 test('判据不认商户名：ANTHROPIC 的扣款一样算扣款', () => {
-  // 0237 卡上真有一笔 ANTHROPIC 100.00。把 OPENAI 写进判据会让它凭空消失。
   assert.equal(countsAsCharge(rows.anthropic), true);
 });
+
+// ————— reconcileCard 次数侧 —————
 
 const card = (over = {}) => ({
   id: 'card-1', last4: '1657', provider_card_id: 'HG81', provider_account_id: '…103',
@@ -65,59 +70,53 @@ const card = (over = {}) => ({
   last_synced_at: '2026-09-18 07:00:00', ...over
 });
 
-test('次数对上、金额对上 = MATCHED', () => {
+test('次数对上 = MATCHED', () => {
   const result = reconcileCard({
-    card: card({ funded_amount: '50.000000', current_balance: '2.750000' }),
-    transactions: [rows.highvccComplete, rows.highvccComplete, rows.highvccComplete],
-    ledgerConsumed: 3
+    card: card(), transactions: [rows.highvccComplete, rows.highvccComplete, rows.highvccComplete], ledgerConsumed: 3
   });
   assert.equal(result.count.finding, CountFinding.MATCHED);
-  assert.equal(result.amount.finding, AmountFinding.MATCHED);
-  assert.equal(isRealDiscrepancy(result.count.finding), false);
 });
 
-test('卡台扣了、账本没记 → 待登记，不算差异（3336 那笔手动 20X）', () => {
-  const result = reconcileCard({
-    card: card({ last4: '3336', funded_amount: '145.000000', current_balance: '2.460000' }),
-    transactions: [rows.highvccPendingReal],
-    ledgerConsumed: 0
-  });
+test('反例 一单两笔扣款（F-48）：没登记手动用卡 → 无主扣款差异，不再被隐藏成「待登记」', () => {
+  const tx = rows.highvccComplete;
+  const result = reconcileCard({ card: card(), transactions: [tx, { ...tx }], ledgerConsumed: 1 });
+  assert.equal(result.count.finding, CountFinding.UNEXPLAINED_CHARGE);
+  assert.equal(isRealDiscrepancy(result.count.finding), true, '无主扣款是差异、进报告、不隐藏');
+});
+
+test('反例 一单两笔扣款（F-48）：登记了手动用卡（3336 那类）→ 待登记、不算差异', () => {
+  const tx = rows.highvccComplete;
+  const result = reconcileCard({ card: card(), transactions: [tx, { ...tx }], ledgerConsumed: 1, manualUseRegistered: true });
   assert.equal(result.count.finding, CountFinding.PENDING_MANUAL_REGISTRATION);
   assert.equal(isRealDiscrepancy(result.count.finding), false);
-  assert.equal(result.amount.finding, AmountFinding.MATCHED, '145 − 142.54 = 2.46，正好对上');
-  assert.equal(result.count.pending, 1);
 });
 
-test('账本比卡台多 → 真差异（反向缺口，要人看）', () => {
-  const result = reconcileCard({
-    card: card(), transactions: [rows.highvccComplete], ledgerConsumed: 3
-  });
+test('账本比卡台多 → LEDGER_AHEAD（真差异，够格升级）', () => {
+  const result = reconcileCard({ card: card(), transactions: [rows.highvccComplete], ledgerConsumed: 3 });
   assert.equal(result.count.finding, CountFinding.LEDGER_AHEAD);
   assert.equal(isRealDiscrepancy(result.count.finding), true);
 });
 
-test('有没见过的状态时，先报状态本身，别忙着比数字', () => {
-  const result = reconcileCard({
-    card: card(), transactions: [rows.unknownStatus, rows.highvccComplete], ledgerConsumed: 1
-  });
+test('有没见过的状态时，先报状态本身（UNKNOWN_STATUS）', () => {
+  const result = reconcileCard({ card: card(), transactions: [rows.unknownStatus, rows.highvccComplete], ledgerConsumed: 1 });
   assert.equal(result.count.finding, CountFinding.UNKNOWN_STATUS);
   assert.equal(result.count.unknownStatus, 1);
 });
 
-test('开卡金额比扣款合计还小 → 公式立不起来，如实标出而不是硬算差异', () => {
-  // 5501 的真实数字：funded 2.00，扣款合计 159.16。
+test('账本里的 RECONCILIATION 占位不是消费，不该报成「账本多于卡台」', () => {
   const result = reconcileCard({
-    card: card({ last4: '5501', funded_amount: '2.000000', current_balance: '1.790000' }),
-    transactions: [rows.highvccComplete, rows.highvccPendingReal],
-    ledgerConsumed: 2
+    card: card({ last4: '4643', inventory_status: 'RETIRED' }),
+    transactions: [], ledgerConsumed: 0, ledgerReconciliation: 1
   });
-  assert.equal(result.amount.finding, AmountFinding.FUNDING_SOURCE_INCOMPLETE);
-  assert.equal(isRealDiscrepancy(result.amount.finding), false);
+  assert.equal(result.count.finding, CountFinding.AWAITING_RESOLUTION);
+  assert.equal(isRealDiscrepancy(result.count.finding), false);
 });
 
-test('一行流水都没有 → 没东西可对，不算差异', () => {
-  const result = reconcileCard({ card: card(), transactions: [], ledgerConsumed: 0 });
-  assert.equal(result.amount.finding, AmountFinding.NO_TRANSACTION_COVERAGE);
+test('确认消费真的多于卡台扣款时，仍然报 LEDGER_AHEAD', () => {
+  const result = reconcileCard({
+    card: card(), transactions: [rows.highvccComplete], ledgerConsumed: 2, ledgerReconciliation: 1
+  });
+  assert.equal(result.count.finding, CountFinding.LEDGER_AHEAD);
 });
 
 test('拒付与手续费计入花掉的钱，但不计入购买次数', () => {
@@ -131,16 +130,92 @@ test('拒付与手续费计入花掉的钱，但不计入购买次数', () => {
   assert.equal(result.amount.charged, '15.71');
 });
 
-test('金额对不上就是对不上，差额如实给出', () => {
+// ————— reconcileCard 金额侧：收窄成「无法核对」（D-275 ①，F-49/F-53）—————
+
+test('金额默认无法核对：没有可验证期初余额就不判异常也不判一致', () => {
+  const result = reconcileCard({ card: card(), transactions: [rows.highvccComplete], ledgerConsumed: 1 });
+  assert.equal(result.amount.finding, AmountFinding.UNVERIFIABLE);
+  assert.equal(result.amount.unverifiableReason, UnverifiableReason.NO_VERIFIABLE_BASELINE);
+  assert.equal(result.amount.expected, null);
+  assert.equal(result.amount.delta, null);
+  assert.equal(isRealDiscrepancy(result.amount.finding), false);
+});
+
+test('反例 消费后导入（F-49）：funded 是下单额不是入卡额 → 金额无法核对（不硬算假差异）', () => {
+  // 首次导入余额 40、导入前已消费 10、之后无变化：旧算法会拿 funded 再扣那 10 报假差异。
+  const result = reconcileCard({
+    card: card({ last4: '1657', funded_amount: '50.000000', current_balance: '1.800000' }),
+    transactions: [rows.highvccComplete, rows.highvccComplete, rows.highvccComplete],
+    ledgerConsumed: 3
+  });
+  assert.equal(result.amount.finding, AmountFinding.UNVERIFIABLE);
+  assert.equal(result.amount.unverifiableReason, UnverifiableReason.NO_VERIFIABLE_BASELINE);
+  assert.equal(isRealDiscrepancy(result.amount.finding), false);
+});
+
+test('反例 负余额（F-53）：余额有符号解析、明确标未知，不 abs 成「正好对上」', () => {
+  const result = reconcileCard({
+    card: card({ funded_amount: '50.000000', current_balance: '-10.000000' }),
+    transactions: [{ ...rows.highvccComplete, amount: '40.000000' }],
+    ledgerConsumed: 1
+  });
+  assert.equal(result.amount.finding, AmountFinding.UNVERIFIABLE);
+  assert.equal(result.amount.unverifiableReason, UnverifiableReason.NEGATIVE_BALANCE);
+  assert.equal(result.amount.balance, '-10.00', '余额保留负号，不取绝对值');
+  assert.equal(result.amount.expected, null);
+});
+
+test('余额读不出 → 无法核对（UNREADABLE_BALANCE）', () => {
+  const result = reconcileCard({ card: card({ current_balance: null }), transactions: [rows.highvccComplete], ledgerConsumed: 1 });
+  assert.equal(result.amount.finding, AmountFinding.UNVERIFIABLE);
+  assert.equal(result.amount.unverifiableReason, UnverifiableReason.UNREADABLE_BALANCE);
+});
+
+test('作废卡也走无法核对（不再单列 CARD_IN_TERMINAL_STATE，余额清零无基准）', () => {
+  const result = reconcileCard({
+    card: card({ last4: '1013', inventory_status: 'RETIRED', funded_amount: '16.000000', current_balance: '0.000000' }),
+    transactions: [rows.hnskjUpperSettled], ledgerConsumed: 1
+  });
+  assert.equal(result.amount.finding, AmountFinding.UNVERIFIABLE);
+  assert.equal(isRealDiscrepancy(result.amount.finding), false);
+});
+
+test('给了可验证期初基准的卡：对得上 → MATCHED', () => {
+  const result = reconcileCard({
+    card: card({ funded_amount: '50.000000', current_balance: '2.750000' }),
+    transactions: [rows.highvccComplete, rows.highvccComplete, rows.highvccComplete],
+    ledgerConsumed: 3, verifiableBaselineCents: 5000
+  });
+  assert.equal(result.amount.finding, AmountFinding.MATCHED);
+  assert.equal(result.amount.delta, '0.00');
+});
+
+test('给了可验证期初基准的卡：对不上 → AMOUNT_DIFF（真差异）', () => {
   const result = reconcileCard({
     card: card({ funded_amount: '50.000000', current_balance: '1.800000' }),
     transactions: [rows.highvccComplete, rows.highvccComplete, rows.highvccComplete],
-    ledgerConsumed: 3
+    ledgerConsumed: 3, verifiableBaselineCents: 5000
   });
   assert.equal(result.amount.finding, AmountFinding.AMOUNT_DIFF);
   assert.equal(result.amount.expected, '2.75');
   assert.equal(result.amount.delta, '-0.95');
   assert.equal(isRealDiscrepancy(result.amount.finding), true);
+});
+
+test('signedAmountCents：负数保留符号、读不出返回 null（F-53 的解析基元）', () => {
+  assert.equal(signedAmountCents('-10'), -1000);
+  assert.equal(signedAmountCents('2.46'), 246);
+  assert.equal(signedAmountCents(''), null);
+  assert.equal(signedAmountCents('abc'), null);
+});
+
+test('isCriticalEligibleFinding：无主扣款/待登记/无法核对不够格升级；真差异够格', () => {
+  assert.equal(isCriticalEligibleFinding(CountFinding.UNEXPLAINED_CHARGE), false);
+  assert.equal(isCriticalEligibleFinding(CountFinding.PENDING_MANUAL_REGISTRATION), false);
+  assert.equal(isCriticalEligibleFinding(AmountFinding.UNVERIFIABLE), false);
+  assert.equal(isCriticalEligibleFinding(CountFinding.LEDGER_AHEAD), true);
+  assert.equal(isCriticalEligibleFinding(AmountFinding.AMOUNT_DIFF), true);
+  assert.equal(isCriticalEligibleFinding(CountFinding.UNKNOWN_STATUS), true);
 });
 
 test('指纹按「卡 + 两个结论」定，用来判断连续两次是不是同一个差异', () => {
@@ -151,52 +226,138 @@ test('指纹按「卡 + 两个结论」定，用来判断连续两次是不是�
   assert.notEqual(fingerprintOf(a), fingerprintOf(c));
 });
 
-test('汇总文案：待销到期并进这一条，不单推（Lemon 2026-09-18 定）', () => {
+// ————— 「连续两次」只由正式批次推进（D-275 ③，F-50/F-51）—————
+
+function reconServicePool({ cards = [], transactions = [], lastReport = null }) {
+  let stored = lastReport;
+  return {
+    stored: () => stored,
+    async query(sql, args = []) {
+      if (sql.includes('SELECT c.id, c.last4')) return [cards];
+      if (sql.includes('SELECT card_id, provider_transaction_id')) return [transactions];
+      if (sql.includes('SELECT setting_value FROM app_settings')) {
+        return [stored ? [{ setting_value: JSON.stringify(stored) }] : []];
+      }
+      if (sql.includes('INSERT INTO app_settings')) { stored = JSON.parse(args[1]); return [{ affectedRows: 1 }]; }
+      if (sql.includes('SELECT c.id, c.provider_account_id') || sql.includes('FROM card_state_events')) return [[]];
+      throw new Error('unexpected sql: ' + sql.slice(0, 60));
+    }
+  };
+}
+
+const ledgerAheadCard = (over = {}) => ({
+  id: 'c1', last4: '9001', provider_account_id: 'a', funded_amount: '50', current_balance: '34',
+  inventory_status: 'AVAILABLE', ledger_consumed: 3, ledger_reconciliation: 0, manual_use_registered: 0, ...over
+});
+const oneCharge = [{ card_id: 'c1', transaction_type: 'PURCHASE', status: 'COMPLETE', amount: '15', currency: 'USD' }];
+
+test('反例 首跑后立即只读 GET（F-50）：只读不推进「连续两次」', async () => {
+  const pool = reconServicePool({ cards: [ledgerAheadCard()], transactions: oneCharge });
+  const svc = createDailyReconciliationService({ pool, clock: () => new Date('2026-09-18T04:00:00Z') });
+  const first = await svc.run({ persist: true });
+  assert.equal(first.persistentCount, 0);
+  for (let i = 0; i < 3; i++) {
+    const ro = await svc.run({ persist: false });
+    assert.equal(ro.persistentCount, 0, '只读 GET 不能把当次差异当成第二次出现');
+  }
+});
+
+test('反例 同步失败跨日（F-51）：没有新正式批次时，跨日只读也不升级', async () => {
+  const pool = reconServicePool({ cards: [ledgerAheadCard()], transactions: oneCharge });
+  await createDailyReconciliationService({ pool, clock: () => new Date('2026-09-18T04:00:00Z') }).run({ persist: true });
+  const r = await createDailyReconciliationService({ pool, clock: () => new Date('2026-09-19T04:00:00Z') }).run({ persist: false });
+  assert.equal(r.persistentCount, 0, '只读不推进，即使跨日、即使读到的是同一份旧数据');
+});
+
+test('连续两次由正式批次推进：够格差异连续两个正式批次 → 升 critical', async () => {
+  const pool = reconServicePool({ cards: [ledgerAheadCard()], transactions: oneCharge });
+  const r0 = await createDailyReconciliationService({ pool, clock: () => new Date('2026-09-18T04:00:00Z') }).run({ persist: true });
+  assert.equal(r0.persistentCount, 0);
+  const r1 = await createDailyReconciliationService({ pool, clock: () => new Date('2026-09-19T04:00:00Z') }).run({ persist: true });
+  assert.equal(r1.persistentCount, 1);
+});
+
+test('同日重跑正式批次幂等：不把当天的差异错当成连续两天', async () => {
+  const pool = reconServicePool({ cards: [ledgerAheadCard()], transactions: oneCharge });
+  const clock = () => new Date('2026-09-18T04:00:00Z');
+  const r1 = await createDailyReconciliationService({ pool, clock }).run({ persist: true });
+  const r2 = await createDailyReconciliationService({ pool, clock }).run({ persist: true });
+  assert.equal(r1.persistentCount, 0);
+  assert.equal(r2.persistentCount, 0, '同一天第二个正式批次不推进连续性');
+});
+
+test('无主扣款连续两天也不升 critical（D-275 ②：进报告但先不升级）', async () => {
+  const cards = [{ id: 'c1', last4: '8590', provider_account_id: 'a', funded_amount: '16', current_balance: '0.03',
+    inventory_status: 'AVAILABLE', ledger_consumed: 0, ledger_reconciliation: 0, manual_use_registered: 0 }];
+  const transactions = [{ card_id: 'c1', transaction_type: 'PURCHASE', status: 'COMPLETE', amount: '15.97', currency: 'USD' }];
+  const pool = reconServicePool({ cards, transactions });
+  const r0 = await createDailyReconciliationService({ pool, clock: () => new Date('2026-09-18T04:00:00Z') }).run({ persist: true });
+  assert.equal(r0.unexplainedChargeCount, 1);
+  assert.equal(r0.discrepancyCount, 1);
+  const r1 = await createDailyReconciliationService({ pool, clock: () => new Date('2026-09-19T04:00:00Z') }).run({ persist: true });
+  assert.equal(r1.discrepancyCount, 1);
+  assert.equal(r1.persistentCount, 0, '无主扣款不进 critical 升级');
+});
+
+test('service 级：已登记手动用卡 → 待登记（不算差异）；没登记 → 无主扣款差异', async () => {
+  const registered = reconServicePool({
+    cards: [{ id: 'c1', last4: '3336', provider_account_id: 'a', funded_amount: '145', current_balance: '2.46',
+      inventory_status: 'RETIRED', ledger_consumed: 0, ledger_reconciliation: 0, manual_use_registered: 1 }],
+    transactions: [{ card_id: 'c1', transaction_type: 'PURCHASE', status: 'PENDING', amount: '142.54', currency: 'USD', merchant_name: 'OPENAI' }]
+  });
+  const r = await createDailyReconciliationService({ pool: registered, clock: () => new Date('2026-09-18T04:00:00Z') }).run({ persist: true });
+  assert.equal(r.pendingRegistrationCount, 1);
+  assert.equal(r.unexplainedChargeCount, 0);
+  assert.equal(r.discrepancyCount, 0);
+});
+
+// ————— 汇总文案与告警计划 —————
+
+test('汇总文案：待销到期并进这一条；无主扣款 / 无法核对分列（D-275）', () => {
   const message = summaryMessage({
     cardCount: 16, discrepancyCount: 2, persistentCount: 1,
-    pendingRegistrationCount: 3, fundingIncompleteCount: 4, retirementDueCount: 5
+    pendingRegistrationCount: 1, unexplainedChargeCount: 2, unverifiableAmountCount: 4, retirementDueCount: 5
   });
   assert.match(message, /对账 16 张卡：差异 2 张/);
   assert.match(message, /连续两天还在/);
+  assert.match(message, /无主扣款 2 张/);
+  assert.match(message, /金额无法核对 4 张/);
   assert.match(message, /待销到期 5 张/);
 });
 
 test('风平浪静那天的汇总也是一句话读完', () => {
   const message = summaryMessage({
     cardCount: 16, discrepancyCount: 0, persistentCount: 0,
-    pendingRegistrationCount: 0, fundingIncompleteCount: 0, retirementDueCount: 0
+    pendingRegistrationCount: 0, unexplainedChargeCount: 0, unverifiableAmountCount: 0, retirementDueCount: 0
   });
   assert.match(message, /差异 0 张/);
   assert.match(message, /待销到期 0 张/);
   assert.doesNotMatch(message, /连续两天/);
 });
 
-test('已作废的卡不做金额对账——余额被清零，公式不适用（生产 7 条假差异的来源）', () => {
-  const result = reconcileCard({
-    card: card({ last4: '1013', inventory_status: 'RETIRED', funded_amount: '16.000000', current_balance: '0.000000' }),
-    transactions: [rows.hnskjUpperSettled],
-    ledgerConsumed: 1
-  });
-  assert.equal(result.amount.finding, AmountFinding.CARD_IN_TERMINAL_STATE);
-  assert.equal(isRealDiscrepancy(result.amount.finding), false);
+test('反例 异常次日恢复（F-54）：日报固定 dedupe_key，昨天 OPEN 今天无差异 → RESOLVE 同一 key', () => {
+  const base = {
+    cardCount: 1, persistentCount: 0, pendingRegistrationCount: 0,
+    unexplainedChargeCount: 0, unverifiableAmountCount: 0, retirementDueCount: 0
+  };
+  const withDiff = reconciliationAlertPlan({ ...base, discrepancyCount: 1, reconciliationDate: '2026-09-18' });
+  assert.equal(withDiff.action, 'upsert');
+  assert.equal(withDiff.key, RECON_ALERT_KEY);
+
+  const nextDayClean = reconciliationAlertPlan({ ...base, discrepancyCount: 0, reconciliationDate: '2026-09-19' });
+  assert.equal(nextDayClean.action, 'resolve');
+  assert.equal(nextDayClean.key, RECON_ALERT_KEY, '固定 key：今天的 RESOLVE 正好收掉昨天那条 OPEN');
 });
 
-test('账本里的 RECONCILIATION 占位不是消费，不该报成「账本多于卡台」', () => {
-  // 1013 / 4643 的真实形态：账本一行 RECONCILIATION，卡台零笔扣款——付款未知、资金锁着。
-  const result = reconcileCard({
-    card: card({ last4: '4643', inventory_status: 'RETIRED' }),
-    transactions: [],
-    ledgerConsumed: 0, ledgerReconciliation: 1
+test('reconciliationAlertPlan：够格差异连续两天 → critical；只有无主扣款 → info', () => {
+  const critical = reconciliationAlertPlan({
+    cardCount: 1, discrepancyCount: 1, persistentCount: 1, pendingRegistrationCount: 0,
+    unexplainedChargeCount: 0, unverifiableAmountCount: 0, retirementDueCount: 0, reconciliationDate: '2026-09-19'
   });
-  assert.equal(result.count.finding, CountFinding.AWAITING_RESOLUTION);
-  assert.equal(isRealDiscrepancy(result.count.finding), false);
-  assert.equal(result.count.ledgerConsumed, 0);
-  assert.equal(result.count.ledgerReconciliation, 1);
-});
-
-test('确认消费真的多于卡台扣款时，仍然报 LEDGER_AHEAD', () => {
-  const result = reconcileCard({
-    card: card(), transactions: [rows.highvccComplete], ledgerConsumed: 2, ledgerReconciliation: 1
+  assert.equal(critical.severity, 'critical');
+  const info = reconciliationAlertPlan({
+    cardCount: 1, discrepancyCount: 1, persistentCount: 0, pendingRegistrationCount: 0,
+    unexplainedChargeCount: 1, unverifiableAmountCount: 0, retirementDueCount: 0, reconciliationDate: '2026-09-18'
   });
-  assert.equal(result.count.finding, CountFinding.LEDGER_AHEAD);
+  assert.equal(info.severity, 'info');
 });

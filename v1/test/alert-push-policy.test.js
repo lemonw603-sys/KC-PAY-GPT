@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
-  BALANCE_CHANGE_TYPE, NON_PUSH_REASONS, PHONE_PUSH_TYPES, PUSH_MODE_DAILY_DIGEST,
+  NON_PUSH_REASONS, PHONE_PUSH_TYPES,
   PushCategory, phonePushTypes, pushCategoryOf, shouldPushToPhone
 } from '../src/domain/alert-push-policy.js';
 import { createAlertNotificationRepository } from '../src/db/repositories/alert-notification-repository.js';
@@ -46,11 +46,9 @@ test('every whitelisted type has a category and no type is in both tables', () =
   }
 });
 
-test('DAILY_DIGEST mode drops only the balance-change type from the phone', () => {
-  const digest = phonePushTypes({ balanceChangePushMode: PUSH_MODE_DAILY_DIGEST });
-  assert.equal(digest.includes(BALANCE_CHANGE_TYPE), false);
-  assert.equal(digest.includes('CARD_CHARGEBACK'), true, '拒付必推，与汇总模式无关');
-  assert.equal(digest.length, Object.keys(PHONE_PUSH_TYPES).length - 1);
+test('phonePushTypes 返回全部白名单类型（D-275 ④：不再有 DAILY_DIGEST 摘除分支）', () => {
+  assert.equal(phonePushTypes().length, Object.keys(PHONE_PUSH_TYPES).length);
+  assert.equal(phonePushTypes().includes('PROVIDER_BALANCE_CHANGED'), true, '余额变化恢复为每笔必推');
 });
 
 function recordingPool(settingValue = null) {
@@ -99,17 +97,19 @@ test('claimNext refuses rows whose type left the whitelist', async () => {
   assert.equal(claim.params[0].includes('BROWSER_ORDER_SUBMITTED'), true);
 });
 
-test('enqueue honours DAILY_DIGEST stored in app_settings', async () => {
-  const pool = recordingPool(PUSH_MODE_DAILY_DIGEST);
+test('enqueue 不再读 provider_balance_change_push_mode 设置，直接用白名单（D-275 ④）', async () => {
+  const pool = recordingPool();
   await createAlertNotificationRepository(pool).enqueueOpenAlerts();
+  const settingReads = pool.calls.filter((call) => /provider_balance_change_push_mode/.test(call.sql));
+  assert.equal(settingReads.length, 0);
   const insert = pool.calls.find((call) => /INSERT IGNORE INTO alert_notifications/.test(call.sql));
-  assert.equal(insert.params[0].includes(BALANCE_CHANGE_TYPE), false);
+  assert.equal(insert.params[0].includes('PROVIDER_BALANCE_CHANGED'), true, '余额变化在白名单里、照推');
 });
 
-test('缝 d: 今天叫了几次 counts sent_at, not opened alerts', async () => {
+test('countAlertInstancesByType（F-55 改名）：统计告警实例、按 sent_at，不承诺发送次数', async () => {
   const pool = recordingPool();
   await createAlertNotificationRepository(pool)
-    .countPushesByType({ sinceUtc: '2026-09-18 00:00:00', untilUtc: '2026-09-19 00:00:00' });
+    .countAlertInstancesByType({ sinceUtc: '2026-09-18 00:00:00', untilUtc: '2026-09-19 00:00:00' });
   const query = pool.calls.find((call) => /GROUP BY a\.alert_type/.test(call.sql));
   assert.match(query.sql, /n\.sent_at IS NOT NULL/);
   assert.match(query.sql, /n\.sent_at >= \? AND n\.sent_at < \?/);

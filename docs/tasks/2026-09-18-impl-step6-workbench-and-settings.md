@@ -5,9 +5,7 @@
 > 本任务书写于 2026-09-18 08:xx UTC；**里面的数字是当时现场，动手前当场重查**。
 > **本块不碰 browser-mvp**（D-254：②⑤⑥⑧不碰）。
 
-> **D-275 修订（2026-09-18，第⑤块收窄后）**：本任务书写于 ⑤ 收尾，以下三处按 D-275 改，以本段为准：
-> ① 看板六问里「今天叫了几次」**拿掉**（数据模型撑不住精确次数）；② 设置页**没有** `provider_balance_change_push_mode`（EACH/DAILY_DIGEST 已删）；③ 队列/看板读 `GET /api/v1/admin/reconciliation/daily` 时，`persistent` 只由正式批次给出、金额类只有「无法核对 / 无主扣款」两种，**「待登记」不再是一栏**——手动用卡的登记入口 = 给卡标 RETIRED + 原因（`card_operational_overrides`，已有端点），本块把它放进工作台「卡片」区，不新建表、不收「客户/套餐/金额」字段。
-> ⑤b 完成前不要开工；⑤b 收尾会再核一遍本段。
+> **D-275 收窄（2026-09-18，⑤b 已落实）已并入下方正文**，不再单列覆盖段。要点：看板「今天叫了几次」拿掉（`alert_notifications` 行会被复活覆盖、撑不住精确发送次数，F-55）；设置页无 `provider_balance_change_push_mode`（`DAILY_DIGEST` 空开关已删，F-52）；`GET /api/v1/admin/reconciliation/daily` 的 `persistent` 只由正式批次给出，差异只有「无主扣款 / 有基准时的真差异」，金额多数落「无法核对」；「待登记」只剩已登记 `manual-used` 的卡（现只 3336），手动用卡登记入口 = 标 RETIRED + 原因（不新建表、不收客户/套餐/金额字段）。
 
 
 ## 为什么是这一步
@@ -21,12 +19,12 @@ D-250 原话：**工作台要用起来舒服、交互好，V1 太差。**
 **A · 工作台（先做，面二/三落实要用）**
 - 三开关（接单 / 派单 / 付款）+ 两个卡台选择（按路线，带面一四项校验，拒切要显示逐项原因）+ CDK 生成。
 - **「需要我处理」队列**：契约表三的 A 项 + 第⑤块日对账的**连续两次**差异 + 第④块待销到期 + token/卡台故障。**不新建表**（缝 c），端点聚合各来源。每条带对应按钮——按钮从诊断页搬过来，不是重写（缝 j：人工收口两按钮搬进队列且必须写账本）。
-- 今日订单七列 + 面四看板六问（今日单数/成功率/**自动完成率** · 花了多少钱（按台）· 卡用了几张剩几张（按台按产品）· 两路线各自耗时 · 异常支出 · **今天叫了几次为什么** · 卡台状态）。「今天叫了几次」用第⑤块已经写好的 `countPushesByType`（按 `alert_notifications.sent_at`，缝 d），别另拼。
-- 日对账看板读 `GET /api/v1/admin/reconciliation/daily`（第⑤块已上）。**注意它有三组「不是差异」的东西**（待登记 / 开卡金额立不起来 / 终态卡与账本占位），页面要能分开显示，别混成一个数字。
+- 今日订单七列 + 面四看板（今日单数/成功率/**自动完成率** · 花了多少钱（按台）· 卡用了几张剩几张（按台按产品）· 两路线各自耗时 · 异常支出 · 卡台状态）。**「今天叫了几次」这一问 D-275 ⑤ 拿掉了**——`alert_notifications` 行会被复活覆盖，撑不住精确发送次数（F-55）。真要展示告警活跃度，用 `countAlertInstancesByType`（改名后的函数），并写明它数的是「告警实例数」不是发送次数。
+- 日对账看板读 `GET /api/v1/admin/reconciliation/daily`（第⑤块已上，⑤b 收窄）。**差异只有两类**：`UNEXPLAINED_CHARGE`（无主扣款）+ 有可验证基准时的真差异。**不是差异、要分开显示的**：`pendingRegistration`（已登记手动用卡）、金额 `UNVERIFIABLE`（无可信期初金额、只对次数）、`AWAITING_RESOLUTION`（账本占位）。别混成一个数字。
 
 **B · 设置页**
 - 按台 × 按产品一张表：水位 / 开卡金额 / 每卡单数 / 最低余额 / 每日开卡上限 / 钱包底线与告警线。
-- 全局：推送汇总（第⑤块的 `provider_balance_change_push_mode`，EACH / DAILY_DIGEST）· Session 门槛 · 账单地址。
+- 全局：Session 门槛 · 账单地址。（**推送汇总开关 D-275 ④ 已删**：`provider_balance_change_push_mode` / `DAILY_DIGEST` 是个只关不推的空开关，F-52；余额变化恢复为每笔必推。）
 - **每项带审计**（写 `admin_setting_events`）。
 
 **C · UI/交互**
@@ -37,7 +35,7 @@ D-250 原话：**工作台要用起来舒服、交互好，V1 太差。**
 1. 后台「库存阈值」控件（`card_stock_low_threshold` / `setThreshold`）**已不驱动任何告警**；`card_replenishment_daily_limit` 全局日限被策略表按台日限取代，但设置服务与总览仍读它 → 设置页重做时清掉（第③步发现 2）。
 2. 后台无「付款前失败、放弃并放卡」动作，现在只能跑 `close-rehearsal-order.mjs` → 契约表三 #3 的按钮（第③步发现 8）。
 3. **建演练单没有正式脚本**（第④步 D-270 ②：上次用底层 `storeCdkBatch` 造码漏了 `cdk_batches` 行）→ 要不要做成带批次的正式运维工具。
-3b. **运营手动用卡登记入口**（哪张卡 / 哪个客户 / 什么套餐 / 多少钱）——**Lemon 2026-09-18 已定要做，归本块**（D-272 ③）。第⑤块的日对账已经把这类扣款单列「待登记」栏（生产现有 7 张），入口上线后回填，那一栏才会清空。
+3b. **运营手动用卡登记入口 = 给卡标 RETIRED + 原因**（`card_operational_overrides`，已有端点 `POST /api/v1/admin/card-retirement/confirm`，`note` 带 `manual-used` 标识）——**Lemon 已定要做，归本块**（D-272 ③ / D-275 ⑦）。**不新建表、不收客户/套餐/金额字段**。⑤b 后日对账已按此判：已登记 `manual-used` 的归 `pendingRegistration`（生产现只剩 3336），没登记的那类扣款报 `UNEXPLAINED_CHARGE` 无主扣款差异（生产现 6 张：8590/0237/0601/5371/5501/7402）；入口上线让运营自助登记，把无主扣款里真属手动用卡的收掉。RUNBOOK §2.7 有手动命令，本块把它搬进工作台「卡片」区。
 4. **`pojia-bark-notifications` 在生产是哑的**：整个 boot 内 journal 一条日志都没有（Node 非 TTY 下 stdout 块缓冲）。推送出问题无从查 → 运维工具那一档（第⑤步发现 1）。
 5. **`ORDER_WAITING_FOR_CARD` 两处产生点共用同一 dedupe_key**（`workflow-repository:480` critical「开不出卡」vs `card-stock-job-service:354` warning「会继续尝试」），同一行被互相覆盖 severity，白名单只能按类型收、两种语义一起推 → 要不要拆成两个告警类型（第⑤步发现 2）。
 6. **ZZSHU 零原因失败「停单不退码」仍未做**（契约表三 #11，现状仍是判失败退码）→ 与队列一起做。
@@ -53,7 +51,7 @@ D-250 原话：**工作台要用起来舒服、交互好，V1 太差。**
 
 - 工作台一屏加载；队列每条按钮可点、点完状态真的变了（不是只刷新页面）；四项校验拒切能显示逐项原因。
 - 「需要我处理」队列的每个来源都有一条真实数据能显示出来（没有真数据的用隔离库造）。
-- 看板六项每项能点进明细，只读复验与底表一致；「今天叫了几次」与 `alert_notifications` 实查数一致。
+- 看板每项能点进明细，只读复验与底表一致。
 - 设置页每项改动都能在 `admin_setting_events` 里查到对应审计行。
 - UI 方案 ≥2 版 + Lemon 试用反馈记录。
 - `state-check.sh` 一致；`wrapup-check.sh` 全绿。
@@ -73,4 +71,4 @@ D-250 原话：**工作台要用起来舒服、交互好，V1 太差。**
 
 ## 涉及文件（起点，不是全集）
 
-`v1/public/admin/admin.js` · `v1/src/services/admin-read-service.js` · `v1/src/services/admin-operations-service.js` · `v1/src/app/create-app.js` · `v1/src/services/daily-reconciliation-service.js`（只读）· `v1/src/db/repositories/alert-notification-repository.js`（`countPushesByType`）· `docs/design/`
+`v1/public/admin/admin.js` · `v1/src/services/admin-read-service.js` · `v1/src/services/admin-operations-service.js` · `v1/src/app/create-app.js` · `v1/src/services/daily-reconciliation-service.js`（只读）· `v1/src/db/repositories/alert-notification-repository.js`（`countAlertInstancesByType`）· `docs/design/`

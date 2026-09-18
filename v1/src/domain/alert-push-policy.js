@@ -45,7 +45,7 @@ export const PHONE_PUSH_TYPES = Object.freeze({
 
   // —— 资金 ——
   CARD_CHARGEBACK: PushCategory.MONEY,              // 拒付必推（D-249；本块新产生点）
-  PROVIDER_BALANCE_CHANGED: PushCategory.MONEY,     // 余额每笔变化；可切每日汇总，见 balanceChangePushMode
+  PROVIDER_BALANCE_CHANGED: PushCategory.MONEY,     // 余额每笔变化必推（D-275 ④：撤掉未实现的每日汇总开关）
   ORDER_CANCELLATION_UNCONFIRMED: PushCategory.MONEY, // 缝 g：取消续费没确认 = 下个周期还会扣
   DAILY_RECONCILIATION_SUMMARY: PushCategory.MONEY, // 每日一条对账汇总（面四③；含待销到期数，D-272）
 
@@ -66,25 +66,19 @@ export const NON_PUSH_REASONS = Object.freeze({
   BARK_RECOVERY_TEST: '通道自检'
 });
 
-export const BALANCE_CHANGE_PUSH_MODE_SETTING = 'provider_balance_change_push_mode';
-export const BALANCE_CHANGE_TYPE = 'PROVIDER_BALANCE_CHANGED';
-export const PUSH_MODE_EACH = 'EACH';
-export const PUSH_MODE_DAILY_DIGEST = 'DAILY_DIGEST';
-
 /**
- * 当前该推的类型清单。`balanceChangePushMode=DAILY_DIGEST` 时把余额变化从即时推送里摘掉——
- * 它仍然写 operator_alerts、仍然进每日汇总，只是不再每笔响手机（D-249「可设每日汇总」）。
+ * 当前该推的类型清单——白名单四类，谁在里面谁响手机，`alert-push-policy` 一处说了算。
+ *
+ * D-275 ④：**撤掉 `DAILY_DIGEST` 余额汇总选项**。它当初只实现了「把余额变化从即时推送里摘掉」
+ * 的前半条，却没有任何替代的「每日汇总发送者」——设了这个开关，余额变化就只是从此不再响，
+ * 没有别的通知补上（F-52）。未实现的功能不给开关。余额变化恢复为每笔必推。
  */
-export function phonePushTypes({ balanceChangePushMode = PUSH_MODE_EACH } = {}) {
-  const types = Object.keys(PHONE_PUSH_TYPES);
-  if (String(balanceChangePushMode).toUpperCase() === PUSH_MODE_DAILY_DIGEST) {
-    return types.filter((type) => type !== BALANCE_CHANGE_TYPE);
-  }
-  return types;
+export function phonePushTypes() {
+  return Object.keys(PHONE_PUSH_TYPES);
 }
 
-export function shouldPushToPhone(alertType, options = {}) {
-  return phonePushTypes(options).includes(String(alertType));
+export function shouldPushToPhone(alertType) {
+  return phonePushTypes().includes(String(alertType));
 }
 
 export function pushCategoryOf(alertType) {
