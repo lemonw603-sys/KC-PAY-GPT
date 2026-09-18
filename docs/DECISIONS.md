@@ -3948,3 +3948,12 @@ Lemon 看过 dry-run 清单后确认 `--apply`：`REVIEW_REQUIRED AND opened_cou
 ## D-262（2026-09-18 00:27 UTC）第③步 D：hnskj 真开一张，T2 第一个真实样本 $0.75
 
 Lemon 逐项看过预检（钱包 $89.48、卡段 23 未维护、$50、预估总扣 $50.75、扣完 ≥ 底线 30）后说「开」。走人工 job（不经调度器，总闸仍 false）+ 手动 `systemctl start pojia-card-stock-runner.service`：开出 5622（尾 6754，$50，AVAILABLE），钱包 89.48 → 38.73，`CARD_ISSUE_FEE` 行 `LOCAL_ISSUE_FEE_5622` = **$0.75**（差 50.75 − 50；与卡台报价 0.5 + 0.5% 吻合，但记的是余额差观察，D-255 选 B 至此有真实样本）。highvcc 那张 Lemon 定先不开（钱包 $23.65 < 20 + 50 + 手续费，且要在时段内贴 token）。
+
+## D-263（2026-09-18 00:50 UTC）第③步 C：供卡调度上线，首轮就按设计拒开并叫人
+
+**放行前 Lemon 先问了一个问题**（见 D-259）：水位判「缺几张」用什么口径。答清并改完（库存口径）他才放行。
+**做了三步**：①`deploy/server/pojia-card-stock-runner.{service,timer}` 同步到生产并 `enable --now`（60s 一轮）；②`set-supply-scheduler-flag.mjs on --apply` 只打开 `card_auto_replenishment_enabled`（**新脚本**：后台那个按钮会把补余额开关一起开，而补余额整条线定要删，所以不能用它）；③连跑两轮看行为。
+**首轮（总闸仍关）**：`reason=DISABLED`，六行决策 = hnskj plus 2/2、pro_5x 2/0、pro_20x 0/0；103 plus 1/2（low）、pro_5x 1/0、pro_20x 0/0。只刷告警不开卡。
+**总闸打开后那轮**：`reason=WALLET_BELOW_FLOOR`，**没建任何 job**（`card_stock_jobs` 自 00:50 起 0 行）。调度器真去读了 highvcc 钱包（$23.65，新快照 00:50:59 写入，token 当时有效），算出 `23.65 − 50 − 6（保守估手续费）= -32.35 < 底线 20` → 不开、推两条告警（`CARD_SUPPLY_WALLET_LOW` critical + `PROVIDER_WALLET_LOW` warning）。两台 `supply_fault_state` 仍 OK——**钱不够不是卡台故障**，没误标、没误转台。
+**Lemon 侧的后续**：充到 ≥ $76 并在时段内贴 token 后，下一轮调度器自己开那张，不用叫人。
+**hnskj 那边不动**：plus 2/2 不缺（0577 + 00:27 新开的 5622），不会开卡。
