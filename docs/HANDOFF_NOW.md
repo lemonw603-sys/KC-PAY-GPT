@@ -13,7 +13,7 @@
 
 ## 证据从哪里看
 
-1. `docs/V2.0_EXECUTION.md` **§6 第④步那节**：五项前置核查、A/B/C 逐块证据、与任务书不同的 5 处、范围外发现 6 条、待 Lemon 定 5 件。
+1. `docs/V2.0_EXECUTION.md` **§6 第④步那节**：五项前置核查、A/B/C 逐块证据、与任务书不同的 5 处、范围外发现 9 条、执行段（发布 / apply / rehearsal，D-269 那 5 件已全定并做完）。
 2. `docs/DECISIONS.md` **D-267 / D-268**。
 3. 三张契约表：`docs/contracts/2026-09-18_{delivery-criteria,payment-unknown-reconciliation,human-intervention-points}-contract.md`。
 4. `docs/RUNBOOK.md` **§2.6**：待销清单怎么看/登记、API 付款不明怎么收口、按需同步怎么看。
