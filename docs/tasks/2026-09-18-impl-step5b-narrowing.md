@@ -11,6 +11,8 @@
 5. **拿掉未实现/撑不住的**（F-52/F-55/F-54）：删 `DAILY_DIGEST` 设置项与策略分支；删 `countPushesByType` 或改名 `countAlertInstancesByType` 并在注释写明不是发送次数；日报 dedupe 按「当前活动异常」而非按天堆积，昨天的 OPEN 在今天无差异时 RESOLVE。
 6. **手动用卡登记 = 标 RETIRED**：确认 `card_operational_overrides.set(RETIRED, reason)` 端点可用即可，不新建；把这条写进 RUNBOOK「运营手动用卡后必须做的一步」。第⑥块负责把它放进工作台。
 
+7. **拒付类型名去猜测**（D-277）：`card-transaction-audit.js` 的 `CHARGEBACK_TYPES` 只留生产见过的 `chargeback`（及 `chargeback_fee`），删 `CHARGE_BACK` / `DISPUTE`；highvcc 侧不做，注释写「等首个真实样本」。
+
 ## 验收
 - 每条 Codex 附录 A 的反例改成单测：一单两笔扣款 / 消费后导入 / 负余额 / 首跑后立即 GET / 同步失败跨日 / 异常次日恢复。
 - 生产只读 dry-run：差异只剩 `UNEXPLAINED_CHARGE`（若有）与 `UNVERIFIABLE`，逐条有解释；1657/3159 应落 `UNVERIFIABLE`。
