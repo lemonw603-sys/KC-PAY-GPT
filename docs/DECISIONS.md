@@ -4006,3 +4006,20 @@ Lemon 逐项看过预检（钱包 $89.48、卡段 23 未维护、$50、预估总
 3. **Browser 核实窗口放长**：批。`run-live-pool.sh` 环境加 `BROWSER_PAYMENT_VERIFICATION_WINDOW_MS=1800000`，常驻 worker 重启前问。
 4. 发布 / apply / rehearsal：可以，每步先问。
 5. **发现的处置**（Lemon「按你建议的来」）：scheduler 60 分钟桶 → 第⑤块；reader 对 hnskj 卡时区偏 8 小时 → 第⑦块（碰 browser-mvp 的块）；`recovery.js` 死代码 → 第⑧步清理；`card_sync_jobs` 307 条历史 REVIEW_REQUIRED → 像 965 条一样归档（dry-run 后问）；ZZSHU 零原因失败停单 → 第⑤/⑥块。
+
+## D-270（2026-09-18 06:5x～07:0x UTC）第④步 rehearsal：**报价段首次跑通**（D-264 遗留补上）；三个顺手坐实的缺口
+
+**流程**（Lemon「全部」授权，逐步贴证据）：切路线 API→BROWSER（四项校验全过，事件 6df4d9f2）→ `stop-live.sh` 停常驻池 74272 + 关付款开关 → 正式 intake 建演练单 `PJV1-8DB4vPHrXotbcNBJHETH`（Lemon 给的 free 号新鲜 Session，10 天有效）→ 关接单 → `run-live-rehearsal.sh once` → 收口 → 切回 API（四项校验全过）→ 开回接单与付款开关 → supervisor 07:06:55 拉起新池 PID 67131。
+
+**结果：`PRE_SUBMIT_STOPPED / BROWSER_REHEARSAL_STOPPED`，报价 PHP 982.14、税 0.00。** 这是 D-264 两次演练都没走到的那一段（一次 Session 复用失败、一次撞免费试用 offer 页），**第④步补上了**：整条生产 Browser 路径（Session 注入 → 身份探测 → 页面签名 → 报价弹窗 → Checkout → 卡料/地址/邮箱 → 零税重新报价 → 最终复核）在本块 browser-mvp 改动之后仍然走得通，按设计停在付款点击前。付款提交 0 次、卡余额未动、账号槽 0。
+
+**顺手坐实并处理的三个缺口**：
+1. **收口脚本守卫认不出新形态**（已扩）：D-264 那两次是 worker fail-closed 直接退出（attempt 还挂着 run RUNNING/NOT_STARTED、租约过期）；这次 worker 自己走完付款前中止，把当时那条 attempt 收成 CLEARED/CLEARED、run 置 FAILED_SAFE/PRE_PAYMENT_ABORT，**并按设计重置 SUBMIT_RECHARGE，于是又建了一条新的 PREPARED/ACTIVE attempt 和一个 QUEUED 派单**。守卫原来写死「只有一条 attempt、run 必须 RUNNING」，直接拒。改判据为「恰好一条还活着的 attempt、其余都已 CLEARED/CLEARED、任何 run 都没有付款痕迹、活着那条要么没 run 要么 run 还 RUNNING 且租约过期」。**这个形态若不收口，开回付款开关后池会真的去付这一单**。
+2. **我建演练 CDK 时用了底层函数、漏了批次行**（我的失误）：`storeCdkBatch` 只写 `cdks`，正式路径 `createAdminCdkService` 还写 `cdk_batches`。退回 CDK 要写 `cdk_delivery_events`，它有外键指向 `cdk_batches` → 收口在最后一步失败。加 `--skip-cdk-return`（只给运维自己生成的一次性演练码用，注释写明客户码一律不能用它），那张码停在 REDEEMED + 订单 CLOSED = 死码。
+3. **supervisor 的「残留 worker」判据被我自己触发**（第③步发现 12 原样重演）：我用 `until pgrep -f "production-live-pool-worker"` 等池拉起，这条命令行本身含那串，supervisor 判定有残留、拒绝拉起，卡了 5 分钟。停掉循环后 07:06:55 正常拉起。判据本身要不要改，仍按第③步结论「记着，不立项」。
+
+**新池已带 D-269 ③ 的 30 分钟核实窗口**（`ps eww` 实测 `BROWSER_PAYMENT_VERIFICATION_WINDOW_MS=1800000`）。
+
+**演练走不到付款后，所以 D-269 ② 新接的「备用卡台侧扣款」真证据路径没被执行**。补了一次**生产真实流水的只读验证**（不写任何东西）：① 1657 窗口内 Plus 扣款（15.70 USD / 982.14 PHP）→ 唯一匹配；② 同卡提交时间挪到两天后 → 不匹配；③ 3336 上 Lemon 手动付的那笔 20X（142.54 USD / 8919.64 PHP）→ 不匹配。三例全符合预期，证明 `card_transactions` 这一路在真实数据上判得对。**仍未验的是「真单付款后由 worker 自动调用这条路径」。**
+
+**新发现（只报未改）**：`plausiblePlusAmount` 只认 USD 14~22 / PHP 900~1200，**Pro 单的扣款一律判成不匹配** → 将来 Pro 走 Browser 时补核永远定不了、每单叫人。归第⑦块（Pro 同型）一并改成按订单套餐取价位区间。

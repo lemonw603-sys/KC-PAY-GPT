@@ -4,7 +4,12 @@
 // CARD_READY order whose SUBMIT_RECHARGE already ran once (the admin path refuses those
 // as SUBMISSION_RISK even though the rehearsal provably never clicked payment).
 //
-//   node scripts/close-rehearsal-order.mjs <public-no> [--dry-run] [--reason "..."]
+//   node scripts/close-rehearsal-order.mjs <public-no> [--dry-run] [--reason "..."] [--skip-cdk-return]
+//
+// --skip-cdk-return：只用于运维自己为演练生成的一次性码。退回会写 cdk_delivery_events，
+// 它有外键指向 cdk_batches；用底层 storeCdkBatch 造的码没有批次行，退回会直接失败。
+// 跳过后这张码停在 REDEEMED 且订单 CLOSED，等于死码，不会被任何人再兑换。**客户的码一律不要用它**，
+// 客户码必须退回成 AVAILABLE 才能重兑。
 //   Needs DATABASE_URL (run on the production host with /etc/pojia/runtime.env sourced,
 //   or through the 13306 tunnel). Refuses when ANY payment evidence exists.
 import mysql from 'mysql2/promise';
@@ -19,6 +24,7 @@ const { transitionCardConsumptionInTransaction } = await import(join(HERE, '../s
 const [publicNo, ...rest] = process.argv.slice(2);
 if (!publicNo) { console.error('usage: close-rehearsal-order <public-no> [--dry-run] [--reason "..."]'); process.exit(2); }
 const dryRun = rest.includes('--dry-run');
+const skipCdkReturn = rest.includes('--skip-cdk-return');
 const reasonIndex = rest.indexOf('--reason');
 const reason = reasonIndex >= 0 ? String(rest[reasonIndex + 1] || '').trim() : 'rehearsal finished; closed before any payment to release the card';
 if (!process.env.DATABASE_URL) { console.error('DATABASE_URL is required'); process.exit(2); }
@@ -49,17 +55,36 @@ try {
       `SELECT br.id, br.status, br.payment_state, br.last_checkpoint_kind, br.worker_lease_until, br.recharge_attempt_id
          FROM browser_runs br INNER JOIN recharge_attempts ra ON ra.id = br.recharge_attempt_id
         WHERE ra.order_id = ? FOR UPDATE`, [order.id]);
-    const attempt = attempts[0];
-    const run = runs[0];
+    // 演练残单有两种形态，都是「一条还占着卡的 PREPARED/ACTIVE attempt，且全程没碰过付款」：
+    //   a) worker fail-closed 直接退出（第③步两次）：那条 attempt 还挂着 run RUNNING/NOT_STARTED、租约已过期。
+    //   b) worker 自己走完付款前中止（第④步这次，走到报价段才停）：它已把当时那条 attempt 收成
+    //      CLEARED/CLEARED、run 置 FAILED_SAFE/PRE_PAYMENT_ABORT，并按设计重置了 SUBMIT_RECHARGE，
+    //      于是 worker 又建了一条新的 PREPARED/ACTIVE attempt 和一个 QUEUED 派单在等池来跑。
+    // 所以判据不是「只有一条 attempt」，而是「恰好一条还活着的 attempt、其余都已清、没有任何付款痕迹」。
+    const pending = attempts.filter((row) => row.status === 'PREPARED' && row.funds_risk_state === 'ACTIVE');
+    const settled = attempts.filter((row) => !(row.status === 'PREPARED' && row.funds_risk_state === 'ACTIVE'));
+    const attempt = pending[0];
+    const run = attempt ? runs.find((row) => row.recharge_attempt_id === attempt.id) || null : null;
+    const otherRuns = runs.filter((row) => row.id !== run?.id);
     const shape = {
-      attempts: attempts.length, attemptStatus: attempt?.status, fundsRiskState: attempt?.funds_risk_state, executorKind: attempt?.executor_kind,
-      runs: runs.length, runStatus: run?.status, paymentState: run?.payment_state, lastCheckpoint: run?.last_checkpoint_kind,
-      leaseUntil: run?.worker_lease_until, leaseExpired: run?.worker_lease_until ? new Date(run.worker_lease_until).getTime() < Date.now() : null,
+      attempts: attempts.length, pendingAttempts: pending.length,
+      settledAttempts: settled.map((row) => `${row.status}/${row.funds_risk_state}`),
+      attemptStatus: attempt?.status, fundsRiskState: attempt?.funds_risk_state, executorKind: attempt?.executor_kind,
+      runs: runs.length, runStatus: run?.status ?? null, paymentState: run?.payment_state ?? null,
+      lastCheckpoint: run?.last_checkpoint_kind ?? null,
+      otherRunStates: otherRuns.map((row) => `${row.status}/${row.payment_state}/${row.last_checkpoint_kind || '-'}`),
+      leaseUntil: run?.worker_lease_until ?? null,
+      leaseExpired: run?.worker_lease_until ? new Date(run.worker_lease_until).getTime() < Date.now() : null,
     };
-    const ok = attempts.length === 1 && attempt.executor_kind === 'BROWSER' && attempt.status === 'PREPARED' && attempt.funds_risk_state === 'ACTIVE'
-      && runs.length === 1 && run.status === 'RUNNING' && run.payment_state === 'NOT_STARTED'
-      && !String(run.last_checkpoint_kind || '').toUpperCase().startsWith('PAYMENT')
-      && shape.leaseExpired === true;
+    const noPaymentTrace = (row) => String(row.payment_state) === 'NOT_STARTED'
+      && !String(row.last_checkpoint_kind || '').toUpperCase().startsWith('PAYMENT');
+    const ok = pending.length === 1 && attempt.executor_kind === 'BROWSER'
+      // 已清掉的 attempt 只能是 CLEARED/CLEARED：FAILED/UNKNOWN/SETTLED 都意味着动过钱。
+      && settled.every((row) => row.status === 'CLEARED' && row.funds_risk_state === 'CLEARED')
+      // 任何 run 都不许有付款痕迹，包括已经终态的那些。
+      && runs.every(noPaymentTrace)
+      // 还活着的那条 attempt 要么没有 run（形态 b），要么 run 还在 RUNNING 且租约已过期（形态 a）。
+      && (run === null || (run.status === 'RUNNING' && shape.leaseExpired === true));
     if (!ok) throw new Error(`not a pre-payment rehearsal leftover, refusing: ${JSON.stringify(shape)}`);
     preSubmitRun = { run, attempt, shape };
   }
@@ -76,28 +101,31 @@ try {
        (SELECT COUNT(*) FROM browser_runs br INNER JOIN recharge_attempts bra ON bra.id = br.recharge_attempt_id
           WHERE bra.order_id = o.id AND br.active_account_key_hmac IS NOT NULL) - ? AS unexpected_open_runs,
        o.recharge_order_no, o.recharge_card_key
-     FROM orders o WHERE o.id = ?`, [preSubmitRun ? 1 : 0, preSubmitRun ? 1 : 0, order.id]);
+     FROM orders o WHERE o.id = ?`, [preSubmitRun ? 1 : 0, preSubmitRun?.run ? 1 : 0, order.id]);
   const blockers = Object.entries(evidence).filter(([key, value]) => (typeof value === 'number' ? value > 0 : Boolean(value)));
   if (blockers.length) throw new Error(`payment evidence present, refusing: ${JSON.stringify(Object.fromEntries(blockers))}`);
 
   let runCloseout = null;
   if (preSubmitRun) {
     const now = new Date();
-    const [runUpdate] = await connection.query(
-      `UPDATE browser_runs
-          SET status = 'FAILED_SAFE', control_state = 'RELEASED', last_checkpoint_kind = 'PRE_PAYMENT_ABORT',
-              last_error_code = 'REHEARSAL_CLOSED', worker_lease_until = NULL,
-              finished_at = ?, updated_at = ?
-        WHERE id = ? AND status = 'RUNNING' AND payment_state = 'NOT_STARTED'`,
-      [now, now, preSubmitRun.run.id]);
-    if (Number(runUpdate.affectedRows) !== 1) throw new Error('browser run changed concurrently');
+    // 形态 b 的 run 已经是 FAILED_SAFE 终态（worker 自己收的），没有 run 要关。
+    if (preSubmitRun.run) {
+      const [runUpdate] = await connection.query(
+        `UPDATE browser_runs
+            SET status = 'FAILED_SAFE', control_state = 'RELEASED', last_checkpoint_kind = 'PRE_PAYMENT_ABORT',
+                last_error_code = 'REHEARSAL_CLOSED', worker_lease_until = NULL,
+                finished_at = ?, updated_at = ?
+          WHERE id = ? AND status = 'RUNNING' AND payment_state = 'NOT_STARTED'`,
+        [now, now, preSubmitRun.run.id]);
+      if (Number(runUpdate.affectedRows) !== 1) throw new Error('browser run changed concurrently');
+    }
     const [attemptUpdate] = await connection.query(
       `UPDATE recharge_attempts
           SET status = 'CLEARED', funds_risk_state = 'CLEARED', result_summary_json = ?, finished_at = ?, updated_at = ?
         WHERE id = ? AND executor_kind = 'BROWSER' AND status = 'PREPARED' AND funds_risk_state = 'ACTIVE'`,
-      [JSON.stringify({ code: 'REHEARSAL_CLOSED', browserRunId: preSubmitRun.run.id, noExternalPaymentAction: true }), now, now, preSubmitRun.attempt.id]);
+      [JSON.stringify({ code: 'REHEARSAL_CLOSED', browserRunId: preSubmitRun.run?.id || null, noExternalPaymentAction: true }), now, now, preSubmitRun.attempt.id]);
     if (Number(attemptUpdate.affectedRows) !== 1) throw new Error('funds attempt changed concurrently');
-    runCloseout = { runId: preSubmitRun.run.id, attemptId: preSubmitRun.attempt.id, shape: preSubmitRun.shape };
+    runCloseout = { runId: preSubmitRun.run?.id || null, attemptId: preSubmitRun.attempt.id, shape: preSubmitRun.shape };
   }
   const ledger = await transitionCardConsumptionInTransaction(connection, {
     orderId: order.id, targetStatus: 'RELEASED', reason: `Order closed before payment: ${reason}`,
@@ -120,10 +148,12 @@ try {
     `INSERT INTO order_events (order_id, from_status, to_status, actor_type, actor_id, reason, metadata_json)
      VALUES (?, ?, 'CLOSED', 'ADMIN', 'admin', ?, ?)`,
     [order.id, fromStatus, reason, JSON.stringify({ closeRehearsalOrder: true, evidence, ledger, card, runCloseout })]);
-  const cdk = await returnCdkForOrderInTransaction(connection, {
-    orderId: order.id, reason: `order closed after rehearsal before payment: ${reason}`,
-    actorType: 'ADMIN', actorId: 'admin', metadata: { closeRehearsalOrder: true },
-  });
+  const cdk = skipCdkReturn
+    ? { skipped: true, note: 'one-off rehearsal code kept REDEEMED on purpose (see --skip-cdk-return)' }
+    : await returnCdkForOrderInTransaction(connection, {
+      orderId: order.id, reason: `order closed after rehearsal before payment: ${reason}`,
+      actorType: 'ADMIN', actorId: 'admin', metadata: { closeRehearsalOrder: true },
+    });
   const summary = { publicNo, dryRun, fromStatus, evidence, runCloseout, ledger, card, dispatchJobs: dispatch.affectedRows, cdk };
   if (dryRun) { await connection.rollback(); console.log('DRY RUN (rolled back)', JSON.stringify(summary)); }
   else { await connection.commit(); console.log('CLOSED', JSON.stringify(summary)); }
