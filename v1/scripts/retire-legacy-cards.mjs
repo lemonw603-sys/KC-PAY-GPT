@@ -2,6 +2,7 @@
 //
 //   --batch hnskj-voided                       hnskj 12 张 $0 旧卡（卡台已作废，Lemon 2026-09-17）
 //   --batch highvcc-cancelled --last4 a,b,c    highvcc 从快照消失的卡里、Lemon 勾出的「我注销的」那几张
+//   --batch highvcc-manual-used --last4 3336   highvcc 在台的卡、Lemon 手动（不经系统）用它付过款（D-269：3336 手动付 20X）
 //   默认 dry-run 只列清单；--apply 才写。Needs DATABASE_URL（生产主机 source /etc/pojia/runtime.env）。
 //
 // 写什么：与后台「已销卡」端点同一段代码（card-retirement-service.confirmRetired）——
@@ -19,9 +20,9 @@ const batch = args[args.indexOf('--batch') + 1];
 const last4Arg = args.includes('--last4') ? String(args[args.indexOf('--last4') + 1] || '') : '';
 const last4s = last4Arg.split(',').map((s) => s.trim()).filter(Boolean);
 if (!process.env.DATABASE_URL) { console.error('DATABASE_URL is required'); process.exit(2); }
-if (!['hnskj-voided', 'highvcc-cancelled'].includes(batch)) { console.error('--batch hnskj-voided | highvcc-cancelled'); process.exit(2); }
-if (batch === 'highvcc-cancelled' && (last4s.length === 0 || last4s.some((v) => !/^\d{4}$/.test(v)))) {
-  console.error('--last4 a,b,c (four digits each) is required for highvcc-cancelled'); process.exit(2);
+if (!['hnskj-voided', 'highvcc-cancelled', 'highvcc-manual-used'].includes(batch)) { console.error('--batch hnskj-voided | highvcc-cancelled | highvcc-manual-used'); process.exit(2); }
+if (batch !== 'hnskj-voided' && (last4s.length === 0 || last4s.some((v) => !/^\d{4}$/.test(v)))) {
+  console.error(`--last4 a,b,c (four digits each) is required for ${batch}`); process.exit(2);
 }
 
 const pool = mysql.createPool({ uri: process.env.DATABASE_URL, connectionLimit: 2, timezone: 'Z' });
@@ -35,19 +36,26 @@ try {
               EXISTS (SELECT 1 FROM card_assignment_history h WHERE h.card_id=c.id AND h.status='ACTIVE') AS active_assignment
          FROM cards c WHERE c.provider_account_id = ? AND c.inventory_status = 'FAILED'
           AND COALESCE(c.current_balance, 0) = 0 ORDER BY c.created_at FOR UPDATE`, [HNSKJ])
-    : await connection.query(
-      `SELECT c.id, c.last4, c.provider_card_id, c.inventory_status, c.current_balance, c.created_at, c.source_present,
-              EXISTS (SELECT 1 FROM card_assignment_history h WHERE h.card_id=c.id AND h.status='ACTIVE') AS active_assignment
-         FROM cards c WHERE c.provider_account_id = ? AND c.inventory_status = 'HELD_FOR_REVIEW'
-          AND c.source_present = 0 AND c.last4 IN (${last4s.map(() => '?').join(',')}) ORDER BY c.created_at FOR UPDATE`,
-      [HIGHVCC, ...last4s]);
+    : batch === 'highvcc-cancelled'
+      ? await connection.query(
+        `SELECT c.id, c.last4, c.provider_card_id, c.inventory_status, c.current_balance, c.created_at, c.source_present,
+                EXISTS (SELECT 1 FROM card_assignment_history h WHERE h.card_id=c.id AND h.status='ACTIVE') AS active_assignment
+           FROM cards c WHERE c.provider_account_id = ? AND c.inventory_status = 'HELD_FOR_REVIEW'
+            AND c.source_present = 0 AND c.last4 IN (${last4s.map(() => '?').join(',')}) ORDER BY c.created_at FOR UPDATE`,
+        [HIGHVCC, ...last4s])
+      : await connection.query(
+        `SELECT c.id, c.last4, c.provider_card_id, c.inventory_status, c.current_balance, c.created_at, c.source_present,
+                EXISTS (SELECT 1 FROM card_assignment_history h WHERE h.card_id=c.id AND h.status='ACTIVE') AS active_assignment
+           FROM cards c WHERE c.provider_account_id = ? AND c.inventory_status <> 'RETIRED'
+            AND c.last4 IN (${last4s.map(() => '?').join(',')}) ORDER BY c.created_at FOR UPDATE`,
+        [HIGHVCC, ...last4s]);
   const summary = {
     mode: apply ? 'apply' : 'dry-run', batch,
     candidates: rows.map((r) => ({ last4: r.last4, providerCardId: r.provider_card_id, inventoryStatus: r.inventory_status,
       balance: r.current_balance == null ? null : String(r.current_balance), createdAt: r.created_at,
       activeAssignment: Number(r.active_assignment) === 1 })),
     count: rows.length,
-    ...(batch === 'highvcc-cancelled' ? { requested: last4s, notFound: last4s.filter((v) => !rows.some((r) => r.last4 === v)) } : {})
+    ...(batch !== 'hnskj-voided' ? { requested: last4s, notFound: last4s.filter((v) => !rows.some((r) => r.last4 === v)) } : {})
   };
   if (summary.candidates.some((c) => c.activeAssignment)) throw new Error('a candidate still has an active assignment; stop');
   if (!apply) {
@@ -56,7 +64,9 @@ try {
   } else {
     const reason = batch === 'hnskj-voided'
       ? 'hnskj voided the card on the platform (Lemon 2026-09-17); $0 balance; legacy FAILED batch'
-      : 'Lemon cancelled the card on highvcc; balance returned to wallet (D-247)';
+      : batch === 'highvcc-cancelled'
+        ? 'Lemon cancelled the card on highvcc; balance returned to wallet (D-247/D-269: missing from snapshot = cancelled)'
+        : 'Lemon paid a customer 20X manually with this card outside Browser/API (D-269); balance 145 -> 2.46; retire';
     const results = [];
     for (const row of rows) {
       results.push(await service.confirmRetired({ cardId: row.id, actorId: 'lemon-via-fable', note: reason,
