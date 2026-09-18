@@ -26,7 +26,7 @@
 ## 接下来做什么（顺序）
 
 0. **先做 ⑤b「第⑤块收窄」（D-275，Lemon 认；Codex 审查 F-47～F-55 大部分成立）**：任务书 `docs/tasks/2026-09-18-impl-step5b-narrowing.md`——发 F-47 修复、金额对账降级为「无法核对」、未知扣款分开、连续两次只认正式批次、拿掉 DAILY_DIGEST 与推送次数、手动用卡=标 RETIRED。⑤b 过了再开⑥；⑥暂不接持续差异/叫了几次/汇总三个字段。
-1. **开第⑥步窗口**：任务书已写（`docs/tasks/2026-09-18-impl-step6-workbench-and-settings.md`，工作台 + 设置页，UI 先出 2~3 版给 Lemon 挑）。它带着前五块归过来的 7 条发现。
+1. **开第⑥步窗口**（⑧ 之后的路线见 `PROJECT_MAP.md` §4.1：集成验收 → 运营期观察 → 候选清单由 Lemon 排，D-278）：任务书已写（`docs/tasks/2026-09-18-impl-step6-workbench-and-settings.md`，工作台 + 设置页，UI 先出 2~3 版给 Lemon 挑）。它带着前五块归过来的 7 条发现。
 2. **明天（09-19 04:01 UTC）看一眼日对账第二跑**：1657 / 3159 那两条差异如果还在，会变成 `persistent` 并把汇总升成 critical——那是设计如此（隔离库已端到端验过这条路径），不是新问题。
 3. 真单来时顺手看两件（都还没有样本）：分卡当场同步在 `provider_calls` 留下 `order-demand-sync:` 前缀的两条读；付款后备用卡台真证据路径被 worker 自动调用。
 

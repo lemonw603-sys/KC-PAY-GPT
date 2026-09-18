@@ -4134,3 +4134,7 @@ Lemon 顾虑「其他模型做做就跑偏」；Fable 复核：跑偏根因是�
 ## D-277（2026-09-18）拒付告警保留：hnskj 侧已上线不动；highvcc 侧等第一个真实样本再做；删猜出来的类型名
 
 Lemon 提出若工程量/不稳定激增可删「拒付必推」。Fable 核实：实现挂在现有流水入库上（`card-transaction-repository` → 类型为 chargeback 即告警），无新接口、无新 timer、无新表；hnskj 有 4+4 笔真实样本，规则对着真样本写。复杂感来自 highvcc 侧无样本——按「外部字段先验真响应」本就不该做。**定**：hnskj 侧保留；highvcc 侧记「等首个真实拒付样本」、不算未完成；`card-transaction-audit.js:78` 猜出来的 `CHARGE_BACK` / `DISPUTE` 由 ⑤b 删掉，只留见过的 `chargeback`。
+
+## D-278（2026-09-18）八步之后做什么：集成验收 DoD、运营期观察、候选清单、已定不做
+
+Lemon 问「⑥⑦⑧做完后模型知道该做什么吗」。账本只写到⑧。**定**：⑧后唯一下一步 = D-243 步⑤集成验收（三单：Plus/API、Plus/Browser、20X/Browser，Lemon 在场，对照交付契约表逐项勾）；过后运营期观察两周只看数不改码；之后从候选清单（V2.2 迁云、自动销卡 V3、免费试用号走 API、集成测试环境、各块未定发现、UI 二轮）由 Lemon 排序，每项照旧任务书 + 做/审/裁。已写进 `PROJECT_MAP.md` §4.1。
