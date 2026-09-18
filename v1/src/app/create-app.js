@@ -547,12 +547,12 @@ export function createApp({
   }
   if (typeof setAdminOrderAcceptance === 'function') {
     app.post('/api/v1/admin/operations/order-acceptance', ...adminWriteGuards, async (req, res) => {
-      res.json(await setAdminOrderAcceptance(req.body));
+      res.json(await setAdminOrderAcceptance({ ...(req.body || {}), actorId: req.admin?.id || 'admin' }));
     });
   }
   if (typeof setAdminDispatch === 'function') {
     app.post('/api/v1/admin/operations/recharge-dispatch', ...adminWriteGuards, async (req, res) => {
-      res.json(await setAdminDispatch(req.body));
+      res.json(await setAdminDispatch({ ...(req.body || {}), actorId: req.admin?.id || 'admin' }));
     });
   }
   if (typeof setAdminBrowserPaymentWrites === 'function') {

@@ -21,7 +21,7 @@ function readSetting(rows, key) {
 }
 
 export function createAdminOperationsService({ pool }) {
-  async function updateSetting({ enabled, confirmation, settingKey, expectedConfirmation, invalidStateCode, confirmationCode, confirmationMessage }) {
+  async function updateSetting({ enabled, confirmation, settingKey, expectedConfirmation, invalidStateCode, confirmationCode, confirmationMessage, actorId = 'admin' }) {
     if (typeof enabled !== 'boolean') {
       throw new PublicApiError('Operation state must be boolean', {
         code: invalidStateCode, status: 400
@@ -43,11 +43,23 @@ export function createAdminOperationsService({ pool }) {
       if (rows.length !== 2) {
         throw new Error('Required order operation settings are missing');
       }
+      const previous = readSetting(rows, settingKey);
       await connection.query(
         `UPDATE app_settings SET setting_value = ?, updated_at = CURRENT_TIMESTAMP(3)
          WHERE setting_key = ?`,
         [String(enabled), settingKey]
       );
+      // D-265 第 3 条：接单/派单两个开关以前不留审计行，2026-09-18 演练期间两次开关在
+      // admin_setting_events 里查不到。与付款开关同一张审计表、同一种写法。
+      if (previous !== enabled) {
+        await connection.query(
+          `INSERT INTO admin_setting_events (setting_key, old_value, new_value, actor_id, reason) VALUES (?, ?, ?, ?, ?)`,
+          [settingKey, String(previous), String(enabled), String(actorId || 'admin').slice(0, 128),
+            settingKey === 'accept_new_orders'
+              ? (enabled ? 'operator started accepting new orders' : 'operator stopped accepting new orders')
+              : (enabled ? 'operator enabled automatic recharge dispatch' : 'operator disabled automatic recharge dispatch')]
+        );
+      }
       await connection.commit();
       const acceptNewOrders = settingKey === 'accept_new_orders' ? enabled : readSetting(rows, 'accept_new_orders');
       const dispatchExistingOrders = settingKey === 'dispatch_new_recharges' ? enabled : readSetting(rows, 'dispatch_new_recharges');
@@ -64,6 +76,7 @@ export function createAdminOperationsService({ pool }) {
     return updateSetting({
       enabled: input.enabled,
       confirmation: input.confirmation,
+      actorId: input.actorId,
       settingKey: 'accept_new_orders',
       expectedConfirmation: acceptanceConfirmation,
       invalidStateCode: 'INVALID_ORDER_ACCEPTANCE_STATE',
@@ -76,6 +89,7 @@ export function createAdminOperationsService({ pool }) {
     return updateSetting({
       enabled: input.enabled,
       confirmation: input.confirmation,
+      actorId: input.actorId,
       settingKey: 'dispatch_new_recharges',
       expectedConfirmation: dispatchConfirmation,
       invalidStateCode: 'INVALID_DISPATCH_STATE',

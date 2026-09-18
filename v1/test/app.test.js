@@ -789,7 +789,7 @@ test('changes intake and default recharge method only through authenticated admi
     });
     assert.equal(permit.status, 404);
     assert.deepEqual(received, [
-      ['intake', { enabled: true, confirmation: '开始接单' }],
+      ['intake', { enabled: true, confirmation: '开始接单', actorId: 'admin' }],
       ['method', { method: 'BROWSER', actorId: 'admin', confirmation: '切换默认充值方式为 BROWSER', expectedCurrentMethod: 'API' }]
     ]);
   });

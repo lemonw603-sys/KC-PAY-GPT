@@ -58,3 +58,20 @@ test('order acceptance requires an exact confirmation', async () => {
   );
   assert.equal(fixture.queries.length, 0);
 });
+
+// D-265 第 3 条：接单 / 派单开关必须像付款开关一样留审计行（old → new + actor）。
+test('intake and dispatch switches write one admin_setting_events row per real change, none when unchanged', async () => {
+  const fixture = poolFixture();
+  const service = createAdminOperationsService({ pool: fixture.pool });
+  await service.setOrderAcceptance({ enabled: true, confirmation: '开始接单', actorId: 'lemon' });
+  const audits = fixture.queries.filter(({ sql }) => /INSERT INTO admin_setting_events/.test(sql));
+  assert.equal(audits.length, 1);
+  assert.deepEqual(audits[0].values.slice(0, 4), ['accept_new_orders', 'false', 'true', 'lemon']);
+
+  const same = poolFixture([
+    { setting_key: 'accept_new_orders', setting_value: 'true' },
+    { setting_key: 'dispatch_new_recharges', setting_value: 'true' }
+  ]);
+  await createAdminOperationsService({ pool: same.pool }).setDispatch({ enabled: true, confirmation: '开始自动充值' });
+  assert.equal(same.queries.some(({ sql }) => /INSERT INTO admin_setting_events/.test(sql)), false, '值没变就不记');
+});
