@@ -95,11 +95,21 @@ systemctl is-active pojia-worker.service
 # 直到 09-16 服务器重启才偶然换掉。通知面的每一次改动都要靠这一行才会真的上线。
 systemctl restart pojia-bark-notifications.service
 systemctl is-active pojia-bark-notifications.service
-wpid=$(systemctl show pojia-worker -p MainPID --value)
-bpid=$(systemctl show pojia-bark-notifications -p MainPID --value)
+# 别在 restart 之后立刻取 MainPID：bark 的旧进程要几秒才退干净，那一刻 MainPID 还是 0，
+# `readlink -f /proc//cwd` 会打印 `/`——一个看起来像「没换成功」的假值（2026-09-18 首次发布实见）。
+# 这一行存在的意义就是核对代码有没有真的换掉，打假值比不打更坏。等到有真 PID 再取。
+show_cwd() {
+  local unit=$1 pid=0
+  for _ in $(seq 1 15); do
+    pid=$(systemctl show "$unit" -p MainPID --value)
+    [ "$pid" != "0" ] && [ -e "/proc/$pid/cwd" ] && { readlink -f "/proc/$pid/cwd"; return; }
+    sleep 1
+  done
+  echo "(no MainPID after 15s)"
+}
 echo "current=$(readlink -f /opt/pojia/current)"
-echo "worker cwd=$(readlink -f /proc/${wpid}/cwd)"
-echo "bark cwd=$(readlink -f /proc/${bpid}/cwd)"
+echo "worker cwd=$(show_cwd pojia-worker)"
+echo "bark cwd=$(show_cwd pojia-bark-notifications)"
 # Wait for the port instead of guessing: a single check after `sleep 2` raced the
 # server's own startup and printed a false live=000 during the 2026-09-11 release,
 # which reads exactly like a broken deploy. Give it up to 30s, then report honestly.

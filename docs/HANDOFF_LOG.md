@@ -2541,3 +2541,10 @@ state-check的$MINBAL紧邻中文括号、wrapup-check的$live/$mday紧邻中文
 **留给 Lemon 批的两件**：①发布（switch 会一并重启 bark，改动才生效）；②装 `pojia-daily-reconciliation.timer`。**两件都没做，所以「白名单只推白名单类型」与「timer 有心跳」两条验收现在都不成立**，如实记。
 
 **范围外发现 12 条**全部只报未改，登记在账本 §6 第⑤步的 E 段，其中归第⑥块 7 条、归第⑦块 2 条。
+
+**当窗口追加（08:2x～08:3x UTC，Lemon 当次批准后执行）**：发布 `20260918-step5-740bc1d`（08:29:00 UTC 切换，无迁移，备份 `pojia-20260918T082829Z.sql.gz.enc` OK）+ 装 `pojia-daily-reconciliation.timer`。
+
+- **三个常驻服务全部换到新 release**（新 SSH 连接独立核实）：web 1202546 / worker 1202551 / **bark 1202626**（08:29:05 起，cwd 新 release）。**D-271 的洞到此闭合——bark 第一次跟着发布换代码。**
+- **中途停下来查清两次，都没有拿顺眼的证据继续推演**：① prepare 后复核 grep 出 `PHONE_PUSH_TYPES 0 / PHONE_SILENT_TYPES 1`，看着像新代码没进包 → 查清是我 grep 错了关键词（常量在 `alert-push-policy.js`，repository 引的是小写函数；那一个匹配是「旧的已删」注释），两个文件 SHA256 与本机逐字节一致才继续。② switch 打印 `bark cwd=/` → 新连接独立核实 bark 其实换对了，**是我自己刚加的那行代码的缺陷**：restart 之后立刻取 MainPID，而 bark 旧进程要 4 秒退干净，那一刻 MainPID 还是 0。这行存在的意义就是核对代码换没换，打假值比不打更坏，已改成等到有真 PID 再取（账本发现 13）。
+- **只读复验**：timer `is-enabled=enabled`、下次 09-19 04:01:19 UTC；手动首跑 `Result=success`，心跳 `daily_reconciliation_heartbeat_at=2026-09-18T08:29:39.596Z`；推了一条 `DAILY_RECONCILIATION_SUMMARY`（info）。**08:29 之后 `alert_notifications` 只新增 1 行、来自白名单类型；白名单外 6 种类型同期新增 0 行。**
+- **更正一条自己补的原因**：先前把「bark 整个 boot 内无日志」写成「Node stdout 块缓冲」——发布把它推翻了（同一份 `console.log`，新进程启动日志立刻进 journal）。事实改写成「boot 时起的那个进程启动日志没进 journal、退出日志进了，**原因未确定**」。
