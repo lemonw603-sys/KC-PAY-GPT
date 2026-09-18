@@ -194,15 +194,7 @@ export function createHighvccCardService({
     if (!Number.isInteger(cents)) {
       throw new PublicApiError('highvcc wallet returned no usable usdBalance', { code: 'HIGHVCC_WALLET_UNUSABLE', status: 502 });
     }
-    // 第⑤步（D-272，Lemon 定）：`usdDeposit` 是押金，**不能花**。它含在 usdBalance 里，所以
-    // 「真实可开卡余额」= usdBalance − usdDeposit。这里原样带出，由钱包预检去扣——
-    // 不在这里先减，是为了让快照与卡台页面上的数字仍然对得上。
-    const heldCents = Number(w.usdDepositCents);
-    return {
-      availableBalance: fromCents(cents), currency: 'USD',
-      heldBalance: Number.isInteger(heldCents) ? fromCents(heldCents) : null,
-      raw: w
-    };
+    return { availableBalance: fromCents(cents), currency: 'USD', raw: w };
   }
 
   async function walletStatus() {

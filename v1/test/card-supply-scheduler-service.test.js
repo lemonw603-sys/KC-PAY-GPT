@@ -250,9 +250,8 @@ test('Pro 水位 0：没有等卡单就不开；来了一单就按 $150 开一�
 });
 
 test('walletPreflight / estimateIssueFeeCents are integer-cent arithmetic', () => {
-  // held/spendable 是第⑤步加的押金扣减（D-272）；不报押金的卡台按 0，结论与以前一致。
   assert.deepEqual(walletPreflight({ availableBalance: '89.48', amount: '50', feeCents: 58, floor: '30' }),
-    { ok: true, balance: '89.48', held: '0.00', spendable: '89.48', amount: '50.00', fee: '0.58', floor: '30.00', projected: '38.90' });
+    { ok: true, balance: '89.48', amount: '50.00', fee: '0.58', floor: '30.00', projected: '38.90' });
   assert.equal(walletPreflight({ availableBalance: 'abc', amount: '50', feeCents: 58, floor: '30' }).ok, false);
   assert.deepEqual(estimateIssueFeeCents({ observedCents: null, amountCents: 15000 }), { cents: 1600, source: 'PLAUSIBLE_UPPER_BOUND' });
 });

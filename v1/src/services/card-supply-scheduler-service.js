@@ -158,27 +158,24 @@ export function estimateIssueFeeCents({ observedCents, amountCents }) {
 }
 
 /**
- * 钱包预检：余额 − **押金** − 开卡金额 − 手续费 ≥ 硬底线。全程整数分。
+ * 钱包预检：余额 − 开卡金额 − 手续费 ≥ 硬底线。全程整数分。
  *
- * `heldBalance`（第⑤步，D-272）：卡台账面余额里有一部分是动不了的押金（highvcc 的
- * `usdDeposit`，Lemon 确认不能花）。不扣掉它，预检会以为钱够、开卡时才被卡台拒绝。
- * 卡台不报押金（hnskj）时传 null/undefined，按 0 处理，行为与以前一致。
+ * **硬底线就是卡台要求账户里留着不能动的那笔钱**（`provider_accounts.wallet_floor`：
+ * 备用卡台 A = 20，hnskj = 30）。2026-09-18 我在 D-272 ② 里又按 `usdDeposit` 扣了一遍押金，
+ * 那是重复计算——押金早就由 floor 表达了，扣两遍等于把底线悄悄翻倍（D-273）。
+ * **要调那笔留存，改 `wallet_floor` 这一个地方，不要在公式里再加减项。**
  */
-export function walletPreflight({ availableBalance, amount, feeCents, floor, heldBalance = null }) {
+export function walletPreflight({ availableBalance, amount, feeCents, floor }) {
   const balanceCents = toCents(String(availableBalance));
   const amountCents = toCents(String(amount));
   const floorCents = floor == null ? 0 : toCents(String(floor));
-  const heldCents = heldBalance == null ? 0 : toCents(String(heldBalance));
-  if (balanceCents === null || amountCents === null || floorCents === null
-    || heldCents === null || !Number.isInteger(feeCents)) {
+  if (balanceCents === null || amountCents === null || floorCents === null || !Number.isInteger(feeCents)) {
     return { ok: false, reason: 'UNREADABLE_AMOUNTS' };
   }
-  const spendableCents = balanceCents - heldCents;
-  const projected = spendableCents - amountCents - feeCents;
+  const projected = balanceCents - amountCents - feeCents;
   return {
     ok: projected >= floorCents,
-    balance: fromCents(balanceCents), held: fromCents(heldCents), spendable: fromCents(spendableCents),
-    amount: fromCents(amountCents), fee: fromCents(feeCents),
+    balance: fromCents(balanceCents), amount: fromCents(amountCents), fee: fromCents(feeCents),
     floor: fromCents(floorCents), projected: fromCents(projected)
   };
 }
@@ -337,10 +334,7 @@ export function createCardSupplyScheduler({ pool, adapters, now = () => new Date
     const fee = estimateIssueFeeCents({
       observedCents: await observedIssueFeeCents(pool, { providerAccountId: opener.id }), amountCents
     });
-    const preflight = walletPreflight({
-      availableBalance: wallet.availableBalance, heldBalance: wallet.heldBalance ?? null,
-      amount, feeCents: fee.cents, floor: opener.walletFloor
-    });
+    const preflight = walletPreflight({ availableBalance: wallet.availableBalance, amount, feeCents: fee.cents, floor: opener.walletFloor });
     const alertThreshold = opener.walletAlertThreshold == null ? null : toCents(String(opener.walletAlertThreshold));
     const balanceCents = toCents(String(wallet.availableBalance));
     if (alertThreshold != null && balanceCents != null && balanceCents < alertThreshold) {
@@ -356,9 +350,7 @@ export function createCardSupplyScheduler({ pool, adapters, now = () => new Date
       await upsertSupplyAlert(pool, {
         type: ALERT_TYPES.WALLET_LOW, key: `card-supply-wallet-low:${opener.id}`, severity: 'critical',
         title: '卡台钱包不够开卡',
-        message: `${opener.displayName} 钱包 ${preflight.balance ?? wallet.availableBalance}`
-          + `${preflight.held && preflight.held !== '0.00' ? `（其中押金 ${preflight.held} 不能花，可用 ${preflight.spendable}）` : ''}`
-          + `，开 ${candidate.productCode} 一张要 ${preflight.amount ?? amount} + 手续费约 ${preflight.fee ?? '?'}（${fee.source}），扣完剩 ${preflight.projected ?? '?'}，低于硬底线 ${preflight.floor ?? opener.walletFloor}；未开卡，请充值钱包。`,
+        message: `${opener.displayName} 钱包 ${preflight.balance ?? wallet.availableBalance}，开 ${candidate.productCode} 一张要 ${preflight.amount ?? amount} + 手续费约 ${preflight.fee ?? '?'}（${fee.source}），扣完剩 ${preflight.projected ?? '?'}，低于硬底线 ${preflight.floor ?? opener.walletFloor}；未开卡，请充值钱包。`,
         orderId: candidate.demandOrderId
       });
       return { scheduled: false, reason: 'WALLET_BELOW_FLOOR', opener: opener.id, preflight, fee };

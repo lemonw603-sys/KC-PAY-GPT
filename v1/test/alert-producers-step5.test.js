@@ -114,24 +114,28 @@ test('正常购买流水不会被当成拒付', async () => {
   assert.equal(alertsOf(db, 'CARD_CHARGEBACK').length, 0);
 });
 
-test('钱包预检扣掉押金：41.49 里有 20 押金，开 $50 的卡不该放行', () => {
-  const withHold = walletPreflight({ availableBalance: '41.49', heldBalance: '20.00', amount: '50', feeCents: 50, floor: '20' });
-  assert.equal(withHold.ok, false);
-  assert.equal(withHold.spendable, '21.49');
-  assert.equal(withHold.held, '20.00');
+// 钱包预检：**硬底线（wallet_floor）就是卡台要求留在账户里不能动的那笔钱**。
+// 备用卡台 A = 20，hnskj = 30。D-272 ② 曾在公式里又按 `usdDeposit` 扣一遍「押金」——
+// 押金扣两次，等于把底线悄悄翻成 40，而且那个字段跟押金本来也没关系（D-273 已整套删除）。
+// **要调那笔留存，改 wallet_floor 这一个地方。**
+test('硬底线已经表达了「要留的那笔钱」，公式里不该再有第二个扣减项', () => {
+  const p = walletPreflight({ availableBalance: '100.00', amount: '50', feeCents: 50, floor: '20' });
+  assert.equal(p.ok, true);
+  assert.equal(p.projected, '49.50');
+  assert.equal(p.held, undefined, '公式里不该再有「押金」这一项');
+  assert.equal(p.spendable, undefined);
 });
 
-test('押金为 null（hnskj 不报押金）时行为与以前一致', () => {
-  const before = walletPreflight({ availableBalance: '100.00', amount: '50', feeCents: 50, floor: '20' });
-  assert.equal(before.ok, true);
-  assert.equal(before.held, '0.00');
-  assert.equal(before.projected, '49.50');
-});
-
-test('押金刚好让余额落到底线之下就拒开', () => {
-  const edge = walletPreflight({ availableBalance: '90.50', heldBalance: '20.00', amount: '50', feeCents: 50, floor: '20' });
+test('刚好落到底线上放行、差一分就拒开', () => {
+  const edge = walletPreflight({ availableBalance: '70.50', amount: '50', feeCents: 50, floor: '20' });
   assert.equal(edge.projected, '20.00');
   assert.equal(edge.ok, true);
-  const justBelow = walletPreflight({ availableBalance: '90.49', heldBalance: '20.00', amount: '50', feeCents: 50, floor: '20' });
+  const justBelow = walletPreflight({ availableBalance: '70.49', amount: '50', feeCents: 50, floor: '20' });
   assert.equal(justBelow.ok, false);
+});
+
+test('生产真实钱包数：41.49 开一张 $50 的卡，按硬底线 20 就该拒开', () => {
+  const p = walletPreflight({ availableBalance: '41.49', amount: '50', feeCents: 50, floor: '20' });
+  assert.equal(p.ok, false);
+  assert.equal(p.projected, '-9.01');  // 与生产 06:54 那条告警文案里的数字一致
 });

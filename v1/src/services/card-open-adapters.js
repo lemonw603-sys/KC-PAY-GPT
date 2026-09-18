@@ -89,10 +89,7 @@ export function createHighvccOpenAdapter({ pool, config, service = null }) {
         providerAccountId: account.id, currency: wallet.currency, availableBalance: wallet.availableBalance,
         pendingBalance: null, observedAt, rawPayload: wallet.raw
       });
-      return {
-        availableBalance: wallet.availableBalance, currency: wallet.currency,
-        heldBalance: wallet.heldBalance, purchaseEnabled: true
-      };
+      return { availableBalance: wallet.availableBalance, currency: wallet.currency, purchaseEnabled: true };
     },
     preflight() {
       return null;
