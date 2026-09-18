@@ -54,9 +54,15 @@ fi
 
 # 6) 悬挂的「待办词」：这些词对应的事很可能已经做完了，文档却还停在旧状态
 #    （2026-09-12 就出现过：客户页早已上线，设计文档待办里还写着「等 Lemon 看过页面后再发」）
-hang=$(grep -rnE '待发布|待确认|等 Lemon|尚未发布|进行中' \
+# 2026-09-18 补：第④步收尾时 PROJECT_MAP 与执行账本的状态标题停在「代码完成、未发布」，
+# 而那一版已经上生产。旧词表只有「尚未发布」没有「未发布」，扫描范围也没有执行账本，两处都漏过去。
+hang=$(grep -rnE '待发布|待确认|等 Lemon|尚未发布|未发布|待 Lemon|进行中' \
         docs/HANDOFF_NOW.md docs/PROJECT_MAP.md docs/CURRENT_STATE.md docs/design/README.md 2>/dev/null \
         | grep -v '推翻' | head -6)
+# 执行账本只看每块的状态标题行（### 第N步…），正文里的历史叙述不算悬挂。
+hang_ledger=$(grep -nE '^### 第.步.*(未发布|未开始|等 Lemon|待 Lemon)' docs/V2.0_EXECUTION.md 2>/dev/null | head -4)
+[ -n "$hang_ledger" ] && hang="$hang
+$hang_ledger"
 if [ -z "$hang" ]; then
   ok "文档里没有悬挂的「待发布/待确认/进行中」"
 else
