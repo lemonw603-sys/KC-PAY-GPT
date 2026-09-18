@@ -7,7 +7,7 @@
 - **V2 落实 8 步：①②③已上生产，④代码完成在 main、未发布，⑤任务书已写**（`docs/tasks/2026-09-18-impl-step5-notification-whitelist-daily-reconciliation.md`）。
 - **生产 release 仍是 `20260918-step3-supply-ba28273`**（第③步）。main 上未发布的：第④步全部（D-267）+ D-265 第 3 条接单/派单审计（`765e971`）+ 迁移 **054**（只加一个设置键 `card_min_retire_age_hours=6`）。
 - **第④步做了什么（D-267）**：分卡时候选卡过期 → 当场同步这一张再按同一条资格规则判（资格规则未改，D-266 a）；定时同步 AVAILABLE 卡降到每 3 小时、不再排 highvcc 卡；待销清单派生查询 + 两端点 + 标终态脚本；三张契约表落 `docs/contracts/2026-09-18_*`：取消续费超时不卡单（照常成功 + 提醒 + 卡进待销）、API 付款不明两路证据自动收口/交人带证据/后台 RESOLVE 入口、Browser 崩溃后进补核、叫人带两路证据。
-- **调度器/生产此刻**：与第③步收尾一致（接单/派单/付款开关 true；Plus 走 API；hnskj 2 张可分配、highvcc 等充值 ≥ $76；非终态 0；常驻 Browser 池本机 PID 74272）。具体值只看 `CURRENT_STATE`。
+- **调度器/生产此刻**：接单/派单/付款开关 true；Plus 走 API；hnskj 2 张（窗口内可分配）；**highvcc 3336 余额 $145 → $2.46，卡台侧一笔 PENDING $142.54（8919.64 PHP）OpenAI 扣款、系统无对应订单、原因未知——先看这个**；非终态 0；常驻 Browser 池本机 PID 74272。具体值只看 `CURRENT_STATE`。
 
 ## 证据从哪里看
 
