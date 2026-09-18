@@ -2589,4 +2589,6 @@ Lemon 让 Codex 复审 ⑤b（`docs/reviews/STEP5B_REVIEW_2026-09-18.md`），�
 
 **测试**：v1 全量 901/835/0/66。**生产只读复验（新代码 persist:false）**：分类不变（6 无主 / 1 待登记 3336 / 1657·3159 无法核对）；`inputVerified` 判对（8590 hnskj=true、5 张 highvcc=false）；`inputUnverifiedCount=0`；alertPlan 按天 key `daily-reconciliation:2026-09-18`。
 
-**诚实一句**：这轮暴露我 ⑤b 有真缺口（选错端点、固定 key 回归、测试名不副实 + 漏第 7 条），Codex 复审戳中了。都在本窗口修完、单测 + 生产只读复验过。范围外发现只报未改，未发布、未写生产。
+**诚实一句**：这轮暴露我 ⑤b 有真缺口（选错端点、固定 key 回归、测试名不副实 + 漏第 7 条），Codex 复审戳中了。都在本窗口修完、单测 + 生产只读复验过。
+
+**发布（同窗口，Lemon 确认「切」后执行）**：push `b0a36d4` → `prepare`（候选包 SHA256 与本机逐字节一致、F-47 在包、备份 `pojia-20260918T130636Z` integrity OK）→ 复核停下给 Lemon 看 → Lemon「切」→ `switch 20260918-step5b-b0a36d4`（13:07 UTC）。发布后新连接独立核实：三服务 web 1376393 / worker 1376398 / bark 1376490 都在新 release、active、NRestarts=0；F-47 `walletPreflight`=`ok=true/25.50`；日对账新代码 dry-run 6 无主 / 1 待登记 3336 / 1657·3159 无法核对 / persistent 0。switch 打印 `bark cwd=/` 又是打印时机假值，新连接核实真实 cwd 在新 release（账本发现 13 老毛病，独立核实兜住）。`prepare` 首次 `scp: Connection closed` 瞬时断连、测 SSH 通后重试即过。**受控打破 D-275 ⑥**（F-47 本要单独发）：与收窄+补修同属⑤系列修复、一起发省一次重启，Lemon 认。CURRENT_STATE / HANDOFF_NOW / PROJECT_MAP / 账本已同步。
