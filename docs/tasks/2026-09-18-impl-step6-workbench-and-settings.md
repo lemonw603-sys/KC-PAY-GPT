@@ -36,7 +36,7 @@ D-250 原话：**工作台要用起来舒服、交互好，V1 太差。**
 4. **`pojia-bark-notifications` 在生产是哑的**：整个 boot 内 journal 一条日志都没有（Node 非 TTY 下 stdout 块缓冲）。推送出问题无从查 → 运维工具那一档（第⑤步发现 1）。
 5. **`ORDER_WAITING_FOR_CARD` 两处产生点共用同一 dedupe_key**（`workflow-repository:480` critical「开不出卡」vs `card-stock-job-service:354` warning「会继续尝试」），同一行被互相覆盖 severity，白名单只能按类型收、两种语义一起推 → 要不要拆成两个告警类型（第⑤步发现 2）。
 6. **ZZSHU 零原因失败「停单不退码」仍未做**（契约表三 #11，现状仍是判失败退码）→ 与队列一起做。
-7. `state-check.sh` 的 `pojia-web` 一行取值失败（脚本缺陷，不是生产问题，第⑤步发现 11）。
+7. `state-check.sh` 的 `pojia-web` 一行**偶发**取值失败（同一轮里先失败后通过，疑似取值竞态，未深查；第⑤步发现 11）。
 
 ## 上一块（第⑤步）留下的现场，动手前当场重查
 
