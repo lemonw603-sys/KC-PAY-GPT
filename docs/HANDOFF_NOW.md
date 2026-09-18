@@ -1,13 +1,14 @@
 # 接班一屏（HANDOFF_NOW）
 
-更新：2026-09-18 14:xx UTC+8（2026-09-18 06:xx UTC，落实第④步窗口收尾）。按 CLAUDE.md 约定维护，接手者从 main 继续，不另起项目。
+更新：2026-09-18 14:4x UTC+8（2026-09-18 06:4x UTC，第④步已发布、apply 已做，演练与池重启待做）。按 CLAUDE.md 约定维护，接手者从 main 继续，不另起项目。
 
 ## 现在是什么
 
-- **V2 落实 8 步：①②③已上生产，④代码完成在 main、未发布，⑤任务书已写**（`docs/tasks/2026-09-18-impl-step5-notification-whitelist-daily-reconciliation.md`）。
-- **生产 release 仍是 `20260918-step3-supply-ba28273`**（第③步）。main 上未发布的：第④步全部（D-267）+ D-265 第 3 条接单/派单审计（`765e971`）+ 迁移 **054**（只加一个设置键 `card_min_retire_age_hours=6`）。
-- **第④步做了什么（D-267）**：分卡时候选卡过期 → 当场同步这一张再按同一条资格规则判（资格规则未改，D-266 a）；定时同步 AVAILABLE 卡降到每 3 小时、不再排 highvcc 卡；待销清单派生查询 + 两端点 + 标终态脚本；三张契约表落 `docs/contracts/2026-09-18_*`：取消续费超时不卡单（照常成功 + 提醒 + 卡进待销）、API 付款不明两路证据自动收口/交人带证据/后台 RESOLVE 入口、Browser 崩溃后进补核、叫人带两路证据。
-- **调度器/生产此刻**：接单/派单/付款开关 true；Plus 走 API；hnskj 2 张（窗口内可分配）；**highvcc 3336 余额 $145 → $2.46，卡台侧一笔 PENDING $142.54（8919.64 PHP）OpenAI 扣款、系统无对应订单、原因未知——先看这个**；非终态 0；常驻 Browser 池本机 PID 74272。具体值只看 `CURRENT_STATE`。
+- **V2 落实 8 步：①②③④已上生产**（第④步 release `20260918-step4-251a441`，2026-09-18 06:26:47 UTC 切换，迁移 054），⑤任务书已写（`docs/tasks/2026-09-18-impl-step5-notification-whitelist-daily-reconciliation.md`）。
+- **第④步做了什么（D-267/D-269）**：分卡时候选卡过期 → 当场同步再按同一条资格规则判；定时同步 AVAILABLE 卡 3 小时、不再排 highvcc 卡；待销清单派生查询 + 两端点；取消续费超时不卡单（照常成功 + 提醒 + 卡进待销）；API 付款不明两路证据自动收口 / 交人带证据 / 后台 RESOLVE；Browser 崩溃后进补核、叫人带证据、备用卡台走 `card_transactions` 真证据（**常驻池重启后才生效**）。
+- **已 apply**：hnskj 12 张 + highvcc 8 张 + 3336（Lemon 手动付 20X）共 21 张 RETIRED；`card_sync_jobs` 307 条归档。
+- **现场事件（06:27 UTC）**：Lemon 充值后调度器自动开 highvcc **4022**（$50，可分配）；**第二张 `HG3c6ea2…`（尾号 8718）卡台已开出、$50、钱已扣（钱包 41.49），库里没入（`HIGHVCC_RECONCILE_NOT_READY`）→ 103 FAULT、调度器停开、`CARD_SUPPLY_OPEN_FAILED` OPEN。补记等 Lemon 一句：`ssh … node scripts/reconcile-highvcc-card.mjs HG3c6ea2018a0444659e947ea5e7161eca`。**
+- 生产：接单 / 派单 / 付款开关 true；Plus 走 API；hnskj 2 张（窗口外由分卡当场同步）；非终态 0；常驻 Browser 池本机 PID 74272（**旧代码、旧 5 分钟窗口**，未重启）。具体值只看 `CURRENT_STATE`。
 
 ## 证据从哪里看
 
@@ -18,11 +19,10 @@
 
 ## 接下来做什么（顺序）
 
-1. **Lemon 定 D-268 三件**：①`production-live-worker.js` 工厂注入 `ledgerSource` 那一行（白名单外）批不批；②Browser 核实窗口用环境变量放长与否（改了要重启常驻 worker，先问）；③highvcc HELD 8 张里哪几张是注销的。
-2. **发布第④步**（含 054 迁移 + D-265 第 3 条）：`deploy-release.sh prepare <commit> 20260918-step4-<sha>` → 贴 054 结果 → `migrate` → `switch`；发布前问。发布后：`state-check`；用一张窗口外的 hnskj 卡 + 一单演练验「分卡不再因 15 分钟窗口等卡」（`provider_calls` 应出现 `order-demand-sync:` 前缀的两条读）。
-3. **browser-mvp 动了 → 一次 rehearsal**（切 BROWSER、停池、关付款开关、建单、`run-live-rehearsal.sh once`、收口、切回）：每步先问。
-4. **两批旧卡 apply**：`retire-legacy-cards.mjs --batch hnskj-voided --apply`；highvcc 按勾选 `--batch highvcc-cancelled --last4 … --apply`；apply 后新连接核实 `inventory_status='RETIRED'` 与 `card_state_events`。
-5. 然后开第⑤步窗口。
+1. **补记第二张 highvcc 卡**（Lemon 一句）：服务器 `reconcile-highvcc-card.mjs HG3c6ea2018a0444659e947ea5e7161eca`；补记后新连接核实 cards 多一张 8718、103 `supply_fault_state` 回 OK、`CARD_SUPPLY_OPEN_FAILED` 关。
+2. **rehearsal 演练**（browser-mvp 动了）：要 Lemon 给一个无试用资格 free 号的**新鲜** Session + 一张 CDK。流程同 D-264：切 BROWSER → `stop-live.sh` → 建单 → `run-live-rehearsal.sh once` → `close-rehearsal-order.mjs` 收口 → 切回 API → 开回付款开关（supervisor 自动拉起的新池即带新代码 + 30 分钟窗口 = 第 4 步一并完成）。
+3. 发布后用一张窗口外 hnskj 卡 + 一单验「分卡不再等卡」（`provider_calls` 出现 `order-demand-sync:` 两条读）。
+4. 然后开第⑤步窗口。
 
 ## 已定不做 / 别再重开的
 
@@ -34,13 +34,13 @@
 
 ## 未验证边界（别说成已完成）
 
-- **第④步全部代码生产未验**：分卡当场同步只有单测/集成 + 生产窗口外候选 SQL 只读实证；API 付款不明（历史 0 次）与 Browser 崩溃进补核（历史 0 次）无样本；待销端点未在生产调过。
-- highvcc 卡「卡台扣款」真证据一路要 D-268 ① 批了才在生产生效，否则仍是旧 marker 恒匹配。
+- **第④步代码已在生产但无真单样本**：分卡当场同步、API 付款不明、Browser 崩溃进补核都没有真单走过；待销端点未在生产调过（口径 SQL 已实跑）。
+- highvcc 卡「卡台扣款」真证据一路：代码已在 main + 服务器，但**常驻池 PID 74272 仍是旧代码**，重启前仍是旧 marker 恒匹配。
 - rehearsal 报价段仍未验（第③步遗留）；highvcc 自动开卡未跑过；故障转台未发生过；集成测试既有失败（D-258，本块本机基线 15 条、改后名单见账本）。
 
 ## 分支、运行与禁止事项
 
-- main 是接手入口；本窗口提交已推送。本机临时 MySQL 容器 `pojia-step4-mysql`（13307）收尾已删；隧道 13306 保留。
+- main 是接手入口；本窗口提交已推送。本机临时 MySQL 容器已删；隧道 13306 保留。发布包 `artifacts/release-candidate-20260918-step4-*` 两份在本机（git 忽略）。
 - 常驻 Browser 池 PID 74272 不要当残留杀掉。
 - 付款未知禁止重付/换卡；开卡 / 补余额 / 切路线 / 发布 / apply / 改开关 / 重启 worker **先开口问**；范围外发现只报不改（D-254）。
 

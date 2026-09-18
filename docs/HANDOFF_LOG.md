@@ -2500,3 +2500,14 @@ state-check的$MINBAL紧邻中文括号、wrapup-check的$live/$mday紧邻中文
 - **范围外发现 6 条**只报未改（账本 §6 第④步节）。
 - **产出**：第⑤步任务书 `docs/tasks/2026-09-18-impl-step5-notification-whitelist-daily-reconciliation.md`；RUNBOOK §2.6；D-267/D-268；PROJECT_MAP 第④步状态；UNVERIFIED 一条；CURRENT_STATE 四行。
 - **本机残留**：临时 MySQL 容器 `pojia-step4-mysql`（端口 13307）收尾时删。
+
+## 2026-09-18｜第④步发布 + 四批 apply + highvcc 自动开卡首次生产实跑（06:1x → 06:4x UTC）
+
+- Lemon 答复 D-268（D-269）：8 张全按注销、3336 一起标（他手动付了 20X）、批工厂注入、批 30 分钟窗口、发布/apply/演练/重启逐步问；发现处置按建议归块，307 条同步残留归档。
+- 工厂注入（两 worker 各三行）+ 删假 marker；browser-mvp 308/299/0、v1 842/776/0、`npm run check` 过。
+- **发布** `20260918-step4-251a441`（prepare 两次：345f0fa 后为带新脚本重做 251a441；备份 `pojia-20260918T061551Z` OK；054 应用 06:26:29；switch 06:26:47；新 SSH 独立核实 PID/cwd、`/health/*` 200）。
+- **四批 apply**（服务器正式脚本，dry-run 先贴、Lemon「全部」）：hnskj 12 / highvcc 8 / 3336 → RETIRED 21；307 条 ARCHIVED_LEGACY。新连接核实一致。
+- **连带事件**：3336 标 RETIRED → highvcc 可分配 0 → 调度器（Lemon 同时充值 23.45 → 142.49）06:27 自动开 4022（$50，扣 50.50，T2 样本）；06:28 第二张 `HIGHVCC_RECONCILE_NOT_READY` → 103 FAULT。只读核对（服务器上用库里 token）：卡台已开出尾号 8718、$50、详情完整；钱包 41.49。**补记等 Lemon**。
+- `run-live-pool.sh` 加 30 分钟核实窗口变量；常驻池未重启（等演练一起）。
+- CURRENT_STATE 十行改；账本 §6 补执行段；HANDOFF_NOW 重写。
+- **未做**：rehearsal（要新鲜 Session + CDK）、常驻池重启、第二张卡补记。
