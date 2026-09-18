@@ -2548,3 +2548,11 @@ state-check的$MINBAL紧邻中文括号、wrapup-check的$live/$mday紧邻中文
 - **中途停下来查清两次，都没有拿顺眼的证据继续推演**：① prepare 后复核 grep 出 `PHONE_PUSH_TYPES 0 / PHONE_SILENT_TYPES 1`，看着像新代码没进包 → 查清是我 grep 错了关键词（常量在 `alert-push-policy.js`，repository 引的是小写函数；那一个匹配是「旧的已删」注释），两个文件 SHA256 与本机逐字节一致才继续。② switch 打印 `bark cwd=/` → 新连接独立核实 bark 其实换对了，**是我自己刚加的那行代码的缺陷**：restart 之后立刻取 MainPID，而 bark 旧进程要 4 秒退干净，那一刻 MainPID 还是 0。这行存在的意义就是核对代码换没换，打假值比不打更坏，已改成等到有真 PID 再取（账本发现 13）。
 - **只读复验**：timer `is-enabled=enabled`、下次 09-19 04:01:19 UTC；手动首跑 `Result=success`，心跳 `daily_reconciliation_heartbeat_at=2026-09-18T08:29:39.596Z`；推了一条 `DAILY_RECONCILIATION_SUMMARY`（info）。**08:29 之后 `alert_notifications` 只新增 1 行、来自白名单类型；白名单外 6 种类型同期新增 0 行。**
 - **更正一条自己补的原因**：先前把「bark 整个 boot 内无日志」写成「Node stdout 块缓冲」——发布把它推翻了（同一份 `console.log`，新进程启动日志立刻进 journal）。事实改写成「boot 时起的那个进程启动日志没进 journal、退出日志进了，**原因未确定**」。
+
+**收尾自查补的一条（08:5x UTC）**：Lemon 问「是不是做完了」，回头对验收逐条盘，发现**漏了半条**——「人为造差异（隔离库）能进看板/汇总推」。这不是走过场：生产第一跑 `persistentCount=0`（没有上一次可比），**「连续两次差异才升 critical」整条判断从未被执行过**，只有单测。
+
+在本机既有测试 MySQL（`pojia-stage1-mysql`）里新建独立库 `pojia_step5_recon`、跑完迁移 001–054，造了两张卡：9001（开卡 50 / 零扣款 / 余额 40）→ 真差异 `AMOUNT_DIFF delta -10.00`；9002（卡台扣 2 笔 / 账本 0）→ 按设计进「待登记」不算差异。**第一跑 persistent=false、汇总 info；第二跑 persistent=true、同一 dedupe_key 的告警 info → critical、标题变「对账差异连续两天还在」**；汇总经白名单入队 PENDING、`claimNext` 领到。
+
+同一个库顺手补了**生产验不了的白名单两条**：白名单外 `BROWSER_PAYMENT_UNKNOWN` 入队 0 行 / 白名单内 `BROWSER_HUMAN_REQUIRED` 入队 1 行；手工给白名单外那条塞一行 `PENDING` 模拟收窄前的遗留队列，`claimNext` 连领三次都没领走它。
+
+验完 `DROP DATABASE pojia_step5_recon`，同实例其余 12 个历史测试库一个没动。**顺带发现**：这个容器已经跑了 7 天，而上一窗口 `HANDOFF_NOW` 写的是「本机临时 MySQL 容器已删」，`wrapup-check.sh` 的「本机没有遗留的调试服务」也没抓到它（账本发现 14，只报未改——容器不是我起的）。
