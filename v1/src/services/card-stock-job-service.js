@@ -271,6 +271,59 @@ export async function completeCardStockJob(pool, { jobId, workerId, openedCount 
   if (result.affectedRows !== 1) throw new Error('Card stock job lease lost before completion');
 }
 
+/**
+ * 人工核对完一个 REVIEW_REQUIRED 的开卡 job 之后结清它（第④步收尾发现，2026-09-18）。
+ *
+ * 为什么需要：`reconcile-highvcc-card.mjs` 是第③步之前就有的脚本，只负责把「卡台已开出、
+ * 系统没入库」的那张卡补记进 cards。它不认识第③步才有的 job / 故障态 / 告警三件，所以补记完
+ * 卡能用了，但 job 仍 REVIEW_REQUIRED → `unresolvedPaidJobsSql` 一直命中 → 调度器每轮
+ * FUNDS_REVIEW_REQUIRED，缺卡也不自动开。2026-09-18 06:28 那张 8718 就是这么卡住的。
+ *
+ * 这里只做「结清」：把 job 标 COMPLETED 并写回真实开出张数（日限靠 opened_count 计数，
+ * 少算就等于放大了当天的资金保险丝）。原 error_code / error_message 原样保留，那是当时的观察；
+ * 人工结论写进 rules_snapshot_json.manualResolution，可审计。不碰钱、不碰卡、不开新卡。
+ */
+export async function resolveReviewedCardStockJob(pool, { jobId, openedCount, note, actorId = 'admin' }) {
+  const id = String(jobId || '').trim();
+  const opened = Number(openedCount);
+  if (!id) throw new Error('jobId is required');
+  if (!Number.isInteger(opened) || opened < 0 || opened > 50) throw new Error('openedCount must be an integer from 0 to 50');
+  const reason = String(note || '').trim();
+  if (!reason) throw new Error('note is required');
+  const actor = String(actorId || 'admin').trim().slice(0, 128);
+  const connection = await pool.getConnection();
+  try {
+    await connection.beginTransaction();
+    const [[job]] = await connection.query(
+      `SELECT id, status, provider_account_id, opened_count, error_code, rules_snapshot_json
+         FROM card_stock_jobs WHERE id = ? FOR UPDATE`, [id]
+    );
+    if (!job) throw new Error(`card stock job not found: ${id}`);
+    if (job.status !== 'REVIEW_REQUIRED') throw new Error(`job is ${job.status}, only REVIEW_REQUIRED can be resolved manually`);
+    const snapshot = (() => {
+      const raw = job.rules_snapshot_json;
+      if (raw && typeof raw === 'object' && !Array.isArray(raw)) return raw;
+      try { const parsed = JSON.parse(String(raw || '{}')); return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {}; }
+      catch { return {}; }
+    })();
+    snapshot.manualResolution = { resolvedBy: actor, resolvedAt: new Date().toISOString(), openedCount: opened, note: reason.slice(0, 500) };
+    const [result] = await connection.query(
+      `UPDATE card_stock_jobs SET status = 'COMPLETED', opened_count = ?, rules_snapshot_json = ?,
+         leased_by = NULL, leased_until = NULL, finished_at = COALESCE(finished_at, CURRENT_TIMESTAMP(3))
+       WHERE id = ? AND status = 'REVIEW_REQUIRED'`,
+      [opened, JSON.stringify(snapshot), id]
+    );
+    if (Number(result.affectedRows) !== 1) throw new Error('card stock job changed concurrently');
+    await connection.commit();
+    return { jobId: id, providerAccountId: job.provider_account_id, openedCount: opened, previousOpenedCount: Number(job.opened_count || 0), errorCode: job.error_code };
+  } catch (error) {
+    await connection.rollback().catch(() => {});
+    throw error;
+  } finally {
+    connection.release();
+  }
+}
+
 export async function failCardStockJob(pool, { jobId, workerId, error }) {
   const code = String(error?.code || error?.kind || 'CARD_STOCK_OPEN_FAILED').toUpperCase().slice(0, 64);
   const message = redactSensitiveText(error?.message || 'Card stock opening failed').slice(0, 1000);
