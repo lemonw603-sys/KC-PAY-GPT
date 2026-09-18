@@ -71,9 +71,9 @@ D-250 原话：**工作台要用起来舒服、交互好，V1 太差。**
 
 ## 上一块（第⑤步）留下的现场，动手前当场重查
 
-第⑤步**代码完成但（写本任务书时）未发布**：生产 release 仍是 `20260918-step4-251a441`，`pojia-bark-notifications` 仍跑 `20260916-unified-4334dc2`，`pojia-daily-reconciliation.timer` **尚未安装**。开工前先确认这三件的当前状态——如果 Lemon 已批发布，白名单与日对账才是活的。
+**⑤ 与 ⑤b 都已发布**（release `20260918-step5b-b0a36d4`，2026-09-18 13:07 UTC 切换；⑤b 收窄 + Codex 复审补修见 DECISIONS **D-282**）：白名单 + 日对账 + F-47 押金修复都在生产，`pojia-daily-reconciliation.timer` 已装并跑过，bark 跟着发布换代码。**开工前仍当场重查**（数字会变）。手动用卡登记入口用 `card-operational-overrides` 端点（**不是** `/card-retirement/confirm`，F-57）。
 
-生产当时的数（**一律当场重查**）：OPEN 告警 122、账本 CONSUMED 19 / RELEASED 50 / RECONCILIATION 2、可分配卡 2 张（hnskj 两张出了 15 分钟窗口）、非终态订单 0、日对账差异 2 条 + 待登记 7 张 + 待销到期 4 张。
+生产当时的数（**一律当场重查**，⑤b 13:0x dry-run 值）：30 张卡 / 日对账差异 **6**（全 `UNEXPLAINED_CHARGE`）/ 待登记 **1**（3336）/ 无法核对 30 / 待销到期 4 / 可分配卡 2 / 非终态订单 0。旧口径「差异 2 + 待登记 7」是⑤b 收窄前的，已变。
 
 ## 验收
 
