@@ -2,8 +2,9 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   countEligibleCards, createCardSourceSelectionService, listCardSourceSelections,
-  minimumBalanceSql, runCardSourceSwitchChecks
+  minimumBalanceSql, runCardSourceSwitchChecks, stockCountingCardSql
 } from '../src/services/card-source-selection-service.js';
+import { eligibleInventoryCardSql } from '../src/services/card-inventory-eligibility.js';
 
 const HNSKJ_ID = '00000000-0000-4000-8000-000000000101';
 const BACKUP_ID = '00000000-0000-4000-8000-000000000103';
@@ -80,13 +81,22 @@ test('three products × two executors each resolve their own card source from on
   assert.equal(pick('plus', 'BROWSER').version, 8);
 });
 
-test('eligible count uses the one production eligibility rule with a per-product minimum, never a copied predicate', async () => {
+test('stock count = production eligibility rule minus only the 15-minute freshness clause (never a copied predicate)', async () => {
   const pool = fakePool({ eligible: 2 });
   assert.equal(await countEligibleCards(pool, { providerAccountId: BACKUP_ID, productCode: 'pro_20x' }), 2);
   const sql = pool.queries.at(-1).sql;
   assert.match(sql, /card_max_successful_payments/);
   assert.match(sql, /card_operational_overrides/);
   assert.match(sql, /minimum_required_card_balance:pro_20x/);
+  // 5276 每小时只有 15 分钟合格：库存口径不能带这句，否则窗口外调度器会以为缺卡去开（Lemon 2026-09-18）。
+  assert.doesNotMatch(sql, /INTERVAL 15 MINUTE/);
+  assert.match(sql, /cards\.sync_tier = 'MANUAL_IMPORT' OR cards\.last_transaction_synced_at IS NOT NULL\)/);
+  // 除那一句外与分配规则逐字相同：把分配规则里那句换掉后应完全一致。
+  const derived = stockCountingCardSql('c', '?', { productCode: 'plus' });
+  const original = eligibleInventoryCardSql('c', '?', { productCode: 'plus' });
+  assert.notEqual(derived, original);
+  assert.equal(original.length - derived.length > 0, true);
+  assert.equal(derived.replace(/\s+/g, ' ').split('AND').length, original.replace(/\s+/g, ' ').split('AND').length - 1, '只少了新鲜度里的一个 AND 条件');
   assert.match(minimumBalanceSql('plus'), /default_minimum_required_card_balance/);
   assert.throws(() => minimumBalanceSql('plus; DROP'), TypeError);
 });
