@@ -386,13 +386,13 @@ export function summaryMessage(report) {
     lines.push(`无主扣款 ${report.unexplainedChargeCount} 张：卡台扣了、账本没记、也没登记手动用卡，进报告待核。`);
   }
   if (report.pendingRegistrationCount) {
-    lines.push(`已登记手动用卡的 ${report.pendingRegistrationCount} 张：待补进账本（第⑥块）。`);
+    lines.push(`已登记手动用卡的 ${report.pendingRegistrationCount} 张：卡台扣了、你已登记，账本待补记。`);
   }
   if (report.unverifiableAmountCount) {
     lines.push(`金额无法核对 ${report.unverifiableAmountCount} 张：没有可信的期初入卡金额，本轮只对次数。`);
   }
   if (report.inputUnverifiedCount) {
-    lines.push(`输入存疑暂不升级的 ${report.inputUnverifiedCount} 张：同步失败或无成功水位，数据先不作数。`);
+    lines.push(`暂不升级的 ${report.inputUnverifiedCount} 张：卡台同步没成功，这轮数据先不作数。`);
   }
   lines.push(`待销到期 ${report.retirementDueCount} 张${report.retirementDueCount ? '，到存活期可以去卡台删了。' : '。'}`);
   return lines.join('');
