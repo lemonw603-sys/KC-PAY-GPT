@@ -43,6 +43,9 @@ export BROWSER_EXECUTION_TIMEOUT_MS="${BROWSER_EXECUTION_TIMEOUT_MS:-120000}" BR
 # D-154: hold a clicked checkout while a PERSON satisfies a human-verification
 # challenge in the visible window. Never solved by the worker.
 export BROWSER_HUMAN_VERIFICATION_WAIT_MS="${BROWSER_HUMAN_VERIFICATION_WAIT_MS:-300000}"
+# 第④步（D-248「窗口放长」/ D-269 ③ Lemon 批）：付款后两路证据自动核实的窗口 5 分钟 → 30 分钟，
+# 定不了才叫人、叫时带证据。改的是运行环境不是代码默认值（config 默认仍 300000）。
+export BROWSER_PAYMENT_VERIFICATION_WINDOW_MS="${BROWSER_PAYMENT_VERIFICATION_WINDOW_MS:-1800000}"
 if [ "$mode" = rehearsal ]; then
   export BROWSER_POOL_CONFIRMATION="I-CONFIRM-RESIDENT-BROWSER-POOL:REHEARSAL" BROWSER_LIVE_STOP_BEFORE=SUBMIT
   export BROWSER_PAYMENT_WRITES_ENABLED=false BROWSER_PAYMENT_EXECUTOR_ENABLED=false
