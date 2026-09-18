@@ -30,10 +30,43 @@ try {
   const [[order]] = await connection.query(
     'SELECT id, status, version, assigned_card_id, cdk_id FROM orders WHERE BINARY public_no = ? LIMIT 1 FOR UPDATE', [publicNo]);
   if (!order) throw new Error('order not found');
-  if (order.status !== 'CARD_READY') throw new Error(`order is ${order.status}; only CARD_READY rehearsal leftovers are closable here`);
+  // 两种演练残单：
+  //   CARD_READY —— 旧形态（D-158 前，演练在预检后停）。
+  //   RECHARGE_PROCESSING —— D-158 起的形态：SUBMIT_RECHARGE 已把单交给 Browser dispatch，
+  //     演练 worker 在付款前 fail-closed（现场保留等接手）后退出，留下 attempt PREPARED/ACTIVE、
+  //     run RUNNING/NOT_STARTED 且租约已过期。后台控制面只有「恢复自动化」没有「放弃并放卡」，
+  //     worker 的 abort 又要租约（已死的 worker 才有），所以这里按 worker 付款前中止的同一顺序收
+  //     （browser-execution-repository 的 PRE_PAYMENT_ABORT 段）。任何付款痕迹仍然一律拒。
+  if (!['CARD_READY', 'RECHARGE_PROCESSING'].includes(order.status)) {
+    throw new Error(`order is ${order.status}; only CARD_READY / RECHARGE_PROCESSING rehearsal leftovers are closable here`);
+  }
+  const fromStatus = order.status;
+  let preSubmitRun = null;
+  if (order.status === 'RECHARGE_PROCESSING') {
+    const [attempts] = await connection.query(
+      `SELECT id, status, funds_risk_state, executor_kind FROM recharge_attempts WHERE order_id = ? FOR UPDATE`, [order.id]);
+    const [runs] = await connection.query(
+      `SELECT br.id, br.status, br.payment_state, br.last_checkpoint_kind, br.worker_lease_until, br.recharge_attempt_id
+         FROM browser_runs br INNER JOIN recharge_attempts ra ON ra.id = br.recharge_attempt_id
+        WHERE ra.order_id = ? FOR UPDATE`, [order.id]);
+    const attempt = attempts[0];
+    const run = runs[0];
+    const shape = {
+      attempts: attempts.length, attemptStatus: attempt?.status, fundsRiskState: attempt?.funds_risk_state, executorKind: attempt?.executor_kind,
+      runs: runs.length, runStatus: run?.status, paymentState: run?.payment_state, lastCheckpoint: run?.last_checkpoint_kind,
+      leaseUntil: run?.worker_lease_until, leaseExpired: run?.worker_lease_until ? new Date(run.worker_lease_until).getTime() < Date.now() : null,
+    };
+    const ok = attempts.length === 1 && attempt.executor_kind === 'BROWSER' && attempt.status === 'PREPARED' && attempt.funds_risk_state === 'ACTIVE'
+      && runs.length === 1 && run.status === 'RUNNING' && run.payment_state === 'NOT_STARTED'
+      && !String(run.last_checkpoint_kind || '').toUpperCase().startsWith('PAYMENT')
+      && shape.leaseExpired === true;
+    if (!ok) throw new Error(`not a pre-payment rehearsal leftover, refusing: ${JSON.stringify(shape)}`);
+    preSubmitRun = { run, attempt, shape };
+  }
   const [[evidence]] = await connection.query(
     `SELECT
-       (SELECT COUNT(*) FROM recharge_attempts ra WHERE ra.order_id = o.id AND ra.funds_risk_state IN ('ACTIVE','UNKNOWN','SETTLED')) AS live_or_paid_attempts,
+       (SELECT COUNT(*) FROM recharge_attempts ra WHERE ra.order_id = o.id AND ra.funds_risk_state IN ('UNKNOWN','SETTLED')) AS unknown_or_paid_attempts,
+       (SELECT COUNT(*) FROM recharge_attempts ra WHERE ra.order_id = o.id AND ra.funds_risk_state = 'ACTIVE') - ? AS unexpected_active_attempts,
        (SELECT COUNT(*) FROM card_consumption_ledger l WHERE l.order_id = o.id AND l.status IN ('CONSUMED','RECONCILIATION')) AS consumed_ledger,
        (SELECT COUNT(*) FROM browser_runs br INNER JOIN recharge_attempts bra ON bra.id = br.recharge_attempt_id
           WHERE bra.order_id = o.id AND br.payment_state <> 'NOT_STARTED') AS runs_past_arming,
@@ -41,12 +74,31 @@ try {
           INNER JOIN recharge_attempts bra ON bra.id = br.recharge_attempt_id
           WHERE bra.order_id = o.id AND bo.operation_type = 'PAYMENT_SUBMIT') AS payment_submits,
        (SELECT COUNT(*) FROM browser_runs br INNER JOIN recharge_attempts bra ON bra.id = br.recharge_attempt_id
-          WHERE bra.order_id = o.id AND br.active_account_key_hmac IS NOT NULL) AS open_runs,
+          WHERE bra.order_id = o.id AND br.active_account_key_hmac IS NOT NULL) - ? AS unexpected_open_runs,
        o.recharge_order_no, o.recharge_card_key
-     FROM orders o WHERE o.id = ?`, [order.id]);
+     FROM orders o WHERE o.id = ?`, [preSubmitRun ? 1 : 0, preSubmitRun ? 1 : 0, order.id]);
   const blockers = Object.entries(evidence).filter(([key, value]) => (typeof value === 'number' ? value > 0 : Boolean(value)));
   if (blockers.length) throw new Error(`payment evidence present, refusing: ${JSON.stringify(Object.fromEntries(blockers))}`);
 
+  let runCloseout = null;
+  if (preSubmitRun) {
+    const now = new Date();
+    const [runUpdate] = await connection.query(
+      `UPDATE browser_runs
+          SET status = 'FAILED_SAFE', control_state = 'RELEASED', last_checkpoint_kind = 'PRE_PAYMENT_ABORT',
+              last_error_code = 'REHEARSAL_CLOSED', worker_lease_until = NULL,
+              finished_at = ?, updated_at = ?
+        WHERE id = ? AND status = 'RUNNING' AND payment_state = 'NOT_STARTED'`,
+      [now, now, preSubmitRun.run.id]);
+    if (Number(runUpdate.affectedRows) !== 1) throw new Error('browser run changed concurrently');
+    const [attemptUpdate] = await connection.query(
+      `UPDATE recharge_attempts
+          SET status = 'CLEARED', funds_risk_state = 'CLEARED', result_summary_json = ?, finished_at = ?, updated_at = ?
+        WHERE id = ? AND executor_kind = 'BROWSER' AND status = 'PREPARED' AND funds_risk_state = 'ACTIVE'`,
+      [JSON.stringify({ code: 'REHEARSAL_CLOSED', browserRunId: preSubmitRun.run.id, noExternalPaymentAction: true }), now, now, preSubmitRun.attempt.id]);
+    if (Number(attemptUpdate.affectedRows) !== 1) throw new Error('funds attempt changed concurrently');
+    runCloseout = { runId: preSubmitRun.run.id, attemptId: preSubmitRun.attempt.id, shape: preSubmitRun.shape };
+  }
   const ledger = await transitionCardConsumptionInTransaction(connection, {
     orderId: order.id, targetStatus: 'RELEASED', reason: `Order closed before payment: ${reason}`,
     allowedCurrentStatuses: ['RESERVED'], requireActive: false, evidence: { source: 'close_rehearsal_order' },
@@ -66,13 +118,13 @@ try {
   if (Number(closed.affectedRows) !== 1) throw new Error('order changed concurrently');
   await connection.query(
     `INSERT INTO order_events (order_id, from_status, to_status, actor_type, actor_id, reason, metadata_json)
-     VALUES (?, 'CARD_READY', 'CLOSED', 'ADMIN', 'admin', ?, ?)`,
-    [order.id, reason, JSON.stringify({ closeRehearsalOrder: true, evidence, ledger, card })]);
+     VALUES (?, ?, 'CLOSED', 'ADMIN', 'admin', ?, ?)`,
+    [order.id, fromStatus, reason, JSON.stringify({ closeRehearsalOrder: true, evidence, ledger, card, runCloseout })]);
   const cdk = await returnCdkForOrderInTransaction(connection, {
     orderId: order.id, reason: `order closed after rehearsal before payment: ${reason}`,
     actorType: 'ADMIN', actorId: 'admin', metadata: { closeRehearsalOrder: true },
   });
-  const summary = { publicNo, dryRun, evidence, ledger, card, dispatchJobs: dispatch.affectedRows, cdk };
+  const summary = { publicNo, dryRun, fromStatus, evidence, runCloseout, ledger, card, dispatchJobs: dispatch.affectedRows, cdk };
   if (dryRun) { await connection.rollback(); console.log('DRY RUN (rolled back)', JSON.stringify(summary)); }
   else { await connection.commit(); console.log('CLOSED', JSON.stringify(summary)); }
 } catch (error) {
