@@ -550,7 +550,7 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
     }
   }
   async function getOverview() {
-    const [[orderCounts], [statusRows], [cdkRows], [settingsRows], [refundRows], [alertRows], [stockRows], [stockSettingRows], [backlogRows]] = await Promise.all([
+    const [[orderCounts], [statusRows], [cdkRows], [settingsRows], [refundRows], [alertRows], [stockRows], [stockSettingRows], [backlogRows], [providerStockRows]] = await Promise.all([
       pool.query(`SELECT
         COUNT(*) AS total,
         SUM(o.created_at >= TIMESTAMP(DATE(CONVERT_TZ(UTC_TIMESTAMP(), '+00:00', '+08:00'))) - INTERVAL 8 HOUR) AS today,
@@ -683,6 +683,15 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
               AND created_at >= TIMESTAMP(DATE(CONVERT_TZ(UTC_TIMESTAMP(), '+00:00', '+08:00'))) - INTERVAL 8 HOUR
               AND created_at < TIMESTAMP(DATE(CONVERT_TZ(UTC_TIMESTAMP(), '+00:00', '+08:00'))) + INTERVAL 16 HOUR) AS replenishment_used_today,
           (SELECT setting_value FROM app_settings WHERE setting_key = 'card_replenishment_daily_limit' LIMIT 1) AS replenishment_daily_limit`)
+      // 第⑥步工作台「卡与钱」按台：复用 eligibleInventoryCardSql（Plus 资格规则，D-280 不另写一套）。
+      // 生产只读已验证：legacy-primary(hnskj) 可分配 0 / backup-a 可分配 2（highvcc 开卡进 backup-a）。
+      ,pool.query(`SELECT pa.account_code AS provider_code, pa.provider_code AS provider_kind,
+          SUM(c.inventory_status <> 'RETIRED') AS in_stock,
+          SUM((${eligibleInventoryCardSql('c', `COALESCE((SELECT CAST(setting_value AS DECIMAL(18,6)) FROM app_settings WHERE setting_key = 'default_minimum_required_card_balance' LIMIT 1), 999999999)`, { productCode: 'plus' })})) AS plus_assignable,
+          SUM(EXISTS(SELECT 1 FROM card_assignment_history ah WHERE ah.card_id=c.id AND ah.status='ACTIVE')) AS in_use,
+          SUM((SELECT COUNT(*) FROM card_consumption_ledger u WHERE u.card_id=c.id AND u.status IN ('RESERVED','CONSUMED','RECONCILIATION'))>0) AS any_used
+        FROM cards c INNER JOIN provider_accounts pa ON pa.id=c.provider_account_id
+        GROUP BY pa.account_code, pa.provider_code ORDER BY pa.provider_code`)
     ]);
     const count = (value) => Number(value || 0);
     const total = count(orderCounts[0]?.total);
@@ -780,6 +789,14 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
         balanceFundingEnabled,
         low: !autoReplenishmentEnabled && available <= lowThreshold
       }; })(),
+      cardStockByProvider: (providerStockRows || []).map((row) => ({
+        providerCode: row.provider_code,
+        providerKind: row.provider_kind,
+        inStock: count(row.in_stock),
+        plusAssignable: count(row.plus_assignable),
+        inUse: count(row.in_use),
+        anyUsed: count(row.any_used)
+      })),
       providerHealth: {
         provider: 'hnskj',
         routeLabel: stockRows[0]?.provider_route_code || '当前 Plus 卡台路线未配置',

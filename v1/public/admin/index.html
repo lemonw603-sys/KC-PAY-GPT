@@ -8,7 +8,8 @@
   <title>Plus 运营后台</title>
   <link rel="icon" href="/admin/assets/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/admin/assets/admin.css?v=26">
-  <script src="/admin/assets/admin.js?v=50" defer></script>
+  <link rel="stylesheet" href="/admin/assets/workbench.css?v=1">
+  <script src="/admin/assets/admin.js?v=51" defer></script>
 </head>
 <body>
   <div class="admin-shell">
@@ -44,23 +45,39 @@
         </div>
       </header>
 
-      <section id="overview-view" class="view" aria-labelledby="view-title">
-        <section class="card decisions-card" aria-labelledby="decisions-title">
-          <div class="card-heading"><div><p class="section-kicker">五个决定</p><h2 id="decisions-title">现在怎么跑</h2></div><span class="write-badge">改动即生效，只影响之后的新订单</span></div>
-          <div class="decisions-grid" id="decisions-grid"><p class="empty-state">正在读取…</p></div>
+      <section id="overview-view" class="view workbench" aria-labelledby="view-title">
+        <div class="wb-ops">
+          <div class="wb-grp" id="wb-decisions"><p class="wb-qempty">正在读取营业状态…</p></div>
+          <div class="wb-vr"></div>
+          <div class="wb-grp"><form class="wb-cdk" id="wb-cdk-form">
+            <label>产品<select class="wb-field" id="wb-cdk-plan"><option value="plus">Plus</option><option value="pro_5x">Pro 5X</option><option value="pro_20x">Pro 20X</option></select></label>
+            <label>数量<input class="wb-field" id="wb-cdk-count" type="number" min="1" max="1000" value="1"></label>
+            <button class="wb-btn pri" type="submit">生成并复制</button>
+          </form></div>
+        </div>
+
+        <div class="wb-search">
+          <span class="wb-mg" aria-hidden="true">⌕</span>
+          <input id="wb-search-input" type="search" maxlength="191" placeholder="贴卡密 / 订单号 / 邮箱 → 直接定位这一单" autocomplete="off" aria-label="全局定位搜索">
+          <kbd>↵</kbd>
+        </div>
+
+        <p class="wb-seclabel">今天生意怎么样</p>
+        <div class="wb-wall" id="wb-wall"></div>
+
+        <div class="wb-mid">
+          <section class="wb-card"><div class="wb-ch"><div><p class="wb-kick">卡与钱</p><h2>今天花了 / 卡用了几张</h2></div><span class="wb-ro">只读</span></div><div class="wb-cb" id="wb-cards"><p class="wb-qempty">正在读取…</p></div></section>
+          <section class="wb-card"><div class="wb-ch"><div><p class="wb-kick">昨夜日对账</p><h2>对上没有</h2></div><button class="wb-btn link" type="button" data-view-jump="diagnostics">看逐张 →</button></div><div class="wb-cb"><div class="wb-recon" id="wb-recon"></div></div></section>
+        </div>
+
+        <section class="wb-card">
+          <div class="wb-ch"><div><p class="wb-kick">今天要处理的</p><h2>需要我处理</h2></div><span class="wb-chip danger" id="wb-queue-count"><span class="wb-d"></span>—</span></div>
+          <div class="wb-cb"><div class="wb-q" id="wb-queue"><p class="wb-qempty">正在读取…</p></div></div>
         </section>
-        <div class="metrics-strip" id="metrics-grid" aria-label="今天的数字"></div>
-        <section class="card orders-card" aria-labelledby="attention-title">
-          <div class="card-heading"><div><p class="section-kicker">今天要处理的</p><h2 id="attention-title">需要处理的订单</h2></div><button class="text-button" type="button" data-open-orders>进入订单</button></div>
-          <div class="table-wrap"><table><thead><tr><th>订单</th><th>产品</th><th>当前阶段</th><th>需要我做什么</th><th>卡尾号</th><th>身份</th><th>创建时间</th></tr></thead><tbody id="attention-orders"></tbody></table></div>
-        </section>
-        <section class="card alerts-card" id="alerts-card" hidden>
-          <div class="card-heading"><div><p class="section-kicker">需要核对</p><h2>内部提醒</h2></div><span class="readonly-badge">只读</span></div>
-          <div class="mini-list" id="alerts-list"></div>
-        </section>
-        <section class="card readiness-card" aria-labelledby="readiness-title">
-          <div class="card-heading"><div><p class="section-kicker">开工检查</p><h2 id="readiness-title">系统就绪情况</h2></div><span class="readonly-badge">只读</span></div>
-          <div class="readiness-list" id="admin-readiness-list"><p class="empty-state">正在检查…</p></div>
+
+        <section class="wb-card">
+          <div class="wb-ch"><div><p class="wb-kick">今日订单</p><h2>正在跑与刚完成</h2></div><button class="wb-btn link" type="button" data-view-jump="orders">进订单页 →</button></div>
+          <div class="wb-cb"><div class="wb-tblwrap"><table class="wb-tbl" id="wb-orders"></table></div></div>
         </section>
       </section>
       <section id="orders-view" class="view" hidden>

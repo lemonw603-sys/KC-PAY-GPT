@@ -114,14 +114,15 @@ test('admin refresh feedback and inset dropdown arrows remain visible', () => {
   const script = fs.readFileSync(path.join(directory, 'admin', 'assets', 'admin.js'), 'utf8');
   const styles = fs.readFileSync(path.join(directory, 'admin', 'assets', 'admin.css'), 'utf8');
   assert.match(html, /admin\.css\?v=26/);
-  assert.match(html, /admin\.js\?v=50/);
+  assert.match(html, /admin\.js\?v=51/);
   assert.match(script, /button\.textContent = '刷新中…'/);
   assert.match(script, /showNotice\('刷新完成。', 'success'\)/);
   assert.match(script, /showNotice\('刷新失败，请稍后重试。'\)/);
-  assert.match(script, /等待 Session/);
-  assert.match(script, /Plus 可分配卡/);
-  assert.match(script, /decisions-grid/);
-  assert.match(html, /五个决定/);
+  // 第⑥步工作台重做（D-283）：overview 段改营业条 wb-decisions + 卡与钱「Plus 可分配」。
+  assert.match(script, /Plus 可分配/);
+  assert.match(script, /wb-decisions/);
+  assert.match(html, /id="wb-decisions"/);
+  assert.match(html, /需要我处理/);
   assert.match(script, /card-stock\/minimum-balance/);
   // F-16/F-3 close-out for payment-result-unknown runs is reachable from the UI (run panel + order drawer),
   // and the client sends renewalCancelled as a real boolean (F-44).
@@ -232,7 +233,6 @@ test('admin orders page is one table plus one drawer without permits, tags, note
   assert.match(html, /<option value="REVIEW_REQUIRED">需要处理<\/option>/);
   assert.match(html, /<option value="ACTIVE">进行中<\/option>/);
   assert.match(html, /<option value="FINISHED">已完成<\/option>/);
-  assert.match(script, /正常模式由系统自动执行/);
   assert.match(script, /取消并释放卡/);
   assert.match(script, /人工付款已完成/);
   assert.match(script, /确认 20X 已升级/);

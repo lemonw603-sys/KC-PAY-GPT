@@ -1,0 +1,527 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>第⑥步 · 工作台三版比稿</title>
+<!--
+  V2 第⑥步 面五② 工作台 · 2~3 版视觉/交互比稿（给 Lemon 挑）
+  令牌沿用客户页「候光」（docs/design/README.md，Lemon 2026-09-12 定后台沿用这套）。
+  三版共享同一份数据，差在信息优先级/布局：
+    A 驾驶舱  · 控制感优先（营业状态条 + 队列/看板并列）
+    B 待办优先 · 收件箱式（"需要我处理"占主角）
+    C 看板优先 · 仪表盘（大数字墙在最上）
+  数据 = 2026-09-18 ⑤b dry-run 现场快照 + 少量样例造单，仅示布局，见页脚说明。
+-->
+<style>
+/* ============ 候光令牌（自 v1/public/assets/customer.css :root，晨雾/石板） ============ */
+:root{
+  --bg:hsl(168,16%,97%);
+  --bg-wash:linear-gradient(150deg,hsl(163,26%,94%) 0%,hsl(168,16%,96%) 48%,hsl(168,14%,97%) 100%);
+  --a:hsl(163,72%,26%); --a-soft:hsl(163,44%,93%); --a-ink:hsl(163,76%,22%); --a-on:hsl(0,0%,100%);
+  --t:hsl(176,18%,11%); --t2:hsl(170,10%,38%); --t3:hsl(168,9%,50%);
+  --s:hsl(0,0%,100%); --s2:hsl(168,20%,97%); --s3:hsl(168,16%,95%); --bd:hsl(168,14%,88%);
+  --warn:hsl(32,72%,40%); --warn-soft:hsl(38,78%,94%); --gold:hsl(38,46%,42%);
+  --glow:hsl(163,62%,62%);
+  --shadow-card:inset 0 1px 0 hsla(0,0%,100%,.85),0 1px 2px hsla(176,25%,10%,.06),
+                 0 14px 30px -14px hsla(176,25%,10%,.22);
+  --shadow-pop:0 10px 24px -8px hsla(176,25%,10%,.28);
+  /* 后台补充的语义色（与主色青绿分开：ok=纯绿 danger=红 warn=琥珀 info=蓝） */
+  --ok:hsl(150,54%,36%); --ok-soft:hsl(150,44%,94%);
+  --danger:hsl(4,66%,50%); --danger-soft:hsl(6,72%,96%);
+  --info:hsl(212,62%,46%); --info-soft:hsl(212,60%,95%);
+  --fd:"Familjen Grotesk","PingFang SC","Hiragino Sans GB",system-ui,sans-serif;
+  --fb:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",system-ui,sans-serif;
+  --fm:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+:root[data-theme="dark"]{
+  --bg:hsl(215,14%,10%); --bg-wash:none;
+  --a:hsl(162,58%,49%); --a-soft:hsl(163,40%,16%); --a-ink:hsl(162,58%,58%); --a-on:hsl(215,14%,10%);
+  --t:hsl(210,20%,92%); --t2:hsl(212,10%,66%); --t3:hsl(212,8%,54%);
+  --s:hsl(215,15%,14%); --s2:hsl(215,15%,12%); --s3:hsl(215,15%,17%); --bd:hsl(214,13%,22%);
+  --warn:hsl(38,62%,62%); --warn-soft:hsl(34,30%,15%); --gold:hsl(38,48%,62%);
+  --glow:hsl(162,58%,42%);
+  --shadow-card:inset 0 1px 0 hsla(0,0%,100%,.06),0 10px 24px hsla(0,0%,0%,.5);
+  --shadow-pop:0 12px 28px hsla(0,0%,0%,.55);
+  --ok:hsl(150,52%,52%); --ok-soft:hsl(150,36%,16%);
+  --danger:hsl(6,72%,62%); --danger-soft:hsl(6,42%,17%);
+  --info:hsl(212,66%,64%); --info-soft:hsl(212,40%,18%);
+}
+
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;min-height:100vh;background:var(--bg);background-image:var(--bg-wash);
+  background-attachment:fixed;color:var(--t);font-family:var(--fb);font-size:14px;line-height:1.55;
+  -webkit-font-smoothing:antialiased}
+button,input,select{font:inherit;color:inherit}
+button{cursor:pointer}
+[hidden]{display:none!important}
+h1,h2,h3{margin:0}
+.mono{font-family:var(--fm);font-variant-numeric:tabular-nums}
+
+/* ============ 比稿控制条 ============ */
+.proto-bar{position:sticky;top:0;z-index:40;display:flex;align-items:center;gap:14px;flex-wrap:wrap;
+  padding:10px 20px;background:var(--s);border-bottom:1px solid var(--bd);box-shadow:0 1px 0 hsla(0,0%,0%,.03)}
+.proto-bar .pb-title{font-weight:700;font-size:13px;letter-spacing:.02em}
+.proto-bar .pb-title small{display:block;font-weight:500;color:var(--t3);font-size:11px;letter-spacing:0}
+.seg{display:inline-flex;padding:3px;gap:2px;background:var(--s3);border-radius:11px;border:1px solid var(--bd)}
+.seg button{border:0;background:transparent;padding:7px 13px;border-radius:8px;font-size:12.5px;font-weight:600;color:var(--t2)}
+.seg button.on{background:var(--s);color:var(--a-ink);box-shadow:var(--shadow-card)}
+.proto-bar .spacer{flex:1}
+.theme-toggle{border:1px solid var(--bd);background:var(--s);border-radius:9px;padding:7px 12px;font-size:12px;font-weight:600;color:var(--t2)}
+
+/* ============ 外壳 ============ */
+.admin-shell{display:grid;grid-template-columns:220px minmax(0,1fr);min-height:calc(100vh - 49px)}
+.sidebar{position:sticky;top:49px;height:calc(100vh - 49px);display:flex;flex-direction:column;gap:6px;
+  padding:22px 15px 18px;border-right:1px solid var(--bd);background:var(--s2)}
+.brand{display:grid;gap:3px;padding:0 8px 18px;border-bottom:1px solid var(--bd);margin-bottom:6px}
+.brand .kick{font-size:10.5px;font-weight:800;letter-spacing:.14em;color:var(--a)}
+.brand strong{font-size:15px;font-family:var(--fd)}
+.brand small{font-size:11px;color:var(--t3)}
+.nav{display:grid;gap:3px}
+.nav a{display:flex;align-items:center;gap:11px;min-height:40px;padding:0 12px;border-radius:10px;
+  color:var(--t2);text-decoration:none;font-size:13px;font-weight:600}
+.nav a .ic{width:22px;height:22px;display:grid;place-items:center;border-radius:7px;background:var(--s3);font-size:12px}
+.nav a:hover{background:var(--s3);color:var(--t)}
+.nav a.on{background:var(--a-soft);color:var(--a-ink)}
+.nav a.on .ic{background:var(--a);color:var(--a-on)}
+.side-foot{margin-top:auto;display:grid;gap:9px;padding-top:14px;border-top:1px solid var(--bd);font-size:11.5px;color:var(--t3)}
+.side-foot .dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--ok);margin-right:6px;vertical-align:1px}
+
+.main{min-width:0;padding:20px clamp(16px,2.4vw,32px) 40px}
+
+/* topbar 共享：标题 + 全局定位搜索 */
+.topbar{display:flex;align-items:center;gap:18px;margin-bottom:18px;flex-wrap:wrap}
+.topbar .tt{display:grid;gap:2px}
+.topbar .tt .kick{font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--a)}
+.topbar .tt h1{font-size:23px;font-family:var(--fd);letter-spacing:-.01em}
+.gsearch{flex:1;min-width:240px;display:flex;align-items:center;gap:8px;max-width:520px;
+  padding:0 12px;height:42px;background:var(--s);border:1px solid var(--bd);border-radius:12px;box-shadow:var(--shadow-card)}
+.gsearch:focus-within{border-color:var(--a);box-shadow:0 0 0 3px var(--a-soft)}
+.gsearch .mg{color:var(--t3)}
+.gsearch input{flex:1;border:0;background:transparent;outline:none;font-size:13.5px}
+.gsearch kbd{font-family:var(--fm);font-size:10.5px;color:var(--t3);border:1px solid var(--bd);border-radius:5px;padding:1px 5px}
+.sync{font-size:11.5px;color:var(--t3);white-space:nowrap}
+
+/* ============ 通用组件 ============ */
+.card{background:var(--s);border:1px solid var(--bd);border-radius:15px;box-shadow:var(--shadow-card)}
+.card-h{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:15px 17px 0}
+.card-h .kick{font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--a)}
+.card-h h2{font-size:15px;margin-top:3px;font-family:var(--fd)}
+.card-b{padding:14px 17px 17px}
+.readonly{font-size:10.5px;font-weight:700;color:var(--t3);border:1px solid var(--bd);border-radius:999px;padding:3px 9px}
+.write{font-size:10.5px;font-weight:700;color:var(--gold);border:1px solid var(--gold);border-radius:999px;padding:3px 9px;opacity:.9}
+
+/* 开关 */
+.switch{display:inline-flex;align-items:center;gap:9px}
+.switch .tg{position:relative;width:40px;height:23px;border-radius:999px;background:var(--s3);border:1px solid var(--bd);transition:.16s}
+.switch .tg::after{content:"";position:absolute;top:2px;left:2px;width:17px;height:17px;border-radius:50%;background:var(--s);box-shadow:0 1px 2px hsla(0,0%,0%,.25);transition:.16s}
+.switch.on .tg{background:var(--ok);border-color:var(--ok)}
+.switch.on .tg::after{left:19px}
+.switch .lb{display:grid;gap:1px}
+.switch .lb b{font-size:13px;font-weight:600}
+.switch .lb small{font-size:10.5px;color:var(--t3)}
+
+/* 芯片：形状+颜色双编码 */
+.chip{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:600;padding:3px 9px;border-radius:999px;border:1px solid transparent;white-space:nowrap}
+.chip .d{width:7px;height:7px;border-radius:2px}
+.chip.ok{color:var(--ok);background:var(--ok-soft)} .chip.ok .d{background:var(--ok);border-radius:50%}
+.chip.warn{color:var(--warn);background:var(--warn-soft)} .chip.warn .d{background:var(--warn);transform:rotate(45deg)}
+.chip.danger{color:var(--danger);background:var(--danger-soft)} .chip.danger .d{background:var(--danger);border-radius:1px}
+.chip.info{color:var(--info);background:var(--info-soft)} .chip.info .d{background:var(--info);border-radius:50%}
+.chip.mute{color:var(--t2);background:var(--s3)} .chip.mute .d{background:var(--t3);border-radius:50%}
+
+/* 按钮 */
+.btn{display:inline-flex;align-items:center;gap:6px;height:34px;padding:0 14px;border-radius:10px;font-size:12.5px;font-weight:600;border:1px solid transparent;background:transparent}
+.btn.pri{background:var(--a);color:var(--a-on);border-color:var(--a)}
+.btn.pri:hover{filter:brightness(1.06)}
+.btn.out{border-color:var(--bd);background:var(--s);color:var(--t2)}
+.btn.out:hover{border-color:var(--a);color:var(--a-ink)}
+.btn.link{padding:0 4px;color:var(--a-ink);height:auto}
+.btn.sm{height:29px;padding:0 11px;font-size:12px;border-radius:8px}
+.btn.danger{border-color:var(--danger);color:var(--danger);background:var(--danger-soft)}
+
+/* KPI */
+.kpi{padding:15px 16px;border:1px solid var(--bd);border-radius:14px;background:var(--s);box-shadow:var(--shadow-card);display:grid;gap:4px}
+.kpi .lb{font-size:11.5px;color:var(--t2);font-weight:600;display:flex;align-items:center;gap:6px}
+.kpi .v{font-family:var(--fm);font-size:27px;font-weight:600;letter-spacing:-.02em;line-height:1.05}
+.kpi .v small{font-size:13px;color:var(--t3);font-weight:500}
+.kpi .sub{font-size:11px;color:var(--t3)}
+.kpi.hero .v{font-size:33px}
+
+/* 队列条目 */
+.q{display:grid;gap:9px}
+.qi{display:grid;grid-template-columns:auto 1fr auto;gap:13px;align-items:center;padding:13px 14px;border:1px solid var(--bd);border-radius:13px;background:var(--s)}
+.qi .qic{width:34px;height:34px;border-radius:10px;display:grid;place-items:center;font-size:15px}
+.qi.danger .qic{background:var(--danger-soft);color:var(--danger)}
+.qi.warn .qic{background:var(--warn-soft);color:var(--warn)}
+.qi.info .qic{background:var(--info-soft);color:var(--info)}
+.qi.ok .qic{background:var(--ok-soft);color:var(--ok)}
+.qi .qt{display:grid;gap:3px;min-width:0}
+.qi .qt b{font-size:13.5px;font-weight:600}
+.qi .qt .ev{font-size:11.5px;color:var(--t2);overflow:hidden;text-overflow:ellipsis}
+.qi .qt .mono{font-size:11px;color:var(--t3)}
+.qi .qa{display:flex;gap:7px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
+.q-empty{padding:18px;text-align:center;color:var(--t3);font-size:12.5px}
+
+/* 表格 */
+.tbl{width:100%;border-collapse:collapse;font-size:12.5px}
+.tbl th{text-align:left;font-size:11px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:.04em;padding:8px 10px;border-bottom:1px solid var(--bd)}
+.tbl td{padding:10px;border-bottom:1px solid var(--s3);vertical-align:middle}
+.tbl tr:last-child td{border-bottom:0}
+.tbl .mono{font-size:11.5px}
+
+/* 卡台/营业条 */
+.route{display:grid;gap:8px}
+.route-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;border:1px solid var(--bd);border-radius:11px;background:var(--s2)}
+.route-row .rl{display:grid;gap:2px}
+.route-row .rl b{font-size:12.5px}
+.route-row .rl small{font-size:10.5px;color:var(--t3)}
+.route-row select{border:1px solid var(--bd);background:var(--s);border-radius:8px;height:32px;padding:0 10px;font-size:12.5px;font-weight:600}
+.opsbar{display:flex;align-items:center;gap:22px;flex-wrap:wrap;padding:14px 16px;border:1px solid var(--bd);border-radius:14px;
+  background:linear-gradient(180deg,var(--s) 0,var(--s2) 100%);box-shadow:var(--shadow-card)}
+.opsbar .grp{display:flex;align-items:center;gap:16px}
+.opsbar .vr{width:1px;align-self:stretch;background:var(--bd)}
+
+/* CDK 快捷 */
+.cdk-quick{display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap}
+.cdk-quick label{display:grid;gap:4px;font-size:11px;color:var(--t2);font-weight:600}
+.cdk-quick select,.cdk-quick input{height:34px;border:1px solid var(--bd);background:var(--s);border-radius:9px;padding:0 10px;font-size:13px}
+.cdk-quick input{width:74px}
+.cdk-out{margin-top:11px;padding:11px 12px;border:1px dashed var(--a);border-radius:11px;background:var(--a-soft);font-family:var(--fm);font-size:12.5px;color:var(--a-ink);display:flex;align-items:center;justify-content:space-between;gap:10px}
+
+/* 日对账四数 */
+.recon{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+.recon .r{padding:12px;border:1px solid var(--bd);border-radius:12px;background:var(--s2);display:grid;gap:3px}
+.recon .r .v{font-family:var(--fm);font-size:22px;font-weight:600}
+.recon .r .lb{font-size:11px;color:var(--t2);font-weight:600}
+.recon .r .lb small{display:block;color:var(--t3);font-weight:500;font-size:10px}
+.recon .r.bad .v{color:var(--danger)}
+
+.grid2{display:grid;grid-template-columns:1.35fr .9fr;gap:16px;align-items:start}
+.grid-kpi{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+.stack{display:grid;gap:16px}
+.mb{margin-bottom:16px}
+.section-label{font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--t3);margin:2px 0 10px}
+
+/* 版 B 收件箱 */
+.inbox-grid{display:grid;grid-template-columns:1.6fr .85fr;gap:16px;align-items:start}
+.inbox-group{margin-bottom:16px}
+.inbox-group .gh{display:flex;align-items:center;gap:8px;margin:0 0 9px;font-size:12px;font-weight:700;color:var(--t2)}
+.inbox-group .gh .n{font-family:var(--fm);color:var(--t3)}
+.kpi-rail{display:grid;gap:10px}
+.kpi-rail .kpi{padding:12px 14px}
+.kpi-rail .kpi .v{font-size:22px}
+
+/* 版 C 数字墙 */
+.wall{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:14px}
+.wall2{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:16px}
+.bars{display:grid;gap:7px}
+.bar{display:grid;grid-template-columns:96px 1fr auto;gap:9px;align-items:center;font-size:11.5px}
+.bar .track{height:9px;border-radius:5px;background:var(--s3);overflow:hidden}
+.bar .fill{height:100%;border-radius:5px;background:var(--a)}
+.bar .fill.hv{background:var(--info)}
+.bar .mono{color:var(--t2)}
+
+.foot-note{max-width:960px;margin:26px auto 0;padding:14px 18px;border-top:1px solid var(--bd);font-size:11.5px;color:var(--t3);line-height:1.7}
+.foot-note b{color:var(--t2)}
+@media(max-width:900px){
+  .admin-shell{grid-template-columns:1fr}.sidebar{display:none}
+  .grid2,.inbox-grid{grid-template-columns:1fr}.wall{grid-template-columns:repeat(2,1fr)}
+  .wall2{grid-template-columns:1fr}.recon{grid-template-columns:repeat(2,1fr)}
+}
+</style>
+</head>
+<body>
+
+<div class="proto-bar">
+  <div class="pb-title">第⑥步 · 工作台比稿<small>面五② · 令牌沿用候光</small></div>
+  <div class="seg" id="seg">
+    <button data-p="A">A 驾驶舱</button>
+    <button data-p="B">B 待办优先</button>
+    <button data-p="C" class="on">C 看板优先（精修）</button>
+  </div>
+  <div class="spacer"></div>
+  <button class="theme-toggle" id="themeBtn">🌙 切夜间</button>
+</div>
+
+<div class="admin-shell">
+  <aside class="sidebar">
+    <div class="brand">
+      <span class="kick">OPERATIONS</span>
+      <strong>Plus 运营后台</strong>
+      <small>内部管理中心</small>
+    </div>
+    <nav class="nav">
+      <a class="on" href="#"><span class="ic">◱</span>工作台</a>
+      <a href="#"><span class="ic">≡</span>订单</a>
+      <a href="#"><span class="ic">#</span>CDK</a>
+      <a href="#"><span class="ic">▣</span>卡片</a>
+      <a href="#"><span class="ic">⚙</span>设置</a>
+      <a href="#"><span class="ic">◎</span>诊断</a>
+    </nav>
+    <div class="side-foot">
+      <span><i class="dot"></i>营业中 · 人工确认模式</span>
+      <span>管理员已登录</span>
+    </div>
+  </aside>
+
+  <main class="main">
+    <div class="topbar">
+      <div class="tt"><span class="kick">运营驾驶舱</span><h1>今天的运行情况</h1></div>
+      <div class="gsearch">
+        <span class="mg">⌕</span>
+        <input id="gs" placeholder="贴卡密 / 订单号 / 邮箱 → 直接定位这一单" autocomplete="off">
+        <kbd>↵</kbd>
+      </div>
+      <span class="sync" id="sync">数据快照 · 2026-09-18 13:0x</span>
+    </div>
+
+    <!-- ============ 版 A 驾驶舱 ============ -->
+    <div id="wb-A" class="wb" hidden>
+      <div class="opsbar mb">
+        <div class="grp" id="A-switches"></div>
+        <div class="vr"></div>
+        <div class="grp" id="A-routes"></div>
+        <div class="vr"></div>
+        <div class="grp"><div class="cdk-quick" id="A-cdk"></div></div>
+      </div>
+      <div class="grid2">
+        <div class="stack">
+          <section class="card">
+            <div class="card-h"><div><p class="kick">今天要处理的</p><h2>需要我处理</h2></div><span class="chip danger" id="A-qn"><span class="d"></span>—</span></div>
+            <div class="card-b"><div class="q" id="A-queue"></div></div>
+          </section>
+          <section class="card">
+            <div class="card-h"><div><p class="kick">今日订单</p><h2>正在跑与刚完成</h2></div><a class="btn link" href="#">进订单页 →</a></div>
+            <div class="card-b" style="padding-top:4px"><div style="overflow-x:auto"><table class="tbl" id="A-orders"></table></div></div>
+          </section>
+        </div>
+        <div class="stack">
+          <div class="grid-kpi" id="A-kpi"></div>
+          <section class="card">
+            <div class="card-h"><div><p class="kick">卡与钱</p><h2>今天花了 / 卡用了几张</h2></div><span class="readonly">只读</span></div>
+            <div class="card-b" id="A-cards"></div>
+          </section>
+          <section class="card">
+            <div class="card-h"><div><p class="kick">昨夜日对账</p><h2>对上没有</h2></div><a class="btn link" href="#">看逐张 →</a></div>
+            <div class="card-b"><div class="recon" id="A-recon"></div></div>
+          </section>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ 版 B 待办优先 ============ -->
+    <div id="wb-B" class="wb" hidden>
+      <div class="inbox-grid">
+        <section class="card">
+          <div class="card-h"><div><p class="kick">收件箱</p><h2>需要我处理 <span class="chip danger" id="B-qn" style="margin-left:6px"><span class="d"></span>—</span></h2></div><a class="btn link" href="#">全部标记看过</a></div>
+          <div class="card-b" id="B-inbox"></div>
+        </section>
+        <div class="stack">
+          <div class="opsbar" style="flex-direction:column;align-items:stretch;gap:12px">
+            <div class="grp" style="justify-content:space-between" id="B-switches"></div>
+            <div class="vr" style="width:auto;height:1px"></div>
+            <div class="route" id="B-routes"></div>
+          </div>
+          <section class="card"><div class="card-h"><div><p class="kick">今天</p><h2>关键数字</h2></div></div>
+            <div class="card-b"><div class="kpi-rail" id="B-kpi"></div></div></section>
+          <section class="card"><div class="card-h"><div><p class="kick">CDK</p><h2>生成即复制</h2></div></div>
+            <div class="card-b"><div class="cdk-quick" id="B-cdk"></div></div></section>
+          <section class="card"><div class="card-h"><div><p class="kick">昨夜日对账</p><h2>四个数</h2></div></div>
+            <div class="card-b"><div class="recon" id="B-recon" style="grid-template-columns:1fr 1fr"></div></div></section>
+        </div>
+      </div>
+      <section class="card" style="margin-top:16px">
+        <div class="card-h"><div><p class="kick">今日订单</p><h2>正在跑与刚完成</h2></div><a class="btn link" href="#">进订单页 →</a></div>
+        <div class="card-b" style="padding-top:4px"><div style="overflow-x:auto"><table class="tbl" id="B-orders"></table></div></div>
+      </section>
+    </div>
+
+    <!-- ============ 版 C 看板优先 ============ -->
+    <div id="wb-C" class="wb">
+      <div class="opsbar mb" style="justify-content:space-between">
+        <div class="grp" id="C-switches"></div>
+        <div class="grp" id="C-routes-mini"></div>
+        <div class="grp"><div class="cdk-quick" id="C-cdk"></div></div>
+      </div>
+      <p class="section-label">今天生意怎么样</p>
+      <div class="wall" id="C-wall"></div>
+      <div class="wall2" style="grid-template-columns:1.35fr .65fr">
+        <section class="card"><div class="card-h"><div><p class="kick">卡与钱</p><h2>今天花了 / 卡用了几张（按台按产品）</h2></div><span class="readonly">只读</span></div><div class="card-b" id="C-cards"></div></section>
+        <section class="card"><div class="card-h"><div><p class="kick">昨夜日对账</p><h2>对上没有</h2></div><a class="btn link" href="#">看逐张 →</a></div><div class="card-b"><div class="recon" id="C-recon" style="grid-template-columns:1fr 1fr"></div></div></section>
+      </div>
+      <section class="card mb">
+        <div class="card-h"><div><p class="kick">今天要处理的</p><h2>需要我处理</h2></div><span class="chip danger" id="C-qn"><span class="d"></span>—</span></div>
+        <div class="card-b"><div class="q" id="C-queue"></div></div>
+      </section>
+      <section class="card">
+        <div class="card-h"><div><p class="kick">今日订单</p><h2>正在跑与刚完成</h2></div><a class="btn link" href="#">进订单页 →</a></div>
+        <div class="card-b" style="padding-top:4px"><div style="overflow-x:auto"><table class="tbl" id="C-orders"></table></div></div>
+      </section>
+    </div>
+
+    <div class="foot-note">
+      <b>这是什么</b>：V2 第⑥步「工作台」的三版比稿，内容一样、摆法不同——A 控制感优先、B 待办优先、C 看板优先。顶部可切版、可切日/夜（令牌来自客户页「候光」，Lemon 已定后台沿用这套）。<br>
+      <b>数据</b>：2026-09-18 ⑤b dry-run 现场快照（30 卡 / 日对账无主扣款 6 张 / 待登记 1 张=3336 / 无法核对 30 / 连续两次 0 / 待销到期 4 / 可分配 2）+ 少量样例造单（现场非终态订单为 0，为看布局临时造几行）。<br>
+      <b>还没逐字核的</b>：看板里「自动完成率 / 按台花费 / 按台按产品卡用量 / 两路线耗时」是否已有现成聚合，要在实现前逐项核（可能需新写查询）——数字暂为示意。字体在生产自托管，此原型可能回退系统字体。
+    </div>
+  </main>
+</div>
+
+<script>
+// ============ 一份数据，三版共享 ============
+var DATA = {
+  switches: [
+    {k:"accept", b:"接单", on:true, s:"新单进入"},
+    {k:"dispatch", b:"派单", on:true, s:"分卡执行"},
+    {k:"pay", b:"付款", on:true, s:"允许提交付款"}
+  ],
+  routes: [
+    {r:"API 路线", card:"HNSKJ", fixed:true, note:"API 固定 hnskj（D-253）"},
+    {r:"Browser 路线", card:"HighVCC", fixed:false, note:"可切任一卡台，异常只提醒"}
+  ],
+  kpi: [
+    {lb:"今日单数", v:"12", sub:"昨日 9"},
+    {lb:"成功率", v:"92%", sub:"11 / 12"},
+    {lb:"自动完成率", v:"75%", sub:"9 单没靠人收口", hero:true},
+    {lb:"今日花费", v:"$384", sub:"hnskj $210 · highvcc $174"},
+    {lb:"异常支出", v:"$0", sub:"无主扣款不计入"}
+  ],
+  cards: [ // 按台按产品卡用量
+    {prov:"HNSKJ", wallet:"$25.50", state:"ok", items:[{p:"Plus", used:2, left:3},{p:"5X", used:0, left:1}]},
+    {prov:"HighVCC", wallet:"水位满", state:"ok", items:[{p:"Plus", used:1, left:2},{p:"20X", used:0, left:1}]}
+  ],
+  cardsTotal:{total:30, assignable:2},
+  routeTime:[{r:"API", v:"48s", pct:30, cls:""},{r:"Browser", v:"2m42s", pct:100, cls:"hv"}],
+  queue: [
+    {t:"danger", ic:"⚠", b:"对账差异 · 无主扣款 6 张卡", ev:"账本无对应订单，非升级、进报告", mono:"8590 · 0237 · 0601 · 5371 · 5501 · 7402", acts:[{l:"看逐张",k:"pri"},{l:"导出 CSV",k:"out"}]},
+    {t:"warn", ic:"⏱", b:"待销到期 4 张卡", ev:"已过可销时间，去卡台删掉后点确认", mono:"复用 card-retirement/candidates", acts:[{l:"逐张确认已删",k:"out"}]},
+    {t:"info", ic:"✎", b:"待登记手动用卡 1 张", ev:"你手动用过、尚未标记 → 标 RETIRED override（不移出待销）", mono:"卡 3336", acts:[{l:"我手动用了这张",k:"out"}]},
+    {t:"ok", ic:"🔑", b:"HighVCC token 有效", ev:"下次失效会红栏提醒并进这里", mono:"最近校验 12:58", acts:[{l:"贴新 token",k:"link"}]},
+    {t:"danger", ic:"⏸", b:"付款结果未知 · 锁入对账 1 单", ev:"提交后崩溃，先对账不重点（样例造单）", mono:"订单 PJ-8K2M · 卡 7402", acts:[{l:"进对账",k:"pri"}]}
+  ],
+  orders: [ // 样例造单
+    {no:"PJ-8K2M", prod:"Plus", stage:"正在确认订阅", stageCls:"info", todo:"自动进行中", card:"7402", id:"a***@gmail", t:"09:12"},
+    {no:"PLUS-Q7X", prod:"Plus", stage:"订阅成功", stageCls:"ok", todo:"—", card:"5501", id:"m***@qq", t:"09:05"},
+    {no:"20X-R3D9", prod:"Pro 20X", stage:"等 Session", stageCls:"warn", todo:"需要换号", card:"—", id:"k***@163", t:"08:50"},
+    {no:"PJ-2F1A", prod:"Plus", stage:"正在提交支付", stageCls:"info", todo:"自动进行中", card:"8590", id:"z***@gmail", t:"08:41"}
+  ],
+  recon: [
+    {v:"6", lb:"差异", s:"无主扣款", bad:true},
+    {v:"1", lb:"待登记", s:"手动用卡"},
+    {v:"30", lb:"无法核对", s:"无可信期初金额"},
+    {v:"0", lb:"连续两次", s:"persistent"}
+  ]
+};
+
+// ============ 渲染助手 ============
+function el(html){var d=document.createElement("div");d.innerHTML=html.trim();return d.firstChild;}
+function toast(msg){var t=document.getElementById("toast");if(!t){t=document.createElement("div");t.id="toast";
+  t.style.cssText="position:fixed;left:50%;bottom:26px;transform:translateX(-50%);z-index:99;background:var(--t);color:var(--bg);"+
+  "padding:10px 16px;border-radius:11px;font-size:12.5px;box-shadow:var(--shadow-pop);max-width:80vw";document.body.appendChild(t);}
+  t.textContent=msg;t.style.opacity="1";clearTimeout(t._h);t._h=setTimeout(function(){t.style.opacity="0";},1900);}
+
+function switchHtml(sw){return '<div class="switch'+(sw.on?' on':'')+'" data-sw="'+sw.k+'"><span class="tg"></span>'+
+  '<span class="lb"><b>'+sw.b+'</b><small>'+sw.s+'</small></span></div>';}
+function renderSwitches(id){var box=document.getElementById(id);if(!box)return;box.innerHTML="";
+  DATA.switches.forEach(function(sw){box.appendChild(el(switchHtml(sw)));});}
+function routeRowHtml(rt){return '<div class="route-row"><div class="rl"><b>'+rt.r+'</b><small>'+rt.note+'</small></div>'+
+  (rt.fixed?'<span class="chip mute"><span class="d"></span>'+rt.card+'</span>':
+   '<select><option>'+rt.card+'</option><option>HNSKJ</option><option>备用卡台 B</option></select>')+'</div>';}
+function renderRoutes(id,compact){var box=document.getElementById(id);if(!box)return;
+  if(compact){box.innerHTML=DATA.routes.map(function(rt){return '<span class="chip '+(rt.fixed?'mute':'info')+'"><span class="d"></span>'+rt.r.replace(" 路线","")+"·"+rt.card+'</span>';}).join(" ");return;}
+  box.className="route";box.innerHTML="";DATA.routes.forEach(function(rt){box.appendChild(el(routeRowHtml(rt)));});}
+function renderRoutesInline(id){var box=document.getElementById(id);if(!box)return;box.innerHTML="";
+  DATA.routes.forEach(function(rt){box.appendChild(el(routeRowHtml(rt)));box.lastChild.style.background="transparent";box.lastChild.style.border="0";box.lastChild.style.padding="0 0 0 0";});}
+function cdkHtml(){return '<label>产品<select><option>Plus</option><option>Pro 5X</option><option>Pro 20X</option></select></label>'+
+  '<label>数量<input type="number" value="1" min="1" max="1000"></label>'+
+  '<button class="btn pri" data-cdk>生成并复制</button>';}
+function renderCdk(id){var box=document.getElementById(id);if(!box)return;box.innerHTML=cdkHtml();}
+function kpiHtml(k){return '<div class="kpi'+(k.hero?' hero':'')+'"><span class="lb">'+k.lb+'</span>'+
+  '<span class="v">'+k.v+'</span><span class="sub">'+k.sub+'</span></div>';}
+function renderKpi(id,list){var box=document.getElementById(id);if(!box)return;box.innerHTML="";
+  (list||DATA.kpi).forEach(function(k){box.appendChild(el(kpiHtml(k)));});}
+function queueItemHtml(q){var acts=q.acts.map(function(a){return '<button class="btn '+(a.k)+' sm" data-act>'+a.l+'</button>';}).join("");
+  return '<div class="qi '+q.t+'"><div class="qic">'+q.ic+'</div><div class="qt"><b>'+q.b+'</b>'+
+    '<span class="ev">'+q.ev+'</span><span class="mono">'+q.mono+'</span></div><div class="qa">'+acts+'</div></div>';}
+function renderQueue(id){var box=document.getElementById(id);if(!box)return;box.innerHTML="";
+  DATA.queue.forEach(function(q){box.appendChild(el(queueItemHtml(q)));});}
+function renderQueueCount(id){var n=DATA.queue.filter(function(q){return q.t!=="ok";}).length;
+  var c=document.getElementById(id);if(c)c.innerHTML='<span class="d"></span>'+n+" 件待办";}
+function ordersHtml(){var head='<thead><tr><th>订单</th><th>产品</th><th>当前阶段</th><th>需要我做什么</th><th>卡尾号</th><th>身份</th><th>创建</th></tr></thead>';
+  var body=DATA.orders.map(function(o){return '<tr><td class="mono">'+o.no+'</td><td>'+o.prod+'</td>'+
+    '<td><span class="chip '+o.stageCls+'"><span class="d"></span>'+o.stage+'</span></td>'+
+    '<td>'+o.todo+'</td><td class="mono">'+o.card+'</td><td class="mono">'+o.id+'</td><td class="mono">'+o.t+'</td></tr>';}).join("");
+  return head+'<tbody>'+body+'</tbody>';}
+function renderOrders(id){var t=document.getElementById(id);if(t)t.innerHTML=ordersHtml();}
+function cardsHtml(){var rows=DATA.cards.map(function(c){var chips=c.items.map(function(it){
+    return '<span class="chip mute" style="margin-right:5px"><span class="d"></span>'+it.p+' 用 '+it.used+' / 剩 '+it.left+'</span>';}).join("");
+  return '<div class="route-row" style="align-items:flex-start"><div class="rl"><b>'+c.prov+
+    ' <span class="chip ok" style="margin-left:4px"><span class="d"></span>'+c.wallet+'</span></b>'+
+    '<div style="margin-top:7px">'+chips+'</div></div></div>';}).join("");
+  return rows+'<p style="margin:10px 2px 0;font-size:11.5px;color:var(--t3)">合计 <b class="mono">'+DATA.cardsTotal.total+
+    '</b> 张 · 现在可分配 <b class="mono">'+DATA.cardsTotal.assignable+'</b> 张</p>';}
+function renderCards(id){var box=document.getElementById(id);if(box)box.innerHTML=cardsHtml();}
+function reconHtml(){return DATA.recon.map(function(r){return '<div class="r'+(r.bad?' bad':'')+'">'+
+  '<span class="v">'+r.v+'</span><span class="lb">'+r.lb+'<small>'+r.s+'</small></span></div>';}).join("");}
+function renderRecon(id){var box=document.getElementById(id);if(box)box.innerHTML=reconHtml();}
+function timeHtml(){return '<div class="bars">'+DATA.routeTime.map(function(t){return '<div class="bar">'+
+  '<span>'+t.r+' 中位耗时</span><span class="track"><span class="fill '+t.cls+'" style="width:'+t.pct+'%"></span></span>'+
+  '<span class="mono">'+t.v+'</span></div>';}).join("")+'</div>';}
+
+// 版 B 收件箱：按类型分组
+function renderInbox(id){var box=document.getElementById(id);if(!box)return;
+  var groups=[{h:"要我确认/对账的",t:["danger"]},{h:"到期与登记",t:["warn","info"]},{h:"状态正常",t:["ok"]}];
+  box.innerHTML="";groups.forEach(function(g){var items=DATA.queue.filter(function(q){return g.t.indexOf(q.t)>=0;});
+    if(!items.length)return;var wrap=el('<div class="inbox-group"><div class="gh">'+g.h+' <span class="n">'+items.length+'</span></div><div class="q"></div></div>');
+    var q=wrap.querySelector(".q");items.forEach(function(it){q.appendChild(el(queueItemHtml(it)));});box.appendChild(wrap);});}
+
+// 版 C 数字墙
+function renderWall(id){var box=document.getElementById(id);if(!box)return;
+  box.innerHTML=DATA.kpi.map(function(k){return kpiHtml(k);}).join("");}
+
+// ============ 装配三版 ============
+function build(){
+  try{
+    // A
+    renderSwitches("A-switches");renderRoutes("A-routes");renderCdk("A-cdk");
+    renderKpi("A-kpi");renderQueue("A-queue");renderQueueCount("A-qn");
+    renderOrders("A-orders");renderCards("A-cards");renderRecon("A-recon");
+    // B
+    renderSwitches("B-switches");renderRoutesInline("B-routes");renderCdk("B-cdk");
+    renderKpi("B-kpi");renderInbox("B-inbox");renderQueueCount("B-qn");
+    renderOrders("B-orders");renderRecon("B-recon");
+    // C
+    renderSwitches("C-switches");renderRoutes("C-routes-mini",true);renderCdk("C-cdk");
+    renderWall("C-wall");renderQueue("C-queue");renderQueueCount("C-qn");
+    renderOrders("C-orders");renderCards("C-cards");renderRecon("C-recon");
+  }catch(e){toast("渲染出错："+e.message);}
+}
+build();
+
+// ============ 交互 ============
+document.getElementById("seg").addEventListener("click",function(e){
+  var b=e.target.closest("button[data-p]");if(!b)return;
+  [].forEach.call(this.querySelectorAll("button"),function(x){x.classList.toggle("on",x===b);});
+  ["A","B","C"].forEach(function(p){document.getElementById("wb-"+p).hidden=(p!==b.dataset.p);});
+});
+document.getElementById("themeBtn").addEventListener("click",function(){
+  var dark=document.documentElement.getAttribute("data-theme")==="dark";
+  document.documentElement.setAttribute("data-theme",dark?"light":"dark");
+  this.textContent=dark?"🌙 切夜间":"☀ 切日间";
+});
+document.body.addEventListener("click",function(e){
+  var sw=e.target.closest(".switch");
+  if(sw){sw.classList.toggle("on");toast("（原型）"+sw.querySelector("b").textContent+"："+(sw.classList.contains("on")?"开":"关")+" — 生产会调 operations 端点并写审计");return;}
+  var cdk=e.target.closest("[data-cdk]");
+  if(cdk){var code="PLUS-"+Math.random().toString(36).slice(2,8).toUpperCase();toast("（原型）已生成并复制："+code+" — D-279 前缀按产品");return;}
+  var act=e.target.closest("[data-act]");
+  if(act){toast("（原型）"+act.textContent+" — 生产会调对应端点、点完状态真的变、并写账本");return;}
+});
+document.getElementById("gs").addEventListener("keydown",function(e){
+  if(e.key==="Enter"&&this.value.trim()){toast("（原型）定位「"+this.value.trim()+"」→ 该码状态 / 绑定订单 / 当前阶段 / 一键进详情");}
+});
+</script>
+</body>
+</html>

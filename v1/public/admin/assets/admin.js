@@ -101,12 +101,8 @@ const elements = {
   viewKicker: document.querySelector('#view-kicker'),
   viewTitle: document.querySelector('#view-title'),
   syncTime: document.querySelector('#sync-time'),
-  metrics: document.querySelector('#metrics-grid'),
-  readinessList: document.querySelector('#admin-readiness-list'),
   diagnosticsReadiness: document.querySelector('#diagnostics-readiness-list'),
   diagnosticsHeartbeat: document.querySelector('#diagnostics-heartbeat'),
-  decisionsGrid: document.querySelector('#decisions-grid'),
-  attentionOrders: document.querySelector('#attention-orders'),
   ordersTable: document.querySelector('#orders-table'),
   filters: document.querySelector('#order-filters'),
   search: document.querySelector('#order-search'),
@@ -121,8 +117,7 @@ const elements = {
   detailContent: document.querySelector('#detail-content'),
   notice: document.querySelector('#page-notice')
   ,startBusiness: document.querySelector('#start-business')
-  ,alertsCard: document.querySelector('#alerts-card'), alertsList: document.querySelector('#alerts-list'),
-  cdkForm: document.querySelector('#cdk-form'), cdkCount: document.querySelector('#cdk-count'),
+  ,cdkForm: document.querySelector('#cdk-form'), cdkCount: document.querySelector('#cdk-count'),
   cdkResult: document.querySelector('#cdk-result'), generatedCdks: document.querySelector('#generated-cdks'),
   cdkBatchLabel: document.querySelector('#cdk-batch-label'), copyCdks: document.querySelector('#copy-cdks'),
   downloadCdks: document.querySelector('#download-cdks'), cdkBatches: document.querySelector('#cdk-batches'),
@@ -246,7 +241,7 @@ async function api(url, options) {
   return payload;
 }
 
-function renderReadiness(readiness = {}, target = elements.readinessList) {
+function renderReadiness(readiness = {}, target = null) {
   if (!target) return;
   const statusLabels = { READY: '已就绪', AUTO_HEAL: '自动处理', ACTION_REQUIRED: '需要处理', BLOCKED: '暂不可用' };
   // Five pages only: card matters go to 卡片, execution and reconciliation to 诊断.
@@ -323,19 +318,117 @@ function orderRow(order) {
   </tr>`;
 }
 
+// ===== 工作台（第⑥步 C 精修，D-283）渲染 =====
+// 复用现有 overview / reconciliation·daily 取数，重排成 C 精修布局。
+// 营业条沿用五个决定的按钮契约（data-intake / data-method / #decision-card-source(-apply)
+// / #decision-payment / data-supply-toggle），只换候光皮，事件委托零改动。
+function wbChip(cls, text) { return `<span class="wb-chip ${cls}"><span class="wb-d"></span>${escapeHtml(text)}</span>`; }
+
+function renderWbWall(overview) {
+  const box = document.getElementById('wb-wall');
+  if (!box) return;
+  const m = overview.metrics || {};
+  // 自动完成率 / 今日花费按台 / 异常支出：后端暂无聚合，占位「待接入」（口径待 Lemon 定，D-283）。
+  const cells = [
+    { lb: '今日订单', v: m.todayOrders ?? 0, sub: `处理中 ${m.processingOrders ?? 0}`, filter: 'TODAY' },
+    { lb: '成功率', v: m.successRate == null ? '—' : `${m.successRate}%`, sub: `完成 ${m.completedOrders ?? 0} 单` },
+    { lb: '自动完成率', v: '待接入', sub: '口径待定', pending: true },
+    { lb: '今日花费', v: '待接入', sub: '按台聚合待做', pending: true },
+    { lb: '异常支出', v: '待接入', sub: '无主扣款不计', pending: true }
+  ];
+  box.innerHTML = cells.map((c) => `<button type="button" class="wb-kpi ${c.pending ? 'wb-pending' : ''}" ${c.filter ? `data-order-filter="${c.filter}"` : ''}><span class="wb-lb">${escapeHtml(c.lb)}</span><span class="wb-v">${escapeHtml(String(c.v))}</span><span class="wb-sub">${escapeHtml(c.sub)}</span></button>`).join('');
+}
+
+function renderWbCards(overview) {
+  const box = document.getElementById('wb-cards');
+  if (!box) return;
+  const byProvider = overview.cardStockByProvider || [];
+  const h = overview.providerHealth || {};
+  // 显示名：hnskj → HNSKJ；backup-a（manual_excel，highvcc 开卡进这台）→ 备用卡台 A。
+  const nameOf = (p) => p.providerKind === 'hnskj' ? 'HNSKJ' : (p.providerCode === 'backup-a' ? '备用卡台 A' : (p.providerCode || p.providerKind || '卡台'));
+  // hnskj 钱包来自本地快照（getOverview.providerHealth）；backup-a 的钱包=highvcc，实时端点、不在概览。
+  const walletOf = (p) => p.providerKind === 'hnskj'
+    ? (h.accountBalance == null ? '钱包 —' : `钱包 ${formatMoney(h.accountBalance)} ${escapeHtml(h.currency || 'USD')}`)
+    : '钱包见卡片页';
+  if (!byProvider.length) { box.innerHTML = '<p class="wb-qempty">暂无卡台数据</p>'; return; }
+  const totalAssignable = byProvider.reduce((sum, p) => sum + (p.plusAssignable || 0), 0);
+  box.innerHTML = byProvider.map((p) => `
+    <div class="wb-provrow"><div><b>${escapeHtml(nameOf(p))}</b> ${wbChip('ok', walletOf(p))}
+      <div class="wb-usechips">${wbChip(p.plusAssignable > 0 ? 'ok' : 'mute', `Plus 可分配 ${p.plusAssignable}`)}${wbChip('mute', `在库 ${p.inStock}`)}${wbChip('mute', `使用中 ${p.inUse}`)}${wbChip('mute', `用过 ${p.anyUsed}`)}</div></div></div>`).join('')
+    + `<p class="wb-total">两台合计现在可分配 <b class="wb-mono">${totalAssignable}</b> 张（Plus 资格规则）<br><small>今日花费按台、highvcc 钱包水位：待接入</small></p>`;
+}
+
+function renderWbRecon(daily) {
+  const box = document.getElementById('wb-recon');
+  if (!box) return;
+  if (!daily) { box.innerHTML = '<p class="wb-qempty wb-recon-empty">日对账暂无数据（timer 每天 04:0x 跑一次）</p>'; return; }
+  const cells = [
+    { v: daily.discrepancyCount ?? 0, lb: '差异', s: '无主扣款', bad: (daily.discrepancyCount ?? 0) > 0 },
+    { v: daily.pendingRegistrationCount ?? 0, lb: '待登记', s: '手动用卡' },
+    { v: daily.unverifiableCount ?? 0, lb: '无法核对', s: '无期初金额' },
+    { v: daily.persistentCount ?? 0, lb: '连续两次', s: 'persistent', bad: (daily.persistentCount ?? 0) > 0 }
+  ];
+  box.innerHTML = cells.map((c) => `<div class="wb-r ${c.bad ? 'is-bad' : ''}"><span class="wb-v">${escapeHtml(String(c.v))}</span><span class="wb-lb">${escapeHtml(c.lb)}<small>${escapeHtml(c.s)}</small></span></div>`).join('');
+}
+
+function renderWbQueue(overview, daily, alertData, reconCases) {
+  const box = document.getElementById('wb-queue');
+  const countChip = document.getElementById('wb-queue-count');
+  if (!box) return;
+  const b = overview.operationalBacklog || {};
+  const cases = (reconCases && reconCases.cases) || [];
+  const items = [];
+  // 资金核对案例：明细 + 真处理（「解决」复用 resolveReconciliationCase，弹结论、写账本、刷新工作台）。
+  cases.forEach((c) => items.push({
+    t: c.severity === 'critical' ? 'danger' : c.severity === 'warning' ? 'warn' : 'info',
+    ic: '◷',
+    title: `资金核对 · ${RECONCILIATION_TYPE_LABELS[c.caseType] || c.caseType || '案例'}`,
+    ev: `${c.publicNo ? '订单 ' + c.publicNo + ' · ' : ''}${RECONCILIATION_STATUS_LABELS[c.status] || c.status} · ${formatTime(c.lastSeenAt)}`,
+    actions: `${c.publicNo ? `<button type="button" class="wb-btn out sm" data-open-case-order-wb="${escapeHtml(c.publicNo)}">看订单</button>` : ''}<button type="button" class="wb-btn pri sm" data-resolve-wb-case="${escapeHtml(c.id)}">解决</button>`
+  }));
+  // 其余类：摘要 + 跳专页处理（待销/手动用卡在卡片页，无主扣款/连续两次在诊断日对账）。
+  if (daily && (daily.discrepancyCount ?? 0) > 0) items.push({ t: 'danger', ic: '⚠', title: `对账差异 · 无主扣款 ${daily.discrepancyCount} 张卡`, ev: '账本无对应订单，进报告、不隐藏', jump: 'diagnostics' });
+  if (daily && (daily.persistentCount ?? 0) > 0) items.push({ t: 'danger', ic: '‼', title: `连续两次差异 ${daily.persistentCount} 张`, ev: '已升级，需人工核', jump: 'diagnostics' });
+  if ((b.cardFundingManualReview ?? 0) > 0) items.push({ t: 'warn', ic: '$', title: `卡补余额待人工 ${b.cardFundingManualReview} 笔`, ev: 'UNKNOWN 需核对已扣/未扣', jump: 'stock' });
+  if ((b.cardIntakePending ?? 0) > 0) items.push({ t: 'info', ic: '⇩', title: `新卡待接管 ${b.cardIntakePending} 张`, ev: '同步后确认接管', jump: 'stock' });
+  if (daily && (daily.pendingRegistrationCount ?? 0) > 0) items.push({ t: 'info', ic: '✎', title: `待登记手动用卡 ${daily.pendingRegistrationCount} 张`, ev: '已登记 manual-used，等去卡台销', jump: 'stock' });
+  const alerts = (alertData && alertData.alerts) || [];
+  alerts.forEach((a) => items.push({ t: 'warn', ic: '🔔', title: a.title || '内部提醒', ev: a.message || '' }));
+  const active = items.length;
+  if (countChip) countChip.innerHTML = `<span class="wb-d"></span>${active} 件待办`;
+  box.innerHTML = active ? items.map((it) => `<div class="wb-qi ${it.t}"><div class="wb-qic">${it.ic}</div><div class="wb-qt"><b>${escapeHtml(it.title)}</b><span class="wb-ev">${escapeHtml(it.ev)}</span></div><div class="wb-qa">${it.actions || (it.jump ? `<button type="button" class="wb-btn out sm" data-view-jump="${it.jump}">去处理</button>` : '')}</div></div>`).join('') : '<p class="wb-qempty">没有要处理的，今天清爽 ✓</p>';
+}
+
+function wbOrderRow(order) {
+  const stage = order.stage || {};
+  const meta = STAGE_LABELS[stage.stage] || [stage.label || '—', 'gray'];
+  const toneMap = { green: 'ok', red: 'danger', orange: 'warn', blue: 'info', gray: 'mute' };
+  const cls = toneMap[meta[1]] || 'mute';
+  return `<tr data-order="${escapeHtml(order.publicNo)}"><td class="wb-mono">${escapeHtml(order.publicNo)}</td><td>${escapeHtml(productLabel(order))}</td><td>${wbChip(cls, meta[0])}</td><td>${stage.action ? escapeHtml(stage.action) : '—'}</td><td class="wb-mono">${order.card?.last4 ? '尾号 ' + escapeHtml(order.card.last4) : '—'}</td><td class="wb-mono">${escapeHtml(order.customerEmail || order.chatgptAccountId || '—')}</td><td class="wb-mono">${formatTime(order.createdAt)}</td></tr>`;
+}
+
+function renderWbOrders(orders) {
+  const table = document.getElementById('wb-orders');
+  if (!table) return;
+  const head = '<thead><tr><th>订单</th><th>产品</th><th>当前阶段</th><th>需要我做什么</th><th>卡尾号</th><th>身份</th><th>创建</th></tr></thead>';
+  const body = orders.length ? orders.map(wbOrderRow).join('') : '<tr><td colspan="7" class="wb-empty">今天还没有订单</td></tr>';
+  table.innerHTML = head + '<tbody>' + body + '</tbody>';
+}
+
 function renderDecisions(overview, cardSources) {
-  if (!elements.decisionsGrid) return;
+  const box = document.getElementById('wb-decisions');
+  if (!box) return;
   const d = overview.decisions || {};
   state.decisions = d;
   state.acceptingOrders = Boolean(d.acceptNewOrders);
   const health = overview.providerHealth || {};
   const intake = !d.acceptNewOrders ? 'stop' : d.dispatchNewRecharges ? 'run' : 'pause';
-  const intakeButton = (key, label) => `<button type="button" class="${intake === key ? 'primary-small' : 'ghost-button'}" data-intake="${key}" ${intake === key ? 'disabled' : ''}>${label}</button>`;
+  const intakeBtn = (key, label) => `<button type="button" class="wb-btn sm ${intake === key ? 'pri' : 'out'}" data-intake="${key}" ${intake === key ? 'disabled' : ''}>${label}</button>`;
   const rechargeMethod = String(health.rechargeMethod || '').toUpperCase();
   // 切换端点要求带上「我看到的当前值」（四项校验之「版本对」，D-246 面一 C1 ③）。
   state.rechargeMethod = rechargeMethod || 'NONE';
   state.browserSelectionVersion = Number(cardSources?.browserSelectionVersion || 0);
-  const routeButton = (method, label, ready = true, title = '') => `<button class="${rechargeMethod === method ? 'primary-small' : 'ghost-button'} default-recharge-method" type="button" data-method="${method}" ${rechargeMethod === method || !ready ? 'disabled' : ''} title="${escapeHtml(title)}">${label}</button>`;
+  const routeBtn = (method, label, ready = true, title = '') => `<button class="wb-btn sm default-recharge-method ${rechargeMethod === method ? 'pri' : 'out'}" type="button" data-method="${method}" ${rechargeMethod === method || !ready ? 'disabled' : ''} title="${escapeHtml(title)}">${label}</button>`;
   const sources = (cardSources?.sources || []).filter((item) => item.supportsBrowserRecharge && item.operationalEnabled);
   const currentSource = cardSources?.browserProviderAccountId || '';
   const sourceOptions = sources.map((item) => `<option value="${escapeHtml(item.id)}" ${item.id === currentSource ? 'selected' : ''}>${escapeHtml(item.displayName)}</option>`).join('');
@@ -343,56 +436,34 @@ function renderDecisions(overview, cardSources) {
   const payMismatch = d.browserProfileWritesEnabled != null && d.browserProfileWritesEnabled !== payOn;
   const supplyOn = Boolean(d.supplyAutomationEnabled);
   const supplyMixed = Boolean(d.supplyAutomationMixed);
-  // Server toggle is all-or-nothing (both auto-open + auto-topup). In the mixed
-  // state (one on, one off) offer BOTH resolutions so the on-half can be turned
-  // off too, not only turned fully on.
-  const supplyBtn = (enable) => `<button type="button" class="${enable ? 'primary-small' : 'danger-small'}" data-supply-toggle data-enable="${enable}">${enable ? '开启' : '关闭'}</button>`;
+  const supplyBtn = (enable) => `<button type="button" class="wb-btn sm ${enable ? 'pri' : 'out'}" data-supply-toggle data-enable="${enable}">${enable ? '开启' : '关闭'}</button>`;
   const supplyControls = supplyOn ? supplyBtn(false) : (supplyMixed ? `${supplyBtn(true)}${supplyBtn(false)}` : supplyBtn(true));
-  const supplyLabel = supplyOn ? '自动开卡与补余额' : (supplyMixed ? '部分开启' : '全部人工');
-  const supplyHint = supplyOn ? '没有合格卡时按真实订单需求自动开卡、自动补足余额' : (supplyMixed ? '开卡与补余额一个开一个关；「开启」两个都开，「关闭」两个都关' : '开卡与补余额都由人工在卡片页操作');
-  elements.decisionsGrid.innerHTML = `
-    <div class="decision"><strong>接不接单</strong><span class="segmented-actions">${intakeButton('run', '接单并处理')}${intakeButton('pause', '接单但暂停处理')}${intakeButton('stop', '停止接单')}</span><small>${intake === 'run' ? '新订单可以提交，规则通过后自动履约' : intake === 'pause' ? '新订单可以提交，但不派发充值，已有订单继续追踪' : '客户页拒绝新订单，已有订单继续追踪'}</small></div>
-    <div class="decision"><strong>走哪条路线</strong><span class="segmented-actions">${routeButton('API', 'API 充值')}${routeButton('BROWSER', '浏览器自动化充值', Boolean(health.browserRechargeReady), health.browserRechargeReady ? '' : 'Browser 执行器尚未就绪')}</span><small>只影响切换后新建的订单；执行中的订单保持原路线</small></div>
-    <div class="decision"><strong>用哪个卡台</strong><span class="segmented-actions"><select id="decision-card-source" aria-label="Browser 卡台">${sourceOptions || '<option value="">没有可用卡台</option>'}</select><button type="button" class="primary-small" id="decision-card-source-apply" ${sources.length ? '' : 'disabled'}>切换</button></span><small>Browser 路线的卡台；切换只影响之后的新订单，不自动回退</small></div>
-    <div class="decision"><strong>能不能付钱</strong><span class="segmented-actions"><em class="switch-state ${payOn ? 'is-on' : ''}">${payOn ? '允许自动付款' : '禁止自动付款'}</em><button type="button" class="${payOn ? 'danger-small' : 'primary-small'}" id="decision-payment" data-enabled="${payOn}">${payOn ? '关闭' : '开启'}</button></span><small>${payMismatch ? '执行器配置与开关不一致，点一次开启/关闭会同步' : payOn ? '浏览器会真实点击付款；每单仍受单笔许可与唯一提交保护' : '所有 Browser 单停在付款前，不会扣款'}</small></div>
-    <div class="decision"><strong>能不能开卡补钱</strong><span class="segmented-actions"><em class="switch-state ${supplyOn ? 'is-on' : ''}">${supplyLabel}</em>${supplyControls}</span><small>${supplyHint}</small></div>`;
+  const supplyLabel = supplyOn ? '自动开卡补钱' : (supplyMixed ? '部分开启' : '全部人工');
+  const swch = (on) => `<span class="wb-switch ${on ? 'is-on' : ''}"><span class="wb-tg"></span></span>`;
+  box.innerHTML = `
+    <div class="wb-route"><b>接不接单</b><div class="wb-routepick">${intakeBtn('run', '接单并处理')}${intakeBtn('pause', '接单暂停处理')}${intakeBtn('stop', '停止接单')}</div></div>
+    <div class="wb-route"><b>走哪条路线</b><div class="wb-routepick">${routeBtn('API', 'API 充值')}${routeBtn('BROWSER', '浏览器充值', Boolean(health.browserRechargeReady), health.browserRechargeReady ? '' : 'Browser 执行器未就绪')}</div></div>
+    <div class="wb-route"><b>用哪个卡台</b><div class="wb-routepick"><select class="wb-field" id="decision-card-source" aria-label="Browser 卡台">${sourceOptions || '<option value="">没有可用卡台</option>'}</select><button type="button" class="wb-btn sm out" id="decision-card-source-apply" ${sources.length ? '' : 'disabled'}>切换</button></div><small>只影响之后的新订单</small></div>
+    <div class="wb-route"><b>能不能付钱</b><div class="wb-routepick">${swch(payOn)}<button type="button" class="wb-btn sm ${payOn ? 'out' : 'pri'}" id="decision-payment" data-enabled="${payOn}">${payOn ? '关闭' : '开启'}</button></div><small>${payMismatch ? '执行器与开关不一致，点一次同步' : payOn ? '会真实点击付款' : '停在付款前不扣款'}</small></div>
+    <div class="wb-route"><b>能不能开卡补钱</b><div class="wb-routepick">${swch(supplyOn)}${wbChip('mute', supplyLabel)}${supplyControls}</div></div>`;
 }
 
 async function loadOverview() {
-  const [overview, attention, alertData, cardSources] = await Promise.all([
+  const [overview, todayOrders, alertData, cardSources, daily, reconCases] = await Promise.all([
     api('/api/v1/admin/overview'),
-    api('/api/v1/admin/orders?page=1&pageSize=8&status=REVIEW_REQUIRED'),
-    api('/api/v1/admin/alerts?limit=10'),
-    api('/api/v1/admin/card-sources').catch(() => ({ sources: [] }))
+    api('/api/v1/admin/orders?page=1&pageSize=12&status=TODAY').catch(() => ({ orders: [] })),
+    api('/api/v1/admin/alerts?limit=10').catch(() => ({ alerts: [] })),
+    api('/api/v1/admin/card-sources').catch(() => ({ sources: [] })),
+    api('/api/v1/admin/reconciliation/daily').catch(() => null),
+    api('/api/v1/admin/reconciliation-cases?page=1&pageSize=20&status=OPEN').catch(() => ({ cases: [] }))
   ]);
-  renderReadiness(overview.readiness);
   renderDecisions(overview, cardSources);
-  const metrics = [
-    { label: '今日订单', value: overview.metrics.todayOrders, note: '今天新建', filter: 'TODAY' },
-    { label: '自动处理中', value: overview.metrics.processingOrders, note: '正常模式由系统自动执行', filter: 'PROCESSING' },
-    { label: '需要处理', value: overview.metrics.reviewingOrders, note: '失败、未知或对账订单', filter: 'REVIEW_REQUIRED' },
-    { label: '等待 Session', value: overview.metrics.waitingForSession ?? 0, note: '客户可随时重新提供', filter: 'WAITING_FOR_SESSION' },
-    { label: 'Plus 可分配卡', value: overview.cardStock?.available ?? 0, note: overview.cardStock?.available ? '合格且未占用' : '没有合格卡，新订单会等卡', view: 'stock' }
-  ];
-  elements.metrics.innerHTML = metrics.map((item, index) => `<button type="button" class="metric-card metric-${index + 1}" ${item.filter ? `data-order-filter="${item.filter}"` : `data-target-view="${item.view}"`}><span>${escapeHtml(item.label)}</span><strong>${escapeHtml(item.value)}</strong><small>${escapeHtml(item.note)}</small></button>`).join('');
-  elements.attentionOrders.innerHTML = attention.orders?.length
-    ? attention.orders.map(orderRow).join('')
-    : '<tr><td colspan="6" class="empty-cell">没有需要处理的订单</td></tr>';
-  const alerts = alertData.alerts || [];
-  elements.alertsCard.hidden = alerts.length === 0;
-  elements.alertsList.innerHTML = alerts.map((alert) => `<div><span><strong>${escapeHtml(alert.title)}</strong><small>${escapeHtml(alert.message)}</small></span><span class="case-actions"><em>${formatTime(alert.createdAt)}</em><button type="button" class="ghost-button" data-close-alert="${escapeHtml(alert.id)}">关闭</button></span></div>`).join('');
-  elements.alertsList.querySelectorAll('[data-close-alert]').forEach((button) => button.addEventListener('click', async () => {
-    button.disabled = true;
-    try {
-      await api(`/api/v1/admin/alerts/${encodeURIComponent(button.dataset.closeAlert)}/close`, { method: 'POST' });
-      showNotice('提醒已关闭；不会改变任何订单、卡片或开关。', 'success');
-      await loadOverview();
-    } catch {
-      showNotice('提醒关闭失败，请刷新后重试。');
-      button.disabled = false;
-    }
-  }));
-  elements.syncTime.textContent = `更新于 ${new Date().toLocaleTimeString('zh-CN', { hour12: false })}`;
+  renderWbWall(overview);
+  renderWbCards(overview);
+  renderWbRecon(daily);
+  renderWbQueue(overview, daily, alertData, reconCases);
+  renderWbOrders(todayOrders.orders || []);
+  if (elements.syncTime) elements.syncTime.textContent = `更新于 ${new Date().toLocaleTimeString('zh-CN', { hour12: false })}`;
 }
 
 async function loadOrders() {
@@ -1711,11 +1782,26 @@ elements.cardFundingTable?.addEventListener('click', async (event) => {
 
 elements.navItems.forEach((item) => item.addEventListener('click', () => switchView(item.dataset.view).catch(() => showNotice('数据读取失败，请稍后重试。'))));
 document.querySelectorAll('[data-open-orders]').forEach((button) => button.addEventListener('click', () => switchView('orders')));
-elements.metrics.addEventListener('click', (event) => {
+// 工作台数字墙 / 队列跳转（原绑在已删的 #metrics-grid，改 document 级委托）。
+document.addEventListener('click', (event) => {
   const filterButton = event.target.closest('[data-order-filter]');
   const viewButton = event.target.closest('[data-target-view]');
+  const jumpButton = event.target.closest('[data-view-jump]');
+  const resolveCase = event.target.closest('[data-resolve-wb-case]');
+  const openCaseOrder = event.target.closest('[data-open-case-order-wb]');
+  if (resolveCase) { resolveReconciliationCase(resolveCase.dataset.resolveWbCase, { after: loadOverview }).catch(() => showNotice('案例解决失败，请重试。')); return; }
+  if (openCaseOrder) { openOrder(openCaseOrder.dataset.openCaseOrderWb); return; }
   if (filterButton) switchView('orders', { status: filterButton.dataset.orderFilter });
   else if (viewButton) switchView(viewButton.dataset.targetView);
+  else if (jumpButton) switchView(jumpButton.dataset.viewJump).catch(() => showNotice('数据读取失败，请稍后重试。'));
+});
+// 工作台全局定位搜索：回车带查询跳订单页做精确匹配（复用 orders/search 的 CDK 精确匹配）。
+document.querySelector('#wb-search-input')?.addEventListener('keydown', (event) => {
+  if (event.key !== 'Enter') return;
+  const q = event.currentTarget.value.trim();
+  if (!q) return;
+  state.query = q;
+  switchView('orders').then(() => { if (elements.search) elements.search.value = q; }).catch(() => showNotice('搜索失败，请重试。'));
 });
 elements.filters.addEventListener('submit', (event) => {
   event.preventDefault();
@@ -2189,6 +2275,34 @@ elements.cdkForm.addEventListener('submit', async (event) => {
   } finally {
     button.disabled = false;
     button.textContent = '生成 CDK';
+  }
+});
+// 工作台 CDK 快捷「生成即复制」（D-279 第 6 条）：复用 cdks/generate + 幂等键 + 剪贴板。
+document.querySelector('#wb-cdk-form')?.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const button = event.currentTarget.querySelector('button[type="submit"]');
+  const planType = document.querySelector('#wb-cdk-plan')?.value || 'plus';
+  const count = Number(document.querySelector('#wb-cdk-count')?.value || 1);
+  if (!Number.isInteger(count) || count < 1 || count > 1000) { showNotice('数量必须是 1–1000 之间的整数。'); return; }
+  if (count > 10 && !window.confirm(`确认一次生成 ${count} 个 CDK？只创建批次，不下载不交付。`)) return;
+  const stored = JSON.parse(sessionStorage.getItem('wb-cdk-request') || 'null');
+  const key = stored?.count === count && (stored.planType || 'plus') === planType ? stored.key : crypto.randomUUID();
+  sessionStorage.setItem('wb-cdk-request', JSON.stringify({ count, planType, key }));
+  if (button) { button.disabled = true; button.textContent = '生成中…'; }
+  try {
+    const payload = await api('/api/v1/admin/cdks/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Idempotency-Key': key },
+      body: JSON.stringify({ count, planType })
+    });
+    sessionStorage.removeItem('wb-cdk-request');
+    const text = (payload.codes || []).join('\n');
+    try { await navigator.clipboard.writeText(text); showNotice(`已生成批次 ${payload.batchNo}（${payload.count} 个）并复制到剪贴板。`, 'success'); }
+    catch { showNotice(`已生成批次 ${payload.batchNo}（${payload.count} 个）；剪贴板不可用，请到 CDK 页复制。`, 'warning'); }
+  } catch (error) {
+    showNotice(cdkErrorMessage(error, 'CDK 生成'));
+  } finally {
+    if (button) { button.disabled = false; button.textContent = '生成并复制'; }
   }
 });
 elements.downloadCdks.addEventListener('click', () => {

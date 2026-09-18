@@ -4165,3 +4165,13 @@ Lemon 痛点：卡列表又多又长没用、金额不准要去卡台看、信�
 **受控打破 D-275 ⑥**（原「F-47 押金修复单独发一版」）：F-47 与收窄+补修同属⑤系列修复、无迁移、可回滚、非 UI 大包，Lemon 确认一起发、省一次重启。
 
 **已发布**：release `20260918-step5b-b0a36d4`（2026-09-18 13:07 UTC 切换，Lemon 确认「切」），无迁移，回滚点 `20260918-step5-740bc1d`。发布后独立核实：三服务都在新 release、F-47 复现 `ok=true/25.50`、日对账新代码 dry-run 分类不变（6 无主 / 1 待登记 3336 / 1657·3159 无法核对 / persistent 0）。全量 901/835/0/66。证据见账本 §6「⑤b 复审补修」+ CURRENT_STATE。
+
+## D-283（2026-09-18）第⑥块工作台采用 C「看板优先·精修」；保留今日订单表（Lemon 定）
+
+三版比稿 `docs/design/prototypes/step6-workbench-compare.html`（A 驾驶舱 / B 待办优先 / C 看板优先），Lemon 挑定 **C** 并当场收窄：删中间「两路线各自耗时」块（不关注）→ 二排＝卡与钱（按台按产品）+ 昨夜日对账；今日订单表挤 → 改整宽舒展、**保留**（不拿掉进订单页）；待处理队列位置保留（数字墙下方整宽）。动线：数字墙 → 卡与钱/日对账 → 需要我处理 → 今日订单。
+
+**导航**（Lemon 让 AI 拿主意，采纳）：一级导航 6 个＝工作台/订单/CDK/卡片/设置/诊断，保留独立订单页（工作台放今日+定位搜索，全量查询留订单页）；订单/诊断过渡期沿用旧皮，订单页后续建议顺手换皮（受控打破，未定）。
+
+**实现现场核查**（动手前重读 admin-read/operations/create-app）：`getOverview` 已返回三开关（accept/dispatch/browserPayment/supplyAutomation，都写 `admin_setting_events` 审计）+ 成功率 + 卡库存 + hnskj 钱包 + 各类待办计数；`operations`/`card-sources`/`reconciliation·daily`/`card-retirement·candidates`/`reconciliation-cases`/`cdks·generate`/`alerts` 端点全现成。**看板 3 个数后端暂无、要新写聚合**：自动完成率（口径＝什么算「没靠人收口」，Lemon 定后再写，不自拍）、今日花费按台、按台按产品卡用量。
+
+**前端策略**（D-281 落地）：工作台用独立 `.workbench` CSS 作用域（候光令牌局部化，不碰 admin.css、不动旧页），抽 `common.js` 公共助手（escapeHtml/formatTime/formatMoney/api/askForm）+ `workbench.js`；外壳 sidebar 暂留旧皮，四页做完再统一换。旧页仍在 admin.js，各自重做时再拆。
