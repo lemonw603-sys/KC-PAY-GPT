@@ -1151,7 +1151,10 @@ export function createBrowserAdminService({
             row.run_status = 'HUMAN_REQUIRED'; row.control_state = 'TRANSFERRED';
             row.payment_state = 'PAYMENT_CONFIRMED'; row.order_status = 'RECHARGE_PROCESSING';
           } else {
-            const orderNextStatus = renewalCancelled ? 'RECHARGE_SUCCESS' : 'CANCELLATION_REVIEW_REQUIRED';
+            // 第④步（面三② 表一，D-248）：人工核实「已扣款」但没勾「续费已取消」也不再卡在
+            // CANCELLATION_REVIEW_REQUIRED——订单照常成功，cancellation_review_required=1 让这张卡
+            // 进待销清单，并推一条提醒。与 API 路线 commitCancellationStatus(exhausted) 同一条规则。
+            const orderNextStatus = 'RECHARGE_SUCCESS';
             const [orderUpdate] = await connection.query(
               `UPDATE orders SET status = ?, cancellation_review_required = ?,
                    subscription_cancelled = COALESCE(?, subscription_cancelled),
@@ -1171,6 +1174,20 @@ export function createBrowserAdminService({
                 'Operator manually verified the payment went through after the result was unknown or escalated',
                 json({ browserRunId: run, evidenceHash, renewalCancelled })]
             );
+            if (!renewalCancelled) {
+              await connection.query(
+                `INSERT INTO operator_alerts
+                 (id, alert_type, dedupe_key, order_id, severity, title, message, status)
+                 VALUES (UUID(), 'ORDER_CANCELLATION_UNCONFIRMED', ?, ?, 'warning', ?, ?, 'OPEN')
+                 ON DUPLICATE KEY UPDATE severity = VALUES(severity), title = VALUES(title),
+                   order_id = VALUES(order_id), message = VALUES(message),
+                   status = IF(status = 'RESOLVED', 'OPEN', status),
+                   acknowledged_at = IF(status = 'RESOLVED', NULL, acknowledged_at)`,
+                [`order-cancellation-unconfirmed:${row.order_id}`, row.order_id,
+                  '取消续费未确认，订单已交付，卡进待销清单',
+                  `订单 ${row.public_no || row.order_id}｜人工核实已扣款但未确认取消续费。订单已按成功交付，不卡单；这张卡已进待销清单，到存活期请在卡台删掉，删完在后台点「已销卡」。`]
+              );
+            }
             row.run_status = 'COMPLETED'; row.control_state = 'RELEASED';
             row.payment_state = 'PAYMENT_CONFIRMED'; row.order_status = orderNextStatus;
           }

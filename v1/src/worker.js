@@ -13,6 +13,7 @@ import {
 import { buildDirectOrderRequest } from './providers/zzshu-recharge.js';
 import { recordProviderCall } from './providers/provider-call-recorder.js';
 import { createWorkflowHandlers } from './workers/workflow-handlers.js';
+import { createOnDemandCardSync } from './services/card-on-demand-sync-service.js';
 import { runWorkerLoop } from './workers/worker-runtime.js';
 import { createOrderCancellationService } from './services/order-cancellation-service.js';
 import { createSessionRepairExpiryService } from './services/session-repair-expiry-service.js';
@@ -73,6 +74,11 @@ const handlers = createWorkflowHandlers({
   buildDirectOrderRequest,
   rechargeAttemptRepository,
   browserDispatchRepository,
+  // 第④步：分卡时当场同步过期候选卡（只读，hnskj）；付款不明时同步卡流水作卡台侧证据。
+  syncCardOnDemand: createOnDemandCardSync({
+    pool, provider: hnskjReadProvider,
+    sessionEncryptionKey: config.sessionEncryptionKey, panHmacKey: config.cardIntakePanHmacKey
+  }),
   rechargeWritesEnabled: config.providerRechargeWritesEnabled,
   holdBeforeProvider: process.env.RECHARGE_SUBMIT_HOLD_BEFORE_PROVIDER === 'true'
 });

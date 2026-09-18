@@ -309,7 +309,7 @@ test('same order can begin only once when a competing funds fence exists', async
 });
 
 function transitionResponses({ orderStatus = 'SUBMITTING', authorizationItemId = 'item-1',
-  release = false, resetTask = release, persistSubmission = false } = {}) {
+  release = false, resetTask = release, persistSubmission = false, scheduleTask = false } = {}) {
   const responses = [
     [[{
       id: 'attempt-1', order_id: 'order-1', authorization_item_id: authorizationItemId,
@@ -328,13 +328,16 @@ function transitionResponses({ orderStatus = 'SUBMITTING', authorizationItemId =
   if (persistSubmission) {
     responses.push([{ affectedRows: 1 }, []]); // enqueue polling
   }
+  if (scheduleTask) {
+    responses.push([{ affectedRows: 1 }, []]); // 第④步：付款不明后排有界 POLL_RECHARGE
+  }
   responses.push([{ affectedRows: 1 }, []]); // event
   responses.push([{ affectedRows: 1 }, []]); // provider call
   return responses;
 }
 
-test('UNKNOWN retains the order funds fence', async () => {
-  const unknownPool = scriptedPool(transitionResponses());
+test('UNKNOWN retains the order funds fence and schedules one bounded reconciliation poll (第④步 表二)', async () => {
+  const unknownPool = scriptedPool(transitionResponses({ scheduleTask: true }));
   const unknown = await createRechargeAttemptRepository(unknownPool).markAttemptUnknown({
     attemptId: 'attempt-1', resultSummary: { code: 'timeout' },
     now: new Date('2026-08-20T12:01:00.000Z')
@@ -342,7 +345,12 @@ test('UNKNOWN retains the order funds fence', async () => {
   assert.equal(unknown.fundsRiskState, 'UNKNOWN');
   assert.deepEqual(unknownPool.queries[1].values.slice(0, 2), ['SUBMIT_UNKNOWN', 'UNKNOWN']);
   assert.equal(unknown.orderStatus, 'SUBMIT_UNKNOWN');
-
+  const task = unknownPool.queries.find((entry) => /INSERT INTO tasks/.test(entry.sql));
+  assert.ok(task, 'markAttemptUnknown must no longer be a dead end');
+  assert.match(task.sql, /'POLL_RECHARGE'/);
+  assert.deepEqual(task.values.slice(0, 3), ['order-1', 'poll-recharge-unknown:attempt-1', 30]);
+  assert.equal(task.values[4], 60);
+  assert.equal(unknownPool.queries.some((entry) => /SET status = 'RELEASED'/.test(entry.sql)), false, 'fence stays');
 });
 
 test('CLEARED releases the fence and consumed authorization for manual re-authorization', async () => {

@@ -97,9 +97,15 @@ export async function scheduleDueCardSyncJobs(pool, {
       await connection.commit();
       return { enabled: false, queued: 0 };
     }
+    // 第④步：只排有只读 API 的卡。MANUAL_IMPORT（备用卡台 A）的卡没有 hnskj 读接口，
+    // 以前也被排进来，runner 拿它的 id 去问 hnskj 必然「请检查填写是否完整」——生产
+    // 2026-09-05～09-17 共 114 条 REVIEW_REQUIRED 全是这么来的，每条白花一次请求。
+    // 已标终态（RETIRED）的卡也不再同步。
     const [cards] = await connection.query(
       `SELECT c.id FROM cards c
        WHERE c.intake_status IN ('ACCEPTED','LEGACY_ACCEPTED')
+         AND c.sync_tier <> 'MANUAL_IMPORT'
+         AND c.inventory_status <> 'RETIRED'
          AND (
            c.next_sync_at <= ?
            OR (c.next_sync_at IS NULL AND (
@@ -121,7 +127,7 @@ export async function scheduleDueCardSyncJobs(pool, {
          WHEN 'REFUND_WATCH' THEN 60 WHEN 'ARCHIVED' THEN 70 ELSE 55 END,
          COALESCE(c.next_sync_at, c.last_transaction_synced_at, c.created_at) ASC
        LIMIT ? FOR UPDATE SKIP LOCKED`,
-      [now, new Date(now.getTime() - 15 * 60_000), cutoff, safeLimit]
+      [now, new Date(now.getTime() - 3 * 60 * 60_000), cutoff, safeLimit]
     );
     const bucket = Math.floor(now.getTime() / (interval * 60_000));
     let queued = 0;

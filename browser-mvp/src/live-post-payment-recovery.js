@@ -123,13 +123,18 @@ export class LivePostPaymentRecoveryVerifier {
       const transactions = await verifier.readCardTransactions();
       const reconciliation = await verifier.reconcile({ transactions });
       if (!cancellation.confirmed || !reconciliation.matched) {
+        // 第④步（D-248）：定不了时把两路证据的结果都带上——账号这一路（plus / cancellation）
+        // 和卡台这一路（候选笔数、候选摘要、有没有因 token 失效拉不到）——escalate 时写进告警。
         return {
           outcome: 'UNKNOWN', reasonCode: 'POST_PAYMENT_RECONCILIATION_REQUIRED',
           evidence: {
             plus: plus.evidence,
             cancellation: cancellation.evidence,
+            cancellationConfirmed: cancellation.confirmed === true,
+            transactionMatched: reconciliation.matched === true,
             transactionEvidenceKind: reconciliation.evidenceKind || null,
             transactionCandidateCount: reconciliation.candidateCount ?? null,
+            transactionEvidence: reconciliation.evidence || null,
           },
         };
       }

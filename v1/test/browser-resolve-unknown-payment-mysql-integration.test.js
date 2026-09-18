@@ -215,7 +215,7 @@ test('CHARGED + renewal already cancelled closes straight to RECHARGE_SUCCESS', 
   }
 });
 
-test('CHARGED without a renewal check goes to CANCELLATION_REVIEW_REQUIRED, not straight to success', { skip }, async () => {
+test('CHARGED without a renewal check delivers as RECHARGE_SUCCESS with the review flag (D-248: cancellation unconfirmed never blocks delivery)', { skip }, async () => {
   let fixture;
   try {
     fixture = await createFixture(pool, 'charged-review');
@@ -227,8 +227,12 @@ test('CHARGED without a renewal check goes to CANCELLATION_REVIEW_REQUIRED, not 
     });
     assert.equal(result.runStatus, 'COMPLETED');
     const after = await snapshot(pool, fixture.ids);
-    assert.equal(after.order_status, 'CANCELLATION_REVIEW_REQUIRED');
+    assert.equal(after.order_status, 'RECHARGE_SUCCESS');
     assert.equal(after.cancellation_review_required, 1);
+    const [[reminder]] = await pool.query(
+      `SELECT COUNT(*) AS n FROM operator_alerts WHERE dedupe_key = ? AND alert_type = 'ORDER_CANCELLATION_UNCONFIRMED' AND status = 'OPEN'`,
+      [`order-cancellation-unconfirmed:${fixture.ids.orderId}`]);
+    assert.equal(Number(reminder.n), 1, 'the card is queued for retirement and the operator is reminded');
     assert.equal(after.subscription_cancelled, null, 'no renewal fact was confirmed, none may be written');
     assert.equal(after.post_payment_state, 'PLUS_CONFIRMED');
     assert.equal(after.cancellation_confirmed_at, null);

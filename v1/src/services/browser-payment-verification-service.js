@@ -110,9 +110,22 @@ export function createBrowserPaymentVerificationService({ repository, verifier,
           });
         } else if (outcome === 'CONFLICT' || outcome === 'DECLINED' || (row.verificationDeadlineAt
           && new Date(row.verificationDeadlineAt).getTime() <= now.getTime())) {
+          // 第④步（D-248）：叫人时必须带两路证据的结果，不许「不知道」就叫。
+          const ev = observation?.evidence || {};
+          const evidenceSummary = {
+            account: ev.plus?.confirmed === true || ev.plus?.observed === true || ev.cancellationConfirmed != null
+              ? `账号状态：Plus ${ev.plus?.confirmed === true || ev.plus?.observed === true ? '已开通' : '未确认'}；取消续费 ${ev.cancellationConfirmed === true ? '已确认' : '未确认'}`
+              : '账号状态：未能读取',
+            card: ev.transactionEvidenceKind
+              ? `卡台扣款：${ev.transactionMatched === true ? '找到唯一匹配' : `候选 ${ev.transactionCandidateCount ?? 0} 笔`}${ev.transactionEvidence?.tokenExpired ? '（highvcc token 失效，未能再拉流水）' : ''}`
+              : '卡台扣款：未查',
+            reasonCode: observation.reasonCode || 'PAYMENT_VERIFICATION_TIMEOUT',
+            checks: row.verificationCheckCount || 0,
+          };
           await repository.escalatePaymentVerification({
             runId: row.runId, operationId: `${operationId}:escalated`,
             reasonCode: observation.reasonCode || 'PAYMENT_VERIFICATION_TIMEOUT', evidenceHash, now,
+            evidenceSummary,
           });
         } else {
           await repository.recordPaymentVerificationObservation({

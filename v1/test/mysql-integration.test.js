@@ -387,7 +387,7 @@ test('assigned cards are periodically queued for transaction and refund observat
   }
 });
 
-test('available cards are refreshed within the 15 minute allocation evidence window', {
+test('available cards are refreshed every 3 hours by the scheduler; the 15 minute window is met on demand at assignment (D-266)', {
   skip: !databaseUrl && 'TEST_DATABASE_URL 未配置；完整 MySQL 套件在服务器隔离数据库运行'
 }, async () => {
   const pool = mysql.createPool({ uri: databaseUrl, connectionLimit: 3, timezone: 'Z' });
@@ -402,6 +402,10 @@ test('available cards are refreshed within the 15 minute allocation evidence win
       [cardId, `available-window-${cardId}`, legacyCardProviderAccountId,
         `available-window-${cardId}`, new Date(Date.now() - 16 * 60_000)]
     );
+    assert.deepEqual(await scheduleDueCardSyncJobs(pool), { enabled: true, queued: 0 },
+      '16 minutes stale is no longer a scheduler concern');
+    await pool.query('UPDATE cards SET last_transaction_synced_at = ? WHERE id = ?',
+      [new Date(Date.now() - (3 * 60 + 1) * 60_000), cardId]);
     assert.deepEqual(await scheduleDueCardSyncJobs(pool), { enabled: true, queued: 1 });
   } finally {
     await pool.query('DELETE FROM card_sync_jobs WHERE card_id=?', [cardId]);
@@ -784,7 +788,7 @@ test('one card serves sequential orders until the configured capacity is exhaust
   }
 });
 
-test('inventory assignment queues one read sync for a stale safe candidate without writing to a Provider', {
+test('inventory assignment exposes a stale safe candidate for on-demand sync and never queues a read job or writes to a Provider', {
   skip: !databaseUrl && 'TEST_DATABASE_URL 未配置；完整 MySQL 套件在服务器隔离数据库运行'
 }, async () => {
   const pool = mysql.createPool({ uri: databaseUrl, connectionLimit: 3, timezone: 'Z' });
@@ -810,10 +814,22 @@ test('inventory assignment queues one read sync for a stale safe candidate witho
       cardNumber: '4242424242425151', expMonth: 12, expYear: 2032, cvv: '123'
     }), integrationSessionKey), legacyCardProviderAccountId, providerCardId]
   );
+  // 分卡按订单冻结的卡台找卡（第③步起 intake 只读选择表写进 frozen 列）；fixture 直接建单没有走 intake，
+  // 这里补上，否则分卡在「订单没有冻结卡台」处就停了（基线里这条用例正是因此一直失败）。
+  await pool.query('UPDATE orders SET frozen_card_provider_account_id = ? WHERE id = ?',
+    [legacyCardProviderAccountId, fixture.orderId]);
   const workflow = createWorkflowRepository(pool, { sessionEncryptionKey: integrationSessionKey });
   try {
+    // 第④步（面二⑨，D-266）：过期候选卡不再「排 job 等 runner」，而是由 handler 当场同步。
+    // 仓库层：先挑候选（只读），再分卡；分卡找不到合格卡时不排任何 card_sync_jobs。
+    const candidate = await workflow.findStaleInventoryCandidate(fixture.orderId);
+    assert.equal(candidate?.id, cardId);
+    assert.equal(candidate.providerCardId, providerCardId);
+    assert.equal(candidate.providerAccountId, legacyCardProviderAccountId);
+
     const first = await workflow.assignAvailableCard(fixture.orderId);
-    assert.deepEqual(first, { waitingForCard: true, refreshQueued: true });
+    assert.equal(first.waitingForCard, true);
+    assert.equal('refreshQueued' in first, false, 'the old "queued a read sync" flag is gone with the job');
 
     const [[waitingOrder]] = await pool.query(
       'SELECT status FROM orders WHERE id = ?', [fixture.orderId]
@@ -824,29 +840,26 @@ test('inventory assignment queues one read sync for a stale safe candidate witho
       `SELECT status, requested_by FROM card_sync_jobs
        WHERE card_id = ? AND status IN ('PENDING','RUNNING')`, [cardId]
     );
-    assert.deepEqual(jobsAfterFirstCall, [{ status: 'PENDING', requested_by: 'worker' }]);
+    assert.deepEqual(jobsAfterFirstCall, [], 'assignment must not queue a read sync job any more');
     const [[openingJobs]] = await pool.query(
       `SELECT COUNT(*) AS count FROM card_stock_jobs
        WHERE JSON_UNQUOTE(JSON_EXTRACT(rules_snapshot_json, '$.demandOrderId')) = ?`,
       [fixture.orderId]
     );
     assert.equal(Number(openingJobs.count), 0,
-      'stale evidence must be refreshed before an automatic paid opening is queued');
+      'stale evidence must never turn into an automatic paid opening');
 
-    const second = await workflow.assignAvailableCard(fixture.orderId);
-    assert.deepEqual(second, { waitingForCard: true, refreshQueued: false });
-    const [[autoHealAlert]] = await pool.query(
-      `SELECT COUNT(*) AS count FROM operator_alerts
-       WHERE dedupe_key = ? AND status = 'OPEN'`,
-      [`order-waiting-card:${fixture.orderId}`]
+    // 当场同步把流水时间刷新到窗口内（这里直接写库模拟同步结果）→ 候选消失、同一条资格规则放行。
+    await pool.query(
+      'UPDATE cards SET last_transaction_synced_at = CURRENT_TIMESTAMP(3) WHERE id = ?', [cardId]
     );
-    assert.equal(Number(autoHealAlert.count), 0,
-      'a queued or in-flight read sync must not repeatedly page the operator');
-    const [[activeJobs]] = await pool.query(
-      `SELECT COUNT(*) AS count FROM card_sync_jobs
-       WHERE card_id = ? AND status IN ('PENDING','RUNNING')`, [cardId]
+    assert.equal(await workflow.findStaleInventoryCandidate(fixture.orderId), null);
+    const assigned = await workflow.assignAvailableCard(fixture.orderId);
+    assert.equal(assigned.providerCardId, providerCardId);
+    const [[assignedOrder]] = await pool.query(
+      'SELECT status FROM orders WHERE id = ?', [fixture.orderId]
     );
-    assert.equal(activeJobs.count, 1);
+    assert.equal(assignedOrder.status, OrderStatus.CARD_READY);
 
     const [[providerWrites]] = await pool.query(
       `SELECT COUNT(*) AS count FROM provider_calls
@@ -856,7 +869,7 @@ test('inventory assignment queues one read sync for a stale safe candidate witho
     const [[storedCard]] = await pool.query(
       'SELECT order_id, inventory_status FROM cards WHERE id = ?', [cardId]
     );
-    assert.deepEqual(storedCard, { order_id: null, inventory_status: 'AVAILABLE' });
+    assert.deepEqual(storedCard, { order_id: fixture.orderId, inventory_status: 'ASSIGNED' });
   } finally {
     await pool.query(
       `DELETE FROM card_stock_jobs
@@ -864,6 +877,10 @@ test('inventory assignment queues one read sync for a stale safe candidate witho
       [fixture.orderId]
     );
     await pool.query('DELETE FROM card_sync_jobs WHERE card_id = ?', [cardId]);
+    // 用例现在会真的把卡分出去，清理要先删分配与账本行再删卡（FK）。
+    await pool.query('DELETE FROM card_consumption_ledger WHERE card_id = ?', [cardId]);
+    await pool.query('DELETE FROM card_assignment_history WHERE card_id = ?', [cardId]);
+    await pool.query('UPDATE orders SET assigned_card_id = NULL WHERE id = ?', [fixture.orderId]);
     await pool.query('DELETE FROM operator_alerts WHERE dedupe_key = ?', [
       `order-waiting-card:${fixture.orderId}`
     ]);

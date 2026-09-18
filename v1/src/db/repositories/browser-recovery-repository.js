@@ -7,6 +7,8 @@ import {
   randomUUID,
   timingSafeEqual
 } from 'node:crypto';
+import { transitionCardConsumptionInTransaction } from '../../services/card-consumption-ledger-service.js';
+import { upsertBrowserAlertInTransaction } from './browser-alert-repository.js';
 
 const HEX_64 = /^[a-f0-9]{64}$/i;
 const SAFE_PAYMENT_STATES = new Set(['NOT_STARTED', 'PAYMENT_ARMED']);
@@ -126,10 +128,12 @@ async function inTransaction(pool, action) {
 async function lockRunResources(connection, runId) {
   const [rows] = await connection.query(
     `SELECT br.id AS run_id, br.status AS run_status, br.payment_state,
+            br.verification_state, br.verification_deadline_at, br.verification_next_check_at,
             br.account_key_hmac, br.worker_id, br.worker_lease_token_hash,
             br.worker_lease_until, br.control_state, br.automation_owner_id,
             rat.id AS attempt_id, rat.order_id, rat.funds_risk_state,
-            o.status AS order_status, c.id AS card_id,
+            rat.status AS attempt_status,
+            o.status AS order_status, o.version AS order_version, c.id AS card_id,
             ca.id AS active_artifact_id
      FROM browser_runs br
      INNER JOIN recharge_attempts rat ON rat.id = br.recharge_attempt_id
@@ -273,8 +277,13 @@ async function assertResourceLeases(connection, {
 export function createBrowserRecoveryRepository(pool, {
   artifactKeys,
   currentArtifactKeyVersion,
-  resourceHmacKey
+  resourceHmacKey,
+  // 第④步：崩溃后进补核的窗口（放长到 30 分钟，D-248「窗口放长」）。
+  verificationWindowMs = 30 * 60_000
 }) {
+  if (!Number.isInteger(verificationWindowMs) || verificationWindowMs < 60_000 || verificationWindowMs > 3_600_000) {
+    throw new BrowserRecoveryError('verificationWindowMs must be between 60000 and 3600000', 'INVALID_ARGUMENT');
+  }
   const resourceKey = requireKey(resourceHmacKey, 'resourceHmacKey');
   if (!(artifactKeys instanceof Map) || artifactKeys.size === 0) {
     throw new BrowserRecoveryError('artifactKeys must be a non-empty Map', 'INVALID_KEY');
@@ -383,11 +392,98 @@ export function createBrowserRecoveryRepository(pool, {
         );
         if (paymentOperations.length || !SAFE_PAYMENT_STATES.has(row.payment_state)
           || row.funds_risk_state === 'UNKNOWN') {
+          // 第④步（面三③ 表二，D-248）：进程崩溃 / 租约丢失后 RECONCILE_ONLY 不再是终点，
+          // 重启后进付款后补核（listPaymentVerificationsDue 只领 verification_state =
+          // VERIFYING_PAYMENT 的 run；以前这里只改 status，补核永远领不到，只能人看）。
+          // 三种情形：
+          //   PAYMENT_CONFIRMED —— 付款已确认、Plus/取消续费还在核：保持 RUNNING（补核的领取
+          //     条件），只是不再发新租约给执行器。
+          //   PAYMENT_SUBMITTING —— 点了付款、进程没等到结果就没了：等价 markPaymentUnknown
+          //     （run PAYMENT_UNKNOWN + VERIFYING、attempt SUBMIT_UNKNOWN/UNKNOWN、账本 RECONCILIATION、
+          //     订单 SUBMIT_UNKNOWN），资金栅栏照旧锁死，不重付、不换卡。
+          //   其余（已是 PAYMENT_UNKNOWN 等）—— RECONCILE_ONLY，且若核实态还没开就开到 VERIFYING。
+          const deadline = new Date(now.getTime() + verificationWindowMs);
+          if (row.payment_state === 'PAYMENT_CONFIRMED') {
+            await connection.query(
+              `UPDATE browser_runs
+               SET verification_state = IF(verification_state IN ('HUMAN_REQUIRED','RESOLVED'),
+                     verification_state, 'VERIFYING_PAYMENT'),
+                   verification_started_at = COALESCE(verification_started_at, ?),
+                   verification_deadline_at = COALESCE(verification_deadline_at, ?),
+                   verification_next_check_at = COALESCE(verification_next_check_at, ?),
+                   updated_at = ?
+               WHERE id = ? AND status = 'RUNNING'`,
+              [now, deadline, now, now, run]
+            );
+            return { runId: run, recoveryMode: 'RECONCILE_ONLY', leaseToken: null, verification: 'POST_PAYMENT' };
+          }
+          if (row.payment_state === 'PAYMENT_SUBMITTING'
+            && row.attempt_status === 'SUBMITTING' && row.funds_risk_state === 'ACTIVE') {
+            const reason = 'RESTART_WITHOUT_TERMINAL_EVIDENCE';
+            await connection.query(
+              `UPDATE browser_runs
+               SET status = 'RECONCILE_ONLY', payment_state = 'PAYMENT_UNKNOWN',
+                   verification_state = 'VERIFYING_PAYMENT', verification_started_at = ?,
+                   verification_deadline_at = ?, verification_next_check_at = ?,
+                   verification_check_count = 0, last_error_code = ?, updated_at = ?
+               WHERE id = ? AND status IN ('READY', 'RUNNING', 'HUMAN_REQUIRED', 'RECONCILE_ONLY')
+                 AND payment_state = 'PAYMENT_SUBMITTING'`,
+              [now, deadline, now, reason, now, run]
+            );
+            const [attemptUpdate] = await connection.query(
+              `UPDATE recharge_attempts
+               SET status = 'SUBMIT_UNKNOWN', funds_risk_state = 'UNKNOWN',
+                   result_summary_json = ?, updated_at = ?
+               WHERE id = ? AND status = 'SUBMITTING' AND funds_risk_state = 'ACTIVE'`,
+              [JSON.stringify({ code: reason, browserRunId: run }), now, row.attempt_id]
+            );
+            if (attemptUpdate.affectedRows !== 1) {
+              throw new BrowserRecoveryError('funds attempt changed concurrently', 'ATTEMPT_CONFLICT');
+            }
+            await transitionCardConsumptionInTransaction(connection, {
+              orderId: row.order_id, rechargeAttemptId: row.attempt_id,
+              targetStatus: 'RECONCILIATION', requireActive: false, now,
+              evidence: { source: 'browser_restart_without_terminal_evidence', browserRunId: run, reasonCode: reason }
+            });
+            if (row.order_status === 'RECHARGE_PROCESSING') {
+              const [orderUpdate] = await connection.query(
+                `UPDATE orders
+                 SET status = 'SUBMIT_UNKNOWN', version = version + 1,
+                     failure_code = ?, failure_reason = ?, updated_at = ?
+                 WHERE id = ? AND status = 'RECHARGE_PROCESSING' AND version = ?`,
+                [reason, 'Browser process restarted after the payment click without a terminal result',
+                  now, row.order_id, row.order_version]
+              );
+              if (orderUpdate.affectedRows !== 1) {
+                throw new BrowserRecoveryError('order changed concurrently', 'ORDER_CONFLICT');
+              }
+              await connection.query(
+                `INSERT INTO order_events
+                 (order_id, from_status, to_status, actor_type, actor_id, reason, metadata_json, created_at)
+                 VALUES (?, 'RECHARGE_PROCESSING', 'SUBMIT_UNKNOWN', 'SYSTEM', NULL,
+                   'Browser process restarted after the payment click without a terminal result; post-payment verification scheduled', ?, ?)`,
+                [row.order_id, JSON.stringify({ browserRunId: run, attemptId: row.attempt_id, reasonCode: reason }), now]
+              );
+            }
+            await upsertBrowserAlertInTransaction(connection, {
+              type: 'BROWSER_PAYMENT_UNKNOWN', orderId: row.order_id,
+              title: '付款点了、进程重启前没拿到结果，系统正在补核',
+              message: '浏览器执行器在点付款之后重启了，没等到结果。系统已锁死这一单（不重付、不换卡），正在用账号状态 + 卡台流水两路证据自动补核；定不了会再叫你。'
+            });
+            return { runId: run, recoveryMode: 'RECONCILE_ONLY', leaseToken: null, verification: 'PAYMENT_UNKNOWN' };
+          }
           await connection.query(
             `UPDATE browser_runs
-             SET status = 'RECONCILE_ONLY', updated_at = ?
+             SET status = 'RECONCILE_ONLY',
+                 verification_state = IF(payment_state = 'PAYMENT_UNKNOWN'
+                     AND verification_state NOT IN ('HUMAN_REQUIRED','RESOLVED'),
+                   'VERIFYING_PAYMENT', verification_state),
+                 verification_started_at = IF(payment_state = 'PAYMENT_UNKNOWN', COALESCE(verification_started_at, ?), verification_started_at),
+                 verification_deadline_at = IF(payment_state = 'PAYMENT_UNKNOWN', COALESCE(verification_deadline_at, ?), verification_deadline_at),
+                 verification_next_check_at = IF(payment_state = 'PAYMENT_UNKNOWN', COALESCE(verification_next_check_at, ?), verification_next_check_at),
+                 updated_at = ?
              WHERE id = ? AND status IN ('READY', 'RUNNING', 'HUMAN_REQUIRED', 'RECONCILE_ONLY')`,
-            [now, run]
+            [now, deadline, now, now, run]
           );
           return { runId: run, recoveryMode: 'RECONCILE_ONLY', leaseToken: null };
         }

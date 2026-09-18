@@ -8,11 +8,17 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const migrationsDir = path.resolve(here, '../migrations');
 const sql = fs.readFileSync(path.join(migrationsDir, '053_card_source_selections_and_supply.sql'), 'utf8');
 
-test('053 is the newest migration and only adds', () => {
+test('054 is the newest migration; 053 and 054 only add', () => {
   const names = fs.readdirSync(migrationsDir).filter((name) => /^\d+_[a-z0-9_-]+\.sql$/i.test(name)).sort();
-  assert.equal(names.at(-1), '053_card_source_selections_and_supply.sql');
-  assert.doesNotMatch(sql, /DROP\s+(TABLE|COLUMN)/i);
-  assert.doesNotMatch(sql, /DELETE\s+FROM/i);
+  assert.equal(names.at(-1), '054_card_retirement.sql');
+  const retirement = fs.readFileSync(path.join(migrationsDir, '054_card_retirement.sql'), 'utf8');
+  for (const text of [sql, retirement]) {
+    assert.doesNotMatch(text, /DROP\s+(TABLE|COLUMN)/i);
+    assert.doesNotMatch(text, /DELETE\s+FROM/i);
+  }
+  // 第④步：待销清单不建表（缝 c），只加一个存活期设置键，默认 6 小时。
+  assert.match(retirement, /INSERT IGNORE INTO app_settings[\s\S]*'card_min_retire_age_hours', '6'/);
+  assert.doesNotMatch(retirement, /CREATE TABLE/i);
 });
 
 test('053 creates the product × executor → card source table and seeds both halves from the old tables', () => {

@@ -191,6 +191,165 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
       });
     },
 
+    /**
+     * 第④步（面二⑨，D-266）：分卡前先看有没有「过期但本来可能合格」的候选卡。
+     * 有合格卡 → null（直接分）；没有合格卡且有过期候选 → 返回那一张，让 handler 当场同步
+     * 再分。只挑有只读 API 的账户（supports_api_sync）、非 MANUAL_IMPORT、流水超过 15 分钟
+     * 没同步、连续同步失败 < 5 次的卡。只读，不改任何东西，不排任何 job。
+     */
+    async findStaleInventoryCandidate(orderId) {
+      const [orders] = await pool.query(
+        `SELECT o.status, o.minimum_required_card_balance,
+                o.frozen_card_provider_account_id AS card_provider_account_id
+         FROM orders o WHERE o.id = ? LIMIT 1`,
+        [orderId]
+      );
+      if (orders.length !== 1) throw new Error(`Order not found: ${orderId}`);
+      const order = orders[0];
+      if (![OrderStatus.CREATED, OrderStatus.WAITING_FOR_CARD].includes(order.status)) return null;
+      if (!order.card_provider_account_id) return null;
+      const [eligible] = await pool.query(
+        `SELECT 1 FROM cards
+         WHERE ${eligibleInventoryCardSql('cards', '?')}
+           AND cards.provider_account_id = ?
+         LIMIT 1`,
+        [String(order.minimum_required_card_balance), order.card_provider_account_id]
+      );
+      if (eligible.length > 0) return null;
+      const [candidates] = await pool.query(
+        `SELECT cards.id, cards.provider_card_id, cards.card_type_id, cards.funded_amount,
+                cards.provider_account_id, cards.last_transaction_synced_at
+         FROM cards
+         INNER JOIN provider_accounts stale_pa ON stale_pa.id = cards.provider_account_id
+         WHERE ${refreshableInventoryCardSql('cards')}
+           AND stale_pa.supports_api_sync = 1
+           AND cards.provider_account_id = ?
+           AND (cards.last_transaction_synced_at IS NULL
+             OR cards.last_transaction_synced_at < DATE_SUB(CURRENT_TIMESTAMP(3), INTERVAL 15 MINUTE))
+           AND COALESCE(cards.sync_consecutive_failures, 0) < 5
+         ORDER BY COALESCE(cards.last_transaction_synced_at, cards.created_at) ASC
+         LIMIT 1`,
+        [order.card_provider_account_id]
+      );
+      if (candidates.length === 0) return null;
+      const card = candidates[0];
+      return {
+        id: card.id,
+        providerCardId: card.provider_card_id,
+        providerAccountId: card.provider_account_id,
+        cardTypeId: card.card_type_id,
+        fundedAmount: card.funded_amount,
+        minimumRequiredBalance: order.minimum_required_card_balance,
+        lastTransactionSyncedAt: card.last_transaction_synced_at
+      };
+    },
+
+    /**
+     * 第④步（面三③ 表二）：API 单付款不明时的上下文——哪条 attempt、ZZSHU 有没有给 cardKey、
+     * 提交请求什么时候发出（provider_calls.started_at）。只读。
+     */
+    async findUnknownSubmission(orderId) {
+      const [rows] = await pool.query(
+        `SELECT rat.id AS attempt_id, rat.status AS attempt_status, rat.funds_risk_state,
+                rat.external_reference, rat.submit_intent_at, rat.created_at AS attempt_created_at,
+                o.recharge_card_key, o.status AS order_status,
+                (SELECT MIN(pc.started_at) FROM provider_calls pc
+                  WHERE pc.order_id = o.id AND pc.provider = 'zzshu' AND pc.operation = 'create_direct') AS submitted_at
+         FROM orders o
+         INNER JOIN recharge_attempts rat ON rat.order_id = o.id
+         WHERE o.id = ? AND rat.status = 'SUBMIT_UNKNOWN' AND rat.funds_risk_state = 'UNKNOWN'
+         ORDER BY rat.created_at DESC LIMIT 1`,
+        [orderId]
+      );
+      if (rows.length !== 1) return null;
+      const row = rows[0];
+      return {
+        attemptId: row.attempt_id,
+        orderStatus: row.order_status,
+        cardKey: row.recharge_card_key || row.external_reference || null,
+        submittedAt: row.submitted_at || row.submit_intent_at || row.attempt_created_at
+      };
+    },
+
+    /** 卡台侧扣款证据：这张卡库内流水里、按提交时间往后的行（含刚当场同步进来的）。只读。 */
+    async listCardPurchasesSince(cardId, since) {
+      const [rows] = await pool.query(
+        `SELECT provider_transaction_id, transaction_type, status, amount, currency,
+                original_amount, original_currency, merchant_name, settlement_status,
+                trade_time_raw, occurred_at, first_seen_at
+         FROM card_transactions
+         WHERE card_id = ?
+           AND (occurred_at >= DATE_SUB(?, INTERVAL 15 MINUTE)
+             OR first_seen_at >= DATE_SUB(?, INTERVAL 15 MINUTE)
+             OR trade_time_raw >= DATE_FORMAT(DATE_ADD(DATE_SUB(?, INTERVAL 15 MINUTE), INTERVAL 8 HOUR), '%Y-%m-%d %H:%i:%s'))
+         ORDER BY first_seen_at ASC, id ASC LIMIT 200`,
+        [cardId, since, since, since]
+      );
+      return rows;
+    },
+
+    /**
+     * 第④步（面三③ 表二）：API 单付款不明、两路证据仍定不了 → 交人，且必须带证据。
+     * 订单 SUBMIT_UNKNOWN → RECONCILIATION_REQUIRED；资金栅栏（attempt SUBMIT_UNKNOWN / UNKNOWN、
+     * 账本 RECONCILIATION、卡占用）原样锁住，不重付、不换卡。写 order_events + operator_alerts +
+     * reconciliation_cases，三者都带 evidence。
+     */
+    async escalateUnknownSubmission(orderId, { reasonCode, evidence = {} } = {}) {
+      const reason = String(reasonCode || 'PAYMENT_UNKNOWN_UNRESOLVED').slice(0, 64);
+      return inTransaction(pool, async (connection) => {
+        const [rows] = await connection.query(
+          `SELECT o.status, o.version, o.public_no,
+                  (SELECT rat.id FROM recharge_attempts rat WHERE rat.order_id = o.id
+                    AND rat.status = 'SUBMIT_UNKNOWN' ORDER BY rat.created_at DESC LIMIT 1) AS attempt_id
+           FROM orders o WHERE o.id = ? FOR UPDATE`, [orderId]
+        );
+        if (rows.length !== 1) throw new Error(`Order not found: ${orderId}`);
+        const order = rows[0];
+        if (order.status === OrderStatus.RECONCILIATION_REQUIRED) return { orderId, replayed: true };
+        if (order.status !== OrderStatus.SUBMIT_UNKNOWN) {
+          throw new Error(`Cannot escalate unknown submission from ${order.status}`);
+        }
+        const safeEvidence = JSON.parse(redactSensitiveText(JSON.stringify(evidence || {})));
+        const [result] = await connection.query(
+          `UPDATE orders SET status = ?, version = version + 1, updated_at = CURRENT_TIMESTAMP(3)
+           WHERE id = ? AND version = ?`,
+          [OrderStatus.RECONCILIATION_REQUIRED, orderId, order.version]
+        );
+        if (result.affectedRows !== 1) throw new Error(`Concurrent unknown-submission escalation detected: ${orderId}`);
+        await insertEvent(connection, {
+          orderId, fromStatus: OrderStatus.SUBMIT_UNKNOWN, toStatus: OrderStatus.RECONCILIATION_REQUIRED,
+          reason: `payment outcome unknown; two-source reconciliation could not decide (${reason})`,
+          metadata: { reasonCode: reason, evidence: safeEvidence }
+        });
+        const account = safeEvidence.account?.summary || '账号状态：无法查询';
+        const card = safeEvidence.card?.summary || '卡台扣款：无法查询';
+        await connection.query(
+          `INSERT INTO operator_alerts
+           (id, alert_type, dedupe_key, order_id, severity, title, message, status)
+           VALUES (UUID(), 'ORDER_PAYMENT_UNKNOWN_REVIEW', ?, ?, 'critical', ?, ?, 'OPEN')
+           ON DUPLICATE KEY UPDATE severity = VALUES(severity), title = VALUES(title),
+             order_id = VALUES(order_id), message = VALUES(message),
+             status = IF(status = 'RESOLVED', 'OPEN', status),
+             acknowledged_at = IF(status = 'RESOLVED', NULL, acknowledged_at)`,
+          [`order-payment-unknown-review:${orderId}`, orderId,
+            'API 付款结果不明，两路证据定不了，等你核实',
+            `订单 ${order.public_no}｜${account}；${card}。系统已锁死：不重付、不换卡。请核实后在后台点「核实付款不明结果」（已扣款 / 未扣款）。`.slice(0, 2000)]
+        );
+        await connection.query(
+          `INSERT INTO reconciliation_cases
+           (id, case_type, status, severity, dedupe_key, order_id, recharge_attempt_id,
+            evidence_json, detected_at, updated_at)
+           VALUES (UUID(), 'API_PAYMENT_UNKNOWN', 'OPEN', 'critical', ?, ?, ?, ?,
+                   CURRENT_TIMESTAMP(3), CURRENT_TIMESTAMP(3))
+           ON DUPLICATE KEY UPDATE last_seen_at = CURRENT_TIMESTAMP(3),
+             evidence_json = VALUES(evidence_json), updated_at = CURRENT_TIMESTAMP(3)`,
+          [`api-payment-unknown:${orderId}`, orderId, order.attempt_id || null,
+            JSON.stringify({ reasonCode: reason, ...safeEvidence })]
+        );
+        return { orderId, replayed: false, reasonCode: reason };
+      });
+    },
+
     async assignAvailableCard(orderId) {
       return inTransaction(pool, async (connection) => {
         const [orders] = await connection.query(
@@ -227,39 +386,9 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
         );
         const alertKey = `order-waiting-card:${orderId}`;
         if (cards.length === 0) {
-          const [refreshCandidates] = await connection.query(
-            `SELECT id FROM cards
-             WHERE ${refreshableInventoryCardSql('cards')}
-               AND sync_tier <> 'MANUAL_IMPORT'
-               AND provider_account_id = ?
-               AND (last_transaction_synced_at IS NULL
-                 OR last_transaction_synced_at < DATE_SUB(CURRENT_TIMESTAMP(3), INTERVAL 15 MINUTE))
-               AND NOT EXISTS (
-                 SELECT 1 FROM card_sync_jobs exhausted_sync
-                 WHERE exhausted_sync.card_id = cards.id
-                   AND exhausted_sync.status = 'REVIEW_REQUIRED'
-                   AND exhausted_sync.completed_at >= COALESCE(
-                     cards.last_transaction_synced_at, cards.created_at)
-               )
-             ORDER BY COALESCE(last_transaction_synced_at, created_at) ASC
-             LIMIT 1 FOR UPDATE SKIP LOCKED`,
-            [order.card_provider_account_id]
-          );
-          let refreshQueued = false;
-          if (refreshCandidates.length > 0) {
-            const cardId = refreshCandidates[0].id;
-            const [queued] = await connection.query(
-              `INSERT INTO card_sync_jobs
-              (id, card_id, status, requested_by, priority, dedupe_key)
-               SELECT ?, ?, 'PENDING', 'worker', 10, ?
-               WHERE NOT EXISTS (
-                 SELECT 1 FROM card_sync_jobs active_sync
-                 WHERE active_sync.card_id = ? AND active_sync.status IN ('PENDING','RUNNING')
-               )`,
-              [crypto.randomUUID(), cardId, `order-demand-sync:${cardId}:${crypto.randomUUID()}`, cardId]
-            );
-            refreshQueued = Number(queued.affectedRows) === 1;
-          }
+          // 第④步（面二⑨，D-266）：候选卡过期不再「排一条 card_sync_jobs 等 runner 领、
+          // 再等下次分卡重试」。分卡 handler 在调本方法之前已用 findStaleInventoryCandidate
+          // 挑出过期候选并当场同步；走到这里就是同步后仍无合格卡。
           const [[fundable]] = await connection.query(
             `SELECT COUNT(*) AS count FROM cards
              WHERE ${fundableInventoryCardSql('cards')}
@@ -332,16 +461,13 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
           // live rule, balance and daily-limit checks and recreated a failed
           // job on every order retry.
           const replenishmentPending = autoReplenishmentEnabled
-            && Number(fundable?.count || 0) === 0
-            && refreshCandidates.length === 0;
-          const waitingMessage = refreshCandidates.length > 0
-            ? '现有卡正在更新余额和交易，订单会在更新后继续处理。'
-            : fundingQueued
-              ? '现有卡余额不足，已自动补足，订单会继续处理。'
-              : replenishmentPending
-                ? '当前没有可用卡，已自动安排开卡，订单会继续处理。'
-                : '当前没有可用于 Plus 的卡，订单正在等待处理。';
-          const autoHealing = refreshCandidates.length > 0 || fundingQueued || replenishmentPending;
+            && Number(fundable?.count || 0) === 0;
+          const waitingMessage = fundingQueued
+            ? '现有卡余额不足，已自动补足，订单会继续处理。'
+            : replenishmentPending
+              ? '当前没有可用卡，已自动安排开卡，订单会继续处理。'
+              : '当前没有可用于 Plus 的卡，订单正在等待处理。';
+          const autoHealing = fundingQueued || replenishmentPending;
           if (autoHealing) {
             await connection.query(
               `UPDATE operator_alerts SET status='RESOLVED',
@@ -378,7 +504,6 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
           }
           return {
             waitingForCard: true,
-            refreshQueued,
             ...(fundingQueued ? { fundingQueued: true } : {}),
             ...(replenishmentPending ? { replenishmentPending: true } : {})
           };
@@ -851,9 +976,13 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
           : null;
         const cancelled = status.isSubscriptionCancelled === 1 ? 1 : 0;
         const reviewRequired = cancelled === 1 ? 0 : (exhausted ? 1 : 0);
-        const targetStatus = cancelled === 1
+        // 第④步（面三② 表一，D-248）：API 单取消续费超时不再阻塞交付。轮询用尽仍没确认
+        // → 订单照常 RECHARGE_SUCCESS，只留 cancellation_review_required=1 这个事实标记，
+        // 推手机提醒，这张卡靠该标记自动进待销清单（card-retirement-service）。
+        // CANCELLATION_REVIEW_REQUIRED 这个订单状态从此不再由自动路径产生。
+        const targetStatus = cancelled === 1 || exhausted
           ? OrderStatus.RECHARGE_SUCCESS
-          : (exhausted ? OrderStatus.CANCELLATION_REVIEW_REQUIRED : OrderStatus.CANCELLATION_PENDING);
+          : OrderStatus.CANCELLATION_PENDING;
         const [result] = await connection.query(
           `UPDATE orders SET status = ?, session_ciphertext = COALESCE(?, session_ciphertext),
              actual_payment_amount = COALESCE(actual_payment_amount, ?),
@@ -872,9 +1001,26 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
             orderId, fromStatus: OrderStatus.CANCELLATION_PENDING, toStatus: targetStatus,
             reason: cancelled === 1
               ? 'subscription cancellation confirmed; fulfillment complete'
-              : 'subscription cancellation could not be confirmed automatically',
+              : 'subscription cancellation could not be confirmed automatically; delivered anyway, card queued for retirement (D-248)',
             metadata: { subscriptionCancelled: cancelled, exhausted }
           });
+        }
+        if (cancelled !== 1 && exhausted) {
+          const [[publicRow]] = await connection.query(
+            'SELECT public_no FROM orders WHERE id = ? LIMIT 1', [orderId]
+          );
+          await connection.query(
+            `INSERT INTO operator_alerts
+             (id, alert_type, dedupe_key, order_id, severity, title, message, status)
+             VALUES (UUID(), 'ORDER_CANCELLATION_UNCONFIRMED', ?, ?, 'warning', ?, ?, 'OPEN')
+             ON DUPLICATE KEY UPDATE severity = VALUES(severity), title = VALUES(title),
+               order_id = VALUES(order_id), message = VALUES(message),
+               status = IF(status = 'RESOLVED', 'OPEN', status),
+               acknowledged_at = IF(status = 'RESOLVED', NULL, acknowledged_at)`,
+            [`order-cancellation-unconfirmed:${orderId}`, orderId,
+              '取消续费未确认，订单已交付，卡进待销清单',
+              `订单 ${publicRow?.public_no || orderId}｜ZZSHU 轮询用尽仍未确认取消续费。订单已按成功交付，不卡单；这张卡已进待销清单，到存活期请在卡台删掉，删完在后台点「已销卡」。`]
+          );
         }
       });
     },

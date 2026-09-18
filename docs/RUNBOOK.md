@@ -107,6 +107,38 @@ browser-mvp/scripts/prod-query.sh "SELECT id, open_adapter, default_card_segment
 - **开卡失败**：job 进 `REVIEW_REQUIRED`（可能已扣款）→ 推手机 `CARD_SUPPLY_OPEN_FAILED`，人工核对前调度器不再自动开；该台标 `supply_fault_state=FAULT`，15 分钟后允许再试；Browser 需求会转另一台开一张顶上，API 需求不转。
 - **归档残留**：`node scripts/archive-legacy-card-stock-jobs.mjs [--apply]`（2026-09-18 已归档 965 条）。
 
+## 2.6 待销清单与付款不明收口（第④步起，2026-09-18）
+
+**待销清单**（面二⑩，派生查询，不建表）：口径 = 用满 / 服务过 Pro 单 / DEPLETED 或 FAILED / 已标 RETIRED / 取消续费未确认，且开卡时间 + 最短存活期（`card_min_retire_age_hours`，默认 6，可调）已到。V2 只做手动销卡（D-232）：Lemon 去卡台删，回来登记。
+
+```bash
+# 看清单：due = 该去删的；notYetDue = 口径成立但存活期没到；recentlyConfirmed = 最近登记过的
+curl -s -b <admin-cookie> https://<admin>/api/v1/admin/card-retirement/candidates | jq '.due, .notYetDue | map({last4, providerCode, reasonLabels, dueAt, sourcePresent})'
+# 删完登记（确认词 已销卡 <last4>）：写 cards.inventory_status=RETIRED + override RETIRED + card_state_events CARD_RETIRED_CONFIRMED（带 ageHours）
+curl -s -b <admin-cookie> -X POST https://<admin>/api/v1/admin/card-retirement/confirm -H 'content-type: application/json' \
+  -d '{"last4":"3241","providerAccountId":"00000000-0000-4000-8000-000000000103","externalCardId":"HG…","confirmation":"已销卡 3241","note":"已在 highvcc 删除"}'
+# 改存活期（小时）：
+browser-mvp/scripts/prod-query.sh "SELECT setting_value FROM app_settings WHERE setting_key='card_min_retire_age_hours'"   # 改用正式路径（后台设置页第⑥块；之前用 sql 脚本走连接池，先问）
+# 两批旧卡标终态（dry-run 默认；--apply 先问 Lemon）：
+ssh root@144.34.180.184 'set -a; . /etc/pojia/runtime.env; set +a; cd /opt/pojia/current/v1 && node scripts/retire-legacy-cards.mjs --batch hnskj-voided'
+ssh root@144.34.180.184 'set -a; . /etc/pojia/runtime.env; set +a; cd /opt/pojia/current/v1 && node scripts/retire-legacy-cards.mjs --batch highvcc-cancelled --last4 a,b,c'
+```
+
+- 事后同步确认：highvcc 卡看 `sourcePresent=false`（快照里消失）；hnskj 卡目录快照只给汇总数，看卡详情同步的 `status`。已 RETIRED 的卡快照缺席不会再改回 HELD_FOR_REVIEW。
+- 每次登记的 `ageHours` 攒在 `card_state_events`，用来校准卡台真实的可销时间（D-228 补充二）。
+
+**API 付款不明收口**（面三③ 表二，`docs/contracts/2026-09-18_payment-unknown-reconciliation-contract.md`）：`markAttemptUnknown` 后系统自己用两路证据收口 30 分钟；定不了 → 订单 `RECONCILIATION_REQUIRED` + `ORDER_PAYMENT_UNKNOWN_REVIEW`（带两路证据）。人工收口：
+
+```bash
+browser-mvp/scripts/prod-query.sh "SELECT public_no, status FROM orders WHERE status IN ('SUBMIT_UNKNOWN','RECONCILIATION_REQUIRED')"
+browser-mvp/scripts/prod-query.sh "SELECT dedupe_key, evidence_json FROM reconciliation_cases WHERE case_type='API_PAYMENT_UNKNOWN' AND status='OPEN'"
+# 核实后（确认词 已核实 <单号> CHARGED|NOT_CHARGED）：
+curl -s -b <admin-cookie> -X POST https://<admin>/api/v1/admin/orders/<PUBLIC_NO>/resolve-unknown-submission -H 'content-type: application/json' \
+  -d '{"outcome":"CHARGED","confirmation":"已核实 <PUBLIC_NO> CHARGED","note":"账号已是 Plus；卡台 15.71 已扣"}'
+```
+
+**分卡当场同步**（面二⑨，D-266）：候选卡流水超过 15 分钟没同步 → worker 分卡前当场同步这一张（卡详情 1 + 流水 ≥1 页，`provider_calls` 里 `request_key` 前缀 `order-demand-sync:`）；失败 60s 后再试，连续 5 次失败的卡候选查询跳过。定时同步 AVAILABLE 卡降到每卡 3 小时（`scheduled-card-sync`），只排有只读 API 的卡。
+
 ## 3. 死单残留清理
 
 订单已是 RECHARGE_FAILED 但卡仍绑定（2026-09-08 前的旧行为）：

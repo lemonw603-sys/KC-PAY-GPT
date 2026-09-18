@@ -56,3 +56,57 @@ test('billing address enrichment keeps imported addresses and fills only cards w
   assert.equal((await source.load('hnskj')).billingAddress, address);
   assert.equal(addressReads, 1);
 });
+
+// 第④步（D-248）：MANUAL_IMPORT 卡注入 ledgerSource 后走真证据（v1 card_transactions 的真实行形状，
+// 2026-09-18 生产实查：PURCHASE / COMPLETE / 15.75 USD / 982.14 PHP / OPENAI / APPROVE，occurred_at 为 ISO UTC）。
+const highvccRow = { provider_transaction_id: 'HGA1', transaction_type: 'PURCHASE', status: 'COMPLETE', amount: '15.750000', currency: 'USD',
+  original_amount: '982.140000', original_currency: 'PHP', merchant_name: 'OPENAI', settlement_status: 'APPROVE',
+  occurred_at: '2026-09-06T10:02:00.000Z', raw_hash: 'c'.repeat(64) };
+const pendingRow = { ...highvccRow, provider_transaction_id: 'HGA2', status: 'PENDING', amount: '0.000000', original_amount: '0.000000', original_currency: 'USD',
+  merchant_name: 'OPENAI                 SAN FRANCISCOCAUS', raw_hash: 'd'.repeat(64) };
+
+test('manual card with a ledger source matches exactly one settled OpenAI Plus purchase inside the intent window', async () => {
+  const windows = [];
+  const reader = new BrowserCardTransactionReader({
+    sourceKind: 'MANUAL_IMPORT', runId: 'run-1', cardId: 'card-uuid', submitIntentAt: '2026-09-06T10:00:00Z',
+    ledgerSource: { async listPurchases(w) { windows.push(w); return [pendingRow, highvccRow]; } },
+  });
+  const transactions = await reader.read();
+  assert.equal(windows[0].cardId, 'card-uuid');
+  assert.equal(windows[0].since.toISOString(), '2026-09-06T09:55:00.000Z');
+  const result = await reader.reconcile({ transactions });
+  assert.equal(result.matched, true);
+  assert.equal(result.evidenceKind, 'CARD_LEDGER_TRANSACTION');
+  assert.equal(result.candidateCount, 1, 'the PENDING $0 authorization row is not a charge');
+  assert.equal(result.transactionHash, 'c'.repeat(64));
+  assert.equal(result.evidence.candidates[0].originalCurrency, 'PHP');
+});
+
+test('manual card: no candidate → one refresh (token-bound, the out-of-window exception); expired token is reported, never faked as a match', async () => {
+  let refreshes = 0;
+  const reader = new BrowserCardTransactionReader({
+    sourceKind: 'MANUAL_IMPORT', runId: 'run-1', cardId: 'card-uuid', submitIntentAt: '2026-09-06T10:00:00Z',
+    ledgerSource: {
+      async listPurchases() { return []; },
+      async refresh() { refreshes += 1; throw Object.assign(new Error('登录已失效'), { code: 'HIGHVCC_TOKEN_EXPIRED' }); },
+    },
+  });
+  const result = await reader.reconcile({ transactions: await reader.read() });
+  assert.equal(refreshes, 1);
+  assert.equal(result.matched, false);
+  assert.equal(result.candidateCount, 0);
+  assert.equal(result.evidence.tokenExpired, true);
+  assert.equal(result.evidence.refreshed.code, 'HIGHVCC_TOKEN_EXPIRED');
+});
+
+test('manual card: a successful refresh re-reads the ledger and can then match', async () => {
+  let rows = [];
+  const reader = new BrowserCardTransactionReader({
+    sourceKind: 'MANUAL_IMPORT', runId: 'run-1', cardId: 'card-uuid', submitIntentAt: '2026-09-06T10:00:00Z',
+    ledgerSource: { async listPurchases() { return rows; }, async refresh() { rows = [highvccRow]; return { written: 1 }; } },
+  });
+  const result = await reader.reconcile({ transactions: await reader.read() });
+  assert.equal(result.matched, true);
+  assert.equal(result.evidence.refreshed.ok, true);
+  assert.throws(() => new BrowserCardTransactionReader({ sourceKind: 'MANUAL_IMPORT', runId: 'r', ledgerSource: { async listPurchases() {} } }), /cardId/);
+});

@@ -1216,7 +1216,7 @@ export function createBrowserExecutionRepository(pool) {
     },
 
     async escalatePaymentVerification({ runId, operationId, reasonCode,
-      evidenceHash, now = new Date() }) {
+      evidenceHash, now = new Date(), evidenceSummary = null }) {
       const run = required(runId, 'runId');
       const operation = required(operationId, 'operationId');
       const reason = requireCode(reasonCode, 'reasonCode');
@@ -1236,11 +1236,14 @@ export function createBrowserExecutionRepository(pool) {
            VALUES (?, ?, 'PAYMENT_VERIFICATION_ESCALATED', 'COMMITTED', ?, ?, ?, ?)`,
           [run, operation, reason, json({ evidenceHash: evidence }), now, now]
         );
+        const evidenceLine = evidenceSummary
+          ? `两路证据：${evidenceSummary.account || '账号状态：未查'}；${evidenceSummary.card || '卡台扣款：未查'}（查了 ${evidenceSummary.checks ?? 0} 次）。`
+          : '';
         await upsertBrowserAlertInTransaction(connection, {
           type: 'BROWSER_HUMAN_REQUIRED', orderId: row.order_id, title: row.order_status === 'RECHARGE_SUCCESS' ? '已交付订单收尾需处理' : '自动核实查不出来，需要你看一眼',
           message: row.order_status === 'RECHARGE_SUCCESS'
-            ? `客户已交付，内部取消续费或对账未完成（${reason}）。保留账号现场，不得重新付款。`
-            : `付款后系统自己查了几次仍无法确定结果（${reason}）。请看客户账号是不是 Plus、卡有没有被扣，然后在后台点「确认核实结果」。`
+            ? `客户已交付，内部取消续费或对账未完成（${reason}）。${evidenceLine}保留账号现场，不得重新付款。`
+            : `付款后系统自己查了几次仍无法确定结果（${reason}）。${evidenceLine}请看客户账号是不是 Plus、卡有没有被扣，然后在后台点「确认核实结果」。`
         });
         await connection.query(
           `UPDATE browser_runs SET status='HUMAN_REQUIRED',
@@ -1259,7 +1262,7 @@ export function createBrowserExecutionRepository(pool) {
              evidence_json=VALUES(evidence_json), updated_at=VALUES(updated_at)`,
           [randomUUID(), `browser-payment-unknown:${row.recharge_attempt_id}`,
             row.order_id, row.recharge_attempt_id,
-            json({ browserRunId: run, reasonCode: reason, evidenceHash: evidence }), now, now]
+            json({ browserRunId: run, reasonCode: reason, evidenceHash: evidence, evidenceSummary }), now, now]
         );
         return publicRun({ ...row, run_status: 'HUMAN_REQUIRED',
           verification_state: 'HUMAN_REQUIRED' }, { idempotentReplay: false });

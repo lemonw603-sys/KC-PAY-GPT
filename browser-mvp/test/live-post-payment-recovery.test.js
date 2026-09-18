@@ -125,3 +125,20 @@ test('a verification check closes the page it opened unless it hands the Profile
   await assert.rejects(() => failed.verifier.verify({ runId: 'run-fail', executorProfileId: 'profile' }));
   assert.equal(failed.calls.includes('page-close'), true);
 });
+
+test('an undecided recovery carries both evidence lines (account + card ledger) so the escalation can name them', async () => {
+  const h = harness({ cancelled: false, matched: false });
+  h.verifier.verifierFactory = () => ({
+    async confirmPlus() { return { confirmed: true, evidence: { plus: true } }; },
+    async confirmCancellation() { return { confirmed: false, evidence: { willRenew: true } }; },
+    async readCardTransactions() { return []; },
+    async reconcile() { return { matched: false, evidenceKind: 'CARD_LEDGER_TRANSACTION', candidateCount: 0, evidence: { tokenExpired: true, candidates: [] } }; },
+  });
+  const result = await h.verifier.verify({ runId: 'run-u', executorProfileId: 'profile-1' });
+  assert.equal(result.outcome, 'UNKNOWN');
+  assert.equal(result.reasonCode, 'POST_PAYMENT_RECONCILIATION_REQUIRED');
+  assert.equal(result.evidence.cancellationConfirmed, false);
+  assert.equal(result.evidence.transactionMatched, false);
+  assert.equal(result.evidence.transactionCandidateCount, 0);
+  assert.equal(result.evidence.transactionEvidence.tokenExpired, true);
+});

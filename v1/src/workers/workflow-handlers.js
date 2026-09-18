@@ -2,6 +2,7 @@ import { OrderStatus } from '../domain/order-status.js';
 import { validateChatGptSession } from '../domain/session-validation.js';
 import { TaskExecutionError } from './task-runner.js';
 import { readAllCardTransactions } from '../services/card-transaction-reader.js';
+import { assessCardSideCharge } from '../services/unknown-submission-evidence.js';
 
 function pendingError(delayMs) {
   return new TaskExecutionError('Recharge is still processing', {
@@ -21,8 +22,12 @@ export function createWorkflowHandlers({
   buildDirectOrderRequest,
   rechargeAttemptRepository = null,
   browserDispatchRepository = null,
+  // 第④步：分卡时「当场同步这一张」（card-on-demand-sync-service）。null = 没配 hnskj 只读
+  // 凭证，退回「等下一轮」。
+  syncCardOnDemand = null,
   pollDelayMs = 5_000,
   cancellationDelayMs = 60_000,
+  unknownReconcileDelayMs = 60_000,
   failureConfirmDelayMs = 2_500,
   rechargeWritesEnabled = true,
   browserDispatchEnabled = true,
@@ -61,6 +66,22 @@ export function createWorkflowHandlers({
         code: 'ORDER_STATE_MISMATCH'
       });
     }
+    // 第④步（面二⑨，D-266）：资格规则里的 15 分钟新鲜度不改；候选卡过期就当场同步这一张
+    // （卡详情 1 次 + 流水 ≥1 页），同步完再按同一条资格规则判。同步失败 → 不分、不重开、
+    // 不换卡台，60 秒后再来；连续 5 次失败的卡候选查询自己会跳过。
+    let onDemandSync = null;
+    if (typeof syncCardOnDemand === 'function' && typeof workflow.findStaleInventoryCandidate === 'function') {
+      const candidate = await workflow.findStaleInventoryCandidate(task.order_id);
+      if (candidate) {
+        try {
+          const synced = await syncCardOnDemand(candidate, { orderId: task.order_id, attemptNo: task.attempts });
+          onDemandSync = { ok: true, cardId: candidate.id, requestCount: synced?.requestCount ?? null };
+        } catch (error) {
+          onDemandSync = { ok: false, cardId: candidate.id,
+            code: error?.code || error?.kind || 'CARD_SYNC_FAILED' };
+        }
+      }
+    }
     const assigned = await workflow.assignAvailableCard(task.order_id);
     if (!assigned) {
       throw new TaskExecutionError('No suitable inventory card is available', {
@@ -68,13 +89,19 @@ export function createWorkflowHandlers({
       });
     }
     if (assigned.waitingForCard) {
-      throw new TaskExecutionError('No suitable inventory card is available', {
-        code: 'CARD_STOCK_EMPTY', retryable: true,
-        delayMs: assigned.refreshQueued || assigned.replenishmentPending || assigned.fundingQueued
-          ? 5_000 : 60_000,
-        refundAttempt: true
-      });
+      throw new TaskExecutionError(
+        onDemandSync && !onDemandSync.ok
+          ? `No eligible inventory card; on-demand card sync failed (${onDemandSync.code})`
+          : 'No suitable inventory card is available', {
+          code: onDemandSync && !onDemandSync.ok ? 'CARD_SYNC_FAILED' : 'CARD_STOCK_EMPTY',
+          retryable: true,
+          delayMs: onDemandSync && !onDemandSync.ok
+            ? 60_000
+            : (assigned.replenishmentPending || assigned.fundingQueued ? 5_000 : 60_000),
+          refundAttempt: true
+        });
     }
+    return onDemandSync ? { onDemandSync } : undefined;
   }
 
   async function prepareRecharge(task) {
@@ -352,7 +379,98 @@ export function createWorkflowHandlers({
     });
   }
 
+  /**
+   * 第④步（面三③ 表二）：API 单付款不明的两路证据自动收口。
+   *   一路「账号状态」= ZZSHU 按 cardKey 查订单状态（success / failed / pending）；
+   *   一路「卡台扣款」= 当场同步这张 hnskj 卡的流水，看提交后有没有 OpenAI 成功扣款。
+   * 有 cardKey：ZZSHU 说 success → 交付；说 failed（二次确认）→ 失败退码；pending → 再等。
+   * 无 cardKey（createDirectOrder 超时没拿到）：只剩卡台这一路——有扣款 → 交人（账号一路
+   * 不可查，不能自动判成功）；没扣款 → 等到窗口用尽仍没有 → 交人（带「30 分钟内卡台无
+   * 扣款」）。任何情况都不重付、不换卡、不释放资金栅栏（CLAUDE.md 硬约束）。
+   */
+  async function reconcileUnknownSubmission(task, context) {
+    const unknown = await workflow.findUnknownSubmission(task.order_id);
+    if (!unknown) {
+      throw new TaskExecutionError('Order is SUBMIT_UNKNOWN without an unknown funds attempt', {
+        code: 'ORDER_STATE_MISMATCH'
+      });
+    }
+    const exhausted = task.attempts >= task.max_attempts;
+    const evidence = { account: null, card: null, attempts: task.attempts, maxAttempts: task.max_attempts };
+    if (unknown.cardKey) {
+      let status;
+      try {
+        status = await queryRecharge(task, task.attempts, {
+          includeSession: true, operation: 'reconcile_unknown_status',
+          requestKey: `unknown-submission:${task.order_id}:${unknown.attemptId}`
+        });
+      } catch (error) {
+        evidence.account = { available: false, summary: `账号状态：ZZSHU 查询失败（${error?.code || error?.kind || 'QUERY_FAILED'}）` };
+        if (!exhausted) throw pendingError(unknownReconcileDelayMs);
+        await workflow.escalateUnknownSubmission(task.order_id, { reasonCode: 'ACCOUNT_QUERY_FAILED', evidence });
+        return;
+      }
+      if (Array.isArray(status)) [status] = status;
+      if (status.status === 'success') {
+        await workflow.commitRechargeSuccess(task.order_id, withoutLatestSession(status), status.latestSession);
+        return;
+      }
+      if (status.status === 'failed') {
+        await wait(failureConfirmDelayMs);
+        let confirmed = await queryRecharge(task, task.attempts + 1, {
+          operation: 'reconcile_unknown_status',
+          requestKey: `unknown-submission:${task.order_id}:${unknown.attemptId}:confirm`
+        });
+        if (Array.isArray(confirmed)) [confirmed] = confirmed;
+        if (confirmed.status === 'failed') {
+          await workflow.commitRechargeFailure(task.order_id, withoutLatestSession(confirmed));
+          return;
+        }
+        if (confirmed.status === 'success') {
+          await workflow.commitRechargeSuccess(task.order_id, withoutLatestSession(confirmed), confirmed.latestSession);
+          return;
+        }
+        status = confirmed;
+      }
+      evidence.account = { available: true, status: String(status.status || 'unknown'),
+        summary: `账号状态：ZZSHU 返回 ${status.status || 'unknown'}` };
+      if (['pending', 'processing'].includes(status.status) && !exhausted) throw pendingError(unknownReconcileDelayMs);
+      await workflow.escalateUnknownSubmission(task.order_id, {
+        reasonCode: ['pending', 'processing'].includes(status.status) ? 'PROVIDER_STILL_PENDING' : 'UNSUPPORTED_PROVIDER_STATUS',
+        evidence
+      });
+      return;
+    }
+    evidence.account = { available: false, summary: '账号状态：ZZSHU 没有返回 cardKey，无法查询' };
+    if (context.card?.id && context.card.supports_api_sync && typeof syncCardOnDemand === 'function') {
+      try {
+        await syncCardOnDemand({
+          id: context.card.id, providerCardId: context.card.provider_card_id,
+          providerAccountId: context.card.provider_account_id, cardTypeId: context.card.card_type_id,
+          fundedAmount: null, minimumRequiredBalance: context.order.minimum_required_card_balance
+        }, { orderId: task.order_id, attemptNo: task.attempts });
+        const purchases = await workflow.listCardPurchasesSince(context.card.id, unknown.submittedAt);
+        evidence.card = assessCardSideCharge({ purchases, submittedAt: unknown.submittedAt });
+      } catch (error) {
+        evidence.card = { available: false, summary: `卡台扣款：同步失败（${error?.code || error?.kind || 'CARD_SYNC_FAILED'}）` };
+      }
+    } else {
+      evidence.card = { available: false, summary: '卡台扣款：这张卡所属卡台没有只读流水接口' };
+    }
+    if (evidence.card.charged) {
+      await workflow.escalateUnknownSubmission(task.order_id, { reasonCode: 'CARD_CHARGED_ACCOUNT_UNVERIFIABLE', evidence });
+      return;
+    }
+    if (!exhausted) throw pendingError(unknownReconcileDelayMs);
+    await workflow.escalateUnknownSubmission(task.order_id, {
+      reasonCode: evidence.card.available ? 'NO_CARD_CHARGE_IN_WINDOW_ACCOUNT_UNVERIFIABLE' : 'NO_EVIDENCE_AVAILABLE',
+      evidence
+    });
+  }
+
   async function pollRecharge(task) {
+    const context = await workflow.loadOrderContext(task.order_id);
+    if (context.order.status === OrderStatus.SUBMIT_UNKNOWN) return reconcileUnknownSubmission(task, context);
     let status = await queryRecharge(task, task.attempts, { includeSession: true });
     if (Array.isArray(status)) [status] = status;
     if (status.status === 'pending' || status.status === 'processing') {

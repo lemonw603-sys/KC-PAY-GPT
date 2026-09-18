@@ -14,10 +14,10 @@ const POLICY = Object.freeze({
   [CardSyncTier.PROVISIONING]: { priority: 20, intervalMs: 60_000 },
   [CardSyncTier.ASSIGNED]: { priority: 30, intervalMs: 5 * 60_000 },
   [CardSyncTier.RECENT_TERMINAL]: { priority: 40, intervalMs: 60 * 60_000 },
-  // Inventory qualification requires transaction evidence newer than 15 minutes.
-  // Refresh available cards inside that window so a healthy card does not
-  // oscillate between eligible and stale for most of a six-hour interval.
-  [CardSyncTier.AVAILABLE]: { priority: 50, intervalMs: 10 * 60_000 },
+  // 第④步（面二⑨，D-266）：分卡时候选卡过期就当场同步这一张再判，所以定时全量同步
+  // 不必再追着 15 分钟资格窗口跑。10 分钟档在生产实际也只能每小时跑一次（scheduler 的
+  // dedupe 桶按 60 分钟分），改成每卡 3 小时，把 hnskj 请求预算让给按需同步与开卡。
+  [CardSyncTier.AVAILABLE]: { priority: 50, intervalMs: 3 * 60 * 60_000 },
   [CardSyncTier.REFUND_WATCH]: { priority: 60, intervalMs: 24 * 60 * 60_000 },
   [CardSyncTier.ARCHIVED]: { priority: 70, intervalMs: 7 * 24 * 60 * 60_000 },
   [CardSyncTier.MANUAL]: { priority: 5, intervalMs: 0 }

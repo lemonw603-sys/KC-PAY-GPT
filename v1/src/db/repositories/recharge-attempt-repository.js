@@ -480,7 +480,14 @@ export function createRechargeAttemptRepository(pool) {
         reason: 'recharge submission outcome is unknown',
         allowedAttemptStatuses: ['PREPARED', 'PROCESSING'],
         allowedFundsStates: ['ACTIVE'],
-        cardConsumptionStatus: 'RECONCILIATION'
+        cardConsumptionStatus: 'RECONCILIATION',
+        // 第④步（面三③ 表二）：付款不明不再是终点。排一条有界的 POLL_RECHARGE，让 worker
+        // 用两路证据（ZZSHU 状态 / 卡台流水）自动定；30 次 × 60 秒仍定不了才交人、带证据。
+        // 以前 markAttemptUnknown 不排任何任务，API 付款不明只能手写 SQL（面三 §1.2）。
+        scheduleReconcileTask: {
+          dedupeKey: `poll-recharge-unknown:${input?.attemptId}`,
+          delaySeconds: 60, maxAttempts: 30
+        }
       });
     },
 
@@ -549,7 +556,8 @@ async function transitionAttempt(pool, {
   orderExtraSql = '',
   orderExtraValues = [],
   cardConsumptionStatus = null,
-  cardConsumptionReason = null
+  cardConsumptionReason = null,
+  scheduleReconcileTask = null
 }) {
   const id = required(attemptId, 'attemptId');
   return inTransaction(pool, async (connection) => {
@@ -655,6 +663,17 @@ async function transitionAttempt(pool, {
                  DATE_ADD(?, INTERVAL 3 SECOND))
          ON DUPLICATE KEY UPDATE id = id`,
         [row.order_id, `poll-recharge:${row.order_id}`, now]
+      );
+    }
+    if (scheduleReconcileTask) {
+      await connection.query(
+        `INSERT INTO tasks
+         (order_id, task_type, status, dedupe_key, max_attempts, available_at)
+         VALUES (?, 'POLL_RECHARGE', 'PENDING', ?, ?, DATE_ADD(?, INTERVAL ? SECOND))
+         ON DUPLICATE KEY UPDATE id = id`,
+        [row.order_id, String(scheduleReconcileTask.dedupeKey),
+          Number(scheduleReconcileTask.maxAttempts) || 30, now,
+          Number(scheduleReconcileTask.delaySeconds) || 60]
       );
     }
     await insertEvent(connection, {

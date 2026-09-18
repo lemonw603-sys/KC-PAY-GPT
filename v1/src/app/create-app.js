@@ -76,6 +76,9 @@ export function createApp({
   setAdminSupplyAutomation = null,
   cancelAdminOrder = null,
   confirmManualCancellation = null,
+  resolveUnknownSubmission = null,
+  listCardRetirementCandidates = null,
+  confirmCardRetired = null,
   createAdminCdkBatch = null,
   listAdminCdkBatches = null,
   downloadAdminCdkBatch = null,
@@ -588,6 +591,40 @@ export function createApp({
         if (error?.name === 'ManualCancellationError') {
           return res.status(error.status).json({ error: error.code.toLowerCase() });
         }
+        throw error;
+      }
+    });
+  }
+  if (typeof resolveUnknownSubmission === 'function') {
+    // 第④步（面三③ 表二）：API 单付款不明、两路证据定不了之后的人工收口入口（CHARGED / NOT_CHARGED）。
+    app.post('/api/v1/admin/orders/:publicNo/resolve-unknown-submission', ...sensitiveAdminGuards, async (req, res) => {
+      try {
+        res.json(await resolveUnknownSubmission(req.params.publicNo, { ...(req.body || {}), actorId: req.admin?.id || 'admin' }));
+      } catch (error) {
+        if (error instanceof PublicApiError) return res.status(error.status || 400).json({ error: error.code.toLowerCase() });
+        throw error;
+      }
+    });
+  }
+  if (typeof listCardRetirementCandidates === 'function') {
+    // 第④步（面二⑩）：待销清单（派生查询，不建表）。due = 到了最短存活期该去卡台删的；notYetDue = 口径成立但时间未到。
+    app.get('/api/v1/admin/card-retirement/candidates', noStore, requireAdminApi, async (req, res) => {
+      res.json(await listCardRetirementCandidates(req.query || {}));
+    });
+  }
+  if (typeof confirmCardRetired === 'function') {
+    // Lemon 在卡台删完后登记：确认词 `已销卡 <last4>`。
+    app.post('/api/v1/admin/card-retirement/confirm', ...sensitiveAdminGuards, async (req, res) => {
+      const body = req.body || {};
+      const last4 = String(body.last4 || '').trim();
+      if (!/^\d{4}$/.test(last4) || body.confirmation !== `已销卡 ${last4}`) {
+        return res.status(400).json({ error: 'card_retirement_confirmation_required' });
+      }
+      try {
+        res.json(await confirmCardRetired({ cardId: body.cardId, providerAccountId: body.providerAccountId,
+          externalCardId: body.externalCardId, note: body.note, actorId: req.admin?.id || 'admin', source: 'admin' }));
+      } catch (error) {
+        if (error instanceof PublicApiError) return res.status(error.status || 400).json({ error: error.code.toLowerCase() });
         throw error;
       }
     });

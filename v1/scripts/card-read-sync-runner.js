@@ -1,11 +1,9 @@
 import os from 'node:os';
 import { isEnvTrue, loadConfig } from '../src/config.js';
 import { createDatabasePool } from '../src/db/pool.js';
-import { commitCardTransactionsForCard } from '../src/db/repositories/card-transaction-repository.js';
 import { HnskjCardProvider } from '../src/providers/index.js';
-import { recordProviderCall } from '../src/providers/provider-call-recorder.js';
-import { createCardStockService, mapStockCard } from '../src/services/card-stock-service.js';
-import { readAllCardTransactions } from '../src/services/card-transaction-reader.js';
+import { syncHnskjCardReadOnly } from '../src/services/card-on-demand-sync-service.js';
+import { createCardStockService } from '../src/services/card-stock-service.js';
 import {
   claimCardSyncJob,
   completeCardSyncJob,
@@ -42,35 +40,14 @@ async function processJob(job, scheduled) {
   // provider_calls row while keeping every external read auditable.
   const claimKey = `${job.id}:${owner}`;
   try {
-    const detail = await recordProviderCall({
-      pool, orderId: job.order_id || null, provider: 'hnskj',
-      operation: 'card_reconciliation_detail', requestKey: `card-read-sync:${claimKey}:detail`,
-      attemptNo: job.attempts,
-      action: () => provider.card(job.provider_card_id),
-      summarize: (value) => {
-        const data = value?.data?.card ?? value?.data ?? {};
-        return { providerCardId: job.provider_card_id, status: data.status || null,
-          currentBalance: data.cardBalance ?? data.currentBalance ?? null, currency: data.currency || null };
-      }
+    // 同步一张卡的实现与分卡时的「当场同步」共用（card-on-demand-sync-service）。
+    const { transactionCount: count } = await syncHnskjCardReadOnly({
+      pool, provider, stock,
+      card: { id: job.card_id, providerCardId: job.provider_card_id, cardTypeId: job.card_type_id,
+        fundedAmount: job.funded_amount, minimumRequiredBalance: job.minimum_required_card_balance },
+      orderId: job.order_id || null, requestKeyPrefix: `card-read-sync:${claimKey}`, attemptNo: job.attempts
     });
-    const mapped = mapStockCard(detail, { providerCardId: job.provider_card_id,
-      cardTypeId: job.card_type_id, fundedAmount: job.funded_amount,
-      minimumRequiredBalance: job.minimum_required_card_balance });
-    const transactions = await readAllCardTransactions({
-      fetchPage: (page, pageSize) => recordProviderCall({
-        pool, orderId: job.order_id || null, provider: 'hnskj',
-        operation: 'card_reconciliation_transactions',
-        requestKey: `card-read-sync:${claimKey}:transactions:${page}`, attemptNo: job.attempts,
-        action: () => provider.transactions(job.provider_card_id, { page, pageSize }),
-        summarize: (value) => ({ providerCardId: job.provider_card_id, page: value.data.page,
-          count: value.data.transactions.length, total: value.data.total,
-          types: [...new Set(value.data.transactions.map((item) => item.type))],
-          statuses: [...new Set(value.data.transactions.map((item) => item.status))] })
-      })
-    });
-    await commitCardTransactionsForCard(pool, { cardId: job.card_id,
-      orderId: job.order_id || null, transactions, cardSnapshot: mapped });
-    await stock.register(mapped);
+    const transactions = { length: count };
     await completeCardSyncJob(pool, { jobId: job.id, workerId: owner });
     console.log(JSON.stringify({ handled: true, jobId: job.id, providerCardId: job.provider_card_id,
       transactionCount: transactions.length, scheduled: scheduled.queued, status: 'COMPLETED' }));

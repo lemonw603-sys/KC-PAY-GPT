@@ -3977,3 +3977,24 @@ Lemon 逐项看过预检（钱包 $89.48、卡段 23 未维护、$50、预估总
 ## D-266（2026-09-18）分卡侧 15 分钟新鲜度：Lemon 选 a——资格规则不变，分卡时当场同步这一张再判（与面二⑨一致）
 
 第③步只把水位统计/切换校验改成库存口径（D-259）；分卡那侧的 `eligibleInventoryCardSql` 新鲜度条件保留，第④步用「分卡时候选卡过期 → 当场同步 → 再判」消掉每小时 15 分钟窗口的抖动。不选 b（去掉新鲜度、只靠账本推算兜底）：账本刚补记过 8 单，分卡安全不只押在它上面。
+
+## D-267（2026-09-18 05:xx UTC）第④步「按需同步 + 待销清单 + 三张契约表」落地方式（代码已在 main，未发布）
+
+**按需同步（面二⑨，D-266 选 a）**：资格规则 `eligibleInventoryCardSql` 一字未改。worker 分卡 handler 先调 `findStaleInventoryCandidate`（只读：有合格卡 → null；否则挑一张 supports_api_sync=1、非 MANUAL_IMPORT、流水 >15 分钟未同步、连续失败 <5 的卡），当场同步这一张（卡详情 1 + 流水 ≥1 页，与定时 runner 共用 `syncHnskjCardReadOnly`），再按同一条资格规则分。失败 → 不分、不开卡、不换台，60 秒后再来。**分卡里「排一条 card_sync_jobs 等 runner 领」的旧实现已删**。定时同步 AVAILABLE 档 10 分钟 → 3 小时；scheduler 不再排 MANUAL_IMPORT 卡（此前 114 条 REVIEW_REQUIRED 全是拿 highvcc 卡 id 去问 hnskj）和 RETIRED 卡。限流预算：按需每单 ≤2 次（多页流水才更多）+ 开卡每张 ≤3 次 + 定时每卡每 3 小时 2 次。
+**核出的一个事实**：CURRENT_STATE 原写「条件 next_sync_at <= now-60min」不准——代码条件是 `next_sync_at <= now`，每小时一次的真因是 dedupe 桶 `scheduled-card-sync:<card>:<60分钟桶>` 撞唯一键；所以 ASSIGNED（5 分钟档）/ RECHARGE_PROCESSING（1 分钟档）实际也只能每小时一次（归第⑤块看要不要提）。
+
+**待销清单（面二⑩，打架 4）**：派生查询不建表（缝 c），口径 = 用满（全局上限）/ 服务过 Pro 单 / DEPLETED 或 FAILED（生产实跑口径时发现 hnskj 7 张作废卡没 override 不在清单，补 FAILED）/ 已标 RETIRED / 取消续费未确认（`cancellation_review_required=1 AND subscription_cancelled=0`），且 `created_at + card_min_retire_age_hours（默认 6，迁移 054 只加这一个设置键）` 已到；有活动分配的不进。端点 `GET /admin/card-retirement/candidates`（due / notYetDue / recentlyConfirmed）、`POST /admin/card-retirement/confirm`（确认词 `已销卡 <last4>`）：卡进终态 `inventory_status=RETIRED`（新值；hnskj 卡另 `sync_tier=ARCHIVED`，MANUAL_IMPORT 不动 tier 因它是快照比对键）+ override RETIRED + `card_state_events CARD_RETIRED_CONFIRMED`（带 ageHours 积累卡台真实规则）。快照缺席不再把 RETIRED 改回 HELD_FOR_REVIEW。两批旧卡用 `retire-legacy-cards.mjs`（dry-run 已出：hnskj 12 张 / highvcc 8 张全列，**apply 等 Lemon 勾选与确认**）。
+
+**契约表（面三②③④）**：三份落 `docs/contracts/2026-09-18_{delivery-criteria,payment-unknown-reconciliation,human-intervention-points}-contract.md`。落地：
+- 表一：`commitCancellationStatus(exhausted)` 与后台 `RESOLVE_UNKNOWN_PAYMENT CHARGED` 未勾续费 → `RECHARGE_SUCCESS` + `cancellation_review_required=1` + `ORDER_CANCELLATION_UNCONFIRMED`（warning）；`CANCELLATION_REVIEW_REQUIRED` 不再由自动路径产生。
+- 表二 API：`markAttemptUnknown` 排有界 `POLL_RECHARGE`（30×60s）；`pollRecharge` 遇 SUBMIT_UNKNOWN 走两路证据（有 cardKey 查 ZZSHU；无 cardKey 当场同步 hnskj 卡流水按 UTC+8 判扣款）；定不了 → `escalateUnknownSubmission`（RECONCILIATION_REQUIRED + 告警/案例都带两路证据摘要，栅栏不动）；后台 `POST /admin/orders/:publicNo/resolve-unknown-submission`（CHARGED / NOT_CHARGED，NOT_CHARGED 不自动重提）。
+- 表二 Browser：`recoverExpiredRun` 崩溃后按付款态分三路进补核（PAYMENT_SUBMITTING → 等价 markPaymentUnknown + VERIFYING，deadline 30 分钟）；`escalatePaymentVerification` 告警与案例带 `evidenceSummary`；白名单内 `browser-card-transaction-reader.js` 支持注入 `ledgerSource`（读 `card_transactions` + token 有效时 refresh 一次）走真证据，**未注入时保留旧 marker**——因为工厂 `production-live-worker.js` 在白名单外（见 D-268）。
+- 表三：12 个人工点唯一清单（含每个点的后台入口与告警类型）；ZZSHU 零原因失败「停单不退码」**本块未改**（现状仍判失败退码），与队列一起归第⑤/⑥块。
+
+**不改的**：付款行为、一卡多单上限值、通知白名单（第④步新告警类型现在按旧规则会推手机）、任何表。**随本块发布的还有** D-265 第 3 条（接单/派单开关审计，`765e971`）。
+
+## D-268（2026-09-18）第④步三件要 Lemon 定的事（等答复，代码已备好两阶段）
+
+1. **`production-live-worker.js` 一行**（白名单外）：`transactionReaderFactory` 给 MANUAL_IMPORT 卡注入 `ledgerSource`（`listPurchases` 读 v1 `card_transactions`；`refresh` 调 highvcc `syncTransactions`，token 失效抛 `HIGHVCC_TOKEN_EXPIRED`）+ `cardId`。不批 → highvcc 卡的「卡台扣款」一路仍是旧 marker 恒匹配（D-248「谎报」根源之一未闭合）；批 → 同时删 reader 里的 marker 分支，且本块「browser-mvp 一动 = 全量 + rehearsal」照做。
+2. **Browser 付款后核实窗口放长**：默认 5 分钟在 `production-live-config.js`（白名单外）；可不改代码，`run-live-pool.sh` 环境加 `BROWSER_PAYMENT_VERIFICATION_WINDOW_MS=1800000`，常驻 worker 重启前问。
+3. **highvcc HELD_FOR_REVIEW 8 张里哪几张是你注销的**：清单（尾号 / 账面余额 / 最后一次在快照里 / 首次缺席）——5501 $1.79（09-17 12:53 / 13:52）、2911 $1.00（09-11 03:39 / 10:50）、7428 $1.00（同 2911）、3241 $1.00（09-11 10:50 / 11:00）、9354 $1.00（同 3241）、9839 $50.00（同 2911）、3118 $1.01（同 5501）、5371 $1.75（同 5501）。勾了的走 `retire-legacy-cards.mjs --batch highvcc-cancelled --last4 …`（dry-run → 你看 → apply）；没勾的保持 HELD_FOR_REVIEW。hnskj 12 张 $0 批 dry-run 已出（12 张全对上），apply 同样等你一句。

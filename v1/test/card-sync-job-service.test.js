@@ -51,3 +51,26 @@ test('provider maintenance honours Retry-After without exhausting the card retry
   assert.equal(pool.calls[0].params[4], 300);
   assert.match(pool.calls[0].sql, /attempts = GREATEST\(0, attempts - \?\)/);
 });
+
+// 第④步：定时同步只排有只读 API 的卡；MANUAL_IMPORT（备用卡台 A）和已销终态的卡不排。
+test('scheduleDueCardSyncJobs excludes MANUAL_IMPORT and RETIRED cards and uses the 3h fallback for available inventory', async () => {
+  const { scheduleDueCardSyncJobs } = await import('../src/services/card-sync-job-service.js');
+  const queries = [];
+  const connection = {
+    beginTransaction: async () => {}, commit: async () => {}, rollback: async () => {}, release: () => {},
+    query: async (sql, params) => {
+      const flat = String(sql).replace(/\s+/g, ' ').trim();
+      queries.push({ sql: flat, params });
+      if (flat.startsWith('SELECT setting_value')) return [[{ setting_value: 'true' }]];
+      if (flat.startsWith('SELECT c.id FROM cards')) return [[]];
+      return [{ affectedRows: 1 }];
+    }
+  };
+  const now = new Date('2026-09-18T12:00:00Z');
+  const result = await scheduleDueCardSyncJobs({ getConnection: async () => connection }, { now });
+  assert.deepEqual(result, { enabled: true, queued: 0 });
+  const select = queries.find((q) => q.sql.startsWith('SELECT c.id FROM cards'));
+  assert.match(select.sql, /c\.sync_tier <> 'MANUAL_IMPORT'/);
+  assert.match(select.sql, /c\.inventory_status <> 'RETIRED'/);
+  assert.equal(select.params[1].toISOString(), '2026-09-18T09:00:00.000Z', 'AVAILABLE/INVENTORY fallback cutoff = now - 3h');
+});

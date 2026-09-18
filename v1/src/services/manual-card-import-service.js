@@ -227,8 +227,11 @@ export function createManualCardImportService({ pool, encryptionKey, panHmacKey 
         [batchId, sequence, item.pan.slice(-4), isAvailableByFacts ? (existing ? 'UPDATED' : 'INSERTED') : 'UNAVAILABLE', item.availabilityReasons.join(',') || null]);
       }
       for (const item of state.missing) {
+        // 第④步：已登记「销卡确认」的终态（RETIRED）不被快照缺席改回 HELD_FOR_REVIEW——
+        // 卡从快照里消失正是 Lemon 删了它的事后证据。
         await connection.query(`UPDATE cards SET source_present=0,
-          inventory_status=IF(${activeRiskSql('cards')}, inventory_status, 'HELD_FOR_REVIEW'),
+          inventory_status=IF(inventory_status='RETIRED', inventory_status,
+            IF(${activeRiskSql('cards')}, inventory_status, 'HELD_FOR_REVIEW')),
           source_operational_status='MISSING_FROM_SNAPSHOT', last_manual_snapshot_batch_id=?,
           updated_at=CURRENT_TIMESTAMP(3) WHERE id=?`, [batchId, item.id]);
         await connection.query(`INSERT INTO manual_card_import_rows

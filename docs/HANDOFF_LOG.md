@@ -2488,3 +2488,15 @@ state-check的$MINBAL紧邻中文括号、wrapup-check的$live/$mday紧邻中文
 - **范围外发现 12 条**（只报未改，账本 §6）：含 `setOrderAcceptance` 不写审计、D-239 诊断只落填写失败、collation 混用、supervisor 残留判据误触发等。
 - **落盘**：CURRENT_STATE 十余行、RUNBOOK §2.5、D-259~D-264、账本 §6、PROJECT_MAP、第④步任务书、HANDOFF_NOW 重写。
 - **未做**：highvcc 那张（等充值 + token）；rehearsal 报价段；两批旧卡标终态（归第④步）。
+
+## 2026-09-18｜落实第④步「按需同步 + 待销清单 + 三张契约表」：代码完成在 main，未发布，三件等 Lemon（2026-09-18 03:1x → 06:xx UTC）
+
+- **先做五项前置核查再动代码**（任务书要求，全部贴查询与原始输出）：同步节奏真因是 dedupe 桶不是 `now-60min`（CURRENT_STATE 原句写错，已改）；24h 内 14 条 REVIEW_REQUIRED 全是 highvcc 卡被排进 hnskj 同步（全时段 114 条）；两批旧卡现状（hnskj 12 张 FAILED、highvcc HELD **8 张**并列出最后在快照/首次缺席时间）；`CANCELLATION_REVIEW_REQUIRED` 两处产生点、历史 1 次；`markAttemptUnknown` 不排任务、API 不明历史 0；`sync_tier=AVAILABLE` 是 `completeCardSyncJob` 设计如此、不是 bug。
+- **代码**（D-267）：A 按需同步（`findStaleInventoryCandidate` + handler 当场同步 + runner 共用同步函数 + 分卡排 job 段删 + AVAILABLE 3h + scheduler 排除 MANUAL_IMPORT/RETIRED）；B 待销清单（派生查询 + 两端点 + 迁移 054 一个设置键 + 快照不覆盖 RETIRED + 标终态脚本；口径在生产实跑后补 FAILED）；C 三张契约表落 `docs/contracts/2026-09-18_*` 并落地（取消超时不卡单 + 提醒；API 不明两路证据 + 有界轮询 + 交人带证据 + 后台 RESOLVE 入口；Browser 崩溃进补核 + 叫人带证据 + reader 可注入真证据）。随本块发布的还有 D-265 第 3 条（`765e971`）。
+- **边界守住**：browser-mvp 只改白名单 `browser-card-transaction-reader.js`、`live-post-payment-recovery.js`（+两份测试）；付款前三件 `git diff` 为空；`recovery.js` 未动（实查无调用者）。**未改白名单外的工厂一行，停下来问 Lemon（D-268 第 1 条）**。
+- **测试**：v1 842/776/0（基线 810/744/0）；browser-mvp 307/298/0（基线 303/294/0）；`customer-sql-probe` 全过；`sql-probe` 602 条 0 失败 + 本块新 SQL 11 条另行 PREPARE 全过；本机临时 MySQL（001–054）集成：842 项 828 通过 13 失败 1 跳过（基线 810/794/15/1）；**相对基线新增失败 0 条**，13 条全是 D-258 立项的既有失败；被改名重写的旧「排 job」用例现通过。另：`Bark notification claims…` 用例在脏库上基线代码同样失败（同库先后各跑两次均失败），是残留/时序型既有 flaky，与本块无关，干净库全量下通过。基线跑法留档 `/tmp/step4-integration-baseline-failures.txt`（会话内）。
+- **生产只读复验**：05:17:01 UTC 两张 hnskj 卡 16 分钟未同步 → 正式资格口径可分配 **0**（等卡现场），新候选 SQL 选中 **5276**；待销口径 SQL 在生产实跑 28 行原始行（因此补了 FAILED）；两批旧卡脚本 dry-run（hnskj 12 张全对上；highvcc 8 张全列）。**没有真实一单走过新分卡路径**（要发布后演练）。
+- **生产写操作：0 次。** 发布、apply、切路线/停池做 rehearsal、常驻 worker 环境变量都等 Lemon（规矩 3/5）。
+- **范围外发现 6 条**只报未改（账本 §6 第④步节）。
+- **产出**：第⑤步任务书 `docs/tasks/2026-09-18-impl-step5-notification-whitelist-daily-reconciliation.md`；RUNBOOK §2.6；D-267/D-268；PROJECT_MAP 第④步状态；UNVERIFIED 一条；CURRENT_STATE 四行。
+- **本机残留**：临时 MySQL 容器 `pojia-step4-mysql`（端口 13307）收尾时删。
