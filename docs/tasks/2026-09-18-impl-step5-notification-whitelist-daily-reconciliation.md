@@ -30,6 +30,11 @@
 4. highvcc 钱包 `usdDeposit`（「$20 押金」）含义未确认，预检只看 `usdBalance` → 问 Lemon/卡台，定了写进预检。
 5. **第④步发现**：scheduler 的 dedupe 桶按 60 分钟分，`ASSIGNED`（5 分钟档）/ `RECHARGE_PROCESSING`（1 分钟档）实际也只能每小时同步一次——对账面要不要把付款中卡的同步节奏提上来（`SYNC_CARD_TRANSACTIONS` 任务另有一条线，先查它够不够）。
 6. **第④步发现**：browser reader 对 hnskj 卡的 `withinIntentWindow` 用 `Date.parse(tradeTime)` 直接解析 hnskj 的 UTC+8 本地串，服务器 TZ 为 UTC 时会偏 8 小时（Browser 单几乎都走 highvcc，历史未暴露）；第④步 API 侧已按 UTC+8 解析（`unknown-submission-evidence.js`），browser-mvp 侧在白名单内可同修，**归第⑦块**（碰 browser-mvp 的块）或 Lemon 单独批。
+7. **第④步收尾发现（D-270 / 账本发现 7）：运营手动用卡付款，系统完全不知道**。3336 那笔 142.54 是 Lemon 自己拿卡给客户付的 20X，不经 Browser 也不经 API：账本用量仍 0、待销清单不会因「用满」列出它、**本块的日对账会把它报成无主扣款**。所以日对账的判据必须先想清楚这类扣款怎么归；要不要给「运营手动用卡」留一个登记入口（哪张卡、哪个客户、什么套餐、多少钱），Lemon 定，做的话归第⑥块页面、判据归本块。
+
+## 上一块（第④步）留下的现场，动手前当场重查
+
+任务书写于 2026-09-18 05:xx UTC，之后第④步全部执行完，生产已变：release 换成 `20260918-step4-251a441`（迁移 054）；21 张卡标了 RETIRED；`card_sync_jobs` 历史 REVIEW_REQUIRED 307 条已归档（现为 0）；highvcc 自动开了 4022、人工补记了 8718；常驻池换成 PID 67131（新代码 + 30 分钟核实窗口）；rehearsal 报价段已跑通。**本任务书里的数字一律按「当时现场」看待，不能直接用。**
 
 ## 验收
 
@@ -51,7 +56,7 @@
 2. 第④步新增的四个告警类型在生产有没有已产生的行（发布后才会有）。
 3. `card-consumption-audit.js` 当前判据与 D-257 记录的假阴性；`card_consumption_ledger` 当前 CONSUMED / RELEASED / RECONCILIATION 分布。
 4. `operator-watch.mjs` 的 `CARD_STOCK_EMPTY` 产生条件与最近一次触发。
-5. 第④步留下的待 Lemon 定项处理结果（`production-live-worker.js` 工厂注入 `ledgerSource` 那一行批没批；Browser 核实窗口环境变量改没改）——影响两路证据在 Browser 侧是否已真实生效。
+5. 第④步那两件已经做完（D-269：工厂已注入真证据源、假 marker 已删；`run-live-pool.sh` 已加 30 分钟核实窗口，常驻池 67131 实测生效）——核查时确认一下现场与这个结论一致即可，重点是**备用卡台那一路在真单付款后还没被 worker 自动调用过**（只做过生产流水只读验证三例）。
 
 ## 涉及文件（起点，不是全集）
 
