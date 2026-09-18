@@ -338,7 +338,7 @@ test('service 级：已登记手动用卡 → 待登记（不算差异）；没�
 
 // ————— 汇总文案与告警计划 —————
 
-test('汇总文案：待销到期并进这一条；无主扣款 / 无法核对分列（D-275）', () => {
+test('汇总文案：待销到期并进这一条；无主扣款单列；「金额无法核对」不进推送（每天恒定＝噪音）', () => {
   const message = summaryMessage({
     cardCount: 16, discrepancyCount: 2, persistentCount: 1,
     pendingRegistrationCount: 1, unexplainedChargeCount: 2, unverifiableAmountCount: 4, retirementDueCount: 5
@@ -346,7 +346,8 @@ test('汇总文案：待销到期并进这一条；无主扣款 / 无法核对�
   assert.match(message, /对账 16 张卡：差异 2 张/);
   assert.match(message, /连续两天还在/);
   assert.match(message, /无主扣款 2 张/);
-  assert.match(message, /金额无法核对 4 张/);
+  assert.doesNotMatch(message, /金额无法核对/,
+    '⑤b 后这个数恒等于卡总数、每天一模一样＝噪音，已拿掉（数字仍在报告 unverifiableAmountCount 字段里）');
   assert.match(message, /待销到期 5 张/);
 });
 

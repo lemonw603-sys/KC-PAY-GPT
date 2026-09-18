@@ -388,9 +388,10 @@ export function summaryMessage(report) {
   if (report.pendingRegistrationCount) {
     lines.push(`已登记手动用卡的 ${report.pendingRegistrationCount} 张：卡台扣了、你已登记，账本待补记。`);
   }
-  if (report.unverifiableAmountCount) {
-    lines.push(`金额无法核对 ${report.unverifiableAmountCount} 张：没有可信的期初入卡金额，本轮只对次数。`);
-  }
+  // 「金额无法核对 N 张」**不进推送**（Lemon 2026-09-19 定）：⑤b 之后所有卡的金额都不做核对，这个数
+  // 恒等于卡总数、每天一字不差地推一遍，是纯噪音——正是⑤b 要去掉的那种东西。数字仍在报告的
+  // `unverifiableAmountCount` 字段里，后台随时能看。哪天真给某张卡录了可验证基准、它不再等于卡总数，
+  // 再考虑要不要说一句。（单测用 doesNotMatch 锁住，别顺手加回来。）
   if (report.inputUnverifiedCount) {
     lines.push(`暂不升级的 ${report.inputUnverifiedCount} 张：卡台同步没成功，这轮数据先不作数。`);
   }
