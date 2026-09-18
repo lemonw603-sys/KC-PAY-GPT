@@ -46,15 +46,19 @@ test('an unknown alert type is refused rather than silently pushed', async () =>
   );
 });
 
-test('D-176: the two intermediate states never reach the phone, everything else does', async () => {
+test('D-176 的两个中间态在白名单下依然不上手机（第⑤步把排除法换成了白名单）', async () => {
   const { createAlertNotificationRepository } = await import('../src/db/repositories/alert-notification-repository.js');
   const queries = [];
   const pool = { async query(sql, params) { queries.push({ sql, params }); return [{ affectedRows: 0 }]; } };
   await createAlertNotificationRepository(pool).enqueueOpenAlerts();
   const insert = queries.find(({ sql }) => /INSERT IGNORE INTO alert_notifications/.test(sql));
-  assert.match(insert.sql, /alert_type NOT IN \(\?, \?\)/);
-  assert.deepEqual(insert.params, ['BROWSER_PAYMENT_UNKNOWN', 'BROWSER_PAYMENT_CONFIRMED'],
-    '一单成功却先收到「付款结果未知」是谎报军情；「付款已确认」与「充值完成」相隔数秒重复');
+  assert.match(insert.sql, /alert_type IN \(\?\)/);
+  const pushed = insert.params[0];
+  assert.equal(pushed.includes('BROWSER_PAYMENT_UNKNOWN'), false,
+    '一单成功却先收到「付款结果未知」是谎报军情');
+  assert.equal(pushed.includes('BROWSER_PAYMENT_CONFIRMED'), false,
+    '「付款已确认」与「充值完成」相隔数秒重复');
+  assert.equal(pushed.includes('BROWSER_HUMAN_REQUIRED'), true, '真要人处理的还得响');
 });
 
 test('D-177: an empty card stock alert is not tied to any order and clears itself when cards come back', async () => {

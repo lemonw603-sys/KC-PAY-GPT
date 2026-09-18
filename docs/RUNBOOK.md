@@ -139,6 +139,34 @@ curl -s -b <admin-cookie> -X POST https://<admin>/api/v1/admin/orders/<PUBLIC_NO
 
 **分卡当场同步**（面二⑨，D-266）：候选卡流水超过 15 分钟没同步 → worker 分卡前当场同步这一张（卡详情 1 + 流水 ≥1 页，`provider_calls` 里 `request_key` 前缀 `order-demand-sync:`）；失败 60s 后再试，连续 5 次失败的卡候选查询跳过。定时同步 AVAILABLE 卡降到每卡 3 小时（`scheduled-card-sync`），只排有只读 API 的卡。
 
+## 2.7 推送与日对账（第⑤步起，2026-09-18）
+
+**谁会响手机**：只有白名单里的类型（`v1/src/domain/alert-push-policy.js`），四类——叫人 / 供给 / 资金 / 客户动态。
+不在白名单的只进后台，理由逐条写在同一文件的 `NON_PUSH_REASONS` 里。加新告警类型时，**要么进白名单、要么进理由表**。
+
+> **改了推送要生效，必须重启 bark 服务**（D-271）。`pojia-bark-notifications` 是常驻进程，
+> `WorkingDirectory=/opt/pojia/current/v1` 在启动那一刻就解析成实目录，之后切 release 它不跟。
+> D-176 的静音就是这么「写进 release 五天没生效」的。`deploy-release.sh switch` 现在会一起重启它，
+> 并打印 `bark cwd=`；**发布后核对这一行指向新 release**，别只看 web/worker。
+
+**日对账**（面四③）：每天 UTC 04:00 由 `pojia-daily-reconciliation.timer` 跑一次，次数与金额分开。
+```bash
+ssh root@144.34.180.184 'systemctl list-timers pojia-daily-reconciliation.timer'          # 下次什么时候跑
+browser-mvp/scripts/prod-query.sh "SELECT setting_value FROM app_settings WHERE setting_key='daily_reconciliation_heartbeat_at'"   # 上次真跑了没
+ssh root@144.34.180.184 'journalctl -u pojia-daily-reconciliation -n 50 --no-pager'        # 上次的报告
+```
+本机只读跑一次（什么都不写，用来核对）：
+```bash
+DATABASE_URL=<隧道 13306 的连接串> node v1/scripts/daily-reconciliation-runner.js --dry-run
+```
+**怎么读报告**：`discrepancies` 才是要看的差异；下面三组**不是**差异，只是列出来——
+`pendingRegistration`（卡台扣了、系统没记：多半是手动用卡，登记入口归第⑥块）、
+`fundingIncomplete`（开卡金额比扣款合计还小，公式立不起来）、
+`CARD_IN_TERMINAL_STATE` / `AWAITING_RESOLUTION`（卡已作废 / 账本占位等收口）。
+**连续两次日对账还在**的差异才 `persistent:true`，那条汇总才升 critical。
+
+推手机的只有一条汇总（`DAILY_RECONCILIATION_SUMMARY`），**待销到期数并在里面**，不单推（D-272）。
+
 ## 3. 死单残留清理
 
 订单已是 RECHARGE_FAILED 但卡仍绑定（2026-09-08 前的旧行为）：
@@ -173,11 +201,13 @@ v1/scripts/sql-probe.sh
 ```bash
 scripts/deploy-release.sh prepare <commit> <YYYYMMDD-tag-shortsha>   # 构建/上传/备份/校验，不切换
 scripts/deploy-release.sh migrate <name>                             # 仅当仓库 v1/migrations 有新文件
-scripts/deploy-release.sh switch  <name>                             # 切换+重启 web+健康检查，打印 ROLLBACK 命令
+scripts/deploy-release.sh switch  <name>                             # 切换+重启 web/worker/bark+健康检查，打印 ROLLBACK 命令
 ```
-发布后复验（服务器本机 3100 + `ADMIN_HOST`）：登录页 200、新资源版本号、关键接口未登录 401。回滚：
+发布后复验（服务器本机 3100 + `ADMIN_HOST`）：登录页 200、新资源版本号、关键接口未登录 401，
+**外加 switch 打印的 `worker cwd=` 与 `bark cwd=` 两行都指向新 release**（D-220 / D-271：这三个常驻进程
+不重启就一直跑旧代码，而测试和发布日志都看不出来）。回滚：
 ```bash
-ssh root@144.34.180.184 'ln -sfn /opt/pojia/releases/<prev> /opt/pojia/current && systemctl restart pojia-web.service'
+ssh root@144.34.180.184 'ln -sfn /opt/pojia/releases/<prev> /opt/pojia/current && systemctl restart pojia-web.service pojia-worker.service pojia-bark-notifications.service'
 ```
 
 ## 6. 本机依赖

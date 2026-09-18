@@ -24,6 +24,7 @@ import { createOrderCancellationService } from './services/order-cancellation-se
 import { createManualCancellationService } from './services/manual-cancellation-service.js';
 import { createUnknownSubmissionResolveService } from './services/unknown-submission-resolve-service.js';
 import { createCardRetirementService } from './services/card-retirement-service.js';
+import { createDailyReconciliationService } from './services/daily-reconciliation-service.js';
 import { HnskjCardProvider } from './providers/index.js';
 import { createCardIntakeService } from './services/card-intake-service.js';
 import { createCardIntakeRepository } from './db/repositories/card-intake-repository.js';
@@ -134,6 +135,9 @@ const cancelAdminOrder = createOrderCancellationService({ pool });
 const confirmManualCancellation = createManualCancellationService({ pool });
 const resolveUnknownSubmission = createUnknownSubmissionResolveService({ pool });
 const cardRetirement = createCardRetirementService({ pool });
+// 第⑤步（面四③）：日对账的最新一份报告 —— 后台看板与「需要我处理」队列（第⑥块）读它。
+// 端点只跑只读对账，不写指纹，免得看一眼后台就把「连续两次」的判断给搅了。
+const dailyReconciliation = createDailyReconciliationService({ pool });
 const reconciliationCases = createReconciliationCaseService({ pool });
 const browserAdmin = createBrowserAdminService({ pool });
 const browserBillingAddressAdmin = createBrowserBillingAddressAdminService({ pool });
@@ -253,6 +257,7 @@ const app = createApp({
   ,confirmManualCancellation
   ,resolveUnknownSubmission
   ,listCardRetirementCandidates: cardRetirement.list
+  ,runDailyReconciliation: () => dailyReconciliation.run({ persist: false })
   ,confirmCardRetired: cardRetirement.confirmRetired
   ,createAdminCdkBatch
   ,listAdminCdkBatches: async (input) => ({

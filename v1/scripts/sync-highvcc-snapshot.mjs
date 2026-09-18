@@ -20,6 +20,11 @@
 // browser-mvp/scripts/run-live-pool.sh does and point DATABASE_URL at the 13306 tunnel).
 import mysql from 'mysql2/promise';
 import { createHighvccSnapshotSyncService } from '../src/services/highvcc-snapshot-sync-service.js';
+import { BACKUP_A_PROVIDER_ACCOUNT_ID } from '../src/services/highvcc-card-service.js';
+import { clearProviderTokenExpired, markProviderTokenExpired } from '../src/services/card-supply-scheduler-service.js';
+
+const HIGHVCC_PROVIDER_ACCOUNT_ID = BACKUP_A_PROVIDER_ACCOUNT_ID;
+const TOKEN_EXPIRED_CODES = new Set(['HIGHVCC_TOKEN_EXPIRED', 'HIGHVCC_TOKEN_MISSING']);
 
 const commit = process.argv.includes('--commit');
 for (const name of ['DATABASE_URL', 'SESSION_ENCRYPTION_KEY_BASE64', 'CARD_INTAKE_PAN_HMAC_KEY_BASE64']) {
@@ -64,6 +69,18 @@ try {
     });
     await step('wallet', () => service.syncWallet());
     await step('transactions', () => service.syncTransactions());
+    // 第⑤步（面四①）：token 失效以前只是 exit 1，没人被告知。这里把它变成一条告警，
+    // 一段失效期只推一次（dedupe_key），贴回新 token 后下一趟成功即 RESOLVE。
+    const tokenExpired = failures.some((name) => TOKEN_EXPIRED_CODES.has(out[name]?.code));
+    if (tokenExpired) {
+      await markProviderTokenExpired(pool, {
+        providerAccountId: HIGHVCC_PROVIDER_ACCOUNT_ID,
+        code: failures.map((name) => out[name]?.code).find((code) => TOKEN_EXPIRED_CODES.has(code))
+      });
+    } else if (!failures.length) {
+      await clearProviderTokenExpired(pool, { providerAccountId: HIGHVCC_PROVIDER_ACCOUNT_ID });
+    }
+    out.tokenAlert = tokenExpired ? 'OPEN' : (failures.length ? 'UNCHANGED' : 'RESOLVED');
     console.log(JSON.stringify(out, null, 2));
     if (failures.length) {
       console.error('failed steps:', failures.join(','));

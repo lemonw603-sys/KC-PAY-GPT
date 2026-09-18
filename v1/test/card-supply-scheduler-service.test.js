@@ -80,6 +80,8 @@ function fakePool({
     if (text.includes('SUM(CASE') && text.includes('WHERE provider_account_id = ?')) return [[{ count: today[params[0]] ?? 0 }]];
     if (text.includes('FROM card_transactions ct')) return [(fees[params[0]] || []).map((amount) => ({ amount }))];
     if (text.startsWith('UPDATE provider_accounts SET supply_fault_state = \'FAULT\'')) { faults.push({ id: params[2], reason: params[0] }); return [{ affectedRows: 1 }]; }
+    // 第⑤步：markSupplyFault 现在还要读账户名，好把「哪个卡台坏了」写进告警文案。
+    if (text.startsWith('SELECT display_name, provider_code FROM provider_accounts')) return [[{ display_name: `账户 ${params[0]}`, provider_code: 'test' }]];
     if (text.includes('INSERT INTO card_stock_jobs')) { jobs.push({ id: params[0], opener: params[1], product: params[2], fallbackFor: params[3], segment: params[4], amount: params[5], estimatedTotal: params[6], rules: JSON.parse(params[7]) }); return [{ affectedRows: 1 }]; }
     throw new Error(`unexpected query: ${text.slice(0, 100)}`);
   }
@@ -248,8 +250,9 @@ test('Pro 水位 0：没有等卡单就不开；来了一单就按 $150 开一�
 });
 
 test('walletPreflight / estimateIssueFeeCents are integer-cent arithmetic', () => {
+  // held/spendable 是第⑤步加的押金扣减（D-272）；不报押金的卡台按 0，结论与以前一致。
   assert.deepEqual(walletPreflight({ availableBalance: '89.48', amount: '50', feeCents: 58, floor: '30' }),
-    { ok: true, balance: '89.48', amount: '50.00', fee: '0.58', floor: '30.00', projected: '38.90' });
+    { ok: true, balance: '89.48', held: '0.00', spendable: '89.48', amount: '50.00', fee: '0.58', floor: '30.00', projected: '38.90' });
   assert.equal(walletPreflight({ availableBalance: 'abc', amount: '50', feeCents: 58, floor: '30' }).ok, false);
   assert.deepEqual(estimateIssueFeeCents({ observedCents: null, amountCents: 15000 }), { cents: 1600, source: 'PLAUSIBLE_UPPER_BOUND' });
 });

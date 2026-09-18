@@ -11,8 +11,10 @@ test('Bark outbox sends once per open incident and only requeues after resolutio
     }
   };
   await createAlertNotificationRepository(pool).enqueueOpenAlerts();
-  assert.equal(calls.length, 3);
-  assert.match(calls[1].sql, /n\.status = 'CANCELLED'/);
-  assert.doesNotMatch(calls[1].sql, /a\.acknowledged_at IS NOT NULL/);
-  assert.match(calls[2].sql, /n\.status IN \('PENDING', 'RETRY', 'SENDING', 'SENT', 'DEAD'\)/);
+  // 4 条：读推送模式设置（第⑤步白名单）+ 入队 + 复活 CANCELLED + 收掉已关闭告警的待推行。
+  assert.equal(calls.length, 4);
+  assert.match(calls[0].sql, /FROM app_settings/);
+  assert.match(calls[2].sql, /n\.status = 'CANCELLED'/);
+  assert.doesNotMatch(calls[2].sql, /a\.acknowledged_at IS NOT NULL/);
+  assert.match(calls[3].sql, /n\.status IN \('PENDING', 'RETRY', 'SENDING', 'SENT', 'DEAD'\)/);
 });

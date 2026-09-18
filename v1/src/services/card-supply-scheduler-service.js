@@ -26,7 +26,9 @@ export const ALERT_TYPES = Object.freeze({
   WALLET_LOW: 'CARD_SUPPLY_WALLET_LOW',
   WALLET_ALERT: 'PROVIDER_WALLET_LOW',
   BLOCKED: 'CARD_SUPPLY_BLOCKED',
-  OPEN_FAILED: 'CARD_SUPPLY_OPEN_FAILED'
+  OPEN_FAILED: 'CARD_SUPPLY_OPEN_FAILED',
+  FAULT: 'CARD_SUPPLY_FAULT',
+  TOKEN_EXPIRED: 'PROVIDER_TOKEN_EXPIRED'
 });
 
 export async function upsertSupplyAlert(queryable, { type, key, severity = 'warning', title, message, orderId = null }) {
@@ -50,20 +52,79 @@ export async function resolveSupplyAlert(queryable, key) {
   );
 }
 
+/** 卡台故障告警的 dedupe_key。一段故障期只有这一行，所以只推一次（第⑤步，契约表三 #10）。 */
+export function supplyFaultAlertKey(providerAccountId) {
+  return `card-supply-fault:${providerAccountId}`;
+}
+
+/** token 失效告警的 dedupe_key。同理：一段失效期只有这一行，贴回新 token 后 RESOLVE。 */
+export function tokenExpiredAlertKey(providerAccountId) {
+  return `provider-token-expired:${providerAccountId}`;
+}
+
+/**
+ * 第⑤步（面四①，契约表三 #10「token 要用而没有」）：token 失效以前只让定时任务 exit 1，
+ * **一条告警都没有**（2026-09-17 生产实证：06:06 贴、08:38 失效，到 12:47 Lemon 自己发现才重贴）。
+ *
+ * 「一段失效期只推一次」靠 dedupe_key + `alert_notifications` 的 (alert_id, channel) 唯一约束：
+ * 失效期间 timer 每小时撞一次，撞的都是同一行，只有第一次进队列。恢复时 RESOLVE，
+ * 下次失效重新 OPEN 才会再推一次。
+ */
+export async function markProviderTokenExpired(queryable, { providerAccountId, code = 'HIGHVCC_TOKEN_EXPIRED' }) {
+  const [rows] = await queryable.query(
+    'SELECT display_name, provider_code FROM provider_accounts WHERE id = ? LIMIT 1',
+    [String(providerAccountId)]
+  );
+  const label = rows[0]?.display_name || rows[0]?.provider_code || providerAccountId;
+  await upsertSupplyAlert(queryable, {
+    type: ALERT_TYPES.TOKEN_EXPIRED,
+    key: tokenExpiredAlertKey(providerAccountId),
+    severity: 'critical',
+    title: '卡台登录失效了，要你贴新 token',
+    message: `${label} 的访问 token 已失效（${code}）。同步、开卡、付款后的卡台侧核对都停了。`
+      + '登录含随机滑块，系统换不了（D-249），请重新贴一次 token。'
+  });
+}
+
+export async function clearProviderTokenExpired(queryable, { providerAccountId }) {
+  await resolveSupplyAlert(queryable, tokenExpiredAlertKey(providerAccountId));
+}
+
+/**
+ * 第⑤步（面四①）：故障态以前只落 `provider_accounts.supply_fault_state`，**没有任何告警**——
+ * 卡台坏了没人知道，直到有客户等卡。告警挂在这里而不是五个调用点上，新增调用点自动带上。
+ * 恢复（clearSupplyFault）时 RESOLVE，下次再坏才重新 OPEN、重新推一次。
+ */
 export async function markSupplyFault(queryable, { providerAccountId, reason, now = new Date() }) {
-  await queryable.query(
+  const code = String(reason || 'UNKNOWN').slice(0, 255);
+  const [result] = await queryable.query(
     `UPDATE provider_accounts SET supply_fault_state = 'FAULT', supply_fault_reason = ?, supply_fault_at = ?
       WHERE id = ?`,
-    [String(reason || 'UNKNOWN').slice(0, 255), now, String(providerAccountId)]
+    [code, now, String(providerAccountId)]
   );
+  if (Number(result?.affectedRows || 0) === 0) return;
+  const [rows] = await queryable.query(
+    'SELECT display_name, provider_code FROM provider_accounts WHERE id = ? LIMIT 1',
+    [String(providerAccountId)]
+  );
+  const label = rows[0]?.display_name || rows[0]?.provider_code || providerAccountId;
+  await upsertSupplyAlert(queryable, {
+    type: ALERT_TYPES.FAULT,
+    key: supplyFaultAlertKey(providerAccountId),
+    severity: 'critical',
+    title: '卡台故障，开不出卡',
+    message: `${label} 供卡故障（${code}）。系统已停止用它开卡；另一台若能顶会自动转台，顶不上时等卡的单会一直等。请去卡台看看。`
+  });
 }
 
 export async function clearSupplyFault(queryable, { providerAccountId }) {
-  await queryable.query(
+  const [result] = await queryable.query(
     `UPDATE provider_accounts SET supply_fault_state = 'OK', supply_fault_reason = NULL, supply_fault_at = NULL
       WHERE id = ? AND supply_fault_state <> 'OK'`,
     [String(providerAccountId)]
   );
+  if (Number(result?.affectedRows || 0) === 0) return;
+  await resolveSupplyAlert(queryable, supplyFaultAlertKey(providerAccountId));
 }
 
 /** 转台开出的卡要给等它的单用：把还没分配、没资金痕迹的等待单冻结卡台改到新台（复用 safeWaitingPredicate）。 */
@@ -96,18 +157,28 @@ export function estimateIssueFeeCents({ observedCents, amountCents }) {
   return { cents: maxPlausibleFeeCents(amountCents), source: 'PLAUSIBLE_UPPER_BOUND' };
 }
 
-/** 钱包预检：余额 − 开卡金额 − 手续费 ≥ 硬底线。全程整数分。 */
-export function walletPreflight({ availableBalance, amount, feeCents, floor }) {
+/**
+ * 钱包预检：余额 − **押金** − 开卡金额 − 手续费 ≥ 硬底线。全程整数分。
+ *
+ * `heldBalance`（第⑤步，D-272）：卡台账面余额里有一部分是动不了的押金（highvcc 的
+ * `usdDeposit`，Lemon 确认不能花）。不扣掉它，预检会以为钱够、开卡时才被卡台拒绝。
+ * 卡台不报押金（hnskj）时传 null/undefined，按 0 处理，行为与以前一致。
+ */
+export function walletPreflight({ availableBalance, amount, feeCents, floor, heldBalance = null }) {
   const balanceCents = toCents(String(availableBalance));
   const amountCents = toCents(String(amount));
   const floorCents = floor == null ? 0 : toCents(String(floor));
-  if (balanceCents === null || amountCents === null || floorCents === null || !Number.isInteger(feeCents)) {
+  const heldCents = heldBalance == null ? 0 : toCents(String(heldBalance));
+  if (balanceCents === null || amountCents === null || floorCents === null
+    || heldCents === null || !Number.isInteger(feeCents)) {
     return { ok: false, reason: 'UNREADABLE_AMOUNTS' };
   }
-  const projected = balanceCents - amountCents - feeCents;
+  const spendableCents = balanceCents - heldCents;
+  const projected = spendableCents - amountCents - feeCents;
   return {
     ok: projected >= floorCents,
-    balance: fromCents(balanceCents), amount: fromCents(amountCents), fee: fromCents(feeCents),
+    balance: fromCents(balanceCents), held: fromCents(heldCents), spendable: fromCents(spendableCents),
+    amount: fromCents(amountCents), fee: fromCents(feeCents),
     floor: fromCents(floorCents), projected: fromCents(projected)
   };
 }
@@ -266,7 +337,10 @@ export function createCardSupplyScheduler({ pool, adapters, now = () => new Date
     const fee = estimateIssueFeeCents({
       observedCents: await observedIssueFeeCents(pool, { providerAccountId: opener.id }), amountCents
     });
-    const preflight = walletPreflight({ availableBalance: wallet.availableBalance, amount, feeCents: fee.cents, floor: opener.walletFloor });
+    const preflight = walletPreflight({
+      availableBalance: wallet.availableBalance, heldBalance: wallet.heldBalance ?? null,
+      amount, feeCents: fee.cents, floor: opener.walletFloor
+    });
     const alertThreshold = opener.walletAlertThreshold == null ? null : toCents(String(opener.walletAlertThreshold));
     const balanceCents = toCents(String(wallet.availableBalance));
     if (alertThreshold != null && balanceCents != null && balanceCents < alertThreshold) {
@@ -282,7 +356,9 @@ export function createCardSupplyScheduler({ pool, adapters, now = () => new Date
       await upsertSupplyAlert(pool, {
         type: ALERT_TYPES.WALLET_LOW, key: `card-supply-wallet-low:${opener.id}`, severity: 'critical',
         title: '卡台钱包不够开卡',
-        message: `${opener.displayName} 钱包 ${preflight.balance ?? wallet.availableBalance}，开 ${candidate.productCode} 一张要 ${preflight.amount ?? amount} + 手续费约 ${preflight.fee ?? '?'}（${fee.source}），扣完剩 ${preflight.projected ?? '?'}，低于硬底线 ${preflight.floor ?? opener.walletFloor}；未开卡，请充值钱包。`,
+        message: `${opener.displayName} 钱包 ${preflight.balance ?? wallet.availableBalance}`
+          + `${preflight.held && preflight.held !== '0.00' ? `（其中押金 ${preflight.held} 不能花，可用 ${preflight.spendable}）` : ''}`
+          + `，开 ${candidate.productCode} 一张要 ${preflight.amount ?? amount} + 手续费约 ${preflight.fee ?? '?'}（${fee.source}），扣完剩 ${preflight.projected ?? '?'}，低于硬底线 ${preflight.floor ?? opener.walletFloor}；未开卡，请充值钱包。`,
         orderId: candidate.demandOrderId
       });
       return { scheduled: false, reason: 'WALLET_BELOW_FLOOR', opener: opener.id, preflight, fee };

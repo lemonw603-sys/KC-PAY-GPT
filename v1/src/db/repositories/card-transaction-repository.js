@@ -67,8 +67,43 @@ async function persistRefundCandidate(connection, { cardId, orderId, transaction
  * 而那个时间戳是非 MANUAL_IMPORT 卡的分配资格判据（card-inventory-eligibility.js）。
  * 开卡时我们并没有同步这张卡的交易，把它刷新等于伪造一个「刚对过账」的新鲜度。
  */
-export async function insertCardTransactionRow(connection, { cardId, transaction }) {
+/**
+ * 第⑤步（面四①，D-249「拒付必推」）：拒付以前**一条告警都没有**。
+ * 原因是它从两边都掉了出去：`classifyCardTransaction` 的 `REFUND_CANDIDATE_TYPES` 里没有
+ * `chargeback`，而 `persistRefundCandidate` 还要求 `status='success'`——hnskj 拒付行的 status
+ * 是中文串「平台监控已登记拒付」。生产 4 笔拒付、`operator_alerts` 里 0 条（2026-09-18 实查）。
+ *
+ * 所以这里**只按类型判，不按 status 判**：status 是卡台的自由文本，拿它当判据正是上一版失效的原因。
+ * 只对**本次新插入**的流水行告警，否则每次同步都会把历史拒付重推一遍。
+ * 拒付手续费（`chargeback_fee`）不单独推，金额并进同一条消息由运营在后台看。
+ */
+const CHARGEBACK_TYPES = new Set(['CHARGEBACK', 'CHARGE_BACK', 'DISPUTE']);
+
+async function persistChargebackAlert(connection, { cardId, transaction }) {
+  const type = String(transaction?.type ?? '').trim().toUpperCase();
+  if (!CHARGEBACK_TYPES.has(type)) return;
+  const [rows] = await connection.query(
+    'SELECT last4, provider_card_id FROM cards WHERE id = ? LIMIT 1', [cardId]
+  );
+  const label = rows[0]?.last4 ? `尾号 ${rows[0].last4}` : `卡 ${rows[0]?.provider_card_id || cardId}`;
   await connection.query(
+    `INSERT INTO operator_alerts
+     (id, alert_type, dedupe_key, severity, title, message, status)
+     VALUES (UUID(), 'CARD_CHARGEBACK', ?, 'critical', '发生拒付，钱被扣走了', ?, 'OPEN')
+     ON DUPLICATE KEY UPDATE severity = VALUES(severity), title = VALUES(title),
+       message = VALUES(message),
+       status = IF(status = 'RESOLVED', 'OPEN', status),
+       acknowledged_at = IF(status = 'RESOLVED', NULL, acknowledged_at)`,
+    [`card-chargeback:${cardId}:${transaction.id}`,
+      `${label} 发生拒付：${transaction.amount} ${transaction.currency}`
+      + `${transaction.merchantName ? `，商户 ${String(transaction.merchantName).slice(0, 40)}` : ''}`
+      + `${transaction.tradeTime ? `，卡台时间 ${transaction.tradeTime}` : ''}。`
+      + '这笔钱已从卡台账户扣走，系统不会自动追回。请去卡台核对这张卡还能不能用。']
+  );
+}
+
+export async function insertCardTransactionRow(connection, { cardId, transaction }) {
+  const [result] = await connection.query(
     `INSERT INTO card_transactions
      (card_id, provider_transaction_id, transaction_type, status,
       amount, currency, fee, trade_time_raw, related_txn_id,
@@ -92,6 +127,9 @@ export async function insertCardTransactionRow(connection, { cardId, transaction
       transaction.merchantCountry || null, transaction.merchantMcc || null,
       transaction.rawHash]
   );
+  // MySQL 的 INSERT ... ON DUPLICATE KEY UPDATE：新插入 = 1，更新既有行 = 2，无变化 = 0。
+  // 调用方靠它区分「第一次看到这笔流水」与「又同步了一遍」。
+  return { inserted: Number(result?.affectedRows || 0) === 1 };
 }
 
 export async function persistCardTransactions(connection, {
@@ -100,11 +138,16 @@ export async function persistCardTransactions(connection, {
   transactions,
   cardSnapshot = null
 }) {
+  const freshlyInserted = [];
   for (const transaction of transactions) {
-    await insertCardTransactionRow(connection, { cardId, transaction });
+    const { inserted } = await insertCardTransactionRow(connection, { cardId, transaction });
+    if (inserted) freshlyInserted.push(transaction);
   }
   for (const transaction of transactions) {
     await persistRefundCandidate(connection, { cardId, orderId, transaction });
+  }
+  for (const transaction of freshlyInserted) {
+    await persistChargebackAlert(connection, { cardId, transaction });
   }
   const balance = cardSnapshot?.currentBalance;
   const currency = cardSnapshot?.currency;

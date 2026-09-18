@@ -78,6 +78,7 @@ export function createApp({
   confirmManualCancellation = null,
   resolveUnknownSubmission = null,
   listCardRetirementCandidates = null,
+  runDailyReconciliation = null,
   confirmCardRetired = null,
   createAdminCdkBatch = null,
   listAdminCdkBatches = null,
@@ -610,6 +611,13 @@ export function createApp({
     // 第④步（面二⑩）：待销清单（派生查询，不建表）。due = 到了最短存活期该去卡台删的；notYetDue = 口径成立但时间未到。
     app.get('/api/v1/admin/card-retirement/candidates', noStore, requireAdminApi, async (req, res) => {
       res.json(await listCardRetirementCandidates(req.query || {}));
+    });
+  }
+  if (typeof runDailyReconciliation === 'function') {
+    // 第⑤步（面四③）：日对账报告。只读——端点这一路不写「连续两次」的指纹，
+    // 那个只由 pojia-daily-reconciliation.timer 每天写一次，免得后台刷新一下就把判断搅了。
+    app.get('/api/v1/admin/reconciliation/daily', noStore, requireAdminApi, async (req, res) => {
+      res.json(await runDailyReconciliation());
     });
   }
   if (typeof confirmCardRetired === 'function') {

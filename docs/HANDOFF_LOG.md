@@ -2521,3 +2521,23 @@ state-check的$MINBAL紧邻中文括号、wrapup-check的$live/$mday紧邻中文
 - 生产写操作：补记 1、结清 job 1、切路线 2、开关 4（关付款/关接单/开接单/开付款）、收口 1。每步 dry-run 或先贴证据，全部新连接核实。
 - 测试：v1 844/778/0、browser-mvp 308/299/0；`state-check` 一致；`wrapup-check` 全绿。
 - 落盘：D-269/D-270、账本 §6 执行段与发现 7~9、CURRENT_STATE 六行、UNVERIFIED、RUNBOOK §2.6、HANDOFF_NOW 重写。
+
+## 2026-09-18｜第⑤步：推送白名单 + 日对账（代码完成，未发布）
+
+**本窗口做的事**：落实 V2 第⑤块（面四①③，任务书 `docs/tasks/2026-09-18-impl-step5-*`）。全程无生产写操作——两次日对账实跑都是 `--dry-run`，发布与装 timer 留给 Lemon 批。
+
+**先做当场重查（任务书要求，数字与任务书里 05:xx 的都不同）**：OPEN 告警 119→**122**、账本 RELEASED 47→**50**、`CARD_STOCK_LOW` 从 OPEN 2 → 4 条全 RESOLVED、可分配卡 4→**2**（hnskj 两张 07:00 同步、56 分钟前，出了 15 分钟窗口）、订单 20/37/21 非终态 0、常驻池 PID 67131 心跳 07:53 新鲜。`ORDER_CANCELLATION_UNCONFIRMED` / `ORDER_PAYMENT_UNKNOWN_REVIEW` 生产 0 行。
+
+**静音根因坐实（D-271）**：不是代码错。`pojia-bark-notifications` 是常驻进程，unit 的 `WorkingDirectory=/opt/pojia/current/v1` 在启动那一刻解析定死，而 `deploy-release.sh` 的 switch 段只重启 web 与 worker。实测 `readlink -f /proc/2324/cwd` = `20260916-unified-4334dc2`，落后 current 四个版本；进程启动时间 = 服务器 boot（09-16 23:36:28），不是任何一次发布。闭环反证：`HANDOFF_LOG.md:2367` 记 09-16 10:46 current = `20260913-orderno-6dcb458`，服务器实测该 release **有** `PHONE_SILENT_TYPES`，而 11:09:35 仍插行并推送。排除了别的解释（全项目只有一处 INSERT、两张表无触发器、`created_at` 无 `ON UPDATE`、静音类型全部 20 行都在 boot 之前）。**同一个洞 D-220 在 2026-09-14 修过一次，当时只修了 worker，没回头数一遍常驻服务（生产只有三个：web/worker/bark）。**
+
+**做完的**：白名单四类替代排除法（含复活路径与 claimNext 两处过滤）· 三个新告警产生点（token 失效 / 卡台故障 / **拒付**——生产 4 笔拒付 0 条告警，因为 `chargeback` 不在分类表里且判据要求 `status='success'` 而它是中文串）· 缝 d 的 `countPushesByType` · 日对账服务 + runner + timer unit + 只读端点 · 判据重写（`domain/card-transaction-audit.js`）· `card-consumption-audit` 改用同一判据 · 钱包预检扣押金 · `deploy-release.sh` 加 bark 重启 · RUNBOOK §2.7/§5 · 契约表三 #12 与末尾新段。
+
+**日对账生产只读实跑**：第一次（08:04:31 UTC）11 条差异，**其中 9 条是判据自己的问题**——7 条来自已作废的卡（余额被清零，公式不适用）、2 条把账本 `RECONCILIATION` 占位当成已确认消费。两处当场修，第二次（08:05:16 UTC）剩 **2 条**（1657 差 -1.00、3159 差 -1.70，**原因未知**）。另有待登记 7 张、开卡金额立不起来 3 张、待销到期 4 张。
+
+**测试**：v1 全量 885/819/0/66（基线 842/776/0/66，+43）。`git diff --stat -- browser-mvp/` 为空。
+
+**Lemon 当场定的三件**（D-272）：待销到期不单推、并进日对账那条汇总；`usdDeposit` 是押金不能花、预检扣掉；运营手动用卡要做登记入口（归第⑥块），本块日对账先按「待登记」列出。
+
+**留给 Lemon 批的两件**：①发布（switch 会一并重启 bark，改动才生效）；②装 `pojia-daily-reconciliation.timer`。**两件都没做，所以「白名单只推白名单类型」与「timer 有心跳」两条验收现在都不成立**，如实记。
+
+**范围外发现 12 条**全部只报未改，登记在账本 §6 第⑤步的 E 段，其中归第⑥块 7 条、归第⑦块 2 条。

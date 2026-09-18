@@ -1,21 +1,32 @@
 import { redactSensitiveText } from '../../security/redaction.js';
+import {
+  BALANCE_CHANGE_PUSH_MODE_SETTING, PUSH_MODE_EACH, phonePushTypes
+} from '../../domain/alert-push-policy.js';
 
 export function createAlertNotificationRepository(pool) {
-  // D-176：不是每个告警都值得响手机。这两类是链路的中间态，不是要运营做什么：
-  //   BROWSER_PAYMENT_UNKNOWN —— 点了付款还没拿到结果。付款后核实通道经常在一分钟内
-  //     自己确认成功（2026-09-11 唯一一次成功就走的这条路），立刻推等于谎报军情；
-  //     真的卡住会由 BROWSER_HUMAN_REQUIRED 或排队超时告警接手。
-  //   BROWSER_PAYMENT_CONFIRMED —— 与 BROWSER_ORDER_COMPLETED 相隔数秒，重复。
-  // 两者仍写入 operator_alerts，后台面板照常能看到，只是不再占用手机。
-  const PHONE_SILENT_TYPES = ['BROWSER_PAYMENT_UNKNOWN', 'BROWSER_PAYMENT_CONFIRMED'];
+  // 第⑤步（面四①，D-249）：排除法 → 白名单。谁该响手机由 `alert-push-policy.js` 一处说了算，
+  // 理由逐条写在那里；这里只负责按当前清单入队。旧的 `PHONE_SILENT_TYPES` 已删。
+  //
+  // D-271：这段代码在生产上「写了没生效」了五天——不是它错，是 pojia-bark-notifications 这个
+  // 常驻进程不在发布重启名单里，一直跑旧 release。**改完这里若不重启该服务，照样不生效。**
+  async function currentPushTypes() {
+    const [rows] = await pool.query(
+      'SELECT setting_value FROM app_settings WHERE setting_key = ? LIMIT 1',
+      [BALANCE_CHANGE_PUSH_MODE_SETTING]
+    );
+    return phonePushTypes({ balanceChangePushMode: rows[0]?.setting_value || PUSH_MODE_EACH });
+  }
 
   async function enqueueOpenAlerts() {
+    const pushTypes = await currentPushTypes();
     await pool.query(
       `INSERT IGNORE INTO alert_notifications (alert_id, channel, status, source_updated_at)
        SELECT id, 'BARK', 'PENDING', updated_at FROM operator_alerts
-        WHERE status = 'OPEN' AND alert_type NOT IN (?, ?)`,
-      PHONE_SILENT_TYPES
+        WHERE status = 'OPEN' AND alert_type IN (?)`,
+      [pushTypes]
     );
+    // 告警 RESOLVED→OPEN 翻回来时，原先被 CANCELLED 的通知行要复活重推（例如 token 再次失效）。
+    // 这一段以前**没有类型过滤**：白名单外的类型只要在历史上推过一次，就能靠这条路一直复活。
     await pool.query(
       `UPDATE alert_notifications n
        JOIN operator_alerts a ON a.id = n.alert_id
@@ -23,7 +34,8 @@ export function createAlertNotificationRepository(pool) {
            n.locked_at = NULL, n.sent_at = NULL, n.last_error = NULL,
            n.source_updated_at = a.updated_at
          WHERE n.channel = 'BARK' AND a.status = 'OPEN'
-         AND n.status = 'CANCELLED'`
+         AND n.status = 'CANCELLED' AND a.alert_type IN (?)`,
+      [pushTypes]
     );
     await pool.query(
       `UPDATE alert_notifications n
@@ -35,21 +47,25 @@ export function createAlertNotificationRepository(pool) {
   }
 
   async function claimNext() {
+    const pushTypes = await currentPushTypes();
     const connection = await pool.getConnection();
     try {
       await connection.beginTransaction();
+      // 白名单在这里再判一次：入队时白、领取时也要白。否则白名单收窄之前遗留的 PENDING/RETRY 行
+      // 会在改动上线后继续被推出去——那正是「改了没生效」的另一种形态。
       const [rows] = await connection.query(
         `SELECT n.id, n.alert_id, n.attempt_count,
                 a.alert_type, a.severity, a.title, a.message
          FROM alert_notifications n
          JOIN operator_alerts a ON a.id = n.alert_id AND a.status = 'OPEN'
-         WHERE n.channel = 'BARK'
+         WHERE n.channel = 'BARK' AND a.alert_type IN (?)
            AND (
              (n.status IN ('PENDING', 'RETRY') AND (n.next_attempt_at IS NULL OR n.next_attempt_at <= CURRENT_TIMESTAMP(3)))
              OR (n.status = 'SENDING' AND n.locked_at < CURRENT_TIMESTAMP(3) - INTERVAL 5 MINUTE)
            )
          ORDER BY FIELD(a.severity, 'critical', 'warning', 'info'), n.id
-         LIMIT 1 FOR UPDATE SKIP LOCKED`
+         LIMIT 1 FOR UPDATE SKIP LOCKED`,
+        [pushTypes]
       );
       const row = rows[0];
       if (!row) {
@@ -105,5 +121,28 @@ export function createAlertNotificationRepository(pool) {
     return { exhausted, delaySeconds: exhausted ? null : delaySeconds };
   }
 
-  return { enqueueOpenAlerts, claimNext, markSent, markFailed };
+  /**
+   * 缝 d：「今天叫了几次、为什么」——按 `alert_notifications.sent_at` 统计，不是按 operator_alerts。
+   * 只有真推到手机的才算「叫」。第⑥块看板的数据源；本块的每日汇总也用它。
+   * `sinceUtc` / `untilUtc` 是半开区间 [since, until)。
+   */
+  async function countPushesByType({ sinceUtc, untilUtc }) {
+    const [rows] = await pool.query(
+      `SELECT a.alert_type, a.severity, COUNT(*) AS pushes, MAX(n.sent_at) AS last_sent_at
+         FROM alert_notifications n JOIN operator_alerts a ON a.id = n.alert_id
+        WHERE n.channel = 'BARK' AND n.sent_at IS NOT NULL
+          AND n.sent_at >= ? AND n.sent_at < ?
+        GROUP BY a.alert_type, a.severity
+        ORDER BY pushes DESC, a.alert_type`,
+      [sinceUtc, untilUtc]
+    );
+    return rows.map((row) => ({
+      alertType: row.alert_type,
+      severity: row.severity,
+      pushes: Number(row.pushes) || 0,
+      lastSentAt: row.last_sent_at
+    }));
+  }
+
+  return { enqueueOpenAlerts, claimNext, markSent, markFailed, countPushesByType };
 }

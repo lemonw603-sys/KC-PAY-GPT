@@ -90,9 +90,16 @@ systemctl is-active pojia-web.service
 # worker 用租约 + 有界重试，重启安全；Lemon 2026-09-14 同意每次 switch 一起重启。
 systemctl restart pojia-worker.service
 systemctl is-active pojia-worker.service
+# D-271（2026-09-18）：bark 是第三个常驻服务，D-220 当时只修了 worker，把它漏了。
+# 结果 D-176 的推送静音写进 release 后五天没生效——进程一直跑 09-11 之前的代码，
+# 直到 09-16 服务器重启才偶然换掉。通知面的每一次改动都要靠这一行才会真的上线。
+systemctl restart pojia-bark-notifications.service
+systemctl is-active pojia-bark-notifications.service
 wpid=$(systemctl show pojia-worker -p MainPID --value)
+bpid=$(systemctl show pojia-bark-notifications -p MainPID --value)
 echo "current=$(readlink -f /opt/pojia/current)"
 echo "worker cwd=$(readlink -f /proc/${wpid}/cwd)"
+echo "bark cwd=$(readlink -f /proc/${bpid}/cwd)"
 # Wait for the port instead of guessing: a single check after `sleep 2` raced the
 # server's own startup and printed a false live=000 during the 2026-09-11 release,
 # which reads exactly like a broken deploy. Give it up to 30s, then report honestly.
@@ -107,7 +114,7 @@ h=$(grep -oE "^ADMIN_HOST=.*" /etc/pojia/runtime.env | cut -d= -f2-)
 echo "index.html on disk references: $(grep -oE 'admin\.js\?v=[0-9]+' /opt/pojia/current/v1/public/admin/index.html)"
 echo "served admin.js?v=23 status/new-action count: $(curl -s -H "Host: $h" -o /tmp/adm.js -w '%{http_code}' 'http://127.0.0.1:3100/admin/assets/admin.js?v=23') / $(grep -c CONFIRM_MANUAL_PAYMENT /tmp/adm.js)"; rm -f /tmp/adm.js
 echo "admin login page: $(curl -s -o /dev/null -H "Host: $h" -w '%{http_code}' http://127.0.0.1:3100/admin/login)"
-echo "ROLLBACK: ln -sfn $prev /opt/pojia/current && systemctl restart pojia-web.service pojia-worker.service"
+echo "ROLLBACK: ln -sfn $prev /opt/pojia/current && systemctl restart pojia-web.service pojia-worker.service pojia-bark-notifications.service"
 REMOTE
 }
 

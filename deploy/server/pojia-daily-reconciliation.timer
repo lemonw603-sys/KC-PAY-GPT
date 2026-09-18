@@ -1,0 +1,13 @@
+[Unit]
+Description=每天跑一次AI充值业务对账
+
+[Timer]
+# 每天 UTC 04:00（上海 12:00）。排在 pojia-backup.timer（03:2x UTC）之后，
+# 让当天的数据库备份先出；也避开 highvcc 快照同步的整点（每小时 :38）。
+OnCalendar=*-*-* 04:00:00 UTC
+RandomizedDelaySec=10min
+Persistent=true
+Unit=pojia-daily-reconciliation.service
+
+[Install]
+WantedBy=timers.target

@@ -4023,3 +4023,47 @@ Lemon 逐项看过预检（钱包 $89.48、卡段 23 未维护、$50、预估总
 **演练走不到付款后，所以 D-269 ② 新接的「备用卡台侧扣款」真证据路径没被执行**。补了一次**生产真实流水的只读验证**（不写任何东西）：① 1657 窗口内 Plus 扣款（15.70 USD / 982.14 PHP）→ 唯一匹配；② 同卡提交时间挪到两天后 → 不匹配；③ 3336 上 Lemon 手动付的那笔 20X（142.54 USD / 8919.64 PHP）→ 不匹配。三例全符合预期，证明 `card_transactions` 这一路在真实数据上判得对。**仍未验的是「真单付款后由 worker 自动调用这条路径」。**
 
 **新发现（只报未改）**：`plausiblePlusAmount` 只认 USD 14~22 / PHP 900~1200，**Pro 单的扣款一律判成不匹配** → 将来 Pro 走 Browser 时补核永远定不了、每单叫人。归第⑦块（Pro 同型）一并改成按订单套餐取价位区间。
+
+## D-271（2026-09-18 07:5x UTC）D-176 静音为何没生效：**代码没错，是 bark 进程从来不跟发布走**
+
+**坐实（第⑤块前置核查，全部生产实证）**：
+
+- `pojia-bark-notifications.service` 的 `MainPID=2324`，`ActiveEnterTimestamp=2026-09-16 23:36:28 UTC`——那是**服务器 boot** 的时刻（`journalctl --list-boots` 只有这一个 boot，首条 23:36:11），不是任何一次发布。
+- `readlink -f /proc/2324/cwd` = `/opt/pojia/releases/20260916-unified-4334dc2/v1`，而 `readlink -f /opt/pojia/current` = `/opt/pojia/releases/20260918-step4-251a441`：**进程落后 current 四个版本**。
+- unit 是 `WorkingDirectory=/opt/pojia/current/v1` + `ExecStart=/usr/bin/node scripts/bark-notification-runner.js`（相对路径）。软链在 systemd 启动进程那一刻解析成实目录，之后 current 换指向对已跑进程无效。
+- `scripts/deploy-release.sh` 的 switch 段只有 `systemctl restart pojia-web.service`（:86）与 `pojia-worker.service`（:91）。**bark 不在重启名单里**，所以发布永远换不掉它的代码。
+
+**闭环（证明 09-16 那次不是巧合）**：`docs/HANDOFF_LOG.md:2367` 记 2026-09-16 10:46 UTC 现场核对 `current = 20260913-orderno-6dcb458`；服务器实测该 release 的 `alert-notification-repository.js:10` **确有** `PHONE_SILENT_TYPES`；而生产 `alert_notifications` 里 `BROWSER_PAYMENT_UNKNOWN` id=438347 `created_at=2026-09-16 11:09:35.571 / sent_at=11:09:36.261`、`BROWSER_PAYMENT_CONFIRMED` id=438355 `created_at=11:10:11.707`。**current 含静音的同时仍在插行并推**——只能是执行插入的那个进程跑着更老的代码。
+
+**排除了其它解释**：全项目 `grep alert_notifications`，INSERT 只有 `alert-notification-repository.js:14` 一处（唯一调用方 `bark-dispatcher.js:2` ← `bark-notification-runner.js`）；`information_schema.TRIGGERS` 对 `alert_notifications`/`operator_alerts` **无触发器**；`created_at` 是 `DEFAULT CURRENT_TIMESTAMP(3)` 且无 `ON UPDATE`，就是插入时刻；两个静音类型的**全部** 20 行 `created_at` 最晚停在 09-16 11:10，都在 boot 之前。
+
+**范围**：生产只有三个常驻 service——web / worker（均 `20260918-step4-251a441`）与 bark（`20260916-unified-4334dc2`）。其余 8 个 pojia-* 都是 timer 拉起的 oneshot，每次新进程走 current，不受此影响。**所以这个洞只咬 bark 一个，但它咬的正好是「通知」。**
+
+**同一个洞被修过一次，漏了这个服务**：D-220（2026-09-14）就发现 worker 在四次发布后仍跑 09-11 的 release，当时给 switch 段加了 `restart pojia-worker`，脚本里那段注释写得很清楚——**但只修了 worker**。生产的常驻服务是三个，bark 是第三个，没人回头数一遍。
+
+**处置**：① `deploy-release.sh` switch 段加 `pojia-bark-notifications.service` 一起重启（本块已改，并打印 `bark cwd=`，ROLLBACK 行同步带上）；② 现在这个跑旧代码的进程要不要立刻重启，问 Lemon（重启推送进程属「先开口问」）。③ 白名单改完之后如果不重启 bark，改动一样不会生效——**发布 ≠ 生效，这条写进 RUNBOOK**。
+
+**副发现（只报）**：`journalctl -u pojia-bark-notifications` 在整个 boot 内**一条都没有**，连启动时 `console.log('Bark notification runner started')` 都看不到（Node 非 TTY 下 stdout 块缓冲，短字符串留在缓冲区）。等于这个服务在生产是**哑的**，出问题无从查。归第⑥块运维工具。
+
+## D-272（2026-09-18 08:0x UTC）第⑤步 Lemon 定的三件 + 推送白名单与日对账的落地判据
+
+**Lemon 定的三件**（任务书里挂着等他答的）：
+
+1. **待销到期不单推**，到期张数并进每日对账那一条汇总。理由：待销是「到存活期去卡台删卡」，不紧急、可积压；单独每天推一条会变成新的常态噪音，而本块的目的正是去噪。契约表三 #12 已改。
+2. **highvcc 的 `usdDeposit` 是押金、不能花**，钱包预检要从余额里扣掉。`walletPreflight` 改成 `余额 − 押金 − 开卡金额 − 手续费 ≥ 硬底线`；卡台不报押金（hnskj）时按 0，行为不变。与 Lemon 2026-09-10 在 CURRENT_STATE 里留的那句「账户另有 $20 押金要先扣，才是真实可开卡余额」一致。
+3. **运营手动用卡要有登记入口**，入口归第⑥块工作台；在它上线前，本块的日对账把这类扣款**单列一栏「待登记」，不算差异、不猜原因**。
+
+**白名单的四类**（`v1/src/domain/alert-push-policy.js`，替代 `PHONE_SILENT_TYPES`）：叫人 10 种 / 供给 4 种 / 资金 4 种 / 客户动态 1 种；不推的 9 种**逐条写了理由**（`NON_PUSH_REASONS`）。新增类型要么进白名单、要么进理由表，不留空白——排除法的毛病就是新类型默认开口子。
+
+- **与任务书不同的三处**（当场重查后改的，都在下面「发现」里说了为什么）：① `BROWSER_ORDER_STALLED`、`ORDER_WAITING_FOR_CARD`、`PROVIDER_SNAPSHOT_STALE` 三种任务书没列，按契约表三 #3/#9/#10 属「A 必须叫」，进白名单；② `BROWSER_ORDER_COMPLETED`（成功）**不推**——D-249 定的「其余只进后台」推翻了 D-176 的「一头一尾」，成功数改进每日汇总；③ `CARD_SUPPLY_BLOCKED` 进供给类。
+- **`enqueueOpenAlerts` 里那条 CANCELLED→PENDING 的复活路径以前没有类型过滤**：白名单外的类型只要历史上推过一次，就能靠它一直复活。已加。`claimNext` 也加了白名单，防止白名单收窄前遗留的 PENDING 行在改动上线后继续被推。
+- **三个新产生点**（都是「以前只改状态、不叫人」）：`PROVIDER_TOKEN_EXPIRED`（token 失效，挂在 `sync-highvcc-snapshot.mjs` 的失败分支）、`CARD_SUPPLY_FAULT`（挂进 `markSupplyFault` 本身，五个调用点自动带上）、`CARD_CHARGEBACK`（拒付必推）。「一段失效期只推一次」靠固定 dedupe_key + `alert_notifications` 的 `(alert_id, channel)` 唯一约束，恢复时 RESOLVE。
+
+**日对账的判据**（`v1/src/domain/card-transaction-audit.js`，D-257 的正式答案）：
+
+- 状态只写**生产真实数据里见过的**：成功态归一化后是 `SUCCESS`/`SETTLED`/`COMPLETE`，`PENDING` 也算扣款（3336 那笔 142.54 就是 PENDING，而 Lemon 确认真付过）。**没见过的状态归 `UNKNOWN_STATUS` 进报告让人看**，不默认映射成功或失败。
+- 符号取绝对值（hnskj 有 -15.97 / -78.24 两笔负数），0 元授权不算扣款，**判据不认商户名**（0237 卡上有一笔 `ANTHROPIC* CLAUDE SUB` 100.00，把 OPENAI 写进判据会让它凭空消失）。
+- **首次生产实跑（08:04 UTC，只读）报出 11 条差异，其中 9 条是判据自己的问题，当场修掉**：① 7 条来自已作废的卡（余额被清零或退回，「开卡金额 − 扣款 = 余额」不适用）→ 终态卡不做金额对账；② 2 条来自把账本的 `RECONCILIATION` 占位当成已确认消费（1013/4643，付款未知、资金锁着）→ 确认消费只数 `CONSUMED`，占位单列 `AWAITING_RESOLUTION`。**修后重跑（08:05 UTC）剩 2 条**。
+- 差异前期只进看板 + 每日一条汇总；**连续两次日对账仍在**才升 critical（指纹存 `app_settings.daily_reconciliation_last_report`，不新建表）。
+
+**白名单上线不会引发补推风暴**（上线前实查）：`operator_alerts` 里 OPEN 的行**全部**已有对应的 BARK 通知行（`LEFT JOIN ... WHERE n.id IS NULL` 返回空），且当前没有任何 `PENDING/RETRY/SENDING/DEAD` 的待推行。`INSERT IGNORE` + 唯一约束保证不会重插。

@@ -17,7 +17,7 @@
 | 9 | 缺卡 | A（开不出才叫） | `WAITING_FOR_CARD` + 调度器开卡失败 / 钱包预检不过 | 分卡时当场同步过期候选（本块）；水位调度自动开（第③步） | 充值钱包 / 贴 token / 看开卡失败原因 | RUNBOOK §2.5 | `CARD_SUPPLY_WALLET_LOW` / `CARD_SUPPLY_OPEN_FAILED` / `CARD_STOCK_LOW` / `ORDER_WAITING_FOR_CARD` |
 | 10 | 卡台 token 过期 / 卡台故障 | A | highvcc `HIGHVCC_TOKEN_EXPIRED`；`provider_accounts.supply_fault_state=FAULT` | 转另一台顶（Browser）；API 不转 | 贴 token / 看卡台 | 后台备用卡台 token 入口 | `HIGHVCC_TOKEN_EXPIRED`（第⑤块坐实推送）、`CARD_SUPPLY_OPEN_FAILED` |
 | 11 | ZZSHU 零原因失败 | A（b：停单不退码） | `PROVIDER_CONFIRMED_FAILURE` 且 ZZSHU 无原因 | **现状仍是判失败退码**（`commitRechargeFailure`），「停单等看」**本块未改**（面三④待办，归第⑤/⑥块与队列一起做） | 看原始响应再定 | — | — |
-| 12 | 待销清单到期 | 手动（D-232） | `card-retirement-service.list().due` 非空 | 派生清单 + 存活期 + 事后同步确认（`sourcePresent`） | 去卡台删，回来点「已销卡」 | 上文 #7 入口 | 第⑤块定要不要每日汇总推 |
+| 12 | 待销清单到期 | 手动（D-232） | `card-retirement-service.list().due` 非空 | 派生清单 + 存活期 + 事后同步确认（`sourcePresent`） | 去卡台删，回来点「已销卡」 | 上文 #7 入口 | **不单推**；到期张数并进每日对账那一条汇总（`DAILY_RECONCILIATION_SUMMARY`，Lemon 2026-09-18 定，D-272） |
 
 ## 缝 j（人工收口写账本）核对
 
@@ -28,4 +28,14 @@
 
 ## 不在表里、所以不叫人的
 
-`BROWSER_PAYMENT_UNKNOWN`（中间态，静音）、`BROWSER_PAYMENT_CONFIRMED`（与 COMPLETED 重复）、`PROVIDER_BALANCE_CHANGED`（D-228 要推——归第⑤块白名单，不是人工兜底点）、`CARD_STOCK_EMPTY`（`operator-watch` 全局那条，与按台×产品的 `CARD_STOCK_LOW` 重叠，第③步发现 1，归第⑤块）。
+`BROWSER_PAYMENT_UNKNOWN`（中间态，静音）、`BROWSER_PAYMENT_CONFIRMED`（与 COMPLETED 重复）、`PROVIDER_BALANCE_CHANGED`（D-228 要推——归第⑤块白名单资金类，不是人工兜底点）、`CARD_STOCK_EMPTY`（`operator-watch` 全局那条，与按台×产品的 `CARD_STOCK_LOW` 重叠，第③步发现 1，第⑤块已归白名单外）。
+
+## 第⑤块（D-271/D-272）对这张表的落地
+
+推手机的判据不再散在各处，只有一张表：`v1/src/domain/alert-push-policy.js`。上表第 A 项对应其中的
+`HUMAN` 类；不推的类型在同一文件的 `NON_PUSH_REASONS` 里逐条写了理由。**新增告警类型时，要么进白名单、要么进理由表，不留空白。**
+
+本块新补的两个产生点（以前只改状态、不叫人）：#10 的 `PROVIDER_TOKEN_EXPIRED`（token 失效）与
+`CARD_SUPPLY_FAULT`（卡台故障）。另补 `CARD_CHARGEBACK`（拒付必推，以前一条都没推过）。
+
+**#11 ZZSHU 零原因失败仍未做**（现状仍是判失败退码），与「需要我处理」队列一起归第⑥块。
