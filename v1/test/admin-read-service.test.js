@@ -362,3 +362,32 @@ test('card consumption read view reports reserved, consumed and reconciliation c
   assert.equal(result.records[0].status, 'RECONCILIATION');
   assert.equal(queries.every((query) => !/^\s*(INSERT|UPDATE|DELETE)/i.test(query.sql)), true);
 });
+
+// 审查 #1b 的防回潮：「今天(UTC+8)」只许有一份定义。
+// 原先 admin-read-service 里两处手写了同样的表达式（今日订单计数 / TODAY 过滤），
+// 当前结果一致所以没人发现，但改「今天」定义时就会漂移——工作台说今天 3 单、
+// 订单页 TODAY 却筛出 5 单这种不一致，查起来极难。
+test('「今天(UTC+8)」窗口只有一份定义，src 里不得再手写 CONVERT_TZ 日界表达式', async () => {
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  const { fileURLToPath } = await import('node:url');
+  const srcDir = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'src');
+  const OWNER = 'card-inventory-eligibility.js'; // todayCst8WindowSql 的家
+  const offenders = [];
+  const walk = (dir) => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) { walk(full); continue; }
+      if (!entry.name.endsWith('.js') || entry.name === OWNER) continue;
+      const text = fs.readFileSync(full, 'utf8');
+      text.split('\n').forEach((line, i) => {
+        if (line.includes("CONVERT_TZ(UTC_TIMESTAMP(), '+00:00', '+08:00')")) {
+          offenders.push(`${path.relative(srcDir, full)}:${i + 1}`);
+        }
+      });
+    }
+  };
+  walk(srcDir);
+  assert.deepEqual(offenders, [],
+    `这些地方又手写了「今天」的日界，请改用 todayCst8WindowSql()：\n  ${offenders.join('\n  ')}`);
+});

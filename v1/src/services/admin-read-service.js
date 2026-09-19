@@ -552,7 +552,7 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
     const [[orderCounts], [statusRows], [cdkRows], [settingsRows], [refundRows], [alertRows], [stockRows], [stockSettingRows], [backlogRows], [providerStockRows]] = await Promise.all([
       pool.query(`SELECT
         COUNT(*) AS total,
-        SUM(o.created_at >= TIMESTAMP(DATE(CONVERT_TZ(UTC_TIMESTAMP(), '+00:00', '+08:00'))) - INTERVAL 8 HOUR) AS today,
+        SUM(${todayCst8WindowSql('o.created_at')}) AS today,
         SUM(o.status = 'RECHARGE_SUCCESS' OR (o.status = 'CLOSED' AND EXISTS (
           SELECT 1 FROM order_events oe
           WHERE oe.order_id = o.id AND oe.to_status = 'RECHARGE_SUCCESS'
@@ -859,7 +859,9 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
           AND st.task_type = 'SUBMIT_RECHARGE' AND st.status = 'PENDING' AND st.attempts = 0
       )`);
     } else if (status === 'TODAY') {
-      conditions.push(`o.created_at >= TIMESTAMP(DATE(CONVERT_TZ(UTC_TIMESTAMP(), '+00:00', '+08:00'))) - INTERVAL 8 HOUR`);
+      // 「今天」＝ UTC+8 自然日，与卡台今日已开同一份定义（审查 #1b：这两处原先手写，
+      // 结果虽一致但改定义时会漂移）。括号必须留着——它和别的条件是 AND 拼接的。
+      conditions.push(`(${todayCst8WindowSql('o.created_at')})`);
     } else if (status === 'ACTIVE') {
       conditions.push(`o.status NOT IN (${FINISHED_STATUSES.map(() => '?').join(', ')})`);
       values.push(...FINISHED_STATUSES);
