@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { providerLabelOf } from '../domain/provider-labels.js';
 import { PublicApiError } from '../domain/public-api-error.js';
 import {
   createCardSourceSelectionService, listCardSourceSelections, safeWaitingPredicate
@@ -11,7 +12,11 @@ function required(value, code, max = 128) {
 }
 function mapSource(row) {
   return { id: row.id, providerCode: row.provider_code, accountCode: row.account_code,
-    displayName: row.display_name || row.account_code, adapter: row.source_adapter,
+    displayName: row.display_name || row.account_code,
+    // 页面一律显示 label（domain/provider-labels 唯一来源）；display_name 是库里的历史值，
+    // 只在「新增备用卡台」时作为人填的原值保留，不拿它当显示名。
+    label: providerLabelOf(row.provider_code),
+    adapter: row.source_adapter,
     openAdapter: row.open_adapter || null,
     supportsApiRecharge: Boolean(row.supports_api_recharge), supportsBrowserRecharge: Boolean(row.supports_browser_recharge),
     supportsApiSync: Boolean(row.supports_api_sync), supportsAutoOpen: Boolean(row.supports_auto_open),

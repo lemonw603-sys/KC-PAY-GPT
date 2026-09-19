@@ -1,4 +1,5 @@
 import { PublicApiError } from '../domain/public-api-error.js';
+import { providerLabelOf } from '../domain/provider-labels.js';
 import crypto from 'node:crypto';
 import { decryptSecret } from '../security/secret-box.js';
 import { validateChatGptSession } from '../domain/session-validation.js';
@@ -799,6 +800,8 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
         providerAccountId: row.provider_account_id,
         providerCode: row.provider_code,
         providerKind: row.provider_kind,
+        // 显示名只有一份来源（domain/provider-labels），页面不再自己拼
+        label: providerLabelOf(row.provider_kind),
         total: count(row.total),
         inStock: count(row.in_stock),
         plusAssignable: count(row.plus_assignable),

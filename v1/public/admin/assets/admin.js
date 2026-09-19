@@ -356,9 +356,8 @@ function renderWbCards(overview) {
   if (!box) return;
   const byProvider = overview.cardStockByProvider || [];
   const h = overview.providerHealth || {};
-  // 显示名：hnskj → HNSKJ；backup-a（manual_excel，highvcc 开卡进这台）→ highvcc卡台
-  // （Lemon 2026-09-20 定：与卡片页同名，同一台卡台不给两个叫法）。
-  const nameOf = (p) => p.providerKind === 'hnskj' ? 'HNSKJ' : (p.providerCode === 'backup-a' ? 'highvcc卡台' : (p.providerCode || p.providerKind || '卡台'));
+  // 显示名由后端给（domain/provider-labels 是唯一来源）；旧响应没有 label 时才回退。
+  const nameOf = (p) => p.label || p.providerCode || p.providerKind || '卡台';
   // hnskj 钱包来自本地快照（getOverview.providerHealth）；backup-a 的钱包=highvcc，实时端点、不在概览。
   const walletOf = (p) => p.providerKind === 'hnskj'
     ? (h.accountBalance == null ? '钱包 —' : `钱包 ${formatMoney(h.accountBalance)} ${escapeHtml(h.currency || 'USD')}`)
@@ -501,7 +500,7 @@ function renderDecisions(overview, cardSources, takeoverEstimate = null) {
   if (routeBox) {
     const sources = (cardSources?.sources || []).filter((item) => item.supportsBrowserRecharge && item.operationalEnabled);
     const currentSource = cardSources?.browserProviderAccountId || '';
-    const sourceOptions = sources.map((item) => `<option value="${escapeHtml(item.id)}" ${item.id === currentSource ? 'selected' : ''}>${escapeHtml(item.displayName)}</option>`).join('');
+    const sourceOptions = sources.map((item) => `<option value="${escapeHtml(item.id)}" ${item.id === currentSource ? 'selected' : ''}>${escapeHtml(item.label || item.displayName)}</option>`).join('');
     // D-284 ①（方向 A）：路线切换块留在工作台。切换走已有的 setDefaultRechargeMethod ——
     // 后端 setDefaultRechargeMethod 会先跑面一 C1 四项校验（ROUTE_UNIQUE / SOURCE_HEALTHY /
     // TARGET_POOL_AVAILABLE / VERSION_MATCH），不过即拒并把逐项结果放在 error.checks 里交回，
@@ -1494,7 +1493,7 @@ elements.cardsRigs?.addEventListener('click', async (event) => {
   try {
     if (isHnskj) {
       await api('/api/v1/admin/card-stock/provider-refresh', { method: 'POST' });
-      showNotice('HNSKJ 卡台规则已刷新。', 'success');
+      showNotice('HNSKJ 卡段规则已刷新。', 'success');
     } else {
       const result = await api('/api/v1/admin/backup-cards/highvcc/refresh', { method: 'POST' });
       // 三步各自报成败——一步失败不掩盖另外两步真的做了什么。
@@ -1605,7 +1604,7 @@ function renderSettingsPolicies(data) {
   }
   const minimums = data.minimumBalanceByPlan || {};
   const body = [...byAccount.entries()].map(([accountCode, list]) => {
-    const label = list[0]?.providerKind === 'hnskj' ? 'HNSKJ 卡台' : 'highvcc卡台';
+    const label = list[0]?.label || accountCode;
     const head = `<tr class="set-rig"><td colspan="6">${escapeHtml(label)} · ${escapeHtml(accountCode)}</td></tr>`;
     const ordered = SETTINGS_PLAN_ORDER
       .map((plan) => list.find((row) => row.productCode === plan))
@@ -1629,7 +1628,7 @@ function renderSettingsPolicies(data) {
 function renderSettingsThresholds(data) {
   if (!elements.settingsThresholds) return;
   const wallets = (data.wallets || []).map((row) => {
-    const label = row.providerKind === 'hnskj' ? 'HNSKJ 卡台' : 'highvcc卡台';
+    const label = row.label || row.accountCode;
     return `<div class="set-kv" data-account="${escapeHtml(row.providerAccountId)}">
       <label>${escapeHtml(label)} <small>${escapeHtml(row.accountCode)} · 底线挡开卡，告警线只提醒</small></label>
       <span>
@@ -2334,7 +2333,7 @@ async function switchView(view, { status = '' } = {}) {
     ]);
   } else if (view === 'stock') {
     elements.viewKicker.textContent = '卡片';
-    elements.viewTitle.textContent = '库存、卡台、导入、补钱';
+    elements.viewTitle.textContent = '库存、卡台、导入';
     await Promise.all([loadStock(), loadProviderRoutes()]);
   } else if (view === 'diagnostics') {
     elements.viewKicker.textContent = '诊断';
@@ -2362,14 +2361,14 @@ function sourceHealth(source) {
 async function loadProviderRoutes() {
   const payload = await api('/api/v1/admin/card-sources');
   const sources = Array.isArray(payload.sources) ? payload.sources : [];
-  elements.cardSourceSummary.innerHTML = `<div><span><strong>API 充值固定卡台</strong><small>不可切换到无 API 的备用来源</small></span><em>${escapeHtml(sources.find((item) => item.id === payload.apiProviderAccountId)?.displayName || 'HNSKJ')}</em></div><div><span><strong>浏览器自动化充值当前卡台</strong><small>切换默认只影响新订单</small></span><em>${escapeHtml(sources.find((item) => item.id === payload.browserProviderAccountId)?.displayName || '未设置')}</em></div>`;
-  elements.manualCardImportSource.innerHTML = `<option value="">选择备用卡台</option>${sources.filter((item) => item.providerCode === 'manual_excel').map((item) => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.displayName)}</option>`).join('')}`;
+  elements.cardSourceSummary.innerHTML = `<div><span><strong>API 充值固定卡台</strong><small>不可切换到无 API 的备用来源</small></span><em>${escapeHtml(sources.find((item) => item.id === payload.apiProviderAccountId)?.label || 'HNSKJ')}</em></div><div><span><strong>浏览器自动化充值当前卡台</strong><small>切换默认只影响新订单</small></span><em>${escapeHtml(sources.find((item) => item.id === payload.browserProviderAccountId)?.label || '未设置')}</em></div>`;
+  elements.manualCardImportSource.innerHTML = `<option value="">选择备用卡台</option>${sources.filter((item) => item.providerCode === 'manual_excel').map((item) => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.label || item.displayName)}</option>`).join('')}`;
   elements.providerRoutesTable.innerHTML = sources.length ? sources.map((source) => {
     const [health, tone] = sourceHealth(source);
     const active = source.id === payload.browserProviderAccountId;
     const capabilities = [source.supportsApiRecharge ? 'API 充值' : null, source.supportsBrowserRecharge ? 'Browser' : null, source.supportsApiSync ? 'API 同步' : '完整快照', source.supportsAutoOpen ? '自动开卡' : null, source.supportsAutoFunding ? '自动补余额' : null].filter(Boolean).join(' · ');
     return `<tr>
-      <td><strong class="cell-main">${escapeHtml(source.displayName)}</strong><small>${escapeHtml(source.accountCode)} · ${escapeHtml(source.providerCode)}</small></td>
+      <td><strong class="cell-main">${escapeHtml(source.label || source.displayName)}</strong><small>${escapeHtml(source.accountCode)} · ${escapeHtml(source.providerCode)}</small></td>
       <td>${escapeHtml(capabilities)}</td>
       <td>${source.cardCount} 张历史卡 · ${source.presentCount} 张在当前快照<small>最近完整快照 ${formatTime(source.lastFullSnapshotAt)}</small></td>
       <td><span class="status-chip ${tone}"><i></i>${escapeHtml(health)}</span></td>

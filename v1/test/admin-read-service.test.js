@@ -58,8 +58,9 @@ test('admin overview maps aggregate values without exposing raw records', async 
     balanceFundingEnabled: false, low: false
   });
   assert.deepEqual(result.cardStockByProvider, [
-    { providerAccountId: 'pa-hnskj', providerCode: 'legacy-primary', providerKind: 'hnskj', total: 14, inStock: 2, plusAssignable: 0, inUse: 0, anyUsed: 6 },
-    { providerAccountId: 'pa-backup-a', providerCode: 'backup-a', providerKind: 'manual_excel', total: 16, inStock: 7, plusAssignable: 2, inUse: 0, anyUsed: 6 }
+    // label 由 domain/provider-labels 给，页面不自己拼（2026-09-20 一致性摸排第 5 条）
+    { providerAccountId: 'pa-hnskj', providerCode: 'legacy-primary', providerKind: 'hnskj', label: 'HNSKJ', total: 14, inStock: 2, plusAssignable: 0, inUse: 0, anyUsed: 6 },
+    { providerAccountId: 'pa-backup-a', providerCode: 'backup-a', providerKind: 'manual_excel', label: 'highvcc', total: 16, inStock: 7, plusAssignable: 2, inUse: 0, anyUsed: 6 }
   ]);
   assert.deepEqual(result.operationalBacklog, {
     cardIntakePending: 2, fundsRiskPending: 1,

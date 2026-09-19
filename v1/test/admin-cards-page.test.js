@@ -16,21 +16,21 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 
 const RIG_HNSKJ = {
   providerAccountId: 'pa-1', accountCode: 'legacy-primary', providerKind: 'hnskj',
-  label: 'HNSKJ 卡台', total: 14, inStock: 2, plusAssignable: 1, inUse: 0, anyUsed: 0,
+  label: 'HNSKJ', total: 14, inStock: 2, plusAssignable: 1, inUse: 0, anyUsed: 0,
   stockTarget: 5, walletBalance: '41.20', walletCurrency: 'USD',
   walletSyncedAt: '2026-09-20T00:59:00.000Z', walletLiveOnly: false, walletFloor: '30.00', walletAlertThreshold: '35.00',
   openedToday: 2, dailyLimit: 3, supplyFaultState: 'OK', supplyFaultReason: null, tokenFault: false
 };
 const RIG_BACKUP = {
   providerAccountId: 'pa-3', accountCode: 'backup-a', providerKind: 'manual_excel',
-  label: 'highvcc卡台', total: 16, inStock: 7, plusAssignable: 1, inUse: 0, anyUsed: 0,
+  label: 'highvcc', total: 16, inStock: 7, plusAssignable: 1, inUse: 0, anyUsed: 0,
   stockTarget: 5, walletBalance: null, walletCurrency: 'USD', walletSyncedAt: null,
   walletLiveOnly: true, walletFloor: '20.00', walletAlertThreshold: '25.00', openedToday: 1, dailyLimit: 3,
   supplyFaultState: 'OK', supplyFaultReason: null, tokenFault: false
 };
 const CARD_READY = {
   providerAccountId: 'pa-1', providerCardId: 'h-1', externalCardId: 'h-1', last4: '4417',
-  providerLabel: 'HNSKJ 卡台', currentBalance: '12.40', lastSyncedAt: '2026-09-20T00:59:00.000Z',
+  providerLabel: 'HNSKJ', currentBalance: '12.40', lastSyncedAt: '2026-09-20T00:59:00.000Z',
   usedCapacity: 0, maxCapacity: 3, category: 'READY', reason: '可直接分配 Plus',
   publicNo: null, createdAt: '2026-09-18T00:00:00.000Z', issueFee: '1.200000', assigned: false
 };
@@ -260,8 +260,8 @@ const DECISIONS_OVERVIEW = { decisions: {}, providerHealth: { rechargeMethod: 'B
 const CARD_SOURCES = {
   browserProviderAccountId: 'pa-1', browserSelectionVersion: 3,
   sources: [
-    { id: 'pa-1', displayName: 'HNSKJ 卡台', supportsBrowserRecharge: true, operationalEnabled: true },
-    { id: 'pa-3', displayName: 'highvcc卡台', supportsBrowserRecharge: true, operationalEnabled: true }
+    { id: 'pa-1', displayName: 'HNSKJ', supportsBrowserRecharge: true, operationalEnabled: true },
+    { id: 'pa-3', displayName: 'highvcc', supportsBrowserRecharge: true, operationalEnabled: true }
   ]
 };
 
@@ -321,4 +321,26 @@ test('后台的关键顶层事件绑定必须都在（2026-09-20 误删事故的
   ];
   const missing = required.filter(([, re]) => !re.test(src)).map(([name]) => name);
   assert.deepEqual(missing, [], `这些顶层事件绑定不见了，后台对应功能会静默失灵：${missing.join('、')}`);
+});
+
+test('卡台显示名只有一份来源：前端不得自己拼名字（2026-09-20 一致性摸排第 5 条）', () => {
+  // 摸排前同一台卡台有三个叫法：工作台「HNSKJ」、卡片页「HNSKJ 卡台」、设置页又自己拼一次。
+  // Lemon 定统一用简称 HNSKJ / highvcc，来源是 src/domain/provider-labels.js。
+  const src = fs.readFileSync(path.join(here, '..', 'public', 'admin', 'assets', 'admin.js'), 'utf8');
+  const code = src.replace(/^\s*\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
+  // 前端不得出现「按 providerKind 三元拼名」这种第二份定义
+  assert.doesNotMatch(code, /providerKind\s*===\s*'hnskj'\s*\?\s*'/,
+    '显示名要用后端给的 label，不要在页面里按 providerKind 拼');
+  assert.doesNotMatch(code, /'HNSKJ 卡台'|'highvcc卡台'/, '旧的全称写法已废弃');
+
+  const labels = fs.readFileSync(path.join(here, '..', 'src', 'domain', 'provider-labels.js'), 'utf8');
+  assert.match(labels, /hnskj:\s*'HNSKJ'/);
+  assert.match(labels, /manual_excel:\s*'highvcc'/);
+});
+
+test('卡片页标题不再提「补钱」——补余额区块已随 D-280 ⑦ 退休', () => {
+  const src = fs.readFileSync(path.join(here, '..', 'public', 'admin', 'assets', 'admin.js'), 'utf8');
+  const html = fs.readFileSync(path.join(here, '..', 'public', 'admin', 'index.html'), 'utf8');
+  assert.doesNotMatch(src, /库存、卡台、导入、补钱/);
+  assert.doesNotMatch(html, /库存、卡台、导入、补钱/);
 });

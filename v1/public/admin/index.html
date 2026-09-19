@@ -223,7 +223,7 @@
           <div id="manual-card-import-preview" class="mini-list"></div>
         </details>
         <details class="card stock-card stock-advanced-details" id="hnskj-open-card">
-          <summary>HNSKJ 卡台 人工开卡（产生费用）</summary>
+          <summary>HNSKJ 人工开卡（产生费用）</summary>
           <div class="advanced-heading"><p>提交后由服务器安全执行。每张卡使用独立幂等键；任务异常时停止并等待人工核对。自动开卡由首页「能不能开卡补钱」决定。</p><button class="text-button" id="refresh-card-provider-rules" type="button">刷新卡段规则</button></div>
           <form class="stock-open-form" id="stock-open-form">
             <div class="stock-presets" role="group" aria-label="快捷选择开卡数量">
@@ -249,7 +249,7 @@
           </form>
         </details>
         <details class="card stock-card stock-advanced-details" id="highvcc-open-card">
-          <summary>highvcc卡台 一键开卡（highvcc.com，产生费用）</summary>
+          <summary>highvcc 一键开卡（highvcc.com，产生费用）</summary>
           <div class="advanced-heading"><p>直接调用卡台自己的接口开卡，不经过浏览器，几秒内完成；持卡人姓名由卡台生成，账单地址用项目已有免税地址库；开出后立即计入库存，不需要再手工导入表格。展开后自动查询一次费用，改卡段或金额会自动重新查询。</p></div>
           <div id="highvcc-token-status" class="mini-list"></div>
           <p><button class="text-button" type="button" id="highvcc-open-site">去 highvcc.com 登录 →</button>　登录过期时先点这个登录一下</p>

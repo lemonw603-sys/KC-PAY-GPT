@@ -1,4 +1,5 @@
 import { PublicApiError } from '../domain/public-api-error.js';
+import { providerLabelOf } from '../domain/provider-labels.js';
 
 /**
  * 设置页的写路径（第⑥步 B / D-290）。
@@ -79,6 +80,7 @@ export function createCardSupplyPolicyAdminService({ pool }) {
         providerAccountId: String(row.provider_account_id),
         accountCode: row.account_code,
         providerKind: row.provider_code,
+        label: providerLabelOf(row.provider_code),
         productCode: row.product_code,
         targetAvailable: Number(row.target_available || 0),
         openCardAmount: money(row.open_card_amount),
@@ -91,6 +93,7 @@ export function createCardSupplyPolicyAdminService({ pool }) {
         providerAccountId: String(row.id),
         accountCode: row.account_code,
         providerKind: row.provider_code,
+        label: providerLabelOf(row.provider_code),
         walletFloor: money(row.wallet_floor),
         walletAlertThreshold: money(row.wallet_alert_threshold)
       })),

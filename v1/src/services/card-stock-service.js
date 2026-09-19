@@ -8,6 +8,7 @@ import {
   snapshotIsFresh
 } from './card-provider-snapshot-service.js';
 import { cardCatalogIsFresh, readCardCatalogSnapshot } from './card-catalog-snapshot-service.js';
+import { providerLabelOf } from '../domain/provider-labels.js';
 import { eligibleInventoryCardSql, providerCardStockSql, todayCst8WindowSql,
   REPLENISHMENT_OPENED_COUNT_SQL } from './card-inventory-eligibility.js';
 
@@ -79,19 +80,6 @@ function decryptCardNumber(row, key) {
   } catch {
     return null;
   }
-}
-
-/**
- * 卡台显示名。库里 backup-a 的 provider_code 是 `manual_excel`（它走的是导入表
- * 那条入库路径），但实际卡台是 highvcc——Lemon 2026-09-20 定两处页面
- * 都叫「highvcc卡台」，免得切卡台时看不出是哪家。
- */
-export const PROVIDER_LABELS = Object.freeze({
-  hnskj: 'HNSKJ 卡台',
-  manual_excel: 'highvcc卡台'
-});
-export function providerLabelOf(providerCode) {
-  return PROVIDER_LABELS[String(providerCode || '')] || String(providerCode || '') || '未知卡台';
 }
 
 export function classifyStockCardOperationalState(card) {
