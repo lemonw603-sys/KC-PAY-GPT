@@ -1,0 +1,320 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>第⑥步 · 卡片页三版比稿</title>
+<!--
+  V2 第⑥步 卡片页（D-280 八条）· 三版视觉/交互比稿（给 Lemon 挑）
+  令牌沿用客户页「候光」，与工作台同皮（外壳 sidebar 已在 7c1a5c0 换候光，见页脚 §3）。
+
+  本轮范围 = D-280 的 ①③⑤⑥（下一轮才做 ②④⑦⑧）：
+    ① 两台并列四个数        ③ 在役卡列表 + 历史折叠
+    ⑤ 待销清单（本页）      ⑥ 手动用卡登记
+
+  三版差在「待销怎么摆」——这是本页唯一有分歧的交互：
+    A 台账优先 · 待销独立成块（最贴 D-280 字面）
+    B 列表优先 · 待销在行内标记，不单独分块（密度最高、滚动最少）
+    C 分区标签 · 在役/待销/历史三个 tab 平级（分类最干净）
+
+  数据来源见页脚 §1：两台的卡数是 2026-09-20 生产只读实查；带 ※ 的是示例。
+-->
+<style>
+:root{
+  --bg:hsl(168,16%,97%);
+  --a:hsl(163,72%,26%); --a-soft:hsl(163,44%,93%); --a-ink:hsl(163,76%,22%); --a-on:hsl(0,0%,100%);
+  --t:hsl(176,18%,11%); --t2:hsl(170,10%,38%); --t3:hsl(168,9%,50%);
+  --s:hsl(0,0%,100%); --s2:hsl(168,20%,97%); --s3:hsl(168,16%,95%); --bd:hsl(168,14%,88%);
+  --warn:hsl(32,72%,40%); --warn-soft:hsl(38,78%,94%); --gold:hsl(38,46%,42%);
+  --ok:hsl(150,54%,36%); --ok-soft:hsl(150,44%,94%);
+  --danger:hsl(4,66%,50%); --danger-soft:hsl(6,72%,96%);
+  --info:hsl(212,62%,46%); --info-soft:hsl(212,60%,95%);
+  --shadow-card:inset 0 1px 0 hsla(0,0%,100%,.85),0 1px 2px hsla(176,25%,10%,.06),
+                0 14px 30px -14px hsla(176,25%,10%,.22);
+  --fd:"Familjen Grotesk","PingFang SC","Hiragino Sans GB",system-ui,sans-serif;
+  --fm:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--t);font-family:var(--fd);font-size:14px;line-height:1.55}
+.page{max-width:1180px;margin:0 auto;padding:28px 20px 80px}
+.masthead{margin-bottom:26px}
+.masthead h1{margin:0 0 6px;font-size:21px;letter-spacing:.01em}
+.masthead p{margin:0;color:var(--t2);font-size:13px}
+.variant{margin:34px 0 0;border:1px solid var(--bd);border-radius:16px;background:var(--s);
+  box-shadow:var(--shadow-card);overflow:hidden}
+.variant>header{padding:14px 18px;background:var(--s2);border-bottom:1px solid var(--bd);
+  display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
+.variant>header b{font-size:15px}
+.variant>header span{color:var(--t2);font-size:12.5px}
+.stage{padding:18px;display:grid;gap:14px;background:var(--bg)}
+
+/* ---------- 卡台栏（①）---------- */
+.rigs{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.rig{background:var(--s);border:1px solid var(--bd);border-radius:14px;padding:14px 15px}
+.rig.alarm{border-color:hsl(4,66%,74%);background:var(--danger-soft)}
+.rig-h{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:11px}
+.rig-h b{font-size:14.5px}
+.rig-h .acct{font-family:var(--fm);font-size:11px;color:var(--t3)}
+.quad{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+.q{background:var(--s2);border:1px solid var(--bd);border-radius:10px;padding:8px 10px}
+.q label{display:block;font-size:11px;color:var(--t3);margin-bottom:3px}
+.q .v{font-family:var(--fm);font-size:16px;font-weight:600;letter-spacing:-.01em}
+.q .v small{font-size:12px;font-weight:400;color:var(--t3)}
+.q.pend .v{color:var(--t3);font-weight:400;font-size:13px}
+.q.bad{background:var(--danger-soft);border-color:hsl(4,60%,84%)}
+.q.bad .v{color:var(--danger)}
+.q.warn{background:var(--warn-soft);border-color:hsl(38,60%,82%)}
+.q.warn .v{color:var(--warn)}
+.rig-foot{margin-top:10px;display:flex;gap:7px;flex-wrap:wrap;align-items:center}
+
+/* 紧凑横幅（B 版）*/
+.rigbar{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.rigbar .rig{padding:10px 12px}
+.rigbar .quad{grid-template-columns:repeat(4,1fr);gap:7px}
+.rigbar .q{padding:6px 8px;background:transparent;border:0;border-left:1px solid var(--bd);border-radius:0}
+.rigbar .q:first-child{border-left:0;padding-left:0}
+.rigbar .q .v{font-size:13.5px}
+.rigbar .q label{font-size:10.5px}
+
+/* ---------- 通用件 ---------- */
+.blk{background:var(--s);border:1px solid var(--bd);border-radius:14px;overflow:hidden}
+.blk>h3{margin:0;padding:12px 15px;font-size:13.5px;border-bottom:1px solid var(--bd);
+  background:var(--s2);display:flex;align-items:center;justify-content:space-between;gap:10px}
+.blk>h3 em{font-style:normal;font-weight:400;color:var(--t3);font-size:12px}
+table{width:100%;border-collapse:collapse;font-size:12.5px}
+th{text-align:left;padding:8px 12px;color:var(--t3);font-weight:600;font-size:11.5px;
+  border-bottom:1px solid var(--bd);white-space:nowrap}
+td{padding:9px 12px;border-bottom:1px solid var(--s3);vertical-align:middle}
+tbody tr:last-child td{border-bottom:0}
+tr.due td{background:var(--warn-soft)}
+tr.dim td{opacity:.62}
+.mono{font-family:var(--fm)}
+.chip{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:999px;
+  font-size:11px;font-weight:600;border:1px solid transparent;white-space:nowrap}
+.chip.ok{background:var(--ok-soft);color:var(--ok);border-color:hsl(150,40%,82%)}
+.chip.use{background:var(--info-soft);color:var(--info);border-color:hsl(212,50%,84%)}
+.chip.due{background:var(--warn-soft);color:var(--warn);border-color:hsl(38,60%,80%)}
+.chip.off{background:var(--s3);color:var(--t3);border-color:var(--bd)}
+.chip.bad{background:var(--danger-soft);color:var(--danger);border-color:hsl(4,60%,84%)}
+.btn{border:1px solid var(--bd);background:var(--s);color:var(--t);border-radius:8px;
+  padding:5px 11px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit}
+.btn:hover{background:var(--s2)}
+.btn.p{background:var(--a);border-color:var(--a);color:var(--a-on)}
+.btn.d{color:var(--danger);border-color:hsl(4,50%,80%)}
+.btn.s{padding:3px 8px;font-size:11.5px}
+.muted{color:var(--t3)}
+.folded{padding:11px 15px;color:var(--t2);font-size:12.5px;cursor:pointer;
+  background:var(--s2);display:flex;align-items:center;gap:7px}
+.folded:hover{color:var(--t)}
+.tabs{display:flex;gap:2px;padding:9px 12px 0;background:var(--s2);border-bottom:1px solid var(--bd)}
+.tab{padding:7px 14px;font-size:12.5px;font-weight:600;color:var(--t2);cursor:pointer;
+  border:1px solid transparent;border-bottom:0;border-radius:9px 9px 0 0;margin-bottom:-1px}
+.tab.on{background:var(--s);border-color:var(--bd);color:var(--t)}
+.tab i{font-style:normal;color:var(--t3);font-weight:400}
+.note{font-size:12px;color:var(--t2);padding:9px 15px;background:var(--info-soft);
+  border-top:1px solid hsl(212,50%,88%)}
+.foot{margin-top:40px;padding:18px;border:1px solid var(--bd);border-radius:14px;
+  background:var(--s);font-size:12.5px;color:var(--t2)}
+.foot h4{margin:0 0 7px;font-size:13px;color:var(--t)}
+.foot ul{margin:0 0 15px;padding-left:19px}
+.foot li{margin-bottom:4px}
+.foot code{font-family:var(--fm);font-size:11.5px;background:var(--s3);padding:1px 5px;border-radius:4px}
+</style>
+</head>
+<body>
+<div class="page">
+
+<div class="masthead">
+  <h1>第⑥步 · 卡片页三版比稿</h1>
+  <p>本轮做 D-280 的 ①③⑤⑥（两台四个数 / 在役列表 / 待销清单 / 手动用卡登记）。三版只差「待销怎么摆」，其余一致。两台的卡数是生产实查，带 ※ 的是示例 —— 详见页脚。</p>
+</div>
+
+<!-- ======================= A ======================= -->
+<section class="variant">
+  <header><b>A · 台账优先</b><span>待销独立成块，最贴 D-280 字面：「待销清单在本页」</span></header>
+  <div class="stage">
+
+    <div class="rigs">
+      <div class="rig">
+        <div class="rig-h"><b>HNSKJ 卡台</b><span class="acct">legacy-primary</span></div>
+        <div class="quad">
+          <div class="q"><label>可分配 / 水位目标</label><div class="v">2 <small>/ 5</small></div></div>
+          <div class="q"><label>钱包余额 / 底线</label><div class="v">$41.20 <small>/ $20</small></div></div>
+          <div class="q"><label>今日已开 / 日限</label><div class="v">0 <small>/ 5</small></div></div>
+          <div class="q"><label>卡台状态</label><div class="v" style="font-size:13px">快照 8 分钟前</div></div>
+        </div>
+        <div class="rig-foot"><span class="muted" style="font-size:11.5px">在库 2 · 总 14</span></div>
+      </div>
+      <div class="rig">
+        <div class="rig-h"><b>备用卡台（highvcc）</b><span class="acct">backup-a</span></div>
+        <div class="quad">
+          <div class="q"><label>可分配 / 水位目标</label><div class="v">7 <small>/ 5</small></div></div>
+          <div class="q"><label>钱包余额 / 底线</label><div class="v" style="font-size:13px"><button class="btn s">查余额</button> <small>/ $20</small></div></div>
+          <div class="q"><label>今日已开 / 日限</label><div class="v">0 <small>/ 5</small></div></div>
+          <div class="q"><label>token</label><div class="v" style="font-size:13px">已配置 <small>· 9-18 设</small></div></div>
+        </div>
+        <div class="rig-foot"><span class="muted" style="font-size:11.5px">在库 7 · 总 16</span></div>
+      </div>
+    </div>
+
+    <div class="blk">
+      <h3>在役卡片 <em>9 张 · 可用 9 / 使用中 0</em></h3>
+      <table>
+        <thead><tr><th>尾号</th><th>卡台</th><th>余额</th><th>用量</th><th>状态</th><th>绑定订单</th><th>开卡</th><th>可销</th><th></th></tr></thead>
+        <tbody>
+          <tr><td class="mono">4417</td><td>HNSKJ</td><td class="mono">$12.40<br><span class="muted" style="font-size:11px">8 分钟前</span></td><td class="mono">0/3</td><td><span class="chip ok">待分配</span></td><td class="muted">—</td><td class="mono" style="font-size:11.5px">09-18<br><span class="muted">$1.20</span></td><td class="muted">已过</td><td><button class="btn s">我手动用了</button></td></tr>
+          <tr><td class="mono">9082</td><td>备用</td><td class="mono">$20.00<br><span class="muted" style="font-size:11px">1 天前</span></td><td class="mono">1/3</td><td><span class="chip ok">待分配</span></td><td class="muted">—</td><td class="mono" style="font-size:11.5px">09-18<br><span class="muted">$1.00</span></td><td class="muted">已过</td><td><button class="btn s">我手动用了</button></td></tr>
+          <tr><td class="mono">3351</td><td>备用</td><td class="mono">$18.60<br><span class="muted" style="font-size:11px">1 天前</span></td><td class="mono">2/3</td><td><span class="chip use">使用中</span></td><td class="mono">PJ-20260919-07</td><td class="mono" style="font-size:11.5px">09-18<br><span class="muted">$1.00</span></td><td class="muted">占用中</td><td><button class="btn s" disabled>—</button></td></tr>
+          <tr class="due"><td class="mono">7726</td><td>HNSKJ</td><td class="mono">$0.35<br><span class="muted" style="font-size:11px">3 小时前</span></td><td class="mono">3/3</td><td><span class="chip due">用满待销</span></td><td class="muted">—</td><td class="mono" style="font-size:11.5px">09-17<br><span class="muted">$1.20</span></td><td>已到期</td><td><button class="btn s">我手动用了</button></td></tr>
+        </tbody>
+      </table>
+      <div class="folded">▸ 历史（退役 / 卡台作废）21 张</div>
+    </div>
+
+    <div class="blk">
+      <h3>待销清单 <em>到期 1 · 未到期 2 · 满 6 小时可销</em></h3>
+      <table>
+        <thead><tr><th>尾号</th><th>卡台</th><th>为什么待销</th><th>余额</th><th>可销时间</th><th></th></tr></thead>
+        <tbody>
+          <tr class="due"><td class="mono">7726</td><td>HNSKJ</td><td>已用满 3/3 次</td><td class="mono">$0.35</td><td>已到期</td><td><button class="btn p s">我已在卡台删掉</button></td></tr>
+          <tr class="dim"><td class="mono">5590</td><td>备用</td><td>余额不足</td><td class="mono">$0.02</td><td>还差 2 小时 10 分</td><td><span class="muted">未到可销时间</span></td></tr>
+          <tr class="dim"><td class="mono">1184</td><td>HNSKJ</td><td>卡台状态不可用</td><td class="mono">$0.00</td><td>还差 4 小时 40 分</td><td><span class="muted">未到可销时间</span></td></tr>
+        </tbody>
+      </table>
+      <div class="note">「我已在卡台删掉」＝ 你已在卡台网站删了这张卡，系统据此标退役。系统不会替你去卡台删。</div>
+    </div>
+
+  </div>
+</section>
+
+<!-- ======================= B ======================= -->
+<section class="variant">
+  <header><b>B · 列表优先</b><span>台账压成横幅；待销不单独分块，直接在行内给按钮 —— 一张表看完全部</span></header>
+  <div class="stage">
+
+    <div class="rigbar">
+      <div class="rig">
+        <div class="rig-h"><b>HNSKJ 卡台</b><span class="acct">在库 2 / 总 14</span></div>
+        <div class="quad">
+          <div class="q"><label>可分配/目标</label><div class="v">2<small>/5</small></div></div>
+          <div class="q"><label>钱包/底线</label><div class="v">$41<small>/20</small></div></div>
+          <div class="q"><label>今开/日限</label><div class="v">0<small>/5</small></div></div>
+          <div class="q"><label>快照</label><div class="v" style="font-size:12px">8 分前</div></div>
+        </div>
+      </div>
+      <div class="rig">
+        <div class="rig-h"><b>备用卡台（highvcc）</b><span class="acct">在库 7 / 总 16</span></div>
+        <div class="quad">
+          <div class="q"><label>可分配/目标</label><div class="v">7<small>/5</small></div></div>
+          <div class="q"><label>钱包/底线</label><div class="v" style="font-size:12px"><button class="btn s">查</button><small>/20</small></div></div>
+          <div class="q"><label>今开/日限</label><div class="v">0<small>/5</small></div></div>
+          <div class="q"><label>token</label><div class="v" style="font-size:12px">已配置</div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="blk">
+      <h3>卡片 <em>在役 9 张 · 其中 1 张可销</em></h3>
+      <table>
+        <thead><tr><th>尾号</th><th>卡台</th><th>余额</th><th>用量</th><th>状态</th><th>绑定订单</th><th>开卡</th><th>操作</th></tr></thead>
+        <tbody>
+          <tr><td class="mono">4417</td><td>HNSKJ</td><td class="mono">$12.40 <span class="muted" style="font-size:11px">8 分前</span></td><td class="mono">0/3</td><td><span class="chip ok">待分配</span></td><td class="muted">—</td><td class="mono" style="font-size:11.5px">09-18 · $1.20</td><td><button class="btn s">我手动用了</button></td></tr>
+          <tr><td class="mono">9082</td><td>备用</td><td class="mono">$20.00 <span class="muted" style="font-size:11px">1 天前</span></td><td class="mono">1/3</td><td><span class="chip ok">待分配</span></td><td class="muted">—</td><td class="mono" style="font-size:11.5px">09-18 · $1.00</td><td><button class="btn s">我手动用了</button></td></tr>
+          <tr><td class="mono">3351</td><td>备用</td><td class="mono">$18.60 <span class="muted" style="font-size:11px">1 天前</span></td><td class="mono">2/3</td><td><span class="chip use">使用中</span></td><td class="mono">PJ-20260919-07</td><td class="mono" style="font-size:11.5px">09-18 · $1.00</td><td class="muted">占用中</td></tr>
+          <tr class="due"><td class="mono">7726</td><td>HNSKJ</td><td class="mono">$0.35 <span class="muted" style="font-size:11px">3 小时前</span></td><td class="mono">3/3</td><td><span class="chip due">用满待销</span></td><td class="muted">—</td><td class="mono" style="font-size:11.5px">09-17 · $1.20</td><td><button class="btn p s">我已在卡台删掉</button></td></tr>
+          <tr class="dim"><td class="mono">5590</td><td>备用</td><td class="mono">$0.02 <span class="muted" style="font-size:11px">5 小时前</span></td><td class="mono">1/3</td><td><span class="chip due">余额不足待销</span></td><td class="muted">—</td><td class="mono" style="font-size:11.5px">09-17 · $1.00</td><td><span class="muted" style="font-size:11.5px">还差 2 小时 10 分</span></td></tr>
+        </tbody>
+      </table>
+      <div class="folded">▸ 历史（退役 / 卡台作废）21 张</div>
+      <div class="note">待销的卡直接排在列表里、底色标黄，到期才亮出「我已在卡台删掉」。不用来回翻两块。</div>
+    </div>
+
+  </div>
+</section>
+
+<!-- ======================= C ======================= -->
+<section class="variant">
+  <header><b>C · 分区标签</b><span>在役 / 待销 / 历史 三个 tab 平级，各管各的</span></header>
+  <div class="stage">
+
+    <div class="rigs">
+      <div class="rig">
+        <div class="rig-h"><b>HNSKJ 卡台</b><span class="acct">legacy-primary</span></div>
+        <div class="quad">
+          <div class="q"><label>可分配 / 水位目标</label><div class="v">2 <small>/ 5</small></div></div>
+          <div class="q"><label>钱包余额 / 底线</label><div class="v">$41.20 <small>/ $20</small></div></div>
+          <div class="q"><label>今日已开 / 日限</label><div class="v">0 <small>/ 5</small></div></div>
+          <div class="q"><label>卡台状态</label><div class="v" style="font-size:13px">快照 8 分钟前</div></div>
+        </div>
+      </div>
+      <div class="rig alarm">
+        <div class="rig-h"><b>备用卡台（highvcc）</b><span class="acct">backup-a</span></div>
+        <div class="quad">
+          <div class="q"><label>可分配 / 水位目标</label><div class="v">7 <small>/ 5</small></div></div>
+          <div class="q"><label>钱包余额 / 底线</label><div class="v" style="font-size:13px"><button class="btn s">查余额</button> <small>/ $20</small></div></div>
+          <div class="q"><label>今日已开 / 日限</label><div class="v">0 <small>/ 5</small></div></div>
+          <div class="q bad"><label>token</label><div class="v" style="font-size:13px">已失效</div></div>
+        </div>
+        <div class="rig-foot"><input placeholder="贴新 token" style="flex:1;min-width:120px;padding:5px 9px;border:1px solid var(--bd);border-radius:8px;font-family:var(--fm);font-size:11.5px"><button class="btn p s">保存</button></div>
+      </div>
+    </div>
+
+    <div class="blk">
+      <div class="tabs">
+        <div class="tab on">在役 <i>9</i></div>
+        <div class="tab">待销 <i>3</i></div>
+        <div class="tab">历史 <i>21</i></div>
+      </div>
+      <table>
+        <thead><tr><th>尾号</th><th>卡台</th><th>余额</th><th>用量</th><th>状态</th><th>绑定订单</th><th>开卡</th><th>可销</th><th></th></tr></thead>
+        <tbody>
+          <tr><td class="mono">4417</td><td>HNSKJ</td><td class="mono">$12.40<br><span class="muted" style="font-size:11px">8 分钟前</span></td><td class="mono">0/3</td><td><span class="chip ok">待分配</span></td><td class="muted">—</td><td class="mono" style="font-size:11.5px">09-18<br><span class="muted">$1.20</span></td><td class="muted">已过</td><td><button class="btn s">我手动用了</button></td></tr>
+          <tr><td class="mono">9082</td><td>备用</td><td class="mono">$20.00<br><span class="muted" style="font-size:11px">1 天前</span></td><td class="mono">1/3</td><td><span class="chip ok">待分配</span></td><td class="muted">—</td><td class="mono" style="font-size:11.5px">09-18<br><span class="muted">$1.00</span></td><td class="muted">已过</td><td><button class="btn s">我手动用了</button></td></tr>
+          <tr><td class="mono">3351</td><td>备用</td><td class="mono">$18.60<br><span class="muted" style="font-size:11px">1 天前</span></td><td class="mono">2/3</td><td><span class="chip use">使用中</span></td><td class="mono">PJ-20260919-07</td><td class="mono" style="font-size:11.5px">09-18<br><span class="muted">$1.00</span></td><td class="muted">占用中</td><td><button class="btn s" disabled>—</button></td></tr>
+        </tbody>
+      </table>
+      <div class="note">「待销」tab 里才有「我已在卡台删掉」；在役表只管日常，不混退役动作。token 失效时整栏标红（本版右上演示）。</div>
+    </div>
+
+  </div>
+</section>
+
+<div class="foot">
+  <h4>§1 · 数据来源（哪些是真的）</h4>
+  <ul>
+    <li><b>生产只读实查（2026-09-20）</b>：两台的 account_code、provider_code、总数与在库数 ——
+      <code>legacy-primary / hnskj</code> 总 14、在库 2；<code>backup-a / manual_excel</code> 总 16、在库 7。
+      备用台库里 provider_code 是 <code>manual_excel</code>，实际卡台是 highvcc，页面按 Lemon 定的叫「备用卡台（highvcc）」。</li>
+    <li><b>※ 示例</b>：余额、用量 N/3、尾号、订单号、开卡成本、可销倒计时、token 状态 —— 只示布局与措辞，不是现场值。</li>
+  </ul>
+
+  <h4>§2 · 四个数各自从哪来（不新写判断，硬约束）</h4>
+  <ul>
+    <li><b>可分配</b>：复用 <code>eligibleInventoryCardSql(..., {productCode:'plus'})</code>，即第③④块那份权威资格规则。<b>水位目标</b>＝<code>card_stock_low_threshold</code>。</li>
+    <li><b>钱包余额</b>：HNSKJ 读快照表 <code>card_provider_snapshots</code>；highvcc 是实时打外部 API，按 Lemon 定 —— <b>给「查余额」按钮，不自动查</b>，打开页面不打外网。</li>
+    <li><b>底线</b>：<b>目前全项目没有这个设置键</b>，本轮新增（Lemon 定「补一个」）。</li>
+    <li><b>今日已开 / 日限</b>：<code>card_stock_jobs</code> 按 <code>provider_account_id</code> 分组（字段本来就有，实查两台都有记录）；日限＝<code>card_replenishment_daily_limit</code>。</li>
+    <li><b>token</b>：<code>tokenStatus()</code> 只答「配没配过」，答不了有效性。按 Lemon 已定口径 —— <b>只在有告警时报「已失效」，没告警不写「有效」</b>。</li>
+    <li><b>卡状态人话</b>：复用 <code>classifyStockCardOperationalState</code>；<b>待销</b>复用 <code>classifyRetirementRow</code> 的 due / notYetDue。页面一行判断都不自己写。</li>
+  </ul>
+
+  <h4>§3 · 皮肤：为什么是候光</h4>
+  <ul>
+    <li>D-283 / D-284② 字面写的是「外壳 sidebar 暂留旧皮，四页做完再统一换」，但现场已经换了 ——
+      <code>workbench.css</code> 里有一段<b>不带 <code>.workbench</code> 作用域的全局覆盖</b>，改的是 <code>body</code> / <code>.admin-shell</code> / <code>.sidebar</code> / <code>.nav-item</code>，
+      来自 <code>7c1a5c0</code>（commit message 自陈「外壳候光已改」）。</li>
+    <li>所以外壳已是候光皮，工作台也是。卡片页属 D-281 说的「四个一级页实质重做」，用候光才一致；继续用旧皮会是候光外壳套旧皮内容。<b>这一条请 Lemon 过目 —— 它与 D-284② 的字面不符，但符合现场。</b></li>
+  </ul>
+
+  <h4>§4 · 本轮不做（D-280 剩下四条，下一轮）</h4>
+  <ul>
+    <li>② 每台「开卡」「刷新这台」按钮（highvcc 刷新要<b>新增一个小端点</b>）</li>
+    <li>④ 点开一行看流水（要<b>新增按卡查流水端点</b>）</li>
+    <li>⑦ 删补余额区块 / 路线切换搬工作台（已在工作台做完） / 卡片录入降高级</li>
+    <li>⑧ 导入备用卡降到「卡台管理」高级入口</li>
+  </ul>
+</div>
+
+</div>
+</body>
+</html>

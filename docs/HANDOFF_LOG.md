@@ -2691,3 +2691,22 @@ step6（`8cd6d7e`）发布后 Lemon 打开生产，指三条做偏：① sidebar
 **状态**：**迁移 055 尚未应用到生产；CDK 前端尚未做；生产仍 ⑤b，本块一行 UI 未上生产。**
 
 **过程教训（第四类，已连续两次）**：**落盘只顾「当轮直接相关」的 DECISIONS/DISPOSITIONS，漏掉 HANDOFF_NOW/HANDOFF_LOG/PROJECT_MAP/UNVERIFIED_LEDGER**，两次都是 Lemon 追问才发现。对策：**每轮提交前跑 `scripts/wrapup-check.sh`**，它会检查接班一屏与 PROJECT_MAP 的同日核对，不靠我自觉。
+
+## 2026-09-20 UTC · 第⑥块 卡片页本轮（D-280 ①③⑤⑥，D-287）
+
+**前置核查先于动手**（任务书写明「发现与现场冲突就停下来摆给 Lemon 选」）：查出四个数里三处对不上——钱包底线全项目无此设置键、两台余额来源不对称（hnskj 快照 / highvcc 只有实时 API）、第二台 `provider_code` 是 `manual_excel` 而实际是 highvcc。三处都摆给 Lemon 选后才开工，结论见 D-287。
+
+**一处自我订正**：先前报「今日已开对 highvcc 恒为 0、不按台」是错的。`card_stock_jobs` 有 `provider_account_id`，补卡调度器给任意卡台建 job，生产实查 backup-a 有 2 条（2026-09-18）；create-app 那条注释说的只是 `/highvcc/open` 一条路径。四个数里三个本来就有真实按台来源。
+
+**比稿**：`docs/design/prototypes/step6-cards-compare.html` 三版（A 台账优先 / B 列表优先 / C 分区标签），只差「待销怎么摆」，两台卡数用 2026-09-20 生产只读实查打底、其余标注为示例。Lemon 挑 A。
+
+**实现要点**：按台聚合与「今天(UTC+8)」窗口提到 `card-inventory-eligibility.js` 作唯一定义（工作台与卡片页同调，消除 admin-read-service 里那份内联副本）；卡对象补 `createdAt`/`issueFee`/`externalCardId`；新增 `setWalletFloor` + `POST /card-stock/wallet-floor`（accountCode 走 provider_accounts 白名单，注入串实测被拒）；token 失效认 `supply_fault_state`+`supply_fault_reason LIKE 'HIGHVCC_TOKEN%'`，不认 `tokenStatus()`。
+
+**验收**（三层，证据见 HANDOFF_NOW）：
+- 业务层：隔离库端到端跑完三个写操作，每个都用**新查询独立复核**——退役 DEPLETED→RETIRED + 审计事件；手动用卡写 override 且卡状态未动（F-57 要的语义）；底线落 `app_settings`。
+- 界面层：真实浏览器 1280 宽比对比稿 A 版；四态全验（有待办 / 无待办 / **上游 fetch 注入 500** / 401 跳登录）。修了一处布局（两台栏被 `.stock-grid` 挤扁 → 整宽置顶）和一处诚实性问题（待销读失败时卡表「可销」列原显示「—」，会被读成「不可销」→ 改显「读取失败」）。
+- 工程层：新增 13 条卡片页回归测试，vm harness 抽到 `test/helpers/admin-dom-harness.js`；全量 942/874/1。
+
+**顺手清掉的历史红测试**：接班交代的「两条既有红」经重查**实为六条**，修了五条（start-business 死引用、054→055 迁移断言、两处 `admin.js?v=51`、`#refresh-button` 可选链 marker），并把 admin.js 版本 bump 到 v=54。**剩一条有意留红**：它暴露的是「供给开关在后台没有渲染入口」（F-65 真实表现），不是文案问题，不越界修、不弱化。
+
+**清理**：隔离库 `step6_cards_*` 已删（只删自己建的，容器与 12 个历史库未动）；8803 验收服务已停。

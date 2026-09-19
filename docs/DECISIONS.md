@@ -4227,3 +4227,23 @@ Lemon 痛点：卡列表又多又长没用、金额不准要去卡台看、信�
 **本轮范围据此扩为**：D-279 六条（结果区／单码列表／单码作废／生成即复制／状态说人话／全局搜索）+ 本条两项。涉及 `cdks` 加列，需新迁移（当前最新 054），**迁移只加列、不改存量数据**；生产应用前按惯例单独确认。
 
 **同轮相关裁定**：单码列表**显示完整明文码**（选项 A，Lemon 定：后台只有他一人使用）。执行者原推荐掩码+单张解密（B+，理由是明文码等于钱、现有 download 端点是写级保护+审计），Lemon 权衡后选 A；据此不做掩码、不加单码解密端点，列表解密批次后直接展示。
+
+## D-287（2026-09-20）卡片页本轮＝D-280 ①③⑤⑥，A「台账优先」+ 候光皮；新增钱包底线设置键；订正「两条红测试」为六条
+
+**比稿与选型**（`docs/design/prototypes/step6-cards-compare.html`，三版只差「待销怎么摆」）：Lemon 挑 **A 台账优先**（两台整宽置顶 → 在役列表 → 待销独立成块，最贴 D-280 字面）。否掉 B（待销混进主列表，删卡按钮与日常行同处易误点）与 C（待销单独 tab，多一步）。
+
+**四个数的现场核查**（动手前查，三处与需求对不上，已摆给 Lemon 选）：
+1. **钱包底线全项目不存在** → Lemon 定「补一个设置键」。新增 `card_wallet_floor:<account_code>`（按台）+ `POST /api/v1/admin/card-stock/wallet-floor`。键是拼出来的，所以 accountCode **必须先在 `provider_accounts` 查到**才允许写（白名单来自库、不是代码常量表），已验注入串被拒。
+2. **两台余额来源不对称**：hnskj 读快照表 `card_provider_snapshots`，highvcc 只有实时 API → Lemon 定**给「查余额」按钮、不自动查**，打开页面不打外网。查不到时显示 null 不显示 0。
+3. **第二台库里 `provider_code` 是 `manual_excel`、实际卡台是 highvcc** → Lemon 定页面叫 **「备用卡台（highvcc）」**。工作台仍用简称「备用卡台 A」（那块空间更窄），两处措辞不同，未统一，待 Lemon 定。
+
+> **事实订正（本轮核查推翻我自己先前的说法）**：先前报「今日已开对 highvcc 恒为 0、不按台」**是错的**。`card_stock_jobs` 本来就有 `provider_account_id`，自动补卡调度器给任意卡台建 job（`card-supply-scheduler-service.js` 的 `opener.id`），生产实查 backup-a 有 2 条（2026-09-18）。create-app 那条「不走 card_stock_jobs」的注释说的只是 `/highvcc/open` 手动同步开卡这一条路径。**所以四个数里三个有真实按台来源，只有底线要新增。**
+
+**皮肤＝候光**（受控打破 D-284② 的字面）：D-283/D-284② 写的是「外壳 sidebar 暂留旧皮、四页做完再统一换」，但现场**早就换了**——`workbench.css` 里有一段**不带 `.workbench` 作用域的全局覆盖**（改 `body`/`.admin-shell`/`.sidebar`/`.nav-item`），来自 `7c1a5c0`（commit message 自陈「外壳候光已改」）。裁定前提不成立，卡片页作为 D-281 说的「四个一级页实质重做」用候光才一致。Lemon 确认。
+
+**不写第二套判断（D-280 硬约束）的落法**：按台聚合 `providerCardStockSql()` 与「今天(UTC+8)」窗口 `todayCst8WindowSql()` 提到 `card-inventory-eligibility.js` 作**唯一定义**，工作台与卡片页同调——两处「可分配」永远同口径。卡状态复用 `classifyStockCardOperationalState`，待销复用 `classifyRetirementRow` 的 due/notYetDue，卡台显示名复用后端 `PROVIDER_LABELS`。页面一行判断都不自己写。
+
+**token 口径落地**：真实信号是 `provider_accounts.supply_fault_state='FAULT'` + `supply_fault_reason LIKE 'HIGHVCC_TOKEN%'`（补卡调度器失败时写、贴新 token 清回 OK），不是 `tokenStatus()`（它只答「配没配过」）。按已定口径**只报「已失效」，无故障不写「有效」**。
+
+**测试红条订正（重要）**：接班一屏此前称「两条既有红测试」，**实为六条**。本轮逐条查清并修了五条——① `start-business` 悬空引用（D-284 改三 toggle 后按钮已删，JS 里留下死引用和死 handler，已删）；② 迁移断言锁死 054（055 是 D-286 批准新增，已改为 055 并保持「只加不删」强度）；③④ `admin.js?v=51` 断言过时（两个文件各一份，实际 v=53；本轮又大改 admin.js，**bump 到 v=54** 并同步两处）；⑤ `#refresh-button` 的 snippet marker 没跟上可选链 `?.`。
+**剩一条有意留红**：`admin overview does not describe disabled automatic card opening as enabled`。查清后发现它比记录的严重——**不是「供给三态文案过时」，而是供给开关在后台根本没有入口**：`data-supply-toggle` 只有 click handler、**全项目没有任何渲染处**，工作台重做后控件没了。这是 F-65 的真实表现，属供给控件范围，本轮（卡片页）不越界修，**测试保持红**作为缺口信号，不弱化。
