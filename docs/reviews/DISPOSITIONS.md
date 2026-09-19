@@ -323,3 +323,17 @@ Lemon 09-11 确认执行顺序重排后 B 段第一件。审查记录批次 2B �
 **新增测试**：状态说人话映射（「使用中」与「已交付」按订单是否 RECHARGE_SUCCESS 区分、不得出现 REDEEMED/REVOKED 内部词）、`data-open-order` 必须有处理器（防假落点回潮）。`admin-workbench-queue` 20/20。
 
 **D-279 七条状态**：①结果区 ✅ ②前缀按产品 ✅ ③全局搜索 ✅ ④单码列表 ✅ ⑤单码作废 ✅ ⑥生成即复制 ✅ ⑦状态说人话 ✅ —— **全部完成**；外加 D-286 两项（交付负债、有效期/下线保护）。**迁移 055 仍未应用生产，全部未部署。**
+
+## 2026-09-19（续七）CDK 页样式：混用 workbench 作用域 class 导致负债条不生效（Lemon 问出来的）
+
+**Lemon 问「CDK 的 UI 用的是以前的系统吗」，查证后确认：是。** CDK 页用的全是旧后台 class（`card`/`data-table`/`filters`/`text-button`/`primary-small`），**没有做成候光皮**；`#cdks-view class="view"`，而工作台是 `class="view workbench"`。
+
+**因此埋下的真实 bug**：我在负债条用了工作台的 `wb-chip`，但 `workbench.css:138` 的定义是 **`.workbench .wb-chip{...}`（作用域限定）**，CDK 页不在该作用域 → 样式完全不生效，三个 chip 退化成糊在一起的纯文字。**上一轮界面验收我只核对了数字对不对，没看长得对不对，所以漏了。**
+
+**与既定方案的偏差（我当时没主动提请确认）**：D-281「四个一级页实质重做…与客户页候光同一路子」、D-283「旧页仍在 admin.js，各自重做时再拆」——按此 CDK 页轮到它时本该一起换候光皮。我实际做的是「在旧页上改造、不推倒重写」，这句写进了处置，但**没把「所以 CDK 页仍是旧皮」这个后果单独摆给 Lemon**。是疏漏，他不问就漏过去了。
+
+**Lemon 裁定：选 B** —— 只修 bug、皮肤照旧，换皮留到「四页做完统一换」那次（符合 D-283 节奏）。
+
+**已修**：负债条改用旧体系自己的 `.status-chip status-{orange|green|gray|red}`（`admin.css:171`，带小圆点），失败态同样改。**不新造第三套样式**。
+**验收**：真实页面 1280×900 实测 `getComputedStyle` —— `borderRadius: 999px`、背景 `rgb(255,244,229)`、`display: inline-flex`，`#cdk-liability` 内无残留 `.wb-chip`；截图肉眼确认是三个带色圆点的独立胶囊，与旧后台其它卡片风格一致。
+**新增守门测试**：`CDK 页不得使用 .workbench 作用域的 class` —— 断言 wb-chip 确为作用域限定、CDK 视图不在该作用域、`loadCdkCodes` 渲染中不得出现 `wb-*` class（注释除外），防同类回潮。21/21 绿。

@@ -2687,19 +2687,22 @@ async function loadCdkCodes() {
     // 而这正是「失败冒充正常」的另一张脸。
     box.innerHTML = '<tr><td colspan="7" class="empty-cell">单码列表读取失败，请刷新重试。</td></tr>';
     const failBar = document.querySelector('#cdk-liability');
-    if (failBar) failBar.innerHTML = '<span class="wb-chip warn">读取失败，数字不可信，请刷新</span>';
+    if (failBar) failBar.innerHTML = '<span class="status-chip status-red"><i></i>读取失败，数字不可信，请刷新</span>';
     return;
   }
 
   // D-286 ①：欠客户多少次交付 vs 还能卖多少，摆在列表上方
   const bar = document.querySelector('#cdk-liability');
   if (bar) {
+    // 用旧后台自己的 .status-chip（admin.css:171），不要用工作台的 .wb-chip ——
+    // 后者定义是 `.workbench .wb-chip{...}`，而 CDK 页(#cdks-view)不在 .workbench 作用域里，
+    // 写了也不生效，chip 会退化成糊在一起的纯文字。CDK 页换候光皮是后面统一做的事（D-283）。
     bar.innerHTML = liability
-      ? `<span class="wb-chip warn"><span class="wb-d"></span>欠交付 ${liability.owed}</span>`
-        + `<span class="wb-chip ok"><span class="wb-d"></span>在手可卖 ${liability.stock}</span>`
-        + `<span class="wb-chip mute">已交付 ${liability.delivered}</span>`
-        + (liability.expired ? `<span class="wb-chip warn">已过期 ${liability.expired}</span>` : '')
-      : '<span class="wb-chip mute">负债汇总读取失败</span>';
+      ? `<span class="status-chip status-orange"><i></i>欠交付 ${liability.owed}</span>`
+        + `<span class="status-chip status-green"><i></i>在手可卖 ${liability.stock}</span>`
+        + `<span class="status-chip status-gray"><i></i>已交付 ${liability.delivered}</span>`
+        + (liability.expired ? `<span class="status-chip status-red"><i></i>已过期 ${liability.expired}</span>` : '')
+      : '<span class="status-chip status-gray"><i></i>负债汇总读取失败</span>';
   }
 
   box.innerHTML = payload.codes.length
