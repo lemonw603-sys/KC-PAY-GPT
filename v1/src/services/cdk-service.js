@@ -6,7 +6,10 @@ import {
   hashCurrentCdk
 } from '../security/cdk-code.js';
 
-const CDK_PREFIX = 'PJ-';
+// D-279 ②：码前缀按产品分，运营一眼能认出是哪档；旧的统一前缀 PJ- 只保留在
+// GENERATED_CDK_PATTERN 的可接受列表里（旧码继续有效、继续可导入），不再用于新生成。
+const CDK_PREFIX_BY_PLAN = Object.freeze({ plus: 'PLUS-', pro_5x: '5X-', pro_20x: '20X-' });
+const LEGACY_CDK_PREFIX = 'PJ-';
 const CDK_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
 const CDK_RANDOM_LENGTH = 20;
 const MAX_BATCH_SIZE = 1_000;
@@ -85,8 +88,11 @@ export function normalizeImportedCdks(text) {
   };
 }
 
-export function generateCdks(value, { randomInt = crypto.randomInt } = {}) {
+// planType 决定前缀（D-279 ②）。未知/缺省一律回退到旧前缀 PJ-，不猜：
+// 宁可发出一个前缀"旧"但合法可用的码，也不要拼出一个正则不收、导入即非法的码。
+export function generateCdks(value, { randomInt = crypto.randomInt, planType = null } = {}) {
   const count = validateBatchCount(value);
+  const prefix = CDK_PREFIX_BY_PLAN[String(planType || '').trim().toLowerCase()] || LEGACY_CDK_PREFIX;
   const codes = new Set();
   while (codes.size < count) {
     let suffix = '';
@@ -94,7 +100,7 @@ export function generateCdks(value, { randomInt = crypto.randomInt } = {}) {
       suffix += CDK_ALPHABET[randomInt(CDK_ALPHABET.length)];
     }
     const groupedSuffix = suffix.match(/.{1,5}/g).join('-');
-    codes.add(`${CDK_PREFIX}${groupedSuffix}`);
+    codes.add(`${prefix}${groupedSuffix}`);
   }
   return [...codes];
 }
@@ -197,7 +203,7 @@ export function createAdminCdkService({ pool, cdkHashKey, cdkRecoveryKey }) {
     const recovered = decodeStoredBatch(existing[0], cdkRecoveryKey, { count, planType });
     if (recovered) return recovered;
 
-    const codes = generateCdks(count);
+    const codes = generateCdks(count, { planType: normalizedPlanType });
     const batchNo = normalizeBatchNo(input.batchNo);
     const ciphertext = encryptSecret(JSON.stringify(codes), cdkRecoveryKey);
     const connection = await pool.getConnection();

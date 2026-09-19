@@ -7,6 +7,7 @@ import {
   normalizePlanType,
   validateBatchCount
 } from '../src/services/cdk-service.js';
+import { GENERATED_CDK_PATTERN } from '../src/security/cdk-code.js';
 
 test('generates unique high-entropy-shaped CDKs without ambiguous characters', () => {
   const codes = generateCdks(250);
@@ -55,4 +56,37 @@ test('accepts Plus and the two Pro tiers, nothing else', () => {
   assert.equal(normalizePlanType(' PRO_20X '), 'pro_20x');
   assert.throws(() => normalizePlanType('team'), (error) => error.code === 'INVALID_PLAN_TYPE');
   assert.throws(() => normalizePlanType('20x'), (error) => error.code === 'INVALID_PLAN_TYPE');
+});
+
+// ——— D-279 ②：码前缀按产品，旧 PJ- 必须继续收 ———
+// 这条改动唯一会咬人的地方是「前缀」和「校验正则」脱节：
+// 前缀改了正则没跟上 → 新码发得出、导不进；正则收窄了 → 旧 PJ- 码导入即非法。
+// 所以每个产品都断言「前缀对」且「能通过正式正则」，再单独锁住旧码仍合法。
+test('D-279②: 三个产品各出各的前缀，且都能通过正式校验正则', () => {
+  const cases = [['plus', 'PLUS-'], ['pro_5x', '5X-'], ['pro_20x', '20X-']];
+  for (const [planType, prefix] of cases) {
+    const [code] = generateCdks(1, { planType });
+    assert.ok(code.startsWith(prefix), `${planType} 应出 ${prefix} 前缀，实际 ${code}`);
+    assert.ok(GENERATED_CDK_PATTERN.test(code), `${planType} 生成的码必须被正式正则接受：${code}`);
+  }
+});
+
+test('D-279②: 旧 PJ- 码继续合法（库里已有大量在客户手上，收窄会让它们导入即非法）', () => {
+  assert.ok(GENERATED_CDK_PATTERN.test('PJ-3GBKE-ZHDCJ-A3UCK-MRMWR'), '旧分组格式必须仍合法');
+  assert.ok(GENERATED_CDK_PATTERN.test('PJ-3GBKEZHDCJA3UCKMRMWR'), '旧不分组格式必须仍合法');
+});
+
+test('D-279②: planType 缺省或未知时回退旧前缀，绝不拼出正则不收的码', () => {
+  for (const planType of [undefined, null, '', 'unknown_plan']) {
+    const [code] = generateCdks(1, { planType });
+    assert.ok(GENERATED_CDK_PATTERN.test(code), `planType=${String(planType)} 时仍须合法：${code}`);
+  }
+});
+
+test('D-279②: 新前缀的码也能被导入校验接受（同一个正则两处用）', () => {
+  const [plus] = generateCdks(1, { planType: 'plus' });
+  const [pro20] = generateCdks(1, { planType: 'pro_20x' });
+  const parsed = normalizeImportedCdks([plus, pro20, 'PJ-3GBKE-ZHDCJ-A3UCK-MRMWR'].join('\n'));
+  const codes = Array.isArray(parsed) ? parsed : parsed.codes;
+  assert.equal(codes.length, 3, '新旧前缀混在一批里都应被接受');
 });

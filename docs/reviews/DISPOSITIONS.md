@@ -246,3 +246,23 @@ Lemon 09-11 确认执行顺序重排后 B 段第一件。审查记录批次 2B �
 - **工程**：`admin-workbench-queue.test.js` 18/18（含 5 条路线切换用例：营业条含三 toggle+路线块、当前路线标注、`state.rechargeMethod` 必须落库、拒切逐项原因、字段位置锁死）。
 
 **未做**：Browser 执行器就绪态下的切换未验（隔离库无 ACTIVE profile/心跳，属执行器环境，非本块）。
+
+## 2026-09-19（续三）CDK D-279 ②：码前缀按产品（本轮只做这一条）
+
+**任务书「三处同改」的描述经核查不准，已按真实代码修正范围**：
+- 任务书说要改「生成、**客户页验码格式检查**、导入格式校验」三处。实测**客户侧根本不校验码格式** —— `order-intake-service.js:8 normalizeCdk` 只校验长度（8~256），客户页 `customer.js:525` 也只查 `length < 8`，提交后走**哈希查找**（`createCdkLookup`）。所谓「客户页验码格式检查」不存在，照任务书去找会改错地方。
+- 真正受前缀影响的是 **2 处**：生成（`cdk-service.js` 的 `CDK_PREFIX`）、导入校验（`security/cdk-code.js` 的 `GENERATED_CDK_PATTERN`，硬编码 `^PJ-`）。外加 1 处**文案**：客户页 placeholder。
+- **副作用**：因为客户侧不看前缀，D-279「旧 PJ 码继续有效」在兑换这条路上天然成立；真正的风险只在**导入**——正则若收窄，库里已发出的旧码会「导入即非法」。
+
+**已实现**：
+- `security/cdk-code.js`：`GENERATED_CDK_PATTERN` 由前缀列表 `CDK_CODE_PREFIXES = ['PLUS-','5X-','20X-','PJ-']` 生成，新旧同收。
+- `cdk-service.js`：`CDK_PREFIX_BY_PLAN`（plus→`PLUS-`、pro_5x→`5X-`、pro_20x→`20X-`）+ `LEGACY_CDK_PREFIX` 兜底；`generateCdks(count, { planType })`，**未知/缺省一律回退旧前缀**，宁可发出前缀"旧"但合法的码，也不拼出正则不收的码。
+- 两个调用处都传产品：批量生成（`normalizedPlanType`）、**补偿补发码**（`order-compensation-service.js` 用 `order.plan_type` —— 否则 20X 单会补发出 `PJ-` 码，运营认错档位）。
+- 客户页 placeholder 改为「例如 PLUS-XXXXX-…」。
+
+**验收**：
+- **工程**：`cdk-service.test.js` 9/9（新增 4 条：三产品各自前缀且都过正则／旧 PJ 两种格式仍合法／planType 缺省未知时回退且仍合法／新旧混合导入都被接受）；`order-compensation-service.test.js` 3/3（断言改为 `PLUS-` 并**额外断言必须通过 `GENERATED_CDK_PATTERN`**，防止前缀与正则再次脱节）；相关 6 文件 66 tests / 64 pass / 2 fail（2 fail 为既有项）。
+- **业务**：实跑生成 —— `plus→PLUS-3TUPY-…`、`pro_5x→5X-CSNA9-…`、`pro_20x→20X-Z7N5J-…` 前缀与正则双对；**新旧混合 4 行导入全收**；反例亦对（非法前缀 `WRONG-` 拒、含歧义字母 L 的码拒）。
+- 过程中两次因**我自己造的样例码不合字符集/长度**被正则拒（含 L、21 位），确认校验是紧的、不是实现问题。
+
+**本轮未做（D-279 其余六条，下一轮）**：结果区带批次号、单码列表（现仅批次聚合 `GET /admin/cdks/batches`）、**作废单张码**（现仅整批 `POST /admin/cdks/:batchNo/revoke`）、生成即复制、状态说人话、工作台全局搜索。后两项要新增后端端点，单独一轮做。

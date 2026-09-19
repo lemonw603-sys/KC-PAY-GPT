@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createOrderCompensationService } from '../src/services/order-compensation-service.js';
+import { GENERATED_CDK_PATTERN } from '../src/security/cdk-code.js';
 import { encryptSecret } from '../src/security/secret-box.js';
 
 const key = Buffer.alloc(32, 23);
@@ -31,7 +32,10 @@ test('compensation creates one replacement and closes only a no-side-effect fail
   const result = await createOrderCompensationService({ pool, cdkHashKey: hashKey, cdkRecoveryKey: key })(
     'PJV1-DEMO', { confirmation: '补发 PJV1-DEMO' }
   );
-  assert.match(result.code, /^PJ-[A-HJ-KM-NP-Z2-9]{5}(?:-[A-HJ-KM-NP-Z2-9]{5}){3}$/);
+  // D-279 ②：补发码按原订单产品出前缀（这里夹具是 plus → PLUS-）。
+  assert.match(result.code, /^PLUS-[A-HJ-KM-NP-Z2-9]{5}(?:-[A-HJ-KM-NP-Z2-9]{5}){3}$/);
+  // 同时必须被正式校验正则接受——前缀和正则一旦脱节，码就会「发得出、导不进」。
+  assert.ok(GENERATED_CDK_PATTERN.test(result.code), '补发码必须通过 GENERATED_CDK_PATTERN');
   assert.equal(result.replayed, false);
   assert.equal(pool.queries.some(({ sql }) => /INSERT INTO order_compensations/.test(sql)), true);
   assert.equal(pool.queries.some(({ sql }) => /SET status = 'CLOSED'/.test(sql)), true);

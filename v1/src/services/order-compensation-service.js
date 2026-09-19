@@ -69,7 +69,8 @@ export function createOrderCompensationService({ pool, cdkHashKey, cdkRecoveryKe
         throw new OrderCompensationError('Order is not terminally failed', 'COMPENSATION_NOT_ELIGIBLE');
       }
 
-      const code = generateCdks(1)[0];
+      // 补发码也按原订单的产品出前缀（D-279 ②）：20X 单补发出 PJ- 码会让运营认错档位。
+      const code = generateCdks(1, { planType: order.plan_type })[0];
       const cdkId = crypto.randomUUID();
       const compensationId = crypto.randomUUID();
       const batchNo = `COMP-${order.id}`;
