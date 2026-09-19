@@ -4175,3 +4175,14 @@ Lemon 痛点：卡列表又多又长没用、金额不准要去卡台看、信�
 **实现现场核查**（动手前重读 admin-read/operations/create-app）：`getOverview` 已返回三开关（accept/dispatch/browserPayment/supplyAutomation，都写 `admin_setting_events` 审计）+ 成功率 + 卡库存 + hnskj 钱包 + 各类待办计数；`operations`/`card-sources`/`reconciliation·daily`/`card-retirement·candidates`/`reconciliation-cases`/`cdks·generate`/`alerts` 端点全现成。**看板 3 个数后端暂无、要新写聚合**：自动完成率（口径＝什么算「没靠人收口」，Lemon 定后再写，不自拍）、今日花费按台、按台按产品卡用量。
 
 **前端策略**（D-281 落地）：工作台用独立 `.workbench` CSS 作用域（候光令牌局部化，不碰 admin.css、不动旧页），抽 `common.js` 公共助手（escapeHtml/formatTime/formatMoney/api/askForm）+ `workbench.js`；外壳 sidebar 暂留旧皮，四页做完再统一换。旧页仍在 admin.js，各自重做时再拆。
+
+## D-284（2026-09-19）第⑥块重做前的三点基准裁定 + 本轮范围＝先闭付款不明一条链（Lemon 定）
+
+新窗口接手第⑥块，开工前把交接文档里登记为「待 Lemon 裁」的基准冲突一次裁清（原冲突见 `HANDOFF_NOW` 旧版「尚未解决」与 `DISPOSITIONS` 过程判断条；审查 `STEP6_BASIS_REVIEW_2026-09-19.md` F-66 也指「基准未冻结即开工会重蹈覆辙」）：
+
+1. **营业条走方向 A**：按已选定原型 C 的形态＝**接单 / 派单 / 付款 三个 toggle**，**路线切换块留在工作台**（带面一 C1 的四项校验、拒切显示逐项原因）。据此否定两个走偏方向：`8cd6d7e` 把营业条做成「五决定按钮组」、在途 `7c1a5c0` 把路线切换挪去设置页（后者与任务书 A 项和 D-280 ⑦「卡台路线切换搬工作台」冲突）。供给参数（水位/开卡金额/每卡单数/钱包底线等）仍归设置页。
+2. **sidebar 四页做完再统一换候光皮**：确认 D-283 原文「外壳 sidebar 暂留旧皮，四页做完再统一换」继续有效；回滚说明里「sidebar/顶栏未换候光皮」那条**不作为本阶段返工依据**。此冲突就此了结，`DISPOSITIONS` 相应「待 Lemon 裁」条已改为已裁。
+3. **自动完成率口径暂不冻结**：数字墙该格**先空着标「待接入」**，在 Lemon 给出明确分子分母定义（什么算「没靠人收口」、失败/测试单排不排）之前，**不许自拟算法填数**——宁可空着，不要挂一个看着对、实际算错的数。
+4. **本轮范围＝只闭「付款不明一条链」**：先把最容易出资金事故、且上一版五个 P1 里占四个的这条链从头到尾做对验透（F-61/62/63 + 执行中新发现的 B1），再向外扩；不整屏重做工作台、不并做 CDK/卡片/设置页。理由：上一版正是四页一起铺导致做偏当天回滚，先立一个对的样板再复制更快、返工更少。
+
+**执行结论（同日，见 HANDOFF_LOG 2026-09-19 本窗口节）**：该链已闭合并提交（`88037c4` + `48524ec` + `911c5ce`），**未推远端、未部署**——Lemon 定「先不 push」，且**发布前必须补隔离库端到端那一跑**（集成测试因本机无 `TEST_DATABASE_URL` 全 skip，已登记 UNVERIFIED_LEDGER）。审查员窗口未跟踪文件 `docs/reviews/STEP6_BASIS_REVIEW_2026-09-19.md` 经 Lemon 定**留着不动**（不替他提交/删改），`wrapup-check.sh` 因此长期报「工作区干净 ✗」，属已知有意。
