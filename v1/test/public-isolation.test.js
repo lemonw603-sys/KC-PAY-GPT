@@ -165,18 +165,26 @@ test('admin separates recharge method from audited Browser card-source switching
   assert.doesNotMatch(`${html}\n${script}`, /secretRef|navigationUrl|leaseToken|resourceKeyHmac|card_credentials_ciphertext|recharge_card_key/i);
 });
 
-test('admin card page folds card sources, import, and balance funding into one view', () => {
+test('admin card page folds card sources and import into one view (balance funding retired, D-280 ⑦)', () => {
   const html = fs.readFileSync(path.join(directory, 'admin', 'index.html'), 'utf8');
   const script = fs.readFileSync(path.join(directory, 'admin', 'assets', 'admin.js'), 'utf8');
   const stockView = html.slice(html.indexOf('id="stock-view"'), html.indexOf('id="page-notice"'));
   for (const id of ['stock-summary', 'card-capacity-form', 'minimum-balance-form', 'provider-routes-table', 'manual-card-source-form',
-    'manual-card-import-form', 'stock-cards', 'stock-open-form', 'card-funding-table', 'stock-jobs', 'card-intake-list']) {
+    'manual-card-import-form', 'stock-cards', 'stock-open-form', 'stock-jobs', 'card-intake-list',
+    // 第⑥块新增的三块（D-280 ①③⑤）
+    'cards-rigs', 'card-retirement-list', 'stock-cards-history']) {
     assert.match(stockView, new RegExp(`id="${id}"`), id);
   }
+  // D-280 ⑦：补余额区块退休（D-218 已弃用补余额），连同工作台那条会跳到这里的待办一起。
+  // 后端与数据都还在，只是后台不再有入口——恢复时连待办一起接。
+  assert.doesNotMatch(stockView, /card-funding-table|card-funding-filters/);
+  // 只看代码，不看注释——注释里写「这条待办为什么退休」是应该的，代码里还调它才是问题。
+  const scriptCode = script.replace(/^\s*\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
+  assert.doesNotMatch(scriptCode, /loadCardFundingAttempts|cardFundingManualReview/);
   assert.doesNotMatch(html, /data-view="provider-routes"|data-view="card-funding"|id="provider-routes-view"|id="card-funding-view"/);
   assert.doesNotMatch(html, /stock-threshold-form|replenishment-limit-form|stock-confirmation|stock-confirm-hint|提醒与自动补卡设置/);
   assert.doesNotMatch(script, /replenishment-settings|stockConfirmation|请输入确认词/);
-  assert.match(script, /Promise\.all\(\[loadStock\(\), loadProviderRoutes\(\), loadCardFundingAttempts\(\)\]\)/);
+  assert.match(script, /Promise\.all\(\[loadStock\(\), loadProviderRoutes\(\)\]\)/);
 });
 
 test('CDK page generates per product and the card page sets the minimum balance per product', () => {

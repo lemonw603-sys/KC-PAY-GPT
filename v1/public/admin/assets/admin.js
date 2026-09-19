@@ -103,7 +103,7 @@ const state = {
   stockProvider: null, stockCatalog: null, stockCardTypeId: '', acceptingOrders: false,
   cdkLoadSequence: 0, cdkBatchCursor: null, cdkBatchRows: [],
   reconciliationPage: 1, reconciliationTotal: 0,
-  browserPage: 1, browserTotal: 0, cardFundingPage: 1, cardFundingTotal: 0
+  browserPage: 1, browserTotal: 0
 };
 const elements = {
   navItems: [...document.querySelectorAll('.nav-item')],
@@ -179,12 +179,6 @@ const elements = {
   ,manualCardSourceForm: document.querySelector('#manual-card-source-form')
   ,manualCardSourceCode: document.querySelector('#manual-card-source-code')
   ,manualCardSourceName: document.querySelector('#manual-card-source-name')
-  ,cardFundingTable: document.querySelector('#card-funding-table')
-  ,cardFundingCount: document.querySelector('#card-funding-count')
-  ,cardFundingPage: document.querySelector('#card-funding-page')
-  ,cardFundingPrev: document.querySelector('#card-funding-prev')
-  ,cardFundingNext: document.querySelector('#card-funding-next')
-  ,cardFundingStatus: document.querySelector('#card-funding-status')
   ,manualCardImportForm: document.querySelector('#manual-card-import-form')
   ,manualCardImportFile: document.querySelector('#manual-card-import-file')
   ,manualCardImportSource: document.querySelector('#manual-card-import-source')
@@ -422,7 +416,9 @@ function renderWbQueue(overview, daily, alertData, reconCases) {
   // 其余类：摘要 + 跳专页处理（待销/手动用卡在卡片页，无主扣款/连续两次在诊断日对账）。
   if (daily && (daily.discrepancyCount ?? 0) > 0) items.push({ t: 'danger', ic: '⚠', title: `对账差异 · 无主扣款 ${daily.discrepancyCount} 张卡`, ev: '账本无对应订单，进报告、不隐藏', jump: 'diagnostics' });
   if (daily && (daily.persistentCount ?? 0) > 0) items.push({ t: 'danger', ic: '‼', title: `连续两次差异 ${daily.persistentCount} 张`, ev: '已升级，需人工核', jump: 'diagnostics' });
-  if ((b.cardFundingManualReview ?? 0) > 0) items.push({ t: 'warn', ic: '$', title: `卡补余额待人工 ${b.cardFundingManualReview} 笔`, ev: 'UNKNOWN 需核对已扣/未扣', jump: 'stock' });
+  // 「卡补余额待人工」这条待办随卡片页补余额区块一起退休（D-280 ⑦ / D-288）：
+  // 补余额已弃（D-218），生产 card_funding_attempts 仅 6 行全 FAILED、最后一次 2026-09-14。
+  // 后端计数仍在 operationalBacklog 里，将来要恢复入口时再接。
   if ((b.cardIntakePending ?? 0) > 0) items.push({ t: 'info', ic: '⇩', title: `新卡待接管 ${b.cardIntakePending} 张`, ev: '同步后确认接管', jump: 'stock' });
   if (daily && (daily.pendingRegistrationCount ?? 0) > 0) items.push({ t: 'info', ic: '✎', title: `待登记手动用卡 ${daily.pendingRegistrationCount} 张`, ev: '已登记 manual-used，等去卡台销', jump: 'stock' });
   // D-285：原型 C 的队列明确画了「待销到期」和「token 状态」两类，放回工作台
@@ -2167,7 +2163,7 @@ async function switchView(view, { status = '' } = {}) {
   } else if (view === 'stock') {
     elements.viewKicker.textContent = '卡片';
     elements.viewTitle.textContent = '库存、卡台、导入、补钱';
-    await Promise.all([loadStock(), loadProviderRoutes(), loadCardFundingAttempts()]);
+    await Promise.all([loadStock(), loadProviderRoutes()]);
   } else if (view === 'diagnostics') {
     elements.viewKicker.textContent = '诊断';
     elements.viewTitle.textContent = '低频、只读为主';
@@ -2212,135 +2208,6 @@ async function loadProviderRoutes() {
   }).join('') : '<tr><td colspan="5" class="empty-state">暂无卡台配置</td></tr>';
 }
 
-async function loadCardFundingAttempts() {
-  const params = new URLSearchParams({ page: state.cardFundingPage, pageSize: 20 });
-  if (elements.cardFundingStatus.value) params.set('status', elements.cardFundingStatus.value);
-  const payload = await api(`/api/v1/admin/card-funding-attempts?${params}`);
-  state.cardFundingTotal = payload.total;
-  elements.cardFundingTable.innerHTML = payload.attempts.length ? payload.attempts.map((item) => `<tr>
-    <td><small>${escapeHtml(item.id)}</small><br>${escapeHtml(item.fundsRiskState)}</td>
-    <td>${escapeHtml(item.last4 || item.providerCardId || '—')}</td>
-    <td>${escapeHtml(item.amount)} ${escapeHtml(item.currency)}</td>
-    <td>${escapeHtml(item.status)}${item.fundsRiskState === 'UNKNOWN' ? `<div class="case-actions"><button class="text-button card-funding-resolve" type="button" data-attempt-id="${escapeHtml(item.id)}" data-action="CONFIRM_SETTLED">确认已扣款</button><button class="text-button card-funding-resolve" type="button" data-attempt-id="${escapeHtml(item.id)}" data-action="CONFIRM_NOT_CHARGED">确认未扣款</button></div>` : ''}</td>
-    <td>${escapeHtml(item.providerCallOutcome || '—')}${item.providerBusinessCode ? `<small>${escapeHtml(item.providerBusinessCode)}</small>` : ''}</td>
-    <td>${escapeHtml(item.publicNo || '—')}</td>
-    <td>${formatTime(item.updatedAt || item.createdAt)}</td>
-  </tr>`).join('') : '<tr><td colspan="7" class="empty-state">暂无记录</td></tr>';
-  const pages = Math.max(1, Math.ceil(payload.total / 20));
-  elements.cardFundingCount.textContent = `${payload.total} 条记录`;
-  elements.cardFundingPage.textContent = `第 ${state.cardFundingPage} / ${pages} 页`;
-  elements.cardFundingPrev.disabled = state.cardFundingPage <= 1;
-  elements.cardFundingNext.disabled = state.cardFundingPage >= pages;
-}
-
-elements.cardFundingTable?.addEventListener('click', async (event) => {
-  const button = event.target.closest('.card-funding-resolve');
-  if (!button) return;
-  const attemptId = button.dataset.attemptId;
-  const actionLabel = button.dataset.action === 'SETTLED' ? '已扣款' : '未扣款';
-  // Server still checks the literal word; the dialog above is the one confirmation.
-  const confirmation = `确认卡充值对账 ${attemptId}`;
-  const note = (await askForm({
-    title: `卡充值对账 ${attemptId}`,
-    message: `把这次卡充值尝试记为「${actionLabel}」。只保存结论，不会自动重充或退款。`,
-    fields: [{ name: 'note', label: '对账依据（至少 10 个字符）', type: 'textarea', required: true }],
-    confirmLabel: '保存结论'
-  }))?.note;
-  if (!note) return;
-  button.disabled = true;
-  try {
-    await sensitiveApi(`/api/v1/admin/card-funding-attempts/${encodeURIComponent(attemptId)}/resolve`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: button.dataset.action, confirmation, note })
-    });
-    showNotice('资金核对结论已保存；没有执行重充或退款。', 'success');
-    await loadCardFundingAttempts();
-  } catch (error) {
-    const messages = {
-      card_funding_manual_confirmation_required: '确认词不匹配，没有修改资金状态。',
-      card_funding_not_unknown: '该记录已不在未知风险状态，请先刷新。',
-      invalid_card_funding_manual_resolution: '对账结论或说明不完整，没有修改资金状态。',
-      admin_step_up_cancelled: '已取消操作，没有修改资金状态。'
-    };
-    showNotice(messages[error.message] || '资金核对失败，没有确认任何变更。');
-    await loadCardFundingAttempts().catch(() => {});
-  } finally {
-    button.disabled = false;
-  }
-});
-
-elements.navItems.forEach((item) => item.addEventListener('click', () => switchView(item.dataset.view).catch(() => showNotice('数据读取失败，请稍后重试。'))));
-document.querySelectorAll('[data-open-orders]').forEach((button) => button.addEventListener('click', () => switchView('orders')));
-// 工作台数字墙 / 队列跳转（原绑在已删的 #metrics-grid，改 document 级委托）。
-document.addEventListener('click', (event) => {
-  const filterButton = event.target.closest('[data-order-filter]');
-  const viewButton = event.target.closest('[data-target-view]');
-  const jumpButton = event.target.closest('[data-view-jump]');
-  const resolveCase = event.target.closest('[data-resolve-wb-case]');
-  const openCaseOrder = event.target.closest('[data-open-case-order-wb]');
-  const opSwitch = event.target.closest('[data-op]');
-  if (opSwitch) { toggleOp(opSwitch.dataset.op, opSwitch.dataset.on !== 'true'); return; }
-  const closeWbAlert = event.target.closest('[data-close-wb-alert]');
-  if (closeWbAlert) { closeWbAlert.disabled = true; api(`/api/v1/admin/alerts/${encodeURIComponent(closeWbAlert.dataset.closeWbAlert)}/close`, { method: 'POST' }).then(() => loadOverview()).catch(() => { showNotice('提醒关闭失败，请重试。'); closeWbAlert.disabled = false; }); return; }
-  if (resolveCase) { resolveReconciliationCase(resolveCase.dataset.resolveWbCase, { after: loadOverview }).catch(() => showNotice('案例解决失败，请重试。')); return; }
-  if (openCaseOrder) { openOrder(openCaseOrder.dataset.openCaseOrderWb); return; }
-  if (filterButton) switchView('orders', { status: filterButton.dataset.orderFilter });
-  else if (viewButton) switchView(viewButton.dataset.targetView);
-  else if (jumpButton) switchView(jumpButton.dataset.viewJump).catch(() => showNotice('数据读取失败，请稍后重试。'));
-});
-// 工作台全局定位搜索：回车带查询跳订单页做精确匹配（复用 orders/search 的 CDK 精确匹配）。
-document.querySelector('#wb-search-input')?.addEventListener('keydown', (event) => {
-  if (event.key !== 'Enter') return;
-  const q = event.currentTarget.value.trim();
-  if (!q) return;
-  state.query = q;
-  switchView('orders').then(() => { if (elements.search) elements.search.value = q; }).catch(() => showNotice('搜索失败，请重试。'));
-});
-elements.filters.addEventListener('submit', (event) => {
-  event.preventDefault();
-  state.page = 1;
-  state.query = elements.search.value.trim();
-  state.status = elements.statusFilter.value;
-  if (state.nav !== 'orders') setActiveNav('orders');
-  elements.viewKicker.textContent = '订单';
-  elements.viewTitle.textContent = ORDER_FILTER_TITLES[state.status] || '全部订单';
-  loadOrders().catch(() => showNotice('订单查询失败，请稍后重试。'));
-});
-elements.prevPage.addEventListener('click', () => { if (state.page > 1) { state.page -= 1; loadOrders(); } });
-elements.nextPage.addEventListener('click', () => { if (state.page * state.pageSize < state.total) { state.page += 1; loadOrders(); } });
-document.querySelector('#export-orders')?.addEventListener('click', () => downloadOperationsCsv('orders').catch(() => showNotice('订单导出失败。')));
-document.querySelector('#export-reconciliation')?.addEventListener('click', () => downloadOperationsCsv('reconciliation_cases').catch(() => showNotice('对账案例导出失败。')));
-document.querySelector('#export-reconciliation-diag')?.addEventListener('click', () => downloadOperationsCsv('reconciliation_cases').catch(() => showNotice('对账案例导出失败。')));
-document.querySelector('#reconciliation-filters')?.addEventListener('submit', (event) => {
-  event.preventDefault();
-  state.reconciliationPage = 1;
-  loadReconciliationCases().catch(() => showNotice('对账案例读取失败。'));
-});
-elements.reconciliationPrev?.addEventListener('click', () => {
-  if (state.reconciliationPage > 1) { state.reconciliationPage -= 1; loadReconciliationCases(); }
-});
-elements.reconciliationNext?.addEventListener('click', () => {
-  if (state.reconciliationPage * 50 < state.reconciliationTotal) { state.reconciliationPage += 1; loadReconciliationCases(); }
-});
-elements.reconciliationTable?.addEventListener('click', (event) => {
-  const row = event.target.closest('[data-case-id]');
-  if (!row) return;
-  const button = event.target.closest('button');
-  if (!button) return;
-  if (button.matches('[data-open-case-order]')) {
-    openOrder(row.dataset.publicNo);
-  } else if (button.matches('[data-assign-case]')) {
-    button.disabled = true;
-    assignReconciliationCase(row.dataset.caseId)
-      .then(() => { button.disabled = false; })
-      .catch(() => { button.disabled = false; showNotice('案例分配失败。'); });
-  } else if (button.matches('[data-resolve-case]')) {
-    button.disabled = true;
-    resolveReconciliationCase(row.dataset.caseId)
-      .then(() => { button.disabled = false; })
-      .catch(() => { button.disabled = false; showNotice('案例解决失败。'); });
-  }
-});
 async function loadBillingAddressSettings() {
   const data = await api('/api/v1/admin/browser/billing-address');
   const enabled = document.querySelector('#billing-address-enabled');
@@ -2444,15 +2311,6 @@ document.querySelector('#refresh-button')?.addEventListener('click', async (even
     button.classList.remove('is-loading');
     button.textContent = '刷新当前页';
   }
-});
-document.querySelector('#card-funding-filters')?.addEventListener('submit', (event) => {
-  event.preventDefault(); state.cardFundingPage = 1; loadCardFundingAttempts().catch(() => showNotice('卡余额充值队列读取失败。'));
-});
-elements.cardFundingPrev?.addEventListener('click', () => {
-  if (state.cardFundingPage > 1) { state.cardFundingPage -= 1; loadCardFundingAttempts(); }
-});
-elements.cardFundingNext?.addEventListener('click', () => {
-  if (state.cardFundingPage * 20 < state.cardFundingTotal) { state.cardFundingPage += 1; loadCardFundingAttempts(); }
 });
 document.querySelector('#refresh-stock')?.addEventListener('click', async () => {
   try {

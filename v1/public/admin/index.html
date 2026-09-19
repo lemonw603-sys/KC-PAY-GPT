@@ -280,16 +280,7 @@
           <div class="cardtable" id="stock-cards"></div>
           <div class="cardfold" id="stock-cards-history" hidden></div>
         </section>
-        <details class="card stock-card stock-advanced-details">
-          <summary>卡余额充值队列（人工核实）</summary>
-          <div class="advanced-heading"><p>只展示卡余额充值尝试及 Provider 结果。PENDING、UNKNOWN 和人工复核状态不会自动重试；UNKNOWN 只能由人工核对后记录“已扣款”或“未扣款”结论，不会在此自动重充或退款。</p></div>
-          <form class="filters filters-two" id="card-funding-filters">
-            <label><span class="sr-only">状态</span><select id="card-funding-status"><option value="">全部状态</option><option value="PENDING">处理中</option><option value="MANUAL_REVIEW">人工复核</option><option value="UNKNOWN">未知风险</option><option value="SETTLED">已确认</option><option value="FAILED">失败</option></select></label>
-            <button class="primary-small" type="submit">筛选</button>
-          </form>
-          <div class="table-wrap"><table><thead><tr><th>尝试</th><th>卡片</th><th>金额</th><th>状态</th><th>Provider 结果</th><th>订单</th><th>时间</th></tr></thead><tbody id="card-funding-table"></tbody></table></div>
-          <div class="pagination"><span id="card-funding-count">0 条记录</span><div><button id="card-funding-prev" type="button">上一页</button><span id="card-funding-page">第 1 页</span><button id="card-funding-next" type="button">下一页</button></div></div>
-        </details>
+        
         <details class="card stock-card stock-advanced-details">
           <summary>补卡执行记录</summary>
           <div class="advanced-heading"><p>只在查看开卡任务或排查异常时使用。</p></div>
