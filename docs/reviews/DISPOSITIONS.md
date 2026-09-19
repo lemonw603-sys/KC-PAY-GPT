@@ -1,84 +1,41 @@
-# 处置记录（DISPOSITIONS）
+# 审查处置（DISPOSITIONS）· 执行者维护
 
-> 按 `docs/REVIEW_PROTOCOL.md` §4 由执行者写，只追加。逐条对应 `REVIEW_RECORD.md` 与 `FULL_CHAIN_AUDIT_2026-09-10.md` 的发现编号。
+> REVIEW_PROTOCOL §4：审查记录由审查员写（`STEP<n>_REVIEW_*.md`），处置由执行者写这里，靠发现编号交叉引用、互不编辑对方文件。P1 逐条 `接受｜拒绝｜待验证` + 理由 + 关联提交，沉默不算处置。
+> 背景（第⑥块）：工作台 `8cd6d7e` 发布后当天回滚，生产已回 `20260918-step5b-b0a36d4`（`state-check.sh` 现场核实一致），Lemon 判定做偏、停止扩展、换窗口重做。以下缺陷**当前不在生产运行**；处置基调＝「接受、待第⑥块重做时闭合并隔离验收」。在途重做 `7c1a5c0` 已动外壳但营业条方向仍错、未验收。
 
-## 批次 1 处置｜2026-09-10｜执行者：本窗口（Fable 5.1）｜用户 09-10 确认"按建议推进"
+## STEP6_REVIEW_2026-09-19（F-61~F-65，全 P1）
 
-### P1（逐条）
+### F-61 「解决资金核对」只关案例、不收口订单/账本/卡占用 — 接受，待验证
+- **接受**：属实。`data-resolve-wb-case` 复用 `resolveReconciliationCase`，只 UPDATE `reconciliation_cases`，不等于 `RESOLVE_UNKNOWN_PAYMENT` 的订单/attempt/卡占用/账本收口；我把「关闭记录」当成「资金问题已处理」，与任务书"按钮真处理、写账本"及我的交接声称不符。
+- **依据**：审查证据 `admin.js:383-389,577-587`、`reconciliation-case-service.js:238-262`（只写 case）。
+- **重做怎么闭合**：按 case 类型带到已有正式收口入口，或明确改名「关闭记录」不赋资金含义；隔离库造付款不明单→点击→核对订单/attempt/账本/卡占用/case 全部权威状态，不只查 case 关闭。
+- **关联**：缺陷 `8cd6d7e`（已回滚）；`7c1a5c0` 未修此项。
 
-| 编号 | 处置 | 理由 | 关联 |
-|---|---|---|---|
-| F-24 核实 lane 开标签不关、无退避 | 接受，已修 | 与 B5 同一文件同一函数；真单进核实态即触发 | `dad5244`（关闭自开页面，20X 交接除外；UNKNOWN 按 `verificationIntervalMs` 退避） |
-| F-18 核实 lane 重注入旧 token | 接受，已修（B5） | 上一轮 P1 | `dad5244` |
-| F-25 中途关付款开关判失败 | 接受，分两步 | 真单前只定纪律（RUNBOOK 跑单纪律：真单期间不在后台关开关，收工只用 stop-live）；代码改动（该 code 归入回 CARD_READY 类）放真单后，避免真单前扩改动面 | RUNBOOK §1；代码待办 |
-| F-26 点击后 kill 无核实排程 | 接受，分两步 | 真单前只改 RUNBOOK ③（PAYMENT_SUBMIT 落库后 10 分钟内不 stop-live）；`recoverExpiredRun` 对 PAYMENT_SUBMITTING 设核实排程放真单后 | RUNBOOK §1；代码待办 |
-| F-34 重提同码丢 Session | 接受，真单后 | 需发布 v1 release；与 F-5 同批，否则表单修好后"重新提交"仍丢 Session | 真单后第一批：F-5 + F-34 + F-35 |
-| F-35 换账号重提 409 | 接受，真单后 | 同上 | 同上 |
+### F-62 字段接错，「无法核对」应 30 却显示 0 — 接受，待验证
+- **接受**：属实，是我又一次没做「外部字段先验真」。`renderWbRecon` 读 `daily.unverifiableCount`，服务实际输出 `unverifiableAmountCount`（`daily-reconciliation-service.js:353`）；`?? 0` 把未知/遗漏默认成 0，产生与后台相反的数字。
+- **依据**：审查 Playwright 注入 `unverifiableAmountCount:30` → 页面显示「0 无法核对」；字段名源码独立核实。
+- **重做怎么闭合**：对真实响应逐字段核对再接；未知值与真实 0 分开（未知/加载失败 ≠ 0）。
+- **关联**：`8cd6d7e`（已回滚）；`7c1a5c0` 同字段仍错、未修。
 
-### P2 / P3（批量）
+### F-63 待办接口失败被吞成空、页面宣称「没有要处理的」 — 接受，待验证
+- **接受**：属实。`loadOverview` 把 alerts/cases/orders 失败 catch 成空数组、daily 失败 catch null，`renderWbQueue` 缺数据时输出「今天清爽 ✓」，无法区分「查过确认无待办」与「读取失败」。
+- **依据**：审查对空值调用正式渲染得「没有要处理的，今天清爽 ✓」；catch 转空路径源码核实。
+- **重做怎么闭合**：保留各板块加载/失败态；部分失败显示「读取失败/重试」，与空结果分开。
+- **关联**：`8cd6d7e`（已回滚）；`7c1a5c0` 未修。
 
-- F-27 D-140 因果反例：接受措辞降级。本轮改 D-140 行末追加更正、CURRENT_STATE「已知未修①」、HANDOFF_NOW 措辞为"候选修复，真单待验"；不重开决策；真单再 403 按 D-139 转人工，不在 D-140 方向继续查。
-- F-28 点击后求值失败即 UNKNOWN、F-29 session 租约 60s、F-30 卡材料租约 5 分钟、F-31 核实 lane 首步注入旧 token、F-32 单块 token 未验：待验证，本次真单作为样本；真单后按 F-24 → F-16 的顺序一并处理。
-- F-33 A1 验不到 900s 租约：接受，HANDOFF_NOW A1 目标已改。
-- F-36 B6 需重绑 CDK：接受，已实现（`close-manually-fulfilled-order.mjs` 对 RECHARGE_FAILED 单重绑 CDK，非 AVAILABLE 即拒；`--card-used` 对该状态拒绝）。
-- F-37 自检脚本资格 SQL 少条件：接受，真单后改为调用 `eligibleInventoryCardSql` 同口径。
-- F-38 go-live/stop-live 直写库：待用户裁决（改走后台接口，或在 CLAUDE.md 明文豁免）。
-- F-39 时间标注错误：接受，本轮收尾时按提交时间戳改正 HANDOFF_NOW/HANDOFF_LOG。
+### F-64 队列来源与「看逐张」目标不闭环 — 接受，待验证
+- **接受**：属实。`renderWbQueue` 没消费 `daily.retirementDueCount`、没读 `card-retirement/candidates`；无主扣款「看逐张」只 `data-view-jump=diagnostics`，而 diagnostics 加载旧 cases/runs、不展示 daily 逐卡报告——跳转无真实落点；待销到期不该因「完整动作在卡片页」就从工作台消失。
+- **依据**：审查 `admin.js:377-407` + switchView diagnostics 分支；`retirementDueCount=4` 且其他空时不产生任何待销项。
+- **重做怎么闭合**：只聚合可解释、可定位的业务对象；完整动作可在专页，但跳转须带定位信息、有真实落点；待销到期在工作台保留提醒。
+- **关联**：`8cd6d7e`（已回滚）；`7c1a5c0` 未修。
 
-### 上一轮审计（FULL_CHAIN_AUDIT）P0/P1 的处置沿用 HANDOFF_NOW 既定顺序
+### F-65 旧供给开关复用会同时打开已弃用的补余额 — 接受，待验证
+- **接受**：属实，正是我没懂「补余额线已弃删（D-218）」。第⑥版营业条保留「能不能开卡补钱」调 supply-automation，`admin-operations-service.js:158-166` 一起写 `card_auto_replenishment` 和 `card_balance_recharge` 两键（生产实际 replenishment=true / balance_recharge=false，刻意拆开）；点开启会把已放弃的补余额一并打开。
+- **依据**：审查 `8cd6d7e` renderDecisions/data-supply-toggle + `admin-operations-service.js:158-175` + 只读 SQL。
+- **重做怎么闭合**：按当前业务决定（补钱已删）选实际开关、不按旧函数名复用；供给放工作台/设置页时用正确单键语义。**后端 `setSupplyAutomation` 仍写两键这一既有风险登记 PROJECT_MAP §5，重做时一并核。**
+- **关联**：`8cd6d7e`（已回滚，营业条含该控件）；`7c1a5c0` 已把营业条该控件移走（迁移语义仍待按 face-2 重定）。
 
-真单前不做：F-10、F-4、F-6、F-7、F-8（未做）。已完成且脱离"真单前不做"名单：F-5+F-34+F-35（已发布 `20260910-highvcc-open-session-resubmit-0b5639c`）、F-1（`23c70e3`，本机代码）、F-24（`dad5244`）、F-25/F-26（本机代码即生效）、**F-16+F-3**（`487b51a`，后台能力已实现并真库测试，管理界面按钮和部署未做，见下）——这些均不涉及真单支付本身，接受两天期限内提前做。剩余顺序：F-10 → F-4/F-7/F-8 → P2。
-
-### F-16+F-3 处置详情
-
-| 编号 | 处置 | 关联 |
-|---|---|---|
-| F-16 付款结果不明/升级人工无正式收口 | 已修（新 controlRun 动作 `RESOLVE_UNKNOWN_PAYMENT`，人工核对账号后二选一 CHARGED/NOT_CHARGED，见下） | `487b51a`，真库集成 5/5 三轮无 flake；**未接管理界面按钮、未部署** |
-| F-3 补充（Plus 已开续费未关无提醒；核实 lane 从未在生产真正跑过） | 已修（CHARGED 分支不带 `renewalCancelled` 时走 `CANCELLATION_REVIEW_REQUIRED`，接现有 `confirmManualCancellation`，不再"没有任何提醒"） | 同上 |
-- F-40 后台静态断言版本号不同步（既有失败）：待用户定；不影响真单，建议真单后随 F-5 那次发布一起改。
-
-### 批次 1 处置更新｜2026-09-10 04:xx UTC（用户定两天内完成，第一天项已开始）
-
-| 编号 | 处置 | 关联 |
-|---|---|---|
-| F-5 客户页重贴表单永远隐藏 | 已修（remaining 为 null 显示表单；customer.js v=12；静态断言） | `22ca2d5`，已发布 `20260910-highvcc-open-session-resubmit-0b5639c` |
-| F-34 重提同码丢 Session | 已修（打回态订单收到同码即当作重贴，写库逻辑抽为 `session-replacement-repository.js`，公开重贴接口共用） | `03c82ce`，已发布 `20260910-highvcc-open-session-resubmit-0b5639c` |
-| F-35 换账号重提 409 | 已修（同上，换账号也接受，记 accountChanged） | `03c82ce`，已发布 `20260910-highvcc-open-session-resubmit-0b5639c` |
-| F-25 中途关付款开关判失败 | 已修（`BROWSER_PAYMENT_WRITES_DISABLED` 归为回 CARD_READY 等待） | `ec75676`，本机 worker 即生效 |
-| F-26 点击后丢 worker 无核实 | 已修（重新领到 PAYMENT_SUBMITTING 的 run 直接 `markPaymentUnknown` 交核实 lane，不再空转） | `d35960c`，本机 worker 即生效；真库集成 7/7 |
-| F-1 预检租约丢失计次、耗尽无告警 | 已修（租约丢失不计次；5 次用尽写 `BROWSER_HUMAN_REQUIRED` 告警；新增 `reopen-browser-preflight.mjs` 重开 DEAD 预检，守卫付款痕迹） | `23c70e3`，browser-mvp 本机代码，pool worker 下次启动即生效；单测 8/8 |
-| F-41 取消等卡单不关预检任务 | 待做（P3，随 F-16 那次一起） | |
-
-### 接班核对处置登记｜2026-09-10 23:33 UTC
-
-本次为接班者自行核查与登记，不冒充独立双人复审。
-
-| 编号 | 处置 | 依据与边界 |
-|---|---|---|
-| F-42 | 接受接线事实；修复待批准 | 对应历史提交 + 真实 factory 离线实例化结果均为 Cookie；撤回“扩展已完成失败对照”的证据归因，不判扩展有效/无效。只改交接事实，不改业务。 |
-| F-43 | 接受离线控制流缺口；真实影响待验证、修复待批准 | 旧材料 3600s/299s 对照证明浏览器探测前被挡；25 项定向与全量 224 通过不覆盖这条组合；不修改凭证验证守卫。 |
-| F-16/F-3 | 更正部署说明；UI/完整收口仍待验证 | 生产 cdcf42e release 文件已含后端分支，不能继续称未部署；不把文件存在当实际资金动作验收。 |
-
-### 接班自行核查处置｜2026-09-10 23:44 UTC
-
-| 编号 | 处置 | 边界 |
-|---|---|---|
-| F-44 | 接受离线类型转换事实，修改待批准 | false 与字符串 false 的 SQL 目标不同；未发生产动作。 |
-| F-45 | 接受缺产品校验事实；Pro DB 复现待验证 | 不把 SQL 意图测试说成真实 Pro 误交付；限定 Plus 还是补产品分支由后续方案明确。 |
-| F-46 | 接受字段不同步的代码事实，UI 待验证 | 自动取消也有同类投影问题，修复应统一口径；本轮不改。 |
-
-## B1 处置｜2026-09-11 04:42 UTC｜执行者：大脑窗口（Fable 5.1）｜release `20260911-resolve-unknown-ui-3d4936d`（commit `3d4936d`）
-
-Lemon 09-11 确认执行顺序重排后 B 段第一件。审查记录批次 2B 的三条由 Sonnet 窗口发现，处置由大脑独立重做（不沿用其自审自处置）。
-
-| 编号 | 处置 | 关联 |
-|---|---|---|
-| F-44 字符串 `"false"` 被当 true | 已修：`strictBoolean`，非布尔一律 `INVALID_RENEWAL_CANCELLED`，缺省 false；前端 select 转真布尔再发 | 单测 7 种非法值拒绝且零查库；真库用例"字符串 false 零写入" |
-| F-45 CHARGED 不按产品核对 | 已修：`lockRun` 带 `plan_type`；Pro 单 CHARGED → run HUMAN_REQUIRED / TRANSFERRED / PLUS_CONFIRMED，订单保持（或从 SUBMIT_UNKNOWN 回到）RECHARGE_PROCESSING，intervention TRANSFERRED，写 `BROWSER_UPGRADE_HANDOFF` 告警，renewalCancelled 忽略；`COMPLETE_20X` 的人工证据检查加认 `MANUAL_VERIFICATION_RESOLVED` | 真库用例：Pro 交接后 COMPLETE_20X 接续到 RECHARGE_SUCCESS；Pro 自 SUBMIT_UNKNOWN |
-| F-46 取消字段不同步 | 已修：Plus 单 CHARGED+renewalCancelled 写 `orders.subscription_cancelled=1 / cancellation_checked_at`（COALESCE 不覆盖旧值）与 `browser_runs.cancellation_confirmed_at / post_payment_state=CANCELLATION_CONFIRMED` | 真库用例断言 |
-| F-16 UI 未接 | 已修：「确认核实结果」按钮 + askForm 三字段（结果 / 续费是否已关 / 证据） | served admin.js v=45 复验 |
-| F-40 版本号断言 | 已修：public-isolation 与 app.test 对齐 v=26 / v=45；app.test 三元断言对齐 `3b182f0` 的 `supplyMixed` 写法。**v1 全量 656 项 595 通过 0 失败 61 跳过，首次全绿** | |
-| 顺带（非编号） | CHARGED/NOT_CHARGED 两分支补关 `browser_dispatch_jobs` / `execution_resource_leases` / `checkout_artifacts`，与 CONFIRM_MANUAL_PAYMENT 一致（09-09 清过的残留同类） | 真库用例断言 dispatch COMPLETED |
-
-未做：F-43（B2）、F-19（B3）、F-41。生产上该动作尚未被真实点击。
-
+## 审查的过程判断（非编号缺陷）
+- HANDOFF 顶部写回滚、下文仍称在生产/让试用/列旧 PID 自相矛盾 — **接受**：本窗口收尾已重写 HANDOFF_NOW 消除矛盾。
+- 「哪张原型/哪些差异有效」需 Lemon 确认再作基准（D-283 授权 sidebar 暂留旧皮 vs 回滚说明要求换皮，冲突）— **待 Lemon 裁**（登记「尚未解决」）；重做前先冻结一份有效原型 + 允许差异，不擅自挑一份文档追责或据此动手。
+- 自动完成率口径任务书写待定、HANDOFF 称已定 — 重做前先冻结口径，本窗口不擅自实现该统计。
