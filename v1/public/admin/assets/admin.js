@@ -553,11 +553,40 @@ async function loadOrders() {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(query)
   });
   state.total = payload.total;
-  elements.ordersTable.innerHTML = payload.orders.length
+  // D-279 ③：CDK 匹配行与订单行**同时**显示，不再二选一。
+  // 原来是 orders.length ? 订单 : cdkMatches —— 码一旦绑了订单，订单非空，CDK 匹配行就被吃掉，
+  // 于是「贴码定位」最有用的那种情况（码已经被用了、想知道它走到哪）反而看不到码的状态。
+  // 现在：匹配到的码置顶当定位提示，底下照常列订单。
+  const cdkMatchHtml = payload.cdkMatches?.length
+      // D-279 ③：贴码要直接看到「这码什么状态、绑了哪单、那单走到哪、客户是谁」，并能一键进详情。
+      // 原来这里只显示 CDK 内部状态词、没有阶段也进不去详情，等于查到了也还得自己再翻一遍。
+      ? payload.cdkMatches.map((cdk) => {
+        const label = cdkStatusLabel({
+          status: cdk.status, orderStatus: cdk.orderStatus, issuedAt: cdk.issuedAt,
+          expired: cdk.expiresAt ? new Date(cdk.expiresAt).getTime() < Date.now() : false,
+          redeemableNow: cdk.status === 'AVAILABLE'
+        });
+        // 订单「当前阶段」不在这里重算：这一单必然也在下面的订单行里，那里有后端算好的
+        // stage（同一口径）。这里只负责把码定位到订单，避免前端另造一套说法跟订单行打架。
+        const stage = cdk.orderPublicNo ? '见下方该订单行' : '尚未下单';
+        return `<tr>
+          <td><strong>CDK 精确匹配</strong><small>批次 ${escapeHtml(cdk.batchNo || '—')}</small></td>
+          <td>${escapeHtml(PLAN_LABELS[cdk.planType] || cdk.planType || '—')}</td>
+          <td><span class="cell-main">${escapeHtml(label.text)}</span>${cdk.issuedNote ? `<small>${escapeHtml(cdk.issuedNote)}</small>` : ''}</td>
+          <td>${cdk.orderPublicNo
+            ? `<button class="text-button" type="button" data-open-order="${escapeHtml(cdk.orderPublicNo)}">${escapeHtml(cdk.orderPublicNo)} · 进详情</button>`
+            : '尚未下单'}</td>
+          <td>${stage}</td>
+          <td>${escapeHtml(cdk.customerEmail || '—')}</td>
+          <td>${formatTime(cdk.redeemedAt || cdk.createdAt)}</td>
+        </tr>`;
+      }).join('')
+    : '';
+  const orderHtml = payload.orders.length
     ? payload.orders.map((order) => orderRow(order)).join('')
-    : payload.cdkMatches?.length
-      ? payload.cdkMatches.map((cdk) => `<tr><td><strong>CDK 精确匹配</strong><small>批次 ${escapeHtml(cdk.batchNo || '—')}</small></td><td>${escapeHtml(String(cdk.planType || '—').toUpperCase())}</td><td>${escapeHtml(cdk.status)}</td><td>${cdk.orderPublicNo ? '已被订单使用' : '尚未下单'}</td><td>—</td><td>—</td><td>${formatTime(cdk.createdAt)}</td></tr>`).join('')
-      : '<tr><td colspan="7" class="empty-cell">没有符合条件的订单或 CDK</td></tr>';
+    : '';
+  elements.ordersTable.innerHTML = (cdkMatchHtml + orderHtml)
+    || '<tr><td colspan="7" class="empty-cell">没有符合条件的订单或 CDK</td></tr>';
   const totalPages = Math.max(1, Math.ceil(payload.total / state.pageSize));
   elements.orderCount.textContent = `${payload.total} 条订单`;
   elements.pageLabel.textContent = `第 ${state.page} / ${totalPages} 页`;
@@ -2774,4 +2803,14 @@ document.querySelector('#cdk-code-filters')?.addEventListener('submit', (event) 
   event.preventDefault();
   resetCdkCodePaging();
   loadCdkCodes().catch(() => showNotice('单码列表读取失败。'));
+});
+
+// data-open-order：从全局搜索的 CDK 匹配行、CDK 单码列表一键进订单详情。
+// 这两处都渲染了按钮却一直没有处理器 —— 按钮能点但到不了对象，正是 F-64 批评的那种假落点。
+document.addEventListener('click', (event) => {
+  const jump = event.target.closest('[data-open-order]');
+  if (!jump) return;
+  const publicNo = jump.dataset.openOrder;
+  if (!publicNo) return;
+  openOrder(publicNo).catch(() => showNotice('订单详情打开失败，请重试。'));
 });

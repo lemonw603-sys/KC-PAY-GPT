@@ -312,3 +312,29 @@ test('D-284① 字段位置锁死：rechargeMethod 在 providerHealth 下，读�
   sandbox.renderDecisions({ decisions: {}, providerHealth: { rechargeMethod: 'API' } }, { sources: [] });
   assert.equal(evalIn('state.rechargeMethod'), 'API', '真实字段在 providerHealth 下');
 });
+
+// ——— D-279 ③⑦：全局搜索贴码的展示 + 状态说人话 ———
+test('D-279⑦ 状态说人话：「使用中」与「已交付」按订单是否成功区分', () => {
+  const { sandbox } = loadAdminJs();
+  const label = (row) => sandbox.cdkStatusLabel(row).text;
+  assert.equal(label({ status: 'AVAILABLE', redeemableNow: true }), '可用·在手里');
+  assert.equal(label({ status: 'AVAILABLE', redeemableNow: true, issuedAt: '2026-09-19T00:00:00Z' }), '已发出·待兑');
+  // 码被绑走只说明开始用了；订单成功才算交付 —— 这两个不能混
+  assert.equal(label({ status: 'REDEEMED', orderStatus: 'RECHARGE_PROCESSING' }), '使用中');
+  assert.equal(label({ status: 'REDEEMED', orderStatus: 'RECHARGE_SUCCESS' }), '已交付');
+  assert.equal(label({ status: 'REVOKED' }), '已作废');
+  assert.equal(label({ status: 'AVAILABLE', expired: true }), '已过期');
+  // 路线关掉时不能显示成「可用」（D-286 ②）
+  assert.equal(label({ status: 'AVAILABLE', redeemableNow: false }), '暂不可兑');
+  // 不许出现内部枚举词
+  for (const row of [{ status: 'REDEEMED', orderStatus: 'X' }, { status: 'REVOKED' }]) {
+    assert.ok(!/REDEEMED|REVOKED/.test(label(row)), '页面不得显示内部状态词');
+  }
+});
+
+test('D-279③ 一键进详情的按钮必须有处理器（不能是能点但到不了对象的假落点）', () => {
+  const src = fs.readFileSync(adminJsPath, 'utf8');
+  assert.ok(/data-open-order="/.test(src), '存在 data-open-order 按钮');
+  assert.ok(/closest\('\[data-open-order\]'\)/.test(src),
+    'data-open-order 必须有点击处理器 —— 渲染了按钮却没处理器就是 F-64 那种假落点');
+});

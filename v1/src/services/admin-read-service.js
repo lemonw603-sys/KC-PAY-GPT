@@ -987,8 +987,11 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
         ORDER BY o.created_at DESC, o.id DESC
         LIMIT ? OFFSET ?`, [...values, pageSize, (page - 1) * pageSize]),
       exactCdkLookup ? pool.query(
+        // D-279 ③：贴码要能一眼看到「这码绑了哪单、那单走到哪、客户是谁」，
+        // 所以带上订单状态与邮箱（同一个 JOIN 就有，不额外查）。
         `SELECT c.id, c.status, c.batch_no, c.plan_type, c.created_at,
-                c.redeemed_at, c.revoked_at, o.public_no
+                c.redeemed_at, c.revoked_at, c.issued_at, c.issued_note, c.expires_at,
+                o.public_no, o.status AS order_status, o.customer_email
          FROM cdks c LEFT JOIN orders o ON o.id = c.order_id
          WHERE (c.hash_version = ? AND c.code_hash = ?)
             OR (c.hash_version = ? AND c.code_hash = ?)
@@ -1005,8 +1008,11 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
         || cdkMatchRows.filter((cdk) => !cdk.public_no).length,
       cdkMatches: cdkMatchRows.map((cdk) => ({
         id: cdk.id, status: cdk.status, batchNo: cdk.batch_no, planType: cdk.plan_type,
-        orderPublicNo: cdk.public_no || null, createdAt: iso(cdk.created_at),
-        redeemedAt: iso(cdk.redeemed_at), revokedAt: iso(cdk.revoked_at)
+        orderPublicNo: cdk.public_no || null, orderStatus: cdk.order_status || null,
+        customerEmail: cdk.customer_email || null, createdAt: iso(cdk.created_at),
+        redeemedAt: iso(cdk.redeemed_at), revokedAt: iso(cdk.revoked_at),
+        issuedAt: iso(cdk.issued_at), issuedNote: cdk.issued_note || null,
+        expiresAt: iso(cdk.expires_at)
       })),
       orders: rows.map((row) => {
         const reconciliation = reconciliationFromRow(row);
