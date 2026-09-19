@@ -154,6 +154,8 @@ export function refreshableInventoryCardSql(alias = 'c', { productCode = 'plus' 
  * 分出去几张」。两者差得很远（生产 2026-09-20：backup-a 在库 7），不要混用。
  */
 export function providerCardStockSql({ productCode = 'plus' } = {}) {
+  const normalizedProduct = String(productCode || 'plus').trim().toLowerCase();
+  if (!/^[a-z0-9_-]{1,32}$/.test(normalizedProduct)) throw new TypeError('Invalid product code');
   const minimumSql = `COALESCE((SELECT CAST(setting_value AS DECIMAL(18,6))
     FROM app_settings WHERE setting_key = 'default_minimum_required_card_balance' LIMIT 1), 999999999)`;
   return `SELECT pa.id AS provider_account_id,
@@ -166,6 +168,12 @@ export function providerCardStockSql({ productCode = 'plus' } = {}) {
       -- （「扣完剩 X，低于硬底线 Y；未开卡」）。D-273 的教训是别为一个已经实现的东西
       -- 再造第二份，页面显示的底线必须就是挡开卡的那一个。
       pa.wallet_floor, pa.wallet_alert_threshold,
+      -- 水位与日限的真实来源是 card_supply_policies（按台×按产品），补卡调度器读的就是它。
+      -- app_settings 里的 card_stock_low_threshold / card_replenishment_daily_limit 早已被它
+      -- 取代（step6 任务书 D 发现 1；生产实值 1 与 10，而策略表是 2 与 20）——显示那两个
+      -- 全局键等于告诉运营一个系统根本不用的数。这里按 Plus 取，与「可分配」的口径一致。
+      sp.target_available AS plus_target_available,
+      sp.daily_open_limit AS plus_daily_open_limit,
       COUNT(*) AS total,
       SUM(c.inventory_status <> 'RETIRED') AS in_stock,
       SUM((${eligibleInventoryCardSql('c', minimumSql, { productCode })})) AS plus_assignable,
@@ -174,8 +182,10 @@ export function providerCardStockSql({ productCode = 'plus' } = {}) {
       SUM((SELECT COUNT(*) FROM card_consumption_ledger u
         WHERE u.card_id=c.id AND u.status IN ('RESERVED','CONSUMED','RECONCILIATION'))>0) AS any_used
     FROM cards c INNER JOIN provider_accounts pa ON pa.id=c.provider_account_id
+    LEFT JOIN card_supply_policies sp ON sp.provider_account_id = pa.id AND sp.product_code = '${normalizedProduct}'
     GROUP BY pa.id, pa.account_code, pa.provider_code, pa.supply_fault_state,
-      pa.supply_fault_reason, pa.supply_fault_at, pa.wallet_floor, pa.wallet_alert_threshold
+      pa.supply_fault_reason, pa.supply_fault_at, pa.wallet_floor, pa.wallet_alert_threshold,
+      sp.target_available, sp.daily_open_limit
     ORDER BY pa.provider_code`;
 }
 

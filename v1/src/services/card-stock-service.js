@@ -510,7 +510,8 @@ export function createCardStockService({ pool, sessionEncryptionKey, panHmacKey 
         plusAssignable: Number(row.plus_assignable || 0),
         inUse: Number(row.in_use || 0),
         anyUsed: Number(row.any_used || 0),
-        stockTarget: threshold,
+        // Plus 口径，与「可分配」一致；来自 card_supply_policies（调度器真正用的那份）
+        stockTarget: row.plus_target_available == null ? null : Number(row.plus_target_available),
         // highvcc 没有快照行，余额只能实时查（前端「查余额」按钮）——这里给 null，
         // 不是 0。0 会被读成「钱花光了」。
         walletBalance: snapshot?.account_balance == null ? null : String(snapshot.account_balance),
@@ -522,8 +523,9 @@ export function createCardStockService({ pool, sessionEncryptionKey, panHmacKey 
         // 页面显示的底线必须和挡开卡的是同一个数，否则运营看到的和系统在用的不一致。
         walletFloor: floor == null ? null : String(floor),
         walletAlertThreshold: row.wallet_alert_threshold == null ? null : String(row.wallet_alert_threshold),
+        // 分子按台（调度器的 countTodayOpenings 也按台），分母是该台 Plus 的 daily_open_limit
         openedToday: openedTodayByAccount.get(String(row.provider_account_id)) || 0,
-        dailyLimit: replenishmentDailyLimit,
+        dailyLimit: row.plus_daily_open_limit == null ? null : Number(row.plus_daily_open_limit),
         // 只在真有故障时说「已失效」；没故障不写「有效」（Lemon 定的口径）。
         supplyFaultState: row.supply_fault_state || null,
         supplyFaultReason: row.supply_fault_reason || null,

@@ -1278,7 +1278,7 @@ function renderCardRigs(byProvider) {
     const acct = escapeHtml(rig.accountCode || '');
     const assignable = Number(rig.plusAssignable || 0);
     const target = Number(rig.stockTarget || 0);
-    const lowStock = target > 0 && assignable < target;
+    const lowStock = rig.stockTarget != null && target > 0 && assignable < target;
     // token 只对 highvcc（无快照那台）有意义，且只在有告警时才敢说「已失效」——
     // tokenStatus() 只答「配没配过」，答不了有效性（Lemon 已定口径）。
     const isHighvcc = Boolean(rig.walletLiveOnly);
@@ -1289,8 +1289,9 @@ function renderCardRigs(byProvider) {
     const opened = Number(rig.openedToday || 0);
     const limit = Number(rig.dailyLimit || 0);
     const cells = [
-      rigCell('可分配 / 水位目标',
-        `${assignable} <small>/ ${target || '—'}</small>`, { tone: lowStock ? 'is-warn' : '' }),
+      rigCell('可分配 / 水位（Plus）',
+        `${assignable} <small>/ ${rig.stockTarget == null ? '未配策略' : target}</small>`,
+        { tone: lowStock ? 'is-warn' : '' }),
       isHighvcc
         ? rigCell('钱包余额 / 底线',
             `<button class="cardbtn" type="button" data-rig-wallet="${acct}">查余额</button>`
@@ -1299,7 +1300,8 @@ function renderCardRigs(byProvider) {
         : rigCell('钱包余额 / 底线',
             `$${formatMoney(balance)} <small>/ ${floor == null ? '未设底线' : `$${formatMoney(floor)}`}</small>`,
             { tone: lowWallet ? 'is-bad' : '' }),
-      rigCell('今日已开 / 日限', `${opened} <small>/ ${limit || '—'}</small>`,
+      rigCell('今日已开 / 日限（Plus）',
+        `${opened} <small>/ ${rig.dailyLimit == null ? '未配策略' : limit}</small>`,
         { tone: limit > 0 && opened >= limit ? 'is-warn' : '' }),
       isHighvcc
         ? rigCell('token', tokenBad ? '已失效' : '已配置',
