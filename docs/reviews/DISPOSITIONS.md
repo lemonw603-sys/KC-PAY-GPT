@@ -266,3 +266,21 @@ Lemon 09-11 确认执行顺序重排后 B 段第一件。审查记录批次 2B �
 - 过程中两次因**我自己造的样例码不合字符集/长度**被正则拒（含 L、21 位），确认校验是紧的、不是实现问题。
 
 **本轮未做（D-279 其余六条，下一轮）**：结果区带批次号、单码列表（现仅批次聚合 `GET /admin/cdks/batches`）、**作废单张码**（现仅整批 `POST /admin/cdks/:batchNo/revoke`）、生成即复制、状态说人话、工作台全局搜索。后两项要新增后端端点，单独一轮做。
+
+## 2026-09-19（续四）CDK 后端四端点端到端验通（D-279④⑤ / D-286）
+
+**端点**（注册顺序有讲究：`/cdks/codes`、`/cdks/liability` 必须排在 `/cdks/:batchNo/...` 之前，否则 Express 会把 `codes`、`liability` 当成 `:batchNo` 吃掉）：
+`GET /admin/cdks/codes`（单码列表，Lemon 选 A 直接给明文）、`GET /admin/cdks/liability`（交付负债）、`POST /admin/cdks/codes/:cdkId/revoke`（单码作废）、`POST /admin/cdks/codes/:cdkId/issued`（标记/撤销已发出）。已接 `server.js` 依赖注入。
+
+**端到端验证（隔离库 + 真实服务 + 真实登录，非夹具）**：
+1. 生成 3 个 20X 码 → `20X-VVYQ3-BRCUG-…`，前缀对。
+2. 单码列表 → total 3、**明文码全部取到**（解密批次 + 双算法 hash 匹配生效）、`redeemableNow: true`、`expired: false`。
+3. 标记 1 张已发出（备注「卖给渠道A」）→ 负债 **owed 1 / stock 2**：**「欠客户的交付」与「还能卖的库存」真的分开了**，这是 D-286 ① 的目的。
+4. 作废另 1 张 → 该行 `REVOKED`，其余行不受影响。
+5. 最终负债 **owed 1 / stock 1**（作废的那张已从库存扣除）。
+
+**过程中两处「字段先验真」**：
+- `requestKey` 实际来自 **`Idempotency-Key` 请求头**、不在 body 里；我按 body 猜了两次都被 `idempotency_key_required` 拒，读端点源码才确认。
+- 上一段还修掉一个自己引入的 `normalizedPlanType` 未定义 bug（后台点生成会 500），起因同样是只测底层函数、没走真实入口。两件事同一个教训：**凡外部契约（字段位置、请求头、调用入口）一律读源码/读真实响应确认，不靠猜**。
+
+**本轮剩余**：前端 CDK 页（单码列表展示、明文码、作废、标记已发出、生成即复制、结果区、状态说人话）+ 工作台全局搜索接 CDK 精确匹配 + 界面层三态验收。迁移 055 尚未应用到生产。

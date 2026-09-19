@@ -85,6 +85,10 @@ export function createApp({
   downloadAdminCdkBatch = null,
   inspectAdminCdkBatch = null,
   revokeAdminCdkBatch = null,
+  listAdminCdkCodes = null,
+  revokeAdminCdkCode = null,
+  markAdminCdkIssued = null,
+  summarizeAdminCdkLiability = null,
   listAdminReconciliationCases = null,
   assignAdminReconciliationCase = null,
   resolveAdminReconciliationCase = null,
@@ -656,6 +660,49 @@ export function createApp({
   if (typeof listAdminCdkBatches === 'function') {
     app.get('/api/v1/admin/cdks/batches', noStore, requireAdminApi, async (req, res) => {
       res.json(await listAdminCdkBatches(req.query));
+    });
+  }
+  // 注意顺序：这两条静态路径必须排在 /cdks/:batchNo/... 之前，
+  // 否则 Express 会把 "codes"、"liability" 当成 :batchNo 匹配进去。
+  if (typeof listAdminCdkCodes === 'function') {
+    // D-279 ④：以单码为主的列表（Lemon 选 A：直接给明文码，后台仅他一人使用）。
+    app.get('/api/v1/admin/cdks/codes', noStore, requireAdminApi, async (req, res) => {
+      try {
+        return res.json(await listAdminCdkCodes(req.query));
+      } catch (error) {
+        if (error instanceof CdkBatchError) return res.status(400).json({ error: error.code.toLowerCase() });
+        throw error;
+      }
+    });
+  }
+  if (typeof summarizeAdminCdkLiability === 'function') {
+    // D-286 ①：欠客户多少次交付（已发出未兑）vs 还能卖多少（未发出）。
+    app.get('/api/v1/admin/cdks/liability', noStore, requireAdminApi, async (_req, res) => {
+      res.json(await summarizeAdminCdkLiability());
+    });
+  }
+  if (typeof revokeAdminCdkCode === 'function') {
+    // D-279 ⑤：作废单张码。服务层只允许作废 AVAILABLE 的码。
+    app.post('/api/v1/admin/cdks/codes/:cdkId/revoke', ...adminWriteGuards, async (req, res) => {
+      try {
+        return res.json(await revokeAdminCdkCode(req.params.cdkId, { reason: req.body?.reason }));
+      } catch (error) {
+        if (error instanceof CdkBatchError) return res.status(400).json({ error: error.code.toLowerCase() });
+        throw error;
+      }
+    });
+  }
+  if (typeof markAdminCdkIssued === 'function') {
+    // D-286 ①：标记/撤销「已发给客户」。与 status 正交，不影响能否兑换。
+    app.post('/api/v1/admin/cdks/codes/:cdkId/issued', ...adminWriteGuards, async (req, res) => {
+      try {
+        return res.json(await markAdminCdkIssued(req.params.cdkId, {
+          note: req.body?.note, issued: req.body?.issued !== false
+        }));
+      } catch (error) {
+        if (error instanceof CdkBatchError) return res.status(400).json({ error: error.code.toLowerCase() });
+        throw error;
+      }
     });
   }
   if (typeof downloadAdminCdkBatch === 'function') {

@@ -10,7 +10,11 @@ import {
   downloadCdkBatch,
   inspectCdkBatch,
   listCdkBatches,
-  revokeCdkBatch
+  listCdkCodes,
+  markCdkIssued,
+  revokeCdkBatch,
+  revokeCdkCode,
+  summarizeCdkLiability
 } from './services/cdk-service.js';
 import { createAdminSessionAuth } from './security/admin-session.js';
 import { createCardStockService } from './services/card-stock-service.js';
@@ -269,6 +273,13 @@ const app = createApp({
     pool, batchNo, config.cdkHashKey, config.cdkRecoveryKey
   )
   ,revokeAdminCdkBatch: (batchNo, reason) => revokeCdkBatch(pool, batchNo, reason)
+  // D-279 ④⑤ / D-286：单码列表（明文码需要解密批次，故要两把钥匙）、单码作废、已发出标记、交付负债
+  ,listAdminCdkCodes: (input) => listCdkCodes(pool, input, {
+    cdkHashKey: config.cdkHashKey, cdkRecoveryKey: config.cdkRecoveryKey
+  })
+  ,revokeAdminCdkCode: (cdkId, input) => revokeCdkCode(pool, cdkId, input)
+  ,markAdminCdkIssued: (cdkId, input) => markCdkIssued(pool, cdkId, input)
+  ,summarizeAdminCdkLiability: () => summarizeCdkLiability(pool)
   ,listAdminReconciliationCases: reconciliationCases.listCases
   ,assignAdminReconciliationCase: reconciliationCases.assign
   ,resolveAdminReconciliationCase: reconciliationCases.resolve
