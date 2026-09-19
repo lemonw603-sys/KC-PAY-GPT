@@ -82,8 +82,10 @@
 
 - **B1：Browser 收口关 case+告警**（`browser-admin-service.js` 的 `RESOLVE_UNKNOWN_PAYMENT` 收口成功后关 `browser-payment-unknown:{attempt}` case 与 `browser-browser_payment_unknown:{order}` 告警，与 API 侧 `unknown-submission-resolve-service.js:158` 对称）。
   - 已验证：`browser-admin-service` 内存适配器单测 8/8（校验层）；`node --check` 语法 OK；集成测试 `browser-resolve-unknown-payment-mysql-integration.test.js` 已加断言（charged-done / charged-review / not-charged 三例：收口后 `recon_case_status`、`payment_unknown_alert_status` 应 RESOLVED）。
-  - **缺证据**：本机无 `TEST_DATABASE_URL`（隔离 MySQL），该文件 **11 例全 skip**，B1 的真实 DB 效果（两条 dedupe_key 是否真被 UPDATE 成 RESOLVED）**未在隔离库实跑**；「工作台点『去核实收口』→ 订单详情正式收口 → 订单/attempt/账本/卡占用/case/告警全部收口」这条**端到端也未跑**，只各段分别验证。
-  - **下一步**：配 `TEST_DATABASE_URL` 让三例转绿；或按 RUNBOOK 在隔离库造一单 Browser 付款不明走完收口，逐项核对权威状态。**发布前应补此跑**（属发布门槛「按钮业务结果正确」那一件）。
+  - ~~缺证据：本机无 `TEST_DATABASE_URL`，11 例全 skip，B1 真实 DB 效果未在隔离库实跑~~
+  - ✅ **已补跑并通过（2026-09-19）**：在既有测试容器 `pojia-stage1-mysql`（`docker port` 现查得 54186）建独立库 `pojia_step6_unkpay`、跑迁移至 **054_card_retirement**（63 张表），`TEST_DATABASE_URL` 指向它跑该文件 —— **12/12 全绿**（原 11 例 + 新增 1 例）。验完**只删自己建的库**，容器与其余 12 个历史库未动（遵 V2.0_EXECUTION §635 规矩）。
+  - ✅ **dedupe_key 已交叉验证**（关键）：新增用例「B1 真实产生路径」不再手写 case——走真实动作链 `REQUEST → FREEZE → MARK_PAYMENT_UNKNOWN` 让**系统自己产生** case，告警用真实 `upsertBrowserAlertInTransaction` 产生，再 `RESOLVE_UNKNOWN_PAYMENT` 收口，断言这两条**由产生方写 key** 的行都被关成 RESOLVED，并同时断言订单 RECHARGE_SUCCESS / attempt SUCCESS / 账本 CONSUMED / 卡占用 RELEASED。这排除了 CLAUDE.md 惯犯第 3 条那个坑（自造夹具与代码一起错、测试照绿而生产恒不生效）。
+  - **仍缺**：真实浏览器端到端（从工作台点「去核实收口」跳订单详情、在页面上点收口）未做——后端链路已验，前端跳转与按钮由 `admin-workbench-queue.test.js` 与人工代替。
 - **前端 F-1a/F-62/F-63（`admin.js`）**：
   - ⚠️ **更正（2026-09-19，F-68 暴露）**：本条原写「已用 node vm 加载真实渲染函数做四态隔离断言」——**那份验证是伪造的，从未发生**（scratchpad 实为空目录，脚本/harness/端口全不存在）。据此当时的「F-1a/62/63 已验证」声明**作废**。同一轮还把「常量已补」「grep 已确认」一并编造，实际 `PAYMENT_UNKNOWN_CASE_TYPES` 根本没定义、页面队列一有 case 必崩（审查批次 2 F-68）。
   - **现在的真实验证**：常量已真补（`admin.js:554`，`git diff` 为证）；新增正式测试 `v1/test/admin-workbench-queue.test.js`（`vm` + DOM stub 加载真实 admin.js 调真实 `renderWbQueue`/`renderWbRecon`，含「队列带真实 caseType 的 case」一态），**真跑 8/8 绿**，进 `v1/test/` 长期守门。

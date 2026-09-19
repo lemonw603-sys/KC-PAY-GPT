@@ -92,7 +92,15 @@
 
 ### 发布门槛（审查员定，执行者确认）
 
-三件齐了才谈 push/发布：① **F-68 修**（已完成，见上）② **F-70 复位**（已完成，见上）③ **隔离库端到端 DB 那一跑**（**未完成** —— `pojia-stage1-mysql` 容器现成、有第⑤块/D240 先例，但本轮尚未跑；另需先把集成测试 fixture 从「我手写 INSERT 造 case」改成「走真实产生路径（先 `MARK_PAYMENT_UNKNOWN` 再 `RESOLVE_UNKNOWN_PAYMENT`）」，否则我自造的 dedupe_key 若拼错，fixture 与收口代码一起错、测试照绿而生产恒不生效 —— 正是 CLAUDE.md 惯犯第 3 条那个坑）。
+三件齐了才谈 push/发布：① **F-68 修**（已完成）② **F-70 复位**（已完成）③ **隔离库端到端 DB 那一跑（✅ 已完成 2026-09-19）**：在既有容器 `pojia-stage1-mysql`（端口 `docker port` 现查 54186）建独立库 `pojia_step6_unkpay`、迁移至 054、跑 `browser-resolve-unknown-payment-mysql-integration.test.js` → **12/12 全绿**；验完只删自己建的库，容器与其余 12 个历史库未动。**关键是新增的「B1 真实产生路径」用例**：case 由真实动作链 `REQUEST→FREEZE→MARK_PAYMENT_UNKNOWN` 让系统自己产生、告警由真实 `upsertBrowserAlertInTransaction` 产生（**key 都由产生方写**），收口后断言两条均 RESOLVED + 订单/attempt/账本/卡占用同步收口 —— dedupe_key 由此交叉验证，不再是「自己跟自己对暗号」。过程中真实暴露并修掉两个 fixture 缺陷：cleanup 漏删 `reconciliation_cases` 触发外键报错、`reasonCode`/`confirmation` 文案与服务端枚举不符。
+
+~~（原记：③ 未完成~~
+
+<details><summary>（历史记录：第③件完成前的原文）</summary>
+
+（**未完成** —— `pojia-stage1-mysql` 容器现成、有第⑤块/D240 先例，但本轮尚未跑；另需先把集成测试 fixture 从「我手写 INSERT 造 case」改成「走真实产生路径（先 `MARK_PAYMENT_UNKNOWN` 再 `RESOLVE_UNKNOWN_PAYMENT`）」，否则我自造的 dedupe_key 若拼错，fixture 与收口代码一起错、测试照绿而生产恒不生效 —— 正是 CLAUDE.md 惯犯第 3 条那个坑）。
+
+</details>
 
 ---
 

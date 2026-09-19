@@ -24,7 +24,10 @@ let pool;
 before(() => { if (databaseUrl) pool = mysql.createPool({ uri: databaseUrl, connectionLimit: 4, timezone: 'Z' }); });
 after(async () => { if (pool) await pool.end(); });
 
-async function createFixture(pool, label) {
+// seedCase=false 时不手写 case/告警，留给「真实产生路径」用例让系统自己造
+// （手写 fixture 的 dedupe_key 是推出来的，推错了会和收口代码一起错、测试照绿，
+//  所以必须另有一个用例用产生方写 key、收口方删 key 来交叉验证）。
+async function createFixture(pool, label, { seedCase = true } = {}) {
   const ids = {
     cdkId: crypto.randomUUID(), orderId: crypto.randomUUID(), cardId: crypto.randomUUID(),
     attemptId: crypto.randomUUID(), profileId: crypto.randomUUID(), runId: crypto.randomUUID(),
@@ -100,20 +103,24 @@ async function createFixture(pool, label) {
   });
   // 付款不明进入待办时会同时产生一条对账 case（按 attempt 去重）和一条告警（按 order 去重）。
   // B1 之前 Browser 收口不关它们，工作台队列/告警栏会残留；这里造成 OPEN 好在收口后断言被关。
-  await pool.query(
-    `INSERT INTO reconciliation_cases
-     (id, case_type, status, severity, dedupe_key, order_id, recharge_attempt_id,
-      evidence_json, detected_at, last_seen_at, updated_at)
-     VALUES (?, 'BROWSER_PAYMENT_UNKNOWN', 'OPEN', 'critical', ?, ?, ?,
-       JSON_OBJECT('seed', TRUE), CURRENT_TIMESTAMP(3), CURRENT_TIMESTAMP(3), CURRENT_TIMESTAMP(3))`,
-    [crypto.randomUUID(), `browser-payment-unknown:${ids.attemptId}`, ids.orderId, ids.attemptId]
-  );
-  await pool.query(
-    `INSERT INTO operator_alerts
-     (id, alert_type, dedupe_key, order_id, severity, title, message, status)
-     VALUES (UUID(), 'BROWSER_PAYMENT_UNKNOWN', ?, ?, 'critical', '付款点了但没拿到结果，等你核实', 'seed', 'OPEN')`,
-    [`browser-browser_payment_unknown:${ids.orderId}`, ids.orderId]
-  );
+  // ⚠️ 这里的 dedupe_key 是照产生方代码推出来的，只能证明「收口能删掉同样拼法的行」；
+  //    key 本身拼得对不对，由下方「真实产生路径」那个用例（seedCase:false）负责交叉验证。
+  if (seedCase) {
+    await pool.query(
+      `INSERT INTO reconciliation_cases
+       (id, case_type, status, severity, dedupe_key, order_id, recharge_attempt_id,
+        evidence_json, detected_at, last_seen_at, updated_at)
+       VALUES (?, 'BROWSER_PAYMENT_UNKNOWN', 'OPEN', 'critical', ?, ?, ?,
+         JSON_OBJECT('seed', TRUE), CURRENT_TIMESTAMP(3), CURRENT_TIMESTAMP(3), CURRENT_TIMESTAMP(3))`,
+      [crypto.randomUUID(), `browser-payment-unknown:${ids.attemptId}`, ids.orderId, ids.attemptId]
+    );
+    await pool.query(
+      `INSERT INTO operator_alerts
+       (id, alert_type, dedupe_key, order_id, severity, title, message, status)
+       VALUES (UUID(), 'BROWSER_PAYMENT_UNKNOWN', ?, ?, 'critical', '付款点了但没拿到结果，等你核实', 'seed', 'OPEN')`,
+      [`browser-browser_payment_unknown:${ids.orderId}`, ids.orderId]
+    );
+  }
   return { ids, workerId };
 }
 
@@ -176,6 +183,10 @@ async function cleanup(pool, ids) {
   await pool.query('DELETE FROM browser_operations WHERE browser_run_id = ?', [ids.runId]);
   await pool.query('DELETE FROM browser_runs WHERE id = ?', [ids.runId]);
   await pool.query('DELETE FROM card_consumption_ledger WHERE recharge_attempt_id = ?', [ids.attemptId]);
+  // 必须在删 recharge_attempts 之前：reconciliation_cases 有外键指向它。
+  // 按 order 和 attempt 双条件删——系统在真实路径上产生的 case 未必带 order_id。
+  await pool.query('DELETE FROM reconciliation_cases WHERE order_id = ? OR recharge_attempt_id = ?',
+    [ids.orderId, ids.attemptId]);
   await pool.query('DELETE FROM recharge_attempts WHERE id = ?', [ids.attemptId]);
   await pool.query('DELETE FROM card_assignment_history WHERE order_id = ?', [ids.orderId]);
   await pool.query('UPDATE orders SET assigned_card_id = NULL WHERE id = ?', [ids.orderId]);
@@ -468,4 +479,72 @@ test('delivered Plus cleanup can be resolved internally without revoking deliver
   assert.equal(row.finished_at.toISOString(),'2026-09-16T00:00:00.000Z');
   const [[run]]=await pool.query('SELECT status FROM browser_runs WHERE id=?',[ids.runId]);assert.equal(run.status,'COMPLETED');
  } finally {if(fixture)await cleanup(pool,fixture.ids)}
+});
+
+// ——— B1 的真正证明：case/告警的 dedupe_key 由「产生方」写、由「收口方」删 ———
+// 上面各例的 case 是 fixture 手写 INSERT 的，key 是照产生方代码推出来的：万一推错，
+// fixture 与收口代码会一起错、测试照样绿，而生产里真实的 case 永远关不掉
+// （CLAUDE.md 惯犯第 3 条：曾把 cardNo 同时写进代码和夹具，真实字段是 lastFour）。
+// 这个用例全程走真实路径：REQUEST → FREEZE → MARK_PAYMENT_UNKNOWN 让系统自己产生 case，
+// 告警用真实的 upsertBrowserAlertInTransaction 产生，再 RESOLVE_UNKNOWN_PAYMENT 收口。
+// 两边 key 对不上就会红——这才证明 B1 在生产上真能关掉那条待办。
+test('B1 真实产生路径：系统自己产生的 case 与告警，收口后都被关掉（交叉验证 dedupe_key）', { skip }, async () => {
+  let fixture;
+  try {
+    fixture = await createFixture(pool, 'real-path', { seedCase: false });
+    const { ids } = fixture;
+
+    // 1) 真实动作链把 run 交到人工手上，再由人工标「付款结果不明」——系统在这一步产生 case。
+    await resolve(pool, ids, { action: 'REQUEST', operationId: `req:${ids.runId}`,
+      confirmation: `请求人工接管 ${ids.runId}`, reasonCode: 'OPERATOR_REVIEW' });
+    await resolve(pool, ids, { action: 'FREEZE', operationId: `frz:${ids.runId}`,
+      confirmation: `冻结自动化 ${ids.runId}` });
+    await resolve(pool, ids, { action: 'MARK_PAYMENT_UNKNOWN', operationId: `mark:${ids.runId}`,
+      confirmation: `确认付款结果未知 ${ids.runId}` });
+
+    // 2) 告警走真实产生器（不是手写 INSERT），key 由 browser-alert-repository 自己拼。
+    const { upsertBrowserAlertInTransaction } = await import('../src/db/repositories/browser-alert-repository.js');
+    await upsertBrowserAlertInTransaction(pool, {
+      type: 'BROWSER_PAYMENT_UNKNOWN', orderId: ids.orderId,
+      title: '付款点了但没拿到结果，等你核实', message: '真实产生路径用例',
+    });
+
+    // 3) 确认这两条确实是系统造出来的、且处于 OPEN——否则后面的断言没有意义。
+    const [[caseBefore]] = await pool.query(
+      'SELECT status, dedupe_key FROM reconciliation_cases WHERE recharge_attempt_id = ?', [ids.attemptId]);
+    const [[alertBefore]] = await pool.query(
+      "SELECT status, dedupe_key FROM operator_alerts WHERE order_id = ? AND alert_type = 'BROWSER_PAYMENT_UNKNOWN'",
+      [ids.orderId]);
+    assert.ok(caseBefore, '真实路径应产生一条对账 case');
+    assert.equal(caseBefore.status, 'OPEN');
+    assert.ok(alertBefore, '真实产生器应产生一条告警');
+    assert.equal(alertBefore.status, 'OPEN');
+
+    // 4) 正式收口。
+    const result = await resolve(pool, ids, {
+      action: 'RESOLVE_UNKNOWN_PAYMENT', operationId: `resolve:${ids.runId}`,
+      verifiedOutcome: 'CHARGED', renewalCancelled: true,
+      evidenceNote: 'real-path: account shows Plus, renewal off',
+    });
+    assert.equal(result.runStatus, 'COMPLETED');
+
+    // 5) 收口必须把「系统自己产生的」那两条关掉——B1 的 key 拼错这里就红。
+    const [[caseAfter]] = await pool.query(
+      'SELECT status FROM reconciliation_cases WHERE dedupe_key = ?', [caseBefore.dedupe_key]);
+    const [[alertAfter]] = await pool.query(
+      'SELECT status FROM operator_alerts WHERE dedupe_key = ?', [alertBefore.dedupe_key]);
+    assert.equal(caseAfter.status, 'RESOLVED',
+      `收口必须关掉系统产生的 case（其真实 key = ${caseBefore.dedupe_key}）`);
+    assert.equal(alertAfter.status, 'RESOLVED',
+      `收口必须关掉系统产生的告警（其真实 key = ${alertBefore.dedupe_key}）`);
+
+    // 6) 顺带确认订单侧确实收口了，不是只动了 case。
+    const after = await snapshot(pool, ids);
+    assert.equal(after.order_status, 'RECHARGE_SUCCESS');
+    assert.equal(after.attempt_status, 'SUCCESS');
+    assert.equal(after.ledger_status, 'CONSUMED');
+    assert.equal(after.assignment_status, 'RELEASED');
+  } finally {
+    if (fixture) await cleanup(pool, fixture.ids);
+  }
 });
