@@ -1,0 +1,73 @@
+/* =========================================================================
+   卡片页（第⑥步 D-280 ①③⑤⑥，采用 A「台账优先」，Lemon 2026-09-20 挑定）
+   令牌用 workbench.css 里定义在 :root 的 --wb-*（全局可用，不是 .workbench 作用域）。
+
+   为什么自带前缀 card-：2026-09-19 CDK 页踩过一次——用了 .workbench .wb-chip{}
+   里的 class，但 CDK 页不在 .workbench 作用域里，样式整个不生效、页面糊成纯文字。
+   这里所有类名以 cardrig/cardtable/cardretire/cardfold 开头，不依赖任何祖先作用域。
+   ========================================================================= */
+
+/* ---------- ① 两台并列 ---------- */
+.cardrigs{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:14px 0}
+@media (max-width:900px){.cardrigs{grid-template-columns:1fr}}
+.cardrig{background:var(--wb-s,#fff);border:1px solid var(--wb-bd,#dde5e3);border-radius:14px;padding:14px 15px}
+.cardrig.is-alarm{border-color:hsl(4,66%,74%);background:var(--wb-danger-soft,#fdf1f0)}
+.cardrig-h{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:11px}
+.cardrig-h b{font-size:14.5px;color:var(--wb-t,#16201e)}
+.cardrig-h .cardrig-acct{font-family:var(--wb-fm,monospace);font-size:11px;color:var(--wb-t3,#7b8a86)}
+.cardrig-quad{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+.cardrig-q{background:var(--wb-s2,#f5f9f8);border:1px solid var(--wb-bd,#dde5e3);border-radius:10px;padding:8px 10px}
+.cardrig-q label{display:block;font-size:11px;color:var(--wb-t3,#7b8a86);margin-bottom:3px}
+.cardrig-q .cardrig-v{font-family:var(--wb-fm,monospace);font-size:16px;font-weight:600;letter-spacing:-.01em;color:var(--wb-t,#16201e)}
+.cardrig-q .cardrig-v small{font-size:12px;font-weight:400;color:var(--wb-t3,#7b8a86)}
+/* 待接入 / 未设置：灰、细体——一眼看出「这不是一个数」，不要伪装成 0 */
+.cardrig-q.is-pending .cardrig-v{color:var(--wb-t3,#7b8a86);font-weight:400;font-size:13px}
+.cardrig-q.is-bad{background:var(--wb-danger-soft,#fdf1f0);border-color:hsl(4,60%,84%)}
+.cardrig-q.is-bad .cardrig-v{color:var(--wb-danger,#cc3b32)}
+.cardrig-q.is-warn{background:var(--wb-warn-soft,#fdf4e6);border-color:hsl(38,60%,82%)}
+.cardrig-q.is-warn .cardrig-v{color:var(--wb-warn,#b06f15)}
+.cardrig-foot{margin-top:10px;display:flex;gap:7px;flex-wrap:wrap;align-items:center;
+  font-size:11.5px;color:var(--wb-t3,#7b8a86)}
+.cardrig-foot input{flex:1;min-width:110px;padding:5px 9px;border:1px solid var(--wb-bd,#dde5e3);
+  border-radius:8px;font-family:var(--wb-fm,monospace);font-size:11.5px;background:var(--wb-s,#fff);color:var(--wb-t,#16201e)}
+
+/* ---------- ③⑤ 表格 ---------- */
+.cardtable,.cardretire{margin-top:10px;border:1px solid var(--wb-bd,#dde5e3);border-radius:12px;overflow:hidden;background:var(--wb-s,#fff)}
+.cardtable table,.cardretire table{width:100%;border-collapse:collapse;font-size:12.5px}
+.cardtable th,.cardretire th{text-align:left;padding:8px 12px;color:var(--wb-t3,#7b8a86);font-weight:600;
+  font-size:11.5px;border-bottom:1px solid var(--wb-bd,#dde5e3);background:var(--wb-s2,#f5f9f8);white-space:nowrap}
+.cardtable td,.cardretire td{padding:9px 12px;border-bottom:1px solid var(--wb-s3,#eef4f2);vertical-align:middle;color:var(--wb-t,#16201e)}
+.cardtable tbody tr:last-child td,.cardretire tbody tr:last-child td{border-bottom:0}
+.cardtable tr.is-due td,.cardretire tr.is-due td{background:var(--wb-warn-soft,#fdf4e6)}
+.cardretire tr.is-notyet td{opacity:.62}
+.cardtable .cardmono,.cardretire .cardmono{font-family:var(--wb-fm,monospace)}
+.cardtable .cardsub,.cardretire .cardsub{display:block;font-size:11px;color:var(--wb-t3,#7b8a86)}
+.cardtable .cardmuted,.cardretire .cardmuted{color:var(--wb-t3,#7b8a86)}
+
+/* 状态徽标：人话，来自 classifyStockCardOperationalState（不在页面里重算） */
+.cardchip{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:999px;
+  font-size:11px;font-weight:600;border:1px solid transparent;white-space:nowrap}
+.cardchip.is-ok{background:var(--wb-ok-soft,#e8f6ee);color:var(--wb-ok,#2f8a54);border-color:hsl(150,40%,82%)}
+.cardchip.is-use{background:var(--wb-info-soft,#eaf2fc);color:var(--wb-info,#2b6cb8);border-color:hsl(212,50%,84%)}
+.cardchip.is-due{background:var(--wb-warn-soft,#fdf4e6);color:var(--wb-warn,#b06f15);border-color:hsl(38,60%,80%)}
+.cardchip.is-off{background:var(--wb-s3,#eef4f2);color:var(--wb-t3,#7b8a86);border-color:var(--wb-bd,#dde5e3)}
+.cardchip.is-bad{background:var(--wb-danger-soft,#fdf1f0);color:var(--wb-danger,#cc3b32);border-color:hsl(4,60%,84%)}
+
+/* 行内按钮 */
+.cardbtn{border:1px solid var(--wb-bd,#dde5e3);background:var(--wb-s,#fff);color:var(--wb-t,#16201e);
+  border-radius:8px;padding:4px 10px;font-size:11.5px;font-weight:600;cursor:pointer;font-family:inherit}
+.cardbtn:hover:not(:disabled){background:var(--wb-s2,#f5f9f8)}
+.cardbtn:disabled{opacity:.45;cursor:not-allowed}
+.cardbtn.is-primary{background:var(--wb-a,#12795a);border-color:var(--wb-a,#12795a);color:var(--wb-a-on,#fff)}
+.cardbtn.is-primary:hover:not(:disabled){filter:brightness(1.08)}
+
+/* 历史折叠 */
+.cardfoldtoggle{margin-top:8px;padding:9px 13px;border:1px solid var(--wb-bd,#dde5e3);border-radius:10px;
+  background:var(--wb-s2,#f5f9f8);color:var(--wb-t2,#5a6b67);font-size:12.5px;font-weight:600;
+  cursor:pointer;width:100%;text-align:left;font-family:inherit}
+.cardfoldtoggle:hover{color:var(--wb-t,#16201e)}
+.cardfold{margin-top:8px}
+
+.cardnote{font-size:12px;color:var(--wb-t2,#5a6b67);padding:9px 13px;background:var(--wb-info-soft,#eaf2fc);
+  border-top:1px solid hsl(212,50%,88%)}
+.cardfail{font-size:12.5px;color:var(--wb-danger,#cc3b32);padding:10px 13px}

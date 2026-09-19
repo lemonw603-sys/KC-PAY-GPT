@@ -49,6 +49,7 @@ export function createApp({
   startAdminBusiness = null,
   setAdminCardMaxSuccessfulPayments = null,
   setAdminCardMinimumBalance = null,
+  setAdminCardWalletFloor = null,
   createAdminCardStockJob = null,
   getHighvccCardStatus = null,
   setHighvccCardToken = null,
@@ -365,6 +366,25 @@ export function createApp({
       const planType = req.body?.planType == null ? 'plus' : String(req.body.planType).trim().toLowerCase();
       if (!['plus', 'pro_5x', 'pro_20x'].includes(planType)) return res.status(400).json({ error: 'invalid_plan_type' });
       res.json(await setAdminCardMinimumBalance(amount, planType));
+    });
+  }
+  if (typeof setAdminCardWalletFloor === 'function') {
+    app.post('/api/v1/admin/card-stock/wallet-floor', ...adminWriteGuards, async (req, res) => {
+      const amount = req.body?.amount;
+      if (typeof amount !== 'number' || !Number.isFinite(amount) || amount < 0 || amount > 100000
+        || Math.round(amount * 100) !== amount * 100) {
+        return res.status(400).json({ error: 'invalid_wallet_floor' });
+      }
+      const accountCode = String(req.body?.accountCode ?? '').trim();
+      if (!accountCode) return res.status(400).json({ error: 'invalid_account_code' });
+      try {
+        return res.json(await setAdminCardWalletFloor(accountCode, amount));
+      } catch (error) {
+        if (/Unknown provider account code/.test(error?.message || '')) {
+          return res.status(400).json({ error: 'unknown_account_code' });
+        }
+        throw error;
+      }
     });
   }
   if (typeof createAdminCardStockJob === 'function') {

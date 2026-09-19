@@ -234,6 +234,7 @@ const app = createApp({
   ,setAdminCardStockDefaultCardType: cardStockService.setDefaultCardType
   ,setAdminCardMaxSuccessfulPayments: (value) => cardStockService.setMaxSuccessfulPayments(value)
   ,setAdminCardMinimumBalance: (value, planType) => cardStockService.setMinimumRequiredCardBalance(value, planType)
+  ,setAdminCardWalletFloor: (accountCode, value) => cardStockService.setWalletFloor(accountCode, value)
   ,createAdminCardStockJob: cardStockJobService.createJob
   ,getHighvccCardStatus: highvccCardService.tokenStatus
   ,setHighvccCardToken: highvccCardService.setToken

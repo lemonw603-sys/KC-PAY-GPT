@@ -116,7 +116,6 @@ const elements = {
   detailTitle: document.querySelector('#detail-title'),
   detailContent: document.querySelector('#detail-content'),
   notice: document.querySelector('#page-notice')
-  ,startBusiness: document.querySelector('#start-business')
   ,cdkForm: document.querySelector('#cdk-form'), cdkCount: document.querySelector('#cdk-count'),
   cdkResult: document.querySelector('#cdk-result'), generatedCdks: document.querySelector('#generated-cdks'),
   cdkBatchLabel: document.querySelector('#cdk-batch-label'), copyCdks: document.querySelector('#copy-cdks'),
@@ -124,6 +123,8 @@ const elements = {
   cdkBatchFilters: document.querySelector('#cdk-batch-filters'), cdkBatchPlan: document.querySelector('#cdk-batch-plan'), cdkBatchStatus: document.querySelector('#cdk-batch-status'), cdkBatchFrom: document.querySelector('#cdk-batch-from'), cdkBatchTo: document.querySelector('#cdk-batch-to'), cdkBatchMore: document.querySelector('#cdk-batch-more'), cdkBatchPageInfo: document.querySelector('#cdk-batch-page-info'), exportCdkBatches: document.querySelector('#export-cdk-batches'), exportCdkTrace: document.querySelector('#export-cdk-trace'),
   stockSummary: document.querySelector('#stock-summary'), stockJobs: document.querySelector('#stock-jobs'),
   stockCards: document.querySelector('#stock-cards'), providerSummary: document.querySelector('#provider-summary'),
+  cardsRigs: document.querySelector('#cards-rigs'), stockCardsHistory: document.querySelector('#stock-cards-history'),
+  cardRetirementList: document.querySelector('#card-retirement-list'),
   cardCapacityForm: document.querySelector('#card-capacity-form'), cardCapacity: document.querySelector('#card-capacity'),
   minimumBalanceForm: document.querySelector('#minimum-balance-form'), minimumBalance: document.querySelector('#minimum-balance'),
   minimumBalancePlan: document.querySelector('#minimum-balance-plan'), cdkPlan: document.querySelector('#cdk-plan'),
@@ -1185,8 +1186,302 @@ function renderSelectedStockCardType({ resetInvalidAmount = false } = {}) {
   updateStockEstimate();
 }
 
+/* ===== 第⑥步 卡片页 D-280 ①③⑤⑥（A「台账优先」，Lemon 2026-09-20 挑定）===== */
+
+const CARD_STATE_CHIPS = Object.freeze({
+  READY: ['is-ok', '待分配'], IN_USE: ['is-use', '使用中'],
+  RETIRED: ['is-off', '停用'], PRODUCT_ONLY: ['is-off', '限其他产品'],
+  BLOCKED: ['is-bad', '暂不可用']
+});
+
+/** 一格数字。pending=true 时显示灰色说明文字而不是数字——「没有」不能长得像 0。 */
+function rigCell(label, valueHtml, { tone = '', pending = false } = {}) {
+  const cls = `cardrig-q${pending ? ' is-pending' : ''}${tone ? ` ${tone}` : ''}`;
+  return `<div class="${cls}"><label>${escapeHtml(label)}</label><div class="cardrig-v">${valueHtml}</div></div>`;
+}
+
+/**
+ * ① 两台并列四个数。四个数全部来自后端 byProvider（可分配＝第③④块的资格规则），
+ * 页面不自己判断哪张卡能分配 —— D-280 硬约束。
+ */
+function renderCardRigs(byProvider) {
+  if (!elements.cardsRigs) return;
+  if (byProvider && byProvider.__error) {
+    elements.cardsRigs.innerHTML = '<p class="cardfail">卡台台账读取失败，先不要据此判断库存。刷新重试。</p>';
+    return;
+  }
+  const rigs = Array.isArray(byProvider) ? byProvider : [];
+  if (!rigs.length) { elements.cardsRigs.innerHTML = '<p class="empty-state">还没有卡台</p>'; return; }
+  elements.cardsRigs.innerHTML = rigs.map((rig) => {
+    const acct = escapeHtml(rig.accountCode || '');
+    const assignable = Number(rig.plusAssignable || 0);
+    const target = Number(rig.stockTarget || 0);
+    const lowStock = target > 0 && assignable < target;
+    // token 只对 highvcc（无快照那台）有意义，且只在有告警时才敢说「已失效」——
+    // tokenStatus() 只答「配没配过」，答不了有效性（Lemon 已定口径）。
+    const isHighvcc = Boolean(rig.walletLiveOnly);
+    const tokenBad = isHighvcc && rig.tokenFault === true;
+    const floor = rig.walletFloor;
+    const balance = rig.walletBalance;
+    const lowWallet = floor != null && balance != null && Number(balance) < Number(floor);
+    const opened = Number(rig.openedToday || 0);
+    const limit = Number(rig.dailyLimit || 0);
+    const cells = [
+      rigCell('可分配 / 水位目标',
+        `${assignable} <small>/ ${target || '—'}</small>`, { tone: lowStock ? 'is-warn' : '' }),
+      isHighvcc
+        ? rigCell('钱包余额 / 底线',
+            `<button class="cardbtn" type="button" data-rig-wallet="${acct}">查余额</button>`
+            + ` <small>/ ${floor == null ? '未设底线' : `$${formatMoney(floor)}`}</small>`,
+            { pending: true })
+        : rigCell('钱包余额 / 底线',
+            `$${formatMoney(balance)} <small>/ ${floor == null ? '未设底线' : `$${formatMoney(floor)}`}</small>`,
+            { tone: lowWallet ? 'is-bad' : '' }),
+      rigCell('今日已开 / 日限', `${opened} <small>/ ${limit || '—'}</small>`,
+        { tone: limit > 0 && opened >= limit ? 'is-warn' : '' }),
+      isHighvcc
+        ? rigCell('token', tokenBad ? '已失效' : '已配置',
+            { tone: tokenBad ? 'is-bad' : '', pending: !tokenBad })
+        : rigCell('卡台快照', rig.walletSyncedAt ? escapeHtml(formatTime(rig.walletSyncedAt)) : '无快照',
+            { pending: true })
+    ].join('');
+    return `<div class="cardrig${tokenBad ? ' is-alarm' : ''}">
+      <div class="cardrig-h"><b>${escapeHtml(rig.label || rig.accountCode || '未知卡台')}</b>
+        <span class="cardrig-acct">${acct}</span></div>
+      <div class="cardrig-quad">${cells}</div>
+      <div class="cardrig-foot">
+        <span>在库 ${Number(rig.inStock || 0)} · 总 ${Number(rig.total || 0)} · 使用中 ${Number(rig.inUse || 0)}</span>
+        <button class="cardbtn" type="button" data-rig-floor="${acct}">设底线</button>
+        <span data-rig-wallet-out="${acct}"></span>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+/** 卡行的「可销时间」：来自待销端点，不在页面里重算规则（D-280 硬约束）。 */
+function retirementIndex(retirement) {
+  const map = new Map();
+  if (!retirement || retirement.__error) return map;
+  for (const bucket of ['due', 'notYetDue']) {
+    for (const item of (retirement[bucket] || [])) {
+      map.set(`${item.providerAccountId}:${item.providerCardId}`, item);
+    }
+  }
+  return map;
+}
+
+function cardRowHtml(card, retireItem, retireFailed = false) {
+  const [chipCls, chipText] = CARD_STATE_CHIPS[card.category] || CARD_STATE_CHIPS.BLOCKED;
+  // 「用满待销」是待销规则说的，不是页面看用量猜的
+  const due = retireItem?.due === true;
+  const chip = due && card.category !== 'IN_USE'
+    ? `<span class="cardchip is-due">${escapeHtml(retireItem.reasonLabels?.[0] || '待销')}</span>`
+    : `<span class="cardchip ${chipCls}">${escapeHtml(chipText)}</span>`;
+  const canRegisterManual = !card.externalOnly && card.category !== 'IN_USE' && card.category !== 'RETIRED';
+  const sellable = retireFailed ? '读取失败'
+    : retireItem
+      ? (retireItem.due ? '已到期' : `还差 ${escapeHtml(remainingText(retireItem.dueAt))}`)
+      : (card.assigned ? '占用中' : '—');
+  return `<tr${due ? ' class="is-due"' : ''}>
+    <td class="cardmono">${escapeHtml(card.last4 || card.providerCardId || '—')}</td>
+    <td>${escapeHtml(card.providerLabel || '—')}</td>
+    <td class="cardmono">${card.currentBalance == null ? '<span class="cardmuted">—</span>' : `$${formatMoney(card.currentBalance)}`}
+      <span class="cardsub">${card.lastSyncedAt ? escapeHtml(formatTime(card.lastSyncedAt)) : '未同步'}</span></td>
+    <td class="cardmono">${Number(card.usedCapacity || 0)}/${Number(card.maxCapacity || 3)}</td>
+    <td>${chip}<span class="cardsub">${escapeHtml(card.reason || '')}</span></td>
+    <td class="cardmono">${card.publicNo ? escapeHtml(card.publicNo) : '<span class="cardmuted">—</span>'}</td>
+    <td class="cardmono">${card.createdAt ? escapeHtml(formatTime(card.createdAt)) : '—'}
+      <span class="cardsub">${card.issueFee == null ? '成本未记' : `$${formatMoney(card.issueFee)}`}</span></td>
+    <td>${escapeHtml(sellable)}</td>
+    <td>${canRegisterManual
+      ? `<button class="cardbtn" type="button" data-manual-use="1"
+          data-account="${escapeHtml(card.providerAccountId || '')}"
+          data-ext="${escapeHtml(card.externalCardId || '')}"
+          data-last4="${escapeHtml(card.last4 || card.providerCardId || '')}">我手动用了</button>`
+      : '<span class="cardmuted">—</span>'}</td>
+  </tr>`;
+}
+
+function remainingText(dueAt) {
+  const ms = Date.parse(dueAt || '') - Date.now();
+  if (!Number.isFinite(ms) || ms <= 0) return '不到 1 分钟';
+  const h = Math.floor(ms / 3_600_000);
+  const m = Math.floor((ms % 3_600_000) / 60_000);
+  return h > 0 ? `${h} 小时 ${m} 分` : `${m} 分`;
+}
+
+const CARD_TABLE_HEAD = `<thead><tr><th>尾号</th><th>卡台</th><th>余额</th><th>用量</th><th>状态</th>
+  <th>绑定订单</th><th>开卡 / 成本</th><th>可销</th><th></th></tr></thead>`;
+
+/** ③ 默认只显示在役；退役与卡台作废折叠进「历史」。 */
+function renderStockCards(cards, retirement) {
+  if (!elements.stockCards) return;
+  const index = retirementIndex(retirement);
+  const retireFailed = Boolean(retirement && retirement.__error);
+  const list = Array.isArray(cards) ? cards : [];
+  const isHistory = (card) => card.category === 'RETIRED' || card.externalOnly;
+  const active = list.filter((card) => !isHistory(card));
+  const history = list.filter(isHistory);
+  elements.stockCards.innerHTML = active.length
+    ? `<table>${CARD_TABLE_HEAD}<tbody>${active.map(
+        (card) => cardRowHtml(card, index.get(`${card.providerAccountId}:${card.providerCardId}`), retireFailed)).join('')}</tbody></table>`
+    : '<p class="empty-state">没有在役卡片</p>';
+  if (!elements.stockCardsHistory) return;
+  if (!history.length) { elements.stockCardsHistory.hidden = true; elements.stockCardsHistory.innerHTML = ''; return; }
+  elements.stockCardsHistory.hidden = false;
+  elements.stockCardsHistory.innerHTML =
+    `<button class="cardfoldtoggle" type="button" data-history-toggle>▸ 历史（退役 / 卡台作废）${history.length} 张</button>
+     <div class="cardtable" data-history-body hidden><table>${CARD_TABLE_HEAD}<tbody>${
+       history.map((card) => cardRowHtml(card, index.get(`${card.providerAccountId}:${card.providerCardId}`), retireFailed)).join('')
+     }</tbody></table></div>`;
+}
+
+/** ⑤ 待销清单：到期的才给按钮，未到期灰显剩余时间。规则全来自 card-retirement 端点。 */
+function renderCardRetirement(retirement, labelByKind = new Map()) {
+  if (!elements.cardRetirementList) return;
+  if (!retirement || retirement.__error) {
+    elements.cardRetirementList.innerHTML =
+      '<p class="cardfail">待销清单读取失败，先别据此销卡。刷新重试。</p>';
+    return;
+  }
+  const due = retirement.due || [];
+  const notYet = retirement.notYetDue || [];
+  if (!due.length && !notYet.length) {
+    elements.cardRetirementList.innerHTML = '<p class="empty-state">当前没有待销的卡</p>';
+    return;
+  }
+  const row = (item, ready) => `<tr class="${ready ? 'is-due' : 'is-notyet'}">
+    <td class="cardmono">${escapeHtml(item.last4 || item.providerCardId || '—')}</td>
+    <td>${escapeHtml(labelByKind.get(item.providerCode) || item.providerCode || '—')}</td>
+    <td>${escapeHtml((item.reasonLabels || []).join('、') || '—')}</td>
+    <td class="cardmono">${item.currentBalance == null ? '—' : `$${formatMoney(item.currentBalance)}`}</td>
+    <td>${ready ? '已到期' : `还差 ${escapeHtml(remainingText(item.dueAt))}`}</td>
+    <td>${ready
+      ? `<button class="cardbtn is-primary" type="button" data-retire-confirm="${escapeHtml(item.cardId)}"
+           data-retire-last4="${escapeHtml(item.last4 || '')}">我已在卡台删掉</button>`
+      : '<span class="cardmuted">未到可销时间</span>'}</td>
+  </tr>`;
+  elements.cardRetirementList.innerHTML = `<table>
+    <thead><tr><th>尾号</th><th>卡台</th><th>为什么待销</th><th>余额</th><th>可销时间</th><th></th></tr></thead>
+    <tbody>${due.map((item) => row(item, true)).join('')}${notYet.map((item) => row(item, false)).join('')}</tbody>
+    </table>
+    <p class="cardnote">满 ${Number(retirement.minAgeHours ?? 6)} 小时才可销。「我已在卡台删掉」只登记，不会替你去卡台删卡。</p>`;
+}
+
+/* ---- 卡片页交互（D-280 ①⑤⑥）：容器上委托，重渲染不用重绑 ---- */
+
+// 历史折叠
+elements.stockCardsHistory?.addEventListener('click', (event) => {
+  const toggle = event.target.closest('[data-history-toggle]');
+  if (!toggle) return;
+  const body = elements.stockCardsHistory.querySelector('[data-history-body]');
+  if (!body) return;
+  body.hidden = !body.hidden;
+  toggle.textContent = toggle.textContent.replace(body.hidden ? '▾' : '▸', body.hidden ? '▸' : '▾');
+});
+
+// ① 查余额 / 设底线
+elements.cardsRigs?.addEventListener('click', async (event) => {
+  const walletButton = event.target.closest('[data-rig-wallet]');
+  if (walletButton) {
+    const accountCode = walletButton.dataset.rigWallet;
+    const out = elements.cardsRigs.querySelector(`[data-rig-wallet-out="${CSS.escape(accountCode)}"]`);
+    walletButton.disabled = true;
+    walletButton.textContent = '查询中…';
+    try {
+      const wallet = await api('/api/v1/admin/backup-cards/highvcc/wallet');
+      // 实时值，不落快照——显示时点明它是「刚查的」，别让人以为页面会自己刷新。
+      walletButton.textContent = wallet.usdBalance == null ? '未返回余额' : `$${formatMoney(wallet.usdBalance)}`;
+      if (out) out.textContent = `刚查于 ${formatTime(new Date().toISOString())}`;
+    } catch (error) {
+      walletButton.textContent = '查余额';
+      walletButton.disabled = false;
+      showNotice(`查询 highvcc 钱包失败：${error.message}`);
+    }
+    return;
+  }
+  const floorButton = event.target.closest('[data-rig-floor]');
+  if (!floorButton) return;
+  const accountCode = floorButton.dataset.rigFloor;
+  const answer = await askForm({
+    title: `设置钱包底线 · ${accountCode}`,
+    message: '余额低于底线时这一格标红。只是提醒，不会自动停开卡。',
+    fields: [{ name: 'amount', label: '底线金额（美元）', type: 'number', required: true }],
+    confirmLabel: '保存'
+  });
+  if (!answer) return;
+  try {
+    await api('/api/v1/admin/card-stock/wallet-floor', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ accountCode, amount: Number(answer.amount) })
+    });
+    showNotice('钱包底线已保存。', 'success');
+    await loadStock();
+  } catch (error) { showNotice(`保存底线失败：${error.message}`); }
+});
+
+// ⑥ 手动用卡登记：标 RETIRED override（F-57 定的正确端点——卡不再分配，但仍留在待销里）
+elements.stockCards?.addEventListener('click', async (event) => {
+  const button = event.target.closest('[data-manual-use]');
+  if (!button) return;
+  const { account, ext, last4 } = button.dataset;
+  if (!account || !ext) { showNotice('这张卡缺卡台标识，无法登记。'); return; }
+  const answer = await askForm({
+    title: `登记手动用卡 · ${last4 || ext}`,
+    message: '登记后这张卡不再参与自动分配，仍会留在待销清单里等你销卡。这不会去卡台做任何操作。',
+    fields: [{ name: 'reason', label: '用在哪了（必填，会进审计）', required: true }],
+    confirmLabel: '登记', danger: true
+  });
+  if (!answer) return;
+  try {
+    await api('/api/v1/admin/card-operational-overrides', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ providerAccountId: account, externalCardId: ext,
+        allocationPolicy: 'RETIRED', reason: answer.reason })
+    });
+    showNotice('已登记，这张卡不再参与分配。', 'success');
+    await loadStock();
+  } catch (error) { showNotice(`登记失败：${error.message}`); }
+});
+
+// ⑤ 「我已在卡台删掉」：确认词是端点要求的防误触闸门，保留
+elements.cardRetirementList?.addEventListener('click', async (event) => {
+  const button = event.target.closest('[data-retire-confirm]');
+  if (!button) return;
+  const cardId = button.dataset.retireConfirm;
+  const last4 = button.dataset.retireLast4 || '';
+  if (!/^\d{4}$/.test(last4)) { showNotice('这张卡没有四位尾号，只能用命令行登记。'); return; }
+  const answer = await askForm({
+    title: `登记已销卡 · ${last4}`,
+    message: `确认你已经在卡台网站删掉了这张卡。系统只做登记，不会替你去删。输入「已销卡 ${last4}」确认。`,
+    fields: [
+      { name: 'confirmation', label: '确认词', required: true },
+      { name: 'note', label: '备注（可选）' }
+    ],
+    confirmLabel: '登记退役', danger: true
+  });
+  if (!answer) return;
+  try {
+    await api('/api/v1/admin/card-retirement/confirm', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cardId, last4, confirmation: answer.confirmation, note: answer.note || null })
+    });
+    showNotice('已登记退役。', 'success');
+    await loadStock();
+  } catch (error) { showNotice(`登记失败：${error.message}`); }
+});
+
 async function loadStock() {
-  const payload = await api('/api/v1/admin/card-stock');
+  const [payload, retirement] = await Promise.all([
+    api('/api/v1/admin/card-stock'),
+    // 读不到就说读不到——待销清单读失败时绝不能显示成「没有待销的卡」。
+    api('/api/v1/admin/card-retirement/candidates').catch(() => ({ __error: true }))
+  ]);
+  const rigs = payload.byProvider || [];
+  renderCardRigs(rigs);
+  // 卡台显示名只有一份来源（后端 PROVIDER_LABELS），页面不自己拼「HNSKJ 卡台」这种字样
+  const labelByKind = new Map(rigs.map((rig) => [rig.providerKind, rig.label]));
+  renderCardRetirement(retirement, labelByKind);
   state.stockProvider = payload.provider || null;
   state.stockCatalog = payload.catalog || null;
   const summary = payload.operationalSummary || { ready: 0, inUse: 0, blocked: 0, retired: 0 };
@@ -1228,11 +1523,7 @@ async function loadStock() {
   elements.stockJobs.innerHTML = payload.jobs?.length
     ? payload.jobs.map((job) => `<div><span><strong>${escapeHtml(STOCK_JOB_LABELS[job.status] || job.status)} · ${job.openedCount}/${job.requestedCount} 张</strong><small>${escapeHtml(job.cardTypeName || `卡段 ${job.cardTypeId}`)} · $${formatMoney(job.amount)} / 张 · 预计总扣款 $${formatMoney(job.estimatedTotal)} · ${formatTime(job.createdAt)}${job.errorMessage ? ` · ${escapeHtml(job.errorMessage)}` : ''}</small></span><em>${escapeHtml(job.status)}</em></div>`).join('')
     : '<p class="empty-state">还没有后台补卡任务</p>';
-  if (payload.cards?.length) {
-    const groups = new Map();
-    for (const card of payload.cards) { const key = `${card.providerAccountId || 'external'}:${card.providerLabel || '未知卡台'}`; if (!groups.has(key)) groups.set(key, []); groups.get(key).push(card); }
-    elements.stockCards.innerHTML = [...groups.values()].map((cards) => `<div class="mini-list-heading">${escapeHtml(cards[0].providerLabel || '未知卡台')} · ${cards.length} 张</div>${cards.map((card) => `${card.externalOnly ? '<div>' : `<div data-card="${escapeHtml(card.providerCardId)}" data-card-account="${escapeHtml(card.providerAccountId || '')}" role="button" tabindex="0">`}<span><strong>${escapeHtml(card.cardNumber || card.last4 || `卡台卡片 ${card.providerCardId}`)}</strong><small>${escapeHtml(card.reason || '当前不满足 Plus 安全分配条件')}${card.currentBalance != null ? ` · 余额 $${formatMoney(card.currentBalance)}` : ''}${card.publicNo ? ` · 订单 ${escapeHtml(card.publicNo)}` : ''}</small></span><em>${escapeHtml(STOCK_CATEGORY_LABELS[card.category] || card.category || '暂不可用')}</em></div>`).join('')}`).join('');
-  } else elements.stockCards.innerHTML = '<p class="empty-state">还没有后台卡片</p>';
+  renderStockCards(payload.cards || [], retirement);
   await loadCardIntake().catch(() => {
     elements.cardIntakeList.innerHTML = '<p class="empty-state">新卡接管状态读取失败，请稍后刷新。</p>';
   });
@@ -2113,21 +2404,8 @@ document.querySelector('#refresh-stock')?.addEventListener('click', async () => 
     showNotice('本地列表已刷新（未同步卡台）。', 'success');
   } catch { showNotice('库存读取失败。'); }
 });
-elements.startBusiness?.addEventListener('click', async (event) => {
-  const button = event.currentTarget; button.disabled = true;
-  try {
-    const result = await api('/api/v1/admin/operations/start-business', { method: 'POST' });
-    renderReadiness(result.readiness);
-    showNotice(result.readiness?.status === 'AUTO_HEAL'
-      ? '已开始营业；当前补给会在首个订单到达时自动处理。'
-      : '只读检查通过，已开始接收新订单并自动派发。', 'success');
-    await loadOverview();
-  } catch (error) {
-    if (error?.payload?.readiness) renderReadiness(error.payload.readiness);
-    const firstBlocker = error?.payload?.readiness?.checks?.find((item) => item.status === 'BLOCKED');
-    showNotice(firstBlocker?.message || '开始营业失败：请按就绪卡片提示处理。');
-  } finally { button.disabled = false; }
-});
+// 「开始营业」按钮已被 D-284 的三个 toggle（接单/派单/付款）取代，按钮和这段 handler 一起退休；
+// /operations/start-business 端点保留，未在后台调用。
 elements.refreshCardProviderRules?.addEventListener('click', async (event) => {
   const button = event.currentTarget;
   button.disabled = true;

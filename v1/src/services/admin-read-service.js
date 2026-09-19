@@ -6,10 +6,9 @@ import { reconcileByRoute } from '../domain/route-reconciliation.js';
 import { createCdkLookup } from '../security/cdk-code.js';
 import { redactSensitiveText } from '../security/redaction.js';
 import { deriveOrderStage } from './order-stage.js';
-import {
-  eligibleInventoryCardSql,
-  fundableInventoryCardSql
-} from './card-inventory-eligibility.js';
+import { eligibleInventoryCardSql,
+  fundableInventoryCardSql, providerCardStockSql, todayCst8WindowSql,
+  REPLENISHMENT_OPENED_COUNT_SQL } from './card-inventory-eligibility.js';
 
 const ORDER_STATUSES = new Set([
   'CREATED',
@@ -676,22 +675,12 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
              FROM card_sync_jobs WHERE status = 'COMPLETED' AND completed_at >= UTC_TIMESTAMP() - INTERVAL 24 HOUR) AS card_sync_avg_latency_seconds,
           (SELECT COALESCE(ROUND(100 * SUM(status IN ('REVIEW_REQUIRED')) / NULLIF(COUNT(*), 0), 1), 0)
              FROM card_sync_jobs WHERE completed_at >= UTC_TIMESTAMP() - INTERVAL 24 HOUR OR status IN ('PENDING','RUNNING','REVIEW_REQUIRED')) AS card_sync_failure_rate,
-          (SELECT COALESCE(SUM(CASE
-              WHEN status IN ('PENDING','RUNNING') THEN requested_count
-              ELSE opened_count END), 0) FROM card_stock_jobs
-            WHERE job_source = 'AUTOMATIC'
-              AND created_at >= TIMESTAMP(DATE(CONVERT_TZ(UTC_TIMESTAMP(), '+00:00', '+08:00'))) - INTERVAL 8 HOUR
-              AND created_at < TIMESTAMP(DATE(CONVERT_TZ(UTC_TIMESTAMP(), '+00:00', '+08:00'))) + INTERVAL 16 HOUR) AS replenishment_used_today,
+          (SELECT ${REPLENISHMENT_OPENED_COUNT_SQL} FROM card_stock_jobs
+            WHERE job_source = 'AUTOMATIC' AND ${todayCst8WindowSql('created_at')}) AS replenishment_used_today,
           (SELECT setting_value FROM app_settings WHERE setting_key = 'card_replenishment_daily_limit' LIMIT 1) AS replenishment_daily_limit`)
       // 第⑥步工作台「卡与钱」按台：复用 eligibleInventoryCardSql（Plus 资格规则，D-280 不另写一套）。
       // 生产只读已验证：legacy-primary(hnskj) 可分配 0 / backup-a 可分配 2（highvcc 开卡进 backup-a）。
-      ,pool.query(`SELECT pa.account_code AS provider_code, pa.provider_code AS provider_kind,
-          SUM(c.inventory_status <> 'RETIRED') AS in_stock,
-          SUM((${eligibleInventoryCardSql('c', `COALESCE((SELECT CAST(setting_value AS DECIMAL(18,6)) FROM app_settings WHERE setting_key = 'default_minimum_required_card_balance' LIMIT 1), 999999999)`, { productCode: 'plus' })})) AS plus_assignable,
-          SUM(EXISTS(SELECT 1 FROM card_assignment_history ah WHERE ah.card_id=c.id AND ah.status='ACTIVE')) AS in_use,
-          SUM((SELECT COUNT(*) FROM card_consumption_ledger u WHERE u.card_id=c.id AND u.status IN ('RESERVED','CONSUMED','RECONCILIATION'))>0) AS any_used
-        FROM cards c INNER JOIN provider_accounts pa ON pa.id=c.provider_account_id
-        GROUP BY pa.account_code, pa.provider_code ORDER BY pa.provider_code`)
+      ,pool.query(providerCardStockSql())
     ]);
     const count = (value) => Number(value || 0);
     const total = count(orderCounts[0]?.total);
@@ -790,8 +779,10 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
         low: !autoReplenishmentEnabled && available <= lowThreshold
       }; })(),
       cardStockByProvider: (providerStockRows || []).map((row) => ({
+        providerAccountId: row.provider_account_id,
         providerCode: row.provider_code,
         providerKind: row.provider_kind,
+        total: count(row.total),
         inStock: count(row.in_stock),
         plusAssignable: count(row.plus_assignable),
         inUse: count(row.in_use),

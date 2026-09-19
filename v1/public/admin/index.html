@@ -9,7 +9,8 @@
   <link rel="icon" href="/admin/assets/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/admin/assets/admin.css?v=26">
   <link rel="stylesheet" href="/admin/assets/workbench.css?v=3">
-  <script src="/admin/assets/admin.js?v=53" defer></script>
+  <link rel="stylesheet" href="/admin/assets/cards.css?v=1">
+  <script src="/admin/assets/admin.js?v=54" defer></script>
 </head>
 <body>
   <div class="admin-shell">
@@ -167,10 +168,16 @@
       </section>
 
       <section id="stock-view" class="view" hidden>
+        <section class="card stock-card">
+          <div class="card-heading"><div><p class="section-kicker">两台卡台</p><h2>现在能分出去几张</h2></div><span class="readonly-badge">可分配＝资格规则算的</span></div>
+          <p class="card-description stock-definition">“可分配”指现在就能安全绑定 Plus 订单的卡，按第③④块那份资格规则算——和工作台同一个数。“在库”只是没退役，两者差得远，别混用。</p>
+          <div class="cardrigs" id="cards-rigs"><p class="empty-state">正在读取两台卡台…</p></div>
+        </section>
+
         <div class="stock-grid">
           <section class="card stock-card">
             <div class="card-heading"><div><p class="section-kicker">Plus 履约</p><h2>卡片概况</h2></div><span class="readonly-badge">有效状态</span></div>
-            <p class="card-description stock-definition">“可分配”指现在就能安全绑定 Plus 订单的卡。余额不足或资料待同步只属于“暂不可用”，不代表卡已失效。</p>
+            <p class="card-description stock-definition">这四个数是两台合计。按台明细看上面。</p>
             <div class="stock-summary" id="stock-summary"></div>
             <div class="provider-summary" id="provider-summary"></div>
             <div class="stock-settings-inline">
@@ -261,9 +268,16 @@
             </div>
           </form>
         </details>
+        <section class="card stock-card" id="card-retirement-card">
+          <div class="card-heading"><div><p class="section-kicker">收尾</p><h2>待销清单</h2></div><span class="write-badge">你删卡后登记</span></div>
+          <p class="card-description">到期的卡才亮出按钮。“我已在卡台删掉”＝你已经在卡台网站删了这张卡，系统据此标退役；系统不会替你去卡台删。</p>
+          <div class="cardretire" id="card-retirement-list"><p class="empty-state">正在读取待销清单…</p></div>
+        </section>
+
         <section class="card stock-card">
           <div class="card-heading"><div><p class="section-kicker">运营明细</p><h2>卡片列表</h2></div><div class="stock-card-actions"><button class="text-button" id="refresh-stock" type="button">刷新本地列表</button><button class="text-button" id="sync-all-cards" type="button">同步卡台余额和交易</button><button class="primary-small" id="discover-new-cards" type="button">同步并接管新卡</button> <span class="write-badge">完整卡号</span></div></div>
-          <div class="mini-list stock-card-list" id="stock-cards"></div>
+          <div class="cardtable" id="stock-cards"></div>
+          <div class="cardfold" id="stock-cards-history" hidden></div>
         </section>
         <details class="card stock-card stock-advanced-details">
           <summary>卡余额充值队列（人工核实）</summary>

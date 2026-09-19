@@ -141,3 +141,50 @@ export function refreshableInventoryCardSql(alias = 'c', { productCode = 'plus' 
         )
     )`;
 }
+
+/**
+ * 按卡台聚合库存（D-280 ①「两台并列、同一张脸」）。
+ *
+ * 唯一定义：工作台「卡与钱」和卡片页顶部台账栏都调这一份，所以两处的「可分配」
+ * 永远同口径。D-280 硬约束写的就是这条——状态那栏必须复用第③④块的资格规则算，
+ * 页面不许再写一套判断。可分配＝ eligibleInventoryCardSql（同一份规则），不是
+ * 「status='active'」或「余额>0」这类局部字段。
+ *
+ * in_stock 只排除 RETIRED，是「这台还剩几张卡」；plus_assignable 才是「现在能
+ * 分出去几张」。两者差得很远（生产 2026-09-20：backup-a 在库 7），不要混用。
+ */
+export function providerCardStockSql({ productCode = 'plus' } = {}) {
+  const minimumSql = `COALESCE((SELECT CAST(setting_value AS DECIMAL(18,6))
+    FROM app_settings WHERE setting_key = 'default_minimum_required_card_balance' LIMIT 1), 999999999)`;
+  return `SELECT pa.id AS provider_account_id,
+      pa.account_code AS provider_code,
+      pa.provider_code AS provider_kind,
+      -- token/供给故障的权威位置：补卡调度器失败时写 FAULT + 原因，贴新 token 清回 OK。
+      -- 「已失效」只认这个，不靠 tokenStatus()（它只答配没配过）。
+      pa.supply_fault_state, pa.supply_fault_reason, pa.supply_fault_at,
+      COUNT(*) AS total,
+      SUM(c.inventory_status <> 'RETIRED') AS in_stock,
+      SUM((${eligibleInventoryCardSql('c', minimumSql, { productCode })})) AS plus_assignable,
+      SUM(EXISTS(SELECT 1 FROM card_assignment_history ah
+        WHERE ah.card_id=c.id AND ah.status='ACTIVE')) AS in_use,
+      SUM((SELECT COUNT(*) FROM card_consumption_ledger u
+        WHERE u.card_id=c.id AND u.status IN ('RESERVED','CONSUMED','RECONCILIATION'))>0) AS any_used
+    FROM cards c INNER JOIN provider_accounts pa ON pa.id=c.provider_account_id
+    GROUP BY pa.id, pa.account_code, pa.provider_code, pa.supply_fault_state,
+      pa.supply_fault_reason, pa.supply_fault_at ORDER BY pa.provider_code`;
+}
+
+/**
+ * 「今天」＝ UTC+8 自然日（Lemon 在 UTC+8 运营，日限按他看到的那一天算）。
+ * 唯一定义：工作台要全局合计、卡片页要按台明细，两个数必须落在同一个窗口里，
+ * 否则「今日已开 3」和两台「1 + 1」对不上。调用方自己决定 GROUP BY 与否。
+ */
+export function todayCst8WindowSql(column = 'created_at') {
+  if (!/^[A-Za-z_][A-Za-z0-9_.]*$/.test(column)) throw new TypeError('Invalid column');
+  return `${column} >= TIMESTAMP(DATE(CONVERT_TZ(UTC_TIMESTAMP(), '+00:00', '+08:00'))) - INTERVAL 8 HOUR
+      AND ${column} < TIMESTAMP(DATE(CONVERT_TZ(UTC_TIMESTAMP(), '+00:00', '+08:00'))) + INTERVAL 16 HOUR`;
+}
+
+/** 已开/在途张数：PENDING/RUNNING 按请求数占位，其余按实开数。与日限对比用。 */
+export const REPLENISHMENT_OPENED_COUNT_SQL =
+  `COALESCE(SUM(CASE WHEN status IN ('PENDING','RUNNING') THEN requested_count ELSE opened_count END), 0)`;

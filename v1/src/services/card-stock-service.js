@@ -8,7 +8,8 @@ import {
   snapshotIsFresh
 } from './card-provider-snapshot-service.js';
 import { cardCatalogIsFresh, readCardCatalogSnapshot } from './card-catalog-snapshot-service.js';
-import { eligibleInventoryCardSql } from './card-inventory-eligibility.js';
+import { eligibleInventoryCardSql, providerCardStockSql, todayCst8WindowSql,
+  REPLENISHMENT_OPENED_COUNT_SQL } from './card-inventory-eligibility.js';
 
 const ACTIVE = new Set(['active', 'available', 'usable', 'ready']);
 const FAILED = new Set(['failed', 'failure', 'invalid', 'inactive', 'closed', 'cancelled', 'canceled']);
@@ -78,6 +79,19 @@ function decryptCardNumber(row, key) {
   } catch {
     return null;
   }
+}
+
+/**
+ * 卡台显示名。库里 backup-a 的 provider_code 是 `manual_excel`（它走的是导入表
+ * 那条入库路径），但实际卡台是 highvcc——Lemon 2026-09-20 定页面点明，免得切卡台
+ * 时看不出是哪家。
+ */
+export const PROVIDER_LABELS = Object.freeze({
+  hnskj: 'HNSKJ 卡台',
+  manual_excel: '备用卡台（highvcc）'
+});
+export function providerLabelOf(providerCode) {
+  return PROVIDER_LABELS[String(providerCode || '')] || String(providerCode || '') || '未知卡台';
 }
 
 export function classifyStockCardOperationalState(card) {
@@ -285,10 +299,11 @@ export function createCardStockService({ pool, sessionEncryptionKey, panHmacKey 
   }
 
   async function status() {
-    const [[thresholdRows], [rows], [settings], [cards], [overrideRows], providerSnapshot, catalogSnapshot] = await Promise.all([
+    const [[thresholdRows], [rows], [settings], [cards], [overrideRows], providerSnapshot, catalogSnapshot,
+      [providerStockRows], [openedTodayRows], [walletFloorRows], [snapshotRows]] = await Promise.all([
       pool.query(
         `SELECT setting_key, setting_value FROM app_settings
-         WHERE setting_key IN ('card_stock_low_threshold','card_auto_replenishment_enabled')`
+         WHERE setting_key IN ('card_stock_low_threshold','card_auto_replenishment_enabled','card_replenishment_daily_limit')`
       ),
       pool.query(
         `SELECT card_type_id,
@@ -316,6 +331,10 @@ export function createCardStockService({ pool, sessionEncryptionKey, panHmacKey 
           co.reason AS allocation_reason,
           (${eligibleInventoryCardSql('c', `COALESCE((SELECT CAST(setting_value AS DECIMAL(18,6))
               FROM app_settings WHERE setting_key = 'default_minimum_required_card_balance' LIMIT 1), 999999999)`)}) AS is_allocatable,
+          c.created_at, c.external_card_id,
+          (SELECT ct.amount FROM card_transactions ct
+            WHERE ct.card_id = c.id AND ct.transaction_type = 'CARD_ISSUE_FEE'
+            ORDER BY ct.first_seen_at ASC LIMIT 1) AS issue_fee,
           c.card_credentials_ciphertext, c.card_number_ciphertext, c.last_synced_at,
           c.last_transaction_synced_at, o.public_no,
           (SELECT COUNT(*) FROM card_transactions ct WHERE ct.card_id = c.id) AS transaction_count,
@@ -341,7 +360,24 @@ export function createCardStockService({ pool, sessionEncryptionKey, panHmacKey 
                    WHERE allocation_policy IN ('RETIRED', 'PRODUCT_ONLY')
                    ORDER BY external_card_id`),
       readProviderSnapshot(pool),
-      readCardCatalogSnapshot(pool)
+      readCardCatalogSnapshot(pool),
+      // D-280 ①「两台并列」：可分配走 providerCardStockSql（＝第③④块那份资格规则），
+      // 页面不自己判断哪张卡能分配。
+      pool.query(providerCardStockSql()),
+      pool.query(`SELECT provider_account_id, ${REPLENISHMENT_OPENED_COUNT_SQL} AS used_today
+         FROM card_stock_jobs
+        WHERE job_source = 'AUTOMATIC' AND ${todayCst8WindowSql('created_at')}
+        GROUP BY provider_account_id`),
+      // 钱包底线按台存（键 card_wallet_floor:<account_code>）。没设过就是没设，
+      // 不给默认值——一个编出来的底线会让「余额够不够」这句话失去意义。
+      pool.query(`SELECT setting_key, setting_value FROM app_settings
+        WHERE setting_key LIKE 'card_wallet_floor:%'`),
+      // 钱包余额：HNSKJ 读快照。highvcc 不在这里读——它只有实时 API，按 D-280 定
+      // 的是「查余额」按钮，打开页面不打外网。
+      pool.query(`SELECT provider, synced_at,
+          JSON_UNQUOTE(JSON_EXTRACT(payload_json, '$.accountBalance')) AS account_balance,
+          JSON_UNQUOTE(JSON_EXTRACT(payload_json, '$.currency')) AS currency
+        FROM card_provider_snapshots`)
     ]);
     const threshold = Math.max(0, Number(thresholdRows.find(
       (row) => row.setting_key === 'card_stock_low_threshold'
@@ -372,8 +408,11 @@ export function createCardStockService({ pool, sessionEncryptionKey, panHmacKey 
         providerAccountId: row.provider_account_id,
         providerCode: row.provider_code || null,
         providerAccountCode: row.account_code || null,
-        providerLabel: row.provider_code === 'manual_excel' ? '备用卡台' : (row.provider_code === 'hnskj' ? 'HNSKJ 卡台' : (row.provider_code || '未知卡台')),
+        providerLabel: providerLabelOf(row.provider_code),
         providerCardId: String(row.provider_card_id),
+        // card_operational_overrides 按 external_card_id 匹配。生产当前两列同值
+        // （2026-09-20 实查 30/30），但别让页面依赖这个巧合。
+        externalCardId: row.external_card_id == null ? null : String(row.external_card_id),
         cardTypeId: String(row.card_type_id),
         cardNumber: decryptCardNumber(row, sessionEncryptionKey),
         last4: row.last4,
@@ -405,7 +444,10 @@ export function createCardStockService({ pool, sessionEncryptionKey, panHmacKey 
           : row.sync_status === 'REVIEW_REQUIRED' ? 'REVIEW_REQUIRED'
             : !row.last_transaction_synced_at ? 'STALE' : 'OK',
         lastSyncedAt: row.last_synced_at instanceof Date
-          ? row.last_synced_at.toISOString() : row.last_synced_at || null
+          ? row.last_synced_at.toISOString() : row.last_synced_at || null,
+        createdAt: row.created_at instanceof Date
+          ? row.created_at.toISOString() : row.created_at || null,
+        issueFee: row.issue_fee == null ? null : String(row.issue_fee)
       };
       return { ...card, ...classifyStockCardOperationalState(card) };
     });
@@ -418,6 +460,7 @@ export function createCardStockService({ pool, sessionEncryptionKey, panHmacKey 
         providerAccountCode: null,
         providerLabel: '外部卡台记录',
         providerCardId: String(row.external_card_id),
+        externalCardId: String(row.external_card_id),
         cardTypeId: null,
         cardNumber: null,
         last4: null,
@@ -446,7 +489,57 @@ export function createCardStockService({ pool, sessionEncryptionKey, panHmacKey 
       }));
     const allCards = [...mappedCards, ...overrideCards];
     const operationalSummary = summarizeStockCardOperationalState(allCards);
+
+    // ---- D-280 ① 两台并列的四个数 ----
+    const replenishmentDailyLimit = Math.max(0, Number(thresholdRows.find(
+      (row) => row.setting_key === 'card_replenishment_daily_limit'
+    )?.setting_value || 5));
+    const openedTodayByAccount = new Map((openedTodayRows || []).map(
+      (row) => [String(row.provider_account_id), Number(row.used_today || 0)]));
+    const WALLET_FLOOR_PREFIX = 'card_wallet_floor:';
+    const walletFloorByAccount = new Map((walletFloorRows || []).map(
+      (row) => [String(row.setting_key).slice(WALLET_FLOOR_PREFIX.length), String(row.setting_value)]));
+    const snapshotByProviderKind = new Map((snapshotRows || []).map(
+      (row) => [String(row.provider), row]));
+    const byProvider = (providerStockRows || []).map((row) => {
+      const accountCode = String(row.provider_code || '');
+      const providerKind = String(row.provider_kind || '');
+      const snapshot = snapshotByProviderKind.get(providerKind) || null;
+      const floor = walletFloorByAccount.get(accountCode);
+      return {
+        providerAccountId: String(row.provider_account_id),
+        accountCode,
+        providerKind,
+        label: providerLabelOf(providerKind),
+        total: Number(row.total || 0),
+        inStock: Number(row.in_stock || 0),
+        // 「可分配」＝ 权威资格规则算出来的，不是「在库」。两者差很远，别混用。
+        plusAssignable: Number(row.plus_assignable || 0),
+        inUse: Number(row.in_use || 0),
+        anyUsed: Number(row.any_used || 0),
+        stockTarget: threshold,
+        // highvcc 没有快照行，余额只能实时查（前端「查余额」按钮）——这里给 null，
+        // 不是 0。0 会被读成「钱花光了」。
+        walletBalance: snapshot?.account_balance == null ? null : String(snapshot.account_balance),
+        walletCurrency: snapshot?.currency || 'USD',
+        walletSyncedAt: snapshot?.synced_at instanceof Date
+          ? snapshot.synced_at.toISOString() : snapshot?.synced_at || null,
+        walletLiveOnly: !snapshot,
+        // 没设过底线就是 null（「未设置」），不编一个默认值。
+        walletFloor: floor == null ? null : String(floor),
+        openedToday: openedTodayByAccount.get(String(row.provider_account_id)) || 0,
+        dailyLimit: replenishmentDailyLimit,
+        // 只在真有故障时说「已失效」；没故障不写「有效」（Lemon 定的口径）。
+        supplyFaultState: row.supply_fault_state || null,
+        supplyFaultReason: row.supply_fault_reason || null,
+        tokenFault: String(row.supply_fault_state || '') === 'FAULT'
+          && /^HIGHVCC_TOKEN/.test(String(row.supply_fault_reason || ''))
+      };
+    });
+
     return {
+      byProvider,
+      replenishmentDailyLimit,
       threshold,
       autoReplenishmentEnabled,
       maxSuccessfulPayments,
@@ -559,6 +652,34 @@ export function createCardStockService({ pool, sessionEncryptionKey, panHmacKey 
       : { minimumRequiredCardBalance: normalized, planType: plan };
   }
 
+  /**
+   * 钱包底线（D-280 ①，Lemon 2026-09-20 定「补一个设置键」）。
+   *
+   * 键是拼出来的（card_wallet_floor:<account_code>），所以 accountCode 必须先在
+   * provider_accounts 里查到才允许写——否则任意字符串都能往 app_settings 里塞键。
+   * 白名单来自库本身，不是代码里的常量列表，免得加卡台时忘了同步。
+   */
+  async function setWalletFloor(accountCode, value) {
+    const code = String(accountCode ?? '').trim();
+    if (!code) throw new Error('Provider account code is required');
+    const [known] = await pool.query(
+      `SELECT 1 FROM provider_accounts WHERE account_code = ? AND purpose = 'CARD' LIMIT 1`, [code]
+    );
+    if (!known.length) throw new Error('Unknown provider account code');
+    const amount = Number(value);
+    if (!Number.isFinite(amount) || amount < 0 || amount > 100000
+      || Math.round(amount * 100) !== amount * 100) {
+      throw new Error('Wallet floor must be between 0 and 100000 with at most two decimals');
+    }
+    const normalized = amount.toFixed(2);
+    await pool.query(
+      `INSERT INTO app_settings (setting_key, setting_value) VALUES (?, ?)
+       ON DUPLICATE KEY UPDATE setting_value=VALUES(setting_value), updated_at=CURRENT_TIMESTAMP(3)`,
+      [`card_wallet_floor:${code}`, normalized]
+    );
+    return { accountCode: code, walletFloor: normalized };
+  }
+
   async function setDefaultCardType(cardTypeId) {
     const id = String(cardTypeId ?? '').trim();
     if (!id) throw new Error('Card type id is required');
@@ -577,5 +698,6 @@ export function createCardStockService({ pool, sessionEncryptionKey, panHmacKey 
     return { cardTypeId: id, cardTypeName: selected.name };
   }
 
-  return { register, status, setThreshold, setMaxSuccessfulPayments, setMinimumRequiredCardBalance, setDefaultCardType };
+  return { register, status, setThreshold, setMaxSuccessfulPayments, setMinimumRequiredCardBalance,
+    setDefaultCardType, setWalletFloor };
 }
