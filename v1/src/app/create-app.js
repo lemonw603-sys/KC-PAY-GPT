@@ -49,6 +49,7 @@ export function createApp({
   startAdminBusiness = null,
   setAdminCardMaxSuccessfulPayments = null,
   setAdminCardMinimumBalance = null,
+  refreshHighvccSnapshot = null,
   createAdminCardStockJob = null,
   getHighvccCardStatus = null,
   setHighvccCardToken = null,
@@ -400,6 +401,15 @@ export function createApp({
         if (error instanceof PublicApiError) return res.status(error.status || 400).json({ error: error.code.toLowerCase(), detail: error.detail || null });
         throw error;
       }
+    });
+  }
+  // D-280 ②「刷新这台」（highvcc）。与 hnskj 的 card-stock/provider-refresh 对称，
+  // 但要慢得多：它走 list + 每张 detail，卡多时是几十秒级的外部调用，前端需提示等待。
+  // 不花钱（不开卡），所以用 adminWriteGuards 而不是 sensitiveAdminGuards。
+  if (typeof refreshHighvccSnapshot === 'function') {
+    app.post('/api/v1/admin/backup-cards/highvcc/refresh', ...adminWriteGuards, async (_req, res) => {
+      const result = await refreshHighvccSnapshot();
+      return res.status(result.failed?.length ? 207 : 200).json(result);
     });
   }
   if (typeof setHighvccCardToken === 'function') {

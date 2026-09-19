@@ -56,6 +56,16 @@ const ORDER_FILTER_TITLES = Object.freeze({
 });
 const REFUND_LABELS = Object.freeze({ MONITORING: '观察中', DETECTED: '疑似退款', CONFIRMED: '已确认退款', WITHDRAWN: '已提取' });
 const INVENTORY_LABELS = Object.freeze({ AVAILABLE: '可分配', ASSIGNED: '已分配', DEPLETED: '已耗尽', PROVISIONING: '核对中', FAILED: '已失效', HELD_FOR_REVIEW: '已隔离，禁止自动复用', RETIRED: '永久停用', PRODUCT_ONLY: '限定产品' });
+// 卡片流水类型说人话（D-280 ④）。生产实查：两个卡台大小写不一致
+// （purchase 与 PURCHASE 并存），所以一律按小写匹配；认不出的原样显示，不编。
+const CARD_TX_TYPE_LABELS = Object.freeze({
+  purchase: '消费', chargeback: '拒付', chargeback_fee: '拒付手续费',
+  normal_cancel_return: '回笼', card_issue_fee: '开卡费'
+});
+function cardTxTypeLabel(type) {
+  const key = String(type || '').trim().toLowerCase();
+  return CARD_TX_TYPE_LABELS[key] || String(type || '—');
+}
 const STOCK_CATEGORY_LABELS = Object.freeze({ READY: '可分配', IN_USE: '使用中', BLOCKED: '暂不可用', RETIRED: '永久停用' });
 const RECONCILIATION_LABELS = Object.freeze({ OK: '已对账', STALE: '待同步', SYNCING: '同步中', REVIEW_REQUIRED: '需核对', MISMATCH: '不一致' });
 const CARD_INTAKE_LABELS = Object.freeze({
@@ -1252,6 +1262,9 @@ function renderCardRigs(byProvider) {
       <div class="cardrig-quad">${cells}</div>
       <div class="cardrig-foot">
         <span>在库 ${Number(rig.inStock || 0)} · 总 ${Number(rig.total || 0)} · 使用中 ${Number(rig.inUse || 0)}</span>
+        <button class="cardbtn" type="button" data-rig-open="${escapeHtml(rig.providerKind)}">开卡…</button>
+        <button class="cardbtn" type="button" data-rig-refresh="${escapeHtml(rig.providerKind)}"
+          data-rig-account="${acct}">刷新这台</button>
         <span data-rig-wallet-out="${acct}"></span>
       </div>
     </div>`;
@@ -1283,7 +1296,11 @@ function cardRowHtml(card, retireItem, retireFailed = false) {
       ? (retireItem.due ? '已到期' : `还差 ${escapeHtml(remainingText(retireItem.dueAt))}`)
       : (card.assigned ? '占用中' : '—');
   return `<tr${due ? ' class="is-due"' : ''}>
-    <td class="cardmono">${escapeHtml(card.last4 || card.providerCardId || '—')}</td>
+    <td class="cardmono">${card.externalOnly
+      ? escapeHtml(card.last4 || card.providerCardId || '—')
+      : `<button class="cardlink" type="button" data-card="${escapeHtml(card.providerCardId)}"
+          data-card-account="${escapeHtml(card.providerAccountId || '')}"
+          title="点开看这张卡的流水">${escapeHtml(card.last4 || card.providerCardId || '—')}</button>`}</td>
     <td>${escapeHtml(card.providerLabel || '—')}</td>
     <td class="cardmono">${card.currentBalance == null ? '<span class="cardmuted">—</span>' : `$${formatMoney(card.currentBalance)}`}
       <span class="cardsub">${card.lastSyncedAt ? escapeHtml(formatTime(card.lastSyncedAt)) : '未同步'}</span></td>
@@ -1398,6 +1415,43 @@ elements.cardsRigs?.addEventListener('click', async (event) => {
       walletButton.disabled = false;
       showNotice(`查询 highvcc 钱包失败：${error.message}`);
     }
+    return;
+  }
+
+  // 「开卡…」不重做开卡流程——两台的开卡 UI 早就在下面的折叠区里（含金额、卡段、
+  // 费用预估与确认闸门）。这里只负责把它展开并滚过去，免得再造一份会花钱的入口。
+  const openButton = event.target.closest('[data-rig-open]');
+  if (openButton) {
+    const section = document.querySelector(
+      openButton.dataset.rigOpen === 'hnskj' ? '#hnskj-open-card' : '#highvcc-open-card');
+    if (!section) { showNotice('找不到这台的开卡区。'); return; }
+    section.open = true;
+    section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    return;
+  }
+
+  const refreshButton = event.target.closest('[data-rig-refresh]');
+  if (!refreshButton) return;
+  const isHnskj = refreshButton.dataset.rigRefresh === 'hnskj';
+  refreshButton.disabled = true;
+  refreshButton.textContent = isHnskj ? '刷新中…' : '刷新中…（要几十秒）';
+  try {
+    if (isHnskj) {
+      await api('/api/v1/admin/card-stock/provider-refresh', { method: 'POST' });
+      showNotice('HNSKJ 卡台规则已刷新。', 'success');
+    } else {
+      const result = await api('/api/v1/admin/backup-cards/highvcc/refresh', { method: 'POST' });
+      // 三步各自报成败——一步失败不掩盖另外两步真的做了什么。
+      showNotice(result.failed?.length
+        ? `部分失败：${result.failed.join('、')}；其余已完成。`
+        : '已向 highvcc 拉取快照、钱包与流水。', result.failed?.length ? 'error' : 'success');
+    }
+    await loadStock();
+  } catch (error) {
+    showNotice(`刷新失败：${error.message}`);
+  } finally {
+    refreshButton.disabled = false;
+    refreshButton.textContent = '刷新这台';
   }
 });
 
@@ -1514,6 +1568,20 @@ async function loadStock() {
   elements.syncTime.textContent = `更新于 ${new Date().toLocaleTimeString('zh-CN', { hour12: false })}`;
 }
 
+/** 向 highvcc 实时查钱包并渲染到开卡区（按需触发，不随页面加载跑）。 */
+async function loadHighvccWallet() {
+  if (!elements.highvccWalletStatus) return;
+  elements.highvccWalletStatus.dataset.loaded = '1';
+  elements.highvccWalletStatus.innerHTML = '<div><span><strong>正在向卡台查询…</strong></span></div>';
+  try {
+    const wallet = await api('/api/v1/admin/backup-cards/highvcc/wallet');
+    elements.highvccWalletStatus.innerHTML = `<div><span><strong>卡台美元钱包 $${wallet.usdBalance}</strong>`
+      + `<small>查询于 ${formatTime(new Date().toISOString())}；卡台自己的"押金"字段累计 $${wallet.usdDeposit}（含义未完全确认，实际能开多大金额以卡台报价为准，不代表这个数字能直接减）；已消费 $${wallet.usdConsume}</small></span></div>`;
+  } catch {
+    elements.highvccWalletStatus.innerHTML = '<div><span><strong>钱包余额读取失败</strong><small>不影响开卡，稍后刷新再看。</small></span></div>';
+  }
+}
+
 async function loadHighvccStatus() {
   if (!elements.highvccTokenStatus) return;
   const status = await api('/api/v1/admin/backup-cards/highvcc/status');
@@ -1524,14 +1592,12 @@ async function loadHighvccStatus() {
     if (elements.highvccWalletStatus) elements.highvccWalletStatus.innerHTML = '';
     return;
   }
-  if (elements.highvccWalletStatus) {
-    try {
-      const wallet = await api('/api/v1/admin/backup-cards/highvcc/wallet');
-      elements.highvccWalletStatus.innerHTML = `<div><span><strong>卡台美元钱包 $${wallet.usdBalance}</strong>`
-        + `<small>卡台自己的"押金"字段累计 $${wallet.usdDeposit}（含义未完全确认，实际能开多大金额以卡台报价为准，不代表这个数字能直接减）；已消费 $${wallet.usdConsume}</small></span></div>`;
-    } catch {
-      elements.highvccWalletStatus.innerHTML = '<div><span><strong>钱包余额读取失败</strong><small>不影响开卡，稍后刷新再看。</small></span></div>';
-    }
+  // 余额一律按需查（Lemon 2026-09-20 定）：highvcc 钱包只有实时 API，没有快照。
+  // 这里原先随 loadStock 自动查，等于「打开卡片页就打一次外网」——与台账栏那个
+  // 「查余额」按钮的暗示（还没查）矛盾。现在改成展开开卡区或点按钮时才查。
+  if (elements.highvccWalletStatus && !elements.highvccWalletStatus.dataset.loaded) {
+    elements.highvccWalletStatus.innerHTML =
+      '<div><span><strong>钱包余额未查询</strong><small>展开本区或点「刷新余额」时才向卡台查询。</small></span></div>';
   }
   if (elements.highvccVidSelect && elements.highvccVidSelect.dataset.loaded !== '1') {
     try {
@@ -1661,7 +1727,16 @@ async function openCard(providerCardId, providerAccountId = '') {
         ['客户邮箱', data.order.customerEmail]
       ]) : '<p class="empty-state">这张卡尚未分配给订单</p>'}</section>
       <section class="detail-section"><h3>历史订单关系</h3><div class="mini-list">${data.assignmentHistory?.length ? data.assignmentHistory.map((assignment) => `<div data-card-order="${escapeHtml(assignment.publicNo)}" role="button" tabindex="0"><span><strong>${escapeHtml(assignment.publicNo)} · ${escapeHtml(assignment.kind)}</strong><small>${escapeHtml(assignment.customerEmail || '—')} · 分配 ${formatTime(assignment.assignedAt)}${assignment.releasedAt ? ` · 释放 ${formatTime(assignment.releasedAt)}` : ' · 当前绑定'}</small></span><em>${escapeHtml(assignment.status)}</em></div>`).join('') : '<p class="empty-state">尚无分配历史</p>'}</div></section>
-      <section class="detail-section"><h3>卡片交易</h3><div class="mini-list">${data.transactions.length ? data.transactions.map((transaction) => `<div><span><strong>${escapeHtml(transaction.type)} · ${escapeHtml(transaction.amount)} ${escapeHtml(transaction.currency)}</strong><small>${escapeHtml(transaction.merchantName || transaction.relatedTransactionId || transaction.providerTransactionId)} · ${escapeHtml(transaction.tradeTimeRaw || formatTime(transaction.firstSeenAt))}</small></span><em>${escapeHtml(transaction.status)}</em></div>`).join('') : '<p class="empty-state">暂无已同步交易</p>'}</div></section>
+      <section class="detail-section"><h3>卡片交易</h3>
+        <p class="card-description">「对应订单」只显示消费账本里明确记了交易号的那些；<strong>空＝账本没记，不代表这笔没有订单</strong>——不按时间相近去猜是哪一单。</p>
+        <div class="mini-list">${data.transactions.length ? data.transactions.map((transaction) => {
+          const linked = transaction.ledgerOrderCount > 1
+            ? `<em class="tx-order-many">账本记了 ${transaction.ledgerOrderCount} 单</em>`
+            : transaction.ledgerOrderPublicNo
+              ? `<button type="button" class="text-button" data-card-order="${escapeHtml(transaction.ledgerOrderPublicNo)}">${escapeHtml(transaction.ledgerOrderPublicNo)}</button>`
+              : '';
+          return `<div><span><strong>${escapeHtml(cardTxTypeLabel(transaction.type))} · ${formatMoney(transaction.amount)} ${escapeHtml(transaction.currency)}</strong><small>${escapeHtml(transaction.tradeTimeRaw || formatTime(transaction.firstSeenAt))} · ${escapeHtml(transaction.merchantName || transaction.relatedTransactionId || transaction.providerTransactionId)}${linked ? ' · 订单 ' : ''}</small>${linked}</span><em>${escapeHtml(transaction.status)}</em></div>`;
+        }).join('') : '<p class="empty-state">暂无已同步交易</p>'}</div></section>
       <section class="detail-section"><h3>同步记录</h3><div class="mini-list">${data.syncJobs.length ? data.syncJobs.map((job) => `<div><span><strong>${escapeHtml(STOCK_JOB_LABELS[job.status] || job.status)}</strong><small>${job.attempts}/${job.maxAttempts} 次 · ${formatTime(job.createdAt)}${job.errorMessage ? ` · ${escapeHtml(job.errorMessage)}` : ''}</small></span><em>${escapeHtml(job.status)}</em></div>`).join('') : '<p class="empty-state">尚未手动同步</p>'}</div></section>
       <section class="detail-section"><h3>状态变化</h3><div class="mini-list">${data.events.length ? data.events.map((event) => `<div><span><strong>${escapeHtml(event.type)}</strong><small>${formatTime(event.createdAt)} · ${escapeHtml(event.source)}</small></span></div>`).join('') : '<p class="empty-state">暂无状态变化记录</p>'}</div></section>`;
     document.querySelector('#sync-one-card')?.addEventListener('click', async (event) => {
@@ -2502,10 +2577,14 @@ elements.stockOpenForm?.addEventListener('submit', async (event) => {
 elements.highvccOpenSite?.addEventListener('click', () => {
   window.open('https://www.highvcc.com', '_blank', 'noopener,noreferrer');
 });
+// 展开「一键开卡」时才查余额：开卡前本来就要看够不够钱，但没展开就不该打外网。
+document.querySelector('#highvcc-open-card')?.addEventListener('toggle', (event) => {
+  if (event.currentTarget.open && elements.highvccWalletStatus?.dataset.loaded !== '1') loadHighvccWallet();
+});
 elements.highvccRefreshWallet?.addEventListener('click', async () => {
   elements.highvccRefreshWallet.disabled = true;
   try {
-    await loadHighvccStatus();
+    await loadHighvccWallet();
     showNotice('余额已刷新。', 'success');
   } catch {
     showNotice('余额刷新失败，请稍后重试。');

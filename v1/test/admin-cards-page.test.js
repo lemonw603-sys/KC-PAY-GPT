@@ -191,3 +191,65 @@ test('卡片页的样式表真的被引入（否则整页退化成无样式表�
   const rules = css.replace(/\/\*[\s\S]*?\*\//g, '');
   assert.doesNotMatch(rules, /\.workbench/, 'cards.css 的选择器不该依赖 .workbench 作用域');
 });
+
+/* ===== D-280 ②④⑧（第二轮）===== */
+
+test('④ 尾号必须是进流水的入口（data-card），不能再被重做掉一次', () => {
+  const { sandbox, html } = loadAdminJs();
+  sandbox.renderStockCards([CARD_READY], { due: [], notYetDue: [] });
+  const out = html('sel:#stock-cards');
+  // 上一轮把表格重做时删掉了 data-card，点击处理器还在、没元素可匹配，入口静默断了。
+  assert.match(out, /data-card="h-1"/);
+  assert.match(out, /data-card-account="pa-1"/);
+});
+
+test('④ 外部卡台记录不给流水入口（它在本地没有卡，点开必 404）', () => {
+  const { sandbox, html } = loadAdminJs();
+  sandbox.renderStockCards([{ ...CARD_READY, externalOnly: true }], { due: [], notYetDue: [] });
+  assert.doesNotMatch(html('sel:#stock-cards'), /data-card=/);
+});
+
+test('④ 流水类型说人话，且大小写不敏感（生产里 purchase 与 PURCHASE 并存）', () => {
+  const { evalIn } = loadAdminJs();
+  assert.equal(evalIn("cardTxTypeLabel('PURCHASE')"), '消费');
+  assert.equal(evalIn("cardTxTypeLabel('purchase')"), '消费');
+  assert.equal(evalIn("cardTxTypeLabel('chargeback')"), '拒付');
+  assert.equal(evalIn("cardTxTypeLabel('NORMAL_CANCEL_RETURN')"), '回笼');
+  assert.equal(evalIn("cardTxTypeLabel('CARD_ISSUE_FEE')"), '开卡费');
+  // 认不出的原样显示，不编一个好听的
+  assert.equal(evalIn("cardTxTypeLabel('SOMETHING_NEW')"), 'SOMETHING_NEW');
+});
+
+test('highvcc 钱包不得随页面加载自动查（Lemon 2026-09-20 定：全部按需）', () => {
+  const src = fs.readFileSync(path.join(here, '..', 'public', 'admin', 'assets', 'admin.js'), 'utf8');
+  const start = src.indexOf('async function loadHighvccStatus()');
+  assert.ok(start > 0, 'loadHighvccStatus 必须存在');
+  const body = src.slice(start, src.indexOf('\n}', start));
+  // loadStock 无条件调 loadHighvccStatus；它里面一旦直接查 wallet，就等于「打开卡片页即打外网」。
+  assert.doesNotMatch(body, /highvcc\/wallet/,
+    'loadHighvccStatus 不得直接查钱包——余额只在点按钮或展开开卡区时查');
+});
+
+test('② 两台都有「开卡…」与「刷新这台」，且开卡只是展开既有折叠区（不另造花钱入口）', () => {
+  const { sandbox, html } = loadAdminJs();
+  sandbox.renderCardRigs([RIG_HNSKJ, RIG_BACKUP]);
+  const out = html('sel:#cards-rigs');
+  assert.match(out, /data-rig-open="hnskj"/);
+  assert.match(out, /data-rig-open="manual_excel"/);
+  assert.match(out, /data-rig-refresh="hnskj"/);
+  assert.match(out, /data-rig-refresh="manual_excel"/);
+  const src = fs.readFileSync(path.join(here, '..', 'public', 'admin', 'assets', 'admin.js'), 'utf8');
+  // 开卡按钮只许展开/滚动到既有折叠区，绝不能自己发起开卡请求
+  const handler = src.slice(src.indexOf("closest('[data-rig-open]')"), src.indexOf("closest('[data-rig-refresh]')"));
+  assert.doesNotMatch(handler, /card-stock\/jobs|highvcc\/open/,
+    '「开卡…」不得自己发起开卡请求，只负责展开既有开卡区');
+});
+
+test('⑧ 导入备用卡降级为折叠的高级入口，能力保留', () => {
+  const html = fs.readFileSync(path.join(here, '..', 'public', 'admin', 'index.html'), 'utf8');
+  const block = html.slice(html.indexOf('id="manual-card-import-card"'));
+  assert.match(html, /<details[^>]*id="manual-card-import-card"/, '必须是 details（默认折叠）');
+  assert.match(block, /接入无 API 的卡台：上传导出表/);
+  // 能力保留：上传表单还在
+  assert.match(block.slice(0, block.indexOf('</details>')), /manual-card-import-file/);
+});

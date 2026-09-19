@@ -20,6 +20,7 @@ import { createAdminSessionAuth } from './security/admin-session.js';
 import { createCardStockService } from './services/card-stock-service.js';
 import { createCardStockJobService } from './services/card-stock-job-service.js';
 import { createHighvccCardService } from './services/highvcc-card-service.js';
+import { createHighvccSnapshotSyncService } from './services/highvcc-snapshot-sync-service.js';
 import { createCardFundingAdminService } from './services/card-funding-admin-service.js';
 import { createProviderRouteAdminService } from './services/provider-route-admin-service.js';
 import { createCardSyncJobService } from './services/card-sync-job-service.js';
@@ -82,6 +83,11 @@ const cardStockService = createCardStockService({
 });
 const cardStockJobService = createCardStockJobService({ pool });
 const highvccCardService = createHighvccCardService({
+  pool, encryptionKey: config.sessionEncryptionKey, panHmacKey: config.cardIntakePanHmacKey
+});
+// D-280 ②「刷新这台」的 highvcc 侧：与 CLI `scripts/sync-highvcc-snapshot.mjs --commit`
+// 同一个服务、同样三步，只是换成后台按钮触发。
+const highvccSnapshotSyncService = createHighvccSnapshotSyncService({
   pool, encryptionKey: config.sessionEncryptionKey, panHmacKey: config.cardIntakePanHmacKey
 });
 const cardFundingAdminService = createCardFundingAdminService({ pool });
@@ -241,6 +247,25 @@ const app = createApp({
   ,openHighvccCard: highvccCardService.openCard
   ,listHighvccCardRanges: highvccCardService.listRanges
   ,getHighvccWalletStatus: highvccCardService.walletStatus
+  // 三步各自独立报成败：一步失败不掩盖另外两步的结果（照 CLI 的 step() 语义）。
+  ,refreshHighvccSnapshot: async () => {
+    const out = {};
+    const failures = [];
+    const step = async (name, run) => {
+      try { out[name] = await run(); }
+      catch (error) {
+        out[name] = { failed: true, code: error.code || error.constructor.name, message: error.message };
+        failures.push(name);
+      }
+    };
+    await step('snapshot', async () => {
+      const result = await highvccSnapshotSyncService.commit({ requestedBy: 'admin:refresh-provider' });
+      return { committed: result.committed, commitAllowed: result.preview?.commitAllowed };
+    });
+    await step('wallet', () => highvccSnapshotSyncService.syncWallet());
+    await step('transactions', () => highvccSnapshotSyncService.syncTransactions());
+    return { ...out, failed: failures };
+  }
   ,listAdminCardFundingAttempts: cardFundingAdminService.list
   ,resolveAdminCardFundingUnknown: cardFundingAdminService.resolveUnknown
   ,setAdminDefaultRechargeMethod: providerRouteAdminService.setDefaultRechargeMethod

@@ -371,10 +371,24 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
     const row = cardRows[0];
     const localCardId = row.id;
     const [[transactionRows], [eventRows], [jobRows], [assignmentRows]] = await Promise.all([
+      // D-280 ④：每笔流水对应哪个订单，**只认账本里明确记了 provider_transaction_id 的**，
+      // 没记的留空——绝不按「时间相近」去推断是哪一单（Lemon 的硬约束）。
+      // 用相关子查询而不是 JOIN：账本这列没有唯一约束，JOIN 一旦遇到重复就会把流水行乘出来
+      // （生产当前无重复，但不拿「现在没有」当约束）。ledger_order_count 用来识别歧义，
+      // 大于 1 时前端显示「多单」而不是随便挑一个。
       pool.query(`SELECT ct.provider_transaction_id, ct.transaction_type, ct.status,
           ct.amount, ct.currency, ct.fee, ct.trade_time_raw, ct.related_txn_id,
           ct.settlement_status, ct.merchant_name, ct.merchant_country,
-          ct.first_seen_at, ct.last_seen_at
+          ct.first_seen_at, ct.last_seen_at,
+          (SELECT COUNT(DISTINCT l.order_id) FROM card_consumption_ledger l
+            WHERE l.provider_transaction_id = ct.provider_transaction_id
+              AND ct.provider_transaction_id IS NOT NULL AND ct.provider_transaction_id <> ''
+          ) AS ledger_order_count,
+          (SELECT o.public_no FROM card_consumption_ledger l
+            INNER JOIN orders o ON o.id = l.order_id
+            WHERE l.provider_transaction_id = ct.provider_transaction_id
+              AND ct.provider_transaction_id IS NOT NULL AND ct.provider_transaction_id <> ''
+            ORDER BY l.created_at ASC LIMIT 1) AS ledger_order_public_no
         FROM card_transactions ct
         WHERE ct.card_id = ? ORDER BY ct.id DESC LIMIT 200`, [localCardId]),
       pool.query(`SELECT cse.event_type, cse.source, cse.previous_json,
@@ -430,6 +444,9 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
         settlementStatus: transaction.settlement_status,
         merchantName: transaction.merchant_name,
         merchantCountry: transaction.merchant_country,
+        // 账本明确记了才有；没记＝null，前端留空，不推断（D-280 ④）
+        ledgerOrderPublicNo: transaction.ledger_order_public_no || null,
+        ledgerOrderCount: Number(transaction.ledger_order_count || 0),
         firstSeenAt: iso(transaction.first_seen_at),
         lastSeenAt: iso(transaction.last_seen_at)
       })),

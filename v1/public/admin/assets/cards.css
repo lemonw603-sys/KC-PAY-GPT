@@ -71,3 +71,10 @@
 .cardnote{font-size:12px;color:var(--wb-t2,#5a6b67);padding:9px 13px;background:var(--wb-info-soft,#eaf2fc);
   border-top:1px solid hsl(212,50%,88%)}
 .cardfail{font-size:12.5px;color:var(--wb-danger,#cc3b32);padding:10px 13px}
+
+/* 尾号＝进流水的入口。D-280 ④「点开一行看流水」——上一轮重做表格时把原来的
+   data-card 入口删掉了（处理器还在、没元素可匹配），这里接回来。 */
+.cardtable .cardlink{background:none;border:0;padding:0;font:inherit;color:var(--wb-a,#12795a);
+  font-family:var(--wb-fm,monospace);font-weight:600;cursor:pointer;text-decoration:underline;
+  text-underline-offset:2px;text-decoration-color:color-mix(in srgb,var(--wb-a,#12795a) 35%,transparent)}
+.cardtable .cardlink:hover{color:var(--wb-a-ink,#0e6045);text-decoration-color:currentColor}
