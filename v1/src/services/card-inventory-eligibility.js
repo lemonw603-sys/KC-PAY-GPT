@@ -162,6 +162,10 @@ export function providerCardStockSql({ productCode = 'plus' } = {}) {
       -- token/供给故障的权威位置：补卡调度器失败时写 FAULT + 原因，贴新 token 清回 OK。
       -- 「已失效」只认这个，不靠 tokenStatus()（它只答配没配过）。
       pa.supply_fault_state, pa.supply_fault_reason, pa.supply_fault_at,
+      -- 钱包底线的唯一来源：wallet_floor 就是开卡预检 walletPreflight 里那条硬底线
+      -- （「扣完剩 X，低于硬底线 Y；未开卡」）。D-273 的教训是别为一个已经实现的东西
+      -- 再造第二份，页面显示的底线必须就是挡开卡的那一个。
+      pa.wallet_floor, pa.wallet_alert_threshold,
       COUNT(*) AS total,
       SUM(c.inventory_status <> 'RETIRED') AS in_stock,
       SUM((${eligibleInventoryCardSql('c', minimumSql, { productCode })})) AS plus_assignable,
@@ -171,7 +175,8 @@ export function providerCardStockSql({ productCode = 'plus' } = {}) {
         WHERE u.card_id=c.id AND u.status IN ('RESERVED','CONSUMED','RECONCILIATION'))>0) AS any_used
     FROM cards c INNER JOIN provider_accounts pa ON pa.id=c.provider_account_id
     GROUP BY pa.id, pa.account_code, pa.provider_code, pa.supply_fault_state,
-      pa.supply_fault_reason, pa.supply_fault_at ORDER BY pa.provider_code`;
+      pa.supply_fault_reason, pa.supply_fault_at, pa.wallet_floor, pa.wallet_alert_threshold
+    ORDER BY pa.provider_code`;
 }
 
 /**

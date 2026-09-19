@@ -349,8 +349,9 @@ function renderWbCards(overview) {
   if (!box) return;
   const byProvider = overview.cardStockByProvider || [];
   const h = overview.providerHealth || {};
-  // 显示名：hnskj → HNSKJ；backup-a（manual_excel，highvcc 开卡进这台）→ 备用卡台 A。
-  const nameOf = (p) => p.providerKind === 'hnskj' ? 'HNSKJ' : (p.providerCode === 'backup-a' ? '备用卡台 A' : (p.providerCode || p.providerKind || '卡台'));
+  // 显示名：hnskj → HNSKJ；backup-a（manual_excel，highvcc 开卡进这台）→ highvcc卡台
+  // （Lemon 2026-09-20 定：与卡片页同名，同一台卡台不给两个叫法）。
+  const nameOf = (p) => p.providerKind === 'hnskj' ? 'HNSKJ' : (p.providerCode === 'backup-a' ? 'highvcc卡台' : (p.providerCode || p.providerKind || '卡台'));
   // hnskj 钱包来自本地快照（getOverview.providerHealth）；backup-a 的钱包=highvcc，实时端点、不在概览。
   const walletOf = (p) => p.providerKind === 'hnskj'
     ? (h.accountBalance == null ? '钱包 —' : `钱包 ${formatMoney(h.accountBalance)} ${escapeHtml(h.currency || 'USD')}`)
@@ -1251,7 +1252,6 @@ function renderCardRigs(byProvider) {
       <div class="cardrig-quad">${cells}</div>
       <div class="cardrig-foot">
         <span>在库 ${Number(rig.inStock || 0)} · 总 ${Number(rig.total || 0)} · 使用中 ${Number(rig.inUse || 0)}</span>
-        <button class="cardbtn" type="button" data-rig-floor="${acct}">设底线</button>
         <span data-rig-wallet-out="${acct}"></span>
       </div>
     </div>`;
@@ -1380,7 +1380,7 @@ elements.stockCardsHistory?.addEventListener('click', (event) => {
   toggle.textContent = toggle.textContent.replace(body.hidden ? '▾' : '▸', body.hidden ? '▸' : '▾');
 });
 
-// ① 查余额 / 设底线
+// ① 查余额（底线是只读的：wallet_floor 挡开卡，改它属资金动作，归设置页）
 elements.cardsRigs?.addEventListener('click', async (event) => {
   const walletButton = event.target.closest('[data-rig-wallet]');
   if (walletButton) {
@@ -1398,26 +1398,7 @@ elements.cardsRigs?.addEventListener('click', async (event) => {
       walletButton.disabled = false;
       showNotice(`查询 highvcc 钱包失败：${error.message}`);
     }
-    return;
   }
-  const floorButton = event.target.closest('[data-rig-floor]');
-  if (!floorButton) return;
-  const accountCode = floorButton.dataset.rigFloor;
-  const answer = await askForm({
-    title: `设置钱包底线 · ${accountCode}`,
-    message: '余额低于底线时这一格标红。只是提醒，不会自动停开卡。',
-    fields: [{ name: 'amount', label: '底线金额（美元）', type: 'number', required: true }],
-    confirmLabel: '保存'
-  });
-  if (!answer) return;
-  try {
-    await api('/api/v1/admin/card-stock/wallet-floor', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ accountCode, amount: Number(answer.amount) })
-    });
-    showNotice('钱包底线已保存。', 'success');
-    await loadStock();
-  } catch (error) { showNotice(`保存底线失败：${error.message}`); }
 });
 
 // ⑥ 手动用卡登记：标 RETIRED override（F-57 定的正确端点——卡不再分配，但仍留在待销里）

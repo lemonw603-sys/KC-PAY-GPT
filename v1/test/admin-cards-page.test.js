@@ -18,14 +18,14 @@ const RIG_HNSKJ = {
   providerAccountId: 'pa-1', accountCode: 'legacy-primary', providerKind: 'hnskj',
   label: 'HNSKJ 卡台', total: 14, inStock: 2, plusAssignable: 1, inUse: 0, anyUsed: 0,
   stockTarget: 5, walletBalance: '41.20', walletCurrency: 'USD',
-  walletSyncedAt: '2026-09-20T00:59:00.000Z', walletLiveOnly: false, walletFloor: '25.50',
+  walletSyncedAt: '2026-09-20T00:59:00.000Z', walletLiveOnly: false, walletFloor: '30.00', walletAlertThreshold: '35.00',
   openedToday: 2, dailyLimit: 3, supplyFaultState: 'OK', supplyFaultReason: null, tokenFault: false
 };
 const RIG_BACKUP = {
   providerAccountId: 'pa-3', accountCode: 'backup-a', providerKind: 'manual_excel',
-  label: '备用卡台（highvcc）', total: 16, inStock: 7, plusAssignable: 1, inUse: 0, anyUsed: 0,
+  label: 'highvcc卡台', total: 16, inStock: 7, plusAssignable: 1, inUse: 0, anyUsed: 0,
   stockTarget: 5, walletBalance: null, walletCurrency: 'USD', walletSyncedAt: null,
-  walletLiveOnly: true, walletFloor: null, openedToday: 1, dailyLimit: 3,
+  walletLiveOnly: true, walletFloor: '20.00', walletAlertThreshold: '25.00', openedToday: 1, dailyLimit: 3,
   supplyFaultState: 'OK', supplyFaultReason: null, tokenFault: false
 };
 const CARD_READY = {
@@ -44,15 +44,28 @@ test('三个渲染函数确有定义，且真实 admin.js 能加载（F-68 守�
   }
 });
 
-test('没设过的钱包底线显示「未设底线」，绝不显示成 $0.00', () => {
+test('底线显示的就是挡开卡那条硬底线（provider_accounts.wallet_floor），不是另造的键', () => {
   const { sandbox, html } = loadAdminJs();
   sandbox.renderCardRigs([RIG_HNSKJ, RIG_BACKUP]);
   const out = html('sel:#cards-rigs');
+  // 生产实值：hnskj 30 / backup-a 20，就是 walletPreflight 里那条「低于硬底线就不开卡」的线。
+  // D-273 的教训：别为一个已经实现的东西再造第二份，页面上的底线必须和挡开卡的是同一个数。
+  assert.match(out, /\$30\.00/);
+  assert.match(out, /\$20\.00/);
+});
+
+test('真取不到底线时显示「未设底线」，绝不显示成 $0.00', () => {
+  const { sandbox, html } = loadAdminJs();
+  sandbox.renderCardRigs([{ ...RIG_HNSKJ, walletFloor: null }]);
+  const out = html('sel:#cards-rigs');
   assert.match(out, /未设底线/);
-  // backup-a 的 walletFloor 是 null。一个编出来的 $0 底线会让「余额够不够」这句话失去意义。
   assert.doesNotMatch(out, /\/ \$0\.00/);
-  // hnskj 设过的那个要照常显示
-  assert.match(out, /\$25\.50/);
+});
+
+test('卡片页不给改底线的入口（wallet_floor 挡开卡，改它是资金动作，归设置页）', () => {
+  const { sandbox, html } = loadAdminJs();
+  sandbox.renderCardRigs([RIG_HNSKJ, RIG_BACKUP]);
+  assert.doesNotMatch(html('sel:#cards-rigs'), /data-rig-floor/);
 });
 
 test('highvcc 不显示余额数字，只给「查余额」按钮（它没有快照，余额只能实时查）', () => {

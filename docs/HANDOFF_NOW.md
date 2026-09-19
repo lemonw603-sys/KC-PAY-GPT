@@ -15,7 +15,7 @@
 **CDK**（已推送）：D-279 ② 码前缀按产品；**D-286** 交付负债可见 + 码有效期/下线保护（迁移 055，只加列）；四端点端到端验通（owed / stock 真的分开）。
 
 **卡片页 D-280 ①③⑤⑥**（本轮，A「台账优先」+ 候光皮，D-287）：
-1. **① 两台并列四个数**：可分配/水位、钱包/底线、今日已开/日限、token。**可分配复用 `providerCardStockSql()`**（＝第③④块资格规则，与工作台同口径）；新增按台钱包底线设置键 + 写端点（带 provider_accounts 白名单）。
+1. **① 两台并列四个数**：可分配/水位、钱包/底线、今日已开/日限、token。**可分配复用 `providerCardStockSql()`**（＝第③④块资格规则，与工作台同口径）；**底线直接读 `provider_accounts.wallet_floor`**——就是开卡预检挡开卡的那条硬底线（生产 hnskj 30 / backup-a 20），只读显示不给编辑入口（改它是资金动作，按 D-284 归设置页）。
 2. **③ 在役列表 + 历史折叠**：状态复用 `classifyStockCardOperationalState`；补了 `createdAt` / `issueFee` / **`externalCardId`**（overrides 按 external_card_id 匹配，生产当前两列同值但不让页面依赖这个巧合）。
 3. **⑤ 待销清单**：复用 `classifyRetirementRow` 的 due/notYetDue；到期才给按钮，确认词闸门保留。
 4. **⑥ 手动用卡登记**：走 overrides（F-57 定的正确端点）——卡不再分配，但**仍留在待销清单里**。
@@ -30,7 +30,6 @@
 - **生产零验证**：以上全部在隔离库 + 本地服务；生产仍旧后台。
 - **迁移 055 未应用生产**（见上）。
 - **唯一一条有意留红的测试**＝`admin overview does not describe disabled automatic card opening as enabled`。查清后比原记录严重：**不是文案过时，是供给开关在后台根本没有入口**——`data-supply-toggle` 只有 handler、全项目无渲染处。这是 **F-65** 的真实表现，属供给控件范围，做供给控件时闭合。**不要为了全绿去改这条测试。**
-- **两处卡台措辞不同**：卡片页「备用卡台（highvcc）」/ 工作台「备用卡台 A」（那块空间窄）。未统一，待 Lemon 定。
 - **旧批次明文可能取不到**：`listCdkCodes` 依赖 `cdk_batches.codes_ciphertext`，解不开的行 `code` 返回 null（不编造）；生产有多少这种批次未统计。
 - **Browser 就绪态切换未验**：隔离库造不出就绪执行器。
 

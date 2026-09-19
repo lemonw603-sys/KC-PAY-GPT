@@ -2710,3 +2710,15 @@ step6（`8cd6d7e`）发布后 Lemon 打开生产，指三条做偏：① sidebar
 **顺手清掉的历史红测试**：接班交代的「两条既有红」经重查**实为六条**，修了五条（start-business 死引用、054→055 迁移断言、两处 `admin.js?v=51`、`#refresh-button` 可选链 marker），并把 admin.js 版本 bump 到 v=54。**剩一条有意留红**：它暴露的是「供给开关在后台没有渲染入口」（F-65 真实表现），不是文案问题，不越界修、不弱化。
 
 **清理**：隔离库 `step6_cards_*` 已删（只删自己建的，容器与 12 个历史库未动）；8803 验收服务已停。
+
+### 同轮纠正：钱包底线差点造成第二份（D-273 同类错误）
+
+落盘时在 `DECISIONS.md:4075`（D-273）读到一句「`provider_accounts.wallet_floor`（备用卡台 A = 20，hnskj = 30）」——立刻查证：**该列早就存在、生产有真实值、且是开卡预检 `walletPreflight` 挡开卡用的那条硬底线**。而我此前报「钱包底线全项目不存在」并据此新建了 `card_wallet_floor:*` 设置键 + 写端点，Lemon 也是基于这个错误前提做的选择。
+
+**根因**：grep 时只搜 `setting_key` 字符串，漏掉它是**表的列**。**危害**：页面显示「未设底线」而系统实际按 30/20 挡开卡，运营看到的和系统在用的不是一个数。
+
+**已全部回退并改正**：删设置键查询 / `setWalletFloor` / `POST /card-stock/wallet-floor` / server 接线 / 前端「设底线」按钮与 handler；`providerCardStockSql()` 改读 `pa.wallet_floor` + `pa.wallet_alert_threshold`。本轮只读显示、不给编辑入口（改它是资金动作，按 D-284 归设置页）。新增守门测试：「卡片页不给改底线的入口」。
+
+**生产只读实跑**（同时补掉 UNVERIFIED 里两条）：新 SQL 在生产跑通 —— hnskj floor 30 / 可分配 **0**（在库 2、总 14），backup-a floor 20 / 可分配 **2**（在库 7、总 16），告警线均 50；与 `admin-read-service.js` 里既有实测注释一致。
+
+**台名**：Lemon 2026-09-20 定两处统一叫 **「highvcc卡台」**（卡片页与工作台同名，后端 `PROVIDER_LABELS` 唯一定义，工作台原简称「备用卡台 A」一并改掉）。

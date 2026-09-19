@@ -83,12 +83,12 @@ function decryptCardNumber(row, key) {
 
 /**
  * 卡台显示名。库里 backup-a 的 provider_code 是 `manual_excel`（它走的是导入表
- * 那条入库路径），但实际卡台是 highvcc——Lemon 2026-09-20 定页面点明，免得切卡台
- * 时看不出是哪家。
+ * 那条入库路径），但实际卡台是 highvcc——Lemon 2026-09-20 定两处页面
+ * 都叫「highvcc卡台」，免得切卡台时看不出是哪家。
  */
 export const PROVIDER_LABELS = Object.freeze({
   hnskj: 'HNSKJ 卡台',
-  manual_excel: '备用卡台（highvcc）'
+  manual_excel: 'highvcc卡台'
 });
 export function providerLabelOf(providerCode) {
   return PROVIDER_LABELS[String(providerCode || '')] || String(providerCode || '') || '未知卡台';
@@ -300,7 +300,7 @@ export function createCardStockService({ pool, sessionEncryptionKey, panHmacKey 
 
   async function status() {
     const [[thresholdRows], [rows], [settings], [cards], [overrideRows], providerSnapshot, catalogSnapshot,
-      [providerStockRows], [openedTodayRows], [walletFloorRows], [snapshotRows]] = await Promise.all([
+      [providerStockRows], [openedTodayRows], [snapshotRows]] = await Promise.all([
       pool.query(
         `SELECT setting_key, setting_value FROM app_settings
          WHERE setting_key IN ('card_stock_low_threshold','card_auto_replenishment_enabled','card_replenishment_daily_limit')`
@@ -368,10 +368,6 @@ export function createCardStockService({ pool, sessionEncryptionKey, panHmacKey 
          FROM card_stock_jobs
         WHERE job_source = 'AUTOMATIC' AND ${todayCst8WindowSql('created_at')}
         GROUP BY provider_account_id`),
-      // 钱包底线按台存（键 card_wallet_floor:<account_code>）。没设过就是没设，
-      // 不给默认值——一个编出来的底线会让「余额够不够」这句话失去意义。
-      pool.query(`SELECT setting_key, setting_value FROM app_settings
-        WHERE setting_key LIKE 'card_wallet_floor:%'`),
       // 钱包余额：HNSKJ 读快照。highvcc 不在这里读——它只有实时 API，按 D-280 定
       // 的是「查余额」按钮，打开页面不打外网。
       pool.query(`SELECT provider, synced_at,
@@ -496,16 +492,13 @@ export function createCardStockService({ pool, sessionEncryptionKey, panHmacKey 
     )?.setting_value || 5));
     const openedTodayByAccount = new Map((openedTodayRows || []).map(
       (row) => [String(row.provider_account_id), Number(row.used_today || 0)]));
-    const WALLET_FLOOR_PREFIX = 'card_wallet_floor:';
-    const walletFloorByAccount = new Map((walletFloorRows || []).map(
-      (row) => [String(row.setting_key).slice(WALLET_FLOOR_PREFIX.length), String(row.setting_value)]));
     const snapshotByProviderKind = new Map((snapshotRows || []).map(
       (row) => [String(row.provider), row]));
     const byProvider = (providerStockRows || []).map((row) => {
       const accountCode = String(row.provider_code || '');
       const providerKind = String(row.provider_kind || '');
       const snapshot = snapshotByProviderKind.get(providerKind) || null;
-      const floor = walletFloorByAccount.get(accountCode);
+      const floor = row.wallet_floor;
       return {
         providerAccountId: String(row.provider_account_id),
         accountCode,
@@ -525,8 +518,10 @@ export function createCardStockService({ pool, sessionEncryptionKey, panHmacKey 
         walletSyncedAt: snapshot?.synced_at instanceof Date
           ? snapshot.synced_at.toISOString() : snapshot?.synced_at || null,
         walletLiveOnly: !snapshot,
-        // 没设过底线就是 null（「未设置」），不编一个默认值。
+        // 底线＝ provider_accounts.wallet_floor，就是开卡预检挡开卡用的那条硬底线。
+        // 页面显示的底线必须和挡开卡的是同一个数，否则运营看到的和系统在用的不一致。
         walletFloor: floor == null ? null : String(floor),
+        walletAlertThreshold: row.wallet_alert_threshold == null ? null : String(row.wallet_alert_threshold),
         openedToday: openedTodayByAccount.get(String(row.provider_account_id)) || 0,
         dailyLimit: replenishmentDailyLimit,
         // 只在真有故障时说「已失效」；没故障不写「有效」（Lemon 定的口径）。
@@ -652,34 +647,6 @@ export function createCardStockService({ pool, sessionEncryptionKey, panHmacKey 
       : { minimumRequiredCardBalance: normalized, planType: plan };
   }
 
-  /**
-   * 钱包底线（D-280 ①，Lemon 2026-09-20 定「补一个设置键」）。
-   *
-   * 键是拼出来的（card_wallet_floor:<account_code>），所以 accountCode 必须先在
-   * provider_accounts 里查到才允许写——否则任意字符串都能往 app_settings 里塞键。
-   * 白名单来自库本身，不是代码里的常量列表，免得加卡台时忘了同步。
-   */
-  async function setWalletFloor(accountCode, value) {
-    const code = String(accountCode ?? '').trim();
-    if (!code) throw new Error('Provider account code is required');
-    const [known] = await pool.query(
-      `SELECT 1 FROM provider_accounts WHERE account_code = ? AND purpose = 'CARD' LIMIT 1`, [code]
-    );
-    if (!known.length) throw new Error('Unknown provider account code');
-    const amount = Number(value);
-    if (!Number.isFinite(amount) || amount < 0 || amount > 100000
-      || Math.round(amount * 100) !== amount * 100) {
-      throw new Error('Wallet floor must be between 0 and 100000 with at most two decimals');
-    }
-    const normalized = amount.toFixed(2);
-    await pool.query(
-      `INSERT INTO app_settings (setting_key, setting_value) VALUES (?, ?)
-       ON DUPLICATE KEY UPDATE setting_value=VALUES(setting_value), updated_at=CURRENT_TIMESTAMP(3)`,
-      [`card_wallet_floor:${code}`, normalized]
-    );
-    return { accountCode: code, walletFloor: normalized };
-  }
-
   async function setDefaultCardType(cardTypeId) {
     const id = String(cardTypeId ?? '').trim();
     if (!id) throw new Error('Card type id is required');
@@ -698,6 +665,5 @@ export function createCardStockService({ pool, sessionEncryptionKey, panHmacKey 
     return { cardTypeId: id, cardTypeName: selected.name };
   }
 
-  return { register, status, setThreshold, setMaxSuccessfulPayments, setMinimumRequiredCardBalance,
-    setDefaultCardType, setWalletFloor };
+  return { register, status, setThreshold, setMaxSuccessfulPayments, setMinimumRequiredCardBalance, setDefaultCardType };
 }

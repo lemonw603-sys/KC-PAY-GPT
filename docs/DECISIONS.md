@@ -4233,15 +4233,23 @@ Lemon 痛点：卡列表又多又长没用、金额不准要去卡台看、信�
 **比稿与选型**（`docs/design/prototypes/step6-cards-compare.html`，三版只差「待销怎么摆」）：Lemon 挑 **A 台账优先**（两台整宽置顶 → 在役列表 → 待销独立成块，最贴 D-280 字面）。否掉 B（待销混进主列表，删卡按钮与日常行同处易误点）与 C（待销单独 tab，多一步）。
 
 **四个数的现场核查**（动手前查，三处与需求对不上，已摆给 Lemon 选）：
-1. **钱包底线全项目不存在** → Lemon 定「补一个设置键」。新增 `card_wallet_floor:<account_code>`（按台）+ `POST /api/v1/admin/card-stock/wallet-floor`。键是拼出来的，所以 accountCode **必须先在 `provider_accounts` 查到**才允许写（白名单来自库、不是代码常量表），已验注入串被拒。
+1. ~~**钱包底线全项目不存在** → 新增设置键~~ **← 这一条是错的，当轮已撤回并纠正，见下方「撤回」。**
 2. **两台余额来源不对称**：hnskj 读快照表 `card_provider_snapshots`，highvcc 只有实时 API → Lemon 定**给「查余额」按钮、不自动查**，打开页面不打外网。查不到时显示 null 不显示 0。
-3. **第二台库里 `provider_code` 是 `manual_excel`、实际卡台是 highvcc** → Lemon 定页面叫 **「备用卡台（highvcc）」**。工作台仍用简称「备用卡台 A」（那块空间更窄），两处措辞不同，未统一，待 Lemon 定。
+3. **第二台库里 `provider_code` 是 `manual_excel`、实际卡台是 highvcc** → Lemon 定**两处页面统一叫「highvcc卡台」**（卡片页与工作台同名，同一台卡台不给两个叫法；原工作台简称「备用卡台 A」一并改掉）。
 
 > **事实订正（本轮核查推翻我自己先前的说法）**：先前报「今日已开对 highvcc 恒为 0、不按台」**是错的**。`card_stock_jobs` 本来就有 `provider_account_id`，自动补卡调度器给任意卡台建 job（`card-supply-scheduler-service.js` 的 `opener.id`），生产实查 backup-a 有 2 条（2026-09-18）。create-app 那条「不走 card_stock_jobs」的注释说的只是 `/highvcc/open` 手动同步开卡这一条路径。**所以四个数里三个有真实按台来源，只有底线要新增。**
 
+**撤回（同轮发现并纠正）：钱包底线早就实现了，我差点造第二份**
+
+我先前报「钱包底线全项目没有这个设置键」，据此新建了 `card_wallet_floor:<account_code>` 设置键 + 写端点，Lemon 也基于这个前提选了「补一个设置键」。**前提是错的**：`provider_accounts.wallet_floor` **早就存在且在生产有真实值**（2026-09-20 只读实查：hnskj **30.00** / backup-a **20.00**），它就是开卡预检 `walletPreflight` 里那条硬底线——告警文案「扣完剩 X，**低于硬底线 Y**；未开卡，请充值钱包」用的正是它。旁边还有 `wallet_alert_threshold`（告警线，生产两台都是 50）。
+
+**错在哪**：grep 时只搜了 `setting_key` 字符串，漏掉它是**表的列**。这与 **D-273** 是同一类错误——为一个已经解决的问题再造一份。**危害具体**：页面会显示「未设底线」，而系统实际在按 30/20 挡开卡，运营看到的和系统在用的不是一个数。
+
+**纠正**：删掉 `card_wallet_floor:*` 设置键、`setWalletFloor`、`POST /card-stock/wallet-floor` 端点与前端「设底线」按钮；`providerCardStockSql()` 直接读 `pa.wallet_floor` / `pa.wallet_alert_threshold`，**页面显示的底线就是挡开卡的那一个**。本轮**只读显示、不给编辑入口**：改这条线直接影响开卡这个资金动作，不该在卡片页顺手改；供给参数按 D-284 归设置页。新 SQL 已在生产只读实跑验证（可分配 hnskj 0 / backup-a 2，与既有实测一致）。
+
 **皮肤＝候光**（受控打破 D-284② 的字面）：D-283/D-284② 写的是「外壳 sidebar 暂留旧皮、四页做完再统一换」，但现场**早就换了**——`workbench.css` 里有一段**不带 `.workbench` 作用域的全局覆盖**（改 `body`/`.admin-shell`/`.sidebar`/`.nav-item`），来自 `7c1a5c0`（commit message 自陈「外壳候光已改」）。裁定前提不成立，卡片页作为 D-281 说的「四个一级页实质重做」用候光才一致。Lemon 确认。
 
-**不写第二套判断（D-280 硬约束）的落法**：按台聚合 `providerCardStockSql()` 与「今天(UTC+8)」窗口 `todayCst8WindowSql()` 提到 `card-inventory-eligibility.js` 作**唯一定义**，工作台与卡片页同调——两处「可分配」永远同口径。卡状态复用 `classifyStockCardOperationalState`，待销复用 `classifyRetirementRow` 的 due/notYetDue，卡台显示名复用后端 `PROVIDER_LABELS`。页面一行判断都不自己写。
+**不写第二套判断（D-280 硬约束）的落法**：按台聚合 `providerCardStockSql()` 与「今天(UTC+8)」窗口 `todayCst8WindowSql()` 提到 `card-inventory-eligibility.js` 作**唯一定义**，工作台与卡片页同调——两处「可分配」永远同口径。卡状态复用 `classifyStockCardOperationalState`，待销复用 `classifyRetirementRow` 的 due/notYetDue，卡台显示名复用后端 `PROVIDER_LABELS`（唯一定义）。页面一行判断都不自己写。
 
 **token 口径落地**：真实信号是 `provider_accounts.supply_fault_state='FAULT'` + `supply_fault_reason LIKE 'HIGHVCC_TOKEN%'`（补卡调度器失败时写、贴新 token 清回 OK），不是 `tokenStatus()`（它只答「配没配过」）。按已定口径**只报「已失效」，无故障不写「有效」**。
 

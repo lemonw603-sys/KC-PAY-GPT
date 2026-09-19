@@ -113,10 +113,10 @@
 | 项 | 状态 | 说明 |
 |---|---|---|
 | 卡片页全部 UI 与端点 | **生产未验证** | 只在隔离库 + 本地 8803 验过；生产仍 ⑤b 旧后台 |
-| `card-stock/wallet-floor` 写端点 | 生产未验证 | 隔离库验过白名单（注入串被拒）、金额校验、落库；生产未调用过 |
-| 钱包底线设置键 `card_wallet_floor:<account_code>` | 生产不存在 | 生产两台都没设过 → 页面会显示「未设底线」，属正确表现 |
+| ~~`card-stock/wallet-floor` 写端点~~ | **已撤销** | 同轮发现 `provider_accounts.wallet_floor` 早就存在且在挡开卡（D-273 同类错误），新建的设置键与端点已全部删除 |
+| 钱包底线只读显示 | **生产已只读实跑** | `providerCardStockSql()` 在生产跑通：hnskj floor 30 / backup-a floor 20，告警线均 50 |
 | highvcc「查余额」按钮 | **真实外网未验证** | 隔离库无 token，只验到 `highvcc_token_missing` 的失败分支；**成功分支没在真实 highvcc 上跑过** |
-| `providerCardStockSql()` 的可分配数 | 生产未比对 | 隔离库与工作台同口径已验；**生产两台的可分配数未实跑过这段新 SQL** |
+| `providerCardStockSql()` 的可分配数 | **生产已只读实跑** | 2026-09-20 生产实跑：hnskj 可分配 **0**（在库 2/总 14）、backup-a 可分配 **2**（在库 7/总 16），与 admin-read-service 里既有实测注释一致 |
 | 卡台 token 失效整栏标红 | 生产未验证 | 靠隔离库手工写 `supply_fault_state='FAULT'` 造出来 |
-| 两处卡台措辞 | **未统一，待 Lemon 定** | 卡片页「备用卡台（highvcc）」/ 工作台「备用卡台 A」 |
+| 两处卡台措辞 | 已统一（2026-09-20 Lemon 定） | 卡片页与工作台都叫「highvcc卡台」；生产未验证 |
 | 供给开关（F-65） | **已知缺口，未修** | 前端无渲染入口；全量测试里唯一那条红就是它，有意保持 |
