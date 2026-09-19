@@ -328,17 +328,19 @@ function renderWbWall(overview) {
   const box = document.getElementById('wb-wall');
   if (!box) return;
   const m = overview.metrics || {};
-  const assignable = (overview.cardStockByProvider || []).reduce((s, p) => s + (p.plusAssignable || 0), 0);
-  const b = overview.operationalBacklog || {};
-  // 只放有真实数据的格子（0 单也不空洞）。自动完成率/今日花费等聚合做好后再加回。
+  // D-285：五格一律按原型 C —— 今日单数 / 成功率 / 自动完成率 / 今日花费（按台）/ 异常支出。
+  // 撤销在途版擅自换成的「可分配卡 / 待核对 / 昨晚的数量」。后端现只有前两项的聚合，
+  // 后三项一律标「待接入」：D-284 ③ 明令自动完成率口径未定前不许自拟算法，
+  // 今日花费与异常支出同理——宁可空着，也不拿相近字段顶替出一个看着对、实则算错的数。
+  const pending = (lb, sub) => ({ lb, v: '待接入', sub, pending: true });
   const cells = [
-    { lb: '今日订单', v: m.todayOrders ?? 0, sub: `处理中 ${m.processingOrders ?? 0}`, filter: 'TODAY' },
+    { lb: '今日单数', v: m.todayOrders ?? 0, sub: `处理中 ${m.processingOrders ?? 0}`, filter: 'TODAY' },
     { lb: '成功率', v: m.successRate == null ? '—' : `${m.successRate}%`, sub: `完成 ${m.completedOrders ?? 0} 单` },
-    { lb: '可分配卡', v: assignable, sub: '两台合计（Plus）', view: 'stock' },
-    { lb: '待核对', v: b.reconciliationCasesOpen ?? 0, sub: '资金核对案例', view: 'diagnostics' },
-    { lb: '开着的告警', v: overview.openAlertCount ?? 0, sub: '内部提醒', view: 'diagnostics' }
+    pending('自动完成率', '口径待定（D-284 ③）'),
+    pending('今日花费', '按卡台，聚合待写'),
+    pending('异常支出', '无主扣款金额，聚合待写')
   ];
-  box.innerHTML = cells.map((c) => `<button type="button" class="wb-kpi" ${c.filter ? `data-order-filter="${c.filter}"` : c.view ? `data-view-jump="${c.view}"` : ''}><span class="wb-lb">${escapeHtml(c.lb)}</span><span class="wb-v">${escapeHtml(String(c.v))}</span><span class="wb-sub">${escapeHtml(c.sub)}</span></button>`).join('');
+  box.innerHTML = cells.map((c) => `<button type="button" class="wb-kpi${c.pending ? ' is-pending' : ''}"${c.pending ? ' disabled' : ''} ${c.filter ? `data-order-filter="${c.filter}"` : c.view ? `data-view-jump="${c.view}"` : ''}><span class="wb-lb">${escapeHtml(c.lb)}</span><span class="wb-v">${escapeHtml(String(c.v))}</span><span class="wb-sub">${escapeHtml(c.sub)}</span></button>`).join('');
 }
 
 function renderWbCards(overview) {
@@ -411,6 +413,21 @@ function renderWbQueue(overview, daily, alertData, reconCases) {
   if ((b.cardFundingManualReview ?? 0) > 0) items.push({ t: 'warn', ic: '$', title: `卡补余额待人工 ${b.cardFundingManualReview} 笔`, ev: 'UNKNOWN 需核对已扣/未扣', jump: 'stock' });
   if ((b.cardIntakePending ?? 0) > 0) items.push({ t: 'info', ic: '⇩', title: `新卡待接管 ${b.cardIntakePending} 张`, ev: '同步后确认接管', jump: 'stock' });
   if (daily && (daily.pendingRegistrationCount ?? 0) > 0) items.push({ t: 'info', ic: '✎', title: `待登记手动用卡 ${daily.pendingRegistrationCount} 张`, ev: '已登记 manual-used，等去卡台销', jump: 'stock' });
+  // D-285：原型 C 的队列明确画了「待销到期」和「token 状态」两类，放回工作台
+  // （此前被我判为卡片页范围、本轮不做，属误判；F-64 据此在本块闭合）。
+  // 完整处理动作仍在卡片页，这里只做提醒 + 带落点的跳转。
+  if (daily && (daily.retirementDueCount ?? 0) > 0) {
+    items.push({ t: 'warn', ic: '⌫', title: `待销到期 ${daily.retirementDueCount} 张卡`,
+      ev: '已过存活期，去卡台删掉后回来点「已销卡」', jump: 'stock' });
+  }
+  // token：只说能证明的。有 PROVIDER_TOKEN_EXPIRED 告警＝确已失效（权威信号）；
+  // 没有告警不等于「有效」——token 两小时不活动就过期，configured=true 推不出有效，
+  // 所以无告警时只报「上次更新时间」，不写「有效」（观察与结论分开）。
+  const tokenExpired = (alertData?.alerts || []).find((a) => a && a.type === 'PROVIDER_TOKEN_EXPIRED');
+  if (tokenExpired) {
+    items.push({ t: 'danger', ic: '⚿', title: '卡台 token 已失效，开卡会失败',
+      ev: `${tokenExpired.message || '重新贴一次 token'} · ${formatTime(tokenExpired.createdAt)}`, jump: 'stock' });
+  }
   // 告警不逐条塞队列（48 个会爆炸）——聚合成一条可展开的折叠栏，逐条关。
   const alerts = (alertData && alertData.alerts) || [];
   const active = items.length;
@@ -490,7 +507,10 @@ async function loadOverview() {
     // 少了这一半，renderWbQueue 的 sourceFailed 永远为假，接口挂了照样显示「今天清爽」——
     // 这正是真实页面验收（500 注入）抓到的，只测渲染函数抓不到。
     api('/api/v1/admin/orders?page=1&pageSize=12&status=TODAY').catch(() => ({ orders: [], __error: true })),
-    api('/api/v1/admin/alerts?limit=10').catch(() => ({ alerts: [], __error: true })),
+    // limit 提到 100（服务端上限）：队列要从告警里挑出 PROVIDER_TOKEN_EXPIRED，
+    // 而 listAlerts 不支持按类型过滤、只按时间倒序，limit=10 时 token 告警会被淹没。
+    // 局限仍在：warning/critical 的 OPEN 告警若超过 100 条，仍可能漏——已登记 UNVERIFIED_LEDGER。
+    api('/api/v1/admin/alerts?limit=100').catch(() => ({ alerts: [], __error: true })),
     api('/api/v1/admin/card-sources').catch(() => ({ sources: [], __error: true })),
     api('/api/v1/admin/reconciliation/daily').catch(() => ({ __error: true })),
     api('/api/v1/admin/reconciliation-cases?page=1&pageSize=20&status=OPEN').catch(() => ({ cases: [], __error: true }))

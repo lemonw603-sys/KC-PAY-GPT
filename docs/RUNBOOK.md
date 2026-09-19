@@ -186,6 +186,29 @@ curl -s -b <admin-cookie> -X POST https://<admin>/api/v1/admin/card-operational-
 英文标识——判据只认它、不认中文「手动」（2026-09-18 只读实查：全部 RETIRED override 里只命中 3336）。
 第⑥块把这个入口搬进工作台「卡片」区（不新建表、不收客户/套餐/金额字段）。
 
+## 2.8 本地界面验收环境（第⑥步起，2026-09-19）
+
+后台每块 UI 的**界面层验收**（真实页面 + 与原型同尺寸比对）都要用它。不碰生产、不碰 13306 只读隧道。
+
+1. **隔离库**（复用既有测试容器，端口每次现查，`docker restart` 会换）：
+   ```
+   PORT=$(docker port pojia-stage1-mysql 3306/tcp | head -1 | sed 's/.*://')
+   mysql -h 127.0.0.1 -P $PORT -u root -proot -e "CREATE DATABASE pojia_ui_verify CHARACTER SET utf8mb4;"
+   cd v1 && MIGRATION_DATABASE_URL="mysql://root:root@127.0.0.1:$PORT/pojia_ui_verify" node scripts/migrate.js
+   ```
+2. **临时凭据**（写 scratchpad，**不进项目、不进 git**）：六个各自独立的 32B base64 密钥
+   （`SESSION_ENCRYPTION_KEY_BASE64` / `CDK_HASH_KEY_V1_BASE64` / `CDK_RECOVERY_KEY_BASE64` /
+   `CDK_DELIVERY_HMAC_KEY_BASE64` / `CARD_INTAKE_PAN_HMAC_KEY_BASE64` / `PAYMENT_REFERENCE_HMAC_KEY_BASE64`，
+   校验要求互不相同）+ `ADMIN_PASSWORD_HASH`（`hashAdminPassword()` 生成）+ `ADMIN_SESSION_SECRET_BASE64`。
+   **坑**：env 文件里值要用单引号包住——hash 形如 `scrypt-v1$…$…`，`source` 时 `$` 会被 shell 展开成空。
+   **不要设** `ADMIN_HOST`（设了会做 Host 校验，localhost 进不去）。
+3. **起服务**：写个 `source env && exec node src/server.js` 的小脚本，用 `preview_start` 起（别用 Bash 起 dev server）。
+4. **造数**：直接往隔离库插。中文务必 `mysql --default-character-set=utf8mb4`，否则页面上是乱码（看着像 bug，其实是造数问题）。
+5. **验完**：停服务 → **只删自己建的库** → 容器和其余历史库不动（V2.0_EXECUTION §635）。
+
+**四态必验**：有待办 / 无待办 / 接口失败（前端 `window.fetch` 注入 500）/ 权限拒绝（注入 401）。
+**只测渲染函数不算界面验收** —— F-63 那次就是只喂 `{__error:true}` 给渲染函数，漏掉了「上游根本不产生失败态」，真实页面才抓到。
+
 ## 3. 死单残留清理
 
 订单已是 RECHARGE_FAILED 但卡仍绑定（2026-09-08 前的旧行为）：

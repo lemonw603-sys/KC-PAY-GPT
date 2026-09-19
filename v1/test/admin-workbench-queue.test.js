@@ -205,3 +205,47 @@ test('F-63 上游对照：接口都正常且确实没有待办时，才显示「
   assert.ok(q.includes('今天清爽'), '真的没有待办时才说清爽，当前渲染=' + q.slice(0, 120));
   assert.ok(!q.includes('接口失败'));
 });
+
+// ——— D-285：数字墙与队列按原型 C 恢复 ———
+test('D-285 数字墙：五格按原型，后端没有的三项必须标「待接入」而不是拿别的指标顶替', () => {
+  const { sandbox, html } = loadAdminJs();
+  sandbox.renderWbWall({
+    metrics: { todayOrders: 12, processingOrders: 1, successRate: 92, completedOrders: 12 },
+    cardStockByProvider: [{ plusAssignable: 2 }],
+    operationalBacklog: { reconciliationCasesOpen: 5 },
+    openAlertCount: 48,
+  });
+  const out = html('wb-wall');
+  assert.ok(out.includes('今日单数') && out.includes('12'), '今日单数接真实值');
+  assert.ok(out.includes('成功率') && out.includes('92%'), '成功率接真实值');
+  assert.ok(out.includes('自动完成率') && out.includes('今日花费') && out.includes('异常支出'),
+    '五格必须是原型那五格');
+  assert.equal((out.match(/待接入/g) || []).length, 3, '后端没有的三项都要标「待接入」');
+  // 撤销在途版换上的三项，别再混进来
+  assert.ok(!out.includes('可分配卡') && !out.includes('待核对') && !out.includes('开着的告警'),
+    '不得保留在途版擅自替换的指标（D-285）');
+  // 关键：不许拿手头数字顶替空位
+  assert.ok(!out.includes('48') && !out.includes('>5<'), '不得用告警数/案例数顶替未接入的格子');
+});
+
+test('D-285 队列：待销到期与 token 失效按原型放回工作台（F-64 在本块闭合）', () => {
+  const { sandbox, html } = loadAdminJs();
+  sandbox.renderWbQueue(
+    { operationalBacklog: {} },
+    { retirementDueCount: 4, discrepancyCount: 0, persistentCount: 0, pendingRegistrationCount: 0 },
+    { alerts: [{ id: 'a1', type: 'PROVIDER_TOKEN_EXPIRED', title: 'token 过期', message: '重新贴一次 token', createdAt: '2026-09-19T12:58:00.000Z' }] },
+    { cases: [] },
+  );
+  const out = html('wb-queue');
+  assert.ok(out.includes('待销到期 4 张卡'), '待销到期要出现在工作台队列');
+  assert.ok(out.includes('token 已失效'), 'token 失效要出现在工作台队列');
+  assert.ok(!out.includes('今天清爽'), '有待办就不能说清爽');
+});
+
+test('D-285 队列：没有 token 失效告警时，不得擅自显示「token 有效」', () => {
+  const { sandbox, html } = loadAdminJs();
+  sandbox.renderWbQueue({ operationalBacklog: {} }, { retirementDueCount: 0 }, { alerts: [] }, { cases: [] });
+  const out = html('wb-queue');
+  assert.ok(!out.includes('token 有效'), 'configured 推不出有效，不许写成有效（观察≠结论）');
+  assert.ok(!out.includes('token 已失效'), '没有失效告警也不能报失效');
+});
