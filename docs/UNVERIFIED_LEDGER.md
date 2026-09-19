@@ -99,3 +99,4 @@
 - ⚠️ **token 失效条目可能漏报**：队列从 `/admin/alerts?limit=100` 里挑 `PROVIDER_TOKEN_EXPIRED`，而 `listAlerts` **不支持按类型过滤**、只按时间倒序取 OPEN 的 warning/critical。生产当前 OPEN 告警 123 条，若其中 warning/critical 超过 100 条，token 告警可能被挤出、队列就不提醒了。
   - **下一步**：给 `listAlerts` 加类型过滤参数，或单给队列一个「按类型查告警」的轻端点。属营业条/队列后续那块，本轮未做。
 - ⚠️ **未在生产环境验证**：以上界面验收全部在隔离库 + 本地服务上完成，**生产 ⑤b 仍是旧后台**，本块 UI 一行都没上生产。
+- ⚠️ **营业条路线切换：Browser 就绪态下的切换未验**（2026-09-19）。已验的是：切回 API 成功（四项校验全过、库状态翻转、审计行写入）、无合格卡时按 `TARGET_POOL_AVAILABLE` 拒切、Browser 执行器未就绪时按 `browser_recharge_not_ready` 拒切。**未验**：Browser 侧 dispatch 开关 + ACTIVE profile + 心跳都就绪时，切到 BROWSER 能否成功——隔离库造不出就绪的执行器环境，属执行器范畴。下一步：rehearsal 或灰度时顺带验一次。
