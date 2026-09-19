@@ -90,6 +90,17 @@
 
 本轮自身测试状况（真实输出）：相关 6 个文件合计 **70 tests / 68 pass / 2 fail**，2 fail 即上表既有项；本轮新增的 `admin-workbench-queue.test.js` **8/8 全绿**。
 
+### ⚠️ 更正（2026-09-19 界面层验收后）：上面「F-63 → 已闭合」是**错的**
+
+首次做成界面层验收（本地起 v1 + 隔离库 + 真实浏览器 1280×900）后发现两件事，特此更正上文，**不修改上面的原记录，以此条为准**：
+
+1. **F-63 当时只修了一半、实际未闭合**。真实页面注入 500 时，队列**照样显示「今天清爽」**。查明：`loadOverview` 的 5 处 `__error` **从未落盘**——`git show` 各提交（`88037c4`/`a72e664`/`bbd9c9d`）里 `__error` 都只有 2 个，即渲染层那两处；我当时「grep 数到 `__error: true` = 5」是幻觉输出。**只有下游（渲染层会显示失败态）落了，上游（`loadOverview` 产生失败态）从没落**，所以整条失效。
+   - **为什么测试没抓到**：`admin-workbench-queue.test.js` 当时直接把 `{__error:true}` 喂给 `renderWbQueue`，**跳过了 `loadOverview` 和 `api()`**——测了下游没测上游。
+   - **现已真修**：`admin.js` loadOverview 五处 catch 补 `__error: true`（`git diff` 为证），真实页面复验显示「部分待办没读出来（接口失败）…这不是「没有待办」」、日对账显「读取失败」；并补两个**上游用例**（从 fetch 层注入 500，走完 `api()` → `loadOverview` → 渲染），该文件 **10/10 绿**。
+2. **另一个真实页面才暴露的缺陷**：队列标题显示原始英文枚举 `BROWSER_PAYMENT_UNKNOWN` / `API_PAYMENT_UNKNOWN`——`RECONCILIATION_TYPE_LABELS` 是旧标签表、不含付款不明两类，fallback 成原文。已补中文标签，复验显示「资金核对 · Browser 付款结果不明」。
+
+**教训（已同步 HANDOFF_LOG）**：只测渲染函数＝只测下游；**凡「上游产生 → 下游显示」的链路，测试必须从上游入口进**，否则半条链断了测试照样绿。这与 B1 那次「fixture 自造 key」是同一类错误的两个变种。
+
 ### 发布门槛（审查员定，执行者确认）
 
 三件齐了才谈 push/发布：① **F-68 修**（已完成）② **F-70 复位**（已完成）③ **隔离库端到端 DB 那一跑（✅ 已完成 2026-09-19）**：在既有容器 `pojia-stage1-mysql`（端口 `docker port` 现查 54186）建独立库 `pojia_step6_unkpay`、迁移至 054、跑 `browser-resolve-unknown-payment-mysql-integration.test.js` → **12/12 全绿**；验完只删自己建的库，容器与其余 12 个历史库未动。**关键是新增的「B1 真实产生路径」用例**：case 由真实动作链 `REQUEST→FREEZE→MARK_PAYMENT_UNKNOWN` 让系统自己产生、告警由真实 `upsertBrowserAlertInTransaction` 产生（**key 都由产生方写**），收口后断言两条均 RESOLVED + 订单/attempt/账本/卡占用同步收口 —— dedupe_key 由此交叉验证，不再是「自己跟自己对暗号」。过程中真实暴露并修掉两个 fixture 缺陷：cleanup 漏删 `reconciliation_cases` 触发外键报错、`reasonCode`/`confirmation` 文案与服务端枚举不符。

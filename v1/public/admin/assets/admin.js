@@ -486,11 +486,14 @@ async function toggleOp(op, enable) {
 async function loadOverview() {
   const [overview, todayOrders, alertData, cardSources, daily, reconCases] = await Promise.all([
     api('/api/v1/admin/overview'),
-    api('/api/v1/admin/orders?page=1&pageSize=12&status=TODAY').catch(() => ({ orders: [] })),
-    api('/api/v1/admin/alerts?limit=10').catch(() => ({ alerts: [] })),
-    api('/api/v1/admin/card-sources').catch(() => ({ sources: [] })),
-    api('/api/v1/admin/reconciliation/daily').catch(() => null),
-    api('/api/v1/admin/reconciliation-cases?page=1&pageSize=20&status=OPEN').catch(() => ({ cases: [] }))
+    // F-63：请求失败必须留下 __error 标记，下游才能把「读取失败」和「查过、确实没有」分开。
+    // 少了这一半，renderWbQueue 的 sourceFailed 永远为假，接口挂了照样显示「今天清爽」——
+    // 这正是真实页面验收（500 注入）抓到的，只测渲染函数抓不到。
+    api('/api/v1/admin/orders?page=1&pageSize=12&status=TODAY').catch(() => ({ orders: [], __error: true })),
+    api('/api/v1/admin/alerts?limit=10').catch(() => ({ alerts: [], __error: true })),
+    api('/api/v1/admin/card-sources').catch(() => ({ sources: [], __error: true })),
+    api('/api/v1/admin/reconciliation/daily').catch(() => ({ __error: true })),
+    api('/api/v1/admin/reconciliation-cases?page=1&pageSize=20&status=OPEN').catch(() => ({ cases: [], __error: true }))
   ]);
   renderDecisions(overview, cardSources);
   renderWbWall(overview);
@@ -560,6 +563,11 @@ const PAYMENT_UNKNOWN_CASE_TYPES = new Set(['API_PAYMENT_UNKNOWN', 'BROWSER_PAYM
 const RECONCILIATION_STATUS_LABELS = Object.freeze({ OPEN: '待处理', ASSIGNED: '已分配', RESOLVED: '已解决' });
 const RECONCILIATION_SEVERITY_LABELS = Object.freeze({ critical: '严重', warning: '警告', info: '提示' });
 const RECONCILIATION_TYPE_LABELS = Object.freeze({
+  // 真实页面验收发现：付款不明这两类 case 不在旧标签表里，队列标题直接显示成
+  // BROWSER_PAYMENT_UNKNOWN / API_PAYMENT_UNKNOWN 原始枚举（node 渲染测试断言的是按钮文案，
+  // 抓不到标题 fallback）。补上中文，与客户页/队列的说人话口径一致。
+  API_PAYMENT_UNKNOWN: 'API 付款结果不明',
+  BROWSER_PAYMENT_UNKNOWN: 'Browser 付款结果不明',
   PROVIDER_PAYMENT_EVIDENCE_MISSING: '缺少充值平台付款证据',
   PAYMENT_AMOUNT_MISMATCH: '付款金额不一致',
   CARD_PAYMENT_NOT_FOUND: '找不到卡片付款记录',

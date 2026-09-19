@@ -158,3 +158,50 @@ test('F-63: 日对账接口失败显「读取失败」，与「今天还没对�
   sandbox.renderWbRecon(null);
   assert.ok(html('wb-recon').includes('暂无数据'));
 });
+
+// ——— 上游测试：loadOverview → api() → 渲染 整条 ———
+// 教训：此前只把 {__error:true} 直接喂给 renderWbQueue，测的是下游渲染，
+// 于是「loadOverview 根本没产生 __error」这一半漏了整整一轮：真实页面接口 500 时
+// 照样显示「今天清爽」。这个用例从 fetch 层注入 500，必须走完 api() 的 throw、
+// loadOverview 的 catch、再到渲染，才算真的证明 F-63。
+function stubResponse(status, body) {
+  return { status, ok: status >= 200 && status < 300, json: async () => body };
+}
+
+test('F-63 上游：待办接口 500 时，loadOverview 必须让队列说「接口失败」而不是「今天清爽」', async () => {
+  const { sandbox, html } = loadAdminJs();
+  const overviewPayload = {
+    operationalBacklog: {}, decisions: {}, todayOrders: 0, successRate: null,
+    cardStockByProvider: [], alerts: [],
+  };
+  sandbox.fetch = (url) => {
+    const u = String(url);
+    if (u.includes('/admin/overview')) return Promise.resolve(stubResponse(200, overviewPayload));
+    // 待办三源全挂
+    if (u.includes('/reconciliation-cases') || u.includes('/reconciliation/daily') || u.includes('/alerts')) {
+      return Promise.resolve(stubResponse(500, { error: 'boom' }));
+    }
+    return Promise.resolve(stubResponse(200, {}));
+  };
+  await sandbox.loadOverview();
+  const q = html('wb-queue');
+  assert.ok(q.includes('接口失败'), '接口挂了必须明说，当前渲染=' + q.slice(0, 120));
+  assert.ok(!q.includes('今天清爽'), '读取失败绝不能显示成「没有待办」');
+  assert.ok(html('wb-recon').includes('读取失败'), '日对账失败也要说失败');
+});
+
+test('F-63 上游对照：接口都正常且确实没有待办时，才显示「今天清爽」', async () => {
+  const { sandbox, html } = loadAdminJs();
+  sandbox.fetch = (url) => {
+    const u = String(url);
+    if (u.includes('/admin/overview')) return Promise.resolve(stubResponse(200, { operationalBacklog: {}, decisions: {} }));
+    if (u.includes('/reconciliation-cases')) return Promise.resolve(stubResponse(200, { cases: [] }));
+    if (u.includes('/reconciliation/daily')) return Promise.resolve(stubResponse(200, null));
+    if (u.includes('/alerts')) return Promise.resolve(stubResponse(200, { alerts: [] }));
+    return Promise.resolve(stubResponse(200, { orders: [] }));
+  };
+  await sandbox.loadOverview();
+  const q = html('wb-queue');
+  assert.ok(q.includes('今天清爽'), '真的没有待办时才说清爽，当前渲染=' + q.slice(0, 120));
+  assert.ok(!q.includes('接口失败'));
+});
