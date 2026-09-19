@@ -417,6 +417,11 @@ function renderWbQueue(overview, daily, alertData, reconCases) {
   if (countChip) countChip.innerHTML = `<span class="wb-d"></span>${active} 件待办`;
   // F-63：待办来源里任一个接口失败时，空列表不能显示成「今天清爽」——那会把「没读到」
   // 冒充成「没有待办」，付款不明单可能就此被漏掉。有失败就明说失败、让人去刷新。
+  // F-71：这里只查这三个，是够的，不是漏——能把「读取失败」误显示成「今天清爽」的，
+  // 只有失败被吞成空值的来源。队列项的四个来源里：cases←reconCases、无主扣款/连续两次/
+  // 待登记←daily、告警折叠栏←alertData 都会被吞，必须查；而卡补余额待人工/新卡待接管
+  // 来自 overview.operationalBacklog，overview 在 loadOverview 里**故意不 catch**，失败会
+  // 直接抛出、整页不更新，压根走不到这行。todayOrders/cardSources 不产生队列项。
   const sourceFailed = [reconCases, daily, alertData].some((s) => s && s.__error);
   const itemsHtml = active
     ? items.map((it) => `<div class="wb-qi ${it.t}"><div class="wb-qic">${it.ic}</div><div class="wb-qt"><b>${escapeHtml(it.title)}</b><span class="wb-ev">${escapeHtml(it.ev)}</span></div><div class="wb-qa">${it.actions || (it.jump ? `<button type="button" class="wb-btn out sm" data-view-jump="${it.jump}">去处理</button>` : '')}</div></div>`).join('')
@@ -548,6 +553,10 @@ async function downloadOperationsCsv(dataset) {
 }
 
 
+// F-61/F-68：付款不明的两类 case 必须走订单详情的正式收口，不能在工作台直接关记录。
+// 这两个值是 case_type 的真实取值（产生点：workflow-repository / browser-execution-repository
+// / browser-admin-service），不是 RECONCILIATION_TYPE_LABELS 里那套旧标签。
+const PAYMENT_UNKNOWN_CASE_TYPES = new Set(['API_PAYMENT_UNKNOWN', 'BROWSER_PAYMENT_UNKNOWN']);
 const RECONCILIATION_STATUS_LABELS = Object.freeze({ OPEN: '待处理', ASSIGNED: '已分配', RESOLVED: '已解决' });
 const RECONCILIATION_SEVERITY_LABELS = Object.freeze({ critical: '严重', warning: '警告', info: '提示' });
 const RECONCILIATION_TYPE_LABELS = Object.freeze({
