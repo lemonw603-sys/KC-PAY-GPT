@@ -8,8 +8,8 @@
   <title>Plus 运营后台</title>
   <link rel="icon" href="/admin/assets/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/admin/assets/admin.css?v=26">
-  <link rel="stylesheet" href="/admin/assets/workbench.css?v=1">
-  <script src="/admin/assets/admin.js?v=51" defer></script>
+  <link rel="stylesheet" href="/admin/assets/workbench.css?v=3">
+  <script src="/admin/assets/admin.js?v=53" defer></script>
 </head>
 <body>
   <div class="admin-shell">
@@ -20,11 +20,12 @@
         <small>内部管理中心</small>
       </a>
       <nav aria-label="后台导航">
-        <button class="nav-item is-active" type="button" data-view="overview"><span aria-hidden="true">⌂</span>首页</button>
-        <button class="nav-item" type="button" data-view="orders"><span aria-hidden="true">≡</span>订单</button>
-        <button class="nav-item" type="button" data-view="cdks"><span aria-hidden="true">#</span>CDK</button>
-        <button class="nav-item" type="button" data-view="stock"><span aria-hidden="true">▣</span>卡片</button>
-        <button class="nav-item" type="button" data-view="diagnostics"><span aria-hidden="true">◎</span>诊断</button>
+        <button class="nav-item is-active" type="button" data-view="overview"><span class="ic" aria-hidden="true">◱</span>工作台</button>
+        <button class="nav-item" type="button" data-view="orders"><span class="ic" aria-hidden="true">≡</span>订单</button>
+        <button class="nav-item" type="button" data-view="cdks"><span class="ic" aria-hidden="true">#</span>CDK</button>
+        <button class="nav-item" type="button" data-view="stock"><span class="ic" aria-hidden="true">▣</span>卡片</button>
+        <button class="nav-item" type="button" data-view="settings"><span class="ic" aria-hidden="true">⚙</span>设置</button>
+        <button class="nav-item" type="button" data-view="diagnostics"><span class="ic" aria-hidden="true">◎</span>诊断</button>
       </nav>
       <div class="sidebar-foot">
         <span class="session-state"><i aria-hidden="true"></i><b>管理员已登录</b><small>人工确认模式</small></span>
@@ -35,31 +36,28 @@
     <main class="main-area">
       <header class="topbar">
         <div>
-          <p class="section-kicker" id="view-kicker">运营概览</p>
+          <p class="section-kicker" id="view-kicker">运营驾驶舱</p>
           <h1 id="view-title">今天的运行情况</h1>
         </div>
-        <div class="topbar-actions">
-          <span class="sync-time" id="sync-time">正在读取数据…</span>
-          <button class="ghost-button" id="refresh-button" type="button">刷新当前页</button>
-          <button class="primary-small" id="start-business" type="button">开始营业</button>
+        <div class="gsearch">
+          <span class="mg" aria-hidden="true">⌕</span>
+          <input id="wb-search-input" type="search" maxlength="191" placeholder="贴卡密 / 订单号 / 邮箱 → 直接定位这一单" autocomplete="off" aria-label="全局定位搜索">
+          <kbd>↵</kbd>
         </div>
+        <span class="sync-time" id="sync-time">正在读取数据…</span>
       </header>
 
       <section id="overview-view" class="view workbench" aria-labelledby="view-title">
         <div class="wb-ops">
           <div class="wb-grp" id="wb-decisions"><p class="wb-qempty">正在读取营业状态…</p></div>
           <div class="wb-vr"></div>
+          <div class="wb-grp wb-route" id="wb-routes"></div>
+          <div class="wb-vr"></div>
           <div class="wb-grp"><form class="wb-cdk" id="wb-cdk-form">
             <label>产品<select class="wb-field" id="wb-cdk-plan"><option value="plus">Plus</option><option value="pro_5x">Pro 5X</option><option value="pro_20x">Pro 20X</option></select></label>
             <label>数量<input class="wb-field" id="wb-cdk-count" type="number" min="1" max="1000" value="1"></label>
             <button class="wb-btn pri" type="submit">生成并复制</button>
           </form></div>
-        </div>
-
-        <div class="wb-search">
-          <span class="wb-mg" aria-hidden="true">⌕</span>
-          <input id="wb-search-input" type="search" maxlength="191" placeholder="贴卡密 / 订单号 / 邮箱 → 直接定位这一单" autocomplete="off" aria-label="全局定位搜索">
-          <kbd>↵</kbd>
         </div>
 
         <p class="wb-seclabel">今天生意怎么样</p>
@@ -326,6 +324,10 @@
           <div class="table-wrap"><table><thead><tr><th>订单 / Run</th><th>运行状态</th><th>付款 / 资金</th><th>控制权</th><th>Worker 租约</th><th>Checkout artifact</th><th>更新时间</th></tr></thead><tbody id="browser-runs-table"></tbody></table></div>
           <div class="pagination"><span id="browser-runs-count">0 个 run</span><div><button id="browser-runs-prev" type="button">上一页</button><span id="browser-runs-page">第 1 页</span><button id="browser-runs-next" type="button">下一页</button></div></div>
         </section>
+      </section>
+
+      <section id="settings-view" class="view workbench" hidden>
+        <section class="wb-card"><div class="wb-ch"><div><p class="wb-kick">设置</p><h2>按台×按产品 · 全局门槛 · 账单地址</h2></div><span class="wb-ro">开发中</span></div><div class="wb-cb"><p class="wb-qempty">设置页在第⑥步后续做：按台×按产品的水位 / 开卡金额 / 每卡单数 / 最低余额 / 每日上限 / 钱包底线，加 Session 门槛、账单地址、路线与开卡补钱开关。</p></div></section>
       </section>
 
       <div class="page-notice" id="page-notice" role="status" aria-live="polite" hidden></div>

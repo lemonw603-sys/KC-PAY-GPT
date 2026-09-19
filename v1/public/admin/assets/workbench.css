@@ -5,8 +5,14 @@
    旧页（订单/诊断）与外壳 sidebar 暂留 admin.css 旧皮，四页做完再统一换。
    ========================================================================= */
 
-.workbench{
-  /* 候光 · 晨雾（日间） */
+/* 候光字体自托管（与客户页同源 /assets/fonts/），让后台也用设计图那两款字体 */
+@font-face{font-family:"Familjen Grotesk";font-style:normal;font-weight:400 700;font-display:swap;src:url(/assets/fonts/familjen-grotesk.woff2) format("woff2")}
+@font-face{font-family:"IBM Plex Mono";font-style:normal;font-weight:400;font-display:swap;src:url(/assets/fonts/ibm-plex-mono-400.woff2) format("woff2")}
+@font-face{font-family:"IBM Plex Mono";font-style:normal;font-weight:500;font-display:swap;src:url(/assets/fonts/ibm-plex-mono-500.woff2) format("woff2")}
+@font-face{font-family:"IBM Plex Mono";font-style:normal;font-weight:600;font-display:swap;src:url(/assets/fonts/ibm-plex-mono-600.woff2) format("woff2")}
+
+:root{
+  /* 候光 · 晨雾（日间）——第⑥步后台候光皮全局令牌 */
   --wb-bg:hsl(168,16%,97%);
   --wb-a:hsl(163,72%,26%); --wb-a-soft:hsl(163,44%,93%); --wb-a-ink:hsl(163,76%,22%); --wb-a-on:hsl(0,0%,100%);
   --wb-t:hsl(176,18%,11%); --wb-t2:hsl(170,10%,38%); --wb-t3:hsl(168,9%,50%);
@@ -17,23 +23,36 @@
   --wb-info:hsl(212,62%,46%); --wb-info-soft:hsl(212,60%,95%);
   --wb-shadow:inset 0 1px 0 hsla(0,0%,100%,.85),0 1px 2px hsla(176,25%,10%,.06),0 14px 30px -14px hsla(176,25%,10%,.22);
   --wb-pop:0 10px 24px -8px hsla(176,25%,10%,.28);
+  --wb-fd:"Familjen Grotesk","PingFang SC","Hiragino Sans GB",system-ui,sans-serif;
   --wb-fm:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
-  display:grid; gap:16px;
 }
-:root[data-theme="dark"] .workbench,
-:root:not([data-theme="light"]) .workbench[data-follow-dark]{
-  /* 候光 · 石板（夜间） */
-  --wb-bg:hsl(215,14%,10%);
-  --wb-a:hsl(162,58%,49%); --wb-a-soft:hsl(163,40%,16%); --wb-a-ink:hsl(162,58%,58%); --wb-a-on:hsl(215,14%,10%);
-  --wb-t:hsl(210,20%,92%); --wb-t2:hsl(212,10%,66%); --wb-t3:hsl(212,8%,54%);
-  --wb-s:hsl(215,15%,14%); --wb-s2:hsl(215,15%,12%); --wb-s3:hsl(215,15%,17%); --wb-bd:hsl(214,13%,22%);
-  --wb-warn:hsl(38,62%,62%); --wb-warn-soft:hsl(34,30%,15%); --wb-gold:hsl(38,48%,62%);
-  --wb-ok:hsl(150,52%,52%); --wb-ok-soft:hsl(150,36%,16%);
-  --wb-danger:hsl(6,72%,62%); --wb-danger-soft:hsl(6,42%,17%);
-  --wb-info:hsl(212,66%,64%); --wb-info-soft:hsl(212,40%,18%);
-  --wb-shadow:inset 0 1px 0 hsla(0,0%,100%,.06),0 10px 24px hsla(0,0%,0%,.5);
-  --wb-pop:0 12px 28px hsla(0,0%,0%,.55);
-}
+.workbench{display:grid;gap:16px}
+
+/* ========== 候光后台外壳（覆盖 admin.css 的 sidebar/顶栏，全站统一候光皮）========== */
+body{font-family:var(--wb-fd)}
+.admin-shell{background:var(--wb-bg)}
+.sidebar{background:var(--wb-s2);border-right:1px solid var(--wb-bd)}
+.admin-brand{border-bottom:1px solid var(--wb-bd)}
+.admin-brand .brand-label{background:var(--wb-a);color:var(--wb-a-on);letter-spacing:.14em}
+.admin-brand strong{color:var(--wb-t)}
+.admin-brand strong span{color:var(--wb-gold)}
+.admin-brand small{color:var(--wb-t3)}
+.nav-item{min-height:40px;border-radius:10px;color:var(--wb-t2);font-weight:600}
+.nav-item span{border-radius:7px;background:var(--wb-s3);color:var(--wb-t2)}
+.nav-item:hover{background:var(--wb-s3);color:var(--wb-t)}
+.nav-item.is-active{background:var(--wb-a-soft);color:var(--wb-a-ink)}
+.nav-item.is-active span{background:var(--wb-a);color:var(--wb-a-on)}
+.sidebar-foot{border-top:1px solid var(--wb-bd)}
+.sidebar-foot .session-state b{color:var(--wb-t2)}
+.sidebar-foot i{background:var(--wb-ok)}
+.topbar h1{color:var(--wb-t)}
+.topbar .section-kicker{color:var(--wb-a)}
+.sync-time{color:var(--wb-t3)}
+.topbar .gsearch{flex:1;min-width:220px;max-width:520px;display:flex;align-items:center;gap:8px;height:42px;padding:0 12px;background:var(--wb-s);border:1px solid var(--wb-bd);border-radius:12px;box-shadow:var(--wb-shadow)}
+.topbar .gsearch:focus-within{border-color:var(--wb-a);box-shadow:0 0 0 3px var(--wb-a-soft)}
+.topbar .gsearch .mg{color:var(--wb-t3)}
+.topbar .gsearch input{flex:1;border:0;background:transparent;outline:none;font-size:13.5px;color:var(--wb-t)}
+.topbar .gsearch kbd{font-family:var(--wb-fm);font-size:10.5px;color:var(--wb-t3);border:1px solid var(--wb-bd);border-radius:5px;padding:1px 5px}
 
 .workbench .wb-mono{font-family:var(--wb-fm);font-variant-numeric:tabular-nums}
 .workbench [hidden]{display:none!important}
@@ -148,6 +167,15 @@
 .workbench .wb-qi .wb-qt .wb-mono{font-size:11px;color:var(--wb-t3)}
 .workbench .wb-qi .wb-qa{display:flex;gap:7px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
 .workbench .wb-qempty{padding:20px;text-align:center;color:var(--wb-t3);font-size:12.5px}
+.workbench .wb-alerts{border:1px solid var(--wb-bd);border-radius:13px;background:var(--wb-s)}
+.workbench .wb-alerts summary{display:flex;align-items:center;gap:8px;padding:12px 14px;cursor:pointer;font-size:12.5px;color:var(--wb-t2);list-style:none}
+.workbench .wb-alerts summary::-webkit-details-marker{display:none}
+.workbench .wb-alerts-list{border-top:1px solid var(--wb-bd);max-height:280px;overflow-y:auto}
+.workbench .wb-alert-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 14px;border-bottom:1px solid var(--wb-s3)}
+.workbench .wb-alert-row:last-child{border-bottom:0}
+.workbench .wb-alert-row .wb-at{display:grid;gap:2px;min-width:0}
+.workbench .wb-alert-row .wb-at b{font-size:12.5px;color:var(--wb-t)}
+.workbench .wb-alert-row .wb-at small{font-size:11px;color:var(--wb-t3)}
 
 /* ---------- 今日订单表（整宽） ---------- */
 .workbench .wb-tblwrap{overflow-x:auto}

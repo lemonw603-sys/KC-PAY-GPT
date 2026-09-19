@@ -328,15 +328,17 @@ function renderWbWall(overview) {
   const box = document.getElementById('wb-wall');
   if (!box) return;
   const m = overview.metrics || {};
-  // 自动完成率 / 今日花费按台 / 异常支出：后端暂无聚合，占位「待接入」（口径待 Lemon 定，D-283）。
+  const assignable = (overview.cardStockByProvider || []).reduce((s, p) => s + (p.plusAssignable || 0), 0);
+  const b = overview.operationalBacklog || {};
+  // 只放有真实数据的格子（0 单也不空洞）。自动完成率/今日花费等聚合做好后再加回。
   const cells = [
     { lb: '今日订单', v: m.todayOrders ?? 0, sub: `处理中 ${m.processingOrders ?? 0}`, filter: 'TODAY' },
     { lb: '成功率', v: m.successRate == null ? '—' : `${m.successRate}%`, sub: `完成 ${m.completedOrders ?? 0} 单` },
-    { lb: '自动完成率', v: '待接入', sub: '口径待定', pending: true },
-    { lb: '今日花费', v: '待接入', sub: '按台聚合待做', pending: true },
-    { lb: '异常支出', v: '待接入', sub: '无主扣款不计', pending: true }
+    { lb: '可分配卡', v: assignable, sub: '两台合计（Plus）', view: 'stock' },
+    { lb: '待核对', v: b.reconciliationCasesOpen ?? 0, sub: '资金核对案例', view: 'diagnostics' },
+    { lb: '开着的告警', v: overview.openAlertCount ?? 0, sub: '内部提醒', view: 'diagnostics' }
   ];
-  box.innerHTML = cells.map((c) => `<button type="button" class="wb-kpi ${c.pending ? 'wb-pending' : ''}" ${c.filter ? `data-order-filter="${c.filter}"` : ''}><span class="wb-lb">${escapeHtml(c.lb)}</span><span class="wb-v">${escapeHtml(String(c.v))}</span><span class="wb-sub">${escapeHtml(c.sub)}</span></button>`).join('');
+  box.innerHTML = cells.map((c) => `<button type="button" class="wb-kpi" ${c.filter ? `data-order-filter="${c.filter}"` : c.view ? `data-view-jump="${c.view}"` : ''}><span class="wb-lb">${escapeHtml(c.lb)}</span><span class="wb-v">${escapeHtml(String(c.v))}</span><span class="wb-sub">${escapeHtml(c.sub)}</span></button>`).join('');
 }
 
 function renderWbCards(overview) {
@@ -392,11 +394,17 @@ function renderWbQueue(overview, daily, alertData, reconCases) {
   if ((b.cardFundingManualReview ?? 0) > 0) items.push({ t: 'warn', ic: '$', title: `卡补余额待人工 ${b.cardFundingManualReview} 笔`, ev: 'UNKNOWN 需核对已扣/未扣', jump: 'stock' });
   if ((b.cardIntakePending ?? 0) > 0) items.push({ t: 'info', ic: '⇩', title: `新卡待接管 ${b.cardIntakePending} 张`, ev: '同步后确认接管', jump: 'stock' });
   if (daily && (daily.pendingRegistrationCount ?? 0) > 0) items.push({ t: 'info', ic: '✎', title: `待登记手动用卡 ${daily.pendingRegistrationCount} 张`, ev: '已登记 manual-used，等去卡台销', jump: 'stock' });
+  // 告警不逐条塞队列（48 个会爆炸）——聚合成一条可展开的折叠栏，逐条关。
   const alerts = (alertData && alertData.alerts) || [];
-  alerts.forEach((a) => items.push({ t: 'warn', ic: '🔔', title: a.title || '内部提醒', ev: a.message || '' }));
   const active = items.length;
   if (countChip) countChip.innerHTML = `<span class="wb-d"></span>${active} 件待办`;
-  box.innerHTML = active ? items.map((it) => `<div class="wb-qi ${it.t}"><div class="wb-qic">${it.ic}</div><div class="wb-qt"><b>${escapeHtml(it.title)}</b><span class="wb-ev">${escapeHtml(it.ev)}</span></div><div class="wb-qa">${it.actions || (it.jump ? `<button type="button" class="wb-btn out sm" data-view-jump="${it.jump}">去处理</button>` : '')}</div></div>`).join('') : '<p class="wb-qempty">没有要处理的，今天清爽 ✓</p>';
+  const itemsHtml = active
+    ? items.map((it) => `<div class="wb-qi ${it.t}"><div class="wb-qic">${it.ic}</div><div class="wb-qt"><b>${escapeHtml(it.title)}</b><span class="wb-ev">${escapeHtml(it.ev)}</span></div><div class="wb-qa">${it.actions || (it.jump ? `<button type="button" class="wb-btn out sm" data-view-jump="${it.jump}">去处理</button>` : '')}</div></div>`).join('')
+    : '<p class="wb-qempty">没有要处理的，今天清爽 ✓</p>';
+  const alertsHtml = alerts.length
+    ? `<details class="wb-alerts"><summary><span class="wb-chip warn"><span class="wb-d"></span>${alerts.length} 个内部提醒</span>点开逐条关</summary><div class="wb-alerts-list">${alerts.map((a) => `<div class="wb-alert-row"><div class="wb-at"><b>${escapeHtml(a.title || '提醒')}</b><small>${escapeHtml(a.message || '')} · ${formatTime(a.createdAt)}</small></div><button type="button" class="wb-btn out sm" data-close-wb-alert="${escapeHtml(a.id)}">关闭</button></div>`).join('')}</div></details>`
+    : '';
+  box.innerHTML = itemsHtml + alertsHtml;
 }
 
 function wbOrderRow(order) {
@@ -421,31 +429,31 @@ function renderDecisions(overview, cardSources) {
   const d = overview.decisions || {};
   state.decisions = d;
   state.acceptingOrders = Boolean(d.acceptNewOrders);
-  const health = overview.providerHealth || {};
-  const intake = !d.acceptNewOrders ? 'stop' : d.dispatchNewRecharges ? 'run' : 'pause';
-  const intakeBtn = (key, label) => `<button type="button" class="wb-btn sm ${intake === key ? 'pri' : 'out'}" data-intake="${key}" ${intake === key ? 'disabled' : ''}>${label}</button>`;
-  const rechargeMethod = String(health.rechargeMethod || '').toUpperCase();
-  // 切换端点要求带上「我看到的当前值」（四项校验之「版本对」，D-246 面一 C1 ③）。
-  state.rechargeMethod = rechargeMethod || 'NONE';
   state.browserSelectionVersion = Number(cardSources?.browserSelectionVersion || 0);
-  const routeBtn = (method, label, ready = true, title = '') => `<button class="wb-btn sm default-recharge-method ${rechargeMethod === method ? 'pri' : 'out'}" type="button" data-method="${method}" ${rechargeMethod === method || !ready ? 'disabled' : ''} title="${escapeHtml(title)}">${label}</button>`;
-  const sources = (cardSources?.sources || []).filter((item) => item.supportsBrowserRecharge && item.operationalEnabled);
-  const currentSource = cardSources?.browserProviderAccountId || '';
-  const sourceOptions = sources.map((item) => `<option value="${escapeHtml(item.id)}" ${item.id === currentSource ? 'selected' : ''}>${escapeHtml(item.displayName)}</option>`).join('');
-  const payOn = Boolean(d.browserPaymentWritesEnabled);
-  const payMismatch = d.browserProfileWritesEnabled != null && d.browserProfileWritesEnabled !== payOn;
-  const supplyOn = Boolean(d.supplyAutomationEnabled);
-  const supplyMixed = Boolean(d.supplyAutomationMixed);
-  const supplyBtn = (enable) => `<button type="button" class="wb-btn sm ${enable ? 'pri' : 'out'}" data-supply-toggle data-enable="${enable}">${enable ? '开启' : '关闭'}</button>`;
-  const supplyControls = supplyOn ? supplyBtn(false) : (supplyMixed ? `${supplyBtn(true)}${supplyBtn(false)}` : supplyBtn(true));
-  const supplyLabel = supplyOn ? '自动开卡补钱' : (supplyMixed ? '部分开启' : '全部人工');
-  const swch = (on) => `<span class="wb-switch ${on ? 'is-on' : ''}"><span class="wb-tg"></span></span>`;
-  box.innerHTML = `
-    <div class="wb-route"><b>接不接单</b><div class="wb-routepick">${intakeBtn('run', '接单并处理')}${intakeBtn('pause', '接单暂停处理')}${intakeBtn('stop', '停止接单')}</div></div>
-    <div class="wb-route"><b>走哪条路线</b><div class="wb-routepick">${routeBtn('API', 'API 充值')}${routeBtn('BROWSER', '浏览器充值', Boolean(health.browserRechargeReady), health.browserRechargeReady ? '' : 'Browser 执行器未就绪')}</div></div>
-    <div class="wb-route"><b>用哪个卡台</b><div class="wb-routepick"><select class="wb-field" id="decision-card-source" aria-label="Browser 卡台">${sourceOptions || '<option value="">没有可用卡台</option>'}</select><button type="button" class="wb-btn sm out" id="decision-card-source-apply" ${sources.length ? '' : 'disabled'}>切换</button></div><small>只影响之后的新订单</small></div>
-    <div class="wb-route"><b>能不能付钱</b><div class="wb-routepick">${swch(payOn)}<button type="button" class="wb-btn sm ${payOn ? 'out' : 'pri'}" id="decision-payment" data-enabled="${payOn}">${payOn ? '关闭' : '开启'}</button></div><small>${payMismatch ? '执行器与开关不一致，点一次同步' : payOn ? '会真实点击付款' : '停在付款前不扣款'}</small></div>
-    <div class="wb-route"><b>能不能开卡补钱</b><div class="wb-routepick">${swch(supplyOn)}${wbChip('mute', supplyLabel)}${supplyControls}</div></div>`;
+  // 营业条 = 接单/派单/付款 三个 toggle 开关（照设计图），对应后端三个独立开关。
+  const sw = (op, on, b, s) => `<button type="button" class="wb-switch ${on ? 'is-on' : ''}" data-op="${op}" data-on="${on}"><span class="wb-tg"></span><span class="wb-lb"><b>${b}</b><small>${escapeHtml(s)}</small></span></button>`;
+  box.innerHTML = sw('accept', Boolean(d.acceptNewOrders), '接单', '新单进入')
+    + sw('dispatch', Boolean(d.dispatchNewRecharges), '派单', '分卡执行')
+    + sw('pay', Boolean(d.browserPaymentWritesEnabled), '付款', '允许提交付款');
+  const routeBox = document.getElementById('wb-routes');
+  if (routeBox) {
+    const sources = (cardSources?.sources || []).filter((item) => item.supportsBrowserRecharge && item.operationalEnabled);
+    const currentSource = cardSources?.browserProviderAccountId || '';
+    const sourceOptions = sources.map((item) => `<option value="${escapeHtml(item.id)}" ${item.id === currentSource ? 'selected' : ''}>${escapeHtml(item.displayName)}</option>`).join('');
+    routeBox.innerHTML = `<div class="wb-route"><b>用哪个卡台</b><div class="wb-routepick"><span class="wb-chip mute"><span class="wb-d"></span>API · HNSKJ 固定</span></div></div>`
+      + `<div class="wb-route"><div class="wb-routepick"><select class="wb-field" id="decision-card-source" aria-label="Browser 卡台">${sourceOptions || '<option value="">没有可用卡台</option>'}</select><button type="button" class="wb-btn sm out" id="decision-card-source-apply" ${sources.length ? '' : 'disabled'}>切换</button></div><small>Browser 路线卡台，只影响新订单</small></div>`;
+  }
+}
+
+// 营业条 toggle：接单/派单/付款，对应后端三个独立开关（路线/开卡补钱移到设置页）。
+async function toggleOp(op, enable) {
+  try {
+    if (op === 'accept') await api('/api/v1/admin/operations/order-acceptance', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: enable, confirmation: enable ? '开始接单' : '停止接单' }) });
+    else if (op === 'dispatch') await api('/api/v1/admin/operations/recharge-dispatch', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: enable, confirmation: enable ? '开始自动充值' : '停止自动充值' }) });
+    else if (op === 'pay') { if (enable && !window.confirm('开启后浏览器会真实点击付款并扣卡上的钱。确定开启？')) return; await api('/api/v1/admin/operations/browser-payment', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: enable }) }); }
+    showNotice('营业开关已更新。', 'success');
+    await loadOverview();
+  } catch { showNotice('开关更新失败，请刷新后重试。'); }
 }
 
 async function loadOverview() {
@@ -1671,7 +1679,7 @@ async function switchView(view, { status = '' } = {}) {
   state.page = 1;
   elements.views.forEach((panel) => { panel.hidden = panel.id !== `${state.view}-view`; });
   if (view === 'overview') {
-    elements.viewKicker.textContent = '运营概览';
+    elements.viewKicker.textContent = '运营驾驶舱';
     elements.viewTitle.textContent = '今天的运行情况';
     await loadOverview();
   } else if (view === 'cdks') {
@@ -1686,6 +1694,9 @@ async function switchView(view, { status = '' } = {}) {
     elements.viewKicker.textContent = '诊断';
     elements.viewTitle.textContent = '低频、只读为主';
     await Promise.all([loadDiagnostics(), loadReconciliationCases(), loadBrowserDispatchJobs(), loadBrowserRuns(), loadBillingAddressSettings()]);
+  } else if (view === 'settings') {
+    elements.viewKicker.textContent = '设置';
+    elements.viewTitle.textContent = '按台×按产品 · 全局门槛 · 账单地址';
   } else {
     elements.viewKicker.textContent = '订单';
     elements.viewTitle.textContent = ORDER_FILTER_TITLES[state.status] || '全部订单';
@@ -1789,6 +1800,10 @@ document.addEventListener('click', (event) => {
   const jumpButton = event.target.closest('[data-view-jump]');
   const resolveCase = event.target.closest('[data-resolve-wb-case]');
   const openCaseOrder = event.target.closest('[data-open-case-order-wb]');
+  const opSwitch = event.target.closest('[data-op]');
+  if (opSwitch) { toggleOp(opSwitch.dataset.op, opSwitch.dataset.on !== 'true'); return; }
+  const closeWbAlert = event.target.closest('[data-close-wb-alert]');
+  if (closeWbAlert) { closeWbAlert.disabled = true; api(`/api/v1/admin/alerts/${encodeURIComponent(closeWbAlert.dataset.closeWbAlert)}/close`, { method: 'POST' }).then(() => loadOverview()).catch(() => { showNotice('提醒关闭失败，请重试。'); closeWbAlert.disabled = false; }); return; }
   if (resolveCase) { resolveReconciliationCase(resolveCase.dataset.resolveWbCase, { after: loadOverview }).catch(() => showNotice('案例解决失败，请重试。')); return; }
   if (openCaseOrder) { openOrder(openCaseOrder.dataset.openCaseOrderWb); return; }
   if (filterButton) switchView('orders', { status: filterButton.dataset.orderFilter });
@@ -1928,7 +1943,7 @@ elements.manualCardSourceForm?.addEventListener('submit', async (event) => {
     elements.manualCardSourceForm.reset(); showNotice('备用卡台已新增。', 'success'); await loadProviderRoutes();
   } catch (error) { showNotice(error.message || '新增备用卡台失败。'); }
 });
-document.querySelector('#refresh-button').addEventListener('click', async (event) => {
+document.querySelector('#refresh-button')?.addEventListener('click', async (event) => {
   const button = event.currentTarget;
   if (button.disabled) return;
   hideNotice();
