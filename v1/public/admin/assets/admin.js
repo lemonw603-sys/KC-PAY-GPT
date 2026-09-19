@@ -134,6 +134,9 @@ const elements = {
   stockSummary: document.querySelector('#stock-summary'), stockJobs: document.querySelector('#stock-jobs'),
   stockCards: document.querySelector('#stock-cards'), providerSummary: document.querySelector('#provider-summary'),
   cardsRigs: document.querySelector('#cards-rigs'), stockCardsHistory: document.querySelector('#stock-cards-history'),
+  settingsPolicies: document.querySelector('#settings-policies'),
+  settingsThresholds: document.querySelector('#settings-thresholds'),
+  settingsGlobal: document.querySelector('#settings-global'),
   cardRetirementList: document.querySelector('#card-retirement-list'),
   cardCapacityForm: document.querySelector('#card-capacity-form'), cardCapacity: document.querySelector('#card-capacity'),
   minimumBalanceForm: document.querySelector('#minimum-balance-form'), minimumBalance: document.querySelector('#minimum-balance'),
@@ -1559,6 +1562,118 @@ elements.cardRetirementList?.addEventListener('click', async (event) => {
   } catch (error) { showNotice(`登记失败：${error.message}`); }
 });
 
+
+/* ===== 设置页（第⑥步 B，B「一张大表」，Lemon 2026-09-20 挑定 / D-290）=====
+   这些数真正决定「何时自动开卡、开多大金额、钱够不够、卡够不够格分配」。
+   所以：不做失焦即存——改完先变色、出「保存」，点了才写，且只提交真的变了的格。 */
+
+const SETTINGS_PLAN_LABELS = Object.freeze({ plus: 'Plus', pro_5x: 'Pro 5X', pro_20x: 'Pro 20X' });
+const SETTINGS_PLAN_ORDER = ['plus', 'pro_5x', 'pro_20x'];
+
+function settingsCell(field, value, extra = '') {
+  return `<input class="wb-field set-f" type="number" step="${field === 'open_card_amount' ? '0.01' : '1'}"
+    data-field="${field}" data-original="${escapeHtml(String(value))}" value="${escapeHtml(String(value))}"${extra}>`;
+}
+
+async function loadSettings() {
+  if (!elements.settingsPolicies) return;
+  let data;
+  try {
+    data = await api('/api/v1/admin/settings/supply');
+  } catch {
+    // 读不到就说读不到——绝不显示成「还没有配置」，那会让人以为该建一份新的
+    const fail = '<p class="wb-qempty">设置读取失败，先不要照这里的值做判断。刷新重试。</p>';
+    elements.settingsPolicies.innerHTML = fail;
+    if (elements.settingsThresholds) elements.settingsThresholds.innerHTML = fail;
+    if (elements.settingsGlobal) elements.settingsGlobal.innerHTML = fail;
+    return;
+  }
+  state.settings = data;
+  renderSettingsPolicies(data);
+  renderSettingsThresholds(data);
+  renderSettingsGlobal(data);
+}
+
+/** B 版：台×产品摊平成一张表，两台并排看得出哪里不一致。 */
+function renderSettingsPolicies(data) {
+  const rows = data.policies || [];
+  if (!rows.length) { elements.settingsPolicies.innerHTML = '<p class="wb-qempty">还没有任何供给策略</p>'; return; }
+  const byAccount = new Map();
+  for (const row of rows) {
+    if (!byAccount.has(row.accountCode)) byAccount.set(row.accountCode, []);
+    byAccount.get(row.accountCode).push(row);
+  }
+  const minimums = data.minimumBalanceByPlan || {};
+  const body = [...byAccount.entries()].map(([accountCode, list]) => {
+    const label = list[0]?.providerKind === 'hnskj' ? 'HNSKJ 卡台' : 'highvcc卡台';
+    const head = `<tr class="set-rig"><td colspan="6">${escapeHtml(label)} · ${escapeHtml(accountCode)}</td></tr>`;
+    const ordered = SETTINGS_PLAN_ORDER
+      .map((plan) => list.find((row) => row.productCode === plan))
+      .filter(Boolean);
+    return head + ordered.map((row) => `<tr data-account="${escapeHtml(row.providerAccountId)}"
+        data-product="${escapeHtml(row.productCode)}">
+      <td>${escapeHtml(SETTINGS_PLAN_LABELS[row.productCode] || row.productCode)}</td>
+      <td>${settingsCell('target_available', row.targetAvailable)}</td>
+      <td>${settingsCell('open_card_amount', Number(row.openCardAmount || 0).toFixed(2))}</td>
+      <td>${settingsCell('daily_open_limit', row.dailyOpenLimit)}</td>
+      <td class="set-ro">${minimums[row.productCode] == null ? '—' : `$${formatMoney(minimums[row.productCode])}`}</td>
+      <td><button type="button" class="wb-btn sm out set-save" data-save-policy disabled>保存</button></td>
+    </tr>`).join('');
+  }).join('');
+  elements.settingsPolicies.innerHTML = `<div class="set-table"><table>
+    <thead><tr><th>产品</th><th>水位（保几张）</th><th>开卡金额</th><th>每日开卡上限</th>
+      <th>最低余额<small>（在下方改）</small></th><th></th></tr></thead>
+    <tbody>${body}</tbody></table></div>`;
+}
+
+function renderSettingsThresholds(data) {
+  if (!elements.settingsThresholds) return;
+  const wallets = (data.wallets || []).map((row) => {
+    const label = row.providerKind === 'hnskj' ? 'HNSKJ 卡台' : 'highvcc卡台';
+    return `<div class="set-kv" data-account="${escapeHtml(row.providerAccountId)}">
+      <label>${escapeHtml(label)} <small>${escapeHtml(row.accountCode)} · 底线挡开卡，告警线只提醒</small></label>
+      <span>
+        ${settingsCell('wallet_floor', Number(row.walletFloor || 0).toFixed(2))}
+        ${settingsCell('wallet_alert_threshold', Number(row.walletAlertThreshold || 0).toFixed(2))}
+        <button type="button" class="wb-btn sm out set-save" data-save-wallet disabled>保存</button>
+      </span></div>`;
+  }).join('');
+  const minimums = data.minimumBalanceByPlan || {};
+  const mins = SETTINGS_PLAN_ORDER.map((plan) => `<div class="set-kv" data-plan="${plan}">
+    <label>最低余额 · ${escapeHtml(SETTINGS_PLAN_LABELS[plan])} <small>低于它这张卡不参与分配</small></label>
+    <span><input class="wb-field set-f" type="number" step="0.01" data-field="minimum_balance"
+      data-original="${escapeHtml(String(minimums[plan] ?? ''))}" value="${escapeHtml(String(minimums[plan] ?? ''))}">
+      <button type="button" class="wb-btn sm out set-save" data-save-minimum disabled>保存</button></span></div>`).join('');
+  // D-221 要按产品，现在只有一个全局值 —— 只读显示并说清，不给改（Lemon 2026-09-20 定）
+  const capacity = `<div class="set-kv">
+    <label>每卡单数 <small>一张卡最多成功充几单</small></label>
+    <span class="set-ro">全局 ${escapeHtml(String(data.maxSuccessfulPayments ?? '—'))}
+      <span class="wb-chip warn">D-221 要按产品（Plus 3 / 5X 1 / 20X 1），现在只有这一个全局值，暂不可改</span></span></div>`;
+  elements.settingsThresholds.innerHTML = wallets + mins + capacity;
+}
+
+function renderSettingsGlobal(data) {
+  if (!elements.settingsGlobal) return;
+  elements.settingsGlobal.innerHTML = `
+    <div class="set-kv"><label>Session 门槛 <small>客户换 Session 的时间窗（小时）</small></label>
+      <span class="set-ro">${escapeHtml(String(data.sessionReplacementWindowHours ?? '—'))} 小时
+        <span class="wb-chip mute">暂不可改</span></span></div>
+    <div class="set-kv"><label>账单地址 <small>Browser 付款时填的地址</small></label>
+      <span><button type="button" class="wb-btn sm out" data-goto-billing>去诊断页配置 →</button></span></div>`;
+}
+
+/** 改过的格变色并启用该行/该项的保存按钮。 */
+function settingsMarkDirty(input) {
+  const changed = String(input.value) !== String(input.dataset.original ?? '');
+  input.classList.toggle('is-dirty', changed);
+  const scope = input.closest('tr') || input.closest('.set-kv');
+  if (!scope) return;
+  const dirty = [...scope.querySelectorAll('.set-f')].some(
+    (item) => String(item.value) !== String(item.dataset.original ?? ''));
+  const button = scope.querySelector('.set-save');
+  if (button) button.disabled = !dirty;
+}
+
 async function loadStock() {
   const [payload, retirement] = await Promise.all([
     api('/api/v1/admin/card-stock'),
@@ -2228,6 +2343,7 @@ async function switchView(view, { status = '' } = {}) {
   } else if (view === 'settings') {
     elements.viewKicker.textContent = '设置';
     elements.viewTitle.textContent = '按台×按产品 · 全局门槛 · 账单地址';
+    await loadSettings();
   } else {
     elements.viewKicker.textContent = '订单';
     elements.viewTitle.textContent = ORDER_FILTER_TITLES[state.status] || '全部订单';
@@ -3121,4 +3237,62 @@ elements.reconciliationTable?.addEventListener('click', (event) => {
       .then(() => { button.disabled = false; })
       .catch(() => { button.disabled = false; showNotice('案例解决失败。'); });
   }
+});
+
+/* 设置页交互：改动标脏 → 点保存才写；只提交真的变了的格，逐项审计。 */
+document.addEventListener('input', (event) => {
+  const field = event.target.closest?.('.set-f');
+  if (field) settingsMarkDirty(field);
+});
+
+document.addEventListener('click', async (event) => {
+  const button = event.target.closest?.('.set-save');
+  if (!button || button.disabled) {
+    if (event.target.closest?.('[data-goto-billing]')) switchView('diagnostics');
+    return;
+  }
+  const scope = button.closest('tr') || button.closest('.set-kv');
+  const dirty = [...scope.querySelectorAll('.set-f')].filter(
+    (item) => String(item.value) !== String(item.dataset.original ?? ''));
+  if (!dirty.length) return;
+  button.disabled = true;
+  button.textContent = '保存中…';
+  const failed = [];
+  for (const input of dirty) {
+    const field = input.dataset.field;
+    try {
+      if (field === 'minimum_balance') {
+        await api('/api/v1/admin/card-stock/minimum-balance', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ amount: Number(input.value), planType: scope.dataset.plan })
+        });
+      } else if (button.hasAttribute('data-save-wallet')) {
+        await api('/api/v1/admin/settings/provider-wallet', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ providerAccountId: scope.dataset.account, field, value: Number(input.value) })
+        });
+      } else {
+        await api('/api/v1/admin/settings/supply-policy', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ providerAccountId: scope.dataset.account,
+            productCode: scope.dataset.product, field, value: Number(input.value) })
+        });
+      }
+      input.dataset.original = input.value;
+      input.classList.remove('is-dirty');
+    } catch (error) {
+      // 一格失败不掩盖另外几格已经存进去了——逐格报，不说「保存失败」了事
+      failed.push(`${field}：${error.payload?.detail || error.message}`);
+      input.classList.add('is-bad');
+    }
+  }
+  button.textContent = '保存';
+  button.disabled = failed.length === 0;
+  if (failed.length) {
+    showNotice(`有 ${failed.length} 项没保存成功：${failed.join('；')}`);
+  } else {
+    showNotice('已保存，改动立刻生效。', 'success');
+  }
+  // 存完重读一次：让页面显示的是库里真实的值，而不是我刚敲进去的字
+  await loadSettings().catch(() => {});
 });

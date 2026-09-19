@@ -8,9 +8,9 @@
   <title>Plus 运营后台</title>
   <link rel="icon" href="/admin/assets/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/admin/assets/admin.css?v=26">
-  <link rel="stylesheet" href="/admin/assets/workbench.css?v=3">
+  <link rel="stylesheet" href="/admin/assets/workbench.css?v=4">
   <link rel="stylesheet" href="/admin/assets/cards.css?v=1">
-  <script src="/admin/assets/admin.js?v=54" defer></script>
+  <script src="/admin/assets/admin.js?v=55" defer></script>
 </head>
 <body>
   <div class="admin-shell">
@@ -358,7 +358,21 @@
       </section>
 
       <section id="settings-view" class="view workbench" hidden>
-        <section class="wb-card"><div class="wb-ch"><div><p class="wb-kick">设置</p><h2>按台×按产品 · 全局门槛 · 账单地址</h2></div><span class="wb-ro">开发中</span></div><div class="wb-cb"><p class="wb-qempty">设置页在第⑥步后续做：按台×按产品的水位 / 开卡金额 / 每卡单数 / 最低余额 / 每日上限 / 钱包底线，加 Session 门槛、账单地址、路线与开卡补钱开关。</p></div></section>
+        <section class="wb-card">
+          <div class="wb-ch"><div><p class="wb-kick">供给策略</p><h2>按台 × 按产品</h2></div><span class="wb-ro">补卡调度器读的就是这张表</span></div>
+          <div class="wb-cb">
+            <p class="wb-note">水位＝这台这个产品至少保几张可分配的卡；日限＝这台今天最多开几张。改动立刻生效，每项都记谁改的、从什么改成什么。</p>
+            <div id="settings-policies"><p class="wb-qempty">正在读取…</p></div>
+          </div>
+        </section>
+        <section class="wb-card">
+          <div class="wb-ch"><div><p class="wb-kick">钱包与门槛</p><h2>钱够不够才开卡、卡够不够才分配</h2></div></div>
+          <div class="wb-cb"><div id="settings-thresholds"><p class="wb-qempty">正在读取…</p></div></div>
+        </section>
+        <section class="wb-card">
+          <div class="wb-ch"><div><p class="wb-kick">全局</p><h2>客户与付款</h2></div></div>
+          <div class="wb-cb"><div id="settings-global"><p class="wb-qempty">正在读取…</p></div></div>
+        </section>
       </section>
 
       <div class="page-notice" id="page-notice" role="status" aria-live="polite" hidden></div>

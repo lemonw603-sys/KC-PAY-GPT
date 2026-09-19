@@ -21,6 +21,7 @@ import { createCardStockService } from './services/card-stock-service.js';
 import { createCardStockJobService } from './services/card-stock-job-service.js';
 import { createHighvccCardService } from './services/highvcc-card-service.js';
 import { createHighvccSnapshotSyncService } from './services/highvcc-snapshot-sync-service.js';
+import { createCardSupplyPolicyAdminService } from './services/card-supply-policy-admin-service.js';
 import { createCardFundingAdminService } from './services/card-funding-admin-service.js';
 import { createProviderRouteAdminService } from './services/provider-route-admin-service.js';
 import { createCardSyncJobService } from './services/card-sync-job-service.js';
@@ -90,6 +91,7 @@ const highvccCardService = createHighvccCardService({
 const highvccSnapshotSyncService = createHighvccSnapshotSyncService({
   pool, encryptionKey: config.sessionEncryptionKey, panHmacKey: config.cardIntakePanHmacKey
 });
+const cardSupplyPolicyAdminService = createCardSupplyPolicyAdminService({ pool });
 const cardFundingAdminService = createCardFundingAdminService({ pool });
 const providerRouteAdminService = createProviderRouteAdminService({ pool });
 const cardSourceAdminService = createCardSourceAdminService({ pool });
@@ -248,6 +250,9 @@ const app = createApp({
   ,listHighvccCardRanges: highvccCardService.listRanges
   ,getHighvccWalletStatus: highvccCardService.walletStatus
   // 三步各自独立报成败：一步失败不掩盖另外两步的结果（照 CLI 的 step() 语义）。
+  ,getAdminSupplySettings: () => cardSupplyPolicyAdminService.list()
+  ,setAdminSupplyPolicyField: (input) => cardSupplyPolicyAdminService.setPolicyField(input)
+  ,setAdminProviderWalletField: (input) => cardSupplyPolicyAdminService.setWalletField(input)
   ,refreshHighvccSnapshot: async () => {
     const out = {};
     const failures = [];

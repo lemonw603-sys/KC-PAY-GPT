@@ -88,7 +88,7 @@ test('labels local stock refresh separately from provider card synchronization',
 test('admin overview does not describe disabled automatic card opening as enabled', async () => {
   const html = await readFile(new URL('../public/admin/index.html', import.meta.url), 'utf8');
   const script = await readFile(new URL('../public/admin/assets/admin.js', import.meta.url), 'utf8');
-  assert.match(html, /admin\.js\?v=54/);
+  assert.match(html, /admin\.js\?v=55/);
   // 3b182f0 (2026-09-08) hoisted d.supplyAutomationMixed into supplyMixed; same three states.
   // 第⑥步工作台重做 renderDecisions（D-283）：供给三态文案改「自动开卡补钱」，仍是关闭态不显示成开启。
   assert.match(script, /supplyOn \? '自动开卡补钱' : \(supplyMixed \? '部分开启' : '全部人工'\)/);

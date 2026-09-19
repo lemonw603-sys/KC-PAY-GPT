@@ -50,6 +50,9 @@ export function createApp({
   setAdminCardMaxSuccessfulPayments = null,
   setAdminCardMinimumBalance = null,
   refreshHighvccSnapshot = null,
+  getAdminSupplySettings = null,
+  setAdminSupplyPolicyField = null,
+  setAdminProviderWalletField = null,
   createAdminCardStockJob = null,
   getHighvccCardStatus = null,
   setHighvccCardToken = null,
@@ -366,6 +369,50 @@ export function createApp({
       const planType = req.body?.planType == null ? 'plus' : String(req.body.planType).trim().toLowerCase();
       if (!['plus', 'pro_5x', 'pro_20x'].includes(planType)) return res.status(400).json({ error: 'invalid_plan_type' });
       res.json(await setAdminCardMinimumBalance(amount, planType));
+    });
+  }
+  // 设置页（第⑥步 B / D-290）。策略表与钱包底线此前只有读、没有写端点——
+  // 真正决定「何时自动开卡、开多大金额、钱够不够」的数，过去只能改库。
+  if (typeof getAdminSupplySettings === 'function') {
+    app.get('/api/v1/admin/settings/supply', noStore, requireAdminApi, async (_req, res) => {
+      res.json(await getAdminSupplySettings());
+    });
+  }
+  if (typeof setAdminSupplyPolicyField === 'function') {
+    app.post('/api/v1/admin/settings/supply-policy', ...adminWriteGuards, async (req, res) => {
+      try {
+        return res.json(await setAdminSupplyPolicyField({
+          providerAccountId: req.body?.providerAccountId,
+          productCode: req.body?.productCode,
+          field: req.body?.field,
+          value: req.body?.value,
+          reason: req.body?.reason ?? null,
+          actorId: req.admin?.id || 'admin'
+        }));
+      } catch (error) {
+        if (error instanceof PublicApiError) {
+          return res.status(error.status || 400).json({ error: error.code.toLowerCase(), detail: error.message });
+        }
+        throw error;
+      }
+    });
+  }
+  if (typeof setAdminProviderWalletField === 'function') {
+    app.post('/api/v1/admin/settings/provider-wallet', ...adminWriteGuards, async (req, res) => {
+      try {
+        return res.json(await setAdminProviderWalletField({
+          providerAccountId: req.body?.providerAccountId,
+          field: req.body?.field,
+          value: req.body?.value,
+          reason: req.body?.reason ?? null,
+          actorId: req.admin?.id || 'admin'
+        }));
+      } catch (error) {
+        if (error instanceof PublicApiError) {
+          return res.status(error.status || 400).json({ error: error.code.toLowerCase(), detail: error.message });
+        }
+        throw error;
+      }
     });
   }
   if (typeof createAdminCardStockJob === 'function') {

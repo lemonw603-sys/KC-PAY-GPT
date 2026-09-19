@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>第⑥步 · 设置页三版比稿</title>
+<!--
+  V2 第⑥步 设置页 · 三版比稿（给 Lemon 挑）
+  令牌沿用候光；设置页 #settings-view 本来就带 class="view workbench"，所以这里用 wb-* 同族样式。
+
+  要放的东西（任务书 B）：
+    按台 × 按产品：水位 / 开卡金额 / 每日开卡上限        ← card_supply_policies（调度器真正读的表）
+    按台：          钱包底线 / 告警线                      ← provider_accounts.wallet_floor / wallet_alert_threshold
+    按产品：        最低余额 / 每卡单数                    ← minimum_required_card_balance:<plan> / card_max_successful_payments
+    全局：          Session 门槛 / 账单地址                ← session_replacement_window_hours / browser.billing-address
+    每项写 admin_setting_events 审计
+
+  数字全部是 2026-09-20 生产只读实查，没有一个是编的。
+-->
+<style>
+:root{
+  --bg:hsl(168,16%,97%);
+  --a:hsl(163,72%,26%); --a-soft:hsl(163,44%,93%); --a-on:hsl(0,0%,100%);
+  --t:hsl(176,18%,11%); --t2:hsl(170,10%,38%); --t3:hsl(168,9%,50%);
+  --s:hsl(0,0%,100%); --s2:hsl(168,20%,97%); --s3:hsl(168,16%,95%); --bd:hsl(168,14%,88%);
+  --warn:hsl(32,72%,40%); --warn-soft:hsl(38,78%,94%);
+  --ok:hsl(150,54%,36%); --ok-soft:hsl(150,44%,94%);
+  --danger:hsl(4,66%,50%); --danger-soft:hsl(6,72%,96%);
+  --info:hsl(212,62%,46%); --info-soft:hsl(212,60%,95%);
+  --sh:inset 0 1px 0 hsla(0,0%,100%,.85),0 1px 2px hsla(176,25%,10%,.06),0 14px 30px -14px hsla(176,25%,10%,.22);
+  --fd:"Familjen Grotesk","PingFang SC","Hiragino Sans GB",system-ui,sans-serif;
+  --fm:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--t);font-family:var(--fd);font-size:14px;line-height:1.55}
+.page{max-width:1180px;margin:0 auto;padding:28px 20px 80px}
+h1{margin:0 0 6px;font-size:21px}
+.sub{margin:0 0 26px;color:var(--t2);font-size:13px}
+.variant{margin:32px 0 0;border:1px solid var(--bd);border-radius:16px;background:var(--s);box-shadow:var(--sh);overflow:hidden}
+.variant>header{padding:14px 18px;background:var(--s2);border-bottom:1px solid var(--bd);display:flex;gap:12px;align-items:baseline;flex-wrap:wrap}
+.variant>header b{font-size:15px}
+.variant>header span{color:var(--t2);font-size:12.5px}
+.stage{padding:18px;display:grid;gap:14px;background:var(--bg)}
+.card{background:var(--s);border:1px solid var(--bd);border-radius:14px;overflow:hidden}
+.card>h3{margin:0;padding:12px 15px;font-size:13.5px;border-bottom:1px solid var(--bd);background:var(--s2);
+  display:flex;justify-content:space-between;align-items:center;gap:10px}
+.card>h3 em{font-style:normal;font-weight:400;color:var(--t3);font-size:11.5px;font-family:var(--fm)}
+table{width:100%;border-collapse:collapse;font-size:12.5px}
+th{text-align:left;padding:8px 12px;color:var(--t3);font-weight:600;font-size:11.5px;border-bottom:1px solid var(--bd);white-space:nowrap}
+td{padding:8px 12px;border-bottom:1px solid var(--s3);vertical-align:middle}
+tbody tr:last-child td{border-bottom:0}
+.rig-row td{background:var(--s2);font-weight:600}
+input.f{width:86px;padding:4px 8px;border:1px solid var(--bd);border-radius:7px;font-family:var(--fm);font-size:12px;background:var(--s);color:var(--t)}
+input.f.w{width:120px}
+.mono{font-family:var(--fm)}
+.muted{color:var(--t3)}
+.btn{border:1px solid var(--bd);background:var(--s);color:var(--t);border-radius:8px;padding:4px 11px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit}
+.btn.p{background:var(--a);border-color:var(--a);color:var(--a-on)}
+.chip{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600;border:1px solid transparent}
+.chip.gap{background:var(--warn-soft);color:var(--warn);border-color:hsl(38,60%,80%)}
+.chip.ok{background:var(--ok-soft);color:var(--ok);border-color:hsl(150,40%,82%)}
+.note{font-size:12px;color:var(--t2);padding:9px 14px;background:var(--info-soft);border-top:1px solid hsl(212,50%,88%)}
+.warnnote{font-size:12px;color:var(--warn);padding:9px 14px;background:var(--warn-soft);border-top:1px solid hsl(38,60%,82%)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media(max-width:900px){.grid2{grid-template-columns:1fr}}
+.kv{display:flex;justify-content:space-between;align-items:center;padding:8px 14px;border-bottom:1px solid var(--s3);gap:10px}
+.kv:last-child{border-bottom:0}
+.kv label{font-size:12.5px}
+.kv small{display:block;color:var(--t3);font-size:11px}
+.foot{margin-top:38px;padding:18px;border:1px solid var(--bd);border-radius:14px;background:var(--s);font-size:12.5px;color:var(--t2)}
+.foot h4{margin:0 0 7px;font-size:13px;color:var(--t)}
+.foot ul{margin:0 0 14px;padding-left:19px}
+.foot li{margin-bottom:4px}
+code{font-family:var(--fm);font-size:11.5px;background:var(--s3);padding:1px 5px;border-radius:4px}
+</style>
+</head>
+<body>
+<div class="page">
+
+<h1>第⑥步 · 设置页三版比稿</h1>
+<p class="sub">三版差在「按台×按产品那 6 行怎么摆」。数字全部是 2026-09-20 生产只读实查。<strong>两处缺口在三版里都标了出来</strong>，见页脚 §2。</p>
+
+<!-- ============ A ============ -->
+<section class="variant">
+  <header><b>A · 按台分组</b><span>一台一张卡片，台内列产品；钱包设置天然跟着台走</span></header>
+  <div class="stage">
+
+    <div class="card">
+      <h3>HNSKJ 卡台 <em>legacy-primary · hnskj</em></h3>
+      <table>
+        <thead><tr><th>产品</th><th>水位（保几张）</th><th>开卡金额</th><th>每日开卡上限</th><th>最低余额</th><th>每卡单数</th></tr></thead>
+        <tbody>
+          <tr><td><b>Plus</b></td><td><input class="f" value="2"></td><td><input class="f" value="50.00"></td><td><input class="f" value="20"></td><td><input class="f" value="16.00"></td><td><input class="f" value="3"></td></tr>
+          <tr><td><b>Pro 5X</b></td><td><input class="f" value="0"></td><td><input class="f" value="100.00"></td><td><input class="f" value="20"></td><td><input class="f" value="16.00"><span class="chip gap">存疑</span></td><td><span class="muted mono">3</span><span class="chip gap">全局值</span></td></tr>
+          <tr><td><b>Pro 20X</b></td><td><input class="f" value="0"></td><td><input class="f" value="150.00"></td><td><input class="f" value="20"></td><td><input class="f" value="150.00"></td><td><span class="muted mono">3</span><span class="chip gap">全局值</span></td></tr>
+        </tbody>
+      </table>
+      <div class="kv"><label>钱包底线 <small>低于它不开卡（开卡预检的硬底线）</small></label><span><input class="f w" value="30.00"> <button class="btn">保存</button></span></div>
+      <div class="kv"><label>钱包告警线 <small>低于它推告警，但不挡开卡</small></label><span><input class="f w" value="50.00"> <button class="btn">保存</button></span></div>
+      <div class="warnnote">「每卡单数」目前是<strong>一个全局值 3</strong>，按 D-221 应当按产品分开（Plus 3 / 5X 1 / 20X 1）。现在这一列对 5X、20X 显示的是同一个全局数，改不动。</div>
+    </div>
+
+    <div class="card">
+      <h3>highvcc卡台 <em>backup-a · manual_excel</em></h3>
+      <table>
+        <thead><tr><th>产品</th><th>水位（保几张）</th><th>开卡金额</th><th>每日开卡上限</th><th>最低余额</th><th>每卡单数</th></tr></thead>
+        <tbody>
+          <tr><td><b>Plus</b></td><td><input class="f" value="2"></td><td><input class="f" value="50.00"></td><td><input class="f" value="20"></td><td><input class="f" value="16.00"></td><td><input class="f" value="3"></td></tr>
+          <tr><td><b>Pro 5X</b></td><td><input class="f" value="0"></td><td><input class="f" value="100.00"></td><td><input class="f" value="20"></td><td><input class="f" value="16.00"><span class="chip gap">存疑</span></td><td><span class="muted mono">3</span><span class="chip gap">全局值</span></td></tr>
+          <tr><td><b>Pro 20X</b></td><td><input class="f" value="0"></td><td><input class="f" value="150.00"></td><td><input class="f" value="20"></td><td><input class="f" value="150.00"></td><td><span class="muted mono">3</span><span class="chip gap">全局值</span></td></tr>
+        </tbody>
+      </table>
+      <div class="kv"><label>钱包底线</label><span><input class="f w" value="20.00"> <button class="btn">保存</button></span></div>
+      <div class="kv"><label>钱包告警线</label><span><input class="f w" value="50.00"> <button class="btn">保存</button></span></div>
+    </div>
+
+    <div class="card">
+      <h3>全局</h3>
+      <div class="kv"><label>Session 门槛 <small>客户换 Session 的时间窗（小时）</small></label><span><input class="f" value="72"> <button class="btn">保存</button></span></div>
+      <div class="kv"><label>账单地址 <small>Browser 付款时填的地址</small></label><span><button class="btn">去配置 →</button></span></div>
+      <div class="note">每改一项都写 <code>admin_setting_events</code>：谁、什么时候、从什么改成什么。</div>
+    </div>
+
+  </div>
+</section>
+
+<!-- ============ B ============ -->
+<section class="variant">
+  <header><b>B · 一张大表</b><span>台×产品 6 行摊平，一屏看完全部；按台的钱包设置单独一块</span></header>
+  <div class="stage">
+    <div class="card">
+      <h3>按台 × 按产品 <em>card_supply_policies</em></h3>
+      <table>
+        <thead><tr><th>卡台</th><th>产品</th><th>水位</th><th>开卡金额</th><th>日限</th><th>最低余额</th><th>每卡单数</th></tr></thead>
+        <tbody>
+          <tr class="rig-row"><td colspan="7">HNSKJ 卡台 · legacy-primary</td></tr>
+          <tr><td></td><td>Plus</td><td><input class="f" value="2"></td><td><input class="f" value="50.00"></td><td><input class="f" value="20"></td><td><input class="f" value="16.00"></td><td><input class="f" value="3"></td></tr>
+          <tr><td></td><td>Pro 5X</td><td><input class="f" value="0"></td><td><input class="f" value="100.00"></td><td><input class="f" value="20"></td><td><input class="f" value="16.00"><span class="chip gap">存疑</span></td><td class="muted mono">3 <span class="chip gap">全局</span></td></tr>
+          <tr><td></td><td>Pro 20X</td><td><input class="f" value="0"></td><td><input class="f" value="150.00"></td><td><input class="f" value="20"></td><td><input class="f" value="150.00"></td><td class="muted mono">3 <span class="chip gap">全局</span></td></tr>
+          <tr class="rig-row"><td colspan="7">highvcc卡台 · backup-a</td></tr>
+          <tr><td></td><td>Plus</td><td><input class="f" value="2"></td><td><input class="f" value="50.00"></td><td><input class="f" value="20"></td><td><input class="f" value="16.00"></td><td><input class="f" value="3"></td></tr>
+          <tr><td></td><td>Pro 5X</td><td><input class="f" value="0"></td><td><input class="f" value="100.00"></td><td><input class="f" value="20"></td><td><input class="f" value="16.00"><span class="chip gap">存疑</span></td><td class="muted mono">3 <span class="chip gap">全局</span></td></tr>
+          <tr><td></td><td>Pro 20X</td><td><input class="f" value="0"></td><td><input class="f" value="150.00"></td><td><input class="f" value="20"></td><td><input class="f" value="150.00"></td><td class="muted mono">3 <span class="chip gap">全局</span></td></tr>
+        </tbody>
+      </table>
+      <div class="note">两台的数当前完全一样，摊平后一眼能看出「哪台和哪台不一致」——分组摆法要来回翻才比得出来。</div>
+    </div>
+    <div class="grid2">
+      <div class="card">
+        <h3>钱包（按台）</h3>
+        <div class="kv"><label>HNSKJ 底线 / 告警线</label><span><input class="f" value="30.00"> <input class="f" value="50.00"></span></div>
+        <div class="kv"><label>highvcc 底线 / 告警线</label><span><input class="f" value="20.00"> <input class="f" value="50.00"></span></div>
+      </div>
+      <div class="card">
+        <h3>全局</h3>
+        <div class="kv"><label>Session 门槛（小时）</label><input class="f" value="72"></div>
+        <div class="kv"><label>账单地址</label><button class="btn">去配置 →</button></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ C ============ -->
+<section class="variant">
+  <header><b>C · 按用途分组</b><span>按「这个设置管什么」分块：供给节奏 / 安全门槛 / 客户与付款</span></header>
+  <div class="stage">
+    <div class="card">
+      <h3>供给节奏 <em>决定什么时候自动开卡、开多少</em></h3>
+      <table>
+        <thead><tr><th>卡台 · 产品</th><th>水位（保几张）</th><th>开卡金额</th><th>每日开卡上限</th></tr></thead>
+        <tbody>
+          <tr><td>HNSKJ · Plus</td><td><input class="f" value="2"></td><td><input class="f" value="50.00"></td><td><input class="f" value="20"></td></tr>
+          <tr><td>HNSKJ · 5X</td><td><input class="f" value="0"></td><td><input class="f" value="100.00"></td><td><input class="f" value="20"></td></tr>
+          <tr><td>HNSKJ · 20X</td><td><input class="f" value="0"></td><td><input class="f" value="150.00"></td><td><input class="f" value="20"></td></tr>
+          <tr><td>highvcc · Plus</td><td><input class="f" value="2"></td><td><input class="f" value="50.00"></td><td><input class="f" value="20"></td></tr>
+          <tr><td>highvcc · 5X</td><td><input class="f" value="0"></td><td><input class="f" value="100.00"></td><td><input class="f" value="20"></td></tr>
+          <tr><td>highvcc · 20X</td><td><input class="f" value="0"></td><td><input class="f" value="150.00"></td><td><input class="f" value="20"></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="card">
+      <h3>安全门槛 <em>决定一张卡能不能被分出去、钱够不够</em></h3>
+      <div class="kv"><label>最低余额 · Plus <small>低于它不分配</small></label><input class="f" value="16.00"></div>
+      <div class="kv"><label>最低余额 · 5X</label><span><input class="f" value="16.00"> <span class="chip gap">5X 开卡要 $100，这个 16 存疑</span></span></div>
+      <div class="kv"><label>最低余额 · 20X</label><input class="f" value="150.00"></div>
+      <div class="kv"><label>每卡单数 <small>一张卡最多成功充几单</small></label><span><input class="f" value="3"> <span class="chip gap">D-221 要按产品，现在只有一个全局值</span></span></div>
+      <div class="kv"><label>钱包底线 · HNSKJ / highvcc</label><span><input class="f" value="30.00"> <input class="f" value="20.00"></span></div>
+      <div class="kv"><label>钱包告警线 · HNSKJ / highvcc</label><span><input class="f" value="50.00"> <input class="f" value="50.00"></span></div>
+    </div>
+    <div class="card">
+      <h3>客户与付款</h3>
+      <div class="kv"><label>Session 门槛（小时）</label><input class="f" value="72"></div>
+      <div class="kv"><label>账单地址</label><button class="btn">去配置 →</button></div>
+      <div class="note">这一版把「最低余额」和「每卡单数」从产品表里拎出来，和钱包底线放一起——它们都是<strong>挡住一次分配/开卡</strong>的门槛，改错了直接影响资金。</div>
+    </div>
+  </div>
+</section>
+
+<div class="foot">
+  <h4>§1 · 每一项的真实数据源（都查过，不是照任务书抄的）</h4>
+  <ul>
+    <li><b>水位 / 开卡金额 / 每日上限</b> → <code>card_supply_policies</code>（按台×按产品）。<strong>补卡调度器读的就是它</strong>；<code>card_stock_low_threshold</code> 与 <code>card_replenishment_daily_limit</code> 这两个全局键早已被它取代（生产实值 1 与 10，而策略表是 2 与 20），卡片页已于本轮改正。<b>这张表目前没有任何写端点，设置页要新建。</b></li>
+    <li><b>钱包底线 / 告警线</b> → <code>provider_accounts.wallet_floor</code> / <code>wallet_alert_threshold</code>（按台）。底线就是开卡预检挡开卡的那条线。<b>同样没有写端点。</b></li>
+    <li><b>最低余额</b> → <code>minimum_required_card_balance:&lt;plan&gt;</code>，写端点已有。</li>
+    <li><b>每卡单数</b> → <code>card_max_successful_payments</code>，写端点已有，但<b>是全局的</b>。</li>
+    <li><b>Session 门槛</b> → <code>session_replacement_window_hours</code>（生产 72）。</li>
+    <li><b>账单地址</b> → <code>/api/v1/admin/browser/billing-address</code>，已在诊断页，设置页给入口即可。</li>
+  </ul>
+
+  <h4>§2 · 两处缺口（三版里都标出来了，需要 Lemon 定）</h4>
+  <ul>
+    <li><b>每卡单数不能按产品</b>：D-221 定「Plus 3 单、5X 与 20X 各 1 单」，而现在只有一个全局 <code>card_max_successful_payments=3</code>。<b>要按产品就得新增存储</b>（形如 <code>card_max_successful_payments:&lt;plan&gt;</code>，与最低余额同一套路），并改所有读它的地方（12 处引用）。</li>
+    <li><b>5X 最低余额 = $16，而 5X 开卡金额 = $100</b>：只是观察，不下结论——<b>但如果 5X 真按 $16 的门槛分配卡，可能分出一张钱不够的卡</b>。20X 是 150.00 看起来是配过的。5X/20X 目前由 Lemon 人工充、自动化未接入，所以现在不会触发。</li>
+  </ul>
+
+  <h4>§3 · 皮肤</h4>
+  <ul>
+    <li>设置页 <code>#settings-view</code> 本来就带 <code>class="view workbench"</code>，在候光作用域里，所以直接用 <code>wb-*</code> 同族样式即可——<b>与 CDK 页那次的坑正好相反</b>（那次是页面不在作用域里却用了作用域内的 class）。</li>
+  </ul>
+</div>
+
+</div>
+</body>
+</html>

@@ -194,3 +194,25 @@ body{font-family:var(--wb-fd)}
   .workbench .wb-ops{gap:14px} .workbench .wb-ops .wb-vr{display:none}
   .workbench .wb-recon{grid-template-columns:1fr 1fr}
 }
+
+/* ===== 设置页（第⑥步 B / D-290）。#settings-view 本来就带 .workbench，可用 wb-* 同族 ===== */
+.workbench .set-table{border:1px solid var(--wb-bd);border-radius:12px;overflow:hidden;background:var(--wb-s)}
+.workbench .set-table table{width:100%;border-collapse:collapse;font-size:12.5px}
+.workbench .set-table th{text-align:left;padding:8px 12px;color:var(--wb-t3);font-weight:600;font-size:11.5px;
+  border-bottom:1px solid var(--wb-bd);background:var(--wb-s2);white-space:nowrap}
+.workbench .set-table th small{font-weight:400;color:var(--wb-t3)}
+.workbench .set-table td{padding:7px 12px;border-bottom:1px solid var(--wb-s3);vertical-align:middle;color:var(--wb-t)}
+.workbench .set-table tbody tr:last-child td{border-bottom:0}
+.workbench .set-rig td{background:var(--wb-s2);font-weight:600;color:var(--wb-t2);font-size:12px}
+.workbench .set-ro{color:var(--wb-t3);font-family:var(--wb-fm);font-size:12px}
+.workbench .set-f{width:92px;padding:4px 8px;font-family:var(--wb-fm);font-size:12px}
+/* 改过还没存的格：一眼看出「这个数还没生效」 */
+.workbench .set-f.is-dirty{border-color:var(--wb-warn);background:var(--wb-warn-soft)}
+.workbench .set-f.is-bad{border-color:var(--wb-danger);background:var(--wb-danger-soft)}
+.workbench .set-kv{display:flex;justify-content:space-between;align-items:center;gap:10px;
+  padding:9px 0;border-bottom:1px solid var(--wb-s3)}
+.workbench .set-kv:last-child{border-bottom:0}
+.workbench .set-kv label{font-size:12.5px;color:var(--wb-t)}
+.workbench .set-kv label small{display:block;color:var(--wb-t3);font-size:11px}
+.workbench .set-kv span{display:flex;align-items:center;gap:7px;flex-wrap:wrap;justify-content:flex-end}
+.workbench .wb-note{margin:0 0 10px;font-size:12px;color:var(--wb-t2)}
