@@ -121,6 +121,31 @@
             <p>CDK 已生成，尚未下载或交付。可复制，或点击“下载本批次 TXT”。</p>
           </div>
         </section>
+        <!-- D-279 ④：以单码为主的列表；批次退居其后，只当筛选与导出用。 -->
+        <section class="card cdk-card cdk-codes-card">
+          <div class="card-heading">
+            <div><p class="section-kicker">卡密</p><h2>每一张卡密</h2></div>
+            <button class="text-button" id="refresh-cdk-codes" type="button">刷新</button>
+          </div>
+          <!-- D-286 ①：欠客户多少次交付 vs 还能卖多少 -->
+          <div class="cdk-liability" id="cdk-liability"></div>
+          <form class="filters cdk-code-filters" id="cdk-code-filters">
+            <label><span class="sr-only">搜索</span><input id="cdk-code-q" type="search" placeholder="卡密 / 订单号 / 邮箱"></label>
+            <label><span class="sr-only">产品</span><select id="cdk-code-plan"><option value="">全部产品</option><option value="plus">Plus</option><option value="pro_5x">Pro 5X</option><option value="pro_20x">Pro 20X</option></select></label>
+            <label><span class="sr-only">状态</span><select id="cdk-code-status"><option value="">全部状态</option><option value="AVAILABLE">未使用</option><option value="REDEEMED">已兑换</option><option value="REVOKED">已作废</option></select></label>
+            <label><span class="sr-only">是否已发出</span><select id="cdk-code-issued"><option value="">发出与否不限</option><option value="no">还在手里</option><option value="yes">已发出</option></select></label>
+            <button class="primary-small" type="submit">筛选</button>
+          </form>
+          <table class="data-table cdk-codes-table">
+            <thead><tr><th>卡密</th><th>产品</th><th>状态</th><th>绑定订单</th><th>客户邮箱</th><th>最近动静</th><th>操作</th></tr></thead>
+            <tbody id="cdk-codes"></tbody>
+          </table>
+          <div class="pager">
+            <button class="text-button" id="cdk-code-prev" type="button">上一页</button>
+            <span id="cdk-code-page-info"></span>
+            <button class="text-button" id="cdk-code-more" type="button">下一页</button>
+          </div>
+        </section>
         <section class="card cdk-card cdk-batches-card">
           <div class="card-heading">
             <div><p class="section-kicker">批次记录</p><h2>最近 CDK 批次</h2></div>
