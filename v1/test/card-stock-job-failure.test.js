@@ -29,7 +29,11 @@ test('automatic preflight failures are retryable without consuming paid-review q
   assert.equal(update.parameters[0], 'FAILED');
   const alert = state.queries.find(({ sql }) => sql.includes('INSERT INTO operator_alerts'));
   assert.ok(alert);
-  assert.equal(alert.parameters[0], 'order-waiting-card:order-1');
+  // D5：这条是「还在自动重试」，必须与「已经停手、要人」的 ORDER_WAITING_FOR_CARD
+  // 分开——共用类型与 dedupe_key 时，真开不出的 critical 会被这条 warning 降级。
+  assert.match(alert.sql, /'ORDER_REPLENISH_RETRYING'/);
+  assert.doesNotMatch(alert.sql, /'ORDER_WAITING_FOR_CARD'/);
+  assert.equal(alert.parameters[0], 'order-replenish-retrying:order-1');
 });
 
 test('ambiguous stock execution failures remain review-required', async () => {

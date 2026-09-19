@@ -55,6 +55,9 @@ export const PHONE_PUSH_TYPES = Object.freeze({
 
 /** 明确不推的类型与理由。新增类型时在这里或白名单里二选一登记，别留空白。 */
 export const NON_PUSH_REASONS = Object.freeze({
+  // D5：补卡还在自动重试，系统没有停手；真「开不出、要人」是 ORDER_WAITING_FOR_CARD，
+  // 调度器开卡失败另有 CARD_SUPPLY_OPEN_FAILED 在推 —— 这条再推就是同一件事第三遍。
+  ORDER_REPLENISH_RETRYING: '补卡仍在自动重试，未卡住客户；要人时由 ORDER_WAITING_FOR_CARD 叫',
   BROWSER_PAYMENT_UNKNOWN: '链路中间态；付款后核实通道常在一分钟内自己确认，真卡住由 BROWSER_HUMAN_REQUIRED 接手（D-176）',
   BROWSER_PAYMENT_CONFIRMED: '与 BROWSER_ORDER_COMPLETED 相隔数秒，重复（D-176）',
   BROWSER_ORDER_COMPLETED: '成功不需要人做什么；成功数进每日汇总（D-249 把 D-176 的「一尾」收进看板）',

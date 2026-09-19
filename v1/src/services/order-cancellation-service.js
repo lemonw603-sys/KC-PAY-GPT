@@ -153,9 +153,10 @@ export function createOrderCancellationService({ pool }) {
           `UPDATE operator_alerts
            SET status='RESOLVED', acknowledged_at=COALESCE(acknowledged_at, CURRENT_TIMESTAMP(3)),
              updated_at=CURRENT_TIMESTAMP(3)
-           WHERE status='OPEN' AND alert_type='ORDER_WAITING_FOR_CARD'
-             AND (order_id=? OR dedupe_key=?)`,
-          [order.id, `order-waiting-card:${order.id}`]
+           WHERE status='OPEN'
+             AND alert_type IN ('ORDER_WAITING_FOR_CARD','ORDER_REPLENISH_RETRYING')
+             AND (order_id=? OR dedupe_key IN (?, ?))`,
+          [order.id, `order-waiting-card:${order.id}`, `order-replenish-retrying:${order.id}`]
         );
         await returnCdkForOrderInTransaction(connection, {
           orderId: order.id, reason: `order cancelled before payment: ${reason}`, actorType: 'ADMIN', actorId: 'admin',

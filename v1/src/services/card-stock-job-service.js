@@ -351,13 +351,17 @@ export async function failCardStockJob(pool, { jobId, workerId, error }) {
     const demandOrderId = rules?.demandOrderId || null;
     if (job?.job_source === 'AUTOMATIC' && demandOrderId) {
       await connection.query(
+        // D5（step6 任务书 D 发现 5）：这条原先也用 ORDER_WAITING_FOR_CARD + 同一个
+        // dedupe_key，于是和 workflow-repository 那条 critical「开不出卡、要人」**共用一行**，
+        // severity 互相覆盖——真开不出的 critical 会被这条 warning 降级。
+        // 拆成自己的类型与 key：它说的是「还在自动重试」，与「已经停手、要人」不是一回事。
         `INSERT INTO operator_alerts
          (id, alert_type, dedupe_key, order_id, severity, title, message, status)
-         VALUES (UUID(), 'ORDER_WAITING_FOR_CARD', ?, ?, 'warning', '自动补卡未完成', ?, 'OPEN')
+         VALUES (UUID(), 'ORDER_REPLENISH_RETRYING', ?, ?, 'warning', '自动补卡未完成', ?, 'OPEN')
          ON DUPLICATE KEY UPDATE severity=VALUES(severity), title=VALUES(title),
            message=VALUES(message), status=IF(status='RESOLVED','OPEN',status),
            acknowledged_at=IF(status='RESOLVED',NULL,acknowledged_at)`,
-        [`order-waiting-card:${demandOrderId}`, demandOrderId,
+        [`order-replenish-retrying:${demandOrderId}`, demandOrderId,
           `自动补卡暂未完成（${code}）；系统会在条件恢复后继续尝试。`]
       );
     }
