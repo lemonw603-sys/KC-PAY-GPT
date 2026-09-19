@@ -5,7 +5,8 @@ import {
   normalizeBatchNo,
   normalizeImportedCdks,
   normalizePlanType,
-  validateBatchCount
+  validateBatchCount,
+  createAdminCdkService
 } from '../src/services/cdk-service.js';
 import { GENERATED_CDK_PATTERN } from '../src/security/cdk-code.js';
 
@@ -89,4 +90,39 @@ test('D-279②: 新前缀的码也能被导入校验接受（同一个正则两�
   const parsed = normalizeImportedCdks([plus, pro20, 'PJ-3GBKE-ZHDCJ-A3UCK-MRMWR'].join('\n'));
   const codes = Array.isArray(parsed) ? parsed : parsed.codes;
   assert.equal(codes.length, 3, '新旧前缀混在一批里都应被接受');
+});
+
+// 教训：前一版这里写错成不存在的变量（normalizedPlanType），后台点生成会直接 500，
+// 而当时的测试只直接调 generateCdks、没走 createBatch 这条真实入口，所以没抓到。
+// 这条从服务入口进，逼它真正执行到生成那一行。
+test('D-279②: 走真实入口 createBatch 生成时，前缀按产品且不炸（覆盖真实调用路径）', async () => {
+  let generated = [];
+  const conn = {
+    query: async (sql, params) => {
+      if (/INSERT INTO cdks /.test(sql)) {
+        generated = params[0].map((row) => row[1]);          // code_hash 列，只用来数行数
+        return [{ affectedRows: params[0].length }];
+      }
+      if (/INSERT INTO customer_payments/.test(sql)) {
+        return [{ affectedRows: params.length / 5 }];        // 每行 5 个占位符
+      }
+      return [{ affectedRows: 1 }];
+    },
+    beginTransaction: async () => {}, commit: async () => {}, rollback: async () => {}, release: () => {}
+  };
+  const pool = {
+    query: async (sql) => (/FROM cdk_batches WHERE BINARY request_key/.test(sql) ? [[]] : [[]]),
+    getConnection: async () => conn
+  };
+  const createBatch = createAdminCdkService({
+    pool, cdkHashKey: Buffer.alloc(32, 7), cdkRecoveryKey: Buffer.alloc(32, 9)
+  });
+  const result = await createBatch({ count: 3, planType: 'pro_20x', requestKey: 'k'.repeat(20) });
+  assert.equal(result.planType, 'pro_20x');
+  assert.equal(result.codes.length, 3);
+  assert.equal(generated.length, 3, '应真的走到插入 cdks 那一步');
+  for (const code of result.codes) {
+    assert.ok(code.startsWith('20X-'), `createBatch 应出 20X- 前缀，实际 ${code}`);
+    assert.ok(GENERATED_CDK_PATTERN.test(code), `createBatch 生成的码必须过正则：${code}`);
+  }
 });

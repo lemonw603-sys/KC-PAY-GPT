@@ -3,7 +3,8 @@ import { decryptSecret, encryptSecret } from '../security/secret-box.js';
 import {
   CURRENT_CDK_HASH_VERSION,
   GENERATED_CDK_PATTERN,
-  hashCurrentCdk
+  hashCurrentCdk,
+  hashLegacyCdk
 } from '../security/cdk-code.js';
 
 // D-279 ②：码前缀按产品分，运营一眼能认出是哪档；旧的统一前缀 PJ- 只保留在
@@ -203,7 +204,7 @@ export function createAdminCdkService({ pool, cdkHashKey, cdkRecoveryKey }) {
     const recovered = decodeStoredBatch(existing[0], cdkRecoveryKey, { count, planType });
     if (recovered) return recovered;
 
-    const codes = generateCdks(count, { planType: normalizedPlanType });
+    const codes = generateCdks(count, { planType });
     const batchNo = normalizeBatchNo(input.batchNo);
     const ciphertext = encryptSecret(JSON.stringify(codes), cdkRecoveryKey);
     const connection = await pool.getConnection();
@@ -420,4 +421,176 @@ export async function revokeCdkBatch(pool, batchNo, reason = 'operator revoked')
   } finally {
     connection.release();
   }
+}
+
+// ——— D-279 ④⑤ / D-286：以单码为主的列表、单码作废、标记已发出 ———
+
+// 明文码只加密存在 cdk_batches.codes_ciphertext，cdks 表只有 code_hash。要在列表里显示码，
+// 必须解密所属批次、再把每个明文 hash 回去匹配。**新旧码的 hash 算法不同**
+// （旧 sha256-v1 / 新 hmac-sha256-v1，cdks.hash_version 有记），两种都要算，
+// 否则旧码永远匹配不上、明文显示不出来（inspectCdkBatch 只算 current，遇旧码会直接抛错）。
+async function buildPlaintextIndex(pool, batchNos, cdkHashKey, cdkRecoveryKey) {
+  const index = new Map();
+  if (!batchNos.length) return index;
+  const [rows] = await pool.query(
+    `SELECT batch_no, codes_ciphertext FROM cdk_batches
+      WHERE batch_no IN (${batchNos.map(() => '?').join(',')})`,
+    batchNos
+  );
+  for (const row of rows) {
+    if (!row.codes_ciphertext) continue;           // 老批次可能没留明文：降级为不显示，不报错
+    let codes;
+    try {
+      codes = JSON.parse(decryptSecret(row.codes_ciphertext, cdkRecoveryKey));
+    } catch {
+      continue;                                     // 解不开就跳过这批，其余行照常返回
+    }
+    for (const code of codes) {
+      index.set(hashCurrentCdk(code, cdkHashKey), code);
+      index.set(hashLegacyCdk(code), code);
+    }
+  }
+  return index;
+}
+
+// 「当前还能不能兑」不落静态字段——路线随时会切（D-245 关 305/306 就是先例），
+// 静态字段必然过期。这里按产品路线的 accepts_new_orders 现算。
+async function loadRedeemablePlanTypes(pool) {
+  const [rows] = await pool.query(
+    `SELECT DISTINCT p.product_code
+       FROM fulfillment_routes fr INNER JOIN products p ON p.id = fr.product_id
+      WHERE fr.accepts_new_orders = 1 AND fr.retired_at IS NULL AND p.status = 'ACTIVE'`
+  );
+  const codes = new Set(rows.map((row) => String(row.product_code)));
+  // products.product_code 是 chatgpt_plus / chatgpt_pro_5x / chatgpt_pro_20x，
+  // cdks.plan_type 是 plus / pro_5x / pro_20x，这里对齐两套写法。
+  const map = { chatgpt_plus: 'plus', chatgpt_pro_5x: 'pro_5x', chatgpt_pro_20x: 'pro_20x' };
+  return new Set([...codes].map((code) => map[code]).filter(Boolean));
+}
+
+export async function listCdkCodes(pool, {
+  limit = 50, offset = 0, batchNo = null, planType = null, status = null, issued = null, q = null
+} = {}, { cdkHashKey, cdkRecoveryKey } = {}) {
+  const safeLimit = Math.min(200, Math.max(1, Number(limit) || 50));
+  const safeOffset = Math.max(0, Number(offset) || 0);
+  const clauses = [];
+  const values = [];
+  if (batchNo) { clauses.push('BINARY c.batch_no = BINARY ?'); values.push(normalizeBatchNo(batchNo)); }
+  if (planType) { clauses.push('c.plan_type = ?'); values.push(normalizePlanType(planType)); }
+  if (status && ['AVAILABLE', 'REDEEMED', 'REVOKED'].includes(String(status))) {
+    clauses.push('c.status = ?'); values.push(String(status));
+  }
+  if (issued === 'yes') clauses.push('c.issued_at IS NOT NULL');
+  if (issued === 'no') clauses.push('c.issued_at IS NULL');
+  const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
+  const [[countRow]] = await pool.query(`SELECT COUNT(*) AS total FROM cdks c ${where}`, values);
+  const [rows] = await pool.query(
+    `SELECT c.id, c.code_hash, c.hash_version, c.status, c.batch_no, c.plan_type,
+            c.created_at, c.redeemed_at, c.revoked_at, c.revoke_reason,
+            c.issued_at, c.issued_note, c.expires_at,
+            o.public_no, o.customer_email, o.status AS order_status
+       FROM cdks c LEFT JOIN orders o ON o.id = c.order_id
+       ${where}
+       ORDER BY c.created_at DESC, c.id DESC
+       LIMIT ? OFFSET ?`,
+    [...values, safeLimit, safeOffset]
+  );
+  const plaintext = await buildPlaintextIndex(
+    pool, [...new Set(rows.map((row) => row.batch_no).filter(Boolean))], cdkHashKey, cdkRecoveryKey
+  );
+  const redeemable = await loadRedeemablePlanTypes(pool);
+  const now = Date.now();
+  let codes = rows.map((row) => {
+    const expired = row.expires_at ? new Date(row.expires_at).getTime() < now : false;
+    return {
+      id: row.id,
+      code: plaintext.get(String(row.code_hash)) || null,   // 取不到明文就给 null，不编造
+      batchNo: row.batch_no,
+      planType: row.plan_type,
+      status: row.status,
+      orderPublicNo: row.public_no || null,
+      customerEmail: row.customer_email || null,
+      orderStatus: row.order_status || null,
+      createdAt: iso(row.created_at),
+      redeemedAt: iso(row.redeemed_at),
+      revokedAt: iso(row.revoked_at),
+      revokeReason: row.revoke_reason || null,
+      issuedAt: iso(row.issued_at),
+      issuedNote: row.issued_note || null,
+      expiresAt: iso(row.expires_at),
+      expired,
+      // 只有还没被用掉的码才谈「现在能不能兑」；路线关了或已过期都算兑不了。
+      redeemableNow: row.status === 'AVAILABLE' && !expired && redeemable.has(String(row.plan_type))
+    };
+  });
+  if (q) {
+    const needle = String(q).trim().toUpperCase();
+    codes = codes.filter((item) => (item.code && item.code.toUpperCase().includes(needle))
+      || (item.orderPublicNo || '').toUpperCase().includes(needle)
+      || (item.customerEmail || '').toUpperCase().includes(needle));
+  }
+  return { total: Number(countRow.total || 0), codes, limit: safeLimit, offset: safeOffset };
+}
+
+// D-279 ⑤：作废单张码。只能作废还没被用掉的（REDEEMED 已绑订单，作废它等于凭空吞掉
+// 客户已付费的交付，必须走退款/补偿而不是这里）。
+export async function revokeCdkCode(pool, cdkId, { reason = null } = {}) {
+  const id = String(cdkId || '').trim();
+  if (!id || id.length > 64) throw new CdkBatchError('cdk id is required', 'INVALID_CDK_ID');
+  const note = reason == null ? null : String(reason).trim().slice(0, 200) || null;
+  const [result] = await pool.query(
+    `UPDATE cdks SET status = 'REVOKED', revoked_at = CURRENT_TIMESTAMP(3), revoke_reason = ?
+      WHERE id = ? AND status = 'AVAILABLE'`,
+    [note, id]
+  );
+  if (result.affectedRows !== 1) {
+    throw new CdkBatchError('only an unused CDK can be revoked', 'CDK_NOT_REVOCABLE');
+  }
+  await pool.query(
+    `INSERT INTO cdk_admin_events (event_type, batch_no, metadata_json)
+     VALUES ('CDK_REVOKED', (SELECT batch_no FROM cdks WHERE id = ?), ?)`,
+    [id, JSON.stringify({ cdkId: id, reason: note })]
+  );
+  return { cdkId: id, status: 'REVOKED', reason: note };
+}
+
+// D-286 ①：标记「已发给客户/渠道」。与 status 正交——已发出的码在被兑换前仍是 AVAILABLE；
+// 这一步只是把「库存」变成「负债（欠一次交付）」，不改变它能不能兑。
+export async function markCdkIssued(pool, cdkId, { note = null, issued = true } = {}) {
+  const id = String(cdkId || '').trim();
+  if (!id || id.length > 64) throw new CdkBatchError('cdk id is required', 'INVALID_CDK_ID');
+  const trimmed = note == null ? null : String(note).trim().slice(0, 200) || null;
+  const [result] = issued
+    ? await pool.query(
+      `UPDATE cdks SET issued_at = COALESCE(issued_at, CURRENT_TIMESTAMP(3)), issued_note = ?
+        WHERE id = ? AND status <> 'REVOKED'`, [trimmed, id])
+    : await pool.query(
+      `UPDATE cdks SET issued_at = NULL, issued_note = NULL WHERE id = ?`, [id]);
+  if (result.affectedRows !== 1) {
+    throw new CdkBatchError('CDK not found or revoked', 'CDK_NOT_FOUND');
+  }
+  await pool.query(
+    `INSERT INTO cdk_admin_events (event_type, batch_no, metadata_json)
+     VALUES (?, (SELECT batch_no FROM cdks WHERE id = ?), ?)`,
+    [issued ? 'CDK_ISSUED' : 'CDK_ISSUE_UNDONE', id, JSON.stringify({ cdkId: id, note: trimmed })]
+  );
+  return { cdkId: id, issued: Boolean(issued), note: trimmed };
+}
+
+// D-286 ①：交付负债一眼可见 —— AVAILABLE 里「已发出未兑」是负债，「未发出」才是库存。
+export async function summarizeCdkLiability(pool) {
+  const [[row]] = await pool.query(
+    `SELECT
+       SUM(status = 'AVAILABLE' AND issued_at IS NOT NULL) AS owed,
+       SUM(status = 'AVAILABLE' AND issued_at IS NULL)     AS stock,
+       SUM(status = 'REDEEMED')                            AS delivered,
+       SUM(status = 'AVAILABLE' AND expires_at IS NOT NULL AND expires_at < CURRENT_TIMESTAMP(3)) AS expired
+     FROM cdks`
+  );
+  return {
+    owed: Number(row.owed || 0),        // 已发出、还没兑 = 欠客户的交付次数
+    stock: Number(row.stock || 0),      // 还在手里、可以卖
+    delivered: Number(row.delivered || 0),
+    expired: Number(row.expired || 0)
+  };
 }
