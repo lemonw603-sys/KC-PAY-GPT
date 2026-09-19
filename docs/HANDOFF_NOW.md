@@ -25,6 +25,8 @@
 - **界面层**：真实浏览器 1280 宽与比稿 A 版逐项比对，一处差异（两台栏被 `.stock-grid` 挤扁）已修成整宽置顶。
 - **工程层**：全量 **942 / pass 874 / fail 1**；新增 `test/admin-cards-page.test.js` 13 条（重点是诚实性断言：没设的底线不许显示成 $0、读不到的待销不许显示成「没有待销的卡」、拿不到的可销时间不许显示成「—」）；vm harness 抽到 `test/helpers/admin-dom-harness.js` 两处共用。
 
+**审查批次6 已处置**（`DISPOSITIONS.md` 批次6）：#1b 采纳已修——「今天(UTC+8)」原来还有两处手写（`admin-read-service.js` 今日订单计数与 TODAY 过滤），已收编进 `todayCst8WindowSql`，加了扫描 `src` 全树的防回潮守门测试并**反向验证过它会抓人**；#2 部分反证——highvcc 余额字段有生产实读依据（`highvcc-transaction-wallet-sync.test.js:184`），代码不改，真正没验的是成功分支端到端外网跑通；#6 确认属实、留观察。
+
 ## 未验证 / 已知缺口（别说成已完成）
 
 - **生产零验证**：以上全部在隔离库 + 本地服务；生产仍旧后台。

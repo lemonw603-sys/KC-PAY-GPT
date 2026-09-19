@@ -115,7 +115,7 @@
 | 卡片页全部 UI 与端点 | **生产未验证** | 只在隔离库 + 本地 8803 验过；生产仍 ⑤b 旧后台 |
 | ~~`card-stock/wallet-floor` 写端点~~ | **已撤销** | 同轮发现 `provider_accounts.wallet_floor` 早就存在且在挡开卡（D-273 同类错误），新建的设置键与端点已全部删除 |
 | 钱包底线只读显示 | **生产已只读实跑** | `providerCardStockSql()` 在生产跑通：hnskj floor 30 / backup-a floor 20，告警线均 50 |
-| highvcc「查余额」按钮 | **真实外网未验证** | 隔离库无 token，只验到 `highvcc_token_missing` 的失败分支；**成功分支没在真实 highvcc 上跑过** |
+| highvcc「查余额」按钮 | **端到端未验证**（字段已验真） | 字段 `usdBalance/usdDeposit/usdConsume` 有生产实读依据（`highvcc-transaction-wallet-sync.test.js:184`），非自造夹具；未验的是**成功分支端到端在真实外网跑通**（鉴权/超时/非 200）。上生产后第一次点「查余额」即为验证点。审查批次6 #2 |
 | `providerCardStockSql()` 的可分配数 | **生产已只读实跑** | 2026-09-20 生产实跑：hnskj 可分配 **0**（在库 2/总 14）、backup-a 可分配 **2**（在库 7/总 16），与 admin-read-service 里既有实测注释一致 |
 | 卡台 token 失效整栏标红 | 生产未验证 | 靠隔离库手工写 `supply_fault_state='FAULT'` 造出来 |
 | 两处卡台措辞 | 已统一（2026-09-20 Lemon 定） | 卡片页与工作台都叫「highvcc卡台」；生产未验证 |
