@@ -39,3 +39,15 @@
 - HANDOFF 顶部写回滚、下文仍称在生产/让试用/列旧 PID 自相矛盾 — **接受**：本窗口收尾已重写 HANDOFF_NOW 消除矛盾。
 - 「哪张原型/哪些差异有效」需 Lemon 确认再作基准（D-283 授权 sidebar 暂留旧皮 vs 回滚说明要求换皮，冲突）— **待 Lemon 裁**（登记「尚未解决」）；重做前先冻结一份有效原型 + 允许差异，不擅自挑一份文档追责或据此动手。
 - 自动完成率口径任务书写待定、HANDOFF 称已定 — 重做前先冻结口径，本窗口不擅自实现该统计。
+
+## 2026-09-19 本轮（付款不明一条链）闭合更新 · 执行者（新窗口）
+
+> 范围＝Lemon 裁定三点后的「先闭付款不明一条链」（营业条方向 A；sidebar 四页做完统一换；自动完成率先空着标待接入）。改动：`v1/src/services/browser-admin-service.js`、`v1/public/admin/assets/admin.js`、`v1/test/browser-resolve-unknown-payment-mysql-integration.test.js`。**未部署**（生产仍 `20260918-step5b-b0a36d4`）。
+
+- **F-61 → 已闭合（本轮）**：工作台付款不明 case（`API_PAYMENT_UNKNOWN`/`BROWSER_PAYMENT_UNKNOWN`）的「解决」改为「去核实收口」，带 `publicNo` 跳订单详情做**正式收口**，不再内联 `resolveReconciliationCase` 只关 case（`admin.js` `renderWbQueue` + 新常量 `PAYMENT_UNKNOWN_CASE_TYPES`）；非付款不明 case 才保留「关闭记录」纯记录动作并改名。**更正审查与我早前的判断「API 前端零 UI」**：API 收口 UI 一直都在（`data-order-resolve-unknown` → `/orders/:publicNo/resolve-unknown-submission`，确认串 `已核实 {publicNo} {outcome}`），当时 grep 词只搜了端点名、漏了按钮 data 属性，故原计划的 F-1b 不需要做。
+  - **新发现并修（B1）**：全库能关 `reconciliation_cases` 的只有 4 处，其中**只有 API 侧收口关 case**（`unknown-submission-resolve-service.js:158`）；Browser 的 `RESOLVE_UNKNOWN_PAYMENT` **不关**自己的 `browser-payment-unknown:{attempt}` case 与 `browser-browser_payment_unknown:{order}` 告警 —— 订单/attempt/卡/账本都已收口，工作台那条 case 与告警仍挂着，运营只能改点「关闭记录」把它擦掉（而那按钮不动资金）。这是 F-61 病根更深一层、审查未及。已在 `browser-admin-service.js` 收口成功、CHARGED/NOT_CHARGED 两路汇合处、公共 checkpoint 之前补关 case+告警，与 API 侧对称。
+  - **验证**：node vm 加载**真实** `admin.js` 调真实 `renderWbQueue` 四态断言（付款不明→「去核实收口」+ 带单号跳订单详情 + 无 `data-resolve-wb-case`）；`browser-admin-service` 单测 8/8；集成测试加三例断言（收口后 `recon_case_status`/`payment_unknown_alert_status` 应 RESOLVED）—— **本地无 `TEST_DATABASE_URL` → skip，见 UNVERIFIED_LEDGER**。
+- **F-62 → 已闭合（本轮）**：`renderWbRecon` 字段名 `unverifiableCount`→`unverifiableAmountCount`；缺字段显「—」而非 0（未知≠真实 0）。验证：node 隔离断言显真实 30、缺失显「—」。
+- **F-63 → 已闭合（本轮）**：`loadOverview` 六来源失败标 `__error`；`renderWbQueue` 空态与 `renderWbRecon` 把「接口失败」与「真无待办/暂无数据」分开。验证：node 隔离断言接口失败不再显「今天清爽」、日对账失败显「读取失败」。
+- **F-64 → 部分闭合（本轮）**：付款不明 case 的「真实落点」随 F-61 解决（跳订单详情，不再空跳 diagnostics）。**未做（本轮范围外，属卡片页 D-280）**：`retirementDueCount` 待销到期在工作台的提醒、无主扣款逐卡报告落点 —— 登记留待卡片页那块做。
+- **F-65 → 本轮未做**：属供给控件（营业条/设置页），不在付款不明链。后端 `setSupplyAutomation` 双写两键的既有风险不变，仍登记 PROJECT_MAP §5，供给控件重做时闭合。

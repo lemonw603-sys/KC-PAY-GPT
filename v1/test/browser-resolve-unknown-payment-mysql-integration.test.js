@@ -98,6 +98,22 @@ async function createFixture(pool, label) {
     workerId, startOperationKey: `resolve-unknown-start:${ids.attemptId}`,
     runId: ids.runId, leaseSeconds: 600
   });
+  // 付款不明进入待办时会同时产生一条对账 case（按 attempt 去重）和一条告警（按 order 去重）。
+  // B1 之前 Browser 收口不关它们，工作台队列/告警栏会残留；这里造成 OPEN 好在收口后断言被关。
+  await pool.query(
+    `INSERT INTO reconciliation_cases
+     (id, case_type, status, severity, dedupe_key, order_id, recharge_attempt_id,
+      evidence_json, detected_at, last_seen_at, updated_at)
+     VALUES (?, 'BROWSER_PAYMENT_UNKNOWN', 'OPEN', 'critical', ?, ?, ?,
+       JSON_OBJECT('seed', TRUE), CURRENT_TIMESTAMP(3), CURRENT_TIMESTAMP(3), CURRENT_TIMESTAMP(3))`,
+    [crypto.randomUUID(), `browser-payment-unknown:${ids.attemptId}`, ids.orderId, ids.attemptId]
+  );
+  await pool.query(
+    `INSERT INTO operator_alerts
+     (id, alert_type, dedupe_key, order_id, severity, title, message, status)
+     VALUES (UUID(), 'BROWSER_PAYMENT_UNKNOWN', ?, ?, 'critical', '付款点了但没拿到结果，等你核实', 'seed', 'OPEN')`,
+    [`browser-browser_payment_unknown:${ids.orderId}`, ids.orderId]
+  );
   return { ids, workerId };
 }
 
@@ -132,7 +148,9 @@ async function snapshot(pool, ids) {
             (SELECT COUNT(*) FROM order_events WHERE order_id = o.id) AS event_count,
             (SELECT status FROM browser_dispatch_jobs WHERE recharge_attempt_id = rat.id LIMIT 1) AS dispatch_status,
             (SELECT status FROM browser_interventions WHERE browser_run_id = br.id ORDER BY requested_at DESC LIMIT 1) AS intervention_status,
-            (SELECT alert_type FROM operator_alerts WHERE order_id = o.id ORDER BY created_at DESC LIMIT 1) AS alert_type
+            (SELECT alert_type FROM operator_alerts WHERE order_id = o.id ORDER BY created_at DESC LIMIT 1) AS alert_type,
+            (SELECT status FROM reconciliation_cases WHERE dedupe_key = CONCAT('browser-payment-unknown:', rat.id)) AS recon_case_status,
+            (SELECT status FROM operator_alerts WHERE dedupe_key = CONCAT('browser-browser_payment_unknown:', o.id)) AS payment_unknown_alert_status
      FROM orders o
      JOIN recharge_attempts rat ON rat.order_id = o.id
      JOIN browser_runs br ON br.recharge_attempt_id = rat.id

@@ -1288,6 +1288,25 @@ export function createBrowserAdminService({
           row.run_status = 'FAILED_SAFE'; row.control_state = 'RELEASED';
           row.payment_state = 'PAYMENT_DECLINED'; row.order_status = 'CLOSED';
         }
+        // 收口成功后关掉这条付款不明的对账案例 + 原始告警，与 API 路线
+        // resolveUnknownSubmission 对称（unknown-submission-resolve-service.js:152-162）。
+        // 此前只有 API 侧关 case/alert，Browser 侧漏了：订单已被正式收口，工作台队列
+        // 那条 case 和折叠栏那条告警却仍挂着，运营只能改去点「关闭记录」把 case 擦掉
+        // 却没收口——这是 F-61 的病根。case 按 attempt 去重、告警按 order 去重
+        // （browser-alert-repository dedupe = browser-{type.toLowerCase()}:{orderId}）。
+        await connection.query(
+          `UPDATE reconciliation_cases SET status = 'RESOLVED',
+             resolved_at = COALESCE(resolved_at, ?), resolution_note = ?, updated_at = ?
+           WHERE dedupe_key = ? AND status <> 'RESOLVED'`,
+          [timestamp,
+            `${actorId}: ${verifiedOutcome}${evidenceNote ? ` — ${evidenceNote}` : ''}`.slice(0, 500),
+            timestamp, `browser-payment-unknown:${row.recharge_attempt_id}`]
+        );
+        await connection.query(
+          `UPDATE operator_alerts SET status = 'RESOLVED', acknowledged_at = COALESCE(acknowledged_at, ?)
+           WHERE dedupe_key = ? AND status = 'OPEN'`,
+          [timestamp, `browser-browser_payment_unknown:${row.order_id}`]
+        );
       }
 
       const { sequence } = await appendControlCheckpoint(connection, row, {

@@ -363,12 +363,17 @@ function renderWbCards(overview) {
 function renderWbRecon(daily) {
   const box = document.getElementById('wb-recon');
   if (!box) return;
+  // F-63：接口失败与「今天没对账」分开——失败必须说失败，不能装成暂无数据。
+  if (daily && daily.__error) { box.innerHTML = '<p class="wb-qempty wb-recon-empty wb-qerror">日对账读取失败，点右上角刷新重试</p>'; return; }
   if (!daily) { box.innerHTML = '<p class="wb-qempty wb-recon-empty">日对账暂无数据（timer 每天 04:0x 跑一次）</p>'; return; }
+  // F-62：字段名对齐服务端 unverifiableAmountCount（曾错写 unverifiableCount → 恒显 0）；
+  // 缺字段显「—」而非 0，把「未知/没接到」和「真实 0」分开。
+  const num = (v) => (v === null || v === undefined || !Number.isFinite(Number(v)) ? '—' : Number(v));
   const cells = [
-    { v: daily.discrepancyCount ?? 0, lb: '差异', s: '无主扣款', bad: (daily.discrepancyCount ?? 0) > 0 },
-    { v: daily.pendingRegistrationCount ?? 0, lb: '待登记', s: '手动用卡' },
-    { v: daily.unverifiableCount ?? 0, lb: '无法核对', s: '无期初金额' },
-    { v: daily.persistentCount ?? 0, lb: '连续两次', s: 'persistent', bad: (daily.persistentCount ?? 0) > 0 }
+    { v: num(daily.discrepancyCount), lb: '差异', s: '无主扣款', bad: (daily.discrepancyCount ?? 0) > 0 },
+    { v: num(daily.pendingRegistrationCount), lb: '待登记', s: '手动用卡' },
+    { v: num(daily.unverifiableAmountCount), lb: '无法核对', s: '无期初金额' },
+    { v: num(daily.persistentCount), lb: '连续两次', s: 'persistent', bad: (daily.persistentCount ?? 0) > 0 }
   ];
   box.innerHTML = cells.map((c) => `<div class="wb-r ${c.bad ? 'is-bad' : ''}"><span class="wb-v">${escapeHtml(String(c.v))}</span><span class="wb-lb">${escapeHtml(c.lb)}<small>${escapeHtml(c.s)}</small></span></div>`).join('');
 }
@@ -380,14 +385,26 @@ function renderWbQueue(overview, daily, alertData, reconCases) {
   const b = overview.operationalBacklog || {};
   const cases = (reconCases && reconCases.cases) || [];
   const items = [];
-  // 资金核对案例：明细 + 真处理（「解决」复用 resolveReconciliationCase，弹结论、写账本、刷新工作台）。
-  cases.forEach((c) => items.push({
-    t: c.severity === 'critical' ? 'danger' : c.severity === 'warning' ? 'warn' : 'info',
-    ic: '◷',
-    title: `资金核对 · ${RECONCILIATION_TYPE_LABELS[c.caseType] || c.caseType || '案例'}`,
-    ev: `${c.publicNo ? '订单 ' + c.publicNo + ' · ' : ''}${RECONCILIATION_STATUS_LABELS[c.status] || c.status} · ${formatTime(c.lastSeenAt)}`,
-    actions: `${c.publicNo ? `<button type="button" class="wb-btn out sm" data-open-case-order-wb="${escapeHtml(c.publicNo)}">看订单</button>` : ''}<button type="button" class="wb-btn pri sm" data-resolve-wb-case="${escapeHtml(c.id)}">解决</button>`
-  }));
+  // 资金核对案例。F-61：付款不明（API/BROWSER）必须走订单详情里的【正式收口】——它把订单、
+  // attempt、消费账本、卡占用一起收口，收口成功后这条 case 自身也会被关（API 见
+  // unknown-submission-resolve-service；Browser 见本轮 browser-admin-service 的 B1 补丁）。
+  // 工作台不再对付款不明提供「解决」直接关 case：那样只擦记录、不动资金，正是 F-61 病根。
+  // 其它类型的对账 case 才保留「关闭记录」这一纯记录动作，且明确改名不叫「解决」。
+  cases.forEach((c) => {
+    const isPaymentUnknown = PAYMENT_UNKNOWN_CASE_TYPES.has(c.caseType);
+    const actions = isPaymentUnknown
+      ? (c.publicNo
+          ? `<button type="button" class="wb-btn pri sm" data-open-case-order-wb="${escapeHtml(c.publicNo)}">去核实收口</button>`
+          : '<span class="wb-hint">缺订单号，去订单页查</span>')
+      : `${c.publicNo ? `<button type="button" class="wb-btn out sm" data-open-case-order-wb="${escapeHtml(c.publicNo)}">看订单</button>` : ''}<button type="button" class="wb-btn out sm" data-resolve-wb-case="${escapeHtml(c.id)}">关闭记录</button>`;
+    items.push({
+      t: c.severity === 'critical' ? 'danger' : c.severity === 'warning' ? 'warn' : 'info',
+      ic: '◷',
+      title: `资金核对 · ${RECONCILIATION_TYPE_LABELS[c.caseType] || c.caseType || '案例'}`,
+      ev: `${c.publicNo ? '订单 ' + c.publicNo + ' · ' : ''}${RECONCILIATION_STATUS_LABELS[c.status] || c.status} · ${formatTime(c.lastSeenAt)}`,
+      actions
+    });
+  });
   // 其余类：摘要 + 跳专页处理（待销/手动用卡在卡片页，无主扣款/连续两次在诊断日对账）。
   if (daily && (daily.discrepancyCount ?? 0) > 0) items.push({ t: 'danger', ic: '⚠', title: `对账差异 · 无主扣款 ${daily.discrepancyCount} 张卡`, ev: '账本无对应订单，进报告、不隐藏', jump: 'diagnostics' });
   if (daily && (daily.persistentCount ?? 0) > 0) items.push({ t: 'danger', ic: '‼', title: `连续两次差异 ${daily.persistentCount} 张`, ev: '已升级，需人工核', jump: 'diagnostics' });
@@ -398,9 +415,14 @@ function renderWbQueue(overview, daily, alertData, reconCases) {
   const alerts = (alertData && alertData.alerts) || [];
   const active = items.length;
   if (countChip) countChip.innerHTML = `<span class="wb-d"></span>${active} 件待办`;
+  // F-63：待办来源里任一个接口失败时，空列表不能显示成「今天清爽」——那会把「没读到」
+  // 冒充成「没有待办」，付款不明单可能就此被漏掉。有失败就明说失败、让人去刷新。
+  const sourceFailed = [reconCases, daily, alertData].some((s) => s && s.__error);
   const itemsHtml = active
     ? items.map((it) => `<div class="wb-qi ${it.t}"><div class="wb-qic">${it.ic}</div><div class="wb-qt"><b>${escapeHtml(it.title)}</b><span class="wb-ev">${escapeHtml(it.ev)}</span></div><div class="wb-qa">${it.actions || (it.jump ? `<button type="button" class="wb-btn out sm" data-view-jump="${it.jump}">去处理</button>` : '')}</div></div>`).join('')
-    : '<p class="wb-qempty">没有要处理的，今天清爽 ✓</p>';
+    : sourceFailed
+      ? '<p class="wb-qempty wb-qerror">部分待办没读出来（接口失败），点右上角刷新重试——这不是「没有待办」。</p>'
+      : '<p class="wb-qempty">没有要处理的，今天清爽 ✓</p>';
   const alertsHtml = alerts.length
     ? `<details class="wb-alerts"><summary><span class="wb-chip warn"><span class="wb-d"></span>${alerts.length} 个内部提醒</span>点开逐条关</summary><div class="wb-alerts-list">${alerts.map((a) => `<div class="wb-alert-row"><div class="wb-at"><b>${escapeHtml(a.title || '提醒')}</b><small>${escapeHtml(a.message || '')} · ${formatTime(a.createdAt)}</small></div><button type="button" class="wb-btn out sm" data-close-wb-alert="${escapeHtml(a.id)}">关闭</button></div>`).join('')}</div></details>`
     : '';

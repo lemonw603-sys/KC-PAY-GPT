@@ -77,3 +77,13 @@
 - 仍未验证：自动点付款、付款后半段、20X；租约 900s 在完整成功路径上；`close-manually-fulfilled-order.mjs --card-used` 分支（本次走的是未用卡分支）。
 - 403 根因假设"注入 host-only cookie 与网站 `.chatgpt.com` 同名 cookie 并存 → 结账页拒"：证据链见 HANDOFF_LOG 09-09「403 根因分析」；**对照实验未做**（需 free 号，两步都停在结账页）。修法未写、未测。
 - （更新）403 根因**已由对照实验坐实并修复**（D-140，HANDOFF_LOG 09-09「对照实验」）：修复后到结账页出 ₱ 报价已验证；**从结账页到自动点付款、付款后半段仍 0 次**。
+
+## 2026-09-19｜第⑥步 付款不明链：代码已改并单测/隔离渲染验过，隔离库端到端未跑
+
+- **B1：Browser 收口关 case+告警**（`browser-admin-service.js` 的 `RESOLVE_UNKNOWN_PAYMENT` 收口成功后关 `browser-payment-unknown:{attempt}` case 与 `browser-browser_payment_unknown:{order}` 告警，与 API 侧 `unknown-submission-resolve-service.js:158` 对称）。
+  - 已验证：`browser-admin-service` 内存适配器单测 8/8（校验层）；`node --check` 语法 OK；集成测试 `browser-resolve-unknown-payment-mysql-integration.test.js` 已加断言（charged-done / charged-review / not-charged 三例：收口后 `recon_case_status`、`payment_unknown_alert_status` 应 RESOLVED）。
+  - **缺证据**：本机无 `TEST_DATABASE_URL`（隔离 MySQL），该文件 **11 例全 skip**，B1 的真实 DB 效果（两条 dedupe_key 是否真被 UPDATE 成 RESOLVED）**未在隔离库实跑**；「工作台点『去核实收口』→ 订单详情正式收口 → 订单/attempt/账本/卡占用/case/告警全部收口」这条**端到端也未跑**，只各段分别验证。
+  - **下一步**：配 `TEST_DATABASE_URL` 让三例转绿；或按 RUNBOOK 在隔离库造一单 Browser 付款不明走完收口，逐项核对权威状态。**发布前应补此跑**（属发布门槛「按钮业务结果正确」那一件）。
+- **前端 F-1a/F-62/F-63（`admin.js`）**：已用 node vm 加载真实 `renderWbQueue`/`renderWbRecon` 做四态隔离断言（去核实收口+跳订单详情+无旧「解决」／无法核对显真实 30／缺失显「—」／接口失败不冒充清爽／日对账失败显读取失败）。
+  - **缺证据**：未在真实浏览器 + 真实登录会话下点击验证（本轮内置浏览器交互工具持续报 `-32603`，navigate/截图可用但 read_page/javascript 不可用），也未与原型 C 做同尺寸视觉比对（本轮改动不涉布局，仅按钮文案/数字/空态文案）。
+  - **下一步**：浏览器可用时，用隔离库数据在后台实点一遍工作台队列四态与「去核实收口」跳转落点。
