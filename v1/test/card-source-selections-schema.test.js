@@ -8,11 +8,14 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const migrationsDir = path.resolve(here, '../migrations');
 const sql = fs.readFileSync(path.join(migrationsDir, '053_card_source_selections_and_supply.sql'), 'utf8');
 
-test('054 is the newest migration; 053 and 054 only add', () => {
+test('055 is the newest migration; 053/054/055 only add', () => {
   const names = fs.readdirSync(migrationsDir).filter((name) => /^\d+_[a-z0-9_-]+\.sql$/i.test(name)).sort();
-  assert.equal(names.at(-1), '054_card_retirement.sql');
+  // 055＝D-286（CDK 发出登记 + 有效期），Lemon 2026-09-19 批准新增；只加列、不动存量。
+  assert.equal(names.at(-1), '055_cdk_issuance_and_expiry.sql');
   const retirement = fs.readFileSync(path.join(migrationsDir, '054_card_retirement.sql'), 'utf8');
-  for (const text of [sql, retirement]) {
+  const cdkIssuance = fs.readFileSync(path.join(migrationsDir, '055_cdk_issuance_and_expiry.sql'), 'utf8');
+  assert.doesNotMatch(cdkIssuance, /CREATE TABLE/i);
+  for (const text of [sql, retirement, cdkIssuance]) {
     assert.doesNotMatch(text, /DROP\s+(TABLE|COLUMN)/i);
     assert.doesNotMatch(text, /DELETE\s+FROM/i);
   }

@@ -114,7 +114,7 @@ test('admin refresh feedback and inset dropdown arrows remain visible', () => {
   const script = fs.readFileSync(path.join(directory, 'admin', 'assets', 'admin.js'), 'utf8');
   const styles = fs.readFileSync(path.join(directory, 'admin', 'assets', 'admin.css'), 'utf8');
   assert.match(html, /admin\.css\?v=26/);
-  assert.match(html, /admin\.js\?v=51/);
+  assert.match(html, /admin\.js\?v=54/);
   assert.match(script, /button\.textContent = '刷新中…'/);
   assert.match(script, /showNotice\('刷新完成。', 'success'\)/);
   assert.match(script, /showNotice\('刷新失败，请稍后重试。'\)/);
@@ -212,11 +212,13 @@ test('customer page shows the Session re-submit form when remaining is null (unl
   assert.ok(Number(scriptVersion[1]) >= 35, 'the asset version only ever moves forward');
 });
 
-test('admin navigation is exactly five pages and old views are gone', () => {
+test('admin navigation is exactly six pages and old views are gone', () => {
   const html = fs.readFileSync(path.join(directory, 'admin', 'index.html'), 'utf8');
   const script = fs.readFileSync(path.join(directory, 'admin', 'assets', 'admin.js'), 'utf8');
   const nav = html.slice(html.indexOf('<nav aria-label="后台导航">'), html.indexOf('</nav>'));
-  assert.deepEqual([...nav.matchAll(/data-view="([a-z-]+)"/g)].map((m) => m[1]), ['overview', 'orders', 'cdks', 'stock', 'diagnostics']);
+  // D-283：一级导航六个＝工作台/订单/CDK/卡片/设置/诊断
+  assert.deepEqual([...nav.matchAll(/data-view="([a-z-]+)"/g)].map((m) => m[1]),
+    ['overview', 'orders', 'cdks', 'stock', 'settings', 'diagnostics']);
   assert.doesNotMatch(html, /id="exceptions-view"|id="browser-view"|id="reconciliation-view"|data-view="exceptions"|data-view="browser"|data-view="reconciliation"/);
   const diagnostics = html.slice(html.indexOf('id="diagnostics-view"'), html.indexOf('id="page-notice"'));
   for (const id of ['diagnostics-heartbeat', 'diagnostics-readiness-list', 'export-orders', 'reconciliation-table', 'browser-runs-table', 'browser-dispatch-table', 'billing-address-settings']) {

@@ -34,8 +34,8 @@ test('admin overview maps aggregate values without exposing raw records', async 
     [{ card_intake_pending: 2, funds_risk_pending: 1,
       card_funding_risk_pending: 2, card_funding_manual_review: 1,
       reconciliation_cases_open: 3, card_sync_backlog: 4, card_sync_review_required: 2 }],
-    [{ provider_code: 'legacy-primary', provider_kind: 'hnskj', in_stock: 2, plus_assignable: 0, in_use: 0, any_used: 6 },
-      { provider_code: 'backup-a', provider_kind: 'manual_excel', in_stock: 7, plus_assignable: 2, in_use: 0, any_used: 6 }],
+    [{ provider_account_id: 'pa-hnskj', provider_code: 'legacy-primary', provider_kind: 'hnskj', total: 14, in_stock: 2, plus_assignable: 0, in_use: 0, any_used: 6 },
+      { provider_account_id: 'pa-backup-a', provider_code: 'backup-a', provider_kind: 'manual_excel', total: 16, in_stock: 7, plus_assignable: 2, in_use: 0, any_used: 6 }],
     [{ active: 1, writes_on: 0 }]
   ]);
   const result = await createAdminReadService({ pool }).getOverview();
@@ -58,8 +58,8 @@ test('admin overview maps aggregate values without exposing raw records', async 
     balanceFundingEnabled: false, low: false
   });
   assert.deepEqual(result.cardStockByProvider, [
-    { providerCode: 'legacy-primary', providerKind: 'hnskj', inStock: 2, plusAssignable: 0, inUse: 0, anyUsed: 6 },
-    { providerCode: 'backup-a', providerKind: 'manual_excel', inStock: 7, plusAssignable: 2, inUse: 0, anyUsed: 6 }
+    { providerAccountId: 'pa-hnskj', providerCode: 'legacy-primary', providerKind: 'hnskj', total: 14, inStock: 2, plusAssignable: 0, inUse: 0, anyUsed: 6 },
+    { providerAccountId: 'pa-backup-a', providerCode: 'backup-a', providerKind: 'manual_excel', total: 16, inStock: 7, plusAssignable: 2, inUse: 0, anyUsed: 6 }
   ]);
   assert.deepEqual(result.operationalBacklog, {
     cardIntakePending: 2, fundsRiskPending: 1,

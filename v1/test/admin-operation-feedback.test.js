@@ -8,7 +8,7 @@ test('Diagnostics manual refresh actually awaits all five loaders',async()=>{
  let handler;const calls=[],notices=[];
  const ctx={document:{querySelector(){return{addEventListener(_,fn){handler=fn}}}},state:{view:'diagnostics'},elements:{syncTime:{}},hideNotice(){},showNotice(x){notices.push(x)},Promise};
  for(const n of ['loadDiagnostics','loadReconciliationCases','loadBrowserDispatchJobs','loadBrowserRuns','loadBillingAddressSettings'])ctx[n]=async()=>{await Promise.resolve();calls.push(n)};
- vm.runInNewContext(snippet("document.querySelector('#refresh-button').addEventListener"),ctx);
+ vm.runInNewContext(snippet("document.querySelector('#refresh-button')?.addEventListener"),ctx);
  await handler({currentTarget:{disabled:false,classList:{add(){},remove(){}}}});
  assert.equal(calls.length,5);assert(notices.includes('刷新完成。'));
 });
