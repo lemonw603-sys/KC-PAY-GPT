@@ -474,6 +474,13 @@ function renderDecisions(overview, cardSources) {
   state.decisions = d;
   state.acceptingOrders = Boolean(d.acceptNewOrders);
   state.browserSelectionVersion = Number(cardSources?.browserSelectionVersion || 0);
+  // D-284 ①：当前默认充值方式必须存进 state —— setDefaultRechargeMethod 要拿它当
+  // expectedCurrentMethod 传给后端做 VERSION_MATCH 校验。此前 state.rechargeMethod
+  // 只被读、从没被赋值，恒为 undefined → 恒传 'NONE' → 与实际 API/BROWSER 对不上
+  // → 四项校验的 VERSION_MATCH 必失败 → 路线切换在页面上永远切不动。
+  // 字段位置以真实响应为准：是 providerHealth.rechargeMethod，不是顶层 overview.rechargeMethod
+  // （对着真实 /admin/overview 响应查出来的；按顶层猜会恒 null → 又变成永远切不动）。
+  state.rechargeMethod = overview.providerHealth?.rechargeMethod || null;
   // 营业条 = 接单/派单/付款 三个 toggle 开关（照设计图），对应后端三个独立开关。
   const sw = (op, on, b, s) => `<button type="button" class="wb-switch ${on ? 'is-on' : ''}" data-op="${op}" data-on="${on}"><span class="wb-tg"></span><span class="wb-lb"><b>${b}</b><small>${escapeHtml(s)}</small></span></button>`;
   box.innerHTML = sw('accept', Boolean(d.acceptNewOrders), '接单', '新单进入')
@@ -484,7 +491,18 @@ function renderDecisions(overview, cardSources) {
     const sources = (cardSources?.sources || []).filter((item) => item.supportsBrowserRecharge && item.operationalEnabled);
     const currentSource = cardSources?.browserProviderAccountId || '';
     const sourceOptions = sources.map((item) => `<option value="${escapeHtml(item.id)}" ${item.id === currentSource ? 'selected' : ''}>${escapeHtml(item.displayName)}</option>`).join('');
-    routeBox.innerHTML = `<div class="wb-route"><b>用哪个卡台</b><div class="wb-routepick"><span class="wb-chip mute"><span class="wb-d"></span>API · HNSKJ 固定</span></div></div>`
+    // D-284 ①（方向 A）：路线切换块留在工作台。切换走已有的 setDefaultRechargeMethod ——
+    // 后端 setDefaultRechargeMethod 会先跑面一 C1 四项校验（ROUTE_UNIQUE / SOURCE_HEALTHY /
+    // TARGET_POOL_AVAILABLE / VERSION_MATCH），不过即拒并把逐项结果放在 error.checks 里交回，
+    // 前端 switchCheckReasons() 把没过的那几项逐条显示出来。此前这个按钮**从未被渲染**，
+    // 功能等于下线；这里补回来，并标出当前走哪条。只影响切换后的新订单。
+    const method = String(state.rechargeMethod || '').toUpperCase();
+    const methodLabel = method === 'API' ? 'API 充值' : method === 'BROWSER' ? '浏览器自动化' : '未设置';
+    const methodBtn = (target, text) => (method === target
+      ? `<span class="wb-chip ok"><span class="wb-d"></span>当前：${escapeHtml(text)}</span>`
+      : `<button type="button" class="wb-btn sm out default-recharge-method" data-method="${target}">切到${escapeHtml(text)}</button>`);
+    routeBox.innerHTML = `<div class="wb-route"><b>走哪条路线</b><div class="wb-routepick">${methodBtn('API', 'API')}${methodBtn('BROWSER', '浏览器')}</div><small>Plus 默认充值方式（${escapeHtml(methodLabel)}）；切换前跑四项校验，不过会逐条说明原因，只影响新订单</small></div>`
+      + `<div class="wb-route"><b>用哪个卡台</b><div class="wb-routepick"><span class="wb-chip mute"><span class="wb-d"></span>API · HNSKJ 固定</span></div></div>`
       + `<div class="wb-route"><div class="wb-routepick"><select class="wb-field" id="decision-card-source" aria-label="Browser 卡台">${sourceOptions || '<option value="">没有可用卡台</option>'}</select><button type="button" class="wb-btn sm out" id="decision-card-source-apply" ${sources.length ? '' : 'disabled'}>切换</button></div><small>Browser 路线卡台，只影响新订单</small></div>`;
   }
 }

@@ -225,3 +225,24 @@ Lemon 09-11 确认执行顺序重排后 B 段第一件。审查记录批次 2B �
 - **四态全验**：有待办（6 条，含新补两类）／无待办（今天清爽、0 件待办）／接口失败（明说失败、不冒充清爽）／权限拒绝（401 走登录跳转）。
 - **与原型 C 差异**：骨架完全一致；sidebar 皮肤差异属 D-284 ② 已批准；数字墙与队列差异已按 D-285 消除；token 措辞为上述有意偏差。
 - **抓到且已修的真实缺陷**：F-63 上游从未落盘（真实页面才暴露）、case 标题显英文枚举。**两者 node 渲染测试全绿都没抓到** —— 界面层验收不可省。
+
+## 2026-09-19（续二）营业条方向 A 落实（D-284 ①）：路线切换接回工作台
+
+**背景更正**：D-284 ① 当时记「在途 `7c1a5c0` 把路线切换挪去了设置页」——**核查后不成立**。真实情况是工作台一直有路线区（`#wb-routes`），但它渲染的是**卡台选择**；设置页只有「开发中」占位、提到路线只是计划文字。真正的缺口是**路线切换（走 API 还是 Browser）压根没有入口**。
+
+**查到三个串联的洞**（都属「后端齐全、前端没接上」）：
+
+1. `setDefaultRechargeMethod()` 完整实现了切换＋四项校验拒切逐项原因（`switchCheckReasons`），事件委托也在，**但全项目从未渲染过 `.default-recharge-method` 按钮** → 功能等于下线。
+2. `state.rechargeMethod` **只被读、从未被赋值** → `expectedCurrentMethod` 恒传 `'NONE'` → `VERSION_MATCH` 必失败 → **即便补回按钮也永远切不动**。
+3. 路线区不显示「当前走哪条」，运营无从判断要不要切。
+
+**已修**：`renderDecisions` 渲染「走哪条路线」块（当前那条标成 chip、另一条给切换按钮），并把当前方式写进 `state`。
+**字段先验真的一次现场纠正**：我本来按 `overview.rechargeMethod` 接，**对着真实 `/admin/overview` 响应查才发现真实位置是 `overview.providerHealth.rechargeMethod`** —— 按顶层猜会恒 null，等于把洞 2 原样复制一遍。已加单测锁死字段位置。
+
+**三层验收（真实页面 + 隔离库）**：
+- **界面**：路线区显示「当前：API」+「切到浏览器」按钮；`state.rechargeMethod='API'`。
+- **业务（关键，证明「切得动」）**：库里把当前改成 BROWSER 后从页面切回 API → **HTTP 200、`changed:true`**，四项校验全过（含 **`VERSION_MATCH: 当前默认方式 BROWSER`** —— 修复前这项必失败）；**数据库权威状态确认翻转**（API `accepts_new_orders` 0→1、BROWSER 1→0），`provider_route_switch_events` 写入审计行（id `c70f4326…`，`previous_route_id`→`route_id`，actor `admin`）。
+- **拒切路径也验了**：无合格卡时四项校验返回 `TARGET_POOL_AVAILABLE: 目标卡台按 plus 门槛可分配 0 张`（其余三项 ok），HTTP 409 未改任何状态，页面只显示没过的那条；Browser 执行器未就绪时另被 `browser_recharge_not_ready` 拦下，文案正确。
+- **工程**：`admin-workbench-queue.test.js` 18/18（含 5 条路线切换用例：营业条含三 toggle+路线块、当前路线标注、`state.rechargeMethod` 必须落库、拒切逐项原因、字段位置锁死）。
+
+**未做**：Browser 执行器就绪态下的切换未验（隔离库无 ACTIVE profile/心跳，属执行器环境，非本块）。

@@ -249,3 +249,66 @@ test('D-285 队列：没有 token 失效告警时，不得擅自显示「token �
   assert.ok(!out.includes('token 有效'), 'configured 推不出有效，不许写成有效（观察≠结论）');
   assert.ok(!out.includes('token 已失效'), '没有失效告警也不能报失效');
 });
+
+// ——— D-284 ① 营业条方向 A：路线切换留在工作台 ———
+test('D-284① 营业条：3 个 toggle + 路线切换块都在工作台', () => {
+  const { sandbox, html } = loadAdminJs();
+  sandbox.renderDecisions(
+    { decisions: { acceptNewOrders: true, dispatchNewRecharges: true, browserPaymentWritesEnabled: false },
+      providerHealth: { rechargeMethod: 'API' } },
+    { sources: [{ id: 's1', displayName: 'HighVCC', supportsBrowserRecharge: true, operationalEnabled: true }],
+      browserProviderAccountId: 's1', browserSelectionVersion: 3 },
+  );
+  const bar = html('wb-decisions');
+  ['accept', 'dispatch', 'pay'].forEach((op) => assert.ok(bar.includes(`data-op="${op}"`), `营业条缺 ${op} toggle`));
+  const routes = html('wb-routes');
+  assert.ok(routes.includes('走哪条路线'), '路线切换块必须在工作台（D-284 ①，不许挪去设置页）');
+  assert.ok(routes.includes('用哪个卡台'), '卡台选择仍在工作台');
+});
+
+test('D-284① 路线切换：当前路线标出来，另一条给可点的切换按钮', () => {
+  const { sandbox, html } = loadAdminJs();
+  sandbox.renderDecisions({ decisions: {}, providerHealth: { rechargeMethod: 'API' } }, { sources: [] });
+  let routes = html('wb-routes');
+  assert.ok(routes.includes('当前：API'), '应标出当前走 API');
+  assert.ok(routes.includes('class="wb-btn sm out default-recharge-method" data-method="BROWSER"'),
+    '另一条应给切换按钮（这个按钮此前从未被渲染，功能等于下线）');
+  assert.ok(!routes.includes('data-method="API"'), '当前那条不该再给切自己的按钮');
+
+  sandbox.renderDecisions({ decisions: {}, providerHealth: { rechargeMethod: 'BROWSER' } }, { sources: [] });
+  routes = html('wb-routes');
+  assert.ok(routes.includes('当前：浏览器'));
+  assert.ok(routes.includes('data-method="API"'));
+});
+
+test('D-284① VERSION_MATCH 的根因：rechargeMethod 必须写进 state，否则路线永远切不动', () => {
+  const { sandbox, evalIn } = loadAdminJs();
+  sandbox.renderDecisions({ decisions: {}, providerHealth: { rechargeMethod: 'API' } }, { sources: [] });
+  // state.rechargeMethod 是 setDefaultRechargeMethod 传给后端的 expectedCurrentMethod；
+  // 从前它只被读、从不被写 → 恒 undefined → 传 'NONE' → 与实际 API 对不上 → 四项校验必拒。
+  assert.equal(evalIn('state.rechargeMethod'), 'API',
+    'overview.rechargeMethod 必须落进 state，否则 VERSION_MATCH 恒失败');
+  sandbox.renderDecisions({ decisions: {}, providerHealth: { rechargeMethod: 'BROWSER' } }, { sources: [] });
+  assert.equal(evalIn('state.rechargeMethod'), 'BROWSER');
+});
+
+test('D-284① 拒切时逐项原因能显示（四项校验的 checks 交给 switchCheckReasons）', () => {
+  const { evalIn } = loadAdminJs();
+  const reasons = evalIn(`switchCheckReasons({ payload: { checks: [
+    { code: 'ROUTE_UNIQUE', ok: true },
+    { code: 'TARGET_POOL_AVAILABLE', ok: false, detail: '目标卡台可分配 0 张' },
+    { code: 'VERSION_MATCH', ok: false, detail: '页面看到的是 API，实际已是 BROWSER；请刷新' }
+  ] } })`);
+  assert.ok(reasons.includes('目标卡台可分配 0 张'), '没过的校验要逐条说原因');
+  assert.ok(reasons.includes('请刷新'), '多条原因要都显示');
+  assert.ok(!reasons.includes('ROUTE_UNIQUE'), '通过的项不该混进拒绝原因');
+});
+
+test('D-284① 字段位置锁死：rechargeMethod 在 providerHealth 下，读顶层拿不到（外部字段先验真）', () => {
+  const { sandbox, evalIn } = loadAdminJs();
+  // 真实 /admin/overview 响应里没有顶层 rechargeMethod；若哪天有人改回读顶层，这条会红。
+  sandbox.renderDecisions({ decisions: {}, rechargeMethod: 'API' }, { sources: [] });
+  assert.equal(evalIn('state.rechargeMethod'), null, '顶层 rechargeMethod 不是真实字段，不该被读到');
+  sandbox.renderDecisions({ decisions: {}, providerHealth: { rechargeMethod: 'API' } }, { sources: [] });
+  assert.equal(evalIn('state.rechargeMethod'), 'API', '真实字段在 providerHealth 下');
+});
