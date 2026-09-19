@@ -475,7 +475,7 @@ function renderWbOrders(orders) {
   table.innerHTML = head + '<tbody>' + body + '</tbody>';
 }
 
-function renderDecisions(overview, cardSources) {
+function renderDecisions(overview, cardSources, takeoverEstimate = null) {
   const box = document.getElementById('wb-decisions');
   if (!box) return;
   const d = overview.decisions || {};
@@ -506,12 +506,64 @@ function renderDecisions(overview, cardSources) {
     // 功能等于下线；这里补回来，并标出当前走哪条。只影响切换后的新订单。
     const method = String(state.rechargeMethod || '').toUpperCase();
     const methodLabel = method === 'API' ? 'API 充值' : method === 'BROWSER' ? '浏览器自动化' : '未设置';
+    // D-280 ⑦：卡台切换从卡片页搬来，「同时接管」这半边不能丢——卡台断供时，
+    // 它把还在排队等卡的单改指新卡台（只动完全没碰过钱的单，见 safeWaitingPredicate）。
+    const takeoverCount = Number(takeoverEstimate?.count || 0);
+    const takeoverHint = takeoverEstimate?.__error
+      ? '<small>Browser 路线卡台，只影响新订单；待接管单数读取失败，本次切换不接管排队单。</small>'
+      : takeoverCount > 0
+        ? `<label class="wb-takeover"><input type="checkbox" id="decision-card-source-takeover"> 同时接管 ${takeoverCount} 张排队等卡的单</label>`
+          + '<small>不勾：只影响新订单，排队单继续等原卡台。勾上：把这些单改指新卡台（只动没分卡、没充值、没碰钱的单）。</small>'
+        : '<small>Browser 路线卡台，只影响新订单；当前没有排队等卡的单可接管。</small>';
     const methodBtn = (target, text) => (method === target
       ? `<span class="wb-chip ok"><span class="wb-d"></span>当前：${escapeHtml(text)}</span>`
       : `<button type="button" class="wb-btn sm out default-recharge-method" data-method="${target}">切到${escapeHtml(text)}</button>`);
     routeBox.innerHTML = `<div class="wb-route"><b>走哪条路线</b><div class="wb-routepick">${methodBtn('API', 'API')}${methodBtn('BROWSER', '浏览器')}</div><small>Plus 默认充值方式（${escapeHtml(methodLabel)}）；切换前跑四项校验，不过会逐条说明原因，只影响新订单</small></div>`
       + `<div class="wb-route"><b>用哪个卡台</b><div class="wb-routepick"><span class="wb-chip mute"><span class="wb-d"></span>API · HNSKJ 固定</span></div></div>`
-      + `<div class="wb-route"><div class="wb-routepick"><select class="wb-field" id="decision-card-source" aria-label="Browser 卡台">${sourceOptions || '<option value="">没有可用卡台</option>'}</select><button type="button" class="wb-btn sm out" id="decision-card-source-apply" ${sources.length ? '' : 'disabled'}>切换</button></div><small>Browser 路线卡台，只影响新订单</small></div>`;
+      + `<div class="wb-route"><div class="wb-routepick"><select class="wb-field" id="decision-card-source" aria-label="Browser 卡台">${sourceOptions || '<option value="">没有可用卡台</option>'}</select><button type="button" class="wb-btn sm out" id="decision-card-source-apply" ${sources.length ? '' : 'disabled'}>切换</button></div>${takeoverHint}</div>`;
+  }
+}
+
+/**
+ * 切 Browser 卡台（D-280 ⑦：从卡片页搬来，含「同时接管」）。
+ *
+ * 三条安全行为必须留着，都是真出过事的：
+ *  1) 切换成功后读失败，仍然算成功——说成失败会让人重复点。
+ *  2) 响应丢了不等于没切成，只能说「未能确认」，绝不能说「原选择未改变」。
+ *  3) 被四项校验拒绝时才说「卡台没有改变」，并逐条给原因。
+ */
+async function applyBrowserCardSource(sourceApply) {
+  const select = document.querySelector('#decision-card-source');
+  const providerAccountId = select?.value;
+  if (!providerAccountId) { showNotice('请先选择卡台。'); return; }
+  sourceApply.disabled = true;
+  try {
+    const takeoverWaiting = document.querySelector('#decision-card-source-takeover')?.checked === true;
+    const result = await api('/api/v1/admin/card-sources/browser/current', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ providerAccountId, takeoverWaiting, expectedVersion: state.browserSelectionVersion || 0 })
+    });
+    // 报「实际接管了几单」而不是「请求了几单」——两者可能不同（期间有单已开始执行）。
+    const actual = Number(result?.actualTakeoverCount || 0);
+    showNotice(takeoverWaiting
+      ? `Browser 卡台已切换；实际接管 ${actual} 张排队单，其余单不受影响。`
+      : 'Browser 卡台已切换，只影响之后的新订单。', 'success');
+    try {
+      await loadOverview();
+    } catch {
+      showNotice('Browser 卡台已切换，但列表刷新失败；请刷新查看，不要重复切换。', 'warning');
+    }
+  } catch (error) {
+    if (error.message === 'card_source_switch_rejected') {
+      showNotice(`切换被拒绝，卡台没有改变：${switchCheckReasons(error)}`, 'warning');
+    } else if (error.message === 'card_source_selection_locked') {
+      showNotice('这一行的卡台是固定的（API 只走 hnskj），不能切换。', 'warning');
+    } else {
+      showNotice('未能确认卡台切换结果，正在重新读取当前选择；请勿重复点击。', 'warning');
+    }
+    await loadOverview().catch(() => {});
+  } finally {
+    sourceApply.disabled = false;
   }
 }
 
@@ -527,7 +579,7 @@ async function toggleOp(op, enable) {
 }
 
 async function loadOverview() {
-  const [overview, todayOrders, alertData, cardSources, daily, reconCases] = await Promise.all([
+  const [overview, todayOrders, alertData, cardSources, daily, reconCases, takeoverEstimate] = await Promise.all([
     api('/api/v1/admin/overview'),
     // F-63：请求失败必须留下 __error 标记，下游才能把「读取失败」和「查过、确实没有」分开。
     // 少了这一半，renderWbQueue 的 sourceFailed 永远为假，接口挂了照样显示「今天清爽」——
@@ -539,9 +591,12 @@ async function loadOverview() {
     api('/api/v1/admin/alerts?limit=100').catch(() => ({ alerts: [], __error: true })),
     api('/api/v1/admin/card-sources').catch(() => ({ sources: [], __error: true })),
     api('/api/v1/admin/reconciliation/daily').catch(() => ({ __error: true })),
-    api('/api/v1/admin/reconciliation-cases?page=1&pageSize=20&status=OPEN').catch(() => ({ cases: [], __error: true }))
+    api('/api/v1/admin/reconciliation-cases?page=1&pageSize=20&status=OPEN').catch(() => ({ cases: [], __error: true })),
+    // 切卡台时「排队单要不要跟着搬」的待接管单数。读不到就标 __error——
+    // 吞成 0 会让「同时接管」这个选项悄悄消失，卡台断供那天正需要它。
+    api('/api/v1/admin/card-sources/browser/takeover-estimate').catch(() => ({ __error: true }))
   ]);
-  renderDecisions(overview, cardSources);
+  renderDecisions(overview, cardSources, takeoverEstimate);
   renderWbWall(overview);
   renderWbCards(overview);
   renderWbRecon(daily);
@@ -2187,10 +2242,7 @@ function sourceHealth(source) {
 }
 
 async function loadProviderRoutes() {
-  const [payload, estimate] = await Promise.all([
-    api('/api/v1/admin/card-sources'),
-    api('/api/v1/admin/card-sources/browser/takeover-estimate')
-  ]);
+  const payload = await api('/api/v1/admin/card-sources');
   const sources = Array.isArray(payload.sources) ? payload.sources : [];
   elements.cardSourceSummary.innerHTML = `<div><span><strong>API 充值固定卡台</strong><small>不可切换到无 API 的备用来源</small></span><em>${escapeHtml(sources.find((item) => item.id === payload.apiProviderAccountId)?.displayName || 'HNSKJ')}</em></div><div><span><strong>浏览器自动化充值当前卡台</strong><small>切换默认只影响新订单</small></span><em>${escapeHtml(sources.find((item) => item.id === payload.browserProviderAccountId)?.displayName || '未设置')}</em></div>`;
   elements.manualCardImportSource.innerHTML = `<option value="">选择备用卡台</option>${sources.filter((item) => item.providerCode === 'manual_excel').map((item) => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.displayName)}</option>`).join('')}`;
@@ -2203,10 +2255,11 @@ async function loadProviderRoutes() {
       <td>${escapeHtml(capabilities)}</td>
       <td>${source.cardCount} 张历史卡 · ${source.presentCount} 张在当前快照<small>最近完整快照 ${formatTime(source.lastFullSnapshotAt)}</small></td>
       <td><span class="status-chip ${tone}"><i></i>${escapeHtml(health)}</span></td>
-      <td>${!source.supportsBrowserRecharge ? '<small>不支持 Browser</small>' : active ? '<small>Browser 新订单使用中</small>' : `<span class="segmented-actions"><button class="primary-small route-switch-button" type="button" data-source-id="${escapeHtml(source.id)}" data-expected-version="${Number(payload.browserSelectionVersion || 0)}">设为当前</button>${Number(estimate.count || 0) ? `<button class="ghost-button route-switch-button" type="button" data-source-id="${escapeHtml(source.id)}" data-takeover="true" data-expected-version="${Number(payload.browserSelectionVersion || 0)}">同时接管 ${Number(estimate.count)} 单</button>` : ''}</span>`}</td>
+      <td>${!source.supportsBrowserRecharge ? '<small>不支持 Browser</small>' : active ? '<small>Browser 新订单使用中</small>' : '<small>可切换 · 去工作台切</small>'}</td>
     </tr>`;
   }).join('') : '<tr><td colspan="5" class="empty-state">暂无卡台配置</td></tr>';
 }
+
 
 async function loadBillingAddressSettings() {
   const data = await api('/api/v1/admin/browser/billing-address');
@@ -2251,35 +2304,8 @@ elements.browserRunsTable?.addEventListener('keydown', (event) => {
     openBrowserRun(row.dataset.browserRun);
   }
 });
-elements.providerRoutesTable?.addEventListener('click', async (event) => {
-  const button = event.target.closest('.route-switch-button');
-  if (!button || button.disabled) return;
-  button.disabled = true;
-  try {
-    const result = await api('/api/v1/admin/card-sources/browser/current', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ providerAccountId: button.dataset.sourceId, takeoverWaiting: button.dataset.takeover === 'true',
-        expectedVersion: Number(button.dataset.expectedVersion || 0) })
-    });
-    showNotice(`Browser 卡台已切换${result.actualTakeoverCount ? `，并安全接管 ${result.actualTakeoverCount} 单` : '；只影响之后的新订单'}。`, 'success');
-    try {
-      await loadProviderRoutes();
-    } catch {
-      showNotice('Browser 卡台已切换，但列表刷新失败；请刷新查看，不要重复切换。', 'warning');
-    }
-  } catch (error) {
-    if (error.message === 'card_source_switch_rejected') {
-      showNotice(`切换被拒绝，卡台没有改变：${switchCheckReasons(error)}`, 'warning');
-    } else if (error.message === 'card_source_selection_locked') {
-      showNotice('这一行的卡台是固定的（API 只走 hnskj），不能切换。', 'warning');
-    } else {
-      showNotice('未能确认卡台切换结果，正在重新读取当前选择；请勿重复点击。', 'warning');
-    }
-    await loadProviderRoutes().catch(() => {});
-  } finally {
-    button.disabled = false;
-  }
-});
+// 卡台切换已统一到工作台（D-280 ⑦ / D-288）：那里带「同时接管 N 单」与四项校验。
+// 卡片页这张表只读——同一个写操作不留两个入口（F-65 那类毛病的根）。
 elements.manualCardSourceForm?.addEventListener('submit', async (event) => {
   event.preventDefault();
   try {
@@ -2780,17 +2806,7 @@ document.addEventListener('click', async (event) => {
   }
   const sourceApply = event.target.closest('#decision-card-source-apply');
   if (sourceApply) {
-    const select = document.querySelector('#decision-card-source');
-    const providerAccountId = select?.value;
-    if (!providerAccountId) return showNotice('请先选择卡台。');
-    sourceApply.disabled = true;
-    try {
-      await api('/api/v1/admin/card-sources/browser/current', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ providerAccountId, takeoverWaiting: false, expectedVersion: state.browserSelectionVersion || 0 }) });
-      showNotice('Browser 卡台已切换，只影响之后的新订单。', 'success');
-    } catch (error) {
-      showNotice(error.message === 'card_source_switch_rejected' ? `切换被拒绝，卡台没有改变：${switchCheckReasons(error)}` : '卡台切换失败，请刷新后重试。');
-    }
-    await loadOverview();
+    await applyBrowserCardSource(sourceApply);
     return;
   }
   const methodButton = event.target.closest('.default-recharge-method');
@@ -3012,4 +3028,95 @@ document.addEventListener('click', (event) => {
   const publicNo = jump.dataset.openOrder;
   if (!publicNo) return;
   openOrder(publicNo).catch(() => showNotice('订单详情打开失败，请重试。'));
+});
+
+/* ===== 顶层事件绑定（导航 / 订单筛选分页 / 导出 / 对账 / 全局搜索 / document 委托）=====
+   2026-09-20 事故恢复：本轮删 loadCardFundingAttempts 时，我用「下一个 async function」
+   当删除边界，把夹在两个函数之间的 14 个顶层绑定一起切掉了——侧边栏导航从此点不动。
+   node --check 只查语法，测试走 snippet/harness 不碰这些绑定，所以 951 全绿而功能是坏的。
+   教训：删代码要按语法边界，不能按「下一个某某」的字符串距离；UI 改完必须真点一遍。 */
+elements.navItems.forEach((item) => item.addEventListener('click', () => switchView(item.dataset.view).catch(() => showNotice('数据读取失败，请稍后重试。'))));
+
+document.querySelectorAll('[data-open-orders]').forEach((button) => button.addEventListener('click', () => switchView('orders')));
+
+// 工作台数字墙 / 队列跳转（原绑在已删的 #metrics-grid，改 document 级委托）。
+document.addEventListener('click', (event) => {
+  const filterButton = event.target.closest('[data-order-filter]');
+  const viewButton = event.target.closest('[data-target-view]');
+  const jumpButton = event.target.closest('[data-view-jump]');
+  const resolveCase = event.target.closest('[data-resolve-wb-case]');
+  const openCaseOrder = event.target.closest('[data-open-case-order-wb]');
+  const opSwitch = event.target.closest('[data-op]');
+  if (opSwitch) { toggleOp(opSwitch.dataset.op, opSwitch.dataset.on !== 'true'); return; }
+  const closeWbAlert = event.target.closest('[data-close-wb-alert]');
+  if (closeWbAlert) { closeWbAlert.disabled = true; api(`/api/v1/admin/alerts/${encodeURIComponent(closeWbAlert.dataset.closeWbAlert)}/close`, { method: 'POST' }).then(() => loadOverview()).catch(() => { showNotice('提醒关闭失败，请重试。'); closeWbAlert.disabled = false; }); return; }
+  if (resolveCase) { resolveReconciliationCase(resolveCase.dataset.resolveWbCase, { after: loadOverview }).catch(() => showNotice('案例解决失败，请重试。')); return; }
+  if (openCaseOrder) { openOrder(openCaseOrder.dataset.openCaseOrderWb); return; }
+  if (filterButton) switchView('orders', { status: filterButton.dataset.orderFilter });
+  else if (viewButton) switchView(viewButton.dataset.targetView);
+  else if (jumpButton) switchView(jumpButton.dataset.viewJump).catch(() => showNotice('数据读取失败，请稍后重试。'));
+});
+
+// 工作台全局定位搜索：回车带查询跳订单页做精确匹配（复用 orders/search 的 CDK 精确匹配）。
+document.querySelector('#wb-search-input')?.addEventListener('keydown', (event) => {
+  if (event.key !== 'Enter') return;
+  const q = event.currentTarget.value.trim();
+  if (!q) return;
+  state.query = q;
+  switchView('orders').then(() => { if (elements.search) elements.search.value = q; }).catch(() => showNotice('搜索失败，请重试。'));
+});
+
+elements.filters.addEventListener('submit', (event) => {
+  event.preventDefault();
+  state.page = 1;
+  state.query = elements.search.value.trim();
+  state.status = elements.statusFilter.value;
+  if (state.nav !== 'orders') setActiveNav('orders');
+  elements.viewKicker.textContent = '订单';
+  elements.viewTitle.textContent = ORDER_FILTER_TITLES[state.status] || '全部订单';
+  loadOrders().catch(() => showNotice('订单查询失败，请稍后重试。'));
+});
+
+elements.prevPage.addEventListener('click', () => { if (state.page > 1) { state.page -= 1; loadOrders(); } });
+
+elements.nextPage.addEventListener('click', () => { if (state.page * state.pageSize < state.total) { state.page += 1; loadOrders(); } });
+
+document.querySelector('#export-orders')?.addEventListener('click', () => downloadOperationsCsv('orders').catch(() => showNotice('订单导出失败。')));
+
+document.querySelector('#export-reconciliation')?.addEventListener('click', () => downloadOperationsCsv('reconciliation_cases').catch(() => showNotice('对账案例导出失败。')));
+
+document.querySelector('#export-reconciliation-diag')?.addEventListener('click', () => downloadOperationsCsv('reconciliation_cases').catch(() => showNotice('对账案例导出失败。')));
+
+document.querySelector('#reconciliation-filters')?.addEventListener('submit', (event) => {
+  event.preventDefault();
+  state.reconciliationPage = 1;
+  loadReconciliationCases().catch(() => showNotice('对账案例读取失败。'));
+});
+
+elements.reconciliationPrev?.addEventListener('click', () => {
+  if (state.reconciliationPage > 1) { state.reconciliationPage -= 1; loadReconciliationCases(); }
+});
+
+elements.reconciliationNext?.addEventListener('click', () => {
+  if (state.reconciliationPage * 50 < state.reconciliationTotal) { state.reconciliationPage += 1; loadReconciliationCases(); }
+});
+
+elements.reconciliationTable?.addEventListener('click', (event) => {
+  const row = event.target.closest('[data-case-id]');
+  if (!row) return;
+  const button = event.target.closest('button');
+  if (!button) return;
+  if (button.matches('[data-open-case-order]')) {
+    openOrder(row.dataset.publicNo);
+  } else if (button.matches('[data-assign-case]')) {
+    button.disabled = true;
+    assignReconciliationCase(row.dataset.caseId)
+      .then(() => { button.disabled = false; })
+      .catch(() => { button.disabled = false; showNotice('案例分配失败。'); });
+  } else if (button.matches('[data-resolve-case]')) {
+    button.disabled = true;
+    resolveReconciliationCase(row.dataset.caseId)
+      .then(() => { button.disabled = false; })
+      .catch(() => { button.disabled = false; showNotice('案例解决失败。'); });
+  }
 });

@@ -253,3 +253,72 @@ test('⑧ 导入备用卡降级为折叠的高级入口，能力保留', () => {
   // 能力保留：上传表单还在
   assert.match(block.slice(0, block.indexOf('</details>')), /manual-card-import-file/);
 });
+
+/* ===== D-280 ⑦：卡台切换搬到工作台，「同时接管」这半边不能丢 ===== */
+
+const DECISIONS_OVERVIEW = { decisions: {}, providerHealth: { rechargeMethod: 'BROWSER' } };
+const CARD_SOURCES = {
+  browserProviderAccountId: 'pa-1', browserSelectionVersion: 3,
+  sources: [
+    { id: 'pa-1', displayName: 'HNSKJ 卡台', supportsBrowserRecharge: true, operationalEnabled: true },
+    { id: 'pa-3', displayName: 'highvcc卡台', supportsBrowserRecharge: true, operationalEnabled: true }
+  ]
+};
+
+test('⑦ 有排队单时，工作台给出「同时接管 N 单」的勾选', () => {
+  const { sandbox, html } = loadAdminJs();
+  sandbox.renderDecisions(DECISIONS_OVERVIEW, CARD_SOURCES, { count: 4 });
+  const out = html('wb-routes');
+  assert.match(out, /id="decision-card-source-takeover"/);
+  assert.match(out, /同时接管 4 张排队等卡的单/);
+  // 要说清勾与不勾各自会发生什么，别让人猜
+  assert.match(out, /排队单继续等原卡台/);
+});
+
+test('⑦ 没有排队单时不给勾选，并说明「当前没有可接管的」', () => {
+  const { sandbox, html } = loadAdminJs();
+  sandbox.renderDecisions(DECISIONS_OVERVIEW, CARD_SOURCES, { count: 0 });
+  const out = html('wb-routes');
+  assert.doesNotMatch(out, /decision-card-source-takeover/);
+  assert.match(out, /没有排队等卡的单可接管/);
+});
+
+test('⑦ 待接管单数读取失败时说读取失败，不静默当成 0', () => {
+  const { sandbox, html } = loadAdminJs();
+  sandbox.renderDecisions(DECISIONS_OVERVIEW, CARD_SOURCES, { __error: true });
+  const out = html('wb-routes');
+  // 吞成 0 会让这个选项在卡台断供那天悄悄消失
+  assert.match(out, /待接管单数读取失败/);
+  assert.doesNotMatch(out, /decision-card-source-takeover/);
+});
+
+test('⑦ 卡台切换只剩工作台一个入口；卡片页那张表已只读', () => {
+  const src = fs.readFileSync(path.join(here, '..', 'public', 'admin', 'assets', 'admin.js'), 'utf8');
+  const code = src.replace(/^\s*\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
+  // 同一个写操作不留两个入口（F-65 那类毛病的根）
+  assert.doesNotMatch(code, /route-switch-button/);
+  assert.match(code, /async function applyBrowserCardSource\(/);
+  // 卡片页那张表的「Browser 操作」列由 admin.js 渲染，只剩一句指路
+  assert.match(code, /去工作台切/);
+});
+
+test('后台的关键顶层事件绑定必须都在（2026-09-20 误删事故的守门人）', () => {
+  // 那次删一个函数时用「下一个 async function」当边界，把夹在中间的 14 个顶层绑定
+  // 一起切掉了：侧边栏导航点不动、订单筛选分页失灵、导出和对账表全哑。
+  // node --check 只查语法，其余测试走 snippet/harness 不碰这些绑定 —— 951 条全绿，
+  // 而后台已经不能用了。这条按「绑定是否存在」把它们钉住。
+  const src = fs.readFileSync(path.join(here, '..', 'public', 'admin', 'assets', 'admin.js'), 'utf8');
+  const required = [
+    ['侧边栏导航', /elements\.navItems\.forEach\(\(item\) => item\.addEventListener\('click'/],
+    ['订单筛选', /elements\.filters\.addEventListener\('submit'/],
+    ['订单上一页', /elements\.prevPage\.addEventListener\('click'/],
+    ['订单下一页', /elements\.nextPage\.addEventListener\('click'/],
+    ['全局搜索', /#wb-search-input'\)\?\.addEventListener\('keydown'/],
+    ['document 级委托', /^document\.addEventListener\('click'/m],
+    ['订单导出', /#export-orders'\)\?\.addEventListener\('click'/],
+    ['对账筛选', /#reconciliation-filters'\)\?\.addEventListener\('submit'/],
+    ['对账表', /elements\.reconciliationTable\?\.addEventListener\('click'/]
+  ];
+  const missing = required.filter(([, re]) => !re.test(src)).map(([name]) => name);
+  assert.deepEqual(missing, [], `这些顶层事件绑定不见了，后台对应功能会静默失灵：${missing.join('、')}`);
+});
