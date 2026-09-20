@@ -15,6 +15,28 @@ import { transitionCardConsumptionInTransaction } from './card-consumption-ledge
  */
 export class UnknownSubmissionResolveError extends PublicApiError {}
 
+/**
+ * 「这一单能不能走 API 付款不明收口」——**唯一一份**资格规则。
+ *
+ * 收口服务在事务里用它决定拒不拒（行为与抽出前逐字相同），后台详情读服务用同一份
+ * 决定按不按钮。判断工具不许抄业务规则（D-191）：抄的那刻就开始漂移——页面会给出
+ * 一个后端必然拒绝的按钮，或者反过来，藏起一个本该能点的按钮。
+ *
+ * 三个入参分别对应后端那条查询的三列：订单路线、订单状态、以及
+ * 「status='SUBMIT_UNKNOWN' 且 funds_risk_state='UNKNOWN'」的那个 attempt 是否存在。
+ */
+export function unknownSubmissionEligibility({ executorKind, orderStatus, attemptId } = {}) {
+  if (String(executorKind || '').toUpperCase() !== 'API') {
+    return { eligible: false, code: 'UNKNOWN_RESOLUTION_WRONG_EXECUTOR',
+      reason: 'Only API-route orders resolve here; Browser runs use RESOLVE_UNKNOWN_PAYMENT', status: 409 };
+  }
+  if (!['SUBMIT_UNKNOWN', 'RECONCILIATION_REQUIRED'].includes(String(orderStatus || '')) || !attemptId) {
+    return { eligible: false, code: 'UNKNOWN_RESOLUTION_NOT_ELIGIBLE',
+      reason: `Order cannot resolve an unknown submission from ${orderStatus}`, status: 409 };
+  }
+  return { eligible: true, code: null, reason: null, status: null };
+}
+
 export function createUnknownSubmissionResolveService({ pool, clock = () => new Date() }) {
   if (!pool) throw new TypeError('pool is required');
 
@@ -50,13 +72,11 @@ export function createUnknownSubmissionResolveService({ pool, clock = () => new 
       );
       if (rows.length !== 1) throw new PublicApiError('Order not found', { code: 'ADMIN_ORDER_NOT_FOUND', status: 404 });
       const order = rows[0];
-      if (String(order.executor_kind || '').toUpperCase() !== 'API') {
-        throw new PublicApiError('Only API-route orders resolve here; Browser runs use RESOLVE_UNKNOWN_PAYMENT', {
-          code: 'UNKNOWN_RESOLUTION_WRONG_EXECUTOR', status: 409 });
-      }
-      if (!['SUBMIT_UNKNOWN', 'RECONCILIATION_REQUIRED'].includes(order.status) || !order.attempt_id) {
-        throw new PublicApiError(`Order cannot resolve an unknown submission from ${order.status}`, {
-          code: 'UNKNOWN_RESOLUTION_NOT_ELIGIBLE', status: 409 });
+      const eligibility = unknownSubmissionEligibility({
+        executorKind: order.executor_kind, orderStatus: order.status, attemptId: order.attempt_id
+      });
+      if (!eligibility.eligible) {
+        throw new PublicApiError(eligibility.reason, { code: eligibility.code, status: eligibility.status });
       }
       const targetOrderStatus = outcome === 'CHARGED' ? 'RECHARGE_SUCCESS' : 'RECHARGE_FAILED';
       if (outcome === 'CHARGED') {

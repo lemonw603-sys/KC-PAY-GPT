@@ -7,6 +7,7 @@ import { reconcileByRoute } from '../domain/route-reconciliation.js';
 import { createCdkLookup } from '../security/cdk-code.js';
 import { redactSensitiveText } from '../security/redaction.js';
 import { deriveOrderStage } from './order-stage.js';
+import { unknownSubmissionEligibility } from './unknown-submission-resolve-service.js';
 import { eligibleInventoryCardSql,
   fundableInventoryCardSql, providerCardStockSql, todayCst8WindowSql,
   REPLENISHMENT_OPENED_COUNT_SQL } from './card-inventory-eligibility.js';
@@ -1416,9 +1417,22 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
       || effectivePermitStatus === 'CONSUMED') {
       cancellationCode = 'ORDER_CANCELLATION_SUBMISSION_RISK';
     }
+    // API 路线付款不明的收口资格。规则只有一份（unknownSubmissionEligibility），
+    // 页面按它决定按不按钮、收口服务按它决定拒不拒，两边不可能说法不一。
+    // 那个 attempt 的条件与服务端查询逐字相同：status='SUBMIT_UNKNOWN' 且 funds_risk_state='UNKNOWN'。
+    const unknownAttempt = attemptRows.find((attempt) => attempt.status === 'SUBMIT_UNKNOWN'
+      && attempt.funds_risk_state === 'UNKNOWN') || null;
+    const unknownResolution = unknownSubmissionEligibility({
+      executorKind: row.executor_kind, orderStatus: row.status, attemptId: unknownAttempt?.id || null
+    });
     return {
       stage: stageFromRow(row, { reconciliation, now: now() }),
       browserRun: runFromRow(row),
+      unknownSubmission: {
+        eligible: unknownResolution.eligible,
+        reasonCode: unknownResolution.code,
+        attemptId: unknownAttempt?.id || null
+      },
       money: {
         attempts: attemptRows.map((attempt) => ({
           id: attempt.id, executorKind: attempt.executor_kind, status: attempt.status,

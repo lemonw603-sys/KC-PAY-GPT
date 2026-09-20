@@ -2077,6 +2077,61 @@ async function confirmManualCancellation(publicNo, { after = null } = {}) {
   await loadOrders();
 }
 
+/**
+ * API 路线付款不明的人工收口（Browser 路线走 RESOLVE_UNKNOWN_PAYMENT，两套流程不通用）。
+ *
+ * 后端 unknown-submission-resolve-service 只认两个结论，且**没有** Browser 那边的
+ * renewalCancelled 参数：CHARGED 恒置 cancellation_review_required=1（卡进待销清单、
+ * 另发提醒），续费要另点「已在账号里取消续费」。文案按这个事实写，不照抄 Browser 的。
+ */
+// 收口失败时把后端的拒绝原因说成人话。全都是「没有改变任何状态」的拒绝——
+// 服务端整段在一个事务里，抛错即回滚，不存在改一半的中间态。
+function unknownResolutionErrorMessage(error) {
+  const messages = {
+    admin_order_not_found: '找不到这个订单号，没有执行任何操作。',
+    invalid_unknown_resolution: '结论必须是「已扣款」或「未扣款」，没有执行任何操作。',
+    unknown_resolution_confirmation_required: '确认信息不匹配，没有执行任何操作。',
+    unknown_resolution_wrong_executor: '这单走的是 Browser 路线，请在下面的浏览器运行里点「确认核实结果」。',
+    unknown_resolution_not_eligible: '这单当前状态不能做付款不明收口（可能已经被别人收口了），请刷新后再看。',
+    order_conflict: '订单刚被其他人改过，没有执行任何操作，请刷新后重试。',
+    admin_step_up_cancelled: '已取消操作，订单未改变。',
+    admin_step_up_required: '敏感操作验证已过期，请重试。'
+  };
+  return messages[error?.message] || '收口失败，订单未改变，请刷新后重试。';
+}
+
+async function resolveUnknownSubmission(publicNo, { after = null } = {}) {
+  const answers = await askForm({
+    title: `核实付款不明结果 ${publicNo}`,
+    message: '只在你亲自看过这个 ChatGPT 账号的套餐、并在卡台查过这张卡的交易之后才点。系统已经自动查过两路证据仍定不了，所以它锁着不重付、不换卡——你这一次的结论就是最终结论。',
+    fields: [
+      {
+        name: 'outcome', label: '你核实到的结果', type: 'select', value: 'CHARGED', required: true,
+        options: [
+          { value: 'CHARGED', label: '已扣款：账号已开通 Plus，卡台有这笔交易' },
+          { value: 'NOT_CHARGED', label: '未扣款：账号仍是 free，卡台没有这笔交易' }
+        ]
+      },
+      { name: 'note', label: '你看到的证据（账号套餐、卡台交易金额与时间；不要输入完整卡号或安全码）', type: 'textarea', required: true }
+    ],
+    confirmLabel: '确认执行', danger: true
+  });
+  if (!answers) return;
+  const outcome = answers.outcome;
+  await sensitiveApi(`/api/v1/admin/orders/${encodeURIComponent(publicNo)}/resolve-unknown-submission`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    // 确认词由前端按后端要求拼，不让人手打——手打只会被复制粘贴，挡不住任何误操作，
+    // 真正的闸门是上面那个必填的证据说明和这个对话框本身。
+    body: JSON.stringify({ outcome, confirmation: `已核实 ${publicNo} ${outcome}`, note: answers.note })
+  });
+  showNotice(outcome === 'NOT_CHARGED'
+    ? '已按「未扣款」收口：订单记为失败，卡片占用释放，客户可用原 CDK 重新提交。'
+    : '已按「已扣款」收口：订单记为充值成功，卡进待销清单。续费状态未知，关掉续费后请点「已在账号里取消续费」。', 'success');
+  if (after) { await after(); return; }
+  await openOrder(publicNo);
+  await loadOrders();
+}
+
 async function cancelOrder(publicNo, button) {
   if (!window.confirm(`确认取消订单 ${publicNo}？\n\n服务器会再次确认充值从未提交。订单关闭后，卡片将释放回可用库存。此操作不可撤销。`)) return;
   button.disabled = true;
@@ -2239,10 +2294,18 @@ async function openOrder(publicNo) {
       actions.push('<button type="button" class="primary-small" id="confirm-manual-cancellation">已在账号里取消续费</button>');
     }
     if (controlRun && resolveUnknownEligible(controlRun)) actions.push('<button type="button" class="primary-small" data-order-run-control="RESOLVE_UNKNOWN_PAYMENT">确认核实结果</button>');
+    // API 路线的同一件事。此前只有 Browser 单有按钮：API 单进 RECONCILIATION_REQUIRED 后
+    // 工作台「去核实收口」跳到这里是死路，而系统发的告警还写着「请在后台点「核实付款不明结果」」。
+    // 资格由后端 unknownSubmissionEligibility 算好（与收口服务同一份规则），前端不自己拼条件。
+    if (data.unknownSubmission?.eligible) actions.push('<button type="button" class="primary-small" id="resolve-unknown-submission">确认核实结果</button>');
     if (runLive && manualPaymentEligible(controlRun)) actions.push('<button type="button" class="primary-small" data-order-run-control="CONFIRM_MANUAL_PAYMENT">人工付款已完成</button>');
     if (runLive && upgradeConfirmEligible(controlRun)) actions.push('<button type="button" class="primary-small" data-order-run-control="COMPLETE_20X">确认 20X 已升级</button>');
     if (data.card) actions.push('<button type="button" class="ghost-button" id="sync-transactions">同步卡交易</button>');
-    openCases.forEach((item) => actions.push(`<button type="button" class="ghost-button" data-resolve-order-case="${escapeHtml(item.id)}">关闭对账案例：${escapeHtml(RECONCILIATION_TYPE_LABELS[item.caseType] || item.caseType)}</button>`));
+    // F-61 在详情页的同一个病：付款不明的 case 不给「关闭对账案例」。关记录只 UPDATE
+    // reconciliation_cases，订单/attempt/账本/卡占用一动不动；这两类必须走上面那两个正式收口按钮
+    // （收口成功会自己把 case 关掉）。工作台队列早已这样分流，详情页此前漏了。
+    openCases.filter((item) => !PAYMENT_UNKNOWN_CASE_TYPES.has(item.caseType))
+      .forEach((item) => actions.push(`<button type="button" class="ghost-button" data-resolve-order-case="${escapeHtml(item.id)}">关闭对账案例：${escapeHtml(RECONCILIATION_TYPE_LABELS[item.caseType] || item.caseType)}</button>`));
     const cancellationLabels = {
       ORDER_CANCELLATION_ELIGIBLE: '可以安全取消：付款未提交，卡片解除绑定并进入隔离区',
       ORDER_CANCELLATION_ALREADY_COMPLETED: '订单已经取消',
@@ -2321,6 +2384,8 @@ async function openOrder(publicNo) {
     document.querySelector('#cancel-order')?.addEventListener('click', (event) => cancelOrder(publicNo, event.currentTarget));
     document.querySelector('#confirm-manual-cancellation')?.addEventListener('click', () => confirmManualCancellation(publicNo, { after: reopen })
       .catch((error) => showNotice(error?.message === 'manual_cancellation_not_eligible' ? '该订单当前不能这样收口。' : '没有记录，订单没有改变。')));
+    document.querySelector('#resolve-unknown-submission')?.addEventListener('click', () => resolveUnknownSubmission(publicNo, { after: reopen })
+      .catch((error) => showNotice(unknownResolutionErrorMessage(error))));
     elements.detailContent.querySelectorAll('[data-order-run-control]').forEach((button) => {
       button.addEventListener('click', () => controlBrowserRun(controlRun, button.dataset.orderRunControl, { after: reopen })
         .catch(() => showNotice('操作没有完成，订单没有改变。')));
