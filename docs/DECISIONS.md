@@ -5055,7 +5055,7 @@ Lemon 质疑执行者把「码被兑」与「开通成功」分成两个并排�
 | 欠交付 | `AVAILABLE AND issued_at IS NOT NULL` | 0 |
 | 在手可卖 | `AVAILABLE AND issued_at IS NULL` | 21 |
 | 已成功交付 | `REDEEMED` 且订单 `RECHARGE_SUCCESS` | **20**（旧口径 37 作废） |
-| 要看一眼 | `REDEEMED` 且订单 `FAILED/CLOSED` 且 `updated_at >= 2026-09-07 15:00` | **1**（不剔历史是 17） |
+| 要看一眼 | `REDEEMED` 且订单 `FAILED/CLOSED` 且 `COALESCE(finished_at, created_at) >= 2026-09-07 15:00` | **1**（不剔历史是 17） |
 
 **16 张历史残留的摆法**（原型逼出来、Lemon 已认）：列表里**如实显示**「兑了没成 · 码没退回」并带灰色 `09-07 前` 标记，不进第四格；第四格小字写明「不含 09-07 前的 16 张」。差额由行内标记当场解释，不靠藏。
 
@@ -5088,3 +5088,13 @@ Lemon 质疑执行者把「码被兑」与「开通成功」分成两个并排�
 - **那 16 张历史残留不动数据**，只在界面上标。
 
 **任务书**：`docs/tasks/2026-09-20-impl-step6-cdk-page.md`（交 Codex 执行，Lemon 额度不足）。
+
+### 十一、2026-09-20 晚订正（Codex 审查，已查证认账）
+
+**判「历史」的字段从 `orders.updated_at` 改为 `COALESCE(orders.finished_at, orders.created_at)`。**
+
+`updated_at` 的定义是 `on update CURRENT_TIMESTAMP(3)`，记的是「最后一次写这行」而非「订单何时终结」。**生产已经被刷过一次**：15 条订单的 `updated_at` 全是 `2026-09-05 23:10:11.628` 同一秒，`created_at` 却跨 08-19 ~ 09-01。再有一次批量写，这 15 条会整批涌进「要看一眼」，那格从 1 跳到 16——**一个本该恒为 0 的异常信号，会被一次无关的数据订正点亮**。
+
+换 `finished_at` 后当前值仍是 1（实查），但不再受后续写影响；1 条 `finished_at IS NULL` 由 `COALESCE` 兜到 `created_at`，落在界线前算历史，与现状一致。
+
+**我当时怎么漏的**：对数时我按 `updated_at` 排序看过那 17 条，还注意到「13 条同一秒」，但把它当成「一次批量收尾」的观察记下就过了，**没有追问这个字段的定义**。这正是自己写进记忆的第二类惯犯——给观察配一个说得通的解释，而不是去查它到底是什么。

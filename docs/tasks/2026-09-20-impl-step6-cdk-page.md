@@ -59,9 +59,17 @@
 | 欠交付 | `status='AVAILABLE' AND issued_at IS NOT NULL` | **0**（`issued_at` 列尚未应用生产） |
 | 在手可卖 | `status='AVAILABLE' AND issued_at IS NULL` | **21**（Plus 19 + 20X 2） |
 | 已成功交付 | `status='REDEEMED'` 且订单 `RECHARGE_SUCCESS` | **20** |
-| 要看一眼 | `status='REDEEMED'` 且订单 `RECHARGE_FAILED/CLOSED` **且 `orders.updated_at >= '2026-09-07 15:00:00'`** | **1** |
+| 要看一眼 | `status='REDEEMED'` 且订单 `RECHARGE_FAILED/CLOSED` **且 `COALESCE(orders.finished_at, orders.created_at) >= '2026-09-07 15:00:00'`** | **1** |
 
 **第四格的时间界线不许去掉**（D-313）。理由：退回机制 2026-09-07 才上线（commit `f8c1d30`，release `20260907-cdk-rules-44b00cd`），此前失败单的码没退回是历史，不是当前系统的产出。去掉界线这一格是 17，全是噪音。
+
+> **⚠️ 2026-09-20 订正（Codex 审查 C-「事实源冲突 3」，已查证并认账）**：本条原写 `orders.updated_at >= ...`，**是错的**。`orders.updated_at` 的定义是 `on update CURRENT_TIMESTAMP(3)`（实查 `SHOW COLUMNS FROM orders`），它记的是「最后一次写这行是什么时候」，不是「订单什么时候终结的」。
+>
+> **生产已经被刷过一次**：15 条订单的 `updated_at` 全是 `2026-09-05 23:10:11.628` 同一秒，而它们的 `created_at` 跨 2026-08-19 ~ 09-01（相差 4~17 天）。再来一次这样的批量写（补记账本、状态订正、数据迁移），这 15 条会**整批涌进「要看一眼」**，那一格从 1 跳到 16。
+>
+> **改用 `finished_at`**：实查覆盖率 CLOSED 21/21、RECHARGE_FAILED 36/37、RECHARGE_SUCCESS 19/20；那 17 条的 `finished_at` 是真实终结时间（`2026-08-19 17:37:31` 等），不受后续写影响。换字段后当前值**仍是 1**，但语义稳定了。
+>
+> **1 条 `finished_at IS NULL`**（`PJV1-bCv-NWwyhLEdU9FwxxVH`，08-21），用 `COALESCE(finished_at, created_at)` 兜——它落在界线之前，算历史，与现状一致。**这个 fallback 要写进契约断言，不许留成隐式行为。**
 
 **第三格现在叫「已交付」且值是 37，这是错的**。`summarizeCdkLiability`（`v1/src/services/cdk-service.js:581`）的 `delivered = SUM(status='REDEEMED')` 算的是「码被消费掉多少张」，而同一页的行标签 `cdkStatusLabel`（`v1/public/admin/assets/admin.js:776`）把「已交付」定义成「REDEEMED 且订单成功」＝20 张。**同一个词两个数，本轮统一到「已成功交付＝20」那个口径。**
 
@@ -204,7 +212,7 @@ created     revoked     相差
 | 欠交付 | 0 |
 | 在手可卖 | 21 |
 | 已成功交付 | **20**（不是 37） |
-| 要看一眼 | **1**（不是 17） |
+| 要看一眼 | **1**（不是 17）。口径用 `COALESCE(finished_at, created_at)`，**不是 `updated_at`** |
 | 筛「兑了没成」的行数 | 17（1 条无标记 + 16 条带 `09-07 前`） |
 
 ### 5.3 按钮业务结果层
@@ -277,6 +285,58 @@ created     revoked     相差
 
 `browser-mvp/scripts/prod-query.sh`，2026-09-20：
 
+> **2026-09-20 晚补（Codex 指出本节「只列输出、未附对应 SQL」，认账）**：下面每段都补上原句，按 D-234「查询语句 + 关键原始输出」。执行者可直接复制复跑。
+
+```sql
+-- 状态分布
+SELECT status, plan_type, COUNT(*) FROM cdks GROUP BY status, plan_type ORDER BY status, plan_type;
+SELECT COUNT(*) AS total, COUNT(DISTINCT batch_no) AS batches FROM cdks;
+SELECT COUNT(*) AS null_batch FROM cdks WHERE batch_no IS NULL;
+
+-- 批次大小分布
+SELECT n AS codes_per_batch, COUNT(*) AS batches
+  FROM (SELECT batch_no, COUNT(*) AS n FROM cdks GROUP BY batch_no) t GROUP BY n ORDER BY n;
+
+-- REDEEMED 按订单状态（决定行标签「已交付」还是「使用中」）
+SELECT o.status, COUNT(*) FROM cdks c JOIN orders o ON o.id=c.order_id
+ WHERE c.status='REDEEMED' GROUP BY o.status ORDER BY COUNT(*) DESC;
+
+-- 四格数（迁移 055 后的口径；owed/expired 因 issued_at/expires_at 列尚未应用生产而恒 0）
+SELECT SUM(status='AVAILABLE') AS stock, SUM(status='REDEEMED') AS delivered_old_wrong FROM cdks;
+SELECT COUNT(*) AS delivered_ok FROM cdks c JOIN orders o ON o.id=c.order_id
+ WHERE c.status='REDEEMED' AND o.status='RECHARGE_SUCCESS';
+SELECT COUNT(*) AS needs_look FROM cdks c JOIN orders o ON o.id=c.order_id
+ WHERE c.status='REDEEMED' AND o.status IN ('RECHARGE_FAILED','CLOSED')
+   AND COALESCE(o.finished_at, o.created_at) >= '2026-09-07 15:00:00';
+
+-- 退回机制上线后有没有漏网
+SELECT o.status, c.status AS cdk_status, COUNT(*) FROM orders o JOIN cdks c ON c.order_id=o.id
+ WHERE o.status IN ('RECHARGE_FAILED','CLOSED') AND o.updated_at >= '2026-09-07 15:00:00'
+ GROUP BY o.status, c.status;
+SELECT DATE(created_at) d, COUNT(*) FROM cdk_delivery_events
+ WHERE event_type='RETURNED' AND created_at >= '2026-09-07 15:00:00' GROUP BY d ORDER BY d;
+
+-- updated_at 不是终结时间的证据（Codex C-「事实源冲突 3」）
+SHOW COLUMNS FROM orders LIKE '%_at';         -- updated_at: on update CURRENT_TIMESTAMP(3)
+SELECT updated_at, COUNT(*) FROM orders GROUP BY updated_at HAVING COUNT(*)>3
+ ORDER BY COUNT(*) DESC LIMIT 5;              -- 2026-09-05 23:10:11.628 → 15 条
+SELECT status, COUNT(*) n, SUM(finished_at IS NOT NULL) has_finished FROM orders
+ WHERE status IN ('RECHARGE_SUCCESS','RECHARGE_FAILED','CLOSED') GROUP BY status;
+
+-- customer_payments
+SELECT COUNT(*) n, SUM(amount IS NOT NULL) with_amount FROM customer_payments;
+SELECT payment_channel, payment_status, COUNT(*) n, SUM(amount IS NOT NULL) amt,
+       SUM(paid_at IS NOT NULL) paid, SUM(operator_note IS NOT NULL) note
+  FROM customer_payments GROUP BY payment_channel, payment_status;
+
+-- 取不到明文的码
+SELECT SUM(b.batch_no IS NULL) AS no_batch_row,
+       SUM(b.batch_no IS NOT NULL AND b.codes_ciphertext IS NULL) AS no_cipher, COUNT(*) AS total
+  FROM cdks c LEFT JOIN cdk_batches b ON BINARY b.batch_no = BINARY c.batch_no;
+```
+
+原始输出：
+
 ```
 === 状态分布 ===
 AVAILABLE  plus     19
@@ -327,3 +387,25 @@ recorded_by: admin 67 + migration:024 6
 **保留**：「下载文件不代表已经交付客户」（它对着「登记发出」这个动作）、「作废只影响尚未兑换的卡密」（作废前要知道）。
 
 判断标准（D-312 的教训）：**界面上每多一句话，先问它对着的人能不能据此做点什么。做不了的，写得再准确也删掉。**
+
+---
+
+## 十一、Codex 接班评估提出的待裁定项（2026-09-20，`docs/reviews/2026-09-20_cdk-takeover-report.md`）
+
+统筹已读原报告并逐条查证。**下面七条里，有四条是已查证的代码事实、三条是设计缺口**；除 C-04 前半与本文 §2.1 的订正外，**其余全部需要 Lemon 裁定后才动**，执行者不要自行选一个解法。
+
+| 编号 | 性质 | 已查证的部分 | 待裁定 |
+|---|---|---|---|
+| **C-01** 撤销发出的语义 | 设计缺口 | `markCdkIssued(issued=false)` 只清 `issued_at/issued_note`（`cdk-service.js:559-577`），建单不看 issued 标记 | 「纠正误登记」与「客户退货」必须分开。退货后的码能不能直接回库再卖 |
+| **C-02** 批次＝生成单位又＝销售单位 | **设计缺口，统筹认账** | 迁移 056 把渠道/金额/发出时间放在唯一的 `cdk_batches` 行，而原型允许任意选码批量登记 —— 两者矛盾 | 整批只能卖给一个渠道（页面须**限制**而不是暗示可拆卖），还是支持囤货后分批销售（那金额就不能挂批次） |
+| **C-03** 整批 TXT ≠ 本次交付清单 | **已查证属实** | `downloadCdkBatch`（`:370-384`）只解密 `codes_ciphertext`，不查码级状态/去向/到期 | 「原始备份」与「本次交付」要拆成两个动作，文案与按钮分开 |
+| **C-04** 四格不表示完整履约 | 前半**已查证属实**，后半待裁定 | `stock = SUM(AVAILABLE AND issued_at IS NULL)`（`:585`）**不排除过期与路线停用**——生产 2 张 20X 路线关着却算在「在手可卖 21」里 | 在途单（已 REDEEMED、订单未终态）四格都不算；作废已发码会让「欠交付」消失而不证明已退款。这些要不要有落点 |
+| **C-05** 有效期语义没定全 | 设计缺口 | 退码不改 `expires_at`（`cdk-return-repository.js:69`），建单拒到期码（`order-intake-repository.js:157`） | 系统自身失败导致错过期限，重试权归谁；日期按 UTC+8 哪个时点截止；已售码能否缩短期限 |
+| **C-06** 批量写的事务与幂等 | **已查证属实** | `revokeCdkCode`（`:540-553`）与 `markCdkIssued`（`:563-575`）都是更新与审计**分两次 `pool.query`、无事务**；批次幂等键只核数量与产品（`decodeStoredBatch:129`） | 新增批量写必须事务化 + 新字段进幂等判定。**不要靠循环调用现有单码函数实现批量** |
+| **C-07** 退码后的历史追踪 | 设计缺口 | 退码清空 `order_id`（`:69`），列表只按当前 `order_id` JOIN 邮箱（`:492`） | 退回的码会显示成「在手里 / 无客户邮箱」，与从未发出的库存分不开。数量=1 隐藏去向字段加重了漏登记 |
+
+**统筹对这份评估的判断**：C-02 是我的设计缺口，我没想清楚「囤货后分批卖」；C-03/C-04 前半/C-06 是已存在的代码事实，我在对数时漏了；C-01/C-05/C-07 是外售开张前必须定义的业务语义，属于 Lemon 的决定。
+
+**Codex 对本文的两条批评，统筹认账并已改**：① §九 只列输出未附 SQL（已补，见上）；② 第四格用 `orders.updated_at` 判历史是错的（已改 `COALESCE(finished_at, created_at)`，见 §2.1 订正框）。
+
+**这份评估没做的**（它自己标明了，接手别当已验证）：未连生产、未做并发与事务故障验证、未做公网安全审计、未验证真实外售与退款流程。它跑的 `node --test test/cdk-service.test.js test/cdk-return-repository.test.js test/cdk-verify-service.test.js` 得 29/29 通过，**只证明既有单测没被破坏，不覆盖上面任何一条**。
