@@ -14,7 +14,7 @@ import { cdkReturnBlockedBy, readCdkReturnEvidence } from './cdk-return-reposito
  */
 export async function findCdkForVerification(pool, cdkLookup) {
   const [rows] = await pool.query(
-    `SELECT c.id, c.status, c.plan_type, c.order_id,
+    `SELECT c.id, c.status, c.plan_type, c.order_id, c.expires_at,
             o.id AS internal_order_id, o.public_no, o.status AS order_status,
             product.display_name AS product_name
        FROM cdks c
@@ -34,6 +34,9 @@ export async function findCdkForVerification(pool, cdkLookup) {
   const row = rows[0];
   return {
     status: String(row.status || ''),
+    // D-286 的有效期此前只在后台显示，兑换链路根本没读它 —— 后台说「已过期」，
+    // 客户照样能兑。取出来交给 verify/intake 判断，让「下线保护」真的拦得住。
+    expiresAt: row.expires_at || null,
     planType: row.plan_type ? String(row.plan_type) : null,
     productName: row.product_name || null,
     order: row.internal_order_id

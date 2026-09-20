@@ -89,7 +89,7 @@ export async function createOrderFromCdk(pool, input) {
     const settings = parseOrderIntakeSettings(settingRows);
 
     const [cdkRows] = await connection.query(
-      `SELECT id, status, plan_type, batch_no FROM cdks
+      `SELECT id, status, plan_type, batch_no, expires_at FROM cdks
        WHERE (hash_version = ? AND code_hash = ?)
           OR (hash_version = ? AND code_hash = ?)
        LIMIT 2 FOR UPDATE`,
@@ -148,6 +148,15 @@ export async function createOrderFromCdk(pool, input) {
     if (cdkRows.length !== 1 || cdkRows[0].status !== 'AVAILABLE') {
       throw new OrderIntakeError('CDK is invalid or unavailable', {
         code: 'CDK_UNAVAILABLE',
+        status: 409
+      });
+    }
+    // D-286 的有效期必须在这里拦，不能只拦在验码那一步 —— 验码是给页面看的，
+    // 真正建单的闸门是这里；只改验码等于留一条绕过去的路（直接打下单接口）。
+    // 单独的错误码：这张码是我们发的、只是过期了，不该和「码不对」共用一个说法。
+    if (cdkRows[0].expires_at && new Date(cdkRows[0].expires_at).getTime() <= Date.now()) {
+      throw new OrderIntakeError('CDK has expired', {
+        code: 'CDK_EXPIRED',
         status: 409
       });
     }

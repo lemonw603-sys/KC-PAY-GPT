@@ -187,3 +187,48 @@ test('intake applies a per-product minimum card balance for Pro CDKs and falls b
   assert.equal(minimumRequiredCardBalanceForPlan(parsed, undefined), '16');
 });
 
+
+/* ===== D-286 有效期必须拦在建单这一步（2026-09-20 补）=====
+   验码只是给页面看的；真正的闸门是这里。只改验码等于留一条绕过去的路
+   （直接打下单接口）。此前两处都没读 expires_at，后台说「已过期」的码照样能兑。 */
+
+function cdkConnectionWithExpiry(expiresAt) {
+  return {
+    async beginTransaction() {}, async commit() {}, async rollback() {}, release() {},
+    async query(sql) {
+      if (sql.includes('FROM app_settings')) return [[
+        { setting_key: 'accept_new_orders', setting_value: 'true' },
+        { setting_key: 'default_card_type_id', setting_value: '1' },
+        { setting_key: 'default_open_card_amount', setting_value: '16' },
+        { setting_key: 'default_minimum_required_card_balance', setting_value: '16' }
+      ]];
+      if (sql.includes('FROM cdks')) return [[
+        { id: 'cdk-1', status: 'AVAILABLE', plan_type: 'plus', batch_no: 'batch-1', expires_at: expiresAt }
+      ]];
+      return [[]];
+    }
+  };
+}
+
+test('D-286: 过期的码在建单这一步被拒，错误码与「码不对」分开', async () => {
+  const connection = cdkConnectionWithExpiry(new Date(Date.now() - 60_000).toISOString());
+  await assert.rejects(
+    () => createOrderFromCdk({ getConnection: async () => connection }, intakeInput()),
+    (error) => error.code === 'CDK_EXPIRED');
+});
+
+test('D-286: expires_at 为 NULL 的码不受影响 —— 生产现存的码全是 NULL', async () => {
+  // 这一条写错就是全站事故：所有客户都建不了单。它必须走过过期检查继续往下。
+  const connection = cdkConnectionWithExpiry(null);
+  await assert.rejects(
+    () => createOrderFromCdk({ getConnection: async () => connection }, intakeInput()),
+    (error) => error.code !== 'CDK_EXPIRED',
+    '无有效期的码绝不能被当成过期');
+});
+
+test('D-286: 有效期未到的码不受影响', async () => {
+  const connection = cdkConnectionWithExpiry(new Date(Date.now() + 86_400_000).toISOString());
+  await assert.rejects(
+    () => createOrderFromCdk({ getConnection: async () => connection }, intakeInput()),
+    (error) => error.code !== 'CDK_EXPIRED');
+});

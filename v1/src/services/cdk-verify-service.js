@@ -21,6 +21,7 @@ export const CDK_VERIFY_STATES = Object.freeze({
   VALID: 'VALID',
   NEEDS_SESSION: 'NEEDS_SESSION',
   BOUND_TO_ORDER: 'BOUND_TO_ORDER',
+  EXPIRED: 'EXPIRED',
   INVALID: 'INVALID'
 });
 
@@ -68,6 +69,12 @@ export function createCdkVerifyService({
     };
 
     if (found.status === 'AVAILABLE') {
+      // 过期是「这张码确实是我们发的，但现在用不了」，和「码不对」是两回事。
+      // 混进 INVALID 会让客户看到「请核对后重新输入」——他核对不出任何问题，
+      // 只会觉得被骗。D-286 的有效期本就是给下线路线留的可控退路。
+      if (found.expiresAt && new Date(found.expiresAt).getTime() <= Date.now()) {
+        return { state: CDK_VERIFY_STATES.EXPIRED, product };
+      }
       return { state: CDK_VERIFY_STATES.VALID, product };
     }
 

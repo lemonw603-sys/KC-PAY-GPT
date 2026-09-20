@@ -94,6 +94,9 @@
     invalid_session_expiry: '账号 Session 的有效期信息无效,请重新获取。',
     session_expired: '账号 Session 已过期,请重新获取。',
     cdk_unavailable: '这张卡密不可用,或者已经绑定了订单。可以到「订单查询」找回原订单。',
+    // D-286 有效期：这张码确实是我们发的，只是过期了 —— 不能说成「核对后重新输入」，
+    // 客户核对不出任何问题，只会觉得被骗。给一条能实际解决问题的路（联系客服）。
+    cdk_expired: '这张卡密已过期,无法继续开通。请联系客服处理,不要重复提交。',
     ordering_paused: '当前暂停接收新订单,请稍后再试。',
     ordering_not_configured: '当前暂时无法创建订单,请稍后再试。',
     order_route_unavailable: '当前暂时无法创建订单,请稍后再试。',
@@ -529,6 +532,10 @@
       const { cdk: result } = await api.verifyCdk({ cdk });
       if (result.state === 'INVALID') {
         return fieldError(el.fieldCdk, '这张卡密无效或已作废,请核对后重新输入。');
+      }
+      if (result.state === 'EXPIRED') {
+        // 与 INVALID 分开：码是真的，过期了，让他找客服而不是反复核对
+        return fieldError(el.fieldCdk, '这张卡密已过期,无法继续开通。请联系客服处理。');
       }
       if (result.state === 'BOUND_TO_ORDER') {
         // 这张码已经有订单了。客户刚点过一次按钮，别让他到了新页面再点一次

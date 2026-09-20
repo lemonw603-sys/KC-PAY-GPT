@@ -145,3 +145,45 @@ test('the plan label falls back to the code own plan when no product row is join
   const result = await serviceWith({ status: 'AVAILABLE', planType: 'pro_20x', productName: null, order: null })({ cdk: CODE });
   assert.deepEqual(result.product, { planType: 'pro_20x', label: 'ChatGPT Pro 20X' });
 });
+
+/* ===== D-286 有效期真正拦得住（2026-09-20 补：此前只在后台显示，兑换链路没读它）===== */
+
+test('过期的码验出 EXPIRED，不是 VALID —— 后台说过期、客户还能兑，是最糟的组合', async () => {
+  const verify = serviceWith({
+    status: 'AVAILABLE', planType: 'plus', productName: 'ChatGPT Plus',
+    expiresAt: new Date(Date.now() - 60_000).toISOString(), order: null
+  });
+  const { state } = await verify({ cdk: CODE });
+  assert.equal(state, 'EXPIRED');
+});
+
+test('过期与「码不对」分开：EXPIRED 不能退化成 INVALID', async () => {
+  const verify = serviceWith({
+    status: 'AVAILABLE', planType: 'plus', productName: 'ChatGPT Plus',
+    expiresAt: new Date(Date.now() - 1).toISOString(), order: null
+  });
+  const { state } = await verify({ cdk: CODE });
+  // 客户买过这张码，说「无效，请核对后重新输入」他核对不出任何问题
+  assert.notEqual(state, 'INVALID');
+  assert.equal(state, 'EXPIRED');
+});
+
+test('没有有效期（expiresAt=null）的码照常可用 —— 生产现存的码全是 NULL', async () => {
+  for (const expiresAt of [null, undefined]) {
+    const verify = serviceWith({
+      status: 'AVAILABLE', planType: 'plus', productName: 'ChatGPT Plus', expiresAt, order: null
+    });
+    const { state } = await verify({ cdk: CODE });
+    // 这一条写错就是全站事故：所有客户都下不了单
+    assert.equal(state, 'VALID', `expiresAt=${expiresAt} 必须仍然可用`);
+  }
+});
+
+test('有效期还没到的码照常可用', async () => {
+  const verify = serviceWith({
+    status: 'AVAILABLE', planType: 'plus', productName: 'ChatGPT Plus',
+    expiresAt: new Date(Date.now() + 86_400_000).toISOString(), order: null
+  });
+  const { state } = await verify({ cdk: CODE });
+  assert.equal(state, 'VALID');
+});
