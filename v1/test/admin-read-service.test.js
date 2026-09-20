@@ -34,8 +34,17 @@ test('admin overview maps aggregate values without exposing raw records', async 
     [{ card_intake_pending: 2, funds_risk_pending: 1,
       card_funding_risk_pending: 2, card_funding_manual_review: 1,
       reconciliation_cases_open: 3, card_sync_backlog: 4, card_sync_review_required: 2 }],
-    [{ provider_account_id: 'pa-hnskj', provider_code: 'legacy-primary', provider_kind: 'hnskj', total: 14, in_stock: 2, plus_assignable: 0, in_use: 0, any_used: 6 },
-      { provider_account_id: 'pa-backup-a', provider_code: 'backup-a', provider_kind: 'manual_excel', total: 16, in_stock: 7, plus_assignable: 2, in_use: 0, any_used: 6 }],
+    [{ provider_account_id: 'pa-hnskj', provider_code: 'legacy-primary', provider_kind: 'hnskj', total: 14, in_stock: 2, plus_assignable: 0, in_use: 0, any_used: 6, plus_target_available: 2 },
+      { provider_account_id: 'pa-backup-a', provider_code: 'backup-a', provider_kind: 'manual_excel', total: 16, in_stock: 7, plus_assignable: 2, in_use: 0, any_used: 6, plus_target_available: 2 }],
+    // 5X：两台水位都是 0（生产实情，Lemon 2026-09-20 确认正常 —— 前期没给它做库存卡）
+    [{ provider_account_id: 'pa-hnskj', plus_assignable: 0, any_used: 0, plus_target_available: 0 },
+      { provider_account_id: 'pa-backup-a', plus_assignable: 0, any_used: 0, plus_target_available: 0 }],
+    // 20X：水位也是 0，但已经有卡在服务（生产 9 单 / 3 张卡）
+    [{ provider_account_id: 'pa-hnskj', plus_assignable: 0, any_used: 1, plus_target_available: 0 },
+      { provider_account_id: 'pa-backup-a', plus_assignable: 0, any_used: 2, plus_target_available: 0 }],
+    [{ provider_account_id: 'pa-hnskj', spent_today: '16.000000', currency: 'USD' },
+      { provider_account_id: 'pa-backup-a', spent_today: '33.250000', currency: 'USD' }],
+    [{ waiting_for_card: 3 }],
     [{ active: 1, writes_on: 0 }]
   ]);
   const result = await createAdminReadService({ pool }).getOverview();
@@ -48,6 +57,18 @@ test('admin overview maps aggregate values without exposing raw records', async 
     supplyAutomationEnabled: false, supplyAutomationMixed: false
   });
   assert.match(pool.queries.find(({ sql }) => /^\s*SELECT COUNT\(\*\) AS active/.test(sql)).sql, /productionWritesEnabled/);
+  // 卡与钱按台按产品（D-283 原规划）：三个产品都要在，水位 0 的要标成「不自动补」
+  const hnskj = result.cardStockByProvider.find((r) => r.providerKind === 'hnskj');
+  assert.deepEqual(hnskj.byProduct.map((p) => p.productCode), ['plus', 'pro_5x', 'pro_20x']);
+  assert.deepEqual(hnskj.byProduct.map((p) => p.label), ['Plus', '5X', '20X']);
+  assert.equal(hnskj.byProduct[0].autoReplenished, true, 'Plus 水位 2 → 会自动补');
+  assert.equal(hnskj.byProduct[2].autoReplenished, false, '20X 水位 0 → 不会自动补，断了要人工开');
+  assert.equal(hnskj.byProduct[2].used, 1, '20X 已经有卡在服务');
+  // 今日花费按台（消费 + 开卡费，不含 card_recharge —— 算了会和消费重复）
+  assert.equal(hnskj.spentToday, '16.000000');
+  assert.equal(result.cardStockByProvider.find((r) => r.providerKind === 'manual_excel').spentToday, '33.250000');
+  // 有多少人在等卡：库存讲「有多少」，这个讲「有多少人在等」
+  assert.equal(result.ordersWaitingForCard, 3);
   assert.equal(result.metrics.successRate, 80);
   assert.equal(result.metrics.todayOrders, 2);
   assert.equal(result.metrics.awaitingConfirmationOrders, 1);
@@ -57,7 +78,21 @@ test('admin overview maps aggregate values without exposing raw records', async 
     needsFunding: 1, lowThreshold: 5, autoReplenishmentEnabled: false,
     balanceFundingEnabled: false, low: false
   });
-  assert.deepEqual(result.cardStockByProvider, [
+  // 整行比对：byProduct / spentToday / 故障态由上面各自的断言管，这里只钉「不多不少哪些字段」
+  // 与标量值，免得整块对象一改就得重抄一遍（但字段集合仍然被钉死）。
+  assert.deepEqual(result.cardStockByProvider.map((r) => Object.keys(r).sort()), [
+    ['anyUsed', 'byProduct', 'inStock', 'inUse', 'label', 'plusAssignable', 'providerAccountId',
+      'providerCode', 'providerKind', 'spentCurrency', 'spentToday', 'supplyFaultReason',
+      'supplyFaultState', 'total'],
+    ['anyUsed', 'byProduct', 'inStock', 'inUse', 'label', 'plusAssignable', 'providerAccountId',
+      'providerCode', 'providerKind', 'spentCurrency', 'spentToday', 'supplyFaultReason',
+      'supplyFaultState', 'total']
+  ]);
+  assert.deepEqual(result.cardStockByProvider.map((r) => ({
+    providerAccountId: r.providerAccountId, providerCode: r.providerCode,
+    providerKind: r.providerKind, label: r.label, total: r.total,
+    inStock: r.inStock, plusAssignable: r.plusAssignable, inUse: r.inUse, anyUsed: r.anyUsed
+  })), [
     // label 由 domain/provider-labels 给，页面不自己拼（2026-09-20 一致性摸排第 5 条）
     { providerAccountId: 'pa-hnskj', providerCode: 'legacy-primary', providerKind: 'hnskj', label: 'HNSKJ', total: 14, inStock: 2, plusAssignable: 0, inUse: 0, anyUsed: 6 },
     { providerAccountId: 'pa-backup-a', providerCode: 'backup-a', providerKind: 'manual_excel', label: 'highvcc', total: 16, inStock: 7, plusAssignable: 2, inUse: 0, anyUsed: 6 }

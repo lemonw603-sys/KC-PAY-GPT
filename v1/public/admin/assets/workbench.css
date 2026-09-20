@@ -48,7 +48,10 @@ body{font-family:var(--wb-fd)}
 .topbar h1{color:var(--wb-t)}
 .topbar .section-kicker{color:var(--wb-a)}
 .sync-time{color:var(--wb-t3)}
-.topbar .gsearch{flex:1;min-width:220px;max-width:520px;display:flex;align-items:center;gap:8px;height:42px;padding:0 12px;background:var(--wb-s);border:1px solid var(--wb-bd);border-radius:12px;box-shadow:var(--wb-shadow)}
+/* 搜索框原本 flex:1 + max-width 520，占掉视线正中近一半宽度。它是「要找某一单时才用」
+   的工具，不是首屏主角：退到右边、收到 300px（Lemon 2026-09-20 定「页头小调整」）。 */
+.topbar .gsearch{flex:0 1 300px;min-width:200px;margin-left:auto;display:flex;align-items:center;gap:8px;height:34px;padding:0 11px;background:var(--wb-s);border:1px solid var(--wb-bd);border-radius:10px;box-shadow:var(--wb-shadow)}
+.topbar .topbar-title h1{font-size:21px;margin:0;letter-spacing:-.01em}
 .topbar .gsearch:focus-within{border-color:var(--wb-a);box-shadow:0 0 0 3px var(--wb-a-soft)}
 .topbar .gsearch .mg{color:var(--wb-t3)}
 .topbar .gsearch input{flex:1;border:0;background:transparent;outline:none;font-size:13.5px;color:var(--wb-t)}
@@ -168,12 +171,34 @@ body{font-family:var(--wb-fd)}
 /* ---------- 二排：卡与钱 | 日对账 ---------- */
 .workbench .wb-mid{display:grid;grid-template-columns:1.35fr .65fr;gap:16px;align-items:start}
 
-.workbench .wb-provrow{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;padding:11px 12px;border:1px solid var(--wb-bd);border-radius:11px;background:var(--wb-s2)}
-.workbench .wb-provrow+.wb-provrow{margin-top:9px}
-.workbench .wb-provrow b{font-size:12.5px;color:var(--wb-t)}
-.workbench .wb-usechips{margin-top:7px;display:flex;flex-wrap:wrap;gap:5px}
-.workbench .wb-total{margin:10px 2px 0;font-size:11.5px;color:var(--wb-t3)}
+/* 卡与钱＝按台按产品（D-283 原规划 / 原型 C）。每台一行：上排卡台名 + 钱包 + 今天花了，
+   下排三个产品各一格「用 N / 剩 N」+ 会不会自动补。
+   此前这里是四个状态标签（可分配/在库/使用中/用过）平铺，维度选错了：
+   「用过 0」这种数运营根本不看，而「20X 还剩几张、断了会不会自动补」才是要的。 */
+.workbench .wb-provrow{padding:11px 13px;border:1px solid var(--wb-bd);border-radius:11px;background:var(--wb-s2)}
+.workbench .wb-provrow+.wb-provrow{margin-top:7px}
+.workbench .wb-provhead{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+.workbench .wb-provhead b{font-size:13px;color:var(--wb-t)}
+.workbench .wb-spent{margin-left:auto;font-size:11.5px;color:var(--wb-t3)}
+.workbench .wb-spent b{font-size:12.5px;color:var(--wb-t2)}
+.workbench .wb-spent.is-zero,.workbench .wb-spent.is-zero b{color:var(--wb-t3);font-weight:400}
+/* 三个产品各一格，每格压成**一行**：六格里通常五格是 0（5X/20X 还没做库存卡），
+   把零值摊成三行大字等于让最没信息的部分占最大的视觉重量 —— 第一版这么做，
+   整块 381px 比改之前的 291px 还高，与「精简」背道而驰。压扁后回到 ~180px。 */
+.workbench .wb-prods{margin-top:8px;display:grid;grid-template-columns:repeat(3,1fr);gap:7px}
+.workbench .wb-prod{display:flex;align-items:baseline;gap:7px;padding:6px 9px;border-radius:8px;
+  background:var(--wb-s);border:1px solid var(--wb-s3)}
+.workbench .wb-prod.is-ok{border-color:var(--wb-bd);background:var(--wb-ok-soft)}
+.workbench .wb-prod b{font-size:11px;font-weight:700;color:var(--wb-t3);letter-spacing:.04em;flex:none}
+/* 有货的才给正常墨色；全 0 的退成弱色 —— 一眼看出哪个产品现在真能接单 */
+.workbench .wb-prod .wb-prod-n{font-family:var(--wb-fm);font-size:12.5px;font-weight:600;color:var(--wb-t3)}
+.workbench .wb-prod.is-ok .wb-prod-n{color:var(--wb-t)}
+.workbench .wb-prod small{font-size:10px;color:var(--wb-t3);margin-left:auto;flex:none;white-space:nowrap}
+/* 「需人工开」要能一眼看出来 —— 它和「自动补」的差别正是这块要回答的问题 */
+.workbench .wb-prod small.is-manual{color:var(--wb-warn);font-weight:600}
+.workbench .wb-total{margin:11px 2px 0;font-size:11.5px;color:var(--wb-t3)}
 .workbench .wb-total b{color:var(--wb-t)}
+.workbench .wb-total b.wb-waiting{color:var(--wb-warn)}
 
 .workbench .wb-recon{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .workbench .wb-recon-empty{grid-column:1 / -1}
@@ -203,16 +228,21 @@ body{font-family:var(--wb-fd)}
 .workbench .wb-btn:disabled{opacity:.55;cursor:default}
 
 /* ---------- 需要我处理队列 ---------- */
-.workbench .wb-q{display:grid;gap:9px}
-.workbench .wb-qi{display:grid;grid-template-columns:auto 1fr auto;gap:13px;align-items:center;padding:13px 14px;border:1px solid var(--wb-bd);border-radius:13px;background:var(--wb-s)}
-.workbench .wb-qi .wb-qic{width:34px;height:34px;border-radius:10px;display:grid;place-items:center;font-size:15px;flex:none}
+/* 待办改「单行紧凑」（Lemon 2026-09-20 定）：每条原本是一张带边框的卡，
+   图标 34px、标题与说明叠成两行，四条占掉 379px —— 全页最高的一块，而待办
+   一多这页就会很长。现在标题与说明并成一行、条目之间只用细线分隔、按钮靠右成列。 */
+.workbench .wb-q{display:grid}
+.workbench .wb-qi{display:grid;grid-template-columns:auto 1fr auto;gap:11px;align-items:center;
+  padding:10px 2px;border-top:1px solid var(--wb-s3)}
+.workbench .wb-qi:first-child{border-top:0}
+.workbench .wb-qi .wb-qic{width:26px;height:26px;border-radius:8px;display:grid;place-items:center;font-size:12px;flex:none}
 .workbench .wb-qi.danger .wb-qic{background:var(--wb-danger-soft);color:var(--wb-danger)}
 .workbench .wb-qi.warn .wb-qic{background:var(--wb-warn-soft);color:var(--wb-warn)}
 .workbench .wb-qi.info .wb-qic{background:var(--wb-info-soft);color:var(--wb-info)}
 .workbench .wb-qi.ok .wb-qic{background:var(--wb-ok-soft);color:var(--wb-ok)}
-.workbench .wb-qi .wb-qt{display:grid;gap:3px;min-width:0}
-.workbench .wb-qi .wb-qt b{font-size:13.5px;font-weight:600;color:var(--wb-t)}
-.workbench .wb-qi .wb-qt .wb-ev{font-size:11.5px;color:var(--wb-t2)}
+.workbench .wb-qi .wb-qt{display:flex;align-items:baseline;gap:9px;min-width:0;flex-wrap:wrap}
+.workbench .wb-qi .wb-qt b{font-size:12.5px;font-weight:600;color:var(--wb-t);flex:none}
+.workbench .wb-qi .wb-qt .wb-ev{font-size:11px;color:var(--wb-t3);min-width:0}
 .workbench .wb-qi .wb-qt .wb-mono{font-size:11px;color:var(--wb-t3)}
 .workbench .wb-qi .wb-qa{display:flex;gap:7px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
 .workbench .wb-qempty{padding:20px;text-align:center;color:var(--wb-t3);font-size:12.5px}

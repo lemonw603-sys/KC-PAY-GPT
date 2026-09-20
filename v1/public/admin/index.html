@@ -8,9 +8,9 @@
   <title>Plus 运营后台</title>
   <link rel="icon" href="/admin/assets/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/admin/assets/admin.css?v=26">
-  <link rel="stylesheet" href="/admin/assets/workbench.css?v=13">
+  <link rel="stylesheet" href="/admin/assets/workbench.css?v=15">
   <link rel="stylesheet" href="/admin/assets/cards.css?v=1">
-  <script src="/admin/assets/admin.js?v=64" defer></script>
+  <script src="/admin/assets/admin.js?v=67" defer></script>
 </head>
 <body>
   <div class="admin-shell">
@@ -36,8 +36,11 @@
 
     <main class="main-area">
       <header class="topbar">
-        <div>
-          <p class="section-kicker" id="view-kicker">运营驾驶舱</p>
+        <!-- 「运营驾驶舱」这个小标题不带信息 —— 侧边栏已经标着「工作台」了。
+             去掉后页头从 58px 降到约 44px，搜索框退到右边不再占据视线正中。
+             #view-kicker 仍保留（隐藏），因为 switchView 会写它，去掉会空指针。 -->
+        <div class="topbar-title">
+          <p class="section-kicker" id="view-kicker" hidden>运营驾驶舱</p>
           <h1 id="view-title">今天的运行情况</h1>
         </div>
         <div class="gsearch">
@@ -68,7 +71,7 @@
         <div class="wb-wall" id="wb-wall"></div>
 
         <div class="wb-mid">
-          <section class="wb-card"><div class="wb-ch"><div><p class="wb-kick">卡与钱</p><h2>今天花了 / 卡用了几张</h2></div><span class="wb-ro">只读</span></div><div class="wb-cb" id="wb-cards"><p class="wb-qempty">正在读取…</p></div></section>
+          <section class="wb-card"><div class="wb-ch"><div><p class="wb-kick">卡与钱</p><h2>卡还够不够</h2></div><span class="wb-ro">只读</span></div><div class="wb-cb" id="wb-cards"><p class="wb-qempty">正在读取…</p></div></section>
           <section class="wb-card"><div class="wb-ch"><div><p class="wb-kick">昨夜日对账</p><h2>对上没有</h2></div><button class="wb-btn link" type="button" data-view-jump="diagnostics">看逐张 →</button></div><div class="wb-cb"><div class="wb-recon" id="wb-recon"></div></div></section>
         </div>
 

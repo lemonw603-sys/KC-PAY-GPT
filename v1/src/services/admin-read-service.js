@@ -567,7 +567,9 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
     }
   }
   async function getOverview() {
-    const [[orderCounts], [statusRows], [cdkRows], [settingsRows], [refundRows], [alertRows], [stockRows], [stockSettingRows], [backlogRows], [providerStockRows]] = await Promise.all([
+    const [[orderCounts], [statusRows], [cdkRows], [settingsRows], [refundRows], [alertRows], [stockRows],
+      [stockSettingRows], [backlogRows], [providerStockRows], [stock5xRows], [stock20xRows],
+      [spendRows], [waitingRows]] = await Promise.all([
       pool.query(`SELECT
         COUNT(*) AS total,
         SUM(${todayCst8WindowSql('o.created_at')}) AS today,
@@ -696,9 +698,36 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
           (SELECT ${REPLENISHMENT_OPENED_COUNT_SQL} FROM card_stock_jobs
             WHERE job_source = 'AUTOMATIC' AND ${todayCst8WindowSql('created_at')}) AS replenishment_used_today,
           (SELECT setting_value FROM app_settings WHERE setting_key = 'card_replenishment_daily_limit' LIMIT 1) AS replenishment_daily_limit`)
-      // 第⑥步工作台「卡与钱」按台：复用 eligibleInventoryCardSql（Plus 资格规则，D-280 不另写一套）。
-      // 生产只读已验证：legacy-primary(hnskj) 可分配 0 / backup-a 可分配 2（highvcc 开卡进 backup-a）。
-      ,pool.query(providerCardStockSql())
+      // 第⑥步工作台「卡与钱」按台**按产品**（D-283 原规划，原型 C 就是这么画的）。
+      // 三个产品各查一次，因为资格规则本身按产品不同：余额门槛按产品取
+      // （plus 16 / pro_20x 150）、大额卡守卫只对 plus 生效（D-296）。
+      // 复用 providerCardStockSql，不另写一套规则。
+      ,pool.query(providerCardStockSql({ productCode: 'plus' }))
+      ,pool.query(providerCardStockSql({ productCode: 'pro_5x' }))
+      ,pool.query(providerCardStockSql({ productCode: 'pro_20x' }))
+      // 今日花费按台（D-294 口径，Lemon 2026-09-20 定并当日修订）：
+      // 给客户充值消费掉的钱 ＋ 开卡手续费。**不含 card_recharge**——往卡里充钱是
+      // 资金转移不是消费，算了会和 consumption 重复（充 $50、再从卡里给客户充 $16，
+      // 两个都算就成了 $66，而当天实际只流出 $50）。
+      ,pool.query(`SELECT pa.id AS provider_account_id,
+          COALESCE(SUM(spend.amount), 0) AS spent_today,
+          MAX(spend.currency) AS currency
+        FROM provider_accounts pa
+        LEFT JOIN (
+          SELECT c.provider_account_id AS pa_id, l.amount, l.currency
+            FROM card_consumption_ledger l JOIN cards c ON c.id = l.card_id
+            WHERE l.status = 'CONSUMED' AND ${todayCst8WindowSql('l.consumed_at')}
+          UNION ALL
+          SELECT c.provider_account_id AS pa_id, t.amount, 'USD' AS currency
+            FROM card_transactions t JOIN cards c ON c.id = t.card_id
+            WHERE LOWER(t.transaction_type) = 'card_issue_fee'
+              AND ${todayCst8WindowSql('t.occurred_at')}
+        ) spend ON spend.pa_id = pa.id
+        GROUP BY pa.id`)
+      // 正在等卡的单：库存讲的是「有多少」，这个数讲「有多少人在等」。
+      // 「剩 0 且 3 单在等」和「剩 0 没人在等」紧急度完全不同（Lemon 同意加）。
+      ,pool.query(`SELECT COUNT(*) AS waiting_for_card FROM orders
+        WHERE status IN ('CREATED','CARD_PURCHASING','CARD_PROVISIONING')`)
     ]);
     const count = (value) => Number(value || 0);
     const total = count(orderCounts[0]?.total);
@@ -796,18 +825,46 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
         balanceFundingEnabled,
         low: !autoReplenishmentEnabled && available <= lowThreshold
       }; })(),
-      cardStockByProvider: (providerStockRows || []).map((row) => ({
-        providerAccountId: row.provider_account_id,
-        providerCode: row.provider_code,
-        providerKind: row.provider_kind,
-        // 显示名只有一份来源（domain/provider-labels），页面不再自己拼
-        label: providerLabelOf(row.provider_kind),
-        total: count(row.total),
-        inStock: count(row.in_stock),
-        plusAssignable: count(row.plus_assignable),
-        inUse: count(row.in_use),
-        anyUsed: count(row.any_used)
-      })),
+      cardStockByProvider: (providerStockRows || []).map((row) => {
+        const byId = (rows) => (rows || []).find((r) => r.provider_account_id === row.provider_account_id);
+        const spend = byId(spendRows);
+        // 按产品的「还剩几张」。水位来自 card_supply_policies（调度器读的就是它）：
+        // 水位 > 0 才会自动补卡，= 0 表示这个产品没做库存卡、断了要人工开
+        // （Lemon 2026-09-20：前期资金少，5X/20X 水位 0 是正常的）。
+        const perProduct = [
+          { code: 'plus', label: 'Plus', row },
+          { code: 'pro_5x', label: '5X', row: byId(stock5xRows) },
+          { code: 'pro_20x', label: '20X', row: byId(stock20xRows) }
+        ].map(({ code, label, row: productRow }) => ({
+          productCode: code,
+          label,
+          assignable: count(productRow?.plus_assignable),
+          used: count(productRow?.any_used),
+          target: productRow?.plus_target_available == null ? null : count(productRow.plus_target_available),
+          // 水位 0（或没配策略）＝调度器不会为它自动补卡，断了只能人工开
+          autoReplenished: count(productRow?.plus_target_available) > 0
+        }));
+        return {
+          providerAccountId: row.provider_account_id,
+          providerCode: row.provider_code,
+          providerKind: row.provider_kind,
+          // 显示名只有一份来源（domain/provider-labels），页面不再自己拼
+          label: providerLabelOf(row.provider_kind),
+          total: count(row.total),
+          inStock: count(row.in_stock),
+          plusAssignable: count(row.plus_assignable),
+          inUse: count(row.in_use),
+          anyUsed: count(row.any_used),
+          // 供给故障：补卡调度器失败时写 FAULT + 原因，贴新 token 清回 OK
+          supplyFaultState: row.supply_fault_state || null,
+          supplyFaultReason: row.supply_fault_reason || null,
+          byProduct: perProduct,
+          spentToday: spend?.spent_today == null ? null : String(spend.spent_today),
+          spentCurrency: spend?.currency || 'USD'
+        };
+      }),
+      // 有多少人在等卡 —— 库存讲「有多少」，这个讲「有多少人在等」
+      ordersWaitingForCard: count(waitingRows?.[0]?.waiting_for_card),
       providerHealth: {
         provider: 'hnskj',
         routeLabel: stockRows[0]?.provider_route_code || '当前 Plus 卡台路线未配置',

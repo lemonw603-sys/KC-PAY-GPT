@@ -114,12 +114,20 @@ test('admin refresh feedback and inset dropdown arrows remain visible', () => {
   const script = fs.readFileSync(path.join(directory, 'admin', 'assets', 'admin.js'), 'utf8');
   const styles = fs.readFileSync(path.join(directory, 'admin', 'assets', 'admin.css'), 'utf8');
   assert.match(html, /admin\.css\?v=26/);
-  assert.match(html, /admin\.js\?v=64/);
+  assert.match(html, /admin\.js\?v=67/);
   assert.match(script, /button\.textContent = '刷新中…'/);
   assert.match(script, /showNotice\('刷新完成。', 'success'\)/);
   assert.match(script, /showNotice\('刷新失败，请稍后重试。'\)/);
-  // 第⑥步工作台重做（D-283）：overview 段改营业条 wb-decisions + 卡与钱「Plus 可分配」。
-  assert.match(script, /Plus 可分配/);
+  // 第⑥步工作台重做（D-283）：overview 段改营业条 wb-decisions + 卡与钱「按台按产品」。
+  // 原先断言的是「Plus 可分配」那个 chip 文案，2026-09-20 按 D-283 原规划改成
+  // 每台一行、行内按产品「用 N / 剩 N」+ 会不会自动补 —— 信息还在，表达变了。
+  assert.match(script, /用 \$\{x\.used\} \/ 剩 \$\{x\.assignable\}/);
+  assert.match(script, /byProduct/);
+  // 「剩 N」旁边必须标会不会自动补：水位 0 的产品断了只能人工开，
+  // 「20X 剩 0」和「Plus 剩 0」严重程度完全不同（Lemon 2026-09-20）
+  assert.match(script, /autoReplenished \? '自动补' : '需人工开'/);
+  // 有多少人在等卡 —— 库存讲「有多少」，这个讲「有多少人在等」
+  assert.match(script, /ordersWaitingForCard/);
   assert.match(script, /wb-decisions/);
   assert.match(html, /id="wb-decisions"/);
   assert.match(html, /需要我处理/);

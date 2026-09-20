@@ -348,7 +348,19 @@ function renderWbWall(overview) {
     { lb: '今日单数', v: m.todayOrders ?? 0, sub: `处理中 ${m.processingOrders ?? 0}`, filter: 'TODAY' },
     { lb: '成功率', v: m.successRate == null ? '—' : `${m.successRate}%`, sub: `完成 ${m.completedOrders ?? 0} 单` },
     pending('自动完成率'),
-    pending('今日花费'),
+    (() => {
+      // D-294（Lemon 当日修订口径）：给客户充值消费掉的钱 ＋ 开卡手续费。
+      // 不含 card_recharge —— 往卡里充钱是资金转移不是消费，算了会和消费重复。
+      const rigs = overview.cardStockByProvider || [];
+      const known = rigs.filter((r) => r.spentToday != null);
+      if (!known.length) return pending('今日花费');
+      const total = known.reduce((sum, r) => sum + Number(r.spentToday || 0), 0);
+      return {
+        lb: '今日花费',
+        v: formatMoney(total),
+        sub: known.map((r) => `${r.label} ${formatMoney(r.spentToday)}`).join(' · ')
+      };
+    })(),
     pending('异常支出')
   ];
   box.innerHTML = cells.map((c) => `<button type="button" class="wb-kpi${c.pending ? ' is-pending' : ''}"${c.pending ? ' disabled' : ''} ${c.filter ? `data-order-filter="${c.filter}"` : c.view ? `data-view-jump="${c.view}"` : ''}><span class="wb-lb">${escapeHtml(c.lb)}</span><span class="wb-v">${escapeHtml(String(c.v))}</span><span class="wb-sub">${escapeHtml(c.sub)}</span></button>`).join('');
@@ -367,10 +379,43 @@ function renderWbCards(overview) {
     : '钱包见卡片页';
   if (!byProvider.length) { box.innerHTML = '<p class="wb-qempty">暂无卡台数据</p>'; return; }
   const totalAssignable = byProvider.reduce((sum, p) => sum + (p.plusAssignable || 0), 0);
-  box.innerHTML = byProvider.map((p) => `
-    <div class="wb-provrow"><div><b>${escapeHtml(nameOf(p))}</b> ${wbChip('ok', walletOf(p))}
-      <div class="wb-usechips">${wbChip(p.plusAssignable > 0 ? 'ok' : 'mute', `Plus 可分配 ${p.plusAssignable}`)}${wbChip('mute', `在库 ${p.inStock}`)}${wbChip('mute', `使用中 ${p.inUse}`)}${wbChip('mute', `用过 ${p.anyUsed}`)}</div></div></div>`).join('')
-    + `<p class="wb-total">两台合计现在可分配 <b class="wb-mono">${totalAssignable}</b> 张（Plus 资格规则）</p>`;
+  const waiting = Number(overview.ordersWaitingForCard || 0);
+
+  // D-283 原规划就是「按台按产品」，原型 C 画的是每台一行、行内按产品「用 N / 剩 N」。
+  // 「剩 N」旁边必须标会不会自动补（Lemon 2026-09-20）：水位来自 card_supply_policies，
+  // 调度器读的就是它 —— 水位 0 表示这个产品没做库存卡，断了只能人工开，
+  // 而「20X 剩 0」和「Plus 剩 0」的严重程度完全不同，只显示「剩 0」看不出这个区别。
+  const prodChip = (x) => {
+    const tone = x.assignable > 0 ? 'ok' : x.used > 0 ? 'warn' : 'mute';
+    const how = x.autoReplenished ? '自动补' : '需人工开';
+    return `<span class="wb-prod ${x.assignable > 0 ? 'is-ok' : ''}">`
+      + `<b>${escapeHtml(x.label)}</b>`
+      + `<span class="wb-prod-n">用 ${x.used} / 剩 ${x.assignable}</span>`
+      + `<small class="${x.autoReplenished ? '' : 'is-manual'}">${how}</small></span>`;
+  };
+  box.innerHTML = byProvider.map((p) => {
+    const spentNum = p.spentToday == null ? null : Number(p.spentToday);
+    const spent = spentNum == null ? null
+      : spentNum === 0 ? null
+        : `${formatMoney(p.spentToday)} ${escapeHtml(p.spentCurrency || 'USD')}`;
+    const fault = p.supplyFaultState && p.supplyFaultState !== 'OK'
+      ? wbChip('danger', `供卡故障${p.supplyFaultReason ? '：' + escapeHtml(p.supplyFaultReason) : ''}`)
+      : '';
+    return `<div class="wb-provrow">
+      <div class="wb-provhead"><b>${escapeHtml(nameOf(p))}</b>${wbChip('ok', walletOf(p))}`
+      + (spentNum == null ? ''
+        : spentNum === 0
+          ? '<span class="wb-spent is-zero">今天没花钱</span>'
+          : `<span class="wb-spent">今天花了 <b class="wb-mono">${spent}</b></span>`)
+      + `${fault}</div>
+      <div class="wb-prods">${(p.byProduct || []).map(prodChip).join('')}</div>
+    </div>`;
+  }).join('')
+    + `<p class="wb-total">合计现在可分配 <b class="wb-mono">${totalAssignable}</b> 张`
+    + (waiting > 0
+      ? ` · <b class="wb-waiting">${waiting} 单正在等卡</b>`
+      : ' · 没有单在等卡')
+    + '</p>';
 }
 
 function renderWbRecon(daily) {
