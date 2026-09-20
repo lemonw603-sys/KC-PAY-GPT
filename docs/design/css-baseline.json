@@ -1,0 +1,21 @@
+{
+  "note": "硬编码棘轮的基线，只许降不许升。规范见 docs/design/DESIGN_SYSTEM.md。降下来之后用 node scripts/css-drift-check.mjs --update 钉到新低点。",
+  "updatedAt": "2026-09-20",
+  "files": {
+    "admin.css": {
+      "literalColors": 157,
+      "offScaleHeights": 17,
+      "duplicatedSelectors": 3
+    },
+    "workbench.css": {
+      "literalColors": 5,
+      "offScaleHeights": 6,
+      "duplicatedSelectors": 0
+    },
+    "cards.css": {
+      "literalColors": 65,
+      "offScaleHeights": 0,
+      "duplicatedSelectors": 0
+    }
+  }
+}

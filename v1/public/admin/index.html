@@ -8,9 +8,9 @@
   <title>Plus 运营后台</title>
   <link rel="icon" href="/admin/assets/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/admin/assets/admin.css?v=26">
-  <link rel="stylesheet" href="/admin/assets/workbench.css?v=12">
+  <link rel="stylesheet" href="/admin/assets/workbench.css?v=13">
   <link rel="stylesheet" href="/admin/assets/cards.css?v=1">
-  <script src="/admin/assets/admin.js?v=61" defer></script>
+  <script src="/admin/assets/admin.js?v=62" defer></script>
 </head>
 <body>
   <div class="admin-shell">
@@ -49,17 +49,19 @@
       </header>
 
       <section id="overview-view" class="view workbench" aria-labelledby="view-title">
+        <!-- 营业条＝一条工具栏（原型 step6-opsbar-v5.html 乙-3，Lemon 2026-09-20 挑定）。
+             此前是「三等分段 + 每段小标题」，两个毛病同源：三段内容量天然不等（1 行 /
+             2 行 / 1 行）却硬切等宽 —— 居中换来标题错位（y 36/13/31），顶对齐换来底部
+             空洞（52/12/42）。乙-3 不分段、不给标题，四组按内容宽、间距均分，两个毛病
+             一起消失。#wb-routes 用 display:contents，好让它渲染的两组直接做工具栏的项。 -->
         <div class="wb-ops">
-          <div class="wb-seg"><p class="wb-seg-t">营业</p>
-            <div id="wb-decisions"><p class="wb-qempty">正在读取营业状态…</p></div></div>
-          <div class="wb-seg"><p class="wb-seg-t">路线与卡台</p>
-            <div class="wb-route" id="wb-routes"></div></div>
-          <div class="wb-seg"><p class="wb-seg-t">发码</p>
-            <form class="wb-cdk" id="wb-cdk-form">
-              <select class="wb-field" id="wb-cdk-plan" aria-label="产品"><option value="plus">Plus</option><option value="pro_5x">Pro 5X</option><option value="pro_20x">Pro 20X</option></select>
-              <input class="wb-field wb-num" id="wb-cdk-count" type="number" min="1" max="1000" value="1" aria-label="数量">
-              <button class="wb-btn pri" type="submit">生成并复制</button>
-            </form></div>
+          <div class="wb-grp" id="wb-decisions"><p class="wb-qempty">正在读取营业状态…</p></div>
+          <div id="wb-routes"></div>
+          <form class="wb-grp wb-cdk" id="wb-cdk-form">
+            <select class="wb-field" id="wb-cdk-plan" aria-label="产品"><option value="plus">Plus</option><option value="pro_5x">Pro 5X</option><option value="pro_20x">Pro 20X</option></select>
+            <input class="wb-field wb-num" id="wb-cdk-count" type="number" min="1" max="1000" value="1" aria-label="数量">
+            <button class="wb-btn pri" type="submit">生成并复制</button>
+          </form>
         </div>
 
         <p class="wb-seclabel">今天生意怎么样</p>

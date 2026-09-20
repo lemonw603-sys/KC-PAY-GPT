@@ -100,7 +100,7 @@ fi
 #    需要一个跑着的后台（演示/隔离都行），所以靠环境变量开启，不强制每轮都有环境。
 if ls docs/design/parity/*.json >/dev/null 2>&1; then
   touched_ui=$(git show --name-only --format= HEAD 2>/dev/null | grep -c '^v1/public/admin/')
-  if [ -n "${PARITY_ADMIN_BASE:-}" ] && [ -n "${PARITY_ADMIN_PASSWORD:-}" ]; then
+  if [ -n "${PARITY_ADMIN_BASE:-}" ] && [ -n "${PARITY_ADMIN_PASSWORD:-}" ] && [ -n "${PARITY_PROTO_BASE:-}" ]; then
     vp=$(node scripts/visual-parity.mjs 2>&1); vpcode=$?
     if [ "$vpcode" = "0" ]; then
       ok "页面与已确认原型一致"
@@ -111,7 +111,21 @@ if ls docs/design/parity/*.json >/dev/null 2>&1; then
       note "视觉比对没跑成（不等于「一致」）" "$(printf '%s' "$vp" | tail -3 | sed 's/^/\n         /')"
     fi
   elif [ "$touched_ui" != "0" ]; then
-    note "这次动了后台页面，但没跑视觉比对" "起一个后台后：PARITY_ADMIN_BASE=http://localhost:PORT PARITY_ADMIN_PASSWORD=... node scripts/visual-parity.mjs"
+    note "这次动了后台页面，但没跑视觉比对" "起后台 + 原型服务（node scripts/proto-server.mjs）后：PARITY_ADMIN_BASE=http://localhost:PORT PARITY_ADMIN_PASSWORD=... PARITY_PROTO_BASE=http://localhost:8899 node scripts/visual-parity.mjs"
+  fi
+fi
+
+# 10) CSS 往回漂：规范（docs/design/DESIGN_SYSTEM.md）不会自己执行。2026-09-20 立棘轮那天，
+#     三份 CSS 有 227 处字面色、六种控件高度、.wb-cdk 在同一文件里定义两次互相打架。
+#     一次性大重构风险大于收益（旧页在生产跑着），所以改成「只许降不许升」，跟着每次重做逐块吃掉。
+if [ -f docs/design/css-baseline.json ]; then
+  drift=$(node scripts/css-drift-check.mjs 2>&1); dcode=$?
+  if [ "$dcode" = "0" ]; then
+    ok "CSS 没有往回漂"
+  elif [ "$dcode" = "1" ]; then
+    bad "CSS 没有往回漂" "$(printf '%s' "$drift" | sed 's/^/\n         /')"
+  else
+    note "CSS 棘轮没跑成" "$(printf '%s' "$drift" | tail -2 | sed 's/^/\n         /')"
   fi
 fi
 

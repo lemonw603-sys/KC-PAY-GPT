@@ -2743,3 +2743,23 @@ step6（`8cd6d7e`）发布后 Lemon 打开生产，指三条做偏：① sidebar
 **为验限流修复重启过一次演示服务**（8803 / step6_demo 隔离库，本轮自建的验收环境，非生产、非 browser worker）：重启前断言过 `DATABASE_URL` 含 `step6_demo` 且 `PORT=8803` 才动手。
 
 **全量测试 972 / 904 pass / 1 fail**——唯一那条 fail 复核确认仍是既有的 F-65（`admin overview does not describe disabled automatic card opening as enabled`，供给开关无渲染入口），不是本轮引入。
+
+---
+
+## 2026-09-20（UTC+8 深夜）营业条定稿乙-3；我建的比对机制被自己的变异测试拆穿；CSS 收敛立棘轮
+
+**营业条**：丁版实现后 Lemon 说「仍然不协调」。实测三处（标题 y 36/13/31 不齐、右侧留白 122/144/68、分段器按钮 24 vs 其余 28），前两条同根——三段内容量 1/2/1 行却硬切等宽。出七版挑，Lemon 选乙、指出「除了生成，其他的有点挤在左边」（实测间隙 0/0/156），再选乙-3（间距均分、无竖线）。落地后条高 117→56px，间隙 48/49/49。
+
+**最要紧的一条：我的比对机制是自欺的，被变异测试当场拆穿。** 为了原型不失真，我让原型 link 真实 CSS（反代）。结果**原型跟着实现一起变**——改 `justify-content` 回 `flex-start`（正是 Lemon 说的挤左边），脚本仍报「一致」。改 padding 也一样。修法是原型改 link `_frozen/opsbar-v5/` 定稿快照，只在重新定稿时更新。修完四个变异全抓到。**没做变异测试的话，我会带着一个永远通过的脚本继续走，还以为有保障。**
+
+顺带暴露两处**原型自身失真**（都是实现对、原型错）：缺 admin.css 导致 `box-sizing` 没生效、数量框多 2px 边框；原型用自己的 `.grp` 导致高特异性规则落空、按钮回落 34px。结论：**定稿那版原型要一个原型专属 class 都不带，且按 index.html 顺序加载全部三份 CSS。**
+
+**CSS 收敛**：`docs/design/DESIGN_SYSTEM.md`（令牌 + 三档尺寸 28/34/44 + 组件表 + 文案规矩）。起点实测 admin 157 / workbench 5 / cards 65 处字面色，六种控件高度。不做一次性大重构，立棘轮 `scripts/css-drift-check.mjs`（只许降不许升，已接进 wrapup-check 第 10 项）。棘轮自测时修掉一处假阳性：`@media` 里的响应式覆盖被报成重复定义。
+
+本轮一并清掉的真实债：`.wb-cdk` 同文件定义两次（后者把前者盖掉）、数量框宽度两处打架、`.wb-route` 三条死样式。
+
+**新工具**：`scripts/proto-server.mjs`（原型与后台同源，反代 assets）、`scripts/proto-bundle.mjs`（打自包含单文件 —— Lemon 换设备后 localhost 打不开，原型发成了 Artifact）。
+
+全量 972 / 904 pass / 1 fail（既有 F-65）。测试里 `admin.js?v=61` 的版本断言跟着 bump 到 v=62 —— 那条断言本就是防止忘记 bump 的闸门。
+
+**待办**：`design` 插件卡片已渲染、Lemon 说「现在安装」，但复查未生效，待重试。

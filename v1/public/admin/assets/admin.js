@@ -521,9 +521,11 @@ function renderDecisions(overview, cardSources, takeoverEstimate = null) {
     const methodBtn = (target, text) => (method === target
       ? `<button type="button" class="is-on" disabled>${escapeHtml(text)}</button>`
       : `<button type="button" class="default-recharge-method" data-method="${target}">${escapeHtml(text)}</button>`);
+    // 营业条是一条工具栏（乙-3）：路线与卡台是**两组**独立的项，各自参与间距均分。
+    // #wb-routes 本身 display:contents，所以这两个 .wb-grp 直接成为工具栏的项。
     routeBox.innerHTML =
-      `<div class="wb-seg2">${methodBtn('API', 'API 充值')}${methodBtn('BROWSER', '浏览器自动化')}</div>`
-      + `<div class="wb-ln"><span class="wb-k">浏览器</span>`
+      `<div class="wb-grp"><div class="wb-seg2">${methodBtn('API', 'API 充值')}${methodBtn('BROWSER', '浏览器自动化')}</div></div>`
+      + `<div class="wb-grp"><span class="wb-k">浏览器</span>`
       + `<span class="wb-pair">`
       + `<select class="wb-field" id="decision-card-source" aria-label="Browser 卡台">${sourceOptions || '<option value="">没有可用卡台</option>'}</select>`
       + `<button type="button" class="wb-btn sm out" id="decision-card-source-apply" ${sources.length ? '' : 'disabled'}>切换</button>`

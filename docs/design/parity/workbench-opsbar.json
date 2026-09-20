@@ -1,58 +1,102 @@
 {
-  "name": "工作台营业条 ↔ 原型丁版（三等分段）",
-  "viewport": [1440, 900],
+  "name": "工作台营业条 ↔ 原型乙-3（一条工具栏）",
+  "viewport": [
+    1440,
+    900
+  ],
   "tolerancePx": 1,
-  "note": "原型丁版是 Lemon 2026-09-20 从四版里挑定的。段宽由各自容器决定，两边容器宽不同，所以不比 width，只比高度、内边距与纵向对齐。",
+  "note": "原型乙-3 是 Lemon 2026-09-20 从七版里挑定的。原型那一节不带任何原型专属 class —— 用的全是 .wb-ops / .wb-grp / .wb-k，和实现一字不差，否则像 .wb-ops .wb-grp .wb-btn{height:28px} 这种高特异性规则会在原型侧落空（实测按钮因此回落到 34px，失真的是原型）。原型也要按 index.html 的顺序加载 admin.css / workbench.css / cards.css 三份，少一份就失真（box-sizing 写在 admin.css，缺了数量框会多出 2px 边框）。不比 width/left/right：下拉里的选项文字两边本就不同（实现从库里读真实卡台名），宽度差属正常。「四组均匀铺开」改用 equalGaps 自洽断言来守 —— 它不受内容宽度影响。",
   "prototype": {
-    "file": "docs/design/prototypes/step6-opsbar-v4.html",
-    "root": ".D"
+    "url": "${PARITY_PROTO_BASE}/step6-opsbar-v5.html",
+    "root": "#pick"
   },
   "impl": {
     "url": "${PARITY_ADMIN_BASE}/admin/",
-    "root": ".wb-ops",
-    "login": { "passwordEnv": "PARITY_ADMIN_PASSWORD" }
+    "root": "#overview-view",
+    "login": {
+      "passwordEnv": "PARITY_ADMIN_PASSWORD"
+    }
   },
   "probes": [
     {
-      "name": "三段",
-      "proto": ".seg",
-      "impl": ".wb-seg",
-      "all": true,
-      "metrics": ["height", "contentTop", "contentBottom", "padding"]
+      "name": "整条",
+      "proto": ".wb-ops",
+      "impl": ".wb-ops",
+      "metrics": [
+        "height",
+        "padding",
+        "borderRadius",
+        "alignItems",
+        "justifyContent",
+        "flexWrap"
+      ]
     },
     {
-      "name": "段小标题",
-      "proto": ".lab",
-      "impl": ".wb-seg-t",
+      "name": "四组",
+      "proto": ".wb-grp",
+      "impl": ".wb-grp",
       "all": true,
-      "metrics": ["height", "fontSize", "fontWeight", "letterSpacing", "marginBottom"]
+      "equalGaps": true,
+      "metrics": [
+        "height",
+        "padding",
+        "gap",
+        "alignItems"
+      ]
     },
     {
       "name": "路线分段器",
-      "proto": ".seg2",
-      "impl": ".wb-seg2",
-      "metrics": ["height", "borderRadius"]
+      "proto": ".wb-ops .wb-seg2",
+      "impl": ".wb-ops .wb-seg2",
+      "metrics": [
+        "height",
+        "borderRadius",
+        "padding"
+      ]
     },
     {
       "name": "分段器按钮",
-      "proto": ".seg2 button",
-      "impl": ".wb-seg2 button",
+      "proto": ".wb-ops .wb-seg2 button",
+      "impl": ".wb-ops .wb-seg2 button",
       "all": true,
-      "metrics": ["height", "fontSize", "fontWeight"]
+      "metrics": [
+        "height",
+        "fontSize",
+        "fontWeight"
+      ]
     },
     {
       "name": "输入控件",
-      "proto": ".f",
-      "impl": ".wb-field",
+      "proto": ".wb-ops .wb-field",
+      "impl": ".wb-ops .wb-field",
       "all": true,
-      "metrics": ["height", "fontSize"]
+      "metrics": [
+        "height",
+        "fontSize",
+        "borderRadius"
+      ]
     },
     {
       "name": "按钮",
-      "proto": ".b",
-      "impl": ".wb-btn",
+      "proto": ".wb-ops .wb-btn",
+      "impl": ".wb-ops .wb-btn",
       "all": true,
-      "metrics": ["height", "fontSize", "fontWeight"]
+      "metrics": [
+        "height",
+        "fontSize",
+        "fontWeight",
+        "borderRadius"
+      ]
+    },
+    {
+      "name": "开关",
+      "proto": ".wb-ops .wb-switch",
+      "impl": ".wb-ops .wb-switch",
+      "all": true,
+      "metrics": [
+        "height",
+        "gap"
+      ]
     }
   ]
 }

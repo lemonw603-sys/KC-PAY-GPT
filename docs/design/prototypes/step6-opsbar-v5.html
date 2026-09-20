@@ -1,0 +1,338 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>营业条 · 第五轮（解决「不协调」）</title>
+<!-- 这一版原型直接引用**真实的 workbench.css**，控件也用**真实 class**（wb-switch /
+     wb-field / wb-btn / wb-seg2 …）。上一轮走样正是因为原型自己另写了一套样式：
+     原型里 28px 的按钮，搬进实现变成 34px，我还得回头一个个对。共用同一份 CSS 之后，
+     选中哪版，差的只有布局那几行，不会再有「像素在搬运途中变了」这回事。
+     同源由 scripts/proto-server.mjs 保证（它把 /admin/assets 与 /assets 反代到真实后台），
+     所以下面直接写绝对路径，和 index.html 的写法完全一致；字体也因此不会被 CORS 挡掉。 -->
+<!-- 三份都要加载，顺序和 index.html 一致 —— 少一份原型就失真：只 link workbench.css
+     时，数量框实测 30px 而实现是 28px，差的 2px 是边框，因为 `* {box-sizing:border-box}`
+     写在 admin.css 里。（三套 CSS 并存正是待收敛的事，见 docs/design/DESIGN_SYSTEM.md）
+
+     指向 _frozen/ 的**快照**，不是实时的 /admin/assets/ —— 这条至关重要：
+     原先反代实时样式，改实现时原型跟着一起变，参照物跟着被测物走，比对永远通过。
+     变异测试当场拆穿：把 justify-content 改回 flex-start（就是 Lemon 说的「挤在左边」），
+     脚本仍报「与原型一致」。见 _frozen/opsbar-v5/README.md。 -->
+<link rel="stylesheet" href="_frozen/opsbar-v5/admin.css">
+<link rel="stylesheet" href="_frozen/opsbar-v5/workbench.css">
+<link rel="stylesheet" href="_frozen/opsbar-v5/cards.css">
+<style>
+  /* 只放原型页自己的脚手架，以及四个候选各自的布局差异 */
+  body{margin:0;background:var(--wb-bg);font-family:var(--wb-fd);color:var(--wb-t)}
+  .page{max-width:1126px;margin:0 auto;padding:20px 0 80px}   /* 1126 = 后台内容区实测宽 */
+  h1{font-size:18px;margin:0 0 2px}
+  .lead{color:var(--wb-t2);font-size:12.5px;margin:0 0 6px;line-height:1.7}
+  .v{margin:26px 0 0}
+  .vh{display:flex;align-items:baseline;gap:10px;margin:0 0 9px}
+  .vh b{font-size:14px}
+  .vh span{color:var(--wb-t2);font-size:12px}
+  .vh .tag{font-family:var(--wb-fm);font-size:11px;color:var(--wb-a);background:var(--wb-a-soft);
+    padding:2px 7px;border-radius:5px;font-weight:600}
+  .why{color:var(--wb-t3);font-size:11.5px;margin:7px 2px 0;line-height:1.7}
+
+  /* ===== 甲：两段不等宽（怎么跑 62% / 发码 38%）===== */
+  .A .wb-seg:nth-child(1){flex:0 0 62%}
+  .A .wb-seg:nth-child(2){flex:1}
+  .A .wb-row{display:flex;align-items:center;gap:22px;flex-wrap:wrap}
+  .A .wb-vr{width:1px;align-self:stretch;background:var(--wb-s3)}
+
+  /* ===== 乙：一条工具栏，不分段、不给标题 ===== */
+  .B.wb-ops{align-items:center;padding:0 4px;flex-wrap:wrap}
+  .B .grp{display:flex;align-items:center;gap:10px;padding:13px 14px}
+  .B .grp + .grp{border-left:1px solid var(--wb-s3)}
+  .B .grp:last-child{margin-left:auto}
+  .B .k{font-size:11.5px;color:var(--wb-t3);white-space:nowrap}
+
+  /* ===== 乙的三种分布（Lemon：「除了生成，其他的有点挤在左边」）=====
+     实测原因：前三组紧贴（间隙 0、0），第三组到发码之间空 156px —— 发码被
+     margin-left:auto 顶到最右，其余全堆在左边 673px 里。 */
+  .B1.wb-ops, .B3.wb-ops{justify-content:space-between}
+  .B1 .grp:last-child, .B2 .grp:last-child, .B3 .grp:last-child{margin-left:0}
+  .B2 .grp{flex:1}
+  .B2 .grp:last-child{justify-content:flex-end}
+  .B3 .grp{border-left:0}
+
+  /* ===== 丙：三段等宽，标题齐平顶 + 内容在剩余空间居中（最小改动）===== */
+  .C .wb-seg{justify-content:flex-start}
+  .C .wb-seg > :not(.wb-seg-t){margin-top:auto;margin-bottom:auto}
+
+  /* ===== 丁：左右两张卡，右卡是发码 ===== */
+  .D{display:grid;grid-template-columns:1fr 340px;gap:14px}
+  .D .card{background:var(--wb-s);border:1px solid var(--wb-bd);border-radius:12px;
+    box-shadow:var(--wb-shadow);padding:13px 17px}
+  .D .card .wb-seg-t{margin-bottom:11px}
+  .D .ln{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:7px 0}
+  .D .ln + .ln{border-top:1px solid var(--wb-s3)}
+  .D .ln > .lab{font-size:12.5px;color:var(--wb-t2);white-space:nowrap}
+  .D .stack{display:grid;gap:9px}
+</style>
+</head>
+<body>
+<div class="workbench page">
+
+  <h1>营业条 · 第五轮</h1>
+  <p class="lead">
+    要解决的是 Lemon 说的「仍然不协调」。实测三处客观证据（同一 1440 视口）：<br>
+    ① 三个小标题不在同一水平线 <b>y=36 / 13 / 31</b>；
+    ② 三段等宽 375，内容宽却是 216/195/272，<b>右侧留白 122 / 144 / 68</b>；
+    ③ 分段器里的按钮 <b>24px</b>，旁边控件全是 <b>28px</b>。<br>
+    ①② 同一个根因：<b>三段内容量天然不等（1 行 / 2 行 / 1 行），却硬切成等宽三份</b>。
+    居中换来标题错位，顶对齐换来底部空洞 —— 前后两版各踩一个。③ 四版里一律改成 28px 对齐。
+  </p>
+
+  <!-- ============ 甲 ============ -->
+  <section class="v">
+    <div class="vh"><b>甲 · 两段不等宽</b><span class="tag">62% / 38%</span>
+      <span>内容多的给多宽。两个标题同在顶部一条线上</span></div>
+    <div class="wb-ops A">
+      <div class="wb-seg">
+        <p class="wb-seg-t">怎么跑</p>
+        <div class="wb-row">
+          <div id="d1" style="display:flex;align-items:center;gap:15px">
+            <button type="button" class="wb-switch is-on"><span class="wb-tg"></span><b>接单</b></button>
+            <button type="button" class="wb-switch is-on"><span class="wb-tg"></span><b>派单</b></button>
+            <button type="button" class="wb-switch is-on"><span class="wb-tg"></span><b>付款</b></button>
+          </div>
+          <span class="wb-vr"></span>
+          <div class="wb-seg2">
+            <button type="button" class="is-on" disabled>API 充值</button>
+            <button type="button">浏览器自动化</button>
+          </div>
+          <span class="wb-pair">
+            <select class="wb-field"><option>HNSKJ</option><option>highvcc</option></select>
+            <button type="button" class="wb-btn">切换</button>
+          </span>
+        </div>
+      </div>
+      <div class="wb-seg">
+        <p class="wb-seg-t">发码</p>
+        <form class="wb-cdk">
+          <select class="wb-field"><option>Plus</option><option>Pro 5X</option><option>Pro 20X</option></select>
+          <input class="wb-field wb-num" type="number" value="1">
+          <button class="wb-btn pri" type="button">生成并复制</button>
+        </form>
+      </div>
+    </div>
+    <p class="why">内容量不等就别等宽 —— 留白差从 122/144/68 收敛到两段各自刚好。两个标题天然同高。
+      代价：「路线与卡台」不再有自己的标题，跟开关挤在「怎么跑」里靠竖线分组。</p>
+  </section>
+
+  <!-- ============ 乙 ============ -->
+  <section class="v">
+    <div class="vh"><b>乙 · 一条工具栏</b><span class="tag">无标题</span>
+      <span>不分段、不给小标题；竖线分组，发码推到最右</span></div>
+    <div class="wb-ops B">
+      <div class="grp">
+        <button type="button" class="wb-switch is-on"><span class="wb-tg"></span><b>接单</b></button>
+        <button type="button" class="wb-switch is-on"><span class="wb-tg"></span><b>派单</b></button>
+        <button type="button" class="wb-switch is-on"><span class="wb-tg"></span><b>付款</b></button>
+      </div>
+      <div class="grp">
+        <div class="wb-seg2">
+          <button type="button" class="is-on" disabled>API 充值</button>
+          <button type="button">浏览器自动化</button>
+        </div>
+      </div>
+      <div class="grp">
+        <span class="k">浏览器</span>
+        <span class="wb-pair">
+          <select class="wb-field"><option>HNSKJ</option><option>highvcc</option></select>
+          <button type="button" class="wb-btn">切换</button>
+        </span>
+      </div>
+      <div class="grp">
+        <select class="wb-field"><option>Plus</option><option>Pro 5X</option><option>Pro 20X</option></select>
+        <input class="wb-field wb-num" type="number" value="1">
+        <button class="wb-btn pri" type="button">生成并复制</button>
+      </div>
+    </div>
+    <p class="why">没有标题就没有标题错位，也没有「段内留白」这回事 —— 三处问题一次消掉两处。
+      整条只有一行高，页面重心下移给数字墙。代价：少了「营业 / 路线 / 发码」的语义分组，全靠竖线。<b>Lemon 指出的问题：除发码外全挤在左边</b> —— 下面三版是三种分布改法。</p>
+  </section>
+
+  <!-- ============ 乙-1 · 间距均分 ============ -->
+  <section class="v">
+    <div class="vh"><b>乙-1 · 间距均分</b><span class="tag">space-between</span><span>四组按各自内容宽，三个间隙一样大</span></div>
+    <div class="wb-ops B B1">
+      <div class="grp">
+        <button type="button" class="wb-switch is-on"><span class="wb-tg"></span><b>接单</b></button>
+        <button type="button" class="wb-switch is-on"><span class="wb-tg"></span><b>派单</b></button>
+        <button type="button" class="wb-switch is-on"><span class="wb-tg"></span><b>付款</b></button>
+      </div>
+      <div class="grp">
+        <div class="wb-seg2">
+          <button type="button" class="is-on" disabled>API 充值</button>
+          <button type="button">浏览器自动化</button>
+        </div>
+      </div>
+      <div class="grp">
+        <span class="k">浏览器</span>
+        <span class="wb-pair">
+          <select class="wb-field"><option>HNSKJ</option><option>highvcc</option></select>
+          <button type="button" class="wb-btn">切换</button>
+        </span>
+      </div>
+      <div class="grp">
+        <select class="wb-field"><option>Plus</option><option>Pro 5X</option><option>Pro 20X</option></select>
+        <input class="wb-field wb-num" type="number" value="1">
+        <button class="wb-btn pri" type="button">生成并复制</button>
+      </div>
+    </div>
+    <p class="why">间隙从 <b>0 / 0 / 156</b> 变成三个相等。组内保持紧凑，留白全部挪到组与组之间 —— 分隔线两侧对称。竖线因组宽不同而不等距。</p>
+  </section>
+
+  <!-- ============ 乙-2 · 四格等分 ============ -->
+  <section class="v">
+    <div class="vh"><b>乙-2 · 四格等分</b><span class="tag">flex:1</span><span>每组占四分之一，剩余空间摊进组内</span></div>
+    <div class="wb-ops B B2">
+      <div class="grp">
+        <button type="button" class="wb-switch is-on"><span class="wb-tg"></span><b>接单</b></button>
+        <button type="button" class="wb-switch is-on"><span class="wb-tg"></span><b>派单</b></button>
+        <button type="button" class="wb-switch is-on"><span class="wb-tg"></span><b>付款</b></button>
+      </div>
+      <div class="grp">
+        <div class="wb-seg2">
+          <button type="button" class="is-on" disabled>API 充值</button>
+          <button type="button">浏览器自动化</button>
+        </div>
+      </div>
+      <div class="grp">
+        <span class="k">浏览器</span>
+        <span class="wb-pair">
+          <select class="wb-field"><option>HNSKJ</option><option>highvcc</option></select>
+          <button type="button" class="wb-btn">切换</button>
+        </span>
+      </div>
+      <div class="grp">
+        <select class="wb-field"><option>Plus</option><option>Pro 5X</option><option>Pro 20X</option></select>
+        <input class="wb-field wb-num" type="number" value="1">
+        <button class="wb-btn pri" type="button">生成并复制</button>
+      </div>
+    </div>
+    <p class="why">竖线接近等距，最像一条标准工具栏。代价：留白跑到每组内容的右边，四组内容宽度本来就不等（234/224/210/293），组内留白会不一样。</p>
+  </section>
+
+  <!-- ============ 乙-3 · 去掉竖线（定稿）============ -->
+  <!-- id 挂在 section 上，不挂在 .wb-ops 上：比对契约靠它定位，而 .wb-ops 内部要保持
+       和实现一字不差，多一个 class 都可能改变选择器命中。 -->
+  <section class="v" id="pick">
+    <div class="vh"><b>乙-3 · 去掉竖线</b><span class="tag">纯留白分组</span><span>间距均分，不画分隔线，靠留白分组</span></div>
+    <div class="wb-ops">
+      <div class="wb-grp">
+        <button type="button" class="wb-switch is-on"><span class="wb-tg"></span><b>接单</b></button>
+        <button type="button" class="wb-switch is-on"><span class="wb-tg"></span><b>派单</b></button>
+        <button type="button" class="wb-switch is-on"><span class="wb-tg"></span><b>付款</b></button>
+      </div>
+      <div class="wb-grp">
+        <div class="wb-seg2">
+          <button type="button" class="is-on" disabled>API 充值</button>
+          <button type="button">浏览器自动化</button>
+        </div>
+      </div>
+      <div class="wb-grp">
+        <span class="wb-k">浏览器</span>
+        <span class="wb-pair">
+          <select class="wb-field"><option>HNSKJ</option><option>highvcc</option></select>
+          <button type="button" class="wb-btn">切换</button>
+        </span>
+      </div>
+      <form class="wb-grp wb-cdk">
+        <select class="wb-field"><option>Plus</option><option>Pro 5X</option><option>Pro 20X</option></select>
+        <input class="wb-field wb-num" type="number" value="1">
+        <button class="wb-btn pri" type="button">生成并复制</button>
+      </form>
+    </div>
+    <p class="why"><b>这一版就是定稿。</b>它不带任何原型专属的 class —— 用的全是 <code>.wb-ops</code> / <code>.wb-grp</code> / <code>.wb-k</code>，和实现一字不差，所以 <code>.wb-ops .wb-grp .wb-btn{height:28px}</code> 这类高特异性规则两边都命中。此前这里用原型自己的 <code>.grp</code>，那条规则落空，按钮回落到 34px —— 失真的是原型，不是实现。<br>最干净。分组全靠间距，不靠线。适合控件本身形态区分度够（开关 / 分段器 / 下拉 / 主按钮各不相同）的情况。</p>
+  </section>
+
+  <!-- ============ 丙 ============ -->
+  <section class="v">
+    <div class="vh"><b>丙 · 维持三等分，只把标题拉平</b><span class="tag">改动最小</span>
+      <span>标题齐平在顶，内容在各自剩余空间里居中</span></div>
+    <div class="wb-ops C">
+      <div class="wb-seg">
+        <p class="wb-seg-t">营业</p>
+        <div style="display:flex;align-items:center;gap:15px">
+          <button type="button" class="wb-switch is-on"><span class="wb-tg"></span><b>接单</b></button>
+          <button type="button" class="wb-switch is-on"><span class="wb-tg"></span><b>派单</b></button>
+          <button type="button" class="wb-switch is-on"><span class="wb-tg"></span><b>付款</b></button>
+        </div>
+      </div>
+      <div class="wb-seg">
+        <p class="wb-seg-t">路线与卡台</p>
+        <div class="wb-route">
+          <div class="wb-seg2">
+            <button type="button" class="is-on" disabled>API 充值</button>
+            <button type="button">浏览器自动化</button>
+          </div>
+          <div class="wb-ln"><span class="wb-k">浏览器</span>
+            <span class="wb-pair">
+              <select class="wb-field"><option>HNSKJ</option><option>highvcc</option></select>
+              <button type="button" class="wb-btn">切换</button>
+            </span>
+          </div>
+        </div>
+      </div>
+      <div class="wb-seg">
+        <p class="wb-seg-t">发码</p>
+        <form class="wb-cdk">
+          <select class="wb-field"><option>Plus</option><option>Pro 5X</option><option>Pro 20X</option></select>
+          <input class="wb-field wb-num" type="number" value="1">
+          <button class="wb-btn pri" type="button">生成并复制</button>
+        </form>
+      </div>
+    </div>
+    <p class="why">只修标题错位（三个标题回到同一条线），保留现有结构和三个语义分组。
+      <b>右侧留白不均仍在</b>（122/144/68）—— 这一版不解决根因，只解决最刺眼的那一条。</p>
+  </section>
+
+  <!-- ============ 丁 ============ -->
+  <section class="v">
+    <div class="vh"><b>丁 · 左右两张卡</b><span class="tag">每行一件事</span>
+      <span>左卡三行纵向排（每行「名称 ─ 控件」左右对齐），右卡发码</span></div>
+    <div class="D">
+      <div class="card">
+        <p class="wb-seg-t">怎么跑</p>
+        <div class="ln"><span class="lab">接单 · 派单 · 付款</span>
+          <span style="display:flex;gap:13px">
+            <button type="button" class="wb-switch is-on"><span class="wb-tg"></span><b>接单</b></button>
+            <button type="button" class="wb-switch is-on"><span class="wb-tg"></span><b>派单</b></button>
+            <button type="button" class="wb-switch is-on"><span class="wb-tg"></span><b>付款</b></button>
+          </span>
+        </div>
+        <div class="ln"><span class="lab">充值路线</span>
+          <div class="wb-seg2">
+            <button type="button" class="is-on" disabled>API 充值</button>
+            <button type="button">浏览器自动化</button>
+          </div>
+        </div>
+        <div class="ln"><span class="lab">浏览器卡台</span>
+          <span class="wb-pair">
+            <select class="wb-field"><option>HNSKJ</option><option>highvcc</option></select>
+            <button type="button" class="wb-btn">切换</button>
+          </span>
+        </div>
+      </div>
+      <div class="card">
+        <p class="wb-seg-t">发码</p>
+        <div class="stack">
+          <div class="ln" style="padding-top:0"><span class="lab">产品</span>
+            <select class="wb-field" style="width:150px"><option>Plus</option><option>Pro 5X</option><option>Pro 20X</option></select></div>
+          <div class="ln"><span class="lab">数量</span>
+            <input class="wb-field wb-num" type="number" value="1" style="width:150px"></div>
+          <button class="wb-btn pri" type="button" style="width:100%;margin-top:3px">生成并复制</button>
+        </div>
+      </div>
+    </div>
+    <p class="why">每行「名称在左、控件在右」，左右都贴边，<b>不存在段内留白</b>。三件事各占一行，看得最清楚。
+      代价：比前三版高（三行），占的竖向空间最多。</p>
+  </section>
+
+</div>
+</body>
+</html>

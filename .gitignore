@@ -48,3 +48,6 @@ Thumbs.db
 plus_gopay/
 .claude/
 output/
+
+# 原型打包的临时产物（scripts/proto-bundle.mjs 的输出，随时可重新生成）
+docs/design/prototypes/.bundled/

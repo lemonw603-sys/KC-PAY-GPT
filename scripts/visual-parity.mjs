@@ -42,8 +42,8 @@ const CHROME_CANDIDATES = [
 
 /** 长度类样式（可按容差比），其余按字符串精确比。 */
 const LENGTH_METRICS = new Set([
-  'height', 'width', 'contentTop', 'contentBottom', 'fontSize', 'letterSpacing',
-  'marginBottom', 'marginTop', 'gap', 'rowGap', 'columnGap', 'borderRadius'
+  'height', 'width', 'contentTop', 'contentBottom', 'left', 'right', 'fontSize',
+  'letterSpacing', 'marginBottom', 'marginTop', 'gap', 'rowGap', 'columnGap', 'borderRadius'
 ]);
 
 /**
@@ -166,6 +166,7 @@ const COLLECTOR = String(function collect(rootSel, probes) {
   const root = document.querySelector(rootSel);
   if (!root) return { error: '根选择器没匹配到元素: ' + rootSel };
 
+  const rb = root.getBoundingClientRect();
   const read = (el) => {
     const b = el.getBoundingClientRect();
     const cs = getComputedStyle(el);
@@ -176,6 +177,10 @@ const COLLECTOR = String(function collect(rootSel, probes) {
     return {
       height: r1(b.height),
       width: r1(b.width),
+      // 相对根的左右边 —— 「各组是不是均匀铺开」只有靠这两个数才守得住，
+      // 光比每组自己的宽高，挤在一边和均匀分布量出来是一样的。
+      left: r1(b.left - rb.left),
+      right: r1(b.right - rb.left),
       // 首/末子元素到容器上下边的距离 —— 顶对齐、居中、底对齐的区别全在这两个数上
       contentTop: first ? r1(first.top - b.top) : null,
       contentBottom: last ? r1(b.bottom - last.bottom) : null,
@@ -193,16 +198,25 @@ const COLLECTOR = String(function collect(rootSel, probes) {
       flexDirection: cs.flexDirection,
       alignItems: cs.alignItems,
       justifyContent: cs.justifyContent,
+      flexWrap: cs.flexWrap,
       textAlign: cs.textAlign
     };
   };
 
-  const out = { rootWidth: r1(root.getBoundingClientRect().width), probes: {} };
+  const out = { rootWidth: r1(rb.width), probes: {} };
   for (const probe of probes) {
     const nodes = [...root.querySelectorAll(probe.sel)];
     if (!nodes.length) { out.probes[probe.name] = { error: '没匹配到: ' + probe.sel }; continue; }
     const picked = probe.all ? nodes : [nodes[0]];
-    out.probes[probe.name] = { count: nodes.length, items: picked.map(read) };
+    const entry = { count: nodes.length, items: picked.map(read) };
+    if (probe.all && picked.length > 1) {
+      // 相邻间隙。「各组是不是均匀铺开」得看间隙 —— 每项自己的宽高都对、却全挤在
+      // 一边，量出来是一样的。间隙又不受内容宽度影响（下拉里的文字两边本就不同），
+      // 所以它比绝对位置更适合拿来守。
+      const boxes = picked.map((el) => el.getBoundingClientRect()).sort((a, b) => a.left - b.left);
+      entry.gaps = boxes.slice(1).map((b, i) => r1(b.left - boxes[i].right));
+    }
+    out.probes[probe.name] = entry;
   }
   return out;
 });
@@ -330,6 +344,16 @@ async function collect(cdp, sessionId, rootSel, probes) {
 
 const toPx = (v) => (typeof v === 'number' ? v : (/^-?[\d.]+px$/.test(String(v)) ? parseFloat(v) : null));
 
+/** 自洽断言：一组元素的相邻间隙应当彼此相等（契约里 equalGaps: true）。 */
+function diffEqualGaps(probeName, side, gaps, tol) {
+  if (!Array.isArray(gaps) || gaps.length < 2) return [];
+  const min = Math.min(...gaps), max = Math.max(...gaps);
+  if (max - min <= tol) return [];
+  return [{ probe: `${probeName}（${side}）`, metric: '间隙应相等',
+    proto: '各间隙一致', impl: gaps.map((g) => `${g}`).join(' / '), delta: `极差 ${r1(max - min)}` }];
+}
+const r1 = (n) => Math.round(n * 10) / 10;
+
 function diffItems(probeName, metrics, protoItems, implItems, tol) {
   const diffs = [];
   if (protoItems.length !== implItems.length) {
@@ -409,6 +433,10 @@ async function runContract(cdp, contract, file) {
     if (pd?.error) throw Object.assign(new Error(`原型侧 ${p.name}: ${pd.error}`), { setup: true });
     if (id?.error) throw Object.assign(new Error(`实现侧 ${p.name}: ${id.error}`), { setup: true });
     diffs.push(...diffItems(probes[i].name, p.metrics, pd.items, id.items, tol));
+    if (p.equalGaps) {
+      diffs.push(...diffEqualGaps(probes[i].name, '原型', pd.gaps, tol));
+      diffs.push(...diffEqualGaps(probes[i].name, '实现', id.gaps, tol));
+    }
   });
 
   return { name: contract.name ?? path.basename(file), diffs, width, protoData, implData };
