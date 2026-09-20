@@ -1,0 +1,287 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>工作台 · 卡与钱 / 待办 / 页头</title>
+<!-- 探索阶段，link 的是**实时**的后台样式（经 scripts/proto-server.mjs 反代）。
+     这与营业条定稿原型不同 —— 那一份 link 的是 _frozen/ 快照。区别在于：
+       · 探索阶段原型是「提案」，实现还不存在，没有比对这回事，用实时样式最省事；
+       · Lemon 挑定之后立刻冻快照，之后原型才变成「参照」，实现要对齐它。
+     顺序错了就会重演那次事故：参照跟着被测物一起变，比对永远通过。
+     数据全部取自跑着的后台（隔离库 step6_demo），不是编的。 -->
+<link rel="stylesheet" href="/admin/assets/admin.css">
+<link rel="stylesheet" href="/admin/assets/workbench.css">
+<link rel="stylesheet" href="/admin/assets/cards.css">
+<style>
+/* ===== 原型页脚手架 ===== */
+body{margin:0;background:var(--wb-bg);font-family:var(--wb-fd);color:var(--wb-t)}
+.page{max-width:1126px;margin:0 auto;padding:22px 0 80px}
+h1{font-size:19px;margin:0 0 4px}
+.lede{color:var(--wb-t2);font-size:13px;margin:0 0 4px;line-height:1.75;max-width:70ch}
+.sec{margin:34px 0 0;padding-top:20px;border-top:1px solid var(--wb-bd)}
+.sec > h2{font-size:15px;margin:0 0 3px}
+.sec > p{margin:0 0 16px;color:var(--wb-t2);font-size:12.5px;line-height:1.7;max-width:74ch}
+.v{margin:20px 0 0}
+.vh{display:flex;align-items:baseline;gap:9px;margin:0 0 9px;flex-wrap:wrap}
+.vh b{font-size:13.5px}
+.vh .tag{font-family:var(--wb-fm);font-size:11px;color:var(--wb-a);background:var(--wb-a-soft);
+  padding:2px 7px;border-radius:5px;font-weight:600}
+.vh span{color:var(--wb-t2);font-size:12px}
+.why{color:var(--wb-t3);font-size:11.5px;margin:8px 2px 0;line-height:1.7;max-width:74ch}
+.side{display:grid;grid-template-columns:1fr 361px;gap:14px}  /* 右栏＝现状「昨夜日对账」的宽度 */
+
+/* ===== 新样式：定稿后搬进 workbench.css，这里先落在原型页 ===== */
+
+/* 甲：主数字领头 */
+.p-lead{display:flex;align-items:stretch;gap:0}
+.p-lead .big{flex:none;padding:2px 22px 2px 0;margin-right:22px;border-right:1px solid var(--wb-s3);
+  display:flex;flex-direction:column;justify-content:center}
+.p-lead .big b{font-family:var(--wb-fm);font-size:40px;font-weight:600;line-height:1;letter-spacing:-.02em}
+.p-lead .big span{font-size:12px;color:var(--wb-t3);margin-top:5px}
+.p-lead .rigs{flex:1;display:grid;gap:9px;align-content:center}
+.p-rig{display:flex;align-items:center;gap:10px;font-size:12.5px}
+.p-rig > b{font-weight:600;width:64px;flex:none}
+.p-rig .money{font-family:var(--wb-fm);font-weight:600}
+.p-rig .rest{color:var(--wb-t3);margin-left:auto;font-size:11.5px}
+
+/* 乙：两台各一张小卡（对齐「昨夜日对账」的四宫格节奏） */
+.p-rigcards{display:grid;grid-template-columns:1fr 1fr;gap:11px}
+.p-rigcard{border:1px solid var(--wb-bd);border-radius:10px;padding:11px 13px;background:var(--wb-s2)}
+.p-rigcard .top{display:flex;align-items:center;gap:8px;margin-bottom:9px}
+.p-rigcard .top b{font-size:13px}
+.p-grid2{display:grid;grid-template-columns:1fr 1fr;gap:9px 12px}
+.p-grid2 div span{display:block;font-size:11px;color:var(--wb-t3)}
+.p-grid2 div b{font-family:var(--wb-fm);font-size:17px;font-weight:600}
+.p-grid2 div b.mute{color:var(--wb-t3);font-weight:500}
+
+/* 丙：一张表 */
+.p-tbl{width:100%;border-collapse:collapse;font-size:12.5px}
+.p-tbl th{text-align:left;font-size:11px;font-weight:600;color:var(--wb-t3);padding:0 10px 7px 0;white-space:nowrap}
+.p-tbl th:not(:first-child),.p-tbl td:not(:first-child){text-align:right}
+.p-tbl td{padding:8px 10px 8px 0;border-top:1px solid var(--wb-s3);font-family:var(--wb-fm);font-weight:600}
+.p-tbl td:first-child{font-family:var(--wb-fd)}
+.p-tbl tfoot td{border-top:1px solid var(--wb-bd);color:var(--wb-a)}
+.p-tbl .mute{color:var(--wb-t3);font-weight:500}
+
+/* 待办：单行紧凑 */
+.p-q{display:grid}
+.p-qrow{display:flex;align-items:center;gap:11px;padding:10px 0;border-top:1px solid var(--wb-s3)}
+.p-qrow:first-child{border-top:0}
+.p-qrow .ic{width:24px;height:24px;border-radius:7px;display:grid;place-items:center;flex:none;font-size:12px}
+.p-qrow .ic.warn{background:var(--wb-warn-soft);color:var(--wb-warn)}
+.p-qrow .ic.info{background:var(--wb-info-soft);color:var(--wb-info)}
+.p-qrow .tx{min-width:0;flex:1}
+.p-qrow .tx b{font-size:12.5px;font-weight:600;display:block}
+.p-qrow .tx small{font-size:11px;color:var(--wb-t3)}
+.p-qrow .wb-btn{flex:none}
+
+/* 页头 */
+.p-head{display:flex;align-items:center;gap:14px;padding:0 0 4px}
+.p-head h2{margin:0;font-size:21px;letter-spacing:-.01em}
+.p-head .when{color:var(--wb-t3);font-size:11.5px;font-family:var(--wb-fm)}
+.p-head .sp{flex:1}
+.p-search{position:relative;width:260px}
+.p-search input{width:100%}
+</style>
+</head>
+<body>
+<div class="workbench page">
+
+<h1>工作台 · 三块重做</h1>
+<p class="lede">数据全部取自跑着的后台（隔离库 step6_demo），不是编的。样式来自后台真实样式表，不是另写的一套。</p>
+
+<!-- ================= 卡与钱 ================= -->
+<section class="sec">
+  <h2>③ 卡与钱</h2>
+  <p>现在的毛病是<b>主次颠倒</b>：运营最想知道的「还能接几单」（合计可分配 <b>2</b>）压在最底下一行小字里，
+  而五个次要标签平铺在上面占满 749px。四版都把这个数提到最显眼处，区别是明细怎么放。
+  右栏放的是<b>现状的「昨夜日对账」</b>作对照 —— 它是整页节奏最对的一块。</p>
+
+  <!-- 甲 -->
+  <div class="v">
+    <div class="vh"><b>甲 · 主数字领头</b><span class="tag">一眼一个数</span><span>大数字在左，两台明细在右，一行一台</span></div>
+    <div class="side">
+      <section class="wb-card">
+        <div class="wb-ch"><div><p class="wb-kick">卡与钱</p><h2>还能接几单</h2></div><span class="wb-ro">只读</span></div>
+        <div class="wb-cb">
+          <div class="p-lead">
+            <div class="big"><b class="wb-mono">2</b><span>还能接的单</span></div>
+            <div class="rigs">
+              <div class="p-rig"><b>HNSKJ</b><span class="wb-chip mute"><span class="wb-d"></span>可分配 0</span>
+                <span class="money">$41.20</span><span class="rest">在库 2 · 使用中 0</span></div>
+              <div class="p-rig"><b>highvcc</b><span class="wb-chip ok"><span class="wb-d"></span>可分配 2</span>
+                <span class="money wb-t3">钱包见卡片页</span><span class="rest">在库 2 · 使用中 0</span></div>
+            </div>
+          </div>
+        </div>
+      </section>
+      <section class="wb-card">
+        <div class="wb-ch"><div><p class="wb-kick">昨夜日对账</p><h2>对上没有</h2></div><button class="wb-btn link" type="button">看逐张 →</button></div>
+        <div class="wb-cb"><div class="wb-recon">
+          <div class="wb-r is-bad"><span class="wb-v">1</span><span class="wb-lb">差异<small>无主扣款</small></span></div>
+          <div class="wb-r"><span class="wb-v">0</span><span class="wb-lb">待登记<small>手动用卡</small></span></div>
+          <div class="wb-r"><span class="wb-v">5</span><span class="wb-lb">无法核对<small>无期初金额</small></span></div>
+          <div class="wb-r"><span class="wb-v">0</span><span class="wb-lb">连续两次<small>persistent</small></span></div>
+        </div></div>
+      </section>
+    </div>
+    <p class="why">「还能接几单」就是运营开工第一眼要的数，给它整块里最大的字号。两台明细退成一行一台。
+    标题也从「今天花了 / 卡用了几张」改成「还能接几单」—— 前者问两件事，而「今天花了」根本还没数据。</p>
+  </div>
+
+  <!-- 乙 -->
+  <div class="v">
+    <div class="vh"><b>乙 · 两台各一张小卡</b><span class="tag">对齐右栏节奏</span><span>每台一个 2×2 小格，和「昨夜日对账」同一种读法</span></div>
+    <div class="side">
+      <section class="wb-card">
+        <div class="wb-ch"><div><p class="wb-kick">卡与钱</p><h2>两台卡的库存</h2></div><span class="wb-ro">只读</span></div>
+        <div class="wb-cb">
+          <div class="p-rigcards">
+            <div class="p-rigcard">
+              <div class="top"><b>HNSKJ</b><span class="wb-chip ok"><span class="wb-d"></span>$41.20</span></div>
+              <div class="p-grid2">
+                <div><span>可分配</span><b class="mute">0</b></div>
+                <div><span>在库</span><b>2</b></div>
+                <div><span>使用中</span><b class="mute">0</b></div>
+                <div><span>用过</span><b class="mute">0</b></div>
+              </div>
+            </div>
+            <div class="p-rigcard">
+              <div class="top"><b>highvcc</b><span class="wb-chip mute"><span class="wb-d"></span>钱包见卡片页</span></div>
+              <div class="p-grid2">
+                <div><span>可分配</span><b>2</b></div>
+                <div><span>在库</span><b>2</b></div>
+                <div><span>使用中</span><b class="mute">0</b></div>
+                <div><span>用过</span><b class="mute">0</b></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+      <section class="wb-card">
+        <div class="wb-ch"><div><p class="wb-kick">昨夜日对账</p><h2>对上没有</h2></div><button class="wb-btn link" type="button">看逐张 →</button></div>
+        <div class="wb-cb"><div class="wb-recon">
+          <div class="wb-r is-bad"><span class="wb-v">1</span><span class="wb-lb">差异<small>无主扣款</small></span></div>
+          <div class="wb-r"><span class="wb-v">0</span><span class="wb-lb">待登记<small>手动用卡</small></span></div>
+          <div class="wb-r"><span class="wb-v">5</span><span class="wb-lb">无法核对<small>无期初金额</small></span></div>
+          <div class="wb-r"><span class="wb-v">0</span><span class="wb-lb">连续两次<small>persistent</small></span></div>
+        </div></div>
+      </section>
+    </div>
+    <p class="why">左右两块变成同一种读法（都是「标签 + 大数字」的格子），整行看着最整齐。
+    代价：没有一个「合计还能接几单」的数，要自己把 0 和 2 加起来。</p>
+  </div>
+
+  <!-- 丙 -->
+  <div class="v">
+    <div class="vh"><b>丙 · 一张表</b><span class="tag">最紧凑</span><span>两行两台，合计在表脚</span></div>
+    <div class="side">
+      <section class="wb-card">
+        <div class="wb-ch"><div><p class="wb-kick">卡与钱</p><h2>两台卡的库存</h2></div><span class="wb-ro">只读</span></div>
+        <div class="wb-cb">
+          <table class="p-tbl">
+            <thead><tr><th>卡台</th><th>钱包</th><th>可分配</th><th>在库</th><th>使用中</th><th>用过</th></tr></thead>
+            <tbody>
+              <tr><td>HNSKJ</td><td>$41.20</td><td class="mute">0</td><td>2</td><td class="mute">0</td><td class="mute">0</td></tr>
+              <tr><td>highvcc</td><td class="mute">见卡片页</td><td>2</td><td>2</td><td class="mute">0</td><td class="mute">0</td></tr>
+            </tbody>
+            <tfoot><tr><td>合计还能接</td><td></td><td>2 单</td><td>4</td><td class="mute">0</td><td class="mute">0</td></tr></tfoot>
+          </table>
+        </div>
+      </section>
+      <section class="wb-card">
+        <div class="wb-ch"><div><p class="wb-kick">昨夜日对账</p><h2>对上没有</h2></div><button class="wb-btn link" type="button">看逐张 →</button></div>
+        <div class="wb-cb"><div class="wb-recon">
+          <div class="wb-r is-bad"><span class="wb-v">1</span><span class="wb-lb">差异<small>无主扣款</small></span></div>
+          <div class="wb-r"><span class="wb-v">0</span><span class="wb-lb">待登记<small>手动用卡</small></span></div>
+          <div class="wb-r"><span class="wb-v">5</span><span class="wb-lb">无法核对<small>无期初金额</small></span></div>
+          <div class="wb-r"><span class="wb-v">0</span><span class="wb-lb">连续两次<small>persistent</small></span></div>
+        </div></div>
+      </section>
+    </div>
+    <p class="why">数字对齐成列，同一指标两台好比较，加卡台也只是多一行。最省高度。
+    代价：全是同样大小的数字，重点靠位置而不是字号，扫起来比甲慢一点。</p>
+  </div>
+
+  <!-- 丁 -->
+  <div class="v">
+    <div class="vh"><b>丁 · 撤掉这块，数字并进数字墙</b><span class="tag">最激进</span><span>「还能接几单」提进上面那排数字，卡台明细收进卡片页</span></div>
+    <div class="wb-wall" style="margin-bottom:12px">
+      <button type="button" class="wb-kpi"><span class="wb-lb">今日单数</span><span class="wb-v">0</span><span class="wb-sub">处理中 0</span></button>
+      <button type="button" class="wb-kpi"><span class="wb-lb">成功率</span><span class="wb-v">—</span><span class="wb-sub">完成 0 单</span></button>
+      <button type="button" class="wb-kpi"><span class="wb-lb">还能接</span><span class="wb-v">2</span><span class="wb-sub">HNSKJ 0 · highvcc 2</span></button>
+      <button type="button" class="wb-kpi is-pending" disabled><span class="wb-lb">今日花费</span><span class="wb-v">待接入</span><span class="wb-sub"></span></button>
+      <button type="button" class="wb-kpi is-pending" disabled><span class="wb-lb">异常支出</span><span class="wb-v">待接入</span><span class="wb-sub"></span></button>
+    </div>
+    <div class="side">
+      <section class="wb-card">
+        <div class="wb-ch"><div><p class="wb-kick">卡台</p><h2>两台都在正常供卡</h2></div><button class="wb-btn link" type="button">进卡片页 →</button></div>
+        <div class="wb-cb">
+          <div class="p-q">
+            <div class="p-qrow"><span class="ic info">✓</span><div class="tx"><b>HNSKJ</b><small>钱包 $41.20 · 在库 2</small></div></div>
+            <div class="p-qrow"><span class="ic info">✓</span><div class="tx"><b>highvcc</b><small>钱包见卡片页 · 在库 2</small></div></div>
+          </div>
+        </div>
+      </section>
+      <section class="wb-card">
+        <div class="wb-ch"><div><p class="wb-kick">昨夜日对账</p><h2>对上没有</h2></div><button class="wb-btn link" type="button">看逐张 →</button></div>
+        <div class="wb-cb"><div class="wb-recon">
+          <div class="wb-r is-bad"><span class="wb-v">1</span><span class="wb-lb">差异<small>无主扣款</small></span></div>
+          <div class="wb-r"><span class="wb-v">0</span><span class="wb-lb">待登记<small>手动用卡</small></span></div>
+          <div class="wb-r"><span class="wb-v">5</span><span class="wb-lb">无法核对<small>无期初金额</small></span></div>
+          <div class="wb-r"><span class="wb-v">0</span><span class="wb-lb">连续两次<small>persistent</small></span></div>
+        </div></div>
+      </section>
+    </div>
+    <p class="why">承认一件事：这块的信息量本来就撑不起 749×291。把唯一天天要看的数提进数字墙，
+    剩下的降成「两台都正常 / 哪台不正常」的健康提示，明细去卡片页看。整页能矮 100px 以上。
+    代价：想同时比两台的四个数，得跳一次页。</p>
+  </div>
+</section>
+
+<!-- ================= 需要我处理 ================= -->
+<section class="sec">
+  <h2>⑤ 需要我处理</h2>
+  <p>现状 379px，是全页最高的一块。三条待办 + 一条折叠，每条「图标 + 标题 + 副标题 + 按钮」各占一行高。
+  待办一多这页会很长。</p>
+
+  <div class="v">
+    <div class="vh"><b>甲 · 单行紧凑</b><span class="tag">省一半高</span><span>图标、标题、说明同一行，按钮靠右</span></div>
+    <section class="wb-card">
+      <div class="wb-ch"><div><p class="wb-kick">今天要处理的</p><h2>需要我处理</h2></div><span class="wb-chip danger"><span class="wb-d"></span>3 件待办</span></div>
+      <div class="wb-cb"><div class="p-q">
+        <div class="p-qrow"><span class="ic warn">⚠</span><div class="tx"><b>对账差异 · 无主扣款 1 张卡</b><small>账本无对应订单，进报告、不隐藏</small></div><button class="wb-btn sm out" type="button">去处理</button></div>
+        <div class="p-qrow"><span class="ic warn">⌫</span><div class="tx"><b>待销到期 1 张卡</b><small>已过存活期，去卡台删掉后回来点「已销卡」</small></div><button class="wb-btn sm out" type="button">去处理</button></div>
+        <div class="p-qrow"><span class="ic warn">⚿</span><div class="tx"><b>卡台 token 已失效，开卡会失败</b><small>贴新 token 后自动恢复 · 09/20 08:28</small></div><button class="wb-btn sm out" type="button">去处理</button></div>
+        <div class="p-qrow"><span class="ic info">⋯</span><div class="tx"><b>2 个内部提醒</b><small>点开逐条关</small></div><button class="wb-btn sm link" type="button">展开</button></div>
+      </div></div>
+    </section>
+    <p class="why">标题和说明本来就是一长一短，叠成两行是浪费；并到一行，按钮靠右对齐成一列。
+    四条从 379px 降到约 190px。</p>
+  </div>
+</section>
+
+<!-- ================= 页头 ================= -->
+<section class="sec">
+  <h2>⓪ 页头</h2>
+  <p>现状：「运营驾驶舱」和「今天的运行情况」上下两行说同一件事；中间那条搜索框占掉近一半宽度。</p>
+
+  <div class="v">
+    <div class="vh"><b>甲 · 一行到底</b><span class="tag">去掉小标题</span><span>标题、时间、搜索同一行；搜索缩到 260px</span></div>
+    <div class="wb-card" style="padding:13px 18px">
+      <div class="p-head">
+        <h2>今天的运行情况</h2>
+        <span class="when">更新于 11:24</span>
+        <span class="sp"></span>
+        <span class="p-search"><input class="wb-field" type="search" placeholder="贴卡密 / 订单号 / 邮箱 → 直接定位这一单"></span>
+      </div>
+    </div>
+    <p class="why">「运营驾驶舱」这个小标题不带信息 —— 侧边栏已经标着「工作台」了。去掉之后页头从 58px 降到约 44px，
+    搜索框退到右边，不再占据视线正中。</p>
+  </div>
+</section>
+
+</div>
+</body>
+</html>
