@@ -66,7 +66,6 @@ function cardTxTypeLabel(type) {
   const key = String(type || '').trim().toLowerCase();
   return CARD_TX_TYPE_LABELS[key] || String(type || '—');
 }
-const STOCK_CATEGORY_LABELS = Object.freeze({ READY: '可分配', IN_USE: '使用中', BLOCKED: '暂不可用', RETIRED: '永久停用' });
 const RECONCILIATION_LABELS = Object.freeze({ OK: '已对账', STALE: '待同步', SYNCING: '同步中', REVIEW_REQUIRED: '需核对', MISMATCH: '不一致' });
 const CARD_INTAKE_LABELS = Object.freeze({
   QUARANTINED: '待第二次稳定读取', VALIDATED: '验证通过，待接管',
@@ -425,7 +424,7 @@ function renderWbCards(overview) {
       <div class="wb-prods">${(p.byProduct || []).map(prodChip).join('')}</div>
     </div>`;
   }).join('')
-    + `<p class="wb-total">合计还能服务 <b class="wb-mono">${totalStock}</b> 张`
+    + `<p class="wb-total">合计可分配 <b class="wb-mono">${totalStock}</b> 张`
     // 两个数不一样时才提一句，且说明它会自己恢复 —— 不提等于隐瞒，天天提是噪音。
     + (totalBindable < totalStock
       ? `<span class="wb-sub">（其中 ${totalBindable} 张此刻可立即绑，其余在等下一次同步，会自行恢复）</span>`
@@ -1325,9 +1324,11 @@ function renderSelectedStockCardType({ resetInvalidAmount = false } = {}) {
 
 /* ===== 第⑥步 卡片页 D-280 ①③⑤⑥（A「台账优先」，Lemon 2026-09-20 挑定）===== */
 
+// 这里的词必须和台账栏、详情抽屉一致：同一个状态在一页上有两个叫法，运营就得自己
+// 猜它们是不是一回事。READY 原来在这里叫「待分配」，而别处都叫「可分配」。
 const CARD_STATE_CHIPS = Object.freeze({
-  READY: ['is-ok', '待分配'], IN_USE: ['is-use', '使用中'],
-  RETIRED: ['is-off', '停用'], PRODUCT_ONLY: ['is-off', '限其他产品'],
+  READY: ['is-ok', '可分配'], IN_USE: ['is-use', '使用中'],
+  RETIRED: ['is-off', '永久停用'], PRODUCT_ONLY: ['is-off', '限定产品'],
   BLOCKED: ['is-bad', '暂不可用']
 });
 
@@ -1338,7 +1339,7 @@ function rigCell(label, valueHtml, { tone = '', pending = false } = {}) {
 }
 
 /**
- * ① 两台并列四个数。四个数全部来自后端 byProvider（可分配＝第③④块的资格规则），
+ * ① 两台并列四个数。四个数全部来自后端 byProvider（可分配＝库存口径，见 providerCardStockSql），
  * 页面不自己判断哪张卡能分配 —— D-280 硬约束。
  */
 /**
@@ -1388,7 +1389,7 @@ function renderCardRigs(byProvider, tokenStatus) {
     const opened = Number(rig.openedToday || 0);
     const limit = Number(rig.dailyLimit || 0);
     const cells = [
-      rigCell('还能服务 / 水位（Plus）',
+      rigCell('可分配 / 水位（Plus）',
         `${stock} <small>/ ${rig.stockTarget == null ? '未配策略' : target}</small>`,
         { tone: lowStock ? 'is-warn' : '' }),
       isHighvcc

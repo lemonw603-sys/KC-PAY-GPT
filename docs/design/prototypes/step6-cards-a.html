@@ -20,7 +20,7 @@
     ① 两台卡台 → ③ 在役卡片列表（含历史折叠）→ ⑤ 待销清单 → 高级
   在役列表在待销**之前**——实现此前是反的，B 部分一并纠正。
 
-  「还能服务」是**库存口径**（这张卡结构上还能不能服务新单）。分配口径（多一条「15 分钟内
+  「可分配」是**库存口径**（这张卡结构上还能不能服务新单）。分配口径（多一条「15 分钟内
   同步过」）只在比它小的时候在脚注里补一句 —— hnskj 每 3 小时同步一次，好卡在大部分时间里
   按分配口径是 0，拿它当主数会让人以为没卡（D-307）。highvcc 是 MANUAL_IMPORT、豁免时效，
   两个数一致，所以它那栏不显示这句话。
@@ -73,12 +73,12 @@
       <!-- ① 两台卡台 -->
       <section class="card stock-card">
         <div class="card-heading"><div><p class="section-kicker">两台卡台</p><h2>现在能分出去几张</h2></div><span class="readonly-badge">可分配＝资格规则算的</span></div>
-        <p class="card-description stock-definition">“可分配”指现在就能安全绑定 Plus 订单的卡，按第③④块那份资格规则算——和工作台同一个数。“在库”只是没退役，两者差得远，别混用。</p>
+        <p class="card-description stock-definition">“可分配”＝还能服务新单的卡：余额够、次数没用满、没被占用或标记，和工作台同一个数。“在库”只是没退役，比它宽。</p>
         <div class="cardrigs" id="cards-rigs">
           <div class="cardrig">
             <div class="cardrig-h"><b>HNSKJ</b><span class="cardrig-acct">legacy-primary</span></div>
             <div class="cardrig-quad">
-              <div class="cardrig-q"><label>还能服务 / 水位（Plus）</label><div class="cardrig-v">2 <small>/ 2</small></div></div>
+              <div class="cardrig-q"><label>可分配 / 水位（Plus）</label><div class="cardrig-v">2 <small>/ 2</small></div></div>
               <div class="cardrig-q"><label>钱包余额 / 底线</label><div class="cardrig-v">$41.20 <small>/ $30.00</small></div></div>
               <div class="cardrig-q"><label>今日已开 / 日限（Plus）</label><div class="cardrig-v">0 <small>/ 20</small></div></div>
               <div class="cardrig-q is-pending"><label>卡台快照</label><div class="cardrig-v">09-20 15:12</div></div>
@@ -94,7 +94,7 @@
           <div class="cardrig">
             <div class="cardrig-h"><b>highvcc</b><span class="cardrig-acct">backup-a</span></div>
             <div class="cardrig-quad">
-              <div class="cardrig-q"><label>还能服务 / 水位（Plus）</label><div class="cardrig-v">2 <small>/ 2</small></div></div>
+              <div class="cardrig-q"><label>可分配 / 水位（Plus）</label><div class="cardrig-v">2 <small>/ 2</small></div></div>
               <div class="cardrig-q is-pending"><label>钱包余额 / 底线</label><div class="cardrig-v"><button class="cardbtn" type="button">查余额</button> <small>/ $20.00</small></div></div>
               <div class="cardrig-q"><label>今日已开 / 日限（Plus）</label><div class="cardrig-v">0 <small>/ 20</small></div></div>
               <div class="cardrig-q is-pending"><label>token</label><div class="cardrig-v">上次贴 09-20 06:12</div></div>

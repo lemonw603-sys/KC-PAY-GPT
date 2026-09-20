@@ -490,7 +490,7 @@ test('D-307：台账主数用库存口径；两个口径不一致时补一句，
   // 生产那个场景：卡是好的，但在同步窗口外
   sandbox.renderCardRigs([{ ...RIG_HNSKJ, stockAvailable: 2, bindableNow: 0, stockTarget: 2 }]);
   const gap = html('sel:#cards-rigs');
-  assert.match(gap, /还能服务 \/ 水位（Plus）/);
+  assert.match(gap, /可分配 \/ 水位（Plus）/);
   assert.match(gap, />2 <small>\/ 2<\/small>/, '主数必须是库存口径 2，不是分配口径 0');
   assert.match(gap, /此刻可立即绑 0 张/);
   assert.match(gap, /会自行恢复/, '必须说明这是暂时的，否则运营会以为卡出事了');
@@ -503,4 +503,24 @@ test('D-307：台账主数用库存口径；两个口径不一致时补一句，
   // 库存真的低于水位才报警（这才是「卡不够了」）
   sandbox.renderCardRigs([{ ...RIG_HNSKJ, stockAvailable: 1, bindableNow: 1, stockTarget: 2 }]);
   assert.match(html('sel:#cards-rigs'), /is-warn/);
+});
+
+test('术语一致：同一个状态在一页上只能有一个叫法', () => {
+  const { evalIn } = loadAdminJs();
+  const html = fs.readFileSync(path.join(here, '..', 'public', 'admin', 'index.html'), 'utf8');
+
+  // READY 这个状态，运营会在三处看到它：台账栏那格、卡片列表的徽标、点开卡片的详情抽屉。
+  // 2026-09-20 实测三处两个叫法——徽标写「待分配」，另两处写「可分配」，
+  // 而徽标恰恰是天天看的那个。两个叫法逼运营自己猜它们是不是一回事。
+  assert.equal(evalIn('CARD_STATE_CHIPS.READY[1]'), '可分配');
+  assert.equal(evalIn('INVENTORY_LABELS.AVAILABLE'), '可分配');
+
+  // 台账栏那格的标题由 admin.js 渲染，不在 index.html 里
+  const src = fs.readFileSync(path.join(here, '..', 'public', 'admin', 'assets', 'admin.js'), 'utf8');
+  assert.match(src, /rigCell\('可分配 \/ 水位（Plus）'/);
+  // 页面上的说明也得用同一个词，否则解释的是另一件事
+  assert.match(html, /“可分配”＝/);
+
+  // 已经删掉的孤儿常量不许回来——它定义了第三份同义标签，零引用
+  assert.doesNotMatch(src, /STOCK_CATEGORY_LABELS/);
 });

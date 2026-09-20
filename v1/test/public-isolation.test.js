@@ -155,7 +155,20 @@ test('admin refresh feedback and inset dropdown arrows remain visible', () => {
   assert.match(script, /card-intake\/.*\/accept/);
   assert.doesNotMatch(script, /卡台当前 active 卡数/);
   assert.doesNotMatch(script, /卡台历史总卡数/);
-  assert.match(script, /可分配.*使用中.*暂不可用.*永久停用/s);
+  // 运营状态必须是人话，不是英文枚举。原来这条靠一个跨行正则去撞 STOCK_CATEGORY_LABELS
+  // （那是个零引用的孤儿常量，已删）—— 撞常量太脆，而且它撞的不是运营真正看到的那张表。
+  // 改成直接钉真正渲染到徽标上的 CARD_STATE_CHIPS：五个状态全中文，且与详情抽屉
+  // 用的 INVENTORY_LABELS 同名状态必须**同词**（2026-09-20 实测 READY 和 RETIRED 各有两个叫法）。
+  const chips = script.match(/const CARD_STATE_CHIPS = Object\.freeze\(\{[\s\S]*?\}\);/)[0];
+  for (const word of ['可分配', '使用中', '永久停用', '限定产品', '暂不可用']) {
+    assert.ok(chips.includes(word), `卡片状态徽标少了「${word}」`);
+  }
+  assert.doesNotMatch(chips, /READY:\s*\[[^\]]*'[A-Z_]{3,}'/, '徽标里不许出现英文枚举');
+  const inventory = script.match(/const INVENTORY_LABELS = Object\.freeze\(\{[^}]*\}\);/)[0];
+  for (const [state, word] of [['AVAILABLE', '可分配'], ['RETIRED', '永久停用'], ['PRODUCT_ONLY', '限定产品']]) {
+    assert.ok(inventory.includes(`${state}: '${word}'`),
+      `详情抽屉的 ${state} 必须和徽标同词：${word}`);
+  }
   assert.match(html, /新卡接管记录/);
   assert.doesNotMatch(html, /待验证新卡（隔离区）/);
   assert.match(styles, /select\s*\{[\s\S]*appearance:\s*none/);
