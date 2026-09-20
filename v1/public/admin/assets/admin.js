@@ -507,7 +507,7 @@ function renderDecisions(overview, cardSources, takeoverEstimate = null) {
     // 前端 switchCheckReasons() 把没过的那几项逐条显示出来。此前这个按钮**从未被渲染**，
     // 功能等于下线；这里补回来，并标出当前走哪条。只影响切换后的新订单。
     const method = String(state.rechargeMethod || '').toUpperCase();
-    const methodLabel = method === 'API' ? 'API 充值' : method === 'BROWSER' ? '浏览器自动化' : '未设置';
+    const methodLabel = method === 'API' ? 'API 充值' : method === 'BROWSER' ? '浏览器自动充' : '未设置';
     // D-280 ⑦：卡台切换从卡片页搬来，「同时接管」这半边不能丢——卡台断供时，
     // 它把还在排队等卡的单改指新卡台（只动完全没碰过钱的单，见 safeWaitingPredicate）。
     const takeoverCount = Number(takeoverEstimate?.count || 0);
@@ -518,11 +518,16 @@ function renderDecisions(overview, cardSources, takeoverEstimate = null) {
           + '<small>不勾：只影响新订单，排队单继续等原卡台。勾上：把这些单改指新卡台（只动没分卡、没充值、没碰钱的单）。</small>'
         : '<small>Browser 路线卡台，只影响新订单；当前没有排队等卡的单可接管。</small>';
     const methodBtn = (target, text) => (method === target
-      ? `<span class="wb-chip ok"><span class="wb-d"></span>当前：${escapeHtml(text)}</span>`
-      : `<button type="button" class="wb-btn sm out default-recharge-method" data-method="${target}">切到${escapeHtml(text)}</button>`);
-    routeBox.innerHTML = `<div class="wb-route"><b>走哪条路线</b><div class="wb-routepick">${methodBtn('API', 'API')}${methodBtn('BROWSER', '浏览器')}</div><small>Plus 默认充值方式（${escapeHtml(methodLabel)}）；切换前跑四项校验，不过会逐条说明原因，只影响新订单</small></div>`
-      + `<div class="wb-route"><b>用哪个卡台</b><div class="wb-routepick"><span class="wb-chip mute"><span class="wb-d"></span>API · HNSKJ 固定</span></div></div>`
-      + `<div class="wb-route"><div class="wb-routepick"><select class="wb-field" id="decision-card-source" aria-label="Browser 卡台">${sourceOptions || '<option value="">没有可用卡台</option>'}</select><button type="button" class="wb-btn sm out" id="decision-card-source-apply" ${sources.length ? '' : 'disabled'}>切换</button></div>${takeoverHint}</div>`;
+      ? `<span class="wb-chip ok"><span class="wb-d"></span>当前用${escapeHtml(text)}</span>`
+      : `<button type="button" class="wb-btn sm out default-recharge-method" data-method="${target}">改用${escapeHtml(text)}</button>`);
+    // 「切到浏览器」四个字看不出在说什么（Lemon 2026-09-20）。两条路线是：
+    // API 充值＝调卡台接口充；浏览器自动充＝程序模拟人在 ChatGPT 官网上付款。
+    routeBox.innerHTML = `<p class="wb-grp-t">Plus 怎么充 · 用哪个卡台</p>`
+      + `<div class="wb-route"><div class="wb-routepick">${methodBtn('API', 'API 充值')}${methodBtn('BROWSER', '浏览器自动充')}</div>`
+      + `<small>API 充值＝调卡台接口；浏览器自动充＝程序在 ChatGPT 官网上替客户付款。`
+      + `当前 <b>${escapeHtml(methodLabel)}</b>，只影响新订单；切换前跑四项校验，不通过会逐条说明原因。</small></div>`
+      + `<div class="wb-route"><div class="wb-routepick"><span class="wb-lead">API 路线</span><span class="wb-chip mute"><span class="wb-d"></span>固定用 HNSKJ</span></div></div>`
+      + `<div class="wb-route"><div class="wb-routepick"><span class="wb-lead">浏览器路线</span><select class="wb-field" id="decision-card-source" aria-label="Browser 卡台">${sourceOptions || '<option value="">没有可用卡台</option>'}</select><button type="button" class="wb-btn sm out" id="decision-card-source-apply" ${sources.length ? '' : 'disabled'}>切换</button></div>${takeoverHint}</div>`;
   }
 }
 

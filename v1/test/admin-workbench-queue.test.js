@@ -203,22 +203,25 @@ test('D-284① 营业条：3 个 toggle + 路线切换块都在工作台', () =>
   const bar = html('wb-decisions');
   ['accept', 'dispatch', 'pay'].forEach((op) => assert.ok(bar.includes(`data-op="${op}"`), `营业条缺 ${op} toggle`));
   const routes = html('wb-routes');
-  assert.ok(routes.includes('走哪条路线'), '路线切换块必须在工作台（D-284 ①，不许挪去设置页）');
-  assert.ok(routes.includes('用哪个卡台'), '卡台选择仍在工作台');
+  // 断结构不断文案：措辞按 Lemon 2026-09-20 的反馈改过（「切到浏览器」看不懂），
+  // 这两条保护的是「路线与卡台的控件在工作台」，不是某几个字。
+  assert.match(routes, /default-recharge-method/, '路线切换块必须在工作台（D-284 ①，不许挪去设置页）');
+  assert.match(routes, /id="decision-card-source"/, '卡台选择仍在工作台');
 });
 
 test('D-284① 路线切换：当前路线标出来，另一条给可点的切换按钮', () => {
   const { sandbox, html } = loadAdminJs();
   sandbox.renderDecisions({ decisions: {}, providerHealth: { rechargeMethod: 'API' } }, { sources: [] });
   let routes = html('wb-routes');
-  assert.ok(routes.includes('当前：API'), '应标出当前走 API');
+  // 当前那条走 chip（wb-chip ok）标出来，不给切自己的按钮；文案可变，形态不变
+  assert.match(routes, /wb-chip ok[^>]*>[\s\S]{0,40}API/, '应标出当前走 API');
   assert.ok(routes.includes('class="wb-btn sm out default-recharge-method" data-method="BROWSER"'),
     '另一条应给切换按钮（这个按钮此前从未被渲染，功能等于下线）');
   assert.ok(!routes.includes('data-method="API"'), '当前那条不该再给切自己的按钮');
 
   sandbox.renderDecisions({ decisions: {}, providerHealth: { rechargeMethod: 'BROWSER' } }, { sources: [] });
   routes = html('wb-routes');
-  assert.ok(routes.includes('当前：浏览器'));
+  assert.match(routes, /wb-chip ok[^>]*>[\s\S]{0,40}浏览器/);
   assert.ok(routes.includes('data-method="API"'));
 });
 
