@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import { PublicApiError } from '../domain/public-api-error.js';
-import { eligibleInventoryCardSql, minimumBalanceSql } from './card-inventory-eligibility.js';
+import { eligibleInventoryCardSql, minimumBalanceSql, stockCountingCardSql } from './card-inventory-eligibility.js';
 import { cardProviderAccountIsHealthy, readCardProviderAccount } from './provider-route-service.js';
 
 /**
@@ -41,27 +41,10 @@ export function safeWaitingPredicate(alias = 'o') {
 // 这里只做转出，免得调用方改 import 路径。
 export { minimumBalanceSql };
 
-/**
- * 库存口径（水位统计 / 切换校验用）= 正式资格规则 **去掉 15 分钟新鲜度那一句**，其余条件原样。
- *
- * 分卡时那句「hnskj 卡的流水同步必须在 15 分钟内」是分配前的证据要求，不是这张卡不存在：
- * 5276 每小时整点同步一次，窗口外按资格 SQL 数是 0 张，调度器会以为缺 2 张、两分钟开出 2 张
- * （Lemon 2026-09-18 指出）。库存数只问「这张卡结构上还能不能服务新单」：余额、次数上限、
- * 活动分配、资金/退款风险、RETIRED/PRODUCT_ONLY 全部保留；新鲜度留给分卡与面二⑨按需同步。
- *
- * 不复制规则：从 eligibleInventoryCardSql 生成后只把那一句替换成「至少同步过一次」；
- * 找不到那一句就抛错，免得规则改了这里静默变成分配口径（D-172 惯犯 3）。
- */
-const FRESHNESS_CLAUSE = /\(\s*(\w+)\.sync_tier = 'MANUAL_IMPORT' OR \(\s*\1\.last_transaction_synced_at IS NOT NULL\s+AND \1\.last_transaction_synced_at >= DATE_SUB\(CURRENT_TIMESTAMP\(3\), INTERVAL 15 MINUTE\)\s*\)\)/;
-
-export function stockCountingCardSql(alias = 'c', minimumSql = '?', { productCode = 'plus' } = {}) {
-  const eligible = eligibleInventoryCardSql(alias, minimumSql, { productCode });
-  const match = FRESHNESS_CLAUSE.exec(eligible);
-  if (!match || match[1] !== alias) {
-    throw new Error('stockCountingCardSql: freshness clause not found in eligibleInventoryCardSql; rule changed, re-derive');
-  }
-  return eligible.replace(FRESHNESS_CLAUSE, `(${alias}.sync_tier = 'MANUAL_IMPORT' OR ${alias}.last_transaction_synced_at IS NOT NULL)`);
-}
+// 库存口径搬去了 card-inventory-eligibility.js（资格规则模块，更底层）——
+// providerCardStockSql 也要用它，留在这一层会让底层反向依赖上层。这里只做转出，
+// 免得调用方改 import 路径（与 minimumBalanceSql 同一个处理）。
+export { stockCountingCardSql };
 
 /** 某台 × 某产品此刻按库存口径可服务新单的张数。 */
 export async function countEligibleCards(queryable, { providerAccountId, productCode = 'plus' }) {

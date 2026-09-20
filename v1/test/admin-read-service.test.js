@@ -34,18 +34,18 @@ test('admin overview maps aggregate values without exposing raw records', async 
     [{ card_intake_pending: 2, funds_risk_pending: 1,
       card_funding_risk_pending: 2, card_funding_manual_review: 1,
       reconciliation_cases_open: 3, card_sync_backlog: 4, card_sync_review_required: 2 }],
-    [{ provider_account_id: 'pa-hnskj', provider_code: 'legacy-primary', provider_kind: 'hnskj', total: 14, in_stock: 2, plus_assignable: 0, in_use: 0, any_used: 6, product_used: 6, plus_target_available: 2 },
-      { provider_account_id: 'pa-backup-a', provider_code: 'backup-a', provider_kind: 'manual_excel', total: 16, in_stock: 7, plus_assignable: 2, in_use: 0, any_used: 6, product_used: 6, plus_target_available: 2 }],
+    [{ provider_account_id: 'pa-hnskj', provider_code: 'legacy-primary', provider_kind: 'hnskj', total: 14, in_stock: 2, stock_available: 2, bindable_now: 0, in_use: 0, any_used: 6, product_used: 6, plus_target_available: 2 },
+      { provider_account_id: 'pa-backup-a', provider_code: 'backup-a', provider_kind: 'manual_excel', total: 16, in_stock: 7, stock_available: 2, bindable_now: 2, in_use: 0, any_used: 6, product_used: 6, plus_target_available: 2 }],
     // ⚠️ fixture 必须是真实 SQL 可能产出的形状：any_used **不分产品**，三个产品查出来必然
     // 完全相同（2026-09-20 生产实测都是 6）；按产品的用量在 product_used 里。
     // 初版 fixture 手工造了「20X any_used=1、5X any_used=0」这种真实 SQL 产不出的数据，
     // 于是断言全绿、把「byProduct.used 取错列」这个 bug 盖住了。
     // 5X：两台水位都是 0（生产实情，Lemon 2026-09-20 确认正常 —— 前期没给它做库存卡）
-    [{ provider_account_id: 'pa-hnskj', plus_assignable: 0, any_used: 6, product_used: 0, plus_target_available: 0 },
-      { provider_account_id: 'pa-backup-a', plus_assignable: 0, any_used: 6, product_used: 0, plus_target_available: 0 }],
+    [{ provider_account_id: 'pa-hnskj', stock_available: 0, bindable_now: 0, any_used: 6, product_used: 0, plus_target_available: 0 },
+      { provider_account_id: 'pa-backup-a', stock_available: 0, bindable_now: 0, any_used: 6, product_used: 0, plus_target_available: 0 }],
     // 20X：水位也是 0，但已经有卡在服务（生产 backup-a 有 1 张）
-    [{ provider_account_id: 'pa-hnskj', plus_assignable: 0, any_used: 6, product_used: 0, plus_target_available: 0 },
-      { provider_account_id: 'pa-backup-a', plus_assignable: 0, any_used: 6, product_used: 1, plus_target_available: 0 }],
+    [{ provider_account_id: 'pa-hnskj', stock_available: 0, bindable_now: 0, any_used: 6, product_used: 0, plus_target_available: 0 },
+      { provider_account_id: 'pa-backup-a', stock_available: 0, bindable_now: 0, any_used: 6, product_used: 1, plus_target_available: 0 }],
     [{ provider_account_id: 'pa-hnskj', spent_today: '16.000000', currency: 'USD' },
       { provider_account_id: 'pa-backup-a', spent_today: '33.250000', currency: 'USD' }],
     [{ active: 1, writes_on: 0 }]
@@ -100,21 +100,21 @@ test('admin overview maps aggregate values without exposing raw records', async 
   // 整行比对：byProduct / spentToday / 故障态由上面各自的断言管，这里只钉「不多不少哪些字段」
   // 与标量值，免得整块对象一改就得重抄一遍（但字段集合仍然被钉死）。
   assert.deepEqual(result.cardStockByProvider.map((r) => Object.keys(r).sort()), [
-    ['anyUsed', 'byProduct', 'inStock', 'inUse', 'label', 'plusAssignable', 'providerAccountId',
-      'providerCode', 'providerKind', 'spentCurrency', 'spentToday', 'supplyFaultReason',
-      'supplyFaultState', 'total'],
-    ['anyUsed', 'byProduct', 'inStock', 'inUse', 'label', 'plusAssignable', 'providerAccountId',
-      'providerCode', 'providerKind', 'spentCurrency', 'spentToday', 'supplyFaultReason',
-      'supplyFaultState', 'total']
+    ['anyUsed', 'bindableNow', 'byProduct', 'inStock', 'inUse', 'label', 'providerAccountId',
+      'providerCode', 'providerKind', 'spentCurrency', 'spentToday', 'stockAvailable',
+      'supplyFaultReason', 'supplyFaultState', 'total'],
+    ['anyUsed', 'bindableNow', 'byProduct', 'inStock', 'inUse', 'label', 'providerAccountId',
+      'providerCode', 'providerKind', 'spentCurrency', 'spentToday', 'stockAvailable',
+      'supplyFaultReason', 'supplyFaultState', 'total']
   ]);
   assert.deepEqual(result.cardStockByProvider.map((r) => ({
     providerAccountId: r.providerAccountId, providerCode: r.providerCode,
     providerKind: r.providerKind, label: r.label, total: r.total,
-    inStock: r.inStock, plusAssignable: r.plusAssignable, inUse: r.inUse, anyUsed: r.anyUsed
+    inStock: r.inStock, stockAvailable: r.stockAvailable, bindableNow: r.bindableNow, inUse: r.inUse, anyUsed: r.anyUsed
   })), [
     // label 由 domain/provider-labels 给，页面不自己拼（2026-09-20 一致性摸排第 5 条）
-    { providerAccountId: 'pa-hnskj', providerCode: 'legacy-primary', providerKind: 'hnskj', label: 'HNSKJ', total: 14, inStock: 2, plusAssignable: 0, inUse: 0, anyUsed: 6 },
-    { providerAccountId: 'pa-backup-a', providerCode: 'backup-a', providerKind: 'manual_excel', label: 'highvcc', total: 16, inStock: 7, plusAssignable: 2, inUse: 0, anyUsed: 6 }
+    { providerAccountId: 'pa-hnskj', providerCode: 'legacy-primary', providerKind: 'hnskj', label: 'HNSKJ', total: 14, inStock: 2, stockAvailable: 2, bindableNow: 0, inUse: 0, anyUsed: 6 },
+    { providerAccountId: 'pa-backup-a', providerCode: 'backup-a', providerKind: 'manual_excel', label: 'highvcc', total: 16, inStock: 7, stockAvailable: 2, bindableNow: 2, inUse: 0, anyUsed: 6 }
   ]);
   assert.deepEqual(result.operationalBacklog, {
     cardIntakePending: 2, fundsRiskPending: 1,

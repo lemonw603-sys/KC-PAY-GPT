@@ -510,11 +510,16 @@ export function createCardStockService({ pool, sessionEncryptionKey, panHmacKey 
         label: providerLabelOf(providerKind),
         total: Number(row.total || 0),
         inStock: Number(row.in_stock || 0),
-        // 「可分配」＝ 权威资格规则算出来的，不是「在库」。两者差很远，别混用。
-        plusAssignable: Number(row.plus_assignable || 0),
+        // 一个数说不了两件事（2026-09-20 Lemon 追问「明明有两张卡为什么是 0」查出来的）：
+        //   stockAvailable 库存口径——「卡够不够」的答案，页面主数
+        //   bindableNow    分配口径——此刻能立即绑几张，比上面多一条 15 分钟同步时效
+        // hnskj 每 3 小时同步一次而窗口只有 15 分钟，所以后者在大部分时间里小于前者，
+        // 且会自行恢复。拿它当「卡够不够」会让好卡看起来不存在。
+        stockAvailable: Number(row.stock_available || 0),
+        bindableNow: Number(row.bindable_now || 0),
         inUse: Number(row.in_use || 0),
         anyUsed: Number(row.any_used || 0),
-        // Plus 口径，与「可分配」一致；来自 card_supply_policies（调度器真正用的那份）
+        // Plus 口径，与上面两个数一致；来自 card_supply_policies（调度器真正用的那份）
         stockTarget: row.plus_target_available == null ? null : Number(row.plus_target_available),
         // highvcc 没有快照行，余额只能实时查（前端「查余额」按钮）——这里给 null，
         // 不是 0。0 会被读成「钱花光了」。

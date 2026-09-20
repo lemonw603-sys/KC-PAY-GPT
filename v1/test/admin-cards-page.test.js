@@ -16,14 +16,14 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 
 const RIG_HNSKJ = {
   providerAccountId: 'pa-1', accountCode: 'legacy-primary', providerKind: 'hnskj',
-  label: 'HNSKJ', total: 14, inStock: 2, plusAssignable: 1, inUse: 0, anyUsed: 0,
+  label: 'HNSKJ', total: 14, inStock: 2, stockAvailable: 1, bindableNow: 1, inUse: 0, anyUsed: 0,
   stockTarget: 5, walletBalance: '41.20', walletCurrency: 'USD',
   walletSyncedAt: '2026-09-20T00:59:00.000Z', walletLiveOnly: false, walletFloor: '30.00', walletAlertThreshold: '35.00',
   openedToday: 2, dailyLimit: 3, supplyFaultState: 'OK', supplyFaultReason: null, tokenFault: false
 };
 const RIG_BACKUP = {
   providerAccountId: 'pa-3', accountCode: 'backup-a', providerKind: 'manual_excel',
-  label: 'highvcc', total: 16, inStock: 7, plusAssignable: 1, inUse: 0, anyUsed: 0,
+  label: 'highvcc', total: 16, inStock: 7, stockAvailable: 1, bindableNow: 1, inUse: 0, anyUsed: 0,
   stockTarget: 5, walletBalance: null, walletCurrency: 'USD', walletSyncedAt: null,
   walletLiveOnly: true, walletFloor: '20.00', walletAlertThreshold: '25.00', openedToday: 1, dailyLimit: 3,
   supplyFaultState: 'OK', supplyFaultReason: null, tokenFault: false
@@ -482,4 +482,25 @@ test('B4：「开卡…」要把外层「高级」一起展开，只开里层等
   const handler = src.slice(start, src.indexOf("closest('[data-rig-refresh]')"));
   assert.match(handler, /closest\('details'\)/, '要沿祖先链把每一层 details 都打开');
   assert.match(handler, /node\.open = true/);
+});
+
+test('D-307：台账主数用库存口径；两个口径不一致时补一句，一致时不啰嗦', () => {
+  const { sandbox, html } = loadAdminJs();
+
+  // 生产那个场景：卡是好的，但在同步窗口外
+  sandbox.renderCardRigs([{ ...RIG_HNSKJ, stockAvailable: 2, bindableNow: 0, stockTarget: 2 }]);
+  const gap = html('sel:#cards-rigs');
+  assert.match(gap, /还能服务 \/ 水位（Plus）/);
+  assert.match(gap, />2 <small>\/ 2<\/small>/, '主数必须是库存口径 2，不是分配口径 0');
+  assert.match(gap, /此刻可立即绑 0 张/);
+  assert.match(gap, /会自行恢复/, '必须说明这是暂时的，否则运营会以为卡出事了');
+  assert.doesNotMatch(gap, /is-warn/, '库存 2 已达水位 2，不该报库存偏低');
+
+  // 两个数一致时不提 —— 天天挂一句一样的话就是噪音
+  sandbox.renderCardRigs([{ ...RIG_HNSKJ, stockAvailable: 2, bindableNow: 2, stockTarget: 2 }]);
+  assert.doesNotMatch(html('sel:#cards-rigs'), /此刻可立即绑/);
+
+  // 库存真的低于水位才报警（这才是「卡不够了」）
+  sandbox.renderCardRigs([{ ...RIG_HNSKJ, stockAvailable: 1, bindableNow: 1, stockTarget: 2 }]);
+  assert.match(html('sel:#cards-rigs'), /is-warn/);
 });

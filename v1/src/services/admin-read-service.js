@@ -853,7 +853,10 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
         ].map(({ code, label, row: productRow }) => ({
           productCode: code,
           label,
-          assignable: count(productRow?.plus_assignable),
+          // 库存口径是「还剩几张」的答案；分配口径是此刻能立即绑几张（会自行恢复的瞬时值）。
+          // 合成一个数会让 hnskj 的好卡在同步窗口外看起来不存在（2026-09-20 查实）。
+          stockAvailable: count(productRow?.stock_available),
+          bindableNow: count(productRow?.bindable_now),
           // 按产品的用量用 product_used（账本 JOIN 订单取 plan_type）。
           // any_used 不分产品 —— 拿它当按产品用量，三个产品会完全相同（实测都是 6，
           // 而真实是 plus 12 / pro_20x 1 / pro_5x 0）。
@@ -870,7 +873,8 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
           label: providerLabelOf(row.provider_kind),
           total: count(row.total),
           inStock: count(row.in_stock),
-          plusAssignable: count(row.plus_assignable),
+          stockAvailable: count(row.stock_available),
+          bindableNow: count(row.bindable_now),
           inUse: count(row.in_use),
           anyUsed: count(row.any_used),
           // 供给故障：补卡调度器失败时写 FAULT + 原因，贴新 token 清回 OK

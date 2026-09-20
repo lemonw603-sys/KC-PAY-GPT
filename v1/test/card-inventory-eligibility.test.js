@@ -158,3 +158,36 @@ test('库存统计只算卡台，不把 zzshu 那类充值渠道当成第三个�
     assert.ok(sql.indexOf('WHERE') < sql.indexOf('GROUP BY'), 'WHERE 必须在 GROUP BY 之前');
   }
 });
+
+test('库存口径与分配口径是两个数，只差「15 分钟同步时效」那一句（D-307）', async () => {
+  const { providerCardStockSql, eligibleInventoryCardSql, stockCountingCardSql, minimumBalanceSql }
+    = await import('../src/services/card-inventory-eligibility.js');
+
+  const sql = providerCardStockSql();
+  // 两列必须都在。合成一个数正是 2026-09-20 那个 bug：hnskj 每 3 小时同步一次而窗口
+  // 只有 15 分钟，好卡在 91.7% 的时间里被算成 0（生产实测 分配 0 / 库存 2 / 在库 2）。
+  assert.match(sql, /AS stock_available/);
+  assert.match(sql, /AS bindable_now/);
+  assert.doesNotMatch(sql, /AS plus_assignable/, '旧的单一口径列不许回来');
+
+  // 两个口径的差别**有且只有**新鲜度那一句 —— 别的条件必须一字不差，
+  // 否则「库存」会悄悄比「能绑」宽出别的东西（比如漏掉退款风险或次数上限）。
+  const min = minimumBalanceSql('plus');
+  const strict = eligibleInventoryCardSql('c', min, { productCode: 'plus' });
+  const loose = stockCountingCardSql('c', min, { productCode: 'plus' });
+  assert.match(strict, /INTERVAL 15 MINUTE/);
+  assert.doesNotMatch(loose, /INTERVAL 15 MINUTE/);
+  // 两边各自精确替换掉新鲜度那一句。**不要写成一个通吃的正则**——
+  // 第一版写 /\(c\.sync_tier = 'MANUAL_IMPORT' OR[\s\S]*?\)\)/ 在宽口径那侧
+  // 一路吃到了 LEAST(...) 结尾的 `))`，把余额子句也吞了，比出来的"差异"全是假的。
+  const STRICT_FRESH = /\(c\.sync_tier = 'MANUAL_IMPORT' OR \(\s*c\.last_transaction_synced_at IS NOT NULL\s+AND c\.last_transaction_synced_at >= DATE_SUB\(CURRENT_TIMESTAMP\(3\), INTERVAL 15 MINUTE\)\s*\)\)/;
+  const LOOSE_FRESH = /\(c\.sync_tier = 'MANUAL_IMPORT' OR c\.last_transaction_synced_at IS NOT NULL\)/;
+  assert.match(strict, STRICT_FRESH, '严口径里应当有 15 分钟那一句');
+  assert.match(loose, LOOSE_FRESH, '宽口径里应当只剩「至少同步过一次」');
+  const normalize = (x, re) => x.replace(re, '<FRESHNESS>').replace(/\s+/g, ' ');
+  assert.equal(normalize(loose, LOOSE_FRESH), normalize(strict, STRICT_FRESH),
+    '两个口径除了新鲜度那一句必须完全相同');
+
+  // 三个数依次收紧：in_stock ≥ stock_available ≥ bindable_now
+  assert.match(sql, /SUM\(c\.inventory_status <> 'RETIRED'\) AS in_stock/);
+});

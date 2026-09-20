@@ -128,7 +128,12 @@ test('admin refresh feedback and inset dropdown arrows remain visible', () => {
   // 第⑥步工作台重做（D-283）：overview 段改营业条 wb-decisions + 卡与钱「按台按产品」。
   // 原先断言的是「Plus 可分配」那个 chip 文案，2026-09-20 按 D-283 原规划改成
   // 每台一行、行内按产品「用 N / 剩 N」+ 会不会自动补 —— 信息还在，表达变了。
-  assert.match(script, /用 \$\{x\.used\} \/ 剩 \$\{x\.assignable\}/);
+  // 「剩 N」用**库存口径**（stockAvailable），不是分配口径。分配口径多一条「15 分钟内
+  // 同步过」，而 hnskj 每 3 小时才同步一次 —— 拿它当「还剩几张」会让好卡看起来不存在
+  // （Lemon 2026-09-18 指出、2026-09-20 在页面这一侧查实并修，D-307）。
+  assert.match(script, /用 \$\{x\.used\} \/ 剩 \$\{stock\}/);
+  assert.match(script, /const stock = Number\(x\.stockAvailable \|\| 0\)/);
+  assert.doesNotMatch(script, /剩 \$\{x\.bindableNow\}/, '「还剩几张」不许用分配口径');
   assert.match(script, /byProduct/);
   // 「剩 N」旁边必须标会不会自动补：水位 0 的产品断了只能人工开，
   // 「20X 剩 0」和「Plus 剩 0」严重程度完全不同（Lemon 2026-09-20）

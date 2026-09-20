@@ -388,19 +388,23 @@ function renderWbCards(overview) {
     ? (h.accountBalance == null ? '钱包 —' : `钱包 ${formatMoney(h.accountBalance)} ${escapeHtml(h.currency || 'USD')}`)
     : '钱包见卡片页';
   if (!byProvider.length) { box.innerHTML = '<p class="wb-qempty">暂无卡台数据</p>'; return; }
-  const totalAssignable = byProvider.reduce((sum, p) => sum + (p.plusAssignable || 0), 0);
+  const totalStock = byProvider.reduce((sum, p) => sum + (p.stockAvailable || 0), 0);
+  const totalBindable = byProvider.reduce((sum, p) => sum + (p.bindableNow || 0), 0);
   const waiting = Number(overview.ordersWaitingForCard || 0);
 
   // D-283 原规划就是「按台按产品」，原型 C 画的是每台一行、行内按产品「用 N / 剩 N」。
   // 「剩 N」旁边必须标会不会自动补（Lemon 2026-09-20）：水位来自 card_supply_policies，
   // 调度器读的就是它 —— 水位 0 表示这个产品没做库存卡，断了只能人工开，
   // 而「20X 剩 0」和「Plus 剩 0」的严重程度完全不同，只显示「剩 0」看不出这个区别。
+  // 「剩 N」用**库存口径**。此前用的是分配口径（多一条「15 分钟内同步过」），而 hnskj
+  // 每 3 小时才同步一次 —— 同一批好卡在每 3 小时里只有头 15 分钟算数，其余时间显示 0。
+  // Lemon 2026-09-18 就指出过，当时只修了补卡调度器，这里漏了（2026-09-20 查实）。
   const prodChip = (x) => {
-    const tone = x.assignable > 0 ? 'ok' : x.used > 0 ? 'warn' : 'mute';
+    const stock = Number(x.stockAvailable || 0);
     const how = x.autoReplenished ? '自动补' : '需人工开';
-    return `<span class="wb-prod ${x.assignable > 0 ? 'is-ok' : ''}">`
+    return `<span class="wb-prod ${stock > 0 ? 'is-ok' : ''}">`
       + `<b>${escapeHtml(x.label)}</b>`
-      + `<span class="wb-prod-n">用 ${x.used} / 剩 ${x.assignable}</span>`
+      + `<span class="wb-prod-n">用 ${x.used} / 剩 ${stock}</span>`
       + `<small class="${x.autoReplenished ? '' : 'is-manual'}">${how}</small></span>`;
   };
   box.innerHTML = byProvider.map((p) => {
@@ -421,7 +425,11 @@ function renderWbCards(overview) {
       <div class="wb-prods">${(p.byProduct || []).map(prodChip).join('')}</div>
     </div>`;
   }).join('')
-    + `<p class="wb-total">合计现在可分配 <b class="wb-mono">${totalAssignable}</b> 张`
+    + `<p class="wb-total">合计还能服务 <b class="wb-mono">${totalStock}</b> 张`
+    // 两个数不一样时才提一句，且说明它会自己恢复 —— 不提等于隐瞒，天天提是噪音。
+    + (totalBindable < totalStock
+      ? `<span class="wb-sub">（其中 ${totalBindable} 张此刻可立即绑，其余在等下一次同步，会自行恢复）</span>`
+      : '')
     + (waiting > 0
       ? ` · <b class="wb-waiting">${waiting} 单正在等卡</b>`
       : ' · 没有单在等卡')
@@ -1354,9 +1362,14 @@ function renderCardRigs(byProvider, tokenStatus) {
   if (!rigs.length) { elements.cardsRigs.innerHTML = '<p class="empty-state">还没有卡台</p>'; return; }
   elements.cardsRigs.innerHTML = rigs.map((rig) => {
     const acct = escapeHtml(rig.accountCode || '');
-    const assignable = Number(rig.plusAssignable || 0);
+    // 主数用**库存口径**（「卡够不够」问的是它）；分配口径只在比它小的时候补一句。
+    // 此前主数用的是分配口径，而 hnskj 每 3 小时才同步一次、时效窗口只有 15 分钟 ——
+    // 两张余额 $16 和 $50 的好卡，在每 3 小时里有 91.7% 的时间显示成「可分配 0」
+    // （2026-09-20 生产实测，Lemon 追问「明明有两张卡」才查出来）。
+    const stock = Number(rig.stockAvailable || 0);
+    const bindable = Number(rig.bindableNow || 0);
     const target = Number(rig.stockTarget || 0);
-    const lowStock = rig.stockTarget != null && target > 0 && assignable < target;
+    const lowStock = rig.stockTarget != null && target > 0 && stock < target;
     // token 只对 highvcc（无快照那台）有意义。
     //
     // B2：权威信号改成 PROVIDER_TOKEN_EXPIRED 告警（rig.tokenExpiredAlert），不再用
@@ -1375,8 +1388,8 @@ function renderCardRigs(byProvider, tokenStatus) {
     const opened = Number(rig.openedToday || 0);
     const limit = Number(rig.dailyLimit || 0);
     const cells = [
-      rigCell('可分配 / 水位（Plus）',
-        `${assignable} <small>/ ${rig.stockTarget == null ? '未配策略' : target}</small>`,
+      rigCell('还能服务 / 水位（Plus）',
+        `${stock} <small>/ ${rig.stockTarget == null ? '未配策略' : target}</small>`,
         { tone: lowStock ? 'is-warn' : '' }),
       isHighvcc
         ? rigCell('钱包余额 / 底线',
@@ -1401,6 +1414,9 @@ function renderCardRigs(byProvider, tokenStatus) {
       <div class="cardrig-quad">${cells}</div>
       <div class="cardrig-foot">
         <span>在库 ${Number(rig.inStock || 0)} · 总 ${Number(rig.total || 0)} · 使用中 ${Number(rig.inUse || 0)}</span>
+        ${bindable < stock
+          ? `<span class="cardrig-note">此刻可立即绑 ${bindable} 张，其余在等下一次同步（会自行恢复）</span>`
+          : ''}
         <button class="cardbtn" type="button" data-rig-open="${escapeHtml(rig.providerKind)}">开卡…</button>
         <button class="cardbtn" type="button" data-rig-refresh="${escapeHtml(rig.providerKind)}"
           data-rig-account="${acct}">刷新这台</button>

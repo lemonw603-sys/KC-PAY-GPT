@@ -152,7 +152,7 @@ test('D-285 数字墙：五格按原型，后端没有的三项必须标「待�
   const { sandbox, html } = loadAdminJs();
   sandbox.renderWbWall({
     metrics: { todayOrders: 12, processingOrders: 1, successRate: 92, completedOrders: 12 },
-    cardStockByProvider: [{ plusAssignable: 2 }],
+    cardStockByProvider: [{ stockAvailable: 2, bindableNow: 2 }],
     operationalBacklog: { reconciliationCasesOpen: 5 },
     openAlertCount: 48,
   });

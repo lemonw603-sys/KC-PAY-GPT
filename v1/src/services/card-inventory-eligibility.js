@@ -190,15 +190,51 @@ export function refreshableInventoryCardSql(alias = 'c', { productCode = 'plus' 
 }
 
 /**
+ * 库存口径（水位统计 / 切换校验用）= 正式资格规则 **去掉 15 分钟新鲜度那一句**，其余条件原样。
+ *
+ * 分卡时那句「hnskj 卡的流水同步必须在 15 分钟内」是分配前的证据要求，不是这张卡不存在：
+ * 5276 每小时整点同步一次，窗口外按资格 SQL 数是 0 张，调度器会以为缺 2 张、两分钟开出 2 张
+ * （Lemon 2026-09-18 指出）。库存数只问「这张卡结构上还能不能服务新单」：余额、次数上限、
+ * 活动分配、资金/退款风险、RETIRED/PRODUCT_ONLY 全部保留；新鲜度留给分卡与面二⑨按需同步。
+ *
+ * 不复制规则：从 eligibleInventoryCardSql 生成后只把那一句替换成「至少同步过一次」；
+ * 找不到那一句就抛错，免得规则改了这里静默变成分配口径（D-172 惯犯 3）。
+ */
+const FRESHNESS_CLAUSE = /\(\s*(\w+)\.sync_tier = 'MANUAL_IMPORT' OR \(\s*\1\.last_transaction_synced_at IS NOT NULL\s+AND \1\.last_transaction_synced_at >= DATE_SUB\(CURRENT_TIMESTAMP\(3\), INTERVAL 15 MINUTE\)\s*\)\)/;
+
+export function stockCountingCardSql(alias = 'c', minimumSql = '?', { productCode = 'plus' } = {}) {
+  const eligible = eligibleInventoryCardSql(alias, minimumSql, { productCode });
+  const match = FRESHNESS_CLAUSE.exec(eligible);
+  if (!match || match[1] !== alias) {
+    throw new Error('stockCountingCardSql: freshness clause not found in eligibleInventoryCardSql; rule changed, re-derive');
+  }
+  return eligible.replace(FRESHNESS_CLAUSE, `(${alias}.sync_tier = 'MANUAL_IMPORT' OR ${alias}.last_transaction_synced_at IS NOT NULL)`);
+}
+
+/**
  * 按卡台聚合库存（D-280 ①「两台并列、同一张脸」）。
  *
- * 唯一定义：工作台「卡与钱」和卡片页顶部台账栏都调这一份，所以两处的「可分配」
- * 永远同口径。D-280 硬约束写的就是这条——状态那栏必须复用第③④块的资格规则算，
- * 页面不许再写一套判断。可分配＝ eligibleInventoryCardSql（同一份规则），不是
- * 「status='active'」或「余额>0」这类局部字段。
+ * 唯一定义：工作台「卡与钱」和卡片页顶部台账栏都调这一份，所以两处永远同口径。
+ * 页面不许再写一套判断。
  *
- * in_stock 只排除 RETIRED，是「这台还剩几张卡」；plus_assignable 才是「现在能
- * 分出去几张」。两者差得很远（生产 2026-09-20：backup-a 在库 7），不要混用。
+ * **一个数说不了两件事，所以这里算两个**（2026-09-20 Lemon 追问「HNSKJ 明明有两张卡，
+ * 为什么可分配是 0」而查出来的）：
+ *
+ *   stock_available  库存口径 —— 这张卡结构上还能不能服务新单（余额、次数上限、活动分配、
+ *                    资金/退款风险、RETIRED/PRODUCT_ONLY 全查，**不查 15 分钟同步时效**）。
+ *                    「卡够不够」问的是这个数。
+ *   bindable_now     分配口径 —— 此刻能不能立即绑单，比上面多一条「hnskj 卡的流水必须
+ *                    15 分钟内同步过」。那是**付款前的证据要求**，不是这张卡不存在。
+ *
+ * 为什么必须分开：hnskj 的卡**每 3 小时**同步一次，而时效窗口是 15 分钟 —— 同一批好卡
+ * 在每 3 小时里只有头 15 分钟算「可分配」，其余 91.7% 的时间是 0。生产 2026-09-20 10:56 实测：
+ * legacy-primary 分配口径 0 / 库存口径 2 / 在库 2，两张卡余额 $16 与 $50、状态全正常。
+ *
+ * Lemon 2026-09-18 就指出过这个坑，当时**只修了补卡调度器**（它改用库存口径数，所以不会
+ * 误判缺卡去开卡），卡片页与工作台这一侧漏了 —— 两处「同口径」没错，用的都是错的那个。
+ *
+ * in_stock 只排除 RETIRED，是「这台还剩几张卡」，比 stock_available 还宽（它不看余额与
+ * 次数上限）。三个数依次收紧：in_stock ≥ stock_available ≥ bindable_now。
  */
 export function providerCardStockSql({ productCode = 'plus' } = {}) {
   const normalizedProduct = String(productCode || 'plus').trim().toLowerCase();
@@ -226,7 +262,10 @@ export function providerCardStockSql({ productCode = 'plus' } = {}) {
       sp.daily_open_limit AS plus_daily_open_limit,
       COUNT(*) AS total,
       SUM(c.inventory_status <> 'RETIRED') AS in_stock,
-      SUM((${eligibleInventoryCardSql('c', minimumSql, { productCode })})) AS plus_assignable,
+      -- 库存口径：「卡够不够」的答案，页面主数。
+      SUM((${stockCountingCardSql('c', minimumSql, { productCode })})) AS stock_available,
+      -- 分配口径：此刻能立即绑几张。比上面多一条 15 分钟同步时效，是个会自行恢复的瞬时值。
+      SUM((${eligibleInventoryCardSql('c', minimumSql, { productCode })})) AS bindable_now,
       SUM(EXISTS(SELECT 1 FROM card_assignment_history ah
         WHERE ah.card_id=c.id AND ah.status='ACTIVE')) AS in_use,
       SUM((SELECT COUNT(*) FROM card_consumption_ledger u
