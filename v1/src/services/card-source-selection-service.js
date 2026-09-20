@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import { PublicApiError } from '../domain/public-api-error.js';
-import { eligibleInventoryCardSql } from './card-inventory-eligibility.js';
+import { eligibleInventoryCardSql, minimumBalanceSql } from './card-inventory-eligibility.js';
 import { cardProviderAccountIsHealthy, readCardProviderAccount } from './provider-route-service.js';
 
 /**
@@ -37,14 +37,9 @@ export function safeWaitingPredicate(alias = 'o') {
 }
 
 /** 产品的最低卡余额门槛：Plus 用全局默认，Pro 用 `minimum_required_card_balance:<plan>`，缺省回落到默认。 */
-export function minimumBalanceSql(productCode) {
-  const plan = String(productCode || 'plus').trim().toLowerCase();
-  if (!/^[a-z0-9_-]{1,32}$/.test(plan)) throw new TypeError('Invalid product code');
-  return `COALESCE(
-    (SELECT CAST(setting_value AS DECIMAL(18,6)) FROM app_settings WHERE setting_key = 'minimum_required_card_balance:${plan}' LIMIT 1),
-    (SELECT CAST(setting_value AS DECIMAL(18,6)) FROM app_settings WHERE setting_key = 'default_minimum_required_card_balance' LIMIT 1),
-    999999999)`;
-}
+// 最低卡余额口径搬去了 card-inventory-eligibility.js（资格规则模块，更底层），
+// 这里只做转出，免得调用方改 import 路径。
+export { minimumBalanceSql };
 
 /**
  * 库存口径（水位统计 / 切换校验用）= 正式资格规则 **去掉 15 分钟新鲜度那一句**，其余条件原样。

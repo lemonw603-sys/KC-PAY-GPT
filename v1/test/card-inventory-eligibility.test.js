@@ -111,3 +111,35 @@ test('按产品统计库存时，最低卡余额也要按产品取 —— 与真
   const idxDefault = pro20.indexOf("'default_minimum_required_card_balance'");
   assert.ok(idxProduct > -1 && idxDefault > idxProduct, '按产品的键必须排在全局 default 之前');
 });
+
+test('大额卡默认不给 Plus 用，且只约束 Plus（Lemon 2026-09-20 定：>75 美金）', () => {
+  // 背景：cards 表没有产品字段，开卡任务记了 product_code 但开出的卡不回写，
+  // 唯一的产品限定是人工标 PRODUCT_ONLY。往后台放一张 $150 的 20X 卡时，只要忘了
+  // 手动标，它就满足 Plus 的全部条件（余额 ≥ $16）而进 Plus 池，钱卡死在那张卡上。
+  const plus = eligibleInventoryCardSql('c', '16');
+
+  // 判定金额取两者较大：只看当前余额的话，$150 的卡用掉一半降到 $70 就又能给 Plus 用
+  assert.match(plus, /GREATEST\(\s*c\.current_balance,\s*COALESCE\(c\.funded_amount, 0\)\s*\)/);
+  // 阈值可调，缺省 75
+  assert.ok(plus.includes("setting_key = 'plus_max_card_balance'"), '阈值要能从 app_settings 调');
+  assert.match(plus, /LIMIT 1\), 75\)/);
+  // 「默认」＝可被显式覆盖：明确标了 PRODUCT_ONLY=plus 的卡仍然放行
+  assert.match(plus, /plus_large_override\.allocation_policy = 'PRODUCT_ONLY'/);
+  assert.match(plus, /LOWER\(COALESCE\(plus_large_override\.product_code, ''\)\) = 'plus'/);
+
+  // 只约束 Plus —— 大卡给 5X/20X 用本来就是它该去的地方，不能连它们一起挡住
+  for (const product of ['pro_5x', 'pro_20x']) {
+    const sql = eligibleInventoryCardSql('c', '150', { productCode: product });
+    assert.ok(!sql.includes('plus_max_card_balance'), `${product} 不该带 Plus 的大额守卫`);
+  }
+});
+
+test('加了大额守卫之后，库存口径仍能从资格规则派生（不复制规则）', async () => {
+  // stockCountingCardSql 是「资格规则去掉新鲜度那一句」派生出来的，靠正则定位那一句。
+  // 在规则末尾加条件不该碰坏它；碰坏了它会抛错而不是静默变成分配口径。
+  const { stockCountingCardSql } = await import('../src/services/card-source-selection-service.js');
+  const counting = stockCountingCardSql('c', '16');
+  assert.ok(counting.includes('plus_max_card_balance'), '派生结果要保留大额守卫');
+  assert.ok(!counting.includes('INTERVAL 15 MINUTE'), '派生结果要去掉新鲜度');
+  assert.ok(counting.includes("c.sync_tier = 'MANUAL_IMPORT' OR c.last_transaction_synced_at IS NOT NULL"));
+});
