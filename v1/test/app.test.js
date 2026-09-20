@@ -85,15 +85,35 @@ test('labels local stock refresh separately from provider card synchronization',
   assert.match(script, /本地列表已刷新（未同步卡台）/);
 });
 
-test('admin overview does not describe disabled automatic card opening as enabled', async () => {
+test('自动开卡：不做总开关，停它走水位；且不许把关闭态说成开启（F-65 结案）', async () => {
   const html = await readFile(new URL('../public/admin/index.html', import.meta.url), 'utf8');
   const script = await readFile(new URL('../public/admin/assets/admin.js', import.meta.url), 'utf8');
-  assert.match(html, /admin\.js\?v=61/);
-  // 3b182f0 (2026-09-08) hoisted d.supplyAutomationMixed into supplyMixed; same three states.
-  // 第⑥步工作台重做 renderDecisions（D-283）：供给三态文案改「自动开卡补钱」，仍是关闭态不显示成开启。
-  assert.match(script, /supplyOn \? '自动开卡补钱' : \(supplyMixed \? '部分开启' : '全部人工'\)/);
+
+  // 这条测试的来历值得写下来：它挂着「F-65 有意留红」的名头很久，2026-09-20 查清后
+  // 发现红的是第一行写死的 `admin.js?v=61`，后面三条守门断言从 d33544c 起一次都没执行过。
+  // 版本号改成「带版本 + 只增不减」之后，真正的断言才第一次跑起来，立刻红在
+  // 「供给三态文案必须存在」—— 而那个控件在工作台改乙-3 时就被拿掉了。
+  //
+  // Lemon 2026-09-20 裁定：**这个总开关不做**。停自动开卡的正式做法是设置页把水位设成 0
+  // （调度器需求 = max(水位, 等卡单数)，按台按产品，比全局一刀切更贴合「只停坏掉那一台」）。
+  // 所以那条断言随决定作废，剩下的三件事改成钉住这个决定。
+  const jsVersion = html.match(/admin\.js\?v=(\d+)/);
+  assert.ok(jsVersion, 'index.html 必须带 admin.js 的 ?v= 版本');
+  assert.ok(Number(jsVersion[1]) >= 73, 'admin.js 的版本只能往上走');
+
+  // ① 旧的谎报文案不许回来（这才是测试名说的那件事）
   assert.doesNotMatch(script, /自动补卡已开启，已到库存线/);
   assert.doesNotMatch(script, /自动开卡已关闭；当前无合格卡时需要人工处理/);
+
+  // ② 不许再造那个总开关。后端 /operations/supply-automation 一次写两个键
+  // （card_auto_replenishment_enabled + card_balance_recharge_enabled），而补余额已弃（D-218）、
+  // 生产刻意把两个键设成不同值 —— 前端调一次就会被抹平。要接必须先拆成单键。
+  const code = script.replace(/^\s*\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
+  assert.doesNotMatch(code, /data-supply-toggle/, '总开关的控件与处理器都已按决定移除');
+  assert.doesNotMatch(code, /operations\/supply-automation/, '前端不许调这个一次写两键的端点');
+
+  // ③ 既然水位就是那个开关，设置页必须把这件事说出来 —— 不说运营不会知道可以这么用
+  assert.match(html, /水位填 0 ＝ 这台这个产品不再自动开卡/);
 });
 
 test('admin script only references elements it declares and ids that exist in the page', async () => {

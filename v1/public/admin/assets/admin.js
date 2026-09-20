@@ -328,7 +328,7 @@ function orderRow(order) {
 // ===== 工作台（第⑥步 C 精修，D-283）渲染 =====
 // 复用现有 overview / reconciliation·daily 取数，重排成 C 精修布局。
 // 营业条沿用五个决定的按钮契约（data-intake / data-method / #decision-card-source(-apply)
-// / #decision-payment / data-supply-toggle），只换候光皮，事件委托零改动。
+// / #decision-payment），只换候光皮，事件委托零改动。
 function wbChip(cls, text) { return `<span class="wb-chip ${cls}"><span class="wb-d"></span>${escapeHtml(text)}</span>`; }
 
 function renderWbWall(overview) {
@@ -3145,17 +3145,12 @@ document.addEventListener('click', async (event) => {
     await loadOverview();
     return;
   }
-  const supplyButton = event.target.closest('[data-supply-toggle]');
-  if (supplyButton) {
-    const enable = supplyButton.dataset.enable === 'true';
-    supplyButton.disabled = true;
-    try {
-      await api('/api/v1/admin/operations/supply-automation', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: enable }) });
-      showNotice(enable ? '已开启自动开卡与补余额。' : '已关闭自动开卡与补余额。', 'success');
-    } catch { showNotice('供给开关更新失败，请刷新后重试。'); }
-    await loadOverview();
-    return;
-  }
+  // 「自动开卡总开关」的处理器删在这里（Lemon 2026-09-20 定：不做这个控件）。
+  // 停自动开卡走设置页把水位设成 0 —— 调度器的需求是 max(水位, 等卡单数)，水位 0
+  // 就不再为囤货开卡，而且是**按台按产品**的，一台坏了不影响另一台。总开关是全局一刀切。
+  // 后端 /operations/supply-automation 仍在，但前端不许调：它一次写两个键
+  // （card_auto_replenishment_enabled + card_balance_recharge_enabled），而补余额已弃（D-218）、
+  // 生产刻意把两个键设成不同值 —— 调一次就会被抹平。要接它必须先拆成单键。
   const sourceApply = event.target.closest('#decision-card-source-apply');
   if (sourceApply) {
     await applyBrowserCardSource(sourceApply);

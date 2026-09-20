@@ -10,7 +10,7 @@
   <link rel="stylesheet" href="/admin/assets/admin.css?v=26">
   <link rel="stylesheet" href="/admin/assets/workbench.css?v=17">
   <link rel="stylesheet" href="/admin/assets/cards.css?v=2">
-  <script src="/admin/assets/admin.js?v=72" defer></script>
+  <script src="/admin/assets/admin.js?v=73" defer></script>
 </head>
 <body>
   <div class="admin-shell">
@@ -355,7 +355,7 @@
         <section class="wb-card">
           <div class="wb-ch"><div><p class="wb-kick">供给策略</p><h2>按台 × 按产品</h2></div><span class="wb-ro">补卡调度器读的就是这张表</span></div>
           <div class="wb-cb">
-            <p class="wb-note">水位＝这台这个产品至少保几张可分配的卡；日限＝这台今天最多开几张。改动立刻生效，每项都记谁改的、从什么改成什么。</p>
+            <p class="wb-note">水位＝这台这个产品至少保几张可分配的卡；日限＝这台今天最多开几张。改动立刻生效，每项都记谁改的、从什么改成什么。<strong>水位填 0 ＝ 这台这个产品不再自动开卡</strong>（还有客户在等卡时仍会为那几单开）——想停某一台的自动开卡就改这里，按台按产品，不影响另一台。</p>
             <div id="settings-policies"><p class="wb-qempty">正在读取…</p></div>
           </div>
         </section>
