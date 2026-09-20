@@ -71,7 +71,7 @@ body{font-family:var(--wb-fd)}
    发码掉左下、右边空一大片。现在：标题区 + 开关横排一层 + 下层两栏。 */
 .workbench .wb-ops{padding:0;overflow:hidden}
 .workbench .wb-ops-top{display:flex;align-items:center;gap:30px;flex-wrap:wrap;
-  padding:13px 18px;background:var(--wb-s2);border-bottom:1px solid var(--wb-s3)}
+  padding:14px 18px;border-bottom:1px solid var(--wb-s3)}
 .workbench .wb-ops-bot{display:grid;grid-template-columns:1.35fr 1fr}
 .workbench .wb-ops-col{padding:14px 18px;border-left:1px solid var(--wb-s3)}
 .workbench .wb-ops-col:first-child{border-left:0}
