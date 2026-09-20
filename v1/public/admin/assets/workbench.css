@@ -42,9 +42,21 @@ body{font-family:var(--wb-fd)}
 .nav-item:hover{background:var(--wb-s3);color:var(--wb-t)}
 .nav-item.is-active{background:var(--wb-a-soft);color:var(--wb-a-ink)}
 .nav-item.is-active span{background:var(--wb-a);color:var(--wb-a-on)}
-.sidebar-foot{border-top:1px solid var(--wb-bd)}
-.sidebar-foot .session-state b{color:var(--wb-t2)}
-.sidebar-foot i{background:var(--wb-ok)}
+/* 侧边栏底部（Lemon 2026-09-20：「管理员已登录，位置需要优化调整」）。
+   原先三处别扭：状态点用 grid-row:1/3 垂直居中，视觉上和两行文字都不对齐；
+   「安全退出」是常规大按钮，在侧栏底部比登录状态本身还重；两块之间 gap 14px 过松。 */
+.sidebar-foot{border-top:1px solid var(--wb-bd);gap:8px;padding-top:13px}
+/* 换成 flex：原先是 grid(auto 1fr) + 点占两行，点悬在两行中间和谁都不对齐。
+   直接把点改成只占第一行会让 small 自动流到第二行第一列（试过，「人工确认模式」
+   跑去了左列、标题被挤到右边），所以整块改 flex：点和标题一行，说明换行缩进对齐。 */
+.sidebar-foot .session-state{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+.sidebar-foot .session-state i{width:6px;height:6px;background:var(--wb-ok);flex:none}
+.sidebar-foot .session-state b{color:var(--wb-t2);font-size:12px;font-weight:600}
+.sidebar-foot .session-state small{width:100%;margin-left:13px;color:var(--wb-t3);font-size:10.5px}
+/* 退出是低频动作，退成文字按钮：不抢登录状态的视觉重量 */
+.sidebar-foot #logout-button{justify-self:start;padding:2px 0;border:0;background:none;
+  color:var(--wb-t3);font-size:11.5px;font-weight:400;min-height:0;box-shadow:none;text-align:left}
+.sidebar-foot #logout-button:hover{color:var(--wb-a);text-decoration:underline}
 .topbar h1{color:var(--wb-t)}
 .topbar .section-kicker{color:var(--wb-a)}
 .sync-time{color:var(--wb-t3)}
@@ -194,8 +206,9 @@ body{font-family:var(--wb-fd)}
 .workbench .wb-prod .wb-prod-n{font-family:var(--wb-fm);font-size:12.5px;font-weight:600;color:var(--wb-t3)}
 .workbench .wb-prod.is-ok .wb-prod-n{color:var(--wb-t)}
 .workbench .wb-prod small{font-size:10px;color:var(--wb-t3);margin-left:auto;flex:none;white-space:nowrap}
-/* 「需人工开」要能一眼看出来 —— 它和「自动补」的差别正是这块要回答的问题 */
-.workbench .wb-prod small.is-manual{color:var(--wb-warn);font-weight:600}
+/* 「需人工开」保留区分但不强调（Lemon 2026-09-20：「不需要那么明显，我知道」）——
+   5X/20X 没做库存卡是既定安排，不是异常，橙色加粗会天天喊一件他早就清楚的事。 */
+.workbench .wb-prod small.is-manual{color:var(--wb-t3)}
 .workbench .wb-total{margin:11px 2px 0;font-size:11.5px;color:var(--wb-t3)}
 .workbench .wb-total b{color:var(--wb-t)}
 .workbench .wb-total b.wb-waiting{color:var(--wb-warn)}

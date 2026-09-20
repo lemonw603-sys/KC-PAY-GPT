@@ -78,14 +78,23 @@ try {
     console.log(`已拍 → ${dest}  (${(buf.length / 1024).toFixed(0)} KB${label ? `, ${label} @2x` : flags.full ? ', 整页' : ''})`);
   };
 
-  if (clips.length > 1 || (clips.length === 1 && clips[0].includes(':'))) {
+  // 「名字:选择器」的名字必须长得像名字 —— CSS 伪类自带冒号（:last-child、::before），
+  // 只看「有没有冒号」会把整个选择器当成名字，然后拿它去建目录（2026-09-20 真踩到）。
+  const splitClip = (spec) => {
+    const idx = spec.indexOf(':');
+    if (idx === -1) return [null, spec];
+    const name = spec.slice(0, idx);
+    return /^[\w\u4e00-\u9fff-]+$/.test(name) ? [name, spec.slice(idx + 1)] : [null, spec];
+  };
+
+  if (clips.length > 1 || (clips.length === 1 && splitClip(clips[0])[0])) {
     // 多块模式：out 当目录用。一个 Chrome 实例拍完所有 —— 每块都重启一次浏览器，
     // 七块就要两分多钟，纯属浪费（2026-09-20 真的这么跑过一次，超时了）。
     const { mkdir } = await import('node:fs/promises');
     await mkdir(out, { recursive: true });
     for (const spec of clips) {
-      const idx = spec.indexOf(':');
-      const [name, sel] = idx === -1 ? [spec.replace(/[^\w\u4e00-\u9fff-]/g, '_'), spec] : [spec.slice(0, idx), spec.slice(idx + 1)];
+      const [parsed, sel] = splitClip(spec);
+      const name = parsed || sel.replace(/[^\w\u4e00-\u9fff-]/g, '_').slice(0, 60);
       await capture(sel, `${out}/${name}.png`, sel);
     }
   } else {

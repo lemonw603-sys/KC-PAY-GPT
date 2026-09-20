@@ -714,9 +714,17 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
           MAX(spend.currency) AS currency
         FROM provider_accounts pa
         LEFT JOIN (
+          -- 只算**给客户实际充值成功**的那部分（Lemon 2026-09-20 收窄）：账本记了 CONSUMED
+          -- 不等于客户拿到了东西 —— 扣了钱而充值没成功的单也会留下 CONSUMED 行。
+          -- 生产当前两者恰好一致（19 笔全部对应 RECHARGE_SUCCESS，$304），但口径要写对，
+          -- 否则第一次出现「扣了钱没充成功」时这个数就会虚高。
           SELECT c.provider_account_id AS pa_id, l.amount, l.currency
-            FROM card_consumption_ledger l JOIN cards c ON c.id = l.card_id
-            WHERE l.status = 'CONSUMED' AND ${todayCst8WindowSql('l.consumed_at')}
+            FROM card_consumption_ledger l
+              JOIN cards c ON c.id = l.card_id
+              JOIN orders spend_order ON spend_order.id = l.order_id
+            WHERE l.status = 'CONSUMED'
+              AND spend_order.status = 'RECHARGE_SUCCESS'
+              AND ${todayCst8WindowSql('l.consumed_at')}
           UNION ALL
           SELECT c.provider_account_id AS pa_id, t.amount, 'USD' AS currency
             FROM card_transactions t JOIN cards c ON c.id = t.card_id
