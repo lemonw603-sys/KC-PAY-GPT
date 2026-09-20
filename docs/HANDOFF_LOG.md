@@ -2799,3 +2799,23 @@ step6（`8cd6d7e`）发布后 Lemon 打开生产，指三条做偏：① sidebar
 **卡片页只到方案阶段，未动代码**：任务书 `docs/tasks/2026-09-20-cards-page-rework-and-fixes.md` 已交，其中 §B1 的「硬前置」被我自己推翻并就地更正（设置页早有最低余额，我只查了一个 service 就断言「不存在」——第七类惯犯当天第二次）。每卡单数已改为可编辑（D-303），删块 2 的前置清零。
 
 **过程教训（Lemon 当面指出）**：这一窗口我把「先读全 → 先证明理解 → 先对齐范围 → 等确认 → 再动手」做成了「边做边补读、边被纠正边改」。**第一条要求里的第三节（付款不明七问 + 反例）与第五节（审查五类问题核实 + DISPOSITIONS）至今空白。**
+
+# 2026-09-20｜补做接班要求第三、五节；API 付款不明收口入口；两份审查逐条处置
+
+**起因**：Lemon 指出我一直欠着他第一条要求里的第三节（付款不明七问 + 反例）和第五节（审查意见逐条核实 + 写 DISPOSITIONS），要求补上。
+
+**第三节（七问）**：两条路线实现不同，分开追通。API 侧产生在 `workflow-repository.js:298`（`escalateUnknownSubmission`），两路证据在 `workflow-handlers.js:390-466`；Browser 侧产生在 `browser-execution-repository.js:1218`，证据在 `browser-payment-verification-service.js:115`。收口后五样状态的去向见 DISPOSITIONS 那张表。**查的过程中差点报一个假 bug**：看到 API 收口不调 `returnCdkForOrderInTransaction`、而注释点名 `RESOLVE_UNKNOWN_PAYMENT/NOT_CHARGED` 才清得掉提交点击，以为 API 单的 CDK 会被卡住；读完 `readCdkReturnEvidence` 才知道 `submit_evidence` 只数 `browser_operations` 的点击、API 单恒为 0，而 API 收口把 attempt 和账本清成 `CLEARED`/`RELEASED` 让 `fundsEvidence` 归零——两条路机制不同、结果都对。今天的隔离库验证实测坐实了这一点（`fundsEvidence` 2→0）。
+
+**第三节顺带查出两个洞**：① **API 路线的收口端点整个前端零引用**，工作台「去核实收口」跳过去是死路，而系统发的告警还写着「请在后台点「核实付款不明结果」」；② 详情页对**每个**未解决 case 都渲染「关闭对账案例」，付款不明的单跳过去反而能看到一个「关记录」的钮——比没有按钮更危险。生产只读实证 `order_events` 里 `RECONCILIATION_REQUIRED` **0 次**，没咬过人。
+
+**修复（提交 `5a6fb99`）**：资格规则抽成 `unknownSubmissionEligibility` 一份，收口服务与详情读服务共用（判断工具不许抄业务规则）；详情返回 `unknownSubmission.eligible`，前端按它渲染；付款不明的 case 不再给「关闭对账案例」。三层验收见 DISPOSITIONS，隔离库两个分支（CHARGED / NOT_CHARGED）端到端各跑一遍、case/告警/事件全由真实 `escalateUnknownSubmission` 产生，验完把数据还原。新增 7 条测试、4 个变异全被抓。
+
+**第五节（STEP6_REVIEW F-61~F-65）**：F-62/F-73 已闭合；F-61 主体已修但有残留（即上面那两个洞，本轮一并修完）；F-63 三个源已闭合、`todayOrders`/`cardSources` 同病未修；F-64 待销已进队列但「看逐张」仍跳 diagnostics、服务端返回的 `discrepancies` 逐卡明细前端一处都没展示；F-65 入口已移除、根因未修。
+
+**收尾脚本报「1 个文件未提交」才发现的事**：`docs/reviews/STEP6_BASIS_REVIEW_2026-09-19.md` 是另一份第⑥块审查（审查员窗口写的，含 F-66~F-75），**一直没入库、七条从未处置**。我此前只处置了被点名的那一份。已补：F-66 已消解（D-284/285 裁定了三点基准）、F-67 前半消解后半与 F-65 合流、F-69 与治理条仍成立（**审查员角色决定至今未落盘，D-284/285/286 全被占，下一个可用号 D-305**——这是治理决定，我不自行占号）、F-72 标记已修而消费未跟上、F-73 已修、F-74/F-75 确认留观察。
+
+**新登记的欠账**：§4.1 第 10 条（本轮已结清）、第 11 条（逐卡差异明细无处可看）；F-65 条目下追记「自动开卡总开关现在哪个页面都没有，而 `index.html:233` 还写着它在首页」。
+
+**同轮发现但未动的**：`test/app.test.js:88` 那条被记作「F-65 有意留红」的测试，实际红在**第一条断言**——版本号写死 `admin.js?v=61`，而实际已 bump 到 `v=70`，后面三条 F-65 守门断言一次都没执行。它从 `d33544c`（61→62）起就不再守 F-65 了。**没改**，等 Lemon 定。
+
+**我这轮犯的**：又一次「断言前没先查已有记录」——F-65 的结论 `PROJECT_MAP` §4.1 早有 D-287 的订正记录，我重查一遍才发现。
