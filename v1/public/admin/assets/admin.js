@@ -511,21 +511,20 @@ function renderDecisions(overview, cardSources, takeoverEstimate = null) {
     // D-280 ⑦：卡台切换从卡片页搬来，「同时接管」这半边不能丢——卡台断供时，
     // 它把还在排队等卡的单改指新卡台（只动完全没碰过钱的单，见 safeWaitingPredicate）。
     const takeoverCount = Number(takeoverEstimate?.count || 0);
+    // 界面不做旁白（Lemon 2026-09-20）：没有排队单时什么都不说；
+    // 只有真出现可接管的单、或读不到这个数时，才值得占一行。
     const takeoverHint = takeoverEstimate?.__error
-      ? '<small>Browser 路线卡台，只影响新订单；待接管单数读取失败，本次切换不接管排队单。</small>'
+      ? '<small>待接管单数读取失败，本次切换不接管排队单</small>'
       : takeoverCount > 0
-        ? `<label class="wb-takeover"><input type="checkbox" id="decision-card-source-takeover"> 同时接管 ${takeoverCount} 张排队等卡的单</label>`
-          + '<small>不勾：只影响新订单，排队单继续等原卡台。勾上：把这些单改指新卡台（只动没分卡、没充值、没碰钱的单）。</small>'
-        : '<small>Browser 路线卡台，只影响新订单；当前没有排队等卡的单可接管。</small>';
+        ? `<label class="wb-takeover"><input type="checkbox" id="decision-card-source-takeover"> 同时接管 ${takeoverCount} 张排队单</label>`
+        : '';
     const methodBtn = (target, text) => (method === target
       ? `<span class="wb-chip ok"><span class="wb-d"></span>当前用${escapeHtml(text)}</span>`
       : `<button type="button" class="wb-btn sm out default-recharge-method" data-method="${target}">改用${escapeHtml(text)}</button>`);
     // 「切到浏览器」四个字看不出在说什么（Lemon 2026-09-20）。两条路线是：
     // API 充值＝调卡台接口充；浏览器自动充＝程序模拟人在 ChatGPT 官网上付款。
     routeBox.innerHTML = `<p class="wb-grp-t">Plus 怎么充 · 用哪个卡台</p>`
-      + `<div class="wb-route"><div class="wb-routepick">${methodBtn('API', 'API 充值')}${methodBtn('BROWSER', '浏览器自动充')}</div>`
-      + `<small>API 充值＝调卡台接口；浏览器自动充＝程序在 ChatGPT 官网上替客户付款。`
-      + `当前 <b>${escapeHtml(methodLabel)}</b>，只影响新订单；切换前跑四项校验，不通过会逐条说明原因。</small></div>`
+      + `<div class="wb-route"><div class="wb-routepick">${methodBtn('API', 'API 充值')}${methodBtn('BROWSER', '浏览器自动充')}</div></div>`
       + `<div class="wb-route"><div class="wb-routepick"><span class="wb-lead">API 路线</span><span class="wb-chip mute"><span class="wb-d"></span>固定用 HNSKJ</span></div></div>`
       + `<div class="wb-route"><div class="wb-routepick"><span class="wb-lead">浏览器路线</span><select class="wb-field" id="decision-card-source" aria-label="Browser 卡台">${sourceOptions || '<option value="">没有可用卡台</option>'}</select><button type="button" class="wb-btn sm out" id="decision-card-source-apply" ${sources.length ? '' : 'disabled'}>切换</button></div>${takeoverHint}</div>`;
   }
