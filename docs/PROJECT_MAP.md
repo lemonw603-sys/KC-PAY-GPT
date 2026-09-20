@@ -62,7 +62,7 @@
 | 7 | **CSS 收敛阶段 2~4**（cards.css 65 处字面色 → token；admin.css 旧页并入） | 跟着每次页面重做逐块吃，不单独排期 | D-293 |
 | 8 | `design` 插件未安装（安装卡片点过但未生效） | 想用 design-critique / design-system 时重试 | D-293 |
 | 9 | `pro5/pro20` 映射验证 | 并入第⑦步 | 8 步表 ① |
-| 10 | **API 路线付款不明的收口按钮**：端点 `POST /admin/orders/:publicNo/resolve-unknown-submission` 在（`create-app.js:662`），但整个 `v1/public/` 零引用；详情页那个「确认核实结果」只对 browser run 渲染（`admin.js:931`），API 单没有 run → 按钮不出现。工作台「去核实收口」跳过去是**死路**，而告警文案还写着「请在后台点「核实付款不明结果」」（`workflow-repository.js:337`）。生产实证：`order_events` 里 `RECONCILIATION_REQUIRED` **0 次**，没咬过人 | 第一单 API 付款不明发生**之前**；或做订单详情页那块时顺手 | F-61 复核（DISPOSITIONS 2026-09-20） |
+| 10 | ~~**API 路线付款不明的收口按钮**~~ **已完成**（2026-09-20，提交 `5a6fb99`）：详情页按后端算好的 `unknownSubmission.eligible` 渲染「确认核实结果」；资格规则抽成 `unknownSubmissionEligibility` 一份，收口服务与详情读服务共用；同轮修掉 F-61 在详情页那一半（付款不明不再给「关闭对账案例」）。隔离库两个分支端到端验过 | — | F-61 复核 |
 | 11 | **日对账逐卡差异明细无处可看**：服务端返回 `discrepancies` 数组（`daily-reconciliation-service.js:356`），前端只用 `discrepancyCount` 计数；「看逐张」和队列「去处理」都跳 diagnostics，而 diagnostics 加载的是 cases/runs/jobs（`admin.js:2412`），没有一项展示那几张卡 | 下次真出无主扣款、或做 diagnostics 页时 | F-64 复核（DISPOSITIONS 2026-09-20） |
 
 前两条是同一件事的两个入口：**兜底已经有了**（D-296 的「>$75 默认不给 Plus」不依赖任何人打标记），所以不急；但源头回写仍值得做，否则每次都靠那条阈值兜着。

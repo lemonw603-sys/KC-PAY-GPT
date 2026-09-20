@@ -434,3 +434,30 @@ UTC+8 日期真值     5   ← 新表达式 == 真值
 只核了这五条 + 顺带查到的 F-71 现状，**没有重跑全量测试来追认**（上次全量：978 / 910 pass / 1 fail，唯一 fail 是有意留红的 F-65）。生产只读查询两条（`order_events` 的 `RECONCILIATION_REQUIRED` 计数、`orders` 的两个状态计数、`app_settings` 两个供给键），其余结论全部来自当前代码，**未在真实浏览器上复现 F-61 残留的那条死路**（需要先造一个 API 路线的付款不明单）。
 
 > **F-65 补注（同轮）**：本条结论与 `PROJECT_MAP` §4.1 已有的「2026-09-20 订正（D-287 查清）」**一致**——那条早已记下「前端无渲染入口、全量测试那条红有意保留」。我这次是重查了一遍才发现已有记录，属于「断言前没先查已有记录」的老毛病；结论相同，不改两处任何一处，此处指回 §4.1 作为主记录。
+
+### F-61 残留已闭合（2026-09-20，提交 `5a6fb99`）
+
+上面那条复核记的「API 路线没有任何界面入口」**已修**，F-61 至此整条闭合：
+
+- **资格规则一份**：`unknownSubmissionEligibility`（`unknown-submission-resolve-service.js`）——收口服务在事务里用它决定拒不拒（行为与抽出前逐字相同，两条测试交叉断言「规则说不合格时服务必抛同一个 code」并验了回滚不提交），详情读服务用它算出 `unknownSubmission.eligible` 给前端。页面不自己拼条件，不会出现「给一个后端必然拒绝的钮」或「藏起本该能点的钮」。
+- **详情页按钮**：`#resolve-unknown-submission` → 已有端点，确认词由前端按后端要求拼（不让人手打——手打只会被复制粘贴，真正的闸门是必填的证据说明）。
+- **F-61 在详情页那一半**：`openCases` 现在过滤掉 `PAYMENT_UNKNOWN_CASE_TYPES`，付款不明不再给「关闭对账案例」。工作台队列早就这样分流，详情页此前漏了——跳过去反而能看到一个「关记录」的钮，比没有按钮更危险。
+
+**三层验收**（隔离库 `step6_demo`；case / 告警 / order_events 全部由真实 `escalateUnknownSubmission` 产生，不手写 dedupe_key）：
+
+| | 收口前 | NOT_CHARGED 后 | CHARGED 后 |
+|---|---|---|---|
+| 订单 | `RECONCILIATION_REQUIRED` | `RECHARGE_FAILED` / `PAYMENT_NOT_CHARGED_VERIFIED` | `RECHARGE_SUCCESS` |
+| attempt | `SUBMIT_UNKNOWN` / `UNKNOWN` | `CLEARED` / `CLEARED` | `SUCCESS` / `SETTLED` |
+| 消费账本 | `RECONCILIATION` | `RELEASED` | `CONSUMED` |
+| 卡占用 | `ACTIVE` | `RELEASED` | `RELEASED` |
+| 卡库存 | `AVAILABLE` | 不变 | `DEPLETED` |
+| CDK | `REDEEMED`，退回被挡（`fundsEvidence=2`） | `REDEEMED`，**退回条件已放开**（`fundsEvidence=0`） | `REDEEMED`，仍被挡（已交付） |
+| case / 告警 | `OPEN` / `OPEN` | `RESOLVED` / `RESOLVED` | `RESOLVED` / `RESOLVED` |
+| 其它 | — | — | 待复核续费=1、待销提醒 `OPEN` |
+
+CDK 那一行坐实了复核时的分析：**API 路线不需要 `paymentSubmitAdjudicated`**——它靠收口把 attempt 和账本清成 `CLEARED`/`RELEASED` 让 `fundsEvidence` 归零，客户下次拿原码重提时由 `order-intake` 退回；`submit_evidence` 只数 `browser_operations` 的点击，API 单恒为 0。两条路线机制不同、结果都对。
+
+**界面层**：队列那条只给「去核实收口」（无「关记录」）→ 跳 `LOAD-0021` 详情 → 动作区 `resolve-unknown-submission | sync-transactions`，`[data-resolve-order-case]` 为 0 → 对话框标题「核实付款不明结果 LOAD-0021」、字段 `ask-outcome | ask-note` → 提示文案与实际收口一致。
+
+**工程层**：新增 7 条测试（2 后端资格 + 5 详情页渲染），**4 个变异全被抓**（executorKind 偷偷兜底成 API / 合格状态多放一个 / 按钮恒显示 / 去掉付款不明过滤）。全量 985 · pass 917 · fail 1（既有 F-65）。验完把隔离库数据还原（订单 `CARD_PROVISIONING`、卡 `AVAILABLE`、CDK `AVAILABLE`、残留 case 0）。
