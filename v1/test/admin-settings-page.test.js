@@ -67,14 +67,18 @@ test('真的没有策略时才说「还没有任何供给策略」（读失败�
   assert.match(src, /设置读取失败，先不要照这里的值做判断/);
 });
 
-test('每卡单数只读显示并写明 D-221 缺口，不给改', () => {
+test('每卡单数只读显示并写明缺口（D-221 尚未按产品拆），不给改，且不把编号写到界面上', () => {
   const { sandbox, html } = loadAdminJs();
   sandbox.renderSettingsThresholds({
     wallets: [], minimumBalanceByPlan: { plus: '16.00' }, maxSuccessfulPayments: '3'
   });
   const out = html('sel:#settings-thresholds');
-  assert.match(out, /D-221 要按产品/);
-  assert.match(out, /暂不可改/);
+  // 缺口必须在界面上可见 —— 但用运营看得懂的话说，不是甩一个决策编号过去
+  assert.match(out, /三个产品暂时共用/);
+  assert.match(out, /还不能分开设/);
+  // 界面不写内部编号（DESIGN_SYSTEM.md 第五节）。原先这里显示的是
+  // 「D-221 要按产品（Plus 3 / 5X 1 / 20X 1），现在只有这一个全局值，暂不可改」。
+  assert.doesNotMatch(out, /\b[DF]-\d+\b/);
   // 只读就不能出现可编辑控件对应的 data-field
   assert.doesNotMatch(out, /data-field="card_max_successful_payments"/);
 });

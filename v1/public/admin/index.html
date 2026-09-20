@@ -10,7 +10,7 @@
   <link rel="stylesheet" href="/admin/assets/admin.css?v=26">
   <link rel="stylesheet" href="/admin/assets/workbench.css?v=13">
   <link rel="stylesheet" href="/admin/assets/cards.css?v=1">
-  <script src="/admin/assets/admin.js?v=62" defer></script>
+  <script src="/admin/assets/admin.js?v=64" defer></script>
 </head>
 <body>
   <div class="admin-shell">
@@ -216,7 +216,7 @@
         </div>
         <details class="card stock-card stock-advanced-details" id="manual-card-import-card">
           <summary>接入无 API 的卡台：上传导出表</summary>
-          <p class="card-description">highvcc 快照入库的正式路径，也是接入没有 API 的新卡台的方式——<strong>能力保留，只是平时不用，收进这里</strong>（D-280 ⑧）。</p>
+          <p class="card-description">highvcc 快照入库，也用来接入没有 API 的新卡台。</p>
           <p class="card-description">每次文件代表所选卡台的全部卡片。结构错误或跨卡台同卡冲突会阻止整批提交；停用、过期和余额不足仍会记录，但不会参与新订单分配。预览后一键提交，不需要密码或确认词。</p>
           <form id="manual-card-import-form" class="filters filters-two">
             <label><span>备用卡台</span><select id="manual-card-import-source" required><option value="">请先读取卡台</option></select></label>

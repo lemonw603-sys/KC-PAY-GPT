@@ -129,6 +129,18 @@ if [ -f docs/design/css-baseline.json ]; then
   fi
 fi
 
+# 11) 写给自己看的话跑到界面上：2026-09-20 实查，数字墙挂着「口径待定（D-284 ③）」，
+#     设置页写着「D-221 要按产品…」，卡片页写着「能力保留，只是平时不用，收进这里（D-280 ⑧）」。
+#     Lemon 两次说过「我要的是简洁，不是让你在这给我做解释」，但规矩不会自己执行。
+copy=$(node scripts/ui-copy-check.mjs 2>&1); ccode=$?
+if [ "$ccode" = "0" ]; then
+  ok "界面文案没有内部编号和开发备忘"
+elif [ "$ccode" = "1" ]; then
+  bad "界面文案没有内部编号和开发备忘" "$(printf '%s' "$copy" | grep -E '^\s+[0-9]+' | head -5 | sed 's/^/\n         /')"
+else
+  note "界面文案检查没跑成" "$(printf '%s' "$copy" | tail -2 | sed 's/^/\n         /')"
+fi
+
 printf '\n'
 [ "$fail" = "0" ] && echo "==> 可以说做完了 ✓（[提醒] 不算失败，但要看一眼）" || echo "==> 还不能说做完 ✗"
 exit "$fail"

@@ -340,13 +340,16 @@ function renderWbWall(overview) {
   // 撤销在途版擅自换成的「可分配卡 / 待核对 / 昨晚的数量」。后端现只有前两项的聚合，
   // 后三项一律标「待接入」：D-284 ③ 明令自动完成率口径未定前不许自拟算法，
   // 今日花费与异常支出同理——宁可空着，也不拿相近字段顶替出一个看着对、实则算错的数。
-  const pending = (lb, sub) => ({ lb, v: '待接入', sub, pending: true });
+  // 副标题只写运营看得懂的话。此前这三格写的是「口径待定（D-284 ③）」「按卡台，聚合待写」，
+  // 那是开发备忘和内部编号，不该出现在运营页面上（Lemon 两次说过：界面不写解释旁白）。
+  // 「待接入」本身已经说清楚了，不必再解释为什么。
+  const pending = (lb) => ({ lb, v: '待接入', sub: '', pending: true });
   const cells = [
     { lb: '今日单数', v: m.todayOrders ?? 0, sub: `处理中 ${m.processingOrders ?? 0}`, filter: 'TODAY' },
     { lb: '成功率', v: m.successRate == null ? '—' : `${m.successRate}%`, sub: `完成 ${m.completedOrders ?? 0} 单` },
-    pending('自动完成率', '口径待定（D-284 ③）'),
-    pending('今日花费', '按卡台，聚合待写'),
-    pending('异常支出', '无主扣款金额，聚合待写')
+    pending('自动完成率'),
+    pending('今日花费'),
+    pending('异常支出')
   ];
   box.innerHTML = cells.map((c) => `<button type="button" class="wb-kpi${c.pending ? ' is-pending' : ''}"${c.pending ? ' disabled' : ''} ${c.filter ? `data-order-filter="${c.filter}"` : c.view ? `data-view-jump="${c.view}"` : ''}><span class="wb-lb">${escapeHtml(c.lb)}</span><span class="wb-v">${escapeHtml(String(c.v))}</span><span class="wb-sub">${escapeHtml(c.sub)}</span></button>`).join('');
 }
@@ -367,7 +370,7 @@ function renderWbCards(overview) {
   box.innerHTML = byProvider.map((p) => `
     <div class="wb-provrow"><div><b>${escapeHtml(nameOf(p))}</b> ${wbChip('ok', walletOf(p))}
       <div class="wb-usechips">${wbChip(p.plusAssignable > 0 ? 'ok' : 'mute', `Plus 可分配 ${p.plusAssignable}`)}${wbChip('mute', `在库 ${p.inStock}`)}${wbChip('mute', `使用中 ${p.inUse}`)}${wbChip('mute', `用过 ${p.anyUsed}`)}</div></div></div>`).join('')
-    + `<p class="wb-total">两台合计现在可分配 <b class="wb-mono">${totalAssignable}</b> 张（Plus 资格规则）<br><small>今日花费按台、highvcc 钱包水位：待接入</small></p>`;
+    + `<p class="wb-total">两台合计现在可分配 <b class="wb-mono">${totalAssignable}</b> 张（Plus 资格规则）</p>`;
 }
 
 function renderWbRecon(daily) {
@@ -1654,7 +1657,7 @@ function renderSettingsThresholds(data) {
   const capacity = `<div class="set-kv">
     <label>每卡单数 <small>一张卡最多成功充几单</small></label>
     <span class="set-ro">全局 ${escapeHtml(String(data.maxSuccessfulPayments ?? '—'))}
-      <span class="wb-chip warn">D-221 要按产品（Plus 3 / 5X 1 / 20X 1），现在只有这一个全局值，暂不可改</span></span></div>`;
+      <span class="wb-chip warn">三个产品暂时共用这一个值，还不能分开设</span></span></div>`;
   elements.settingsThresholds.innerHTML = wallets + mins + capacity;
 }
 
