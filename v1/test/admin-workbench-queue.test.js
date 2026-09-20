@@ -296,3 +296,31 @@ test('CDK 页不得使用 .workbench 作用域的 class（写了也不生效，�
   assert.ok(!/class="[^"]*\bwb-/.test(codeOnly),
     'CDK 页渲染不得用 .workbench 作用域的 wb-* class；旧页请用 .status-chip 等 admin.css 的类');
 });
+
+test('数字墙只有真有去处的格子才是按钮 —— 没去处的不许长得能点', () => {
+  // 2026-09-20 实测发现：五格全渲染成 <button>，于是「成功率」「今日花费」光标是手型、
+  // hover 还变色，点下去却什么都不发生（浏览器实点验证：视图不变）。
+  // CSS 早就分好了（.wb-kpi 基础 cursor:default，只有 button.wb-kpi 才 pointer + hover），
+  // 是渲染时没分。Lemon 定：今日花费改成不可点，成功率跳订单页看已完成。
+  const { sandbox, html } = loadAdminJs();
+  sandbox.renderWbWall({
+    metrics: { todayOrders: 12, processingOrders: 1, successRate: 92, completedOrders: 12 },
+    cardStockByProvider: [{ label: 'HNSKJ', spentToday: '16.000000', spentCurrency: 'USD' }],
+    operationalBacklog: {}, openAlertCount: 0
+  });
+  const out = html('wb-wall');
+
+  // 成功率：可点，去订单页的「已完成」
+  assert.match(out, /<button[^>]*data-order-filter="FINISHED"[^>]*>\s*<span class="wb-lb">成功率/);
+  // 今日单数：可点，去今日
+  assert.match(out, /<button[^>]*data-order-filter="TODAY"/);
+  // 今日花费：**不是 button** —— 它的按台明细就在下面「卡还够不够」那块，不必跳转
+  assert.match(out, /<div class="wb-kpi"><span class="wb-lb">今日花费/);
+  // 反过来钉死：不许出现「是 button 却没有任何去处、也不是 disabled」的格子
+  for (const m of out.matchAll(/<button[^>]*class="wb-kpi([^"]*)"([^>]*)>/g)) {
+    const [, extraCls, attrs] = m;
+    const hasJump = /data-order-filter=|data-view-jump=/.test(attrs);
+    const isPending = /is-pending/.test(extraCls) && /disabled/.test(attrs);
+    assert.ok(hasJump || isPending, `数字墙有个 button 既没去处也不是 disabled：${m[0]}`);
+  }
+});

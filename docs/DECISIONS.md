@@ -4642,3 +4642,30 @@ Lemon 追问「你确定是 bug 吗」——我此前三条全是**读 SQL 推�
 任务书 §B1 已就地更正（保留原文并标注错在哪）。**删块 2 的前置清零。**
 
 全量 977 / 909 pass / 1 fail（既有 F-65）。
+
+## D-304（2026-09-20）数字墙有两个死按钮（实点确认）；Lemon 定：今日花费改不可点、成功率跳「已完成的订单」
+
+Lemon 问「你确定所有按钮都是有效的吗」——我不确定，从没系统验过，而且当天有前科（误删 14 个事件绑定而 951 条测试全绿，D-289）。**测试保证不了按钮有没有反应。**
+
+**验法**：用 CDP 列出工作台 69 个可点元素与各自的 `data-*`，再**实际点击**无副作用的几个。
+
+**实点结果**：
+```
+点「进订单页 →」  overview-view → orders-view   ✅
+点「今日单数」    overview-view → orders-view   ✅
+点「成功率」      overview-view → overview-view ❌ 无反应
+```
+
+**确认两个死按钮**：数字墙的「成功率」与「今日花费」是 `<button>` 却**没有任何 `data-*`**，且不是 `disabled` —— 光标是手型、hover 还变色，点下去什么都不发生。（「自动完成率」「异常支出」是明确 `disabled` 的，样式也弱化，属诚实的「待接入」，不算死按钮。）
+
+**根因**：`renderWbWall` 把五格**一律**渲染成 `<button>`，而 CSS **早就分好了**——`.wb-kpi{cursor:default}`、只有 `.workbench button.wb-kpi` 才 `pointer` + hover 变色。**样式考虑过这件事，渲染没跟上。**
+
+**Lemon 裁定并已实现**：今日花费改成 `<div>`（它的按台明细就在下面「卡还够不够」那块，不必跳转）；成功率加 `data-order-filter="FINISHED"`。
+
+**改后实点复验**：五格现在是 `button/pointer/TODAY`、`button/pointer/FINISHED`、`button disabled/default`、**`div/default`**、`button disabled/default`；点「成功率」→ `orders-view`，页面标题「**已完成的订单**」。
+
+**测试钉住并做了变异测试**：新增断言——除了 `disabled` 的待接入格，**不许出现「是 button 却没有任何去处」的格子**；把 `<div>` 改回 `<button>` 立刻变红。
+
+**仍未验的按钮（已记 UNVERIFIED_LEDGER）**：三个营业开关、路线切换、卡台切换、发码、123 个告警「关闭」——它们有副作用，本轮只核了处理器存在，**没有实际点过**。要在隔离库逐个点一遍才算验过。
+
+全量 978 / 910 pass / 1 fail（既有 F-65）。

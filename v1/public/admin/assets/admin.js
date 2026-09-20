@@ -346,7 +346,7 @@ function renderWbWall(overview) {
   const pending = (lb) => ({ lb, v: '待接入', sub: '', pending: true });
   const cells = [
     { lb: '今日单数', v: m.todayOrders ?? 0, sub: `处理中 ${m.processingOrders ?? 0}`, filter: 'TODAY' },
-    { lb: '成功率', v: m.successRate == null ? '—' : `${m.successRate}%`, sub: `完成 ${m.completedOrders ?? 0} 单` },
+    { lb: '成功率', v: m.successRate == null ? '—' : `${m.successRate}%`, sub: `完成 ${m.completedOrders ?? 0} 单`, filter: 'FINISHED' },
     pending('自动完成率'),
     (() => {
       // D-294（Lemon 当日修订口径）：给客户充值消费掉的钱 ＋ 开卡手续费。
@@ -363,7 +363,18 @@ function renderWbWall(overview) {
     })(),
     pending('异常支出')
   ];
-  box.innerHTML = cells.map((c) => `<button type="button" class="wb-kpi${c.pending ? ' is-pending' : ''}"${c.pending ? ' disabled' : ''} ${c.filter ? `data-order-filter="${c.filter}"` : c.view ? `data-view-jump="${c.view}"` : ''}><span class="wb-lb">${escapeHtml(c.lb)}</span><span class="wb-v">${escapeHtml(String(c.v))}</span><span class="wb-sub">${escapeHtml(c.sub)}</span></button>`).join('');
+  // 只有真有去处的格子才是 button。此前全渲染成 button，于是「成功率」「今日花费」
+  // 长得能点、光标是手型、hover 还变色，点下去却什么都不发生（2026-09-20 实测确认）。
+  // CSS 早就分好了：.wb-kpi 基础 cursor:default，只有 button.wb-kpi 才 pointer + hover。
+  // 「今日花费」不给去处是有意的 —— 它的按台明细就在下面「卡还够不够」那块，不必跳转。
+  box.innerHTML = cells.map((c) => {
+    const jump = c.filter ? `data-order-filter="${c.filter}"` : c.view ? `data-view-jump="${c.view}"` : '';
+    const inner = `<span class="wb-lb">${escapeHtml(c.lb)}</span><span class="wb-v">${escapeHtml(String(c.v))}</span><span class="wb-sub">${escapeHtml(c.sub)}</span>`;
+    if (c.pending) return `<button type="button" class="wb-kpi is-pending" disabled>${inner}</button>`;
+    return jump
+      ? `<button type="button" class="wb-kpi" ${jump}>${inner}</button>`
+      : `<div class="wb-kpi">${inner}</div>`;
+  }).join('');
 }
 
 function renderWbCards(overview) {
