@@ -66,39 +66,43 @@ body{font-family:var(--wb-fd)}
 .workbench .wb-ro{font-size:10.5px;font-weight:700;color:var(--wb-t3);border:1px solid var(--wb-bd);border-radius:999px;padding:3px 9px}
 
 /* ---------- 营业条：三开关 + 两卡台 + CDK 快捷 ---------- */
-/* 营业条（丁「三等分段」，Lemon 2026-09-20 挑定）：营业 / 路线与卡台 / 发码
-   三块等宽并排，每块一个小标题，纵向两行；撑满整行、不留空白。 */
+/* 营业条（丁「三等分段」，Lemon 2026-09-20 挑定）。数值与原型
+   docs/design/prototypes/step6-opsbar-v4.html 的丁版逐项对齐过。 */
 .workbench .wb-ops{display:flex;align-items:stretch;flex-wrap:wrap;padding:0;
-  border:1px solid var(--wb-bd);border-radius:14px;background:var(--wb-s);box-shadow:var(--wb-shadow)}
-.workbench .wb-seg{flex:1;min-width:236px;padding:13px 18px;border-left:1px solid var(--wb-s3);
-  display:flex;flex-direction:column;gap:9px}
+  border:1px solid var(--wb-bd);border-radius:12px;background:var(--wb-s);box-shadow:var(--wb-shadow)}
+.workbench .wb-seg{flex:1;min-width:230px;padding:12px 18px;border-left:1px solid var(--wb-s3);
+  display:flex;flex-direction:column;gap:7px}
 .workbench .wb-seg:first-child{border-left:0}
-.workbench .wb-seg-t{margin:0;font-size:11px;letter-spacing:.06em;font-weight:700;color:var(--wb-t3)}
+.workbench .wb-seg-t{margin:0 0 6px;font-size:11px;letter-spacing:.06em;font-weight:700;color:var(--wb-t3)}
 .workbench .wb-ln{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .workbench .wb-k{font-size:12px;color:var(--wb-t3)}
 .workbench .wb-num{width:52px;text-align:center}
 .workbench .wb-cdk{display:flex;align-items:center;gap:8px;margin:0;flex-wrap:wrap}
 .workbench .wb-takeover{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--wb-t2)}
 
-/* 二选一分段器：互斥选项同一形态，选中那个白底主色 */
+/* 二选一分段器 */
 .workbench .wb-seg2{display:inline-flex;padding:2px;background:var(--wb-s3);border-radius:8px;gap:2px}
-.workbench .wb-seg2 button{border:0;background:transparent;border-radius:6px;height:26px;padding:0 12px;
+.workbench .wb-seg2 button{border:0;background:transparent;border-radius:6px;height:24px;padding:0 11px;
   font-size:12.5px;font-weight:600;color:var(--wb-t3);cursor:pointer;font-family:inherit;white-space:nowrap}
 .workbench .wb-seg2 button.is-on{background:var(--wb-s);color:var(--wb-a);
   box-shadow:0 1px 2px hsla(176,25%,10%,.1);cursor:default}
 .workbench .wb-seg2 button:not(.is-on):hover{color:var(--wb-t2)}
 
-/* 开关缩小：它们是状态，不该比数字还抢眼 */
+/* 开关 */
 .workbench .wb-ops .wb-switch{gap:7px}
 .workbench .wb-ops .wb-switch b{font-size:12.5px;font-weight:600;color:var(--wb-t)}
 .workbench .wb-ops .wb-tg{width:30px;height:17px;border:0;background:hsl(168,12%,84%)}
 .workbench .wb-ops .wb-tg::after{top:2px;left:2px;width:13px;height:13px;box-shadow:0 1px 2px hsla(176,25%,10%,.22)}
 .workbench .wb-ops .wb-switch.is-on .wb-tg{background:var(--wb-a)}
 .workbench .wb-ops .wb-switch.is-on .wb-tg::after{left:15px}
-/* 控件统一 28px/7px，边框减轻 */
+
+/* 控件。.wb-btn 的基础规则（height:34px）写在本文件更靠后的位置，同优先级下后者胜，
+   所以这里必须提高特异性，否则按钮会保持 34px —— 实测过，原先写 .wb-ops .wb-btn 没生效。 */
 .workbench .wb-ops .wb-field{height:28px;border-radius:7px;font-size:12.5px;padding:0 9px;border-color:hsl(168,14%,87%)}
 .workbench .wb-ops select.wb-field{padding-right:26px;background-position:calc(100% - 14px) 55%,calc(100% - 9.5px) 55%}
-.workbench .wb-ops .wb-btn{height:28px;border-radius:7px;font-size:12.5px}
+.workbench .wb-ops .wb-seg .wb-btn,
+.workbench .wb-ops .wb-seg .wb-btn.pri,
+.workbench .wb-ops .wb-seg .wb-btn.out{height:28px;border-radius:7px;font-size:12.5px;padding:0 11px}
 
 .workbench .wb-switch{display:inline-flex;align-items:center;gap:9px;border:0;background:transparent;padding:0;text-align:left}
 .workbench .wb-tg{position:relative;width:40px;height:23px;border-radius:999px;background:var(--wb-s3);border:1px solid var(--wb-bd);transition:.16s;flex:none}
