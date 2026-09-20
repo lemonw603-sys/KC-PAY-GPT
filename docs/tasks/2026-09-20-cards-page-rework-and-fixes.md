@@ -168,9 +168,13 @@ risk_cancel_return 5 笔 -$0.05 · normal_cancel_return 2 笔 $0.02
 | 「浏览器自动化充值当前卡台」 | **删** | D-280 第 7 条，工作台营业条已实现 | 无 |
 | 「卡台管理」表格（卡台能力/库存快照/告警） | **降折叠高级入口** | D-280 第 8 条 | 无 |
 
-**⚠️ 硬前置**：设置页（D-290）那张大表只做了水位 / 开卡金额 / 每日开卡上限 / 钱包底线 / 钱包告警线，**漏做了「最低余额」与「每卡单数」**。这两项目前唯一的后台写入入口就在块 2 里（`POST /api/v1/admin/card-stock/minimum-balance`、`/card-stock/max-successful-payments`）。
+**⚠️ 更正（2026-09-20，本条原文有误，保留以示错在哪）**：上面这段曾写「设置页漏做了『最低余额』与『每卡单数』，必须先补再删块 2」。**错了一半**——
 
-**因此必须先补设置页，再删块 2**，否则删完这两个值就只能改库/跑脚本（D-301 当天已临时新建 `v1/scripts/set-minimum-card-balance.mjs` 应急）。
+- **最低余额：设置页早就做了**，按产品三行 + 保存按钮（`admin.js` `renderSettingsThresholds` 的 `mins`），保存调的就是 `/card-stock/minimum-balance`，**和块 2 里那份是同一个端点**。所以块 2 那份是**重复入口**，删掉即可，没有前置。
+- **我为什么误判**：只查了 `card-supply-policy-admin-service.js` 的 `POLICY_FIELDS`（那里管 `card_supply_policies` 与 `provider_accounts` 列），而最低余额不走那个 service。**在一个地方没找到就断言「不存在」** —— 本项目记忆里的第七类惯犯。
+- **每卡单数：确实是真前置**。设置页那项此前做成只读（理由是 D-221 要按产品、且块 2 还有可编辑入口），块 2 一删就没入口了。**已于当日改为可编辑**（复用既有端点 `/card-stock/max-successful-payments`，整数 1~4 校验），并加测试钉住。
+
+**结论：删块 2 的前置已清零。**
 
 **怎么核实**：
 ```bash

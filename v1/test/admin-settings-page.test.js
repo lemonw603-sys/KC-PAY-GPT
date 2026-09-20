@@ -67,20 +67,40 @@ test('真的没有策略时才说「还没有任何供给策略」（读失败�
   assert.match(src, /设置读取失败，先不要照这里的值做判断/);
 });
 
-test('每卡单数只读显示并写明缺口（D-221 尚未按产品拆），不给改，且不把编号写到界面上', () => {
+test('每卡单数可编辑（块 2 撤掉后这是唯一入口），缺口说明仍在，且不把编号写到界面上', () => {
   const { sandbox, html } = loadAdminJs();
   sandbox.renderSettingsThresholds({
     wallets: [], minimumBalanceByPlan: { plus: '16.00' }, maxSuccessfulPayments: '3'
   });
   const out = html('sel:#settings-thresholds');
   // 缺口必须在界面上可见 —— 但用运营看得懂的话说，不是甩一个决策编号过去
-  assert.match(out, /三个产品暂时共用/);
+  assert.match(out, /三个产品共用/);
   assert.match(out, /还不能分开设/);
-  // 界面不写内部编号（DESIGN_SYSTEM.md 第五节）。原先这里显示的是
-  // 「D-221 要按产品（Plus 3 / 5X 1 / 20X 1），现在只有这一个全局值，暂不可改」。
+  // 界面不写内部编号（DESIGN_SYSTEM.md 第五节）
   assert.doesNotMatch(out, /\b[DF]-\d+\b/);
-  // 只读就不能出现可编辑控件对应的 data-field
-  assert.doesNotMatch(out, /data-field="card_max_successful_payments"/);
+  // 此前做成只读，是因为卡片页块 2 还有一个可编辑入口；块 2 按 V2 §3.3 / D-284 ① 要撤，
+  // 撤掉后这里就是唯一入口，所以必须能改。端点 /card-stock/max-successful-payments 早就存在。
+  assert.match(out, /data-field="max_successful_payments"/);
+  assert.match(out, /data-save-capacity/);
+  assert.match(out, /max="4"/);
+});
+
+test('最低余额按产品可改，且走既有端点 —— 不是「设置页漏做了」', () => {
+  // 2026-09-20 我一度断言「设置页 D-290 漏做了最低余额」，并把它写成删块 2 的硬前置。
+  // 错在只查了 card-supply-policy-admin-service 的 POLICY_FIELDS，而最低余额不走那个
+  // service、走 /card-stock/minimum-balance。这条测试把「已存在」钉住，免得再误判一次。
+  const { sandbox, html } = loadAdminJs();
+  sandbox.renderSettingsThresholds({
+    wallets: [], minimumBalanceByPlan: { plus: '16.00', pro_5x: '95.00', pro_20x: '150.00' },
+    maxSuccessfulPayments: '3'
+  });
+  const out = html('sel:#settings-thresholds');
+  for (const plan of ['plus', 'pro_5x', 'pro_20x']) {
+    assert.match(out, new RegExp(`data-plan="${plan}"`), `${plan} 要有自己的一行`);
+  }
+  assert.match(out, /data-field="minimum_balance"/);
+  assert.match(out, /data-save-minimum/);
+  assert.match(out, /95\.00/);
 });
 
 test('设置页在 .workbench 作用域内，可以用 wb-* 同族样式（与 CDK 页的坑相反）', () => {

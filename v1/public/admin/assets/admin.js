@@ -1698,11 +1698,16 @@ function renderSettingsThresholds(data) {
     <span><input class="wb-field set-f" type="number" step="0.01" data-field="minimum_balance"
       data-original="${escapeHtml(String(minimums[plan] ?? ''))}" value="${escapeHtml(String(minimums[plan] ?? ''))}">
       <button type="button" class="wb-btn sm out set-save" data-save-minimum disabled>保存</button></span></div>`).join('');
-  // D-221 要按产品，现在只有一个全局值 —— 只读显示并说清，不给改（Lemon 2026-09-20 定）
+  // 每卡单数：D-221 要按产品，现在仍是一个全局值（欠账 3）。此前这里做成只读，
+  // 因为卡片页块 2 还有一个可编辑入口；而块 2 按 V2 §3.3 / D-284 ① 要撤 ——
+  // 撤掉后这里就是唯一入口，所以改回可编辑。端点 /card-stock/max-successful-payments
+  // 早就存在且带校验（整数 1~4），不新建。「三个产品共用」的说明保留，那是事实。
   const capacity = `<div class="set-kv">
     <label>每卡单数 <small>一张卡最多成功充几单</small></label>
-    <span class="set-ro">全局 ${escapeHtml(String(data.maxSuccessfulPayments ?? '—'))}
-      <span class="wb-chip warn">三个产品暂时共用这一个值，还不能分开设</span></span></div>`;
+    <span><input class="wb-field set-f" type="number" step="1" min="1" max="4" data-field="max_successful_payments"
+      data-original="${escapeHtml(String(data.maxSuccessfulPayments ?? ''))}" value="${escapeHtml(String(data.maxSuccessfulPayments ?? ''))}">
+      <button type="button" class="wb-btn sm out set-save" data-save-capacity disabled>保存</button>
+      <span class="wb-chip warn">三个产品共用这一个值，还不能分开设</span></span></div>`;
   elements.settingsThresholds.innerHTML = wallets + mins + capacity;
 }
 
@@ -3319,6 +3324,11 @@ document.addEventListener('click', async (event) => {
         await api('/api/v1/admin/card-stock/minimum-balance', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ amount: Number(input.value), planType: scope.dataset.plan })
+        });
+      } else if (field === 'max_successful_payments') {
+        await api('/api/v1/admin/card-stock/max-successful-payments', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ count: Number(input.value) })
         });
       } else if (button.hasAttribute('data-save-wallet')) {
         await api('/api/v1/admin/settings/provider-wallet', {
