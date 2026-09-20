@@ -133,4 +133,4 @@
 | `first_seen_at` 替代 `occurred_at` | 已实跑 | **语义差异未被跨日场景检验**：它是「同步到的时间」不是交易时间，跨日同步会归到同步那天 |
 | 设置页「每卡单数」改为可编辑（D-303） | **只有单元测试** | 端点既有、校验既有，但**没有在隔离库真点过一次保存**并复核 `app_settings` 与审计行 |
 
-| 工作台有副作用的按钮 | **只核了处理器存在，没实际点过** | 三个营业开关（accept/dispatch/pay）、路线切换（API↔Browser）、卡台切换、发码「生成并复制」、告警「关闭」。2026-09-20 只对无副作用的跳转类做了实点验证（进订单页 / 今日单数 / 成功率）。**要在隔离库逐个点一遍并复核库状态与审计行，才算验过** |
+| 工作台有副作用的按钮 | **2026-09-20 在隔离库 `step6_demo`(8803) 逐个点过并复核库/审计/界面**：接单、派单、付款（开启方向弹 confirm、关闭方向不弹，与代码一致）三开关均库值翻转+审计+1+界面同步+提示正确，且都已切回原值；卡台切换真切成（Plus/BROWSER `legacy-primary`→`backup-a`→切回，version 3→4→5）；发码「生成并复制」批次 0→1、码 28→30；告警「关闭」OPEN→RESOLVED 且界面移除；路线切换弹确认→发请求→409 `browser_recharge_not_ready`→界面显示原因 | **「关闭记录」按钮当前不可能被触发**（不是"没点过"）：`reconciliation_cases` 全系统只有三个产生方（`workflow-repository.js:339`、`browser-execution-repository.js:1257`、`browser-admin-service.js:958`），产的都是 `API_PAYMENT_UNKNOWN`/`BROWSER_PAYMENT_UNKNOWN`，而这两种在 `admin.js:463` 走的是「去核实收口」分支；通用入口 `reconciliation-case-service.upsertCase` **生产代码零调用**，只有测试在用。生产只读实证：`SELECT case_type,status,COUNT(*) … GROUP BY` → 仅 `BROWSER_PAYMENT_UNKNOWN OPEN 2`。**它是给 V2「对账面」（⑦⑧，未开始）预留的分支**，接入 detector 产出非付款不明 case 后才会出现，届时再验 |
