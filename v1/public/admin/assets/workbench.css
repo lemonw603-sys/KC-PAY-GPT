@@ -66,22 +66,10 @@ body{font-family:var(--wb-fd)}
 .workbench .wb-ro{font-size:10.5px;font-weight:700;color:var(--wb-t3);border:1px solid var(--wb-bd);border-radius:999px;padding:3px 9px}
 
 /* ---------- 营业条：三开关 + 两卡台 + CDK 快捷 ---------- */
-/* 运营控制条（Lemon 2026-09-20 三轮反馈后定稿）。
-   前两版的毛病：内容量撑不起「两层 + 左右两栏」，左右都空一大片；三行控件因为
-   标签宽度不同，左边缘根本没对齐。现在是紧凑的标签对齐行——标签列等宽，
-   所有控件从同一条竖线起，整块高度压到三行。界面不做旁白，没有解释文字。 */
-.workbench .wb-ops{padding:0;overflow:hidden}
-.workbench .wb-ops-top{display:flex;align-items:center;gap:28px;flex-wrap:wrap;
-  padding:13px 18px;border-bottom:1px solid var(--wb-s3)}
-.workbench .wb-ops-rows{padding:12px 18px;display:grid;gap:9px}
-.workbench .wb-ops-row{display:flex;align-items:center;gap:9px;flex-wrap:wrap;min-height:30px}
-/* 标签列等宽 —— 三行的控件因此从同一条竖线开始 */
-.workbench .wb-lead{flex:none;width:58px;font-size:12.5px;color:var(--wb-t3)}
-.workbench .wb-lead2{font-size:12.5px;color:var(--wb-t3)}
-.workbench .wb-sep{color:var(--wb-bd);font-size:12px}
-.workbench .wb-num{width:62px;text-align:center}
-.workbench .wb-cdk{display:flex;align-items:center;gap:9px;margin:0}
-.workbench .wb-takeover{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--wb-t2)}
+.workbench .wb-ops{display:flex;align-items:stretch;gap:20px;flex-wrap:wrap;padding:14px 16px;border:1px solid var(--wb-bd);border-radius:14px;
+  background:linear-gradient(180deg,var(--wb-s) 0,var(--wb-s2) 100%);box-shadow:var(--wb-shadow)}
+.workbench .wb-ops .wb-grp{display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+.workbench .wb-ops .wb-vr{width:1px;background:var(--wb-bd)}
 
 .workbench .wb-switch{display:inline-flex;align-items:center;gap:9px;border:0;background:transparent;padding:0;text-align:left}
 .workbench .wb-tg{position:relative;width:40px;height:23px;border-radius:999px;background:var(--wb-s3);border:1px solid var(--wb-bd);transition:.16s;flex:none}
@@ -125,32 +113,8 @@ body{font-family:var(--wb-fd)}
 .workbench .wb-kpi .wb-v{font-family:var(--wb-fm);font-size:28px;font-weight:600;letter-spacing:-.02em;line-height:1.05;color:var(--wb-t)}
 .workbench .wb-kpi .wb-v small{font-size:13px;color:var(--wb-t3);font-weight:500}
 .workbench .wb-kpi .wb-sub{font-size:11px;color:var(--wb-t3)}
-/* 「待接入」：JS 输出的是 is-pending，这里原先写的是 wb-pending —— 名字对不上，
-   规则一直没生效，三格占着和真数字一样大的字号，喧宾夺主（Lemon 2026-09-20 指出）。
-   灰、小、不可点：一眼看出它不是一个数。 */
-.workbench .wb-kpi.is-pending{background:var(--wb-s2);box-shadow:none;cursor:default}
-.workbench .wb-kpi.is-pending .wb-lb{color:var(--wb-t3)}
-.workbench .wb-kpi.is-pending .wb-v{font-family:var(--wb-fd);font-size:13px;font-weight:500;color:var(--wb-t3)}
-.workbench .wb-kpi.is-pending .wb-sub{color:var(--wb-t3);opacity:.85}
-.workbench button.wb-kpi.is-pending:hover{border-color:var(--wb-bd)}
-
-/* ===== 整体精致化（2026-09-20，Lemon「再精致一些」）=====
-   只调间距/层级/对齐，不动结构。 */
-/* 数字与副标题层级拉开：数字更实、标签更轻 */
-.workbench .wb-kpi{gap:3px}
-.workbench .wb-kpi .wb-lb{letter-spacing:.01em}
-.workbench .wb-kpi .wb-sub{line-height:1.45}
-/* 卡片标题区统一高度与内边距，避免每块高低不一 */
-.workbench .wb-ch{min-height:52px;padding:11px 16px}
-.workbench .wb-ch h2{font-size:15px;line-height:1.3}
-.workbench .wb-kick{margin:0;font-size:10.5px;letter-spacing:.08em;font-weight:700}
-.workbench .wb-cb{padding:14px 16px}
-/* 表格：行高与对齐统一；金额右对齐、时间列不换行 */
-.workbench table td,.workbench table th{padding:8px 12px}
-.workbench table td.num,.workbench table th.num{text-align:right;font-family:var(--wb-fm)}
-.workbench table td.when,.workbench table th.when{white-space:nowrap;color:var(--wb-t3)}
-/* 空态与失败态：统一措辞位置与留白，不再有的居中有的靠左 */
-.workbench .wb-qempty{margin:0;padding:14px 2px;color:var(--wb-t3);font-size:12.5px}
+.workbench .wb-kpi.wb-pending{opacity:.6}
+.workbench .wb-kpi.wb-pending .wb-v{font-size:15px;color:var(--wb-t3)}
 
 /* ---------- 二排：卡与钱 | 日对账 ---------- */
 .workbench .wb-mid{display:grid;grid-template-columns:1.35fr .65fr;gap:16px;align-items:start}
@@ -227,7 +191,7 @@ body{font-family:var(--wb-fd)}
 /* ---------- 响应式 ---------- */
 @media(max-width:1024px){ .workbench .wb-mid{grid-template-columns:1fr} }
 @media(max-width:640px){
-  .workbench .wb-ops-top{gap:16px}
+  .workbench .wb-ops{gap:14px} .workbench .wb-ops .wb-vr{display:none}
   .workbench .wb-recon{grid-template-columns:1fr 1fr}
 }
 
@@ -252,44 +216,3 @@ body{font-family:var(--wb-fd)}
 .workbench .set-kv label small{display:block;color:var(--wb-t3);font-size:11px}
 .workbench .set-kv span{display:flex;align-items:center;gap:7px;flex-wrap:wrap;justify-content:flex-end}
 .workbench .wb-note{margin:0 0 10px;font-size:12px;color:var(--wb-t2)}
-
-/* ===== 营业条视觉精修（Lemon 2026-09-20：位置对，但好看不起来）=====
-   原先：40×23 的大绿 toggle 三只并排最抢眼，而它们只是状态、不是主角；
-   控件高度 34px 偏笨重、圆角偏大、边框偏重；标签与控件之间缺层次。
-   这里只动质感，不动结构与文案。 */
-
-/* 开关：缩小、去掉重边框，用更柔的绿；滑块给一点投影显出厚度 */
-.workbench .wb-ops-top .wb-tg{width:32px;height:18px;border:0;background:hsl(168,12%,82%);
-  transition:background .18s ease}
-.workbench .wb-ops-top .wb-tg::after{top:2px;left:2px;width:14px;height:14px;
-  box-shadow:0 1px 2px hsla(176,25%,10%,.22);transition:left .18s ease}
-.workbench .wb-ops-top .wb-switch.is-on .wb-tg{background:var(--wb-a)}
-.workbench .wb-ops-top .wb-switch.is-on .wb-tg::after{left:16px}
-.workbench .wb-ops-top .wb-switch{gap:8px}
-.workbench .wb-ops-top .wb-switch .wb-lb b{font-size:12.5px;letter-spacing:.01em}
-.workbench .wb-ops-top .wb-switch .wb-lb small{font-size:10.5px;color:var(--wb-t3)}
-.workbench .wb-ops-top{gap:24px;padding:12px 18px}
-
-/* 控件：统一 30px 高、8px 圆角、更淡的边框；聚焦时才用主色描边 */
-.workbench .wb-ops .wb-field{height:30px;border-radius:8px;font-size:12.5px;padding:0 9px;
-  border-color:hsl(168,14%,86%)}
-.workbench .wb-ops select.wb-field{padding-right:26px;background-position:calc(100% - 14px) 55%,calc(100% - 9.5px) 55%}
-.workbench .wb-ops .wb-field:focus{outline:0;border-color:var(--wb-a);box-shadow:0 0 0 3px var(--wb-a-soft)}
-.workbench .wb-ops .wb-btn{height:30px;border-radius:8px;font-size:12.5px;border-color:hsl(168,14%,86%)}
-.workbench .wb-ops .wb-btn:hover{background:var(--wb-s2);border-color:var(--wb-bd)}
-.workbench .wb-ops .wb-btn.pri{border-color:var(--wb-a);box-shadow:0 1px 2px hsla(163,60%,20%,.18)}
-.workbench .wb-ops .wb-btn.pri:hover{filter:brightness(1.06)}
-
-/* 当前态胶囊：小圆点 + 淡底，别和按钮抢 */
-.workbench .wb-ops .wb-chip{height:30px;padding:0 11px;border-radius:999px;font-size:12.5px;
-  display:inline-flex;align-items:center;gap:6px;font-weight:600}
-.workbench .wb-ops .wb-chip .wb-d{width:6px;height:6px}
-.workbench .wb-ops .wb-chip.mute{background:var(--wb-s2);color:var(--wb-t3);border:1px solid hsl(168,14%,88%)}
-
-/* 行与标签：标签更轻，控件成组，行距均匀 */
-.workbench .wb-ops-rows{padding:13px 18px 15px;gap:10px}
-.workbench .wb-ops-row{gap:8px;min-height:30px}
-.workbench .wb-lead{width:56px;font-size:12px;color:var(--wb-t3);font-weight:500}
-.workbench .wb-lead2{font-size:12px;color:var(--wb-t3)}
-.workbench .wb-sep{color:hsl(168,14%,84%)}
-.workbench .wb-num{width:56px}

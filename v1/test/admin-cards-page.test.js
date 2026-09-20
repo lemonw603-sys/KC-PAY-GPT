@@ -270,15 +270,17 @@ test('⑦ 有排队单时，工作台给出「同时接管 N 单」的勾选', (
   sandbox.renderDecisions(DECISIONS_OVERVIEW, CARD_SOURCES, { count: 4 });
   const out = html('wb-routes');
   assert.match(out, /id="decision-card-source-takeover"/);
-  assert.match(out, /同时接管 4 张排队单/);
+  assert.match(out, /同时接管 4 张排队等卡的单/);
+  // 要说清勾与不勾各自会发生什么，别让人猜
+  assert.match(out, /排队单继续等原卡台/);
 });
 
-test('⑦ 没有排队单时不给勾选，也不占一行说明（界面不做旁白）', () => {
+test('⑦ 没有排队单时不给勾选，并说明「当前没有可接管的」', () => {
   const { sandbox, html } = loadAdminJs();
   sandbox.renderDecisions(DECISIONS_OVERVIEW, CARD_SOURCES, { count: 0 });
   const out = html('wb-routes');
   assert.doesNotMatch(out, /decision-card-source-takeover/);
-  assert.doesNotMatch(out, /可接管/, '没有可接管的单时不该占一行说明');
+  assert.match(out, /没有排队等卡的单可接管/);
 });
 
 test('⑦ 待接管单数读取失败时说读取失败，不静默当成 0', () => {
