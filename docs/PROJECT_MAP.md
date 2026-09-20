@@ -63,6 +63,7 @@
 | 8 | `design` 插件未安装（安装卡片点过但未生效） | 想用 design-critique / design-system 时重试 | D-293 |
 | 9 | `pro5/pro20` 映射验证 | 并入第⑦步 | 8 步表 ① |
 | 10 | ~~**API 路线付款不明的收口按钮**~~ **已完成**（2026-09-20，提交 `5a6fb99`）：详情页按后端算好的 `unknownSubmission.eligible` 渲染「确认核实结果」；资格规则抽成 `unknownSubmissionEligibility` 一份，收口服务与详情读服务共用；同轮修掉 F-61 在详情页那一半（付款不明不再给「关闭对账案例」）。隔离库两个分支端到端验过 | — | F-61 复核 |
+| 12 | **界面文案闸门只扫前端**：`scripts/ui-copy-check.mjs` 的 TARGETS 只有 `admin.js` / 两个 `index.html`，**后端产出、前端直接渲染的文案完全不在它管辖内**。本轮实例：待销原因标签里挂着 `（DEPLETED）`/`（FAILED）`/`RETIRED` 三个枚举名（`card-retirement-service.js` 的 `REASON_LABELS`，第④块带进来的），闸门全绿而页面上就写着。本轮已就地改掉那三条，**闸门本身没扩** | 下次往闸门里加规则时一并做；或再抓到第二例时 | D-305 |
 | 11 | **日对账逐卡差异明细无处可看**：服务端返回 `discrepancies` 数组（`daily-reconciliation-service.js:356`），前端只用 `discrepancyCount` 计数；「看逐张」和队列「去处理」都跳 diagnostics，而 diagnostics 加载的是 cases/runs/jobs（`admin.js:2412`），没有一项展示那几张卡 | 下次真出无主扣款、或做 diagnostics 页时 | F-64 复核（DISPOSITIONS 2026-09-20） |
 
 前两条是同一件事的两个入口：**兜底已经有了**（D-296 的「>$75 默认不给 Plus」不依赖任何人打标记），所以不急；但源头回写仍值得做，否则每次都靠那条阈值兜着。

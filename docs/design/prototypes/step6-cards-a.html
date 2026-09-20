@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light">
+<title>第⑥步 · 卡片页 A 版定稿（比对基准）</title>
+<!--
+  这是**定稿原型**，不是比稿。比稿在 step6-cards-compare.html（三版给 Lemon 挑，A 已选定，D-287）。
+
+  两条规矩来自 2026-09-20 营业条那次事故（见 _frozen/opsbar-v5/README.md）：
+  1) link 的是 _frozen/cards-a/ 的定稿快照，**不是**实时的 /admin/assets/*。
+     走 proto-server 反代实时 CSS 的话，原型会跟着实现一起变，比对永远通过。
+  2) 被量的那棵树里**一个原型专属 class 都不带**，用的全是实现里的真类名。
+     否则像 `.cardadv-item > summary{...}` 这种子选择器会在原型侧落空，失真的是原型。
+
+  三份 CSS 按 index.html 的顺序加载，少一份就失真（box-sizing 写在 admin.css）。
+
+  结构＝A 版三块 + 一个高级入口，顺序按 A 版原型：
+    ① 两台卡台 → ③ 在役卡片列表（含历史折叠）→ ⑤ 待销清单 → 高级
+  在役列表在待销**之前**——实现此前是反的，B 部分一并纠正。
+
+  数字：两台的卡数与水位/底线/日限是 2026-09-20 生产只读实查
+  （providerCardStockSql() 原样跑：hnskj 在库 2 / 可分配 0 / 总 14，
+   backup-a 在库 7 / 可分配 2 / 总 16；wallet_floor 30 与 20）。
+  卡行与待销行是示例数据，只为撑出几何量。
+-->
+<link rel="stylesheet" href="_frozen/cards-a/admin.css">
+<link rel="stylesheet" href="_frozen/cards-a/workbench.css">
+<link rel="stylesheet" href="_frozen/cards-a/cards.css">
+</head>
+<body>
+<div class="admin-shell">
+  <!-- 侧栏是**外壳**、不在被量的树里，但必须在：.admin-shell 是
+       `grid-template-columns: 230px minmax(0,1fr)`，少了它 .main-area 会落进 230px 那一列，
+       整页横向被压到 230px，所有东西换行、高度全部虚高。
+       第一版原型就漏了它，比对报出 26 处「原型比实现高」，全是这一个原因。 -->
+  <aside class="sidebar">
+    <a class="admin-brand" href="#" aria-label="Plus 运营后台首页">
+      <span class="brand-label">OPERATIONS</span>
+      <strong>Plus 运营后台 <span aria-hidden="true">✦</span></strong>
+      <small>内部管理中心</small>
+    </a>
+    <nav aria-label="后台导航">
+      <button class="nav-item" type="button" data-view="overview"><span class="ic" aria-hidden="true">◱</span>工作台</button>
+      <button class="nav-item" type="button" data-view="orders"><span class="ic" aria-hidden="true">≡</span>订单</button>
+      <button class="nav-item" type="button" data-view="cdks"><span class="ic" aria-hidden="true">#</span>CDK</button>
+      <button class="nav-item is-active" type="button" data-view="stock"><span class="ic" aria-hidden="true">▣</span>卡片</button>
+      <button class="nav-item" type="button" data-view="settings"><span class="ic" aria-hidden="true">⚙</span>设置</button>
+      <button class="nav-item" type="button" data-view="diagnostics"><span class="ic" aria-hidden="true">◎</span>诊断</button>
+    </nav>
+    <div class="sidebar-foot">
+      <span class="session-state"><i aria-hidden="true"></i><b>管理员已登录</b><small>人工确认模式</small></span>
+      <button type="button">安全退出</button>
+    </div>
+  </aside>
+  <main class="main-area">
+    <header class="topbar">
+      <div class="topbar-title">
+        <p class="section-kicker">卡片</p>
+        <h1 id="view-title">库存、卡台、导入</h1>
+      </div>
+      <span class="sync-time">更新于 16:37:59</span>
+    </header>
+
+    <section id="stock-view" class="view">
+
+      <!-- ① 两台卡台 -->
+      <section class="card stock-card">
+        <div class="card-heading"><div><p class="section-kicker">两台卡台</p><h2>现在能分出去几张</h2></div><span class="readonly-badge">可分配＝资格规则算的</span></div>
+        <p class="card-description stock-definition">“可分配”指现在就能安全绑定 Plus 订单的卡，按第③④块那份资格规则算——和工作台同一个数。“在库”只是没退役，两者差得远，别混用。</p>
+        <div class="cardrigs" id="cards-rigs">
+          <div class="cardrig">
+            <div class="cardrig-h"><b>HNSKJ</b><span class="cardrig-acct">legacy-primary</span></div>
+            <div class="cardrig-quad">
+              <div class="cardrig-q is-warn"><label>可分配 / 水位（Plus）</label><div class="cardrig-v">0 <small>/ 2</small></div></div>
+              <div class="cardrig-q"><label>钱包余额 / 底线</label><div class="cardrig-v">$41.20 <small>/ $30.00</small></div></div>
+              <div class="cardrig-q"><label>今日已开 / 日限（Plus）</label><div class="cardrig-v">0 <small>/ 20</small></div></div>
+              <div class="cardrig-q is-pending"><label>卡台快照</label><div class="cardrig-v">09-20 15:12</div></div>
+            </div>
+            <div class="cardrig-foot">
+              <span>在库 2 · 总 14 · 使用中 0</span>
+              <button class="cardbtn" type="button">开卡…</button>
+              <button class="cardbtn" type="button">刷新这台</button>
+              <span></span>
+            </div>
+          </div>
+          <div class="cardrig">
+            <div class="cardrig-h"><b>highvcc</b><span class="cardrig-acct">backup-a</span></div>
+            <div class="cardrig-quad">
+              <div class="cardrig-q"><label>可分配 / 水位（Plus）</label><div class="cardrig-v">2 <small>/ 2</small></div></div>
+              <div class="cardrig-q is-pending"><label>钱包余额 / 底线</label><div class="cardrig-v"><button class="cardbtn" type="button">查余额</button> <small>/ $20.00</small></div></div>
+              <div class="cardrig-q"><label>今日已开 / 日限（Plus）</label><div class="cardrig-v">0 <small>/ 20</small></div></div>
+              <div class="cardrig-q is-pending"><label>token</label><div class="cardrig-v">上次贴 09-20 06:12</div></div>
+            </div>
+            <div class="cardrig-foot">
+              <span>在库 7 · 总 16 · 使用中 0</span>
+              <button class="cardbtn" type="button">开卡…</button>
+              <button class="cardbtn" type="button">刷新这台</button>
+              <span></span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ③ 在役卡片列表（A 版：在待销之前） -->
+      <section class="card stock-card">
+        <div class="card-heading"><div><p class="section-kicker">运营明细</p><h2>卡片列表</h2></div><div class="stock-card-actions"><button class="text-button" type="button">刷新本地列表</button><button class="text-button" type="button">同步卡台余额和交易</button><button class="primary-small" type="button">同步并接管新卡</button> <span class="write-badge">完整卡号</span></div></div>
+        <div class="cardtable" id="stock-cards">
+          <table>
+            <thead><tr><th>尾号</th><th>卡台</th><th>余额</th><th>用量</th><th>状态</th>
+              <th>绑定订单</th><th>开卡 / 成本</th><th>可销</th><th></th></tr></thead>
+            <tbody>
+              <tr>
+                <td class="cardmono"><button class="cardlink" type="button">4417</button></td>
+                <td>HNSKJ</td>
+                <td class="cardmono">$12.40<span class="cardsub">09-20 15:12</span></td>
+                <td class="cardmono">0/3</td>
+                <td><span class="cardchip is-ok">可分配</span><span class="cardsub">可直接分配 Plus</span></td>
+                <td class="cardmono"><span class="cardmuted">—</span></td>
+                <td class="cardmono">09-18 00:27<span class="cardsub">$0.75</span></td>
+                <td>—</td>
+                <td><button class="cardbtn" type="button">我手动用了</button></td>
+              </tr>
+              <tr>
+                <td class="cardmono"><button class="cardlink" type="button">9082</button></td>
+                <td>highvcc</td>
+                <td class="cardmono">$20.00<span class="cardsub">09-19 22:03</span></td>
+                <td class="cardmono">1/3</td>
+                <td><span class="cardchip is-ok">可分配</span><span class="cardsub">可继续分配 Plus（已用 1/3 次）</span></td>
+                <td class="cardmono"><span class="cardmuted">—</span></td>
+                <td class="cardmono">09-18 06:27<span class="cardsub">$0.50</span></td>
+                <td>—</td>
+                <td><button class="cardbtn" type="button">我手动用了</button></td>
+              </tr>
+              <tr>
+                <td class="cardmono"><button class="cardlink" type="button">3351</button></td>
+                <td>highvcc</td>
+                <td class="cardmono">$18.60<span class="cardsub">09-19 22:03</span></td>
+                <td class="cardmono">2/3</td>
+                <td><span class="cardchip is-use">使用中</span><span class="cardsub">已绑定订单 PJ-20260919-07</span></td>
+                <td class="cardmono">PJ-20260919-07</td>
+                <td class="cardmono">09-18 06:27<span class="cardsub">$0.50</span></td>
+                <td>占用中</td>
+                <td><span class="cardmuted">—</span></td>
+              </tr>
+              <tr class="is-due">
+                <td class="cardmono"><button class="cardlink" type="button">7726</button></td>
+                <td>HNSKJ</td>
+                <td class="cardmono">$0.35<span class="cardsub">09-20 12:40</span></td>
+                <td class="cardmono">3/3</td>
+                <td><span class="cardchip is-due">已用满 3/3 次</span><span class="cardsub"></span></td>
+                <td class="cardmono"><span class="cardmuted">—</span></td>
+                <td class="cardmono">09-17 09:11<span class="cardsub">$0.75</span></td>
+                <td>已到期</td>
+                <td><button class="cardbtn" type="button">我手动用了</button></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="cardfold" id="stock-cards-history">
+          <button class="cardfoldtoggle" type="button">▸ 历史（退役 / 卡台作废）21 张</button>
+          <div class="cardtable" hidden></div>
+        </div>
+      </section>
+
+      <!-- ⑤ 待销清单 -->
+      <section class="card stock-card" id="card-retirement-card">
+        <div class="card-heading"><div><p class="section-kicker">收尾</p><h2>待销清单</h2></div><span class="write-badge">你删卡后登记</span></div>
+        <p class="card-description">到期的卡才亮出按钮。“我已在卡台删掉”＝你已经在卡台网站删了这张卡，系统据此标退役；系统不会替你去卡台删。点错了可以在历史里撤销。</p>
+        <div class="cardretire" id="card-retirement-list">
+          <table>
+            <thead><tr><th>尾号</th><th>卡台</th><th>为什么待销</th><th>余额</th><th>可销时间</th><th></th></tr></thead>
+            <tbody>
+              <tr class="is-due"><td class="cardmono">7726</td><td>HNSKJ</td><td>已用满 3/3 次</td><td class="cardmono">$0.35</td><td>已到期</td><td><button class="cardbtn is-primary" type="button">我已在卡台删掉</button></td></tr>
+              <tr class="is-notyet"><td class="cardmono">5590</td><td>highvcc</td><td>余额不足</td><td class="cardmono">$0.02</td><td>还差 2 小时 10 分</td><td><span class="cardmuted">未到可销时间</span></td></tr>
+              <tr class="is-notyet"><td class="cardmono">1184</td><td>HNSKJ</td><td>卡台状态不可用</td><td class="cardmono">$0.00</td><td>还差 4 小时 40 分</td><td><span class="cardmuted">未到可销时间</span></td></tr>
+            </tbody>
+          </table>
+          <p class="cardnote">满 6 小时才可销。「我已在卡台删掉」只登记，不会替你去卡台销卡。</p>
+        </div>
+      </section>
+
+      <!-- 高级：六件低频事收成一个入口 -->
+      <!-- 量的时候要展开：折起来的 <details> 里子元素是 0×0，两边都 0 就成了「一致」。
+           契约的 impl.prepare 也会把它打开，两边量的是同一个状态。里面六件保持折起——
+           那才是默认状态，也正是要守的那个节奏。 -->
+      <details class="card stock-card cardadv" id="stock-advanced" open>
+        <summary>高级<span class="cardadv-hint">卡台管理 · 开卡 · 导入 · 执行记录</span></summary>
+        <div class="cardadv-body">
+          <details class="cardadv-item" id="card-source-admin"><summary>卡台管理<span class="cardadv-hint">能力 · 快照 · 告知状态 · 新增备用卡台</span></summary></details>
+          <details class="cardadv-item" id="manual-card-import-card"><summary>接入无 API 的卡台：上传导出表</summary></details>
+          <details class="cardadv-item" id="hnskj-open-card"><summary>HNSKJ 人工开卡<span class="cardadv-hint">产生费用</span></summary></details>
+          <details class="cardadv-item" id="highvcc-open-card"><summary>highvcc 一键开卡<span class="cardadv-hint">highvcc.com · 产生费用</span></summary></details>
+          <details class="cardadv-item" id="stock-jobs-card"><summary>补卡执行记录</summary></details>
+          <details class="cardadv-item" id="card-intake-card"><summary>新卡接管记录</summary></details>
+        </div>
+      </details>
+
+    </section>
+
+  </main>
+</div>
+</body>
+</html>

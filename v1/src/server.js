@@ -293,6 +293,7 @@ const app = createApp({
   ,listCardRetirementCandidates: cardRetirement.list
   ,runDailyReconciliation: () => dailyReconciliation.run({ persist: false })
   ,confirmCardRetired: cardRetirement.confirmRetired
+  ,undoCardRetired: cardRetirement.undoRetired
   ,createAdminCdkBatch
   ,listAdminCdkBatches: async (input) => ({
     ...await listCdkBatches(pool, input),

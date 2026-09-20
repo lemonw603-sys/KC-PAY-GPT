@@ -111,11 +111,16 @@ test('admin script only references elements it declares and ids that exist in th
 test('exposes the one-to-four card capacity setting in the admin UI', async () => {
   const html = await readFile(new URL('../public/admin/index.html', import.meta.url), 'utf8');
   const script = await readFile(new URL('../public/admin/assets/admin.js', import.meta.url), 'utf8');
-  assert.match(html, /id="card-capacity-form"/);
-  assert.match(html, /id="card-capacity"[^>]*required/);
-  for (const value of [1, 2, 3, 4]) assert.match(html, new RegExp(`<option value="${value}">${value} 次</option>`));
+  // 入口从卡片页块 2 搬到设置页（B1 / D-284 ① / V2 §3.3）：块 2 那份是重复入口，
+  // 走的是同一个端点。这条测试守的是「这项还能改、范围仍是 1~4」，不是它在哪个页面上。
+  assert.doesNotMatch(html, /id="card-capacity-form"/, '块 2 的那份重复入口已删');
+  assert.match(script, /data-field="max_successful_payments"/);
+  assert.match(script, /min="1" max="4"/);
   assert.match(script, /\/api\/v1\/admin\/card-stock\/max-successful-payments/);
-  assert.match(script, /payload\.maxSuccessfulPayments \|\| 3/);
+  assert.match(script, /data\.maxSuccessfulPayments/);
+  // 设置页那格必须是可编辑的：D-303 之前它是只读，理由是「块 2 还有可编辑入口」——
+  // 块 2 一删，只读就等于这项再也改不了。
+  assert.doesNotMatch(script, /data-field="max_successful_payments"[^>]*readonly/);
 });
 
 test('readiness fails closed and errors do not expose details', async () => {

@@ -84,6 +84,7 @@ export function createApp({
   listCardRetirementCandidates = null,
   runDailyReconciliation = null,
   confirmCardRetired = null,
+  undoCardRetired = null,
   createAdminCdkBatch = null,
   listAdminCdkBatches = null,
   downloadAdminCdkBatch = null,
@@ -607,7 +608,7 @@ export function createApp({
   }
   if (typeof clearCardOperationalOverride === 'function') {
     app.delete('/api/v1/admin/card-operational-overrides', ...sensitiveAdminGuards, async (req, res) => {
-      res.json(await clearCardOperationalOverride(req.body || {}));
+      res.json(await clearCardOperationalOverride({ ...(req.body || {}), actorId: req.admin?.id || 'admin' }));
     });
   }
   if (typeof setAdminOrderAcceptance === 'function') {
@@ -682,16 +683,33 @@ export function createApp({
     });
   }
   if (typeof confirmCardRetired === 'function') {
-    // Lemon 在卡台删完后登记：确认词 `已销卡 <last4>`。
+    // Lemon 在卡台删完后登记。
+    //
+    // D-301：确认词不留。它挡不住误点——手打一次就会被复制粘贴，真正的闸门是
+    // ① 只有到期的卡才亮按钮、② 有活动分配的卡后端直接拒、③ 现在有了撤销路径
+    // （POST /card-retirement/undo）。last4 仍然校验，那是**定位**这张卡用的，不是闸门。
     app.post('/api/v1/admin/card-retirement/confirm', ...sensitiveAdminGuards, async (req, res) => {
       const body = req.body || {};
       const last4 = String(body.last4 || '').trim();
-      if (!/^\d{4}$/.test(last4) || body.confirmation !== `已销卡 ${last4}`) {
-        return res.status(400).json({ error: 'card_retirement_confirmation_required' });
+      if (!/^\d{4}$/.test(last4)) {
+        return res.status(400).json({ error: 'card_retirement_last4_required' });
       }
       try {
         res.json(await confirmCardRetired({ cardId: body.cardId, providerAccountId: body.providerAccountId,
           externalCardId: body.externalCardId, note: body.note, actorId: req.admin?.id || 'admin', source: 'admin' }));
+      } catch (error) {
+        if (error instanceof PublicApiError) return res.status(error.status || 400).json({ error: error.code.toLowerCase() });
+        throw error;
+      }
+    });
+  }
+  if (typeof undoCardRetired === 'function') {
+    // 撤销退役登记（B3 的前置：去掉确认词之前必须先有回头路）。必填理由，进审计。
+    app.post('/api/v1/admin/card-retirement/undo', ...sensitiveAdminGuards, async (req, res) => {
+      const body = req.body || {};
+      try {
+        res.json(await undoCardRetired({ cardId: body.cardId, providerAccountId: body.providerAccountId,
+          externalCardId: body.externalCardId, reason: body.reason, actorId: req.admin?.id || 'admin' }));
       } catch (error) {
         if (error instanceof PublicApiError) return res.status(error.status || 400).json({ error: error.code.toLowerCase() });
         throw error;

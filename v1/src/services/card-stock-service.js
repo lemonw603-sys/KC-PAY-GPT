@@ -11,6 +11,7 @@ import { cardCatalogIsFresh, readCardCatalogSnapshot } from './card-catalog-snap
 import { providerLabelOf } from '../domain/provider-labels.js';
 import { eligibleInventoryCardSql, providerCardStockSql, todayCst8WindowSql,
   REPLENISHMENT_OPENED_COUNT_SQL } from './card-inventory-eligibility.js';
+import { ALERT_TYPES, tokenExpiredAlertKey } from './card-supply-scheduler-service.js';
 
 const ACTIVE = new Set(['active', 'available', 'usable', 'ready']);
 const FAILED = new Set(['failed', 'failure', 'invalid', 'inactive', 'closed', 'cancelled', 'canceled']);
@@ -288,7 +289,7 @@ export function createCardStockService({ pool, sessionEncryptionKey, panHmacKey 
 
   async function status() {
     const [[thresholdRows], [rows], [settings], [cards], [overrideRows], providerSnapshot, catalogSnapshot,
-      [providerStockRows], [openedTodayRows], [snapshotRows]] = await Promise.all([
+      [providerStockRows], [openedTodayRows], [snapshotRows], [tokenAlertRows]] = await Promise.all([
       pool.query(
         `SELECT setting_key, setting_value FROM app_settings
          WHERE setting_key IN ('card_stock_low_threshold','card_auto_replenishment_enabled','card_replenishment_daily_limit')`
@@ -361,7 +362,21 @@ export function createCardStockService({ pool, sessionEncryptionKey, panHmacKey 
       pool.query(`SELECT provider, synced_at,
           JSON_UNQUOTE(JSON_EXTRACT(payload_json, '$.accountBalance')) AS account_balance,
           JSON_UNQUOTE(JSON_EXTRACT(payload_json, '$.currency')) AS currency
-        FROM card_provider_snapshots`)
+        FROM card_provider_snapshots`),
+      // token 失效的**权威信号**（B2）：PROVIDER_TOKEN_EXPIRED 告警。
+      //
+      // 此前卡片页读 provider_accounts.supply_fault_state，那个字段只在**补卡调度器开卡失败**
+      // 时才写；而 token 失效是快照同步任务发现的，markProviderTokenExpired 只写告警、
+      // 不碰 supply_fault_state。生产 2026-09-20 实测正处于矛盾态（supply_fault_state=OK
+      // 而告警 OPEN），卡片页说「已配置」、工作台说「已失效」。以告警为准，两页统一。
+      //
+      // 不走 /admin/alerts 那条路：它不支持按类型过滤、只取最近 100 条，OPEN 告警一多
+      // 就会把这条挤出去（F-74）。这里按 dedupe_key 精确命中，跟条数无关。
+      // key 和类型都从 card-supply-scheduler-service 引进来，不在这里重写字符串。
+      pool.query(
+        `SELECT dedupe_key FROM operator_alerts WHERE alert_type = ? AND status = 'OPEN'`,
+        [ALERT_TYPES.TOKEN_EXPIRED]
+      )
     ]);
     const threshold = Math.max(0, Number(thresholdRows.find(
       (row) => row.setting_key === 'card_stock_low_threshold'
@@ -482,6 +497,7 @@ export function createCardStockService({ pool, sessionEncryptionKey, panHmacKey 
       (row) => [String(row.provider_account_id), Number(row.used_today || 0)]));
     const snapshotByProviderKind = new Map((snapshotRows || []).map(
       (row) => [String(row.provider), row]));
+    const openTokenAlertKeys = new Set((tokenAlertRows || []).map((row) => String(row.dedupe_key)));
     const byProvider = (providerStockRows || []).map((row) => {
       const accountCode = String(row.provider_code || '');
       const providerKind = String(row.provider_kind || '');
@@ -517,6 +533,12 @@ export function createCardStockService({ pool, sessionEncryptionKey, panHmacKey 
         // 只在真有故障时说「已失效」；没故障不写「有效」（Lemon 定的口径）。
         supplyFaultState: row.supply_fault_state || null,
         supplyFaultReason: row.supply_fault_reason || null,
+        // B2：token 那格认这个——有 OPEN 的 PROVIDER_TOKEN_EXPIRED 告警才叫「已失效」。
+        // 没有告警**不等于**有效（token 两小时不活动就过期），所以字段只有 true 有意义，
+        // false 的含义是「没有证据说它失效」，页面据此只报「上次贴于几点」。
+        tokenExpiredAlert: openTokenAlertKeys.has(tokenExpiredAlertKey(row.provider_account_id)),
+        // 旧字段保留：它答的是「补卡调度器开卡失败过没有」，与 token 有效性无关，
+        // 别再拿它当 token 信号（此前就是这么错的）。
         tokenFault: String(row.supply_fault_state || '') === 'FAULT'
           && /^HIGHVCC_TOKEN/.test(String(row.supply_fault_reason || ''))
       };

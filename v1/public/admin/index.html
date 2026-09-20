@@ -9,8 +9,8 @@
   <link rel="icon" href="/admin/assets/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/admin/assets/admin.css?v=26">
   <link rel="stylesheet" href="/admin/assets/workbench.css?v=17">
-  <link rel="stylesheet" href="/admin/assets/cards.css?v=1">
-  <script src="/admin/assets/admin.js?v=70" defer></script>
+  <link rel="stylesheet" href="/admin/assets/cards.css?v=2">
+  <script src="/admin/assets/admin.js?v=72" defer></script>
 </head>
 <body>
   <div class="admin-shell">
@@ -180,122 +180,110 @@
           <div class="cardrigs" id="cards-rigs"><p class="empty-state">正在读取两台卡台…</p></div>
         </section>
 
-        <div class="stock-grid">
-          <section class="card stock-card">
-            <div class="card-heading"><div><p class="section-kicker">Plus 履约</p><h2>卡片概况</h2></div><span class="readonly-badge">有效状态</span></div>
-            <p class="card-description stock-definition">这四个数是两台合计。按台明细看上面。</p>
-            <div class="stock-summary" id="stock-summary"></div>
-            <div class="provider-summary" id="provider-summary"></div>
-            <div class="stock-settings-inline">
-              <form class="threshold-form" id="card-capacity-form">
-                <label for="card-capacity">每张卡最多成功充值次数</label>
-                <div><select id="card-capacity" required>
-                  <option value="1">1 次</option><option value="2">2 次</option>
-                  <option value="3">3 次</option><option value="4">4 次</option>
-                </select><button class="primary-small" type="submit">保存次数</button></div>
-                <p class="form-hint">达到上限后不再分配；修改只影响后续订单，不改写历史。</p>
-              </form>
-              <form class="threshold-form" id="minimum-balance-form">
-                <label for="minimum-balance">最低所需卡余额（USD，按产品）</label>
-                <div><select id="minimum-balance-plan" aria-label="产品"><option value="plus">Plus</option><option value="pro_5x">Pro 5X</option><option value="pro_20x">Pro 20X</option></select><input id="minimum-balance" type="number" min="0" max="1000" step="0.01" required><button class="primary-small" type="submit">保存余额门槛</button></div>
-                <p class="form-hint">余额低于此值的卡不参与该产品的分配；Pro 要覆盖 Plus 加升级两笔。只影响之后的分配，不影响付款。</p>
-              </form>
-            </div>
-          </section>
-          <section class="card stock-card">
-            <div class="card-heading"><div><p class="section-kicker">来源</p><h2>卡台管理</h2></div><span class="write-badge">人工指定</span></div>
-            <p class="card-description">API 充值固定使用 HNSKJ。浏览器自动化充值可直接指定任一卡台；异常只提醒、不阻止保存，也不会自动回退。默认只影响之后创建的新订单。</p>
-            <div id="card-source-summary" class="mini-list"></div>
-            <div class="table-wrap"><table><thead><tr><th>卡台</th><th>能力</th><th>库存快照</th><th>告知状态</th><th>Browser 操作</th></tr></thead><tbody id="provider-routes-table"></tbody></table></div>
-            <details class="stock-inline-details">
-              <summary>新增备用卡台</summary>
-              <form id="manual-card-source-form" class="filters filters-two">
-                <label><span>内部代号</span><input id="manual-card-source-code" maxlength="64" placeholder="backup-b" required></label>
-                <label><span>显示名称</span><input id="manual-card-source-name" maxlength="128" placeholder="备用卡台 B" required></label>
-                <button class="primary-small" type="submit">新增卡台</button>
-              </form>
-            </details>
-          </section>
-        </div>
-        <details class="card stock-card stock-advanced-details" id="manual-card-import-card">
-          <summary>接入无 API 的卡台：上传导出表</summary>
-          <p class="card-description">highvcc 快照入库，也用来接入没有 API 的新卡台。</p>
-          <p class="card-description">每次文件代表所选卡台的全部卡片。结构错误或跨卡台同卡冲突会阻止整批提交；停用、过期和余额不足仍会记录，但不会参与新订单分配。预览后一键提交，不需要密码或确认词。</p>
-          <form id="manual-card-import-form" class="filters filters-two">
-            <label><span>备用卡台</span><select id="manual-card-import-source" required><option value="">请先读取卡台</option></select></label>
-            <label><span>卡片文件</span><input id="manual-card-import-file" type="file" accept=".xls,.xlsx" required></label>
-            <button class="primary-small" type="submit">预览完整快照</button>
-          </form>
-          <div id="manual-card-import-preview" class="mini-list"></div>
-        </details>
-        <details class="card stock-card stock-advanced-details" id="hnskj-open-card">
-          <summary>HNSKJ 人工开卡（产生费用）</summary>
-          <div class="advanced-heading"><p>提交后由服务器安全执行。每张卡使用独立幂等键；任务异常时停止并等待人工核对。自动开卡由首页「能不能开卡补钱」决定。</p><button class="text-button" id="refresh-card-provider-rules" type="button">刷新卡段规则</button></div>
-          <form class="stock-open-form" id="stock-open-form">
-            <div class="stock-presets" role="group" aria-label="快捷选择开卡数量">
-              <span>快捷选择</span>
-              <button class="stock-preset" type="button" data-count="1" aria-pressed="false">1 张</button>
-              <button class="stock-preset is-active" type="button" data-count="2" aria-pressed="true">2 张</button>
-              <button class="stock-preset" type="button" data-count="5" aria-pressed="false">5 张</button>
-              <button class="stock-preset" type="button" data-count="10" aria-pressed="false">10 张</button>
-            </div>
-            <label>数量（超过 10 张需额外确认）<input id="stock-open-count" type="number" min="1" max="10000" value="2" required></label>
-            <label>单卡金额（USD）<input id="stock-open-amount" type="number" min="1" max="200" value="16" required></label>
-            <label class="stock-card-type-label" for="stock-card-type">卡片类型（来自卡台实时卡段）
-              <select id="stock-card-type" required disabled><option value="">正在读取卡台规则</option></select>
-            </label>
-            <div class="stock-card-profile" id="stock-card-profile">
-              <div><span>卡段名称</span><strong>正在读取</strong></div>
-              <div><span>卡段 ID / BIN</span><strong>—</strong></div>
-              <div><span>允许金额</span><strong>—</strong></div>
-              <p>提交时服务器会再次校验卡段 ID 和实时规则</p>
-            </div>
-            <div class="stock-cost" id="stock-cost">正在计算实际费用…</div>
-            <button class="danger-button" type="submit">确认并创建开卡任务</button>
-          </form>
-        </details>
-        <details class="card stock-card stock-advanced-details" id="highvcc-open-card">
-          <summary>highvcc 一键开卡（highvcc.com，产生费用）</summary>
-          <div class="advanced-heading"><p>直接调用卡台自己的接口开卡，不经过浏览器，几秒内完成；持卡人姓名由卡台生成，账单地址用项目已有免税地址库；开出后立即计入库存，不需要再手工导入表格。展开后自动查询一次费用，改卡段或金额会自动重新查询。</p></div>
-          <div id="highvcc-token-status" class="mini-list"></div>
-          <p><button class="text-button" type="button" id="highvcc-open-site">去 highvcc.com 登录 →</button>　登录过期时先点这个登录一下</p>
-          <p class="form-hint">一次性设置：把下面这个按钮拖到浏览器收藏栏（不是点，是按住拖上去）。以后 token 过期，先点上面登录，登完再点一下收藏栏里这个按钮，token 自动存进后台，不用再告诉任何人。　<a class="text-button" href="javascript:(function(){var t=localStorage.getItem('access_token');if(!t){alert('没有读到登录信息，请先在这个页面登录 highvcc.com');return;}location.href='https://ops.vibebridge.top/admin#highvcc-token='+encodeURIComponent(t);})();" onclick="return confirm('这个按钮要拖到收藏栏才能用，直接点击不会生效。仍要继续吗？');">📌 刷新卡台登录（拖我）</a></p>
-          <div class="advanced-heading"><div id="highvcc-wallet-status" class="mini-list"></div><button class="text-button" id="highvcc-refresh-wallet" type="button">刷新余额</button></div>
-          <form class="filters filters-two" id="highvcc-token-form">
-            <label><span>更新登录 token</span><input id="highvcc-token-input" type="password" maxlength="4096" placeholder="从已登录的 highvcc.com 页面 Console 执行 copy(localStorage.getItem('access_token')) 后粘贴" autocomplete="off"></label>
-            <button class="text-button" type="submit">保存 token</button>
-          </form>
-          <form class="stock-open-form" id="highvcc-open-form">
-            <label>卡段<select id="highvcc-vid-select"><option value="">请选择卡段（展开后会带上各卡段的拒付统计）</option></select></label>
-            <label>单卡金额（USD）<input id="highvcc-open-amount" type="number" min="1" max="200" step="1" value="50" required></label>
-            <div class="stock-cost" id="highvcc-cost">展开后自动查询费用…</div>
-            <div class="stock-presets" role="group">
-              <button class="stock-preset" type="button" id="highvcc-quote-button">重新查询费用</button>
-              <button class="danger-button" type="submit" id="highvcc-open-button" disabled>确认开卡</button>
-            </div>
-          </form>
-        </details>
-        <section class="card stock-card" id="card-retirement-card">
-          <div class="card-heading"><div><p class="section-kicker">收尾</p><h2>待销清单</h2></div><span class="write-badge">你删卡后登记</span></div>
-          <p class="card-description">到期的卡才亮出按钮。“我已在卡台删掉”＝你已经在卡台网站删了这张卡，系统据此标退役；系统不会替你去卡台删。</p>
-          <div class="cardretire" id="card-retirement-list"><p class="empty-state">正在读取待销清单…</p></div>
-        </section>
-
         <section class="card stock-card">
           <div class="card-heading"><div><p class="section-kicker">运营明细</p><h2>卡片列表</h2></div><div class="stock-card-actions"><button class="text-button" id="refresh-stock" type="button">刷新本地列表</button><button class="text-button" id="sync-all-cards" type="button">同步卡台余额和交易</button><button class="primary-small" id="discover-new-cards" type="button">同步并接管新卡</button> <span class="write-badge">完整卡号</span></div></div>
           <div class="cardtable" id="stock-cards"></div>
           <div class="cardfold" id="stock-cards-history" hidden></div>
         </section>
-        
-        <details class="card stock-card stock-advanced-details">
-          <summary>补卡执行记录</summary>
-          <div class="advanced-heading"><p>只在查看开卡任务或排查异常时使用。</p></div>
-          <div class="mini-list" id="stock-jobs"></div>
-        </details>
-        <details class="card stock-card stock-advanced-details">
-          <summary>新卡接管记录</summary>
-          <div class="advanced-heading"><p>手动开新卡后才需要点一次同步；这不是卡台实时库存数。</p></div>
-          <div class="mini-list" id="card-intake-list"><p class="empty-state">正在读取接管状态…</p></div>
+
+        <section class="card stock-card" id="card-retirement-card">
+          <div class="card-heading"><div><p class="section-kicker">收尾</p><h2>待销清单</h2></div><span class="write-badge">你删卡后登记</span></div>
+          <p class="card-description">到期的卡才亮出按钮。“我已在卡台删掉”＝你已经在卡台网站删了这张卡，系统据此标退役；系统不会替你去卡台删。点错了可以在上面卡片列表的“历史”里撤销。</p>
+          <div class="cardretire" id="card-retirement-list"><p class="empty-state">正在读取待销清单…</p></div>
+        </section>
+
+        <details class="card stock-card cardadv" id="stock-advanced">
+          <summary>高级<span class="cardadv-hint">卡台管理 · 开卡 · 导入 · 执行记录</span></summary>
+          <div class="cardadv-body">
+            <details class="cardadv-item" id="card-source-admin">
+              <summary>卡台管理<span class="cardadv-hint">能力 · 快照 · 告知状态 · 新增备用卡台</span></summary>
+              <p class="card-description">API 充值固定使用 HNSKJ。浏览器自动化充值用哪台，在工作台的工具栏里切；那里带「同时接管排队单」和四项安全校验，这张表只读。异常只提醒、不阻止，也不会自动回退。</p>
+              <div id="card-source-summary" class="mini-list"></div>
+              <div class="table-wrap"><table><thead><tr><th>卡台</th><th>能力</th><th>库存快照</th><th>告知状态</th><th>Browser 操作</th></tr></thead><tbody id="provider-routes-table"></tbody></table></div>
+              <details class="stock-inline-details">
+                <summary>新增备用卡台</summary>
+                <form id="manual-card-source-form" class="filters filters-two">
+                  <label><span>内部代号</span><input id="manual-card-source-code" maxlength="64" placeholder="backup-b" required></label>
+                  <label><span>显示名称</span><input id="manual-card-source-name" maxlength="128" placeholder="备用卡台 B" required></label>
+                  <button class="primary-small" type="submit">新增卡台</button>
+                </form>
+              </details>
+            </details>
+
+            <details class="cardadv-item" id="manual-card-import-card">
+              <summary>接入无 API 的卡台：上传导出表</summary>
+              <p class="card-description">highvcc 快照入库，也用来接入没有 API 的新卡台。</p>
+              <p class="card-description">每次文件代表所选卡台的全部卡片。结构错误或跨卡台同卡冲突会阻止整批提交；停用、过期和余额不足仍会记录，但不会参与新订单分配。预览后一键提交，不需要密码或确认词。</p>
+              <form id="manual-card-import-form" class="filters filters-two">
+                <label><span>备用卡台</span><select id="manual-card-import-source" required><option value="">请先读取卡台</option></select></label>
+                <label><span>卡片文件</span><input id="manual-card-import-file" type="file" accept=".xls,.xlsx" required></label>
+                <button class="primary-small" type="submit">预览完整快照</button>
+              </form>
+              <div id="manual-card-import-preview" class="mini-list"></div>
+            </details>
+
+            <details class="cardadv-item" id="hnskj-open-card">
+              <summary>HNSKJ 人工开卡<span class="cardadv-hint">产生费用</span></summary>
+              <div class="advanced-heading"><p>提交后由服务器安全执行。每张卡使用独立幂等键；任务异常时停止并等待人工核对。这里是人工开卡；系统按水位自动补卡是另一回事，目前界面上还没有开关它的地方。</p><button class="text-button" id="refresh-card-provider-rules" type="button">刷新卡段规则</button></div>
+              <form class="stock-open-form" id="stock-open-form">
+                <div class="stock-presets" role="group" aria-label="快捷选择开卡数量">
+                  <span>快捷选择</span>
+                  <button class="stock-preset" type="button" data-count="1" aria-pressed="false">1 张</button>
+                  <button class="stock-preset is-active" type="button" data-count="2" aria-pressed="true">2 张</button>
+                  <button class="stock-preset" type="button" data-count="5" aria-pressed="false">5 张</button>
+                  <button class="stock-preset" type="button" data-count="10" aria-pressed="false">10 张</button>
+                </div>
+                <label>数量（超过 10 张需额外确认）<input id="stock-open-count" type="number" min="1" max="10000" value="2" required></label>
+                <label>单卡金额（USD）<input id="stock-open-amount" type="number" min="1" max="200" value="16" required></label>
+                <label class="stock-card-type-label" for="stock-card-type">卡片类型（来自卡台实时卡段）
+                  <select id="stock-card-type" required disabled><option value="">正在读取卡台规则</option></select>
+                </label>
+                <div class="stock-card-profile" id="stock-card-profile">
+                  <div><span>卡段名称</span><strong>正在读取</strong></div>
+                  <div><span>卡段 ID / BIN</span><strong>—</strong></div>
+                  <div><span>允许金额</span><strong>—</strong></div>
+                  <p>提交时服务器会再次校验卡段 ID 和实时规则</p>
+                </div>
+                <div class="cardgate" id="stock-open-gate">正在读取卡台状态…</div>
+                <div class="stock-cost" id="stock-cost">正在计算实际费用…</div>
+                <button class="danger-button" type="submit">确认并创建开卡任务</button>
+              </form>
+            </details>
+
+            <details class="cardadv-item" id="highvcc-open-card">
+              <summary>highvcc 一键开卡<span class="cardadv-hint">highvcc.com · 产生费用</span></summary>
+              <div class="advanced-heading"><p>直接调用卡台自己的接口开卡，不经过浏览器，几秒内完成；持卡人姓名由卡台生成，账单地址用项目已有免税地址库；开出后立即计入库存，不需要再手工导入表格。展开后自动查询一次费用，改卡段或金额会自动重新查询。</p></div>
+              <div id="highvcc-token-status" class="mini-list"></div>
+              <p><button class="text-button" type="button" id="highvcc-open-site">去 highvcc.com 登录 →</button>　登录过期时先点这个登录一下</p>
+              <p class="form-hint">一次性设置：把下面这个按钮拖到浏览器收藏栏（不是点，是按住拖上去）。以后 token 过期，先点上面登录，登完再点一下收藏栏里这个按钮，token 自动存进后台，不用再告诉任何人。　<a class="text-button" href="javascript:(function(){var t=localStorage.getItem('access_token');if(!t){alert('没有读到登录信息，请先在这个页面登录 highvcc.com');return;}location.href='https://ops.vibebridge.top/admin#highvcc-token='+encodeURIComponent(t);})();" onclick="return confirm('这个按钮要拖到收藏栏才能用，直接点击不会生效。仍要继续吗？');">📌 刷新卡台登录（拖我）</a></p>
+              <div class="advanced-heading"><div id="highvcc-wallet-status" class="mini-list"></div><button class="text-button" id="highvcc-refresh-wallet" type="button">刷新余额</button></div>
+              <form class="filters filters-two" id="highvcc-token-form">
+                <label><span>更新登录 token</span><input id="highvcc-token-input" type="password" maxlength="4096" placeholder="从已登录的 highvcc.com 页面 Console 执行 copy(localStorage.getItem('access_token')) 后粘贴" autocomplete="off"></label>
+                <button class="text-button" type="submit">保存 token</button>
+              </form>
+              <form class="stock-open-form" id="highvcc-open-form">
+                <label>卡段<select id="highvcc-vid-select"><option value="">请选择卡段（展开后会带上各卡段的拒付统计）</option></select></label>
+                <label>单卡金额（USD）<input id="highvcc-open-amount" type="number" min="1" max="200" step="1" value="50" required></label>
+                <div class="stock-cost" id="highvcc-cost">展开后自动查询费用…</div>
+                <div class="stock-presets" role="group">
+                  <button class="stock-preset" type="button" id="highvcc-quote-button">重新查询费用</button>
+                  <button class="danger-button" type="submit" id="highvcc-open-button" disabled>确认开卡</button>
+                </div>
+              </form>
+            </details>
+
+            <details class="cardadv-item" id="stock-jobs-card">
+              <summary>补卡执行记录</summary>
+              <div class="advanced-heading"><p>只在查看开卡任务或排查异常时使用。</p></div>
+              <div class="mini-list" id="stock-jobs"></div>
+            </details>
+
+            <details class="cardadv-item" id="card-intake-card">
+              <summary>新卡接管记录</summary>
+              <div class="advanced-heading"><p>手动开新卡后才需要点一次同步；这不是卡台实时库存数。</p></div>
+              <div class="mini-list" id="card-intake-list"><p class="empty-state">正在读取接管状态…</p></div>
+            </details>
+          </div>
         </details>
       </section>
 

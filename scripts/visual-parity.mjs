@@ -167,6 +167,11 @@ const COLLECTOR = String(function collect(rootSel, probes) {
   if (!root) return { error: '根选择器没匹配到元素: ' + rootSel };
 
   const rb = root.getBoundingClientRect();
+  // 隐藏的子树量出来全是 0，而 0 和 0 比是「一致」—— 后台的非当前视图默认 hidden，
+  // 不拦住的话整份契约会静静地变成永远通过。这不是差异，是跑不起来。
+  if (rb.width === 0 || rb.height === 0) {
+    return { error: '根元素不可见（量到 0×0）: ' + rootSel + ' —— 契约里用 prepare 先切到这个视图' };
+  }
   const read = (el) => {
     const b = el.getBoundingClientRect();
     const cs = getComputedStyle(el);
@@ -221,7 +226,7 @@ const COLLECTOR = String(function collect(rootSel, probes) {
   return out;
 });
 
-export async function openPage(cdp, url, { width, height, login }) {
+export async function openPage(cdp, url, { width, height, login, prepare }) {
   const { targetId } = await cdp.send('Target.createTarget', { url: 'about:blank' });
   const { sessionId } = await cdp.send('Target.attachToTarget', { targetId, flatten: true });
 
@@ -280,6 +285,21 @@ export async function openPage(cdp, url, { width, height, login }) {
       await saveSession(url, cookies);
     }
     await navigate(url);
+  }
+
+  // 契约的 prepare：进页面后、量之前要做的一步操作。
+  // 后台是单页多视图，除工作台外的视图默认 hidden —— 不先切过去，量到的全是 0，
+  // 而 waitForSelectors 用的是 querySelector（隐藏元素照样匹配得到），拦不住这种情况。
+  // 所以这里给契约一个显式的切换钩子，而不是让每份契约各想各的办法。
+  if (prepare) {
+    const { result, exceptionDetails } = await cdp.send('Runtime.evaluate',
+      { expression: `(async () => { ${prepare} })()`, awaitPromise: true, returnByValue: true }, sessionId);
+    if (exceptionDetails) {
+      throw Object.assign(new Error(`契约的 prepare 执行失败：${exceptionDetails.text}`), { setup: true });
+    }
+    if (result?.value === false) {
+      throw Object.assign(new Error('契约的 prepare 返回 false（该点的东西没点到），不能当成「一致」'), { setup: true });
+    }
   }
 
   // 渲染稳定后再量：等两帧 + 字体就绪，避免量到字体回退时的尺寸
@@ -417,12 +437,13 @@ async function runContract(cdp, contract, file) {
   const protoProbes = contract.probes.map((p, i) => ({ ...probes[i], sel: p.proto }));
   const implProbes = contract.probes.map((p, i) => ({ ...probes[i], sel: p.impl }));
 
-  const protoSession = await openPage(cdp, resolveUrl(contract.prototype), { width, height, login: null });
+  const protoSession = await openPage(cdp, resolveUrl(contract.prototype),
+    { width, height, login: null, prepare: contract.prototype.prepare });
   await waitForSelectors(cdp, protoSession, contract.prototype.root, protoProbes.map((p) => p.sel));
   const protoData = await collect(cdp, protoSession, contract.prototype.root, protoProbes);
 
   const implSession = await openPage(cdp, resolveUrl(contract.impl),
-    { width, height, login: resolveLogin(contract.impl) });
+    { width, height, login: resolveLogin(contract.impl), prepare: contract.impl.prepare });
   await waitForSelectors(cdp, implSession, contract.impl.root, implProbes.map((p) => p.sel));
   const implData = await collect(cdp, implSession, contract.impl.root, implProbes);
 

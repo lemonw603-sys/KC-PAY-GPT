@@ -131,21 +131,20 @@ const elements = {
   cdkBatchLabel: document.querySelector('#cdk-batch-label'), copyCdks: document.querySelector('#copy-cdks'),
   downloadCdks: document.querySelector('#download-cdks'), cdkBatches: document.querySelector('#cdk-batches'),
   cdkBatchFilters: document.querySelector('#cdk-batch-filters'), cdkBatchPlan: document.querySelector('#cdk-batch-plan'), cdkBatchStatus: document.querySelector('#cdk-batch-status'), cdkBatchFrom: document.querySelector('#cdk-batch-from'), cdkBatchTo: document.querySelector('#cdk-batch-to'), cdkBatchMore: document.querySelector('#cdk-batch-more'), cdkBatchPageInfo: document.querySelector('#cdk-batch-page-info'), exportCdkBatches: document.querySelector('#export-cdk-batches'), exportCdkTrace: document.querySelector('#export-cdk-trace'),
-  stockSummary: document.querySelector('#stock-summary'), stockJobs: document.querySelector('#stock-jobs'),
-  stockCards: document.querySelector('#stock-cards'), providerSummary: document.querySelector('#provider-summary'),
+  stockJobs: document.querySelector('#stock-jobs'),
+  stockCards: document.querySelector('#stock-cards'),
   cardsRigs: document.querySelector('#cards-rigs'), stockCardsHistory: document.querySelector('#stock-cards-history'),
   settingsPolicies: document.querySelector('#settings-policies'),
   settingsThresholds: document.querySelector('#settings-thresholds'),
   settingsGlobal: document.querySelector('#settings-global'),
   cardRetirementList: document.querySelector('#card-retirement-list'),
-  cardCapacityForm: document.querySelector('#card-capacity-form'), cardCapacity: document.querySelector('#card-capacity'),
-  minimumBalanceForm: document.querySelector('#minimum-balance-form'), minimumBalance: document.querySelector('#minimum-balance'),
-  minimumBalancePlan: document.querySelector('#minimum-balance-plan'), cdkPlan: document.querySelector('#cdk-plan'),
+  cdkPlan: document.querySelector('#cdk-plan'),
   stockOpenForm: document.querySelector('#stock-open-form'), stockOpenCount: document.querySelector('#stock-open-count'),
   stockOpenAmount: document.querySelector('#stock-open-amount'), stockCardType: document.querySelector('#stock-card-type'),
   refreshCardProviderRules: document.querySelector('#refresh-card-provider-rules'),
   stockCardProfile: document.querySelector('#stock-card-profile'),
   stockCost: document.querySelector('#stock-cost'),
+  stockOpenGate: document.querySelector('#stock-open-gate'),
   highvccTokenStatus: document.querySelector('#highvcc-token-status'),
   highvccTokenForm: document.querySelector('#highvcc-token-form'), highvccTokenInput: document.querySelector('#highvcc-token-input'),
   highvccOpenForm: document.querySelector('#highvcc-open-form'), highvccOpenAmount: document.querySelector('#highvcc-open-amount'),
@@ -1334,7 +1333,18 @@ function rigCell(label, valueHtml, { tone = '', pending = false } = {}) {
  * ① 两台并列四个数。四个数全部来自后端 byProvider（可分配＝第③④块的资格规则），
  * 页面不自己判断哪张卡能分配 —— D-280 硬约束。
  */
-function renderCardRigs(byProvider) {
+/**
+ * token 那格在「没有失效告警」时说什么。
+ * 只说能证明的：贴过就报上次贴的时间，没贴过就说没贴，读不到就说读不到。
+ * 一个字都不写「有效」——没有告警不等于有效（工作台 admin.js 的注释里是同一条口径）。
+ */
+function tokenText(status) {
+  if (!status) return '状态读取失败';
+  if (!status.configured) return '还没贴 token';
+  return status.updatedAt ? `上次贴 ${escapeHtml(formatTime(status.updatedAt))}` : '已贴过，时间不详';
+}
+
+function renderCardRigs(byProvider, tokenStatus) {
   if (!elements.cardsRigs) return;
   if (byProvider && byProvider.__error) {
     elements.cardsRigs.innerHTML = '<p class="cardfail">卡台台账读取失败，先不要据此判断库存。刷新重试。</p>';
@@ -1347,10 +1357,18 @@ function renderCardRigs(byProvider) {
     const assignable = Number(rig.plusAssignable || 0);
     const target = Number(rig.stockTarget || 0);
     const lowStock = rig.stockTarget != null && target > 0 && assignable < target;
-    // token 只对 highvcc（无快照那台）有意义，且只在有告警时才敢说「已失效」——
-    // tokenStatus() 只答「配没配过」，答不了有效性（Lemon 已定口径）。
+    // token 只对 highvcc（无快照那台）有意义。
+    //
+    // B2：权威信号改成 PROVIDER_TOKEN_EXPIRED 告警（rig.tokenExpiredAlert），不再用
+    // supply_fault_state。后者只在**补卡调度器开卡失败**时才写，而 token 失效是快照同步
+    // 任务发现并 markProviderTokenExpired 的，它只写告警、不碰 supply_fault_state ——
+    // 于是生产出现过 supply_fault_state=OK 而告警 OPEN：卡片页说「已配置」、工作台说
+    // 「token 已失效」，同一个后台两页说法相反。工作台那边是对的，这里跟它统一。
+    //
+    // 口径同工作台：有告警＝确已失效；**没告警不等于「有效」**（token 两小时不活动就过期，
+    // configured=true 推不出有效），所以无告警时只报「上次贴于几点」，不写「有效」。
     const isHighvcc = Boolean(rig.walletLiveOnly);
-    const tokenBad = isHighvcc && rig.tokenFault === true;
+    const tokenBad = isHighvcc && rig.tokenExpiredAlert === true;
     const floor = rig.walletFloor;
     const balance = rig.walletBalance;
     const lowWallet = floor != null && balance != null && Number(balance) < Number(floor);
@@ -1372,7 +1390,7 @@ function renderCardRigs(byProvider) {
         `${opened} <small>/ ${rig.dailyLimit == null ? '未配策略' : limit}</small>`,
         { tone: limit > 0 && opened >= limit ? 'is-warn' : '' }),
       isHighvcc
-        ? rigCell('token', tokenBad ? '已失效' : '已配置',
+        ? rigCell('token', tokenBad ? '已失效' : tokenText(tokenStatus),
             { tone: tokenBad ? 'is-bad' : '', pending: !tokenBad })
         : rigCell('卡台快照', rig.walletSyncedAt ? escapeHtml(formatTime(rig.walletSyncedAt)) : '无快照',
             { pending: true })
@@ -1412,6 +1430,11 @@ function cardRowHtml(card, retireItem, retireFailed = false) {
     ? `<span class="cardchip is-due">${escapeHtml(retireItem.reasonLabels?.[0] || '待销')}</span>`
     : `<span class="cardchip ${chipCls}">${escapeHtml(chipText)}</span>`;
   const canRegisterManual = !card.externalOnly && card.category !== 'IN_USE' && card.category !== 'RETIRED';
+  // 历史行的回头路（B3）。两种撤销对应两个不同的动作，撤法也不同，不能混成一个按钮：
+  //   inventory_status = RETIRED  → 「我已在卡台删掉」的结果，撤销走 card-retirement/undo
+  //   只有 override = RETIRED     → 「我手动用了」的结果，撤销就是删掉那行 override
+  const undoAction = card.inventoryStatus === 'RETIRED' ? 'retire'
+    : card.allocationPolicy === 'RETIRED' ? 'manual-use' : null;
   const sellable = retireFailed ? '读取失败'
     : retireItem
       ? (retireItem.due ? '已到期' : `还差 ${escapeHtml(remainingText(retireItem.dueAt))}`)
@@ -1436,7 +1459,17 @@ function cardRowHtml(card, retireItem, retireFailed = false) {
           data-account="${escapeHtml(card.providerAccountId || '')}"
           data-ext="${escapeHtml(card.externalCardId || '')}"
           data-last4="${escapeHtml(card.last4 || card.providerCardId || '')}">我手动用了</button>`
-      : '<span class="cardmuted">—</span>'}</td>
+      : undoAction === 'retire'
+        ? `<button class="cardbtn" type="button" data-undo-retire="1"
+            data-account="${escapeHtml(card.providerAccountId || '')}"
+            data-ext="${escapeHtml(card.externalCardId || '')}"
+            data-last4="${escapeHtml(card.last4 || card.providerCardId || '')}">撤销退役</button>`
+        : undoAction === 'manual-use'
+          ? `<button class="cardbtn" type="button" data-undo-manual-use="1"
+              data-account="${escapeHtml(card.providerAccountId || '')}"
+              data-ext="${escapeHtml(card.externalCardId || '')}"
+              data-last4="${escapeHtml(card.last4 || card.providerCardId || '')}">撤销登记</button>`
+          : '<span class="cardmuted">—</span>'}</td>
   </tr>`;
 }
 
@@ -1546,7 +1579,12 @@ elements.cardsRigs?.addEventListener('click', async (event) => {
     const section = document.querySelector(
       openButton.dataset.rigOpen === 'hnskj' ? '#hnskj-open-card' : '#highvcc-open-card');
     if (!section) { showNotice('找不到这台的开卡区。'); return; }
-    section.open = true;
+    // B4 之后开卡区嵌在「高级」里：只把里层 open=true，外层还关着，点了等于没反应。
+    // 沿祖先链把每一层 <details> 都打开。
+    for (let node = section; node; node = node.parentElement?.closest('details')) {
+      node.open = true;
+      if (!node.parentElement) break;
+    }
     section.scrollIntoView({ behavior: 'smooth', block: 'start' });
     return;
   }
@@ -1600,7 +1638,9 @@ elements.stockCards?.addEventListener('click', async (event) => {
   } catch (error) { showNotice(`登记失败：${error.message}`); }
 });
 
-// ⑤ 「我已在卡台删掉」：确认词是端点要求的防误触闸门，保留
+// ⑤ 「我已在卡台删掉」：D-301 去掉确认词。
+// 确认词挡不住误点——手打一次就会被复制粘贴。真正的闸门是三条：只有到期的卡才亮按钮、
+// 有活动分配的卡后端直接拒、点错了能在「历史」里撤销回来（本轮新加的 undo 端点）。
 elements.cardRetirementList?.addEventListener('click', async (event) => {
   const button = event.target.closest('[data-retire-confirm]');
   if (!button) return;
@@ -1609,22 +1649,67 @@ elements.cardRetirementList?.addEventListener('click', async (event) => {
   if (!/^\d{4}$/.test(last4)) { showNotice('这张卡没有四位尾号，只能用命令行登记。'); return; }
   const answer = await askForm({
     title: `登记已销卡 · ${last4}`,
-    message: `确认你已经在卡台网站删掉了这张卡。系统只做登记，不会替你去删。输入「已销卡 ${last4}」确认。`,
-    fields: [
-      { name: 'confirmation', label: '确认词', required: true },
-      { name: 'note', label: '备注（可选）' }
-    ],
+    message: '确认你已经在卡台网站删掉了这张卡。系统只做登记，不会替你去删。点错了可以在「历史」里撤销。',
+    fields: [{ name: 'note', label: '备注（可选）' }],
     confirmLabel: '登记退役', danger: true
   });
   if (!answer) return;
   try {
     await api('/api/v1/admin/card-retirement/confirm', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ cardId, last4, confirmation: answer.confirmation, note: answer.note || null })
+      body: JSON.stringify({ cardId, last4, note: answer.note || null })
     });
-    showNotice('已登记退役。', 'success');
+    showNotice('已登记退役。点错了可以在「历史」里撤销。', 'success');
     await loadStock();
   } catch (error) { showNotice(`登记失败：${error.message}`); }
+});
+
+// ⑥/⑤ 的回头路：历史里的两种撤销。
+// 此前两个动作都是单向的——「我手动用了」把卡挡在分配之外（后端有 DELETE 端点，
+// 但前端**一次都没调过**），「我已在卡台删掉」连回头路都没有。去确认词的前提就是这个。
+elements.stockCardsHistory?.addEventListener('click', async (event) => {
+  const undoUse = event.target.closest('[data-undo-manual-use]');
+  if (undoUse) {
+    const { account, ext, last4 } = undoUse.dataset;
+    const answer = await askForm({
+      title: `撤销手动用卡登记 · ${last4 || ext}`,
+      message: '撤销后这张卡回到普通状态，重新按资格规则参与分配。',
+      fields: [{ name: 'reason', label: '为什么撤销（必填，会进审计）', required: true }],
+      confirmLabel: '撤销登记'
+    });
+    if (!answer) return;
+    try {
+      await api('/api/v1/admin/card-operational-overrides', {
+        method: 'DELETE', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ providerAccountId: account, externalCardId: ext, reason: answer.reason })
+      });
+      showNotice('已撤销，这张卡重新参与分配。', 'success');
+      await loadStock();
+    } catch (error) { showNotice(`撤销失败：${error.message}`); }
+    return;
+  }
+  const undoRetire = event.target.closest('[data-undo-retire]');
+  if (!undoRetire) return;
+  const { account, ext, last4 } = undoRetire.dataset;
+  if (!account || !ext) { showNotice('这张卡缺卡台标识，无法撤销。'); return; }
+  const answer = await askForm({
+    title: `撤销退役登记 · ${last4 || ext}`,
+    message: '把这张卡放回退役前的状态。注意：撤销只改系统里的记录，不代表卡在卡台还活着——'
+      + '下一次同步会重新核对，真被删掉的卡会自己掉出可分配池。',
+    fields: [{ name: 'reason', label: '为什么撤销（必填，会进审计）', required: true }],
+    confirmLabel: '撤销退役', danger: true
+  });
+  if (!answer) return;
+  try {
+    const result = await api('/api/v1/admin/card-retirement/undo', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ providerAccountId: account, externalCardId: ext, reason: answer.reason })
+    });
+    showNotice(result?.previousOverrideKnown === false
+      ? '已撤销退役。这张卡退役前有没有别的分配限制系统没记，如需限定产品请重新标一次。'
+      : '已撤销退役。', 'success');
+    await loadStock();
+  } catch (error) { showNotice(`撤销失败：${error.message}`); }
 });
 
 
@@ -1745,62 +1830,53 @@ function settingsMarkDirty(input) {
 }
 
 async function loadStock() {
-  const [payload, retirement] = await Promise.all([
+  const [payload, retirement, tokenStatus] = await Promise.all([
     api('/api/v1/admin/card-stock'),
     // 读不到就说读不到——待销清单读失败时绝不能显示成「没有待销的卡」。
-    api('/api/v1/admin/card-retirement/candidates').catch(() => ({ __error: true }))
+    api('/api/v1/admin/card-retirement/candidates').catch(() => ({ __error: true })),
+    // token 那格要「上次贴于几点」，所以和台账一起取，不能等台账渲染完再补——
+    // 那样第一帧会先显示一个没有时间的 token 格。读失败就 null，格子里说读不到。
+    api('/api/v1/admin/backup-cards/highvcc/status').catch(() => null)
   ]);
   const rigs = payload.byProvider || [];
-  renderCardRigs(rigs);
+  state.highvccTokenStatus = tokenStatus;
+  renderCardRigs(rigs, tokenStatus);
   // 卡台显示名只有一份来源（后端 PROVIDER_LABELS），页面不自己拼「HNSKJ 卡台」这种字样
   const labelByKind = new Map(rigs.map((rig) => [rig.providerKind, rig.label]));
   renderCardRetirement(retirement, labelByKind);
   state.stockProvider = payload.provider || null;
   state.stockCatalog = payload.catalog || null;
-  const summary = payload.operationalSummary || { ready: 0, inUse: 0, blocked: 0, retired: 0 };
-  elements.stockSummary.innerHTML = [
-    ['可分配', summary.ready], ['使用中', summary.inUse],
-    ['暂不可用', summary.blocked], ['永久停用', summary.retired]
-  ].map(([label, value]) => `<div><span>${label}</span><strong>${value}</strong></div>`).join('');
-  elements.cardCapacity.value = String(payload.maxSuccessfulPayments || 3);
-  state.minimumRequiredCardBalanceByPlan = payload.minimumRequiredCardBalanceByPlan || { plus: payload.minimumRequiredCardBalance };
-  if (elements.minimumBalance && payload.minimumRequiredCardBalance != null) {
-    const plan = elements.minimumBalancePlan?.value || 'plus';
-    elements.minimumBalance.value = String(state.minimumRequiredCardBalanceByPlan[plan] ?? payload.minimumRequiredCardBalance);
-  }
+  // 块 2「卡片概况 + 卡台管理」已删（B1）：四个合计数块 1 按台已有；每卡单数与最低余额
+  // 搬到设置页（那里本来就有，块 2 那份是重复入口）；卡台管理整表降进「高级」。
   const provider = state.stockProvider;
   const catalog = state.stockCatalog || {};
   const cardTypes = provider?.cardTypes || [];
   const stillAvailable = cardTypes.some((item) => String(item.id) === String(state.stockCardTypeId));
   state.stockCardTypeId = stillAvailable
     ? state.stockCardTypeId : String(provider?.defaultCardTypeId || cardTypes[0]?.id || '');
-  elements.stockCardType.innerHTML = cardTypes.length
-    ? cardTypes.map((item) => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.name)} · ID ${escapeHtml(item.id)} · BIN ${escapeHtml(item.binPrefix)}</option>`).join('')
-    : '<option value="">没有可用卡段</option>';
-  elements.stockCardType.value = state.stockCardTypeId;
+  if (elements.stockCardType) {
+    elements.stockCardType.innerHTML = cardTypes.length
+      ? cardTypes.map((item) => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.name)} · ID ${escapeHtml(item.id)} · BIN ${escapeHtml(item.binPrefix)}</option>`).join('')
+      : '<option value="">没有可用卡段</option>';
+    elements.stockCardType.value = state.stockCardTypeId;
+  }
   const providerRemaining = Number(provider?.cardLimit?.remaining);
-  if (Number.isInteger(providerRemaining) && providerRemaining > 0) {
+  if (elements.stockOpenCount && Number.isInteger(providerRemaining) && providerRemaining > 0) {
     elements.stockOpenCount.max = String(providerRemaining);
   }
-  elements.providerSummary.innerHTML = provider?.syncedAt ? `
-    <div><span>卡台余额</span><strong>$${formatMoney(provider.accountBalance)}</strong></div>
-    <div><span>当前默认卡段</span><strong>${escapeHtml(provider.selectedCardType?.name || '未选择')}</strong></div>
-    <div><span>剩余开卡额度</span><strong>${escapeHtml(provider.cardLimit?.remaining ?? '—')}</strong></div>
-    <small class="${provider.rulesFresh && provider.purchaseEnabled && catalog.fresh && !catalog.openingBlocked ? '' : 'provider-warning'}">
-      ${provider.rulesFresh ? `规则更新于 ${formatTime(provider.syncedAt)}` : '卡台规则已过期，禁止开卡'}
-      ${catalog.fresh ? ` · 卡片对账 ${formatTime(catalog.syncedAt)}` : ' · 卡片对账已过期'}
-      ${catalog.openingBlocked ? ' · 对账未完成，禁止新开卡' : ''}
-      ${provider.purchaseEnabled ? '' : ' · 卡台当前禁止开卡'}
-    </small>` : '<p class="provider-warning">尚未取得卡台规则，禁止开卡。</p>';
+  renderStockOpenGate();
   renderSelectedStockCardType({ resetInvalidAmount: true });
-  elements.stockJobs.innerHTML = payload.jobs?.length
-    ? payload.jobs.map((job) => `<div><span><strong>${escapeHtml(STOCK_JOB_LABELS[job.status] || job.status)} · ${job.openedCount}/${job.requestedCount} 张</strong><small>${escapeHtml(job.cardTypeName || `卡段 ${job.cardTypeId}`)} · $${formatMoney(job.amount)} / 张 · 预计总扣款 $${formatMoney(job.estimatedTotal)} · ${formatTime(job.createdAt)}${job.errorMessage ? ` · ${escapeHtml(job.errorMessage)}` : ''}</small></span><em>${escapeHtml(job.status)}</em></div>`).join('')
-    : '<p class="empty-state">还没有后台补卡任务</p>';
+  if (elements.stockJobs) {
+    elements.stockJobs.innerHTML = payload.jobs?.length
+      ? payload.jobs.map((job) => `<div><span><strong>${escapeHtml(STOCK_JOB_LABELS[job.status] || job.status)} · ${job.openedCount}/${job.requestedCount} 张</strong><small>${escapeHtml(job.cardTypeName || `卡段 ${job.cardTypeId}`)} · $${formatMoney(job.amount)} / 张 · 预计总扣款 $${formatMoney(job.estimatedTotal)} · ${formatTime(job.createdAt)}${job.errorMessage ? ` · ${escapeHtml(job.errorMessage)}` : ''}</small></span><em>${escapeHtml(job.status)}</em></div>`).join('')
+      : '<p class="empty-state">还没有后台补卡任务</p>';
+  }
   renderStockCards(payload.cards || [], retirement);
   await loadCardIntake().catch(() => {
-    elements.cardIntakeList.innerHTML = '<p class="empty-state">新卡接管状态读取失败，请稍后刷新。</p>';
+    if (elements.cardIntakeList) elements.cardIntakeList.innerHTML = '<p class="empty-state">新卡接管状态读取失败，请稍后刷新。</p>';
   });
-  await loadHighvccStatus().catch(() => {
+  // 传上面已经取到的那次响应：同一个端点一次页面加载只打一次。
+  await loadHighvccStatus(tokenStatus).catch(() => {
     if (elements.highvccTokenStatus) elements.highvccTokenStatus.innerHTML = '<p class="empty-state">highvcc token 状态读取失败，请稍后刷新。</p>';
   });
   elements.syncTime.textContent = `更新于 ${new Date().toLocaleTimeString('zh-CN', { hour12: false })}`;
@@ -1820,9 +1896,10 @@ async function loadHighvccWallet() {
   }
 }
 
-async function loadHighvccStatus() {
+async function loadHighvccStatus(prefetched) {
   if (!elements.highvccTokenStatus) return;
-  const status = await api('/api/v1/admin/backup-cards/highvcc/status');
+  const status = prefetched || await api('/api/v1/admin/backup-cards/highvcc/status');
+  if (!status) throw new Error('highvcc status unavailable');
   elements.highvccTokenStatus.innerHTML = status.configured
     ? `<div><span><strong>token 已配置</strong><small>上次更新 ${formatTime(status.updatedAt)}；2 小时不活动会过期，届时开卡会明确报错。</small></span></div>`
     : '<div><span><strong>还没有配置 token</strong><small>先在下方粘贴并保存，才能查询费用或开卡。</small></span></div>';
@@ -1990,6 +2067,8 @@ async function openCard(providerCardId, providerAccountId = '') {
 }
 
 function updateStockEstimate() {
+  // 开卡区不在页面上（或还没渲染）时直接返回：少一个节点不该把 loadStock 整条链路带塌。
+  if (!elements.stockOpenForm || !elements.stockOpenCount || !elements.stockOpenAmount || !elements.stockCost) return;
   const count = Math.max(0, Number(elements.stockOpenCount.value) || 0);
   const amount = Math.max(0, Number(elements.stockOpenAmount.value) || 0);
   const provider = state.stockProvider;
@@ -2030,12 +2109,53 @@ function updateStockEstimate() {
       ? `当前余额 $${Number.isFinite(balance) ? balance.toFixed(2) : '—'} · 按实时规则最多安全开 ${affordable} 张`
       : `当前卡段金额必须为 $${formatMoney(selected?.minimumAmount)}–$${formatMoney(selected?.maximumAmount)} 的整数`}</small>`;
   const submit = elements.stockOpenForm.querySelector('button[type="submit"]');
-  submit.disabled = !valid;
+  if (submit) submit.disabled = !valid;
+  // 按钮灰了必须有地方说为什么（见 renderStockOpenGate 的注释）。
+  renderStockOpenGate();
   document.querySelectorAll('.stock-preset').forEach((button) => {
     const selected = Number(button.dataset.count) === count;
     button.classList.toggle('is-active', selected);
     button.setAttribute('aria-pressed', String(selected));
   });
+}
+
+/**
+ * B1 搬迁：开卡为什么被禁 + 剩余开卡额度。
+ *
+ * 这两样原先只在块 2 的「卡片概况」里。块 2 一删，updateStockEstimate() 就只剩把提交按钮
+ * 置灰、把费用框变黄——**一个字都不说为什么**，运营会看着一个点不动的按钮找不到原因。
+ * 所以搬到开卡表单里，紧挨着那个灰按钮。
+ *
+ * 只写能证明的：阻断项逐条来自后端给的 provider / catalog 字段，不猜、不合并成一句
+ * 「卡台异常」。没有阻断时报的是「剩余开卡额度」与两个时间，不写「一切正常」。
+ */
+function renderStockOpenGate() {
+  const gate = elements.stockOpenGate;
+  if (!gate) return;
+  const provider = state.stockProvider;
+  const catalog = state.stockCatalog || {};
+  if (!provider?.syncedAt) {
+    gate.className = 'cardgate is-blocked';
+    gate.innerHTML = '<b>尚未取得卡台规则，禁止开卡</b><small>先点上面的「刷新卡段规则」。</small>';
+    return;
+  }
+  const blocks = [];
+  if (!provider.rulesFresh) blocks.push('卡台规则已过期，禁止开卡');
+  if (!provider.purchaseEnabled) blocks.push('卡台当前禁止开卡');
+  if (!catalog.fresh) blocks.push('卡片对账已过期');
+  if (catalog.openingBlocked) blocks.push('对账未完成，禁止新开卡');
+  if (blocks.length) {
+    gate.className = 'cardgate is-blocked';
+    gate.innerHTML = `<b>现在不能开卡：${escapeHtml(blocks.join('；'))}</b>`
+      + `<small>规则更新于 ${escapeHtml(formatTime(provider.syncedAt))}`
+      + `${catalog.syncedAt ? ` · 卡片对账 ${escapeHtml(formatTime(catalog.syncedAt))}` : ''}</small>`;
+    return;
+  }
+  gate.className = 'cardgate';
+  gate.innerHTML = `<b>剩余开卡额度 ${escapeHtml(String(provider.cardLimit?.remaining ?? '—'))}`
+    + ` · 当前默认卡段 ${escapeHtml(provider.selectedCardType?.name || '未选择')}</b>`
+    + `<small>规则更新于 ${escapeHtml(formatTime(provider.syncedAt))}`
+    + `${catalog.syncedAt ? ` · 卡片对账 ${escapeHtml(formatTime(catalog.syncedAt))}` : ''}</small>`;
 }
 
 function renderKeyValues(items) {
@@ -2497,8 +2617,15 @@ function sourceHealth(source) {
 async function loadProviderRoutes() {
   const payload = await api('/api/v1/admin/card-sources');
   const sources = Array.isArray(payload.sources) ? payload.sources : [];
-  elements.cardSourceSummary.innerHTML = `<div><span><strong>API 充值固定卡台</strong><small>不可切换到无 API 的备用来源</small></span><em>${escapeHtml(sources.find((item) => item.id === payload.apiProviderAccountId)?.label || 'HNSKJ')}</em></div><div><span><strong>浏览器自动化充值当前卡台</strong><small>切换默认只影响新订单</small></span><em>${escapeHtml(sources.find((item) => item.id === payload.browserProviderAccountId)?.label || '未设置')}</em></div>`;
-  elements.manualCardImportSource.innerHTML = `<option value="">选择备用卡台</option>${sources.filter((item) => item.providerCode === 'manual_excel').map((item) => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.label || item.displayName)}</option>`).join('')}`;
+  // 「浏览器自动化充值当前卡台」这一行删掉：工作台的工具栏里有同一个数，而且那里能切。
+  // 这里只留 API 固定那台——全后台再没有第二处显示它。
+  if (elements.cardSourceSummary) {
+    elements.cardSourceSummary.innerHTML = `<div><span><strong>API 充值固定卡台</strong><small>不可切换到无 API 的备用来源</small></span><em>${escapeHtml(sources.find((item) => item.id === payload.apiProviderAccountId)?.label || 'HNSKJ')}</em></div>`;
+  }
+  if (elements.manualCardImportSource) {
+    elements.manualCardImportSource.innerHTML = `<option value="">选择备用卡台</option>${sources.filter((item) => item.providerCode === 'manual_excel').map((item) => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.label || item.displayName)}</option>`).join('')}`;
+  }
+  if (!elements.providerRoutesTable) return;
   elements.providerRoutesTable.innerHTML = sources.length ? sources.map((source) => {
     const [health, tone] = sourceHealth(source);
     const active = source.id === payload.browserProviderAccountId;
@@ -2642,36 +2769,8 @@ elements.stockCardType?.addEventListener('change', () => {
   }).then(() => showNotice('默认卡段已保存。', 'success'))
     .catch(() => showNotice('默认卡段保存失败。'));
 });
-elements.cardCapacityForm?.addEventListener('submit', async (event) => {
-  event.preventDefault();
-  try {
-    await api('/api/v1/admin/card-stock/max-successful-payments', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ count: Number(elements.cardCapacity.value) })
-    });
-    showNotice('每张卡的成功充值次数上限已更新，只影响后续分配。', 'success');
-    await loadStock();
-  } catch (error) { showNotice(error.message); }
-});
-elements.minimumBalancePlan?.addEventListener('change', () => {
-  const plan = elements.minimumBalancePlan.value;
-  const value = state.minimumRequiredCardBalanceByPlan?.[plan];
-  if (value != null) elements.minimumBalance.value = String(value);
-});
-elements.minimumBalanceForm?.addEventListener('submit', async (event) => {
-  event.preventDefault();
-  const amount = Number(elements.minimumBalance.value);
-  const planType = elements.minimumBalancePlan?.value || 'plus';
-  if (!Number.isFinite(amount) || amount < 0 || amount > 1000) return showNotice('最低余额必须是 0 到 1000 之间的金额。');
-  try {
-    await api('/api/v1/admin/card-stock/minimum-balance', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ amount: Math.round(amount * 100) / 100, planType })
-    });
-    showNotice(`${{ plus: 'Plus', pro_5x: 'Pro 5X', pro_20x: 'Pro 20X' }[planType]} 的最低所需卡余额已更新，只影响之后的分配。`, 'success');
-    await loadStock();
-  } catch (error) { showNotice(error.message === 'invalid_minimum_balance' ? '金额无效，最多两位小数。' : '保存失败，请稍后重试。'); }
-});
+// 「每卡单数」「最低所需卡余额」两个表单随块 2 一起删（B1）：它们在设置页本来就有
+// 一份可写入口，走的还是同两个端点。同一个写操作不留两个入口——F-65 那类毛病的根。
 elements.stockOpenForm?.addEventListener('submit', async (event) => {
   event.preventDefault();
   const count = Number(elements.stockOpenCount.value);

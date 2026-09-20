@@ -78,20 +78,47 @@ test('highvcc 不显示余额数字，只给「查余额」按钮（它没有快
   assert.doesNotMatch(out, /\$0\.00 <small>\//);
 });
 
-test('token 只在 supply fault 是 HIGHVCC_TOKEN 时说「已失效」；没故障时不写「有效」', () => {
+test('token 认 PROVIDER_TOKEN_EXPIRED 告警，不认 supply_fault_state（B2）', () => {
   const { sandbox, html } = loadAdminJs();
 
-  sandbox.renderCardRigs([{ ...RIG_BACKUP, tokenFault: false }]);
+  // 生产 2026-09-20 实测正处在这个矛盾态：supply_fault_state=OK 而告警 OPEN。
+  // 旧口径据 supply_fault_state 说「已配置」，工作台据告警说「已失效」，同一个后台两页相反。
+  // 权威信号是告警——这一条钉住：supplyFault 说没事也压不住告警。
+  sandbox.renderCardRigs([{ ...RIG_BACKUP, tokenExpiredAlert: true, tokenFault: false,
+    supplyFaultState: 'OK' }], { configured: true, updatedAt: '2026-09-20T06:12:00.000Z' });
+  const alarmed = html('sel:#cards-rigs');
+  assert.match(alarmed, /已失效/);
+  assert.match(alarmed, /is-alarm/, 'token 失效要整栏标红');
+
+  // 反过来：开卡失败写的那个 supply fault **不是** token 信号，不许让它冒充「已失效」。
+  sandbox.renderCardRigs([{ ...RIG_BACKUP, tokenExpiredAlert: false, tokenFault: true,
+    supplyFaultState: 'FAULT', supplyFaultReason: 'HIGHVCC_TOKEN_EXPIRED' }],
+  { configured: true, updatedAt: '2026-09-20T06:12:00.000Z' });
+  const supplyFaultOnly = html('sel:#cards-rigs');
+  assert.doesNotMatch(supplyFaultOnly, /已失效/);
+  assert.doesNotMatch(supplyFaultOnly, /is-alarm/);
+});
+
+test('没有 token 告警时只报上次贴的时间，一个字都不写「有效」', () => {
+  const { sandbox, html } = loadAdminJs();
+
+  sandbox.renderCardRigs([{ ...RIG_BACKUP, tokenExpiredAlert: false }],
+    { configured: true, updatedAt: '2026-09-20T06:12:00.000Z' });
   const healthy = html('sel:#cards-rigs');
   assert.doesNotMatch(healthy, /已失效/);
-  // tokenStatus() 只答「配没配过」，答不了有效性——所以没告警时一个字都不能说「有效」。
+  // token 两小时不活动就过期，configured=true 推不出有效 —— 观察与结论分开。
   assert.doesNotMatch(healthy, /有效(?!性)/);
+  assert.doesNotMatch(healthy, /已配置/);
+  assert.match(healthy, /上次贴/);
 
-  sandbox.renderCardRigs([{ ...RIG_BACKUP, tokenFault: true,
-    supplyFaultState: 'FAULT', supplyFaultReason: 'HIGHVCC_TOKEN_EXPIRED' }]);
-  const faulty = html('sel:#cards-rigs');
-  assert.match(faulty, /已失效/);
-  assert.match(faulty, /is-alarm/, 'token 失效要整栏标红');
+  // 没贴过就说没贴过；状态读不到就说读不到。都不许含糊成一个像样的词。
+  sandbox.renderCardRigs([{ ...RIG_BACKUP, tokenExpiredAlert: false }], { configured: false });
+  assert.match(html('sel:#cards-rigs'), /还没贴 token/);
+
+  sandbox.renderCardRigs([{ ...RIG_BACKUP, tokenExpiredAlert: false }], null);
+  const unknown = html('sel:#cards-rigs');
+  assert.match(unknown, /状态读取失败/);
+  assert.doesNotMatch(unknown, /有效(?!性)/);
 });
 
 test('台账读取失败时说读取失败，不渲染成「还没有卡台」', () => {
@@ -222,12 +249,21 @@ test('④ 流水类型说人话，且大小写不敏感（生产里 purchase 与
 
 test('highvcc 钱包不得随页面加载自动查（Lemon 2026-09-20 定：全部按需）', () => {
   const src = fs.readFileSync(path.join(here, '..', 'public', 'admin', 'assets', 'admin.js'), 'utf8');
-  const start = src.indexOf('async function loadHighvccStatus()');
+  const start = src.indexOf('async function loadHighvccStatus(');
   assert.ok(start > 0, 'loadHighvccStatus 必须存在');
   const body = src.slice(start, src.indexOf('\n}', start));
   // loadStock 无条件调 loadHighvccStatus；它里面一旦直接查 wallet，就等于「打开卡片页即打外网」。
   assert.doesNotMatch(body, /highvcc\/wallet/,
     'loadHighvccStatus 不得直接查钱包——余额只在点按钮或展开开卡区时查');
+
+  // 同一条规矩在 loadStock 自己身上也要成立：B2 之后它会预取 token 状态，
+  // 顺手把钱包也取了就是一行的事，所以这里钉死。
+  const stockStart = src.indexOf('async function loadStock()');
+  const stockBody = src.slice(stockStart, src.indexOf('\n}', stockStart));
+  assert.doesNotMatch(stockBody, /highvcc\/wallet/, 'loadStock 不得查钱包');
+  // 而 token 状态只许取一次：B2 让台账栏也要用它，取两次就是同一个端点打两遍。
+  assert.equal((stockBody.match(/highvcc\/status/g) || []).length, 1,
+    'token 状态在 loadStock 里只许取一次，取到的那份传给 loadHighvccStatus 复用');
 });
 
 test('② 两台都有「开卡…」与「刷新这台」，且开卡只是展开既有折叠区（不另造花钱入口）', () => {
@@ -341,4 +377,109 @@ test('卡片页标题不再提「补钱」——补余额区块已随 D-280 ⑦ 
   const html = fs.readFileSync(path.join(here, '..', 'public', 'admin', 'index.html'), 'utf8');
   assert.doesNotMatch(src, /库存、卡台、导入、补钱/);
   assert.doesNotMatch(html, /库存、卡台、导入、补钱/);
+});
+
+/* ===== B 部分：删块 2、收高级区、撤销路径（B1 / B3 / B4） ===== */
+
+test('B1：开卡被禁时逐条说为什么，不只是把按钮变灰', () => {
+  const { evalIn, html } = loadAdminJs();
+  // state 是顶层 const，不挂在 sandbox 上，只能在脚本作用域里赋值（见 harness 注释）
+  const render = (provider, catalog) => evalIn(
+    `state.stockProvider = ${JSON.stringify(provider)};`
+    + `state.stockCatalog = ${JSON.stringify(catalog)};`
+    + 'renderStockOpenGate();');
+
+  // 块 2 删掉前，这几句话只在「卡片概况」那一格里；删掉后 updateStockEstimate() 就只剩
+  // 把提交按钮置灰、把费用框变黄，一个字都不说为什么 —— 和 F-65「生产开着而界面上
+  // 关不掉」同型。这条钉住：每一条阻断原因都要落到页面上。
+  render({ syncedAt: '2026-09-20T00:00:00.000Z', rulesFresh: false, purchaseEnabled: false,
+    cardLimit: { remaining: 7 }, selectedCardType: { name: '卡段 A' } },
+  { fresh: false, openingBlocked: true, syncedAt: '2026-09-20T00:00:00.000Z' });
+  const blocked = html('sel:#stock-open-gate');
+  assert.match(blocked, /卡台规则已过期，禁止开卡/);
+  assert.match(blocked, /卡台当前禁止开卡/);
+  assert.match(blocked, /卡片对账已过期/);
+  assert.match(blocked, /对账未完成，禁止新开卡/);
+
+  // 没有阻断时报的是「还能开几张」，不写「一切正常」——那是结论不是观察。
+  render({ syncedAt: '2026-09-20T00:00:00.000Z', rulesFresh: true, purchaseEnabled: true,
+    cardLimit: { remaining: 7 }, selectedCardType: { name: '卡段 A' } },
+  { fresh: true, openingBlocked: false, syncedAt: '2026-09-20T00:00:00.000Z' });
+  const ok = html('sel:#stock-open-gate');
+  assert.match(ok, /剩余开卡额度 7/);
+  assert.doesNotMatch(ok, /禁止/);
+
+  // 连卡台规则都没取到时，说的是「禁止开卡」，不是一个空格子
+  render(null, {});
+  assert.match(html('sel:#stock-open-gate'), /尚未取得卡台规则，禁止开卡/);
+});
+
+test('B3：历史里两种撤销各归各的，不混成一个按钮', () => {
+  const { sandbox, html } = loadAdminJs();
+  // 「我已在卡台删掉」的结果：inventory_status 真的变 RETIRED
+  const retiredCard = { ...CARD_READY, providerCardId: 'h-7', externalCardId: 'h-7', last4: '7726',
+    category: 'RETIRED', inventoryStatus: 'RETIRED', allocationPolicy: 'RETIRED' };
+  // 「我手动用了」的结果：只有 override 是 RETIRED，卡本身没动
+  const manualUsed = { ...CARD_READY, providerCardId: 'h-8', externalCardId: 'h-8', last4: '5590',
+    category: 'RETIRED', inventoryStatus: 'AVAILABLE', allocationPolicy: 'RETIRED' };
+  sandbox.renderStockCards([retiredCard, manualUsed], { due: [], notYetDue: [] });
+  const history = html('sel:#stock-cards-history');
+
+  assert.match(history, /data-undo-retire="1"[\s\S]*?data-last4="7726"/);
+  assert.match(history, /data-undo-manual-use="1"[\s\S]*?data-last4="5590"/);
+  // 撤销退役要走 card-retirement/undo，撤销登记要删 override —— 两个不同的动作，
+  // 给错按钮就等于用错端点。
+  assert.equal((history.match(/data-undo-retire="1"/g) || []).length, 1);
+  assert.equal((history.match(/data-undo-manual-use="1"/g) || []).length, 1);
+
+  // 在役的卡给的是「我手动用了」，不是撤销
+  const active = html('sel:#stock-cards');
+  assert.doesNotMatch(active, /data-undo-retire|data-undo-manual-use/);
+});
+
+test('B3：登记退役不再要确认词，但仍必须带 last4 定位到卡', () => {
+  const src = fs.readFileSync(path.join(here, '..', 'public', 'admin', 'assets', 'admin.js'), 'utf8');
+  const start = src.indexOf("closest('[data-retire-confirm]')");
+  const handler = src.slice(start, src.indexOf('\n});', start));
+  // D-301：确认词不留。手打一次就会被复制粘贴，挡不住误点。
+  assert.doesNotMatch(handler, /confirmation/, '确认词已按 D-301 去掉');
+  assert.doesNotMatch(handler, /ask-confirmation|name: 'confirmation'/);
+  // last4 是定位用的，不是闸门，得留着
+  assert.match(handler, /\\d\{4\}/);
+  assert.match(handler, /last4/);
+  // 去确认词的前提是有回头路，提示里必须说出来
+  assert.match(handler, /撤销/);
+});
+
+test('B3：撤销必须填理由——没有理由的撤销在审计里等于没发生过', () => {
+  const src = fs.readFileSync(path.join(here, '..', 'public', 'admin', 'assets', 'admin.js'), 'utf8');
+  const start = src.indexOf("closest('[data-undo-manual-use]')");
+  const block = src.slice(start, src.indexOf('/* =====', start));
+  assert.match(block, /name: 'reason', label: '为什么撤销（必填，会进审计）', required: true/);
+  assert.equal((block.match(/required: true/g) || []).length, 2, '两种撤销都要必填理由');
+  assert.match(block, /card-operational-overrides[\s\S]*?method: 'DELETE'/);
+  assert.match(block, /card-retirement\/undo/);
+});
+
+test('B4：五条折叠条收进一个「高级」，六件一件不少', () => {
+  const html = fs.readFileSync(path.join(here, '..', 'public', 'admin', 'index.html'), 'utf8');
+  const stockView = html.slice(html.indexOf('id="stock-view"'), html.indexOf('id="diagnostics-view"'));
+  const advanced = stockView.slice(stockView.indexOf('id="stock-advanced"'));
+  for (const id of ['card-source-admin', 'manual-card-import-card', 'hnskj-open-card',
+    'highvcc-open-card', 'stock-jobs-card', 'card-intake-card']) {
+    assert.match(advanced, new RegExp(`id="${id}"`), `高级区少了 ${id}`);
+  }
+  assert.equal((advanced.match(/class="cardadv-item"/g) || []).length, 6);
+  // 六件都默认折起：展开着就等于没收
+  assert.doesNotMatch(advanced, /class="cardadv-item"[^>]*\sopen/);
+  // 高级区自己也默认折起
+  assert.doesNotMatch(stockView, /id="stock-advanced"[^>]*\sopen/);
+});
+
+test('B4：「开卡…」要把外层「高级」一起展开，只开里层等于点了没反应', () => {
+  const src = fs.readFileSync(path.join(here, '..', 'public', 'admin', 'assets', 'admin.js'), 'utf8');
+  const start = src.indexOf("closest('[data-rig-open]')");
+  const handler = src.slice(start, src.indexOf("closest('[data-rig-refresh]')"));
+  assert.match(handler, /closest\('details'\)/, '要沿祖先链把每一层 details 都打开');
+  assert.match(handler, /node\.open = true/);
 });

@@ -134,3 +134,15 @@
 | 设置页「每卡单数」改为可编辑（D-303） | **只有单元测试** | 端点既有、校验既有，但**没有在隔离库真点过一次保存**并复核 `app_settings` 与审计行 |
 
 | 工作台有副作用的按钮 | **2026-09-20 在隔离库 `step6_demo`(8803) 逐个点过并复核库/审计/界面**：接单、派单、付款（开启方向弹 confirm、关闭方向不弹，与代码一致）三开关均库值翻转+审计+1+界面同步+提示正确，且都已切回原值；卡台切换真切成（Plus/BROWSER `legacy-primary`→`backup-a`→切回，version 3→4→5）；发码「生成并复制」批次 0→1、码 28→30；告警「关闭」OPEN→RESOLVED 且界面移除；路线切换弹确认→发请求→409 `browser_recharge_not_ready`→界面显示原因 | **「关闭记录」按钮当前不可能被触发**（不是"没点过"）：`reconciliation_cases` 全系统只有三个产生方（`workflow-repository.js:339`、`browser-execution-repository.js:1257`、`browser-admin-service.js:958`），产的都是 `API_PAYMENT_UNKNOWN`/`BROWSER_PAYMENT_UNKNOWN`，而这两种在 `admin.js:463` 走的是「去核实收口」分支；通用入口 `reconciliation-case-service.upsertCase` **生产代码零调用**，只有测试在用。生产只读实证：`SELECT case_type,status,COUNT(*) … GROUP BY` → 仅 `BROWSER_PAYMENT_UNKNOWN OPEN 2`。**它是给 V2「对账面」（⑦⑧，未开始）预留的分支**，接入 detector 产出非付款不明 case 后才会出现，届时再验 |
+
+## 2026-09-20 · 卡片页 B 部分（D-305 / B1~B4）
+
+| 事项 | 状态 | 证据与缺口 |
+|---|---|---|
+| 卡片页整块重构（A 版三块 + 一个高级入口） | **只在隔离库 `step6_demo`(8803) 与定稿原型比对过，未上生产** | 界面层 `cards-page.json` 18 条探针全绿、5 个变异全被抓；真实浏览器逐个入口点过一遍。**没有任何真实客户单走过这一页**，face-5 DoD 要求的「Lemon 实际用一天」也没做 |
+| token 那格改认 `PROVIDER_TOKEN_EXPIRED` 告警（B2） | **隔离库双向验过，生产未验** | 用真实写入口 `markProviderTokenExpired` / `clearProviderTokenExpired` 造与清，页面「已失效 + 整栏标红」↔「上次贴 <时间>」双向都对，且复现了生产那个 `supply_fault_state=OK` 而告警 OPEN 的矛盾态。**生产当前正有一条 OPEN 的 token 告警**（`provider-token-expired:…0103`，2026-09-18 12:52 起），上生产后卡片页会立刻显示「已失效」——这是预期，不是新 bug |
+| `POST /card-retirement/undo`（B3 新端点） | **隔离库端到端验过，生产从未调用** | 登记退役→撤销→卡回到 `DEPLETED`/`AUTO`、override 行清掉、审计链齐全（新连接独立复核）。**缺口：对「本轮之前就已退役的卡」，退役事件的 `previous_json` 里没有 `override` 字段**，撤销会走「原值不详」分支——删掉 override 行并如实提示。生产现有退役卡全部属于这种，**这条分支没有在生产数据上跑过** |
+| 「撤销手动用卡登记」前端入口 | **隔离库点过，生产未验** | 后端 `DELETE /card-operational-overrides` 一直都在、前端此前零调用。现在它会写 `CARD_OVERRIDE_CLEARED` 审计——**这个事件类型是本轮新增的，生产库里一条都没有**，任何按事件类型做的报表/查询都还没见过它 |
+| 开卡闸门 `renderStockOpenGate()` | **隔离库只验到「阻断态」** | 演示库的卡台快照本来就过期，所以四条阻断原因都实际渲染出来了；**「可以开卡」那一支只有单元测试，没有在真实新鲜快照下看过** |
+| 高级区六件的展开态布局 | **比对只覆盖折起态** | `cards-page.json` 量的是六件折起时的高度与间距（那是默认态）。**展开后的内部布局没有契约**，靠的是这些块本来就没改内部结构 |
+| `.cardadv*` / `.cardgate` 新样式 | **只在 1440px 下比过** | 契约视口是 1440×900 一档。窄屏（`@media max-width:900px` 那几条）没量过 |

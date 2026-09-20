@@ -113,8 +113,15 @@ test('admin refresh feedback and inset dropdown arrows remain visible', () => {
   const html = fs.readFileSync(path.join(directory, 'admin', 'index.html'), 'utf8');
   const script = fs.readFileSync(path.join(directory, 'admin', 'assets', 'admin.js'), 'utf8');
   const styles = fs.readFileSync(path.join(directory, 'admin', 'assets', 'admin.css'), 'utf8');
-  assert.match(html, /admin\.css\?v=26/);
-  assert.match(html, /admin\.js\?v=69/);
+  // 缓存版本号：只守真正要守的——三份资源都带版本、JS 版本只能往上走。
+  // 写死具体数字会让这条断言每次改版都挂，反过来诱导人去改断言（本文件客户页那条
+  // 早就是这么写的，admin 这条一直还写死着）。
+  assert.match(html, /admin\.css\?v=\d+/);
+  assert.match(html, /workbench\.css\?v=\d+/);
+  assert.match(html, /cards\.css\?v=\d+/);
+  const adminJsVersion = html.match(/admin\.js\?v=(\d+)/);
+  assert.ok(adminJsVersion, 'index.html 必须带 admin.js 的 ?v= 版本');
+  assert.ok(Number(adminJsVersion[1]) >= 72, 'admin.js 的版本只能往上走（改了脚本必须 bump）');
   assert.match(script, /button\.textContent = '刷新中…'/);
   assert.match(script, /showNotice\('刷新完成。', 'success'\)/);
   assert.match(script, /showNotice\('刷新失败，请稍后重试。'\)/);
@@ -137,7 +144,8 @@ test('admin refresh feedback and inset dropdown arrows remain visible', () => {
   assert.match(script, /data-browser-control="RESOLVE_UNKNOWN_PAYMENT">确认核实结果</);
   assert.match(script, /data-order-run-control="RESOLVE_UNKNOWN_PAYMENT">确认核实结果</);
   assert.match(script, /input\.renewalCancelled = answers\.renewalCancelled === 'true'/);
-  assert.match(html, /最低所需卡余额/);
+  // B1 删块 2 之后，「最低余额」的唯一入口在设置页（由 admin.js 渲染，不在 index.html）
+  assert.match(script, /最低余额 · \$\{escapeHtml\(SETTINGS_PLAN_LABELS\[plan\]\)\}/);
   assert.match(script, /card-intake\/.*\/validate/);
   assert.match(script, /card-intake\/.*\/accept/);
   assert.doesNotMatch(script, /卡台当前 active 卡数/);
@@ -165,24 +173,52 @@ test('admin separates recharge method from audited Browser card-source switching
   const html = fs.readFileSync(path.join(directory, 'admin', 'index.html'), 'utf8');
   const script = fs.readFileSync(path.join(directory, 'admin', 'assets', 'admin.js'), 'utf8');
   assert.match(html, /卡台管理/);
-  assert.match(html, /人工指定/);
   assert.match(html, /API 充值固定使用 HNSKJ/);
   assert.match(script, /\/api\/v1\/admin\/card-sources\/browser\/current/);
   assert.match(script, /Browser 卡台已切换/);
-  assert.match(html, /只影响之后创建的新订单/);
+  // D-280 ⑦ / B1：切换卡台只在工作台（那里带「同时接管排队单」和四项校验），
+  // 卡片页这张表是只读的。所以这里要的是「指向工作台」，不是「人工指定」徽标。
+  assert.match(html, /在工作台的工具栏里切/);
+  // 只看代码，不看注释——注释里写「这一行为什么删了」是应该的，代码里还渲染它才是问题。
+  const code = script.replace(/^\s*\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
+  assert.doesNotMatch(code, /浏览器自动化充值当前卡台/,
+    '这一行工作台已经有了，卡片页不再重复显示');
   assert.doesNotMatch(`${html}\n${script}`, /secretRef|navigationUrl|leaseToken|resourceKeyHmac|card_credentials_ciphertext|recharge_card_key/i);
 });
 
 test('admin card page folds card sources and import into one view (balance funding retired, D-280 ⑦)', () => {
   const html = fs.readFileSync(path.join(directory, 'admin', 'index.html'), 'utf8');
   const script = fs.readFileSync(path.join(directory, 'admin', 'assets', 'admin.js'), 'utf8');
-  const stockView = html.slice(html.indexOf('id="stock-view"'), html.indexOf('id="page-notice"'));
-  for (const id of ['stock-summary', 'card-capacity-form', 'minimum-balance-form', 'provider-routes-table', 'manual-card-source-form',
+  const stockView = html.slice(html.indexOf('id="stock-view"'), html.indexOf('id="diagnostics-view"'));
+  // 能力一个都不许丢：五条折叠只是收进「高级」，不是删掉。
+  for (const id of ['provider-routes-table', 'manual-card-source-form',
     'manual-card-import-form', 'stock-cards', 'stock-open-form', 'stock-jobs', 'card-intake-list',
     // 第⑥块新增的三块（D-280 ①③⑤）
-    'cards-rigs', 'card-retirement-list', 'stock-cards-history']) {
+    'cards-rigs', 'card-retirement-list', 'stock-cards-history',
+    // B4：六件低频事收进这一个入口
+    'stock-advanced']) {
     assert.match(stockView, new RegExp(`id="${id}"`), id);
   }
+  // B1：块 2「卡片概况 + 卡台管理」整块删掉。这三个写入口在设置页本来就有一份，
+  // 同一个写操作不留两个入口（F-65 那类毛病的根）。它们不许回到卡片页。
+  for (const gone of ['stock-summary', 'card-capacity-form', 'minimum-balance-form',
+    'card-capacity', 'minimum-balance-plan', 'provider-summary']) {
+    assert.doesNotMatch(stockView, new RegExp(`id="${gone}"`), `${gone} 已随块 2 删除，不许回到卡片页`);
+  }
+  // 删了不等于丢了：那两项现在由设置页渲染，端点没变。
+  assert.match(script, /card-stock\/max-successful-payments/);
+  assert.match(script, /card-stock\/minimum-balance/);
+  // A 版顺序：两台 → 在役卡表 → 待销 → 高级。换序 = 换了另一版设计。
+  const order = ['id="cards-rigs"', 'id="stock-cards"', 'id="card-retirement-list"', 'id="stock-advanced"']
+    .map((needle) => stockView.indexOf(needle));
+  assert.ok(order.every((i) => i >= 0), 'A 版四块必须都在');
+  assert.deepEqual(order, [...order].sort((a, b) => a - b),
+    'A 版原型的顺序是「在役列表在待销之前」，实现此前是反的，不许再反回去');
+  // 块 2 删掉后，「为什么不能开卡」必须还有地方说——否则就是一个点不动又没人解释的按钮。
+  assert.match(stockView, /id="stock-open-gate"/);
+  assert.match(script, /卡台规则已过期，禁止开卡/);
+  assert.match(script, /对账未完成，禁止新开卡/);
+  assert.match(script, /剩余开卡额度/);
   // D-280 ⑦：补余额区块退休（D-218 已弃用补余额），连同工作台那条会跳到这里的待办一起。
   // 后端与数据都还在，只是后台不再有入口——恢复时连待办一起接。
   assert.doesNotMatch(stockView, /card-funding-table|card-funding-filters/);
@@ -200,10 +236,11 @@ test('CDK page generates per product and the card page sets the minimum balance 
   const script = fs.readFileSync(path.join(directory, 'admin', 'assets', 'admin.js'), 'utf8');
   assert.match(html, /id="cdk-plan"[^>]*>[\s\S]*?<option value="pro_20x">Pro 20X<\/option>/);
   assert.match(html, /id="cdk-batch-plan">[\s\S]*?<option value="pro_5x">Pro 5X<\/option>/);
-  assert.match(html, /id="minimum-balance-plan"/);
   assert.doesNotMatch(html, /当前仅支持 Plus/);
   assert.match(script, /body: JSON\.stringify\(\{ count, planType \}\)/);
-  assert.match(script, /body: JSON\.stringify\(\{ amount: Math\.round\(amount \* 100\) \/ 100, planType \}\)/);
+  // 最低余额按产品：入口随 B1 从卡片页块 2 搬到设置页，端点和「按产品」这件事都没变。
+  assert.match(script, /SETTINGS_PLAN_ORDER = \['plus', 'pro_5x', 'pro_20x'\]/);
+  assert.match(script, /body: JSON\.stringify\(\{ amount: Number\(input\.value\), planType: scope\.dataset\.plan \}\)/);
   const customer = fs.readFileSync(path.join(directory, 'assets', 'customer.js'), 'utf8');
   assert.match(customer, /function withProduct\(text, order\)/);
 });

@@ -1,0 +1,214 @@
+{
+  "name": "卡片页 ↔ 原型 A「台账优先」（三块 + 一个高级入口）",
+  "viewport": [
+    1440,
+    900
+  ],
+  "tolerancePx": 1,
+  "note": "原型 A 是 Lemon 2026-09-20 从三版里挑定的（D-287）。原型 link 的是 _frozen/cards-a/ 定稿快照、不是实时 /admin/assets/*——反代实时 CSS 会让参照跟着被测物一起变，比对永远通过（D-293 被变异测试拆穿过）。被量的树里一个原型专属 class 都不带，三份 CSS 按 index.html 顺序加载。impl 侧要先 prepare 切到卡片视图：非当前视图 hidden，量出来全是 0，而 0==0 会被当成一致。prepare 里的点击写成**可重入**的循环——页面自身的启动流程是异步的，点得太早会被它随后一次渲染重新隐藏（实测：卡台和卡表都已渲染，而 #stock-view 仍 hidden）。所以每轮都重新点一次，直到这个视图真的显示出来为止。不比 width/left/right 的探针都写在各自 metrics 里：卡台名、订单号、余额来自真实库，文字长度两边本就不同，宽度差属正常；结构与节奏靠「块数」「高度」「间距」守。",
+  "prototype": {
+    "url": "${PARITY_PROTO_BASE}/step6-cards-a.html",
+    "root": "#stock-view"
+  },
+  "impl": {
+    "url": "${PARITY_ADMIN_BASE}/admin/",
+    "root": "#stock-view",
+    "login": {
+      "passwordEnv": "PARITY_ADMIN_PASSWORD"
+    },
+    "prepare": "const sel='.nav-item[data-view=\"stock\"]';if(!document.querySelector(sel)) return false;const t=Date.now();while(Date.now()-t<20000){ const v=document.querySelector('#stock-view'); const a=document.querySelector('#stock-advanced'); if(v&&!v.hidden&&a&&v.querySelector('#cards-rigs .cardrig')&&v.querySelector('#stock-cards table')){  a.open=true; await new Promise(r=>requestAnimationFrame(r)); return true; } document.querySelector(sel).click(); await new Promise(r=>setTimeout(r,250)); }return false;"
+  },
+  "probes": [
+    {
+      "name": "第①块是两台卡台",
+      "proto": "#stock-view > *:nth-child(1) #cards-rigs",
+      "impl": "#stock-view > *:nth-child(1) #cards-rigs",
+      "metrics": [
+        "display"
+      ]
+    },
+    {
+      "name": "第②块是在役卡表",
+      "proto": "#stock-view > *:nth-child(2) #stock-cards",
+      "impl": "#stock-view > *:nth-child(2) #stock-cards",
+      "metrics": [
+        "display"
+      ]
+    },
+    {
+      "name": "第③块是待销清单",
+      "proto": "#stock-view > *:nth-child(3) #card-retirement-list",
+      "impl": "#stock-view > *:nth-child(3) #card-retirement-list",
+      "metrics": [
+        "display"
+      ]
+    },
+    {
+      "name": "第④块是高级入口",
+      "proto": "#stock-view > *:nth-child(4)#stock-advanced",
+      "impl": "#stock-view > *:nth-child(4)#stock-advanced",
+      "metrics": [
+        "display"
+      ]
+    },
+    {
+      "name": "整页分块",
+      "proto": "#stock-view > section, #stock-view > details",
+      "impl": "#stock-view > section, #stock-view > details",
+      "all": true,
+      "metrics": [
+        "display",
+        "borderRadius",
+        "marginTop",
+        "marginBottom"
+      ]
+    },
+    {
+      "name": "两台并列",
+      "proto": "#cards-rigs",
+      "impl": "#cards-rigs",
+      "metrics": [
+        "display",
+        "gap",
+        "marginTop",
+        "marginBottom"
+      ]
+    },
+    {
+      "name": "每台一块",
+      "proto": "#cards-rigs .cardrig",
+      "impl": "#cards-rigs .cardrig",
+      "all": true,
+      "metrics": [
+        "height",
+        "padding",
+        "borderRadius"
+      ]
+    },
+    {
+      "name": "四个数格",
+      "proto": "#cards-rigs .cardrig-quad",
+      "impl": "#cards-rigs .cardrig-quad",
+      "all": true,
+      "metrics": [
+        "display",
+        "gap",
+        "height"
+      ]
+    },
+    {
+      "name": "数格单元",
+      "proto": "#cards-rigs .cardrig-q",
+      "impl": "#cards-rigs .cardrig-q",
+      "all": true,
+      "metrics": [
+        "height",
+        "padding",
+        "borderRadius"
+      ]
+    },
+    {
+      "name": "在役卡表",
+      "proto": "#stock-cards",
+      "impl": "#stock-cards",
+      "metrics": [
+        "marginTop",
+        "borderRadius"
+      ]
+    },
+    {
+      "name": "卡表表头",
+      "proto": "#stock-cards thead th",
+      "impl": "#stock-cards thead th",
+      "all": true,
+      "metrics": [
+        "height",
+        "padding",
+        "fontSize",
+        "fontWeight",
+        "textAlign"
+      ]
+    },
+    {
+      "name": "历史折叠条",
+      "proto": "#stock-cards-history .cardfoldtoggle",
+      "impl": "#stock-cards-history .cardfoldtoggle",
+      "metrics": [
+        "height",
+        "padding",
+        "fontSize",
+        "fontWeight",
+        "borderRadius",
+        "textAlign"
+      ]
+    },
+    {
+      "name": "待销表",
+      "proto": "#card-retirement-list",
+      "impl": "#card-retirement-list",
+      "metrics": [
+        "marginTop",
+        "borderRadius"
+      ]
+    },
+    {
+      "name": "待销表头",
+      "proto": "#card-retirement-list thead th",
+      "impl": "#card-retirement-list thead th",
+      "all": true,
+      "metrics": [
+        "height",
+        "padding",
+        "fontSize",
+        "fontWeight"
+      ]
+    },
+    {
+      "name": "高级入口",
+      "proto": "#stock-advanced",
+      "impl": "#stock-advanced",
+      "metrics": [
+        "display",
+        "padding",
+        "borderRadius"
+      ]
+    },
+    {
+      "name": "高级入口标题",
+      "proto": "#stock-advanced > summary",
+      "impl": "#stock-advanced > summary",
+      "metrics": [
+        "height",
+        "fontSize",
+        "fontWeight",
+        "display",
+        "alignItems",
+        "gap"
+      ]
+    },
+    {
+      "name": "高级六件",
+      "proto": "#stock-advanced .cardadv-item",
+      "impl": "#stock-advanced .cardadv-item",
+      "all": true,
+      "metrics": [
+        "height",
+        "padding",
+        "borderRadius"
+      ]
+    },
+    {
+      "name": "高级六件标题",
+      "proto": "#stock-advanced .cardadv-item > summary",
+      "impl": "#stock-advanced .cardadv-item > summary",
+      "all": true,
+      "metrics": [
+        "height",
+        "fontSize",
+        "fontWeight",
+        "display",
+        "gap"
+      ]
+    }
+  ]
+}

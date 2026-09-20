@@ -4669,3 +4669,61 @@ Lemon 问「你确定所有按钮都是有效的吗」——我不确定，从�
 **仍未验的按钮（已记 UNVERIFIED_LEDGER）**：三个营业开关、路线切换、卡台切换、发码、123 个告警「关闭」——它们有副作用，本轮只核了处理器存在，**没有实际点过**。要在隔离库逐个点一遍才算验过。
 
 全量 978 / 910 pass / 1 fail（既有 F-65）。
+
+## D-305（2026-09-20）卡片页按 A 版重构完成（B1~B4）：块 2 删掉、五条折叠收进一个「高级」、token 认告警、退役登记补上回头路
+
+> 治理条仍然欠着：审查员角色决定至今没有编号（F-69）。上一个窗口说「下一个可用号是 D-305」
+> 但不自行占号；那是**不替 Lemon 定一件他还没定的事**，不是把 305 留给它。这里照常取号，
+> 审查员角色那条等 Lemon 定时取当时的下一个号。
+
+**B1 删块 2**（`.stock-grid` 里的「卡片概况 + 卡台管理」，实测 675px）。块内七样东西的去向，逐样查过才动：
+
+| 内容 | 去向 | 依据 |
+|---|---|---|
+| 四个合计数 | 删 | 块 1 已有按台的四个数。生产实测两者同值（块 1 合计 0+2=2，块 2 `ready`=2） |
+| 每卡单数 | 设置页（已有） | `admin.js` `renderSettingsThresholds` 的 `data-save-capacity`，同一个端点 |
+| 最低余额（按产品） | 设置页（已有） | 同上，`data-save-minimum` |
+| 浏览器自动化当前卡台 | 删 | 工作台工具栏有同一个数，而且那里能切 |
+| API 充值固定卡台 | 进「高级 · 卡台管理」 | **全后台只此一处显示它**，不能跟着块 2 一起没 |
+| 卡台管理表（能力/快照/告知状态）+ 新增备用卡台 | 进「高级 · 卡台管理」 | D-280 ⑧；`sourceHealth()` 与 `POST /card-sources` 全项目都只有这一个调用点 |
+| **开卡被禁的三条原因 + 剩余开卡额度** | **搬进 HNSKJ 开卡区**（Lemon 当次同意） | **任务书那张表漏了这一整块** |
+
+最后一行是本轮真正的坑：`updateStockEstimate()` 在规则过期/对账未完成时**只把提交按钮置灰、把费用框变黄，一个字都不说为什么**。块 2 一删，全后台就再没有地方解释那个灰按钮——和 F-65「生产开着而界面上关不掉」同型。所以新建 `renderStockOpenGate()`，逐条列出阻断原因，紧挨着那个按钮。
+
+**顺带修掉的两个静默失效**：
+- `loadProviderRoutes()` 里三处 DOM 赋值原本无守卫，而它还负责填导入表的卡台下拉。删掉第一个节点会让函数在第一行抛出，**导入功能静默坏掉**、页面上只显示「请先读取卡台」。已加守卫。
+- `loadStock()` 同病。本轮变异测试（删掉「补卡执行记录」那块）实测：`elements.stockJobs` 变 null → 抛在中途 → **卡片列表整块不渲染**。已加守卫。这正是 D-289 的同型。
+
+**B2 token 改认告警**。旧口径读 `provider_accounts.supply_fault_state`，那个字段只在**补卡调度器开卡失败**时写；token 失效是快照同步任务发现的，`markProviderTokenExpired` 只写告警、不碰它。隔离库用真实写入口复现了生产那个矛盾态：
+
+```
+markProviderTokenExpired 之后：
+  operator_alerts  PROVIDER_TOKEN_EXPIRED / provider-token-expired:<uuid> / OPEN
+  provider_accounts.supply_fault_state = OK          ← 旧信号说「没事」
+  API byProvider:  tokenExpiredAlert=true, tokenFault=false, supplyFaultState=OK
+  页面：token 格「已失效」+ 整栏标红
+clearProviderTokenExpired 之后：
+  告警 RESOLVED → 页面「上次贴 09/20 09:10」（**不写「有效」**）
+```
+
+告警按 `tokenExpiredAlertKey()` 精确命中，不走 `/admin/alerts`（它不支持按类型过滤、只取最近 100 条，F-74）。**查的时候发现隔离库里还有第二种 key 形态 `provider-token:backup-a`** —— 全仓库 grep 无任何代码产出它，生产也只有 `provider-token-expired:<uuid>` 一种，判定是上一个窗口手写的夹具，已删（否则本轮验证分不清命中的是哪条）。
+
+**B3 去掉确认词 + 补回头路**（D-301「确认词不用留」的前置）。查清了任务书里那个未验证项：**`card_operational_overrides` 改回 NORMAL 前端有没有入口——没有**。但后端早有 `DELETE /card-operational-overrides`，前端一次都没调过。所以「我手动用了」不需要新端点，只需要补前端入口；**差点又造第二份**（D-273 同类第四次的机会）。
+
+- 「我已在卡台删掉」：新增 `POST /card-retirement/undo`。还原依据只有一个——这张卡最近一条 `CARD_RETIRED_CONFIRMED` 事件的 `previous_json`；**没有那条事件就拒绝，不猜一个「大概是 AVAILABLE」**。同时让 `confirmRetired` 从此把 override 的原值记进事件（此前它 `INSERT ... ON DUPLICATE` 把原 override 原地盖掉，不记就永远还原不回去）。
+- 「知道退役前没有 override」和「不知道退役前是什么」分成两个字段。第一版合成一个布尔，页面会对着一个其实记得清清楚楚的 case 说「系统没记」——那是给观察补原因。
+- `clear()` 现在走事务并写 `CARD_OVERRIDE_CLEARED` 审计：它从「前端没人调的端点」变成了运营会点的按钮，必须留痕。override 行没有对应 cards 行时如实返回 `audited:false`，不假装记过。
+- 确认词去掉后剩下的闸门写清楚了：只有到期的卡才亮按钮、有活动分配的卡后端直接拒、点错了能撤销。`last4` 仍校验，但那是**定位**用的，不是闸门。
+
+**B4 五条折叠条收进一个「高级」**（`#stock-advanced`，六件：卡台管理 / 导入 / 两台开卡 / 补卡记录 / 新卡接管）。顺带修掉一处必然的回归：「开卡…」原本只把里层 `<details>` 的 `open` 置 true，嵌进「高级」之后**外层还关着，点了等于没反应**；改成沿祖先链逐层打开。
+
+**顺序纠正**：A 版原型是「两台 → 在役卡表 → 待销」，实现此前把待销放在卡表前面。这轮改回，并用位置选择器钉住（纯比几何量抓不到换序，两块样式一样）。
+
+**顺带清掉一处文案债**：待销原因标签里挂着枚举名（`余额已用尽（DEPLETED）`/`卡台标记失效（FAILED）`/`运营已标 RETIRED`），是第④块带进来的。`ui-copy-check.mjs` 抓不到它——**那个闸门只扫前端三个文件，后端产出的文案照样会显示到页面上**。已登记为欠账。
+
+**三层验收**
+- 业务层：隔离库真实点一遍全链路（登记退役→撤销→手动用卡→撤销），每步用**新连接**独立复核。审计链 `CARD_RETIRED_CONFIRMED → CARD_RETIREMENT_UNDONE → CARD_OVERRIDE_CLEARED` 齐全，卡状态与 override 行都回到原样。
+- 界面层：新建 `docs/design/prototypes/step6-cards-a.html`（定稿原型，link `_frozen/cards-a/` 快照、被量的树里零原型专属 class）+ `docs/design/parity/cards-page.json`（18 条探针）。**契约做了 5 个变异全被抓**：换序、少一件高级项、改内边距、块 2 复活、删掉一个高级块。
+- 工程层：全量 **1004 / 936 pass / 1 fail**（唯一 fail 仍是既有 F-65，未动）。新增 19 条测试，**5 个变异全被抓**。三条闸门全绿。
+
+**给 visual-parity.mjs 加了两样东西**（不是重造，是补它缺的）：契约的 `prepare` 钩子（后台是单页多视图，非当前视图 `hidden`，不先切过去量到的全是 0）；以及根元素 0×0 时直接判「跑不起来」——否则 0 和 0 比是「一致」，整份契约会静静地变成永远通过。
