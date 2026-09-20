@@ -8,9 +8,9 @@
   <title>Plus 运营后台</title>
   <link rel="icon" href="/admin/assets/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/admin/assets/admin.css?v=26">
-  <link rel="stylesheet" href="/admin/assets/workbench.css?v=6">
+  <link rel="stylesheet" href="/admin/assets/workbench.css?v=7">
   <link rel="stylesheet" href="/admin/assets/cards.css?v=1">
-  <script src="/admin/assets/admin.js?v=58" defer></script>
+  <script src="/admin/assets/admin.js?v=59" defer></script>
 </head>
 <body>
   <div class="admin-shell">
@@ -51,13 +51,16 @@
       <section id="overview-view" class="view workbench" aria-labelledby="view-title">
         <section class="wb-card wb-ops">
           <div class="wb-ops-top" id="wb-decisions"><p class="wb-qempty">正在读取营业状态…</p></div>
-          <div class="wb-ops-bot">
-            <div class="wb-ops-col wb-route" id="wb-routes"></div>
-            <div class="wb-ops-col"><p class="wb-grp-t">生成兑换码</p><form class="wb-cdk" id="wb-cdk-form">
-            <label>产品<select class="wb-field" id="wb-cdk-plan"><option value="plus">Plus</option><option value="pro_5x">Pro 5X</option><option value="pro_20x">Pro 20X</option></select></label>
-            <label>数量<input class="wb-field" id="wb-cdk-count" type="number" min="1" max="1000" value="1"></label>
-            <button class="wb-btn pri" type="submit">生成并复制</button>
-          </form></div>
+          <div class="wb-ops-rows">
+            <div class="wb-route" id="wb-routes"></div>
+            <div class="wb-ops-row">
+              <span class="wb-lead">发码</span>
+              <form class="wb-cdk" id="wb-cdk-form">
+                <select class="wb-field" id="wb-cdk-plan" aria-label="产品"><option value="plus">Plus</option><option value="pro_5x">Pro 5X</option><option value="pro_20x">Pro 20X</option></select>
+                <input class="wb-field wb-num" id="wb-cdk-count" type="number" min="1" max="1000" value="1" aria-label="数量">
+                <button class="wb-btn pri" type="submit">生成并复制</button>
+              </form>
+            </div>
           </div>
         </section>
 

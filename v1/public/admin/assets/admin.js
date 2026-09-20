@@ -523,10 +523,15 @@ function renderDecisions(overview, cardSources, takeoverEstimate = null) {
       : `<button type="button" class="wb-btn sm out default-recharge-method" data-method="${target}">改用${escapeHtml(text)}</button>`);
     // 「切到浏览器」四个字看不出在说什么（Lemon 2026-09-20）。两条路线是：
     // API 充值＝调卡台接口充；浏览器自动充＝程序模拟人在 ChatGPT 官网上付款。
-    routeBox.innerHTML = `<p class="wb-grp-t">Plus 怎么充 · 用哪个卡台</p>`
-      + `<div class="wb-route"><div class="wb-routepick">${methodBtn('API', 'API 充值')}${methodBtn('BROWSER', '浏览器自动充')}</div></div>`
-      + `<div class="wb-route"><div class="wb-routepick"><span class="wb-lead">API 路线</span><span class="wb-chip mute"><span class="wb-d"></span>固定用 HNSKJ</span></div></div>`
-      + `<div class="wb-route"><div class="wb-routepick"><span class="wb-lead">浏览器路线</span><select class="wb-field" id="decision-card-source" aria-label="Browser 卡台">${sourceOptions || '<option value="">没有可用卡台</option>'}</select><button type="button" class="wb-btn sm out" id="decision-card-source-apply" ${sources.length ? '' : 'disabled'}>切换</button></div>${takeoverHint}</div>`;
+    routeBox.innerHTML =
+      `<div class="wb-ops-row"><span class="wb-lead">充值方式</span>`
+      + `${methodBtn('API', 'API 充值')}${methodBtn('BROWSER', '浏览器自动充')}</div>`
+      + `<div class="wb-ops-row"><span class="wb-lead">卡台</span>`
+      + `<span class="wb-chip mute"><span class="wb-d"></span>API 固定 HNSKJ</span>`
+      + `<span class="wb-sep">·</span><span class="wb-lead2">浏览器</span>`
+      + `<select class="wb-field" id="decision-card-source" aria-label="Browser 卡台">${sourceOptions || '<option value="">没有可用卡台</option>'}</select>`
+      + `<button type="button" class="wb-btn sm out" id="decision-card-source-apply" ${sources.length ? '' : 'disabled'}>切换</button>`
+      + `${takeoverHint}</div>`;
   }
 }
 
