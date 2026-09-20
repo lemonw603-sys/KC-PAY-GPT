@@ -1,0 +1,473 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>第⑥步 · CDK 页三版比稿</title>
+<!--
+  V2 第⑥步 CDK 页重做 · 三版比稿（给 Lemon 挑）
+  令牌沿用客户页「候光」，与工作台/卡片页同皮。
+
+  本轮输入（Lemon 2026-09-20 当面定）：
+    ① 批发做进来（按批发出 / 按渠道记）
+    ② 渠道自由填（不建渠道表）
+    ③ 批发金额记批次（不按张均摊）
+    ④ 金额选填、不强制
+    ⑤ 异常那格剔除 2026-09-07 之前的历史
+  既有：D-279 六条、D-286 两条。
+
+  三版差在「零售与批发怎么共存」——这是本页唯一有分歧的结构：
+    A 一条流水线 · 一张表管所有码，批发＝表上的批量勾选
+    B 两条动线   · 零售区与批发区各占一块，各按各的单位操作
+    C 生命周期段 · 按码走到哪一步分段，异常自己浮出来
+
+  数据：四格数与列表状态分布是 2026-09-20 生产只读实查（见页脚 §1）。
+  带 ※ 的是示例——生产至今零批发批次（Lemon：码一直自用，没对外发过）。
+-->
+<style>
+:root{
+  --bg:hsl(168,16%,97%);
+  --a:hsl(163,72%,26%); --a-soft:hsl(163,44%,93%); --a-ink:hsl(163,76%,22%); --a-on:hsl(0,0%,100%);
+  --t:hsl(176,18%,11%); --t2:hsl(170,10%,38%); --t3:hsl(168,9%,50%);
+  --s:hsl(0,0%,100%); --s2:hsl(168,20%,97%); --s3:hsl(168,16%,95%); --bd:hsl(168,14%,88%);
+  --warn:hsl(32,72%,40%); --warn-soft:hsl(38,78%,94%); --gold:hsl(38,46%,42%);
+  --ok:hsl(150,54%,36%); --ok-soft:hsl(150,44%,94%);
+  --danger:hsl(4,66%,50%); --danger-soft:hsl(6,72%,96%);
+  --info:hsl(212,62%,46%); --info-soft:hsl(212,60%,95%);
+  --shadow-card:inset 0 1px 0 hsla(0,0%,100%,.85),0 1px 2px hsla(176,25%,10%,.06),
+                0 14px 30px -14px hsla(176,25%,10%,.22);
+  --fd:"Familjen Grotesk","PingFang SC","Hiragino Sans GB",system-ui,sans-serif;
+  --fm:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--t);font-family:var(--fd);font-size:14px;line-height:1.55}
+.page{max-width:1180px;margin:0 auto;padding:28px 20px 80px}
+.masthead{margin-bottom:8px}
+.masthead h1{margin:0 0 6px;font-size:21px;letter-spacing:.01em}
+.masthead p{margin:0 0 4px;color:var(--t2);font-size:13px}
+.diagnosis{margin:18px 0 0;padding:14px 16px;border:1px solid var(--bd);border-left:3px solid var(--gold);
+  border-radius:10px;background:var(--s);font-size:13px;color:var(--t2)}
+.diagnosis b{color:var(--t)}
+.diagnosis ol{margin:8px 0 0;padding-left:20px}
+.diagnosis li{margin:3px 0}
+
+.variant{margin:34px 0 0;border:1px solid var(--bd);border-radius:16px;background:var(--s);
+  box-shadow:var(--shadow-card);overflow:hidden}
+.variant>header{padding:14px 18px;background:var(--s2);border-bottom:1px solid var(--bd);
+  display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
+.variant>header h2{margin:0;font-size:16px}
+.variant>header .tag{font-size:11px;padding:2px 8px;border-radius:999px;background:var(--a-soft);
+  color:var(--a-ink);letter-spacing:.04em}
+.variant>header p{margin:0;flex:1 1 100%;color:var(--t2);font-size:12.5px}
+.stage{padding:18px;background:var(--bg)}
+
+/* —— 共用零件 —— */
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px}
+.kpi{padding:11px 13px;border:1px solid var(--bd);border-radius:11px;background:var(--s)}
+.kpi span{display:block;font-size:11.5px;color:var(--t3);letter-spacing:.02em}
+.kpi b{display:block;font-size:22px;font-weight:600;line-height:1.25;font-family:var(--fm)}
+.kpi small{display:block;font-size:11px;color:var(--t3);margin-top:1px}
+.kpi.is-quiet b{color:var(--t3)}
+.kpi.is-alert{border-color:hsl(32,60%,72%);background:var(--warn-soft)}
+.kpi.is-alert b{color:var(--warn)}
+.kpi.is-ok b{color:var(--a-ink)}
+
+.blk{border:1px solid var(--bd);border-radius:12px;background:var(--s);margin-bottom:12px;overflow:hidden}
+.blk>h3{margin:0;padding:10px 14px;font-size:13.5px;border-bottom:1px solid var(--bd);
+  background:var(--s2);display:flex;align-items:center;gap:9px}
+.blk>h3 .sub{font-weight:400;color:var(--t3);font-size:12px}
+.blk>h3 .right{margin-left:auto;display:flex;gap:7px}
+.bd{padding:12px 14px}
+
+.btn{font:inherit;font-size:12.5px;padding:5px 11px;border-radius:8px;border:1px solid var(--bd);
+  background:var(--s);color:var(--t);cursor:default}
+.btn.pri{background:var(--a);border-color:var(--a);color:var(--a-on)}
+.btn.link{border-color:transparent;background:transparent;color:var(--a-ink);padding:5px 4px}
+.btn.dgr{color:var(--danger);border-color:hsl(6,50%,84%)}
+.btn.sm{font-size:11.5px;padding:3px 8px}
+
+.gen{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.gen input,.gen select{font:inherit;font-size:12.5px;padding:5px 9px;border:1px solid var(--bd);
+  border-radius:8px;background:var(--s);color:var(--t)}
+.gen .w60{width:64px}
+.gen .hint{font-size:11.5px;color:var(--t3);flex:1 1 100%;margin-top:2px}
+
+.search{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
+.search input[type=search]{flex:1 1 240px;font:inherit;font-size:12.5px;padding:6px 10px;
+  border:1px solid var(--bd);border-radius:8px;background:var(--s)}
+.search select{font:inherit;font-size:12.5px;padding:6px 9px;border:1px solid var(--bd);
+  border-radius:8px;background:var(--s)}
+
+table.t{width:100%;border-collapse:collapse;font-size:12.5px}
+table.t th{text-align:left;font-weight:500;color:var(--t3);font-size:11.5px;padding:7px 9px;
+  border-bottom:1px solid var(--bd);white-space:nowrap}
+table.t td{padding:8px 9px;border-bottom:1px solid var(--s3);vertical-align:top}
+table.t tr:last-child td{border-bottom:0}
+.mono{font-family:var(--fm);font-size:12px}
+.chip{display:inline-block;font-size:11px;padding:1.5px 7px;border-radius:999px;
+  background:var(--s3);color:var(--t2);white-space:nowrap}
+.chip.ok{background:var(--ok-soft);color:var(--ok)}
+.chip.info{background:var(--info-soft);color:var(--info)}
+.chip.warn{background:var(--warn-soft);color:var(--warn)}
+.chip.mute{background:var(--s3);color:var(--t3)}
+.chip.dgr{background:var(--danger-soft);color:var(--danger)}
+.muted{color:var(--t3)}
+.bulk{display:flex;align-items:center;gap:9px;padding:8px 12px;background:var(--a-soft);
+  border-bottom:1px solid var(--bd);font-size:12.5px;color:var(--a-ink)}
+.bulk b{font-family:var(--fm)}
+.note{font-size:11.5px;color:var(--t3);padding:7px 14px;background:var(--s2);border-top:1px solid var(--bd)}
+
+/* 批发卡片 */
+.lots{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+.lot{border:1px solid var(--bd);border-radius:10px;padding:11px 12px;background:var(--s)}
+.lot .top{display:flex;align-items:baseline;gap:8px;margin-bottom:7px}
+.lot .top b{font-family:var(--fm);font-size:12.5px}
+.lot .meta{font-size:11.5px;color:var(--t2);line-height:1.7}
+.lot .meta i{font-style:normal;color:var(--t3)}
+.bars{height:6px;border-radius:999px;background:var(--s3);overflow:hidden;display:flex;margin:8px 0 6px}
+.bars i{display:block;height:100%}
+.bars .b1{background:var(--a)} .bars .b2{background:hsl(163,40%,70%)}
+.lot .acts{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}
+
+/* 生命周期段 */
+.seg{border:1px solid var(--bd);border-radius:11px;background:var(--s);margin-bottom:9px;overflow:hidden}
+.seg>summary{padding:10px 14px;cursor:default;display:flex;align-items:center;gap:10px;
+  font-size:13px;list-style:none;background:var(--s2)}
+.seg>summary::-webkit-details-marker{display:none}
+.seg>summary b{font-family:var(--fm);font-size:15px;min-width:30px}
+.seg>summary .lbl{font-weight:500}
+.seg>summary .sub{color:var(--t3);font-size:11.5px}
+.seg>summary .right{margin-left:auto;display:flex;gap:6px}
+.seg[data-tone=alert]>summary{background:var(--warn-soft)}
+.seg[data-tone=alert]>summary b{color:var(--warn)}
+.seg[data-tone=quiet]>summary b{color:var(--t3)}
+.seg .inner{padding:10px 14px}
+.subgroup{font-size:11.5px;color:var(--t3);margin:9px 0 5px;padding-left:2px}
+.subgroup:first-child{margin-top:0}
+
+.foot{margin-top:40px;border-top:1px solid var(--bd);padding-top:18px;font-size:12.5px;color:var(--t2)}
+.foot h3{font-size:13.5px;color:var(--t);margin:18px 0 7px}
+.foot h3:first-of-type{margin-top:0}
+.foot code{font-family:var(--fm);font-size:11.5px;background:var(--s3);padding:1px 5px;border-radius:4px}
+.foot table{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:6px}
+.foot th,.foot td{text-align:left;padding:6px 9px;border-bottom:1px solid var(--bd);vertical-align:top}
+.foot th{color:var(--t3);font-weight:500;font-size:11.5px}
+.ast{color:var(--gold)}
+</style>
+</head>
+<body>
+<div class="page">
+
+<div class="masthead">
+  <h1>第⑥步 · CDK 页三版比稿</h1>
+  <p>三版都装同样的东西，差别只在「零售与批发怎么共存」。挑一版，或者说哪几块要换。</p>
+</div>
+
+<div class="diagnosis">
+  <b>先确认我理解对了没有</b>：你说现在这页「完全不合格，没有任何整体设计」。我读下来它的毛病是——
+  <ol>
+    <li>首屏被一段六行说明占着，里面「Pro 是两阶段」已经被 D-245 作废，「外部付款可在订单详情补录」说的是别的页的事；</li>
+    <li>三块平铺没有主次：生成、单码列表、批次列表，像功能一个个堆上去的；</li>
+    <li>最该一眼看到的四个数（欠多少、还能卖多少）藏在第二块中间；</li>
+    <li>批次那块占三分之一，四个筛选器加两个导出按钮，服务的是一个还没发生过的用法。</li>
+  </ol>
+  如果你不满的是别的，说一声，三版都得重画。
+</div>
+
+<!-- ══════════════════ A ══════════════════ -->
+<section class="variant">
+  <header>
+    <span class="tag">A</span>
+    <h2>一条流水线</h2>
+    <p>一张表管所有码，批发是表上的批量勾选。批次退成筛选条件和导出入口，不再独立成块。</p>
+  </header>
+  <div class="stage">
+
+    <div class="kpis">
+      <div class="kpi is-quiet"><span>欠交付</span><b>0</b><small>已发出还没兑</small></div>
+      <div class="kpi"><span>在手可卖</span><b>21</b><small>Plus 19 · 20X 2</small></div>
+      <div class="kpi is-ok"><span>已成功交付</span><b>20</b><small>兑了并且开通成功</small></div>
+      <div class="kpi is-alert"><span>要看一眼</span><b>1</b><small>兑了没成、码也没退回</small></div>
+    </div>
+
+    <div class="blk">
+      <h3>生成 <span class="sub">生成不触发开卡或充值</span>
+        <span class="right"><span class="btn sm">批次与导出 ▾</span></span></h3>
+      <div class="bd">
+        <div class="gen">
+          <input class="w60" value="1"><select><option>Plus</option><option>Pro 5X</option><option>Pro 20X</option></select>
+          <span class="btn pri">生成并复制</span>
+          <span class="muted" style="font-size:12px">生成 1 张走零售：出码即复制。填 &gt;1 走批发：生成后下载 TXT、整批登记去向。</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="blk">
+      <h3>每一张卡密 <span class="sub">75 张</span></h3>
+      <div class="bd" style="padding-bottom:0">
+        <div class="search">
+          <input type="search" placeholder="卡密 / 订单号 / 邮箱（整库搜，不只搜当前页）">
+          <select><option>全部产品</option></select>
+          <select><option>全部状态</option></select>
+          <select><option>去向不限</option><option>还在手里</option><option>已发出</option></select>
+          <select><option>全部批次</option><option>B-2026091811… (1)</option></select>
+        </div>
+      </div>
+      <div class="bulk">已选 <b>38</b> 张
+        <span class="btn sm">整批登记去向…</span><span class="btn sm">设有效期…</span><span class="btn sm dgr">作废</span>
+        <span class="muted" style="margin-left:auto;font-size:11.5px">筛出一个批次 → 全选 → 一次登记</span></div>
+      <table class="t">
+        <thead><tr><th style="width:26px"></th><th>卡密</th><th>产品</th><th>状态</th><th>去向</th><th>绑定订单</th><th>最近动静</th><th>操作</th></tr></thead>
+        <tbody>
+          <tr><td><input type="checkbox"></td><td class="mono">PLUS-9CJCX-KGNSQ-VN7MQ-WGFR5</td><td>Plus</td>
+            <td><span class="chip ok">可用 · 在手里</span></td><td class="muted">—</td><td class="muted">—</td>
+            <td class="muted">生成 09-18 11:26</td><td><span class="btn sm">复制</span> <span class="btn sm">登记发出</span></td></tr>
+          <tr><td><input type="checkbox" checked></td><td class="mono">PLUS-AFER3-CXP9A-5PQ5K-H4ZFM</td><td>Plus</td>
+            <td><span class="chip info">已发出 · 待兑</span></td><td>小李渠道 <span class="ast">※</span></td><td class="muted">—</td>
+            <td class="muted">发出 09-19 14:02</td><td><span class="btn sm">复制</span> <span class="btn sm">撤销发出</span></td></tr>
+          <tr><td><input type="checkbox"></td><td class="mono">20X-7K2PD-Q8MRT-XW4NY-C6VJH</td><td>Pro 20X</td>
+            <td><span class="chip warn">暂不可兑</span><small class="muted"> 20X 路线已关</small></td><td class="muted">—</td><td class="muted">—</td>
+            <td class="muted">生成 09-14 08:42</td><td><span class="btn sm">复制</span> <span class="btn sm dgr">作废</span></td></tr>
+          <tr><td><input type="checkbox"></td><td class="mono">PJ-4WQT9-HN2LX-BKD73-M8PYS</td><td>Plus</td>
+            <td><span class="chip ok">已交付</span></td><td class="muted">—</td><td><span class="btn link sm">PJV1-x-tIsPB5…</span></td>
+            <td class="muted">兑换 09-16 11:06</td><td><span class="btn sm">复制</span></td></tr>
+          <tr><td><input type="checkbox"></td><td class="mono">PJ-M3DKA-P7CVE-QZ9WR-T5NBX</td><td>Plus</td>
+            <td><span class="chip warn">兑了没成 · 码没退回</span></td><td class="muted">—</td><td><span class="btn link sm">PJV1-8DB4vPHr…</span></td>
+            <td class="muted">兑换 09-18 06:54</td><td><span class="btn sm">去看订单</span></td></tr>
+          <tr><td><input type="checkbox"></td><td class="mono">PJ-ZT6HY-L2FQM-D9SKW-R4XGN</td><td>Plus</td>
+            <td><span class="chip mute">已作废</span></td><td class="muted">—</td><td class="muted">—</td>
+            <td class="muted">作废 09-18 04:11</td><td></td></tr>
+        </tbody>
+      </table>
+      <div class="note">一个分母、一个搜索框、一个真相。批发的代价是多两步：先按批次筛，再全选。</div>
+    </div>
+
+  </div>
+</section>
+
+<!-- ══════════════════ B ══════════════════ -->
+<section class="variant">
+  <header>
+    <span class="tag">B</span>
+    <h2>两条动线</h2>
+    <p>零售和批发各占一块，各按各的单位操作：零售一张张走，批发以「批」为单位一次点完。</p>
+  </header>
+  <div class="stage">
+
+    <div class="kpis">
+      <div class="kpi is-quiet"><span>欠交付</span><b>0</b><small>零售 0 · 批发 0</small></div>
+      <div class="kpi"><span>在手可卖</span><b>21</b><small>Plus 19 · 20X 2</small></div>
+      <div class="kpi is-ok"><span>已成功交付</span><b>20</b><small>兑了并且开通成功</small></div>
+      <div class="kpi is-alert"><span>要看一眼</span><b>1</b><small>兑了没成、码也没退回</small></div>
+    </div>
+
+    <div class="blk">
+      <h3>零售 <span class="sub">一客一码</span>
+        <span class="right"><span class="btn pri sm">生成 1 张并复制</span></span></h3>
+      <div class="bd" style="padding-bottom:0">
+        <div class="search">
+          <input type="search" placeholder="卡密 / 订单号 / 邮箱（整库搜）">
+          <select><option>全部状态</option></select>
+        </div>
+      </div>
+      <table class="t">
+        <thead><tr><th>卡密</th><th>产品</th><th>状态</th><th>给了谁</th><th>收款</th><th>绑定订单</th><th>操作</th></tr></thead>
+        <tbody>
+          <tr><td class="mono">PLUS-9CJCX-KGNSQ-VN7MQ-WGFR5</td><td>Plus</td><td><span class="chip ok">可用 · 在手里</span></td>
+            <td class="muted">—</td><td class="muted">—</td><td class="muted">—</td>
+            <td><span class="btn sm">复制</span> <span class="btn sm">登记发出</span></td></tr>
+          <tr><td class="mono">PLUS-AFER3-CXP9A-5PQ5K-H4ZFM</td><td>Plus</td><td><span class="chip info">已发出 · 待兑</span></td>
+            <td>老客户 W <span class="ast">※</span></td><td class="mono">¥128 <span class="ast">※</span></td><td class="muted">—</td>
+            <td><span class="btn sm">复制</span> <span class="btn sm">撤销</span></td></tr>
+          <tr><td class="mono">PJ-4WQT9-HN2LX-BKD73-M8PYS</td><td>Plus</td><td><span class="chip ok">已交付</span></td>
+            <td class="muted">—</td><td class="muted">未记</td><td><span class="btn link sm">PJV1-x-tIsPB5…</span></td><td></td></tr>
+          <tr><td class="mono">PJ-M3DKA-P7CVE-QZ9WR-T5NBX</td><td>Plus</td><td><span class="chip warn">兑了没成 · 码没退回</span></td>
+            <td class="muted">—</td><td class="muted">未记</td><td><span class="btn link sm">PJV1-8DB4vPHr…</span></td>
+            <td><span class="btn sm">去看订单</span></td></tr>
+        </tbody>
+      </table>
+      <div class="note">只列不属于任何批发批次的码。属于批发的在下面那块，不在这里重复出现。</div>
+    </div>
+
+    <div class="blk">
+      <h3>批发 <span class="sub">一批给一个渠道</span>
+        <span class="right"><span class="btn sm">生成一批…</span><span class="btn sm">导出汇总 CSV</span></span></h3>
+      <div class="bd">
+        <div class="lots">
+          <div class="lot">
+            <div class="top"><b>B-20260919-A3F1</b><span class="chip info">已发出</span></div>
+            <div class="meta">
+              <i>发给</i> 小李渠道 <span class="ast">※</span> · <i>09-19 14:02</i><br>
+              <i>这批收</i> <span class="mono">¥6,400</span> <span class="ast">※</span> · <i>有效期</i> 2026-12-31 <span class="ast">※</span>
+            </div>
+            <div class="bars"><i class="b1" style="width:24%"></i><i class="b2" style="width:52%"></i></div>
+            <div class="meta"><i>50 张：已兑 12 · 待兑 26 · 作废 12</i></div>
+            <div class="acts"><span class="btn sm">看这批的码</span><span class="btn sm">下载 TXT</span><span class="btn sm">状态清单</span><span class="btn sm dgr">作废未使用</span></div>
+          </div>
+          <div class="lot">
+            <div class="top"><b>B-20260920-7C2E</b><span class="chip mute">还没发出</span></div>
+            <div class="meta">
+              <i>发给</i> <span class="muted">未登记</span> · <i>生成 09-20 09:14</i> <span class="ast">※</span><br>
+              <i>这批收</i> <span class="muted">未记</span> · <i>有效期</i> <span class="muted">不过期</span>
+            </div>
+            <div class="bars"><i class="b2" style="width:100%"></i></div>
+            <div class="meta"><i>30 张：全部待兑</i></div>
+            <div class="acts"><span class="btn pri sm">登记发给谁…</span><span class="btn sm">下载 TXT</span><span class="btn sm dgr">整批作废</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="note">「登记发给谁」一次写完整批：渠道名（自由填）、这批收多少钱、要不要设有效期。</div>
+    </div>
+
+  </div>
+</section>
+
+<!-- ══════════════════ C ══════════════════ -->
+<section class="variant">
+  <header>
+    <span class="tag">C</span>
+    <h2>生命周期段</h2>
+    <p>按码走到哪一步分段，零售批发混在一起、用「去向」区分。异常单独成段，不混进正常数里。</p>
+  </header>
+  <div class="stage">
+
+    <div class="kpis">
+      <div class="kpi is-quiet"><span>欠交付</span><b>0</b><small>已发出还没兑</small></div>
+      <div class="kpi"><span>在手可卖</span><b>21</b><small>Plus 19 · 20X 2</small></div>
+      <div class="kpi is-ok"><span>已成功交付</span><b>20</b><small>兑了并且开通成功</small></div>
+      <div class="kpi is-alert"><span>要看一眼</span><b>1</b><small>兑了没成、码也没退回</small></div>
+    </div>
+
+    <div class="blk">
+      <h3>生成
+        <span class="right"><span class="btn pri sm">生成并复制</span><span class="btn sm">生成一批…</span></span></h3>
+      <div class="bd">
+        <div class="search" style="margin:0">
+          <input type="search" placeholder="卡密 / 订单号 / 邮箱（整库搜，搜到自动展开所在段）">
+        </div>
+      </div>
+    </div>
+
+    <details class="seg" open>
+      <summary><b>21</b><span class="lbl">还在手里</span><span class="sub">没发出去，随时能卖</span>
+        <span class="right"><span class="btn sm">批量登记发出…</span></span></summary>
+      <div class="inner">
+        <table class="t">
+          <thead><tr><th>卡密</th><th>产品</th><th>能不能兑</th><th>生成于</th><th>操作</th></tr></thead>
+          <tbody>
+            <tr><td class="mono">PLUS-9CJCX-KGNSQ-VN7MQ-WGFR5</td><td>Plus</td><td><span class="chip ok">能</span></td>
+              <td class="muted">09-18 11:26</td><td><span class="btn sm">复制</span> <span class="btn sm">登记发出</span></td></tr>
+            <tr><td class="mono">20X-7K2PD-Q8MRT-XW4NY-C6VJH</td><td>Pro 20X</td>
+              <td><span class="chip warn">不能 · 20X 路线已关</span></td><td class="muted">09-14 08:42</td>
+              <td><span class="btn sm">复制</span> <span class="btn sm dgr">作废</span></td></tr>
+            <tr><td colspan="5" class="muted" style="text-align:center;padding:9px">…还有 19 张</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </details>
+
+    <details class="seg" data-tone="quiet">
+      <summary><b>0</b><span class="lbl">已发出 · 等客户来兑</span><span class="sub">这是欠出去的交付</span></summary>
+      <div class="inner">
+        <p class="subgroup">按去向分组（渠道名自由填，同名自动归一组）</p>
+        <p class="muted" style="font-size:12.5px;margin:0">
+          现在是 0。上线后这里会长成：<span class="ast">※</span><br>
+          <span class="mono">小李渠道 · 38 张待兑 · 这批收 ¥6,400 · 有效期 2026-12-31</span><br>
+          <span class="mono">老客户 W · 1 张待兑 · ¥128</span>
+        </p>
+      </div>
+    </details>
+
+    <details class="seg">
+      <summary><b>37</b><span class="lbl">已经兑了</span><span class="sub">其中 20 开通成功 · 16 是 09-07 前的历史</span></summary>
+      <div class="inner">
+        <table class="t">
+          <thead><tr><th>卡密</th><th>结果</th><th>订单</th><th>客户</th><th>兑换于</th></tr></thead>
+          <tbody>
+            <tr><td class="mono">PJ-4WQT9-HN2LX-BKD73-M8PYS</td><td><span class="chip ok">开通成功</span></td>
+              <td><span class="btn link sm">PJV1-x-tIsPB5…</span></td><td class="muted">c***@gmail.com</td><td class="muted">09-16 11:06</td></tr>
+            <tr><td colspan="5" class="muted" style="text-align:center;padding:9px">…还有 36 张</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </details>
+
+    <details class="seg" data-tone="alert" open>
+      <summary><b>1</b><span class="lbl">兑了没成，码也没退回</span><span class="sub">不算历史；正常情况这里应该是 0</span></summary>
+      <div class="inner">
+        <table class="t">
+          <thead><tr><th>卡密</th><th>订单</th><th>订单结局</th><th>为什么没退回</th><th>操作</th></tr></thead>
+          <tbody>
+            <tr><td class="mono">PJ-M3DKA-P7CVE-QZ9WR-T5NBX</td><td><span class="btn link sm">PJV1-8DB4vPHr…</span></td>
+              <td><span class="chip mute">CLOSED</span></td><td class="muted">第④步演练单，当时故意留作死码</td>
+              <td><span class="btn sm">去看订单</span></td></tr>
+          </tbody>
+        </table>
+        <p class="muted" style="font-size:11.5px;margin:9px 0 0">
+          只统计 2026-09-07 之后终结的单（退回机制上线时点）。此前 16 张历史残留不进这一格。
+        </p>
+      </div>
+    </details>
+
+    <details class="seg" data-tone="quiet">
+      <summary><b>17</b><span class="lbl">已作废</span><span class="sub">留着倒查用</span></summary>
+      <div class="inner"><p class="muted" style="margin:0;font-size:12.5px">按作废时间倒序，带作废原因。</p></div>
+    </details>
+
+    <div class="note" style="border:1px solid var(--bd);border-radius:11px;border-top:1px solid var(--bd)">
+      批次不单独成块：批发生成的码进「还在手里」，登记发出后按渠道在第二段聚成组。下载 TXT 与状态清单挂在每个渠道组上。
+    </div>
+
+  </div>
+</section>
+
+<!-- ══════════════════ 页脚 ══════════════════ -->
+<div class="foot">
+
+<h3>§1 数字来源</h3>
+<p>四格数与状态分布是 2026-09-20 生产只读实查（<code>browser-mvp/scripts/prod-query.sh</code>，迁移 055 应用后的口径）：</p>
+<table>
+  <tr><th>格子</th><th>值</th><th>算法</th></tr>
+  <tr><td>欠交付</td><td>0</td><td><code>status='AVAILABLE' AND issued_at IS NOT NULL</code>；生产 <code>issued_at</code> 全 NULL（列尚未应用）</td></tr>
+  <tr><td>在手可卖</td><td>21</td><td><code>status='AVAILABLE' AND issued_at IS NULL</code>（Plus 19 + 20X 2）</td></tr>
+  <tr><td>已成功交付</td><td>20</td><td><code>status='REDEEMED'</code> 且订单 <code>RECHARGE_SUCCESS</code></td></tr>
+  <tr><td>要看一眼</td><td>1</td><td><code>REDEEMED</code> 且订单 <code>RECHARGE_FAILED/CLOSED</code> 且 <code>updated_at &gt;= 2026-09-07 15:00 UTC</code></td></tr>
+  <tr><td>（对照）不剔历史</td><td>17</td><td>去掉时间条件就是 17，其中 15 条终结于退回机制上线前，13 条挤在 09-05 23:10 同一秒</td></tr>
+  <tr><td>码总数 / 批次</td><td>75 / 66</td><td>65 个批次只有 1 张码 —— 自用期痕迹，不代表将来形态</td></tr>
+</table>
+<p>带 <span class="ast">※</span> 的是示例：生产至今<b>零批发批次</b>（码一直自用，没对外发过）。</p>
+
+<h3>§2 三版都包含的（不在比较范围）</h3>
+<table>
+  <tr><td>四格数</td><td>欠交付 / 在手可卖 / 已成功交付 / 要看一眼；最后一格剔除 09-07 前历史，正常应为 0</td></tr>
+  <tr><td>整库搜索</td><td>修掉现在「只在当前 50 行里过滤」的毛病：生产 75 张码里最早 25 张现在搜不到</td></tr>
+  <tr><td>「最近动静」</td><td>补上作废时间。现在 17 张已作废的码，这一列显示的是创建时间，差 4～9 天</td></tr>
+  <tr><td>批次列表不再每 10 秒抖</td><td>现在停在页面不动，条数会在 50 和 66 之间来回跳</td></tr>
+  <tr><td>渠道</td><td>自由填，不建渠道表（Lemon 定）。同名归一组，拼写不一致就分成两组</td></tr>
+  <tr><td>金额</td><td>选填不强制。零售记在码上，批发记在批次上（Lemon 定，不按张均摊）</td></tr>
+  <tr><td>删掉的文案</td><td>「Pro 是两阶段」（D-245 已作废）、「外部付款可在订单详情补录」（是别的页的事，且生产 73 条付款记录金额全空）</td></tr>
+</table>
+
+<h3>§3 差异对照</h3>
+<table>
+  <tr><th></th><th>A 一条流水线</th><th>B 两条动线</th><th>C 生命周期段</th></tr>
+  <tr><th>主体</th><td>一张表，全部 75 张</td><td>零售表 + 批发卡片，两块</td><td>五段，按码走到哪一步</td></tr>
+  <tr><th>批发发货</th><td>筛批次 → 全选 → 登记（两步）</td><td>批次卡片上一个按钮（一步）</td><td>「还在手里」段批量登记（一步）</td></tr>
+  <tr><th>一张码出现几次</th><td>1 次</td><td>1 次（有归属规则：属于批发批次的不进零售表）</td><td>1 次</td></tr>
+  <tr><th>异常怎么冒头</th><td>表里一行 + 顶部那格</td><td>零售表里一行 + 顶部那格</td><td><b>单独一段，默认展开</b></td></tr>
+  <tr><th>「我欠某渠道多少」</th><td>筛去向后自己数</td><td>批次卡片上直接写</td><td>第二段按渠道聚成组</td></tr>
+  <tr><th>滚动长度</th><td>最短</td><td>中</td><td>最长（但段可折叠）</td></tr>
+  <tr><th>风险</th><td>批发操作绕；批次退化后「这批发给谁」要塞进表列</td><td>两块容易长出两个口径 —— 正是这页现在的病</td><td>段多；渠道自由填会让第二段碎成很多小组</td></tr>
+</table>
+
+<h3>§4 三版都没解决、要你单独定的</h3>
+<table>
+  <tr><td>那 21 张自用期老码</td><td>你说对外要「用新的 cdk」。这 21 张是自用期生成的，要不要整批作废？作废是写生产数据，要你单独批</td></tr>
+  <tr><td>有效期写入口</td><td><code>expires_at</code> 现在只有读没有写（三形态查过：全部 INSERT/UPDATE cdks 语句里没有一条写它）。批发确定要做之后它才有意义（渠道囤码），三版都把它放在「登记发出」那一步。确认这样做</td></tr>
+  <tr><td>那 16 张历史残留</td><td>剔出异常格之后它们仍在「已经兑了」里。不动数据的话它们会永远在那；要清的话是写生产数据</td></tr>
+</table>
+
+</div>
+</div>
+</body>
+</html>

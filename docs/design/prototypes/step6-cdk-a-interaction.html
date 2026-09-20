@@ -1,0 +1,480 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>第⑥步 · CDK 页 A 版交互稿（可点）</title>
+<!--
+  A 版（Lemon 2026-09-20 挑定）的**交互方案稿**，回答两个疑问：
+    疑问1 不用记批次号 —— 批次以「去向」的面目出现，点去向＝筛出整批
+    疑问2 登记去向与有效期在**生成那一步**填，数量>1 自动展开；留空可事后补登记
+
+  这不是比对基准。比对基准要 link _frozen/ 快照、零原型专属 class、带全外壳，
+  那一版等这稿定了、CSS 写进实现之后再做（六步里的第 2、3 步）。
+
+  数据：状态分布与四格数是 2026-09-20 生产实查；批发相关全是示例（生产零批发批次）。
+-->
+<style>
+:root{
+  --bg:hsl(168,16%,97%);
+  --a:hsl(163,72%,26%); --a-soft:hsl(163,44%,93%); --a-ink:hsl(163,76%,22%); --a-on:hsl(0,0%,100%);
+  --t:hsl(176,18%,11%); --t2:hsl(170,10%,38%); --t3:hsl(168,9%,50%);
+  --s:hsl(0,0%,100%); --s2:hsl(168,20%,97%); --s3:hsl(168,16%,95%); --bd:hsl(168,14%,88%);
+  --warn:hsl(32,72%,40%); --warn-soft:hsl(38,78%,94%); --gold:hsl(38,46%,42%);
+  --ok:hsl(150,54%,36%); --ok-soft:hsl(150,44%,94%);
+  --danger:hsl(4,66%,50%); --danger-soft:hsl(6,72%,96%);
+  --info:hsl(212,62%,46%); --info-soft:hsl(212,60%,95%);
+  --shadow-card:inset 0 1px 0 hsla(0,0%,100%,.85),0 1px 2px hsla(176,25%,10%,.06),
+                0 14px 30px -14px hsla(176,25%,10%,.22);
+  --fd:"Familjen Grotesk","PingFang SC","Hiragino Sans GB",system-ui,sans-serif;
+  --fm:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--t);font-family:var(--fd);font-size:14px;line-height:1.55}
+.page{max-width:1120px;margin:0 auto;padding:26px 20px 70px}
+.masthead h1{margin:0 0 5px;font-size:20px}
+.masthead p{margin:0 0 3px;color:var(--t2);font-size:13px}
+.try{margin:14px 0 22px;padding:12px 15px;border:1px solid var(--bd);border-left:3px solid var(--a);
+  border-radius:10px;background:var(--s);font-size:12.5px;color:var(--t2)}
+.try b{color:var(--t)}
+.try ol{margin:7px 0 0;padding-left:19px} .try li{margin:3px 0}
+
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:13px}
+.kpi{padding:11px 13px;border:1px solid var(--bd);border-radius:11px;background:var(--s)}
+.kpi span{display:block;font-size:11.5px;color:var(--t3)}
+.kpi b{display:block;font-size:22px;font-weight:600;line-height:1.25;font-family:var(--fm)}
+.kpi small{display:block;font-size:11px;color:var(--t3);margin-top:1px}
+.kpi.is-quiet b{color:var(--t3)} .kpi.is-ok b{color:var(--a-ink)}
+.kpi.is-alert{border-color:hsl(32,60%,72%);background:var(--warn-soft)} .kpi.is-alert b{color:var(--warn)}
+
+.blk{border:1px solid var(--bd);border-radius:12px;background:var(--s);margin-bottom:12px;overflow:hidden}
+.blk>h3{margin:0;padding:10px 14px;font-size:13.5px;border-bottom:1px solid var(--bd);
+  background:var(--s2);display:flex;align-items:center;gap:9px}
+.blk>h3 .sub{font-weight:400;color:var(--t3);font-size:12px}
+.blk>h3 .right{margin-left:auto;display:flex;gap:7px}
+.bd{padding:12px 14px}
+
+button,input,select{font:inherit}
+.btn{font-size:12.5px;padding:5px 11px;border-radius:8px;border:1px solid var(--bd);
+  background:var(--s);color:var(--t);cursor:pointer}
+.btn:hover{background:var(--s2)}
+.btn.pri{background:var(--a);border-color:var(--a);color:var(--a-on)}
+.btn.pri:hover{background:var(--a-ink)}
+.btn.link{border-color:transparent;background:transparent;color:var(--a-ink);padding:5px 4px;text-decoration:underline;text-underline-offset:2px}
+.btn.dgr{color:var(--danger);border-color:hsl(6,50%,84%)}
+.btn.sm{font-size:11.5px;padding:3px 8px}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+
+/* 生成条 */
+.genrow{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.genrow input,.genrow select{font-size:12.5px;padding:6px 9px;border:1px solid var(--bd);
+  border-radius:8px;background:var(--s);color:var(--t)}
+.genrow .w60{width:62px;text-align:center;font-family:var(--fm)}
+.wholesale{display:none;gap:8px;align-items:center;flex-wrap:wrap;
+  padding:9px 11px;margin-top:9px;border:1px dashed hsl(163,30%,72%);border-radius:10px;background:var(--a-soft)}
+.wholesale.on{display:flex;animation:slide .18s ease-out}
+@keyframes slide{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
+.wholesale label{font-size:11.5px;color:var(--a-ink);display:flex;align-items:center;gap:6px}
+.wholesale input{background:var(--s)}
+.wholesale .opt{font-size:10.5px;color:var(--t3);background:var(--s);padding:1px 5px;border-radius:4px}
+.genhint{font-size:11.5px;color:var(--t3);flex:1 1 100%;margin-top:3px}
+
+/* 刚生成提示条 */
+.fresh{display:none;align-items:center;gap:10px;padding:9px 14px;background:var(--a-soft);
+  border-bottom:1px solid var(--bd);font-size:12.5px;color:var(--a-ink)}
+.fresh.on{display:flex}
+.fresh b{font-family:var(--fm)}
+.fresh .x{margin-left:auto}
+
+/* 搜索筛选 */
+.search{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
+.search input[type=search]{flex:1 1 230px;font-size:12.5px;padding:6px 10px;
+  border:1px solid var(--bd);border-radius:8px;background:var(--s)}
+.search select{font-size:12.5px;padding:6px 9px;border:1px solid var(--bd);border-radius:8px;background:var(--s)}
+.search select.act{border-color:var(--a);background:var(--a-soft);color:var(--a-ink)}
+
+/* 批量条 */
+.bulk{display:none;align-items:center;gap:9px;padding:8px 13px;background:var(--a-soft);
+  border-bottom:1px solid var(--bd);font-size:12.5px;color:var(--a-ink)}
+.bulk.on{display:flex}
+.bulk b{font-family:var(--fm)}
+.bulk .tip{margin-left:auto;font-size:11.5px;color:var(--t3)}
+
+table.t{width:100%;border-collapse:collapse;font-size:12.5px}
+table.t th{text-align:left;font-weight:500;color:var(--t3);font-size:11.5px;padding:7px 9px;
+  border-bottom:1px solid var(--bd);white-space:nowrap}
+table.t td{padding:8px 9px;border-bottom:1px solid var(--s3);vertical-align:middle}
+table.t tr:last-child td{border-bottom:0}
+table.t tr.sel{background:var(--a-soft)}
+table.t tr.hit{background:hsl(38,80%,96%)}
+.mono{font-family:var(--fm);font-size:12px}
+.chip{display:inline-block;font-size:11px;padding:1.5px 7px;border-radius:999px;background:var(--s3);color:var(--t2);white-space:nowrap}
+.chip.ok{background:var(--ok-soft);color:var(--ok)}
+.chip.info{background:var(--info-soft);color:var(--info)}
+.chip.warn{background:var(--warn-soft);color:var(--warn)}
+.chip.mute{background:var(--s3);color:var(--t3)}
+.muted{color:var(--t3)}
+.pager{display:flex;align-items:center;gap:10px;padding:9px 14px;border-top:1px solid var(--bd);
+  background:var(--s2);font-size:12px;color:var(--t2)}
+.pager .right{margin-left:auto;display:flex;gap:6px}
+.empty{padding:22px;text-align:center;color:var(--t3);font-size:12.5px}
+
+.demo-warn{margin:0 0 12px;padding:10px 13px;border:1px solid hsl(32,60%,78%);border-radius:10px;
+  background:var(--warn-soft);font-size:12.5px;color:var(--t2);line-height:1.7}
+.demo-warn b{color:var(--warn)}
+.foot{margin-top:34px;border-top:1px solid var(--bd);padding-top:16px;font-size:12.5px;color:var(--t2)}
+.foot h3{font-size:13.5px;color:var(--t);margin:16px 0 6px}
+.foot h3:first-of-type{margin-top:0}
+.foot code{font-family:var(--fm);font-size:11.5px;background:var(--s3);padding:1px 5px;border-radius:4px}
+.foot table{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:5px}
+.foot th,.foot td{text-align:left;padding:6px 9px;border-bottom:1px solid var(--bd);vertical-align:top}
+.foot th{color:var(--t3);font-weight:500;font-size:11.5px}
+.ast{color:var(--gold)}
+</style>
+</head>
+<body>
+<div class="page">
+
+<div class="masthead">
+  <h1>第⑥步 · CDK 页 A 版交互稿</h1>
+  <p>可以点。回答两个疑问：批次号要不要记、登记去向什么时候做。</p>
+</div>
+
+<div class="try">
+  <b>试这几下</b>
+  <ol>
+    <li>把数量从 1 改成 <b>50</b> —— 批发三个字段自己滑出来；改回 1 就收回去</li>
+    <li>填个渠道名点「生成」—— 表格自动筛出刚生成这批，顶部出下载条</li>
+    <li>点任何一行<b>去向</b>列的渠道名 —— 筛出整批，不用知道批次号</li>
+    <li>搜 <span class="mono">PJ-ZT6HY</span> —— 它排在全表最后一行。现在的实现取完前 50 行才过滤，所以搜不到它</li>
+    <li>勾几行 —— 批量条出来，可以补登记去向</li>
+  </ol>
+</div>
+
+<p class="demo-warn"><b>下面的数字是演示值，不是生产真值。</b>
+  表里掺了 <b>80 张示例批发码</b>（生产至今零批发批次，不掺就演示不了批发交互）。<br>
+  <b>生产真值</b>：欠交付 <b>0</b> · 在手可卖 <b>21</b> · 已成功交付 <b>20</b> · 要看一眼 <b>1</b> · 共 <b>75</b> 张 —— 见页脚 §5。</p>
+
+<div class="kpis">
+  <div class="kpi is-quiet"><span>欠交付</span><b id="k-owed">0</b><small>已发出还没兑</small></div>
+  <div class="kpi"><span>在手可卖</span><b id="k-stock">21</b><small>Plus 19 · 20X 2</small></div>
+  <div class="kpi is-ok"><span>已成功交付</span><b id="k-done">20</b><small>兑了并且开通成功</small></div>
+  <div class="kpi is-alert"><span>要看一眼</span><b id="k-stuck">1</b><small>兑了没成、码也没退回<br>不含 09-07 前的 16 张</small></div>
+</div>
+
+<div class="blk">
+  <h3>生成 <span class="sub">生成不触发开卡或充值</span></h3>
+  <div class="bd">
+    <div class="genrow">
+      <input class="w60" id="g-count" type="number" min="1" max="1000" value="1">
+      <select id="g-plan"><option value="plus">Plus</option><option value="pro_5x">Pro 5X</option><option value="pro_20x">Pro 20X</option></select>
+      <button class="btn pri" id="g-go">生成并复制</button>
+      <span class="genhint" id="g-hint">填 1 走零售：出码即复制。填 &gt;1 走批发，下面会多出三个字段。</span>
+    </div>
+    <div class="wholesale" id="g-ws">
+      <label>发给 <input id="g-chan" placeholder="渠道名，自由填" style="width:150px"></label>
+      <label>这批收 <input id="g-amt" placeholder="0.00" style="width:92px"><span class="opt">选填</span></label>
+      <label>有效期 <input id="g-exp" type="date" style="width:142px"><span class="opt">选填</span></label>
+      <span class="muted" style="font-size:11.5px">三项都能留空；囤着先不发的，之后在表里筛出这批补登记。</span>
+    </div>
+  </div>
+</div>
+
+<div class="blk">
+  <h3>每一张卡密 <span class="sub" id="t-count">75 张</span>
+    <span class="right"><button class="btn sm" id="t-refresh">刷新</button></span></h3>
+
+  <div class="bd" style="padding-bottom:0">
+    <div class="search">
+      <input type="search" id="f-q" placeholder="卡密 / 订单号 / 邮箱（整库搜，不只搜当前页）">
+      <select id="f-plan"><option value="">全部产品</option><option value="plus">Plus</option><option value="pro_5x">Pro 5X</option><option value="pro_20x">Pro 20X</option></select>
+      <select id="f-state"><option value="">全部状态</option><option value="instock">在手里</option><option value="issued">已发出待兑</option><option value="done">已交付</option><option value="stuck">兑了没成</option><option value="void">已作废</option></select>
+      <select id="f-lot"><option value="">全部批次</option></select>
+      <button class="btn sm" id="f-clear" style="display:none">清掉筛选</button>
+    </div>
+  </div>
+
+  <div class="fresh" id="fresh">
+    刚生成 <b id="fresh-n">0</b> 张 · <span id="fresh-chan"></span>
+    <button class="btn sm" id="fresh-dl">下载 TXT</button>
+    <button class="btn sm" id="fresh-copy">复制全部</button>
+    <button class="btn sm x" id="fresh-x">知道了</button>
+  </div>
+
+  <div class="bulk" id="bulk">
+    已选 <b id="bulk-n">0</b> 张
+    <button class="btn sm" id="bulk-issue">登记去向…</button>
+    <button class="btn sm" id="bulk-exp">设有效期…</button>
+    <button class="btn sm dgr" id="bulk-void">作废</button>
+    <span class="tip">筛出一批 → 全选 → 一次登记</span>
+  </div>
+
+  <table class="t">
+    <thead><tr>
+      <th style="width:26px"><input type="checkbox" id="ck-all"></th>
+      <th>卡密</th><th>产品</th><th>状态</th><th>去向</th><th>客户邮箱</th><th>最近动静</th><th>操作</th>
+    </tr></thead>
+    <tbody id="tb"></tbody>
+  </table>
+  <div class="pager">
+    <span id="p-info">—</span>
+    <span class="right"><button class="btn sm" id="p-prev">上一页</button><button class="btn sm" id="p-next">下一页</button></span>
+  </div>
+</div>
+
+<div class="foot">
+<h3>§1 疑问 1：批次号不出现在界面上</h3>
+<table>
+  <tr><th>怎么找到整批</th><td>点任何一行「去向」列的渠道名。没登记去向的批发码，去向列显示 <code>09-20 那批 · 30 张</code>，同样可点</td></tr>
+  <tr><th>批次筛选下拉</th><td>只列<b>多于 1 张</b>的批次，用人话：<code>小李渠道 · 50 张 · 09-19</code>。生产 66 个批次里 65 个只有 1 张码，全列进去就是 66 条噪音</td></tr>
+  <tr><th>零售单张码</th><td>去向列显示客户备注或 <code>—</code>，不可点 —— 它没有同批</td></tr>
+  <tr><th>批次号去哪了</th><td>只在导出的 CSV / TXT 文件名和倒查时出现，页面上不摆</td></tr>
+</table>
+
+<h3>§2 疑问 2：登记去向在生成那一步</h3>
+<table>
+  <tr><th>为什么放生成时</th><td>和渠道谈好的时候「发给谁、多少钱、有效期」就已经定了。放生成时＝一次填完，不用二次操作</td></tr>
+  <tr><th>零售不受影响</th><td>数量是 1 时那三个字段不出现，表单只有两个控件一个按钮</td></tr>
+  <tr><th>囤货怎么办</th><td>三项都能留空，生成出来算「还在手里」。之后筛出这批 → 全选 → 批量条「登记去向…」补填</td></tr>
+  <tr><th>生成完自动做两件</th><td>① 表格自动筛出刚生成这批 ② 顶部出「下载 TXT / 复制全部」条，不用自己去表里翻</td></tr>
+  <tr><th>不自动下载</th><td>D-279 定的：生成只创建批次，下载要单独点。下载文件不代表已交付客户</td></tr>
+</table>
+
+<h3>§3 这一版对比现在的实现，改了什么</h3>
+<table>
+  <tr><th>绑定订单 → 客户邮箱</th><td>Lemon 2026-09-20 定并强调「我需要看到客户邮箱」：<b>完整邮箱、不脱敏</b>（后台只他一人用，与 D-286 明文码同一条理由）。邮箱可点进订单详情；订单号 <code>PJV1-x-tIsPB5ICHu6R9bzsSO</code> 不摆在列里。生产 37 条已兑码全部有邮箱，数据够</td></tr>
+  <tr><th>搜索整库</th><td>现在是先取 50 行再在这 50 行里过滤：生产 75 张码里最早 25 张搜不到。试第 4 条</td></tr>
+  <tr><th>最近动静</th><td>补上作废时间。现在 17 张已作废的码这一列显示创建时间，差 4～9 天</td></tr>
+  <tr><th>批次列表整块删掉</th><td>退成筛选条件 + 导出入口。三个导出（批次汇总 CSV / 订单追溯 CSV / 状态清单）搬进「批次与导出」菜单</td></tr>
+  <tr><th>首屏那段说明删掉</th><td>「Pro 是两阶段」D-245 已作废；「外部付款可在订单详情补录」是别的页的事，且生产 73 条付款记录金额全空</td></tr>
+  <tr><th>不再每 10 秒抖</th><td>现在停在页面不动，批次条数会在 50 和 66 之间来回跳</td></tr>
+</table>
+
+<h3>§4 还要你定的</h3>
+<table>
+  <tr><th>21 张老码作废的时点</th><td><b>我建议等这页上线后用页面做</b>：筛「在手里」→ 全选 → 作废。既完成作废，又真验了批量作废这个新按钮。现在做要另写脚本，而且验不到页面。码在你手里没发出去，等得起</td></tr>
+  <tr><th>迁移 056</th><td>批发要给 <code>cdk_batches</code> 加渠道 / 金额 / 发出时间三列（现在这表只有 batch_no / request_key / plan_type / requested_count / codes_ciphertext / created_by / created_at / revoked_at / revoke_reason）。挑完版我连同迁移一起给你确认</td></tr>
+  <tr><th>有效期写入口</th><td><code>expires_at</code> 列在 055 里已加、但全项目没有一条写它的语句。这一版把写入口放在生成时与批量条里，确认这样做</td></tr>
+</table>
+
+<h3>§5 演示数据 vs 生产真值</h3>
+<table>
+  <tr><th></th><th>这份交互稿</th><th>2026-09-20 生产实查</th></tr>
+  <tr><th>码总数</th><td>155（含 80 张示例批发码）</td><td>75</td></tr>
+  <tr><th>欠交付</th><td>38（示例）</td><td><b>0</b>（<code>issued_at</code> 全 NULL）</td></tr>
+  <tr><th>在手可卖</th><td>51（含 30 张示例）</td><td><b>21</b>（Plus 19 + 20X 2）</td></tr>
+  <tr><th>已成功交付</th><td>32（生产 20 + 12 张示例批发）</td><td><b>20</b></td></tr>
+  <tr><th>要看一眼</th><td>1</td><td><b>1</b>（09-18 那条演练单）</td></tr>
+  <tr><th>09-07 前的历史残留</th><td>16（列表里显示「兑了没成 · 09-07 前」，不进顶部那格）</td><td><b>16</b></td></tr>
+  <tr><th>已作废</th><td>17</td><td><b>17</b></td></tr>
+  <tr><th>批发批次</th><td>2 个（示例）</td><td><b>0 个</b> —— 码一直自用，没对外发过</td></tr>
+</table>
+<p class="muted" style="margin-top:6px">掺示例是为了让批发那条线能点；不掺的话「去向」列全空、批次下拉是空的，两个疑问都演示不了。</p>
+
+<p style="margin-top:14px" class="muted">数据：四格数与状态分布是 2026-09-20 生产只读实查；批发相关（渠道、金额、批次）全是示例 —— 生产至今零批发批次。</p>
+</div>
+</div>
+
+<script>
+// ——— 假数据：状态分布照生产（21 在手 / 37 已兑其中 20 成功 / 17 作废），外加一批示例批发 ———
+const LOTS = {
+  'B-20260919-A3F1': { label: '小李渠道', n: 50, at: '09-19', chan: '小李渠道' },
+  'B-20260920-7C2E': { label: '09-20 那批', n: 30, at: '09-20', chan: null }
+};
+const rows = [];
+let seq = 0;
+const code = (p) => {
+  const A = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; let s = '';
+  for (let i = 0; i < 20; i += 1) { s += A[(seq * 7 + i * 13 + 5) % A.length]; if (i % 5 === 4 && i < 19) s += '-'; }
+  seq += 1; return p + '-' + s;
+};
+// 在手 21（Plus 19 + 20X 2）
+for (let i = 0; i < 19; i += 1) rows.push({ c: code('PLUS'), plan: 'plus', st: 'instock', lot: null, mail: null, at: '生成 09-1' + (i % 9) + ' 11:26' });
+for (let i = 0; i < 2; i += 1) rows.push({ c: code('20X'), plan: 'pro_20x', st: 'blocked', lot: null, mail: null, at: '生成 09-14 08:42' });
+// 示例批发：小李渠道 50（已发出待兑 38 / 已交付 12），09-20 那批 30（还在手里）
+for (let i = 0; i < 38; i += 1) rows.push({ c: code('PLUS'), plan: 'plus', st: 'issued', lot: 'B-20260919-A3F1', mail: null, at: '发出 09-19 14:02', demo: 1 });
+for (let i = 0; i < 12; i += 1) rows.push({ c: code('PLUS'), plan: 'plus', st: 'done', lot: 'B-20260919-A3F1', mail: 'zhang.wei8842@gmail.com', at: '兑换 09-19 20:1' + (i % 9), demo: 1 });
+for (let i = 0; i < 30; i += 1) rows.push({ c: code('PLUS'), plan: 'plus', st: 'instock', lot: 'B-20260920-7C2E', mail: null, at: '生成 09-20 09:14', demo: 1 });
+// 已兑 37：20 成功 + 1 异常 + 16 历史
+for (let i = 0; i < 20; i += 1) rows.push({ c: code('PJ'), plan: 'plus', st: 'done', lot: null, mail: ['liu.yang','chen_hao','wang.min','xu.tao','zhao.lei'][i%5] + (1000+i) + '@qq.com', at: '兑换 09-1' + (i % 9) + ' 11:06' });
+rows.push({ c: 'PJ-M3DKA-P7CVE-QZ9WR-T5NBX', plan: 'plus', st: 'stuck', lot: null, mail: 'kevin.zhou@gmail.com', at: '兑换 09-18 06:54' });
+for (let i = 0; i < 16; i += 1) rows.push({ c: code('PJ'), plan: 'plus', st: 'stuck', legacy: 1, lot: null, mail: ['sun.qi','ma.jun','he.ping'][i%3] + (2200+i) + '@163.com', at: '兑换 08-2' + (i % 9) + ' 09:30' });
+// 已作废 17（最近动静＝作废时间，不是创建时间）
+for (let i = 0; i < 16; i += 1) rows.push({ c: code('PJ'), plan: 'plus', st: 'void', lot: null, mail: null, at: '作废 09-01 23:1' + (i % 9) });
+rows.push({ c: 'PJ-ZT6HY-L2FQM-D9SKW-R4XGN', plan: 'plus', st: 'void', lot: null, mail: null, at: '作废 09-18 04:11' });
+
+const ST = {
+  instock: ['可用 · 在手里', 'ok'], issued: ['已发出 · 待兑', 'info'],
+  done: ['已交付', 'ok'], stuck: ['兑了没成 · 码没退回', 'warn'],
+  void: ['已作废', 'mute'], blocked: ['暂不可兑', 'warn']
+};
+const PLAN = { plus: 'Plus', pro_5x: 'Pro 5X', pro_20x: 'Pro 20X' };
+const PAGE = 50;
+let page = 0, sel = new Set(), fresh = null;
+const $ = (id) => document.getElementById(id);
+
+function lotLabel(id) { const l = LOTS[id]; return l ? (l.chan || l.label + ' · ' + l.n + ' 张') : null; }
+
+function filtered() {
+  const q = $('f-q').value.trim().toUpperCase();
+  const plan = $('f-plan').value, st = $('f-state').value, lot = $('f-lot').value;
+  return rows.filter((r) => {
+    if (plan && r.plan !== plan) return false;
+    if (st && !(st === 'instock' ? (r.st === 'instock' || r.st === 'blocked') : r.st === st)) return false;
+    if (lot && r.lot !== lot) return false;
+    // 整库搜：在过滤阶段搜，不是取完一页再筛
+    if (q && !(r.c.toUpperCase().includes(q) || (r.mail || '').toUpperCase().includes(q))) return false;
+    return true;
+  });
+}
+
+function render() {
+  const all = filtered();
+  const max = Math.max(0, Math.ceil(all.length / PAGE) - 1);
+  if (page > max) page = max;
+  const slice = all.slice(page * PAGE, page * PAGE + PAGE);
+  const q = $('f-q').value.trim().toUpperCase();
+
+  $('tb').innerHTML = slice.length ? slice.map((r, i) => {
+    const idx = rows.indexOf(r);
+    const [txt, tone] = ST[r.st];
+    const dest = r.lot
+      ? '<button class="btn link sm" data-lot="' + r.lot + '">' + lotLabel(r.lot) + '</button>'
+      : '<span class="muted">—</span>';
+    const mail = r.mail
+      ? '<button class="btn link sm" data-mail="1">' + r.mail + '</button>'
+      : '<span class="muted">—</span>';
+    const acts = [];
+    if (r.st !== 'void') acts.push('<button class="btn sm">复制</button>');
+    if (r.st === 'instock' || r.st === 'blocked') acts.push('<button class="btn sm">登记发出</button>');
+    if (r.st === 'issued') acts.push('<button class="btn sm">撤销发出</button>');
+    if (r.st === 'stuck') acts.push('<button class="btn sm">去看订单</button>');
+    const hit = q && r.c.toUpperCase().includes(q);
+    return '<tr class="' + (sel.has(idx) ? 'sel ' : '') + (hit ? 'hit' : '') + '">'
+      + '<td><input type="checkbox" data-i="' + idx + '"' + (sel.has(idx) ? ' checked' : '') + '></td>'
+      + '<td class="mono">' + r.c + '</td><td>' + PLAN[r.plan] + '</td>'
+      + '<td><span class="chip ' + tone + '">' + txt + '</span>'
+      + (r.st === 'blocked' ? '<small class="muted"> 20X 路线已关</small>' : '')
+      + (r.legacy ? '<small class="muted"> 09-07 前</small>' : '') + '</td>'
+      + '<td>' + dest + '</td><td>' + mail + '</td>'
+      + '<td class="muted">' + r.at + '</td><td>' + acts.join(' ') + '</td></tr>';
+  }).join('')
+    : '<tr><td colspan="8" class="empty">没有符合条件的 CDK</td></tr>';
+
+  const from = all.length ? page * PAGE + 1 : 0;
+  $('p-info').textContent = from + '-' + (page * PAGE + slice.length) + ' / 共 ' + all.length
+    + (all.length !== rows.length ? '（已筛，全部 ' + rows.length + '）' : '');
+  $('p-prev').disabled = page === 0;
+  $('p-next').disabled = page >= max;
+  $('t-count').textContent = rows.length + ' 张';
+  $('bulk').classList.toggle('on', sel.size > 0);
+  $('bulk-n').textContent = sel.size;
+  const anyFilter = $('f-q').value || $('f-plan').value || $('f-state').value || $('f-lot').value;
+  $('f-clear').style.display = anyFilter ? '' : 'none';
+  $('f-lot').classList.toggle('act', !!$('f-lot').value);
+  // 四格数跟着数据走
+  $('k-owed').textContent = rows.filter((r) => r.st === 'issued').length;
+  $('k-stock').textContent = rows.filter((r) => r.st === 'instock' || r.st === 'blocked').length;
+  $('k-done').textContent = rows.filter((r) => r.st === 'done').length;
+  $('k-stuck').textContent = rows.filter((r) => r.st === 'stuck' && !r.legacy).length;
+}
+
+function syncLots() {
+  const cur = $('f-lot').value;
+  const counts = {};
+  rows.forEach((r) => { if (r.lot) counts[r.lot] = (counts[r.lot] || 0) + 1; });
+  // 只列多于 1 张的批次；单张批次不进下拉
+  $('f-lot').innerHTML = '<option value="">全部批次</option>'
+    + Object.keys(counts).filter((k) => counts[k] > 1).map((k) => {
+      const l = LOTS[k];
+      return '<option value="' + k + '">' + (l.chan || l.label) + ' · ' + counts[k] + ' 张 · ' + l.at + '</option>';
+    }).join('');
+  $('f-lot').value = cur;
+}
+
+// 数量 >1 → 批发字段滑出
+$('g-count').addEventListener('input', () => {
+  const n = Number($('g-count').value) || 1;
+  $('g-ws').classList.toggle('on', n > 1);
+  $('g-go').textContent = n > 1 ? '生成 ' + n + ' 张' : '生成并复制';
+  $('g-hint').textContent = n > 1
+    ? '批发：生成后自动筛出这批，顶部给下载 TXT。三个字段都能留空，事后补登记。'
+    : '填 1 走零售：出码即复制。填 >1 走批发，下面会多出三个字段。';
+});
+
+$('g-go').addEventListener('click', () => {
+  const n = Math.max(1, Math.min(1000, Number($('g-count').value) || 1));
+  const plan = $('g-plan').value;
+  const chan = $('g-chan').value.trim();
+  const id = 'B-' + Date.now().toString(36).toUpperCase();
+  if (n > 1) {
+    LOTS[id] = { label: '刚生成那批', n, at: '今天', chan: chan || null };
+    for (let i = 0; i < n; i += 1) rows.unshift({ c: code(plan === 'plus' ? 'PLUS' : plan === 'pro_5x' ? '5X' : '20X'),
+      plan, st: chan ? 'issued' : 'instock', lot: id, mail: null, at: (chan ? '发出 ' : '生成 ') + '今天' });
+    syncLots();
+    $('f-lot').value = id;                       // 自动筛出刚生成这批
+    $('f-q').value = ''; $('f-state').value = ''; $('f-plan').value = '';
+    fresh = id; page = 0; sel.clear();
+    $('fresh').classList.add('on');
+    $('fresh-n').textContent = n;
+    $('fresh-chan').textContent = chan ? ('已登记发给「' + chan + '」') : '还没登记去向，算「在手里」';
+  } else {
+    rows.unshift({ c: code(plan === 'plus' ? 'PLUS' : plan === 'pro_5x' ? '5X' : '20X'),
+      plan, st: plan === 'plus' ? 'instock' : 'blocked', lot: null, mail: null, at: '生成 今天' });
+    page = 0; sel.clear();
+    $('fresh').classList.add('on');
+    $('fresh-n').textContent = 1;
+    $('fresh-chan').textContent = '已复制到剪贴板';
+  }
+  render();
+});
+
+$('fresh-x').addEventListener('click', () => { $('fresh').classList.remove('on'); });
+['f-q', 'f-plan', 'f-state', 'f-lot'].forEach((id) => {
+  $(id).addEventListener('input', () => { page = 0; sel.clear(); render(); });
+  $(id).addEventListener('change', () => { page = 0; sel.clear(); render(); });
+});
+$('f-clear').addEventListener('click', () => {
+  $('f-q').value = ''; $('f-plan').value = ''; $('f-state').value = ''; $('f-lot').value = '';
+  page = 0; sel.clear(); render();
+});
+$('tb').addEventListener('click', (e) => {
+  const lotBtn = e.target.closest('[data-lot]');
+  if (lotBtn) { $('f-lot').value = lotBtn.dataset.lot; $('f-q').value = ''; page = 0; sel.clear(); render(); return; }
+  const ck = e.target.closest('input[type=checkbox]');
+  if (ck) { const i = Number(ck.dataset.i); ck.checked ? sel.add(i) : sel.delete(i); render(); }
+});
+$('ck-all').addEventListener('change', (e) => {
+  const all = filtered().slice(page * PAGE, page * PAGE + PAGE);
+  sel.clear();
+  if (e.target.checked) all.forEach((r) => sel.add(rows.indexOf(r)));
+  render();
+});
+$('p-prev').addEventListener('click', () => { page -= 1; sel.clear(); render(); });
+$('p-next').addEventListener('click', () => { page += 1; sel.clear(); render(); });
+$('bulk-issue').addEventListener('click', () => {
+  const chan = window.prompt('发给谁？（渠道名，自由填）', '');
+  if (chan === null) return;
+  const amt = window.prompt('这批收多少钱？（选填，留空＝不记）', '');
+  sel.forEach((i) => { rows[i].st = 'issued'; rows[i].at = '发出 今天'; });
+  if (chan.trim()) { const lots = new Set([...sel].map((i) => rows[i].lot).filter(Boolean));
+    lots.forEach((l) => { if (LOTS[l]) LOTS[l].chan = chan.trim(); }); syncLots(); }
+  window.alert('已登记 ' + sel.size + ' 张发给「' + (chan || '未填') + '」'
+    + (amt && amt.trim() ? '，这批收 ' + amt.trim() : '，金额未记'));
+  sel.clear(); render();
+});
+$('bulk-exp').addEventListener('click', () => { window.prompt('有效期（选填，留空＝不过期）', ''); });
+$('bulk-void').addEventListener('click', () => {
+  if (!window.confirm('作废选中的 ' + sel.size + ' 张？\n\n只能作废还没被兑换的，作废后不可撤销。')) return;
+  sel.forEach((i) => { if (rows[i].st === 'instock' || rows[i].st === 'blocked' || rows[i].st === 'issued') {
+    rows[i].st = 'void'; rows[i].at = '作废 今天'; } });
+  sel.clear(); render();
+});
+$('fresh-dl').addEventListener('click', () => window.alert('下载 TXT（原型不实际下载）'));
+$('fresh-copy').addEventListener('click', () => window.alert('已复制全部（原型不实际复制）'));
+$('t-refresh').addEventListener('click', render);
+
+syncLots(); render();
+</script>
+</body>
+</html>
