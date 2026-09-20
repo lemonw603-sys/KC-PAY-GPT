@@ -383,3 +383,52 @@ UTC+8 日期真值     5   ← 新表达式 == 真值
 - **#4 抽 harness 没削弱断言**：审查员**独立跑**得 18→21 全绿，删的 1 条等价移进 helper。
 - **externalCardId 暴露本身非敏感泄露**：卡台卡 ID，非卡号/CVV/token，运营去卡台操作需要它。
 - **#3 生产零验证 / #5 F-65 有意留红**：确认属实，非 bug、非漏跑。
+
+---
+
+## STEP6_REVIEW_2026-09-19 复核（2026-09-20，第⑥块重做后逐条实测）
+
+> 上面 F-61~F-65 的处置写于 `8cd6d7e` 回滚、第⑥块重做**之前**，判定全是「接受，待验证」。第⑥块工作台已重做完成（代码在 HEAD，未部署）。本节按接班要求第五节「逐条核实是否仍存在、允许反证」复核当前代码，**只追加，不改上面任何一条原文**。每条给证据行。
+
+### F-61 — 主体已闭合，**残留一处死路（API 路线）**
+
+**已闭合的部分**：付款不明 case 不再给「解决」。`admin.js:463` 按 `PAYMENT_UNKNOWN_CASE_TYPES`（`admin.js:760` = `API_PAYMENT_UNKNOWN` / `BROWSER_PAYMENT_UNKNOWN`）分流：付款不明 → 「去核实收口」跳订单详情；其它类型才给「关闭记录」，且已改名不叫「解决」。Browser 侧收口补了对称的关 case + 关告警（`browser-admin-service.js:1296-1300`，与 API 侧 `unknown-submission-resolve-service.js:152-162` 对称）。
+
+**残留（新发现，本次复核查出）**：**API 路线的收口在后台没有任何界面入口**。
+- 端点和服务都在：`create-app.js:662` 的 `POST /api/v1/admin/orders/:publicNo/resolve-unknown-submission` → `unknown-submission-resolve-service.js`。
+- 前端零引用：`grep -rn "resolve-unknown-submission" v1/public/` → 无输出（整个 public 目录，含 index.html / admin.js / login.js）。
+- 详情页那个「确认核实结果」按钮只对 Browser 单出现：`resolveUnknownEligible(run)`（`admin.js:931-935`）要 `run.status ∈ {RECONCILE_ONLY, HUMAN_REQUIRED}` 且 `run.paymentState ∈ {PAYMENT_UNKNOWN, PAYMENT_CONFIRMED}` —— 这是 **browser run**，API 单没有 run，按钮不渲染。
+- 于是 API 付款不明的链路是：工作台队列显示「去核实收口」→ 跳订单详情 → **详情页没有任何收口按钮** → 只能调 API 或手写 SQL。
+- 而系统自己发的告警文案写的是「请核实后在后台点「核实付款不明结果」（已扣款 / 未扣款）」（`workflow-repository.js:337`）—— **这个按钮不存在**。
+
+**影响面（生产只读实证，不推断）**：`SELECT COUNT(*) FROM order_events WHERE to_status='RECONCILIATION_REQUIRED'` → **0**；`SELECT status,COUNT(*) FROM orders WHERE status IN ('SUBMIT_UNKNOWN','RECONCILIATION_REQUIRED')` → **空**。生产从未有单走到这一步，缺口未咬过人，但它是真缺口，且第一次发生时运营会照着告警文案去找一个不存在的按钮。
+
+**判定**：F-61 **部分成立**。审查指控的「关闭记录被当成资金收口」已修；但同一条审查的落点「按钮要到达真实处理入口」对 API 路线仍不成立。**未修，已登记。**
+
+### F-62 — 已闭合
+
+`admin.js:444` 读 `daily.unverifiableAmountCount`（与服务端一致），`admin.js:438` 留了为什么的注释。且 `num()` 把缺字段显示成「—」而非 0，把「未知/没接到」和「真实 0」分开（`admin.js:440`）——这比审查的最小要求更严。**不再成立。**
+
+### F-63 — 三个源已闭合，**同病两个源仍在**
+
+**已闭合**：`loadOverview`（`admin.js:655-662`）给 alerts / cases / daily 都打了 `__error` 标记；`renderWbQueue` 的 `sourceFailed`（`admin.js:511`）据此把「读取失败」和「查过、确实没有」分开；`renderWbRecon`（`admin.js:436`）单独处理 daily 失败。
+
+**仍在（= 已登记的 F-71）**：`sourceFailed` 只看 `[reconCases, daily, alertData]`；`todayOrders` 和 `cardSources` 虽然也带了 `__error`，但**没有任何消费方**——`renderWbOrders(todayOrders.orders || [])`（`admin.js:672`）直接丢掉标记，接口 500 时今日订单表显示「今天还没有订单」（`admin.js:535`），与 F-63 病根完全相同，只是不在待办队列上。**未修，已在 UNVERIFIED_LEDGER 登记为 F-71。**
+
+### F-64 — 待销已闭合，**「看逐张」仍是死跳**
+
+**已闭合**：`retirementDueCount` 已进队列（`admin.js:488-489`），待销到期不再从工作台消失。
+
+**仍成立**：「看逐张」按钮（`index.html:75`）仍是 `data-view-jump="diagnostics"`，而 diagnostics 加载的还是 `loadDiagnostics() / loadReconciliationCases() / loadBrowserDispatchJobs() / loadBrowserRuns() / loadBillingAddressSettings()`（`admin.js:2412`）——**没有一项展示逐卡差异**。服务端 `daily-reconciliation-service.js:356` 明确返回 `discrepancies` 逐卡明细数组，而前端全文件只消费 `discrepancyCount` 计数（`admin.js:442`、`:478`），**明细一处都没展示**。队列里「对账差异 · 无主扣款 N 张卡」点「去处理」同样跳 diagnostics，落地后找不到那 N 张卡。**未修。**
+
+### F-65 — 界面入口已移除，**根因未修**
+
+**已移除**：`data-supply-toggle` 在整个 `v1/public/` 下只剩事件处理器（`admin.js:2984`）和一句注释，**没有任何地方渲染出这个属性的按钮**——点不到了。
+
+**根因仍在**：`admin-operations-service.js:158-166` 的 `setSupplyAutomation` 依旧一次循环写两个键（`card_auto_replenishment_enabled` + `card_balance_recharge_enabled`），路由 `POST /api/v1/admin/operations/supply-automation`（`create-app.js:630`）仍注册，前端处理器仍在。生产两键实际值（只读）：`card_auto_replenishment_enabled=true`、`card_balance_recharge_enabled=false` —— 仍是刻意拆开的状态，一旦这个端点被调用就会被抹平成同值。
+
+**判定**：风险等级从「点一下就打开补余额」降为「无界面入口、端点仍可达」。审查建议的「按当前业务决定选择实际开关，不按旧函数名字复用」**没有做**。设置页若要放这个开关，必须先把它拆成分别写——否则 F-65 原样复活。测试里那条有意留红的 F-65 用例继续留着（不许为全绿改它）。
+
+### 本次复核的边界
+
+只核了这五条 + 顺带查到的 F-71 现状，**没有重跑全量测试来追认**（上次全量：978 / 910 pass / 1 fail，唯一 fail 是有意留红的 F-65）。生产只读查询两条（`order_events` 的 `RECONCILIATION_REQUIRED` 计数、`orders` 的两个状态计数、`app_settings` 两个供给键），其余结论全部来自当前代码，**未在真实浏览器上复现 F-61 残留的那条死路**（需要先造一个 API 路线的付款不明单）。
