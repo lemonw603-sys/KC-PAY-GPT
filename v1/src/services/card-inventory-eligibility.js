@@ -254,6 +254,10 @@ export function providerCardStockSql({ productCode = 'plus' } = {}) {
       -- （「扣完剩 X，低于硬底线 Y；未开卡」）。D-273 的教训是别为一个已经实现的东西
       -- 再造第二份，页面显示的底线必须就是挡开卡的那一个。
       pa.wallet_floor, pa.wallet_alert_threshold,
+      -- 卡台健康：运营手动停用 / 熔断 / 有没有导入过完整快照。
+      -- 这三项原先只在「卡台管理」那张表里露面（D-309 把表删了，状态并进台账栏）——
+      -- 一台卡台是不是能用，该和它的可分配/钱包/日限显示在同一处，不该另开一张表。
+      pa.operational_enabled, pa.circuit_state, pa.last_full_snapshot_at,
       -- 水位与日限的真实来源是 card_supply_policies（按台×按产品），补卡调度器读的就是它。
       -- app_settings 里的 card_stock_low_threshold / card_replenishment_daily_limit 早已被它
       -- 取代（step6 任务书 D 发现 1；生产实值 1 与 10，而策略表是 2 与 20）——显示那两个
@@ -289,6 +293,7 @@ export function providerCardStockSql({ productCode = 'plus' } = {}) {
     WHERE pa.purpose = 'CARD'
     GROUP BY pa.id, pa.account_code, pa.provider_code, pa.supply_fault_state,
       pa.supply_fault_reason, pa.supply_fault_at, pa.wallet_floor, pa.wallet_alert_threshold,
+      pa.operational_enabled, pa.circuit_state, pa.last_full_snapshot_at,
       sp.target_available, sp.daily_open_limit
     ORDER BY pa.provider_code`;
 }

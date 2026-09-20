@@ -5,7 +5,7 @@
     900
   ],
   "tolerancePx": 1,
-  "note": "原型 A 是 Lemon 2026-09-20 从三版里挑定的（D-287）。原型 link 的是 _frozen/cards-a/ 定稿快照、不是实时 /admin/assets/*——反代实时 CSS 会让参照跟着被测物一起变，比对永远通过（D-293 被变异测试拆穿过）。被量的树里一个原型专属 class 都不带，三份 CSS 按 index.html 顺序加载。impl 侧要先 prepare 切到卡片视图：非当前视图 hidden，量出来全是 0，而 0==0 会被当成一致。prepare 里的点击写成**可重入**的循环——页面自身的启动流程是异步的，点得太早会被它随后一次渲染重新隐藏（实测：卡台和卡表都已渲染，而 #stock-view 仍 hidden）。所以每轮都重新点一次，直到这个视图真的显示出来为止。不比 width/left/right 的探针都写在各自 metrics 里：卡台名、订单号、余额来自真实库，文字长度两边本就不同，宽度差属正常；结构与节奏靠「块数」「高度」「间距」守。",
+  "note": "原型 A 是 Lemon 2026-09-20 从三版里挑定的（D-287）。原型 link 的是 _frozen/cards-a/ 定稿快照、不是实时 /admin/assets/*——反代实时 CSS 会让参照跟着被测物一起变，比对永远通过（D-293 被变异测试拆穿过）。被量的树里一个原型专属 class 都不带，三份 CSS 按 index.html 顺序加载。impl 侧要先 prepare 切到卡片视图：非当前视图 hidden，量出来全是 0，而 0==0 会被当成一致。prepare 里的点击写成**可重入**的循环——页面自身的启动流程是异步的，点得太早会被它随后一次渲染重新隐藏（实测：卡台和卡表都已渲染，而 #stock-view 仍 hidden）。所以每轮都重新点一次，直到这个视图真的显示出来为止。不比 width/left/right 的探针都写在各自 metrics 里：卡台名、订单号、余额来自真实库，文字长度两边本就不同，宽度差属正常；结构与节奏靠「块数」「高度」「间距」守。卡表标题栏只比高度与外边距，**它抓不到「标题栏里多一个按钮」**——那一行是 flex，按钮没有 h2 高，塞回去高度不变（2026-09-20 变异实测）。「不许把动作按钮塞回标题栏」由 public-isolation 的结构测试守，几何比对在这一点上有盲区，别当它守住了、台账栏按钮比个数与尺寸（两台按钮本就不对称：hnskj 只有「开卡…」，highvcc 多一个「同步这台」——hnskj 的卡每 15 秒自动同步，不需要手动催）。这两条是 2026-09-20 变异测试漏抓后补的。",
   "prototype": {
     "url": "${PARITY_PROTO_BASE}/step6-cards-a.html",
     "root": "#stock-view"
@@ -100,6 +100,27 @@
       "name": "数格单元",
       "proto": "#cards-rigs .cardrig-q",
       "impl": "#cards-rigs .cardrig-q",
+      "all": true,
+      "metrics": [
+        "height",
+        "padding",
+        "borderRadius"
+      ]
+    },
+    {
+      "name": "卡表标题栏",
+      "proto": "#stock-view > *:nth-child(2) .card-heading",
+      "impl": "#stock-view > *:nth-child(2) .card-heading",
+      "metrics": [
+        "height",
+        "alignItems",
+        "marginBottom"
+      ]
+    },
+    {
+      "name": "台账栏按钮",
+      "proto": "#cards-rigs .cardrig-foot .cardbtn",
+      "impl": "#cards-rigs .cardrig-foot .cardbtn",
       "all": true,
       "metrics": [
         "height",

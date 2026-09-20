@@ -152,36 +152,11 @@ export function createAdminOperationsService({ pool }) {
     }
   }
 
-  // Decision 5 「能不能开卡补钱」: one switch over the two supply automations
-  // (automatic card opening and automatic balance top-up). Existing readers keep
-  // their keys; this writes both so they can never disagree by accident.
-  //
-  // 2026-09-20 Lemon 定：**不给它做界面**（F-65 就此判为「不做」，不再算缺口）。
-  // 停自动开卡的正式做法是设置页把水位设成 0 —— 调度器的需求是 max(水位, 等卡单数)，
-  // 而且是按台按产品的，比这个全局一刀切的开关更贴合「只停坏掉的那一台」。
-  //
-  // 这个函数本身还有一个没修的毛病：它一次写两个键，而补余额已弃用（D-218），生产
-  // 刻意把两个键设成不同值（auto_replenishment=true / balance_recharge=false）。
-  // **调用它一次就会把这两个值抹平。** 将来真要接界面，先把它拆成单键再说。
-  // 前端不许调它，有测试钉着。
-  async function setSupplyAutomation({ enabled, actorId = 'admin' } = {}) {
-    const value = requireBoolean(enabled);
-    const connection = await pool.getConnection();
-    try {
-      await connection.beginTransaction();
-      for (const key of ['card_auto_replenishment_enabled', 'card_balance_recharge_enabled']) {
-        await writeSettingWithAudit(connection, { key, value: String(value), actorId,
-          reason: value ? 'operator enabled supply automation' : 'operator disabled supply automation' });
-      }
-      await connection.commit();
-      return { supplyAutomationEnabled: value, cardAutoReplenishmentEnabled: value, cardBalanceRechargeEnabled: value };
-    } catch (error) {
-      await connection.rollback();
-      throw error;
-    } finally {
-      connection.release();
-    }
-  }
+  // 「自动开卡总开关」的 setSupplyAutomation 已删（D-309，Lemon 2026-09-20 定不做这个控件）。
+  // 它一次写两个键（card_auto_replenishment_enabled + card_balance_recharge_enabled），
+  // 而补余额已弃用（D-218）、生产刻意把两键设成不同值 —— 调一次就会被抹平。
+  // 停自动开卡有两条更对的路：设置页把水位设成 0（按台按产品，只停坏掉那一台）；
+  // 或 `node v1/scripts/set-supply-scheduler-flag.mjs off --apply`（只写单键、带预览与审计）。
 
   async function closeAlert(alertId) {
     const id = String(alertId || '').trim();
@@ -197,5 +172,5 @@ export function createAdminOperationsService({ pool }) {
     return { alertId: id, closed: result.affectedRows === 1 };
   }
 
-  return { setOrderAcceptance, setDispatch, setBrowserPaymentWrites, setSupplyAutomation, closeAlert };
+  return { setOrderAcceptance, setDispatch, setBrowserPaymentWrites, closeAlert };
 }

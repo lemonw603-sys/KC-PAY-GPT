@@ -77,7 +77,6 @@ export function createApp({
   setAdminOrderAcceptance = null,
   setAdminDispatch = null,
   setAdminBrowserPaymentWrites = null,
-  setAdminSupplyAutomation = null,
   cancelAdminOrder = null,
   confirmManualCancellation = null,
   resolveUnknownSubmission = null,
@@ -627,12 +626,11 @@ export function createApp({
       res.json(await setAdminBrowserPaymentWrites({ enabled: req.body.enabled, actorId: req.admin?.id || 'admin' }));
     });
   }
-  if (typeof setAdminSupplyAutomation === 'function') {
-    app.post('/api/v1/admin/operations/supply-automation', ...adminWriteGuards, async (req, res) => {
-      if (typeof req.body?.enabled !== 'boolean') return res.status(400).json({ error: 'invalid_operation_state' });
-      res.json(await setAdminSupplyAutomation({ enabled: req.body.enabled, actorId: req.admin?.id || 'admin' }));
-    });
-  }
+  // 「自动开卡总开关」端点已删（D-309，Lemon 2026-09-20 定不做这个控件）。
+  // 它一次写两个键（card_auto_replenishment_enabled + card_balance_recharge_enabled），
+  // 而补余额已弃用（D-218）、生产刻意把两键设成不同值 —— 调一次就会被抹平。
+  // 停自动开卡有两条更对的路：设置页把水位设成 0（按台按产品）；
+  // 或 `node v1/scripts/set-supply-scheduler-flag.mjs off --apply`（只写单键、带预览与审计）。
   if (typeof cancelAdminOrder === 'function') {
     app.post('/api/v1/admin/orders/:publicNo/cancellation', ...sensitiveAdminGuards, async (req, res) => {
       try {

@@ -77,12 +77,26 @@ test('serves the isolated v1 customer page and local assets', async () => {
   });
 });
 
-test('labels local stock refresh separately from provider card synchronization', async () => {
+test('手动同步必须说清「自动本来就在跑」，别让人以为不点就没同步（D-309）', async () => {
   const html = await readFile(new URL('../public/admin/index.html', import.meta.url), 'utf8');
-  const script = await readFile(new URL('../public/admin/assets/admin.js', import.meta.url), 'utf8');
-  assert.match(html, /id="refresh-stock"[^>]*>刷新本地列表</);
-  assert.match(html, /id="sync-all-cards"[^>]*>同步卡台余额和交易</);
-  assert.match(script, /本地列表已刷新（未同步卡台）/);
+
+  // 这条原来守的是「刷新本地列表」和「同步卡台」要分开标注，免得运营以为点了本地刷新
+  // 就等于同步了卡台。那个意图仍然成立，但按钮变了：
+  //   「刷新本地列表」删掉 —— 它调的就是 loadStock，和切进这一页完全同效
+  //   「同步余额和交易」「发现并接管新卡」降进高级区的「执行记录」
+  // 两者都是**自动链路的手动兜底**（生产实据：余额交易每 15 秒自动同步、新卡每 5 分钟
+  // 自动发现），所以现在要守的是更要紧的一句：**说清楚自动本来就在跑**，
+  // 否则运营会以为不点就没同步，天天点。
+  assert.doesNotMatch(html, /id="refresh-stock"/, '这个按钮和切进页面完全同效，已删');
+  assert.match(html, /id="sync-all-cards"[^>]*>立刻同步余额和交易</);
+  assert.match(html, /id="discover-new-cards"[^>]*>立刻发现并接管新卡</);
+  assert.match(html, /每 15 秒同步到期的卡/, '必须写明余额交易是自动同步的');
+  assert.match(html, /新卡每 5 分钟发现一次/, '必须写明新卡是自动发现的');
+  assert.match(html, /只是不想等的时候手动催一次/);
+
+  // 两个按钮都在「执行记录」里，不该回到卡片列表的标题栏抢位置
+  const cardList = html.slice(html.indexOf('<h2>卡片列表</h2>'), html.indexOf('id="card-retirement-card"'));
+  assert.doesNotMatch(cardList, /sync-all-cards|discover-new-cards/);
 });
 
 test('自动开卡：不做总开关，停它走水位；且不许把关闭态说成开启（F-65 结案）', async () => {
@@ -1104,7 +1118,7 @@ test('order execution timeline is readable by an authenticated administrator onl
   });
 });
 
-test('the two home-page decision switches are guarded, boolean-only and audited through their services', async () => {
+test('付款开关走 service、只认布尔、有守卫（供给那个端点已按 D-309 删除）', async () => {
   const adminAuth = createAdminSessionAuth({
     passwordHash: await hashAdminPassword('fixture admin password', { salt: Buffer.alloc(16, 29) }),
     sessionSecret: Buffer.alloc(32, 30), secureCookies: false
@@ -1112,15 +1126,19 @@ test('the two home-page decision switches are guarded, boolean-only and audited 
   const calls = [];
   const app = createApp({
     adminAuth,
-    setAdminBrowserPaymentWrites: async (input) => { calls.push(['payment', input]); return { browserPaymentWritesEnabled: input.enabled, previous: !input.enabled, executorProfilesUpdated: 1 }; },
-    setAdminSupplyAutomation: async (input) => { calls.push(['supply', input]); return { supplyAutomationEnabled: input.enabled, cardAutoReplenishmentEnabled: input.enabled, cardBalanceRechargeEnabled: input.enabled }; }
+    setAdminBrowserPaymentWrites: async (input) => { calls.push(['payment', input]); return { browserPaymentWritesEnabled: input.enabled, previous: !input.enabled, executorProfilesUpdated: 1 }; }
   });
   await withServer(app, async (baseUrl) => {
     const denied = await fetch(`${baseUrl}/api/v1/admin/operations/browser-payment`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: true }) });
     assert.equal(denied.status, 401);
     const login = await fetch(`${baseUrl}/api/v1/admin/session`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: 'fixture admin password' }) });
     const cookie = login.headers.get('set-cookie').split(';')[0];
-    for (const path of ['browser-payment', 'supply-automation']) {
+    // supply-automation 已删（D-309）：它一次写两个键，而补余额已弃用、生产刻意把两键
+    // 设成不同值，调一次就抹平。停自动开卡走设置页水位归零或 set-supply-scheduler-flag.mjs。
+    const gone = await fetch(`${baseUrl}/api/v1/admin/operations/supply-automation`, { method: 'POST', headers: { Cookie: cookie, Origin: baseUrl, 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: false }) });
+    assert.equal(gone.status, 404, '这个端点不许回来');
+
+    for (const path of ['browser-payment']) {
       const bad = await fetch(`${baseUrl}/api/v1/admin/operations/${path}`, { method: 'POST', headers: { Cookie: cookie, Origin: baseUrl, 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: 'true' }) });
       assert.equal(bad.status, 400);
       assert.deepEqual(await bad.json(), { error: 'invalid_operation_state' });
@@ -1128,7 +1146,7 @@ test('the two home-page decision switches are guarded, boolean-only and audited 
       assert.equal(ok.status, 200);
     }
   });
-  assert.deepEqual(calls.map(([name, input]) => [name, input.enabled, input.actorId]), [['payment', false, 'admin'], ['supply', false, 'admin']]);
+  assert.deepEqual(calls.map(([name, input]) => [name, input.enabled, input.actorId]), [['payment', false, 'admin']]);
 });
 
 test('verifies a CDK before the customer is asked for a Session', async () => {

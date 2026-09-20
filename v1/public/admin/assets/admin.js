@@ -174,8 +174,7 @@ const elements = {
   browserRunsCount: document.querySelector('#browser-runs-count'),
   browserRunsPage: document.querySelector('#browser-runs-page'),
   browserRunsPrev: document.querySelector('#browser-runs-prev'),
-  browserRunsNext: document.querySelector('#browser-runs-next'),
-  providerRoutesTable: document.querySelector('#provider-routes-table')
+  browserRunsNext: document.querySelector('#browser-runs-next')
   ,cardSourceSummary: document.querySelector('#card-source-summary')
   ,manualCardSourceForm: document.querySelector('#manual-card-source-form')
   ,manualCardSourceCode: document.querySelector('#manual-card-source-code')
@@ -1421,8 +1420,16 @@ function renderCardRigs(byProvider, tokenStatus) {
         : rigCell('卡台快照', rig.walletSyncedAt ? escapeHtml(formatTime(rig.walletSyncedAt)) : '无快照',
             { pending: true })
     ].join('');
-    return `<div class="cardrig${tokenBad ? ' is-alarm' : ''}">
+    // 健康异常和 token 失效都让整栏标红：运营扫一眼就知道哪台不能用了
+    const issue = providerHealthIssue({
+      operationalEnabled: rig.operationalEnabled,
+      circuitState: rig.circuitState,
+      lastFullSnapshotAt: rig.lastFullSnapshotAt,
+      isManualImport: isHighvcc
+    });
+    return `<div class="cardrig${tokenBad || issue?.[1] === 'is-bad' ? ' is-alarm' : ''}">
       <div class="cardrig-h"><b>${escapeHtml(rig.label || rig.accountCode || '未知卡台')}</b>
+        ${issue ? `<span class="cardchip ${issue[1]}">${escapeHtml(issue[0])}</span>` : ''}
         <span class="cardrig-acct">${acct}</span></div>
       <div class="cardrig-quad">${cells}</div>
       <div class="cardrig-foot">
@@ -1431,8 +1438,8 @@ function renderCardRigs(byProvider, tokenStatus) {
           ? `<span class="cardrig-note">此刻可立即绑 ${bindable} 张，其余在等下一次同步（会自行恢复）</span>`
           : ''}
         <button class="cardbtn" type="button" data-rig-open="${escapeHtml(rig.providerKind)}">开卡…</button>
-        <button class="cardbtn" type="button" data-rig-refresh="${escapeHtml(rig.providerKind)}"
-          data-rig-account="${acct}">刷新这台</button>
+        ${isHighvcc ? `<button class="cardbtn" type="button" data-rig-refresh="${escapeHtml(rig.providerKind)}"
+          data-rig-account="${acct}" title="向卡台拉一次最新的卡片快照、钱包余额和流水">同步这台</button>` : ''}
         <span data-rig-wallet-out="${acct}"></span>
       </div>
     </div>`;
@@ -1618,28 +1625,24 @@ elements.cardsRigs?.addEventListener('click', async (event) => {
     return;
   }
 
+  // 只有 highvcc 有这个按钮：hnskj 的卡每 15 秒自动同步一次到期的，不需要手动催；
+  // 它原来那个「刷新这台」刷的是卡段规则（开卡块里已有同端点的按钮），名不副实又重复。
   const refreshButton = event.target.closest('[data-rig-refresh]');
   if (!refreshButton) return;
-  const isHnskj = refreshButton.dataset.rigRefresh === 'hnskj';
   refreshButton.disabled = true;
-  refreshButton.textContent = isHnskj ? '刷新中…' : '刷新中…（要几十秒）';
+  refreshButton.textContent = '同步中…（要几十秒）';
   try {
-    if (isHnskj) {
-      await api('/api/v1/admin/card-stock/provider-refresh', { method: 'POST' });
-      showNotice('HNSKJ 卡段规则已刷新。', 'success');
-    } else {
-      const result = await api('/api/v1/admin/backup-cards/highvcc/refresh', { method: 'POST' });
-      // 三步各自报成败——一步失败不掩盖另外两步真的做了什么。
-      showNotice(result.failed?.length
-        ? `部分失败：${result.failed.join('、')}；其余已完成。`
-        : '已向 highvcc 拉取快照、钱包与流水。', result.failed?.length ? 'error' : 'success');
-    }
+    const result = await api('/api/v1/admin/backup-cards/highvcc/refresh', { method: 'POST' });
+    // 三步各自报成败——一步失败不掩盖另外两步真的做了什么。
+    showNotice(result.failed?.length
+      ? `部分失败：${FRIENDLY_SYNC_STEPS(result.failed)}；其余已完成。`
+      : '已向卡台拉到最新的卡片、余额和流水。', result.failed?.length ? 'error' : 'success');
     await loadStock();
   } catch (error) {
-    showNotice(`刷新失败：${error.message}`);
+    showNotice(`同步失败：${friendlyApiError(error)}`);
   } finally {
     refreshButton.disabled = false;
-    refreshButton.textContent = '刷新这台';
+    refreshButton.textContent = '同步这台';
   }
 });
 
@@ -2636,11 +2639,42 @@ async function switchView(view, { status = '' } = {}) {
   }
 }
 
-function sourceHealth(source) {
-  if (!source.operationalEnabled) return ['运营标记停用（仍可选择）', 'status-red'];
-  if (source.providerCode === 'manual_excel' && !source.lastFullSnapshotAt) return ['尚未导入完整快照', 'status-orange'];
-  if (source.circuitState && source.circuitState !== 'CLOSED') return [`熔断 ${source.circuitState}（仍可选择）`, 'status-red'];
-  return ['当前无告知性异常', 'status-green'];
+/**
+ * 卡台健康：只答「有没有告知性异常」，正常时返回 null。
+ *
+ * 参数写成显式的，不接整个对象：byProvider 里 `providerCode` 是 account_code、
+ * `providerKind` 才是 provider_code，与 card-sources 那边的命名正好反过来 ——
+ * 靠字段名巧合传对象迟早踩。
+ */
+/**
+ * 错误码翻译成人话。
+ *
+ * 2026-09-20 实测：点 hnskj 的「刷新这台」失败，界面原样吐出 `刷新失败：not_found`——
+ * 那是给程序看的码，运营看了不知道该做什么。翻不了的照原样带出来（**不吞、不含糊**），
+ * 但至少加一句「这是系统内部的错误码」，免得人以为是自己操作错了。
+ */
+const API_ERROR_WORDS = Object.freeze({
+  not_found: '卡台没认这个请求（多半是卡台凭据没配或配错了）',
+  highvcc_token_missing: '卡台登录信息还没贴，先去开卡区贴一次 token',
+  highvcc_token_expired: '卡台登录已过期，去开卡区重贴一次 token',
+  admin_origin_required: '请求来源不对，刷新页面后重试'
+});
+function friendlyApiError(error) {
+  const raw = String(error?.message || '').trim();
+  const known = API_ERROR_WORDS[raw.toLowerCase()];
+  return known || (/^[a-z0-9_]+$/i.test(raw) ? `${raw}（系统内部错误码）` : raw || '原因不详');
+}
+
+/** highvcc 同步分三步，后端回的是英文步骤名。 */
+const SYNC_STEP_WORDS = Object.freeze({ snapshot: '卡片快照', wallet: '钱包余额', transactions: '流水' });
+const FRIENDLY_SYNC_STEPS = (steps) =>
+  (steps || []).map((step) => SYNC_STEP_WORDS[step] || step).join('、');
+
+function providerHealthIssue({ operationalEnabled, circuitState, lastFullSnapshotAt, isManualImport }) {
+  if (operationalEnabled === false) return ['运营已停用', 'is-bad'];
+  if (circuitState && circuitState !== 'CLOSED') return [`熔断 ${circuitState}`, 'is-bad'];
+  if (isManualImport && !lastFullSnapshotAt) return ['未导入完整快照', 'is-warn'];
+  return null;
 }
 
 async function loadProviderRoutes() {
@@ -2654,19 +2688,10 @@ async function loadProviderRoutes() {
   if (elements.manualCardImportSource) {
     elements.manualCardImportSource.innerHTML = `<option value="">选择备用卡台</option>${sources.filter((item) => item.providerCode === 'manual_excel').map((item) => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.label || item.displayName)}</option>`).join('')}`;
   }
-  if (!elements.providerRoutesTable) return;
-  elements.providerRoutesTable.innerHTML = sources.length ? sources.map((source) => {
-    const [health, tone] = sourceHealth(source);
-    const active = source.id === payload.browserProviderAccountId;
-    const capabilities = [source.supportsApiRecharge ? 'API 充值' : null, source.supportsBrowserRecharge ? 'Browser' : null, source.supportsApiSync ? 'API 同步' : '完整快照', source.supportsAutoOpen ? '自动开卡' : null, source.supportsAutoFunding ? '自动补余额' : null].filter(Boolean).join(' · ');
-    return `<tr>
-      <td><strong class="cell-main">${escapeHtml(source.label || source.displayName)}</strong><small>${escapeHtml(source.accountCode)} · ${escapeHtml(source.providerCode)}</small></td>
-      <td>${escapeHtml(capabilities)}</td>
-      <td>${source.cardCount} 张历史卡 · ${source.presentCount} 张在当前快照<small>最近完整快照 ${formatTime(source.lastFullSnapshotAt)}</small></td>
-      <td><span class="status-chip ${tone}"><i></i>${escapeHtml(health)}</span></td>
-      <td>${!source.supportsBrowserRecharge ? '<small>不支持 Browser</small>' : active ? '<small>Browser 新订单使用中</small>' : '<small>可切换 · 去工作台切</small>'}</td>
-    </tr>`;
-  }).join('') : '<tr><td colspan="5" class="empty-state">暂无卡台配置</td></tr>';
+  // 「卡台管理」那张表已删（D-309）。它四列里：能力是静态配置（不会变）、Browser 操作
+  // 只是一句「去工作台切」、库存快照和告知状态才有用 —— 后两样已经并进台账栏
+  // （providerHealthIssue + 每台的快照时间），一台卡台能不能用该和它的可分配/钱包/日限
+  // 显示在同一处，不必为此另开一张表。这个函数现在只剩两件事：填 API 固定台、填导入下拉。
 }
 
 
@@ -2723,36 +2748,8 @@ elements.manualCardSourceForm?.addEventListener('submit', async (event) => {
     elements.manualCardSourceForm.reset(); showNotice('备用卡台已新增。', 'success'); await loadProviderRoutes();
   } catch (error) { showNotice(error.message || '新增备用卡台失败。'); }
 });
-document.querySelector('#refresh-button')?.addEventListener('click', async (event) => {
-  const button = event.currentTarget;
-  if (button.disabled) return;
-  hideNotice();
-  button.disabled = true;
-  button.classList.add('is-loading');
-  button.textContent = '刷新中…';
-  elements.syncTime.textContent = '正在刷新…';
-  try {
-    if (state.view === 'cdks') resetCdkBatchPaging();
-    await (state.view === 'overview' ? loadOverview()
-    : state.view === 'stock' ? loadStock()
-      : state.view === 'cdks' ? loadCdkBatches()
-        : state.view === 'diagnostics' ? Promise.all([loadDiagnostics(), loadReconciliationCases(), loadBrowserDispatchJobs(), loadBrowserRuns(), loadBillingAddressSettings()])
-          : loadOrders());
-    showNotice('刷新完成。', 'success');
-  } catch {
-    showNotice('刷新失败，请稍后重试。');
-  } finally {
-    button.disabled = false;
-    button.classList.remove('is-loading');
-    button.textContent = '刷新当前页';
-  }
-});
-document.querySelector('#refresh-stock')?.addEventListener('click', async () => {
-  try {
-    await loadStock();
-    showNotice('本地列表已刷新（未同步卡台）。', 'success');
-  } catch { showNotice('库存读取失败。'); }
-});
+// 「刷新本地列表」按钮已删（D-309）：它调的就是 loadStock，和切进这一页完全同效，
+// 而页头那个「刷新当前页」早在工作台重做时就没了（它的 handler 也是孤儿，一并删）。
 // 「开始营业」按钮已被 D-284 的三个 toggle（接单/派单/付款）取代，按钮和这段 handler 一起退休；
 // /operations/start-business 端点保留，未在后台调用。
 elements.refreshCardProviderRules?.addEventListener('click', async (event) => {

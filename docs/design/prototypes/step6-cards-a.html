@@ -87,7 +87,6 @@
               <span>在库 2 · 总 14 · 使用中 0</span>
               <span class="cardrig-note">此刻可立即绑 0 张，其余在等下一次同步（会自行恢复）</span>
               <button class="cardbtn" type="button">开卡…</button>
-              <button class="cardbtn" type="button">刷新这台</button>
               <span></span>
             </div>
           </div>
@@ -102,7 +101,7 @@
             <div class="cardrig-foot">
               <span>在库 7 · 总 16 · 使用中 0</span>
               <button class="cardbtn" type="button">开卡…</button>
-              <button class="cardbtn" type="button">刷新这台</button>
+              <button class="cardbtn" type="button">同步这台</button>
               <span></span>
             </div>
           </div>
@@ -111,7 +110,7 @@
 
       <!-- ③ 在役卡片列表（A 版：在待销之前） -->
       <section class="card stock-card">
-        <div class="card-heading"><div><p class="section-kicker">运营明细</p><h2>卡片列表</h2></div><div class="stock-card-actions"><button class="text-button" type="button">刷新本地列表</button><button class="text-button" type="button">同步卡台余额和交易</button><button class="primary-small" type="button">同步并接管新卡</button> <span class="write-badge">完整卡号</span></div></div>
+        <div class="card-heading"><div><p class="section-kicker">运营明细</p><h2>卡片列表</h2></div><span class="write-badge">完整卡号</span></div>
         <div class="cardtable" id="stock-cards">
           <table>
             <thead><tr><th>尾号</th><th>卡台</th><th>余额</th><th>用量</th><th>状态</th>
@@ -192,14 +191,12 @@
            契约的 impl.prepare 也会把它打开，两边量的是同一个状态。里面六件保持折起——
            那才是默认状态，也正是要守的那个节奏。 -->
       <details class="card stock-card cardadv" id="stock-advanced" open>
-        <summary>高级<span class="cardadv-hint">卡台管理 · 开卡 · 导入 · 执行记录</span></summary>
+        <summary>高级<span class="cardadv-hint">开卡 · 接入卡台 · 执行记录</span></summary>
         <div class="cardadv-body">
-          <details class="cardadv-item" id="card-source-admin"><summary>卡台管理<span class="cardadv-hint">能力 · 快照 · 告知状态 · 新增备用卡台</span></summary></details>
-          <details class="cardadv-item" id="manual-card-import-card"><summary>接入无 API 的卡台：上传导出表</summary></details>
           <details class="cardadv-item" id="hnskj-open-card"><summary>HNSKJ 人工开卡<span class="cardadv-hint">产生费用</span></summary></details>
           <details class="cardadv-item" id="highvcc-open-card"><summary>highvcc 一键开卡<span class="cardadv-hint">highvcc.com · 产生费用</span></summary></details>
-          <details class="cardadv-item" id="stock-jobs-card"><summary>补卡执行记录</summary></details>
-          <details class="cardadv-item" id="card-intake-card"><summary>新卡接管记录</summary></details>
+          <details class="cardadv-item" id="card-source-intake"><summary>接入新卡台<span class="cardadv-hint">先建卡台，再导入它的导出表</span></summary></details>
+          <details class="cardadv-item" id="stock-records"><summary>执行记录<span class="cardadv-hint">开卡任务 · 新卡接管 · 手动同步</span></summary></details>
         </div>
       </details>
 

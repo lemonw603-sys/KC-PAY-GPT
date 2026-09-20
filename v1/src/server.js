@@ -284,7 +284,6 @@ const app = createApp({
   ,setAdminOrderAcceptance: adminOperationsService.setOrderAcceptance
   ,setAdminDispatch: adminOperationsService.setDispatch
   ,setAdminBrowserPaymentWrites: (input) => adminOperationsService.setBrowserPaymentWrites(input)
-  ,setAdminSupplyAutomation: (input) => adminOperationsService.setSupplyAutomation(input)
   ,closeAdminAlert: adminOperationsService.closeAlert
   ,startAdminBusiness: startBusiness
   ,cancelAdminOrder

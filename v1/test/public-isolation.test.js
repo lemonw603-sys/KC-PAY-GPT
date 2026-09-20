@@ -122,9 +122,13 @@ test('admin refresh feedback and inset dropdown arrows remain visible', () => {
   const adminJsVersion = html.match(/admin\.js\?v=(\d+)/);
   assert.ok(adminJsVersion, 'index.html 必须带 admin.js 的 ?v= 版本');
   assert.ok(Number(adminJsVersion[1]) >= 72, 'admin.js 的版本只能往上走（改了脚本必须 bump）');
-  assert.match(script, /button\.textContent = '刷新中…'/);
-  assert.match(script, /showNotice\('刷新完成。', 'success'\)/);
-  assert.match(script, /showNotice\('刷新失败，请稍后重试。'\)/);
+  // 原来这三条守的是页头「刷新当前页」按钮的反馈文案。那个按钮从 7c1a5c0（工作台重做）
+  // 起就不在页面上了，handler 一直是死代码，D-309 一并删除。
+  // 「有反馈」这件事仍然要守，对象换成真正会被点的那个：highvcc 台账栏的「同步这台」。
+  assert.match(script, /refreshButton\.textContent = '同步中…（要几十秒）'/, '慢操作要有进行中反馈');
+  assert.match(script, /已向卡台拉到最新的卡片、余额和流水/);
+  assert.match(script, /同步失败：\$\{friendlyApiError\(error\)\}/, '失败要说人话，不吐原始错误码');
+  assert.doesNotMatch(script, /querySelector\('#refresh-button'\)/);
   // 第⑥步工作台重做（D-283）：overview 段改营业条 wb-decisions + 卡与钱「按台按产品」。
   // 原先断言的是「Plus 可分配」那个 chip 文案，2026-09-20 按 D-283 原规划改成
   // 每台一行、行内按产品「用 N / 剩 N」+ 会不会自动补 —— 信息还在，表达变了。
@@ -169,7 +173,11 @@ test('admin refresh feedback and inset dropdown arrows remain visible', () => {
     assert.ok(inventory.includes(`${state}: '${word}'`),
       `详情抽屉的 ${state} 必须和徽标同词：${word}`);
   }
-  assert.match(html, /新卡接管记录/);
+  // D-309：「补卡执行记录」和「新卡接管记录」合成一件「执行记录」——
+  // 排查「卡怎么没进来」本来就要连着看「开了吗 / 接管了吗」。两个只读列表、无耦合。
+  assert.match(html, /id="stock-records"/);
+  assert.match(html, /执行记录/);
+  assert.match(html, /新卡接管/);
   assert.doesNotMatch(html, /待验证新卡（隔离区）/);
   assert.match(styles, /select\s*\{[\s\S]*appearance:\s*none/);
   assert.match(styles, /padding-right:\s*40px\s*!important/);
@@ -190,8 +198,10 @@ test('admin Browser view exposes operational metadata but no authority recovery 
 test('admin separates recharge method from audited Browser card-source switching', () => {
   const html = fs.readFileSync(path.join(directory, 'admin', 'index.html'), 'utf8');
   const script = fs.readFileSync(path.join(directory, 'admin', 'assets', 'admin.js'), 'utf8');
-  assert.match(html, /卡台管理/);
-  assert.match(html, /API 充值固定使用 HNSKJ/);
+  // D-309：「卡台管理」那张表整个删了，有用的两列并进台账栏
+  assert.doesNotMatch(html, /id="provider-routes-table"/);
+  assert.match(html, /接入新卡台/);
+  assert.match(html, /API 充值固定用 HNSKJ/);
   assert.match(script, /\/api\/v1\/admin\/card-sources\/browser\/current/);
   assert.match(script, /Browser 卡台已切换/);
   // D-280 ⑦ / B1：切换卡台只在工作台（那里带「同时接管排队单」和四项校验），
@@ -209,7 +219,7 @@ test('admin card page folds card sources and import into one view (balance fundi
   const script = fs.readFileSync(path.join(directory, 'admin', 'assets', 'admin.js'), 'utf8');
   const stockView = html.slice(html.indexOf('id="stock-view"'), html.indexOf('id="diagnostics-view"'));
   // 能力一个都不许丢：五条折叠只是收进「高级」，不是删掉。
-  for (const id of ['provider-routes-table', 'manual-card-source-form',
+  for (const id of ['manual-card-source-form',
     'manual-card-import-form', 'stock-cards', 'stock-open-form', 'stock-jobs', 'card-intake-list',
     // 第⑥块新增的三块（D-280 ①③⑤）
     'cards-rigs', 'card-retirement-list', 'stock-cards-history',
@@ -220,12 +230,20 @@ test('admin card page folds card sources and import into one view (balance fundi
   // B1：块 2「卡片概况 + 卡台管理」整块删掉。这三个写入口在设置页本来就有一份，
   // 同一个写操作不留两个入口（F-65 那类毛病的根）。它们不许回到卡片页。
   for (const gone of ['stock-summary', 'card-capacity-form', 'minimum-balance-form',
-    'card-capacity', 'minimum-balance-plan', 'provider-summary']) {
+    'card-capacity', 'minimum-balance-plan', 'provider-summary',
+    'provider-routes-table', 'refresh-stock']) {
     assert.doesNotMatch(stockView, new RegExp(`id="${gone}"`), `${gone} 已随块 2 删除，不许回到卡片页`);
   }
   // 删了不等于丢了：那两项现在由设置页渲染，端点没变。
   assert.match(script, /card-stock\/max-successful-payments/);
   assert.match(script, /card-stock\/minimum-balance/);
+  // 卡片列表标题栏不许再挂动作按钮（D-309：三个按钮里一个删、两个降进高级区的执行记录）。
+  // **这条只能靠测试守**：几何比对抓不到它 —— 标题栏是 flex，按钮没有 h2 高，
+  // 塞回去整行高度不变（2026-09-20 变异实测，契约 note 里也标了这个盲区）。
+  const listHead = stockView.slice(stockView.indexOf('<h2>卡片列表</h2>'),
+    stockView.indexOf('id="card-retirement-card"'));
+  assert.doesNotMatch(listHead, /<button/, '卡片列表标题栏只留徽标，动作都在高级区');
+
   // A 版顺序：两台 → 在役卡表 → 待销 → 高级。换序 = 换了另一版设计。
   const order = ['id="cards-rigs"', 'id="stock-cards"', 'id="card-retirement-list"', 'id="stock-advanced"']
     .map((needle) => stockView.indexOf(needle));

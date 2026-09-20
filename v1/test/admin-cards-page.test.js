@@ -266,14 +266,18 @@ test('highvcc 钱包不得随页面加载自动查（Lemon 2026-09-20 定：全�
     'token 状态在 loadStock 里只许取一次，取到的那份传给 loadHighvccStatus 复用');
 });
 
-test('② 两台都有「开卡…」与「刷新这台」，且开卡只是展开既有折叠区（不另造花钱入口）', () => {
+test('② 两台都有「开卡…」；「同步这台」只有 highvcc 有，且开卡只是展开既有折叠区', () => {
   const { sandbox, html } = loadAdminJs();
   sandbox.renderCardRigs([RIG_HNSKJ, RIG_BACKUP]);
   const out = html('sel:#cards-rigs');
   assert.match(out, /data-rig-open="hnskj"/);
   assert.match(out, /data-rig-open="manual_excel"/);
-  assert.match(out, /data-rig-refresh="hnskj"/);
+  // D-309：两台的「刷新这台」做的根本不是一回事 —— hnskj 那个刷的是**卡段规则**
+  // （开卡块里已有同端点的「刷新卡段规则」，重复且名不副实），跟这一栏四个数几乎无关；
+  // 而且 hnskj 的卡每 15 秒自动同步一次，不需要手动催。只留 highvcc 那个。
+  assert.doesNotMatch(out, /data-rig-refresh="hnskj"/);
   assert.match(out, /data-rig-refresh="manual_excel"/);
+  assert.match(out, /同步这台/);
   const src = fs.readFileSync(path.join(here, '..', 'public', 'admin', 'assets', 'admin.js'), 'utf8');
   // 开卡按钮只许展开/滚动到既有折叠区，绝不能自己发起开卡请求
   const handler = src.slice(src.indexOf("closest('[data-rig-open]')"), src.indexOf("closest('[data-rig-refresh]')"));
@@ -281,13 +285,18 @@ test('② 两台都有「开卡…」与「刷新这台」，且开卡只是展�
     '「开卡…」不得自己发起开卡请求，只负责展开既有开卡区');
 });
 
-test('⑧ 导入备用卡降级为折叠的高级入口，能力保留', () => {
+test('⑧ 导入并进「接入新卡台」（D-309），折叠且能力保留', () => {
   const html = fs.readFileSync(path.join(here, '..', 'public', 'admin', 'index.html'), 'utf8');
-  const block = html.slice(html.indexOf('id="manual-card-import-card"'));
-  assert.match(html, /<details[^>]*id="manual-card-import-card"/, '必须是 details（默认折叠）');
-  assert.match(block, /接入无 API 的卡台：上传导出表/);
-  // 能力保留：上传表单还在
-  assert.match(block.slice(0, block.indexOf('</details>')), /manual-card-import-file/);
+  // D-309：导入和「新增备用卡台」并成一件事 —— 接入没有 API 的卡台本来就是
+  // 「先建卡台、再传它的导出表」一条链，分两块做这件事要跳两个地方。
+  assert.match(html, /<details[^>]*id="card-source-intake"/, '必须是 details（默认折叠）');
+  const block = html.slice(html.indexOf('id="card-source-intake"'));
+  const body = block.slice(0, block.indexOf('</details>'));
+  assert.match(body, /接入新卡台/);
+  // 两样能力都还在，且建台在前、传表在后（顺序就是操作顺序）
+  assert.ok(body.indexOf('manual-card-source-form') < body.indexOf('manual-card-import-form'),
+    '先建卡台、再导入表格——顺序反了就不是一条链了');
+  assert.match(body, /manual-card-import-file/);
 });
 
 /* ===== D-280 ⑦：卡台切换搬到工作台，「同时接管」这半边不能丢 ===== */
@@ -332,8 +341,13 @@ test('⑦ 卡台切换只剩工作台一个入口；卡片页那张表已只读'
   // 同一个写操作不留两个入口（F-65 那类毛病的根）
   assert.doesNotMatch(code, /route-switch-button/);
   assert.match(code, /async function applyBrowserCardSource\(/);
-  // 卡片页那张表的「Browser 操作」列由 admin.js 渲染，只剩一句指路
-  assert.match(code, /去工作台切/);
+  // D-309：卡片页那张「卡台管理」表整个删了 —— 四列里能力是静态配置、Browser 操作
+  // 只是一句指路，有用的「告知状态」和「快照时间」已并进台账栏（providerHealthIssue）。
+  assert.doesNotMatch(code, /provider-routes-table/, '那张表已删，不许回来');
+  assert.match(code, /function providerHealthIssue\(/, '卡台健康改在台账栏上报');
+  // 指路仍然要有，只是搬到「接入新卡台」那块的说明里
+  const html = fs.readFileSync(path.join(here, '..', 'public', 'admin', 'index.html'), 'utf8');
+  assert.match(html, /在工作台的工具栏里切/);
 });
 
 test('后台的关键顶层事件绑定必须都在（2026-09-20 误删事故的守门人）', () => {
@@ -461,15 +475,25 @@ test('B3：撤销必须填理由——没有理由的撤销在审计里等于没
   assert.match(block, /card-retirement\/undo/);
 });
 
-test('B4：五条折叠条收进一个「高级」，六件一件不少', () => {
+test('B4/D-309：高级区 4 件，合并都有业务理由，能力一个不少', () => {
   const html = fs.readFileSync(path.join(here, '..', 'public', 'admin', 'index.html'), 'utf8');
   const stockView = html.slice(html.indexOf('id="stock-view"'), html.indexOf('id="diagnostics-view"'));
   const advanced = stockView.slice(stockView.indexOf('id="stock-advanced"'));
-  for (const id of ['card-source-admin', 'manual-card-import-card', 'hnskj-open-card',
-    'highvcc-open-card', 'stock-jobs-card', 'card-intake-card']) {
+  // 从 6 件压到 4 件，两处合并各有理由，**不是为了少一个折叠条**（Lemon 2026-09-20：
+  // 「不要为了美观而强行合并，如果合并能更稳定和提效，那是可以的」）：
+  //   接入新卡台 = 新增卡台 + 导入导出表 —— 一条链（先建台、再传表）
+  //   执行记录   = 开卡任务 + 新卡接管 —— 排查「卡怎么没进来」要连着看
+  // 两台开卡**不合并**：表单结构差异大（卡段/数量/预估 vs token/拒付统计/报价），
+  // 合成一个块内切换要引状态管理、降稳定；而台账栏每台已有「开卡…」直达。
+  for (const id of ['hnskj-open-card', 'highvcc-open-card', 'card-source-intake', 'stock-records']) {
     assert.match(advanced, new RegExp(`id="${id}"`), `高级区少了 ${id}`);
   }
-  assert.equal((advanced.match(/class="cardadv-item"/g) || []).length, 6);
+  assert.equal((advanced.match(/class="cardadv-item"/g) || []).length, 4);
+  // 能力一个都不许丢：合并只是换了摆法
+  for (const id of ['manual-card-source-form', 'manual-card-import-form', 'stock-open-form',
+    'highvcc-open-form', 'stock-jobs', 'card-intake-list', 'card-source-summary']) {
+    assert.match(advanced, new RegExp(`id="${id}"`), `合并时把 ${id} 弄丢了`);
+  }
   // 六件都默认折起：展开着就等于没收
   assert.doesNotMatch(advanced, /class="cardadv-item"[^>]*\sopen/);
   // 高级区自己也默认折起

@@ -4,13 +4,25 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 const src=fs.readFileSync(new URL('../public/admin/assets/admin.js',import.meta.url),'utf8');
 function snippet(marker,end='\n});'){const a=src.indexOf(marker);assert(a>=0,`marker not found: ${marker}`);const b=src.indexOf(end,a)+end.length;return src.slice(a,b);}
-test('Diagnostics manual refresh actually awaits all five loaders',async()=>{
- let handler;const calls=[],notices=[];
- const ctx={document:{querySelector(){return{addEventListener(_,fn){handler=fn}}}},state:{view:'diagnostics'},elements:{syncTime:{}},hideNotice(){},showNotice(x){notices.push(x)},Promise};
- for(const n of ['loadDiagnostics','loadReconciliationCases','loadBrowserDispatchJobs','loadBrowserRuns','loadBillingAddressSettings'])ctx[n]=async()=>{await Promise.resolve();calls.push(n)};
- vm.runInNewContext(snippet("document.querySelector('#refresh-button')?.addEventListener"),ctx);
- await handler({currentTarget:{disabled:false,classList:{add(){},remove(){}}}});
- assert.equal(calls.length,5);assert(notices.includes('刷新完成。'));
+// 这条原来跑的是 `#refresh-button` 的 handler。查下来那个按钮从 7c1a5c0（工作台重做）
+// 起就**不在页面上了**（HTML 0 处、JS 动态创建 0 处），handler 一直是死代码 ——
+// 也就是说这条测试一直在给一段用户永远碰不到的代码发绿灯。**测试绿 ≠ 功能可达。**
+// handler 已随 D-309 删除；它守的意图（进诊断页要 await 全部五个 loader，不能只等一个
+// 就说「刷新完成」）仍然成立，对象换成真正活着的 switchView。
+test('进诊断页要 await 全部五个 loader（原来这条守的是个死按钮）', () => {
+  const src = fs.readFileSync(new URL('../public/admin/assets/admin.js', import.meta.url), 'utf8');
+  const branch = src.slice(src.indexOf("} else if (view === 'diagnostics') {"),
+    src.indexOf("} else if (view === 'settings') {"));
+  assert.ok(branch, 'switchView 里的 diagnostics 分支不见了');
+  const loaders = ['loadDiagnostics', 'loadReconciliationCases', 'loadBrowserDispatchJobs',
+    'loadBrowserRuns', 'loadBillingAddressSettings'];
+  for (const name of loaders) assert.ok(branch.includes(name), `诊断页少 await 了 ${name}`);
+  // 必须在同一个 Promise.all 里 await —— 少了 await 就会「页面还空着却说读完了」
+  const all = branch.match(/await Promise\.all\(\[([\s\S]*?)\]\)/);
+  assert.ok(all, '五个 loader 必须在一个 await Promise.all 里');
+  for (const name of loaders) assert.ok(all[1].includes(name), `${name} 没进那个 Promise.all`);
+  // 页面上已经没有 #refresh-button 了，它的 handler 不许回来
+  assert.doesNotMatch(src, /querySelector\('#refresh-button'\)/);
 });
 // D-280 ⑦ 后卡台切换统一在工作台（applyBrowserCardSource）。这两条保护的行为没变：
 // 切成功后读失败仍算成功；响应丢了只能说「未能确认」，不能说「未改变」。

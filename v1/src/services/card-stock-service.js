@@ -542,6 +542,11 @@ export function createCardStockService({ pool, sessionEncryptionKey, panHmacKey 
         // 没有告警**不等于**有效（token 两小时不活动就过期），所以字段只有 true 有意义，
         // false 的含义是「没有证据说它失效」，页面据此只报「上次贴于几点」。
         tokenExpiredAlert: openTokenAlertKeys.has(tokenExpiredAlertKey(row.provider_account_id)),
+        // 卡台健康三项（D-309：「卡台管理」那张表删掉，状态并进台账栏）
+        operationalEnabled: row.operational_enabled == null ? true : Boolean(row.operational_enabled),
+        circuitState: row.circuit_state || null,
+        lastFullSnapshotAt: row.last_full_snapshot_at instanceof Date
+          ? row.last_full_snapshot_at.toISOString() : row.last_full_snapshot_at || null,
         // 旧字段保留：它答的是「补卡调度器开卡失败过没有」，与 token 有效性无关，
         // 别再拿它当 token 信号（此前就是这么错的）。
         tokenFault: String(row.supply_fault_state || '') === 'FAULT'

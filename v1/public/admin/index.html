@@ -10,7 +10,7 @@
   <link rel="stylesheet" href="/admin/assets/admin.css?v=26">
   <link rel="stylesheet" href="/admin/assets/workbench.css?v=18">
   <link rel="stylesheet" href="/admin/assets/cards.css?v=3">
-  <script src="/admin/assets/admin.js?v=78" defer></script>
+  <script src="/admin/assets/admin.js?v=79" defer></script>
 </head>
 <body>
   <div class="admin-shell">
@@ -181,7 +181,7 @@
         </section>
 
         <section class="card stock-card">
-          <div class="card-heading"><div><p class="section-kicker">运营明细</p><h2>卡片列表</h2></div><div class="stock-card-actions"><button class="text-button" id="refresh-stock" type="button">刷新本地列表</button><button class="text-button" id="sync-all-cards" type="button">同步卡台余额和交易</button><button class="primary-small" id="discover-new-cards" type="button">同步并接管新卡</button> <span class="write-badge">完整卡号</span></div></div>
+          <div class="card-heading"><div><p class="section-kicker">运营明细</p><h2>卡片列表</h2></div><span class="write-badge">完整卡号</span></div>
           <div class="cardtable" id="stock-cards"></div>
           <div class="cardfold" id="stock-cards-history" hidden></div>
         </section>
@@ -193,35 +193,8 @@
         </section>
 
         <details class="card stock-card cardadv" id="stock-advanced">
-          <summary>高级<span class="cardadv-hint">卡台管理 · 开卡 · 导入 · 执行记录</span></summary>
+          <summary>高级<span class="cardadv-hint">开卡 · 接入卡台 · 执行记录</span></summary>
           <div class="cardadv-body">
-            <details class="cardadv-item" id="card-source-admin">
-              <summary>卡台管理<span class="cardadv-hint">能力 · 快照 · 告知状态 · 新增备用卡台</span></summary>
-              <p class="card-description">API 充值固定使用 HNSKJ。浏览器自动化充值用哪台，在工作台的工具栏里切；那里带「同时接管排队单」和四项安全校验，这张表只读。异常只提醒、不阻止，也不会自动回退。</p>
-              <div id="card-source-summary" class="mini-list"></div>
-              <div class="table-wrap"><table><thead><tr><th>卡台</th><th>能力</th><th>库存快照</th><th>告知状态</th><th>Browser 操作</th></tr></thead><tbody id="provider-routes-table"></tbody></table></div>
-              <details class="stock-inline-details">
-                <summary>新增备用卡台</summary>
-                <form id="manual-card-source-form" class="filters filters-two">
-                  <label><span>内部代号</span><input id="manual-card-source-code" maxlength="64" placeholder="backup-b" required></label>
-                  <label><span>显示名称</span><input id="manual-card-source-name" maxlength="128" placeholder="备用卡台 B" required></label>
-                  <button class="primary-small" type="submit">新增卡台</button>
-                </form>
-              </details>
-            </details>
-
-            <details class="cardadv-item" id="manual-card-import-card">
-              <summary>接入无 API 的卡台：上传导出表</summary>
-              <p class="card-description">highvcc 快照入库，也用来接入没有 API 的新卡台。</p>
-              <p class="card-description">每次文件代表所选卡台的全部卡片。结构错误或跨卡台同卡冲突会阻止整批提交；停用、过期和余额不足仍会记录，但不会参与新订单分配。预览后一键提交，不需要密码或确认词。</p>
-              <form id="manual-card-import-form" class="filters filters-two">
-                <label><span>备用卡台</span><select id="manual-card-import-source" required><option value="">请先读取卡台</option></select></label>
-                <label><span>卡片文件</span><input id="manual-card-import-file" type="file" accept=".xls,.xlsx" required></label>
-                <button class="primary-small" type="submit">预览完整快照</button>
-              </form>
-              <div id="manual-card-import-preview" class="mini-list"></div>
-            </details>
-
             <details class="cardadv-item" id="hnskj-open-card">
               <summary>HNSKJ 人工开卡<span class="cardadv-hint">产生费用</span></summary>
               <div class="advanced-heading"><p>提交后由服务器安全执行。每张卡使用独立幂等键；任务异常时停止并等待人工核对。这里是人工开卡；系统按水位自动补卡是另一回事，目前界面上还没有开关它的地方。</p><button class="text-button" id="refresh-card-provider-rules" type="button">刷新卡段规则</button></div>
@@ -272,15 +245,30 @@
               </form>
             </details>
 
-            <details class="cardadv-item" id="stock-jobs-card">
-              <summary>补卡执行记录</summary>
-              <div class="advanced-heading"><p>只在查看开卡任务或排查异常时使用。</p></div>
-              <div class="mini-list" id="stock-jobs"></div>
+            <details class="cardadv-item" id="card-source-intake">
+              <summary>接入新卡台<span class="cardadv-hint">先建卡台，再导入它的导出表</span></summary>
+              <p class="card-description">给没有 API 的卡台用：先在这里建一个卡台，再把它的导出表传上来。API 充值固定用 HNSKJ；浏览器自动化用哪台，在工作台的工具栏里切。</p>
+              <div id="card-source-summary" class="mini-list"></div>
+              <form id="manual-card-source-form" class="filters filters-two">
+                <label><span>内部代号</span><input id="manual-card-source-code" maxlength="64" placeholder="backup-b" required></label>
+                <label><span>显示名称</span><input id="manual-card-source-name" maxlength="128" placeholder="备用卡台 B" required></label>
+                <button class="primary-small" type="submit">新增卡台</button>
+              </form>
+              <p class="card-description">每次文件代表所选卡台的全部卡片。结构错误或跨卡台同卡冲突会阻止整批提交；停用、过期和余额不足仍会记录，但不会参与新订单分配。预览后一键提交，不需要密码或确认词。</p>
+              <form id="manual-card-import-form" class="filters filters-two">
+                <label><span>导入到哪台</span><select id="manual-card-import-source" required><option value="">请先读取卡台</option></select></label>
+                <label><span>卡片文件</span><input id="manual-card-import-file" type="file" accept=".xls,.xlsx" required></label>
+                <button class="primary-small" type="submit">预览完整快照</button>
+              </form>
+              <div id="manual-card-import-preview" class="mini-list"></div>
             </details>
 
-            <details class="cardadv-item" id="card-intake-card">
-              <summary>新卡接管记录</summary>
-              <div class="advanced-heading"><p>手动开新卡后才需要点一次同步；这不是卡台实时库存数。</p></div>
+            <details class="cardadv-item" id="stock-records">
+              <summary>执行记录<span class="cardadv-hint">开卡任务 · 新卡接管 · 手动同步</span></summary>
+              <div class="advanced-heading"><p>排查「卡怎么没进来」时看这里：先看开卡任务出没出，再看新卡接管有没有收进来。两件事自动都在跑（开卡按水位每分钟判一次，新卡每 5 分钟发现一次，余额和交易每 15 秒同步到期的卡），下面两个按钮只是不想等的时候手动催一次。</p><div class="stock-card-actions"><button class="text-button" id="sync-all-cards" type="button">立刻同步余额和交易</button><button class="primary-small" id="discover-new-cards" type="button">立刻发现并接管新卡</button></div></div>
+              <p class="card-description">开卡任务</p>
+              <div class="mini-list" id="stock-jobs"></div>
+              <p class="card-description">新卡接管</p>
               <div class="mini-list" id="card-intake-list"><p class="empty-state">正在读取接管状态…</p></div>
             </details>
           </div>
