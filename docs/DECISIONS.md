@@ -4519,3 +4519,25 @@ Lemon 要求「先想清楚这个卡片到底应该展示什么」，照做时�
 **顺带修掉截图工具一个 bug**：`--clip=名字:选择器` 用冒号分隔，而 CSS 伪类自带冒号（`:last-child`），于是把整条选择器当成名字拿去建目录。改成「冒号前那段长得像名字才当名字」。
 
 全量 975 / 907 pass / 1 fail（既有 F-65）；文案闸门与 CSS 棘轮均绿。
+
+## D-299（2026-09-20）库存统计补 `purpose='CARD'` 过滤：卡台是两个，`zzshu` 不是第三个
+
+**起因是我报错**。我说「生产有 3 个 provider_accounts，第三个（zzshu）没有卡所以不显示」，Lemon 当场纠正：「你怎么给我弄出来三个卡台，我一共就两个呀」。
+
+**实查证据**：
+
+| provider_code | account_code | purpose | supports_browser_recharge |
+|---|---|---|---|
+| hnskj | legacy-primary | **CARD** | 1 |
+| manual_excel | backup-a | **CARD** | 1 |
+| zzshu | legacy-primary | **RECHARGE** | 0 |
+
+`zzshu` 是旧直充系统（CLAUDE.md：「只保留历史兼容，不参与 Browser 新链路设计和实施」），在 `provider_accounts` 里占一行但不是卡台。**我拿表的行数当业务答案**——犯的正是本项目规矩里「业务状态不得由单字段推断」那条，而且记忆里明明有一条「两卡台同等重要」。
+
+**顺着这个错查出代码里的同源问题**：`providerCardStockSql` 是全项目**唯一**没有按 `purpose='CARD'` 筛卡台的地方——分卡（`workflow-repository`）、路线（`provider-route-service`）、设置页（`card-supply-policy-admin-service`）、导入（`manual-card-import-service`）全都筛了。
+
+**它此前不出错，只因为 zzshu 恰好 0 张卡**——依赖「碰巧没卡」而不是「它不是卡台」。哪天历史数据让它挂上一张，工作台的「卡与钱」就会冒出第三个卡台，和我这次看错的表现一模一样。同一个页面上还并存两套口径：营业条的卡台下拉是过滤的（`supportsBrowserRecharge && operationalEnabled`），卡与钱没过滤。
+
+**改动**：`providerCardStockSql` 加 `WHERE pa.purpose = 'CARD'`。生产实跑改后仍是 2 行（legacy-primary 在库 2 / backup-a 在库 7），与改前一致——**零行为变化，堵的是将来**。回归测试覆盖三个产品，变异测试（去掉过滤）当场变红。
+
+全量 976 / 908 pass / 1 fail（既有 F-65）。

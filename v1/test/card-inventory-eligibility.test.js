@@ -143,3 +143,18 @@ test('加了大额守卫之后，库存口径仍能从资格规则派生（不�
   assert.ok(!counting.includes('INTERVAL 15 MINUTE'), '派生结果要去掉新鲜度');
   assert.ok(counting.includes("c.sync_tier = 'MANUAL_IMPORT' OR c.last_transaction_synced_at IS NOT NULL"));
 });
+
+test('库存统计只算卡台，不把 zzshu 那类充值渠道当成第三个卡台', () => {
+  // provider_accounts 里混着两种：purpose='CARD'（hnskj / highvcc，卡台）和
+  // purpose='RECHARGE'（zzshu 旧直充系统，CLAUDE.md 明确「只保留历史兼容、不参与新链路」）。
+  // 全项目筛卡台都用 purpose='CARD'（分卡 workflow-repository、路线 provider-route-service、
+  // 设置页 card-supply-policy-admin-service、导入 manual-card-import-service），这里曾经漏了。
+  //
+  // 漏了也不出错，只因为 zzshu 生产上恰好 0 张卡 —— 依赖「碰巧没卡」而不是「它不是卡台」。
+  // 2026-09-20 我自己就照着 provider_accounts 的行数报了「生产有 3 个卡台」，被 Lemon 当场纠正。
+  for (const product of ['plus', 'pro_5x', 'pro_20x']) {
+    const sql = providerCardStockSql({ productCode: product });
+    assert.ok(sql.includes("pa.purpose = 'CARD'"), `${product} 的库存统计必须只算卡台`);
+    assert.ok(sql.indexOf('WHERE') < sql.indexOf('GROUP BY'), 'WHERE 必须在 GROUP BY 之前');
+  }
+});

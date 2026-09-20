@@ -233,6 +233,12 @@ export function providerCardStockSql({ productCode = 'plus' } = {}) {
         WHERE u.card_id=c.id AND u.status IN ('RESERVED','CONSUMED','RECONCILIATION'))>0) AS any_used
     FROM cards c INNER JOIN provider_accounts pa ON pa.id=c.provider_account_id
     LEFT JOIN card_supply_policies sp ON sp.provider_account_id = pa.id AND sp.product_code = '${normalizedProduct}'
+    -- 只统计**卡台**。provider_accounts 里还有 purpose='RECHARGE' 的行（zzshu 旧直充系统，
+    -- CLAUDE.md：只保留历史兼容、不参与新链路），它不是卡台。全项目筛卡台都用 purpose='CARD'
+    -- （分卡 workflow-repository、路线 provider-route-service、设置页、导入），唯独这里漏了。
+    -- 此前不出错只是因为 zzshu 恰好 0 张卡 —— 依赖「碰巧没卡」而不是「它不是卡台」，
+    -- 哪天历史数据让它挂上一张，工作台就会冒出第三个卡台（2026-09-20 我自己就这么看错过）。
+    WHERE pa.purpose = 'CARD'
     GROUP BY pa.id, pa.account_code, pa.provider_code, pa.supply_fault_state,
       pa.supply_fault_reason, pa.supply_fault_at, pa.wallet_floor, pa.wallet_alert_threshold,
       sp.target_available, sp.daily_open_limit
