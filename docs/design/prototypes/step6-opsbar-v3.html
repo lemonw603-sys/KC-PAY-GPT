@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>营业条 · 三个方向</title>
+<style>
+:root{
+  --bg:hsl(168,16%,97%);
+  --a:hsl(163,72%,26%); --a-soft:hsl(163,44%,93%); --a-on:hsl(0,0%,100%);
+  --t:hsl(176,18%,11%); --t2:hsl(170,10%,38%); --t3:hsl(168,9%,52%);
+  --s:hsl(0,0%,100%); --s2:hsl(168,20%,97%); --s3:hsl(168,16%,95%); --bd:hsl(168,14%,89%);
+  --warn:hsl(32,72%,42%); --warn-soft:hsl(38,80%,95%);
+  --ok:hsl(150,54%,36%); --ok-soft:hsl(150,44%,95%);
+  --danger:hsl(4,66%,50%);
+  --sh:0 1px 2px hsla(176,25%,10%,.05),0 12px 28px -18px hsla(176,25%,10%,.25);
+  --fd:"Familjen Grotesk","PingFang SC","Hiragino Sans GB",system-ui,sans-serif;
+  --fm:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--t);font-family:var(--fd);font-size:14px;line-height:1.55}
+.page{max-width:1280px;margin:0 auto;padding:22px 20px 60px}
+h1{margin:0 0 3px;font-size:19px}
+.sub{margin:0 0 18px;color:var(--t2);font-size:12.5px}
+.v{margin:22px 0 0;border:1px solid var(--bd);border-radius:15px;background:var(--s);overflow:hidden;box-shadow:var(--sh)}
+.v>header{padding:11px 17px;background:var(--s2);border-bottom:1px solid var(--bd)}
+.v>header b{font-size:14px} .v>header span{color:var(--t2);font-size:12px;margin-left:9px}
+.stage{padding:17px;background:var(--bg)}
+.pagehead{display:flex;align-items:baseline;gap:12px;margin:0 0 12px}
+.pagehead h2{margin:0;font-size:19px} .pagehead em{font-style:normal;color:var(--t3);font-size:12px}
+
+/* 通用控件 */
+.tg{display:inline-flex;align-items:center;gap:8px}
+.tg i{width:32px;height:18px;border-radius:999px;background:var(--a);position:relative;flex:none;transition:.15s}
+.tg i::after{content:'';position:absolute;right:2px;top:2px;width:14px;height:14px;border-radius:50%;background:#fff}
+.tg.off i{background:hsl(168,10%,76%)} .tg.off i::after{left:2px;right:auto}
+.tg b{font-size:12.5px;font-weight:600}
+.f{border:1px solid var(--bd);border-radius:7px;padding:4px 9px;font-size:12.5px;background:var(--s);font-family:inherit;height:30px}
+.btn{border:1px solid var(--bd);background:var(--s);border-radius:7px;padding:0 12px;height:30px;font-size:12.5px;font-weight:600;cursor:pointer;font-family:inherit;white-space:nowrap}
+.btn.p{background:var(--a);border-color:var(--a);color:var(--a-on)}
+.btn.xs{height:26px;padding:0 10px;font-size:12px}
+.pill{display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:999px;font-size:12px;font-weight:600;background:var(--a-soft);color:var(--a);white-space:nowrap}
+.pill.m{background:var(--s3);color:var(--t3)}
+.pill i{width:6px;height:6px;border-radius:50%;background:currentColor;flex:none}
+.sep{width:1px;height:26px;background:var(--bd);flex:none}
+.mono{font-family:var(--fm)}
+.muted{color:var(--t3);font-size:12px}
+
+/* ===== 方向一：贴顶横向工具栏 ===== */
+.bar{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:10px 16px;
+  background:var(--s);border:1px solid var(--bd);border-radius:12px}
+.bar .grp{display:flex;align-items:center;gap:9px}
+.bar .k{font-size:11.5px;color:var(--t3)}
+
+/* ===== 方向二：窄卡 + 右侧并排 ===== */
+.side{display:grid;grid-template-columns:320px 1fr;gap:14px}
+@media(max-width:900px){.side{grid-template-columns:1fr}}
+.card{background:var(--s);border:1px solid var(--bd);border-radius:14px;overflow:hidden}
+.card h3{margin:0;padding:11px 16px;font-size:13px;border-bottom:1px solid var(--s3);display:flex;justify-content:space-between;align-items:center}
+.card h3 em{font-style:normal;font-weight:400;color:var(--t3);font-size:11.5px}
+.cb{padding:12px 16px;display:grid;gap:11px}
+.line{display:flex;align-items:center;justify-content:space-between;gap:9px}
+.kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:0}
+.kpis>div{padding:13px 16px;border-left:1px solid var(--s3)}
+.kpis>div:first-child{border-left:0}
+.kpis label{display:block;font-size:11.5px;color:var(--t3);margin-bottom:2px}
+.kpis b{font-family:var(--fm);font-size:23px;font-weight:600;letter-spacing:-.02em}
+.kpis b small{font-size:12px;color:var(--t3);font-weight:500;font-family:var(--fd)}
+.kpis .mute b{font-size:13px;font-weight:500;color:var(--t3);font-family:var(--fd)}
+
+/* ===== 方向三：状态 + 抽屉 ===== */
+.strip{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;
+  padding:12px 17px;background:var(--s);border:1px solid var(--bd);border-radius:12px}
+.strip .live{display:flex;align-items:center;gap:10px}
+.strip .dot{width:8px;height:8px;border-radius:50%;background:var(--ok);box-shadow:0 0 0 4px var(--ok-soft);flex:none}
+.strip .live b{font-size:14.5px}
+.strip .live small{display:block;color:var(--t3);font-size:11.5px}
+details.drw{margin-top:10px;border:1px solid var(--bd);border-radius:12px;background:var(--s);overflow:hidden}
+details.drw summary{padding:10px 17px;cursor:pointer;list-style:none;font-size:12.5px;font-weight:600;
+  display:flex;justify-content:space-between;align-items:center;color:var(--t2)}
+details.drw summary::-webkit-details-marker{display:none}
+details.drw summary::after{content:'展开';color:var(--t3);font-weight:400;font-size:11.5px}
+details.drw[open] summary::after{content:'收起'}
+details.drw .body{padding:13px 17px;border-top:1px solid var(--s3);display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+</style>
+</head>
+<body>
+<div class="page">
+<h1>那一块 · 三个方向</h1>
+<p class="sub">共同点：<b>都不再让它独占一整行</b>。内容就这么多，占满一行怎么排都空。</p>
+
+<!-- 一 -->
+<section class="v">
+  <header><b>一 · 贴顶工具栏</b><span>全部横向排在一条里，自然填满；不是卡片，是页面的一条边</span></header>
+  <div class="stage">
+    <div class="pagehead"><h2>今天的运行情况</h2><em>更新于 09:21</em></div>
+    <div class="bar">
+      <div class="grp">
+        <span class="tg"><i></i><b>接单</b></span>
+        <span class="tg"><i></i><b>派单</b></span>
+        <span class="tg"><i></i><b>付款</b></span>
+      </div>
+      <span class="sep"></span>
+      <div class="grp"><span class="k">充值</span><span class="pill"><i></i>API</span><button class="btn xs">改用浏览器</button></div>
+      <span class="sep"></span>
+      <div class="grp"><span class="k">浏览器卡台</span><select class="f"><option>HNSKJ</option><option>highvcc</option></select><button class="btn xs">切换</button></div>
+      <span class="sep"></span>
+      <div class="grp" style="margin-left:auto"><span class="k">发码</span><select class="f"><option>Plus</option><option>Pro 5X</option></select><input class="f mono" style="width:52px;text-align:center" value="1"><button class="btn p">生成并复制</button></div>
+    </div>
+    <p class="muted" style="margin:9px 2px 0">下面接数字墙、要我处理、今日订单…（此处略）</p>
+  </div>
+</section>
+
+<!-- 二 -->
+<section class="v">
+  <header><b>二 · 窄卡片 + 右侧并排</b><span>它只占左边 320px，右边同一行放今日数字，空白被填掉</span></header>
+  <div class="stage">
+    <div class="pagehead"><h2>今天的运行情况</h2><em>更新于 09:21</em></div>
+    <div class="side">
+      <div class="card">
+        <h3>运营控制 <em>立刻生效</em></h3>
+        <div class="cb">
+          <div class="line"><span class="tg"><i></i><b>接单</b></span><span class="tg"><i></i><b>派单</b></span><span class="tg"><i></i><b>付款</b></span></div>
+          <div class="line"><span class="muted">充值方式</span><span style="display:flex;gap:7px;align-items:center"><span class="pill"><i></i>API</span><button class="btn xs">改</button></span></div>
+          <div class="line"><span class="muted">浏览器卡台</span><span style="display:flex;gap:7px;align-items:center"><select class="f"><option>HNSKJ</option></select><button class="btn xs">切</button></span></div>
+          <div class="line"><span class="muted">发码</span><span style="display:flex;gap:7px;align-items:center"><select class="f" style="width:74px"><option>Plus</option></select><input class="f mono" style="width:46px;text-align:center" value="1"><button class="btn p">生成</button></span></div>
+        </div>
+      </div>
+      <div class="card">
+        <h3>今天 <em>进订单页 →</em></h3>
+        <div class="kpis">
+          <div><label>今日单数</label><b>4 <small>处理中 1</small></b></div>
+          <div><label>成功率</label><b>75<small>%</small></b></div>
+          <div><label>可分配卡</label><b>2 <small>张</small></b></div>
+        </div>
+        <div class="kpis" style="border-top:1px solid var(--s3)">
+          <div class="mute"><label>自动完成率</label><b>待接入</b></div>
+          <div class="mute"><label>今日花费</label><b>待接入</b></div>
+          <div class="mute"><label>异常支出</label><b>待接入</b></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 三 -->
+<section class="v">
+  <header><b>三 · 只留状态，控制收进抽屉</b><span>平时只看到「正常营业中」一条；要改才展开</span></header>
+  <div class="stage">
+    <div class="pagehead"><h2>今天的运行情况</h2><em>更新于 09:21</em></div>
+    <div class="strip">
+      <div class="live"><span class="dot"></span><div><b>正常营业中</b><small>接单 · 派单 · 付款 都开着 ｜ API 充值 ｜ 浏览器卡台 HNSKJ</small></div></div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <select class="f"><option>Plus</option><option>Pro 5X</option></select>
+        <input class="f mono" style="width:52px;text-align:center" value="1">
+        <button class="btn p">生成并复制</button>
+      </div>
+    </div>
+    <details class="drw">
+      <summary>改开关 · 路线 · 卡台</summary>
+      <div class="body">
+        <span class="tg"><i></i><b>接单</b></span>
+        <span class="tg"><i></i><b>派单</b></span>
+        <span class="tg"><i></i><b>付款</b></span>
+        <span class="sep"></span>
+        <span class="muted">充值</span><span class="pill"><i></i>API</span><button class="btn xs">改用浏览器</button>
+        <span class="sep"></span>
+        <span class="muted">浏览器卡台</span><select class="f"><option>HNSKJ</option><option>highvcc</option></select><button class="btn xs">切换</button>
+      </div>
+    </details>
+    <p class="muted" style="margin:9px 2px 0">发码是每天要用的，留在外面；开关和路线很少动，收起来。</p>
+  </div>
+</section>
+
+</div>
+</body>
+</html>

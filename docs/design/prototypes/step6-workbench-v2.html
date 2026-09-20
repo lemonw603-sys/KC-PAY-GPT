@@ -1,0 +1,260 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>工作台 · 重新设计</title>
+<style>
+:root{
+  --bg:hsl(168,16%,97%);
+  --a:hsl(163,72%,26%); --a-soft:hsl(163,44%,93%); --a-on:hsl(0,0%,100%);
+  --t:hsl(176,18%,11%); --t2:hsl(170,10%,38%); --t3:hsl(168,9%,52%);
+  --s:hsl(0,0%,100%); --s2:hsl(168,20%,97%); --s3:hsl(168,16%,95%); --bd:hsl(168,14%,89%);
+  --warn:hsl(32,72%,42%); --warn-soft:hsl(38,80%,95%);
+  --ok:hsl(150,54%,36%); --ok-soft:hsl(150,44%,95%);
+  --danger:hsl(4,66%,50%); --danger-soft:hsl(6,72%,97%);
+  --sh:0 1px 2px hsla(176,25%,10%,.05),0 12px 28px -18px hsla(176,25%,10%,.25);
+  --fd:"Familjen Grotesk","PingFang SC","Hiragino Sans GB",system-ui,sans-serif;
+  --fm:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--t);font-family:var(--fd);font-size:14px;line-height:1.55}
+.page{max-width:1280px;margin:0 auto;padding:24px 20px 70px}
+.top{margin:0 0 18px}
+.top h1{margin:0 0 4px;font-size:20px}
+.top p{margin:0;color:var(--t2);font-size:13px}
+.variant{margin:24px 0 0;border:1px solid var(--bd);border-radius:16px;background:var(--s);overflow:hidden;box-shadow:var(--sh)}
+.variant>header{padding:12px 18px;background:var(--s2);border-bottom:1px solid var(--bd)}
+.variant>header b{font-size:14.5px} .variant>header span{color:var(--t2);font-size:12.5px;margin-left:10px}
+.stage{padding:18px;background:var(--bg);display:grid;gap:14px}
+
+/* ===== 状态条 ===== */
+.hero{display:flex;align-items:center;justify-content:space-between;gap:20px;flex-wrap:wrap;
+  padding:15px 20px;background:var(--s);border:1px solid var(--bd);border-radius:14px}
+.hero .st{display:flex;align-items:center;gap:11px}
+.hero .dot{width:9px;height:9px;border-radius:50%;background:var(--ok);box-shadow:0 0 0 4px var(--ok-soft)}
+.hero .st b{font-size:16px;letter-spacing:-.01em}
+.hero .st small{display:block;color:var(--t3);font-size:11.5px}
+.sws{display:flex;gap:7px}
+.swc{display:inline-flex;align-items:center;gap:7px;padding:5px 12px 5px 9px;border-radius:999px;
+  border:1px solid var(--bd);background:var(--s2);font-size:12.5px;cursor:pointer}
+.swc i{width:8px;height:8px;border-radius:50%;background:var(--ok);flex:none}
+.swc.off{color:var(--t3)} .swc.off i{background:hsl(168,10%,72%)}
+.lnk{border:0;background:none;color:var(--a);font-size:12.5px;font-weight:600;cursor:pointer;font-family:inherit;padding:0}
+
+/* ===== 要处理 ===== */
+.act{border:1px solid hsl(38,60%,84%);background:var(--warn-soft);border-radius:14px;overflow:hidden}
+.act .h{padding:11px 18px;display:flex;align-items:center;gap:9px;border-bottom:1px solid hsl(38,55%,88%)}
+.act .h b{font-size:14px}
+.act .n{background:var(--warn);color:#fff;border-radius:999px;font-size:11px;font-weight:700;padding:1px 8px}
+.act ul{margin:0;padding:4px 0;list-style:none}
+.act li{display:flex;align-items:center;gap:11px;padding:9px 18px}
+.act li + li{border-top:1px solid hsl(38,55%,91%)}
+.act li .d{width:6px;height:6px;border-radius:50%;flex:none}
+.act li .d.bad{background:var(--danger)} .act li .d.warn{background:var(--warn)}
+.act li .tx{flex:1;min-width:0;font-size:13px}
+.act li .tx small{display:block;color:var(--t3);font-size:11.5px}
+
+/* ===== 一行摘要 ===== */
+.sum{display:flex;align-items:center;gap:0;padding:0;background:var(--s);border:1px solid var(--bd);border-radius:14px;overflow:hidden;flex-wrap:wrap}
+.sum > div{padding:13px 20px;border-left:1px solid var(--s3);flex:1;min-width:130px}
+.sum > div:first-child{border-left:0}
+.sum label{display:block;font-size:11.5px;color:var(--t3);margin-bottom:2px}
+.sum b{font-family:var(--fm);font-size:22px;font-weight:600;letter-spacing:-.02em}
+.sum b small{font-size:12px;color:var(--t3);font-weight:500;font-family:var(--fd)}
+.sum .mute b{font-size:13px;font-weight:500;color:var(--t3);font-family:var(--fd)}
+
+/* ===== 卡片 ===== */
+.c{background:var(--s);border:1px solid var(--bd);border-radius:14px;overflow:hidden}
+.c > h3{margin:0;padding:12px 18px;font-size:13.5px;border-bottom:1px solid var(--s3);
+  display:flex;align-items:center;justify-content:space-between;gap:10px}
+.c > h3 em{font-style:normal;font-weight:400;font-size:11.5px;color:var(--t3)}
+.cb{padding:6px 18px 14px}
+table{width:100%;border-collapse:collapse;font-size:12.5px}
+th{text-align:left;padding:8px 0;color:var(--t3);font-weight:500;font-size:11px;border-bottom:1px solid var(--s3)}
+td{padding:9px 0;border-bottom:1px solid var(--s3)}
+tbody tr:last-child td{border-bottom:0}
+.mono{font-family:var(--fm)}
+.muted{color:var(--t3)}
+.tag{display:inline-flex;align-items:center;gap:4px;font-size:11.5px;font-weight:600}
+.tag::before{content:'';width:6px;height:6px;border-radius:50%}
+.tag.run::before{background:var(--warn)} .tag.ok::before{background:var(--ok)} .tag.wait::before{background:hsl(212,62%,55%)}
+.rig{display:flex;align-items:baseline;justify-content:space-between;gap:10px;padding:10px 0;border-bottom:1px solid var(--s3)}
+.rig:last-child{border-bottom:0}
+.rig .nm{font-size:13px;font-weight:600}
+.rig .nm small{display:block;font-weight:400;color:var(--t3);font-size:11.5px}
+.rig .v{font-family:var(--fm);font-size:17px;font-weight:600}
+.rig .v small{font-size:11.5px;color:var(--t3);font-weight:400}
+.two{display:grid;grid-template-columns:1.5fr 1fr;gap:14px}
+@media(max-width:900px){.two{grid-template-columns:1fr}}
+
+/* 控制抽屉 */
+.drw{border:1px solid var(--bd);border-radius:14px;background:var(--s);overflow:hidden}
+.drw summary{padding:12px 18px;cursor:pointer;font-size:13px;font-weight:600;list-style:none;display:flex;justify-content:space-between;align-items:center}
+.drw summary::-webkit-details-marker{display:none}
+.drw summary span{font-weight:400;color:var(--t3);font-size:12px}
+.drw .body{padding:4px 18px 16px;display:grid;gap:10px;border-top:1px solid var(--s3)}
+.row{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+.row .lb{width:58px;flex:none;font-size:12.5px;color:var(--t3)}
+.f{border:1px solid var(--bd);border-radius:8px;padding:5px 10px;font-size:12.5px;background:var(--s);font-family:inherit}
+.btn{border:1px solid var(--bd);background:var(--s);border-radius:8px;padding:5px 12px;font-size:12.5px;font-weight:600;cursor:pointer;font-family:inherit}
+.btn.p{background:var(--a);border-color:var(--a);color:var(--a-on)}
+.pill{display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:999px;font-size:11.5px;font-weight:600;background:var(--a-soft);color:var(--a)}
+.pill.m{background:var(--s3);color:var(--t3)}
+</style>
+</head>
+<body>
+<div class="page">
+
+<div class="top">
+  <h1>工作台 · 重新设计</h1>
+  <p>两版，差在「主角是谁」。数据取自本地 demo 库。</p>
+</div>
+
+<!-- ============ 版本一 ============ -->
+<section class="variant">
+  <header><b>一 · 待办优先</b><span>要不要我动手 → 今天怎么样 → 细节；控制项收进抽屉</span></header>
+  <div class="stage">
+
+    <div class="hero">
+      <div class="st"><span class="dot"></span><div><b>正常营业中</b><small>接单 · 派单 · 付款 都开着</small></div></div>
+      <div class="sws">
+        <button class="swc"><i></i>接单</button>
+        <button class="swc"><i></i>派单</button>
+        <button class="swc"><i></i>付款</button>
+      </div>
+    </div>
+
+    <div class="act">
+      <div class="h"><b>要我处理</b><span class="n">2</span></div>
+      <ul>
+        <li><span class="d bad"></span><span class="tx">highvcc token 已失效<small>开卡会一直失败</small></span><button class="btn p">去贴 token</button></li>
+        <li><span class="d warn"></span><span class="tx">对账差异 · 无主扣款 1 张<small>昨夜日对账</small></span><button class="btn">去处理</button></li>
+      </ul>
+    </div>
+
+    <div class="sum">
+      <div><label>今日单数</label><b>4 <small>处理中 1</small></b></div>
+      <div><label>成功率</label><b>75<small>%</small></b></div>
+      <div><label>可分配卡</label><b>2 <small>张</small></b></div>
+      <div class="mute"><label>自动完成率</label><b>待接入</b></div>
+      <div class="mute"><label>今日花费 / 异常支出</label><b>待接入</b></div>
+    </div>
+
+    <div class="two">
+      <div class="c">
+        <h3>今日订单 <em>进订单页 →</em></h3>
+        <div class="cb"><table>
+          <thead><tr><th>单号</th><th>阶段</th><th>客户</th><th style="text-align:right">时间</th></tr></thead>
+          <tbody>
+            <tr><td class="mono">PJV1-BBBB…</td><td><span class="tag run">充值处理中</span></td><td class="muted">running@example.com</td><td class="muted" style="text-align:right">2 小时前</td></tr>
+            <tr><td class="mono">PJV1-CCCC…</td><td><span class="tag wait">等客户换 Session</span></td><td class="muted">waiting@example.com</td><td class="muted" style="text-align:right">5 小时前</td></tr>
+            <tr><td class="mono">PJV1-AAAA…</td><td><span class="tag ok">充值成功</span></td><td class="muted">ok@example.com</td><td class="muted" style="text-align:right">30 小时前</td></tr>
+          </tbody>
+        </table></div>
+      </div>
+      <div style="display:grid;gap:14px;align-content:start">
+        <div class="c">
+          <h3>卡与钱 <em>去卡片页 →</em></h3>
+          <div class="cb">
+            <div class="rig"><span class="nm">HNSKJ<small>钱包 $41.20</small></span><span class="v">1 <small>/ 2</small></span></div>
+            <div class="rig"><span class="nm">highvcc<small>钱包点开查</small></span><span class="v">1 <small>/ 2</small></span></div>
+          </div>
+        </div>
+        <div class="c">
+          <h3>昨夜对账 <em>看逐张 →</em></h3>
+          <div class="cb">
+            <div class="rig"><span class="nm">无主扣款</span><span class="v" style="color:var(--danger)">1</span></div>
+            <div class="rig"><span class="nm">无法核对金额</span><span class="v">5</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <details class="drw">
+      <summary>路线 · 卡台 · 发码 <span>当前 API 充值 · 浏览器路线走 HNSKJ</span></summary>
+      <div class="body">
+        <div class="row"><span class="lb">充值方式</span><span class="pill">API 充值</span><button class="btn">改用浏览器自动充</button></div>
+        <div class="row"><span class="lb">卡台</span><span class="pill m">API 固定 HNSKJ</span><span class="muted">·</span><span class="muted" style="font-size:12.5px">浏览器</span><select class="f"><option>HNSKJ</option><option>highvcc</option></select><button class="btn">切换</button></div>
+        <div class="row"><span class="lb">发码</span><select class="f"><option>Plus</option><option>Pro 5X</option></select><input class="f mono" style="width:60px;text-align:center" value="1"><button class="btn p">生成并复制</button></div>
+      </div>
+    </details>
+  </div>
+</section>
+
+<!-- ============ 版本二 ============ -->
+<section class="variant">
+  <header><b>二 · 一屏总览</b><span>不折叠、不分主次，但每块面积按信息量分配；控制项固定在最下一条</span></header>
+  <div class="stage">
+
+    <div class="hero">
+      <div class="st"><span class="dot"></span><div><b>正常营业中</b><small>4 单 · 成功率 75% · 可分配 2 张</small></div></div>
+      <div class="sws">
+        <button class="swc"><i></i>接单</button>
+        <button class="swc"><i></i>派单</button>
+        <button class="swc"><i></i>付款</button>
+      </div>
+    </div>
+
+    <div class="two">
+      <div style="display:grid;gap:14px;align-content:start">
+        <div class="act">
+          <div class="h"><b>要我处理</b><span class="n">2</span></div>
+          <ul>
+            <li><span class="d bad"></span><span class="tx">highvcc token 已失效<small>开卡会一直失败</small></span><button class="btn p">去贴</button></li>
+            <li><span class="d warn"></span><span class="tx">对账差异 · 无主扣款 1 张<small>昨夜日对账</small></span><button class="btn">去处理</button></li>
+          </ul>
+        </div>
+        <div class="c">
+          <h3>今日订单 <em>进订单页 →</em></h3>
+          <div class="cb"><table>
+            <thead><tr><th>单号</th><th>阶段</th><th style="text-align:right">时间</th></tr></thead>
+            <tbody>
+              <tr><td class="mono">PJV1-BBBB…</td><td><span class="tag run">充值处理中</span></td><td class="muted" style="text-align:right">2 小时前</td></tr>
+              <tr><td class="mono">PJV1-CCCC…</td><td><span class="tag wait">等换 Session</span></td><td class="muted" style="text-align:right">5 小时前</td></tr>
+              <tr><td class="mono">PJV1-AAAA…</td><td><span class="tag ok">充值成功</span></td><td class="muted" style="text-align:right">30 小时前</td></tr>
+            </tbody>
+          </table></div>
+        </div>
+      </div>
+
+      <div style="display:grid;gap:14px;align-content:start">
+        <div class="c">
+          <h3>卡与钱</h3>
+          <div class="cb">
+            <div class="rig"><span class="nm">HNSKJ<small>$41.20 · 底线 30</small></span><span class="v">1 <small>/ 2</small></span></div>
+            <div class="rig"><span class="nm">highvcc<small>余额点开查 · 底线 20</small></span><span class="v">1 <small>/ 2</small></span></div>
+          </div>
+        </div>
+        <div class="c">
+          <h3>昨夜对账 <em>看逐张 →</em></h3>
+          <div class="cb">
+            <div class="rig"><span class="nm">无主扣款</span><span class="v" style="color:var(--danger)">1</span></div>
+            <div class="rig"><span class="nm">待登记手动用卡</span><span class="v">0</span></div>
+            <div class="rig"><span class="nm">无法核对金额</span><span class="v">5</span></div>
+          </div>
+        </div>
+        <div class="c">
+          <h3>还没接上的数 <em>后端未做</em></h3>
+          <div class="cb">
+            <div class="rig"><span class="nm muted" style="font-weight:400">自动完成率</span><span class="muted" style="font-size:12.5px">待接入</span></div>
+            <div class="rig"><span class="nm muted" style="font-weight:400">今日花费 · 异常支出</span><span class="muted" style="font-size:12.5px">待接入</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="drw"><div class="body" style="border-top:0;padding:14px 18px">
+      <div class="row"><span class="lb">充值方式</span><span class="pill">API 充值</span><button class="btn">改用浏览器自动充</button>
+        <span style="width:22px"></span>
+        <span class="lb">卡台</span><span class="pill m">API 固定 HNSKJ</span><span class="muted" style="font-size:12.5px">浏览器</span><select class="f"><option>HNSKJ</option><option>highvcc</option></select><button class="btn">切换</button>
+        <span style="width:22px"></span>
+        <span class="lb">发码</span><select class="f"><option>Plus</option></select><input class="f mono" style="width:56px;text-align:center" value="1"><button class="btn p">生成并复制</button>
+      </div>
+    </div></div>
+  </div>
+</section>
+
+</div>
+</body>
+</html>

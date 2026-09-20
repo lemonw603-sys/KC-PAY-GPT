@@ -1,0 +1,58 @@
+{
+  "name": "工作台营业条 ↔ 原型丁版（三等分段）",
+  "viewport": [1440, 900],
+  "tolerancePx": 1,
+  "note": "原型丁版是 Lemon 2026-09-20 从四版里挑定的。段宽由各自容器决定，两边容器宽不同，所以不比 width，只比高度、内边距与纵向对齐。",
+  "prototype": {
+    "file": "docs/design/prototypes/step6-opsbar-v4.html",
+    "root": ".D"
+  },
+  "impl": {
+    "url": "${PARITY_ADMIN_BASE}/admin/",
+    "root": ".wb-ops",
+    "login": { "passwordEnv": "PARITY_ADMIN_PASSWORD" }
+  },
+  "probes": [
+    {
+      "name": "三段",
+      "proto": ".seg",
+      "impl": ".wb-seg",
+      "all": true,
+      "metrics": ["height", "contentTop", "contentBottom", "padding"]
+    },
+    {
+      "name": "段小标题",
+      "proto": ".lab",
+      "impl": ".wb-seg-t",
+      "all": true,
+      "metrics": ["height", "fontSize", "fontWeight", "letterSpacing", "marginBottom"]
+    },
+    {
+      "name": "路线分段器",
+      "proto": ".seg2",
+      "impl": ".wb-seg2",
+      "metrics": ["height", "borderRadius"]
+    },
+    {
+      "name": "分段器按钮",
+      "proto": ".seg2 button",
+      "impl": ".wb-seg2 button",
+      "all": true,
+      "metrics": ["height", "fontSize", "fontWeight"]
+    },
+    {
+      "name": "输入控件",
+      "proto": ".f",
+      "impl": ".wb-field",
+      "all": true,
+      "metrics": ["height", "fontSize"]
+    },
+    {
+      "name": "按钮",
+      "proto": ".b",
+      "impl": ".wb-btn",
+      "all": true,
+      "metrics": ["height", "fontSize", "fontWeight"]
+    }
+  ]
+}

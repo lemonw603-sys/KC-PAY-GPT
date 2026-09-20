@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>营业条重排 · 三版</title>
+<!--
+  只改工作台顶部那一块（Lemon 2026-09-20：整体排版认可，就这块不好）。
+  整页结构、数字墙、卡与钱、队列、今日订单一律不动。
+
+  现在的毛病：四种性质不同的东西（营业开关 / 走哪条路线 / 用哪个卡台 / 发码）
+  挤在一个无标题的方框里；三开关贴左上、发码掉在左下、右边空一大片；各块间距不一。
+-->
+<style>
+:root{
+  --bg:hsl(168,16%,97%);
+  --a:hsl(163,72%,26%); --a-soft:hsl(163,44%,93%); --a-on:hsl(0,0%,100%);
+  --t:hsl(176,18%,11%); --t2:hsl(170,10%,38%); --t3:hsl(168,9%,50%);
+  --s:hsl(0,0%,100%); --s2:hsl(168,20%,97%); --s3:hsl(168,16%,95%); --bd:hsl(168,14%,88%);
+  --ok:hsl(150,54%,36%); --ok-soft:hsl(150,44%,94%);
+  --sh:inset 0 1px 0 hsla(0,0%,100%,.85),0 1px 2px hsla(176,25%,10%,.06),0 14px 30px -14px hsla(176,25%,10%,.22);
+  --fd:"Familjen Grotesk","PingFang SC","Hiragino Sans GB",system-ui,sans-serif;
+  --fm:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--t);font-family:var(--fd);font-size:14px;line-height:1.55}
+.page{max-width:1180px;margin:0 auto;padding:26px 20px 70px}
+h1{margin:0 0 5px;font-size:20px}
+.sub{margin:0 0 22px;color:var(--t2);font-size:13px}
+.variant{margin:26px 0 0;border:1px solid var(--bd);border-radius:15px;background:var(--s);box-shadow:var(--sh);overflow:hidden}
+.variant>header{padding:12px 17px;background:var(--s2);border-bottom:1px solid var(--bd);display:flex;gap:11px;align-items:baseline;flex-wrap:wrap}
+.variant>header b{font-size:14.5px}
+.variant>header span{color:var(--t2);font-size:12.5px}
+.stage{padding:16px;background:var(--bg)}
+
+/* 卡片外壳（与页面其余部分同规格，不改） */
+.card{background:var(--s);border:1px solid var(--bd);border-radius:14px;overflow:hidden}
+.ch{padding:11px 16px;border-bottom:1px solid var(--bd);background:var(--s2);display:flex;align-items:center;justify-content:space-between;gap:10px}
+.ch .kick{margin:0;font-size:10.5px;letter-spacing:.08em;color:var(--a);font-weight:700}
+.ch h3{margin:1px 0 0;font-size:14.5px}
+.ch .ro{font-size:11px;color:var(--t3);background:var(--s3);border:1px solid var(--bd);border-radius:999px;padding:2px 9px}
+
+/* 开关 */
+.sw{display:inline-flex;align-items:center;gap:9px}
+.sw i{width:36px;height:20px;border-radius:999px;background:var(--a);position:relative;display:inline-block;flex:none}
+.sw i::after{content:'';position:absolute;right:2px;top:2px;width:16px;height:16px;border-radius:50%;background:#fff}
+.sw .lb b{font-size:13.5px;display:block;line-height:1.25}
+.sw .lb small{display:block;font-size:11px;color:var(--t3)}
+
+.btn{border:1px solid var(--bd);background:var(--s);color:var(--t);border-radius:8px;padding:5px 12px;font-size:12.5px;font-weight:600;cursor:pointer;font-family:inherit;white-space:nowrap}
+.btn.p{background:var(--a);border-color:var(--a);color:var(--a-on)}
+.sel{border:1px solid var(--bd);border-radius:8px;padding:5px 10px;font-size:12.5px;background:var(--s);font-family:inherit}
+.chip{display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:999px;font-size:11.5px;font-weight:600;border:1px solid transparent;white-space:nowrap}
+.chip.ok{background:var(--ok-soft);color:var(--ok);border-color:hsl(150,40%,82%)}
+.chip.mute{background:var(--s3);color:var(--t3);border-color:var(--bd)}
+.hint{margin:6px 0 0;font-size:11.5px;color:var(--t3);line-height:1.5}
+.grp-t{font-size:11.5px;font-weight:700;color:var(--t2);margin:0 0 8px}
+
+/* ---- A：三列均分 ---- */
+.colsA{display:grid;grid-template-columns:1fr 1.25fr 1fr;align-items:stretch}
+.colsA > div{padding:14px 18px;border-left:1px solid var(--s3)}
+.colsA > div:first-child{border-left:0}
+.swsA{display:grid;gap:11px}
+.rowline{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+
+/* ---- B：上下两层 ---- */
+.tierTop{padding:13px 18px;display:flex;align-items:center;gap:30px;flex-wrap:wrap;border-bottom:1px solid var(--s3);background:var(--s2)}
+.tierBot{display:grid;grid-template-columns:1.35fr 1fr}
+.tierBot > div{padding:14px 18px;border-left:1px solid var(--s3)}
+.tierBot > div:first-child{border-left:0}
+
+/* ---- C：拆成两张卡 ---- */
+.twoCards{display:grid;grid-template-columns:1.6fr 1fr;gap:13px}
+.pairs{display:grid;grid-template-columns:1fr 1fr;gap:16px;padding:14px 18px}
+@media(max-width:900px){.colsA,.tierBot,.twoCards,.pairs{grid-template-columns:1fr}}
+
+.foot{margin-top:32px;padding:17px;border:1px solid var(--bd);border-radius:14px;background:var(--s);font-size:12.5px;color:var(--t2)}
+.foot h4{margin:0 0 6px;font-size:13px;color:var(--t)}
+.foot ul{margin:0 0 13px;padding-left:19px} .foot li{margin-bottom:5px}
+</style>
+</head>
+<body>
+<div class="page">
+
+<h1>工作台顶部那一块 · 三个排法</h1>
+<p class="sub">整页结构、数字墙、卡与钱、队列、今日订单<strong>一律不动</strong>，只改这一块。三版都做了同一件事：给它一个标题区，把四种东西分组、对齐，右边不再空一大片。</p>
+
+<!-- A -->
+<section class="variant">
+  <header><b>A · 三列均分</b><span>营业 | 路线与卡台 | 发码，竖线分隔，三列各自对齐</span></header>
+  <div class="stage">
+    <div class="card">
+      <div class="ch"><div><p class="kick">运营控制</p><h3>现在怎么跑</h3></div><span class="ro">改动立刻生效</span></div>
+      <div class="colsA">
+        <div>
+          <p class="grp-t">营业开关</p>
+          <div class="swsA">
+            <span class="sw"><i></i><span class="lb"><b>接单</b><small>新单进入</small></span></span>
+            <span class="sw"><i></i><span class="lb"><b>派单</b><small>分卡执行</small></span></span>
+            <span class="sw"><i></i><span class="lb"><b>付款</b><small>允许提交付款</small></span></span>
+          </div>
+        </div>
+        <div>
+          <p class="grp-t">走哪条路线 · 用哪个卡台</p>
+          <div class="rowline" style="margin-bottom:9px"><span class="chip ok">当前 API</span><button class="btn">切到浏览器</button></div>
+          <div class="rowline"><span class="chip mute">API · HNSKJ 固定</span></div>
+          <div class="rowline" style="margin-top:9px"><select class="sel"><option>HNSKJ</option><option>highvcc</option></select><button class="btn">切换</button></div>
+          <p class="hint">Browser 路线卡台，只影响新订单；当前没有排队等卡的单可接管。</p>
+        </div>
+        <div>
+          <p class="grp-t">生成兑换码</p>
+          <div class="rowline"><select class="sel"><option>Plus</option><option>Pro 5X</option></select><input class="sel" style="width:60px;font-family:var(--fm)" value="1"></div>
+          <div class="rowline" style="margin-top:9px"><button class="btn p">生成并复制</button></div>
+          <p class="hint">生成后自动复制到剪贴板。</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- B -->
+<section class="variant">
+  <header><b>B · 上下两层</b><span>开关是「状态」单独一条横排；下层左右分＝路线卡台 / 发码</span></header>
+  <div class="stage">
+    <div class="card">
+      <div class="ch"><div><p class="kick">运营控制</p><h3>现在怎么跑</h3></div><span class="ro">改动立刻生效</span></div>
+      <div class="tierTop">
+        <span class="sw"><i></i><span class="lb"><b>接单</b><small>新单进入</small></span></span>
+        <span class="sw"><i></i><span class="lb"><b>派单</b><small>分卡执行</small></span></span>
+        <span class="sw"><i></i><span class="lb"><b>付款</b><small>允许提交付款</small></span></span>
+      </div>
+      <div class="tierBot">
+        <div>
+          <p class="grp-t">走哪条路线 · 用哪个卡台</p>
+          <div class="rowline"><span class="chip ok">当前 API</span><button class="btn">切到浏览器</button><span class="chip mute">API · HNSKJ 固定</span></div>
+          <div class="rowline" style="margin-top:10px"><span style="font-size:12.5px;color:var(--t2)">Browser 卡台</span><select class="sel"><option>HNSKJ</option><option>highvcc</option></select><button class="btn">切换</button></div>
+          <p class="hint">只影响新订单；切换前跑四项校验，不过会逐条说明原因。当前没有排队等卡的单可接管。</p>
+        </div>
+        <div>
+          <p class="grp-t">生成兑换码</p>
+          <div class="rowline"><select class="sel"><option>Plus</option><option>Pro 5X</option><option>Pro 20X</option></select><input class="sel" style="width:58px;font-family:var(--fm)" value="1"><button class="btn p">生成并复制</button></div>
+          <p class="hint">生成后自动复制到剪贴板，下方「每一张卡密」可查。</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- C -->
+<section class="variant">
+  <header><b>C · 拆成两张卡</b><span>「怎么跑」与「发码」本来就是两件事，分成两张卡并排</span></header>
+  <div class="stage">
+    <div class="twoCards">
+      <div class="card">
+        <div class="ch"><div><p class="kick">运营控制</p><h3>现在怎么跑</h3></div><span class="ro">改动立刻生效</span></div>
+        <div class="pairs">
+          <div>
+            <p class="grp-t">营业开关</p>
+            <div class="swsA" style="gap:11px">
+              <span class="sw"><i></i><span class="lb"><b>接单</b><small>新单进入</small></span></span>
+              <span class="sw"><i></i><span class="lb"><b>派单</b><small>分卡执行</small></span></span>
+              <span class="sw"><i></i><span class="lb"><b>付款</b><small>允许提交付款</small></span></span>
+            </div>
+          </div>
+          <div>
+            <p class="grp-t">路线与卡台</p>
+            <div class="rowline"><span class="chip ok">当前 API</span><button class="btn">切到浏览器</button></div>
+            <div class="rowline" style="margin-top:9px"><span class="chip mute">API · HNSKJ 固定</span></div>
+            <div class="rowline" style="margin-top:9px"><select class="sel"><option>HNSKJ</option><option>highvcc</option></select><button class="btn">切换</button></div>
+            <p class="hint">Browser 路线卡台，只影响新订单。</p>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="ch"><div><p class="kick">发码</p><h3>生成兑换码</h3></div></div>
+        <div style="padding:14px 18px">
+          <div class="rowline"><select class="sel"><option>Plus</option><option>Pro 5X</option><option>Pro 20X</option></select><input class="sel" style="width:58px;font-family:var(--fm)" value="1"></div>
+          <div class="rowline" style="margin-top:10px"><button class="btn p">生成并复制</button></div>
+          <p class="hint">生成后自动复制到剪贴板。要查历史码去 CDK 页。</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="foot">
+  <h4>三版都修掉的（不管你挑哪版）</h4>
+  <ul>
+    <li><b>给了标题区</b>：「运营控制 / 现在怎么跑」+ 右侧「改动立刻生效」，和页面其余卡片同一规格；现在这块是无标题裸露的。</li>
+    <li><b>四样东西分了组</b>，每组有小标题，不再是挤在一起的一片控件。</li>
+    <li><b>右边不再空一大片</b>：A 三列均分、B 下层两栏、C 拆两张卡，横向都填满。</li>
+    <li><b>说明文字统一</b>：同字号同颜色，挂在所属分组下面，不再有的在中间有的在末尾。</li>
+    <li><b>控件尺寸统一</b>：下拉、输入框、按钮同高同圆角。</li>
+  </ul>
+  <h4>取舍</h4>
+  <ul>
+    <li><b>A</b> 三列一眼看全，但「路线+卡台」内容最多，挤在中间一列会偏窄。</li>
+    <li><b>B</b> 开关横排在顶、最像「状态条」，下层两栏空间分配更合理。<b>我倾向这版。</b></li>
+    <li><b>C</b> 语义最干净（发码本来就不是「怎么跑」），但顶部会变成两张卡，整页卡片数 +1。</li>
+  </ul>
+  <h4>另外的「整体精致化」，我打算这样做（不改结构）</h4>
+  <ul>
+    <li>统一卡片内边距与块间距（现在几块各不相同）；统一标题区高度。</li>
+    <li>数字墙：数字与副标题的字号层级拉开；「待接入」三格灰化、不可点，一眼看出不是数。</li>
+    <li>表格：行高、列宽、对齐统一（金额右对齐、时间列固定宽）。</li>
+    <li>空态与失败态：统一措辞与样式，不再有的居中有的靠左。</li>
+    <li>按钮：主/次/危险三档固定，同类动作同一档。</li>
+  </ul>
+</div>
+
+</div>
+</body>
+</html>

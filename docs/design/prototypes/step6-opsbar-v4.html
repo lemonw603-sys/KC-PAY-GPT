@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>营业条 · 四版</title>
+<style>
+:root{
+  --bg:hsl(168,16%,97%);
+  --a:hsl(163,72%,26%); --a2:hsl(163,52%,40%); --a-soft:hsl(163,44%,94%); --a-on:#fff;
+  --t:hsl(176,18%,11%); --t2:hsl(170,10%,40%); --t3:hsl(168,9%,54%);
+  --s:#fff; --s2:hsl(168,20%,98%); --s3:hsl(168,16%,95%); --bd:hsl(168,14%,90%);
+  --ok:hsl(150,54%,38%); --warn:hsl(32,72%,44%);
+  --fd:"Familjen Grotesk","PingFang SC","Hiragino Sans GB",system-ui,sans-serif;
+  --fm:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--t);font-family:var(--fd);font-size:14px}
+.page{max-width:1240px;margin:0 auto;padding:22px 20px 60px}
+h1{margin:0 0 3px;font-size:19px}
+.sub{margin:0 0 6px;color:var(--t2);font-size:12.5px}
+.v{margin:22px 0 0;border:1px solid var(--bd);border-radius:14px;background:var(--s);overflow:hidden}
+.v>header{padding:10px 16px;background:var(--s2);border-bottom:1px solid var(--bd)}
+.v>header b{font-size:13.5px} .v>header span{color:var(--t2);font-size:12px;margin-left:8px}
+.stage{padding:18px;background:var(--bg)}
+.ph{display:flex;align-items:baseline;gap:10px;margin:0 0 13px}
+.ph h2{margin:0;font-size:18px} .ph em{font-style:normal;color:var(--t3);font-size:11.5px}
+
+/* 原子 */
+.tg{position:relative;width:30px;height:17px;border-radius:999px;background:hsl(168,12%,84%);flex:none;display:inline-block}
+.tg::after{content:'';position:absolute;top:2px;left:2px;width:13px;height:13px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.2)}
+.tg.on{background:var(--a)} .tg.on::after{left:15px}
+.f{border:1px solid var(--bd);border-radius:7px;height:28px;padding:0 8px;font-size:12.5px;background:var(--s);font-family:inherit;color:var(--t)}
+.b{border:1px solid var(--bd);background:var(--s);border-radius:7px;height:28px;padding:0 11px;font-size:12.5px;font-weight:600;cursor:pointer;font-family:inherit;white-space:nowrap;color:var(--t)}
+.b.p{background:var(--a);border-color:var(--a);color:#fff}
+.b.g{border:0;background:transparent;color:var(--a);padding:0 2px}
+.dot{width:6px;height:6px;border-radius:50%;background:currentColor;display:inline-block;flex:none}
+.mut{color:var(--t3);font-size:12px}
+/* 二选一分段器：两条路线是互斥选项，用同一个形态表达 —— 原先「当前 API」是状态、
+   「改用浏览器」是按钮，两种形态说同一件事，所以看着割裂（Lemon 2026-09-20）。 */
+.seg2{display:inline-flex;padding:2px;background:var(--s3);border-radius:8px;gap:2px}
+.seg2 button{border:0;background:transparent;border-radius:6px;height:24px;padding:0 11px;
+  font-size:12.5px;font-weight:600;color:var(--t3);cursor:pointer;font-family:inherit;white-space:nowrap}
+.seg2 button.on{background:var(--s);color:var(--a);box-shadow:0 1px 2px rgba(0,0,0,.08)}
+.seg2 button:not(.on):hover{color:var(--t2)}
+.mono{font-family:var(--fm)}
+
+/* ========== 甲：单行工具栏 ========== */
+.A{display:flex;align-items:center;gap:0;background:var(--s);border:1px solid var(--bd);border-radius:12px;overflow:hidden;flex-wrap:wrap}
+.A > div{display:flex;align-items:center;gap:9px;padding:11px 16px;border-left:1px solid var(--s3)}
+.A > div:first-child{border-left:0}
+.A .sw{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600}
+.A .last{margin-left:auto;background:var(--s2)}
+
+/* ========== 乙：状态句 + 悬浮操作 ========== */
+.B{background:var(--s);border:1px solid var(--bd);border-radius:12px;padding:14px 18px;
+   display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.B .say{font-size:14.5px;line-height:1.7}
+.B .say b{font-weight:600}
+.B .say .on{color:var(--a);font-weight:600}
+.B .say .off{color:var(--warn);font-weight:600}
+.B .acts{display:flex;align-items:center;gap:8px}
+
+/* ========== 丙：两格卡 ========== */
+.C{display:grid;grid-template-columns:1fr 1fr;gap:13px}
+@media(max-width:860px){.C{grid-template-columns:1fr}}
+.cd{background:var(--s);border:1px solid var(--bd);border-radius:12px;padding:13px 16px}
+.cd .t{font-size:11.5px;color:var(--t3);font-weight:600;margin:0 0 11px;letter-spacing:.03em}
+.cd .r{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:7px 0}
+.cd .r + .r{border-top:1px solid var(--s3)}
+.cd .r .n{font-size:13px;font-weight:600}
+.cd .r .n small{display:block;font-weight:400;color:var(--t3);font-size:11px}
+
+/* ========== 丁：极简条 ========== */
+.D{background:var(--s);border:1px solid var(--bd);border-radius:12px;
+   display:flex;align-items:stretch;flex-wrap:wrap}
+.D .seg{display:flex;align-items:center;gap:10px;padding:12px 18px;flex:1;min-width:230px;border-left:1px solid var(--s3)}
+.D .seg:first-child{border-left:0}
+.D .seg .lab{font-size:11px;color:var(--t3);letter-spacing:.06em;font-weight:700;width:100%;margin:0 0 6px}
+.D .seg .col{display:flex;flex-direction:column;gap:7px;width:100%}
+.D .seg .ln{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+</style>
+</head>
+<body>
+<div class="page">
+<h1>营业条（<code>div.wb-ops</code>）· 四版</h1>
+<p class="sub">装三样：营业开关 <code>#wb-decisions</code> ／ 路线与卡台 <code>#wb-routes</code> ／ 发码 <code>#wb-cdk-form</code>。</p>
+
+<!-- 甲 -->
+<section class="v">
+  <header><b>甲 · 单行工具栏</b><span>一行到底，分段用细线；发码推到最右</span></header>
+  <div class="stage">
+    <div class="ph"><h2>今天的运行情况</h2><em>更新于 09:31</em></div>
+    <div class="A">
+      <div>
+        <span class="sw"><i class="tg on"></i>接单</span>
+        <span class="sw"><i class="tg on"></i>派单</span>
+        <span class="sw"><i class="tg on"></i>付款</span>
+      </div>
+      <div><span class="mut">充值</span><span class="seg2"><button class="on">API 充值</button><button>浏览器自动化</button></span></div>
+      <div><span class="mut">浏览器卡台</span><select class="f"><option>HNSKJ</option><option>highvcc</option></select><button class="b">切换</button></div>
+      <div class="last"><span class="mut">发码</span><select class="f"><option>Plus</option><option>Pro 5X</option></select><input class="f mono" style="width:48px;text-align:center" value="1"><button class="b p">生成并复制</button></div>
+    </div>
+  </div>
+</section>
+
+<!-- 乙 -->
+<section class="v">
+  <header><b>乙 · 一句话状态 + 右侧操作</b><span>状态用人话写成一句，改动靠右侧按钮进弹窗</span></header>
+  <div class="stage">
+    <div class="ph"><h2>今天的运行情况</h2><em>更新于 09:31</em></div>
+    <div class="B">
+      <div class="say">
+        <span class="on">接单中</span> · <span class="on">派单中</span> · <span class="on">允许付款</span>
+        <span class="mut">|</span>　Plus 走 <b>API 充值</b>，浏览器路线用 <b>HNSKJ</b>
+      </div>
+      <div class="acts">
+        <button class="b">调整</button>
+        <span style="width:1px;height:24px;background:var(--bd)"></span>
+        <select class="f"><option>Plus</option><option>Pro 5X</option></select>
+        <input class="f mono" style="width:48px;text-align:center" value="1">
+        <button class="b p">生成并复制</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 丙 -->
+<section class="v">
+  <header><b>丙 · 两格卡</b><span>左＝怎么跑（开关+路线+卡台），右＝发码；两格等宽，各自成立</span></header>
+  <div class="stage">
+    <div class="ph"><h2>今天的运行情况</h2><em>更新于 09:31</em></div>
+    <div class="C">
+      <div class="cd">
+        <p class="t">怎么跑</p>
+        <div class="r"><span class="n">接单 · 派单 · 付款</span><span style="display:flex;gap:7px"><i class="tg on"></i><i class="tg on"></i><i class="tg on"></i></span></div>
+        <div class="r"><span class="n">充值方式<small>Plus 默认</small></span><span class="seg2"><button class="on">API 充值</button><button>浏览器自动化</button></span></div>
+        <div class="r"><span class="n">浏览器卡台<small>API 固定 HNSKJ</small></span><span style="display:flex;gap:7px"><select class="f"><option>HNSKJ</option><option>highvcc</option></select><button class="b">切换</button></span></div>
+      </div>
+      <div class="cd">
+        <p class="t">发码</p>
+        <div class="r"><span class="n">产品</span><select class="f" style="width:120px"><option>Plus</option><option>Pro 5X</option><option>Pro 20X</option></select></div>
+        <div class="r"><span class="n">数量</span><input class="f mono" style="width:120px;text-align:center" value="1"></div>
+        <div class="r" style="padding-top:11px"><span class="mut">生成后自动复制</span><button class="b p">生成并复制</button></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 丁 -->
+<section class="v">
+  <header><b>丁 · 三等分段</b><span>三块等宽并排，每块一个小标题，纵向两行，撑满不留空</span></header>
+  <div class="stage">
+    <div class="ph"><h2>今天的运行情况</h2><em>更新于 09:31</em></div>
+    <div class="D">
+      <div class="seg"><div class="col">
+        <p class="lab">营业</p>
+        <div class="ln"><i class="tg on"></i><span style="font-size:12.5px">接单</span><i class="tg on"></i><span style="font-size:12.5px">派单</span><i class="tg on"></i><span style="font-size:12.5px">付款</span></div>
+      </div></div>
+      <div class="seg"><div class="col">
+        <p class="lab">路线与卡台</p>
+        <div class="ln"><span class="seg2"><button class="on">API 充值</button><button>浏览器自动化</button></span></div>
+        <div class="ln"><span class="mut">浏览器</span><select class="f"><option>HNSKJ</option><option>highvcc</option></select><button class="b">切换</button></div>
+      </div></div>
+      <div class="seg"><div class="col">
+        <p class="lab">发码</p>
+        <div class="ln"><select class="f"><option>Plus</option><option>Pro 5X</option></select><input class="f mono" style="width:48px;text-align:center" value="1"><button class="b p">生成并复制</button></div>
+      </div></div>
+    </div>
+  </div>
+</section>
+
+</div>
+</body>
+</html>

@@ -74,7 +74,11 @@ body{font-family:var(--wb-fd)}
   display:flex;flex-direction:column;gap:7px;
   /* 纵向 flex 默认 stretch 会把分段器/控件横向拉满，留出大片空白 —— 实测分段器被拉到
      338px 而按钮只占 165px。靠左对齐，控件只占自己该占的宽。 */
-  align-items:flex-start}
+  align-items:flex-start;
+  /* 三段等高（由最高的「路线与卡台」撑起），内容纵向居中 —— 原型丁版实测
+     colTop=colBot（34.5/12/29.5）。此前做成顶对齐，营业段底下空 52px、
+     发码段空 42px，整条重心全压在上半部。 */
+  justify-content:center}
 /* 三个开关之间原本没有任何间距（实测 gap=0，挤在一起）——它们在 #wb-decisions 里，
    而 gap 写在 .wb-seg 上，管不到这一层。 */
 .workbench #wb-decisions{display:flex;align-items:center;gap:15px;flex-wrap:wrap}
@@ -129,7 +133,7 @@ body{font-family:var(--wb-fd)}
 .workbench .wb-switch .wb-lb b{font-size:13px;font-weight:600;color:var(--wb-t)}
 .workbench .wb-switch .wb-lb small{font-size:10.5px;color:var(--wb-t3)}
 
-.workbench .wb-route{display:grid;gap:2px}
+.workbench .wb-route{display:grid;gap:7px}
 .workbench .wb-route b{font-size:12.5px;color:var(--wb-t)}
 .workbench .wb-route small{font-size:10.5px;color:var(--wb-t3)}
 .workbench .wb-route .wb-routepick{display:flex;align-items:center;gap:8px;margin-top:3px}

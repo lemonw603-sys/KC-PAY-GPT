@@ -1,0 +1,347 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>工作台重做 · 三版比稿</title>
+<!--
+  第⑥步 工作台重做（2026-09-20，Lemon 指出「排版极其糟糕」后重出）
+
+  病因：现在是把营业开关 / 走哪条路线 / 用哪个卡台 / CDK 生成四种不同性质的东西
+  堆进同一个卡片，没人管整页版式 —— 一直在逐块接功能，没做过整体设计。
+
+  基准取自设置页（Lemon 认可的那个），提炼出三条规范，三版都守：
+    1. 一个卡片只管一件事；
+    2. 统一标题区＝小标签 + 标题 + 右侧状态/操作；
+    3. 内容只用三种形态：数字格 / 表格 / 键值行。
+
+  三版差在「整页怎么组织」，数据取自本地 demo 库。
+-->
+<style>
+:root{
+  --bg:hsl(168,16%,97%);
+  --a:hsl(163,72%,26%); --a-soft:hsl(163,44%,93%); --a-on:hsl(0,0%,100%);
+  --t:hsl(176,18%,11%); --t2:hsl(170,10%,38%); --t3:hsl(168,9%,50%);
+  --s:hsl(0,0%,100%); --s2:hsl(168,20%,97%); --s3:hsl(168,16%,95%); --bd:hsl(168,14%,88%);
+  --warn:hsl(32,72%,40%); --warn-soft:hsl(38,78%,94%);
+  --ok:hsl(150,54%,36%); --ok-soft:hsl(150,44%,94%);
+  --danger:hsl(4,66%,50%); --danger-soft:hsl(6,72%,96%);
+  --info:hsl(212,62%,46%); --info-soft:hsl(212,60%,95%);
+  --sh:inset 0 1px 0 hsla(0,0%,100%,.85),0 1px 2px hsla(176,25%,10%,.06),0 14px 30px -14px hsla(176,25%,10%,.22);
+  --fd:"Familjen Grotesk","PingFang SC","Hiragino Sans GB",system-ui,sans-serif;
+  --fm:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--t);font-family:var(--fd);font-size:14px;line-height:1.55}
+.page{max-width:1240px;margin:0 auto;padding:26px 20px 70px}
+h1{margin:0 0 5px;font-size:21px}
+.sub{margin:0 0 8px;color:var(--t2);font-size:13px}
+.rules{margin:0 0 24px;padding:11px 14px;background:var(--s);border:1px solid var(--bd);border-radius:11px;font-size:12.5px;color:var(--t2)}
+.rules b{color:var(--t)}
+.variant{margin:30px 0 0;border:1px solid var(--bd);border-radius:16px;background:var(--s);box-shadow:var(--sh);overflow:hidden}
+.variant>header{padding:13px 18px;background:var(--s2);border-bottom:1px solid var(--bd);display:flex;gap:12px;align-items:baseline;flex-wrap:wrap}
+.variant>header b{font-size:15px}
+.variant>header span{color:var(--t2);font-size:12.5px}
+.stage{padding:16px;background:var(--bg);display:grid;gap:13px}
+
+/* ---- 通用卡片（三条规范的载体）---- */
+.c{background:var(--s);border:1px solid var(--bd);border-radius:14px;overflow:hidden}
+.ch{padding:11px 15px;border-bottom:1px solid var(--bd);background:var(--s2);display:flex;align-items:center;justify-content:space-between;gap:10px}
+.ch .kick{font-size:10.5px;letter-spacing:.08em;color:var(--a);font-weight:700;text-transform:uppercase}
+.ch h3{margin:1px 0 0;font-size:14.5px}
+.ch .ro{font-size:11px;color:var(--t3);background:var(--s3);border:1px solid var(--bd);border-radius:999px;padding:2px 9px}
+.cb{padding:13px 15px}
+
+/* 形态一：数字格 */
+.kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:9px}
+.kpi{background:var(--s2);border:1px solid var(--bd);border-radius:11px;padding:10px 11px}
+.kpi label{display:block;font-size:11px;color:var(--t3);margin-bottom:3px}
+.kpi b{font-family:var(--fm);font-size:21px;font-weight:600;letter-spacing:-.02em}
+.kpi small{display:block;font-size:10.5px;color:var(--t3);margin-top:2px}
+.kpi.pending b{font-size:13px;font-weight:400;color:var(--t3)}
+@media(max-width:900px){.kpis{grid-template-columns:repeat(2,1fr)}}
+
+/* 形态二：表格 */
+table{width:100%;border-collapse:collapse;font-size:12.5px}
+th{text-align:left;padding:7px 12px;color:var(--t3);font-weight:600;font-size:11px;border-bottom:1px solid var(--bd);white-space:nowrap}
+td{padding:8px 12px;border-bottom:1px solid var(--s3)}
+tbody tr:last-child td{border-bottom:0}
+.tw{border:1px solid var(--bd);border-radius:11px;overflow:hidden}
+
+/* 形态三：键值行 */
+.kv{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--s3)}
+.kv:last-child{border-bottom:0}
+.kv label{font-size:12.5px}
+.kv label small{display:block;color:var(--t3);font-size:11px}
+.kv .v{display:flex;align-items:center;gap:7px;flex-wrap:wrap;justify-content:flex-end}
+
+/* 控件 */
+.sw{display:inline-flex;align-items:center;gap:8px}
+.sw i{width:34px;height:19px;border-radius:999px;background:var(--a);position:relative;display:inline-block}
+.sw i::after{content:'';position:absolute;right:2px;top:2px;width:15px;height:15px;border-radius:50%;background:#fff}
+.sw.off i{background:hsl(168,10%,78%)}
+.sw.off i::after{left:2px;right:auto}
+.sw b{font-size:13px}
+.sw small{display:block;font-size:10.5px;color:var(--t3);font-weight:400}
+.btn{border:1px solid var(--bd);background:var(--s);color:var(--t);border-radius:8px;padding:5px 11px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit}
+.btn.p{background:var(--a);border-color:var(--a);color:var(--a-on)}
+.sel{border:1px solid var(--bd);border-radius:8px;padding:5px 9px;font-size:12px;background:var(--s);font-family:inherit}
+.chip{display:inline-flex;align-items:center;gap:5px;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:600;border:1px solid transparent}
+.chip.ok{background:var(--ok-soft);color:var(--ok);border-color:hsl(150,40%,82%)}
+.chip.warn{background:var(--warn-soft);color:var(--warn);border-color:hsl(38,60%,80%)}
+.chip.bad{background:var(--danger-soft);color:var(--danger);border-color:hsl(4,60%,84%)}
+.chip.mute{background:var(--s3);color:var(--t3);border-color:var(--bd)}
+.mono{font-family:var(--fm)}
+.muted{color:var(--t3)}
+
+/* 待办行 */
+.todo{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--s3)}
+.todo:last-child{border-bottom:0}
+.todo .d{width:7px;height:7px;border-radius:50%;flex:none}
+.todo .d.bad{background:var(--danger)} .todo .d.warn{background:var(--warn)}
+.todo .tx{flex:1;min-width:0}
+.todo .tx b{font-size:12.5px;display:block}
+.todo .tx small{font-size:11px;color:var(--t3)}
+
+/* 版式骨架 */
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:13px}
+.split{display:grid;grid-template-columns:300px 1fr;gap:13px}
+.grid2{display:grid;grid-template-columns:1.15fr .85fr;gap:13px}
+@media(max-width:900px){.row2,.split,.grid2{grid-template-columns:1fr}}
+.bar{background:var(--s);border:1px solid var(--bd);border-radius:14px;padding:11px 15px;display:flex;align-items:center;gap:18px;flex-wrap:wrap}
+.bar .sep{width:1px;height:26px;background:var(--bd)}
+.foot{margin-top:34px;padding:17px;border:1px solid var(--bd);border-radius:14px;background:var(--s);font-size:12.5px;color:var(--t2)}
+.foot h4{margin:0 0 6px;font-size:13px;color:var(--t)}
+.foot ul{margin:0 0 13px;padding-left:19px} .foot li{margin-bottom:4px}
+code{font-family:var(--fm);font-size:11.5px;background:var(--s3);padding:1px 5px;border-radius:4px}
+</style>
+</head>
+<body>
+<div class="page">
+
+<h1>工作台重做 · 三版比稿</h1>
+<p class="sub">病因：营业开关 / 路线 / 卡台 / CDK 生成四种不同性质的东西堆在同一个卡片里，一直在逐块接功能，没做过整体设计。</p>
+<p class="rules"><b>三版共守的规范（从你认可的设置页反推）：</b>① 一个卡片只管一件事；② 统一标题区＝小标签 + 标题 + 右侧状态；③ 内容只用三种形态——数字格 / 表格 / 键值行。<b>三版差在整页怎么组织。</b></p>
+
+<!-- ================= A ================= -->
+<section class="variant">
+  <header><b>A · 按动线自上而下</b><span>要我处理什么 → 今天怎么样 → 资源够不够 → 具体订单；控制项收成顶部一条</span></header>
+  <div class="stage">
+
+    <div class="bar">
+      <span class="sw"><i></i><b>接单<small>新单进入</small></b></span>
+      <span class="sw"><i></i><b>派单<small>分卡执行</small></b></span>
+      <span class="sw"><i></i><b>付款<small>允许提交</small></b></span>
+      <span class="sep"></span>
+      <span class="muted" style="font-size:12px">路线 <span class="chip ok">API</span></span>
+      <span class="muted" style="font-size:12px">Browser 卡台 <span class="chip mute">HNSKJ</span></span>
+      <button class="btn">改路线与卡台</button>
+    </div>
+
+    <div class="c">
+      <div class="ch"><div><p class="kick" style="margin:0">需要我处理</p><h3>2 件</h3></div><span class="ro">按严重程度排</span></div>
+      <div class="cb">
+        <div class="todo"><span class="d bad"></span><span class="tx"><b>highvcc token 已失效</b><small>贴新 token 后自动恢复 · 开卡会一直失败</small></span><button class="btn p">去贴 token</button></div>
+        <div class="todo"><span class="d warn"></span><span class="tx"><b>自动开卡失败</b><small>卡台返回额度不足 · 系统会继续重试</small></span><button class="btn">看卡片页</button></div>
+      </div>
+    </div>
+
+    <div class="c">
+      <div class="ch"><div><p class="kick" style="margin:0">今天</p><h3>运行情况</h3></div><span class="ro">08:34 更新</span></div>
+      <div class="cb"><div class="kpis">
+        <div class="kpi"><label>今日单数</label><b>4</b><small>处理中 1</small></div>
+        <div class="kpi"><label>成功率</label><b>75%</b><small>完成 3 单</small></div>
+        <div class="kpi pending"><label>自动完成率</label><b>待接入</b><small>口径待定</small></div>
+        <div class="kpi pending"><label>今日花费</label><b>待接入</b><small>按卡台</small></div>
+        <div class="kpi pending"><label>异常支出</label><b>待接入</b><small>无主扣款</small></div>
+      </div></div>
+    </div>
+
+    <div class="row2">
+      <div class="c">
+        <div class="ch"><div><p class="kick" style="margin:0">卡与钱</p><h3>还能做几单</h3></div><span class="ro">只读</span></div>
+        <div class="cb">
+          <div class="kv"><label>HNSKJ<small>钱包 $41.20 · 底线 $30</small></label><span class="v"><b class="mono">1</b><span class="muted">/ 水位 2</span></span></div>
+          <div class="kv"><label>highvcc<small>钱包需点开查 · 底线 $20</small></label><span class="v"><b class="mono">1</b><span class="muted">/ 水位 2</span></span></div>
+          <div class="kv"><label>两台合计可分配</label><span class="v"><b class="mono" style="font-size:18px">2</b><span class="muted">张（Plus 资格）</span></span></div>
+        </div>
+      </div>
+      <div class="c">
+        <div class="ch"><div><p class="kick" style="margin:0">昨夜日对账</p><h3>对上没有</h3></div><span class="ro">看逐张 →</span></div>
+        <div class="cb">
+          <div class="kv"><label>无主扣款</label><span class="v"><b class="mono">0</b></span></div>
+          <div class="kv"><label>待登记手动用卡</label><span class="v"><b class="mono">0</b></span></div>
+          <div class="kv"><label>无法核对金额</label><span class="v"><b class="mono">1</b><span class="muted">只对次数</span></span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="c">
+      <div class="ch"><div><p class="kick" style="margin:0">今日订单</p><h3>正在跑与刚完成</h3></div><span class="ro">进订单页 →</span></div>
+      <div class="tw" style="border:0;border-radius:0">
+        <table>
+          <thead><tr><th>单号</th><th>产品</th><th>阶段</th><th>客户</th><th>卡</th><th>时间</th></tr></thead>
+          <tbody>
+            <tr><td class="mono">PJV1-BBBB…</td><td>Plus</td><td><span class="chip warn">充值处理中</span></td><td>running@example.com</td><td class="mono">5590</td><td class="muted">2 小时前</td></tr>
+            <tr><td class="mono">PJV1-CCCC…</td><td>Plus</td><td><span class="chip warn">等客户换 Session</span></td><td>waiting@example.com</td><td class="muted">—</td><td class="muted">5 小时前</td></tr>
+            <tr><td class="mono">PJV1-AAAA…</td><td>Plus</td><td><span class="chip ok">充值成功</span></td><td>ok@example.com</td><td class="mono">4417</td><td class="muted">30 小时前</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="c">
+      <div class="ch"><div><p class="kick" style="margin:0">发码</p><h3>生成兑换码</h3></div></div>
+      <div class="cb"><div class="kv"><label>产品与数量</label><span class="v"><select class="sel"><option>Plus</option></select><input class="sel mono" style="width:64px" value="1"><button class="btn p">生成并复制</button></span></div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= B ================= -->
+<section class="variant">
+  <header><b>B · 左右分栏</b><span>左窄栏＝我要操作的（开关/路线/发码），右宽栏＝我要看的（待办/数字/订单）</span></header>
+  <div class="stage">
+    <div class="split">
+      <div style="display:grid;gap:13px;align-content:start">
+        <div class="c">
+          <div class="ch"><div><p class="kick" style="margin:0">营业</p><h3>开着没有</h3></div></div>
+          <div class="cb">
+            <div class="kv"><label>接单<small>新单进入</small></label><span class="v"><span class="sw"><i></i></span></span></div>
+            <div class="kv"><label>派单<small>分卡执行</small></label><span class="v"><span class="sw"><i></i></span></span></div>
+            <div class="kv"><label>付款<small>允许提交</small></label><span class="v"><span class="sw"><i></i></span></span></div>
+          </div>
+        </div>
+        <div class="c">
+          <div class="ch"><div><p class="kick" style="margin:0">路线</p><h3>走哪条 · 用哪台</h3></div></div>
+          <div class="cb">
+            <div class="kv"><label>充值方式</label><span class="v"><span class="chip ok">API</span><button class="btn">切浏览器</button></span></div>
+            <div class="kv"><label>Browser 卡台</label><span class="v"><select class="sel"><option>HNSKJ</option><option>highvcc</option></select><button class="btn">切换</button></span></div>
+            <div class="kv"><label class="muted" style="font-size:11.5px">当前没有排队等卡的单可接管</label><span class="v"></span></div>
+          </div>
+        </div>
+        <div class="c">
+          <div class="ch"><div><p class="kick" style="margin:0">发码</p><h3>生成兑换码</h3></div></div>
+          <div class="cb"><div class="kv"><label>Plus</label><span class="v"><input class="sel mono" style="width:56px" value="1"><button class="btn p">生成并复制</button></span></div></div>
+        </div>
+      </div>
+
+      <div style="display:grid;gap:13px;align-content:start">
+        <div class="c">
+          <div class="ch"><div><p class="kick" style="margin:0">需要我处理</p><h3>2 件</h3></div></div>
+          <div class="cb">
+            <div class="todo"><span class="d bad"></span><span class="tx"><b>highvcc token 已失效</b><small>开卡会一直失败</small></span><button class="btn p">去贴 token</button></div>
+            <div class="todo"><span class="d warn"></span><span class="tx"><b>自动开卡失败</b><small>额度不足 · 会继续重试</small></span><button class="btn">看卡片页</button></div>
+          </div>
+        </div>
+        <div class="c">
+          <div class="ch"><div><p class="kick" style="margin:0">今天</p><h3>运行情况</h3></div><span class="ro">08:34</span></div>
+          <div class="cb"><div class="kpis" style="grid-template-columns:repeat(3,1fr)">
+            <div class="kpi"><label>今日单数</label><b>4</b><small>处理中 1</small></div>
+            <div class="kpi"><label>成功率</label><b>75%</b><small>完成 3</small></div>
+            <div class="kpi pending"><label>自动完成率</label><b>待接入</b></div>
+            <div class="kpi pending"><label>今日花费</label><b>待接入</b></div>
+            <div class="kpi pending"><label>异常支出</label><b>待接入</b></div>
+            <div class="kpi"><label>可分配卡</label><b>2</b><small>HNSKJ 1 · highvcc 1</small></div>
+          </div></div>
+        </div>
+        <div class="c">
+          <div class="ch"><div><p class="kick" style="margin:0">今日订单</p><h3>正在跑与刚完成</h3></div><span class="ro">进订单页 →</span></div>
+          <div class="tw" style="border:0;border-radius:0"><table>
+            <thead><tr><th>单号</th><th>阶段</th><th>客户</th><th>时间</th></tr></thead>
+            <tbody>
+              <tr><td class="mono">PJV1-BBBB…</td><td><span class="chip warn">充值处理中</span></td><td>running@example.com</td><td class="muted">2 小时前</td></tr>
+              <tr><td class="mono">PJV1-CCCC…</td><td><span class="chip warn">等换 Session</span></td><td>waiting@example.com</td><td class="muted">5 小时前</td></tr>
+              <tr><td class="mono">PJV1-AAAA…</td><td><span class="chip ok">充值成功</span></td><td>ok@example.com</td><td class="muted">30 小时前</td></tr>
+            </tbody>
+          </table></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= C ================= -->
+<section class="variant">
+  <header><b>C · 状态头 + 两列网格</b><span>顶部一条把「现在是什么状态」说完，下面两列并排，密度最高</span></header>
+  <div class="stage">
+    <div class="bar" style="justify-content:space-between">
+      <div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">
+        <span class="chip ok">接单中</span><span class="chip ok">派单中</span><span class="chip ok">允许付款</span>
+        <span class="sep"></span>
+        <span style="font-size:12.5px">路线 <b>API</b> · Browser 卡台 <b>HNSKJ</b> · 可分配 <b class="mono">2</b> 张</span>
+      </div>
+      <div style="display:flex;gap:7px"><button class="btn">改开关</button><button class="btn">改路线</button><button class="btn p">生成 CDK</button></div>
+    </div>
+
+    <div class="grid2">
+      <div class="c">
+        <div class="ch"><div><p class="kick" style="margin:0">需要我处理</p><h3>2 件</h3></div><span class="ro">按严重程度</span></div>
+        <div class="cb">
+          <div class="todo"><span class="d bad"></span><span class="tx"><b>highvcc token 已失效</b><small>贴新 token 后自动恢复</small></span><button class="btn p">去贴</button></div>
+          <div class="todo"><span class="d warn"></span><span class="tx"><b>自动开卡失败</b><small>额度不足 · 会继续重试</small></span><button class="btn">去看</button></div>
+        </div>
+      </div>
+      <div class="c">
+        <div class="ch"><div><p class="kick" style="margin:0">今天</p><h3>运行情况</h3></div></div>
+        <div class="cb"><div class="kpis" style="grid-template-columns:repeat(2,1fr)">
+          <div class="kpi"><label>今日单数</label><b>4</b><small>处理中 1</small></div>
+          <div class="kpi"><label>成功率</label><b>75%</b><small>完成 3 单</small></div>
+          <div class="kpi pending"><label>自动完成率</label><b>待接入</b></div>
+          <div class="kpi pending"><label>今日花费 / 异常支出</label><b>待接入</b></div>
+        </div></div>
+      </div>
+    </div>
+
+    <div class="grid2">
+      <div class="c">
+        <div class="ch"><div><p class="kick" style="margin:0">今日订单</p><h3>正在跑与刚完成</h3></div><span class="ro">进订单页 →</span></div>
+        <div class="tw" style="border:0;border-radius:0"><table>
+          <thead><tr><th>单号</th><th>阶段</th><th>客户</th><th>时间</th></tr></thead>
+          <tbody>
+            <tr><td class="mono">PJV1-BBBB…</td><td><span class="chip warn">充值处理中</span></td><td>running@…</td><td class="muted">2 小时前</td></tr>
+            <tr><td class="mono">PJV1-CCCC…</td><td><span class="chip warn">等换 Session</span></td><td>waiting@…</td><td class="muted">5 小时前</td></tr>
+            <tr><td class="mono">PJV1-AAAA…</td><td><span class="chip ok">充值成功</span></td><td>ok@…</td><td class="muted">30 小时前</td></tr>
+          </tbody>
+        </table></div>
+      </div>
+      <div style="display:grid;gap:13px;align-content:start">
+        <div class="c">
+          <div class="ch"><div><p class="kick" style="margin:0">卡与钱</p><h3>还能做几单</h3></div></div>
+          <div class="cb">
+            <div class="kv"><label>HNSKJ<small>$41.20 / 底线 30</small></label><span class="v"><b class="mono">1</b><span class="muted">/ 2</span></span></div>
+            <div class="kv"><label>highvcc<small>余额需点查 / 底线 20</small></label><span class="v"><b class="mono">1</b><span class="muted">/ 2</span></span></div>
+          </div>
+        </div>
+        <div class="c">
+          <div class="ch"><div><p class="kick" style="margin:0">昨夜日对账</p><h3>对上没有</h3></div></div>
+          <div class="cb">
+            <div class="kv"><label>无主扣款 / 待登记</label><span class="v"><b class="mono">0 / 0</b></span></div>
+            <div class="kv"><label>无法核对金额</label><span class="v"><b class="mono">1</b></span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="foot">
+  <h4>§1 · 三版都改掉了什么</h4>
+  <ul>
+    <li><b>拆开那个塞了四样东西的卡片</b>：营业开关、路线与卡台、发码，现在各是各的，不再共用一个无标题的方框。</li>
+    <li><b>每块都有标题区</b>（小标签 + 标题 + 右侧状态），和设置页一致；现在的工作台有几块是没有标题直接堆内容的。</li>
+    <li><b>「待接入」不再占满一格大字</b>：灰、小字、不可点，一眼能看出它不是一个数。</li>
+    <li><b>待办给按钮</b>：现在的队列只有文字和跳转，A/B/C 都把「去贴 token」这类动作摆在行尾。</li>
+  </ul>
+  <h4>§2 · 三版的取舍</h4>
+  <ul>
+    <li><b>A 按动线</b>：从「要我处理什么」开始往下读，最贴你早上打开后台的顺序。代价：整页较长，卡与钱和日对账要往下滚。</li>
+    <li><b>B 左右分栏</b>：操作全在左边固定一栏，看的东西在右边。代价：左栏在窄屏会被压到下面；两栏高度不齐时右边会留白。</li>
+    <li><b>C 状态头 + 网格</b>：一屏塞得下最多信息，顶部一行说完「现在什么状态」。代价：开关变成「改开关」按钮弹出来改，不如 A/B 直接拨。</li>
+  </ul>
+  <h4>§3 · 数据</h4>
+  <ul><li>取自本地 demo 库（4 单 / 两台各 1 张可分配 / token 失效告警），不是编的；「待接入」三格是真的还没做（D-284 ③ 与聚合未写）。</li></ul>
+</div>
+
+</div>
+</body>
+</html>

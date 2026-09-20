@@ -93,6 +93,28 @@ else
   note "这些变量取自吞错误的查询、没判空、却直接当数字用" "$(printf '%s' "$swallow" | sed 's/^/\n         /')"
 fi
 
+# 9) 改了后台页面却没跟已确认原型对过：2026-09-20 Lemon 的原话是「你实际做出来的和
+#    设计有差距，你却不知道」。当天的营业条实测差了两处（纵向对齐差 23px、段高差 5px），
+#    而我看截图看不出来 —— 截图被缩到真实分辨率的 55%，视口 emulation 还会被悄悄清掉。
+#    所以这一项不看截图，只比数字：scripts/visual-parity.mjs 把原型和实现放进同一视口实测。
+#    需要一个跑着的后台（演示/隔离都行），所以靠环境变量开启，不强制每轮都有环境。
+if ls docs/design/parity/*.json >/dev/null 2>&1; then
+  touched_ui=$(git show --name-only --format= HEAD 2>/dev/null | grep -c '^v1/public/admin/')
+  if [ -n "${PARITY_ADMIN_BASE:-}" ] && [ -n "${PARITY_ADMIN_PASSWORD:-}" ]; then
+    vp=$(node scripts/visual-parity.mjs 2>&1); vpcode=$?
+    if [ "$vpcode" = "0" ]; then
+      ok "页面与已确认原型一致"
+    elif [ "$vpcode" = "1" ]; then
+      bad "页面与已确认原型一致" "$(printf '%s' "$vp" | sed 's/^/\n         /')"
+    else
+      # 跑不起来不等于一致，也不等于不一致 —— 单独说，不许算通过
+      note "视觉比对没跑成（不等于「一致」）" "$(printf '%s' "$vp" | tail -3 | sed 's/^/\n         /')"
+    fi
+  elif [ "$touched_ui" != "0" ]; then
+    note "这次动了后台页面，但没跑视觉比对" "起一个后台后：PARITY_ADMIN_BASE=http://localhost:PORT PARITY_ADMIN_PASSWORD=... node scripts/visual-parity.mjs"
+  fi
+fi
+
 printf '\n'
 [ "$fail" = "0" ] && echo "==> 可以说做完了 ✓（[提醒] 不算失败，但要看一眼）" || echo "==> 还不能说做完 ✗"
 exit "$fail"

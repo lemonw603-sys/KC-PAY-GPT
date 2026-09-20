@@ -2722,3 +2722,24 @@ step6（`8cd6d7e`）发布后 Lemon 打开生产，指三条做偏：① sidebar
 **生产只读实跑**（同时补掉 UNVERIFIED 里两条）：新 SQL 在生产跑通 —— hnskj floor 30 / 可分配 **0**（在库 2、总 14），backup-a floor 20 / 可分配 **2**（在库 7、总 16），告警线均 50；与 `admin-read-service.js` 里既有实测注释一致。
 
 **台名**：Lemon 2026-09-20 定两处统一叫 **「highvcc卡台」**（卡片页与工作台同名，后端 `PROVIDER_LABELS` 唯一定义，工作台原简称「备用卡台 A」一并改掉）。
+
+---
+
+## 2026-09-20（UTC+8 晚）营业条与原型对不上的真实差距，以及「肉眼验收」被换成机器比数字
+
+**Lemon 的问题不是「这里不好看」，是「你为什么不知道」**：「根源是你实际做出来的和设计有差距，你却不知道，这是机制和底层问题，你需要彻底解决，你是需要一些 mcp，skill，还是一些设计插件吗？」
+
+**先查「为什么不知道」，四个坑**（详见 D-292 表）：视口 emulation 会被悄悄清掉（实测先 resize 后 navigate → `innerWidth` 280，命中堆叠规则，**我看的是三段竖排、Lemon 看的是三段并排**）；CSS `zoom` 放大会改布局（三段被挤成两行的"缺陷"是放大手法造的）；`computer zoom` 的 region 裁剪在 Browser pane 不支持、静默退化成缩到 55% 的全屏图；就算前三条都躲开，5px / 23px 这种量肉眼也判不了。**第一条最致命，因为它不报错。** 当轮它两次拦下本会做错的判断。
+
+**真实差距 2 处**（把原型丁版和实现放进同一 1440 视口逐项实测）：三段纵向对齐——原型居中（colTop=colBot 34.5/12/29.5），实现顶对齐（底部空 52/12/42），**实现时我擅自换了对齐方式**；路线段两行间距 7px → 2px，段高因此差 5px。其余（padding/字号/字重/字距/标题 margin/行内 gap/控件高度）**全部一致**。改完三段几何量与原型完全吻合。
+
+**机制**：`scripts/visual-parity.mjs`（零依赖，系统 Chrome headless + Node 内置 WebSocket 走 CDP，**不装 puppeteer**）+ `docs/design/parity/*.json` 契约 + `wrapup-check.sh` 第 9 项 + 做法文档 `docs/design/VISUAL_PARITY_PROTOCOL.md`。只比结果量（height / contentTop / contentBottom / padding / 字号字重），结构不同构的量（gap、width）不比否则必误报。退出码 `0/1/2` 三档，**`2`「跑不起来」必须单列**——环境坏了伪装成通过是这类工具最典型的失效方式。
+
+**工具自己做了变异测试，抓出它自己的两个缺陷**（这一步不做就只会看到一个偶尔"通过"的脚本）：
+- 撤掉居中 → 报 4 处 ✓；行距改回 2px → 报 7 处 ✓；恢复 → 通过 ✓
+- 连跑 5 次挂 4 次 → `#wb-routes` 是接口返回后才渲染的，`load` 事件后立刻测会时灵时不灵 → 补 `waitForSelectors`
+- 补完又全挂 → 登录限流 5 次/15 分钟，每跑一次重登一次 → 补 session 本机缓存（600 权限、12h 过期、不打印）→ 连跑 7 次全绿
+
+**为验限流修复重启过一次演示服务**（8803 / step6_demo 隔离库，本轮自建的验收环境，非生产、非 browser worker）：重启前断言过 `DATABASE_URL` 含 `step6_demo` 且 `PORT=8803` 才动手。
+
+**全量测试 972 / 904 pass / 1 fail**——唯一那条 fail 复核确认仍是既有的 F-65（`admin overview does not describe disabled automatic card opening as enabled`，供给开关无渲染入口），不是本轮引入。
