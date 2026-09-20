@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import {
   eligibleInventoryCardSql,
   fundableInventoryCardSql,
+  providerCardStockSql,
   refreshableInventoryCardSql
 } from '../src/services/card-inventory-eligibility.js';
 
@@ -82,4 +83,31 @@ test('card operational override migration is minimal and replay-safe by table cr
   assert.match(sql, /UNIQUE KEY uq_card_operational_override/);
   assert.match(sql, /allocation_policy IN \('NORMAL','PRODUCT_ONLY','RETIRED'\)/);
   assert.doesNotMatch(sql, /DROP TABLE|DELETE FROM|TRUNCATE/);
+});
+
+test('按产品统计库存时，最低卡余额也要按产品取 —— 与真实建单同口径', () => {
+  // 真实建单走 order-intake-repository.minimumRequiredCardBalanceForPlan()：
+  // 先查 `minimum_required_card_balance:<product>`，缺了才回落全局 default。
+  // 这里的统计 SQL 必须用同一套口径，否则页面上的「可分配」和实际能不能派卡对不上。
+  //
+  // 生产实测（2026-09-20）：在库 9 张里余额 ≥16（plus 口径）4 张、≥150（pro_20x 真实
+  // 口径，生产实值）0 张。此前 minimumSql 写死取全局键，传 productCode 只改资格规则、
+  // 不改余额门槛 —— 按产品统计时 20X 会显示「可分配 4」，真实是 0。
+  const plus = providerCardStockSql();
+  const pro20 = providerCardStockSql({ productCode: 'pro_20x' });
+
+  for (const [label, sql, key] of [
+    ['plus', plus, 'minimum_required_card_balance:plus'],
+    ['pro_20x', pro20, 'minimum_required_card_balance:pro_20x']
+  ]) {
+    assert.ok(sql.includes(`setting_key = '${key}'`), `${label} 必须先查按产品的余额键`);
+    assert.ok(sql.includes("setting_key = 'default_minimum_required_card_balance'"),
+      `${label} 取不到按产品值时要回落全局 default`);
+  }
+  // 两个产品生成的 SQL 必须真的不同 —— 相同就说明 productCode 又被忽略了
+  assert.notEqual(plus, pro20);
+  // 回落顺序不能反：按产品的键要排在 default 前面
+  const idxProduct = pro20.indexOf('minimum_required_card_balance:pro_20x');
+  const idxDefault = pro20.indexOf("'default_minimum_required_card_balance'");
+  assert.ok(idxProduct > -1 && idxDefault > idxProduct, '按产品的键必须排在全局 default 之前');
 });

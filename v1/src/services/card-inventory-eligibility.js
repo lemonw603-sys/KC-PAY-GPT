@@ -156,8 +156,19 @@ export function refreshableInventoryCardSql(alias = 'c', { productCode = 'plus' 
 export function providerCardStockSql({ productCode = 'plus' } = {}) {
   const normalizedProduct = String(productCode || 'plus').trim().toLowerCase();
   if (!/^[a-z0-9_-]{1,32}$/.test(normalizedProduct)) throw new TypeError('Invalid product code');
-  const minimumSql = `COALESCE((SELECT CAST(setting_value AS DECIMAL(18,6))
-    FROM app_settings WHERE setting_key = 'default_minimum_required_card_balance' LIMIT 1), 999999999)`;
+  // 最低卡余额**按产品**取，口径必须与真实建单一致 ——
+  // order-intake-repository.minimumRequiredCardBalanceForPlan()：先查
+  // `minimum_required_card_balance:<product>`，没有才回落全局 default。
+  // 此前这里写死取全局键，传进来的 productCode 只影响资格规则、不影响余额门槛。
+  // 只调 plus 时看不出来；一旦按产品统计就会严重高估：生产实测（2026-09-20）
+  // 在库 9 张里余额 ≥16（plus 口径）有 4 张、≥150（pro_20x 真实口径）**0 张**，
+  // 照旧写法 20X 会显示「可分配 4」而真实是 0 —— 运营据此以为有货，客户一下单就失败。
+  const minimumSql = `COALESCE(
+    (SELECT CAST(setting_value AS DECIMAL(18,6)) FROM app_settings
+      WHERE setting_key = 'minimum_required_card_balance:${normalizedProduct}' LIMIT 1),
+    (SELECT CAST(setting_value AS DECIMAL(18,6)) FROM app_settings
+      WHERE setting_key = 'default_minimum_required_card_balance' LIMIT 1),
+    999999999)`;
   return `SELECT pa.id AS provider_account_id,
       pa.account_code AS provider_code,
       pa.provider_code AS provider_kind,
