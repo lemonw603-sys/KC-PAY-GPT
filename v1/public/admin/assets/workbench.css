@@ -71,10 +71,23 @@ body{font-family:var(--wb-fd)}
 .workbench .wb-ops{display:flex;align-items:stretch;flex-wrap:wrap;padding:0;
   border:1px solid var(--wb-bd);border-radius:12px;background:var(--wb-s);box-shadow:var(--wb-shadow)}
 .workbench .wb-seg{flex:1;min-width:230px;padding:12px 18px;border-left:1px solid var(--wb-s3);
-  display:flex;flex-direction:column;gap:7px}
+  display:flex;flex-direction:column;gap:7px;
+  /* 纵向 flex 默认 stretch 会把分段器/控件横向拉满，留出大片空白 —— 实测分段器被拉到
+     338px 而按钮只占 165px。靠左对齐，控件只占自己该占的宽。 */
+  align-items:flex-start}
+/* 三个开关之间原本没有任何间距（实测 gap=0，挤在一起）——它们在 #wb-decisions 里，
+   而 gap 写在 .wb-seg 上，管不到这一层。 */
+.workbench #wb-decisions{display:flex;align-items:center;gap:15px;flex-wrap:wrap}
 .workbench .wb-seg:first-child{border-left:0}
 .workbench .wb-seg-t{margin:0 0 6px;font-size:11px;letter-spacing:.06em;font-weight:700;color:var(--wb-t3)}
 .workbench .wb-ln{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+/* 「选哪台」和「执行切换」是一次操作的两半，做成连体控件：中间不留缝、
+   共享一条边，视觉上是一个整体，而不是两个长得像的独立按钮。 */
+.workbench .wb-ln .wb-pair{display:inline-flex;align-items:stretch}
+.workbench .wb-ln .wb-pair .wb-field{border-top-right-radius:0;border-bottom-right-radius:0;border-right:0}
+.workbench .wb-ln .wb-pair .wb-btn{border-top-left-radius:0;border-bottom-left-radius:0;
+  background:var(--wb-s2);color:var(--wb-t)}
+.workbench .wb-ln .wb-pair .wb-btn:hover{background:var(--wb-s3)}
 .workbench .wb-k{font-size:12px;color:var(--wb-t3)}
 .workbench .wb-num{width:52px;text-align:center}
 .workbench .wb-cdk{display:flex;align-items:center;gap:8px;margin:0;flex-wrap:wrap}
@@ -82,8 +95,11 @@ body{font-family:var(--wb-fd)}
 
 /* 二选一分段器 */
 .workbench .wb-seg2{display:inline-flex;padding:2px;background:var(--wb-s3);border-radius:8px;gap:2px}
+/* 两个选项等宽：文字长短不同（「API 充值」4 字 /「浏览器自动化」6 字）时，
+   不等宽会让这一对看着不成比例。 */
 .workbench .wb-seg2 button{border:0;background:transparent;border-radius:6px;height:24px;padding:0 11px;
-  font-size:12.5px;font-weight:600;color:var(--wb-t3);cursor:pointer;font-family:inherit;white-space:nowrap}
+  font-size:12.5px;font-weight:600;color:var(--wb-t3);cursor:pointer;font-family:inherit;white-space:nowrap;
+  flex:1;min-width:92px;text-align:center}
 .workbench .wb-seg2 button.is-on{background:var(--wb-s);color:var(--wb-a);
   box-shadow:0 1px 2px hsla(176,25%,10%,.1);cursor:default}
 .workbench .wb-seg2 button:not(.is-on):hover{color:var(--wb-t2)}

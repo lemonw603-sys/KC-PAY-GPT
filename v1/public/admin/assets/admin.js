@@ -524,9 +524,10 @@ function renderDecisions(overview, cardSources, takeoverEstimate = null) {
     routeBox.innerHTML =
       `<div class="wb-seg2">${methodBtn('API', 'API 充值')}${methodBtn('BROWSER', '浏览器自动化')}</div>`
       + `<div class="wb-ln"><span class="wb-k">浏览器</span>`
+      + `<span class="wb-pair">`
       + `<select class="wb-field" id="decision-card-source" aria-label="Browser 卡台">${sourceOptions || '<option value="">没有可用卡台</option>'}</select>`
       + `<button type="button" class="wb-btn sm out" id="decision-card-source-apply" ${sources.length ? '' : 'disabled'}>切换</button>`
-      + `${takeoverHint}</div>`;
+      + `</span>${takeoverHint}</div>`;
   }
 }
 
