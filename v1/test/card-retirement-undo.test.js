@@ -179,3 +179,44 @@ test('退役确认把 override 的原值记进事件——不记就没得还原'
   assert.deepEqual(previous.override, { allocationPolicy: 'PRODUCT_ONLY', productCode: 'pro_20x',
     reason: '20X 专用', setBy: 'lemon' });
 });
+
+/* ===== 待销理由（D-309）===== */
+
+test('「取消续费未确认」不再算待销理由——那是去关续费，不是去销卡', async () => {
+  const { classifyRetirementRow } = await import('../src/services/card-retirement-service.js');
+  // cancellation_unconfirmed 必须**是 1** —— 少了这个字段，断言就是空转：
+  // 把那条理由加回代码里测试照样全绿（本轮变异测试当场抓到我这个疏漏）。
+  const base = {
+    id: 'c1', created_at: new Date('2026-09-01T00:00:00.000Z'), used_count: 0, max_payments: 3,
+    pro_used_count: 0, inventory_status: 'AVAILABLE', retired_override: 0, min_age_hours: 6,
+    cancellation_unconfirmed: 1
+  };
+  const row = classifyRetirementRow(base, { now: new Date('2026-09-20T00:00:00.000Z') });
+  assert.deepEqual(row.reasons, [], '一张正常服役的卡不该因为订单没关续费就进待销清单');
+  assert.equal(row.candidate, false);
+
+  // 该留的理由一个都不能少
+  const cases = [
+    [{ used_count: 3 }, 'USED_UP'],
+    [{ pro_used_count: 1 }, 'PRO_USED'],
+    [{ inventory_status: 'DEPLETED' }, 'DEPLETED'],
+    [{ inventory_status: 'FAILED' }, 'FAILED'],
+    [{ retired_override: 1 }, 'RETIRED_OVERRIDE']
+  ];
+  for (const [patch, expected] of cases) {
+    const got = classifyRetirementRow({ ...base, ...patch }, { now: new Date('2026-09-20T00:00:00.000Z') });
+    assert.ok(got.reasons.includes(expected), `${expected} 这条理由丢了`);
+  }
+});
+
+test('待销的取数 SQL 不再跑那个没人用的续费子查询', async () => {
+  const { retirementCandidateSql } = await import('../src/services/card-retirement-service.js');
+  const sql = retirementCandidateSql();
+  assert.doesNotMatch(sql, /cancellation_unconfirmed/,
+    '理由去掉了，这个每行都跑一次的 EXISTS 也该跟着去掉');
+  assert.doesNotMatch(sql, /cancellation_review_required/);
+  // 其余判定用的列必须还在
+  for (const col of ['used_count', 'pro_used_count', 'retired_override', 'max_payments', 'min_age_hours']) {
+    assert.match(sql, new RegExp(col), `${col} 丢了`);
+  }
+});

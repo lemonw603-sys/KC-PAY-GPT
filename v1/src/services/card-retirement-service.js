@@ -27,8 +27,7 @@ const REASON_LABELS = Object.freeze({
   PRO_USED: '服务过 Pro 单（一单一卡）',
   DEPLETED: '余额已用尽',
   FAILED: '卡台标记失效',
-  RETIRED_OVERRIDE: '运营已标永久停用',
-  CANCELLATION_UNCONFIRMED: '取消续费未确认'
+  RETIRED_OVERRIDE: '运营已标永久停用'
 });
 
 export const RETIRED_INVENTORY_STATUS = 'RETIRED';
@@ -66,10 +65,6 @@ export function retirementCandidateSql() {
             WHERE o.provider_account_id = c.provider_account_id
               AND BINARY o.external_card_id = BINARY c.external_card_id
               AND o.allocation_policy = 'RETIRED') AS retired_override,
-          EXISTS (SELECT 1 FROM orders o
-            WHERE o.assigned_card_id = c.id AND o.status = 'RECHARGE_SUCCESS'
-              AND o.cancellation_review_required = 1
-              AND COALESCE(o.subscription_cancelled, 0) = 0) AS cancellation_unconfirmed,
           COALESCE((SELECT CAST(setting_value AS UNSIGNED) FROM app_settings
             WHERE setting_key = 'card_max_successful_payments' LIMIT 1), 3) AS max_payments,
           COALESCE((SELECT CAST(setting_value AS DECIMAL(10,2)) FROM app_settings
@@ -89,7 +84,11 @@ export function classifyRetirementRow(row, { now = new Date() } = {}) {
   if (String(row.inventory_status) === 'DEPLETED') reasons.push('DEPLETED');
   if (String(row.inventory_status) === 'FAILED') reasons.push('FAILED');
   if (Number(row.retired_override) === 1) reasons.push('RETIRED_OVERRIDE');
-  if (Number(row.cancellation_unconfirmed) === 1) reasons.push('CANCELLATION_UNCONFIRMED');
+  // 「取消续费未确认」不再算待销理由（Lemon 2026-09-20 定）。
+  // 它说的是「这单已扣款充值成功，但续费没确认关掉」—— 那是**去订单里关续费**，
+  // 跟这张卡该不该销没有关系。挂在待销清单里会让运营以为该去卡台删卡，
+  // 而那张卡可能还在正常服务。这件事改由工作台队列提醒（backlog.cancellationReview，
+  // 生产当时 7 单，那个计数后端一直在算、前端一个地方都没消费）。
   const minAgeHours = Number(row.min_age_hours ?? 6);
   const createdAt = row.created_at ? new Date(row.created_at) : null;
   const dueAt = createdAt && Number.isFinite(createdAt.getTime())

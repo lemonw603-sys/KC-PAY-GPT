@@ -324,3 +324,24 @@ test('数字墙只有真有去处的格子才是按钮 —— 没去处的不许
     assert.ok(hasJump || isPending, `数字墙有个 button 既没去处也不是 disabled：${m[0]}`);
   }
 });
+
+test('待复核续费进工作台队列，且读的是 metrics 不是 backlog（D-309）', () => {
+  const { sandbox, html } = loadAdminJs();
+  // 这个数在 **metrics** 里。第一版按代码位置猜成 operationalBacklog，页面上那条
+  // 待办就是不出现，而且不报错——字段归属要对着真实响应看，不能按位置推。
+  sandbox.renderWbQueue({ metrics: { cancellationReview: 7 }, operationalBacklog: {} }, null, null, null);
+  const out = html('wb-queue');
+  assert.match(out, /待复核续费 7 单/);
+  assert.match(out, /不关下个周期会再扣一次/, '要说清后果，否则运营不知道为什么急');
+  // 去处理必须落到订单页的「需要处理」，不是跳卡片页
+  assert.match(out, /data-order-filter="REVIEW_REQUIRED"/);
+  assert.doesNotMatch(out, /待复核续费[\s\S]{0,200}data-view-jump="stock"/);
+
+  // 放错位置（backlog）时不该显示 —— 钉住这次踩的坑
+  sandbox.renderWbQueue({ metrics: {}, operationalBacklog: { cancellationReview: 7 } }, null, null, null);
+  assert.doesNotMatch(html('wb-queue'), /待复核续费/);
+
+  // 0 单时不占位置
+  sandbox.renderWbQueue({ metrics: { cancellationReview: 0 }, operationalBacklog: {} }, null, null, null);
+  assert.doesNotMatch(html('wb-queue'), /待复核续费/);
+});

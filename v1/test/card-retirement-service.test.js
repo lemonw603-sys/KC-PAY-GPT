@@ -27,12 +27,20 @@ test('DEPLETED card is a candidate; one that is younger than the minimum age is 
   assert.equal(young.dueAt, '2026-09-18T15:00:00.000Z');
 });
 
-test('cancellation-unconfirmed delivery (D-248 打架 4) puts the card on the list; an active assignment keeps it off until the order ends', () => {
+test('取消续费未确认**不再**进待销清单（D-309 改写 D-248 打架 4）；有活动分配的卡仍然不进', () => {
+  // D-248 打架 4 当初加这条，关切是「取消续费没确认的卡是客户可能续费扣我们钱的卡」。
+  // 关切成立，落点错了：待销清单的动作是「去卡台删掉这张卡」，而这件事要做的是
+  // 「去订单里把续费关掉」。而且实查两件事——资格规则里没有任何 cancellation/subscription
+  // 条件，待销清单又是派生查询不建表——**进这个清单从来没有阻止过这张卡被继续分配**，
+  // 它的效果只有「提醒」。所以关切原样搬去工作台队列（那条待办的文案就是
+  // 「不关下个周期会再扣一次」），落点改成跳订单页的「需要处理」。
   const row = classifyRetirementRow({ ...base, cancellation_unconfirmed: 1 }, { now });
-  assert.deepEqual(row.reasons, ['CANCELLATION_UNCONFIRMED']);
-  assert.equal(row.due, true);
-  const busy = classifyRetirementRow({ ...base, cancellation_unconfirmed: 1, active_assignment: 1 }, { now });
-  assert.equal(busy.candidate, false);
+  assert.deepEqual(row.reasons, []);
+  assert.equal(row.candidate, false);
+
+  // 「有活动分配的不进」是另一条规则，与本次改动无关，必须还在
+  const busy = classifyRetirementRow({ ...base, used_count: 3, active_assignment: 1 }, { now });
+  assert.equal(busy.candidate, false, '卡还绑着在跑的订单时，哪怕用满也不能催人去销');
 });
 
 test('a card that served a Pro order is one-and-done (D-221) even below the Plus cap; a healthy card is not a candidate', () => {
@@ -48,7 +56,8 @@ test('candidate SQL reads the cap and the minimum age from app_settings and excl
   assert.match(sql, /card_max_successful_payments/);
   assert.match(sql, /card_min_retire_age_hours/);
   assert.match(sql, /inventory_status <> 'RETIRED'/);
-  assert.match(sql, /cancellation_review_required = 1/);
+  // 那条理由去掉后，这个每行都要跑一次的 EXISTS 也跟着删了（D-309）
+  assert.doesNotMatch(sql, /cancellation_review_required/);
 });
 
 function poolWith(cardRow) {

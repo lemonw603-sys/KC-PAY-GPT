@@ -488,6 +488,18 @@ function renderWbQueue(overview, daily, alertData, reconCases) {
   // 后端计数仍在 operationalBacklog 里，将来要恢复入口时再接。
   if ((b.cardIntakePending ?? 0) > 0) items.push({ t: 'info', ic: '⇩', title: `新卡待接管 ${b.cardIntakePending} 张`, ev: '同步后确认接管', jump: 'stock' });
   if (daily && (daily.pendingRegistrationCount ?? 0) > 0) items.push({ t: 'info', ic: '✎', title: `待登记手动用卡 ${daily.pendingRegistrationCount} 张`, ev: '已登记 manual-used，等去卡台销', jump: 'stock' });
+  // 待复核续费：已扣款、充值成功，但续费没确认关掉 —— 不关掉下个周期会再扣一次客户的钱。
+  // 后端 backlog.cancellationReview 一直在算（生产 2026-09-20 有 7 单），而前端**一个地方
+  // 都没消费**；它此前唯一的露面处是待销清单里一条语义错位的理由（那里说的是「该销卡」，
+  // 而这件事要做的是「去订单里关续费」）。那条已按 Lemon 2026-09-20 的裁定移除，落点搬到这里。
+  // 注意它在 **metrics** 里，不是 operationalBacklog（`b`）——我第一版按代码位置猜成
+  // backlog，页面上那条待办就是不出现。字段归属对着真实响应看，别按位置推。
+  const cancellationReview = Number(overview.metrics?.cancellationReview || 0);
+  if (cancellationReview > 0) {
+    items.push({ t: 'warn', ic: '↻', title: `待复核续费 ${cancellationReview} 单`,
+      ev: '已扣款且充值成功，但续费没确认关掉——不关下个周期会再扣一次',
+      actions: '<button type="button" class="wb-btn out sm" data-order-filter="REVIEW_REQUIRED">去处理</button>' });
+  }
   // D-285：原型 C 的队列明确画了「待销到期」和「token 状态」两类，放回工作台
   // （此前被我判为卡片页范围、本轮不做，属误判；F-64 据此在本块闭合）。
   // 完整处理动作仍在卡片页，这里只做提醒 + 带落点的跳转。
