@@ -67,7 +67,7 @@ async function saveSession(url, cookies) {
   } catch { /* 缓存不上就每次登录，不影响结论 */ }
 }
 
-class Cdp {
+export class Cdp {
   #ws; #id = 0; #pending = new Map(); #listeners = new Map();
 
   static async connect(url) {
@@ -119,7 +119,7 @@ class Cdp {
   close() { try { this.#ws.close(); } catch { /* 已关就算了 */ } }
 }
 
-async function launchChrome() {
+export async function launchChrome() {
   const bin = CHROME_CANDIDATES.find((p) => existsSync(p));
   if (!bin) {
     throw Object.assign(new Error(
@@ -221,7 +221,7 @@ const COLLECTOR = String(function collect(rootSel, probes) {
   return out;
 });
 
-async function openPage(cdp, url, { width, height, login }) {
+export async function openPage(cdp, url, { width, height, login }) {
   const { targetId } = await cdp.send('Target.createTarget', { url: 'about:blank' });
   const { sessionId } = await cdp.send('Target.attachToTarget', { targetId, flatten: true });
 
@@ -484,8 +484,11 @@ async function main() {
   return failed ? 1 : 0;
 }
 
-main().then((code) => process.exit(code), (err) => {
-  console.error(`\n跑不起来（不等于「一致」）：${err.message}`);
-  if (!err.setup) console.error(err.stack);
-  process.exit(2);
-});
+// 被别的脚本 import 时只取上面那些导出，不要跑比对
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  main().then((code) => process.exit(code), (err) => {
+    console.error(`\n跑不起来（不等于「一致」）：${err.message}`);
+    if (!err.setup) console.error(err.stack);
+    process.exit(2);
+  });
+}
