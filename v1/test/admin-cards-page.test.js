@@ -548,3 +548,53 @@ test('术语一致：同一个状态在一页上只能有一个叫法', () => {
   // 已经删掉的孤儿常量不许回来——它定义了第三份同义标签，零引用
   assert.doesNotMatch(src, /STOCK_CATEGORY_LABELS/);
 });
+
+/* ===== 停用这张卡：理由决定下一步（D-311）===== */
+
+test('「停用这张卡」的理由是选项，且原因码写进 reason 的最前面', () => {
+  const src = fs.readFileSync(path.join(here, '..', 'public', 'admin', 'assets', 'admin.js'), 'utf8');
+  const start = src.indexOf("closest('[data-manual-use]')");
+  const handler = src.slice(start, src.indexOf('\n});', start));
+
+  // 生产现有的 override 正好是三类（手动挪用 / 卡台作废 / 运营主动取消），
+  // 当初全塞在自由文本里（highvcc-manual-used / highvcc-cancelled / hnskj-voided），
+  // 事后只能靠读字符串区分。改成选项。
+  assert.match(handler, /type: 'select'/);
+  for (const code of ['MANUAL_USED', 'PROVIDER_VOIDED', 'CARD_FAULTY', 'OPERATOR_CANCELLED', 'OTHER']) {
+    assert.ok(handler.includes(code), `少了停用原因 ${code}`);
+  }
+  // 说明仍然必填——原因码回答「接下来做什么」，说明回答「当时发生了什么」
+  assert.match(handler, /name: 'note'[\s\S]{0,80}required: true/);
+  // 原因码必须在 reason 最前面，待销清单靠它认
+  assert.match(handler, /reason: `\$\{answer\.cause\}: \$\{answer\.note\}`/);
+});
+
+test('原因决定「接下来去卡台做什么」，认不出的不猜', () => {
+  const { evalIn } = loadAdminJs();
+  // 卡台自己作废的不用再去删；自己挪用或卡有问题的要去删 —— 动作不同
+  assert.match(evalIn("stopCauseOf('PROVIDER_VOIDED: 后台显示已作废').next"), /已经没了/);
+  assert.match(evalIn("stopCauseOf('MANUAL_USED: 给客户手动充了 20X').next"), /去卡台把它删掉/);
+  assert.equal(evalIn("stopCauseOf('MANUAL_USED: x').label"), '手动充值用掉了');
+  // 旧数据（本轮之前写的 override）没有原因码前缀 —— 返回 null，按普通停用显示，不猜
+  assert.equal(evalIn("stopCauseOf('Lemon paid a customer 20X manually with this card')"), null);
+  assert.equal(evalIn("stopCauseOf(null)"), null);
+  assert.equal(evalIn("stopCauseOf('NOT_A_CODE: x')"), null);
+});
+
+test('待销清单把「运营已标永久停用」换成具体原因 + 下一步；认不出就照旧', () => {
+  const { sandbox, html } = loadAdminJs();
+  const base = { providerAccountId: 'pa-1', providerCode: 'hnskj', currentBalance: '0.35',
+    due: true, dueAt: '2026-09-19T00:00:00.000Z', reasonLabels: ['运营已标永久停用'] };
+  sandbox.renderCardRetirement({ minAgeHours: 6, notYetDue: [], recentlyConfirmed: [], due: [
+    { ...base, cardId: 'c1', last4: '1111', retiredOverrideReason: 'PROVIDER_VOIDED: 卡台作废' },
+    { ...base, cardId: 'c2', last4: '2222', retiredOverrideReason: 'MANUAL_USED: 手动充了' },
+    { ...base, cardId: 'c3', last4: '3333', retiredOverrideReason: 'Lemon cancelled the card on highvcc' }
+  ] });
+  const out = html('sel:#card-retirement-list');
+  assert.match(out, /卡台已禁用\/作废[\s\S]*?卡台那边已经没了/);
+  assert.match(out, /手动充值用掉了[\s\S]*?去卡台把它删掉/);
+  // 认不出原因码的旧数据：保留原来那句，且**不许**编一个下一步出来
+  assert.match(out, /运营已标永久停用/);
+  const legacyRow = out.slice(out.indexOf('3333'));
+  assert.doesNotMatch(legacyRow.slice(0, legacyRow.indexOf('</tr>')), /去卡台把它删掉|已经没了/);
+});

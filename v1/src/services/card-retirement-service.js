@@ -65,6 +65,13 @@ export function retirementCandidateSql() {
             WHERE o.provider_account_id = c.provider_account_id
               AND BINARY o.external_card_id = BINARY c.external_card_id
               AND o.allocation_policy = 'RETIRED') AS retired_override,
+          -- 停用原因原样带出来（前端从中认原因码）。不带的话待销清单只能说
+          -- 「运营已标永久停用」，运营看不出接下来该去卡台做什么 —— 卡台已经作废的
+          -- 不用再去删，自己挪用的才要去删，两者动作不同。
+          (SELECT o2.reason FROM card_operational_overrides o2
+            WHERE o2.provider_account_id = c.provider_account_id
+              AND BINARY o2.external_card_id = BINARY c.external_card_id
+              AND o2.allocation_policy = 'RETIRED' LIMIT 1) AS retired_override_reason,
           COALESCE((SELECT CAST(setting_value AS UNSIGNED) FROM app_settings
             WHERE setting_key = 'card_max_successful_payments' LIMIT 1), 3) AS max_payments,
           COALESCE((SELECT CAST(setting_value AS DECIMAL(10,2)) FROM app_settings
@@ -112,6 +119,8 @@ export function classifyRetirementRow(row, { now = new Date() } = {}) {
     maxPayments,
     reasons,
     reasonLabels: reasons.map((code) => REASON_LABELS[code] || code),
+    // 原样透出，前端认原因码；认不出就按普通停用显示（不编）
+    retiredOverrideReason: row.retired_override_reason == null ? null : String(row.retired_override_reason),
     activeAssignment,
     createdAt: iso(createdAt),
     minAgeHours,

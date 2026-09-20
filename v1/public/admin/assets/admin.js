@@ -1337,6 +1337,27 @@ function renderSelectedStockCardType({ resetInvalidAmount = false } = {}) {
 
 // 这里的词必须和台账栏、详情抽屉一致：同一个状态在一页上有两个叫法，运营就得自己
 // 猜它们是不是一回事。READY 原来在这里叫「待分配」，而别处都叫「可分配」。
+/**
+ * 停用原因 → 「接下来该去卡台做什么」。
+ *
+ * 这不是装饰：卡台已经作废的卡不用再去删，自己挪用或有问题的才要去删。
+ * 待销清单靠它告诉运营下一步，免得对着一句「运营已标永久停用」猜。
+ */
+const STOP_CAUSES = Object.freeze({
+  MANUAL_USED: { label: '手动充值用掉了', next: '去卡台把它删掉' },
+  PROVIDER_VOIDED: { label: '卡台已禁用/作废', next: '卡台那边已经没了，直接登记即可' },
+  CARD_FAULTY: { label: '卡有问题', next: '去卡台把它删掉' },
+  OPERATOR_CANCELLED: { label: '已在卡台取消', next: '卡台那边已经没了，直接登记即可' },
+  OTHER: { label: '其他', next: '按说明处理' }
+});
+const STOP_CAUSE_NOTICE = Object.freeze(Object.fromEntries(
+  Object.entries(STOP_CAUSES).map(([code, v]) => [code, `已停用（${v.label}）。${v.next}。`])));
+/** 从 override 的 reason 里认出原因码；认不出就返回 null（不猜）。 */
+function stopCauseOf(reason) {
+  const code = String(reason || '').split(':')[0].trim();
+  return STOP_CAUSES[code] ? { code, ...STOP_CAUSES[code] } : null;
+}
+
 const CARD_STATE_CHIPS = Object.freeze({
   READY: ['is-ok', '可分配'], IN_USE: ['is-use', '使用中'],
   RETIRED: ['is-off', '永久停用'], PRODUCT_ONLY: ['is-off', '限定产品'],
@@ -1494,7 +1515,7 @@ function cardRowHtml(card, retireItem, retireFailed = false) {
       ? `<button class="cardbtn" type="button" data-manual-use="1"
           data-account="${escapeHtml(card.providerAccountId || '')}"
           data-ext="${escapeHtml(card.externalCardId || '')}"
-          data-last4="${escapeHtml(card.last4 || card.providerCardId || '')}">我手动用了</button>`
+          data-last4="${escapeHtml(card.last4 || card.providerCardId || '')}">停用这张卡</button>`
       : undoAction === 'retire'
         ? `<button class="cardbtn" type="button" data-undo-retire="1"
             data-account="${escapeHtml(card.providerAccountId || '')}"
@@ -1560,7 +1581,14 @@ function renderCardRetirement(retirement, labelByKind = new Map()) {
   const row = (item, ready) => `<tr class="${ready ? 'is-due' : 'is-notyet'}">
     <td class="cardmono">${escapeHtml(item.last4 || item.providerCardId || '—')}</td>
     <td>${escapeHtml(labelByKind.get(item.providerCode) || item.providerCode || '—')}</td>
-    <td>${escapeHtml((item.reasonLabels || []).join('、') || '—')}</td>
+    <td>${(() => {
+      const cause = stopCauseOf(item.retiredOverrideReason);
+      const labels = (item.reasonLabels || []).map((label) =>
+        // 「运营已标永久停用」太笼统——认得出原因码就换成具体那句
+        cause && label === '运营已标永久停用' ? cause.label : label);
+      return `${escapeHtml(labels.join('、') || '—')}`
+        + (cause ? `<span class="cardsub">${escapeHtml(cause.next)}</span>` : '');
+    })()}</td>
     <td class="cardmono">${item.currentBalance == null ? '—' : `$${formatMoney(item.currentBalance)}`}</td>
     <td>${ready ? '已到期' : `还差 ${escapeHtml(remainingText(item.dueAt))}`}</td>
     <td>${ready
@@ -1652,22 +1680,39 @@ elements.stockCards?.addEventListener('click', async (event) => {
   if (!button) return;
   const { account, ext, last4 } = button.dataset;
   if (!account || !ext) { showNotice('这张卡缺卡台标识，无法登记。'); return; }
+  // 理由做成选项而不是自由文本：它决定你接下来该去卡台做什么（卡台已经作废的不用再去删，
+  // 自己挪用或有问题的要去删）。生产现有的 override 正好就是这三类，只是当初全塞在
+  // 自由文本里（`highvcc-manual-used` / `highvcc-cancelled` / `hnskj-voided`），
+  // 事后只能靠读字符串区分。
   const answer = await askForm({
-    title: `登记手动用卡 · ${last4 || ext}`,
-    message: '登记后这张卡不再参与自动分配，仍会留在待销清单里等你销卡。这不会去卡台做任何操作。',
-    fields: [{ name: 'reason', label: '用在哪了（必填，会进审计）', required: true }],
-    confirmLabel: '登记', danger: true
+    title: `停用这张卡 · ${last4 || ext}`,
+    message: '停用后这张卡不再参与自动分配，并进入待销清单等你在卡台做最后处理。'
+      + '这一步只改系统里的记录，不会去卡台做任何操作。点错了可以在「历史」里撤销。',
+    fields: [
+      { name: 'cause', label: '为什么停用', type: 'select', value: 'MANUAL_USED',
+        options: [
+          { value: 'MANUAL_USED', label: '我拿它手动充值了' },
+          { value: 'PROVIDER_VOIDED', label: '卡台把它禁用或作废了' },
+          { value: 'CARD_FAULTY', label: '这张卡有问题（付款老失败等）' },
+          { value: 'OPERATOR_CANCELLED', label: '我在卡台主动取消了它' },
+          { value: 'OTHER', label: '其他（在下面写清楚）' }
+        ] },
+      { name: 'note', label: '说明（必填，会进审计）', required: true }
+    ],
+    confirmLabel: '停用', danger: true
   });
   if (!answer) return;
   try {
     await api('/api/v1/admin/card-operational-overrides', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ providerAccountId: account, externalCardId: ext,
-        allocationPolicy: 'RETIRED', reason: answer.reason })
+        allocationPolicy: 'RETIRED',
+        // 原因码写在最前面，待销清单据它显示「接下来该做什么」；说明原样跟在后面。
+        reason: `${answer.cause}: ${answer.note}` })
     });
-    showNotice('已登记，这张卡不再参与分配。', 'success');
+    showNotice(STOP_CAUSE_NOTICE[answer.cause] || '已停用，这张卡不再参与分配。', 'success');
     await loadStock();
-  } catch (error) { showNotice(`登记失败：${error.message}`); }
+  } catch (error) { showNotice(`停用失败：${friendlyApiError(error)}`); }
 });
 
 // ⑤ 「我已在卡台删掉」：D-301 去掉确认词。
