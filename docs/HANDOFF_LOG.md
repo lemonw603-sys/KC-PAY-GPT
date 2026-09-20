@@ -3052,3 +3052,7 @@ Lemon 把那句「此刻可立即绑 0 张，其余在等下一次同步（会�
 原始证据与结论落 `docs/reviews/2026-09-20_cdk-takeover-report.md`：保留 A 版一条流水线方向；记录 C-01～C-07，区分现有代码行为与尚待裁定的设计边界，重点为撤销发出不撤销持码权、生成批次与销售批次混用、原始整批下载易误作新交付清单、四格遗漏在途义务、有效期与失败重试、事务审计/扩展幂等、退码后库存和历史归属。
 
 定向运行 `node --test test/cdk-service.test.js test/cdk-return-repository.test.js test/cdk-verify-service.test.js`：29 pass / 0 fail / 0 skipped。未跑全量、数据库并发、UI 或生产验收；未连接生产，未执行 state-check，不订正 CURRENT_STATE，不改既定决策、不部署、不启动或停止 worker。HANDOFF_NOW 增补本轮评估暂停点，保留上一窗口交接供追溯。下一步先讨论业务边界，而非径直开始实现。
+
+## 2026-09-21｜CDK 两项业务边界裁定（D-314）
+
+UTC+8。用户明确：不需要撤销发出，直接作废；不做囤货后分多次、不同价格卖给不同渠道。已更新 DECISIONS、任务书与接班入口。C-02 不再作为本轮阻塞，不新增销售批次模型；C-01 不做回库流程，但旧撤销实现尚未移除。无付款失败自动退码保留，不与撤销销售混淆。仅文档修改与 diff 检查；未跑业务测试/生产 state-check，未连接生产、未操作任何码或 worker。
