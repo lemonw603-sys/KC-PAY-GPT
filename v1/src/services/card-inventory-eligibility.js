@@ -230,7 +230,16 @@ export function providerCardStockSql({ productCode = 'plus' } = {}) {
       SUM(EXISTS(SELECT 1 FROM card_assignment_history ah
         WHERE ah.card_id=c.id AND ah.status='ACTIVE')) AS in_use,
       SUM((SELECT COUNT(*) FROM card_consumption_ledger u
-        WHERE u.card_id=c.id AND u.status IN ('RESERVED','CONSUMED','RECONCILIATION'))>0) AS any_used
+        WHERE u.card_id=c.id AND u.status IN ('RESERVED','CONSUMED','RECONCILIATION'))>0) AS any_used,
+      -- 按**产品**用过几张卡。上面那个 any_used 不分产品（它答的是「这张卡被用过没」），
+      -- 拿它当按产品的用量会三个产品完全相同 —— 2026-09-20 生产实测：plus / pro_5x /
+      -- pro_20x 三个口径的 any_used 都是 6，而真实按产品用量是 plus 12 / pro_20x 1 / pro_5x 0。
+      -- 产品归属只能从账本 JOIN 回订单取 plan_type，卡本身不记自己服务过哪个产品。
+      SUM(EXISTS(SELECT 1 FROM card_consumption_ledger pu
+        JOIN orders po ON po.id = pu.order_id
+        WHERE pu.card_id = c.id
+          AND pu.status IN ('RESERVED','CONSUMED','RECONCILIATION')
+          AND po.plan_type = '${normalizedProduct}')) AS product_used
     FROM cards c INNER JOIN provider_accounts pa ON pa.id=c.provider_account_id
     LEFT JOIN card_supply_policies sp ON sp.provider_account_id = pa.id AND sp.product_code = '${normalizedProduct}'
     -- 只统计**卡台**。provider_accounts 里还有 purpose='RECHARGE' 的行（zzshu 旧直充系统，

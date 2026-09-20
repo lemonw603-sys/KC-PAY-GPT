@@ -22,7 +22,7 @@ function queuedPool(results) {
 test('admin overview maps aggregate values without exposing raw records', async () => {
   const pool = queuedPool([
     [{ total: 10, today: 2, successful: 8, completed_failed: 2, processing: 1,
-      awaiting_confirmation: 1, reviewing: 1 }],
+      awaiting_confirmation: 1, reviewing: 1, waiting_for_card: 3 }],
     [{ status: 'RECHARGE_SUCCESS', count: 8 }],
     [{ status: 'AVAILABLE', count: 20 }],
     [{ setting_key: 'accept_new_orders', setting_value: 'false', updated_at: new Date('2026-08-17T00:00:00Z') }],
@@ -34,17 +34,20 @@ test('admin overview maps aggregate values without exposing raw records', async 
     [{ card_intake_pending: 2, funds_risk_pending: 1,
       card_funding_risk_pending: 2, card_funding_manual_review: 1,
       reconciliation_cases_open: 3, card_sync_backlog: 4, card_sync_review_required: 2 }],
-    [{ provider_account_id: 'pa-hnskj', provider_code: 'legacy-primary', provider_kind: 'hnskj', total: 14, in_stock: 2, plus_assignable: 0, in_use: 0, any_used: 6, plus_target_available: 2 },
-      { provider_account_id: 'pa-backup-a', provider_code: 'backup-a', provider_kind: 'manual_excel', total: 16, in_stock: 7, plus_assignable: 2, in_use: 0, any_used: 6, plus_target_available: 2 }],
+    [{ provider_account_id: 'pa-hnskj', provider_code: 'legacy-primary', provider_kind: 'hnskj', total: 14, in_stock: 2, plus_assignable: 0, in_use: 0, any_used: 6, product_used: 6, plus_target_available: 2 },
+      { provider_account_id: 'pa-backup-a', provider_code: 'backup-a', provider_kind: 'manual_excel', total: 16, in_stock: 7, plus_assignable: 2, in_use: 0, any_used: 6, product_used: 6, plus_target_available: 2 }],
+    // ⚠️ fixture 必须是真实 SQL 可能产出的形状：any_used **不分产品**，三个产品查出来必然
+    // 完全相同（2026-09-20 生产实测都是 6）；按产品的用量在 product_used 里。
+    // 初版 fixture 手工造了「20X any_used=1、5X any_used=0」这种真实 SQL 产不出的数据，
+    // 于是断言全绿、把「byProduct.used 取错列」这个 bug 盖住了。
     // 5X：两台水位都是 0（生产实情，Lemon 2026-09-20 确认正常 —— 前期没给它做库存卡）
-    [{ provider_account_id: 'pa-hnskj', plus_assignable: 0, any_used: 0, plus_target_available: 0 },
-      { provider_account_id: 'pa-backup-a', plus_assignable: 0, any_used: 0, plus_target_available: 0 }],
-    // 20X：水位也是 0，但已经有卡在服务（生产 9 单 / 3 张卡）
-    [{ provider_account_id: 'pa-hnskj', plus_assignable: 0, any_used: 1, plus_target_available: 0 },
-      { provider_account_id: 'pa-backup-a', plus_assignable: 0, any_used: 2, plus_target_available: 0 }],
+    [{ provider_account_id: 'pa-hnskj', plus_assignable: 0, any_used: 6, product_used: 0, plus_target_available: 0 },
+      { provider_account_id: 'pa-backup-a', plus_assignable: 0, any_used: 6, product_used: 0, plus_target_available: 0 }],
+    // 20X：水位也是 0，但已经有卡在服务（生产 backup-a 有 1 张）
+    [{ provider_account_id: 'pa-hnskj', plus_assignable: 0, any_used: 6, product_used: 0, plus_target_available: 0 },
+      { provider_account_id: 'pa-backup-a', plus_assignable: 0, any_used: 6, product_used: 1, plus_target_available: 0 }],
     [{ provider_account_id: 'pa-hnskj', spent_today: '16.000000', currency: 'USD' },
       { provider_account_id: 'pa-backup-a', spent_today: '33.250000', currency: 'USD' }],
-    [{ waiting_for_card: 3 }],
     [{ active: 1, writes_on: 0 }]
   ]);
   const result = await createAdminReadService({ pool }).getOverview();
@@ -63,12 +66,28 @@ test('admin overview maps aggregate values without exposing raw records', async 
   assert.deepEqual(hnskj.byProduct.map((p) => p.label), ['Plus', '5X', '20X']);
   assert.equal(hnskj.byProduct[0].autoReplenished, true, 'Plus 水位 2 → 会自动补');
   assert.equal(hnskj.byProduct[2].autoReplenished, false, '20X 水位 0 → 不会自动补，断了要人工开');
-  assert.equal(hnskj.byProduct[2].used, 1, '20X 已经有卡在服务');
+  assert.equal(hnskj.byProduct[2].used, 0, 'hnskj 没有 20X 用量');
+  const backup = result.cardStockByProvider.find((r) => r.providerKind === 'manual_excel');
+  assert.equal(backup.byProduct[2].used, 1, 'backup-a 有 1 张卡服务过 20X');
+  // 三个产品的 used 不能因为 any_used 相同而相同 —— 它们必须来自 product_used
+  assert.deepEqual(backup.byProduct.map((p) => p.used), [6, 0, 1]);
   // 今日花费按台（消费 + 开卡费，不含 card_recharge —— 算了会和消费重复）
   assert.equal(hnskj.spentToday, '16.000000');
   assert.equal(result.cardStockByProvider.find((r) => r.providerKind === 'manual_excel').spentToday, '33.250000');
   // 有多少人在等卡：库存讲「有多少」，这个讲「有多少人在等」
-  assert.equal(result.ordersWaitingForCard, 3);
+  // 等卡数来自 orderCounts 里早就存在的 waiting_for_card（SUM(status='WAITING_FOR_CARD')），
+  // 不另起一条查询 —— 初版重复造了一个，还把状态值写错。
+  assert.equal(result.ordersWaitingForCard, result.metrics.waitingForCard);
+  const waitingSqls = pool.queries.filter(({ sql }) => /AS waiting_for_card/.test(sql));
+  assert.equal(waitingSqls.length, 1, '算等卡的 SQL 只能有一条');
+  assert.match(waitingSqls[0].sql, /o\.status = 'WAITING_FOR_CARD'/);
+  // 今日花费必须用 first_seen_at（occurred_at 生产全为 NULL）并含拒付
+  const spendSql = pool.queries.find(({ sql }) => /card_issue_fee/.test(sql)).sql;
+  assert.match(spendSql, /first_seen_at/);
+  assert.doesNotMatch(spendSql, /t\.occurred_at/);
+  // 直接断言类型列表本身 —— 按关键词匹配会被 SQL 注释里的文字干扰
+  // （注释里写着「不含 card_recharge」，doesNotMatch(/card_recharge/) 因此误报）
+  assert.match(spendSql, /IN \('card_issue_fee', 'chargeback', 'chargeback_fee'\)/);
   assert.equal(result.metrics.successRate, 80);
   assert.equal(result.metrics.todayOrders, 2);
   assert.equal(result.metrics.awaitingConfirmationOrders, 1);

@@ -4597,3 +4597,30 @@ Lemon 让我「先把整个项目了解清楚」后再谈重构。补读 `PRODUC
 - **验收标准出处**：face-5 DoD「落实前出多方案；**验收含 Lemon 实际用一天的反馈**」。
 
 基线文件已就地标注更正（不删原文），`PROJECT_MAP` §4.1 欠账 4 结清。
+
+## D-302（2026-09-20）修掉自查出的三处错误；过程中又发现第四处——我重复造了一个早就存在的统计
+
+Lemon 追问「你确定是 bug 吗」——我此前三条全是**读 SQL 推理**出来的，一次没实跑。逐条实证后确认都是真 bug，修复时又挖出第四处。
+
+**实证（生产只读，改前）**
+
+| # | 结论 | 证据 |
+|---|---|---|
+| A1 | 等卡计数漏了 `WAITING_FOR_CARD` | `order_events` 里 `to_status='WAITING_FOR_CARD'` **24 次**（2026-08-25~09-14），与 face-2「历史 24 次等卡」吻合 |
+| A2 | `byProduct.used` 取的 `any_used` 不分产品 | 三个产品口径查出来**都是 6**；真实按产品用量 plus **12** / pro_20x **1** / pro_5x **0** |
+| A3 | 开卡费按 `occurred_at` 筛日期恒为 0 | 同一统计：`occurred_at` 版 **0.00**，`first_seen_at` 版 **1.25** |
+
+**修复与改后实证**
+- A2：`providerCardStockSql` 新增 `product_used`（账本 JOIN 订单取 `plan_type`；卡本身不记产品归属）。改后生产实跑 plus 6+6=**12** / pro_5x 0+0=**0** / pro_20x 0+1=**1**，与对照组完全吻合。
+- A3/A4：时间列改 `first_seen_at`，类型扩为 `('card_issue_fee','chargeback','chargeback_fee')`（D-301「拒付也算」；face-4 看板六问原文「开卡 + 付款 + 拒付，按台」）。仍不含 `card_recharge`（资金转移，会与 consumption 重复）。改后 09-18 实跑 hnskj **0.75** / manual_excel **0.50**。
+- A1 → 见下。
+
+**第四处：我重复造了一个早就存在的统计。** 修 A1 时发现 `admin-read-service.js:600` **本来就有** `SUM(o.status = 'WAITING_FOR_CARD') AS waiting_for_card`，并且第 792 行早已映射成 `metrics.waitingForCard`（只是前端一直没用）。我却另加了一条 `SELECT COUNT(*) ... WHERE status IN ('CREATED','CARD_PURCHASING','CARD_PROVISIONING')` —— **既重复、状态值又写错**。改法：删掉我加的查询，`ordersWaitingForCard` 直接取既有的 `orderCounts[0].waiting_for_card`。
+
+**这是 D-273「别为已经实现的东西再造第二份」的第三次**：① 钱包底线（前窗口）② `minimumBalanceSql`（D-296，当天）③ 本条。**而我在 D-296 的说明里刚刚引用过这条教训。** 共同触发条件：**新写一段聚合前没有先 grep 同名/同义的列是否已存在**。
+
+**测试也修了，且这次是真修**：初版 fixture 手工造了「20X `any_used`=1、5X `any_used`=0」这种**真实 SQL 产不出**的数据，断言全绿、把 bug 盖住。现改成真实形状（`any_used` 三产品相同、`product_used` 按产品不同），并新增四条断言：等卡 SQL **只能有一条**且必须用 `o.status = 'WAITING_FOR_CARD'`、花费 SQL 必须用 `first_seen_at` 且类型列表恰为三类。
+
+**顺带一条小教训**：断言 `doesNotMatch(/card_recharge/)` 曾误报——**SQL 注释里写着「不含 card_recharge」被正则匹配到了**。改为直接断言类型列表本身。
+
+全量 976 / 908 pass / 1 fail（既有 F-65）。`occurred_at` 全表 NULL 仍只报不改，登记在任务书 §A3。

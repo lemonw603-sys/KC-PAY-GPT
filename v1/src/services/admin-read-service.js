@@ -569,7 +569,7 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
   async function getOverview() {
     const [[orderCounts], [statusRows], [cdkRows], [settingsRows], [refundRows], [alertRows], [stockRows],
       [stockSettingRows], [backlogRows], [providerStockRows], [stock5xRows], [stock20xRows],
-      [spendRows], [waitingRows]] = await Promise.all([
+      [spendRows]] = await Promise.all([
       pool.query(`SELECT
         COUNT(*) AS total,
         SUM(${todayCst8WindowSql('o.created_at')}) AS today,
@@ -726,16 +726,22 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
               AND spend_order.status = 'RECHARGE_SUCCESS'
               AND ${todayCst8WindowSql('l.consumed_at')}
           UNION ALL
+          -- 开卡手续费 + 拒付 + 拒付手续费（D-301：Lemon 定「拒付也算」；face-4 看板六问
+          -- 原文就是「开卡 + 付款 + 拒付，按台」）。仍**不含 card_recharge** —— 往卡里充钱
+          -- 是资金转移不是消费，算了会和上面的 consumption 重复。
+          --
+          -- 时间列用 first_seen_at 而不是 occurred_at：生产 card_transactions 的
+          -- occurred_at **76 行全为 NULL**（2026-09-20 实查），拿它筛日期恒为 false、
+          -- 开卡费永远算不进去。first_seen_at 的语义是「第一次同步到这笔流水的时间」，
+          -- 当天开卡当天同步到时与交易时间一致，跨日同步会归到同步那天。
+          -- （occurred_at 全 NULL 本身疑似既有 bug —— trade_time_raw 有真实时间却没解析入列，
+          --  已在 docs/tasks/2026-09-20-cards-page-rework-and-fixes.md §A3 登记，本轮只报不改。）
           SELECT c.provider_account_id AS pa_id, t.amount, 'USD' AS currency
             FROM card_transactions t JOIN cards c ON c.id = t.card_id
-            WHERE LOWER(t.transaction_type) = 'card_issue_fee'
-              AND ${todayCst8WindowSql('t.occurred_at')}
+            WHERE LOWER(t.transaction_type) IN ('card_issue_fee', 'chargeback', 'chargeback_fee')
+              AND ${todayCst8WindowSql('t.first_seen_at')}
         ) spend ON spend.pa_id = pa.id
         GROUP BY pa.id`)
-      // 正在等卡的单：库存讲的是「有多少」，这个数讲「有多少人在等」。
-      // 「剩 0 且 3 单在等」和「剩 0 没人在等」紧急度完全不同（Lemon 同意加）。
-      ,pool.query(`SELECT COUNT(*) AS waiting_for_card FROM orders
-        WHERE status IN ('CREATED','CARD_PURCHASING','CARD_PROVISIONING')`)
     ]);
     const count = (value) => Number(value || 0);
     const total = count(orderCounts[0]?.total);
@@ -847,7 +853,10 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
           productCode: code,
           label,
           assignable: count(productRow?.plus_assignable),
-          used: count(productRow?.any_used),
+          // 按产品的用量用 product_used（账本 JOIN 订单取 plan_type）。
+          // any_used 不分产品 —— 拿它当按产品用量，三个产品会完全相同（实测都是 6，
+          // 而真实是 plus 12 / pro_20x 1 / pro_5x 0）。
+          used: count(productRow?.product_used),
           target: productRow?.plus_target_available == null ? null : count(productRow.plus_target_available),
           // 水位 0（或没配策略）＝调度器不会为它自动补卡，断了只能人工开
           autoReplenished: count(productRow?.plus_target_available) > 0
@@ -871,8 +880,12 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
           spentCurrency: spend?.currency || 'USD'
         };
       }),
-      // 有多少人在等卡 —— 库存讲「有多少」，这个讲「有多少人在等」
-      ordersWaitingForCard: count(waitingRows?.[0]?.waiting_for_card),
+      // 「有多少人在等卡」不另查：orderCounts 里早就有
+      // `SUM(o.status = 'WAITING_FOR_CARD') AS waiting_for_card`，并且已映射成
+      // metrics.waitingForCard（只是前端一直没用）。初版我又加了一条查询算同一件事，
+      // 还把状态值写成 CREATED/CARD_PURCHASING/CARD_PROVISIONING —— 漏掉了真正的等卡状态。
+      // D-273「别为已经实现的东西再造第二份」，这已经是同类第三次（钱包底线、minimumBalanceSql）。
+      ordersWaitingForCard: count(orderCounts[0]?.waiting_for_card),
       providerHealth: {
         provider: 'hnskj',
         routeLabel: stockRows[0]?.provider_route_code || '当前 Plus 卡台路线未配置',
