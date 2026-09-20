@@ -48,13 +48,21 @@ async function inlineAssets(css, cssOrigin) {
 
 const src = await readFile(path.join(PROTO_DIR, name), 'utf8');
 
-// 1) 原型自己 <link> 的样式表，逐个内联
-const links = [...src.matchAll(/<link[^>]+href="(\/[^"]+\.css)"[^>]*>/g)];
+// 1) 原型自己 <link> 的样式表，逐个内联。
+//    两种写法都要认：绝对路径 /admin/assets/x.css 走 v1/public；
+//    相对路径 _frozen/…/x.css 走原型目录（定稿快照就放那儿）。
+const links = [...src.matchAll(/<link[^>]+href="([^"]+\.css)"[^>]*>/g)].map((m) => m[1]);
+if (!links.length) {
+  console.error('源文件里没有 <link ... .css>，打出来的包会缺样式 —— 停手。');
+  process.exit(2);
+}
 let externalCss = '';
-for (const [, href] of links) {
-  const file = path.join(PUBLIC_DIR, href.replace(/^\//, ''));
+for (const href of links) {
+  const file = href.startsWith('/')
+    ? path.join(PUBLIC_DIR, href.replace(/^\//, ''))
+    : path.join(PROTO_DIR, href);
   const css = await readFile(file, 'utf8');
-  externalCss += `\n/* ===== 内联自 ${href}（真实后台样式，未改一行）===== */\n`
+  externalCss += `\n/* ===== 内联自 ${href}（未改一行）===== */\n`
     + await inlineAssets(css, href);
 }
 
