@@ -508,21 +508,21 @@ test('B4：「开卡…」要把外层「高级」一起展开，只开里层等
   assert.match(handler, /node\.open = true/);
 });
 
-test('D-307：台账主数用库存口径；两个口径不一致时补一句，一致时不啰嗦', () => {
+test('D-307：台账主数用库存口径，分配口径一个字都不上界面', () => {
   const { sandbox, html } = loadAdminJs();
 
-  // 生产那个场景：卡是好的，但在同步窗口外
+  // 生产那个场景：卡是好的，但在同步窗口外（库存 2 / 可立即绑 0）
   sandbox.renderCardRigs([{ ...RIG_HNSKJ, stockAvailable: 2, bindableNow: 0, stockTarget: 2 }]);
   const gap = html('sel:#cards-rigs');
   assert.match(gap, /可分配 \/ 水位（Plus）/);
   assert.match(gap, />2 <small>\/ 2<\/small>/, '主数必须是库存口径 2，不是分配口径 0');
-  assert.match(gap, /此刻可立即绑 0 张/);
-  assert.match(gap, /会自行恢复/, '必须说明这是暂时的，否则运营会以为卡出事了');
   assert.doesNotMatch(gap, /is-warn/, '库存 2 已达水位 2，不该报库存偏低');
 
-  // 两个数一致时不提 —— 天天挂一句一样的话就是噪音
-  sandbox.renderCardRigs([{ ...RIG_HNSKJ, stockAvailable: 2, bindableNow: 2, stockTarget: 2 }]);
-  assert.doesNotMatch(html('sel:#cards-rigs'), /此刻可立即绑/);
+  // 分配口径不上界面（Lemon 2026-09-20 定）：它是个会自己恢复的瞬时值，客户下单
+  // 分不到卡时系统会自动排一次按需同步再重试，运营不需要为它操心。第一版在这里挂了
+  // 一句「此刻可立即绑 N 张，其余在等下一次同步（会自行恢复）」——那句话在说一件
+  // 运营做不了也不用做的事，摆出来只会让人以为卡出了事。
+  assert.doesNotMatch(gap, /此刻可立即绑|会自行恢复|等下一次同步/);
 
   // 库存真的低于水位才报警（这才是「卡不够了」）
   sandbox.renderCardRigs([{ ...RIG_HNSKJ, stockAvailable: 1, bindableNow: 1, stockTarget: 2 }]);

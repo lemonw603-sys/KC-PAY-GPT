@@ -116,5 +116,3 @@
 .cardgate.is-blocked{background:var(--wb-warn-soft);border-color:var(--wb-warn);color:var(--wb-warn)}
 .cardgate.is-blocked small{color:inherit}
 .stock-open-form .cardgate{grid-column:1 / -1}
-/* 分配口径与库存口径不一致时的那句说明：它是个会自行恢复的瞬时值，不该抢主数的视觉重量 */
-.cardrig-note{flex-basis:100%;color:var(--wb-t3);font-size:11px;line-height:1.4}
