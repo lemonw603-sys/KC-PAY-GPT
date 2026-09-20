@@ -66,10 +66,39 @@ body{font-family:var(--wb-fd)}
 .workbench .wb-ro{font-size:10.5px;font-weight:700;color:var(--wb-t3);border:1px solid var(--wb-bd);border-radius:999px;padding:3px 9px}
 
 /* ---------- 营业条：三开关 + 两卡台 + CDK 快捷 ---------- */
-.workbench .wb-ops{display:flex;align-items:stretch;gap:20px;flex-wrap:wrap;padding:14px 16px;border:1px solid var(--wb-bd);border-radius:14px;
-  background:linear-gradient(180deg,var(--wb-s) 0,var(--wb-s2) 100%);box-shadow:var(--wb-shadow)}
-.workbench .wb-ops .wb-grp{display:flex;align-items:center;gap:16px;flex-wrap:wrap}
-.workbench .wb-ops .wb-vr{width:1px;background:var(--wb-bd)}
+/* 营业条（丁「三等分段」，Lemon 2026-09-20 挑定）：营业 / 路线与卡台 / 发码
+   三块等宽并排，每块一个小标题，纵向两行；撑满整行、不留空白。 */
+.workbench .wb-ops{display:flex;align-items:stretch;flex-wrap:wrap;padding:0;
+  border:1px solid var(--wb-bd);border-radius:14px;background:var(--wb-s);box-shadow:var(--wb-shadow)}
+.workbench .wb-seg{flex:1;min-width:236px;padding:13px 18px;border-left:1px solid var(--wb-s3);
+  display:flex;flex-direction:column;gap:9px}
+.workbench .wb-seg:first-child{border-left:0}
+.workbench .wb-seg-t{margin:0;font-size:11px;letter-spacing:.06em;font-weight:700;color:var(--wb-t3)}
+.workbench .wb-ln{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.workbench .wb-k{font-size:12px;color:var(--wb-t3)}
+.workbench .wb-num{width:52px;text-align:center}
+.workbench .wb-cdk{display:flex;align-items:center;gap:8px;margin:0;flex-wrap:wrap}
+.workbench .wb-takeover{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--wb-t2)}
+
+/* 二选一分段器：互斥选项同一形态，选中那个白底主色 */
+.workbench .wb-seg2{display:inline-flex;padding:2px;background:var(--wb-s3);border-radius:8px;gap:2px}
+.workbench .wb-seg2 button{border:0;background:transparent;border-radius:6px;height:26px;padding:0 12px;
+  font-size:12.5px;font-weight:600;color:var(--wb-t3);cursor:pointer;font-family:inherit;white-space:nowrap}
+.workbench .wb-seg2 button.is-on{background:var(--wb-s);color:var(--wb-a);
+  box-shadow:0 1px 2px hsla(176,25%,10%,.1);cursor:default}
+.workbench .wb-seg2 button:not(.is-on):hover{color:var(--wb-t2)}
+
+/* 开关缩小：它们是状态，不该比数字还抢眼 */
+.workbench .wb-ops .wb-switch{gap:7px}
+.workbench .wb-ops .wb-switch b{font-size:12.5px;font-weight:600;color:var(--wb-t)}
+.workbench .wb-ops .wb-tg{width:30px;height:17px;border:0;background:hsl(168,12%,84%)}
+.workbench .wb-ops .wb-tg::after{top:2px;left:2px;width:13px;height:13px;box-shadow:0 1px 2px hsla(176,25%,10%,.22)}
+.workbench .wb-ops .wb-switch.is-on .wb-tg{background:var(--wb-a)}
+.workbench .wb-ops .wb-switch.is-on .wb-tg::after{left:15px}
+/* 控件统一 28px/7px，边框减轻 */
+.workbench .wb-ops .wb-field{height:28px;border-radius:7px;font-size:12.5px;padding:0 9px;border-color:hsl(168,14%,87%)}
+.workbench .wb-ops select.wb-field{padding-right:26px;background-position:calc(100% - 14px) 55%,calc(100% - 9.5px) 55%}
+.workbench .wb-ops .wb-btn{height:28px;border-radius:7px;font-size:12.5px}
 
 .workbench .wb-switch{display:inline-flex;align-items:center;gap:9px;border:0;background:transparent;padding:0;text-align:left}
 .workbench .wb-tg{position:relative;width:40px;height:23px;border-radius:999px;background:var(--wb-s3);border:1px solid var(--wb-bd);transition:.16s;flex:none}
@@ -113,8 +142,13 @@ body{font-family:var(--wb-fd)}
 .workbench .wb-kpi .wb-v{font-family:var(--wb-fm);font-size:28px;font-weight:600;letter-spacing:-.02em;line-height:1.05;color:var(--wb-t)}
 .workbench .wb-kpi .wb-v small{font-size:13px;color:var(--wb-t3);font-weight:500}
 .workbench .wb-kpi .wb-sub{font-size:11px;color:var(--wb-t3)}
-.workbench .wb-kpi.wb-pending{opacity:.6}
-.workbench .wb-kpi.wb-pending .wb-v{font-size:15px;color:var(--wb-t3)}
+/* JS 输出的是 is-pending，这里原先写 wb-pending —— 名字对不上，规则从来没生效，
+   三格一直占着和真数字一样大的字号。灰底小字不可点，一眼看出它不是一个数。 */
+.workbench .wb-kpi.is-pending{background:var(--wb-s2);box-shadow:none;cursor:default}
+.workbench .wb-kpi.is-pending .wb-lb{color:var(--wb-t3)}
+.workbench .wb-kpi.is-pending .wb-v{font-family:var(--wb-fd);font-size:13px;font-weight:500;color:var(--wb-t3)}
+.workbench .wb-kpi.is-pending .wb-sub{color:var(--wb-t3);opacity:.85}
+.workbench button.wb-kpi.is-pending:hover{border-color:var(--wb-bd)}
 
 /* ---------- 二排：卡与钱 | 日对账 ---------- */
 .workbench .wb-mid{display:grid;grid-template-columns:1.35fr .65fr;gap:16px;align-items:start}
@@ -191,7 +225,8 @@ body{font-family:var(--wb-fd)}
 /* ---------- 响应式 ---------- */
 @media(max-width:1024px){ .workbench .wb-mid{grid-template-columns:1fr} }
 @media(max-width:640px){
-  .workbench .wb-ops{gap:14px} .workbench .wb-ops .wb-vr{display:none}
+  .workbench .wb-seg{min-width:100%;border-left:0;border-top:1px solid var(--wb-s3)}
+  .workbench .wb-seg:first-child{border-top:0}
   .workbench .wb-recon{grid-template-columns:1fr 1fr}
 }
 

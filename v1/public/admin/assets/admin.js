@@ -492,10 +492,10 @@ function renderDecisions(overview, cardSources, takeoverEstimate = null) {
   // （对着真实 /admin/overview 响应查出来的；按顶层猜会恒 null → 又变成永远切不动）。
   state.rechargeMethod = overview.providerHealth?.rechargeMethod || null;
   // 营业条 = 接单/派单/付款 三个 toggle 开关（照设计图），对应后端三个独立开关。
-  const sw = (op, on, b, s) => `<button type="button" class="wb-switch ${on ? 'is-on' : ''}" data-op="${op}" data-on="${on}"><span class="wb-tg"></span><span class="wb-lb"><b>${b}</b><small>${escapeHtml(s)}</small></span></button>`;
-  box.innerHTML = sw('accept', Boolean(d.acceptNewOrders), '接单', '新单进入')
-    + sw('dispatch', Boolean(d.dispatchNewRecharges), '派单', '分卡执行')
-    + sw('pay', Boolean(d.browserPaymentWritesEnabled), '付款', '允许提交付款');
+  const sw = (op, on, b) => `<button type="button" class="wb-switch ${on ? 'is-on' : ''}" data-op="${op}" data-on="${on}"><span class="wb-tg"></span><b>${b}</b></button>`;
+  box.innerHTML = sw('accept', Boolean(d.acceptNewOrders), '接单')
+    + sw('dispatch', Boolean(d.dispatchNewRecharges), '派单')
+    + sw('pay', Boolean(d.browserPaymentWritesEnabled), '付款');
   const routeBox = document.getElementById('wb-routes');
   if (routeBox) {
     const sources = (cardSources?.sources || []).filter((item) => item.supportsBrowserRecharge && item.operationalEnabled);
@@ -512,17 +512,21 @@ function renderDecisions(overview, cardSources, takeoverEstimate = null) {
     // 它把还在排队等卡的单改指新卡台（只动完全没碰过钱的单，见 safeWaitingPredicate）。
     const takeoverCount = Number(takeoverEstimate?.count || 0);
     const takeoverHint = takeoverEstimate?.__error
-      ? '<small>Browser 路线卡台，只影响新订单；待接管单数读取失败，本次切换不接管排队单。</small>'
+      ? '<small>待接管单数读取失败，本次切换不接管排队单</small>'
       : takeoverCount > 0
-        ? `<label class="wb-takeover"><input type="checkbox" id="decision-card-source-takeover"> 同时接管 ${takeoverCount} 张排队等卡的单</label>`
-          + '<small>不勾：只影响新订单，排队单继续等原卡台。勾上：把这些单改指新卡台（只动没分卡、没充值、没碰钱的单）。</small>'
-        : '<small>Browser 路线卡台，只影响新订单；当前没有排队等卡的单可接管。</small>';
+        ? `<label class="wb-takeover"><input type="checkbox" id="decision-card-source-takeover"> 同时接管 ${takeoverCount} 张排队单</label>`
+        : '';
+    // 两条路线是互斥选项，用同一个形态（分段器）表达；原先「当前 X」是状态、
+    // 「切到 Y」是按钮，两种形态说同一件事，看着割裂（Lemon 2026-09-20）。
     const methodBtn = (target, text) => (method === target
-      ? `<span class="wb-chip ok"><span class="wb-d"></span>当前：${escapeHtml(text)}</span>`
-      : `<button type="button" class="wb-btn sm out default-recharge-method" data-method="${target}">切到${escapeHtml(text)}</button>`);
-    routeBox.innerHTML = `<div class="wb-route"><b>走哪条路线</b><div class="wb-routepick">${methodBtn('API', 'API')}${methodBtn('BROWSER', '浏览器')}</div><small>Plus 默认充值方式（${escapeHtml(methodLabel)}）；切换前跑四项校验，不过会逐条说明原因，只影响新订单</small></div>`
-      + `<div class="wb-route"><b>用哪个卡台</b><div class="wb-routepick"><span class="wb-chip mute"><span class="wb-d"></span>API · HNSKJ 固定</span></div></div>`
-      + `<div class="wb-route"><div class="wb-routepick"><select class="wb-field" id="decision-card-source" aria-label="Browser 卡台">${sourceOptions || '<option value="">没有可用卡台</option>'}</select><button type="button" class="wb-btn sm out" id="decision-card-source-apply" ${sources.length ? '' : 'disabled'}>切换</button></div>${takeoverHint}</div>`;
+      ? `<button type="button" class="is-on" disabled>${escapeHtml(text)}</button>`
+      : `<button type="button" class="default-recharge-method" data-method="${target}">${escapeHtml(text)}</button>`);
+    routeBox.innerHTML =
+      `<div class="wb-seg2">${methodBtn('API', 'API 充值')}${methodBtn('BROWSER', '浏览器自动化')}</div>`
+      + `<div class="wb-ln"><span class="wb-k">浏览器</span>`
+      + `<select class="wb-field" id="decision-card-source" aria-label="Browser 卡台">${sourceOptions || '<option value="">没有可用卡台</option>'}</select>`
+      + `<button type="button" class="wb-btn sm out" id="decision-card-source-apply" ${sources.length ? '' : 'disabled'}>切换</button>`
+      + `${takeoverHint}</div>`;
   }
 }
 
