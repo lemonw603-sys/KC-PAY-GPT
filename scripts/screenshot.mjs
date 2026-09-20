@@ -10,6 +10,7 @@
 //     --width=1440 --height=900   视口（默认 1440×900）
 //     --full                      整页长图（默认只拍视口内）
 //     --clip=<选择器>             只拍这个元素
+//     --clip=<名字>:<选择器>      多块：可重复传，输出目录下按名字存（一个 Chrome 拍完所有）
 //     --wait=<选择器>             先等这个元素出现（异步渲染的页面用）
 //     --login                     先登录后台（读 PARITY_ADMIN_PASSWORD）
 //
@@ -19,7 +20,9 @@ import { writeFile } from 'node:fs/promises';
 import { Cdp, launchChrome, openPage } from './visual-parity.mjs';
 
 const args = process.argv.slice(2);
-const flags = Object.fromEntries(args.filter((a) => a.startsWith('--'))
+// --clip 可重复传，其余标志取最后一个
+const clips = args.filter((a) => a.startsWith('--clip=')).map((a) => a.slice(7));
+const flags = Object.fromEntries(args.filter((a) => a.startsWith('--') && !a.startsWith('--clip='))
   .map((a) => { const [k, v] = a.slice(2).split('='); return [k, v ?? true]; }));
 const [url, out] = args.filter((a) => !a.startsWith('--'));
 
@@ -53,27 +56,41 @@ try {
     { expression: 'innerWidth', returnByValue: true }, sessionId);
   if (vw.value !== width) throw new Error(`视口没生效：期望 ${width}，实际 ${vw.value}`);
 
-  const shot = { format: 'png', captureBeyondViewport: !!flags.full };
+  const capture = async (clipSel, dest, label) => {
+    const shot = { format: 'png', captureBeyondViewport: !!flags.full };
+    if (clipSel) {
+      const { result } = await cdp.send('Runtime.evaluate', {
+        expression: `(() => { const e = document.querySelector(${JSON.stringify(clipSel)});
+          if (!e) return null; const b = e.getBoundingClientRect();
+          return { x: b.x + scrollX, y: b.y + scrollY, width: b.width, height: b.height }; })()`,
+        returnByValue: true
+      }, sessionId);
+      if (!result.value) throw new Error(`找不到 ${clipSel}`);
+      shot.clip = { ...result.value, scale: 2 };   // 2 倍图，细节看得清
+      shot.captureBeyondViewport = true;
+    } else if (flags.full) {
+      const { cssContentSize } = await cdp.send('Page.getLayoutMetrics', {}, sessionId);
+      shot.clip = { x: 0, y: 0, width: cssContentSize.width, height: cssContentSize.height, scale: 1 };
+    }
+    const { data } = await cdp.send('Page.captureScreenshot', shot, sessionId);
+    const buf = Buffer.from(data, 'base64');
+    await writeFile(dest, buf);
+    console.log(`已拍 → ${dest}  (${(buf.length / 1024).toFixed(0)} KB${label ? `, ${label} @2x` : flags.full ? ', 整页' : ''})`);
+  };
 
-  if (flags.clip) {
-    const { result } = await cdp.send('Runtime.evaluate', {
-      expression: `(() => { const e = document.querySelector(${JSON.stringify(flags.clip)});
-        if (!e) return null; const b = e.getBoundingClientRect();
-        return { x: b.x + scrollX, y: b.y + scrollY, width: b.width, height: b.height }; })()`,
-      returnByValue: true
-    }, sessionId);
-    if (!result.value) throw new Error(`找不到 ${flags.clip}`);
-    shot.clip = { ...result.value, scale: 2 };   // 2 倍图，细节看得清
-    shot.captureBeyondViewport = true;
-  } else if (flags.full) {
-    const { cssContentSize } = await cdp.send('Page.getLayoutMetrics', {}, sessionId);
-    shot.clip = { x: 0, y: 0, width: cssContentSize.width, height: cssContentSize.height, scale: 1 };
+  if (clips.length > 1 || (clips.length === 1 && clips[0].includes(':'))) {
+    // 多块模式：out 当目录用。一个 Chrome 实例拍完所有 —— 每块都重启一次浏览器，
+    // 七块就要两分多钟，纯属浪费（2026-09-20 真的这么跑过一次，超时了）。
+    const { mkdir } = await import('node:fs/promises');
+    await mkdir(out, { recursive: true });
+    for (const spec of clips) {
+      const idx = spec.indexOf(':');
+      const [name, sel] = idx === -1 ? [spec.replace(/[^\w\u4e00-\u9fff-]/g, '_'), spec] : [spec.slice(0, idx), spec.slice(idx + 1)];
+      await capture(sel, `${out}/${name}.png`, sel);
+    }
+  } else {
+    await capture(clips[0] || null, out, clips[0] || '');
   }
-
-  const { data } = await cdp.send('Page.captureScreenshot', shot, sessionId);
-  await writeFile(out, Buffer.from(data, 'base64'));
-  const kb = (Buffer.from(data, 'base64').length / 1024).toFixed(0);
-  console.log(`已拍 → ${out}  (${kb} KB, 视口 ${width}×${height}${flags.clip ? `, 裁 ${flags.clip} @2x` : flags.full ? ', 整页' : ''})`);
 } finally {
   cdp.close();
   await chrome.kill();
