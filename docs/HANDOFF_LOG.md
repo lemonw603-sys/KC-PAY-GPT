@@ -3212,3 +3212,11 @@ IAB tab4已markDeliverable，预览URL http://127.0.0.1:8899/step6-diagnostics-i
 06:07:24～06:07:51 UTC最终隔离脚本24项通过：直接旧接口4次409且DB快照不变，从诊断出发API/Browser×已扣/未扣4条UI收口通过，原码重提不重复建单、卡复用正式资格、报告计数/展开/卡详情、普通case、检索、500/503错误与重试、账单保存、CSV、布局及gap变异；既有MySQL12/12，默认1048/979 pass/0 fail/69 skipped。证据reviews/2026-09-21-diagnostics-implementation。原型外部CSS冻结，9项几何契约通过，新增CSS零字面色/规范外高度/重复选择器；CSS和文案闸门纳入新文件，旧基线未放宽。
 
 SQL现场仅state-check只读，生产仍⑤b/054；无生产写入、无新迁移、无browser-mvp改动。历史2条CLOSED订单的OPEN案例未自动清除。专用库/账号0/0，临时服务/Chrome/恢复容器清理；8804/8899保留。新发布候选必须包含诊断改动，仍待当次发布批准。已确认布局不再重新比稿，但不能把本地验收当真钱或整个V2验收。
+
+## 2026-09-21｜其他页面审查覆盖与可用性复核（只读评估）
+
+用户认可诊断投入并问其他页面是否有不合理之处、以前是否审过。复读2026-09-21-step6-joint/report.md（含D-320修后覆盖）、cdk-implementation-report、D-283/287/290/294/304和当前代码：各页曾分轮审查，工作台C/营业条乙-3、CDK A、卡片A、设置B是已挑定版本；订单页D-283明确过渡旧皮，关键收口/查询验过，未做全页重构。不能把旧报告原始“暂不发布/J-01未修”当最新状态，也不能把局部联动/几何通过说成所有UI均无问题。
+
+两项有依据的待讨论点：①index.html工作台标题“今天生意怎么样”，admin.js renderWbWall直接用metrics.successRate；admin-read-service getOverview的successful/completed_failed聚合在FROM orders o后没有今日WHERE，successRate=successful/(successful+completed_failed)，是历史完结口径，易误读今日。联合报告已登记，D-294只是延期数字墙重排，不授权擅改指标算法。②renderSettingsThresholds钱包同一行两输入只有data-field，无各自label/aria-label/placeholder；用现有admin-dom-harness真实运行该函数，合成walletFloor20、walletAlertThreshold30，输出依次为wallet_floor value20.00、wallet_alert_threshold value30.00，外层只写“底线挡开卡，告警线只提醒”。这是代码/render产物核对，不是本轮浏览器实点或生产值。
+
+本轮未做全页重新点击、没有生产查询/写入、没有修业务或UI。建议下一步如需补验，限钱相关输入辨识、未保存离开、失败重试/重复提交和跨页去向，先报证据后定最小修正；不重新设计全部页面。已定延期项和付款开关不改均保留。
