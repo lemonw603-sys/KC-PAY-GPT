@@ -3298,3 +3298,7 @@ Demo是用户试用产物，服务及标签保留，默认恢复token失效工�
 用户确认新版Demo继续推进，本轮只读、不改UI不发布。无cookie/Authorization获取highvcc主页列出的13个非vendor业务JS，主脚本有changeRefreshToken定义1次但其他业务chunk无引用，无具体refresh路径；登录chunk只将accessToken/expireTime传给setToken，没有传refresh_token。网页有两小时不活动判断、响应更新时间，但不能推服务端TTL或定时保活有效。未登录/验证码/续期/资金请求，动态验证仍缺用户正常登录的字段元数据。
 
 12:05:28 UTC生产release原服务通过只允许SELECT/WITH的pool做25次读：工作台/卡片库存均每台2，HNSKJ钱包38.73及12:03:02同步时点一致；highvcc实时钱包未验证。12:06查询费用三类10行occurred_at全部NULL，今日聚合按首次入库有跨日限制，不清历史、不擅改口径。12:04读取token设置更新时间未取值、最近钱包和告警/timer状态；指定历史journal无匹配输出不编日志。报告auth-and-data-audit.md含范围、SHA256及原始输出。下一步需要正常登录观察样本，不把通用函数当已可用续期接口。
+
+## 2026-09-21｜用户愿意配合一次登录，观察已准备
+
+用户“方便”授权配合正常登录观察。新建IAB tab7至highvcc官方主页，当前账号登录表单/邮箱/密码/滑块显示，无自动填入或提交。Network.enable仅内存缓冲，responseReceived cursor32，绑定authTab/authCdp保留；不创建HAR、不导出请求参数和凭据，不做书签同步/开卡/付款。open_in_codex返回queued、visibility.set(true)后get仍false，不能声称面板已显示；标签markHandoff，等用户在这一标签正常登录后提取最少响应元数据。不是后台自动续期测试。
