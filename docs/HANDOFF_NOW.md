@@ -41,6 +41,8 @@
 
 ## 保留的本机现场
 
+- **最新用户试用入口8805**：`http://127.0.0.1:8805/admin/`，运行`scripts/feedback-demo.mjs`。实际admin前端＋内存假API，不接数据库/卡台/worker；仅工作台与卡片本批交互，顶部四场景选择。用户明确要可点击Demo，服务与浏览器标签保留供试用，不当残留worker清理。仅输入demo-token，输入值不保存或转发。重启清空测试状态，原8803/8804/8899未改。
+
 - 8804：用户CDK隔离演示，`scripts/cdk-demo.mjs`，前次PID30087、库step6_cdk_demo；仅CDK操作/订单只读，不可发真实客户。原8803/8899按原用途保留；下次先核对进程，不把旧PID当当前保证。
 - 8899诊断稿：`/step6-diagnostics-interaction.html`，仍是合成数据示意，不是生产后台。
 - 本机测试MySQL为pojia-stage1-mysql、端口54186；A第一批隔离检查10:18:38 UTC结束，测试库/账号剩余0，Chrome/临时服务/恢复容器已清理，无新增长期worker。原演示服务保留。
