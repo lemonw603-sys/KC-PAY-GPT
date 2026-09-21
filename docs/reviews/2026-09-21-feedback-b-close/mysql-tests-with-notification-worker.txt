@@ -1,0 +1,16 @@
+PASS dry-run is read-only and validates all 12 targets
+PASS unknown funds refuse
+PASS held ledger refuses
+PASS unproven cancellation refuses
+PASS missing manual evidence refuses
+PASS changed evidence refuses before any writes
+PASS apply requires backup
+PASS backup failure prevents writes
+PASS mid-batch failure rolls back all case and alert changes
+PASS exact 2+10 close with 10 audit events; protected rows unchanged
+PASS unapproved alert and existing notification unchanged
+PASS existing notification worker cancels closed notice without resending or losing sent time
+PASS replay is no-op
+PASS reopened incident never silently closed again
+{"checks":14,"passed":true,"productionTouched":false}
+CLEANUP isolated database removed

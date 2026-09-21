@@ -3322,3 +3322,13 @@ tab7只读计算不可用于登录的SHA256指纹与storedExpiry，落login-obse
 保留核实：1013/4643两条RECONCILIATION（各16）虽卡退役、attempt cleared不能释放；7单人工交付续费待核，其中Dqcnq缺CONSUMED；17个旧非成功单CDK仍回指已兑，剔除1明确演练死码后16需分清测试/权益，不能全退。4条closeRehearsalOrder=true演练可单独筛选，不以CANCELLED_PRE_SUBMISSION17条直接判测试。四项结构完整性异常0，不等于全链路无风险。默认成功率20/78=25.6%；今天0样本，近7天5单中3明确演练，排除后仅2，口径待裁定。
 
 12:40:18 UTC独立查询仍78/2OPEN case/123OPEN alert，release9b9f181与三服务active。首次rc.created_at误字段1054，detail分组1055后修SQL并完整重跑，不用部分结果冒充完成。只新增本地SQL/脱敏TSV/离线分类器/报告，详见reviews/2026-09-21-feedback-b。没有生产/高卡台请求或代码变更，23:20任务不变。
+
+## 2026-09-21｜D-335精确12条历史状态收口完成
+
+用户批准2case＋10alert范围。固定cc10b30维护脚本（SHA54a4cfe…）在独立/opt/pojia/maintenance/20260921-D335-cc10b30/v1/scripts执行，依赖链接固定9b9f181，未修改release。生产前13项真实MySQL/默认993 pass0fail69skip通过；dry-run固定名单/终态/判款审计/账本/取消续费/轮次/CDK均通过，预览digest=d3f276…。
+
+13:03:30 UTC匹配digest，先保存12原记录到0600备份（父0700），一笔SERIALIZABLE事务精确关闭2+10、新增同状态order_events647～656。事务内8类业务与通知完整行不变、范围外case/alert不变后commit。没有重新判款、退码、动账、资金动作或服务重启。
+
+新连接初查false：不是业务变化，8类业务全字段hash仍一致，只有通知10行被既有enqueueOpenAlerts在13:03:31转CANCELLED；旧sent_at与attempt_count1、incident_version1保留。未重复apply；补第14项真实MySQL调用原通知服务验证取消不重发，最后独立验证同时检查业务不变与通知正常取消。13:08:41 UTCorders78(20/37/21)、OPEN case0/alert113、待对账账本2/续费待核7、审计10。PID234748/234751/234754和release9b9f181未变。
+
+证据reviews/2026-09-21-feedback-b-close，CURRENT_STATE更新。B仅此批完成，其余113提醒/16旧CDK/7续费/2账本/统计仍待裁定；A界面未发布、23:20闲置复测不变，highvcc标签未访问。

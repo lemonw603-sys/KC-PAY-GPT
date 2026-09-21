@@ -6,6 +6,7 @@ import {readFile} from 'node:fs/promises';
 import mysql from '../v1/node_modules/mysql2/promise.js';
 import {createBrowserExecutionRepository} from '../v1/src/db/repositories/browser-execution-repository.js';
 import {BATCH,reconcileHistoricalNotices} from '../v1/scripts/reconcile-historical-payment-notices.mjs';
+import {createAlertNotificationRepository} from '../v1/src/db/repositories/alert-notification-repository.js';
 
 const name='notice_test_'+crypto.randomBytes(4).toString('hex');
 const inspect=JSON.parse(execFileSync('docker',['inspect','pojia-stage1-mysql'],{encoding:'utf8'}))[0];
@@ -62,6 +63,10 @@ try{
   const applied=await reconcileHistoricalNotices(pool,{targets,apply:true,expectedDigest:fresh.planDigest,backupBeforeApply});assert.equal(applied.changedCases,2);assert.equal(applied.changedAlerts,10);assert.equal(applied.protectedUnchanged,true);assert.equal(await open(),0);assert.equal(backupCount,2);
   assert.equal(await scalar("SELECT COUNT(*) n FROM order_events WHERE JSON_UNQUOTE(JSON_EXTRACT(metadata_json,'$.maintenanceBatch'))=?",[BATCH]),10);pass('exact 2+10 close with 10 audit events; protected rows unchanged');
   assert.equal(await scalar('SELECT status FROM operator_alerts WHERE id=?',[extraAlert]),'OPEN');assert.equal(await scalar('SELECT status FROM alert_notifications WHERE alert_id=?',[targets.alerts[0].id]),'SENT');pass('unapproved alert and existing notification unchanged');
+  const [[notificationBefore]]=await pool.query('SELECT attempt_count,sent_at FROM alert_notifications WHERE alert_id=?',[targets.alerts[0].id]);
+  await createAlertNotificationRepository(pool).enqueueOpenAlerts();
+  const [[notificationAfter]]=await pool.query('SELECT status,attempt_count,sent_at FROM alert_notifications WHERE alert_id=?',[targets.alerts[0].id]);
+  assert.equal(notificationAfter.status,'CANCELLED');assert.equal(notificationAfter.attempt_count,notificationBefore.attempt_count);assert.deepEqual(notificationAfter.sent_at,notificationBefore.sent_at);pass('existing notification worker cancels closed notice without resending or losing sent time');
   assert.equal((await reconcileHistoricalNotices(pool,{targets,apply:true})).alreadyApplied,true);pass('replay is no-op');
   await pool.query("UPDATE operator_alerts SET status='OPEN' WHERE id=?",[targets.alerts[0].id]);await assert.rejects(dry,/APPLIED_BATCH_CHANGED/);pass('reopened incident never silently closed again');
   console.log(JSON.stringify({checks,passed:true,productionTouched:false}));

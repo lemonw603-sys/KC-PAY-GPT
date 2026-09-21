@@ -1,0 +1,155 @@
+{
+  "at": "2026-09-21T13:06:18.408Z",
+  "hashes": {
+    "orders": {
+      "rows": 10,
+      "unchanged": true
+    },
+    "cdks": {
+      "rows": 10,
+      "unchanged": true
+    },
+    "attempts": {
+      "rows": 21,
+      "unchanged": true
+    },
+    "runs": {
+      "rows": 21,
+      "unchanged": true
+    },
+    "operations": {
+      "rows": 85,
+      "unchanged": true
+    },
+    "ledger": {
+      "rows": 10,
+      "unchanged": true
+    },
+    "assignments": {
+      "rows": 10,
+      "unchanged": true
+    },
+    "cards": {
+      "rows": 4,
+      "unchanged": true
+    },
+    "notifications": {
+      "rows": 10,
+      "unchanged": false
+    }
+  },
+  "alerts": [
+    {
+      "id": "04aa9568-add2-11f1-b261-96f4cc0be41b",
+      "status": "RESOLVED",
+      "incident_version": 1
+    },
+    {
+      "id": "150e62ea-af1b-11f1-b261-96f4cc0be41b",
+      "status": "RESOLVED",
+      "incident_version": 1
+    },
+    {
+      "id": "17c543b8-b1bf-11f1-b261-96f4cc0be41b",
+      "status": "RESOLVED",
+      "incident_version": 1
+    },
+    {
+      "id": "1e94ccca-af1f-11f1-b261-96f4cc0be41b",
+      "status": "RESOLVED",
+      "incident_version": 1
+    },
+    {
+      "id": "227e1006-adcd-11f1-b261-96f4cc0be41b",
+      "status": "RESOLVED",
+      "incident_version": 1
+    },
+    {
+      "id": "3ecbf5b6-af25-11f1-b261-96f4cc0be41b",
+      "status": "RESOLVED",
+      "incident_version": 1
+    },
+    {
+      "id": "40c81fee-af45-11f1-b261-96f4cc0be41b",
+      "status": "RESOLVED",
+      "incident_version": 1
+    },
+    {
+      "id": "cd84a249-adb4-11f1-b261-96f4cc0be41b",
+      "status": "RESOLVED",
+      "incident_version": 1
+    },
+    {
+      "id": "e4307cac-aec9-11f1-b261-96f4cc0be41b",
+      "status": "RESOLVED",
+      "incident_version": 1
+    },
+    {
+      "id": "fa7ee1b2-af53-11f1-b261-96f4cc0be41b",
+      "status": "RESOLVED",
+      "incident_version": 1
+    }
+  ],
+  "cases": [
+    {
+      "id": "1286b5b3-9fe3-40b7-aff9-25cbaec03ff7",
+      "status": "RESOLVED"
+    },
+    {
+      "id": "cf367b11-a188-4a8b-89a0-25396c2b3996",
+      "status": "RESOLVED"
+    }
+  ],
+  "audits": [
+    {
+      "id": 647,
+      "from_status": "CLOSED",
+      "to_status": "CLOSED"
+    },
+    {
+      "id": 648,
+      "from_status": "CLOSED",
+      "to_status": "CLOSED"
+    },
+    {
+      "id": 649,
+      "from_status": "RECHARGE_SUCCESS",
+      "to_status": "RECHARGE_SUCCESS"
+    },
+    {
+      "id": 650,
+      "from_status": "CLOSED",
+      "to_status": "CLOSED"
+    },
+    {
+      "id": 651,
+      "from_status": "CLOSED",
+      "to_status": "CLOSED"
+    },
+    {
+      "id": 652,
+      "from_status": "RECHARGE_SUCCESS",
+      "to_status": "RECHARGE_SUCCESS"
+    },
+    {
+      "id": 653,
+      "from_status": "RECHARGE_SUCCESS",
+      "to_status": "RECHARGE_SUCCESS"
+    },
+    {
+      "id": 654,
+      "from_status": "RECHARGE_SUCCESS",
+      "to_status": "RECHARGE_SUCCESS"
+    },
+    {
+      "id": 655,
+      "from_status": "RECHARGE_SUCCESS",
+      "to_status": "RECHARGE_SUCCESS"
+    },
+    {
+      "id": 656,
+      "from_status": "RECHARGE_SUCCESS",
+      "to_status": "RECHARGE_SUCCESS"
+    }
+  ]
+}

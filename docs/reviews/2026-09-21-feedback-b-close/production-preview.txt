@@ -1,0 +1,156 @@
+54a4cfecca6cd389af7ca9cf5910800cf01a9f589f5db198f1c5ec563dac7a3d  /opt/pojia/maintenance/20260921-D335-cc10b30/v1/scripts/reconcile-historical-payment-notices.mjs
+{
+  "batch": "D335-20260921-historical-notices",
+  "mode": "dry-run",
+  "manifestDigest": "91c6e59df2027ba46efefe816eca8924d95adb3d84805f7e2644a4e8deef3bad",
+  "planDigest": "d3f276e87ba6cbd9831425e2541e8307c64ebf4ad8ea6e5186d593a3b730e82d",
+  "proofs": [
+    {
+      "order": "PJV1-9TN0gGX-I5rRdhXxLrq7",
+      "orderId": "2f079c32-188c-4f97-b952-769f5952dc21",
+      "outcome": "NOT_CHARGED",
+      "proofId": 85
+    },
+    {
+      "order": "PJV1-CkFQM-aahxjZdJZX8vkY",
+      "orderId": "f54f0641-230a-4704-9770-14ae8dc8cb54",
+      "outcome": "NOT_CHARGED",
+      "proofId": 93
+    },
+    {
+      "order": "PJV1-ztS9FZ3QcwHopTmZRfDY",
+      "orderId": "31604f39-4516-41e1-a266-b929b180de1e",
+      "outcome": "CHARGED",
+      "proofId": "d5a5a20d-cdbd-4b87-9d7d-3935b6378e52"
+    },
+    {
+      "order": "PJV1-G4OZ2IwONAFtL7dUNokp",
+      "orderId": "6c512a6f-59e8-44b9-bdd3-6f3108040d51",
+      "outcome": "NOT_CHARGED",
+      "proofId": 121
+    },
+    {
+      "order": "PJV1-4U9xwJCCcbx_2qp7EX-1",
+      "orderId": "5beee94b-f8ee-4cbe-bade-15bcc1d05340",
+      "outcome": "NOT_CHARGED",
+      "proofId": 133
+    },
+    {
+      "order": "PJV1-KLZoklP0ZjTMhLIMVxYd",
+      "orderId": "e0b28864-1b04-4f98-90e8-676983939a75",
+      "outcome": "CHARGED",
+      "proofId": "c7092063-06ba-42f6-a46f-4af759a6fe74"
+    },
+    {
+      "order": "PJV1-L_fKJY_PJYxUx2ZlYatk",
+      "orderId": "c849e957-4dbf-45be-8f64-d3e47309b85a",
+      "outcome": "CHARGED",
+      "proofId": "d5a13f9a-b961-4a60-9b7a-c3dc90b67b72"
+    },
+    {
+      "order": "PJV1-XrDZCfpakRwaoRQLrEbS",
+      "orderId": "2010cdc8-89c7-48ea-9b16-d5b077b89585",
+      "outcome": "CHARGED",
+      "proofId": "c7d54c43-ea24-456f-b602-15f8f41ae1c8"
+    },
+    {
+      "order": "PJV1-4J5Oq9I-hdv69aLk59wY",
+      "orderId": "c4c9d549-5ff0-4e76-9eac-467e66ff1866",
+      "outcome": "CHARGED",
+      "proofId": "4253a469-33fa-43a4-8bd7-2d2a3ab49b16"
+    },
+    {
+      "order": "PJV1-x-tIsPB5ICHu6R9bzsSO",
+      "orderId": "34754d6d-9aa4-40e2-89c2-a1c020dd39e0",
+      "outcome": "CHARGED",
+      "proofId": "f181d993-46c7-467b-9ae3-f31b158e4a66"
+    }
+  ],
+  "protectedHashes": {
+    "orders": "d99213bc81848bb78d18fd07956fb84bb39612a55e0664f4a28f9659f029c4b4",
+    "cdks": "40f54e3afb71e5858d6641aa816b33442683f05337181918132ae7bb78c0adc2",
+    "attempts": "70d1223b6606138d40baa3971aaa032551e896cf84621f3fb1af438ee025d2b9",
+    "runs": "f8c3803900d707cd8859aceae2aee9a62c5a0e66bf5598bf3230c67d63b12fa6",
+    "operations": "b2581c4db9f4bc6d14d371a121c15642356075e659a7a54936e0d88354317113",
+    "ledger": "4e872c1def7cb9e3a3b0aa13288752f340c1637a75a44fb5fc74f8ca1cf51b50",
+    "assignments": "4ff4df6e3f95722690c93a7abe6bf9733c61ba6fd0e6c56d4230194410e8dda5",
+    "cards": "f70b09ac171105b7c0b54ec7408d157a05412fd829c81342fb974f715ca4211c",
+    "notifications": "90892fd922a107c5cf8cbd3cbf097f5800682ee0e9825db364e086e85b841793"
+  },
+  "cases": [
+    {
+      "id": "cf367b11-a188-4a8b-89a0-25396c2b3996",
+      "status": "OPEN",
+      "resolvedAt": null
+    },
+    {
+      "id": "1286b5b3-9fe3-40b7-aff9-25cbaec03ff7",
+      "status": "OPEN",
+      "resolvedAt": null
+    }
+  ],
+  "alerts": [
+    {
+      "id": "cd84a249-adb4-11f1-b261-96f4cc0be41b",
+      "status": "OPEN",
+      "acknowledgedAt": null,
+      "incidentVersion": 1
+    },
+    {
+      "id": "227e1006-adcd-11f1-b261-96f4cc0be41b",
+      "status": "OPEN",
+      "acknowledgedAt": null,
+      "incidentVersion": 1
+    },
+    {
+      "id": "04aa9568-add2-11f1-b261-96f4cc0be41b",
+      "status": "OPEN",
+      "acknowledgedAt": null,
+      "incidentVersion": 1
+    },
+    {
+      "id": "e4307cac-aec9-11f1-b261-96f4cc0be41b",
+      "status": "OPEN",
+      "acknowledgedAt": null,
+      "incidentVersion": 1
+    },
+    {
+      "id": "150e62ea-af1b-11f1-b261-96f4cc0be41b",
+      "status": "OPEN",
+      "acknowledgedAt": null,
+      "incidentVersion": 1
+    },
+    {
+      "id": "1e94ccca-af1f-11f1-b261-96f4cc0be41b",
+      "status": "OPEN",
+      "acknowledgedAt": null,
+      "incidentVersion": 1
+    },
+    {
+      "id": "3ecbf5b6-af25-11f1-b261-96f4cc0be41b",
+      "status": "OPEN",
+      "acknowledgedAt": null,
+      "incidentVersion": 1
+    },
+    {
+      "id": "40c81fee-af45-11f1-b261-96f4cc0be41b",
+      "status": "OPEN",
+      "acknowledgedAt": null,
+      "incidentVersion": 1
+    },
+    {
+      "id": "fa7ee1b2-af53-11f1-b261-96f4cc0be41b",
+      "status": "OPEN",
+      "acknowledgedAt": null,
+      "incidentVersion": 1
+    },
+    {
+      "id": "17c543b8-b1bf-11f1-b261-96f4cc0be41b",
+      "status": "OPEN",
+      "acknowledgedAt": null,
+      "incidentVersion": 1
+    }
+  ],
+  "changedCases": 0,
+  "changedAlerts": 0
+}

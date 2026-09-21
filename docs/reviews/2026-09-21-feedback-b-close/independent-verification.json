@@ -1,0 +1,90 @@
+{
+  "verified": true,
+  "coreProtectedUnchanged": {
+    "orders": {
+      "rows": 10,
+      "unchanged": true
+    },
+    "cdks": {
+      "rows": 10,
+      "unchanged": true
+    },
+    "attempts": {
+      "rows": 21,
+      "unchanged": true
+    },
+    "runs": {
+      "rows": 21,
+      "unchanged": true
+    },
+    "operations": {
+      "rows": 85,
+      "unchanged": true
+    },
+    "ledger": {
+      "rows": 10,
+      "unchanged": true
+    },
+    "assignments": {
+      "rows": 10,
+      "unchanged": true
+    },
+    "cards": {
+      "rows": 4,
+      "unchanged": true
+    }
+  },
+  "casesResolved": 2,
+  "alertsResolved": 10,
+  "auditEvents": 10,
+  "notificationLifecycle": {
+    "transactionUnchanged": true,
+    "afterWorker": "CANCELLED",
+    "rows": 10,
+    "attemptCounts": 1,
+    "noSentAtAfterMaintenance": true,
+    "incidentVersions": 1
+  },
+  "queries": [
+    [
+      "at",
+      "2026-09-21 13:08:41.776"
+    ],
+    [
+      "orders",
+      "CLOSED",
+      "21"
+    ],
+    [
+      "orders",
+      "RECHARGE_FAILED",
+      "37"
+    ],
+    [
+      "orders",
+      "RECHARGE_SUCCESS",
+      "20"
+    ],
+    [
+      "open_cases",
+      "0"
+    ],
+    [
+      "open_alerts",
+      "113"
+    ],
+    [
+      "retained_ledger",
+      "2"
+    ],
+    [
+      "cancellation_review",
+      "7"
+    ],
+    [
+      "audit",
+      "10"
+    ]
+  ],
+  "note": "Initial all-table hash comparison failed only because existing notification worker cancels resolved alerts; source and real MySQL test independently verified this expected lifecycle. No second apply was run."
+}
