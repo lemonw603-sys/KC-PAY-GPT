@@ -1,0 +1,83 @@
+{
+  "startedAt": "2026-09-21T07:22:34.776Z",
+  "checks": [
+    {
+      "name": "057 schema: read-only succeeds while actual persistence fails",
+      "evidence": {
+        "displayCharacters": 28355,
+        "discrepancies": 6,
+        "error": "ER_DATA_TOO_LONG"
+      }
+    },
+    {
+      "name": "058 migration and repeated runner preserve all previous settings",
+      "evidence": {
+        "column": {
+          "COLUMN_TYPE": "mediumtext",
+          "IS_NULLABLE": "NO",
+          "COLUMN_DEFAULT": null,
+          "COLLATION_NAME": "utf8mb4_unicode_ci"
+        },
+        "secondPass": [
+          "migration 058_app_settings_report_capacity already applied"
+        ]
+      }
+    },
+    {
+      "name": "actual daily summary persisted and read back, no full-report storage",
+      "evidence": {
+        "storedCharacters": 544,
+        "keys": [
+          "date",
+          "generatedAt",
+          "discrepancyFingerprints",
+          "persistentFingerprints"
+        ]
+      }
+    },
+    {
+      "name": "same-day repeat does not create false persistence",
+      "evidence": {}
+    },
+    {
+      "name": "next-day fingerprints survive and readonly does not write",
+      "evidence": {
+        "persistent": 6
+      }
+    },
+    {
+      "name": "real scheduled runner writes summary heartbeat and one alert, no sender started",
+      "evidence": {
+        "exitCode": 0,
+        "openDailyAlerts": 1
+      }
+    },
+    {
+      "name": "valid summary larger than TEXT capacity roundtrips without truncation",
+      "evidence": {
+        "bytes": 106618,
+        "fingerprints": 1500
+      }
+    },
+    {
+      "name": "interruption after widening resumes without data rewrite",
+      "evidence": {}
+    },
+    {
+      "name": "unexpected column type rejected",
+      "evidence": {
+        "error": "MIGRATION_SCHEMA_MISMATCH"
+      }
+    },
+    {
+      "name": "new isolated MySQL restore preserves exact summary and passes functional verifier",
+      "evidence": {
+        "digest": "fa211be01f63c54173db8fa7bd5fc850118c37e0dbe68bfcf0c6e74e26bb6149",
+        "verification": "restore_functional={\"businessRead\":\"OK\",\"decryptedSamples\":{\"sessions\":1,\"cdkBatches\":1},\"dailySummary\":\"OK\",\"alertTrigger\":\"OK\",\"incidentVersion\":2,\"definerPrepared\":true,\"scope\":\"isolated representative checks; not production or offsite recovery acceptance\"}"
+      }
+    }
+  ],
+  "status": "passed",
+  "remainingDatabases": 0,
+  "finishedAt": "2026-09-21T07:22:54.295Z"
+}

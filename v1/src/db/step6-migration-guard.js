@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 
-// Narrow recovery adapter for the seven reviewed DDL statements in 055–057.
+// Narrow recovery adapter for reviewed DDL in 055–058.
 // SQL remains authoritative; fingerprints prevent an edited file silently using old checks.
 const contracts = {
   '055_cdk_issuance_and_expiry.sql': {
@@ -29,6 +29,11 @@ const contracts = {
       ['operator_alerts', 'incident_version', 'int unsigned', false, '1'],
       ['alert_notifications', 'incident_version', 'int unsigned', false, '1']
     ], indexes: [], trigger: 'operator_alert_incident_version_before_update'
+  },
+  '058_app_settings_report_capacity.sql': {
+    hash: 'f4e712c25c1b58dd2ed625dc434826d6bc4620d0cfeddb8caa470d002775f481',
+    columns: [], indexes: [],
+    widen: ['app_settings', 'setting_value', 'varchar(255)', 'mediumtext', false, null]
   }
 };
 
@@ -51,6 +56,12 @@ export function step6MigrationPlan(file, sql) {
     return { kind: 'column', table, name, type, nullable, defaultValue,
       sql: `ALTER TABLE ${identifier(table)} ADD COLUMN ${identifier(name)} ${declaration}` };
   });
+  if (contract.widen) {
+    const [table, name, fromType, type, nullable, defaultValue] = contract.widen;
+    const canonical = `ALTER TABLE ${table} MODIFY COLUMN ${name} MEDIUMTEXT NOT NULL;`;
+    if (!sql.includes(canonical)) mismatch(`${file}: widening DDL missing`);
+    steps.push({ kind: 'widen-column', table, name, fromType, type, nullable, defaultValue, sql: canonical });
+  }
   for (const [table, name, columns] of contract.indexes) {
     steps.push({ kind: 'index', table, name, columns,
       sql: `ALTER TABLE ${identifier(table)} ADD KEY ${identifier(name)} (${columns.map(identifier).join(', ')})` });
@@ -64,17 +75,18 @@ export function step6MigrationPlan(file, sql) {
 }
 
 async function inspect(connection, step) {
-  if (step.kind === 'column') {
+  if (step.kind === 'column' || step.kind === 'widen-column') {
     const [[row]] = await connection.query(`SELECT c.COLUMN_TYPE, c.IS_NULLABLE, c.COLUMN_DEFAULT, c.EXTRA, c.GENERATION_EXPRESSION,
         c.COLLATION_NAME, t.TABLE_COLLATION
       FROM information_schema.COLUMNS c JOIN information_schema.TABLES t
         ON t.TABLE_SCHEMA=c.TABLE_SCHEMA AND t.TABLE_NAME=c.TABLE_NAME
       WHERE c.TABLE_SCHEMA=DATABASE() AND c.TABLE_NAME=? AND c.COLUMN_NAME=?`, [step.table, step.name]);
     if (!row) return false;
-    if (row.COLUMN_TYPE !== step.type || row.IS_NULLABLE !== (step.nullable ? 'YES' : 'NO')
+    const original = step.kind === 'widen-column' && row.COLUMN_TYPE === step.fromType;
+    if ((!original && row.COLUMN_TYPE !== step.type) || row.IS_NULLABLE !== (step.nullable ? 'YES' : 'NO')
       || row.COLUMN_DEFAULT !== step.defaultValue || row.EXTRA !== '' || row.GENERATION_EXPRESSION !== ''
       || (row.COLLATION_NAME !== null && row.COLLATION_NAME !== row.TABLE_COLLATION)) mismatch(`${step.table}.${step.name}`);
-    return true;
+    return !original;
   }
   if (step.kind === 'index') {
     const [rows] = await connection.query(`SELECT COLUMN_NAME, NON_UNIQUE, SUB_PART, EXPRESSION, INDEX_TYPE, IS_VISIBLE

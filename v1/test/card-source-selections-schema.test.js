@@ -11,7 +11,7 @@ const sql = fs.readFileSync(path.join(migrationsDir, '053_card_source_selections
 test('057 is the newest migration; 053 through 057 are additive', () => {
   const names = fs.readdirSync(migrationsDir).filter((name) => /^\d+_[a-z0-9_-]+\.sql$/i.test(name)).sort();
   // 055＝D-286（CDK 发出登记 + 有效期），Lemon 2026-09-19 批准新增；只加列、不动存量。
-  assert.equal(names.at(-1), '057_alert_incident_version.sql');
+  assert.equal(names.at(-1), '058_app_settings_report_capacity.sql');
   const retirement = fs.readFileSync(path.join(migrationsDir, '054_card_retirement.sql'), 'utf8');
   const cdkIssuance = fs.readFileSync(path.join(migrationsDir, '055_cdk_issuance_and_expiry.sql'), 'utf8');
   assert.doesNotMatch(cdkIssuance, /CREATE TABLE/i);

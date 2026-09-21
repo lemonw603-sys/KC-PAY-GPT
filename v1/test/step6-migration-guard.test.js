@@ -32,3 +32,16 @@ test('wrong existing column and missing recorded structure fail closed',async()=
   await assert.rejects(()=>preflightStep6Migrations(reader({root:true,badColumn:true}),sources,new Set()),{code:'MIGRATION_SCHEMA_MISMATCH'});
   await assert.rejects(()=>preflightStep6Migrations(reader({root:true}),sources,new Set(['055_cdk_issuance_and_expiry'])),{code:'MIGRATION_SCHEMA_MISMATCH'});
 });
+
+test('058 widening accepts only the original or reviewed target definition, without writing during preflight',async()=>{
+  const file='058_app_settings_report_capacity.sql',sql=await readFile(new URL('../migrations/'+file,import.meta.url),'utf8');
+  const steps=step6MigrationPlan(file,sql);assert.equal(steps.length,1);assert.equal(steps[0].kind,'widen-column');
+  assert.throws(()=>step6MigrationPlan(file,sql+' '),{code:'MIGRATION_SOURCE_MISMATCH'});
+  for(const type of ['varchar(255)','mediumtext','int']){
+    const base=reader({root:true});const originalQuery=base.query.bind(base);
+    base.query=async(q,p)=>q.includes('information_schema.COLUMNS')?[[{COLUMN_TYPE:type,IS_NULLABLE:'NO',COLUMN_DEFAULT:null,EXTRA:'',GENERATION_EXPRESSION:'',COLLATION_NAME:'utf8mb4_unicode_ci',TABLE_COLLATION:'utf8mb4_unicode_ci'}]]:originalQuery(q,p);
+    if(type==='int')await assert.rejects(()=>preflightStep6Migrations(base,[{file,sql}],new Set()),{code:'MIGRATION_SCHEMA_MISMATCH'});
+    else await preflightStep6Migrations(base,[{file,sql}],new Set());
+    if(type==='varchar(255)')await assert.rejects(()=>preflightStep6Migrations(base,[{file,sql}],new Set(['058_app_settings_report_capacity'])),{code:'MIGRATION_SCHEMA_MISMATCH'});
+  }
+});

@@ -4,6 +4,7 @@
 
 ## 当前下一步
 
+- **D-328：用户同意最小容量修复、真实落库/恢复验收后继续发布。** 058与迁移恢复保护已本地实现；10项真实MySQL检查通过，默认980 pass/0 fail/69 skipped。更正：生产实际存摘要544字符，展示报告31348字符不是存储内容；保持只存摘要。新候选待固定后继续D-327发布，原66bfe98准备包不复用。证据`docs/reviews/2026-09-21-report-capacity/report.md`。
 - **D-327发布尝试已在迁移前中止，原⑤b已恢复营业。** 候选66bfe98已推送/prepare，1249项manifest通过，两份加密备份通过；但现场发现日对账任务ER_DATA_TOO_LONG：生产app_settings.setting_value=VARCHAR(255)，只读报告31348字符，完整JSON落库不下。此前只读验收没有证明定时保存。需要先确认新增容量修复，不能继续switch旧候选。
 - **07:00 UTC独立核实恢复**：release仍20260918-step5b-b0a36d4，web/worker/bark active、ready200；9timer恢复active/enabled，accept=true，付款/派单原值未变；schema054，迁移账号Super_priv=N。**055～057/临时授权/switch/新ops安装全未执行。** 接单暂停06:52:41→06:59:38 UTC，正式服务审计齐全；无在途/活动账号槽/未知资金。生产日对账旧故障仍未修，别宣称全部健康。
 - 执行记录`docs/reviews/2026-09-21-step6-release/report.md`及prepare.log/maintenance-snapshot.json。服务器检查点`/opt/pojia/maintenance/20260921-step6-66bfe98/phase.json`为restored-before-migration；准备好的release和bundle已存在，不能重复prepare到同目录。备份与旧ops副本保留。`migrate-with-revoke.sh`是未执行的受控wrapper草案，不是授权/迁移证据。
@@ -20,8 +21,8 @@
 
 - **发布方案等待执行确认**：`docs/tasks/2026-09-21-step6-release-plan.md`，须包含新恢复检查及运维入口安装。拟对专用迁移身份临时授SUPER，正式迁移后撤回，不改应用权限/全局变量。本机已实证撤权后触发器正常、重复迁移通过；生产未授权/DDL/prepare/switch。下一次确认须覆盖推送/备份/维护/授权撤回/迁移/切换及运维入口安装，不能把本地修复当已发布。
 
-1. 向用户说明报告容量问题，确认最小修复及新增迁移范围；先本地真实落库/读取/恢复验证，不截断报告、不另造大系统。
-2. 修复后重新固定发布候选和迁移范围，确认后再执行；本次已退出维护，不能从“正在停单”或“已经授SUPER”接续。两项UI不改。
+1. 固定含058的新候选，先prepare及维护前旧备份功能恢复，再重查空闲条件进入维护；当前仍旧版营业，不能从“已经停单/授SUPER”接续。
+2. 按D-328/D-327执行055～058、撤临时权限、正式日对账一次并读回、备份恢复/switch/独立复核后恢复原营业状态。两项UI不改。
 3. 上线后才按既定计划用页面处理自用老码；数量重查，不沿用历史21。
 4. 第⑥步收口后才到⑦产品与客户页、⑧清理和集成验收。真实客户/卡网发货及真实付款仍不能用本地测试代替。
 

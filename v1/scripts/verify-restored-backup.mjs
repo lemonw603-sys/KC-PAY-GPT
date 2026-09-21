@@ -81,6 +81,8 @@ export async function verifyRestoredBackup({ container, keysFile, prepareDefiner
   const rows = async text => { const out = await query(text); return out ? out.split('\n').map(JSON.parse) : []; };
   const scalar = async text => Number(await query(text));
   const has057 = (await scalar("SELECT COUNT(*) FROM schema_migrations WHERE version='057_alert_incident_version'")) === 1;
+  const has058 = (await scalar("SELECT COUNT(*) FROM schema_migrations WHERE version='058_app_settings_report_capacity'")) === 1;
+  if (has058 && (await query(`SELECT COLUMN_TYPE FROM information_schema.COLUMNS WHERE TABLE_SCHEMA='${DATABASE}' AND TABLE_NAME='app_settings' AND COLUMN_NAME='setting_value'`)) !== 'mediumtext') fail('RESTORE_REPORT_CAPACITY_MISMATCH');
   const triggers = await rows(`SELECT JSON_OBJECT('name',TRIGGER_NAME,'table',EVENT_OBJECT_TABLE,'timing',ACTION_TIMING,
     'event',EVENT_MANIPULATION,'orientation',ACTION_ORIENTATION,'body',ACTION_STATEMENT,'definer',DEFINER)
     FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA='${DATABASE}'`);
@@ -126,6 +128,17 @@ export async function verifyRestoredBackup({ container, keysFile, prepareDefiner
   } catch { fail('RESTORE_DECRYPTION_OR_SHAPE_FAILED'); }
   // No samples is not proof that the supplied key matches the backup.
   if (!samples.sessions || !samples.cdkBatches) fail('RESTORE_DECRYPTION_SAMPLE_MISSING');
+  const summaries = await rows("SELECT JSON_OBJECT('value',setting_value) FROM app_settings WHERE setting_key='daily_reconciliation_last_report'");
+  let dailySummary = 'NOT_PRESENT';
+  if (summaries.length) {
+    try {
+      const saved = JSON.parse(summaries[0].value);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(saved.date) || typeof saved.generatedAt !== 'string'
+        || !Array.isArray(saved.discrepancyFingerprints) || !Array.isArray(saved.persistentFingerprints)
+        || ![...saved.discrepancyFingerprints,...saved.persistentFingerprints].every(x => typeof x === 'string')) throw Error('shape');
+      dailySummary = 'OK';
+    } catch { fail('RESTORE_DAILY_SUMMARY_INVALID'); }
+  }
   let incidentVersion = null;
   if (hasTrigger) {
     const id = randomUUID();
@@ -142,7 +155,7 @@ export async function verifyRestoredBackup({ container, keysFile, prepareDefiner
     if (incidentVersion !== 2) fail('RESTORE_TRIGGER_PROBE_FAILED');
     if (await scalar(`SELECT COUNT(*) FROM operator_alerts WHERE id='${id}'`)) fail('RESTORE_PROBE_NOT_ROLLED_BACK');
   }
-  return { businessRead: 'OK', decryptedSamples: samples,
+  return { businessRead: 'OK', decryptedSamples: samples, dailySummary,
     alertTrigger: hasTrigger ? 'OK' : 'NOT_APPLICABLE_PRE057', incidentVersion, definerPrepared,
     scope: 'isolated representative checks; not production or offsite recovery acceptance' };
 }
