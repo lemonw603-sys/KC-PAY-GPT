@@ -3124,3 +3124,13 @@ UTC+8。用户同意修复后新增057告警轮次，两列与状态转OPEN触�
 备份20260920T033154Z校验和/解密/gzip完整性通过，不称恢复演练；备份脚本含triggers，备份账号有TRIGGER。迁移身份SHOW GRANTS只有库级ALL，MySQL8.4.11/log_bin1/trust_creators0，057创建触发器额外权限门槛仍需处理，不在生产试跑DDL。完整查询与原始输出见reviews/2026-09-21-production-readiness.md，权限部分对照官方MySQL8.4文档。
 
 本轮只读：未执行prepare/迁移/switch、未改权限/开关、未重启服务、未推送。当前不能直接发布；还需明确迁移权限与中断处理、DEFINER存续、维护窗口以及代码/业务回滚边界。8804试用页未动。
+
+## 2026-09-21｜两项发布前隔离演练（中断后继续）
+
+用户明确同意第1、2项：本地模拟迁移与无卡Session恢复。中断检查工作区干净，无迁移/演练进程残留，原演示保留。02:17:55～02:18:16 UTC运行scripts/step6-prepublish-rehearsal.mjs；真实本机MySQL8.4.11，log_bin1/trust_creators0，仅新建一次性测试库与库级ALL账号，不改全局权限或生产。
+
+完整证据落reviews/2026-09-21-prepublish-rehearsal/report.md、evidence.json。迁移同权限1419，055/056成功记账，057两列已加却触发器缺失；同权限/管理员直接重跑均1060。全新管理员完整迁移及重复执行通过；7个DDL断点逐一新库复现续跑1060，含最后DDL完成但未记账的断点。旧码哨兵状态/期限未被改写。
+
+Session使用正式服务/校验/事务/任务领取与PREPARE处理器验证：无卡且无分卡任务、无卡且分卡任务已完成两类，均返回PROCESSING/订单WAITING_FOR_CARD，分卡领取null；库里实际有1张正式SQL合格卡，PREPARE报ORDER_STATE_MISMATCH。已绑卡对照回CARD_READY。不调用外部服务/不启动充值worker。没有把只改预期后的绿测试当客户恢复通过。
+
+只新增诊断脚本和证据/交接，未改业务代码及迁移文件。10个专用数据库与测试账户已清理，独立查剩余0/0、global配置不变，原8803/8804及常驻worker未动。node --check与git diff --check通过；本轮不重跑无关全套、不连接生产、不推送。下一步最小修复：迁移前置权限检查+结构校验后可续跑；资金安全检查后无卡恢复唯一分卡任务、避免准备/提交抢跑。仍未放行上线。

@@ -1,0 +1,708 @@
+{
+  "startedAt": "2026-09-21T02:17:55.715Z",
+  "baselineCommit": "8b88577",
+  "migrations": [
+    {
+      "scenario": "production-like schema privileges",
+      "first": {
+        "exitCode": 1,
+        "error": "ER_BINLOG_CREATE_ROUTINE_NEED_SUPER",
+        "output": [
+          "migration 053_card_source_selections_and_supply already applied",
+          "migration 054_card_retirement already applied",
+          "applied migration 055_cdk_issuance_and_expiry",
+          "applied migration 056_cdk_sales_metadata"
+        ],
+        "errno": 1419
+      },
+      "afterFailure": {
+        "versions": [
+          "055_cdk_issuance_and_expiry",
+          "056_cdk_sales_metadata"
+        ],
+        "columns": [
+          {
+            "TABLE_NAME": "alert_notifications",
+            "COLUMN_NAME": "incident_version"
+          },
+          {
+            "TABLE_NAME": "browser_artifact_secrets",
+            "COLUMN_NAME": "expires_at"
+          },
+          {
+            "TABLE_NAME": "cdk_batches",
+            "COLUMN_NAME": "generation_fingerprint"
+          },
+          {
+            "TABLE_NAME": "cdk_batches",
+            "COLUMN_NAME": "issued_at"
+          },
+          {
+            "TABLE_NAME": "cdks",
+            "COLUMN_NAME": "expires_at"
+          },
+          {
+            "TABLE_NAME": "cdks",
+            "COLUMN_NAME": "issuance_kind"
+          },
+          {
+            "TABLE_NAME": "cdks",
+            "COLUMN_NAME": "issued_at"
+          },
+          {
+            "TABLE_NAME": "checkout_artifacts",
+            "COLUMN_NAME": "expires_at"
+          },
+          {
+            "TABLE_NAME": "operator_alerts",
+            "COLUMN_NAME": "incident_version"
+          },
+          {
+            "TABLE_NAME": "payment_permits",
+            "COLUMN_NAME": "expires_at"
+          },
+          {
+            "TABLE_NAME": "payment_permits",
+            "COLUMN_NAME": "issued_at"
+          },
+          {
+            "TABLE_NAME": "recharge_authorizations",
+            "COLUMN_NAME": "expires_at"
+          }
+        ],
+        "triggers": []
+      },
+      "retryLimited": {
+        "exitCode": 1,
+        "error": "ER_DUP_FIELDNAME",
+        "output": [
+          "migration 053_card_source_selections_and_supply already applied",
+          "migration 054_card_retirement already applied",
+          "migration 055_cdk_issuance_and_expiry already applied",
+          "migration 056_cdk_sales_metadata already applied"
+        ],
+        "errno": 1060
+      },
+      "retryRoot": {
+        "exitCode": 1,
+        "error": "ER_DUP_FIELDNAME",
+        "output": [
+          "migration 053_card_source_selections_and_supply already applied",
+          "migration 054_card_retirement already applied",
+          "migration 055_cdk_issuance_and_expiry already applied",
+          "migration 056_cdk_sales_metadata already applied"
+        ],
+        "errno": 1060
+      }
+    },
+    {
+      "scenario": "privileged clean run and repeat",
+      "complete": {
+        "exitCode": 0,
+        "error": null,
+        "output": [
+          "migration 054_card_retirement already applied",
+          "applied migration 055_cdk_issuance_and_expiry",
+          "applied migration 056_cdk_sales_metadata",
+          "applied migration 057_alert_incident_version"
+        ],
+        "errno": null
+      },
+      "repeated": {
+        "exitCode": 0,
+        "error": null,
+        "output": [
+          "migration 054_card_retirement already applied",
+          "migration 055_cdk_issuance_and_expiry already applied",
+          "migration 056_cdk_sales_metadata already applied",
+          "migration 057_alert_incident_version already applied"
+        ],
+        "errno": null
+      },
+      "legacy": {
+        "status": "AVAILABLE",
+        "issued_at": null,
+        "expires_at": null,
+        "issuance_kind": "LEGACY"
+      },
+      "final": {
+        "versions": [
+          "055_cdk_issuance_and_expiry",
+          "056_cdk_sales_metadata",
+          "057_alert_incident_version"
+        ],
+        "columns": [
+          {
+            "TABLE_NAME": "alert_notifications",
+            "COLUMN_NAME": "incident_version"
+          },
+          {
+            "TABLE_NAME": "browser_artifact_secrets",
+            "COLUMN_NAME": "expires_at"
+          },
+          {
+            "TABLE_NAME": "cdk_batches",
+            "COLUMN_NAME": "generation_fingerprint"
+          },
+          {
+            "TABLE_NAME": "cdk_batches",
+            "COLUMN_NAME": "issued_at"
+          },
+          {
+            "TABLE_NAME": "cdks",
+            "COLUMN_NAME": "expires_at"
+          },
+          {
+            "TABLE_NAME": "cdks",
+            "COLUMN_NAME": "issuance_kind"
+          },
+          {
+            "TABLE_NAME": "cdks",
+            "COLUMN_NAME": "issued_at"
+          },
+          {
+            "TABLE_NAME": "checkout_artifacts",
+            "COLUMN_NAME": "expires_at"
+          },
+          {
+            "TABLE_NAME": "operator_alerts",
+            "COLUMN_NAME": "incident_version"
+          },
+          {
+            "TABLE_NAME": "payment_permits",
+            "COLUMN_NAME": "expires_at"
+          },
+          {
+            "TABLE_NAME": "payment_permits",
+            "COLUMN_NAME": "issued_at"
+          },
+          {
+            "TABLE_NAME": "recharge_authorizations",
+            "COLUMN_NAME": "expires_at"
+          }
+        ],
+        "triggers": [
+          "operator_alert_incident_version_before_update"
+        ]
+      }
+    },
+    {
+      "scenario": "interrupted after DDL 1/7",
+      "file": "055_cdk_issuance_and_expiry.sql",
+      "resumed": {
+        "exitCode": 1,
+        "error": "ER_DUP_FIELDNAME",
+        "output": [
+          "migration 051_orders_cdk_id_reusable already applied",
+          "migration 052_cards_bin already applied",
+          "migration 053_card_source_selections_and_supply already applied",
+          "migration 054_card_retirement already applied"
+        ],
+        "errno": 1060
+      },
+      "final": {
+        "versions": [],
+        "columns": [
+          {
+            "TABLE_NAME": "browser_artifact_secrets",
+            "COLUMN_NAME": "expires_at"
+          },
+          {
+            "TABLE_NAME": "cdks",
+            "COLUMN_NAME": "expires_at"
+          },
+          {
+            "TABLE_NAME": "cdks",
+            "COLUMN_NAME": "issued_at"
+          },
+          {
+            "TABLE_NAME": "checkout_artifacts",
+            "COLUMN_NAME": "expires_at"
+          },
+          {
+            "TABLE_NAME": "payment_permits",
+            "COLUMN_NAME": "expires_at"
+          },
+          {
+            "TABLE_NAME": "payment_permits",
+            "COLUMN_NAME": "issued_at"
+          },
+          {
+            "TABLE_NAME": "recharge_authorizations",
+            "COLUMN_NAME": "expires_at"
+          }
+        ],
+        "triggers": []
+      }
+    },
+    {
+      "scenario": "interrupted after DDL 2/7",
+      "file": "055_cdk_issuance_and_expiry.sql",
+      "resumed": {
+        "exitCode": 1,
+        "error": "ER_DUP_FIELDNAME",
+        "output": [
+          "migration 051_orders_cdk_id_reusable already applied",
+          "migration 052_cards_bin already applied",
+          "migration 053_card_source_selections_and_supply already applied",
+          "migration 054_card_retirement already applied"
+        ],
+        "errno": 1060
+      },
+      "final": {
+        "versions": [],
+        "columns": [
+          {
+            "TABLE_NAME": "browser_artifact_secrets",
+            "COLUMN_NAME": "expires_at"
+          },
+          {
+            "TABLE_NAME": "cdks",
+            "COLUMN_NAME": "expires_at"
+          },
+          {
+            "TABLE_NAME": "cdks",
+            "COLUMN_NAME": "issued_at"
+          },
+          {
+            "TABLE_NAME": "checkout_artifacts",
+            "COLUMN_NAME": "expires_at"
+          },
+          {
+            "TABLE_NAME": "payment_permits",
+            "COLUMN_NAME": "expires_at"
+          },
+          {
+            "TABLE_NAME": "payment_permits",
+            "COLUMN_NAME": "issued_at"
+          },
+          {
+            "TABLE_NAME": "recharge_authorizations",
+            "COLUMN_NAME": "expires_at"
+          }
+        ],
+        "triggers": []
+      }
+    },
+    {
+      "scenario": "interrupted after DDL 3/7",
+      "file": "056_cdk_sales_metadata.sql",
+      "resumed": {
+        "exitCode": 1,
+        "error": "ER_DUP_FIELDNAME",
+        "output": [
+          "migration 052_cards_bin already applied",
+          "migration 053_card_source_selections_and_supply already applied",
+          "migration 054_card_retirement already applied",
+          "migration 055_cdk_issuance_and_expiry already applied"
+        ],
+        "errno": 1060
+      },
+      "final": {
+        "versions": [
+          "055_cdk_issuance_and_expiry"
+        ],
+        "columns": [
+          {
+            "TABLE_NAME": "browser_artifact_secrets",
+            "COLUMN_NAME": "expires_at"
+          },
+          {
+            "TABLE_NAME": "cdk_batches",
+            "COLUMN_NAME": "generation_fingerprint"
+          },
+          {
+            "TABLE_NAME": "cdk_batches",
+            "COLUMN_NAME": "issued_at"
+          },
+          {
+            "TABLE_NAME": "cdks",
+            "COLUMN_NAME": "expires_at"
+          },
+          {
+            "TABLE_NAME": "cdks",
+            "COLUMN_NAME": "issued_at"
+          },
+          {
+            "TABLE_NAME": "checkout_artifacts",
+            "COLUMN_NAME": "expires_at"
+          },
+          {
+            "TABLE_NAME": "payment_permits",
+            "COLUMN_NAME": "expires_at"
+          },
+          {
+            "TABLE_NAME": "payment_permits",
+            "COLUMN_NAME": "issued_at"
+          },
+          {
+            "TABLE_NAME": "recharge_authorizations",
+            "COLUMN_NAME": "expires_at"
+          }
+        ],
+        "triggers": []
+      }
+    },
+    {
+      "scenario": "interrupted after DDL 4/7",
+      "file": "056_cdk_sales_metadata.sql",
+      "resumed": {
+        "exitCode": 1,
+        "error": "ER_DUP_FIELDNAME",
+        "output": [
+          "migration 052_cards_bin already applied",
+          "migration 053_card_source_selections_and_supply already applied",
+          "migration 054_card_retirement already applied",
+          "migration 055_cdk_issuance_and_expiry already applied"
+        ],
+        "errno": 1060
+      },
+      "final": {
+        "versions": [
+          "055_cdk_issuance_and_expiry"
+        ],
+        "columns": [
+          {
+            "TABLE_NAME": "browser_artifact_secrets",
+            "COLUMN_NAME": "expires_at"
+          },
+          {
+            "TABLE_NAME": "cdk_batches",
+            "COLUMN_NAME": "generation_fingerprint"
+          },
+          {
+            "TABLE_NAME": "cdk_batches",
+            "COLUMN_NAME": "issued_at"
+          },
+          {
+            "TABLE_NAME": "cdks",
+            "COLUMN_NAME": "expires_at"
+          },
+          {
+            "TABLE_NAME": "cdks",
+            "COLUMN_NAME": "issuance_kind"
+          },
+          {
+            "TABLE_NAME": "cdks",
+            "COLUMN_NAME": "issued_at"
+          },
+          {
+            "TABLE_NAME": "checkout_artifacts",
+            "COLUMN_NAME": "expires_at"
+          },
+          {
+            "TABLE_NAME": "payment_permits",
+            "COLUMN_NAME": "expires_at"
+          },
+          {
+            "TABLE_NAME": "payment_permits",
+            "COLUMN_NAME": "issued_at"
+          },
+          {
+            "TABLE_NAME": "recharge_authorizations",
+            "COLUMN_NAME": "expires_at"
+          }
+        ],
+        "triggers": []
+      }
+    },
+    {
+      "scenario": "interrupted after DDL 5/7",
+      "file": "057_alert_incident_version.sql",
+      "resumed": {
+        "exitCode": 1,
+        "error": "ER_DUP_FIELDNAME",
+        "output": [
+          "migration 053_card_source_selections_and_supply already applied",
+          "migration 054_card_retirement already applied",
+          "migration 055_cdk_issuance_and_expiry already applied",
+          "migration 056_cdk_sales_metadata already applied"
+        ],
+        "errno": 1060
+      },
+      "final": {
+        "versions": [
+          "055_cdk_issuance_and_expiry",
+          "056_cdk_sales_metadata"
+        ],
+        "columns": [
+          {
+            "TABLE_NAME": "browser_artifact_secrets",
+            "COLUMN_NAME": "expires_at"
+          },
+          {
+            "TABLE_NAME": "cdk_batches",
+            "COLUMN_NAME": "generation_fingerprint"
+          },
+          {
+            "TABLE_NAME": "cdk_batches",
+            "COLUMN_NAME": "issued_at"
+          },
+          {
+            "TABLE_NAME": "cdks",
+            "COLUMN_NAME": "expires_at"
+          },
+          {
+            "TABLE_NAME": "cdks",
+            "COLUMN_NAME": "issuance_kind"
+          },
+          {
+            "TABLE_NAME": "cdks",
+            "COLUMN_NAME": "issued_at"
+          },
+          {
+            "TABLE_NAME": "checkout_artifacts",
+            "COLUMN_NAME": "expires_at"
+          },
+          {
+            "TABLE_NAME": "operator_alerts",
+            "COLUMN_NAME": "incident_version"
+          },
+          {
+            "TABLE_NAME": "payment_permits",
+            "COLUMN_NAME": "expires_at"
+          },
+          {
+            "TABLE_NAME": "payment_permits",
+            "COLUMN_NAME": "issued_at"
+          },
+          {
+            "TABLE_NAME": "recharge_authorizations",
+            "COLUMN_NAME": "expires_at"
+          }
+        ],
+        "triggers": []
+      }
+    },
+    {
+      "scenario": "interrupted after DDL 6/7",
+      "file": "057_alert_incident_version.sql",
+      "resumed": {
+        "exitCode": 1,
+        "error": "ER_DUP_FIELDNAME",
+        "output": [
+          "migration 053_card_source_selections_and_supply already applied",
+          "migration 054_card_retirement already applied",
+          "migration 055_cdk_issuance_and_expiry already applied",
+          "migration 056_cdk_sales_metadata already applied"
+        ],
+        "errno": 1060
+      },
+      "final": {
+        "versions": [
+          "055_cdk_issuance_and_expiry",
+          "056_cdk_sales_metadata"
+        ],
+        "columns": [
+          {
+            "TABLE_NAME": "alert_notifications",
+            "COLUMN_NAME": "incident_version"
+          },
+          {
+            "TABLE_NAME": "browser_artifact_secrets",
+            "COLUMN_NAME": "expires_at"
+          },
+          {
+            "TABLE_NAME": "cdk_batches",
+            "COLUMN_NAME": "generation_fingerprint"
+          },
+          {
+            "TABLE_NAME": "cdk_batches",
+            "COLUMN_NAME": "issued_at"
+          },
+          {
+            "TABLE_NAME": "cdks",
+            "COLUMN_NAME": "expires_at"
+          },
+          {
+            "TABLE_NAME": "cdks",
+            "COLUMN_NAME": "issuance_kind"
+          },
+          {
+            "TABLE_NAME": "cdks",
+            "COLUMN_NAME": "issued_at"
+          },
+          {
+            "TABLE_NAME": "checkout_artifacts",
+            "COLUMN_NAME": "expires_at"
+          },
+          {
+            "TABLE_NAME": "operator_alerts",
+            "COLUMN_NAME": "incident_version"
+          },
+          {
+            "TABLE_NAME": "payment_permits",
+            "COLUMN_NAME": "expires_at"
+          },
+          {
+            "TABLE_NAME": "payment_permits",
+            "COLUMN_NAME": "issued_at"
+          },
+          {
+            "TABLE_NAME": "recharge_authorizations",
+            "COLUMN_NAME": "expires_at"
+          }
+        ],
+        "triggers": []
+      }
+    },
+    {
+      "scenario": "interrupted after DDL 7/7",
+      "file": "057_alert_incident_version.sql",
+      "resumed": {
+        "exitCode": 1,
+        "error": "ER_DUP_FIELDNAME",
+        "output": [
+          "migration 053_card_source_selections_and_supply already applied",
+          "migration 054_card_retirement already applied",
+          "migration 055_cdk_issuance_and_expiry already applied",
+          "migration 056_cdk_sales_metadata already applied"
+        ],
+        "errno": 1060
+      },
+      "final": {
+        "versions": [
+          "055_cdk_issuance_and_expiry",
+          "056_cdk_sales_metadata"
+        ],
+        "columns": [
+          {
+            "TABLE_NAME": "alert_notifications",
+            "COLUMN_NAME": "incident_version"
+          },
+          {
+            "TABLE_NAME": "browser_artifact_secrets",
+            "COLUMN_NAME": "expires_at"
+          },
+          {
+            "TABLE_NAME": "cdk_batches",
+            "COLUMN_NAME": "generation_fingerprint"
+          },
+          {
+            "TABLE_NAME": "cdk_batches",
+            "COLUMN_NAME": "issued_at"
+          },
+          {
+            "TABLE_NAME": "cdks",
+            "COLUMN_NAME": "expires_at"
+          },
+          {
+            "TABLE_NAME": "cdks",
+            "COLUMN_NAME": "issuance_kind"
+          },
+          {
+            "TABLE_NAME": "cdks",
+            "COLUMN_NAME": "issued_at"
+          },
+          {
+            "TABLE_NAME": "checkout_artifacts",
+            "COLUMN_NAME": "expires_at"
+          },
+          {
+            "TABLE_NAME": "operator_alerts",
+            "COLUMN_NAME": "incident_version"
+          },
+          {
+            "TABLE_NAME": "payment_permits",
+            "COLUMN_NAME": "expires_at"
+          },
+          {
+            "TABLE_NAME": "payment_permits",
+            "COLUMN_NAME": "issued_at"
+          },
+          {
+            "TABLE_NAME": "recharge_authorizations",
+            "COLUMN_NAME": "expires_at"
+          }
+        ],
+        "triggers": [
+          "operator_alert_incident_version_before_update"
+        ]
+      }
+    }
+  ],
+  "sessionRecovery": [
+    {
+      "scenario": "no-assignment-task",
+      "responseStatus": "PROCESSING",
+      "orderStatus": "WAITING_FOR_CARD",
+      "hasAssignedCard": false,
+      "tasks": [
+        {
+          "task_type": "PREPARE_RECHARGE",
+          "status": "PENDING"
+        },
+        {
+          "task_type": "SUBMIT_RECHARGE",
+          "status": "PENDING"
+        }
+      ],
+      "assignTaskClaimed": false,
+      "eligibleCardCount": 1,
+      "preparation": "ORDER_STATE_MISMATCH"
+    },
+    {
+      "scenario": "completed-assignment-task",
+      "responseStatus": "PROCESSING",
+      "orderStatus": "WAITING_FOR_CARD",
+      "hasAssignedCard": false,
+      "tasks": [
+        {
+          "task_type": "ASSIGN_CARD",
+          "status": "COMPLETED"
+        },
+        {
+          "task_type": "PREPARE_RECHARGE",
+          "status": "PENDING"
+        },
+        {
+          "task_type": "SUBMIT_RECHARGE",
+          "status": "PENDING"
+        }
+      ],
+      "assignTaskClaimed": false,
+      "eligibleCardCount": 1,
+      "preparation": "ORDER_STATE_MISMATCH"
+    },
+    {
+      "scenario": "already-has-card",
+      "responseStatus": "PROCESSING",
+      "orderStatus": "CARD_READY",
+      "hasAssignedCard": true,
+      "tasks": [
+        {
+          "task_type": "PREPARE_RECHARGE",
+          "status": "PENDING"
+        },
+        {
+          "task_type": "SUBMIT_RECHARGE",
+          "status": "PENDING"
+        }
+      ],
+      "assignTaskClaimed": false,
+      "eligibleCardCount": 1,
+      "preparation": null
+    }
+  ],
+  "databases": [
+    "step6_gate_ed7c525f_cut7",
+    "step6_gate_ed7c525f_cut6",
+    "step6_gate_ed7c525f_cut5",
+    "step6_gate_ed7c525f_cut4",
+    "step6_gate_ed7c525f_cut3",
+    "step6_gate_ed7c525f_cut2",
+    "step6_gate_ed7c525f_cut1",
+    "step6_gate_ed7c525f_clean",
+    "step6_gate_ed7c525f_limited",
+    "step6_gate_ed7c525f_base"
+  ],
+  "testAccount": "step6_gate_ed7c525f",
+  "mysql": {
+    "version": "8.4.11",
+    "log_bin": 1,
+    "trust_creators": 0
+  },
+  "finishedAt": "2026-09-21T02:18:16.156Z",
+  "status": "diagnostics completed",
+  "cleanedUp": true
+}
