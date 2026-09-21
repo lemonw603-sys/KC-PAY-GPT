@@ -3152,3 +3152,11 @@ Session事务在资金检查后锁任务：有效租约/重复分卡任务拒绝
 在本机新建一次性账号/库，真实模拟库级ALL→临时SUPER→正式055～057迁移→撤SUPER→告警重开incident_version=2→同低权限重复迁移already applied。DEFINER为迁移账号，global trust保持0。临时本机库/账号清理，没有把权限改动带到生产。
 
 形成tasks/2026-09-21-step6-release-plan.md：固定2d41192候选，完整列推送/prepare/维护（暂停9个项目timer并等在途服务自然结束）/维护点备份/临时授权迁移和必撤权/switch三服务/独立核验/按原状态恢复；无旧码作废或资金测试，不重启本机Browser池。回退失败先保持维护，不自动删结构倒库。方案待用户明确执行确认，本轮不推送、不prepare、不迁移、不停服务、不改开关；8804未动。
+
+## 2026-09-21｜全项目只读理解与重要验证缺口
+
+用户问还有什么重要检查，允许先了解项目；不是发布或新功能授权。补读架构、计划、最新决策、交付/人工介入契约及对应实现。依据D-283/284（工作台step6-workbench-compare.html C；营业条step6-opsbar-v5.html乙-3），D-291保留延期、D-290每卡分产品限制待⑦，D-314～319 CDK规则/试用不重开。
+
+三个待讨论的重点验收：①admin.js:581“付款”绑定browserPaymentWritesEnabled，admin-operations-service.js:130只写Browser门；worker-runtime.js:15的API提交由dispatch与API权限控制，不能把付款按钮当全局停付。②资金不明后台已有保护/定向MySQL证据，但工作台入口至订单、CDK、卡、资金台账/告警收口仍需隔离完整验收。③pojia-ops.sh:123恢复测试只断言表数>0，不证明恢复后应用密钥解密/057触发器DEFINER/业务可用；离机密钥备份策略未核实。未实际执行这些新验收，不将缺证据说成已知失败。
+
+03:27 UTC生产只读release仍⑤b、web/worker/bark active、ready200；highvcc同步failed且近期HIGHVCC_TOKEN_EXPIRED，OPEN过期告警1条、SENT记录时间09-19 01:53:25.335；修正CURRENT_STATE旧行。API Plus开、Browser Plus/Pro关闭。终态订单非空Session密文计数CLOSED21/FAILED37/SUCCESS20，保留策略待核实，不代表token仍有效。本轮state-check通过其11项核对，但不代表全链路通过。没有生产写操作、没有新worker、没有业务代码改动，演示8804保留。
