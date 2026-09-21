@@ -185,14 +185,14 @@ test('Bark notification claims are concurrency-safe and reopen after resolution'
     await pool.query(
       `INSERT INTO operator_alerts
        (id, alert_type, dedupe_key, severity, title, message, status)
-       VALUES (?, 'BARK_TEST', ?, 'warning', 'Bark 集成测试', '不含资金操作', 'OPEN')`,
+       VALUES (?, 'PROVIDER_TOKEN_EXPIRED', ?, 'warning', 'Bark 集成测试', '不含资金操作', 'OPEN')`,
       [alertId, dedupeKey]
     );
     const repository = createAlertNotificationRepository(pool);
     await repository.enqueueOpenAlerts();
     const claimed = await Promise.all([repository.claimNext(), repository.claimNext()]);
     assert.equal(claimed.filter(Boolean).length, 1);
-    await repository.markSent(claimed.find(Boolean).id);
+    await repository.markSent(claimed.find(Boolean).id, { incidentVersion: claimed.find(Boolean).incidentVersion });
 
     await new Promise((resolve) => setTimeout(resolve, 10));
     await pool.query(
@@ -205,6 +205,7 @@ test('Bark notification claims are concurrency-safe and reopen after resolution'
     const reopened = await repository.claimNext();
     assert.ok(reopened);
     const retry = await repository.markFailed(reopened.id, {
+      incidentVersion: reopened.incidentVersion,
       error: new Error('temporary Bark test failure'),
       retryable: true,
       attemptCount: reopened.attemptCount,

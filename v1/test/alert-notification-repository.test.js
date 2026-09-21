@@ -16,6 +16,8 @@ test('Bark outbox sends once per open incident and only requeues after resolutio
   assert.equal(calls.length, 3);
   assert.match(calls[0].sql, /INSERT IGNORE INTO alert_notifications/);
   assert.match(calls[1].sql, /n\.status = 'CANCELLED'/);
+  assert.match(calls[1].sql, /n\.incident_version < a\.incident_version/);
+  assert.match(calls[1].sql, /n\.incident_version = a\.incident_version/);
   assert.doesNotMatch(calls[1].sql, /a\.acknowledged_at IS NOT NULL/);
   assert.match(calls[2].sql, /n\.status IN \('PENDING', 'RETRY', 'SENDING', 'SENT', 'DEAD'\)/);
 });

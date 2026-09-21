@@ -4,7 +4,7 @@ import { dispatchOneBarkNotification } from '../src/notifications/bark-dispatche
 
 function delivery(attemptCount = 1) {
   return {
-    id: 9, alertId: 'alert-1', attemptCount,
+    id: 9, alertId: 'alert-1', attemptCount, incidentVersion: 2,
     title: '库存异常', message: '剩余 1 张', severity: 'warning'
   };
 }
@@ -14,14 +14,14 @@ test('dispatches and marks one Bark notification sent', async () => {
   const repository = {
     enqueueOpenAlerts: async () => calls.push('enqueue'),
     claimNext: async () => delivery(),
-    markSent: async (id) => calls.push(['sent', id])
+    markSent: async (id, version) => calls.push(['sent', id, version])
   };
   const client = { send: async (payload) => calls.push(['send', payload]) };
   const result = await dispatchOneBarkNotification({ repository, client });
   assert.equal(result.delivered, true);
   assert.deepEqual(calls[0], 'enqueue');
   assert.equal(calls[1][0], 'send');
-  assert.deepEqual(calls[2], ['sent', 9]);
+  assert.deepEqual(calls[2], ['sent', 9, { incidentVersion: 2 }]);
 });
 
 test('records retry metadata and does not throw delivery failures out of the runner', async () => {
@@ -42,6 +42,7 @@ test('records retry metadata and does not throw delivery failures out of the run
   assert.equal(failure.attemptCount, 2);
   assert.equal(failure.retryable, true);
   assert.equal(failure.maxAttempts, 8);
+  assert.equal(failure.incidentVersion, 2);
 });
 
 test('returns idle when no open alert is dispatchable', async () => {

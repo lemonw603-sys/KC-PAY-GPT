@@ -534,13 +534,32 @@ function wbOrderRow(order) {
   return `<tr data-order="${escapeHtml(order.publicNo)}"><td class="wb-mono">${escapeHtml(order.publicNo)}</td><td>${escapeHtml(productLabel(order))}</td><td>${wbChip(cls, meta[0])}</td><td>${stage.action ? escapeHtml(stage.action) : '—'}</td><td class="wb-mono">${order.card?.last4 ? '尾号 ' + escapeHtml(order.card.last4) : '—'}</td><td class="wb-mono">${escapeHtml(order.customerEmail || order.chatgptAccountId || '—')}</td><td class="wb-mono">${formatTime(order.createdAt)}</td></tr>`;
 }
 
-function renderWbOrders(orders) {
+const TODAY_ORDERS_URL = '/api/v1/admin/orders?page=1&pageSize=12&status=TODAY';
+
+function renderWbOrders(orders, { failed = false } = {}) {
   const table = document.getElementById('wb-orders');
   if (!table) return;
   const head = '<thead><tr><th>订单</th><th>产品</th><th>当前阶段</th><th>需要我做什么</th><th>卡尾号</th><th>身份</th><th>创建</th></tr></thead>';
-  const body = orders.length ? orders.map(wbOrderRow).join('') : '<tr><td colspan="7" class="wb-empty">今天还没有订单</td></tr>';
+  const body = failed
+    ? '<tr><td colspan="7" class="wb-empty"><span role="alert">今日订单读取失败。</span> <button type="button" class="wb-btn sm out" data-retry-today-orders>重试</button></td></tr>'
+    : orders.length ? orders.map(wbOrderRow).join('') : '<tr><td colspan="7" class="wb-empty">今天还没有订单</td></tr>';
   table.innerHTML = head + '<tbody>' + body + '</tbody>';
 }
+
+async function loadTodayOrders() {
+  try {
+    const result = await api(TODAY_ORDERS_URL);
+    renderWbOrders(result?.orders, { failed: !Array.isArray(result?.orders) });
+  } catch { renderWbOrders([], { failed: true }); }
+}
+
+document.addEventListener('click', async (event) => {
+  const button = event.target.closest('[data-retry-today-orders]');
+  if (!button || button.disabled) return;
+  button.disabled = true;
+  button.textContent = '重试中…';
+  await loadTodayOrders();
+});
 
 function renderDecisions(overview, cardSources, takeoverEstimate = null) {
   const box = document.getElementById('wb-decisions');
@@ -658,7 +677,7 @@ async function loadOverview() {
     // F-63：请求失败必须留下 __error 标记，下游才能把「读取失败」和「查过、确实没有」分开。
     // 少了这一半，renderWbQueue 的 sourceFailed 永远为假，接口挂了照样显示「今天清爽」——
     // 这正是真实页面验收（500 注入）抓到的，只测渲染函数抓不到。
-    api('/api/v1/admin/orders?page=1&pageSize=12&status=TODAY').catch(() => ({ orders: [], __error: true })),
+    api(TODAY_ORDERS_URL).catch(() => ({ orders: [], __error: true })),
     // limit 提到 100（服务端上限）：队列要从告警里挑出 PROVIDER_TOKEN_EXPIRED，
     // 而 listAlerts 不支持按类型过滤、只按时间倒序，limit=10 时 token 告警会被淹没。
     // 局限仍在：warning/critical 的 OPEN 告警若超过 100 条，仍可能漏——已登记 UNVERIFIED_LEDGER。
@@ -675,7 +694,7 @@ async function loadOverview() {
   renderWbCards(overview);
   renderWbRecon(daily);
   renderWbQueue(overview, daily, alertData, reconCases);
-  renderWbOrders(todayOrders.orders || []);
+  renderWbOrders(todayOrders?.orders, { failed: todayOrders?.__error || !Array.isArray(todayOrders?.orders) });
   if (elements.syncTime) elements.syncTime.textContent = `更新于 ${new Date().toLocaleTimeString('zh-CN', { hour12: false })}`;
 }
 
@@ -1790,9 +1809,6 @@ function renderSettingsThresholds(data) {
 function renderSettingsGlobal(data) {
   if (!elements.settingsGlobal) return;
   elements.settingsGlobal.innerHTML = `
-    <div class="set-kv"><label>Session 门槛 <small>客户换 Session 的时间窗（小时）</small></label>
-      <span class="set-ro">${escapeHtml(String(data.sessionReplacementWindowHours ?? '—'))} 小时
-        <span class="wb-chip mute">暂不可改</span></span></div>
     <div class="set-kv"><label>账单地址 <small>Browser 付款时填的地址</small></label>
       <span><button type="button" class="wb-btn sm out" data-goto-billing>去诊断页配置 →</button></span></div>`;
 }

@@ -119,3 +119,38 @@ assert.ok(reopened): actual null
 ## 交付核对
 
 四页基础联动检查已完成；12条失败逐项归因完成（1项仍有真实缺陷，11项按现行规则修正夹具后通过）。发现报告已落盘；修复与生产放行未完成。仅保留本地证据及交接，本轮不推送、不迁移生产、不部署。
+
+## 后续修复记录（D-320，2026-09-21 UTC+8）
+
+上文为原始审查，保留不改。用户明确同意修复J-01～04后，四项均已本地修复：
+
+| 项目 | 实现 | 新证据 |
+|---|---|---|
+| J-01 | 057迁移添加告警/通知incident_version；数据库触发器只在非OPEN→OPEN时递增；outbox按轮次入队、领取、确认 | alert-reopen-mysql-integration实际MySQL；无中间扫描重开、并发扫描/领取、内容更新不重推、RETRY/DEAD不无限复活、白名单、迟到成功/失败回调不覆盖新轮次、INSERT ON DUPLICATE KEY路径通过 |
+| J-02 | loadOverview保留今日订单失败标记，renderWbOrders区分失败和空；失败态给局部“重试” | 先红后绿的fetch500单测；浏览器Network.loadingFailed inspector请求42183.41后实际显示“今日订单读取失败。重试”；撤销阻断点重试显示“今天还没有订单” |
+| J-03 | 删除renderSettingsGlobal退休的72小时门槛展示；账单地址入口保留 | 单测及真实设置页DOM核对，无Session门槛/72小时；不改变Session业务规则 |
+| J-04 | cdkBatchDate使用Asia/Shanghai日历日期；下拉与行内共用，不截取时间字符串 | 单测跨UTC日界线/null/非法日期；浏览器实见“2026/09/20 那批 · 2 张” |
+
+默认测试1023 / 954 pass / 0 fail / 69 skipped。专项真实MySQL与原Bark测试：2 pass / 0 fail / 0 skipped。原Bark夹具改用实际白名单PROVIDER_TOKEN_EXPIRED并传递领取轮次；其余11条旧失败的正式夹具未在本轮改动，不宣称整个MySQL大套件已全绿。
+
+命令（v1目录、仅本机step6_jfix库）：
+
+```sh
+ALERT_TEST_DATABASE_URL='<本机step6_jfix连接串>' \
+TEST_DATABASE_URL='<同库连接串>' \
+node --test --test-concurrency=1 --test-name-pattern='incident-aware|Bark notification claims' \
+  test/alert-reopen-mysql-integration.test.js test/mysql-integration.test.js
+npm test
+```
+
+另外三份现有1440几何契约（卡片A/CDK A/工作台营业条乙-3）全部通过；CSS棘轮、文案检查、git diff --check通过。没有新CSS或重新设计页面。临时8805实例仅连接本地克隆库step6_jfix_ui，Provider读写关、无worker；8804用户演示未重启。
+
+### 发布前新增注意事项
+
+- 生产需单独确认055、056及**新增057**，不能只按旧计划应用两份迁移。057是两列+一个数据库触发器；需核实迁移账户TRIGGER权限、备份触发器和数据库迁移中断恢复方式。禁止在未知权限下试写生产。
+- 先应用迁移再切匹配的新应用，尤其bark通知进程必须换到新代码；旧版本不按轮次处理，回滚旧版本会重新失去本修复保证。
+- incident_version默认为1，不为历史已解决重开事件补造轮次；迁移前已经漏掉的历史通知不保证自动补发。发布时应只读核对当前OPEN告警及对应通知，有疑点交用户决定，不批量重推。
+- 同一轮投递仍是现有有界重试/租约语义，不承诺跨网络故障“绝对只发一次”；本次防止的是“新轮次完全漏发”和“旧轮次覆盖新轮次”。
+- 无卡Session恢复后分卡排程、真实卡网/付款、生产release与服务现场等原未覆盖项仍保留。修复这四项不等于生产全面放行。
+
+技能使用范围：impeccable/UX指导仅用于明确错误状态、保留恢复操作和局部文案；context-handoff更新交接；delivery-commitment-check逐项对照四项证据，没有将未跑的69项算通过。

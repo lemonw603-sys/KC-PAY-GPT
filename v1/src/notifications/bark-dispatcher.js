@@ -8,10 +8,11 @@ export async function dispatchOneBarkNotification({ repository, client, maxAttem
       message: delivery.message,
       severity: delivery.severity
     });
-    await repository.markSent(delivery.id);
+    await repository.markSent(delivery.id, { incidentVersion: delivery.incidentVersion });
     return { handled: true, delivered: true, alertId: delivery.alertId };
   } catch (error) {
     const result = await repository.markFailed(delivery.id, {
+      incidentVersion: delivery.incidentVersion,
       error,
       retryable: error?.retryable !== false,
       attemptCount: delivery.attemptCount,

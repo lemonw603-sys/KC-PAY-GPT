@@ -1,4 +1,15 @@
 /* CDK page controller; owns only #cdks-view. Shared auth/notice/order navigation stay in admin.js. */
+window.cdkBatchDate = function (value) {
+  if (!value) return '日期未记录';
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return '日期未记录';
+  const parts = new Intl.DateTimeFormat('en', {
+    timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit'
+  }).formatToParts(date);
+  const pick = (type) => parts.find((part) => part.type === type).value;
+  return `${pick('year')}/${pick('month')}/${pick('day')}`;
+};
+
 window.createCdkPage = function ({ api, escapeHtml: esc, formatTime, showNotice, askForm, downloadCodes, downloadCdkStatusCsv }) {
   const root = document.querySelector('#cdks-view');
   const el = (id) => root.querySelector(`#${id}`);
@@ -54,7 +65,7 @@ window.createCdkPage = function ({ api, escapeHtml: esc, formatTime, showNotice,
     el('cdk-codes').innerHTML = rows.map((row) => {
       const [text, tone] = label(row);
       const available = row.status === 'AVAILABLE';
-      const destination = row.issuedNote || row.batchNote || (row.batchCount > 1 ? `${formatTime(row.createdAt).slice(0,10)} 那批 · ${row.batchCount} 张` : '—');
+      const destination = row.issuedNote || row.batchNote || (row.batchCount > 1 ? `${window.cdkBatchDate(row.createdAt)} 那批 · ${row.batchCount} 张` : '—');
       return `<tr>
         <td><input type="checkbox" data-cdk-select="${esc(row.id)}" aria-label="选择 ${esc(row.code || '历史卡密')}" ${available ? '' : 'disabled'}></td>
         <td><span class="cdk-code">${esc(row.code || '—（未留明文）')}</span><small>${row.expiresAt ? `有效至 ${esc(formatTime(row.expiresAt))}` : '不过期'}</small></td>
@@ -101,7 +112,7 @@ window.createCdkPage = function ({ api, escapeHtml: esc, formatTime, showNotice,
   }
   function renderBatchOptions() {
     const value = el('cdk-code-batch').value;
-    el('cdk-code-batch').innerHTML = '<option value="">全部批次</option>' + batches.map((b) => `<option value="${esc(b.batchNo)}">${esc(b.note || formatTime(b.createdAt).slice(0,10) + ' 那批')} · ${b.count} 张</option>`).join('');
+    el('cdk-code-batch').innerHTML = '<option value="">全部批次</option>' + batches.map((b) => `<option value="${esc(b.batchNo)}">${esc(b.note || window.cdkBatchDate(b.createdAt) + ' 那批')} · ${b.count} 张</option>`).join('');
     if (value && !batches.some((b) => b.batchNo === value)) el('cdk-code-batch').add(new Option('当前批次', value));
     el('cdk-code-batch').value = value;
     el('cdk-more-batches').hidden = !cursor;

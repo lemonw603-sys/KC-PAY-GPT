@@ -15,21 +15,22 @@ export function createAlertNotificationRepository(pool) {
   async function enqueueOpenAlerts() {
     const pushTypes = await currentPushTypes();
     await pool.query(
-      `INSERT IGNORE INTO alert_notifications (alert_id, channel, status, source_updated_at)
-       SELECT id, 'BARK', 'PENDING', updated_at FROM operator_alerts
+      `INSERT IGNORE INTO alert_notifications (alert_id, channel, status, source_updated_at, incident_version)
+       SELECT id, 'BARK', 'PENDING', updated_at, incident_version FROM operator_alerts
         WHERE status = 'OPEN' AND alert_type IN (?)`,
       [pushTypes]
     );
-    // 告警 RESOLVED→OPEN 翻回来时，原先被 CANCELLED 的通知行要复活重推（例如 token 再次失效）。
-    // 这一段以前**没有类型过滤**：白名单外的类型只要在历史上推过一次，就能靠这条路一直复活。
+    // The DB records the incident edge; polling need not observe RESOLVED.
+    // Mere message/updated_at changes cannot reopen a sent or exhausted delivery.
     await pool.query(
       `UPDATE alert_notifications n
        JOIN operator_alerts a ON a.id = n.alert_id
        SET n.status = 'PENDING', n.attempt_count = 0, n.next_attempt_at = NULL,
            n.locked_at = NULL, n.sent_at = NULL, n.last_error = NULL,
-           n.source_updated_at = a.updated_at
+           n.source_updated_at = a.updated_at, n.incident_version = a.incident_version
          WHERE n.channel = 'BARK' AND a.status = 'OPEN'
-         AND n.status = 'CANCELLED' AND a.alert_type IN (?)`,
+         AND (n.status = 'CANCELLED' OR n.incident_version < a.incident_version)
+         AND a.alert_type IN (?)`,
       [pushTypes]
     );
     await pool.query(
@@ -49,11 +50,12 @@ export function createAlertNotificationRepository(pool) {
       // 白名单在这里再判一次：入队时白、领取时也要白。否则白名单收窄之前遗留的 PENDING/RETRY 行
       // 会在改动上线后继续被推出去——那正是「改了没生效」的另一种形态。
       const [rows] = await connection.query(
-        `SELECT n.id, n.alert_id, n.attempt_count,
+        `SELECT n.id, n.alert_id, n.attempt_count, n.incident_version,
                 a.alert_type, a.severity, a.title, a.message
          FROM alert_notifications n
          JOIN operator_alerts a ON a.id = n.alert_id AND a.status = 'OPEN'
          WHERE n.channel = 'BARK' AND a.alert_type IN (?)
+           AND n.incident_version = a.incident_version
            AND (
              (n.status IN ('PENDING', 'RETRY') AND (n.next_attempt_at IS NULL OR n.next_attempt_at <= CURRENT_TIMESTAMP(3)))
              OR (n.status = 'SENDING' AND n.locked_at < CURRENT_TIMESTAMP(3) - INTERVAL 5 MINUTE)
@@ -79,6 +81,7 @@ export function createAlertNotificationRepository(pool) {
         id: row.id,
         alertId: row.alert_id,
         attemptCount: Number(row.attempt_count) + 1,
+        incidentVersion: Number(row.incident_version),
         type: row.alert_type,
         severity: row.severity,
         title: row.title,
@@ -92,28 +95,40 @@ export function createAlertNotificationRepository(pool) {
     }
   }
 
-  async function markSent(id) {
-    await pool.query(
+  function requireIncidentVersion(value) {
+    if (!Number.isSafeInteger(value) || value < 1) throw new TypeError('incidentVersion is required');
+    return value;
+  }
+
+  async function markSent(id, { incidentVersion } = {}) {
+    const version = requireIncidentVersion(incidentVersion);
+    const [result] = await pool.query(
       `UPDATE alert_notifications n JOIN operator_alerts a ON a.id = n.alert_id
        SET n.status = 'SENT', n.sent_at = CURRENT_TIMESTAMP(3),
          n.locked_at = NULL, n.next_attempt_at = NULL, n.last_error = NULL,
-         n.source_updated_at = a.updated_at WHERE n.id = ?`,
-      [id]
+         n.source_updated_at = a.updated_at
+       WHERE n.id = ? AND n.status = 'SENDING' AND a.status = 'OPEN'
+         AND n.incident_version = ? AND a.incident_version = ?`,
+      [id, version, version]
     );
+    return Number(result.affectedRows) === 1;
   }
 
-  async function markFailed(id, { error, retryable, attemptCount, maxAttempts }) {
+  async function markFailed(id, { incidentVersion, error, retryable, attemptCount, maxAttempts }) {
+    const version = requireIncidentVersion(incidentVersion);
     const exhausted = !retryable || attemptCount >= maxAttempts;
     const delaySeconds = Math.min(3_600, 15 * (2 ** Math.max(0, attemptCount - 1)));
-    await pool.query(
-      `UPDATE alert_notifications SET status = ?, locked_at = NULL,
-         next_attempt_at = ${exhausted ? 'NULL' : 'CURRENT_TIMESTAMP(3) + INTERVAL ? SECOND'},
-         last_error = ? WHERE id = ?`,
+    const [result] = await pool.query(
+      `UPDATE alert_notifications n JOIN operator_alerts a ON a.id = n.alert_id
+       SET n.status = ?, n.locked_at = NULL,
+         n.next_attempt_at = ${exhausted ? 'NULL' : 'CURRENT_TIMESTAMP(3) + INTERVAL ? SECOND'},
+         n.last_error = ? WHERE n.id = ? AND n.status = 'SENDING' AND a.status = 'OPEN'
+         AND n.incident_version = ? AND a.incident_version = ?`,
       exhausted
-        ? ['DEAD', redactSensitiveText(error?.message || 'Bark delivery failed'), id]
-        : ['RETRY', delaySeconds, redactSensitiveText(error?.message || 'Bark delivery failed'), id]
+        ? ['DEAD', redactSensitiveText(error?.message || 'Bark delivery failed'), id, version, version]
+        : ['RETRY', delaySeconds, redactSensitiveText(error?.message || 'Bark delivery failed'), id, version, version]
     );
-    return { exhausted, delaySeconds: exhausted ? null : delaySeconds };
+    return { exhausted, delaySeconds: exhausted ? null : delaySeconds, recorded: Number(result.affectedRows) === 1 };
   }
 
   /**
