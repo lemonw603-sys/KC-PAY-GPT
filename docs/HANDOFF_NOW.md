@@ -4,6 +4,8 @@
 
 ## 当前位置与下一步
 
+- **D-335最新：2case＋10alert已获关闭批准，执行中**。固定名单在v1/scripts/reconcile-historical-payment-notices.mjs；隔离测试与默认suite通过后，先生产dry-run、匹配digest并备份12目标行，再原子更新状态＋10个同状态order_events审计。不得改订单/资金/卡/CDK/账本或放开通用409；不改release，不重启服务。不把“已批准/脚本已写”当生产已完成，完成证据另更新。
+
 - **D-334 / B批已交只读分类预览，待裁定处置**：用户允许等待A复测时并行B核查。78单/123条OPEN提醒逐项分类见`reviews/2026-09-21-feedback-b/report.md`及preview.md。2旧case有正式NOT_CHARGED收口证据，10旧付款不明alert对应4未扣款终态/6已成功取消续费，建议只关闭这些历史状态（未获执行批准）。2条RECONCILIATION账本、7单续费待核（其中1缺CONSUMED）和16条旧CDK仍绑定需分清，不能清掉。明确演练4单；成功率当前20/78，窗口与演练排除待确认。未改应用/业务数据，不访问highvcc标签；A仍未结，23:20复测照常。
 
 - **已安排一次复测**：用户要求延长到约3小时；同一应用heartbeat任务id `highvcc`，已从22:20顺延至2026-09-21 **23:20北京时间**，COUNT=1、ACTIVE，目标当前任务。先读login-observation.md的会话指纹基线，只做一次只读验证；不reload/重登/续期/保活/生产写入。结果或无法继续时通知用户，不循环重试；任务后暂停/关闭。请保留电脑/应用及官方tab7，不为等待启动脚本。
