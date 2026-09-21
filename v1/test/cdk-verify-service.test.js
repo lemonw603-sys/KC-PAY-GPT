@@ -87,6 +87,12 @@ test('payment evidence keeps the code bound even when the order ended', async ()
   assert.equal(result.order.publicNo, 'PJV1-ABCDEFGHIJKLMNOPQRST');
 });
 
+test('expired no-payment failure cannot advertise a fresh order; unknown funds remain bound', async () => {
+  const expired = redeemed('RECHARGE_FAILED', { expiresAt: '2020-01-01T00:00:00Z' });
+  assert.equal((await serviceWith(expired)({ cdk: CODE })).state, 'EXPIRED');
+  assert.equal((await serviceWith(expired, { blocked: true })({ cdk: CODE })).state, 'BOUND_TO_ORDER');
+});
+
 test('a delivered or running order sends the customer to that order, without asking the ledger', async () => {
   for (const live of ['RECHARGE_SUCCESS', 'CARD_PURCHASING', 'SUBMIT_UNKNOWN', 'CREATED']) {
     let asked = false;

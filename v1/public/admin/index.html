@@ -7,10 +7,12 @@
   <meta name="theme-color" content="#f5f8fc">
   <title>Plus 运营后台</title>
   <link rel="icon" href="/admin/assets/favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/admin/assets/admin.css?v=26">
+  <link rel="stylesheet" href="/admin/assets/admin.css?v=27">
   <link rel="stylesheet" href="/admin/assets/workbench.css?v=19">
   <link rel="stylesheet" href="/admin/assets/cards.css?v=4">
-  <script src="/admin/assets/admin.js?v=81" defer></script>
+  <link rel="stylesheet" href="/admin/assets/cdks.css?v=1">
+  <script src="/admin/assets/cdks.js?v=1" defer></script>
+  <script src="/admin/assets/admin.js?v=82" defer></script>
 </head>
 <body>
   <div class="admin-shell">
@@ -107,69 +109,58 @@
 
 
 
-      <section id="cdks-view" class="view" hidden>
-        <section class="card cdk-card">
-          <div class="card-heading">
-            <div><p class="section-kicker">订单入口</p><h2>生成 CDK 卡密</h2></div>
-            <span class="write-badge">内部写入</span>
-          </div>
-          <p class="card-description">产品：Plus、Pro 5X、Pro 20X（Pro 是两阶段：先开通 Plus，再在同一账号里升级）。一次可生成 1–1000 个 CDK；生成后由你另行选择复制或下载 TXT，不会自动下载。数据库保存不可逆 HMAC，批次恢复副本加密保存。生成卡密不会触发开卡或充值。外部付款只记录“已确认”，实际金额和付款时间可在订单详情中补录；未补录时导出显示“未记录”。<strong>下载文件不代表已经交付客户。</strong></p>
-          <form class="cdk-form" id="cdk-form">
-            <label for="cdk-count">生成数量与产品</label>
-            <div>
-              <input id="cdk-count" name="count" type="number" min="1" max="1000" value="1" required>
-              <select id="cdk-plan" name="planType" aria-label="产品"><option value="plus">Plus</option><option value="pro_5x">Pro 5X</option><option value="pro_20x">Pro 20X</option></select>
-              <button class="primary-button" type="submit">生成 CDK</button>
+      <section id="cdks-view" class="view cdk-page" hidden>
+        <div class="cdk-kpis" id="cdk-liability" aria-label="卡密统计">
+          <button type="button" data-cdk-state="pending"><span>待兑换</span><b>—</b><small>不代表已售数量</small></button>
+          <button type="button" data-cdk-state="reserve"><span>应急备码</span><b>—</b><small>以后台登记为准</small></button>
+          <button type="button" data-cdk-state="done"><span>已成功交付</span><b>—</b><small>已确认充值成功</small></button>
+          <button type="button" data-cdk-state="attention"><span>要看一眼</span><b>—</b><small>不含历史残留</small></button>
+        </div>
+        <section class="cdk-block">
+          <h2>生成 <small>生成不触发开卡或充值</small></h2>
+          <form id="cdk-form" class="cdk-generate">
+            <div class="cdk-controls">
+              <label>数量<input id="cdk-count" type="number" min="1" max="1000" value="1" required></label>
+              <label>产品<select id="cdk-plan"><option value="plus">Plus</option><option value="pro_5x">Pro 5X</option><option value="pro_20x">Pro 20X</option></select></label>
+              <label>用途<select id="cdk-kind"><option value="NORMAL">直接发码</option><option value="RESERVE">应急备码</option><option value="MARKETPLACE">卡网投放</option></select></label>
+              <label>有效期<select id="cdk-expiry-mode"><option value="DEFAULT">生成起 30 天</option><option value="CUSTOM">自定义</option><option value="NEVER">不过期</option></select></label>
+              <label id="cdk-expiry-field" hidden>截止时间（北京时间）<input id="cdk-expires-at" type="datetime-local"></label>
+              <button class="cdk-primary" type="submit">生成并复制</button>
             </div>
+            <div class="cdk-controls cdk-extra" id="cdk-extra" hidden>
+              <label>去向备注<input id="cdk-note" maxlength="200" placeholder="客户 / 渠道 / 备码，选填"></label>
+              <label id="cdk-amount-field">这批收<input id="cdk-amount" inputmode="decimal" placeholder="选填"></label>
+              <label id="cdk-currency-field">币种<select id="cdk-currency"><option>CNY</option><option>USD</option></select></label>
+            </div>
+            <button id="cdk-toggle-note" class="cdk-link" type="button">添加备注</button>
           </form>
-          <div class="cdk-result" id="cdk-result" hidden>
-            <div><span id="cdk-batch-label">批次</span><span class="cdk-result-actions"><button class="text-button" id="download-cdks" type="button">下载本批次 TXT</button><button class="text-button" id="copy-cdks" type="button">复制全部</button></span></div>
-            <textarea id="generated-cdks" readonly spellcheck="false" aria-label="刚生成的 CDK 卡密"></textarea>
-            <p>CDK 已生成，尚未下载或交付。可复制，或点击“下载本批次 TXT”。</p>
+          <div id="cdk-result" class="cdk-fresh" hidden>
+            <div class="cdk-controls"><strong id="cdk-batch-label"></strong><button id="download-cdks" type="button">下载 TXT</button><button id="copy-cdks" type="button">复制全部</button><button id="cdk-dismiss" class="cdk-link" type="button">知道了</button></div>
+            <textarea id="generated-cdks" readonly spellcheck="false" aria-label="刚生成的卡密，复制失败时可手动复制"></textarea>
+            <small>下载文件不代表已经交付客户。</small>
           </div>
         </section>
-        <!-- D-279 ④：以单码为主的列表；批次退居其后，只当筛选与导出用。 -->
-        <section class="card cdk-card cdk-codes-card">
-          <div class="card-heading">
-            <div><p class="section-kicker">卡密</p><h2>每一张卡密</h2></div>
-            <button class="text-button" id="refresh-cdk-codes" type="button">刷新</button>
-          </div>
-          <!-- D-286 ①：欠客户多少次交付 vs 还能卖多少 -->
-          <div class="cdk-liability" id="cdk-liability"></div>
-          <form class="filters cdk-code-filters" id="cdk-code-filters">
-            <label><span class="sr-only">搜索</span><input id="cdk-code-q" type="search" placeholder="卡密 / 订单号 / 邮箱"></label>
-            <label><span class="sr-only">产品</span><select id="cdk-code-plan"><option value="">全部产品</option><option value="plus">Plus</option><option value="pro_5x">Pro 5X</option><option value="pro_20x">Pro 20X</option></select></label>
-            <label><span class="sr-only">状态</span><select id="cdk-code-status"><option value="">全部状态</option><option value="AVAILABLE">未使用</option><option value="REDEEMED">已兑换</option><option value="REVOKED">已作废</option></select></label>
-            <label><span class="sr-only">是否已发出</span><select id="cdk-code-issued"><option value="">发出与否不限</option><option value="no">还在手里</option><option value="yes">已发出</option></select></label>
-            <button class="primary-small" type="submit">筛选</button>
+        <section class="cdk-block">
+          <form id="cdk-code-filters" class="cdk-controls cdk-filters">
+            <label class="cdk-search"><span class="sr-only">搜索完整卡密、订单号、邮箱或备注</span><input id="cdk-code-q" type="search" placeholder="完整卡密 / 订单号 / 邮箱 / 备注"></label>
+            <select id="cdk-code-plan" aria-label="按产品筛选"><option value="">全部产品</option><option value="plus">Plus</option><option value="pro_5x">Pro 5X</option><option value="pro_20x">Pro 20X</option></select>
+            <select id="cdk-code-status" aria-label="按状态筛选"><option value="">全部状态</option><option value="pending">待兑换</option><option value="reserve">应急备码</option><option value="processing">处理中</option><option value="done">已成功交付</option><option value="stuck">兑了没成</option><option value="attention">要看一眼</option><option value="expired">已过期</option><option value="revoked">已作废</option><option value="legacy">历史未分类</option></select>
+            <select id="cdk-code-kind" aria-label="按用途筛选"><option value="">全部用途</option><option value="NORMAL">直接发码</option><option value="RESERVE">应急备码</option><option value="MARKETPLACE">卡网投放</option></select>
+            <select id="cdk-code-batch" aria-label="按批次筛选"><option value="">全部批次</option></select>
+            <button type="submit">筛选</button><button id="refresh-cdk-codes" class="cdk-link" type="button">刷新</button>
           </form>
-          <table class="data-table cdk-codes-table">
-            <thead><tr><th>卡密</th><th>产品</th><th>状态</th><th>绑定订单</th><th>客户邮箱</th><th>最近动静</th><th>操作</th></tr></thead>
-            <tbody id="cdk-codes"></tbody>
-          </table>
-          <div class="pager">
-            <button class="text-button" id="cdk-code-prev" type="button">上一页</button>
-            <span id="cdk-code-page-info"></span>
-            <button class="text-button" id="cdk-code-more" type="button">下一页</button>
+          <details class="cdk-export"><summary>批次与导出</summary>
+            <div class="cdk-controls"><button id="cdk-more-batches" type="button">更多批次</button><button id="cdk-batch-meta" type="button">修改所选批次备注与金额</button><button id="cdk-original" type="button">原始整批 TXT（留档）</button><button id="cdk-report" type="button">逐码状态 CSV</button></div>
+            <p id="cdk-batch-info"></p>
+          </details>
+          <div id="cdk-bulk-actions" class="cdk-bulk" hidden>
+            <strong id="cdk-selected-count"></strong><button type="button" data-cdk-bulk="issue">登记已发出</button><button type="button" data-cdk-bulk="expiry">设有效期 / 延期</button><button class="cdk-danger" type="button" data-cdk-bulk="revoke">作废</button><button id="cdk-clear-selection" class="cdk-link" type="button">取消选择</button>
           </div>
-        </section>
-        <section class="card cdk-card cdk-batches-card">
-          <div class="card-heading">
-            <div><p class="section-kicker">批次记录</p><h2>最近 CDK 批次</h2></div>
-            <button class="text-button" id="refresh-cdk-batches" type="button">刷新批次列表</button>
-          </div>
-          <p class="card-description">每个新版批次可单独下载原始 TXT 和带状态的 CSV 留档；作废只影响尚未兑换的卡密，记录会保留便于倒查。</p>
-          <form class="filters cdk-batch-filters" id="cdk-batch-filters">
-            <label><span class="sr-only">产品</span><select id="cdk-batch-plan"><option value="">全部产品</option><option value="plus">Plus</option><option value="pro_5x">Pro 5X</option><option value="pro_20x">Pro 20X</option></select></label>
-            <label><span class="sr-only">状态</span><select id="cdk-batch-status"><option value="">全部状态</option><option value="AVAILABLE">含未使用</option><option value="REDEEMED">含已兑换</option><option value="REVOKED">含已作废</option></select></label>
-            <label><span class="sr-only">开始日期</span><input id="cdk-batch-from" type="date"></label>
-            <label><span class="sr-only">结束日期</span><input id="cdk-batch-to" type="date"></label>
-            <button class="primary-small" type="submit">筛选</button>
-            <button class="text-button" id="export-cdk-batches" type="button">导出批次汇总 CSV</button>
-            <button class="text-button" id="export-cdk-trace" type="button">导出订单追溯 CSV</button>
-          </form>
-          <div class="mini-list cdk-batch-list" id="cdk-batches"></div>
-          <div class="pagination"><span id="cdk-batch-page-info">最近批次</span><button class="text-button" id="cdk-batch-more" type="button" hidden>加载更多</button></div>
+          <div class="cdk-table-wrap"><table class="cdk-table">
+            <thead><tr><th><input id="cdk-select-page" type="checkbox" aria-label="全选本页未使用的卡密"></th><th>卡密</th><th>产品</th><th>状态</th><th>去向</th><th>客户邮箱</th><th>最近动静</th><th>操作</th></tr></thead>
+            <tbody id="cdk-codes"><tr><td colspan="8">正在读取卡密…</td></tr></tbody>
+          </table></div>
+          <div class="cdk-pager"><button id="cdk-code-prev" type="button">上一页</button><span id="cdk-code-page-info" aria-live="polite"></span><button id="cdk-code-more" type="button">下一页</button></div>
         </section>
       </section>
 

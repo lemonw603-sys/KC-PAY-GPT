@@ -216,7 +216,7 @@ export async function createOrderFromCdk(pool, input) {
     );
     const [cdkUpdate] = await connection.query(
       `UPDATE cdks SET status = 'REDEEMED', order_id = ?,
-         redeemed_at = CURRENT_TIMESTAMP(3)
+         redeemed_at = CURRENT_TIMESTAMP(3), issued_at = COALESCE(issued_at, CURRENT_TIMESTAMP(3))
        WHERE id = ? AND status = 'AVAILABLE'`,
       [input.orderId, cdkId]
     );

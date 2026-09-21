@@ -100,7 +100,6 @@ const state = {
   view: 'overview', nav: 'overview', page: 1, pageSize: 20, total: 0, status: '', query: '',
   from: '', to: '', timeField: 'CREATED',
   stockProvider: null, stockCatalog: null, stockCardTypeId: '', acceptingOrders: false,
-  cdkLoadSequence: 0, cdkBatchCursor: null, cdkBatchRows: [],
   reconciliationPage: 1, reconciliationTotal: 0,
   browserPage: 1, browserTotal: 0
 };
@@ -125,19 +124,13 @@ const elements = {
   detailTitle: document.querySelector('#detail-title'),
   detailContent: document.querySelector('#detail-content'),
   notice: document.querySelector('#page-notice')
-  ,cdkForm: document.querySelector('#cdk-form'), cdkCount: document.querySelector('#cdk-count'),
-  cdkResult: document.querySelector('#cdk-result'), generatedCdks: document.querySelector('#generated-cdks'),
-  cdkBatchLabel: document.querySelector('#cdk-batch-label'), copyCdks: document.querySelector('#copy-cdks'),
-  downloadCdks: document.querySelector('#download-cdks'), cdkBatches: document.querySelector('#cdk-batches'),
-  cdkBatchFilters: document.querySelector('#cdk-batch-filters'), cdkBatchPlan: document.querySelector('#cdk-batch-plan'), cdkBatchStatus: document.querySelector('#cdk-batch-status'), cdkBatchFrom: document.querySelector('#cdk-batch-from'), cdkBatchTo: document.querySelector('#cdk-batch-to'), cdkBatchMore: document.querySelector('#cdk-batch-more'), cdkBatchPageInfo: document.querySelector('#cdk-batch-page-info'), exportCdkBatches: document.querySelector('#export-cdk-batches'), exportCdkTrace: document.querySelector('#export-cdk-trace'),
-  stockJobs: document.querySelector('#stock-jobs'),
+  ,stockJobs: document.querySelector('#stock-jobs'),
   stockCards: document.querySelector('#stock-cards'),
   cardsRigs: document.querySelector('#cards-rigs'), stockCardsHistory: document.querySelector('#stock-cards-history'),
   settingsPolicies: document.querySelector('#settings-policies'),
   settingsThresholds: document.querySelector('#settings-thresholds'),
   settingsGlobal: document.querySelector('#settings-global'),
   cardRetirementList: document.querySelector('#card-retirement-list'),
-  cdkPlan: document.querySelector('#cdk-plan'),
   stockOpenForm: document.querySelector('#stock-open-form'), stockOpenCount: document.querySelector('#stock-open-count'),
   stockOpenAmount: document.querySelector('#stock-open-amount'), stockCardType: document.querySelector('#stock-card-type'),
   refreshCardProviderRules: document.querySelector('#refresh-card-provider-rules'),
@@ -240,6 +233,7 @@ async function api(url, options) {
   const payload = await response.json().catch(() => null);
   if (!response.ok) {
     const error = new Error(payload?.error || 'request_failed');
+    error.status = response.status;
     error.payload = payload;
     throw error;
   }
@@ -776,19 +770,18 @@ const PLAN_LABELS = Object.freeze({ plus: 'Plus', pro_5x: 'Pro 5X', pro_20x: 'Pr
 function cdkStatusLabel(row) {
   if (row.status === 'REVOKED') return { text: '已作废', tone: 'mute' };
   if (row.status === 'REDEEMED') {
+    if (['RECHARGE_FAILED', 'CLOSED'].includes(row.orderStatus)) return { text: '兑了没成 · 码没退回', tone: 'warn' };
     return row.orderStatus === 'RECHARGE_SUCCESS'
       ? { text: '已交付', tone: 'ok' }
       : { text: '使用中', tone: 'info' };
   }
   if (row.expired) return { text: '已过期', tone: 'warn' };
   if (!row.redeemableNow) return { text: '暂不可兑', tone: 'warn' };   // 产品路线关了（D-286 ②）
-  return row.issuedAt ? { text: '已发出·待兑', tone: 'info' } : { text: '可用·在手里', tone: 'ok' };
+  return row.issuedAt ? { text: '待兑换', tone: 'info' } : { text: '未使用', tone: 'ok' };
 }
 
-let justGeneratedCodes = new Set();      // D-279 ①：这批码在列表里标「刚生成」
-let cdkCodePage = 0;
-const CDK_CODE_PAGE_SIZE = 50;
-function resetCdkCodePaging() { cdkCodePage = 0; }
+// The page controller is isolated; shared order navigation stays in this file.
+const cdkPage = window.createCdkPage?.({ api, escapeHtml, formatTime, showNotice, askForm, downloadCodes, downloadCdkStatusCsv });
 
 const RECONCILIATION_STATUS_LABELS = Object.freeze({ OPEN: '待处理', ASSIGNED: '已分配', RESOLVED: '已解决' });
 const RECONCILIATION_SEVERITY_LABELS = Object.freeze({ critical: '严重', warning: '警告', info: '提示' });
@@ -996,7 +989,8 @@ function askForm({ title, message = '', fields = [], confirmLabel = '确认', da
       if (field.type === 'textarea') {
         return `<label class="ask-field" for="${id}">${escapeHtml(field.label)}<textarea id="${id}" name="${escapeHtml(field.name)}" rows="3" placeholder="${escapeHtml(field.placeholder || '')}"${required}>${escapeHtml(field.value || '')}</textarea></label>`;
       }
-      return `<label class="ask-field" for="${id}">${escapeHtml(field.label)}<input id="${id}" name="${escapeHtml(field.name)}" type="text" value="${escapeHtml(field.value || '')}" placeholder="${escapeHtml(field.placeholder || '')}"${required}></label>`;
+      const inputType = field.type === 'datetime-local' ? 'datetime-local' : 'text';
+      return `<label class="ask-field" for="${id}">${escapeHtml(field.label)}<input id="${id}" name="${escapeHtml(field.name)}" type="${inputType}" value="${escapeHtml(field.value || '')}" placeholder="${escapeHtml(field.placeholder || '')}"${required}></label>`;
     };
     dialog.innerHTML = `<form class="ask-form">
       <h3>${escapeHtml(title)}</h3>
@@ -1200,95 +1194,9 @@ function downloadCdkStatusCsv(payload) {
   URL.revokeObjectURL(url);
 }
 
-async function loadCdkBatches() {
-  const sequence = ++state.cdkLoadSequence;
-  const query = new URLSearchParams({ limit: '50' });
-  if (state.cdkBatchCursor) query.set('cursor', state.cdkBatchCursor);
-  if (elements.cdkBatchPlan?.value) query.set('planType', elements.cdkBatchPlan.value);
-  if (elements.cdkBatchStatus?.value) query.set('status', elements.cdkBatchStatus.value);
-  if (elements.cdkBatchFrom?.value) query.set('fromDate', elements.cdkBatchFrom.value);
-  if (elements.cdkBatchTo?.value) query.set('toDate', elements.cdkBatchTo.value);
-  const payload = await api(`/api/v1/admin/cdks/batches?${query}`);
-  if (sequence !== state.cdkLoadSequence) return;
-  state.cdkBatchRows = state.cdkBatchCursor ? [...state.cdkBatchRows, ...payload.batches] : payload.batches;
-  state.cdkBatchCursor = payload.nextCursor || null;
-  elements.cdkBatches.innerHTML = state.cdkBatchRows.length
-    ? state.cdkBatchRows.map((batch) => {
-      const fullyRevoked = batch.revokedCount > 0 && batch.revokedCount === batch.totalCount;
-      const partlyRevoked = batch.revokedCount > 0 && !fullyRevoked;
-      const batchClass = fullyRevoked ? 'cdk-batch-revoked' : partlyRevoked ? 'cdk-batch-partial' : '';
-      const badge = fullyRevoked ? '<b class="cdk-state-badge is-revoked">已全部作废</b>'
-        : partlyRevoked ? '<b class="cdk-state-badge is-partial">部分作废</b>'
-          : batch.availableCount > 0 ? '<b class="cdk-state-badge is-available">可使用</b>' : '<b class="cdk-state-badge">已用完</b>';
-      return `<div class="${batchClass}" data-cdk-batch="${escapeHtml(batch.batchNo)}">
-      <span><strong>${escapeHtml(batch.batchNo)} · ${escapeHtml(batch.planType.toUpperCase())} ${badge}</strong>
-      <small>总数 ${batch.totalCount} · 未使用 ${batch.availableCount} · 已兑换 ${batch.redeemedCount} · 已作废 ${batch.revokedCount} · ${formatTime(batch.createdAt)}</small></span>
-      <span class="cdk-batch-actions">
-        ${batch.downloadable ? `<button type="button" class="text-button" data-download-batch data-redeemed-count="${batch.redeemedCount}" data-revoked-count="${batch.revokedCount}">下载原始 TXT</button><button type="button" class="text-button" data-status-report>下载状态清单 CSV</button>` : '<em>历史批次无明文恢复副本</em>'}
-        ${batch.availableCount > 0 ? '<button type="button" class="danger-small" data-revoke-batch>作废未使用</button>' : ''}
-      </span></div>`;
-    }).join('')
-    : '<p class="empty-state">还没有符合条件的 CDK 批次</p>';
-  if (elements.cdkBatchMore) elements.cdkBatchMore.hidden = !state.cdkBatchCursor;
-  if (elements.cdkBatchPageInfo) elements.cdkBatchPageInfo.textContent = `${state.cdkBatchRows.length} 个批次${state.cdkBatchCursor ? ' · 还有更多' : ''}`;
-  elements.syncTime.textContent = `更新于 ${new Date().toLocaleTimeString('zh-CN', { hour12: false })}`;
-}
 
-async function downloadStoredBatch(batchNo, button) {
-  const redeemedCount = Number(button.dataset.redeemedCount || 0);
-  const revokedCount = Number(button.dataset.revokedCount || 0);
-  if ((redeemedCount || revokedCount) && !window.confirm(
-    `批次 ${batchNo} 的原始文件包含 ${redeemedCount} 个已兑换、${revokedCount} 个已作废 CDK。\n\n仅用于核对和留档，禁止把文件中的码重新发放。确认继续导出？`
-  )) return;
-  button.disabled = true;
-  try {
-    const payload = await api(`/api/v1/admin/cdks/${encodeURIComponent(batchNo)}/download`, {
-      method: 'POST'
-    });
-    downloadCodes(payload.batchNo, payload.codes);
-    showNotice(`已导出批次 ${payload.batchNo}。`, 'success');
-  } catch (error) {
-    showNotice(cdkErrorMessage(error, '批次导出'));
-  } finally { button.disabled = false; }
-}
 
-async function downloadStoredBatchStatus(batchNo, button) {
-  button.disabled = true;
-  try {
-    const payload = await api(`/api/v1/admin/cdks/${encodeURIComponent(batchNo)}/status-report`, {
-      method: 'POST'
-    });
-    downloadCdkStatusCsv(payload);
-    showNotice(`已下载批次 ${payload.batchNo} 的逐码状态清单。`, 'success');
-  } catch (error) {
-    showNotice(cdkErrorMessage(error, '状态清单下载'));
-  } finally { button.disabled = false; }
-}
 
-async function revokeStoredBatch(batchNo, button) {
-  if (!window.confirm(`确认作废批次 ${batchNo} 中所有未使用 CDK？\n\n已兑换的订单不会受影响。`)) return;
-  button.disabled = true;
-  let result;
-  try {
-    result = await api(`/api/v1/admin/cdks/${encodeURIComponent(batchNo)}/revoke`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ reason: '后台批次作废' })
-    });
-  } catch (error) {
-    showNotice(cdkErrorMessage(error, '批次作废'));
-    button.disabled = false;
-    return;
-  }
-  button.textContent = '已作废';
-  showNotice(result.revokedCount
-    ? `已作废 ${result.revokedCount} 个未使用 CDK。`
-    : '该批次已没有未使用 CDK，无需重复作废。', 'success');
-  try {
-    await loadCdkBatches();
-  } catch {
-    showNotice(`已作废 ${result.revokedCount} 个未使用 CDK，但批次列表刷新失败；请点“刷新批次列表”核对。`, 'warning');
-  }
-}
 
 const STOCK_JOB_LABELS = Object.freeze({
   PENDING: '等待执行', RUNNING: '执行中', COMPLETED: '已完成', REVIEW_REQUIRED: '需要核对'
@@ -2653,12 +2561,7 @@ async function switchView(view, { status = '' } = {}) {
   } else if (view === 'cdks') {
     elements.viewKicker.textContent = '卡密管理';
     elements.viewTitle.textContent = '生成客户兑换码';
-    // D-279 ④：以单码为主；批次列表退居其后，只当筛选与导出用。
-    resetCdkCodePaging();
-    await Promise.all([
-      loadCdkCodes().catch(() => {}),
-      loadCdkBatches().catch(() => {})
-    ]);
+    await cdkPage.enter();
   } else if (view === 'stock') {
     elements.viewKicker.textContent = '卡片';
     elements.viewTitle.textContent = '库存、卡台、导入';
@@ -3013,70 +2916,11 @@ window.setInterval(() => {
   const refresh = state.view === 'overview' ? loadOverview
     : state.view === 'orders' ? loadOrders
       : state.view === 'stock' ? loadStock
-        : state.view === 'cdks' ? loadCdkBatches
+        : state.view === 'cdks' ? () => cdkPage.load({ automatic: true })
           : state.view === 'diagnostics'
             ? () => Promise.all([loadReconciliationCases(), loadBrowserDispatchJobs(), loadBrowserRuns()]) : null;
   refresh?.().catch(() => {});
 }, 10_000);
-elements.cdkForm.addEventListener('submit', async (event) => {
-  event.preventDefault();
-  hideNotice();
-  const button = elements.cdkForm.querySelector('button[type="submit"]');
-  button.disabled = true;
-  button.textContent = '生成中…';
-  const count = Number(elements.cdkCount.value);
-  if (count > 10 && !window.confirm(`确认一次生成 ${count} 个 CDK？\n\n生成只创建批次，不会自动下载或交付。`)) {
-    button.disabled = false;
-    button.textContent = '生成 CDK';
-    return;
-  }
-  const planType = elements.cdkPlan?.value || 'plus';
-  const storedRequest = JSON.parse(sessionStorage.getItem('cdk-generation-request') || 'null');
-  const requestKey = storedRequest?.count === count && (storedRequest.planType || 'plus') === planType
-    ? storedRequest.key : crypto.randomUUID();
-  sessionStorage.setItem('cdk-generation-request', JSON.stringify({ count, planType, key: requestKey }));
-  let payload;
-  try {
-    payload = await api('/api/v1/admin/cdks/generate', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Idempotency-Key': requestKey },
-      body: JSON.stringify({ count, planType })
-    });
-    elements.generatedCdks.value = payload.codes.join('\n');
-    elements.generatedCdks.rows = Math.min(Math.max(payload.codes.length, 3), 18);
-    // D-279 ①：结果区带批次号 / 产品 / 数量 / 时间，不只是批次号。
-    const planLabel = PLAN_LABELS[payload.planType] || payload.planType || '—';
-    elements.cdkBatchLabel.textContent =
-      `批次 ${payload.batchNo} · ${planLabel} · ${payload.count} 个 · ${new Date().toLocaleString('zh-CN', { hour12: false })}`;
-    elements.cdkResult.hidden = false;
-    sessionStorage.removeItem('cdk-generation-request');
-    // D-279 ⑥ 生成即复制：直接进剪贴板，省掉「全选再复制」。剪贴板可能被浏览器拒
-    // （非安全上下文/无权限），那就如实说没复制上、码仍在上面框里，不假装成功。
-    try {
-      await navigator.clipboard.writeText(payload.codes.join('\n'));
-      showNotice(`已生成 ${payload.count} 个${planLabel}码，并复制到剪贴板。`, 'success');
-    } catch {
-      showNotice(`已生成 ${payload.count} 个${planLabel}码；自动复制失败，请手动从上方复制。`, 'warning');
-    }
-    justGeneratedCodes = new Set(payload.codes);   // 列表里给这批标「刚生成」
-    resetCdkCodePaging();
-    loadCdkCodes().catch(() => {});
-  } catch (error) {
-    showNotice(cdkErrorMessage(error, 'CDK 生成'));
-    button.disabled = false;
-    button.textContent = '生成 CDK';
-    return;
-  }
-  showNotice(`已生成批次 ${payload.batchNo}，共 ${payload.count} 个 CDK；尚未下载。`, 'success');
-  try {
-    await loadCdkBatches();
-  } catch {
-    showNotice(`批次 ${payload.batchNo} 已生成，但列表刷新失败；请点“刷新批次列表”核对，不要再次生成。`, 'warning');
-  } finally {
-    button.disabled = false;
-    button.textContent = '生成 CDK';
-  }
-});
 // 工作台 CDK 快捷「生成即复制」（D-279 第 6 条）：复用 cdks/generate + 幂等键 + 剪贴板。
 document.querySelector('#wb-cdk-form')?.addEventListener('submit', async (event) => {
   event.preventDefault();
@@ -3103,34 +2947,6 @@ document.querySelector('#wb-cdk-form')?.addEventListener('submit', async (event)
     showNotice(cdkErrorMessage(error, 'CDK 生成'));
   } finally {
     if (button) { button.disabled = false; button.textContent = '生成并复制'; }
-  }
-});
-elements.downloadCdks.addEventListener('click', () => {
-  const batchNo = elements.cdkBatchLabel.textContent.match(/^批次\s+(\S+)/)?.[1] || 'cdks';
-  downloadCodes(batchNo, elements.generatedCdks.value.split(/\r?\n/).filter(Boolean));
-});
-function resetCdkBatchPaging() { state.cdkBatchCursor = null; state.cdkBatchRows = []; }
-document.querySelector('#refresh-cdk-batches')?.addEventListener('click', () => { resetCdkBatchPaging(); loadCdkBatches().catch(() => showNotice('批次记录读取失败。')); });
-elements.cdkBatchFilters?.addEventListener('submit', (event) => { event.preventDefault(); resetCdkBatchPaging(); loadCdkBatches().catch(() => showNotice('批次筛选失败。')); });
-elements.cdkBatchMore?.addEventListener('click', () => loadCdkBatches().catch(() => showNotice('更多批次读取失败。')));
-elements.exportCdkBatches?.addEventListener('click', () => downloadOperationsCsv('cdk_batches').catch(() => showNotice('批次汇总导出失败。')));
-elements.exportCdkTrace?.addEventListener('click', () => downloadOperationsCsv('order_trace').catch(() => showNotice('订单追溯导出失败。')));
-elements.cdkBatches.addEventListener('click', (event) => {
-  const row = event.target.closest('[data-cdk-batch]');
-  if (!row) return;
-  const batchNo = row.dataset.cdkBatch;
-  if (event.target.closest('[data-download-batch]')) downloadStoredBatch(batchNo, event.target.closest('button'));
-  if (event.target.closest('[data-status-report]')) downloadStoredBatchStatus(batchNo, event.target.closest('button'));
-  if (event.target.closest('[data-revoke-batch]')) revokeStoredBatch(batchNo, event.target.closest('button'));
-});
-elements.copyCdks.addEventListener('click', async () => {
-  try {
-    await navigator.clipboard.writeText(elements.generatedCdks.value);
-    elements.copyCdks.textContent = '已复制';
-    setTimeout(() => { elements.copyCdks.textContent = '复制全部'; }, 1500);
-  } catch {
-    elements.generatedCdks.select();
-    showNotice('自动复制失败，已选中卡密，请手动复制。');
   }
 });
 function manualCardImportErrorMessage(error) {
@@ -3286,152 +3102,9 @@ api('/api/v1/admin/session')
   .catch((error) => { if (error.message !== 'admin_auth_required') showNotice('后台暂时无法加载。'); });
 
 // ——— D-279 ④⑤ / D-286：CDK 单码列表（明文码按 D-286 裁定直接显示，后台仅 Lemon 使用）———
-async function loadCdkCodes() {
-  const box = document.querySelector('#cdk-codes');
-  if (!box) return;
-  const params = new URLSearchParams({ limit: CDK_CODE_PAGE_SIZE, offset: cdkCodePage * CDK_CODE_PAGE_SIZE });
-  const plan = document.querySelector('#cdk-code-plan')?.value;
-  const status = document.querySelector('#cdk-code-status')?.value;
-  const issued = document.querySelector('#cdk-code-issued')?.value;
-  const q = document.querySelector('#cdk-code-q')?.value?.trim();
-  if (plan) params.set('planType', plan);
-  if (status) params.set('status', status);
-  if (issued) params.set('issued', issued);
-  if (q) params.set('q', q);
-
-  let payload;
-  let liability = null;
-  try {
-    [payload, liability] = await Promise.all([
-      api(`/api/v1/admin/cdks/codes?${params}`),
-      api('/api/v1/admin/cdks/liability').catch(() => null)
-    ]);
-  } catch {
-    // 失败就说失败，不显示成「没有码」（F-63 同一个教训）。
-    // 负债条也必须一起翻成失败态——否则它会留着上一次的旧数字，看着像「当前欠 0」，
-    // 而这正是「失败冒充正常」的另一张脸。
-    box.innerHTML = '<tr><td colspan="7" class="empty-cell">单码列表读取失败，请刷新重试。</td></tr>';
-    const failBar = document.querySelector('#cdk-liability');
-    if (failBar) failBar.innerHTML = '<span class="status-chip status-red"><i></i>读取失败，数字不可信，请刷新</span>';
-    return;
-  }
-
-  // D-286 ①：欠客户多少次交付 vs 还能卖多少，摆在列表上方
-  const bar = document.querySelector('#cdk-liability');
-  if (bar) {
-    // 用旧后台自己的 .status-chip（admin.css:171），不要用工作台的 .wb-chip ——
-    // 后者定义是 `.workbench .wb-chip{...}`，而 CDK 页(#cdks-view)不在 .workbench 作用域里，
-    // 写了也不生效，chip 会退化成糊在一起的纯文字。CDK 页换候光皮是后面统一做的事（D-283）。
-    bar.innerHTML = liability
-      ? `<span class="status-chip status-orange"><i></i>欠交付 ${liability.owed}</span>`
-        + `<span class="status-chip status-green"><i></i>在手可卖 ${liability.stock}</span>`
-        + `<span class="status-chip status-gray"><i></i>已交付 ${liability.delivered}</span>`
-        + (liability.expired ? `<span class="status-chip status-red"><i></i>已过期 ${liability.expired}</span>` : '')
-      : '<span class="status-chip status-gray"><i></i>负债汇总读取失败</span>';
-  }
-
-  box.innerHTML = payload.codes.length
-    ? payload.codes.map((row) => {
-      const label = cdkStatusLabel(row);
-      const fresh = row.code && justGeneratedCodes.has(row.code);
-      // 明文取不到时如实显示「—（批次未留明文）」，不编一个码出来
-      const codeCell = row.code
-        ? `<strong class="mono">${escapeHtml(row.code)}</strong>`
-        : '<span class="muted">—（批次未留明文）</span>';
-      const actions = [
-        row.code ? `<button class="text-button" type="button" data-copy-cdk="${escapeHtml(row.code)}">复制</button>` : '',
-        row.status === 'AVAILABLE' && !row.issuedAt ? `<button class="text-button" type="button" data-issue-cdk="${escapeHtml(row.id)}">标为已发出</button>` : '',
-        row.status === 'AVAILABLE' && row.issuedAt ? `<button class="text-button" type="button" data-unissue-cdk="${escapeHtml(row.id)}">撤销已发出</button>` : '',
-        row.status === 'AVAILABLE' ? `<button class="danger-small" type="button" data-revoke-cdk="${escapeHtml(row.id)}">作废</button>` : ''
-      ].filter(Boolean).join('');
-      return `<tr>
-        <td>${codeCell}${fresh ? '<small class="cdk-fresh">刚生成</small>' : ''}</td>
-        <td>${escapeHtml(PLAN_LABELS[row.planType] || row.planType || '—')}</td>
-        <td><span class="cell-main">${escapeHtml(label.text)}</span>${row.issuedNote ? `<small>${escapeHtml(row.issuedNote)}</small>` : ''}</td>
-        <td>${row.orderPublicNo ? `<button class="text-button" type="button" data-open-order="${escapeHtml(row.orderPublicNo)}">${escapeHtml(row.orderPublicNo)}</button>` : '—'}</td>
-        <td>${escapeHtml(row.customerEmail || '—')}</td>
-        <td>${formatTime(row.redeemedAt || row.issuedAt || row.createdAt)}</td>
-        <td class="case-actions">${actions}</td>
-      </tr>`;
-    }).join('')
-    : '<tr><td colspan="7" class="empty-cell">没有符合条件的 CDK</td></tr>';
-
-  const info = document.querySelector('#cdk-code-page-info');
-  if (info) {
-    const from = payload.total ? cdkCodePage * CDK_CODE_PAGE_SIZE + 1 : 0;
-    const to = cdkCodePage * CDK_CODE_PAGE_SIZE + payload.codes.length;
-    info.textContent = `${from}-${to} / 共 ${payload.total}`;
-  }
-  const more = document.querySelector('#cdk-code-more');
-  if (more) more.disabled = (cdkCodePage + 1) * CDK_CODE_PAGE_SIZE >= payload.total;
-  const prev = document.querySelector('#cdk-code-prev');
-  if (prev) prev.disabled = cdkCodePage === 0;
-}
 
 // CDK 单码列表的交互（复制 / 标为已发出 / 撤销 / 作废 / 分页 / 筛选）
-document.addEventListener('click', async (event) => {
-  const copyBtn = event.target.closest('[data-copy-cdk]');
-  if (copyBtn) {
-    try {
-      await navigator.clipboard.writeText(copyBtn.dataset.copyCdk);
-      showNotice('卡密已复制。', 'success');
-    } catch {
-      showNotice('复制失败（浏览器未授权），请手动选中复制。');
-    }
-    return;
-  }
-  const issueBtn = event.target.closest('[data-issue-cdk]');
-  if (issueBtn) {
-    const note = window.prompt('发给谁 / 哪个渠道？（可留空，仅备注用）', '');
-    if (note === null) return;
-    try {
-      await api(`/api/v1/admin/cdks/codes/${encodeURIComponent(issueBtn.dataset.issueCdk)}/issued`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ note, issued: true })
-      });
-      showNotice('已标记为发出；它现在算「欠客户的交付」，不再算在手库存。', 'success');
-      await loadCdkCodes();
-    } catch (error) { showNotice(cdkErrorMessage(error, '标记已发出')); }
-    return;
-  }
-  const unissueBtn = event.target.closest('[data-unissue-cdk]');
-  if (unissueBtn) {
-    try {
-      await api(`/api/v1/admin/cdks/codes/${encodeURIComponent(unissueBtn.dataset.unissueCdk)}/issued`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ issued: false })
-      });
-      showNotice('已撤销「发出」标记，回到在手库存。', 'success');
-      await loadCdkCodes();
-    } catch (error) { showNotice(cdkErrorMessage(error, '撤销已发出')); }
-    return;
-  }
-  const revokeBtn = event.target.closest('[data-revoke-cdk]');
-  if (revokeBtn) {
-    // 作废不可逆，且服务端只允许作废还没被用掉的码
-    if (!window.confirm('确认作废这张卡密？\n\n作废后它不能再被兑换，且不可撤销。\n已经绑定订单的码不能在这里作废——那要走退款/补偿。')) return;
-    const reason = window.prompt('作废原因（会记进审计）', '');
-    if (reason === null) return;
-    try {
-      await api(`/api/v1/admin/cdks/codes/${encodeURIComponent(revokeBtn.dataset.revokeCdk)}/revoke`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ reason })
-      });
-      showNotice('已作废这张卡密。', 'success');
-      await loadCdkCodes();
-    } catch (error) { showNotice(cdkErrorMessage(error, '作废卡密')); }
-    return;
-  }
-  if (event.target.closest('#cdk-code-more')) { cdkCodePage += 1; loadCdkCodes().catch(() => {}); return; }
-  if (event.target.closest('#cdk-code-prev')) { cdkCodePage = Math.max(0, cdkCodePage - 1); loadCdkCodes().catch(() => {}); return; }
-  if (event.target.closest('#refresh-cdk-codes')) { resetCdkCodePaging(); loadCdkCodes().catch(() => {}); }
-});
 
-document.querySelector('#cdk-code-filters')?.addEventListener('submit', (event) => {
-  event.preventDefault();
-  resetCdkCodePaging();
-  loadCdkCodes().catch(() => showNotice('单码列表读取失败。'));
-});
 
 // data-open-order：从全局搜索的 CDK 匹配行、CDK 单码列表一键进订单详情。
 // 这两处都渲染了按钮却一直没有处理器 —— 按钮能点但到不了对象，正是 F-64 批评的那种假落点。

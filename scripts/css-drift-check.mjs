@@ -21,7 +21,7 @@ import { fileURLToPath } from 'node:url';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const CSS_DIR = path.join(ROOT, 'v1/public/admin/assets');
 const BASELINE = path.join(ROOT, 'docs/design/css-baseline.json');
-const FILES = ['admin.css', 'workbench.css', 'cards.css'];
+const FILES = ['admin.css', 'workbench.css', 'cards.css', 'cdks.css'];
 
 /** 规范里认可的控件高度（DESIGN_SYSTEM.md 第三节）。嵌套控件的 24 / 开关的 17 也在册。 */
 const ALLOWED_HEIGHTS = new Set([17, 24, 28, 34, 44]);

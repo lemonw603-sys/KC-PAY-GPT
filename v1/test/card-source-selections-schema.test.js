@@ -8,14 +8,17 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const migrationsDir = path.resolve(here, '../migrations');
 const sql = fs.readFileSync(path.join(migrationsDir, '053_card_source_selections_and_supply.sql'), 'utf8');
 
-test('055 is the newest migration; 053/054/055 only add', () => {
+test('056 is the newest migration; 053 through 056 only add', () => {
   const names = fs.readdirSync(migrationsDir).filter((name) => /^\d+_[a-z0-9_-]+\.sql$/i.test(name)).sort();
   // 055＝D-286（CDK 发出登记 + 有效期），Lemon 2026-09-19 批准新增；只加列、不动存量。
-  assert.equal(names.at(-1), '055_cdk_issuance_and_expiry.sql');
+  assert.equal(names.at(-1), '056_cdk_sales_metadata.sql');
   const retirement = fs.readFileSync(path.join(migrationsDir, '054_card_retirement.sql'), 'utf8');
   const cdkIssuance = fs.readFileSync(path.join(migrationsDir, '055_cdk_issuance_and_expiry.sql'), 'utf8');
   assert.doesNotMatch(cdkIssuance, /CREATE TABLE/i);
-  for (const text of [sql, retirement, cdkIssuance]) {
+  const cdkSales = fs.readFileSync(path.join(migrationsDir, '056_cdk_sales_metadata.sql'), 'utf8');
+  assert.doesNotMatch(cdkSales, /CREATE TABLE|UPDATE\s+cdks|DELETE\s+FROM/i);
+  assert.match(cdkSales, /issuance_kind.*DEFAULT 'LEGACY'/);
+  for (const text of [sql, retirement, cdkIssuance, cdkSales]) {
     assert.doesNotMatch(text, /DROP\s+(TABLE|COLUMN)/i);
     assert.doesNotMatch(text, /DELETE\s+FROM/i);
   }

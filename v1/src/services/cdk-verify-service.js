@@ -96,7 +96,11 @@ export function createCdkVerifyService({
     // rather than assuming, so this screen and intake always agree.
     if (CDK_RETURN_ORDER_STATUSES.includes(found.order.status)) {
       const blocked = await repository.cdkReturnWouldBeBlocked(pool, found.order.internalOrderId);
-      if (!blocked) return { state: CDK_VERIFY_STATES.VALID, product };
+      if (!blocked) return {
+        state: found.expiresAt && new Date(found.expiresAt).getTime() <= Date.now()
+          ? CDK_VERIFY_STATES.EXPIRED : CDK_VERIFY_STATES.VALID,
+        product
+      };
     }
 
     return {

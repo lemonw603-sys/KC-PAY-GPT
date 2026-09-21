@@ -91,15 +91,15 @@ test('admin assets contain no remote, legacy, or secret-bearing dependencies', (
 
 test('admin batch generation keeps generation and downloads separate and exposes audit history', () => {
   const html = fs.readFileSync(path.join(directory, 'admin', 'index.html'), 'utf8');
-  const script = fs.readFileSync(path.join(directory, 'admin', 'assets', 'admin.js'), 'utf8');
-  assert.match(html, />生成 CDK</);
-  assert.match(html, /下载本批次 TXT/);
-  assert.match(script, /下载原始 TXT/);
-  assert.match(script, /下载状态清单 CSV/);
-  assert.match(script, /已全部作废/);
-  assert.match(script, /禁止把文件中的码重新发放/);
-  assert.match(script, /已生成，但列表刷新失败/);
-  assert.match(script, /已作废.*但批次列表刷新失败/);
+  const script = fs.readFileSync(path.join(directory, 'admin', 'assets', 'cdks.js'), 'utf8');
+  assert.match(html, />生成并复制</);
+  assert.match(html, /下载 TXT/);
+  assert.match(html, /原始整批 TXT（留档）/);
+  assert.match(html, /逐码状态 CSV/);
+  assert.match(script, /原始整批文件可能含已发出、已兑换、已作废或过期的码，仅供留档/);
+  assert.match(script, /生成已成功，列表刷新失败/);
+  assert.match(script, /操作已成功，列表刷新失败/);
+  assert.match(script, /case 'download-cdks'/);
 });
 
 test('admin sends sensitive unified search in a protected JSON body, never in the URL', () => {
@@ -271,7 +271,7 @@ test('CDK page generates per product and the card page sets the minimum balance 
   const html = fs.readFileSync(path.join(directory, 'admin', 'index.html'), 'utf8');
   const script = fs.readFileSync(path.join(directory, 'admin', 'assets', 'admin.js'), 'utf8');
   assert.match(html, /id="cdk-plan"[^>]*>[\s\S]*?<option value="pro_20x">Pro 20X<\/option>/);
-  assert.match(html, /id="cdk-batch-plan">[\s\S]*?<option value="pro_5x">Pro 5X<\/option>/);
+  assert.match(html, /id="cdk-code-plan"[^>]*>[\s\S]*?<option value="pro_5x">Pro 5X<\/option>/);
   assert.doesNotMatch(html, /当前仅支持 Plus/);
   assert.match(script, /body: JSON\.stringify\(\{ count, planType \}\)/);
   // 最低余额按产品：入口随 B1 从卡片页块 2 搬到设置页，端点和「按产品」这件事都没变。
@@ -328,7 +328,8 @@ test('admin orders page is one table plus one drawer without permits, tags, note
   assert.match(script, /人工付款已完成/);
   assert.match(script, /确认 20X 已升级/);
   assert.match(script, /关闭对账案例/);
-  assert.doesNotMatch(`${html}\n${script}`, /灰度批量许可|灰度单笔许可|撤销灰度许可|添加标签|添加备注|请输入后台密码/);
+  const ordersSection = html.slice(html.indexOf('<section id="orders-view"'), html.indexOf('<section id="cdks-view"'));
+  assert.doesNotMatch(`${ordersSection}\n${script}`, /灰度批量许可|灰度单笔许可|撤销灰度许可|添加标签|添加备注|请输入后台密码/);
   assert.doesNotMatch(script, /#issue-compensation|#add-order-tag|#add-order-note|#arm-recharge-permit|#revoke-recharge-permit|data-record-cdk-delivery|data-search-cdk-delivery|data-select-order/);
   assert.doesNotMatch(html, /退款观察<\/th>|batch-authorize-recharge|select-page-orders|order-time-field/);
   assert.doesNotMatch(`${html}\n${script}`, /逐单确认|待确认充值/);

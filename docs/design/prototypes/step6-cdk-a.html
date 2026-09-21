@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="theme-color" content="#f5f8fc">
+  <title>Plus 运营后台</title>
+  <link rel="icon" href="_frozen/cdk-a/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="_frozen/cdk-a/admin.css?v=26">
+  <link rel="stylesheet" href="_frozen/cdk-a/workbench.css?v=19">
+  <link rel="stylesheet" href="_frozen/cdk-a/cards.css?v=4">
+  
+  <link rel="stylesheet" href="_frozen/cdk-a/cdks.css">
+</head>
+<body>
+  <div class="admin-shell">
+    <aside class="sidebar">
+      <a class="admin-brand" href="/admin" aria-label="Plus 运营后台首页">
+        <span class="brand-label">OPERATIONS</span>
+        <strong>Plus 运营后台 <span aria-hidden="true">✦</span></strong>
+        <small>内部管理中心</small>
+      </a>
+      <nav aria-label="后台导航">
+        <button class="nav-item is-active" type="button" data-view="overview"><span class="ic" aria-hidden="true">◱</span>工作台</button>
+        <button class="nav-item" type="button" data-view="orders"><span class="ic" aria-hidden="true">≡</span>订单</button>
+        <button class="nav-item" type="button" data-view="cdks"><span class="ic" aria-hidden="true">#</span>CDK</button>
+        <button class="nav-item" type="button" data-view="stock"><span class="ic" aria-hidden="true">▣</span>卡片</button>
+        <button class="nav-item" type="button" data-view="settings"><span class="ic" aria-hidden="true">⚙</span>设置</button>
+        <button class="nav-item" type="button" data-view="diagnostics"><span class="ic" aria-hidden="true">◎</span>诊断</button>
+      </nav>
+      <div class="sidebar-foot">
+        <span class="session-state"><i aria-hidden="true"></i><b>管理员已登录</b><small>人工确认模式</small></span>
+        <button id="logout-button" type="button">安全退出</button>
+      </div>
+    </aside>
+
+    <main class="main-area">
+      <header class="topbar">
+        <!-- 「运营驾驶舱」这个小标题不带信息 —— 侧边栏已经标着「工作台」了。
+             去掉后页头从 58px 降到约 44px，搜索框退到右边不再占据视线正中。
+             #view-kicker 仍保留（隐藏），因为 switchView 会写它，去掉会空指针。 -->
+        <div class="topbar-title">
+          <p class="section-kicker" id="view-kicker" hidden>运营驾驶舱</p>
+          <h1 id="view-title">今天的运行情况</h1>
+        </div>
+        <div class="gsearch">
+          <span class="mg" aria-hidden="true">⌕</span>
+          <input id="wb-search-input" type="search" maxlength="191" placeholder="贴卡密 / 订单号 / 邮箱 → 直接定位这一单" autocomplete="off" aria-label="全局定位搜索">
+          <kbd>↵</kbd>
+        </div>
+        <span class="sync-time" id="sync-time">正在读取数据…</span>
+      </header>
+
+      <section id="cdks-view" class="view cdk-page">
+        <div class="cdk-kpis" id="cdk-liability" aria-label="卡密统计">
+          <button type="button" data-cdk-state="pending"><span>待兑换</span><b>—</b><small>不代表已售数量</small></button>
+          <button type="button" data-cdk-state="reserve"><span>应急备码</span><b>—</b><small>以后台登记为准</small></button>
+          <button type="button" data-cdk-state="done"><span>已成功交付</span><b>—</b><small>已确认充值成功</small></button>
+          <button type="button" data-cdk-state="attention"><span>要看一眼</span><b>—</b><small>不含历史残留</small></button>
+        </div>
+        <section class="cdk-block">
+          <h2>生成 <small>生成不触发开卡或充值</small></h2>
+          <form id="cdk-form" class="cdk-generate">
+            <div class="cdk-controls">
+              <label>数量<input id="cdk-count" type="number" min="1" max="1000" value="1" required></label>
+              <label>产品<select id="cdk-plan"><option value="plus">Plus</option><option value="pro_5x">Pro 5X</option><option value="pro_20x">Pro 20X</option></select></label>
+              <label>用途<select id="cdk-kind"><option value="NORMAL">直接发码</option><option value="RESERVE">应急备码</option><option value="MARKETPLACE">卡网投放</option></select></label>
+              <label>有效期<select id="cdk-expiry-mode"><option value="DEFAULT">生成起 30 天</option><option value="CUSTOM">自定义</option><option value="NEVER">不过期</option></select></label>
+              <label id="cdk-expiry-field" hidden>截止时间（北京时间）<input id="cdk-expires-at" type="datetime-local"></label>
+              <button class="cdk-primary" type="submit">生成并复制</button>
+            </div>
+            <div class="cdk-controls cdk-extra" id="cdk-extra" hidden>
+              <label>去向备注<input id="cdk-note" maxlength="200" placeholder="客户 / 渠道 / 备码，选填"></label>
+              <label id="cdk-amount-field">这批收<input id="cdk-amount" inputmode="decimal" placeholder="选填"></label>
+              <label id="cdk-currency-field">币种<select id="cdk-currency"><option>CNY</option><option>USD</option></select></label>
+            </div>
+            <button id="cdk-toggle-note" class="cdk-link" type="button">添加备注</button>
+          </form>
+          <div id="cdk-result" class="cdk-fresh" hidden>
+            <div class="cdk-controls"><strong id="cdk-batch-label"></strong><button id="download-cdks" type="button">下载 TXT</button><button id="copy-cdks" type="button">复制全部</button><button id="cdk-dismiss" class="cdk-link" type="button">知道了</button></div>
+            <textarea id="generated-cdks" readonly spellcheck="false" aria-label="刚生成的卡密，复制失败时可手动复制"></textarea>
+            <small>下载文件不代表已经交付客户。</small>
+          </div>
+        </section>
+        <section class="cdk-block">
+          <form id="cdk-code-filters" class="cdk-controls cdk-filters">
+            <label class="cdk-search"><span class="sr-only">搜索完整卡密、订单号、邮箱或备注</span><input id="cdk-code-q" type="search" placeholder="完整卡密 / 订单号 / 邮箱 / 备注"></label>
+            <select id="cdk-code-plan" aria-label="按产品筛选"><option value="">全部产品</option><option value="plus">Plus</option><option value="pro_5x">Pro 5X</option><option value="pro_20x">Pro 20X</option></select>
+            <select id="cdk-code-status" aria-label="按状态筛选"><option value="">全部状态</option><option value="pending">待兑换</option><option value="reserve">应急备码</option><option value="processing">处理中</option><option value="done">已成功交付</option><option value="stuck">兑了没成</option><option value="attention">要看一眼</option><option value="expired">已过期</option><option value="revoked">已作废</option><option value="legacy">历史未分类</option></select>
+            <select id="cdk-code-kind" aria-label="按用途筛选"><option value="">全部用途</option><option value="NORMAL">直接发码</option><option value="RESERVE">应急备码</option><option value="MARKETPLACE">卡网投放</option></select>
+            <select id="cdk-code-batch" aria-label="按批次筛选"><option value="">全部批次</option></select>
+            <button type="submit">筛选</button><button id="refresh-cdk-codes" class="cdk-link" type="button">刷新</button>
+          </form>
+          <details class="cdk-export"><summary>批次与导出</summary>
+            <div class="cdk-controls"><button id="cdk-more-batches" type="button">更多批次</button><button id="cdk-batch-meta" type="button">修改所选批次备注与金额</button><button id="cdk-original" type="button">原始整批 TXT（留档）</button><button id="cdk-report" type="button">逐码状态 CSV</button></div>
+            <p id="cdk-batch-info"></p>
+          </details>
+          <div id="cdk-bulk-actions" class="cdk-bulk" hidden>
+            <strong id="cdk-selected-count"></strong><button type="button" data-cdk-bulk="issue">登记已发出</button><button type="button" data-cdk-bulk="expiry">设有效期 / 延期</button><button class="cdk-danger" type="button" data-cdk-bulk="revoke">作废</button><button id="cdk-clear-selection" class="cdk-link" type="button">取消选择</button>
+          </div>
+          <div class="cdk-table-wrap"><table class="cdk-table">
+            <thead><tr><th><input id="cdk-select-page" type="checkbox" aria-label="全选本页未使用的卡密"></th><th>卡密</th><th>产品</th><th>状态</th><th>去向</th><th>客户邮箱</th><th>最近动静</th><th>操作</th></tr></thead>
+            <tbody id="cdk-codes"><tr><td colspan="8">正在读取卡密…</td></tr></tbody>
+          </table></div>
+          <div class="cdk-pager"><button id="cdk-code-prev" type="button">上一页</button><span id="cdk-code-page-info" aria-live="polite"></span><button id="cdk-code-more" type="button">下一页</button></div>
+        </section>
+      </section>
+</main></div></body></html>

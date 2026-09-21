@@ -1,0 +1,108 @@
+{
+  "name": "CDK A 一条流水线 + D-318 四格",
+  "viewport": [
+    1440,
+    900
+  ],
+  "tolerancePx": 1,
+  "note": "冻结原型先于实现；只比较结构与控件，数据行由独立数据库/UI测试验证。字面内容来自 D-314～318。不能证明完整业务或每种文本长度。",
+  "prototype": {
+    "url": "${PARITY_PROTO_BASE}/step6-cdk-a.html",
+    "root": "#cdks-view"
+  },
+  "impl": {
+    "url": "${PARITY_ADMIN_BASE}/admin/",
+    "root": "#cdks-view",
+    "login": {
+      "passwordEnv": "PARITY_ADMIN_PASSWORD"
+    },
+    "prepare": "await switchView('cdks');return !document.querySelector('#cdks-view').hidden;"
+  },
+  "probes": [
+    {
+      "name": "四格",
+      "proto": ".cdk-kpis",
+      "impl": ".cdk-kpis",
+      "metrics": [
+        "display",
+        "gap",
+        "width"
+      ]
+    },
+    {
+      "name": "四格控件",
+      "proto": ".cdk-kpis button",
+      "impl": ".cdk-kpis button",
+      "all": true,
+      "metrics": [
+        "padding",
+        "borderRadius",
+        "height",
+        "width"
+      ]
+    },
+    {
+      "name": "两个主块",
+      "proto": ".cdk-block",
+      "impl": ".cdk-block",
+      "all": true,
+      "metrics": [
+        "padding",
+        "borderRadius",
+        "width"
+      ]
+    },
+    {
+      "name": "生成条",
+      "proto": ".cdk-generate > .cdk-controls",
+      "impl": ".cdk-generate > .cdk-controls",
+      "metrics": [
+        "height",
+        "gap",
+        "display"
+      ]
+    },
+    {
+      "name": "生成控件",
+      "proto": ".cdk-generate > .cdk-controls select",
+      "impl": ".cdk-generate > .cdk-controls select",
+      "all": true,
+      "metrics": [
+        "height",
+        "borderRadius",
+        "fontSize"
+      ]
+    },
+    {
+      "name": "表头",
+      "proto": ".cdk-table th",
+      "impl": ".cdk-table th",
+      "all": true,
+      "metrics": [
+        "padding",
+        "fontSize",
+        "fontWeight"
+      ]
+    },
+    {
+      "name": "导出折叠",
+      "proto": ".cdk-export",
+      "impl": ".cdk-export",
+      "metrics": [
+        "marginTop",
+        "marginBottom",
+        "fontSize"
+      ]
+    },
+    {
+      "name": "分页",
+      "proto": ".cdk-pager",
+      "impl": ".cdk-pager",
+      "metrics": [
+        "display",
+        "gap",
+        "fontSize"
+      ]
+    }
+  ]
+}

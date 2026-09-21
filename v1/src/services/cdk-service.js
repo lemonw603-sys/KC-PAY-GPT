@@ -1,4 +1,6 @@
 import crypto from 'node:crypto';
+import { CdkBatchError, normalizeCdkOptions, resolveCdkExpiry, CDK_STATE_SQL } from './cdk-policy.js';
+export { CdkBatchError } from './cdk-policy.js';
 import { decryptSecret, encryptSecret } from '../security/secret-box.js';
 import {
   CURRENT_CDK_HASH_VERSION,
@@ -15,14 +17,6 @@ const CDK_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
 const CDK_RANDOM_LENGTH = 20;
 const MAX_BATCH_SIZE = 1_000;
 export const PLAN_TYPES = new Set(['plus', 'pro_5x', 'pro_20x']);
-
-export class CdkBatchError extends Error {
-  constructor(message, code) {
-    super(message);
-    this.name = 'CdkBatchError';
-    this.code = code;
-  }
-}
 
 export function normalizePlanType(value = 'plus') {
   const planType = String(value || '').trim().toLowerCase();
@@ -123,6 +117,7 @@ function decodeStoredBatch(row, key, expected = null) {
   if (expected && (
     Number(row.requested_count) !== expected.count
     || String(row.plan_type) !== expected.planType
+    || (expected.fingerprint && row.generation_fingerprint !== expected.fingerprint)
   )) {
     throw new CdkBatchError('idempotency key was already used for a different request', 'IDEMPOTENCY_MISMATCH');
   }
@@ -187,23 +182,33 @@ export async function storeCdkBatch(pool, codes, {
   }
 }
 
-export function createAdminCdkService({ pool, cdkHashKey, cdkRecoveryKey }) {
+export function createAdminCdkService({ pool, cdkHashKey, cdkRecoveryKey, now = () => new Date() }) {
   if (!pool) throw new TypeError('pool is required');
   if (!Buffer.isBuffer(cdkHashKey)) throw new TypeError('cdkHashKey is required');
   if (!Buffer.isBuffer(cdkRecoveryKey)) throw new TypeError('cdkRecoveryKey is required');
 
   return async function createBatch(input = {}) {
+    if (!input || typeof input !== 'object' || Array.isArray(input)) throw new CdkBatchError('invalid input', 'INVALID_INPUT');
     const count = validateBatchCount(input.count);
     const planType = normalizePlanType(input.planType);
     const requestKey = normalizeRequestKey(input.requestKey);
+    const options = normalizeCdkOptions(input);
+    if (count === 1 && options.amount !== null) {
+      throw new CdkBatchError('single-code payments are recorded on the order', 'SINGLE_AMOUNT_ON_ORDER');
+    }
+    const fingerprint = crypto.createHash('sha256').update(JSON.stringify({ count, planType, ...options })).digest('hex');
     const [existing] = await pool.query(
-      `SELECT batch_no, plan_type, requested_count, codes_ciphertext
+      `SELECT batch_no, plan_type, requested_count, codes_ciphertext, generation_fingerprint
        FROM cdk_batches WHERE BINARY request_key = BINARY ? LIMIT 1`,
       [requestKey]
     );
-    const recovered = decodeStoredBatch(existing[0], cdkRecoveryKey, { count, planType });
+    const recovered = decodeStoredBatch(existing[0], cdkRecoveryKey, { count, planType, fingerprint });
     if (recovered) return recovered;
 
+    const createdAt = now();
+    const expiresAt = resolveCdkExpiry(options, createdAt);
+    // Normal/marketplace means allocated for distribution, not proof of actual sale.
+    const issuedAt = options.issuanceKind === 'RESERVE' ? null : createdAt;
     const codes = generateCdks(count, { planType });
     const batchNo = normalizeBatchNo(input.batchNo);
     const ciphertext = encryptSecret(JSON.stringify(codes), cdkRecoveryKey);
@@ -212,16 +217,19 @@ export function createAdminCdkService({ pool, cdkHashKey, cdkRecoveryKey }) {
       await connection.beginTransaction();
       await connection.query(
         `INSERT INTO cdk_batches
-         (batch_no, request_key, plan_type, requested_count, codes_ciphertext, created_by)
-         VALUES (?, ?, ?, ?, ?, 'admin')`,
-        [batchNo, requestKey, planType, count, ciphertext]
+         (batch_no, request_key, plan_type, requested_count, codes_ciphertext, created_by,
+          channel_note, sale_amount, sale_currency, issued_at, generation_fingerprint, created_at)
+         VALUES (?, ?, ?, ?, ?, 'admin', ?, ?, ?, ?, ?, ?)`,
+        [batchNo, requestKey, planType, count, ciphertext, options.note || null,
+          options.amount, options.amount === null ? null : options.currency, issuedAt, fingerprint, createdAt]
       );
       const values = codes.map((code) => [
         crypto.randomUUID(), hashCurrentCdk(code, cdkHashKey), CURRENT_CDK_HASH_VERSION,
-        'AVAILABLE', batchNo, planType
+        'AVAILABLE', batchNo, planType, options.issuanceKind, issuedAt, null, expiresAt, createdAt
       ]);
       const [result] = await connection.query(
-        `INSERT INTO cdks (id, code_hash, hash_version, status, batch_no, plan_type) VALUES ?`,
+        `INSERT INTO cdks (id, code_hash, hash_version, status, batch_no, plan_type,
+          issuance_kind, issued_at, issued_note, expires_at, created_at) VALUES ?`,
         [values]
       );
       if (Number(result.affectedRows) !== count) {
@@ -242,7 +250,7 @@ export function createAdminCdkService({ pool, cdkHashKey, cdkRecoveryKey }) {
       await connection.query(
         `INSERT INTO cdk_admin_events (event_type, batch_no, metadata_json)
          VALUES ('BATCH_CREATED', ?, ?)`,
-        [batchNo, JSON.stringify({ count, planType })]
+        [batchNo, JSON.stringify({ count, planType, ...options, expiresAt: iso(expiresAt) })]
       );
       await connection.commit();
       return { batchNo, planType, count, codes, replayed: false };
@@ -250,11 +258,11 @@ export function createAdminCdkService({ pool, cdkHashKey, cdkRecoveryKey }) {
       await connection.rollback();
       if (error?.code === 'ER_DUP_ENTRY') {
         const [duplicate] = await connection.query(
-          `SELECT batch_no, plan_type, requested_count, codes_ciphertext
+          `SELECT batch_no, plan_type, requested_count, codes_ciphertext, generation_fingerprint
            FROM cdk_batches WHERE BINARY request_key = BINARY ? LIMIT 1`,
           [requestKey]
         );
-        const duplicateBatch = decodeStoredBatch(duplicate[0], cdkRecoveryKey, { count, planType });
+        const duplicateBatch = decodeStoredBatch(duplicate[0], cdkRecoveryKey, { count, planType, fingerprint });
         if (duplicateBatch) return duplicateBatch;
         throw new CdkBatchError('batch number already exists', 'BATCH_EXISTS');
       }
@@ -469,128 +477,192 @@ async function loadRedeemablePlanTypes(pool) {
 }
 
 export async function listCdkCodes(pool, {
-  limit = 50, offset = 0, batchNo = null, planType = null, status = null, issued = null, q = null
+  limit = 50, offset = 0, batchNo = null, planType = null, status = null, issued = null,
+  state = null, issuanceKind = null, q = null
 } = {}, { cdkHashKey, cdkRecoveryKey } = {}) {
-  const safeLimit = Math.min(200, Math.max(1, Number(limit) || 50));
-  const safeOffset = Math.max(0, Number(offset) || 0);
+  const safeLimit = Math.min(200, Math.max(1, Math.trunc(Number(limit)) || 50));
+  const safeOffset = Math.max(0, Math.trunc(Number(offset)) || 0);
   const clauses = [];
   const values = [];
   if (batchNo) { clauses.push('BINARY c.batch_no = BINARY ?'); values.push(normalizeBatchNo(batchNo)); }
   if (planType) { clauses.push('c.plan_type = ?'); values.push(normalizePlanType(planType)); }
-  if (status && ['AVAILABLE', 'REDEEMED', 'REVOKED'].includes(String(status))) {
-    clauses.push('c.status = ?'); values.push(String(status));
+  if (status && ['AVAILABLE', 'REDEEMED', 'REVOKED'].includes(status)) {
+    clauses.push('c.status = ?'); values.push(status);
+  }
+  if (state) {
+    if (!CDK_STATE_SQL[state]) throw new CdkBatchError('invalid state', 'INVALID_STATE');
+    clauses.push(`(${CDK_STATE_SQL[state]})`);
+  }
+  if (issuanceKind) {
+    if (!['NORMAL', 'RESERVE', 'MARKETPLACE', 'LEGACY'].includes(issuanceKind)) {
+      throw new CdkBatchError('invalid issuance kind', 'INVALID_ISSUANCE_KIND');
+    }
+    clauses.push('c.issuance_kind = ?'); values.push(issuanceKind);
   }
   if (issued === 'yes') clauses.push('c.issued_at IS NOT NULL');
   if (issued === 'no') clauses.push('c.issued_at IS NULL');
+  if (q && String(q).trim()) {
+    const term = String(q).trim();
+    if (term.length > 256) throw new CdkBatchError('search too long', 'INVALID_SEARCH');
+    // Exact full-code lookup works even when a legacy batch has no plaintext.
+    // Other text fields support substring search, all BEFORE COUNT/LIMIT.
+    const like = '%' + term.replace(/[!%_]/g, '!$&') + '%';
+    clauses.push("(c.code_hash IN (?, ?) OR o.public_no LIKE ? ESCAPE '!' OR o.customer_email LIKE ? ESCAPE '!' OR c.issued_note LIKE ? ESCAPE '!' OR b.channel_note LIKE ? ESCAPE '!')");
+    values.push(hashCurrentCdk(term, cdkHashKey), hashLegacyCdk(term), like, like, like, like);
+  }
   const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
-  const [[countRow]] = await pool.query(`SELECT COUNT(*) AS total FROM cdks c ${where}`, values);
+  const joins = 'FROM cdks c LEFT JOIN orders o ON o.id = c.order_id LEFT JOIN cdk_batches b ON BINARY b.batch_no = BINARY c.batch_no';
+  const [[countRow]] = await pool.query(`SELECT COUNT(*) AS total ${joins} ${where}`, values);
   const [rows] = await pool.query(
-    `SELECT c.id, c.code_hash, c.hash_version, c.status, c.batch_no, c.plan_type,
-            c.created_at, c.redeemed_at, c.revoked_at, c.revoke_reason,
-            c.issued_at, c.issued_note, c.expires_at,
-            o.public_no, o.customer_email, o.status AS order_status
-       FROM cdks c LEFT JOIN orders o ON o.id = c.order_id
-       ${where}
-       ORDER BY c.created_at DESC, c.id DESC
-       LIMIT ? OFFSET ?`,
+    `SELECT c.*, o.public_no, o.customer_email, o.status AS order_status,
+            b.channel_note, b.requested_count, b.sale_amount, b.sale_currency,
+            (${CDK_STATE_SQL.historical}) AS historical,
+            GREATEST(c.created_at, COALESCE(c.redeemed_at,c.created_at),
+              COALESCE(c.issued_at,c.created_at), COALESCE(c.revoked_at,c.created_at),
+              COALESCE(c.admin_updated_at,c.created_at)) AS latest_at
+       ${joins} ${where}
+       ORDER BY c.created_at DESC, c.id DESC LIMIT ? OFFSET ?`,
     [...values, safeLimit, safeOffset]
   );
-  const plaintext = await buildPlaintextIndex(
-    pool, [...new Set(rows.map((row) => row.batch_no).filter(Boolean))], cdkHashKey, cdkRecoveryKey
-  );
+  const plaintext = await buildPlaintextIndex(pool,
+    [...new Set(rows.map((row) => row.batch_no).filter(Boolean))], cdkHashKey, cdkRecoveryKey);
   const redeemable = await loadRedeemablePlanTypes(pool);
   const now = Date.now();
-  let codes = rows.map((row) => {
-    const expired = row.expires_at ? new Date(row.expires_at).getTime() < now : false;
+  const codes = rows.map((row) => {
+    const expired = row.expires_at ? new Date(row.expires_at).getTime() <= now : false;
     return {
-      id: row.id,
-      code: plaintext.get(String(row.code_hash)) || null,   // 取不到明文就给 null，不编造
-      batchNo: row.batch_no,
-      planType: row.plan_type,
-      status: row.status,
-      orderPublicNo: row.public_no || null,
-      customerEmail: row.customer_email || null,
-      orderStatus: row.order_status || null,
-      createdAt: iso(row.created_at),
-      redeemedAt: iso(row.redeemed_at),
-      revokedAt: iso(row.revoked_at),
-      revokeReason: row.revoke_reason || null,
-      issuedAt: iso(row.issued_at),
-      issuedNote: row.issued_note || null,
-      expiresAt: iso(row.expires_at),
-      expired,
-      // 只有还没被用掉的码才谈「现在能不能兑」；路线关了或已过期都算兑不了。
-      redeemableNow: row.status === 'AVAILABLE' && !expired && redeemable.has(String(row.plan_type))
+      id: row.id, code: plaintext.get(String(row.code_hash)) || null,
+      batchNo: row.batch_no, batchCount: Number(row.requested_count || 1),
+      batchNote: row.channel_note || null, batchAmount: row.sale_amount, batchCurrency: row.sale_currency,
+      planType: row.plan_type, status: row.status, issuanceKind: row.issuance_kind,
+      orderPublicNo: row.public_no || null, customerEmail: row.customer_email || null,
+      orderStatus: row.order_status || null, historical: Boolean(row.historical),
+      createdAt: iso(row.created_at), redeemedAt: iso(row.redeemed_at), revokedAt: iso(row.revoked_at),
+      revokeReason: row.revoke_reason || null, issuedAt: iso(row.issued_at),
+      issuedNote: row.issued_note || null, expiresAt: iso(row.expires_at), latestAt: iso(row.latest_at),
+      expired, redeemableNow: row.status === 'AVAILABLE' && !expired && redeemable.has(String(row.plan_type))
     };
   });
-  if (q) {
-    const needle = String(q).trim().toUpperCase();
-    codes = codes.filter((item) => (item.code && item.code.toUpperCase().includes(needle))
-      || (item.orderPublicNo || '').toUpperCase().includes(needle)
-      || (item.customerEmail || '').toUpperCase().includes(needle));
-  }
   return { total: Number(countRow.total || 0), codes, limit: safeLimit, offset: safeOffset };
 }
 
-// D-279 ⑤：作废单张码。只能作废还没被用掉的（REDEEMED 已绑订单，作废它等于凭空吞掉
-// 客户已付费的交付，必须走退款/补偿而不是这里）。
+// All selected rows succeed or nothing changes. Same transaction for state + audit.
+// Sorted locking makes simultaneous bulk operations deterministic; intake locks the same CDK rows.
+export async function updateCdkCodes(pool, input = {}) {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) throw new CdkBatchError('invalid input', 'INVALID_INPUT');
+  if (!Array.isArray(input.ids) || !input.ids.length || input.ids.length > 1000
+    || input.ids.some((id) => typeof id !== 'string' || !id || id.length > 64)) {
+    throw new CdkBatchError('select 1-1000 codes', 'INVALID_CDK_IDS');
+  }
+  const ids = [...new Set(input.ids)].sort();
+  const action = input.action;
+  if (!['revoke', 'issue', 'expiry'].includes(action)) throw new CdkBatchError('invalid action', 'INVALID_ACTION');
+  const note = input.note == null ? null : String(input.note).trim();
+  if (note && note.length > 200) throw new CdkBatchError('note too long', 'INVALID_NOTE');
+  let expiry = null;
+  if (action === 'expiry') {
+    const options = normalizeCdkOptions(input);
+    if (options.expiryMode === 'DEFAULT') throw new CdkBatchError('choose explicit expiry', 'INVALID_EXPIRY');
+    expiry = resolveCdkExpiry(options, new Date());
+  }
+  const connection = await pool.getConnection();
+  try {
+    await connection.beginTransaction();
+    const [rows] = await connection.query(
+      'SELECT id, status, order_id, batch_no, issued_at, issuance_kind, expires_at FROM cdks WHERE id IN (?) ORDER BY id FOR UPDATE',
+      [ids]
+    );
+    if (rows.length !== ids.length) throw new CdkBatchError('code not found', 'CDK_NOT_FOUND');
+    for (const row of rows) {
+      if (row.order_id || (row.status !== 'AVAILABLE' && !(action === 'revoke' && row.status === 'REVOKED'))) {
+        throw new CdkBatchError('selection contains a used code; nothing changed', 'CDK_SELECTION_CONFLICT');
+      }
+      // A sold or distributed code cannot have its deadline shortened.
+      if (action === 'expiry' && row.issued_at && expiry
+        && (!row.expires_at || expiry < new Date(row.expires_at))) {
+        throw new CdkBatchError('issued expiry can only be extended', 'EXPIRY_CANNOT_SHORTEN');
+      }
+    }
+    let changed = 0;
+    for (const row of rows) {
+      if (action === 'revoke' && row.status === 'REVOKED') continue;
+      if (action === 'issue' && row.issued_at && note === null) continue;
+      if (action === 'expiry' && iso(row.expires_at) === iso(expiry)) continue;
+      if (action === 'revoke') {
+        await connection.query("UPDATE cdks SET status='REVOKED', revoked_at=CURRENT_TIMESTAMP(3), revoke_reason=? WHERE id=?",
+          [note || '后台作废', row.id]);
+      } else if (action === 'issue') {
+        await connection.query("UPDATE cdks SET issued_at=COALESCE(issued_at,CURRENT_TIMESTAMP(3)), issued_note=COALESCE(?,issued_note), admin_updated_at=CURRENT_TIMESTAMP(3) WHERE id=?",
+          [note, row.id]);
+      } else {
+        await connection.query('UPDATE cdks SET expires_at=?, admin_updated_at=CURRENT_TIMESTAMP(3) WHERE id=?', [expiry, row.id]);
+      }
+      await connection.query(
+        'INSERT INTO cdk_admin_events (event_type,batch_no,metadata_json) VALUES (?,?,?)',
+        [{ revoke: 'CDK_REVOKED', issue: 'CDK_ISSUED', expiry: 'CDK_EXPIRY_SET' }[action], row.batch_no,
+          JSON.stringify({ cdkId: row.id, note, previousExpiresAt: iso(row.expires_at),
+            ...(action === 'expiry' ? { expiresAt: iso(expiry) } : {}) })]
+      );
+      changed++;
+    }
+    await connection.commit();
+    return { action, selected: ids.length, changed, unchanged: ids.length - changed };
+  } catch (error) {
+    await connection.rollback(); throw error;
+  } finally { connection.release(); }
+}
+
 export async function revokeCdkCode(pool, cdkId, { reason = null } = {}) {
-  const id = String(cdkId || '').trim();
-  if (!id || id.length > 64) throw new CdkBatchError('cdk id is required', 'INVALID_CDK_ID');
-  const note = reason == null ? null : String(reason).trim().slice(0, 200) || null;
-  const [result] = await pool.query(
-    `UPDATE cdks SET status = 'REVOKED', revoked_at = CURRENT_TIMESTAMP(3), revoke_reason = ?
-      WHERE id = ? AND status = 'AVAILABLE'`,
-    [note, id]
-  );
-  if (result.affectedRows !== 1) {
-    throw new CdkBatchError('only an unused CDK can be revoked', 'CDK_NOT_REVOCABLE');
-  }
-  await pool.query(
-    `INSERT INTO cdk_admin_events (event_type, batch_no, metadata_json)
-     VALUES ('CDK_REVOKED', (SELECT batch_no FROM cdks WHERE id = ?), ?)`,
-    [id, JSON.stringify({ cdkId: id, reason: note })]
-  );
-  return { cdkId: id, status: 'REVOKED', reason: note };
+  await updateCdkCodes(pool, { ids: [cdkId], action: 'revoke', note: reason });
+  return { cdkId, status: 'REVOKED', reason };
 }
 
-// D-286 ①：标记「已发给客户/渠道」。与 status 正交——已发出的码在被兑换前仍是 AVAILABLE；
-// 这一步只是把「库存」变成「负债（欠一次交付）」，不改变它能不能兑。
 export async function markCdkIssued(pool, cdkId, { note = null, issued = true } = {}) {
-  const id = String(cdkId || '').trim();
-  if (!id || id.length > 64) throw new CdkBatchError('cdk id is required', 'INVALID_CDK_ID');
-  const trimmed = note == null ? null : String(note).trim().slice(0, 200) || null;
-  const [result] = issued
-    ? await pool.query(
-      `UPDATE cdks SET issued_at = COALESCE(issued_at, CURRENT_TIMESTAMP(3)), issued_note = ?
-        WHERE id = ? AND status <> 'REVOKED'`, [trimmed, id])
-    : await pool.query(
-      `UPDATE cdks SET issued_at = NULL, issued_note = NULL WHERE id = ?`, [id]);
-  if (result.affectedRows !== 1) {
-    throw new CdkBatchError('CDK not found or revoked', 'CDK_NOT_FOUND');
-  }
-  await pool.query(
-    `INSERT INTO cdk_admin_events (event_type, batch_no, metadata_json)
-     VALUES (?, (SELECT batch_no FROM cdks WHERE id = ?), ?)`,
-    [issued ? 'CDK_ISSUED' : 'CDK_ISSUE_UNDONE', id, JSON.stringify({ cdkId: id, note: trimmed })]
-  );
-  return { cdkId: id, issued: Boolean(issued), note: trimmed };
+  if (issued !== true) throw new CdkBatchError('undo issuance is disabled', 'CDK_UNISSUE_DISABLED');
+  await updateCdkCodes(pool, { ids: [cdkId], action: 'issue', note });
+  return { cdkId, issued: true, note };
 }
 
-// D-286 ①：交付负债一眼可见 —— AVAILABLE 里「已发出未兑」是负债，「未发出」才是库存。
 export async function summarizeCdkLiability(pool) {
+  const fields = ['pending', 'reserve', 'done', 'attention', 'historical', 'expired', 'processing', 'legacy'];
   const [[row]] = await pool.query(
-    `SELECT
-       SUM(status = 'AVAILABLE' AND issued_at IS NOT NULL) AS owed,
-       SUM(status = 'AVAILABLE' AND issued_at IS NULL)     AS stock,
-       SUM(status = 'REDEEMED')                            AS delivered,
-       SUM(status = 'AVAILABLE' AND expires_at IS NOT NULL AND expires_at < CURRENT_TIMESTAMP(3)) AS expired
-     FROM cdks`
+    `SELECT ${fields.map((field) => `COALESCE(SUM(${CDK_STATE_SQL[field]}),0) AS ${field}`).join(', ')}
+       FROM cdks c LEFT JOIN orders o ON o.id = c.order_id`
   );
-  return {
-    owed: Number(row.owed || 0),        // 已发出、还没兑 = 欠客户的交付次数
-    stock: Number(row.stock || 0),      // 还在手里、可以卖
-    delivered: Number(row.delivered || 0),
-    expired: Number(row.expired || 0)
-  };
+  return Object.fromEntries(fields.map((field) => [field, Number(row[field] || 0)]));
+}
+
+export async function listCdkBatchOptions(pool, { cursor = null } = {}) {
+  if (cursor !== null) normalizeBatchNo(cursor);
+  const [rows] = await pool.query(
+    `SELECT batch_no, channel_note, requested_count, plan_type, created_at, sale_amount, sale_currency
+     FROM cdk_batches WHERE requested_count > 1 ${cursor ? 'AND batch_no < ?' : ''}
+     ORDER BY batch_no DESC LIMIT 101`, cursor ? [cursor] : []
+  );
+  return { batches: rows.slice(0,100).map((r) => ({
+    batchNo: r.batch_no, note: r.channel_note, count: Number(r.requested_count),
+    planType: r.plan_type, createdAt: iso(r.created_at), amount: r.sale_amount, currency: r.sale_currency
+  })), nextCursor: rows.length > 100 ? rows[99].batch_no : null };
+}
+
+// Batch metadata is intentionally a batch-level edit, never inferred from a partial selection.
+export async function updateCdkBatchMetadata(pool, batchNo, input) {
+  const batch = normalizeBatchNo(batchNo);
+  const options = normalizeCdkOptions(input);
+  const connection = await pool.getConnection();
+  try {
+    await connection.beginTransaction();
+    const [[row]] = await connection.query('SELECT batch_no, requested_count FROM cdk_batches WHERE BINARY batch_no=BINARY ? FOR UPDATE', [batch]);
+    if (!row) throw new CdkBatchError('batch not found', 'BATCH_NOT_FOUND');
+    if (Number(row.requested_count) <= 1 && options.amount !== null) {
+      throw new CdkBatchError('single payment belongs to order', 'SINGLE_AMOUNT_ON_ORDER');
+    }
+    await connection.query('UPDATE cdk_batches SET channel_note=?, sale_amount=?, sale_currency=? WHERE BINARY batch_no=BINARY ?',
+      [options.note || null, options.amount, options.amount === null ? null : options.currency, batch]);
+    await connection.query('INSERT INTO cdk_admin_events (event_type,batch_no,metadata_json) VALUES (?,?,?)',
+      ['BATCH_METADATA_SET', batch, JSON.stringify({ note: options.note, amount: options.amount, currency: options.currency })]);
+    await connection.commit();
+    return { batchNo: batch };
+  } catch (error) { await connection.rollback(); throw error; }
+  finally { connection.release(); }
 }

@@ -93,6 +93,9 @@ export function createApp({
   revokeAdminCdkCode = null,
   markAdminCdkIssued = null,
   summarizeAdminCdkLiability = null,
+  listAdminCdkBatchOptions = null,
+  updateAdminCdkCodes = null,
+  updateAdminCdkBatchMetadata = null,
   listAdminReconciliationCases = null,
   assignAdminReconciliationCase = null,
   resolveAdminReconciliationCase = null,
@@ -738,6 +741,13 @@ export function createApp({
   // 注意顺序：这两条静态路径必须排在 /cdks/:batchNo/... 之前，
   // 否则 Express 会把 "codes"、"liability" 当成 :batchNo 匹配进去。
   if (typeof listAdminCdkCodes === 'function') {
+    app.post('/api/v1/admin/cdks/search', noStore, requireAdminApi, requireAdminOrigin, async (req, res) => {
+      try { return res.json(await listAdminCdkCodes(req.body)); }
+      catch (error) {
+        if (error instanceof CdkBatchError) return res.status(400).json({ error: error.code.toLowerCase() });
+        throw error;
+      }
+    });
     // D-279 ④：以单码为主的列表（Lemon 选 A：直接给明文码，后台仅他一人使用）。
     app.get('/api/v1/admin/cdks/codes', noStore, requireAdminApi, async (req, res) => {
       try {
@@ -773,6 +783,33 @@ export function createApp({
           note: req.body?.note, issued: req.body?.issued !== false
         }));
       } catch (error) {
+        if (error instanceof CdkBatchError) return res.status(400).json({ error: error.code.toLowerCase() });
+        throw error;
+      }
+    });
+  }
+  if (typeof listAdminCdkBatchOptions === 'function') {
+    app.get('/api/v1/admin/cdks/batch-options', noStore, requireAdminApi, async (req, res) => {
+      try { res.json(await listAdminCdkBatchOptions(req.query)); }
+      catch (error) {
+        if (error instanceof CdkBatchError) return res.status(400).json({ error: error.code.toLowerCase() });
+        throw error;
+      }
+    });
+  }
+  if (typeof updateAdminCdkCodes === 'function') {
+    app.post('/api/v1/admin/cdks/bulk', ...adminWriteGuards, async (req, res) => {
+      try { res.json(await updateAdminCdkCodes(req.body)); }
+      catch (error) {
+        if (error instanceof CdkBatchError) return res.status(400).json({ error: error.code.toLowerCase() });
+        throw error;
+      }
+    });
+  }
+  if (typeof updateAdminCdkBatchMetadata === 'function') {
+    app.post('/api/v1/admin/cdks/:batchNo/metadata', ...adminWriteGuards, async (req, res) => {
+      try { res.json(await updateAdminCdkBatchMetadata(req.params.batchNo, req.body)); }
+      catch (error) {
         if (error instanceof CdkBatchError) return res.status(400).json({ error: error.code.toLowerCase() });
         throw error;
       }

@@ -260,8 +260,9 @@ test('D-284① 字段位置锁死：rechargeMethod 在 providerHealth 下，读�
 test('D-279⑦ 状态说人话：「使用中」与「已交付」按订单是否成功区分', () => {
   const { sandbox } = loadAdminJs();
   const label = (row) => sandbox.cdkStatusLabel(row).text;
-  assert.equal(label({ status: 'AVAILABLE', redeemableNow: true }), '可用·在手里');
-  assert.equal(label({ status: 'AVAILABLE', redeemableNow: true, issuedAt: '2026-09-19T00:00:00Z' }), '已发出·待兑');
+  assert.equal(label({ status: 'AVAILABLE', redeemableNow: true }), '未使用');
+  assert.equal(label({ status: 'AVAILABLE', redeemableNow: true, issuedAt: '2026-09-19T00:00:00Z' }), '待兑换');
+  assert.equal(label({ status: 'REDEEMED', orderStatus: 'RECHARGE_FAILED' }), '兑了没成 · 码没退回');
   // 码被绑走只说明开始用了；订单成功才算交付 —— 这两个不能混
   assert.equal(label({ status: 'REDEEMED', orderStatus: 'RECHARGE_PROCESSING' }), '使用中');
   assert.equal(label({ status: 'REDEEMED', orderStatus: 'RECHARGE_SUCCESS' }), '已交付');
@@ -288,10 +289,9 @@ test('CDK 页不得使用 .workbench 作用域的 class（写了也不生效，�
   const html = fs.readFileSync(path.join(here, '..', 'public', 'admin', 'index.html'), 'utf8');
   // 前提：wb-* 样式确实被限定在 .workbench 里，且 CDK 视图不在该作用域
   assert.ok(/\.workbench \.wb-chip\{/.test(css), 'wb-chip 应是 .workbench 作用域限定的');
-  assert.ok(/id="cdks-view" class="view"/.test(html), 'CDK 视图不带 workbench 作用域');
+  assert.ok(/id="cdks-view" class="view cdk-page"/.test(html), 'CDK 视图不带 workbench 作用域');
   // loadCdkCodes 的渲染里不许出现 wb-* class（注释不算）
-  const fn = src.slice(src.indexOf('async function loadCdkCodes'));
-  const body = fn.slice(0, fn.indexOf('\n}\n'));
+  const body = fs.readFileSync(path.join(here, '..', 'public', 'admin', 'assets', 'cdks.js'), 'utf8');
   const codeOnly = body.split('\n').filter((line) => !line.trim().startsWith('//')).join('\n');
   assert.ok(!/class="[^"]*\bwb-/.test(codeOnly),
     'CDK 页渲染不得用 .workbench 作用域的 wb-* class；旧页请用 .status-chip 等 admin.css 的类');

@@ -11,6 +11,9 @@ import {
   inspectCdkBatch,
   listCdkBatches,
   listCdkCodes,
+  listCdkBatchOptions,
+  updateCdkCodes,
+  updateCdkBatchMetadata,
   markCdkIssued,
   revokeCdkBatch,
   revokeCdkCode,
@@ -310,6 +313,9 @@ const app = createApp({
   ,revokeAdminCdkCode: (cdkId, input) => revokeCdkCode(pool, cdkId, input)
   ,markAdminCdkIssued: (cdkId, input) => markCdkIssued(pool, cdkId, input)
   ,summarizeAdminCdkLiability: () => summarizeCdkLiability(pool)
+  ,listAdminCdkBatchOptions: (input) => listCdkBatchOptions(pool, input)
+  ,updateAdminCdkCodes: (input) => updateCdkCodes(pool, input)
+  ,updateAdminCdkBatchMetadata: (batch, input) => updateCdkBatchMetadata(pool, batch, input)
   ,listAdminReconciliationCases: reconciliationCases.listCases
   ,assignAdminReconciliationCase: reconciliationCases.assign
   ,resolveAdminReconciliationCase: reconciliationCases.resolve
