@@ -1,9 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
-import { parseRestoreKeys, validateRestoreContainer, validateRestoreTrigger } from '../scripts/verify-restored-backup.mjs';
+import { parseRestoreKeys, validateRestoreContainer, validateRestoreTrigger, validateDailySummary } from '../scripts/verify-restored-backup.mjs';
 
 const encoded = randomBytes(32).toString('base64');
+test('pre-058 observed summary remains explicitly legacy; new schema and malformed summaries fail closed',()=>{
+  const old={generatedAt:'2026-09-18T08:29:39.596Z',discrepancyFingerprints:['old-fingerprint']};
+  assert.equal(validateDailySummary(JSON.stringify(old),false),'LEGACY_FORMAT');
+  assert.throws(()=>validateDailySummary(JSON.stringify(old),true),/RESTORE_DAILY_SUMMARY_INVALID/);
+  assert.equal(validateDailySummary(JSON.stringify({...old,date:'2026-09-21',persistentFingerprints:[]}),true),'OK');
+  for(const value of ['{}','not-json',JSON.stringify({...old,generatedAt:'bad'}),JSON.stringify({...old,discrepancyFingerprints:[null]})])assert.throws(()=>validateDailySummary(value,false),/RESTORE_DAILY_SUMMARY_INVALID/);
+});
 const keyText = `SESSION_ENCRYPTION_KEY_BASE64=${encoded}\nexport CDK_RECOVERY_KEY_BASE64="${encoded}"\nDATABASE_URL=not-evaluated\n`;
 test('restoration key file is parsed as data and only whitelisted keys are used', () => {
   assert.deepEqual(Object.keys(parseRestoreKeys(keyText)), ['SESSION_ENCRYPTION_KEY_BASE64','CDK_RECOVERY_KEY_BASE64']);

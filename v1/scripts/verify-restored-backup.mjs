@@ -52,6 +52,20 @@ export function validateRestoreTrigger(rows, has057) {
   return true;
 }
 
+export function validateDailySummary(value, has058) {
+  try {
+    const saved = JSON.parse(value);
+    const strings = a => Array.isArray(a) && a.every(x => typeof x === 'string');
+    if (!saved || typeof saved.generatedAt !== 'string' || !Number.isFinite(Date.parse(saved.generatedAt))
+      || !strings(saved.discrepancyFingerprints)) throw Error('shape');
+    if (/^\d{4}-\d{2}-\d{2}$/.test(saved.date) && strings(saved.persistentFingerprints)) return 'OK';
+    // Observed pre-058 production format: 188 chars, generatedAt + fingerprints.
+    // Preserve it as legacy, not as proof of current daily persistence semantics.
+    if (!has058 && Object.keys(saved).length === 2 && saved.date === undefined && saved.persistentFingerprints === undefined) return 'LEGACY_FORMAT';
+  } catch { /* emit only a safe error code */ }
+  fail('RESTORE_DAILY_SUMMARY_INVALID');
+}
+
 async function run(args, input = '') {
   return new Promise((resolve, reject) => {
     const child = spawn('docker', args, { stdio: ['pipe', 'pipe', 'pipe'] });
@@ -131,13 +145,7 @@ export async function verifyRestoredBackup({ container, keysFile, prepareDefiner
   const summaries = await rows("SELECT JSON_OBJECT('value',setting_value) FROM app_settings WHERE setting_key='daily_reconciliation_last_report'");
   let dailySummary = 'NOT_PRESENT';
   if (summaries.length) {
-    try {
-      const saved = JSON.parse(summaries[0].value);
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(saved.date) || typeof saved.generatedAt !== 'string'
-        || !Array.isArray(saved.discrepancyFingerprints) || !Array.isArray(saved.persistentFingerprints)
-        || ![...saved.discrepancyFingerprints,...saved.persistentFingerprints].every(x => typeof x === 'string')) throw Error('shape');
-      dailySummary = 'OK';
-    } catch { fail('RESTORE_DAILY_SUMMARY_INVALID'); }
+    dailySummary = validateDailySummary(summaries[0].value, has058);
   }
   let incidentVersion = null;
   if (hasTrigger) {

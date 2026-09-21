@@ -1,5 +1,5 @@
 {
-  "startedAt": "2026-09-21T07:22:34.776Z",
+  "startedAt": "2026-09-21T07:31:27.687Z",
   "checks": [
     {
       "name": "057 schema: read-only succeeds while actual persistence fails",
@@ -72,12 +72,12 @@
     {
       "name": "new isolated MySQL restore preserves exact summary and passes functional verifier",
       "evidence": {
-        "digest": "fa211be01f63c54173db8fa7bd5fc850118c37e0dbe68bfcf0c6e74e26bb6149",
+        "digest": "3b0b68befe902a5f10c68258596354b79e67ed1d4d137bf41a6a25ce5dbe41b8",
         "verification": "restore_functional={\"businessRead\":\"OK\",\"decryptedSamples\":{\"sessions\":1,\"cdkBatches\":1},\"dailySummary\":\"OK\",\"alertTrigger\":\"OK\",\"incidentVersion\":2,\"definerPrepared\":true,\"scope\":\"isolated representative checks; not production or offsite recovery acceptance\"}"
       }
     }
   ],
   "status": "passed",
   "remainingDatabases": 0,
-  "finishedAt": "2026-09-21T07:22:54.295Z"
+  "finishedAt": "2026-09-21T07:31:52.360Z"
 }
