@@ -1,4 +1,5 @@
 import { PublicApiError } from '../domain/public-api-error.js';
+import { providerLabelOf } from '../domain/provider-labels.js';
 
 export const CARD_STOCK_RISK_CONFIRM_THRESHOLD = 10;
 export const CARD_PROVIDER_SNAPSHOT_MAX_AGE_MS = 2 * 60 * 1000;
@@ -199,7 +200,7 @@ export async function refreshProviderSnapshot(pool, provider, {
     ? null : String(previousRows[0].available_balance);
   if (previousBalance != null && previousBalance !== snapshot.accountBalance) {
     const providerCode = String(snapshot.provider || 'hnskj');
-    const providerLabel = providerCode === 'hnskj' ? '当前卡台' : providerCode;
+    const providerLabel = providerLabelOf(providerCode);
     const dedupeKey = `provider-balance-change:${providerCode}:${previousBalance}:${snapshot.accountBalance}`;
     await pool.query(
       `INSERT INTO operator_alerts

@@ -1,0 +1,8 @@
+PASS balance and human-required push; routine submission including old queue is silent
+PASS same OPEN incident does not repeat
+PASS phone wording leaves original backend alert intact
+PASS late acknowledgement cannot mark a new incident delivered
+PASS recovered then recurring incident sends exactly once again
+PASS routine event remains recorded without phone attempts
+{"checks":6,"passed":true,"actualPhoneRequests":0,"database":"bark_copy_3b02215b"}
+CLEANUP isolated database removed

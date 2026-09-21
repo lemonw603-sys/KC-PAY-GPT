@@ -1,13 +1,11 @@
+import {presentBarkNotification} from './bark-presentation.js';
+
 export async function dispatchOneBarkNotification({ repository, client, maxAttempts = 8 }) {
   await repository.enqueueOpenAlerts();
   const delivery = await repository.claimNext();
   if (!delivery) return { handled: false };
   try {
-    await client.send({
-      title: delivery.title,
-      message: delivery.message,
-      severity: delivery.severity
-    });
+    await client.send(presentBarkNotification(delivery));
     await repository.markSent(delivery.id, { incidentVersion: delivery.incidentVersion });
     return { handled: true, delivered: true, alertId: delivery.alertId };
   } catch (error) {
