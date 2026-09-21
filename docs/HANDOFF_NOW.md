@@ -4,7 +4,7 @@
 
 ## 当前位置与下一步
 
-- **当前等待用户登录观察**：用户回复“方便”。应用内浏览器highvcc官方登录页tab7（https://www.highvcc.com/#/），CDP Network仅内存启用，responseReceived起点cursor32；cua_repl绑定authTab/authCdp/authCaptureCursor。没有填写凭据/滑块/点击登录；不录HAR、不输出请求参数/Authorization/完整响应。用户正常登录后仅提取登录响应的字段名、刷新凭据存在性与过期时间，随后关闭观察。不要reload该页或让用户重新登录；先读cursor32之后事件。工具显示标签已保留，但面板visibility仍false，用户未见页面时先解决展示再操作。
+- **登录观察已完成（12:14:49 UTC）**：用户自行在tab7登录成功，Network已disable，不再等待登录、不再读旧cursor。成功响应只有name/isSub/expireTime/accessToken，无refreshToken；expireTime=1790597610→2026-09-28 12:13:30 UTC（约7天）。这不等于7天保证有效，2小时网页闲置规则和服务端失效仍待区分。未导出完整凭据/请求参数、未写生产token、未做保活。tab7登录态按原样保留，不擅自退出或再次登录。最新证据`reviews/2026-09-21-feedback-a/login-observation.md`；下一步讨论有界只读有效性复测，不再猜“token固定2小时有效”。
 
 - **D-333最新**：用户已认可D-332交互，继续推进，不再重开这版UI。只读续期调查发现网站通用refresh函数，但13个公开业务JS未见实际调用/具体刷新URL，登录页只传访问凭据和时间；不能据此实施自动续期。下一验证依赖一次用户正常登录的响应元数据（不把完整凭据落日志）。同时生产正式读服务核实两页库存各台2/2、HNSKJ钱包与时点一致；10条费用/拒付记录事件时间全空，今日费用按首次入库时间仍有跨日限制。报告`reviews/2026-09-21-feedback-a/auth-and-data-audit.md`。没有新增自动登录/保活或发布。
 
