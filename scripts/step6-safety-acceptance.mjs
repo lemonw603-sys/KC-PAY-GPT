@@ -38,7 +38,8 @@ const suffix = crypto.randomBytes(4).toString('hex');
 const database = `step6_safety_${suffix}`, migrator = `safety_${suffix}`;
 const restoreContainer = `step6-restore-${suffix}`;
 const diagnosticsMode = process.env.DIAGNOSTICS_ACCEPTANCE === '1';
-const output = new URL(diagnosticsMode ? '../output/playwright/diagnostics/' : '../output/playwright/step6-safety/', import.meta.url);
+const feedbackMode = process.env.FEEDBACK_ACCEPTANCE === '1';
+const output = new URL(feedbackMode ? '../output/playwright/feedback-a/' : diagnosticsMode ? '../output/playwright/diagnostics/' : '../output/playwright/step6-safety/', import.meta.url);
 const report = { startedAt: new Date().toISOString(), checks: [], failures: [], isolation: { database, restoreContainer, syntheticOnly: true, providersRegistered: false, workersStarted: false } };
 await mkdir(output, { recursive: true });
 let owner, pool, restored, restoreOwner, server, chrome, cdp, restoreTunnel, restoreCreated = false, dbCreated = false, userCreated = false;
@@ -113,6 +114,37 @@ try {
   const fill=(selector,value)=>ev(`const e=document.querySelector(${JSON.stringify(selector)});if(!e)throw Error('missing field');e.value=${JSON.stringify(value)};e.dispatchEvent(new Event('input',{bubbles:true}));e.dispatchEvent(new Event('change',{bubbles:true}));`);
   async function capture(name) { const {data}=await cdp.send('Page.captureScreenshot',{format:'png'},sid);await writeFile(new URL(name+'.png',output),Buffer.from(data,'base64')); }
   async function reload(){await ev('await loadOverview();');await wait('document.querySelector("[data-op=pay]")');}
+  if(feedbackMode) await section('feedback A wallet and token navigation',async()=>{
+    await ev(`window.feedbackOriginalApi=api;window.feedbackCalls=[];window.feedbackWalletFails=true;
+      api=async(path,options)=>{window.feedbackCalls.push({path,method:options?.method||'GET'});
+        if(path==='/api/v1/admin/backup-cards/highvcc/wallet'){
+          if(window.feedbackWalletFails)throw Error('highvcc_token_expired');
+          return {usdBalance:'38.73',usdDeposit:'0',usdConsume:'1'};
+        }return window.feedbackOriginalApi(path,options);};
+      renderWbCards({cardStockByProvider:[{providerKind:'highvcc',label:'隔离卡台',products:[]}]});`);
+    try {
+      await click('[data-highvcc-target="wallet"]');
+      await wait('document.activeElement?.id==="highvcc-refresh-wallet"');
+      assert.equal(await ev(`let e=document.querySelector('#highvcc-open-card');while(e){if(!e.open)return false;e=e.parentElement?.closest('details');}return true;`),true);
+      await wait('document.querySelector("#highvcc-wallet-status").textContent.includes("未取得新余额")');
+      await click('#highvcc-refresh-wallet');
+      await wait('!document.querySelector("#highvcc-refresh-wallet").disabled');
+      assert.match(await ev('return elements.notice.textContent'),/余额刷新失败/);
+      await capture('wallet-failed');
+      await ev('window.feedbackWalletFails=false');
+      await click('#highvcc-refresh-wallet');
+      await wait('document.querySelector("#highvcc-wallet-status").textContent.includes("38.73")');
+      assert.match(await ev('return elements.notice.textContent'),/余额已刷新/);
+      await capture('wallet-success');
+      await ev(`await switchView('overview');renderWbQueue({},null,{alerts:[{type:'PROVIDER_TOKEN_EXPIRED',message:'隔离过期样本',createdAt:new Date().toISOString()}]},null);document.querySelector('#highvcc-open-card').open=false;`);
+      await click('[data-highvcc-target="token"]');
+      await wait('document.activeElement?.id==="highvcc-token-input"');
+      await capture('token-focused');
+      const requests=await ev('return window.feedbackCalls');
+      assert.equal(requests.filter(r=>r.method!=='GET').length,0);
+      mark('real DOM clicks: wallet/token deep links, wallet failure/retry, no write requests',{requests,syntheticWallet:true,stockReadFailureFallback:true});
+    } finally {await ev('api=window.feedbackOriginalApi;await switchView("overview");');}
+  });
   await section('payment gate scope',async()=>{
     await ops.setBrowserPaymentWrites({enabled:true});await ops.setDispatch({enabled:true,confirmation:'开始自动充值'});
     await reload();await click('[data-op=pay]');await wait('document.querySelector("[data-op=pay]").dataset.on==="false"');

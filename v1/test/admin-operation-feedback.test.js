@@ -4,6 +4,37 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 const src=fs.readFileSync(new URL('../public/admin/assets/admin.js',import.meta.url),'utf8');
 function snippet(marker,end='\n});'){const a=src.indexOf(marker);assert(a>=0,`marker not found: ${marker}`);const b=src.indexOf(end,a)+end.length;return src.slice(a,b);}
+test('wallet refresh reports failure truthfully and restores the button; retry succeeds', async () => {
+ let handler, fail=true; const notices=[], requests=[];
+ const ctx={elements:{highvccWalletStatus:{dataset:{},innerHTML:''},highvccRefreshWallet:{disabled:false,addEventListener(_,fn){handler=fn}}},
+  api:async(path)=>{requests.push(path);if(fail)throw Error('expired');return{usdBalance:'38.73',usdDeposit:'0',usdConsume:'1'}},
+  formatTime:x=>x,showNotice:(...args)=>notices.push(args)};
+ vm.runInNewContext(snippet('async function loadHighvccWallet(', '\n}\n')+'\n'+snippet("elements.highvccRefreshWallet?.addEventListener('click'"),ctx);
+ await handler();
+ assert.match(ctx.elements.highvccWalletStatus.innerHTML,/未取得新余额/);
+ assert(!notices.some(x=>x[1]==='success'));assert.equal(ctx.elements.highvccRefreshWallet.disabled,false);
+ fail=false;await handler();
+ assert.match(ctx.elements.highvccWalletStatus.innerHTML,/38.73/);
+ assert.equal(notices.at(-1)[1],'success');assert.equal(ctx.elements.highvccRefreshWallet.disabled,false);
+ assert.deepEqual(requests,Array(2).fill('/api/v1/admin/backup-cards/highvcc/wallet'));
+});
+for (const target of ['wallet','token']) test(`highvcc ${target} jump expands ancestors and focuses only the requested control even if page read fails`,async()=>{
+ const outer={open:false,parentElement:null},section={open:false,parentElement:{closest:()=>outer}};
+ const focused=[],scrolled=[],notices=[];
+ const control=name=>({focus:()=>focused.push(name),scrollIntoView:()=>scrolled.push(name)});
+ const ctx={state:{view:'overview'},document:{querySelector:()=>section},
+  elements:{highvccTokenInput:control('token'),highvccRefreshWallet:control('wallet')},
+  switchView:async(v)=>{ctx.state.view=v;throw Error('read failed')},showNotice:x=>notices.push(x)};
+ vm.runInNewContext(snippet('async function openHighvccTarget(', '\n}\n')+'\nglobalThis.run=openHighvccTarget;',ctx);
+ await ctx.run(target);
+ assert.equal(section.open,true);assert.equal(outer.open,true);
+ assert.deepEqual(focused,[target]);assert.deepEqual(scrolled,[target]);assert.equal(notices.length,1);
+});
+test('highvcc jump does not steal focus after navigation away while loading',async()=>{
+ const ctx={state:{view:'overview'},switchView:async()=>{},document:{querySelector(){throw Error('unexpected focus')}},showNotice(){}};
+ vm.runInNewContext(snippet('async function openHighvccTarget(', '\n}\n')+'\nglobalThis.run=openHighvccTarget;',ctx);
+ await ctx.run('token');await ctx.run('invalid');
+});
 // 这条原来跑的是 `#refresh-button` 的 handler。查下来那个按钮从 7c1a5c0（工作台重做）
 // 起就**不在页面上了**（HTML 0 处、JS 动态创建 0 处），handler 一直是死代码 ——
 // 也就是说这条测试一直在给一段用户永远碰不到的代码发绿灯。**测试绿 ≠ 功能可达。**

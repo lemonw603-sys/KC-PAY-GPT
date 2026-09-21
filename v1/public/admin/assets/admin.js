@@ -407,7 +407,7 @@ function renderWbCards(overview) {
       ? wbChip('danger', `供卡故障${p.supplyFaultReason ? '：' + escapeHtml(p.supplyFaultReason) : ''}`)
       : '';
     return `<div class="wb-provrow">
-      <div class="wb-provhead"><b>${escapeHtml(nameOf(p))}</b>${wbChip('ok', walletOf(p))}`
+      <div class="wb-provhead"><b>${escapeHtml(nameOf(p))}</b>${p.providerKind === 'hnskj' ? wbChip('ok', walletOf(p)) : '<button type="button" class="wb-btn out sm" data-highvcc-target="wallet">钱包见卡片页</button>'}`
       + (spentNum == null ? ''
         : spentNum === 0
           ? '<span class="wb-spent is-zero">今天没花钱</span>'
@@ -501,7 +501,8 @@ function renderWbQueue(overview, daily, alertData, reconCases) {
   const tokenExpired = (alertData?.alerts || []).find((a) => a && a.type === 'PROVIDER_TOKEN_EXPIRED');
   if (tokenExpired) {
     items.push({ t: 'danger', ic: '⚿', title: '卡台 token 已失效，开卡会失败',
-      ev: `${tokenExpired.message || '重新贴一次 token'} · ${formatTime(tokenExpired.createdAt)}`, jump: 'stock' });
+      ev: `${tokenExpired.message || '重新贴一次 token'} · ${formatTime(tokenExpired.createdAt)}`,
+      actions: '<button type="button" class="wb-btn out sm" data-highvcc-target="token">去处理</button>' });
   }
   // 告警不逐条塞队列（48 个会爆炸）——聚合成一条可展开的折叠栏，逐条关。
   const alerts = (alertData && alertData.alerts) || [];
@@ -1894,16 +1895,32 @@ async function loadStock() {
 
 /** 向 highvcc 实时查钱包并渲染到开卡区（按需触发，不随页面加载跑）。 */
 async function loadHighvccWallet() {
-  if (!elements.highvccWalletStatus) return;
+  if (!elements.highvccWalletStatus) return false;
   elements.highvccWalletStatus.dataset.loaded = '1';
   elements.highvccWalletStatus.innerHTML = '<div><span><strong>正在向卡台查询…</strong></span></div>';
   try {
     const wallet = await api('/api/v1/admin/backup-cards/highvcc/wallet');
     elements.highvccWalletStatus.innerHTML = `<div><span><strong>卡台美元钱包 $${wallet.usdBalance}</strong>`
       + `<small>查询于 ${formatTime(new Date().toISOString())}；卡台自己的"押金"字段累计 $${wallet.usdDeposit}（含义未完全确认，实际能开多大金额以卡台报价为准，不代表这个数字能直接减）；已消费 $${wallet.usdConsume}</small></span></div>`;
+    return true;
   } catch {
-    elements.highvccWalletStatus.innerHTML = '<div><span><strong>钱包余额读取失败</strong><small>不影响开卡，稍后刷新再看。</small></span></div>';
+    elements.highvccWalletStatus.innerHTML = '<div><span><strong>钱包余额读取失败</strong><small>请检查卡台登录状态后重试；本次未取得新余额。</small></span></div>';
+    return false;
   }
+}
+
+/** 只定位已有表单，不提交 token、开卡或充值。读页失败也允许修复登录。 */
+async function openHighvccTarget(target) {
+  if (target !== 'wallet' && target !== 'token') return;
+  try { await switchView('stock'); }
+  catch { showNotice('部分卡片数据读取失败，仍可使用下方登录与余额入口。'); }
+  if (state.view !== 'stock') return; // 请求期间用户已切页，不抢回焦点。
+  const section = document.querySelector('#highvcc-open-card');
+  const control = target === 'token' ? elements.highvccTokenInput : elements.highvccRefreshWallet;
+  if (!section || !control) { showNotice('找不到卡台操作入口，请刷新页面重试。'); return; }
+  for (let node = section; node; node = node.parentElement?.closest('details')) node.open = true;
+  control.scrollIntoView({ block: 'center' });
+  control.focus({ preventScroll: true });
 }
 
 async function loadHighvccStatus(prefetched) {
@@ -2856,8 +2873,9 @@ document.querySelector('#highvcc-open-card')?.addEventListener('toggle', (event)
 elements.highvccRefreshWallet?.addEventListener('click', async () => {
   elements.highvccRefreshWallet.disabled = true;
   try {
-    await loadHighvccWallet();
-    showNotice('余额已刷新。', 'success');
+    const refreshed = await loadHighvccWallet();
+    if (refreshed) showNotice('余额已刷新。', 'success');
+    else showNotice('余额刷新失败，请检查卡台登录状态后重试。');
   } catch {
     showNotice('余额刷新失败，请稍后重试。');
   } finally {
@@ -3197,6 +3215,8 @@ document.addEventListener('click', (event) => {
   const filterButton = event.target.closest('[data-order-filter]');
   const viewButton = event.target.closest('[data-target-view]');
   const jumpButton = event.target.closest('[data-view-jump]');
+  const highvccTarget = event.target.closest('[data-highvcc-target]');
+  if (highvccTarget) { openHighvccTarget(highvccTarget.dataset.highvccTarget).catch(() => showNotice('卡台入口打开失败，请重试。')); return; }
   const resolveCase = event.target.closest('[data-resolve-wb-case]');
   const openCaseOrder = event.target.closest('[data-open-case-order-wb]');
   const opSwitch = event.target.closest('[data-op]');
