@@ -407,7 +407,7 @@ function renderWbCards(overview) {
       ? wbChip('danger', `供卡故障${p.supplyFaultReason ? '：' + escapeHtml(p.supplyFaultReason) : ''}`)
       : '';
     return `<div class="wb-provrow">
-      <div class="wb-provhead"><b>${escapeHtml(nameOf(p))}</b>${p.providerKind === 'hnskj' ? wbChip('ok', walletOf(p)) : '<button type="button" class="wb-btn out sm" data-highvcc-target="wallet">钱包见卡片页</button>'}`
+      <div class="wb-provhead"><b>${escapeHtml(nameOf(p))}</b>${p.providerKind === 'hnskj' ? wbChip('ok', walletOf(p)) : '<span class="wb-chip" data-highvcc-wallet-summary>钱包 — USD · 未查询</span><button type="button" class="wb-btn out sm" data-highvcc-refresh>刷新余额</button><button type="button" class="wb-btn out sm" data-highvcc-target="token">更新登录</button>'}`
       + (spentNum == null ? ''
         : spentNum === 0
           ? '<span class="wb-spent is-zero">今天没花钱</span>'
@@ -421,6 +421,7 @@ function renderWbCards(overview) {
       ? ` · <b class="wb-waiting">${waiting} 单正在等卡</b>`
       : ' · 没有单在等卡')
     + '</p>';
+  updateHighvccWalletSummary();
 }
 
 function renderWbRecon(daily) {
@@ -612,7 +613,7 @@ function renderDecisions(overview, cardSources, takeoverEstimate = null) {
       `<div class="wb-grp"><div class="wb-seg2">${methodBtn('API', 'API 充值')}${methodBtn('BROWSER', '浏览器自动化')}</div></div>`
       + `<div class="wb-grp"><span class="wb-k">浏览器</span>`
       + `<span class="wb-pair">`
-      + `<select class="wb-field" id="decision-card-source" data-saved-value="${escapeHtml(currentSource)}" aria-label="Browser 卡台">${sourceOptions || '<option value="">没有可用卡台</option>'}</select>`
+      + `<select class="wb-field" id="decision-card-source" aria-label="Browser 卡台">${sourceOptions || '<option value="">没有可用卡台</option>'}</select>`
       + `<button type="button" class="wb-btn sm out" id="decision-card-source-apply" ${sources.length ? '' : 'disabled'}>切换</button>`
       + `</span>${takeoverHint}</div>`;
   }
@@ -1885,13 +1886,28 @@ async function loadStock() {
 
 let highvccWalletRequest = null;
 let highvccWalletVersion = 0;
+function updateHighvccWalletSummary() {
+  const summary = document.querySelector('[data-highvcc-wallet-summary]');
+  const button = document.querySelector('[data-highvcc-refresh]');
+  const observation = state.highvccWalletObservation;
+  if (summary) {
+    summary.textContent = observation
+      ? `钱包 ${observation.balance} USD · ${state.highvccWalletError ? '上次查询' : '查询于'} ${formatTime(observation.at)}${state.highvccWalletError ? ' · 刷新失败' : ''}`
+      : `钱包 — USD · ${state.highvccWalletError ? '查询失败，请检查登录' : '未查询'}`;
+    summary.classList.toggle('warn', Boolean(state.highvccWalletError));
+  }
+  if (button) { button.disabled = Boolean(highvccWalletRequest); button.textContent = highvccWalletRequest ? '查询中…' : '刷新余额'; }
+}
 function invalidateHighvccWallet() {
   highvccWalletVersion += 1;
   highvccWalletRequest = null;
+  state.highvccWalletObservation = null;
+  state.highvccWalletError = false;
   if (elements.highvccWalletStatus) {
     delete elements.highvccWalletStatus.dataset.loaded;
     elements.highvccWalletStatus.innerHTML = '<div><span><strong>登录信息已更新，请重新查询余额</strong></span></div>';
   }
+  updateHighvccWalletSummary();
 }
 
 /** 两个入口共用一个展示区与在途查询；页面轮询不请求上游钱包。 */
@@ -1905,19 +1921,25 @@ async function loadHighvccWallet() {
     try {
       const wallet = await api('/api/v1/admin/backup-cards/highvcc/wallet');
       if (version !== highvccWalletVersion) return false;
+      if (wallet.usdBalance == null || wallet.usdBalance === '' || !Number.isFinite(Number(wallet.usdBalance))) throw new Error('wallet_balance_missing');
+      state.highvccWalletObservation = { balance: formatMoney(wallet.usdBalance), at: new Date().toISOString() };
+      state.highvccWalletError = false;
       elements.highvccWalletStatus.innerHTML = `<div><span><strong>卡台美元钱包 $${wallet.usdBalance}</strong>`
         + `<small>查询于 ${formatTime(new Date().toISOString())}；卡台自己的"押金"字段累计 $${wallet.usdDeposit}（含义未完全确认，实际能开多大金额以卡台报价为准，不代表这个数字能直接减）；已消费 $${wallet.usdConsume}</small></span></div>`;
       return true;
     } catch {
       if (version !== highvccWalletVersion) return false;
+      state.highvccWalletError = true;
       elements.highvccWalletStatus.innerHTML = '<div><span><strong>钱包余额读取失败</strong><small>请检查卡台登录状态后重试；本次未取得新余额。</small></span></div>';
       return false;
     }
   })();
   highvccWalletRequest = request;
+  updateHighvccWalletSummary();
   try { return await request; }
   finally {
     if (highvccWalletRequest === request) highvccWalletRequest = null;
+    updateHighvccWalletSummary();
   }
 }
 
@@ -2370,15 +2392,10 @@ function switchCheckReasons(error) {
 }
 
 async function setDefaultRechargeMethod(button) {
+  if (button.disabled) return;
   const method = String(button.dataset.method || '').toUpperCase();
   if (!['API', 'BROWSER'].includes(method)) return;
-  const source = document.querySelector('#decision-card-source');
-  if (method === 'BROWSER' && source?.dataset.savedValue && source.value !== source.dataset.savedValue) {
-    showNotice('卡台选择尚未保存，请先点卡台旁的“切换”，或改回原选择，再切充值方式。');
-    return;
-  }
   const label = method === 'API' ? 'API 充值' : '浏览器自动化充值';
-  if (!window.confirm(`确认将默认充值方式切换为“${label}”？\n\n只影响切换后新建订单；已经创建或正在执行的订单不会改线。`)) return;
   button.disabled = true;
   try {
     await api('/api/v1/admin/operations/default-recharge-method', {
@@ -3238,6 +3255,11 @@ document.addEventListener('click', (event) => {
   const viewButton = event.target.closest('[data-target-view]');
   const jumpButton = event.target.closest('[data-view-jump]');
   const highvccTarget = event.target.closest('[data-highvcc-target]');
+  const walletRefresh = event.target.closest('[data-highvcc-refresh]');
+  if (walletRefresh) {
+    if (!walletRefresh.disabled) loadHighvccWallet().then((ok) => showNotice(ok ? '钱包余额已更新。' : '钱包查询失败，请检查卡台登录状态。', ok ? 'success' : 'error'));
+    return;
+  }
   if (highvccTarget) { openHighvccTarget(highvccTarget.dataset.highvccTarget).catch(() => showNotice('卡台入口打开失败，请重试。')); return; }
   const resolveCase = event.target.closest('[data-resolve-wb-case]');
   const openCaseOrder = event.target.closest('[data-open-case-order-wb]');

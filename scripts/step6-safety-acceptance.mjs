@@ -128,8 +128,19 @@ try {
         }return window.feedbackOriginalApi(path,options);};
       renderWbCards({cardStockByProvider:[{providerKind:'highvcc',label:'隔离卡台',products:[]}]});`);
     try {
-      await click('[data-highvcc-target="wallet"]');
-      await wait('document.activeElement?.id==="highvcc-refresh-wallet"');
+      await click('[data-highvcc-refresh]');
+      await wait('document.querySelector("[data-highvcc-wallet-summary]").textContent.includes("查询失败")');
+      assert.equal(await ev('return state.view'),'overview');
+      await ev('window.feedbackWalletFails=false');
+      await click('[data-highvcc-refresh]');
+      await wait('document.querySelector("[data-highvcc-wallet-summary]").textContent.includes("38.73")');
+      await ev('await loadOverview();window.feedbackWalletFails=true');
+      await click('[data-highvcc-refresh]');
+      await wait('document.querySelector("[data-highvcc-wallet-summary]").textContent.includes("上次查询")');
+      assert.match(await ev('return document.querySelector("[data-highvcc-wallet-summary]").textContent'),/38.73/);
+      await capture('workbench-wallet-stale');
+      await click('#wb-cards [data-highvcc-target="token"]');
+      await wait('document.activeElement?.id==="highvcc-token-input"');
       assert.equal(await ev(`let e=document.querySelector('#highvcc-open-card');while(e){if(!e.open)return false;e=e.parentElement?.closest('details');}return true;`),true);
       await wait('document.querySelector("#highvcc-wallet-status").textContent.includes("未取得新余额")');
       await click('#highvcc-refresh-wallet');

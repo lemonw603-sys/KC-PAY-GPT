@@ -34,6 +34,8 @@
 
 ### Demo试用后的需求调整（2026-09-21，待对齐细节）
 
+**D-332后续覆盖：用户已明确撤回新增卡台未保存提醒，第4点只指Demo模拟场景，其他建议同意。** 第三批完成原位钱包USD/刷新/登录入口、删除未保存guard及方式confirm、顶部醒目反馈，Demo模拟故障工具折叠。默认993 pass/0 fail/69 skipped，隔离25通过，未发布；只用本页面最近成功钱包值，整页重载未查询，不读历史钱包冒充新值。续期研究、A全部字段与整体验收仍未完成。证据[第三批](../reviews/2026-09-21-feedback-a/third-batch.md)。以下是讨论时原始记录，不再作为待澄清事项。
+
 用户提出：①工作台highvcc钱包像HNSKJ显示金额USD，附近放刷新/登录入口，查询成功回显新金额；②重新探索更省事且稳定的登录续期，减少反复登录/书签；③认为卡源新增交互更难理解，倾向不改，撤回范围待确认；③.1希望去掉API/Browser切换原生确认框；③.2右下角操作反馈不明显，需增强；④“没看懂”所指待确认。先讨论调整，不继续把上一Demo当最终确认稿，不擅自扩大到自动破解登录或生产凭据保存。
 
 本轮代码核查：highvcc provider只使用getAccessToken，无续期实现；D-249旧“不自动登录”依据为滑块，不等于已证伪续期接口。walletStatus已有实时GET，provider_balance_snapshots有历史钱包。11:38:57.171 UTC执行 `SELECT pa.account_code,MAX(bs.observed_at) AS last_wallet_observation FROM provider_balance_snapshots bs JOIN provider_accounts pa ON pa.id=bs.provider_account_id GROUP BY pa.account_code;` 输出legacy-primary=2026-09-21 11:37:58.192、backup-a=2026-09-19 00:53:18.368（UTC）。历史金额显示必须带时间/失效状态，不当最新值。依据仍D-330/331、工作台C/卡片A；新布局与撤回范围尚未确认，未改应用代码或Demo。

@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 const app = express(), port = 8805;
 const root = fileURLToPath(new URL('../v1/public/', import.meta.url));
 const now = () => new Date().toISOString();
-let mode='expired', method='API', source='backup', updatedAt=now(), saved=false;
+let mode='normal', method='API', source='backup', updatedAt=now(), saved=false;
 const sources=[{id:'primary',accountCode:'demo-primary',label:'HNSKJ（测试）',providerKind:'hnskj'},
   {id:'backup',accountCode:'demo-backup',label:'highvcc（测试）',providerKind:'highvcc'}];
 const rigs=()=>sources.map((s,i)=>({...s,providerAccountId:s.id,providerCode:s.accountCode,operationalEnabled:true,
@@ -70,8 +70,10 @@ app.post('/api/v1/admin/orders/search',(_req,res)=>res.json({orders:[],total:0})
 app.use('/api',(_req,res)=>res.status(403).json({error:'DEMO_ONLY_此操作未接通'}));
 const banner=`<section id="demo-tools" style="padding:14px;background:var(--wb-warn-soft);border-bottom:1px solid var(--wb-bd);position:relative;z-index:20">
 <strong>可交互 Demo · 纯测试数据 · 不连接真实业务</strong>
-<label style="display:block;margin-top:8px">测试场景 <select id="demo-scenario"><option value="expired">token失效（默认）</option><option value="normal">正常查询</option><option value="save-read-failed">保存成功但状态读取失败</option><option value="switch-unknown">切换结果未确认</option></select></label>
-<small>建议：工作台钱包／token去处理 → 卡片查余额。保存 token 只填 demo-token；切换卡台和充值方式只影响内存。切换场景会重置测试状态。其他模块未开放。</small></section>`;
+<p>先试工作台的“刷新余额”和API／浏览器切换。更新登录时只填 demo-token，不要填真实凭据。</p>
+<details><summary>模拟故障（可不操作，正式系统没有这一项）</summary>
+<label style="display:block;margin-top:8px">模拟情况 <select id="demo-scenario"><option value="normal">正常使用</option><option value="expired">模拟登录过期，查不到余额</option><option value="save-read-failed">模拟token存好了，但状态没读到</option><option value="switch-unknown">模拟切换好了，但回复丢了</option></select></label>
+<small>选一种情况，亲手试提示是否看得懂；选择后会重置测试状态。其他模块未开放。</small></details></section>`;
 app.get(['/','/admin','/admin/'],async(_req,res)=>{
   let html=await readFile(root+'admin/index.html','utf8');
   html=html.replace(/<body([^>]*)>/,`<body$1>${banner}`).replace('</body>','<script src="/demo.js"></script></body>');
