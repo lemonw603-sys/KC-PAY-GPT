@@ -106,6 +106,7 @@ function boundCdkConnection({ boundOrder }) {
       ]];
       if (sql.includes('FROM cdks') && sql.includes('code_hash')) return [[{ id: 'cdk-1', status: 'REDEEMED', plan_type: 'plus', batch_no: 'batch-1' }]];
       if (sql.includes('FROM orders WHERE id = (SELECT order_id FROM cdks')) return [[boundOrder]];
+      if (sql.includes('FROM tasks') && sql.includes('lease_active')) return [[]];
       if (/cdk-return payment evidence/.test(sql)) return [[{ payment_evidence: 0 }]];
       if (/FROM cdks WHERE order_id/.test(sql)) return [[{ id: 'cdk-1', batch_no: 'batch-1' }]];
       if (/UPDATE cdks SET status = 'AVAILABLE'/.test(sql)) return [{ affectedRows: 1 }];

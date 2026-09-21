@@ -36,7 +36,8 @@ function replacementError(code, status = 409) {
     SESSION_REPLACEMENT_NOT_ALLOWED: 'Order is not waiting for a new Session',
     SESSION_REPLACEMENT_EXPIRED: 'Session replacement window has expired',
     SESSION_REPLACEMENT_LIMIT_REACHED: 'Session replacement limit has been reached',
-    FUNDS_STATE_UNSAFE: 'Order funds state requires manual review'
+    FUNDS_STATE_UNSAFE: 'Order funds state requires manual review',
+    SESSION_REPLACEMENT_CONFLICT: 'Order is being processed; please retry shortly'
   };
   return new PublicApiError(messages[code] || 'Session replacement failed', { code, status });
 }
@@ -78,7 +79,7 @@ export function createSessionReplacementService({
           customerEmail: validated.customerEmail, chatgptAccountId: validated.chatgptAccountId,
         });
       } catch (error) {
-        if (error?.code === 'FUNDS_STATE_UNSAFE') throw replacementError('FUNDS_STATE_UNSAFE');
+        if (['FUNDS_STATE_UNSAFE', 'SESSION_REPLACEMENT_CONFLICT'].includes(error?.code)) throw replacementError(error.code);
         throw error;
       }
       await connection.commit();

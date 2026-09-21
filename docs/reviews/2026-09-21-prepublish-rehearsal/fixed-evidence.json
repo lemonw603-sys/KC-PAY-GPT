@@ -1,0 +1,1089 @@
+{
+  "startedAt": "2026-09-21T02:40:55.747Z",
+  "baselineCommit": "8b0b8360730297e6de008a1ea59b0aa7f1a91c94",
+  "sourceWorkingTreeDiff": "v1/scripts/migrate.js\nv1/src/db/repositories/session-replacement-repository.js\nv1/src/db/repositories/workflow-repository.js\nv1/src/services/session-replacement-service.js\nv1/test/order-intake-repository.test.js\nv1/test/session-replacement-service.test.js",
+  "migrations": [
+    {
+      "scenario": "production-like schema privileges",
+      "first": {
+        "exitCode": 1,
+        "error": "MIGRATION_TRIGGER_PRIVILEGE_REQUIRED",
+        "output": [
+          ""
+        ],
+        "errno": null
+      },
+      "afterFailure": {
+        "versions": [],
+        "columns": [
+          {
+            "TABLE_NAME": "browser_artifact_secrets",
+            "COLUMN_NAME": "expires_at"
+          },
+          {
+            "TABLE_NAME": "checkout_artifacts",
+            "COLUMN_NAME": "expires_at"
+          },
+          {
+            "TABLE_NAME": "payment_permits",
+            "COLUMN_NAME": "expires_at"
+          },
+          {
+            "TABLE_NAME": "payment_permits",
+            "COLUMN_NAME": "issued_at"
+          },
+          {
+            "TABLE_NAME": "recharge_authorizations",
+            "COLUMN_NAME": "expires_at"
+          }
+        ],
+        "triggers": []
+      },
+      "retryLimited": {
+        "exitCode": 1,
+        "error": "MIGRATION_TRIGGER_PRIVILEGE_REQUIRED",
+        "output": [
+          ""
+        ],
+        "errno": null
+      },
+      "retryRoot": {
+        "exitCode": 0,
+        "error": null,
+        "output": [
+          "migration 054_card_retirement already applied",
+          "applied migration 055_cdk_issuance_and_expiry",
+          "applied migration 056_cdk_sales_metadata",
+          "applied migration 057_alert_incident_version"
+        ],
+        "errno": null
+      }
+    },
+    {
+      "scenario": "privileged clean run and repeat",
+      "complete": {
+        "exitCode": 0,
+        "error": null,
+        "output": [
+          "migration 054_card_retirement already applied",
+          "applied migration 055_cdk_issuance_and_expiry",
+          "applied migration 056_cdk_sales_metadata",
+          "applied migration 057_alert_incident_version"
+        ],
+        "errno": null
+      },
+      "repeated": {
+        "exitCode": 0,
+        "error": null,
+        "output": [
+          "migration 054_card_retirement already applied",
+          "migration 055_cdk_issuance_and_expiry already applied",
+          "migration 056_cdk_sales_metadata already applied",
+          "migration 057_alert_incident_version already applied"
+        ],
+        "errno": null
+      },
+      "legacy": {
+        "status": "AVAILABLE",
+        "issued_at": null,
+        "expires_at": null,
+        "issuance_kind": "LEGACY"
+      },
+      "final": {
+        "versions": [
+          "055_cdk_issuance_and_expiry",
+          "056_cdk_sales_metadata",
+          "057_alert_incident_version"
+        ],
+        "columns": [
+          {
+            "TABLE_NAME": "alert_notifications",
+            "COLUMN_NAME": "incident_version"
+          },
+          {
+            "TABLE_NAME": "browser_artifact_secrets",
+            "COLUMN_NAME": "expires_at"
+          },
+          {
+            "TABLE_NAME": "cdk_batches",
+            "COLUMN_NAME": "generation_fingerprint"
+          },
+          {
+            "TABLE_NAME": "cdk_batches",
+            "COLUMN_NAME": "issued_at"
+          },
+          {
+            "TABLE_NAME": "cdks",
+            "COLUMN_NAME": "expires_at"
+          },
+          {
+            "TABLE_NAME": "cdks",
+            "COLUMN_NAME": "issuance_kind"
+          },
+          {
+            "TABLE_NAME": "cdks",
+            "COLUMN_NAME": "issued_at"
+          },
+          {
+            "TABLE_NAME": "checkout_artifacts",
+            "COLUMN_NAME": "expires_at"
+          },
+          {
+            "TABLE_NAME": "operator_alerts",
+            "COLUMN_NAME": "incident_version"
+          },
+          {
+            "TABLE_NAME": "payment_permits",
+            "COLUMN_NAME": "expires_at"
+          },
+          {
+            "TABLE_NAME": "payment_permits",
+            "COLUMN_NAME": "issued_at"
+          },
+          {
+            "TABLE_NAME": "recharge_authorizations",
+            "COLUMN_NAME": "expires_at"
+          }
+        ],
+        "triggers": [
+          "operator_alert_incident_version_before_update"
+        ]
+      }
+    },
+    {
+      "scenario": "interrupted after DDL 1/7",
+      "file": "055_cdk_issuance_and_expiry.sql",
+      "resumed": {
+        "exitCode": 0,
+        "error": null,
+        "output": [
+          "migration 054_card_retirement already applied",
+          "applied migration 055_cdk_issuance_and_expiry",
+          "applied migration 056_cdk_sales_metadata",
+          "applied migration 057_alert_incident_version"
+        ],
+        "errno": null
+      },
+      "final": {
+        "versions": [
+          "055_cdk_issuance_and_expiry",
+          "056_cdk_sales_metadata",
+          "057_alert_incident_version"
+        ],
+        "columns": [
+          {
+            "TABLE_NAME": "alert_notifications",
+            "COLUMN_NAME": "incident_version"
+          },
+          {
+            "TABLE_NAME": "browser_artifact_secrets",
+            "COLUMN_NAME": "expires_at"
+          },
+          {
+            "TABLE_NAME": "cdk_batches",
+            "COLUMN_NAME": "generation_fingerprint"
+          },
+          {
+            "TABLE_NAME": "cdk_batches",
+            "COLUMN_NAME": "issued_at"
+          },
+          {
+            "TABLE_NAME": "cdks",
+            "COLUMN_NAME": "expires_at"
+          },
+          {
+            "TABLE_NAME": "cdks",
+            "COLUMN_NAME": "issuance_kind"
+          },
+          {
+            "TABLE_NAME": "cdks",
+            "COLUMN_NAME": "issued_at"
+          },
+          {
+            "TABLE_NAME": "checkout_artifacts",
+            "COLUMN_NAME": "expires_at"
+          },
+          {
+            "TABLE_NAME": "operator_alerts",
+            "COLUMN_NAME": "incident_version"
+          },
+          {
+            "TABLE_NAME": "payment_permits",
+            "COLUMN_NAME": "expires_at"
+          },
+          {
+            "TABLE_NAME": "payment_permits",
+            "COLUMN_NAME": "issued_at"
+          },
+          {
+            "TABLE_NAME": "recharge_authorizations",
+            "COLUMN_NAME": "expires_at"
+          }
+        ],
+        "triggers": [
+          "operator_alert_incident_version_before_update"
+        ]
+      }
+    },
+    {
+      "scenario": "interrupted after DDL 2/7",
+      "file": "055_cdk_issuance_and_expiry.sql",
+      "resumed": {
+        "exitCode": 0,
+        "error": null,
+        "output": [
+          "migration 054_card_retirement already applied",
+          "applied migration 055_cdk_issuance_and_expiry",
+          "applied migration 056_cdk_sales_metadata",
+          "applied migration 057_alert_incident_version"
+        ],
+        "errno": null
+      },
+      "final": {
+        "versions": [
+          "055_cdk_issuance_and_expiry",
+          "056_cdk_sales_metadata",
+          "057_alert_incident_version"
+        ],
+        "columns": [
+          {
+            "TABLE_NAME": "alert_notifications",
+            "COLUMN_NAME": "incident_version"
+          },
+          {
+            "TABLE_NAME": "browser_artifact_secrets",
+            "COLUMN_NAME": "expires_at"
+          },
+          {
+            "TABLE_NAME": "cdk_batches",
+            "COLUMN_NAME": "generation_fingerprint"
+          },
+          {
+            "TABLE_NAME": "cdk_batches",
+            "COLUMN_NAME": "issued_at"
+          },
+          {
+            "TABLE_NAME": "cdks",
+            "COLUMN_NAME": "expires_at"
+          },
+          {
+            "TABLE_NAME": "cdks",
+            "COLUMN_NAME": "issuance_kind"
+          },
+          {
+            "TABLE_NAME": "cdks",
+            "COLUMN_NAME": "issued_at"
+          },
+          {
+            "TABLE_NAME": "checkout_artifacts",
+            "COLUMN_NAME": "expires_at"
+          },
+          {
+            "TABLE_NAME": "operator_alerts",
+            "COLUMN_NAME": "incident_version"
+          },
+          {
+            "TABLE_NAME": "payment_permits",
+            "COLUMN_NAME": "expires_at"
+          },
+          {
+            "TABLE_NAME": "payment_permits",
+            "COLUMN_NAME": "issued_at"
+          },
+          {
+            "TABLE_NAME": "recharge_authorizations",
+            "COLUMN_NAME": "expires_at"
+          }
+        ],
+        "triggers": [
+          "operator_alert_incident_version_before_update"
+        ]
+      }
+    },
+    {
+      "scenario": "interrupted after DDL 3/7",
+      "file": "056_cdk_sales_metadata.sql",
+      "resumed": {
+        "exitCode": 0,
+        "error": null,
+        "output": [
+          "migration 054_card_retirement already applied",
+          "migration 055_cdk_issuance_and_expiry already applied",
+          "applied migration 056_cdk_sales_metadata",
+          "applied migration 057_alert_incident_version"
+        ],
+        "errno": null
+      },
+      "final": {
+        "versions": [
+          "055_cdk_issuance_and_expiry",
+          "056_cdk_sales_metadata",
+          "057_alert_incident_version"
+        ],
+        "columns": [
+          {
+            "TABLE_NAME": "alert_notifications",
+            "COLUMN_NAME": "incident_version"
+          },
+          {
+            "TABLE_NAME": "browser_artifact_secrets",
+            "COLUMN_NAME": "expires_at"
+          },
+          {
+            "TABLE_NAME": "cdk_batches",
+            "COLUMN_NAME": "generation_fingerprint"
+          },
+          {
+            "TABLE_NAME": "cdk_batches",
+            "COLUMN_NAME": "issued_at"
+          },
+          {
+            "TABLE_NAME": "cdks",
+            "COLUMN_NAME": "expires_at"
+          },
+          {
+            "TABLE_NAME": "cdks",
+            "COLUMN_NAME": "issuance_kind"
+          },
+          {
+            "TABLE_NAME": "cdks",
+            "COLUMN_NAME": "issued_at"
+          },
+          {
+            "TABLE_NAME": "checkout_artifacts",
+            "COLUMN_NAME": "expires_at"
+          },
+          {
+            "TABLE_NAME": "operator_alerts",
+            "COLUMN_NAME": "incident_version"
+          },
+          {
+            "TABLE_NAME": "payment_permits",
+            "COLUMN_NAME": "expires_at"
+          },
+          {
+            "TABLE_NAME": "payment_permits",
+            "COLUMN_NAME": "issued_at"
+          },
+          {
+            "TABLE_NAME": "recharge_authorizations",
+            "COLUMN_NAME": "expires_at"
+          }
+        ],
+        "triggers": [
+          "operator_alert_incident_version_before_update"
+        ]
+      }
+    },
+    {
+      "scenario": "interrupted after DDL 4/7",
+      "file": "056_cdk_sales_metadata.sql",
+      "resumed": {
+        "exitCode": 0,
+        "error": null,
+        "output": [
+          "migration 054_card_retirement already applied",
+          "migration 055_cdk_issuance_and_expiry already applied",
+          "applied migration 056_cdk_sales_metadata",
+          "applied migration 057_alert_incident_version"
+        ],
+        "errno": null
+      },
+      "final": {
+        "versions": [
+          "055_cdk_issuance_and_expiry",
+          "056_cdk_sales_metadata",
+          "057_alert_incident_version"
+        ],
+        "columns": [
+          {
+            "TABLE_NAME": "alert_notifications",
+            "COLUMN_NAME": "incident_version"
+          },
+          {
+            "TABLE_NAME": "browser_artifact_secrets",
+            "COLUMN_NAME": "expires_at"
+          },
+          {
+            "TABLE_NAME": "cdk_batches",
+            "COLUMN_NAME": "generation_fingerprint"
+          },
+          {
+            "TABLE_NAME": "cdk_batches",
+            "COLUMN_NAME": "issued_at"
+          },
+          {
+            "TABLE_NAME": "cdks",
+            "COLUMN_NAME": "expires_at"
+          },
+          {
+            "TABLE_NAME": "cdks",
+            "COLUMN_NAME": "issuance_kind"
+          },
+          {
+            "TABLE_NAME": "cdks",
+            "COLUMN_NAME": "issued_at"
+          },
+          {
+            "TABLE_NAME": "checkout_artifacts",
+            "COLUMN_NAME": "expires_at"
+          },
+          {
+            "TABLE_NAME": "operator_alerts",
+            "COLUMN_NAME": "incident_version"
+          },
+          {
+            "TABLE_NAME": "payment_permits",
+            "COLUMN_NAME": "expires_at"
+          },
+          {
+            "TABLE_NAME": "payment_permits",
+            "COLUMN_NAME": "issued_at"
+          },
+          {
+            "TABLE_NAME": "recharge_authorizations",
+            "COLUMN_NAME": "expires_at"
+          }
+        ],
+        "triggers": [
+          "operator_alert_incident_version_before_update"
+        ]
+      }
+    },
+    {
+      "scenario": "interrupted after DDL 5/7",
+      "file": "057_alert_incident_version.sql",
+      "resumed": {
+        "exitCode": 0,
+        "error": null,
+        "output": [
+          "migration 054_card_retirement already applied",
+          "migration 055_cdk_issuance_and_expiry already applied",
+          "migration 056_cdk_sales_metadata already applied",
+          "applied migration 057_alert_incident_version"
+        ],
+        "errno": null
+      },
+      "final": {
+        "versions": [
+          "055_cdk_issuance_and_expiry",
+          "056_cdk_sales_metadata",
+          "057_alert_incident_version"
+        ],
+        "columns": [
+          {
+            "TABLE_NAME": "alert_notifications",
+            "COLUMN_NAME": "incident_version"
+          },
+          {
+            "TABLE_NAME": "browser_artifact_secrets",
+            "COLUMN_NAME": "expires_at"
+          },
+          {
+            "TABLE_NAME": "cdk_batches",
+            "COLUMN_NAME": "generation_fingerprint"
+          },
+          {
+            "TABLE_NAME": "cdk_batches",
+            "COLUMN_NAME": "issued_at"
+          },
+          {
+            "TABLE_NAME": "cdks",
+            "COLUMN_NAME": "expires_at"
+          },
+          {
+            "TABLE_NAME": "cdks",
+            "COLUMN_NAME": "issuance_kind"
+          },
+          {
+            "TABLE_NAME": "cdks",
+            "COLUMN_NAME": "issued_at"
+          },
+          {
+            "TABLE_NAME": "checkout_artifacts",
+            "COLUMN_NAME": "expires_at"
+          },
+          {
+            "TABLE_NAME": "operator_alerts",
+            "COLUMN_NAME": "incident_version"
+          },
+          {
+            "TABLE_NAME": "payment_permits",
+            "COLUMN_NAME": "expires_at"
+          },
+          {
+            "TABLE_NAME": "payment_permits",
+            "COLUMN_NAME": "issued_at"
+          },
+          {
+            "TABLE_NAME": "recharge_authorizations",
+            "COLUMN_NAME": "expires_at"
+          }
+        ],
+        "triggers": [
+          "operator_alert_incident_version_before_update"
+        ]
+      }
+    },
+    {
+      "scenario": "interrupted after DDL 6/7",
+      "file": "057_alert_incident_version.sql",
+      "resumed": {
+        "exitCode": 0,
+        "error": null,
+        "output": [
+          "migration 054_card_retirement already applied",
+          "migration 055_cdk_issuance_and_expiry already applied",
+          "migration 056_cdk_sales_metadata already applied",
+          "applied migration 057_alert_incident_version"
+        ],
+        "errno": null
+      },
+      "final": {
+        "versions": [
+          "055_cdk_issuance_and_expiry",
+          "056_cdk_sales_metadata",
+          "057_alert_incident_version"
+        ],
+        "columns": [
+          {
+            "TABLE_NAME": "alert_notifications",
+            "COLUMN_NAME": "incident_version"
+          },
+          {
+            "TABLE_NAME": "browser_artifact_secrets",
+            "COLUMN_NAME": "expires_at"
+          },
+          {
+            "TABLE_NAME": "cdk_batches",
+            "COLUMN_NAME": "generation_fingerprint"
+          },
+          {
+            "TABLE_NAME": "cdk_batches",
+            "COLUMN_NAME": "issued_at"
+          },
+          {
+            "TABLE_NAME": "cdks",
+            "COLUMN_NAME": "expires_at"
+          },
+          {
+            "TABLE_NAME": "cdks",
+            "COLUMN_NAME": "issuance_kind"
+          },
+          {
+            "TABLE_NAME": "cdks",
+            "COLUMN_NAME": "issued_at"
+          },
+          {
+            "TABLE_NAME": "checkout_artifacts",
+            "COLUMN_NAME": "expires_at"
+          },
+          {
+            "TABLE_NAME": "operator_alerts",
+            "COLUMN_NAME": "incident_version"
+          },
+          {
+            "TABLE_NAME": "payment_permits",
+            "COLUMN_NAME": "expires_at"
+          },
+          {
+            "TABLE_NAME": "payment_permits",
+            "COLUMN_NAME": "issued_at"
+          },
+          {
+            "TABLE_NAME": "recharge_authorizations",
+            "COLUMN_NAME": "expires_at"
+          }
+        ],
+        "triggers": [
+          "operator_alert_incident_version_before_update"
+        ]
+      }
+    },
+    {
+      "scenario": "interrupted after DDL 7/7",
+      "file": "057_alert_incident_version.sql",
+      "resumed": {
+        "exitCode": 0,
+        "error": null,
+        "output": [
+          "migration 054_card_retirement already applied",
+          "migration 055_cdk_issuance_and_expiry already applied",
+          "migration 056_cdk_sales_metadata already applied",
+          "applied migration 057_alert_incident_version"
+        ],
+        "errno": null
+      },
+      "final": {
+        "versions": [
+          "055_cdk_issuance_and_expiry",
+          "056_cdk_sales_metadata",
+          "057_alert_incident_version"
+        ],
+        "columns": [
+          {
+            "TABLE_NAME": "alert_notifications",
+            "COLUMN_NAME": "incident_version"
+          },
+          {
+            "TABLE_NAME": "browser_artifact_secrets",
+            "COLUMN_NAME": "expires_at"
+          },
+          {
+            "TABLE_NAME": "cdk_batches",
+            "COLUMN_NAME": "generation_fingerprint"
+          },
+          {
+            "TABLE_NAME": "cdk_batches",
+            "COLUMN_NAME": "issued_at"
+          },
+          {
+            "TABLE_NAME": "cdks",
+            "COLUMN_NAME": "expires_at"
+          },
+          {
+            "TABLE_NAME": "cdks",
+            "COLUMN_NAME": "issuance_kind"
+          },
+          {
+            "TABLE_NAME": "cdks",
+            "COLUMN_NAME": "issued_at"
+          },
+          {
+            "TABLE_NAME": "checkout_artifacts",
+            "COLUMN_NAME": "expires_at"
+          },
+          {
+            "TABLE_NAME": "operator_alerts",
+            "COLUMN_NAME": "incident_version"
+          },
+          {
+            "TABLE_NAME": "payment_permits",
+            "COLUMN_NAME": "expires_at"
+          },
+          {
+            "TABLE_NAME": "payment_permits",
+            "COLUMN_NAME": "issued_at"
+          },
+          {
+            "TABLE_NAME": "recharge_authorizations",
+            "COLUMN_NAME": "expires_at"
+          }
+        ],
+        "triggers": [
+          "operator_alert_incident_version_before_update"
+        ]
+      }
+    },
+    {
+      "scenario": "granular step 1/15",
+      "resumed": {
+        "exitCode": 0,
+        "error": null,
+        "output": [
+          "migration 054_card_retirement already applied",
+          "applied migration 055_cdk_issuance_and_expiry",
+          "applied migration 056_cdk_sales_metadata",
+          "applied migration 057_alert_incident_version"
+        ],
+        "errno": null
+      }
+    },
+    {
+      "scenario": "granular step 2/15",
+      "resumed": {
+        "exitCode": 0,
+        "error": null,
+        "output": [
+          "migration 054_card_retirement already applied",
+          "applied migration 055_cdk_issuance_and_expiry",
+          "applied migration 056_cdk_sales_metadata",
+          "applied migration 057_alert_incident_version"
+        ],
+        "errno": null
+      }
+    },
+    {
+      "scenario": "granular step 3/15",
+      "resumed": {
+        "exitCode": 0,
+        "error": null,
+        "output": [
+          "migration 054_card_retirement already applied",
+          "applied migration 055_cdk_issuance_and_expiry",
+          "applied migration 056_cdk_sales_metadata",
+          "applied migration 057_alert_incident_version"
+        ],
+        "errno": null
+      }
+    },
+    {
+      "scenario": "granular step 4/15",
+      "resumed": {
+        "exitCode": 0,
+        "error": null,
+        "output": [
+          "migration 054_card_retirement already applied",
+          "applied migration 055_cdk_issuance_and_expiry",
+          "applied migration 056_cdk_sales_metadata",
+          "applied migration 057_alert_incident_version"
+        ],
+        "errno": null
+      }
+    },
+    {
+      "scenario": "granular step 5/15",
+      "resumed": {
+        "exitCode": 0,
+        "error": null,
+        "output": [
+          "migration 054_card_retirement already applied",
+          "migration 055_cdk_issuance_and_expiry already applied",
+          "applied migration 056_cdk_sales_metadata",
+          "applied migration 057_alert_incident_version"
+        ],
+        "errno": null
+      }
+    },
+    {
+      "scenario": "granular step 6/15",
+      "resumed": {
+        "exitCode": 0,
+        "error": null,
+        "output": [
+          "migration 054_card_retirement already applied",
+          "migration 055_cdk_issuance_and_expiry already applied",
+          "applied migration 056_cdk_sales_metadata",
+          "applied migration 057_alert_incident_version"
+        ],
+        "errno": null
+      }
+    },
+    {
+      "scenario": "granular step 7/15",
+      "resumed": {
+        "exitCode": 0,
+        "error": null,
+        "output": [
+          "migration 054_card_retirement already applied",
+          "migration 055_cdk_issuance_and_expiry already applied",
+          "applied migration 056_cdk_sales_metadata",
+          "applied migration 057_alert_incident_version"
+        ],
+        "errno": null
+      }
+    },
+    {
+      "scenario": "granular step 8/15",
+      "resumed": {
+        "exitCode": 0,
+        "error": null,
+        "output": [
+          "migration 054_card_retirement already applied",
+          "migration 055_cdk_issuance_and_expiry already applied",
+          "applied migration 056_cdk_sales_metadata",
+          "applied migration 057_alert_incident_version"
+        ],
+        "errno": null
+      }
+    },
+    {
+      "scenario": "granular step 9/15",
+      "resumed": {
+        "exitCode": 0,
+        "error": null,
+        "output": [
+          "migration 054_card_retirement already applied",
+          "migration 055_cdk_issuance_and_expiry already applied",
+          "applied migration 056_cdk_sales_metadata",
+          "applied migration 057_alert_incident_version"
+        ],
+        "errno": null
+      }
+    },
+    {
+      "scenario": "granular step 10/15",
+      "resumed": {
+        "exitCode": 0,
+        "error": null,
+        "output": [
+          "migration 054_card_retirement already applied",
+          "migration 055_cdk_issuance_and_expiry already applied",
+          "applied migration 056_cdk_sales_metadata",
+          "applied migration 057_alert_incident_version"
+        ],
+        "errno": null
+      }
+    },
+    {
+      "scenario": "granular step 11/15",
+      "resumed": {
+        "exitCode": 0,
+        "error": null,
+        "output": [
+          "migration 054_card_retirement already applied",
+          "migration 055_cdk_issuance_and_expiry already applied",
+          "applied migration 056_cdk_sales_metadata",
+          "applied migration 057_alert_incident_version"
+        ],
+        "errno": null
+      }
+    },
+    {
+      "scenario": "granular step 12/15",
+      "resumed": {
+        "exitCode": 0,
+        "error": null,
+        "output": [
+          "migration 054_card_retirement already applied",
+          "migration 055_cdk_issuance_and_expiry already applied",
+          "applied migration 056_cdk_sales_metadata",
+          "applied migration 057_alert_incident_version"
+        ],
+        "errno": null
+      }
+    },
+    {
+      "scenario": "granular step 13/15",
+      "resumed": {
+        "exitCode": 0,
+        "error": null,
+        "output": [
+          "migration 054_card_retirement already applied",
+          "migration 055_cdk_issuance_and_expiry already applied",
+          "migration 056_cdk_sales_metadata already applied",
+          "applied migration 057_alert_incident_version"
+        ],
+        "errno": null
+      }
+    },
+    {
+      "scenario": "granular step 14/15",
+      "resumed": {
+        "exitCode": 0,
+        "error": null,
+        "output": [
+          "migration 054_card_retirement already applied",
+          "migration 055_cdk_issuance_and_expiry already applied",
+          "migration 056_cdk_sales_metadata already applied",
+          "applied migration 057_alert_incident_version"
+        ],
+        "errno": null
+      }
+    },
+    {
+      "scenario": "granular step 15/15",
+      "resumed": {
+        "exitCode": 0,
+        "error": null,
+        "output": [
+          "migration 054_card_retirement already applied",
+          "migration 055_cdk_issuance_and_expiry already applied",
+          "migration 056_cdk_sales_metadata already applied",
+          "applied migration 057_alert_incident_version"
+        ],
+        "errno": null
+      }
+    },
+    {
+      "scenario": "reject wrong column without writes",
+      "result": {
+        "exitCode": 1,
+        "error": "MIGRATION_SCHEMA_MISMATCH",
+        "output": [
+          ""
+        ],
+        "errno": null
+      }
+    },
+    {
+      "scenario": "reject wrong index without writes",
+      "result": {
+        "exitCode": 1,
+        "error": "MIGRATION_SCHEMA_MISMATCH",
+        "output": [
+          ""
+        ],
+        "errno": null
+      }
+    },
+    {
+      "scenario": "reject wrong trigger without writes",
+      "result": {
+        "exitCode": 1,
+        "error": "MIGRATION_SCHEMA_MISMATCH",
+        "output": [
+          ""
+        ],
+        "errno": null
+      }
+    },
+    {
+      "scenario": "concurrent migration rejected",
+      "result": {
+        "exitCode": 1,
+        "error": "MIGRATION_ALREADY_RUNNING",
+        "output": [
+          ""
+        ],
+        "errno": null
+      }
+    }
+  ],
+  "sessionRecovery": [
+    {
+      "scenario": "no-assignment-task",
+      "responseStatus": "PROCESSING",
+      "orderStatus": "WAITING_FOR_CARD",
+      "hasAssignedCard": false,
+      "tasks": [
+        {
+          "task_type": "ASSIGN_CARD",
+          "status": "PENDING"
+        },
+        {
+          "task_type": "PREPARE_RECHARGE",
+          "status": "DEAD"
+        },
+        {
+          "task_type": "SUBMIT_RECHARGE",
+          "status": "DEAD"
+        }
+      ],
+      "assignTaskClaimed": true,
+      "eligibleCardCount": 1,
+      "preparation": "ORDER_STATE_MISMATCH",
+      "afterAssignment": {
+        "orderStatus": "CARD_READY",
+        "hasAssignedCard": true,
+        "preparationTaskClaimed": true
+      }
+    },
+    {
+      "scenario": "completed-assignment-task",
+      "responseStatus": "PROCESSING",
+      "orderStatus": "WAITING_FOR_CARD",
+      "hasAssignedCard": false,
+      "tasks": [
+        {
+          "task_type": "ASSIGN_CARD",
+          "status": "PENDING"
+        },
+        {
+          "task_type": "PREPARE_RECHARGE",
+          "status": "DEAD"
+        },
+        {
+          "task_type": "SUBMIT_RECHARGE",
+          "status": "DEAD"
+        }
+      ],
+      "assignTaskClaimed": true,
+      "eligibleCardCount": 1,
+      "preparation": "ORDER_STATE_MISMATCH",
+      "afterAssignment": {
+        "orderStatus": "CARD_READY",
+        "hasAssignedCard": true,
+        "preparationTaskClaimed": true
+      }
+    },
+    {
+      "scenario": "expired-assignment-lease",
+      "responseStatus": "PROCESSING",
+      "orderStatus": "WAITING_FOR_CARD",
+      "hasAssignedCard": false,
+      "tasks": [
+        {
+          "task_type": "ASSIGN_CARD",
+          "status": "PENDING"
+        },
+        {
+          "task_type": "PREPARE_RECHARGE",
+          "status": "DEAD"
+        },
+        {
+          "task_type": "SUBMIT_RECHARGE",
+          "status": "DEAD"
+        }
+      ],
+      "assignTaskClaimed": true,
+      "eligibleCardCount": 1,
+      "preparation": "ORDER_STATE_MISMATCH",
+      "afterAssignment": {
+        "orderStatus": "CARD_READY",
+        "hasAssignedCard": true,
+        "preparationTaskClaimed": true
+      }
+    },
+    {
+      "scenario": "live-assignment-lease",
+      "rejected": "SESSION_REPLACEMENT_CONFLICT",
+      "orderAndTasksUnchanged": true
+    },
+    {
+      "scenario": "unknown-funds",
+      "rejected": "FUNDS_STATE_UNSAFE",
+      "orderAndTasksUnchanged": true
+    },
+    {
+      "scenario": "already-has-card",
+      "responseStatus": "PROCESSING",
+      "orderStatus": "CARD_READY",
+      "hasAssignedCard": true,
+      "tasks": [
+        {
+          "task_type": "PREPARE_RECHARGE",
+          "status": "PENDING"
+        },
+        {
+          "task_type": "SUBMIT_RECHARGE",
+          "status": "PENDING"
+        }
+      ],
+      "assignTaskClaimed": false,
+      "eligibleCardCount": 1,
+      "preparation": null,
+      "afterAssignment": null
+    }
+  ],
+  "databases": [
+    "step6_gate_c1fd388b_locked",
+    "step6_gate_c1fd388b_bad_trigger",
+    "step6_gate_c1fd388b_bad_index",
+    "step6_gate_c1fd388b_bad_column",
+    "step6_gate_c1fd388b_step15",
+    "step6_gate_c1fd388b_step14",
+    "step6_gate_c1fd388b_step13",
+    "step6_gate_c1fd388b_step12",
+    "step6_gate_c1fd388b_step11",
+    "step6_gate_c1fd388b_step10",
+    "step6_gate_c1fd388b_step9",
+    "step6_gate_c1fd388b_step8",
+    "step6_gate_c1fd388b_step7",
+    "step6_gate_c1fd388b_step6",
+    "step6_gate_c1fd388b_step5",
+    "step6_gate_c1fd388b_step4",
+    "step6_gate_c1fd388b_step3",
+    "step6_gate_c1fd388b_step2",
+    "step6_gate_c1fd388b_step1",
+    "step6_gate_c1fd388b_cut7",
+    "step6_gate_c1fd388b_cut6",
+    "step6_gate_c1fd388b_cut5",
+    "step6_gate_c1fd388b_cut4",
+    "step6_gate_c1fd388b_cut3",
+    "step6_gate_c1fd388b_cut2",
+    "step6_gate_c1fd388b_cut1",
+    "step6_gate_c1fd388b_clean",
+    "step6_gate_c1fd388b_limited",
+    "step6_gate_c1fd388b_base"
+  ],
+  "testAccount": "step6_gate_c1fd388b",
+  "mysql": {
+    "version": "8.4.11",
+    "log_bin": 1,
+    "trust_creators": 0
+  },
+  "finishedAt": "2026-09-21T02:41:48.435Z",
+  "status": "recovery checks passed",
+  "cleanedUp": true
+}

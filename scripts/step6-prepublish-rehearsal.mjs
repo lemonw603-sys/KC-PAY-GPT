@@ -1,7 +1,7 @@
 // Local-only diagnostics. Exercises real migrations and Session replacement; no provider/worker.
 // Usage: REHEARSAL_MYSQL_URL=<local root URI> node scripts/step6-prepublish-rehearsal.mjs
 import assert from 'node:assert/strict';
-import { randomBytes, randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { readFile, readdir, mkdir, writeFile } from 'node:fs/promises';
@@ -12,7 +12,8 @@ import { createAdminCdkService } from '../v1/src/services/cdk-service.js';
 import { createSessionReplacementService } from '../v1/src/services/session-replacement-service.js';
 import { createWorkflowRepository } from '../v1/src/db/repositories/workflow-repository.js';
 import { createWorkflowHandlers } from '../v1/src/workers/workflow-handlers.js';
-import { claimNextTask } from '../v1/src/db/repositories/task-repository.js';
+import { claimNextTask, completeTask } from '../v1/src/db/repositories/task-repository.js';
+import { step6MigrationPlan } from '../v1/src/db/step6-migration-guard.js';
 import { eligibleInventoryCardSql } from '../v1/src/services/card-inventory-eligibility.js';
 import { sessionFixture } from '../v1/test-support/session-fixture.js';
 import { encryptSecret } from '../v1/src/security/secret-box.js';
@@ -20,6 +21,7 @@ import { encryptSecret } from '../v1/src/security/secret-box.js';
 const root = fileURLToPath(new URL('../', import.meta.url));
 const output = new URL('../output/step6-prepublish/', import.meta.url);
 const rootUrl = new URL(process.env.REHEARSAL_MYSQL_URL);
+const expectFixed = process.env.EXPECT_RECOVERY_FIXED === '1';
 assert.equal(rootUrl.hostname, '127.0.0.1');
 assert.ok(rootUrl.port && rootUrl.port !== '13306', 'production tunnel forbidden');
 const databases = [], connections = [];
@@ -92,8 +94,10 @@ try {
   await owner.query(`GRANT ALL PRIVILEGES ON \`${limited.name}\`.* TO ?@?`,[username,'%']);
   const first=await runner(limited.name,true);
   const afterFailure=await snapshot(limited.c);
+  if(expectFixed){assert.equal(first.error,'MIGRATION_TRIGGER_PRIVILEGE_REQUIRED');assert.deepEqual(afterFailure,await snapshot(baseline.c),'preflight must make zero schema changes');}
   const retryLimited=await runner(limited.name,true);
   const retryRoot=await runner(limited.name,false);
+  if(expectFixed)assert.equal(retryRoot.exitCode,0);
   report.migrations.push({scenario:'production-like schema privileges',first,afterFailure,retryLimited,retryRoot});
   console.log('limited account:',first.error,'retry:',retryLimited.error);await save();
 
@@ -115,8 +119,43 @@ try {
       }
     }
     const resumed=await runner(scenario.name);
+    if(expectFixed)assert.equal(resumed.exitCode,0,`original DDL cut ${cut}`);
     report.migrations.push({scenario:`interrupted after DDL ${cut}/7`,file:statements[cut-1].file,resumed,final:await snapshot(scenario.c)});
     console.log('DDL cut',cut,'resume:',resumed.exitCode===0?'pass':resumed.error);await save();
+  }
+
+  if(expectFixed){
+    const steps=pending.flatMap(m=>step6MigrationPlan(m.file,m.sql).map(s=>({file:m.file,sql:s.sql})));
+    for(let cut=1;cut<=steps.length;cut++){
+      const scenario=await makeDb('step'+cut,dump);
+      for(let i=0;i<cut;i++){
+        await scenario.c.query(steps[i].sql);
+        if(i<cut-1&&steps[i+1]?.file!==steps[i].file)await scenario.c.query('INSERT INTO schema_migrations(version) VALUES (?)',[steps[i].file.replace(/\.sql$/,'')]);
+      }
+      const resumed=await runner(scenario.name);assert.equal(resumed.exitCode,0,`new granular cut ${cut}`);
+      report.migrations.push({scenario:`granular step ${cut}/${steps.length}`,resumed});
+      console.log('granular cut',cut,'pass');await save();
+    }
+    for(const kind of ['column','index','trigger']){
+      const bad=await makeDb('bad_'+kind,dump);
+      if(kind==='column')await bad.c.query('ALTER TABLE cdks ADD COLUMN issued_at VARCHAR(30) NULL');
+      if(kind==='index'){
+        await bad.c.query('ALTER TABLE cdks ADD COLUMN issued_at TIMESTAMP(3) NULL DEFAULT NULL');
+        await bad.c.query('ALTER TABLE cdks ADD KEY idx_cdks_status_issued(status)');
+      }
+      if(kind==='trigger'){
+        await bad.c.query('ALTER TABLE operator_alerts ADD COLUMN incident_version INT UNSIGNED NOT NULL DEFAULT 1');
+        await bad.c.query('ALTER TABLE alert_notifications ADD COLUMN incident_version INT UNSIGNED NOT NULL DEFAULT 1');
+        await bad.c.query('CREATE TRIGGER operator_alert_incident_version_before_update BEFORE UPDATE ON operator_alerts FOR EACH ROW SET NEW.incident_version=OLD.incident_version');
+      }
+      const before=await snapshot(bad.c);const result=await runner(bad.name);assert.equal(result.error,'MIGRATION_SCHEMA_MISMATCH');assert.deepEqual(await snapshot(bad.c),before);
+      report.migrations.push({scenario:`reject wrong ${kind} without writes`,result});
+    }
+    const held=await makeDb('locked',dump);
+    const lockName=`pojia-migrate:${createHash('sha256').update(held.name).digest('hex').slice(0,32)}`;
+    await held.c.query('SELECT GET_LOCK(?,0)',[lockName]);
+    const locked=await runner(held.name);assert.equal(locked.error,'MIGRATION_ALREADY_RUNNING');
+    await held.c.query('SELECT RELEASE_LOCK(?)',[lockName]);report.migrations.push({scenario:'concurrent migration rejected',result:locked});
   }
 
   const pool=createDatabasePool({url:uri(clean.name),tls:{enabled:false}});connections.push(pool);
@@ -133,28 +172,57 @@ try {
   assert.equal(Number(eligible.n),1);
   const workflow=createWorkflowRepository(pool,{sessionEncryptionKey:key});
   const handlers=createWorkflowHandlers({workflow,rechargeAttemptRepository:{},cardProvider:{},rechargeProvider:{},recordCall:()=>{throw Error('provider forbidden');}});
-  for(const scenario of ['no-assignment-task','completed-assignment-task','already-has-card']){
+  for(const scenario of ['no-assignment-task','completed-assignment-task',...(expectFixed?['expired-assignment-lease','live-assignment-lease','unknown-funds']:[]),'already-has-card']){
     const b=await create({count:1,requestKey:randomUUID()});
     const [[cdk]]=await pool.query('SELECT id FROM cdks WHERE batch_no=?',[b.batchNo]);
     const order=randomUUID(), publicNo='PJV1-'+randomBytes(15).toString('base64url');
     const assigned=scenario==='already-has-card'?card:null;
     await pool.query(`INSERT INTO orders(id,public_no,cdk_id,status,session_ciphertext,card_purchase_idempotency_key,
-      product_id,fulfillment_route_id,frozen_card_provider_account_id,route_resolution_status,assigned_card_id)
-      VALUES (?,?,?,'WAITING_FOR_SESSION',?,?, '00000000-0000-4000-8000-000000000201','00000000-0000-4000-8000-000000000301',?,'RESOLVED',?)`,
+      product_id,fulfillment_route_id,frozen_card_provider_account_id,route_resolution_status,assigned_card_id,
+      card_type_id,open_card_amount,minimum_required_card_balance)
+      VALUES (?,?,?,'WAITING_FOR_SESSION',?,?, '00000000-0000-4000-8000-000000000201','00000000-0000-4000-8000-000000000301',?,'RESOLVED',?,'7',16,16)`,
     [order,publicNo,cdk.id,encryptSecret(JSON.stringify(sessionFixture()),key),order,provider,assigned]);
     await pool.query("UPDATE cdks SET status='REDEEMED',order_id=? WHERE id=?",[order,cdk.id]);
-    for(const type of ['PREPARE_RECHARGE','SUBMIT_RECHARGE']) await pool.query("INSERT INTO tasks(order_id,task_type,status,dedupe_key,max_attempts) VALUES (?,?,'DEAD',?,5)",[order,type,type+':'+order]);
+    for(const type of ['PREPARE_RECHARGE','SUBMIT_RECHARGE']) await pool.query("INSERT INTO tasks(order_id,task_type,status,dedupe_key,max_attempts) VALUES (?,?,'DEAD',?,5)",[order,type,type.toLowerCase().replaceAll('_','-')+':'+order]);
     if(scenario==='completed-assignment-task')await pool.query("INSERT INTO tasks(order_id,task_type,status,dedupe_key,max_attempts) VALUES (?,'ASSIGN_CARD','COMPLETED',?,10080)",[order,'assign-card:'+order]);
+    if(scenario==='expired-assignment-lease'||scenario==='live-assignment-lease'){
+      await pool.query(`INSERT INTO tasks(order_id,task_type,status,dedupe_key,max_attempts,leased_by,leased_until)
+        VALUES (?,'ASSIGN_CARD','RUNNING',?,10080,'other-worker',DATE_ADD(CURRENT_TIMESTAMP(3),INTERVAL ? SECOND))`,[order,'assign-card:'+order,scenario==='live-assignment-lease'?3600:-1]);
+    }
+    if(scenario==='unknown-funds')await pool.query("INSERT INTO recharge_attempts(id,order_id,executor_kind,status,funds_risk_state) VALUES (?,?,'API','UNKNOWN','UNKNOWN')",[randomUUID(),order]);
+    if(scenario==='live-assignment-lease'||scenario==='unknown-funds'){
+      const before=(await pool.query('SELECT task_type,status,leased_by,leased_until FROM tasks WHERE order_id=? ORDER BY id',[order]))[0];
+      const code=scenario==='live-assignment-lease'?'SESSION_REPLACEMENT_CONFLICT':'FUNDS_STATE_UNSAFE';
+      await assert.rejects(()=>replace({publicNo,session:sessionFixture()}),{code,status:409});
+      assert.deepEqual((await pool.query('SELECT task_type,status,leased_by,leased_until FROM tasks WHERE order_id=? ORDER BY id',[order]))[0],before);
+      const [[unchanged]]=await pool.query('SELECT status,session_replacement_count FROM orders WHERE id=?',[order]);
+      assert.equal(unchanged.status,'WAITING_FOR_SESSION');assert.equal(Number(unchanged.session_replacement_count),0);
+      report.sessionRecovery.push({scenario,rejected:code,orderAndTasksUnchanged:true});console.log('session guard:',scenario,'pass');await save();continue;
+    }
     const response=await replace({publicNo,session:sessionFixture()});
     const [[state]]=await pool.query('SELECT status,assigned_card_id FROM orders WHERE id=?',[order]);
     const [tasks]=await pool.query('SELECT task_type,status FROM tasks WHERE order_id=? ORDER BY task_type',[order]);
     const claim=await claimNextTask(pool,{workerId:'isolated-rehearsal',allowedTaskTypes:['ASSIGN_CARD'],allowedRechargeExecutorKinds:['API'],rechargeDispatchMode:'AUTOMATIC'});
-    let preparation=null;
+    let preparation=null,afterAssignment=null;
     if(!assigned){try{await handlers.PREPARE_RECHARGE({order_id:order,attempts:1});preparation='unexpected success';}catch(e){preparation=e.code||e.message;}}
-    report.sessionRecovery.push({scenario,responseStatus:response.status,orderStatus:state.status,hasAssignedCard:!!state.assigned_card_id,tasks,assignTaskClaimed:!!claim,eligibleCardCount:Number(eligible.n),preparation});
+    if(expectFixed&&!assigned){
+      assert.ok(claim);assert.equal(claim.order_id,order);assert.equal(tasks.filter(t=>t.task_type==='ASSIGN_CARD').length,1);
+      assert.ok(tasks.filter(t=>['PREPARE_RECHARGE','SUBMIT_RECHARGE'].includes(t.task_type)).every(t=>t.status==='DEAD'));
+      const early=await claimNextTask(pool,{workerId:'early-prepare',allowedTaskTypes:['PREPARE_RECHARGE'],allowedRechargeExecutorKinds:['API'],rechargeDispatchMode:'AUTOMATIC'});assert.equal(early,null);
+      await assert.rejects(()=>replace({publicNo,session:sessionFixture()}),{code:'SESSION_REPLACEMENT_NOT_ALLOWED'});
+      await handlers.ASSIGN_CARD(claim);
+      await completeTask(pool,{taskId:claim.id,workerId:'isolated-rehearsal'});
+      const [[done]]=await pool.query('SELECT status,assigned_card_id FROM orders WHERE id=?',[order]);assert.equal(done.status,'CARD_READY');assert.ok(done.assigned_card_id);
+      const next=await claimNextTask(pool,{workerId:'isolated-prepare',allowedTaskTypes:['PREPARE_RECHARGE'],allowedRechargeExecutorKinds:['API'],rechargeDispatchMode:'AUTOMATIC'});assert.equal(next.order_id,order);
+      afterAssignment={orderStatus:done.status,hasAssignedCard:true,preparationTaskClaimed:true};
+      // Release only fixture allocations for the next independent scenario, not a business API.
+      await pool.query("UPDATE card_assignment_history SET status='RELEASED',released_at=CURRENT_TIMESTAMP(3) WHERE order_id=?",[order]);
+      await pool.query("UPDATE card_consumption_ledger SET status='RELEASED' WHERE order_id=?",[order]);
+    }
+    report.sessionRecovery.push({scenario,responseStatus:response.status,orderStatus:state.status,hasAssignedCard:!!state.assigned_card_id,tasks,assignTaskClaimed:!!claim,eligibleCardCount:Number(eligible.n),preparation,afterAssignment});
     console.log('session:',scenario,'state:',state.status,'assign-task:',!!claim,'prepare:',preparation);await save();
   }
-  report.finishedAt=new Date().toISOString();report.status='diagnostics completed';
+  report.finishedAt=new Date().toISOString();report.status=expectFixed?'recovery checks passed':'diagnostics completed';
 }catch(error){report.status='harness failed';report.error={code:error.code||error.name,message:error.code?undefined:error.message};process.exitCode=1;console.error(report.error);}
 finally{
   for(const c of connections.reverse())await c.end().catch(()=>{});

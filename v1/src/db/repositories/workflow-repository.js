@@ -569,6 +569,17 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
            ON DUPLICATE KEY UPDATE updated_at = CURRENT_TIMESTAMP(3)`,
           [orderId, `prepare-recharge:${orderId}`, orderId, `submit-recharge:${orderId}`]
         );
+        // Session recovery held these tasks until this assignment committed a card.
+        // Never revive unrelated DEAD tasks or a task under another dedupe key.
+        await connection.query(
+          `UPDATE tasks SET status = 'PENDING', attempts = 0, available_at = CURRENT_TIMESTAMP(3),
+             leased_by = NULL, leased_until = NULL, completed_at = NULL,
+             last_error_code = NULL, last_error_message = NULL, updated_at = CURRENT_TIMESTAMP(3)
+           WHERE order_id = ? AND task_type IN ('PREPARE_RECHARGE','SUBMIT_RECHARGE')
+             AND status = 'DEAD' AND last_error_code = 'SESSION_REPLACEMENT_WAITING_FOR_CARD'
+             AND dedupe_key IN (?, ?)`,
+          [orderId, `prepare-recharge:${orderId}`, `submit-recharge:${orderId}`]
+        );
         // 库存偏低的告警按台 × 产品由供卡调度器每分钟唯一产生（card-supply-scheduler-service），
         // 这里只把剩余数报回去，不再自己写库存偏低告警（旧实现只算一台、阈值全局）。
         const [stockRows] = await connection.query(

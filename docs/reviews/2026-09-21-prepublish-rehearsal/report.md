@@ -64,3 +64,45 @@
 ```sh
 REHEARSAL_MYSQL_URL='<本机pojia-stage1-mysql管理员连接串>' node scripts/step6-prepublish-rehearsal.mjs
 ```
+
+## D-321修复与复验（2026-09-21，UTC+8）
+
+以上保留原始失败证据。用户同意最小修复后，已完成两项本地修复；修后原始结果见[fixed-evidence.json](fixed-evidence.json)，status为`recovery checks passed`。
+
+### 迁移
+
+- v1/scripts/migrate.js在任何DDL前读取版本、检查整批055～057的结构与直接权限，并通过数据库级GET_LOCK防止并发迁移。权限不足报MIGRATION_TRIGGER_PRIVILEGE_REQUIRED；不修改权限或全局变量。
+- v1/src/db/step6-migration-guard.js仅负责055～057恢复适配，不泛化为新迁移平台。原SQL文件未改；SHA256将适配合同绑定到已审SQL，未来改文件而不更新合同会被拒绝。
+- 对每列核对类型、NULL、默认值、额外/生成属性、文本排序规则；对索引核对列顺序/唯一性/前缀/表达式/可见性；对触发器核对表/时机/事件/正文。相同则跳过，缺失才创建；冲突立即停，不覆盖。
+- 已记账迁移若结构缺失也拒绝，不伪装already applied。只有整份结构完成才写版本号，断点后重跑可继续。
+- 本轮28个迁移场景符合预期：受限账户提前拒绝且schema快照零变化；完整迁移/重复执行通过；原7个DDL断点+实际15个逐项断点（含DDL完成未记账）全部续做成功；错列/错索引/错触发器零写入拒绝；并发锁拒绝第二个执行者。
+- 权限预检目前以直接授权为准；只通过角色获得权限会保守拒绝，需单独审查，不猜有效权限。该适配不承诺001～054及未来迁移也有逐项恢复能力。
+
+### Session恢复
+
+- session-replacement-repository保留原ACTIVE/UNKNOWN/SETTLED资金屏障，并锁定该订单相关任务。有效RUNNING租约或重复分卡任务拒绝、返回409，不抢任务。
+- 无卡：已有分卡任务按原ID恢复，缺失才创建唯一ASSIGN_CARD；准备/提交暂以现有DEAD状态和SESSION_REPLACEMENT_WAITING_FOR_CARD标记暂停，不另增任务状态。
+- workflow-repository实际分卡成功后，在同一事务中恢复该标记下的规范去重键PREPARE/SUBMIT；不复活其他无关DEAD任务。已绑卡继续原恢复路径。
+- 六类真实MySQL场景：缺任务、已完成任务、过期租约均可领取分卡、真实分配到卡并回CARD_READY，之后准备任务可领取；有效租约、UNKNOWN资金分别拒绝且订单/任务不变；已绑卡对照仍CARD_READY。
+- 重复提交不会增加分卡任务；单测同时覆盖同CDK重提的既有入口、有效准备/提交租约拒绝、多个分卡任务冲突与无限次Session规则。
+- 证据里`preparation: ORDER_STATE_MISMATCH`是故意在分卡前直调准备处理器验证守卫仍生效，不是修复失败。真正放行证据在`afterAssignment: CARD_READY / preparationTaskClaimed:true`；实际队列在分卡前不允许领取准备任务。
+
+### 验证与边界
+
+```sh
+# v1目录
+node --test test/step6-migration-guard.test.js test/session-replacement-service.test.js test/order-intake-repository.test.js
+# 19 pass / 0 fail / 0 skipped
+npm test
+# 1027 tests / 958 pass / 0 fail / 69 skipped
+
+# 仓库根，实际本机MySQL，包含28迁移场景与6类恢复场景
+EXPECT_RECOVERY_FIXED=1 REHEARSAL_MYSQL_URL='<本机隔离管理员连接串>' node scripts/step6-prepublish-rehearsal.mjs
+# recovery checks passed
+```
+
+语法与diff检查通过。测试库/一次性账户已清理，独立查询剩余0/0，log_bin1/trust_creators0未变。没有Browser代码/界面布局改动，8804仍运行，未重启其他服务。
+
+本轮没有再连接生产。**057的生产创建权限仍没有授予或绕过**：代码现在会安全提前拒绝，实际部署仍需单独确认具备权限的受控DDL连接、触发器DEFINER存续、备份与维护窗口。没有推送/迁移生产/发布/真实付款。其余旧MySQL夹具与业务未验证项没有被本轮默认套件绿灯豁免。
+
+交付核对：迁移断点恢复本地修复与复验完成；无卡队列恢复本地修复与复验完成；生产执行未做、真实充值未做。下一步为确定生产一次性DDL执行方式及最终发布清单，而非继续改CDK业务方案。
