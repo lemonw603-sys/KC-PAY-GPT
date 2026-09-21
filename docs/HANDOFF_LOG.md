@@ -3380,3 +3380,11 @@ tab7只读计算不可用于登录的SHA256指纹与storedExpiry，落login-obse
 15:59 UTC切到`20260921-feedback-d340-7e88952`。web PID538098、worker 538103、bark 538173均独立核对cwd为新release；live/ready/login=200，未登录overview=401；admin.js/admin.css/cards.css线与磁盘哈希一致。开关保持接单/派单/Browser付款/自动供卡=true、补余额=false；非终态仍0。历史36条来单仍全为OPEN+SENT、attempt1、最后send仍09-18，无补推。
 
 switch首次打印`bark cwd=/`，独立证据当场证实为重启窗口瞬时假值而非跑旧版；同轮将发布脚本改为必须精确匹配候选cwd，否则失败。未真实付款/开卡/造单/主动发Bark。证据`reviews/2026-09-22-feedback-release/report.md`。
+
+## 2026-09-22｜7笔续费待核完成生产只读专项审计
+
+按D-248/D-309及反馈规划B批继续。2026-09-21 16:30:15.748 UTC使用只读SQL重查：生产仍7笔`RECHARGE_SUCCESS + cancellation_review_required=1`，7笔`subscription_cancelled`/检查时间均NULL，没有人工取消事件或Browser`CANCELLATION_CONFIRMED`。5笔有Browser run但全在`PRE_PAYMENT_ABORT`，`PAYMENT_SUBMIT=0`；另2笔无attempt/run。7笔均有`close-manually-fulfilled`，即系统外人工交付后收口，系统内无续费已取消证据。
+
+6笔已有`CONSUMED 16 USD`且各关联`PURCHASE COMPLETE 15.75 USD`；`PJV1-DqcnqHF0tPlxDhygTtAA`仍仅`RELEASED 16 USD`、无关联流水，与D-256一致，本轮不猜金额补账。结论：7笔不是可清历史待办；需逐账号确认/取消续费，再复用现有正式后台入口收口。本轮不进账号、不点取消、不写确认状态、不改账本/提醒。当时release仍`20260921-feedback-d340-7e88952`，web/worker/bark均active且cwd指向该release。
+
+依据、脱敏原始输出、业务建议和停止点见`reviews/2026-09-22-feedback-b-renewal-audit/`。下一步等Lemon定自己操作，还是授权Leila复用现存Session/浏览器逐笔只做续费检查与取消；实际操作前不将这7笔标已完成。

@@ -1,0 +1,5 @@
+observed_at_utc	2026-09-21T16:30:20Z
+current_release	/opt/pojia/releases/20260921-feedback-d340-7e88952
+pojia-web.service	active	/opt/pojia/releases/20260921-feedback-d340-7e88952/v1
+pojia-worker.service	active	/opt/pojia/releases/20260921-feedback-d340-7e88952/v1
+pojia-bark-notifications.service	active	/opt/pojia/releases/20260921-feedback-d340-7e88952/v1
