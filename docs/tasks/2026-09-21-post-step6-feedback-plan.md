@@ -1,0 +1,121 @@
+# 第⑥步使用反馈整改规划（待共同确认）
+
+更新：2026-09-21，UTC+8。方向依据D-329；**当前只批准核实和规划，未实施修复/清理/切换。**
+
+## 目标与新顺序
+
+解决本批实际使用问题，让数据可信、动作能到位、旧记录不干扰日常判断；稳定与效率优先，不新增一套同步、统计或监控系统。全部事项处理并验收后，再整体使用一天；没有影响使用/数据/资金的未结问题，才进入第⑦部分。⑧和最终各产品真实集成验收仍沿原规划。
+
+“处理完”须是已验证修复，或用户明确裁定不改并记录理由，不能由执行者擅自搁置后称全完成。试用一天内出现本批实质问题，修复回归后重新开始本轮验收观察；无真实订单样本时明确记录，不把空跑一天当真钱全链路通过。
+
+## 依据清单
+
+- 决策：D-246/253执行器与卡源独立、API固定HNSKJ；D-259/307/312库存与即时分配口径；D-283工作台；D-287卡片；D-309/310不为美观强行合并、按需余额查询；D-314～319 CDK；D-325/326诊断；D-327两项UI不改；D-329本批整改与第⑦进入条件。
+- 原型：工作台`step6-workbench-compare.html` C，营业条`step6-opsbar-v5.html`乙-3；卡片`step6-cards-compare.html` A/`step6-cards-a.html`；CDK A；诊断`step6-diagnostics-interaction.html`。订单重构尚无确认原型，必须先对需求。客户页沿现有候光，不擅自把本批衔接修复扩大为Pro完整改造。
+- 当前运行基线：09:18 UTC独立SSH为`20260921-step6-9b9f181`，三主服务active、ready200；highvcc同步service failed；日对账Result=success。具体动态事实只看CURRENT_STATE及本节带时间证据。
+
+## 问题台账
+
+| 编号 | 用户反馈与范围 | 本轮初查／尚待核实 | 验收标准 | 状态 |
+|---|---|---|---|---|
+| FB-01 | 工作台“卡与钱”两台数据是否准确、怎样刷新 | `renderWbCards`的库存/用量来自DB；HNSKJ钱包来自快照，highvcc提示去卡片页；不能用“来自数据库”证明与上游一致。需逐字段核对库存、钱包、今日花费、同步新鲜度及两页口径 | 每个数有来源/计算范围/更新时间；样本与上游只读证据对齐；刷新确实刷新对应数据而非卡段规则；失败不装0或正常 | 初查，待逐字段验证 |
+| FB-02 | token入口太深；失效“去处理”跳转不对 | 代码确认待办只`jump:'stock'`，通用处理仅switchView；表单位于高级区highvcc开卡折叠内，未深链定位。模块归属未必错，但处理链未到位 | 待办能直接找到更新入口；更新登录与产生费用动作清楚区分；复用原token保存服务，保存失败不假报成功；是否自动同步先说明并裁定 | 代码确认入口缺口，待浏览器复现/方案裁定 |
+| FB-03 | 选Browser后是否还必须点卡台“切换” | 后端setDefaultRechargeMethod使用已保存card_source_selections，不改变卡台；只有换卡台才需要保存该选择。需验证未保存下拉变更、切换拒绝/响应丢失的反馈 | 当前方式、已保存卡台明确；不要求无意义二次切换；失败不误显示成功；新单使用正确冻结来源，旧单不误改线；只在安全规则允许时接管排队单 | 代码行为已核实，交互边界待验 |
+| FB-04 | 历史、过期的待处理是否清理 | 大量OPEN提醒来自历史；但不能按年龄或订单CLOSED就断言风险解除。2条OPEN付款不明case关联CLOSED订单，仍须查资金/账本证据 | 逐类说明保留/隐藏/关闭/归档依据；未定资金、欠交付、未关续费不能因“过期”消失；执行前提供具体目标预览、影响和审计/恢复办法 | 待分类，不获准清理 |
+| FB-05 | 卡片余额下的时间是否最后同步、是否错误 | 前端cardRow显示card.lastSyncedAt，后端映射cards.last_synced_at，不是交易同步字段。实际含义还要追写入：同步无变化、部分失败、旧导入与时区 | DB原值→接口→页面时区逐层对上；明确是资料/余额成功同步、尝试还是变更时间；无变化的成功同步和失败不能误导；不混成消费发生时间 | 映射已核实，语义/上游写入待验 |
+| FB-06 | 工作台完成率混历史，是否清理 | 当前已实现“成功率”按历史完结订单算；“自动完成率”另有未定口径，不能混为一项。D-327曾定知道即可不改，本次重新讨论数据范围，不等于授权删历史或改算法 | 先确认具体指标、统计时间窗、分母和演练排除条件；真实失败不能为了数字好看而剔除；零样本不显示100%；保留追溯 | 待业务裁定 |
+| FB-07 | 客户充值页与新系统是否衔接顺畅 | 代码仍接verify/create/session/status正式接口，不能因此称全链路顺畅；需核CDK三用途/期限、路线不可用、Session、处理中/失败/未知付款/成功及重复提交 | 现有Plus从客户页面到后台关键状态一致；刷新/网络失败/重提不重复建单或付款；后台成功与客户交付一致；错误提示与现行规则一致 | 待隔离端到端回归 |
+| FB-08 | 订单是否有大量脏数据、是否清理 | 当前78条历史订单（20成功/37失败/21关闭）仅是状态分布，不能判成脏数据。须区分真实历史、演练、孤立/不一致、风险未清记录 | 给可复核分类清单；真实交易/资金链不删；统计过滤与物理清理分开；每批有具体预览和用户确认，前后数量/关联/审计验证 | 待审计，不获准删除 |
+| FB-09 | 订单页重构，先共同对需求 | D-283原保留旧皮；用户现在要求重新对需求。需结合FB-04/06/08结果确定日常找单/跟进/处理异常的主流程 | 先确认字段、筛选、状态语义、动作、历史默认展示及移动端需求；可点原型确认后实现；既有收口、资金保护、查询能力不丢 | 需求待对齐，未设计/实施 |
+
+## 建议执行顺序（本规划待确认）
+
+### A. 先让数据和操作入口可信：FB-01/02/05/03
+
+1. 建“字段—真相来源—成功更新时间—刷新动作”对照，分别核两台；只读查看上游或用已有记录对比，先不强制同步。
+2. 复现token待办路径，给最小方案：优先直达并展开现有更新表单；是否调整表单位置经用户确认，不复制第二套保存逻辑，不把开卡按钮当更新登录入口。
+   同时核查凭据是否进入URL、日志或截图；规划/证据不保存token，定位锚点不携带凭据值。
+3. 核实余额时间和无变化/失败场景。优先复用既有按台同步与按需查余额，不提高全局轮询频率，不做每打开页面就批量打卡台接口。
+4. 实测“充值方式”和“卡台选择”的成功/拒绝/未保存状态，必要时仅澄清当前选择与动作含义，不合并成危险的隐式多项资金变更。
+
+交付：事实对照、复现证据、最小修正项；业务方向确认后实现，隔离回归、必要时单独确认发布。
+
+### B. 再分清历史、统计与待处理：FB-04/06/08
+
+1. 先审计不清理，关联订单/CDK/卡分配/消费账本/attempt/告警，付款证据不看单个状态。
+2. 向用户交分类预览，分别裁定“日常默认不显示”“从业务统计排除”“可关闭记录/归档”“保留待核实”。不默认物理删除。
+3. 对齐成功率或自动完成率的确切字段和分母；优先以明确统计范围解决历史干扰，而非删掉真实失败单。
+4. 数据操作批准后才执行，走正式服务/审计/备份；不得通过放松诊断409保护来消除资金待办。
+
+交付：分类清单、统计定义、处理预览与批准记录、前后独立验证。
+
+### C. 验现有客户链路：FB-07
+
+从客户实际页面走隔离样本，不只测接口能200：正常兑换、过期/作废/路线关闭、Session无效与重贴、处理中刷新、失败重提、未知付款锁定、重复点击和响应丢失。真实自然来单可在用户允许范围内只读观察；额外付费测试须当次确认。
+
+本阶段解决现有Plus衔接；Pro与完整第⑦改造仍关闭。若必要修正与⑦发生范围重叠，先明确选择，不悄悄扩大项目。
+
+### D. 共同对订单页需求，再重构：FB-09
+
+基于已定的数据分类/统计和客户状态，讨论日常到底需要找什么单、看什么、做什么。先定主路径与必留能力，再出可点击稿；确认后实施。不只是换颜色，也不把全部技术字段平铺给运营。
+
+### E. 整体回归 → 完整使用一天 → 第⑦
+
+所有FB项逐条闭合（或用户明确裁定不改），统一回归工作台/卡片/诊断/订单/客户/CDK及数据口径。部署版本固定后记录试用起点、代表性操作、异常与样本限制。一天无本批实质问题且用户确认通过后进入⑦；这一阶段不自动创建后台监控或付费演练。
+
+## 相关潜在问题检查（限本批范围）
+
+- 数据不变时同步时间是否更新；失败/部分成功是否仍显示新时间或绿色状态；本地页面刷新是否被误当上游同步。
+- 今日花费是否混用了交易发生时间与首次入库时间；不能靠删除历史流水修显示。
+- 未保存卡台选择时切执行方式、重复点击/响应丢失时是否出现误判；不能静默改在途订单。
+- 旧告警与真实风险是否脱节；客户重提与后台人工处理是否会互相覆盖。未知付款保护始终保留。
+
+## 状态与落盘规则
+
+状态只使用：待核实→事实已确认→方案待裁定→已批准→实施中→待验收→已验证；用户定不改则单列“已裁定不改”及理由。不得用“代码写了”冒充验证完成。
+
+- 本文件：范围、顺序、每项状态与证据链接的唯一入口。
+- DECISIONS：用户裁定；CURRENT_STATE：生产动态事实；HANDOFF_NOW：当前一屏与下一步；HANDOFF_LOG：阶段过程。
+- 实施前说验收怎么验；涉及真实开卡/付款、生产开关/路线、token保存或数据清理，按当次明确范围执行，不从规划推导额外权限。
+- 每阶段需要业务裁定的点集中确认，不为已定范围内的每个小修反复提问；发现会改变资金规则或明显扩范围的新问题再停下讨论。
+
+## 本轮只读证据（2026-09-21 09:18～09:23 UTC）
+
+```sql
+SELECT status,COUNT(*) AS n FROM orders GROUP BY status;
+SELECT rc.case_type,rc.status,o.status AS order_status,COUNT(*) AS n
+FROM reconciliation_cases rc LEFT JOIN orders o ON o.id=rc.order_id
+GROUP BY rc.case_type,rc.status,o.status;
+SELECT p.product_code,css.executor_kind,pa.account_code,pa.source_adapter,css.locked,css.updated_at
+FROM card_source_selections css JOIN products p ON p.id=css.product_id
+JOIN provider_accounts pa ON pa.id=css.provider_account_id
+ORDER BY css.executor_kind,p.product_code;
+SELECT pa.account_code,MAX(bs.observed_at) AS last_wallet_snapshot
+FROM provider_balance_snapshots bs JOIN provider_accounts pa ON pa.id=bs.provider_account_id
+GROUP BY pa.account_code;
+SELECT c.inventory_status,pa.account_code,COUNT(*) AS n,MAX(c.last_synced_at) AS last_card_sync
+FROM cards c JOIN provider_accounts pa ON pa.id=c.provider_account_id
+GROUP BY c.inventory_status,pa.account_code ORDER BY pa.account_code,c.inventory_status;
+```
+
+关键原始输出：
+
+```text
+orders: CLOSED21 / RECHARGE_FAILED37 / RECHARGE_SUCCESS20
+case: BROWSER_PAYMENT_UNKNOWN OPEN CLOSED 2
+Plus API source=legacy-primary/hnskj_api_v1 locked1
+Plus BROWSER source=backup-a/backup_card_export_v1 locked0 updated=2026-09-21 08:45:07.017 UTC
+其他产品选择表行存在不代表路线开启；实际API Plus=1、Browser Plus/5X/20X=0
+wallet latest: legacy-primary 2026-09-21 09:17:19.067 UTC
+wallet latest: backup-a 2026-09-19 00:53:18.368 UTC
+AVAILABLE: legacy-primary 2 last_card_sync=2026-09-21 07:12:22.683 UTC
+AVAILABLE: backup-a 7 last_card_sync=2026-09-18 06:49:12.519 UTC
+RETIRED: legacy-primary12 / backup-a9（旧时间不能直接当在役同步故障）
+highvcc token updated_at=2026-09-18 12:54:05.098 UTC（未读取密文值）
+PROVIDER_TOKEN_EXPIRED OPEN1；highvcc同步service failed
+OPEN提醒包含BROWSER_ORDER_SUBMITTED36、FAILED30、PAYMENT_UNKNOWN10等历史类别；不据此判为可删除
+```
+
+数据时间不同不自动等于错误；快照时间旧也不能单独推出最后成功请求时间（NO_CHANGE路径可能不提交新批次）。本轮没有对上游数值作新请求比对，所以不承诺两个卡台全部准确。
+
+代码证据：admin.js renderWbCards/token待办jump/通用view-jump/cardRow；index.html highvcc-open-card折叠内token表单；provider-route-admin-service.setDefaultRechargeMethod使用已存卡源；card-stock-service的lastSyncedAt映射；highvcc-snapshot-sync-service的NO_CHANGE；customer.js四个正式API。首次选择表SQL误用了不存在product_code列，已按053结构改用products JOIN重查，上述为成功查询结果，不把查错当业务结论。

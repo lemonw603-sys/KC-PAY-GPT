@@ -25,7 +25,7 @@
 | accept_new_orders | true。最终窗口07:37:18.243 UTC true→false；07:51:48.076 UTC false→true，正式setOrderAcceptance审计（actor codex:step6-release-9b9f181 / -complete）。其余付款/派单/供卡原开关保持不变。 | 2026-09-21 07:52 UTC | app_settings + admin_setting_events新连接独立查询 |
 | dispatch_new_recharges / 模式 | true / AUTOMATIC | 2026-09-09 11:46 UTC | app_settings |
 | 默认路线（Plus） | **API：LEGACY_HNSKJ_ZZSHU_V1 accepts_new_orders=1；CHATGPT_PLUS_BROWSER_V1=0**。第④步 rehearsal 期间 06:53 UTC 切 BROWSER（事件 6df4d9f2）、07:00 UTC 切回 API，两次四项校验全过（`TARGET_POOL_AVAILABLE` 用库存口径：切回时 hnskj 分卡口径 0 张、库存口径 2 张，校验按后者放行——D-259 的改动在切换校验上的生产实证）。仅影响切换后新单。 | 2026-09-18 07:07 UTC | fulfillment_routes 独立 SELECT + provider_route_switch_events |
-| Browser 当前卡台 | 备用卡台 A（`manual_excel` / `backup-a`） | 13:31 | browser_card_source_selections |
+| Browser 当前卡台 | Plus已保存备用卡台A（backup-a / backup_card_export_v1），选择行updated_at=2026-09-21 08:45:07.017 UTC；此行不表示Browser路线已经开启或token有效。新真相源是card_source_selections，不再用旧browser_card_source_selections判断。 | 2026-09-21 09:23 UTC | card_source_selections JOIN products/provider_accounts只读查询，FB-03规划证据 |
 | browser_dispatch_enabled | true | 2026-09-09 11:46 UTC | app_settings |
 | browser_payment_writes_enabled | true；第③步 E 演练期间 01:03 UTC `stop-live.sh` 关（审计行 actor stop-live.sh）、01:45 UTC `setBrowserPaymentWrites` 开回并同步 executor profile（审计行 actor lemon-via-fable:step3-E）。 | 2026-09-18 01:46 UTC | app_settings + executor_profiles + admin_setting_events 独立 SELECT |
 | **菲律宾出口对 ChatGPT 的可达性** | **未定论**。裸 curl 经出口访问 chatgpt.com 返回 403 Cloudflare 拦截页，但 **curl 不能用来判断 Cloudflare 是否封禁**（无 TLS 指纹、不执行 JS，会被单独拦）。**Lemon 当场在 BitBrowser 窗口里看到的是 ChatGPT 的退出登录页面，说明页面打得开、出口没被整站封**。真实根因转向「Session 没能登录上」，见 D-187 | 2026-09-12 09:40 UTC | 反例证据来自 Lemon 直接观察窗口；curl 测试已作废 |

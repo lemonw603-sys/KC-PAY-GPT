@@ -3244,3 +3244,13 @@ SQL现场仅state-check只读，生产仍⑤b/054；无生产写入、无新迁�
 07:51:48正式服务恢复接单true，9timer恢复active/enabled，其余原设置逐条一致后才恢复。07:52新SSH/DB：current9b9f181；web234748/worker234751/bark234754 active且cwd正确；schema058；migrator仅globalUSAGE+库ALL；公网登录200；摘要544/JSON有效；无在途/账号槽/活动未知资金。Pro/付款/供卡开关原样，未清旧码/case、未发起真实资金测试、未发本机Browser池重启命令。服务器phase=released-original-state-restored，恢复容器已清理。
 
 证据reviews/2026-09-21-step6-release-v2及report-capacity。CURRENT_STATE为唯一生产事实表，Handoff重写；下一步按D-291用户实际使用第⑥步一天再⑦，不继续误报“待发布”或重开已确认UI。
+
+## 2026-09-21｜D-329使用反馈统一整改规划（待共同确认）
+
+用户提出全部反馈并要求先规划、共同确认后逐项解决、全部解决后再使用一天进入⑦。台账FB-01～09覆盖卡与钱/刷新、token入口与跳转、路线与卡源、历史待办、余额时间、完成率历史口径、客户衔接、订单数据分类与订单页重构。规划tasks/2026-09-21-post-step6-feedback-plan.md，A数据与入口→B历史/统计→C现有Plus客户链→D订单需求/原型/重构→E整体回归及一天观察，顺序待确认。没有新修复、同步、token保存、路线切换或数据清理。
+
+09:18～09:23 UTC只读核对运行仍9b9f181，主服务/ready正常，highvcc同步failed；订单20成功/37失败/21关闭，2条OPEN未知付款case关联CLOSED。Browser Plus已存backup-a（更新时间08:45 UTC），当前Plus API路线开、Browser/Pro关；来源选择表存在Pro行不等于Pro路线可用。钱包快照HNSKJ09:17、backup09-19 00:53；在库AVAILABLE卡资料最近HNSKJ07:12、backup09-18 06:49（UTC）。日期不同不是直接错；未请求上游新值，不能证明一致。选择表首条查询误用product_code列，按053结构JOIN products重查成功，错误不作业务结论。
+
+代码确认：token待办jump stock，通用jump仅switchView，表单在高级highvcc开卡折叠，缺深链定位；路线切换只翻接受新单标记，按已有card_source_selections校验，不同时改卡源；余额时间来自cards.last_synced_at，NO_CHANGE/部分失败/时区语义待验。客户页四个正式API存在，但不冒充端到端顺畅。历史/失败/关闭不自动定义为脏；统计问题优先确定口径，不删除真实失败使数字好看。
+
+D-329改变进⑦门槛并重新提出完成率样本范围讨论，旧“不改成功率”不能自动当本轮最终裁定，也不能反过来当已获改算法授权。钱包标签/付款开关旧裁定继续。用context-handoff与docs-generator落统一计划/决定/当前入口，不开新服务或自动监控。
