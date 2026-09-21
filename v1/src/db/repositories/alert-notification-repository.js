@@ -51,7 +51,7 @@ export function createAlertNotificationRepository(pool) {
       // 会在改动上线后继续被推出去——那正是「改了没生效」的另一种形态。
       const [rows] = await connection.query(
         `SELECT n.id, n.alert_id, n.attempt_count, n.incident_version,
-                a.alert_type, a.severity, a.title, a.message
+                a.alert_type, a.severity, a.title, a.message, a.order_id
          FROM alert_notifications n
          JOIN operator_alerts a ON a.id = n.alert_id AND a.status = 'OPEN'
          WHERE n.channel = 'BARK' AND a.alert_type IN (?)
@@ -77,6 +77,17 @@ export function createAlertNotificationRepository(pool) {
         [row.id]
       );
       await connection.commit();
+      // Read identity after releasing the outbox locks; do not add orders to the
+      // FOR UPDATE join or make an optional display lookup block critical delivery.
+      let identity = null;
+      if (row.order_id) {
+        try {
+          const [orders] = await connection.query({
+            sql: 'SELECT public_no, customer_email FROM orders WHERE id = ? LIMIT 1', timeout: 1500
+          }, [row.order_id]);
+          identity = orders[0] || null;
+        } catch { /* Keep the original order-number fallback. */ }
+      }
       return {
         id: row.id,
         alertId: row.alert_id,
@@ -85,7 +96,9 @@ export function createAlertNotificationRepository(pool) {
         type: row.alert_type,
         severity: row.severity,
         title: row.title,
-        message: row.message
+        message: row.message,
+        customerEmail: identity?.customer_email || null,
+        publicNo: identity?.public_no || null
       };
     } catch (error) {
       await connection.rollback();

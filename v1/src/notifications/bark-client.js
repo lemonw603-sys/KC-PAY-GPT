@@ -1,4 +1,5 @@
 import { redactSensitiveText } from '../security/redaction.js';
+import { usableBarkEmail } from './bark-presentation.js';
 
 export class BarkDeliveryError extends Error {
   constructor(message, { retryable = true, status = null } = {}) {
@@ -27,7 +28,14 @@ export function createBarkClient({
   const endpoint = `${String(serverUrl).replace(/\/+$/, '')}/push`;
 
   return {
-    async send({ title, message, severity = 'warning', url = null }) {
+    async send({ title, message, severity = 'warning', url = null, customerEmail = null }) {
+      const email = usableBarkEmail(customerEmail);
+      const prefix = email ? `账号 ${email}\n` : null;
+      // Only the explicit account-identity line is exempt from numeric PAN masking.
+      // Everything after it still goes through normal credential/card redaction.
+      const body = prefix && String(message).startsWith(prefix)
+        ? prefix + redactSensitiveText(String(message).slice(prefix.length)).slice(0, 1000-prefix.length)
+        : redactSensitiveText(message).slice(0, 1000);
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), timeoutMs);
       let response;
@@ -38,7 +46,7 @@ export function createBarkClient({
           body: JSON.stringify({
             device_key: deviceKey,
             title: redactSensitiveText(title).slice(0, 200),
-            body: redactSensitiveText(message).slice(0, 1_000),
+            body,
             group,
             level: barkLevel(severity),
             ...(url ? { url } : {})

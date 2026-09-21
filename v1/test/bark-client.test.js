@@ -2,6 +2,15 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { BarkDeliveryError, createBarkClient } from '../src/notifications/bark-client.js';
 
+test('explicit account email stays complete but credentials and card numbers remain redacted',async()=>{
+  let payload;const client=createBarkClient({serverUrl:'https://api.day.app',deviceKey:'fake',fetchImpl:async(_,options)=>{payload=JSON.parse(options.body);return{ok:true,status:200,json:async()=>({code:200})}}});
+  const email='123456789012345@example.test';
+  await client.send({title:'付款待核实',customerEmail:email,message:`账号 ${email}\n卡 4242424242424242 access_token=secret-token`});
+  assert.match(payload.body,new RegExp(email));assert.doesNotMatch(payload.body,/4242424242424242|secret-token/);assert.match(payload.body,/\*\*\*\*4242/);
+  await client.send({title:'待核',customerEmail:email,message:'password=secret-value 卡4242424242424242'});
+  assert.doesNotMatch(payload.body,/secret-value|4242424242424242/);
+});
+
 test('sends a redacted Bark JSON payload without placing the device key in the URL', async () => {
   let captured;
   const client = createBarkClient({

@@ -2,6 +2,21 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createAlertNotificationRepository } from '../src/db/repositories/alert-notification-repository.js';
 
+for(const failed of [false,true])test(`order email lookup happens after commit and safely falls back: failure=${failed}`,async()=>{
+  let committed=false,lookups=0;
+  const c={beginTransaction:async()=>{},commit:async()=>{committed=true},rollback:async()=>{},release(){},
+    query:async(sql,args)=>{
+      if(typeof sql==='object'){
+        assert.equal(committed,true);assert.equal(sql.timeout,1500);assert.doesNotMatch(sql.sql,/FOR UPDATE/);assert.deepEqual(args,['order-id']);lookups++;
+        if(failed)throw Error('read failed');return[[{public_no:'PJV1-test',customer_email:'a@example.test'}]];
+      }
+      if(sql.includes('FOR UPDATE'))return[[{id:1,alert_id:'a',attempt_count:0,incident_version:1,order_id:'order-id',alert_type:'BROWSER_HUMAN_REQUIRED',title:'待核',message:'原文'}]];
+      return[{affectedRows:1}];
+    }};
+  const r=await createAlertNotificationRepository({getConnection:async()=>c}).claimNext();
+  assert.equal(lookups,1);assert.equal(r.message,'原文');assert.equal(r.customerEmail,failed?null:'a@example.test');
+});
+
 test('Bark outbox sends once per open incident and only requeues after resolution', async () => {
   const calls = [];
   const pool = {

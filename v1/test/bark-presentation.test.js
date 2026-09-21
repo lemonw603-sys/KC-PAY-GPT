@@ -4,6 +4,22 @@ import {presentBarkNotification as present} from '../src/notifications/bark-pres
 import {dispatchOneBarkNotification} from '../src/notifications/bark-dispatcher.js';
 import {summaryMessage} from '../src/services/daily-reconciliation-service.js';
 const order='PJV1-test-order';
+test('customer email replaces the order heading, backend source remains untouched',()=>{
+  const input={type:'BROWSER_HUMAN_REQUIRED',publicNo:order,customerEmail:'alice@example.test',title:'待核',message:`订单 ${order}｜付款后系统自己查了几次仍无法确定结果（TIMEOUT）。`};
+  const r=present(input);assert.match(r.message,/^账号 alice@example.test\n/);assert.doesNotMatch(r.message,/PJV1-test-order/);assert.match(r.message,/勿重复付款/);assert.match(input.message,/PJV1-test-order/);
+});
+test('missing, malformed, multiline or contradictory identity keeps the order fallback',()=>{
+  for(const customerEmail of [null,'','not-an-email','a@example.test\npassword=hidden','a\u202e@example.test']){
+    const r=present({type:'BROWSER_HUMAN_VERIFICATION',publicNo:order,customerEmail,message:`订单 ${order}｜待人工验证`});
+    assert.match(r.message,new RegExp(`^订单 ${order}`));assert.equal(r.customerEmail,undefined);
+  }
+  const r=present({type:'BROWSER_HUMAN_VERIFICATION',publicNo:'PJV1-different',customerEmail:'wrong@example.test',message:`订单 ${order}｜待人工验证`});
+  assert.doesNotMatch(r.message,/wrong@example/);assert.equal(r.customerEmail,undefined);
+});
+test('linked non-browser alert without legacy order prefix still shows email',()=>{
+  const r=present({type:'ORDER_PAYMENT_UNKNOWN_REVIEW',customerEmail:'bob@example.test',message:'扣款16 USD尚未确认，请核实，勿重付。'});
+  assert.match(r.message,/^账号 bob@example.test\n/);assert.match(r.message,/16 USD/);assert.match(r.message,/勿重付/);
+});
 test('balance remains exact and readable, including tiny/negative changes; no invented reason',()=>{
   for(const [a,b,expected]of [['89.480000','38.730000','89.48 → 38.73 USD'],['0.000001','-0.000001','0.000001 → -0.000001 USD'],['0.000000','100.000000','0 → 100 USD']]){
     const input={type:'PROVIDER_BALANCE_CHANGED',severity:'info',title:'余额发生变化',message:`HNSKJ余额由 ${a} USD 变为 ${b} USD。`};

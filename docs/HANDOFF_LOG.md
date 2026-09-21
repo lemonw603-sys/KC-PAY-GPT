@@ -3342,3 +3342,9 @@ tab7只读计算不可用于登录的SHA256指纹与storedExpiry，落login-obse
 用户明确余额暂时逐笔继续，量大再考虑取消，其他按需并优化短文案。移除普通BROWSER_ORDER_SUBMITTED手机白名单、保留后台记录；保留余额/最终人工/资金异常。新增纯bark-presentation只处理已知生产者格式，金额/币种精确、订单不截断，未知/带金额人工证据回退原文；余额源显示名改为统一providerLabelOf，不动余额逻辑。日报压缩解释不删维度，后台原始文字不批量改。
 
 默认1071/1002 pass/0 fail/69 skipped；6项真实隔离MySQL验证真实repository/dispatcher到mock客户端：正常来单和旧队列不发，余额/人工推，同事故一次，恢复复发一次，迟到确认隔离，后台事件不丢。真实手机请求0，测试库清理；没有发布/生产重启/卡台请求。跨类型同故障合并未完成，不能说Bark全部降噪已交付。报告reviews/2026-09-21-bark-simplification/report.md，23:20复测不变。
+
+## 2026-09-21｜D-337手机通知优先充值邮箱
+
+用户认为订单号无法快速识别客户，要求具体邮箱。通知领取commit后按关联order_id限时1500ms查询public_no/customer_email，不把订单加入FOR UPDATE锁；查询失败回原通知。手机摘要显示账号邮箱、没有可靠邮箱或正文订单矛盾时回退原号；后台原文/审计不变。Bark client仅对明确账号首行保留完整数字邮箱，余下token/密码/PAN仍按旧脱敏，不改全局脱敏规则。
+
+专项31通过，默认1077/1008 pass0fail69skip；真实隔离MySQL7项含FK邮件链路、同事故/重开/迟到ack/余额保留，实际手机请求0，临时库清理。没有发布、生产写入、卡台请求或支付改动。证据reviews/2026-09-21-bark-simplification/email-update.md；跨类型重复合并仍未完成，23:20闲置复测不变。

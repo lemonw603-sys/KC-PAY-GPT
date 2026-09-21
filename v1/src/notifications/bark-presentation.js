@@ -1,14 +1,21 @@
 import {redactSensitiveText} from '../security/redaction.js';
 
+export function usableBarkEmail(value) {
+  const email=typeof value==='string'?value.trim():'';
+  return email.length<=320&&/^[^\s@<>\p{C}]+@[^\s@<>\p{C}]+\.[^\s@<>\p{C}]+$/u.test(email)?email:null;
+}
+
 // Phone-only presentation: never mutate the original alert or infer a payment outcome.
 // Recognize only existing producer contracts; unknown formats retain their full safe text.
 export function presentBarkNotification(delivery) {
   const title=redactSensitiveText(String(delivery.title||''));
   const message=redactSensitiveText(String(delivery.message||''));
-  const base={title,message,severity:delivery.severity};
   const order=message.match(/^订单 ([A-Za-z0-9_-]+)｜([\s\S]*)$/);
+  const email=order&&delivery.publicNo&&order[1]!==delivery.publicNo?null:usableBarkEmail(delivery.customerEmail);
+  const base={title,message,severity:delivery.severity,...(email?{customerEmail:email}:{})};
+  const identity=email?`账号 ${email}`:order?`订单 ${order[1]}`:null;
   const hasMoney=/(?:[$¥€£]\s*-?\d|\d(?:[\d.,]*\d)?\s*(?:USD|PHP|HKD|CNY|EUR|美元|港币|人民币))/i.test(message);
-  const withOrder=(heading,body)=>({ ...base,title:heading,message:`订单 ${order[1]}\n${body}` });
+  const withOrder=(heading,body)=>({ ...base,title:heading,message:`${identity}\n${body}` });
   if(delivery.type==='PROVIDER_BALANCE_CHANGED'){
     const balance=message.match(/^(.+?)余额由 (-?\d+(?:\.\d+)?) ([A-Z]{3}) 变为 (-?\d+(?:\.\d+)?) \3[。.]?$/);
     if(balance){
@@ -38,6 +45,5 @@ export function presentBarkNotification(delivery) {
     .replace(/：卡台扣了、账本没记、也没登记手动用卡，进报告待核。/g,'，待核实。')
     .replace(/已登记手动用卡的 (\d+) 张：卡台扣了、你已登记，账本待补记。/g,'手动用卡待补记 $1 张。')
     .replace(/。(?=\S)/g,'。\n')};
-  // This format keeps identifiers readable without shortening or replacing them.
-  return order?withOrder(title,order[2]):base;
+  return order?withOrder(title,order[2]):email?withOrder(title,message):base;
 }

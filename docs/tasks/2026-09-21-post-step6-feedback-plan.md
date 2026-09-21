@@ -79,6 +79,8 @@
 
 **D-336覆盖**：用户定初期余额继续逐笔，其他按需降噪并精简文案。本地第一批保留余额/关键异常、普通来单转后台、手机摘要精简但留后台原文，1002 pass/0 fail/69 skipped＋6真实MySQL检查通过。未发布、真实Bark请求0；跨类型重复合并仍待验证，不把第一批算全完成。证据[通知第一批](../reviews/2026-09-21-bark-simplification/report.md)。
 
+**D-337覆盖显示定位**：用户要求通知优先具体充值邮箱，其他同意。本地已按alert.order_id读取并展示邮箱，缺失/异常/矛盾用订单号兜底，后台记录不变；1008 pass/0 fail/69 skipped＋7隔离MySQL通过，未发布/真发。证据[邮箱优先](../reviews/2026-09-21-bark-simplification/email-update.md)。
+
 13:18:09 UTC只读查询近7天保留的通知行：PROVIDER_BALANCE_CHANGED SENT10、BROWSER_ORDER_SUBMITTED SENT5；近24小时只有DAILY_RECONCILIATION_SUMMARY留存1行。此表会覆盖sent_at/轮次，不是精确发送次数或手机收到证明；历史类型还跨旧release，不能据此断言现版本仍在推已移出白名单的类型。113是后台OPEN告警数，不是本次或今日Bark发送数。尚需用户指出最烦的标题/类别来定位噪音，未修改通知规则或生产。
 
 **D-335**：用户已批准上一报告的精确2案例＋10提醒受控收口，当前实施。默认预览、生产digest一致/目标备份后原子改状态并审计；不动其他业务数据和通用保护。未完成前不得称已清理，B其他分类/统计仍待裁定。
