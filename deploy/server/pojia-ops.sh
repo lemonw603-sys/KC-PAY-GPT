@@ -7,6 +7,12 @@ backup_service='pojia-backup.service'
 backup_timer='pojia-backup.timer'
 bark_service='pojia-bark-notifications.service'
 mysql_image='mysql:8.4.11'
+restore_keys_file='/etc/pojia/runtime.env'
+# When called from a release checkout use its matching verifier. Installed copies
+# resolve through current; a missing verifier fails closed, never falls back to table count.
+ops_source_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+restore_verifier="${ops_source_root}/v1/scripts/verify-restored-backup.mjs"
+[[ -f ${restore_verifier} ]] || restore_verifier='/opt/pojia/current/v1/scripts/verify-restored-backup.mjs'
 
 die() {
   printf 'error=%s\n' "$*" >&2
@@ -74,18 +80,20 @@ create_backup() {
 
 restore_test() {
   local backup container database table_count
+  [[ -r ${restore_verifier} ]] || die 'restore_verifier_missing'
+  [[ -r ${restore_keys_file} ]] || die 'restore_keys_file_missing'
+  command -v node >/dev/null || die 'restore_node_missing'
   backup=$(resolve_backup "${1:-}")
   verify_backup "${backup}"
 
   container="pojia-restore-test-$$"
   database='pojia_restore_test'
-  # The EXIT trap runs after this function's local variables are gone.
-  # Capture the literal container name so `set -u` cannot break cleanup.
-  trap 'docker rm --force "pojia-restore-test-$$" >/dev/null 2>&1 || true' EXIT
-
-  docker run --detach --rm --name "${container}" --network none \
+  docker run --detach --rm --name "${container}" --network none --label com.pojia.restore-test=true \
     --env MYSQL_ALLOW_EMPTY_PASSWORD=yes "${mysql_image}" --skip-networking \
     >/dev/null
+  # Register only after successful creation: a name collision must not delete
+  # another container. Local variables have gone out of scope when EXIT fires.
+  trap 'docker rm --force "pojia-restore-test-$$" >/dev/null 2>&1 || true' EXIT
 
   # The official image briefly starts a temporary initialization server before
   # stopping it and launching the final server. A plain mysqladmin ping can hit
@@ -124,6 +132,9 @@ restore_test() {
     --execute "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='${database}'")
   [[ ${table_count} =~ ^[0-9]+$ && ${table_count} -gt 0 ]] || die 'restore_has_no_tables'
 
+  node "${restore_verifier}" "${container}" "${restore_keys_file}" --prepare-definer \
+    || die 'restore_functional_check_failed'
+
   printf 'restore_test=OK\nrestored_tables=%s\nbackup_file=%s\n' \
     "${table_count}" "${backup}"
 }
@@ -136,7 +147,7 @@ Commands:
   status        Show service, timer, release and latest-backup status.
   backup        Create and verify a new encrypted production backup.
   verify        Verify checksum, decryption and gzip integrity.
-  restore-test  Restore into an isolated temporary MySQL container.
+  restore-test  Isolated restore + business reads, decryption and alert-trigger checks.
   check         Run status and verify the latest backup.
 USAGE
 }
@@ -157,4 +168,4 @@ main() {
   esac
 }
 
-main "$@"
+if [[ ${BASH_SOURCE[0]} == "$0" ]]; then main "$@"; fi

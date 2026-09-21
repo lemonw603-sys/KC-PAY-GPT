@@ -24,7 +24,7 @@
 - `pojia-ops status`：查看 Web、worker、MySQL、备份定时器和最新备份。
 - `pojia-ops backup`：立即创建并校验一份加密备份。
 - `pojia-ops verify`：校验最新备份的哈希、解密和压缩完整性。
-- `pojia-ops restore-test`：在无网络的临时 MySQL 容器中做真实恢复演练，不接触生产库。
+- `pojia-ops restore-test`：在无网络临时MySQL中恢复，检查业务读取、代表性Session/CDK解密与057告警触发器；必要的已知执行身份只在临时库补建，不接触生产库。缺密钥/身份/规则不符不报成功，细则见运行手册§2。
 - `pojia-ops check`：一次完成状态检查和最新备份校验。
 
 生产迁移、停机顺序、Bark 演练和只读体检必须按

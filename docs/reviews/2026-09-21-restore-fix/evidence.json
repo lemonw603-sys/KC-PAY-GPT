@@ -1,0 +1,99 @@
+{
+  "startedAt": "2026-09-21T04:20:30.353Z",
+  "checks": [
+    {
+      "name": "official restore success",
+      "evidence": {
+        "exitCode": 0,
+        "functional": [
+          "restore_functional={\"businessRead\":\"OK\",\"decryptedSamples\":{\"sessions\":1,\"cdkBatches\":1},\"alertTrigger\":\"OK\",\"incidentVersion\":2,\"definerPrepared\":true,\"scope\":\"isolated representative checks; not production or offsite recovery acceptance\"}",
+          "restore_test=OK"
+        ],
+        "error": ""
+      }
+    },
+    {
+      "name": "wrong key fails without OK",
+      "evidence": {
+        "exitCode": 1,
+        "functional": [],
+        "error": "error=RESTORE_DECRYPTION_OR_SHAPE_FAILED\nerror=restore_functional_check_failed"
+      }
+    },
+    {
+      "name": "missing definer fails by default",
+      "evidence": {
+        "error": "error=RESTORE_DEFINER_MISSING"
+      }
+    },
+    {
+      "name": "only locked identity and table-level privileges restored",
+      "evidence": {
+        "grants": "GRANT USAGE ON *.* TO `pojia_migrator`@`172.17.0.1`\nGRANT SELECT, UPDATE, TRIGGER ON `pojia_restore_test`.`operator_alerts` TO `pojia_migrator`@`172.17.0.1`\nY"
+      }
+    },
+    {
+      "name": "repeat verification passes without changing account",
+      "evidence": {
+        "result": "restore_functional={\"businessRead\":\"OK\",\"decryptedSamples\":{\"sessions\":1,\"cdkBatches\":1},\"alertTrigger\":\"OK\",\"incidentVersion\":2,\"definerPrepared\":false,\"scope\":\"isolated representative checks; not production or offsite recovery acceptance\"}"
+      }
+    },
+    {
+      "name": "0640 runtime configuration accepted",
+      "evidence": {
+        "exitCode": 0
+      }
+    },
+    {
+      "name": "world-readable key file rejected",
+      "evidence": {
+        "error": "error=RESTORE_KEYS_FILE_PERMISSIONS"
+      }
+    },
+    {
+      "name": "wrong CDK recovery key rejected",
+      "evidence": {
+        "error": "error=RESTORE_DECRYPTION_OR_SHAPE_FAILED"
+      }
+    },
+    {
+      "name": "existing identity with insufficient rights is rejected, not silently broadened",
+      "evidence": {
+        "error": "error=RESTORE_SQL_FAILED_1143"
+      }
+    },
+    {
+      "name": "057 ledger without trigger fails",
+      "evidence": {
+        "error": "error=RESTORE_TRIGGER_MISMATCH"
+      }
+    },
+    {
+      "name": "unknown definer is not automatically created",
+      "evidence": {
+        "error": "error=RESTORE_UNEXPECTED_DEFINER"
+      }
+    },
+    {
+      "name": "half-migrated schema cannot masquerade as pre057",
+      "evidence": {
+        "error": "error=RESTORE_PARTIAL_057"
+      }
+    },
+    {
+      "name": "pre057 backup explicitly reports trigger not applicable",
+      "evidence": {
+        "result": "restore_functional={\"businessRead\":\"OK\",\"decryptedSamples\":{\"sessions\":1,\"cdkBatches\":1},\"alertTrigger\":\"NOT_APPLICABLE_PRE057\",\"incidentVersion\":null,\"definerPrepared\":false,\"scope\":\"isolated representative checks; not production or offsite recovery acceptance\"}"
+      }
+    },
+    {
+      "name": "no decryption sample cannot masquerade as verified",
+      "evidence": {
+        "error": "error=RESTORE_DECRYPTION_SAMPLE_MISSING"
+      }
+    }
+  ],
+  "status": "passed",
+  "databasesRemaining": 0,
+  "finishedAt": "2026-09-21T04:21:24.347Z"
+}
