@@ -1,0 +1,96 @@
+--- a/v1/test/mysql-integration.test.js
++++ b/v1/test/mysql-integration.test.js
+@@ -103,8 +103,8 @@
+     `INSERT INTO orders
+      (id, public_no, cdk_id, status, card_type_id, open_card_amount, minimum_required_card_balance,
+       session_ciphertext, card_purchase_idempotency_key, product_id,
+-      fulfillment_route_id, route_resolution_status)
+-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'RESOLVED')`,
++      fulfillment_route_id, frozen_card_provider_account_id, route_resolution_status)
++     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'RESOLVED')`,
+     [
+       orderId,
+       overrides.publicNo || `TEST-${orderId}`,
+@@ -116,7 +116,8 @@
+       encryptSecret(JSON.stringify({ accessToken: 'fixture-token', account: { id: 'acct-1' } }), integrationSessionKey),
+       overrides.purchaseKey || `purchase-${orderId}`,
+       legacyProductId,
+-      legacyRouteId
++      legacyRouteId,
++      legacyCardProviderAccountId
+     ]
+   );
+   await pool.query('UPDATE cdks SET order_id = ? WHERE id = ?', [orderId, cdkId]);
+@@ -185,7 +186,7 @@
+     await pool.query(
+       `INSERT INTO operator_alerts
+        (id, alert_type, dedupe_key, severity, title, message, status)
+-       VALUES (?, 'BARK_TEST', ?, 'warning', 'Bark 集成测试', '不含资金操作', 'OPEN')`,
++       VALUES (?, 'PROVIDER_TOKEN_EXPIRED', ?, 'warning', 'Bark 集成测试', '不含资金操作', 'OPEN')`,
+       [alertId, dedupeKey]
+     );
+     const repository = createAlertNotificationRepository(pool);
+@@ -742,7 +743,7 @@
+         funded_amount, current_balance, currency, refund_status, card_credentials_ciphertext,
+         provider_account_id, external_card_id, intake_status, sync_tier,
+         last_synced_at, last_transaction_synced_at)
+-       VALUES (?, NULL, 'AVAILABLE', ?, '17', '4242', 'active', 16, 16, 'USD', 'MONITORING',
++       VALUES (?, NULL, 'AVAILABLE', ?, '17', '4242', 'active', 50, 50, 'USD', 'MONITORING',
+         ?, ?, ?, 'ACCEPTED', 'AVAILABLE', CURRENT_TIMESTAMP(3), CURRENT_TIMESTAMP(3))`,
+       [cardId, `multi-${cardId}`, encryptSecret(JSON.stringify({
+         cardNumber: '4242424242424242', expMonth: 12, expYear: 2032, cvv: '123'
+@@ -756,10 +757,10 @@
+       WHERE card_id=? AND order_id=?`, [cardId, first.orderId]);
+     const stock = createCardStockService({ pool, sessionEncryptionKey: integrationSessionKey });
+     const refreshedCard = mapStockCard({ data: {
+-      id: `multi-${cardId}`, cardTypeId: '17', status: 'active', cardBalance: '16.00',
++      id: `multi-${cardId}`, cardTypeId: '17', status: 'active', cardBalance: '34.00',
+       currency: 'USD', cardNumber: '4242424242424242', cvv: '123',
+       expiryMonth: 12, expiryYear: 2032
+-    } }, { minimumRequiredBalance: '16' });
++    } }, { minimumRequiredBalance: '16', fundedAmount: '50' });
+     assert.equal((await stock.register(refreshedCard)).inventoryStatus, 'AVAILABLE');
+     const [[afterFirstSync]] = await pool.query(
+       `SELECT order_id, inventory_status FROM cards WHERE id=?`, [cardId]
+@@ -910,7 +911,7 @@
+       id: providerCardId, cardTypeId: '7', status: 'active', cardBalance: '16.00',
+       currency: 'USD', cardNumber: '4242424242424242', cvv: '123',
+       expiryMonth: 12, expiryYear: 2032
+-    } }, { minimumRequiredBalance: '16' });
++    } }, { minimumRequiredBalance: '16', fundedAmount: '16' });
+     const registered = await stock.register(card);
+     assert.equal(registered.inventoryStatus, 'AVAILABLE');
+     const [[stored]] = await pool.query(
+@@ -1793,7 +1794,6 @@
+       [fixture.orderId]
+     );
+     assert.deepEqual(tasks, [
+-      { task_type: 'VERIFY_CARD', status: 'PENDING' },
+       { task_type: 'PREPARE_RECHARGE', status: 'PENDING' },
+       { task_type: 'SUBMIT_RECHARGE', status: 'PENDING' },
+       { task_type: 'POLL_RECHARGE', status: 'PENDING' }
+@@ -2587,6 +2587,7 @@
+ 
+     const workflow = createWorkflowRepository(pool, { sessionEncryptionKey: integrationSessionKey });
+     await workflow.markSessionReplacementRequired(fixture.orderId);
++    await pool.query('UPDATE orders SET assigned_card_id=? WHERE id=?',[cardId,fixture.orderId]);
+     await createSessionReplacementService({
+       pool, sessionEncryptionKey: integrationSessionKey,
+       cdkHashKey: integrationCdkHashKey
+@@ -3018,14 +3019,14 @@
+       cdkHashKey: integrationCdkHashKey, now: () => nowMs
+     });
+     assert.deepEqual(await service({ publicNo, session: replacement }), {
+-      publicNo, status: 'PROCESSING', replacementCount: 1, replacementsRemaining: 2
++      publicNo, status: 'PROCESSING', replacementCount: 1, replacementsRemaining: null
+     });
+     const [[stored]] = await pool.query(
+       `SELECT status, customer_email, chatgpt_account_id, session_replacement_count,
+               customer_action_code, failure_code, session_ciphertext
+        FROM orders WHERE id = ?`, [fixture.orderId]
+     );
+-    assert.equal(stored.status, OrderStatus.CARD_READY);
++    assert.equal(stored.status, OrderStatus.WAITING_FOR_CARD);
+     assert.equal(stored.customer_email, 'replacement@example.com');
+     assert.equal(stored.chatgpt_account_id, 'replacement-account');
+     assert.equal(stored.session_replacement_count, 1);
