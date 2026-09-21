@@ -40,5 +40,36 @@ try{
   assert.equal(await repository.markSent(notification.id,{incidentVersion:1}),false);pass('late acknowledgement cannot mark a new incident delivered');
   await dispatch();assert.equal(sent.length,3);assert.equal((await dispatch()).handled,false);pass('recovered then recurring incident sends exactly once again');
   const [[normal]]=await pool.query('SELECT attempt_count FROM alert_notifications WHERE alert_id=?',[ids.submitted]);assert.equal(normal.attempt_count,0);pass('routine event remains recorded without phone attempts');
+  async function addAlert(type,key,title,severity='warning') {
+    const id=crypto.randomUUID();await pool.query("INSERT INTO operator_alerts(id,alert_type,dedupe_key,title,message,severity,status) VALUES (?,?,?,?,?,?,'OPEN')",[id,type,key,title,'isolated',severity]);return id;
+  }
+  async function pair(account=crypto.randomUUID()) {
+    const soft=await addAlert('PROVIDER_WALLET_LOW',`provider-wallet-low:${account}`,'soft-wallet');
+    const hard=await addAlert('CARD_SUPPLY_WALLET_LOW',`card-supply-wallet-low:${account}`,'hard-wallet','critical');
+    await repository.enqueueOpenAlerts();return{soft,hard};
+  }
+  async function resolveAlerts(list) {await pool.query("UPDATE operator_alerts SET status='RESOLVED' WHERE id IN (?)",[list]);await repository.enqueueOpenAlerts();}
+  const first=await pair();let previous=sent.length;
+  await dispatch();assert.equal(sent.length,previous+1);assert.equal(sent.at(-1).title,'hard-wallet');assert.equal((await dispatch()).handled,false);
+  const [[softPending]]=await pool.query('SELECT a.status,n.attempt_count FROM operator_alerts a JOIN alert_notifications n ON n.alert_id=a.id WHERE a.id=?',[first.soft]);assert.equal(softPending.status,'OPEN');assert.equal(softPending.attempt_count,0);pass('same account hard wallet notice covers softer warning without changing its alert');
+  const other=await addAlert('PROVIDER_WALLET_LOW',`provider-wallet-low:${crypto.randomUUID()}`,'other-wallet');await dispatch();assert.equal(sent.at(-1).title,'other-wallet');pass('different account warning remains independent');
+  const money=await addAlert('PROVIDER_BALANCE_CHANGED',crypto.randomUUID(),'balance-kept','info');await dispatch();assert.equal(sent.at(-1).title,'balance-kept');pass('balance changes remain eligible even while wallet warnings are covered');
+  const chargeback=await addAlert('CARD_CHARGEBACK',crypto.randomUUID(),'chargeback-kept','critical');await dispatch();assert.equal(sent.at(-1).title,'chargeback-kept');pass('chargeback is never covered');
+  await resolveAlerts([first.hard]);await dispatch();assert.equal(sent.at(-1).title,'soft-wallet');pass('remaining low-balance warning becomes eligible when hard issue resolves');
+  await resolveAlerts([first.soft,other,money,chargeback]);
+  for(const status of ['RETRY','DEAD']){
+    const p=await pair();await pool.query('UPDATE alert_notifications SET status=?,next_attempt_at=DATE_ADD(CURRENT_TIMESTAMP(3),INTERVAL 1 HOUR) WHERE alert_id=?',[status,p.hard]);
+    await dispatch();assert.equal(sent.at(-1).title,'soft-wallet');pass(`failed primary ${status} does not silence fallback warning`);await resolveAlerts([p.soft,p.hard]);
+  }
+  const old=await pair();await pool.query("UPDATE alert_notifications SET status='SENT' WHERE alert_id=?",[old.hard]);
+  await pool.query("UPDATE operator_alerts SET status='RESOLVED' WHERE id=?",[old.hard]);await pool.query("UPDATE operator_alerts SET status='OPEN' WHERE id=?",[old.hard]);
+  const uncovered=await repository.claimNext();assert.equal(uncovered.alertId,old.soft);await repository.markSent(uncovered.id,{incidentVersion:uncovered.incidentVersion});pass('previous incident delivery cannot cover a new incident before enqueue catches up');await resolveAlerts([old.soft,old.hard]);
+  const malformed=await pair('legacy-account');await pool.query("UPDATE alert_notifications SET status='SENT' WHERE alert_id=?",[malformed.hard]);
+  const unknown=await repository.claimNext();assert.equal(unknown.alertId,malformed.soft);await repository.markSent(unknown.id,{incidentVersion:unknown.incidentVersion});pass('unrecognized account-key shape stays visible');await resolveAlerts([malformed.soft,malformed.hard]);
+  const newer=await pair();await pool.query("UPDATE alert_notifications SET status='SENT' WHERE alert_id=?",[newer.hard]);
+  await pool.query('UPDATE operator_alerts SET updated_at=DATE_ADD(CURRENT_TIMESTAMP(3),INTERVAL 1 DAY) WHERE id=?',[newer.soft]);
+  const newerClaim=await repository.claimNext();assert.equal(newerClaim.alertId,newer.soft);await repository.markSent(newerClaim.id,{incidentVersion:newerClaim.incidentVersion});pass('stale primary cannot hide a newer wallet observation');await resolveAlerts([newer.soft,newer.hard]);
+  const concurrent=await pair();const claims=await Promise.all([repository.claimNext(),repository.claimNext()]);
+  assert.equal(claims.filter(Boolean).length,1);assert.equal(claims.find(Boolean).alertId,concurrent.hard);pass('concurrent claimers do not claim the covered soft warning');await resolveAlerts([concurrent.soft,concurrent.hard]);
   console.log(JSON.stringify({checks,passed:true,actualPhoneRequests:0,database:name}));
 }finally{if(pool)await pool.end();if(created)await owner.query(`DROP DATABASE ${name}`);if(owner)await owner.end();console.log('CLEANUP isolated database removed');}

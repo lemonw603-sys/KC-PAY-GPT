@@ -44,6 +44,25 @@ export function createAlertNotificationRepository(pool) {
 
   async function claimNext() {
     const pushTypes = await currentPushTypes();
+    // A same-account hard wallet failure covers its softer threshold warning.
+    // Do not resolve/delete the underlying alert, and do not suppress balance-change
+    // events. Retry/dead/cancelled or old-incident primary deliveries cannot cover it.
+    const walletCoverage = pushTypes.includes('CARD_SUPPLY_WALLET_LOW') ? `
+           AND NOT (
+             a.alert_type = 'PROVIDER_WALLET_LOW'
+             AND a.dedupe_key REGEXP '^provider-wallet-low:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+             AND EXISTS (
+               SELECT 1 FROM operator_alerts primary_alert
+               JOIN alert_notifications primary_delivery ON primary_delivery.alert_id = primary_alert.id
+               WHERE primary_alert.alert_type = 'CARD_SUPPLY_WALLET_LOW'
+                 AND primary_alert.status = 'OPEN'
+                 AND primary_alert.updated_at >= a.updated_at
+                 AND primary_alert.dedupe_key = CONCAT('card-supply-wallet-low:', SUBSTRING(a.dedupe_key,CHAR_LENGTH('provider-wallet-low:')+1))
+                 AND primary_delivery.channel = 'BARK'
+                 AND primary_delivery.incident_version = primary_alert.incident_version
+                 AND primary_delivery.status IN ('PENDING','SENDING','SENT')
+             )
+           )` : '';
     const connection = await pool.getConnection();
     try {
       await connection.beginTransaction();
@@ -56,6 +75,7 @@ export function createAlertNotificationRepository(pool) {
          JOIN operator_alerts a ON a.id = n.alert_id AND a.status = 'OPEN'
          WHERE n.channel = 'BARK' AND a.alert_type IN (?)
            AND n.incident_version = a.incident_version
+           ${walletCoverage}
            AND (
              (n.status IN ('PENDING', 'RETRY') AND (n.next_attempt_at IS NULL OR n.next_attempt_at <= CURRENT_TIMESTAMP(3)))
              OR (n.status = 'SENDING' AND n.locked_at < CURRENT_TIMESTAMP(3) - INTERVAL 5 MINUTE)

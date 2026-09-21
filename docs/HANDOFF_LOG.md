@@ -3348,3 +3348,9 @@ tab7只读计算不可用于登录的SHA256指纹与storedExpiry，落login-obse
 用户认为订单号无法快速识别客户，要求具体邮箱。通知领取commit后按关联order_id限时1500ms查询public_no/customer_email，不把订单加入FOR UPDATE锁；查询失败回原通知。手机摘要显示账号邮箱、没有可靠邮箱或正文订单矛盾时回退原号；后台原文/审计不变。Bark client仅对明确账号首行保留完整数字邮箱，余下token/密码/PAN仍按旧脱敏，不改全局脱敏规则。
 
 专项31通过，默认1077/1008 pass0fail69skip；真实隔离MySQL7项含FK邮件链路、同事故/重开/迟到ack/余额保留，实际手机请求0，临时库清理。没有发布、生产写入、卡台请求或支付改动。证据reviews/2026-09-21-bark-simplification/email-update.md；跨类型重复合并仍未完成，23:20闲置复测不变。
+
+## 2026-09-21｜D-338同账户钱包提醒覆盖
+
+承接用户同意继续合并核查，14:24 UTC生产只读确认highvcc同账户软钱包预警与硬不足同时OPEN，source同一次scheduleFor可生成两条。highvcc token与HNSKJ快照不是同卡台，停滞产生方也已有排除HUMAN_REQUIRED，不任意合并。仅领取时增加同账户/有效key/当前轮次/重提醒OPEN且不早于轻预警/正常投递状态覆盖条件；RETRY/DEAD等仍让轻提醒兜底，恢复后轻风险仍在可发，不改后台alert、不取消逐笔余额或拒付。
+
+18真实MySQL含双领取并发通过，数据库清理、实际手机请求0。由当前repository生成SQL，对生产只读EXPLAIN，两个关联eq_ref用唯一索引各估计1行，不额外建表/服务。源码与文档解释覆盖边界，原同事件去重不冒充新实现；已经发送或主提醒后来升级不能撤回。报告wallet-coverage.md；未发布、无卡台请求，23:20复测不变。

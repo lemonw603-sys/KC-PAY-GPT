@@ -1,0 +1,33 @@
+EXPLAIN SELECT n.id, n.alert_id, n.attempt_count, n.incident_version,
+                a.alert_type, a.severity, a.title, a.message, a.order_id
+         FROM alert_notifications n
+         JOIN operator_alerts a ON a.id = n.alert_id AND a.status = 'OPEN'
+         WHERE n.channel = 'BARK' AND a.alert_type IN ('BROWSER_HUMAN_VERIFICATION', 'BROWSER_HUMAN_REQUIRED', 'ORDER_PAYMENT_UNKNOWN_REVIEW', 'BROWSER_ORDER_FAILED', 'BROWSER_ORDER_STALLED', 'ORDER_WAITING_FOR_CARD', 'CARD_SUPPLY_OPEN_FAILED', 'PROVIDER_TOKEN_EXPIRED', 'CARD_SUPPLY_FAULT', 'PROVIDER_SNAPSHOT_STALE', 'CARD_STOCK_LOW', 'CARD_SUPPLY_WALLET_LOW', 'PROVIDER_WALLET_LOW', 'CARD_SUPPLY_BLOCKED', 'CARD_CHARGEBACK', 'PROVIDER_BALANCE_CHANGED', 'ORDER_CANCELLATION_UNCONFIRMED', 'DAILY_RECONCILIATION_SUMMARY')
+           AND n.incident_version = a.incident_version
+           
+           AND NOT (
+             a.alert_type = 'PROVIDER_WALLET_LOW'
+             AND a.dedupe_key REGEXP '^provider-wallet-low:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+             AND EXISTS (
+               SELECT 1 FROM operator_alerts primary_alert
+               JOIN alert_notifications primary_delivery ON primary_delivery.alert_id = primary_alert.id
+               WHERE primary_alert.alert_type = 'CARD_SUPPLY_WALLET_LOW'
+                 AND primary_alert.status = 'OPEN'
+                 AND primary_alert.updated_at >= a.updated_at
+                 AND primary_alert.dedupe_key = CONCAT('card-supply-wallet-low:', SUBSTRING(a.dedupe_key,CHAR_LENGTH('provider-wallet-low:')+1))
+                 AND primary_delivery.channel = 'BARK'
+                 AND primary_delivery.incident_version = primary_alert.incident_version
+                 AND primary_delivery.status IN ('PENDING','SENDING','SENT')
+             )
+           )
+           AND (
+             (n.status IN ('PENDING', 'RETRY') AND (n.next_attempt_at IS NULL OR n.next_attempt_at <= CURRENT_TIMESTAMP(3)))
+             OR (n.status = 'SENDING' AND n.locked_at < CURRENT_TIMESTAMP(3) - INTERVAL 5 MINUTE)
+           )
+         ORDER BY FIELD(a.severity, 'critical', 'warning', 'info'), n.id
+         LIMIT 1 
+1	PRIMARY	n	NULL	range	uq_alert_notification_channel,idx_alert_notification_dispatch	idx_alert_notification_dispatch	203	NULL	3	100.00	Using index condition; Using where; Using temporary; Using filesort
+1	PRIMARY	a	NULL	eq_ref	PRIMARY,idx_operator_alert_status	PRIMARY	144	pojia.n.alert_id	1	5.00	Using where
+2	DEPENDENT SUBQUERY	primary_alert	NULL	eq_ref	PRIMARY,uq_operator_alert_dedupe,idx_operator_alert_status	uq_operator_alert_dedupe	766	func	1	5.00	Using index condition; Using where
+2	DEPENDENT SUBQUERY	primary_delivery	NULL	eq_ref	uq_alert_notification_channel,idx_alert_notification_dispatch	uq_alert_notification_channel	242	pojia.primary_alert.id,const	1	5.00	Using where
+

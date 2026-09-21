@@ -1,0 +1,20 @@
+PASS balance and human-required push; routine submission including old queue is silent
+PASS actual order-linked email flows through repository and dispatcher
+PASS same OPEN incident does not repeat
+PASS phone wording leaves original backend alert intact
+PASS late acknowledgement cannot mark a new incident delivered
+PASS recovered then recurring incident sends exactly once again
+PASS routine event remains recorded without phone attempts
+PASS same account hard wallet notice covers softer warning without changing its alert
+PASS different account warning remains independent
+PASS balance changes remain eligible even while wallet warnings are covered
+PASS chargeback is never covered
+PASS remaining low-balance warning becomes eligible when hard issue resolves
+PASS failed primary RETRY does not silence fallback warning
+PASS failed primary DEAD does not silence fallback warning
+PASS previous incident delivery cannot cover a new incident before enqueue catches up
+PASS unrecognized account-key shape stays visible
+PASS stale primary cannot hide a newer wallet observation
+PASS concurrent claimers do not claim the covered soft warning
+{"checks":18,"passed":true,"actualPhoneRequests":0,"database":"bark_copy_a020b346"}
+CLEANUP isolated database removed
