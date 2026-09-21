@@ -3394,3 +3394,9 @@ switch首次打印`bark cwd=/`，独立证据当场证实为重启窗口瞬时�
 Lemon明确“不用处理，我会销卡”，覆盖上一节的逐账号取消建议。本轮不进客户账号、不点取消续费、不代销卡、不写生产状态。
 
 22:36:10.513 UTC生产只读核对关联卡尾号1657/3159/5371/7402：全部无活动assignment、非终态订单或未结退款案例；5371已RETIRED/source_present=0，其他三张仍AVAILABLE/source_present=1。销卡后须用现有`confirmRetired`如实登记卡退役，但该服务不会清订单续费待核；人工取消服务会写`subscription_cancelled=1`，不能冒充销卡。因此未销前7待办与3未退役卡保留；实际销完再核实和定最小如实收口，不现在新增臃肿功能。证据追加到`reviews/2026-09-22-feedback-b-renewal-audit/`。
+
+## 2026-09-22｜D-343用户确认历史CDK/待对账单全为自测，收窄为一次性收口
+
+Lemon补足业务事实：当前讨论的16个旧CDK和2条RECONCILIATION订单都是他自己测试/操作，CDK尚未正式对客户开放。因此不再做“测试码/客户权益/证据不足”逐个分类。
+
+当场只读证据仍支持两条账本未扣款：412JIT外部单8849为failed/卡片被拒/paymentResult=false，u696SE外部单9255为failed/开通超时/paymentResult=false；两attempt均FAILED/CLEARED，卡1013/4643都无PURCHASE，只有16美元入金与15.99美元余额退回。最小处理：保留订单审计；16测试CDK改REVOKED不回库；2条RECONCILIATION改RELEASED并写审计。不新建长期功能。本轮仅定方向与落盘，生产apply仍等固定预览及Lemon明确同意。

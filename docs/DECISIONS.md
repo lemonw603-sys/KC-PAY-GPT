@@ -5293,3 +5293,16 @@ D-327成功率不改曾是已定项，本次是重新讨论指标与历史样本
 生产只读核对关联4张备用卡尾号1657/3159/5371/7402：无活动占用、非终态订单或未结退款案例；5371已RETIRED/source_present=0，其余3张仍AVAILABLE/source_present=1。本轮没有代Lemon销卡或改生产状态。Lemon完成卡台销卡后，再核实并使用现有“登记已销卡”能力将未退役卡标RETIRED；不使用“已在账号里取消续费”按钮冒充销卡。
 
 现有销卡登记不会清订单`cancellation_review_required`，所以7笔待办暂保留；卡台销卡真实完成后再按“风险已由销卡阻断”如实收口，不把`subscription_cancelled`写1。是否需要一次性维护或最小正式入口，等真实销卡结果后再定，不现在扩展系统。证据`reviews/2026-09-22-feedback-b-renewal-audit/`。
+
+## D-343（2026-09-22，UTC+8）历史16个旧CDK与2条待对账订单均为Lemon测试，不再做客户权益归属调查
+
+Lemon明确：“以上这些都是我测试的，我操作的，目前CDK还没有正式对客户们开放”。这是之前证据里缺失的业务事实，覆盖“逐个区分测试码或客户权益”的复杂方案。
+
+处理收窄为一次性历史收口：
+
+1. 16个“非成功终态订单仍绑定REDEEMED CDK”均为测试码，应保留订单/审计记录，CDK改为`REVOKED`；**不恢复AVAILABLE**，避免旧测试码回流为可售库存。
+2. `PJV1-412JIT_yfiuBpZeC39_m`与`PJV1-u696SEuwCQqyReHZ_FmP`的两条`RECONCILIATION`释放为`RELEASED`：当场生产证据仍是Provider `failed` / `paymentResult.success=false`、attempt `FAILED/CLEARED`，对应卡1013/4643无PURCHASE，只有开卡入金16和余额退回15.99。
+3. 不物理删订单、attempt、Provider call、卡流水或事件；不调整生产统计去粉饰历史。
+4. 不新建页面、长期分类规则或迁移；用固定名单、dry-run、备份、单事务、审计事件和独立复核的一次性维护收口。
+
+本决定确认业务定性与最小方向，**不自动等于已授权生产apply**；执行前给出16个CDK与2条ledger固定预览，Lemon明确同意后再写生产。
