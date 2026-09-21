@@ -32,6 +32,12 @@
 
 ## 已确认执行顺序
 
+### Demo试用后的需求调整（2026-09-21，待对齐细节）
+
+用户提出：①工作台highvcc钱包像HNSKJ显示金额USD，附近放刷新/登录入口，查询成功回显新金额；②重新探索更省事且稳定的登录续期，减少反复登录/书签；③认为卡源新增交互更难理解，倾向不改，撤回范围待确认；③.1希望去掉API/Browser切换原生确认框；③.2右下角操作反馈不明显，需增强；④“没看懂”所指待确认。先讨论调整，不继续把上一Demo当最终确认稿，不擅自扩大到自动破解登录或生产凭据保存。
+
+本轮代码核查：highvcc provider只使用getAccessToken，无续期实现；D-249旧“不自动登录”依据为滑块，不等于已证伪续期接口。walletStatus已有实时GET，provider_balance_snapshots有历史钱包。11:38:57.171 UTC执行 `SELECT pa.account_code,MAX(bs.observed_at) AS last_wallet_observation FROM provider_balance_snapshots bs JOIN provider_accounts pa ON pa.id=bs.provider_account_id GROUP BY pa.account_code;` 输出legacy-primary=2026-09-21 11:37:58.192、backup-a=2026-09-19 00:53:18.368（UTC）。历史金额显示必须带时间/失效状态，不当最新值。依据仍D-330/331、工作台C/卡片A；新布局与撤回范围尚未确认，未改应用代码或Demo。
+
 ### G0. 每批实施前的影响核对与支付基线（不等到C/E才做）
 
 开始任何修改前，在对应FB项下面记录五件事：**改什么、谁共用、必须保持什么、怎么验、如何回退/恢复**。先保存当前已知可用版本与配置的非敏感快照，在隔离环境建立同一条客户提交→验码→分卡→支付提交→结果确认→客户展示的基线；以后每批按影响复用已有回归工具，不另建一套测试系统。
