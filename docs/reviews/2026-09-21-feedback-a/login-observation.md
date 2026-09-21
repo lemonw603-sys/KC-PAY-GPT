@@ -32,7 +32,7 @@ renewalPathsObserved=[]
 
 ## 下一验证点
 
-**已获后续授权并安排**：用户“安排”。2026-09-21 22:20 Asia/Shanghai应用一次性heartbeat，id=highvcc，指向当前任务，COUNT=1。不主动保活、不刷新或重登；最多一次现有GET /api/user/wallet，先确认是同一会话。完成或需要用户处理后停止，不重复执行。
+**已获后续授权并安排**：用户“安排”，随后要求延长到约3小时。同一应用一次性heartbeat已顺延为2026-09-21 **23:20 Asia/Shanghai**（原22:20取消），id=highvcc，指向当前任务，COUNT=1。不主动保活、不刷新或重登；最多一次现有GET /api/user/wallet，先确认是同一会话。完成或需要用户处理后停止，不重复执行。
 
 安排时在tab7内部只读计算SHA256（未发网络请求、不导出token）：`0e9493ef8c17bca799652217a732eb643841020464449be88489e372224a945d`；storedExpiry=`1790597610000`。复测前用同法比较指纹；若不同，只报告会话变化，不能当原token两小时验证。指纹不可用于登录，不保存原始token。CDP Network仍关闭，标签markHandoff保留。
 
