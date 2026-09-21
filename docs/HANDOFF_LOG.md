@@ -3230,3 +3230,17 @@ SQL现场仅state-check只读，生产仍⑤b/054；无生产写入、无新迁�
 依迁移前失败收敛恢复原服务/9timer与接单，06:59:38正式服务写恢复审计；07:00新SSH/新DB独立核实release仍⑤b，web204712/worker204713/bark204714 active且cwd正确、ready200、9timer active/enabled、accepttrue，原付款/派单等设置未变，schema054、migrator Super_priv=N/仅库级ALL。无在途/账号槽/活动未知资金，CDK状态计数未变。日对账旧故障仍待修。没有真实资金测试、清旧码/case、本机池重启或新恢复容器。
 
 报告reviews/2026-09-21-step6-release，服务器/opt/pojia/maintenance/20260921-step6-66bfe98留snapshot.json、phase.json(restored-before-migration)、pojia-ops.before；准备release/bundle与加密备份保留。CURRENT_STATE同步服务新PID、恢复接单和日对账真实失败；下一步请求容量最小修复及新增迁移授权，不能继续旧候选switch。该轮发布目标未完成，不称“发布成功”。
+
+## 2026-09-21｜D-328容量修复并完成第⑥步生产发布
+
+用户同意最小存储修复、落库/恢复验收后继续发布。先更正上一轮解释：生产SELECT-only代理拦截INSERT，实际摘要544字符/6指纹，31348是展示报告，不是写入对象。058仅VARCHAR255→MEDIUMTEXT，原值/非空/字符规则不变；迁移保护扩至058，意外类型拒绝、DDL后无版本可续。新恢复检查验证容量与摘要格式。本地真实MySQL10项、最终默认1050/981 pass/0 fail/69 skipped通过，临时环境清理。
+
+8395fe3候选prepare后，维护前生产备份恢复发现合法旧摘要格式188字符（generatedAt+fingerprints，09-18旧值）不符合新检查器；生产未停单。补严格版本兼容，058前只接受已证实旧格式并标LEGACY_FORMAT，058后仍强制新版。重新固定9b9f181，单提交1259项manifest通过；07:34:30备份及维护前恢复63表/解密样本通过。
+
+07:37:18正式服务暂停接单，9timer暂停不disable，oneshot自然结束、7类活动计数全0后停主服务；07:38:40维护点备份通过。同远端EXIT trap受控授权/正式runner两遍/撤SUPER，055～058成功，独立连接确认SUPER=N。75旧码状态不变、全LEGACY且未添加到期；候选日对账真实保存544字符摘要/心跳/汇总告警，未写订单或资金；07:40:56新备份隔离恢复dailySummary/trigger/decrypt均OK。
+
+正式switch到20260921-step6-9b9f181，三进程独立cwd验证正确；脚本即时cwd打印/未作为依据。ops入口现场路径/usr/local/sbin/pojia-ops已安装且源/目标哈希一致，旧副本保留。切换后真实systemd日对账单元复验success/0，07:45:13结束；同日重跑复用key，未批量重推历史通知。Node fetch HTTP探针404后，明确Host的curl确认登录200/未登录API401及5份UI资源哈希一致；只读服务overview/CDK/设置/卡源/日对账/case可读，不冒充生产写按钮验收。
+
+07:51:48正式服务恢复接单true，9timer恢复active/enabled，其余原设置逐条一致后才恢复。07:52新SSH/DB：current9b9f181；web234748/worker234751/bark234754 active且cwd正确；schema058；migrator仅globalUSAGE+库ALL；公网登录200；摘要544/JSON有效；无在途/账号槽/活动未知资金。Pro/付款/供卡开关原样，未清旧码/case、未发起真实资金测试、未发本机Browser池重启命令。服务器phase=released-original-state-restored，恢复容器已清理。
+
+证据reviews/2026-09-21-step6-release-v2及report-capacity。CURRENT_STATE为唯一生产事实表，Handoff重写；下一步按D-291用户实际使用第⑥步一天再⑦，不继续误报“待发布”或重开已确认UI。

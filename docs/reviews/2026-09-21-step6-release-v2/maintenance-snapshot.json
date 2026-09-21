@@ -1,0 +1,134 @@
+{
+  "createdAt": "2026-09-21T07:37:17.933Z",
+  "release": "/opt/pojia/releases/20260918-step5b-b0a36d4",
+  "settings": [
+    {
+      "setting_key": "accept_new_orders",
+      "setting_value": "true"
+    },
+    {
+      "setting_key": "browser_dispatch_enabled",
+      "setting_value": "true"
+    },
+    {
+      "setting_key": "browser_payment_writes_enabled",
+      "setting_value": "true"
+    },
+    {
+      "setting_key": "card_auto_replenishment_enabled",
+      "setting_value": "true"
+    },
+    {
+      "setting_key": "card_balance_recharge_enabled",
+      "setting_value": "false"
+    },
+    {
+      "setting_key": "dispatch_new_recharges",
+      "setting_value": "true"
+    },
+    {
+      "setting_key": "poll_existing_orders",
+      "setting_value": "true"
+    },
+    {
+      "setting_key": "recharge_dispatch_mode",
+      "setting_value": "AUTOMATIC"
+    },
+    {
+      "setting_key": "sync_card_transactions",
+      "setting_value": "true"
+    }
+  ],
+  "orders": [
+    {
+      "status": "CLOSED",
+      "n": 21
+    },
+    {
+      "status": "RECHARGE_FAILED",
+      "n": 37
+    },
+    {
+      "status": "RECHARGE_SUCCESS",
+      "n": 20
+    }
+  ],
+  "cdks": [
+    {
+      "status": "AVAILABLE",
+      "n": 21
+    },
+    {
+      "status": "REDEEMED",
+      "n": 37
+    },
+    {
+      "status": "REVOKED",
+      "n": 17
+    }
+  ],
+  "timers": [
+    {
+      "unit": "pojia-card-funding.timer",
+      "ActiveState": "active",
+      "UnitFileState": "enabled"
+    },
+    {
+      "unit": "pojia-card-funding-reconcile.timer",
+      "ActiveState": "active",
+      "UnitFileState": "enabled"
+    },
+    {
+      "unit": "pojia-card-read-sync.timer",
+      "ActiveState": "active",
+      "UnitFileState": "enabled"
+    },
+    {
+      "unit": "pojia-card-catalog-sync.timer",
+      "ActiveState": "active",
+      "UnitFileState": "enabled"
+    },
+    {
+      "unit": "pojia-card-stock-runner.timer",
+      "ActiveState": "active",
+      "UnitFileState": "enabled"
+    },
+    {
+      "unit": "pojia-operator-watch.timer",
+      "ActiveState": "active",
+      "UnitFileState": "enabled"
+    },
+    {
+      "unit": "pojia-highvcc-snapshot-sync.timer",
+      "ActiveState": "active",
+      "UnitFileState": "enabled"
+    },
+    {
+      "unit": "pojia-backup.timer",
+      "ActiveState": "active",
+      "UnitFileState": "enabled"
+    },
+    {
+      "unit": "pojia-daily-reconciliation.timer",
+      "ActiveState": "active",
+      "UnitFileState": "enabled"
+    }
+  ],
+  "services": [
+    {
+      "unit": "pojia-web.service",
+      "ActiveState": "active",
+      "UnitFileState": "enabled"
+    },
+    {
+      "unit": "pojia-worker.service",
+      "ActiveState": "active",
+      "UnitFileState": "enabled"
+    },
+    {
+      "unit": "pojia-bark-notifications.service",
+      "ActiveState": "active",
+      "UnitFileState": "enabled"
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+previous=/opt/pojia/releases/20260918-step5b-b0a36d4
+active
+active
+active
+current=/opt/pojia/releases/20260921-step6-9b9f181
+worker cwd=/
+bark cwd=/
+live=200
+{"status":"ready"} ready=200
+index.html on disk references: admin.js?v=84
+served admin.js?v=23 status/new-action count: 200 / 7
+admin login page: 200
+ROLLBACK: ln -sfn /opt/pojia/releases/20260918-step5b-b0a36d4 /opt/pojia/current && systemctl restart pojia-web.service pojia-worker.service pojia-bark-notifications.service

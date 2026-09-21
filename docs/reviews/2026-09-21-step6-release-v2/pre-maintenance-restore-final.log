@@ -1,0 +1,7 @@
+/var/backups/pojia/pojia-20260921T073430Z.sql.gz.enc: OK
+backup_integrity=OK
+backup_file=/var/backups/pojia/pojia-20260921T073430Z.sql.gz.enc
+restore_functional={"businessRead":"OK","decryptedSamples":{"sessions":3,"cdkBatches":3},"dailySummary":"LEGACY_FORMAT","alertTrigger":"NOT_APPLICABLE_PRE057","incidentVersion":null,"definerPrepared":false,"scope":"isolated representative checks; not production or offsite recovery acceptance"}
+restore_test=OK
+restored_tables=63
+backup_file=/var/backups/pojia/pojia-20260921T073430Z.sql.gz.enc
