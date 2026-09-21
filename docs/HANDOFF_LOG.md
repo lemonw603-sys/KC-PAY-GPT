@@ -3372,3 +3372,11 @@ tab7只读计算不可用于登录的SHA256指纹与storedExpiry，落login-obse
 用户明确“客户来单改为通知我”，覆盖D-336的来单静默子项。`BROWSER_ORDER_SUBMITTED`恢复手机白名单并单独归为ACTIVITY；手机标题“收到客户充值”，优先显示充值邮箱，无邮箱回退订单号，删除“跑完会再推结果”的不可靠承诺。余额逐笔、资金/人工异常、事故轮次去重及D-338钱包覆盖不变；无新表/服务/配置页，未动D-254付款代码。
 
 专项单测23/23、隔离MySQL 19项、默认1080 tests/1011 pass/0 fail/69 skipped通过；真实Bark请求0，临时库已清理。生产只读复查`BROWSER_ORDER_SUBMITTED`历史36条全是OPEN+SENT，时间09-12 09:25:54.575～09-18 06:54:18.607 UTC，恢复白名单不补推历史来单。生产release仍`20260921-step6-9b9f181`，未发布/重启/真发手机。证据`reviews/2026-09-21-bark-simplification/customer-submission-update.md`。
+
+## 2026-09-22｜D-341反馈第一批发布完成
+
+用户明确同意发布。范围D-332/333、D-336～340、D-339，固定`7e88952`；无迁移。切换前生产订单20成功/37失败/21关闭，非终态/活动attempt/open run均0；customer-sql-probe 5项通过。prepare的manifest1325通过，备份`pojia-20260921T155914Z.sql.gz.enc`完整性通过。
+
+15:59 UTC切到`20260921-feedback-d340-7e88952`。web PID538098、worker 538103、bark 538173均独立核对cwd为新release；live/ready/login=200，未登录overview=401；admin.js/admin.css/cards.css线与磁盘哈希一致。开关保持接单/派单/Browser付款/自动供卡=true、补余额=false；非终态仍0。历史36条来单仍全为OPEN+SENT、attempt1、最后send仍09-18，无补推。
+
+switch首次打印`bark cwd=/`，独立证据当场证实为重启窗口瞬时假值而非跑旧版；同轮将发布脚本改为必须精确匹配候选cwd，否则失败。未真实付款/开卡/造单/主动发Bark。证据`reviews/2026-09-22-feedback-release/report.md`。

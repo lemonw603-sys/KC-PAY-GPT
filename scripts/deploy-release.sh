@@ -99,17 +99,23 @@ systemctl is-active pojia-bark-notifications.service
 # `readlink -f /proc//cwd` 会打印 `/`——一个看起来像「没换成功」的假值（2026-09-18 首次发布实见）。
 # 这一行存在的意义就是核对代码有没有真的换掉，打假值比不打更坏。等到有真 PID 再取。
 show_cwd() {
-  local unit=$1 pid=0
+  local unit=$1 expected=$2 pid=0 actual=""
   for _ in $(seq 1 15); do
     pid=$(systemctl show "$unit" -p MainPID --value)
-    [ "$pid" != "0" ] && [ -e "/proc/$pid/cwd" ] && { readlink -f "/proc/$pid/cwd"; return; }
+    if [ -n "$pid" ] && [ "$pid" != "0" ] && [ -e "/proc/$pid/cwd" ]; then
+      actual=$(readlink -f "/proc/$pid/cwd" 2>/dev/null || true)
+      [ "$actual" = "$expected" ] && { echo "$actual"; return 0; }
+    fi
     sleep 1
   done
-  echo "(no MainPID after 15s)"
+  echo "(expected $expected; last pid=${pid:-none} cwd=${actual:-unavailable})" >&2
+  return 1
 }
 echo "current=$(readlink -f /opt/pojia/current)"
-echo "worker cwd=$(show_cwd pojia-worker)"
-echo "bark cwd=$(show_cwd pojia-bark-notifications)"
+worker_cwd=$(show_cwd pojia-worker "$r/v1")
+bark_cwd=$(show_cwd pojia-bark-notifications "$r/v1")
+echo "worker cwd=$worker_cwd"
+echo "bark cwd=$bark_cwd"
 # Wait for the port instead of guessing: a single check after `sleep 2` raced the
 # server's own startup and printed a false live=000 during the 2026-09-11 release,
 # which reads exactly like a broken deploy. Give it up to 30s, then report honestly.

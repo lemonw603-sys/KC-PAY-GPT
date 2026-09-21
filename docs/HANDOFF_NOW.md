@@ -1,12 +1,12 @@
 # 接班一屏（HANDOFF_NOW）
 
-更新：2026-09-21 23:48（UTC+8）。**第⑥步主体已发布；使用反馈整改与新版Bark尚未发布，不混为一件事。**
+更新：2026-09-22 00:02（UTC+8）。**第⑥步使用反馈第一批已发布；A/B仍有历史业务项待裁定，不冒充整批完成。**
 
 ## 当前位置
 
-- 正式release仍是 `20260921-step6-9b9f181`；生产动态事实唯一看CURRENT_STATE，不据本机HEAD判生产版本。
+- 正式release是`20260921-feedback-d340-7e88952`（D-341）；生产动态事实唯一看CURRENT_STATE，不据本机HEAD判生产版本。
 - D-329总门槛：FB-01～09全部处理/明确裁定并验收 → 完整使用一天 → 用户确认后进⑦。A/B均未整体结束，C客户链/D订单需求/E整体试用尚未完成，⑦⑧及各产品真钱集成验收仍在后面。
-- 当前规划唯一入口：`tasks/2026-09-21-post-step6-feedback-plan.md`。D-338钱包提醒覆盖与D-339近7天成功率均已本地验收，不重开已定交互，不自动发布。
+- 当前规划唯一入口：`tasks/2026-09-21-post-step6-feedback-plan.md`。D-332/333、D-336～340、D-339已发布；不重开已定交互。
 
 ## 23:20一次性闲置复测已停，结论仍未知
 
@@ -14,16 +14,17 @@
 - 实际highvcc请求0：无wallet GET/reload/login/renew，无凭据读出或写入。不能得出“3小时有效”或“已失效”。
 - 一次性automation `highvcc`已删除，不留重复运行。完整证据与原指纹见`reviews/2026-09-21-feedback-a/login-observation.md`。
 
-## 本地已验、未发布的反馈改动
+## 已发布的反馈第一批
 
 - A / D-332、333已获用户试用认可：工作台钱包原位查询USD+时间、刷新/登录入口，失败留旧标旧；仅本页面最近成功值，整页reload后未查询，不冒充旧库数据为新值。
 - token待办直达表单；手机表单单列；写成功/读失败与结果不明分开。撤回“卡台未保存”拦截、去API/Browser原生confirm、操作提示顶部醒目；不取消收费动作确认，不改后台卡源/资金规则。
-- A证据：`reviews/2026-09-21-feedback-a/third-batch.md`；25项隔离检查通过，不是生产真付款/全部页面几何验收。
+- A证据：`reviews/2026-09-21-feedback-a/third-batch.md`；25项隔离检查通过。生产静态资源已验哈希一致，不是真实highvcc查询或真付款验收。
 - Bark / D-340最新：客户每次来单恢复手机通知，覆盖D-336的来单静默子项；标题“收到客户充值”，优先关联充值邮箱，缺失才回单号，同一OPEN轮次只推一次。余额继续逐笔，资金/人工异常保留，后台原文不变。
 - D-338：仅同账户硬钱包不足覆盖软低余额预警，须当前事故正常投递且不早于软预警；不同账户、失败/旧轮次/旧观察或未知key不压掉。后台两条原事实保留，余额变化和拒付不受影响。用户已认可该组规则。
-- Bark证据：`reviews/2026-09-21-bark-simplification/report.md`、`email-update.md`、`wallet-coverage.md`、`customer-submission-update.md`。D-340后默认1080 tests/1011 pass/0 fail/69 skipped；19项真实隔离MySQL通过。生产36条历史来单投递都是SENT，不会因白名单恢复补推。真实Bark请求0，未做真机验收。
-- B / D-339：近7个北京自然日创建且已结束、只排明确演练；显示成功/样本，零样本“—”，点击与聚合共用样本predicate，历史“全部/已完成”保留。真MySQL4项、真DOM/核心保护26项、默认1079/1010 pass/0 fail/69 skipped通过；生产只读当时1/2=50%，不当稳定性结论。报告`reviews/2026-09-21-feedback-b-success-rate/report.md`。
+- Bark证据：`reviews/2026-09-21-bark-simplification/`。D-340后默认1080 tests/1011 pass/0 fail/69 skipped；19项真实隔离MySQL通过。发布后36条历史来单仍全为SENT/attempt1，无补推；下一笔自然来单才验手机真机。
+- B / D-339：近7个北京自然日已结束样本口径已上线；当时生产只读1/2=50%，不当稳定性结论。报告`reviews/2026-09-21-feedback-b-success-rate/report.md`。
 - 其他没有同因证据的提醒不强行合并；不新增通用时间静音、服务或未来自动关闭余额通知开关。
+- 发布证据：`reviews/2026-09-22-feedback-release/report.md`；manifest1325、备份完整性、三进程cwd、HTTP/哈希/开关均已独立核对。
 
 ## 已完成的生产维护：不要重复执行
 
