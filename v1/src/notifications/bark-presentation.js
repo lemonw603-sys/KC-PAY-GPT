@@ -13,7 +13,7 @@ export function presentBarkNotification(delivery) {
   const order=message.match(/^订单 ([A-Za-z0-9_-]+)｜([\s\S]*)$/);
   const email=order&&delivery.publicNo&&order[1]!==delivery.publicNo?null:usableBarkEmail(delivery.customerEmail);
   const base={title,message,severity:delivery.severity,...(email?{customerEmail:email}:{})};
-  const identity=email?`账号 ${email}`:order?`订单 ${order[1]}`:null;
+  const identity=email?`账号 ${email}`:order?`订单 ${order[1]}`:delivery.publicNo?`订单 ${delivery.publicNo}`:null;
   const hasMoney=/(?:[$¥€£]\s*-?\d|\d(?:[\d.,]*\d)?\s*(?:USD|PHP|HKD|CNY|EUR|美元|港币|人民币))/i.test(message);
   const withOrder=(heading,body)=>({ ...base,title:heading,message:`${identity}\n${body}` });
   if(delivery.type==='PROVIDER_BALANCE_CHANGED'){
@@ -26,6 +26,10 @@ export function presentBarkNotification(delivery) {
   if(delivery.type==='PROVIDER_TOKEN_EXPIRED'){
     const provider=message.match(/^(.+?) 的访问 token 已失效（[^）]+）。/);
     if(provider)return {...base,title:'卡台登录失效',message:`${provider[1]}：同步、开卡及付款核对受影响。\n请在后台更新登录。`};
+  }
+  if(delivery.type==='BROWSER_ORDER_SUBMITTED'){
+    const body='已收到，正在排队处理。';
+    return identity?withOrder('收到客户充值',body):{...base,title:'收到客户充值',message:body};
   }
   if(delivery.type==='BROWSER_HUMAN_VERIFICATION'&&order&&!hasMoney)
     return withOrder('需要人机验证','请在浏览器完成验证，勿重复付款。');

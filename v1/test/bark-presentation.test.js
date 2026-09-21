@@ -20,6 +20,14 @@ test('linked non-browser alert without legacy order prefix still shows email',()
   const r=present({type:'ORDER_PAYMENT_UNKNOWN_REVIEW',customerEmail:'bob@example.test',message:'扣款16 USD尚未确认，请核实，勿重付。'});
   assert.match(r.message,/^账号 bob@example.test\n/);assert.match(r.message,/16 USD/);assert.match(r.message,/勿重付/);
 });
+test('customer submission is concise, identifies by email, and falls back to order number',()=>{
+  const byEmail=present({type:'BROWSER_ORDER_SUBMITTED',publicNo:order,customerEmail:'new@example.test',title:'客户提交了充值',message:'已收到 CDK 与账号，正在分卡并排队执行。跑完会再推一条结果。'});
+  assert.equal(byEmail.title,'收到客户充值');
+  assert.equal(byEmail.message,'账号 new@example.test\n已收到，正在排队处理。');
+  assert.doesNotMatch(byEmail.message,/跑完会再推/);
+  const fallback=present({type:'BROWSER_ORDER_SUBMITTED',publicNo:order,customerEmail:null,title:'客户提交了充值',message:'已收到'});
+  assert.equal(fallback.message,`订单 ${order}\n已收到，正在排队处理。`);
+});
 test('balance remains exact and readable, including tiny/negative changes; no invented reason',()=>{
   for(const [a,b,expected]of [['89.480000','38.730000','89.48 → 38.73 USD'],['0.000001','-0.000001','0.000001 → -0.000001 USD'],['0.000000','100.000000','0 → 100 USD']]){
     const input={type:'PROVIDER_BALANCE_CHANGED',severity:'info',title:'余额发生变化',message:`HNSKJ余额由 ${a} USD 变为 ${b} USD。`};

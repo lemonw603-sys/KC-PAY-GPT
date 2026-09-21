@@ -2,6 +2,8 @@
 
 2026-09-21 UTC+8。**本地实现并验证，未发布、未发真实Bark。** 用户明确更容易用邮箱识别客户；本规则覆盖前批样例中订单号优先的显示方式。
 
+**D-340后续更新**：客户来单现在也使用这一邮箱优先规则并恢复Bark投递；下表“普通来单仍静默”的旧验证结论已被D-340替换。最新证据见[customer-submission-update.md](customer-submission-update.md)。
+
 ## 实际变化
 
 - repository领取通知仍只锁原outbox/alert，不把orders加入FOR UPDATE。领取事务commit后，凭alert.order_id按主键读取orders.public_no/customer_email，1500ms可选查询；失败回退，不丢关键通知。
@@ -28,7 +30,7 @@
 | 缺失/查询失败不阻断 | 单测查询在commit后、timeout1500；异常时照常返回原通知 | 通过 |
 | 正文订单矛盾不套错邮箱 | presenter单位测试 | 通过，回退原号 |
 | 完整数字邮箱、敏感值仍脱敏 | bark-client真实JSON payload到mock fetch，15位数字邮箱保留，PAN/token掩码保留 | 通过 |
-| 后台信息及既有保护不变 | 原文断言、同轮只推一次、重开一次、迟到ack拒绝、普通来单仍静默、余额仍推 | 通过 |
+| 后台信息及既有保护不变 | 原文断言、同轮只推一次、重开一次、迟到ack拒绝、余额仍推 | 通过；来单静默子项已由D-340替换 |
 | 生产/真机效果 | 本轮无实际发送或发布 | 未验证 |
 
 专项31项通过。默认1077 tests /1008 pass/0 fail/69 skipped（email-full-tests.txt）；真实隔离MySQL7项通过，actualPhoneRequests=0，临时库bark_copy_c7555343已清理（email-mysql-tests.txt）。无支付/卡片业务状态修改。

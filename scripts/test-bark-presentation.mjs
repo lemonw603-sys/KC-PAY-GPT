@@ -24,22 +24,23 @@ try{
     ['submitted','BROWSER_ORDER_SUBMITTED','客户提交','测试来单','info'],
     ['human','BROWSER_HUMAN_REQUIRED','自动核实查不出来','订单 PJV1-DEMO｜付款后系统自己查了几次仍无法确定结果（TIMEOUT）。','critical']
   ])await pool.query("INSERT INTO operator_alerts(id,alert_type,dedupe_key,title,message,severity,status) VALUES (?,?,?,?,?,?,'OPEN')",[ids[key],type,ids[key],title,message,severity]);
-  await pool.query('UPDATE operator_alerts SET order_id=? WHERE id=?',[orderId,ids.human]);
-  // Old pending submission survives upgrade, but must not be claimed/sent anymore.
+  await pool.query('UPDATE operator_alerts SET order_id=? WHERE id IN (?,?)',[orderId,ids.human,ids.submitted]);
+  // A queued customer submission is eligible after D-340 and must still send only once.
   await pool.query("INSERT INTO alert_notifications(alert_id,channel,status) VALUES (?,'BARK','PENDING')",[ids.submitted]);
   const repository=createAlertNotificationRepository(pool),client={send:async payload=>sent.push(payload)};
   const dispatch=()=>dispatchOneBarkNotification({repository,client});
-  await dispatch();await dispatch();assert.equal((await dispatch()).handled,false);
-  assert.equal(sent.length,2);assert(sent.some(p=>p.message==='89.48 → 38.73 USD'));assert(sent.some(p=>p.message.includes('勿重复付款')));pass('balance and human-required push; routine submission including old queue is silent');
+  await dispatch();await dispatch();await dispatch();assert.equal((await dispatch()).handled,false);
+  assert.equal(sent.length,3);assert(sent.some(p=>p.message==='89.48 → 38.73 USD'));assert(sent.some(p=>p.message.includes('勿重复付款')));pass('balance, customer submission and human-required alerts push');
+  assert(sent.some(p=>p.title==='收到客户充值'&&p.message==='账号 customer@example.test\n已收到，正在排队处理。'));pass('customer submission identifies the account by email with concise wording');
   assert(sent.some(p=>p.message.startsWith('账号 customer@example.test\n')&&!p.message.includes('PJV1-DEMO')));pass('actual order-linked email flows through repository and dispatcher');
-  await dispatch();assert.equal(sent.length,2);pass('same OPEN incident does not repeat');
+  await dispatch();assert.equal(sent.length,3);pass('same OPEN incident does not repeat');
   const [[raw]]=await pool.query('SELECT message,status FROM operator_alerts WHERE id=?',[ids.balance]);assert.equal(raw.message,'HNSKJ余额由 89.480000 USD 变为 38.730000 USD。');assert.equal(raw.status,'OPEN');pass('phone wording leaves original backend alert intact');
   await pool.query("UPDATE operator_alerts SET status='RESOLVED' WHERE id=?",[ids.balance]);await repository.enqueueOpenAlerts();
   await pool.query("UPDATE operator_alerts SET status='OPEN' WHERE id=?",[ids.balance]);await repository.enqueueOpenAlerts();
   const [[notification]]=await pool.query('SELECT id,status,incident_version FROM alert_notifications WHERE alert_id=?',[ids.balance]);assert.equal(notification.incident_version,2);
   assert.equal(await repository.markSent(notification.id,{incidentVersion:1}),false);pass('late acknowledgement cannot mark a new incident delivered');
-  await dispatch();assert.equal(sent.length,3);assert.equal((await dispatch()).handled,false);pass('recovered then recurring incident sends exactly once again');
-  const [[normal]]=await pool.query('SELECT attempt_count FROM alert_notifications WHERE alert_id=?',[ids.submitted]);assert.equal(normal.attempt_count,0);pass('routine event remains recorded without phone attempts');
+  await dispatch();assert.equal(sent.length,4);assert.equal((await dispatch()).handled,false);pass('recovered then recurring incident sends exactly once again');
+  const [[normal]]=await pool.query('SELECT attempt_count,status FROM alert_notifications WHERE alert_id=?',[ids.submitted]);assert.equal(normal.attempt_count,1);assert.equal(normal.status,'SENT');pass('customer submission is delivered once and remains recorded');
   async function addAlert(type,key,title,severity='warning') {
     const id=crypto.randomUUID();await pool.query("INSERT INTO operator_alerts(id,alert_type,dedupe_key,title,message,severity,status) VALUES (?,?,?,?,?,?,'OPEN')",[id,type,key,title,'isolated',severity]);return id;
   }

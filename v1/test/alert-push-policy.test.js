@@ -6,9 +6,10 @@ import {
 } from '../src/domain/alert-push-policy.js';
 import { createAlertNotificationRepository } from '../src/db/repositories/alert-notification-repository.js';
 
-// D-336：普通来单静默；叫人/供给/资金继续，取消续费未确认继续推。
-test('whitelist retains human, supply and money signals; routine submissions are silent', () => {
+// D-340：客户来单恢复通知；叫人/供给/资金原规则不变。
+test('whitelist retains activity, human, supply and money signals', () => {
   const representatives = {
+    [PushCategory.ACTIVITY]: 'BROWSER_ORDER_SUBMITTED',
     [PushCategory.HUMAN]: 'BROWSER_HUMAN_VERIFICATION',
     [PushCategory.SUPPLY]: 'CARD_STOCK_LOW',
     [PushCategory.MONEY]: 'CARD_CHARGEBACK'
@@ -88,12 +89,12 @@ test('enqueue filters by whitelist on both the insert and the CANCELLED revive p
   assert.equal(revive.params[0].includes('BROWSER_PAYMENT_CONFIRMED'), false);
 });
 
-test('claimNext refuses rows whose type left the whitelist', async () => {
+test('claimNext follows the current phone whitelist', async () => {
   const pool = recordingPool();
   await createAlertNotificationRepository(pool).claimNext();
   const claim = pool.calls.find((call) => /FOR UPDATE SKIP LOCKED/.test(call.sql));
   assert.match(claim.sql, /a\.alert_type IN \(\?\)/);
-  assert.equal(claim.params[0].includes('BROWSER_ORDER_SUBMITTED'), false);
+  assert.equal(claim.params[0].includes('BROWSER_ORDER_SUBMITTED'), true);
 });
 
 test('enqueue 不再读 provider_balance_change_push_mode 设置，直接用白名单（D-275 ④）', async () => {

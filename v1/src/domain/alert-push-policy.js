@@ -11,7 +11,8 @@
  *   HUMAN    叫人——系统已经停手，不做点什么这一单就一直停着（表三 #3/#4/#5/#6/#9/#10）
  *   SUPPLY   供给——还没卡住客户，但再不动手就会（缺卡预警、开卡失败、钱包低于告警线）
  *   MONEY    资金——钱的去向变了，事后再看就来不及（拒付、余额变化、取消续费未确认=续订会再扣）
- *   D-336：普通客户动态只进后台；余额仍逐笔通知。
+ *   ACTIVITY 业务动态——客户刚提交充值，按 D-340 通知运营。
+ *   D-336：余额仍逐笔通知；D-340覆盖其“普通来单只进后台”部分。
  *
  * **不在白名单里的都有理由，写在 `NON_PUSH_REASONS` 里**，不是漏掉的：新增告警类型时先去那张
  * 表里给个理由，再决定要不要进白名单。
@@ -20,7 +21,8 @@
 export const PushCategory = Object.freeze({
   HUMAN: 'HUMAN',
   SUPPLY: 'SUPPLY',
-  MONEY: 'MONEY'
+  MONEY: 'MONEY',
+  ACTIVITY: 'ACTIVITY'
 });
 
 export const PHONE_PUSH_TYPES = Object.freeze({
@@ -48,12 +50,12 @@ export const PHONE_PUSH_TYPES = Object.freeze({
   ORDER_CANCELLATION_UNCONFIRMED: PushCategory.MONEY, // 缝 g：取消续费没确认 = 下个周期还会扣
   DAILY_RECONCILIATION_SUMMARY: PushCategory.MONEY, // 每日一条对账汇总（面四③；含待销到期数，D-272）
 
-  // 普通客户提交按 D-336 只留后台；客户真的停滞仍由 BROWSER_ORDER_STALLED 叫人。
+  // —— 业务动态 ——
+  BROWSER_ORDER_SUBMITTED: PushCategory.ACTIVITY // D-340：客户来单即通知，并继续保留后台记录
 });
 
 /** 明确不推的类型与理由。新增类型时在这里或白名单里二选一登记，别留空白。 */
 export const NON_PUSH_REASONS = Object.freeze({
-  BROWSER_ORDER_SUBMITTED: '正常来单只留后台；需要处理或真正卡住时再推（D-336）',
   // D5：补卡还在自动重试，系统没有停手；真「开不出、要人」是 ORDER_WAITING_FOR_CARD，
   // 调度器开卡失败另有 CARD_SUPPLY_OPEN_FAILED 在推 —— 这条再推就是同一件事第三遍。
   ORDER_REPLENISH_RETRYING: '补卡仍在自动重试，未卡住客户；要人时由 ORDER_WAITING_FOR_CARD 叫',

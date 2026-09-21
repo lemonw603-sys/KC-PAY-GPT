@@ -85,7 +85,9 @@
 
 **D-338合并核查**：已证明同账户钱包硬不足与软预警重叠，本地只对这一组做投递覆盖，后台事实不变；18真实MySQL场景（含失败/恢复/跨账户/旧轮次/旧观察/并发）通过，生产只读EXPLAIN命中唯一索引。不同卡台或无同因证据的不合并；无真实Bark或发布。证据[钱包提醒覆盖](../reviews/2026-09-21-bark-simplification/wallet-coverage.md)。
 
-13:18:09 UTC只读查询近7天保留的通知行：PROVIDER_BALANCE_CHANGED SENT10、BROWSER_ORDER_SUBMITTED SENT5；近24小时只有DAILY_RECONCILIATION_SUMMARY留存1行。此表会覆盖sent_at/轮次，不是精确发送次数或手机收到证明；历史类型还跨旧release，不能据此断言现版本仍在推已移出白名单的类型。113是后台OPEN告警数，不是本次或今日Bark发送数。尚需用户指出最烦的标题/类别来定位噪音，未修改通知规则或生产。
+**D-340覆盖来单规则**：用户明确改为客户每次来单都通知，覆盖D-336“普通来单只留后台”的部分。本地已将`BROWSER_ORDER_SUBMITTED`恢复进入现有Bark白名单；标题“收到客户充值”，优先显示充值邮箱，缺邮箱才回退订单号，同一OPEN轮次不重复。不改余额/资金/人工异常与D-338覆盖规则，不新增配置或服务。真实Bark请求0，未发布；最新证据[来单通知更新](../reviews/2026-09-21-bark-simplification/customer-submission-update.md)。
+
+13:18:09 UTC只读查询近7天保留的通知行：PROVIDER_BALANCE_CHANGED SENT10、BROWSER_ORDER_SUBMITTED SENT5；近24小时只有DAILY_RECONCILIATION_SUMMARY留存1行。此表会覆盖sent_at/轮次，不是精确发送次数或手机收到证明。113是后台OPEN告警数，不是本次或今日Bark发送数。D-340已重新确定客户来单应推送，因此该历史采样只作保留记录，不再用于论证来单应静默。
 
 **D-335**：用户已批准上一报告的精确2案例＋10提醒受控收口，当前实施。默认预览、生产digest一致/目标备份后原子改状态并审计；不动其他业务数据和通用保护。未完成前不得称已清理，B其他分类/统计仍待裁定。
 

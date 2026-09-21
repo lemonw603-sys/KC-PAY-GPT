@@ -3366,3 +3366,9 @@ tab7只读计算不可用于登录的SHA256指纹与storedExpiry，落login-obse
 真本地MySQL 4项通过：边界、演练、进行中、零样本；聚合2/4与列表4行一致。真DOM/核心保护26项通过，临时库/账号0；默认1079/1010 pass/0 fail/69 skipped。生产只读最终predicate为2样本/1成功=50%，不作稳定性结论。首轮真库夹具时区换算错与DOM初始化竞态均修正并重跑，不用部分绿冒充通过。证据`reviews/2026-09-21-feedback-b-success-rate/report.md`。未发布。
 
 23:20 UTC+8一次性highvcc复测按时执行，但Computer Use浏览器盘点返回`Codex auth token is unavailable`，原authTab/authCdp绑定不存在。无法核对同一会话，因此不刷新/重登/续期/保活，也没有发wallet GET；无法得出会话有效或失效。一次性automation `highvcc`已删除，不重试。更新login-observation与HANDOFF_NOW。
+
+## 2026-09-21｜D-340客户来单恢复Bark通知
+
+用户明确“客户来单改为通知我”，覆盖D-336的来单静默子项。`BROWSER_ORDER_SUBMITTED`恢复手机白名单并单独归为ACTIVITY；手机标题“收到客户充值”，优先显示充值邮箱，无邮箱回退订单号，删除“跑完会再推结果”的不可靠承诺。余额逐笔、资金/人工异常、事故轮次去重及D-338钱包覆盖不变；无新表/服务/配置页，未动D-254付款代码。
+
+专项单测23/23、隔离MySQL 19项、默认1080 tests/1011 pass/0 fail/69 skipped通过；真实Bark请求0，临时库已清理。生产只读复查`BROWSER_ORDER_SUBMITTED`历史36条全是OPEN+SENT，时间09-12 09:25:54.575～09-18 06:54:18.607 UTC，恢复白名单不补推历史来单。生产release仍`20260921-step6-9b9f181`，未发布/重启/真发手机。证据`reviews/2026-09-21-bark-simplification/customer-submission-update.md`。
