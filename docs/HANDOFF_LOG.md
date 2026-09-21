@@ -3388,3 +3388,9 @@ switch首次打印`bark cwd=/`，独立证据当场证实为重启窗口瞬时�
 6笔已有`CONSUMED 16 USD`且各关联`PURCHASE COMPLETE 15.75 USD`；`PJV1-DqcnqHF0tPlxDhygTtAA`仍仅`RELEASED 16 USD`、无关联流水，与D-256一致，本轮不猜金额补账。结论：7笔不是可清历史待办；需逐账号确认/取消续费，再复用现有正式后台入口收口。本轮不进账号、不点取消、不写确认状态、不改账本/提醒。当时release仍`20260921-feedback-d340-7e88952`，web/worker/bark均active且cwd指向该release。
 
 依据、脱敏原始输出、业务建议和停止点见`reviews/2026-09-22-feedback-b-renewal-audit/`。下一步等Lemon定自己操作，还是授权Leila复用现存Session/浏览器逐笔只做续费检查与取消；实际操作前不将这7笔标已完成。
+
+## 2026-09-22｜D-342改为销卡阻断续费，不进客户账号
+
+Lemon明确“不用处理，我会销卡”，覆盖上一节的逐账号取消建议。本轮不进客户账号、不点取消续费、不代销卡、不写生产状态。
+
+22:36:10.513 UTC生产只读核对关联卡尾号1657/3159/5371/7402：全部无活动assignment、非终态订单或未结退款案例；5371已RETIRED/source_present=0，其他三张仍AVAILABLE/source_present=1。销卡后须用现有`confirmRetired`如实登记卡退役，但该服务不会清订单续费待核；人工取消服务会写`subscription_cancelled=1`，不能冒充销卡。因此未销前7待办与3未退役卡保留；实际销完再核实和定最小如实收口，不现在新增臃肿功能。证据追加到`reviews/2026-09-22-feedback-b-renewal-audit/`。

@@ -1,0 +1,12 @@
+observed_at	2026-09-21 22:36:10.513
+card	{"id": "71ec21fe-ec75-4fa3-8189-9c01cb113442", "last4": "1657", "source": "backup_card_export_v1", "status": "active", "balance": 1.800000, "provider": "backup-a", "syncTier": "MANUAL_IMPORT", "inventory": "AVAILABLE", "pendingOrders": 0, "sourcePresent": 1, "openRefundCases": 0, "activeAssignments": 0}
+card	{"id": "e934d5aa-2a46-4dfe-be3c-71f7878956fd", "last4": "3159", "source": "backup_card_export_v1", "status": "active", "balance": 1.050000, "provider": "backup-a", "syncTier": "MANUAL_IMPORT", "inventory": "AVAILABLE", "pendingOrders": 0, "sourcePresent": 1, "openRefundCases": 0, "activeAssignments": 0}
+card	{"id": "c4367206-3353-4fbc-ba6d-880fde1be2e1", "last4": "5371", "source": "backup_card_export_v1", "status": "active", "balance": 1.750000, "provider": "backup-a", "syncTier": "MANUAL_IMPORT", "inventory": "RETIRED", "pendingOrders": 0, "sourcePresent": 0, "openRefundCases": 0, "activeAssignments": 0}
+card	{"id": "60206d73-ab90-11f1-b261-96f4cc0be41b", "last4": "7402", "source": "backup_card_export_v1", "status": "active", "balance": 1.080000, "provider": "backup-a", "syncTier": "MANUAL_IMPORT", "inventory": "AVAILABLE", "pendingOrders": 0, "sourcePresent": 1, "openRefundCases": 0, "activeAssignments": 0}
+ledger	{"count": 3, "last4": "1657", "amount": 48.000000, "status": "CONSUMED"}
+ledger	{"count": 2, "last4": "1657", "amount": 32.000000, "status": "RELEASED"}
+ledger	{"count": 3, "last4": "3159", "amount": 48.000000, "status": "CONSUMED"}
+ledger	{"count": 2, "last4": "5371", "amount": 32.000000, "status": "CONSUMED"}
+ledger	{"count": 15, "last4": "5371", "amount": 240.000000, "status": "RELEASED"}
+ledger	{"count": 1, "last4": "7402", "amount": 16.000000, "status": "CONSUMED"}
+ledger	{"count": 2, "last4": "7402", "amount": 32.000000, "status": "RELEASED"}
