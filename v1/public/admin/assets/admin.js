@@ -612,7 +612,7 @@ function renderDecisions(overview, cardSources, takeoverEstimate = null) {
       `<div class="wb-grp"><div class="wb-seg2">${methodBtn('API', 'API 充值')}${methodBtn('BROWSER', '浏览器自动化')}</div></div>`
       + `<div class="wb-grp"><span class="wb-k">浏览器</span>`
       + `<span class="wb-pair">`
-      + `<select class="wb-field" id="decision-card-source" aria-label="Browser 卡台">${sourceOptions || '<option value="">没有可用卡台</option>'}</select>`
+      + `<select class="wb-field" id="decision-card-source" data-saved-value="${escapeHtml(currentSource)}" aria-label="Browser 卡台">${sourceOptions || '<option value="">没有可用卡台</option>'}</select>`
       + `<button type="button" class="wb-btn sm out" id="decision-card-source-apply" ${sources.length ? '' : 'disabled'}>切换</button>`
       + `</span>${takeoverHint}</div>`;
   }
@@ -1398,7 +1398,6 @@ function renderCardRigs(byProvider, tokenStatus) {
         <button class="cardbtn" type="button" data-rig-open="${escapeHtml(rig.providerKind)}">开卡…</button>
         ${isHighvcc ? `<button class="cardbtn" type="button" data-rig-refresh="${escapeHtml(rig.providerKind)}"
           data-rig-account="${acct}" title="向卡台拉一次最新的卡片快照、钱包余额和流水">同步这台</button>` : ''}
-        <span data-rig-wallet-out="${acct}"></span>
       </div>
     </div>`;
   }).join('');
@@ -1441,7 +1440,7 @@ function cardRowHtml(card, retireItem, retireFailed = false) {
           title="点开看这张卡的流水">${escapeHtml(card.last4 || card.providerCardId || '—')}</button>`}</td>
     <td>${escapeHtml(card.providerLabel || '—')}</td>
     <td class="cardmono">${card.currentBalance == null ? '<span class="cardmuted">—</span>' : `$${formatMoney(card.currentBalance)}`}
-      <span class="cardsub">${card.lastSyncedAt ? escapeHtml(formatTime(card.lastSyncedAt)) : '未同步'}</span></td>
+      <span class="cardsub" title="卡片资料写入时间，不代表每次余额查询时间；按浏览器所在时区显示">${card.lastSyncedAt ? `资料更新 ${escapeHtml(formatTime(card.lastSyncedAt))}` : '未同步'}</span></td>
     <td class="cardmono">${Number(card.usedCapacity || 0)}/${Number(card.maxCapacity || 3)}</td>
     <td>${chip}<span class="cardsub">${escapeHtml(card.reason || '')}</span></td>
     <td class="cardmono">${card.publicNo ? escapeHtml(card.publicNo) : '<span class="cardmuted">—</span>'}</td>
@@ -1556,20 +1555,11 @@ elements.stockCardsHistory?.addEventListener('click', (event) => {
 elements.cardsRigs?.addEventListener('click', async (event) => {
   const walletButton = event.target.closest('[data-rig-wallet]');
   if (walletButton) {
-    const accountCode = walletButton.dataset.rigWallet;
-    const out = elements.cardsRigs.querySelector(`[data-rig-wallet-out="${CSS.escape(accountCode)}"]`);
     walletButton.disabled = true;
-    walletButton.textContent = '查询中…';
     try {
-      const wallet = await api('/api/v1/admin/backup-cards/highvcc/wallet');
-      // 实时值，不落快照——显示时点明它是「刚查的」，别让人以为页面会自己刷新。
-      walletButton.textContent = wallet.usdBalance == null ? '未返回余额' : `$${formatMoney(wallet.usdBalance)}`;
-      if (out) out.textContent = `刚查于 ${formatTime(new Date().toISOString())}`;
-    } catch (error) {
-      walletButton.textContent = '查余额';
-      walletButton.disabled = false;
-      showNotice(`查询 highvcc 钱包失败：${error.message}`);
-    }
+      if (await openHighvccTarget('wallet')) await loadHighvccWallet();
+    } catch { showNotice('钱包入口打开失败，请重试。'); }
+    finally { walletButton.disabled = false; }
     return;
   }
 
@@ -1893,26 +1883,48 @@ async function loadStock() {
   elements.syncTime.textContent = `更新于 ${new Date().toLocaleTimeString('zh-CN', { hour12: false })}`;
 }
 
-/** 向 highvcc 实时查钱包并渲染到开卡区（按需触发，不随页面加载跑）。 */
+let highvccWalletRequest = null;
+let highvccWalletVersion = 0;
+function invalidateHighvccWallet() {
+  highvccWalletVersion += 1;
+  highvccWalletRequest = null;
+  if (elements.highvccWalletStatus) {
+    delete elements.highvccWalletStatus.dataset.loaded;
+    elements.highvccWalletStatus.innerHTML = '<div><span><strong>登录信息已更新，请重新查询余额</strong></span></div>';
+  }
+}
+
+/** 两个入口共用一个展示区与在途查询；页面轮询不请求上游钱包。 */
 async function loadHighvccWallet() {
   if (!elements.highvccWalletStatus) return false;
+  if (highvccWalletRequest) return highvccWalletRequest;
+  const version = highvccWalletVersion;
   elements.highvccWalletStatus.dataset.loaded = '1';
   elements.highvccWalletStatus.innerHTML = '<div><span><strong>正在向卡台查询…</strong></span></div>';
-  try {
-    const wallet = await api('/api/v1/admin/backup-cards/highvcc/wallet');
-    elements.highvccWalletStatus.innerHTML = `<div><span><strong>卡台美元钱包 $${wallet.usdBalance}</strong>`
-      + `<small>查询于 ${formatTime(new Date().toISOString())}；卡台自己的"押金"字段累计 $${wallet.usdDeposit}（含义未完全确认，实际能开多大金额以卡台报价为准，不代表这个数字能直接减）；已消费 $${wallet.usdConsume}</small></span></div>`;
-    return true;
-  } catch {
-    elements.highvccWalletStatus.innerHTML = '<div><span><strong>钱包余额读取失败</strong><small>请检查卡台登录状态后重试；本次未取得新余额。</small></span></div>';
-    return false;
+  const request = (async () => {
+    try {
+      const wallet = await api('/api/v1/admin/backup-cards/highvcc/wallet');
+      if (version !== highvccWalletVersion) return false;
+      elements.highvccWalletStatus.innerHTML = `<div><span><strong>卡台美元钱包 $${wallet.usdBalance}</strong>`
+        + `<small>查询于 ${formatTime(new Date().toISOString())}；卡台自己的"押金"字段累计 $${wallet.usdDeposit}（含义未完全确认，实际能开多大金额以卡台报价为准，不代表这个数字能直接减）；已消费 $${wallet.usdConsume}</small></span></div>`;
+      return true;
+    } catch {
+      if (version !== highvccWalletVersion) return false;
+      elements.highvccWalletStatus.innerHTML = '<div><span><strong>钱包余额读取失败</strong><small>请检查卡台登录状态后重试；本次未取得新余额。</small></span></div>';
+      return false;
+    }
+  })();
+  highvccWalletRequest = request;
+  try { return await request; }
+  finally {
+    if (highvccWalletRequest === request) highvccWalletRequest = null;
   }
 }
 
 /** 只定位已有表单，不提交 token、开卡或充值。读页失败也允许修复登录。 */
 async function openHighvccTarget(target) {
   if (target !== 'wallet' && target !== 'token') return;
-  try { await switchView('stock'); }
+  try { if (state.view !== 'stock') await switchView('stock'); }
   catch { showNotice('部分卡片数据读取失败，仍可使用下方登录与余额入口。'); }
   if (state.view !== 'stock') return; // 请求期间用户已切页，不抢回焦点。
   const section = document.querySelector('#highvcc-open-card');
@@ -1921,6 +1933,7 @@ async function openHighvccTarget(target) {
   for (let node = section; node; node = node.parentElement?.closest('details')) node.open = true;
   control.scrollIntoView({ block: 'center' });
   control.focus({ preventScroll: true });
+  return true;
 }
 
 async function loadHighvccStatus(prefetched) {
@@ -2359,6 +2372,11 @@ function switchCheckReasons(error) {
 async function setDefaultRechargeMethod(button) {
   const method = String(button.dataset.method || '').toUpperCase();
   if (!['API', 'BROWSER'].includes(method)) return;
+  const source = document.querySelector('#decision-card-source');
+  if (method === 'BROWSER' && source?.dataset.savedValue && source.value !== source.dataset.savedValue) {
+    showNotice('卡台选择尚未保存，请先点卡台旁的“切换”，或改回原选择，再切充值方式。');
+    return;
+  }
   const label = method === 'API' ? 'API 充值' : '浏览器自动化充值';
   if (!window.confirm(`确认将默认充值方式切换为“${label}”？\n\n只影响切换后新建订单；已经创建或正在执行的订单不会改线。`)) return;
   button.disabled = true;
@@ -2368,7 +2386,8 @@ async function setDefaultRechargeMethod(button) {
       body: JSON.stringify({ method, confirmation: `切换默认充值方式为 ${method}`, expectedCurrentMethod: state.rechargeMethod || 'NONE' })
     });
     showNotice(`默认充值方式已切换为${label}；只影响之后新建的订单。`, 'success');
-    await loadOverview();
+    try { await loadOverview(); }
+    catch { showNotice('默认充值方式已切换，但页面刷新失败；请刷新查看，不要重复切换。', 'warning'); }
   } catch (error) {
     const messages = {
       browser_recharge_not_ready: 'Browser 执行器尚未就绪，默认充值方式没有改变。',
@@ -2376,7 +2395,7 @@ async function setDefaultRechargeMethod(button) {
       default_recharge_method_confirmation_required: '确认信息不匹配，默认充值方式没有改变。',
       default_recharge_method_rejected: `切换被拒绝，默认充值方式没有改变：${switchCheckReasons(error)}`
     };
-    showNotice(messages[error.message] || '默认充值方式切换失败，原设置未改变。');
+    showNotice(messages[error.message] || '未能确认默认充值方式切换结果，请刷新核实，不要重复切换。');
     await loadOverview().catch(() => {});
   } finally {
     button.disabled = false;
@@ -2893,10 +2912,12 @@ elements.highvccTokenForm?.addEventListener('submit', async (event) => {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token })
     });
     elements.highvccTokenInput.value = '';
-    showNotice('token 已保存。', 'success');
-    await loadHighvccStatus();
+    invalidateHighvccWallet();
+    showNotice('token 已保存；有效性以卡台查询结果为准。', 'success');
+    try { await loadHighvccStatus(); }
+    catch { showNotice('token 已保存，但状态读取失败；请刷新查看，不必重复保存。', 'warning'); }
   } catch (error) {
-    showNotice(error.message === 'highvcc_token_invalid' ? 'token 格式不对（太短或包含空白），请重新复制。' : 'token 保存失败。');
+    showNotice(error.message === 'highvcc_token_invalid' ? 'token 格式不对（太短或包含空白），请重新复制。' : '未能确认 token 保存结果，请刷新查看更新时间后再决定是否重试。');
   }
   finally { button.disabled = false; }
 });
@@ -3176,9 +3197,10 @@ async function consumeHighvccTokenFromHash() {
     await sensitiveApi('/api/v1/admin/backup-cards/highvcc/token', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token })
     });
-    showNotice('highvcc 登录 token 已自动更新。', 'success');
+    invalidateHighvccWallet();
+    showNotice('highvcc 登录 token 已自动保存；有效性以卡台查询结果为准。', 'success');
   } catch {
-    showNotice('highvcc token 自动更新失败，请到"卡片"页手动粘贴保存。');
+    showNotice('未能确认 highvcc token 保存结果，请到“卡片”页查看更新时间后再决定是否重试。');
   }
 }
 

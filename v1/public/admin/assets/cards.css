@@ -116,3 +116,5 @@
 .cardgate.is-blocked{background:var(--wb-warn-soft);border-color:var(--wb-warn);color:var(--wb-warn)}
 .cardgate.is-blocked small{color:inherit}
 .stock-open-form .cardgate{grid-column:1 / -1}
+/* token 深链在手机上也必须能直接操作；不覆盖其他高级表单。 */
+@media (max-width:620px){#highvcc-token-form{grid-template-columns:minmax(0,1fr)}}

@@ -115,7 +115,12 @@ try {
   async function capture(name) { const {data}=await cdp.send('Page.captureScreenshot',{format:'png'},sid);await writeFile(new URL(name+'.png',output),Buffer.from(data,'base64')); }
   async function reload(){await ev('await loadOverview();');await wait('document.querySelector("[data-op=pay]")');}
   if(feedbackMode) await section('feedback A wallet and token navigation',async()=>{
-    await ev(`window.feedbackOriginalApi=api;window.feedbackCalls=[];window.feedbackWalletFails=true;
+    await ev(`window.feedbackOriginalApi=api;window.feedbackOriginalOverview=loadOverview;window.feedbackOriginalStock=loadStock;
+      window.feedbackCalls=[];window.feedbackWalletFails=true;
+      window.feedbackRigs=[{accountCode:'fixture-highvcc',providerKind:'highvcc',label:'隔离卡台',walletLiveOnly:true}];
+      loadOverview=async()=>{renderWbCards({cardStockByProvider:[{providerKind:'highvcc',label:'隔离卡台',products:[]}]});
+        renderWbQueue({},null,{alerts:[{type:'PROVIDER_TOKEN_EXPIRED',message:'隔离过期样本',createdAt:new Date().toISOString()}]},null);};
+      loadStock=async()=>{renderCardRigs(window.feedbackRigs,{});throw Error('isolated stock read failure');};
       api=async(path,options)=>{window.feedbackCalls.push({path,method:options?.method||'GET'});
         if(path==='/api/v1/admin/backup-cards/highvcc/wallet'){
           if(window.feedbackWalletFails)throw Error('highvcc_token_expired');
@@ -140,10 +145,28 @@ try {
       await click('[data-highvcc-target="token"]');
       await wait('document.activeElement?.id==="highvcc-token-input"');
       await capture('token-focused');
+      await ev(`window.feedbackRigs=[{accountCode:'fixture-highvcc',providerKind:'highvcc',label:'隔离卡台',walletLiveOnly:true}];renderCardRigs(window.feedbackRigs,{});`);
+      const countBefore=await ev(`return window.feedbackCalls.filter(r=>r.path.endsWith('/wallet')).length`);
+      await click('[data-rig-wallet]');
+      await wait(`window.feedbackCalls.filter(r=>r.path.endsWith('/wallet')).length>${countBefore} && !document.querySelector('[data-rig-wallet]').disabled`);
+      assert.equal(await ev('return document.activeElement.id'),'highvcc-refresh-wallet');
+      await ev('renderCardRigs(window.feedbackRigs,{})');
+      assert.match(await ev('return elements.highvccWalletStatus.textContent'),/38.73/);
+      assert.equal(await ev(`return window.feedbackCalls.filter(r=>r.path.endsWith('/wallet')).length`),countBefore+1);
+      await click('[data-rig-wallet]');
+      await wait(`window.feedbackCalls.filter(r=>r.path.endsWith('/wallet')).length===${countBefore+2}`);
+      for(const [width,height] of [[1440,1000],[390,844]]) {
+        await cdp.send('Emulation.setDeviceMetricsOverride',{width,height,deviceScaleFactor:1,mobile:false},sid);
+        await ev(`await openHighvccTarget('token')`);
+        assert.equal(await ev('return document.activeElement.id'),'highvcc-token-input');
+        await capture('feedback-focused-'+width);
+        assert.ok(await ev('return document.documentElement.scrollWidth<=innerWidth+1'),JSON.stringify(await ev('return {width:innerWidth,scrollWidth:document.documentElement.scrollWidth,overflow:[...document.querySelectorAll("#stock-view *")].filter(e=>e.getBoundingClientRect().right>innerWidth+1).slice(0,8).map(e=>({tag:e.tagName,id:e.id,cls:e.className,right:e.getBoundingClientRect().right}))}')));
+      }
+      await cdp.send('Emulation.setDeviceMetricsOverride',{width:1440,height:1000,deviceScaleFactor:1,mobile:false},sid);
       const requests=await ev('return window.feedbackCalls');
       assert.equal(requests.filter(r=>r.method!=='GET').length,0);
-      mark('real DOM clicks: wallet/token deep links, wallet failure/retry, no write requests',{requests,syntheticWallet:true,stockReadFailureFallback:true});
-    } finally {await ev('api=window.feedbackOriginalApi;await switchView("overview");');}
+      mark('real DOM clicks: wallet/token deep links, failure/retry, rig repeat query/redraw, desktop/mobile, no write requests',{requests,syntheticWallet:true,stockReadFailureFallback:true});
+    } finally {await ev('api=window.feedbackOriginalApi;loadOverview=window.feedbackOriginalOverview;loadStock=window.feedbackOriginalStock;await switchView("overview");');}
   });
   await section('payment gate scope',async()=>{
     await ops.setBrowserPaymentWrites({enabled:true});await ops.setDispatch({enabled:true,confirmation:'开始自动充值'});

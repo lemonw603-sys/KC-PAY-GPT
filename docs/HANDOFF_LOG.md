@@ -3268,3 +3268,9 @@ D-329改变进⑦门槛并重新提出完成率样本范围讨论，旧“不改
 修改前60项保护基线通过；修改后专项108通过，默认1054/985 pass/0 fail/69 skipped。FEEDBACK_ACCEPTANCE+DIAGNOSTICS_ACCEPTANCE复用原隔离脚本，25项含真实DOM点击/0写请求、四条核实收口/通用关闭409/重放幂等/诊断几何/恢复探针通过；10:18:38 UTC结束，临时库和账号剩余0，临时服务/Chrome/恢复容器清理。卡片页测试故意未注册stock读服务，验证读失败仍可定位；合成钱包不代表外网成功。
 
 10:19:22～26 UTC独立SQL/SSH复验仍9b9f181三服务active、token告警OPEN1且更新时间09-18未变、非终态0；state-check一致。HNSKJ钱包样本38.73与缓存一致；highvcc只读请求TOKEN_EXPIRED，未贴token。首条告警SQL误用type报1054，按alert_type重查。A的顶部钱包、token保存反馈、时间/选择边界未完成，B～E未开始，不将本批报整批结项。证据reviews/2026-09-21-feedback-a/report.md，后续按其下一批继续。
+
+## 2026-09-21｜反馈A第二批：重复查询与反馈保护
+
+用户继续批准既定规划。顶部钱包统一定位高级区查询，删除按钮临时数值与易被重绘的输出；合并在途GET、token保存后清旧钱包并拒绝旧响应覆盖。手工保存和方式切换的写成功/读失败分开，响应丢失只报未确认；未保存Browser卡源先提示而非隐式使用另一选择。余额下时间标资料更新、title说明浏览器时区与非每次余额查询，不改DB/资格SQL。
+
+测试先发现旧filters-two后置双列造成390px溢出，仅highvcc-token-form加手机单列；第二遍夹具被轮询清掉报null.click，明确隔离读取来源后重跑，真实DOM/委托/重绘/请求记录保留。默认1061/992 pass/0 fail/69 skipped；最终隔离25通过，10:39:57 UTC结束临时库/账号0。后端/Browser相对生产diff空。10:39:50 UTC独立SSH仍9b9f181三服务active；state-check全一致。无发布、真实资金操作、凭据写入、历史清理或生产重启。证据reviews/2026-09-21-feedback-a/second-batch.md；A剩字段准确性与整体验收，B～E未开始。

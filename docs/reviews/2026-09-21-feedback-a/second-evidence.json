@@ -1,0 +1,484 @@
+{
+  "startedAt": "2026-09-21T10:39:10.241Z",
+  "checks": [
+    {
+      "name": "real DOM clicks: wallet/token deep links, failure/retry, rig repeat query/redraw, desktop/mobile, no write requests",
+      "evidence": {
+        "requests": [
+          {
+            "path": "/api/v1/admin/card-sources",
+            "method": "GET"
+          },
+          {
+            "path": "/api/v1/admin/backup-cards/highvcc/wallet",
+            "method": "GET"
+          },
+          {
+            "path": "/api/v1/admin/backup-cards/highvcc/wallet",
+            "method": "GET"
+          },
+          {
+            "path": "/api/v1/admin/backup-cards/highvcc/wallet",
+            "method": "GET"
+          },
+          {
+            "path": "/api/v1/admin/card-sources",
+            "method": "GET"
+          },
+          {
+            "path": "/api/v1/admin/backup-cards/highvcc/wallet",
+            "method": "GET"
+          },
+          {
+            "path": "/api/v1/admin/backup-cards/highvcc/wallet",
+            "method": "GET"
+          }
+        ],
+        "syntheticWallet": true,
+        "stockReadFailureFallback": true
+      }
+    },
+    {
+      "name": "Browser payment off rejects new permit; API submission remains eligible",
+      "evidence": {
+        "settings": [
+          {
+            "setting_key": "browser_payment_writes_enabled",
+            "setting_value": "false"
+          },
+          {
+            "setting_key": "dispatch_new_recharges",
+            "setting_value": "true"
+          },
+          {
+            "setting_key": "poll_existing_orders",
+            "setting_value": "true"
+          },
+          {
+            "setting_key": "sync_card_transactions",
+            "setting_value": "true"
+          }
+        ],
+        "allowedTasks": [
+          "ASSIGN_CARD",
+          "PREPARE_RECHARGE",
+          "SUBMIT_RECHARGE",
+          "POLL_RECHARGE",
+          "RECHECK_CANCELLATION",
+          "SYNC_CARD_TRANSACTIONS"
+        ]
+      }
+    },
+    {
+      "name": "dispatch off excludes new submit, keeps poll and card synchronization",
+      "evidence": {
+        "allowedTasks": [
+          "POLL_RECHARGE",
+          "RECHECK_CANCELLATION",
+          "SYNC_CARD_TRANSACTIONS"
+        ],
+        "scope": "scheduler eligibility; no external submission executed"
+      }
+    },
+    {
+      "name": "API CHARGED: forged generic-close HTTP blocked with unchanged DB",
+      "evidence": {
+        "status": 409,
+        "body": {
+          "error": "case_requires_order_resolution"
+        }
+      }
+    },
+    {
+      "name": "API CHARGED: diagnostics → detail → actual handler → DB/CDK verified",
+      "evidence": {
+        "before": {
+          "orderStatus": "RECONCILIATION_REQUIRED",
+          "failure_code": null,
+          "cancellation_review_required": 0,
+          "attemptStatus": "SUBMIT_UNKNOWN",
+          "funds": "UNKNOWN",
+          "cdkStatus": "REDEEMED",
+          "cdkOrder": "9308c517-e446-4b31-a3b3-1fc6037d5358",
+          "ledger": "RESERVED",
+          "assignment": "ACTIVE",
+          "inventory": "ASSIGNED",
+          "cases": [
+            {
+              "case_type": "API_PAYMENT_UNKNOWN",
+              "status": "OPEN"
+            }
+          ],
+          "alerts": [
+            {
+              "alert_type": "ORDER_PAYMENT_UNKNOWN_REVIEW",
+              "status": "OPEN"
+            }
+          ],
+          "attempts": 1,
+          "tasks": 0
+        },
+        "after": {
+          "orderStatus": "RECHARGE_SUCCESS",
+          "failure_code": null,
+          "cancellation_review_required": 1,
+          "attemptStatus": "SUCCESS",
+          "funds": "SETTLED",
+          "cdkStatus": "REDEEMED",
+          "cdkOrder": "9308c517-e446-4b31-a3b3-1fc6037d5358",
+          "ledger": "CONSUMED",
+          "assignment": "RELEASED",
+          "inventory": "DEPLETED",
+          "cases": [
+            {
+              "case_type": "API_PAYMENT_UNKNOWN",
+              "status": "RESOLVED"
+            }
+          ],
+          "alerts": [
+            {
+              "alert_type": "ORDER_PAYMENT_UNKNOWN_REVIEW",
+              "status": "RESOLVED"
+            },
+            {
+              "alert_type": "ORDER_CANCELLATION_UNCONFIRMED",
+              "status": "OPEN"
+            }
+          ],
+          "attempts": 1,
+          "tasks": 0
+        },
+        "cdkVerdict": "BOUND_TO_ORDER",
+        "eligibleCardAfter": 0
+      }
+    },
+    {
+      "name": "API NOT_CHARGED: forged generic-close HTTP blocked with unchanged DB",
+      "evidence": {
+        "status": 409,
+        "body": {
+          "error": "case_requires_order_resolution"
+        }
+      }
+    },
+    {
+      "name": "API NOT_CHARGED: diagnostics → detail → actual handler → DB/CDK verified",
+      "evidence": {
+        "before": {
+          "orderStatus": "RECONCILIATION_REQUIRED",
+          "failure_code": null,
+          "cancellation_review_required": 0,
+          "attemptStatus": "SUBMIT_UNKNOWN",
+          "funds": "UNKNOWN",
+          "cdkStatus": "REDEEMED",
+          "cdkOrder": "a7d5f0a7-3e82-4e6d-bb94-193f6134e81c",
+          "ledger": "RESERVED",
+          "assignment": "ACTIVE",
+          "inventory": "ASSIGNED",
+          "cases": [
+            {
+              "case_type": "API_PAYMENT_UNKNOWN",
+              "status": "OPEN"
+            }
+          ],
+          "alerts": [
+            {
+              "alert_type": "ORDER_PAYMENT_UNKNOWN_REVIEW",
+              "status": "OPEN"
+            }
+          ],
+          "attempts": 1,
+          "tasks": 0
+        },
+        "after": {
+          "orderStatus": "RECHARGE_FAILED",
+          "failure_code": "PAYMENT_NOT_CHARGED_VERIFIED",
+          "cancellation_review_required": 0,
+          "attemptStatus": "CLEARED",
+          "funds": "CLEARED",
+          "cdkStatus": "REDEEMED",
+          "cdkOrder": "a7d5f0a7-3e82-4e6d-bb94-193f6134e81c",
+          "ledger": "RELEASED",
+          "assignment": "RELEASED",
+          "inventory": "ASSIGNED",
+          "cases": [
+            {
+              "case_type": "API_PAYMENT_UNKNOWN",
+              "status": "RESOLVED"
+            }
+          ],
+          "alerts": [
+            {
+              "alert_type": "ORDER_PAYMENT_UNKNOWN_REVIEW",
+              "status": "RESOLVED"
+            }
+          ],
+          "attempts": 1,
+          "tasks": 0
+        },
+        "cdkVerdict": "VALID",
+        "eligibleCardAfter": 1
+      }
+    },
+    {
+      "name": "API no-charge: actual customer resubmission creates one new order; replay reuses it",
+      "evidence": {
+        "status": "CREATED",
+        "reused": true
+      }
+    },
+    {
+      "name": "BROWSER CHARGED: forged generic-close HTTP blocked with unchanged DB",
+      "evidence": {
+        "status": 409,
+        "body": {
+          "error": "case_requires_order_resolution"
+        }
+      }
+    },
+    {
+      "name": "BROWSER CHARGED: diagnostics → detail → actual handler → DB/CDK verified",
+      "evidence": {
+        "before": {
+          "orderStatus": "SUBMIT_UNKNOWN",
+          "failure_code": "HUMAN_PAYMENT_UNKNOWN",
+          "cancellation_review_required": 0,
+          "attemptStatus": "SUBMIT_UNKNOWN",
+          "funds": "UNKNOWN",
+          "cdkStatus": "REDEEMED",
+          "cdkOrder": "742689a5-2d33-429c-8d5c-8d548b86abfb",
+          "ledger": "RESERVED",
+          "assignment": "ACTIVE",
+          "inventory": "ASSIGNED",
+          "cases": [
+            {
+              "case_type": "BROWSER_PAYMENT_UNKNOWN",
+              "status": "OPEN"
+            }
+          ],
+          "alerts": [
+            {
+              "alert_type": "BROWSER_PAYMENT_UNKNOWN",
+              "status": "OPEN"
+            }
+          ],
+          "attempts": 1,
+          "tasks": 0
+        },
+        "after": {
+          "orderStatus": "RECHARGE_SUCCESS",
+          "failure_code": null,
+          "cancellation_review_required": 0,
+          "attemptStatus": "SUCCESS",
+          "funds": "SETTLED",
+          "cdkStatus": "REDEEMED",
+          "cdkOrder": "742689a5-2d33-429c-8d5c-8d548b86abfb",
+          "ledger": "CONSUMED",
+          "assignment": "RELEASED",
+          "inventory": "DEPLETED",
+          "cases": [
+            {
+              "case_type": "BROWSER_PAYMENT_UNKNOWN",
+              "status": "RESOLVED"
+            }
+          ],
+          "alerts": [
+            {
+              "alert_type": "BROWSER_PAYMENT_UNKNOWN",
+              "status": "RESOLVED"
+            }
+          ],
+          "attempts": 1,
+          "tasks": 0
+        },
+        "cdkVerdict": "BOUND_TO_ORDER",
+        "eligibleCardAfter": 0
+      }
+    },
+    {
+      "name": "BROWSER NOT_CHARGED: forged generic-close HTTP blocked with unchanged DB",
+      "evidence": {
+        "status": 409,
+        "body": {
+          "error": "case_requires_order_resolution"
+        }
+      }
+    },
+    {
+      "name": "BROWSER NOT_CHARGED: diagnostics → detail → actual handler → DB/CDK verified",
+      "evidence": {
+        "before": {
+          "orderStatus": "SUBMIT_UNKNOWN",
+          "failure_code": "HUMAN_PAYMENT_UNKNOWN",
+          "cancellation_review_required": 0,
+          "attemptStatus": "SUBMIT_UNKNOWN",
+          "funds": "UNKNOWN",
+          "cdkStatus": "REDEEMED",
+          "cdkOrder": "66c4e645-7cf5-4425-8c77-fbb381963925",
+          "ledger": "RESERVED",
+          "assignment": "ACTIVE",
+          "inventory": "ASSIGNED",
+          "cases": [
+            {
+              "case_type": "BROWSER_PAYMENT_UNKNOWN",
+              "status": "OPEN"
+            }
+          ],
+          "alerts": [
+            {
+              "alert_type": "BROWSER_PAYMENT_UNKNOWN",
+              "status": "OPEN"
+            }
+          ],
+          "attempts": 1,
+          "tasks": 0
+        },
+        "after": {
+          "orderStatus": "CLOSED",
+          "failure_code": "HUMAN_VERIFIED_NOT_CHARGED",
+          "cancellation_review_required": 0,
+          "attemptStatus": "FAILED",
+          "funds": "CLEARED",
+          "cdkStatus": "AVAILABLE",
+          "cdkOrder": null,
+          "ledger": "RELEASED",
+          "assignment": "RELEASED",
+          "inventory": "AVAILABLE",
+          "cases": [
+            {
+              "case_type": "BROWSER_PAYMENT_UNKNOWN",
+              "status": "RESOLVED"
+            }
+          ],
+          "alerts": [
+            {
+              "alert_type": "BROWSER_PAYMENT_UNKNOWN",
+              "status": "RESOLVED"
+            }
+          ],
+          "attempts": 1,
+          "tasks": 0
+        },
+        "cdkVerdict": "VALID",
+        "eligibleCardAfter": 1
+      }
+    },
+    {
+      "name": "BROWSER no-charge: actual customer resubmission creates one new order; replay reuses it",
+      "evidence": {
+        "status": "CREATED",
+        "reused": true
+      }
+    },
+    {
+      "name": "real read-only report drives counts, expands evidence and opens actual card detail",
+      "evidence": {
+        "unverifiable": 4
+      }
+    },
+    {
+      "name": "non-payment record retains audited-note close path",
+      "evidence": {
+        "status": "RESOLVED"
+      }
+    },
+    {
+      "name": "diagnostics search reaches existing order detail",
+      "evidence": {
+        "publicNo": "UNKPAY-API-CHAR-9308c517-e446-4b31-a3b3-1fc6037d5358"
+      }
+    },
+    {
+      "name": "500 clears stale report/count and retry recovers",
+      "evidence": {}
+    },
+    {
+      "name": "runtime/case read failure shown; failed config read disables writes until retry",
+      "evidence": {}
+    },
+    {
+      "name": "existing billing save and sanitized CSV backend retained",
+      "evidence": {
+        "csv": {
+          "status": 200,
+          "hasData": true,
+          "leaks": false
+        }
+      }
+    },
+    {
+      "name": "approved prototype geometry/style contract",
+      "evidence": {}
+    },
+    {
+      "name": "geometry contract rejects deliberate gap regression",
+      "evidence": {
+        "exitCode": 1
+      }
+    },
+    {
+      "name": "existing unknown-payment MySQL regressions",
+      "evidence": {
+        "output": [
+          "✔ B1 真实产生路径：系统自己产生的 case 与告警，收口后都被关掉（交叉验证 dedupe_key） (146.083375ms)",
+          "ℹ tests 12",
+          "ℹ suites 0",
+          "ℹ pass 12",
+          "ℹ fail 0",
+          "ℹ cancelled 0",
+          "ℹ skipped 0",
+          "ℹ todo 0",
+          "ℹ duration_ms 1948.444583",
+          ""
+        ]
+      }
+    },
+    {
+      "name": "backup gzip/encryption roundtrip, fresh MySQL import, Session/CDK decrypt and app overview",
+      "evidence": {
+        "tables": 63,
+        "wrongKeyRejected": true,
+        "productionBackup": false,
+        "networkMode": "none"
+      }
+    },
+    {
+      "name": "negative control: table-only restore passes but missing definer blocks alert UPDATE",
+      "evidence": {
+        "code": "ER_NO_SUCH_USER",
+        "errno": 1449
+      }
+    },
+    {
+      "name": "definer restored with DB-level grants only: trigger increments incident version",
+      "evidence": {
+        "before": 1,
+        "after": 2
+      }
+    }
+  ],
+  "failures": [],
+  "isolation": {
+    "database": "step6_safety_8a3f29bb",
+    "restoreContainer": "step6-restore-8a3f29bb",
+    "syntheticOnly": true,
+    "providersRegistered": false,
+    "workersStarted": false,
+    "web": "http://127.0.0.1:61245"
+  },
+  "commit": "613a74a37e55a96852076eb44a7c96793fe0cb04",
+  "sourceSha256": {
+    "v1/public/admin/index.html": "0550bb0203b4c7b3fbaa30fd5497a686ae399b1a7e27783dd0f936eb875368f7",
+    "v1/public/admin/assets/admin.js": "bce7172372a0eeab2c5a505dc6f9e7259ad4408b28e627e427204710c9521883",
+    "v1/public/admin/assets/diagnostics.js": "9ec77ba209790427be1bfabe7dd628af22f4e3d098df6d672f317201886234da",
+    "v1/public/admin/assets/diagnostics.css": "7a5730ed6e76d54ca750fe21f1e12aa859dca95ab95b116390475a21c8981d01",
+    "v1/src/services/reconciliation-case-service.js": "f546f3fafe6813bfd6152d66549a69eae83c9c95c42b64c54bbfb6a52613fbf1",
+    "v1/src/app/create-app.js": "c52554b069f669e7e46c0d60b3f24e7f6039500fbeaf1f57179cb467a1d98e78"
+  },
+  "cleanup": {
+    "databasesRemaining": 0,
+    "accountsRemaining": 0
+  },
+  "finishedAt": "2026-09-21T10:39:57.257Z",
+  "status": "passed"
+}

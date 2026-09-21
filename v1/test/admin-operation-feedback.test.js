@@ -6,7 +6,7 @@ const src=fs.readFileSync(new URL('../public/admin/assets/admin.js',import.meta.
 function snippet(marker,end='\n});'){const a=src.indexOf(marker);assert(a>=0,`marker not found: ${marker}`);const b=src.indexOf(end,a)+end.length;return src.slice(a,b);}
 test('wallet refresh reports failure truthfully and restores the button; retry succeeds', async () => {
  let handler, fail=true; const notices=[], requests=[];
- const ctx={elements:{highvccWalletStatus:{dataset:{},innerHTML:''},highvccRefreshWallet:{disabled:false,addEventListener(_,fn){handler=fn}}},
+ const ctx={highvccWalletRequest:null,highvccWalletVersion:0,elements:{highvccWalletStatus:{dataset:{},innerHTML:''},highvccRefreshWallet:{disabled:false,addEventListener(_,fn){handler=fn}}},
   api:async(path)=>{requests.push(path);if(fail)throw Error('expired');return{usdBalance:'38.73',usdDeposit:'0',usdConsume:'1'}},
   formatTime:x=>x,showNotice:(...args)=>notices.push(args)};
  vm.runInNewContext(snippet('async function loadHighvccWallet(', '\n}\n')+'\n'+snippet("elements.highvccRefreshWallet?.addEventListener('click'"),ctx);
@@ -17,6 +17,35 @@ test('wallet refresh reports failure truthfully and restores the button; retry s
  assert.match(ctx.elements.highvccWalletStatus.innerHTML,/38.73/);
  assert.equal(notices.at(-1)[1],'success');assert.equal(ctx.elements.highvccRefreshWallet.disabled,false);
  assert.deepEqual(requests,Array(2).fill('/api/v1/admin/backup-cards/highvcc/wallet'));
+});
+test('wallet requests coalesce and an old response cannot overwrite a saved-token invalidation',async()=>{
+ let resolve,calls=0;
+ const ctx={highvccWalletRequest:null,highvccWalletVersion:0,elements:{highvccWalletStatus:{dataset:{},innerHTML:''}},formatTime:x=>x,
+  api:async()=>{calls++;return new Promise(r=>{resolve=r})}};
+ vm.runInNewContext(snippet('async function loadHighvccWallet(', '\n}\n')+snippet('function invalidateHighvccWallet(', '\n}\n'),ctx);
+ const a=ctx.loadHighvccWallet(),b=ctx.loadHighvccWallet();assert.equal(calls,1);
+ ctx.invalidateHighvccWallet();resolve({usdBalance:'99'});
+ assert.equal(await a,false);assert.equal(await b,false);assert.doesNotMatch(ctx.elements.highvccWalletStatus.innerHTML,/99/);
+ const c=ctx.loadHighvccWallet();resolve({usdBalance:'12',usdDeposit:'0',usdConsume:'0'});assert.equal(await c,true);assert.equal(calls,2);
+});
+test('token save success followed by status failure is not reported as failed save',async()=>{
+ let handler,invalidations=0,writes=0;const notices=[],button={disabled:false};
+ const ctx={elements:{highvccTokenInput:{value:'synthetic-token'},highvccTokenForm:{addEventListener(_,fn){handler=fn},querySelector:()=>button}},
+  sensitiveApi:async()=>{writes++},invalidateHighvccWallet:()=>invalidations++,loadHighvccStatus:async()=>{throw Error('read failed')},showNotice:x=>notices.push(x)};
+ vm.runInNewContext(snippet("elements.highvccTokenForm?.addEventListener('submit'"),ctx);await handler({preventDefault(){}});
+ assert.equal(writes,1);assert.equal(invalidations,1);assert.equal(button.disabled,false);assert.equal(ctx.elements.highvccTokenInput.value,'');
+ assert.match(notices.at(-1),/已保存，但状态读取失败/);assert(!notices.some(x=>x.includes('保存失败')));
+});
+for(const outcome of ['read-failed','lost-response','rejected','unsaved','success'])test(`method switch feedback: ${outcome}`,async()=>{
+ let writes=0,reads=0;const notices=[];
+ const ctx={document:{querySelector:()=>({dataset:{savedValue:'a'},value:outcome==='unsaved'?'b':'a'})},state:{rechargeMethod:'API'},window:{confirm:()=>true},
+  api:async()=>{writes++;if(outcome==='lost-response')throw Error('network');if(outcome==='rejected')throw Error('default_recharge_method_rejected')},
+  loadOverview:async()=>{reads++;if(outcome==='read-failed')throw Error('read')},switchCheckReasons:()=>'',showNotice:x=>notices.push(x)};
+ vm.runInNewContext(snippet('async function setDefaultRechargeMethod(', '\n}\n'),ctx);
+ const button={dataset:{method:'BROWSER'},disabled:false};await ctx.setDefaultRechargeMethod(button);assert.equal(button.disabled,false);
+ assert.equal(writes,outcome==='unsaved'?0:1);
+ const expected={'read-failed':'已切换，但页面刷新失败','lost-response':'未能确认','rejected':'切换被拒绝','unsaved':'尚未保存','success':'默认充值方式已切换'};
+ assert(notices.some(x=>x.includes(expected[outcome])));if(outcome==='read-failed')assert.equal(reads,1);
 });
 for (const target of ['wallet','token']) test(`highvcc ${target} jump expands ancestors and focuses only the requested control even if page read fails`,async()=>{
  const outer={open:false,parentElement:null},section={open:false,parentElement:{closest:()=>outer}};
