@@ -3220,3 +3220,13 @@ SQL现场仅state-check只读，生产仍⑤b/054；无生产写入、无新迁�
 两项有依据的待讨论点：①index.html工作台标题“今天生意怎么样”，admin.js renderWbWall直接用metrics.successRate；admin-read-service getOverview的successful/completed_failed聚合在FROM orders o后没有今日WHERE，successRate=successful/(successful+completed_failed)，是历史完结口径，易误读今日。联合报告已登记，D-294只是延期数字墙重排，不授权擅改指标算法。②renderSettingsThresholds钱包同一行两输入只有data-field，无各自label/aria-label/placeholder；用现有admin-dom-harness真实运行该函数，合成walletFloor20、walletAlertThreshold30，输出依次为wallet_floor value20.00、wallet_alert_threshold value30.00，外层只写“底线挡开卡，告警线只提醒”。这是代码/render产物核对，不是本轮浏览器实点或生产值。
 
 本轮未做全页重新点击、没有生产查询/写入、没有修业务或UI。建议下一步如需补验，限钱相关输入辨识、未保存离开、失败重试/重复提交和跨页去向，先报证据后定最小修正；不重新设计全部页面。已定延期项和付款开关不改均保留。
+
+## 2026-09-21｜D-327发布在迁移前中止，旧版已恢复
+
+用户明确两项UI不用改并“同意 推进吧”，按既定范围执行。前置现场⑤b/054/主服务正常、无在途与活动资金、迁移账号无SUPER。推送origin/main成功，候选66bfe98单提交prepare、1249项manifest通过，06:49:57 UTC备份验证通过。06:51:57维护快照落服务器root-only目录，06:52:41正式setOrderAcceptance关接单并审计；9timers stop不disable，oneshot自然结束，重查7类活动计数均0后停web/worker/bark；06:55:18维护点备份验证通过。
+
+发现日对账service在04:02:17已失败，journal只有ER_DATA_TOO_LONG；只读核对生产app_settings.setting_value=VARCHAR(255)，候选persist:false生成报告31348字符、30卡/6差异。writeLastReport保存完整JSON，容量不匹配；这是既有未覆盖写路径缺陷，不能用只读成功证明定时保存成功。未擅加迁移，**055～057/临时SUPER/切版本/新ops安装均未执行**。受控grant/revoke包装脚本仅准备、未运行。
+
+依迁移前失败收敛恢复原服务/9timer与接单，06:59:38正式服务写恢复审计；07:00新SSH/新DB独立核实release仍⑤b，web204712/worker204713/bark204714 active且cwd正确、ready200、9timer active/enabled、accepttrue，原付款/派单等设置未变，schema054、migrator Super_priv=N/仅库级ALL。无在途/账号槽/活动未知资金，CDK状态计数未变。日对账旧故障仍待修。没有真实资金测试、清旧码/case、本机池重启或新恢复容器。
+
+报告reviews/2026-09-21-step6-release，服务器/opt/pojia/maintenance/20260921-step6-66bfe98留snapshot.json、phase.json(restored-before-migration)、pojia-ops.before；准备release/bundle与加密备份保留。CURRENT_STATE同步服务新PID、恢复接单和日对账真实失败；下一步请求容量最小修复及新增迁移授权，不能继续旧候选switch。该轮发布目标未完成，不称“发布成功”。

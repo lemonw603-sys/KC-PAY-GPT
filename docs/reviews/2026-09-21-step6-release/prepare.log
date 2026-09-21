@@ -1,0 +1,21 @@
+== build bundle from 66bfe98fdd35c84e4d60e081febcef31b6d6ff35 ==
+release_manifest=OK tracked_files=1249
+release_commit=66bfe98fdd35c84e4d60e081febcef31b6d6ff35
+release_bundle=/Users/lemon/code/AI充值业务/artifacts/release-candidate-20260921-step6-66bfe98
+release_manifest=/Users/lemon/code/AI充值业务/artifacts/release-candidate-20260921-step6-66bfe98/source-manifest.sha256
+== upload bundle ==
+== archive hash ==
+source.tar.gz: OK
+== database backup ==
+/var/backups/pojia/pojia-20260921T064957Z.sql.gz.enc: OK
+backup_integrity=OK
+backup_file=/var/backups/pojia/pojia-20260921T064957Z.sql.gz.enc
+/var/backups/pojia/pojia-20260921T064957Z.sql.gz.enc: OK
+backup_integrity=OK
+backup_file=/var/backups/pojia/pojia-20260921T064957Z.sql.gz.enc
+== extract ==
+== verify manifest (all tracked files) ==
+release_manifest=OK tracked_files=1249
+== install deps (lockfiles unchanged; same as previous releases) ==
+== ready to switch: /opt/pojia/releases/20260921-step6-66bfe98 ==
+previous=/opt/pojia/releases/20260918-step5b-b0a36d4
