@@ -315,6 +315,17 @@ export function todayCst8WindowSql(column = 'created_at') {
       AND ${column} < TIMESTAMP(DATE(CONVERT_TZ(UTC_TIMESTAMP(), '+00:00', '+08:00'))) + INTERVAL 16 HOUR`;
 }
 
+/**
+ * 截至今天的最近 N 个 UTC+8 自然日（含今天）。与 todayCst8WindowSql 共用同一日界。
+ * days 是源码内部常量，仍做整数与上界校验，防止 SQL 片段被污染或误传大范围。
+ */
+export function recentCst8CalendarDaysWindowSql(column = 'created_at', days = 7) {
+  if (!/^[A-Za-z_][A-Za-z0-9_.]*$/.test(column)) throw new TypeError('Invalid column');
+  if (!Number.isInteger(days) || days < 1 || days > 366) throw new TypeError('Invalid day count');
+  return `${column} >= TIMESTAMP(DATE(CONVERT_TZ(UTC_TIMESTAMP(), '+00:00', '+08:00'))) - INTERVAL ${days - 1} DAY - INTERVAL 8 HOUR
+      AND ${column} < TIMESTAMP(DATE(CONVERT_TZ(UTC_TIMESTAMP(), '+00:00', '+08:00'))) + INTERVAL 16 HOUR`;
+}
+
 /** 已开/在途张数：PENDING/RUNNING 按请求数占位，其余按实开数。与日限对比用。 */
 export const REPLENISHMENT_OPENED_COUNT_SQL =
   `COALESCE(SUM(CASE WHEN status IN ('PENDING','RUNNING') THEN requested_count ELSE opened_count END), 0)`;

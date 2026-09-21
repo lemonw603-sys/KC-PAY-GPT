@@ -51,7 +51,8 @@ const LEDGER_STATUS_LABELS = Object.freeze({
   RESERVED: '已占用', CONSUMED: '已消费', RECONCILIATION: '对账中', RELEASED: '已释放'
 });
 const ORDER_FILTER_TITLES = Object.freeze({
-  REVIEW_REQUIRED: '需要处理的订单', ACTIVE: '进行中的订单', FINISHED: '已完成的订单', TODAY: '今日订单',
+  REVIEW_REQUIRED: '需要处理的订单', ACTIVE: '进行中的订单', FINISHED: '已完成的订单',
+  RECENT_FINISHED: '近7天统计样本', TODAY: '今日订单',
   PROCESSING: '自动处理中的订单', WAITING_FOR_SESSION: '等 Session 的订单'
 });
 const REFUND_LABELS = Object.freeze({ MONITORING: '观察中', DETECTED: '疑似退款', CONFIRMED: '已确认退款', WITHDRAWN: '已提取' });
@@ -337,7 +338,8 @@ function renderWbWall(overview) {
   const pending = (lb) => ({ lb, v: '待接入', sub: '', pending: true });
   const cells = [
     { lb: '今日单数', v: m.todayOrders ?? 0, sub: `处理中 ${m.processingOrders ?? 0}`, filter: 'TODAY' },
-    { lb: '成功率', v: m.successRate == null ? '—' : `${m.successRate}%`, sub: `完成 ${m.completedOrders ?? 0} 单`, filter: 'FINISHED' },
+    { lb: '近7天成功率', v: m.recentSuccessRate == null ? '—' : `${m.recentSuccessRate}%`,
+      sub: `成功 ${m.recentSuccessfulOrders ?? 0} / 样本 ${m.recentFinishedOrders ?? 0}`, filter: 'RECENT_FINISHED' },
     pending('自动完成率'),
     (() => {
       // D-294（Lemon 当日修订口径）：给客户充值消费掉的钱 ＋ 开卡手续费。
@@ -2664,7 +2666,14 @@ async function refreshDiagnostics({ daily = false } = {}) {
 }
 document.querySelector('#diagnostics-refresh').addEventListener('click', () => refreshDiagnostics({ daily: true }));
 
-async function switchView(view, { status = '' } = {}) {
+async function switchView(view, { status = '', resetOrderFilters = false } = {}) {
+  if (view === 'orders' && resetOrderFilters) {
+    state.query = '';
+    state.from = '';
+    state.to = '';
+    state.timeField = 'CREATED';
+    if (elements.search) elements.search.value = '';
+  }
   setActiveNav(view);
   state.view = view;
   state.status = status;
@@ -3269,7 +3278,11 @@ document.addEventListener('click', (event) => {
   if (closeWbAlert) { closeWbAlert.disabled = true; api(`/api/v1/admin/alerts/${encodeURIComponent(closeWbAlert.dataset.closeWbAlert)}/close`, { method: 'POST' }).then(() => loadOverview()).catch(() => { showNotice('提醒关闭失败，请重试。'); closeWbAlert.disabled = false; }); return; }
   if (resolveCase) { resolveReconciliationCase(resolveCase.dataset.resolveWbCase, { after: loadOverview }).catch(() => showNotice('案例解决失败，请重试。')); return; }
   if (openCaseOrder) { openOrder(openCaseOrder.dataset.openCaseOrderWb); return; }
-  if (filterButton) switchView('orders', { status: filterButton.dataset.orderFilter });
+  if (filterButton) switchView('orders', {
+    status: filterButton.dataset.orderFilter,
+    // 数字墙的数字是完整样本；旧搜索词/日期不应暗中把点进去的清单再缩小一次。
+    resetOrderFilters: true
+  });
   else if (viewButton) switchView(viewButton.dataset.targetView);
   else if (jumpButton) switchView(jumpButton.dataset.viewJump).catch(() => showNotice('数据读取失败，请稍后重试。'));
 });

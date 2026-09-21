@@ -28,7 +28,7 @@ app.post('/demo/scenario',(req,res)=>{
   mode=req.body.mode;method='API';source='backup';saved=false;updatedAt=now();res.json({ok:true});
 });
 app.get('/api/v1/admin/session',(_req,res)=>res.json({authenticated:true}));
-app.get('/api/v1/admin/overview',(_req,res)=>res.json({metrics:{todayOrders:0,completedOrders:0},
+app.get('/api/v1/admin/overview',(_req,res)=>res.json({metrics:{todayOrders:0,recentSuccessfulOrders:1,recentFinishedOrders:2,recentSuccessRate:50},
   decisions:{acceptNewOrders:true,dispatchNewRecharges:true,browserPaymentWritesEnabled:false},
   providerHealth:{rechargeMethod:method,accountBalance:'38.73',currency:'USD'},cardStockByProvider:rigs()}));
 app.get('/api/v1/admin/card-sources',(_req,res)=>res.json({browserProviderAccountId:source,browserSelectionVersion:1,

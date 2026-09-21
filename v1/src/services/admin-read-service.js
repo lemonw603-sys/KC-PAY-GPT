@@ -9,7 +9,7 @@ import { redactSensitiveText } from '../security/redaction.js';
 import { deriveOrderStage } from './order-stage.js';
 import { unknownSubmissionEligibility } from './unknown-submission-resolve-service.js';
 import { eligibleInventoryCardSql,
-  fundableInventoryCardSql, providerCardStockSql, todayCst8WindowSql,
+  fundableInventoryCardSql, providerCardStockSql, recentCst8CalendarDaysWindowSql, todayCst8WindowSql,
   REPLENISHMENT_OPENED_COUNT_SQL } from './card-inventory-eligibility.js';
 
 const ORDER_STATUSES = new Set([
@@ -46,10 +46,27 @@ const FAILED_AFTER_PAYMENT_SQL = `(o.status = 'RECHARGE_FAILED' AND (EXISTS (
 const PROCESSING_STATUSES = ['CREATED', 'WAITING_FOR_CARD', 'CARD_PURCHASING', 'CARD_PROVISIONING', 'SUBMITTING',
   'RECHARGE_PROCESSING', 'CANCELLATION_PENDING'];
 const FINISHED_STATUSES = ['RECHARGE_SUCCESS', 'RECHARGE_FAILED', 'CLOSED'];
+const RECENT_FINISHED_FILTER = 'RECENT_FINISHED';
 const VIRTUAL_FILTERS = new Set([
   'TODAY', 'PROCESSING', 'AWAITING_CONFIRMATION', 'REVIEW_REQUIRED', 'RECONCILIATION_ISSUES',
-  'ACTIVE', 'FINISHED'
+  'ACTIVE', 'FINISHED', RECENT_FINISHED_FILTER
 ]);
+
+// D-339：经营成功率只看北京时间近7个自然日（含当天）内创建且已结束的订单。
+// 只有 closeRehearsalOrder=true 的明确演练记录才排除，不根据错误码、文案或 CLOSED
+// 状态猜测。这一个 predicate 同时供概览聚合与订单列表使用，防止点进去的样本与指标分母漂移。
+const SUCCESSFUL_FINISHED_ORDER_SQL = (alias = 'o') => `(${alias}.status = 'RECHARGE_SUCCESS'
+  OR (${alias}.status = 'CLOSED' AND EXISTS (
+    SELECT 1 FROM order_events success_oe
+    WHERE success_oe.order_id = ${alias}.id AND success_oe.to_status = 'RECHARGE_SUCCESS'
+  )))`;
+const RECENT_FINISHED_SAMPLE_SQL = (alias = 'o') => `(${alias}.status IN ('RECHARGE_SUCCESS','RECHARGE_FAILED','CLOSED')
+  AND ${recentCst8CalendarDaysWindowSql(`${alias}.created_at`, 7)}
+  AND NOT EXISTS (
+    SELECT 1 FROM order_events rehearsal_oe
+    WHERE rehearsal_oe.order_id = ${alias}.id
+      AND JSON_UNQUOTE(JSON_EXTRACT(rehearsal_oe.metadata_json, '$.closeRehearsalOrder')) = 'true'
+  ))`;
 // Latest recharge attempt and latest Browser run for one order row (MySQL 8 LATERAL).
 const LATEST_ATTEMPT_LATERAL = `LEFT JOIN LATERAL (
           SELECT lra.status AS attempt_status, lra.funds_risk_state AS attempt_funds_risk_state,
@@ -582,6 +599,8 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
           SELECT 1 FROM order_events oe
           WHERE oe.order_id = o.id AND oe.to_status = 'RECHARGE_SUCCESS'
         ))) AS completed_failed,
+        SUM(${RECENT_FINISHED_SAMPLE_SQL('o')} AND ${SUCCESSFUL_FINISHED_ORDER_SQL('o')}) AS recent_successful,
+        SUM(${RECENT_FINISHED_SAMPLE_SQL('o')}) AS recent_finished,
         SUM(o.status IN ('CREATED','WAITING_FOR_CARD','CARD_PURCHASING','CARD_PROVISIONING','SUBMITTING','RECHARGE_PROCESSING','CANCELLATION_PENDING')) AS processing,
         (SELECT COUNT(*) FROM tasks rt
           WHERE rt.status = 'RUNNING' AND rt.leased_until < UTC_TIMESTAMP(3)) AS expired_task_leases,
@@ -748,6 +767,8 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
     const total = count(orderCounts[0]?.total);
     const successful = count(orderCounts[0]?.successful);
     const completed = successful + count(orderCounts[0]?.completed_failed);
+    const recentSuccessful = count(orderCounts[0]?.recent_successful);
+    const recentFinished = count(orderCounts[0]?.recent_finished);
     const heartbeatRow = settingsRows.find((row) => row.setting_key === 'worker_heartbeat_at');
     const heartbeatAt = Date.parse(heartbeatRow?.setting_value || '');
     const workerHealthy = Number.isFinite(heartbeatAt) && now() - heartbeatAt <= 60_000;
@@ -785,7 +806,12 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
         cancellationPending: count(orderCounts[0]?.cancellation_pending),
         cancellationReview: count(orderCounts[0]?.cancellation_review),
         completedOrders: completed,
-        successRate: completed === 0 ? null : Number(((successful / completed) * 100).toFixed(1))
+        successRate: completed === 0 ? null : Number(((successful / completed) * 100).toFixed(1)),
+        recentSuccessfulOrders: recentSuccessful,
+        recentFinishedOrders: recentFinished,
+        recentSuccessRate: recentFinished === 0
+          ? null
+          : Number(((recentSuccessful / recentFinished) * 100).toFixed(1))
       },
       orderStatuses: statusRows.map((row) => ({ status: row.status, count: count(row.count) })),
       cdkStatuses: cdkRows.map((row) => ({ status: row.status, count: count(row.count) })),
@@ -971,6 +997,8 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
     } else if (status === 'FINISHED') {
       conditions.push(`o.status IN (${FINISHED_STATUSES.map(() => '?').join(', ')})`);
       values.push(...FINISHED_STATUSES);
+    } else if (status === RECENT_FINISHED_FILTER) {
+      conditions.push(RECENT_FINISHED_SAMPLE_SQL('o'));
     } else if (status) {
       conditions.push('o.status = ?');
       values.push(status);

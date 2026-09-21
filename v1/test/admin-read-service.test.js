@@ -21,7 +21,8 @@ function queuedPool(results) {
 
 test('admin overview maps aggregate values without exposing raw records', async () => {
   const pool = queuedPool([
-    [{ total: 10, today: 2, successful: 8, completed_failed: 2, processing: 1,
+    [{ total: 10, today: 2, successful: 8, completed_failed: 2,
+      recent_successful: 1, recent_finished: 2, processing: 1,
       awaiting_confirmation: 1, reviewing: 1, waiting_for_card: 3 }],
     [{ status: 'RECHARGE_SUCCESS', count: 8 }],
     [{ status: 'AVAILABLE', count: 20 }],
@@ -89,6 +90,11 @@ test('admin overview maps aggregate values without exposing raw records', async 
   // （注释里写着「不含 card_recharge」，doesNotMatch(/card_recharge/) 因此误报）
   assert.match(spendSql, /IN \('card_issue_fee', 'chargeback', 'chargeback_fee'\)/);
   assert.equal(result.metrics.successRate, 80);
+  assert.equal(result.metrics.recentSuccessRate, 50);
+  assert.equal(result.metrics.recentSuccessfulOrders, 1);
+  assert.equal(result.metrics.recentFinishedOrders, 2);
+  assert.match(pool.queries[0].sql, /created_at >= TIMESTAMP\(DATE\(CONVERT_TZ\(UTC_TIMESTAMP\(\), '\+00:00', '\+08:00'\)\)\) - INTERVAL 6 DAY - INTERVAL 8 HOUR/);
+  assert.match(pool.queries[0].sql, /closeRehearsalOrder[\s\S]*= 'true'/);
   assert.equal(result.metrics.todayOrders, 2);
   assert.equal(result.metrics.awaitingConfirmationOrders, 1);
   assert.deepEqual(result.orderStatuses, [{ status: 'RECHARGE_SUCCESS', count: 8 }]);
@@ -192,7 +198,7 @@ test('admin order list validates filters, maps card summaries, and supports CDK 
   );
 });
 
-test('admin order list supports the 进行中 / 已完成 virtual filters', async () => {
+test('admin order list supports the 进行中 / 已完成 / 近7天统计样本 virtual filters', async () => {
   const active = queuedPool([[{ total: 0 }], []]);
   await createAdminReadService({ pool: active }).listOrders({ status: 'ACTIVE' });
   assert.match(active.queries[0].sql, /o\.status NOT IN \(\?, \?, \?\)/);
@@ -200,6 +206,12 @@ test('admin order list supports the 进行中 / 已完成 virtual filters', asyn
   const finished = queuedPool([[{ total: 0 }], []]);
   await createAdminReadService({ pool: finished }).listOrders({ status: 'FINISHED' });
   assert.match(finished.queries[0].sql, /o\.status IN \(\?, \?, \?\)/);
+  const recent = queuedPool([[{ total: 0 }], [], []]);
+  await createAdminReadService({ pool: recent }).listOrders({ status: 'RECENT_FINISHED' });
+  assert.match(recent.queries[0].sql, /o\.status IN \('RECHARGE_SUCCESS','RECHARGE_FAILED','CLOSED'\)/);
+  assert.match(recent.queries[0].sql, /o\.created_at >=[\s\S]*INTERVAL 6 DAY - INTERVAL 8 HOUR/);
+  assert.match(recent.queries[0].sql, /closeRehearsalOrder[\s\S]*= 'true'/);
+  assert.deepEqual(recent.queries[0].values, []);
 });
 
 test('admin order detail exposes the full PAN but not CVV or Session', async () => {

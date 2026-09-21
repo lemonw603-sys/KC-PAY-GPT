@@ -115,28 +115,33 @@ try {
   async function capture(name) { const {data}=await cdp.send('Page.captureScreenshot',{format:'png'},sid);await writeFile(new URL(name+'.png',output),Buffer.from(data,'base64')); }
   async function reload(){await ev('await loadOverview();');await wait('document.querySelector("[data-op=pay]")');}
   if(feedbackMode) await section('feedback A wallet and token navigation',async()=>{
+    // Login only proves the shell loaded; wait for the initial overview promise to finish so it cannot
+    // race with the synthetic render below and remove its wallet controls halfway through the click.
+    await wait('document.querySelector("#sync-time")?.textContent.includes("更新于")');
     await ev(`window.feedbackOriginalApi=api;window.feedbackOriginalOverview=loadOverview;window.feedbackOriginalStock=loadStock;
       window.feedbackCalls=[];window.feedbackWalletFails=true;
       window.feedbackRigs=[{accountCode:'fixture-highvcc',providerKind:'highvcc',label:'隔离卡台',walletLiveOnly:true}];
       loadOverview=async()=>{renderWbCards({cardStockByProvider:[{providerKind:'highvcc',label:'隔离卡台',products:[]}]});
         renderWbQueue({},null,{alerts:[{type:'PROVIDER_TOKEN_EXPIRED',message:'隔离过期样本',createdAt:new Date().toISOString()}]},null);};
       loadStock=async()=>{renderCardRigs(window.feedbackRigs,{});throw Error('isolated stock read failure');};
-      api=async(path,options)=>{window.feedbackCalls.push({path,method:options?.method||'GET'});
+      api=async(path,options)=>{window.feedbackCalls.push({path,method:options?.method||'GET',body:options?.body||null});
         if(path==='/api/v1/admin/backup-cards/highvcc/wallet'){
           if(window.feedbackWalletFails)throw Error('highvcc_token_expired');
           return {usdBalance:'38.73',usdDeposit:'0',usdConsume:'1'};
-        }return window.feedbackOriginalApi(path,options);};
+        }
+        if(path==='/api/v1/admin/orders/search')return {total:0,orders:[],cdkMatches:[]};
+        return window.feedbackOriginalApi(path,options);};
       renderWbCards({cardStockByProvider:[{providerKind:'highvcc',label:'隔离卡台',products:[]}]});`);
     try {
       await click('[data-highvcc-refresh]');
-      await wait('document.querySelector("[data-highvcc-wallet-summary]").textContent.includes("查询失败")');
+      await wait('document.querySelector("[data-highvcc-wallet-summary]")?.textContent.includes("查询失败")');
       assert.equal(await ev('return state.view'),'overview');
       await ev('window.feedbackWalletFails=false');
       await click('[data-highvcc-refresh]');
-      await wait('document.querySelector("[data-highvcc-wallet-summary]").textContent.includes("38.73")');
+      await wait('document.querySelector("[data-highvcc-wallet-summary]")?.textContent.includes("38.73")');
       await ev('await loadOverview();window.feedbackWalletFails=true');
       await click('[data-highvcc-refresh]');
-      await wait('document.querySelector("[data-highvcc-wallet-summary]").textContent.includes("上次查询")');
+      await wait('document.querySelector("[data-highvcc-wallet-summary]")?.textContent.includes("上次查询")');
       assert.match(await ev('return document.querySelector("[data-highvcc-wallet-summary]").textContent'),/38.73/);
       await capture('workbench-wallet-stale');
       await click('#wb-cards [data-highvcc-target="token"]');
@@ -166,6 +171,13 @@ try {
       assert.equal(await ev(`return window.feedbackCalls.filter(r=>r.path.endsWith('/wallet')).length`),countBefore+1);
       await click('[data-rig-wallet]');
       await wait(`window.feedbackCalls.filter(r=>r.path.endsWith('/wallet')).length===${countBefore+2}`);
+      await ev(`await switchView('overview');renderWbWall({metrics:{todayOrders:0,recentSuccessfulOrders:1,recentFinishedOrders:2,recentSuccessRate:50},cardStockByProvider:[]});
+        state.query='stale@example.test';state.from='2026-01-01';state.to='2026-01-31';state.timeField='UPDATED';elements.search.value=state.query;`);
+      await click('[data-order-filter="RECENT_FINISHED"]');
+      await wait(`state.view==='orders'&&state.status==='RECENT_FINISHED'`);
+      const recentRequest=await ev(`const r=[...window.feedbackCalls].reverse().find(x=>x.path==='/api/v1/admin/orders/search');return {state:{query:state.query,from:state.from,to:state.to,timeField:state.timeField},body:JSON.parse(r.body)};`);
+      assert.deepEqual(recentRequest,{state:{query:'',from:'',to:'',timeField:'CREATED'},body:{page:1,pageSize:20,status:'RECENT_FINISHED',timeField:'CREATED'}});
+      mark('real DOM click: recent success metric opens the exact cohort and clears stale order filters',recentRequest);
       for(const [width,height] of [[1440,1000],[390,844]]) {
         await cdp.send('Emulation.setDeviceMetricsOverride',{width,height,deviceScaleFactor:1,mobile:false},sid);
         await ev(`await openHighvccTarget('token')`);
@@ -175,7 +187,7 @@ try {
       }
       await cdp.send('Emulation.setDeviceMetricsOverride',{width:1440,height:1000,deviceScaleFactor:1,mobile:false},sid);
       const requests=await ev('return window.feedbackCalls');
-      assert.equal(requests.filter(r=>r.method!=='GET').length,0);
+      assert.equal(requests.filter(r=>r.method!=='GET'&&r.path!=='/api/v1/admin/orders/search').length,0);
       mark('real DOM clicks: wallet/token deep links, failure/retry, rig repeat query/redraw, desktop/mobile, no write requests',{requests,syntheticWallet:true,stockReadFailureFallback:true});
     } finally {await ev('api=window.feedbackOriginalApi;loadOverview=window.feedbackOriginalOverview;loadStock=window.feedbackOriginalStock;await switchView("overview");');}
   });

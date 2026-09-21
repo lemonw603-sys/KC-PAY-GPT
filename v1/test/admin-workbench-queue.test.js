@@ -151,14 +151,16 @@ test('F-63 上游对照：接口都正常且确实没有待办时，才显示「
 test('D-285 数字墙：五格按原型，后端没有的三项必须标「待接入」而不是拿别的指标顶替', () => {
   const { sandbox, html } = loadAdminJs();
   sandbox.renderWbWall({
-    metrics: { todayOrders: 12, processingOrders: 1, successRate: 92, completedOrders: 12 },
+    metrics: { todayOrders: 12, processingOrders: 1, recentSuccessRate: 92,
+      recentSuccessfulOrders: 11, recentFinishedOrders: 12 },
     cardStockByProvider: [{ stockAvailable: 2, bindableNow: 2 }],
     operationalBacklog: { reconciliationCasesOpen: 5 },
     openAlertCount: 48,
   });
   const out = html('wb-wall');
   assert.ok(out.includes('今日单数') && out.includes('12'), '今日单数接真实值');
-  assert.ok(out.includes('成功率') && out.includes('92%'), '成功率接真实值');
+  assert.ok(out.includes('近7天成功率') && out.includes('92%'), '近7天成功率接真实值');
+  assert.ok(out.includes('成功 11 / 样本 12'), '成功数和已结束样本数同时显示');
   assert.ok(out.includes('自动完成率') && out.includes('今日花费') && out.includes('异常支出'),
     '五格必须是原型那五格');
   assert.equal((out.match(/待接入/g) || []).length, 3, '后端没有的三项都要标「待接入」');
@@ -301,17 +303,18 @@ test('数字墙只有真有去处的格子才是按钮 —— 没去处的不许
   // 2026-09-20 实测发现：五格全渲染成 <button>，于是「成功率」「今日花费」光标是手型、
   // hover 还变色，点下去却什么都不发生（浏览器实点验证：视图不变）。
   // CSS 早就分好了（.wb-kpi 基础 cursor:default，只有 button.wb-kpi 才 pointer + hover），
-  // 是渲染时没分。Lemon 定：今日花费改成不可点，成功率跳订单页看已完成。
+  // 是渲染时没分。Lemon 定：今日花费改成不可点；D-339 后成功率跳同口径近7天样本。
   const { sandbox, html } = loadAdminJs();
   sandbox.renderWbWall({
-    metrics: { todayOrders: 12, processingOrders: 1, successRate: 92, completedOrders: 12 },
+    metrics: { todayOrders: 12, processingOrders: 1, recentSuccessRate: 92,
+      recentSuccessfulOrders: 11, recentFinishedOrders: 12 },
     cardStockByProvider: [{ label: 'HNSKJ', spentToday: '16.000000', spentCurrency: 'USD' }],
     operationalBacklog: {}, openAlertCount: 0
   });
   const out = html('wb-wall');
 
-  // 成功率：可点，去订单页的「已完成」
-  assert.match(out, /<button[^>]*data-order-filter="FINISHED"[^>]*>\s*<span class="wb-lb">成功率/);
+  // 近7天成功率：可点，去与统计完全同口径的样本清单
+  assert.match(out, /<button[^>]*data-order-filter="RECENT_FINISHED"[^>]*>\s*<span class="wb-lb">近7天成功率/);
   // 今日单数：可点，去今日
   assert.match(out, /<button[^>]*data-order-filter="TODAY"/);
   // 今日花费：**不是 button** —— 它的按台明细就在下面「卡还够不够」那块，不必跳转
@@ -323,6 +326,35 @@ test('数字墙只有真有去处的格子才是按钮 —— 没去处的不许
     const isPending = /is-pending/.test(extraCls) && /disabled/.test(attrs);
     assert.ok(hasJump || isPending, `数字墙有个 button 既没去处也不是 disabled：${m[0]}`);
   }
+});
+
+test('D-339 近7天零样本显示破折号，不显示 0%', () => {
+  const { sandbox, html } = loadAdminJs();
+  sandbox.renderWbWall({
+    metrics: { todayOrders: 0, recentSuccessRate: null,
+      recentSuccessfulOrders: 0, recentFinishedOrders: 0 },
+    cardStockByProvider: [], operationalBacklog: {}, openAlertCount: 0
+  });
+  const recent = html('wb-wall').match(/<button[^>]*data-order-filter="RECENT_FINISHED"[\s\S]*?<\/button>/)?.[0] || '';
+  assert.match(recent, /<span class="wb-v">—<\/span>/);
+  assert.doesNotMatch(recent, />0%<\/span>/);
+  assert.match(recent, /成功 0 \/ 样本 0/);
+});
+
+test('D-339 数字墙跳统计样本时清掉旧搜索和日期，请求不会暗中二次缩小分母', async () => {
+  const { sandbox, evalIn } = loadAdminJs();
+  let requestBody = null;
+  sandbox.fetch = (_url, options = {}) => {
+    requestBody = JSON.parse(options.body || '{}');
+    return Promise.resolve(stubResponse(200, { total: 0, orders: [], cdkMatches: [] }));
+  };
+  evalIn("state.query='old@example.com'; state.from='2026-01-01'; state.to='2026-01-31'; state.timeField='UPDATED'; elements.search.value='old@example.com'");
+  await sandbox.switchView('orders', { status: 'RECENT_FINISHED', resetOrderFilters: true });
+  assert.deepEqual(JSON.parse(JSON.stringify(requestBody)), {
+    page: 1, pageSize: 20, status: 'RECENT_FINISHED', timeField: 'CREATED'
+  });
+  assert.equal(evalIn('state.query'), '');
+  assert.equal(evalIn('elements.search.value'), '');
 });
 
 test('待复核续费进工作台队列，且读的是 metrics 不是 backlog（D-309）', () => {
