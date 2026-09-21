@@ -1,0 +1,45 @@
+✔ starting intake does not enable automatic recharge dispatch (2.087792ms)
+✔ automatic recharge dispatch has its own exact confirmation and switch (2.852084ms)
+✔ stopping intake leaves existing-order processing unchanged (0.228959ms)
+✔ order acceptance requires an exact confirmation (0.171041ms)
+✔ intake and dispatch switches write one admin_setting_events row per real change, none when unchanged (0.205875ms)
+✔ beginRun binds an existing Browser funds attempt without creating a provider call (4.350291ms)
+✔ payment submission commits permit consumption, checkpoint and funds intent atomically (7.185ms)
+✔ replayed payment operation never authorizes a second external action (0.19175ms)
+✔ payment writes fail closed and roll back while the Browser production switch is disabled (0.512708ms)
+✔ payment permit derives its snapshot from locked card and route facts (0.3315ms)
+✔ payment permit accepts a reused card bound through orders.assigned_card_id (0.237ms)
+✔ payment permit rejects missing card consumption reservation (0.177208ms)
+✔ payment permit rejects executor profile drift (0.12475ms)
+✔ payment permit rejects insufficient balance (0.113833ms)
+✔ payment permit rejects inactive card (0.143958ms)
+✔ payment permit rejects missing card credentials (0.098708ms)
+✔ payment permit rejects stale card sync (0.098666ms)
+✔ payment permit rejects stale transaction evidence (0.094917ms)
+✔ payment permit rejects frozen source mismatch (0.077333ms)
+✔ payment submission rejects an authoritative snapshot changed after permit issuance (0.282ms)
+✔ Session failure before payment atomically closes Browser state and opens replacement (1.408ms)
+✔ pre-payment abort refuses any committed payment-submit evidence (0.150875ms)
+✔ unknown Browser payment locks run, attempt and order into reconciliation in one transaction (0.660792ms)
+✔ recovery state becomes reconcile-only after a committed payment submit intent (0.109167ms)
+✔ confirmed payment schedules bounded post-payment recovery for only the approved order (0.290583ms)
+✔ post-payment lifecycle requires activation and cancellation before final success (0.633125ms)
+✔ CHARGED: attempt settles, ledger consumed, card depleted, order delivered with cancellation unknown → retirement list + reminder (2.762083ms)
+✔ NOT_CHARGED: funds fence cleared, ledger released, authorization released, order failed — never re-submitted automatically (0.243583ms)
+✔ refuses Browser-route orders, wrong states and a mismatched confirmation word (0.41575ms)
+✔ 资格规则：只有 API 路线 + 两种订单状态 + 存在未知资金的 attempt，三者齐了才合格 (0.11375ms)
+✔ 资格规则与收口服务不会各说各话：规则说不合格时，服务必抛同一个 code (1.114583ms)
+✔ runtime settings and process gates jointly control task eligibility (1.178416ms)
+✔ one worker iteration passes only eligible task types to the runner (0.193833ms)
+✔ worker passes only executable recharge kinds to task claiming (0.15925ms)
+✔ worker loop runs at most the configured number of iterations concurrently (5.807333ms)
+✔ one failed concurrent iteration is reported without cancelling siblings (0.383ms)
+✔ worker loop emits a bounded heartbeat without blocking task iterations (0.285083ms)
+ℹ tests 37
+ℹ suites 0
+ℹ pass 37
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 122.447542

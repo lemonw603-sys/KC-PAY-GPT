@@ -3160,3 +3160,11 @@ Session事务在资金检查后锁任务：有效租约/重复分卡任务拒绝
 三个待讨论的重点验收：①admin.js:581“付款”绑定browserPaymentWritesEnabled，admin-operations-service.js:130只写Browser门；worker-runtime.js:15的API提交由dispatch与API权限控制，不能把付款按钮当全局停付。②资金不明后台已有保护/定向MySQL证据，但工作台入口至订单、CDK、卡、资金台账/告警收口仍需隔离完整验收。③pojia-ops.sh:123恢复测试只断言表数>0，不证明恢复后应用密钥解密/057触发器DEFINER/业务可用；离机密钥备份策略未核实。未实际执行这些新验收，不将缺证据说成已知失败。
 
 03:27 UTC生产只读release仍⑤b、web/worker/bark active、ready200；highvcc同步failed且近期HIGHVCC_TOKEN_EXPIRED，OPEN过期告警1条、SENT记录时间09-19 01:53:25.335；修正CURRENT_STATE旧行。API Plus开、Browser Plus/Pro关闭。终态订单非空Session密文计数CLOSED21/FAILED37/SUCCESS20，保留策略待核实，不代表token仍有效。本轮state-check通过其11项核对，但不代表全链路通过。没有生产写操作、没有新worker、没有业务代码改动，演示8804保留。
+
+## 2026-09-21｜D-322三项隔离验收
+
+用户同意补验，不授权发布或改规则。新增scripts/step6-safety-acceptance.mjs，仅本机随机库+合成数据+真实Chrome/正式服务，未注册provider、未启动worker。付款off后Browser新permit和提交intent拒绝，API调度仍允许；派单off后不调新提交、保留轮询/卡同步。API/Browser各已扣/未扣四条从工作台入口走通；真实产生case与告警，收口后消失；数据库核对资金、消费账本、卡分配、CDK。正式资格SQL证明未知时卡不可复用、未扣后可复用；实际客户重提成功且幂等，不自动重付。API未扣CDK在重提时正式退回再绑定，不要求收口瞬间AVAILABLE。
+
+最终03:56:47～03:57:13 UTC完整重跑12项通过；既有未知付款MySQL12/12，定向单测37/37。合成备份全新network=none容器恢复63表，解密/getOverview成功；缺DEFINER时报1449，即使表数检查通过；补同名账号与库级权限后轮次1→2。该负例是新确认的恢复流程缺口，未修复生产/运维脚本。建议只补付款范围文字和恢复身份/功能验收，待用户确认。
+
+证据docs/reviews/2026-09-21-step6-safety/。专用库/账号独立计数0/0，临时容器/Chrome/服务器关闭，无新worker；8804/原常驻进程保留。state-check11项一致，运行代码相对候选2d41192无差异。未推送/部署/生产授权/资金操作；生产异地备份与密钥保管未验。按交付核对技能明确：三项补验已做、两个收口项尚未实施，不能报整个项目无问题。

@@ -1,0 +1,20 @@
+✔ CHARGED + renewal already cancelled closes straight to RECHARGE_SUCCESS (174.2215ms)
+✔ CHARGED without a renewal check delivers as RECHARGE_SUCCESS with the review flag (D-248: cancellation unconfirmed never blocks delivery) (83.734916ms)
+✔ NOT_CHARGED closes the order, releases the card, and returns the CDK when no payment evidence exists (106.227667ms)
+✔ NOT_CHARGED is refused once the payment is already confirmed — cannot contradict a settled charge (70.764041ms)
+✔ refuses a run that is not actually stuck awaiting verification (58.830458ms)
+✔ CHARGED on a Pro order records the Plus stage and hands off for 20X instead of closing the order (87.238291ms)
+✔ CHARGED on a Pro order stuck as SUBMIT_UNKNOWN moves the order back to RECHARGE_PROCESSING (80.867292ms)
+✔ a string renewalCancelled is refused and leaves every row untouched (63.335166ms)
+✔ F-48: the real shape — a submit click happened — still hands the CDK back on NOT_CHARGED (81.973333ms)
+✔ F-48: the not-charged close-out clears the funds fence before handing the CDK back (72.117541ms)
+✔ delivered Plus cleanup can be resolved internally without revoking delivery or recharging (97.384083ms)
+✔ B1 真实产生路径：系统自己产生的 case 与告警，收口后都被关掉（交叉验证 dedupe_key） (102.131875ms)
+ℹ tests 12
+ℹ suites 0
+ℹ pass 12
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1222.224417
