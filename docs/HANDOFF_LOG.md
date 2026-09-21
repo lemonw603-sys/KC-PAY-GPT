@@ -3292,3 +3292,9 @@ Demo是用户试用产物，服务及标签保留，默认恢复token失效工�
 用户明确撤回卡台未保存提醒，第4点仅指Demo测试场景，其他建议同意。工作台原位钱包查询/显示最近成功金额USD和时点，失败留旧值并标失败，无记录不装数字；token仍走现有登录入口。删除未保存guard/data-saved-value和方式window.confirm，保留后端confirmation/校验和收费动作confirm。page-notice从右下11px改顶部居中14px醒目条，不改结果语义；Demo故障工具折叠默认正常。未动后端/支付实现/生产，无部署。
 
 默认1062/993 pass/0 fail/69 skipped，专项56通过；25项隔离11:52:23 UTC结束、库/账号剩0；CSS/文案/diff通过，颜色基线降低137→133。Demo实点原位41.49USD，未保存选择后切Browser无guard无dialog且未暗改已存卡源；截图确认顶部提示。state-check现场一致。8805作为用户演示继续保留，其他服务不动。自动续期未实现、字段准确性与A整体验收仍待做，证据reviews/2026-09-21-feedback-a/third-batch.md。
+
+## 2026-09-21｜D-333交互获认可，公开续期代码与两页数据核查
+
+用户确认新版Demo继续推进，本轮只读、不改UI不发布。无cookie/Authorization获取highvcc主页列出的13个非vendor业务JS，主脚本有changeRefreshToken定义1次但其他业务chunk无引用，无具体refresh路径；登录chunk只将accessToken/expireTime传给setToken，没有传refresh_token。网页有两小时不活动判断、响应更新时间，但不能推服务端TTL或定时保活有效。未登录/验证码/续期/资金请求，动态验证仍缺用户正常登录的字段元数据。
+
+12:05:28 UTC生产release原服务通过只允许SELECT/WITH的pool做25次读：工作台/卡片库存均每台2，HNSKJ钱包38.73及12:03:02同步时点一致；highvcc实时钱包未验证。12:06查询费用三类10行occurred_at全部NULL，今日聚合按首次入库有跨日限制，不清历史、不擅改口径。12:04读取token设置更新时间未取值、最近钱包和告警/timer状态；指定历史journal无匹配输出不编日志。报告auth-and-data-audit.md含范围、SHA256及原始输出。下一步需要正常登录观察样本，不把通用函数当已可用续期接口。
