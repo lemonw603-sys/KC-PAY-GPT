@@ -3144,3 +3144,11 @@ Session事务在资金检查后锁任务：有效租约/重复分卡任务拒绝
 修后实际MySQL演练status=recovery checks passed：28迁移场景（正常/重复、权限零写拒绝、7原断点+15细断点、错列/索引/触发器、并发迁移锁）与6类恢复（无任务/完成任务/过期租约实际分卡成功并可领取准备任务；有效租约/UNKNOWN拒绝不变；已绑卡正常）。分卡前故意直调PREPARE仍ORDER_STATE_MISMATCH，证明守卫保留，真正放行看afterAssignment。证据fixed-evidence.json保留，旧失败证据不覆盖。
 
 默认1027/958 pass/0 fail/69 skipped，定向19/19；语法与diff检查通过。单测夹具补上新增SELECT任务返回值，不用错误结果形状驱动业务降级。29个专用库与临时账户清理，独立查询0/0，log_bin1/trust_creators0不变。8804用户演示仍运行，未连接生产/迁移/推送/重启。HANDOFF_NOW压缩为当前快照，下一步生产受控DDL方式和发布确认，057权限未被本轮自动解决。
+
+## 2026-09-21｜第⑥步DDL身份与发布窗口方案
+
+用户同意继续确定执行方式/窗口。本轮生产只读重查：03:07 UTC仍⑤b/迁移054，三服务active同PID，ready200，无在途单/Browser账号槽/活动资金任务；stock timer在跑、接单/派单/Browser付款/自动供卡原值true。迁移真实身份pojia_migrator@172.17.0.1，无global SUPER；容器内root@localhost可用，凭据文件600 root。没有生产写操作。
+
+在本机新建一次性账号/库，真实模拟库级ALL→临时SUPER→正式055～057迁移→撤SUPER→告警重开incident_version=2→同低权限重复迁移already applied。DEFINER为迁移账号，global trust保持0。临时本机库/账号清理，没有把权限改动带到生产。
+
+形成tasks/2026-09-21-step6-release-plan.md：固定2d41192候选，完整列推送/prepare/维护（暂停9个项目timer并等在途服务自然结束）/维护点备份/临时授权迁移和必撤权/switch三服务/独立核验/按原状态恢复；无旧码作废或资金测试，不重启本机Browser池。回退失败先保持维护，不自动删结构倒库。方案待用户明确执行确认，本轮不推送、不prepare、不迁移、不停服务、不改开关；8804未动。
