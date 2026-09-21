@@ -3314,3 +3314,11 @@ tab7只读计算不可用于登录的SHA256指纹与storedExpiry，落login-obse
 ## 2026-09-21｜复测延长到约3小时
 
 用户提出延长到3小时。20:26 UTC+8更新同一应用任务highvcc为“三小时只读复测”、23:20北京时间，COUNT=1/ACTIVE；原22:20不再执行，没有新增第二个任务或中途保活。工具更新成功后独立读取配置确认时分和状态。相对20:13:30登录约3小时6分，留出两小时边界之外的余量，不代表一次复测能证明长期有效。其余安全范围、指纹及通知/停止条件不变。
+
+## 2026-09-21｜D-334：B批历史分类只读预览
+
+用户同意等待A复测时并行B只读分类。audit/detail SQL产出78单与123 OPEN告警，未读凭据/个人资料。两条OPEN Browser未知案例已有09-11/12正式MANUAL_VERIFICATION_NOT_CHARGED审计，关联资金CLEARED、账本无占用、CDK AVAILABLE；10条旧UNKNOWN提醒对应4人工未扣款收口/6成功且已取消续费。建议后续受控只关2case＋10alert，未实现或执行；不放开通用409，不重复判款。
+
+保留核实：1013/4643两条RECONCILIATION（各16）虽卡退役、attempt cleared不能释放；7单人工交付续费待核，其中Dqcnq缺CONSUMED；17个旧非成功单CDK仍回指已兑，剔除1明确演练死码后16需分清测试/权益，不能全退。4条closeRehearsalOrder=true演练可单独筛选，不以CANCELLED_PRE_SUBMISSION17条直接判测试。四项结构完整性异常0，不等于全链路无风险。默认成功率20/78=25.6%；今天0样本，近7天5单中3明确演练，排除后仅2，口径待裁定。
+
+12:40:18 UTC独立查询仍78/2OPEN case/123OPEN alert，release9b9f181与三服务active。首次rc.created_at误字段1054，detail分组1055后修SQL并完整重跑，不用部分结果冒充完成。只新增本地SQL/脱敏TSV/离线分类器/报告，详见reviews/2026-09-21-feedback-b。没有生产/高卡台请求或代码变更，23:20任务不变。
