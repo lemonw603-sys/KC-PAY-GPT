@@ -3180,3 +3180,15 @@ Session事务在资金检查后锁任务：有效租约/重复分卡任务拒绝
 04:20:30～04:21:24 UTC最终14项真实MySQL通过：正式shell正确/错密钥、缺身份/最小授权/重复、0640接受/0644拒绝、CDK错钥、权限不足、缺trigger、未知definer、半迁移、旧备份、缺样本。默认1030/961 pass/0 fail/69 skipped，语法与diff通过。报告reviews/2026-09-21-restore-fix，数据库剩余0、恢复标签容器剩余0、临时秘密/备份清理。演示8804和常驻worker未动。
 
 本轮仅生产只读stat密钥配置权限600 root pojia及state-check核对（11项一致），没有安装/恢复/权限写入/迁移/发布。付款开关不改。真实灾备身份恢复步骤写入PRODUCTION_PREP_RUNBOOK，明确临时ACCOUNT LOCK配置不可照抄锁生产迁移账号；异地副本和独立密钥获取仍未验。统一发布候选需纳入修复并再次固定，不能用旧2d41192宣称包含新检查；运维入口安装属于待确认发布范围。
+
+## 2026-09-21｜发布前诊断页范围讨论（未实施）
+
+用户要求发布前先确定诊断是否重构。代码/规划评估，不做正式视觉评分，不改页面。Impeccable上下文启动器权限拒绝，已告知，改读仓库事实源；根PRODUCT.md/DESIGN.md未找到，沿docs/design/DESIGN_SYSTEM.md和已定D-281/D-283。
+
+依据：D-281诊断高级入口沿旧代码，D-283六导航包含诊断且过渡期旧皮；工作台step6-workbench-compare.html C，诊断没有单独挑定的重构原型。index.html:269起当前内容为心跳/开工检查、CSV、资金case、Browser派工/运行/人工接管、账单地址配置；设置页admin.js:1813仍跳诊断配置地址。
+
+代码确认新遗漏：admin.js:835对所有未RESOLVED case提供“分配/解决”，3218绑定resolveReconciliationCase；后端reconciliation-case-service.js:238通用resolve只写case状态/备注，不拦API_PAYMENT_UNKNOWN/BROWSER_PAYMENT_UNKNOWN，不处理订单/资金/CDK。与工作台admin.js:455付款未知专门“去核实收口”不同。风险是记录已关但业务未收口，不等于直接放开重付。前轮四条UI验收只走工作台主路径，没覆盖该旧入口；此前“F-61整条闭合”的措辞需受此新证据限制。本轮未对生产点击验证。
+
+既有遗漏：PROJECT_MAP欠账11/F-64，“看逐张”跳诊断，但其五个loader没有daily报告；daily-reconciliation-service.js:356已返回discrepancies数组，前端只消费计数。不是新业务需求，不擅自将已延期事项改为发布阻塞。其他整理候选仅供讨论：按运行状态/单号排查/对账明细组织，技术字段和配置/导出低频收起，不新建监控系统、不搬写操作或合并执行逻辑。
+
+生产只读SQL：`SELECT rc.case_type,rc.status AS case_status,o.status AS order_status,COUNT(*) AS n FROM reconciliation_cases rc LEFT JOIN orders o ON o.id=rc.order_id GROUP BY rc.case_type,rc.status,o.status ORDER BY rc.case_type,rc.status,o.status`。原始输出：`BROWSER_PAYMENT_UNKNOWN OPEN CLOSED 2`。不能把2条OPEN历史case当2笔在途未知付款，不据此作废/解决它们。无生产写入、无部署、无新测试进程。建议只先补入口一致性和讨论逐卡明细，不整页推倒重构，等用户裁定。
