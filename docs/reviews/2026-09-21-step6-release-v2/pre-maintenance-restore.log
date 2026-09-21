@@ -1,0 +1,5 @@
+/var/backups/pojia/pojia-20260921T072732Z.sql.gz.enc: OK
+backup_integrity=OK
+backup_file=/var/backups/pojia/pojia-20260921T072732Z.sql.gz.enc
+error=RESTORE_DAILY_SUMMARY_INVALID
+error=restore_functional_check_failed
