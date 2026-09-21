@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'unsafe-inline'; style-src 'self' 'unsafe-inline'; font-src 'self'; connect-src 'none'; form-action 'none'; object-src 'none'; base-uri 'none'">
+<title>诊断 · 可点击布局稿</title>
+<link rel="icon" href="/admin/assets/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/admin/assets/admin.css">
+<link rel="stylesheet" href="/admin/assets/workbench.css">
+<!-- D-325: interactive proposal only. No admin.js, API calls, database or production actions. -->
+<style>
+body{background:var(--wb-bg);color:var(--wb-t)}
+*{box-sizing:border-box} [hidden]{display:none!important}
+button,input,select,textarea{font:inherit;accent-color:var(--wb-a);caret-color:var(--wb-a)}
+button,a,input,select,textarea,summary{outline-offset:4px} :focus-visible{outline:2px solid var(--wb-a)}
+::selection{background:var(--wb-a-soft);color:var(--wb-a-ink)}
+.main-area{padding:26px 28px 42px;max-width:1440px;width:100%;margin-inline:auto}
+.sidebar{backdrop-filter:none}.admin-brand{text-decoration:none}.nav-item[disabled]{opacity:.6;cursor:default}
+.topbar{margin-bottom:16px}.topbar h1{font-size:21px;margin:0}.topbar p{margin:4px 0 0;color:var(--wb-t2);font-size:13px}
+.proto-bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 14px;margin-bottom:16px;background:var(--wb-warn-soft);border:1px solid var(--wb-bd);border-radius:9px;font-size:12.5px;color:var(--wb-t)}
+.proto-bar label{margin-left:auto;display:flex;align-items:center;gap:8px}.proto-bar strong{color:var(--wb-warn)}
+.diag{display:grid;gap:22px}.panel{background:var(--wb-s);border:1px solid var(--wb-bd);border-radius:14px;overflow:hidden}
+.heading{padding:16px 22px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;border-bottom:1px solid var(--wb-bd)}
+.heading h2{margin:0;font-size:16px;font-weight:650}.heading .right{margin-left:auto}.heading small{color:var(--wb-t2);font-size:12px}
+.count{font:12px var(--wb-fm);padding:3px 7px;border-radius:5px;background:var(--wb-s3);color:var(--wb-t2)}
+.btn{min-height:34px;border:1px solid var(--wb-bd);padding:6px 12px;border-radius:9px;background:var(--wb-s);color:var(--wb-t);font-size:13px;font-weight:550;white-space:nowrap}
+.btn:hover{background:var(--wb-s2);border-color:var(--wb-a)}.btn.primary{background:var(--wb-a);color:var(--wb-a-on);border-color:var(--wb-a)}.btn.primary:hover{background:var(--wb-a-ink)}
+.btn.link{background:none;border-color:transparent;color:var(--wb-a-ink);padding-inline:4px;text-decoration:underline;text-underline-offset:3px}
+.btn:disabled{opacity:.5;cursor:not-allowed}.field{min-height:34px;border:1px solid var(--wb-bd);border-radius:9px;background:var(--wb-s);color:var(--wb-t);padding:6px 10px;font-size:13px;max-width:100%}
+.field:focus{border-color:var(--wb-a)}.mono{font-family:var(--wb-fm);font-variant-numeric:tabular-nums;font-size:12px}.muted{color:var(--wb-t2)}
+.status-line{display:flex;align-items:center;gap:22px;padding:16px 22px;flex-wrap:wrap;font-size:13px}.status-line span{display:flex;align-items:center;gap:8px}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--wb-ok);display:inline-block;flex:none}.dot.warn{background:var(--wb-warn)}
+.badge{display:inline-flex;padding:3px 7px;border-radius:5px;font-size:12px;background:var(--wb-s3);color:var(--wb-t2)}.badge.warn{background:var(--wb-warn-soft);color:var(--wb-warn)}.badge.danger{background:var(--wb-danger-soft);color:var(--wb-danger)}
+summary{cursor:pointer;font-size:13px;font-weight:550;padding:14px 22px;color:var(--wb-t2)}details[open]>summary{color:var(--wb-a-ink)}summary:hover{background:var(--wb-s2)}
+.status-detail{border-top:1px solid var(--wb-bd)}.detail-body{padding:0 22px 16px;font-size:13px}.checks{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 22px;margin:0}.checks div{display:flex;justify-content:space-between;gap:14px;padding-block:7px;border-bottom:1px solid var(--wb-bd)}.checks dt{color:var(--wb-t2)}.checks dd{margin:0;text-align:right}.checks .warn{color:var(--wb-warn)}
+.case-list{padding:0 22px}.case-row{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:14px;padding:16px 0;border-bottom:1px solid var(--wb-bd)}.case-row:last-child{border:0}.case-title{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:13px}.case-row p{margin:7px 0 0;font-size:12.5px;color:var(--wb-t2)}.case-actions{display:flex;gap:8px;flex-wrap:wrap}
+.subhead{display:flex;align-items:center;gap:10px;padding:16px 22px 10px;flex-wrap:wrap}.subhead h3{margin:0;font-size:14px}.subhead small{color:var(--wb-t2);margin-left:auto;font-size:12px}
+.tabs{display:flex;gap:7px;flex-wrap:wrap;padding:0 22px 14px}.tab{border:1px solid var(--wb-bd);border-radius:7px;background:var(--wb-s);color:var(--wb-t2);padding:6px 10px;font-size:12.5px;min-height:34px}.tab[aria-pressed=true]{background:var(--wb-a-soft);color:var(--wb-a-ink);border-color:var(--wb-a)}
+.table-wrap{border:0;border-radius:0;overflow:auto}table{width:100%;border-collapse:collapse;min-width:640px;font-size:13px}th{background:var(--wb-s2);color:var(--wb-t2);text-align:left;padding:10px 22px;font-size:12px;font-weight:550;border-block:1px solid var(--wb-bd)}td{padding:13px 22px;border-bottom:1px solid var(--wb-bd);vertical-align:middle}tbody tr:last-child td{border-bottom:0}td small{display:block;color:var(--wb-t2);font-size:12px;margin-top:4px}.expanded td{background:var(--wb-s2);padding:16px 22px;white-space:normal}.evidence{display:grid;grid-template-columns:1fr 1fr;gap:14px}.evidence p{margin:4px 0;color:var(--wb-t2);font-size:12.5px}.evidence strong{font-size:13px}.explanation{margin-top:14px!important;color:var(--wb-t)!important}
+.empty{padding:28px 22px;text-align:center;color:var(--wb-t2);font-size:13px}.empty strong{display:block;color:var(--wb-t);font-weight:550;margin-bottom:7px}.error{padding:16px 22px;display:flex;align-items:center;justify-content:space-between;gap:14px;background:var(--wb-warn-soft);font-size:13px}
+.search-row{display:flex;gap:8px;align-items:center;padding:16px 22px;flex-wrap:wrap}.search-row input{flex:1;min-width:180px}.search-row label{font-size:13px}.search-row small{width:100%;color:var(--wb-t2);font-size:12px}
+.run-summary{padding:0 22px 16px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;font-size:13px}.run-summary p{margin:6px 0;color:var(--wb-t2)}.technical{border-top:1px solid var(--wb-bd)}
+.tools summary{color:var(--wb-t);padding:16px 22px}.tools summary small{font-weight:400;color:var(--wb-t2);margin-left:10px}.tools-inner{padding:0 22px 22px}.tools-line{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:14px 0;border-top:1px solid var(--wb-bd);font-size:13px}.tools-line p{margin:0;color:var(--wb-t2);font-size:12px}.tools-line label{display:grid;gap:7px}.tools-line .label{margin-right:auto}
+dialog{color:var(--wb-t);background:var(--wb-s);border:1px solid var(--wb-bd);border-radius:14px;box-shadow:var(--wb-pop);padding:0;width:min(520px,calc(100% - 28px));max-height:90dvh;overflow:auto}dialog::backdrop{background:hsla(176,18%,11%,.32)}
+.modal-head{display:flex;align-items:center;justify-content:space-between;padding:16px 22px;border-bottom:1px solid var(--wb-bd);gap:14px}.modal-head h2{font-size:17px;margin:0}.modal-body{padding:16px 22px}.modal-body p{font-size:13px;color:var(--wb-t2);line-height:1.7}.modal-body label{display:grid;gap:7px;font-size:13px;margin-top:14px}.modal-body textarea{min-height:90px;resize:vertical}.modal-foot{padding:14px 22px;display:flex;justify-content:flex-end;gap:8px;border-top:1px solid var(--wb-bd)}
+.toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);max-width:calc(100% - 28px);background:var(--wb-t);color:var(--wb-s);padding:12px 16px;border-radius:9px;font-size:13px;z-index:20;box-shadow:var(--wb-pop)}
+@media(max-width:900px){.main-area{padding:20px}.proto-bar label{margin-left:0}.topbar{align-items:flex-start}.sidebar-foot{display:none}}
+@media(max-width:600px){.main-area{padding:16px 14px 28px}.heading,.status-line{padding:14px;gap:10px}.heading small{flex-basis:100%}.case-list{padding-inline:14px}.case-row{grid-template-columns:1fr;gap:10px}.case-actions{justify-content:flex-start}.checks,.evidence{grid-template-columns:1fr}.detail-body,.run-summary{padding-inline:14px}.subhead{padding:14px}.tabs{padding-inline:14px}.search-row{padding:14px}.tools-inner{padding-inline:14px}.btn,.field,.tab,summary{min-height:44px}.proto-bar{gap:8px}.proto-bar label{width:100%}.proto-bar select{flex:1}.topbar{flex-wrap:wrap;gap:10px}.topbar p{max-width:32ch}td,th{padding-inline:14px}summary{padding:14px}.status-line{column-gap:16px}.tools summary small{display:block;margin:4px 0 0}}
+@media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}}
+</style>
+</head>
+<body>
+<div class="admin-shell">
+<aside class="sidebar">
+  <div class="admin-brand"><span class="brand-label">OPERATIONS</span><strong>Plus 运营后台</strong><small>内部管理中心</small></div>
+  <nav aria-label="后台导航"><button class="nav-item" disabled>工作台</button><button class="nav-item" disabled>订单</button><button class="nav-item" disabled>CDK</button><button class="nav-item" disabled>卡片</button><button class="nav-item" disabled>设置</button><button class="nav-item is-active" aria-current="page" id="nav-diag">诊断</button></nav>
+  <div class="sidebar-foot"><span class="session-state"><i aria-hidden="true"></i><b>本地交互预览</b><small>未连接生产系统</small></span></div>
+</aside>
+<main class="main-area" id="main">
+  <header class="topbar"><div><h1>诊断</h1><p>先看哪里卡住，再查这一单发生了什么。</p></div><button class="btn" id="refresh">刷新状态</button></header>
+  <div class="proto-bar"><strong>可点击布局稿</strong><span>全部为示例数据，操作不会影响真实订单。</span><label>预览场景<select class="field" id="scene"><option value="issues">有待核对</option><option value="empty">暂无异常</option><option value="error">读取失败</option></select></label><button class="btn" id="reset">重置演示</button></div>
+  <div class="diag">
+    <section class="panel" aria-label="运行状态">
+      <div class="status-line" id="status-line"><span><i class="dot" aria-hidden="true"></i>API Worker <b>在线</b></span><span><i class="dot warn" aria-hidden="true"></i>Browser <b>未就绪</b></span><span class="muted" id="updated">示例快照 · 09/21 12:30（北京时间）</span></div>
+      <details class="status-detail"><summary>查看开工检查</summary><div class="detail-body"><dl class="checks"><div><dt>API 心跳</dt><dd>12:29:58</dd></div><div><dt>Browser 心跳</dt><dd>12:29:56</dd></div><div><dt>Browser 就绪情况</dt><dd class="warn">卡台凭据待更新</dd></div><div><dt>过期任务租约</dt><dd>0</dd></div><div><dt>卡住的卡台调用</dt><dd>0</dd></div><div><dt>浏览器付款许可</dt><dd>已开启 · 执行配置允许</dd></div></dl><p class="muted">在线不代表一定可以派单；异常原因与最近检查时间一起看。</p></div></details>
+    </section>
+    <section class="panel" aria-labelledby="review-title">
+      <div class="heading"><h2 id="review-title">需要核对</h2><span class="count" id="case-count">2 条付款不明</span><small class="right">付款结果不明时，不重付、不换卡。</small></div>
+      <div id="cases"></div>
+      <div class="subhead"><h3>逐卡对账</h3><small>示例报告 · 09/21 12:00（北京时间）</small></div>
+      <div class="tabs" aria-label="对账分类"><button class="tab" data-filter="difference" aria-pressed="true">差异 <span>2</span></button><button class="tab" data-filter="pending" aria-pressed="false">待登记 <span>1</span></button><button class="tab" data-filter="unverifiable" aria-pressed="false">无法核对 <span>1</span></button></div>
+      <div id="cards"></div>
+    </section>
+    <section class="panel" aria-labelledby="trace-title" id="trace">
+      <div class="heading"><h2 id="trace-title">按订单排查</h2><small>先看结果，需要时再展开执行细节。</small></div>
+      <form class="search-row" id="search"><label for="order-query">订单号</label><input class="field mono" id="order-query" placeholder="例如 DEMO-1001" autocomplete="off"><button class="btn primary" type="submit">查这一单</button><button class="btn" type="button" id="clear-query">清空</button><small>演示订单：DEMO-1001（Browser）、DEMO-1002（API）</small></form>
+      <div id="trace-result"></div>
+      <details class="technical" id="run-records"><summary>浏览执行记录与派工队列</summary><div class="detail-body"><p>保留最近记录与筛选，日常无需展开技术编号。</p><div class="table-wrap"><table><thead><tr><th>订单</th><th>执行方式</th><th>当前状态</th><th>操作</th></tr></thead><tbody><tr><td class="mono">DEMO-1001</td><td>Browser</td><td>等待人工核实</td><td><button class="btn link" data-trace="DEMO-1001">查这一单</button></td></tr><tr><td class="mono">DEMO-1002</td><td>API</td><td>付款结果不明</td><td><button class="btn link" data-trace="DEMO-1002">查这一单</button></td></tr></tbody></table></div></div></details>
+    </section>
+    <details class="panel tools" id="tools"><summary>低频工具 <small>导出留档、账单地址配置</small></summary><div class="tools-inner"><div class="tools-line"><div class="label"><b>导出留档</b><p>本稿预览示例CSV，正式页面保留下载功能。</p></div><button class="btn" data-export="orders">订单 CSV</button><button class="btn" data-export="reconciliation">核对案例 CSV</button></div><form id="billing" class="tools-line"><div class="label"><b>账单地址</b><p>现有配置入口保留；此处只演示保存反馈。</p></div><label>状态<select class="field"><option>启用</option><option>关闭</option></select></label><label>州<select class="field"><option>DE</option><option>AK</option><option>MT</option><option>NH</option><option>OR</option></select></label><label>账单姓名<input class="field" value="Demo User" maxlength="120"></label><button class="btn" type="submit">演示保存</button></form></div></details>
+  </div>
+</main>
+</div>
+<dialog id="order-dialog" aria-labelledby="dialog-title"><div class="modal-head"><h2 id="dialog-title">订单核实收口</h2><button class="btn" data-close aria-label="关闭订单核实示意">关闭</button></div><form id="resolve-form"><div class="modal-body"><span class="badge warn">演示 · 正式操作在订单详情完成</span><p id="dialog-description"></p><label>核实结果<select class="field" id="outcome" required><option value="">请选择</option><option value="CHARGED">已扣款：账号已开通，卡台有对应交易</option><option value="NOT_CHARGED">未扣款：账号未开通，卡台没有对应交易</option></select></label><label>核实依据<textarea class="field" id="note" required placeholder="请说明账号套餐、交易金额与时间；不要填写令牌或完整卡号。"></textarea></label><p>本稿只模拟完成反馈。真实实现会复用已有收口流程，不能只关闭案例记录。</p></div><div class="modal-foot"><button class="btn" type="button" data-close>返回诊断</button><button class="btn primary" type="submit">演示确认收口</button></div></form></dialog>
+<div class="toast" role="status" aria-live="polite" id="toast" hidden></div>
+<dialog id="csv-dialog" aria-labelledby="csv-title"><div class="modal-head"><h2 id="csv-title">CSV 导出示意</h2><button class="btn" id="close-csv">关闭预览</button></div><div class="modal-body"><p>正式页面这里下载脱敏CSV；本稿只展示示例，不下载真实数据。</p><pre class="mono" style="white-space:pre-wrap;overflow-wrap:anywhere">类型,订单号,说明
+示例,DEMO-1001,不含真实数据</pre></div></dialog>
+<script>
+'use strict';
+const $=s=>document.querySelector(s), esc=v=>String(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+let filter='difference', resolved=new Map(), activeOrder=null, toastTimer;
+const orders=[{id:'DEMO-1001',kind:'Browser',reason:'付款提交后未能确认结果，等待核对账号与卡台交易。'},{id:'DEMO-1002',kind:'API',reason:'平台返回结果未知，自动核实仍无法确定是否扣款。'}];
+const cards=[{last4:'2468',provider:'HNSKJ',group:'difference',label:'卡台有扣款，账本无对应消费',ledger:'0 笔',upstream:'1 笔 · 15.72 USD',order:null},{last4:'1357',provider:'备用卡台 A',group:'difference',label:'消费次数不一致',ledger:'1 笔',upstream:'2 笔 · 31.44 USD',order:'DEMO-1001'},{last4:'6824',provider:'备用卡台 A',group:'pending',label:'已登记手动用卡，账本待补记',ledger:'尚未补记',upstream:'1 笔 · 15.72 USD',order:null},{last4:'7935',provider:'HNSKJ',group:'unverifiable',label:'缺少可信期初金额',ledger:'无金额比较基准',upstream:'已有交易记录',order:null}];
+function toast(message){clearTimeout(toastTimer);$('#toast').textContent=message;$('#toast').hidden=false;toastTimer=setTimeout(()=>$('#toast').hidden=true,4500)}
+function scene(){return $('#scene').value}
+function render(){
+  const error=scene()==='error',empty=scene()==='empty',todo=empty?[]:orders.filter(o=>!resolved.has(o.id));
+  $('#case-count').textContent=error?'尚未读取':`${todo.length} 条付款不明`;
+  $('#run-records tbody').innerHTML=orders.map(o=>`<tr><td class="mono">${o.id}</td><td>${o.kind}</td><td>${resolved.has(o.id)?'已演示收口':'等待人工核实'}</td><td><button class="btn link" data-trace="${o.id}">查这一单</button></td></tr>`).join('');
+  $('#status-line').innerHTML=error?'<span class="badge warn">状态读取失败</span><span class="muted">无法确认当前运行状态，请重试。</span>':`<span><i class="dot" aria-hidden="true"></i>API Worker <b>在线</b></span><span><i class="dot ${empty?'':'warn'}" aria-hidden="true"></i>Browser <b>${empty?'就绪':'未就绪'}</b></span><span class="muted">示例快照 · 09/21 12:30（北京时间）</span>`;
+  $('.status-detail').hidden=error;$('.checks .warn').textContent=empty?'可派发':'卡台凭据待更新';
+  $('#cases').innerHTML=error?'<div class="error"><span>核对案例读取失败，不能确认是否有待办。</span><button class="btn" data-retry>重试</button></div>':todo.length?`<div class="case-list">${todo.map(o=>`<div class="case-row"><div><div class="case-title"><span class="badge warn">付款不明</span><b class="mono">${o.id}</b><span class="muted">${o.kind}</span></div><p>${o.reason}</p></div><div class="case-actions"><button class="btn link" data-trace="${o.id}">查看经过</button><button class="btn primary" data-resolve="${o.id}">去订单核实收口</button></div></div>`).join('')}</div>`:'<div class="empty"><strong>没有待核对的付款案例</strong>需要查询旧订单时，可以在下方按订单号排查。</div>';
+  const list=empty?[]:cards.filter(c=>c.group===filter);
+  document.querySelectorAll('[data-filter]').forEach(b=>{b.setAttribute('aria-pressed',String(b.dataset.filter===filter));b.querySelector('span').textContent=error?'—':empty?'0':cards.filter(c=>c.group===b.dataset.filter).length});
+  $('#cards').innerHTML=error?'<div class="error"><span>逐卡报告读取失败，不能当作“没有差异”。</span><button class="btn" data-retry>重试</button></div>':!list.length?'<div class="empty"><strong>这个分类下没有记录</strong>不会把读取失败或缺少证据算作“对账正常”。</div>':`<div class="table-wrap"><table><thead><tr><th>卡片 / 卡台</th><th>需要核对什么</th><th>证据状态</th><th>操作</th></tr></thead><tbody>${list.map(c=>`<tr><td><b class="mono">尾号 ${c.last4}</b><small>${c.provider}</small></td><td>${c.label}</td><td><span class="badge ${c.group==='difference'?'warn':''}">${c.group==='unverifiable'?'无法判断':c.group==='pending'?'待补记':'待核对'}</span></td><td><button class="btn" data-card="${c.last4}" aria-expanded="false" aria-controls="detail-${c.last4}">展开明细</button></td></tr><tr class="expanded" id="detail-${c.last4}" hidden><td colspan="4"><div class="evidence"><div><strong>系统账本</strong><p>${c.ledger}</p></div><div><strong>卡台记录</strong><p>${c.upstream}</p></div></div><p class="explanation">${c.group==='unverifiable'?'缺少期初金额，不能据此判定一致或异常。':c.group==='pending'?'已有手动用卡登记，不将这笔当成无主扣款。':'先核对交易归属；这里只展示证据，不自动补账或重付。'}</p>${c.order?`<button class="btn link" data-trace="${c.order}">查看已关联订单 ${c.order}</button>`:'<span class="muted">没有可确认的关联订单，不推测交易归属。</span>'}</td></tr>`).join('')}</tbody></table></div>`;
+}
+function trace(id){$('#order-query').value=id;const order=orders.find(o=>o.id===id);$('#trace-result').innerHTML=!order?'<div class="empty"><strong>未找到这个演示订单</strong>可试 DEMO-1001 或 DEMO-1002；本稿不查询真实订单。</div>':`<div class="run-summary"><div><b class="mono">${order.id}</b><p>${order.kind} · ${resolved.has(id)?'已演示收口':'付款结果不明，资金保持锁定'}</p></div>${resolved.has(id)?'<span class="badge">演示已完成</span>':`<button class="btn primary" data-resolve="${id}">去订单核实收口</button>`}</div><details class="technical"><summary>执行细节与技术编号</summary><div class="detail-body"><dl class="checks"><div><dt>最后阶段</dt><dd>核实付款结果</dd></div><div><dt>资金状态</dt><dd>${resolved.has(id)?'以演示结论为准':'UNKNOWN'}</dd></div><div><dt>错误记录</dt><dd>结果暂无法确认</dd></div><div><dt>Attempt</dt><dd class="mono">demo-attempt-${id.slice(-4)}</dd></div></dl><p class="muted">${order.kind==='Browser'?'运行记录、检查点、租约与人工接管入口在正式订单详情保留。':'API 单不伪造 Browser 运行记录；按实际执行方式展示证据。'}</p></div></details>`;$('#trace').scrollIntoView({block:'start'});$('#order-query').focus({preventScroll:true});}
+function openResolve(id){activeOrder=id;$('#dialog-title').textContent=`订单 ${id}`;$('#dialog-description').textContent=`${orders.find(o=>o.id===id).kind} 付款结果不明。先核对账号是否开通、卡台是否扣款，再走订单的正式收口。`;$('#resolve-form').reset();$('#order-dialog').showModal();}
+document.addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;if(b.dataset.resolve)openResolve(b.dataset.resolve);if(b.dataset.trace)trace(b.dataset.trace);if(b.dataset.card){const row=$('#detail-'+b.dataset.card);row.hidden=!row.hidden;b.setAttribute('aria-expanded',String(!row.hidden));b.textContent=row.hidden?'展开明细':'收起明细'}if(b.dataset.filter){filter=b.dataset.filter;render()}if(b.hasAttribute('data-close'))$('#order-dialog').close();if(b.hasAttribute('data-retry')){$('#scene').value='issues';render();toast('已重新载入示例数据。')}if(b.dataset.export)$('#csv-dialog').showModal()});
+$('#close-csv').onclick=()=>$('#csv-dialog').close();
+$('#search').addEventListener('submit',e=>{e.preventDefault();trace($('#order-query').value.trim().toUpperCase())});
+$('#clear-query').onclick=()=>{$('#order-query').value='';$('#trace-result').innerHTML='';$('#order-query').focus()};
+$('#resolve-form').addEventListener('submit',e=>{e.preventDefault();resolved.set(activeOrder,$('#outcome').value);$('#order-dialog').close();render();if($('#order-query').value===activeOrder)trace(activeOrder);toast('已演示收口后的界面；没有修改真实订单。')});
+$('#billing').addEventListener('submit',e=>{e.preventDefault();toast('演示保存完成，真实账单配置没有改变。')});
+$('#scene').onchange=()=>{render();$('#trace-result').innerHTML='';$('#order-query').value=''};
+$('#reset').onclick=()=>{resolved.clear();filter='difference';$('#scene').value='issues';$('#trace-result').innerHTML='';$('#order-query').value='';document.querySelectorAll('details').forEach(d=>d.open=false);render();toast('演示已重置。')};
+$('#refresh').onclick=()=>{render();toast('已刷新示例快照，没有读取生产系统。')};$('#nav-diag').onclick=()=>window.scrollTo({top:0});
+render();
+</script>
+</body>
+</html>

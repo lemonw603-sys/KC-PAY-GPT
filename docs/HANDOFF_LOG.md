@@ -3192,3 +3192,13 @@ Session事务在资金检查后锁任务：有效租约/重复分卡任务拒绝
 既有遗漏：PROJECT_MAP欠账11/F-64，“看逐张”跳诊断，但其五个loader没有daily报告；daily-reconciliation-service.js:356已返回discrepancies数组，前端只消费计数。不是新业务需求，不擅自将已延期事项改为发布阻塞。其他整理候选仅供讨论：按运行状态/单号排查/对账明细组织，技术字段和配置/导出低频收起，不新建监控系统、不搬写操作或合并执行逻辑。
 
 生产只读SQL：`SELECT rc.case_type,rc.status AS case_status,o.status AS order_status,COUNT(*) AS n FROM reconciliation_cases rc LEFT JOIN orders o ON o.id=rc.order_id GROUP BY rc.case_type,rc.status,o.status ORDER BY rc.case_type,rc.status,o.status`。原始输出：`BROWSER_PAYMENT_UNKNOWN OPEN CLOSED 2`。不能把2条OPEN历史case当2笔在途未知付款，不据此作废/解决它们。无生产写入、无部署、无新测试进程。建议只先补入口一致性和讨论逐卡明细，不整页推倒重构，等用户裁定。
+
+## 2026-09-21｜D-325诊断可点击布局稿
+
+用户同意两项功能修正，追问美化并同意轻量整理、先给可点稿。只新增prototypes/step6-diagnostics-interaction.html，复用现有8899原型服务与实际admin.css/workbench.css/字体；不加载业务admin.js、无API连接，合成订单DEMO-1001/1002及四张合成卡。CSP connect-src none、form-action none，所有按钮仅本页示意。导航其他五页置禁用防误导，六入口位置保留。付款开关/真实配置不动。
+
+原型四段：状态简条+开工详情；付款未知去订单正式收口示意+逐卡差异/待登记/无法核对；订单检索与折叠技术记录；导出与账单设置低频折叠。首轮检查后一次修正：CSV下载事件在IAB等待超时，改为明确CSV预览（不假报下载成功）；演示收口后折叠记录状态同步。此稿用来确认布局，不宣称完整复刻正式收口表单。
+
+CUA真实浏览器实点明细/无关联提示/核实表单/待办2→1/查API单/错误重试/无法核对/保存反馈/CSV预览/空态/重置，布尔观察均true。DOM宽度分别1440=scrollWidth1440、390=390、默认829=829，宽表内部滚动；默认截图看到四段阅读顺序和示例标记。IAB覆盖视口截图缩放异常，不当手机像素验收。最终错误日志[]；Node vm.Script编译通过，脚本未使用fetch/XHR/sendBeacon/WebSocket。Impeccable上下文/扫描启动器权限拒绝，已说明并沿仓库设计规范人工核对，未运行正式critique或子代理。
+
+IAB tab4已markDeliverable，预览URL http://127.0.0.1:8899/step6-diagnostics-interaction.html；视口override已reset，稿恢复默认有待办场景。未新启服务，8899/8804按原用途保留。两项业务修正尚未实施，等待用户试用确认，不能用稿替代发布验收。
