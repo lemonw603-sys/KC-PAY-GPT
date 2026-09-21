@@ -3304,3 +3304,9 @@ Demo是用户试用产物，服务及标签保留，默认恢复token失效工�
 用户“方便”授权配合正常登录观察。新建IAB tab7至highvcc官方主页，当前账号登录表单/邮箱/密码/滑块显示，无自动填入或提交。Network.enable仅内存缓冲，responseReceived cursor32，绑定authTab/authCdp保留；不创建HAR、不导出请求参数和凭据，不做书签同步/开卡/付款。open_in_codex返回queued、visibility.set(true)后get仍false，不能声称面板已显示；标签markHandoff，等用户在这一标签正常登录后提取最少响应元数据。不是后台自动续期测试。
 
 同轮后续：再次定位tab7已进入#/home（用户自行登录）。捕获两次loginPwd响应，先HTTP200/code500（未看原因），再HTTP200/code200；成功data字段name/isSub/expireTime/accessToken，无刷新凭据。expireTime1790597610转为09-28 12:13:30 UTC（约7天）；不等于7天保证可用。页面自然请求中未见renew/refresh。12:14:49 UTC关闭Network，原始事件/body不导出、不写完整token，保留安全字段摘要。HANDOFF改为已完成观察，报告login-observation.md覆盖“还缺登录”，下一步是讨论有界跨时段只读复测，不自动设保活/长期轮询。没有更新生产token或触发资金动作。
+
+## 2026-09-21｜一次性22:20登录有效性复测已安排
+
+用户“安排”授权。应用heartbeat id=highvcc，ACTIVE，目标当前任务、22:20北京时间、COUNT=1；automation view及本地配置独立核对。首个创建缺destination、第二个小时COUNT=1无未来时点均被拒绝，最终按每日指定时分且COUNT=1创建，未重复创建任务或系统cron。提示约束只读、同一会话、最多一次wallet GET、不刷新重登保活、不读出完整凭据、不写生产、不动资金；完成或无法继续即停止并通知。
+
+tab7只读计算不可用于登录的SHA256指纹与storedExpiry，落login-observation.md供复测判断同一token；没有发出新请求，Network保持关闭，标签markHandoff。保留现有现场，结果尚未发生，不提前宣布两小时有效。
