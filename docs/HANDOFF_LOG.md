@@ -3202,3 +3202,13 @@ Session事务在资金检查后锁任务：有效租约/重复分卡任务拒绝
 CUA真实浏览器实点明细/无关联提示/核实表单/待办2→1/查API单/错误重试/无法核对/保存反馈/CSV预览/空态/重置，布尔观察均true。DOM宽度分别1440=scrollWidth1440、390=390、默认829=829，宽表内部滚动；默认截图看到四段阅读顺序和示例标记。IAB覆盖视口截图缩放异常，不当手机像素验收。最终错误日志[]；Node vm.Script编译通过，脚本未使用fetch/XHR/sendBeacon/WebSocket。Impeccable上下文/扫描启动器权限拒绝，已说明并沿仓库设计规范人工核对，未运行正式critique或子代理。
 
 IAB tab4已markDeliverable，预览URL http://127.0.0.1:8899/step6-diagnostics-interaction.html；视口override已reset，稿恢复默认有待办场景。未新启服务，8899/8804按原用途保留。两项业务修正尚未实施，等待用户试用确认，不能用稿替代发布验收。
+
+## 2026-09-21｜D-326诊断正式接线及隔离验收
+
+用户对交互稿回复“没问题”，按已定范围接真实后台。新diagnostics.js/css四段布局替换旧主展示；保留Browser筛选/分页/控制、账单表单与CSV，配置从设置页跳入时自动展开定位。删除重复导出按钮残留handler，HTML无重复id。逐卡报告走既有persist:false接口，卡片定位带providerAccountId，不从尾号猜关联订单；分类/金额规则不变。病例读取/健康/报告失败不假装0，错误报告清旧值、错序响应不覆盖新值；账单配置读取失败禁用保存。
+
+付款不明四类（API/BROWSER_PAYMENT_UNKNOWN、历史SUBMIT_UNKNOWN/STALE）后端锁内拒绝通用resolve，返回409，list提供requiresOrderResolution；工作台/诊断/详情备用识别同一列表。正式订单收口服务不改，普通case仍能关记录保留结论。新增12种类型/状态保护测试及6条页面数据/错序/结构测试。
+
+06:07:24～06:07:51 UTC最终隔离脚本24项通过：直接旧接口4次409且DB快照不变，从诊断出发API/Browser×已扣/未扣4条UI收口通过，原码重提不重复建单、卡复用正式资格、报告计数/展开/卡详情、普通case、检索、500/503错误与重试、账单保存、CSV、布局及gap变异；既有MySQL12/12，默认1048/979 pass/0 fail/69 skipped。证据reviews/2026-09-21-diagnostics-implementation。原型外部CSS冻结，9项几何契约通过，新增CSS零字面色/规范外高度/重复选择器；CSS和文案闸门纳入新文件，旧基线未放宽。
+
+SQL现场仅state-check只读，生产仍⑤b/054；无生产写入、无新迁移、无browser-mvp改动。历史2条CLOSED订单的OPEN案例未自动清除。专用库/账号0/0，临时服务/Chrome/恢复容器清理；8804/8899保留。新发布候选必须包含诊断改动，仍待当次发布批准。已确认布局不再重新比稿，但不能把本地验收当真钱或整个V2验收。

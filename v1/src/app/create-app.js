@@ -889,7 +889,7 @@ export function createApp({
         }));
       } catch (error) {
         if (error instanceof ReconciliationCaseError) {
-          return res.status(error.code === 'CASE_NOT_FOUND' ? 404 : 400)
+          return res.status(error.code === 'CASE_NOT_FOUND' ? 404 : error.code === 'CASE_REQUIRES_ORDER_RESOLUTION' ? 409 : 400)
             .json({ error: error.code.toLowerCase() });
         }
         throw error;

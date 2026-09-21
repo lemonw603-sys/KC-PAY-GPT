@@ -72,6 +72,7 @@
 | 输入控件 | `.wb-field` | 同上 | 同上 |
 | 按钮 | `.wb-btn` `.pri` `.out` | 同上 | 同上 |
 | CDK 流水线页 | `.cdk-page` / `.cdk-kpis` / `.cdk-block` | `step6-cdk-a.html` A（D-313～D-318） | `parity/cdk-page.json`；冻结 `_frozen/cdk-a/` |
+| 诊断四段布局 | `.diagnostics-page` / `.diag-layout` / `.diag-panel` | `step6-diagnostics-interaction.html`（D-325/326） | `parity/diagnostics-page.json`；外部样式冻结 `_frozen/diagnostics/` |
 
 CDK 当前沿用 A 的紧凑生成条：桌面主按钮34px；移动控件最小44px、仍9px圆角/13px字号。与上表「大档」的11px/14px不完全一致，已记入本轮验收报告，不扩大范围改其他页面，也不把几何契约通过称为全规范一致。
 

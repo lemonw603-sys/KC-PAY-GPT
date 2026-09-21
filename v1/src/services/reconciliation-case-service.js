@@ -4,6 +4,10 @@ import { redactSensitiveFields } from '../security/redaction.js';
 const CASE_STATUSES = new Set(['OPEN', 'ASSIGNED', 'RESOLVED']);
 const CASE_SEVERITIES = new Set(['info', 'warning', 'critical']);
 const MAX_PAGE_SIZE = 100;
+// These cases represent a funds workflow, not a dismissible operator note.
+export const ORDER_RESOLUTION_CASE_TYPES = Object.freeze([
+  'API_PAYMENT_UNKNOWN', 'BROWSER_PAYMENT_UNKNOWN', 'SUBMIT_UNKNOWN', 'SUBMIT_UNKNOWN_STALE'
+]);
 
 export class ReconciliationCaseError extends Error {
   constructor(message, code, details = undefined) {
@@ -64,6 +68,7 @@ function mapCase(row, { includeEvidence = false } = {}) {
   return {
     id: row.id,
     caseType: row.case_type,
+    requiresOrderResolution: ORDER_RESOLUTION_CASE_TYPES.includes(String(row.case_type || '').toUpperCase()),
     status: row.status,
     severity: row.severity,
     dedupeKey: row.dedupe_key,
@@ -241,6 +246,9 @@ export function createReconciliationCaseService({
     return inTransaction(pool, async (connection) => {
       const existing = await getCaseById(connection, caseId, { forUpdate: true });
       if (!existing) throw new ReconciliationCaseError('reconciliation case not found', 'CASE_NOT_FOUND');
+      if (existing.requiresOrderResolution) {
+        throw new ReconciliationCaseError('Resolve the payment outcome through the order workflow', 'CASE_REQUIRES_ORDER_RESOLUTION');
+      }
       if (existing.status !== 'RESOLVED') {
         await connection.query(
           `UPDATE reconciliation_cases

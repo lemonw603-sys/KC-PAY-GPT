@@ -1,0 +1,315 @@
+/* =========================================================================
+   工作台（第⑥步 面五②，采用 C「看板优先·精修」，D-283）
+   令牌沿用客户页「候光」（docs/design/README.md，Lemon 2026-09-12 定后台沿用）。
+   隔离：所有类名带 wb- 前缀 + 令牌作用域在 .workbench，不碰 admin.css、不影响旧页。
+   旧页（订单/诊断）与外壳 sidebar 暂留 admin.css 旧皮，四页做完再统一换。
+   ========================================================================= */
+
+/* 候光字体自托管（与客户页同源 /assets/fonts/），让后台也用设计图那两款字体 */
+@font-face{font-family:"Familjen Grotesk";font-style:normal;font-weight:400 700;font-display:swap;src:url(/assets/fonts/familjen-grotesk.woff2) format("woff2")}
+@font-face{font-family:"IBM Plex Mono";font-style:normal;font-weight:400;font-display:swap;src:url(/assets/fonts/ibm-plex-mono-400.woff2) format("woff2")}
+@font-face{font-family:"IBM Plex Mono";font-style:normal;font-weight:500;font-display:swap;src:url(/assets/fonts/ibm-plex-mono-500.woff2) format("woff2")}
+@font-face{font-family:"IBM Plex Mono";font-style:normal;font-weight:600;font-display:swap;src:url(/assets/fonts/ibm-plex-mono-600.woff2) format("woff2")}
+
+:root{
+  /* 候光 · 晨雾（日间）——第⑥步后台候光皮全局令牌 */
+  --wb-bg:hsl(168,16%,97%);
+  --wb-a:hsl(163,72%,26%); --wb-a-soft:hsl(163,44%,93%); --wb-a-ink:hsl(163,76%,22%); --wb-a-on:hsl(0,0%,100%);
+  --wb-t:hsl(176,18%,11%); --wb-t2:hsl(170,10%,38%); --wb-t3:hsl(168,9%,50%);
+  --wb-s:hsl(0,0%,100%); --wb-s2:hsl(168,20%,97%); --wb-s3:hsl(168,16%,95%); --wb-bd:hsl(168,14%,88%);
+  --wb-warn:hsl(32,72%,40%); --wb-warn-soft:hsl(38,78%,94%); --wb-gold:hsl(38,46%,42%);
+  --wb-ok:hsl(150,54%,36%); --wb-ok-soft:hsl(150,44%,94%);
+  --wb-danger:hsl(4,66%,50%); --wb-danger-soft:hsl(6,72%,96%);
+  --wb-info:hsl(212,62%,46%); --wb-info-soft:hsl(212,60%,95%);
+  --wb-shadow:inset 0 1px 0 hsla(0,0%,100%,.85),0 1px 2px hsla(176,25%,10%,.06),0 14px 30px -14px hsla(176,25%,10%,.22);
+  --wb-pop:0 10px 24px -8px hsla(176,25%,10%,.28);
+  --wb-fd:"Familjen Grotesk","PingFang SC","Hiragino Sans GB",system-ui,sans-serif;
+  --wb-fm:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+.workbench{display:grid;gap:16px}
+
+/* ========== 候光后台外壳（覆盖 admin.css 的 sidebar/顶栏，全站统一候光皮）========== */
+body{font-family:var(--wb-fd)}
+.admin-shell{background:var(--wb-bg)}
+.sidebar{background:var(--wb-s2);border-right:1px solid var(--wb-bd)}
+.admin-brand{border-bottom:1px solid var(--wb-bd)}
+.admin-brand .brand-label{background:var(--wb-a);color:var(--wb-a-on);letter-spacing:.14em}
+.admin-brand strong{color:var(--wb-t)}
+.admin-brand strong span{color:var(--wb-gold)}
+.admin-brand small{color:var(--wb-t3)}
+.nav-item{min-height:40px;border-radius:10px;color:var(--wb-t2);font-weight:600}
+.nav-item span{border-radius:7px;background:var(--wb-s3);color:var(--wb-t2)}
+.nav-item:hover{background:var(--wb-s3);color:var(--wb-t)}
+.nav-item.is-active{background:var(--wb-a-soft);color:var(--wb-a-ink)}
+.nav-item.is-active span{background:var(--wb-a);color:var(--wb-a-on)}
+/* 侧边栏底部（Lemon 2026-09-20：「管理员已登录，位置需要优化调整」）。
+   原先三处别扭：状态点用 grid-row:1/3 垂直居中，视觉上和两行文字都不对齐；
+   「安全退出」是常规大按钮，在侧栏底部比登录状态本身还重；两块之间 gap 14px 过松。 */
+.sidebar-foot{border-top:1px solid var(--wb-bd);gap:8px;padding-top:13px}
+/* 换成 flex：原先是 grid(auto 1fr) + 点占两行，点悬在两行中间和谁都不对齐。
+   直接把点改成只占第一行会让 small 自动流到第二行第一列（试过，「人工确认模式」
+   跑去了左列、标题被挤到右边），所以整块改 flex：点和标题一行，说明换行缩进对齐。 */
+.sidebar-foot .session-state{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+.sidebar-foot .session-state i{width:6px;height:6px;background:var(--wb-ok);flex:none}
+.sidebar-foot .session-state b{color:var(--wb-t2);font-size:12px;font-weight:600}
+.sidebar-foot .session-state small{width:100%;margin-left:13px;color:var(--wb-t3);font-size:10.5px}
+/* 退出是低频动作，退成文字按钮：不抢登录状态的视觉重量 */
+.sidebar-foot #logout-button{justify-self:start;padding:2px 0;border:0;background:none;
+  color:var(--wb-t3);font-size:11.5px;font-weight:400;min-height:0;box-shadow:none;text-align:left}
+.sidebar-foot #logout-button:hover{color:var(--wb-a);text-decoration:underline}
+.topbar h1{color:var(--wb-t)}
+.topbar .section-kicker{color:var(--wb-a)}
+.sync-time{color:var(--wb-t3)}
+/* 搜索框原本 flex:1 + max-width 520，占掉视线正中近一半宽度。它是「要找某一单时才用」
+   的工具，不是首屏主角：退到右边、收到 300px（Lemon 2026-09-20 定「页头小调整」）。 */
+.topbar .gsearch{flex:0 1 300px;min-width:200px;margin-left:auto;display:flex;align-items:center;gap:8px;height:34px;padding:0 11px;background:var(--wb-s);border:1px solid var(--wb-bd);border-radius:10px;box-shadow:var(--wb-shadow)}
+.topbar .topbar-title h1{font-size:21px;margin:0;letter-spacing:-.01em}
+.topbar .gsearch:focus-within{border-color:var(--wb-a);box-shadow:0 0 0 3px var(--wb-a-soft)}
+.topbar .gsearch .mg{color:var(--wb-t3)}
+.topbar .gsearch input{flex:1;border:0;background:transparent;outline:none;font-size:13.5px;color:var(--wb-t)}
+.topbar .gsearch kbd{font-family:var(--wb-fm);font-size:10.5px;color:var(--wb-t3);border:1px solid var(--wb-bd);border-radius:5px;padding:1px 5px}
+
+.workbench .wb-mono{font-family:var(--wb-fm);font-variant-numeric:tabular-nums}
+.workbench [hidden]{display:none!important}
+
+/* ---------- 卡片 ---------- */
+.workbench .wb-card{background:var(--wb-s);border:1px solid var(--wb-bd);border-radius:15px;box-shadow:var(--wb-shadow)}
+.workbench .wb-ch{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:15px 17px 0}
+.workbench .wb-ch .wb-kick{font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--wb-a)}
+.workbench .wb-ch h2{margin:3px 0 0;font-size:15px}
+.workbench .wb-cb{padding:14px 17px 17px}
+.workbench .wb-ro{font-size:10.5px;font-weight:700;color:var(--wb-t3);border:1px solid var(--wb-bd);border-radius:999px;padding:3px 9px}
+
+/* ---------- 营业条：三开关 + 两卡台 + CDK 快捷 ---------- */
+/* 一条工具栏（原型 docs/design/prototypes/step6-opsbar-v5.html 的乙-3，
+   Lemon 2026-09-20 从七版里挑定）。
+   前一版是「三等分段 + 每段小标题」，两个毛病同源：三段内容量天然不等
+   （1 行 / 2 行 / 1 行）却硬切等宽 —— 内容居中换来标题错位（实测 y 36/13/31），
+   顶对齐换来底部空洞（实测 52/12/42）。乙-3 不分段、不给标题、不画竖线：
+   四组各按自己内容的宽度，剩余空间摊成三个相等的间隙（实测 0/0/156 → 52/52/52），
+   两个毛病一起没有了，整条还从 117px 矮到 62px，省下的高度给数字墙。
+   几何量由 docs/design/parity/workbench-opsbar.json 对着原型逐项守着。 */
+.workbench .wb-ops{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;
+  padding:0 4px;border:1px solid var(--wb-bd);border-radius:12px;background:var(--wb-s);box-shadow:var(--wb-shadow)}
+.workbench .wb-grp{display:flex;align-items:center;gap:10px;padding:13px 14px}
+/* 路线与卡台是两组独立的项，各自参与间距均分；让 #wb-routes 这层容器不参与布局，
+   它渲染出的两个 .wb-grp 才能直接做工具栏的项。 */
+.workbench #wb-routes{display:contents}
+.workbench #wb-decisions{flex-wrap:wrap}
+.workbench .wb-ln{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+/* 「选哪台」和「执行切换」是一次操作的两半，做成连体控件：中间不留缝、
+   共享一条边，视觉上是一个整体，而不是两个长得像的独立按钮。 */
+.workbench .wb-pair{display:inline-flex;align-items:stretch}
+.workbench .wb-pair .wb-field{border-top-right-radius:0;border-bottom-right-radius:0;border-right:0}
+.workbench .wb-pair .wb-btn{border-top-left-radius:0;border-bottom-left-radius:0;
+  background:var(--wb-s2);color:var(--wb-t)}
+.workbench .wb-pair .wb-btn:hover{background:var(--wb-s3)}
+.workbench .wb-k{font-size:12px;color:var(--wb-t3)}
+.workbench .wb-num{width:72px;text-align:center}  /* 容得下四位数：CDK 单次最多 1000 张 */
+/* 发码表单的布局全部来自 .wb-grp（它和其余三组用同一套 display/align/gap）；
+   .wb-cdk 只负责去掉 form 的默认 margin。此前这个 class 在本文件里被定义了两次
+   （center/gap8 与 flex-end/gap10），后者把前者盖掉，发码组因此与其余三组不同步。 */
+.workbench .wb-cdk{margin:0}
+.workbench .wb-takeover{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--wb-t2)}
+
+/* 二选一分段器 */
+.workbench .wb-seg2{display:inline-flex;padding:2px;background:var(--wb-s3);border-radius:8px;gap:2px}
+/* 两个选项等宽：文字长短不同（「API 充值」4 字 /「浏览器自动化」6 字）时，
+   不等宽会让这一对看着不成比例。 */
+.workbench .wb-seg2 button{border:0;background:transparent;border-radius:6px;height:24px;padding:0 11px;
+  font-size:12.5px;font-weight:600;color:var(--wb-t3);cursor:pointer;font-family:inherit;white-space:nowrap;
+  flex:1;min-width:92px;text-align:center}
+.workbench .wb-seg2 button.is-on{background:var(--wb-s);color:var(--wb-a);
+  box-shadow:0 1px 2px hsla(176,25%,10%,.1);cursor:default}
+.workbench .wb-seg2 button:not(.is-on):hover{color:var(--wb-t2)}
+
+/* 开关 */
+.workbench .wb-ops .wb-switch{gap:7px}
+.workbench .wb-ops .wb-switch b{font-size:12.5px;font-weight:600;color:var(--wb-t)}
+.workbench .wb-ops .wb-tg{width:30px;height:17px;border:0;background:hsl(168,12%,84%)}
+.workbench .wb-ops .wb-tg::after{top:2px;left:2px;width:13px;height:13px;box-shadow:0 1px 2px hsla(176,25%,10%,.22)}
+.workbench .wb-ops .wb-switch.is-on .wb-tg{background:var(--wb-a)}
+.workbench .wb-ops .wb-switch.is-on .wb-tg::after{left:15px}
+
+/* 控件。.wb-btn 的基础规则（height:34px）写在本文件更靠后的位置，同优先级下后者胜，
+   所以这里必须提高特异性，否则按钮会保持 34px —— 实测过，原先写 .wb-ops .wb-btn 没生效。 */
+.workbench .wb-ops .wb-field{height:28px;border-radius:7px;font-size:12.5px;padding:0 9px;border-color:hsl(168,14%,87%)}
+.workbench .wb-ops select.wb-field{padding-right:26px;background-position:calc(100% - 14px) 55%,calc(100% - 9.5px) 55%}
+.workbench .wb-ops .wb-grp .wb-btn,
+.workbench .wb-ops .wb-grp .wb-btn.pri,
+.workbench .wb-ops .wb-grp .wb-btn.out{height:28px;border-radius:7px;font-size:12.5px;padding:0 11px}
+
+.workbench .wb-switch{display:inline-flex;align-items:center;gap:9px;border:0;background:transparent;padding:0;text-align:left}
+.workbench .wb-tg{position:relative;width:40px;height:23px;border-radius:999px;background:var(--wb-s3);border:1px solid var(--wb-bd);transition:.16s;flex:none}
+.workbench .wb-tg::after{content:"";position:absolute;top:2px;left:2px;width:17px;height:17px;border-radius:50%;background:var(--wb-s);box-shadow:0 1px 2px hsla(0,0%,0%,.25);transition:.16s}
+.workbench .wb-switch.is-on .wb-tg{background:var(--wb-ok);border-color:var(--wb-ok)}
+.workbench .wb-switch.is-on .wb-tg::after{left:19px}
+.workbench .wb-switch .wb-lb{display:grid;gap:1px}
+.workbench .wb-switch .wb-lb b{font-size:13px;font-weight:600;color:var(--wb-t)}
+.workbench .wb-switch .wb-lb small{font-size:10.5px;color:var(--wb-t3)}
+
+.workbench select,.workbench .wb-cdk input,.workbench .wb-search input{font:inherit;color:inherit}
+.workbench .wb-field{height:34px;border:1px solid var(--wb-bd);background:var(--wb-s);border-radius:9px;padding:0 10px;font-size:13px;color:var(--wb-t)}
+.workbench select.wb-field{appearance:none;-webkit-appearance:none;padding-right:30px;
+  background-image:linear-gradient(45deg,transparent 50%,var(--wb-t3) 50%),linear-gradient(135deg,var(--wb-t3) 50%,transparent 50%);
+  background-repeat:no-repeat;background-position:calc(100% - 16px) 55%,calc(100% - 11px) 55%;background-size:5px 5px}
+
+/* ---------- 全局定位搜索 ---------- */
+.workbench .wb-search{display:flex;align-items:center;gap:8px;height:42px;padding:0 12px;
+  background:var(--wb-s);border:1px solid var(--wb-bd);border-radius:12px;box-shadow:var(--wb-shadow)}
+.workbench .wb-search:focus-within{border-color:var(--wb-a);box-shadow:0 0 0 3px var(--wb-a-soft)}
+.workbench .wb-search .wb-mg{color:var(--wb-t3)}
+.workbench .wb-search input{flex:1;border:0;background:transparent;outline:none;font-size:13.5px}
+.workbench .wb-search kbd{font-family:var(--wb-fm);font-size:10.5px;color:var(--wb-t3);border:1px solid var(--wb-bd);border-radius:5px;padding:1px 5px}
+
+/* ---------- 数字墙 ---------- */
+.workbench .wb-seclabel{margin:2px 0 -4px;font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--wb-t3)}
+.workbench .wb-wall{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+.workbench .wb-kpi{padding:15px 16px;border:1px solid var(--wb-bd);border-radius:14px;background:var(--wb-s);box-shadow:var(--wb-shadow);display:grid;gap:4px;text-align:left;color:inherit;cursor:default}
+.workbench button.wb-kpi{cursor:pointer}
+.workbench button.wb-kpi:hover{border-color:var(--wb-a)}
+.workbench .wb-kpi .wb-lb{font-size:11.5px;color:var(--wb-t2);font-weight:600}
+.workbench .wb-kpi .wb-v{font-family:var(--wb-fm);font-size:28px;font-weight:600;letter-spacing:-.02em;line-height:1.05;color:var(--wb-t)}
+.workbench .wb-kpi .wb-v small{font-size:13px;color:var(--wb-t3);font-weight:500}
+.workbench .wb-kpi .wb-sub{font-size:11px;color:var(--wb-t3)}
+/* JS 输出的是 is-pending，这里原先写 wb-pending —— 名字对不上，规则从来没生效，
+   三格一直占着和真数字一样大的字号。灰底小字不可点，一眼看出它不是一个数。 */
+.workbench .wb-kpi.is-pending{background:var(--wb-s2);box-shadow:none;cursor:default}
+.workbench .wb-kpi.is-pending .wb-lb{color:var(--wb-t3)}
+.workbench .wb-kpi.is-pending .wb-v{font-family:var(--wb-fd);font-size:13px;font-weight:500;color:var(--wb-t3)}
+.workbench .wb-kpi.is-pending .wb-sub{color:var(--wb-t3);opacity:.85}
+.workbench button.wb-kpi.is-pending:hover{border-color:var(--wb-bd)}
+
+/* ---------- 二排：卡与钱 | 日对账 ---------- */
+.workbench .wb-mid{display:grid;grid-template-columns:1.35fr .65fr;gap:16px;align-items:start}
+
+/* 卡与钱＝按台按产品（D-283 原规划 / 原型 C）。每台一行：上排卡台名 + 钱包 + 今天花了，
+   下排三个产品各一格「用 N / 剩 N」+ 会不会自动补。
+   此前这里是四个状态标签（可分配/在库/使用中/用过）平铺，维度选错了：
+   「用过 0」这种数运营根本不看，而「20X 还剩几张、断了会不会自动补」才是要的。 */
+.workbench .wb-provrow{padding:11px 13px;border:1px solid var(--wb-bd);border-radius:11px;background:var(--wb-s2)}
+.workbench .wb-provrow+.wb-provrow{margin-top:7px}
+.workbench .wb-provhead{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+.workbench .wb-provhead b{font-size:13px;color:var(--wb-t)}
+.workbench .wb-spent{margin-left:auto;font-size:11.5px;color:var(--wb-t3)}
+.workbench .wb-spent b{font-size:12.5px;color:var(--wb-t2)}
+.workbench .wb-spent.is-zero,.workbench .wb-spent.is-zero b{color:var(--wb-t3);font-weight:400}
+/* 三个产品各一格，每格压成**一行**：六格里通常五格是 0（5X/20X 还没做库存卡），
+   把零值摊成三行大字等于让最没信息的部分占最大的视觉重量 —— 第一版这么做，
+   整块 381px 比改之前的 291px 还高，与「精简」背道而驰。压扁后回到 ~180px。 */
+.workbench .wb-prods{margin-top:8px;display:grid;grid-template-columns:repeat(3,1fr);gap:7px}
+.workbench .wb-prod{display:flex;align-items:baseline;gap:7px;padding:6px 9px;border-radius:8px;
+  background:var(--wb-s);border:1px solid var(--wb-s3)}
+.workbench .wb-prod.is-ok{border-color:var(--wb-bd);background:var(--wb-ok-soft)}
+.workbench .wb-prod b{font-size:11px;font-weight:700;color:var(--wb-t3);letter-spacing:.04em;flex:none}
+/* 有货的才给正常墨色；全 0 的退成弱色 —— 一眼看出哪个产品现在真能接单 */
+.workbench .wb-prod .wb-prod-n{font-family:var(--wb-fm);font-size:12.5px;font-weight:600;color:var(--wb-t3)}
+.workbench .wb-prod.is-ok .wb-prod-n{color:var(--wb-t)}
+.workbench .wb-prod small{font-size:10px;color:var(--wb-t3);margin-left:auto;flex:none;white-space:nowrap}
+/* 「需人工开」保留区分但不强调（Lemon 2026-09-20：「不需要那么明显，我知道」）——
+   5X/20X 没做库存卡是既定安排，不是异常，橙色加粗会天天喊一件他早就清楚的事。 */
+.workbench .wb-prod small.is-manual{color:var(--wb-t3)}
+.workbench .wb-total{margin:11px 2px 0;font-size:11.5px;color:var(--wb-t3)}
+.workbench .wb-total b{color:var(--wb-t)}
+.workbench .wb-total b.wb-waiting{color:var(--wb-warn)}
+
+.workbench .wb-recon{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.workbench .wb-recon-empty{grid-column:1 / -1}
+.workbench .wb-recon .wb-r{padding:12px;border:1px solid var(--wb-bd);border-radius:12px;background:var(--wb-s2);display:grid;gap:3px}
+.workbench .wb-recon .wb-r .wb-v{font-family:var(--wb-fm);font-size:22px;font-weight:600;color:var(--wb-t)}
+.workbench .wb-recon .wb-r .wb-lb{font-size:11px;color:var(--wb-t2);font-weight:600}
+.workbench .wb-recon .wb-r .wb-lb small{display:block;color:var(--wb-t3);font-weight:500;font-size:10px}
+.workbench .wb-recon .wb-r.is-bad .wb-v{color:var(--wb-danger)}
+
+/* ---------- 芯片：形状+颜色双编码 ---------- */
+.workbench .wb-chip{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:600;padding:3px 9px;border-radius:999px;white-space:nowrap}
+.workbench .wb-chip .wb-d{width:7px;height:7px;border-radius:2px;flex:none}
+.workbench .wb-chip.ok{color:var(--wb-ok);background:var(--wb-ok-soft)} .workbench .wb-chip.ok .wb-d{background:var(--wb-ok);border-radius:50%}
+.workbench .wb-chip.warn{color:var(--wb-warn);background:var(--wb-warn-soft)} .workbench .wb-chip.warn .wb-d{background:var(--wb-warn);transform:rotate(45deg)}
+.workbench .wb-chip.danger{color:var(--wb-danger);background:var(--wb-danger-soft)} .workbench .wb-chip.danger .wb-d{background:var(--wb-danger);border-radius:1px}
+.workbench .wb-chip.info{color:var(--wb-info);background:var(--wb-info-soft)} .workbench .wb-chip.info .wb-d{background:var(--wb-info);border-radius:50%}
+.workbench .wb-chip.mute{color:var(--wb-t2);background:var(--wb-s3)} .workbench .wb-chip.mute .wb-d{background:var(--wb-t3);border-radius:50%}
+
+/* ---------- 按钮 ---------- */
+.workbench .wb-btn{display:inline-flex;align-items:center;gap:6px;height:34px;padding:0 14px;border-radius:10px;font-size:12.5px;font-weight:600;border:1px solid transparent;background:transparent}
+.workbench .wb-btn.pri{background:var(--wb-a);color:var(--wb-a-on);border-color:var(--wb-a)}
+.workbench .wb-btn.pri:hover{filter:brightness(1.06)}
+.workbench .wb-btn.out{border-color:var(--wb-bd);background:var(--wb-s);color:var(--wb-t2)}
+.workbench .wb-btn.out:hover{border-color:var(--wb-a);color:var(--wb-a-ink)}
+.workbench .wb-btn.link{padding:0 4px;height:auto;color:var(--wb-a-ink);background:transparent}
+.workbench .wb-btn.sm{height:29px;padding:0 11px;font-size:12px;border-radius:8px}
+.workbench .wb-btn:disabled{opacity:.55;cursor:default}
+
+/* ---------- 需要我处理队列 ---------- */
+/* 待办改「单行紧凑」（Lemon 2026-09-20 定）：每条原本是一张带边框的卡，
+   图标 34px、标题与说明叠成两行，四条占掉 379px —— 全页最高的一块，而待办
+   一多这页就会很长。现在标题与说明并成一行、条目之间只用细线分隔、按钮靠右成列。 */
+.workbench .wb-q{display:grid}
+.workbench .wb-qi{display:grid;grid-template-columns:auto 1fr auto;gap:11px;align-items:center;
+  padding:10px 2px;border-top:1px solid var(--wb-s3)}
+.workbench .wb-qi:first-child{border-top:0}
+.workbench .wb-qi .wb-qic{width:26px;height:26px;border-radius:8px;display:grid;place-items:center;font-size:12px;flex:none}
+.workbench .wb-qi.danger .wb-qic{background:var(--wb-danger-soft);color:var(--wb-danger)}
+.workbench .wb-qi.warn .wb-qic{background:var(--wb-warn-soft);color:var(--wb-warn)}
+.workbench .wb-qi.info .wb-qic{background:var(--wb-info-soft);color:var(--wb-info)}
+.workbench .wb-qi.ok .wb-qic{background:var(--wb-ok-soft);color:var(--wb-ok)}
+.workbench .wb-qi .wb-qt{display:flex;align-items:baseline;gap:9px;min-width:0;flex-wrap:wrap}
+.workbench .wb-qi .wb-qt b{font-size:12.5px;font-weight:600;color:var(--wb-t);flex:none}
+.workbench .wb-qi .wb-qt .wb-ev{font-size:11px;color:var(--wb-t3);min-width:0}
+.workbench .wb-qi .wb-qt .wb-mono{font-size:11px;color:var(--wb-t3)}
+.workbench .wb-qi .wb-qa{display:flex;gap:7px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
+.workbench .wb-qempty{padding:20px;text-align:center;color:var(--wb-t3);font-size:12.5px}
+.workbench .wb-alerts{border:1px solid var(--wb-bd);border-radius:13px;background:var(--wb-s)}
+.workbench .wb-alerts summary{display:flex;align-items:center;gap:8px;padding:12px 14px;cursor:pointer;font-size:12.5px;color:var(--wb-t2);list-style:none}
+.workbench .wb-alerts summary::-webkit-details-marker{display:none}
+.workbench .wb-alerts-list{border-top:1px solid var(--wb-bd);max-height:280px;overflow-y:auto}
+.workbench .wb-alert-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 14px;border-bottom:1px solid var(--wb-s3)}
+.workbench .wb-alert-row:last-child{border-bottom:0}
+.workbench .wb-alert-row .wb-at{display:grid;gap:2px;min-width:0}
+.workbench .wb-alert-row .wb-at b{font-size:12.5px;color:var(--wb-t)}
+.workbench .wb-alert-row .wb-at small{font-size:11px;color:var(--wb-t3)}
+
+/* ---------- 今日订单表（整宽） ---------- */
+.workbench .wb-tblwrap{overflow-x:auto}
+.workbench .wb-tbl{width:100%;border-collapse:collapse;font-size:12.5px}
+.workbench .wb-tbl th{text-align:left;font-size:11px;font-weight:700;color:var(--wb-t3);text-transform:uppercase;letter-spacing:.03em;padding:8px 10px;border-bottom:1px solid var(--wb-bd);white-space:nowrap}
+.workbench .wb-tbl td{padding:10px;border-bottom:1px solid var(--wb-s3);vertical-align:middle;color:var(--wb-t)}
+.workbench .wb-tbl tr:last-child td{border-bottom:0}
+.workbench .wb-tbl tbody tr{cursor:pointer}
+.workbench .wb-tbl tbody tr:hover{background:var(--wb-s2)}
+.workbench .wb-tbl .wb-mono{font-size:11.5px;color:var(--wb-t2)}
+.workbench .wb-tbl .wb-empty{text-align:center;color:var(--wb-t3);cursor:default}
+
+/* ---------- 响应式 ---------- */
+@media(max-width:1024px){ .workbench .wb-mid{grid-template-columns:1fr} }
+@media(max-width:640px){
+  /* 窄屏：工具栏竖过来，每组一行，组间用细线分开（宽屏靠间距分组，窄屏堆叠后
+     间距读不出分组，得把线补回来）。#wb-routes 是 display:contents，它的两个
+     .wb-grp 在这里是独立的行，所以第一条线只需从 .wb-ops 的头一个子元素去掉。 */
+  .workbench .wb-ops{flex-direction:column;align-items:stretch;padding:0}
+  .workbench .wb-grp{padding:11px 16px;border-top:1px solid var(--wb-s3)}
+  .workbench .wb-ops > .wb-grp:first-child{border-top:0}
+  .workbench .wb-recon{grid-template-columns:1fr 1fr}
+}
+
+/* ===== 设置页（第⑥步 B / D-290）。#settings-view 本来就带 .workbench，可用 wb-* 同族 ===== */
+.workbench .set-table{border:1px solid var(--wb-bd);border-radius:12px;overflow:hidden;background:var(--wb-s)}
+.workbench .set-table table{width:100%;border-collapse:collapse;font-size:12.5px}
+.workbench .set-table th{text-align:left;padding:8px 12px;color:var(--wb-t3);font-weight:600;font-size:11.5px;
+  border-bottom:1px solid var(--wb-bd);background:var(--wb-s2);white-space:nowrap}
+.workbench .set-table th small{font-weight:400;color:var(--wb-t3)}
+.workbench .set-table td{padding:7px 12px;border-bottom:1px solid var(--wb-s3);vertical-align:middle;color:var(--wb-t)}
+.workbench .set-table tbody tr:last-child td{border-bottom:0}
+.workbench .set-rig td{background:var(--wb-s2);font-weight:600;color:var(--wb-t2);font-size:12px}
+.workbench .set-ro{color:var(--wb-t3);font-family:var(--wb-fm);font-size:12px}
+.workbench .set-f{width:92px;padding:4px 8px;font-family:var(--wb-fm);font-size:12px}
+/* 改过还没存的格：一眼看出「这个数还没生效」 */
+.workbench .set-f.is-dirty{border-color:var(--wb-warn);background:var(--wb-warn-soft)}
+.workbench .set-f.is-bad{border-color:var(--wb-danger);background:var(--wb-danger-soft)}
+.workbench .set-kv{display:flex;justify-content:space-between;align-items:center;gap:10px;
+  padding:9px 0;border-bottom:1px solid var(--wb-s3)}
+.workbench .set-kv:last-child{border-bottom:0}
+.workbench .set-kv label{font-size:12.5px;color:var(--wb-t)}
+.workbench .set-kv label small{display:block;color:var(--wb-t3);font-size:11px}
+.workbench .set-kv span{display:flex;align-items:center;gap:7px;flex-wrap:wrap;justify-content:flex-end}
+.workbench .wb-note{margin:0 0 10px;font-size:12px;color:var(--wb-t2)}

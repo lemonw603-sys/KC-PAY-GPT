@@ -1,0 +1,19 @@
+{
+  "name": "诊断 D-325 四段布局与候光控件",
+  "viewport": [1440, 1000],
+  "tolerancePx": 1,
+  "note": "对照用户确认的交互稿；真实记录长度/筛选器/保留的高级表单与演示不同，不强比内容高度。主分组、控件、边距、颜色及折叠结构单独守门，业务由隔离MySQL/UI测试证明。",
+  "prototype": {"url":"${PARITY_PROTO_BASE}/step6-diagnostics-interaction.html","root":"#main"},
+  "impl": {"url":"${PARITY_ADMIN_BASE}/admin/","root":"#diagnostics-view","login":{"passwordEnv":"PARITY_ADMIN_PASSWORD"},"prepare":"await switchView('diagnostics');return !document.querySelector('#diagnostics-view').hidden;"},
+  "probes": [
+    {"name":"主区域分组间距","proto":".diag","impl":".diag-layout","metrics":["display","gap"]},
+    {"name":"四段容器","proto":".diag > .panel","impl":".diag-layout > .diag-panel","all":true,"metrics":["borderRadius"]},
+    {"name":"状态条","proto":".status-line","impl":".diag-status","metrics":["padding","gap","fontSize"]},
+    {"name":"两区标题","proto":".heading","impl":".diag-heading","all":true,"metrics":["padding","gap"]},
+    {"name":"标题字号","proto":".heading h2","impl":".diag-heading h2","all":true,"metrics":["fontSize","fontWeight"]},
+    {"name":"主要查询按钮","proto":"#search button[type=submit]","impl":"#diagnostics-order-search button[type=submit]","metrics":["height","borderRadius","fontSize"]},
+    {"name":"查询输入框","proto":"#order-query","impl":"#diagnostics-public-no","metrics":["height","borderRadius","fontSize"]},
+    {"name":"三类对账筛选","proto":".tabs button","impl":".diag-tabs button","all":true,"metrics":["height","borderRadius","fontSize"]},
+    {"name":"默认折叠工具","proto":"#tools > summary","impl":"#diagnostics-tools > summary","metrics":["padding","fontSize"]}
+  ]
+}

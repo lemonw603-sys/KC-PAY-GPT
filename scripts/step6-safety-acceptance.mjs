@@ -7,6 +7,7 @@ import { once } from 'node:events';
 import { readFile, mkdir, writeFile } from 'node:fs/promises';
 import { gzipSync, gunzipSync } from 'node:zlib';
 import net from 'node:net';
+import { fileURLToPath } from 'node:url';
 import mysql from '../v1/node_modules/mysql2/promise.js';
 import { createApp } from '../v1/src/app/create-app.js';
 import { createAdminSessionAuth, hashAdminPassword } from '../v1/src/security/admin-session.js';
@@ -27,12 +28,17 @@ import { encryptSecret, decryptSecret } from '../v1/src/security/secret-box.js';
 import { loadRuntimeSettings } from '../v1/src/db/repositories/settings-repository.js';
 import { allowedTaskTypesFor } from '../v1/src/workers/worker-runtime.js';
 import { eligibleInventoryCardSql } from '../v1/src/services/card-inventory-eligibility.js';
+import { createDailyReconciliationService } from '../v1/src/services/daily-reconciliation-service.js';
+import { createCardSourceAdminService } from '../v1/src/services/card-source-admin-service.js';
+import { createBrowserBillingAddressAdminService } from '../v1/src/services/browser-billing-address-admin-service.js';
+import { createOperationsCsvExportService } from '../v1/src/services/operations-csv-export-service.js';
 import { Cdp, launchChrome, openPage } from './visual-parity.mjs';
 
 const suffix = crypto.randomBytes(4).toString('hex');
 const database = `step6_safety_${suffix}`, migrator = `safety_${suffix}`;
 const restoreContainer = `step6-restore-${suffix}`;
-const output = new URL('../output/playwright/step6-safety/', import.meta.url);
+const diagnosticsMode = process.env.DIAGNOSTICS_ACCEPTANCE === '1';
+const output = new URL(diagnosticsMode ? '../output/playwright/diagnostics/' : '../output/playwright/step6-safety/', import.meta.url);
 const report = { startedAt: new Date().toISOString(), checks: [], failures: [], isolation: { database, restoreContainer, syntheticOnly: true, providersRegistered: false, workersStarted: false } };
 await mkdir(output, { recursive: true });
 let owner, pool, restored, restoreOwner, server, chrome, cdp, restoreTunnel, restoreCreated = false, dbCreated = false, userCreated = false;
@@ -64,6 +70,10 @@ async function snapshot(ids) {
 }
 try {
   report.commit=(await checked('git',['rev-parse','HEAD'])).toString().trim();
+  report.sourceSha256 = {};
+  for (const file of ['v1/public/admin/index.html','v1/public/admin/assets/admin.js','v1/public/admin/assets/diagnostics.js','v1/public/admin/assets/diagnostics.css','v1/src/services/reconciliation-case-service.js','v1/src/app/create-app.js']) {
+    report.sourceSha256[file] = crypto.createHash('sha256').update(await readFile(file)).digest('hex');
+  }
   const info=JSON.parse((await checked('docker',['inspect','pojia-stage1-mysql'])).toString())[0];
   const binding=info.NetworkSettings.Ports['3306/tcp'][0]; assert.equal(binding.HostIp,'127.0.0.1'); assert.notEqual(binding.HostPort,'13306');
   const password=info.Config.Env.find(e=>e.startsWith('MYSQL_ROOT_PASSWORD=')).slice('MYSQL_ROOT_PASSWORD='.length);
@@ -81,13 +91,16 @@ try {
   const browser=createBrowserAdminService({pool}),ops=createAdminOperationsService({pool});
   const read=createAdminReadService({pool,sessionEncryptionKey:key,cdkHashKey:hashKey,panHmacKey:crypto.randomBytes(32)});
   const cases=createReconciliationCaseService({pool});
+  const daily=createDailyReconciliationService({pool}),cardSources=createCardSourceAdminService({pool}),billing=createBrowserBillingAddressAdminService({pool});
   const verify=createCdkVerifyService({pool,cdkHashKey:hashKey});
   const intake=createOrderIntakeService({pool,sessionEncryptionKey:key,cdkHashKey:hashKey});
   await ops.setOrderAcceptance({enabled:true,confirmation:'开始接单'});
   const adminPassword=crypto.randomUUID();
   const app=createApp({adminAuth:createAdminSessionAuth({passwordHash:await hashAdminPassword(adminPassword),sessionSecret:crypto.randomBytes(32),secureCookies:false}),
     getAdminOverview:read.getOverview,listAdminOrders:read.listOrders,getAdminOrder:read.getOrder,getAdminOrderTimeline:read.getOrderTimeline,listAdminAlerts:read.listAlerts,
-    listAdminReconciliationCases:cases.listCases,listAdminBrowserRuns:browser.listRuns,getAdminBrowserRun:browser.getRun,
+    listAdminReconciliationCases:cases.listCases,resolveAdminReconciliationCase:cases.resolve,listAdminBrowserRuns:browser.listRuns,getAdminBrowserRun:browser.getRun,
+    listAdminBrowserDispatchJobs:browser.listDispatchJobs,runDailyReconciliation:()=>daily.run({persist:false}),listAdminCardSources:cardSources.list,
+    getAdminBillingAddressSettings:billing.get,setAdminBillingAddressSettings:billing.set,getAdminCard:read.getCard,exportAdminOperationsCsv:createOperationsCsvExportService({pool}).exportCsv,
     controlAdminBrowserRun:browser.controlRun,resolveUnknownSubmission:createUnknownSubmissionResolveService({pool}),
     setAdminOrderAcceptance:ops.setOrderAcceptance,setAdminDispatch:ops.setDispatch,setAdminBrowserPaymentWrites:ops.setBrowserPaymentWrites});
   server=app.listen(0,'127.0.0.1');await once(server,'listening');
@@ -124,7 +137,7 @@ try {
       // Hash shape follows the actual lookup helper; values are never printed.
       await sql('UPDATE cdks SET code_hash=?,hash_version=?,issued_at=NOW(3),issuance_kind=\'NORMAL\' WHERE id=?',[lookup.current.hash,lookup.current.version,ids.cdkId]);
       await sql('UPDATE orders SET session_ciphertext=?,customer_email=? WHERE id=?',[encryptSecret('{"synthetic":true}',key),`${kind.toLowerCase()}-${outcome.toLowerCase()}@example.test`,ids.orderId]);
-      await sql('UPDATE cards SET card_credentials_ciphertext=?,funded_amount=50,current_balance=50 WHERE id=?',[encryptSecret('{}',key),ids.cardId]);
+      await sql('UPDATE cards SET card_credentials_ciphertext=?,funded_amount=50,current_balance=50,last4=? WHERE id=?',[encryptSecret('{}',key),String(2400+fixtures.length),ids.cardId]);
       if(kind==='API'){
         await helpers.moveToStuck(pool,ids,{runStatus:'RECONCILE_ONLY',verificationState:'NOT_REQUIRED',orderStatus:'SUBMIT_UNKNOWN'});
         for(const table of ['browser_checkpoints','browser_run_events','browser_operations','execution_resource_leases'])await sql(`DELETE FROM ${table} WHERE browser_run_id=?`,[ids.runId]);
@@ -143,7 +156,15 @@ try {
       assert.equal(Number(await eligible()),0,'unknown funds must not make the card reusable');
       assert.ok(before.cases.length>0&&before.cases.every(c=>c.status==='OPEN'));
       await assert.rejects(()=>intake({cdk:code,session:sessionFixture()}),{code:'CDK_UNAVAILABLE'});
-      await reload();await click(`[data-open-case-order-wb="${publicNo}"]`);
+      if(diagnosticsMode){
+        await ev("await switchView('diagnostics');");
+        const caseId=await scalar('SELECT id FROM reconciliation_cases WHERE order_id=?',[ids.orderId]);
+        assert.equal(await ev(`return document.querySelectorAll('[data-case-id="${caseId}"] [data-resolve-case]').length`),0);
+        const blocked=await ev(`const r=await fetch('/api/v1/admin/reconciliation-cases/${caseId}/resolve',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({resolutionNote:'bypass attempt'})});return {status:r.status,body:await r.json()};`);
+        assert.equal(blocked.status,409);assert.equal(blocked.body.error,'case_requires_order_resolution');assert.deepEqual(await snapshot(ids),before);
+        mark(`${kind} ${outcome}: forged generic-close HTTP blocked with unchanged DB`,blocked);
+        await click(`[data-case-id="${caseId}"] .primary[data-open-case-order]`);
+      }else{await reload();await click(`[data-open-case-order-wb="${publicNo}"]`);}
       const action=kind==='API'?'#resolve-unknown-submission':'[data-order-run-control="RESOLVE_UNKNOWN_PAYMENT"]';
       await click(action);await wait('document.querySelector(".ask-dialog")?.open');
       await fill(kind==='API'?'#ask-outcome':'#ask-verifiedOutcome',outcome);
@@ -158,7 +179,7 @@ try {
       const verdict=await verify({cdk:code});assert.equal(verdict.state,outcome==='CHARGED'?'BOUND_TO_ORDER':'VALID');
       const eligibleAfter=Number(await eligible());assert.equal(eligibleAfter,outcome==='NOT_CHARGED'?1:0);
       await reload();assert.equal(await ev(`return document.querySelectorAll('[data-open-case-order-wb="${publicNo}"]').length`),0);
-      await capture(`${kind}-${outcome}-closed`);mark(`${kind} ${outcome}: workbench → detail → actual handler → DB/CDK verified`,{before,after,cdkVerdict:verdict.state,eligibleCardAfter:eligibleAfter});
+      await capture(`${kind}-${outcome}-closed`);mark(`${kind} ${outcome}: ${diagnosticsMode?'diagnostics':'workbench'} → detail → actual handler → DB/CDK verified`,{before,after,cdkVerdict:verdict.state,eligibleCardAfter:eligibleAfter});
       if(outcome==='NOT_CHARGED'){
         const retry=await intake({cdk:code,session:sessionFixture()});assert.notEqual(retry.orderId,ids.orderId);
         const repeated=await intake({cdk:code,session:sessionFixture()});assert.equal(repeated.orderId,retry.orderId);
@@ -166,6 +187,47 @@ try {
       }else await assert.rejects(()=>intake({cdk:code,session:sessionFixture()}),{code:'CDK_UNAVAILABLE'});
     });
   }
+  if(diagnosticsMode)await section('diagnostics reports and UI states',async()=>{
+    await ev("if(document.querySelector('#detail-drawer').open)document.querySelector('#detail-drawer').close();await switchView('diagnostics');");
+    await wait("document.querySelector('#diagnostics-report-time').textContent.includes('只读核对')");
+    const data=await daily.run({persist:false});
+    const cnt=await ev("return document.querySelector('[data-diagnostic-filter=unverifiable] span').textContent");
+    assert.equal(Number(cnt),data.cards.filter(c=>c.amount.finding==='UNVERIFIABLE').length);
+    await click('[data-diagnostic-filter=unverifiable]');await click('[data-diagnostic-expand]');
+    assert.ok(await ev("return document.querySelector('.diag-evidence:not([hidden])').textContent.includes('卡片同步')"));
+    await click('[data-diagnostic-card]');await wait("document.querySelector('#detail-drawer').open && !document.querySelector('#detail-content').textContent.includes('正在读取')");
+    assert.ok(!(await ev("return document.querySelector('#detail-content').textContent")).includes('读取失败'));await click('#close-detail');
+    mark('real read-only report drives counts, expands evidence and opens actual card detail',{unverifiable:Number(cnt)});
+    const ordinary=await cases.upsertCase({caseType:'OPERATOR_NOTE',dedupeKey:'diag-ordinary',evidence:{synthetic:true}});
+    await ev('await refreshDiagnostics();');await click(`[data-case-id="${ordinary.id}"] [data-resolve-case]`);await fill('#ask-note','isolated record closure');await click('.ask-dialog button[type=submit]');
+    const end=Date.now()+8000;while(await scalar('SELECT status FROM reconciliation_cases WHERE id=?',[ordinary.id])!=='RESOLVED'){if(Date.now()>end)throw Error('ordinary case did not close');await new Promise(r=>setTimeout(r,50));}
+    mark('non-payment record retains audited-note close path',{status:'RESOLVED'});
+    const publicNo=await scalar('SELECT public_no FROM orders WHERE id=?',[fixtures[0].orderId]);
+    await fill('#diagnostics-public-no',publicNo);await click('#diagnostics-order-search button[type=submit]');await wait("document.querySelector('[data-diagnostic-order]')");await click('[data-diagnostic-order]');await wait("document.querySelector('#detail-drawer').open");await click('#close-detail');
+    mark('diagnostics search reaches existing order detail',{publicNo});
+    await ev("window.diagRealFetch=window.fetch;window.fetch=(url,opts)=>String(url).includes('/reconciliation/daily')?Promise.resolve(new Response('{}',{status:500,headers:{'content-type':'application/json'}})):window.diagRealFetch(url,opts);");
+    await click('#diagnostics-report-refresh');await wait("document.querySelector('[data-diagnostic-retry]')");assert.equal(await ev("return document.querySelector('[data-diagnostic-filter=difference] span').textContent"),'—');
+    await ev('window.fetch=window.diagRealFetch;');await click('[data-diagnostic-retry]');await wait("!document.querySelector('[data-diagnostic-retry]')");mark('500 clears stale report/count and retry recovers',{});
+    await ev("window.fetch=(url,opts)=>/reconciliation-cases|admin\\/overview|billing-address/.test(String(url))?Promise.resolve(new Response('{}',{status:503,headers:{'content-type':'application/json'}})):window.diagRealFetch(url,opts);await refreshDiagnostics({daily:true});");
+    assert.match(await ev("return document.querySelector('#diagnostics-status').textContent"),/读取失败/);assert.match(await ev("return document.querySelector('#reconciliation-table').textContent"),/读取失败/);
+    assert.equal(await ev("return document.querySelector('#billing-address-settings button').disabled"),true);
+    await ev('window.fetch=window.diagRealFetch;await refreshDiagnostics({daily:true});');assert.equal(await ev("return document.querySelector('#billing-address-settings button').disabled"),false);
+    mark('runtime/case read failure shown; failed config read disables writes until retry',{});
+    await ev("document.querySelector('#diagnostics-tools').open=true;");await fill('#billing-address-name','Isolated Test');await fill('#billing-address-enabled','true');await click('#billing-address-settings button');
+    await wait("document.querySelector('#page-notice').textContent.includes('账单地址设置已保存')");assert.equal(await scalar("SELECT setting_value FROM app_settings WHERE setting_key='browser_billing_address_name'"),'Isolated Test');
+    const csv=await ev("const r=await fetch('/api/v1/admin/exports/orders.csv?limit=10000');const t=await r.text();return {status:r.status,hasData:t.includes('UNKPAY'),leaks:/session_ciphertext|card_credentials_ciphertext|accessToken/.test(t)};");
+    assert.equal(csv.status,200);assert.equal(csv.hasData,true);assert.equal(csv.leaks,false);mark('existing billing save and sanitized CSV backend retained',{csv});
+    await ev("document.querySelector('#diagnostics-tools').open=false;document.querySelector('#page-notice').hidden=true;window.scrollTo(0,0);");
+    for(const [width,height] of [[1440,1000],[390,844]]){await cdp.send('Emulation.setDeviceMetricsOverride',{width,height,deviceScaleFactor:1,mobile:false},sid);assert.equal(await ev('return innerWidth'),width);assert.ok(await ev('return document.documentElement.scrollWidth<=innerWidth+1'));await capture('diagnostics-'+width);}
+    await cdp.send('Emulation.setDeviceMetricsOverride',{width:1440,height:1000,deviceScaleFactor:1,mobile:false},sid);
+    const parity=await command(process.execPath,['scripts/visual-parity.mjs','docs/design/parity/diagnostics-page.json'],{env:{PARITY_ADMIN_BASE:web,PARITY_PROTO_BASE:'http://127.0.0.1:8899',PARITY_ADMIN_PASSWORD:adminPassword}});
+    await writeFile(new URL('parity.txt',output),parity.stdout);assert.equal(parity.code,0,parity.stdout.toString()+parity.stderr);mark('approved prototype geometry/style contract',{});
+    const mutant=JSON.parse(await readFile('docs/design/parity/diagnostics-page.json','utf8'));
+    mutant.impl.prepare="await switchView('diagnostics');document.querySelector('.diag-layout').style.gap='2px';return true;";
+    const mutationPath=new URL('gap-mutant.json',output);await writeFile(mutationPath,JSON.stringify(mutant));
+    const mutation=await command(process.execPath,['scripts/visual-parity.mjs',fileURLToPath(mutationPath)],{env:{PARITY_ADMIN_BASE:web,PARITY_PROTO_BASE:'http://127.0.0.1:8899',PARITY_ADMIN_PASSWORD:adminPassword}});
+    await writeFile(new URL('mutation.txt',output),mutation.stdout);assert.equal(mutation.code,1,mutation.stdout.toString()+mutation.stderr);mark('geometry contract rejects deliberate gap regression',{exitCode:mutation.code});
+  });
   await section('existing unknown-payment MySQL regressions',async()=>{
     const result=await command(process.execPath,['--test','--test-concurrency=1','v1/test/browser-resolve-unknown-payment-mysql-integration.test.js'],{env:{TEST_DATABASE_URL:source.href}});
     await writeFile(new URL('mysql-tests.txt',output),Buffer.concat([result.stdout,Buffer.from(result.stderr)]));assert.equal(result.code,0,result.stdout.toString().slice(-3000));mark('existing unknown-payment MySQL regressions',{output:result.stdout.toString().split('\n').slice(-10)});

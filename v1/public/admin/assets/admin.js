@@ -454,7 +454,7 @@ function renderWbQueue(overview, daily, alertData, reconCases) {
   // 工作台不再对付款不明提供「解决」直接关 case：那样只擦记录、不动资金，正是 F-61 病根。
   // 其它类型的对账 case 才保留「关闭记录」这一纯记录动作，且明确改名不叫「解决」。
   cases.forEach((c) => {
-    const isPaymentUnknown = PAYMENT_UNKNOWN_CASE_TYPES.has(c.caseType);
+    const isPaymentUnknown = c.requiresOrderResolution || PAYMENT_UNKNOWN_CASE_TYPES.has(String(c.caseType || '').toUpperCase());
     const actions = isPaymentUnknown
       ? (c.publicNo
           ? `<button type="button" class="wb-btn pri sm" data-open-case-order-wb="${escapeHtml(c.publicNo)}">去核实收口</button>`
@@ -782,7 +782,7 @@ async function downloadOperationsCsv(dataset) {
 // F-61/F-68：付款不明的两类 case 必须走订单详情的正式收口，不能在工作台直接关记录。
 // 这两个值是 case_type 的真实取值（产生点：workflow-repository / browser-execution-repository
 // / browser-admin-service），不是 RECONCILIATION_TYPE_LABELS 里那套旧标签。
-const PAYMENT_UNKNOWN_CASE_TYPES = new Set(['API_PAYMENT_UNKNOWN', 'BROWSER_PAYMENT_UNKNOWN']);
+const PAYMENT_UNKNOWN_CASE_TYPES = new Set(['API_PAYMENT_UNKNOWN', 'BROWSER_PAYMENT_UNKNOWN', 'SUBMIT_UNKNOWN', 'SUBMIT_UNKNOWN_STALE']);
 // D-279 ⑦：CDK 状态用客户看得懂的说法，不把 REDEEMED/REVOKED 这种内部词摆到页面上。
 // 「使用中 / 已交付」要看订单走到哪：码被绑走(REDEEMED)只说明开始用了，订单成功才算交付。
 const PLAN_LABELS = Object.freeze({ plus: 'Plus', pro_5x: 'Pro 5X', pro_20x: 'Pro 20X' });
@@ -810,6 +810,7 @@ const RECONCILIATION_TYPE_LABELS = Object.freeze({
   // 抓不到标题 fallback）。补上中文，与客户页/队列的说人话口径一致。
   API_PAYMENT_UNKNOWN: 'API 付款结果不明',
   BROWSER_PAYMENT_UNKNOWN: 'Browser 付款结果不明',
+  SUBMIT_UNKNOWN_STALE: '提交结果未确认',
   PROVIDER_PAYMENT_EVIDENCE_MISSING: '缺少充值平台付款证据',
   PAYMENT_AMOUNT_MISMATCH: '付款金额不一致',
   CARD_PAYMENT_NOT_FOUND: '找不到卡片付款记录',
@@ -818,29 +819,42 @@ const RECONCILIATION_TYPE_LABELS = Object.freeze({
   EVIDENCE_PENDING: '交易证据尚未同步'
 });
 
+let reconciliationLoadVersion = 0;
 async function loadReconciliationCases() {
+  const ticket = ++reconciliationLoadVersion;
   const params = new URLSearchParams({ page: state.reconciliationPage, pageSize: 50 });
   if (elements.reconciliationStatus.value) params.set('status', elements.reconciliationStatus.value);
   if (elements.reconciliationSeverity.value) params.set('severity', elements.reconciliationSeverity.value);
-  const payload = await api(`/api/v1/admin/reconciliation-cases?${params}`);
-  state.reconciliationTotal = payload.total;
-  elements.reconciliationTable.innerHTML = payload.cases.length
-    ? payload.cases.map((item) => `<tr data-case-id="${escapeHtml(item.id)}" data-public-no="${escapeHtml(item.publicNo || '')}">
-      <td><strong>${escapeHtml(item.id)}</strong><small>${escapeHtml(item.dedupeKey)}</small></td>
-      <td>${escapeHtml(item.publicNo || '—')}</td>
-      <td><span class="cell-main">${escapeHtml(RECONCILIATION_TYPE_LABELS[item.caseType] || item.caseType)}</span><small>${escapeHtml(item.caseType)} · ${escapeHtml(RECONCILIATION_SEVERITY_LABELS[item.severity] || item.severity)}</small></td>
-      <td>${escapeHtml(RECONCILIATION_STATUS_LABELS[item.status] || item.status)}</td>
-      <td>${escapeHtml(item.assignedTo || '未分配')}</td>
-      <td>${formatTime(item.lastSeenAt)}</td>
-      <td class="case-actions">${item.publicNo ? '<button class="text-button" type="button" data-open-case-order>查看订单</button>' : ''}${item.status !== 'RESOLVED' ? '<button class="text-button" type="button" data-assign-case>分配</button><button class="danger-small" type="button" data-resolve-case>解决</button>' : escapeHtml(item.resolutionNote || '已解决')}</td>
-    </tr>`).join('')
-    : '<tr><td colspan="7" class="empty-cell">没有符合条件的对账案例</td></tr>';
-  const totalPages = Math.max(1, Math.ceil(payload.total / 50));
-  elements.reconciliationCount.textContent = `${payload.total} 个案例`;
-  elements.reconciliationPage.textContent = `第 ${state.reconciliationPage} / ${totalPages} 页`;
-  elements.reconciliationPrev.disabled = state.reconciliationPage <= 1;
-  elements.reconciliationNext.disabled = state.reconciliationPage >= totalPages;
-  elements.syncTime.textContent = `更新于 ${new Date().toLocaleTimeString('zh-CN', { hour12: false })}`;
+  try {
+    const payload = await api(`/api/v1/admin/reconciliation-cases?${params}`);
+    if (ticket !== reconciliationLoadVersion) return;
+    const openDetails = new Set([...elements.reconciliationTable.querySelectorAll('details[open]')].map(d => d.closest('[data-case-id]').dataset.caseId));
+    state.reconciliationTotal = payload.total;
+    elements.reconciliationTable.innerHTML = payload.cases.length ? payload.cases.map(item => {
+      const orderOnly = item.requiresOrderResolution || PAYMENT_UNKNOWN_CASE_TYPES.has(String(item.caseType || '').toUpperCase());
+      const actions = item.status === 'RESOLVED' ? '<span class="diag-badge">记录已关闭</span>'
+        : orderOnly ? (item.publicNo ? '<button class="diag-btn primary" type="button" data-open-case-order>去订单核实收口</button>' : '<span class="diag-badge warn">缺少订单号，需核对记录关联</span>')
+        : '<button class="diag-btn" type="button" data-resolve-case>关闭记录</button>';
+      return `<article class="diag-case" data-case-id="${escapeHtml(item.id)}" data-public-no="${escapeHtml(item.publicNo || '')}">
+        <div class="diag-case-main"><div><div class="diag-case-title"><span class="diag-badge ${orderOnly ? 'warn' : ''}">${escapeHtml(RECONCILIATION_TYPE_LABELS[item.caseType] || item.caseType)}</span><b class="diag-mono">${escapeHtml(item.publicNo || '未关联订单')}</b></div>
+        <p>${orderOnly ? '先核对账号与卡台交易，再通过订单完成资金收口。' : '这里关闭的是核对记录，不代替订单或资金处理。'}</p></div>
+        <div class="case-actions">${item.publicNo ? '<button class="diag-btn link" type="button" data-open-case-order>查看经过</button>' : ''}${actions}</div></div>
+        <details ${openDetails.has(item.id) ? 'open' : ''}><summary>案例记录与分配</summary><p>${escapeHtml(RECONCILIATION_STATUS_LABELS[item.status] || item.status)} · ${escapeHtml(RECONCILIATION_SEVERITY_LABELS[item.severity] || item.severity)} · ${escapeHtml(item.assignedTo || '未分配')} · ${formatTime(item.lastSeenAt)}</p><p class="diag-mono">${escapeHtml(item.id)} · ${escapeHtml(item.dedupeKey)}</p>${item.resolutionNote ? `<p>${escapeHtml(item.resolutionNote)}</p>` : ''}${item.status !== 'RESOLVED' ? '<button class="diag-btn" type="button" data-assign-case>分配负责人</button>' : ''}</details></article>`;
+    }).join('') : '<div class="diag-empty">没有符合条件的核对案例。</div>';
+    const totalPages = Math.max(1, Math.ceil(payload.total / 50));
+    document.querySelector('#diagnostics-case-count').textContent = `${payload.total} 条记录`;
+    elements.reconciliationCount.textContent = `${payload.total} 个案例`;
+    elements.reconciliationPage.textContent = `第 ${state.reconciliationPage} / ${totalPages} 页`;
+    elements.reconciliationPrev.disabled = state.reconciliationPage <= 1;
+    elements.reconciliationNext.disabled = state.reconciliationPage >= totalPages;
+  } catch (error) {
+    if (ticket !== reconciliationLoadVersion) return;
+    elements.reconciliationTable.innerHTML = '<div class="diag-error">核对案例读取失败，不能确认是否有待办。请刷新状态重试。</div>';
+    document.querySelector('#diagnostics-case-count').textContent = '读取失败';
+    elements.reconciliationCount.textContent = '— 个案例';
+    elements.reconciliationPrev.disabled = elements.reconciliationNext.disabled = true;
+    throw error;
+  }
 }
 
 async function assignReconciliationCase(caseId) {
@@ -863,7 +877,7 @@ async function resolveReconciliationCase(caseId, { after = null } = {}) {
   await sensitiveApi(`/api/v1/admin/reconciliation-cases/${encodeURIComponent(caseId)}/resolve`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ resolutionNote })
   });
-  showNotice('案例已解决并保留处理结论。', 'success');
+  showNotice('核对记录已关闭并保留结论；未执行订单或资金操作。', 'success');
   if (after) await after(); else await loadReconciliationCases();
 }
 
@@ -2420,7 +2434,7 @@ async function openOrder(publicNo) {
     // F-61 在详情页的同一个病：付款不明的 case 不给「关闭对账案例」。关记录只 UPDATE
     // reconciliation_cases，订单/attempt/账本/卡占用一动不动；这两类必须走上面那两个正式收口按钮
     // （收口成功会自己把 case 关掉）。工作台队列早已这样分流，详情页此前漏了。
-    openCases.filter((item) => !PAYMENT_UNKNOWN_CASE_TYPES.has(item.caseType))
+    openCases.filter((item) => !PAYMENT_UNKNOWN_CASE_TYPES.has(String(item.caseType || '').toUpperCase()))
       .forEach((item) => actions.push(`<button type="button" class="ghost-button" data-resolve-order-case="${escapeHtml(item.id)}">关闭对账案例：${escapeHtml(RECONCILIATION_TYPE_LABELS[item.caseType] || item.caseType)}</button>`));
     const cancellationLabels = {
       ORDER_CANCELLATION_ELIGIBLE: '可以安全取消：付款未提交，卡片解除绑定并进入隔离区',
@@ -2550,11 +2564,13 @@ function setActiveNav(navId) {
 }
 
 async function loadDiagnostics() {
+  try {
   const overview = await api('/api/v1/admin/overview');
   renderReadiness(overview.readiness, elements.diagnosticsReadiness);
   const runtime = overview.runtimeHealth || {};
   const provider = overview.providerHealth || {};
   const decisions = overview.decisions || {};
+  document.querySelector('#diagnostics-status').innerHTML = `<span><i class="diag-dot ${runtime.workerHealthy ? '' : 'warn'}" aria-hidden="true"></i>API Worker <b>${runtime.workerHealthy ? '在线' : '离线或未确认'}</b></span><span><i class="diag-dot ${provider.browserRechargeReady ? '' : 'warn'}" aria-hidden="true"></i>Browser <b>${provider.browserRechargeReady ? '就绪' : '未就绪'}</b></span><small>读取于 ${formatTime(new Date().toISOString())}</small>`;
   elements.diagnosticsHeartbeat.innerHTML = `
     <div><span>API Worker 心跳</span><strong>${runtime.workerHealthy ? '在线' : '离线'}</strong><small>${formatTime(runtime.workerHeartbeatAt)}</small></div>
     <div><span>Browser Worker 心跳</span><strong>${provider.browserRechargeReady ? '在线且可派发' : '未就绪'}</strong><small>${formatTime(provider.browserWorkerHeartbeatAt)}</small></div>
@@ -2562,7 +2578,38 @@ async function loadDiagnostics() {
     <div><span>卡住的卡台调用</span><strong>${runtime.stalledProviderCalls ?? 0}</strong></div>
     <div><span>浏览器真实付款</span><strong>${decisions.browserPaymentWritesEnabled ? '已开启' : '关闭'}</strong><small>profile ${decisions.browserProfileWritesEnabled ? '允许写' : '只读'}</small></div>
     <div><span>Worker 直充写权限</span><strong>${runtime.rechargeWritesEnabled ? '已开启' : '关闭'}</strong></div>`;
+  } catch (error) {
+    document.querySelector('#diagnostics-status').innerHTML = '<span class="diag-badge warn">运行状态读取失败，请重试</span>';
+    elements.diagnosticsHeartbeat.innerHTML = '';
+    elements.diagnosticsReadiness.innerHTML = '<p class="diag-empty">尚未取得开工检查结果，不代表系统已就绪。</p>';
+    throw error;
+  }
 }
+
+const diagnosticsPage = window.createDiagnosticsPage({ api, escapeHtml, formatTime, formatMoney, openOrder, openCard, showNotice, orderStatusLabel: code => STATUS_META[code]?.[0] || code });
+async function loadDiagnosticPart(loader, target, colspan = 0) {
+  try { await loader(); } catch {
+    if (target) target.innerHTML = colspan ? `<tr><td colspan="${colspan}" class="diag-empty">读取失败，请刷新状态重试。</td></tr>` : '<p class="diag-empty">读取失败，请刷新状态重试。</p>';
+    if (target === elements.browserDispatchTable) elements.browserDispatchCount.textContent = '读取失败';
+    if (target === elements.browserRunsTable) {
+      elements.browserRunsCount.textContent = '读取失败';
+      elements.browserRunsPrev.disabled = elements.browserRunsNext.disabled = true;
+    }
+  }
+}
+async function refreshDiagnostics({ daily = false } = {}) {
+  const button = document.querySelector('#diagnostics-refresh');
+  button.disabled = true;
+  try {
+    await Promise.all([
+      loadDiagnosticPart(loadDiagnostics), loadDiagnosticPart(loadReconciliationCases),
+      loadDiagnosticPart(loadBrowserDispatchJobs, elements.browserDispatchTable, 6),
+      loadDiagnosticPart(loadBrowserRuns, elements.browserRunsTable, 7),
+      ...(daily ? [loadDiagnosticPart(loadBillingAddressSettings, document.querySelector('#billing-address-meta')), diagnosticsPage.loadDaily()] : [])
+    ]);
+  } finally { button.disabled = false; }
+}
+document.querySelector('#diagnostics-refresh').addEventListener('click', () => refreshDiagnostics({ daily: true }));
 
 async function switchView(view, { status = '' } = {}) {
   setActiveNav(view);
@@ -2570,6 +2617,7 @@ async function switchView(view, { status = '' } = {}) {
   state.status = status;
   state.page = 1;
   elements.views.forEach((panel) => { panel.hidden = panel.id !== `${state.view}-view`; });
+  document.body?.classList.toggle('diagnostics-active', view === 'diagnostics');
   if (view === 'overview') {
     elements.viewKicker.textContent = '运营驾驶舱';
     elements.viewTitle.textContent = '今天的运行情况';
@@ -2584,8 +2632,8 @@ async function switchView(view, { status = '' } = {}) {
     await Promise.all([loadStock(), loadProviderRoutes()]);
   } else if (view === 'diagnostics') {
     elements.viewKicker.textContent = '诊断';
-    elements.viewTitle.textContent = '低频、只读为主';
-    await Promise.all([loadDiagnostics(), loadReconciliationCases(), loadBrowserDispatchJobs(), loadBrowserRuns(), loadBillingAddressSettings()]);
+    elements.viewTitle.textContent = '诊断';
+    await refreshDiagnostics({ daily: true });
   } else if (view === 'settings') {
     elements.viewKicker.textContent = '设置';
     elements.viewTitle.textContent = '按台×按产品 · 全局门槛 · 账单地址';
@@ -2655,6 +2703,8 @@ async function loadProviderRoutes() {
 
 
 async function loadBillingAddressSettings() {
+  const fields = [...document.querySelectorAll('#billing-address-settings input, #billing-address-settings select, #billing-address-settings button')];
+  fields.forEach(field => { field.disabled = true; });
   const data = await api('/api/v1/admin/browser/billing-address');
   const enabled = document.querySelector('#billing-address-enabled');
   const state = document.querySelector('#billing-address-state');
@@ -2662,6 +2712,7 @@ async function loadBillingAddressSettings() {
   if (!enabled) return;
   enabled.value = data.enabled ? 'true' : 'false'; state.value = data.state || 'DE'; name.value = '';
   document.querySelector('#billing-address-meta').textContent = `${data.source} · ${data.sourceVersion}${data.nameConfigured ? ' · 姓名已配置' : ' · 尚未配置姓名'}`;
+  fields.forEach(field => { field.disabled = false; });
 }
 async function saveBillingAddressSettings(event) {
   event.preventDefault();
@@ -2927,14 +2978,14 @@ document.querySelector('#logout-button').addEventListener('click', async () => {
 document.querySelector('#close-detail').addEventListener('click', () => elements.detail.close());
 elements.detail.addEventListener('click', (event) => { if (event.target === elements.detail) elements.detail.close(); });
 window.setInterval(() => {
-  const editing = document.activeElement?.matches?.('input, textarea, select') || elements.detail.open;
+  const editing = document.activeElement?.matches?.('input, textarea, select') || elements.detail.open || document.querySelector('dialog[open]');
   if (document.hidden || editing) return;
   const refresh = state.view === 'overview' ? loadOverview
     : state.view === 'orders' ? loadOrders
       : state.view === 'stock' ? loadStock
         : state.view === 'cdks' ? () => cdkPage.load({ automatic: true })
           : state.view === 'diagnostics'
-            ? () => Promise.all([loadReconciliationCases(), loadBrowserDispatchJobs(), loadBrowserRuns()]) : null;
+            ? () => refreshDiagnostics() : null;
   refresh?.().catch(() => {});
 }, 10_000);
 // 工作台 CDK 快捷「生成即复制」（D-279 第 6 条）：复用 cdks/generate + 幂等键 + 剪贴板。
@@ -3185,8 +3236,6 @@ elements.nextPage.addEventListener('click', () => { if (state.page * state.pageS
 
 document.querySelector('#export-orders')?.addEventListener('click', () => downloadOperationsCsv('orders').catch(() => showNotice('订单导出失败。')));
 
-document.querySelector('#export-reconciliation')?.addEventListener('click', () => downloadOperationsCsv('reconciliation_cases').catch(() => showNotice('对账案例导出失败。')));
-
 document.querySelector('#export-reconciliation-diag')?.addEventListener('click', () => downloadOperationsCsv('reconciliation_cases').catch(() => showNotice('对账案例导出失败。')));
 
 document.querySelector('#reconciliation-filters')?.addEventListener('submit', (event) => {
@@ -3219,7 +3268,7 @@ elements.reconciliationTable?.addEventListener('click', (event) => {
     button.disabled = true;
     resolveReconciliationCase(row.dataset.caseId)
       .then(() => { button.disabled = false; })
-      .catch(() => { button.disabled = false; showNotice('案例解决失败。'); });
+      .catch(error => { button.disabled = false; showNotice(error.message === 'case_requires_order_resolution' ? '付款不明不能只关闭记录，请到订单详情核实收口。' : '核对记录关闭失败，请重试。'); });
   }
 });
 
@@ -3232,7 +3281,12 @@ document.addEventListener('input', (event) => {
 document.addEventListener('click', async (event) => {
   const button = event.target.closest?.('.set-save');
   if (!button || button.disabled) {
-    if (event.target.closest?.('[data-goto-billing]')) switchView('diagnostics');
+    if (event.target.closest?.('[data-goto-billing]')) {
+      await switchView('diagnostics');
+      document.querySelector('#diagnostics-tools').open = true;
+      document.querySelector('#billing-address-settings').scrollIntoView({ block: 'center' });
+      document.querySelector('#billing-address-enabled').focus({ preventScroll: true });
+    }
     return;
   }
   const scope = button.closest('tr') || button.closest('.set-kv');

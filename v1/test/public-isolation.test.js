@@ -189,7 +189,8 @@ test('admin Browser view exposes operational metadata but no authority recovery 
   const html = fs.readFileSync(path.join(directory, 'admin', 'index.html'), 'utf8');
   const script = fs.readFileSync(path.join(directory, 'admin', 'assets', 'admin.js'), 'utf8');
   assert.match(html, /data-view="diagnostics"/);
-  assert.match(html, /authority 不可见/);
+  assert.match(html, /不含 Session、完整卡号或令牌/);
+  assert.match(html, /id="diagnostics-execution"/);
   assert.match(script, /\/api\/v1\/admin\/browser\/runs/);
   assert.match(script, /确认付款结果未知/);
   assert.doesNotMatch(script, /\.secretRef|\.navigationUrl|\.leaseToken|\.resourceKeyHmac/);

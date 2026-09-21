@@ -21,6 +21,11 @@
       "literalColors": 0,
       "offScaleHeights": 0,
       "duplicatedSelectors": 0
+    },
+    "diagnostics.css": {
+      "literalColors": 0,
+      "offScaleHeights": 0,
+      "duplicatedSelectors": 0
     }
   }
 }

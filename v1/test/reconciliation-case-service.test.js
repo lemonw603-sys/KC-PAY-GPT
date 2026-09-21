@@ -2,6 +2,16 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createReconciliationCaseService } from '../src/services/reconciliation-case-service.js';
 
+for (const type of ['API_PAYMENT_UNKNOWN','BROWSER_PAYMENT_UNKNOWN','SUBMIT_UNKNOWN','SUBMIT_UNKNOWN_STALE']) {
+  for (const status of ['OPEN','ASSIGNED','RESOLVED']) test(`${type}/${status} cannot close through the record-only endpoint`, async () => {
+    const pool = scriptedPool([[[{ id:'case-1',case_type:type,status }],[]]]);
+    await assert.rejects(createReconciliationCaseService({pool}).resolve({id:'case-1',resolutionNote:'must not dismiss funds'}), {code:'CASE_REQUIRES_ORDER_RESOLUTION'});
+    assert.equal(pool.queries.length,1);
+    assert.equal(pool.queries.some(q=>/UPDATE|INSERT|DELETE/.test(q.sql.replace('FOR UPDATE',''))),false);
+    assert.deepEqual(pool.transaction,{began:1,committed:0,rolledBack:1,released:1});
+  });
+}
+
 function scriptedPool(responses) {
   const queries = [];
   const transaction = { began: 0, committed: 0, rolledBack: 0, released: 0 };

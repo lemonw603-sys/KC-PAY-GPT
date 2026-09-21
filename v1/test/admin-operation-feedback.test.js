@@ -16,11 +16,14 @@ test('进诊断页要 await 全部五个 loader（原来这条守的是个死按
   assert.ok(branch, 'switchView 里的 diagnostics 分支不见了');
   const loaders = ['loadDiagnostics', 'loadReconciliationCases', 'loadBrowserDispatchJobs',
     'loadBrowserRuns', 'loadBillingAddressSettings'];
-  for (const name of loaders) assert.ok(branch.includes(name), `诊断页少 await 了 ${name}`);
+  assert.match(branch, /await refreshDiagnostics\(\{ daily: true \}\)/);
+  const refresh = src.slice(src.indexOf('async function refreshDiagnostics('), src.indexOf("document.querySelector('#diagnostics-refresh').addEventListener"));
+  for (const name of loaders) assert.ok(refresh.includes(name), `诊断页少 await 了 ${name}`);
   // 必须在同一个 Promise.all 里 await —— 少了 await 就会「页面还空着却说读完了」
-  const all = branch.match(/await Promise\.all\(\[([\s\S]*?)\]\)/);
+  const all = refresh.match(/await Promise\.all\(\[([\s\S]*?)\]\)/);
   assert.ok(all, '五个 loader 必须在一个 await Promise.all 里');
   for (const name of loaders) assert.ok(all[1].includes(name), `${name} 没进那个 Promise.all`);
+  assert.ok(all[1].includes('diagnosticsPage.loadDaily()'), '逐卡报告必须一起等完');
   // 页面上已经没有 #refresh-button 了，它的 handler 不许回来
   assert.doesNotMatch(src, /querySelector\('#refresh-button'\)/);
 });
@@ -68,4 +71,3 @@ test('manual card import preview explains why the commit is blocked and translat
  assert.match(panel.innerHTML,/manual_card_file_invalid/);
  assert.equal(notices.length,1);
 });
-

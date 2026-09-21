@@ -64,6 +64,7 @@ export function loadAdminJs() {
   sandbox.globalThis = sandbox;
   sandbox.self = sandbox;
   vm.createContext(sandbox);
+  vm.runInContext(fs.readFileSync(path.join(path.dirname(adminJsPath), 'diagnostics.js'), 'utf8'), sandbox, { filename: 'diagnostics.js' });
   vm.runInContext(fs.readFileSync(adminJsPath, 'utf8'), sandbox, { filename: 'admin.js' });
   // 注意：顶层 const/let 是全局词法绑定，不会挂到 sandbox(globalThis) 上（只有 function/var 会）。
   // 所以查常量必须在脚本作用域里求值，不能读 sandbox.XXX。
