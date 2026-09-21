@@ -3332,3 +3332,7 @@ tab7只读计算不可用于登录的SHA256指纹与storedExpiry，落login-obse
 新连接初查false：不是业务变化，8类业务全字段hash仍一致，只有通知10行被既有enqueueOpenAlerts在13:03:31转CANCELLED；旧sent_at与attempt_count1、incident_version1保留。未重复apply；补第14项真实MySQL调用原通知服务验证取消不重发，最后独立验证同时检查业务不变与通知正常取消。13:08:41 UTCorders78(20/37/21)、OPEN case0/alert113、待对账账本2/续费待核7、审计10。PID234748/234751/234754和release9b9f181未变。
 
 证据reviews/2026-09-21-feedback-b-close，CURRENT_STATE更新。B仅此批完成，其余113提醒/16旧CDK/7续费/2账本/统计仍待裁定；A界面未发布、23:20闲置复测不变，highvcc标签未访问。
+
+## 2026-09-21｜用户要求Bark降噪与后台历史提醒合并讨论
+
+用户问历史提醒是否Bark，并反映推送太多。已查alert-push-policy及notification-repository：后台alert和BARK投递是两层；余额每笔变化/客户提交仍在白名单，PAYMENT_UNKNOWN中间态等不在现白名单。13:18 UTC查询近7天保留sent_at的行中余额变化10、提交5，最近24h日报1；不是完整投递流水，重开会覆盖，不能当精确发送或手机收到次数，也不能否定用户使用感受。联合范围写入FB-04/交接，拟一并裁定后台去向/手机触发/重复去重，未改代码、静音、删除历史或重启服务。询问最烦的标题以区分正常动态过多与同一故障多次提醒；资金异常保护保留。
