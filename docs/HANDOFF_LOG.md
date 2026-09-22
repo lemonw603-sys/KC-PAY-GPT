@@ -3400,3 +3400,9 @@ Lemon明确“不用处理，我会销卡”，覆盖上一节的逐账号取消
 Lemon补足业务事实：当前讨论的16个旧CDK和2条RECONCILIATION订单都是他自己测试/操作，CDK尚未正式对客户开放。因此不再做“测试码/客户权益/证据不足”逐个分类。
 
 当场只读证据仍支持两条账本未扣款：412JIT外部单8849为failed/卡片被拒/paymentResult=false，u696SE外部单9255为failed/开通超时/paymentResult=false；两attempt均FAILED/CLEARED，卡1013/4643都无PURCHASE，只有16美元入金与15.99美元余额退回。最小处理：保留订单审计；16测试CDK改REVOKED不回库；2条RECONCILIATION改RELEASED并写审计。不新建长期功能。本轮仅定方向与落盘，生产apply仍等固定预览及Lemon明确同意。
+
+## 2026-09-22｜D-343测试CDK与未扣款账本完成一次性生产收口
+
+Lemon听取“作废/释放/保留历史及执行保护”的逐项用途、影响和原因后回复“以上同意”。固定脚本`close-historical-test-cdks.mjs`提交90066ea，默认dry-run，无页面或公开路由；隔离MySQL 1项apply闭环通过，V1默认1081 tests / 1011 pass / 0 fail / 70 skipped。生产dry-run严格命中16个REDEEMED且仍绑定的失败/关闭测试单与2条RECONCILIATION，planDigest 2868a9f0…。
+
+00:01 UTC在独立维护目录用一笔SERIALIZABLE事务完成：16 CDK→REVOKED且保留order_id，2 ledger→RELEASED；新增16条CDK审计和2条同状态订单审计，保护行哈希不变。原值备份0600、15452字节。00:02 UTC新连接独立复核16/16、2/2、审计16+2；订单仍20成功/37失败/21关闭、非终态0，账本19 CONSUMED/52 RELEASED/0 RECONCILIATION。release仍7e88952，web/worker/bark均active，接单/派单/Browser付款开关仍true；无部署、重启或支付动作。证据`reviews/2026-09-22-d343-test-cdk-closeout/report.md`。
