@@ -3453,4 +3453,4 @@ Lemon要求重新了解业务后再给方案并回复“同意”。按D-345～D
 
 Lemon同意卡片联动、highvcc命名统一、去掉重复状态筛选、轻量提升列表协调感、卡片详情沿用V1。实现仅涉及后台只读查询和前端展示：订单行卡台/卡尾号接入现有`openCard`；provider字段补齐并用统一label；订单搜索请求可选返回按搜索/时间范围的摘要，处理/成功/付款未知卡片点击对应列表；隐藏旧状态下拉；highvcc确认文案更正；CSS补摘要卡片与卡片链接样式。付款/CDK/卡分配/资金状态机未改。
 
-验证：新增`v1/test/order-summary-contract.test.js`，加上现有admin-read/public/workbench测试，全量`npm --prefix v1 test`通过1014/0/70。由于网络中断，本轮尚未完成正式后台真实浏览器截图验收、未提交、未部署；继续项是浏览器验收后再决定是否提交。
+验证：新增`v1/test/order-summary-contract.test.js`，加上现有admin-read/public/workbench测试，全量`npm --prefix v1 test`通过1014/0/70；CSS漂移检查也通过。由于后台浏览器停在登录页，本轮未完成登录后的真实截图/点击验收，未部署。已提交推送`141c0dd`与`97c6420`。
