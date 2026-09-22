@@ -3406,3 +3406,11 @@ Lemon补足业务事实：当前讨论的16个旧CDK和2条RECONCILIATION订单�
 Lemon听取“作废/释放/保留历史及执行保护”的逐项用途、影响和原因后回复“以上同意”。固定脚本`close-historical-test-cdks.mjs`提交90066ea，默认dry-run，无页面或公开路由；隔离MySQL 1项apply闭环通过，V1默认1081 tests / 1011 pass / 0 fail / 70 skipped。生产dry-run严格命中16个REDEEMED且仍绑定的失败/关闭测试单与2条RECONCILIATION，planDigest 2868a9f0…。
 
 00:01 UTC在独立维护目录用一笔SERIALIZABLE事务完成：16 CDK→REVOKED且保留order_id，2 ledger→RELEASED；新增16条CDK审计和2条同状态订单审计，保护行哈希不变。原值备份0600、15452字节。00:02 UTC新连接独立复核16/16、2/2、审计16+2；订单仍20成功/37失败/21关闭、非终态0，账本19 CONSUMED/52 RELEASED/0 RECONCILIATION。release仍7e88952，web/worker/bark均active，接单/派单/Browser付款开关仍true；无部署、重启或支付动作。证据`reviews/2026-09-22-d343-test-cdk-closeout/report.md`。
+
+## 2026-09-22｜FB-07客户充值页只读审查完成，发现关路产品晚拒绝
+
+按用户批准的C阶段只读检查生产客户页、当前代码、生产路线/CDK只读数据与隔离测试；未提交真实CDK/Session、未造单、未付款、未部署。Plus有开放API路线；5X/20X路线均关闭，生产仍有2张未过期AVAILABLE 20X码。客户页仍固定宣传三产品，验码服务对AVAILABLE码不查路线，客户会在粘贴完整Session并最终建单时才收到`ORDER_ROUTE_UNAVAILABLE`；事务回滚，不会占码或付款，但体验和最小提交不合理。
+
+客户专项112/112通过。全新058隔离库的旧`mysql-integration`为31通过/11失败/1跳过，主要是已知卡源夹具漂移；其中客户换号夹具仍期待3次上限，与D-120不限次数冲突，不能冒充本轮回归。浏览器初段已验桌面/375px/教程/空态/无控制台错误，后续通道报`Codex auth token is unavailable`后停止，不补写未做现场结果。
+
+建议最小修正：只对会创建新订单的码在验码阶段复用路线可用性判断，返回客户可懂的暂停提示；既有订单查询、重贴、付款未知锁定不受路线开关影响，建单端二次校验保留；首屏三产品固定宣传改中性提示。不新增表、页面或自动售后。尚未获用户批准，未改实现。完整依据和验收见`reviews/2026-09-22-customer-flow-audit/report.md`。
