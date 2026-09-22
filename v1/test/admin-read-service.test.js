@@ -157,6 +157,7 @@ test('admin order list validates filters, maps card summaries, and supports CDK 
       actual_payment_amount: '1150.000000', actual_payment_currency: 'PHP',
       created_at: new Date('2026-08-17T00:00:00Z'), updated_at: new Date('2026-08-17T00:01:00Z'),
       finished_at: null, last4: '4242', current_balance: '25.000000', currency: 'USD',
+      provider_account_id: 'test-highvcc', provider_card_id: 'test-card', card_provider_code: 'manual_excel',
       refund_status: 'MONITORING',
       card_number_ciphertext: encryptSecret('4242424242424242', adminCardKey)
     }], []
@@ -169,6 +170,7 @@ test('admin order list validates filters, maps card summaries, and supports CDK 
   assert.equal(result.total, 1);
   assert.deepEqual(result.orders[0].card, {
     cardNumber: '4242424242424242', last4: '4242', currentBalance: '25.000000',
+    providerAccountId: 'test-highvcc', providerCardId: 'test-card', providerLabel: 'highvcc',
     currency: 'USD', refundStatus: 'MONITORING'
   });
   assert.equal(result.orders[0].actualPaymentAmount, '1150.000000');

@@ -321,10 +321,10 @@ test('admin navigation is exactly six pages and old views are gone', () => {
 test('admin orders page is one table plus one drawer without permits, tags, notes or resend', () => {
   const html = fs.readFileSync(path.join(directory, 'admin', 'index.html'), 'utf8');
   const script = fs.readFileSync(path.join(directory, 'admin', 'assets', 'admin.js'), 'utf8');
-  assert.match(html, /<th>订单<\/th><th>产品<\/th><th>当前阶段<\/th><th>需要我做什么<\/th><th>卡尾号<\/th><th>身份<\/th><th>创建时间<\/th>/);
-  assert.match(html, /<option value="REVIEW_REQUIRED">需要处理<\/option>/);
-  assert.match(html, /<option value="ACTIVE">进行中<\/option>/);
-  assert.match(html, /<option value="FINISHED">已完成<\/option>/);
+  assert.match(html, /<th>订单<\/th><th>产品<\/th><th>当前阶段<\/th><th>需要我做什么<\/th><th>付款卡<\/th><th>身份<\/th><th>创建时间<\/th>/);
+  assert.match(html, /id="order-summary"/);
+  assert.match(script, /data-order-summary-filter/);
+  assert.doesNotMatch(html, /<option value="REVIEW_REQUIRED">|<option value="ACTIVE">|<option value="FINISHED">/);
   assert.match(script, /取消并释放卡/);
   assert.match(script, /人工付款已完成/);
   assert.match(script, /确认 20X 已升级/);

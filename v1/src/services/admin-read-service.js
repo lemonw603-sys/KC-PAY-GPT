@@ -49,7 +49,7 @@ const FINISHED_STATUSES = ['RECHARGE_SUCCESS', 'RECHARGE_FAILED', 'CLOSED'];
 const RECENT_FINISHED_FILTER = 'RECENT_FINISHED';
 const VIRTUAL_FILTERS = new Set([
   'TODAY', 'PROCESSING', 'AWAITING_CONFIRMATION', 'REVIEW_REQUIRED', 'RECONCILIATION_ISSUES',
-  'ACTIVE', 'FINISHED', RECENT_FINISHED_FILTER
+  'ACTIVE', 'FINISHED', 'PAYMENT_UNKNOWN', RECENT_FINISHED_FILTER
 ]);
 
 // D-339：经营成功率只看北京时间近7个自然日（含当天）内创建且已结束的订单。
@@ -164,6 +164,9 @@ const PAYMENT_SETTLED_SQL = `EXISTS (SELECT 1 FROM cards rsetcard
 // filter must always agree with what an operator can actually open.
 const RECONCILIATION_ISSUE_SQL = `EXISTS (SELECT 1 FROM reconciliation_cases rci
   WHERE rci.order_id=o.id AND rci.status IN ('OPEN','ASSIGNED'))`;
+const PAYMENT_UNKNOWN_SQL = `(o.status = 'SUBMIT_UNKNOWN' OR EXISTS (
+  SELECT 1 FROM recharge_attempts unknown_ra WHERE unknown_ra.order_id = o.id
+    AND unknown_ra.status = 'SUBMIT_UNKNOWN' AND unknown_ra.funds_risk_state = 'UNKNOWN'))`;
 
 function reconciliationFromRow(row) {
   return reconcileByRoute({
@@ -976,6 +979,8 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
       values.push(...REVIEW_STATUSES);
     } else if (status === 'RECONCILIATION_ISSUES') {
       conditions.push(RECONCILIATION_ISSUE_SQL);
+    } else if (status === 'PAYMENT_UNKNOWN') {
+      conditions.push(PAYMENT_UNKNOWN_SQL);
     } else if (status === 'PROCESSING') {
       conditions.push(`o.status IN (${PROCESSING_STATUSES.map(() => '?').join(', ')})`);
       values.push(...PROCESSING_STATUSES);
@@ -1003,6 +1008,8 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
       conditions.push('o.status = ?');
       values.push(status);
     }
+    const statusConditionCount = conditions.length;
+    const statusValueCount = values.length;
     const directTimeColumn = {
       CREATED: 'o.created_at', UPDATED: 'o.updated_at', FINISHED: 'o.finished_at'
     }[timeField];
@@ -1070,7 +1077,9 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
       conditions.push(`(${lookupConditions.join(' OR ')})`);
     }
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
-    const [[countRows], [rows], [cdkMatchRows]] = await Promise.all([
+    const summaryConditions = conditions.slice(statusConditionCount);
+    const summaryWhere = summaryConditions.length ? `WHERE ${summaryConditions.join(' AND ')}` : '';
+    const [[countRows], [rows], [cdkMatchRows], [summaryRows]] = await Promise.all([
       pool.query(`SELECT COUNT(*) AS total FROM orders o ${where}`, values),
       pool.query(`SELECT o.public_no, o.status, o.customer_email, o.chatgpt_account_id,
           o.recharge_order_no, o.failure_code, o.created_at, o.updated_at, o.finished_at,
@@ -1082,7 +1091,8 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
           latest_run.run_control_state, latest_run.run_lane, latest_run.run_last_checkpoint_kind,
           latest_run.run_last_error_code, latest_run.run_human_owner_id, latest_run.run_worker_id,
           latest_run.run_lease_until, latest_run.run_updated_at, latest_run.run_profile_code,
-          c.last4, c.current_balance, c.currency, c.refund_status,
+          c.last4, c.provider_account_id, c.provider_card_id, c.current_balance, c.currency, c.refund_status,
+          pa.provider_code AS card_provider_code,
           c.card_number_ciphertext, c.card_credentials_ciphertext,
           (o.status = 'CARD_READY' AND EXISTS (
             SELECT 1 FROM tasks pt WHERE pt.order_id = o.id
@@ -1104,6 +1114,7 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
              FROM cards source_card LEFT JOIN provider_accounts pa ON pa.id = source_card.provider_account_id
              WHERE source_card.id = o.assigned_card_id LIMIT 1) AS card_source_kind
         FROM orders o LEFT JOIN cards c ON (c.id = o.assigned_card_id OR (o.assigned_card_id IS NULL AND c.order_id = o.id))
+        LEFT JOIN provider_accounts pa ON pa.id = c.provider_account_id
         LEFT JOIN products prod ON prod.id = o.product_id
         ${LATEST_ATTEMPT_LATERAL}
         ${LATEST_RUN_LATERAL}
@@ -1122,7 +1133,17 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
          LIMIT 2`,
         [exactCdkLookup.current.version, exactCdkLookup.current.hash,
           exactCdkLookup.legacy.version, exactCdkLookup.legacy.hash]
-      ) : Promise.resolve([[]])
+      ) : Promise.resolve([[]]),
+      input?.includeSummary === true ? pool.query(`SELECT COUNT(*) AS total,
+          SUM(o.status IN (${PROCESSING_STATUSES.map(() => '?').join(', ')})) AS processing,
+          SUM(o.status = 'RECHARGE_SUCCESS') AS success,
+          SUM((o.status IN (${REVIEW_STATUSES.map(() => '?').join(', ')})
+            OR ${FAILED_AFTER_PAYMENT_SQL}
+            OR o.cancellation_review_required = 1
+            OR (${STALE_CREATE_ATTEMPT_SQL}))) AS action,
+          SUM(${PAYMENT_UNKNOWN_SQL}) AS unknown
+        FROM orders o ${summaryWhere}`, [...PROCESSING_STATUSES, ...REVIEW_STATUSES,
+          ...values.slice(statusValueCount)]) : Promise.resolve([[]])
     ]);
     return {
       page,
@@ -1130,6 +1151,13 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
       deliveryTrackingEnabled,
       total: Number(countRows[0]?.total || 0)
         || cdkMatchRows.filter((cdk) => !cdk.public_no).length,
+      ...(input?.includeSummary === true ? { summary: {
+        total: Number(summaryRows[0]?.total || 0),
+        processing: Number(summaryRows[0]?.processing || 0),
+        success: Number(summaryRows[0]?.success || 0),
+        action: Number(summaryRows[0]?.action || 0),
+        unknown: Number(summaryRows[0]?.unknown || 0)
+      } } : {}),
       cdkMatches: cdkMatchRows.map((cdk) => ({
         id: cdk.id, status: cdk.status, batchNo: cdk.batch_no, planType: cdk.plan_type,
         orderPublicNo: cdk.public_no || null, orderStatus: cdk.order_status || null,
@@ -1161,9 +1189,12 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
         requiresRechargeConfirmation: Boolean(row.requires_recharge_confirmation),
         confirmationReadyAt: iso(row.confirmation_ready_at),
         reconciliation,
-        card: row.last4 ? {
+        card: row.provider_card_id ? {
           cardNumber: cardNumber(row, sessionEncryptionKey),
           last4: row.last4,
+          providerAccountId: row.provider_account_id,
+          providerCardId: row.provider_card_id,
+          providerLabel: providerLabelOf(row.card_provider_code),
           currentBalance: decimal(row.current_balance),
           currency: row.currency,
           refundStatus: row.refund_status

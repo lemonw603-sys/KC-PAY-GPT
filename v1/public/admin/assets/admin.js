@@ -53,7 +53,8 @@ const LEDGER_STATUS_LABELS = Object.freeze({
 const ORDER_FILTER_TITLES = Object.freeze({
   REVIEW_REQUIRED: '需要处理的订单', ACTIVE: '进行中的订单', FINISHED: '已完成的订单',
   RECENT_FINISHED: '近7天统计样本', TODAY: '今日订单',
-  PROCESSING: '自动处理中的订单', WAITING_FOR_SESSION: '等 Session 的订单'
+  PROCESSING: '自动处理中的订单', WAITING_FOR_SESSION: '等 Session 的订单',
+  RECONCILIATION_ISSUES: '付款与交易待核实', PAYMENT_UNKNOWN: '付款结果待核实'
 });
 const REFUND_LABELS = Object.freeze({ MONITORING: '观察中', DETECTED: '疑似退款', CONFIRMED: '已确认退款', WITHDRAWN: '已提取' });
 const INVENTORY_LABELS = Object.freeze({ AVAILABLE: '可分配', ASSIGNED: '已分配', DEPLETED: '已耗尽', PROVISIONING: '核对中', FAILED: '已失效', HELD_FOR_REVIEW: '已隔离，禁止自动复用', RETIRED: '永久停用', PRODUCT_ONLY: '限定产品' });
@@ -307,15 +308,34 @@ function identityCell(order) {
 
 function orderRow(order) {
   const stage = order.stage || {};
+  const card = order.card;
+  const cardCell = card?.providerCardId
+    ? `<button class="order-card-link" type="button" data-card="${escapeHtml(card.providerCardId)}" data-card-account="${escapeHtml(card.providerAccountId || '')}">${escapeHtml(card.providerLabel || '卡片')} · 尾号 ${escapeHtml(card.last4 || '—')}</button>`
+    : '<span class="cell-muted">未关联卡片</span>';
   return `<tr data-order="${escapeHtml(order.publicNo)}" tabindex="0">
     <td><strong class="order-link">${escapeHtml(order.publicNo)}</strong><small>${escapeHtml(order.customerEmail || order.chatgptAccountId || '—')}</small></td>
     <td>${escapeHtml(productLabel(order))}</td>
     <td>${stageChip(stage)}</td>
     <td>${stage.action ? `<small class="attention-note">${escapeHtml(stage.action)}</small>` : '<small>—</small>'}</td>
-    <td>${order.card?.last4 ? `尾号 ${escapeHtml(order.card.last4)}` : '—'}</td>
+    <td>${cardCell}</td>
     <td>${identityCell(order)}</td>
     <td>${formatTime(order.createdAt)}</td>
   </tr>`;
+}
+
+function renderOrderSummary(summary = {}) {
+  const items = [
+    ['全部订单', 'ALL', summary.total ?? '—', '当前搜索与时间范围'],
+    ['处理中', 'PROCESSING', summary.processing ?? '—', '正在自动执行'],
+    ['需要处理', 'REVIEW_REQUIRED', summary.action ?? '—', '客户补资料或人工处理'],
+    ['付款待核实', 'PAYMENT_UNKNOWN', summary.unknown ?? '—', '禁止重复充值']
+  ];
+  const box = document.querySelector('#order-summary');
+  if (!box) return;
+  box.innerHTML = items.map(([label, filter, value, note]) =>
+    `<button type="button" aria-pressed="${state.status === (filter === 'ALL' ? '' : filter)}" class="order-summary-item${state.status === (filter === 'ALL' ? '' : filter) ? ' is-active' : ''}" data-order-summary-filter="${filter}">
+      <span>${escapeHtml(label)}</span><strong>${escapeHtml(String(value))}</strong><small>${escapeHtml(note)}</small>
+    </button>`).join('');
 }
 
 // ===== 工作台（第⑥步 C 精修，D-283）渲染 =====
@@ -703,7 +723,7 @@ async function loadOverview() {
 }
 
 async function loadOrders() {
-  const query = { page: state.page, pageSize: state.pageSize };
+  const query = { page: state.page, pageSize: state.pageSize, includeSummary: true };
   if (state.status) query.status = state.status;
   if (state.query) query.q = state.query;
   query.timeField = state.timeField;
@@ -713,6 +733,7 @@ async function loadOrders() {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(query)
   });
   state.total = payload.total;
+  renderOrderSummary(payload.summary);
   // D-279 ③：CDK 匹配行与订单行**同时**显示，不再二选一。
   // 原来是 orders.length ? 订单 : cdkMatches —— 码一旦绑了订单，订单非空，CDK 匹配行就被吃掉，
   // 于是「贴码定位」最有用的那种情况（码已经被用了、想知道它走到哪）反而看不到码的状态。
@@ -3003,7 +3024,7 @@ elements.highvccOpenForm?.addEventListener('submit', async (event) => {
   }
   const confirmation = `开卡 ${vid} ${amount}`;
   const segmentLabel = elements.highvccVidSelect?.selectedOptions?.[0]?.textContent || vid;
-  if (!window.confirm(`确认在备用卡台 A（highvcc.com，卡段 ${segmentLabel}）开一张 $${amount} 的卡？\n\n${state.highvccQuoteFee}\n\n持卡人和地址由系统生成，开出后立即计入库存。`)) return;
+  if (!window.confirm(`确认在 highvcc（highvcc.com，卡段 ${segmentLabel}）开一张 $${amount} 的卡？\n\n${state.highvccQuoteFee}\n\n持卡人和地址由系统生成，开出后立即计入库存。`)) return;
   elements.highvccOpenButton.disabled = true;
   try {
     const result = await sensitiveApi('/api/v1/admin/backup-cards/highvcc/open', {
@@ -3312,6 +3333,17 @@ elements.prevPage.addEventListener('click', () => { if (state.page > 1) { state.
 elements.nextPage.addEventListener('click', () => { if (state.page * state.pageSize < state.total) { state.page += 1; loadOrders(); } });
 
 document.querySelector('#export-orders')?.addEventListener('click', () => downloadOperationsCsv('orders').catch(() => showNotice('订单导出失败。')));
+
+document.addEventListener('click', (event) => {
+  const button = event.target.closest('[data-order-summary-filter]');
+  if (!button) return;
+  const filter = button.dataset.orderSummaryFilter;
+  state.status = filter === 'ALL' ? '' : filter;
+  state.page = 1;
+  if (elements.statusFilter) elements.statusFilter.value = state.status;
+  elements.viewTitle.textContent = ORDER_FILTER_TITLES[state.status] || '全部订单';
+  loadOrders().catch(() => showNotice('订单查询失败，请稍后重试。'));
+});
 
 document.querySelector('#export-reconciliation-diag')?.addEventListener('click', () => downloadOperationsCsv('reconciliation_cases').catch(() => showNotice('对账案例导出失败。')));
 

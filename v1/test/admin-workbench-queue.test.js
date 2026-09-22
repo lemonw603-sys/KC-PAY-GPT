@@ -351,7 +351,7 @@ test('D-339 数字墙跳统计样本时清掉旧搜索和日期，请求不会�
   evalIn("state.query='old@example.com'; state.from='2026-01-01'; state.to='2026-01-31'; state.timeField='UPDATED'; elements.search.value='old@example.com'");
   await sandbox.switchView('orders', { status: 'RECENT_FINISHED', resetOrderFilters: true });
   assert.deepEqual(JSON.parse(JSON.stringify(requestBody)), {
-    page: 1, pageSize: 20, status: 'RECENT_FINISHED', timeField: 'CREATED'
+    page: 1, pageSize: 20, includeSummary: true, status: 'RECENT_FINISHED', timeField: 'CREATED'
   });
   assert.equal(evalIn('state.query'), '');
   assert.equal(evalIn('elements.search.value'), '');
