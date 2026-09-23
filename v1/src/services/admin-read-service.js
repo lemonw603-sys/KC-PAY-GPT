@@ -910,6 +910,8 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
           // any_used 不分产品 —— 拿它当按产品用量，三个产品会完全相同（实测都是 6，
           // 而真实是 plus 12 / pro_20x 1 / pro_5x 0）。
           used: count(productRow?.product_used),
+          // D-355 ⑦：还能充几单（库存口径卡的按产品上限 − 已用 之和）
+          remainingOrders: count(productRow?.remaining_orders),
           target: productRow?.plus_target_available == null ? null : count(productRow.plus_target_available),
           // 水位 0（或没配策略）＝调度器不会为它自动补卡，断了只能人工开
           autoReplenished: count(productRow?.plus_target_available) > 0

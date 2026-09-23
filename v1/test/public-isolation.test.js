@@ -136,7 +136,7 @@ test('admin refresh feedback and inset dropdown arrows remain visible', () => {
   // 「剩 N」用**库存口径**（stockAvailable），不是分配口径。分配口径多一条「15 分钟内
   // 同步过」，而 hnskj 每 3 小时才同步一次 —— 拿它当「还剩几张」会让好卡看起来不存在
   // （Lemon 2026-09-18 指出、2026-09-20 在页面这一侧查实并修，D-307）。
-  assert.match(script, /用 \$\{x\.used\} \/ 剩 \$\{stock\}/);
+  assert.match(script, /剩 <i>\$\{stock\}<\/i> 张 · 能充 <i>\$\{Number\(x\.remainingOrders \|\| 0\)\}<\/i> 单/);
   assert.match(script, /const stock = Number\(x\.stockAvailable \|\| 0\)/);
   assert.doesNotMatch(script, /剩 \$\{x\.bindableNow\}/, '「还剩几张」不许用分配口径');
   assert.match(script, /byProduct/);

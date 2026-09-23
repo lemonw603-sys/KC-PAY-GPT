@@ -198,14 +198,17 @@ body{font-family:var(--wb-fd)}
    把零值摊成三行大字等于让最没信息的部分占最大的视觉重量 —— 第一版这么做，
    整块 381px 比改之前的 291px 还高，与「精简」背道而驰。压扁后回到 ~180px。 */
 .workbench .wb-prods{margin-top:8px;display:grid;grid-template-columns:repeat(3,1fr);gap:7px}
-.workbench .wb-prod{display:flex;align-items:baseline;gap:7px;padding:6px 9px;border-radius:8px;
+/* D-355 ⑦ 文案变长（剩 N 张 · 能充 N 单）：数字才用等宽，汉字用正文字体，否则中文在等宽里字距发散；
+   「自动补/需人工开」固定落到第二行右侧，三格高度一致，1280 宽也不溢出。 */
+.workbench .wb-prod{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 7px;padding:6px 9px;border-radius:8px;
   background:var(--wb-s);border:1px solid var(--wb-s3)}
 .workbench .wb-prod.is-ok{border-color:var(--wb-bd);background:var(--wb-ok-soft)}
 .workbench .wb-prod b{font-size:11px;font-weight:700;color:var(--wb-t3);letter-spacing:.04em;flex:none}
 /* 有货的才给正常墨色；全 0 的退成弱色 —— 一眼看出哪个产品现在真能接单 */
-.workbench .wb-prod .wb-prod-n{font-family:var(--wb-fm);font-size:12.5px;font-weight:600;color:var(--wb-t3)}
+.workbench .wb-prod .wb-prod-n{font-size:12.5px;font-weight:600;color:var(--wb-t3);white-space:nowrap}
+.workbench .wb-prod .wb-prod-n i{font-style:normal;font-family:var(--wb-fm)}
 .workbench .wb-prod.is-ok .wb-prod-n{color:var(--wb-t)}
-.workbench .wb-prod small{font-size:10px;color:var(--wb-t3);margin-left:auto;flex:none;white-space:nowrap}
+.workbench .wb-prod small{font-size:10px;color:var(--wb-t3);width:100%;text-align:right;flex:none;white-space:nowrap;line-height:1.2}
 /* 「需人工开」保留区分但不强调（Lemon 2026-09-20：「不需要那么明显，我知道」）——
    5X/20X 没做库存卡是既定安排，不是异常，橙色加粗会天天喊一件他早就清楚的事。 */
 .workbench .wb-prod small.is-manual{color:var(--wb-t3)}

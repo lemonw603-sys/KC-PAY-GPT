@@ -35,7 +35,7 @@ test('admin overview maps aggregate values without exposing raw records', async 
     [{ card_intake_pending: 2, funds_risk_pending: 1,
       card_funding_risk_pending: 2, card_funding_manual_review: 1,
       reconciliation_cases_open: 3, card_sync_backlog: 4, card_sync_review_required: 2 }],
-    [{ provider_account_id: 'pa-hnskj', provider_code: 'legacy-primary', provider_kind: 'hnskj', total: 14, in_stock: 2, stock_available: 2, bindable_now: 0, in_use: 0, any_used: 6, product_used: 6, plus_target_available: 2 },
+    [{ provider_account_id: 'pa-hnskj', provider_code: 'legacy-primary', provider_kind: 'hnskj', total: 14, in_stock: 2, stock_available: 2, bindable_now: 0, in_use: 0, any_used: 6, product_used: 6, remaining_orders: 5, plus_target_available: 2 },
       { provider_account_id: 'pa-backup-a', provider_code: 'backup-a', provider_kind: 'manual_excel', total: 16, in_stock: 7, stock_available: 2, bindable_now: 2, in_use: 0, any_used: 6, product_used: 6, plus_target_available: 2 }],
     // ⚠️ fixture 必须是真实 SQL 可能产出的形状：any_used **不分产品**，三个产品查出来必然
     // 完全相同（2026-09-20 生产实测都是 6）；按产品的用量在 product_used 里。
@@ -72,6 +72,9 @@ test('admin overview maps aggregate values without exposing raw records', async 
   assert.equal(backup.byProduct[2].used, 1, 'backup-a 有 1 张卡服务过 20X');
   // 三个产品的 used 不能因为 any_used 相同而相同 —— 它们必须来自 product_used
   assert.deepEqual(backup.byProduct.map((p) => p.used), [6, 0, 1]);
+  // D-355 ⑦：工作台显示「剩 N 张 · 能充 N 单」，能充几单来自 remaining_orders（库存卡按产品上限 − 已用 之和）
+  assert.equal(hnskj.byProduct[0].remainingOrders, 5);
+  assert.equal(hnskj.byProduct[2].remainingOrders, 0, 'fixture 没给 remaining_orders 的按 0 算');
   // 今日花费按台（消费 + 开卡费，不含 card_recharge —— 算了会和消费重复）
   assert.equal(hnskj.spentToday, '16.000000');
   assert.equal(result.cardStockByProvider.find((r) => r.providerKind === 'manual_excel').spentToday, '33.250000');

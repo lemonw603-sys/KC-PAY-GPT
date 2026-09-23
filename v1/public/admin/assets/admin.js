@@ -352,6 +352,8 @@ function renderWbCards(overview) {
   const waiting = Number(overview.ordersWaitingForCard || 0);
 
   // D-283 原规划就是「按台按产品」，原型 C 画的是每台一行、行内按产品「用 N / 剩 N」。
+  // D-355 ⑦（2026-09-24 落地）：Lemon 说「用 N」（历史卡张数含已销）不是他要的，改成
+  // 「剩 N 张 · 能充 N 单」——能充几单 = 库存卡各自（按产品上限 − 已用）之和，后端算。
   // 「剩 N」旁边必须标会不会自动补（Lemon 2026-09-20）：水位来自 card_supply_policies，
   // 调度器读的就是它 —— 水位 0 表示这个产品没做库存卡，断了只能人工开，
   // 而「20X 剩 0」和「Plus 剩 0」的严重程度完全不同，只显示「剩 0」看不出这个区别。
@@ -363,7 +365,7 @@ function renderWbCards(overview) {
     const how = x.autoReplenished ? '自动补' : '需人工开';
     return `<span class="wb-prod ${stock > 0 ? 'is-ok' : ''}">`
       + `<b>${escapeHtml(x.label)}</b>`
-      + `<span class="wb-prod-n">用 ${x.used} / 剩 ${stock}</span>`
+      + `<span class="wb-prod-n">剩 <i>${stock}</i> 张 · 能充 <i>${Number(x.remainingOrders || 0)}</i> 单</span>`
       + `<small class="${x.autoReplenished ? '' : 'is-manual'}">${how}</small></span>`;
   };
   box.innerHTML = byProvider.map((p) => {

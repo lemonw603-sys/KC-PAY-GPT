@@ -3594,3 +3594,7 @@ Lemon 选做「1 每周自检」。`scripts/weekly-check.sh`（本机）+ `v1/sc
 
 Lemon「发布」。prepare（备份 `pojia-20260923T232507Z`）→ migrate 059（两把 Pro 键 = 1，新连接核实 3/1/1）→ 复核新目录 → switch：三进程 cwd 在新 release，live/ready 200。复验：登录 200、`admin.js?v=93` 200 且含按产品字段、端点未登录 401；正式资格 SQL 实跑 plus 1 张/上限 3、pro_5x 0/1、pro_20x 0/1；发布前后「跑过 Pro 且在库」的卡 0 张（新规则没退出任何卡）。CURRENT_STATE 七行已改，CLAUDE.md 硬约束那句改为已落地。回滚点 `20260924-session-hours-a307356`。
 
+## 2026-09-24｜欠账 15 落地（D-362，08:4x～09:0x UTC+8）
+
+Lemon「欠账 15」。查 D-355 ⑦ 已定 (b)，直接做：`remaining_orders` 列（库存口径卡按产品上限 − 已用之和）、投影 `remainingOrders`、工作台「剩 N 张 · 能充 N 单」。第一版全用等宽字体导致中文字距发散、20X 格换行；改成数字等宽 + 说明落第二行，三格等高。全量测试、棘轮、文案、营业条契约（下）。全量 sql-probe 结果补记。
+

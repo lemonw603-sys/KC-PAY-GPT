@@ -329,7 +329,14 @@ export function providerCardStockSql({ productCode = 'plus' } = {}) {
         JOIN orders po ON po.id = pu.order_id
         WHERE pu.card_id = c.id
           AND pu.status IN ('RESERVED','CONSUMED','RECONCILIATION')
-          AND po.plan_type = '${normalizedProduct}')) AS product_used
+          AND po.plan_type = '${normalizedProduct}')) AS product_used,
+      -- D-355 ⑦（欠账 15）：工作台按产品显示「剩 N 张 · 还能充 N 单」。
+      -- 「还能充」= 库存口径里每张卡（该产品的每卡上限 − 已用次数）之和，
+      -- 上限按产品取（maxPaymentsSql，D-361），已用与资格 SQL 同口径。
+      SUM(CASE WHEN (${stockCountingCardSql('c', minimumSql, { productCode: normalizedProduct })})
+        THEN GREATEST(0, (${maxPaymentsSql(normalizedProduct)}) - (SELECT COUNT(*) FROM card_consumption_ledger ro
+          WHERE ro.card_id = c.id AND ro.status IN ('RESERVED','CONSUMED','RECONCILIATION')))
+        ELSE 0 END) AS remaining_orders
     FROM cards c INNER JOIN provider_accounts pa ON pa.id=c.provider_account_id
     LEFT JOIN card_supply_policies sp ON sp.provider_account_id = pa.id AND sp.product_code = '${normalizedProduct}'
     -- 只统计**卡台**。provider_accounts 里还有 purpose='RECHARGE' 的行（zzshu 旧直充系统，

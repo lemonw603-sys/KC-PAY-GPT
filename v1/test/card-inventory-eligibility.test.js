@@ -213,3 +213,10 @@ test('D-221: 每卡单数按产品 —— 按产品键优先、回落全局、�
   assert.throws(() => maxPaymentsSql({ column: 'o.plan_type; DROP' }), /Invalid plan column/);
 });
 
+test('D-355 ⑦: provider stock SQL reports remaining orders per product (per-product cap minus used, stock-counting cards only)', () => {
+  const sql = providerCardStockSql({ productCode: 'pro_20x' });
+  assert.match(sql, /AS remaining_orders/);
+  assert.match(sql, /GREATEST\(0, \(COALESCE\(\s*\(SELECT CAST\(setting_value AS UNSIGNED\) FROM app_settings WHERE setting_key = 'card_max_successful_payments:pro_20x'/);
+  assert.match(sql, /ro\.status IN \('RESERVED','CONSUMED','RECONCILIATION'\)/);
+});
+
