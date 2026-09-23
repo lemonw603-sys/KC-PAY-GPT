@@ -3472,3 +3472,13 @@ Lemon明确本窗口不再由本执行者继续订单页工作块，只要求落
 - 工作区收尾时无未提交修改；本窗口没有改业务代码、没有部署、没有生产写入。
 
 交接边界：测试全绿只证明当前实现的代码契约，不推翻D-351的实际交互否定；D-345～D-350的需求、候选结构与局部实现均是历史材料，D-350与D-349均不构成新基线。E整体回归、完整使用一天、⑦⑧及各产品真钱集成验收仍未开始。
+
+## 2026-09-23｜新窗口接班盘点与执行顺序改写（D-352）
+
+Lemon 问「怎样要求你才能完全接住」并要求审视问题与方向。本窗口未改业务代码，做了三路只读盘点（06:08～06:18 UTC）：
+
+- **生产现场**：`state-check.sh` 11 项全一致。订单 78（成功 20 / 失败 37 / 关闭 21），最近成功 09-16 11:06 UTC `x-tIs`（旧版），09-19 起 0 单；近 30 天按日峰值 09-13 24 单。CDK 81（AVAILABLE 21 / REDEEMED 21 / REVOKED 39），09-21 新增 2 个 NORMAL 批次（6 张，`微信a / 600.00`）已「后台作废」。卡：hnskj AVAILABLE 2（$66）/ RETIRED 12；highvcc AVAILABLE 7（$119.92）/ RETIRED 9。钱包快照 hnskj $38.73（09-23 06:07 UTC）、highvcc $41.49（09-19 00:53 UTC，此后无新快照）。`pojia-highvcc-snapshot-sync.service` failed，24h journal `HIGHVCC_TOKEN_EXPIRED` 57 次；timer 实为每 10 分钟（事实表原写每小时，已改）。告警 OPEN 113；Bark 最后 SENT 09-23 04:05 UTC（日对账）。本机 pool worker PID 67131 自 09-18 07:06 UTC 跑至今。成功单 `PJV1-_VjINYXkOLLdiBrjpSZo` finished_at 为 NULL（已记入事实表）。未核实：web/worker/bark 三进程 journal 去向（`journalctl -u` 0 行）。
+- **代码结构**（证据行号见 D-352）：Browser 单机单 lane 串行；一单付款不明冻结整 lane；入单不看执行器心跳、处理中无老化；Session 门槛与等卡 7 天冲突；不许重付三份状态；卡日开上限 20 张/台；本机 `npm --prefix v1 test` 1014 pass / 0 fail / 70 skipped，70 skip 全是 MySQL 集成。
+- **投入分布**：DECISIONS 348 条、36 天；W37 81 条 / W38 104 条；近 30 天后台 UI 64 + 流程规则 55 + 付款链路 44；至少 16 组决策定了又改。git 近 30 天 1441 提交、62% 纯文档、docs 新增 496 文件；W39 browser-mvp 触及 0。接班必读约 180KB + DECISIONS 559KB。
+
+结论与新顺序见 D-352。本轮落盘：DECISIONS D-352、PROJECT_MAP §4 顺序覆盖、HANDOFF_NOW 重写为一屏、CURRENT_STATE 三行订正（highvcc timer 间隔、快照日期、订单 finished_at NULL）。
