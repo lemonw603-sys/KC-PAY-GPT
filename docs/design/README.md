@@ -242,3 +242,11 @@ D-180 当时写的是"阶段来自 `browser_runs` 检查点"。实查后修正�
 - ~~发布~~ **已完成**：2026-09-12 12:55 UTC 上线 `20260912-customer-page-624487c`，
   发布后已独立复验（`stage` 字段正常返回、卡密校验接口 200 且限流生效、后台未受影响），
   证据见 `CURRENT_STATE.md`。
+
+
+## 设计与视觉审查工具（2026-09-24 Lemon 批准安装）
+
+- **impeccable**（项目级，`.claude/skills/impeccable`，编辑钩子在 `.claude/settings.local.json`）：`/impeccable critique|audit|polish|layout <目标>` 做设计审查；`.claude/skills/impeccable/scripts/impeccable detect <文件或本地地址>` 跑 61 条确定性规则（对比度、拥挤、AI 味），不需要模型。首扫订单页 Demo 结果见 `reviews/2026-09-23-orders-v3-demo.md`。临时产物 `.impeccable/` 已加 .gitignore。
+- **frontend-design**（Anthropic 官方插件，用户级）：新页面设计阶段先出色板/字体/布局小计划并对照需求自查是否模板套路。
+- 既有：`scripts/visual-parity.mjs`（几何量对冻结原型）、真实 Chromium 截图人工读图、`refactoring-ui` 技能自审清单。
+- 分工：做之前 frontend-design 定方向 → 做完 refactoring-ui + impeccable critique 自审 → detect 进收尾 → parity 防实现走样。

@@ -3539,3 +3539,8 @@ prepare（manifest 1348、备份 OK、无迁移）→ switch → 三服务 activ
 ## 2026-09-24｜订单页 Demo v3（D-356）做完并浏览器验收
 
 Lemon 答完八问后即做：`step6-orders-v3.html` 复用 `_frozen/cdk-a` 外壳与 cdk-* 列表/筛选形态，只加 od-* 管主行/历史行、动作格、抽屉三问；数据从生产只读导出 80 单形态并匿名（`data/orders-demo.jsonl`）。验收 25/25（脚本与结果入 reviews）。截图核对后修了三处：邮箱按钮被通用控件样式套成方框（提高选择器优先级）、续费待确认未归入「需要我处理」、未分卡时抽屉三问缺两行。字体 502 来自原型服务器反代本地后台未启动，记录不算错。原型服务器 8899 由本窗口以后台进程起（此前已在跑），Lemon 打开 http://localhost:8899/step6-orders-v3.html 即可点。
+
+## 2026-09-24｜订单页 Demo 第三、四轮；装 impeccable + frontend-design
+
+Lemon 第二轮试用：客户/产品列间距仍宽、「此前 N 次」与邮箱不协调。第三轮：客户列只留邮箱、按内容定宽 236px，历史链接挪进度列；Lemon 要求放回客户列并用小图标代替文字。第四轮：邮箱后 18px 小标「N ▾」（数字 + 三角，aria-label 说明），展开时翻转变主色浅调。验收 30/30。
+Lemon 批准安装：官方 `frontend-design@claude-plugins-official`（用户级）与 `impeccable`（项目级 + 编辑/Stop 钩子，引擎 v0.1.5 在 `.claude/skills/impeccable/scripts/bin`）。`impeccable detect` 首扫 Demo：16 条，全是两类——三级文字 `--wb-t3` 在白底 3.6:1、警示色 `--wb-warn` 在浅底 3.9:1（都是全局令牌，四页共用，非 Demo 独有）；分段器与表格外框「内容贴边」两条属控件形态；两条 advisory（1px 边 + 宽投影）。令牌候选：t3 50%→44% 得 4.5:1，warn 40%→36% 得 4.6:1，待 Lemon 定是否改令牌。impeccable 技能本会话未加载（需新窗口）。
