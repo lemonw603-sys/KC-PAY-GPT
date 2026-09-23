@@ -5466,3 +5466,13 @@ Lemon 对 `reviews/2026-09-24-orders-v3-critique.md` 的裁定：**1 做**（抽
 - 令牌：`--wb-t3` 50% → **41%**（44% 在卡片内嵌底只有 4.3:1，不够；41% 在白/内嵌/控件底 5.1/4.8/4.6），`--wb-warn` 40% → **36%**（浅底 4.6）。四页共用；五份几何契约全部一致；`impeccable detect` 复验这两个令牌的对比度条目清零（剩 31 条全是 admin.css 旧壳层 `--muted`/`--green`/蓝按钮，不在候光皮内）。
 - 发布：Lemon 一句「发布」。顺序：做完 1 与 5 → prepare → 复核 → switch → 生产只读复验。
 
+## D-360（2026-09-24）KC-PAY-GPT 独立业务线：先隔离验证，再决定接入 V2
+
+Lemon 确认新增一条独立的 KC-PAY-GPT 充值执行路线。它与 ZZSHU、Browser 并列，但不直接并入 V2 代码或生产链路。
+
+- 独立工程目录：`/Users/lemon/code/KC-PAY-GPT-standalone`；上游为 `KC-CatK/KC-PAY-GPT`，开发分支为 `codex/kc-standalone-api`。
+- 第一阶段只做独立二次开发和链路验证：独立进程、数据库、配置、密钥、卡池和代理；不接 V2、不改默认路线、不产生生产充值。
+- KC-PAY-GPT 只有在独立完成 API、Worker、订单状态、成功/失败收口和受控充值验收后，才允许通过薄 `KC_PAY_GPT` Adapter 接入 V2。
+- 接入时 V2 只持有统一路线状态和外部任务引用，不共享 KC 内部数据库，不搬运 KC 后台或执行器源码。
+
+本决定不改变当前 V2 生产路线，不代表 KC-PAY-GPT 已验证可充值。

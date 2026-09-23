@@ -3575,4 +3575,9 @@ Lemon「1 做」。列表投影加 `session_repair_expires_at`；芯片文案「
 
 Lemon「发布」。无迁移、SQL probe 通过；prepare 备份 `pojia-20260923T184034Z`；复核新目录含 `orders.js?v=4`、「还剩」文案、列表投影；switch 后三进程 cwd 都在新 release，live/ready 200。独立复验：登录 200、`orders.js?v=4` 200 且含新文案、search 未登录 401；生产只读实跑「需要我处理」桶 9 行，等 Session 行带到期时间。回滚点 `20260924-orders-v3-822cb7d`。
 Lemon 2026-09-24 05:0x UTC+8 看过生产：「没问题，进块 6 前置」。块 6 前置 = 20X 购买页非付款 PoC 冻结到 contracts。
+## 2026-09-24｜KC-PAY-GPT 独立业务线创建
+
+Lemon 确认将 `KC-PAY-GPT` 作为独立充值执行路线进行二次开发。已在 V2 仓库外创建同级目录 `/Users/lemon/code/KC-PAY-GPT-standalone`，从上游 `https://github.com/KC-CatK/KC-PAY-GPT.git` 克隆，当前分支 `codex/kc-standalone-api`，工作区干净，V2 工作区无改动。
+
+执行边界：先在独立工程内完成最小 API、Worker、订单状态和受控充值验证；在验证通过前，不接入 V2、不注册默认路线、不共享 V2 数据库/卡池/密钥、不做生产充值。后续如通过，仅以薄 `KC_PAY_GPT Adapter` 接入。
 
