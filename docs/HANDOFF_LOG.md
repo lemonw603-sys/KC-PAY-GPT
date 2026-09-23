@@ -3574,4 +3574,5 @@ Lemon「1 做」。列表投影加 `session_repair_expires_at`；芯片文案「
 ## 2026-09-24｜发布 `20260924-session-hours-a307356`（18:4x UTC = 02:4x UTC+8 次日）
 
 Lemon「发布」。无迁移、SQL probe 通过；prepare 备份 `pojia-20260923T184034Z`；复核新目录含 `orders.js?v=4`、「还剩」文案、列表投影；switch 后三进程 cwd 都在新 release，live/ready 200。独立复验：登录 200、`orders.js?v=4` 200 且含新文案、search 未登录 401；生产只读实跑「需要我处理」桶 9 行，等 Session 行带到期时间。回滚点 `20260924-orders-v3-822cb7d`。
+Lemon 2026-09-24 05:0x UTC+8 看过生产：「没问题，进块 6 前置」。块 6 前置 = 20X 购买页非付款 PoC 冻结到 contracts。
 
