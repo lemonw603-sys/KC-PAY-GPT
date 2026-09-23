@@ -5,7 +5,7 @@
 | 项目 | 当前值 | 核对时间（UTC） | 证据方式 |
 |---|---|---|---|
 | 第⑥步057迁移准入 | 055～058已应用；057触发器DEFINER为`pojia_migrator@172.17.0.1`，临时SUPER已撤回。本轮反馈发布无新迁移，未重跑DDL。 | 2026-09-21 07:52 UTC | migration.log，新连接schema/DEFINER/grants复核 |
-| 生产 release | `/opt/pojia/releases/20260923-d355-8f9ddc1`（固定提交 `8f9ddc1`，D-355 打回等 Session 时放卡；含块 3 服务器侧全部改动 `6807de8`）。 | 2026-09-23 13:0x UTC | 独立 SSH readlink/三进程 cwd；manifest 1348 项通过 |
+| 生产 release | `/opt/pojia/releases/20260923-d355-8f9ddc1`（固定提交 `8f9ddc1`，D-355 打回等 Session 时放卡；含块 3 服务器侧全部改动 `6807de8`）。**注意：D-350 订单页改动（`141c0dd`，Lemon 已否定 D-351、文档写「不发布」）在 main 上，随块 3 发布一并进了生产**：线上 `index.html` 引 `admin.js?v=89`、含 `#order-summary`，即订单页现为 D-350 版（摘要卡片筛选、隐藏状态下拉、付款卡按钮）。执行者 2026-09-23 22:4x 发现，待 Lemon 定：留到块 5 重做替换，或先回退前端这几处。 | 2026-09-23 13:0x UTC | 独立 SSH readlink/三进程 cwd；manifest 1348 项通过 |
 | 回滚点 | **`20260923-block3-6807de8`**（块 3 首发版）。命令：`ln -sfn /opt/pojia/releases/20260923-block3-6807de8 /opt/pojia/current && systemctl restart pojia-web.service pojia-worker.service pojia-bark-notifications.service`。再往前是 `20260921-feedback-d340-7e88952`。 | 2026-09-23 13:0x UTC | `deploy-release.sh switch` 输出 |
 | 最新数据库备份 | `/var/backups/pojia/pojia-20260923T123158Z.sql.gz.enc`，backup_integrity=OK。本轮无迁移。 | 2026-09-23 12:32 UTC | prepare 原始输出 |
 | **服务器重启** | 最近启动时间2026-09-21 01:08:52 UTC，服务器时区UTC。原因本轮未核实，不沿用09-16的历史原因。 | 2026-09-21 02:01 UTC | uptime -s + date +%Z |

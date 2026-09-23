@@ -3527,3 +3527,7 @@ prepare（manifest 1348、备份 OK、无迁移）→ switch → 三服务 activ
 ## 2026-09-23｜块 3 收尾：演练通过、常驻池换新代码（13:40～13:53 UTC）
 
 流程：`stop-live.sh` 停池 67131 + 关付款 → `set-intake-executor-check.mjs off --apply` → Lemon 客户页建演练单 `PJV1-LjBlwWYn-MKrbHYII1gY`（13:40:51）→ 第一次 `run-live-rehearsal.sh once`（默认 Lane 3 身份 8f126430…）在 `page.goto chatgpt.com` 120s 超时，run FAILED_SAFE、租约过期、无残留进程 → 第二次改用常驻池 lane-1 身份 10f0dc7b… → **`PRE_SUBMIT_STOPPED`，报价 PHP 982.14 / 税 0.00，付款点击 0**（新连接核实 PAYMENT_SUBMIT 0、funds ACTIVE→收口）→ `close-rehearsal-order.mjs`（三问全 0）CLOSED：卡 8718 放回、CDK 退回、派发取消 → check `on --apply` → 按 go-live 同一路径开付款 + profile + 审计 → supervisor 13:50:13 UTC 拉起新池 PID 6667，心跳 13:51 新鲜。**块 3 四项与 D-355 全部上线且演练绿。** 观察：Lane 3 身份打不开 chatgpt.com（原因未查，不影响生产，生产用 lane-1）。
+
+## 2026-09-23｜发现：D-350 订单页改动已随块 3 发布进生产（与 D-351「不发布」冲突）
+
+块 5 代码盘点时查出 `141c0dd`（D-350）是生产 release 固定提交 `8f9ddc1` 的祖先；SSH 核实线上 `index.html` 引 `admin.js?v=89`、含 `#order-summary`，`admin.js` 含 `renderOrderSummary`。根因：D-350 当时提交到了 main 且未回退，块 3 从 main 固定提交发布时带上。文档（DECISIONS D-351、HANDOFF_LOG 09-23）写的「保留代码、不发布」与现场不一致，以现场为准登记。影响：后台订单页现为 D-350 版；测试全绿、功能可用，但是 Lemon 试用否定过的交互。处理待 Lemon 定（留到块 5 替换 / 先回退）。另登记：列表接口 `orders[].card.cardNumber` 返回解密完整卡号而页面未用（既有行为，块 5 一并审）。
