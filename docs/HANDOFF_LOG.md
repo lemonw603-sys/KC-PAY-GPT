@@ -3496,3 +3496,15 @@ Lemon 07:04:44 UTC 经后台保存 token；07:12:28 UTC timer 轮次 success、`
 Lemon 08:2x 说有客户半小时后下单。就绪检查全过（隧道 / 菲律宾出口 / BitBrowser / 服务 / 槽空闲 / 可分配 1 张 = 8718 $16.89）；池进程 67131 代码与 main 一致。08:33:06 UTC 订单 `PJV1-_xH487IWWc0h0fi8pqY9` 进入，08:33:11 派发被池认领并推 Bark（D-340 来单通知首次真机 SENT），08:33:40 run RUNNING，08:34:15 预检 `ACCOUNT_ALREADY_PLUS` → `FAILED_SAFE / PRE_PAYMENT_ABORT`，订单 `WAITING_FOR_SESSION`，卡 8718 账本 RELEASED，payment_state NOT_STARTED（新连接核实）。客户暂不重贴。
 
 本单验证了（当前 release）：来单 → 分卡 → 派发 → 池认领 → 预检 → 付款前安全中止 → 卡释放 → 来单 Bark 推送。**未验证**：付款后半段仍零样本。新业务边界待 Lemon 定：已是 Plus 的账号提交（续费场景）当前一律拒。另查实 0601 卡 funded_amount 3.27 vs 余额 31.99 导致不合格（规则盲点，D-217）。
+
+
+## 2026-09-23｜块 3 代码完成（D-352 ①②③ + D-354 ④），待演练与发布
+
+Lemon 批白名单后实施，提交 `6807de8`。改动与证据：
+- ① lane 守卫：`production-live-pool-worker.js` 抽出 `LANE_BLOCKING_RUNS_SQL` / `withLaneGuard`，去掉 `HUMAN_REQUIRED`（RUNNING / RECONCILE_ONLY 付款在途仍占窗口）；`browser-dispatch-repository.js` 认领谓词加「同 ChatGPT 账号已有活动 run 则不认领」（`active_account_key_hmac` 由 v1 库判定，不依赖 browser-mvp 的 HMAC）。测试：pool worker 守卫用例、dispatch 谓词用例（claim 与 countClaimable 共用）。
+- ② 下单查心跳：`order-intake-repository.js` 路线解析后读 `browser_worker_heartbeat_at` / `worker_heartbeat_at`，>120s 抛 `EXECUTOR_UNAVAILABLE` 503（事务回滚、CDK 不动）；`intake_executor_heartbeat_check=false` 可关（演练用，新脚本 `set-intake-executor-check.mjs` 带审计）；客户页文案 `executor_unavailable`。测试：纯函数五种边界 + mock 事务断言无 INSERT/UPDATE。
+- ③ 巡检：`operator-watch.mjs` 按接单路线查执行器心跳，>120s 开 `EXECUTOR_OFFLINE`（critical，进 `PHONE_PUSH_TYPES` HUMAN），恢复自动 RESOLVED；`BROWSER_ORDER_STALLED` 本就在白名单。客户页排队/备卡阶段 >3 分钟显示「排队比平时久，已通知运营」。
+- ④ 补钱：新 `domain/card-top-up.js`（只认涨、一分钱阈值）；`manual-card-import-service.js` 与 `card-stock-service.js` 两条同步路径在余额上涨时把差额加进 `funded_amount` 并写 `card_state_events CARD_TOPUP_OBSERVED`；`card-inventory-eligibility.js` 抽出 `ledgerSpendSql` 供新脚本 `backfill-card-funded-amount.mjs`（dry-run / apply）复用。隔离库集成用例：3.27 → 31.99 → funded 31.99、资格 0→1、降到 16 不记事件。
+- 测试：v1 1089 tests / 1019 pass / 0 fail / 70 skipped；browser-mvp 309 / 300 pass / 9 skipped；隔离 MySQL（本机 docker 54186，新库 058 全迁）12 文件 71 tests / 54 pass / 14 fail / 3 skipped，**同一批在未改动的基线工作树上同样 14 fail（D-258 老问题，名单逐条一致）**，新增 0。
+- 未做：rehearsal（要 free 号 Session）、本机池重启、发布。生产只读预览 `backfill` 候选 0（0601 余额已降到 1.99 < funded 3.27）。
+- 现场变化（12:15 UTC 观察，原因未核）：hnskj 6754/0577 10:15 同步为 $0.01 DEPLETED；0601 31.99→1.99；hnskj 钱包 38.73→104.71；highvcc 钱包 44.74→34.24；8718 被 WAITING_FOR_SESSION 单持有；可分配 0。

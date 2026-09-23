@@ -7,12 +7,13 @@
 - 生产 release `20260921-feedback-d340-7e88952`（D-341）。**默认路线已切 BROWSER**（08:13 UTC，D-353）；API 路线代码标未验证。生产数值只看 `CURRENT_STATE.md`。
 - 09-23 08:33 UTC 第一单真实客户单 `PJV1-_xH487IWWc0h0fi8pqY9`：预检 ACCOUNT_ALREADY_PLUS 付款前安全中止，卡已释放，等客户重贴（暂不会）。付款后半段仍零样本；最近真钱成功 09-16（旧版）。
 - highvcc token 已于 07:04 UTC 更新，07:12 轮次同步成功、快照 $44.74（块 1 完成）。
-- 本机 pool worker PID 67131 自 09-18 07:06 UTC 跑至今，代码为 09-18 版。
+- **块 3 代码完成并推送（`6807de8`）**：v1 1019 pass / browser-mvp 300 pass / 隔离 MySQL 集成 54 pass（另 14 条是 D-258 老失败，基线工作树同样 14 条）。**未发布、未 rehearsal、本机池未重启**（PID 67131 仍是 09-18 代码）。
+- 生产此刻 **可分配卡 0 张**：8718 被 WAITING_FOR_SESSION 单持有；hnskj 两张 10:15 UTC 变 $0.01 DEPLETED；0601 变 $1.99。钱包 hnskj $104.71 / highvcc $34.24；调度器报 WALLET_BELOW_FLOOR 不开卡（规则未核）。
 - 订单页 = 块 5，紧接块 3；真钱只留 Plus 一单（块 3 后）+ 20X 一单（块 6），其余用 rehearsal（D-352 补记）。
 
 ## 下一可执行项（按 D-352 块序）
 
-1. **块 3**：运营不在场三硬伤（付款不明只隔离账号 / 入单查心跳 / 处理中超时转人工）+ 第 4 项手动补钱后卡可用（D-354），动 browser-mvp 前先列文件白名单给 Lemon 批（D-254）。
+1. **块 3 收尾（需 Lemon）**：① rehearsal 一次（要一个 free 号新鲜 Session；流程见 RUNBOOK §2，先 `set-intake-executor-check.mjs off`，完了 `on`）；② 重启本机池让 lane 守卫生效；③ `deploy-release.sh prepare 6807de8` → 复核 → `switch`；④ 发布后跑 `backfill-card-funded-amount.mjs` 预览再 apply；⑤ 问 Lemon：hnskj 6754/0577 与 0601 的余额是不是他用的；8718 那张被等 Session 的单占着，客户不回来要不要关单放卡。
 2. 块 4：Plus Browser 真钱一单（仅此一单），对照交付判据合同；其余用 rehearsal。
 3. 块 5：订单页三个问题 → 拍板 → 做一版。
 
