@@ -15,7 +15,7 @@
 
 1. 块 5 已发布、Lemon 看过生产页「没问题」（04:0x UTC+8）。欠账 D-359 ④「还剩 Nh」芯片已发布并复验。块 5 无欠账。
 2. **块 4**：Plus Browser 真钱一单。2026-09-24 04:1x UTC+8 Lemon：「可以，但暂时没有单」——等他有单（客户单或自费）再开；流程五步已写在对话与 RUNBOOK §2。付款后半段在当前 release 仍零样本。
-3. **块 6 前置进行中**（Lemon 05:0x「进块 6 前置」）：任务书 `tasks/2026-09-24-block6-pro20x-poc.md`；只读 PoC 脚本 `browser-mvp/scripts/poc-free-pro20x-checkout-readonly.mjs` 已写、语法与导入检查过、**未跑**——等 Lemon 在比特浏览器 Lane 2 登录一个 Free 账号。出口 38.60.246.34 在线，常驻池 PID 6667 在 Pilot 上跑、不占 Lane 2。块 7：删表 + 可离开。
+3. **块 6 前置进行中**（Lemon 05:0x「进块 6 前置」）：任务书 `tasks/2026-09-24-block6-pro20x-poc.md`；只读 PoC 脚本 `browser-mvp/scripts/poc-free-pro20x-checkout-readonly.mjs` 已写、语法与导入检查过、**未跑**——Lemon 05:3x：手头没有可用的无订阅账号（新号或已过期号都没有），PoC 挂起，等他有账号。出口 38.60.246.34 在线，常驻池 PID 6667 在 Pilot 上跑、不占 Lane 2。块 7：删表 + 可离开。
 
 ## 已定不做 / 禁区
 
