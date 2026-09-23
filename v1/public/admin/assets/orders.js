@@ -63,8 +63,8 @@ window.createOrdersPage = function ({ api, escapeHtml: esc, showNotice, openOrde
       <td class="od-cust"><button type="button" class="od-email" data-open="${esc(o.publicNo)}">${esc(o.customerEmail || o.chatgptAccountId || o.publicNo)}</button>${tries}</td>
       <td class="od-plan">${esc(PLAN[o.planType] || o.productName || o.planType || '—')}</td>
       <td class="od-route">${routeCell(o)}</td>
-      <td class="od-stagecell"><div class="od-stage">${chip(o)}${rowAction(o)}</div></td>
       <td class="od-time">${esc(cst(o.createdAt))}</td>
+      <td class="od-stagecell"><div class="od-stage">${chip(o)}${rowAction(o)}</div></td>
     </tr>`;
   }
   function histRow(o) {
@@ -72,8 +72,8 @@ window.createOrdersPage = function ({ api, escapeHtml: esc, showNotice, openOrde
       <td class="od-cust"><span class="od-no"><button type="button" class="od-email od-no" data-open="${esc(o.publicNo)}">${esc(o.publicNo)}</button></span></td>
       <td class="od-plan">${esc(PLAN[o.planType] || o.planType || '—')}</td>
       <td class="od-route">${routeCell(o)}</td>
-      <td class="od-stagecell"><div class="od-stage">${chip(o)}</div></td>
       <td class="od-time">${esc(cst(o.createdAt))}</td>
+      <td class="od-stagecell"><div class="od-stage">${chip(o)}</div></td>
     </tr>`;
   }
   function renderCounts(buckets = {}) {

@@ -54,15 +54,15 @@
        「路线·卡台·卡尾号」是执行层，前面留 24px 的组间距；「进度」再隔 22px；时间右对齐、等宽数字。 */
     /* 客户列按最长邮箱收紧（width:1% + nowrap 是表格里「按内容定宽」的标准写法），
        产品格紧跟其后；路线前留 24px 组间距。列宽不再写死像素，邮箱长短变了也保持这个节奏。 */
-    .od-table col.c-plan{width:60px}.od-table col.c-route{width:176px}.od-table col.c-time{width:124px}
+    .od-table col.c-plan{width:60px}.od-table col.c-route{width:176px}.od-table col.c-time{width:112px}
     .od-table td.od-plan,.od-table td.od-route{color:var(--wb-t2)}
     .od-table td.od-cust,.od-table th:first-child{width:1%;white-space:nowrap;padding-right:0}
     .od-table td.od-plan,.od-table th.th-plan{padding-right:0}
     .od-table td.od-cust{max-width:280px;overflow:hidden;text-overflow:ellipsis}
     .od-table td.od-plan,.od-table th.th-plan{padding-left:4px}
     .od-table td.od-route,.od-table th.th-route{padding-left:32px}
-    .od-table td.od-stagecell,.od-table th.th-stage{padding-left:22px}
-    .od-table td.od-time,.od-table th.th-time{text-align:right;font-variant-numeric:tabular-nums;padding-right:28px}
+    .od-table td.od-stagecell,.od-table th.th-stage{padding-left:48px}
+    .od-table td.od-time,.od-table th.th-time{font-variant-numeric:tabular-nums;padding-left:22px;padding-right:0}
     .od-page .od-cardlink{text-underline-offset:3px}
     .od-chip{display:inline-flex;align-items:center;gap:6px;padding:4px 8px;border-radius:7px;background:var(--wb-s3);color:var(--wb-t2);white-space:nowrap;font-size:12px}
     .od-chip::before{content:"";width:7px;height:7px;background:currentColor;border-radius:50%}
@@ -109,6 +109,7 @@
     dialog.od-confirm h3{margin:0 0 8px;font-size:15px}
     dialog.od-confirm p{margin:0 0 16px;color:var(--wb-t2);font-size:13px;line-height:1.55}
     dialog.od-confirm .btns{display:flex;gap:8px;justify-content:flex-end}
+    .main-area .od-page,.main-area .topbar{max-width:1280px}
     @media(max-width:760px){.od-table{min-width:900px}.od-count{margin-left:0;width:100%}}
   </style>
 </head>
@@ -167,9 +168,9 @@
           </form>
           <div class="cdk-table-wrap">
             <table class="cdk-table od-table" id="od-table">
-              <colgroup><col class="c-cust"><col class="c-plan"><col class="c-route"><col class="c-stage"><col class="c-time"></colgroup>
+              <colgroup><col class="c-cust"><col class="c-plan"><col class="c-route"><col class="c-time"><col class="c-stage"></colgroup>
               <thead><tr>
-                <th>客户</th><th class="th-plan">产品</th><th class="th-route">路线 · 卡台 · 卡尾号</th><th class="th-stage">进度 / 需要我做什么</th><th class="th-time">提交时间</th>
+                <th>客户</th><th class="th-plan">产品</th><th class="th-route">路线 · 卡台 · 卡尾号</th><th class="th-time">提交时间</th><th class="th-stage">进度 / 需要我做什么</th>
               </tr></thead>
               <tbody id="od-rows"></tbody>
             </table>
@@ -283,16 +284,16 @@
         <td class="od-cust"><span class="od-no">${o.no}</span></td>
         <td class="od-plan">${PLAN[o.plan] || o.plan}</td>
         <td class="od-route">${o.route === 'BROWSER' ? 'Browser' : 'API'}<small>${o.last4 ? `<button type="button" class="od-cardlink" data-card="${o.no}">${PROVIDER[o.provider] || o.provider} · ${o.last4}</button>` : '未分卡'}</small></td>
-        <td class="od-stagecell"><div class="od-stage">${chip(o)}</div></td>
         <td class="od-time">${fmt(o.created)}</td>
+        <td class="od-stagecell"><div class="od-stage">${chip(o)}</div></td>
       </tr>`;
       const tries = hist && hist.length ? `<button type="button" class="od-tries" data-expand="${o.cdk}" aria-expanded="${state.expanded.has(o.cdk)}" title="此前 ${hist.length} 次未成功，点开看" aria-label="此前 ${hist.length} 次未成功，展开历史"><b>${hist.length}</b><i aria-hidden="true"></i></button>` : '';
       return `<tr class="${isMain ? 'od-mainrow' : 'od-hist'}" data-no="${o.no}">
         <td class="od-cust"><button type="button" class="od-email" data-open="${o.no}">${emailOf(o)}</button>${tries}</td>
         <td class="od-plan">${PLAN[o.plan] || o.plan}</td>
         <td class="od-route">${o.route === 'BROWSER' ? 'Browser' : 'API'}<small>${o.last4 ? `<button type="button" class="od-cardlink" data-card="${o.no}">${PROVIDER[o.provider] || o.provider} · ${o.last4}</button>` : '未分卡'}</small></td>
-        <td class="od-stagecell"><div class="od-stage">${chip(o)}${isMain ? actionBtn(o, 'row') : ''}</div></td>
         <td class="od-time">${fmt(o.created)}</td>
+        <td class="od-stagecell"><div class="od-stage">${chip(o)}${isMain ? actionBtn(o, 'row') : ''}</div></td>
       </tr>`;
     }
     function render() {

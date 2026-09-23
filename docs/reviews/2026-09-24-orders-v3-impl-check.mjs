@@ -119,6 +119,20 @@ await page.click('#od-rows [data-retry]');
 await page.waitForFunction(() => !/读取失败/.test(document.querySelector('#od-rows').textContent));
 ok('重试后恢复', true);
 
+// 宽屏 1920：内容区封顶 1280，时间列在进度列前（第八轮，Lemon 2026-09-24「进度往右一些；其他的补」）
+await page.setViewportSize({ width: 1920, height: 1000 });
+await page.waitForTimeout(300);
+const wide = await page.evaluate(() => {
+  const pageW = document.querySelector('#orders-view .od-page').getBoundingClientRect().width;
+  const ths = [...document.querySelectorAll('#od-table thead th')].map((th) => th.className);
+  const tb = document.querySelector('#od-table').getBoundingClientRect();
+  const stageLeft = document.querySelector('#od-table th.th-stage').getBoundingClientRect().left - tb.left;
+  const timeLeft = document.querySelector('#od-table th.th-time').getBoundingClientRect().left - tb.left;
+  return { pageW, ths, stageLeft, timeLeft };
+});
+ok('1920 下内容区封顶 1280', wide.pageW === 1280, `${wide.pageW}`);
+ok('1920 下时间列在进度列之前，进度列收尾', wide.ths.indexOf('th-time') === 3 && wide.ths.indexOf('th-stage') === 4 && wide.timeLeft < wide.stageLeft, wide.ths.join(','));
+
 // 手机宽度
 await page.setViewportSize({ width: 390, height: 800 });
 ok('390px 下表格可横向滚动', await page.evaluate(() => { const w = document.querySelector('#orders-view .cdk-table-wrap'); return w.scrollWidth > w.clientWidth; }));

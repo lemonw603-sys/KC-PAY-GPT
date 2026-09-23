@@ -324,7 +324,7 @@ test('admin orders page is one table plus one drawer without permits, tags, note
   const script = fs.readFileSync(path.join(directory, 'admin', 'assets', 'admin.js'), 'utf8');
   const ordersScript = fs.readFileSync(path.join(directory, 'admin', 'assets', 'orders.js'), 'utf8');
   // D-356/D-357 订单页 v3：五列、状态四桶做成分段器（不再是下拉与摘要卡）、时间快选近 7 天/全部
-  assert.match(html, /<th>客户<\/th><th class="th-plan">产品<\/th><th class="th-route">路线 · 卡台 · 卡尾号<\/th><th class="th-stage">进度 \/ 需要我做什么<\/th><th class="th-time">提交时间<\/th>/);
+  assert.match(html, /<th>客户<\/th><th class="th-plan">产品<\/th><th class="th-route">路线 · 卡台 · 卡尾号<\/th><th class="th-time">提交时间<\/th><th class="th-stage">进度 \/ 需要我做什么<\/th>/);
   for (const bucket of ['all', 'processing', 'success', 'failed', 'action']) assert.match(html, new RegExp(`data-status="${bucket}"`), bucket);
   assert.doesNotMatch(html, /id="order-summary"|id="order-status-filter"|<option value="REVIEW_REQUIRED">|<option value="ACTIVE">|<option value="FINISHED">/);
   assert.match(ordersScript, /groupByCdk: true/);

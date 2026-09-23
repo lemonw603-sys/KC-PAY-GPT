@@ -1,8 +1,11 @@
 {
   "name": "订单页 v3（D-356/D-357）",
-  "viewport": [1440, 900],
+  "viewport": [
+    1920,
+    1000
+  ],
   "tolerancePx": 1,
-  "note": "冻结原型先于实现；只比结构与控件几何，数据行由隔离库/浏览器测试验证。impl 用与原型相同的 od-*/cdk-* 类名。列宽不比（两边容器宽度不同），比高度、内边距、圆角与首尾子元素到容器边的距离。",
+  "note": "冻结原型先于实现；只比结构与控件几何，数据行由隔离库/浏览器测试验证。impl 用与原型相同的 od-*/cdk-* 类名。列宽不比（两边容器宽度不同），比高度、内边距、圆角与首尾子元素到容器边的距离。 视口 1920：同时量内容区封顶 1280（2026-09-24 第八轮）。",
   "prototype": {
     "url": "${PARITY_PROTO_BASE}/step6-orders-v3.html",
     "root": ".od-page",
@@ -11,27 +14,202 @@
   "impl": {
     "url": "${PARITY_ADMIN_BASE}/admin/",
     "root": "#orders-view .od-page",
-    "login": { "passwordEnv": "PARITY_ADMIN_PASSWORD" },
+    "login": {
+      "passwordEnv": "PARITY_ADMIN_PASSWORD"
+    },
     "prepare": "await switchView('orders');await new Promise(r=>setTimeout(r,1200));document.querySelector('#orders-view [data-range=\"all\"]').click();await new Promise(r=>setTimeout(r,1200));return !document.querySelector('#orders-view').hidden && document.querySelectorAll('#od-rows tr.od-mainrow').length>0 && document.querySelectorAll('#od-rows .od-cardlink').length>0;"
   },
   "probes": [
-    { "name": "筛选块", "proto": ".cdk-block", "impl": ".cdk-block", "metrics": ["padding", "borderRadius"] },
-    { "name": "筛选条", "proto": "#od-filters", "impl": "#od-filters", "metrics": ["display", "gap"] },
-    { "name": "搜索框", "proto": "#od-q", "impl": "#od-q", "metrics": ["height", "borderRadius", "fontSize"] },
-    { "name": "状态分段器", "proto": "#od-filters .od-seg", "impl": "#od-filters .od-seg", "all": true, "metrics": ["height", "borderRadius"] },
-    { "name": "分段按钮", "proto": ".od-seg button", "impl": ".od-seg button", "all": true, "metrics": ["height", "padding", "fontSize"] },
-    { "name": "分段角标", "proto": ".od-seg button i", "impl": ".od-seg button i", "all": true, "metrics": ["fontSize", "padding", "borderRadius"] },
-    { "name": "下拉", "proto": "#od-plan", "impl": "#od-plan", "metrics": ["height", "borderRadius", "fontSize"] },
-    { "name": "表头单元", "proto": ".od-table th", "impl": ".od-table th", "all": true, "metrics": ["height", "padding", "fontSize"] },
-    { "name": "主行客户格", "proto": "tr.od-mainrow td.od-cust", "impl": "tr.od-mainrow td.od-cust", "metrics": ["padding", "fontSize"] },
-    { "name": "主行产品格", "proto": "tr.od-mainrow td.od-plan", "impl": "tr.od-mainrow td.od-plan", "metrics": ["padding"] },
-    { "name": "主行路线格", "proto": "tr.od-mainrow td.od-route", "impl": "tr.od-mainrow td.od-route", "metrics": ["padding"] },
-    { "name": "主行进度格", "proto": "tr.od-mainrow td.od-stagecell", "impl": "tr.od-mainrow td.od-stagecell", "metrics": ["padding"] },
-    { "name": "主行时间格", "proto": "tr.od-mainrow td.od-time", "impl": "tr.od-mainrow td.od-time", "metrics": ["padding", "fontSize"] },
-    { "name": "邮箱按钮", "proto": ".od-email", "impl": ".od-email", "metrics": ["fontSize", "height", "padding"] },
-    { "name": "历史小标", "proto": ".od-tries", "impl": ".od-tries", "metrics": ["height", "borderRadius", "padding", "fontSize"] },
-    { "name": "进度芯片", "proto": ".od-chip", "impl": ".od-chip", "metrics": ["height", "padding", "borderRadius", "fontSize"] },
-    { "name": "行内动作", "proto": ".od-rowact", "impl": ".od-rowact", "metrics": ["fontSize", "padding", "height"] },
-    { "name": "卡尾号链接", "proto": ".od-cardlink", "impl": ".od-cardlink", "metrics": ["fontSize", "padding"] }
+    {
+      "name": "内容区封顶（1920 下卡片宽 = 1280 − 页内边距）",
+      "proto": ".cdk-block",
+      "impl": "#orders-view .cdk-block",
+      "metrics": [
+        "width"
+      ]
+    },
+    {
+      "name": "筛选块",
+      "proto": ".cdk-block",
+      "impl": ".cdk-block",
+      "metrics": [
+        "padding",
+        "borderRadius"
+      ]
+    },
+    {
+      "name": "筛选条",
+      "proto": "#od-filters",
+      "impl": "#od-filters",
+      "metrics": [
+        "display",
+        "gap"
+      ]
+    },
+    {
+      "name": "搜索框",
+      "proto": "#od-q",
+      "impl": "#od-q",
+      "metrics": [
+        "height",
+        "borderRadius",
+        "fontSize"
+      ]
+    },
+    {
+      "name": "状态分段器",
+      "proto": "#od-filters .od-seg",
+      "impl": "#od-filters .od-seg",
+      "all": true,
+      "metrics": [
+        "height",
+        "borderRadius"
+      ]
+    },
+    {
+      "name": "分段按钮",
+      "proto": ".od-seg button",
+      "impl": ".od-seg button",
+      "all": true,
+      "metrics": [
+        "height",
+        "padding",
+        "fontSize"
+      ]
+    },
+    {
+      "name": "分段角标",
+      "proto": ".od-seg button i",
+      "impl": ".od-seg button i",
+      "all": true,
+      "metrics": [
+        "fontSize",
+        "padding",
+        "borderRadius"
+      ]
+    },
+    {
+      "name": "下拉",
+      "proto": "#od-plan",
+      "impl": "#od-plan",
+      "metrics": [
+        "height",
+        "borderRadius",
+        "fontSize"
+      ]
+    },
+    {
+      "name": "表头单元",
+      "proto": ".od-table th",
+      "impl": ".od-table th",
+      "all": true,
+      "metrics": [
+        "height",
+        "padding",
+        "fontSize"
+      ]
+    },
+    {
+      "name": "主行客户格",
+      "proto": "tr.od-mainrow td.od-cust",
+      "impl": "tr.od-mainrow td.od-cust",
+      "metrics": [
+        "padding",
+        "fontSize"
+      ]
+    },
+    {
+      "name": "主行产品格",
+      "proto": "tr.od-mainrow td.od-plan",
+      "impl": "tr.od-mainrow td.od-plan",
+      "metrics": [
+        "padding"
+      ]
+    },
+    {
+      "name": "主行路线格",
+      "proto": "tr.od-mainrow td.od-route",
+      "impl": "tr.od-mainrow td.od-route",
+      "metrics": [
+        "padding"
+      ]
+    },
+    {
+      "name": "主行进度格",
+      "proto": "tr.od-mainrow td.od-stagecell",
+      "impl": "tr.od-mainrow td.od-stagecell",
+      "metrics": [
+        "padding"
+      ]
+    },
+    {
+      "name": "主行时间格",
+      "proto": "tr.od-mainrow td.od-time",
+      "impl": "tr.od-mainrow td.od-time",
+      "metrics": [
+        "padding",
+        "fontSize"
+      ]
+    },
+    {
+      "name": "邮箱按钮",
+      "proto": ".od-email",
+      "impl": ".od-email",
+      "metrics": [
+        "fontSize",
+        "height",
+        "padding"
+      ]
+    },
+    {
+      "name": "历史小标",
+      "proto": ".od-tries",
+      "impl": ".od-tries",
+      "metrics": [
+        "height",
+        "borderRadius",
+        "padding",
+        "fontSize"
+      ]
+    },
+    {
+      "name": "进度芯片",
+      "proto": ".od-chip",
+      "impl": ".od-chip",
+      "metrics": [
+        "height",
+        "padding",
+        "borderRadius",
+        "fontSize"
+      ]
+    },
+    {
+      "name": "行内动作",
+      "proto": ".od-rowact",
+      "impl": ".od-rowact",
+      "metrics": [
+        "fontSize",
+        "padding",
+        "height"
+      ]
+    },
+    {
+      "name": "卡尾号链接",
+      "proto": ".od-cardlink",
+      "impl": ".od-cardlink",
+      "metrics": [
+        "fontSize",
+        "padding"
+      ]
+    },
+    {
+      "name": "主行时间格（前移，左对齐）",
+      "proto": "tr.od-mainrow td.od-time",
+      "impl": "tr.od-mainrow td.od-time",
+      "metrics": [
+        "padding",
+        "textAlign"
+      ]
+    }
   ]
 }

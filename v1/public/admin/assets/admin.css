@@ -53,6 +53,8 @@ button { cursor: pointer; }
 .sidebar-foot button { width: max-content; min-height: 36px; padding: 0 12px; color: #52677d; border: 1px solid var(--line); border-radius: 9px; background: white; font-size: 12px; font-weight: 800; }
 
 .main-area { min-width: 0; padding: 26px clamp(20px, 3vw, 42px) 42px; }
+/* 内容区封顶 1280（GitHub Primer container-xl / Linear 同值，2026-09-24 Lemon 定）：宽屏多出来的当页边距，不再让表格吃掉整块屏。 */
+.main-area .topbar, .main-area .view { max-width: 1280px; }
 .topbar { display: flex; align-items: center; justify-content: space-between; gap: 24px; margin-bottom: 22px; }
 .topbar h1 { margin: 0; font-size: 25px; letter-spacing: -.03em; }
 .topbar-actions { display: flex; align-items: center; gap: 12px; }

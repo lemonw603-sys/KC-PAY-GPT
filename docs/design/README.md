@@ -250,3 +250,5 @@ D-180 当时写的是"阶段来自 `browser_runs` 检查点"。实查后修正�
 - **frontend-design**（Anthropic 官方插件，用户级）：新页面设计阶段先出色板/字体/布局小计划并对照需求自查是否模板套路。
 - 既有：`scripts/visual-parity.mjs`（几何量对冻结原型）、真实 Chromium 截图人工读图、`refactoring-ui` 技能自审清单。
 - 分工：做之前 frontend-design 定方向 → 做完 refactoring-ui + impeccable critique 自审 → detect 进收尾 → parity 防实现走样。
+- **`DESIGN.md`（项目根，2026-09-24 D-358 新增）**：后台设计系统的机器可读一份（令牌 YAML + 布局/形状/组件/Do-Don't）。给所有 AI 窗口读，做新页面先读它；改令牌先改代码再改它。参考 GitHub `VoltAgent/awesome-design-md` 的格式（Google Stitch DESIGN.md 规范）。
+- **多视口验收**：真实页验收脚本与 parity 契约至少覆盖 1440 与 1920（2026-09-24 第八轮教训：只在 1280/1440 验过，1920 上进度列空出 1039px 没人看见）。
