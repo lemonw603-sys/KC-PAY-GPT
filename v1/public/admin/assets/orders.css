@@ -1,0 +1,103 @@
+/* 订单页 v3（D-356/D-357，冻结原型 docs/design/prototypes/step6-orders-v3.html）。
+   外壳、筛选条与表格形态复用 cdks.css 的 .cdk-block / .cdk-filters / .cdk-table；这里只管订单页特有的
+   三件事：主行/历史行、动作格、抽屉里的「卡与钱」。颜色只用 --wb-* 令牌，不写字面色（棘轮 0）。
+   契约 docs/design/parity/orders-page.json 量的就是这些类，改前先跑 scripts/visual-parity.mjs。 */
+.od-page{display:grid;gap:16px;color:var(--wb-t);min-width:0}
+.od-page button,.od-page input:not([type=checkbox]),.od-page select{min-height:34px;border:1px solid var(--wb-bd);border-radius:9px;padding:4px 10px;background:var(--wb-s);color:var(--wb-t);font-size:13px;max-width:100%;font:inherit;font-size:13px}
+.od-page button{cursor:pointer}
+.od-page button:disabled{opacity:.5;cursor:not-allowed}
+.od-page .cdk-filters{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.od-page .cdk-filters input[type=search]{flex:1 1 240px}
+.od-seg{display:inline-flex;border:1px solid var(--wb-bd);border-radius:9px;overflow:hidden;background:var(--wb-s)}
+.od-page .od-seg button{min-height:32px;border:0;border-radius:0;border-right:1px solid var(--wb-bd);padding:0 11px;background:transparent;color:var(--wb-t2);font-size:12.5px;display:inline-flex;align-items:center;gap:6px}
+.od-page .od-seg button:last-child{border-right:0}
+.od-page .od-seg button[aria-pressed=true]{background:var(--wb-a-soft);color:var(--wb-a-ink);font-weight:600}
+.od-seg button i{font-style:normal;font:500 11px var(--wb-fm);padding:1px 6px;border-radius:6px;background:var(--wb-s3);color:var(--wb-t2)}
+.od-seg button[aria-pressed=true] i{background:var(--wb-a);color:var(--wb-a-on)}
+.od-seg button[data-status=action] i.has{background:var(--wb-warn-soft);color:var(--wb-warn)}
+.od-range{display:inline-flex;align-items:center;gap:6px;color:var(--wb-t2);font-size:12.5px}
+.od-page .od-range input[type=date]{min-height:32px;font:12.5px var(--wb-fm)}
+.od-count{color:var(--wb-t3);font-size:12.5px;margin-left:auto}
+.od-extra{display:inline-flex;align-items:center;gap:6px;padding:0 6px 0 10px;min-height:32px;border:1px dashed var(--wb-bd);border-radius:9px;color:var(--wb-t2);font-size:12.5px}
+.od-page .od-extra button{min-height:0;border:0;background:none;padding:2px 4px;color:var(--wb-t3);font-size:14px;line-height:1}
+.od-table td{vertical-align:top}
+.od-table col.c-plan{width:60px}.od-table col.c-route{width:176px}.od-table col.c-time{width:124px}
+.od-table td.od-plan,.od-table td.od-route{color:var(--wb-t2)}
+.od-table td.od-cust,.od-table th:first-child{width:1%;white-space:nowrap;padding-right:0}
+.od-table td.od-cust{max-width:280px;overflow:hidden;text-overflow:ellipsis}
+.od-table td.od-plan,.od-table th.th-plan{padding-left:4px;padding-right:0}
+.od-table td.od-route,.od-table th.th-route{padding-left:32px}
+.od-table td.od-stagecell,.od-table th.th-stage{padding-left:22px}
+.od-table td.od-time,.od-table th.th-time{text-align:right;font-variant-numeric:tabular-nums;padding-right:28px}
+.od-page .od-email{border:0;background:none;padding:0;min-height:0;color:var(--wb-t);font-weight:600;font-size:12.5px;text-align:left;cursor:pointer;border-radius:5px;box-shadow:none}
+.od-page .od-email:hover{color:var(--wb-a);text-decoration:underline}
+.od-page .od-email:focus-visible{outline:2px solid var(--wb-a);outline-offset:2px}
+.od-no{font:11.5px var(--wb-fm);color:var(--wb-t3)}
+.od-page .od-tries{display:inline-flex;align-items:center;gap:3px;vertical-align:middle;margin-left:6px;height:18px;padding:0 5px 0 6px;border:0;border-radius:9px;background:var(--wb-s3);color:var(--wb-t2);font:600 11px var(--wb-fm);cursor:pointer;box-shadow:none;min-height:0;line-height:1}
+.od-page .od-tries i{width:0;height:0;border-left:3.5px solid transparent;border-right:3.5px solid transparent;border-top:4px solid currentColor;transition:transform .15s}
+.od-page .od-tries:hover{background:var(--wb-bd);color:var(--wb-t)}
+.od-page .od-tries[aria-expanded=true]{background:var(--wb-a-soft);color:var(--wb-a-ink)}
+.od-page .od-tries[aria-expanded=true] i{transform:rotate(180deg)}
+.od-route small{display:block;color:var(--wb-t3);font:11.5px var(--wb-fm)}
+.od-page .od-cardlink{min-height:0;border:0;background:none;padding:0;font:11.5px var(--wb-fm);color:var(--wb-t2);cursor:pointer;box-shadow:none;border-radius:4px;border-bottom:1px dotted var(--wb-t3);text-underline-offset:3px}
+.od-page .od-cardlink:hover{color:var(--wb-a);border-bottom-color:var(--wb-a)}
+.od-stage{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.od-chip{display:inline-flex;align-items:center;gap:6px;padding:4px 8px;border-radius:7px;background:var(--wb-s3);color:var(--wb-t2);white-space:nowrap;font-size:12px}
+.od-chip::before{content:"";width:7px;height:7px;background:currentColor;border-radius:50%}
+.od-chip.ok{background:var(--wb-ok-soft);color:var(--wb-ok)}
+.od-chip.warn{background:var(--wb-warn-soft);color:var(--wb-warn)}
+.od-chip.warn::before{border-radius:1px;transform:rotate(45deg)}
+.od-chip.danger{background:var(--wb-danger-soft);color:var(--wb-danger)}
+.od-chip.danger::before{border-radius:1px}
+.od-chip.info{background:var(--wb-info-soft);color:var(--wb-info)}
+.od-page .od-rowact{min-height:0;border:0;background:none;padding:0;color:var(--wb-a);font-size:12.5px;font-weight:600;cursor:pointer;white-space:nowrap;box-shadow:none;border-radius:4px}
+.od-page .od-rowact:hover{text-decoration:underline}
+.od-page .od-rowact.is-danger{color:var(--wb-danger)}
+.od-time{font:12px var(--wb-fm);color:var(--wb-t2);white-space:nowrap}
+tr.od-hist td{background:var(--wb-s2);color:var(--wb-t2);font-size:12px;padding-top:7px;padding-bottom:7px}
+tr.od-hist td:first-child{padding-left:26px}
+tr.od-hist .od-no{color:var(--wb-t3)}
+.od-empty{padding:28px;text-align:center;color:var(--wb-t3)}
+.od-cdkmatch{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:0 0 12px;padding:10px 12px;border-radius:9px;background:var(--wb-a-soft);color:var(--wb-a-ink);font-size:12.5px}
+.od-pager{display:flex;align-items:center;justify-content:flex-end;gap:10px;margin-top:12px;color:var(--wb-t3);font-size:12.5px}
+.od-page .od-pager button{min-height:30px;padding:0 12px;font-size:12.5px}
+/* 抽屉：此刻可做 → 进度 → 客户与卡密 → 卡与钱 → 技术证据 */
+.od-drawer-sub{display:block;font:11.5px var(--wb-fm);color:var(--wb-t3);margin-top:2px}
+.od-actions{display:flex;gap:8px;flex-wrap:wrap;padding:2px 0 6px}
+.od-actions .od-act{min-height:34px;border:1px solid var(--wb-a);border-radius:9px;padding:0 14px;font-size:13px;font-weight:600;background:var(--wb-a);color:var(--wb-a-on);cursor:pointer}
+.od-actions .od-act.out{background:var(--wb-s);color:var(--wb-a-ink)}
+.od-actions .od-act.danger{background:var(--wb-s);color:var(--wb-danger);border-color:var(--wb-danger)}
+.od-actions .od-act.ghost{background:var(--wb-s);color:var(--wb-t2);border-color:var(--wb-bd);font-weight:500}
+.od-actions .od-none{color:var(--wb-t3);font-size:12.5px;align-self:center}
+.od-kv{display:grid;grid-template-columns:110px 1fr;gap:6px 12px;font-size:12.5px;margin:0}
+.od-kv.od-kv-gap{margin-top:12px}
+.od-kv dt{color:var(--wb-t3)}
+.od-kv dd{margin:0;color:var(--wb-t)}
+.od-kv dd.mono{font-family:var(--wb-fm)}
+.od-h{margin:0 0 10px;font-size:13px;color:var(--wb-t2);font-weight:600;letter-spacing:.02em}
+.od-card{display:grid;gap:8px;border:1px solid var(--wb-bd);border-radius:12px;padding:12px 14px;background:var(--wb-s2)}
+.od-card .row{display:flex;justify-content:space-between;gap:10px;font-size:12.5px}
+.od-card .row span{color:var(--wb-t3)}
+.od-card .row b{font-weight:600;text-align:right}
+.od-card .row b.mono{font-family:var(--wb-fm)}
+.od-card a,.od-card button.od-link{justify-self:end;border:0;background:none;padding:0;min-height:0;color:var(--wb-a);font-size:12.5px;cursor:pointer;font:inherit;font-size:12.5px}
+#od-money.is-focus .od-card{box-shadow:0 0 0 3px var(--wb-a-soft);border-color:var(--wb-a)}
+.od-tl{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.od-tl li{display:grid;grid-template-columns:118px 1fr;gap:10px;font-size:12.5px}
+.od-tl li time{font:11.5px var(--wb-fm);color:var(--wb-t3)}
+.od-tl li b{font-weight:500;color:var(--wb-t)}
+.od-tl li.cur b{color:var(--wb-a-ink);font-weight:600}
+.od-warnbox{border:1px solid var(--wb-warn);background:var(--wb-warn-soft);color:var(--wb-warn);border-radius:9px;padding:10px 12px;font-size:12.5px;margin-top:8px}
+.od-drawer-link{border:0;background:none;padding:0;min-height:0;color:var(--wb-a);font:inherit;font-size:12.5px;cursor:pointer}
+.od-drawer-link:hover{text-decoration:underline}
+dialog.od-confirm{border:1px solid var(--wb-bd);border-radius:14px;padding:20px 22px;width:min(440px,92vw);box-shadow:var(--wb-pop);color:var(--wb-t);font-family:var(--wb-fd)}
+dialog.od-confirm h3{margin:0 0 8px;font-size:15px}
+dialog.od-confirm p{margin:0 0 14px;color:var(--wb-t2);font-size:13px;line-height:1.55}
+dialog.od-confirm label{display:grid;gap:6px;margin:0 0 12px;font-size:12.5px;color:var(--wb-t2)}
+dialog.od-confirm label.inline{display:flex;align-items:center;gap:8px}
+dialog.od-confirm input[type=text]{min-height:34px;border:1px solid var(--wb-bd);border-radius:9px;padding:4px 10px;font:inherit;font-size:13px;color:var(--wb-t)}
+dialog.od-confirm .btns{display:flex;gap:8px;justify-content:flex-end}
+dialog.od-confirm .btns button{min-height:34px;border:1px solid var(--wb-bd);border-radius:9px;padding:0 14px;background:var(--wb-s);color:var(--wb-t);font:inherit;font-size:13px;cursor:pointer}
+dialog.od-confirm .btns button.od-act{background:var(--wb-a);color:var(--wb-a-on);border-color:var(--wb-a);font-weight:600}
+dialog.od-confirm .btns button.od-act.danger{background:var(--wb-danger);border-color:var(--wb-danger)}
+@media(max-width:760px){.od-table{min-width:900px}.od-count{margin-left:0;width:100%}}

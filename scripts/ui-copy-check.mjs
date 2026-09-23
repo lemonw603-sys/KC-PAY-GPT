@@ -20,6 +20,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const TARGETS = [
   'v1/public/admin/assets/admin.js',
   'v1/public/admin/assets/cdks.js',
+  'v1/public/admin/assets/orders.js',
   'v1/public/admin/assets/diagnostics.js',
   'v1/public/admin/index.html',
   'v1/public/index.html'

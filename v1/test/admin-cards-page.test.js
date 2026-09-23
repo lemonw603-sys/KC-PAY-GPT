@@ -356,11 +356,18 @@ test('后台的关键顶层事件绑定必须都在（2026-09-20 误删事故的
   // node --check 只查语法，其余测试走 snippet/harness 不碰这些绑定 —— 951 条全绿，
   // 而后台已经不能用了。这条按「绑定是否存在」把它们钉住。
   const src = fs.readFileSync(path.join(here, '..', 'public', 'admin', 'assets', 'admin.js'), 'utf8');
+  // 订单页 v3（D-357）：订单筛选与翻页归 orders.js，绑定也在那里钉住。
+  const ordersSrc = fs.readFileSync(path.join(here, '..', 'public', 'admin', 'assets', 'orders.js'), 'utf8');
+  const requiredOrders = [
+    ['订单筛选提交', /el\('od-filters'\)\.addEventListener\('submit'/],
+    ['订单上一页', /el\('od-prev'\)\.addEventListener\('click'/],
+    ['订单下一页', /el\('od-next'\)\.addEventListener\('click'/],
+    ['订单页点击委托（邮箱/卡尾号/展开/动作）', /root\.addEventListener\('click'/]
+  ];
+  const missingOrders = requiredOrders.filter(([, re]) => !re.test(ordersSrc)).map(([name]) => name);
+  assert.deepEqual(missingOrders, [], `orders.js 里这些绑定不见了：${missingOrders.join('、')}`);
   const required = [
     ['侧边栏导航', /elements\.navItems\.forEach\(\(item\) => item\.addEventListener\('click'/],
-    ['订单筛选', /elements\.filters\.addEventListener\('submit'/],
-    ['订单上一页', /elements\.prevPage\.addEventListener\('click'/],
-    ['订单下一页', /elements\.nextPage\.addEventListener\('click'/],
     ['全局搜索', /#wb-search-input'\)\?\.addEventListener\('keydown'/],
     ['document 级委托', /^document\.addEventListener\('click'/m],
     ['订单导出', /#export-orders'\)\?\.addEventListener\('click'/],

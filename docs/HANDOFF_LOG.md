@@ -3544,3 +3544,7 @@ Lemon 答完八问后即做：`step6-orders-v3.html` 复用 `_frozen/cdk-a` 外�
 
 Lemon 第二轮试用：客户/产品列间距仍宽、「此前 N 次」与邮箱不协调。第三轮：客户列只留邮箱、按内容定宽 236px，历史链接挪进度列；Lemon 要求放回客户列并用小图标代替文字。第四轮：邮箱后 18px 小标「N ▾」（数字 + 三角，aria-label 说明），展开时翻转变主色浅调。验收 30/30。
 Lemon 批准安装：官方 `frontend-design@claude-plugins-official`（用户级）与 `impeccable`（项目级 + 编辑/Stop 钩子，引擎 v0.1.5 在 `.claude/skills/impeccable/scripts/bin`）。`impeccable detect` 首扫 Demo：16 条，全是两类——三级文字 `--wb-t3` 在白底 3.6:1、警示色 `--wb-warn` 在浅底 3.9:1（都是全局令牌，四页共用，非 Demo 独有）；分段器与表格外框「内容贴边」两条属控件形态；两条 advisory（1px 边 + 宽投影）。令牌候选：t3 50%→44% 得 4.5:1，warn 40%→36% 得 4.6:1，待 Lemon 定是否改令牌。impeccable 技能本会话未加载（需新窗口）。
+
+## 2026-09-24｜块 5 订单页 v3 实现完成，本地全绿，待发布（00:3x～01:1x UTC+8）
+
+后端（`509d050`）之后做前端：`orders.js`（列表/筛选/历史行/行内动作/确认框）、`orders.css`（od-* 只用令牌）、`index.html` 订单视图换成 od-page、`admin.js` 抽屉按「此刻可做 → 进度 → 客户与卡密 → 卡与钱三问 → 技术证据」重排，删掉 D-350 的摘要卡/旧筛选/旧行渲染。验收：真实页 30/30、parity 一致、v1 1032/0、棘轮与文案干净（`reviews/2026-09-24-orders-v3-impl.md`）。修的六处见该记录。生产未动，仍是 D-350 版；发布等 Lemon 一句话。

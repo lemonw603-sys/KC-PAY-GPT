@@ -56,7 +56,8 @@ export function loadAdminJs() {
     document, window: win, console,
     fetch: () => Promise.reject(new Error('network disabled in this test')),
     setTimeout, clearTimeout, setInterval, clearInterval,
-    URL, URLSearchParams, Date, Math, JSON,
+    URL, URLSearchParams, Date, Math, JSON, Intl,
+    CSS: { escape: (v) => String(v).replace(/[^a-zA-Z0-9_-]/g, (c) => `\\${c}`) },
     FormData: class {}, Blob: class {}, AbortController,
     navigator: { clipboard: { writeText: () => Promise.resolve() } },
     location: win.location, localStorage: storage, sessionStorage: storage,
@@ -65,6 +66,8 @@ export function loadAdminJs() {
   sandbox.self = sandbox;
   vm.createContext(sandbox);
   vm.runInContext(fs.readFileSync(path.join(path.dirname(adminJsPath), 'diagnostics.js'), 'utf8'), sandbox, { filename: 'diagnostics.js' });
+  // 订单页 v3（D-357）：列表控制器在 orders.js，admin.js 顶层用 window.createOrdersPage 建它。
+  vm.runInContext(fs.readFileSync(path.join(path.dirname(adminJsPath), 'orders.js'), 'utf8'), sandbox, { filename: 'orders.js' });
   vm.runInContext(fs.readFileSync(adminJsPath, 'utf8'), sandbox, { filename: 'admin.js' });
   // 注意：顶层 const/let 是全局词法绑定，不会挂到 sandbox(globalThis) 上（只有 function/var 会）。
   // 所以查常量必须在脚本作用域里求值，不能读 sandbox.XXX。

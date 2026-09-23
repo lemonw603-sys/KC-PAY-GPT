@@ -14,3 +14,6 @@
 3. 真实浏览器（本地后台 8803 + 隔离库造数）：原型验收脚本的 30 项改成对实现跑；四态（有数据 / 空 / 接口 500 / 401）。
 4. `visual-parity.mjs` 对 `orders-page.json` 一致；`ui-copy-check`、CSS 棘轮、wrapup 全绿。
 5. 生产：prepare → 复核 → Lemon 确认 → switch → 只读复验（列表查询对 80 单实跑）。
+
+## 状态（2026-09-24 01:1x UTC+8）
+验收 1–4 全绿（记录 `reviews/2026-09-24-orders-v3-impl.md`）。第 5 项生产发布待 Lemon 确认。

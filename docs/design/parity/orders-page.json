@@ -12,7 +12,7 @@
     "url": "${PARITY_ADMIN_BASE}/admin/",
     "root": "#orders-view .od-page",
     "login": { "passwordEnv": "PARITY_ADMIN_PASSWORD" },
-    "prepare": "await switchView('orders');await new Promise(r=>setTimeout(r,1200));return !document.querySelector('#orders-view').hidden && document.querySelectorAll('#od-rows tr.od-mainrow').length>0;"
+    "prepare": "await switchView('orders');await new Promise(r=>setTimeout(r,1200));document.querySelector('#orders-view [data-range=\"all\"]').click();await new Promise(r=>setTimeout(r,1200));return !document.querySelector('#orders-view').hidden && document.querySelectorAll('#od-rows tr.od-mainrow').length>0 && document.querySelectorAll('#od-rows .od-cardlink').length>0;"
   },
   "probes": [
     { "name": "筛选块", "proto": ".cdk-block", "impl": ".cdk-block", "metrics": ["padding", "borderRadius"] },

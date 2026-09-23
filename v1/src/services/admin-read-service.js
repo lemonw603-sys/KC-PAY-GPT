@@ -1296,6 +1296,12 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
           c.current_balance, c.currency, c.refund_status, c.last_synced_at,
           c.last_transaction_synced_at,
           c.card_number_ciphertext, c.card_credentials_ciphertext,
+          c.provider_account_id AS card_provider_account_id,
+          (SELECT cpa.provider_code FROM provider_accounts cpa WHERE cpa.id = c.provider_account_id) AS card_provider_code,
+          (SELECT COUNT(*) FROM card_consumption_ledger cu WHERE cu.card_id = c.id
+             AND cu.status IN ('RESERVED','CONSUMED','RECONCILIATION')) AS card_used_count,
+          (SELECT CAST(setting_value AS UNSIGNED) FROM app_settings
+             WHERE setting_key = 'card_max_successful_payments' LIMIT 1) AS card_capacity,
           prod.display_name AS product_name,
           latest_attempt.attempt_status, latest_attempt.attempt_funds_risk_state, latest_attempt.executor_kind,
           latest_run.run_id, latest_run.run_status, latest_run.run_payment_state, latest_run.run_post_payment_state,
@@ -1617,6 +1623,11 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
       },
       card: row.provider_card_id ? {
         providerCardId: row.provider_card_id,
+        providerAccountId: row.card_provider_account_id || null,
+        providerLabel: providerLabelOf(row.card_provider_code),
+        // 订单页 v3「卡与钱」第三问：这张卡还能再充几单 = 每卡上限 − 已用（账本 RESERVED/CONSUMED/RECONCILIATION）。
+        usedCount: Number(row.card_used_count || 0),
+        capacity: row.card_capacity == null ? 3 : Number(row.card_capacity),
         cardNumber: cardNumber(row, sessionEncryptionKey),
         last4: row.last4,
         status: row.card_status,

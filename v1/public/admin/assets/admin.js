@@ -50,12 +50,6 @@ const ATTEMPT_STATUS_LABELS = Object.freeze({
 const LEDGER_STATUS_LABELS = Object.freeze({
   RESERVED: '已占用', CONSUMED: '已消费', RECONCILIATION: '对账中', RELEASED: '已释放'
 });
-const ORDER_FILTER_TITLES = Object.freeze({
-  REVIEW_REQUIRED: '需要处理的订单', ACTIVE: '进行中的订单', FINISHED: '已完成的订单',
-  RECENT_FINISHED: '近7天统计样本', TODAY: '今日订单',
-  PROCESSING: '自动处理中的订单', WAITING_FOR_SESSION: '等 Session 的订单',
-  RECONCILIATION_ISSUES: '付款与交易待核实', PAYMENT_UNKNOWN: '付款结果待核实'
-});
 const REFUND_LABELS = Object.freeze({ MONITORING: '观察中', DETECTED: '疑似退款', CONFIRMED: '已确认退款', WITHDRAWN: '已提取' });
 const INVENTORY_LABELS = Object.freeze({ AVAILABLE: '可分配', ASSIGNED: '已分配', DEPLETED: '已耗尽', PROVISIONING: '核对中', FAILED: '已失效', HELD_FOR_REVIEW: '已隔离，禁止自动复用', RETIRED: '永久停用', PRODUCT_ONLY: '限定产品' });
 // 卡片流水类型说人话（D-280 ④）。生产实查：两个卡台大小写不一致
@@ -113,14 +107,6 @@ const elements = {
   syncTime: document.querySelector('#sync-time'),
   diagnosticsReadiness: document.querySelector('#diagnostics-readiness-list'),
   diagnosticsHeartbeat: document.querySelector('#diagnostics-heartbeat'),
-  ordersTable: document.querySelector('#orders-table'),
-  filters: document.querySelector('#order-filters'),
-  search: document.querySelector('#order-search'),
-  statusFilter: document.querySelector('#status-filter'),
-  orderCount: document.querySelector('#order-count'),
-  pageLabel: document.querySelector('#page-label'),
-  prevPage: document.querySelector('#prev-page'),
-  nextPage: document.querySelector('#next-page'),
   detail: document.querySelector('#detail-drawer'),
   detailKicker: document.querySelector('#detail-kicker'),
   detailTitle: document.querySelector('#detail-title'),
@@ -295,47 +281,6 @@ function identityLabel(run) {
   const worker = String(run?.workerId || '');
   if (worker.startsWith('pool:')) return worker.slice('pool:'.length);
   return worker || run?.lane || run?.profileCode || '—';
-}
-
-function identityCell(order) {
-  const run = order.browserRun;
-  if (run) {
-    return `<span class="cell-main">${escapeHtml(identityLabel(run))}</span><small>${escapeHtml(BROWSER_RUN_LABELS[run.status] || run.status)}${run.profileCode ? ` · ${escapeHtml(run.profileCode)}` : ''}</small>`;
-  }
-  if (order.attempt?.executorKind === 'API') return '<span class="cell-main">API 路线</span>';
-  return '<span class="cell-main">—</span>';
-}
-
-function orderRow(order) {
-  const stage = order.stage || {};
-  const card = order.card;
-  const cardCell = card?.providerCardId
-    ? `<button class="order-card-link" type="button" data-card="${escapeHtml(card.providerCardId)}" data-card-account="${escapeHtml(card.providerAccountId || '')}">${escapeHtml(card.providerLabel || '卡片')} · 尾号 ${escapeHtml(card.last4 || '—')}</button>`
-    : '<span class="cell-muted">未关联卡片</span>';
-  return `<tr data-order="${escapeHtml(order.publicNo)}" tabindex="0">
-    <td><strong class="order-link">${escapeHtml(order.publicNo)}</strong><small>${escapeHtml(order.customerEmail || order.chatgptAccountId || '—')}</small></td>
-    <td>${escapeHtml(productLabel(order))}</td>
-    <td>${stageChip(stage)}</td>
-    <td>${stage.action ? `<small class="attention-note">${escapeHtml(stage.action)}</small>` : '<small>—</small>'}</td>
-    <td>${cardCell}</td>
-    <td>${identityCell(order)}</td>
-    <td>${formatTime(order.createdAt)}</td>
-  </tr>`;
-}
-
-function renderOrderSummary(summary = {}) {
-  const items = [
-    ['全部订单', 'ALL', summary.total ?? '—', '当前搜索与时间范围'],
-    ['处理中', 'PROCESSING', summary.processing ?? '—', '正在自动执行'],
-    ['需要处理', 'REVIEW_REQUIRED', summary.action ?? '—', '客户补资料或人工处理'],
-    ['付款待核实', 'PAYMENT_UNKNOWN', summary.unknown ?? '—', '禁止重复充值']
-  ];
-  const box = document.querySelector('#order-summary');
-  if (!box) return;
-  box.innerHTML = items.map(([label, filter, value, note]) =>
-    `<button type="button" aria-pressed="${state.status === (filter === 'ALL' ? '' : filter)}" class="order-summary-item${state.status === (filter === 'ALL' ? '' : filter) ? ' is-active' : ''}" data-order-summary-filter="${filter}">
-      <span>${escapeHtml(label)}</span><strong>${escapeHtml(String(value))}</strong><small>${escapeHtml(note)}</small>
-    </button>`).join('');
 }
 
 // ===== 工作台（第⑥步 C 精修，D-283）渲染 =====
@@ -722,59 +667,6 @@ async function loadOverview() {
   if (elements.syncTime) elements.syncTime.textContent = `更新于 ${new Date().toLocaleTimeString('zh-CN', { hour12: false })}`;
 }
 
-async function loadOrders() {
-  const query = { page: state.page, pageSize: state.pageSize, includeSummary: true };
-  if (state.status) query.status = state.status;
-  if (state.query) query.q = state.query;
-  query.timeField = state.timeField;
-  if (state.from) query.from = `${state.from}T00:00:00.000+08:00`;
-  if (state.to) query.to = `${state.to}T23:59:59.999+08:00`;
-  const payload = await api('/api/v1/admin/orders/search', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(query)
-  });
-  state.total = payload.total;
-  renderOrderSummary(payload.summary);
-  // D-279 ③：CDK 匹配行与订单行**同时**显示，不再二选一。
-  // 原来是 orders.length ? 订单 : cdkMatches —— 码一旦绑了订单，订单非空，CDK 匹配行就被吃掉，
-  // 于是「贴码定位」最有用的那种情况（码已经被用了、想知道它走到哪）反而看不到码的状态。
-  // 现在：匹配到的码置顶当定位提示，底下照常列订单。
-  const cdkMatchHtml = payload.cdkMatches?.length
-      // D-279 ③：贴码要直接看到「这码什么状态、绑了哪单、那单走到哪、客户是谁」，并能一键进详情。
-      // 原来这里只显示 CDK 内部状态词、没有阶段也进不去详情，等于查到了也还得自己再翻一遍。
-      ? payload.cdkMatches.map((cdk) => {
-        const label = cdkStatusLabel({
-          status: cdk.status, orderStatus: cdk.orderStatus, issuedAt: cdk.issuedAt,
-          expired: cdk.expiresAt ? new Date(cdk.expiresAt).getTime() < Date.now() : false,
-          redeemableNow: cdk.status === 'AVAILABLE'
-        });
-        // 订单「当前阶段」不在这里重算：这一单必然也在下面的订单行里，那里有后端算好的
-        // stage（同一口径）。这里只负责把码定位到订单，避免前端另造一套说法跟订单行打架。
-        const stage = cdk.orderPublicNo ? '见下方该订单行' : '尚未下单';
-        return `<tr>
-          <td><strong>CDK 精确匹配</strong><small>批次 ${escapeHtml(cdk.batchNo || '—')}</small></td>
-          <td>${escapeHtml(PLAN_LABELS[cdk.planType] || cdk.planType || '—')}</td>
-          <td><span class="cell-main">${escapeHtml(label.text)}</span>${cdk.issuedNote ? `<small>${escapeHtml(cdk.issuedNote)}</small>` : ''}</td>
-          <td>${cdk.orderPublicNo
-            ? `<button class="text-button" type="button" data-open-order="${escapeHtml(cdk.orderPublicNo)}">${escapeHtml(cdk.orderPublicNo)} · 进详情</button>`
-            : '尚未下单'}</td>
-          <td>${stage}</td>
-          <td>${escapeHtml(cdk.customerEmail || '—')}</td>
-          <td>${formatTime(cdk.redeemedAt || cdk.createdAt)}</td>
-        </tr>`;
-      }).join('')
-    : '';
-  const orderHtml = payload.orders.length
-    ? payload.orders.map((order) => orderRow(order)).join('')
-    : '';
-  elements.ordersTable.innerHTML = (cdkMatchHtml + orderHtml)
-    || '<tr><td colspan="7" class="empty-cell">没有符合条件的订单或 CDK</td></tr>';
-  const totalPages = Math.max(1, Math.ceil(payload.total / state.pageSize));
-  elements.orderCount.textContent = `${payload.total} 条订单`;
-  elements.pageLabel.textContent = `第 ${state.page} / ${totalPages} 页`;
-  elements.prevPage.disabled = state.page <= 1;
-  elements.nextPage.disabled = state.page >= totalPages;
-  elements.syncTime.textContent = `更新于 ${new Date().toLocaleTimeString('zh-CN', { hour12: false })}`;
-}
 
 
 
@@ -826,6 +718,43 @@ function cdkStatusLabel(row) {
 
 // The page controller is isolated; shared order navigation stays in this file.
 const cdkPage = window.createCdkPage?.({ api, escapeHtml, formatTime, showNotice, askForm, downloadCodes, downloadCdkStatusCsv });
+// 订单页 v3（D-356/D-357）：列表/筛选/展开/行内动作在 orders.js；抽屉与动作实现留在这里共用。
+const ordersPage = window.createOrdersPage?.({
+  api, escapeHtml, showNotice, planLabels: PLAN_LABELS,
+  openOrder: (publicNo, options) => openOrder(publicNo, options),
+  actions: {
+    cancel: (publicNo, { after }) => cancelOrder(publicNo, null, { confirmed: true, after }),
+    renewal: (publicNo, { after }) => confirmManualCancellation(publicNo, { after }),
+    manual: (publicNo, { cardUsed, reason, after }) => markManuallyFulfilled(publicNo, { cardUsed, reason, after })
+  }
+});
+const refreshOrdersIfVisible = () => (state.view === 'orders' && ordersPage ? ordersPage.load() : Promise.resolve());
+
+// 「标为已手工充值」（D-356 ⑤）：守卫在后端 manual-fulfillment-service（与脚本同一份），前端只带确认词。
+async function markManuallyFulfilled(publicNo, { cardUsed = false, reason = '', after = null } = {}) {
+  try {
+    const result = await sensitiveApi(`/api/v1/admin/orders/${encodeURIComponent(publicNo)}/manual-fulfilled`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ confirmation: '我已在系统外手工充值成功', cardUsed: Boolean(cardUsed), reason: String(reason || '') })
+    });
+    showNotice(`已记为手工充值成功${result.cardLast4 ? `（卡尾 ${result.cardLast4}${cardUsed ? ' 记一次消费' : ' 已放回'}）` : ''}；续费状态待你确认。`, 'success');
+  } catch (error) {
+    const messages = {
+      manual_fulfillment_payment_evidence: '这一单有系统付款痕迹，不能标为手工充值，要先核实付款。',
+      manual_fulfillment_not_eligible: '这一单当前状态不能标为手工充值。',
+      manual_fulfillment_cdk_taken: '这张卡密已被别的订单使用或已作废，需要人看。',
+      manual_fulfillment_card_used_not_allowed: '付款前失败的单不能记卡消费，请不要勾选。',
+      manual_fulfillment_conflict: '订单刚被改过，请刷新后重试。',
+      manual_fulfillment_confirmation_required: '确认信息不匹配，没有执行。',
+      order_not_found: '找不到这个订单。'
+    };
+    showNotice(messages[error?.message] || '没有记录，订单没有改变。');
+    throw error;
+  }
+  if (after) { await after(); return; }
+  await openOrder(publicNo);
+  await refreshOrdersIfVisible();
+}
 
 const RECONCILIATION_STATUS_LABELS = Object.freeze({ OPEN: '待处理', ASSIGNED: '已分配', RESOLVED: '已解决' });
 const RECONCILIATION_SEVERITY_LABELS = Object.freeze({ critical: '严重', warning: '警告', info: '提示' });
@@ -2279,7 +2208,7 @@ async function confirmManualCancellation(publicNo, { after = null } = {}) {
   showNotice(result.replayed ? '该订单此前已记录为已取消续费。' : '已记录：自动续费已人工取消，订单收口为成功。', 'success');
   if (after) { await after(); return; }
   await openOrder(publicNo);
-  await loadOrders();
+  await refreshOrdersIfVisible();
 }
 
 /**
@@ -2334,21 +2263,21 @@ async function resolveUnknownSubmission(publicNo, { after = null } = {}) {
     : '已按「已扣款」收口：订单记为充值成功，卡进待销清单。续费状态未知，关掉续费后请点「已在账号里取消续费」。', 'success');
   if (after) { await after(); return; }
   await openOrder(publicNo);
-  await loadOrders();
+  await refreshOrdersIfVisible();
 }
 
-async function cancelOrder(publicNo, button) {
-  if (!window.confirm(`确认取消订单 ${publicNo}？\n\n服务器会再次确认充值从未提交。订单关闭后，卡片将释放回可用库存。此操作不可撤销。`)) return;
-  button.disabled = true;
-  button.textContent = '核对并取消中…';
+async function cancelOrder(publicNo, button, { confirmed = false, after = null } = {}) {
+  if (!confirmed && !window.confirm(`确认取消订单 ${publicNo}？\n\n服务器会再次确认充值从未提交。订单关闭后，卡片将释放回可用库存。此操作不可撤销。`)) return;
+  if (button) { button.disabled = true; button.textContent = '核对并取消中…'; }
   try {
     const result = await sensitiveApi(`/api/v1/admin/orders/${encodeURIComponent(publicNo)}/cancellation`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ confirmation: `取消订单 ${publicNo}` })
     });
     showNotice(result.replayed ? '该订单此前已经取消。' : '订单已取消，卡片已释放回库存。');
+    if (after) { await after(); return; }
     await openOrder(publicNo);
-    await loadOrders();
+    await refreshOrdersIfVisible();
   } catch (error) {
     const messages = {
       order_cancellation_submission_risk: '充值可能已经开始，禁止取消。',
@@ -2357,8 +2286,8 @@ async function cancelOrder(publicNo, button) {
       order_cancellation_order_changed: '订单或卡片状态刚刚发生变化，请刷新后重试。'
     };
     showNotice(messages[error.message] || '取消被服务器拒绝，订单和卡片均未改变。');
-    button.disabled = false;
-    button.textContent = '取消并释放卡片';
+    if (button) { button.disabled = false; button.textContent = '取消并放卡'; }
+    if (after) throw error;
   }
 }
 
@@ -2472,13 +2401,16 @@ async function renderOrderTimeline(publicNo) {
       : '<p class="empty-state">还没有 Browser 执行记录。</p>';
   } catch { host.innerHTML = '<p class="empty-state">执行时间线读取失败。</p>'; }
 }
-async function openOrder(publicNo) {
+async function openOrder(publicNo, { focus = null } = {}) {
   elements.detailKicker.textContent = '订单';
   elements.detailTitle.textContent = publicNo;
   elements.detailContent.innerHTML = '<p class="loading-state">正在读取订单详情…</p>';
   if (!elements.detail.open) elements.detail.showModal();
   try {
-    const data = await api(`/api/v1/admin/orders/${encodeURIComponent(publicNo)}`);
+    const [data, siblings] = await Promise.all([
+      api(`/api/v1/admin/orders/${encodeURIComponent(publicNo)}`),
+      api(`/api/v1/admin/orders/${encodeURIComponent(publicNo)}/attempts`).catch(() => ({ attempts: [] }))
+    ]);
     const order = data.order;
     const stage = data.stage || {};
     const run = data.browserRun || null;
@@ -2495,23 +2427,28 @@ async function openOrder(publicNo) {
     const moneyList = (items) => items?.length
       ? items.map((item) => `${item.amount} ${item.currency}`).join('；') : '没有已记录金额';
     const actions = [];
-    if (cancellation.eligible) actions.push('<button type="button" class="danger-small" id="cancel-order">取消并释放卡</button>');
-    if (order.cancellationReviewRequired === 1 || order.status === 'CANCELLATION_REVIEW_REQUIRED') {
-      actions.push('<button type="button" class="primary-small" id="confirm-manual-cancellation">已在账号里取消续费</button>');
+    if (cancellation.eligible) actions.push('<button type="button" class="od-act danger" id="cancel-order">取消并放卡</button>');
+    // 后端把 cancellationReviewRequired 投影成布尔；此前这里写 === 1 恒假，成功但续费待确认的单在抽屉里没按钮（块 5 盘点发现）。
+    if (order.cancellationReviewRequired === true || order.cancellationReviewRequired === 1 || order.status === 'CANCELLATION_REVIEW_REQUIRED') {
+      actions.push('<button type="button" class="od-act out" id="confirm-manual-cancellation">已在账号里取消续费</button>');
     }
-    if (controlRun && resolveUnknownEligible(controlRun)) actions.push('<button type="button" class="primary-small" data-order-run-control="RESOLVE_UNKNOWN_PAYMENT">确认核实结果</button>');
+    if (controlRun && resolveUnknownEligible(controlRun)) actions.push('<button type="button" class="od-act" data-order-run-control="RESOLVE_UNKNOWN_PAYMENT">确认核实结果</button>');
     // API 路线的同一件事。此前只有 Browser 单有按钮：API 单进 RECONCILIATION_REQUIRED 后
     // 工作台「去核实收口」跳到这里是死路，而系统发的告警还写着「请在后台点「核实付款不明结果」」。
     // 资格由后端 unknownSubmissionEligibility 算好（与收口服务同一份规则），前端不自己拼条件。
-    if (data.unknownSubmission?.eligible) actions.push('<button type="button" class="primary-small" id="resolve-unknown-submission">确认核实结果</button>');
-    if (runLive && manualPaymentEligible(controlRun)) actions.push('<button type="button" class="primary-small" data-order-run-control="CONFIRM_MANUAL_PAYMENT">人工付款已完成</button>');
-    if (runLive && upgradeConfirmEligible(controlRun)) actions.push('<button type="button" class="primary-small" data-order-run-control="COMPLETE_20X">确认 20X 已升级</button>');
-    if (data.card) actions.push('<button type="button" class="ghost-button" id="sync-transactions">同步卡交易</button>');
+    if (data.unknownSubmission?.eligible) actions.push('<button type="button" class="od-act" id="resolve-unknown-submission">确认核实结果</button>');
+    if (runLive && manualPaymentEligible(controlRun)) actions.push('<button type="button" class="od-act" data-order-run-control="CONFIRM_MANUAL_PAYMENT">人工付款已完成</button>');
+    if (runLive && upgradeConfirmEligible(controlRun)) actions.push('<button type="button" class="od-act" data-order-run-control="COMPLETE_20X">确认 20X 已升级</button>');
+    // D-356 ⑤：手工标成功。资格由后端守卫定（无付款痕迹），这里只按状态决定摆不摆按钮。
+    if (['CREATED', 'CARD_READY', 'WAITING_FOR_SESSION', 'RECHARGE_FAILED'].includes(order.status) && !runLive) {
+      actions.push('<button type="button" class="od-act out" id="manual-fulfilled">标为已手工充值</button>');
+    }
+    if (data.card) actions.push('<button type="button" class="od-act ghost" id="sync-transactions">同步卡交易</button>');
     // F-61 在详情页的同一个病：付款不明的 case 不给「关闭对账案例」。关记录只 UPDATE
     // reconciliation_cases，订单/attempt/账本/卡占用一动不动；这两类必须走上面那两个正式收口按钮
     // （收口成功会自己把 case 关掉）。工作台队列早已这样分流，详情页此前漏了。
     openCases.filter((item) => !PAYMENT_UNKNOWN_CASE_TYPES.has(String(item.caseType || '').toUpperCase()))
-      .forEach((item) => actions.push(`<button type="button" class="ghost-button" data-resolve-order-case="${escapeHtml(item.id)}">关闭对账案例：${escapeHtml(RECONCILIATION_TYPE_LABELS[item.caseType] || item.caseType)}</button>`));
+      .forEach((item) => actions.push(`<button type="button" class="od-act ghost" data-resolve-order-case="${escapeHtml(item.id)}">关闭对账案例：${escapeHtml(RECONCILIATION_TYPE_LABELS[item.caseType] || item.caseType)}</button>`));
     const cancellationLabels = {
       ORDER_CANCELLATION_ELIGIBLE: '可以安全取消：付款未提交，卡片解除绑定并进入隔离区',
       ORDER_CANCELLATION_ALREADY_COMPLETED: '订单已经取消',
@@ -2519,13 +2456,52 @@ async function openOrder(publicNo) {
       ORDER_CANCELLATION_SUBMISSION_RISK: '付款可能已经开始，禁止取消',
       ORDER_CANCELLATION_NOT_ELIGIBLE: ''
     };
+    // ---- 抽屉头：邮箱主、单号副（D-356 ⑤）----
+    const routeKind = (data.attempt?.executorKind || order.routeExecutorKind || (run ? 'BROWSER' : 'API')) === 'API' ? 'API' : 'Browser';
+    elements.detailTitle.textContent = order.customerEmail || order.chatgptAccountId || publicNo;
+    elements.detailKicker.textContent = `${publicNo} · ${productLabel(order)} · ${routeKind}`;
+    // ---- 进度：只用已落库的状态事件，不造步骤（D-347 / N-03）----
+    const eventsAsc = [...(data.events || [])].sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)));
+    const progress = eventsAsc.length
+      ? `<ul class="od-tl">${eventsAsc.map((event, index) => `<li class="${index === eventsAsc.length - 1 ? 'cur' : ''}"><time>${formatTime(event.createdAt)}</time><b>${escapeHtml(STATUS_META[event.toStatus]?.[0] || event.toStatus)}</b></li>`).join('')}</ul>`
+      : '<p class="empty-state">还没有状态事件</p>';
+    const paymentUnknown = ['SUBMIT_UNKNOWN', 'RECONCILIATION_REQUIRED'].includes(order.status)
+      || (run && ['RECONCILE_ONLY', 'HUMAN_REQUIRED'].includes(run.status) && run.paymentState === 'PAYMENT_UNKNOWN');
+    // ---- 卡与钱三问（D-356 方向裁定）----
+    const card = data.card;
+    const consumed = (money.ledger || []).find((item) => item.status === 'CONSUMED');
+    const reserved = (money.ledger || []).find((item) => item.status === 'RESERVED');
+    const charged = paymentUnknown ? '不确定，等你核实'
+      : consumed ? `已扣 ${escapeHtml(consumed.amount || '—')} ${escapeHtml(consumed.currency || '')}${reconciliation.status === 'MATCHED' ? '，卡台流水已匹配' : reconciliation.status ? `，${escapeHtml(ORDER_RECONCILIATION_LABELS[reconciliation.status] || reconciliation.status)}` : ''}`
+        : reserved ? '已占用，未扣' : '未扣';
+    const moneyBlock = card ? `<div class="od-card">
+        <div class="row"><span>这单用的卡</span><b class="mono">${escapeHtml(card.providerLabel || '卡台')} · ${escapeHtml(card.last4 || '')}</b></div>
+        <div class="row"><span>扣了没</span><b>${charged}</b></div>
+        <div class="row"><span>这张卡还能再充</span><b>${Math.max(0, Number(card.capacity ?? 3) - Number(card.usedCount || 0))} 单（每卡 ${Number(card.capacity ?? 3)} 单上限，已用 ${Number(card.usedCount || 0)}）</b></div>
+        <button type="button" class="od-link" data-goto-card="${escapeHtml(card.providerCardId)}" data-goto-card-account="${escapeHtml(card.providerAccountId || '')}">去卡片页看这张卡 →</button>
+      </div>` : `<div class="od-card"><div class="row"><span>这单用的卡</span><b>还没分到卡</b></div><div class="row"><span>扣了没</span><b>${paymentUnknown ? '不确定，等你核实' : '没有扣款'}</b></div><div class="row"><span>这张卡还能再充</span><b>—</b></div></div>`;
+    const cdkRow = (trace.cdks || []).find((item) => item.relationship !== 'REPLACEMENT') || (trace.cdks || [])[0] || null;
+    const tries = (siblings.attempts || []).length;
+    const newerExists = (siblings.attempts || []).some((item) => String(item.createdAt || '') > String(order.createdAt || ''));
     elements.detailContent.innerHTML = `
-      <section class="detail-section drawer-summary">
-        <div class="detail-status">${stageChip(stage)}<span>${escapeHtml(productLabel(order))} · 创建 ${formatTime(order.createdAt)}</span></div>
-        <p class="${stage.action ? 'drawer-action-line' : 'empty-state'}">${escapeHtml(stage.action || '当前不需要人工动作')}</p>
-        <div class="drawer-actions">${actions.join('') || '<small>没有可执行的动作</small>'}</div>
+      <section class="detail-section od-top">
+        <div class="od-actions">${actions.join('') || '<span class="od-none">这一单现在没有需要你做的</span>'}</div>
+        ${stage.action ? `<small class="drawer-hint">${escapeHtml(stage.action)}</small>` : ''}
         ${cancellationLabels[cancellation.code] ? `<small class="drawer-hint">${escapeHtml(cancellationLabels[cancellation.code])}</small>` : ''}
+        ${paymentUnknown ? '<div class="od-warnbox">付款结果未知：系统已锁死这一单，不会重付、不会换卡。核实前不要让客户重新充值。</div>' : ''}
       </section>
+      <section class="detail-section"><p class="od-h">进度</p>${progress}
+        <dl class="od-kv od-kv-gap"><dt>提交时间</dt><dd class="mono">${formatTime(order.createdAt)}</dd><dt>充值成功时间</dt><dd class="mono">${order.status === 'RECHARGE_SUCCESS' ? formatTime(order.finishedAt) : '—'}</dd>${order.failureCode ? `<dt>结束原因</dt><dd>${escapeHtml(order.failureReason || order.failureCode)}</dd>` : ''}</dl>
+      </section>
+      <section class="detail-section"><p class="od-h">客户与卡密</p>
+        <dl class="od-kv"><dt>邮箱</dt><dd>${escapeHtml(order.customerEmail || '—')}</dd><dt>账号 ID</dt><dd class="mono">${escapeHtml(order.chatgptAccountId || '—')}</dd>
+          <dt>卡密</dt><dd>${cdkRow ? `${escapeHtml(cdkRow.status)}${cdkRow.batchId ? ` · 批次 ${escapeHtml(cdkRow.batchId)}` : ''} <button type="button" class="od-drawer-link" data-goto-cdk="${escapeHtml(publicNo)}">在 CDK 页定位 →</button>` : '—'}</dd>
+          <dt>这张码的尝试</dt><dd>${tries + 1} 次${tries ? `，本单是${newerExists ? '之前的一次' : '最新一次'}` : ''}</dd>
+          ${order.status === 'WAITING_FOR_SESSION' ? `<dt>等客户做什么</dt><dd>${escapeHtml(CUSTOMER_ACTION_LABELS[order.customerActionCode] || '换一个 Session')}（72 小时内），卡已放回池子</dd>` : ''}
+        </dl>
+      </section>
+      <section class="detail-section" id="od-money"><p class="od-h">卡与钱</p>${moneyBlock}</section>
+      <details class="detail-evidence"><summary>技术证据（运行时间线、资金、会话、卡片、身份、事件、任务、交易）</summary>
       <section class="detail-section"><div class="detail-section-heading"><h3>执行时间线</h3></div><div id="order-timeline"><p class="loading-state">正在读取…</p></div></section>
       <section class="detail-section"><h3>资金与结果</h3>${renderKeyValues([
         ['对账结论', ORDER_RECONCILIATION_LABELS[reconciliation.status] || reconciliation.status],
@@ -2571,7 +2547,6 @@ async function openOrder(publicNo) {
         ['最近检查点', run.lastCheckpointKind], ['最近错误', run.lastErrorCode],
         ['Worker', run.workerId], ['租约到期', formatTime(run.leaseUntil)]
       ]) + `<p class="empty-state"><button type="button" class="text-button" data-open-run="${escapeHtml(run.id)}">打开 Browser 运行详情</button></p>` : '<p class="empty-state">尚未创建浏览器运行</p>'}</section>
-      <details class="detail-evidence"><summary>技术证据（事件、任务、分配、客户付款、交易）</summary>
         <section class="detail-section"><h3>状态事件</h3><div class="timeline">${data.events.length ? data.events.map((event) => `<article><i></i><div><strong>${escapeHtml(STATUS_META[event.toStatus]?.[0] || event.toStatus)}</strong><p>${escapeHtml(event.reason)}</p><small>${formatTime(event.createdAt)} · ${escapeHtml(event.actorType)}</small></div></article>`).join('') : '<p class="empty-state">暂无事件</p>'}</div></section>
         <section class="detail-section"><h3>后台任务</h3><div class="mini-list">${data.tasks.length ? data.tasks.map((task) => `<div><span><strong>${escapeHtml(TASK_LABELS[task.type] || task.type)}</strong><small>${task.attempts}/${task.maxAttempts} 次尝试${task.lastErrorCode ? ` · ${escapeHtml(task.lastErrorCode)}` : ''}</small></span><em>${escapeHtml(TASK_STATUS_LABELS[task.status] || task.status)}</em></div>`).join('') : '<p class="empty-state">暂无任务</p>'}</div></section>
         <section class="detail-section"><h3>卡片分配历史</h3><div class="mini-list">${trace.cardAssignments?.length ? trace.cardAssignments.map((assignment) => `<div data-trace-card="${escapeHtml(assignment.providerCardId)}" data-trace-card-account="${escapeHtml(assignment.providerAccountId || '')}" role="button" tabindex="0"><span><strong>尾号 ${escapeHtml(assignment.last4 || assignment.providerCardId)} · ${escapeHtml(assignment.kind)}</strong><small>分配 ${formatTime(assignment.assignedAt)}${assignment.releasedAt ? ` · 释放 ${formatTime(assignment.releasedAt)}` : ' · 当前绑定'} · ${escapeHtml(assignment.assignmentReason || assignment.releaseReason || '')}</small></span><em>${escapeHtml(assignment.status)}</em></div>`).join('') : '<p class="empty-state">尚无卡片分配历史</p>'}</div></section>
@@ -2586,6 +2561,32 @@ async function openOrder(publicNo) {
       </details>`;
     renderOrderTimeline(publicNo);
     const reopen = () => openOrder(publicNo);
+    document.querySelector('#manual-fulfilled')?.addEventListener('click', async () => {
+      const answers = await askForm({
+        title: `标为已手工充值 ${publicNo}`,
+        message: '只有在你已经在系统外（比特浏览器 / 上号器）给这个客户手动充成功时才点。系统会记成功、卡放回池子，续费留给你确认；有付款痕迹的单服务器会拒绝。',
+        fields: [
+          { name: 'cardUsed', label: '手动充值用的是哪张卡', type: 'select', value: 'NO', required: true,
+            options: [{ value: 'NO', label: '没用系统分配的这张卡（卡放回池子）' }, { value: 'YES', label: '就是系统分配的这张卡（卡记一次消费）' }] },
+          { name: 'reason', label: '备注（可选）', type: 'text' }
+        ],
+        confirmLabel: '确认已手工充值'
+      });
+      if (!answers) return;
+      await markManuallyFulfilled(publicNo, { cardUsed: answers.cardUsed === 'YES', reason: answers.reason || '', after: async () => { await reopen(); await refreshOrdersIfVisible(); } }).catch(() => {});
+    });
+    elements.detailContent.querySelector('[data-goto-card]')?.addEventListener('click', (event) => openCard(event.currentTarget.dataset.gotoCard, event.currentTarget.dataset.gotoCardAccount));
+    elements.detailContent.querySelector('[data-goto-cdk]')?.addEventListener('click', async (event) => {
+      const no = event.currentTarget.dataset.gotoCdk;
+      elements.detail.close();
+      await switchView('cdks');
+      const input = document.querySelector('#cdk-code-q');
+      if (input) { input.value = no; document.querySelector('#cdk-code-filters')?.requestSubmit(); }
+    });
+    if (focus === 'money') {
+      const target = elements.detailContent.querySelector('#od-money');
+      if (target) { target.scrollIntoView({ block: 'start' }); target.classList.add('is-focus'); setTimeout(() => target.classList.remove('is-focus'), 1600); }
+    }
     document.querySelector('#sync-transactions')?.addEventListener('click', (event) => requestTransactionSync(publicNo, event.currentTarget));
     document.querySelector('#cancel-order')?.addEventListener('click', (event) => cancelOrder(publicNo, event.currentTarget));
     document.querySelector('#confirm-manual-cancellation')?.addEventListener('click', () => confirmManualCancellation(publicNo, { after: reopen })
@@ -2687,14 +2688,7 @@ async function refreshDiagnostics({ daily = false } = {}) {
 }
 document.querySelector('#diagnostics-refresh').addEventListener('click', () => refreshDiagnostics({ daily: true }));
 
-async function switchView(view, { status = '', resetOrderFilters = false } = {}) {
-  if (view === 'orders' && resetOrderFilters) {
-    state.query = '';
-    state.from = '';
-    state.to = '';
-    state.timeField = 'CREATED';
-    if (elements.search) elements.search.value = '';
-  }
+async function switchView(view, { status = '', resetOrderFilters = false, query = null } = {}) {
   setActiveNav(view);
   state.view = view;
   state.status = status;
@@ -2723,9 +2717,9 @@ async function switchView(view, { status = '', resetOrderFilters = false } = {})
     await loadSettings();
   } else {
     elements.viewKicker.textContent = '订单';
-    elements.viewTitle.textContent = ORDER_FILTER_TITLES[state.status] || '全部订单';
-    elements.statusFilter.value = state.status;
-    await loadOrders();
+    elements.viewTitle.textContent = '订单';
+    // 订单页 v3：筛选状态归 orders.js 管；resetOrderFilters 只用于工作台数字墙跳转（带筛选、清搜索）。
+    await ordersPage.enter({ status: resetOrderFilters ? status : status, query });
   }
 }
 
@@ -3067,7 +3061,7 @@ window.setInterval(() => {
   const editing = document.activeElement?.matches?.('input, textarea, select') || elements.detail.open || document.querySelector('dialog[open]');
   if (document.hidden || editing) return;
   const refresh = state.view === 'overview' ? loadOverview
-    : state.view === 'orders' ? loadOrders
+    : state.view === 'orders' ? () => ordersPage.load()
       : state.view === 'stock' ? loadStock
         : state.view === 'cdks' ? () => cdkPage.load({ automatic: true })
           : state.view === 'diagnostics'
@@ -3313,37 +3307,11 @@ document.querySelector('#wb-search-input')?.addEventListener('keydown', (event) 
   if (event.key !== 'Enter') return;
   const q = event.currentTarget.value.trim();
   if (!q) return;
-  state.query = q;
-  switchView('orders').then(() => { if (elements.search) elements.search.value = q; }).catch(() => showNotice('搜索失败，请重试。'));
+  switchView('orders', { query: q }).catch(() => showNotice('搜索失败，请重试。'));
 });
-
-elements.filters.addEventListener('submit', (event) => {
-  event.preventDefault();
-  state.page = 1;
-  state.query = elements.search.value.trim();
-  state.status = elements.statusFilter.value;
-  if (state.nav !== 'orders') setActiveNav('orders');
-  elements.viewKicker.textContent = '订单';
-  elements.viewTitle.textContent = ORDER_FILTER_TITLES[state.status] || '全部订单';
-  loadOrders().catch(() => showNotice('订单查询失败，请稍后重试。'));
-});
-
-elements.prevPage.addEventListener('click', () => { if (state.page > 1) { state.page -= 1; loadOrders(); } });
-
-elements.nextPage.addEventListener('click', () => { if (state.page * state.pageSize < state.total) { state.page += 1; loadOrders(); } });
 
 document.querySelector('#export-orders')?.addEventListener('click', () => downloadOperationsCsv('orders').catch(() => showNotice('订单导出失败。')));
 
-document.addEventListener('click', (event) => {
-  const button = event.target.closest('[data-order-summary-filter]');
-  if (!button) return;
-  const filter = button.dataset.orderSummaryFilter;
-  state.status = filter === 'ALL' ? '' : filter;
-  state.page = 1;
-  if (elements.statusFilter) elements.statusFilter.value = state.status;
-  elements.viewTitle.textContent = ORDER_FILTER_TITLES[state.status] || '全部订单';
-  loadOrders().catch(() => showNotice('订单查询失败，请稍后重试。'));
-});
 
 document.querySelector('#export-reconciliation-diag')?.addEventListener('click', () => downloadOperationsCsv('reconciliation_cases').catch(() => showNotice('对账案例导出失败。')));
 

@@ -1,0 +1,154 @@
+{
+ "checks": [
+  {
+   "name": "登录后进入订单页，无 JS 错误",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "name": "视口 1280",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "name": "「全部」有主行且每码一行（LOAD-0020/0021 并进 0022 的码）",
+   "ok": true,
+   "detail": "22 行；默认计数「22 个客户充值 · 本页 24 次尝试」"
+  },
+  {
+   "name": "状态角标全部 = 主行数",
+   "ok": true,
+   "detail": "22"
+  },
+  {
+   "name": "「需要我处理」角标 ≥ 3（等 Session ×2 + 付款不明 + 续费待确认）",
+   "ok": true,
+   "detail": "5"
+  },
+  {
+   "name": "LOAD-0022 主行带历史小标「2」",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "name": "展开后 2 条历史行（LOAD-0021 / LOAD-0020）",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "name": "再点收起",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "name": "点产品格不开抽屉",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "name": "抽屉头是邮箱、副行是单号",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "name": "抽屉含此刻可做 / 进度 / 客户与卡密 / 卡与钱 / 技术证据",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "name": "抽屉含提交时间与充值成功时间",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "name": "这张码的尝试 = 3 次",
+   "ok": true,
+   "detail": "这张码的尝试3 次"
+  },
+  {
+   "name": "未成功单抽屉有「标为已手工充值」按钮",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "name": "抽屉正文无内部编号",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "name": "点卡尾号打开本单抽屉并高亮「卡与钱」",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "name": "「需要我处理」每行都有行内动作链接",
+   "ok": true,
+   "detail": "5 行"
+  },
+  {
+   "name": "付款不明（LOAD-0019）的动作是「去核实」",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "name": "「去核实」打开抽屉且顶部有付款未知警示",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "name": "等 Session（LOAD-0023）的动作是「取消并放卡」",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "name": "点「取消并放卡」先弹确认框",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "name": "续费待确认的单动作是「已在账号里取消续费」",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "name": "按单号搜索只剩那一单",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "name": "产品筛选 20X 有结果且少于全部",
+   "ok": true,
+   "detail": "6"
+  },
+  {
+   "name": "路线筛选 API 有结果或明确空态",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "name": "无结果时显示明确空态",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "name": "接口 500 时显示「读取失败」与重试，不冒充空态",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "name": "重试后恢复",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "name": "390px 下表格可横向滚动",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "name": "全程无 JS 错误",
+   "ok": true,
+   "detail": ""
+  }
+ ]
+}

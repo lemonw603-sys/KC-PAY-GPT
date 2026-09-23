@@ -280,9 +280,13 @@ test('D-279⑦ 状态说人话：「使用中」与「已交付」按订单是�
 
 test('D-279③ 一键进详情的按钮必须有处理器（不能是能点但到不了对象的假落点）', () => {
   const src = fs.readFileSync(adminJsPath, 'utf8');
-  assert.ok(/data-open-order="/.test(src), '存在 data-open-order 按钮');
+  const cdksSrc = fs.readFileSync(path.join(here, '..', 'public', 'admin', 'assets', 'cdks.js'), 'utf8');
+  const ordersSrc = fs.readFileSync(path.join(here, '..', 'public', 'admin', 'assets', 'orders.js'), 'utf8');
+  // 订单页 v3（D-357）：CDK 页仍渲染 data-open-order（admin.js 委托处理）；订单页自己渲染 data-open（orders.js 内处理）。
+  assert.ok(/data-open-order="/.test(cdksSrc), 'CDK 页存在 data-open-order 按钮');
   assert.ok(/closest\('\[data-open-order\]'\)/.test(src),
     'data-open-order 必须有点击处理器 —— 渲染了按钮却没处理器就是 F-64 那种假落点');
+  assert.ok(/data-open="/.test(ordersSrc) && /closest\('\[data-open\]'\)/.test(ordersSrc), '订单页 data-open 按钮与处理器成对');
 });
 
 test('CDK 页不得使用 .workbench 作用域的 class（写了也不生效，会退化成纯文字）', () => {
@@ -348,13 +352,15 @@ test('D-339 数字墙跳统计样本时清掉旧搜索和日期，请求不会�
     requestBody = JSON.parse(options.body || '{}');
     return Promise.resolve(stubResponse(200, { total: 0, orders: [], cdkMatches: [] }));
   };
-  evalIn("state.query='old@example.com'; state.from='2026-01-01'; state.to='2026-01-31'; state.timeField='UPDATED'; elements.search.value='old@example.com'");
+  // 订单页 v3：筛选状态归 ordersPage.state；带筛选跳入时清搜索与日期（D-339 的意图不变）。
+  evalIn("ordersPage.state.q='old@example.com'; ordersPage.state.from='2026-01-01'; ordersPage.state.to='2026-01-31'; ordersPage.state.planType='plus'");
   await sandbox.switchView('orders', { status: 'RECENT_FINISHED', resetOrderFilters: true });
   assert.deepEqual(JSON.parse(JSON.stringify(requestBody)), {
-    page: 1, pageSize: 20, includeSummary: true, status: 'RECENT_FINISHED', timeField: 'CREATED'
+    page: 1, pageSize: 50, includeSummary: true, groupByCdk: true, timeField: 'CREATED', status: 'RECENT_FINISHED', planType: 'plus'
   });
-  assert.equal(evalIn('state.query'), '');
-  assert.equal(evalIn('elements.search.value'), '');
+  assert.equal(evalIn('ordersPage.state.q'), '');
+  assert.equal(evalIn('ordersPage.state.from'), '');
+  assert.equal(evalIn('ordersPage.state.to'), '');
 });
 
 test('待复核续费进工作台队列，且读的是 metrics 不是 backlog（D-309）', () => {

@@ -11,10 +11,12 @@
   <link rel="stylesheet" href="/admin/assets/workbench.css?v=19">
   <link rel="stylesheet" href="/admin/assets/cards.css?v=5">
   <link rel="stylesheet" href="/admin/assets/cdks.css?v=1">
+  <link rel="stylesheet" href="/admin/assets/orders.css?v=2">
   <link rel="stylesheet" href="/admin/assets/diagnostics.css?v=1">
   <script src="/admin/assets/cdks.js?v=2" defer></script>
+  <script src="/admin/assets/orders.js?v=1" defer></script>
   <script src="/admin/assets/diagnostics.js?v=1" defer></script>
-  <script src="/admin/assets/admin.js?v=89" defer></script>
+  <script src="/admin/assets/admin.js?v=91" defer></script>
 </head>
 <body>
   <div class="admin-shell">
@@ -90,15 +92,39 @@
         </section>
       </section>
       <section id="orders-view" class="view" hidden>
-        <section class="card orders-card">
-          <form class="filters filters-compact" id="order-filters">
-            <label class="search-field"><span class="sr-only">搜索订单</span><input id="order-search" type="search" maxlength="191" placeholder="搜索查询码、CDK、邮箱、卡号、卡台 ID 或外部订单号"></label>
-            <input id="status-filter" type="hidden" value="">
-            <button class="primary-small" type="submit">查询</button>
-          </form>
-          <div class="order-summary" id="order-summary" aria-label="订单摘要"></div>
-          <div class="table-wrap"><table><thead><tr><th>订单</th><th>产品</th><th>当前阶段</th><th>需要我做什么</th><th>付款卡</th><th>身份</th><th>创建时间</th></tr></thead><tbody id="orders-table"></tbody></table></div>
-          <div class="pagination"><span id="order-count">0 条订单</span><div><button id="prev-page" type="button">上一页</button><span id="page-label">第 1 页</span><button id="next-page" type="button">下一页</button></div></div>
+        <section class="od-page">
+          <section class="cdk-block">
+            <form class="cdk-filters" id="od-filters">
+              <input id="od-q" type="search" maxlength="191" placeholder="邮箱 / 订单号 / 卡密" aria-label="搜索订单" autocomplete="off">
+              <div class="od-seg" role="group" aria-label="状态">
+                <button type="button" data-status="all" aria-pressed="true">全部 <i data-n="all">—</i></button>
+                <button type="button" data-status="processing" aria-pressed="false">处理中 <i data-n="processing">—</i></button>
+                <button type="button" data-status="success" aria-pressed="false">已成功 <i data-n="success">—</i></button>
+                <button type="button" data-status="failed" aria-pressed="false">未成功 <i data-n="failed">—</i></button>
+                <button type="button" data-status="action" aria-pressed="false">需要我处理 <i data-n="action">—</i></button>
+              </div>
+              <span class="od-extra" id="od-extra" hidden></span>
+              <select id="od-plan" aria-label="产品"><option value="">所有产品</option><option value="plus">Plus</option><option value="pro_5x">5X</option><option value="pro_20x">20X</option></select>
+              <select id="od-route" aria-label="路线"><option value="">所有路线</option><option value="BROWSER">Browser</option><option value="API">API</option></select>
+              <span class="od-range"><input id="od-from" type="date" aria-label="起"> 至 <input id="od-to" type="date" aria-label="止"></span>
+              <div class="od-seg" role="group" aria-label="时间快选">
+                <button type="button" data-range="7" aria-pressed="true">近 7 天</button>
+                <button type="button" data-range="all" aria-pressed="false">全部</button>
+              </div>
+              <span class="od-count" id="od-count"></span>
+            </form>
+            <div class="od-cdkmatch" id="od-cdkmatch" hidden></div>
+            <div class="cdk-table-wrap">
+              <table class="cdk-table od-table" id="od-table">
+                <colgroup><col class="c-cust"><col class="c-plan"><col class="c-route"><col class="c-stage"><col class="c-time"></colgroup>
+                <thead><tr>
+                  <th>客户</th><th class="th-plan">产品</th><th class="th-route">路线 · 卡台 · 卡尾号</th><th class="th-stage">进度 / 需要我做什么</th><th class="th-time">提交时间</th>
+                </tr></thead>
+                <tbody id="od-rows"></tbody>
+              </table>
+            </div>
+            <div class="od-pager"><button id="od-prev" type="button">上一页</button><span id="od-page-label">第 1 页</span><button id="od-next" type="button">下一页</button></div>
+          </section>
         </section>
       </section>
 
@@ -354,6 +380,14 @@
   <dialog class="detail-drawer" id="detail-drawer" aria-labelledby="detail-title">
     <div class="drawer-heading"><div><p class="section-kicker" id="detail-kicker">订单详情</p><h2 id="detail-title">—</h2></div><button class="close-button" id="close-detail" type="button" aria-label="关闭详情">×</button></div>
     <div id="detail-content"></div>
+  </dialog>
+  <dialog id="od-confirm" class="od-confirm">
+    <form method="dialog" onsubmit="return false">
+      <h3 id="od-confirm-title"></h3>
+      <p id="od-confirm-text"></p>
+      <div id="od-confirm-fields"></div>
+      <div class="btns"><button type="button" id="od-confirm-no">先不做</button><button type="button" class="od-act" id="od-confirm-yes"></button></div>
+    </form>
   </dialog>
 </body>
 </html>

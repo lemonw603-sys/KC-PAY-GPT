@@ -103,7 +103,8 @@ test('admin batch generation keeps generation and downloads separate and exposes
 });
 
 test('admin sends sensitive unified search in a protected JSON body, never in the URL', () => {
-  const script = fs.readFileSync(path.join(directory, 'admin', 'assets', 'admin.js'), 'utf8');
+  // 订单列表（含卡密/邮箱搜索）从 D-357 起住在 orders.js；admin.js 只剩抽屉与跳转。两份都守。
+  const script = ['admin.js', 'orders.js'].map((name) => fs.readFileSync(path.join(directory, 'admin', 'assets', name), 'utf8')).join('\n');
   assert.match(script, /\/api\/v1\/admin\/orders\/search/);
   assert.doesNotMatch(script, /\/api\/v1\/admin\/orders\?[^'"`]*q=/);
   assert.doesNotMatch(script, /URLSearchParams[\s\S]{0,300}\.set\(['"]q['"]/);
@@ -321,11 +322,14 @@ test('admin navigation is exactly six pages and old views are gone', () => {
 test('admin orders page is one table plus one drawer without permits, tags, notes or resend', () => {
   const html = fs.readFileSync(path.join(directory, 'admin', 'index.html'), 'utf8');
   const script = fs.readFileSync(path.join(directory, 'admin', 'assets', 'admin.js'), 'utf8');
-  assert.match(html, /<th>订单<\/th><th>产品<\/th><th>当前阶段<\/th><th>需要我做什么<\/th><th>付款卡<\/th><th>身份<\/th><th>创建时间<\/th>/);
-  assert.match(html, /id="order-summary"/);
-  assert.match(script, /data-order-summary-filter/);
-  assert.doesNotMatch(html, /<option value="REVIEW_REQUIRED">|<option value="ACTIVE">|<option value="FINISHED">/);
-  assert.match(script, /取消并释放卡/);
+  const ordersScript = fs.readFileSync(path.join(directory, 'admin', 'assets', 'orders.js'), 'utf8');
+  // D-356/D-357 订单页 v3：五列、状态四桶做成分段器（不再是下拉与摘要卡）、时间快选近 7 天/全部
+  assert.match(html, /<th>客户<\/th><th class="th-plan">产品<\/th><th class="th-route">路线 · 卡台 · 卡尾号<\/th><th class="th-stage">进度 \/ 需要我做什么<\/th><th class="th-time">提交时间<\/th>/);
+  for (const bucket of ['all', 'processing', 'success', 'failed', 'action']) assert.match(html, new RegExp(`data-status="${bucket}"`), bucket);
+  assert.doesNotMatch(html, /id="order-summary"|id="order-status-filter"|<option value="REVIEW_REQUIRED">|<option value="ACTIVE">|<option value="FINISHED">/);
+  assert.match(ordersScript, /groupByCdk: true/);
+  assert.match(ordersScript, /取消并放卡/);
+  assert.match(script, /id="manual-fulfilled"/);
   assert.match(script, /人工付款已完成/);
   assert.match(script, /确认 20X 已升级/);
   assert.match(script, /关闭对账案例/);
