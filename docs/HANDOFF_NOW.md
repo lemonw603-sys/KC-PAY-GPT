@@ -4,16 +4,16 @@
 
 ## 现在的状态
 
-- 生产 release `20260921-feedback-d340-7e88952`（D-341）。**默认路线已切 BROWSER**（08:13 UTC，D-353）；API 路线代码标未验证。生产数值只看 `CURRENT_STATE.md`。
+- 生产 release **`20260923-block3-6807de8`**（12:34 UTC 切换，块 3 服务器侧已上线；回滚点 `20260921-feedback-d340-7e88952`）。默认路线 BROWSER（D-353）；API 路线代码标未验证。生产数值只看 `CURRENT_STATE.md`。
 - 09-23 08:33 UTC 第一单真实客户单 `PJV1-_xH487IWWc0h0fi8pqY9`：预检 ACCOUNT_ALREADY_PLUS 付款前安全中止，卡已释放，等客户重贴（暂不会）。付款后半段仍零样本；最近真钱成功 09-16（旧版）。
 - highvcc token 已于 07:04 UTC 更新，07:12 轮次同步成功、快照 $44.74（块 1 完成）。
-- **块 3 代码完成并推送（`6807de8`）**：v1 1019 pass / browser-mvp 300 pass / 隔离 MySQL 集成 54 pass（另 14 条是 D-258 老失败，基线工作树同样 14 条）。**未发布、未 rehearsal、本机池未重启**（PID 67131 仍是 09-18 代码）。
+- **块 3 代码完成并推送（`6807de8`）**：v1 1019 pass / browser-mvp 300 pass / 隔离 MySQL 集成 54 pass（另 14 条是 D-258 老失败，基线工作树同样 14 条）。**服务器侧已发布；未 rehearsal、本机池未重启**（PID 67131 仍是 09-18 代码，lane 守卫改动未生效）。
 - 生产此刻 **可分配卡 0 张**：8718 被 WAITING_FOR_SESSION 单持有；hnskj 两张 10:15 UTC 变 $0.01 DEPLETED；0601 变 $1.99。钱包 hnskj $104.71 / highvcc $34.24；调度器报 WALLET_BELOW_FLOOR 不开卡（规则未核）。
 - 订单页 = 块 5，紧接块 3；真钱只留 Plus 一单（块 3 后）+ 20X 一单（块 6），其余用 rehearsal（D-352 补记）。
 
 ## 下一可执行项（按 D-352 块序）
 
-1. **块 3 收尾（需 Lemon）**：① rehearsal 一次（要一个 free 号新鲜 Session；流程见 RUNBOOK §2，先 `set-intake-executor-check.mjs off`，完了 `on`）；② 重启本机池让 lane 守卫生效；③ `deploy-release.sh prepare 6807de8` → 复核 → `switch`；④ 发布后跑 `backfill-card-funded-amount.mjs` 预览再 apply；⑤ 问 Lemon：hnskj 6754/0577 与 0601 的余额是不是他用的；8718 那张被等 Session 的单占着，客户不回来要不要关单放卡。
+1. **块 3 收尾**：① rehearsal（Lemon 自己在客户页贴 free 号 Session 建单，Session 不经执行者；顺序：停池 `stop-live.sh` → `set-intake-executor-check.mjs off --apply` → Lemon 建单 → `run-live-rehearsal.sh once` → `close-rehearsal-order.mjs` 收口 → check `on --apply` → 开付款 → supervisor 拉起新池）；② 演练前要有可分配卡：8718 被 WAITING_FOR_SESSION 单占着，待 Lemon 定是否关单放卡；③ 回填预览候选 0，本轮不 apply。
 2. 块 4：Plus Browser 真钱一单（仅此一单），对照交付判据合同；其余用 rehearsal。
 3. 块 5：订单页三个问题 → 拍板 → 做一版。
 

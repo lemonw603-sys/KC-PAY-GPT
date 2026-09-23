@@ -3510,3 +3510,7 @@ Lemon 批白名单后实施，提交 `6807de8`。改动与证据：
 - 现场变化（12:15 UTC 观察，原因未核）：hnskj 6754/0577 10:15 同步为 $0.01 DEPLETED；0601 31.99→1.99；hnskj 钱包 38.73→104.71；highvcc 钱包 44.74→34.24；8718 被 WAITING_FOR_SESSION 单持有；可分配 0。
 
 补记（20:3x UTC+8，Lemon 说明）：hnskj 6754/0577 → $0.01 是卡台服务器故障、余额自动退回钱包；0601 余额转到 0951 与 8718；0951 留作手动充其他 AI 产品（库内覆盖 RETIRED 已挡住）。演练单改由 Lemon 在客户页自己贴 Session 建，Session 不经执行者；Lemon 同意重启本机池与发布。
+
+## 2026-09-23｜块 3 服务器侧发布 `20260923-block3-6807de8`（12:34 UTC）
+
+Lemon 同意后 prepare（manifest 1347 项、备份 `pojia-20260923T123158Z`、无迁移）→ switch → 三服务 active、live/ready 200、served customer.js 哈希与磁盘一致；巡检 12:35 轮输出新字段 executors.BROWSER offline=false。服务器 `backfill-card-funded-amount.mjs` 预览候选 0；`set-intake-executor-check.mjs on` 预览显示键未设置（= 检查开）。本机池未重启、rehearsal 未做。
