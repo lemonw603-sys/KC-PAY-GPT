@@ -40,15 +40,23 @@ await firstRow.locator('td').nth(1).click();
 ok('点产品格不打开抽屉', !(await page.locator('#od-drawer').evaluate((d) => d.open)));
 await firstRow.locator('.od-email').click();
 ok('点邮箱格打开右侧抽屉', await page.locator('#od-drawer').evaluate((d) => d.open));
+ok('列表客户格只有邮箱一行，单号在抽屉头', (await firstRow.locator('.od-no').count()) === 0 && /PJV1-/.test(await page.locator('#od-drawer-sub').textContent()));
 const drawerText = await page.locator('#detail-content').textContent();
 ok('抽屉含「卡与钱」三问', /这单用的卡/.test(drawerText) && /扣了没/.test(drawerText) && /还能再充/.test(drawerText));
 ok('抽屉含提交时间与充值成功时间', /提交时间/.test(drawerText) && /充值成功时间/.test(drawerText));
 ok('抽屉正文无内部编号（D-xxx / F-xx）', !/\b[DF]-\d{2,3}\b/.test(drawerText));
 await page.click('#od-close');
+// 卡尾号可点：打开本单抽屉并定位到「卡与钱」
+const cardLink = page.locator('#od-rows .od-cardlink').first();
+await cardLink.click();
+ok('点卡尾号打开本单抽屉', await page.locator('#od-drawer').evaluate((d) => d.open));
+ok('并定位到「卡与钱」段（高亮）', await page.locator('#od-money.is-focus').count() === 1);
+await page.click('#od-close');
 // 需要我处理：行内动作按钮 + 确认框
 await page.click('[data-status="action"]');
 const actRows = await page.locator('#od-rows tr.od-mainrow').count();
-ok('「需要我处理」筛选后每行都有动作按钮', actRows > 0 && (await page.locator('#od-rows tr.od-mainrow .od-act').count()) === actRows, `${actRows} 行`);
+ok('「需要我处理」筛选后每行都有行内动作链接（与进度芯片同一行）', actRows > 0 && (await page.locator('#od-rows tr.od-mainrow .od-rowact').count()) === actRows, `${actRows} 行`);
+ok('行内动作不是实心大按钮（无 .od-act）', (await page.locator('#od-rows .od-act').count()) === 0);
 const verifyBtn = page.locator('#od-rows [data-action="verify"]').first();
 ok('付款待核实行的按钮是「去核实」', (await verifyBtn.count()) === 1);
 await verifyBtn.click();
@@ -62,8 +70,12 @@ await page.fill('#od-q', 'PJV1-_xH487');
 const wRow = page.locator('#od-rows tr.od-mainrow');
 ok('搜索单号能定位到等 Session 那单', (await wRow.count()) === 1);
 ok('等 Session 行的动作是「取消并放卡」', (await wRow.locator('[data-action="cancel"]').count()) === 1);
+// 抽屉里点「在 CDK 页定位」不再弹窗
+page.once('dialog', async (d) => { ok('CDK 定位不弹窗', false, d.message()); await d.dismiss(); });
 await wRow.locator('.od-email').click();
 ok('等 Session 抽屉写明「卡已放回池子」', /卡已放回池子/.test(await page.locator('#detail-content').textContent()));
+await page.click('#detail-content [data-goto-cdk]');
+ok('点 CDK 定位后无弹窗、抽屉仍开着', await page.locator('#od-drawer').evaluate((d) => d.open));
 await page.click('#od-close');
 // 筛选：产品 / 路线
 await page.fill('#od-q', '');

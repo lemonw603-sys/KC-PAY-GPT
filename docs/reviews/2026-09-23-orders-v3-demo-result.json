@@ -56,6 +56,11 @@
    "detail": ""
   },
   {
+   "name": "列表客户格只有邮箱一行，单号在抽屉头",
+   "ok": true,
+   "detail": ""
+  },
+  {
    "name": "抽屉含「卡与钱」三问",
    "ok": true,
    "detail": ""
@@ -71,9 +76,24 @@
    "detail": ""
   },
   {
-   "name": "「需要我处理」筛选后每行都有动作按钮",
+   "name": "点卡尾号打开本单抽屉",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "name": "并定位到「卡与钱」段（高亮）",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "name": "「需要我处理」筛选后每行都有行内动作链接（与进度芯片同一行）",
    "ok": true,
    "detail": "10 行"
+  },
+  {
+   "name": "行内动作不是实心大按钮（无 .od-act）",
+   "ok": true,
+   "detail": ""
   },
   {
    "name": "付款待核实行的按钮是「去核实」",
@@ -106,6 +126,11 @@
    "detail": ""
   },
   {
+   "name": "点 CDK 定位后无弹窗、抽屉仍开着",
+   "ok": true,
+   "detail": ""
+  },
+  {
    "name": "路线筛选 API 有结果且少于全部",
    "ok": true,
    "detail": "17"
@@ -127,8 +152,9 @@
   }
  ],
  "assetFails": [
-  "http://127.0.0.1:8899/assets/fonts/familjen-grotesk.woff2",
   "http://127.0.0.1:8899/assets/fonts/ibm-plex-mono-400.woff2",
-  "http://127.0.0.1:8899/assets/fonts/ibm-plex-mono-500.woff2"
+  "http://127.0.0.1:8899/assets/fonts/familjen-grotesk.woff2",
+  "http://127.0.0.1:8899/assets/fonts/ibm-plex-mono-500.woff2",
+  "http://127.0.0.1:8899/assets/fonts/ibm-plex-mono-600.woff2"
  ]
 }

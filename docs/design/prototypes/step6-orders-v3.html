@@ -38,7 +38,17 @@
     .od-page .od-tries{border:0;background:var(--wb-s3);color:var(--wb-t2);font-size:11px;padding:2px 7px;border-radius:6px;min-height:0;cursor:pointer;margin-left:6px;box-shadow:none}
     .od-page .od-tries[aria-expanded=true]{background:var(--wb-a-soft);color:var(--wb-a-ink)}
     .od-route small{display:block;color:var(--wb-t3);font:11.5px var(--wb-fm)}
-    .od-stage{display:grid;gap:6px;justify-items:start}
+    .od-stage{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+    .od-page .od-rowact{min-height:0;border:0;background:none;padding:0;color:var(--wb-a);font-size:12.5px;font-weight:600;cursor:pointer;white-space:nowrap;box-shadow:none;border-radius:4px}
+    .od-page .od-rowact:hover{text-decoration:underline}
+    .od-page .od-rowact.is-danger{color:var(--wb-danger)}
+    .od-page .od-cardlink{min-height:0;border:0;background:none;padding:0;font:11.5px var(--wb-fm);color:var(--wb-t2);cursor:pointer;box-shadow:none;border-radius:4px;border-bottom:1px dotted var(--wb-t3)}
+    .od-page .od-cardlink:hover{color:var(--wb-a);border-bottom-color:var(--wb-a)}
+    .od-page .od-cust{white-space:nowrap}
+    .od-table{table-layout:fixed}
+    .od-table col.c-cust{width:300px}.od-table col.c-plan{width:64px}.od-table col.c-route{width:150px}.od-table col.c-stage{width:auto}.od-table col.c-time{width:112px}
+    .od-table td.od-plan,.od-table td.od-route{color:var(--wb-t2)}
+    .od-table td.od-cust{white-space:normal}
     .od-chip{display:inline-flex;align-items:center;gap:6px;padding:4px 8px;border-radius:7px;background:var(--wb-s3);color:var(--wb-t2);white-space:nowrap;font-size:12px}
     .od-chip::before{content:"";width:7px;height:7px;background:currentColor;border-radius:50%}
     .od-chip.ok{background:var(--wb-ok-soft);color:var(--wb-ok)}
@@ -77,6 +87,7 @@
     .od-tl li{display:grid;grid-template-columns:118px 1fr;gap:10px;font-size:12.5px}
     .od-tl li time{font:11.5px var(--wb-fm);color:var(--wb-t3)}
     .od-tl li.cur b{color:var(--wb-a-ink)}
+    #od-money.is-focus .od-card{box-shadow:0 0 0 3px var(--wb-a-soft);border-color:var(--wb-a)}
     .od-warnbox{border:1px solid var(--wb-warn);background:var(--wb-warn-soft);color:var(--wb-warn);border-radius:9px;padding:10px 12px;font-size:12.5px}
     dialog.od-confirm{border:1px solid var(--wb-bd);border-radius:14px;padding:20px 22px;width:min(420px,92vw);box-shadow:var(--wb-pop)}
     dialog.od-confirm::backdrop{background:hsla(176,25%,10%,.28)}
@@ -141,6 +152,7 @@
           </form>
           <div class="cdk-table-wrap">
             <table class="cdk-table od-table" id="od-table">
+              <colgroup><col class="c-cust"><col class="c-plan"><col class="c-route"><col class="c-stage"><col class="c-time"></colgroup>
               <thead><tr>
                 <th>客户</th><th>产品</th><th>路线 · 卡台 · 卡尾号</th><th>进度 / 需要我做什么</th><th>提交时间</th>
               </tr></thead>
@@ -249,14 +261,21 @@
     function actionBtn(o, where) {
       const a = primaryAction(o);
       if (!a) return where === 'row' ? '' : '<span class="od-none">这一单现在没有需要你做的</span>';
-      return `<button type="button" class="od-act ${a.cls}" data-action="${a.key}" data-no="${o.no}">${a.label}</button>`;
+      return `<button type="button" class="${where === 'row' ? 'od-rowact' : `od-act ${a.cls}`}${where === 'row' && a.cls === 'danger' ? ' is-danger' : ''}" data-action="${a.key}" data-no="${o.no}">${a.label}${where === 'row' ? ' ›' : ''}</button>`;
     }
     function row(o, isMain, hist) {
+      if (!isMain) return `<tr class="od-hist" data-no="${o.no}">
+        <td class="od-cust"><span class="od-no">${o.no}</span></td>
+        <td class="od-plan">${PLAN[o.plan] || o.plan}</td>
+        <td class="od-route">${o.route === 'BROWSER' ? 'Browser' : 'API'}<small>${o.last4 ? `<button type="button" class="od-cardlink" data-card="${o.no}">${PROVIDER[o.provider] || o.provider} · ${o.last4}</button>` : '未分卡'}</small></td>
+        <td><div class="od-stage">${chip(o)}</div></td>
+        <td class="od-time">${fmt(o.created)}</td>
+      </tr>`;
       const tries = hist && hist.length ? `<button type="button" class="od-tries" data-expand="${o.cdk}" aria-expanded="${state.expanded.has(o.cdk)}">此前 ${hist.length} 次未成功 ${state.expanded.has(o.cdk) ? '▴' : '▾'}</button>` : '';
       return `<tr class="${isMain ? 'od-mainrow' : 'od-hist'}" data-no="${o.no}">
-        <td><div class="od-main"><span><button type="button" class="od-email" data-open="${o.no}">${emailOf(o)}</button>${tries}</span><span class="od-no">${o.no}</span></div></td>
-        <td>${PLAN[o.plan] || o.plan}</td>
-        <td class="od-route">${o.route === 'BROWSER' ? 'Browser' : 'API'}<small>${o.last4 ? `${PROVIDER[o.provider] || o.provider} · ${o.last4}` : '未分卡'}</small></td>
+        <td class="od-cust"><button type="button" class="od-email" data-open="${o.no}">${emailOf(o)}</button>${tries}</td>
+        <td class="od-plan">${PLAN[o.plan] || o.plan}</td>
+        <td class="od-route">${o.route === 'BROWSER' ? 'Browser' : 'API'}<small>${o.last4 ? `<button type="button" class="od-cardlink" data-card="${o.no}">${PROVIDER[o.provider] || o.provider} · ${o.last4}</button>` : '未分卡'}</small></td>
         <td><div class="od-stage">${chip(o)}${isMain ? actionBtn(o, 'row') : ''}</div></td>
         <td class="od-time">${fmt(o.created)}</td>
       </tr>`;
@@ -292,7 +311,7 @@
         <a href="#" data-goto-card="${o.last4}">去卡片页看这张卡 →</a>
       </div>`;
     }
-    function openDrawer(no) {
+    function openDrawer(no, focus = null) {
       const o = ALL.find((x) => x.no === no); if (!o) return;
       const s = STAGE[o.status] || { label: o.status };
       document.getElementById('od-drawer-title').textContent = emailOf(o);
@@ -308,9 +327,10 @@
         <section class="detail-section"><p class="od-h">客户与卡密</p>
           <dl class="od-kv"><dt>邮箱</dt><dd>${emailOf(o)}</dd><dt>卡密</dt><dd class="mono">${cdkOf(o)} <a href="#" data-goto-cdk="${o.cdk}">在 CDK 页定位 →</a></dd><dt>这张码的尝试</dt><dd>${ALL.filter((x) => x.cdk === o.cdk).length} 次，本单是最新一次${ALL.filter((x) => x.cdk === o.cdk)[ALL.filter((x) => x.cdk === o.cdk).length - 1].no === o.no ? '' : '之前的'}</dd>${o.status === 'WAITING_FOR_SESSION' ? '<dt>等客户做什么</dt><dd>换一个免费账号的 Session（72 小时内），卡已放回池子</dd>' : ''}</dl>
         </section>
-        <section class="detail-section"><p class="od-h">卡与钱</p>${moneyBlock(o)}</section>
+        <section class="detail-section" id="od-money"><p class="od-h">卡与钱</p>${moneyBlock(o)}</section>
         <details class="detail-evidence"><summary>技术证据（状态事件、任务、账本、运行）</summary><section class="detail-section"><dl class="od-kv"><dt>状态</dt><dd class="mono">${o.status}</dd><dt>失败码</dt><dd class="mono">${o.failure || '—'}</dd><dt>客户动作码</dt><dd class="mono">${o.action || '—'}</dd><dt>经过付款不明</dt><dd>${o.unknown} 次</dd></dl></section></details>`;
       document.getElementById('od-drawer').showModal();
+      if (focus === 'money') { const el = document.getElementById('od-money'); el.scrollIntoView({ block: 'start' }); el.classList.add('is-focus'); setTimeout(() => el.classList.remove('is-focus'), 1600); }
     }
     function confirmAction(key, no) {
       const o = ALL.find((x) => x.no === no); if (!o) return;
@@ -329,17 +349,18 @@
     // ---- 事件 ----
     document.getElementById('od-rows').addEventListener('click', (e) => {
       const open = e.target.closest('[data-open]'); if (open) return openDrawer(open.dataset.open);
+      const card = e.target.closest('[data-card]'); if (card) return openDrawer(card.dataset.card, 'money');
       const ex = e.target.closest('[data-expand]'); if (ex) { const k = Number(ex.dataset.expand); state.expanded.has(k) ? state.expanded.delete(k) : state.expanded.add(k); return render(); }
       const act = e.target.closest('[data-action]'); if (act) return confirmAction(act.dataset.action, act.dataset.no);
       // 其他位置：不响应（D-356：只有邮箱格可点开详情）
     });
     document.getElementById('detail-content').addEventListener('click', (e) => {
       const act = e.target.closest('[data-action]'); if (act) return confirmAction(act.dataset.action, act.dataset.no);
-      if (e.target.closest('[data-goto-card],[data-goto-cdk]')) { e.preventDefault(); alert('Demo：正式版跳到卡片页 / CDK 页并定位'); }
+      const go = e.target.closest('[data-goto-card],[data-goto-cdk]'); if (go) { e.preventDefault(); go.textContent = go.dataset.gotoCdk ? '正式版：跳到 CDK 页并定位这张码' : '正式版：跳到卡片页并定位这张卡'; }
     });
     document.getElementById('od-close').addEventListener('click', () => document.getElementById('od-drawer').close());
     document.getElementById('od-confirm-no').addEventListener('click', () => document.getElementById('od-confirm').close());
-    document.getElementById('od-confirm-yes').addEventListener('click', () => { document.getElementById('od-confirm').close(); alert('Demo：正式版在这里调用后端动作并刷新'); });
+    document.getElementById('od-confirm-yes').addEventListener('click', () => { document.getElementById('od-confirm').close(); });
     document.querySelectorAll('[data-status]').forEach((b) => b.addEventListener('click', () => { document.querySelectorAll('[data-status]').forEach((x) => x.setAttribute('aria-pressed', 'false')); b.setAttribute('aria-pressed', 'true'); state.status = b.dataset.status; render(); }));
     document.querySelectorAll('[data-range]').forEach((b) => b.addEventListener('click', () => { document.querySelectorAll('[data-range]').forEach((x) => x.setAttribute('aria-pressed', 'false')); b.setAttribute('aria-pressed', 'true'); if (b.dataset.range === 'all') { state.from = ''; state.to = ''; } else { state.from = '2026-09-17'; state.to = '2026-09-23'; } document.getElementById('od-from').value = state.from; document.getElementById('od-to').value = state.to; render(); }));
     document.getElementById('od-q').addEventListener('input', (e) => { state.q = e.target.value.trim(); render(); });
