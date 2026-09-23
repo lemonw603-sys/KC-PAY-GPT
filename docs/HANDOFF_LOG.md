@@ -3490,3 +3490,9 @@ Lemon 07:04:44 UTC 经后台保存 token；07:12:28 UTC timer 轮次 success、`
 ## 2026-09-23｜块 2 收口（D-353）：台账裁定、默认路线切 Browser
 
 发现当前默认路线为 API 而 09-16 后 API 路线核心文件改动 300+ 行（`git diff --stat` workflow-handlers 307 / workflow-repository 510 / recharge-attempt-repository 23）且无非付款演练方式；Lemon 选切 Browser，08:13:21 UTC 后台切换，新连接核实路线表翻转与审计行。台账 FB-01/02/03/05/06/08 关，FB-04 保留（三卡未销、不急），FB-07 并块 6，FB-09 = 块 5。未改业务代码、未部署。
+
+## 2026-09-23｜第一单真实客户单（Browser 路线）：预检拒绝已 Plus 账号，付款前安全中止
+
+Lemon 08:2x 说有客户半小时后下单。就绪检查全过（隧道 / 菲律宾出口 / BitBrowser / 服务 / 槽空闲 / 可分配 1 张 = 8718 $16.89）；池进程 67131 代码与 main 一致。08:33:06 UTC 订单 `PJV1-_xH487IWWc0h0fi8pqY9` 进入，08:33:11 派发被池认领并推 Bark（D-340 来单通知首次真机 SENT），08:33:40 run RUNNING，08:34:15 预检 `ACCOUNT_ALREADY_PLUS` → `FAILED_SAFE / PRE_PAYMENT_ABORT`，订单 `WAITING_FOR_SESSION`，卡 8718 账本 RELEASED，payment_state NOT_STARTED（新连接核实）。客户暂不重贴。
+
+本单验证了（当前 release）：来单 → 分卡 → 派发 → 池认领 → 预检 → 付款前安全中止 → 卡释放 → 来单 Bark 推送。**未验证**：付款后半段仍零样本。新业务边界待 Lemon 定：已是 Plus 的账号提交（续费场景）当前一律拒。另查实 0601 卡 funded_amount 3.27 vs 余额 31.99 导致不合格（规则盲点，D-217）。
