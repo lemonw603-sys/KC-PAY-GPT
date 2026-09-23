@@ -163,7 +163,22 @@ const CLAIMABLE_PREDICATE = `(bdj.status = 'QUEUED'
                SELECT 1 FROM app_settings browser_gate
                WHERE browser_gate.setting_key = 'browser_dispatch_enabled'
                  AND browser_gate.setting_value = 'true'
+             )
+             AND NOT EXISTS (
+               SELECT 1 FROM browser_runs busy_run
+               INNER JOIN recharge_attempts busy_attempt ON busy_attempt.id = busy_run.recharge_attempt_id
+               INNER JOIN orders busy_order ON busy_order.id = busy_attempt.order_id
+               WHERE busy_run.active_account_key_hmac IS NOT NULL
+                 AND busy_order.id <> o.id
+                 AND busy_order.chatgpt_account_id IS NOT NULL
+                 AND BINARY busy_order.chatgpt_account_id = BINARY o.chatgpt_account_id
              )`;
+// 最后一段 NOT EXISTS（D-352 块 3 ①，2026-09-23）：同一个 ChatGPT 账号已有活动 run
+// （READY/RUNNING/RECONCILE_ONLY/HUMAN_REQUIRED 之一，即 active_account_key_hmac 非空）
+// 时，这个账号的新单不认领、留在队列。以前这一层由 lane 守卫「整条 lane 停工」顺带挡住；
+// 守卫放开 HUMAN_REQUIRED 之后，必须在认领处按账号挡，否则 beginRun 会撞
+// uq_browser_runs_active_account。不认领的单会在 3 分钟后被 operator-watch 报
+// BROWSER_ORDER_STALLED，让人去处理那条卡住的 HUMAN_REQUIRED。
 
 export function createBrowserDispatchRepository(pool, { transactionTimeoutMs = 5000 } = {}) {
   return {

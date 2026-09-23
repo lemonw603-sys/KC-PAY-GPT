@@ -37,6 +37,7 @@ export const PHONE_PUSH_TYPES = Object.freeze({
   PROVIDER_TOKEN_EXPIRED: PushCategory.HUMAN,       // #10 token 要用而没有（本块新产生点）
   CARD_SUPPLY_FAULT: PushCategory.HUMAN,            // #10 卡台故障（本块新产生点）
   PROVIDER_SNAPSHOT_STALE: PushCategory.HUMAN,      // #10 卡台信息拉不动，同属卡台故障
+  EXECUTOR_OFFLINE: PushCategory.HUMAN,             // D-352 块3③：接单路线的执行器心跳断了，客户会被拒单，只有人能把它拉起来
 
   // —— 供给 ——
   CARD_STOCK_LOW: PushCategory.SUPPLY,              // 按台×产品水位不足（第③步起唯一产生点）

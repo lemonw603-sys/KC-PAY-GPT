@@ -141,6 +141,15 @@ else
   note "界面文案检查没跑成" "$(printf '%s' "$copy" | tail -2 | sed 's/^/\n         /')"
 fi
 
+# 12) 演练窗口关掉的「下单查执行器心跳」没有开回去（D-352 块 3 ②，2026-09-23）。
+#     关着 = 常驻池停了客户照样能提交、订单无限期挂起，正是块 3 要堵的洞；演练完最容易忘。
+hbcheck=$(bash browser-mvp/scripts/prod-query.sh "SELECT setting_value FROM app_settings WHERE setting_key='intake_executor_heartbeat_check'" 2>/dev/null | tr -d '[:space:]')
+if [ -z "$hbcheck" ] || [ "$hbcheck" = "true" ]; then
+  ok "下单查执行器心跳：开着（${hbcheck:-未设置=开}）"
+else
+  bad "下单查执行器心跳" "生产是 ${hbcheck}，演练完没开回去：node v1/scripts/set-intake-executor-check.mjs on --apply"
+fi
+
 printf '\n'
 [ "$fail" = "0" ] && echo "==> 可以说做完了 ✓（[提醒] 不算失败，但要看一眼）" || echo "==> 还不能说做完 ✗"
 exit "$fail"

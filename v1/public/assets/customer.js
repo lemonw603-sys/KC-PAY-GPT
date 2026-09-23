@@ -98,6 +98,8 @@
     // 客户核对不出任何问题，只会觉得被骗。给一条能实际解决问题的路（联系客服）。
     cdk_expired: '这张卡密已过期,无法继续开通。请联系客服处理,不要重复提交。',
     ordering_paused: '当前暂停接收新订单,请稍后再试。',
+    // D-352 块3②：执行器没在跑（心跳过期）时当场拒单，而不是收下让客户干等。卡密没被使用。
+    executor_unavailable: '系统正在维护,暂时无法接单,请稍后再试。你的卡密没有被使用。',
     ordering_not_configured: '当前暂时无法创建订单,请稍后再试。',
     order_route_unavailable: '当前暂时无法创建订单,请稍后再试。',
     invalid_order_query: '请输入有效的卡密。',
@@ -394,16 +396,29 @@
   // 但如果它迟迟不动，客户干等着看不出所以然比看到警告更糟。用阶段停留时长判断，
   // 不新增后端字段：stage.since 就是这一阶段的起点。
   const VERIFYING_PATIENCE_MS = 180000;
-  function resolveView(order) {
-    const view = STATUS_VIEW[order.status] || STATUS_VIEW.REVIEWING;
-    if (order.status !== 'VERIFYING') return view;
+  // D-352 块3③：排队/备卡阶段停太久（执行器没接、没卡可分），后台巡检 3 分钟就会叫运营；
+  // 客户页同一时点照实说，别让他以为在正常处理。阈值与 operator-watch 的 3 分钟对齐。
+  const QUEUE_PATIENCE_MS = 180000;
+  const QUEUE_STAGES = ['CARD_PREPARING', 'QUEUED_FOR_RUN'];
+  function stageStartedAt(order) {
     const since = order.stage?.since ? new Date(order.stage.since).getTime() : null;
-    const startedAt = Number.isFinite(since) && since
+    return Number.isFinite(since) && since
       ? since
       : (stageSeenAt.get(order.stage?.code) || Date.now());
-    if (Date.now() - startedAt <= VERIFYING_PATIENCE_MS) return view;
-    return { ...STATUS_VIEW.REVIEWING,
-      hint: '支付结果确认得比平时久,我们已经收到通知在核对。本页会自动更新,你的卡密可以随时回来查。' };
+  }
+  function resolveView(order) {
+    const view = STATUS_VIEW[order.status] || STATUS_VIEW.REVIEWING;
+    if (order.status === 'VERIFYING') {
+      if (Date.now() - stageStartedAt(order) <= VERIFYING_PATIENCE_MS) return view;
+      return { ...STATUS_VIEW.REVIEWING,
+        hint: '支付结果确认得比平时久,我们已经收到通知在核对。本页会自动更新,你的卡密可以随时回来查。' };
+    }
+    if (['QUEUED', 'PREPARING', 'ACTIVATING'].includes(order.status) && QUEUE_STAGES.includes(order.stage?.code)) {
+      if (Date.now() - stageStartedAt(order) <= QUEUE_PATIENCE_MS) return view;
+      return { ...view, tone: 'warn', poll: 10000,
+        hint: '排队比平时久,我们已经收到通知在处理。不用重新提交,本页会自动更新,你的卡密可以随时回来查。' };
+    }
+    return view;
   }
 
   function renderOrder(order, { scroll = false } = {}) {

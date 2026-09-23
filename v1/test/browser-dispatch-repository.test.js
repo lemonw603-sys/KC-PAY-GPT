@@ -197,3 +197,24 @@ test('claim transaction acquire timeout destroys a late pool connection without 
   await new Promise((resolve) => setTimeout(resolve, 60));
   assert.equal(destroyed, 1);
 });
+
+
+test('D-352 块3①: claim skips a job whose ChatGPT account already has an active Browser run', async () => {
+  // The predicate is shared by claim() and countClaimable(); assert the rule text once.
+  const seen = [];
+  const connection = {
+    async beginTransaction() {}, async commit() {}, async rollback() {}, release() {},
+    async query(sql, values) { seen.push({ sql, values }); return [[]]; }
+  };
+  const pool = { async getConnection() { return connection; }, async query(sql, values) { seen.push({ sql, values }); return [[{ n: 0 }]]; } };
+  const repository = createBrowserDispatchRepository(pool);
+  await repository.claim({ workerId: 'pool:lane-1', leaseSeconds: 60 });
+  const claimSql = seen.find((call) => /FROM browser_dispatch_jobs bdj/.test(call.sql))?.sql || '';
+  assert.match(claimSql, /NOT EXISTS \(\s*SELECT 1 FROM browser_runs busy_run/);
+  assert.match(claimSql, /busy_run\.active_account_key_hmac IS NOT NULL/);
+  assert.match(claimSql, /busy_order\.id <> o\.id/);
+  assert.match(claimSql, /BINARY busy_order\.chatgpt_account_id = BINARY o\.chatgpt_account_id/);
+  await repository.countClaimable();
+  const countSql = seen.find((call) => /COUNT\(/.test(call.sql) && /browser_dispatch_jobs bdj/.test(call.sql))?.sql || '';
+  assert.match(countSql, /busy_run\.active_account_key_hmac IS NOT NULL/, 'countClaimable 与 claim 共用同一谓词');
+});

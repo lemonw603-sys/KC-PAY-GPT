@@ -75,6 +75,12 @@ browser-mvp/scripts/run-stats.sh        # 逐单明细 + 成功率 + 失败原�
 ## 2. 演练（停在付款前，不扣款）
 
 前提：付款开关 = false（`ready-check.sh rehearsal` 全绿）。
+
+**建演练单前先关「下单查执行器心跳」**（D-352 块 3 ②，2026-09-23 起）：常驻池停着时下单入口会拒单（`EXECUTOR_UNAVAILABLE`），演练单建不出来。演练完开回去，`wrapup-check` 会盯这个键。
+```bash
+ssh root@144.34.180.184 'set -a; . /etc/pojia/runtime.env; set +a; cd /opt/pojia/current/v1 && node scripts/set-intake-executor-check.mjs off --apply'   # 演练前
+ssh root@144.34.180.184 'set -a; . /etc/pojia/runtime.env; set +a; cd /opt/pojia/current/v1 && node scripts/set-intake-executor-check.mjs on --apply'    # 演练后
+```
 ```bash
 # 单单演练（推荐，跑完自动退出，不要用常驻池反复 claim）
 BITBROWSER_PROFILE_ID=51e915e3298b4a02bbd7468b39749c9e browser-mvp/scripts/run-browser-preflight.sh once   # 本机 BROWSER_PREFLIGHT
@@ -106,6 +112,17 @@ browser-mvp/scripts/prod-query.sh "SELECT id, open_adapter, default_card_segment
 - **highvcc**：时段内先贴 token，钱包要 ≥ 底线 20 + 开卡金额 + 手续费估计（无观察时按金额 10% + $1）；后台「备用卡台 A 开卡」仍可同步直开。
 - **开卡失败**：job 进 `REVIEW_REQUIRED`（可能已扣款）→ 推手机 `CARD_SUPPLY_OPEN_FAILED`，人工核对前调度器不再自动开；该台标 `supply_fault_state=FAULT`，15 分钟后允许再试；Browser 需求会转另一台开一张顶上，API 需求不转。
 - **归档残留**：`node scripts/archive-legacy-card-stock-jobs.mjs [--apply]`（2026-09-18 已归档 965 条）。
+
+## 2.55 运营不在场三件（D-352 块 3，2026-09-23）
+
+- **执行器停摆 → 客户被拒单 + 手机响**：所选路线的执行器心跳超过 120s 没更新，客户提交看到「系统维护，暂时无法接单」，CDK 不消耗；`pojia-operator-watch` 每分钟检查同一心跳，超时开 `EXECUTOR_OFFLINE`（推手机），拉起后自动解除。Browser 路线心跳来自本机常驻池（每 5s），API 路线来自 `pojia-worker`（每 15s）。
+- **付款不明不再冻结整条 lane**：只有 RUNNING / RECONCILE_ONLY 且付款在途的 run 占着窗口；`HUMAN_REQUIRED` 的单靠资金栅栏与「同账号只许一个活动 run」隔离，其他客户照跑；同账号新单留在队列，3 分钟后 `BROWSER_ORDER_STALLED` 叫人。人工处理仍走后台「确认核实结果」。
+- **排队/备卡超过 3 分钟**：客户页照实显示「排队比平时久，已通知运营」，后台 `BROWSER_ORDER_STALLED` 同时推手机。
+- **往卡里补钱后**：下次同步把差额记进 `funded_amount`（`card_state_events` 留 `CARD_TOPUP_OBSERVED`），卡按新余额参与分配。历史上已补过钱、`funded_amount` 落后的卡用一次性脚本抬平：
+  ```bash
+  ssh root@144.34.180.184 'set -a; . /etc/pojia/runtime.env; set +a; cd /opt/pojia/current/v1 && node scripts/backfill-card-funded-amount.mjs'           # 预览
+  ssh root@144.34.180.184 'set -a; . /etc/pojia/runtime.env; set +a; cd /opt/pojia/current/v1 && node scripts/backfill-card-funded-amount.mjs --apply'   # 真写
+  ```
 
 ## 2.6 待销清单与付款不明收口（第④步起，2026-09-18）
 

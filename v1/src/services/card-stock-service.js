@@ -1,3 +1,4 @@
+import { detectTopUp, fundedAmountAfterTopUp } from '../domain/card-top-up.js';
 import crypto from 'node:crypto';
 import { decryptSecret, encryptSecret } from '../security/secret-box.js';
 import { mapCardCredentials } from '../providers/hnskj-card.js';
@@ -142,6 +143,16 @@ export function summarizeStockCardOperationalState(cards = []) {
 
 export function createCardStockService({ pool, sessionEncryptionKey, panHmacKey = null,
   providerAccountId = LEGACY_HNSKJ_ACCOUNT_ID }) {
+  async function recordTopUpEvent(connection, { cardId, previous, card, topUp, fundedBefore }) {
+    await connection.query(
+      `INSERT INTO card_state_events (card_id, event_type, source, previous_json, current_json)
+       VALUES (?, 'CARD_TOPUP_OBSERVED', 'provider_sync', ?, ?)`,
+      [cardId,
+        JSON.stringify({ currentBalance: previous?.currentBalance ?? null, fundedAmount: fundedBefore == null ? null : String(fundedBefore) }),
+        JSON.stringify({ currentBalance: card.currentBalance == null ? null : String(card.currentBalance), fundedAmount: fundedAmountAfterTopUp(fundedBefore, topUp), topUp })]
+    );
+  }
+
   async function recordStateEvent(connection, { cardId, previous, current, source = 'provider_sync' }) {
     const changed = !previous
       || previous.status !== current.status
@@ -178,7 +189,7 @@ export function createCardStockService({ pool, sessionEncryptionKey, panHmacKey 
     try {
       await connection.beginTransaction();
       const [existing] = await connection.query(
-        `SELECT c.id, c.order_id, c.status, c.inventory_status, c.current_balance, c.currency,
+        `SELECT c.id, c.order_id, c.status, c.inventory_status, c.current_balance, c.currency, c.funded_amount,
                 EXISTS (SELECT 1 FROM card_assignment_history h
                   WHERE h.card_id = c.id AND h.status='ACTIVE') AS has_active_assignment
          FROM cards c
@@ -202,8 +213,11 @@ export function createCardStockService({ pool, sessionEncryptionKey, panHmacKey 
         const cardNumberCiphertext = card.credentials?.cardNumber
           ? encryptSecret(card.credentials.cardNumber, sessionEncryptionKey)
           : null;
+        // D-354：同步余额比库里高 = 有人在卡台补了钱，差额记进 funded_amount（见 card-top-up.js）。
+        const assignedTopUp = card.fundedAmount == null ? detectTopUp(previous?.currentBalance, card.currentBalance) : null;
         await connection.query(
           `UPDATE cards SET last4 = COALESCE(?, last4), status = ?, current_balance = ?, currency = ?,
+             funded_amount = COALESCE(?, funded_amount),
              inventory_status = 'ASSIGNED',
              card_credentials_ciphertext = COALESCE(?, card_credentials_ciphertext),
              card_number_ciphertext = COALESCE(?, card_number_ciphertext),
@@ -212,8 +226,10 @@ export function createCardStockService({ pool, sessionEncryptionKey, panHmacKey 
              last_synced_at = CURRENT_TIMESTAMP(3), updated_at = CURRENT_TIMESTAMP(3)
            WHERE id = ?`,
           [card.last4, card.status, card.currentBalance, card.currency,
+            assignedTopUp ? fundedAmountAfterTopUp(existing[0].funded_amount, assignedTopUp) : null,
             credentialsCiphertext, cardNumberCiphertext, panHmac, panHmac, existing[0].id]
         );
+        if (assignedTopUp) await recordTopUpEvent(connection, { cardId: existing[0].id, previous, card, topUp: assignedTopUp, fundedBefore: existing[0].funded_amount });
         await recordStateEvent(connection, {
           cardId: existing[0].id,
           previous,
@@ -235,6 +251,10 @@ export function createCardStockService({ pool, sessionEncryptionKey, panHmacKey 
         ? encryptSecret(card.credentials.cardNumber, sessionEncryptionKey)
         : null;
       if (existing.length) {
+        // D-354：同步余额比库里高 = 有人在卡台补了钱，差额记进 funded_amount（见 card-top-up.js）。
+        // 卡台自己给了 fundedAmount 时以它为准，不再叠加。
+        const topUp = card.fundedAmount == null ? detectTopUp(previous?.currentBalance, card.currentBalance) : null;
+        const fundedAmount = card.fundedAmount ?? (topUp ? fundedAmountAfterTopUp(existing[0].funded_amount, topUp) : null);
         await connection.query(
           `UPDATE cards SET card_type_id = ?, last4 = ?, status = ?, funded_amount = COALESCE(?, funded_amount),
              current_balance = ?, currency = ?, inventory_status = ?,
@@ -244,10 +264,11 @@ export function createCardStockService({ pool, sessionEncryptionKey, panHmacKey 
              pan_hmac_version = CASE WHEN ? IS NULL THEN pan_hmac_version ELSE 1 END,
              last_synced_at = CURRENT_TIMESTAMP(3), updated_at = CURRENT_TIMESTAMP(3)
           WHERE id = ?`,
-          [card.cardTypeId, card.last4, card.status, card.fundedAmount, card.currentBalance,
+          [card.cardTypeId, card.last4, card.status, fundedAmount, card.currentBalance,
             card.currency, inventoryStatus, credentialsCiphertext, cardNumberCiphertext,
             panHmac, panHmac, existing[0].id]
         );
+        if (topUp) await recordTopUpEvent(connection, { cardId: existing[0].id, previous, card, topUp, fundedBefore: existing[0].funded_amount });
       } else {
         await connection.query(
           `INSERT INTO cards

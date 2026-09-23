@@ -54,6 +54,7 @@ integration('multi-source snapshots, order freeze and allocation share one autho
   const cdkId=crypto.randomUUID(), orderId=crypto.randomUUID();
   await pool.query(`INSERT INTO cdks (id,code_hash,hash_version,status,batch_no,plan_type) VALUES (?,?,'test-v2','AVAILABLE',?,'plus')`,[cdkId,crypto.randomBytes(32).toString('hex'),`test-${suffix}`]);
   const [[cdk]]=await pool.query('SELECT code_hash FROM cdks WHERE id=?',[cdkId]);
+  await pool.query("INSERT INTO app_settings (setting_key, setting_value) VALUES ('browser_worker_heartbeat_at', ?), ('worker_heartbeat_at', ?) ON DUPLICATE KEY UPDATE setting_value=VALUES(setting_value)", [new Date().toISOString(), new Date().toISOString()]); // D-352 块3②：建单要求执行器心跳新鲜
   await createOrderFromCdk(pool,{orderId,publicNo:`TEST-${suffix}`,cdkLookup:{current:{version:'test-v2',hash:cdk.code_hash},legacy:{version:'none',hash:'0'.repeat(64)}},customerEmail:'test@example.invalid',chatgptAccountId:`acct-${suffix}`,sessionCiphertext:'not-read-during-assignment',cardPurchaseIdempotencyKey:`purchase-${suffix}`});
   const [[created]]=await pool.query('SELECT frozen_card_provider_account_id FROM orders WHERE id=?',[orderId]);
   assert.equal(created.frozen_card_provider_account_id,sourceA);

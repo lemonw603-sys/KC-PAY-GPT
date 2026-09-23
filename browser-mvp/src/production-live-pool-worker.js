@@ -197,6 +197,38 @@ function laneLogger(laneId) {
   return (event, data) => console.log(`[pool:${laneId}] ${event}`, data);
 }
 
+/**
+ * Lane guard: which of this lane's own runs must keep the window to itself.
+ *
+ * RUNNING / RECONCILE_ONLY with a payment in flight means the lane's resident
+ * window is still needed by that run — either the click happened moments ago and
+ * the same window watches for the outcome, or the automatic verification
+ * (step 1 of the tick) is re-injecting that account's session into this window.
+ * Starting another order now would tear the page out from under it.
+ *
+ * HUMAN_REQUIRED is deliberately **not** in the list (D-352 块 3 ①). Before
+ * 2026-09-23 it was, and one order whose payment result could not be settled
+ * automatically parked the whole lane until a person clicked 「确认核实结果」
+ * in the admin — with a single lane that meant every later customer waited on
+ * one unresolved order. A HUMAN_REQUIRED run no longer uses the window: its
+ * verification_next_check_at is NULL, the money is fenced by
+ * recharge_attempts.funds_risk_state, and the account itself stays locked by
+ * uq_browser_runs_active_account, so a second order for the *same* account still
+ * cannot start (the dispatch claim skips it). Other accounts proceed.
+ */
+export const LANE_BLOCKING_RUNS_SQL = `SELECT COUNT(*) AS count FROM browser_runs WHERE worker_id=?
+         AND status IN ('RUNNING','RECONCILE_ONLY')
+         AND payment_state IN ('PAYMENT_SUBMITTING','PAYMENT_UNKNOWN','PAYMENT_CONFIRMED')`;
+
+export function withLaneGuard({ query, workerId }) {
+  if (typeof query !== 'function' || !workerId) throw new TypeError('query and workerId are required');
+  return (step) => async () => {
+    const [[pending]] = await query(LANE_BLOCKING_RUNS_SQL, [workerId]);
+    if (Number(pending?.count) > 0) return { status: 'IDLE' };
+    return step();
+  };
+}
+
 export async function createLaneWorker({ lane, config, pool, browserType, shared }) {
   const workerId = `${config.workerIdPrefix}:${lane.laneId}`;
   const walPath = `${config.stateDir}/${lane.laneId}.wal`;
@@ -255,14 +287,7 @@ export async function createLaneWorker({ lane, config, pool, browserType, shared
     operatorTakeoverWindowMs: config.operatorTakeoverWindowMs,
     postPlusAction: postPlusActionForPlan, stopBeforeSubmit: config.stopBeforeSubmit, releaseSessionOnComplete: true, safeAbortOnFailure: true,
   });
-  const withCleanupGuard = (step) => async () => {
-    const [[pending]] = await pool.query(
-      `SELECT COUNT(*) AS count FROM browser_runs WHERE worker_id=?
-         AND status IN ('RUNNING','RECONCILE_ONLY','HUMAN_REQUIRED')
-         AND payment_state IN ('PAYMENT_SUBMITTING','PAYMENT_UNKNOWN','PAYMENT_CONFIRMED')`, [workerId]);
-    if (Number(pending.count) > 0) return { status: 'IDLE' };
-    return step();
-  };
+  const withCleanupGuard = withLaneGuard({ query: (sql, params) => pool.query(sql, params), workerId });
   return Object.freeze({
     laneId: lane.laneId, workerId,
     steps: Object.freeze([

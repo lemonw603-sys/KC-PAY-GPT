@@ -16,6 +16,23 @@ export function minimumBalanceSql(productCode) {
     999999999)`;
 }
 
+/**
+ * 「这张卡按账本已经花掉多少」的唯一口径（D-217 的账本侧）。RELEASED 只在订单成功时计入：
+ * 失败单的 RELEASED 是卡没用（不计），成功单的 RELEASED 是收口脚本记法差异（必须计）。
+ * 资格 SQL 与 D-354 的 funded_amount 回填脚本共用，脚本不抄第二份。
+ */
+export function ledgerSpendSql(alias = 'c') {
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(alias)) throw new TypeError('Invalid card SQL alias');
+  return `COALESCE((
+        SELECT SUM(eligible_spend.amount) FROM card_consumption_ledger eligible_spend
+        LEFT JOIN orders eligible_spend_order ON eligible_spend_order.id = eligible_spend.order_id
+        WHERE eligible_spend.card_id = ${alias}.id
+          AND (eligible_spend.status IN ('RESERVED','CONSUMED','RECONCILIATION')
+            OR (eligible_spend.status = 'RELEASED'
+              AND eligible_spend_order.status = 'RECHARGE_SUCCESS'))
+      ), 0)`;
+}
+
 export function eligibleInventoryCardSql(alias = 'c', minimumSql = '?', { productCode = 'plus' } = {}) {
   if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(alias)) throw new TypeError('Invalid card SQL alias');
   const normalizedProduct = String(productCode || 'plus').trim().toLowerCase();
@@ -75,14 +92,7 @@ export function eligibleInventoryCardSql(alias = 'c', minimumSql = '?', { produc
     -- 5371 有 7 笔失败单的 RELEASED，那样它会被算成用了 8 次。
     AND LEAST(
       ${alias}.current_balance,
-      ${alias}.funded_amount - COALESCE((
-        SELECT SUM(eligible_spend.amount) FROM card_consumption_ledger eligible_spend
-        LEFT JOIN orders eligible_spend_order ON eligible_spend_order.id = eligible_spend.order_id
-        WHERE eligible_spend.card_id = ${alias}.id
-          AND (eligible_spend.status IN ('RESERVED','CONSUMED','RECONCILIATION')
-            OR (eligible_spend.status = 'RELEASED'
-              AND eligible_spend_order.status = 'RECHARGE_SUCCESS'))
-      ), 0)
+      ${alias}.funded_amount - ${ledgerSpendSql(alias)}
     ) >= ${minimumSql}
     AND (SELECT COUNT(*) FROM card_consumption_ledger eligible_usage
       WHERE eligible_usage.card_id = ${alias}.id

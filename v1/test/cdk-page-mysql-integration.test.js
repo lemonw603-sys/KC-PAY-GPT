@@ -104,7 +104,8 @@ test('CDK page real MySQL: issuance, expiry, search, history, bulk atomicity and
       for (const [key, value] of Object.entries({ accept_new_orders:'true',default_card_type_id:'1',default_open_card_amount:'50',default_minimum_required_card_balance:'16' })) {
         await pool.query('UPDATE app_settings SET setting_value=? WHERE setting_key=?',[value,key]);
       }
-      await createOrderFromCdk(pool,{orderId:intakeId,publicNo:'TEST-'+intakeId,
+      await pool.query("INSERT INTO app_settings (setting_key, setting_value) VALUES ('browser_worker_heartbeat_at', ?), ('worker_heartbeat_at', ?) ON DUPLICATE KEY UPDATE setting_value=VALUES(setting_value)", [new Date().toISOString(), new Date().toISOString()]); // D-352 块3②：建单要求执行器心跳新鲜
+  await createOrderFromCdk(pool,{orderId:intakeId,publicNo:'TEST-'+intakeId,
         cdkLookup:createCdkLookup(reserveUsed.codes[0],keys.cdkHashKey),customerEmail:'offline@example.test',
         chatgptAccountId:'isolated-account',sessionCiphertext:'isolated-session',cardPurchaseIdempotencyKey:intakeId});
       assert.ok((await codes(reserveUsed))[0].issuedAt);

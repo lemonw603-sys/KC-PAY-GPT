@@ -1,3 +1,4 @@
+import { detectTopUp, fundedAmountAfterTopUp } from '../domain/card-top-up.js';
 import crypto from 'node:crypto';
 import { unzipSync, strFromU8 } from 'fflate';
 import { encryptSecret } from '../security/secret-box.js';
@@ -137,6 +138,7 @@ export function createManualCardImportService({ pool, encryptionKey, panHmacKey 
     const source = await loadSource(queryable, providerAccountId, { forUpdate: lock });
     if (source.source_adapter !== 'backup_card_export_v1') throw sourceError('unsupported card source adapter', 'UNSUPPORTED_CARD_SOURCE_ADAPTER');
     const [existing] = await queryable.query(`SELECT id, external_card_id, pan_hmac, source_present,
+      current_balance, funded_amount,
       ${activeRiskSql('cards')} AS has_active_risk FROM cards WHERE provider_account_id=?${lock ? ' FOR UPDATE' : ''}`, [source.id]);
     const byExternal = new Map(existing.map((r) => [String(r.external_card_id), r]));
     const panHmacs = rows.map((r) => hmac(r.pan, panHmacKey)).filter(Boolean);
@@ -198,15 +200,26 @@ export function createManualCardImportService({ pool, encryptionKey, panHmacKey 
         const encrypted = encryptSecret(JSON.stringify(credentials), encryptionKey);
         const operationalStatus = isAvailableByFacts ? 'ACTIVE' : item.availabilityReasons.join(',').slice(0, 32);
         if (existing) {
+          // D-354：快照余额比库里高 = 有人补了钱。把差额记进 funded_amount，否则分卡资格
+          // （D-217 取「同步余额」与「funded − 账本消费」较小值）永远按补钱前的开卡金额算。
+          const topUp = detectTopUp(existing.current_balance, item.balance);
+          const fundedAfter = topUp ? fundedAmountAfterTopUp(existing.funded_amount, topUp) : null;
           await connection.query(`UPDATE cards SET last4=?, status=?, current_balance=?, currency='USD',
+            funded_amount=COALESCE(?, funded_amount),
             inventory_status=IF(${activeRiskSql('cards')}, inventory_status, ?), intake_status='ACCEPTED',
             sync_tier='MANUAL_IMPORT', source_present=1, source_operational_status=?,
             last_manual_snapshot_batch_id=?, card_credentials_ciphertext=?, card_number_ciphertext=?,
             pan_hmac=?, pan_hmac_version=1, card_bin=?,
             last_synced_at=CURRENT_TIMESTAMP(3), updated_at=CURRENT_TIMESTAMP(3)
-            WHERE id=?`, [item.pan.slice(-4), isAvailableByFacts ? 'active' : 'unavailable', item.balance,
+            WHERE id=?`, [item.pan.slice(-4), isAvailableByFacts ? 'active' : 'unavailable', item.balance, fundedAfter,
             isAvailableByFacts ? 'AVAILABLE' : 'HELD_FOR_REVIEW', operationalStatus, batchId, encrypted,
             encryptSecret(item.pan, encryptionKey), hmac(item.pan, panHmacKey), cardBin(item.pan), existing.id]);
+          if (topUp) {
+            await connection.query(`INSERT INTO card_state_events (card_id, event_type, source, previous_json, current_json)
+              VALUES (?, 'CARD_TOPUP_OBSERVED', 'manual_card_import', ?, ?)`, [existing.id,
+              JSON.stringify({ currentBalance: existing.current_balance == null ? null : String(existing.current_balance), fundedAmount: existing.funded_amount == null ? null : String(existing.funded_amount) }),
+              JSON.stringify({ currentBalance: String(item.balance), fundedAmount: fundedAfter, topUp, batchId })]);
+          }
           updated += 1;
         } else {
           await connection.query(`INSERT INTO cards

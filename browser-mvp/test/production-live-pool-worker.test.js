@@ -2,8 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
-  POOL_CONFIRMATION_PREFIX, loadProductionLivePoolConfig, parsePoolLanes, parseProductionLivePoolArgs, runLaneLoop,
-  shouldRefreshCardBalances,
+  LANE_BLOCKING_RUNS_SQL, POOL_CONFIRMATION_PREFIX, loadProductionLivePoolConfig, parsePoolLanes, parseProductionLivePoolArgs, runLaneLoop,
+  shouldRefreshCardBalances, withLaneGuard,
 } from '../src/production-live-pool-worker.js';
 
 const key = (byte) => Buffer.alloc(32, byte).toString('base64');
@@ -101,4 +101,25 @@ test('没配 PAN HMAC key 时回填静默关闭，不影响付款（D-195）', (
   assert.ok(Buffer.isBuffer(withKey.cardIntakePanHmacKey));
   // 缺这把 key 只是退回小时级 timer，绝不能让执行器起不来——付款比回填重要。
   assert.equal(loadProductionLivePoolConfig(env()).cardIntakePanHmacKey, null);
+});
+
+
+test('D-352 块3①: lane guard blocks on RUNNING/RECONCILE_ONLY payments only; HUMAN_REQUIRED no longer parks the lane', async () => {
+  // The SQL is the rule. Read it as a contract: HUMAN_REQUIRED must be absent, the two
+  // window-holding statuses and the three in-flight payment states must be present.
+  assert.doesNotMatch(LANE_BLOCKING_RUNS_SQL, /HUMAN_REQUIRED/);
+  assert.match(LANE_BLOCKING_RUNS_SQL, /status IN \('RUNNING','RECONCILE_ONLY'\)/);
+  assert.match(LANE_BLOCKING_RUNS_SQL, /'PAYMENT_SUBMITTING','PAYMENT_UNKNOWN','PAYMENT_CONFIRMED'/);
+  assert.match(LANE_BLOCKING_RUNS_SQL, /worker_id=\?/);
+
+  const seen = [];
+  const make = (count) => withLaneGuard({ workerId: 'pool:lane-1', query: async (sql, params) => { seen.push({ sql, params }); return [[{ count }]]; } });
+  let ran = 0;
+  const step = async () => { ran += 1; return { status: 'COMPLETED' }; };
+  assert.deepEqual(await make(1)(step)(), { status: 'IDLE' }, '本 lane 有付款在途的 run → 不接新单');
+  assert.equal(ran, 0);
+  assert.deepEqual(await make(0)(step)(), { status: 'COMPLETED' }, '没有 → 照常跑');
+  assert.equal(ran, 1);
+  assert.deepEqual(seen[0].params, ['pool:lane-1'], '只看本 lane 自己的 run');
+  assert.throws(() => withLaneGuard({ workerId: '', query: async () => [[{ count: 0 }]] }), TypeError);
 });

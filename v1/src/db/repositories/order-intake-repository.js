@@ -17,6 +17,34 @@ const PLAN_MINIMUM_SETTINGS = Object.freeze({
   pro_20x: 'minimum_required_card_balance:pro_20x'
 });
 const INTAKE_SETTING_KEYS = Object.freeze([...REQUIRED_SETTINGS, ...Object.values(PLAN_MINIMUM_SETTINGS)]);
+
+// D-352 块 3 ②（2026-09-23）：下单时先看这条路线的执行器活着没有。
+// 之前客户任何时候都能提交，哪怕 Lemon 的 Mac 睡了、比特浏览器关了；订单就无限期停在
+// RECHARGE_PROCESSING，客户页一直转圈。现在执行器心跳过期就当场拒单（CDK 不消耗、不建单），
+// 客户看到「暂停接单，稍后再试」。心跳节奏：Browser 常驻池每 5s 写一次，v1 worker 每 15s。
+// 120s 容忍一次发布重启（switch 重启 web/worker 约 10~20s）而不误拒客户。
+export const EXECUTOR_HEARTBEAT_MAX_AGE_MS = 120_000;
+export const EXECUTOR_HEARTBEAT_SETTING = Object.freeze({
+  BROWSER: 'browser_worker_heartbeat_at',
+  API: 'worker_heartbeat_at'
+});
+// 运维演练时常驻池是停着的，却要建演练单：把这条设成 'false' 就跳过检查（默认/缺失 = 检查）。
+// 改它走 v1/scripts/set-intake-executor-check.mjs（带审计），不要手改库。
+export const EXECUTOR_HEARTBEAT_CHECK_SETTING = 'intake_executor_heartbeat_check';
+
+export function assertExecutorHeartbeat({ executorKind, heartbeatAt, checkEnabled = true, now = Date.now(), maxAgeMs = EXECUTOR_HEARTBEAT_MAX_AGE_MS }) {
+  if (String(checkEnabled).toLowerCase() === 'false') return { skipped: true };
+  const kind = String(executorKind || '').toUpperCase();
+  if (!EXECUTOR_HEARTBEAT_SETTING[kind]) {
+    throw new OrderIntakeError('Order route is not configured', { code: 'ORDER_ROUTE_UNAVAILABLE', status: 503 });
+  }
+  const at = Date.parse(String(heartbeatAt || ''));
+  const fresh = Number.isFinite(at) && now - at <= maxAgeMs && at - now <= maxAgeMs;
+  if (!fresh) {
+    throw new OrderIntakeError('Order executor is not running', { code: 'EXECUTOR_UNAVAILABLE', status: 503 });
+  }
+  return { skipped: false, ageMs: now - at };
+}
 const MINIMUM_PATTERN = /^\d+(?:\.\d{1,6})?$/;
 
 export function minimumRequiredCardBalanceForPlan(settings, planType) {
@@ -187,6 +215,21 @@ export async function createOrderFromCdk(pool, input) {
       });
     }
     const route = routeRows[0];
+
+    // D-352 块 3 ②：执行器心跳不新鲜就不建单。普通 SELECT，不加锁——心跳行每 5s 被执行器
+    // 改一次，锁它会让下单和心跳互相等。
+    const [heartbeatRows] = await connection.query(
+      `SELECT setting_key, setting_value FROM app_settings
+       WHERE setting_key IN (?, ?)`,
+      [EXECUTOR_HEARTBEAT_SETTING[route.executor_kind] || '', EXECUTOR_HEARTBEAT_CHECK_SETTING]
+    );
+    const heartbeatValues = new Map(heartbeatRows.map((row) => [row.setting_key, row.setting_value]));
+    assertExecutorHeartbeat({
+      executorKind: route.executor_kind,
+      heartbeatAt: heartbeatValues.get(EXECUTOR_HEARTBEAT_SETTING[route.executor_kind]),
+      checkEnabled: heartbeatValues.get(EXECUTOR_HEARTBEAT_CHECK_SETTING) ?? 'true',
+      now: typeof input.now === 'function' ? input.now() : Date.now()
+    });
 
     await connection.query(
       `INSERT INTO orders

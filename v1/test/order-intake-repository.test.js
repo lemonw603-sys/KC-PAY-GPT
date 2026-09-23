@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createOrderFromCdk, parseOrderIntakeSettings } from '../src/db/repositories/order-intake-repository.js';
+import { EXECUTOR_HEARTBEAT_MAX_AGE_MS, assertExecutorHeartbeat, createOrderFromCdk, parseOrderIntakeSettings } from '../src/db/repositories/order-intake-repository.js';
 
 function settings(values) {
   return Object.entries(values).map(([setting_key, setting_value]) => ({ setting_key, setting_value }));
@@ -46,6 +46,7 @@ test('D-158: Browser order intake creates only the card assignment task, no sepa
     async beginTransaction() {}, async commit() {}, async rollback() {}, release() {},
     async query(sql, values) {
       calls.push({ sql, values });
+      if (sql.includes('FROM app_settings') && sql.includes('setting_key IN (?, ?)')) return [[{ setting_key: 'browser_worker_heartbeat_at', setting_value: new Date().toISOString() }, { setting_key: 'worker_heartbeat_at', setting_value: new Date().toISOString() }]];
       if (sql.includes('FROM app_settings')) return [[
         { setting_key: 'accept_new_orders', setting_value: 'true' },
         { setting_key: 'default_card_type_id', setting_value: '1' },
@@ -100,6 +101,7 @@ function boundCdkConnection({ boundOrder }) {
     async beginTransaction() {}, async commit() { connection.committed += 1; }, async rollback() {}, release() {},
     async query(sql, values) {
       calls.push({ sql, values });
+      if (sql.includes('FROM app_settings') && sql.includes('setting_key IN (?, ?)')) return [[{ setting_key: 'browser_worker_heartbeat_at', setting_value: new Date().toISOString() }, { setting_key: 'worker_heartbeat_at', setting_value: new Date().toISOString() }]];
       if (sql.includes('FROM app_settings')) return [[
         { setting_key: 'accept_new_orders', setting_value: 'true' }, { setting_key: 'default_card_type_id', setting_value: '1' },
         { setting_key: 'default_open_card_amount', setting_value: '16' }, { setting_key: 'default_minimum_required_card_balance', setting_value: '16' },
@@ -197,6 +199,7 @@ function cdkConnectionWithExpiry(expiresAt) {
   return {
     async beginTransaction() {}, async commit() {}, async rollback() {}, release() {},
     async query(sql) {
+      if (sql.includes('FROM app_settings') && sql.includes('setting_key IN (?, ?)')) return [[{ setting_key: 'browser_worker_heartbeat_at', setting_value: new Date().toISOString() }, { setting_key: 'worker_heartbeat_at', setting_value: new Date().toISOString() }]];
       if (sql.includes('FROM app_settings')) return [[
         { setting_key: 'accept_new_orders', setting_value: 'true' },
         { setting_key: 'default_card_type_id', setting_value: '1' },
@@ -232,4 +235,57 @@ test('D-286: 有效期未到的码不受影响', async () => {
   await assert.rejects(
     () => createOrderFromCdk({ getConnection: async () => connection }, intakeInput()),
     (error) => error.code !== 'CDK_EXPIRED');
+});
+
+
+test('D-352 块3②: intake refuses when the route executor heartbeat is stale, missing or in the future; a disabled check passes', () => {
+  const now = Date.parse('2026-09-23T08:00:00.000Z');
+  const fresh = new Date(now - 30_000).toISOString();
+  const stale = new Date(now - EXECUTOR_HEARTBEAT_MAX_AGE_MS - 1).toISOString();
+  assert.deepEqual(assertExecutorHeartbeat({ executorKind: 'BROWSER', heartbeatAt: fresh, now }), { skipped: false, ageMs: 30_000 });
+  for (const heartbeatAt of [stale, null, '', 'not-a-date', new Date(now + 10 * 60_000).toISOString()]) {
+    assert.throws(() => assertExecutorHeartbeat({ executorKind: 'BROWSER', heartbeatAt, now }),
+      (error) => error.code === 'EXECUTOR_UNAVAILABLE' && error.status === 503, `heartbeat=${heartbeatAt}`);
+  }
+  assert.throws(() => assertExecutorHeartbeat({ executorKind: 'ZZSHU', heartbeatAt: fresh, now }), (error) => error.code === 'ORDER_ROUTE_UNAVAILABLE');
+  assert.deepEqual(assertExecutorHeartbeat({ executorKind: 'BROWSER', heartbeatAt: stale, checkEnabled: 'false', now }), { skipped: true });
+  assert.throws(() => assertExecutorHeartbeat({ executorKind: 'API', heartbeatAt: stale, checkEnabled: 'true', now }), (error) => error.code === 'EXECUTOR_UNAVAILABLE');
+});
+
+test('D-352 块3②: a stale Browser heartbeat rejects the order before anything is inserted and the CDK stays untouched', async () => {
+  const calls = [];
+  const connection = {
+    async beginTransaction() {}, async commit() { calls.push({ sql: 'COMMIT' }); }, async rollback() { calls.push({ sql: 'ROLLBACK' }); }, release() {},
+    async query(sql, values) {
+      calls.push({ sql, values });
+      if (sql.includes('FROM app_settings') && sql.includes('setting_key IN (?, ?)')) return [[
+        { setting_key: 'browser_worker_heartbeat_at', setting_value: '2026-09-23T00:00:00.000Z' }
+      ]];
+      if (sql.includes('FROM app_settings')) return [[
+        { setting_key: 'accept_new_orders', setting_value: 'true' },
+        { setting_key: 'default_card_type_id', setting_value: '1' },
+        { setting_key: 'default_open_card_amount', setting_value: '16' },
+        { setting_key: 'default_minimum_required_card_balance', setting_value: '16' },
+      ]];
+      if (sql.includes('FROM cdks')) return [[{ id: 'cdk-1', status: 'AVAILABLE', plan_type: 'plus', batch_no: 'batch-1' }]];
+      if (sql.includes('FROM products')) return [[{
+        product_id: 'product-1', fulfillment_route_id: 'route-browser', executor_kind: 'BROWSER',
+        frozen_card_provider_account_id: 'manual-source-a',
+      }]];
+      throw new Error(`unexpected query in rejected intake: ${sql.slice(0, 60)}`);
+    }
+  };
+  const pool = { async getConnection() { return connection; } };
+  await assert.rejects(
+    createOrderFromCdk(pool, {
+      orderId: 'order-1', publicNo: 'PJV1-test', customerEmail: 'a@b.c', chatgptAccountId: 'acct-1',
+      sessionCiphertext: 'cipher', cardPurchaseIdempotencyKey: 'purchase-order-1',
+      cdkLookup: { current: { version: 2, hash: 'h2' }, legacy: { version: 1, hash: 'h1' } },
+      now: () => Date.parse('2026-09-23T08:00:00.000Z')
+    }),
+    (error) => error.code === 'EXECUTOR_UNAVAILABLE' && error.status === 503
+  );
+  assert.ok(!calls.some((call) => /INSERT INTO orders/.test(call.sql)), '没有建单');
+  assert.ok(!calls.some((call) => /UPDATE cdks/.test(call.sql)), 'CDK 没被占用');
+  assert.ok(calls.some((call) => call.sql === 'ROLLBACK'), '事务回滚');
 });

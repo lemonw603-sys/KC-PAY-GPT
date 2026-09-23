@@ -15,6 +15,7 @@ import mysql from 'mysql2/promise';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const { upsertBrowserAlertInTransaction } = await import(join(HERE, '../src/db/repositories/browser-alert-repository.js'));
+const { EXECUTOR_HEARTBEAT_MAX_AGE_MS, EXECUTOR_HEARTBEAT_SETTING } = await import(join(HERE, '../src/db/repositories/order-intake-repository.js'));
 // 资格口径只有一份权威实现，这里复用它，不另拼 SQL——自拼过一次就报错过一次。
 const { eligibleInventoryCardSql } = await import(join(HERE, '../src/services/card-inventory-eligibility.js'));
 
@@ -108,9 +109,52 @@ try {
     }
   }
 
+  // 第四件（D-352 块 3 ③，2026-09-23）：接单路线的执行器心跳断了。下单入口此时会拒客户
+  // （EXECUTOR_UNAVAILABLE，D-352 块 3 ②），客户看到「暂停接单」；这条是叫人的那一半——
+  // Mac 睡了 / 比特浏览器关了 / 隧道断了 / v1 worker 挂了，只有人能把它拉起来。
+  // 阈值与下单入口一致取 120s（EXECUTOR_HEARTBEAT_MAX_AGE_MS），巡检每分钟跑一次。
+  const [routeRows] = await connection.query(
+    `SELECT DISTINCT executor_kind FROM fulfillment_routes WHERE accepts_new_orders = 1 AND retired_at IS NULL`
+  );
+  const [heartbeatRows] = await connection.query(
+    `SELECT setting_key, setting_value FROM app_settings WHERE setting_key IN (?, ?)`,
+    [EXECUTOR_HEARTBEAT_SETTING.BROWSER, EXECUTOR_HEARTBEAT_SETTING.API]
+  );
+  const heartbeats = new Map(heartbeatRows.map((row) => [row.setting_key, row.setting_value]));
+  const executors = {};
+  for (const row of routeRows) {
+    const kind = String(row.executor_kind || '').toUpperCase();
+    const key = EXECUTOR_HEARTBEAT_SETTING[kind];
+    if (!key) continue;
+    const at = Date.parse(String(heartbeats.get(key) || ''));
+    const ageMs = Number.isFinite(at) ? Date.now() - at : null;
+    const offline = ageMs == null || ageMs > EXECUTOR_HEARTBEAT_MAX_AGE_MS;
+    executors[kind] = { offline, ageSeconds: ageMs == null ? null : Math.round(ageMs / 1000) };
+    if (dryRun) continue;
+    const dedupeKey = `executor-offline:${kind}`;
+    if (offline) {
+      const label = kind === 'BROWSER' ? '本机 Browser 执行器' : 'v1 任务 worker';
+      await connection.query(
+        `INSERT INTO operator_alerts (id, alert_type, dedupe_key, severity, title, message, status)
+         VALUES (UUID(), 'EXECUTOR_OFFLINE', ?, 'critical', ?, ?, 'OPEN')
+         ON DUPLICATE KEY UPDATE message = VALUES(message),
+           status = IF(status = 'RESOLVED', 'OPEN', status),
+           acknowledged_at = IF(status = 'RESOLVED', NULL, acknowledged_at)`,
+        [dedupeKey, `${label}停了，客户正在被拒单`,
+          `${label}心跳${ageMs == null ? '从未写入' : `已 ${Math.round(ageMs / 1000)} 秒没更新`}。这条路线现在接不了单：客户提交会看到「系统维护，暂时无法接单」，卡密不消耗。`
+          + (kind === 'BROWSER' ? '请看 Mac 是否睡了、比特浏览器是否开着、隧道是否在（ready-check.sh），拉起后本条自动解除。' : '请看服务器 pojia-worker 服务，拉起后本条自动解除。')]
+      );
+    } else {
+      await connection.query(
+        `UPDATE operator_alerts SET status='RESOLVED', acknowledged_at=CURRENT_TIMESTAMP(3)
+          WHERE dedupe_key=? AND status='OPEN'`, [dedupeKey]
+      );
+    }
+  }
+
   await connection.commit();
   console.log(JSON.stringify({ dryRun, thresholdMinutes: minutes, eligibleCards, heldByRunningOrders,
-    cardStockAlert: eligibleCards === 0 && heldByRunningOrders === 0 ? 'OPEN' : 'RESOLVED', stalled: found }));
+    cardStockAlert: eligibleCards === 0 && heldByRunningOrders === 0 ? 'OPEN' : 'RESOLVED', stalled: found, executors }));
 } catch (error) {
   await connection.rollback().catch(() => undefined);
   console.error(String(error?.message || error));
