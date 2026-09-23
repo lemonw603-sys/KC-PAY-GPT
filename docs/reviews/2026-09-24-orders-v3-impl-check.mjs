@@ -80,6 +80,11 @@ await verify.click();
 await page.waitForFunction(() => document.querySelector('#detail-drawer').open && /进度/.test(document.querySelector('#detail-content').textContent));
 ok('「去核实」打开抽屉且顶部有付款未知警示', /不会重付/.test(await page.locator('#detail-content').textContent()));
 await page.click('#close-detail');
+// D-359 ④：等 Session 芯片带剩余时间（造数 LOAD-0023 到期 +41h、LOAD-0007 已过期 8h）
+const chip23 = await page.locator('tr.od-mainrow[data-no="LOAD-0023"] .od-chip').textContent();
+ok('等 Session 芯片显示「还剩 Nh」', /还剩 (40|41)h/.test(chip23), chip23);
+const chip07 = await page.locator('tr.od-mainrow[data-no="LOAD-0007"] .od-chip').textContent();
+ok('过期的等 Session 芯片显示「已到期」', /已到期/.test(chip07), chip07);
 const cancel = page.locator('tr.od-mainrow[data-no="LOAD-0023"] [data-action="cancel"]');
 ok('等 Session（LOAD-0023）的动作是「取消并放卡」', (await cancel.count()) === 1);
 await cancel.click();

@@ -3567,3 +3567,7 @@ Lemon「发布」。发布前：无新迁移；`customer-sql-probe.sh` 全部可
 生产只读实跑（服务器 release 目录、正式连接池、`listOrders`/`listOrderAttempts`/`getOrder` 直调）：全部 55 个码（四桶 需要我处理 9 / 已成功 13 / 未成功 33 / 处理中 0，合计 55 ✓），带历史 8 个码，路线 BROWSER+API 都在；需要我处理 9 行中 8 行有一键动作（1 行显示「看详情」）；样本单历史 2 次、抽屉可读；每次查询 28～205ms。
 Lemon 2026-09-24 04:0x UTC+8 看过生产订单页：「没问题」。块 5 验收关闭。
 
+## 2026-09-24｜欠账 D-359 ④：等 Session 芯片「还剩 Nh」（04:2x～04:4x UTC+8）
+
+Lemon「1 做」。列表投影加 `session_repair_expires_at`；芯片文案「等客户重贴 Session · 还剩 41h / 不到 1h / 已到期」；原型同步（Demo 给等 Session 单补 41h）。契约测试加投影断言；真实页验收 +2 项（造数 LOAD-0023 +41h、LOAD-0007 已过期）= 34/34；parity 一致；v1 全量通过。`orders.js?v=4`。待 Lemon 说发。
+

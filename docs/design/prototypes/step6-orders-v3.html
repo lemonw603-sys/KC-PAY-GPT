@@ -266,9 +266,18 @@
       state.status = prev;
       for (const [k, v] of Object.entries(n)) { const el = document.querySelector(`[data-n="${k}"]`); if (el) { el.textContent = v; if (k === 'action') el.classList.toggle('has', v > 0); } }
     }
+    function remaining(iso) {
+      const ms = new Date(iso).getTime() - Date.now();
+      if (!Number.isFinite(ms)) return '';
+      if (ms <= 0) return '已到期';
+      const h = Math.floor(ms / 3600000);
+      return h >= 1 ? `还剩 ${h}h` : '不到 1h';
+    }
     function chip(o) {
       const s = STAGE[o.status] || { label: o.status, tone: '' };
       let text = (o.review === 1 && o.status === 'RECHARGE_SUCCESS') ? '已成功 · 续费待确认' : s.label;
+      // D-359 ④：等 Session 芯片带剩余时间（72h 窗口到期系统自收口）
+      if (o.status === 'WAITING_FOR_SESSION' && o.sessionRepairExpiresAt) text += ` · ${remaining(o.sessionRepairExpiresAt)}`;
       if (o.review === 1 && o.status === 'RECHARGE_SUCCESS') return `<span class="od-chip warn">${text}</span>`;
       if (o.status === 'RECHARGE_FAILED' && o.failure) text += `：${FAIL[o.failure] || o.failure}`;
       if (o.status === 'CLOSED' && o.failure) text += `：${FAIL[o.failure] || o.failure}`;
@@ -392,6 +401,8 @@
       const seed = ALL.find((x) => x.status === 'RECHARGE_SUCCESS');
       if (seed) ALL.push({ ...seed, no: 'PJV1-DEMO-UNKNOWN-000000', status: 'SUBMIT_UNKNOWN', created: '2026-09-22T09:12:00Z', finished: '', cdk: 9001, email: 31, unknown: 1, route: 'BROWSER', provider: 'manual_excel', last4: '8718' },
         { ...seed, no: 'PJV1-DEMO-RENEWAL-000000', status: 'RECHARGE_SUCCESS', review: 1, created: '2026-09-21T02:40:00Z', finished: '2026-09-21T02:49:00Z', cdk: 9002, email: 32, unknown: 0 });
+      // Demo：给等 Session 的单补一个 41 小时后到期，展示「还剩 Nh」
+      for (const x of ALL) if (x.status === 'WAITING_FOR_SESSION' && !x.sessionRepairExpiresAt) x.sessionRepairExpiresAt = new Date(Date.now() + 41 * 3600000).toISOString();
       render();
     });
     window.__odState = state;

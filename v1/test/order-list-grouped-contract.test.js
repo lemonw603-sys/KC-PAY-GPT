@@ -43,7 +43,7 @@ test('D-356: invalid product / route / reference are rejected before any query',
 });
 
 test('D-356: each row carries route kind, history count, bucket and one primary action; summary carries four buckets', async () => {
-  const base = { public_no: 'PJV1-a', plan_type: 'plus', customer_email: 'a@b.c', created_at: new Date('2026-09-23T08:33:06Z'), route_executor_kind: 'BROWSER', history_count: 2 };
+  const base = { public_no: 'PJV1-a', plan_type: 'plus', customer_email: 'a@b.c', created_at: new Date('2026-09-23T08:33:06Z'), route_executor_kind: 'BROWSER', history_count: 2, session_repair_expires_at: new Date('2026-09-26T08:33:06Z') };
   const rows = [
     { ...base, status: 'WAITING_FOR_SESSION', needs_person: 1, failed_after_payment: 0, cancellation_review_required: 0 },
     { ...base, public_no: 'PJV1-b', status: 'RECHARGE_SUCCESS', needs_person: 1, failed_after_payment: 0, cancellation_review_required: 1 },
@@ -60,6 +60,8 @@ test('D-356: each row carries route kind, history count, bucket and one primary 
     ['PJV1-e', 'success', null, 0, 'BROWSER'],
   ]);
   assert.deepEqual(result.summary.buckets, { all: 9, action: 3, success: 3, failed: 2, processing: 1 });
+  // D-359 ④：等 Session 芯片要显示剩余时间，列表行必须带到期时间（SQL 与投影都要有）
+  assert.equal(result.orders[0].sessionRepairExpiresAt, '2026-09-26T08:33:06.000Z');
 });
 
 test('D-356: listOrderAttempts scopes to the same CDK and excludes the order itself', async () => {

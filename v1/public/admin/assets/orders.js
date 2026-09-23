@@ -36,11 +36,20 @@ window.createOrdersPage = function ({ api, escapeHtml: esc, showNotice, openOrde
   };
   function last7() { state.from = cstDay(6); state.to = cstDay(0); }
 
+  function remaining(iso) {
+    const ms = new Date(iso).getTime() - Date.now();
+    if (!Number.isFinite(ms)) return '';
+    if (ms <= 0) return '已到期';
+    const h = Math.floor(ms / 3600000);
+    return h >= 1 ? `还剩 ${h}h` : '不到 1h';
+  }
   function chip(o) {
     const stage = o.stage || {};
     let text = stage.label || o.status;
     if (['failed'].includes(o.bucket) && o.failureCode && FAIL[o.failureCode]) text = `${text}：${FAIL[o.failureCode]}`;
     if (o.bucket === 'action' && o.status === 'RECHARGE_SUCCESS') text = '已成功 · 续费待确认';
+    // 等 Session 有 72h 窗口、到期系统自己收口（D-355/D-359 ④）：把剩余时间写进芯片，让人看到时间再决定要不要取消。
+    if (o.status === 'WAITING_FOR_SESSION' && o.sessionRepairExpiresAt) text = `${text} · ${remaining(o.sessionRepairExpiresAt)}`;
     const tone = o.bucket === 'action' ? 'warn' : (TONE[stage.tone] ?? '');
     return `<span class="od-chip ${tone}">${esc(text)}</span>`;
   }
