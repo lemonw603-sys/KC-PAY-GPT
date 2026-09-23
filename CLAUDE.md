@@ -26,7 +26,7 @@
 ## 第一版硬约束
 
 - 产品是 Plus、5X、20X 三个（D-244/D-245，2026-09-17 Lemon 定）。Plus 两条路线都在生产跑；5X/20X 目标路线是 Browser（现由 Lemon 人工用比特浏览器充，路线 305/306 在生产开着），自动化按 V2 排期接入；API 路线能否充 Pro 未知。**ChatGPT 已可从 Free 直接升级到 20X，「先 Plus 后升级」两阶段方案退休（D-245）**，Pro 单与 Plus 同型：一次付款、一次确认、一次取消续费，只是 Checkout 选的套餐不同；页面行为仍须先经非付款 PoC 冻结到 `docs/contracts/` 才能进执行器。
-- 一张卡同一时刻最多绑定一个活动订单；完成一单并释放活动分配后，可在**按产品的每卡成功充值上限**内顺序服务后续订单（**Plus 3 单、5X 与 20X 各 1 单，API 与 Browser 两路线一致**；2026-09-14 Lemon 定，D-221。现有全局设置 `card_max_successful_payments=3` 只对 Plus 成立，5X/20X 启用前必须按产品）。容量以消费账本为权威；失败或付款状态不明确时保留占用，绝不释放或换卡重付。
+- 一张卡同一时刻最多绑定一个活动订单；完成一单并释放活动分配后，可在**按产品的每卡成功充值上限**内顺序服务后续订单（**Plus 3 单、5X 与 20X 各 1 单，API 与 Browser 两路线一致**；2026-09-14 Lemon 定，D-221。2026-09-24 D-361 已按产品落地：唯一口径 `card-inventory-eligibility.maxPaymentsSql`，Plus 沿用全局键 3、5X/20X 各自的键 = 1，跑过 Pro 的卡不再分配）。容量以消费账本为权威；失败或付款状态不明确时保留占用，绝不释放或换卡重付。
 - 卡台开卡写请求必须使用稳定的 `X-Idempotency-Key`；超时和 502/503 只能用原 Key 重试。
 - **Browser 自动化代码脆弱，改动受限（D-254，2026-09-17 Lemon 定）**：付款前三件 `browser-mvp/src/billing-address-fill.js`、`live-chatgpt-payment-adapter.js`、`payment-executor.js` 的 submit 段**任何任务不许改**，除非 Lemon 当次单独批；其他 browser-mvp 改动只能在任务书列出的文件白名单内，越界即停下来问；browser-mvp 一动就跑全量测试 + 一次 rehearsal 演练都绿才算改完；常驻 worker 重启前问 Lemon。
 - 任何付款执行器在提交结果不明确时都进入 `SUBMIT_UNKNOWN`，禁止自动重试、换卡或换执行器；Browser 点击付款后崩溃必须先对账，不能重新点击。

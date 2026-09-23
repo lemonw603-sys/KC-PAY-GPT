@@ -3590,3 +3590,7 @@ Lemon 选做「1 每周自检」。`scripts/weekly-check.sh`（本机）+ `v1/sc
 摸系统时发现分卡三处没按产品传参（20X 单会被 Plus 的大额卡守卫挡住），一并修。唯一口径 `maxPaymentsSql`；三谓词 + 库存口径 + 分卡 + 账本预留 + 抽屉容量按产品；新规则「跑过 Pro 的卡不再分配/补钱」（PRO_USED 前移）；迁移 059 补两把 Pro 键 = 1；设置页三行各存各的（端点 `planType`）。测试：全量 1035/0；`customer-sql-probe` ✓；真实页：设置页三行 Plus 3 / 5X 1 / 20X 1，把 20X 改 2 保存 → 库里 `card_max_successful_payments:pro_20x=2`（正确的键），再改回 1。全量 `sql-probe`（640 条）结果补记于下。生产未动，含迁移，发布走 prepare → migrate → switch，先问。
 全量 `sql-probe`：640 条对生产 schema，真实失败 0（含新加的 products 关联与按产品键子查询）。
 
+## 2026-09-24｜发布 `20260924-per-product-cap-213ccba`（23:2x UTC = 07:2x UTC+8）
+
+Lemon「发布」。prepare（备份 `pojia-20260923T232507Z`）→ migrate 059（两把 Pro 键 = 1，新连接核实 3/1/1）→ 复核新目录 → switch：三进程 cwd 在新 release，live/ready 200。复验：登录 200、`admin.js?v=93` 200 且含按产品字段、端点未登录 401；正式资格 SQL 实跑 plus 1 张/上限 3、pro_5x 0/1、pro_20x 0/1；发布前后「跑过 Pro 且在库」的卡 0 张（新规则没退出任何卡）。CURRENT_STATE 七行已改，CLAUDE.md 硬约束那句改为已落地。回滚点 `20260924-session-hours-a307356`。
+
