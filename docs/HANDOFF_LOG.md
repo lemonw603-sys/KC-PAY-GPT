@@ -3581,3 +3581,7 @@ Lemon 确认将 `KC-PAY-GPT` 作为独立充值执行路线进行二次开发。
 
 执行边界：先在独立工程内完成最小 API、Worker、订单状态和受控充值验证；在验证通过前，不接入 V2、不注册默认路线、不共享 V2 数据库/卡池/密钥、不做生产充值。后续如通过，仅以薄 `KC_PAY_GPT Adapter` 接入。
 
+## 2026-09-24｜每周自检命令（D-360，06:3x～07:0x UTC+8）
+
+Lemon 选做「1 每周自检」。`scripts/weekly-check.sh`（本机）+ `v1/scripts/weekly-readonly-probe.mjs`（服务器侧只读探针，临时拷过去跑完即删；正式连接池 + 正式规则）。首跑 53 秒：0 失败 3 提醒——需要我处理 9 单（真实）、PENDING>1h 1 个（查实是 09-10 一个 CLOSED 单的 BROWSER_PREFLIGHT 残留，改成只算非终态单、残留另计）、工作区未提交（本次新文件）。RUNBOOK §0.5、PROJECT_MAP 可离开第四条勾掉。
+

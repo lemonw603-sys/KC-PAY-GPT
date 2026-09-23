@@ -5476,3 +5476,9 @@ Lemon 确认新增一条独立的 KC-PAY-GPT 充值执行路线。它与 ZZSHU�
 - 接入时 V2 只持有统一路线状态和外部任务引用，不共享 KC 内部数据库，不搬运 KC 后台或执行器源码。
 
 本决定不改变当前 V2 生产路线，不代表 KC-PAY-GPT 已验证可充值。
+
+## D-360（2026-09-24 07:0x UTC+8）每周自检命令落地（可离开四条之一）；块 6 PoC 因无账号挂起
+
+Lemon 无可用的无订阅 ChatGPT 账号，块 6 前置 PoC（`tasks/2026-09-24-block6-pro20x-poc.md`，脚本已写未跑）挂起。Lemon 选做「每周自检命令」。
+落地：`scripts/weekly-check.sh` + 服务器侧只读探针 `v1/scripts/weekly-readonly-probe.mjs`（正式连接池 + 正式规则：「需要我处理」调 listOrders 同一份谓词，可分配卡调 `eligibleInventoryCardSql`，不另抄规则）。首跑 53 秒、0 失败 3 提醒（需要我处理 9 单、PENDING>1h 任务 1 个、工作区未提交）。RUNBOOK §0.5。
+
