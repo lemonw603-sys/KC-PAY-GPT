@@ -1303,6 +1303,7 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
           (SELECT CAST(setting_value AS UNSIGNED) FROM app_settings
              WHERE setting_key = 'card_max_successful_payments' LIMIT 1) AS card_capacity,
           prod.display_name AS product_name,
+          (SELECT fr_kind.executor_kind FROM fulfillment_routes fr_kind WHERE fr_kind.id = o.fulfillment_route_id) AS route_executor_kind,
           latest_attempt.attempt_status, latest_attempt.attempt_funds_risk_state, latest_attempt.executor_kind,
           latest_run.run_id, latest_run.run_status, latest_run.run_payment_state, latest_run.run_post_payment_state,
           latest_run.run_control_state, latest_run.run_lane, latest_run.run_last_checkpoint_kind,
@@ -1598,6 +1599,7 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
         status: row.status,
         planType: row.plan_type,
         productName: row.product_name || null,
+        routeExecutorKind: row.route_executor_kind || null,
         customerEmail: row.customer_email,
         chatgptAccountId: row.chatgpt_account_id,
         cardTypeId: row.card_type_id,

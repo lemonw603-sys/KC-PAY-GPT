@@ -3553,3 +3553,7 @@ Lemon 批准安装：官方 `frontend-design@claude-plugins-official`（用户�
 
 Lemon 看本地页面：「这几项都挤在左边，右边那么大块干啥的？你是不是缺什么工具，去 GitHub 找」。量数字（进度列 1440/559px、1920/1039px）确认是六轮定稿的结构问题：余量全给进度列、时间钉右、内容区无上限。GitHub 核对 Primer/Linear/Stripe/Carbon 的容器与表格规则后做第七轮（时间前移）、第八轮（+封顶 1280），Lemon 定第八轮并要求进度再往右（22→48）。同步实现、原型冻结、契约（视口 1920 + 封顶探针）、验收脚本（+2 项 1920）、隔离测试表头断言；v1 1032/0，真实页 32/32，parity @1920 一致，棘轮/文案干净。写项目根 `DESIGN.md`（候光令牌 + 布局规则 + Do/Don't）。impeccable critique 双子代理对实现跑（结果另记）。生产未动。
 
+## 2026-09-24｜订单页 impeccable critique（双子代理）与两处修正（02:2x～02:5x UTC+8）
+
+A（设计总监式）28/40，B（detect 63 条 + Playwright 量测）。合成稿 `reviews/2026-09-24-orders-v3-critique.md`。核实后修两处实现不一致：抽屉头产品名（`PRO_20X` → 走 PLAN_LABELS）、路线来源（列表默认 Browser / 抽屉默认 API 打架 → getOrder 投影 `route_executor_kind`，两处只认后端，空写「—」）。A 的 P3「手工充值是实心按钮」核对截图为描边，A 看错。待 Lemon 定：P1 等 Session 单列表有「取消并放卡」而抽屉规则（需仍有分卡）在 D-355 后永远不满足——规则冲突未改；P2 桶内风险分级；P3–P5 与两个挑衅性问题。CSP 拦掉浏览器注入检测，以后只走 CLI + 量测。复验：v1 1032/0，真实页 32/32，parity @1920 一致。
+

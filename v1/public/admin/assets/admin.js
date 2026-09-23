@@ -272,7 +272,8 @@ function stageChip(stage = {}) {
 }
 
 function productLabel(order) {
-  return order.productName || (order.planType ? String(order.planType).toUpperCase() : '—');
+  // 评审（2026-09-24 critique P-次要）：此前 planType 大写直出 PRO_20X，与列表「Pro 20X」不一致；三处统一走 PLAN_LABELS。
+  return PLAN_LABELS[order.planType] || order.productName || (order.planType ? String(order.planType) : '—');
 }
 
 // The resident pool writes the identity into worker_id as `pool:<lane>`; the
@@ -2457,7 +2458,9 @@ async function openOrder(publicNo, { focus = null } = {}) {
       ORDER_CANCELLATION_NOT_ELIGIBLE: ''
     };
     // ---- 抽屉头：邮箱主、单号副（D-356 ⑤）----
-    const routeKind = (data.attempt?.executorKind || order.routeExecutorKind || (run ? 'BROWSER' : 'API')) === 'API' ? 'API' : 'Browser';
+    // 路线只认后端投影（getOrder 现在也给 routeExecutorKind）；空就写「—」，不猜。评审 P1：此前列表默认 Browser、抽屉默认 API，同一单两处打架。
+    const routeRaw = order.routeExecutorKind || data.attempt?.executorKind || null;
+    const routeKind = routeRaw === 'API' ? 'API' : (routeRaw ? 'Browser' : '—');
     elements.detailTitle.textContent = order.customerEmail || order.chatgptAccountId || publicNo;
     elements.detailKicker.textContent = `${publicNo} · ${productLabel(order)} · ${routeKind}`;
     // ---- 进度：只用已落库的状态事件，不造步骤（D-347 / N-03）----

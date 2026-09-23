@@ -51,7 +51,7 @@ window.createOrdersPage = function ({ api, escapeHtml: esc, showNotice, openOrde
     return `<button type="button" class="od-rowact${a.key === 'cancel' ? ' is-danger' : ''}" data-action="${esc(a.key)}" data-no="${esc(o.publicNo)}">${esc(a.label)} ›</button>`;
   }
   function routeCell(o) {
-    const kind = o.routeExecutorKind === 'API' ? 'API' : 'Browser';
+    const kind = o.routeExecutorKind === 'API' ? 'API' : (o.routeExecutorKind ? 'Browser' : '—');
     const card = o.card ? `<button type="button" class="od-cardlink" data-card="${esc(o.publicNo)}">${esc(o.card.providerLabel || '卡')} · ${esc(o.card.last4 || '')}</button>` : '未分卡';
     return `${kind}<small>${card}</small>`;
   }
