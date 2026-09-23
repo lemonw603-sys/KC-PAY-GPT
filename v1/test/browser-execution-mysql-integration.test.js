@@ -367,6 +367,11 @@ test('Browser MySQL pre-payment abort releases every runtime and funds fence ato
     assert.equal(stored.ciphertext, null);
     assert.ok(stored.released_at);
     assert.equal(permit.snapshotHash.length, 64);
+    // D-355：打回等 Session 的同时把卡放回池子（余额 20 ≥ 门槛 → AVAILABLE，指针清空）。
+    const [[d355Card]] = await pool.query('SELECT inventory_status, order_id FROM cards WHERE id = ?', [cardId]);
+    assert.deepEqual(d355Card, { inventory_status: 'AVAILABLE', order_id: null });
+    const [[d355Order]] = await pool.query('SELECT assigned_card_id FROM orders WHERE id = ?', [orderId]);
+    assert.equal(d355Order.assigned_card_id, null);
 
     // WAITING_FOR_SESSION keeps the paid entitlement bound (the customer will
     // re-submit); only a no-payment ending hands it back. Exercise the return

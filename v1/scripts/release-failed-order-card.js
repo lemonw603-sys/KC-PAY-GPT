@@ -2,10 +2,12 @@
 // payment action (the Browser pre-payment abort did not release assignments until
 // 2026-09-08). Refuses when any payment evidence exists.
 //   node scripts/release-failed-order-card.js <public-no> [--reason "..."] [--dry-run]
+// D-355（2026-09-23）起也接受 WAITING_FOR_SESSION：给 D-355 上线前就已打回、仍占着卡的单放卡
+// （走 releaseCardForSessionReplacementInTransaction，同一套付款痕迹守卫，并清 assigned_card_id）。
 import mysql from 'mysql2/promise';
 import { loadConfig } from '../src/config.js';
 import { createDatabaseConnectionOptions } from '../src/db/pool.js';
-import { releaseCardForFailedOrderInTransaction } from '../src/db/repositories/card-release-repository.js';
+import { releaseCardForFailedOrderInTransaction, releaseCardForSessionReplacementInTransaction } from '../src/db/repositories/card-release-repository.js';
 
 function parseArguments(argv) {
   const [publicNo, ...rest] = argv;
@@ -30,7 +32,7 @@ async function main() {
       'SELECT id, status, failure_code FROM orders WHERE BINARY public_no = ? LIMIT 1 FOR UPDATE', [publicNo]
     );
     if (!order) throw new Error('order not found');
-    if (order.status !== 'RECHARGE_FAILED') throw new Error(`order is ${order.status}, only RECHARGE_FAILED is repairable`);
+    if (!['RECHARGE_FAILED', 'WAITING_FOR_SESSION'].includes(order.status)) throw new Error(`order is ${order.status}, only RECHARGE_FAILED / WAITING_FOR_SESSION are repairable`);
     const [[evidence]] = await connection.query(
       `SELECT
          (SELECT COUNT(*) FROM recharge_attempts ra WHERE ra.order_id = o.id
@@ -54,13 +56,17 @@ async function main() {
       await connection.rollback();
       return;
     }
-    const result = await releaseCardForFailedOrderInTransaction(connection, {
-      orderId: order.id, releasedBy: 'admin:release-failed-order-card', reason: options.reason
-    });
+    const result = order.status === 'WAITING_FOR_SESSION'
+      ? await releaseCardForSessionReplacementInTransaction(connection, {
+        orderId: order.id, releasedBy: 'admin:release-failed-order-card', reason: options.reason
+      })
+      : await releaseCardForFailedOrderInTransaction(connection, {
+        orderId: order.id, releasedBy: 'admin:release-failed-order-card', reason: options.reason
+      });
     await connection.query(
       `INSERT INTO order_events (order_id, from_status, to_status, actor_type, actor_id, reason, metadata_json, created_at)
-       VALUES (?, 'RECHARGE_FAILED', 'RECHARGE_FAILED', 'ADMIN', 'release-failed-order-card', ?, ?, CURRENT_TIMESTAMP(3))`,
-      [order.id, options.reason, JSON.stringify({ ...result, failureCode: order.failure_code, backfill: true })]
+       VALUES (?, ?, ?, 'ADMIN', 'release-failed-order-card', ?, ?, CURRENT_TIMESTAMP(3))`,
+      [order.id, order.status, order.status, options.reason, JSON.stringify({ ...result, failureCode: order.failure_code, backfill: true })]
     );
     if (options.dryRun) {
       await connection.rollback();

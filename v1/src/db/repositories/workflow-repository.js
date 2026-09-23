@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import { transitionOrder } from './order-repository.js';
+import { releaseCardForSessionReplacementInTransaction } from './card-release-repository.js';
 import { OrderStatus } from '../../domain/order-status.js';
 import { decryptSecret, encryptSecret } from '../../security/secret-box.js';
 import { redactSensitiveText } from '../../security/redaction.js';
@@ -183,10 +184,15 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
         if (Number(updated.affectedRows) !== 1) {
           throw new Error(`Concurrent Session repair transition detected: ${orderId}`);
         }
+        // D-355：等 Session 期间不占卡；有付款痕迹时 helper 自己不放。
+        const release = await releaseCardForSessionReplacementInTransaction(connection, {
+          orderId, releasedBy: 'worker:session-replacement-required',
+          reason: `session replacement required: ${failureCode}`
+        });
         await insertEvent(connection, {
           orderId, fromStatus: order.status, toStatus: OrderStatus.WAITING_FOR_SESSION,
           reason: 'target account requires a customer-provided replacement Session',
-          metadata: { failureCode, customerActionCode, replacementWindowHours: hours }
+          metadata: { failureCode, customerActionCode, replacementWindowHours: hours, cardRelease: release }
         });
       });
     },

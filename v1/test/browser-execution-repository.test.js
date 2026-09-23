@@ -332,6 +332,10 @@ test('Session failure before payment atomically closes Browser state and opens r
     if (/operation_type = 'PAYMENT_SUBMIT'/.test(sql)) return [[], []];
     if (/SELECT id, status FROM payment_permits/.test(sql)) return [[{ id: 'permit-1', status: 'ISSUED' }], []];
     if (/session_replacement_window_hours/.test(sql)) return [[{ setting_value: '72' }], []];
+    // D-355：打回等 Session 时放卡 —— 付款痕迹三问都答 0，余额门槛答 16。
+    if (/AS live_or_paid_attempts/.test(sql)) return [[{ live_or_paid_attempts: 0, payment_runs: 0, provider_calls: 0 }], []];
+    if (/default_minimum_required_card_balance/.test(sql)) return [[{ setting_value: '16' }], []];
+    if (/SELECT minimum_required_card_balance FROM orders/.test(sql)) return [[{ minimum_required_card_balance: '16' }], []];
     return updateOk();
   });
   const result = await createBrowserExecutionRepository(pool).abortBeforePayment({

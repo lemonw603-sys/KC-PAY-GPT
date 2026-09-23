@@ -5417,3 +5417,14 @@ Lemon 逐条裁定（本窗口）：
 
 - **已是 Plus 的账号提交一律不充**（维持预检 `ACCOUNT_ALREADY_PLUS` 拒绝，不做续费）。来源：09-23 第一单真实客户单被预检拒后 Lemon 定。
 - **往卡里补钱后卡仍不可分配是不合理的**，要修。现状：D-217 资格取 `LEAST(同步余额, funded_amount − 账本消费)`，手动补钱只抬同步余额，`funded_amount` 不动（0601：余额 31.99 / funded 3.27 → 不合格）。修法进块 3 作为第 4 项：快照同步发现余额比上次高时，把差额登记为补款（抬 `funded_amount`，写审计），不放松 D-217 对「用掉后快照滞后」的保护。
+
+## D-355（2026-09-23 21:10 UTC+8）打回「等 Session」时放卡；72h 窗口不动；小额卡参数；工作台「用/剩」待重议
+
+Lemon 三问，执行者查代码/生产账本后答，Lemon 裁定：
+
+1. **等 Session 的单不再占卡**（Lemon：「把这单解开，他后续要提重新走流程」）。实现：新 helper `releaseCardForSessionReplacementInTransaction`（`card-release-repository.js`），只在无付款痕迹（资金栅栏 ACTIVE/UNKNOWN/SETTLED、付款 run、ZZSHU 非明确失败调用均为 0）时：账本 RESERVED→RELEASED、分配 RELEASED、卡回 AVAILABLE/DEPLETED、`orders.assigned_card_id` 清空；两处打回入口（Browser 付款前中止 `abortBeforePayment` target=WAITING_FOR_SESSION；API/worker `markSessionReplacementRequired`）都调它。重贴路径原本就按「无卡 → WAITING_FOR_CARD + 重排 ASSIGN_CARD」续跑，不改。`release-failed-order-card.js` 扩到接受 WAITING_FOR_SESSION，用于给上线前已打回的单（09-23 `PJV1-_xH487IWWc0h0fi8pqY9` 占 8718）放卡。真库集成：打回→卡回池→重贴→重排→再分同一张全链通过。
+2. **72h 窗口保留不动**：卡放开后它不再护任何资源，只决定挂单何时自行收尾；客户拿同码回来照样续上原单。
+3. **小额卡（$16/$32）**：系统本就支持（每单 Plus 实扣约 15.75～15.79、门槛 16、每卡 ≤3 单是上限不是要求）；D-354 修复后手动补钱自动记入 funded。调度器开卡金额在设置页按台按产品改（现两台 50），开卡前要求钱包 − 金额 − 手续费 ≥ 底线（highvcc 底线 20 / 费 0.5，hnskj 30 / 0.75）。建议资金紧时 highvcc 开卡金额 32、水位 1，钱包保 55 以上；Lemon「没问题」，是否改设置页由 Lemon 操作。
+4. **工作台「Plus 用 6 / 剩 0」**：查实「用 N」= 该台历史上给该产品充过的**卡张数**（含已销卡；SQL `product_used`，`card-inventory-eligibility.js`），「剩 N」= 当前库存口径可分配张数；累计与当前混排。Lemon：「不是我想要的，记下来重点讨论」→ 登记欠账，块 5 订单页时一并定。
+
+另登记欠账：供卡调度器每轮只取一个候选，被挡（WALLET_BELOW_FLOOR）即返回，不看下一台（09-23 hnskj 钱包够却不开卡的原因）；要不要改成跳过继续，待定。

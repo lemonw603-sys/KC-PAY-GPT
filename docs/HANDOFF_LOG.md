@@ -3515,3 +3515,7 @@ Lemon 批白名单后实施，提交 `6807de8`。改动与证据：
 
 Lemon 同意后 prepare（manifest 1347 项、备份 `pojia-20260923T123158Z`、无迁移）→ switch → 三服务 active、live/ready 200、served customer.js 哈希与磁盘一致；巡检 12:35 轮输出新字段 executors.BROWSER offline=false。服务器 `backfill-card-funded-amount.mjs` 预览候选 0；`set-intake-executor-check.mjs on` 预览显示键未设置（= 检查开）。本机池未重启、rehearsal 未做。
 补记（12:45 UTC）：调度器「hnskj 钱包 104.71 仍不开卡」查清 = 每轮只取一个候选，本轮候选是 highvcc plus（钱包 34.24，开 50 + 费 0.50 后 −16.26 < 底线 20 → WALLET_BELOW_FLOOR 直接返回），hnskj 的缺口没轮到。代码 `card-supply-scheduler-service.js:300-372`，告警 `card-supply-wallet-low:…103` 08:43 起 OPEN。这是调度器一轮只处理一个候选的既有行为，不是 bug 判定；要不要改成「被挡的候选跳过、看下一个」登记为欠账，待 Lemon 定。
+
+## 2026-09-23｜D-355 打回等 Session 时放卡（代码完成）
+
+Lemon 同意后实现：`card-release-repository.js` 新 helper（付款痕迹三问守卫 → 账本/分配/卡/订单指针一起放）；`browser-execution-repository.abortBeforePayment` 与 `workflow-repository.markSessionReplacementRequired` 接入；`release-failed-order-card.js` 接受 WAITING_FOR_SESSION。测试：browser-execution-repository 单测 21 pass（假连接补三问应答）；隔离库 `session-replacement-card-release-mysql-integration` 全链通过、`browser-execution-mysql-integration` 加卡回池断言通过。另答 72h（不动）、小额卡参数（设置页可改）、工作台用/剩（登记欠账 15）。

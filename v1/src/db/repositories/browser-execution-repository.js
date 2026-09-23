@@ -2,7 +2,7 @@ import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypt
 import { redactSensitiveText } from '../../security/redaction.js';
 import { transitionCardConsumptionInTransaction } from '../../services/card-consumption-ledger-service.js';
 import { returnCdkForOrderInTransaction } from './cdk-return-repository.js';
-import { releaseCardForFailedOrderInTransaction } from './card-release-repository.js';
+import { releaseCardForFailedOrderInTransaction, releaseCardForSessionReplacementInTransaction } from './card-release-repository.js';
 import { upsertBrowserAlertInTransaction } from './browser-alert-repository.js';
 
 // Which picker plan a run's order buys (mirrors browser-mvp resolveOrderPlan).
@@ -883,6 +883,12 @@ export function createBrowserExecutionRepository(pool) {
              WHERE order_id = ? AND task_type = 'SUBMIT_RECHARGE'`,
             [now, now, row.order_id]
           );
+        } else if (target === 'WAITING_FOR_SESSION') {
+          // D-355：客户去换 Session 的这段时间不占卡；重贴后重新分卡（一秒钟）。
+          await releaseCardForSessionReplacementInTransaction(connection, {
+            orderId: row.order_id, releasedBy: 'browser:session-replacement-required',
+            reason: `session replacement required: ${reason}`, now
+          });
         } else if (target === 'RECHARGE_FAILED') {
           await connection.query(
             `UPDATE tasks SET status = 'DEAD', leased_by = NULL, leased_until = NULL,
