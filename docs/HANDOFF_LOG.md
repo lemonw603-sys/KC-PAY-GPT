@@ -3486,3 +3486,7 @@ Lemon 问「怎样要求你才能完全接住」并要求审视问题与方向�
 ## 2026-09-23｜块 1 完成：highvcc token 更新生效；D-352 补记真钱最少化与订单页时点
 
 Lemon 07:04:44 UTC 经后台保存 token；07:12:28 UTC timer 轮次 success、`tokenAlert: RESOLVED`，新快照 $44.74 @ 07:13:33 UTC（新连接独立查询）。发现 timer unit 描述写「每 10 分钟」而配置 `OnUnitActiveSec=1h`，事实表按配置改回每小时。D-352 补记：真钱只留 Plus Browser 一单与 20X 一单；订单页排块 5 紧接块 3。下一块 = 块 2（A/B 台账只验已发布项）。
+
+## 2026-09-23｜块 2 收口（D-353）：台账裁定、默认路线切 Browser
+
+发现当前默认路线为 API 而 09-16 后 API 路线核心文件改动 300+ 行（`git diff --stat` workflow-handlers 307 / workflow-repository 510 / recharge-attempt-repository 23）且无非付款演练方式；Lemon 选切 Browser，08:13:21 UTC 后台切换，新连接核实路线表翻转与审计行。台账 FB-01/02/03/05/06/08 关，FB-04 保留（三卡未销、不急），FB-07 并块 6，FB-09 = 块 5。未改业务代码、未部署。
