@@ -14,7 +14,7 @@
 ## 下一可执行项（按 D-352 块序）
 
 1. **块 4**：Plus Browser 真钱一单（Lemon 定何时、自费或客户单）；付款后半段在当前 release 仍零样本。
-2. **块 5**：需求对齐稿已写 `tasks/2026-09-23-orders-page-three-questions.md`（8 个待答问题），**等 Lemon 逐条答** → 画可点 Demo（真实 80 单形态）→ 写 parity 契约 → 实现。D-350 版订单页已在生产（待 Lemon 定留/回退）。
+2. **块 5**：八问已裁定（D-356）；可点 Demo v3 `design/prototypes/step6-orders-v3.html` 已做、浏览器验收 25/25（`reviews/2026-09-23-orders-v3-demo.md`），**等 Lemon 点验** → 定稿冻结 + `parity/orders-page.json` → 实现（前后端：按 CDK 归组的只读查询、行内动作、抽屉三问、手工标成功按钮 + 守卫）。D-350 版留在生产到替换。
 2. 块 4：Plus Browser 真钱一单（仅此一单），对照交付判据合同；其余用 rehearsal。
 3. 块 5：订单页三个问题 → 拍板 → 做一版。
 

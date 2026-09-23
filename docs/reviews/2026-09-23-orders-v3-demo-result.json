@@ -1,0 +1,134 @@
+{
+ "checks": [
+  {
+   "name": "无 JS 错误",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "name": "视口宽度 1280（测量前断言）",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "name": "默认「近 7 天」只显示该窗口内的主行",
+   "ok": true,
+   "detail": "6 行 · 6 个客户充值 · 7 次尝试"
+  },
+  {
+   "name": "「全部」按 CDK 归并：主行数 = 码数（55+2 演示码）",
+   "ok": true,
+   "detail": "57 行 · 57 个客户充值 · 82 次尝试"
+  },
+  {
+   "name": "状态角标：全部 = 主行数",
+   "ok": true,
+   "detail": "57"
+  },
+  {
+   "name": "「需要我处理」角标 ≥ 3（等 Session 1 + 演示付款不明 1 + 演示续费待确认 1）",
+   "ok": true,
+   "detail": "10"
+  },
+  {
+   "name": "12 次尝试的码显示「此前 11 次未成功」",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "name": "展开后出现 11 条历史行",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "name": "再点收起",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "name": "点产品格不打开抽屉",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "name": "点邮箱格打开右侧抽屉",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "name": "抽屉含「卡与钱」三问",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "name": "抽屉含提交时间与充值成功时间",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "name": "抽屉正文无内部编号（D-xxx / F-xx）",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "name": "「需要我处理」筛选后每行都有动作按钮",
+   "ok": true,
+   "detail": "10 行"
+  },
+  {
+   "name": "付款待核实行的按钮是「去核实」",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "name": "点动作先弹确认框，不直接执行",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "name": "确认框写清会发生什么",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "name": "搜索单号能定位到等 Session 那单",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "name": "等 Session 行的动作是「取消并放卡」",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "name": "等 Session 抽屉写明「卡已放回池子」",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "name": "路线筛选 API 有结果且少于全部",
+   "ok": true,
+   "detail": "17"
+  },
+  {
+   "name": "产品筛选 20X 有结果",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "name": "390px 下表格 min-width 生效、可横向滚动",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "name": "全程无 JS 错误",
+   "ok": true,
+   "detail": ""
+  }
+ ],
+ "assetFails": [
+  "http://127.0.0.1:8899/assets/fonts/familjen-grotesk.woff2",
+  "http://127.0.0.1:8899/assets/fonts/ibm-plex-mono-400.woff2",
+  "http://127.0.0.1:8899/assets/fonts/ibm-plex-mono-500.woff2"
+ ]
+}

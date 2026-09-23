@@ -1,0 +1,364 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="theme-color" content="#f5f8fc">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'">
+  <title>Plus 运营后台 · 订单（Demo v3）</title>
+  <link rel="icon" href="_frozen/cdk-a/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="_frozen/cdk-a/admin.css?v=26">
+  <link rel="stylesheet" href="_frozen/cdk-a/workbench.css?v=19">
+  <link rel="stylesheet" href="_frozen/cdk-a/cards.css?v=4">
+  <link rel="stylesheet" href="_frozen/cdk-a/cdks.css">
+  <style>
+    /* 订单页 Demo v3（D-356）。只用 --wb-* 令牌与 cdk-* 已定稿的列表/筛选形态，
+       新增的 od-* 只管订单页特有的三件事：主行/历史行、动作格、抽屉里的「卡与钱」。 */
+    .od-page{display:grid;gap:16px;color:var(--wb-t);min-width:0}
+    .od-page button,.od-page input:not([type=checkbox]),.od-page select{min-height:34px;border:1px solid var(--wb-bd);border-radius:9px;padding:4px 10px;background:var(--wb-s);color:var(--wb-t);font-size:13px;max-width:100%}
+    .od-page .cdk-filters{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+    .od-page .cdk-filters input[type=search]{flex:1 1 240px}
+    .od-seg{display:inline-flex;border:1px solid var(--wb-bd);border-radius:9px;overflow:hidden;background:var(--wb-s)}
+    .od-seg button{min-height:32px;border:0;border-radius:0;border-right:1px solid var(--wb-bd);padding:0 11px;background:transparent;color:var(--wb-t2);font-size:12.5px;display:inline-flex;align-items:center;gap:6px}
+    .od-seg button:last-child{border-right:0}
+    .od-seg button[aria-pressed=true]{background:var(--wb-a-soft);color:var(--wb-a-ink);font-weight:600}
+    .od-seg button i{font-style:normal;font:500 11px var(--wb-fm);padding:1px 6px;border-radius:6px;background:var(--wb-s3);color:var(--wb-t2)}
+    .od-seg button[aria-pressed=true] i{background:var(--wb-a);color:var(--wb-a-on)}
+    .od-seg button[data-status=action] i.has{background:var(--wb-warn-soft);color:var(--wb-warn)}
+    .od-range{display:inline-flex;align-items:center;gap:6px;color:var(--wb-t2);font-size:12.5px}
+    .od-range input[type=date]{min-height:32px;font:12.5px var(--wb-fm)}
+    .od-count{color:var(--wb-t3);font-size:12.5px;margin-left:auto}
+    .od-table td{vertical-align:top}
+    .od-main{display:grid;gap:2px}
+    .od-page .od-email{border:0;background:none;padding:0;min-height:0;color:var(--wb-t);font-weight:600;font-size:12.5px;text-align:left;cursor:pointer;border-radius:5px;box-shadow:none}
+    .od-page .od-email:hover{color:var(--wb-a);text-decoration:underline}
+    .od-page .od-email:focus-visible{outline:2px solid var(--wb-a);outline-offset:2px}
+    .od-no{font:11.5px var(--wb-fm);color:var(--wb-t3)}
+    .od-page .od-tries{border:0;background:var(--wb-s3);color:var(--wb-t2);font-size:11px;padding:2px 7px;border-radius:6px;min-height:0;cursor:pointer;margin-left:6px;box-shadow:none}
+    .od-page .od-tries[aria-expanded=true]{background:var(--wb-a-soft);color:var(--wb-a-ink)}
+    .od-route small{display:block;color:var(--wb-t3);font:11.5px var(--wb-fm)}
+    .od-stage{display:grid;gap:6px;justify-items:start}
+    .od-chip{display:inline-flex;align-items:center;gap:6px;padding:4px 8px;border-radius:7px;background:var(--wb-s3);color:var(--wb-t2);white-space:nowrap;font-size:12px}
+    .od-chip::before{content:"";width:7px;height:7px;background:currentColor;border-radius:50%}
+    .od-chip.ok{background:var(--wb-ok-soft);color:var(--wb-ok)}
+    .od-chip.warn{background:var(--wb-warn-soft);color:var(--wb-warn)}
+    .od-chip.warn::before{border-radius:1px;transform:rotate(45deg)}
+    .od-chip.danger{background:var(--wb-danger-soft);color:var(--wb-danger)}
+    .od-chip.danger::before{border-radius:1px}
+    .od-chip.info{background:var(--wb-info-soft);color:var(--wb-info)}
+    .od-act{min-height:28px;border-radius:7px;padding:0 10px;font-size:12.5px;font-weight:600;background:var(--wb-a);color:var(--wb-a-on);border-color:var(--wb-a)}
+    .od-act.out{background:var(--wb-s);color:var(--wb-a-ink);border-color:var(--wb-a)}
+    .od-act.danger{background:var(--wb-s);color:var(--wb-danger);border-color:var(--wb-danger)}
+    .od-time{font:12px var(--wb-fm);color:var(--wb-t2);white-space:nowrap}
+    tr.od-hist td{background:var(--wb-s2);color:var(--wb-t2);font-size:12px;padding-top:7px;padding-bottom:7px}
+    tr.od-hist td:first-child{padding-left:26px}
+    tr.od-hist .od-no{color:var(--wb-t3)}
+    .od-empty{padding:28px;text-align:center;color:var(--wb-t3)}
+    /* 抽屉 */
+    .od-drawer{font-family:var(--wb-fd)}
+    .od-drawer .drawer-heading h2{font-size:15px}
+    .od-drawer .drawer-heading small{display:block;font:11.5px var(--wb-fm);color:var(--wb-t3);margin-top:2px}
+    .od-actions{display:flex;gap:8px;flex-wrap:wrap;padding:14px 0}
+    .od-actions .od-act{min-height:34px;border-radius:9px;padding:0 14px;font-size:13px}
+    .od-actions .od-none{color:var(--wb-t3);font-size:12.5px;align-self:center}
+    .od-kv{display:grid;grid-template-columns:110px 1fr;gap:6px 12px;font-size:12.5px}
+    .od-kv dt{color:var(--wb-t3)}
+    .od-kv dd{margin:0;color:var(--wb-t)}
+    .od-kv dd.mono{font-family:var(--wb-fm)}
+    .od-h{margin:0 0 10px;font-size:13px;color:var(--wb-t2);font-weight:600;letter-spacing:.02em}
+    .od-card{display:grid;gap:8px;border:1px solid var(--wb-bd);border-radius:12px;padding:12px 14px;background:var(--wb-s2)}
+    .od-card .row{display:flex;justify-content:space-between;gap:10px;font-size:12.5px}
+    .od-card .row span{color:var(--wb-t3)}
+    .od-card .row b{font-weight:600}
+    .od-card .row b.mono{font-family:var(--wb-fm)}
+    .od-card a{color:var(--wb-a);font-size:12.5px;justify-self:end}
+    .od-tl{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+    .od-tl li{display:grid;grid-template-columns:118px 1fr;gap:10px;font-size:12.5px}
+    .od-tl li time{font:11.5px var(--wb-fm);color:var(--wb-t3)}
+    .od-tl li.cur b{color:var(--wb-a-ink)}
+    .od-warnbox{border:1px solid var(--wb-warn);background:var(--wb-warn-soft);color:var(--wb-warn);border-radius:9px;padding:10px 12px;font-size:12.5px}
+    dialog.od-confirm{border:1px solid var(--wb-bd);border-radius:14px;padding:20px 22px;width:min(420px,92vw);box-shadow:var(--wb-pop)}
+    dialog.od-confirm::backdrop{background:hsla(176,25%,10%,.28)}
+    dialog.od-confirm h3{margin:0 0 8px;font-size:15px}
+    dialog.od-confirm p{margin:0 0 16px;color:var(--wb-t2);font-size:13px;line-height:1.55}
+    dialog.od-confirm .btns{display:flex;gap:8px;justify-content:flex-end}
+    @media(max-width:760px){.od-table{min-width:900px}.od-count{margin-left:0;width:100%}}
+  </style>
+</head>
+<body>
+  <div class="admin-shell">
+    <aside class="sidebar">
+      <a class="admin-brand" href="#" aria-label="Plus 运营后台首页">
+        <span class="brand-label">OPERATIONS</span>
+        <strong>Plus 运营后台 <span aria-hidden="true">✦</span></strong>
+        <small>内部管理中心</small>
+      </a>
+      <nav aria-label="后台导航">
+        <button class="nav-item" type="button"><span class="ic" aria-hidden="true">◱</span>工作台</button>
+        <button class="nav-item is-active" type="button"><span class="ic" aria-hidden="true">≡</span>订单</button>
+        <button class="nav-item" type="button"><span class="ic" aria-hidden="true">#</span>CDK</button>
+        <button class="nav-item" type="button"><span class="ic" aria-hidden="true">▣</span>卡片</button>
+        <button class="nav-item" type="button"><span class="ic" aria-hidden="true">⚙</span>设置</button>
+        <button class="nav-item" type="button"><span class="ic" aria-hidden="true">◎</span>诊断</button>
+      </nav>
+      <div class="sidebar-foot">
+        <span class="session-state"><i aria-hidden="true"></i><b>管理员已登录</b><small>人工确认模式</small></span>
+        <button type="button">安全退出</button>
+      </div>
+    </aside>
+
+    <main class="main-area">
+      <header class="topbar">
+        <div class="topbar-title"><h1>订单</h1></div>
+        <div class="gsearch">
+          <span class="mg" aria-hidden="true">⌕</span>
+          <input type="search" placeholder="贴卡密 / 订单号 / 邮箱 → 直接定位这一单" autocomplete="off" aria-label="全局定位搜索">
+          <kbd>↵</kbd>
+        </div>
+        <span class="sync-time">Demo · 数据为生产 80 单形态（标识已匿名）</span>
+      </header>
+
+      <section class="od-page">
+        <section class="cdk-block">
+          <form class="cdk-filters" id="od-filters" onsubmit="return false">
+            <input id="od-q" type="search" placeholder="邮箱 / 订单号 / 卡密" aria-label="搜索订单">
+            <div class="od-seg" role="group" aria-label="状态">
+              <button type="button" data-status="all" aria-pressed="true">全部 <i data-n="all">0</i></button>
+              <button type="button" data-status="processing" aria-pressed="false">处理中 <i data-n="processing">0</i></button>
+              <button type="button" data-status="success" aria-pressed="false">已成功 <i data-n="success">0</i></button>
+              <button type="button" data-status="failed" aria-pressed="false">未成功 <i data-n="failed">0</i></button>
+              <button type="button" data-status="action" aria-pressed="false">需要我处理 <i data-n="action">0</i></button>
+            </div>
+            <select id="od-plan" aria-label="产品"><option value="">所有产品</option><option value="plus">Plus</option><option value="pro_5x">5X</option><option value="pro_20x">20X</option></select>
+            <select id="od-route" aria-label="路线"><option value="">所有路线</option><option value="BROWSER">Browser</option><option value="API">API</option></select>
+            <span class="od-range"><input id="od-from" type="date" aria-label="起"> 至 <input id="od-to" type="date" aria-label="止"></span>
+            <div class="od-seg" role="group" aria-label="时间快选">
+              <button type="button" data-range="7" aria-pressed="true">近 7 天</button>
+              <button type="button" data-range="all" aria-pressed="false">全部</button>
+            </div>
+            <span class="od-count" id="od-count"></span>
+          </form>
+          <div class="cdk-table-wrap">
+            <table class="cdk-table od-table" id="od-table">
+              <thead><tr>
+                <th>客户</th><th>产品</th><th>路线 · 卡台 · 卡尾号</th><th>进度 / 需要我做什么</th><th>提交时间</th>
+              </tr></thead>
+              <tbody id="od-rows"></tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+    </main>
+  </div>
+
+  <dialog id="od-drawer" class="detail-drawer od-drawer" aria-labelledby="od-drawer-title">
+    <div class="drawer-heading">
+      <div><h2 id="od-drawer-title">订单</h2><small id="od-drawer-sub"></small></div>
+      <button class="close-button" type="button" id="od-close" aria-label="关闭">×</button>
+    </div>
+    <div id="detail-content"></div>
+  </dialog>
+
+  <dialog id="od-confirm" class="od-confirm">
+    <h3 id="od-confirm-title"></h3>
+    <p id="od-confirm-text"></p>
+    <div class="btns"><button type="button" id="od-confirm-no">先不做</button><button type="button" class="od-act" id="od-confirm-yes"></button></div>
+  </dialog>
+
+  <script>
+  (() => {
+    // ---- 口径（只在 Demo 里写死；正式实现全部来自后端投影）----
+    const STAGE = {
+      RECHARGE_SUCCESS:   { label: '已成功', tone: 'ok', bucket: 'success' },
+      RECHARGE_FAILED:    { label: '未成功', tone: 'danger', bucket: 'failed' },
+      CLOSED:             { label: '已关闭', tone: '', bucket: 'failed' },
+      WAITING_FOR_SESSION:{ label: '等客户换 Session', tone: 'warn', bucket: 'action' },
+      WAITING_FOR_CARD:   { label: '等卡', tone: 'warn', bucket: 'action' },
+      CARD_READY:         { label: '已分卡', tone: 'info', bucket: 'processing' },
+      RECHARGE_PROCESSING:{ label: '处理中', tone: 'info', bucket: 'processing' },
+      SUBMITTING:         { label: '正在付款', tone: 'info', bucket: 'processing' },
+      SUBMIT_UNKNOWN:     { label: '付款待核实', tone: 'warn', bucket: 'action' },
+      RECONCILIATION_REQUIRED:{ label: '付款待核实', tone: 'warn', bucket: 'action' },
+      CANCELLATION_REVIEW_REQUIRED:{ label: '续费待确认', tone: 'warn', bucket: 'action' },
+    };
+    const PLAN = { plus: 'Plus', pro_5x: '5X', pro_20x: '20X' };
+    const PROVIDER = { hnskj: 'HNSKJ', manual_excel: 'highvcc', '': '' };
+    const FAIL = { CHECKOUT_DRIFT: '结账页变了', CHECKOUT_NAVIGATION_FAILED: '打不开结账页', PROVIDER_CONFIRMED_FAILURE: '卡台确认失败', CHECKOUT_OBSERVATION_FAILED: '结账页读不出', CARD_DECLINED: '卡被拒', CHATGPT_ACCESS_BLOCKED: '账号被拦', RECHARGE_SUBMIT_REJECTED: '提交被拒', BROWSER_RETRY_LIMIT: '重试用尽', PAYMENT_EXECUTION_FAILED: '付款执行失败', PAGE_DRIFT: '页面变了', PAGE_CHECKPOINT_FAILED: '页面检查失败', CANCELLED_PRE_SUBMISSION: '付款前取消', HUMAN_VERIFIED_NOT_CHARGED: '人工核实未扣款' };
+
+    // 此刻唯一可做的动作。Demo 里「有无付款痕迹」用 unknown 计数近似；正式实现由后端算 eligibility。
+    function primaryAction(o) {
+      if (o.status === 'SUBMIT_UNKNOWN' || o.status === 'RECONCILIATION_REQUIRED') return { key: 'verify', label: '去核实', cls: '' };
+      if (o.status === 'WAITING_FOR_SESSION' || o.status === 'WAITING_FOR_CARD' || o.status === 'CARD_READY') return { key: 'cancel', label: '取消并放卡', cls: 'danger' };
+      if (o.review === 1 && o.status === 'RECHARGE_SUCCESS') return { key: 'renewal', label: '已在账号里取消续费', cls: 'out' };
+      if (o.status === 'RECHARGE_FAILED' && o.unknown === 0) return { key: 'manual', label: '标为已手工充值', cls: 'out' };
+      return null;
+    }
+
+    const fmt = (iso) => iso ? iso.replace('T', ' ').replace('Z', '').slice(5, 16) : '—';
+    const emailOf = (o) => `cust${String(o.email).padStart(2, '0')}@example.com`;
+    const cdkOf = (o) => `PLUS-…${String(o.cdk).padStart(4, '0')}`;
+
+    let ALL = [];
+    const state = { q: '', status: 'all', plan: '', route: '', from: '2026-09-17', to: '2026-09-23', expanded: new Set() };
+
+    // 主行 = 每个 CDK 最新一次尝试；历史 = 其余尝试（D-346）
+    function groups(list) {
+      const by = new Map();
+      for (const o of list) { if (!by.has(o.cdk)) by.set(o.cdk, []); by.get(o.cdk).push(o); }
+      const out = [];
+      for (const [, tries] of by) {
+        tries.sort((a, b) => a.created < b.created ? 1 : -1);
+        out.push({ main: tries[0], history: tries.slice(1) });
+      }
+      out.sort((a, b) => a.main.created < b.main.created ? 1 : -1);
+      return out;
+    }
+    const bucketOf = (o) => (o.review === 1 && o.status === 'RECHARGE_SUCCESS') ? 'action' : (STAGE[o.status] || { bucket: 'processing' }).bucket;
+    function passes(o) {
+      const s = { bucket: bucketOf(o) };
+      if (state.status !== 'all' && s.bucket !== state.status) return false;
+      if (state.plan && o.plan !== state.plan) return false;
+      if (state.route && o.route !== state.route) return false;
+      const day = o.created.slice(0, 10);
+      if (state.from && day < state.from) return false;
+      if (state.to && day > state.to) return false;
+      if (state.q) {
+        const q = state.q.toLowerCase();
+        if (!(emailOf(o).includes(q) || o.no.toLowerCase().includes(q) || cdkOf(o).toLowerCase().includes(q))) return false;
+      }
+      return true;
+    }
+    function counts() {
+      // 数字按「时间/产品/路线/搜索」过滤后、不按状态过滤的主行统计
+      const keep = { ...state, status: 'all' };
+      const n = { all: 0, processing: 0, success: 0, failed: 0, action: 0 };
+      const prev = state.status; state.status = 'all';
+      for (const g of groups(ALL.filter(passes))) { n.all += 1; n[bucketOf(g.main)] += 1; }
+      state.status = prev;
+      for (const [k, v] of Object.entries(n)) { const el = document.querySelector(`[data-n="${k}"]`); if (el) { el.textContent = v; if (k === 'action') el.classList.toggle('has', v > 0); } }
+    }
+    function chip(o) {
+      const s = STAGE[o.status] || { label: o.status, tone: '' };
+      let text = (o.review === 1 && o.status === 'RECHARGE_SUCCESS') ? '已成功 · 续费待确认' : s.label;
+      if (o.review === 1 && o.status === 'RECHARGE_SUCCESS') return `<span class="od-chip warn">${text}</span>`;
+      if (o.status === 'RECHARGE_FAILED' && o.failure) text += `：${FAIL[o.failure] || o.failure}`;
+      if (o.status === 'CLOSED' && o.failure) text += `：${FAIL[o.failure] || o.failure}`;
+      return `<span class="od-chip ${s.tone}">${text}</span>`;
+    }
+    function actionBtn(o, where) {
+      const a = primaryAction(o);
+      if (!a) return where === 'row' ? '' : '<span class="od-none">这一单现在没有需要你做的</span>';
+      return `<button type="button" class="od-act ${a.cls}" data-action="${a.key}" data-no="${o.no}">${a.label}</button>`;
+    }
+    function row(o, isMain, hist) {
+      const tries = hist && hist.length ? `<button type="button" class="od-tries" data-expand="${o.cdk}" aria-expanded="${state.expanded.has(o.cdk)}">此前 ${hist.length} 次未成功 ${state.expanded.has(o.cdk) ? '▴' : '▾'}</button>` : '';
+      return `<tr class="${isMain ? 'od-mainrow' : 'od-hist'}" data-no="${o.no}">
+        <td><div class="od-main"><span><button type="button" class="od-email" data-open="${o.no}">${emailOf(o)}</button>${tries}</span><span class="od-no">${o.no}</span></div></td>
+        <td>${PLAN[o.plan] || o.plan}</td>
+        <td class="od-route">${o.route === 'BROWSER' ? 'Browser' : 'API'}<small>${o.last4 ? `${PROVIDER[o.provider] || o.provider} · ${o.last4}` : '未分卡'}</small></td>
+        <td><div class="od-stage">${chip(o)}${isMain ? actionBtn(o, 'row') : ''}</div></td>
+        <td class="od-time">${fmt(o.created)}</td>
+      </tr>`;
+    }
+    function render() {
+      counts();
+      const gs = groups(ALL.filter(passes));
+      const tb = document.getElementById('od-rows');
+      if (!gs.length) { tb.innerHTML = `<tr><td colspan="5" class="od-empty">这个范围内没有订单</td></tr>`; }
+      else tb.innerHTML = gs.map((g) => row(g.main, true, g.history) + (state.expanded.has(g.main.cdk) ? g.history.map((h) => row(h, false)).join('') : '')).join('');
+      document.getElementById('od-count').textContent = `${gs.length} 个客户充值 · ${gs.reduce((n, g) => n + 1 + g.history.length, 0)} 次尝试`;
+    }
+
+    // ---- 抽屉：此刻可做 → 进度 → 客户与卡密 → 卡与钱 → 技术证据 ----
+    function usedByCard(last4) { return ALL.filter((x) => x.last4 === last4 && x.status === 'RECHARGE_SUCCESS').length; }
+    function timeline(o) {
+      const items = [['已收到', o.created]];
+      if (['RECHARGE_PROCESSING', 'CARD_READY', 'SUBMITTING', 'SUBMIT_UNKNOWN', 'RECHARGE_SUCCESS', 'RECHARGE_FAILED', 'CLOSED', 'WAITING_FOR_SESSION'].includes(o.status) && o.last4) items.push(['已分卡', o.created]);
+      if (o.route === 'BROWSER' && ['RECHARGE_SUCCESS', 'SUBMIT_UNKNOWN'].includes(o.status)) items.push(['登录核对 · 结账页 · 付款', '']);
+      if (o.unknown > 0) items.push(['付款结果待核实', '']);
+      const s = STAGE[o.status] || { label: o.status };
+      items.push([s.label, o.finished || '']);
+      return `<ul class="od-tl">${items.map(([t, at], i) => `<li class="${i === items.length - 1 ? 'cur' : ''}"><time>${at ? fmt(at) : ''}</time><b>${t}</b></li>`).join('')}</ul>`;
+    }
+    function moneyBlock(o) {
+      if (!o.last4) return `<div class="od-card"><div class="row"><span>这单用的卡</span><b>还没分到卡</b></div><div class="row"><span>扣了没</span><b>没有扣款</b></div><div class="row"><span>这张卡还能再充</span><b>—</b></div></div>`;
+      const charged = o.status === 'RECHARGE_SUCCESS' ? '已扣 15.79 USD，卡台流水已匹配' : (o.status === 'SUBMIT_UNKNOWN' || o.status === 'RECONCILIATION_REQUIRED') ? '不确定，等你核实' : '未扣';
+      const left = Math.max(0, 3 - usedByCard(o.last4));
+      return `<div class="od-card">
+        <div class="row"><span>这单用的卡</span><b class="mono">${PROVIDER[o.provider] || o.provider} · ${o.last4}</b></div>
+        <div class="row"><span>扣了没</span><b>${charged}</b></div>
+        <div class="row"><span>这张卡还能再充</span><b>${left} 单（每卡 3 单上限，已用 ${3 - left}）</b></div>
+        <a href="#" data-goto-card="${o.last4}">去卡片页看这张卡 →</a>
+      </div>`;
+    }
+    function openDrawer(no) {
+      const o = ALL.find((x) => x.no === no); if (!o) return;
+      const s = STAGE[o.status] || { label: o.status };
+      document.getElementById('od-drawer-title').textContent = emailOf(o);
+      document.getElementById('od-drawer-sub').textContent = `${o.no} · ${PLAN[o.plan] || o.plan} · ${o.route === 'BROWSER' ? 'Browser' : 'API'}`;
+      const c = document.getElementById('detail-content');
+      c.innerHTML = `
+        <section class="detail-section"><div class="od-actions">${actionBtn(o, 'drawer')}</div>
+          ${(o.status === 'SUBMIT_UNKNOWN' || o.status === 'RECONCILIATION_REQUIRED') ? '<div class="od-warnbox">付款结果未知：系统已锁死这一单，不会重付、不会换卡。核实前不要让客户重新充值。</div>' : ''}
+        </section>
+        <section class="detail-section"><p class="od-h">进度</p>${timeline(o)}
+          <dl class="od-kv" style="margin-top:12px"><dt>提交时间</dt><dd class="mono">${fmt(o.created)}</dd><dt>充值成功时间</dt><dd class="mono">${o.status === 'RECHARGE_SUCCESS' ? fmt(o.finished) : '—'}</dd>${o.failure ? `<dt>结束原因</dt><dd>${FAIL[o.failure] || o.failure}</dd>` : ''}</dl>
+        </section>
+        <section class="detail-section"><p class="od-h">客户与卡密</p>
+          <dl class="od-kv"><dt>邮箱</dt><dd>${emailOf(o)}</dd><dt>卡密</dt><dd class="mono">${cdkOf(o)} <a href="#" data-goto-cdk="${o.cdk}">在 CDK 页定位 →</a></dd><dt>这张码的尝试</dt><dd>${ALL.filter((x) => x.cdk === o.cdk).length} 次，本单是最新一次${ALL.filter((x) => x.cdk === o.cdk)[ALL.filter((x) => x.cdk === o.cdk).length - 1].no === o.no ? '' : '之前的'}</dd>${o.status === 'WAITING_FOR_SESSION' ? '<dt>等客户做什么</dt><dd>换一个免费账号的 Session（72 小时内），卡已放回池子</dd>' : ''}</dl>
+        </section>
+        <section class="detail-section"><p class="od-h">卡与钱</p>${moneyBlock(o)}</section>
+        <details class="detail-evidence"><summary>技术证据（状态事件、任务、账本、运行）</summary><section class="detail-section"><dl class="od-kv"><dt>状态</dt><dd class="mono">${o.status}</dd><dt>失败码</dt><dd class="mono">${o.failure || '—'}</dd><dt>客户动作码</dt><dd class="mono">${o.action || '—'}</dd><dt>经过付款不明</dt><dd>${o.unknown} 次</dd></dl></section></details>`;
+      document.getElementById('od-drawer').showModal();
+    }
+    function confirmAction(key, no) {
+      const o = ALL.find((x) => x.no === no); if (!o) return;
+      const text = {
+        cancel: ['取消这一单并放回卡？', `${emailOf(o)} 的这一单没有付款痕迹。取消后卡回到池子、卡密退回可用，客户可以直接重新兑换。`, '取消并放卡'],
+        manual: ['标为已手工充值？', `只有在你已经在卡台/浏览器里手动给 ${emailOf(o)} 充成功时才点。系统会记成功、卡记一次消费；有付款痕迹的单不会允许。`, '确认已手工充值'],
+        verify: ['去核实付款结果', '打开核实面板：你需要先看客户账号是不是 Plus、卡有没有被扣，再选「已扣款」或「未扣款」。', '打开核实'],
+        renewal: ['已在账号里取消续费？', '只有在你亲自在客户账号里关掉自动续费后才点。', '确认已取消'],
+      }[key];
+      document.getElementById('od-confirm-title').textContent = text[0];
+      document.getElementById('od-confirm-text').textContent = text[1];
+      document.getElementById('od-confirm-yes').textContent = text[2];
+      document.getElementById('od-confirm').showModal();
+    }
+
+    // ---- 事件 ----
+    document.getElementById('od-rows').addEventListener('click', (e) => {
+      const open = e.target.closest('[data-open]'); if (open) return openDrawer(open.dataset.open);
+      const ex = e.target.closest('[data-expand]'); if (ex) { const k = Number(ex.dataset.expand); state.expanded.has(k) ? state.expanded.delete(k) : state.expanded.add(k); return render(); }
+      const act = e.target.closest('[data-action]'); if (act) return confirmAction(act.dataset.action, act.dataset.no);
+      // 其他位置：不响应（D-356：只有邮箱格可点开详情）
+    });
+    document.getElementById('detail-content').addEventListener('click', (e) => {
+      const act = e.target.closest('[data-action]'); if (act) return confirmAction(act.dataset.action, act.dataset.no);
+      if (e.target.closest('[data-goto-card],[data-goto-cdk]')) { e.preventDefault(); alert('Demo：正式版跳到卡片页 / CDK 页并定位'); }
+    });
+    document.getElementById('od-close').addEventListener('click', () => document.getElementById('od-drawer').close());
+    document.getElementById('od-confirm-no').addEventListener('click', () => document.getElementById('od-confirm').close());
+    document.getElementById('od-confirm-yes').addEventListener('click', () => { document.getElementById('od-confirm').close(); alert('Demo：正式版在这里调用后端动作并刷新'); });
+    document.querySelectorAll('[data-status]').forEach((b) => b.addEventListener('click', () => { document.querySelectorAll('[data-status]').forEach((x) => x.setAttribute('aria-pressed', 'false')); b.setAttribute('aria-pressed', 'true'); state.status = b.dataset.status; render(); }));
+    document.querySelectorAll('[data-range]').forEach((b) => b.addEventListener('click', () => { document.querySelectorAll('[data-range]').forEach((x) => x.setAttribute('aria-pressed', 'false')); b.setAttribute('aria-pressed', 'true'); if (b.dataset.range === 'all') { state.from = ''; state.to = ''; } else { state.from = '2026-09-17'; state.to = '2026-09-23'; } document.getElementById('od-from').value = state.from; document.getElementById('od-to').value = state.to; render(); }));
+    document.getElementById('od-q').addEventListener('input', (e) => { state.q = e.target.value.trim(); render(); });
+    document.getElementById('od-plan').addEventListener('change', (e) => { state.plan = e.target.value; render(); });
+    document.getElementById('od-route').addEventListener('change', (e) => { state.route = e.target.value; render(); });
+    document.getElementById('od-from').addEventListener('change', (e) => { state.from = e.target.value; render(); });
+    document.getElementById('od-to').addEventListener('change', (e) => { state.to = e.target.value; render(); });
+    document.getElementById('od-from').value = state.from; document.getElementById('od-to').value = state.to;
+
+    fetch('data/orders-demo.jsonl').then((r) => r.text()).then((t) => {
+      ALL = t.split('\n').filter(Boolean).map((l) => JSON.parse(l));
+      // Demo 加一条付款待核实与一条续费待确认，让「需要我处理」有东西可点（生产此刻没有这两种）
+      const seed = ALL.find((x) => x.status === 'RECHARGE_SUCCESS');
+      if (seed) ALL.push({ ...seed, no: 'PJV1-DEMO-UNKNOWN-000000', status: 'SUBMIT_UNKNOWN', created: '2026-09-22T09:12:00Z', finished: '', cdk: 9001, email: 31, unknown: 1, route: 'BROWSER', provider: 'manual_excel', last4: '8718' },
+        { ...seed, no: 'PJV1-DEMO-RENEWAL-000000', status: 'RECHARGE_SUCCESS', review: 1, created: '2026-09-21T02:40:00Z', finished: '2026-09-21T02:49:00Z', cdk: 9002, email: 32, unknown: 0 });
+      render();
+    });
+    window.__odState = state;
+  })();
+  </script>
+</body>
+</html>
