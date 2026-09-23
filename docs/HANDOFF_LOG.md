@@ -3561,3 +3561,8 @@ A（设计总监式）28/40，B（detect 63 条 + Playwright 量测）。合成�
 
 抽屉取消资格补无卡分支（getOrder 主查询补 `recharge_card_key`）；两条单测；令牌 t3 41% / warn 36%（44% 在内嵌底不够，算过表再定）。全量 v1 通过；五份 parity 一致；detect 令牌两条清零。接着 prepare 发布（Lemon 已说「发布」）。
 
+## 2026-09-24｜块 5 发布 `20260924-orders-v3-822cb7d`（18:0x UTC = 02:0x UTC+8 次日）
+
+Lemon「发布」。发布前：无新迁移；`customer-sql-probe.sh` 全部可执行。prepare（备份 `pojia-20260923T180702Z`，manifest 1370 项 OK）→ 复核 release 目录里资源版本 / 令牌 / 封顶规则均为新值、current 仍指旧 → switch：三进程 active，web/worker/bark cwd 都在新 release，live 200、ready 200。独立复验（服务器本机 3100 + ADMIN_HOST）：登录页 200、index 引 `admin.js?v=92` 等、`orders.js?v=3` 200、`orders/search` 与 `orders/:no/attempts` 未登录 401、服务出的 workbench.css 含 t3 41%、admin.css 含封顶。CURRENT_STATE 六行已改，state-check 一致。回滚点 `20260923-d355-8f9ddc1`。D-350 版至此被替换。
+生产只读实跑（服务器 release 目录、正式连接池、`listOrders`/`listOrderAttempts`/`getOrder` 直调）：全部 55 个码（四桶 需要我处理 9 / 已成功 13 / 未成功 33 / 处理中 0，合计 55 ✓），带历史 8 个码，路线 BROWSER+API 都在；需要我处理 9 行中 8 行有一键动作（1 行显示「看详情」）；样本单历史 2 次、抽屉可读；每次查询 28～205ms。
+
