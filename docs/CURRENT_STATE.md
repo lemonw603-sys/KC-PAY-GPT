@@ -5,15 +5,15 @@
 | 项目 | 当前值 | 核对时间（UTC） | 证据方式 |
 |---|---|---|---|
 | 第⑥步057迁移准入 | 055～058已应用；057触发器DEFINER为`pojia_migrator@172.17.0.1`，临时SUPER已撤回。本轮反馈发布无新迁移，未重跑DDL。 | 2026-09-21 07:52 UTC | migration.log，新连接schema/DEFINER/grants复核 |
-| 生产 release | `/opt/pojia/releases/20260924-per-product-cap-213ccba`（固定提交 `213ccba`，D-361 每卡单数按产品 + 分卡按产品传参 + 跑过 Pro 的卡不再分配；含 `a307356` 之前全部）。线上 `index.html` 引 `admin.js?v=93`。 | 2026-09-23 23:26 UTC | switch 原始输出 + 独立 SSH 三进程 cwd + 本机 3100 带 ADMIN_HOST curl（登录 200、admin.js?v=93 200 且含按产品字段、端点未登录 401）+ 生产只读实跑正式资格 SQL：plus 可分配 1 张/上限 3，pro_5x 0/1，pro_20x 0/1；发布前后跑过 Pro 且在库的卡 0 张 |
-| 回滚点 | **`20260924-session-hours-a307356`**。命令：`ln -sfn /opt/pojia/releases/20260924-session-hours-a307356 /opt/pojia/current && systemctl restart pojia-web.service pojia-worker.service pojia-bark-notifications.service`。注意迁移 059 只补两把键、回滚代码不需回退数据。再往前 `20260924-orders-v3-822cb7d`。 | 2026-09-23 23:26 UTC | switch 打印的 ROLLBACK |
-| 最新数据库备份 | `/var/backups/pojia/pojia-20260923T232507Z.sql.gz.enc`，backup_integrity=OK（prepare 时做，在迁移 059 之前）。 | 2026-09-23 23:25 UTC | prepare 原始输出 + ls -t |
+| 生产 release | `/opt/pojia/releases/20260924-wb-remaining-2830063`（固定提交 `2830063`，D-362 工作台「剩 N 张 · 能充 N 单」；含 `213ccba` 之前全部）。线上 `index.html` 引 `admin.js?v=94` / `workbench.css?v=21`。 | 2026-09-23 23:46 UTC | switch 原始输出 + 独立 SSH 三进程 cwd + 本机 3100 带 ADMIN_HOST curl（登录 200、admin.js?v=94 200 且含新字段、overview 未登录 401）+ 生产只读实跑 getOverview：highvcc Plus 剩 1 张 · 能充 3 单，HNSKJ Plus 剩 0，5X/20X 均 0 |
+| 回滚点 | **`20260924-per-product-cap-213ccba`**。命令：`ln -sfn /opt/pojia/releases/20260924-per-product-cap-213ccba /opt/pojia/current && systemctl restart pojia-web.service pojia-worker.service pojia-bark-notifications.service`。再往前 `20260924-session-hours-a307356`。 | 2026-09-23 23:46 UTC | switch 打印的 ROLLBACK |
+| 最新数据库备份 | `/var/backups/pojia/pojia-20260923T234556Z.sql.gz.enc`，backup_integrity=OK。本轮无迁移。 | 2026-09-23 23:45 UTC | prepare 原始输出 + ls -t |
 | **服务器重启** | 最近启动时间2026-09-21 01:08:52 UTC，服务器时区UTC。原因本轮未核实，不沿用09-16的历史原因。 | 2026-09-21 02:01 UTC | uptime -s + date +%Z |
-| pojia-web | active；PID 2497496；cwd `/opt/pojia/releases/20260924-per-product-cap-213ccba/v1`。 | 2026-09-23 23:26 UTC | 独立 SSH systemctl show + /proc/PID/cwd |
+| pojia-web | active；PID 2511710；cwd `/opt/pojia/releases/20260924-wb-remaining-2830063/v1`。 | 2026-09-23 23:46 UTC | 独立 SSH systemctl show + /proc/PID/cwd |
 | highvcc 备用卡台 A token | 已配置进生产（`app_settings.highvcc_access_token_ciphertext`，加密存储，09-10 09:17 UTC 写入） | 2026-09-10 09:52 UTC | `v1/scripts/set-highvcc-token.mjs` 输出 |
 | highvcc 备用卡台 A 已开卡片（本窗口） | 3 张：尾号 9839（$50，08:xx）、9354（$5，09:19）、3241（$3，09:35，开卡时因 detail() 竞态未即时入库，09:53 用 `reconcile-highvcc-card.mjs` 补记）；账户另有 $20 押金要从钱包余额里先扣，才是真实可开卡余额（Lemon 提供） | 2026-09-10 09:52 UTC | 平台卡片列表 + `cards` 表独立核对 |
-| pojia-worker（v1 任务 Worker） | active；PID 2497501；cwd `/opt/pojia/releases/20260924-per-product-cap-213ccba/v1`。 | 2026-09-23 23:26 UTC | 独立 SSH systemctl show + /proc/PID/cwd |
-| **pojia-bark-notifications** | active；PID 2497518；cwd `/opt/pojia/releases/20260924-per-product-cap-213ccba/v1`。 | 2026-09-23 23:26 UTC | 独立 SSH /proc/cwd |
+| pojia-worker（v1 任务 Worker） | active；PID 2511715；cwd `/opt/pojia/releases/20260924-wb-remaining-2830063/v1`。 | 2026-09-23 23:46 UTC | 独立 SSH systemctl show + /proc/PID/cwd |
+| **pojia-bark-notifications** | active；PID 2511787；cwd `/opt/pojia/releases/20260924-wb-remaining-2830063/v1`。 | 2026-09-23 23:46 UTC | 独立 SSH /proc/cwd |
 | pojia-daily-reconciliation.timer | active/enabled；正式service已成功，Result=success / ExecMainStatus=0，07:45:13 UTC结束。058将setting_value扩大为MEDIUMTEXT；摘要544字符、JSON有效，心跳07:45:12.849 UTC。旧值188字符为旧格式；31348是展示报告，不是存储内容。ER_DATA_TOO_LONG已修复并实际跑通。 | 2026-09-21 07:52 UTC | systemctl、独立SELECT摘要长度/JSON_VALID/心跳；迁移后生产备份功能恢复dailySummary=OK |
 | pojia-browser-worker | inactive / disabled（Browser 执行在本机，来单人工拉） | 2026-09-09 11:46 UTC | systemctl |
 | pojia-card-funding.timer | active / enabled，`OnUnitActiveSec=5s` 跑 `card-funding-runner.js`（带 `PROVIDER_CARD_WRITES_ENABLED=true`），但 `card_balance_recharge_enabled=false` → 每次立即退出（journal `CARD_BALANCE_RECHARGE_DISABLED`），不做事。另有 `pojia-card-funding-reconcile.timer`（15s）、`pojia-operator-watch.timer`（1min）、`pojia-backup.timer`（每日）在跑。 | 2026-09-17 05:40 UTC | ssh `systemctl cat` / `list-timers` / `journalctl -u pojia-card-funding` |

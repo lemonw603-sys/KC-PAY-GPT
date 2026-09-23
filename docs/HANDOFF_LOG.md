@@ -3599,3 +3599,7 @@ Lemon「发布」。prepare（备份 `pojia-20260923T232507Z`）→ migrate 059�
 Lemon「欠账 15」。查 D-355 ⑦ 已定 (b)，直接做：`remaining_orders` 列（库存口径卡按产品上限 − 已用之和）、投影 `remainingOrders`、工作台「剩 N 张 · 能充 N 单」。第一版全用等宽字体导致中文字距发散、20X 格换行；改成数字等宽 + 说明落第二行，三格等高。全量测试、棘轮、文案、营业条契约（下）。全量 sql-probe 结果补记。
 全量 `sql-probe`：640 条对生产 schema，真实失败 0 条。
 
+## 2026-09-24｜发布 `20260924-wb-remaining-2830063`（23:4x UTC = 07:4x UTC+8）
+
+Lemon「发布」。无迁移；prepare（备份 `pojia-20260923T234556Z`）→ 复核 → switch：三进程 cwd 在新 release，live/ready 200。复验：登录 200、`admin.js?v=94` 含 remainingOrders、overview 未登录 401；生产只读实跑 getOverview：highvcc Plus 剩 1 张 · 能充 3 单（8718 未用），HNSKJ Plus 剩 0 · 能充 0，5X/20X 两台均 0。回滚点 `20260924-per-product-cap-213ccba`。
+
