@@ -3508,3 +3508,5 @@ Lemon 批白名单后实施，提交 `6807de8`。改动与证据：
 - 测试：v1 1089 tests / 1019 pass / 0 fail / 70 skipped；browser-mvp 309 / 300 pass / 9 skipped；隔离 MySQL（本机 docker 54186，新库 058 全迁）12 文件 71 tests / 54 pass / 14 fail / 3 skipped，**同一批在未改动的基线工作树上同样 14 fail（D-258 老问题，名单逐条一致）**，新增 0。
 - 未做：rehearsal（要 free 号 Session）、本机池重启、发布。生产只读预览 `backfill` 候选 0（0601 余额已降到 1.99 < funded 3.27）。
 - 现场变化（12:15 UTC 观察，原因未核）：hnskj 6754/0577 10:15 同步为 $0.01 DEPLETED；0601 31.99→1.99；hnskj 钱包 38.73→104.71；highvcc 钱包 44.74→34.24；8718 被 WAITING_FOR_SESSION 单持有；可分配 0。
+
+补记（20:3x UTC+8，Lemon 说明）：hnskj 6754/0577 → $0.01 是卡台服务器故障、余额自动退回钱包；0601 余额转到 0951 与 8718；0951 留作手动充其他 AI 产品（库内覆盖 RETIRED 已挡住）。演练单改由 Lemon 在客户页自己贴 Session 建，Session 不经执行者；Lemon 同意重启本机池与发布。
