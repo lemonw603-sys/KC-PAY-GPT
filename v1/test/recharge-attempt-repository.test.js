@@ -15,6 +15,8 @@ function scriptedPool(responses, { browserDispatchError = null } = {}) {
       if (/SELECT id FROM cards WHERE id = \? FOR UPDATE/.test(sql)) return [[{ id: values[0] }], []];
       if (/FROM card_consumption_ledger[\s\S]*order_id = \? FOR UPDATE/.test(sql)) return [[], []];
       if (/SELECT COUNT\(\*\) AS used FROM card_consumption_ledger/.test(sql)) return [[{ used: 0 }], []];
+      // D-221：账本预留上限按订单产品，仓库用 maxPaymentsSql 单独查一次（Pro 键 → 1，Plus 回落全局 3）
+      if (/AS max_payments/.test(sql)) return [[{ max_payments: /card_max_successful_payments:pro_/.test(sql) ? 1 : 3 }], []];
       if (/INSERT INTO card_consumption_ledger/.test(sql)) return [{ affectedRows: 1 }, []];
       if (/UPDATE card_consumption_ledger/.test(sql)) return [{ affectedRows: 1 }, []];
       if (/UPDATE card_assignment_history/.test(sql)) return [{ affectedRows: 1 }, []];
@@ -104,16 +106,17 @@ test('atomically begins an authorized attempt in the required lock/write order',
   assert.match(pool.queries[6].sql, /INSERT INTO recharge_attempts/);
   assert.match(pool.queries[6].sql, /'PREPARED', 'ACTIVE'/);
   assert.equal(pool.queries[6].values[7], 'recharge-auth-item:item-1');
-  assert.match(pool.queries[11].sql, /status = 'CONSUMED'/);
-  assert.match(pool.queries[12].sql, /SET status = \?, version = version \+ 1/);
-  assert.equal(pool.queries[12].values[0], 'SUBMITTING');
-  assert.match(pool.queries[13].sql, /INSERT INTO order_events/);
-  assert.match(pool.queries[14].sql, /INSERT INTO provider_calls/);
-  assert.match(pool.queries[14].sql, /'create_direct'/);
-  assert.deepEqual(pool.queries[14].values.slice(0, 4), [
+  assert.match(pool.queries[7].sql, /AS max_payments/, 'D-221：账本预留前按订单产品取每卡上限');
+  assert.match(pool.queries[12].sql, /status = 'CONSUMED'/);
+  assert.match(pool.queries[13].sql, /SET status = \?, version = version \+ 1/);
+  assert.equal(pool.queries[13].values[0], 'SUBMITTING');
+  assert.match(pool.queries[14].sql, /INSERT INTO order_events/);
+  assert.match(pool.queries[15].sql, /INSERT INTO provider_calls/);
+  assert.match(pool.queries[15].sql, /'create_direct'/);
+  assert.deepEqual(pool.queries[15].values.slice(0, 4), [
     'order-1', 'attempt-1', 'new-provider', 'provider-account-1'
   ]);
-  assert.equal(pool.queries[14].values[4], 'recharge-auth-item:item-1');
+  assert.equal(pool.queries[15].values[4], 'recharge-auth-item:item-1');
   const allSql = pool.queries.map((entry) => entry.sql).join('\n');
   assert.doesNotMatch(allSql, /payload_json/i);
 });
@@ -235,8 +238,8 @@ test('automatically creates and consumes one auditable authorization when none e
   assert.match(pool.queries[7].sql, /'AUTOMATIC'/);
   assert.match(pool.queries[8].sql, /INSERT INTO recharge_authorization_items/);
   assert.match(pool.queries[9].sql, /INSERT INTO recharge_attempts/);
-  assert.match(pool.queries[15].sql, /SET status = 'CONSUMED'/);
-  assert.match(pool.queries[18].sql, /INSERT INTO provider_calls/);
+  assert.match(pool.queries[16].sql, /SET status = 'CONSUMED'/);
+  assert.match(pool.queries[19].sql, /INSERT INTO provider_calls/);
   assert.deepEqual(pool.transaction, { began: 1, committed: 1, rolledBack: 0, released: 1 });
 });
 

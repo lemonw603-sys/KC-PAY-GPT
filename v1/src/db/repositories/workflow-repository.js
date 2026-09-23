@@ -8,8 +8,7 @@ import { persistCardTransactions } from './card-transaction-repository.js';
 import {
   eligibleInventoryCardSql,
   fundableInventoryCardSql,
-  refreshableInventoryCardSql
-} from '../../services/card-inventory-eligibility.js';
+  refreshableInventoryCardSql, maxPaymentsSql } from '../../services/card-inventory-eligibility.js';
 import {
   reserveCardConsumptionInTransaction,
   transitionCardConsumptionInTransaction
@@ -205,7 +204,7 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
      */
     async findStaleInventoryCandidate(orderId) {
       const [orders] = await pool.query(
-        `SELECT o.status, o.minimum_required_card_balance,
+        `SELECT o.status, o.minimum_required_card_balance, o.plan_type,
                 o.frozen_card_provider_account_id AS card_provider_account_id
          FROM orders o WHERE o.id = ? LIMIT 1`,
         [orderId]
@@ -216,7 +215,7 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
       if (!order.card_provider_account_id) return null;
       const [eligible] = await pool.query(
         `SELECT 1 FROM cards
-         WHERE ${eligibleInventoryCardSql('cards', '?')}
+         WHERE ${eligibleInventoryCardSql('cards', '?', { productCode: order.plan_type || 'plus' })}
            AND cards.provider_account_id = ?
          LIMIT 1`,
         [String(order.minimum_required_card_balance), order.card_provider_account_id]
@@ -359,7 +358,7 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
     async assignAvailableCard(orderId) {
       return inTransaction(pool, async (connection) => {
         const [orders] = await connection.query(
-          `SELECT o.status, o.version, o.card_type_id, o.product_id, o.open_card_amount,
+          `SELECT o.status, o.version, o.card_type_id, o.product_id, o.plan_type, o.open_card_amount,
                   o.minimum_required_card_balance, o.fulfillment_route_id,
                   o.frozen_card_provider_account_id AS card_provider_account_id
            FROM orders o
@@ -384,7 +383,7 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
         const [cards] = await connection.query(
           `SELECT id, provider_card_id, current_balance
            FROM cards
-           WHERE ${eligibleInventoryCardSql('cards', '?')}
+           WHERE ${eligibleInventoryCardSql('cards', '?', { productCode: order.plan_type || 'plus' })}
              AND cards.provider_account_id = ?
            ORDER BY current_balance ASC, created_at ASC
            LIMIT 1 FOR UPDATE SKIP LOCKED`,
@@ -515,11 +514,11 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
           };
         }
         const card = cards[0];
+        // 每卡单数按订单产品（D-221）：唯一口径 maxPaymentsSql，不在这里另抄键名
         const [[capacitySetting]] = await connection.query(
-          `SELECT setting_value FROM app_settings
-           WHERE setting_key='card_max_successful_payments' LIMIT 1 FOR SHARE`
+          `SELECT (${maxPaymentsSql(order.plan_type || 'plus')}) AS max_payments`
         );
-        const maxPayments = Number(capacitySetting?.setting_value || 3);
+        const maxPayments = Number(capacitySetting?.max_payments || 3);
         const [cardUpdate] = await connection.query(
           `UPDATE cards SET order_id = COALESCE(order_id, ?), inventory_status = 'ASSIGNED',
              assigned_at = COALESCE(assigned_at, CURRENT_TIMESTAMP(3)), updated_at = CURRENT_TIMESTAMP(3)
@@ -590,7 +589,7 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
         // 这里只把剩余数报回去，不再自己写库存偏低告警（旧实现只算一台、阈值全局）。
         const [stockRows] = await connection.query(
           `SELECT COUNT(*) AS count FROM cards
-           WHERE ${eligibleInventoryCardSql('cards', '?')}
+           WHERE ${eligibleInventoryCardSql('cards', '?', { productCode: order.plan_type || 'plus' })}
              AND provider_account_id = ?`,
           [String(order.minimum_required_card_balance), order.card_provider_account_id]
         );

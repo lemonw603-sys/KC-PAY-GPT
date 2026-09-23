@@ -67,20 +67,19 @@ test('真的没有策略时才说「还没有任何供给策略」（读失败�
   assert.match(src, /设置读取失败，先不要照这里的值做判断/);
 });
 
-test('每卡单数可编辑（块 2 撤掉后这是唯一入口），缺口说明仍在，且不把编号写到界面上', () => {
+test('每卡单数按产品三行可编辑（2026-09-24 落地 D-221），不再有「共用」缺口说明，且不把编号写到界面上', () => {
   const { sandbox, html } = loadAdminJs();
   sandbox.renderSettingsThresholds({
-    wallets: [], minimumBalanceByPlan: { plus: '16.00' }, maxSuccessfulPayments: '3'
+    wallets: [], minimumBalanceByPlan: { plus: '16.00' },
+    maxSuccessfulPayments: '3', maxSuccessfulPaymentsByPlan: { plus: '3', pro_5x: '1', pro_20x: '1' }
   });
   const out = html('sel:#settings-thresholds');
-  // 缺口必须在界面上可见 —— 但用运营看得懂的话说，不是甩一个决策编号过去
-  assert.match(out, /三个产品共用/);
-  assert.match(out, /还不能分开设/);
-  // 界面不写内部编号（DESIGN_SYSTEM.md 第五节）
+  assert.doesNotMatch(out, /三个产品共用|还不能分开设/);
   assert.doesNotMatch(out, /\b[DF]-\d+\b/);
-  // 此前做成只读，是因为卡片页块 2 还有一个可编辑入口；块 2 按 V2 §3.3 / D-284 ① 要撤，
-  // 撤掉后这里就是唯一入口，所以必须能改。端点 /card-stock/max-successful-payments 早就存在。
-  assert.match(out, /data-field="max_successful_payments"/);
+  const rows = out.match(/data-field="max_successful_payments"/g) || [];
+  assert.equal(rows.length, 3, 'Plus / 5X / 20X 各一行');
+  assert.match(out, /每卡单数 · Plus[\s\S]*value="3"/);
+  assert.match(out, /每卡单数 · Pro 20X[\s\S]*value="1"/);
   assert.match(out, /data-save-capacity/);
   assert.match(out, /max="4"/);
 });

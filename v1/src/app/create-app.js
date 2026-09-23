@@ -388,7 +388,12 @@ export function createApp({
       if (typeof count !== 'number' || !Number.isInteger(count) || count < 1 || count > 4) {
         return res.status(400).json({ error: 'invalid_card_capacity' });
       }
-      res.json(await setAdminCardMaxSuccessfulPayments(count));
+      // D-221：按产品；不传按 Plus（历史全局键）
+      const planType = req.body?.planType === undefined ? 'plus' : req.body.planType;
+      if (typeof planType !== 'string' || !/^(plus|pro_5x|pro_20x)$/.test(planType)) {
+        return res.status(400).json({ error: 'invalid_plan_type' });
+      }
+      res.json(await setAdminCardMaxSuccessfulPayments(count, planType));
     });
   }
   if (typeof setAdminCardMinimumBalance === 'function') {

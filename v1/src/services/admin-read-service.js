@@ -11,7 +11,7 @@ import { deriveOrderStage } from './order-stage.js';
 import { unknownSubmissionEligibility } from './unknown-submission-resolve-service.js';
 import { eligibleInventoryCardSql,
   fundableInventoryCardSql, providerCardStockSql, recentCst8CalendarDaysWindowSql, todayCst8WindowSql,
-  REPLENISHMENT_OPENED_COUNT_SQL } from './card-inventory-eligibility.js';
+  REPLENISHMENT_OPENED_COUNT_SQL, maxPaymentsSql } from './card-inventory-eligibility.js';
 
 const ORDER_STATUSES = new Set([
   'CREATED',
@@ -1301,8 +1301,7 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
           (SELECT cpa.provider_code FROM provider_accounts cpa WHERE cpa.id = c.provider_account_id) AS card_provider_code,
           (SELECT COUNT(*) FROM card_consumption_ledger cu WHERE cu.card_id = c.id
              AND cu.status IN ('RESERVED','CONSUMED','RECONCILIATION')) AS card_used_count,
-          (SELECT CAST(setting_value AS UNSIGNED) FROM app_settings
-             WHERE setting_key = 'card_max_successful_payments' LIMIT 1) AS card_capacity,
+          (${maxPaymentsSql({ column: 'o.plan_type' })}) AS card_capacity,
           prod.display_name AS product_name,
           (SELECT fr_kind.executor_kind FROM fulfillment_routes fr_kind WHERE fr_kind.id = o.fulfillment_route_id) AS route_executor_kind,
           latest_attempt.attempt_status, latest_attempt.attempt_funds_risk_state, latest_attempt.executor_kind,

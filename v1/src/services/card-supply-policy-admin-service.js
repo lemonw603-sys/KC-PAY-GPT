@@ -69,7 +69,7 @@ export function createCardSupplyPolicyAdminService({ pool }) {
       pool.query(`SELECT id, account_code, provider_code, wallet_floor, wallet_alert_threshold
           FROM provider_accounts WHERE purpose = 'CARD' ORDER BY provider_code`),
       pool.query(`SELECT setting_key, setting_value FROM app_settings
-          WHERE setting_key IN ('card_max_successful_payments','default_minimum_required_card_balance',
+          WHERE setting_key IN ('card_max_successful_payments','card_max_successful_payments:pro_5x','card_max_successful_payments:pro_20x','default_minimum_required_card_balance',
             'minimum_required_card_balance:pro_5x','minimum_required_card_balance:pro_20x',
             'session_replacement_window_hours')`)
     ]);
@@ -103,9 +103,14 @@ export function createCardSupplyPolicyAdminService({ pool }) {
         pro_5x: setting('minimum_required_card_balance:pro_5x'),
         pro_20x: setting('minimum_required_card_balance:pro_20x')
       },
-      // D-221 要按产品，但目前只有这一个全局值 —— 设置页只读显示，不给改（Lemon 2026-09-20 定）。
+      // D-221 每卡单数按产品（2026-09-24 落地）：Plus = 全局键；Pro 键缺时回落全局，与 SQL 口径一致。
       maxSuccessfulPayments: setting('card_max_successful_payments'),
-      maxSuccessfulPaymentsIsPerProduct: false,
+      maxSuccessfulPaymentsByPlan: {
+        plus: setting('card_max_successful_payments'),
+        pro_5x: setting('card_max_successful_payments:pro_5x') ?? setting('card_max_successful_payments'),
+        pro_20x: setting('card_max_successful_payments:pro_20x') ?? setting('card_max_successful_payments')
+      },
+      maxSuccessfulPaymentsIsPerProduct: true,
       sessionReplacementWindowHours: setting('session_replacement_window_hours')
     };
   }

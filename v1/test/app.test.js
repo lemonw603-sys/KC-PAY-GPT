@@ -634,10 +634,10 @@ test('updates card capacity through the guarded admin route without provider cal
   const app = createApp({
     adminAuth,
     getAdminCardStock: async () => ({ maxSuccessfulPayments: capacity }),
-    setAdminCardMaxSuccessfulPayments: async (count) => {
+    setAdminCardMaxSuccessfulPayments: async (count, planType) => {
       settingWrites += 1;
       capacity = count;
-      return { maxSuccessfulPayments: count };
+      return { maxSuccessfulPayments: count, planType };
     },
     refreshAdminCardStockProvider: async () => {
       providerCalls += 1;
@@ -662,16 +662,29 @@ test('updates card capacity through the guarded admin route without provider cal
       assert.equal(response.status, 400);
       assert.deepEqual(await response.json(), { error: 'invalid_card_capacity' });
     }
+    // D-221：planType 非法 → 400，不写
+    const badPlan = await fetch(`${baseUrl}/api/v1/admin/card-stock/max-successful-payments`, {
+      method: 'POST', headers: { Cookie: cookie, Origin: baseUrl, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ count: 1, planType: 'pro_99x' })
+    });
+    assert.equal(badPlan.status, 400);
+    assert.deepEqual(await badPlan.json(), { error: 'invalid_plan_type' });
     const updated = await fetch(`${baseUrl}/api/v1/admin/card-stock/max-successful-payments`, {
       method: 'POST', headers: { Cookie: cookie, Origin: baseUrl, 'Content-Type': 'application/json' },
       body: JSON.stringify({ count: 4 })
     });
     assert.equal(updated.status, 200);
-    assert.deepEqual(await updated.json(), { maxSuccessfulPayments: 4 });
+    assert.deepEqual(await updated.json(), { maxSuccessfulPayments: 4, planType: 'plus' }, '不传 planType 按 Plus');
     const stock = await fetch(`${baseUrl}/api/v1/admin/card-stock`, { headers: { Cookie: cookie } });
     assert.deepEqual(await stock.json(), { maxSuccessfulPayments: 4 });
+    const pro = await fetch(`${baseUrl}/api/v1/admin/card-stock/max-successful-payments`, {
+      method: 'POST', headers: { Cookie: cookie, Origin: baseUrl, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ count: 1, planType: 'pro_20x' })
+    });
+    assert.equal(pro.status, 200);
+    assert.deepEqual(await pro.json(), { maxSuccessfulPayments: 1, planType: 'pro_20x' });
   });
-  assert.equal(settingWrites, 1);
+  assert.equal(settingWrites, 2);
   assert.equal(providerCalls, 0);
 });
 

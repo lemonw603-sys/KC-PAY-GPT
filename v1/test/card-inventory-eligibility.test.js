@@ -7,7 +7,9 @@ import {
   eligibleInventoryCardSql,
   fundableInventoryCardSql,
   providerCardStockSql,
-  refreshableInventoryCardSql
+  refreshableInventoryCardSql,
+  maxPaymentsSql,
+  stockCountingCardSql
 } from '../src/services/card-inventory-eligibility.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -191,3 +193,23 @@ test('库存口径与分配口径是两个数，只差「15 分钟同步时效�
   // 三个数依次收紧：in_stock ≥ stock_available ≥ bindable_now
   assert.match(sql, /SUM\(c\.inventory_status <> 'RETIRED'\) AS in_stock/);
 });
+
+test('D-221: 每卡单数按产品 —— 按产品键优先、回落全局、再回落 3；Pro 用过的卡不再分给任何产品', () => {
+  const plus = eligibleInventoryCardSql('c', '?', { productCode: 'plus' });
+  const pro = eligibleInventoryCardSql('c', '?', { productCode: 'pro_20x' });
+  assert.match(plus, /setting_key = 'card_max_successful_payments:plus'/, 'Plus 也先看按产品键（不存在时回落全局）');
+  assert.match(pro, /setting_key = 'card_max_successful_payments:pro_20x'/);
+  assert.match(pro, /setting_key = 'card_max_successful_payments' LIMIT 1\),\s*3\)/, '回落链：按产品 → 全局 → 3');
+  assert.doesNotMatch(plus, /setting_key='card_max_successful_payments' LIMIT 1\), 3\)/, '旧的只读全局的写法不能残留');
+  // 5X/20X 一卡一单：跑过 Pro 的卡不再进任何产品的可分配池（与待销 PRO_USED 同口径）
+  for (const sql of [plus, pro]) assert.match(sql, /eligible_pro_product\.product_code LIKE 'chatgpt_pro%'/);
+  assert.match(fundableInventoryCardSql('c'), /fundable_pro_product\.product_code LIKE 'chatgpt_pro%'/, '补余额资格同样排除');
+  // 库存口径从资格生成，规则自动跟着走
+  assert.match(stockCountingCardSql('c', '?', { productCode: 'pro_5x' }), /card_max_successful_payments:pro_5x/);
+  assert.match(stockCountingCardSql('c', '?', { productCode: 'pro_5x' }), /LIKE 'chatgpt_pro%'/);
+  // 订单抽屉按行取产品
+  assert.match(maxPaymentsSql({ column: 'o.plan_type' }), /CONCAT\('card_max_successful_payments:', LOWER\(o\.plan_type\)\)/);
+  assert.throws(() => maxPaymentsSql('bad plan!'), /Invalid product code/);
+  assert.throws(() => maxPaymentsSql({ column: 'o.plan_type; DROP' }), /Invalid plan column/);
+});
+

@@ -3585,3 +3585,7 @@ Lemon 确认将 `KC-PAY-GPT` 作为独立充值执行路线进行二次开发。
 
 Lemon 选做「1 每周自检」。`scripts/weekly-check.sh`（本机）+ `v1/scripts/weekly-readonly-probe.mjs`（服务器侧只读探针，临时拷过去跑完即删；正式连接池 + 正式规则）。首跑 53 秒：0 失败 3 提醒——需要我处理 9 单（真实）、PENDING>1h 1 个（查实是 09-10 一个 CLOSED 单的 BROWSER_PREFLIGHT 残留，改成只算非终态单、残留另计）、工作区未提交（本次新文件）。RUNBOOK §0.5、PROJECT_MAP 可离开第四条勾掉。
 
+## 2026-09-24｜欠账 3「每卡单数按产品」落地（D-361，07:1x～08:2x UTC+8）
+
+摸系统时发现分卡三处没按产品传参（20X 单会被 Plus 的大额卡守卫挡住），一并修。唯一口径 `maxPaymentsSql`；三谓词 + 库存口径 + 分卡 + 账本预留 + 抽屉容量按产品；新规则「跑过 Pro 的卡不再分配/补钱」（PRO_USED 前移）；迁移 059 补两把 Pro 键 = 1；设置页三行各存各的（端点 `planType`）。测试：全量 1035/0；`customer-sql-probe` ✓；真实页：设置页三行 Plus 3 / 5X 1 / 20X 1，把 20X 改 2 保存 → 库里 `card_max_successful_payments:pro_20x=2`（正确的键），再改回 1。全量 `sql-probe`（640 条）结果补记于下。生产未动，含迁移，发布走 prepare → migrate → switch，先问。
+

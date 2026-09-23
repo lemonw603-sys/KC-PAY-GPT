@@ -7,6 +7,28 @@
  * 又抄了一份写死全局键的版本 —— 同一个口径两处实现、其中一处是错的，正是 D-273
  * 「别为已经实现的东西再造第二份」说的那类。收敛到这里，两边都引用它。
  */
+/**
+ * 每卡成功单数上限的**唯一**口径（D-221：Plus 3 / 5X 1 / 20X 1）：先查按产品的键
+ * `card_max_successful_payments:<plan>`，缺了回落全局 `card_max_successful_payments`，再缺 3。
+ * Plus 沿用全局键（不另建）；pro_5x / pro_20x 的键由迁移 059 写成 1。
+ * 传字面产品码，或传 { column: 'o.plan_type' } 让 SQL 按行取产品（订单抽屉用）。
+ */
+export function maxPaymentsSql(productCode = 'plus') {
+  let keyExpr;
+  if (productCode && typeof productCode === 'object' && productCode.column) {
+    if (!/^[A-Za-z_][A-Za-z0-9_.]*$/.test(productCode.column)) throw new TypeError('Invalid plan column');
+    keyExpr = `CONCAT('card_max_successful_payments:', LOWER(${productCode.column}))`;
+  } else {
+    const plan = String(productCode || 'plus').trim().toLowerCase();
+    if (!/^[a-z0-9_-]{1,32}$/.test(plan)) throw new TypeError('Invalid product code');
+    keyExpr = `'card_max_successful_payments:${plan}'`;
+  }
+  return `COALESCE(
+    (SELECT CAST(setting_value AS UNSIGNED) FROM app_settings WHERE setting_key = ${keyExpr} LIMIT 1),
+    (SELECT CAST(setting_value AS UNSIGNED) FROM app_settings WHERE setting_key = 'card_max_successful_payments' LIMIT 1),
+    3)`;
+}
+
 export function minimumBalanceSql(productCode) {
   const plan = String(productCode || 'plus').trim().toLowerCase();
   if (!/^[a-z0-9_-]{1,32}$/.test(plan)) throw new TypeError('Invalid product code');
@@ -97,8 +119,14 @@ export function eligibleInventoryCardSql(alias = 'c', minimumSql = '?', { produc
     AND (SELECT COUNT(*) FROM card_consumption_ledger eligible_usage
       WHERE eligible_usage.card_id = ${alias}.id
         AND eligible_usage.status IN ('RESERVED','CONSUMED','RECONCILIATION'))
-      < COALESCE((SELECT CAST(setting_value AS UNSIGNED) FROM app_settings
-        WHERE setting_key='card_max_successful_payments' LIMIT 1), 3)
+      < ${maxPaymentsSql(normalizedProduct)}
+    -- D-221「5X/20X 一卡一单」：跑过 Pro 的卡不再分给任何产品（含 Plus）。待销清单的 PRO_USED
+    -- 早按这个口径把卡列为待销，这里把同一条规则前移到分配，免得销卡前又被 Plus 单吃掉余额。
+    AND NOT EXISTS (SELECT 1 FROM card_consumption_ledger eligible_pro_usage
+      INNER JOIN products eligible_pro_product ON eligible_pro_product.id = eligible_pro_usage.product_id
+      WHERE eligible_pro_usage.card_id = ${alias}.id
+        AND eligible_pro_usage.status IN ('RESERVED','CONSUMED','RECONCILIATION')
+        AND eligible_pro_product.product_code LIKE 'chatgpt_pro%')
     AND NOT EXISTS (SELECT 1 FROM card_assignment_history eligible_assignment
       WHERE eligible_assignment.card_id=${alias}.id AND eligible_assignment.status='ACTIVE')
     AND NOT EXISTS (SELECT 1 FROM card_funding_attempts eligible_funding
@@ -138,8 +166,12 @@ export function fundableInventoryCardSql(alias = 'c', { productCode = 'plus' } =
     AND (SELECT COUNT(*) FROM card_consumption_ledger fundable_usage
       WHERE fundable_usage.card_id = ${alias}.id
         AND fundable_usage.status IN ('RESERVED','CONSUMED','RECONCILIATION'))
-      < COALESCE((SELECT CAST(setting_value AS UNSIGNED) FROM app_settings
-        WHERE setting_key='card_max_successful_payments' LIMIT 1), 3)
+      < ${maxPaymentsSql(normalizedProduct)}
+    AND NOT EXISTS (SELECT 1 FROM card_consumption_ledger fundable_pro_usage
+      INNER JOIN products fundable_pro_product ON fundable_pro_product.id = fundable_pro_usage.product_id
+      WHERE fundable_pro_usage.card_id = ${alias}.id
+        AND fundable_pro_usage.status IN ('RESERVED','CONSUMED','RECONCILIATION')
+        AND fundable_pro_product.product_code LIKE 'chatgpt_pro%')
     AND NOT EXISTS (SELECT 1 FROM card_assignment_history fundable_assignment
       WHERE fundable_assignment.card_id=${alias}.id AND fundable_assignment.status='ACTIVE')
     AND NOT EXISTS (SELECT 1 FROM card_funding_attempts fundable_funding
@@ -178,8 +210,7 @@ export function refreshableInventoryCardSql(alias = 'c', { productCode = 'plus' 
     AND (SELECT COUNT(*) FROM card_consumption_ledger refresh_usage
       WHERE refresh_usage.card_id = ${alias}.id
         AND refresh_usage.status IN ('RESERVED','CONSUMED','RECONCILIATION'))
-      < COALESCE((SELECT CAST(setting_value AS UNSIGNED) FROM app_settings
-        WHERE setting_key='card_max_successful_payments' LIMIT 1), 3)
+      < ${maxPaymentsSql(normalizedProduct)}
     AND NOT EXISTS (SELECT 1 FROM card_assignment_history refresh_assignment
       WHERE refresh_assignment.card_id=${alias}.id AND refresh_assignment.status='ACTIVE')
     AND NOT EXISTS (

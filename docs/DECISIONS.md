@@ -5482,3 +5482,14 @@ Lemon 确认新增一条独立的 KC-PAY-GPT 充值执行路线。它与 ZZSHU�
 Lemon 无可用的无订阅 ChatGPT 账号，块 6 前置 PoC（`tasks/2026-09-24-block6-pro20x-poc.md`，脚本已写未跑）挂起。Lemon 选做「每周自检命令」。
 落地：`scripts/weekly-check.sh` + 服务器侧只读探针 `v1/scripts/weekly-readonly-probe.mjs`（正式连接池 + 正式规则：「需要我处理」调 listOrders 同一份谓词，可分配卡调 `eligibleInventoryCardSql`，不另抄规则）。首跑 53 秒、0 失败 3 提醒（需要我处理 9 单、PENDING>1h 任务 1 个、工作区未提交）。RUNBOOK §0.5。
 
+## D-361（2026-09-24 08:0x UTC+8）欠账 3 落地：每卡成功单数按产品（Plus 3 / 5X 1 / 20X 1，D-221），跑过 Pro 的卡不再分配
+
+Lemon 选做「2 每卡单数按产品」（块 6 后端前置，不需账号）。摸真实系统后的发现：分卡路径三处 `eligibleInventoryCardSql('cards','?')` **没传产品**，20X 单分卡走的是 Plus 规则——Plus 的「>$75 大额卡不给 Plus」守卫反而会把 $150 的 20X 卡挡掉，20X 自动化时必然分不到卡。本次一并修。
+落地（唯一口径 `card-inventory-eligibility.maxPaymentsSql`：按产品键 `card_max_successful_payments:<plan>` → 全局键 → 3）：
+- 三个谓词（可分配 / 可补钱 / 可按需同步）与库存口径按产品取上限；分卡三处与账本预留（`recharge-attempt-repository`）按订单 `plan_type` 传产品；订单抽屉「这张卡还能再充」按行取产品。
+- **新规则**（把已有的待销 PRO_USED 口径前移到分配）：账本里跑过 `chatgpt_pro%` 的卡不再进任何产品的可分配池，也不再补钱。D-221「5X/20X 一卡一单」的落实；此前只在待销清单里体现，销卡前 Plus 单仍可能吃掉余额。
+- 迁移 059：补 `pro_5x` / `pro_20x` 键 = 1，已有不覆盖；Plus 沿用全局键 3。
+- 设置页每卡单数三行各自保存（端点 `max-successful-payments` 加 `planType`，不传按 Plus）；card-stock / supply-policy 读 `maxSuccessfulPaymentsByPlan`。
+- 待销 USED_UP 仍用全局值（卡本身无产品），Pro 卡由 PRO_USED 覆盖，不改。
+- 测试：资格 SQL（按产品键 / 回落链 / Pro 排除 / 列形式 / 非法输入）、账本预留顺序、端点 planType、设置页三行、迁移 059 只补不改。全量通过；`customer-sql-probe` 通过；全量 `sql-probe` 结果见 HANDOFF_LOG。
+

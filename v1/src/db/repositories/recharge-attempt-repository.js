@@ -1,3 +1,4 @@
+import { maxPaymentsSql } from '../../services/card-inventory-eligibility.js';
 import { randomUUID } from 'node:crypto';
 import {
   reserveCardConsumptionInTransaction,
@@ -106,7 +107,7 @@ export function createRechargeAttemptRepository(pool) {
         }
 
         const [orders] = await connection.query(
-          `SELECT o.id, o.status, o.version, o.fulfillment_route_id, o.product_id,
+          `SELECT o.id, o.status, o.version, o.fulfillment_route_id, o.product_id, o.plan_type,
                   o.frozen_card_provider_account_id,
                   o.open_card_amount,
                   o.minimum_required_card_balance,
@@ -361,6 +362,11 @@ export function createRechargeAttemptRepository(pool) {
           );
         }
 
+        // D-221 每卡单数按产品：与分卡资格同一口径（maxPaymentsSql），全局键只是 Plus 的回落值
+        const [[capacityRow]] = await connection.query(
+          `SELECT (${maxPaymentsSql(orderRow.plan_type || 'plus')}) AS max_payments`
+        );
+        const maxPaymentsForPlan = Number(capacityRow?.max_payments || settings.card_max_successful_payments || 3);
         const cardConsumption = await reserveCardConsumptionInTransaction(connection, {
           cardId: orderRow.card_id,
           orderId: order,
@@ -368,7 +374,7 @@ export function createRechargeAttemptRepository(pool) {
           productId: orderRow.product_id,
           amount: orderRow.open_card_amount,
           currency: orderRow.card_currency || 'USD',
-          maxPayments: settings.card_max_successful_payments || 3,
+          maxPayments: maxPaymentsForPlan,
           evidence: {
             source: 'recharge_attempt',
             executorKind: orderRow.executor_kind,

@@ -247,7 +247,7 @@ const app = createApp({
       };
     } : null
   ,setAdminCardStockDefaultCardType: cardStockService.setDefaultCardType
-  ,setAdminCardMaxSuccessfulPayments: (value) => cardStockService.setMaxSuccessfulPayments(value)
+  ,setAdminCardMaxSuccessfulPayments: (value, planType) => cardStockService.setMaxSuccessfulPayments(value, planType)
   ,setAdminCardMinimumBalance: (value, planType) => cardStockService.setMinimumRequiredCardBalance(value, planType)
   ,createAdminCardStockJob: cardStockJobService.createJob
   ,getHighvccCardStatus: highvccCardService.tokenStatus

@@ -333,7 +333,7 @@ export function createCardStockService({ pool, sessionEncryptionKey, panHmacKey 
          FROM cards GROUP BY card_type_id ORDER BY card_type_id`
       ),
       pool.query(`SELECT setting_key, setting_value FROM app_settings
-        WHERE setting_key IN ('default_card_type_id','default_open_card_amount','card_max_successful_payments','default_minimum_required_card_balance','minimum_required_card_balance:pro_5x','minimum_required_card_balance:pro_20x')`),
+        WHERE setting_key IN ('default_card_type_id','default_open_card_amount','card_max_successful_payments','card_max_successful_payments:pro_5x','card_max_successful_payments:pro_20x','default_minimum_required_card_balance','minimum_required_card_balance:pro_5x','minimum_required_card_balance:pro_20x')`),
       pool.query(`SELECT c.provider_account_id, pa.provider_code, pa.account_code,
           c.provider_card_id, c.card_type_id, c.last4, c.status, c.inventory_status,
           c.funded_amount, c.current_balance, c.currency, c.sync_tier, active_assignment.order_id AS active_order_id,
@@ -409,6 +409,12 @@ export function createCardStockService({ pool, sessionEncryptionKey, panHmacKey 
     const defaultCardTypeId = String(settingMap.get('default_card_type_id') || '');
     const maxSuccessfulPayments = Math.min(4, Math.max(1,
       Number(settingMap.get('card_max_successful_payments') || 3)));
+    // D-221 按产品：Plus 沿用全局键；Pro 键缺时与 SQL 口径一样回落全局（迁移 059 会写成 1）
+    const maxSuccessfulPaymentsByPlan = {
+      plus: maxSuccessfulPayments,
+      pro_5x: Math.min(4, Math.max(1, Number(settingMap.get('card_max_successful_payments:pro_5x') || maxSuccessfulPayments))),
+      pro_20x: Math.min(4, Math.max(1, Number(settingMap.get('card_max_successful_payments:pro_20x') || maxSuccessfulPayments)))
+    };
     const minimumRequiredCardBalance = String(settingMap.get('default_minimum_required_card_balance') || '');
     const minimumRequiredCardBalanceByPlan = {
       plus: minimumRequiredCardBalance,
@@ -581,6 +587,7 @@ export function createCardStockService({ pool, sessionEncryptionKey, panHmacKey 
       threshold,
       autoReplenishmentEnabled,
       maxSuccessfulPayments,
+      maxSuccessfulPaymentsByPlan,
       minimumRequiredCardBalance,
       minimumRequiredCardBalanceByPlan,
       operationalSummary,
@@ -644,19 +651,24 @@ export function createCardStockService({ pool, sessionEncryptionKey, panHmacKey 
     return { threshold };
   }
 
-  async function setMaxSuccessfulPayments(value) {
+  // D-221：每卡单数按产品。Plus 写历史全局键（分卡/账本/资格 SQL 对 Plus 都回落到它），
+  // Pro 写 `card_max_successful_payments:<plan>`；读取口径见 card-inventory-eligibility.maxPaymentsSql。
+  async function setMaxSuccessfulPayments(value, planType = 'plus') {
     const limit = Number(value);
     if (!Number.isInteger(limit) || limit < 1 || limit > 4) {
       throw new Error('Card successful payment limit must be an integer between 1 and 4');
     }
+    const plan = String(planType || 'plus').trim().toLowerCase();
+    if (!['plus', 'pro_5x', 'pro_20x'].includes(plan)) throw new Error('Unknown plan type');
+    const key = plan === 'plus' ? 'card_max_successful_payments' : `card_max_successful_payments:${plan}`;
     await pool.query(
       `INSERT INTO app_settings (setting_key, setting_value)
-       VALUES ('card_max_successful_payments', ?)
+       VALUES (?, ?)
        ON DUPLICATE KEY UPDATE setting_value=VALUES(setting_value),
          updated_at=CURRENT_TIMESTAMP(3)`,
-      [String(limit)]
+      [key, String(limit)]
     );
-    return { maxSuccessfulPayments: limit };
+    return { maxSuccessfulPayments: limit, planType: plan };
   }
 
   // Operator-set floor for card allocation eligibility (USD). Only affects

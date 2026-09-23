@@ -8,10 +8,17 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const migrationsDir = path.resolve(here, '../migrations');
 const sql = fs.readFileSync(path.join(migrationsDir, '053_card_source_selections_and_supply.sql'), 'utf8');
 
-test('057 is the newest migration; 053 through 057 are additive', () => {
+test('059 is the newest migration; 053 through 059 are additive', () => {
   const names = fs.readdirSync(migrationsDir).filter((name) => /^\d+_[a-z0-9_-]+\.sql$/i.test(name)).sort();
   // 055＝D-286（CDK 发出登记 + 有效期），Lemon 2026-09-19 批准新增；只加列、不动存量。
-  assert.equal(names.at(-1), '058_app_settings_report_capacity.sql');
+  assert.equal(names.at(-1), '059_card_max_payments_per_product.sql');
+  // 059＝D-221 每卡单数按产品：只补两把 Pro 键（=1），已有值不覆盖；不改结构、不动 Plus 的全局键。
+  const perProduct = fs.readFileSync(path.join(migrationsDir, '059_card_max_payments_per_product.sql'), 'utf8');
+  assert.doesNotMatch(perProduct, /ALTER TABLE|CREATE TABLE|DELETE|UPDATE\s+app_settings/i);
+  assert.match(perProduct, /'card_max_successful_payments:pro_5x', '1'/);
+  assert.match(perProduct, /'card_max_successful_payments:pro_20x', '1'/);
+  assert.match(perProduct, /ON DUPLICATE KEY UPDATE setting_value = setting_value/);
+  assert.doesNotMatch(perProduct, /\('card_max_successful_payments', /);
   const retirement = fs.readFileSync(path.join(migrationsDir, '054_card_retirement.sql'), 'utf8');
   const cdkIssuance = fs.readFileSync(path.join(migrationsDir, '055_cdk_issuance_and_expiry.sql'), 'utf8');
   assert.doesNotMatch(cdkIssuance, /CREATE TABLE/i);
