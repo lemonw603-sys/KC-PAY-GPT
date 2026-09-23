@@ -3519,3 +3519,7 @@ Lemon 同意后 prepare（manifest 1347 项、备份 `pojia-20260923T123158Z`、
 ## 2026-09-23｜D-355 打回等 Session 时放卡（代码完成）
 
 Lemon 同意后实现：`card-release-repository.js` 新 helper（付款痕迹三问守卫 → 账本/分配/卡/订单指针一起放）；`browser-execution-repository.abortBeforePayment` 与 `workflow-repository.markSessionReplacementRequired` 接入；`release-failed-order-card.js` 接受 WAITING_FOR_SESSION。测试：browser-execution-repository 单测 21 pass（假连接补三问应答）；隔离库 `session-replacement-card-release-mysql-integration` 全链通过、`browser-execution-mysql-integration` 加卡回池断言通过。另答 72h（不动）、小额卡参数（设置页可改）、工作台用/剩（登记欠账 15）。
+
+## 2026-09-23｜D-355 发布 `20260923-d355-8f9ddc1`（13:0x UTC）并放回 8718
+
+prepare（manifest 1348、备份 OK、无迁移）→ switch → 三服务 active、live/ready 200、新连接复核 cwd。服务器跑 `release-failed-order-card.js PJV1-_xH487… --dry-run`（三问全 0、active_assignments 1）→ apply：releasedAssignments 1 / resetCards 1；新连接核实 8718 AVAILABLE、订单 assigned_card_id NULL、ready-check 可分配 1 张。下一步：停池 → 关心跳检查 → Lemon 客户页建演练单 → 单单演练 → 收口 → 开回 → supervisor 拉起新池。
