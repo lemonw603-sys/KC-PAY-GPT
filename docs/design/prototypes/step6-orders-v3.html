@@ -36,7 +36,7 @@
     .od-page .od-email:focus-visible{outline:2px solid var(--wb-a);outline-offset:2px}
     .od-no{font:11.5px var(--wb-fm);color:var(--wb-t3)}
     /* 历史尝试标：邮箱后一个 18px 高的小标，数字 + 三角，不写字。展开时三角翻上、底色转主色浅调。 */
-    .od-page .od-tries{display:inline-flex;align-items:center;gap:3px;vertical-align:middle;margin-left:7px;height:18px;padding:0 5px 0 6px;border:0;border-radius:9px;background:var(--wb-s3);color:var(--wb-t2);font:600 11px var(--wb-fm);cursor:pointer;box-shadow:none;min-height:0;line-height:1}
+    .od-page .od-tries{display:inline-flex;align-items:center;gap:3px;vertical-align:middle;margin-left:6px;height:18px;padding:0 5px 0 6px;border:0;border-radius:9px;background:var(--wb-s3);color:var(--wb-t2);font:600 11px var(--wb-fm);cursor:pointer;box-shadow:none;min-height:0;line-height:1}
     .od-page .od-tries i{width:0;height:0;border-left:3.5px solid transparent;border-right:3.5px solid transparent;border-top:4px solid currentColor;transition:transform .15s}
     .od-page .od-tries:hover{background:var(--wb-bd);color:var(--wb-t)}
     .od-page .od-tries[aria-expanded=true]{background:var(--wb-a-soft);color:var(--wb-a-ink)}
@@ -49,10 +49,21 @@
     .od-page .od-cardlink{min-height:0;border:0;background:none;padding:0;font:11.5px var(--wb-fm);color:var(--wb-t2);cursor:pointer;box-shadow:none;border-radius:4px;border-bottom:1px dotted var(--wb-t3)}
     .od-page .od-cardlink:hover{color:var(--wb-a);border-bottom-color:var(--wb-a)}
     .od-page .od-cust{white-space:nowrap}
-    .od-table{table-layout:fixed}
-    .od-table col.c-cust{width:236px}.od-table col.c-plan{width:64px}.od-table col.c-route{width:150px}.od-table col.c-stage{width:auto}.od-table col.c-time{width:112px}
+    /* 列节奏（D-356 第五轮，Lemon：「客户与产品靠近、产品与路线拉开、要有美感」）：
+       两组一紧一松——「客户 + 产品」是这单的身份，贴在一起（产品格左内边距只留 4px）；
+       「路线·卡台·卡尾号」是执行层，前面留 24px 的组间距；「进度」再隔 22px；时间右对齐、等宽数字。 */
+    /* 客户列按最长邮箱收紧（width:1% + nowrap 是表格里「按内容定宽」的标准写法），
+       产品格紧跟其后；路线前留 24px 组间距。列宽不再写死像素，邮箱长短变了也保持这个节奏。 */
+    .od-table col.c-plan{width:60px}.od-table col.c-route{width:176px}.od-table col.c-time{width:104px}
     .od-table td.od-plan,.od-table td.od-route{color:var(--wb-t2)}
-    .od-table td.od-cust{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .od-table td.od-cust,.od-table th:first-child{width:1%;white-space:nowrap;padding-right:0}
+    .od-table td.od-plan,.od-table th.th-plan{padding-right:0}
+    .od-table td.od-cust{max-width:280px;overflow:hidden;text-overflow:ellipsis}
+    .od-table td.od-plan,.od-table th.th-plan{padding-left:4px}
+    .od-table td.od-route,.od-table th.th-route{padding-left:32px}
+    .od-table td.od-stagecell,.od-table th.th-stage{padding-left:22px}
+    .od-table td.od-time,.od-table th.th-time{text-align:right;font-variant-numeric:tabular-nums}
+    .od-page .od-cardlink{text-underline-offset:3px}
     .od-chip{display:inline-flex;align-items:center;gap:6px;padding:4px 8px;border-radius:7px;background:var(--wb-s3);color:var(--wb-t2);white-space:nowrap;font-size:12px}
     .od-chip::before{content:"";width:7px;height:7px;background:currentColor;border-radius:50%}
     .od-chip.ok{background:var(--wb-ok-soft);color:var(--wb-ok)}
@@ -158,7 +169,7 @@
             <table class="cdk-table od-table" id="od-table">
               <colgroup><col class="c-cust"><col class="c-plan"><col class="c-route"><col class="c-stage"><col class="c-time"></colgroup>
               <thead><tr>
-                <th>客户</th><th>产品</th><th>路线 · 卡台 · 卡尾号</th><th>进度 / 需要我做什么</th><th>提交时间</th>
+                <th>客户</th><th class="th-plan">产品</th><th class="th-route">路线 · 卡台 · 卡尾号</th><th class="th-stage">进度 / 需要我做什么</th><th class="th-time">提交时间</th>
               </tr></thead>
               <tbody id="od-rows"></tbody>
             </table>
@@ -272,7 +283,7 @@
         <td class="od-cust"><span class="od-no">${o.no}</span></td>
         <td class="od-plan">${PLAN[o.plan] || o.plan}</td>
         <td class="od-route">${o.route === 'BROWSER' ? 'Browser' : 'API'}<small>${o.last4 ? `<button type="button" class="od-cardlink" data-card="${o.no}">${PROVIDER[o.provider] || o.provider} · ${o.last4}</button>` : '未分卡'}</small></td>
-        <td><div class="od-stage">${chip(o)}</div></td>
+        <td class="od-stagecell"><div class="od-stage">${chip(o)}</div></td>
         <td class="od-time">${fmt(o.created)}</td>
       </tr>`;
       const tries = hist && hist.length ? `<button type="button" class="od-tries" data-expand="${o.cdk}" aria-expanded="${state.expanded.has(o.cdk)}" title="此前 ${hist.length} 次未成功，点开看" aria-label="此前 ${hist.length} 次未成功，展开历史"><b>${hist.length}</b><i aria-hidden="true"></i></button>` : '';
@@ -280,7 +291,7 @@
         <td class="od-cust"><button type="button" class="od-email" data-open="${o.no}">${emailOf(o)}</button>${tries}</td>
         <td class="od-plan">${PLAN[o.plan] || o.plan}</td>
         <td class="od-route">${o.route === 'BROWSER' ? 'Browser' : 'API'}<small>${o.last4 ? `<button type="button" class="od-cardlink" data-card="${o.no}">${PROVIDER[o.provider] || o.provider} · ${o.last4}</button>` : '未分卡'}</small></td>
-        <td><div class="od-stage">${chip(o)}${isMain ? actionBtn(o, 'row') : ''}</div></td>
+        <td class="od-stagecell"><div class="od-stage">${chip(o)}${isMain ? actionBtn(o, 'row') : ''}</div></td>
         <td class="od-time">${fmt(o.created)}</td>
       </tr>`;
     }
