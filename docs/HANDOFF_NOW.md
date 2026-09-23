@@ -1,21 +1,21 @@
 # 接班一屏（HANDOFF_NOW）
 
-更新：2026-09-23 14:45（UTC+8）。当前执行顺序以 **D-352** 为准（覆盖 D-329 门槛与 PROJECT_MAP 旧八步⑥之后的排序）。
+更新：2026-09-23 15:20（UTC+8）。当前执行顺序以 **D-352** 为准（覆盖 D-329 门槛与 PROJECT_MAP 旧八步⑥之后的排序）。
 
 ## 现在的状态
 
 - 生产 release `20260921-feedback-d340-7e88952`（D-341）；`state-check.sh` 11 项一致（2026-09-23 06:08 UTC）。生产数值只看 `CURRENT_STATE.md`。
 - 09-19 起生产 0 单；最近真钱成功 09-16（旧版代码）；此后 6 次发布无真单样本。
-- highvcc token 09-19 起失效，快照 4 天未更新，`pojia-highvcc-snapshot-sync.service` failed。
+- highvcc token 已于 07:04 UTC 更新，07:12 轮次同步成功、快照 $44.74（块 1 完成）。
 - 本机 pool worker PID 67131 自 09-18 07:06 UTC 跑至今，代码为 09-18 版。
-- 订单页工作块（D-345～D-351）已停，D-352 定为块 5、待块 4 真实单后重定需求。
+- 订单页 = 块 5，紧接块 3；真钱只留 Plus 一单（块 3 后）+ 20X 一单（块 6），其余用 rehearsal（D-352 补记）。
 
 ## 下一可执行项（按 D-352 块序）
 
-1. **块 1**：Lemon 贴新 highvcc token（`v1/scripts/set-highvcc-token.mjs`），新连接核实快照恢复、服务 active。
-2. 块 2：A/B 反馈台账（`tasks/2026-09-21-post-step6-feedback-plan.md` FB-01～08）逐条只验已发布项，Lemon 裁定关闭。
-3. 块 3：运营不在场三硬伤（付款不明只隔离账号 / 入单查心跳 / 处理中超时转人工），动 browser-mvp 前先列文件白名单给 Lemon 批（D-254）。
-4. 块 4：Lemon 自己跑真钱 Plus 单验收（API 一单 + Browser 若干），每单对照交付判据合同。
+1. **块 2**：A/B 反馈台账（`tasks/2026-09-21-post-step6-feedback-plan.md` FB-01～08）逐条只验已发布项，Lemon 裁定关闭。
+2. 块 3：运营不在场三硬伤（付款不明只隔离账号 / 入单查心跳 / 处理中超时转人工），动 browser-mvp 前先列文件白名单给 Lemon 批（D-254）。
+3. 块 4：Plus Browser 真钱一单（仅此一单），对照交付判据合同；其余用 rehearsal。
+4. 块 5：订单页三个问题 → 拍板 → 做一版。
 
 ## 已定不做 / 禁区
 

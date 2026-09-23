@@ -3482,3 +3482,7 @@ Lemon 问「怎样要求你才能完全接住」并要求审视问题与方向�
 - **投入分布**：DECISIONS 348 条、36 天；W37 81 条 / W38 104 条；近 30 天后台 UI 64 + 流程规则 55 + 付款链路 44；至少 16 组决策定了又改。git 近 30 天 1441 提交、62% 纯文档、docs 新增 496 文件；W39 browser-mvp 触及 0。接班必读约 180KB + DECISIONS 559KB。
 
 结论与新顺序见 D-352。本轮落盘：DECISIONS D-352、PROJECT_MAP §4 顺序覆盖、HANDOFF_NOW 重写为一屏、CURRENT_STATE 三行订正（highvcc timer 间隔、快照日期、订单 finished_at NULL）。
+
+## 2026-09-23｜块 1 完成：highvcc token 更新生效；D-352 补记真钱最少化与订单页时点
+
+Lemon 07:04:44 UTC 经后台保存 token；07:12:28 UTC timer 轮次 success、`tokenAlert: RESOLVED`，新快照 $44.74 @ 07:13:33 UTC（新连接独立查询）。发现 timer unit 描述写「每 10 分钟」而配置 `OnUnitActiveSec=1h`，事实表按配置改回每小时。D-352 补记：真钱只留 Plus Browser 一单与 20X 一单；订单页排块 5 紧接块 3。下一块 = 块 2（A/B 台账只验已发布项）。
