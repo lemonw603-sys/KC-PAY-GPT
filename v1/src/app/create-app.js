@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { readFile } from 'node:fs/promises';
 import { PublicApiError } from '../domain/public-api-error.js';
 import { CdkBatchError } from '../services/cdk-service.js';
+import { MANUAL_FULFILLMENT_CONFIRMATION } from '../services/manual-fulfillment-service.js';
 import { OrderCancellationError } from '../services/order-cancellation-service.js';
 import { ReconciliationCaseError } from '../services/reconciliation-case-service.js';
 import { OperationsCsvExportError } from '../services/operations-csv-export-service.js';
@@ -33,6 +34,8 @@ export function createApp({
   listAdminOrders = null,
   getAdminOrder = null,
   getAdminOrderTimeline = null,
+  listAdminOrderAttempts = null,
+  closeAdminManualFulfilled = null,
   completeAdminCustomerPayment = null,
   listAdminAlerts = null,
   closeAdminAlert = null,
@@ -264,6 +267,32 @@ export function createApp({
   if (typeof getAdminOrderTimeline === 'function') {
     app.get('/api/v1/admin/orders/:publicNo/timeline', noStore, requireAdminApi, async (req, res) => {
       res.json(await getAdminOrderTimeline(req.params.publicNo));
+    });
+  }
+  if (typeof listAdminOrderAttempts === 'function') {
+    // 订单页 v3（D-356）：同一张码下这一单之外的其它尝试，列表展开「此前 N 次」时读。
+    app.get('/api/v1/admin/orders/:publicNo/attempts', noStore, requireAdminApi, async (req, res) => {
+      res.json(await listAdminOrderAttempts(req.params.publicNo));
+    });
+  }
+  if (typeof closeAdminManualFulfilled === 'function') {
+    // 订单页 v3（D-356 ⑤）：「标为已手工充值」。守卫与脚本 close-manually-fulfilled-order.mjs 同一份
+    // （manual-fulfillment-service）：任何系统付款痕迹即拒；要打确认词。
+    app.post('/api/v1/admin/orders/:publicNo/manual-fulfilled', ...sensitiveAdminGuards, async (req, res) => {
+      const body = req.body || {};
+      if (String(body.confirmation || '') !== MANUAL_FULFILLMENT_CONFIRMATION) {
+        return res.status(400).json({ error: 'manual_fulfillment_confirmation_required' });
+      }
+      try {
+        return res.json(await closeAdminManualFulfilled(req.params.publicNo, {
+          cardUsed: body.cardUsed === true, reason: body.reason || '', actorId: req.admin?.id || 'admin'
+        }));
+      } catch (error) {
+        if (error?.name === 'ManualFulfillmentError') {
+          return res.status(error.status || 409).json({ error: error.code.toLowerCase(), detail: error.detail || null });
+        }
+        throw error;
+      }
     });
   }
   if (typeof completeAdminCustomerPayment === 'function') {

@@ -32,6 +32,7 @@ import { createAdminOperationsService } from './services/admin-operations-servic
 import { createOrderCancellationService } from './services/order-cancellation-service.js';
 import { createManualCancellationService } from './services/manual-cancellation-service.js';
 import { createUnknownSubmissionResolveService } from './services/unknown-submission-resolve-service.js';
+import { createManualFulfillmentService } from './services/manual-fulfillment-service.js';
 import { createCardRetirementService } from './services/card-retirement-service.js';
 import { createDailyReconciliationService } from './services/daily-reconciliation-service.js';
 import { HnskjCardProvider } from './providers/index.js';
@@ -149,6 +150,7 @@ const startBusiness = createAdminStartBusinessService({ adminReadService, cardSt
 const cancelAdminOrder = createOrderCancellationService({ pool });
 const confirmManualCancellation = createManualCancellationService({ pool });
 const resolveUnknownSubmission = createUnknownSubmissionResolveService({ pool });
+const manualFulfillment = createManualFulfillmentService({ pool });
 const cardRetirement = createCardRetirementService({ pool });
 // 第⑤步（面四③）：日对账的最新一份报告 —— 后台看板与「需要我处理」队列（第⑥块）读它。
 // 端点只跑只读对账，不写指纹，免得看一眼后台就把「连续两次」的判断给搅了。
@@ -197,6 +199,8 @@ const app = createApp({
   listAdminOrders: adminReadService.listOrders,
   getAdminOrder: adminReadService.getOrder,
   getAdminOrderTimeline: adminReadService.getOrderTimeline,
+  listAdminOrderAttempts: adminReadService.listOrderAttempts,
+  closeAdminManualFulfilled: manualFulfillment.closeManuallyFulfilled,
   completeAdminCustomerPayment: traceabilityOperations.completeCustomerPayment,
   listAdminAlerts: adminReadService.listAlerts,
   requestCardTransactionSync: adminReadService.requestCardTransactionSync

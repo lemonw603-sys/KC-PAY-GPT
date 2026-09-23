@@ -6,6 +6,7 @@ import { validateChatGptSession } from '../domain/session-validation.js';
 import { reconcileByRoute } from '../domain/route-reconciliation.js';
 import { createCdkLookup } from '../security/cdk-code.js';
 import { redactSensitiveText } from '../security/redaction.js';
+import { FAILED_BUCKET_STATUSES, orderBucket, primaryOrderAction } from './order-list-bucket.js';
 import { deriveOrderStage } from './order-stage.js';
 import { unknownSubmissionEligibility } from './unknown-submission-resolve-service.js';
 import { eligibleInventoryCardSql,
@@ -43,13 +44,18 @@ const FAILED_AFTER_PAYMENT_SQL = `(o.status = 'RECHARGE_FAILED' AND (EXISTS (
           INNER JOIN recharge_attempts fap_bra ON fap_bra.id = fap_br.recharge_attempt_id
           WHERE fap_bra.order_id = o.id
             AND fap_br.payment_state IN ('PAYMENT_CONFIRMED','PAYMENT_UNKNOWN'))))`;
+// 订单页 v3（D-356）：「需要我处理」= 与 REVIEW_REQUIRED 筛选同一谓词，写成不带占位符的内联版，
+// 好放进 SELECT 投影（needs_person）、桶筛选与桶计数里。改口径两处一起改。
+const NEEDS_PERSON_SQL = () => `(o.status IN (${REVIEW_STATUSES.map((status) => `'${status}'`).join(', ')})
+        OR ${FAILED_AFTER_PAYMENT_SQL}
+        OR o.cancellation_review_required = 1 OR (${STALE_CREATE_ATTEMPT_SQL}))`;
 const PROCESSING_STATUSES = ['CREATED', 'WAITING_FOR_CARD', 'CARD_PURCHASING', 'CARD_PROVISIONING', 'SUBMITTING',
   'RECHARGE_PROCESSING', 'CANCELLATION_PENDING'];
 const FINISHED_STATUSES = ['RECHARGE_SUCCESS', 'RECHARGE_FAILED', 'CLOSED'];
 const RECENT_FINISHED_FILTER = 'RECENT_FINISHED';
 const VIRTUAL_FILTERS = new Set([
   'TODAY', 'PROCESSING', 'AWAITING_CONFIRMATION', 'REVIEW_REQUIRED', 'RECONCILIATION_ISSUES',
-  'ACTIVE', 'FINISHED', 'PAYMENT_UNKNOWN', RECENT_FINISHED_FILTER
+  'ACTIVE', 'FINISHED', 'PAYMENT_UNKNOWN', RECENT_FINISHED_FILTER, 'BUCKET_SUCCESS', 'BUCKET_FAILED'
 ]);
 
 // D-339：经营成功率只看北京时间近7个自然日（含当天）内创建且已结束的订单。
@@ -270,6 +276,20 @@ function parseListQuery(input = {}) {
   const from = String(input.from || '').trim();
   const to = String(input.to || '').trim();
   const timeField = String(input.timeField || 'CREATED').trim().toUpperCase();
+  // 订单页 v3（D-356）：产品 / 路线两个下拉、按 CDK 归组（每码只出最新一单）、同码历史（siblingsOf）。
+  const planType = String(input.planType || '').trim().toLowerCase();
+  const executorKind = String(input.executorKind || '').trim().toUpperCase();
+  const groupByCdk = input.groupByCdk === true;
+  const siblingsOf = String(input.siblingsOf || '').trim();
+  if (planType && !/^[a-z0-9_]{1,32}$/.test(planType)) {
+    throw new PublicApiError('Invalid product', { code: 'INVALID_ADMIN_QUERY', status: 400 });
+  }
+  if (executorKind && !['API', 'BROWSER'].includes(executorKind)) {
+    throw new PublicApiError('Invalid route kind', { code: 'INVALID_ADMIN_QUERY', status: 400 });
+  }
+  if (siblingsOf.length > 64) {
+    throw new PublicApiError('Invalid order reference', { code: 'INVALID_ADMIN_QUERY', status: 400 });
+  }
   if (!Number.isInteger(page) || page < 1 || page > 100_000) {
     throw new PublicApiError('Invalid page', { code: 'INVALID_ADMIN_QUERY', status: 400 });
   }
@@ -301,7 +321,7 @@ function parseListQuery(input = {}) {
   if (fromDate && toDate && fromDate > toDate) {
     throw new PublicApiError('Invalid time range', { code: 'INVALID_ADMIN_QUERY', status: 400 });
   }
-  return { page, pageSize, status, query, tag, fromDate, toDate, timeField };
+  return { page, pageSize, status, query, tag, fromDate, toDate, timeField, planType, executorKind, groupByCdk, siblingsOf };
 }
 
 function sessionSafety(row, key, now) {
@@ -968,7 +988,7 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
   }
 
   async function listOrders(input) {
-    const { page, pageSize, status, query, tag, fromDate, toDate, timeField } = parseListQuery(input);
+    const { page, pageSize, status, query, tag, fromDate, toDate, timeField, planType, executorKind, groupByCdk, siblingsOf } = parseListQuery(input);
     const conditions = [];
     const values = [];
     let exactCdkLookup = null;
@@ -981,6 +1001,10 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
       conditions.push(RECONCILIATION_ISSUE_SQL);
     } else if (status === 'PAYMENT_UNKNOWN') {
       conditions.push(PAYMENT_UNKNOWN_SQL);
+    } else if (status === 'BUCKET_SUCCESS') {
+      conditions.push(`(o.status = 'RECHARGE_SUCCESS' AND NOT ${NEEDS_PERSON_SQL()})`);
+    } else if (status === 'BUCKET_FAILED') {
+      conditions.push(`(o.status IN (${FAILED_BUCKET_STATUSES.map((value) => `'${value}'`).join(', ')}) AND NOT ${NEEDS_PERSON_SQL()})`);
     } else if (status === 'PROCESSING') {
       conditions.push(`o.status IN (${PROCESSING_STATUSES.map(() => '?').join(', ')})`);
       values.push(...PROCESSING_STATUSES);
@@ -1010,6 +1034,24 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
     }
     const statusConditionCount = conditions.length;
     const statusValueCount = values.length;
+    // 订单页 v3：这三条不是状态筛选，summary 的分母要带上它们（放在 statusConditionCount 之后）。
+    if (planType) { conditions.push('o.plan_type = ?'); values.push(planType); }
+    if (executorKind) {
+      conditions.push(`EXISTS (SELECT 1 FROM fulfillment_routes fr_kind
+        WHERE fr_kind.id = o.fulfillment_route_id AND fr_kind.executor_kind = ?)`);
+      values.push(executorKind);
+    }
+    if (groupByCdk) {
+      // 每个 CDK 只出最新一次尝试（D-346：同码最新为主行，历史就地展开，不按邮箱合并）。
+      conditions.push(`o.id = (SELECT latest_try.id FROM orders latest_try WHERE latest_try.cdk_id = o.cdk_id
+        ORDER BY latest_try.created_at DESC, latest_try.id DESC LIMIT 1)`);
+    }
+    if (siblingsOf) {
+      // 同一张码下、除这一单之外的其它尝试（展开历史用）。
+      conditions.push(`o.cdk_id = (SELECT sib.cdk_id FROM orders sib WHERE BINARY sib.public_no = BINARY ? LIMIT 1)
+        AND BINARY o.public_no <> BINARY ?`);
+      values.push(siblingsOf, siblingsOf);
+    }
     const directTimeColumn = {
       CREATED: 'o.created_at', UPDATED: 'o.updated_at', FINISHED: 'o.finished_at'
     }[timeField];
@@ -1109,7 +1151,11 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
           (${TRANSACTION_SYNCED_SQL}) AS transaction_evidence_synced,
           (${SUCCESSFUL_PURCHASE_SQL}) AS successful_purchase_exists,
           (${PAYMENT_MATCH_SQL}) AS payment_matched,
-          (${PAYMENT_SETTLED_SQL}) AS payment_settled
+          (${PAYMENT_SETTLED_SQL}) AS payment_settled,
+          (SELECT fr_kind.executor_kind FROM fulfillment_routes fr_kind WHERE fr_kind.id = o.fulfillment_route_id) AS route_executor_kind,
+          (SELECT COUNT(*) - 1 FROM orders hist WHERE hist.cdk_id = o.cdk_id) AS history_count,
+          (${FAILED_AFTER_PAYMENT_SQL}) AS failed_after_payment,
+          (${NEEDS_PERSON_SQL()}) AS needs_person
           ,(SELECT CASE WHEN pa.source_adapter = 'backup_card_export_v1' THEN 'MANUAL_IMPORT' ELSE 'API' END
              FROM cards source_card LEFT JOIN provider_accounts pa ON pa.id = source_card.provider_account_id
              WHERE source_card.id = o.assigned_card_id LIMIT 1) AS card_source_kind
@@ -1141,7 +1187,10 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
             OR ${FAILED_AFTER_PAYMENT_SQL}
             OR o.cancellation_review_required = 1
             OR (${STALE_CREATE_ATTEMPT_SQL}))) AS action,
-          SUM(${PAYMENT_UNKNOWN_SQL}) AS unknown
+          SUM(${PAYMENT_UNKNOWN_SQL}) AS unknown,
+          SUM(${NEEDS_PERSON_SQL()}) AS bucket_action,
+          SUM(o.status = 'RECHARGE_SUCCESS' AND NOT ${NEEDS_PERSON_SQL()}) AS bucket_success,
+          SUM(o.status IN (${FAILED_BUCKET_STATUSES.map((value) => `'${value}'`).join(', ')}) AND NOT ${NEEDS_PERSON_SQL()}) AS bucket_failed
         FROM orders o ${summaryWhere}`, [...PROCESSING_STATUSES, ...REVIEW_STATUSES,
           ...values.slice(statusValueCount)]) : Promise.resolve([[]])
     ]);
@@ -1156,7 +1205,15 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
         processing: Number(summaryRows[0]?.processing || 0),
         success: Number(summaryRows[0]?.success || 0),
         action: Number(summaryRows[0]?.action || 0),
-        unknown: Number(summaryRows[0]?.unknown || 0)
+        unknown: Number(summaryRows[0]?.unknown || 0),
+        // 订单页 v3 四桶（与 BUCKET_* 筛选同一谓词）；processing = 其余。
+        buckets: (() => {
+          const total = Number(summaryRows[0]?.total || 0);
+          const action = Number(summaryRows[0]?.bucket_action || 0);
+          const success = Number(summaryRows[0]?.bucket_success || 0);
+          const failed = Number(summaryRows[0]?.bucket_failed || 0);
+          return { all: total, action, success, failed, processing: Math.max(0, total - action - success - failed) };
+        })()
       } } : {}),
       cdkMatches: cdkMatchRows.map((cdk) => ({
         id: cdk.id, status: cdk.status, batchNo: cdk.batch_no, planType: cdk.plan_type,
@@ -1189,6 +1246,14 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
         requiresRechargeConfirmation: Boolean(row.requires_recharge_confirmation),
         confirmationReadyAt: iso(row.confirmation_ready_at),
         reconciliation,
+        routeExecutorKind: row.route_executor_kind || null,
+        historyCount: Math.max(0, Number(row.history_count || 0)),
+        bucket: orderBucket({ status: row.status, needsPerson: Boolean(Number(row.needs_person)) }),
+        primaryAction: primaryOrderAction({
+          status: row.status, needsPerson: Boolean(Number(row.needs_person)),
+          cancellationReviewRequired: Boolean(row.cancellation_review_required),
+          failedAfterPayment: Boolean(Number(row.failed_after_payment)), run: runFromRow(row)
+        }),
         card: row.provider_card_id ? {
           cardNumber: cardNumber(row, sessionEncryptionKey),
           last4: row.last4,
@@ -1742,5 +1807,13 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
     return { publicNo: order.public_no, events: rows.map(mapBrowserTimelineRow) };
   }
 
-  return { getCard, getCardConsumption, getOrder, getOrderTimeline, getOverview, listOrders, listAlerts, requestCardTransactionSync };
+  /** 订单页 v3：同一张码下这一单之外的其它尝试（展开历史用），最新在前，最多 100 条。 */
+  async function listOrderAttempts(publicNo) {
+    const reference = String(publicNo || '').trim();
+    if (!reference) throw new PublicApiError('Invalid order reference', { code: 'INVALID_ADMIN_QUERY', status: 400 });
+    const result = await listOrders({ page: 1, pageSize: 100, siblingsOf: reference });
+    return { publicNo: reference, attempts: result.orders };
+  }
+
+  return { getCard, getCardConsumption, getOrder, getOrderTimeline, getOverview, listOrders, listOrderAttempts, listAlerts, requestCardTransactionSync };
 }
