@@ -460,3 +460,48 @@ test('「今天(UTC+8)」窗口只有一份定义，src 里不得再手写 CONVE
   assert.deepEqual(offenders, [],
     `这些地方又手写了「今天」的日界，请改用 todayCst8WindowSql()：\n  ${offenders.join('\n  ')}`);
 });
+
+test('admin order detail: a card-less Session-waiting order (card released per D-355) is cancellable, card not released', async () => {
+  const nowMs = Date.parse('2026-09-24T00:00:00.000Z');
+  const pool = queuedPool([
+    [{
+      id: 'order-2', public_no: 'PJV1-WAIT', status: 'WAITING_FOR_SESSION', plan_type: 'plus',
+      open_card_amount: '16.000000', minimum_required_card_balance: '15.500000',
+      actual_payment_amount: null, actual_payment_currency: null,
+      provider_card_id: null, last4: null, card_status: null, current_balance: null,
+      recharge_order_no: null, recharge_card_key: null,
+      session_ciphertext: null, card_credentials_ciphertext: null, card_number_ciphertext: null,
+      created_at: new Date(nowMs), updated_at: new Date(nowMs)
+    }],
+    [], [{ task_type: 'SUBMIT_RECHARGE', status: 'DEAD', attempts: 1, max_attempts: 5, permit_status: null, permit_expires_at: null }],
+    [], [], [], [], [], [], [], [], [], [], [], [], [],
+    [{ id: 'attempt-9', executor_kind: 'BROWSER', status: 'CANCELLED', funds_risk_state: 'CLEARED',
+      external_order_id: null, submit_intent_at: null, submitted_at: null, last_reconciled_at: null,
+      finished_at: new Date(nowMs), created_at: new Date(nowMs) }],
+    [], [], []
+  ]);
+  const result = await createAdminReadService({ pool, sessionEncryptionKey: adminCardKey, now: () => nowMs }).getOrder('PJV1-WAIT');
+  assert.deepEqual(result.cancellation, {
+    eligible: true, alreadyCancelled: false, code: 'ORDER_CANCELLATION_ELIGIBLE', cardWillBeReleased: false
+  });
+  assert.match(pool.queries[0].sql, /o\.recharge_card_key/);
+});
+
+test('admin order detail: a card-less Session-waiting order with a live funds attempt is NOT cancellable', async () => {
+  const nowMs = Date.parse('2026-09-24T00:00:00.000Z');
+  const pool = queuedPool([
+    [{ id: 'order-3', public_no: 'PJV1-RISK', status: 'WAITING_FOR_SESSION', plan_type: 'plus',
+      open_card_amount: '16.000000', minimum_required_card_balance: '15.500000',
+      actual_payment_amount: null, actual_payment_currency: null, provider_card_id: null,
+      recharge_order_no: null, recharge_card_key: null, session_ciphertext: null,
+      created_at: new Date(nowMs), updated_at: new Date(nowMs) }],
+    [], [], [], [], [], [], [], [], [], [], [], [], [], [], [],
+    [{ id: 'attempt-8', executor_kind: 'BROWSER', status: 'SUBMIT_UNKNOWN', funds_risk_state: 'UNKNOWN',
+      external_order_id: null, submit_intent_at: null, submitted_at: null, last_reconciled_at: null,
+      finished_at: null, created_at: new Date(nowMs) }],
+    [], [], []
+  ]);
+  const result = await createAdminReadService({ pool, sessionEncryptionKey: adminCardKey, now: () => nowMs }).getOrder('PJV1-RISK');
+  assert.equal(result.cancellation.eligible, false);
+});
+

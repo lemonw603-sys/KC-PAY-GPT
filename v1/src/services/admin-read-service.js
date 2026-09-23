@@ -1283,7 +1283,7 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
       pool.query(`SELECT o.id, o.public_no, o.status, o.plan_type, o.customer_email,
           o.chatgpt_account_id, o.card_type_id, o.open_card_amount,
           o.minimum_required_card_balance, o.actual_payment_amount, o.actual_payment_currency,
-          o.recharge_order_no, o.failure_code, o.failure_reason,
+          o.recharge_order_no, o.recharge_card_key, o.failure_code, o.failure_reason,
           o.customer_action_code, o.session_replacement_count,
           o.session_repair_started_at, o.session_repair_expires_at, o.last_session_replaced_at,
           o.subscription_cancelled, o.cancellation_checked_at, o.cancellation_review_required,
@@ -1539,6 +1539,17 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
       && callRows.filter((call) => call.provider === 'zzshu' && call.operation === 'create_direct')
         .every((call) => call.outcome === 'DEFINITE_FAILURE')) {
       cancellationCode = 'ORDER_CANCELLATION_ELIGIBLE';
+    } else if (row.status === 'WAITING_FOR_SESSION'
+      && !row.provider_card_id
+      && attemptRows.every((attempt) => !['ACTIVE', 'UNKNOWN', 'SETTLED'].includes(attempt.funds_risk_state))
+      && !row.recharge_order_no
+      && !row.recharge_card_key
+      && callRows.filter((call) => call.operation === 'create_direct').every((call) => call.outcome === 'DEFINITE_FAILURE')) {
+      // D-355 之后打回等 Session 时卡已放回：这种单没卡、没资金 attempt、没供应商调用，
+      // 取消只是退码 + 杀任务。条件逐字对应 order-cancellation-service 的无卡分支
+      // （unsafe_attempt_count / unsafe_provider_call_count / recharge_order_no / recharge_card_key）。
+      // 此前这里漏了这支，抽屉永远不给「取消并放卡」，而列表按状态给、取消服务也放行（2026-09-24 critique P1）。
+      cancellationCode = 'ORDER_CANCELLATION_ELIGIBLE';
     } else if (row.status === 'CARD_READY'
       && submitTask?.status === 'PENDING'
       && Number(submitTask.attempts) === 0
@@ -1669,7 +1680,7 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
         eligible: cancellationCode === 'ORDER_CANCELLATION_ELIGIBLE',
         alreadyCancelled: cancellationCode === 'ORDER_CANCELLATION_ALREADY_COMPLETED',
         code: cancellationCode,
-        cardWillBeReleased: cancellationCode === 'ORDER_CANCELLATION_ELIGIBLE'
+        cardWillBeReleased: cancellationCode === 'ORDER_CANCELLATION_ELIGIBLE' && Boolean(row.provider_card_id)
       },
       traceability: {
         deliveryTrackingEnabled: Boolean(deliveryTrackingEnabled),

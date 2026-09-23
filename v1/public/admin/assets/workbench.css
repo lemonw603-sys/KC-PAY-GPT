@@ -15,9 +15,9 @@
   /* 候光 · 晨雾（日间）——第⑥步后台候光皮全局令牌 */
   --wb-bg:hsl(168,16%,97%);
   --wb-a:hsl(163,72%,26%); --wb-a-soft:hsl(163,44%,93%); --wb-a-ink:hsl(163,76%,22%); --wb-a-on:hsl(0,0%,100%);
-  --wb-t:hsl(176,18%,11%); --wb-t2:hsl(170,10%,38%); --wb-t3:hsl(168,9%,50%);
+  --wb-t:hsl(176,18%,11%); --wb-t2:hsl(170,10%,38%); --wb-t3:hsl(168,9%,41%);
   --wb-s:hsl(0,0%,100%); --wb-s2:hsl(168,20%,97%); --wb-s3:hsl(168,16%,95%); --wb-bd:hsl(168,14%,88%);
-  --wb-warn:hsl(32,72%,40%); --wb-warn-soft:hsl(38,78%,94%); --wb-gold:hsl(38,46%,42%);
+  --wb-warn:hsl(32,72%,36%); --wb-warn-soft:hsl(38,78%,94%); --wb-gold:hsl(38,46%,42%);
   --wb-ok:hsl(150,54%,36%); --wb-ok-soft:hsl(150,44%,94%);
   --wb-danger:hsl(4,66%,50%); --wb-danger-soft:hsl(6,72%,96%);
   --wb-info:hsl(212,62%,46%); --wb-info-soft:hsl(212,60%,95%);

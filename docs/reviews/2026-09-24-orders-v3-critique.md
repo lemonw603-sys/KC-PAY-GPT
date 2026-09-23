@@ -37,7 +37,9 @@ Method: dual-agent（A：设计总监式评审，独立截图 1440/1920/需要�
 - **抽屉头产品名**：`productLabel` 此前 planType 大写直出 `PRO_20X`，列表是「Pro 20X」、筛选是「20X」；统一走 `PLAN_LABELS`。
 - **路线来源**：列表 `routeExecutorKind` 为空时默认「Browser」、抽屉默认「API」，同一单两处打架。改为两处只认后端投影（getOrder 补 `route_executor_kind`），空显示「—」不猜。
 
-## 待 Lemon 定的（设计或规则，不擅自改）
+## Lemon 裁定（03:0x UTC+8，D-359）：1 做（已修，抽屉规则补无卡分支）· 2 不做 · 3 不改 · 4 同意（块 5 后加「还剩 N 小时」）· 5 令牌调深（已改 t3 41% / warn 36%）
+
+## 当时列出的待定项（原文保留）
 
 - **P1 行内「取消并放卡」与抽屉不一致（规则冲突，待查根因）**：列表 `primaryAction` 按状态集（CREATED / WAITING_FOR_CARD / CARD_READY / WAITING_FOR_SESSION）给「取消并放卡」；抽屉 `cancellation.eligible` 按后端细规则（WAITING_FOR_SESSION 需 **仍有分配卡** + submit 任务 DEAD + 无付款痕迹）。D-355 之后等 Session 的单**已经放卡**，所以抽屉那条永远不满足——等 Session 单在抽屉里永远没有取消按钮，而列表有。哪份规则对，取决于 D-355 之后「取消等 Session 单」应该做什么（只退码？），需要对着取消服务的规则再查。**本轮没改。**
 - **P2 「需要我处理」桶内不分级**：付款不明（钱的事）与等客户重贴 Session（客户侧等待）同为橙色同重量。建议付款不明用危险色 + 方块形并排第一行。改动约 3 行，但属芯片语义，D-357 冻结范围。

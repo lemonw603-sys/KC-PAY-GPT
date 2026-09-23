@@ -3557,3 +3557,7 @@ Lemon 看本地页面：「这几项都挤在左边，右边那么大块干啥�
 
 A（设计总监式）28/40，B（detect 63 条 + Playwright 量测）。合成稿 `reviews/2026-09-24-orders-v3-critique.md`。核实后修两处实现不一致：抽屉头产品名（`PRO_20X` → 走 PLAN_LABELS）、路线来源（列表默认 Browser / 抽屉默认 API 打架 → getOrder 投影 `route_executor_kind`，两处只认后端，空写「—」）。A 的 P3「手工充值是实心按钮」核对截图为描边，A 看错。待 Lemon 定：P1 等 Session 单列表有「取消并放卡」而抽屉规则（需仍有分卡）在 D-355 后永远不满足——规则冲突未改；P2 桶内风险分级；P3–P5 与两个挑衅性问题。CSP 拦掉浏览器注入检测，以后只走 CLI + 量测。复验：v1 1032/0，真实页 32/32，parity @1920 一致。
 
+## 2026-09-24｜critique 裁定落地（1 做 / 2 不做 / 3 不改 / 4 同意 / 5 同意）与令牌调深（03:0x～03:2x UTC+8）
+
+抽屉取消资格补无卡分支（getOrder 主查询补 `recharge_card_key`）；两条单测；令牌 t3 41% / warn 36%（44% 在内嵌底不够，算过表再定）。全量 v1 通过；五份 parity 一致；detect 令牌两条清零。接着 prepare 发布（Lemon 已说「发布」）。
+
