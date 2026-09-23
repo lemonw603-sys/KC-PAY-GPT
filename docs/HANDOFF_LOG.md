@@ -3588,4 +3588,5 @@ Lemon 选做「1 每周自检」。`scripts/weekly-check.sh`（本机）+ `v1/sc
 ## 2026-09-24｜欠账 3「每卡单数按产品」落地（D-361，07:1x～08:2x UTC+8）
 
 摸系统时发现分卡三处没按产品传参（20X 单会被 Plus 的大额卡守卫挡住），一并修。唯一口径 `maxPaymentsSql`；三谓词 + 库存口径 + 分卡 + 账本预留 + 抽屉容量按产品；新规则「跑过 Pro 的卡不再分配/补钱」（PRO_USED 前移）；迁移 059 补两把 Pro 键 = 1；设置页三行各存各的（端点 `planType`）。测试：全量 1035/0；`customer-sql-probe` ✓；真实页：设置页三行 Plus 3 / 5X 1 / 20X 1，把 20X 改 2 保存 → 库里 `card_max_successful_payments:pro_20x=2`（正确的键），再改回 1。全量 `sql-probe`（640 条）结果补记于下。生产未动，含迁移，发布走 prepare → migrate → switch，先问。
+全量 `sql-probe`：640 条对生产 schema，真实失败 0（含新加的 products 关联与按产品键子查询）。
 
