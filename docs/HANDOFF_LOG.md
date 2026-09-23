@@ -3523,3 +3523,7 @@ Lemon 同意后实现：`card-release-repository.js` 新 helper（付款痕迹�
 ## 2026-09-23｜D-355 发布 `20260923-d355-8f9ddc1`（13:0x UTC）并放回 8718
 
 prepare（manifest 1348、备份 OK、无迁移）→ switch → 三服务 active、live/ready 200、新连接复核 cwd。服务器跑 `release-failed-order-card.js PJV1-_xH487… --dry-run`（三问全 0、active_assignments 1）→ apply：releasedAssignments 1 / resetCards 1；新连接核实 8718 AVAILABLE、订单 assigned_card_id NULL、ready-check 可分配 1 张。下一步：停池 → 关心跳检查 → Lemon 客户页建演练单 → 单单演练 → 收口 → 开回 → supervisor 拉起新池。
+
+## 2026-09-23｜块 3 收尾：演练通过、常驻池换新代码（13:40～13:53 UTC）
+
+流程：`stop-live.sh` 停池 67131 + 关付款 → `set-intake-executor-check.mjs off --apply` → Lemon 客户页建演练单 `PJV1-LjBlwWYn-MKrbHYII1gY`（13:40:51）→ 第一次 `run-live-rehearsal.sh once`（默认 Lane 3 身份 8f126430…）在 `page.goto chatgpt.com` 120s 超时，run FAILED_SAFE、租约过期、无残留进程 → 第二次改用常驻池 lane-1 身份 10f0dc7b… → **`PRE_SUBMIT_STOPPED`，报价 PHP 982.14 / 税 0.00，付款点击 0**（新连接核实 PAYMENT_SUBMIT 0、funds ACTIVE→收口）→ `close-rehearsal-order.mjs`（三问全 0）CLOSED：卡 8718 放回、CDK 退回、派发取消 → check `on --apply` → 按 go-live 同一路径开付款 + profile + 审计 → supervisor 13:50:13 UTC 拉起新池 PID 6667，心跳 13:51 新鲜。**块 3 四项与 D-355 全部上线且演练绿。** 观察：Lane 3 身份打不开 chatgpt.com（原因未查，不影响生产，生产用 lane-1）。
