@@ -153,8 +153,8 @@
  ],
  "assetFails": [
   "http://127.0.0.1:8899/assets/fonts/ibm-plex-mono-400.woff2",
-  "http://127.0.0.1:8899/assets/fonts/familjen-grotesk.woff2",
   "http://127.0.0.1:8899/assets/fonts/ibm-plex-mono-500.woff2",
+  "http://127.0.0.1:8899/assets/fonts/familjen-grotesk.woff2",
   "http://127.0.0.1:8899/assets/fonts/ibm-plex-mono-600.woff2"
  ]
 }

@@ -35,8 +35,9 @@
     .od-page .od-email:hover{color:var(--wb-a);text-decoration:underline}
     .od-page .od-email:focus-visible{outline:2px solid var(--wb-a);outline-offset:2px}
     .od-no{font:11.5px var(--wb-fm);color:var(--wb-t3)}
-    .od-page .od-tries{border:0;background:var(--wb-s3);color:var(--wb-t2);font-size:11px;padding:2px 7px;border-radius:6px;min-height:0;cursor:pointer;margin-left:6px;box-shadow:none}
-    .od-page .od-tries[aria-expanded=true]{background:var(--wb-a-soft);color:var(--wb-a-ink)}
+    .od-page .od-tries{border:0;background:none;color:var(--wb-t3);font-size:12px;padding:0;min-height:0;cursor:pointer;box-shadow:none;border-radius:4px;white-space:nowrap}
+    .od-page .od-tries:hover{color:var(--wb-t);text-decoration:underline}
+    .od-page .od-tries[aria-expanded=true]{color:var(--wb-a-ink)}
     .od-route small{display:block;color:var(--wb-t3);font:11.5px var(--wb-fm)}
     .od-stage{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
     .od-page .od-rowact{min-height:0;border:0;background:none;padding:0;color:var(--wb-a);font-size:12.5px;font-weight:600;cursor:pointer;white-space:nowrap;box-shadow:none;border-radius:4px}
@@ -46,9 +47,9 @@
     .od-page .od-cardlink:hover{color:var(--wb-a);border-bottom-color:var(--wb-a)}
     .od-page .od-cust{white-space:nowrap}
     .od-table{table-layout:fixed}
-    .od-table col.c-cust{width:300px}.od-table col.c-plan{width:64px}.od-table col.c-route{width:150px}.od-table col.c-stage{width:auto}.od-table col.c-time{width:112px}
+    .od-table col.c-cust{width:236px}.od-table col.c-plan{width:64px}.od-table col.c-route{width:150px}.od-table col.c-stage{width:auto}.od-table col.c-time{width:112px}
     .od-table td.od-plan,.od-table td.od-route{color:var(--wb-t2)}
-    .od-table td.od-cust{white-space:normal}
+    .od-table td.od-cust{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     .od-chip{display:inline-flex;align-items:center;gap:6px;padding:4px 8px;border-radius:7px;background:var(--wb-s3);color:var(--wb-t2);white-space:nowrap;font-size:12px}
     .od-chip::before{content:"";width:7px;height:7px;background:currentColor;border-radius:50%}
     .od-chip.ok{background:var(--wb-ok-soft);color:var(--wb-ok)}
@@ -273,10 +274,10 @@
       </tr>`;
       const tries = hist && hist.length ? `<button type="button" class="od-tries" data-expand="${o.cdk}" aria-expanded="${state.expanded.has(o.cdk)}">此前 ${hist.length} 次未成功 ${state.expanded.has(o.cdk) ? '▴' : '▾'}</button>` : '';
       return `<tr class="${isMain ? 'od-mainrow' : 'od-hist'}" data-no="${o.no}">
-        <td class="od-cust"><button type="button" class="od-email" data-open="${o.no}">${emailOf(o)}</button>${tries}</td>
+        <td class="od-cust"><button type="button" class="od-email" data-open="${o.no}">${emailOf(o)}</button></td>
         <td class="od-plan">${PLAN[o.plan] || o.plan}</td>
         <td class="od-route">${o.route === 'BROWSER' ? 'Browser' : 'API'}<small>${o.last4 ? `<button type="button" class="od-cardlink" data-card="${o.no}">${PROVIDER[o.provider] || o.provider} · ${o.last4}</button>` : '未分卡'}</small></td>
-        <td><div class="od-stage">${chip(o)}${isMain ? actionBtn(o, 'row') : ''}</div></td>
+        <td><div class="od-stage">${chip(o)}${isMain ? actionBtn(o, 'row') : ''}${tries}</div></td>
         <td class="od-time">${fmt(o.created)}</td>
       </tr>`;
     }
