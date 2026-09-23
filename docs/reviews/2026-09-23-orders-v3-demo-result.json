@@ -31,7 +31,7 @@
    "detail": "10"
   },
   {
-   "name": "12 次尝试的码显示「此前 11 次未成功」",
+   "name": "12 次尝试的码在邮箱后显示小标「11 ▾」（无文字占位，aria-label 说明）",
    "ok": true,
    "detail": ""
   },
@@ -152,9 +152,9 @@
   }
  ],
  "assetFails": [
+  "http://127.0.0.1:8899/assets/fonts/familjen-grotesk.woff2",
   "http://127.0.0.1:8899/assets/fonts/ibm-plex-mono-400.woff2",
   "http://127.0.0.1:8899/assets/fonts/ibm-plex-mono-500.woff2",
-  "http://127.0.0.1:8899/assets/fonts/familjen-grotesk.woff2",
   "http://127.0.0.1:8899/assets/fonts/ibm-plex-mono-600.woff2"
  ]
 }

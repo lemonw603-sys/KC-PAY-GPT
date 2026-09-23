@@ -28,8 +28,8 @@ const nAction = Number(await page.locator('[data-n="action"]').textContent());
 ok('状态角标：全部 = 主行数', nAll === mainAll, `${nAll}`);
 ok('「需要我处理」角标 ≥ 3（等 Session 1 + 演示付款不明 1 + 演示续费待确认 1）', nAction >= 3, `${nAction}`);
 // 12 次尝试的码：主行带「此前 11 次未成功」，展开后出现 11 条历史行
-const tries = page.locator('.od-tries', { hasText: '此前 11 次' });
-ok('12 次尝试的码显示「此前 11 次未成功」', await tries.count() === 1);
+const tries = page.locator('.od-tries[aria-label="此前 11 次未成功，展开历史"]');
+ok('12 次尝试的码在邮箱后显示小标「11 ▾」（无文字占位，aria-label 说明）', await tries.count() === 1 && (await tries.first().locator('b').textContent()) === '11');
 await tries.first().click();
 ok('展开后出现 11 条历史行', await page.locator('#od-rows tr.od-hist').count() === 11);
 await tries.first().click();

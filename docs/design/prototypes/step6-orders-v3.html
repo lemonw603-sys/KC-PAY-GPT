@@ -35,9 +35,12 @@
     .od-page .od-email:hover{color:var(--wb-a);text-decoration:underline}
     .od-page .od-email:focus-visible{outline:2px solid var(--wb-a);outline-offset:2px}
     .od-no{font:11.5px var(--wb-fm);color:var(--wb-t3)}
-    .od-page .od-tries{border:0;background:none;color:var(--wb-t3);font-size:12px;padding:0;min-height:0;cursor:pointer;box-shadow:none;border-radius:4px;white-space:nowrap}
-    .od-page .od-tries:hover{color:var(--wb-t);text-decoration:underline}
-    .od-page .od-tries[aria-expanded=true]{color:var(--wb-a-ink)}
+    /* 历史尝试标：邮箱后一个 18px 高的小标，数字 + 三角，不写字。展开时三角翻上、底色转主色浅调。 */
+    .od-page .od-tries{display:inline-flex;align-items:center;gap:3px;vertical-align:middle;margin-left:7px;height:18px;padding:0 5px 0 6px;border:0;border-radius:9px;background:var(--wb-s3);color:var(--wb-t2);font:600 11px var(--wb-fm);cursor:pointer;box-shadow:none;min-height:0;line-height:1}
+    .od-page .od-tries i{width:0;height:0;border-left:3.5px solid transparent;border-right:3.5px solid transparent;border-top:4px solid currentColor;transition:transform .15s}
+    .od-page .od-tries:hover{background:var(--wb-bd);color:var(--wb-t)}
+    .od-page .od-tries[aria-expanded=true]{background:var(--wb-a-soft);color:var(--wb-a-ink)}
+    .od-page .od-tries[aria-expanded=true] i{transform:rotate(180deg)}
     .od-route small{display:block;color:var(--wb-t3);font:11.5px var(--wb-fm)}
     .od-stage{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
     .od-page .od-rowact{min-height:0;border:0;background:none;padding:0;color:var(--wb-a);font-size:12.5px;font-weight:600;cursor:pointer;white-space:nowrap;box-shadow:none;border-radius:4px}
@@ -272,12 +275,12 @@
         <td><div class="od-stage">${chip(o)}</div></td>
         <td class="od-time">${fmt(o.created)}</td>
       </tr>`;
-      const tries = hist && hist.length ? `<button type="button" class="od-tries" data-expand="${o.cdk}" aria-expanded="${state.expanded.has(o.cdk)}">此前 ${hist.length} 次未成功 ${state.expanded.has(o.cdk) ? '▴' : '▾'}</button>` : '';
+      const tries = hist && hist.length ? `<button type="button" class="od-tries" data-expand="${o.cdk}" aria-expanded="${state.expanded.has(o.cdk)}" title="此前 ${hist.length} 次未成功，点开看" aria-label="此前 ${hist.length} 次未成功，展开历史"><b>${hist.length}</b><i aria-hidden="true"></i></button>` : '';
       return `<tr class="${isMain ? 'od-mainrow' : 'od-hist'}" data-no="${o.no}">
-        <td class="od-cust"><button type="button" class="od-email" data-open="${o.no}">${emailOf(o)}</button></td>
+        <td class="od-cust"><button type="button" class="od-email" data-open="${o.no}">${emailOf(o)}</button>${tries}</td>
         <td class="od-plan">${PLAN[o.plan] || o.plan}</td>
         <td class="od-route">${o.route === 'BROWSER' ? 'Browser' : 'API'}<small>${o.last4 ? `<button type="button" class="od-cardlink" data-card="${o.no}">${PROVIDER[o.provider] || o.provider} · ${o.last4}</button>` : '未分卡'}</small></td>
-        <td><div class="od-stage">${chip(o)}${isMain ? actionBtn(o, 'row') : ''}${tries}</div></td>
+        <td><div class="od-stage">${chip(o)}${isMain ? actionBtn(o, 'row') : ''}</div></td>
         <td class="od-time">${fmt(o.created)}</td>
       </tr>`;
     }
