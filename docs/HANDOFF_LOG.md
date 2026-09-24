@@ -3612,3 +3612,11 @@ Lemon 决定新开窗口；接班方式由他直接跟新窗口说，本窗口�
 ## 2026-09-24｜新窗口接班核对：HNSKJ 水位已归 0、事实表与自检补漏（01:0x～01:1x UTC）
 
 按 AGENTS 顺序读完入口文档后现场只读核对。`state-check` 11 项全一致，但它不查供卡策略：`admin_setting_events` 显示 00:13 UTC highvcc Plus 水位 2→1、开卡 $50→$16，hnskj Plus 2→1；00:16 highvcc 告警线 50→33；**00:48:38 hnskj Plus 1→0**（actor 只有后台账号 `admin`）。调度器 01:09 轮 `NO_DEMAND`，`alert_notifications` 今日只有 00:13（故障 v1）与 00:45:58（缺卡 v3）两行，此后无推送；`provider_accounts` hnskj 仍 FAULT。HANDOFF_NOW「约每 15 分钟推一次 / 是否先止响」在写下时已过期。改：CURRENT_STATE 供卡执行器行重写；`state-check.sh` 加两台 Plus 水位与 hnskj 故障状态三项（值先单独校验，防查询失败时前缀字母绕过取值守卫），正向 14 项一致、改错副本报 2 处漂移。未动业务代码与生产。
+
+## 2026-09-24｜⑤ 同一故障只推一次（D-363，01:2x～01:4x UTC）
+
+根因（代码 + 隔离库复现）：`scheduleFor` 在 `accountCanOpen` 放行后、真正读钱包前就 `resolveSupplyAlert(card-supply-blocked…)`；故障重试每 15 分钟放行一次 → 先关 → 读到 `purchaseEnabled=false` → 下一分钟被挡重开 → 057 触发器 +1 → Bark 再推。另一个缺陷：需求消失（水位调 0）时这条告警永远不关（生产现挂 OPEN v3）。
+改：删掉放行即关；改为每轮 `可分配 ≥ 需求` 时关（`run`），及开卡执行器真开出卡时关（`card-stock-job-runner.js`，转台开的记在缺卡台名下）；key 抽成 `supplyBlockedAlertKey`。
+验：新增两条带「057 规则台账」的单测，旧代码上两条都失败、修后通过；v1 全量 1038/0（72 跳过）；隔离库 `pojia_d363_alert`（真实 057 触发器 + 正式连接池配置）模拟 00:13 被挡 + 三次重试 + 水位调 0：旧代码缺卡告警 v1→v4、推 4 次且调 0 后仍 OPEN；修后整段 v1、推 1 次、调 0 后 RESOLVED。隔离库已删。未发布。
+发布后预期：首轮调度即把生产那条 OPEN v3 关掉（水位 0、无需求），关闭不推送。
+同文件发现两条，未改、待 Lemon 定：欠账 16 触发条件已到；新增欠账 17（转台开卡按水位反复开）。一次故障仍会有「卡台故障」+「缺卡但开不出来」两条不同推送（外加可能的库存偏低），要不要前者盖住后者待 Lemon 定。

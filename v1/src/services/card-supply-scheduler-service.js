@@ -70,6 +70,17 @@ export function supplyFaultAlertKey(providerAccountId) {
   return `card-supply-fault:${providerAccountId}`;
 }
 
+/**
+ * 「缺卡但开不出来」告警的 dedupe_key（按台 × 产品）。
+ *
+ * 一段缺口期只推一次（D-363）：只在缺口真补上时关——可分配 ≥ 需求（run 每轮判），或真开出了卡
+ * （开卡执行器完成 job 时）。**故障重试不关它**：2026-09-24 HNSKJ 停开卡时，每 15 分钟一次的重试
+ * 先关、读到仍禁开再重开，057 触发器把每次重开算新事件，同一故障推了 3 次。
+ */
+export function supplyBlockedAlertKey(providerAccountId, productCode) {
+  return `card-supply-blocked:${providerAccountId}:${productCode}`;
+}
+
 /** token 失效告警的 dedupe_key。同理：一段失效期只有这一行，贴回新 token 后 RESOLVE。 */
 export function tokenExpiredAlertKey(providerAccountId) {
   return `provider-token-expired:${providerAccountId}`;
@@ -305,7 +316,7 @@ export function createCardSupplyScheduler({ pool, adapters, now = () => new Date
         accountsById: state.accountsById, selections: state.selections });
       if (!fallback.account) {
         await upsertSupplyAlert(pool, {
-          type: ALERT_TYPES.BLOCKED, key: `card-supply-blocked:${demandAccount.id}:${candidate.productCode}`, severity: 'critical',
+          type: ALERT_TYPES.BLOCKED, key: supplyBlockedAlertKey(demandAccount.id, candidate.productCode), severity: 'critical',
           title: '缺卡但开不出来',
           message: `${demandAccount.displayName} 的 ${candidate.productCode} 缺 ${candidate.deficit} 张：该台此刻不能开（${canOpen.reason}），${fallback.reason === 'NOT_BROWSER_DEMAND' ? 'API 路线不转台' : '没有别的卡台能顶上'}。`,
           orderId: candidate.demandOrderId
@@ -315,7 +326,7 @@ export function createCardSupplyScheduler({ pool, adapters, now = () => new Date
       opener = fallback.account;
       fallbackFor = demandAccount.id;
     }
-    await resolveSupplyAlert(pool, `card-supply-blocked:${demandAccount.id}:${candidate.productCode}`);
+    // 这里不关「缺卡但开不出来」：能走到这里只说明「可以试」（含故障重试），还没开出卡（D-363）。
 
     const openerPolicy = state.policies.find((row) => row.providerAccountId === opener.id && row.productCode === candidate.productCode) || null;
     const dailyLimit = openerPolicy?.dailyOpenLimit ?? candidate.dailyOpenLimit;
@@ -426,6 +437,7 @@ export function createCardSupplyScheduler({ pool, adapters, now = () => new Date
       const row = await measure(policy);
       row.accountLabel = account.displayName;
       row.low = await refreshStockAlert(row, { enabled: state.enabled });
+      if (row.available >= row.demand) await resolveSupplyAlert(pool, supplyBlockedAlertKey(row.providerAccountId, row.productCode));
       measured.push(row);
     }
     const decisions = measured.map((row) => ({

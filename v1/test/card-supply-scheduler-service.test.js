@@ -45,7 +45,7 @@ function selectionRows({ plusBrowser = BACKUP_ID } = {}) {
  */
 function fakePool({
   enabled = true, accounts = [accountRow(HNSKJ_ID), accountRow(BACKUP_ID)], selections = selectionRows(),
-  available = {}, waiting = {}, today = {}, fees = {}, activeJob = false, unresolved = false
+  available = {}, waiting = {}, today = {}, fees = {}, activeJob = false, unresolved = false, policies = policyRows()
 } = {}) {
   const queries = []; const alerts = []; const resolved = []; const jobs = []; const faults = [];
   const key = (account, product) => `${account}:${product}`;
@@ -55,7 +55,7 @@ function fakePool({
     if (text.includes("setting_key = 'card_auto_replenishment_enabled'")) return [[{ setting_key: 'card_auto_replenishment_enabled', setting_value: enabled ? 'true' : 'false' }]];
     if (text.includes('FROM provider_accounts pa')) return [accounts];
     if (text.includes('FROM card_source_selections s')) return [selections];
-    if (text.includes('FROM card_supply_policies')) return [policyRows()];
+    if (text.includes('FROM card_supply_policies')) return [policies];
     if (text.includes('FROM products WHERE status')) return [[
       { id: PLUS, product_code: 'chatgpt_plus', legacy_plan_type: 'plus' },
       { id: PRO20, product_code: 'chatgpt_pro_20x', legacy_plan_type: 'pro_20x' }
@@ -254,4 +254,83 @@ test('walletPreflight / estimateIssueFeeCents are integer-cent arithmetic', () =
     { ok: true, balance: '89.48', amount: '50.00', fee: '0.58', floor: '30.00', projected: '38.90' });
   assert.equal(walletPreflight({ availableBalance: 'abc', amount: '50', feeCents: 58, floor: '30' }).ok, false);
   assert.deepEqual(estimateIssueFeeCents({ observedCents: null, amountCents: 15000 }), { cents: 1600, source: 'PLAUSIBLE_UPPER_BOUND' });
+});
+
+/**
+ * 告警台账：按 057 触发器的规则记 incident_version（RESOLVED → OPEN 才 +1），Bark 按版本推。
+ * 假库只记「调了什么」，看不出「先关后开」，所以同一故障推几次要靠这个台账数。
+ */
+function withAlertLedger(pool) {
+  const ledger = new Map();
+  const query = async (sql, params = []) => {
+    const text = String(sql);
+    if (text.includes('INSERT INTO operator_alerts')) {
+      const row = ledger.get(params[1]);
+      if (!row) ledger.set(params[1], { type: params[0], status: 'OPEN', version: 1 });
+      else if (row.status === 'RESOLVED') Object.assign(row, { status: 'OPEN', version: row.version + 1 });
+    } else if (text.startsWith('UPDATE operator_alerts')) {
+      const row = ledger.get(params[0]);
+      if (row?.status === 'OPEN') row.status = 'RESOLVED';
+    }
+    return pool.query(sql, params);
+  };
+  return Object.assign(Object.create(pool), { query, ledger, getConnection: pool.getConnection });
+}
+
+test('同一段故障只推一次：故障重试读到仍禁开，不先关「缺卡但开不出来」（D-363，2026-09-24 HNSKJ 推了 3 次）', async () => {
+  const t0 = Date.parse('2026-09-24T00:13:00Z');
+  let current = new Date(t0);
+  // 生产现场形状：hnskj 停开卡（purchaseEnabled=false），Browser 行指向 highvcc，hnskj 的 Plus 缺口不转台。
+  const hnskj = accountRow(HNSKJ_ID, { supply_fault_state: 'FAULT', supply_fault_reason: 'CARD_STOCK_PURCHASE_DISABLED', supply_fault_at: new Date(t0 - 60_000) });
+  const pool = withAlertLedger(fakePool({
+    accounts: [hnskj, accountRow(BACKUP_ID)],
+    available: { [`${HNSKJ_ID}:plus`]: 0, [`${BACKUP_ID}:plus`]: 2 }
+  }));
+  const scheduler = createCardSupplyScheduler({ pool, adapters: fakeAdapters({ hnskjPurchaseEnabled: false }), now: () => current });
+  const blockedKey = `card-supply-blocked:${HNSKJ_ID}:plus`;
+
+  assert.equal((await scheduler.run()).reason, 'BLOCKED');
+  assert.deepEqual(pool.ledger.get(blockedKey), { type: 'CARD_SUPPLY_BLOCKED', status: 'OPEN', version: 1 });
+
+  // 三轮重试（每 15 分钟一次），每轮之后下一分钟再被挡一次——这正是生产上 00:14 / 00:30 / 00:45 的节奏。
+  for (let round = 1; round <= 3; round += 1) {
+    current = new Date(Date.parse(hnskj.supply_fault_at) + SUPPLY_FAULT_RETRY_MS + 1000);
+    assert.equal((await scheduler.run()).reason, 'ADAPTER_CANNOT_OPEN', `第 ${round} 次重试读到仍禁开`);
+    assert.equal(pool.ledger.get(blockedKey).status, 'OPEN', `第 ${round} 次重试不关缺卡告警`);
+    hnskj.supply_fault_at = current; // markSupplyFault 把故障时间刷成这一轮
+    current = new Date(current.getTime() + 60_000);
+    assert.equal((await scheduler.run()).reason, 'BLOCKED');
+  }
+  assert.deepEqual(pool.ledger.get(blockedKey), { type: 'CARD_SUPPLY_BLOCKED', status: 'OPEN', version: 1 },
+    '一段故障期 incident_version 不涨 = Bark 只推一次');
+  assert.equal(pool.ledger.get(`card-supply-fault:${HNSKJ_ID}`).version, 1, '故障告警本身也只一版');
+});
+
+test('缺口真没了才关「缺卡但开不出来」：水位调 0 或卡够了；之后再缺且开不出是新的一次', async () => {
+  const hnskj = accountRow(HNSKJ_ID, { supply_fault_state: 'FAULT', supply_fault_reason: 'CARD_STOCK_PURCHASE_DISABLED', supply_fault_at: new Date(Date.now() - 60_000) });
+  const zeroTarget = policyRows().map((row) => (row.provider_account_id === HNSKJ_ID && row.product_code === 'plus' ? { ...row, target_available: 0 } : row));
+  const blockedKey = `card-supply-blocked:${HNSKJ_ID}:plus`;
+  const base = fakePool({ accounts: [hnskj, accountRow(BACKUP_ID)], available: { [`${HNSKJ_ID}:plus`]: 0, [`${BACKUP_ID}:plus`]: 2 } });
+  const pool = withAlertLedger(base);
+  await createCardSupplyScheduler({ pool, adapters: fakeAdapters() }).run();
+  assert.equal(pool.ledger.get(blockedKey).status, 'OPEN');
+
+  // Lemon 2026-09-24 00:48 UTC 的操作：把 hnskj Plus 水位调 0 → 没有需求 → 告警关掉（此前它会一直挂着）。
+  const zero = withAlertLedger(fakePool({ accounts: [hnskj, accountRow(BACKUP_ID)], policies: zeroTarget, available: { [`${BACKUP_ID}:plus`]: 2 } }));
+  zero.ledger.set(blockedKey, { type: 'CARD_SUPPLY_BLOCKED', status: 'OPEN', version: 3 });
+  assert.equal((await createCardSupplyScheduler({ pool: zero, adapters: fakeAdapters() }).run()).reason, 'NO_DEMAND');
+  assert.equal(zero.ledger.get(blockedKey).status, 'RESOLVED');
+
+  // 卡够了（可分配 ≥ 水位）同样关；有缺口时不关。
+  const enough = withAlertLedger(fakePool({ accounts: [hnskj, accountRow(BACKUP_ID)], available: { [`${HNSKJ_ID}:plus`]: 2, [`${BACKUP_ID}:plus`]: 2 } }));
+  enough.ledger.set(blockedKey, { type: 'CARD_SUPPLY_BLOCKED', status: 'OPEN', version: 1 });
+  await createCardSupplyScheduler({ pool: enough, adapters: fakeAdapters() }).run();
+  assert.equal(enough.ledger.get(blockedKey).status, 'RESOLVED');
+
+  // 关掉之后水位调回、卡台仍坏：这是新的一段缺口，推一次（版本 +1）。
+  await createCardSupplyScheduler({ pool: zero, adapters: fakeAdapters() }).run();
+  const again = withAlertLedger(fakePool({ accounts: [hnskj, accountRow(BACKUP_ID)], available: { [`${HNSKJ_ID}:plus`]: 0, [`${BACKUP_ID}:plus`]: 2 } }));
+  again.ledger.set(blockedKey, { ...zero.ledger.get(blockedKey) });
+  assert.equal((await createCardSupplyScheduler({ pool: again, adapters: fakeAdapters() }).run()).reason, 'BLOCKED');
+  assert.deepEqual(again.ledger.get(blockedKey), { type: 'CARD_SUPPLY_BLOCKED', status: 'OPEN', version: 4 });
 });

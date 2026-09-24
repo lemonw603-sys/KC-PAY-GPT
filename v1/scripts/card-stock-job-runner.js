@@ -16,7 +16,7 @@ import {
 import { createCardOpenAdapters } from '../src/services/card-open-adapters.js';
 import {
   ALERT_TYPES, clearSupplyFault, createCardSupplyScheduler, markSupplyFault,
-  resolveSupplyAlert, takeoverWaitingOrders, upsertSupplyAlert
+  resolveSupplyAlert, supplyBlockedAlertKey, takeoverWaitingOrders, upsertSupplyAlert
 } from '../src/services/card-supply-scheduler-service.js';
 import { listCardProviderAccounts } from '../src/services/provider-route-service.js';
 import { recordIssueFee } from '../src/services/card-issue-fee-service.js';
@@ -89,6 +89,10 @@ async function executeJob(job) {
   await completeCardStockJob(pool, { jobId: job.id, workerId, openedCount: job.openedCount + opened });
   await clearSupplyFault(pool, { providerAccountId: account.id });
   await resolveSupplyAlert(pool, `card-supply-open-failed:${account.id}`);
+  // 真开出了卡，「缺卡但开不出来」才算结束（D-363）；转台开的记在缺卡那台名下。
+  if (opened > 0 && job.productCode) {
+    await resolveSupplyAlert(pool, supplyBlockedAlertKey(job.fallbackForProviderAccountId || account.id, job.productCode));
+  }
   return { opened, issueFees, takenOver, account: account.displayName };
 }
 
