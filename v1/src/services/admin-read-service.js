@@ -273,7 +273,6 @@ function parseListQuery(input = {}) {
   const pageSize = Number(input.pageSize || 20);
   const status = String(input.status || '').trim();
   const query = String(input.q || '').trim();
-  const tag = String(input.tag || '').trim();
   const from = String(input.from || '').trim();
   const to = String(input.to || '').trim();
   const timeField = String(input.timeField || 'CREATED').trim().toUpperCase();
@@ -303,9 +302,6 @@ function parseListQuery(input = {}) {
   if (query.length > 191) {
     throw new PublicApiError('Query too long', { code: 'INVALID_ADMIN_QUERY', status: 400 });
   }
-  if (tag.length > 64) {
-    throw new PublicApiError('Tag too long', { code: 'INVALID_ADMIN_QUERY', status: 400 });
-  }
   if (!TIME_FIELDS.has(timeField)) {
     throw new PublicApiError('Invalid time field', { code: 'INVALID_ADMIN_QUERY', status: 400 });
   }
@@ -322,7 +318,7 @@ function parseListQuery(input = {}) {
   if (fromDate && toDate && fromDate > toDate) {
     throw new PublicApiError('Invalid time range', { code: 'INVALID_ADMIN_QUERY', status: 400 });
   }
-  return { page, pageSize, status, query, tag, fromDate, toDate, timeField, planType, executorKind, groupByCdk, siblingsOf };
+  return { page, pageSize, status, query, fromDate, toDate, timeField, planType, executorKind, groupByCdk, siblingsOf };
 }
 
 function sessionSafety(row, key, now) {
@@ -997,7 +993,7 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
   }
 
   async function listOrders(input) {
-    const { page, pageSize, status, query, tag, fromDate, toDate, timeField, planType, executorKind, groupByCdk, siblingsOf } = parseListQuery(input);
+    const { page, pageSize, status, query, fromDate, toDate, timeField, planType, executorKind, groupByCdk, siblingsOf } = parseListQuery(input);
     const conditions = [];
     const values = [];
     let exactCdkLookup = null;
@@ -1077,11 +1073,6 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
           WHERE tp.order_id = o.id AND tp.operation = 'create_direct'
             AND ${timeConditions.join(' AND ')})`);
     }
-    if (tag) {
-      conditions.push(`EXISTS (SELECT 1 FROM order_tags ot
-        WHERE ot.order_id = o.id AND BINARY ot.tag = BINARY ?)`);
-      values.push(tag);
-    }
     if (query) {
       const lookupConditions = [`o.public_no LIKE ?`, `o.customer_email LIKE ?`,
         `o.chatgpt_account_id LIKE ?`, `o.recharge_order_no LIKE ?`,
@@ -1090,12 +1081,11 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
           WHERE oqra.order_id = o.id AND oqra.external_order_id LIKE ?)`,
         `EXISTS (SELECT 1 FROM provider_calls oqpc
           WHERE oqpc.order_id = o.id AND oqpc.business_code LIKE ?)`,
-        `EXISTS (SELECT 1 FROM order_tags oqt WHERE oqt.order_id = o.id AND oqt.tag LIKE ?)`,
         `EXISTS (SELECT 1 FROM customer_payments oqp
           WHERE oqp.order_id = o.id AND oqp.external_reference_masked LIKE ?)`];
       const pattern = `%${query}%`;
       values.push(pattern, pattern, pattern, pattern, pattern, pattern, pattern, pattern,
-        pattern, pattern);
+        pattern);
       const normalizedPan = query.replace(/[\s-]/g, '');
       const cardLookup = [`sc.provider_card_id LIKE ?`, `sc.external_card_id LIKE ?`, `sc.last4 = ?`];
       values.push(pattern, pattern, query);
@@ -1114,8 +1104,7 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
         exactCdkLookup = lookup;
         lookupConditions.push(`EXISTS (
           SELECT 1 FROM cdks cdk
-          LEFT JOIN order_compensations oc ON oc.replacement_cdk_id = cdk.id
-          WHERE (cdk.id = o.cdk_id OR oc.original_order_id = o.id) AND (
+          WHERE cdk.id = o.cdk_id AND (
             (cdk.hash_version = ? AND cdk.code_hash = ?)
             OR (cdk.hash_version = ? AND cdk.code_hash = ?)
           )
@@ -1287,8 +1276,8 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
       throw new PublicApiError('Invalid public number', { code: 'INVALID_ADMIN_QUERY', status: 400 });
     }
     const [[orderRows], [eventRows], [taskRows], [callRows], [refundRows], [transactionRows],
-      [compensationRows], [authorizationRows], [cdkRows], [deliveryRows], [paymentRows],
-      [assignmentRows], [noteRows], [tagRows], [relationshipRows], [sessionReplacementRows],
+      [authorizationRows], [cdkRows], [deliveryRows], [paymentRows],
+      [assignmentRows], [noteRows], [sessionReplacementRows],
       [attemptRows], [ledgerRows], [operationRows], [caseRows]] = await Promise.all([
       pool.query(`SELECT o.id, o.public_no, o.status, o.plan_type, o.customer_email,
           o.chatgpt_account_id, o.card_type_id, o.open_card_amount,
@@ -1357,11 +1346,6 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
         INNER JOIN card_transactions ct ON ct.card_id = c.id
         WHERE BINARY o.public_no = ?
         ORDER BY ct.id DESC LIMIT 200`, [publicNo]),
-      pool.query(`SELECT oc.created_at, c.status AS replacement_status
-        FROM order_compensations oc
-        INNER JOIN orders o ON o.id = oc.original_order_id
-        INNER JOIN cdks c ON c.id = oc.replacement_cdk_id
-        WHERE BINARY o.public_no = ? LIMIT 1`, [publicNo]),
       pool.query(`SELECT ra.id AS authorization_id, ra.status AS authorization_status,
           ra.expires_at, rai.status AS item_status, rat.id AS attempt_id,
           rat.status AS attempt_status, rat.funds_risk_state
@@ -1371,36 +1355,22 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
         LEFT JOIN recharge_attempts rat ON rat.authorization_item_id = rai.id
         WHERE BINARY o.public_no = ? ORDER BY rai.created_at DESC LIMIT 1`, [publicNo])
       ,pool.query(`SELECT c.id, c.status, c.batch_no, c.created_at, c.redeemed_at,
-            CASE WHEN c.id = o.cdk_id THEN 'ORDER' ELSE 'REPLACEMENT' END AS relationship,
+            'ORDER' AS relationship,
             redeemed_order.public_no AS redeemed_order_public_no
           FROM orders o
-          INNER JOIN cdks c ON c.id = o.cdk_id OR EXISTS (
-            SELECT 1 FROM order_compensations oc
-            WHERE oc.original_order_id = o.id AND oc.replacement_cdk_id = c.id
-          )
+          INNER JOIN cdks c ON c.id = o.cdk_id
           LEFT JOIN orders redeemed_order ON redeemed_order.id = c.order_id
           WHERE BINARY o.public_no = ? ORDER BY c.created_at`, [publicNo])
       ,pool.query(`SELECT de.cdk_id, de.event_type, de.channel,
             de.recipient_note, de.actor_id, de.delivered_at
           FROM cdk_delivery_events de
-          INNER JOIN orders o ON de.cdk_id = o.cdk_id OR EXISTS (
-            SELECT 1 FROM order_compensations oc
-            WHERE oc.original_order_id = o.id AND oc.replacement_cdk_id = de.cdk_id
-          )
+          INNER JOIN orders o ON de.cdk_id = o.cdk_id
           WHERE BINARY o.public_no = ? ORDER BY de.delivered_at DESC`, [publicNo])
       ,pool.query(`SELECT p.id, p.cdk_id, p.payment_channel, p.payment_status,
             p.amount, p.currency, p.paid_at, p.external_reference_masked,
             p.operator_note, p.recorded_by, p.created_at
           FROM customer_payments p
-          INNER JOIN orders o ON p.order_id = o.id OR p.cdk_id = o.cdk_id OR EXISTS (
-            SELECT 1 FROM order_compensations oc
-            WHERE oc.original_order_id = o.id AND oc.replacement_cdk_id = p.cdk_id
-          ) OR EXISTS (
-            SELECT 1 FROM order_compensations reverse_oc
-            INNER JOIN orders original ON original.id = reverse_oc.original_order_id
-            WHERE reverse_oc.replacement_cdk_id = o.cdk_id
-              AND (p.order_id = original.id OR p.cdk_id = original.cdk_id)
-          )
+          INNER JOIN orders o ON p.order_id = o.id OR p.cdk_id = o.cdk_id
           WHERE BINARY o.public_no = ? ORDER BY p.created_at DESC`, [publicNo])
       ,pool.query(`SELECT ah.id, ah.assignment_kind, ah.status, ah.assigned_by,
             ah.assignment_reason, ah.assigned_at, ah.released_by, ah.release_reason,
@@ -1415,18 +1385,6 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
       ,pool.query(`SELECT n.id, n.note_text, n.created_by, n.created_at
           FROM order_notes n INNER JOIN orders o ON o.id = n.order_id
           WHERE BINARY o.public_no = ? ORDER BY n.created_at DESC`, [publicNo])
-      ,pool.query(`SELECT t.tag, t.created_by, t.created_at
-          FROM order_tags t INNER JOIN orders o ON o.id = t.order_id
-          WHERE BINARY o.public_no = ? ORDER BY t.tag`, [publicNo])
-      ,pool.query(`SELECT original.public_no AS original_public_no,
-            replacement_order.public_no AS replacement_public_no,
-            oc.created_at
-          FROM order_compensations oc
-          INNER JOIN orders original ON original.id = oc.original_order_id
-          INNER JOIN cdks replacement_cdk ON replacement_cdk.id = oc.replacement_cdk_id
-          LEFT JOIN orders replacement_order ON replacement_order.cdk_id = replacement_cdk.id
-          WHERE BINARY original.public_no = ? OR BINARY replacement_order.public_no = ?
-          ORDER BY oc.created_at DESC`, [publicNo, publicNo])
       ,pool.query(`SELECT sr.replacement_no, sr.reason_code,
             sr.previous_customer_email, sr.new_customer_email,
             sr.previous_chatgpt_account_id, sr.new_chatgpt_account_id,
@@ -1494,18 +1452,6 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
     const cardReady = ['active', 'available', 'usable', 'ready'].includes(String(row.card_status || '').toLowerCase())
       && Number(row.current_balance) >= Number(row.minimum_required_card_balance)
       && Boolean(row.card_credentials_ciphertext);
-    const compensationRecord = compensationRows[0];
-    const hasActiveTask = taskRows.some((task) => ['PENDING', 'RUNNING'].includes(task.status));
-    const hasDeadTask = taskRows.some((task) => task.status === 'DEAD');
-    let compensationCode = 'COMPENSATION_SIDE_EFFECT_RISK';
-    if (compensationRecord) compensationCode = 'COMPENSATION_ALREADY_ISSUED';
-    else if (row.status === 'CREATED' && !row.provider_card_id && callRows.length === 0 && hasActiveTask) {
-      compensationCode = 'COMPENSATION_ORDER_STILL_ACTIVE';
-    } else if (row.status === 'CREATED' && !row.provider_card_id && callRows.length === 0 && !hasDeadTask) {
-      compensationCode = 'COMPENSATION_NOT_TERMINALLY_FAILED';
-    } else if (row.status === 'CREATED' && !row.provider_card_id && callRows.length === 0 && hasDeadTask) {
-      compensationCode = 'COMPENSATION_ELIGIBLE';
-    }
     const rechargeCallExists = callRows.some(
       (call) => call.provider === 'zzshu' && call.operation === 'create_direct'
     );
@@ -1678,13 +1624,6 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
         cardReady,
         cardCheckFresh
       },
-      compensation: {
-        eligible: compensationCode === 'COMPENSATION_ELIGIBLE',
-        alreadyIssued: Boolean(compensationRecord),
-        code: compensationCode,
-        issuedAt: iso(compensationRecord?.created_at),
-        replacementStatus: compensationRecord?.replacement_status || null
-      },
       cancellation: {
         eligible: cancellationCode === 'ORDER_CANCELLATION_ELIGIBLE',
         alreadyCancelled: cancellationCode === 'ORDER_CANCELLATION_ALREADY_COMPLETED',
@@ -1727,14 +1666,6 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
         notes: noteRows.map((note) => ({
           id: note.id, text: note.note_text, createdBy: note.created_by,
           createdAt: iso(note.created_at)
-        })),
-        tags: tagRows.map((tagRow) => ({
-          tag: tagRow.tag, createdBy: tagRow.created_by, createdAt: iso(tagRow.created_at)
-        })),
-        orderRelationships: relationshipRows.map((relationship) => ({
-          originalPublicNo: relationship.original_public_no,
-          replacementPublicNo: relationship.replacement_public_no || null,
-          createdAt: iso(relationship.created_at)
         })),
         sessionReplacements: sessionReplacementRows.map((replacement) => ({
           replacementNo: Number(replacement.replacement_no),

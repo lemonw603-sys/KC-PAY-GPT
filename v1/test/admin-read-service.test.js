@@ -198,7 +198,8 @@ test('admin order list validates filters, maps card summaries, and supports CDK 
   assert.match(pool.queries[0].sql, /payment_state IN \('PAYMENT_CONFIRMED','PAYMENT_UNKNOWN'\)/);
   assert.equal(pool.queries.some(({ sql }) => /session_ciphertext|recharge_card_key/i.test(sql)), false);
   assert.match(pool.queries[0].sql, /EXISTS \(\s*SELECT 1 FROM cdks cdk/i);
-  assert.equal(pool.queries[0].values.length, 22);
+  // 关键词搜索少了「标签」那一个 LIKE（D-367 删 order_tags）：22 → 21
+  assert.equal(pool.queries[0].values.length, 21);
   assert.match(pool.queries[0].sql, /card_assignment_history/i);
   assert.match(pool.queries[0].sql, /customer_payments/i);
 
@@ -247,7 +248,7 @@ test('admin order detail exposes the full PAN but not CVV or Session', async () 
     }, {
       task_type: 'SUBMIT_RECHARGE', status: 'PENDING', attempts: 0, max_attempts: 5,
       permit_status: null, permit_expires_at: null
-    }], [], [], [], [], [], [], [], [], [], [], [], [], [],
+    }], [], [], [], [], [], [], [], [], [], [],
     [{ id: 'attempt-1', executor_kind: 'BROWSER', status: 'PREPARED', funds_risk_state: 'CLEARED',
       external_order_id: null, submit_intent_at: null, submitted_at: null, last_reconciled_at: null,
       finished_at: null, created_at: new Date(nowMs) }],
@@ -300,10 +301,8 @@ test('admin order detail exposes the full PAN but not CVV or Session', async () 
     cardReady: true,
     cardCheckFresh: true
   });
-  assert.deepEqual(result.compensation, {
-    eligible: false, alreadyIssued: false, code: 'COMPENSATION_SIDE_EFFECT_RISK',
-    issuedAt: null, replacementStatus: null
-  });
+  // 补发随 D-367 删除：详情不再给补发资格（前端从未使用），标签与订单关联两块同删。
+  assert.equal(Object.hasOwn(result, 'compensation'), false);
   assert.deepEqual(result.cancellation, {
     eligible: true, alreadyCancelled: false, code: 'ORDER_CANCELLATION_ELIGIBLE',
     cardWillBeReleased: true
@@ -311,8 +310,8 @@ test('admin order detail exposes the full PAN but not CVV or Session', async () 
   assert.deepEqual(result.transactions, []);
   assert.deepEqual(result.traceability, {
     deliveryTrackingEnabled: false,
-    cdks: [], deliveries: [], customerPayments: [], cardAssignments: [], notes: [], tags: [],
-    orderRelationships: [], sessionReplacements: [],
+    cdks: [], deliveries: [], customerPayments: [], cardAssignments: [], notes: [],
+    sessionReplacements: [],
     fulfillmentCost: {
       customerPayments: [], cardFundedAmount: [], providerConfirmedPayment: [],
       successfulCardPurchases: [], cardTransactionFees: [], exchangeRateApplied: false,
@@ -337,7 +336,7 @@ test('admin order detail prefers the Provider attempt failure reason over a gene
       created_at: new Date(nowMs - 60_000), updated_at: new Date(nowMs),
       finished_at: new Date(nowMs)
     }],
-    [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], []
+    [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], []
   ]);
   const result = await createAdminReadService({ pool, now: () => nowMs })
     .getOrder('PJV1-FAILED');
@@ -348,16 +347,17 @@ test('admin order detail prefers the Provider attempt failure reason over a gene
   assert.match(pool.queries[0].sql, /recharge_attempt_result_summary_json/);
 });
 
-test('admin unified search supports exact PAN HMAC, tags, and bounded time filters', async () => {
+test('admin unified search supports exact PAN HMAC and bounded time filters (tag filter retired, D-367)', async () => {
   const panKey = Buffer.alloc(32, 31);
   const pool = queuedPool([[{ total: 0 }], []]);
   await createAdminReadService({ pool, panHmacKey: panKey }).listOrders({
-    q: '4242-4242-4242-4242', tag: '补发',
+    q: '4242-4242-4242-4242', tag: '补发', // 旧参数：传了也被忽略
     from: '2026-08-01T00:00:00.000Z', to: '2026-08-31T23:59:59.999Z'
   });
   const countQuery = pool.queries[0];
   assert.match(countQuery.sql, /sc\.pan_hmac = \?/i);
-  assert.match(countQuery.sql, /BINARY ot\.tag = BINARY \?/i);
+  assert.doesNotMatch(countQuery.sql, /order_tags|order_compensations/i);
+  assert.equal(countQuery.values.includes('补发'), false);
   assert.match(countQuery.sql, /o\.created_at >= \?/i);
   assert.match(countQuery.sql, /o\.created_at <= \?/i);
   const expectedHmac = (await import('node:crypto')).default
@@ -482,7 +482,7 @@ test('admin order detail: a card-less Session-waiting order (card released per D
       created_at: new Date(nowMs), updated_at: new Date(nowMs)
     }],
     [], [{ task_type: 'SUBMIT_RECHARGE', status: 'DEAD', attempts: 1, max_attempts: 5, permit_status: null, permit_expires_at: null }],
-    [], [], [], [], [], [], [], [], [], [], [], [], [],
+    [], [], [], [], [], [], [], [], [], [],
     [{ id: 'attempt-9', executor_kind: 'BROWSER', status: 'CANCELLED', funds_risk_state: 'CLEARED',
       external_order_id: null, submit_intent_at: null, submitted_at: null, last_reconciled_at: null,
       finished_at: new Date(nowMs), created_at: new Date(nowMs) }],
@@ -503,7 +503,7 @@ test('admin order detail: a card-less Session-waiting order with a live funds at
       actual_payment_amount: null, actual_payment_currency: null, provider_card_id: null,
       recharge_order_no: null, recharge_card_key: null, session_ciphertext: null,
       created_at: new Date(nowMs), updated_at: new Date(nowMs) }],
-    [], [], [], [], [], [], [], [], [], [], [], [], [], [], [],
+    [], [], [], [], [], [], [], [], [], [], [], [],
     [{ id: 'attempt-8', executor_kind: 'BROWSER', status: 'SUBMIT_UNKNOWN', funds_risk_state: 'UNKNOWN',
       external_order_id: null, submit_intent_at: null, submitted_at: null, last_reconciled_at: null,
       finished_at: null, created_at: new Date(nowMs) }],

@@ -9,10 +9,7 @@ const SELECT_ORDER = `
          o.session_replacement_count, o.session_repair_expires_at,
          COALESCE(
            CASE WHEN o.status = 'CLOSED' THEN (
-             CASE WHEN o.failure_code = 'CANCELLED_PRE_SUBMISSION' THEN 'CARD_FAILED'
-             WHEN EXISTS (
-               SELECT 1 FROM order_compensations oc WHERE oc.original_order_id = o.id
-             ) THEN 'CARD_FAILED' ELSE (
+             CASE WHEN o.failure_code = 'CANCELLED_PRE_SUBMISSION' THEN 'CARD_FAILED' ELSE (
                SELECT oe.to_status FROM order_events oe
                WHERE oe.order_id = o.id AND oe.to_status <> 'CLOSED'
                ORDER BY oe.id DESC LIMIT 1

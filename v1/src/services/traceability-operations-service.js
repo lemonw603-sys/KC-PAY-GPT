@@ -43,28 +43,6 @@ export function createTraceabilityOperationsService({ pool, paymentReferenceHmac
     return { publicNo, note, recorded: true };
   }
 
-  async function addOrderTag(publicNoInput, input = {}) {
-    const publicNo = normalizePublicNo(publicNoInput);
-    const tag = normalizeText(input.tag, { field: 'tag', max: 64 });
-    try {
-      const [result] = await pool.query(
-        `INSERT INTO order_tags (order_id, tag, created_by)
-         SELECT o.id, ?, 'admin' FROM orders o
-         WHERE BINARY o.public_no = ?`,
-        [tag, publicNo]
-      );
-      if (Number(result.affectedRows) !== 1) {
-        throw new TraceabilityOperationError('Order not found', 'ADMIN_ORDER_NOT_FOUND', 404);
-      }
-      return { publicNo, tag, recorded: true, replayed: false };
-    } catch (error) {
-      if (error?.code === 'ER_DUP_ENTRY') {
-        return { publicNo, tag, recorded: true, replayed: true };
-      }
-      throw error;
-    }
-  }
-
   async function completeCustomerPayment(publicNoInput, input = {}) {
     const publicNo = normalizePublicNo(publicNoInput);
     const amount = String(input.amount || '').trim();
@@ -104,12 +82,7 @@ export function createTraceabilityOperationsService({ pool, paymentReferenceHmac
         `SELECT o.id AS order_id, o.cdk_id, p.id AS payment_id, p.order_id AS payment_order_id,
                 p.amount, p.currency,
                 p.payment_channel, p.paid_at, p.external_reference_hmac
-         FROM orders o INNER JOIN customer_payments p ON p.cdk_id = o.cdk_id OR EXISTS (
-           SELECT 1 FROM order_compensations oc
-           INNER JOIN orders original ON original.id = oc.original_order_id
-           WHERE oc.replacement_cdk_id = o.cdk_id
-             AND (p.order_id = original.id OR p.cdk_id = original.cdk_id)
-         )
+         FROM orders o INNER JOIN customer_payments p ON p.cdk_id = o.cdk_id
          WHERE BINARY o.public_no = ? ORDER BY p.created_at LIMIT 1 FOR UPDATE`,
         [publicNo]
       );
@@ -149,5 +122,5 @@ export function createTraceabilityOperationsService({ pool, paymentReferenceHmac
     }
   }
 
-  return { addOrderNote, addOrderTag, completeCustomerPayment };
+  return { addOrderNote, completeCustomerPayment };
 }

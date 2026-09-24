@@ -8,10 +8,12 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const migrationsDir = path.resolve(here, '../migrations');
 const sql = fs.readFileSync(path.join(migrationsDir, '053_card_source_selections_and_supply.sql'), 'utf8');
 
-test('059 is the newest migration; 053 through 059 are additive', () => {
+test('060 is the newest migration; 053 through 059 are additive', () => {
   const names = fs.readdirSync(migrationsDir).filter((name) => /^\d+_[a-z0-9_-]+\.sql$/i.test(name)).sort();
   // 055＝D-286（CDK 发出登记 + 有效期），Lemon 2026-09-19 批准新增；只加列、不动存量。
-  assert.equal(names.at(-1), '059_card_max_payments_per_product.sql');
+  // 060＝块 7 删表第一批（D-367），下面单独一条钉住它只删那 5 张。
+  assert.equal(names.at(-1), '060_drop_superseded_and_unused_tables.sql');
+  assert.equal(names.at(-2), '059_card_max_payments_per_product.sql');
   // 059＝D-221 每卡单数按产品：只补两把 Pro 键（=1），已有值不覆盖；不改结构、不动 Plus 的全局键。
   const perProduct = fs.readFileSync(path.join(migrationsDir, '059_card_max_payments_per_product.sql'), 'utf8');
   assert.doesNotMatch(perProduct, /ALTER TABLE|CREATE TABLE|DELETE|UPDATE\s+app_settings/i);
@@ -68,4 +70,19 @@ test('053 lets stock jobs name their account/product and be archived without del
   assert.match(sql, /ADD COLUMN fallback_for_provider_account_id CHAR\(36\) NULL/);
   assert.match(sql, /ADD COLUMN archived_at TIMESTAMP\(3\) NULL/);
   assert.match(sql, /UPDATE card_stock_jobs\s+SET provider_account_id = '00000000-0000-4000-8000-000000000101', product_code = 'plus'\s+WHERE provider_account_id IS NULL/);
+});
+
+test('060 只删 D-367 定下的 5 张表，别的一张不碰（块 7 第一批）', () => {
+  const sql = fs.readFileSync(path.join(migrationsDir, '060_drop_superseded_and_unused_tables.sql'), 'utf8')
+    .split('\n').filter((line) => !line.trim().startsWith('--')).join('\n');
+  const dropped = [...sql.matchAll(/DROP TABLE IF EXISTS ([a-z_]+);/g)].map((m) => m[1]).sort();
+  assert.deepEqual(dropped, ['browser_card_source_selections', 'browser_card_source_switch_events',
+    'fulfillment_route_card_sources', 'order_compensations', 'order_tags']);
+  assert.doesNotMatch(sql, /ALTER|CREATE|DELETE|UPDATE|INSERT|TRUNCATE/i);
+  // 盘点结论里明确不删的（资金保护、付款链路在引用、功能保留、第二批再动）
+  for (const kept of ['refund_cases', 'order_notes', 'checkout_artifacts', 'browser_artifact_secrets',
+    'reconciliation_cases', 'browser_interventions', 'card_funding_attempts', 'card_funding_manual_actions',
+    'card_source_selections']) {
+    assert.doesNotMatch(sql, new RegExp(`\\b${kept}\\b`), `${kept} 不在第一批`);
+  }
 });

@@ -115,7 +115,8 @@ test('looks up by public number or hashed CDK without passing CDK plaintext', as
   assert.equal(byCdk.publicNo, byPublicNo.publicNo);
 });
 
-test('closed compensated orders are resolved from the compensation record before public mapping', async () => {
+// 补发（order_compensations）随 D-367 删除：CLOSED 单不再查补发记录，只按付款前取消与最后一个非 CLOSED 状态映射。
+test('closed orders map without the retired compensation lookup', async () => {
   const queries = [];
   const pool = {
     async query(sql, values) {
@@ -126,7 +127,8 @@ test('closed compensated orders are resolved from the compensation record before
   };
   const result = await createOrderStatusService({ pool })({ publicNo: 'PJV1-ABCDEFGHIJKLMNOPQRST' });
   assert.equal(result.status, 'FAILED');
-  assert.match(queries[0].sql, /order_compensations/);
+  assert.doesNotMatch(queries[0].sql, /order_compensations/);
+  assert.match(queries[0].sql, /CANCELLED_PRE_SUBMISSION/);
 });
 
 test('rejects ambiguous query bodies and hides missing lookup details', async () => {

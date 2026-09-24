@@ -16,22 +16,13 @@ test('adds append-only notes through an order relationship', async () => {
   assert.match(pool.queries[0].sql, /BINARY o\.public_no = \?/i);
 });
 
-test('adds idempotent tags and rejects invalid traceability input', async () => {
+// 订单标签随 D-367 删除（addOrderTag 从未接到路由，order_tags 0 行）；保留备注的非法输入校验。
+test('rejects invalid traceability input', async () => {
   const pool = poolWith({ affectedRows: 1 });
   const service = createTraceabilityOperationsService({ pool });
-  assert.deepEqual(await service.addOrderTag('PJV1-DEMO', { tag: '补发' }), {
-    publicNo: 'PJV1-DEMO', tag: '补发', recorded: true, replayed: false
-  });
-  await assert.rejects(() => service.addOrderTag('PJV1-DEMO', { tag: '' }), /tag is invalid/);
+  assert.equal(service.addOrderTag, undefined);
   await assert.rejects(() => service.addOrderNote('bad', { note: 'x' }),
     (error) => error.code === 'ADMIN_ORDER_NOT_FOUND');
-});
-
-test('repeated tags are reported as a safe replay', async () => {
-  const pool = { async query() { const error = new Error('duplicate'); error.code = 'ER_DUP_ENTRY'; throw error; } };
-  const result = await createTraceabilityOperationsService({ pool })
-    .addOrderTag('PJV1-DEMO', { tag: '重点客户' });
-  assert.equal(result.replayed, true);
 });
 
 test('completes an unknown payment once while storing only HMAC and masked reference', async () => {

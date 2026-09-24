@@ -3657,3 +3657,9 @@ Lemon：HNSKJ 卡台维护中，是卡台自己的问题。写入 CURRENT_STATE 
 ## 2026-09-24｜块 7 删表盘点（03:5x～04:1x UTC，只读）
 
 Lemon「现在开始」。报告 `reviews/2026-09-24-block7-table-inventory.md`：63 表精确行数（03:52 UTC）+ 分区引用统计 + 调用链。要点：运行代码里真 0 引用的只有 3 张旧卡台选择表（面五④清单外，053 已替代）；面五④点名的 5 张零行表里 `checkout_artifacts`/`browser_artifact_secrets` 被每张 Browser 单的 `abortBeforePayment`/`recordPlusActivation` UPDATE，**不能直接删**；`order_notes` 被「补录客户付款」在用；`order_tags` 与 `order_compensations` 的写入入口已不存在；`refund_cases` 是分卡资格里的资金保护，建议不删；导出端点面五④说删、诊断页 D-325 保留，冲突待定；补余额两个定时任务 10 分钟约 105 秒 CPU、开关关着空转。CURRENT_STATE「事实表之外」旧句改指向报告。
+
+## 2026-09-24｜块 7 第一批代码就绪（D-367，04:2x～04:5x UTC，未发布）
+
+删 `order_tags` / `order_compensations` 全部读写：后台订单列表的标签筛选与关键词里的标签条件（占位 22→21）、CDK 精确查找的补发分支、订单详情三条查询（补发记录 / 标签 / 订单关联）及响应里 `compensation` / `tags` / `orderRelationships` 三块（前端 0 处使用）、CDK/交付/客户付款三条查询里的补发分支、客户查单 CLOSED 单的补发分支、`addOrderTag`（未接路由）、整个 `order-compensation-service.js`（未被引用）及其测试。迁移 060 删 5 张表（3 张旧卡台选择表 + 这两张）。
+验：v1 全量 1041/0（72 跳过；少的 1 条是删掉的补发集成测试）；新增「060 只删这 5 张、不碰盘点里保留的表」测试；隔离库 001→060 两遍（第二遍 already applied），5 表消失、剩 58 表；把全部抽取 SQL 对**删表后**的隔离库逐条 PREPARE，0 报错（反例：对 `order_tags` PREPARE 报 1146，证明检查有效）。删前行已导出：`reviews/2026-09-24-block7-evidence/batch1-rows-before-drop.tsv`（12 行）+ 列名。
+**发布顺序要反过来**：先 switch 到不再引用这些表的新代码，确认后再跑 060；060 之后回滚到旧 release 会让旧代码的订单列表/详情/客户查单报错，须先按旧迁移重建表。补余额两个定时任务的停用是单独的生产动作。

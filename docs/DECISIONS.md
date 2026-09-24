@@ -5532,3 +5532,11 @@ Lemon 答复：
 1. **发布** D-365 的欠账 16 / 17 / 同一故障只推一条。
 2. **「剩 N 张 · 能充 N 单」用 B「统一」**：整句 12px 中等粗细、数字正文字体（tnum），与「钱包 X USD · 查询于」同写法；随本次一起发布。
 3. **「可离开」第一条改为甲**（覆盖 D-352 补记「10 次 rehearsal + 两单真钱」）：**第一张真实客户 Plus 单即真钱验收**——来单时 Bark 会推（D-340），Lemon 开窗口让执行者按 RUNBOOK §1 全程盯、逐项对照 `contracts/2026-09-18_delivery-criteria-contract.md`；此后「连续 10 单无人介入自动完成」用真实客户单计数。不花 Lemon 的钱、不需要 free 号；代价是第一次真付款跑在客户单上，出问题靠已上线的兜底（付款不明只锁账号、停摆时客户页有答复且 Bark 有推）。20X 那单仍随块 6（Pro）在其首个真实客户单上验，块 6 PoC 仍因无账号挂起。
+
+## D-367（2026-09-24 12:1x UTC+8）块 7 删表范围定稿
+
+Lemon 对盘点报告（`reviews/2026-09-24-block7-table-inventory.md`）答复「以上同意」：
+1. **删**：3 张旧卡台选择表（`browser_card_source_selections` / `browser_card_source_switch_events` / `fulfillment_route_card_sources`，删前导出留底）；补余额整条线（先停两个定时任务，再删代码与 `card_funding_attempts` / `card_funding_manual_actions`，导出留底）；`order_tags` / `order_compensations` 及其读写代码（含客户查单一句 SQL）。
+2. **导出留档保留**（面五④「删 exports 端点」作废，按 D-325 诊断页）。
+3. **「补录客户付款」先留**，`order_notes` 随之保留。
+不删：`checkout_artifacts` / `browser_artifact_secrets`（并入块 6）、`refund_cases`（资金保护）及已定保留各表。生产动作（导出、停定时任务、迁移、发布）执行前仍逐次问。

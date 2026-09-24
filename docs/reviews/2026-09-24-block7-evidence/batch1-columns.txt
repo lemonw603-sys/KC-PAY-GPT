@@ -1,0 +1,5 @@
+browser_card_source_selections: product_id,provider_account_id,version,updated_by,updated_at
+browser_card_source_switch_events: id,product_id,previous_provider_account_id,provider_account_id,waiting_takeover_requested,estimated_takeover_count,actual_takeover_count,actor_id,created_at
+fulfillment_route_card_sources: fulfillment_route_id,provider_account_id,priority,enabled,created_at
+order_tags: order_id,tag,created_by,created_at
+order_compensations: id,original_order_id,replacement_cdk_id,code_ciphertext,reason,issued_by,created_at
