@@ -3603,3 +3603,8 @@ Lemon「欠账 15」。查 D-355 ⑦ 已定 (b)，直接做：`remaining_orders`
 
 Lemon「发布」。无迁移；prepare（备份 `pojia-20260923T234556Z`）→ 复核 → switch：三进程 cwd 在新 release，live/ready 200。复验：登录 200、`admin.js?v=94` 含 remainingOrders、overview 未登录 401；生产只读实跑 getOverview：highvcc Plus 剩 1 张 · 能充 3 单（8718 未用），HNSKJ Plus 剩 0 · 能充 0，5X/20X 两台均 0。回滚点 `20260924-per-product-cap-213ccba`。
 
+## 2026-09-24｜窗口收尾：Lemon 的四个问题（只查未改）+ 新窗口接班方式（08:3x～08:5x UTC+8）
+
+Lemon 看生产后提四问：卡与钱排版被改、「更新登录」跳贴 token 框且提示不消失、卡片页 highvcc 只有查余额没有余额、HNSKJ 故障短时间推 3 条。逐条查代码与生产，结论与证据写进 `HANDOFF_NOW.md`「待处理的四个问题」。要点：①D-362 把「自动补/需人工开」下沉第二行是我未问 Lemon 自改，承认错误；②`showNotice` 无自动消失；③highvcc 卡台格只渲染按钮；④缺卡告警因 15 分钟故障重试「先关后开」被 057 触发器算作新事件，00:14/00:30/00:45 三次推送（后台任务等到 00:46 UTC 实查证实）。五条建议均未获批、未改。
+Lemon 换模型后要求：新模型先把项目搞清楚、不要上来盲目分析；并决定新开窗口。接班方式写进 `HANDOFF_NOW.md` 顶部「新窗口第一件事」。本机常驻池 6667 / supervisor 61962 是块 3 正式池，保留不动；本窗口起的本地 8803/8899 演示服务已停。
+
