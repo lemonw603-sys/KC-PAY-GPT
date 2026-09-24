@@ -22,6 +22,10 @@
 2. **「可离开」第一条（D-366）**：等第一张真实客户 Plus 单。来单 Bark 会推 → Lemon 开窗口 → 执行者按 RUNBOOK §1 全程盯、逐项对照 `contracts/2026-09-18_delivery-criteria-contract.md`；此后数「连续 10 单真实客户单无人介入」。不自费、不需 free 号。
 3. 块 6（Pro 20X）PoC 仍挂起：没有无订阅账号（任务书 `tasks/2026-09-24-block6-pro20x-poc.md`，脚本已写未跑）。
 
+## 并行在跑的别的工作（不是本窗口的）
+
+- **Codex**（Lemon 2026-09-24 安排）：在本工作区评估 GitHub 上一个充值项目有什么可借鉴。14:22 / 14:59（UTC+8）各跑了一次只读 PoC（定价弹窗、结账接口），用的比特浏览器窗口**不是**常驻池的 lane/执行窗口（编号摘要 9d7445ff… vs a196a016… / 1a6410f7…），常驻池未受影响。它留下的 `artifacts/poc-checkout-api-20260907/pricing-modal-plus.json`（覆盖了 09-07 基线，原件在 git 历史）与新目录 `artifacts/poc-checkout-api-20260924/` **归 Codex 处理，本窗口不提交不回退**；因此 `wrapup-check` 的「工作区干净」会报失败，属已知。
+
 ## 已定不做 / 禁区
 
 - 付款前三件（`billing-address-fill.js` / `live-chatgpt-payment-adapter.js` / `payment-executor.js` submit 段）不改（D-254）；browser-mvp 改动走任务书白名单。
