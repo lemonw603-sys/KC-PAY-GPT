@@ -5540,3 +5540,7 @@ Lemon 对盘点报告（`reviews/2026-09-24-block7-table-inventory.md`）答复�
 2. **导出留档保留**（面五④「删 exports 端点」作废，按 D-325 诊断页）。
 3. **「补录客户付款」先留**，`order_notes` 随之保留。
 不删：`checkout_artifacts` / `browser_artifact_secrets`（并入块 6）、`refund_cases`（资金保护）及已定保留各表。生产动作（导出、停定时任务、迁移、发布）执行前仍逐次问。
+
+## D-368（2026-09-24 16:5x UTC+8）KC-PAY-GPT 第三方 API 路线不做
+
+Lemon：第三方 API 是对方自己做的，对我们是黑盒，没有意义。据此：KC 第三方代充（`gpt-api-client.js` → `kc.vpss.eu.cc`）不试、不接。D-360「KC 独立业务线」的方向待 Lemon 就「本地路线能否作底层能力」讨论后再定（评估见 `reviews/2026-09-24-kc-pay-gpt-evaluation.md`）。
