@@ -63,6 +63,25 @@ export function createAlertNotificationRepository(pool) {
                  AND primary_delivery.status IN ('PENDING','SENDING','SENT')
              )
            )` : '';
+    // 同一台卡台的「卡台故障」已经推过（或在推），这台的「缺卡但开不出来」就不再另推，只进后台
+    // （D-365，Lemon 同意：一次故障只推一条）。写法同上面的钱包覆盖：只认当前事件版本、且推送在
+    // PENDING/SENDING/SENT 的故障告警；故障恢复（告警关掉）后，仍缺卡的那条照常可推。
+    const faultCoverage = pushTypes.includes('CARD_SUPPLY_FAULT') ? `
+           AND NOT (
+             a.alert_type = 'CARD_SUPPLY_BLOCKED'
+             AND a.dedupe_key REGEXP '^card-supply-blocked:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}:'
+             AND EXISTS (
+               SELECT 1 FROM operator_alerts fault_alert
+               JOIN alert_notifications fault_delivery ON fault_delivery.alert_id = fault_alert.id
+               WHERE fault_alert.alert_type = 'CARD_SUPPLY_FAULT'
+                 AND fault_alert.status = 'OPEN'
+                 AND fault_alert.dedupe_key = CONCAT('card-supply-fault:',
+                   SUBSTRING_INDEX(SUBSTRING(a.dedupe_key, CHAR_LENGTH('card-supply-blocked:') + 1), ':', 1))
+                 AND fault_delivery.channel = 'BARK'
+                 AND fault_delivery.incident_version = fault_alert.incident_version
+                 AND fault_delivery.status IN ('PENDING','SENDING','SENT')
+             )
+           )` : '';
     const connection = await pool.getConnection();
     try {
       await connection.beginTransaction();
@@ -76,6 +95,7 @@ export function createAlertNotificationRepository(pool) {
          WHERE n.channel = 'BARK' AND a.alert_type IN (?)
            AND n.incident_version = a.incident_version
            ${walletCoverage}
+           ${faultCoverage}
            AND (
              (n.status IN ('PENDING', 'RETRY') AND (n.next_attempt_at IS NULL OR n.next_attempt_at <= CURRENT_TIMESTAMP(3)))
              OR (n.status = 'SENDING' AND n.locked_at < CURRENT_TIMESTAMP(3) - INTERVAL 5 MINUTE)

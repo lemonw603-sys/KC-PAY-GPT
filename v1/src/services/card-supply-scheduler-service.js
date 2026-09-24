@@ -12,8 +12,11 @@ import { countTodayOpenings, unresolvedPaidJobsSql } from './card-stock-job-serv
  *   需求 = max(水位, 该台该产品正在等卡的单数)；缺口 = 需求 − 可分配 − 在途 job。
  *   缺口 > 0 且 总闸开 且 没有别的 job 在跑 且 没有花过钱没人核对的 job
  *     → 该台此刻能开：日限内、钱包预检过（余额 − 金额 − 手续费 ≥ 硬底线）→ 建一张卡的 job；
- *     → 该台此刻不能开（故障 / 无 token / 卡台禁开）：Browser 产品需求转另一台开一张顶上，
- *       API 需求不转（ZZSHU 只认 hnskj 的 BIN，D-253）。
+ *     → 该台此刻不能开（故障 / 无 token / 卡台禁开）：**只替正在等卡的 Browser 订单**转另一台开卡顶上，
+ *       水位缺口不转（D-365，欠账 17：转台开出的卡记在开卡那台名下，缺卡那台的水位永远补不满，
+ *       按水位转台会每分钟再开一张，直到开卡台钱包碰底线或日限）；API 需求不转（ZZSHU 只认 hnskj 的 BIN，D-253）。
+ *   一轮里按优先级逐个看缺口，一台开不了就接着看下一台（D-365，欠账 16：此前只看第一个，
+ *   它被挡住整轮就结束，排第二的那台缺卡、钱也够，也永远不会自动补）。
  *   `CARD_STOCK_LOW` 按台 × 产品由这里唯一产生（阈值 = 水位），不再散在分卡/入库两处。
  *
  * 手续费用第②步落的真实观察（CARD_ISSUE_FEE 行）：取该台最近 5 条的中位数；一条观察都没有时
@@ -292,11 +295,14 @@ export function createCardSupplyScheduler({ pool, adapters, now = () => new Date
     return false;
   }
 
-  function pickFallback({ demandAccountId, productId, accountsById, selections }) {
+  function pickFallback({ demandAccountId, productId, accountsById, selections, waitingGap }) {
     // 只有 Browser 需求才转台：选择表 BROWSER 行指向缺卡那台，说明这批需求由 Browser 消费；
     // API 行冻结 hnskj，不转（D-253）。
     const browserRow = selections.find((row) => row.productId === productId && row.executorKind === 'BROWSER');
     if (!browserRow || browserRow.providerAccountId !== demandAccountId) return { account: null, reason: 'NOT_BROWSER_DEMAND' };
+    // 只替等卡的单转台（D-365）：开出的卡随 takeoverWaitingOrders 把等待单改冻到开卡台，等待单数随之下降，
+    // 转台自然停；水位缺口转过去补不满，会一张接一张开。
+    if (!(waitingGap > 0)) return { account: null, reason: 'NO_WAITING_ORDERS' };
     const current = now();
     for (const account of accountsById.values()) {
       if (account.id === demandAccountId || !account.supportsBrowserRecharge) continue;
@@ -313,12 +319,16 @@ export function createCardSupplyScheduler({ pool, adapters, now = () => new Date
     const canOpen = accountCanOpen(demandAccount, adapters, { now: current });
     if (!canOpen.ok) {
       const fallback = pickFallback({ demandAccountId: demandAccount.id, productId: candidate.productId,
-        accountsById: state.accountsById, selections: state.selections });
+        accountsById: state.accountsById, selections: state.selections,
+        waitingGap: candidate.waiting - candidate.available - candidate.inflight });
       if (!fallback.account) {
+        const why = fallback.reason === 'NOT_BROWSER_DEMAND' ? 'API 路线不转台'
+          : fallback.reason === 'NO_WAITING_ORDERS' ? '没有客户在等卡，只缺水位，不替它转台开卡'
+            : '没有别的卡台能顶上';
         await upsertSupplyAlert(pool, {
           type: ALERT_TYPES.BLOCKED, key: supplyBlockedAlertKey(demandAccount.id, candidate.productCode), severity: 'critical',
           title: '缺卡但开不出来',
-          message: `${demandAccount.displayName} 的 ${candidate.productCode} 缺 ${candidate.deficit} 张：该台此刻不能开（${canOpen.reason}），${fallback.reason === 'NOT_BROWSER_DEMAND' ? 'API 路线不转台' : '没有别的卡台能顶上'}。`,
+          message: `${demandAccount.displayName} 的 ${candidate.productCode} 缺 ${candidate.deficit} 张：该台此刻不能开（${canOpen.reason}），${why}。`,
           orderId: candidate.demandOrderId
         });
         return { scheduled: false, reason: 'BLOCKED', cause: canOpen.reason, fallback: fallback.reason };
@@ -449,11 +459,28 @@ export function createCardSupplyScheduler({ pool, adapters, now = () => new Date
     if (active.length) return { enabled: true, reason: 'JOB_ACTIVE', decisions, scheduled: null };
     const [unresolved] = await pool.query(unresolvedPaidJobsSql());
     if (unresolved.length) return { enabled: true, reason: 'FUNDS_REVIEW_REQUIRED', decisions, scheduled: null, jobId: unresolved[0].id };
+    let first = null;
+    // 排序要是一个一致的比较：此前第二段写成「a 是 plus 就返回 -1」，两个都是 plus 时两边都说自己小，
+    // 顺序落到引擎排序细节上（2026-09-24 实测生产 Node 22：两台 Plus 同为 0 等待时 highvcc 排前）。
+    // 现在：等卡单多的先、Plus 先，其余保持策略表顺序（Array.sort 稳定）。
+    const plusFirst = (row) => (row.productCode === 'plus' ? 0 : 1);
     const candidates = measured.filter((row) => row.deficit > 0)
-      .sort((a, b) => (b.waiting - a.waiting) || (a.productCode === 'plus' ? -1 : b.productCode === 'plus' ? 1 : 0));
+      .sort((a, b) => (b.waiting - a.waiting) || (plusFirst(a) - plusFirst(b)));
     if (!candidates.length) return { enabled: true, reason: 'NO_DEMAND', decisions, scheduled: null };
-    const outcome = await scheduleFor(candidates[0], state);
-    return { enabled: true, reason: outcome.scheduled ? 'SCHEDULED' : outcome.reason, decisions, scheduled: outcome.scheduled ? outcome : null, outcome };
+    // 逐个看，开出一张（或发现已有 job 在跑）就停；被挡的记下来接着看下一个（D-365 欠账 16）。
+    // reason / outcome 报排第一的那个被挡原因（优先级最高的缺口），outcomes 记这一轮每个候选的结局。
+    const outcomes = [];
+    for (const candidate of candidates) {
+      const outcome = await scheduleFor(candidate, state);
+      outcomes.push({ providerAccountId: candidate.providerAccountId, productCode: candidate.productCode,
+        scheduled: Boolean(outcome.scheduled), reason: outcome.scheduled ? 'SCHEDULED' : outcome.reason });
+      if (outcome.scheduled || outcome.reason === 'JOB_ACTIVE') {
+        return { enabled: true, reason: outcome.scheduled ? 'SCHEDULED' : outcome.reason, decisions,
+          scheduled: outcome.scheduled ? outcome : null, outcome, outcomes };
+      }
+      if (!first) first = outcome;
+    }
+    return { enabled: true, reason: first.reason, decisions, scheduled: null, outcome: first, outcomes };
   }
 
   return Object.freeze({ run, measure, scheduleFor, loadState });

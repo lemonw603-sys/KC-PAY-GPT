@@ -334,3 +334,71 @@ test('缺口真没了才关「缺卡但开不出来」：水位调 0 或卡够�
   assert.equal((await createCardSupplyScheduler({ pool: again, adapters: fakeAdapters() }).run()).reason, 'BLOCKED');
   assert.deepEqual(again.ledger.get(blockedKey), { type: 'CARD_SUPPLY_BLOCKED', status: 'OPEN', version: 4 });
 });
+
+test('欠账 17：缺卡那台开不了、只缺水位（没有等卡的单）→ 不转台开卡，只告警（D-365）', async () => {
+  const faultedBackup = accountRow(BACKUP_ID, {
+    supply_fault_state: 'FAULT', supply_fault_reason: 'HIGHVCC_TOKEN_EXPIRED', supply_fault_at: new Date(Date.now() - 60_000)
+  });
+  const pool = fakePool({
+    accounts: [accountRow(HNSKJ_ID), faultedBackup],
+    available: { [`${HNSKJ_ID}:plus`]: 2, [`${BACKUP_ID}:plus`]: 0 }
+  });
+  const result = await createCardSupplyScheduler({ pool, adapters: fakeAdapters({ highvccToken: false }) }).run();
+  assert.equal(pool.jobs.length, 0, '水位缺口不转台：hnskj 替 highvcc 开出的卡记在 hnskj 名下，highvcc 水位永远补不满');
+  assert.equal(result.reason, 'BLOCKED');
+  assert.match(pool.alerts.find((a) => a.type === 'CARD_SUPPLY_BLOCKED').message, /没有客户在等卡，只缺水位，不替它转台开卡/);
+});
+
+test('欠账 17：转台只开到等卡单数为止——等待单被接走后下一轮不再转台（此前会每分钟再开一张）', async () => {
+  const faultedBackup = accountRow(BACKUP_ID, {
+    supply_fault_state: 'FAULT', supply_fault_reason: 'HIGHVCC_TOKEN_EXPIRED', supply_fault_at: new Date(Date.now() - 60_000)
+  });
+  const first = fakePool({
+    accounts: [accountRow(HNSKJ_ID), faultedBackup],
+    available: { [`${HNSKJ_ID}:plus`]: 2, [`${BACKUP_ID}:plus`]: 0 },
+    waiting: { [`${BACKUP_ID}:plus`]: 1 }
+  });
+  assert.equal((await createCardSupplyScheduler({ pool: first, adapters: fakeAdapters({ highvccToken: false }) }).run()).reason, 'SCHEDULED');
+  assert.equal(first.jobs[0].fallbackFor, BACKUP_ID);
+  // 开卡执行器完成 job 后 takeoverWaitingOrders 把那一单改冻到 hnskj：highvcc 等待 0、可分配仍 0、水位仍 2。
+  const next = fakePool({
+    accounts: [accountRow(HNSKJ_ID), faultedBackup],
+    available: { [`${HNSKJ_ID}:plus`]: 3, [`${BACKUP_ID}:plus`]: 0 }
+  });
+  await createCardSupplyScheduler({ pool: next, adapters: fakeAdapters({ highvccToken: false }) }).run();
+  assert.equal(next.jobs.length, 0, '等待单已被接走，不再替 highvcc 的水位转台开卡');
+});
+
+test('欠账 16：排第一的那台开不了，接着看第二台（此前整轮就结束，highvcc 缺卡钱也够却不补）', async () => {
+  // 生产 2026-09-24 上午的形状：hnskj 卡台禁开（故障期内），两台 Plus 都缺，都没有等卡单 → hnskj 排第一。
+  const faultedHnskj = accountRow(HNSKJ_ID, { supply_fault_state: 'FAULT', supply_fault_reason: 'CARD_STOCK_PURCHASE_DISABLED', supply_fault_at: new Date(Date.now() - 60_000) });
+  const pool = fakePool({
+    accounts: [faultedHnskj, accountRow(BACKUP_ID)],
+    available: { [`${HNSKJ_ID}:plus`]: 0, [`${BACKUP_ID}:plus`]: 0 }
+  });
+  const result = await createCardSupplyScheduler({ pool, adapters: fakeAdapters({ highvccBalance: '100.00' }) }).run();
+  assert.equal(result.reason, 'SCHEDULED');
+  assert.equal(pool.jobs.length, 1);
+  assert.equal(pool.jobs[0].opener, BACKUP_ID, 'hnskj 被挡后轮到 highvcc 自己开');
+  assert.equal(pool.jobs[0].fallbackFor, null);
+  assert.deepEqual(result.outcomes.map((o) => [o.providerAccountId, o.reason]),
+    [[HNSKJ_ID, 'BLOCKED'], [BACKUP_ID, 'SCHEDULED']]);
+});
+
+test('欠账 16：所有候选都被挡时报排第一的原因，并列出每个候选的结局；不会开卡', async () => {
+  const pool = fakePool({ available: { [`${HNSKJ_ID}:plus`]: 0, [`${BACKUP_ID}:plus`]: 0 } });
+  const result = await createCardSupplyScheduler({ pool, adapters: fakeAdapters({ hnskjBalance: '60.00', highvccBalance: '30.00' }) }).run();
+  assert.equal(result.reason, 'WALLET_BELOW_FLOOR');
+  assert.equal(result.outcome.opener, HNSKJ_ID);
+  assert.deepEqual(result.outcomes.map((o) => o.reason), ['WALLET_BELOW_FLOOR', 'WALLET_BELOW_FLOOR']);
+  assert.equal(pool.jobs.length, 0);
+});
+
+test('候选排序是一致的：等卡单多的先、Plus 先，同条件按策略表顺序（不再依赖引擎排序细节）', async () => {
+  // 两台 Plus 都缺、都不等单、都开不了（钱包不够）→ outcomes 的顺序就是候选顺序。
+  const pool = fakePool({ available: { [`${HNSKJ_ID}:plus`]: 0, [`${BACKUP_ID}:plus`]: 0 },
+    waiting: { [`${BACKUP_ID}:pro_20x`]: 1 } });
+  const result = await createCardSupplyScheduler({ pool, adapters: fakeAdapters({ hnskjBalance: '60.00', highvccBalance: '30.00' }) }).run();
+  assert.deepEqual(result.outcomes.map((o) => `${o.providerAccountId === HNSKJ_ID ? 'hnskj' : 'highvcc'}/${o.productCode}`),
+    ['highvcc/pro_20x', 'hnskj/plus', 'highvcc/plus'], '有等卡单的 20X 最先；两台 Plus 按策略表顺序');
+});
