@@ -43,7 +43,7 @@
 ## 供给链
 
 - 备用卡付款后对账为空：`browser-card-transaction-reader.js` 对 `MANUAL_IMPORT` 返回固定标记 `MANUAL_CARD_BROWSER_CONFIRMED`，对账恒匹配，只靠 Plus 确认，无独立扣款证据。
-- HNSKJ 自动开卡、自动补余额自 09-05 卡台故障起未运行。
+- HNSKJ 自动开卡、自动补余额自 09-05 卡台故障起未运行。（2026-09-24：补余额整条线已删，D-367；自动开卡由第③步调度器接管。）
 - 一卡多单顺序复用（Plus 上限 3）未在真实付款中跑过；按产品最低余额已实现（`minimum_required_card_balance:<product>`，09-09 pro_20x 调 150；pro_5x 仍 16，上线前调）；开卡金额仍全局值。付款前失败释放卡绑定（D-131）09-07 上线；09-09 演练残单（CARD_READY 持卡）需 `close-rehearsal-order.mjs` 收口，自检已加占卡提示。
 
 ## 客户链
