@@ -61,6 +61,18 @@ if [ -n "$MINBAL" ]; then
   check "可分配卡（正式资格 SQL）" "${N:-} 张" "可分配卡数（Plus 门槛 ${MINBAL}）"
   fi
 fi
+# 供卡策略与卡台故障：2026-09-24 后台把 hnskj Plus 水位 1→0，事实表仍写「两台水位 2」，而本脚本当时
+# 报全部一致——它根本没查这一行。水位决定调度器开不开卡、会不会反复重试故障卡台并推送。
+for ACC in legacy-primary backup-a; do
+  TGT=$(bash "$Q" "SELECT p.target_available FROM card_supply_policies p JOIN provider_accounts a ON a.id=p.provider_account_id WHERE a.account_code='$ACC' AND a.provider_code<>'zzshu' AND p.product_code='plus'" 2>/dev/null | tr -d '[:space:]')
+  NAME=$([ "$ACC" = legacy-primary ] && echo hnskj || echo highvcc)
+  # 前缀自带字母，查询失败时 "hnskj plus 水位 " 会绕过 check 的取值守卫并命中表里的 "水位 0"，所以先单独验值。
+  case "$TGT" in ''|*[!0-9]*) say "[取值失败] $NAME Plus 水位取不到整数（现场 '${TGT}'）"; drift=1 ;;
+    *) check "pojia-card-stock-runner.timer" "$NAME plus 水位 $TGT" "$NAME Plus 水位" ;; esac
+done
+FAULT=$(bash "$Q" "SELECT supply_fault_state FROM provider_accounts WHERE provider_code='hnskj'" 2>/dev/null | tr -d '[:space:]')
+case "$FAULT" in OK|FAULT) check "pojia-card-stock-runner.timer" "hnskj 供卡故障 $FAULT" "hnskj 供卡故障状态" ;;
+  *) say "[取值失败] hnskj 供卡故障状态不是 OK/FAULT（现场 '${FAULT}'）"; drift=1 ;; esac
 RUNS=$(bash "$Q" "SELECT COUNT(*) FROM browser_runs WHERE active_account_key_hmac IS NOT NULL" 2>/dev/null | tr -d '[:space:]'); check "活动资金与运行" "active_runs $RUNS" "账号槽"
 OPEN=$(bash "$Q" "SELECT COUNT(*) FROM orders WHERE status NOT IN ('RECHARGE_SUCCESS','RECHARGE_FAILED','CLOSED')" 2>/dev/null | tr -d '[:space:]'); check "可分配卡（正式资格 SQL）" "非终态订单 $OPEN" "非终态订单"
 say ""; [ "$drift" -eq 0 ] && say "==> CURRENT_STATE 与现场一致 ✓" || say "==> 有漂移/缺行：改 docs/CURRENT_STATE.md 对应行（带核对时间与证据）"
