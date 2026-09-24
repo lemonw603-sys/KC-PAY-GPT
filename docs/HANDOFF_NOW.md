@@ -4,7 +4,7 @@
 
 ## 现在的状态（证据：CURRENT_STATE.md；以下 00:48 UTC 现查）
 
-- 生产 release **`20260924-supply-blocked-once-2f91f00`**（D-363 ⑤，02:14 UTC；回滚点 `20260924-wb-remaining-2830063`）。默认路线 BROWSER（D-353），Browser Plus 用 highvcc（backup-a）。
+- 生产 release **`20260924-wallet-oneline-29b8358`**（D-364/365 ①～④，03:05 UTC；回滚点 `20260924-supply-blocked-once-2f91f00`）。默认路线 BROWSER（D-353），Browser Plus 用 highvcc（backup-a）。
 - 块 0～3、块 5 已发布；欠账 3（每卡单数按产品，D-361，迁移 059）、欠账 15（工作台「剩 N 张 · 能充 N 单」，D-362）已发布；每周自检 `scripts/weekly-check.sh` 已就位（D-360，「可离开」第四条）。
 - 可分配 Plus 卡 1 张（highvcc 8718，能充 3 单）；钱包快照 HNSKJ $104.71（00:48 UTC）/ highvcc $34.24（00:13 UTC）。
 - **HNSKJ 供卡故障进行中**：`supply_fault_state=FAULT`、`CARD_STOCK_PURCHASE_DISABLED`（HNSKJ 卡类型接口返回 `purchaseEnabled=false`，卡台侧原因未知），最近一次 00:44:49 UTC。当前不影响接单（Browser 走 highvcc；HNSKJ 只供 API 路线，按 D-253 不转台）。
@@ -21,7 +21,7 @@
 
 ## 下一可执行项（按 D-352 块序）
 
-1. 上面四个问题：**D-363 定先做⑤，再①～④一批**（①先给原型）。⑤ 已发布。**①～④ 已本地实现并验收、未发布**（D-364）：等 Lemon 看截图（卡与钱改前/改后、卡片页台账栏）后说发布；发布前要重冻卡片页原型（`_frozen/cards-a/` + `step6-cards-a.html` 那格），否则 `cards-page.json` 契约一直报 5 处高度差。本机隔离库 `pojia_ui_d363`（容器 pojia-stage1-mysql）与临时凭据留着给这一轮改版用，定稿后删库。
+1. 上面四个问题：**D-363 定先做⑤，再①～④一批**（①先给原型）。⑤ 已发布。**①～④ 已发布**（03:05 UTC，卡片页原型已重冻、四份可跑契约一致）。**进行中（D-365）**：欠账 16/17、同一故障只推一条；「剩 N 张」字体出几版给 Lemon 挑。本机隔离库 `pojia_ui_d363` 留作字体比稿用，定稿后删。
    - 同文件两条待 Lemon 定：欠账 16（调度器一轮只看一个候选，触发条件「下次动调度器时」已到）；欠账 17（转台开卡按水位会一张接一张开，代码显示、生产 0 次，见 PROJECT_MAP）。
 2. **块 4**：Plus Browser 真钱一单——**不排**（D-363：Lemon 不花钱、没有 free 号）。流程：关付款开关与下单查心跳 → Lemon 建演练单 → 单单 rehearsal → 收口放卡 → 开回开关 → 真单 → 盯成功与取消续费 → 对账（RUNBOOK §2）。
 3. **块 6 前置**：Free→Pro 20x 非付款 PoC，任务书 `tasks/2026-09-24-block6-pro20x-poc.md`，脚本 `browser-mvp/scripts/poc-free-pro20x-checkout-readonly.mjs` 已写未跑。挂起：Lemon 没有无订阅账号（曾付费、当前无订阅的也行，按钮会是 Rejoin Pro）。
