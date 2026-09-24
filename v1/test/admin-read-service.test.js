@@ -49,6 +49,8 @@ test('admin overview maps aggregate values without exposing raw records', async 
       { provider_account_id: 'pa-backup-a', stock_available: 0, bindable_now: 0, any_used: 6, product_used: 1, plus_target_available: 0 }],
     [{ provider_account_id: 'pa-hnskj', spent_today: '16.000000', currency: 'USD' },
       { provider_account_id: 'pa-backup-a', spent_today: '33.250000', currency: 'USD' }],
+    // 两台钱包的上次余额（latestProviderBalancesSql，2026-09-24）：hnskj 有、backup-a 这次没有
+    [{ provider_account_id: 'pa-hnskj', available_balance: '104.710000', currency: 'USD', observed_at: new Date('2026-09-24T02:23:36.671Z') }],
     [{ active: 1, writes_on: 0 }]
   ]);
   const result = await createAdminReadService({ pool }).getOverview();
@@ -77,6 +79,9 @@ test('admin overview maps aggregate values without exposing raw records', async 
   assert.equal(hnskj.byProduct[2].remainingOrders, 0, 'fixture 没给 remaining_orders 的按 0 算');
   // 今日花费按台（消费 + 开卡费，不含 card_recharge —— 算了会和消费重复）
   assert.equal(hnskj.spentToday, '16.000000');
+  assert.deepEqual(hnskj.wallet, { balance: '104.710000', currency: 'USD', observedAt: '2026-09-24T02:23:36.671Z' });
+  assert.equal(result.cardStockByProvider.find((r) => r.providerKind === 'manual_excel').wallet, null, '没有余额观察就是 null，不是 0');
+  assert.match(pool.queries[13].sql, /FROM provider_balance_snapshots s[\s\S]*MAX\(observed_at\)/);
   assert.equal(result.cardStockByProvider.find((r) => r.providerKind === 'manual_excel').spentToday, '33.250000');
   // 有多少人在等卡：库存讲「有多少」，这个讲「有多少人在等」
   // 等卡数来自 orderCounts 里早就存在的 waiting_for_card（SUM(status='WAITING_FOR_CARD')），
@@ -111,10 +116,10 @@ test('admin overview maps aggregate values without exposing raw records', async 
   assert.deepEqual(result.cardStockByProvider.map((r) => Object.keys(r).sort()), [
     ['anyUsed', 'bindableNow', 'byProduct', 'inStock', 'inUse', 'label', 'providerAccountId',
       'providerCode', 'providerKind', 'spentCurrency', 'spentToday', 'stockAvailable',
-      'supplyFaultReason', 'supplyFaultState', 'total'],
+      'supplyFaultReason', 'supplyFaultState', 'total', 'wallet'],
     ['anyUsed', 'bindableNow', 'byProduct', 'inStock', 'inUse', 'label', 'providerAccountId',
       'providerCode', 'providerKind', 'spentCurrency', 'spentToday', 'stockAvailable',
-      'supplyFaultReason', 'supplyFaultState', 'total']
+      'supplyFaultReason', 'supplyFaultState', 'total', 'wallet']
   ]);
   assert.deepEqual(result.cardStockByProvider.map((r) => ({
     providerAccountId: r.providerAccountId, providerCode: r.providerCode,

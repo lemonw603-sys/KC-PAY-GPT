@@ -48,14 +48,19 @@ for(const outcome of ['read-failed','lost-response','rejected','unsaved','succes
  assert(notices.some(x=>x.includes(expected[outcome])));if(outcome==='read-failed')assert.equal(reads,1);
 });
 test('workbench wallet keeps last observation marked stale on failure and re-render does not fetch',async()=>{
- const summary={textContent:'',classList:{toggle(){}}},button={};let fail=false,requests=0;
+ const text={textContent:''},summary={lastElementChild:text,classList:{toggle(){}}},button={};let fail=false,requests=0;
  const ctx={state:{},document:{querySelector:s=>s.includes('summary')?summary:button},highvccWalletRequest:null,highvccWalletVersion:0,
   elements:{highvccWalletStatus:{dataset:{},innerHTML:''}},formatTime:x=>x,formatMoney:x=>Number(x).toFixed(2),
   api:async()=>{requests++;if(fail)throw Error('expired');return{usdBalance:'41.49',usdDeposit:'0',usdConsume:'0'}}};
- vm.runInNewContext(snippet('function updateHighvccWalletSummary(', '\n}\n')+snippet('async function loadHighvccWallet(', '\n}\n'),ctx);
- ctx.updateHighvccWalletSummary();assert.match(summary.textContent,/未查询/);
- await ctx.loadHighvccWallet();assert.match(summary.textContent,/钱包 41.49 USD/);
- fail=true;await ctx.loadHighvccWallet();assert.match(summary.textContent,/41.49 USD.*上次查询.*刷新失败/);
+ // 2026-09-24 起文案走 walletSummaryText / newerWallet / paintWalletChip（两台共用），一并载入。
+ vm.runInNewContext(['function updateHighvccWalletSummary(','function walletSummaryText(','function walletWhenText(','function newerWallet(','function paintWalletChip(']
+  .map((m)=>snippet(m,'\n}\n')).join('\n')+snippet('async function loadHighvccWallet(', '\n}\n'),ctx);
+ ctx.updateHighvccWalletSummary();assert.match(text.textContent,/还没查过/);
+ await ctx.loadHighvccWallet();assert.match(text.textContent,/钱包 41.49 USD · 查询于/);
+ fail=true;await ctx.loadHighvccWallet();assert.match(text.textContent,/41.49 USD.*上次查询.*刷新失败/);
+ // 页面上有更早的快照时，以刚刷新成功的那次为准；刷新失败也不回退到更旧的快照
+ ctx.state.highvccWalletSnapshot={balance:'30.00',currency:'USD',observedAt:'2026-01-01T00:00:00.000Z'};
+ ctx.updateHighvccWalletSummary();assert.match(text.textContent,/41.49 USD/);
  ctx.updateHighvccWalletSummary();assert.equal(requests,2);assert.equal(button.disabled,false);
 });
 for (const target of ['wallet','token']) test(`highvcc ${target} jump expands ancestors and focuses only the requested control even if page read fails`,async()=>{

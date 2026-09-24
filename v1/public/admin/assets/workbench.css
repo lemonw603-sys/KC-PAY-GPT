@@ -198,17 +198,25 @@ body{font-family:var(--wb-fd)}
    把零值摊成三行大字等于让最没信息的部分占最大的视觉重量 —— 第一版这么做，
    整块 381px 比改之前的 291px 还高，与「精简」背道而驰。压扁后回到 ~180px。 */
 .workbench .wb-prods{margin-top:8px;display:grid;grid-template-columns:repeat(3,1fr);gap:7px}
-/* D-355 ⑦ 文案变长（剩 N 张 · 能充 N 单）：数字才用等宽，汉字用正文字体，否则中文在等宽里字距发散；
-   「自动补/需人工开」固定落到第二行右侧，三格高度一致，1280 宽也不溢出。 */
-.workbench .wb-prod{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 7px;padding:6px 9px;border-radius:8px;
-  background:var(--wb-s);border:1px solid var(--wb-s3)}
+/* 每格固定一行（Lemon 2026-09-24：换两行不好看，要保证一行）。D-362 曾用 small{width:100%} 把
+   「自动补/需人工开」硬推到第二行，其实空间够：Lemon 的屏幕 1440 宽（Chrome 占满屏），格子内容区
+   204px，一行只要约 172px（两位数时约 187）。所以：不换行，「自动补」靠右同一行；
+   格子变窄到放不下时（窗口缩小、开侧边栏）改显示两字短词「自动/人工」，再窄就截断数字文字而不换行。
+   数字才用等宽，汉字用正文字体，否则中文在等宽里字距发散。 */
+.workbench .wb-prod{display:flex;flex-wrap:nowrap;align-items:baseline;gap:7px;padding:6px 9px;border-radius:8px;
+  background:var(--wb-s);border:1px solid var(--wb-s3);container-type:inline-size;overflow:hidden}
 .workbench .wb-prod.is-ok{border-color:var(--wb-bd);background:var(--wb-ok-soft)}
 .workbench .wb-prod b{font-size:11px;font-weight:700;color:var(--wb-t3);letter-spacing:.04em;flex:none}
 /* 有货的才给正常墨色；全 0 的退成弱色 —— 一眼看出哪个产品现在真能接单 */
-.workbench .wb-prod .wb-prod-n{font-size:12.5px;font-weight:600;color:var(--wb-t3);white-space:nowrap}
+.workbench .wb-prod .wb-prod-n{font-size:12.5px;font-weight:600;color:var(--wb-t3);white-space:nowrap;min-width:0;overflow:hidden;text-overflow:ellipsis}
 .workbench .wb-prod .wb-prod-n i{font-style:normal;font-family:var(--wb-fm)}
 .workbench .wb-prod.is-ok .wb-prod-n{color:var(--wb-t)}
-.workbench .wb-prod small{font-size:10px;color:var(--wb-t3);width:100%;text-align:right;flex:none;white-space:nowrap;line-height:1.2}
+.workbench .wb-prod small{margin-left:auto;font-size:10px;color:var(--wb-t3);flex:none;white-space:nowrap;line-height:1.2}
+.workbench .wb-prod small .wb-how-s{display:none}
+@container (max-width:196px){
+  .workbench .wb-prod small .wb-how{display:none}
+  .workbench .wb-prod small .wb-how-s{display:inline}
+}
 /* 「需人工开」保留区分但不强调（Lemon 2026-09-20：「不需要那么明显，我知道」）——
    5X/20X 没做库存卡是既定安排，不是异常，橙色加粗会天天喊一件他早就清楚的事。 */
 .workbench .wb-prod small.is-manual{color:var(--wb-t3)}

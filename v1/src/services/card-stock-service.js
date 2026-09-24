@@ -1,3 +1,4 @@
+import { latestProviderBalancesSql } from './provider-balance-snapshot-service.js';
 import { detectTopUp, fundedAmountAfterTopUp } from '../domain/card-top-up.js';
 import crypto from 'node:crypto';
 import { decryptSecret, encryptSecret } from '../security/secret-box.js';
@@ -310,7 +311,7 @@ export function createCardStockService({ pool, sessionEncryptionKey, panHmacKey 
 
   async function status() {
     const [[thresholdRows], [rows], [settings], [cards], [overrideRows], providerSnapshot, catalogSnapshot,
-      [providerStockRows], [openedTodayRows], [snapshotRows], [tokenAlertRows]] = await Promise.all([
+      [providerStockRows], [openedTodayRows], [snapshotRows], [tokenAlertRows], [walletRows]] = await Promise.all([
       pool.query(
         `SELECT setting_key, setting_value FROM app_settings
          WHERE setting_key IN ('card_stock_low_threshold','card_auto_replenishment_enabled','card_replenishment_daily_limit')`
@@ -397,7 +398,9 @@ export function createCardStockService({ pool, sessionEncryptionKey, panHmacKey 
       pool.query(
         `SELECT dedupe_key FROM operator_alerts WHERE alert_type = ? AND status = 'OPEN'`,
         [ALERT_TYPES.TOKEN_EXPIRED]
-      )
+      ),
+      // ④ highvcc 那格直接显示上次余额 + 查询时间（Lemon 2026-09-24），与工作台同一份口径
+      pool.query(latestProviderBalancesSql())
     ]);
     const threshold = Math.max(0, Number(thresholdRows.find(
       (row) => row.setting_key === 'card_stock_low_threshold'
@@ -555,6 +558,12 @@ export function createCardStockService({ pool, sessionEncryptionKey, panHmacKey 
         walletSyncedAt: snapshot?.synced_at instanceof Date
           ? snapshot.synced_at.toISOString() : snapshot?.synced_at || null,
         walletLiveOnly: !snapshot,
+        // 最后一次余额观察（provider_balance_snapshots，两台都有）；highvcc 那格用它，不必先点才有数
+        walletObserved: (() => {
+          const w = (walletRows || []).find((r) => String(r.provider_account_id) === String(row.provider_account_id));
+          return w ? { balance: String(w.available_balance), currency: w.currency || 'USD',
+            observedAt: w.observed_at instanceof Date ? w.observed_at.toISOString() : w.observed_at || null } : null;
+        })(),
         // 底线＝ provider_accounts.wallet_floor，就是开卡预检挡开卡用的那条硬底线。
         // 页面显示的底线必须和挡开卡的是同一个数，否则运营看到的和系统在用的不一致。
         walletFloor: floor == null ? null : String(floor),

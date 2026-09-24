@@ -18,6 +18,14 @@
 .cardrig-quad{display:grid;grid-template-columns:1fr 1fr;gap:9px}
 .cardrig-q{background:var(--wb-s2,#f5f9f8);border:1px solid var(--wb-bd,#dde5e3);border-radius:10px;padding:8px 10px}
 .cardrig-q label{display:block;font-size:11px;color:var(--wb-t3,#7b8a86);margin-bottom:3px}
+/* 标题行右侧的「查询于 10:13 · 刷新」（highvcc 钱包格）：一行放下，数值行与 hnskj 那格同形 */
+.cardrig-lh{display:flex;align-items:baseline;justify-content:space-between;gap:6px;margin-bottom:3px;min-width:0}
+.cardrig-lh label{margin-bottom:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.cardrig-aside{display:inline-flex;align-items:baseline;gap:6px;flex:none;white-space:nowrap;font-size:11px;color:var(--wb-t3)}
+.cardrig-aside .is-fail{color:var(--wb-warn)}
+.cardlink{border:0;background:none;padding:0;font:inherit;font-weight:600;color:var(--wb-a);cursor:pointer}
+.cardlink:hover:not(:disabled){text-decoration:underline}
+.cardlink:disabled{opacity:.45;cursor:not-allowed}
 .cardrig-q .cardrig-v{font-family:var(--wb-fm,monospace);font-size:16px;font-weight:600;letter-spacing:-.01em;color:var(--wb-t,#16201e)}
 .cardrig-q .cardrig-v small{font-size:12px;font-weight:400;color:var(--wb-t3,#7b8a86)}
 /* 待接入 / 未设置：灰、细体——一眼看出「这不是一个数」，不要伪装成 0 */

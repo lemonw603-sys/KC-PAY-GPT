@@ -200,13 +200,19 @@ function statusChip(status) {
   return `<span class="status-chip status-${tone}"><i></i>${escapeHtml(label)}</span>`;
 }
 
+// 成功提示 4 秒后自己消失，失败提示留着等人看（Lemon 2026-09-24：「已保存」一直挂着不走）。
+// 此前 showNotice 没有任何消失机制，只能被下一条覆盖或刷新页面。
+let noticeTimer = null;
 function showNotice(message, tone = 'error') {
+  clearTimeout(noticeTimer);
   elements.notice.textContent = message;
   elements.notice.dataset.tone = tone;
   elements.notice.hidden = false;
+  if (tone === 'success') noticeTimer = setTimeout(hideNotice, 4000);
 }
 
 function hideNotice() {
+  clearTimeout(noticeTimer);
   elements.notice.hidden = true;
   elements.notice.textContent = '';
   delete elements.notice.dataset.tone;
@@ -340,13 +346,11 @@ function renderWbCards(overview) {
   const box = document.getElementById('wb-cards');
   if (!box) return;
   const byProvider = overview.cardStockByProvider || [];
-  const h = overview.providerHealth || {};
   // 显示名由后端给（domain/provider-labels 是唯一来源）；旧响应没有 label 时才回退。
   const nameOf = (p) => p.label || p.providerCode || p.providerKind || '卡台';
-  // hnskj 钱包来自本地快照（getOverview.providerHealth）；backup-a 的钱包=highvcc，实时端点、不在概览。
-  const walletOf = (p) => p.providerKind === 'hnskj'
-    ? (h.accountBalance == null ? '钱包 —' : `钱包 ${formatMoney(h.accountBalance)} ${escapeHtml(h.currency || 'USD')}`)
-    : '钱包见卡片页';
+  // 两台钱包同一种写法「钱包 X USD · 查询于 时间」+ 刷新（Lemon 2026-09-24）。上次余额来自
+  // provider_balance_snapshots（getOverview 每台带 wallet）；点刷新后以更新的那次为准。
+  // 此前 hnskj 读 providerHealth 快照显示绿标、highvcc 不读快照只显示「未查询」，两台长得不一样。
   if (!byProvider.length) { box.innerHTML = '<p class="wb-qempty">暂无卡台数据</p>'; return; }
   const totalStock = byProvider.reduce((sum, p) => sum + (p.stockAvailable || 0), 0);
   const waiting = Number(overview.ordersWaitingForCard || 0);
@@ -363,10 +367,12 @@ function renderWbCards(overview) {
   const prodChip = (x) => {
     const stock = Number(x.stockAvailable || 0);
     const how = x.autoReplenished ? '自动补' : '需人工开';
+    // 格子窄到放不下时 CSS 换成两字短词，保证一行（Lemon 2026-09-24）；两份都在 DOM 里，只显示一份。
+    const howShort = x.autoReplenished ? '自动' : '人工';
     return `<span class="wb-prod ${stock > 0 ? 'is-ok' : ''}">`
       + `<b>${escapeHtml(x.label)}</b>`
       + `<span class="wb-prod-n">剩 <i>${stock}</i> 张 · 能充 <i>${Number(x.remainingOrders || 0)}</i> 单</span>`
-      + `<small class="${x.autoReplenished ? '' : 'is-manual'}">${how}</small></span>`;
+      + `<small class="${x.autoReplenished ? '' : 'is-manual'}" title="${how}"><span class="wb-how">${how}</span><span class="wb-how-s">${howShort}</span></small></span>`;
   };
   box.innerHTML = byProvider.map((p) => {
     const spentNum = p.spentToday == null ? null : Number(p.spentToday);
@@ -376,8 +382,13 @@ function renderWbCards(overview) {
     const fault = p.supplyFaultState && p.supplyFaultState !== 'OK'
       ? wbChip('danger', `供卡故障${p.supplyFaultReason ? '：' + escapeHtml(p.supplyFaultReason) : ''}`)
       : '';
+    const isHnskj = p.providerKind === 'hnskj';
+    if (isHnskj) state.hnskjWalletSnapshot = p.wallet || null; else state.highvccWalletSnapshot = p.wallet || null;
     return `<div class="wb-provrow">
-      <div class="wb-provhead"><b>${escapeHtml(nameOf(p))}</b>${p.providerKind === 'hnskj' ? wbChip('ok', walletOf(p)) : '<span class="wb-chip" data-highvcc-wallet-summary>钱包 — USD · 未查询</span><button type="button" class="wb-btn out sm" data-highvcc-refresh>刷新余额</button><button type="button" class="wb-btn out sm" data-highvcc-target="token">更新登录</button>'}`
+      <div class="wb-provhead"><b>${escapeHtml(nameOf(p))}</b>`
+      + `<span class="wb-chip mute" ${isHnskj ? 'data-hnskj-wallet-summary' : 'data-highvcc-wallet-summary'}><span class="wb-d"></span><span></span></span>`
+      + `<button type="button" class="wb-btn out sm" ${isHnskj ? 'data-hnskj-wallet-refresh' : 'data-highvcc-refresh'}>刷新余额</button>`
+      + (isHnskj ? '' : '<button type="button" class="wb-btn out sm" data-highvcc-login-check>更新登录</button>')
       + (spentNum == null ? ''
         : spentNum === 0
           ? '<span class="wb-spent is-zero">今天没花钱</span>'
@@ -391,7 +402,61 @@ function renderWbCards(overview) {
       ? ` · <b class="wb-waiting">${waiting} 单正在等卡</b>`
       : ' · 没有单在等卡')
     + '</p>';
+  updateHnskjWalletSummary();
   updateHighvccWalletSummary();
+}
+
+/** 「钱包 X USD · 查询于 时间」：今天只写时分，跨天带日期。observation = { balance, at, currency }。 */
+function walletSummaryText(observation, failed) {
+  if (!observation) return `钱包 — USD · ${failed ? '查询失败，请检查登录' : '还没查过'}`;
+  return `钱包 ${formatMoney(observation.balance)} ${observation.currency || 'USD'} · ${walletWhenText(observation, failed)}`;
+}
+/** 「查询于 10:13」；跨天带日期；刷新失败时写「上次查询 … · 刷新失败」。 */
+function walletWhenText(observation, failed) {
+  const at = new Date(observation.at);
+  const sameDay = Number.isFinite(at.getTime()) && at.toDateString() === new Date().toDateString();
+  const when = sameDay ? at.toLocaleTimeString('zh-CN', { hour12: false, hour: '2-digit', minute: '2-digit' }) : formatTime(observation.at);
+  return `${failed ? '上次查询' : '查询于'} ${when}${failed ? ' · 刷新失败' : ''}`;
+}
+/** 快照与页面上刚刷新的那次，取时间更新的一个。 */
+function newerWallet(snapshot, live) {
+  const s = snapshot ? { balance: snapshot.balance, at: snapshot.observedAt, currency: snapshot.currency } : null;
+  if (!live) return s;
+  if (!s) return live;
+  return Date.parse(live.at) >= Date.parse(s.at) ? live : s;
+}
+function paintWalletChip(summary, observation, failed) {
+  if (!summary) return;
+  summary.lastElementChild.textContent = walletSummaryText(observation, failed);
+  summary.classList.toggle('warn', Boolean(failed));
+  summary.classList.toggle('mute', !failed);
+}
+function updateHnskjWalletSummary() {
+  paintWalletChip(document.querySelector('[data-hnskj-wallet-summary]'), newerWallet(state.hnskjWalletSnapshot, null), state.hnskjWalletError);
+}
+let hnskjWalletRequest = null;
+/** hnskj「刷新余额」：走卡片页同一个 provider-refresh（现在也落余额历史），完了重读工作台。 */
+async function refreshHnskjWallet() {
+  if (hnskjWalletRequest) return hnskjWalletRequest;
+  const button = document.querySelector('[data-hnskj-wallet-refresh]');
+  if (button) { button.disabled = true; button.textContent = '查询中…'; }
+  hnskjWalletRequest = (async () => {
+    try {
+      await api('/api/v1/admin/card-stock/provider-refresh', { method: 'POST' });
+      state.hnskjWalletError = false;
+      await loadOverview();
+      return true;
+    } catch {
+      state.hnskjWalletError = true;
+      updateHnskjWalletSummary();
+      return false;
+    } finally {
+      hnskjWalletRequest = null;
+      const again = document.querySelector('[data-hnskj-wallet-refresh]');
+      if (again) { again.disabled = false; again.textContent = '刷新余额'; }
+    }
+  })();
+  return hnskjWalletRequest;
 }
 
 function renderWbRecon(daily) {
@@ -1258,9 +1323,14 @@ const CARD_STATE_CHIPS = Object.freeze({
 });
 
 /** 一格数字。pending=true 时显示灰色说明文字而不是数字——「没有」不能长得像 0。 */
-function rigCell(label, valueHtml, { tone = '', pending = false } = {}) {
+function rigCell(label, valueHtml, { tone = '', pending = false, aside = '' } = {}) {
   const cls = `cardrig-q${pending ? ' is-pending' : ''}${tone ? ` ${tone}` : ''}`;
-  return `<div class="${cls}"><label>${escapeHtml(label)}</label><div class="cardrig-v">${valueHtml}</div></div>`;
+  // aside 放在标题行右侧（查询时间 + 刷新），不塞进数值行 —— 塞进去格子会被挤成两行（2026-09-24）。
+  // 不包进 <label>：label 里的按钮会被点标题文字误触发。
+  const head = aside
+    ? `<div class="cardrig-lh"><label>${escapeHtml(label)}</label><span class="cardrig-aside">${aside}</span></div>`
+    : `<label>${escapeHtml(label)}</label>`;
+  return `<div class="${cls}">${head}<div class="cardrig-v">${valueHtml}</div></div>`;
 }
 
 /**
@@ -1276,6 +1346,30 @@ function tokenText(status) {
   if (!status) return '状态读取失败';
   if (!status.configured) return '还没贴 token';
   return status.updatedAt ? `上次贴 ${escapeHtml(formatTime(status.updatedAt))}` : '已贴过，时间不详';
+}
+
+/**
+ * ④ 卡片页 highvcc 那格：直接显示上次余额 + 查询时间（provider_balance_snapshots，与工作台同一份），
+ * 点「刷新」原地更新，不再跳到下面「一键开卡」折叠区才看得到（Lemon 2026-09-24）。
+ */
+function rigWalletObservation(rig) {
+  if (rig) state.highvccWalletSnapshot = rig.walletObserved || state.highvccWalletSnapshot || null;
+  return newerWallet(state.highvccWalletSnapshot, state.highvccWalletObservation);
+}
+function rigWalletHtml(rig) {
+  const observation = rigWalletObservation(rig);
+  return observation ? `$${formatMoney(observation.balance)}` : '—';
+}
+/** 标题行右侧的短时间：「查询于 10:13」/「刷新失败 10:13」/「还没查过」。 */
+function rigWalletWhen() {
+  const observation = rigWalletObservation(null);
+  if (!observation) return state.highvccWalletError ? '查询失败' : '还没查过';
+  const when = walletWhenText(observation, false).replace('查询于 ', '');
+  return state.highvccWalletError ? `刷新失败 ${when}` : `查询于 ${when}`;
+}
+function rigWalletLow(rig) {
+  const observation = rigWalletObservation(rig);
+  return Boolean(observation && rig.walletFloor != null && Number(observation.balance) < Number(rig.walletFloor));
 }
 
 function renderCardRigs(byProvider, tokenStatus) {
@@ -1309,7 +1403,10 @@ function renderCardRigs(byProvider, tokenStatus) {
     //
     // 口径同工作台：有告警＝确已失效；**没告警不等于「有效」**（token 两小时不活动就过期，
     // configured=true 推不出有效），所以无告警时只报「上次贴于几点」，不写「有效」。
-    const isHighvcc = Boolean(rig.walletLiveOnly);
+    // 按卡台类型认 highvcc，不再用「没有 hnskj 快照」反推：hnskj 快照缺一次（新库、快照表被清）时，
+    // 旧判断会把 hnskj 那栏当成 highvcc 渲染（2026-09-24 本机验收时撞到）。旧响应没有 providerKind 才回退。
+    const isHighvcc = rig.providerKind ? rig.providerKind !== 'hnskj' : Boolean(rig.walletLiveOnly);
+    if (isHighvcc) state.highvccWalletFloor = rig.walletFloor;
     const tokenBad = isHighvcc && rig.tokenExpiredAlert === true;
     const floor = rig.walletFloor;
     const balance = rig.walletBalance;
@@ -1322,9 +1419,11 @@ function renderCardRigs(byProvider, tokenStatus) {
         { tone: lowStock ? 'is-warn' : '' }),
       isHighvcc
         ? rigCell('钱包余额 / 底线',
-            `<button class="cardbtn" type="button" data-rig-wallet="${acct}">查余额</button>`
+            `<span data-rig-wallet-value>${rigWalletHtml(rig)}</span>`
             + ` <small>/ ${floor == null ? '未设底线' : `$${formatMoney(floor)}`}</small>`,
-            { pending: true })
+            { tone: rigWalletLow(rig) ? 'is-bad' : '',
+              aside: `<span data-rig-wallet-when class="${state.highvccWalletError ? 'is-fail' : ''}">${escapeHtml(rigWalletWhen())}</span>`
+                + `<button class="cardlink" type="button" data-rig-wallet="${acct}">刷新</button>` })
         : rigCell('钱包余额 / 底线',
             `$${formatMoney(balance)} <small>/ ${floor == null ? '未设底线' : `$${formatMoney(floor)}`}</small>`,
             { tone: lowWallet ? 'is-bad' : '' }),
@@ -1512,10 +1611,17 @@ elements.cardsRigs?.addEventListener('click', async (event) => {
   const walletButton = event.target.closest('[data-rig-wallet]');
   if (walletButton) {
     walletButton.disabled = true;
+    walletButton.textContent = '查询中…';
     try {
-      if (await openHighvccTarget('wallet')) await loadHighvccWallet();
-    } catch { showNotice('钱包入口打开失败，请重试。'); }
-    finally { walletButton.disabled = false; }
+      const ok = await loadHighvccWallet();
+      const cell = walletButton.closest('.cardrig-q');
+      const value = cell?.querySelector('[data-rig-wallet-value]');
+      if (value) value.innerHTML = rigWalletHtml(null);
+      const when = cell?.querySelector('[data-rig-wallet-when]');
+      if (when) { when.textContent = rigWalletWhen(); when.classList.toggle('is-fail', Boolean(state.highvccWalletError)); }
+      if (cell) cell.classList.toggle('is-bad', rigWalletLow({ walletFloor: state.highvccWalletFloor }));
+      showNotice(ok ? 'highvcc 钱包余额已更新。' : '钱包查询失败，请检查卡台登录状态。', ok ? 'success' : 'error');
+    } finally { walletButton.disabled = false; walletButton.textContent = '刷新'; }
     return;
   }
 
@@ -1842,13 +1948,7 @@ let highvccWalletVersion = 0;
 function updateHighvccWalletSummary() {
   const summary = document.querySelector('[data-highvcc-wallet-summary]');
   const button = document.querySelector('[data-highvcc-refresh]');
-  const observation = state.highvccWalletObservation;
-  if (summary) {
-    summary.textContent = observation
-      ? `钱包 ${observation.balance} USD · ${state.highvccWalletError ? '上次查询' : '查询于'} ${formatTime(observation.at)}${state.highvccWalletError ? ' · 刷新失败' : ''}`
-      : `钱包 — USD · ${state.highvccWalletError ? '查询失败，请检查登录' : '未查询'}`;
-    summary.classList.toggle('warn', Boolean(state.highvccWalletError));
-  }
+  paintWalletChip(summary, newerWallet(state.highvccWalletSnapshot, state.highvccWalletObservation), state.highvccWalletError);
   if (button) { button.disabled = Boolean(highvccWalletRequest); button.textContent = highvccWalletRequest ? '查询中…' : '刷新余额'; }
 }
 function invalidateHighvccWallet() {
@@ -1875,14 +1975,16 @@ async function loadHighvccWallet() {
       const wallet = await api('/api/v1/admin/backup-cards/highvcc/wallet');
       if (version !== highvccWalletVersion) return false;
       if (wallet.usdBalance == null || wallet.usdBalance === '' || !Number.isFinite(Number(wallet.usdBalance))) throw new Error('wallet_balance_missing');
-      state.highvccWalletObservation = { balance: formatMoney(wallet.usdBalance), at: new Date().toISOString() };
+      state.highvccWalletObservation = { balance: wallet.usdBalance, at: new Date().toISOString(), currency: 'USD' };
       state.highvccWalletError = false;
+      state.highvccWalletErrorCode = null;
       elements.highvccWalletStatus.innerHTML = `<div><span><strong>卡台美元钱包 $${wallet.usdBalance}</strong>`
         + `<small>查询于 ${formatTime(new Date().toISOString())}；卡台自己的"押金"字段累计 $${wallet.usdDeposit}（含义未完全确认，实际能开多大金额以卡台报价为准，不代表这个数字能直接减）；已消费 $${wallet.usdConsume}</small></span></div>`;
       return true;
-    } catch {
+    } catch (error) {
       if (version !== highvccWalletVersion) return false;
       state.highvccWalletError = true;
+      state.highvccWalletErrorCode = error?.message || null;
       elements.highvccWalletStatus.innerHTML = '<div><span><strong>钱包余额读取失败</strong><small>请检查卡台登录状态后重试；本次未取得新余额。</small></span></div>';
       return false;
     }
@@ -1893,6 +1995,30 @@ async function loadHighvccWallet() {
   finally {
     if (highvccWalletRequest === request) highvccWalletRequest = null;
     updateHighvccWalletSummary();
+  }
+}
+
+/**
+ * 工作台「更新登录」：先拿钱包接口试一次登录（顺带刷新余额），还有效就原地告诉他，不跳页；
+ * 卡台明确说 token 失效/没配（409 highvcc_token_expired / highvcc_token_missing）才带他去贴 token 的框；
+ * 别的失败（卡台连不上等 502）说清楚「不是登录问题」，不误导去贴 token（Lemon 2026-09-24）。
+ */
+async function checkHighvccLogin(button) {
+  button.disabled = true;
+  const label = button.textContent;
+  button.textContent = '检查中…';
+  try {
+    const ok = await loadHighvccWallet();
+    if (ok) { showNotice('highvcc 登录还有效，不用更新（余额已顺带刷新）。', 'success'); return; }
+    if (/^highvcc_token_(expired|missing)$/.test(state.highvccWalletErrorCode || '')) {
+      showNotice('highvcc 登录已失效，请在下面贴新的 token。');
+      await openHighvccTarget('token');
+      return;
+    }
+    showNotice('卡台这会儿查不到，不是登录失效，稍后再点一次。');
+  } finally {
+    button.disabled = false;
+    button.textContent = label;
   }
 }
 
@@ -3283,6 +3409,16 @@ document.addEventListener('click', (event) => {
   const jumpButton = event.target.closest('[data-view-jump]');
   const highvccTarget = event.target.closest('[data-highvcc-target]');
   const walletRefresh = event.target.closest('[data-highvcc-refresh]');
+  const hnskjRefresh = event.target.closest('[data-hnskj-wallet-refresh]');
+  const loginCheck = event.target.closest('[data-highvcc-login-check]');
+  if (loginCheck) {
+    if (!loginCheck.disabled) checkHighvccLogin(loginCheck).catch(() => showNotice('卡台入口打开失败，请重试。'));
+    return;
+  }
+  if (hnskjRefresh) {
+    if (!hnskjRefresh.disabled) refreshHnskjWallet().then((ok) => showNotice(ok ? 'HNSKJ 钱包余额已更新。' : 'HNSKJ 钱包查询失败，请稍后重试。', ok ? 'success' : 'error'));
+    return;
+  }
   if (walletRefresh) {
     if (!walletRefresh.disabled) loadHighvccWallet().then((ok) => showNotice(ok ? '钱包余额已更新。' : '钱包查询失败，请检查卡台登录状态。', ok ? 'success' : 'error'));
     return;

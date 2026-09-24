@@ -51,6 +51,7 @@ import {
   readProviderSnapshot,
   refreshProviderSnapshot
 } from './services/card-provider-snapshot-service.js';
+import { createProviderBalanceSnapshotService } from './services/provider-balance-snapshot-service.js';
 import { createCardOperationalOverrideService } from './services/card-operational-override-service.js';
 import { createAdminStartBusinessService } from './services/admin-start-business-service.js';
 import { buildAdminReadinessSummary } from './services/admin-readiness-summary.js';
@@ -234,8 +235,10 @@ const app = createApp({
   })
   ,refreshAdminCardStockProvider: cardIntakeProvider
     ? async () => {
+      // 手动刷新也落余额历史（与 card-catalog-sync 同路径），工作台钱包的「上次余额 + 查询时间」才会跟着变。
       const snapshot = await refreshProviderSnapshot(pool, cardIntakeProvider, {
-        providerAccountId: currentCardProviderAccountId
+        providerAccountId: currentCardProviderAccountId,
+        balanceSnapshotService: createProviderBalanceSnapshotService({ pool })
       });
       return {
         syncedAt: snapshot.syncedAt,

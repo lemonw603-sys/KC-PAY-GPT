@@ -3625,3 +3625,8 @@ Lemon 决定新开窗口；接班方式由他直接跟新窗口说，本窗口�
 
 Lemon「发布」。发布前：非终态订单 1（WAITING_FOR_SESSION，无卡）、活动 run 0、开卡 job 在途 0；`customer-sql-probe` 全部可执行；无迁移。prepare（备份 `pojia-20260924T021418Z`，manifest 1375 OK）→ 复核新目录含 `supplyBlockedAlertKey`、旧写法 0 处、current 仍指旧 → switch：三进程 cwd 在新 release，live/ready 200。独立复验：三进程 PID/cwd（新 SSH）；开卡执行器 timer 的 WorkingDirectory 是 `/opt/pojia/current/v1`，02:15:33 UTC 首轮即新代码：挂着的 `CARD_SUPPLY_BLOCKED` OPEN v3 → RESOLVED，通知 567108 SENT→CANCELLED，无新推送；`CARD_SUPPLY_FAULT` 仍 OPEN（卡台仍禁开）。state-check 全部一致。回滚点 `20260924-wb-remaining-2830063`。
 另：AGENTS.md 加「回答结尾集中列要你决定的事」（Lemon 同日要求）。
+
+## 2026-09-24｜①～④ 本地实现（D-364，02:2x～02:5x UTC）
+
+量 Lemon 的真实视口（系统 + Chrome 配置读得 1440×730）。①工作台卡与钱每格一行：`.wb-prod` 不换行、「自动补/需人工开」靠右，容器查询窄时换「自动/人工」；1440×730 实测格高 47→31、整块 350→318（本地同数据），三段顶端差 ≤3px、无溢出。②两台钱包统一：`latestProviderBalancesSql`（新，provider-balance-snapshot-service）供工作台与卡片页；hnskj 后台「刷新」改为也落 `provider_balance_snapshots`（server.js 传 balanceSnapshotService，与 card-catalog-sync 同路径）；生产只读实跑该 SQL：hnskj 104.71 @02:28、highvcc 34.24 @02:13，走 idx_provider_balance_history。③`showNotice` 成功 4 秒消失（实测 3.5s 仍在、4.5s 消失）、失败保留（5s 后仍在）；工作台「更新登录」改 `data-highvcc-login-check`：先调钱包接口，409 `highvcc_token_expired/missing` 才跳贴 token（本机无 token 实测：跳到卡片页、焦点在 token 输入框、提示「登录已失效」），其它失败说「不是登录失效」。④卡片页 highvcc 钱包格显示上次余额，「查询于/刷新」放标题行右侧（不包进 label，点标题不误触），八格同高 57px；顺手把 highvcc 判定改成按 providerKind（旧法按「没有 hnskj 快照」反推，本机新库撞到 hnskj 栏被当 highvcc 渲染）。
+测试：v1 全量 1039/0（改写 2 条锁旧规则的前端测试、概览夹具加钱包行、新增 2 条）；css 棘轮、文案闸门通过；parity：营业条/CDK/诊断一致，订单页因本地缺订单造数跑不起来，卡片页 5 处高度差全部来自 ④ 那格（原型仍是「查余额」按钮），待 Lemon 看过重冻。hnskj「刷新余额」成功路径本机无卡台凭据走不到，只验了失败态（芯片转警示「上次查询 … · 刷新失败」、按钮复原）。未发布。

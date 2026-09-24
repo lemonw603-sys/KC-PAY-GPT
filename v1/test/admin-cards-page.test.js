@@ -68,14 +68,36 @@ test('卡片页不给改底线的入口（wallet_floor 挡开卡，改它是资�
   assert.doesNotMatch(html('sel:#cards-rigs'), /data-rig-floor/);
 });
 
-test('highvcc 不显示余额数字，只给「查余额」按钮（它没有快照，余额只能实时查）', () => {
+// ④（Lemon 2026-09-24）：旧规则「highvcc 没有快照，只给查余额按钮」的前提已不成立——D-249 T1 起
+// highvcc 每小时落 provider_balance_snapshots（生产 2026-09-24 最新 02:13 UTC）。现在那格直接显示
+// 上次余额 + 查询时间，「刷新」原地更新；读的是本地快照，打开页面仍不打外网。
+test('highvcc 那格直接显示上次余额 + 查询时间，刷新按钮原地更新；没快照不冒充 $0.00', () => {
   const { sandbox, html } = loadAdminJs();
   sandbox.renderCardRigs([RIG_BACKUP]);
+  const none = html('sel:#cards-rigs');
+  assert.match(none, /data-rig-wallet="backup-a"[^>]*>刷新</);
+  assert.match(none, /data-rig-wallet-value>—<\/span>/);
+  assert.match(none, /data-rig-wallet-when[^>]*>还没查过</);
+  assert.doesNotMatch(none, /<label>[^<]*<button/, '刷新按钮不能包在 label 里（点标题会误触发）');
+  assert.doesNotMatch(none, /\$0\.00 <small>/, '没有快照不能被 formatMoney 成 0.00 顶上去');
+
+  const observedAt = new Date().toISOString();
+  sandbox.renderCardRigs([{ ...RIG_BACKUP, walletObserved: { balance: '34.240000', currency: 'USD', observedAt } }]);
+  const seen = html('sel:#cards-rigs');
+  assert.match(seen, /data-rig-wallet-value>\$34\.24<\/span> <small>\/ \$20\.00<\/small>/, '数值行与 hnskj 同形：余额 / 底线');
+  assert.match(seen, /data-rig-wallet-when[^>]*>查询于 \d{2}:\d{2}</, '查询时间在标题行右侧');
+  assert.doesNotMatch(seen, /cardrig-q is-bad/, '34.24 高于底线 20，不标红');
+
+  sandbox.renderCardRigs([{ ...RIG_BACKUP, walletObserved: { balance: '12.00', currency: 'USD', observedAt } }]);
+  assert.match(html('sel:#cards-rigs'), /cardrig-q is-bad/, '低于底线 20 要标红');
+});
+
+test('hnskj 快照缺一次也不会被当成 highvcc 渲染（按 providerKind 认，2026-09-24 本机撞到）', () => {
+  const { sandbox, html } = loadAdminJs();
+  sandbox.renderCardRigs([{ ...RIG_HNSKJ, walletLiveOnly: true, walletBalance: null, walletSyncedAt: null }]);
   const out = html('sel:#cards-rigs');
-  assert.match(out, /data-rig-wallet="backup-a"/);
-  assert.match(out, /查余额/);
-  // walletBalance 是 null，不能被 formatMoney 成 0.00 顶上去
-  assert.doesNotMatch(out, /\$0\.00 <small>\//);
+  assert.doesNotMatch(out, /data-rig-wallet=/, 'hnskj 那栏不出现 highvcc 的刷新按钮');
+  assert.match(out, /无快照/);
 });
 
 test('token 认 PROVIDER_TOKEN_EXPIRED 告警，不认 supply_fault_state（B2）', () => {

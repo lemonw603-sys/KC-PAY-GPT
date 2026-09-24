@@ -284,7 +284,9 @@ components:
 - 数字用等宽 + `tnum`；时间一律 `MM-DD HH:mm`（北京时间）。
 - 需要人处理的状态用警示色芯片 + 同行文字链接；一眼看到「做什么」。
 - 宽屏留页边距，不拉宽表格；余量给最后一列。
-- 每次动后台页面，跑 `scripts/visual-parity.mjs`（几何契约）、`scripts/css-drift-check.mjs`（棘轮）、`scripts/ui-copy-check.mjs`（文案）三件，加真实页验收脚本，视口至少 1440 与 1920。
+- 每次动后台页面，跑 `scripts/visual-parity.mjs`（几何契约）、`scripts/css-drift-check.mjs`（棘轮）、`scripts/ui-copy-check.mjs`（文案）三件，加真实页验收脚本。**首要视口是 Lemon 的真实屏幕：1440×730**（MacBook 逻辑分辨率 1440×900，Chrome 四个配置窗口都占满 1440 宽、约 817 高，后台站点无缩放；2026-09-24 从 `system_profiler` 与 Chrome Preferences 读得），1920 作次要检查。不要凭空挑两个宽度去挤（Lemon 2026-09-24）。
+- 格子、卡片里的一条信息**保持一行**（Lemon 2026-09-24：「换两行视觉上很不好看」）。先量 1440×730 下真实需要的宽度；放不下时先缩短次要文字（如「需人工开」→「人工」）、把时间/按钮挪到标题行，不许换行。
+- 钱包「查询于」时间：当天只写 `HH:mm`，跨天才带日期——一行放不下 `MM-DD HH:mm` 时的受控例外（2026-09-24）。
 
 ### Don't
 - 不用更细字重做弱化；不低于 400。

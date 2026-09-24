@@ -201,6 +201,19 @@ export async function recordProviderBalanceSnapshot(pool, input = {}) {
   });
 }
 
+/**
+ * 每台卡台最新一次钱包余额观察。唯一口径，工作台「卡与钱」与卡片页台账栏共用（Lemon 2026-09-24：
+ * 两台钱包统一成「上次余额 + 查询时间」）。表的唯一键含 observed_at，每次查询都落一行，
+ * 所以 observed_at 就是「最后一次查询的时间」，不是「余额最后一次变化的时间」。
+ */
+export function latestProviderBalancesSql() {
+  return `SELECT s.provider_account_id, s.available_balance, s.currency, s.observed_at
+    FROM provider_balance_snapshots s
+    INNER JOIN (SELECT provider_account_id, MAX(observed_at) AS latest
+                  FROM provider_balance_snapshots GROUP BY provider_account_id) newest
+      ON newest.provider_account_id = s.provider_account_id AND newest.latest = s.observed_at`;
+}
+
 export function createProviderBalanceSnapshotService({ pool } = {}) {
   if (!pool) throw new TypeError('pool is required');
   return {

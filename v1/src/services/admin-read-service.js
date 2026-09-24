@@ -1,3 +1,4 @@
+import { latestProviderBalancesSql } from './provider-balance-snapshot-service.js';
 import { PublicApiError } from '../domain/public-api-error.js';
 import { providerLabelOf } from '../domain/provider-labels.js';
 import crypto from 'node:crypto';
@@ -610,7 +611,7 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
   async function getOverview() {
     const [[orderCounts], [statusRows], [cdkRows], [settingsRows], [refundRows], [alertRows], [stockRows],
       [stockSettingRows], [backlogRows], [providerStockRows], [stock5xRows], [stock20xRows],
-      [spendRows]] = await Promise.all([
+      [spendRows], [walletRows]] = await Promise.all([
       pool.query(`SELECT
         COUNT(*) AS total,
         SUM(${todayCst8WindowSql('o.created_at')}) AS today,
@@ -785,6 +786,8 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
               AND ${todayCst8WindowSql('t.first_seen_at')}
         ) spend ON spend.pa_id = pa.id
         GROUP BY pa.id`)
+      // 两台钱包统一成「上次余额 + 查询时间」（Lemon 2026-09-24），口径与卡片页同一份
+      ,pool.query(latestProviderBalancesSql())
     ]);
     const count = (value) => Number(value || 0);
     const total = count(orderCounts[0]?.total);
@@ -933,7 +936,11 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
           supplyFaultReason: row.supply_fault_reason || null,
           byProduct: perProduct,
           spentToday: spend?.spent_today == null ? null : String(spend.spent_today),
-          spentCurrency: spend?.currency || 'USD'
+          spentCurrency: spend?.currency || 'USD',
+          wallet: (() => {
+            const w = byId(walletRows);
+            return w ? { balance: String(w.available_balance), currency: w.currency || 'USD', observedAt: iso(w.observed_at) } : null;
+          })()
         };
       }),
       // 「有多少人在等卡」不另查：orderCounts 里早就有

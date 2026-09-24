@@ -21,7 +21,7 @@
 
 ## 下一可执行项（按 D-352 块序）
 
-1. 上面四个问题：**D-363 定先做⑤，再①～④一批**（①先给原型）。⑤ 已发布。
+1. 上面四个问题：**D-363 定先做⑤，再①～④一批**（①先给原型）。⑤ 已发布。**①～④ 已本地实现并验收、未发布**（D-364）：等 Lemon 看截图（卡与钱改前/改后、卡片页台账栏）后说发布；发布前要重冻卡片页原型（`_frozen/cards-a/` + `step6-cards-a.html` 那格），否则 `cards-page.json` 契约一直报 5 处高度差。本机隔离库 `pojia_ui_d363`（容器 pojia-stage1-mysql）与临时凭据留着给这一轮改版用，定稿后删库。
    - 同文件两条待 Lemon 定：欠账 16（调度器一轮只看一个候选，触发条件「下次动调度器时」已到）；欠账 17（转台开卡按水位会一张接一张开，代码显示、生产 0 次，见 PROJECT_MAP）。
 2. **块 4**：Plus Browser 真钱一单——**不排**（D-363：Lemon 不花钱、没有 free 号）。流程：关付款开关与下单查心跳 → Lemon 建演练单 → 单单 rehearsal → 收口放卡 → 开回开关 → 真单 → 盯成功与取消续费 → 对账（RUNBOOK §2）。
 3. **块 6 前置**：Free→Pro 20x 非付款 PoC，任务书 `tasks/2026-09-24-block6-pro20x-poc.md`，脚本 `browser-mvp/scripts/poc-free-pro20x-checkout-readonly.mjs` 已写未跑。挂起：Lemon 没有无订阅账号（曾付费、当前无订阅的也行，按钮会是 Rejoin Pro）。
