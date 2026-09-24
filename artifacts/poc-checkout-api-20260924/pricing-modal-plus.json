@@ -1,0 +1,23 @@
+{
+  "startedAt": "2026-09-24T06:22:56.371Z",
+  "profileIdDigest": "9d7445fffc27ffc9",
+  "steps": [
+    {
+      "step": "page",
+      "at": "2026-09-24T06:23:11.642Z",
+      "url": "https://chatgpt.com/",
+      "title": "ChatGPT"
+    },
+    {
+      "step": "pricing-modal",
+      "at": "2026-09-24T06:23:11.691Z",
+      "visible": false,
+      "text": null
+    },
+    {
+      "step": "error",
+      "at": "2026-09-24T06:23:11.691Z",
+      "message": "pricing modal not visible"
+    }
+  ]
+}

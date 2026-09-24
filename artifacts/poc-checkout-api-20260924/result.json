@@ -1,0 +1,47 @@
+{
+  "startedAt": "2026-09-24T06:59:40.031Z",
+  "profileIdDigest": "9d7445fffc27ffc9",
+  "country": "PH",
+  "currency": "PHP",
+  "steps": [
+    {
+      "step": "page",
+      "at": "2026-09-24T06:59:40.880Z",
+      "url": "https://chatgpt.com/#pricing",
+      "title": "ChatGPT Plans"
+    },
+    {
+      "step": "session",
+      "at": "2026-09-24T06:59:41.680Z",
+      "status": 200,
+      "hasToken": true,
+      "emailDigest": "80d5592e352d1da9",
+      "expires": "2026-12-23T06:59:41.484Z"
+    },
+    {
+      "step": "account",
+      "at": "2026-09-24T06:59:45.477Z",
+      "status": 200,
+      "plan": "free",
+      "hasActive": false,
+      "keys": [
+        "accounts",
+        "account_ordering"
+      ]
+    },
+    {
+      "step": "checkout:plus",
+      "at": "2026-09-24T06:59:47.078Z",
+      "planName": "chatgptplusplan",
+      "status": 400,
+      "keys": [
+        "detail"
+      ],
+      "hasSessionId": false,
+      "urlHost": null,
+      "urlDigest": null,
+      "detail": "Our systems have detected unusual activity. Please try again later."
+    }
+  ],
+  "finishedAt": "2026-09-24T06:59:47.113Z"
+}
