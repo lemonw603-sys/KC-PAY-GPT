@@ -3685,3 +3685,7 @@ Lemon：「KC-PAY-GPT，开始评估」。报告 `reviews/2026-09-24-kc-pay-gpt-
 ## 2026-09-25｜块 6 非付款 PoC（2026-09-24 16:5x～17:0x UTC）
 
 Lemon「先做一次测试」。核对：Lane 3（`9d7445ff…`，名「Plus Browser PH Lane 3」，备注非付款隔离验证）≠ 常驻池 Pilot（`a196a016…`）；付款前预检默认用 Lane 3 但需手动跑；无在途订单；出口实测 `38.60.246.34` / PH。运行：pro_20x → 定价弹窗 20x 单选 `disabled`，导航合同拒点禁用控件而停；只读探针确认 5x `aria-checked=true`、20x `disabled=true`；pro_5x → 同页结账 `/checkout/openai_llc/`，`plan_name=chatgptprolite`、₱6,490（含 VAT 12%）、`Subscribe`、`requires_manual_approval=true`；临时探针确认结账页 20x 单选同样 `disabled`（探针跑完即删）。三次均 0 字段 0 提交，结账页关闭，Lane 3 窗口已关；常驻池心跳正常。证据 `artifacts/poc-free-pro20x-20260924/`（按任务书不入库，已加 .gitignore）。合同与 D-369 已落。
+
+## 2026-09-25｜块 6 Pro 5x 代码完成（隔离分支，未发布）（09-24 16:0x～17:3x UTC）
+
+Lemon「1. 同意 2. 先不开卡」。分支 `block6-pro5x` `71f6ae3`（已推送）。改 4 个白名单文件 + 4 个测试文件，详见 D-371。验：browser-mvp 全量 306/0（9 跳过）、v1 全量 1027/0（65 跳过）；变异验证：交易读取器 / 核实器 / 常驻池映射 / 组合层四处换回旧逻辑，新测试分别 1/3/1/1 条变红，还原后 `cmp` 一致。v1 收口（`recordCancellationConfirmed`）不分套餐，5x 确认后可正常到 `RECHARGE_SUCCESS`（代码显示）。演练未跑：5x 无卡；Plus 回归要 Lemon 建单 + 暂停常驻池。

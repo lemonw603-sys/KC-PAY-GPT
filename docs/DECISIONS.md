@@ -5558,3 +5558,17 @@ Lemon：先推进 5x；Pro 20x 现在官方不让订阅，是官方的问题，�
 
 Lemon 指出 D-370 的 $104 是用含 12% VAT 的 ₱6,490 算的；填完免税账单后税为 0。核对：Plus 未填账单 ₱1,100 → 填后 ₱982.14（=1,100/1.12，与 rehearsal「税 0」一致）；5x 同理 ₱6,490/1.12 = **₱5,794.64**（即 D-369 结账页小计），按 62.3 PHP/USD 实扣约 **$93**。现 5x 开卡 $100 / 最低余额 $95 足够，**不调**。D-370 原「不调会拒付」的判断作废。
 Lemon：**暂不做 5x 真钱实验，等客户有单**（同 D-366 思路：第一张真实 5x 客户单即真钱验收）。
+
+## D-371（2026-09-25 01:3x UTC+8 ＝ 09-24 17:3x UTC）块 6 Pro 5x 代码完成（隔离分支，未发布）
+
+Lemon「1. 同意 2. 先不开卡」（批白名单；不开 5x 卡）。代码在分支 `block6-pro5x`（`71f6ae3`，工作树 `.claude/worktrees/block6-pro5x`），**未合 main、未发布、常驻池未重启**——隔离是为了常驻池（从 main 目录跑）意外重启时不会载入未演练的代码。
+做法（只动任务书白名单 4 个文件 + 测试；付款前三件、`chatgpt-checkout-navigator.js` 未动——执行器已按 `job.metadata.plan` 导航）：
+- 常驻池：所有套餐都走 `CANCEL_RENEWAL`（`postPlusActionForPlan` 导出）；不再有套餐进 `UPGRADE_DIALOG_STOP`。
+- 组合层：结账按订单套餐选档；**仍按旧两步走配置的调用方（单单工具 `MANUAL_20X_HANDOFF`）第一步照旧买 Plus**（`checkoutPlanForAction`），不悄悄改它们的行为。
+- 付款后确认：`targetPlan`；pro_5x 只认「含 pro、不含 plus」（5x 结账 `plan_name=chatgptprolite`，**付款后账号上的套餐串未观察过**）。对不上＝未确认 → `POST_PAYMENT_UNKNOWN` → 人工，**只付一次、不取消续费、不重付**（测试以真执行器 + 真核实器组合证明）。证据 kind 仍 `PLUS_ACTIVE`（下游按它认），加 `targetPlan` 字段。
+- 付款后复核（`live-post-payment-recovery.js` 不在白名单、未改）：常驻池给它传 `verifierFactory`，套餐取自同一次运行的交易读取器（按订单解析）。否则 5x 单第一次没确认到就会全部落人工。
+- 交易金额按套餐：pro_5x PHP 5,500–6,100 / USD 85–102（免税 ₱5,794.64 ≈ $93；**含 VAT 的 ₱6,490 / $104 不认**）；pro_20x 不给区间（任何扣款都进人工）；Plus 区间不变。
+验：browser-mvp 全量 306 过 / 0 败（9 跳过）；v1 全量 1027 / 0（65 跳过）。新增 6 条测试，4 处改动逐一换回旧逻辑，新测试全部变红（变异验证）。
+**未完成（D-254 要求）**：一次演练。5x 演练要 5x 卡（Lemon 不开）；Plus 回归演练要 Lemon 在客户页用 Lane 3 号建单，且演练期间常驻池须暂停（否则付款模式的常驻池会抢单真付）。
+**未验证**：5x 免税后零税报价（D-369 PoC 只到结账页、没填账单）；5x 付款后账号套餐串。
+**遗留（不在白名单，未动）**：单单工具 `production-live-worker.js` 的交易读取器不传套餐——用它真付 5x 会对账不上进人工（安全）；`BROWSER_UPGRADE_STAGE` 配置与两步走旧代码待清理；v1 侧客户页成功文案按套餐、`browser-admin-service.js` 旧 20X 人工确认未动。路线 305 仍关（CURRENT_STATE：2026-09-17 起 `accepts_new_orders=0`）。
