@@ -3645,3 +3645,7 @@ Lemon「发布」。先重冻卡片页原型 highvcc 钱包格（`step6-cards-a.
 ## 2026-09-24｜字体 B 落地、「可离开」第一条改甲（D-366，03:3x～03:5x UTC）
 
 Lemon：发布 / B / 甲。`workbench.css` `.wb-prod-n` 12px/500、数字 `tabular-nums` 不再用等宽（v=23）；本机 1440×730 实测格高 31、无溢出，截图与 Lemon 挑定的比稿 B **逐像素相同**（cmp）。棘轮通过，v1 全量 1044/0。可离开第一条改写进 DECISIONS / PROJECT_MAP 顶部 / HANDOFF_NOW / 记忆。本机隔离库 `pojia_ui_d363` 已删。
+
+## 2026-09-24｜发布 `20260924-supply-sched-0e87990`（03:33 UTC，D-365/D-366）
+
+Lemon「发布」（含字体 B）。发布前：全量 sql-probe 641 条真实失败 0；customer-sql-probe 通过；新推送领取 SQL（含 faultCoverage）经 mysql.format 取出后在生产 EXPLAIN，走 `uq_operator_alert_dedupe` / `uq_alert_notification_channel`，只读执行返回 0 行（此刻无待推）；非终态 1、活动 run 0、开卡 job 0；无迁移。prepare（备份 `pojia-20260924T032825Z`）→ 复核新目录含三处调度器改动、faultCoverage、workbench.css?v=23 与 tabular-nums → switch。独立复验：三进程 cwd；磁盘 index.html 引 v=23，带 ADMIN_HOST 取该 CSS 含 tabular-nums；开卡执行器新代码首轮 03:34:07 UTC NO_DEMAND、Result=success；bark 切换后 journal 无错误；`CARD_SUPPLY_FAULT` 仍 OPEN v1、缺卡告警无 OPEN。state-check 一致。回滚点 `20260924-wallet-oneline-29b8358`。HANDOFF_NOW 整页重写。
