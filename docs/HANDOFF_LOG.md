@@ -3653,3 +3653,7 @@ Lemon「发布」（含字体 B）。发布前：全量 sql-probe 641 条真实�
 ## 2026-09-24｜HNSKJ 停开卡原因（11:4x UTC+8）
 
 Lemon：HNSKJ 卡台维护中，是卡台自己的问题。写入 CURRENT_STATE 供卡执行器行与 HANDOFF_NOW；待他做的那条划掉。维护结束后调度器按水位（现 0）不会自动去试，需要 HNSKJ 供卡时把水位调回即可，故障标记在下次成功开卡后自动清除。
+
+## 2026-09-24｜块 7 删表盘点（03:5x～04:1x UTC，只读）
+
+Lemon「现在开始」。报告 `reviews/2026-09-24-block7-table-inventory.md`：63 表精确行数（03:52 UTC）+ 分区引用统计 + 调用链。要点：运行代码里真 0 引用的只有 3 张旧卡台选择表（面五④清单外，053 已替代）；面五④点名的 5 张零行表里 `checkout_artifacts`/`browser_artifact_secrets` 被每张 Browser 单的 `abortBeforePayment`/`recordPlusActivation` UPDATE，**不能直接删**；`order_notes` 被「补录客户付款」在用；`order_tags` 与 `order_compensations` 的写入入口已不存在；`refund_cases` 是分卡资格里的资金保护，建议不删；导出端点面五④说删、诊断页 D-325 保留，冲突待定；补余额两个定时任务 10 分钟约 105 秒 CPU、开关关着空转。CURRENT_STATE「事实表之外」旧句改指向报告。
