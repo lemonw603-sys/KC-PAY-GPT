@@ -10,7 +10,6 @@ function fakePool(responses) {
       queries.push({ sql, values });
       if (/FROM card_consumption_ledger/.test(sql)) return [[{ id: 'usage-1', status: 'RESERVED', recharge_attempt_id: null }], []];
       if (/UPDATE card_consumption_ledger/.test(sql)) return [{ affectedRows: 1 }, []];
-      if (/UPDATE card_funding_attempts/.test(sql)) return [{ affectedRows: 1 }, []];
       if (/UPDATE card_stock_jobs/.test(sql)) return [{ affectedRows: 1 }, []];
       if (/UPDATE operator_alerts/.test(sql)) return [{ affectedRows: 1 }, []];
       if (/cdk-return payment evidence/.test(sql)) return [[{ payment_evidence: 0 }], []];
@@ -116,7 +115,7 @@ test('cancellation closes an untouched waiting-for-card order without inventing 
   assert.deepEqual(result, { publicNo: 'PJV1-DEMO', status: 'CLOSED', cardReleased: false,
     cardInventoryStatus: null, replayed: false });
   assert.equal(pool.queries.some(({ sql }) => /WAITING_FOR_CARD', 'CLOSED'/.test(sql)), true);
-  assert.equal(pool.queries.some(({ sql }) => /UPDATE card_funding_attempts/.test(sql)), true);
+  assert.equal(pool.queries.some(({ sql }) => /card_funding_attempts/.test(sql)), false, '补余额整条线已删（D-367）');
   assert.equal(pool.queries.some(({ sql }) => /UPDATE card_stock_jobs/.test(sql)), true);
   assert.equal(pool.queries.some(({ sql }) => /UPDATE cards/.test(sql)), false);
 });

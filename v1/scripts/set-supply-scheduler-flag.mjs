@@ -1,8 +1,8 @@
 // 开/关供卡调度器的总闸（app_settings.card_auto_replenishment_enabled）。
 //
-// 为什么要单独一个脚本：后台那个「能不能开卡补钱」按钮走 setSupplyAutomation，它把
-// `card_auto_replenishment_enabled` 与 `card_balance_recharge_enabled` **一起**改；而补余额整条线
-// 已定要删（面二⑪），现在不该被顺手打开。prod-query.sh 是只读工具、不得用于写库。
+// 为什么要单独一个脚本：后台没有这个总闸的控件（D-306/D-309），停自动开卡的日常做法是设置页把水位设 0；
+// 真要关总闸走这里。（补余额整条线已随 D-367 删除，`card_balance_recharge_enabled` 不再存在。）
+// prod-query.sh 是只读工具、不得用于写库。
 // 这里走正式连接池 + 事务 + admin_setting_events 审计，与后台改其他开关同一套语义。
 //
 //   node v1/scripts/set-supply-scheduler-flag.mjs on            # 预览，不写
@@ -59,11 +59,8 @@ try {
     const [rows] = await connection.query(
       'SELECT setting_value FROM app_settings WHERE setting_key = ? LIMIT 1 FOR UPDATE', [KEY]);
     const previous = rows.length ? String(rows[0].setting_value) : null;
-    const [[funding]] = await connection.query(
-      `SELECT setting_value FROM app_settings WHERE setting_key='card_balance_recharge_enabled' LIMIT 1`);
     console.log(JSON.stringify({
-      key: KEY, previous: previous ?? '(未设置)', target: value,
-      card_balance_recharge_enabled: funding?.setting_value ?? '(未设置)', mode: apply ? 'apply' : 'dry-run'
+      key: KEY, previous: previous ?? '(未设置)', target: value, mode: apply ? 'apply' : 'dry-run'
     }, null, 2));
     if (!apply) {
       await connection.rollback();

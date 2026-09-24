@@ -239,7 +239,7 @@ function renderReadiness(readiness = {}, target = null) {
   const statusLabels = { READY: '已就绪', AUTO_HEAL: '自动处理', ACTION_REQUIRED: '需要处理', BLOCKED: '暂不可用' };
   // Five pages only: card matters go to 卡片, execution and reconciliation to 诊断.
   const actionViews = {
-    REFRESH_PROVIDER_RULES: 'stock', OPEN_CARD_STOCK: 'stock', OPEN_CARD_FUNDING: 'stock',
+    REFRESH_PROVIDER_RULES: 'stock', OPEN_CARD_STOCK: 'stock',
     OPEN_BROWSER_STATUS: 'diagnostics', OPEN_RECONCILIATION: 'diagnostics',
     OPEN_PROVIDER_ROUTES: 'stock'
   };

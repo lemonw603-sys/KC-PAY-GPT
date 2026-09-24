@@ -6,7 +6,7 @@ const fresh = new Date().toISOString();
 const base = {
   providerHealth: { rechargeMethod: 'API', syncedAt: fresh, purchaseEnabled: true, browserRechargeReady: false },
   runtimeHealth: { workerHealthy: true, rechargeWritesEnabled: true },
-  cardStock: { available: 1, needsFunding: 0, autoReplenishmentEnabled: true }
+  cardStock: { available: 1, autoReplenishmentEnabled: true }
 };
 
 test('API readiness ignores an inactive Browser executor when API and inventory are ready', () => {
@@ -43,30 +43,17 @@ test('Browser is a blocker only when it is the selected default route', () => {
 });
 
 test('no card can auto-heal only when opening rules and default card type are ready', () => {
-  const overview = { ...base, cardStock: { available: 0, needsFunding: 0, autoReplenishmentEnabled: true } };
+  const overview = { ...base, cardStock: { available: 0, autoReplenishmentEnabled: true } };
   assert.equal(buildAdminReadinessSummary(overview, { defaultCardTypeReady: true }).status, 'AUTO_HEAL');
   const blocked = buildAdminReadinessSummary(overview, { defaultCardTypeReady: false });
   assert.equal(blocked.status, 'BLOCKED');
   assert.equal(blocked.checks[1].actionId, 'REFRESH_PROVIDER_RULES');
 });
 
-test('underfunded inventory remains blocked while production funding is disabled', () => {
-  const result = buildAdminReadinessSummary({ ...base, cardStock: { available: 0, needsFunding: 2, autoReplenishmentEnabled: true } }, { defaultCardTypeReady: true });
-  assert.equal(result.status, 'BLOCKED');
-  assert.equal(result.checks[1].actionId, 'OPEN_CARD_FUNDING');
-});
-
-test('underfunded inventory is auto-healable after order-driven production funding is enabled', () => {
-  const result = buildAdminReadinessSummary({
-    ...base,
-    cardStock: {
-      available: 0,
-      needsFunding: 2,
-      autoReplenishmentEnabled: true,
-      balanceFundingEnabled: true
-    }
-  }, { defaultCardTypeReady: true });
-  assert.equal(result.status, 'AUTO_HEAL');
-  assert.equal(result.ready, true);
-  assert.equal(result.checks[1].actionId, null);
+// 「有卡要补余额」一支随补余额整条线删除（D-367）：余额不够的卡不再单列，缺卡与无卡同样交给自动开卡判断。
+test('low-balance cards no longer produce a funding check (D-367)', () => {
+  const withLegacyField = buildAdminReadinessSummary({ ...base, cardStock: { available: 0, needsFunding: 2, autoReplenishmentEnabled: true } }, { defaultCardTypeReady: true });
+  const without = buildAdminReadinessSummary({ ...base, cardStock: { available: 0, autoReplenishmentEnabled: true } }, { defaultCardTypeReady: true });
+  assert.deepEqual(withLegacyField, without);
+  assert.equal(withLegacyField.checks.some((item) => item.actionId === 'OPEN_CARD_FUNDING' || /补余额|补足/.test(item.message)), false);
 });

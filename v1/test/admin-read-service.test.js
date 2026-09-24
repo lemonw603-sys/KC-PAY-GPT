@@ -29,11 +29,10 @@ test('admin overview maps aggregate values without exposing raw records', async 
     [{ setting_key: 'accept_new_orders', setting_value: 'false', updated_at: new Date('2026-08-17T00:00:00Z') }],
     [{ status: 'REFUND_DETECTED', count: 1 }],
     [{ count: 1 }],
-    [{ available: 7, provisioning: 1, assigned: 2, depleted: 1, held: 1, needs_funding: 1 }],
+    [{ available: 7, provisioning: 1, assigned: 2, depleted: 1, held: 1 }],
     [{ setting_key: 'card_stock_low_threshold', setting_value: '5' },
       { setting_key: 'card_auto_replenishment_enabled', setting_value: 'false' }],
     [{ card_intake_pending: 2, funds_risk_pending: 1,
-      card_funding_risk_pending: 2, card_funding_manual_review: 1,
       reconciliation_cases_open: 3, card_sync_backlog: 4, card_sync_review_required: 2 }],
     [{ provider_account_id: 'pa-hnskj', provider_code: 'legacy-primary', provider_kind: 'hnskj', total: 14, in_stock: 2, stock_available: 2, bindable_now: 0, in_use: 0, any_used: 6, product_used: 6, remaining_orders: 5, plus_target_available: 2 },
       { provider_account_id: 'pa-backup-a', provider_code: 'backup-a', provider_kind: 'manual_excel', total: 16, in_stock: 7, stock_available: 2, bindable_now: 2, in_use: 0, any_used: 6, product_used: 6, plus_target_available: 2 }],
@@ -59,9 +58,10 @@ test('admin overview maps aggregate values without exposing raw records', async 
   assert.deepEqual(result.decisions, {
     acceptNewOrders: false, dispatchNewRecharges: false,
     browserPaymentWritesEnabled: false, browserProfileWritesEnabled: false,
-    cardAutoReplenishmentEnabled: false, cardBalanceRechargeEnabled: false,
-    supplyAutomationEnabled: false, supplyAutomationMixed: false
+    cardAutoReplenishmentEnabled: false
   });
+  // 补余额整条线已删（D-367）：概览不再读 card_funding_attempts 与 card_balance_recharge_enabled
+  assert.equal(pool.queries.some(({ sql }) => /card_funding_attempts|card_balance_recharge_enabled/.test(sql)), false);
   assert.match(pool.queries.find(({ sql }) => /^\s*SELECT COUNT\(\*\) AS active/.test(sql)).sql, /productionWritesEnabled/);
   // 卡与钱按台按产品（D-283 原规划）：三个产品都要在，水位 0 的要标成「不自动补」
   const hnskj = result.cardStockByProvider.find((r) => r.providerKind === 'hnskj');
@@ -108,8 +108,7 @@ test('admin overview maps aggregate values without exposing raw records', async 
   assert.deepEqual(result.orderStatuses, [{ status: 'RECHARGE_SUCCESS', count: 8 }]);
   assert.deepEqual(result.cardStock, {
     available: 7, provisioning: 1, assigned: 2, depleted: 1, held: 1,
-    needsFunding: 1, lowThreshold: 5, autoReplenishmentEnabled: false,
-    balanceFundingEnabled: false, low: false
+    lowThreshold: 5, autoReplenishmentEnabled: false, low: false
   });
   // 整行比对：byProduct / spentToday / 故障态由上面各自的断言管，这里只钉「不多不少哪些字段」
   // 与标量值，免得整块对象一改就得重抄一遍（但字段集合仍然被钉死）。
@@ -132,7 +131,6 @@ test('admin overview maps aggregate values without exposing raw records', async 
   ]);
   assert.deepEqual(result.operationalBacklog, {
     cardIntakePending: 2, fundsRiskPending: 1,
-    cardFundingRiskPending: 2, cardFundingManualReview: 1,
     reconciliationCasesOpen: 3, cardSyncBacklog: 4,
     cardSyncOldestAgeSeconds: 0, cardSyncAvgLatencySeconds: 0,
     cardSyncFailureRate: 0, cardSyncReviewRequired: 2,

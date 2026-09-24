@@ -89,7 +89,9 @@ test('Browser source switch runs the four checks and only then writes; it no lon
   assert.match(takeover.sql, /assigned_card_id IS NULL/);
   assert.match(takeover.sql, /card_assignment_history/);
   assert.match(takeover.sql, /recharge_attempts/);
-  assert.match(takeover.sql, /card_funding_attempts/);
+  assert.doesNotMatch(takeover.sql, /card_funding_attempts/, '补余额整条线已删（D-367）');
+  assert.match(takeover.sql, /recharge_attempts ra/);
+  assert.match(takeover.sql, /reconciliation_cases rc/);
   assert.match(takeover.sql, /reconciliation_cases/);
 });
 

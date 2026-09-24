@@ -30,8 +30,6 @@ export function safeWaitingPredicate(alias = 'o') {
     AND NOT EXISTS (SELECT 1 FROM card_consumption_ledger l WHERE l.order_id=${alias}.id
       AND l.status IN ('RESERVED','CONSUMED','RECONCILIATION'))
     AND NOT EXISTS (SELECT 1 FROM recharge_attempts ra WHERE ra.order_id=${alias}.id)
-    AND NOT EXISTS (SELECT 1 FROM card_funding_attempts fa WHERE fa.order_id=${alias}.id
-      AND (fa.status IN ('PREPARED','PENDING','MANUAL_REVIEW') OR fa.funds_risk_state IN ('ACTIVE','UNKNOWN','SETTLED')))
     AND NOT EXISTS (SELECT 1 FROM reconciliation_cases rc WHERE rc.order_id=${alias}.id
       AND rc.status IN ('OPEN','ASSIGNED'))`;
 }

@@ -129,10 +129,6 @@ export function eligibleInventoryCardSql(alias = 'c', minimumSql = '?', { produc
         AND eligible_pro_product.product_code LIKE 'chatgpt_pro%')
     AND NOT EXISTS (SELECT 1 FROM card_assignment_history eligible_assignment
       WHERE eligible_assignment.card_id=${alias}.id AND eligible_assignment.status='ACTIVE')
-    AND NOT EXISTS (SELECT 1 FROM card_funding_attempts eligible_funding
-      WHERE eligible_funding.card_id=${alias}.id
-        AND (eligible_funding.status='PREPARED'
-          OR eligible_funding.funds_risk_state IN ('ACTIVE','UNKNOWN')))
     AND NOT EXISTS (
       SELECT 1 FROM refund_cases eligible_refund
       WHERE eligible_refund.card_id = ${alias}.id
@@ -148,51 +144,6 @@ export function eligibleInventoryCardSql(alias = 'c', minimumSql = '?', { produc
             AND LOWER(COALESCE(eligible_override.product_code, '')) <> '${normalizedProduct}')
         )
     )${plusLargeCardGuard}`;
-}
-
-export function fundableInventoryCardSql(alias = 'c', { productCode = 'plus' } = {}) {
-  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(alias)) throw new TypeError('Invalid card SQL alias');
-  const normalizedProduct = String(productCode || 'plus').trim().toLowerCase();
-  if (!/^[a-z0-9_-]{1,32}$/.test(normalizedProduct)) throw new TypeError('Invalid product code');
-  return `${alias}.inventory_status IN ('AVAILABLE','ASSIGNED','DEPLETED','PROVISIONING')
-    AND COALESCE(${alias}.source_present, 1) = 1
-    AND ${alias}.intake_status IN ('ACCEPTED','LEGACY_ACCEPTED')
-    AND LOWER(${alias}.status) IN ('active','available','usable','ready')
-    AND ${alias}.card_credentials_ciphertext IS NOT NULL
-    AND ${alias}.current_balance IS NOT NULL
-    AND ${alias}.sync_tier <> 'MANUAL_IMPORT'
-    AND ${alias}.last_transaction_synced_at IS NOT NULL
-    AND ${alias}.last_transaction_synced_at >= DATE_SUB(CURRENT_TIMESTAMP(3), INTERVAL 15 MINUTE)
-    AND (SELECT COUNT(*) FROM card_consumption_ledger fundable_usage
-      WHERE fundable_usage.card_id = ${alias}.id
-        AND fundable_usage.status IN ('RESERVED','CONSUMED','RECONCILIATION'))
-      < ${maxPaymentsSql(normalizedProduct)}
-    AND NOT EXISTS (SELECT 1 FROM card_consumption_ledger fundable_pro_usage
-      INNER JOIN products fundable_pro_product ON fundable_pro_product.id = fundable_pro_usage.product_id
-      WHERE fundable_pro_usage.card_id = ${alias}.id
-        AND fundable_pro_usage.status IN ('RESERVED','CONSUMED','RECONCILIATION')
-        AND fundable_pro_product.product_code LIKE 'chatgpt_pro%')
-    AND NOT EXISTS (SELECT 1 FROM card_assignment_history fundable_assignment
-      WHERE fundable_assignment.card_id=${alias}.id AND fundable_assignment.status='ACTIVE')
-    AND NOT EXISTS (SELECT 1 FROM card_funding_attempts fundable_funding
-      WHERE fundable_funding.card_id=${alias}.id
-        AND (fundable_funding.status='PREPARED'
-          OR fundable_funding.funds_risk_state IN ('ACTIVE','UNKNOWN')))
-    AND NOT EXISTS (
-      SELECT 1 FROM refund_cases fundable_refund
-      WHERE fundable_refund.card_id = ${alias}.id
-        AND fundable_refund.status <> 'WITHDRAWN'
-    )
-    AND NOT EXISTS (
-      SELECT 1 FROM card_operational_overrides fundable_override
-      WHERE fundable_override.provider_account_id = ${alias}.provider_account_id
-        AND BINARY fundable_override.external_card_id = BINARY ${alias}.external_card_id
-        AND (
-          fundable_override.allocation_policy = 'RETIRED'
-          OR (fundable_override.allocation_policy = 'PRODUCT_ONLY'
-            AND LOWER(COALESCE(fundable_override.product_code, '')) <> '${normalizedProduct}')
-        )
-    )`;
 }
 
 // Candidate cards may be stale, so this predicate must never be used to assign

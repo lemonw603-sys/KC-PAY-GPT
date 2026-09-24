@@ -7,31 +7,11 @@ import { redactSensitiveText } from '../../security/redaction.js';
 import { persistCardTransactions } from './card-transaction-repository.js';
 import {
   eligibleInventoryCardSql,
-  fundableInventoryCardSql,
   refreshableInventoryCardSql, maxPaymentsSql } from '../../services/card-inventory-eligibility.js';
 import {
   reserveCardConsumptionInTransaction,
   transitionCardConsumptionInTransaction
 } from '../../services/card-consumption-ledger-service.js';
-
-function topUpAmount(minimum, current) {
-  const delta = Number(minimum) - Number(current || 0);
-  // HNSKJ card recharge contract accepts whole USD amounts only. Round up so
-  // a fractional deficit (e.g. $15.99) is sent as $16 rather than rejected
-  // locally after creating a funding attempt.
-  return String(Math.max(1, Math.ceil(delta)));
-}
-
-function jsonObject(value) {
-  if (value && typeof value === 'object' && !Array.isArray(value)) return value;
-  if (typeof value !== 'string' || !value.trim()) return {};
-  try {
-    const parsed = JSON.parse(value);
-    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
-  } catch {
-    return {};
-  }
-}
 
 function parseSession(ciphertext, key) {
   const text = decryptSecret(ciphertext, key);
@@ -374,7 +354,7 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
           throw new Error(`Order route cannot assign a card: ${orderId}`);
         }
         const [sourceRows] = await connection.query(
-          `SELECT id, supports_api_sync, supports_auto_open, supports_auto_funding
+          `SELECT id, supports_api_sync, supports_auto_open
            FROM provider_accounts WHERE id=? AND purpose='CARD' LIMIT 1 FOR UPDATE`,
           [order.card_provider_account_id]
         );
@@ -394,85 +374,25 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
           // 第④步（面二⑨，D-266）：候选卡过期不再「排一条 card_sync_jobs 等 runner 领、
           // 再等下次分卡重试」。分卡 handler 在调本方法之前已用 findStaleInventoryCandidate
           // 挑出过期候选并当场同步；走到这里就是同步后仍无合格卡。
-          const [[fundable]] = await connection.query(
-            `SELECT COUNT(*) AS count FROM cards
-             WHERE ${fundableInventoryCardSql('cards')}
-               AND provider_account_id = ?`,
-            [order.card_provider_account_id]
-          );
-          let fundingQueued = false;
-          const [[underfunded]] = await connection.query(
-            `SELECT c.id, c.current_balance
-             FROM cards c
-             WHERE ${fundableInventoryCardSql('c')}
-               AND c.provider_account_id = ?
-               AND c.current_balance < ?
-             ORDER BY c.current_balance DESC, c.updated_at ASC
-             LIMIT 1 FOR UPDATE SKIP LOCKED`,
-            [order.card_provider_account_id, String(order.minimum_required_card_balance)]
-          );
           const [supplySettings] = await connection.query(
             `SELECT setting_key, setting_value FROM app_settings
-             WHERE setting_key IN ('card_auto_replenishment_enabled','card_balance_recharge_enabled')`
+             WHERE setting_key = 'card_auto_replenishment_enabled'`
           );
           const autoReplenishmentEnabled = Boolean(source.supports_auto_open) && supplySettings.some(
             (row) => row.setting_key === 'card_auto_replenishment_enabled'
               && row.setting_value === 'true'
           );
-          const balanceFundingEnabled = Boolean(source.supports_auto_funding) && supplySettings.some(
-            (row) => row.setting_key === 'card_balance_recharge_enabled'
-              && row.setting_value === 'true'
-          );
-          if (underfunded && balanceFundingEnabled) {
-            const amount = topUpAmount(
-              order.minimum_required_card_balance,
-              underfunded.current_balance
-            );
-            const [priorFunding] = await connection.query(
-              `SELECT status, funds_risk_state, result_summary_json
-               FROM card_funding_attempts
-               WHERE order_id = ? AND card_id = ?
-               ORDER BY created_at DESC, id DESC FOR UPDATE`,
-              [orderId, underfunded.id]
-            );
-            const lastFunding = priorFunding[0] || null;
-            const retryDisposition = jsonObject(lastFunding?.result_summary_json).retryDisposition;
-            const mayPrepare = priorFunding.length === 0 || (
-              priorFunding.length < 3
-              && lastFunding.status === 'FAILED'
-              && lastFunding.funds_risk_state === 'CLEARED'
-              && retryDisposition === 'AUTO_RETRY'
-            );
-            if (mayPrepare) {
-              const attemptNo = priorFunding.length + 1;
-              const fundingKey = `order-card-funding:${orderId}:${underfunded.id}:v${attemptNo}`;
-              const [fundingInsert] = await connection.query(
-                `INSERT INTO card_funding_attempts
-               (id, card_id, order_id, provider_account_id, amount, currency, status,
-                funds_risk_state, idempotency_key)
-               VALUES (?, ?, ?, ?, ?, 'USD', 'PREPARED', 'NONE', ?)
-               ON DUPLICATE KEY UPDATE id = id`,
-                [crypto.randomUUID(), underfunded.id, orderId, order.card_provider_account_id,
-                  amount, fundingKey]
-              );
-              fundingQueued = Number(fundingInsert.affectedRows) === 1;
-            }
-          }
-          // A stale local card is not proof that inventory is absent. Wait for
-          // the already queued read sync before spending money on a new card;
-          // the retry will fund or assign it when the refreshed evidence allows.
           // WAITING_FOR_CARD itself is the durable replenishment trigger. Do
           // not create a paid stock job here: that bypassed the scheduler's
           // live rule, balance and daily-limit checks and recreated a failed
           // job on every order retry.
-          const replenishmentPending = autoReplenishmentEnabled
-            && Number(fundable?.count || 0) === 0;
-          const waitingMessage = fundingQueued
-            ? '现有卡余额不足，已自动补足，订单会继续处理。'
-            : replenishmentPending
-              ? '当前没有可用卡，已自动安排开卡，订单会继续处理。'
-              : '当前没有可用于 Plus 的卡，订单正在等待处理。';
-          const autoHealing = fundingQueued || replenishmentPending;
+          // 补余额整条线已删（D-367）：余额不够的卡不再「补足后再用」，缺卡一律交给水位调度器开新卡；
+          // 开不出来时由调度器的「缺卡但开不出来」/「卡台故障」叫人，这里不再因「有卡可补钱」而另外叫人。
+          const replenishmentPending = autoReplenishmentEnabled;
+          const waitingMessage = replenishmentPending
+            ? '当前没有可用卡，已自动安排开卡，订单会继续处理。'
+            : '当前没有可用于 Plus 的卡，订单正在等待处理。';
+          const autoHealing = replenishmentPending;
           if (autoHealing) {
             await connection.query(
               `UPDATE operator_alerts SET status='RESOLVED',
@@ -509,7 +429,6 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
           }
           return {
             waitingForCard: true,
-            ...(fundingQueued ? { fundingQueued: true } : {}),
             ...(replenishmentPending ? { replenishmentPending: true } : {})
           };
         }

@@ -8,12 +8,13 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const migrationsDir = path.resolve(here, '../migrations');
 const sql = fs.readFileSync(path.join(migrationsDir, '053_card_source_selections_and_supply.sql'), 'utf8');
 
-test('060 is the newest migration; 053 through 059 are additive', () => {
+test('061 is the newest migration; 053 through 059 are additive', () => {
   const names = fs.readdirSync(migrationsDir).filter((name) => /^\d+_[a-z0-9_-]+\.sql$/i.test(name)).sort();
   // 055＝D-286（CDK 发出登记 + 有效期），Lemon 2026-09-19 批准新增；只加列、不动存量。
   // 060＝块 7 删表第一批（D-367），下面单独一条钉住它只删那 5 张。
-  assert.equal(names.at(-1), '060_drop_superseded_and_unused_tables.sql');
-  assert.equal(names.at(-2), '059_card_max_payments_per_product.sql');
+  assert.equal(names.at(-1), '061_drop_card_funding_line.sql');
+  assert.equal(names.at(-2), '060_drop_superseded_and_unused_tables.sql');
+  assert.equal(names.at(-3), '059_card_max_payments_per_product.sql');
   // 059＝D-221 每卡单数按产品：只补两把 Pro 键（=1），已有值不覆盖；不改结构、不动 Plus 的全局键。
   const perProduct = fs.readFileSync(path.join(migrationsDir, '059_card_max_payments_per_product.sql'), 'utf8');
   assert.doesNotMatch(perProduct, /ALTER TABLE|CREATE TABLE|DELETE|UPDATE\s+app_settings/i);
@@ -84,5 +85,20 @@ test('060 只删 D-367 定下的 5 张表，别的一张不碰（块 7 第一批
     'reconciliation_cases', 'browser_interventions', 'card_funding_attempts', 'card_funding_manual_actions',
     'card_source_selections']) {
     assert.doesNotMatch(sql, new RegExp(`\\b${kept}\\b`), `${kept} 不在第一批`);
+  }
+});
+
+test('061 只动补余额整条线：拆 provider_calls 外键（列保留）、删两张补余额表、删那个开关（D-367 第二批）', () => {
+  const sql = fs.readFileSync(path.join(migrationsDir, '061_drop_card_funding_line.sql'), 'utf8')
+    .split('\n').filter((line) => !line.trim().startsWith('--')).join('\n');
+  const dropped = [...sql.matchAll(/DROP TABLE IF EXISTS ([a-z_]+);/g)].map((m) => m[1]).sort();
+  assert.deepEqual(dropped, ['card_funding_attempts', 'card_funding_manual_actions']);
+  assert.match(sql, /DROP FOREIGN KEY fk_provider_calls_card_funding/);
+  assert.match(sql, /information_schema\.TABLE_CONSTRAINTS/, '拆外键要可重跑');
+  assert.doesNotMatch(sql, /DROP COLUMN/i, 'card_funding_attempt_id 列保留，历史调用能对上留底记录');
+  assert.equal([...sql.matchAll(/DELETE FROM ([a-z_]+)/g)].map((m) => m[1]).join(), 'app_settings');
+  assert.match(sql, /DELETE FROM app_settings WHERE setting_key = 'card_balance_recharge_enabled';/);
+  for (const kept of ['refund_cases', 'order_notes', 'checkout_artifacts', 'browser_artifact_secrets', 'provider_calls;']) {
+    assert.doesNotMatch(sql, new RegExp(`DROP TABLE IF EXISTS ${kept}`));
   }
 });

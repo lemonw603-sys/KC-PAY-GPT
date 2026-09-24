@@ -25,7 +25,6 @@ import { createCardStockJobService } from './services/card-stock-job-service.js'
 import { createHighvccCardService } from './services/highvcc-card-service.js';
 import { createHighvccSnapshotSyncService } from './services/highvcc-snapshot-sync-service.js';
 import { createCardSupplyPolicyAdminService } from './services/card-supply-policy-admin-service.js';
-import { createCardFundingAdminService } from './services/card-funding-admin-service.js';
 import { createProviderRouteAdminService } from './services/provider-route-admin-service.js';
 import { createCardSyncJobService } from './services/card-sync-job-service.js';
 import { createAdminOperationsService } from './services/admin-operations-service.js';
@@ -97,7 +96,6 @@ const highvccSnapshotSyncService = createHighvccSnapshotSyncService({
   pool, encryptionKey: config.sessionEncryptionKey, panHmacKey: config.cardIntakePanHmacKey
 });
 const cardSupplyPolicyAdminService = createCardSupplyPolicyAdminService({ pool });
-const cardFundingAdminService = createCardFundingAdminService({ pool });
 const providerRouteAdminService = createProviderRouteAdminService({ pool });
 const cardSourceAdminService = createCardSourceAdminService({ pool });
 const cardOperationalOverrideService = createCardOperationalOverrideService({ pool });
@@ -281,8 +279,6 @@ const app = createApp({
     await step('transactions', () => highvccSnapshotSyncService.syncTransactions());
     return { ...out, failed: failures };
   }
-  ,listAdminCardFundingAttempts: cardFundingAdminService.list
-  ,resolveAdminCardFundingUnknown: cardFundingAdminService.resolveUnknown
   ,setAdminDefaultRechargeMethod: providerRouteAdminService.setDefaultRechargeMethod
   ,listAdminCardSources: cardSourceAdminService.list
   ,createAdminManualCardSource: cardSourceAdminService.createManualSource

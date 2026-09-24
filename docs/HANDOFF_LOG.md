@@ -3667,3 +3667,9 @@ Lemon「现在开始」。报告 `reviews/2026-09-24-block7-table-inventory.md`�
 ## 2026-09-24｜块 7 第一批上线：停补余额定时任务 + 发布 `20260924-block7-batch1-eadcd37` + 迁移 060（04:42～05:08 UTC）
 
 Lemon「1 停 2 发布」。① 04:42:45 UTC `systemctl disable --now` 两个补余额 timer；新连接复核 disabled/inactive，停后 6 分钟 journal 0 次启动。② 全量 sql-probe 630/0（比上轮少 11 条＝删掉的语句）、customer-sql-probe 通过；非终态 1、活动 run 0、开卡 job 0。prepare（备份 `pojia-20260924T044353Z`，删表前）→ **先 switch**（新代码不再引用 5 表）→ 服务器正式连接池只读复验（列表 55 码 9/13/33/0、关键词 80、详情无 compensation、客户查单 CLOSED→CARD_FAILED、web 日志 0 错）→ **再 migrate 060**（05:07:34 UTC，第二遍 already applied）→ 新连接复核 5 表不存在、BASE TABLE 58、同一只读复验结果不变、web/worker 3 分钟 0 错、live 200。回滚点 `20260924-supply-sched-0e87990`，但 060 后回滚须先重建两张订单表（CURRENT_STATE 回滚行已写）。
+
+## 2026-09-24｜块 7 第二批代码就绪：删补余额整条线（D-367，05:1x～05:4x UTC，未发布）
+
+删：执行器 `card-funding-executor` / 对账 `card-funding-reconcile-service` / 后台 `card-funding-admin-service` 与两个端点 / `card-funding-repository` / 两个 runner 脚本与 npm scripts / `deploy/server` 四个 unit 文件；分卡 `assignAvailableCard` 补余额分支（`fundable`/`underfunded` 查询、`card_funding_attempts` 写入、`topUpAmount`/`jsonObject`）；资格规则里的补余额条件与整个 `fundableInventoryCardSql`；等卡谓词与取消订单里的补余额句；概览 `needsFunding`/`balanceFundingEnabled`/`cardFundingRiskPending`/`cardFundingManualReview`/`cardBalanceRechargeEnabled`/`supplyAutomation*`；准备情况「要补余额」一支；前端 `OPEN_CARD_FUNDING` 映射；`set-supply-scheduler-flag` 的补余额展示。迁移 061：可重跑地拆 `provider_calls.fk_provider_calls_card_funding`（**列保留**）、删两张表、删 `card_balance_recharge_enabled`。
+**行为变化**：没卡可分时不再因「有卡可补钱」而推「订单在等卡」；自动开卡开着即交给调度器开新卡，开不出由供卡告警叫人；自动开卡关着照旧叫人。
+验：v1 全量 1027/0（65 跳过；少的 7 条是补余额集成测试）；新增「分卡等卡新行为」测试（旧代码下失败、新代码通过）、「资格谓词不含补余额」、「061 只动补余额线」；隔离库 001→061 两遍，补余额表与外键不在、列保留、56 表；全部抽取 SQL 对 061 后隔离库 PREPARE 0 报错；棘轮/文案闸门通过。生产行已导出 `reviews/2026-09-24-block7-evidence/batch2-funding-rows-before-drop.tsv`（6+1+7 行，扫过无卡号样长数字）。发布同第一批：先 switch 再 migrate；之后删服务器上四个 unit 文件（运维动作）。

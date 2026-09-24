@@ -45,7 +45,7 @@ test('findStaleInventoryCandidate: an eligible card short-circuits (no candidate
 test('assignAvailableCard with no eligible card no longer inserts a card_sync_jobs row (on-demand sync replaced it)', async () => {
   const h = harness((sql) => {
     if (sql.startsWith('SELECT o.status')) return [[{ status: 'CREATED', version: 1, card_type_id: 7, product_id: 'p', open_card_amount: '50', minimum_required_card_balance: '16', fulfillment_route_id: 'r', card_provider_account_id: 'acct' }]];
-    if (sql.startsWith('SELECT id, supports_api_sync')) return [[{ id: 'acct', supports_api_sync: 1, supports_auto_open: 1, supports_auto_funding: 0 }]];
+    if (sql.startsWith('SELECT id, supports_api_sync')) return [[{ id: 'acct', supports_api_sync: 1, supports_auto_open: 1 }]];
     if (sql.startsWith('SELECT id, provider_card_id, current_balance')) return [[]];
     if (sql.startsWith('SELECT COUNT(*) AS count FROM cards')) return [[{ count: 0 }]];
     if (sql.startsWith('SELECT c.id, c.current_balance')) return [[]];
@@ -56,6 +56,27 @@ test('assignAvailableCard with no eligible card no longer inserts a card_sync_jo
   assert.deepEqual(result, { waitingForCard: true, replenishmentPending: true });
   assert.equal(h.queries.some((q) => /card_sync_jobs/.test(q.sql)), false);
   assert.equal(h.queries.some((q) => /UPDATE orders SET status = \?/.test(q.sql) && q.params[0] === OrderStatus.WAITING_FOR_CARD), true);
+});
+
+test('assignAvailableCard without an eligible card: funding line is gone (D-367) — auto-open on hands it to the scheduler, no human alert', async () => {
+  const route = (autoOpen) => (sql) => {
+    if (sql.startsWith('SELECT o.status')) return [[{ status: 'CREATED', version: 1, card_type_id: 7, product_id: 'p', plan_type: 'plus', open_card_amount: '50', minimum_required_card_balance: '16', fulfillment_route_id: 'r', card_provider_account_id: 'acct' }]];
+    if (sql.startsWith('SELECT id, supports_api_sync')) return [[{ id: 'acct', supports_api_sync: 1, supports_auto_open: 1 }]];
+    if (sql.startsWith('SELECT id, provider_card_id, current_balance')) return [[]];
+    if (sql.startsWith('SELECT setting_key, setting_value')) return [autoOpen ? [{ setting_key: 'card_auto_replenishment_enabled', setting_value: 'true' }] : []];
+    return [{ affectedRows: 1 }];
+  };
+  const on = harness(route(true));
+  assert.deepEqual(await on.workflow.assignAvailableCard('o1'), { waitingForCard: true, replenishmentPending: true });
+  assert.equal(on.queries.some((q) => /card_funding_attempts|card_balance_recharge_enabled|supports_auto_funding/.test(q.sql)), false);
+  assert.equal(on.queries.some((q) => /INSERT INTO operator_alerts/.test(q.sql)), false, '自动开卡开着：不叫人，开不出来由调度器的供卡告警叫');
+  assert.equal(on.queries.some((q) => /UPDATE operator_alerts SET status='RESOLVED'/.test(q.sql)), true);
+
+  const off = harness(route(false));
+  assert.deepEqual(await off.workflow.assignAvailableCard('o1'), { waitingForCard: true });
+  const alert = off.queries.find((q) => /INSERT INTO operator_alerts/.test(q.sql));
+  assert.ok(alert, '自动开卡关着：照旧推「订单在等卡」叫人');
+  assert.equal(alert.params[2], '当前没有可用于 Plus 的卡，订单正在等待处理。');
 });
 
 test('commitCancellationStatus(exhausted): order delivers as RECHARGE_SUCCESS with review flag + reminder alert, never CANCELLATION_REVIEW_REQUIRED (D-248)', async () => {

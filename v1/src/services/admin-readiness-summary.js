@@ -29,13 +29,9 @@ export function buildAdminReadinessSummary(overview = {}, { defaultCardTypeReady
   }
 
   const available = Number(stock.available || 0);
-  const needsFunding = Number(stock.needsFunding || 0);
+  // 「有卡要补余额才能用」这一支随补余额整条线删除（D-367）：余额不够的卡不再补足，缺卡交给开新卡。
   if (available > 0) {
     checks.push(check('CARD_SUPPLY', 'READY', `可直接分配卡 ${available} 张`));
-  } else if (needsFunding > 0) {
-    checks.push(stock.balanceFundingEnabled === true
-      ? check('CARD_SUPPLY', 'AUTO_HEAL', `有 ${needsFunding} 张卡余额不足；订单到达后会自动补足`)
-      : check('CARD_SUPPLY', 'BLOCKED', `有 ${needsFunding} 张卡需要补余额后才能使用`, 'OPEN_CARD_FUNDING'));
   } else if (stock.autoReplenishmentEnabled === true) {
     const providerReady = Boolean(health.syncedAt)
       && snapshotIsFresh({ syncedAt: health.syncedAt })

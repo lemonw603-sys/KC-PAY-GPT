@@ -11,7 +11,7 @@ import { FAILED_BUCKET_STATUSES, orderBucket, primaryOrderAction } from './order
 import { deriveOrderStage } from './order-stage.js';
 import { unknownSubmissionEligibility } from './unknown-submission-resolve-service.js';
 import { eligibleInventoryCardSql,
-  fundableInventoryCardSql, providerCardStockSql, recentCst8CalendarDaysWindowSql, todayCst8WindowSql,
+  providerCardStockSql, recentCst8CalendarDaysWindowSql, todayCst8WindowSql,
   REPLENISHMENT_OPENED_COUNT_SQL, maxPaymentsSql } from './card-inventory-eligibility.js';
 
 const ORDER_STATUSES = new Set([
@@ -646,7 +646,7 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
       pool.query('SELECT status, COUNT(*) AS count FROM orders GROUP BY status ORDER BY status'),
       pool.query('SELECT status, COUNT(*) AS count FROM cdks GROUP BY status ORDER BY status'),
       pool.query(`SELECT setting_key, setting_value, updated_at FROM app_settings
-        WHERE setting_key IN ('accept_new_orders','dispatch_new_recharges','recharge_dispatch_mode','poll_existing_orders','sync_card_transactions','worker_heartbeat_at','worker_recharge_writes_enabled','card_balance_recharge_enabled','browser_payment_writes_enabled','card_auto_replenishment_enabled')
+        WHERE setting_key IN ('accept_new_orders','dispatch_new_recharges','recharge_dispatch_mode','poll_existing_orders','sync_card_transactions','worker_heartbeat_at','worker_recharge_writes_enabled','browser_payment_writes_enabled','card_auto_replenishment_enabled')
         ORDER BY setting_key`),
       pool.query(`SELECT status, COUNT(*) AS count FROM refund_cases
         WHERE status <> 'WITHDRAWN' GROUP BY status ORDER BY status`)
@@ -666,9 +666,6 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
           SUM(inventory_status = 'HELD_FOR_REVIEW' AND NOT EXISTS (
             SELECT 1 FROM card_assignment_history overview_assignment
             WHERE overview_assignment.card_id=cards.id AND overview_assignment.status='ACTIVE')) AS held,
-          SUM(${fundableInventoryCardSql('cards')}
-            AND current_balance < COALESCE((SELECT CAST(setting_value AS DECIMAL(18,6))
-              FROM app_settings WHERE setting_key = 'default_minimum_required_card_balance' LIMIT 1), 999999999)) AS needs_funding,
           (SELECT synced_at FROM card_provider_snapshots WHERE provider = 'hnskj' LIMIT 1) AS provider_synced_at,
           (SELECT JSON_UNQUOTE(JSON_EXTRACT(payload_json, '$.accountBalance'))
              FROM card_provider_snapshots WHERE provider = 'hnskj' LIMIT 1) AS provider_account_balance,
@@ -719,10 +716,6 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
             AND latest.intake_status IN ('QUARANTINED','VALIDATED','REVIEW_REQUIRED')) AS card_intake_pending,
           (SELECT COUNT(*) FROM recharge_attempts
             WHERE funds_risk_state IN ('ACTIVE','UNKNOWN')) AS funds_risk_pending,
-          (SELECT COUNT(*) FROM card_funding_attempts
-            WHERE funds_risk_state IN ('ACTIVE','UNKNOWN')) AS card_funding_risk_pending,
-          (SELECT COUNT(*) FROM card_funding_attempts
-            WHERE status = 'MANUAL_REVIEW' OR funds_risk_state = 'UNKNOWN') AS card_funding_manual_review,
           (SELECT COUNT(*) FROM reconciliation_cases
             WHERE status IN ('OPEN','ASSIGNED')) AS reconciliation_cases_open,
           (SELECT COUNT(*) FROM card_sync_jobs
@@ -808,11 +801,8 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
       dispatchNewRecharges: settingOn('dispatch_new_recharges'),
       browserPaymentWritesEnabled: settingOn('browser_payment_writes_enabled'),
       browserProfileWritesEnabled: count(browserProfile?.active) > 0 && count(browserProfile?.writes_on) === count(browserProfile?.active),
-      cardAutoReplenishmentEnabled: settingOn('card_auto_replenishment_enabled'),
-      cardBalanceRechargeEnabled: settingOn('card_balance_recharge_enabled'),
+      cardAutoReplenishmentEnabled: settingOn('card_auto_replenishment_enabled')
     };
-    decisions.supplyAutomationEnabled = decisions.cardAutoReplenishmentEnabled && decisions.cardBalanceRechargeEnabled;
-    decisions.supplyAutomationMixed = decisions.cardAutoReplenishmentEnabled !== decisions.cardBalanceRechargeEnabled;
     return {
       decisions,
       metrics: {
@@ -849,8 +839,6 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
       operationalBacklog: {
         cardIntakePending: count(backlogRows[0]?.card_intake_pending),
         fundsRiskPending: count(backlogRows[0]?.funds_risk_pending),
-        cardFundingRiskPending: count(backlogRows[0]?.card_funding_risk_pending),
-        cardFundingManualReview: count(backlogRows[0]?.card_funding_manual_review),
         reconciliationCasesOpen: count(backlogRows[0]?.reconciliation_cases_open),
         cardSyncBacklog: count(backlogRows[0]?.card_sync_backlog),
         cardSyncReviewRequired: count(backlogRows[0]?.card_sync_review_required),
@@ -870,9 +858,6 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
         const autoReplenishmentEnabled = stockSettingRows.some(
           (row) => row.setting_key === 'card_auto_replenishment_enabled' && row.setting_value === 'true'
         );
-        const balanceFundingEnabled = settingsRows.some(
-          (row) => row.setting_key === 'card_balance_recharge_enabled' && row.setting_value === 'true'
-        );
         const provisioning = count(stockRows[0]?.provisioning);
         const depleted = count(stockRows[0]?.depleted);
         const available = count(stockRows[0]?.available);
@@ -882,10 +867,8 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
         assigned: count(stockRows[0]?.assigned),
         depleted,
         held: count(stockRows[0]?.held),
-        needsFunding: count(stockRows[0]?.needs_funding),
         lowThreshold,
         autoReplenishmentEnabled,
-        balanceFundingEnabled,
         low: !autoReplenishmentEnabled && available <= lowThreshold
       }; })(),
       cardStockByProvider: (providerStockRows || []).map((row) => {
