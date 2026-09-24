@@ -3663,3 +3663,7 @@ Lemon「现在开始」。报告 `reviews/2026-09-24-block7-table-inventory.md`�
 删 `order_tags` / `order_compensations` 全部读写：后台订单列表的标签筛选与关键词里的标签条件（占位 22→21）、CDK 精确查找的补发分支、订单详情三条查询（补发记录 / 标签 / 订单关联）及响应里 `compensation` / `tags` / `orderRelationships` 三块（前端 0 处使用）、CDK/交付/客户付款三条查询里的补发分支、客户查单 CLOSED 单的补发分支、`addOrderTag`（未接路由）、整个 `order-compensation-service.js`（未被引用）及其测试。迁移 060 删 5 张表（3 张旧卡台选择表 + 这两张）。
 验：v1 全量 1041/0（72 跳过；少的 1 条是删掉的补发集成测试）；新增「060 只删这 5 张、不碰盘点里保留的表」测试；隔离库 001→060 两遍（第二遍 already applied），5 表消失、剩 58 表；把全部抽取 SQL 对**删表后**的隔离库逐条 PREPARE，0 报错（反例：对 `order_tags` PREPARE 报 1146，证明检查有效）。删前行已导出：`reviews/2026-09-24-block7-evidence/batch1-rows-before-drop.tsv`（12 行）+ 列名。
 **发布顺序要反过来**：先 switch 到不再引用这些表的新代码，确认后再跑 060；060 之后回滚到旧 release 会让旧代码的订单列表/详情/客户查单报错，须先按旧迁移重建表。补余额两个定时任务的停用是单独的生产动作。
+
+## 2026-09-24｜块 7 第一批上线：停补余额定时任务 + 发布 `20260924-block7-batch1-eadcd37` + 迁移 060（04:42～05:08 UTC）
+
+Lemon「1 停 2 发布」。① 04:42:45 UTC `systemctl disable --now` 两个补余额 timer；新连接复核 disabled/inactive，停后 6 分钟 journal 0 次启动。② 全量 sql-probe 630/0（比上轮少 11 条＝删掉的语句）、customer-sql-probe 通过；非终态 1、活动 run 0、开卡 job 0。prepare（备份 `pojia-20260924T044353Z`，删表前）→ **先 switch**（新代码不再引用 5 表）→ 服务器正式连接池只读复验（列表 55 码 9/13/33/0、关键词 80、详情无 compensation、客户查单 CLOSED→CARD_FAILED、web 日志 0 错）→ **再 migrate 060**（05:07:34 UTC，第二遍 already applied）→ 新连接复核 5 表不存在、BASE TABLE 58、同一只读复验结果不变、web/worker 3 分钟 0 错、live 200。回滚点 `20260924-supply-sched-0e87990`，但 060 后回滚须先重建两张订单表（CURRENT_STATE 回滚行已写）。

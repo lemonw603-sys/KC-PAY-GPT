@@ -4,7 +4,7 @@
 
 ## 现在的状态（证据：CURRENT_STATE.md；以下 03:34 UTC 现查）
 
-- 生产 release **`20260924-supply-sched-0e87990`**（回滚点 `20260924-wallet-oneline-29b8358`）。默认路线 BROWSER（D-353），Browser Plus 用 highvcc（backup-a）。
+- 生产 release **`20260924-block7-batch1-eadcd37`**，迁移最新 060（回滚点 `20260924-supply-sched-0e87990`，回滚前须重建两张订单表，见 CURRENT_STATE）。默认路线 BROWSER（D-353），Browser Plus 用 highvcc（backup-a）。
 - 可分配 Plus 卡 1 张（highvcc 8718，能充 3 单）；钱包 HNSKJ $104.71 / highvcc $34.24。非终态订单 1（WAITING_FOR_SESSION，无卡）。
 - **HNSKJ 供卡故障仍在**（`CARD_STOCK_PURCHASE_DISABLED`；原因＝HNSKJ 卡台自身维护中，Lemon 告知）；Lemon 已把 HNSKJ Plus 水位设 0（D-363）。不影响 Browser 接单。
 - 本机常驻池 PID 6667 + supervisor 61962 在跑，Browser 心跳 03:35 UTC 新鲜。
@@ -18,7 +18,7 @@
 
 ## 下一可执行项
 
-1. **块 7**：盘点已出（`reviews/2026-09-24-block7-table-inventory.md`，只读未动生产），**等 Lemon 对清单点头**；之后按报告末尾顺序做，迁移与发布前问。
+1. **块 7**（D-367）：第一批已上线（release `eadcd37` + 迁移 060 删 5 表；补余额两个定时任务已停用）。**下一步＝第二批**：删补余额整条线代码（执行器/对账/后台服务、`workflow-repository` 分卡补余额分支、资格规则两句、等卡谓词一句、取消订单一句、概览与前端残留）+ 两张表（先拆 `provider_calls.fk_provider_calls_card_funding`，行先导出）；同样先 switch 后 migrate，发布前问。
 2. **「可离开」第一条（D-366）**：等第一张真实客户 Plus 单。来单 Bark 会推 → Lemon 开窗口 → 执行者按 RUNBOOK §1 全程盯、逐项对照 `contracts/2026-09-18_delivery-criteria-contract.md`；此后数「连续 10 单真实客户单无人介入」。不自费、不需 free 号。
 3. 块 6（Pro 20X）PoC 仍挂起：没有无订阅账号（任务书 `tasks/2026-09-24-block6-pro20x-poc.md`，脚本已写未跑）。
 
