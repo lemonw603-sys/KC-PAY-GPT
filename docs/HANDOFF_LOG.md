@@ -3649,3 +3649,7 @@ Lemon：发布 / B / 甲。`workbench.css` `.wb-prod-n` 12px/500、数字 `tabul
 ## 2026-09-24｜发布 `20260924-supply-sched-0e87990`（03:33 UTC，D-365/D-366）
 
 Lemon「发布」（含字体 B）。发布前：全量 sql-probe 641 条真实失败 0；customer-sql-probe 通过；新推送领取 SQL（含 faultCoverage）经 mysql.format 取出后在生产 EXPLAIN，走 `uq_operator_alert_dedupe` / `uq_alert_notification_channel`，只读执行返回 0 行（此刻无待推）；非终态 1、活动 run 0、开卡 job 0；无迁移。prepare（备份 `pojia-20260924T032825Z`）→ 复核新目录含三处调度器改动、faultCoverage、workbench.css?v=23 与 tabular-nums → switch。独立复验：三进程 cwd；磁盘 index.html 引 v=23，带 ADMIN_HOST 取该 CSS 含 tabular-nums；开卡执行器新代码首轮 03:34:07 UTC NO_DEMAND、Result=success；bark 切换后 journal 无错误；`CARD_SUPPLY_FAULT` 仍 OPEN v1、缺卡告警无 OPEN。state-check 一致。回滚点 `20260924-wallet-oneline-29b8358`。HANDOFF_NOW 整页重写。
+
+## 2026-09-24｜HNSKJ 停开卡原因（11:4x UTC+8）
+
+Lemon：HNSKJ 卡台维护中，是卡台自己的问题。写入 CURRENT_STATE 供卡执行器行与 HANDOFF_NOW；待他做的那条划掉。维护结束后调度器按水位（现 0）不会自动去试，需要 HNSKJ 供卡时把水位调回即可，故障标记在下次成功开卡后自动清除。

@@ -6,7 +6,7 @@
 
 - 生产 release **`20260924-supply-sched-0e87990`**（回滚点 `20260924-wallet-oneline-29b8358`）。默认路线 BROWSER（D-353），Browser Plus 用 highvcc（backup-a）。
 - 可分配 Plus 卡 1 张（highvcc 8718，能充 3 单）；钱包 HNSKJ $104.71 / highvcc $34.24。非终态订单 1（WAITING_FOR_SESSION，无卡）。
-- **HNSKJ 供卡故障仍在**（`CARD_STOCK_PURCHASE_DISABLED`，卡台侧原因未知）；Lemon 已把 HNSKJ Plus 水位设 0（D-363）。不影响 Browser 接单。
+- **HNSKJ 供卡故障仍在**（`CARD_STOCK_PURCHASE_DISABLED`；原因＝HNSKJ 卡台自身维护中，Lemon 告知）；Lemon 已把 HNSKJ Plus 水位设 0（D-363）。不影响 Browser 接单。
 - 本机常驻池 PID 6667 + supervisor 61962 在跑，Browser 心跳 03:35 UTC 新鲜。
 
 ## 本窗口已完成并发布（D-363～D-366）
@@ -30,7 +30,6 @@
 
 ## 待 Lemon 定 / 待他做
 
-- HNSKJ 为何停开卡：需要他去卡台看（系统侧只看到 `purchaseEnabled=false`）。
 - `DESIGN.md`「概览」一节的措辞核对（上一窗口遗留）。
 
 ## 未验证边界
