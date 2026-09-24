@@ -3620,3 +3620,8 @@ Lemon 决定新开窗口；接班方式由他直接跟新窗口说，本窗口�
 验：新增两条带「057 规则台账」的单测，旧代码上两条都失败、修后通过；v1 全量 1038/0（72 跳过）；隔离库 `pojia_d363_alert`（真实 057 触发器 + 正式连接池配置）模拟 00:13 被挡 + 三次重试 + 水位调 0：旧代码缺卡告警 v1→v4、推 4 次且调 0 后仍 OPEN；修后整段 v1、推 1 次、调 0 后 RESOLVED。隔离库已删。未发布。
 发布后预期：首轮调度即把生产那条 OPEN v3 关掉（水位 0、无需求），关闭不推送。
 同文件发现两条，未改、待 Lemon 定：欠账 16 触发条件已到；新增欠账 17（转台开卡按水位反复开）。一次故障仍会有「卡台故障」+「缺卡但开不出来」两条不同推送（外加可能的库存偏低），要不要前者盖住后者待 Lemon 定。
+
+## 2026-09-24｜发布 `20260924-supply-blocked-once-2f91f00`（02:14 UTC）
+
+Lemon「发布」。发布前：非终态订单 1（WAITING_FOR_SESSION，无卡）、活动 run 0、开卡 job 在途 0；`customer-sql-probe` 全部可执行；无迁移。prepare（备份 `pojia-20260924T021418Z`，manifest 1375 OK）→ 复核新目录含 `supplyBlockedAlertKey`、旧写法 0 处、current 仍指旧 → switch：三进程 cwd 在新 release，live/ready 200。独立复验：三进程 PID/cwd（新 SSH）；开卡执行器 timer 的 WorkingDirectory 是 `/opt/pojia/current/v1`，02:15:33 UTC 首轮即新代码：挂着的 `CARD_SUPPLY_BLOCKED` OPEN v3 → RESOLVED，通知 567108 SENT→CANCELLED，无新推送；`CARD_SUPPLY_FAULT` 仍 OPEN（卡台仍禁开）。state-check 全部一致。回滚点 `20260924-wb-remaining-2830063`。
+另：AGENTS.md 加「回答结尾集中列要你决定的事」（Lemon 同日要求）。
