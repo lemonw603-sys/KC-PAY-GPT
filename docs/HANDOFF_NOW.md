@@ -1,42 +1,52 @@
 # 接班一屏（HANDOFF_NOW）
 
-更新：2026-09-24 07:5x（UTC+8）。当前执行顺序以 **D-352** 为准（覆盖 D-329 门槛与 PROJECT_MAP 旧八步⑥之后的排序）。
+更新：2026-09-24 08:5x（UTC+8）＝ 00:5x UTC。当前执行顺序以 **D-352** 为准。上一窗口（1da900ae，Fable 5.1 → Opus 5.5）在此收尾，Lemon 要**新开窗口**接班。
 
-## 现在的状态
+## 新窗口第一件事（Lemon 2026-09-24 要求）
 
-- 生产 release **`20260924-wb-remaining-2830063`**（09-23 23:4x UTC；D-362 工作台剩/能充；含 D-361；回滚点 `20260924-per-product-cap-213ccba`）。默认路线 BROWSER（D-353）；API 路线代码标未验证。生产数值只看 `CURRENT_STATE.md`。
-- 09-23 08:33 UTC 第一单真实客户单 `PJV1-_xH487IWWc0h0fi8pqY9`：预检 ACCOUNT_ALREADY_PLUS 付款前安全中止，卡已释放，等客户重贴（暂不会）。付款后半段仍零样本；最近真钱成功 09-16（旧版）。
-- highvcc token 已于 07:04 UTC 更新，07:12 轮次同步成功、快照 $44.74（块 1 完成）。
-- **块 3 完成**：代码 `6807de8` + D-355 `8f9ddc1` 已发布；rehearsal 通过（PHP 982.14 / 税 0 / 点击 0）；本机池 PID 6667 已用新代码拉起。
-- 可分配卡 1 张（8718 $16.89）。hnskj 两张 $0.01（卡台故障退回钱包）；钱包 hnskj $104.71 / highvcc $34.24；调度器一轮只看一个候选（highvcc 被挡）→ 不开卡（欠账 16）。
-- **块 5 完成并已发布**（D-356～D-359；真实页 32/32、五份 parity 一致、v1 1034/0；`reviews/2026-09-24-orders-v3-impl.md`、`-critique.md`）。线上 D-350 版已被替换。项目根新增 `DESIGN.md`。线上仍是 D-350 版（`admin.js?v=89`）。真钱只留 Plus 一单（块 4）+ 20X 一单（块 6），其余用 rehearsal（D-352 补记）。
+**先读、后对齐、再动手。** 按 `AGENTS.md` 顺序读完事实源 → 跑 `browser-mvp/scripts/state-check.sh` 与 `scripts/weekly-check.sh` 摸现场 → 交 Lemon 一份「我理解的项目」清单（目标与「可离开」四条、做到哪、已定不做、他的工作习惯、未证明的边界）让他核对 → 确认后才回到下面「待处理的四个问题」，且每条先交依据清单（D 编号 + 原型版本 + 生产查询原始输出）再提改法。不要上来就分析或改代码。
+
+## 现在的状态（证据：CURRENT_STATE.md；以下 00:48 UTC 现查）
+
+- 生产 release **`20260924-wb-remaining-2830063`**（回滚点 `20260924-per-product-cap-213ccba`）。默认路线 BROWSER（D-353），Browser Plus 用 highvcc（backup-a）。
+- 块 0～3、块 5 已发布；欠账 3（每卡单数按产品，D-361，迁移 059）、欠账 15（工作台「剩 N 张 · 能充 N 单」，D-362）已发布；每周自检 `scripts/weekly-check.sh` 已就位（D-360，「可离开」第四条）。
+- 可分配 Plus 卡 1 张（highvcc 8718，能充 3 单）；钱包快照 HNSKJ $104.71（00:48 UTC）/ highvcc $34.24（00:13 UTC）。
+- **HNSKJ 供卡故障进行中**：`supply_fault_state=FAULT`、`CARD_STOCK_PURCHASE_DISABLED`（HNSKJ 卡类型接口返回 `purchaseEnabled=false`，卡台侧原因未知），最近一次 00:44:49 UTC。当前不影响接单（Browser 走 highvcc；HNSKJ 只供 API 路线，按 D-253 不转台）。
+- 本机常驻池 PID 6667 + supervisor 61962 在跑（块 3 拉起的正式池，保留）。
+
+## 待处理的四个问题（Lemon 2026-09-24 08:3x UTC+8 提出；只查了、**都没改**）
+
+1. **卡与钱排版被改**：「自动补 / 需人工开」下沉第二行是上一窗口 D-362 **未先问 Lemon** 自作主张（`workbench.css` `.wb-prod` flex-wrap + `small{width:100%}`），需按他意见重做。两台钱包样式不同**不是这次改的**（自 `a45ec41` 起：HNSKJ 读本地快照 → 绿 chip；highvcc 无快照，点「刷新余额」才出数 → 灰 chip + 按钮，`admin.js` renderWbCards）。
+2. **「更新登录」跳到贴 token 框 / 提示条不消失**：按钮 `data-highvcc-target="token"` → `openHighvccTarget` 固定滚到 token 输入框，不判断 token 是否还有效（卡片页只写「token 已配置 上次更新于」）。提示条不消失的根因：`showNotice`（`admin.js:203`）**没有自动消失**，只能被下一条覆盖或刷新页面。Lemon 说的文案「已保存，改动立刻生效」在代码里只出自设置页保存（`admin.js:3417`），书签路径文案是「highvcc 登录 token 已自动保存…」——他看到的是哪条**未核实**。
+3. **卡片页 highvcc 只有「查余额」没有余额**：`admin.js:1323` 起 highvcc 格只渲染按钮；点了滚到「一键开卡」折叠区在那里显示余额，格子本身不回填。
+4. **HNSKJ 故障一会儿推 3 条**：已核实推送（`alert_notifications` SENT）：故障 00:13 一次；「缺卡但开不出来」00:14、00:30、00:45:58 三次（`incident_version` 1→3）。机制：调度器每 15 分钟（`SUPPLY_FAULT_RETRY_MS`）重试故障卡台，重试时 `accountCanOpen` 放行 → 先 `resolveSupplyAlert` 关掉缺卡告警 → 读钱包仍 `purchaseEnabled=false` → 重标故障、缺卡告警重开 → 057 触发器把「重开」算新事件 → 再推。**只要 HNSKJ 不恢复，约每 15 分钟推一次**。
+
+上一窗口给过的建议（Lemon **未批**，新窗口先对齐再定）：①卡与钱改回一行、放不下才两行，先给原型；②两台钱包统一成「上次余额 + 查询时间 + 刷新」；③成功提示 4 秒自动消失、失败保留，「更新登录」先查 token 是否可用；④卡片页 highvcc 格直接显示余额并就地刷新；⑤故障重试期间不先关缺卡告警、真开出卡才关（同一故障只推一次）——建议最先做。临时止响（需 Lemon 点头）：他去 HNSKJ 看为何停开卡，或设置页把 HNSKJ Plus 水位临时设 0。
 
 ## 下一可执行项（按 D-352 块序）
 
-1. 块 5 已发布、Lemon 看过生产页「没问题」（04:0x UTC+8）。欠账 D-359 ④「还剩 Nh」芯片已发布并复验。块 5 无欠账。
-2. **块 4**：Plus Browser 真钱一单。2026-09-24 04:1x UTC+8 Lemon：「可以，但暂时没有单」——等他有单（客户单或自费）再开；流程五步已写在对话与 RUNBOOK §2。付款后半段在当前 release 仍零样本。
-3. 欠账 3 每卡单数按产品：已发布并复验（D-361）。欠账 15 工作台「剩 N 张 · 能充 N 单」：已发布并复验（D-362）。
-4. **块 6 前置进行中**（Lemon 05:0x「进块 6 前置」）：任务书 `tasks/2026-09-24-block6-pro20x-poc.md`；只读 PoC 脚本 `browser-mvp/scripts/poc-free-pro20x-checkout-readonly.mjs` 已写、语法与导入检查过、**未跑**——Lemon 05:3x：手头没有可用的无订阅账号（新号或已过期号都没有），PoC 挂起，等他有账号。出口 38.60.246.34 在线，常驻池 PID 6667 在 Pilot 上跑、不占 Lane 2。块 7：删表 + 可离开——可离开四条里「每周自检命令」已做（D-360，`scripts/weekly-check.sh`），剩「连续 10 单 Plus 无人介入」等真单。
+1. 上面四个问题（先对齐理解、交依据清单，再按 Lemon 选的做）。
+2. **块 4**：Plus Browser 真钱一单——Lemon「暂时没有单」，等单。流程：关付款开关与下单查心跳 → Lemon 建演练单 → 单单 rehearsal → 收口放卡 → 开回开关 → 真单 → 盯成功与取消续费 → 对账（RUNBOOK §2）。
+3. **块 6 前置**：Free→Pro 20x 非付款 PoC，任务书 `tasks/2026-09-24-block6-pro20x-poc.md`，脚本 `browser-mvp/scripts/poc-free-pro20x-checkout-readonly.mjs` 已写未跑。挂起：Lemon 没有无订阅账号（曾付费、当前无订阅的也行，按钮会是 Rejoin Pro）。
+4. **块 7**：删表盘点（只出清单不动生产）+「可离开」剩「连续 10 单 Plus 无人介入」（等真单）。
 
 ## 已定不做 / 禁区
 
-- 付款前三件（`billing-address-fill.js` / `live-chatgpt-payment-adapter.js` / `payment-executor.js` submit 段）不改（D-254）。
-- 不重开：接口三段统一（D-248）、早交付（D-240）、卡台解耦到 API（D-253）、自动续 token（D-249）、完整财务总账（D-275）、自动开卡总开关（D-306）。
-- 四页（工作台/CDK/卡片/设置）沿用不重做；订单页不先做（D-352）。已 Plus 账号不充（D-354）。72h 窗口不动；工作台「用/剩」块 5 重议（D-355）。
-- 资金与生产动作当次确认；发布先问。
+- 付款前三件（`billing-address-fill.js` / `live-chatgpt-payment-adapter.js` / `payment-executor.js` submit 段）不改（D-254）；browser-mvp 改动走任务书白名单。
+- 不重开：D-248、D-240、D-253、D-249、D-275、D-306。critique 裁定（D-359）：「需要我处理」桶内不按风险分色、订单页默认桶不改。
+- 资金与生产动作当次确认；**发布先问**。
 
 ## 待 Lemon 定
 
-- `DESIGN.md`「概览」一节的措辞核对（令牌与规则都有代码出处，只有创意语言是沿用候光）。
-- critique 已裁定（D-359）：1 做（已修）、2 不做、3 不改、4 同意（已发）、5 同意（已改）。
+- 上面四个问题的改法与顺序；是否先临时止响。
+- `DESIGN.md`「概览」一节的措辞核对。
 
 ## 未验证边界
 
-- FB-04：1657 / 3159 / 7402 三张 highvcc 卡 Lemon 尚未销卡（不急），销后核实登记。
-
 - 当前 release 真实付款、取消续费、付款不明恢复、Browser 崩溃补核、分卡当场同步均无真单样本（`UNVERIFIED_LEDGER`）。
-- 代码显示的六条结构性问题（D-352）未在生产复现，只有代码证据。
-- web/worker/bark 三进程 journal 去向未查到。
+- HNSKJ `purchaseEnabled=false` 的卡台侧原因未知。
+- FB-04：1657 / 3159 / 7402 三张 highvcc 卡 Lemon 尚未销卡（不急）。
+- 代码显示的六条结构性问题（D-352）未在生产复现；web/worker/bark 三进程 journal 去向未查到。
 
 ## 每块收尾
 
