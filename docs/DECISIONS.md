@@ -5544,3 +5544,7 @@ Lemon 对盘点报告（`reviews/2026-09-24-block7-table-inventory.md`）答复�
 ## D-368（2026-09-24 16:5x UTC+8）KC-PAY-GPT 第三方 API 路线不做
 
 Lemon：第三方 API 是对方自己做的，对我们是黑盒，没有意义。据此：KC 第三方代充（`gpt-api-client.js` → `kc.vpss.eu.cc`）不试、不接。D-360「KC 独立业务线」的方向待 Lemon 就「本地路线能否作底层能力」讨论后再定（评估见 `reviews/2026-09-24-kc-pay-gpt-evaluation.md`）。
+
+## D-369（2026-09-25 01:0x UTC+8）块 6 非付款 PoC：5x 可直进结账，20x 在该号该出口下被禁用（待 Lemon 定）
+
+Lemon 同意用 Lane 3 已登录的免费测试号做块 6 非付款测试。菲律宾固定出口 `38.60.246.34` 下两次运行 + 一次只读状态探针，`fieldsWritten 0 / submitCalls 0`。结果见 `contracts/2026-09-24_browser-free-pro20x-checkout-contract.md`：档位切换存在；**5x 可从定价弹窗同页进结账**（`plan_name=chatgptprolite`，₱6,490/月含 12% VAT，按钮 `Subscribe`）；**20x 在定价弹窗与结账页都 `disabled`**，页面无说明，与 D-245「免费号可直升 20X」冲突，原因未知（该号曾订阅 Plus）。块 6 下一步待 Lemon 定：换号/换出口再看 20x，或先按 5x 推进。

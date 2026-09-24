@@ -20,7 +20,7 @@
 
 1. **块 7 删表已完成**（D-367，两批：迁移 060 删 5 表、061 删补余额线 2 表 + 开关；补余额两个定时任务停用并删 unit）。剩余：`checkout_artifacts` / `browser_artifact_secrets` 并入块 6；块 7 只剩「可离开」收尾＝等第一张真实客户单（下一条）。
 2. **「可离开」第一条（D-366）**：等第一张真实客户 Plus 单。来单 Bark 会推 → Lemon 开窗口 → 执行者按 RUNBOOK §1 全程盯、逐项对照 `contracts/2026-09-18_delivery-criteria-contract.md`；此后数「连续 10 单真实客户单无人介入」。不自费、不需 free 号。
-3. 块 6（Pro 20X）PoC 仍挂起：没有无订阅账号（任务书 `tasks/2026-09-24-block6-pro20x-poc.md`，脚本已写未跑）。
+3. **块 6 非付款 PoC 已跑**（D-369，Lane 3 免费测试号、PH 固定出口）：5x 可直进结账（合同 `contracts/2026-09-24_browser-free-pro20x-checkout-contract.md`）；**20x 在该号该出口下被禁用、原因未知**——待 Lemon 定换号/换出口再看，还是先按 5x 推进。
 
 ## 下一件（Lemon 2026-09-24 定）
 

@@ -66,3 +66,5 @@ docs/design/prototypes/.bundled/
 **/.impeccable/live/cache/
 **/.impeccable/live/*.png
 # impeccable-ignore-end
+# 块 6 非付款 PoC 证据按任务书不入库，摘要在 docs/contracts/2026-09-24_browser-free-pro20x-checkout-contract.md
+artifacts/poc-free-pro20x-*/

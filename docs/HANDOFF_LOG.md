@@ -3681,3 +3681,7 @@ Lemon「都做」。全量 sql-probe 612/0（少 18 条＝删掉的补余额语�
 ## 2026-09-24｜KC-PAY-GPT 评估（08:0x～08:4x UTC，只读）
 
 Lemon：「KC-PAY-GPT，开始评估」。报告 `reviews/2026-09-24-kc-pay-gpt-evaluation.md`。核心：独立文件夹代码与本仓库根目录 legacy 29/31 逐字节相同（本仓库仅多 legacy 运行锁），上游最新提交已在本仓库历史；本地路线是浏览器填 Stripe 表（直调 Stripe 0 处 / 页面操作 178 处），依赖的 Plus 结账接口捷径 09-07 与今日均 400「unusual activity」；第三方路线把卡号/CVC、客户登录凭证、代理账密交给身份不明的服务，超时即判失败并放卡（`server.js:3359-3382`，照搬会重复扣款）。自动过 hCaptcha 的模块不评估不建议启用。顺带：Lane 3（`9d7445ff…`）今日仍登录一个 free、无订阅账号。未运行其代码、未调用第三方、未付款。
+
+## 2026-09-25｜块 6 非付款 PoC（2026-09-24 16:5x～17:0x UTC）
+
+Lemon「先做一次测试」。核对：Lane 3（`9d7445ff…`，名「Plus Browser PH Lane 3」，备注非付款隔离验证）≠ 常驻池 Pilot（`a196a016…`）；付款前预检默认用 Lane 3 但需手动跑；无在途订单；出口实测 `38.60.246.34` / PH。运行：pro_20x → 定价弹窗 20x 单选 `disabled`，导航合同拒点禁用控件而停；只读探针确认 5x `aria-checked=true`、20x `disabled=true`；pro_5x → 同页结账 `/checkout/openai_llc/`，`plan_name=chatgptprolite`、₱6,490（含 VAT 12%）、`Subscribe`、`requires_manual_approval=true`；临时探针确认结账页 20x 单选同样 `disabled`（探针跑完即删）。三次均 0 字段 0 提交，结账页关闭，Lane 3 窗口已关；常驻池心跳正常。证据 `artifacts/poc-free-pro20x-20260924/`（按任务书不入库，已加 .gitignore）。合同与 D-369 已落。
