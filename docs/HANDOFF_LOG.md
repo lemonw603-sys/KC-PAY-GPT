@@ -3677,3 +3677,7 @@ Lemon「1 停 2 发布」。① 04:42:45 UTC `systemctl disable --now` 两个补
 ## 2026-09-24｜块 7 第二批上线：发布 `20260924-block7-batch2-0d06f41` + 迁移 061 + 删服务器补余额 unit（06:5x～07:05 UTC）
 
 Lemon「都做」。全量 sql-probe 612/0（少 18 条＝删掉的补余额语句）、customer-sql-probe 通过；非终态 1、活动 run 0、开卡 job 0；补余额记录 6 条全 FAILED 无在途。prepare（备份 `pojia-20260924T065501Z`）→ **先 switch** → 服务器正式连接池只读复验（营业开关 5 项、概览无补余额字段、准备情况 READY/READY、卡片页 0/1、订单 9/13/33/0、三服务日志 0 错、开卡执行器 success）→ **再 migrate 061**（07:02:36 UTC）→ 新连接复核：补余额表 0、外键 0、`card_funding_attempt_id` 列在且 7 行历史 id 在、开关行 0、BASE TABLE 56；同一复验结果不变、live 200。07:04 UTC 删 `/etc/systemd/system/pojia-card-funding*` 五项并 daemon-reload，复核 list-unit-files/list-timers 0 条 funding、其余 6 项 active。state-check 一致。回滚点 `20260924-block7-batch1-eadcd37`（回滚须先重建表，见 CURRENT_STATE）。**块 7 删表部分完成**：共删 7 张表 + 1 开关 + 两个空转定时任务；`checkout_artifacts`/`browser_artifact_secrets` 按 D-367 留给块 6。
+
+## 2026-09-24｜KC-PAY-GPT 评估（08:0x～08:4x UTC，只读）
+
+Lemon：「KC-PAY-GPT，开始评估」。报告 `reviews/2026-09-24-kc-pay-gpt-evaluation.md`。核心：独立文件夹代码与本仓库根目录 legacy 29/31 逐字节相同（本仓库仅多 legacy 运行锁），上游最新提交已在本仓库历史；本地路线是浏览器填 Stripe 表（直调 Stripe 0 处 / 页面操作 178 处），依赖的 Plus 结账接口捷径 09-07 与今日均 400「unusual activity」；第三方路线把卡号/CVC、客户登录凭证、代理账密交给身份不明的服务，超时即判失败并放卡（`server.js:3359-3382`，照搬会重复扣款）。自动过 hCaptcha 的模块不评估不建议启用。顺带：Lane 3（`9d7445ff…`）今日仍登录一个 free、无订阅账号。未运行其代码、未调用第三方、未付款。

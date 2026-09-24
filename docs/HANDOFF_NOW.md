@@ -24,8 +24,7 @@
 
 ## 下一件（Lemon 2026-09-24 定）
 
-- **评估 GitHub 上那个充值项目有什么可借鉴**：Lemon 原先让 Codex 做，认为效果差，改由本执行者在本窗口事项做完后接手。先向 Lemon 要项目链接；结论要逐条对照现有系统与已定决策（如 D-360 KC-PAY-GPT 独立线 `/Users/lemon/code/KC-PAY-GPT-standalone`），标明「已有 / 定过不做 / 值得借鉴 + 代价」。
-- Codex 当天两次只读 PoC 的结果留档在 `artifacts/poc-checkout-api-20260924/`（它覆盖掉的 09-07 定价基线已从 git 恢复）。所用比特浏览器窗口不是常驻池的，池未受影响。
+- **KC-PAY-GPT 评估已出**（`reviews/2026-09-24-kc-pay-gpt-evaluation.md`）：它就是本仓库根目录封存的旧代码（29/31 文件逐字节相同）；本地路线＝`browser-mvp` 的前身且 Plus 裸调结账接口 400，不再单独做；第三方路线＝另一个 ZZSHU 式代充商，唯一增量是可能接受 highvcc 卡。**待 Lemon 定**：第三方路线试不试（需买 API Key + 一次小额真钱受控测试）、Lane 3 免费测试号能否用于块 6 PoC/演练。
 
 ## 已定不做 / 禁区
 
