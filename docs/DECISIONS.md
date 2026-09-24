@@ -5548,3 +5548,8 @@ Lemon：第三方 API 是对方自己做的，对我们是黑盒，没有意义�
 ## D-369（2026-09-25 01:0x UTC+8）块 6 非付款 PoC：5x 可直进结账，20x 在该号该出口下被禁用（待 Lemon 定）
 
 Lemon 同意用 Lane 3 已登录的免费测试号做块 6 非付款测试。菲律宾固定出口 `38.60.246.34` 下两次运行 + 一次只读状态探针，`fieldsWritten 0 / submitCalls 0`。结果见 `contracts/2026-09-24_browser-free-pro20x-checkout-contract.md`：档位切换存在；**5x 可从定价弹窗同页进结账**（`plan_name=chatgptprolite`，₱6,490/月含 12% VAT，按钮 `Subscribe`）；**20x 在定价弹窗与结账页都 `disabled`**，页面无说明，与 D-245「免费号可直升 20X」冲突，原因未知（该号曾订阅 Plus）。块 6 下一步待 Lemon 定：换号/换出口再看 20x，或先按 5x 推进。
+
+## D-370（2026-09-25 01:2x UTC+8）块 6 先做 Pro 5x；20x 为官方暂停订阅
+
+Lemon：先推进 5x；Pro 20x 现在官方不让订阅，是官方的问题，与我们无关。据此块 6 范围收窄为 5x（Browser 路线），20x 等官方恢复再议，路线 306 保持关闭。
+执行前发现（证据：生产 `card_transactions` 中 `original_currency='PHP'` 的真实扣款）：Plus ₱982.14 实扣 $15.75～15.79，折合约 **62.3 PHP/USD**；5x ₱6,490（含 VAT，D-369）预计实扣约 **$104**，**高于现 5x 开卡金额 $100 与最低余额 $95**——不调就会拒付。调整属资金参数，待 Lemon 批。
