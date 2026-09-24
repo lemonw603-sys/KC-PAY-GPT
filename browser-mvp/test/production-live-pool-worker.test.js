@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
-  LANE_BLOCKING_RUNS_SQL, POOL_CONFIRMATION_PREFIX, loadProductionLivePoolConfig, parsePoolLanes, parseProductionLivePoolArgs, runLaneLoop,
+  LANE_BLOCKING_RUNS_SQL, POOL_CONFIRMATION_PREFIX, loadProductionLivePoolConfig, parsePoolLanes, parseProductionLivePoolArgs, postPlusActionForPlan, runLaneLoop,
   shouldRefreshCardBalances, withLaneGuard,
 } from '../src/production-live-pool-worker.js';
 
@@ -122,4 +122,8 @@ test('D-352 块3①: lane guard blocks on RUNNING/RECONCILE_ONLY payments only; 
   assert.equal(ran, 1);
   assert.deepEqual(seen[0].params, ['pool:lane-1'], '只看本 lane 自己的 run');
   assert.throws(() => withLaneGuard({ workerId: '', query: async () => [[{ count: 0 }]] }), TypeError);
+});
+
+test('block 6 (D-245/D-370): every plan, 5x included, finishes like Plus — pay once, confirm, cancel renewal; nothing enters the retired upgrade dialog', () => {
+  for (const plan of ['plus', 'pro_5x', 'pro_20x', undefined]) assert.equal(postPlusActionForPlan(plan), 'CANCEL_RENEWAL');
 });

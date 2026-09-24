@@ -49,14 +49,23 @@ function successful(value) {
     .includes(String(value || '').trim().toUpperCase());
 }
 
-function plausiblePlusAmount(transaction) {
+// 每个套餐一笔扣款的合理金额区间（百万分单位）。Plus 沿用原区间不动。
+// pro_5x（D-369/D-370 更正）：免税后结账 ₱5,794.64，真实扣款汇率约 62.3 PHP/USD → 约 $93；
+// 区间留汇率浮动余地，但不放宽到含 12% VAT 的 ₱6,490（零税是硬约束，含税扣款本身就不该发生）。
+// pro_20x 官方暂停订阅（D-370），不给区间：任何扣款都对不上 → 进人工，绝不自动认成功。
+const PLAN_AMOUNT_RANGES = Object.freeze({
+  plus: Object.freeze({ USD: [14_000_000n, 22_000_000n], PHP: [900_000_000n, 1_200_000_000n] }),
+  pro_5x: Object.freeze({ USD: [85_000_000n, 102_000_000n], PHP: [5_500_000_000n, 6_100_000_000n] }),
+});
+
+function plausiblePlanAmount(transaction, plan) {
+  const ranges = PLAN_AMOUNT_RANGES[plan];
+  if (!ranges) return false;
   const currency = String(transaction?.originalCurrency || transaction?.currency || '').trim().toUpperCase();
   const amount = decimal(transaction?.originalAmount ?? transaction?.amount);
-  if (amount == null) return false;
+  if (amount == null || !ranges[currency]) return false;
   const absolute = amount < 0n ? -amount : amount;
-  if (currency === 'USD') return absolute >= 14_000_000n && absolute <= 22_000_000n;
-  if (currency === 'PHP') return absolute >= 900_000_000n && absolute <= 1_200_000_000n;
-  return false;
+  return absolute >= ranges[currency][0] && absolute <= ranges[currency][1];
 }
 
 function plausibleMerchant(transaction) {
@@ -87,8 +96,10 @@ function withinIntentWindow(transaction, intentAt, matchWindowMs) {
  */
 export class BrowserCardTransactionReader {
   constructor({ sourceKind, provider = null, providerCardId = null, runId,
-    submitIntentAt = null, matchWindowMs = 3_600_000, ledgerSource = null, cardId = null } = {}) {
+    submitIntentAt = null, matchWindowMs = 3_600_000, ledgerSource = null, cardId = null, plan = 'plus' } = {}) {
     this.sourceKind = String(sourceKind || '').trim().toUpperCase();
+    // 按订单套餐核对扣款金额（块 6）；未知套餐不报错，只是永远对不上 → 人工。
+    this.plan = String(plan || 'plus').trim().toLowerCase();
     this.provider = provider;
     this.providerCardId = providerCardId == null ? null : String(providerCardId).trim();
     this.cardId = cardId == null ? null : String(cardId).trim();
@@ -140,7 +151,7 @@ export class BrowserCardTransactionReader {
       const window = this.#ledgerWindow();
       let rows = await this.ledgerSource.listPurchases(window);
       let refreshed = null;
-      const hasCandidate = (list) => list.some((row) => this.#isPlusPurchase(this.#fromLedgerRow(row)));
+      const hasCandidate = (list) => list.some((row) => this.#isPlanPurchase(this.#fromLedgerRow(row)));
       if (!hasCandidate(rows) && typeof this.ledgerSource.refresh === 'function') {
         try {
           refreshed = { ok: true, ...(await this.ledgerSource.refresh(window) || {}) };
@@ -159,15 +170,15 @@ export class BrowserCardTransactionReader {
     });
   }
 
-  #isPlusPurchase(item) {
-    return successful(item.status) && plausibleMerchant(item) && plausiblePlusAmount(item)
+  #isPlanPurchase(item) {
+    return successful(item.status) && plausibleMerchant(item) && plausiblePlanAmount(item, this.plan)
       && withinIntentWindow(item, this.submitIntentAt, this.matchWindowMs);
   }
 
   async reconcile({ transactions }) {
     if (!Array.isArray(transactions)) return { matched: false, reasonCode: 'TRANSACTION_EVIDENCE_INVALID' };
     if (this.sourceKind === 'MANUAL_IMPORT') {
-      const candidates = transactions.filter((item) => item?.kind === 'LEDGER_TRANSACTION' && this.#isPlusPurchase(item));
+      const candidates = transactions.filter((item) => item?.kind === 'LEDGER_TRANSACTION' && this.#isPlanPurchase(item));
       const refreshed = transactions.refreshed || null;
       return {
         matched: candidates.length === 1,
@@ -183,7 +194,7 @@ export class BrowserCardTransactionReader {
       };
     }
     const candidates = transactions.filter((item) => successful(item.status)
-      && plausibleMerchant(item) && plausiblePlusAmount(item)
+      && plausibleMerchant(item) && plausiblePlanAmount(item, this.plan)
       && withinIntentWindow(item, this.submitIntentAt, this.matchWindowMs));
     return {
       matched: candidates.length === 1,

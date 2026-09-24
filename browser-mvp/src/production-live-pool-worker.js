@@ -13,6 +13,7 @@ import { BrowserOrderEncryptedSessionSource, createBrowserOrderPreflightWorker }
 import { DurableCardMaterialLeaseProvider } from './durable-card-material-lease.js';
 import { createBitBrowserControlManifest } from './fixtures.js';
 import { LivePostPaymentRecoveryVerifier } from './live-post-payment-recovery.js';
+import { ChatGptPostPaymentVerifier } from './chatgpt-post-payment-verifier.js';
 import { MockAddressBillingAddressSource, MysqlBillingAddressAssignmentStore } from './mockaddress-billing-address-source.js';
 import {
   BROWSER_LIVE_STOP_BEFORE_SUBMIT, ProductionLiveConfigError, integer, key32, localApiUrl, required,
@@ -41,6 +42,23 @@ export const POOL_MODES = Object.freeze({ PAY: 'PAY', REHEARSAL: 'REHEARSAL' });
  * payment authority is the database flag + permit + unique PAYMENT_SUBMIT.
  * REHEARSAL lanes run the same path and stop before the click.
  */
+/**
+ * 块 6（D-245/D-370）：Pro 与 Plus 同型——一次付款、确认、取消续费。旧「先 Plus 后升级」（D-133）退休，
+ * 常驻池不再让任何套餐走进 UPGRADE_DIALOG_STOP；那段旧代码与 BROWSER_UPGRADE_STAGE 留到之后清理。
+ */
+export function postPlusActionForPlan() {
+  return 'CANCEL_RENEWAL';
+}
+
+/** 这次 Browser 运行属于哪一单、买的什么套餐（套餐规则只在 resolveOrderPlan 一处）。 */
+async function resolveRunPlan(pool, runId) {
+  const [[row]] = await pool.query(
+    `SELECT rat.order_id FROM browser_runs br INNER JOIN recharge_attempts rat ON rat.id=br.recharge_attempt_id WHERE br.id=? LIMIT 1`, [runId],
+  );
+  if (!row?.order_id) throw new Error('Browser run order is unavailable');
+  return resolveOrderPlan(pool, { orderId: row.order_id });
+}
+
 export function parsePoolLanes(raw) {
   const text = String(raw ?? '').trim();
   if (!text) throw new ProductionLiveConfigError('BROWSER_POOL_LANES is required (laneId=bitbrowserProfileId,...)');
@@ -249,16 +267,19 @@ export async function createLaneWorker({ lane, config, pool, browserType, shared
     // D-246 面一 C1：交易读取器按卡的来源层标记（sync_tier）判，不看卡台名字。
     const sourceKind = card.sync_tier === 'MANUAL_IMPORT' ? 'MANUAL_IMPORT' : 'HNSKJ';
     if (sourceKind === 'HNSKJ' && (!config.providerReadsEnabled || !shared.provider)) throw new Error('HNSKJ transaction verification requires explicit Provider read credentials');
+    // 块 6（D-370）：交易金额按这一单的套餐认（5x 与 Plus 金额区间不同）；套餐只从订单读，同一条规则。
+    const plan = await resolveRunPlan(pool, runId);
     return new BrowserCardTransactionReader({ sourceKind, provider: shared.provider, providerCardId: card.provider_card_id, runId, submitIntentAt: card.submit_intent_at, matchWindowMs: config.verificationWindowMs,
-      cardId: card.card_id, ledgerSource: sourceKind === 'MANUAL_IMPORT' ? createCardLedgerSource({ pool, refresh: highvccLedgerRefresh }) : null });
+      plan, cardId: card.card_id, ledgerSource: sourceKind === 'MANUAL_IMPORT' ? createCardLedgerSource({ pool, refresh: highvccLedgerRefresh }) : null });
   };
-  // Plus orders finish by cancelling auto-renew; Pro orders stop on the upgrade dialog (D-133).
-  const postPlusActionForPlan = (plan) => (String(plan || 'plus') === 'plus' ? 'CANCEL_RENEWAL' : 'UPGRADE_DIALOG_STOP');
   const recoveryVerifier = new LivePostPaymentRecoveryVerifier({
     runtimeAdapter, manifest, sessionProvider: shared.postPaymentSessionProvider,
     resolveSessionIdentity: ({ orderId }) => resolveIdentity(pool, { orderId }), transactionReaderFactory,
     navigationTimeoutMs: config.executionTimeoutMs, verificationWindowMs: config.verificationWindowMs,
     verificationIntervalMs: config.verificationIntervalMs, postPlusAction: postPlusActionForPlan,
+    // 块 6：付款后复核也按这一单的套餐确认。套餐来自同一次运行的交易读取器（上面按订单解析），
+    // 不另开一条读套餐的路；读不到时按 Plus——5x 单对不上只会进人工，不会重付。
+    verifierFactory: (input) => new ChatGptPostPaymentVerifier({ ...input, targetPlan: input.transactionReader?.plan || 'plus' }),
   });
   const verification = createBrowserPaymentVerificationService({
     repository: createBrowserExecutionRepository(pool), verifier: recoveryVerifier, maxBatch: 1, workerId,

@@ -115,6 +115,14 @@ export async function runPreSubmitRehearsal({
 }
 
 /** Production-shaped LIVE composition. Construction alone performs no payment action. */
+/**
+ * 结账买哪个套餐（块 6，D-245/D-370）：一次付款到位（CANCEL_RENEWAL）就买订单套餐；
+ * 仍按旧两步走配置（MANUAL_20X_HANDOFF / UPGRADE_DIALOG_STOP）的调用方第一步照旧买 Plus。
+ */
+export function checkoutPlanForAction(plan, postPlusAction) {
+  return postPlusAction === 'CANCEL_RENEWAL' ? String(plan || 'plus') : 'plus';
+}
+
 export function createSharedLivePaymentWorker({
   pool,
   workerId,
@@ -167,6 +175,7 @@ export function createSharedLivePaymentWorker({
     throw new TypeError('a rehearsal cannot carry a manual 20X handoff');
   }
   const resolvePostPlusAction = (plan) => (typeof postPlusAction === 'function' ? postPlusAction(plan) : postPlusAction);
+  const checkoutPlanFor = (plan) => checkoutPlanForAction(plan, resolvePostPlusAction(plan));
   if (!runtimeAdapter?.open || !runtimeAdapter?.close) throw new TypeError('runtimeAdapter is required');
   if (!manifest || manifest.allowWrites !== false) throw new TypeError('reviewed Browser manifest is required');
   if (!observation?.pageContract || !observation?.checkoutContract) throw new TypeError('LIVE observation contracts are required');
@@ -202,12 +211,12 @@ export function createSharedLivePaymentWorker({
     const sessionIdentity = await resolveSessionIdentity({
       orderId: claimedJob.orderId, attemptId: claimedJob.attemptId, runId: run.runId,
     });
-    // Two-stage Pro (pro_5x/pro_20x): stage 1 always buys Plus in Checkout; the Pro
-    // upgrade runs after payment (UPGRADE_DIALOG_STOP). A free account cannot buy Pro
-    // directly, and the Pro tier toggle is absent on the Plus purchase dialog, so the
-    // checkout navigation plan is fixed to plus; only the post-payment upgrade uses the order plan.
+    // 块 6（D-245/D-369/D-370）：免费号可从定价弹窗直接进 Pro 结账（5x 档实测 tier-selected:5x），
+    // 旧「第一步固定买 Plus、付款后再升级」退休；结账导航用这一单的套餐。没接套餐的调用方仍按 Plus。
+    const plan = checkoutPlanFor(typeof resolvePlan === 'function'
+      ? await resolvePlan({ orderId: claimedJob.orderId, attemptId: claimedJob.attemptId, runId: run.runId }) : 'plus');
     const loaded = await upstreamAdapter.load({
-      runId: run.runId, manifest, observation: { ...observation, sessionIdentity, plan: 'plus' },
+      runId: run.runId, manifest, observation: { ...observation, sessionIdentity, plan },
       sessionRef: await resolveSessionRef({ orderId: claimedJob.orderId, attemptId: claimedJob.attemptId, runId: run.runId }),
     });
     return {
@@ -249,6 +258,7 @@ export function createSharedLivePaymentWorker({
         timeoutMs: verificationWindowMs,
         pollIntervalMs: verificationIntervalMs,
         upgradePlan: action === 'UPGRADE_DIALOG_STOP' ? plan : null,
+        targetPlan: checkoutPlanFor(plan),
         navigationTimeoutMs: executionTimeoutMs,
         // D-134 (2026-09-08 root cause): payment rotates the ChatGPT session. The
         // backend sets a FRESH session-token (Plus, with a live accessToken) in the

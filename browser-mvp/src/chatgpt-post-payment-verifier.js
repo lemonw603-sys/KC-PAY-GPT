@@ -5,6 +5,13 @@ import { checkSessionHealth } from './post-payment-session-recovery.js';
 import { ContractError } from './contracts.js';
 import { probeSessionIdentity } from './session-identity-probe.js';
 
+/** 账号当前套餐是否就是这一单买的（Plus 沿用原判断；Pro 认含 pro，且不能是 Plus）。 */
+function targetPlanActive(plan, targetPlan) {
+  const value = String(plan || '').toLowerCase();
+  if (targetPlan === 'plus') return value.includes('plus');
+  return value.includes('pro') && !value.includes('plus');
+}
+
 const DEFAULT_ACCOUNT_CHECK_PATH = '/backend-api/accounts/check/v4-2023-04-27?timezone_offset_min=0';
 const DEFAULT_CANCEL_PATH = '/backend-api/subscriptions/cancel';
 
@@ -101,13 +108,17 @@ export class ChatGptPostPaymentVerifier {
     sessionRecovery = null,
     // Stage 2 of a Pro order: which picker plan to open (pro_5x / pro_20x).
     upgradePlan = null,
+    // 块 6（D-370）：这一单买的套餐。Pro 与 Plus 同型——一次付款后确认的是这个套餐，不再先确认 Plus。
+    targetPlan = 'plus',
     navigationContract = CHATGPT_PLUS_CHECKOUT_NAVIGATION_CONTRACT,
     navigationTimeoutMs = 45_000,
   } = {}) {
     if (sessionRecovery != null && typeof sessionRecovery !== 'function') throw new TypeError('sessionRecovery must be a function');
     if (upgradePlan != null && !/^pro_(5x|20x)$/.test(String(upgradePlan))) throw new TypeError('upgradePlan must be pro_5x or pro_20x');
+    if (!/^(plus|pro_(5x|20x))$/.test(String(targetPlan))) throw new TypeError('targetPlan must be plus, pro_5x or pro_20x');
     this.sessionRecovery = sessionRecovery;
     this.upgradePlan = upgradePlan == null ? null : String(upgradePlan);
+    this.targetPlan = String(targetPlan);
     this.navigationContract = navigationContract;
     this.navigationTimeoutMs = boundedInteger(navigationTimeoutMs, 'navigationTimeoutMs', { min: 1_000, max: 300_000 });
     this.recoveryAttempted = false;
@@ -232,15 +243,18 @@ export class ChatGptPostPaymentVerifier {
     };
   }
 
+  // 名字沿用 confirmPlus / PLUS_ACTIVE：付款执行器（受保护文件，D-254）与服务器库都按它认「目标套餐已开通」。
+  // 目标是 Pro 时认 Pro：5x 结账的 plan_name 是 chatgptprolite（D-369）；付款后账号上的套餐字符串至今未观察到，
+  // 所以只要求含「pro」。对不上就是未确认——调用方按「结果不明、转人工」处理，绝不重付（D-254 红线不变）。
   async confirmPlus() {
     const identity = await this.#verifiedIdentity();
     const state = await this.#poll((value) => value?.ok && value.hasActive
-      && String(value.plan).includes('plus'), this.verifiedSubscription);
-    const confirmed = Boolean(state?.ok && state.hasActive && String(state.plan).includes('plus'));
+      && targetPlanActive(value.plan, this.targetPlan), this.verifiedSubscription);
+    const confirmed = Boolean(state?.ok && state.hasActive && targetPlanActive(state.plan, this.targetPlan));
     return {
       confirmed,
       evidence: {
-        kind: 'PLUS_ACTIVE', observed: confirmed,
+        kind: 'PLUS_ACTIVE', observed: confirmed, targetPlan: this.targetPlan,
         identityMatched: identity.identityMatched === true,
         accountIdDigest: state?.accountId ? digest(state.accountId) : null,
         httpStatus: Number(state?.status) || null,
@@ -251,7 +265,7 @@ export class ChatGptPostPaymentVerifier {
   async confirmCancellation() {
     await this.#verifiedIdentity();
     let state = this.verifiedSubscription;
-    const plus = state?.ok && state.hasActive && String(state.plan).includes('plus');
+    const plus = state?.ok && state.hasActive && targetPlanActive(state.plan, this.targetPlan);
     if (!plus || !state.accountId) {
       return { confirmed: false, evidence: { kind: 'CANCELLATION_CONFIRMED', observed: false } };
     }

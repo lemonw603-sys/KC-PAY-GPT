@@ -119,3 +119,22 @@ test('manual card: a successful refresh re-reads the ledger and can then match',
   assert.equal(result.evidence.refreshed.ok, true);
   assert.throws(() => new BrowserCardTransactionReader({ sourceKind: 'MANUAL_IMPORT', runId: 'r', submitIntentAt: '2026-09-06T10:00:00Z', ledgerSource: { async listPurchases() {} } }), /cardId/);
 });
+
+// 块 6（D-369/D-370 更正）：5x 免税后结账 ₱5,794.64；生产扣款汇率约 62.3 PHP/USD → 约 $93。
+test('block 6: a pro_5x reader matches one zero-tax 5x charge and rejects Plus-sized or VAT-inclusive charges', async () => {
+  const at = { submitIntentAt: '2026-09-06T10:00:00Z' };
+  const fiveX = { ...highvccRow, amount: '93.010000', original_amount: '5794.640000', raw_hash: 'e'.repeat(64) };
+  const ledger = (rows) => ({ async listPurchases() { return rows; } });
+  const reader = (plan, rows) => new BrowserCardTransactionReader({ sourceKind: 'MANUAL_IMPORT', runId: 'run-5x', cardId: 'card-uuid', ...at, plan, ledgerSource: ledger(rows) });
+  const match = async (plan, rows) => { const r = reader(plan, rows); return r.reconcile({ transactions: await r.read() }); };
+  assert.equal((await match('pro_5x', [fiveX])).matched, true);
+  assert.equal((await match('pro_5x', [highvccRow])).matched, false, 'a Plus-sized ₱982.14 charge is not a 5x purchase');
+  assert.equal((await match('pro_5x', [{ ...fiveX, original_amount: '6490.000000', amount: '104.170000' }])).matched, false, 'VAT-inclusive ₱6,490 means tax was not zero');
+  assert.equal((await match('plus', [fiveX])).matched, false, 'a Plus order never accepts a 5x-sized charge');
+  assert.equal((await match('pro_20x', [fiveX])).matched, false, '20x has no range: any charge goes to a person');
+  assert.equal(new BrowserCardTransactionReader({ sourceKind: 'MANUAL_IMPORT', runId: 'r', cardId: 'c', ...at, ledgerSource: ledger([]) }).plan, 'plus');
+  const hnskj = new BrowserCardTransactionReader({ sourceKind: 'HNSKJ', provider: { transactions() {} }, providerCardId: 'card-1', runId: 'run-1', ...at, plan: 'pro_5x' });
+  const usd = { type: 'PURCHASE', status: 'success', currency: 'USD', tradeTime: '2026-09-06T10:01:00Z', merchantName: 'OPENAI' };
+  assert.equal((await hnskj.reconcile({ transactions: [{ ...usd, amount: '93.00' }] })).matched, true);
+  assert.equal((await hnskj.reconcile({ transactions: [{ ...usd, amount: '16.50' }] })).matched, false);
+});

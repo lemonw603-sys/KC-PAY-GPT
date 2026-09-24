@@ -3,7 +3,7 @@ import test from 'node:test';
 
 import { MemoryEvidenceSink } from '../src/evidence-sink.js';
 import { createBitBrowserControlManifest } from '../src/fixtures.js';
-import { awaitOperatorTakeover, createSharedLivePaymentWorker, runPreSubmitRehearsal } from '../src/shared-live-composition.js';
+import { awaitOperatorTakeover, checkoutPlanForAction, createSharedLivePaymentWorker, runPreSubmitRehearsal } from '../src/shared-live-composition.js';
 
 const key = (byte) => Buffer.alloc(32, byte);
 function input(overrides = {}) {
@@ -174,4 +174,12 @@ test('D-213: a failing queue probe does not abort the wait', async () => {
     clock: () => now, sleep: async (ms) => { now += ms; },
   });
   assert.equal(result.reason, 'WINDOW_EXPIRED');
+});
+
+test('block 6: Checkout buys the order plan when one payment completes the order; legacy two-stage callers still buy Plus first', () => {
+  assert.equal(checkoutPlanForAction('pro_5x', 'CANCEL_RENEWAL'), 'pro_5x');
+  assert.equal(checkoutPlanForAction('plus', 'CANCEL_RENEWAL'), 'plus');
+  assert.equal(checkoutPlanForAction(undefined, 'CANCEL_RENEWAL'), 'plus');
+  assert.equal(checkoutPlanForAction('pro_5x', 'UPGRADE_DIALOG_STOP'), 'plus');
+  assert.equal(checkoutPlanForAction('pro_20x', 'MANUAL_20X_HANDOFF'), 'plus');
 });
