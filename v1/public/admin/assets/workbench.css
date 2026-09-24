@@ -202,14 +202,17 @@ body{font-family:var(--wb-fd)}
    「自动补/需人工开」硬推到第二行，其实空间够：Lemon 的屏幕 1440 宽（Chrome 占满屏），格子内容区
    204px，一行只要约 172px（两位数时约 187）。所以：不换行，「自动补」靠右同一行；
    格子变窄到放不下时（窗口缩小、开侧边栏）改显示两字短词「自动/人工」，再窄就截断数字文字而不换行。
-   数字才用等宽，汉字用正文字体，否则中文在等宽里字距发散。 */
+   字体见下方 B「统一」。 */
 .workbench .wb-prod{display:flex;flex-wrap:nowrap;align-items:baseline;gap:7px;padding:6px 9px;border-radius:8px;
   background:var(--wb-s);border:1px solid var(--wb-s3);container-type:inline-size;overflow:hidden}
 .workbench .wb-prod.is-ok{border-color:var(--wb-bd);background:var(--wb-ok-soft)}
 .workbench .wb-prod b{font-size:11px;font-weight:700;color:var(--wb-t3);letter-spacing:.04em;flex:none}
 /* 有货的才给正常墨色；全 0 的退成弱色 —— 一眼看出哪个产品现在真能接单 */
-.workbench .wb-prod .wb-prod-n{font-size:12.5px;font-weight:600;color:var(--wb-t3);white-space:nowrap;min-width:0;overflow:hidden;text-overflow:ellipsis}
-.workbench .wb-prod .wb-prod-n i{font-style:normal;font-family:var(--wb-fm)}
+/* B「统一」（Lemon 2026-09-24 从三版里挑定，D-366）：整句 12px 中等粗细、数字用正文字体（等宽对齐靠 tnum），
+   与同块「钱包 X USD · 查询于」同一种写法。此前 12.5px/600 + 数字等宽字体：一行混三种字体、比周围说明字重一截，
+   Lemon「总感觉和整体页面不协调」。有货与否仍靠格子绿底 + 墨色区分，不靠加粗。 */
+.workbench .wb-prod .wb-prod-n{font-size:12px;font-weight:500;color:var(--wb-t3);white-space:nowrap;min-width:0;overflow:hidden;text-overflow:ellipsis}
+.workbench .wb-prod .wb-prod-n i{font-style:normal;font-variant-numeric:tabular-nums}
 .workbench .wb-prod.is-ok .wb-prod-n{color:var(--wb-t)}
 .workbench .wb-prod small{margin-left:auto;font-size:10px;color:var(--wb-t3);flex:none;white-space:nowrap;line-height:1.2}
 .workbench .wb-prod small .wb-how-s{display:none}

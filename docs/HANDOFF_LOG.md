@@ -3641,3 +3641,7 @@ Lemon「发布」。先重冻卡片页原型 highvcc 钱包格（`step6-cards-a.
 - 欠账 16：`run` 逐个候选调 `scheduleFor`，开出或遇 JOB_ACTIVE 即停，被挡的记入 `outcomes` 接着看；reason/outcome 报排第一的。顺带修排序：原比较函数两个 Plus 时都返回 -1，不一致；生产 Node 22 与本机 Node 24 实测「两台 Plus 同为 0 等待」时 highvcc 排前（我上一条对 Lemon 说「HNSKJ 在前」是未验证推断，错了，汇报中更正）。现为等待多先、Plus 先、同条件按策略表顺序。
 - 同一故障只推一条：`claimNext` 加 faultCoverage，同台 `card-supply-fault:<acct>` OPEN 且本版推送在 PENDING/SENDING/SENT 时，`card-supply-blocked:<acct>:*` 不领取（行留 PENDING、只进后台）；故障恢复或故障推送 DEAD 时照推。
 验：调度器新增 5 条单测；三处各做变异（撤回即 2～3 条失败）；新增真实 MySQL 集成测试 `supply-fault-push-coverage-mysql-integration.test.js`（env `SUPPLY_ALERT_TEST_DATABASE_URL`，隔离库通过；去掉覆盖条件即失败）；v1 全量 1044/0（73 跳过）；隔离库按生产起点重演早上故障：推送 = 卡台故障 1 条 + 库存偏低 1 条，缺卡告警 0 条、水位调 0 后 RESOLVED。隔离库已删。
+
+## 2026-09-24｜字体 B 落地、「可离开」第一条改甲（D-366，03:3x～03:5x UTC）
+
+Lemon：发布 / B / 甲。`workbench.css` `.wb-prod-n` 12px/500、数字 `tabular-nums` 不再用等宽（v=23）；本机 1440×730 实测格高 31、无溢出，截图与 Lemon 挑定的比稿 B **逐像素相同**（cmp）。棘轮通过，v1 全量 1044/0。可离开第一条改写进 DECISIONS / PROJECT_MAP 顶部 / HANDOFF_NOW / 记忆。本机隔离库 `pojia_ui_d363` 已删。
