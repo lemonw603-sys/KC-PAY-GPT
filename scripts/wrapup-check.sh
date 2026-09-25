@@ -15,11 +15,15 @@ ahead=$(git log origin/main..HEAD --oneline 2>/dev/null | wc -l | tr -d ' ')
 [ "$ahead" = "0" ] && ok "已推送远端" || bad "已推送远端" "$ahead 个提交未推送"
 
 # 2) 生产事实表与现场一致（权威口径来自 state-check.sh 自己的查询，不另起炉灶）
-if bash browser-mvp/scripts/state-check.sh 2>/dev/null | tail -1 | grep -q "一致"; then
-  ok "CURRENT_STATE 与现场一致"
+# 2026-09-25：「一致」只担保脚本查的那些行；脚本不查、又超过 7 天没人核的行单独提醒（当天就有 4 行这样过期而全绿）。
+sc_out=$(bash browser-mvp/scripts/state-check.sh 2>/dev/null)
+if printf '%s\n' "$sc_out" | tail -1 | grep -q "一致"; then
+  ok "CURRENT_STATE 与现场一致（$(printf '%s\n' "$sc_out" | tail -1 | sed 's/^==> //')）"
 else
   bad "CURRENT_STATE 与现场一致" "有漂移，跑 browser-mvp/scripts/state-check.sh 看哪一行"
 fi
+stale=$(printf '%s\n' "$sc_out" | grep -c '^\[陈旧\]')
+[ "$stale" = "0" ] || printf '[提醒] %s — %s\n' "CURRENT_STATE 有 ${stale} 行超过 7 天没人核" "$(printf '%s\n' "$sc_out" | grep '^\[陈旧\]' | sed 's/^\[陈旧\] //; s/：.*//' | paste -sd '、' -)"
 
 # 3) 接班一屏没有停留在旧 release —— 本轮最容易漏的一项
 live=$(ssh -o BatchMode=yes -o ConnectTimeout=10 root@144.34.180.184 'basename $(readlink /opt/pojia/current)' 2>/dev/null)
