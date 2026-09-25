@@ -571,6 +571,12 @@ export async function navigateToChatGPTCheckout(page, contract = CHATGPT_PLUS_CH
     checkoutUrlDigest: digest(page.url()),
     submitCalls: 0,
   };
+  } catch (error) {
+    // D-375：失败时带上已走过的导航步骤（本文件自己的固定动作名，不含页面内容），执行器记入失败事件。
+    if (error && typeof error === 'object' && !Array.isArray(error.navigationActions)) {
+      try { error.navigationActions = [...actions]; } catch { /* non-extensible error: skip */ }
+    }
+    throw error;
   } finally {
     if (context?.off) context.off('page', onPopup);
   }

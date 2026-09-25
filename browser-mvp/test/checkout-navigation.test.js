@@ -562,3 +562,59 @@ test('navigator recognises #pricing taking the page to an unpaid Checkout, then 
     await assert.rejects(navigateToChatGPTCheckout(page, contract, { timeoutMs: 3_000, plan: 'pro_5x' }), /without selecting its tier/);
   } finally { await browser.close(); server.close(); await once(server, 'close'); }
 });
+
+// D-375：导航失败时，fail-closed 事件带清洗过的报错首行与已走步骤（以前只有原因码，09-12～09-14 的失败查不回来）。
+test('a navigation failure records its cleaned first line and the steps taken on the fail-closed event', async () => {
+  const server = createServer((request, response) => {
+    response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+    if (request.url === '/api/auth/session') {
+      response.end(JSON.stringify({ user: { id: 'user-fixture', email: 'buyer@example.test' }, account: { id: 'account-fixture' }, accessToken: 'fixture-access-token' }));
+      return;
+    }
+    if (request.url?.startsWith('/backend-api/accounts/check/')) {
+      response.end(JSON.stringify({ accounts: { default: { entitlement: { has_active_subscription: false, subscription_plan: 'free' } } } }));
+      return;
+    }
+    response.end(`<title>Navigator fixture</title><main data-browser-mvp-marker>observe-only</main>
+      <button type="button" aria-label="Upgrade" onclick="document.querySelector('[role=dialog]').hidden=false">Upgrade</button>
+      <section role="dialog" hidden><button type="button">Upgrade to Pro</button></section>`);
+  });
+  server.listen(0, '127.0.0.1'); await once(server, 'listening');
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const evidenceSink = new MemoryEvidenceSink();
+  const executor = new BrowserExecutionService({ runtimeAdapter: new LocalPlaywrightRuntimeAdapter({ browserType: chromium }), evidenceSink, timeoutMs: 3_000 });
+  const job = createSyntheticJob({
+    state: 'RUNNING',
+    metadata: {
+      pageContract: { urlPrefix: `${base}/`, title: 'Navigator fixture', requiredSelector: '[data-browser-mvp-marker]', markerText: 'observe-only' },
+      sessionIdentity: { email: 'buyer@example.test', accountId: 'account-fixture' },
+      accountProbeContract: { accountCheckPath: '/backend-api/accounts/check/v4-fixture' },
+      checkoutNavigationContract: { ...CHATGPT_PLUS_CHECKOUT_NAVIGATION_CONTRACT, homeUrlPrefix: `${base}/`, checkoutUrlPrefix: `${base}/checkout/`, openPricingSelectors: ['button[aria-label="Upgrade"]'] },
+      checkoutContract: { ...CHATGPT_PLUS_CHECKOUT_CONTRACT, urlPrefix: `${base}/checkout/` },
+    },
+  });
+  try {
+    await assert.rejects(executor.execute(job, { assertLease: async () => true }), (error) => error.reason === 'CHECKOUT_NAVIGATION_FAILED');
+    const closed = evidenceSink.events.at(-1).summary;
+    assert.equal(closed.action, 'fail-closed');
+    assert.equal(closed.reason, 'CHECKOUT_NAVIGATION_FAILED');
+    assert.match(closed.navigationError, /upgrade control/);
+    assert.deepEqual(closed.navigationActions, ['pricing-opened']);
+    assert.ok(!/fixture-access-token|buyer@example/.test(JSON.stringify(closed)));
+  } finally { server.close(); await once(server, 'close'); }
+});
+
+test('navigation failure text keeps only a cleaned first line: origin-only URLs, no tokens, no long digit runs', async () => {
+  const { navigationFailureDetail } = await import('../src/executor.js');
+  const error = Object.assign(new Error([
+    'x click failed at https://chatgpt.com/checkout/openai_llc/cs_live_abcdefghijklmnopqrstuvwxyz0123456789?session=1',
+    'Call log:', '  - <input value="4111 1111 1111 1111">',
+  ].join('\n')), { navigationActions: ['pricing-opened', 'tier-selected:5x', '<img src=x>', 'a'.repeat(80)] });
+  assert.deepEqual(navigationFailureDetail(error), {
+    navigationError: 'x click failed at https://chatgpt.com', navigationActions: ['pricing-opened', 'tier-selected:5x'],
+  });
+  assert.equal(navigationFailureDetail(new Error('token eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.sig card 4111-1111-1111-1111 after 45000ms')).navigationError,
+    'token [token] card [digits] after 45000ms');
+  assert.equal(navigationFailureDetail(new Error('y'.repeat(300))).navigationError.length <= 200, true);
+  assert.deepEqual(navigationFailureDetail(new Error('')), {});
+});

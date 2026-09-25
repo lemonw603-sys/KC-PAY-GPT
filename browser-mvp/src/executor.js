@@ -67,6 +67,25 @@ export function isTransientPageError(error) {
 // 契约没给 secureFieldTimeoutMs 时的兜底上限（D-202）。
 const SAVED_METHOD_WAIT_MS = 15_000;
 
+const NAVIGATION_ACTION = /^[a-z][a-z0-9-]{0,40}(?::[a-z0-9]{1,8})?$/i;
+
+/**
+ * 导航失败的可落库说明（D-375）：报错首行，网址只留域名，令牌/长串/长数字替换掉，限 200 字；
+ * 加上导航自己记的动作名（白名单格式，最多 12 个）。不含页面内容、Cookie、请求或响应。
+ */
+export function navigationFailureDetail(error) {
+  const text = String(error?.message || '').split('\n')[0]
+    .replace(/https?:\/\/[^\s'"<>)]+/gi, (url) => { try { return new URL(url).origin; } catch { return '[url]'; } })
+    .replace(/eyJ[\w-]{8,}(?:\.[\w-]+)*/g, '[token]')
+    .replace(/[A-Za-z0-9+/_=-]{32,}/g, '[redacted]')
+    .replace(/\d[\d\s-]{6,}\d/g, '[digits]')
+    .replace(/\s+/g, ' ').trim().slice(0, 200);
+  const actions = Array.isArray(error?.navigationActions)
+    ? error.navigationActions.filter((action) => typeof action === 'string' && NAVIGATION_ACTION.test(action)).slice(0, 12)
+    : [];
+  return { ...(text ? { navigationError: text } : {}), ...(actions.length ? { navigationActions: actions } : {}) };
+}
+
 async function closeStaleOrderPages(context, urlPrefix) {
   if (typeof context.pages !== 'function') return 0;
   const stale = context.pages().filter((page) => !page.isClosed?.() && page.url().startsWith(urlPrefix));
@@ -423,7 +442,11 @@ export class BrowserExecutionService {
         } catch (error) {
           if (error instanceof BrowserExecutionError) throw error;
           if (error?.code === 'SESSION_INVALID') throw new BrowserExecutionError('SESSION_INVALID', error.message, error);
-          throw new BrowserExecutionError('CHECKOUT_NAVIGATION_FAILED', error.message, error);
+          const failure = new BrowserExecutionError('CHECKOUT_NAVIGATION_FAILED', error.message, error);
+          // D-375（Lemon 同意）：以前生产只存原因码，09-12～09-14 的 7 次导航失败原因查不回来。
+          // 只存清洗过的报错首行与已走步骤，经已有的 fail-closed 事件落库。
+          failure.evidenceDetail = navigationFailureDetail(error);
+          throw failure;
         }
         await this._event(job, 'checkpoint', ++evidenceSequence, {
           action: 'checkout-navigation',
