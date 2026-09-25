@@ -278,6 +278,15 @@ scripts/deploy-release.sh switch  <name>                             # 切换+�
 ssh root@144.34.180.184 'ln -sfn /opt/pojia/releases/<prev> /opt/pojia/current && systemctl restart pojia-web.service pojia-worker.service pojia-bark-notifications.service'
 ```
 
+### 本机常驻池换代码（2026-09-25 起跑固定版本目录，D-383）
+
+常驻池不再跑 main 工作区，而是 `~/pojia-pool/current`（LaunchAgent 指向它）。池子换代码与服务器发布用**同一提交**：
+```bash
+scripts/pool-release.sh prepare <commit> <name>      # 建目录+校验+装依赖+自检，不碰在跑的池
+scripts/pool-release.sh status                       # current 指向哪、worker 实际跑哪份
+```
+然后：正式路径关付款开关 → 确认无在途 run → 只对池 worker 发 SIGTERM、确认退出 → `scripts/pool-release.sh switch <name>` → 开付款开关（supervisor 60 秒内从新目录拉起）→ `status` 显示「跑 current」。回滚＝`switch <上一版>` 再按同样步骤停/开。**worker 未退出前不许动 launchd**（同进程组，卸载会连带强杀）。等待循环的命令行别含池进程名（D-373）。
+
 ## 6. 本机依赖
 
 ```bash

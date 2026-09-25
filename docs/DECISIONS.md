@@ -5650,3 +5650,12 @@ Lemon「别频繁浪费新 session，能验证的都验证」→ 不用新号：
 结果（分支 `103f7d2`，17:22:31～17:23:55 UTC，订单 `PJV1-v3tiEHgJecMDAinmycZk`）：放入 Session → 身份核对（FREE、identityMatched）→ 卡准备 → 导航到结账页（checkoutCreated）→ 无保存的付款方式 → 填地址/邮箱/卡 → **PRE_SUBMIT_STOPPED，PHP 982.14 / 税 0.00**；PAYMENT_SUBMIT 0；导航成功后录制丢弃、未产生证据目录（真流程验证）。收口：`close-rehearsal-order.mjs` 付款痕迹全 0 → CLOSED、CDK 退回、8718 放回；17:25 UTC 开回检查与付款开关，池 42676 17:25:48 UTC 拉起。
 覆盖范围：点升级→结账页加载由 D-381 实验 A 在同一号上验证；本次覆盖其余全链。**未覆盖**：5x 专属逻辑（无 5x 卡）、真实付款与取消续费。09-25 那两次「付款表单加载失败」原因仍未知。
 下一步按 HANDOFF 逐项问 Lemon：合 main → 服务器发布（含 D-377「贴 token 当场验证」`3a633f5`）→ 常驻池切 `~/pojia-pool` 固定目录并改 LaunchAgent（D-377 已批，当场再确认）→ 重开 305（先定 5x 卡从哪来）。另：演练脚本默认租约应与常驻池一致（改 `run-live-rehearsal.sh`，browser-mvp 白名单，待批）。
+
+## D-383（2026-09-26 UTC+8 凌晨）块 6 合并发布；常驻池切固定版本目录；演练租约默认 900
+
+Lemon「1 现在做。2 以后再说。3 改」+「还用新号测试吗」。
+- **不用新号**：付款池加载的 69 个文件在演练通过的 `103f7d2` 与合并后的 `f748bb63` 之间逐个比对**零差异**（import 图 + `git diff --name-only`），发布版本的池代码＝演练通过的代码。第一张真实客户单是最终实测。
+- **顺序**：在块 6 工作树里 `git merge main`（无冲突）→ 两套全量（browser-mvp 335：326/0/9；v1 1099：1034/0/65）+ `customer-sql-probe` 全部可执行 → 推分支 → `deploy-release.sh prepare f748bb63 20260925-block6-pro5x-f748bb6`（备份 `pojia-20260925T174219Z` OK，无迁移）→ `switch`（17:42 UTC；新连接复验三服务 cwd 新版、线上 admin.js 含新提示、token 接口未登录 401、err 日志 0）→ `pool-release.sh prepare`（`~/pojia-pool/releases/20260925-block6-pro5x-f748bb6`，1383 文件校验、依赖全在目录内）→ 关付款开关 17:44:10 → SIGTERM 42676（code=0）→ `switch` → 备份旧 LaunchAgent、装新 plist（只改启动路径）→ `launchctl bootout/bootstrap`（supervisor 52141 从固定目录起）→ 开付款开关 17:44:45 → 池 **52721** 17:45:50 拉起，cwd＝固定目录，心跳新鲜，ready-check pay 就绪 → 最后才把 main 工作区 ff 到 `f748bb63`（池已不从它跑）。
+- **第 3 项**：`run-live-rehearsal.sh` 默认 `BROWSER_WORKER_LEASE_SECONDS=900`（`89d1971`）；通过的演练正是用这个值（环境变量）跑的，视为已演练。
+- 回滚：服务器＝`20260924-block7-batch2-0d06f41`（无迁移）；本机池＝`pool-release.sh switch <上一版>` + 停 worker；回到 main 工作区＝装回 `~/pojia-pool/launchagent-backup/` 里的旧 plist 并重载（先停 worker）。
+- 仍未堵：`go-live.sh` 与手工 `run-live-pool.sh run pay` 可从 main 起真付款池（任务书「未堵的口子」，要不要堵待定）。5x 卡从哪来：Lemon「以后再说」，305 仍关。
