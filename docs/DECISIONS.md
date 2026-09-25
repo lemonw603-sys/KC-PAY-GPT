@@ -5633,3 +5633,7 @@ Lemon「1 并进做 2 现在做」→ 演练（贴 token 当场验证的发布�
 Lemon「以上同意」：① 恢复生产（15:45 UTC 已做）；② 先做「失败证据包」再做对照实验（立刻点 vs 按钮可点后等 5 秒），任务书 `tasks/2026-09-25-navigation-failure-evidence.md` 先给 Lemon 看、批了再动手；③ 3 号窗口 Lemon 手动点出的未付结账页标签已关（只关标签）；④ Playwright 1.59→1.63 以后单独做。
 依据：GitHub 调研 `browser-research/2026-09-25-browser-automation-oss-survey.md`——不换框架，先用 Playwright 自带的取现场能力；AI 浏览器代理不进付款链路；trace 会录请求头（含登录 Cookie），第一期不用。
 对照观察（只读）：Lemon 手动点进的是标准结账页 `/checkout/openai_llc/oaics_…`（Stripe 框全部加载、无报错）；自动点两次都是网址不变的页内「Configure your plan — Unable to load payment form」。是否由 `56fa9e7`「一可点就立刻点」引起：未知，待对照实验。生产不受影响（池跑 main，不含该提交）。
+
+## D-380（2026-09-26 UTC+8 凌晨）证据包不限制存什么（受控放开「日志不得出现 token」）
+
+Lemon：「我们不限制不能存的东西，如果这么多的限制会严重阻碍我们项目的推进」。放开：本机导航失败证据包含 Playwright 完整 trace（请求头、Cookie、token、返回内容、邮箱、截图、完整 HTML），生产与演练都开。保留一条：卡号 / CVV 不进证据——结构性做到（录制只从开始导航到进结账页，成功即丢弃，填卡在录制之外），不增加过滤成本。代价（已告知）：本机证据文件泄露时，客户 ChatGPT 账号在 token 有效期内可被登录；缓解＝仅本机、700、14 天自动删、不进 git 不上传不贴聊天。CLAUDE.md 硬约束句已加例外说明。实测依据：connectOverCDP 下 trace 可录，假 Authorization 头与服务器返回内容均在 trace 内。任务书已按此改写并开工（`tasks/2026-09-25-navigation-failure-evidence.md`）。
