@@ -1,11 +1,10 @@
 # 接班一屏（HANDOFF_NOW）
 
-更新：2026-09-25 23:3x（UTC+8）＝ 15:3x UTC。执行顺序以 **D-352** 为准，「可离开」第一条以 **D-366** 为准；本窗口 D-376、D-377、D-378。
+更新：2026-09-25 23:5x（UTC+8）＝ 15:5x UTC。执行顺序以 **D-352** 为准，「可离开」第一条以 **D-366** 为准；本窗口 D-376、D-377、D-378。
 
-## ⚠ 现在生产是暂停的（15:26 UTC 现查；明细见 CURRENT_STATE.md，`state-check.sh` 一致）
+## 现在的状态（15:48 UTC 现查；明细见 CURRENT_STATE.md）
 
-- **付款开关 false、本机常驻池未起**（worker 91075 于 12:30 UTC 为演练正常退出；supervisor 61962 在跑，开关关着只等不跑）。「下单查付款池」已开回 true → 客户下单看到维护、不收单。
-- **恢复**（Lemon 批了才做）：正式路径开付款开关（`admin-operations-service.setBrowserPaymentWrites({ enabled: true })`，在服务器 `/opt/pojia/current/v1` 用 runtime.env 跑，写审计、同步 executor profile）→ supervisor 60 秒内从 main 工作区拉起池 → 新连接复核开关 + `pgrep` + 心跳新鲜 → 改 CURRENT_STATE 三行（付款开关 / 本机 / 心跳）。
+- **生产已恢复**（Lemon 批）：付款开关 15:45:31 UTC 开回，常驻池 PID 13942 15:48:08 UTC 拉起（main 工作区代码），心跳新鲜；「下单查付款池」true。
 - 生产 release **`20260924-block7-batch2-0d06f41`**，迁移 061。默认路线 BROWSER（Plus 用 highvcc 卡）。可分配 Plus 卡 1 张（8718）；非终态订单 1（旧的 WAITING_FOR_SESSION，无卡）。highvcc token 有效（08:15 UTC 恢复）。HNSKJ 供卡故障仍在。路线 305/306 关。
 
 ## 块 6 Plus 回归演练：未通过（D-378）
