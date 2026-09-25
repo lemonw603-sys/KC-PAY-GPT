@@ -5,6 +5,7 @@ import { probeSessionIdentity, SessionIdentityProbeError } from './session-ident
 import { observeCheckout } from './checkout-observer.js';
 import { dismissSavedPaymentMethod } from './stripe-link-picker.js';
 import { navigateToChatGPTCheckout } from './chatgpt-checkout-navigator.js';
+import { defaultNavigationEvidenceOptions, startNavigationEvidence } from './navigation-failure-evidence.js';
 import { fillSecureCardFieldsNonPayment } from './nonpayment-card-fill.js';
 import { fillBillingAddress, fillTransientBillingEmail } from './billing-address-fill.js';
 import { assertCardMaterial } from './card-material-lease.js';
@@ -113,7 +114,8 @@ async function activeOrderPage(context, urlPrefix, timeoutMs) {
 }
 
 export class BrowserExecutionService {
-  constructor({ runtimeAdapter, evidenceSink, sessionProvider = null, clock = () => Date.now(), timeoutMs = 5_000 } = {}) {
+  constructor({ runtimeAdapter, evidenceSink, sessionProvider = null, clock = () => Date.now(), timeoutMs = 5_000,
+    navigationEvidence = defaultNavigationEvidenceOptions() } = {}) {
     if (!runtimeAdapter || typeof runtimeAdapter.open !== 'function' || typeof runtimeAdapter.close !== 'function') throw new TypeError('runtimeAdapter is required');
     if (!evidenceSink || typeof evidenceSink.append !== 'function') throw new TypeError('evidenceSink is required');
     this.runtimeAdapter = runtimeAdapter;
@@ -121,6 +123,7 @@ export class BrowserExecutionService {
     this.sessionProvider = sessionProvider;
     this.clock = clock;
     this.timeoutMs = timeoutMs;
+    this.navigationEvidence = navigationEvidence;
   }
 
   async execute(job, {
@@ -433,6 +436,15 @@ export class BrowserExecutionService {
           if (freezeRequested()) throw new BrowserExecutionError('MANUAL_FREEZE');
           if (!(await assertLease())) throw new BrowserExecutionError('LEASE_LOST');
         };
+        // D-379/D-380：导航这一段全程录制；成功即丢弃（填卡永远在录制之外），失败存成本机证据目录，
+        // 失败事件里只多一个 evidenceRef（目录名）。取证出任何错都不改变下面的失败处理。
+        const evidence = await (this.navigationEvidence?.start || startNavigationEvidence)({
+          page,
+          runRef: job.metadata?.browserRunRef || job.jobId,
+          root: this.navigationEvidence?.root,
+          enabled: this.navigationEvidence?.enabled === true,
+          clock: this.clock,
+        }).catch(() => null);
         try {
           checkoutNavigation = await navigateToChatGPTCheckout(page, job.metadata.checkoutNavigationContract, {
             timeoutMs: this.timeoutMs,
@@ -440,14 +452,26 @@ export class BrowserExecutionService {
             plan: job.metadata.plan || 'plus',
           });
         } catch (error) {
-          if (error instanceof BrowserExecutionError) throw error;
-          if (error?.code === 'SESSION_INVALID') throw new BrowserExecutionError('SESSION_INVALID', error.message, error);
+          const captured = evidence
+            ? await evidence.capture({ reason: error?.reason || error?.code || null, error, actions: error?.navigationActions }).catch(() => null)
+            : null;
+          const evidenceRef = this.navigationEvidence?.enabled === true ? { evidenceRef: captured?.evidenceRef ?? null } : {};
+          if (error instanceof BrowserExecutionError) {
+            if (Object.isExtensible(error)) error.evidenceDetail = { ...(error.evidenceDetail || {}), ...evidenceRef };
+            throw error;
+          }
+          if (error?.code === 'SESSION_INVALID') {
+            const invalid = new BrowserExecutionError('SESSION_INVALID', error.message, error);
+            invalid.evidenceDetail = evidenceRef;
+            throw invalid;
+          }
           const failure = new BrowserExecutionError('CHECKOUT_NAVIGATION_FAILED', error.message, error);
           // D-375（Lemon 同意）：以前生产只存原因码，09-12～09-14 的 7 次导航失败原因查不回来。
           // 只存清洗过的报错首行与已走步骤，经已有的 fail-closed 事件落库。
-          failure.evidenceDetail = navigationFailureDetail(error);
+          failure.evidenceDetail = { ...navigationFailureDetail(error), ...evidenceRef };
           throw failure;
         }
+        await evidence?.discard().catch(() => undefined);
         await this._event(job, 'checkpoint', ++evidenceSequence, {
           action: 'checkout-navigation',
           plan: checkoutNavigation.plan || 'plus',
