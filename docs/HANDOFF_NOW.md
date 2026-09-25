@@ -1,12 +1,12 @@
 # 接班一屏（HANDOFF_NOW）
 
-更新：2026-09-26 02:1x（UTC+8）＝ 09-25 18:1x UTC。执行顺序以 **D-352** 为准，「可离开」第一条以 **D-366** 为准；本窗口 D-376～D-384。
+更新：2026-09-26 02:0x（UTC+8）＝ 09-25 18:0x UTC。执行顺序以 **D-352** 为准，「可离开」第一条以 **D-366** 为准；本窗口 D-376～D-384。
 
 ## 现在的状态（17:46 UTC 现查；明细见 CURRENT_STATE.md，`state-check.sh` 一致）
 
 - 生产 release **`20260925-block6-pro5x-f748bb6`**（固定提交 `f748bb63`，无新迁移，最新迁移仍 061）。回滚点 `20260924-block7-batch2-0d06f41`（无迁移，直接回滚）。
 - **本机常驻池跑固定版本目录**：PID 52721（supervisor 52141），cwd `~/pojia-pool/releases/20260925-block6-pro5x-f748bb6/browser-mvp`，与服务器同一提交；LaunchAgent 指向 `~/pojia-pool/current`。main 工作区改动不再影响常驻池。换代码 / 回滚步骤见 RUNBOOK §5「本机常驻池换代码」。
-- 付款开关 true、下单查付款池 true、心跳新鲜。默认路线 BROWSER（Plus 用 highvcc 卡），可分配 Plus 卡 1 张（8718）；非终态订单 1（旧 WAITING_FOR_SESSION，无卡）。highvcc token 有效。HNSKJ 供卡故障仍在。**路线 305/306 仍关**。
+- 付款开关 true、下单查付款池 true、心跳新鲜。默认路线 BROWSER（Plus 用 highvcc 卡），可分配 Plus 卡 1 张（8718）；非终态订单 1（旧 WAITING_FOR_SESSION，无卡）。highvcc token 有效。HNSKJ 供卡故障仍在（Lemon 18:02 UTC 把 hnskj Plus 水位 0→1，调度器一试即重新标故障，未开卡未花钱）。**路线 305/306 仍关**。
 
 ## 这一轮做完的（D-376～D-383）
 
