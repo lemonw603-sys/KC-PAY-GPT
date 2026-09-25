@@ -1,6 +1,6 @@
 # AI充值业务｜项目地图
 
-最后核对：2026-09-26 02:0x（UTC+8）。本页只放目标、块序与状态、下一步、欠账、不做；**生产数值只看 `CURRENT_STATE.md`**，过程看 `HANDOFF_LOG.md`，决策看 `DECISIONS.md`。
+最后核对：2026-09-26 02:2x（UTC+8）。本页只放目标、块序与状态、下一步、欠账、不做；**生产数值只看 `CURRENT_STATE.md`**，过程看 `HANDOFF_LOG.md`，决策看 `DECISIONS.md`。
 2026-09-25 前的完整旧版（顶部 8 段「覆盖」+ 八步表逐步记录 + 已完成欠账）原文：`archive/2026-09/PROJECT_MAP_pre_onepage_2026-09-25.md`。
 
 ## 1. 目标与原则

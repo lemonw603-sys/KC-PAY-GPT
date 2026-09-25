@@ -3,6 +3,9 @@
 #   browser-mvp/scripts/go-live.sh --arm
 # 必须带 --arm（这是真实付款权限动作）。停用见 stop-live.sh。
 set -euo pipefail
+# D-385：常驻池跑固定版本目录后，本脚本退役——一运行就停下并提示，下面的旧逻辑不再执行。
+echo "已停用（D-385，2026-09-26）：来单由本机常驻付款池自动处理（~/pojia-pool/current，LaunchAgent 常驻），本脚本会从当前目录另起一个付款进程、并用只读工具写库。看池状态：scripts/pool-release.sh status。" >&2
+exit 3
 [ "${1:-}" = "--arm" ] || { echo "用法: $0 --arm   （开付款开关并拉 pay worker）" >&2; exit 2; }
 DIR="$(cd "$(dirname "$0")" && pwd)"; Q="$DIR/prod-query.sh"
 LANE="${BROWSER_POOL_LANES:-lane-4=51e915e3298b4a02bbd7468b39749c9e}"

@@ -5666,3 +5666,10 @@ Lemon「以上同意，现在可以做的话就做」＋ 问第 1 项会不会�
 1. **口子**：RUNBOOK §1「来单」仍写 `go-live.sh --arm`（常驻池之前的旧入口，会从 main 工作区另起付款进程，与常驻池同时付款）与 `stop-live.sh`（停所有付款进程、用只读工具写库）。**已改 RUNBOOK §1 / §1.5**：来单全自动；不要用这两个脚本；紧急停＝SIGTERM 池 worker + 正式路径关付款开关（命令写进 RUNBOOK）；删去已退役的 20X 两段式说明。代码层建议改为「只让 `go-live.sh` / `stop-live.sh` 一运行就停下并提示」（不碰常驻池启动路径 `run-live-pool.sh`，对在跑的池零影响、无需重启）；原提的「在 `run-live-pool.sh` 加路径检查」若写错会让常驻池自己起不来，不推荐——**待 Lemon 确认**。
 2. **块 6 工作树已删**：`artifacts/poc-pro5x-billing-tax/` 与 main 逐文件一致（11/11）后 `git worktree remove --force`；本地分支已合并删除，远端 `block6-pro5x` 留作记录。
 3. **块 7 两张表盘点（只读）**：`checkout_artifacts` / `browser_artifact_secrets` 均 0 行；代码 20 处引用，其中 `browser-execution-repository.js`（付款前中止 :781/787、确认 Plus :1484/1594）与 `browser-recovery-repository.js` 在常驻池加载范围内。删表＝改付款链路相邻代码 + 迁移 + 发布 + 池重启 + 一次演练（要用一个号的 Session），换来的只是删两张空表。**建议暂不删**，等下次本来就要改付款链路、本来就要演练时顺手一起做——待 Lemon 确认。
+
+## D-385（2026-09-26 UTC+8 凌晨）老脚本退役；两张空表暂不删；hnskj 水位 1 是有意的
+
+Lemon「1 改 2 同意。3 我有意改的」。
+1. `browser-mvp/scripts/go-live.sh` 与 `stop-live.sh` 在 `set -euo pipefail` 后立即打印提示、`exit 3`，旧逻辑不再执行（go-live 会从当前目录另起付款进程且用只读工具写库；stop-live 停所有付款进程且用只读工具写库）。常驻池启动路径 `run-live-pool.sh` 一行未动。验证：两脚本各实跑一次均 exit 3、无副作用（付款开关仍 true、池 52721 仍在）；browser-mvp 全量见 HANDOFF_LOG。`~/pojia-pool` 里的旧副本随下次池发布更新。CLAUDE.md 弹窗说明注明已退役。
+2. `checkout_artifacts` / `browser_artifact_secrets` 暂不删，等下次本来要改付款链路、本来要演练时顺手做。
+3. hnskj Plus 水位 0→1（18:02:36 UTC，`admin`）是 Lemon 有意改的：HNSKJ 维护结束后调度器会自动开一张 $50 卡（开卡金额 `card_supply_policies.open_card_amount`=50）。

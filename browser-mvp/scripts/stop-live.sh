@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # 收工：停 pay worker（先等其收尾）→ 关付款开关(同步 profile + 审计) → 独立核实
 set -euo pipefail
+# D-385：常驻池跑固定版本目录后，本脚本退役——一运行就停下并提示，下面的旧逻辑不再执行。
+echo "已停用（D-385，2026-09-26）：本脚本会停掉所有付款进程、并用只读工具写库。紧急停按 docs/RUNBOOK.md §1「紧急停」：只对池 worker 发 SIGTERM + 正式路径关付款开关。" >&2
+exit 3
 DIR="$(cd "$(dirname "$0")" && pwd)"; Q="$DIR/prod-query.sh"
 echo "== 停 worker =="
 for p in $(pgrep -f production-live-pool-worker || true); do kill "$p" 2>/dev/null && echo "  killed $p"; done

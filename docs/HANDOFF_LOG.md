@@ -3738,3 +3738,7 @@ Lemon 在 3 号窗口手动登录新免费号 → 只读确认已登录（无「
 ## 2026-09-25｜RUNBOOK §1 改写、块 6 工作树删除、块 7 两表盘点（18:0x UTC）
 
 见 D-384。RUNBOOK §1 原文（go-live / stop-live / 20X 两段式）在 git 历史 `6126920d` 之前版本。
+
+## 2026-09-25｜老脚本退役（18:1x UTC）
+
+D-385：`go-live.sh` / `stop-live.sh` 开头即 exit 3 + 提示；实跑验证无副作用；browser-mvp 全量 335：326/0/9。两张空表暂不删；hnskj Plus 水位 1 为 Lemon 有意。
