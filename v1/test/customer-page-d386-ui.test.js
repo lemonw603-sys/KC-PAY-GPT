@@ -86,6 +86,7 @@ test('failed and needs-new-account screens say the conclusion, without a percent
     assert.equal(await page.locator('#stage-name').textContent(), '需要换一个账号');
     assert.equal(await page.locator('#stage-hint').textContent(), '当前账号已是 Plus，请更换一个免费账号的 Session。');
     assert.equal(await page.locator('#ring-num').isHidden(), true);
+    assert.equal(await page.locator('.ring').isHidden(), true, 'D-389: no frozen amber ring on a conclusion screen');
   });
 });
 
@@ -99,6 +100,7 @@ test('a retryable failure shows its conclusion title on the progress screen with
     await page.waitForTimeout(300);
     assert.equal(await page.locator('#stage-name').textContent(), '这一单没有完成');
     assert.equal(await page.locator('#ring-num').isHidden(), true);
+    assert.equal(await page.locator('.ring').isHidden(), true);
     assert.equal(await visible(page, '#retry-order'), true);
   });
 });
@@ -125,6 +127,7 @@ test('after a successful account change the page shows processing, not the orang
     await page.locator('#replace-submit').click();
     await page.waitForFunction(() => document.querySelector('#stage-name').textContent === '正在获取支付信息');
     assert.equal(await page.locator('#view-run').getAttribute('data-tone'), 'ok');
+    assert.equal(await page.locator('.ring').isVisible(), true, 'the ring comes back once the order is processing again');
     assert.doesNotMatch(await page.locator('#stage-hint').innerText(), /遇到点问题/);
   });
 });

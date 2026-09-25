@@ -22,3 +22,10 @@ test('a closed order shows success only if it succeeded before closing; every ot
   assert.match(sql, /\) = 'RECHARGE_SUCCESS' THEN 'RECHARGE_SUCCESS' ELSE 'CARD_FAILED' END/);
   assert.doesNotMatch(sql, /failure_code = 'CANCELLED_PRE_SUBMISSION' THEN 'CARD_FAILED' ELSE \(/, 'the old rule that surfaced the pre-close status is gone');
 });
+
+test('the lookup carries the order\'s own code state, so a returned code can be offered for redemption again', async () => {
+  const pool = capturingPool();
+  await findCustomerOrder(pool, { publicNo: 'PJV1-ABCDEFGHIJKLMNOPQRST' });
+  assert.match(pool.sqls[0], /order_cdk\.status AS cdk_status, order_cdk\.order_id AS cdk_order_id/);
+  assert.match(pool.sqls[0], /LEFT JOIN cdks order_cdk ON order_cdk\.id = o\.cdk_id/);
+});

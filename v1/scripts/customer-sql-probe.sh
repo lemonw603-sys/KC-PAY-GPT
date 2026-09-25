@@ -63,13 +63,17 @@ probe "cdk-return-repository · readCdkReturnEvidence" \
              INNER JOIN recharge_attempts rat ON rat.id = br.recharge_attempt_id
             WHERE rat.order_id = '$OID' AND bo.operation_type = 'PAYMENT_SUBMIT') AS submit_evidence"
 
-probe "order-status-query-repository · findCustomerOrder" \
-  "SELECT o.public_no, o.status, o.updated_at, o.customer_action_code,
-          o.session_replacement_count, o.session_repair_expires_at,
-          o.customer_email, o.finished_at, o.id AS internal_order_id,
-          o.plan_type, product.product_code, product.display_name AS product_name
-     FROM orders o LEFT JOIN products product ON product.id = o.product_id
-    WHERE BINARY o.public_no = 'probe' LIMIT 1"
+# 状态查询用仓库里导出的那一份 SQL，不在这里另抄——09-26 发现这里的手抄版漏了批 A 的两处改动（D-389）。
+ORDER_SQL="$(node --input-type=module -e "import { SELECT_ORDER } from './src/db/repositories/order-status-query-repository.js'; process.stdout.write(SELECT_ORDER)")" \
+  || { echo "[失败] 读不到 SELECT_ORDER"; exit 1; }
+probe "order-status-query-repository · findCustomerOrder（按查询码）" \
+  "$ORDER_SQL WHERE BINARY o.public_no = 'probe' LIMIT 1"
+probe "order-status-query-repository · findCustomerOrder（按卡密）" \
+  "$ORDER_SQL INNER JOIN cdks c ON c.id = o.cdk_id
+    WHERE (c.hash_version = 'probe' AND c.code_hash = 'probe') OR (c.hash_version = 'probe' AND c.code_hash = 'probe')
+    ORDER BY (o.id = c.order_id) DESC, o.created_at DESC, o.id DESC LIMIT 1"
+probe "order-status-query-repository · findCustomerOrder（真实订单）" \
+  "$ORDER_SQL WHERE o.id = '$OID' LIMIT 1"
 
 echo
 if [ "$fail" -eq 0 ]; then echo "==> 客户链路 SQL 全部可执行 ✓"; else echo "==> 有 SQL 跑不通 ✗"; fi

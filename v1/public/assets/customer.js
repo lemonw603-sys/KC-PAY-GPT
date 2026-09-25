@@ -480,7 +480,8 @@
     const reasonHint = canReplace && order.actionRequired?.message && hint === order.actionRequired.message;
     swapStageText(withProduct(name, order), reasonHint ? hint : withProduct(hint, order));
 
-    // 进度环：只在处理中显示百分比
+    // 进度环只属于处理中：成功换成对勾；失败和换号是结论，整个环收起，不留一个停住的橙色环（D-389）。
+    el.run.classList.toggle('is-conclusive', conclusive);
     el.ringNum.hidden = success || conclusive;
     el.ringTick.classList.toggle('is-on', success);
     if (success) {

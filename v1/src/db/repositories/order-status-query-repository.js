@@ -1,4 +1,5 @@
-const SELECT_ORDER = `
+// 导出给 scripts/customer-sql-probe.sh 对生产实跑同一份 SQL，不在脚本里另抄一份。
+export const SELECT_ORDER = `
   SELECT o.public_no, o.status, o.updated_at,
          COALESCE(o.customer_action_code,
            CASE WHEN o.status IN ('RECHARGE_FAILED','SUBMIT_UNKNOWN')
@@ -22,9 +23,12 @@ const SELECT_ORDER = `
            o.status
          ) AS effective_status,
          o.customer_email, o.finished_at, o.id AS internal_order_id,
-         o.plan_type, product.product_code, product.display_name AS product_name
+         o.plan_type, product.product_code, product.display_name AS product_name,
+         -- 这一单的卡密现在的样子：已退回（AVAILABLE 且没绑单）就能直接重兑（D-389）。
+         order_cdk.status AS cdk_status, order_cdk.order_id AS cdk_order_id
   FROM orders o
-  LEFT JOIN products product ON product.id = o.product_id`;
+  LEFT JOIN products product ON product.id = o.product_id
+  LEFT JOIN cdks order_cdk ON order_cdk.id = o.cdk_id`;
 
 export async function findCustomerOrder(pool, lookup) {
   let sql;

@@ -293,3 +293,35 @@ test('orders that have not failed carry no retry field at all', async () => {
   assert.equal('canRetry' in result, false);
   assert.equal(asked, 0, '成功单不去问卡密退回，白跑一次查询');
 });
+
+test('a failed order whose code is already back in stock says "redeem again" without asking the return rule', async () => {
+  // D-389：运营判「未扣款」关单后卡密已退回，但点过付款，退回规则仍答「退不了」——
+  // 客户页原来因此叫他联系商家。卡密是 AVAILABLE、没绑单，就是可以直接重兑。
+  let asked = 0;
+  const make = (cdk) => createOrderStatusService({
+    pool: {},
+    repository: {
+      findCustomerOrder: async () => ({
+        public_no: 'PJV1-ABCDEFGHIJKLMNOPQRST',
+        internal_order_id: 'order-1',
+        effective_status: 'CARD_FAILED',
+        updated_at: new Date('2026-09-12T09:26:31.000Z'),
+        ...cdk
+      }),
+      cdkReturnWouldBeBlocked: async () => { asked += 1; return true; }
+    }
+  });
+  const returned = await make({ cdk_status: 'AVAILABLE', cdk_order_id: null })({ publicNo: 'PJV1-ABCDEFGHIJKLMNOPQRST' });
+  assert.equal(returned.status, 'FAILED');
+  assert.equal(returned.canRetry, true);
+  assert.equal(asked, 0);
+
+  // 卡密还绑在单上，或已被下一单用掉：仍按原规则问，不因为这条捷径放行。
+  const stillBound = await make({ cdk_status: 'REDEEMED', cdk_order_id: 'order-1' })({ publicNo: 'PJV1-ABCDEFGHIJKLMNOPQRST' });
+  assert.equal(stillBound.canRetry, false);
+  const usedByNext = await make({ cdk_status: 'REDEEMED', cdk_order_id: 'order-2' })({ publicNo: 'PJV1-ABCDEFGHIJKLMNOPQRST' });
+  assert.equal(usedByNext.canRetry, false);
+  const revoked = await make({ cdk_status: 'REVOKED', cdk_order_id: null })({ publicNo: 'PJV1-ABCDEFGHIJKLMNOPQRST' });
+  assert.equal(revoked.canRetry, false);
+  assert.equal(asked, 3);
+});

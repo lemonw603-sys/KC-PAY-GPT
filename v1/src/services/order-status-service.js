@@ -168,7 +168,12 @@ export function createOrderStatusService({
     // 给的答案不会前后矛盾。没动过钱就能重来（卡密已退回，或 intake 会当场退）；
     // 点过付款、结果不明的，卡密留在原单上等人工核对，不能让客户再兑一次。
     // 查不出来时按不能重来处理：宁可让客户找客服，也不能许诺一个兑不掉的重来。
-    if (response.status === 'FAILED') {
+    // 卡密已经退回（AVAILABLE、没绑任何单）时不用再问：客户第一步校验会直接说「可用」。
+    // 运营判「未扣款」关单走的是带裁定的退回，上面那条规则仍会因为点过付款而说「退不了」，
+    // 客户页就叫他联系商家——而卡密其实早就能用了（D-389，生产 4 单）。
+    if (response.status === 'FAILED' && order.cdk_status === 'AVAILABLE' && order.cdk_order_id == null) {
+      response.canRetry = true;
+    } else if (response.status === 'FAILED') {
       try {
         response.canRetry = !(await repository.cdkReturnWouldBeBlocked(pool, order.internal_order_id));
       } catch (error) {

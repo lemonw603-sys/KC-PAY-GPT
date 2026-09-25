@@ -240,7 +240,11 @@ input[type=text]:focus,textarea:focus{outline:0;border-color:var(--a)}
 .run.is-done .sublink{margin-top:14px}
 .run.is-done .btn{margin-top:14px}
 
-/* 出问题 / 需换号：环停住并转琥珀 */
+/* 失败 / 需换号是结论：环整个收起，标题顶上去（D-389） */
+.run.is-conclusive .ring{display:none}
+.run.is-conclusive .stage-name{margin-top:0}
+
+/* 复核等处理中出问题：环停住并转琥珀 */
 .run[data-tone="warn"] .ring__fg{stroke:var(--warn)}
 .run[data-tone="warn"] .ring__num b{color:var(--warn)}
 
