@@ -78,6 +78,18 @@ async function uniqueVisibleButton(scope, labels, label, { optional = false } = 
   return matches[0];
 }
 
+// 价格框刚弹出时升级按钮会先灰着，价格加载完才可点（2026-09-25 块 6 演练实测：15:05:19 判定为灰，
+// 几分钟后同一按钮已可点）。这里只「看」不「点」：每 0.1 秒看一次，变可点就交回去点一次；
+// 等满 waitMs 还是灰（或始终不是唯一一个），就按原来的单次查找收尾，原样报「is disabled」/「找到 N 个」，绝不点灰按钮。
+async function uniqueEnabledButton(page, scope, labels, label, waitMs) {
+  const ready = await waitForState(page, async () => {
+    const button = await uniqueVisibleButton(scope, labels, label);
+    const disabled = await button.evaluate((element) => Boolean(element.disabled) || element.getAttribute('aria-disabled') === 'true');
+    return disabled ? null : button;
+  }, { timeoutMs: waitMs, label }).catch(() => null);
+  return ready || uniqueVisibleButton(scope, labels, label);
+}
+
 async function uniqueVisibleMenuItem(scope, labels, label, { optional = false } = {}) {
   const matches = [];
   for (const name of labels || []) {
@@ -457,7 +469,7 @@ export async function navigateToChatGPTCheckout(page, contract = CHATGPT_PLUS_CH
         actions.push(`tier-selected:${planSpec.tierLabels[0]}`);
         await page.waitForTimeout(250);
       }
-      const upgrade = await uniqueVisibleButton(dialog, planSpec.upgradeLabels, `${planSpec.plan} upgrade control`);
+      const upgrade = await uniqueEnabledButton(page, dialog, planSpec.upgradeLabels, `${planSpec.plan} upgrade control`, Math.min(timeoutMs, 10_000));
       try {
         await safeClick(upgrade, `${planSpec.plan} upgrade control`, assertContinue, timeoutMs);
       } catch (error) {

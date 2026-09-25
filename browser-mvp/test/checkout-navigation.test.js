@@ -618,3 +618,53 @@ test('navigation failure text keeps only a cleaned first line: origin-only URLs,
   assert.equal(navigationFailureDetail(new Error('y'.repeat(300))).navigationError.length <= 200, true);
   assert.deepEqual(navigationFailureDetail(new Error('')), {});
 });
+
+// 2026-09-25 块 6 演练：价格框已开、Plus 按钮先灰着，导航当场放弃。现在只等按钮变可点（每 0.1 秒看一次），变了点一次。
+async function runGrayThenEnabled({ enableAfterMs, attr, timeoutMs }) {
+  const disabledAttr = attr === 'aria' ? 'aria-disabled="true"' : 'disabled';
+  const enable = attr === 'aria' ? "b.setAttribute('aria-disabled','false')" : 'b.disabled = false';
+  const html = `<title>ChatGPT Plans</title>
+    <section role="dialog">
+      <button type="button" disabled>Your current plan</button>
+      <button type="button" id="upgrade-plus" ${disabledAttr}
+        onclick="document.body.dataset.clicks = String(Number(document.body.dataset.clicks || 0) + 1); document.querySelector('[data-testid=checkout-page-content]').hidden=false; history.replaceState(null, '', '/checkout/oaics_new')">Upgrade to Plus</button>
+    </section>
+    <main data-testid="checkout-page-content" hidden>checkout</main>
+    ${enableAfterMs == null ? '' : `<script>setTimeout(() => { const b = document.getElementById('upgrade-plus'); ${enable}; }, ${enableAfterMs});</script>`}`;
+  const { navigateToChatGPTCheckout } = await import('../src/chatgpt-checkout-navigator.js');
+  const server = createServer((request, response) => { response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }); response.end(html); });
+  server.listen(0, '127.0.0.1'); await once(server, 'listening');
+  const base = `http://127.0.0.1:${server.address().port}/`;
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage();
+    await page.goto(`${base}#pricing`, { waitUntil: 'domcontentloaded' });
+    const started = Date.now();
+    let result = null; let error = null;
+    try {
+      result = await navigateToChatGPTCheckout(page, { ...CHATGPT_PLUS_CHECKOUT_NAVIGATION_CONTRACT, homeUrlPrefix: base, checkoutUrlPrefix: `${base}checkout/` }, { timeoutMs, plan: 'plus' });
+    } catch (caught) { error = caught; }
+    const clicks = Number(await page.evaluate(() => document.body.dataset.clicks || 0));
+    return { result, error, clicks, elapsedMs: Date.now() - started };
+  } finally { await browser.close(); server.close(); await once(server, 'close'); }
+}
+
+test('a Plus button that is gray while prices load is waited for, then clicked exactly once', async () => {
+  for (const attr of ['disabled', 'aria']) {
+    const { result, error, clicks } = await runGrayThenEnabled({ enableAfterMs: 1500, attr, timeoutMs: 5_000 });
+    assert.equal(error, null, `${attr}: ${error?.message}`);
+    assert.deepEqual(result.actions, ['pricing-already-open', 'upgrade-requested']);
+    assert.equal(result.checkoutCreated, true);
+    assert.equal(clicks, 1, `${attr}: exactly one upgrade click`);
+  }
+});
+
+test('a Plus button that stays gray is never clicked: the navigator waits, then stops with the original reason', async () => {
+  const { error, clicks, elapsedMs } = await runGrayThenEnabled({ enableAfterMs: null, attr: 'disabled', timeoutMs: 2_000 });
+  assert.ok(error instanceof ContractError, String(error));
+  assert.match(error.message, /plus upgrade control is disabled/);
+  assert.deepEqual(error.navigationActions, ['pricing-already-open']);
+  assert.equal(clicks, 0);
+  assert.ok(elapsedMs >= 1_800, `waited before giving up (${elapsedMs} ms)`);
+});
+
