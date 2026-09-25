@@ -3689,3 +3689,8 @@ Lemon「先做一次测试」。核对：Lane 3（`9d7445ff…`，名「Plus Bro
 ## 2026-09-25｜块 6 Pro 5x 代码完成（隔离分支，未发布）（09-24 16:0x～17:3x UTC）
 
 Lemon「1. 同意 2. 先不开卡」。分支 `block6-pro5x` `71f6ae3`（已推送）。改 4 个白名单文件 + 4 个测试文件，详见 D-371。验：browser-mvp 全量 306/0（9 跳过）、v1 全量 1027/0（65 跳过）；变异验证：交易读取器 / 核实器 / 常驻池映射 / 组合层四处换回旧逻辑，新测试分别 1/3/1/1 条变红，还原后 `cmp` 一致。v1 收口（`recordCancellationConfirmed`）不分套餐，5x 确认后可正常到 `RECHARGE_SUCCESS`（代码显示）。演练未跑：5x 无卡；Plus 回归要 Lemon 建单 + 暂停常驻池。
+
+## 2026-09-25｜暂停常驻池等演练单；导航拦截；5x 零税 PoC；KC 封存（09-24 17:45～09-25 01:1x UTC）
+
+Lemon「1 做 2 A 3 可以」→ 17:45:53 UTC 正式路径关付款开关（新连接复核 false / profile false / 审计行）→ SIGTERM 6667（活动 run 0，code=0 退出）→ `set-intake-executor-check.mjs off`（dry-run 后 apply，复核 false）→ `ready-check.sh rehearsal` 全绿（可分配 Plus 卡 1）。之后到 01:0x UTC 无新单。
+5x 只填地址脚本（`browser-mvp/scripts/poc-pro5x-billing-tax.mjs`，分支）8 次：3 次直接落地结账页（见 D-372 第 1 条）、2 次填地址时 Stripe 框重载报错、1 次页面未就绪导航超时、2 次到结账页但 20 个框无地址字段。Lemon「1 同意 2 封存」→ 导航拦截 `0e97bab` + 测试 + 变异验证；KC 封存。证据复制到主仓库 `artifacts/poc-pro5x-billing-tax/`（不入库）。

@@ -5572,3 +5572,12 @@ Lemon「1. 同意 2. 先不开卡」（批白名单；不开 5x 卡）。代码�
 **未完成（D-254 要求）**：一次演练。5x 演练要 5x 卡（Lemon 不开）；Plus 回归演练要 Lemon 在客户页用 Lane 3 号建单，且演练期间常驻池须暂停（否则付款模式的常驻池会抢单真付）。
 **未验证**：5x 免税后零税报价（D-369 PoC 只到结账页、没填账单）；5x 付款后账号套餐串。
 **遗留（不在白名单，未动）**：单单工具 `production-live-worker.js` 的交易读取器不传套餐——用它真付 5x 会对账不上进人工（安全）；`BROWSER_UPGRADE_STAGE` 配置与两步走旧代码待清理；v1 侧客户页成功文案按套餐、`browser-admin-service.js` 旧 20X 人工确认未动。路线 305 仍关（CURRENT_STATE：2026-09-17 起 `accepts_new_orders=0`）。
+
+## D-372（2026-09-25 09:0x UTC+8 ＝ 01:0x UTC）块 6：导航加「Pro 必须亲手选档」拦截；5x 不填卡验不了零税；KC-PAY-GPT 独立文件夹封存
+
+Lemon「1 同意 2 封存」（前一轮「1 做 2 A 3 可以」）。
+1. **导航拦截（分支 `block6-pro5x` `0e97bab`）**：Pro 单在这次导航里没有「选档 + 点升级」就到了结账页 → `ContractError`（执行器归为 `CHECKOUT_NAVIGATION_FAILED`，付款前失败）。起因：5x 只填地址脚本 8 次运行里 3 次点页头「Upgrade」直接落到结账页、没经过选档。其中 01:02 UTC 一次页面先 `GET` 到一张**已有的未付款 5x 结账单**（`chatgptprolite`）——落地的是先前没付的 5x 结账，不是 Plus；为何会直接回到它原因未知。Plus 不受影响。新测试对旧代码变红；browser-mvp 全量 307/0、v1 1027/0。
+   **代价**：客户号上已有一张没付的结账单（如 5x 付款前失败后重试、或客户自己开过）时，5x 单会被停下 → 按现有付款前失败处理（`RECHARGE_FAILED` + CDK 退回 + 卡释放）。可改进：直接落地时读结账页上选中的档位，对得上就放行（未做，待 Lemon 定）。
+2. **5x「只填地址看税」（Lemon 批 A）做不成**：结账页 20 个框里没有任何地址字段，只有 Stripe 卡号框（`artifacts/poc-pro5x-billing-tax/pro_5x-2026-09-25T01-02-37-495Z.json`）；地址栏应要填卡后才出现（推断；生产顺序本就是先卡后地址）。**5x 免税后零税仍未验证**，只能靠带卡演练或第一张 5x 客户单。本轮所见：5x 结账 `plan_name=chatgptprolite`，填地址前 ₱5,794.64 + VAT ₱695.36 = ₱6,490.00（与 D-369 一致）。每次 `cardFieldsWritten 0 / submitCalls 0`。
+3. **KC-PAY-GPT 独立文件夹封存**：`~/code/KC-PAY-GPT-standalone` 不再开发、不删；放 `ARCHIVED.md`，`~/code/PROJECTS.md` 登记「已封存」。D-360「KC 独立业务线」结束。
+4. **Plus 回归演练**：17:45:53 UTC 起常驻池暂停（付款开关 false、下单心跳检查 false、6667 已退出），等 Lemon 用 Lane 3 号在客户页建单；到 01:0x UTC 未见新单。现状见 CURRENT_STATE。

@@ -20,11 +20,11 @@
 
 1. **块 7 删表已完成**（D-367，两批：迁移 060 删 5 表、061 删补余额线 2 表 + 开关；补余额两个定时任务停用并删 unit）。剩余：`checkout_artifacts` / `browser_artifact_secrets` 并入块 6；块 7 只剩「可离开」收尾＝等第一张真实客户单（下一条）。
 2. **「可离开」第一条（D-366）**：等第一张真实客户 Plus 单。来单 Bark 会推 → Lemon 开窗口 → 执行者按 RUNBOOK §1 全程盯、逐项对照 `contracts/2026-09-18_delivery-criteria-contract.md`；此后数「连续 10 单真实客户单无人介入」。不自费、不需 free 号。
-3. **块 6 = Pro 5x**（D-370/D-371；20x 官方暂停）：**代码已完成**，在分支 `block6-pro5x`（`71f6ae3`，未合 main、未发布、常驻池未重启），两套全量测试绿。**差一次演练才算改完（D-254）**：5x 演练没卡（Lemon 不开）；Plus 回归演练要 Lemon 在客户页用 Lane 3 号建单 + 同意演练时暂停常驻池。之后：合 main → 发布/重启常驻池 → 重开路线 305，每步先问。5x 真钱验收等第一张客户单。
+3. **块 6 = Pro 5x**（D-370/D-371/D-372）：代码在分支 `block6-pro5x`（`0e97bab`，未合 main、未发布），两套全量测试绿；含导航「Pro 必须亲手选档」拦截。5x 零税不填卡验不了（D-372），等带卡演练或首张 5x 客户单。**⚠ 生产现在处于演练暂停**：付款开关 false、下单心跳检查 false、常驻池已停（17:45 UTC 起）。等 Lemon 用 Lane 3 号在客户页建 Plus 单 → `run-browser-preflight.sh once` → 从分支目录 `run-live-rehearsal.sh once <id>` → `close-rehearsal-order.mjs` → 心跳检查 on → 付款开关 on（supervisor 自动拉起池）。之后：合 main → 发布/重启池 → 重开路线 305，每步先问。
 
 ## 下一件（Lemon 2026-09-24 定）
 
-- **KC-PAY-GPT 评估已出**（`reviews/2026-09-24-kc-pay-gpt-evaluation.md`）：它就是本仓库根目录封存的旧代码（29/31 文件逐字节相同）；本地路线＝`browser-mvp` 的前身且 Plus 裸调结账接口 400，不再单独做；第三方路线＝另一个 ZZSHU 式代充商，唯一增量是可能接受 highvcc 卡。**待 Lemon 定**：第三方路线试不试（需买 API Key + 一次小额真钱受控测试）、Lane 3 免费测试号能否用于块 6 PoC/演练。
+- **KC-PAY-GPT 已封存**（D-372）。评估已出（`reviews/2026-09-24-kc-pay-gpt-evaluation.md`）：它就是本仓库根目录封存的旧代码（29/31 文件逐字节相同）；本地路线＝`browser-mvp` 的前身且 Plus 裸调结账接口 400，不再单独做；第三方路线＝另一个 ZZSHU 式代充商，唯一增量是可能接受 highvcc 卡。**待 Lemon 定**：第三方路线试不试（需买 API Key + 一次小额真钱受控测试）、Lane 3 免费测试号能否用于块 6 PoC/演练。
 
 ## 已定不做 / 禁区
 
