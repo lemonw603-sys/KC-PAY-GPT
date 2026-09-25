@@ -490,6 +490,12 @@ export async function navigateToChatGPTCheckout(page, contract = CHATGPT_PLUS_CH
 
   await waitForState(page, () => targetReady(page, contract, expect, popups), { timeoutMs, label: `${expect} readiness` });
   await assertContinue();
+  // 块 6（D-372）：Pro 单必须在这次导航里亲手选过档、点过升级。2026-09-24 实测一次：点页头
+  // 「Upgrade」后直接落在结账页、没经过选档（原因未知），那页是什么套餐无从确认——付款前停下。
+  if (planSpec.tierLabels.length
+    && !(actions.includes(`tier-selected:${planSpec.tierLabels[0]}`) && actions.includes('upgrade-requested'))) {
+    throw new ContractError(`${planSpec.plan} checkout was reached without selecting its tier`);
+  }
   if (expect === 'plan-change') {
     if (await planChangeDialogVisible(page, contract)) {
       return {
