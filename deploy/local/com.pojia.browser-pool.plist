@@ -19,6 +19,9 @@
   <key>EnvironmentVariables</key>
   <dict>
     <key>PATH</key><string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <!-- D-386：付款后核实器上限 300000 毫秒；run-live-pool.sh 默认的 1800000 会让每张真付款单在填卡前报错。
+         这里显式给 300000（run-live-pool.sh 用 ${VAR:-默认}，已有值优先）。代码层上限对齐在批 B。 -->
+    <key>BROWSER_PAYMENT_VERIFICATION_WINDOW_MS</key><string>300000</string>
   </dict>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>

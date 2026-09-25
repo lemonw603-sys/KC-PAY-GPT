@@ -2,9 +2,9 @@
 
 更新：2026-09-26 03:0x（UTC+8）＝ 09-25 19:0x UTC。执行顺序以 **D-352** 为准，「可离开」第一条以 **D-366** 为准；本窗口 D-376～D-386。
 
-## ⚠ 第一件事：常驻池处理不了真付款单（D-386，待 Lemon 批）
+## P0 已止血（D-387）
 
-池环境 `BROWSER_PAYMENT_VERIFICATION_WINDOW_MS=1800000` 超过核实器上限 300000 → 每张真付款单在填卡前报错失败（不扣钱）；付款不明补核线同样报错。演练覆盖不到，09-18 起从未触发。建议止血：LaunchAgent `EnvironmentVariables` 加 `BROWSER_PAYMENT_VERIFICATION_WINDOW_MS=300000` → 关付款开关 → 等 worker 退出 → bootout/bootstrap → 开付款开关 → `ps eww` 核实新 worker 值。代码修（池配置上限与核实器一致 + 启动校验 + 跨模块测试）放批 B。**首张真实客户单来之前必须修。**
+常驻池付款后核实窗口已由 LaunchAgent 环境变量设为 300000（池 85147 实测），真付款单不再会在填卡前报错。代码层修（池配置上限与核实器对齐、启动校验、`run-live-pool.sh` 默认值、跨模块测试）在批 B。
 
 ## 现在的状态（17:46 UTC 现查；明细见 CURRENT_STATE.md，`state-check.sh` 一致）
 
@@ -21,7 +21,7 @@
 
 ## 下一可执行项
 
-1. **等首张真实客户 Plus 单**（可离开第一条，D-366；**先修上面的 P0**）：Bark 来单 → 按 RUNBOOK §1 盯、对照交付判据合同。若导航失败，先看证据目录（`evidenceRef` 在 fail-closed 事件里），重点看 `POST /backend-api/payments/checkout` 的返回（成功基准 200，D-381）。
+1. **等首张真实客户 Plus 单**（可离开第一条，D-366）：Bark 来单 → 按 RUNBOOK §1 盯、对照交付判据合同。若导航失败，先看证据目录（`evidenceRef` 在 fail-closed 事件里），重点看 `POST /backend-api/payments/checkout` 的返回（成功基准 200，D-381）。
 2. **重开 305（5x）**：Lemon「以后再说」。重开前先定 5x 卡从哪来（两台 pro_5x 水位 0；欠账 1、2）。
 3. 块 7 余项：`checkout_artifacts` / `browser_artifact_secrets` 两张空表——**Lemon 定暂不删**，下次本来要改付款链路、本来要演练时顺手做（D-385）。
 4. `go-live.sh` / `stop-live.sh` 已退役（一运行就停下并提示，D-385；main 已改，`~/pojia-pool` 里的旧副本随下次池发布更新）。RUNBOOK §1 已改为常驻池现实。块 6 工作树已删。
