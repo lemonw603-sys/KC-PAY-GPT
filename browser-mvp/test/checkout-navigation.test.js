@@ -475,3 +475,40 @@ test('a Pro order that lands on Checkout without selecting its tier stops before
     assert.deepEqual(plus.actions, ['pricing-opened']);
   } finally { await browser.close(); server.close(); await once(server, 'close'); }
 });
+
+// 块 6（D-373）：落地的结账页上恰好一个选中档位、value 是该套餐结账名、文字以档位开头 → 放行。
+// 夹具照 2026-09-25 真实 5x 结账页只读核对的结构：button[role=radio][value][aria-checked] + 隐藏 input[type=radio]。
+test('a Pro order that lands on Checkout proceeds only when the page itself shows its tier checked', async () => {
+  const checkout = ({ checked, value5x = 'chatgptprolite', label5x = '5x more usage than Plus ₱6,490/month' }) => `<title>ChatGPT</title>
+    <button type="button" aria-label="Upgrade" onclick="document.querySelector('[data-testid=checkout-page-content]').hidden=false; history.replaceState(null, '', '/checkout/openai_llc/oaics_resumed')">Upgrade</button>
+    <main data-testid="checkout-page-content" hidden>
+      <button type="button" role="radio" value="${value5x}" aria-checked="${checked === '5x'}" data-state="${checked === '5x' ? 'checked' : 'unchecked'}">${label5x}</button>
+      <input type="radio" value="${value5x}" ${checked === '5x' ? 'checked' : ''} hidden>
+      <button type="button" role="radio" value="chatgptpro" aria-checked="${checked === '20x'}" ${checked === '20x' ? '' : 'disabled'}>20x more usage than Plus ₱9,990/month</button>
+      <input type="radio" value="chatgptpro" ${checked === '20x' ? 'checked' : ''} hidden>
+      <button type="button" onclick="document.body.dataset.subscribed='yes'">Subscribe</button>
+    </main>`;
+  const { navigateToChatGPTCheckout } = await import('../src/chatgpt-checkout-navigator.js');
+  let html = '';
+  const server = createServer((request, response) => { response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }); response.end(html); });
+  server.listen(0, '127.0.0.1'); await once(server, 'listening');
+  const base = `http://127.0.0.1:${server.address().port}/`;
+  const contract = { ...CHATGPT_PLUS_CHECKOUT_NAVIGATION_CONTRACT, homeUrlPrefix: base, checkoutUrlPrefix: `${base}checkout/` };
+  const browser = await chromium.launch({ headless: true });
+  const run = async (page, plan) => navigateToChatGPTCheckout(page, contract, { timeoutMs: 3_000, plan });
+  try {
+    html = checkout({ checked: '5x' });
+    let page = await browser.newPage(); await page.goto(base, { waitUntil: 'domcontentloaded' });
+    const ok = await run(page, 'pro_5x');
+    assert.deepEqual(ok.actions, ['pricing-opened', 'tier-verified-on-checkout:5x']);
+    assert.equal(await page.evaluate(() => document.body.dataset.subscribed), undefined);
+    await page.close();
+    for (const [variant, plan] of [[{ checked: '20x' }, 'pro_5x'], [{ checked: '5x', value5x: 'chatgptplusplan' }, 'pro_5x'],
+      [{ checked: '5x', label5x: '20x more usage than Plus' }, 'pro_5x'], [{ checked: 'none' }, 'pro_5x'], [{ checked: '5x' }, 'pro_20x']]) {
+      html = checkout(variant);
+      page = await browser.newPage(); await page.goto(base, { waitUntil: 'domcontentloaded' });
+      await assert.rejects(run(page, plan), (error) => error instanceof ContractError && /without selecting its tier/.test(error.message), JSON.stringify({ variant, plan }));
+      await page.close();
+    }
+  } finally { await browser.close(); server.close(); await once(server, 'close'); }
+});

@@ -201,9 +201,13 @@ export const CHATGPT_PLUS_CHECKOUT_NAVIGATION_CONTRACT = Object.freeze({
   // button and selects its tier (5x / 20x) with a toggle first.
   plans: Object.freeze({
     plus: Object.freeze({ tierLabels: Object.freeze([]), upgradeLabels: Object.freeze(['升级至 Plus', 'Upgrade to Plus', '重新订阅 Plus', 'Rejoin Plus']) }),
-    pro_5x: Object.freeze({ tierLabels: Object.freeze(['5x']), upgradeLabels: Object.freeze(['升级至 Pro', 'Upgrade to Pro', '重新订阅 Pro', 'Rejoin Pro']) }),
-    pro_20x: Object.freeze({ tierLabels: Object.freeze(['20x']), upgradeLabels: Object.freeze(['升级至 Pro', 'Upgrade to Pro', '重新订阅 Pro', 'Rejoin Pro']) }),
+    // checkoutPlanNames：结账页档位单选的 value（2026-09-25 真实 5x 结账页只读核对：5x=chatgptprolite 选中，
+    // 20x=chatgptpro 禁用；5x 也等于结账接口的 plan_name，D-369）。
+    pro_5x: Object.freeze({ tierLabels: Object.freeze(['5x']), upgradeLabels: Object.freeze(['升级至 Pro', 'Upgrade to Pro', '重新订阅 Pro', 'Rejoin Pro']), checkoutPlanNames: Object.freeze(['chatgptprolite']) }),
+    pro_20x: Object.freeze({ tierLabels: Object.freeze(['20x']), upgradeLabels: Object.freeze(['升级至 Pro', 'Upgrade to Pro', '重新订阅 Pro', 'Rejoin Pro']), checkoutPlanNames: Object.freeze(['chatgptpro']) }),
   }),
+  // 结账页上的档位单选（页面内容区里的 button[role=radio]，选中的 aria-checked="true"）。
+  checkoutTierSelector: 'button[role="radio"]',
   questionnaireSkipLabels: Object.freeze(['跳过', 'Skip']),
   checkoutReadySelector: '[data-testid="checkout-page-content"]',
   // An account that already subscribes does not get a Checkout page: the
@@ -214,6 +218,16 @@ export const CHATGPT_PLUS_CHECKOUT_NAVIGATION_CONTRACT = Object.freeze({
   planChangeCancelLabels: Object.freeze(['Cancel', '取消']),
   maxUpgradeAttempts: 2,
 });
+
+/** 结账页上唯一选中的档位单选（value + 文字）；没有或不唯一时返回 null。只读。 */
+async function checkoutSelectedTier(target, contract) {
+  if (!contract.checkoutTierSelector) return null;
+  const checked = target.locator(`${contract.checkoutReadySelector} ${contract.checkoutTierSelector}[aria-checked="true"]`);
+  if (await checked.count().catch(() => 0) !== 1) return null;
+  const value = String(await checked.getAttribute('value').catch(() => '') || '').trim();
+  const label = String(await checked.innerText().catch(() => '') || '').replace(/\s+/g, ' ').trim();
+  return value ? { value, label } : null;
+}
 
 function planChangeDialog(page, contract) {
   const labels = contract.planChangeDialogLabels || [];
@@ -321,7 +335,7 @@ export async function cancelPlanChangeDialog(page, contract = CHATGPT_PLUS_CHECK
 export function resolvePlanSpec(contract, plan = 'plus') {
   const key = String(plan || 'plus').trim().toLowerCase();
   const spec = contract?.plans?.[key];
-  if (spec) return { plan: key, tierLabels: [...(spec.tierLabels || [])], upgradeLabels: [...(spec.upgradeLabels || [])] };
+  if (spec) return { plan: key, tierLabels: [...(spec.tierLabels || [])], upgradeLabels: [...(spec.upgradeLabels || [])], checkoutPlanNames: [...(spec.checkoutPlanNames || [])] };
   if (key === 'plus') return { plan: 'plus', tierLabels: [], upgradeLabels: [...(contract?.upgradeLabels || [])] };
   throw new ContractError(`checkout navigation has no plan spec for ${key}`);
 }
@@ -490,11 +504,22 @@ export async function navigateToChatGPTCheckout(page, contract = CHATGPT_PLUS_CH
 
   await waitForState(page, () => targetReady(page, contract, expect, popups), { timeoutMs, label: `${expect} readiness` });
   await assertContinue();
-  // 块 6（D-372）：Pro 单必须在这次导航里亲手选过档、点过升级。2026-09-24 实测一次：点页头
-  // 「Upgrade」后直接落在结账页、没经过选档（原因未知），那页是什么套餐无从确认——付款前停下。
+  // 块 6（D-372/D-373）：Pro 单要么在这次导航里亲手选过档、点过升级，要么落地的结账页上恰好一个选中档位、
+  // 其 value 是这个套餐的结账名且文字以档位开头（实测点页头「Upgrade」会直接回到号上没付的结账单）。
+  // 两样都没有＝结账页是什么套餐无从确认——付款前停下。
   if (planSpec.tierLabels.length
     && !(actions.includes(`tier-selected:${planSpec.tierLabels[0]}`) && actions.includes('upgrade-requested'))) {
-    throw new ContractError(`${planSpec.plan} checkout was reached without selecting its tier`);
+    const target = popups.find((candidate) => candidate.url().startsWith(contract.checkoutUrlPrefix)) || page;
+    const onPage = target.url().startsWith(contract.checkoutUrlPrefix)
+      ? await waitForState(target, () => checkoutSelectedTier(target, contract), {
+        timeoutMs: Math.min(timeoutMs, 15_000), label: `${planSpec.plan} checkout tier`,
+      }).catch(() => null)
+      : null;
+    const tierPattern = new RegExp(`^${escapeRegExp(planSpec.tierLabels[0])}\\b`, 'i');
+    if (!onPage || !planSpec.checkoutPlanNames.includes(onPage.value) || !tierPattern.test(onPage.label)) {
+      throw new ContractError(`${planSpec.plan} checkout was reached without selecting its tier`);
+    }
+    actions.push(`tier-verified-on-checkout:${planSpec.tierLabels[0]}`);
   }
   if (expect === 'plan-change') {
     if (await planChangeDialogVisible(page, contract)) {
