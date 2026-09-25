@@ -1,6 +1,6 @@
 # 接班一屏（HANDOFF_NOW）
 
-更新：2026-09-25 23:5x（UTC+8）＝ 15:5x UTC。执行顺序以 **D-352** 为准，「可离开」第一条以 **D-366** 为准；本窗口 D-376、D-377、D-378。
+更新：2026-09-26 00:2x（UTC+8）＝ 09-25 16:2x UTC。执行顺序以 **D-352** 为准，「可离开」第一条以 **D-366** 为准；本窗口 D-376～D-379。
 
 ## 现在的状态（15:48 UTC 现查；明细见 CURRENT_STATE.md）
 
@@ -11,7 +11,7 @@
 
 - 分支 **`block6-pro5x`（`56fa9e7`，已推送，未合 main、未发布）**：在 `b3f1d37` 上加了「升级按钮是灰的就等它变可点」（最多 10 秒、只点一次、绝不点灰按钮）。
 - 演练三张单都没付款、都已收口。卡住的地方：点到「Upgrade to Plus」后，ChatGPT 页面显示 **「Configure your plan — Unable to load payment form」**，网址不变（没到 `/checkout/`），连续两次；经同一菲律宾出口 curl Stripe 正常。**原因未知**。真实客户 Plus 单是否也这样：未验证。
-- 下一步候选（等 Lemon 选）：只读查付款表单为什么加载不出来（3 号窗口点页面上的 Retry 看报错、换常驻池那个窗口对比）；或先恢复生产、改天再演练。
+- **下一步（D-379）**：① 导航失败证据包——任务书 `tasks/2026-09-25-navigation-failure-evidence.md` **等 Lemon 批**；② 批后做完，带着证据包做对照实验（立刻点 vs 可点后等 5 秒；不付款；要 Lemon 给一个没用过的普通免费号 Session）。线索：Lemon 手动点进的是标准结账页 `/checkout/…`，自动点是网址不变的页内报错；Playwright 文档说自动化可能在按钮的点击处理挂上前就点（假设，待实验）。
 - 演练步骤（RUNBOOK §2 已改）：**不要先跑 preflight**；`run-live-rehearsal.sh once <orders.id>` 要从分支目录跑；3 号窗口开跑前把残留的 chatgpt.com 标签页关掉（开着多个会 `PROFILE_PAGE_AMBIGUOUS`）；演练号用普通邮箱注册的免费号（企业邮箱号价格框默认 Business 栏，D-378 不改）。
 - 通过之后仍逐项问：合 main → 服务器发布（并入「贴 token 当场验证」`3a633f5`，D-377）→ 常驻池切 `~/pojia-pool` 固定目录并改 LaunchAgent（D-377 已批，当场再确认）→ 重开 305（先定 5x 卡从哪来）。
 

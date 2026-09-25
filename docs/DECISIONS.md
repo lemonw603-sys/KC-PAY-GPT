@@ -5627,3 +5627,9 @@ Lemon「1 并进做 2 现在做」→ 演练（贴 token 当场验证的发布�
 3. `PJV1-kRso…`（普通免费号）：价格框已开、Plus 按钮当时是灰的 → `plus upgrade control is disabled`，几分钟后同一按钮可点。**Lemon 选 B：等按钮变可点**——每 0.1 秒看一次、最多 10 秒、变可点只点一次、等不到按原样停、绝不点灰按钮（块 6 分支 `56fa9e7`，变异 4/4，分支全量 323：314/0/9）。改后导航成功点到「Upgrade to Plus」，但 ChatGPT 页面显示 **「Configure your plan — Unable to load payment form. Please try again.」**，网址仍是 `/`（未到 `/checkout/`），导航一直等结账页直到运行租约过期；连续两次一样（中间一次比特浏览器 `/browser/list` 临时失败）。经同一菲律宾出口 curl Stripe 三个地址均 200。**原因未知**；真实客户单若同样如此会安全失败（未验证）。
 收口：后两张用 `close-rehearsal-order.mjs`（付款痕迹全 0）CLOSED，CDK 退回、卡 8718 放回；「下单查付款池」15:26 UTC 开回。**付款开关仍关、常驻池未起**（客户下单看到维护），恢复与否待 Lemon 定。
 顺带：state-check 新加的「本机池未运行」比对值原为纯中文，被取值守卫当成失败，已改为 `worker 0 个`。
+
+## D-379（2026-09-26 UTC+8 凌晨）先做导航失败证据包，再做对照实验；Playwright 升级以后单独做
+
+Lemon「以上同意」：① 恢复生产（15:45 UTC 已做）；② 先做「失败证据包」再做对照实验（立刻点 vs 按钮可点后等 5 秒），任务书 `tasks/2026-09-25-navigation-failure-evidence.md` 先给 Lemon 看、批了再动手；③ 3 号窗口 Lemon 手动点出的未付结账页标签已关（只关标签）；④ Playwright 1.59→1.63 以后单独做。
+依据：GitHub 调研 `browser-research/2026-09-25-browser-automation-oss-survey.md`——不换框架，先用 Playwright 自带的取现场能力；AI 浏览器代理不进付款链路；trace 会录请求头（含登录 Cookie），第一期不用。
+对照观察（只读）：Lemon 手动点进的是标准结账页 `/checkout/openai_llc/oaics_…`（Stripe 框全部加载、无报错）；自动点两次都是网址不变的页内「Configure your plan — Unable to load payment form」。是否由 `56fa9e7`「一可点就立刻点」引起：未知，待对照实验。生产不受影响（池跑 main，不含该提交）。
