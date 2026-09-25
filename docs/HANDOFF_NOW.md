@@ -1,6 +1,6 @@
 # 接班一屏（HANDOFF_NOW）
 
-更新：2026-09-26 01:5x（UTC+8）＝ 09-25 17:5x UTC。执行顺序以 **D-352** 为准，「可离开」第一条以 **D-366** 为准；本窗口 D-376～D-383。
+更新：2026-09-26 02:1x（UTC+8）＝ 09-25 18:1x UTC。执行顺序以 **D-352** 为准，「可离开」第一条以 **D-366** 为准；本窗口 D-376～D-384。
 
 ## 现在的状态（17:46 UTC 现查；明细见 CURRENT_STATE.md，`state-check.sh` 一致）
 
@@ -19,8 +19,8 @@
 
 1. **等首张真实客户 Plus 单**（可离开第一条，D-366）：Bark 来单 → 按 RUNBOOK §1 盯、对照交付判据合同。若导航失败，先看证据目录（`evidenceRef` 在 fail-closed 事件里），重点看 `POST /backend-api/payments/checkout` 的返回（成功基准 200，D-381）。
 2. **重开 305（5x）**：Lemon「以后再说」。重开前先定 5x 卡从哪来（两台 pro_5x 水位 0；欠账 1、2）。
-3. 块 7 余项：`checkout_artifacts` / `browser_artifact_secrets` 两表清理（块 6 已上线，可排）。
-4. 待定小项：`go-live.sh` / 手工 `run-live-pool.sh run pay` 仍能从 main 起真付款池——要不要堵（browser-mvp 白名单）。块 6 工作树 `.claude/worktrees/block6-pro5x` 已合并，可删（删前问）。
+3. 块 7 余项：`checkout_artifacts` / `browser_artifact_secrets` 两表（0 行、20 处引用，其中付款链路两文件在池加载范围内）——建议暂不删，下次本来要改付款链路时顺手做（D-384，待 Lemon 确认）。
+4. RUNBOOK §1 已改为常驻池现实（不用 go-live / stop-live；紧急停＝SIGTERM 池 worker + 正式路径关付款开关）。代码层建议只让 `go-live.sh` / `stop-live.sh` 一运行就停下（不碰 `run-live-pool.sh`），待 Lemon 确认（D-384）。块 6 工作树已删。
 
 ## 已定 / 禁区
 

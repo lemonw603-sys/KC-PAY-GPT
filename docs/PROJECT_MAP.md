@@ -1,6 +1,6 @@
 # AI充值业务｜项目地图
 
-最后核对：2026-09-26 01:5x（UTC+8）。本页只放目标、块序与状态、下一步、欠账、不做；**生产数值只看 `CURRENT_STATE.md`**，过程看 `HANDOFF_LOG.md`，决策看 `DECISIONS.md`。
+最后核对：2026-09-26 02:1x（UTC+8）。本页只放目标、块序与状态、下一步、欠账、不做；**生产数值只看 `CURRENT_STATE.md`**，过程看 `HANDOFF_LOG.md`，决策看 `DECISIONS.md`。
 2026-09-25 前的完整旧版（顶部 8 段「覆盖」+ 八步表逐步记录 + 已完成欠账）原文：`archive/2026-09/PROJECT_MAP_pre_onepage_2026-09-25.md`。
 
 ## 1. 目标与原则
@@ -31,7 +31,7 @@
 3. ~~合 main → 发布 → 池切固定目录~~ ✅ 09-25 17:4x UTC（D-383）。**重开路线 305**：先定 5x 卡从哪来（两台 pro_5x 水位 0；欠账 1、2），Lemon「以后再说」。
 4. 等首张真实客户 Plus 单（可离开第一条），之后数连续 10 单。
 5. ~~贴 token 当场验证~~ ✅ 随块 6 发布（D-383）。
-6. 块 7 余项：`checkout_artifacts` / `browser_artifact_secrets` 两表在块 6 之后清理。
+6. 块 7 余项：`checkout_artifacts` / `browser_artifact_secrets` 两张空表——建议暂不删，下次本来要改付款链路、本来要演练时顺手做（D-384）。
 
 ## 4. 欠账（每条带触发条件；已完成的见旧版原文）
 

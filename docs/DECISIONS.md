@@ -5659,3 +5659,10 @@ Lemon「1 现在做。2 以后再说。3 改」+「还用新号测试吗」。
 - **第 3 项**：`run-live-rehearsal.sh` 默认 `BROWSER_WORKER_LEASE_SECONDS=900`（`89d1971`）；通过的演练正是用这个值（环境变量）跑的，视为已演练。
 - 回滚：服务器＝`20260924-block7-batch2-0d06f41`（无迁移）；本机池＝`pool-release.sh switch <上一版>` + 停 worker；回到 main 工作区＝装回 `~/pojia-pool/launchagent-backup/` 里的旧 plist 并重载（先停 worker）。
 - 仍未堵：`go-live.sh` 与手工 `run-live-pool.sh run pay` 可从 main 起真付款池（任务书「未堵的口子」，要不要堵待定）。5x 卡从哪来：Lemon「以后再说」，305 仍关。
+
+## D-384（2026-09-26 UTC+8 凌晨）RUNBOOK §1 改成常驻池现实；块 6 工作树已删；块 7 两张空表暂不删
+
+Lemon「以上同意，现在可以做的话就做」＋ 问第 1 项会不会让系统更脆弱。
+1. **口子**：RUNBOOK §1「来单」仍写 `go-live.sh --arm`（常驻池之前的旧入口，会从 main 工作区另起付款进程，与常驻池同时付款）与 `stop-live.sh`（停所有付款进程、用只读工具写库）。**已改 RUNBOOK §1 / §1.5**：来单全自动；不要用这两个脚本；紧急停＝SIGTERM 池 worker + 正式路径关付款开关（命令写进 RUNBOOK）；删去已退役的 20X 两段式说明。代码层建议改为「只让 `go-live.sh` / `stop-live.sh` 一运行就停下并提示」（不碰常驻池启动路径 `run-live-pool.sh`，对在跑的池零影响、无需重启）；原提的「在 `run-live-pool.sh` 加路径检查」若写错会让常驻池自己起不来，不推荐——**待 Lemon 确认**。
+2. **块 6 工作树已删**：`artifacts/poc-pro5x-billing-tax/` 与 main 逐文件一致（11/11）后 `git worktree remove --force`；本地分支已合并删除，远端 `block6-pro5x` 留作记录。
+3. **块 7 两张表盘点（只读）**：`checkout_artifacts` / `browser_artifact_secrets` 均 0 行；代码 20 处引用，其中 `browser-execution-repository.js`（付款前中止 :781/787、确认 Plus :1484/1594）与 `browser-recovery-repository.js` 在常驻池加载范围内。删表＝改付款链路相邻代码 + 迁移 + 发布 + 池重启 + 一次演练（要用一个号的 Session），换来的只是删两张空表。**建议暂不删**，等下次本来就要改付款链路、本来就要演练时顺手一起做——待 Lemon 确认。
