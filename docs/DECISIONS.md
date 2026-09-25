@@ -5673,3 +5673,9 @@ Lemon「1 改 2 同意。3 我有意改的」。
 1. `browser-mvp/scripts/go-live.sh` 与 `stop-live.sh` 在 `set -euo pipefail` 后立即打印提示、`exit 3`，旧逻辑不再执行（go-live 会从当前目录另起付款进程且用只读工具写库；stop-live 停所有付款进程且用只读工具写库）。常驻池启动路径 `run-live-pool.sh` 一行未动。验证：两脚本各实跑一次均 exit 3、无副作用（付款开关仍 true、池 52721 仍在）；browser-mvp 全量见 HANDOFF_LOG。`~/pojia-pool` 里的旧副本随下次池发布更新。CLAUDE.md 弹窗说明注明已退役。
 2. `checkout_artifacts` / `browser_artifact_secrets` 暂不删，等下次本来要改付款链路、本来要演练时顺手做。
 3. hnskj Plus 水位 0→1（18:02:36 UTC，`admin`）是 Lemon 有意改的：HNSKJ 维护结束后调度器会自动开一张 $50 卡（开卡金额 `card_supply_policies.open_card_amount`=50）。
+
+## D-386（2026-09-26 UTC+8 凌晨）盘点发现 P0：常驻池处理不了真付款单；客户页 / 提速盘点报告
+
+Lemon「现在开始」盘点（只读三线）。报告 `reviews/2026-09-26-customer-ux-speed-audit/report.md`。
+- **P0（已核实并重现）**：池环境 `BROWSER_PAYMENT_VERIFICATION_WINDOW_MS=1800000`（D-269 ③ 09-18 设「30 分钟」）超过核实器上限 300000；核实器在付款 handler 里、付款适配器之前构造 → 真付款单填卡前报错失败（不扣钱），补核线同。09-18 后到付款的 run 0 条，演练覆盖不到。**D-269 ③ 的 30 分钟从未生效，反而使付款路径失效**——同型错误：只改了一处（运行环境）、没看另一处（核实器上限）。止血方案与代码修见报告，待 Lemon 批。
+- P1 客户页正确性 4 项、P2 体验与四态、P3 提速候选，建议分批 A（v1/客户页）/ B（browser-mvp 一次演练），待 Lemon 挑。
