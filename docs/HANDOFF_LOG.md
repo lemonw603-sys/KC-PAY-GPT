@@ -3698,3 +3698,7 @@ Lemon「1 做 2 A 3 可以」→ 17:45:53 UTC 正式路径关付款开关（新�
 ## 2026-09-25｜恢复常驻池；拦截改为读页面档位（01:3x～02:0x UTC）
 
 Lemon「1B 2 现在做」。恢复步骤与复核见 D-373 第 1 条（PID 91075，state-check 一致）。拦截改进 `aad6980`：先只读探真实 5x 结账页档位结构，再写规则与测试，变异验证 4 处全红，Lane 3 实跑认出已有 5x 未付结账单（`tier-verified-on-checkout:5x`）。证据 `artifacts/poc-pro5x-billing-tax/`（11 份，不入库）。
+
+## 2026-09-25｜导航开头偶发失败查清并修（02:0x～02:4x UTC）
+
+Lemon「1 现在查」。PoC 证据汇总 → 生产 `browser_runs`/`browser_run_events`/WAL/go-live 日志查原文（只有原因码）→ 只读探个人菜单按钮结构 → 时间线诊断 3 次复现 1 次 → 修两处等待逻辑 `0f483ef` → 测试 + 变异 → Lane 3 实跑 5/5。详见 D-374。
