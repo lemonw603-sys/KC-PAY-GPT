@@ -289,3 +289,44 @@ test('D-352 块3②: a stale Browser heartbeat rejects the order before anything
   assert.ok(!calls.some((call) => /UPDATE cdks/.test(call.sql)), 'CDK 没被占用');
   assert.ok(calls.some((call) => call.sql === 'ROLLBACK'), '事务回滚');
 });
+
+// ---- D-386：验卡预检与下单用同一套判断（只读、不加锁） ----
+import { checkOrderAvailability as checkAvailabilityForTest } from '../src/db/repositories/order-intake-repository.js';
+
+function availabilityQueryable({ settings = {}, routes = [{ executor_kind: 'BROWSER', product_id: 'p', fulfillment_route_id: 'r', frozen_card_provider_account_id: 'a' }], heartbeat = {} } = {}) {
+  const base = { accept_new_orders: 'true', default_card_type_id: '23', default_open_card_amount: '16', default_minimum_required_card_balance: '16.00' };
+  const merged = { ...base, ...settings };
+  const sqls = [];
+  return {
+    sqls,
+    async query(sql, params) {
+      sqls.push(sql);
+      if (/FROM products p/.test(sql)) return [routes];
+      if (/FROM app_settings/.test(sql) && params.length === 2) {
+        return [params.filter((key) => key in heartbeat).map((key) => ({ setting_key: key, setting_value: heartbeat[key] }))];
+      }
+      if (/FROM app_settings/.test(sql)) {
+        return [Object.entries(merged).filter(([, v]) => v != null).map(([setting_key, setting_value]) => ({ setting_key, setting_value }))];
+      }
+      throw new Error(`unexpected sql ${sql}`);
+    },
+  };
+}
+
+test('availability pre-check answers like intake would: paused, route closed, executor down, ok — and never locks', async () => {
+  const now = Date.parse('2026-09-26T00:00:00Z');
+  const fresh = { browser_worker_heartbeat_at: new Date(now - 5_000).toISOString() };
+  const stale = { browser_worker_heartbeat_at: new Date(now - 600_000).toISOString() };
+  const cases = [
+    [{ settings: { accept_new_orders: 'false' }, heartbeat: fresh }, { ok: false, code: 'ORDERING_PAUSED' }],
+    [{ routes: [], heartbeat: fresh }, { ok: false, code: 'ORDER_ROUTE_UNAVAILABLE' }],
+    [{ heartbeat: stale }, { ok: false, code: 'EXECUTOR_UNAVAILABLE' }],
+    [{ heartbeat: { ...stale, intake_executor_heartbeat_check: 'false' } }, { ok: true }],
+    [{ heartbeat: fresh }, { ok: true }],
+  ];
+  for (const [setup, expected] of cases) {
+    const queryable = availabilityQueryable(setup);
+    assert.deepEqual(await checkAvailabilityForTest(queryable, { planType: 'plus', now }), expected, JSON.stringify(setup));
+    assert.ok(queryable.sqls.every((sql) => !/FOR (SHARE|UPDATE)/.test(sql)), 'pre-check must not lock');
+  }
+});

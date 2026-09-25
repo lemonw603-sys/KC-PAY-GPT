@@ -207,9 +207,13 @@ test('进度环不跳：换段与跑完都是过渡，不是瞬移', () => {
   assert.match(js, /if \(shownPct > 0 && shownPct < 100\) glideTo\(100\);/);
 });
 
-test('出问题时标题保留当前阶段名，客户要知道卡在哪一步', () => {
-  // 设计稿 stuck 屏的标题仍是「正在提交支付」，换掉的只是下面那行说明。
-  assert.match(js, /const name = stage \? stage\.label : '处理中';/);
+test('处理中（含复核）标题是阶段名；失败与需换号标题写结论、不显示百分比（D-387）', () => {
+  // 2026-09-26 Lemon 定打破原「标题永远是阶段名」：失败屏原来写「正在准备并提交支付 84%」，
+  // 下面才说「这一单没有完成」，标题和说明互相矛盾。复核仍是处理中，标题照旧是阶段名。
+  assert.match(js, /let name = stage \? stage\.label : '处理中';/);
+  assert.match(js, /if \(order\.status === 'FAILED'\) name = '这一单没有完成';/);
+  assert.match(js, /if \(order\.status === 'ACTION_REQUIRED'\) name = '需要换一个账号';/);
+  assert.match(js, /el\.ringNum\.hidden = success \|\| conclusive;/);
   assert.doesNotMatch(js, /name: '遇到点问题'/);
   assert.match(js, /REVIEWING:[\s\S]{0,160}hint: '遇到点问题/);
 });

@@ -1,5 +1,6 @@
 import { CDK_RETURN_ORDER_STATUSES } from '../db/repositories/cdk-return-repository.js';
 import { cdkReturnWouldBeBlocked, findCdkForVerification } from '../db/repositories/cdk-verify-repository.js';
+import { checkOrderAvailability } from '../db/repositories/order-intake-repository.js';
 import { productLabel } from '../domain/product-labels.js';
 import { PublicApiError } from '../domain/public-api-error.js';
 import { createCdkLookup } from '../security/cdk-code.js';
@@ -51,8 +52,22 @@ function invalid() {
 export function createCdkVerifyService({
   pool,
   cdkHashKey,
-  repository = { findCdkForVerification, cdkReturnWouldBeBlocked }
+  repository = { findCdkForVerification, cdkReturnWouldBeBlocked, checkOrderAvailability },
+  now = () => Date.now()
 }) {
+  // D-386：能开新单的卡密，顺带告诉客户这个套餐现在能不能下单（暂停接单 / 路线没开 / 执行器不在线），
+  // 别让他做完 Session 那一步才在最后被拒。查不出来就不说（不挡路），下单时仍会再判一次。
+  async function withAvailability(answer) {
+    if (typeof repository.checkOrderAvailability !== 'function') return answer;
+    try {
+      const orderable = await repository.checkOrderAvailability(pool, { planType: answer.product.planType, now: now() });
+      return orderable && typeof orderable.ok === 'boolean' ? { ...answer, orderable } : answer;
+    } catch (error) {
+      console.error('order availability pre-check failed', { name: error?.name, code: error?.code });
+      return answer;
+    }
+  }
+
   return async function verifyCustomerCdk(input) {
     const cdk = readCdkInput(input);
     if (!cdk) return invalid();
@@ -75,7 +90,7 @@ export function createCdkVerifyService({
       if (found.expiresAt && new Date(found.expiresAt).getTime() <= Date.now()) {
         return { state: CDK_VERIFY_STATES.EXPIRED, product };
       }
-      return { state: CDK_VERIFY_STATES.VALID, product };
+      return withAvailability({ state: CDK_VERIFY_STATES.VALID, product });
     }
 
     // REDEEMED without an order row is a broken pairing, not an entitlement.
@@ -96,11 +111,12 @@ export function createCdkVerifyService({
     // rather than assuming, so this screen and intake always agree.
     if (CDK_RETURN_ORDER_STATUSES.includes(found.order.status)) {
       const blocked = await repository.cdkReturnWouldBeBlocked(pool, found.order.internalOrderId);
-      if (!blocked) return {
-        state: found.expiresAt && new Date(found.expiresAt).getTime() <= Date.now()
-          ? CDK_VERIFY_STATES.EXPIRED : CDK_VERIFY_STATES.VALID,
-        product
-      };
+      if (!blocked) {
+        if (found.expiresAt && new Date(found.expiresAt).getTime() <= Date.now()) {
+          return { state: CDK_VERIFY_STATES.EXPIRED, product };
+        }
+        return withAvailability({ state: CDK_VERIFY_STATES.VALID, product });
+      }
     }
 
     return {

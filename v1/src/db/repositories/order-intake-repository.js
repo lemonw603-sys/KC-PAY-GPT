@@ -104,6 +104,72 @@ export function parseOrderIntakeSettings(rows) {
   };
 }
 
+// 路线规则只有这一份：下单时加 FOR SHARE 锁，验卡时的预检不加锁（D-386）。
+async function resolveOrderRoute(queryable, planType, { lock = false } = {}) {
+  const [routeRows] = await queryable.query(
+    `SELECT p.id AS product_id, fr.id AS fulfillment_route_id, fr.executor_kind,
+            css.provider_account_id AS frozen_card_provider_account_id
+     FROM products p INNER JOIN fulfillment_routes fr ON fr.product_id = p.id
+     INNER JOIN card_source_selections css
+       ON css.product_id = p.id AND css.executor_kind = fr.executor_kind
+     INNER JOIN provider_accounts cpa ON cpa.id = css.provider_account_id
+     WHERE BINARY p.legacy_plan_type = BINARY ?
+       AND p.status = 'ACTIVE' AND fr.accepts_new_orders = 1
+       AND fr.retired_at IS NULL
+       AND ((fr.executor_kind='API' AND cpa.supports_api_recharge=1)
+         OR (fr.executor_kind='BROWSER' AND cpa.supports_browser_recharge=1))
+     ORDER BY fr.route_version DESC LIMIT 2${lock ? ' FOR SHARE' : ''}`,
+    [planType || 'plus']
+  );
+  if (routeRows.length !== 1) {
+    throw new OrderIntakeError('Order route is not configured', {
+      code: 'ORDER_ROUTE_UNAVAILABLE',
+      status: 503
+    });
+  }
+  return routeRows[0];
+}
+
+async function readExecutorHeartbeatValues(queryable, executorKind) {
+  const [heartbeatRows] = await queryable.query(
+    `SELECT setting_key, setting_value FROM app_settings
+     WHERE setting_key IN (?, ?)`,
+    [EXECUTOR_HEARTBEAT_SETTING[executorKind] || '', EXECUTOR_HEARTBEAT_CHECK_SETTING]
+  );
+  return new Map(heartbeatRows.map((row) => [row.setting_key, row.setting_value]));
+}
+
+/**
+ * 客户在第一步验卡时就问一句「这张卡密的套餐现在能不能下单」（D-386）：暂停接单、路线没开、
+ * 执行器不在线，原来要到最后一步点「立即兑换」才被拒，客户白做了最难的 Session 那一步。
+ * 这里跑的是下单时的同一套判断（同一份设置解析、同一份路线 SQL、同一个心跳判定），只是只读、
+ * 不加锁、不碰卡密。它只是提示：下单时仍会在事务里再判一次，以那一次为准。
+ * 返回 { ok: true } 或 { ok: false, code }（code 与下单拒单的错误码相同）。
+ */
+export async function checkOrderAvailability(queryable, { planType, now = Date.now() } = {}) {
+  try {
+    const placeholders = INTAKE_SETTING_KEYS.map(() => '?').join(', ');
+    const [settingRows] = await queryable.query(
+      `SELECT setting_key, setting_value FROM app_settings
+       WHERE setting_key IN (${placeholders})`,
+      INTAKE_SETTING_KEYS
+    );
+    parseOrderIntakeSettings(settingRows);
+    const route = await resolveOrderRoute(queryable, planType, { lock: false });
+    const heartbeatValues = await readExecutorHeartbeatValues(queryable, route.executor_kind);
+    assertExecutorHeartbeat({
+      executorKind: route.executor_kind,
+      heartbeatAt: heartbeatValues.get(EXECUTOR_HEARTBEAT_SETTING[route.executor_kind]),
+      checkEnabled: heartbeatValues.get(EXECUTOR_HEARTBEAT_CHECK_SETTING) ?? 'true',
+      now
+    });
+    return { ok: true };
+  } catch (error) {
+    if (error instanceof OrderIntakeError) return { ok: false, code: error.code };
+    throw error;
+  }
+}
+
 export async function createOrderFromCdk(pool, input) {
   const connection = await pool.getConnection();
   try {
@@ -193,37 +259,11 @@ export async function createOrderFromCdk(pool, input) {
     // 冻结卡台只从「产品 × 执行器 → 卡台」选择表取（D-246 面一 C1）。路线表那一列和
     // browser_card_source_selections 不再是真相；API 行固定 hnskj 是选择表里的一行
     // （locked=1），不再在这里写死 provider_code。
-    const [routeRows] = await connection.query(
-      `SELECT p.id AS product_id, fr.id AS fulfillment_route_id, fr.executor_kind,
-              css.provider_account_id AS frozen_card_provider_account_id
-       FROM products p INNER JOIN fulfillment_routes fr ON fr.product_id = p.id
-       INNER JOIN card_source_selections css
-         ON css.product_id = p.id AND css.executor_kind = fr.executor_kind
-       INNER JOIN provider_accounts cpa ON cpa.id = css.provider_account_id
-       WHERE BINARY p.legacy_plan_type = BINARY ?
-         AND p.status = 'ACTIVE' AND fr.accepts_new_orders = 1
-         AND fr.retired_at IS NULL
-         AND ((fr.executor_kind='API' AND cpa.supports_api_recharge=1)
-           OR (fr.executor_kind='BROWSER' AND cpa.supports_browser_recharge=1))
-       ORDER BY fr.route_version DESC LIMIT 2 FOR SHARE`,
-      [cdkRows[0].plan_type || 'plus']
-    );
-    if (routeRows.length !== 1) {
-      throw new OrderIntakeError('Order route is not configured', {
-        code: 'ORDER_ROUTE_UNAVAILABLE',
-        status: 503
-      });
-    }
-    const route = routeRows[0];
+    const route = await resolveOrderRoute(connection, cdkRows[0].plan_type, { lock: true });
 
     // D-352 块 3 ②：执行器心跳不新鲜就不建单。普通 SELECT，不加锁——心跳行每 5s 被执行器
     // 改一次，锁它会让下单和心跳互相等。
-    const [heartbeatRows] = await connection.query(
-      `SELECT setting_key, setting_value FROM app_settings
-       WHERE setting_key IN (?, ?)`,
-      [EXECUTOR_HEARTBEAT_SETTING[route.executor_kind] || '', EXECUTOR_HEARTBEAT_CHECK_SETTING]
-    );
-    const heartbeatValues = new Map(heartbeatRows.map((row) => [row.setting_key, row.setting_value]));
+    const heartbeatValues = await readExecutorHeartbeatValues(connection, route.executor_kind);
     assertExecutorHeartbeat({
       executorKind: route.executor_kind,
       heartbeatAt: heartbeatValues.get(EXECUTOR_HEARTBEAT_SETTING[route.executor_kind]),

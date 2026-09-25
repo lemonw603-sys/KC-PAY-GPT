@@ -193,3 +193,54 @@ test('有效期还没到的码照常可用', async () => {
   const { state } = await verify({ cdk: CODE });
   assert.equal(state, 'VALID');
 });
+
+// ---- D-386：验卡时顺带说「这个套餐现在能不能下单」 ----
+
+function serviceWithAvailability(found, availability) {
+  const calls = [];
+  const verify = createCdkVerifyService({
+    pool: {},
+    cdkHashKey: HASH_KEY,
+    now: () => 1_000,
+    repository: {
+      findCdkForVerification: async () => found,
+      cdkReturnWouldBeBlocked: async () => false,
+      checkOrderAvailability: async (_pool, input) => { calls.push(input); return availability(); },
+    }
+  });
+  return { verify, calls };
+}
+
+test('a VALID code carries whether its product can be ordered right now (paused / route closed / executor down)', async () => {
+  for (const code of ['ORDERING_PAUSED', 'ORDER_ROUTE_UNAVAILABLE', 'EXECUTOR_UNAVAILABLE']) {
+    const { verify, calls } = serviceWithAvailability({ ...availableCdk, planType: 'pro_5x' }, () => ({ ok: false, code }));
+    const result = await verify({ cdk: CODE });
+    assert.equal(result.state, 'VALID');
+    assert.deepEqual(result.orderable, { ok: false, code });
+    assert.deepEqual(calls, [{ planType: 'pro_5x', now: 1_000 }]);
+  }
+  const { verify } = serviceWithAvailability(availableCdk, () => ({ ok: true }));
+  assert.deepEqual((await verify({ cdk: CODE })).orderable, { ok: true });
+});
+
+test('a code freed by a failed order is checked the same way before it is offered again', async () => {
+  const { verify, calls } = serviceWithAvailability(redeemed('RECHARGE_FAILED'), () => ({ ok: false, code: 'ORDERING_PAUSED' }));
+  const result = await verify({ cdk: CODE });
+  assert.deepEqual([result.state, result.orderable?.code, calls.length], ['VALID', 'ORDERING_PAUSED', 1]);
+});
+
+test('the pre-check never blocks: if it cannot answer, the customer continues and intake decides', async () => {
+  const { verify } = serviceWithAvailability(availableCdk, () => { throw new Error('db hiccup'); });
+  const result = await verify({ cdk: CODE });
+  assert.equal(result.state, 'VALID');
+  assert.equal('orderable' in result, false);
+});
+
+test('codes that do not start a new order are not pre-checked (NEEDS_SESSION, BOUND_TO_ORDER, EXPIRED)', async () => {
+  for (const found of [redeemed('WAITING_FOR_SESSION'), redeemed('RECHARGE_PROCESSING'), { ...availableCdk, expiresAt: '2000-01-01T00:00:00Z' }]) {
+    const { verify, calls } = serviceWithAvailability(found, () => ({ ok: false, code: 'ORDERING_PAUSED' }));
+    const result = await verify({ cdk: CODE });
+    assert.equal('orderable' in result, false, result.state);
+    assert.equal(calls.length, 0, result.state);
+  }
+});

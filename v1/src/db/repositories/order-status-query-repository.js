@@ -8,12 +8,16 @@ const SELECT_ORDER = `
              THEN 'ACCOUNT_ALREADY_PLUS' END) AS customer_action_code,
          o.session_replacement_count, o.session_repair_expires_at,
          COALESCE(
+           -- 关单对客户只有两种结局：关单前最后一步是成功就显示成功，其余一律显示「没有完成」
+           -- （能不能重兑由 cdkReturnWouldBeBlocked 决定）。原来除 CANCELLED_PRE_SUBMISSION 外都显示
+           -- 关单前的最后状态，运营判「未扣款」关单（HUMAN_VERIFIED_NOT_CHARGED）后客户页永远停在
+           -- 「正在等待支付结果」（D-386 盘点，生产 4 单）。
            CASE WHEN o.status = 'CLOSED' THEN (
-             CASE WHEN o.failure_code = 'CANCELLED_PRE_SUBMISSION' THEN 'CARD_FAILED' ELSE (
+             CASE WHEN (
                SELECT oe.to_status FROM order_events oe
                WHERE oe.order_id = o.id AND oe.to_status <> 'CLOSED'
                ORDER BY oe.id DESC LIMIT 1
-             ) END
+             ) = 'RECHARGE_SUCCESS' THEN 'RECHARGE_SUCCESS' ELSE 'CARD_FAILED' END
            ) END,
            o.status
          ) AS effective_status,
@@ -33,6 +37,10 @@ export async function findCustomerOrder(pool, lookup) {
       INNER JOIN cdks c ON c.id = o.cdk_id
       WHERE (c.hash_version = ? AND c.code_hash = ?)
          OR (c.hash_version = ? AND c.code_hash = ?)
+      -- 一张卡密可以对应多单（失败退回后重兑，迁移 051）。先取卡密当前绑定的那一单，
+      -- 没有绑定（已退回）就取最新一单。原来 LIMIT 1 不排序，生产上「失败后重兑成功」的
+      -- 卡密有 4/5 查出旧的失败单（D-386）。
+      ORDER BY (o.id = c.order_id) DESC, o.created_at DESC, o.id DESC
       LIMIT 1`;
     parameter = [
       lookup.cdkLookup.current.version, lookup.cdkLookup.current.hash,

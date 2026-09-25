@@ -52,7 +52,8 @@
     SUBSCRIPTION_CONFIRMING: '支付成功,正在确认订阅已生效。',
     SUBSCRIPTION_ACTIVE: 'Plus 已开通,现在就可以用了。'
   };
-  const KEEP_OPEN = '请保持本页打开,通常几分钟之内完成。';
+  // D-386：原来写「请保持本页打开」，暗示关掉就会出事；刷新或切走再回来现在会自动接上进度。
+  const KEEP_OPEN = '通常几分钟之内完成,关掉本页也不影响,随时可以用卡密回来查。';
 
   // 后端映射态 → 本页呈现方式。poll 为 null 表示终态，停止轮询。
   // 设计稿的「遇到问题」屏标题仍是当前阶段名（例如「正在提交支付」），
@@ -64,6 +65,9 @@
     PREPARING:       { tone: 'ok',   poll: 5000 },
     PAYING:          { tone: 'ok',   poll: 4000 },
     ACTIVATING:      { tone: 'ok',   poll: 5000 },
+    // 换号接口受理后回的是 PROCESSING（重新排队）。原来没有这一项，落到 REVIEWING，客户换完号
+    // 先看到 30 秒橙色「遇到点问题」、环归零（D-386）。现在按处理中渲染并立刻再查一次。
+    PROCESSING:      { tone: 'ok',   poll: 3000 },
     // 付款已提交、正在确认结果。后端的 SUBMIT_UNKNOWN 映射到这里，它是每一单必经的
     // 一步（2026-09-13 两单各停 8~9 秒），此前被当成「遇到点问题」+30 秒轮询，客户在
     // 钱已付掉的那几秒看到橙色警告，成功还要等下一轮才显示。这里按正常态走、轮询压到
@@ -95,18 +99,18 @@
     session_expired: '账号 Session 已过期,请重新获取。',
     cdk_unavailable: '这张卡密不可用,或者已经绑定了订单。可以到「订单查询」找回原订单。',
     // D-286 有效期：这张码确实是我们发的，只是过期了 —— 不能说成「核对后重新输入」，
-    // 客户核对不出任何问题，只会觉得被骗。给一条能实际解决问题的路（联系客服）。
-    cdk_expired: '这张卡密已过期,无法继续开通。请联系客服处理,不要重复提交。',
+    // 客户核对不出任何问题，只会觉得被骗。给一条能实际解决问题的路（联系商家，D-387）。
+    cdk_expired: '这张卡密已过期,无法继续开通。请联系商家处理,不要重复提交。',
     ordering_paused: '当前暂停接收新订单,请稍后再试。',
     // D-352 块3②：执行器没在跑（心跳过期）时当场拒单，而不是收下让客户干等。卡密没被使用。
     executor_unavailable: '系统正在维护,暂时无法接单,请稍后再试。你的卡密没有被使用。',
     ordering_not_configured: '当前暂时无法创建订单,请稍后再试。',
-    order_route_unavailable: '当前暂时无法创建订单,请稍后再试。',
+    order_route_unavailable: '这个套餐暂未开放,请联系商家。',
     invalid_order_query: '请输入有效的卡密。',
     order_not_found: '没有找到对应订单,请检查输入。',
     session_replacement_not_allowed: '当前订单不需要更换账号。',
-    session_replacement_expired: '更换时间已过,请保留卡密联系人工处理。',
-    session_replacement_limit_reached: '更换次数已用完,请保留卡密联系人工处理。',
+    session_replacement_expired: '更换时间已过,请保留卡密联系商家处理。',
+    session_replacement_limit_reached: '更换次数已用完,请保留卡密联系商家处理。',
     funds_state_unsafe: '订单正在复核,暂时不能更换账号。',
     rate_limited: '操作太频繁了,请稍等一会儿再试。',
     body_too_large: '粘贴的内容过大,请检查是否多复制了东西。',
@@ -182,6 +186,17 @@
   }
   function readRememberedPublicNo() {
     try { return sessionStorage.getItem('pojia:lastPublicNo'); } catch { return null; }
+  }
+  // 客户自己的卡密也记在本标签页（sessionStorage，关掉标签即清）：刷新后接上进度时，
+  // 「订单号」那一行和查询框都用它，不再把内部单号 PJV1-… 塞给客户（D-386）。
+  function rememberCdk(cdk) {
+    try { if (cdk) sessionStorage.setItem('pojia:lastCdk', cdk); } catch { /* 隐私模式等 */ }
+  }
+  function readRememberedCdk() {
+    try { return sessionStorage.getItem('pojia:lastCdk'); } catch { return null; }
+  }
+  function forgetRemembered() {
+    try { sessionStorage.removeItem('pojia:lastPublicNo'); sessionStorage.removeItem('pojia:lastCdk'); } catch { /* 无妨 */ }
   }
   function productShortName(order) {
     const label = String(order?.product?.label || verified?.product?.label || '');
@@ -433,27 +448,40 @@
     // 原来那条提醒落在 856px，客户根本看不到，而它是硬规则要求必须看到的。
     el.run.classList.toggle('is-done', success);
 
-    // 标题永远是当前阶段名——出问题时也是，客户要知道卡在哪一步。
-    // 换掉的只有下面那行说明。
-    const name = stage ? stage.label : '处理中';
+    // 处理中（含复核）标题是当前阶段名，客户要知道走到哪一步；失败和需要换号是结论，
+    // 标题直接写结论、不再显示「正在××」和百分比（D-387 Lemon 定，打破原「标题永远是阶段名」）。
+    const conclusive = order.status === 'FAILED' || order.status === 'ACTION_REQUIRED';
+    let name = stage ? stage.label : '处理中';
+    if (order.status === 'FAILED') name = '这一单没有完成';
+    if (order.status === 'ACTION_REQUIRED') name = '需要换一个账号';
     let hint = view.hint;
     // 失败单分两种：钱没动的，卡密已经退回（或提交时会当场退回），客户自己就能
-    // 再来一次；点过付款、结果不明的，卡密留在原单上等人工核对，只能找客服。
+    // 再来一次；点过付款、结果不明的，卡密留在原单上等人工核对，只能找商家。
     const canRetry = order.status === 'FAILED' && order.canRetry === true;
     if (order.status === 'FAILED') {
       hint = canRetry
-        ? '这一单没有完成,没有扣费。你的卡密可以直接重新兑换。'
-        : '这一单没有完成。请保留卡密联系客服核对。';
+        ? '没有扣费,你的卡密可以直接重新兑换。'
+        : '请保留卡密联系商家核对。';
     }
+    // 换号：具体原因（已是 Plus / Session 无效）直接作为说明传进去。原来先写原因、170 毫秒后
+    // 切换动画又把说明改回通用文案，客户看不到真正的原因（D-386）。
+    const replacement = order.sessionReplacement || {};
+    const expired = replacement.expiresAt && new Date(replacement.expiresAt).getTime() <= Date.now();
+    const canReplace = order.status === 'ACTION_REQUIRED' && !expired
+      && (replacement.remaining == null || Number(replacement.remaining) > 0);
+    if (canReplace && order.actionRequired?.message) hint = order.actionRequired.message;
+    if (order.status === 'ACTION_REQUIRED' && !canReplace) hint = '更换次数或时间已经用完,请保留卡密联系商家处理。';
     if (!hint) {
       const base = stage ? STAGE_HINT[stage.code] : '';
       hint = success ? withProduct(STAGE_HINT.SUBSCRIPTION_ACTIVE, order)
         : `${base || ''}${base ? KEEP_OPEN : ''}`.trim() || KEEP_OPEN;
     }
-    swapStageText(withProduct(name, order), withProduct(hint, order));
+    // 换号原因是后端原话（「当前账号已是 Plus…」），不做套餐名替换，否则 5x 单会变成「已是 Pro 5X」。
+    const reasonHint = canReplace && order.actionRequired?.message && hint === order.actionRequired.message;
+    swapStageText(withProduct(name, order), reasonHint ? hint : withProduct(hint, order));
 
-    // 进度环
-    el.ringNum.hidden = success;
+    // 进度环：只在处理中显示百分比
+    el.ringNum.hidden = success || conclusive;
     el.ringTick.classList.toggle('is-on', success);
     if (success) {
       // 最后一跳原来最刺眼：阶段 8「正在确认订阅」（88→97）根本没有停留时间——
@@ -478,26 +506,19 @@
     el.runSublink.hidden = !success;
     el.runRisk.hidden = !success;
 
-    el.queryInput.value = order.publicNo;
+    if (currentCdk) el.queryInput.value = currentCdk;
     rememberPublicNo(order.publicNo);
+    rememberCdk(currentCdk);
     renderRows(order, { ticket: Boolean(view.ticket) });
 
     // 换号表单：remaining 为 null 表示不限次数（D-120），不能当成 0。
-    const replacement = order.sessionReplacement || {};
-    const expired = replacement.expiresAt && new Date(replacement.expiresAt).getTime() <= Date.now();
-    const canReplace = order.status === 'ACTION_REQUIRED' && !expired
-      && (replacement.remaining == null || Number(replacement.remaining) > 0);
     el.formReplace.hidden = !canReplace;
     el.retryOrder.hidden = !canRetry;
     if (canReplace) {
-      const reason = order.actionRequired?.message;
-      if (reason) el.stageHint.textContent = reason;
       el.replaceLimit.textContent = replacement.remaining == null
         ? '可以随时换,不限次数,订单会继续等待。'
         : `还可以换 ${replacement.remaining} 次`
           + (replacement.expiresAt ? ` · 截止 ${fmtTime(replacement.expiresAt)}` : '');
-    } else if (order.status === 'ACTION_REQUIRED') {
-      el.stageHint.textContent = '更换次数或时间已经用完,请保留卡密联系客服处理。';
     }
 
     showView('run', { allDone: success });
@@ -550,7 +571,7 @@
       }
       if (result.state === 'EXPIRED') {
         // 与 INVALID 分开：码是真的，过期了，让他找客服而不是反复核对
-        return fieldError(el.fieldCdk, '这张卡密已过期,无法继续开通。请联系客服处理。');
+        return fieldError(el.fieldCdk, '这张卡密已过期,无法继续开通。请联系商家处理。');
       }
       if (result.state === 'BOUND_TO_ORDER') {
         // 这张码已经有订单了。客户刚点过一次按钮，别让他到了新页面再点一次
@@ -562,10 +583,15 @@
         await runQuery(lookup, { button: el.cdkSubmit });
         return;
       }
+      // D-386：这个套餐现在不能下单（暂停接单 / 未开放 / 维护中），在第一步就说，
+      // 别让客户做完 Session 那一步才在最后被拒。后端没给这项时照常往下走，下单时仍会再判。
+      if (result.orderable && result.orderable.ok === false) {
+        return fieldError(el.fieldCdk, errText({ code: String(result.orderable.code || '').toLowerCase() }));
+      }
       verified = { cdk, product: result.product || null, state: result.state };
       el.sessionSub.textContent = result.state === 'NEEDS_SESSION'
         ? '之前那个账号不能开通,换一个免费账号:打开 Token 页面,把整页内容复制过来。'
-        : '打开 Token 页面,把整页内容复制过来,我们据此确认是哪个账号。';
+        : '打开 Token 页面,把整页内容复制过来,我们据此确认是哪个账号。请用当前没有付费订阅的账号。';
       showView('session');
       el.session.focus();
     } catch (error) {
@@ -597,6 +623,10 @@
 
   function checkSession(session) {
     if (!session || typeof session !== 'object' || Array.isArray(session)) return { error: INCOMPLETE };
+    // 浏览器里没登录时 Token 页面返回 {}：这不是「没复制全」，是还没登录（D-386）。
+    if (Object.keys(session).length === 0) {
+      return { error: '这个浏览器还没有登录 ChatGPT。请先登录要充值的账号,再打开 Token 页面复制。' };
+    }
     if (!session.user || !nonEmpty(session.user.id) || !nonEmpty(session.user.email)) return { error: INCOMPLETE };
     if (!session.account || !nonEmpty(session.account.id)) return { error: INCOMPLETE };
     if (!nonEmpty(session.accessToken) || !nonEmpty(session.sessionToken) || !nonEmpty(session.expires)) {
@@ -699,6 +729,7 @@
       el.sessionOk.hidden = true;
       pending.session = null;
       currentCdk = pending.cdk;
+      rememberCdk(currentCdk);
       pending = null;
       pollStart = Date.now();
       stageSeenAt = new Map();
@@ -741,6 +772,7 @@
   });
 
   el.retryOrder.addEventListener('click', () => {
+    forgetRemembered();
     stopPoll();
     stopRing();
     currentOrder = null;
@@ -767,7 +799,9 @@
     let session;
     try { session = parseSessionInput(el.replaceSession.value).value; }
     catch { return fieldError(el.fieldReplace, '内容格式不对,请重新复制整页 Token 页面内容。'); }
-    if (!session?.user?.email) return fieldError(el.fieldReplace, '请粘贴完整的账号 Session。');
+    // 与第 2 步同一套本地预检（D-386）：原来只看有没有邮箱，过期 / 不完整要等服务端报错才知道。
+    const checked = checkSession(session);
+    if (checked.error) return fieldError(el.fieldReplace, checked.error);
 
     setBusy(el.replaceSubmit, true);
     try {
@@ -777,7 +811,11 @@
       session = null;
       pollStart = Date.now();
       stageSeenAt = new Map();
-      renderOrder({ ...order, updatedAt: order.updatedAt || new Date().toISOString() }, { scroll: true });
+      // 换号接口只回「已受理」，立刻再查一次拿真实进度；查不到就按处理中先渲染，下一轮轮询补上。
+      let fresh = null;
+      try { ({ order: fresh } = await api.getStatus({ publicNo: order.publicNo || currentOrder.publicNo })); } catch { fresh = null; }
+      renderOrder(fresh || { ...currentOrder, ...order, status: 'PROCESSING', stage: undefined,
+        updatedAt: order.updatedAt || new Date().toISOString() }, { scroll: true });
       toast('账号已更换,订单继续处理。', 'success');
     } catch (error) {
       fieldError(el.fieldReplace, errText(error));
@@ -797,20 +835,23 @@
     try {
       const byPublicNo = value.startsWith('PJV1-');
       currentCdk = byPublicNo ? null : value;
+      rememberCdk(currentCdk);
       const { order } = await api.getStatus(byPublicNo ? { publicNo: value } : { cdk: value });
       currentOrder = order;
       rememberPublicNo(order.publicNo);
       // 设计稿的查询屏就地给答案，不把客户推进完整的进度页。只有订单还在
       // 跑的时候才跳过去——那时他要看的是实时进度，一个静态结论没用。
       if (order.status === 'SUCCESS') {
+        el.queryResult.dataset.kind = 'ok';
         el.queryResultTitle.textContent = `${productShortName(order)} 已开通`;
         el.queryResultSub.textContent = fmtTime(order.finishedAt || order.updatedAt)
           ? `开通时间 ${fmtTime(order.finishedAt || order.updatedAt)}` : '';
         el.queryResult.hidden = false;
         el.queryRisk.hidden = false;
       } else if (order.status === 'FAILED' && order.canRetry !== true) {
+        el.queryResult.dataset.kind = 'warn';
         el.queryResultTitle.textContent = '这一单没有完成';
-        el.queryResultSub.textContent = '请保留卡密联系客服核对。';
+        el.queryResultSub.textContent = '请保留卡密联系商家核对。';
         el.queryResult.hidden = false;
       } else {
         pollStart = Date.now();
@@ -875,8 +916,25 @@
   });
 
   // ------------------------------------------------------------- 初始
-  const remembered = readRememberedPublicNo();
-  if (remembered) el.queryInput.value = remembered;
+  // D-386：刷新、从别的 App 切回来（浏览器可能已回收标签页）时，本标签页里还在处理的那一单
+  // 自动接上进度——原来一律回到第 1 步，客户以为单丢了。已经结束的单不接（不把客户困在
+  // 旧结果里），只把卡密留在查询框。
+  async function resumeRemembered() {
+    const publicNo = readRememberedPublicNo();
+    const cdk = readRememberedCdk();
+    if (cdk) el.queryInput.value = cdk;
+    if (!publicNo) return showView('cdk');
+    try {
+      const { order } = await api.getStatus({ publicNo });
+      if (order.status === 'SUCCESS' || order.status === 'FAILED') return showView('cdk');
+      currentCdk = cdk || null;
+      pollStart = Date.now();
+      stageSeenAt = new Map();
+      renderOrder(order);
+    } catch {
+      showView('cdk');
+    }
+  }
   el.cdk.value = '';
   el.session.value = '';
   window.addEventListener('pageshow', (event) => {
@@ -889,7 +947,8 @@
     el.sessionSubmit.disabled = true;
     fieldError(el.fieldCdk, '');
     fieldError(el.fieldSession, '');
-    showView('cdk');
+    resumeRemembered();
   });
   showView('cdk');
+  resumeRemembered();
 })();
