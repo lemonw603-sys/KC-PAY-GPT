@@ -5558,3 +5558,95 @@ Lemon：先推进 5x；Pro 20x 现在官方不让订阅，是官方的问题，�
 
 Lemon 指出 D-370 的 $104 是用含 12% VAT 的 ₱6,490 算的；填完免税账单后税为 0。核对：Plus 未填账单 ₱1,100 → 填后 ₱982.14（=1,100/1.12，与 rehearsal「税 0」一致）；5x 同理 ₱6,490/1.12 = **₱5,794.64**（即 D-369 结账页小计），按 62.3 PHP/USD 实扣约 **$93**。现 5x 开卡 $100 / 最低余额 $95 足够，**不调**。D-370 原「不调会拒付」的判断作废。
 Lemon：**暂不做 5x 真钱实验，等客户有单**（同 D-366 思路：第一张真实 5x 客户单即真钱验收）。
+
+## D-371（2026-09-25 01:3x UTC+8 ＝ 09-24 17:3x UTC）块 6 Pro 5x 代码完成（隔离分支，未发布）
+
+Lemon「1. 同意 2. 先不开卡」（批白名单；不开 5x 卡）。代码在分支 `block6-pro5x`（`71f6ae3`，工作树 `.claude/worktrees/block6-pro5x`），**未合 main、未发布、常驻池未重启**——隔离是为了常驻池（从 main 目录跑）意外重启时不会载入未演练的代码。
+做法（只动任务书白名单 4 个文件 + 测试；付款前三件、`chatgpt-checkout-navigator.js` 未动——执行器已按 `job.metadata.plan` 导航）：
+- 常驻池：所有套餐都走 `CANCEL_RENEWAL`（`postPlusActionForPlan` 导出）；不再有套餐进 `UPGRADE_DIALOG_STOP`。
+- 组合层：结账按订单套餐选档；**仍按旧两步走配置的调用方（单单工具 `MANUAL_20X_HANDOFF`）第一步照旧买 Plus**（`checkoutPlanForAction`），不悄悄改它们的行为。
+- 付款后确认：`targetPlan`；pro_5x 只认「含 pro、不含 plus」（5x 结账 `plan_name=chatgptprolite`，**付款后账号上的套餐串未观察过**）。对不上＝未确认 → `POST_PAYMENT_UNKNOWN` → 人工，**只付一次、不取消续费、不重付**（测试以真执行器 + 真核实器组合证明）。证据 kind 仍 `PLUS_ACTIVE`（下游按它认），加 `targetPlan` 字段。
+- 付款后复核（`live-post-payment-recovery.js` 不在白名单、未改）：常驻池给它传 `verifierFactory`，套餐取自同一次运行的交易读取器（按订单解析）。否则 5x 单第一次没确认到就会全部落人工。
+- 交易金额按套餐：pro_5x PHP 5,500–6,100 / USD 85–102（免税 ₱5,794.64 ≈ $93；**含 VAT 的 ₱6,490 / $104 不认**）；pro_20x 不给区间（任何扣款都进人工）；Plus 区间不变。
+验：browser-mvp 全量 306 过 / 0 败（9 跳过）；v1 全量 1027 / 0（65 跳过）。新增 6 条测试，4 处改动逐一换回旧逻辑，新测试全部变红（变异验证）。
+**未完成（D-254 要求）**：一次演练。5x 演练要 5x 卡（Lemon 不开）；Plus 回归演练要 Lemon 在客户页用 Lane 3 号建单，且演练期间常驻池须暂停（否则付款模式的常驻池会抢单真付）。
+**未验证**：5x 免税后零税报价（D-369 PoC 只到结账页、没填账单）；5x 付款后账号套餐串。
+**遗留（不在白名单，未动）**：单单工具 `production-live-worker.js` 的交易读取器不传套餐——用它真付 5x 会对账不上进人工（安全）；`BROWSER_UPGRADE_STAGE` 配置与两步走旧代码待清理；v1 侧客户页成功文案按套餐、`browser-admin-service.js` 旧 20X 人工确认未动。路线 305 仍关（CURRENT_STATE：2026-09-17 起 `accepts_new_orders=0`）。
+
+## D-372（2026-09-25 09:0x UTC+8 ＝ 01:0x UTC）块 6：导航加「Pro 必须亲手选档」拦截；5x 不填卡验不了零税；KC-PAY-GPT 独立文件夹封存
+
+Lemon「1 同意 2 封存」（前一轮「1 做 2 A 3 可以」）。
+1. **导航拦截（分支 `block6-pro5x` `0e97bab`）**：Pro 单在这次导航里没有「选档 + 点升级」就到了结账页 → `ContractError`（执行器归为 `CHECKOUT_NAVIGATION_FAILED`，付款前失败）。起因：5x 只填地址脚本 8 次运行里 3 次点页头「Upgrade」直接落到结账页、没经过选档。其中 01:02 UTC 一次页面先 `GET` 到一张**已有的未付款 5x 结账单**（`chatgptprolite`）——落地的是先前没付的 5x 结账，不是 Plus；为何会直接回到它原因未知。Plus 不受影响。新测试对旧代码变红；browser-mvp 全量 307/0、v1 1027/0。
+   **代价**：客户号上已有一张没付的结账单（如 5x 付款前失败后重试、或客户自己开过）时，5x 单会被停下 → 按现有付款前失败处理（`RECHARGE_FAILED` + CDK 退回 + 卡释放）。可改进：直接落地时读结账页上选中的档位，对得上就放行（未做，待 Lemon 定）。
+2. **5x「只填地址看税」（Lemon 批 A）做不成**：结账页 20 个框里没有任何地址字段，只有 Stripe 卡号框（`artifacts/poc-pro5x-billing-tax/pro_5x-2026-09-25T01-02-37-495Z.json`）；地址栏应要填卡后才出现（推断；生产顺序本就是先卡后地址）。**5x 免税后零税仍未验证**，只能靠带卡演练或第一张 5x 客户单。本轮所见：5x 结账 `plan_name=chatgptprolite`，填地址前 ₱5,794.64 + VAT ₱695.36 = ₱6,490.00（与 D-369 一致）。每次 `cardFieldsWritten 0 / submitCalls 0`。
+3. **KC-PAY-GPT 独立文件夹封存**：`~/code/KC-PAY-GPT-standalone` 不再开发、不删；放 `ARCHIVED.md`，`~/code/PROJECTS.md` 登记「已封存」。D-360「KC 独立业务线」结束。
+4. **Plus 回归演练**：17:45:53 UTC 起常驻池暂停（付款开关 false、下单心跳检查 false、6667 已退出），等 Lemon 用 Lane 3 号在客户页建单；到 01:0x UTC 未见新单。现状见 CURRENT_STATE。
+
+## D-373（2026-09-25 09:3x～10:0x UTC+8 ＝ 01:3x～02:0x UTC）恢复常驻池、改天演练；Pro 直接落地结账页改为「读页面档位，对上放行」
+
+Lemon「1B 2 现在做」。
+1. **恢复**：复核暂停期新单 0、活动 run 0 → 01:32:00 UTC 正式路径开付款开关（复核 true / profile true / 审计行）→ supervisor 01:36:38 UTC 拉起 **PID 91075**（PAY/lane-1，cwd main `browser-mvp`，代码与此前 6667 相同，未含块 6）→ 心跳 01:38:35 UTC 新鲜 → 01:39:01 UTC 开回下单心跳检查（dry-run 后 apply，复核 true）→ `EXECUTOR_OFFLINE` 01:36:53 UTC 自动 RESOLVED → `state-check` 一致。插曲：supervisor 01:32:28 那轮报「有残留 worker」，推断是我等待循环的命令行含 `production-live-pool-worker` 被它的 `pgrep -f` 匹配（未证实），下一轮即通过。**Plus 回归演练改天：Lemon 建演练单前先告诉执行者**（池在付款模式，不先停会被真付）。
+2. **拦截改进（分支 `aad6980`）**：Pro 单没亲手选档就落到结账页时，读结账页档位单选——恰好一个 `aria-checked="true"`、`value` 是该套餐结账名（5x `chatgptprolite`、20x `chatgptpro`）、文字以档位开头——三项都对才放行（记 `tier-verified-on-checkout:5x`），否则仍付款前停下。页面结构先对真实 5x 结账页只读核对（`button[role=radio]` + 隐藏 `input[type=radio]`，同值）。实跑：落在号上已有的 5x 未付结账单时被正确认出并放行。测试：5 种拒绝 + 1 种放行；4 处变异（永远放行 / 永远拒绝 / 不查 value / 不查文字）全变红。browser-mvp 全量 308/0、v1 1027/0。
+3. **观察（未改）**：11 次运行里另有 2 次在导航早段失败（个人菜单超时 1、个人菜单元素点击时已脱离页面 1），都在付款前。这是导航原有的不稳定，Plus 单同样会遇到；频率与原因未查。
+
+## D-374（2026-09-25 10:xx UTC+8 ＝ 02:xx UTC）导航开头偶发失败：根因坐实并修（分支 `0f483ef`，未发布）
+
+Lemon「1 现在查」。
+**证据**：①11 次 PoC 里 2 次失败的共同点＝开始时页头「Upgrade」未渲染（`hdr=[]`），其余 9 次都有。②Lane 3 时间线诊断（页面刚加载即导航，每 0.5 秒记页头/弹框/网址）3 次复现 1 次：页头 4.5 秒时没有 → 导航只看一眼即改走 `#pricing` → 6.3 秒页头出现但已不用 → `#pricing` 始终没弹定价框 → **18.6 秒页面自己跳到号上那张未付 5x 结账页** → 导航只在等弹框，错过已到结账页，转去结账页上找个人菜单直到 65 秒超时（「profile menu control timed out」）。③个人菜单按钮在已加载页面上是两个 `div role=button tabIndex 0`，能过安全检查——备用路本身不坏，坏在时机。④生产 `browser_runs` 有 7 次 `CHECKOUT_NAVIGATION_FAILED`（09-08～09-14），库与 WAL 只存原因码、不存原文，09-12 那次从导航开始到失败约 122 秒（≈ 生产 120 秒导航超时），**具体原因查不回来**；go-live 日志里 09-09～09-11 的是另一种（「checkout or questionnaire transition timed out」）。
+**修**：①先有界等（≤10 秒）入口出现（已到结账页 / 弹框 / 页头按钮）再决定走哪条路；②等 `#pricing` 时，结账页已就绪也算到达（记 `landed-on-checkout`），Pro 单仍须过 D-373 的页面档位核对。点击安全规则未动。新测试 2 条，旧逻辑各自变红；browser-mvp 全量 310/0、v1 1027/0。修后 Lane 3 实跑 5/5 到达 5x 结账页。
+**未做（建议）**：①生产导航失败只存原因码、不存报错原文——以后再出无从查（改在执行器/证据层，不在块 6 白名单）。②Plus 单若号上挂着未付的 Pro 结账单，点页头可能直接落到那张 Pro 结账页，Plus 路径目前不核对页面套餐（报价核对不看套餐；Plus 卡余额不够 Pro 价多半被拒 → 锁定转人工，不重付）。可在 Plus 回归演练时顺便记下真实 Plus 结账页结构，再给 Plus 也加页面核对。
+
+## D-375（2026-09-25 UTC+8 上午）导航失败记原因；Plus 不加结账页套餐核对
+
+Lemon「1 同意 2 我不太想加，因为我认为可能会带来更多的不确定性」。
+1. **导航失败记原因（分支 `b3f1d37`，白名单经 Lemon 同意扩到 `browser-mvp/src/executor.js`）**：`CHECKOUT_NAVIGATION_FAILED` 的 fail-closed 事件（落 `browser_run_events.summary_json` 与 WAL）带 `navigationError`（报错首行；网址只留域名；JWT/≥32 位长串/≥8 位数字串替换；≤200 字）与 `navigationActions`（导航自己的动作名，格式白名单，≤12 个）。不含页面内容、Cookie、请求、响应。其他失败原因码不变（仍只存原因码）。测试 2 条；3 处变异（不落库 / 不带步骤 / 不清洗网址）全变红；browser-mvp 全量 312/0、v1 1027/0。
+2. **Plus 不加结账页套餐核对**（Lemon 定）。已知风险照 D-374 记录：号上挂着未付 Pro 结账单时 Plus 单可能落到 Pro 结账页；报价核对不看套餐，多半因卡余额不够被拒 → 锁定转人工，不重付。
+
+## D-376（2026-09-25 UTC+8 下午）接班机制整修；常驻池改跑固定版本目录；旧工作区盘点
+
+Lemon「以上同意」（对四项：修接班机制、池改跑固定目录并与块 6 那次重启合并、旧工作区盘点后批了再清、块 6 演练等他说）。
+1. **接班机制（已做，`c85d6d9`）**：起因是按接班流程实走时发现 `state-check.sh` 报「一致 ✓」而事实表 token 行写「已更新并生效」、现场 `PROVIDER_TOKEN_EXPIRED` OPEN；另 3 行（每卡上限未落地 / 告警 113 / Worker PID 75228）过期无人发觉——脚本只查 14 项，其余行没人管。改：state-check 补 token 告警、按产品上限、bark 实际 release、worker 四个写开关（只在服务器 grep 四个键）、本机常驻池 PID 与 cwd；脚本不查的行超过 7 天列 `[陈旧]`；结尾一行写明「脚本核对 N 项（M 行）/ 另 K 行靠手工」。wrapup-check 把陈旧行列为提醒。四处变异（token / bark / 写开关 / PID）全部报漂移。事实表 30 余行按现场重写，3 行一次性历史移到 `archive/2026-09/CURRENT_STATE_rows_removed_2026-09-25.md`。browser-mvp 全量 309：300/0/9。
+2. **PROJECT_MAP 压回一页**：统一用「块」编号（旧八步 ⑦=块 6、⑧=块 7），只留块序与状态、下一步、未完成欠账、不做；旧版原文 `archive/2026-09/PROJECT_MAP_pre_onepage_2026-09-25.md`。
+3. **常驻池固定版本目录（方向定，切换未做）**：`scripts/pool-release.sh`（不改 browser-mvp），任务书 `tasks/2026-09-25-pool-pinned-release.md`。切换并入块 6「合 main → 发布 / 重启常驻池」那一次。待 Lemon 确认：目录放 `~/pojia-pool`；改 LaunchAgent。关键约束：worker 未退出前不许动 launchd（同进程组、exit timeout 5，会连带强杀）。
+4. **旧工作区盘点（只读，清理未做）**：12 个 worktree / 21 个本地分支；可安全删 5 个 worktree（其中 2 个先搬发布包，`incidents/*/prepare.txt` 引用）；4 处有 main 没有的提交（9128 `codex/browser` 49 条、mockaddress 45 条、browser-live 1 条、a088 游离 1 条）、c566 有约 66M 未提交内容——建 `archive/*` 引用或打包后再删，等 Lemon 批。
+5. **token 显示「失效」的原因**：贴 token（`setToken`）只写密文、清供卡故障，不关 `PROVIDER_TOKEN_EXPIRED`、不写 `admin_setting_events`；告警只在每小时快照同步成功时关。所以贴完到下一轮同步前，告警与工作台 token 格仍显示失效（最长约 1 小时）。
+
+## D-377（2026-09-25 UTC+8 傍晚）四项全批：池目录与 LaunchAgent、旧工作区清理、贴 token 当场验证；演练晚些
+
+Lemon「以上全部同意，5 等晚一些再做」。
+1. **常驻池固定版本目录放 `~/pojia-pool`**；**块 6 发布那次重启时改 LaunchAgent**（先关付款开关、等 worker 自己退出再动 launchd），步骤按 `tasks/2026-09-25-pool-pinned-release.md`。到时仍当场确认一次再动。
+2. **旧工作区清理（已做）**：先存档后删除。main 没有的提交存为 `archive/*` 分支（6 个，已推 origin，含游离提交 `d7fd651b` 与 `stash@{0}`）；9128 / c566 的未跟踪与被忽略内容打包到 `~/archive/AI充值业务-worktrees-20260925/`（700/600 权限，文件数与磁盘逐一对上：100/100、5119/5119，另存 c566 已跟踪改动 patch）；两个发布包 `diff -r` 一致地搬到主工作区 `artifacts/release-candidate-20260916-*`。删除 10 个 `~/.codex/worktrees` 工作树与 6 个空目录、17 个本地分支（合并的用 `-d`；未合并的都先核对存档分支指向同一提交或已被包含）。剩余：main、block6-pro5x、upstream-baseline、codex/inflight-20260906-abandoned、6 个 archive/*。去向表在 `archive/INDEX.md` 末尾。
+3. **贴 token 后当场验证（代码完成，未发布）**：保存后用新 token 读一次卡台钱包（只读）：卡台认 → 关 `PROVIDER_TOKEN_EXPIRED`（VALID）；不认 → 提示重贴、不动告警（REJECTED）；连不上 / 超时 10 秒 → 提示下一轮同步再验、不动告警（UNKNOWN）。开告警与推送仍只由每小时同步判定。实现放在只有网页后台加载的 `services/highvcc-token-save-service.js`（server.js 组装），**付款池加载的 68 个模块一个没改**（第一版写进了 `highvcc-card-service.js`，查出它在池的加载范围内后撤回重做）。「卡台不认」的码抽成 `domain/highvcc-token-trouble.js` 一份，快照同步脚本同用。页面按三种结果给大白话提示，`admin.js?v=96`。测试：新 6 条走真 `highvcc-card-service` 只换网络与库；变异 6 处全被抓；v1 全量 1099：1034/0/65；界面文案检查通过。发布等 Lemon 批。
+4. 块 6 Plus 回归演练：Lemon 说晚些再做。
+
+## D-378（2026-09-25 UTC+8 晚）块 6 Plus 回归演练：两处导航问题一改一不改；卡在「付款表单加载失败」，暂停中
+
+Lemon「1 并进做 2 现在做」→ 演练（贴 token 当场验证的发布并入块 6 那次）。三张演练单全部未付款（付款痕迹 0）：
+1. `PJV1-pcNK…`：我按交接页先跑了 `run-browser-preflight.sh once`，它领走这张已在 RECHARGE_PROCESSING 的单（job `brjob:…`），3 号窗口有多个 ChatGPT 页 → `PROFILE_PAGE_AMBIGUOUS` 安全中止、单判失败、CDK 自动退回、卡放回。09-23 那次演练没跑 preflight；**演练不再先跑 preflight**（RUNBOOK §2 已改）。
+2. `PJV1-W6lU…`（企业邮箱注册的号）：价格框默认停在 Business 栏，找不到 Plus 按钮（D-375 记下的原因 `找到 0 个`，actions `pricing-opened`）。点 Personal 后 Plus ₱1,100 出现。**Lemon 定：不改**（特殊号，不为它加分支）；记欠账，触发＝第一张真实客户单因「找不到 Plus 按钮」失败时。企业邮箱号的真客户单会安全失败、需人工换号。
+3. `PJV1-kRso…`（普通免费号）：价格框已开、Plus 按钮当时是灰的 → `plus upgrade control is disabled`，几分钟后同一按钮可点。**Lemon 选 B：等按钮变可点**——每 0.1 秒看一次、最多 10 秒、变可点只点一次、等不到按原样停、绝不点灰按钮（块 6 分支 `56fa9e7`，变异 4/4，分支全量 323：314/0/9）。改后导航成功点到「Upgrade to Plus」，但 ChatGPT 页面显示 **「Configure your plan — Unable to load payment form. Please try again.」**，网址仍是 `/`（未到 `/checkout/`），导航一直等结账页直到运行租约过期；连续两次一样（中间一次比特浏览器 `/browser/list` 临时失败）。经同一菲律宾出口 curl Stripe 三个地址均 200。**原因未知**；真实客户单若同样如此会安全失败（未验证）。
+收口：后两张用 `close-rehearsal-order.mjs`（付款痕迹全 0）CLOSED，CDK 退回、卡 8718 放回；「下单查付款池」15:26 UTC 开回。**付款开关仍关、常驻池未起**（客户下单看到维护），恢复与否待 Lemon 定。
+顺带：state-check 新加的「本机池未运行」比对值原为纯中文，被取值守卫当成失败，已改为 `worker 0 个`。
+
+## D-379（2026-09-26 UTC+8 凌晨）先做导航失败证据包，再做对照实验；Playwright 升级以后单独做
+
+Lemon「以上同意」：① 恢复生产（15:45 UTC 已做）；② 先做「失败证据包」再做对照实验（立刻点 vs 按钮可点后等 5 秒），任务书 `tasks/2026-09-25-navigation-failure-evidence.md` 先给 Lemon 看、批了再动手；③ 3 号窗口 Lemon 手动点出的未付结账页标签已关（只关标签）；④ Playwright 1.59→1.63 以后单独做。
+依据：GitHub 调研 `browser-research/2026-09-25-browser-automation-oss-survey.md`——不换框架，先用 Playwright 自带的取现场能力；AI 浏览器代理不进付款链路；trace 会录请求头（含登录 Cookie），第一期不用。
+对照观察（只读）：Lemon 手动点进的是标准结账页 `/checkout/openai_llc/oaics_…`（Stripe 框全部加载、无报错）；自动点两次都是网址不变的页内「Configure your plan — Unable to load payment form」。是否由 `56fa9e7`「一可点就立刻点」引起：未知，待对照实验。生产不受影响（池跑 main，不含该提交）。
+
+## D-380（2026-09-26 UTC+8 凌晨）证据包不限制存什么（受控放开「日志不得出现 token」）
+
+Lemon：「我们不限制不能存的东西，如果这么多的限制会严重阻碍我们项目的推进」。放开：本机导航失败证据包含 Playwright 完整 trace（请求头、Cookie、token、返回内容、邮箱、截图、完整 HTML），生产与演练都开。保留一条：卡号 / CVV 不进证据——结构性做到（录制只从开始导航到进结账页，成功即丢弃，填卡在录制之外），不增加过滤成本。代价（已告知）：本机证据文件泄露时，客户 ChatGPT 账号在 token 有效期内可被登录；缓解＝仅本机、700、14 天自动删、不进 git 不上传不贴聊天。CLAUDE.md 硬约束句已加例外说明。实测依据：connectOverCDP 下 trace 可录，假 Authorization 头与服务器返回内容均在 trace 内。任务书已按此改写并开工（`tasks/2026-09-25-navigation-failure-evidence.md`）。
+
+## D-381（2026-09-26 UTC+8 凌晨）对照实验 A：「一可点就立刻点」这次进了结账页；证据包首用暴露一个 bug 已修
+
+Lemon 选 A（他在 3 号窗口手动登录一个没用过的普通免费号，不建单、不停池）。16:57 UTC 用块 6 分支导航代码（`56fa9e7`「一可点就立刻点」）跑：actions `pricing-already-open → upgrade-requested`，41 秒到标准结账页 `/checkout/openai_llc/oaics_…`，结账内容在、Stripe 框 5 个、无「Unable to load payment form」；没碰卡。**「点太快导致付款表单失败」的推测不成立（至少不充分）**；B（等 5 秒）不再跑（A 没失败，且号上已有未付结账单会干扰）。09-25 两次失败的原因仍未知，候选（均未验证）：那个号本身、执行器完整路径（注入 Session、身份探测等）、当时 ChatGPT 一侧的临时问题。
+成功时的关键请求（从 trace 读出，作以后对照）：`POST chatgpt.com/backend-api/payments/checkout` 200 → `/checkout/openai_llc/oaics_….data` 200。下次失败先看这一条。
+证据包首用发现：真页面总有没结束的请求（长连接、Stripe 轮询），`network.json` 那步整体超时没存（trace 里网络记录完整，没丢证据）。修：每个请求最多等 300 毫秒、等不到标 pending（`103f7d2`，新测试 + 变异抓到；真页面复验 91 行、12 pending、取证 0.67 秒；分支全量 335：326/0/9）。
+
+## D-382（2026-09-26 UTC+8 凌晨）块 6 Plus 回归演练通过（D-254 条件满足）
+
+Lemon「别频繁浪费新 session，能验证的都验证」→ 不用新号：复用对照实验 A 那个号（他在 3 号窗口取 `/api/auth/session`、客户页建单，Session 不经 AI）。演练前排掉会白跑的因素：演练脚本租约默认 60 秒而常驻池是 900 秒（`run-live-pool.sh:42`；09-25 两次失败都在等结账页时租约先到期）→ 本次运行时带 `BROWSER_WORKER_LEASE_SECONDS=900`（不改代码）；3 号窗口残留标签已关；不跑 preflight；证据包开着。
+结果（分支 `103f7d2`，17:22:31～17:23:55 UTC，订单 `PJV1-v3tiEHgJecMDAinmycZk`）：放入 Session → 身份核对（FREE、identityMatched）→ 卡准备 → 导航到结账页（checkoutCreated）→ 无保存的付款方式 → 填地址/邮箱/卡 → **PRE_SUBMIT_STOPPED，PHP 982.14 / 税 0.00**；PAYMENT_SUBMIT 0；导航成功后录制丢弃、未产生证据目录（真流程验证）。收口：`close-rehearsal-order.mjs` 付款痕迹全 0 → CLOSED、CDK 退回、8718 放回；17:25 UTC 开回检查与付款开关，池 42676 17:25:48 UTC 拉起。
+覆盖范围：点升级→结账页加载由 D-381 实验 A 在同一号上验证；本次覆盖其余全链。**未覆盖**：5x 专属逻辑（无 5x 卡）、真实付款与取消续费。09-25 那两次「付款表单加载失败」原因仍未知。
+下一步按 HANDOFF 逐项问 Lemon：合 main → 服务器发布（含 D-377「贴 token 当场验证」`3a633f5`）→ 常驻池切 `~/pojia-pool` 固定目录并改 LaunchAgent（D-377 已批，当场再确认）→ 重开 305（先定 5x 卡从哪来）。另：演练脚本默认租约应与常驻池一致（改 `run-live-rehearsal.sh`，browser-mvp 白名单，待批）。

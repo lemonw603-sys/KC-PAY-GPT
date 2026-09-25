@@ -1,47 +1,38 @@
 # 接班一屏（HANDOFF_NOW）
 
-更新：2026-09-24 11:3x（UTC+8）＝ 03:3x UTC。当前执行顺序以 **D-352** 为准，「可离开」第一条以 **D-366** 为准。本窗口（acd69d1e）写。
+更新：2026-09-26 01:3x（UTC+8）＝ 09-25 17:3x UTC。执行顺序以 **D-352** 为准，「可离开」第一条以 **D-366** 为准；本窗口 D-376～D-382。
 
-## 现在的状态（证据：CURRENT_STATE.md；以下 03:34 UTC 现查）
+## 现在的状态（17:26 UTC 现查；明细见 CURRENT_STATE.md）
 
-- 生产 release **`20260924-block7-batch2-0d06f41`**，迁移最新 061（回滚点 `20260924-block7-batch1-eadcd37`；回滚到删表前的版本须先重建表，见 CURRENT_STATE）。默认路线 BROWSER（D-353），Browser Plus 用 highvcc（backup-a）。
-- 可分配 Plus 卡 1 张（highvcc 8718，能充 3 单）；钱包 HNSKJ $104.71 / highvcc $34.24。非终态订单 1（WAITING_FOR_SESSION，无卡）。
-- **HNSKJ 供卡故障仍在**（`CARD_STOCK_PURCHASE_DISABLED`；原因＝HNSKJ 卡台自身维护中，Lemon 告知）；Lemon 已把 HNSKJ Plus 水位设 0（D-363）。不影响 Browser 接单。
-- 本机常驻池 PID 6667 + supervisor 61962 在跑，Browser 心跳 03:35 UTC 新鲜。
+- 生产正常：付款开关 true（17:25:01 UTC 开回），常驻池 PID 42676（17:25:48 UTC 拉起，main 工作区代码），心跳新鲜；「下单查付款池」true。
+- 生产 release **`20260924-block7-batch2-0d06f41`**，迁移 061。默认路线 BROWSER（Plus 用 highvcc 卡）。可分配 Plus 卡 1 张（8718）；非终态订单 1（旧的 WAITING_FOR_SESSION，无卡）。highvcc token 有效（08:15 UTC 恢复）。HNSKJ 供卡故障仍在。路线 305/306 关。
 
-## 本窗口已完成并发布（D-363～D-366）
+## 块 6：Plus 回归演练已通过（D-382），下一步逐项问 Lemon
 
-- ⑤ 故障重试不再先关缺卡告警；缺口真补上/真开出卡才关。
-- ①～④：卡与钱每格一行（按 Lemon 屏幕 1440×730）；两台钱包「上次余额 + 查询时间 + 刷新余额」；成功提示 4 秒消失；「更新登录」先查登录；卡片页 highvcc 格直接显示余额。字体 B（12px/500，数字正文字体）。
-- 欠账 16（逐个候选 + 一致排序）、17（转台只替等卡单）；同台「卡台故障」推过则「缺卡但开不出来」不另推。
-- 自检补漏：`state-check.sh` 加两台 Plus 水位 + HNSKJ 故障状态。
+- 分支 **`block6-pro5x`（`103f7d2`，已推送，未合 main、未发布）**：`b3f1d37` + 等灰按钮（`56fa9e7`）+ 导航失败证据包（`f640f9c`、`103f7d2`）。
+- 演练（17:22 UTC，订单 `PJV1-v3tiEHgJecMDAinmycZk`，已收口）：PRE_SUBMIT_STOPPED、PHP 982.14 / 税 0、付款提交 0。点升级→结账页那段由 D-381 实验在同一号上验证。未覆盖：5x 专属、真付款与取消续费。09-25 两次「付款表单加载失败」原因仍未知（证据包上线后再出现会有完整现场）。
+- **下一步（每步先问）**：① 合 main；② 服务器发布（含 `3a633f5` 贴 token 当场验证）；③ 常驻池切 `~/pojia-pool` 固定目录 + 改 LaunchAgent（D-377 已批，当场再确认；步骤见 `tasks/2026-09-25-pool-pinned-release.md`，worker 未退出前不许动 launchd）；④ 重开 305（先定 5x 卡从哪来；欠账 1、2）。
+- 待批小改：`run-live-rehearsal.sh` 默认租约 60 秒 → 与常驻池一致 900 秒（本次靠运行时环境变量绕过）。
+- 演练步骤（RUNBOOK §2）：不跑 preflight；`BROWSER_WORKER_LEASE_SECONDS=900 run-live-rehearsal.sh once <orders.id>` 从分支目录跑；开跑前关 3 号窗口残留 chatgpt.com 标签；演练号优先复用（结账单挂在账号上，换窗口不会变干净）。
 
-## 下一可执行项
+## 本窗口做完的
 
-1. **块 7 删表已完成**（D-367，两批：迁移 060 删 5 表、061 删补余额线 2 表 + 开关；补余额两个定时任务停用并删 unit）。剩余：`checkout_artifacts` / `browser_artifact_secrets` 并入块 6；块 7 只剩「可离开」收尾＝等第一张真实客户单（下一条）。
-2. **「可离开」第一条（D-366）**：等第一张真实客户 Plus 单。来单 Bark 会推 → Lemon 开窗口 → 执行者按 RUNBOOK §1 全程盯、逐项对照 `contracts/2026-09-18_delivery-criteria-contract.md`；此后数「连续 10 单真实客户单无人介入」。不自费、不需 free 号。
-3. **块 6 = Pro 5x**（D-370；20x 官方暂停）：任务书 `tasks/2026-09-25-block6-pro5x-browser.md`（白名单 5 个 browser-mvp 文件 + 测试，付款前三件不动）。**待 Lemon**：批白名单；演练前置（Lane 3 号的 Session 由他在客户页建单；5x 演练要不要开一张 $100 的 5x 卡）。5x 卡金额不用调（免税后约 $93）；5x 真钱等客户单。
+- D-376：state-check 补 6 类检查与陈旧行提醒；事实表逐行对现场；PROJECT_MAP 压一页；`scripts/pool-release.sh`（未启用）。
+- D-377：旧工作区清理（存档后删，去向 `archive/INDEX.md` 末尾）；贴 token 当场验证（main `3a633f5`，**未发布**）。
+- D-378：演练经过；企业邮箱号欠账（地图欠账 15）。
+- D-379～D-382：证据包（放开存储限制）、对照实验 A、证据包首用修 bug、演练通过。
 
-## 下一件（Lemon 2026-09-24 定）
+## 已定 / 禁区
 
-- **KC-PAY-GPT 评估已出**（`reviews/2026-09-24-kc-pay-gpt-evaluation.md`）：它就是本仓库根目录封存的旧代码（29/31 文件逐字节相同）；本地路线＝`browser-mvp` 的前身且 Plus 裸调结账接口 400，不再单独做；第三方路线＝另一个 ZZSHU 式代充商，唯一增量是可能接受 highvcc 卡。**待 Lemon 定**：第三方路线试不试（需买 API Key + 一次小额真钱受控测试）、Lane 3 免费测试号能否用于块 6 PoC/演练。
-
-## 已定不做 / 禁区
-
-- 付款前三件（`billing-address-fill.js` / `live-chatgpt-payment-adapter.js` / `payment-executor.js` submit 段）不改（D-254）；browser-mvp 改动走任务书白名单。
-- 不重开：D-248、D-240、D-253、D-249、D-275、D-306、D-359 裁定。资金与生产动作当次确认；**发布先问**。
-- 回复 Lemon：开头三点定位，**结尾一节「要你决定的」列全**（AGENTS.md，2026-09-24）；排版以 1440×730 为准、格内不换行（DESIGN.md）。
-
-## 待 Lemon 定 / 待他做
-
-- `DESIGN.md`「概览」一节的措辞核对（上一窗口遗留）。
+- 付款前三件不改（D-254）；browser-mvp 改动走白名单 + 全量测试 + 演练；常驻池重启、发布、开关、LaunchAgent 先问。
+- Plus 不加结账页套餐核对（D-375）；企业邮箱号 Business 栏这次不改（D-378）。
+- 回复 Lemon：开头给定位、话要短、大白话，结尾一节「要你决定的」列全。
 
 ## 未验证边界
 
-- HNSKJ「刷新余额」成功路径未在生产点过（本机无卡台凭据，只验了失败态）；Lemon 第一次点即首次真跑。
-- 欠账 16/17 与「故障盖住缺卡」只有单测、隔离 MySQL 与重演证据，生产无真实触发样本。
-- 当前 release 真实付款、取消续费、付款不明恢复、Browser 崩溃补核均无真单样本（`UNVERIFIED_LEDGER`）。
-- FB-04：1657 / 3159 / 7402 三张 highvcc 卡 Lemon 尚未销卡（不急）。D-352 六条结构性问题中未随块 3 处理的仍只在代码层。
+- 当前 release 真实付款、取消续费、付款不明恢复、Browser 崩溃补核均无真单样本。
+- 09-25 两次「付款表单加载失败」的原因、是否影响真实客户单：未知。
+- 事实表「已知未修」行是 09-10 旧清单，未逐项复核。
 
 ## 每块收尾
 

@@ -89,6 +89,8 @@ submitCalls=0
 
 以下证据位于未跟踪 `artifacts/`，不会混入 Git 提交：
 
+> 2026-09-25（D-377）：9128 工作树已删除，这两个文件现在在 `~/archive/AI充值业务-worktrees-20260925/9128-untracked-and-ignored.tgz` 内（同相对路径 `artifacts/browser-checkout-observe/2026-08-26-live/`）。
+
 - `/Users/lemon/.codex/worktrees/9128/AI充值业务/artifacts/browser-checkout-observe/2026-08-26-live/checkout-readonly.png`
 - `/Users/lemon/.codex/worktrees/9128/AI充值业务/artifacts/browser-checkout-observe/2026-08-26-live/checkout-readonly-sanitized.json`
 

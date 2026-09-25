@@ -32,7 +32,7 @@
 - 任何付款执行器在提交结果不明确时都进入 `SUBMIT_UNKNOWN`，禁止自动重试、换卡或换执行器；Browser 点击付款后崩溃必须先对账，不能重新点击。
 - 停止新订单与追踪已有订单是两个独立开关；停单不能停止状态轮询和退款同步。
 - 客户侧不提供退款查询；退款、交易和余额提取仅在内部后台处理。
-- 普通日志不得出现完整卡号、CVV、API Key、accessToken 或 sessionToken。
+- 普通日志不得出现完整卡号、CVV、API Key、accessToken 或 sessionToken。例外（D-380，2026-09-26 Lemon 定「不限制不能存的东西」）：本机导航失败证据包（`~/Library/Application Support/pojia-browser-live/evidence/`，含 Playwright trace）可以含 Cookie、accessToken、sessionToken、请求头与返回内容、邮箱；只存本机、700 权限、14 天自动删、不进 git、不上传、不贴进聊天。卡号 / CVV 仍不得进证据：录制只覆盖进结账页之前。
 - 金额使用十进制定点值或最小货币单位，不使用 JavaScript 浮点数直接结算。
 
 ## 外部系统与执行目标

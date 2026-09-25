@@ -3078,12 +3078,12 @@ elements.highvccTokenForm?.addEventListener('submit', async (event) => {
   const button = elements.highvccTokenForm.querySelector('button[type="submit"]');
   button.disabled = true;
   try {
-    await sensitiveApi('/api/v1/admin/backup-cards/highvcc/token', {
+    const saved = await sensitiveApi('/api/v1/admin/backup-cards/highvcc/token', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token })
     });
     elements.highvccTokenInput.value = '';
     invalidateHighvccWallet();
-    showNotice('token 已保存；有效性以卡台查询结果为准。', 'success');
+    showHighvccTokenSaved(saved);
     try { await loadHighvccStatus(); }
     catch { showNotice('token 已保存，但状态读取失败；请刷新查看，不必重复保存。', 'warning'); }
   } catch (error) {
@@ -3357,6 +3357,18 @@ function stashHighvccTokenFromHash() {
 }
 stashHighvccTokenFromHash();
 
+// D-377：保存后后端当场用新 token 查一次卡台钱包。告诉贴的人结果，别让他以为没贴上。
+function showHighvccTokenSaved(saved) {
+  const v = saved?.verification;
+  if (v === 'VALID') {
+    showNotice(saved.alertCleared ? 'token 已保存，卡台验证通过，失效提醒已关。' : 'token 已保存，卡台验证通过；失效提醒下一轮同步（每小时）才会关。', 'success');
+  } else if (v === 'REJECTED') {
+    showNotice('token 已保存，但卡台不认它（可能已过期或没复制全）。请重新登录卡台复制一次。', 'warning');
+  } else {
+    showNotice('token 已保存，这次没连上卡台验证；下一轮同步（每小时）会再验。', 'warning');
+  }
+}
+
 async function consumeHighvccTokenFromHash() {
   let token = '';
   try { token = sessionStorage.getItem(HIGHVCC_TOKEN_STASH) || ''; } catch { token = ''; }
@@ -3364,11 +3376,11 @@ async function consumeHighvccTokenFromHash() {
   // 先删再发：发送失败也不要让它留在 sessionStorage 里等下次莫名其妙地重放。
   try { sessionStorage.removeItem(HIGHVCC_TOKEN_STASH); } catch { /* 删不掉也继续 */ }
   try {
-    await sensitiveApi('/api/v1/admin/backup-cards/highvcc/token', {
+    const saved = await sensitiveApi('/api/v1/admin/backup-cards/highvcc/token', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token })
     });
     invalidateHighvccWallet();
-    showNotice('highvcc 登录 token 已自动保存；有效性以卡台查询结果为准。', 'success');
+    showHighvccTokenSaved(saved);
   } catch {
     showNotice('未能确认 highvcc token 保存结果，请到“卡片”页查看更新时间后再决定是否重试。');
   }

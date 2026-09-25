@@ -22,9 +22,10 @@ import mysql from 'mysql2/promise';
 import { createHighvccSnapshotSyncService } from '../src/services/highvcc-snapshot-sync-service.js';
 import { BACKUP_A_PROVIDER_ACCOUNT_ID } from '../src/services/highvcc-card-service.js';
 import { clearProviderTokenExpired, markProviderTokenExpired } from '../src/services/card-supply-scheduler-service.js';
+import { HIGHVCC_TOKEN_TROUBLE_CODES } from '../src/domain/highvcc-token-trouble.js';
 
 const HIGHVCC_PROVIDER_ACCOUNT_ID = BACKUP_A_PROVIDER_ACCOUNT_ID;
-const TOKEN_EXPIRED_CODES = new Set(['HIGHVCC_TOKEN_EXPIRED', 'HIGHVCC_TOKEN_MISSING']);
+const TOKEN_EXPIRED_CODES = HIGHVCC_TOKEN_TROUBLE_CODES; // 与贴 token 后的当场验证同一份（D-377）
 
 const commit = process.argv.includes('--commit');
 for (const name of ['DATABASE_URL', 'SESSION_ENCRYPTION_KEY_BASE64', 'CARD_INTAKE_PAN_HMAC_KEY_BASE64']) {

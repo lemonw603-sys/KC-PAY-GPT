@@ -3685,3 +3685,48 @@ Lemon：「KC-PAY-GPT，开始评估」。报告 `reviews/2026-09-24-kc-pay-gpt-
 ## 2026-09-25｜块 6 非付款 PoC（2026-09-24 16:5x～17:0x UTC）
 
 Lemon「先做一次测试」。核对：Lane 3（`9d7445ff…`，名「Plus Browser PH Lane 3」，备注非付款隔离验证）≠ 常驻池 Pilot（`a196a016…`）；付款前预检默认用 Lane 3 但需手动跑；无在途订单；出口实测 `38.60.246.34` / PH。运行：pro_20x → 定价弹窗 20x 单选 `disabled`，导航合同拒点禁用控件而停；只读探针确认 5x `aria-checked=true`、20x `disabled=true`；pro_5x → 同页结账 `/checkout/openai_llc/`，`plan_name=chatgptprolite`、₱6,490（含 VAT 12%）、`Subscribe`、`requires_manual_approval=true`；临时探针确认结账页 20x 单选同样 `disabled`（探针跑完即删）。三次均 0 字段 0 提交，结账页关闭，Lane 3 窗口已关；常驻池心跳正常。证据 `artifacts/poc-free-pro20x-20260924/`（按任务书不入库，已加 .gitignore）。合同与 D-369 已落。
+
+## 2026-09-25｜块 6 Pro 5x 代码完成（隔离分支，未发布）（09-24 16:0x～17:3x UTC）
+
+Lemon「1. 同意 2. 先不开卡」。分支 `block6-pro5x` `71f6ae3`（已推送）。改 4 个白名单文件 + 4 个测试文件，详见 D-371。验：browser-mvp 全量 306/0（9 跳过）、v1 全量 1027/0（65 跳过）；变异验证：交易读取器 / 核实器 / 常驻池映射 / 组合层四处换回旧逻辑，新测试分别 1/3/1/1 条变红，还原后 `cmp` 一致。v1 收口（`recordCancellationConfirmed`）不分套餐，5x 确认后可正常到 `RECHARGE_SUCCESS`（代码显示）。演练未跑：5x 无卡；Plus 回归要 Lemon 建单 + 暂停常驻池。
+
+## 2026-09-25｜暂停常驻池等演练单；导航拦截；5x 零税 PoC；KC 封存（09-24 17:45～09-25 01:1x UTC）
+
+Lemon「1 做 2 A 3 可以」→ 17:45:53 UTC 正式路径关付款开关（新连接复核 false / profile false / 审计行）→ SIGTERM 6667（活动 run 0，code=0 退出）→ `set-intake-executor-check.mjs off`（dry-run 后 apply，复核 false）→ `ready-check.sh rehearsal` 全绿（可分配 Plus 卡 1）。之后到 01:0x UTC 无新单。
+5x 只填地址脚本（`browser-mvp/scripts/poc-pro5x-billing-tax.mjs`，分支）8 次：3 次直接落地结账页（见 D-372 第 1 条）、2 次填地址时 Stripe 框重载报错、1 次页面未就绪导航超时、2 次到结账页但 20 个框无地址字段。Lemon「1 同意 2 封存」→ 导航拦截 `0e97bab` + 测试 + 变异验证；KC 封存。证据复制到主仓库 `artifacts/poc-pro5x-billing-tax/`（不入库）。
+
+## 2026-09-25｜恢复常驻池；拦截改为读页面档位（01:3x～02:0x UTC）
+
+Lemon「1B 2 现在做」。恢复步骤与复核见 D-373 第 1 条（PID 91075，state-check 一致）。拦截改进 `aad6980`：先只读探真实 5x 结账页档位结构，再写规则与测试，变异验证 4 处全红，Lane 3 实跑认出已有 5x 未付结账单（`tier-verified-on-checkout:5x`）。证据 `artifacts/poc-pro5x-billing-tax/`（11 份，不入库）。
+
+## 2026-09-25｜导航开头偶发失败查清并修（02:0x～02:4x UTC）
+
+Lemon「1 现在查」。PoC 证据汇总 → 生产 `browser_runs`/`browser_run_events`/WAL/go-live 日志查原文（只有原因码）→ 只读探个人菜单按钮结构 → 时间线诊断 3 次复现 1 次 → 修两处等待逻辑 `0f483ef` → 测试 + 变异 → Lane 3 实跑 5/5。详见 D-374。
+
+## 2026-09-25｜导航失败记原因（D-375）
+
+Lemon「1 同意 2 不加」。`b3f1d37`：执行器导航失败事件带清洗过的首行与步骤；测试 + 变异 3 处；两套全量绿。Plus 结账页核对不做。
+
+## 2026-09-25｜接班实走 + 接班机制整修（07:3x～08:2x UTC）
+
+Lemon 问「如果让你接这个项目怎么做更好」→ 按 AGENTS 顺序实走一遍并现场只读核对：交接页下一步准确；`state-check` 全绿但事实表 4 行过期（token / 每卡上限 / 告警数 / Worker PID），token 行先改（`923592f`）。Lemon「以上同意」→ 事实表逐行对现场重写、state-check 补 6 类检查与陈旧行提醒、wrapup-check 接提醒（`c85d6d9`，变异 4/4，browser-mvp 309：300/0/9）；PROJECT_MAP 压一页；`scripts/pool-release.sh` 在临时目录验过 prepare 与 5 个反例（未碰在跑的池、未改 LaunchAgent）；旧工作区只读盘点（清理待批）。token：Lemon 07:25:58 UTC 重贴；告警只在每小时同步时关，见 D-376 第 5 条。详见 D-376。
+
+## 2026-09-25｜旧工作区清理 + 贴 token 当场验证（09:4x～10:0x UTC）
+
+Lemon「以上全部同意，5 等晚一些再做」。存档（6 个 archive 分支推 origin、两个 tgz + patch、两个发布包搬回）→ 删 10 个工作树与 17 个本地分支 → `archive/INDEX.md` 记去向、`real-checkout-observation` 证据行加新位置。贴 token 验证：先写进 `highvcc-card-service.js`，跑付款池 import 图发现该文件在池加载范围内 → 撤回，改为网页后台专用的 `highvcc-token-save-service.js`；复核池的 68 个模块与改动文件零重叠。详见 D-377。
+
+## 2026-09-25｜块 6 Plus 回归演练：未通过，暂停中（12:29～15:27 UTC）
+
+12:29:57 正式路径关付款开关（新连接复核 false / profile false / 审计 `lemon-via-claude`）→ 12:30:18 SIGTERM 91075（code=0）→ 12:30:40 关下单查付款池 → ready-check rehearsal 全绿。三张演练单与结果见 D-378（preflight 误用、企业邮箱 Business 栏、Plus 按钮灰 → 修等待、付款表单加载失败）。中途只读探页面（截图/列按钮，另在企业邮箱号的价格框点过一次 Personal 标签，未点任何购买控件）。15:26 收口两单、开回下单查付款池；新连接核实 CLOSED / CDK AVAILABLE / run FAILED_SAFE / 8718 AVAILABLE / active_runs 0。付款开关 false、池未起，等 Lemon。
+
+## 2026-09-25｜导航失败证据包（16:0x～16:5x UTC）
+
+Lemon「以上同意」→ 任务书 → 「不限制不能存的东西」（D-380，CLAUDE.md 硬约束加例外，卡号/CVV 结构性排除）。先实测 connectOverCDP 下 trace 能录、请求头与返回内容在 trace 内。块 6 分支 `f640f9c`：新 `navigation-failure-evidence.js` + `executor.js` 导航 catch 处接入（可注入 `start` 供测试）。测试 11 条；变异 8 处——第一轮「成功后不丢弃」只靠 60 秒超时被抓（成功用例跑结账页检查过慢），改为在 checkout-navigation 事件时关测试页后直接失败。分支全量 334：325/0/9。未合 main、生产未用。
+
+## 2026-09-25｜对照实验 A + 证据包首用修 bug（16:55～17:0x UTC）
+
+Lemon 在 3 号窗口手动登录新免费号 → 只读确认已登录（无「登录」按钮、有 Upgrade）→ 脚本（scratchpad，不入库）用块 6 分支导航 + 证据包跑 A：41 秒进 `/checkout/openai_llc/oaics_…`，成功；证据 `evidence/20260925T165738Z-abAmuh7ewns`（无 network.json：超时）。修 `103f7d2` 后在该结账页刷新复验：`evidence/20260925T170011Z-netverifymuh` 七个文件齐、网络 91 行。详见 D-381。3 号窗口仍开着实验 A 的未付结账页。
+
+## 2026-09-25｜块 6 Plus 回归演练第二轮：通过（17:06～17:27 UTC）
+
+17:07:04 关付款开关（正式路径，新连接复核）→ 17:07:16 SIGTERM 13942（code=0）→ 17:07:30 关下单查付款池 → ready-check 全绿；Lemon 复用实验 A 的号在客户页建单 `PJV1-v3tiEHgJecMDAinmycZk`（17:22:01）→ `BROWSER_WORKER_LEASE_SECONDS=900` 从分支目录跑演练：PRE_SUBMIT_STOPPED ₱982.14 / 税 0，PAYMENT_SUBMIT 0 → close 脚本 CLOSED（痕迹全 0）→ 17:25 开回检查与付款开关 → 池 42676 17:25:48 拉起、心跳新鲜。详见 D-382。

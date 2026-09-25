@@ -90,9 +90,10 @@ ssh root@144.34.180.184 'set -a; . /etc/pojia/runtime.env; set +a; cd /opt/pojia
 ssh root@144.34.180.184 'set -a; . /etc/pojia/runtime.env; set +a; cd /opt/pojia/current/v1 && node scripts/set-intake-executor-check.mjs on --apply'    # 演练后
 ```
 ```bash
-# 单单演练（推荐，跑完自动退出，不要用常驻池反复 claim）
-BITBROWSER_PROFILE_ID=51e915e3298b4a02bbd7468b39749c9e browser-mvp/scripts/run-browser-preflight.sh once   # 本机 BROWSER_PREFLIGHT
-browser-mvp/scripts/run-live-rehearsal.sh once <orderId>                                                      # 到零税报价、停在点击前
+# 单单演练（推荐，跑完自动退出，不要用常驻池反复 claim）。<orderId> 是订单内部 id（orders.id，不是 PJV1- 编号）。
+# 不要先跑 run-browser-preflight.sh：2026-09-25 实测它会领走已在 RECHARGE_PROCESSING 的演练单，一出错就把单判失败（D-378）。
+# 租约要与常驻池一致（脚本默认 60 秒，导航等结账页会超时，D-382）；在要验证的代码所在目录（如块 6 分支工作树）里跑
+BROWSER_WORKER_LEASE_SECONDS=900 browser-mvp/scripts/run-live-rehearsal.sh once <orderId>                     # 到零税报价、停在点击前
 ```
 演练后订单按设计回 **CARD_READY 并继续持卡**。若不打算真付这单，必须收口释放卡（否则挡住后续新单）：
 ```bash

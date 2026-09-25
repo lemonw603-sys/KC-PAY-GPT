@@ -234,3 +234,15 @@
 | `docs/security_best_practices_report.md` | `docs/archive/undated/security_best_practices_report.md` |
 
 - `2026-09/PROJECT_MAP_pre_D240_2026-09-16.md`：D-240发布后整理前的项目地图，仅供历史追溯，不是当前执行顺序。
+- `2026-09/PROJECT_MAP_pre_onepage_2026-09-25.md`：压成一页前的项目地图（顶部 8 段「覆盖」、八步表逐步记录、已完成欠账原文），D-376。
+- `2026-09/CURRENT_STATE_rows_removed_2026-09-25.md`：从生产事实表移出的 3 行一次性历史（highvcc 09-10 开卡、D-335、D-343 收口），D-376。
+
+## 2026-09-25 旧工作树清理（D-377）
+
+文档里出现的 `/Users/lemon/.codex/worktrees/…` 路径（9128、a088、ai-recharge-d240、ai-recharge-release、ai-recharge-unified、ai-recharge-unified-release、browser-live、c566、mockaddress-browser、nonbrowser）已全部删除。内容去向：
+
+- 已提交的历史：都在 Git。main 没有的提交存为分支（本地 + origin）：`archive/codex-browser-20260905`（9128 的 `codex/browser`）、`archive/codex-mockaddress-browser-20260904`、`archive/codex-browser-live-20260911`、`archive/a088-session-intake-20260831`（原游离提交 `d7fd651b`）、`archive/deploy-order-demand-sync-20260829`（含 `release/card-refresh-ux-20260829`）、`archive/stash-browser-ledger-wip-20260828`（`stash@{0}`，stash 本身也保留）。
+- 9128 的未跟踪 / 被忽略文件（含 `.env.browser-*`、`data/browser-pool/`、`artifacts/browser-poc/` cookie 文件、`artifacts/browser-checkout-observe/`）：`~/archive/AI充值业务-worktrees-20260925/9128-untracked-and-ignored.tgz`（100 个文件，权限 600，**可能含会话材料，不要解进仓库**）。
+- c566 的已跟踪改动与未跟踪文件（约 5119 个）：同目录 `c566-tracked-changes.patch` + `c566-changes-and-untracked.tgz`。
+- 两个发布包：`docs/incidents/d240-deployment/prepare.txt` 与 `docs/incidents/unified-success/prepare.txt` 第 4-5 行的 `release_bundle=` 现在在主工作区 `artifacts/release-candidate-20260916-d240-b31a88a/`、`artifacts/release-candidate-20260916-unified-4334dc2/`（被 .gitignore 忽略，只在本机，`diff -r` 与原件一致）。
+
