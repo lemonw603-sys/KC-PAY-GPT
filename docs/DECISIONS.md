@@ -5618,3 +5618,12 @@ Lemon「以上全部同意，5 等晚一些再做」。
 2. **旧工作区清理（已做）**：先存档后删除。main 没有的提交存为 `archive/*` 分支（6 个，已推 origin，含游离提交 `d7fd651b` 与 `stash@{0}`）；9128 / c566 的未跟踪与被忽略内容打包到 `~/archive/AI充值业务-worktrees-20260925/`（700/600 权限，文件数与磁盘逐一对上：100/100、5119/5119，另存 c566 已跟踪改动 patch）；两个发布包 `diff -r` 一致地搬到主工作区 `artifacts/release-candidate-20260916-*`。删除 10 个 `~/.codex/worktrees` 工作树与 6 个空目录、17 个本地分支（合并的用 `-d`；未合并的都先核对存档分支指向同一提交或已被包含）。剩余：main、block6-pro5x、upstream-baseline、codex/inflight-20260906-abandoned、6 个 archive/*。去向表在 `archive/INDEX.md` 末尾。
 3. **贴 token 后当场验证（代码完成，未发布）**：保存后用新 token 读一次卡台钱包（只读）：卡台认 → 关 `PROVIDER_TOKEN_EXPIRED`（VALID）；不认 → 提示重贴、不动告警（REJECTED）；连不上 / 超时 10 秒 → 提示下一轮同步再验、不动告警（UNKNOWN）。开告警与推送仍只由每小时同步判定。实现放在只有网页后台加载的 `services/highvcc-token-save-service.js`（server.js 组装），**付款池加载的 68 个模块一个没改**（第一版写进了 `highvcc-card-service.js`，查出它在池的加载范围内后撤回重做）。「卡台不认」的码抽成 `domain/highvcc-token-trouble.js` 一份，快照同步脚本同用。页面按三种结果给大白话提示，`admin.js?v=96`。测试：新 6 条走真 `highvcc-card-service` 只换网络与库；变异 6 处全被抓；v1 全量 1099：1034/0/65；界面文案检查通过。发布等 Lemon 批。
 4. 块 6 Plus 回归演练：Lemon 说晚些再做。
+
+## D-378（2026-09-25 UTC+8 晚）块 6 Plus 回归演练：两处导航问题一改一不改；卡在「付款表单加载失败」，暂停中
+
+Lemon「1 并进做 2 现在做」→ 演练（贴 token 当场验证的发布并入块 6 那次）。三张演练单全部未付款（付款痕迹 0）：
+1. `PJV1-pcNK…`：我按交接页先跑了 `run-browser-preflight.sh once`，它领走这张已在 RECHARGE_PROCESSING 的单（job `brjob:…`），3 号窗口有多个 ChatGPT 页 → `PROFILE_PAGE_AMBIGUOUS` 安全中止、单判失败、CDK 自动退回、卡放回。09-23 那次演练没跑 preflight；**演练不再先跑 preflight**（RUNBOOK §2 已改）。
+2. `PJV1-W6lU…`（企业邮箱注册的号）：价格框默认停在 Business 栏，找不到 Plus 按钮（D-375 记下的原因 `找到 0 个`，actions `pricing-opened`）。点 Personal 后 Plus ₱1,100 出现。**Lemon 定：不改**（特殊号，不为它加分支）；记欠账，触发＝第一张真实客户单因「找不到 Plus 按钮」失败时。企业邮箱号的真客户单会安全失败、需人工换号。
+3. `PJV1-kRso…`（普通免费号）：价格框已开、Plus 按钮当时是灰的 → `plus upgrade control is disabled`，几分钟后同一按钮可点。**Lemon 选 B：等按钮变可点**——每 0.1 秒看一次、最多 10 秒、变可点只点一次、等不到按原样停、绝不点灰按钮（块 6 分支 `56fa9e7`，变异 4/4，分支全量 323：314/0/9）。改后导航成功点到「Upgrade to Plus」，但 ChatGPT 页面显示 **「Configure your plan — Unable to load payment form. Please try again.」**，网址仍是 `/`（未到 `/checkout/`），导航一直等结账页直到运行租约过期；连续两次一样（中间一次比特浏览器 `/browser/list` 临时失败）。经同一菲律宾出口 curl Stripe 三个地址均 200。**原因未知**；真实客户单若同样如此会安全失败（未验证）。
+收口：后两张用 `close-rehearsal-order.mjs`（付款痕迹全 0）CLOSED，CDK 退回、卡 8718 放回；「下单查付款池」15:26 UTC 开回。**付款开关仍关、常驻池未起**（客户下单看到维护），恢复与否待 Lemon 定。
+顺带：state-check 新加的「本机池未运行」比对值原为纯中文，被取值守卫当成失败，已改为 `worker 0 个`。

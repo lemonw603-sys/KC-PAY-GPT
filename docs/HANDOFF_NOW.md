@@ -1,45 +1,38 @@
 # 接班一屏（HANDOFF_NOW）
 
-更新：2026-09-25 18:0x（UTC+8）＝ 10:0x UTC。执行顺序以 **D-352** 为准，「可离开」第一条以 **D-366** 为准；本窗口 D-376、D-377。
+更新：2026-09-25 23:3x（UTC+8）＝ 15:3x UTC。执行顺序以 **D-352** 为准，「可离开」第一条以 **D-366** 为准；本窗口 D-376、D-377、D-378。
 
-## 现在的状态（08:15 UTC 现查；明细见 CURRENT_STATE.md，`state-check.sh` 一致）
+## ⚠ 现在生产是暂停的（15:26 UTC 现查；明细见 CURRENT_STATE.md，`state-check.sh` 一致）
 
-- 生产 release **`20260924-block7-batch2-0d06f41`**，迁移最新 061。默认路线 BROWSER，Browser Plus 用 highvcc 卡。可分配 Plus 卡 1 张（8718，正式资格 SQL）；非终态订单 1（WAITING_FOR_SESSION，无卡）。
-- 本机常驻池 **PID 91075**（supervisor 61962），cwd = main 工作区 `browser-mvp`＝**不含块 6**；付款开关 true、下单心跳检查 true。
-- **highvcc token 已恢复**：Lemon 07:25:58 UTC 重贴，08:15:24 UTC 同步 `tokenAlert: RESOLVED`，告警已关。注意：贴 token 不会马上关告警，要等下一轮每小时同步（D-376 第 5 条）。
-- HNSKJ 供卡故障仍在（卡台维护，D-363；水位 0）。路线 305（5x）/306（20x）关着。
+- **付款开关 false、本机常驻池未起**（worker 91075 于 12:30 UTC 为演练正常退出；supervisor 61962 在跑，开关关着只等不跑）。「下单查付款池」已开回 true → 客户下单看到维护、不收单。
+- **恢复**（Lemon 批了才做）：正式路径开付款开关（`admin-operations-service.setBrowserPaymentWrites({ enabled: true })`，在服务器 `/opt/pojia/current/v1` 用 runtime.env 跑，写审计、同步 executor profile）→ supervisor 60 秒内从 main 工作区拉起池 → 新连接复核开关 + `pgrep` + 心跳新鲜 → 改 CURRENT_STATE 三行（付款开关 / 本机 / 心跳）。
+- 生产 release **`20260924-block7-batch2-0d06f41`**，迁移 061。默认路线 BROWSER（Plus 用 highvcc 卡）。可分配 Plus 卡 1 张（8718）；非终态订单 1（旧的 WAITING_FOR_SESSION，无卡）。highvcc token 有效（08:15 UTC 恢复）。HNSKJ 供卡故障仍在。路线 305/306 关。
 
-## 块 6 = Pro 5x（D-370～D-375）——代码完成，差一次演练
+## 块 6 Plus 回归演练：未通过（D-378）
 
-- 分支 **`block6-pro5x`（`b3f1d37`，已推送，未合 main、未发布）**，工作树 `.claude/worktrees/block6-pro5x`（node_modules 是软链，别提交）。
-- **下一步＝Plus 回归演练（D-254）**，Lemon 说晚些再做，他会先说。流程：正式路径关付款开关（`admin-operations-service.setBrowserPaymentWrites`，不用 `stop-live.sh`）→ SIGTERM 常驻池 worker → `set-intake-executor-check.mjs off --apply` → Lemon 在客户页用 Lane 3 号（比特窗口 `8f126430…`）建 Plus 单 → `run-browser-preflight.sh once` → **从分支目录**跑 `run-live-rehearsal.sh once <id>` → `close-rehearsal-order.mjs` 收口 → 心跳检查 on → 付款开关 on。等待循环的命令行别含 `production-live-pool-worker`（D-373）。
-- 演练过后逐项问：合 main → 服务器发布 → **常驻池切到 `~/pojia-pool` 固定版本目录并改 LaunchAgent**（D-377 已批；与这次重启合并，步骤见 `tasks/2026-09-25-pool-pinned-release.md`，动之前当场再确认；worker 未退出前不许动 launchd）→ 重开路线 305。重开前要定 5x 卡从哪来（两台 pro_5x 水位 0、Lemon 定过先不开卡；欠账 1、2，调度器会不会替等卡单自动开尚未核实）。
+- 分支 **`block6-pro5x`（`56fa9e7`，已推送，未合 main、未发布）**：在 `b3f1d37` 上加了「升级按钮是灰的就等它变可点」（最多 10 秒、只点一次、绝不点灰按钮）。
+- 演练三张单都没付款、都已收口。卡住的地方：点到「Upgrade to Plus」后，ChatGPT 页面显示 **「Configure your plan — Unable to load payment form」**，网址不变（没到 `/checkout/`），连续两次；经同一菲律宾出口 curl Stripe 正常。**原因未知**。真实客户 Plus 单是否也这样：未验证。
+- 下一步候选（等 Lemon 选）：只读查付款表单为什么加载不出来（3 号窗口点页面上的 Retry 看报错、换常驻池那个窗口对比）；或先恢复生产、改天再演练。
+- 演练步骤（RUNBOOK §2 已改）：**不要先跑 preflight**；`run-live-rehearsal.sh once <orders.id>` 要从分支目录跑；3 号窗口开跑前把残留的 chatgpt.com 标签页关掉（开着多个会 `PROFILE_PAGE_AMBIGUOUS`）；演练号用普通邮箱注册的免费号（企业邮箱号价格框默认 Business 栏，D-378 不改）。
+- 通过之后仍逐项问：合 main → 服务器发布（并入「贴 token 当场验证」`3a633f5`，D-377）→ 常驻池切 `~/pojia-pool` 固定目录并改 LaunchAgent（D-377 已批，当场再确认）→ 重开 305（先定 5x 卡从哪来）。
 
-## 本窗口做完的（D-376、D-377）
+## 本窗口做完的
 
-- `state-check.sh` 补 token 告警 / 每卡上限 / bark release / worker 写开关 / 本机池 PID 与 cwd；脚本不查、超过 7 天的行列 `[陈旧]`；结尾写明覆盖范围。wrapup-check 接提醒。事实表逐行对现场重写。
-- PROJECT_MAP 压一页（统一「块」编号）。
-- `scripts/pool-release.sh`（prepare / verify / switch / status）在临时目录验过；**在跑的池与 LaunchAgent 都没动**。
-- 旧工作区已清理（D-377 第 2 条）：先存档后删，去向表在 `archive/INDEX.md` 末尾；剩 main、block6-pro5x、upstream-baseline、codex/inflight-20260906-abandoned、6 个 archive/*。
-- 贴 token 当场验证：代码完成、测试与变异通过，**未发布**（`services/highvcc-token-save-service.js`，不在付款池加载范围内）。
-
-## 等 Lemon 的
-
-1. 块 6 Plus 回归演练：他说晚些做，说开始才做。
-2. 贴 token 当场验证的发布：单独发，还是并入块 6 那次发布。
+- D-376：state-check 补 6 类检查与陈旧行提醒；事实表逐行对现场；PROJECT_MAP 压一页；`scripts/pool-release.sh`（未启用）。
+- D-377：旧工作区清理（存档后删，去向 `archive/INDEX.md` 末尾）；贴 token 当场验证（main `3a633f5`，**未发布**）。
+- D-378：演练经过；企业邮箱号欠账（地图欠账 15）。
 
 ## 已定 / 禁区
 
 - 付款前三件不改（D-254）；browser-mvp 改动走白名单 + 全量测试 + 演练；常驻池重启、发布、开关、LaunchAgent 先问。
-- Plus 不加结账页套餐核对（D-375）。KC-PAY-GPT 已封存（D-372）。
+- Plus 不加结账页套餐核对（D-375）；企业邮箱号 Business 栏这次不改（D-378）。
 - 回复 Lemon：开头给定位、话要短、大白话，结尾一节「要你决定的」列全。
 
 ## 未验证边界
 
 - 当前 release 真实付款、取消续费、付款不明恢复、Browser 崩溃补核均无真单样本。
-- 7 次 `CHECKOUT_NAVIGATION_FAILED`（09-08～09-14）原因查不回来（D-375 起分支代码会存）。
-- 暂停期间 `EXECUTOR_OFFLINE` 告警未推送的原因未查。事实表「已知未修」行是 09-10 旧清单，未逐项复核。
-- FB-04：1657 / 3159 / 7402 三张 highvcc 卡 Lemon 尚未销卡（不急）。
+- 「付款表单加载失败」的原因、是否影响真实客户单：未知。
+- 事实表「已知未修」行是 09-10 旧清单，未逐项复核。
 
 ## 每块收尾
 

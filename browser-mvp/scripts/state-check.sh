@@ -106,7 +106,7 @@ done
 # 本机常驻付款池：它真的在付钱，表里「本机」行的 PID 与工作目录必须是现场的。
 PPIDS=$(pgrep -f 'src/production-live-pool-worker.js --run' 2>/dev/null | tr '\n' ' ' | sed 's/ *$//')
 case "$PPIDS" in
-  '') check "本机" "常驻池未运行" "本机常驻池" ;;
+  '') check "本机" "worker 0 个" "本机常驻池" ;;   # 值里要有字母/数字才过 check 的取值守卫（纯中文会被当取值失败）
   *' '*) say "[漂移] 本机：同时有多个常驻池 worker（PID ${PPIDS}），表里只该有一个"; drift=1 ;;
   *) check "本机" "PID $PPIDS" "本机常驻池 PID"
      PCWD=$(lsof -a -p "$PPIDS" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p' | head -1)

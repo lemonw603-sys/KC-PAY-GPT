@@ -3714,3 +3714,7 @@ Lemon 问「如果让你接这个项目怎么做更好」→ 按 AGENTS 顺序�
 ## 2026-09-25｜旧工作区清理 + 贴 token 当场验证（09:4x～10:0x UTC）
 
 Lemon「以上全部同意，5 等晚一些再做」。存档（6 个 archive 分支推 origin、两个 tgz + patch、两个发布包搬回）→ 删 10 个工作树与 17 个本地分支 → `archive/INDEX.md` 记去向、`real-checkout-observation` 证据行加新位置。贴 token 验证：先写进 `highvcc-card-service.js`，跑付款池 import 图发现该文件在池加载范围内 → 撤回，改为网页后台专用的 `highvcc-token-save-service.js`；复核池的 68 个模块与改动文件零重叠。详见 D-377。
+
+## 2026-09-25｜块 6 Plus 回归演练：未通过，暂停中（12:29～15:27 UTC）
+
+12:29:57 正式路径关付款开关（新连接复核 false / profile false / 审计 `lemon-via-claude`）→ 12:30:18 SIGTERM 91075（code=0）→ 12:30:40 关下单查付款池 → ready-check rehearsal 全绿。三张演练单与结果见 D-378（preflight 误用、企业邮箱 Business 栏、Plus 按钮灰 → 修等待、付款表单加载失败）。中途只读探页面（截图/列按钮，另在企业邮箱号的价格框点过一次 Personal 标签，未点任何购买控件）。15:26 收口两单、开回下单查付款池；新连接核实 CLOSED / CDK AVAILABLE / run FAILED_SAFE / 8718 AVAILABLE / active_runs 0。付款开关 false、池未起，等 Lemon。
