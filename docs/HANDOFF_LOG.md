@@ -3722,3 +3722,7 @@ Lemon「以上全部同意，5 等晚一些再做」。存档（6 个 archive �
 ## 2026-09-25｜导航失败证据包（16:0x～16:5x UTC）
 
 Lemon「以上同意」→ 任务书 → 「不限制不能存的东西」（D-380，CLAUDE.md 硬约束加例外，卡号/CVV 结构性排除）。先实测 connectOverCDP 下 trace 能录、请求头与返回内容在 trace 内。块 6 分支 `f640f9c`：新 `navigation-failure-evidence.js` + `executor.js` 导航 catch 处接入（可注入 `start` 供测试）。测试 11 条；变异 8 处——第一轮「成功后不丢弃」只靠 60 秒超时被抓（成功用例跑结账页检查过慢），改为在 checkout-navigation 事件时关测试页后直接失败。分支全量 334：325/0/9。未合 main、生产未用。
+
+## 2026-09-25｜对照实验 A + 证据包首用修 bug（16:55～17:0x UTC）
+
+Lemon 在 3 号窗口手动登录新免费号 → 只读确认已登录（无「登录」按钮、有 Upgrade）→ 脚本（scratchpad，不入库）用块 6 分支导航 + 证据包跑 A：41 秒进 `/checkout/openai_llc/oaics_…`，成功；证据 `evidence/20260925T165738Z-abAmuh7ewns`（无 network.json：超时）。修 `103f7d2` 后在该结账页刷新复验：`evidence/20260925T170011Z-netverifymuh` 七个文件齐、网络 91 行。详见 D-381。3 号窗口仍开着实验 A 的未付结账页。

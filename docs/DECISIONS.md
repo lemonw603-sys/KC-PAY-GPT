@@ -5637,3 +5637,9 @@ Lemon「以上同意」：① 恢复生产（15:45 UTC 已做）；② 先做「
 ## D-380（2026-09-26 UTC+8 凌晨）证据包不限制存什么（受控放开「日志不得出现 token」）
 
 Lemon：「我们不限制不能存的东西，如果这么多的限制会严重阻碍我们项目的推进」。放开：本机导航失败证据包含 Playwright 完整 trace（请求头、Cookie、token、返回内容、邮箱、截图、完整 HTML），生产与演练都开。保留一条：卡号 / CVV 不进证据——结构性做到（录制只从开始导航到进结账页，成功即丢弃，填卡在录制之外），不增加过滤成本。代价（已告知）：本机证据文件泄露时，客户 ChatGPT 账号在 token 有效期内可被登录；缓解＝仅本机、700、14 天自动删、不进 git 不上传不贴聊天。CLAUDE.md 硬约束句已加例外说明。实测依据：connectOverCDP 下 trace 可录，假 Authorization 头与服务器返回内容均在 trace 内。任务书已按此改写并开工（`tasks/2026-09-25-navigation-failure-evidence.md`）。
+
+## D-381（2026-09-26 UTC+8 凌晨）对照实验 A：「一可点就立刻点」这次进了结账页；证据包首用暴露一个 bug 已修
+
+Lemon 选 A（他在 3 号窗口手动登录一个没用过的普通免费号，不建单、不停池）。16:57 UTC 用块 6 分支导航代码（`56fa9e7`「一可点就立刻点」）跑：actions `pricing-already-open → upgrade-requested`，41 秒到标准结账页 `/checkout/openai_llc/oaics_…`，结账内容在、Stripe 框 5 个、无「Unable to load payment form」；没碰卡。**「点太快导致付款表单失败」的推测不成立（至少不充分）**；B（等 5 秒）不再跑（A 没失败，且号上已有未付结账单会干扰）。09-25 两次失败的原因仍未知，候选（均未验证）：那个号本身、执行器完整路径（注入 Session、身份探测等）、当时 ChatGPT 一侧的临时问题。
+成功时的关键请求（从 trace 读出，作以后对照）：`POST chatgpt.com/backend-api/payments/checkout` 200 → `/checkout/openai_llc/oaics_….data` 200。下次失败先看这一条。
+证据包首用发现：真页面总有没结束的请求（长连接、Stripe 轮询），`network.json` 那步整体超时没存（trace 里网络记录完整，没丢证据）。修：每个请求最多等 300 毫秒、等不到标 pending（`103f7d2`，新测试 + 变异抓到；真页面复验 91 行、12 pending、取证 0.67 秒；分支全量 335：326/0/9）。
