@@ -1,5 +1,7 @@
 import { accessSync, constants } from 'node:fs';
 
+import { POST_PAYMENT_VERIFICATION_MAX_MS } from './chatgpt-post-payment-verifier.js';
+
 export const PRODUCTION_LIVE_CONFIRMATION_PREFIX = 'I-CONFIRM-ONE-LIVE-BROWSER-PAYMENT:';
 // Rehearsal: the exact production path (Session → identity → pricing modal →
 // Checkout → card/address/email → zero-tax requote → final recheck) that stops
@@ -143,7 +145,7 @@ export function loadProductionLiveBrowserConfig(env = process.env) {
     runtimeHmacKey, artifactKey, resourceHmacKey, materialEncryptionKey,
     leaseSeconds: integer(env, 'BROWSER_WORKER_LEASE_SECONDS', { min: 10, max: 3600, fallback: 60 }),
     executionTimeoutMs: integer(env, 'BROWSER_EXECUTION_TIMEOUT_MS', { min: 1_000, max: 300_000, fallback: 60_000 }),
-    verificationWindowMs: integer(env, 'BROWSER_PAYMENT_VERIFICATION_WINDOW_MS', { min: 30_000, max: 3_600_000, fallback: 300_000 }),
+    verificationWindowMs: integer(env, 'BROWSER_PAYMENT_VERIFICATION_WINDOW_MS', { min: 30_000, max: POST_PAYMENT_VERIFICATION_MAX_MS, fallback: 300_000 }),
     verificationIntervalMs: integer(env, 'BROWSER_PAYMENT_VERIFICATION_INTERVAL_MS', { min: 1_000, max: 60_000, fallback: 5_000 }),
     // D-154: seconds a clicked checkout is held while a PERSON satisfies a human
     // verification challenge. 0 (default) only detects and reports it.

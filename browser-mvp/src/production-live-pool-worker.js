@@ -1,4 +1,5 @@
 import { mkdir } from 'node:fs/promises';
+import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { chromium } from 'playwright';
 
@@ -13,7 +14,8 @@ import { BrowserOrderEncryptedSessionSource, createBrowserOrderPreflightWorker }
 import { DurableCardMaterialLeaseProvider } from './durable-card-material-lease.js';
 import { createBitBrowserControlManifest } from './fixtures.js';
 import { LivePostPaymentRecoveryVerifier } from './live-post-payment-recovery.js';
-import { ChatGptPostPaymentVerifier } from './chatgpt-post-payment-verifier.js';
+import { ChatGptPostPaymentVerifier, POST_PAYMENT_VERIFICATION_MAX_MS } from './chatgpt-post-payment-verifier.js';
+import { createPostClickTiming } from './post-click-timing.js';
 import { MockAddressBillingAddressSource, MysqlBillingAddressAssignmentStore } from './mockaddress-billing-address-source.js';
 import {
   BROWSER_LIVE_STOP_BEFORE_SUBMIT, ProductionLiveConfigError, integer, key32, localApiUrl, required,
@@ -140,7 +142,8 @@ export function loadProductionLivePoolConfig(env = process.env) {
     pollIntervalMs: integer(env, 'BROWSER_POOL_POLL_INTERVAL_MS', { min: 500, max: 60_000, fallback: 3_000 }),
     leaseSeconds: integer(env, 'BROWSER_WORKER_LEASE_SECONDS', { min: 10, max: 3600, fallback: 120 }),
     executionTimeoutMs: integer(env, 'BROWSER_EXECUTION_TIMEOUT_MS', { min: 1_000, max: 300_000, fallback: 120_000 }),
-    verificationWindowMs: integer(env, 'BROWSER_PAYMENT_VERIFICATION_WINDOW_MS', { min: 30_000, max: 3_600_000, fallback: 300_000 }),
+    // 上限跟核实器同一份（D-389）：填超了池启动就报错，而不是每张真付款单在填卡前报错。
+    verificationWindowMs: integer(env, 'BROWSER_PAYMENT_VERIFICATION_WINDOW_MS', { min: 30_000, max: POST_PAYMENT_VERIFICATION_MAX_MS, fallback: 300_000 }),
     verificationIntervalMs: integer(env, 'BROWSER_PAYMENT_VERIFICATION_INTERVAL_MS', { min: 1_000, max: 60_000, fallback: 5_000 }),
     // D-154: seconds a clicked checkout is held while a PERSON satisfies a human
     // verification challenge. 0 (default) only detects and reports it.
@@ -306,6 +309,7 @@ export async function createLaneWorker({ lane, config, pool, browserType, shared
     verificationWindowMs: config.verificationWindowMs, verificationIntervalMs: config.verificationIntervalMs,
     humanVerificationWaitMs: config.humanVerificationWaitMs,
     operatorTakeoverWindowMs: config.operatorTakeoverWindowMs,
+    postClickTiming: shared.postClickTiming,
     postPlusAction: postPlusActionForPlan, stopBeforeSubmit: config.stopBeforeSubmit, releaseSessionOnComplete: true, safeAbortOnFailure: true,
   });
   const withCleanupGuard = withLaneGuard({ query: (sql, params) => pool.query(sql, params), workerId });
@@ -336,6 +340,8 @@ export async function runProductionLivePoolWorker({ env = process.env, browserTy
     const rawCardSource = new SharedEncryptedCardMaterialSource({ db: pool, encryptionKey: config.materialEncryptionKey });
     const SessionProviderAdapter = config.sessionProviderMode === 'EXTENSION' ? ExtensionSessionBootstrapAdapter : CookieSessionBootstrapAdapter;
     const shared = {
+      // D-389：点完付款后各段耗时，写本机池状态目录（与 WAL 同目录，不进仓库、不上传）。
+      postClickTiming: createPostClickTiming({ file: join(config.stateDir, 'post-click-timing.jsonl') }),
       enrichedCardSource: new BillingAddressEnrichedCardMaterialSource({
         cardSource: rawCardSource, billingAddressSource: addressSource,
         resolveBillingAddressRef: async (runRef) => `card:${(await resolveCardContext(pool, String(runRef).replace(/^browser-run:/, ''))).card_id}`,

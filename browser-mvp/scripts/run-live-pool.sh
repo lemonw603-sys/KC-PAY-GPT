@@ -43,9 +43,12 @@ export BROWSER_EXECUTION_TIMEOUT_MS="${BROWSER_EXECUTION_TIMEOUT_MS:-120000}" BR
 # D-154: hold a clicked checkout while a PERSON satisfies a human-verification
 # challenge in the visible window. Never solved by the worker.
 export BROWSER_HUMAN_VERIFICATION_WAIT_MS="${BROWSER_HUMAN_VERIFICATION_WAIT_MS:-300000}"
-# 第④步（D-248「窗口放长」/ D-269 ③ Lemon 批）：付款后两路证据自动核实的窗口 5 分钟 → 30 分钟，
-# 定不了才叫人、叫时带证据。改的是运行环境不是代码默认值（config 默认仍 300000）。
-export BROWSER_PAYMENT_VERIFICATION_WINDOW_MS="${BROWSER_PAYMENT_VERIFICATION_WINDOW_MS:-1800000}"
+# 付款后核实窗口：5 分钟，也是核实器能接受的上限（D-389）。09-18 曾在这里设 30 分钟（D-269 ③），
+# 而核实器只收 5 分钟以内，结果每张真付款单都会在填卡前报错（D-386 P0）。现在填超了池启动就起不来。
+# 「30 分钟窗口」若还要，得和 900 秒运行租约一起重新设计，不是改这个数。
+export BROWSER_PAYMENT_VERIFICATION_WINDOW_MS="${BROWSER_PAYMENT_VERIFICATION_WINDOW_MS:-300000}"
+# 空闲时查新单的间隔 3 秒 → 1 秒（D-389）。心跳写库另有 5 秒节流，其余是只读查询。
+export BROWSER_POOL_POLL_INTERVAL_MS="${BROWSER_POOL_POLL_INTERVAL_MS:-1000}"
 if [ "$mode" = rehearsal ]; then
   export BROWSER_POOL_CONFIRMATION="I-CONFIRM-RESIDENT-BROWSER-POOL:REHEARSAL" BROWSER_LIVE_STOP_BEFORE=SUBMIT
   export BROWSER_PAYMENT_WRITES_ENABLED=false BROWSER_PAYMENT_EXECUTOR_ENABLED=false

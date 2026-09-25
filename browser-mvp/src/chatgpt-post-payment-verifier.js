@@ -94,6 +94,13 @@ async function cancelSubscription(page, cancelPath, accountId) {
  * Real post-payment observer bound to the same authenticated BitBrowser page.
  * Access tokens and raw account responses never leave page.evaluate().
  */
+/**
+ * 付款后核实窗口的上限。池配置、单次 worker 配置都从这里取上限（D-389）：
+ * 09-18 起池的运行环境设了 1800000，配置层允许到 3600000、这里只收 300000，
+ * 结果每张真付款单都会在填卡前报错（D-386 P0）。上限只留这一份，填错时池启动就起不来。
+ */
+export const POST_PAYMENT_VERIFICATION_MAX_MS = 300_000;
+
 export class ChatGptPostPaymentVerifier {
   constructor({
     page,
@@ -134,7 +141,7 @@ export class ChatGptPostPaymentVerifier {
     this.transactionReader = transactionReader;
     this.accountCheckPath = sameOriginPath(accountCheckPath, 'accountCheckPath');
     this.cancelPath = sameOriginPath(cancelPath, 'cancelPath');
-    this.timeoutMs = boundedInteger(timeoutMs, 'timeoutMs', { min: 1_000, max: 300_000 });
+    this.timeoutMs = boundedInteger(timeoutMs, 'timeoutMs', { min: 1_000, max: POST_PAYMENT_VERIFICATION_MAX_MS });
     this.pollIntervalMs = boundedInteger(pollIntervalMs, 'pollIntervalMs', { min: 100, max: 10_000 });
   }
 

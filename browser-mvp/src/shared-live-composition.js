@@ -10,6 +10,7 @@ import { BrowserPaymentExecutor, diagnosticTextOf } from './payment-executor.js'
 import { createHumanVerificationGate } from './human-verification-gate.js';
 import { upsertBrowserAlertInTransaction } from '../../v1/src/db/repositories/browser-alert-repository.js';
 import { createPostSubmitWatch } from './post-submit-outcome-watch.js';
+import { createPostClickTiming } from './post-click-timing.js';
 import { createLocalOperatorNotifier } from './local-operator-notify.js';
 import { LiveChatGPTPaymentAdapter, LIVE_PAYMENT_CONFIRMATION } from './live-chatgpt-payment-adapter.js';
 import { ChatGptPostPaymentVerifier } from './chatgpt-post-payment-verifier.js';
@@ -114,6 +115,52 @@ export async function runPreSubmitRehearsal({
   }
 }
 
+/**
+ * F-47: before spending the whole verification window polling the account,
+ * read what the Checkout itself is saying. A declined card is visible on
+ * the page within seconds; the old path waited five minutes and then
+ * reported "unknown" with no reason at all. This only reads — the funds
+ * verdict still goes through the normal unknown/operator-verify path.
+ *
+ * D-389：抽成导出函数只为让单元测试跑到生产用的同一段代码（演练停在点击前，跑不到这里）；
+ * 两段各包一层计时，结果和错误原样透传。
+ */
+export function createPaymentOutcomeObserver({ watchPostSubmit, verifier, timing = NO_TIMING }) {
+  return async ({ page: submittedPage }) => {
+    const observed = await timing.span('checkout-outcome-watch', () => watchPostSubmit(submittedPage), {
+      page: submittedPage,
+      describe: (value) => ({ state: value?.state || null, reasonCode: value?.reasonCode || null }),
+    }).catch(() => ({ state: 'UNREADABLE' }));
+    if (observed.state === 'DECLINED' || observed.state === 'PAGE_ERROR') {
+      return { status: 'DECLINED', reasonCode: observed.reasonCode, observedText: observed.observedText };
+    }
+    const plusVerification = await timing.span('confirm-plan-active', () => verifier.confirmPlus(), {
+      page: submittedPage,
+      describe: (value) => ({
+        confirmed: value?.confirmed === true,
+        identityMatched: value?.evidence?.identityMatched === true,
+        httpStatus: value?.evidence?.httpStatus ?? null,
+        recovery: typeof verifier.recoveryReport === 'function' ? verifier.recoveryReport() : null,
+      }),
+      describeError: () => ({ recovery: typeof verifier.recoveryReport === 'function' ? verifier.recoveryReport() : null }),
+    });
+    return { status: plusVerification.confirmed ? 'CONFIRMED' : 'UNKNOWN', plusVerification };
+  };
+}
+
+const NO_TIMING = createPostClickTiming().start({ runId: 'untimed' });
+
+/** D-389：人机验证检测也计时（点击后第一件事），参数和结果原样透传。 */
+export function timedGate(timing, gate) {
+  return (args) => timing.span('human-verification-gate', () => gate(args), {
+    page: args?.page,
+    describe: (value) => ({
+      challenged: value?.challenged === true, cleared: value?.cleared === true,
+      waitedMs: Number.isFinite(value?.waitedMs) ? value.waitedMs : null, reason: value?.reason || null,
+    }),
+  });
+}
+
 /** Production-shaped LIVE composition. Construction alone performs no payment action. */
 /**
  * 结账买哪个套餐（块 6，D-245/D-370）：一次付款到位（CANCEL_RENEWAL）就买订单套餐；
@@ -153,6 +200,8 @@ export function createSharedLivePaymentWorker({
   // F-47: how long to read the Checkout for a definite answer before falling
   // back to polling the account. A decline shows up in seconds.
   postSubmitWatchMs = 60_000,
+  // D-389：点完付款后各段耗时，只记录不改流程；默认不写（常驻池传入写本机文件的那个）。
+  postClickTiming = createPostClickTiming(),
   // D-210：付款前失败且现场保留时，给运营多久接手。
   // 2026-09-14 从 8 分钟收到 90 秒（D-212）：对抗式审查发现只有 1 条 lane、
   // runLaneLoop 串行，等待期间后面的客户全在排队——8 分钟是我亲手加的吞吐瓶颈。
@@ -251,6 +300,7 @@ export function createSharedLivePaymentWorker({
         ? await resolvePlan({ orderId: claimedJob.orderId, attemptId: claimedJob.attemptId, runId: run.runId }) : 'plus';
       const action = resolvePostPlusAction(plan);
       const sessionRefInput = { orderId: claimedJob.orderId, attemptId: claimedJob.attemptId, runId: run.runId };
+      const timing = postClickTiming.start({ runId: run.runId, plan });
       const verifier = new ChatGptPostPaymentVerifier({
         page,
         expectedIdentity: await resolveSessionIdentity(sessionRefInput),
@@ -283,7 +333,7 @@ export function createSharedLivePaymentWorker({
         // tell the operator, and wait for a person to satisfy it in the window.
         // Never satisfied here; `humanVerificationWaitMs = 0` keeps the old
         // behaviour except that the reason is now recorded.
-        challengeGate: createHumanVerificationGate({
+        challengeGate: timedGate(timing, createHumanVerificationGate({
           waitMs: humanVerificationWaitMs,
           pollIntervalMs: verificationIntervalMs,
           notify: async ({ waitMs }) => {
@@ -305,32 +355,32 @@ export function createSharedLivePaymentWorker({
               });
             } catch { /* 通知尽力而为 */ }
           },
-        }),
+        })),
         // F-47: before spending the whole verification window polling the account,
         // read what the Checkout itself is saying. A declined card is visible on
         // the page within seconds; the old path waited five minutes and then
         // reported "unknown" with no reason at all. This only reads — the funds
         // verdict still goes through the normal unknown/operator-verify path.
-        outcomeObserver: async ({ page: submittedPage }) => {
-          const observed = await watchPostSubmit(submittedPage).catch(() => ({ state: 'UNREADABLE' }));
-          if (observed.state === 'DECLINED' || observed.state === 'PAGE_ERROR') {
-            return { status: 'DECLINED', reasonCode: observed.reasonCode, observedText: observed.observedText };
-          }
-          const plusVerification = await verifier.confirmPlus();
-          return { status: plusVerification.confirmed ? 'CONFIRMED' : 'UNKNOWN', plusVerification };
-        },
+        outcomeObserver: createPaymentOutcomeObserver({ watchPostSubmit, verifier, timing }),
       });
-      const paymentResult = await new BrowserPaymentExecutor({
-        integration, executionRepository, paymentAdapter: adapter,
-        postPaymentVerifier: verifier, enabled: true,
-        postPlusAction: action,
-        verificationWindowMs, verificationIntervalMs,
-      }).execute({
-        control, run, page, checkout, checkoutContract, cardMaterial, billingEmail,
-        operationId: `browser-live-payment:${run.runId}`,
-        beforeSubmit: () => control.assertLeaseBeforeAction('FINAL_PRE_SUBMIT_RECHECK'),
-        onStage,  // D-208
-      });
+      let paymentResult;
+      try {
+        paymentResult = await new BrowserPaymentExecutor({
+          integration, executionRepository, paymentAdapter: adapter,
+          postPaymentVerifier: verifier, enabled: true,
+          postPlusAction: action,
+          verificationWindowMs, verificationIntervalMs,
+        }).execute({
+          control, run, page, checkout, checkoutContract, cardMaterial, billingEmail,
+          operationId: `browser-live-payment:${run.runId}`,
+          beforeSubmit: () => control.assertLeaseBeforeAction('FINAL_PRE_SUBMIT_RECHECK'),
+          onStage,  // D-208
+        });
+      } catch (error) {
+        timing.fail(error);
+        throw error;
+      }
+      timing.finish(paymentResult);
       // D-210：付款前失败、但表单被留在屏幕上 → 先别判失败。判了客户就会看到
       // 「没有完成，卡密可以直接重新兑换」并停止轮询，而运营这时正要接手；
       // 客户照那句话做就是两张卡付两次钱。等一个窗口，只认"账号真的变成付费计划"。
