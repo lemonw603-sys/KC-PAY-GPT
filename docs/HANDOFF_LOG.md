@@ -3726,3 +3726,7 @@ Lemon「以上同意」→ 任务书 → 「不限制不能存的东西」（D-3
 ## 2026-09-25｜对照实验 A + 证据包首用修 bug（16:55～17:0x UTC）
 
 Lemon 在 3 号窗口手动登录新免费号 → 只读确认已登录（无「登录」按钮、有 Upgrade）→ 脚本（scratchpad，不入库）用块 6 分支导航 + 证据包跑 A：41 秒进 `/checkout/openai_llc/oaics_…`，成功；证据 `evidence/20260925T165738Z-abAmuh7ewns`（无 network.json：超时）。修 `103f7d2` 后在该结账页刷新复验：`evidence/20260925T170011Z-netverifymuh` 七个文件齐、网络 91 行。详见 D-381。3 号窗口仍开着实验 A 的未付结账页。
+
+## 2026-09-25｜块 6 Plus 回归演练第二轮：通过（17:06～17:27 UTC）
+
+17:07:04 关付款开关（正式路径，新连接复核）→ 17:07:16 SIGTERM 13942（code=0）→ 17:07:30 关下单查付款池 → ready-check 全绿；Lemon 复用实验 A 的号在客户页建单 `PJV1-v3tiEHgJecMDAinmycZk`（17:22:01）→ `BROWSER_WORKER_LEASE_SECONDS=900` 从分支目录跑演练：PRE_SUBMIT_STOPPED ₱982.14 / 税 0，PAYMENT_SUBMIT 0 → close 脚本 CLOSED（痕迹全 0）→ 17:25 开回检查与付款开关 → 池 42676 17:25:48 拉起、心跳新鲜。详见 D-382。

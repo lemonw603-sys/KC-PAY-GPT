@@ -5643,3 +5643,10 @@ Lemon：「我们不限制不能存的东西，如果这么多的限制会严重
 Lemon 选 A（他在 3 号窗口手动登录一个没用过的普通免费号，不建单、不停池）。16:57 UTC 用块 6 分支导航代码（`56fa9e7`「一可点就立刻点」）跑：actions `pricing-already-open → upgrade-requested`，41 秒到标准结账页 `/checkout/openai_llc/oaics_…`，结账内容在、Stripe 框 5 个、无「Unable to load payment form」；没碰卡。**「点太快导致付款表单失败」的推测不成立（至少不充分）**；B（等 5 秒）不再跑（A 没失败，且号上已有未付结账单会干扰）。09-25 两次失败的原因仍未知，候选（均未验证）：那个号本身、执行器完整路径（注入 Session、身份探测等）、当时 ChatGPT 一侧的临时问题。
 成功时的关键请求（从 trace 读出，作以后对照）：`POST chatgpt.com/backend-api/payments/checkout` 200 → `/checkout/openai_llc/oaics_….data` 200。下次失败先看这一条。
 证据包首用发现：真页面总有没结束的请求（长连接、Stripe 轮询），`network.json` 那步整体超时没存（trace 里网络记录完整，没丢证据）。修：每个请求最多等 300 毫秒、等不到标 pending（`103f7d2`，新测试 + 变异抓到；真页面复验 91 行、12 pending、取证 0.67 秒；分支全量 335：326/0/9）。
+
+## D-382（2026-09-26 UTC+8 凌晨）块 6 Plus 回归演练通过（D-254 条件满足）
+
+Lemon「别频繁浪费新 session，能验证的都验证」→ 不用新号：复用对照实验 A 那个号（他在 3 号窗口取 `/api/auth/session`、客户页建单，Session 不经 AI）。演练前排掉会白跑的因素：演练脚本租约默认 60 秒而常驻池是 900 秒（`run-live-pool.sh:42`；09-25 两次失败都在等结账页时租约先到期）→ 本次运行时带 `BROWSER_WORKER_LEASE_SECONDS=900`（不改代码）；3 号窗口残留标签已关；不跑 preflight；证据包开着。
+结果（分支 `103f7d2`，17:22:31～17:23:55 UTC，订单 `PJV1-v3tiEHgJecMDAinmycZk`）：放入 Session → 身份核对（FREE、identityMatched）→ 卡准备 → 导航到结账页（checkoutCreated）→ 无保存的付款方式 → 填地址/邮箱/卡 → **PRE_SUBMIT_STOPPED，PHP 982.14 / 税 0.00**；PAYMENT_SUBMIT 0；导航成功后录制丢弃、未产生证据目录（真流程验证）。收口：`close-rehearsal-order.mjs` 付款痕迹全 0 → CLOSED、CDK 退回、8718 放回；17:25 UTC 开回检查与付款开关，池 42676 17:25:48 UTC 拉起。
+覆盖范围：点升级→结账页加载由 D-381 实验 A 在同一号上验证；本次覆盖其余全链。**未覆盖**：5x 专属逻辑（无 5x 卡）、真实付款与取消续费。09-25 那两次「付款表单加载失败」原因仍未知。
+下一步按 HANDOFF 逐项问 Lemon：合 main → 服务器发布（含 D-377「贴 token 当场验证」`3a633f5`）→ 常驻池切 `~/pojia-pool` 固定目录并改 LaunchAgent（D-377 已批，当场再确认）→ 重开 305（先定 5x 卡从哪来）。另：演练脚本默认租约应与常驻池一致（改 `run-live-rehearsal.sh`，browser-mvp 白名单，待批）。
