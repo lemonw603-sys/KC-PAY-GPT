@@ -3706,3 +3706,7 @@ Lemon「1 现在查」。PoC 证据汇总 → 生产 `browser_runs`/`browser_run
 ## 2026-09-25｜导航失败记原因（D-375）
 
 Lemon「1 同意 2 不加」。`b3f1d37`：执行器导航失败事件带清洗过的首行与步骤；测试 + 变异 3 处；两套全量绿。Plus 结账页核对不做。
+
+## 2026-09-25｜接班实走 + 接班机制整修（07:3x～08:2x UTC）
+
+Lemon 问「如果让你接这个项目怎么做更好」→ 按 AGENTS 顺序实走一遍并现场只读核对：交接页下一步准确；`state-check` 全绿但事实表 4 行过期（token / 每卡上限 / 告警数 / Worker PID），token 行先改（`923592f`）。Lemon「以上同意」→ 事实表逐行对现场重写、state-check 补 6 类检查与陈旧行提醒、wrapup-check 接提醒（`c85d6d9`，变异 4/4，browser-mvp 309：300/0/9）；PROJECT_MAP 压一页；`scripts/pool-release.sh` 在临时目录验过 prepare 与 5 个反例（未碰在跑的池、未改 LaunchAgent）；旧工作区只读盘点（清理待批）。token：Lemon 07:25:58 UTC 重贴；告警只在每小时同步时关，见 D-376 第 5 条。详见 D-376。

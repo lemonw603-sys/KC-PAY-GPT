@@ -234,3 +234,5 @@
 | `docs/security_best_practices_report.md` | `docs/archive/undated/security_best_practices_report.md` |
 
 - `2026-09/PROJECT_MAP_pre_D240_2026-09-16.md`：D-240发布后整理前的项目地图，仅供历史追溯，不是当前执行顺序。
+- `2026-09/PROJECT_MAP_pre_onepage_2026-09-25.md`：压成一页前的项目地图（顶部 8 段「覆盖」、八步表逐步记录、已完成欠账原文），D-376。
+- `2026-09/CURRENT_STATE_rows_removed_2026-09-25.md`：从生产事实表移出的 3 行一次性历史（highvcc 09-10 开卡、D-335、D-343 收口），D-376。

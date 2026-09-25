@@ -5601,3 +5601,12 @@ Lemon「1 现在查」。
 Lemon「1 同意 2 我不太想加，因为我认为可能会带来更多的不确定性」。
 1. **导航失败记原因（分支 `b3f1d37`，白名单经 Lemon 同意扩到 `browser-mvp/src/executor.js`）**：`CHECKOUT_NAVIGATION_FAILED` 的 fail-closed 事件（落 `browser_run_events.summary_json` 与 WAL）带 `navigationError`（报错首行；网址只留域名；JWT/≥32 位长串/≥8 位数字串替换；≤200 字）与 `navigationActions`（导航自己的动作名，格式白名单，≤12 个）。不含页面内容、Cookie、请求、响应。其他失败原因码不变（仍只存原因码）。测试 2 条；3 处变异（不落库 / 不带步骤 / 不清洗网址）全变红；browser-mvp 全量 312/0、v1 1027/0。
 2. **Plus 不加结账页套餐核对**（Lemon 定）。已知风险照 D-374 记录：号上挂着未付 Pro 结账单时 Plus 单可能落到 Pro 结账页；报价核对不看套餐，多半因卡余额不够被拒 → 锁定转人工，不重付。
+
+## D-376（2026-09-25 UTC+8 下午）接班机制整修；常驻池改跑固定版本目录；旧工作区盘点
+
+Lemon「以上同意」（对四项：修接班机制、池改跑固定目录并与块 6 那次重启合并、旧工作区盘点后批了再清、块 6 演练等他说）。
+1. **接班机制（已做，`c85d6d9`）**：起因是按接班流程实走时发现 `state-check.sh` 报「一致 ✓」而事实表 token 行写「已更新并生效」、现场 `PROVIDER_TOKEN_EXPIRED` OPEN；另 3 行（每卡上限未落地 / 告警 113 / Worker PID 75228）过期无人发觉——脚本只查 14 项，其余行没人管。改：state-check 补 token 告警、按产品上限、bark 实际 release、worker 四个写开关（只在服务器 grep 四个键）、本机常驻池 PID 与 cwd；脚本不查的行超过 7 天列 `[陈旧]`；结尾一行写明「脚本核对 N 项（M 行）/ 另 K 行靠手工」。wrapup-check 把陈旧行列为提醒。四处变异（token / bark / 写开关 / PID）全部报漂移。事实表 30 余行按现场重写，3 行一次性历史移到 `archive/2026-09/CURRENT_STATE_rows_removed_2026-09-25.md`。browser-mvp 全量 309：300/0/9。
+2. **PROJECT_MAP 压回一页**：统一用「块」编号（旧八步 ⑦=块 6、⑧=块 7），只留块序与状态、下一步、未完成欠账、不做；旧版原文 `archive/2026-09/PROJECT_MAP_pre_onepage_2026-09-25.md`。
+3. **常驻池固定版本目录（方向定，切换未做）**：`scripts/pool-release.sh`（不改 browser-mvp），任务书 `tasks/2026-09-25-pool-pinned-release.md`。切换并入块 6「合 main → 发布 / 重启常驻池」那一次。待 Lemon 确认：目录放 `~/pojia-pool`；改 LaunchAgent。关键约束：worker 未退出前不许动 launchd（同进程组、exit timeout 5，会连带强杀）。
+4. **旧工作区盘点（只读，清理未做）**：12 个 worktree / 21 个本地分支；可安全删 5 个 worktree（其中 2 个先搬发布包，`incidents/*/prepare.txt` 引用）；4 处有 main 没有的提交（9128 `codex/browser` 49 条、mockaddress 45 条、browser-live 1 条、a088 游离 1 条）、c566 有约 66M 未提交内容——建 `archive/*` 引用或打包后再删，等 Lemon 批。
+5. **token 显示「失效」的原因**：贴 token（`setToken`）只写密文、清供卡故障，不关 `PROVIDER_TOKEN_EXPIRED`、不写 `admin_setting_events`；告警只在每小时快照同步成功时关。所以贴完到下一轮同步前，告警与工作台 token 格仍显示失效（最长约 1 小时）。
