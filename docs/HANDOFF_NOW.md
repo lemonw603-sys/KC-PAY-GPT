@@ -1,6 +1,6 @@
 # 接班一屏（HANDOFF_NOW）
 
-更新：2026-09-26 03:0x（UTC+8）＝ 09-25 19:0x UTC。执行顺序以 **D-352** 为准，「可离开」第一条以 **D-366** 为准；本窗口 D-376～D-386。
+更新：2026-09-26 03:4x（UTC+8）＝ 09-25 19:4x UTC。执行顺序以 **D-352** 为准，「可离开」第一条以 **D-366** 为准；本窗口 D-376～D-388。
 
 ## P0 已止血（D-387）
 
@@ -8,7 +8,7 @@
 
 ## 现在的状态（17:46 UTC 现查；明细见 CURRENT_STATE.md，`state-check.sh` 一致）
 
-- 生产 release **`20260925-block6-pro5x-f748bb6`**（固定提交 `f748bb63`，无新迁移，最新迁移仍 061）。回滚点 `20260924-block7-batch2-0d06f41`（无迁移，直接回滚）。
+- 生产 release **`20260925-customer-batchA-ac6e857`**（`ac6e8578`，客户页批 A，D-388；无新迁移）。回滚点 `20260925-block6-pro5x-f748bb6`（无迁移，直接回滚）。
 - **本机常驻池跑固定版本目录**：PID 52721（supervisor 52141），cwd `~/pojia-pool/releases/20260925-block6-pro5x-f748bb6/browser-mvp`，与服务器同一提交；LaunchAgent 指向 `~/pojia-pool/current`。main 工作区改动不再影响常驻池。换代码 / 回滚步骤见 RUNBOOK §5「本机常驻池换代码」。
 - 付款开关 true、下单查付款池 true、心跳新鲜。默认路线 BROWSER（Plus 用 highvcc 卡），可分配 Plus 卡 1 张（8718）；非终态订单 1（旧 WAITING_FOR_SESSION，无卡）。highvcc token 有效。HNSKJ 供卡故障仍在。hnskj Plus 水位 1（Lemon 18:02 UTC **有意**改的）：维护一结束调度器会自动开一张 $50 卡。**路线 305/306 仍关**。
 
@@ -26,9 +26,9 @@
 3. 块 7 余项：`checkout_artifacts` / `browser_artifact_secrets` 两张空表——**Lemon 定暂不删**，下次本来要改付款链路、本来要演练时顺手做（D-385）。
 4. `go-live.sh` / `stop-live.sh` 已退役（一运行就停下并提示，D-385；main 已改，`~/pojia-pool` 里的旧副本随下次池发布更新）。RUNBOOK §1 已改为常驻池现实。块 6 工作树已删。
 
-## 客户页 / 提速盘点（D-386）
+## 客户页 / 提速盘点（D-386）→ 批 A 已上线（D-388）
 
-报告 `reviews/2026-09-26-customer-ux-speed-audit/report.md`：P1 四个客户会看到错结论的问题（卡密查到旧失败单、判未扣款后永远「正在核对」、换号后先显示「遇到点问题」、执行器失败后仍显示处理中）；P2 体验问题与四态只做一半；P3 提速候选。建议分批：批 A（v1/客户页，不用演练）、批 B（browser-mvp，一次演练）。待 Lemon 挑。
+报告 `reviews/2026-09-26-customer-ux-speed-audit/report.md`：P1 四个客户会看到错结论的问题（卡密查到旧失败单、判未扣款后永远「正在核对」、换号后先显示「遇到点问题」、执行器失败后仍显示处理中）；P2 体验问题与四态只做一半；P3 提速候选。批 A 已上线（D-388，遗留三项见该条）；批 B（browser-mvp：P0 代码修 + 提速，一次演练 + 池发布）待做。
 
 ## 已定 / 禁区
 

@@ -3742,3 +3742,7 @@ Lemon 在 3 号窗口手动登录新免费号 → 只读确认已登录（无「
 ## 2026-09-25｜老脚本退役（18:1x UTC）
 
 D-385：`go-live.sh` / `stop-live.sh` 开头即 exit 3 + 提示；实跑验证无副作用；browser-mvp 全量 335：326/0/9。两张空表暂不删；hnskj Plus 水位 1 为 Lemon 有意。
+
+## 2026-09-25｜P0 止血 + 客户页批 A 上线（19:2x～19:4x UTC）
+
+P0：LaunchAgent 加 300000，池 85147（D-387）。批 A：后端三处 + 客户页十余处，`ac6e8578`，release `20260925-customer-batchA-ac6e857`（D-388）。
