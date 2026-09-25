@@ -3719,6 +3719,6 @@ Lemon「以上全部同意，5 等晚一些再做」。存档（6 个 archive �
 
 12:29:57 正式路径关付款开关（新连接复核 false / profile false / 审计 `lemon-via-claude`）→ 12:30:18 SIGTERM 91075（code=0）→ 12:30:40 关下单查付款池 → ready-check rehearsal 全绿。三张演练单与结果见 D-378（preflight 误用、企业邮箱 Business 栏、Plus 按钮灰 → 修等待、付款表单加载失败）。中途只读探页面（截图/列按钮，另在企业邮箱号的价格框点过一次 Personal 标签，未点任何购买控件）。15:26 收口两单、开回下单查付款池；新连接核实 CLOSED / CDK AVAILABLE / run FAILED_SAFE / 8718 AVAILABLE / active_runs 0。付款开关 false、池未起，等 Lemon。
 
-## 2026-09-25｜导航失败证据包（16:3x～17:3x UTC）
+## 2026-09-25｜导航失败证据包（16:0x～16:5x UTC）
 
 Lemon「以上同意」→ 任务书 → 「不限制不能存的东西」（D-380，CLAUDE.md 硬约束加例外，卡号/CVV 结构性排除）。先实测 connectOverCDP 下 trace 能录、请求头与返回内容在 trace 内。块 6 分支 `f640f9c`：新 `navigation-failure-evidence.js` + `executor.js` 导航 catch 处接入（可注入 `start` 供测试）。测试 11 条；变异 8 处——第一轮「成功后不丢弃」只靠 60 秒超时被抓（成功用例跑结账页检查过慢），改为在 checkout-navigation 事件时关测试页后直接失败。分支全量 334：325/0/9。未合 main、生产未用。
