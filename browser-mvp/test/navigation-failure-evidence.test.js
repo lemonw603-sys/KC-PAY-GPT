@@ -83,6 +83,25 @@ test('a navigation failure leaves a complete local bundle: trace, console, page 
   });
 });
 
+test('a request that never finishes does not stop the network list from being written (2026-09-25 first real use)', async () => {
+  const root = await tmpRoot();
+  const server = createServer((request, response) => {
+    if (request.url === '/api/hang') return; // never answers, like a long poll
+    response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+    response.end(`<title>Hang fixture</title><main>page</main><script>fetch('/api/hang').catch(() => {});</script>`);
+  });
+  await withPage(async ({ page, base }) => {
+    const recorder = await startNavigationEvidence({ page, runRef: 'run:hang', root });
+    await page.goto(base);
+    await page.waitForTimeout(300);
+    const out = await recorder.capture({ reason: 'X' });
+    const network = JSON.parse(await fs.readFile(path.join(root, out.evidenceRef, 'network.json'), 'utf8'));
+    const hang = network.find((row) => row.url.endsWith('/api/hang'));
+    assert.equal(hang.pending, true);
+    assert.equal(network.find((row) => row.url === base).status, 200);
+  }, server);
+});
+
 test('a successful navigation discards the recording: no bundle, and later actions are in no recording', async () => {
   const root = await tmpRoot();
   await withPage(async ({ page, context, base }) => {

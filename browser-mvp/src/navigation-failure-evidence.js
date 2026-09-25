@@ -121,7 +121,10 @@ async function requestSummary(request) {
   const row = { method: request.method(), url: request.url(), resourceType: request.resourceType() };
   const failure = request.failure();
   if (failure) row.failure = failure.errorText;
-  const response = await request.response().catch(() => null);
+  // 真页面上总有没结束的请求（长连接、Stripe 轮询），request.response() 会一直等下去——2026-09-25 第一次真用时
+  // 整张清单因此超时没存下来。每个请求最多等 300 毫秒，等不到就标 pending。
+  const response = await withTimeout(request.response(), 300, 'response').catch(() => null);
+  if (!response && !failure) row.pending = true;
   if (response) {
     row.status = response.status();
     if (row.status >= 400) {
