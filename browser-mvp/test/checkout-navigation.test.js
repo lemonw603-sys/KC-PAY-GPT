@@ -512,3 +512,53 @@ test('a Pro order that lands on Checkout proceeds only when the page itself show
     }
   } finally { await browser.close(); server.close(); await once(server, 'close'); }
 });
+
+// D-374：真实页面时间线（2026-09-25 Lane 3）：页头「Upgrade」在 domcontentloaded 后约 1.8 秒才出现；
+// 号上有未付结账单时，#pricing 不弹定价框、约十几秒后自己跳到那张结账页。
+test('navigator waits for a late header entry instead of falling back on the first empty read', async () => {
+  const html = `<title>ChatGPT</title>
+    <script>setTimeout(() => { const b = document.createElement('button'); b.type = 'button'; b.setAttribute('aria-label', 'Upgrade'); b.textContent = 'Upgrade';
+      b.onclick = () => { document.getElementById('picker').hidden = false; }; document.body.prepend(b); }, 1500);</script>
+    <section role="dialog" id="picker" hidden><button type="button" disabled>Your current plan</button>
+      <button type="button" onclick="document.querySelector('[data-testid=checkout-page-content]').hidden=false; history.replaceState(null, '', '/checkout/oaics_new')">Rejoin Plus</button></section>
+    <main data-testid="checkout-page-content" hidden>checkout</main>`;
+  const { navigateToChatGPTCheckout } = await import('../src/chatgpt-checkout-navigator.js');
+  const server = createServer((request, response) => { response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }); response.end(html); });
+  server.listen(0, '127.0.0.1'); await once(server, 'listening');
+  const base = `http://127.0.0.1:${server.address().port}/`;
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage();
+    await page.goto(base, { waitUntil: 'domcontentloaded' });
+    const result = await navigateToChatGPTCheckout(page, { ...CHATGPT_PLUS_CHECKOUT_NAVIGATION_CONTRACT, homeUrlPrefix: base, checkoutUrlPrefix: `${base}checkout/` }, { timeoutMs: 5_000, plan: 'plus' });
+    assert.deepEqual(result.actions, ['pricing-opened', 'upgrade-requested']);
+  } finally { await browser.close(); server.close(); await once(server, 'close'); }
+});
+
+test('navigator recognises #pricing taking the page to an unpaid Checkout, then lets the tier check decide', async () => {
+  const page5x = (checked) => `<title>ChatGPT</title>
+    <script>addEventListener('hashchange', () => { if (location.hash === '#pricing') setTimeout(() => {
+      document.querySelector('[data-testid=checkout-page-content]').hidden = false; history.replaceState(null, '', '/checkout/openai_llc/oaics_unpaid'); }, 1200); });</script>
+    <main data-testid="checkout-page-content" hidden>
+      <button type="button" role="radio" value="chatgptprolite" aria-checked="${checked === '5x'}">5x more usage than Plus ₱6,490/month</button>
+      <button type="button" role="radio" value="chatgptpro" aria-checked="${checked === '20x'}">20x more usage than Plus ₱9,990/month</button>
+      <button type="button" onclick="document.body.dataset.subscribed='yes'">Subscribe</button></main>`;
+  const { navigateToChatGPTCheckout } = await import('../src/chatgpt-checkout-navigator.js');
+  let html = '';
+  const server = createServer((request, response) => { response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }); response.end(html); });
+  server.listen(0, '127.0.0.1'); await once(server, 'listening');
+  const base = `http://127.0.0.1:${server.address().port}/`;
+  const contract = { ...CHATGPT_PLUS_CHECKOUT_NAVIGATION_CONTRACT, homeUrlPrefix: base, checkoutUrlPrefix: `${base}checkout/` };
+  const browser = await chromium.launch({ headless: true });
+  try {
+    html = page5x('5x');
+    let page = await browser.newPage(); await page.goto(base, { waitUntil: 'domcontentloaded' });
+    const ok = await navigateToChatGPTCheckout(page, contract, { timeoutMs: 3_000, plan: 'pro_5x' });
+    assert.deepEqual(ok.actions, ['landed-on-checkout', 'tier-verified-on-checkout:5x']);
+    assert.equal(await page.evaluate(() => document.body.dataset.subscribed), undefined);
+    await page.close();
+    html = page5x('20x');
+    page = await browser.newPage(); await page.goto(base, { waitUntil: 'domcontentloaded' });
+    await assert.rejects(navigateToChatGPTCheckout(page, contract, { timeoutMs: 3_000, plan: 'pro_5x' }), /without selecting its tier/);
+  } finally { await browser.close(); server.close(); await once(server, 'close'); }
+});

@@ -365,7 +365,14 @@ export async function navigateToChatGPTCheckout(page, contract = CHATGPT_PLUS_CH
   if (context?.on) context.on('page', onPopup);
   try {
   await assertNoSessionExpiredDialog(page);
-  if (!await targetReady(page, contract, expect, popups)) {
+  // D-374：页面外壳在 domcontentloaded 之后才渲染（实测页头「Upgrade」晚 1.5～2 秒出现）。原来只看一眼
+  // 就改走 #pricing / 个人菜单备用路，备用路在号上有未付结账单时会失败；先有界地等入口出现。
+  const entry = await waitForState(page, async () => {
+    if (await targetReady(page, contract, expect, popups)) return 'target';
+    if (await pricingDialogVisible(page, contract)) return 'pricing';
+    return (await lastVisibleNavigationSelector(page, contract.openPricingSelectors, 'open pricing control', { optional: true })) ? 'header' : null;
+  }, { timeoutMs: Math.min(timeoutMs, 10_000), label: 'pricing entry' }).catch(() => null);
+  if (entry !== 'target' && !await targetReady(page, contract, expect, popups)) {
     // A resumed run may already sit on the open plan picker; the header
     // control behind the modal is then covered and must not be clicked.
     let pickerAlreadyOpen = await pricingDialogVisible(page, contract);
@@ -375,19 +382,23 @@ export async function navigateToChatGPTCheckout(page, contract = CHATGPT_PLUS_CH
       'open pricing control',
       { optional: true },
     );
+    let landedOnTarget = false;
     // Plus accounts have no header "Upgrade" button and no "Upgrade plan" item in
     // the profile menu; their plan picker opens via the #pricing hash instead.
     // Try that first (covers Plus->Pro stage 2), then fall back to the
     // free-account profile-menu path below.
     if (!openPricing && !pickerAlreadyOpen) {
       await page.goto(`${contract.homeUrlPrefix}#pricing`, { waitUntil: 'domcontentloaded', timeout: timeoutMs }).catch(() => undefined);
-      pickerAlreadyOpen = await waitForState(
-        page,
-        async () => ((await pricingDialogVisible(page, contract)) ? true : null),
-        { timeoutMs: Math.min(timeoutMs, 15_000), label: 'pricing dialog via #pricing' },
-      ).then(() => true).catch(() => false);
+      // D-374：号上有未付结账单时，#pricing 会直接把页面带到那张结账页而不弹定价框（实测 18 秒后跳转）；
+      // 原来只等弹框，错过已到结账页，转去结账页上找不存在的个人菜单直到超时。
+      const viaHash = await waitForState(page, async () => {
+        if (await targetReady(page, contract, expect, popups)) return 'target';
+        return (await pricingDialogVisible(page, contract)) ? 'pricing' : null;
+      }, { timeoutMs: Math.min(timeoutMs, 30_000), label: 'pricing dialog via #pricing' }).catch(() => null);
+      pickerAlreadyOpen = viaHash === 'pricing';
+      landedOnTarget = viaHash === 'target';
     }
-    if (!openPricing && !pickerAlreadyOpen) {
+    if (!openPricing && !pickerAlreadyOpen && !landedOnTarget) {
       // The app shell renders asynchronously after a freshly injected session
       // navigates home; the profile menu (the pricing entry point) can appear a
       // beat later. Wait for it instead of failing on the first empty DOM read.
@@ -404,7 +415,10 @@ export async function navigateToChatGPTCheckout(page, contract = CHATGPT_PLUS_CH
         return uniqueVisibleMenuItem(page, contract.profileUpgradeLabels, 'profile upgrade control', { optional: true });
       }, { timeoutMs, label: 'profile upgrade control' });
     }
-    if (pickerAlreadyOpen) {
+    if (landedOnTarget) {
+      // 没点任何东西就到了结账页：Pro 单由下方的档位核对决定放不放行。
+      actions.push('landed-on-checkout');
+    } else if (pickerAlreadyOpen) {
       actions.push('pricing-already-open');
     } else {
       await safeClick(openPricing, 'open pricing control', assertContinue, timeoutMs);
