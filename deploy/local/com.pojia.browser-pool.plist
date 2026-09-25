@@ -9,7 +9,9 @@
   <key>ProgramArguments</key>
   <array>
     <string>/bin/bash</string>
-    <string>/Users/lemon/code/AI充值业务/browser-mvp/scripts/live-pool-supervisor.sh</string>
+    <!-- D-377/D-383：从固定版本目录跑（scripts/pool-release.sh prepare/switch 管 current 软链），
+         不再跑 main 工作区——工作区里的改动不会在池子下次重启时悄悄上线。 -->
+    <string>/Users/lemon/pojia-pool/current/browser-mvp/scripts/live-pool-supervisor.sh</string>
   </array>
   <!-- launchd 的默认 PATH 只有 /usr/bin:/bin:/usr/sbin:/sbin，取不到 Homebrew 装的 mysql，
        prod-query.sh 就查不出付款开关，supervisor 会永远停在「只等不跑」——开了开关也不动。
