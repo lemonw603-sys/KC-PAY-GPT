@@ -1,6 +1,6 @@
 # AI充值业务｜项目地图
 
-最后核对：2026-09-25 16:2x（UTC+8）。本页只放目标、块序与状态、下一步、欠账、不做；**生产数值只看 `CURRENT_STATE.md`**，过程看 `HANDOFF_LOG.md`，决策看 `DECISIONS.md`。
+最后核对：2026-09-25 18:0x（UTC+8）。本页只放目标、块序与状态、下一步、欠账、不做；**生产数值只看 `CURRENT_STATE.md`**，过程看 `HANDOFF_LOG.md`，决策看 `DECISIONS.md`。
 2026-09-25 前的完整旧版（顶部 8 段「覆盖」+ 八步表逐步记录 + 已完成欠账）原文：`archive/2026-09/PROJECT_MAP_pre_onepage_2026-09-25.md`。
 
 ## 1. 目标与原则
@@ -27,10 +27,11 @@
 ## 3. 下一步（按顺序，每步等 Lemon）
 
 1. ~~highvcc token~~ ✅ 09-25 07:25:58 UTC 重贴，08:15 UTC 同步确认有效、告警已关（CURRENT_STATE token 行）。
-2. **块 6 Plus 回归演练**（Lemon 想做时说；步骤见 `HANDOFF_NOW.md`）。计划与「常驻池改跑固定版本目录」合成一次演练、一次重启（2026-09-25 Lemon 同意方向，细节待批）。
+2. **块 6 Plus 回归演练**（Lemon 说晚些做；步骤见 `HANDOFF_NOW.md`）。演练后那次发布重启时，常驻池切到 `~/pojia-pool` 固定版本目录并改 LaunchAgent（D-377 已批，到时当场再确认）。
 3. 演练过后逐项问：合 main → 发布 / 重启常驻池 → 重开路线 305。**重开 305 之前要定 5x 卡从哪来**：两台 pro_5x 水位都是 0、Lemon 定过「先不开卡」；来 5x 单时调度器会不会替等卡单自动开一张、开出来的卡归属怎么标（欠账 1、2），**尚未核实**。
 4. 等首张真实客户 Plus 单（可离开第一条），之后数连续 10 单。
-5. 块 7 余项：`checkout_artifacts` / `browser_artifact_secrets` 两表在块 6 之后清理。
+5. **贴 token 当场验证**（D-377，代码完成未发布）：发布等 Lemon 批，可单独发也可并入块 6 那次。
+6. 块 7 余项：`checkout_artifacts` / `browser_artifact_secrets` 两表在块 6 之后清理。
 
 ## 4. 欠账（每条带触发条件；已完成的见旧版原文）
 

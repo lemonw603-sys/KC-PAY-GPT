@@ -23,6 +23,7 @@ import { createAdminSessionAuth } from './security/admin-session.js';
 import { createCardStockService } from './services/card-stock-service.js';
 import { createCardStockJobService } from './services/card-stock-job-service.js';
 import { createHighvccCardService } from './services/highvcc-card-service.js';
+import { createHighvccTokenSaveService } from './services/highvcc-token-save-service.js';
 import { createHighvccSnapshotSyncService } from './services/highvcc-snapshot-sync-service.js';
 import { createCardSupplyPolicyAdminService } from './services/card-supply-policy-admin-service.js';
 import { createProviderRouteAdminService } from './services/provider-route-admin-service.js';
@@ -89,6 +90,10 @@ const cardStockService = createCardStockService({
 const cardStockJobService = createCardStockJobService({ pool });
 const highvccCardService = createHighvccCardService({
   pool, encryptionKey: config.sessionEncryptionKey, panHmacKey: config.cardIntakePanHmacKey
+});
+// D-377：贴 token 后当场验证、卡台认就关失效告警。
+const saveHighvccToken = createHighvccTokenSaveService({
+  pool, setToken: highvccCardService.setToken, walletStatus: highvccCardService.walletStatus
 });
 // D-280 ②「刷新这台」的 highvcc 侧：与 CLI `scripts/sync-highvcc-snapshot.mjs --commit`
 // 同一个服务、同样三步，只是换成后台按钮触发。
@@ -252,7 +257,7 @@ const app = createApp({
   ,setAdminCardMinimumBalance: (value, planType) => cardStockService.setMinimumRequiredCardBalance(value, planType)
   ,createAdminCardStockJob: cardStockJobService.createJob
   ,getHighvccCardStatus: highvccCardService.tokenStatus
-  ,setHighvccCardToken: highvccCardService.setToken
+  ,setHighvccCardToken: saveHighvccToken
   ,quoteHighvccCard: highvccCardService.quote
   ,openHighvccCard: highvccCardService.openCard
   ,listHighvccCardRanges: highvccCardService.listRanges

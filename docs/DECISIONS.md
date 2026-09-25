@@ -5610,3 +5610,11 @@ Lemon「以上同意」（对四项：修接班机制、池改跑固定目录并
 3. **常驻池固定版本目录（方向定，切换未做）**：`scripts/pool-release.sh`（不改 browser-mvp），任务书 `tasks/2026-09-25-pool-pinned-release.md`。切换并入块 6「合 main → 发布 / 重启常驻池」那一次。待 Lemon 确认：目录放 `~/pojia-pool`；改 LaunchAgent。关键约束：worker 未退出前不许动 launchd（同进程组、exit timeout 5，会连带强杀）。
 4. **旧工作区盘点（只读，清理未做）**：12 个 worktree / 21 个本地分支；可安全删 5 个 worktree（其中 2 个先搬发布包，`incidents/*/prepare.txt` 引用）；4 处有 main 没有的提交（9128 `codex/browser` 49 条、mockaddress 45 条、browser-live 1 条、a088 游离 1 条）、c566 有约 66M 未提交内容——建 `archive/*` 引用或打包后再删，等 Lemon 批。
 5. **token 显示「失效」的原因**：贴 token（`setToken`）只写密文、清供卡故障，不关 `PROVIDER_TOKEN_EXPIRED`、不写 `admin_setting_events`；告警只在每小时快照同步成功时关。所以贴完到下一轮同步前，告警与工作台 token 格仍显示失效（最长约 1 小时）。
+
+## D-377（2026-09-25 UTC+8 傍晚）四项全批：池目录与 LaunchAgent、旧工作区清理、贴 token 当场验证；演练晚些
+
+Lemon「以上全部同意，5 等晚一些再做」。
+1. **常驻池固定版本目录放 `~/pojia-pool`**；**块 6 发布那次重启时改 LaunchAgent**（先关付款开关、等 worker 自己退出再动 launchd），步骤按 `tasks/2026-09-25-pool-pinned-release.md`。到时仍当场确认一次再动。
+2. **旧工作区清理（已做）**：先存档后删除。main 没有的提交存为 `archive/*` 分支（6 个，已推 origin，含游离提交 `d7fd651b` 与 `stash@{0}`）；9128 / c566 的未跟踪与被忽略内容打包到 `~/archive/AI充值业务-worktrees-20260925/`（700/600 权限，文件数与磁盘逐一对上：100/100、5119/5119，另存 c566 已跟踪改动 patch）；两个发布包 `diff -r` 一致地搬到主工作区 `artifacts/release-candidate-20260916-*`。删除 10 个 `~/.codex/worktrees` 工作树与 6 个空目录、17 个本地分支（合并的用 `-d`；未合并的都先核对存档分支指向同一提交或已被包含）。剩余：main、block6-pro5x、upstream-baseline、codex/inflight-20260906-abandoned、6 个 archive/*。去向表在 `archive/INDEX.md` 末尾。
+3. **贴 token 后当场验证（代码完成，未发布）**：保存后用新 token 读一次卡台钱包（只读）：卡台认 → 关 `PROVIDER_TOKEN_EXPIRED`（VALID）；不认 → 提示重贴、不动告警（REJECTED）；连不上 / 超时 10 秒 → 提示下一轮同步再验、不动告警（UNKNOWN）。开告警与推送仍只由每小时同步判定。实现放在只有网页后台加载的 `services/highvcc-token-save-service.js`（server.js 组装），**付款池加载的 68 个模块一个没改**（第一版写进了 `highvcc-card-service.js`，查出它在池的加载范围内后撤回重做）。「卡台不认」的码抽成 `domain/highvcc-token-trouble.js` 一份，快照同步脚本同用。页面按三种结果给大白话提示，`admin.js?v=96`。测试：新 6 条走真 `highvcc-card-service` 只换网络与库；变异 6 处全被抓；v1 全量 1099：1034/0/65；界面文案检查通过。发布等 Lemon 批。
+4. 块 6 Plus 回归演练：Lemon 说晚些再做。

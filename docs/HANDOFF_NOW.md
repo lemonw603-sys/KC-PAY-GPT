@@ -1,6 +1,6 @@
 # 接班一屏（HANDOFF_NOW）
 
-更新：2026-09-25 16:2x（UTC+8）＝ 08:2x UTC。执行顺序以 **D-352** 为准，「可离开」第一条以 **D-366** 为准；本窗口 D-376。
+更新：2026-09-25 18:0x（UTC+8）＝ 10:0x UTC。执行顺序以 **D-352** 为准，「可离开」第一条以 **D-366** 为准；本窗口 D-376、D-377。
 
 ## 现在的状态（08:15 UTC 现查；明细见 CURRENT_STATE.md，`state-check.sh` 一致）
 
@@ -12,22 +12,21 @@
 ## 块 6 = Pro 5x（D-370～D-375）——代码完成，差一次演练
 
 - 分支 **`block6-pro5x`（`b3f1d37`，已推送，未合 main、未发布）**，工作树 `.claude/worktrees/block6-pro5x`（node_modules 是软链，别提交）。
-- **下一步＝Plus 回归演练（D-254）**，Lemon 想做时会先说。流程：正式路径关付款开关（`admin-operations-service.setBrowserPaymentWrites`，不用 `stop-live.sh`）→ SIGTERM 常驻池 worker → `set-intake-executor-check.mjs off --apply` → Lemon 在客户页用 Lane 3 号（比特窗口 `8f126430…`）建 Plus 单 → `run-browser-preflight.sh once` → **从分支目录**跑 `run-live-rehearsal.sh once <id>` → `close-rehearsal-order.mjs` 收口 → 心跳检查 on → 付款开关 on。等待循环的命令行别含 `production-live-pool-worker`（D-373）。
-- 演练过后逐项问：合 main → 服务器发布 → **常驻池切到固定版本目录**（与这次重启合并，步骤见 `tasks/2026-09-25-pool-pinned-release.md`）→ 重开路线 305。重开前要定 5x 卡从哪来（两台 pro_5x 水位 0、Lemon 定过先不开卡；欠账 1、2，调度器会不会替等卡单自动开尚未核实）。
+- **下一步＝Plus 回归演练（D-254）**，Lemon 说晚些再做，他会先说。流程：正式路径关付款开关（`admin-operations-service.setBrowserPaymentWrites`，不用 `stop-live.sh`）→ SIGTERM 常驻池 worker → `set-intake-executor-check.mjs off --apply` → Lemon 在客户页用 Lane 3 号（比特窗口 `8f126430…`）建 Plus 单 → `run-browser-preflight.sh once` → **从分支目录**跑 `run-live-rehearsal.sh once <id>` → `close-rehearsal-order.mjs` 收口 → 心跳检查 on → 付款开关 on。等待循环的命令行别含 `production-live-pool-worker`（D-373）。
+- 演练过后逐项问：合 main → 服务器发布 → **常驻池切到 `~/pojia-pool` 固定版本目录并改 LaunchAgent**（D-377 已批；与这次重启合并，步骤见 `tasks/2026-09-25-pool-pinned-release.md`，动之前当场再确认；worker 未退出前不许动 launchd）→ 重开路线 305。重开前要定 5x 卡从哪来（两台 pro_5x 水位 0、Lemon 定过先不开卡；欠账 1、2，调度器会不会替等卡单自动开尚未核实）。
 
-## 本窗口做完的（D-376）
+## 本窗口做完的（D-376、D-377）
 
 - `state-check.sh` 补 token 告警 / 每卡上限 / bark release / worker 写开关 / 本机池 PID 与 cwd；脚本不查、超过 7 天的行列 `[陈旧]`；结尾写明覆盖范围。wrapup-check 接提醒。事实表逐行对现场重写。
 - PROJECT_MAP 压一页（统一「块」编号）。
 - `scripts/pool-release.sh`（prepare / verify / switch / status）在临时目录验过；**在跑的池与 LaunchAgent 都没动**。
-- 旧工作区只读盘点：清单在 D-376 第 4 条，**清理等 Lemon 批**。
+- 旧工作区已清理（D-377 第 2 条）：先存档后删，去向表在 `archive/INDEX.md` 末尾；剩 main、block6-pro5x、upstream-baseline、codex/inflight-20260906-abandoned、6 个 archive/*。
+- 贴 token 当场验证：代码完成、测试与变异通过，**未发布**（`services/highvcc-token-save-service.js`，不在付款池加载范围内）。
 
 ## 等 Lemon 的
 
-1. 块 6 Plus 回归演练：他说开始才做。
-2. 池固定目录：目录放 `~/pojia-pool`、切换那次改 LaunchAgent——都未确认。
-3. 旧工作区：5 个可安全删（2 个先搬发布包）；4 处有未合提交、c566 有约 66M 未提交内容，要他定存档还是放弃。
-4. 贴 token 后是否让系统立刻验一次并关告警（v1 小改动，未做）。
+1. 块 6 Plus 回归演练：他说晚些做，说开始才做。
+2. 贴 token 当场验证的发布：单独发，还是并入块 6 那次发布。
 
 ## 已定 / 禁区
 

@@ -31,10 +31,26 @@ test('wallet requests coalesce and an old response cannot overwrite a saved-toke
 test('token save success followed by status failure is not reported as failed save',async()=>{
  let handler,invalidations=0,writes=0;const notices=[],button={disabled:false};
  const ctx={elements:{highvccTokenInput:{value:'synthetic-token'},highvccTokenForm:{addEventListener(_,fn){handler=fn},querySelector:()=>button}},
-  sensitiveApi:async()=>{writes++},invalidateHighvccWallet:()=>invalidations++,loadHighvccStatus:async()=>{throw Error('read failed')},showNotice:x=>notices.push(x)};
+  sensitiveApi:async()=>{writes++;return{configured:true,verification:'VALID',alertCleared:true}},invalidateHighvccWallet:()=>invalidations++,loadHighvccStatus:async()=>{throw Error('read failed')},showNotice:x=>notices.push(x),
+  showHighvccTokenSaved:(saved)=>notices.push(`saved:${saved?.verification}`)};
  vm.runInNewContext(snippet("elements.highvccTokenForm?.addEventListener('submit'"),ctx);await handler({preventDefault(){}});
  assert.equal(writes,1);assert.equal(invalidations,1);assert.equal(button.disabled,false);assert.equal(ctx.elements.highvccTokenInput.value,'');
  assert.match(notices.at(-1),/已保存，但状态读取失败/);assert(!notices.some(x=>x.includes('保存失败')));
+ assert(notices.includes('saved:VALID'),'the verification outcome from the save response is shown');
+});
+test('token save tells the operator what the platform said about the new token (D-377)',()=>{
+ const notices=[];const ctx={showNotice:(...args)=>notices.push(args)};
+ vm.runInNewContext(snippet('function showHighvccTokenSaved(', '\n}\n'),ctx);
+ ctx.showHighvccTokenSaved({verification:'VALID',alertCleared:true});
+ ctx.showHighvccTokenSaved({verification:'VALID',alertCleared:false});
+ ctx.showHighvccTokenSaved({verification:'REJECTED',alertCleared:false});
+ ctx.showHighvccTokenSaved({verification:'UNKNOWN',alertCleared:false});
+ ctx.showHighvccTokenSaved(undefined);
+ assert.match(notices[0][0],/验证通过，失效提醒已关/);assert.equal(notices[0][1],'success');
+ assert.match(notices[1][0],/验证通过；失效提醒下一轮同步/);
+ assert.match(notices[2][0],/卡台不认它/);assert.equal(notices[2][1],'warning');
+ assert.match(notices[3][0],/没连上卡台验证/);assert.match(notices[4][0],/没连上卡台验证/);
+ assert(!notices.some(([x])=>/VALID|REJECTED|UNKNOWN/.test(x)),'no internal codes on screen');
 });
 for(const outcome of ['read-failed','lost-response','rejected','unsaved','success'])test(`method switch feedback: ${outcome}`,async()=>{
  let writes=0,reads=0;const notices=[];
