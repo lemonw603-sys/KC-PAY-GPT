@@ -3694,3 +3694,7 @@ Lemon「1. 同意 2. 先不开卡」。分支 `block6-pro5x` `71f6ae3`（已推�
 
 Lemon「1 做 2 A 3 可以」→ 17:45:53 UTC 正式路径关付款开关（新连接复核 false / profile false / 审计行）→ SIGTERM 6667（活动 run 0，code=0 退出）→ `set-intake-executor-check.mjs off`（dry-run 后 apply，复核 false）→ `ready-check.sh rehearsal` 全绿（可分配 Plus 卡 1）。之后到 01:0x UTC 无新单。
 5x 只填地址脚本（`browser-mvp/scripts/poc-pro5x-billing-tax.mjs`，分支）8 次：3 次直接落地结账页（见 D-372 第 1 条）、2 次填地址时 Stripe 框重载报错、1 次页面未就绪导航超时、2 次到结账页但 20 个框无地址字段。Lemon「1 同意 2 封存」→ 导航拦截 `0e97bab` + 测试 + 变异验证；KC 封存。证据复制到主仓库 `artifacts/poc-pro5x-billing-tax/`（不入库）。
+
+## 2026-09-25｜恢复常驻池；拦截改为读页面档位（01:3x～02:0x UTC）
+
+Lemon「1B 2 现在做」。恢复步骤与复核见 D-373 第 1 条（PID 91075，state-check 一致）。拦截改进 `aad6980`：先只读探真实 5x 结账页档位结构，再写规则与测试，变异验证 4 处全红，Lane 3 实跑认出已有 5x 未付结账单（`tier-verified-on-checkout:5x`）。证据 `artifacts/poc-pro5x-billing-tax/`（11 份，不入库）。

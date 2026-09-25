@@ -20,7 +20,7 @@
 
 1. **块 7 删表已完成**（D-367，两批：迁移 060 删 5 表、061 删补余额线 2 表 + 开关；补余额两个定时任务停用并删 unit）。剩余：`checkout_artifacts` / `browser_artifact_secrets` 并入块 6；块 7 只剩「可离开」收尾＝等第一张真实客户单（下一条）。
 2. **「可离开」第一条（D-366）**：等第一张真实客户 Plus 单。来单 Bark 会推 → Lemon 开窗口 → 执行者按 RUNBOOK §1 全程盯、逐项对照 `contracts/2026-09-18_delivery-criteria-contract.md`；此后数「连续 10 单真实客户单无人介入」。不自费、不需 free 号。
-3. **块 6 = Pro 5x**（D-370/D-371/D-372）：代码在分支 `block6-pro5x`（`0e97bab`，未合 main、未发布），两套全量测试绿；含导航「Pro 必须亲手选档」拦截。5x 零税不填卡验不了（D-372），等带卡演练或首张 5x 客户单。**⚠ 生产现在处于演练暂停**：付款开关 false、下单心跳检查 false、常驻池已停（17:45 UTC 起）。等 Lemon 用 Lane 3 号在客户页建 Plus 单 → `run-browser-preflight.sh once` → 从分支目录 `run-live-rehearsal.sh once <id>` → `close-rehearsal-order.mjs` → 心跳检查 on → 付款开关 on（supervisor 自动拉起池）。之后：合 main → 发布/重启池 → 重开路线 305，每步先问。
+3. **块 6 = Pro 5x**（D-370～D-373）：代码在分支 `block6-pro5x`（`aad6980`，未合 main、未发布），两套全量测试绿；含导航「Pro 须亲手选档，或结账页上选中档位对得上」规则。5x 零税不填卡验不了，等首张 5x 客户单（不开卡）。**还差 Plus 回归演练（D-254）**：生产已恢复（常驻池 PID 91075 付款模式）→ **Lemon 建演练单前先告诉执行者**，执行者先停池（正式路径关付款开关 → SIGTERM → 心跳检查 off）再让他建单 → preflight → 从分支目录 `run-live-rehearsal.sh once <id>` → 收口 → 开回。之后：合 main → 发布/重启池 → 重开路线 305，每步先问。
 
 ## 下一件（Lemon 2026-09-24 定）
 

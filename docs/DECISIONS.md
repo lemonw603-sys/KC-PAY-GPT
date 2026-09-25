@@ -5581,3 +5581,10 @@ Lemon「1 同意 2 封存」（前一轮「1 做 2 A 3 可以」）。
 2. **5x「只填地址看税」（Lemon 批 A）做不成**：结账页 20 个框里没有任何地址字段，只有 Stripe 卡号框（`artifacts/poc-pro5x-billing-tax/pro_5x-2026-09-25T01-02-37-495Z.json`）；地址栏应要填卡后才出现（推断；生产顺序本就是先卡后地址）。**5x 免税后零税仍未验证**，只能靠带卡演练或第一张 5x 客户单。本轮所见：5x 结账 `plan_name=chatgptprolite`，填地址前 ₱5,794.64 + VAT ₱695.36 = ₱6,490.00（与 D-369 一致）。每次 `cardFieldsWritten 0 / submitCalls 0`。
 3. **KC-PAY-GPT 独立文件夹封存**：`~/code/KC-PAY-GPT-standalone` 不再开发、不删；放 `ARCHIVED.md`，`~/code/PROJECTS.md` 登记「已封存」。D-360「KC 独立业务线」结束。
 4. **Plus 回归演练**：17:45:53 UTC 起常驻池暂停（付款开关 false、下单心跳检查 false、6667 已退出），等 Lemon 用 Lane 3 号在客户页建单；到 01:0x UTC 未见新单。现状见 CURRENT_STATE。
+
+## D-373（2026-09-25 09:3x～10:0x UTC+8 ＝ 01:3x～02:0x UTC）恢复常驻池、改天演练；Pro 直接落地结账页改为「读页面档位，对上放行」
+
+Lemon「1B 2 现在做」。
+1. **恢复**：复核暂停期新单 0、活动 run 0 → 01:32:00 UTC 正式路径开付款开关（复核 true / profile true / 审计行）→ supervisor 01:36:38 UTC 拉起 **PID 91075**（PAY/lane-1，cwd main `browser-mvp`，代码与此前 6667 相同，未含块 6）→ 心跳 01:38:35 UTC 新鲜 → 01:39:01 UTC 开回下单心跳检查（dry-run 后 apply，复核 true）→ `EXECUTOR_OFFLINE` 01:36:53 UTC 自动 RESOLVED → `state-check` 一致。插曲：supervisor 01:32:28 那轮报「有残留 worker」，推断是我等待循环的命令行含 `production-live-pool-worker` 被它的 `pgrep -f` 匹配（未证实），下一轮即通过。**Plus 回归演练改天：Lemon 建演练单前先告诉执行者**（池在付款模式，不先停会被真付）。
+2. **拦截改进（分支 `aad6980`）**：Pro 单没亲手选档就落到结账页时，读结账页档位单选——恰好一个 `aria-checked="true"`、`value` 是该套餐结账名（5x `chatgptprolite`、20x `chatgptpro`）、文字以档位开头——三项都对才放行（记 `tier-verified-on-checkout:5x`），否则仍付款前停下。页面结构先对真实 5x 结账页只读核对（`button[role=radio]` + 隐藏 `input[type=radio]`，同值）。实跑：落在号上已有的 5x 未付结账单时被正确认出并放行。测试：5 种拒绝 + 1 种放行；4 处变异（永远放行 / 永远拒绝 / 不查 value / 不查文字）全变红。browser-mvp 全量 308/0、v1 1027/0。
+3. **观察（未改）**：11 次运行里另有 2 次在导航早段失败（个人菜单超时 1、个人菜单元素点击时已脱离页面 1），都在付款前。这是导航原有的不稳定，Plus 单同样会遇到；频率与原因未查。
