@@ -389,18 +389,11 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
           // 补余额整条线已删（D-367）：余额不够的卡不再「补足后再用」，缺卡一律交给水位调度器开新卡；
           // 开不出来时由调度器的「缺卡但开不出来」/「卡台故障」叫人，这里不再因「有卡可补钱」而另外叫人。
           const replenishmentPending = autoReplenishmentEnabled;
-          const waitingMessage = replenishmentPending
-            ? '当前没有可用卡，已自动安排开卡，订单会继续处理。'
-            : '当前没有可用于 Plus 的卡，订单正在等待处理。';
-          const autoHealing = replenishmentPending;
-          if (autoHealing) {
-            await connection.query(
-              `UPDATE operator_alerts SET status='RESOLVED',
-                 acknowledged_at=COALESCE(acknowledged_at, CURRENT_TIMESTAMP(3))
-               WHERE dedupe_key=? AND status='OPEN'`,
-              [alertKey]
-            );
-          } else {
+          // 自动开卡开着时，这一单的「在等卡」告警归调度器管：本轮开不出卡才打开，分到卡或离开等卡才关
+          // （D-397）。这里不能再每次都关它——分卡每 60 秒重试一次，调度器随后又打开，就是一次「关→开」，
+          // 手机每分钟响一次。以前总是关，于是开不出卡时一条都不响（2026-09-26 查出）。
+          if (!replenishmentPending) {
+            const waitingMessage = '当前没有可用于 Plus 的卡，订单正在等待处理。';
             await connection.query(
               `INSERT INTO operator_alerts
                (id, alert_type, dedupe_key, order_id, severity, title, message, status)

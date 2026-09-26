@@ -18,6 +18,9 @@ import { countTodayOpenings, unresolvedPaidJobsSql } from './card-stock-job-serv
  *   一轮里按优先级逐个看缺口，一台开不了就接着看下一台（D-365，欠账 16：此前只看第一个，
  *   它被挡住整轮就结束，排第二的那台缺卡、钱也够，也永远不会自动补）。
  *   `CARD_STOCK_LOW` 按台 × 产品由这里唯一产生（阈值 = 水位），不再散在分卡/入库两处。
+ *   总闸开着时，「客户在等卡」（ORDER_WAITING_FOR_CARD，每单一行）也归这里管（D-397）：本轮给等卡单
+ *   开不出卡才打开、每单只推一次；拿到卡（分卡事务）、取消、或订单离开等卡时关。库存与等卡两类告警
+ *   都等本轮结论出来再写，文案按结论说「已安排 / 在跑 / 开不出来：原因」，不再先写「正在补」。
  *
  * 手续费用第②步落的真实观察（CARD_ISSUE_FEE 行）：取该台最近 5 条的中位数；一条观察都没有时
  * 用「金额 10% + $1」这个保守上限（computeIssueFee 的合理性闸门），宁可少开也不猜费率。
@@ -282,17 +285,82 @@ export function createCardSupplyScheduler({ pool, adapters, now = () => new Date
     };
   }
 
-  async function refreshStockAlert(measured, { enabled }) {
+  async function refreshStockAlert(measured, { note }) {
     const key = `card-stock-low:${measured.providerAccountId}:${measured.productCode}`;
-    if (measured.targetAvailable > 0 && measured.available < measured.targetAvailable) {
+    if (measured.low) {
       await upsertSupplyAlert(pool, {
         type: ALERT_TYPES.STOCK_LOW, key, severity: 'warning', title: '可用卡库存偏低',
-        message: `${measured.accountLabel} 的 ${measured.productCode} 可分配 ${measured.available} 张，水位 ${measured.targetAvailable}${enabled ? '，调度器正在补' : '，自动开卡总闸关闭，不会自动补'}。`
+        message: `${measured.accountLabel} 的 ${measured.productCode} 可分配 ${measured.available} 张，水位 ${measured.targetAvailable}${note}。`
       });
-      return true;
+      return;
     }
     await resolveSupplyAlert(pool, key);
-    return false;
+  }
+
+  /** 本轮对这一行的结论里「开不出来」的那个；在跑 / 已安排 / 本轮没轮到它，都不算。 */
+  function blockedOutcomeFor(row, result, byRow) {
+    if (!result.enabled || !(row.deficit > 0)) return null;
+    if (result.reason === 'FUNDS_REVIEW_REQUIRED') return { scheduled: false, reason: 'FUNDS_REVIEW_REQUIRED' };
+    const outcome = byRow.get(policyKey(row.providerAccountId, row.productCode));
+    if (!outcome || outcome.scheduled || outcome.reason === 'JOB_ACTIVE') return null;
+    return outcome;
+  }
+
+  function describeBlocked(outcome, state) {
+    const label = state.accountsById.get(outcome.opener)?.displayName || '卡台';
+    const preflight = outcome.preflight || {};
+    switch (outcome.reason) {
+      case 'WALLET_BELOW_FLOOR':
+        return `${label} 钱包 ${preflight.balance}，开一张要 ${preflight.amount} + 手续费约 ${preflight.fee}，扣完剩 ${preflight.projected}，低于底线 ${preflight.floor}，请给钱包充值`;
+      case 'DAILY_LIMIT':
+        return `${label} 今天已开 ${outcome.usedToday} 张，到了每日上限 ${outcome.dailyLimit}`;
+      case 'BLOCKED': {
+        const why = outcome.fallback === 'NOT_BROWSER_DEMAND' ? 'API 路线不转台'
+          : outcome.fallback === 'NO_WAITING_ORDERS' ? '只缺水位不转台' : '没有别的卡台能顶上';
+        return `该台此刻不能开（${outcome.cause}），${why}`;
+      }
+      case 'ADAPTER_CANNOT_OPEN':
+        return `${label} 不让开卡（${outcome.cause}）`;
+      case 'WALLET_READ_FAILED':
+        return `读不到 ${label} 的钱包（${outcome.cause}）`;
+      case 'FUNDS_REVIEW_REQUIRED':
+        return '有一张开卡任务花了钱还没核对，自动开卡暂停，核对后恢复';
+      default:
+        return `开卡没过（${outcome.reason}${outcome.cause ? `：${outcome.cause}` : ''}）`;
+    }
+  }
+
+  function stockNote(row, result, byRow, state) {
+    if (!state.enabled) return '，自动开卡总闸关闭，不会自动补';
+    const outcome = byRow.get(policyKey(row.providerAccountId, row.productCode));
+    if (outcome?.scheduled) return `，已安排 ${state.accountsById.get(outcome.opener)?.displayName || '卡台'} 开一张`;
+    if (result.reason === 'JOB_ACTIVE' || outcome?.reason === 'JOB_ACTIVE' || (!(row.deficit > 0) && row.inflight > 0)) return '，开卡任务在跑';
+    const blocked = blockedOutcomeFor(row, result, byRow);
+    return blocked ? `，开不出来：${describeBlocked(blocked, state)}` : '';
+  }
+
+  /**
+   * 有客户在等、本轮又开不出卡：给等卡单各开一条 ORDER_WAITING_FOR_CARD（每单一行、只在打开那一刻推）。
+   * 只算可分配与在途都顶不上的那几单（最新的几单）；顶得上的那几单马上会分到卡，不叫人。
+   */
+  async function raiseBlockedWaitingOrders(row, blocked, state) {
+    const uncovered = row.waiting - row.available - row.inflight;
+    if (!blocked || !(uncovered > 0)) return 0;
+    const [orders] = await pool.query(
+      `SELECT o.id, o.public_no FROM orders o
+        WHERE o.product_id = ? AND o.frozen_card_provider_account_id = ? AND ${safeWaitingPredicate('o')}
+        ORDER BY o.created_at DESC, o.id DESC LIMIT ?`,
+      [row.productId, row.providerAccountId, uncovered]
+    );
+    const reason = describeBlocked(blocked, state);
+    for (const order of orders) {
+      await upsertSupplyAlert(pool, {
+        type: 'ORDER_WAITING_FOR_CARD', key: `order-waiting-card:${order.id}`, severity: 'critical',
+        title: '客户在等卡，开不出来', orderId: order.id,
+        message: `订单 ${order.public_no}｜客户在等卡，${reason}。条件恢复后系统会自动开卡、接着跑，客户不用重新提交。`
+      });
+    }
+    return orders.length;
   }
 
   function pickFallback({ demandAccountId, productId, accountsById, selections, waitingGap }) {
@@ -446,10 +514,39 @@ export function createCardSupplyScheduler({ pool, adapters, now = () => new Date
       const account = state.accountsById.get(policy.providerAccountId);
       const row = await measure(policy);
       row.accountLabel = account.displayName;
-      row.low = await refreshStockAlert(row, { enabled: state.enabled });
+      row.low = row.targetAvailable > 0 && row.available < row.targetAvailable;
       if (row.available >= row.demand) await resolveSupplyAlert(pool, supplyBlockedAlertKey(row.providerAccountId, row.productCode));
       measured.push(row);
     }
+    const byRow = new Map();
+    let result;
+    let failure = null;
+    try {
+      result = await decide(state, measured, byRow);
+    } catch (error) {
+      // 以前库存告警在 decide 之前写，decide 抛错也照写；挪到后面后别让一次抛错把告警也跳过。
+      failure = error;
+      result = { enabled: state.enabled, reason: 'ERROR' };
+    }
+    // 告警等结论出来再写：先写就只能写「正在补」，补不补得了要 decide 之后才知道
+    // （2026-09-26 00:01 UTC 钱包低于底线，照样推了「调度器正在补」，D-397）。
+    for (const row of measured) {
+      await refreshStockAlert(row, { note: stockNote(row, result, byRow, state) });
+      await raiseBlockedWaitingOrders(row, blockedOutcomeFor(row, result, byRow), state);
+    }
+    // 订单离开等卡（分到卡、取消、放弃、转人工……）就把它的等卡告警收掉；分卡与取消事务自己也会关，
+    // 这里兜住其余出口。只收不开，不会推手机。
+    await pool.query(
+      `UPDATE operator_alerts a INNER JOIN orders o ON o.id = a.order_id
+          SET a.status = 'RESOLVED', a.acknowledged_at = COALESCE(a.acknowledged_at, CURRENT_TIMESTAMP(3))
+        WHERE a.alert_type = 'ORDER_WAITING_FOR_CARD' AND a.status = 'OPEN'
+          AND o.status NOT IN ('CREATED','WAITING_FOR_CARD')`
+    );
+    if (failure) throw failure;
+    return result;
+  }
+
+  async function decide(state, measured, byRow) {
     const decisions = measured.map((row) => ({
       providerAccountId: row.providerAccountId, productCode: row.productCode, available: row.available,
       target: row.targetAvailable, waiting: row.waiting, inflight: row.inflight, deficit: row.deficit, low: row.low
@@ -472,6 +569,7 @@ export function createCardSupplyScheduler({ pool, adapters, now = () => new Date
     const outcomes = [];
     for (const candidate of candidates) {
       const outcome = await scheduleFor(candidate, state);
+      byRow.set(policyKey(candidate.providerAccountId, candidate.productCode), outcome);
       outcomes.push({ providerAccountId: candidate.providerAccountId, productCode: candidate.productCode,
         scheduled: Boolean(outcome.scheduled), reason: outcome.scheduled ? 'SCHEDULED' : outcome.reason });
       if (outcome.scheduled || outcome.reason === 'JOB_ACTIVE') {

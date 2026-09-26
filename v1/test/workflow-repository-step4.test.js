@@ -69,8 +69,9 @@ test('assignAvailableCard without an eligible card: funding line is gone (D-367)
   const on = harness(route(true));
   assert.deepEqual(await on.workflow.assignAvailableCard('o1'), { waitingForCard: true, replenishmentPending: true });
   assert.equal(on.queries.some((q) => /card_funding_attempts|card_balance_recharge_enabled|supports_auto_funding/.test(q.sql)), false);
-  assert.equal(on.queries.some((q) => /INSERT INTO operator_alerts/.test(q.sql)), false, '自动开卡开着：不叫人，开不出来由调度器的供卡告警叫');
-  assert.equal(on.queries.some((q) => /UPDATE operator_alerts SET status='RESOLVED'/.test(q.sql)), true);
+  assert.equal(on.queries.some((q) => /INSERT INTO operator_alerts/.test(q.sql)), false, '自动开卡开着：不叫人，开不出来由调度器的等卡告警叫');
+  // D-397：也不许关它。分卡每 60 秒重试一次，这里一关、调度器下一轮又开，就是一次「关→开」，手机每分钟响。
+  assert.equal(on.queries.some((q) => /UPDATE operator_alerts/.test(q.sql)), false, '自动开卡开着：等卡告警归调度器，分卡重试不碰它');
 
   const off = harness(route(false));
   assert.deepEqual(await off.workflow.assignAvailableCard('o1'), { waitingForCard: true });

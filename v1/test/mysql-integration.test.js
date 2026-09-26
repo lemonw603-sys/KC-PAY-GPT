@@ -1078,6 +1078,87 @@ test('supply scheduler measures per account × product, refuses while a paid job
   }
 });
 
+test('D-397: a customer waiting while the scheduler cannot open rings once; assignment retries and later rounds never re-open it; leaving the wait resolves it', {
+  skip: !databaseUrl && 'TEST_DATABASE_URL 未配置；完整 MySQL 套件在服务器隔离数据库运行'
+}, async () => {
+  const pool = mysql.createPool({ uri: databaseUrl, connectionLimit: 3, timezone: 'Z' });
+  const [[originalSetting]] = await pool.query(
+    `SELECT setting_value FROM app_settings WHERE setting_key = 'card_auto_replenishment_enabled'`
+  );
+  const [originalPolicies] = await pool.query(
+    `SELECT provider_account_id, product_code, target_available, open_card_amount, daily_open_limit, card_segment FROM card_supply_policies`
+  );
+  // hnskj 底线 30（迁移 053）：40 − 16 − 2.60（无手续费观察时的保守上限 10%+$1）= 21.40 < 30 → 开不出来。
+  const adapters = {
+    has: (code) => code === 'hnskj_api_v1' || code === 'highvcc_api_v1',
+    for: (code) => (code === 'hnskj_api_v1' || code === 'highvcc_api_v1') ? {
+      async canOpen() { return { ok: true }; },
+      async readWallet() { return { availableBalance: '40.00', currency: 'USD', purchaseEnabled: true, snapshot: {} }; },
+      preflight() { return { cardType: { name: 'Z-TEST' } }; }
+    } : null
+  };
+  const scheduler = createCardSupplyScheduler({ pool, adapters });
+  const workflow = createWorkflowRepository(pool, { sessionEncryptionKey: integrationSessionKey });
+  const fixture = await createOrder(pool, { status: OrderStatus.WAITING_FOR_CARD, publicNo: 'TEST-D397-WAIT' });
+  const alertRow = async () => {
+    const [[row]] = await pool.query(
+      `SELECT alert_type, status, incident_version, severity, order_id, message FROM operator_alerts WHERE dedupe_key = ?`,
+      [`order-waiting-card:${fixture.orderId}`]
+    );
+    return row;
+  };
+  try {
+    await pool.query(`INSERT INTO app_settings (setting_key, setting_value) VALUES ('card_auto_replenishment_enabled','true')
+      ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)`);
+    await pool.query(`UPDATE card_supply_policies SET target_available = 0`);
+    await pool.query(`UPDATE card_supply_policies SET open_card_amount = 16, daily_open_limit = 20, card_segment = '7'
+      WHERE provider_account_id = ? AND product_code = 'plus'`, [legacyCardProviderAccountId]);
+
+    const first = await scheduler.run();
+    assert.equal(first.reason, 'WALLET_BELOW_FLOOR', JSON.stringify(first));
+    let alert = await alertRow();
+    assert.equal(alert.alert_type, 'ORDER_WAITING_FOR_CARD');
+    assert.equal(alert.status, 'OPEN');
+    assert.equal(alert.severity, 'critical');
+    assert.equal(alert.order_id, fixture.orderId);
+    assert.equal(Number(alert.incident_version), 1);
+    assert.match(alert.message, /^订单 TEST-D397-WAIT｜客户在等卡，HNSKJ 钱包 40\.00，开一张要 16\.00 \+ 手续费约 2\.60，扣完剩 21\.40，低于底线 30\.00/);
+
+    // 分卡每 60 秒重试一次：自动开卡开着时不许去关它（否则调度器下一轮再开，就是一次关→开、再推一次）。
+    assert.deepEqual(await workflow.assignAvailableCard(fixture.orderId), { waitingForCard: true, replenishmentPending: true });
+    await scheduler.run();
+    await workflow.assignAvailableCard(fixture.orderId);
+    await scheduler.run();
+    alert = await alertRow();
+    assert.equal(alert.status, 'OPEN');
+    assert.equal(Number(alert.incident_version), 1, '推送只在关→开时发生：两轮分卡重试 + 两轮调度后仍是第 1 次');
+
+    // 订单离开等卡（这里模拟取消以外的出口），下一轮调度收掉；收不推手机。
+    await pool.query(`UPDATE orders SET status = 'CLOSED', version = version + 1 WHERE id = ?`, [fixture.orderId]);
+    await scheduler.run();
+    alert = await alertRow();
+    assert.equal(alert.status, 'RESOLVED');
+  } finally {
+    await removeOrder(pool, fixture);
+    await pool.query(`DELETE FROM operator_alerts WHERE dedupe_key IN (?, ?, ?)`, [
+      `card-supply-wallet-low:${legacyCardProviderAccountId}`,
+      `provider-wallet-low:${legacyCardProviderAccountId}`,
+      `card-stock-low:${legacyCardProviderAccountId}:plus`
+    ]);
+    for (const row of originalPolicies) {
+      await pool.query(
+        `UPDATE card_supply_policies SET target_available = ?, open_card_amount = ?, daily_open_limit = ?, card_segment = ?
+          WHERE provider_account_id = ? AND product_code = ?`,
+        [row.target_available, row.open_card_amount, row.daily_open_limit, row.card_segment, row.provider_account_id, row.product_code]
+      );
+    }
+    if (originalSetting) {
+      await pool.query(`UPDATE app_settings SET setting_value = ? WHERE setting_key = 'card_auto_replenishment_enabled'`, [originalSetting.setting_value]);
+    }
+    await pool.end();
+  }
+});
+
 test('workflow repository commits card and recharge handoffs atomically', {
   skip: !databaseUrl && 'TEST_DATABASE_URL 未配置；完整 MySQL 套件在服务器隔离数据库运行'
 }, async () => {

@@ -45,9 +45,10 @@ function selectionRows({ plusBrowser = BACKUP_ID } = {}) {
  */
 function fakePool({
   enabled = true, accounts = [accountRow(HNSKJ_ID), accountRow(BACKUP_ID)], selections = selectionRows(),
-  available = {}, waiting = {}, today = {}, fees = {}, activeJob = false, unresolved = false, policies = policyRows()
+  available = {}, waiting = {}, today = {}, fees = {}, activeJob = false, unresolved = false, policies = policyRows(),
+  inflight = 0, activeJobInTx = false
 } = {}) {
-  const queries = []; const alerts = []; const resolved = []; const jobs = []; const faults = [];
+  const queries = []; const alerts = []; const resolved = []; const jobs = []; const faults = []; const finishedSweeps = [];
   const key = (account, product) => `${account}:${product}`;
   async function query(sql, params = []) {
     const text = String(sql);
@@ -72,10 +73,20 @@ function fakePool({
       const product = params[0] === PLUS ? 'plus' : 'pro_20x';
       return [(waiting[key(params[1], product)] ?? 0) > 0 ? [{ id: `order-${product}` }] : []];
     }
-    if (text.includes('SUM(requested_count - opened_count)')) return [[{ count: 0 }]];
-    if (text.includes('INSERT INTO operator_alerts')) { alerts.push({ type: params[0], key: params[1], severity: params[3], message: params[5] }); return [{ affectedRows: 1 }]; }
+    // D-397：开不出卡时给「可分配与在途都顶不上」的等卡单开告警，按最新的几单取（LIMIT = 顶不上的单数）。
+    if (text.includes('SELECT o.id, o.public_no FROM orders o')) {
+      const product = params[0] === PLUS ? 'plus' : 'pro_20x';
+      const count = Math.min(waiting[key(params[1], product)] ?? 0, Number(params[2]));
+      return [Array.from({ length: count }, (_, i) => ({ id: `order-${product}-${i + 1}`, public_no: `PJV1-${product}-${i + 1}` }))];
+    }
+    if (text.includes('SUM(requested_count - opened_count)')) return [[{ count: inflight }]];
+    if (text.includes('INSERT INTO operator_alerts')) { alerts.push({ type: params[0], key: params[1], orderId: params[2], severity: params[3], title: params[4], message: params[5] }); return [{ affectedRows: 1 }]; }
+    if (text.startsWith('UPDATE operator_alerts a INNER JOIN orders o')) { finishedSweeps.push(text.replace(/\s+/g, ' ')); return [{ affectedRows: 0 }]; }
     if (text.startsWith('UPDATE operator_alerts')) { resolved.push(params[0]); return [{ affectedRows: 0 }]; }
-    if (text.includes("SELECT id FROM card_stock_jobs WHERE status IN ('PENDING','RUNNING')")) return [activeJob ? [{ id: 'job-active' }] : []];
+    if (text.includes("SELECT id FROM card_stock_jobs WHERE status IN ('PENDING','RUNNING')")) {
+      // activeJobInTx：轮初检查时还没有，建 job 的事务里（FOR UPDATE）才看到别处刚建的——并发那一刻。
+      return [activeJob || (activeJobInTx && text.includes('FOR UPDATE')) ? [{ id: 'job-active' }] : []];
+    }
     if (text.includes("status = 'REVIEW_REQUIRED'")) return [unresolved ? [{ id: 'job-review' }] : []];
     if (text.includes('SUM(CASE') && text.includes('WHERE provider_account_id = ?')) return [[{ count: today[params[0]] ?? 0 }]];
     if (text.includes('FROM card_transactions ct')) return [(fees[params[0]] || []).map((amount) => ({ amount }))];
@@ -86,7 +97,7 @@ function fakePool({
     throw new Error(`unexpected query: ${text.slice(0, 100)}`);
   }
   const connection = { query, async beginTransaction() {}, async commit() {}, async rollback() {}, release() {} };
-  return { queries, alerts, resolved, jobs, faults, query, async getConnection() { return connection; } };
+  return { queries, alerts, resolved, jobs, faults, finishedSweeps, query, async getConnection() { return connection; } };
 }
 
 /** 假适配器，钱包用生产真实数（2026-09-17 16:21 UTC hnskj $89.48；15:52 UTC highvcc $23.68）。 */
@@ -401,4 +412,107 @@ test('候选排序是一致的：等卡单多的先、Plus 先，同条件按策
   const result = await createCardSupplyScheduler({ pool, adapters: fakeAdapters({ hnskjBalance: '60.00', highvccBalance: '30.00' }) }).run();
   assert.deepEqual(result.outcomes.map((o) => `${o.providerAccountId === HNSKJ_ID ? 'hnskj' : 'highvcc'}/${o.productCode}`),
     ['highvcc/pro_20x', 'hnskj/plus', 'highvcc/plus'], '有等卡单的 20X 最先；两台 Plus 按策略表顺序');
+});
+
+// ---- D-397：有客户在等、又开不出卡时要叫人；「正在补」只在真补得了时说 ----
+// 生产 2026-09-26 现值：highvcc Plus 水位 1、开卡 $16、钱包 $34.00、最近手续费 $0.50、底线 $20；
+// hnskj Plus 水位 1、卡台维护（FAULT CARD_STOCK_PURCHASE_DISABLED）；Plus Browser 选 highvcc。
+function prodPolicies() {
+  return [
+    { provider_account_id: HNSKJ_ID, product_code: 'plus', target_available: 1, open_card_amount: '50.000000', daily_open_limit: 20, card_segment: null },
+    { provider_account_id: HNSKJ_ID, product_code: 'pro_20x', target_available: 0, open_card_amount: '150.000000', daily_open_limit: 20, card_segment: null },
+    { provider_account_id: BACKUP_ID, product_code: 'plus', target_available: 1, open_card_amount: '16.000000', daily_open_limit: 20, card_segment: null },
+    { provider_account_id: BACKUP_ID, product_code: 'pro_20x', target_available: 0, open_card_amount: '150.000000', daily_open_limit: 20, card_segment: null }
+  ];
+}
+function prodPool(overrides = {}) {
+  return fakePool({
+    accounts: [accountRow(HNSKJ_ID, { supply_fault_state: 'FAULT', supply_fault_reason: 'CARD_STOCK_PURCHASE_DISABLED', supply_fault_at: new Date(Date.now() - 60_000) }), accountRow(BACKUP_ID)],
+    policies: prodPolicies(), fees: { [BACKUP_ID]: ['0.500000'] }, ...overrides
+  });
+}
+const waitingAlerts = (pool) => pool.alerts.filter((a) => a.type === 'ORDER_WAITING_FOR_CARD');
+const stockLow = (pool, account) => pool.alerts.find((a) => a.type === 'CARD_STOCK_LOW' && a.key === `card-stock-low:${account}:plus`);
+
+test('D-397：客户在等卡、highvcc 钱包低于底线 → 这一单响一次，写明原因；任何告警都不说「正在补」', async () => {
+  const pool = prodPool({ waiting: { [`${BACKUP_ID}:plus`]: 1 } });
+  const result = await createCardSupplyScheduler({ pool, adapters: fakeAdapters({ highvccBalance: '34.00' }) }).run();
+  assert.equal(result.reason, 'WALLET_BELOW_FLOOR');
+  assert.equal(pool.jobs.length, 0);
+  const alerts = waitingAlerts(pool);
+  assert.equal(alerts.length, 1);
+  assert.equal(alerts[0].key, 'order-waiting-card:order-plus-1');
+  assert.equal(alerts[0].orderId, 'order-plus-1');
+  assert.equal(alerts[0].severity, 'critical');
+  assert.equal(alerts[0].message,
+    '订单 PJV1-plus-1｜客户在等卡，备用卡台 A 钱包 34.00，开一张要 16.00 + 手续费约 0.50，扣完剩 17.50，低于底线 20.00，请给钱包充值。条件恢复后系统会自动开卡、接着跑，客户不用重新提交。');
+  assert.match(stockLow(pool, BACKUP_ID).message, /可分配 0 张，水位 1，开不出来：备用卡台 A 钱包 34\.00/);
+  assert.match(stockLow(pool, HNSKJ_ID).message, /开不出来：该台此刻不能开（FAULT:CARD_STOCK_PURCHASE_DISABLED），API 路线不转台/);
+  assert.equal(pool.alerts.some((a) => /正在补/.test(a.message)), false, '补不了时不许说正在补（09-26 00:01 UTC 实推过）');
+  assert.equal(pool.finishedSweeps.length, 1, '每轮收一次已离开等卡的单的告警');
+});
+
+test('D-397：钱包够、开卡已安排 → 不叫人，库存告警说「已安排」', async () => {
+  const pool = prodPool({ waiting: { [`${BACKUP_ID}:plus`]: 1 } });
+  const result = await createCardSupplyScheduler({ pool, adapters: fakeAdapters({ highvccBalance: '60.00' }) }).run();
+  assert.equal(result.reason, 'SCHEDULED');
+  assert.equal(waitingAlerts(pool).length, 0);
+  assert.match(stockLow(pool, BACKUP_ID).message, /水位 1，已安排 备用卡台 A 开一张。$/);
+});
+
+test('D-397：只缺水位、没有客户在等 → 开不出来也不叫人（库存告警照写原因）', async () => {
+  const pool = prodPool();
+  const result = await createCardSupplyScheduler({ pool, adapters: fakeAdapters({ highvccBalance: '34.00' }) }).run();
+  // 都没人等时按策略表顺序看，hnskj 排第一，本轮报它的 BLOCKED；highvcc 那行照样被看过、被钱包挡住。
+  assert.equal(result.reason, 'BLOCKED');
+  assert.deepEqual(result.outcomes.map((o) => o.reason), ['BLOCKED', 'WALLET_BELOW_FLOOR']);
+  assert.equal(waitingAlerts(pool).length, 0);
+  assert.match(stockLow(pool, BACKUP_ID).message, /开不出来：备用卡台 A 钱包/);
+});
+
+test('D-397：只叫可分配与在途都顶不上的那几单', async () => {
+  const two = prodPool({ waiting: { [`${BACKUP_ID}:plus`]: 3 }, available: { [`${BACKUP_ID}:plus`]: 1 } });
+  await createCardSupplyScheduler({ pool: two, adapters: fakeAdapters({ highvccBalance: '34.00' }) }).run();
+  assert.deepEqual(waitingAlerts(two).map((a) => a.orderId), ['order-plus-1', 'order-plus-2'], '3 单等、1 张可分配 → 叫 2 单');
+  const one = prodPool({ waiting: { [`${BACKUP_ID}:plus`]: 3 }, available: { [`${BACKUP_ID}:plus`]: 1 }, inflight: 1 });
+  await createCardSupplyScheduler({ pool: one, adapters: fakeAdapters({ highvccBalance: '34.00' }) }).run();
+  assert.equal(waitingAlerts(one).length, 1, '再有 1 张在途 → 只叫 1 单');
+});
+
+test('D-397：有花过钱没核对的开卡任务（自动开卡整体暂停）也算开不出来，要叫人', async () => {
+  const pool = prodPool({ waiting: { [`${BACKUP_ID}:plus`]: 1 }, unresolved: true });
+  const result = await createCardSupplyScheduler({ pool, adapters: fakeAdapters() }).run();
+  assert.equal(result.reason, 'FUNDS_REVIEW_REQUIRED');
+  const [alert] = waitingAlerts(pool);
+  assert.match(alert.message, /^订单 PJV1-plus-1｜客户在等卡，有一张开卡任务花了钱还没核对，自动开卡暂停/);
+});
+
+test('D-397：开卡任务在跑 / 总闸关着 → 调度器不叫人（前者在补，后者由分卡那边叫）', async () => {
+  const busy = prodPool({ waiting: { [`${BACKUP_ID}:plus`]: 1 }, activeJob: true });
+  assert.equal((await createCardSupplyScheduler({ pool: busy, adapters: fakeAdapters() }).run()).reason, 'JOB_ACTIVE');
+  assert.equal(waitingAlerts(busy).length, 0);
+  assert.match(stockLow(busy, BACKUP_ID).message, /，开卡任务在跑。$/);
+  const off = prodPool({ waiting: { [`${BACKUP_ID}:plus`]: 1 }, enabled: false });
+  assert.equal((await createCardSupplyScheduler({ pool: off, adapters: fakeAdapters() }).run()).reason, 'DISABLED');
+  assert.equal(waitingAlerts(off).length, 0);
+  assert.match(stockLow(off, BACKUP_ID).message, /总闸关闭/);
+});
+
+test('D-397：决策中途抛错 → 库存告警照写（不带「正在补」）、收尾照做，错误照抛', async () => {
+  const pool = prodPool({ waiting: { [`${BACKUP_ID}:plus`]: 1 } });
+  const adapters = fakeAdapters();
+  adapters.for('highvcc_api_v1').canOpen = async () => { throw new Error('boom'); };
+  await assert.rejects(createCardSupplyScheduler({ pool, adapters }).run(), /boom/);
+  assert.match(stockLow(pool, BACKUP_ID).message, /可分配 0 张，水位 1。$/);
+  assert.equal(waitingAlerts(pool).length, 0);
+  assert.equal(pool.finishedSweeps.length, 1);
+});
+
+test('D-397：建 job 的事务里才发现别处刚建了 job（并发）→ 算在补，不叫人', async () => {
+  const pool = prodPool({ waiting: { [`${BACKUP_ID}:plus`]: 1 }, activeJobInTx: true });
+  const result = await createCardSupplyScheduler({ pool, adapters: fakeAdapters({ highvccBalance: '60.00' }) }).run();
+  assert.equal(result.reason, 'JOB_ACTIVE');
+  assert.equal(result.outcome.reason, 'JOB_ACTIVE');
+  assert.equal(waitingAlerts(pool).length, 0);
+  assert.match(stockLow(pool, BACKUP_ID).message, /，开卡任务在跑。$/);
 });
