@@ -49,18 +49,18 @@ ssh root@144.34.180.184 'set -a; . /etc/pojia/runtime.env; set +a; cd /opt/pojia
 ```
 （守卫：系统有任何付款痕迹即拒。默认视为分配的卡**没用**→释放；手动用的就是这张卡则加 `--card-used`→账本 CONSUMED、卡 DEPLETED。订单 RECHARGE_SUCCESS、CDK 保持已用、取消续费留「已在账号里取消续费」复核。）403 根因 09-09 已定位修复（D-140），真单未验。
 
-**失败应对（按发生阶段，2026-09-10 定，真单前必读）**：
-- **①预检失败**（订单仍 CARD_READY，没有 run；预检 5 次即 DEAD，无自动重开）：紧急停 → 用户手动充 → `close-manually-fulfilled-order.mjs <单号>`。09-09 走过。
-- **②付款前失败**（live run 已起、未点击）：常驻池会**自己**安全中止——卡类/租约问题回 CARD_READY 重试；其余一律 RECHARGE_FAILED + CDK 退回 + 卡释放（审计 F-4）。用户若手动充了：订单 CARD_READY 用上面脚本；订单已 RECHARGE_FAILED 的**脚本目前不接**（待扩，审计 B6），先记单号事后收。
-- **③点击付款之后**（run `payment_state` 不是 NOT_STARTED/ARMED；`browser_operations` 出现 `PAYMENT_SUBMIT`）：**任何人都不许手动重付**，并且 **10 分钟内不得紧急停、不得 kill worker**（点击后 worker 自己核实最多 5 分钟，不明后再由核实 lane 核实 5 分钟；kill 会让 run 停在 PAYMENT_SUBMITTING、没有任何自动核实，审查 F-26）。等自动核实：账号仍 free → 判拒付 → RECHARGE_FAILED 放卡；确认 Plus → 取消续费 → 成功；核实到期 → run HUMAN_REQUIRED + 对账 case，订单停 RECHARGE_PROCESSING（审计 F-16：目前只能走 run 控制面 REQUEST→FREEZE→TRANSFER→COMPLETE_20X 收成功，续费要人工到账号里关；或等 F-16 做完）。
-- **客户被打回**（WAITING_FOR_SESSION）：客户页的重贴表单目前不显示（审计 F-5 未修）；客户自己"重新提交同一 CDK"也**不会**更新 Session（同码同账号返回原单，审查 F-34），换账号提交会被 409 拒（F-35）。唯一兜底：客户把新 session JSON 交给用户，执行者在服务器本机用公开接口替客户提交（`POST /api/v1/orders/session`，body `{"publicNo":"<单号>","session":<JSON>}`，对 127.0.0.1:3100 发、Host 头用客户页域名，见 `/etc/pojia/runtime.env`）。**未演练**。
+**失败应对（按发生阶段，2026-09-10 定，真单前必读；2026-09-26 按当前代码复核①②③末段、客户被打回、测试账号收口两条）**：
+- **①预检失败**：D-158 起不再有单独的预检任务，预检并进付款 run（`order-intake-repository.js:329`，最后一条 BROWSER_PREFLIGHT 是 09-11），按②处理。
+- **②付款前失败**（live run 已起、未点击）：常驻池会**自己**安全中止——卡类/租约问题回 CARD_READY 重试；其余一律 RECHARGE_FAILED + CDK 退回 + 卡释放（审计 F-4）。付款前挂住没人处理：D-390 起当场判失败 + 退卡密 + 推手机；还挂着的用后台订单抽屉「放弃并放卡」（D-394，`/abandon-pre-payment`）。用户若手动充了：后台订单抽屉「标为已手工充值」（`/manual-fulfilled`，与上面脚本共用 `manual-fulfillment-service.js`）；RECHARGE_FAILED 的单也接（重新绑回原卡密，不接受 `--card-used`，卡密已被别单占用或作废则拒）。
+- **③点击付款之后**（run `payment_state` 不是 NOT_STARTED/ARMED；`browser_operations` 出现 `PAYMENT_SUBMIT`）：**任何人都不许手动重付**，并且 **10 分钟内不得紧急停、不得 kill worker**（点击后 worker 自己核实最多 5 分钟，不明后再由核实 lane 核实 5 分钟；kill 会让 run 停在 PAYMENT_SUBMITTING、没有任何自动核实，审查 F-26）。等自动核实：账号仍 free → 判拒付 → RECHARGE_FAILED 放卡；确认 Plus → 取消续费 → 成功；核实到期 → run HUMAN_REQUIRED + 对账 case，订单停 RECHARGE_PROCESSING；到账号里看清是否 Plus、卡台是否扣款后，后台「确认核实结果」（`RESOLVE_UNKNOWN_PAYMENT`，`browser-admin-service.js:559`）选 CHARGED / NOT_CHARGED，CHARGED 时可同时勾「续费已取消」，不勾则进取消续费待确认。**这一路生产上没有真单走过。**
+- **客户被打回**（WAITING_FOR_SESSION）：客户页有「更换账号」表单（`customer.js:146`、`:475`，限时、限次，过期或用完提示「保留卡密联系商家」），走 `POST /api/v1/orders/session`；F-34 / F-35 09-10 已修（事实表「已知未修」⑦）。**「打回 → 客户重贴 → 再跑」没有真实客户走过**（`UNVERIFIED_LEDGER.md` 客户链）。客户页用不了时的兜底：客户把新 session JSON 交给用户，执行者在服务器本机替客户提交同一接口（body `{"publicNo":"<单号>","session":<JSON>}`，对 127.0.0.1:3100 发、Host 头用客户页域名，见 `/etc/pojia/runtime.env`）。
 - **跑单纪律**：跑单期间客户不要使用该账号；不要把该账号登进任何其他比特浏览器窗口（同一账号两处登录会挤掉注入的 session，09-07 观察到）；跑单期间**不在后台首页关"浏览器真实付款"开关**（中途关开关会把正在跑的单判成 RECHARGE_FAILED 并退码放卡，审查 F-25）；常驻池不用「收工」，要停只用上面的紧急停。
 
 **测试账号单失败后的收口（2026-09-11 核对代码与生产；测试单不手动充，收口后另一个账号重新提交新单）**：
-- 预检 DEAD（订单 CARD_READY、卡仍绑定、无 run/attempt/dispatch）：后台「取消」。代码放行条件 = 付款任务 PENDING 且 attempts=0、permit 未消费（`order-cancellation-service.js` untouchedCardReady）→ 卡回池、CDK 回 AVAILABLE。**生产未走过**（09-09 是手动充后 close-manually-fulfilled）。
+- 订单 CARD_READY、卡已绑定、还没起 run：后台「取消」（`order-cancellation-service.js` untouchedCardReady）→ 卡回池、CDK 回 AVAILABLE（09-11 时生产未走过，之后是否走过本次未查）。付款前挂住的用「放弃并放卡」（见上②）。
 - 付款前中止（live run 起、未点击）：worker 自动 RECHARGE_FAILED + CDK 退回 + 卡释放（D-131）。生产走过 2 次。
 - 拒付（点击后 DECLINED）：run 停 RECONCILE_ONLY/PAYMENT_UNKNOWN → 后台「确认核实结果」选 NOT_CHARGED → 卡释放、CDK 退回、RECHARGE_FAILED。**新按钮生产未点过**（历史 3 次拒付由一次性脚本 `claude-declined-closeout` 收）。
-- 换账号 = 新订单：另一个 AVAILABLE CDK + 新账号的 Session；合格卡当前仅 9839，拒付后若要换卡需补余额/开卡（资金动作，先确认）。
+- 换账号 = 新订单：另一个 AVAILABLE CDK + 新账号的 Session；可分配卡数看事实表「可分配卡」行（09-26 为 1 张 8718；9839 已于 09-11 注销，D-163），拒付后若要换卡需补余额 / 开卡（资金动作，先确认）。
 - 跑单期间该账号不得在任何其他窗口登录（含上号器手动登录），否则挤掉注入 Session；Session 提交后尽快跑（accessToken 剩余 <5 分钟即拒）。
 
 ## 1.5 攒数据：自己跑一单 + 看成功率（2026-09-11 12:39 UTC 起）
