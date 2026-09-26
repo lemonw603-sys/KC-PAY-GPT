@@ -3754,3 +3754,10 @@ browser-mvp：`1ca9a422`（任务书 `tasks/2026-09-26-batch-b-pool-fix.md`）�
 23:19 服务器 prepare（备份 `pojia-20260925T231927Z`）→ 23:20 switch `20260926-d389-1ca9a42`，新连接复验三服务 cwd、`customer.css?v=41` 含 `is-conclusive`、`PJV1-4U9x…` canRetry true。池 `pool-release.sh prepare` 同提交，`check pay` READY、1800000 启动即报错。
 23:21:18 正式路径关付款 → 23:21:2x SIGTERM 85147（2 秒退出）→ 23:21:46 关下单查心跳 → 关 3 号窗口残留结账页。23:41 Lemon 建 `PJV1-k3QP…`（企业邮箱号）→ 演练导航失败（Business 栏，证据包截图）→ 单持卡 8718、锁到 23:57:25 → 23:58:07 收口（CLOSED / 8718 AVAILABLE / 卡密退回 / run FAILED_SAFE）。00:00:47 Lemon 用普通邮箱号建 `PJV1-Iynl…` → 00:02:33 `PRE_SUBMIT_STOPPED` PHP 982.14 / 税 0 / 付款点击 0 → 收口。00:03 `pool-release.sh switch` → 00:03:45 开付款 → 00:03:46 开下单查心跳 → 00:04:37 池 56510 拉起（current、POLL 1000、WINDOW 300000、心跳 00:04:58）。state-check 20 项一致。
 另：回答 Lemon「客户也要等锁吗」时查实——演练单次工具没开 safeAbortOnFailure（欠账 18），常驻池开了，`pool:lane-1` 43 次付款前失败都当场收口。
+
+## 2026-09-26｜D-390 巡检补「付款前挂住」+ 等卡说明（00:15～00:45 UTC）
+
+Lemon：付款前卡住保持当场判失败；做欠账 17 / 16；欠账 18 不做；「何时对外发卡密」答「同意」含义待确认。
+欠账 17：先用生产 W6lU / kRso（演练挂住 55 / 21 分钟）看挂住形态（run RUNNING/NOT_STARTED、租约过期、订单处理中）；派发谓词显示过期 CLAIMED 任务会被常驻池重领，所以只报「过期 N 分钟后仍没人领」。SQL 抽到 `stalled-order-queries.js`，脚本 / 测试 / probe 共用。本机一次性 MySQL 起不来（`mysqld` 缺 `libabsl_base`，修需重装软件，未做）→ 改为生产只读实跑：当前 0 行；把状态条件换成 CLOSED 在历史关单上跑排除规则，付款前停下的全选中、点过付款的 4 张全排除。发现「客户卡住了」告警从不自动解除（3 条 09-12～18 的一直 OPEN），加订单结束即收掉。
+欠账 16：读 D-250 讨论稿原文：等卡说明做了；复核文案与 09-12 测试锁定的「不说已转人工」冲突，交 Lemon。
+v1 1122：1057/0/65；新 UI 测试 + 变异抓到。00:40 prepare（备份 `pojia-20260926T004055Z`）→ 新 release 上 `operator-watch --dry-run` 对生产 `prePayment: []` → 00:41 switch `20260926-d390-ebb2b78` → 定时器新脚本一轮 `prePayment: []`，3 条旧告警 RESOLVED、通知 CANCELLED 未推；线上 v=42 含新文案。常驻池不动（池加载代码只多一个它不引用的文件）。
