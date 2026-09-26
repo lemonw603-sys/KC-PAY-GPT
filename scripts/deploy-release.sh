@@ -23,6 +23,18 @@ prepare() {
   cd "${REPO}"
   git rev-parse --verify "${commit}^{commit}" >/dev/null
   local full; full=$(git rev-parse "${commit}^{commit}")
+  # D-394 ③：真数据库测试（本机测试容器，每个测试文件一个全新隔离库，跑完即删）。发布前必须全绿。
+  # 测的必须就是要发布的提交：工作区不是这个提交、或 v1/ 有未提交改动，就停下，不在别的代码上跑出一个「绿」。
+  # 容器没开等确有理由不跑时，显式 MYSQL_TESTS=skip，输出里留「未验证」。
+  if [[ "${MYSQL_TESTS:-run}" == "skip" ]]; then
+    echo "== mysql tests: SKIPPED (MYSQL_TESTS=skip) — 真数据库测试未验证 =="
+  elif [[ "$(git rev-parse HEAD)" != "${full}" || -n "$(git status --porcelain -- v1)" ]]; then
+    echo "== mysql tests: 工作区不是 ${full}（或 v1/ 有未提交改动）；先切到发布提交再来，或显式 MYSQL_TESTS=skip ==" >&2
+    exit 1
+  else
+    echo "== mysql tests (v1/scripts/mysql-tests.sh) =="
+    bash "${REPO}/v1/scripts/mysql-tests.sh"
+  fi
   if [[ -f "${bundle}/release-metadata.json" ]] && grep -q "\"commit\": \"${full}\"" "${bundle}/release-metadata.json"; then
     echo "== reuse existing bundle for ${full} =="
     (cd "${bundle}" && shasum -a 256 -c source.tar.gz.sha256)

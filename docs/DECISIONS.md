@@ -5756,3 +5756,8 @@ Lemon 答复：
 4. 事实表「已知未修」行（09-10 旧清单）我逐条复核，不需 Lemon。
 **实施结果（2 已上线）**：release `20260926-d394-0b5285f`（`0b5285f9`，03:43 UTC switch，无迁移，回滚点 `20260926-d393-738204c`）。`close-rehearsal-order.mjs` 的判断与写库搬进 `v1/src/services/pre-payment-closeout-service.js`，脚本与后台按钮共用、抽屉摆不摆按钮也问它（不加锁读；点下去加锁再判）。后台放弃：关单代码 `ABANDONED_PRE_PAYMENT`（统计里「付款前停下·已放弃」）、run 记 `ADMIN_ABANDONED`、**不打** `closeRehearsalOrder` 演练标记；脚本收演练照旧打标记（D-339 成功率靠它排除演练）。抽屉：可放弃时说明后果；付款池还拿着时写「到几点」；放弃后「订单已经取消」（顺带修：已关单里只认 `CANCELLED_PRE_SUBMISSION`，新代码会落到「付款可能已经开始」）。接口要求确认语「放弃订单 <单号>」，走敏感写守卫。
 **新发现、待 Lemon 定**：系统里「演练单」有两套判定——成功率（D-339）只认收单脚本打的 `closeRehearsalOrder` 标记；D-393 失败统计按「谁跑的」判。生产上前者判为演练的单后者全部同判，后者多排除 2 张（`zffo` 09-01 非付款测试、`pcNK` 09-25 误跑预检的演练单）。
+**实施结果（3 真数据库测试）**：16 个文件在全新隔离库上原为 55 通过 / 14 失败 / 1 跳过。分三类处理，**全部是测试落后于已定改动，没有改生产代码**：
+- 写死库名（2）：`alert-reopen` / `cdk-page` 要求库名恰为 `step6_jfix` / `step6_cdk_test` → 改用公用守卫 `test/helpers/isolated-database.js`（本机 + 库名前缀 `step6_` / `pojia_it_`，本意不变）。
+- 共用一个库互相污染（2）：新 `v1/scripts/mysql-tests.sh` 每个文件一个全新库、跑完即删。
+- 落后于业务（10，均在 `mysql-integration.test.js`，每条先查到依据再改）：造单没冻结卡台（D-246/D-247/D-252，09-18）→ 造单函数按真实下单补 `frozen_card_provider_account_id`；测试卡只充 $16（D-217 可用额 LEAST(同步余额, 充值额−已花)）→ 改 $60 并按实扣回写余额；库存登记漏传开卡金额（真实开卡 `scripts/card-stock.js` 有传，**生产无此问题**，生产现有可用卡均为人工导入且充值额齐全）；VERIFY_CARD 已随开卡线删（19ee0b8e）；下单查执行器心跳（D-352 块 3 ②）→ 测试写真实时间的新鲜心跳，不关检查；换号不限次数（f8c1d300）；换号后回等卡重分卡（D-355）→ 断言 WAITING_FOR_CARD + ASSIGN_CARD，重新授权前先重分卡（拿回同一张）。
+- 结果：69 通过 / 0 失败 / 1 跳过（`mysql-integration` 里旧 API fake-provider 全流程，代码写明有意跳过待重写，不在本次范围）。**发布关卡**：`deploy-release.sh prepare` 先跑这套，不绿即停；工作区不是发布提交也停（已验证：拿 HEAD~1 去发布，打包前停下、未连服务器）。

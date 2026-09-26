@@ -3,10 +3,11 @@ import test from 'node:test';
 import { randomUUID } from 'node:crypto';
 import { createDatabasePool } from '../src/db/pool.js';
 import { createAlertNotificationRepository } from '../src/db/repositories/alert-notification-repository.js';
+import { assertIsolatedTestDatabase } from './helpers/isolated-database.js';
 
 const url=process.env.ALERT_TEST_DATABASE_URL;
 test('incident-aware outbox: missed close, normal updates, retries, stale callbacks and concurrent scans', {skip:!url&&'requires isolated ALERT_TEST_DATABASE_URL'}, async()=>{
-  const target=new URL(url);assert.equal(target.hostname,'127.0.0.1');assert.equal(target.pathname,'/step6_jfix');
+  assertIsolatedTestDatabase(url);
   const pool=createDatabasePool({url,tls:{enabled:false}});const repo=createAlertNotificationRepository(pool);
   const ids=[];
   const make=async(type='PROVIDER_TOKEN_EXPIRED')=>{const id=randomUUID();ids.push(id);await pool.query("INSERT INTO operator_alerts(id,alert_type,dedupe_key,severity,title,message,status) VALUES (?,?,?,'warning','isolated incident','no external send','OPEN')",[id,type,id]);return id;};

@@ -9,12 +9,11 @@ import { createCdkVerifyService } from '../src/services/cdk-verify-service.js';
 import { createOrderFromCdk } from '../src/db/repositories/order-intake-repository.js';
 import { returnCdkForOrderInTransaction } from '../src/db/repositories/cdk-return-repository.js';
 import { createCdkLookup } from '../src/security/cdk-code.js';
+import { assertIsolatedTestDatabase } from './helpers/isolated-database.js';
 
 const url = process.env.CDK_TEST_DATABASE_URL;
 test('CDK page real MySQL: issuance, expiry, search, history, bulk atomicity and idempotency', { skip: !url && 'CDK_TEST_DATABASE_URL not set' }, async () => {
-  const target = new URL(url);
-  assert.equal(target.hostname, '127.0.0.1');
-  assert.equal(target.pathname, '/step6_cdk_test');
+  assertIsolatedTestDatabase(url);
   const pool = createDatabasePool({ url, tls: { enabled: false } });
   const keys = { cdkHashKey: Buffer.alloc(32, 7), cdkRecoveryKey: Buffer.alloc(32, 9) };
   const create = createAdminCdkService({ pool, ...keys });

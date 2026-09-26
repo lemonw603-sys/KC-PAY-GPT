@@ -3,12 +3,13 @@ import test from 'node:test';
 import { randomUUID } from 'node:crypto';
 import { createDatabasePool } from '../src/db/pool.js';
 import { createAlertNotificationRepository } from '../src/db/repositories/alert-notification-repository.js';
+import { assertIsolatedTestDatabase } from './helpers/isolated-database.js';
 
 // D-365（Lemon 同意）：同一台卡台的「卡台故障」推过，这台的「缺卡但开不出来」只进后台不另推。
 // 真实 MySQL（含 057 触发器）上跑，因为覆盖条件是一段 SQL，假库测不出它对不对。
 const url = process.env.SUPPLY_ALERT_TEST_DATABASE_URL;
 test('卡台故障推过 → 同台缺卡告警不推；别的台、故障没推成、故障已恢复 → 照推', { skip: !url && 'requires isolated SUPPLY_ALERT_TEST_DATABASE_URL' }, async () => {
-  const target = new URL(url); assert.equal(target.hostname, '127.0.0.1');
+  assertIsolatedTestDatabase(url);
   const pool = createDatabasePool({ url, tls: { enabled: false } });
   const repo = createAlertNotificationRepository(pool);
   const A = randomUUID(); const B = randomUUID(); const ids = [];

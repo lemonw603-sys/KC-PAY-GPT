@@ -50,6 +50,7 @@ import { createCardSupplyScheduler } from '../src/services/card-supply-scheduler
 import { createTraceabilityOperationsService } from '../src/services/traceability-operations-service.js';
 import { createSessionReplacementService } from '../src/services/session-replacement-service.js';
 import { createCardIntakeRepository } from '../src/db/repositories/card-intake-repository.js';
+import { EXECUTOR_HEARTBEAT_SETTING } from '../src/db/repositories/order-intake-repository.js';
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
 const integrationSessionKey = Buffer.alloc(32, 7);
@@ -101,8 +102,8 @@ async function createOrder(pool, overrides = {}) {
     `INSERT INTO orders
      (id, public_no, cdk_id, status, card_type_id, open_card_amount, minimum_required_card_balance,
       session_ciphertext, card_purchase_idempotency_key, product_id,
-      fulfillment_route_id, route_resolution_status)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'RESOLVED')`,
+      fulfillment_route_id, frozen_card_provider_account_id, route_resolution_status)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'RESOLVED')`,
     [
       orderId,
       overrides.publicNo || `TEST-${orderId}`,
@@ -114,7 +115,10 @@ async function createOrder(pool, overrides = {}) {
       encryptSecret(JSON.stringify({ accessToken: 'fixture-token', account: { id: 'acct-1' } }), integrationSessionKey),
       overrides.purchaseKey || `purchase-${orderId}`,
       legacyProductId,
-      legacyRouteId
+      legacyRouteId,
+      // 下单时按「卡台选择表」冻结卡台（第③步 D-246/D-247/D-252，2026-09-18）；老路线 0301 是 API，
+      // 对应卡台就是 0101。原先这里没写，分卡与授权一律拒（「路线不能分卡」「卡来源对不上」）。
+      overrides.frozenCardProviderAccountId || legacyCardProviderAccountId
     ]
   );
   await pool.query('UPDATE cdks SET order_id = ? WHERE id = ?', [orderId, cdkId]);
@@ -692,7 +696,7 @@ test('one card serves sequential orders until the configured capacity is exhaust
         funded_amount, current_balance, currency, refund_status, card_credentials_ciphertext,
         provider_account_id, external_card_id, intake_status, sync_tier,
         last_synced_at, last_transaction_synced_at)
-       VALUES (?, NULL, 'AVAILABLE', ?, '17', '4242', 'active', 16, 16, 'USD', 'MONITORING',
+       VALUES (?, NULL, 'AVAILABLE', ?, '17', '4242', 'active', 60, 60, 'USD', 'MONITORING',
         ?, ?, ?, 'ACCEPTED', 'AVAILABLE', CURRENT_TIMESTAMP(3), CURRENT_TIMESTAMP(3))`,
       [cardId, `multi-${cardId}`, encryptSecret(JSON.stringify({
         cardNumber: '4242424242424242', expMonth: 12, expYear: 2032, cvv: '123'
@@ -705,11 +709,15 @@ test('one card serves sequential orders until the configured capacity is exhaust
     await pool.query(`UPDATE card_assignment_history SET status='RELEASED', released_at=CURRENT_TIMESTAMP(3)
       WHERE card_id=? AND order_id=?`, [cardId, first.orderId]);
     const stock = createCardStockService({ pool, sessionEncryptionKey: integrationSessionKey });
-    const refreshedCard = mapStockCard({ data: {
-      id: `multi-${cardId}`, cardTypeId: '17', status: 'active', cardBalance: '16.00',
+    // D-217 起可用额＝LEAST(同步余额, 充值额 − 账本已花)，每单按 $16 记。原夹具是一张 $16 的卡，
+    // 第一单后可用额就是 0，测不到「次数上限」。改成 $60（低于 Plus 大额卡上限 $75）：两单后还剩 $28，
+    // 第三单只会被「每卡 2 单」挡住。同步回来的余额按真实扣款写。
+    const snapshot = (balance) => mapStockCard({ data: {
+      id: `multi-${cardId}`, cardTypeId: '17', status: 'active', cardBalance: balance,
       currency: 'USD', cardNumber: '4242424242424242', cvv: '123',
       expiryMonth: 12, expiryYear: 2032
     } }, { minimumRequiredBalance: '16' });
+    const refreshedCard = snapshot('44.00');
     assert.equal((await stock.register(refreshedCard)).inventoryStatus, 'AVAILABLE');
     const [[afterFirstSync]] = await pool.query(
       `SELECT order_id, inventory_status FROM cards WHERE id=?`, [cardId]
@@ -721,7 +729,7 @@ test('one card serves sequential orders until the configured capacity is exhaust
       WHERE card_id=? AND order_id=?`, [cardId, second.orderId]);
     await pool.query(`UPDATE card_assignment_history SET status='RELEASED', released_at=CURRENT_TIMESTAMP(3)
       WHERE card_id=? AND order_id=?`, [cardId, second.orderId]);
-    assert.equal((await stock.register(refreshedCard)).inventoryStatus, 'AVAILABLE');
+    assert.equal((await stock.register(snapshot('28.00'))).inventoryStatus, 'AVAILABLE');
 
     assert.equal((await workflow.assignAvailableCard(third.orderId)).waitingForCard, true);
     const [[usage]] = await pool.query(`SELECT COUNT(*) AS count FROM card_consumption_ledger
@@ -860,7 +868,9 @@ test('a card registered by the stock service is provider-scoped, accepted, and a
       id: providerCardId, cardTypeId: '7', status: 'active', cardBalance: '16.00',
       currency: 'USD', cardNumber: '4242424242424242', cvv: '123',
       expiryMonth: 12, expiryYear: 2032
-    } }, { minimumRequiredBalance: '16' });
+    } }, { minimumRequiredBalance: '16', fundedAmount: '16' });
+    // 真实开卡（scripts/card-stock.js openStockCards）登记时带开卡金额作 funded_amount；D-217 起可用额
+    // 取 LEAST(同步余额, funded_amount − 账本已花)，funded_amount 为空的卡永远不可分配。原夹具漏传。
     const registered = await stock.register(card);
     assert.equal(registered.inventoryStatus, 'AVAILABLE');
     const [[stored]] = await pool.query(
@@ -1227,8 +1237,9 @@ test('workflow repository commits card and recharge handoffs atomically', {
       'SELECT task_type, status FROM tasks WHERE order_id = ? ORDER BY id',
       [fixture.orderId]
     );
+    // VERIFY_CARD 随开卡线一起删了（D-247，19ee0b8e「worker PURCHASE_CARD/VERIFY_CARD 死线删」），
+    // 上面的注释早已改过，这里的断言当时漏改。
     assert.deepEqual(tasks, [
-      { task_type: 'VERIFY_CARD', status: 'PENDING' },
       { task_type: 'PREPARE_RECHARGE', status: 'PENDING' },
       { task_type: 'SUBMIT_RECHARGE', status: 'PENDING' },
       { task_type: 'POLL_RECHARGE', status: 'PENDING' }
@@ -1284,6 +1295,16 @@ test('order intake atomically redeems one CDK and creates an encrypted queued or
        )`
     );
 
+    // 块 3 ②（D-352，2026-09-23）起下单要查接单路线执行器的心跳（2 分钟内），测试库没有心跳就一律
+    // EXECUTOR_UNAVAILABLE。写一个新鲜心跳，走真实的检查路径，而不是把检查关掉。心跳检查用的是真实时钟
+    // （下单服务注入的 now 只管 Session 校验），所以这里按真实时间写，不能用上面的 nowMs。
+    for (const key of Object.values(EXECUTOR_HEARTBEAT_SETTING)) {
+      await pool.query(
+        `INSERT INTO app_settings (setting_key, setting_value) VALUES (?, ?)
+         ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)`,
+        [key, new Date().toISOString()]
+      );
+    }
     const concurrent = await Promise.allSettled([
       createCustomerOrder({ cdk, session }),
       createCustomerOrder({ cdk, session })
@@ -2026,6 +2047,9 @@ test('a cleared attempt can be reauthorized after Session replacement with a dis
       pool, sessionEncryptionKey: integrationSessionKey,
       cdkHashKey: integrationCdkHashKey
     })({ publicNo, session: replacement });
+    // D-355（2026-09-23）：打回换号时卡已放回，重贴后订单回「等卡」，要先重新分卡（拿回同一张）才能再授权。
+    const reassigned = await workflow.assignAvailableCard(fixture.orderId);
+    assert.equal(reassigned.providerCardId, `retry-card-${cardId}`);
 
     const secondAuthorization = await createRechargeAuthorization(pool, {
       publicNos: [publicNo], authorizedBy: 'mysql-retry-test'
@@ -2453,14 +2477,17 @@ test('customer replaces Session on the original MySQL order at most through the 
       cdkHashKey: integrationCdkHashKey, now: () => nowMs
     });
     assert.deepEqual(await service({ publicNo, session: replacement }), {
-      publicNo, status: 'PROCESSING', replacementCount: 1, replacementsRemaining: 2
+      // Session 重贴不限次数、不限时间（f8c1d300，2026-09-07 基线 CDK 规则）：remaining 为 null＝不限。
+      publicNo, status: 'PROCESSING', replacementCount: 1, replacementsRemaining: null
     });
     const [[stored]] = await pool.query(
       `SELECT status, customer_email, chatgpt_account_id, session_replacement_count,
               customer_action_code, failure_code, session_ciphertext
        FROM orders WHERE id = ?`, [fixture.orderId]
     );
-    assert.equal(stored.status, OrderStatus.CARD_READY);
+    // D-355（2026-09-23）：打回换号时卡已放回，重贴后回到「等卡」重新分卡；这张单本来就没挂卡，
+    // 所以是 WAITING_FOR_CARD，不是旧流程的 CARD_READY（放卡 → 重贴 → 再分卡的全流程见 session-replacement-card-release 测试）。
+    assert.equal(stored.status, OrderStatus.WAITING_FOR_CARD);
     assert.equal(stored.customer_email, 'replacement@example.com');
     assert.equal(stored.chatgpt_account_id, 'replacement-account');
     assert.equal(stored.session_replacement_count, 1);
@@ -2472,9 +2499,11 @@ test('customer replaces Session on the original MySQL order at most through the 
       `SELECT task_type, status, attempts FROM tasks WHERE order_id = ? ORDER BY task_type`,
       [fixture.orderId]
     );
+    // 分到卡之前不复活下游任务：先 DEAD 并打 SESSION_REPLACEMENT_WAITING_FOR_CARD 标记，分卡成功时才恢复。
     assert.deepEqual(tasks, [
-      { task_type: 'PREPARE_RECHARGE', status: 'PENDING', attempts: 0 },
-      { task_type: 'SUBMIT_RECHARGE', status: 'PENDING', attempts: 0 }
+      { task_type: 'ASSIGN_CARD', status: 'PENDING', attempts: 0 },
+      { task_type: 'PREPARE_RECHARGE', status: 'DEAD', attempts: 0 },
+      { task_type: 'SUBMIT_RECHARGE', status: 'DEAD', attempts: 0 }
     ]);
     const [[history]] = await pool.query(
       `SELECT COUNT(*) AS count FROM order_session_replacements WHERE order_id = ?`,

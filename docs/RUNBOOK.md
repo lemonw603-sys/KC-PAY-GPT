@@ -267,6 +267,10 @@ browser-mvp/scripts/prod-query.sh "SELECT ..."   # 经隧道，凭证运行时�
 ```bash
 v1/scripts/customer-sql-probe.sh
 ```
+**真数据库测试**（D-394 ③）：`deploy-release.sh prepare` 会先自动跑 `v1/scripts/mysql-tests.sh`（本机 `pojia-stage1-mysql` 容器，每个测试文件一个全新隔离库、跑完即删，约 1.5 分钟），不全绿就停止发布；工作区不是发布提交或 v1/ 有未提交改动也会停。容器没开等确有理由不跑时显式 `MYSQL_TESTS=skip`，输出留「未验证」。平时也可单独跑：
+```bash
+v1/scripts/mysql-tests.sh
+```
 动到数据库结构、或做了大范围重构时，再跑一次全量（589 条，约 8 分钟，见 D-186）：
 ```bash
 v1/scripts/sql-probe.sh
