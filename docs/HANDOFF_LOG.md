@@ -3812,3 +3812,4 @@ Lemon 追问「是不是更适合独立」→ 讨论（交集只有卡密与客�
 ## 2026-09-26｜ZZSHU（card.zzshu.pro）能不能接进来（20:0x～20:25 UTC，讨论，未定）
 
 Lemon 问 `https://card.zzshu.pro/` 能否接入。核实：它就是本系统 API 路线 301 的直充上游（`config.js:344` 默认地址、生产 env 同值），09-23 起路线关着，最后一次调用 09-14。只读看其网站与文档：计费改为须用其发放的 Key、按成功扣点，新增 go / to_20x / codex、region、Stripe 人工验证 `verification`、history / credits 接口（`contracts/2026-09-26_zzshu-api-changes-since-0917.md`）。在服务器用生产代码与生产 Key 只读调 `/third-party/user` → 401 `40107`，现有对接已不能下单（CURRENT_STATE 新行）。结论与建议交 Lemon，无代码、无生产写入。
+Lemon 问「之前认我们的卡台，是不是因为密钥是通过我们卡台申请的」→ 证据不支持：①09-17 卡头被拒测试时 ZZSHU 不校验 Key（`API_BASELINE.md:29` 08 月实测任意 Key 可用；09-17 对方文档「不校验、不查库、不扣次」）；②生产 ZZSHU Key 为 64 字符、前缀 `fd66`，非 HNSKJ 的 `nhs_` 格式，现又被 ZZSHU 判 `40107` 未登记 → 为本方自定串；③拒卡原话是卡头白名单。未知：其白名单为何含 HNSKJ 卡头；改收费后卡头放行是否与账号挂钩。
