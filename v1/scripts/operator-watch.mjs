@@ -1,7 +1,7 @@
 // 运营巡视告警（D-175/D-177）。只读判断 + 只写告警行：不碰订单、不碰卡、不碰付款。
 //
 // 管的是"没有任何人会告诉你"的那几件事：客户排队没人处理、付款结果一直没落定、
-// 以及可分配卡见底。
+// 停在付款前没人处理（D-390）、以及可分配卡见底。订单结束后它的「客户卡住了」自动收掉。
 //
 // 补的是唯一没人能发现的缺口：本机 Mac 睡了 / 比特浏览器关了 / 隧道断了 / 没人在，
 // 客户的单就静静躺在队列里。没有 run 产生，也就没有任何既有告警会响。服务器是常开的，
@@ -18,6 +18,7 @@ const { upsertBrowserAlertInTransaction } = await import(join(HERE, '../src/db/r
 const { EXECUTOR_HEARTBEAT_MAX_AGE_MS, EXECUTOR_HEARTBEAT_SETTING } = await import(join(HERE, '../src/db/repositories/order-intake-repository.js'));
 // 资格口径只有一份权威实现，这里复用它，不另拼 SQL——自拼过一次就报错过一次。
 const { eligibleInventoryCardSql } = await import(join(HERE, '../src/services/card-inventory-eligibility.js'));
+const { PRE_PAYMENT_STUCK_SQL, RESOLVE_FINISHED_STALLED_SQL, preStuckAlert } = await import(join(HERE, '../src/db/repositories/stalled-order-queries.js'));
 
 const args = process.argv.slice(2);
 const idx = args.indexOf('--minutes');
@@ -55,9 +56,12 @@ try {
         AND o.status NOT IN ('RECHARGE_SUCCESS','RECHARGE_FAILED','CLOSED','CARD_FAILED')`,
     [minutes + 5]
   );
+  // 第三种卡住（D-390，欠账 17）：停在付款前、没有任何程序在处理，客户页却照样显示处理中。
+  const [prePaymentStuck] = await connection.query(PRE_PAYMENT_STUCK_SQL, [minutes, minutes, minutes]);
   const found = {
     queued: stalled.map((row) => ({ publicNo: row.public_no, waitedMinutes: Number(row.waited) })),
     unresolvedPayment: stuckRuns.map((row) => ({ publicNo: row.public_no, waitedMinutes: Number(row.waited) })),
+    prePayment: prePaymentStuck.map((row) => ({ publicNo: row.public_no, waitedMinutes: Number(row.waited) })),
   };
   if (!dryRun) {
     for (const row of stalled) {
@@ -67,6 +71,11 @@ try {
         message: `已排队 ${row.waited} 分钟没有被执行。多半是本机没在跑：Mac 睡了、比特浏览器关了、隧道断了，或者付款开关没开。客户很快会来问。`,
       });
     }
+    for (const row of prePaymentStuck) {
+      await upsertBrowserAlertInTransaction(connection, preStuckAlert(row));
+    }
+    // 订单结束了，它的「客户卡住了」就收掉（D-390）；以前从不自动解除。
+    await connection.query(RESOLVE_FINISHED_STALLED_SQL);
     for (const row of stuckRuns) {
       await upsertBrowserAlertInTransaction(connection, {
         type: 'BROWSER_ORDER_STALLED', orderId: row.id,

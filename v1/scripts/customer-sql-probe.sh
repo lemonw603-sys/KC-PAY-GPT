@@ -75,6 +75,14 @@ probe "order-status-query-repository · findCustomerOrder（按卡密）" \
 probe "order-status-query-repository · findCustomerOrder（真实订单）" \
   "$ORDER_SQL WHERE o.id = '$OID' LIMIT 1"
 
+# 巡检「付款前挂住」与「订单结束收掉卡住告警」（D-390）：同样取仓库导出的那一份；UPDATE 按只读 SELECT 形式跑。
+STUCK_SQL="$(node --input-type=module -e "import { PRE_PAYMENT_STUCK_SQL } from './src/db/repositories/stalled-order-queries.js'; process.stdout.write(PRE_PAYMENT_STUCK_SQL.replaceAll('?', '3'))")" \
+  || { echo "[失败] 读不到 PRE_PAYMENT_STUCK_SQL"; exit 1; }
+probe "stalled-order-queries · 付款前挂住" "$STUCK_SQL"
+RESOLVE_SELECT="$(node --input-type=module -e "import { RESOLVE_FINISHED_STALLED_SQL as s } from './src/db/repositories/stalled-order-queries.js'; process.stdout.write('SELECT oa.id FROM operator_alerts oa INNER JOIN orders o ON o.id = oa.order_id ' + s.slice(s.indexOf('WHERE')))")" \
+  || { echo "[失败] 读不到 RESOLVE_FINISHED_STALLED_SQL"; exit 1; }
+probe "stalled-order-queries · 订单结束收掉卡住告警（只读形式）" "$RESOLVE_SELECT"
+
 echo
 if [ "$fail" -eq 0 ]; then echo "==> 客户链路 SQL 全部可执行 ✓"; else echo "==> 有 SQL 跑不通 ✗"; fi
 exit "$fail"

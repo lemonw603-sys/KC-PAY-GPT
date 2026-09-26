@@ -182,3 +182,19 @@ test('an empty {} from a logged-out browser is explained as "not logged in", not
     assert.match(await page.locator('#field-session [data-error]').textContent(), /还没有登录 ChatGPT/);
   });
 });
+
+test('waiting for a card says it may take a few minutes, and says "few minutes" only once (D-250 / D-390)', async () => {
+  const waiting = order('PREPARING', { stage: { index: 2, total: 9, code: 'CARD_PREPARING', label: '正在准备支付卡', floor: 2, ceiling: 6, typicalMs: 15000, since: new Date().toISOString() } });
+  await withPage({ '/api/v1/orders/status': () => ({ json: { order: waiting } }) }, async (page) => {
+    await page.locator('#nav-query').click();
+    await page.locator('#query-input').fill(PUBLIC_NO);
+    await page.locator('#query-submit').click();
+    await page.waitForFunction(() => document.querySelector('#stage-name').textContent === '正在准备支付卡');
+    await page.waitForTimeout(800);
+    const hint = await page.locator('#stage-hint').textContent();
+    assert.equal(hint, '正在准备专用卡,可能需要几分钟。关掉本页也不影响,随时可以用卡密回来查。');
+    assert.equal(hint.split('几分钟').length - 1, 1);
+    assert.equal(await page.locator('#view-run').getAttribute('data-tone'), 'ok');
+    assert.equal(await page.locator('.ring').isVisible(), true, 'still processing: the ring stays');
+  });
+});

@@ -236,6 +236,15 @@ curl -s -b <admin-cookie> -X POST https://<admin>/api/v1/admin/card-operational-
 
 ## 3. 死单残留清理
 
+**付款前挂住**（Bark「客户卡住了，停在付款前没人处理」，D-390）：订单还是处理中，但没有程序在处理它，还没点付款、钱没动。
+1. 先看本机付款池：`browser-mvp/scripts/ready-check.sh pay`、`scripts/pool-release.sh status`。池子停了就按 §1 拉起；拉起后租约过期的任务几秒内会被重新领走，告警在订单结束后自动收掉。
+2. 池子正常、几分钟后仍没人接手：收单，客户卡密退回、可重新兑换（守卫：有任何付款痕迹就拒绝；run 租约没过期也会拒绝，等过期再来）。
+```bash
+ssh root@144.34.180.184 'set -a; . /etc/pojia/runtime.env; set +a; cd /opt/pojia/current/v1 && node scripts/close-rehearsal-order.mjs <PUBLIC_NO> --dry-run'
+ssh root@144.34.180.184 'set -a; . /etc/pojia/runtime.env; set +a; cd /opt/pojia/current/v1 && node scripts/close-rehearsal-order.mjs <PUBLIC_NO> --reason "pre-payment stall: <原因>"'
+```
+（脚本名带「演练」，守卫只看付款痕迹，对客户单同样适用；**不要加 `--skip-cdk-return`**，客户码必须退回。）
+
 订单已是 RECHARGE_FAILED 但卡仍绑定（2026-09-08 前的旧行为）：
 ```bash
 ssh root@144.34.180.184 'set -a; . /etc/pojia/runtime.env; set +a; cd /opt/pojia/current/v1 && node scripts/release-failed-order-card.js <PUBLIC_NO> --dry-run'

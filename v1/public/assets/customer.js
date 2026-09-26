@@ -43,7 +43,8 @@
   const SEGMENT_MS = 90000;
   const STAGE_HINT = {
     ORDER_RECEIVED: '已收到你的卡密和账号,正在安排开通。',
-    CARD_PREPARING: '正在为这笔订单准备专用支付卡。',
+    // 等卡（D-250 Lemon 定稿「等卡 / 等人说明保留」）：没卡时要现开，客户会在这一步等几分钟。
+    CARD_PREPARING: '正在准备专用卡,可能需要几分钟。',
     QUEUED_FOR_RUN: '已进入开通队列,马上开始。',
     ACCOUNT_VERIFYING: '正在登录并核对账号,确认可以开通。',
     CHECKOUT_LOADING: '正在打开官方购买页面。',
@@ -53,7 +54,10 @@
     SUBSCRIPTION_ACTIVE: 'Plus 已开通,现在就可以用了。'
   };
   // D-386：原来写「请保持本页打开」，暗示关掉就会出事；刷新或切走再回来现在会自动接上进度。
-  const KEEP_OPEN = '通常几分钟之内完成,关掉本页也不影响,随时可以用卡密回来查。';
+  const KEEP_OPEN_TAIL = '关掉本页也不影响,随时可以用卡密回来查。';
+  const KEEP_OPEN = '通常几分钟之内完成,' + KEEP_OPEN_TAIL;
+  // 说明里自己已经讲了要等多久的阶段，后面不再接「通常几分钟之内完成」，免得一句话说两遍几分钟。
+  const STAGE_HINT_HAS_TIME = new Set(['CARD_PREPARING']);
 
   // 后端映射态 → 本页呈现方式。poll 为 null 表示终态，停止轮询。
   // 设计稿的「遇到问题」屏标题仍是当前阶段名（例如「正在提交支付」），
@@ -474,7 +478,7 @@
     if (!hint) {
       const base = stage ? STAGE_HINT[stage.code] : '';
       hint = success ? withProduct(STAGE_HINT.SUBSCRIPTION_ACTIVE, order)
-        : `${base || ''}${base ? KEEP_OPEN : ''}`.trim() || KEEP_OPEN;
+        : `${base || ''}${base ? (STAGE_HINT_HAS_TIME.has(stage.code) ? KEEP_OPEN_TAIL : KEEP_OPEN) : ''}`.trim() || KEEP_OPEN;
     }
     // 换号原因是后端原话（「当前账号已是 Plus…」），不做套餐名替换，否则 5x 单会变成「已是 Pro 5X」。
     const reasonHint = canReplace && order.actionRequired?.message && hint === order.actionRequired.message;
