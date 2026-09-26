@@ -3746,3 +3746,11 @@ D-385：`go-live.sh` / `stop-live.sh` 开头即 exit 3 + 提示；实跑验证�
 ## 2026-09-25｜P0 止血 + 客户页批 A 上线（19:2x～19:4x UTC）
 
 P0：LaunchAgent 加 300000，池 85147（D-387）。批 A：后端三处 + 客户页十余处，`ac6e8578`，release `20260925-customer-batchA-ac6e857`（D-388）。
+
+## 2026-09-26｜D-389 客户页两处小修 + 批 B（23:00～00:05 UTC）
+
+v1：`0e316b6c`（失败 / 换号屏收起进度环；卡密已退回的失败单 canRetry=true；customer-sql-probe 改跑导出的 `SELECT_ORDER`）。先查生产 4 张判未扣款关单卡密：AVAILABLE、未绑单、无有效期；真实 SQL 对这 4 单返回 CARD_FAILED / AVAILABLE / NULL。UI 测试加环隐藏断言，截图 1440×730 与 390×844 亲看；两处变异都抓到。v1 全量 1116：1051/0/65。
+browser-mvp：`1ca9a422`（任务书 `tasks/2026-09-26-batch-b-pool-fix.md`）。全量 347：338/0/9；8 处变异全抓。
+23:19 服务器 prepare（备份 `pojia-20260925T231927Z`）→ 23:20 switch `20260926-d389-1ca9a42`，新连接复验三服务 cwd、`customer.css?v=41` 含 `is-conclusive`、`PJV1-4U9x…` canRetry true。池 `pool-release.sh prepare` 同提交，`check pay` READY、1800000 启动即报错。
+23:21:18 正式路径关付款 → 23:21:2x SIGTERM 85147（2 秒退出）→ 23:21:46 关下单查心跳 → 关 3 号窗口残留结账页。23:41 Lemon 建 `PJV1-k3QP…`（企业邮箱号）→ 演练导航失败（Business 栏，证据包截图）→ 单持卡 8718、锁到 23:57:25 → 23:58:07 收口（CLOSED / 8718 AVAILABLE / 卡密退回 / run FAILED_SAFE）。00:00:47 Lemon 用普通邮箱号建 `PJV1-Iynl…` → 00:02:33 `PRE_SUBMIT_STOPPED` PHP 982.14 / 税 0 / 付款点击 0 → 收口。00:03 `pool-release.sh switch` → 00:03:45 开付款 → 00:03:46 开下单查心跳 → 00:04:37 池 56510 拉起（current、POLL 1000、WINDOW 300000、心跳 00:04:58）。state-check 20 项一致。
+另：回答 Lemon「客户也要等锁吗」时查实——演练单次工具没开 safeAbortOnFailure（欠账 18），常驻池开了，`pool:lane-1` 43 次付款前失败都当场收口。
