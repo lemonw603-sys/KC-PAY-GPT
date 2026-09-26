@@ -12,11 +12,11 @@
   <link rel="stylesheet" href="/admin/assets/cards.css?v=6">
   <link rel="stylesheet" href="/admin/assets/cdks.css?v=1">
   <link rel="stylesheet" href="/admin/assets/orders.css?v=3">
-  <link rel="stylesheet" href="/admin/assets/diagnostics.css?v=1">
+  <link rel="stylesheet" href="/admin/assets/diagnostics.css?v=2">
   <script src="/admin/assets/cdks.js?v=2" defer></script>
-  <script src="/admin/assets/orders.js?v=4" defer></script>
-  <script src="/admin/assets/diagnostics.js?v=1" defer></script>
-  <script src="/admin/assets/admin.js?v=96" defer></script>
+  <script src="/admin/assets/orders.js?v=5" defer></script>
+  <script src="/admin/assets/diagnostics.js?v=2" defer></script>
+  <script src="/admin/assets/admin.js?v=97" defer></script>
 </head>
 <body>
   <div class="admin-shell">
@@ -337,6 +337,12 @@
           <div class="table-wrap"><table><thead><tr><th>订单 / Run</th><th>运行状态</th><th>付款 / 资金</th><th>控制权</th><th>Worker 租约</th><th>Checkout artifact</th><th>更新时间</th></tr></thead><tbody id="browser-runs-table"></tbody></table></div>
           <div class="pagination"><span id="browser-runs-count">0 个 run</span><div><button id="browser-runs-prev" type="button">上一页</button><span id="browser-runs-page">第 1 页</span><button id="browser-runs-next" type="button">下一页</button></div></div>
             </div></details>
+          </section>
+          <!-- D-393：失败原因统计（原型 step6-diagnostics-interaction.html #fail-stats）。按提交时间、默认近 7 天、演练单不计入。 -->
+          <section class="diag-panel" aria-labelledby="diag-fail-title" id="diagnostics-failures">
+            <div class="diag-heading"><h2 id="diag-fail-title">失败原因统计</h2><span class="diag-count" id="diag-fail-summary">正在读取…</span><small>按提交时间；演练单不计入。</small></div>
+            <form class="diag-search diag-fail-range" id="diag-fail-range"><label for="diag-fail-from">提交时间</label><input id="diag-fail-from" type="date" aria-label="起"> 至 <input id="diag-fail-to" type="date" aria-label="止"><button class="diag-btn" type="button" data-fail-range="7" aria-pressed="true">近 7 天</button><button class="diag-btn" type="button" data-fail-range="all" aria-pressed="false">全部</button></form>
+            <div class="table-wrap"><table class="diag-fail-table"><thead><tr><th>原因</th><th>单数</th><th>占比</th><th>最近一单</th><th>具体原话（最近一条）</th></tr></thead><tbody id="diag-fail-rows"></tbody></table></div>
           </section>
           <details class="diag-panel diag-tools" id="diagnostics-tools"><summary>低频工具 <small>导出留档、账单地址配置</small></summary><div class="diag-body">
             <div class="diag-export"><div><strong>导出留档</strong><p>仅运营字段，不含 Session、完整卡号或令牌。</p></div><button class="diag-btn" id="export-orders" type="button">订单 CSV</button><button class="diag-btn" id="export-reconciliation-diag" type="button">核对案例 CSV</button></div>

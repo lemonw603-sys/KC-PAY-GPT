@@ -771,6 +771,15 @@ const PAYMENT_UNKNOWN_CASE_TYPES = new Set(['API_PAYMENT_UNKNOWN', 'BROWSER_PAYM
 // D-279 ⑦：CDK 状态用客户看得懂的说法，不把 REDEEMED/REVOKED 这种内部词摆到页面上。
 // 「使用中 / 已交付」要看订单走到哪：码被绑走(REDEEMED)只说明开始用了，订单成功才算交付。
 const PLAN_LABELS = Object.freeze({ plus: 'Plus', pro_5x: 'Pro 5X', pro_20x: 'Pro 20X' });
+// 失败原因代码 → 中文（订单页「未成功」与诊断页「失败原因统计」共用这一份，D-393；原先只在 orders.js 里）。
+const FAILURE_LABELS = Object.freeze({
+  CHECKOUT_DRIFT: '结账页变了', CHECKOUT_NAVIGATION_FAILED: '打不开结账页', PROVIDER_CONFIRMED_FAILURE: '卡台确认失败',
+  CHECKOUT_OBSERVATION_FAILED: '结账页读不出', CARD_DECLINED: '卡被拒', CHATGPT_ACCESS_BLOCKED: '账号被拦',
+  RECHARGE_SUBMIT_REJECTED: '提交被拒', BROWSER_RETRY_LIMIT: '重试用尽', PAYMENT_EXECUTION_FAILED: '付款执行失败',
+  PAGE_DRIFT: '页面变了', PAGE_CHECKPOINT_FAILED: '页面检查失败', CANCELLED_PRE_SUBMISSION: '付款前取消',
+  HUMAN_VERIFIED_NOT_CHARGED: '人工核实未扣款', PAYMENT_NOT_CHARGED_VERIFIED: '人工核实未扣款',
+  PROFILE_PAGE_AMBIGUOUS: '账号页认不准'
+});
 function cdkStatusLabel(row) {
   if (row.status === 'REVOKED') return { text: '已作废', tone: 'mute' };
   if (row.status === 'REDEEMED') {
@@ -788,7 +797,7 @@ function cdkStatusLabel(row) {
 const cdkPage = window.createCdkPage?.({ api, escapeHtml, formatTime, showNotice, askForm, downloadCodes, downloadCdkStatusCsv });
 // 订单页 v3（D-356/D-357）：列表/筛选/展开/行内动作在 orders.js；抽屉与动作实现留在这里共用。
 const ordersPage = window.createOrdersPage?.({
-  api, escapeHtml, showNotice, planLabels: PLAN_LABELS,
+  api, escapeHtml, showNotice, planLabels: PLAN_LABELS, failureLabels: FAILURE_LABELS,
   openOrder: (publicNo, options) => openOrder(publicNo, options),
   actions: {
     cancel: (publicNo, { after }) => cancelOrder(publicNo, null, { confirmed: true, after }),
@@ -2792,7 +2801,7 @@ async function loadDiagnostics() {
   }
 }
 
-const diagnosticsPage = window.createDiagnosticsPage({ api, escapeHtml, formatTime, formatMoney, openOrder, openCard, showNotice, orderStatusLabel: code => STATUS_META[code]?.[0] || code });
+const diagnosticsPage = window.createDiagnosticsPage({ api, escapeHtml, formatTime, formatMoney, openOrder, openCard, showNotice, orderStatusLabel: code => STATUS_META[code]?.[0] || code, failureLabels: FAILURE_LABELS });
 async function loadDiagnosticPart(loader, target, colspan = 0) {
   try { await loader(); } catch {
     if (target) target.innerHTML = colspan ? `<tr><td colspan="${colspan}" class="diag-empty">读取失败，请刷新状态重试。</td></tr>` : '<p class="diag-empty">读取失败，请刷新状态重试。</p>';
@@ -2811,7 +2820,7 @@ async function refreshDiagnostics({ daily = false } = {}) {
       loadDiagnosticPart(loadDiagnostics), loadDiagnosticPart(loadReconciliationCases),
       loadDiagnosticPart(loadBrowserDispatchJobs, elements.browserDispatchTable, 6),
       loadDiagnosticPart(loadBrowserRuns, elements.browserRunsTable, 7),
-      ...(daily ? [loadDiagnosticPart(loadBillingAddressSettings, document.querySelector('#billing-address-meta')), diagnosticsPage.loadDaily()] : [])
+      ...(daily ? [loadDiagnosticPart(loadBillingAddressSettings, document.querySelector('#billing-address-meta')), diagnosticsPage.loadDaily(), diagnosticsPage.loadFailures()] : [])
     ]);
   } finally { button.disabled = false; }
 }

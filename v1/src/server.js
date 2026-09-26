@@ -57,6 +57,7 @@ import { createAdminStartBusinessService } from './services/admin-start-business
 import { buildAdminReadinessSummary } from './services/admin-readiness-summary.js';
 import { createManualCardImportService } from './services/manual-card-import-service.js';
 import { createCardSourceAdminService } from './services/card-source-admin-service.js';
+import { createFailureStatsService } from './services/failure-stats-service.js';
 
 const config = loadConfig();
 const pool = createDatabasePool(config.database);
@@ -201,6 +202,7 @@ const app = createApp({
   adminHost: config.adminHost,
   getAdminOverview: getAdminOverviewWithReadiness,
   listAdminOrders: adminReadService.listOrders,
+  getFailureStats: createFailureStatsService({ pool }),
   getAdminOrder: adminReadService.getOrder,
   getAdminOrderTimeline: adminReadService.getOrderTimeline,
   listAdminOrderAttempts: adminReadService.listOrderAttempts,

@@ -47,6 +47,20 @@ dialog{color:var(--wb-t);background:var(--wb-s);border:1px solid var(--wb-bd);bo
 @media(max-width:900px){.main-area{padding:20px}.proto-bar label{margin-left:0}.topbar{align-items:flex-start}.sidebar-foot{display:none}}
 @media(max-width:600px){.main-area{padding:16px 14px 28px}.heading,.status-line{padding:14px;gap:10px}.heading small{flex-basis:100%}.case-list{padding-inline:14px}.case-row{grid-template-columns:1fr;gap:10px}.case-actions{justify-content:flex-start}.checks,.evidence{grid-template-columns:1fr}.detail-body,.run-summary{padding-inline:14px}.subhead{padding:14px}.tabs{padding-inline:14px}.search-row{padding:14px}.tools-inner{padding-inline:14px}.btn,.field,.tab,summary{min-height:44px}.proto-bar{gap:8px}.proto-bar label{width:100%}.proto-bar select{flex:1}.topbar{flex-wrap:wrap;gap:10px}.topbar p{max-width:32ch}td,th{padding-inline:14px}summary{padding:14px}.status-line{column-gap:16px}.tools summary small{display:block;margin:4px 0 0}}
 @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}}
+/* D-393 失败原因统计：格内一行（Lemon 屏幕 1440×730），原话省略、悬停看全文 */
+.fail-range input{flex:0 0 auto;min-width:0}
+.btn[aria-pressed=true]{background:var(--wb-a-soft);color:var(--wb-a-ink);border-color:var(--wb-a)}
+.fail-table{table-layout:fixed}
+.fail-table th:nth-child(1){width:180px}.fail-table th:nth-child(2),.fail-table th:nth-child(3){width:72px}.fail-table th:nth-child(4){width:120px}
+.fail-table td{white-space:nowrap}
+.fail-table .btn.link{padding-inline:0;min-height:0}
+.fail-detail{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fail-detail.muted{color:var(--wb-t2)}
+.fail-source{display:inline;margin:0 8px 0 0;color:var(--wb-t2);font-size:12px}
+.fail-orders td{background:var(--wb-s2);padding:8px 22px 12px}
+.fail-orders ul{list-style:none;margin:0;padding:0;display:grid;gap:6px}
+.fail-orders li{display:grid;grid-template-columns:auto 96px minmax(0,1fr) auto;gap:14px;align-items:center;font-size:12.5px}
+.fail-orders li small{margin:0}
 </style>
 </head>
 <body>
@@ -76,6 +90,18 @@ dialog{color:var(--wb-t);background:var(--wb-s);border:1px solid var(--wb-bd);bo
       <form class="search-row" id="search"><label for="order-query">订单号</label><input class="field mono" id="order-query" placeholder="例如 DEMO-1001" autocomplete="off"><button class="btn primary" type="submit">查这一单</button><button class="btn" type="button" id="clear-query">清空</button><small>演示订单：DEMO-1001（Browser）、DEMO-1002（API）</small></form>
       <div id="trace-result"></div>
       <details class="technical" id="run-records"><summary>浏览执行记录与派工队列</summary><div class="detail-body"><p>保留最近记录与筛选，日常无需展开技术编号。</p><div class="table-wrap"><table><thead><tr><th>订单</th><th>执行方式</th><th>当前状态</th><th>操作</th></tr></thead><tbody><tr><td class="mono">DEMO-1001</td><td>Browser</td><td>等待人工核实</td><td><button class="btn link" data-trace="DEMO-1001">查这一单</button></td></tr><tr><td class="mono">DEMO-1002</td><td>API</td><td>付款结果不明</td><td><button class="btn link" data-trace="DEMO-1002">查这一单</button></td></tr></tbody></table></div></div></details>
+    </section>
+    <!-- D-393（2026-09-26 Lemon 在预览里选定）：失败原因统计。按提交时间、默认近 7 天、演练单不计入；点原因展开是哪几张单。格内一行，原话过长省略、悬停看全文。 -->
+    <section class="panel" aria-labelledby="fail-title" id="fail-stats">
+      <div class="heading"><h2 id="fail-title">失败原因统计</h2><span class="count" id="fail-summary">共 12 单 · 成功 7 · 未成功 5 · 还没结束 0 · 已排除演练 3 单</span><small class="right">按提交时间；演练单不计入。</small></div>
+      <form class="search-row fail-range" id="fail-range"><label for="fail-from">提交时间</label><input class="field mono" type="date" id="fail-from" value="2026-09-20"> 至 <input class="field mono" type="date" id="fail-to" value="2026-09-26"><button class="btn" type="button" aria-pressed="true">近 7 天</button><button class="btn" type="button" aria-pressed="false">全部</button></form>
+      <div class="table-wrap"><table class="fail-table"><thead><tr><th>原因</th><th>单数</th><th>占比</th><th>最近一单</th><th>具体原话（最近一条）</th></tr></thead><tbody>
+        <tr><td><button class="btn link" type="button" aria-expanded="true">打不开结账页</button></td><td class="mono">2</td><td class="mono">40%</td><td class="mono">09-30 14:02</td><td class="fail-detail" title="plus upgrade control must resolve to one visible button (找到 0 个)">plus upgrade control must resolve to one visible button (找到 0 个)</td></tr>
+        <tr class="fail-orders"><td colspan="5"><ul><li><button class="btn link mono" type="button">DEMO-1003</button><span class="mono">09-30 14:02</span><span class="fail-detail">plus upgrade control must resolve to one visible button (找到 0 个)</span><small>现场 20260930T060200Z-demo</small></li><li><button class="btn link mono" type="button">DEMO-1004</button><span class="mono">09-28 09:15</span><span class="fail-detail">Timeout 45000ms exceeded waiting for checkout</span><small>现场 20260928T011500Z-demo</small></li></ul></td></tr>
+        <tr><td><button class="btn link" type="button" aria-expanded="false">结账页变了</button></td><td class="mono">1</td><td class="mono">20%</td><td class="mono">09-29 10:11</td><td class="fail-detail" title="LIVE Browser payment failed at fill-billing-address">LIVE Browser payment failed at fill-billing-address</td></tr>
+        <tr><td><button class="btn link" type="button" aria-expanded="false">卡被拒</button></td><td class="mono">1</td><td class="mono">20%</td><td class="mono">09-28 09:40</td><td class="fail-detail" title="Stripe declined the card; no charge"><small class="fail-source">订单说明</small>Stripe declined the card; no charge</td></tr>
+        <tr><td><button class="btn link" type="button" aria-expanded="false">账号被拦</button></td><td class="mono">1</td><td class="mono">20%</td><td class="mono">09-27 22:15</td><td class="fail-detail muted">只有代码，没有原话</td></tr>
+      </tbody></table></div>
     </section>
     <details class="panel tools" id="tools"><summary>低频工具 <small>导出留档、账单地址配置</small></summary><div class="tools-inner"><div class="tools-line"><div class="label"><b>导出留档</b><p>本稿预览示例CSV，正式页面保留下载功能。</p></div><button class="btn" data-export="orders">订单 CSV</button><button class="btn" data-export="reconciliation">核对案例 CSV</button></div><form id="billing" class="tools-line"><div class="label"><b>账单地址</b><p>现有配置入口保留；此处只演示保存反馈。</p></div><label>状态<select class="field"><option>启用</option><option>关闭</option></select></label><label>州<select class="field"><option>DE</option><option>AK</option><option>MT</option><option>NH</option><option>OR</option></select></label><label>账单姓名<input class="field" value="Demo User" maxlength="120"></label><button class="btn" type="submit">演示保存</button></form></div></details>
   </div>

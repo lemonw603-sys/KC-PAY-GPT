@@ -37,13 +37,13 @@ test('malformed report is a failed read, not zero',async()=>{
 test('all payment-unknown case types match between frontend fallbacks and backend policy',()=>{
   const h=loadAdminJs();const types=h.evalIn('[...PAYMENT_UNKNOWN_CASE_TYPES]');assert.deepEqual(Array.from(types),ORDER_RESOLUTION_CASE_TYPES);
 });
-test('diagnostics keeps four groups, low-frequency forms and original Browser controls',()=>{
+test('diagnostics keeps five groups (D-393 adds failure reasons), low-frequency forms and original Browser controls',()=>{
   const html=fs.readFileSync(new URL('../public/admin/index.html',import.meta.url),'utf8');
   const src=fs.readFileSync(new URL('../public/admin/assets/admin.js',import.meta.url),'utf8');
   const section=html.slice(html.indexOf('<section id="diagnostics-view"'),html.indexOf('<section id="settings-view"'));
-  assert.equal((section.match(/class="diag-panel(?: |")/g)||[]).length,4);
-  for(const id of ['diagnostics-status','reconciliation-table','diagnostics-card-report','diagnostics-order-search','diagnostics-execution','browser-filters','browser-dispatch-table','browser-runs-table','diagnostics-tools','billing-address-settings','export-orders','export-reconciliation-diag'])assert.ok(section.includes(`id="${id}"`),id);
-  assert.match(html,/diagnostics\.js\?v=1/);assert.match(html,/diagnostics\.css\?v=1/);
+  assert.equal((section.match(/class="diag-panel(?: |")/g)||[]).length,5);
+  for(const id of ['diagnostics-status','reconciliation-table','diagnostics-card-report','diagnostics-order-search','diagnostics-execution','browser-filters','browser-dispatch-table','browser-runs-table','diagnostics-tools','billing-address-settings','export-orders','export-reconciliation-diag','diagnostics-failures','diag-fail-range','diag-fail-rows'])assert.ok(section.includes(`id="${id}"`),id);
+  assert.match(html,/diagnostics\.js\?v=2/);assert.match(html,/diagnostics\.css\?v=2/);
   assert.match(src,/RESOLVE_UNKNOWN_PAYMENT/);assert.match(src,/CONFIRM_MANUAL_PAYMENT/);assert.match(src,/RELEASE_SAFE/);
   assert.match(src,/diagnostics-tools'\)\.open = true/,'settings link must reveal the folded billing form');
 });

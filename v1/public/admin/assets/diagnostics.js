@@ -6,7 +6,7 @@
     PENDING_MANUAL_REGISTRATION: '已登记手动用卡，账本待补记', AMOUNT_DIFF: '金额存在差异', UNVERIFIABLE: '金额无法核对'
   };
   const reasons = { NO_VERIFIABLE_BASELINE: '缺少可信期初金额，不据此判定金额一致或异常。', UNREADABLE_BALANCE: '余额未读到，暂不能核对金额。', NEGATIVE_BALANCE: '余额为负，含义待核实；不取绝对值掩盖问题。' };
-  window.createDiagnosticsPage = ({ api, escapeHtml: esc, formatTime, formatMoney, openOrder, openCard, showNotice, orderStatusLabel }) => {
+  window.createDiagnosticsPage = ({ api, escapeHtml: esc, formatTime, formatMoney, openOrder, openCard, showNotice, orderStatusLabel, failureLabels = {} }) => {
     const $ = s => document.querySelector(s);
     let report = null, sources = new Map(), filter = 'difference', generation = 0, searchGeneration = 0;
     const count = n => n == null || !Number.isFinite(Number(n)) ? '—' : String(n);
@@ -44,8 +44,61 @@
         $('#diagnostics-card-report').innerHTML = '<div class="diag-error"><span>逐卡报告读取失败，不能当作没有差异。</span><button class="diag-btn" data-diagnostic-retry>重试</button></div>';
       } finally { if (ticket === generation) $('#diagnostics-report-refresh').disabled = false; }
     }
+    // ---------------------------------------------------------------- 失败原因统计（D-393）
+    // 按提交时间（UTC+8 自然日，与订单页同一写法）；「近 7 天」含今天；「全部」不带日期。
+    let failRange = '7', failGeneration = 0;
+    const cstDay = (offsetDays = 0) => new Date(Date.now() + 8 * 3_600_000 - offsetDays * 86_400_000).toISOString().slice(0, 10);
+    const cstTime = iso => { const d = new Date(iso); return Number.isFinite(d.getTime()) ? new Date(d.getTime() + 8 * 3_600_000).toISOString().slice(5, 16).replace('T', ' ') : '—'; };
+    const failLabel = code => failureLabels[code] || (code ? `未归类（${code}）` : '没有记录原因');
+    const failDetail = (text, source, tag = 'td') => {
+      if (!text) return `<${tag} class="diag-fail-detail muted">只有代码，没有原话</${tag}>`;
+      const src = source === 'ORDER' ? '<small class="diag-fail-source">订单说明</small>' : '';
+      return `<${tag} class="diag-fail-detail" title="${esc(text)}">${src}${esc(text)}</${tag}>`;
+    };
+    function setFailRange(range) {
+      failRange = range;
+      document.querySelectorAll('[data-fail-range]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.failRange === range)));
+      if (range === '7') { $('#diag-fail-from').value = cstDay(6); $('#diag-fail-to').value = cstDay(0); }
+      if (range === 'all') { $('#diag-fail-from').value = ''; $('#diag-fail-to').value = ''; }
+    }
+    function renderFailures(data) {
+      const t = data.totals;
+      $('#diag-fail-summary').textContent = `共 ${t.orders} 单 · 成功 ${t.succeeded} · 未成功 ${t.failed} · 还没结束 ${t.other} · 已排除演练 ${t.rehearsalExcluded} 单`;
+      if (!data.reasons.length) { $('#diag-fail-rows').innerHTML = '<tr><td colspan="5" class="diag-empty">这段时间没有未成功的单。</td></tr>'; return; }
+      $('#diag-fail-rows').innerHTML = data.reasons.map((r, i) => {
+        const id = `diag-fail-${i}`;
+        const more = r.count > r.orders.length ? `<li><small>只列最近 ${r.orders.length} 张，共 ${r.count} 张</small></li>` : '';
+        const list = r.orders.map(o => `<li><button class="diag-btn link diag-mono" type="button" data-diagnostic-order="${esc(o.publicNo)}">${esc(o.publicNo)}</button><span class="diag-mono">${esc(cstTime(o.createdAt))}</span>${failDetail(o.detail, o.detailSource, 'span')}<small>${o.evidenceRef ? `现场 ${esc(o.evidenceRef)}` : ''}</small></li>`).join('');
+        return `<tr><td><button class="diag-btn link" type="button" data-fail-expand="${id}" aria-expanded="false">${esc(failLabel(r.code))}</button></td><td class="diag-mono">${esc(String(r.count))}</td><td class="diag-mono">${esc(String(r.share))}%</td><td class="diag-mono">${esc(cstTime(r.lastAt))}</td>${failDetail(r.lastDetail, r.lastDetailSource)}</tr>
+          <tr class="diag-fail-orders" id="${id}" hidden><td colspan="5"><ul>${list}${more}</ul></td></tr>`;
+      }).join('');
+    }
+    async function loadFailures() {
+      const ticket = ++failGeneration;
+      if (failRange === '7' && !$('#diag-fail-from').value) setFailRange('7');
+      const from = $('#diag-fail-from').value, to = $('#diag-fail-to').value;
+      const query = new URLSearchParams();
+      if (from) query.set('from', `${from}T00:00:00.000+08:00`);
+      if (to) query.set('to', `${to}T23:59:59.999+08:00`);
+      $('#diag-fail-summary').textContent = '正在读取…';
+      try {
+        const data = await api(`/api/v1/admin/failure-stats${query.toString() ? `?${query}` : ''}`);
+        if (ticket !== failGeneration) return;
+        if (!data?.totals || !Array.isArray(data.reasons)) throw Error('invalid failure stats');
+        renderFailures(data);
+      } catch {
+        if (ticket !== failGeneration) return;
+        $('#diag-fail-summary').textContent = '读取失败';
+        $('#diag-fail-rows').innerHTML = '<tr><td colspan="5"><div class="diag-error"><span>统计读取失败，不能当作没有失败。</span><button class="diag-btn" type="button" data-fail-retry>重试</button></div></td></tr>';
+      }
+    }
+    document.querySelectorAll('[data-fail-range]').forEach(b => b.addEventListener('click', () => { setFailRange(b.dataset.failRange); loadFailures(); }));
+    ['#diag-fail-from', '#diag-fail-to'].forEach(sel => $(sel).addEventListener('change', () => { setFailRange('custom'); loadFailures(); }));
+
     $('#diagnostics-view').addEventListener('click', e => {
       const b = e.target.closest('button'); if (!b) return;
+      if (b.dataset.failExpand) { const row = document.getElementById(b.dataset.failExpand); row.hidden = !row.hidden; b.setAttribute('aria-expanded', String(!row.hidden)); }
+      if (b.hasAttribute('data-fail-retry')) loadFailures();
       if (b.dataset.diagnosticFilter) { filter = b.dataset.diagnosticFilter; render(); }
       if (b.dataset.diagnosticExpand) { const row = document.getElementById(b.dataset.diagnosticExpand); row.hidden = !row.hidden; b.setAttribute('aria-expanded', String(!row.hidden)); b.textContent = row.hidden ? '展开明细' : '收起明细'; }
       if (b.hasAttribute('data-diagnostic-retry')) loadDaily();
@@ -67,6 +120,6 @@
       }
     });
     $('#diagnostics-clear-search').addEventListener('click', () => { searchGeneration++; $('#diagnostics-public-no').value = ''; $('#diagnostics-order-result').innerHTML = ''; $('#diagnostics-public-no').focus(); });
-    return { loadDaily };
+    return { loadDaily, loadFailures };
   };
 })();

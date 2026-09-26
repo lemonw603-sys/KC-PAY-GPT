@@ -1,6 +1,6 @@
 /* 订单页 v3 控制器（D-356/D-357）；只管 #orders-view。共享的 api / 通知 / 抽屉 / 动作留在 admin.js。
    冻结原型：docs/design/prototypes/step6-orders-v3.html；契约：docs/design/parity/orders-page.json。 */
-window.createOrdersPage = function ({ api, escapeHtml: esc, showNotice, openOrder, actions, planLabels }) {
+window.createOrdersPage = function ({ api, escapeHtml: esc, showNotice, openOrder, actions, planLabels, failureLabels }) {
   const root = document.querySelector('#orders-view');
   // id 全局唯一；用 getElementById 也让测试沙箱（元素 stub 的 querySelector 返回 null）能加载。
   const el = (id) => document.getElementById(id);
@@ -13,13 +13,8 @@ window.createOrdersPage = function ({ api, escapeHtml: esc, showNotice, openOrde
     WAITING_FOR_SESSION: '等客户换 Session', RECONCILIATION_ISSUES: '付款与交易待核实', PAYMENT_UNKNOWN: '付款结果待核实'
   };
   const TONE = { blue: 'info', green: 'ok', orange: 'warn', red: 'danger', gray: '' };
-  const FAIL = {
-    CHECKOUT_DRIFT: '结账页变了', CHECKOUT_NAVIGATION_FAILED: '打不开结账页', PROVIDER_CONFIRMED_FAILURE: '卡台确认失败',
-    CHECKOUT_OBSERVATION_FAILED: '结账页读不出', CARD_DECLINED: '卡被拒', CHATGPT_ACCESS_BLOCKED: '账号被拦',
-    RECHARGE_SUBMIT_REJECTED: '提交被拒', BROWSER_RETRY_LIMIT: '重试用尽', PAYMENT_EXECUTION_FAILED: '付款执行失败',
-    PAGE_DRIFT: '页面变了', PAGE_CHECKPOINT_FAILED: '页面检查失败', CANCELLED_PRE_SUBMISSION: '付款前取消',
-    HUMAN_VERIFIED_NOT_CHARGED: '人工核实未扣款', PAYMENT_NOT_CHARGED_VERIFIED: '人工核实未扣款'
-  };
+  // 失败原因中文由 admin.js 传入（与诊断页统计共用一份，D-393）。
+  const FAIL = failureLabels || {};
   const state = { q: '', bucket: 'all', extra: '', planType: '', executorKind: '', from: '', to: '', page: 1, pageSize: 50, total: 0, expanded: new Set(), loaded: new Map() };
   const cst = (iso) => {
     if (!iso) return '—';

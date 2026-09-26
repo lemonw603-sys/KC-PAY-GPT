@@ -1,3 +1,15 @@
+/**
+ * 关单前的最后一个状态（D-388）。关单对客户只有两种结局：这个值是 RECHARGE_SUCCESS 就算成功，
+ * 其余一律算没完成。客户页状态与后台失败原因统计（D-393）用的是同一份。
+ */
+export function closedLastStatusSql(alias = 'o') {
+  return `(
+               SELECT oe.to_status FROM order_events oe
+               WHERE oe.order_id = ${alias}.id AND oe.to_status <> 'CLOSED'
+               ORDER BY oe.id DESC LIMIT 1
+             )`;
+}
+
 // 导出给 scripts/customer-sql-probe.sh 对生产实跑同一份 SQL，不在脚本里另抄一份。
 export const SELECT_ORDER = `
   SELECT o.public_no, o.status, o.updated_at,
@@ -14,11 +26,7 @@ export const SELECT_ORDER = `
            -- 关单前的最后状态，运营判「未扣款」关单（HUMAN_VERIFIED_NOT_CHARGED）后客户页永远停在
            -- 「正在等待支付结果」（D-386 盘点，生产 4 单）。
            CASE WHEN o.status = 'CLOSED' THEN (
-             CASE WHEN (
-               SELECT oe.to_status FROM order_events oe
-               WHERE oe.order_id = o.id AND oe.to_status <> 'CLOSED'
-               ORDER BY oe.id DESC LIMIT 1
-             ) = 'RECHARGE_SUCCESS' THEN 'RECHARGE_SUCCESS' ELSE 'CARD_FAILED' END
+             CASE WHEN ${closedLastStatusSql('o')} = 'RECHARGE_SUCCESS' THEN 'RECHARGE_SUCCESS' ELSE 'CARD_FAILED' END
            ) END,
            o.status
          ) AS effective_status,

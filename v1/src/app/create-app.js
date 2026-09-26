@@ -32,6 +32,7 @@ export function createApp({
   adminAuth = null,
   getAdminOverview = null,
   listAdminOrders = null,
+  getFailureStats = null,
   getAdminOrder = null,
   getAdminOrderTimeline = null,
   listAdminOrderAttempts = null,
@@ -676,6 +677,12 @@ export function createApp({
     // 第④步（面二⑩）：待销清单（派生查询，不建表）。due = 到了最短存活期该去卡台删的；notYetDue = 口径成立但时间未到。
     app.get('/api/v1/admin/card-retirement/candidates', noStore, requireAdminApi, async (req, res) => {
       res.json(await listCardRetirementCandidates(req.query || {}));
+    });
+  }
+  if (typeof getFailureStats === 'function') {
+    // D-393：诊断页「失败原因统计」。只读；from/to 与订单页同一写法（UTC+8 当日起止的 ISO 时间）。
+    app.get('/api/v1/admin/failure-stats', noStore, requireAdminApi, async (req, res) => {
+      res.json(await getFailureStats(req.query || {}));
     });
   }
   if (typeof runDailyReconciliation === 'function') {
