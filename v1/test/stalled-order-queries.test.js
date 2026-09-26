@@ -29,7 +29,7 @@ test('the alert rings the phone and tells the operator money did not move', () =
   assert.equal(PHONE_PUSH_TYPES[alert.type], 'HUMAN');
   assert.match(alert.message, /已 7 分钟/);
   assert.match(alert.message, /还没点付款，钱没动/);
-  assert.match(alert.message, /RUNBOOK §3/);
+  assert.match(alert.message, /后台打开这一单点「放弃并放卡」/, 'D-394: the operator can finish it alone, no SSH');
 });
 
 test('a stalled alert is resolved once its order has ended, and only then', () => {

@@ -58,6 +58,7 @@ import { buildAdminReadinessSummary } from './services/admin-readiness-summary.j
 import { createManualCardImportService } from './services/manual-card-import-service.js';
 import { createCardSourceAdminService } from './services/card-source-admin-service.js';
 import { createFailureStatsService } from './services/failure-stats-service.js';
+import { createPrePaymentAbandonService } from './services/pre-payment-closeout-service.js';
 
 const config = loadConfig();
 const pool = createDatabasePool(config.database);
@@ -203,6 +204,7 @@ const app = createApp({
   getAdminOverview: getAdminOverviewWithReadiness,
   listAdminOrders: adminReadService.listOrders,
   getFailureStats: createFailureStatsService({ pool }),
+  abandonPrePaymentOrder: createPrePaymentAbandonService({ pool }),
   getAdminOrder: adminReadService.getOrder,
   getAdminOrderTimeline: adminReadService.getOrderTimeline,
   listAdminOrderAttempts: adminReadService.listOrderAttempts,

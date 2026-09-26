@@ -778,7 +778,7 @@ const FAILURE_LABELS = Object.freeze({
   RECHARGE_SUBMIT_REJECTED: '提交被拒', BROWSER_RETRY_LIMIT: '重试用尽', PAYMENT_EXECUTION_FAILED: '付款执行失败',
   PAGE_DRIFT: '页面变了', PAGE_CHECKPOINT_FAILED: '页面检查失败', CANCELLED_PRE_SUBMISSION: '付款前取消',
   HUMAN_VERIFIED_NOT_CHARGED: '人工核实未扣款', PAYMENT_NOT_CHARGED_VERIFIED: '人工核实未扣款',
-  PROFILE_PAGE_AMBIGUOUS: '账号页认不准'
+  PROFILE_PAGE_AMBIGUOUS: '账号页认不准', ABANDONED_PRE_PAYMENT: '付款前停下·已放弃'
 });
 function cdkStatusLabel(row) {
   if (row.status === 'REVOKED') return { text: '已作废', tone: 'mute' };
@@ -2427,6 +2427,32 @@ async function cancelOrder(publicNo, button, { confirmed = false, after = null }
   }
 }
 
+// D-394：付款前停下、没人收口的单。服务器加锁再核一遍：有任何付款痕迹、或付款池还拿着这一单，都会拒绝。
+async function abandonPrePaymentOrder(publicNo, button) {
+  if (!window.confirm(`确认放弃订单 ${publicNo}？\n\n服务器会再核对一次，没有任何付款痕迹才会放弃。\n放弃后：订单关闭，卡放回可用库存，卡密退回，客户可以用卡密重新兑换。`)) return;
+  if (button) { button.disabled = true; button.textContent = '核对并放弃中…'; }
+  try {
+    const result = await sensitiveApi(`/api/v1/admin/orders/${encodeURIComponent(publicNo)}/abandon-pre-payment`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ confirmation: `放弃订单 ${publicNo}` })
+    });
+    showNotice(result.cdkReturned ? '已放弃：卡已放回，卡密已退回，客户可以重新兑换。' : '已放弃：卡已放回；卡密没有退回，请到 CDK 页核对这张码。');
+    await openOrder(publicNo);
+    await refreshOrdersIfVisible();
+  } catch (error) {
+    const messages = {
+      pre_payment_payment_evidence: '有付款痕迹，不能放弃。请按付款结果不明处理，不要让客户重兑。',
+      pre_payment_run_lease_active: '付款池还在处理这一单，稍后再试。',
+      pre_payment_not_pre_payment_shape: '这一单不是「付款前停下」的样子，不能放弃。',
+      pre_payment_not_pre_payment_status: '这一单已经不在付款前阶段，不能放弃。',
+      pre_payment_changed_concurrently: '订单刚刚发生变化，请刷新后重试。',
+      pre_payment_order_not_found: '没有找到这一单。'
+    };
+    showNotice(messages[error.message] || '放弃被服务器拒绝，订单和卡片均未改变。');
+    if (button) { button.disabled = false; button.textContent = '放弃并放卡'; }
+  }
+}
+
 async function setOrderAcceptance(button) {
   const currentlyEnabled = button.dataset.enabled === 'true';
   const enabled = !currentlyEnabled;
@@ -2564,6 +2590,13 @@ async function openOrder(publicNo, { focus = null } = {}) {
       ? items.map((item) => `${item.amount} ${item.currency}`).join('；') : '没有已记录金额';
     const actions = [];
     if (cancellation.eligible) actions.push('<button type="button" class="od-act danger" id="cancel-order">取消并放卡</button>');
+    // D-394：付款前停下、取消被「跑过一次」挡住的单。资格由后端与收口服务同一份规则算好，这里只按结果摆按钮。
+    const abandon = data.prePaymentAbandon || {};
+    if (!cancellation.eligible && abandon.eligible) actions.push('<button type="button" class="od-act danger" id="abandon-pre-payment">放弃并放卡</button>');
+    const abandonHint = !cancellation.eligible && abandon.eligible
+      ? '付款前停下、没有付款痕迹：可以放弃这一单。放弃后卡放回，卡密退回，客户可以用卡密重新兑换。'
+      : (abandon.reasonCode === 'RUN_LEASE_ACTIVE' && abandon.leaseUntil
+        ? `付款池还拿着这一单（到 ${formatTime(abandon.leaseUntil)}），过了这个时间还没动静再来放弃。` : '');
     // 后端把 cancellationReviewRequired 投影成布尔；此前这里写 === 1 恒假，成功但续费待确认的单在抽屉里没按钮（块 5 盘点发现）。
     if (order.cancellationReviewRequired === true || order.cancellationReviewRequired === 1 || order.status === 'CANCELLATION_REVIEW_REQUIRED') {
       actions.push('<button type="button" class="od-act out" id="confirm-manual-cancellation">已在账号里取消续费</button>');
@@ -2625,7 +2658,8 @@ async function openOrder(publicNo, { focus = null } = {}) {
       <section class="detail-section od-top">
         <div class="od-actions">${actions.join('') || '<span class="od-none">这一单现在没有需要你做的</span>'}</div>
         ${stage.action ? `<small class="drawer-hint">${escapeHtml(stage.action)}</small>` : ''}
-        ${cancellationLabels[cancellation.code] ? `<small class="drawer-hint">${escapeHtml(cancellationLabels[cancellation.code])}</small>` : ''}
+        ${abandonHint ? `<small class="drawer-hint">${escapeHtml(abandonHint)}</small>`
+          : (cancellationLabels[cancellation.code] ? `<small class="drawer-hint">${escapeHtml(cancellationLabels[cancellation.code])}</small>` : '')}
         ${paymentUnknown ? '<div class="od-warnbox">付款结果未知：系统已锁死这一单，不会重付、不会换卡。核实前不要让客户重新充值。</div>' : ''}
       </section>
       <section class="detail-section"><p class="od-h">进度</p>${progress}
@@ -2727,6 +2761,7 @@ async function openOrder(publicNo, { focus = null } = {}) {
     }
     document.querySelector('#sync-transactions')?.addEventListener('click', (event) => requestTransactionSync(publicNo, event.currentTarget));
     document.querySelector('#cancel-order')?.addEventListener('click', (event) => cancelOrder(publicNo, event.currentTarget));
+    document.querySelector('#abandon-pre-payment')?.addEventListener('click', (event) => abandonPrePaymentOrder(publicNo, event.currentTarget));
     document.querySelector('#confirm-manual-cancellation')?.addEventListener('click', () => confirmManualCancellation(publicNo, { after: reopen })
       .catch((error) => showNotice(error?.message === 'manual_cancellation_not_eligible' ? '该订单当前不能这样收口。' : '没有记录，订单没有改变。')));
     document.querySelector('#resolve-unknown-submission')?.addEventListener('click', () => resolveUnknownSubmission(publicNo, { after: reopen })

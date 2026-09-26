@@ -8,6 +8,7 @@ import { reconcileByRoute } from '../domain/route-reconciliation.js';
 import { createCdkLookup } from '../security/cdk-code.js';
 import { redactSensitiveText } from '../security/redaction.js';
 import { FAILED_BUCKET_STATUSES, orderBucket, primaryOrderAction } from './order-list-bucket.js';
+import { PRE_PAYMENT_CLOSABLE_STATUSES, readPrePaymentCloseoutState } from './pre-payment-closeout-service.js';
 import { deriveOrderStage } from './order-stage.js';
 import { unknownSubmissionEligibility } from './unknown-submission-resolve-service.js';
 import { eligibleInventoryCardSql,
@@ -1467,7 +1468,8 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
     });
     const customerPaidRows = paymentRows.filter((payment) => payment.payment_status === 'PAID');
     let cancellationCode = 'ORDER_CANCELLATION_NOT_ELIGIBLE';
-    if (row.status === 'CLOSED' && row.failure_code === 'CANCELLED_PRE_SUBMISSION') {
+    // D-394：后台「放弃并放卡」关的单（ABANDONED_PRE_PAYMENT）同样是付款前关单，不能再写「付款可能已经开始」。
+    if (row.status === 'CLOSED' && ['CANCELLED_PRE_SUBMISSION', 'ABANDONED_PRE_PAYMENT'].includes(row.failure_code)) {
       cancellationCode = 'ORDER_CANCELLATION_ALREADY_COMPLETED';
     } else if (row.status === 'WAITING_FOR_SESSION'
       && row.provider_card_id
@@ -1500,6 +1502,18 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
     } else if (rechargeCallExists || row.recharge_order_no || Number(submitTask?.attempts || 0) > 0
       || effectivePermitStatus === 'CONSUMED') {
       cancellationCode = 'ORDER_CANCELLATION_SUBMISSION_RISK';
+    }
+    // D-394：付款前停下、「取消并放卡」又因跑过一次而拒绝的单，看能不能「放弃并放卡」。
+    // 判断与收口服务同一份（readPrePaymentCloseoutState，这里不加锁）；点下去时服务端加锁再判一次。
+    let prePaymentAbandon = { eligible: false, reasonCode: null, leaseUntil: null };
+    if (cancellationCode !== 'ORDER_CANCELLATION_ELIGIBLE' && PRE_PAYMENT_CLOSABLE_STATUSES.includes(row.status)) {
+      try {
+        const state = await readPrePaymentCloseoutState(pool, { id: row.id, status: row.status }, { now: new Date(now()) });
+        prePaymentAbandon = { eligible: state.eligible === true, reasonCode: state.reasonCode || null,
+          leaseUntil: state.shape?.leaseUntil ? iso(state.shape.leaseUntil) : null };
+      } catch {
+        prePaymentAbandon = { eligible: false, reasonCode: 'CHECK_FAILED', leaseUntil: null };
+      }
     }
     // API 路线付款不明的收口资格。规则只有一份（unknownSubmissionEligibility），
     // 页面按它决定按不按钮、收口服务按它决定拒不拒，两边不可能说法不一。
@@ -1607,6 +1621,7 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
         cardReady,
         cardCheckFresh
       },
+      prePaymentAbandon,
       cancellation: {
         eligible: cancellationCode === 'ORDER_CANCELLATION_ELIGIBLE',
         alreadyCancelled: cancellationCode === 'ORDER_CANCELLATION_ALREADY_COMPLETED',

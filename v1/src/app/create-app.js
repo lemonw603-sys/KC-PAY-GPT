@@ -33,6 +33,7 @@ export function createApp({
   getAdminOverview = null,
   listAdminOrders = null,
   getFailureStats = null,
+  abandonPrePaymentOrder = null,
   getAdminOrder = null,
   getAdminOrderTimeline = null,
   listAdminOrderAttempts = null,
@@ -677,6 +678,24 @@ export function createApp({
     // 第④步（面二⑩）：待销清单（派生查询，不建表）。due = 到了最短存活期该去卡台删的；notYetDue = 口径成立但时间未到。
     app.get('/api/v1/admin/card-retirement/candidates', noStore, requireAdminApi, async (req, res) => {
       res.json(await listCardRetirementCandidates(req.query || {}));
+    });
+  }
+  if (typeof abandonPrePaymentOrder === 'function') {
+    // D-394：付款前停下、没人收口的单，后台一键放弃并放卡（与 close-rehearsal-order 同一份守卫）。
+    // 与「取消并放卡」同一组敏感写守卫，并要求带上确认语，防误调。
+    app.post('/api/v1/admin/orders/:publicNo/abandon-pre-payment', ...sensitiveAdminGuards, async (req, res) => {
+      const publicNo = String(req.params.publicNo || '');
+      if (String(req.body?.confirmation || '') !== `放弃订单 ${publicNo}`) {
+        return res.status(400).json({ error: 'confirmation_required' });
+      }
+      try {
+        res.json(await abandonPrePaymentOrder(publicNo, { dryRun: req.body?.dryRun === true, actorId: req.admin?.id || 'admin' }));
+      } catch (error) {
+        if (error?.name === 'PrePaymentCloseoutRefused') {
+          return res.status(error.status).json({ error: `pre_payment_${String(error.code).toLowerCase()}` });
+        }
+        throw error;
+      }
     });
   }
   if (typeof getFailureStats === 'function') {

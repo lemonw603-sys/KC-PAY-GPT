@@ -240,12 +240,8 @@ curl -s -b <admin-cookie> -X POST https://<admin>/api/v1/admin/card-operational-
 
 **付款前挂住**（Bark「客户卡住了，停在付款前没人处理」，D-390）：订单还是处理中，但没有程序在处理它，还没点付款、钱没动。
 1. 先看本机付款池：`browser-mvp/scripts/ready-check.sh pay`、`scripts/pool-release.sh status`。池子停了就按 §1 拉起；拉起后租约过期的任务几秒内会被重新领走，告警在订单结束后自动收掉。
-2. 池子正常、几分钟后仍没人接手：收单，客户卡密退回、可重新兑换（守卫：有任何付款痕迹就拒绝；run 租约没过期也会拒绝，等过期再来）。
-```bash
-ssh root@144.34.180.184 'set -a; . /etc/pojia/runtime.env; set +a; cd /opt/pojia/current/v1 && node scripts/close-rehearsal-order.mjs <PUBLIC_NO> --dry-run'
-ssh root@144.34.180.184 'set -a; . /etc/pojia/runtime.env; set +a; cd /opt/pojia/current/v1 && node scripts/close-rehearsal-order.mjs <PUBLIC_NO> --reason "pre-payment stall: <原因>"'
-```
-（脚本名带「演练」，守卫只看付款痕迹，对客户单同样适用；**不要加 `--skip-cdk-return`**，客户码必须退回。）
+2. 池子正常、几分钟后仍没人接手：**后台打开这一单 →「此刻可做」点「放弃并放卡」**（D-394）。服务器加锁再核一遍：有任何付款痕迹、或付款池还拿着这一单（抽屉会写「到几点」）都会拒绝。放弃后订单关闭，卡放回，客户卡密退回、可以重新兑换；失败原因统计里记为「付款前停下·已放弃」。
+3. 演练残单仍用 `close-rehearsal-order.mjs`（它会打演练标记，成功率统计据此排除）；**真实客户单不要用这个脚本**，用第 2 步的按钮。
 
 订单已是 RECHARGE_FAILED 但卡仍绑定（2026-09-08 前的旧行为）：
 ```bash

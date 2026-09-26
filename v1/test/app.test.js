@@ -1225,3 +1225,46 @@ test('the admin host serves no customer CDK route', async () => {
     assert.equal(blocked.statusCode, 404);
   });
 });
+
+test('D-394: abandon-pre-payment needs login, the sensitive guards and the typed confirmation; refusals reach the page as codes', async () => {
+  const adminAuth = createAdminSessionAuth({
+    passwordHash: await hashAdminPassword('fixture admin password', { salt: Buffer.alloc(16, 21) }),
+    sessionSecret: Buffer.alloc(32, 22), secureCookies: false
+  });
+  const calls = [];
+  const app = createApp({
+    adminAuth,
+    abandonPrePaymentOrder: async (publicNo, options) => {
+      calls.push({ publicNo, options });
+      if (publicNo === 'PJV1-LEASEDLEASEDLEASED00') {
+        throw Object.assign(new Error('lease'), { name: 'PrePaymentCloseoutRefused', code: 'RUN_LEASE_ACTIVE', status: 409 });
+      }
+      return { publicNo, dryRun: options.dryRun, status: 'CLOSED', cardReleased: true, cdkReturned: true };
+    }
+  });
+  await withServer(app, async (baseUrl) => {
+    const path = (p) => `${baseUrl}/api/v1/admin/orders/${p}/abandon-pre-payment`;
+    assert.equal((await fetch(path('PJV1-AAAAAAAAAAAAAAAAAAAA'), { method: 'POST' })).status, 401, 'not logged in');
+    const login = await fetch(`${baseUrl}/api/v1/admin/session`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: 'fixture admin password' })
+    });
+    const cookie = login.headers.get('set-cookie').split(';')[0];
+    const sensitiveCookie = await stepUp(baseUrl, cookie);
+    const post = (p, body) => fetch(path(p), { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: sensitiveCookie, Origin: baseUrl }, body: JSON.stringify(body) });
+
+    const noConfirmation = await post('PJV1-AAAAAAAAAAAAAAAAAAAA', {});
+    assert.equal(noConfirmation.status, 400);
+    assert.deepEqual(await noConfirmation.json(), { error: 'confirmation_required' });
+    assert.equal((await post('PJV1-AAAAAAAAAAAAAAAAAAAA', { confirmation: '放弃订单 PJV1-BBBBBBBBBBBBBBBBBBBB' })).status, 400, 'confirmation must name this order');
+    assert.equal(calls.length, 0, 'nothing reaches the service without the right confirmation');
+
+    const ok = await post('PJV1-AAAAAAAAAAAAAAAAAAAA', { confirmation: '放弃订单 PJV1-AAAAAAAAAAAAAAAAAAAA' });
+    assert.equal(ok.status, 200);
+    assert.equal((await ok.json()).cdkReturned, true);
+    assert.deepEqual(calls[0].options.dryRun, false);
+
+    const refused = await post('PJV1-LEASEDLEASEDLEASED00', { confirmation: '放弃订单 PJV1-LEASEDLEASEDLEASED00' });
+    assert.equal(refused.status, 409);
+    assert.deepEqual(await refused.json(), { error: 'pre_payment_run_lease_active' });
+  });
+});
