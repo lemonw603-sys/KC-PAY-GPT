@@ -38,6 +38,7 @@
 
 - 单次点击后的结果观察、Plus 开通确认、付款后凭证刷新（A2）、取消续费、卡交易对账：只有 MySQL 模拟证明。
 - 结账页含 Stripe 隐形 hCaptcha 框架；结账接口返回 `requires_manual_approval: true`；点击后是否被拦未知。
+  - 2026-09-26 旁证（对方文档，非本方实测）：ZZSHU 三方接口文档写明 `cs_live_`（Stripe 托管结账）订单可能要求人工安全验证（给下游 120 秒用 Stripe.js 完成，超时即失败），`oaics_`（OpenAI 自有结账）无此项（`contracts/2026-09-26_zzshu-api-changes-since-0917.md`）。本方两种结账页都会拿到（D-157）；本方真单遇到验证的频率未知，遇到时靠 `BROWSER_HUMAN_VERIFICATION` 推手机、要人在场。
 - 付款未知（UNKNOWN）的真实页面恢复路径未跑。
 
 ## 供给链
