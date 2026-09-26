@@ -5784,3 +5784,12 @@ Lemon 选 A：首页成功率（D-339 原只认收单脚本打的 `closeRehearsa
 提醒 Lemon：D-366 让当前代码的第一次真付款落在客户单上；点击付款之后那段（核实、确认 Plus、取消续费、记账）在当前代码上零真单样本，演练停在点击前，覆盖不到——09-25 那个「核实窗口超上限、真付款处理不了」的 P0 是 D-386 盘点审出来的，当天 17:22 的演练照样通过。
 **Lemon 同意**：D-366 不变（第一张真实客户单即真钱验收，不自费测试）；**第一张对外卡密先发给能容忍等待的熟人，约一个 Lemon 在场的时间提交，提前告诉执行者开窗口按 RUNBOOK §1 全程盯**。何时发仍由 Lemon 定（D-391）。
 同轮发现（未决，交 Lemon）：第一单用完 8718 后 Plus 无卡可分配，highvcc 按生产规则开不出下一张（钱包 $34.00 − 开卡 $16 − 手续费 $0.50 = $17.50 < 底线 $20），hnskj 仍在卡台维护故障——证据见 CURRENT_STATE「第一单之后的供卡」行。RUNBOOK §1 五处过时说法按当前代码改正。本条无代码、无部署、无生产写入。
+
+## D-397 补记（2026-09-26 15:1x UTC+8）第二单的卡：来单时 Lemon 第一时间给 highvcc 充值
+
+Lemon：「以上同意，预计来单时我会第一时间冲」——不提前充，来单时充 highvcc 钱包。按业务流程核对这个方案（代码 + 生产只读）：
+- **来单会推**：每张 Browser 单提交即推「客户提交了充值」（`order-intake-repository.js:339`，白名单 `alert-push-policy.js` ACTIVITY）。
+- **充完多快生效**：highvcc `readWallet` 是现查接口（`card-open-adapters.js` `highvcc.walletBalance()`），调度器 60 秒一轮；前提是 token 有效（最近一次成功读余额 06:17 UTC）。
+- **系统不会再提醒钱包不够**：`card-supply-wallet-low:…103` 自 09-18 起 OPEN、incident_version 1、那次已 SENT；只改消息不重推（`alert-notification-repository.js:23-24`）。自动开卡开着时订单等卡不发 `ORDER_WAITING_FOR_CARD`（`workflow-repository.js:394`）；巡检「卡住」只看 RECHARGE_PROCESSING（`stalled-order-queries.js:17`），不看 WAITING_FOR_CARD；`CARD_STOCK_EMPTY` 不推。
+- **会推一条误导的**：缺卡时 `CARD_STOCK_LOW` 推「可分配 0 张，水位 1，调度器正在补。」——09-26 00:01:18 UTC 实推过一次（incident v8，SENT 后随关闭改 CANCELLED），当时 wallet-low 告警 OPEN、实际补不了。
+结论：第一单来时（Lemon 本就在场，D-397）就充，第二单才接得住；靠系统提醒「该充了」是等不到的。「钱包挡住开卡时有单在等却不响、还推『正在补』」是运营不在场时的缺口，改不改交 Lemon。
