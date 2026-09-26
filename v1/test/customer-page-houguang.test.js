@@ -53,8 +53,11 @@ test('风控提醒是固定文案，不自行补写后果', () => {
   assert.match(html, /请不要在 ChatGPT 设置里的「升级套餐」中点击升级,这类操作容易触发官方风控。/);
 });
 
-test('出问题时对客户说实话，不说「已转人工」也不给原因', () => {
-  assert.match(js, /遇到点问题,我们已经收到通知在处理/);
+test('复核归处理中，说「正在人工确认」，不承诺时间、不给原因（D-250 / D-391）', () => {
+  // 2026-09-26 Lemon 选 A：按 D-250 定稿，覆盖 09-12「不说已转人工」。仍不说「已转入 / 已由人工接手」这类
+  // 像是换了流程的话，也不给内部原因。
+  assert.match(js, /REVIEWING:\s+\{ tone: 'ok', poll: 30000, ticket: true,\s+hint: '正在人工确认,完成后这里会更新。' \+ KEEP_OPEN_TAIL \}/);
+  assert.doesNotMatch(js, /遇到点问题,我们已经收到通知在处理/);
   assert.doesNotMatch(all, /已转入人工核对/);
   assert.doesNotMatch(all, /已由人工接手核对/);
 });
@@ -215,7 +218,7 @@ test('处理中（含复核）标题是阶段名；失败与需换号标题写�
   assert.match(js, /if \(order\.status === 'ACTION_REQUIRED'\) name = '需要换一个账号';/);
   assert.match(js, /el\.ringNum\.hidden = success \|\| conclusive;/);
   assert.doesNotMatch(js, /name: '遇到点问题'/);
-  assert.match(js, /REVIEWING:[\s\S]{0,160}hint: '遇到点问题/);
+  assert.match(js, /REVIEWING:[\s\S]{0,160}hint: '正在人工确认/);
 });
 
 test('查询屏就地给答案，不把客户推进完整进度页', () => {

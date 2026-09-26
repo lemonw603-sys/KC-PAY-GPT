@@ -198,3 +198,31 @@ test('waiting for a card says it may take a few minutes, and says "few minutes" 
     assert.equal(await page.locator('.ring').isVisible(), true, 'still processing: the ring stays');
   });
 });
+
+test('a review in progress looks like processing and says a person is confirming (D-250 / D-391)', async () => {
+  await withPage({ '/api/v1/orders/status': () => ({ json: { order: order('REVIEWING') } }) }, async (page) => {
+    await page.locator('#nav-query').click();
+    await page.locator('#query-input').fill(PUBLIC_NO);
+    await page.locator('#query-submit').click();
+    await page.waitForFunction(() => !document.querySelector('#view-run').hidden);
+    await page.waitForTimeout(800);
+    assert.equal(await page.locator('#view-run').getAttribute('data-tone'), 'ok', 'green, not the orange "something went wrong"');
+    assert.equal(await page.locator('#stage-name').textContent(), '正在验证账号', 'the title is still the stage');
+    assert.equal(await page.locator('#stage-hint').textContent(), '正在人工确认,完成后这里会更新。关掉本页也不影响,随时可以用卡密回来查。');
+    assert.equal(await page.locator('.ring').isVisible(), true);
+    assert.equal(await page.locator('#ring-num').isVisible(), true, 'still processing: the percentage stays');
+  });
+});
+
+test('a payment confirmation that drags on is still flagged in amber, unchanged by D-391', async () => {
+  const slow = order('VERIFYING', { stage: { index: 7, total: 9, code: 'PAYMENT_AWAITING', label: '正在等待支付结果', floor: 94, ceiling: 98, typicalMs: 9500, since: new Date(Date.now() - 4 * 60_000).toISOString() } });
+  await withPage({ '/api/v1/orders/status': () => ({ json: { order: slow } }) }, async (page) => {
+    await page.locator('#nav-query').click();
+    await page.locator('#query-input').fill(PUBLIC_NO);
+    await page.locator('#query-submit').click();
+    await page.waitForFunction(() => !document.querySelector('#view-run').hidden);
+    await page.waitForTimeout(800);
+    assert.equal(await page.locator('#view-run').getAttribute('data-tone'), 'warn');
+    assert.match(await page.locator('#stage-hint').textContent(), /支付结果确认得比平时久/);
+  });
+});

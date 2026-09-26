@@ -81,8 +81,10 @@
     // 确认订阅/取消续费这一段最快只有几秒（三个操作同事务提交），轮询别比它还慢，
     // 否则成功要等下一轮才显示。
     CONFIRMING:      { tone: 'ok',   poll: 2000 },
-    REVIEWING:       { tone: 'warn', poll: 30000, ticket: true,
-      hint: '遇到点问题,我们已经收到通知在处理。本页会自动更新,你的卡密可以随时回来查。' },
+    // 复核（人工在看）归「处理中」：绿色、标题仍是阶段名、不承诺时间、不显示失败（D-250 定稿，
+    // D-391 Lemon 选 A，覆盖 09-12「不说已转人工」）。保留 ticket：等得久，复制订单号按钮有用。
+    REVIEWING:       { tone: 'ok', poll: 30000, ticket: true,
+      hint: '正在人工确认,完成后这里会更新。' + KEEP_OPEN_TAIL },
     ACTION_REQUIRED: { tone: 'warn', poll: 30000, ticket: true,
       hint: '当前账号不能开通,请在下方换一个免费账号的 Session,订单会继续处理。' },
     SUCCESS:         { tone: 'ok',   poll: null, ticket: true },
@@ -429,7 +431,8 @@
     const view = STATUS_VIEW[order.status] || STATUS_VIEW.REVIEWING;
     if (order.status === 'VERIFYING') {
       if (Date.now() - stageStartedAt(order) <= VERIFYING_PATIENCE_MS) return view;
-      return { ...STATUS_VIEW.REVIEWING,
+      // 这是付款确认迟迟不落定的提醒，不是复核：保持橙色（D-391 只改复核本身）。
+      return { ...STATUS_VIEW.REVIEWING, tone: 'warn',
         hint: '支付结果确认得比平时久,我们已经收到通知在核对。本页会自动更新,你的卡密可以随时回来查。' };
     }
     if (['QUEUED', 'PREPARING', 'ACTIVATING'].includes(order.status) && QUEUE_STAGES.includes(order.stage?.code)) {
