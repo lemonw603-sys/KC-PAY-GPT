@@ -5776,3 +5776,4 @@ Lemon 选 A：首页成功率（D-339 原只认收单脚本打的 `closeRehearsa
 2. **3 张 09-08 CARD_DECLINED 失败单**（1UfN / LDPg / UFi8）资金早已 CLEARED/CLEARED、无消费账本，却因 run 停在 PAYMENT_UNKNOWN 被「付款后失败」谓词永久挂着：**改规则**——run 所属 attempt 已 CLEARED 的不再算。
 3. **09-23 WAITING_FOR_SESSION 测试单 `PJV1-_xH4`**：取消并放卡，卡密退回。
 另：终态单 `PJV1-Liuc` 上残留 1 个 D-158 前的 BROWSER_PREFLIGHT PENDING 任务，无程序处理、不影响队列，放着，将来清理时顺手收。
+**实施结果**：①② 06:0x UTC 按正式服务执行（`manual-cancellation-service` 7 张，每张带确认语与「Lemon 确认自用期已关续费」备注；`order-cancellation-service` 取消 `_xH4`），服务器端先断言对象恰为这 7 张与这 1 张。新连接核实：续费待确认 0、7 张 subscription_cancelled=1；`_xH4` CLOSED、卡密 AVAILABLE 未绑单；非终态订单 0。② 规则：`FAILED_AFTER_PAYMENT_SQL` 的 run 分支加 `fap_bra.funds_risk_state <> 'CLEARED'`；生产旧规则命中 3 张 → 新规则 0，无其它变化。release `20260926-d396-7a7998b`（06:10 UTC，发布关卡真数据库测试 69/0/1），每周自检「需要我处理」为 0。
