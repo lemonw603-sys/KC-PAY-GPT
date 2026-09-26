@@ -109,8 +109,8 @@ export async function readPrePaymentCloseoutState(queryable, order, { lock = fal
  */
 export async function closePrePaymentOrderInTransaction(connection, {
   publicNo, reason, actorId = 'admin', runErrorCode, failureCode, source, skipCdkReturn = false, now = new Date(),
-  // 额外写进订单事件与卡密退回记录的标记。演练收口必须带 closeRehearsalOrder:true——经营成功率（D-339）
-  // 只认这个标记排除演练；后台放弃的是真实客户单，绝不能带。
+  // 额外写进订单事件与卡密退回记录的标记。演练收口带 closeRehearsalOrder:true，只作审计信息：
+  // 「演练单」自 D-395 起按运行方判定（rehearsal-order-sql.js），不再看这个标记。后台放弃不带。
   eventMetadata = {},
 } = {}) {
   if (!reason || !runErrorCode || !failureCode || !source) throw new TypeError('reason, runErrorCode, failureCode and source are required');

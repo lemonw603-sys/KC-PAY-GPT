@@ -9,6 +9,7 @@ import { createCdkLookup } from '../security/cdk-code.js';
 import { redactSensitiveText } from '../security/redaction.js';
 import { FAILED_BUCKET_STATUSES, orderBucket, primaryOrderAction } from './order-list-bucket.js';
 import { PRE_PAYMENT_CLOSABLE_STATUSES, readPrePaymentCloseoutState } from './pre-payment-closeout-service.js';
+import { rehearsalOrderSql } from '../db/repositories/rehearsal-order-sql.js';
 import { deriveOrderStage } from './order-stage.js';
 import { unknownSubmissionEligibility } from './unknown-submission-resolve-service.js';
 import { eligibleInventoryCardSql,
@@ -61,8 +62,8 @@ const VIRTUAL_FILTERS = new Set([
 ]);
 
 // D-339：经营成功率只看北京时间近7个自然日（含当天）内创建且已结束的订单。
-// 只有 closeRehearsalOrder=true 的明确演练记录才排除，不根据错误码、文案或 CLOSED
-// 状态猜测。这一个 predicate 同时供概览聚合与订单列表使用，防止点进去的样本与指标分母漂移。
+// 演练单按运行方判定排除（D-395 统一，与诊断页失败统计同一份 rehearsalOrderSql），不根据错误码、文案或
+// CLOSED 状态猜测。这一个 predicate 同时供概览聚合与订单列表使用，防止点进去的样本与指标分母漂移。
 const SUCCESSFUL_FINISHED_ORDER_SQL = (alias = 'o') => `(${alias}.status = 'RECHARGE_SUCCESS'
   OR (${alias}.status = 'CLOSED' AND EXISTS (
     SELECT 1 FROM order_events success_oe
@@ -70,11 +71,7 @@ const SUCCESSFUL_FINISHED_ORDER_SQL = (alias = 'o') => `(${alias}.status = 'RECH
   )))`;
 const RECENT_FINISHED_SAMPLE_SQL = (alias = 'o') => `(${alias}.status IN ('RECHARGE_SUCCESS','RECHARGE_FAILED','CLOSED')
   AND ${recentCst8CalendarDaysWindowSql(`${alias}.created_at`, 7)}
-  AND NOT EXISTS (
-    SELECT 1 FROM order_events rehearsal_oe
-    WHERE rehearsal_oe.order_id = ${alias}.id
-      AND JSON_UNQUOTE(JSON_EXTRACT(rehearsal_oe.metadata_json, '$.closeRehearsalOrder')) = 'true'
-  ))`;
+  AND NOT ${rehearsalOrderSql(alias)})`;
 // Latest recharge attempt and latest Browser run for one order row (MySQL 8 LATERAL).
 const LATEST_ATTEMPT_LATERAL = `LEFT JOIN LATERAL (
           SELECT lra.status AS attempt_status, lra.funds_risk_state AS attempt_funds_risk_state,

@@ -33,7 +33,7 @@ const connection = await pool.getConnection();
 try {
   await connection.beginTransaction();
   // 两种演练残单（CARD_READY 旧形态 / RECHARGE_PROCESSING 付款前 fail-closed）的判据与收口顺序见共用模块。
-  // 演练收口带 closeRehearsalOrder:true：经营成功率（D-339）靠它排除演练。真实客户单请用后台「放弃并放卡」。
+  // 演练收口带 closeRehearsalOrder:true，只作审计（D-395 起演练按运行方判定，不看它）。真实客户单请用后台「放弃并放卡」。
   const summary = await closePrePaymentOrderInTransaction(connection, {
     publicNo, reason, actorId: 'admin', runErrorCode: 'REHEARSAL_CLOSED', failureCode: 'CANCELLED_PRE_SUBMISSION',
     source: 'close_rehearsal_order', skipCdkReturn, eventMetadata: { closeRehearsalOrder: true },

@@ -1,4 +1,5 @@
 import { closedLastStatusSql } from '../db/repositories/order-status-query-repository.js';
+import { rehearsalOrderSql } from '../db/repositories/rehearsal-order-sql.js';
 import { PublicApiError } from '../domain/public-api-error.js';
 
 /**
@@ -6,25 +7,8 @@ import { PublicApiError } from '../domain/public-api-error.js';
  * 只读：不写任何表。按提交时间（orders.created_at）取范围，与订单页默认的时间口径一致。
  */
 
-/**
- * 演练单：有运行记录，但没有一条是「正式」的。正式运行（出现任意一条就是真实单）：
- *   - 常驻付款池跑的（worker_id 'pool:%'），但常驻池演练模式停在点击前的 BROWSER_REHEARSAL_STOPPED 不算；
- *   - worker_id 为空的——已退役的一次性付款脚本（go-live.sh，D-385）不写程序名，生产 09-06～09-13 共 6 次、5 次点过付款；
- *   - 付款状态越过了点击的——演练按设计永远不点付款，点过的一定是真单，不管程序叫什么。
- * 演练单由单次演练程序（程序名取服务器配置，现为 production-readonly-1）或下单预检（local-readonly-*）跑。
- * 没有运行记录的单（下单环节就停了、走 API 路线的）算真实单。
- * 按运行方而不是按收单代码判断：真实客户单被人按 RUNBOOK §3 用收单脚本收掉时，收单代码与演练收口一样，
- * 但它是常驻池跑的，不会被误排除。
- */
-export function rehearsalOrderSql(alias = 'o') {
-  return `(EXISTS (SELECT 1 FROM browser_runs rr INNER JOIN recharge_attempts rra ON rra.id = rr.recharge_attempt_id
-              WHERE rra.order_id = ${alias}.id)
-      AND NOT EXISTS (SELECT 1 FROM browser_runs rr INNER JOIN recharge_attempts rra ON rra.id = rr.recharge_attempt_id
-              WHERE rra.order_id = ${alias}.id
-                AND ((rr.worker_id LIKE 'pool:%' AND COALESCE(rr.last_error_code, '') <> 'BROWSER_REHEARSAL_STOPPED')
-                  OR rr.worker_id IS NULL
-                  OR COALESCE(rr.payment_state, 'NOT_STARTED') NOT IN ('NOT_STARTED', 'PAYMENT_ARMED'))))`;
-}
+// 演练单判定只有一份（D-395），与首页成功率共用。
+export { rehearsalOrderSql };
 
 /** 最终结局：成功（含成功后才关单的）/ 未成功 / 还没结束。关单规则与客户页同一份（closedLastStatusSql）。 */
 export function orderOutcomeSql(alias = 'o') {

@@ -1,4 +1,4 @@
-// Real local MySQL acceptance for D-339. Synthetic rows only; no provider/worker/payment calls.
+// Real local MySQL acceptance for D-339 (rehearsal rule D-395). Synthetic rows only; no provider/worker/payment calls.
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import { execFileSync } from 'node:child_process';
@@ -39,6 +39,7 @@ try {
     ['closed-normal', 'CLOSED', '2026-09-19 03:00:00.000'],
     ['closed-success-event', 'CLOSED', '2026-09-20 03:00:00.000'],
     ['closed-rehearsal', 'CLOSED', '2026-09-20 04:00:00.000'],
+    ['closed-marked-real', 'CLOSED', '2026-09-20 04:30:00.000'],
     ['processing', 'RECHARGE_PROCESSING', '2026-09-20 05:00:00.000'],
     ['too-old', 'RECHARGE_FAILED', '2026-09-14 15:59:59.999'],
     ['upper-exclusive', 'RECHARGE_SUCCESS', '2026-09-22 16:00:00.000']
@@ -64,9 +65,24 @@ try {
   await connection.query(`INSERT INTO order_events
     (order_id,from_status,to_status,actor_type,reason,metadata_json)
     VALUES (?,'RECHARGE_PROCESSING','RECHARGE_SUCCESS','SYSTEM','synthetic success history',NULL)`, [ids.get('closed-success-event')]);
+  // D-395：演练按运行方判定。演练单＝只被演练程序跑过；另一张打了旧标记、却是常驻池正式跑的，必须算进样本。
+  const profileId = crypto.randomUUID();
+  await connection.query(`INSERT INTO executor_profiles (id, profile_code, profile_version, adapter_version, executor_kind, runtime_id)
+    VALUES (?, 'd395-profile', 1, 'synthetic', 'BROWSER', 'synthetic')`, [profileId]);
+  let runNo = 0;
+  const runFor = async (label, workerId, lastError) => {
+    const attemptId = crypto.randomUUID();
+    runNo += 1;
+    await connection.query("INSERT INTO recharge_attempts (id, order_id, executor_kind, status, funds_risk_state) VALUES (?, ?, 'BROWSER', 'CLEARED', 'CLEARED')", [attemptId, ids.get(label)]);
+    await connection.query(`INSERT INTO browser_runs (id, recharge_attempt_id, executor_profile_id, account_key_hmac, run_no, start_operation_key, status, payment_state, worker_id, last_error_code)
+      VALUES (?, ?, ?, ?, ?, ?, 'FAILED_SAFE', 'NOT_STARTED', ?, ?)`,
+    [crypto.randomUUID(), attemptId, profileId, crypto.randomBytes(32).toString('hex'), runNo, `d395-${runNo}`, workerId, lastError]);
+  };
+  await runFor('closed-rehearsal', 'production-readonly-1', 'REHEARSAL_CLOSED');
+  await runFor('closed-marked-real', 'pool:lane-1', 'REHEARSAL_CLOSED');
   await connection.query(`INSERT INTO order_events
     (order_id,from_status,to_status,actor_type,reason,metadata_json)
-    VALUES (?,'CREATED','CLOSED','SYSTEM','synthetic rehearsal',JSON_OBJECT('closeRehearsalOrder',true))`, [ids.get('closed-rehearsal')]);
+    VALUES (?,'CREATED','CLOSED','SYSTEM','closed with the rehearsal script but run by the pool',JSON_OBJECT('closeRehearsalOrder',true))`, [ids.get('closed-marked-real')]);
 
   const read = createAdminReadService({ pool: connection });
   const overview = await read.getOverview();
@@ -77,18 +93,21 @@ try {
     successful: overview.metrics.recentSuccessfulOrders,
     finished: overview.metrics.recentFinishedOrders,
     rate: overview.metrics.recentSuccessRate
-  }, { successful: 2, finished: 4, rate: 50 });
-  pass('aggregate uses finished non-rehearsal orders in seven Beijing calendar days', '2/4 = 50%');
+  }, { successful: 2, finished: 5, rate: 40 });
+  pass('aggregate uses finished non-rehearsal orders in seven Beijing calendar days', '2/5 = 40%');
 
-  assert.equal(sample.total, 4);
+  assert.equal(sample.total, 5);
   assert.deepEqual(sampleNos, [
-    'D339-closed-normal', 'D339-closed-success-event', 'D339-failed-inside', 'D339-success-lower'
+    'D339-closed-marked-real', 'D339-closed-normal', 'D339-closed-success-event', 'D339-failed-inside', 'D339-success-lower'
   ]);
+  pass('D-395: an order the pool ran counts even if the rehearsal script closed it', 'closed-marked-real in sample');
   pass('click-through cohort matches aggregate denominator', sampleNos.join(','));
   assert(!sample.orders.some((row) => ['D339-closed-rehearsal', 'D339-processing', 'D339-too-old', 'D339-upper-exclusive'].includes(row.publicNo)));
   pass('rehearsal, pending, lower-minus-1ms and upper boundary are excluded');
 
   await connection.query('DELETE FROM order_events');
+  await connection.query('DELETE FROM browser_runs');
+  await connection.query('DELETE FROM recharge_attempts');
   await connection.query('DELETE FROM orders');
   const empty = await read.getOverview();
   assert.equal(empty.metrics.recentSuccessRate, null);

@@ -92,7 +92,7 @@ test('a stalled pre-payment order: dry run changes nothing, then the admin butto
     assert.equal(after.ledger.status, 'RELEASED');
     const meta = typeof after.closedEvent.metadata_json === 'string' ? JSON.parse(after.closedEvent.metadata_json) : after.closedEvent.metadata_json;
     assert.equal(meta.source, 'admin_abandon_pre_payment');
-    assert.equal('closeRehearsalOrder' in meta, false, 'a real customer order must not be counted as a rehearsal (D-339)');
+    assert.equal('closeRehearsalOrder' in meta, false, 'the admin path does not write the rehearsal-script marker (audit only since D-395)');
   } finally {
     await db.end();
   }
@@ -123,7 +123,7 @@ test('refusals: pool still holds it, a payment click, a run past arming, or not 
   }
 });
 
-test('the rehearsal script path still marks the close as a rehearsal for the success rate (D-339)', { skip }, async () => {
+test('the rehearsal script path still writes its audit marker (D-395: no longer used to exclude rehearsals)', { skip }, async () => {
   const db = await mysql.createPool({ uri: url, connectionLimit: 3, timezone: 'Z' });
   const connection = await db.getConnection();
   try {

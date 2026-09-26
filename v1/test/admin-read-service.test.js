@@ -102,7 +102,9 @@ test('admin overview maps aggregate values without exposing raw records', async 
   assert.equal(result.metrics.recentSuccessfulOrders, 1);
   assert.equal(result.metrics.recentFinishedOrders, 2);
   assert.match(pool.queries[0].sql, /created_at >= TIMESTAMP\(DATE\(CONVERT_TZ\(UTC_TIMESTAMP\(\), '\+00:00', '\+08:00'\)\)\) - INTERVAL 6 DAY - INTERVAL 8 HOUR/);
-  assert.match(pool.queries[0].sql, /closeRehearsalOrder[\s\S]*= 'true'/);
+  // D-395：演练按运行方判定（与失败统计同一份 rehearsalOrderSql），不再认事件里的 closeRehearsalOrder 标记。
+  assert.match(pool.queries[0].sql, /formal_run\.worker_id LIKE 'pool:%'/);
+  assert.doesNotMatch(pool.queries[0].sql, /closeRehearsalOrder/);
   assert.equal(result.metrics.todayOrders, 2);
   assert.equal(result.metrics.awaitingConfirmationOrders, 1);
   assert.deepEqual(result.orderStatuses, [{ status: 'RECHARGE_SUCCESS', count: 8 }]);
@@ -219,7 +221,8 @@ test('admin order list supports the 进行中 / 已完成 / 近7天统计样本 
   await createAdminReadService({ pool: recent }).listOrders({ status: 'RECENT_FINISHED' });
   assert.match(recent.queries[0].sql, /o\.status IN \('RECHARGE_SUCCESS','RECHARGE_FAILED','CLOSED'\)/);
   assert.match(recent.queries[0].sql, /o\.created_at >=[\s\S]*INTERVAL 6 DAY - INTERVAL 8 HOUR/);
-  assert.match(recent.queries[0].sql, /closeRehearsalOrder[\s\S]*= 'true'/);
+  assert.match(recent.queries[0].sql, /NOT \(EXISTS \(SELECT 1 FROM browser_runs rehearsal_run/, 'the click-through cohort excludes rehearsals by the same rule');
+  assert.doesNotMatch(recent.queries[0].sql, /closeRehearsalOrder/);
   assert.deepEqual(recent.queries[0].values, []);
 });
 
