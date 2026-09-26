@@ -5768,3 +5768,11 @@ Lemon 选 A：首页成功率（D-339 原只认收单脚本打的 `closeRehearsa
 **实施结果**：release `20260926-d395-8b61c71`（`8b61c71d`，04:29 UTC switch，无迁移，回滚点 `20260926-d394-0b5285f`）。规则搬到 `v1/src/db/repositories/rehearsal-order-sql.js`，`admin-read-service` 的 `RECENT_FINISHED_SAMPLE_SQL`（概览聚合与订单列表点进去的样本同一谓词）与 `failure-stats-service` 共用。生产只读：首页近 7 天由 0/1（唯一样本 `pcNK` 是演练）变 0/0，显示「—」；失败统计不变（真实 74 / 演练 12）。`scripts/test-recent-success-rate.mjs` 隔离库校验改为按运行方造演练单，并加「脚本收口、常驻池跑的单计入样本」，5 项全过。发布准备的真数据库测试关卡首次正式上岗：69/0/1 通过后才打包。
 另记（未改，生产无差异）：成功率认「关单前出现过成功」即成功，客户页 / 失败统计认「关单前最后一步是成功」；生产 27 张关单两种认法都是 0 张成功。
 **D-394 ① 执行（Lemon 改为「你给我作废吧」）**：04:4x UTC 按正式路径 `cdk-service.updateCdkCodes(action:'revoke')`（事务、有用过的码整批不动、逐码写 `cdk_admin_events`）作废。执行前当场重查并在服务器端断言：AVAILABLE、未绑单、无有效期、09-05～09-18 生成，正好 21 张（Plus 19 / Pro 20X 2），`issued_at` 全空（没有标为已发出）；不符即不动。结果 selected 21 / changed 21。新连接独立核实：无有效期的可用老码 0、带「D-394 自用期老码作废」原因 21、审计 21；全库 AVAILABLE 7（均为 09-23 起带 30 天有效期的新码）/ REDEEMED 22 / REVOKED 60（原 39）。作废无恢复入口。
+
+## D-396（2026-09-26 UTC+8 下午）清「需要我处理」里的自用期旧单
+
+每周自检提醒「需要我处理」9 行（按卡密；按订单 11 张），全是自用期旧单。Lemon 答复：
+1. **7 张成功但续费未确认**（09-09～09-14：VHl_ / Dqcn / pom5 / NnL3 / BUGA / G3Ni / zdpr；卡 7402 / 3159 / 5371 / 1657 余额 $1.05～$1.80）：Lemon 确认**当时已在账号里关了自动续费**（选 A）→ 由我按正式路径代为登记「已在账号里取消续费」，actor 注明 Lemon 确认。
+2. **3 张 09-08 CARD_DECLINED 失败单**（1UfN / LDPg / UFi8）资金早已 CLEARED/CLEARED、无消费账本，却因 run 停在 PAYMENT_UNKNOWN 被「付款后失败」谓词永久挂着：**改规则**——run 所属 attempt 已 CLEARED 的不再算。
+3. **09-23 WAITING_FOR_SESSION 测试单 `PJV1-_xH4`**：取消并放卡，卡密退回。
+另：终态单 `PJV1-Liuc` 上残留 1 个 D-158 前的 BROWSER_PREFLIGHT PENDING 任务，无程序处理、不影响队列，放着，将来清理时顺手收。

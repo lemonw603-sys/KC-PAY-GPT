@@ -46,7 +46,10 @@ const FAILED_AFTER_PAYMENT_SQL = `(o.status = 'RECHARGE_FAILED' AND (EXISTS (
           SELECT 1 FROM browser_runs fap_br
           INNER JOIN recharge_attempts fap_bra ON fap_bra.id = fap_br.recharge_attempt_id
           WHERE fap_bra.order_id = o.id
-            AND fap_br.payment_state IN ('PAYMENT_CONFIRMED','PAYMENT_UNKNOWN'))))`;
+            AND fap_br.payment_state IN ('PAYMENT_CONFIRMED','PAYMENT_UNKNOWN')
+            -- D-396：run 停在付款不明、但它那次尝试的资金已判定 CLEARED（核实未扣款）的，钱的结论已定，
+            -- 不再挂在「需要我处理」（生产 09-08 三张 CARD_DECLINED 单因此永久挂着且无按钮可处理）。
+            AND fap_bra.funds_risk_state <> 'CLEARED')))`;
 // 订单页 v3（D-356）：「需要我处理」= 与 REVIEW_REQUIRED 筛选同一谓词，写成不带占位符的内联版，
 // 好放进 SELECT 投影（needs_person）、桶筛选与桶计数里。改口径两处一起改。
 const NEEDS_PERSON_SQL = () => `(o.status IN (${REVIEW_STATUSES.map((status) => `'${status}'`).join(', ')})

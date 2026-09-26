@@ -514,3 +514,11 @@ test('admin order detail: a card-less Session-waiting order with a live funds at
   assert.equal(result.cancellation.eligible, false);
 });
 
+
+test('D-396: a failed order whose run stopped at payment-unknown but whose attempt was adjudicated CLEARED no longer needs a person', async () => {
+  const pool = queuedPool([[{ total: 0 }], [], []]);
+  await createAdminReadService({ pool }).listOrders({ status: 'REVIEW_REQUIRED' });
+  const sql = pool.queries[0].sql;
+  assert.match(sql, /fap_br\.payment_state IN \('PAYMENT_CONFIRMED','PAYMENT_UNKNOWN'\)[\s\S]*?AND fap_bra\.funds_risk_state <> 'CLEARED'/);
+  assert.match(sql, /fap_ra\.funds_risk_state IN \('UNKNOWN','SETTLED'\)/, 'money still unknown or settled keeps it in the queue');
+});
