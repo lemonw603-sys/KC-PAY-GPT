@@ -3814,3 +3814,5 @@ Lemon 追问「是不是更适合独立」→ 讨论（交集只有卡密与客�
 Lemon 问 `https://card.zzshu.pro/` 能否接入。核实：它就是本系统 API 路线 301 的直充上游（`config.js:344` 默认地址、生产 env 同值），09-23 起路线关着，最后一次调用 09-14。只读看其网站与文档：计费改为须用其发放的 Key、按成功扣点，新增 go / to_20x / codex、region、Stripe 人工验证 `verification`、history / credits 接口（`contracts/2026-09-26_zzshu-api-changes-since-0917.md`）。在服务器用生产代码与生产 Key 只读调 `/third-party/user` → 401 `40107`，现有对接已不能下单（CURRENT_STATE 新行）。结论与建议交 Lemon，无代码、无生产写入。
 Lemon 问「之前认我们的卡台，是不是因为密钥是通过我们卡台申请的」→ 证据不支持：①09-17 卡头被拒测试时 ZZSHU 不校验 Key（`API_BASELINE.md:29` 08 月实测任意 Key 可用；09-17 对方文档「不校验、不查库、不扣次」）；②生产 ZZSHU Key 为 64 字符、前缀 `fd66`，非 HNSKJ 的 `nhs_` 格式，现又被 ZZSHU 判 `40107` 未登记 → 为本方自定串；③拒卡原话是卡头白名单。未知：其白名单为何含 HNSKJ 卡头；改收费后卡头放行是否与账号挂钩。
 Lemon（2026-09-27 01:46 UTC）：已购买 ZZSHU 的 API Key。下一步：Key 存本机文件（不进聊天）→ 执行者只读验证（`/third-party/user` 点数）→ 等 Lemon 回答「点数含不含卡钱」再定用哪种卡测第一单。
+Lemon 问「之前有没有 Key、从哪申请的」→ 没有也不需要：08-16 他下载的对方文档第 3/29/44 行写「自行准备任意非空字符串、本站不校验」；生产旧 Key 为 64 位小写十六进制（与 `openssl rand -hex 32` 同格式），非 HNSKJ `nhs_` 格式，ZZSHU 判未登记。谁、何时生成的无记录。
+2026-09-27 01:56 UTC：新 Key 存 `~/.config/zzshu/api.env`，只读验证 `/third-party/user` → 200 / code 0 / points 15。
