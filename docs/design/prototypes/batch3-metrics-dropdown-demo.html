@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>第三批演示 · 两格与下拉</title>
+<link rel="icon" href="/admin/assets/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/admin/assets/admin.css?v=31">
+<link rel="stylesheet" href="/admin/assets/workbench.css?v=25">
+<link rel="stylesheet" href="/admin/assets/cards.css?v=8">
+<link rel="stylesheet" href="/admin/assets/cdks.css?v=1">
+<link rel="stylesheet" href="/admin/assets/orders.css?v=4">
+<style>
+/* ---- 演示外壳（不是产品的一部分） ---- */
+.demo-bar{position:sticky;top:0;z-index:40;display:flex;align-items:center;gap:12px;margin:0 0 14px;padding:9px 12px;border:1px dashed var(--wb-bd);border-radius:11px;background:var(--wb-s);font-size:12.5px;color:var(--wb-t2)}
+.demo-bar b{color:var(--wb-t)}
+.demo-bar .opt{display:inline-flex;gap:2px;padding:2px;border-radius:8px;background:var(--wb-s3)}
+.demo-bar .opt button{border:0;background:none;padding:4px 12px;border-radius:6px;font:inherit;font-size:12.5px;color:var(--wb-t2);cursor:pointer}
+.demo-bar .opt button[aria-pressed="true"]{background:var(--wb-s);color:var(--wb-a-ink);font-weight:600;box-shadow:0 1px 2px hsla(176,25%,10%,.12)}
+.demo-note{margin:0 0 12px;padding:9px 13px;border:1px dashed var(--wb-bd);border-radius:10px;background:var(--wb-s);font-size:12.5px;color:var(--wb-t2);line-height:1.7}
+.demo-note b{color:var(--wb-t)}
+.demo-toast{position:fixed;left:0;right:0;bottom:22px;margin:0 auto;width:max-content;padding:8px 14px;border-radius:999px;background:var(--wb-t);color:var(--wb-a-on);font-size:12.5px;z-index:90}
+.wb-kpi .wb-sub.is-warn{color:var(--wb-warn)}
+
+/* ================= 自绘下拉（第三批提议） =================
+   收起时和第二批统一的样子一模一样；点开后是后台自己的菜单，不再是系统白底菜单。
+   原生 <select> 留在页面里当数据源（表单提交、已有的 change 监听都不用改），只是不显示。 */
+.dd{position:relative;display:inline-block;vertical-align:middle}
+.dd>select{position:absolute;inset:0;opacity:0;pointer-events:none}
+.dd-btn{appearance:none;display:inline-grid;align-items:center;justify-items:start;box-sizing:border-box;height:34px;min-width:100%;
+  padding:0 30px 0 11px;border:1px solid var(--wb-bd);border-radius:9px;background-color:var(--wb-s);color:var(--wb-t);
+  font:inherit;font-size:13px;font-weight:500;cursor:pointer;white-space:nowrap;text-align:left;
+  background-image:linear-gradient(45deg,transparent 50%,var(--wb-t2) 50%),linear-gradient(135deg,var(--wb-t2) 50%,transparent 50%);
+  background-position:calc(100% - 16px) 50%,calc(100% - 11px) 50%;background-size:5px 5px;background-repeat:no-repeat}
+/* 和系统下拉一样按最长选项定宽：所有选项文字叠在同一格里、只显示当前那个，切换时宽度不跳 */
+.dd-btn>span{grid-area:1/1}
+.dd-btn>.dd-ghost{visibility:hidden}
+.dd-btn:hover{border-color:var(--wb-t3)}
+.dd-btn:focus-visible,.dd.is-open .dd-btn{outline:none;border-color:var(--wb-a);box-shadow:0 0 0 3px var(--wb-a-soft)}
+.dd.is-open .dd-btn{background-image:linear-gradient(135deg,transparent 50%,var(--wb-t2) 50%),linear-gradient(45deg,var(--wb-t2) 50%,transparent 50%)}
+.dd-btn:disabled{background-color:var(--wb-s3);color:var(--wb-t3);cursor:not-allowed}
+.dd.is-sm .dd-btn{height:28px;padding:0 26px 0 9px;border-radius:7px;font-size:12.5px;background-position:calc(100% - 14px) 52%,calc(100% - 9px) 52%}
+.dd-menu{position:absolute;left:0;top:calc(100% + 4px);z-index:70;min-width:100%;max-height:280px;overflow:auto;margin:0;padding:4px;list-style:none;
+  background:var(--wb-s);border:1px solid var(--wb-bd);border-radius:10px;box-shadow:var(--wb-pop);box-sizing:border-box;
+  opacity:0;transform:translateY(-3px);transition:opacity .12s,transform .12s;visibility:hidden}
+.dd.is-up .dd-menu{top:auto;bottom:calc(100% + 4px);transform:translateY(3px)}
+.dd.is-open .dd-menu{opacity:1;transform:none;visibility:visible}
+.dd-opt{display:flex;align-items:center;justify-content:space-between;gap:14px;height:32px;padding:0 10px;border-radius:7px;font-size:13px;color:var(--wb-t);cursor:pointer;white-space:nowrap}
+.dd.is-sm .dd-opt{height:28px;font-size:12.5px}
+.dd-opt.is-active{background:var(--wb-s3)}
+.dd-opt[aria-selected="true"]{color:var(--wb-a-ink);font-weight:600}
+.dd-opt[aria-selected="true"]::after{content:"✓";font-weight:700}
+.dd-opt[aria-disabled="true"]{color:var(--wb-t3);cursor:not-allowed}
+.dd-opt small{color:var(--wb-t3);font-weight:400}
+
+/* 对比排布 */
+.cmp{display:grid;grid-template-columns:190px 1fr 1fr;border:1px solid var(--wb-bd);border-radius:12px;background:var(--wb-s)}
+.cmp>div{padding:14px;border-top:1px solid var(--wb-bd);display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12.5px;color:var(--wb-t2)}
+.cmp>div.h{border-top:0;background:var(--wb-s2);font-weight:700;color:var(--wb-t)}
+.cmp>div.h:first-child{border-radius:12px 0 0 0}.cmp>div.h:nth-child(3){border-radius:0 12px 0 0}
+.cmp>div.k b{color:var(--wb-t)}
+.cmp>div.k small{display:block;width:100%;color:var(--wb-t3)}
+.ops-mini{display:flex;align-items:center;gap:8px}
+</style>
+</head>
+<body>
+<div class="admin-shell">
+  <aside class="sidebar">
+    <a class="admin-brand" href="#" aria-label="首页"><span class="brand-label">OPERATIONS</span><strong>Plus 运营后台 <span aria-hidden="true">✦</span></strong><small>内部管理中心</small></a>
+    <nav aria-label="后台导航">
+      <button class="nav-item is-active" type="button" data-go="wall"><span class="ic" aria-hidden="true">◱</span>两格</button>
+      <button class="nav-item" type="button" data-go="dd"><span class="ic" aria-hidden="true">▾</span>下拉展开</button>
+    </nav>
+  </aside>
+
+  <main class="main-area">
+    <header class="topbar"><div class="topbar-title"><h1 id="view-title">今天生意怎么样</h1></div><span class="sync-time">演示页 · 真实数照 09-28 03:40 的生产现状</span></header>
+
+    <!-- ================= 两格 ================= -->
+    <section id="v-wall" class="view workbench">
+      <div class="demo-bar">
+        <b>第三批演示</b>
+        <span class="opt" role="group"><button type="button" data-data="real" aria-pressed="true">现在的真实数</button><button type="button" data-data="busy" aria-pressed="false">有生意时的样子（示例）</button></span>
+        <span>鼠标停在两个新格子上看明细，点一下看会跳到哪</span>
+      </div>
+      <p class="demo-note">
+        <b>自动完成率</b>＝近 7 天结束的真实订单里，<b>成功、且没人在后台动过</b>的比例。分母和「近7天成功率」同一批单（不含演练单）。
+        「动过」＝这单有任何一条人写的记录：标为已手工充值、核实付款结果、浏览器转人工 / 手动付款、确认已取消续费、放卡、取消等。事后整理数据的脚本也算「动过」——只会让这个数偏低、不会虚高，而且都是自用期的老单。
+        现在：近 7 天只结束了 1 单（失败），所以是 0 / 1。按同样的算法看近 30 天：69 单里成功 18、其中没人动过的 2（自用期大多是你手动推的）。<br>
+        <b>异常支出</b>＝近 7 天拒付 + 拒付手续费，旁边写还没认领的无主扣款有几笔。现在：0（最近一次拒付是 09-15，4 笔 $462.25 + 手续费 $1.60，已在 7 天外）；无主扣款昨晚那 7 张已登记，现在 0。
+      </p>
+      <div class="wb-wall" id="wall"></div>
+    </section>
+
+    <!-- ================= 下拉展开 ================= -->
+    <section id="v-dd" class="view" hidden>
+      <p class="demo-note"><b>下拉点开后的菜单</b>：左边是现在（系统自带的白色菜单，样式由 macOS 决定、改不了）；右边是提议的后台自己的菜单——同一套颜色和圆角、选中项打勾、鼠标移上去浅灰底。<br>键盘也能用：Tab 到下拉上按 ↓ / 回车打开，↑↓ 选，回车确定，Esc 关；直接按字母会跳到那个开头的选项。点开时如果下面放不下会自动往上开。<br>收起时的样子和第二批统一后一模一样，不变。</p>
+      <div class="cmp">
+        <div class="h">用在哪</div><div class="h">现在（系统菜单）</div><div class="h">提议（后台自己的菜单）</div>
+
+        <div class="k"><b>营业条</b><small>卡台、发码产品</small></div>
+        <div><div class="ops-mini workbench"><div class="wb-ops" style="padding:0;border:0;background:none;box-shadow:none"><select aria-label="卡台"><option>highvcc</option><option>HNSKJ</option></select><select aria-label="产品"><option>Plus</option><option>Pro 5X</option><option>Pro 20X</option></select></div></div></div>
+        <div><span class="dd is-sm"><select aria-label="卡台"><option>highvcc</option><option>HNSKJ</option></select></span><span class="dd is-sm"><select aria-label="产品"><option>Plus</option><option>Pro 5X</option><option>Pro 20X</option></select></span></div>
+
+        <div class="k"><b>筛选条</b><small>订单、CDK、诊断</small></div>
+        <div><select aria-label="产品"><option>所有产品</option><option>Plus</option><option>5X</option><option>20X</option></select><select aria-label="路线"><option>所有路线</option><option>Browser</option><option>API</option></select><select aria-label="状态"><option>全部状态</option><option>待兑换</option><option>已兑换</option><option>已作废</option><option>已过期</option></select></div>
+        <div><span class="dd"><select aria-label="产品"><option>所有产品</option><option>Plus</option><option>5X</option><option>20X</option></select></span><span class="dd"><select aria-label="路线"><option>所有路线</option><option>Browser</option><option>API</option></select></span><span class="dd"><select aria-label="状态"><option>全部状态</option><option>待兑换</option><option>已兑换</option><option>已作废</option><option>已过期</option></select></span></div>
+
+        <div class="k"><b>表单</b><small>开卡选卡段（选项长、带说明）</small></div>
+        <div><select aria-label="卡段" style="width:320px"><option>请选择卡段</option><option>513989 · 美国 · 拒付 0 / 12</option><option>531993 · 美国 · 拒付 1 / 20</option><option disabled>556766 · 已停用</option></select></div>
+        <div><span class="dd" style="width:320px"><select aria-label="卡段"><option>请选择卡段</option><option>513989 · 美国 · 拒付 0 / 12</option><option>531993 · 美国 · 拒付 1 / 20</option><option disabled>556766 · 已停用</option></select></span></div>
+
+        <div class="k"><b>弹窗</b><small>停用这张卡</small></div>
+        <div><button type="button" class="wb-btn out sm" data-dialog="native">打开「停用」弹窗（现在）</button></div>
+        <div><button type="button" class="wb-btn out sm" data-dialog="custom">打开「停用」弹窗（提议）</button></div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<dialog class="ask-dialog" id="dlg-native"><form class="ask-form" method="dialog"><h3>停用这张卡 · 4022</h3><p class="ask-message">停用后不再分配、进待销清单。只改系统记录，不动卡台；点错可在「历史」里撤销。</p>
+  <label class="ask-field">为什么停用<select><option>手动用掉了</option><option>卡台已作废</option><option>卡有问题</option><option>已在卡台取消</option><option>其他</option></select></label>
+  <label class="ask-field">备注 <small>选填</small><input placeholder="例如：9-21 给 Pro 补差价"></label>
+  <div class="ask-actions"><button type="button" class="ghost-button" data-close>取消</button><button type="button" class="danger-small" data-close>停用</button></div></form></dialog>
+<dialog class="ask-dialog" id="dlg-custom" style="overflow:visible"><form class="ask-form" method="dialog"><h3>停用这张卡 · 4022</h3><p class="ask-message">停用后不再分配、进待销清单。只改系统记录，不动卡台；点错可在「历史」里撤销。</p>
+  <label class="ask-field">为什么停用<span class="dd" style="display:block"><select><option>手动用掉了</option><option>卡台已作废</option><option>卡有问题</option><option>已在卡台取消</option><option>其他</option></select></span></label>
+  <label class="ask-field">备注 <small>选填</small><input placeholder="例如：9-21 给 Pro 补差价"></label>
+  <div class="ask-actions"><button type="button" class="ghost-button" data-close>取消</button><button type="button" class="danger-small" data-close>停用</button></div></form></dialog>
+
+<script>
+const $ = (s, r = document) => r.querySelector(s);
+// ---------------- 两格 ----------------
+const DATA = {
+  real: { today: [0, '处理中 0'], rate: ['0%', '成功 0 / 样本 1'], auto: ['0%', '自动 0 / 样本 1', '近 7 天结束的真实订单 1 单：成功 0 单。\n成功且没人在后台动过的 0 单。'],
+    spend: ['0.00', 'HNSKJ 0.00 · highvcc 0.00'], odd: ['0.00', '拒付 0 笔 · 无主扣款 0 笔', '近 7 天：拒付 0.00 USD（0 笔）+ 拒付手续费 0.00 USD（0 笔）。\n还没认领的无主扣款 0 笔。'], oddWarn: false },
+  busy: { today: [12, '处理中 1'], rate: ['91%', '成功 10 / 样本 11'], auto: ['82%', '自动 9 / 样本 11', '近 7 天结束的真实订单 11 单：成功 10 单。\n成功且没人在后台动过的 9 单；另 1 单成功前你在后台核实过付款结果。'],
+    spend: ['191.52', 'HNSKJ 0.00 · highvcc 191.52'], odd: ['129.15', '拒付 1 笔 · 无主扣款 1 笔', '近 7 天：拒付 128.75 USD（1 笔）+ 拒付手续费 0.40 USD（1 笔）。\n还没认领的无主扣款 1 笔（金额见诊断日对账，那张卡分不清是哪一笔多扣的）。'], oddWarn: true }
+};
+let data = 'real';
+function renderWall() {
+  const d = DATA[data];
+  const cell = (lb, v, sub, { jump = '', title = '', warn = false } = {}) => jump
+    ? `<button type="button" class="wb-kpi" data-jump="${jump}" title="${title}"><span class="wb-lb">${lb}</span><span class="wb-v">${v}</span><span class="wb-sub${warn ? ' is-warn' : ''}">${sub}</span></button>`
+    : `<div class="wb-kpi"><span class="wb-lb">${lb}</span><span class="wb-v">${v}</span><span class="wb-sub">${sub}</span></div>`;
+  $('#wall').innerHTML = cell('今日单数', d.today[0], d.today[1], { jump: '订单页 · 今天的订单' })
+    + cell('近7天成功率', d.rate[0], d.rate[1], { jump: '订单页 · 近 7 天统计样本' })
+    + cell('自动完成率', d.auto[0], d.auto[1], { jump: '订单页 · 近 7 天统计样本（同一批单）', title: d.auto[2] })
+    + cell('今日花费', d.spend[0], d.spend[1])
+    + cell('异常支出', d.odd[0], d.odd[1], { jump: '诊断页 · 日对账逐张报告', title: d.odd[2], warn: d.oddWarn });
+}
+// ---------------- 自绘下拉 ----------------
+function enhance(host) {
+  const select = host.querySelector('select');
+  const btn = document.createElement('button');
+  btn.type = 'button'; btn.className = 'dd-btn'; btn.setAttribute('aria-haspopup', 'listbox'); btn.setAttribute('aria-expanded', 'false');
+  btn.setAttribute('aria-label', select.getAttribute('aria-label') || '');
+  const menu = document.createElement('ul'); menu.className = 'dd-menu'; menu.setAttribute('role', 'listbox'); menu.tabIndex = -1;
+  // 按钮放在 select 前面：外层 <label> 点击时落到按钮上（打开菜单），而不是落到看不见的 select 上
+  select.tabIndex = -1; select.setAttribute('aria-hidden', 'true');
+  host.prepend(btn); host.append(menu);
+  let active = -1, typed = '', typedAt = 0;
+  const opts = () => [...menu.children];
+  const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const sync = () => {
+    btn.innerHTML = `<span class="dd-cur">${esc(select.selectedOptions[0]?.text || '')}</span>`
+      + [...select.options].map((o) => `<span class="dd-ghost" aria-hidden="true">${esc(o.text)}</span>`).join('');
+    btn.disabled = select.disabled;
+  };
+  const build = () => {
+    menu.innerHTML = [...select.options].map((o, i) => `<li class="dd-opt" role="option" data-i="${i}" aria-selected="${o.selected}"${o.disabled ? ' aria-disabled="true"' : ''}>${o.text}</li>`).join('');
+  };
+  const setActive = (i) => { active = i; opts().forEach((li, k) => li.classList.toggle('is-active', k === i)); opts()[i]?.scrollIntoView({ block: 'nearest' }); };
+  const open = () => {
+    if (host.classList.contains('is-open') || select.disabled) return;
+    document.querySelectorAll('.dd.is-open').forEach((other) => other !== host && other.__close());
+    build();
+    const r = btn.getBoundingClientRect(); const room = (host.closest('dialog') ? host.closest('dialog').getBoundingClientRect().bottom : innerHeight) - r.bottom;
+    host.classList.toggle('is-up', room < Math.min(280, select.options.length * 34 + 12));
+    host.classList.add('is-open'); btn.setAttribute('aria-expanded', 'true');
+    setActive(select.selectedIndex);
+  };
+  const close = (focus = true) => { host.classList.remove('is-open'); btn.setAttribute('aria-expanded', 'false'); if (focus) btn.focus(); };
+  host.__close = () => close(false);
+  const choose = (i) => {
+    if (select.options[i]?.disabled) return;
+    if (select.selectedIndex !== i) { select.selectedIndex = i; select.dispatchEvent(new Event('change', { bubbles: true })); }
+    sync(); close();
+  };
+  btn.addEventListener('click', () => (host.classList.contains('is-open') ? close() : open()));
+  btn.addEventListener('keydown', (e) => {
+    const isOpen = host.classList.contains('is-open'); const n = select.options.length;
+    const step = (from, dir) => { let i = from; do { i = (i + dir + n) % n; } while (select.options[i].disabled && i !== from); return i; };
+    if (['ArrowDown', 'ArrowUp', 'Enter', ' '].includes(e.key) && !isOpen) { e.preventDefault(); open(); return; }
+    if (!isOpen) return;
+    if (e.key === 'ArrowDown') { e.preventDefault(); setActive(step(active, 1)); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); setActive(step(active, -1)); }
+    else if (e.key === 'Home') { e.preventDefault(); setActive(step(-1 + n, 1)); }
+    else if (e.key === 'End') { e.preventDefault(); setActive(step(0, -1)); }
+    else if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); choose(active); }
+    else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(); }
+    else if (e.key === 'Tab') { close(false); }
+    else if (e.key.length === 1) {
+      typed = Date.now() - typedAt > 700 ? e.key : typed + e.key; typedAt = Date.now();
+      const hit = [...select.options].findIndex((o) => !o.disabled && o.text.toLowerCase().startsWith(typed.toLowerCase()));
+      if (hit >= 0) setActive(hit);
+    }
+  });
+  menu.addEventListener('mousemove', (e) => { const li = e.target.closest('.dd-opt'); if (li) setActive(Number(li.dataset.i)); });
+  menu.addEventListener('mousedown', (e) => e.preventDefault());
+  menu.addEventListener('click', (e) => { const li = e.target.closest('.dd-opt'); if (li) choose(Number(li.dataset.i)); });
+  select.addEventListener('change', sync);
+  sync();
+}
+document.addEventListener('click', (e) => { document.querySelectorAll('.dd.is-open').forEach((dd) => { if (!dd.contains(e.target)) dd.__close(); }); }, true);
+document.querySelectorAll('.dd').forEach(enhance);
+
+function toast(text) { const t = document.createElement('div'); t.className = 'demo-toast'; t.textContent = `会跳到：${text}`; document.body.appendChild(t); setTimeout(() => t.remove(), 1800); }
+function go(view) {
+  document.querySelectorAll('.view').forEach((v) => { v.hidden = v.id !== `v-${view}`; });
+  document.querySelectorAll('[data-go]').forEach((b) => b.classList.toggle('is-active', b.dataset.go === view));
+  $('#view-title').textContent = { wall: '今天生意怎么样', dd: '下拉展开' }[view];
+}
+document.addEventListener('click', (e) => {
+  const t = e.target.closest('button'); if (!t) return;
+  if (t.dataset.go) return go(t.dataset.go);
+  if (t.dataset.data) { data = t.dataset.data; document.querySelectorAll('[data-data]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.data === data))); return renderWall(); }
+  if (t.dataset.jump) return toast(t.dataset.jump);
+  if (t.dataset.dialog) return $(`#dlg-${t.dataset.dialog}`).showModal();
+  if (t.hasAttribute('data-close')) t.closest('dialog').close();
+});
+renderWall();
+</script>
+</body>
+</html>
