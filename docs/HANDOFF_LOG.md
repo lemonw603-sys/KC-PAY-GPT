@@ -3818,3 +3818,4 @@ Lemon 问「之前有没有 Key、从哪申请的」→ 没有也不需要：08-
 2026-09-27 01:56 UTC：新 Key 存 `~/.config/zzshu/api.env`，只读验证 `/third-party/user` → 200 / code 0 / points 15。
 Lemon（2026-09-27 02:00 UTC）：点数只是服务费（卡要自带，走 `direct`）；问「必须真花钱吗」。答：钥匙已免费验；卡头认不认可用余额约 $1 的 highvcc 卡测（被拒则建单前退回不花钱；被收则付款因余额不足被拒、失败不扣点——拒付手续费 / 风控计数 / 测试号影响未核实）；成功全路径只能真开一单，或以首张客户单 / Lemon 自需的号验收。恢复 API 路线 301 需改 CLAUDE.md「ZZSHU 只保留历史兼容」，待 Lemon 明确。
 D-400 卡头测试：Lemon 限「最多 2 次」、指定卡 4022。免费测试号 Session 存其本机 `~/.config/zzshu/test-session.json`（free、token 到 10-05），与 Key 一起经 SSH 传入服务器脚本内存。第 1 次 4022、第 2 次校准 0601，均 `40020`「region 未对该套餐开放」、未建单（history 0、points 15）→ 分不出，按约定停。Lemon 在聊天里贴过 4022 的完整卡号，已提醒以后只给尾号、测后可在 highvcc 删卡。服务器留有无密钥的临时脚本 `/root/zzshu-probe/`，删不删待 Lemon。
+Lemon：客服答「让 AI 弄就行」（未回答卡头问题）→ Lemon 批 B 1 次 → 4022 / PH 建单成功（35289）→ 02:28:08 UTC 失败「该卡交易过于频繁」，points 15、cdk_cost 0。结论：卡头放行；付款能否成功未验。

@@ -28,3 +28,4 @@
 - 方法：`POST /third-party/orders/direct`，`orderType direct`、`planType plus`、免费测试号完整 Session、库内 highvcc 卡（服务器内存解密）、`region "XX"`（未开放地区），期望「卡头被拒 → 卡头消息；卡头通过 → 地区消息」，两者都不建单。脚本 `/root/zzshu-probe/probe.mjs`（服务器，只打印 HTTP / code / message）。
 - 结果：卡 4022（`51398996`）02:22:21 UTC → HTTP 400 `{"code":40020,"message":"region 未对该套餐开放"}`；卡 0601（`53211304`，09-17 曾得「该卡头暂不支持提交」）02:22:34 UTC → 同一响应。均未建单（`orders/history` total 0，points 15 不变）。
 - 解读：校准卡与目标卡响应相同 → **此法区分不了卡头**（地区检查可能先于卡头检查，或卡头白名单已取消）。卡头是否放行仍未知。
+- **补测（Lemon 另批 1 次）**：卡 4022（`51398996`，余额 $1.00）`region PH` 02:27:09 UTC → HTTP 201 `{"code":0,"message":"success"}`，订单 35289（`card_key` 以 `DIRECT-` 开头）。**`51398996` 未被拒，建单成功。** 02:28:08 UTC 订单 `failed`，`failure_reason` 与 `payment_result.failure_detail` 均为「该卡交易过于频繁，请稍后再试或换卡」，`retry_attempt 1`，`verification null`。`history`：1 条 failed、`cdk_cost 0`、卡号打码 `5139****4022`；`points` 15 不变。失败原因含义未知（非预期的「余额不足」）。
