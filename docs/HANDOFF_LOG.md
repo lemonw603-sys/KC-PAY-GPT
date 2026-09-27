@@ -3869,3 +3869,7 @@ Lemon：「发布」。探针全过、在途 0、无新迁移 → prepare（77/0
 ## 2026-09-27｜13 条体验 / 取数问题研究（14:05～14:35 UTC，只读，未改）
 
 Lemon 发布同时提 13 条。三个只读代码调查 + 本人生产只读核实：①工作台点数挂按钮上（`admin.js:656-657`）；②卡台下拉被全局 `select{padding-right:40px !important}`（`admin.css:22`）撑宽、连体控件样式被压；③④「待登记 1」= 3336 历史差异、「新卡待接管 13」= 08-27 hnskj `CARD_TYPE_MISSING` 的 REVIEW_REQUIRED 死账，跳转无定位、落点无动作；⑤关一条后整块重画折叠、且工作台 10 秒自动刷新也会折叠，无批量关；36 条里 33 条为终态订单的自用期提醒；⑥**生产后台字体 404**（ops 挡 /assets，plus 200），加低对比边框 / 阴影；⑦邮箱与产品实际间距约 4px，`finishedAt` 接口已有，订单页冻结原型与视觉契约要同步改；⑧「当前不满足 Plus 安全分配条件」是后端兜底（`card-stock-service.js:127`），无逐卡原因；停用原因码与日对账正则不一致（欠账 27）；⑨待销 9 张：highvcc 7 张 10:20 UTC 同步仍在卡台、hnskj 2 张卡台 invalid，接口有 `sourcePresent` 页面未显示；⑩水位 = 每台每产品保持的可分配张数，16 美金 = 转入新卡的钱，Plus 门槛 16 → 每张 16 美金卡实际只够 1 单；⑪两格是 D-284 定的占位，等口径；⑫下拉 4 种高度 / 3 种圆角 / 4 种聚焦样式、展开是系统原生菜单；⑬$0.50 = 5270 今天 09:33 UTC 自动开卡手续费（数据库时区 SYSTEM=UTC，窗口无偏移），「今天花了」含手续费、不含转入卡内的 16 美金。欠账 26～28 记入。
+
+## 2026-09-27｜D-405 决定 + 33 条陈年提醒关闭（15:1x～15:22 UTC）
+
+Lemon：「一到四同意，五先不改」，另立规矩：页面改动先给可交互演示、看过再做、做完验证再汇报（记忆 `ui-changes-demo-first`）。按 2 执行：服务器上用后台「关闭」同一服务 `admin-operations-service.closeAlert` 逐条关，条件＝OPEN 且类型 BROWSER_ORDER_FAILED / BROWSER_HUMAN_REQUIRED 且订单已终态，先断言 33 条才动 → 15:21 UTC matched 33 / closed 33；新查询核实：打开的 warning/critical 只剩 3 条（hnskj CARD_STOCK_LOW / CARD_SUPPLY_FAULT / CARD_SUPPLY_BLOCKED），本批 RESOLVED 33。
