@@ -73,7 +73,7 @@ browser-mvp/scripts/prod-query.sh "SELECT public_no, status, failure_code, failu
 browser-mvp/scripts/prod-query.sh "SELECT pc.operation, pc.http_status, pc.business_code, pc.outcome, pc.started_at FROM provider_calls pc JOIN orders o ON o.id=pc.order_id WHERE o.public_no='<单号>' AND pc.provider='zzshu' ORDER BY pc.started_at"
 ssh root@144.34.180.184 'journalctl -u pojia-worker -f -o cat'
 ```
-- **失败**（含对方要人工安全验证 `verification`——本方没有这一环，对方 120 秒后记失败）：不重付、不换卡。卡的占用转对账、卡密不自动退。hnskj 卡由失败后流水同步自动放回；**highvcc 卡要等快照同步（token 须有效），能否自动放回未验证**（`card-transaction-repository.js` 放回条件：失败后同步过、余额够、无成功扣款）。付款后失败的单后台没有「标为已手工充值」（`order-list-bucket.js:36`）。先查清卡台有没有扣款，再定怎么收口。
+- **失败**（含对方要人工安全验证 `verification`——本方没有这一环，对方 120 秒后记失败）：不重付、不换卡。卡先锁在对账、卡密不退，手机收到「充值失败，要你处理」，这单进后台订单页「需要我处理」。到卡台看这张卡：**没被扣钱**（「被拒」不算）→ 订单行点「放卡退卡密」（确认框里可写看到了什么）→ 卡放回、卡密退回、告警关，客户用原卡密重兑；卡台有被拒记录的，约 1 小时内 highvcc 同步也会自动放卡（告警一起关）；**系统已看到成功扣款**的单不给放（按钮变「去核实」），先查清是不是这一单扣的。（D-404，`api-failure-release-service.js`）
 - **付款不明**（`SUBMIT_UNKNOWN` / `RECONCILIATION_REQUIRED`）：系统先自己查 ZZSHU；查不清转人工 → 后台订单「去核实」选 扣了 / 没扣（`unknown-submission-resolve-service.js`）。
 - **点数**见 §2.75；0 点时系统自动切回 Browser。**切回 Browser**：工作台点「浏览器」（会查池心跳）。
 
@@ -241,7 +241,7 @@ API 路线 301 = ZZSHU 直充 + 本方自带卡（任何有 API 直充能力的�
   - `直充平台点数用完了`（0）：若 Plus 正走 API，系统已用正式切路线服务切到 Browser（审计 `system:zzshu-points`）；切不过去（Browser 不在线 / 没卡）时 API 新单被拒（客户看到暂停接单）——充点，或把 Browser 拉起来。
   - `直充平台点数已恢复`：只在「自动切过 Browser」之后出现；系统**不自动切回**，要切回在工作台点「API 充值」（切换会校验点数不为 0）。
   - `直充平台不认这把 Key`：Key 被拒（401 / 40107 / 40306），API 路线下不了单；到平台核对，或换 Key（下一条）。
-  - `充值失败，要你处理`（API 路线提交后失败）：卡的占用转对账、卡密不自动退；按订单抽屉核对卡台扣款后收口。
+  - `充值失败，要你处理`（API 路线提交后失败）：卡先锁着、卡密没退；按 §1.A「失败」处理（后台订单「需要我处理」→「放卡退卡密」）。
 - **换 Key**：Lemon 把新 Key 存本机（不进聊天）：先 `mkdir -p ~/.config/zzshu && chmod 700 ~/.config/zzshu`，复制 Key 后 `printf 'ZZSHU_API_KEY=%s\n' "$(pbpaste)" > ~/.config/zzshu/api.env && chmod 600 ~/.config/zzshu/api.env`。执行者（**先问**）改服务器 `/etc/pojia/provider.env` 的 `ZZSHU_API_KEY` 行、重启 `pojia-worker`（**先问**），再用上面的只读命令核对。
 - **API 路线用哪个卡台**：工作台营业条的卡台下拉框跟着当前路线走（走 API 时切的是 API 那一行），与 Browser 行各自独立；候选只列有 API 直充能力的卡台。
 

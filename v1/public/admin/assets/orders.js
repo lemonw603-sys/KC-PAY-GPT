@@ -195,6 +195,16 @@ window.createOrdersPage = function ({ api, escapeHtml: esc, showNotice, openOrde
       if (ok) await actions.cancel(no, { after: load });
       return;
     }
+    if (key === 'release') {
+      const ok = await askConfirm({
+        title: '确认没扣款，放卡并退卡密？',
+        text: `先到卡台看这张卡：${no} 失败之后没有被扣钱（「被拒」的记录不算扣钱）才点。点了以后卡放回、卡密退回，客户可以用原卡密重新兑换。服务器会再核对一次，系统看到这张卡有成功扣款的会拒绝。`,
+        okLabel: '放卡并退卡密', danger: true,
+        fields: '<label>你在卡台看到的（可选）<input type="text" name="note" maxlength="300" placeholder="例如：卡台只有一笔被拒记录"></label>'
+      });
+      if (ok) await actions.release(no, { note: ok.note || '', after: load });
+      return;
+    }
     if (key === 'manual') {
       const ok = await askConfirm({
         title: '标为已手工充值？', text: `只有在你已经在系统外给 ${no} 手动充成功时才点。系统会记成功、卡放回池子，续费留给你确认；有付款痕迹的单服务器会拒绝。`,

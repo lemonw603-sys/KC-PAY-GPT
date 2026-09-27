@@ -12,6 +12,8 @@ import { PRE_PAYMENT_CLOSABLE_STATUSES, readPrePaymentCloseoutState } from './pr
 import { rehearsalOrderSql } from '../db/repositories/rehearsal-order-sql.js';
 import { deriveOrderStage } from './order-stage.js';
 import { unknownSubmissionEligibility } from './unknown-submission-resolve-service.js';
+import { apiFailureLockedSql, apiFailureReleasableSql, readApiFailureReleaseState } from './api-failure-release-service.js';
+import { manualFulfillmentBlockedSql } from './manual-fulfillment-service.js';
 import { eligibleInventoryCardSql,
   providerCardStockSql, recentCst8CalendarDaysWindowSql, todayCst8WindowSql,
   REPLENISHMENT_OPENED_COUNT_SQL, maxPaymentsSql } from './card-inventory-eligibility.js';
@@ -52,9 +54,11 @@ const FAILED_AFTER_PAYMENT_SQL = `(o.status = 'RECHARGE_FAILED' AND (EXISTS (
             AND fap_bra.funds_risk_state <> 'CLEARED')))`;
 // 订单页 v3（D-356）：「需要我处理」= 与 REVIEW_REQUIRED 筛选同一谓词，写成不带占位符的内联版，
 // 好放进 SELECT 投影（needs_person）、桶筛选与桶计数里。改口径两处一起改。
+// 2026-09-27 整体排查欠账 23：API 单对方确认失败、卡还锁在对账的，也要人看（放卡退卡密或先查扣款）。
 const NEEDS_PERSON_SQL = () => `(o.status IN (${REVIEW_STATUSES.map((status) => `'${status}'`).join(', ')})
         OR ${FAILED_AFTER_PAYMENT_SQL}
-        OR o.cancellation_review_required = 1 OR (${STALE_CREATE_ATTEMPT_SQL}))`;
+        OR o.cancellation_review_required = 1 OR (${STALE_CREATE_ATTEMPT_SQL})
+        OR ${apiFailureLockedSql('o')})`;
 const PROCESSING_STATUSES = ['CREATED', 'WAITING_FOR_CARD', 'CARD_PURCHASING', 'CARD_PROVISIONING', 'SUBMITTING',
   'RECHARGE_PROCESSING', 'CANCELLATION_PENDING'];
 const FINISHED_STATUSES = ['RECHARGE_SUCCESS', 'RECHARGE_FAILED', 'CLOSED'];
@@ -993,9 +997,12 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
     const values = [];
     let exactCdkLookup = null;
     if (status === 'REVIEW_REQUIRED') {
+      // 与 NEEDS_PERSON_SQL 同一谓词（改口径两处一起改）。欠账 23 第一次只改了那一处：
+      // 顶部「需要我处理 1」、点进来却是空列表（本机真页面验收抓到，已加真库测试守）。
       conditions.push(`(o.status IN (${REVIEW_STATUSES.map(() => '?').join(', ')})
         OR ${FAILED_AFTER_PAYMENT_SQL}
-        OR o.cancellation_review_required = 1 OR (${STALE_CREATE_ATTEMPT_SQL}))`);
+        OR o.cancellation_review_required = 1 OR (${STALE_CREATE_ATTEMPT_SQL})
+        OR ${apiFailureLockedSql('o')})`);
       values.push(...REVIEW_STATUSES);
     } else if (status === 'RECONCILIATION_ISSUES') {
       conditions.push(RECONCILIATION_ISSUE_SQL);
@@ -1148,7 +1155,10 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
           (SELECT fr_kind.executor_kind FROM fulfillment_routes fr_kind WHERE fr_kind.id = o.fulfillment_route_id) AS route_executor_kind,
           (SELECT COUNT(*) - 1 FROM orders hist WHERE hist.cdk_id = o.cdk_id) AS history_count,
           (${FAILED_AFTER_PAYMENT_SQL}) AS failed_after_payment,
-          (${NEEDS_PERSON_SQL()}) AS needs_person
+          (${NEEDS_PERSON_SQL()}) AS needs_person,
+          (${apiFailureLockedSql('o')}) AS api_failure_locked,
+          (${apiFailureReleasableSql('o')}) AS api_failure_releasable,
+          (${manualFulfillmentBlockedSql('o')}) AS manual_blocked
           ,(SELECT CASE WHEN pa.source_adapter = 'backup_card_export_v1' THEN 'MANUAL_IMPORT' ELSE 'API' END
              FROM cards source_card LEFT JOIN provider_accounts pa ON pa.id = source_card.provider_account_id
              WHERE source_card.id = o.assigned_card_id LIMIT 1) AS card_source_kind
@@ -1246,7 +1256,10 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
         primaryAction: primaryOrderAction({
           status: row.status, needsPerson: Boolean(Number(row.needs_person)),
           cancellationReviewRequired: Boolean(row.cancellation_review_required),
-          failedAfterPayment: Boolean(Number(row.failed_after_payment)), run: runFromRow(row)
+          failedAfterPayment: Boolean(Number(row.failed_after_payment)), run: runFromRow(row),
+          apiFailureLocked: Boolean(Number(row.api_failure_locked)),
+          apiFailureReleasable: Boolean(Number(row.api_failure_releasable)),
+          manualBlocked: Boolean(Number(row.manual_blocked))
         }),
         card: row.provider_card_id ? {
           cardNumber: cardNumber(row, sessionEncryptionKey),
@@ -1534,6 +1547,19 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
     const unknownResolution = unknownSubmissionEligibility({
       executorKind: row.executor_kind, orderStatus: row.status, attemptId: unknownAttempt?.id || null
     });
+    // 欠账 23：「放卡退卡密」与「标为已手工充值」摆不摆，都按服务端同一份判断（不在页面里拼条件）。
+    // 查不出来时同「放弃并放卡」：不摆放卡按钮、手工按钮维持原样（blocked=null），抽屉照常打开；服务端点下去还会再判。
+    let apiFailureRelease = { eligible: false, locked: false, code: 'CHECK_FAILED' };
+    let manualBlocked = null;
+    try {
+      apiFailureRelease = await readApiFailureReleaseState(pool, row.id);
+      const [[manualRow]] = await pool.query(
+        `SELECT (${manualFulfillmentBlockedSql('o')}) AS blocked FROM orders o WHERE o.id = ?`, [row.id]
+      );
+      manualBlocked = manualRow ? Boolean(Number(manualRow.blocked)) : null;
+    } catch {
+      // 保持上面的默认值
+    }
     return {
       stage: stageFromRow(row, { reconciliation, now: now() }),
       browserRun: runFromRow(row),
@@ -1542,6 +1568,8 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
         reasonCode: unknownResolution.code,
         attemptId: unknownAttempt?.id || null
       },
+      apiFailureRelease: { eligible: apiFailureRelease.eligible, locked: apiFailureRelease.locked, reasonCode: apiFailureRelease.code },
+      manualFulfillment: { blocked: manualBlocked },
       money: {
         attempts: attemptRows.map((attempt) => ({
           id: attempt.id, executorKind: attempt.executor_kind, status: attempt.status,

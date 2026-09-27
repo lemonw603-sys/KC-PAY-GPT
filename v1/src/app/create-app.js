@@ -85,6 +85,7 @@ export function createApp({
   cancelAdminOrder = null,
   confirmManualCancellation = null,
   resolveUnknownSubmission = null,
+  releaseApiFailure = null,
   listCardRetirementCandidates = null,
   runDailyReconciliation = null,
   confirmCardRetired = null,
@@ -679,6 +680,18 @@ export function createApp({
     app.post('/api/v1/admin/orders/:publicNo/resolve-unknown-submission', ...sensitiveAdminGuards, async (req, res) => {
       try {
         res.json(await resolveUnknownSubmission(req.params.publicNo, { ...(req.body || {}), actorId: req.admin?.id || 'admin' }));
+      } catch (error) {
+        if (error instanceof PublicApiError) return res.status(error.status || 400).json({ error: error.code.toLowerCase() });
+        throw error;
+      }
+    });
+  }
+  if (typeof releaseApiFailure === 'function') {
+    // 2026-09-27 整体排查欠账 23：API 单对方确认失败、卡锁在对账，运营核实卡台没扣款后「放卡退卡密」。
+    // 资格与列表 / 抽屉同一份（api-failure-release-service），确认语由前端按后端要求拼。
+    app.post('/api/v1/admin/orders/:publicNo/release-api-failure', ...sensitiveAdminGuards, async (req, res) => {
+      try {
+        res.json(await releaseApiFailure(req.params.publicNo, { ...(req.body || {}), actorId: req.admin?.id || 'admin' }));
       } catch (error) {
         if (error instanceof PublicApiError) return res.status(error.status || 400).json({ error: error.code.toLowerCase() });
         throw error;

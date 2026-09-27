@@ -9,6 +9,11 @@ import { createProviderRouteAdminService } from '../src/services/provider-route-
 import {
   createZzshuPointsMonitor, ZZSHU_ALERT_KEYS, ZZSHU_AUTO_SWITCHED_SETTING, ZZSHU_POINTS_ACTOR
 } from '../src/services/zzshu-points-monitor.js';
+import { reserveCardConsumptionInTransaction } from '../src/services/card-consumption-ledger-service.js';
+import { apiFailureReleaseConfirmation, createApiFailureReleaseService } from '../src/services/api-failure-release-service.js';
+import { createAdminReadService } from '../src/services/admin-read-service.js';
+import { commitCardTransactionsForCard } from '../src/db/repositories/card-transaction-repository.js';
+import { toCardTransactionRow } from '../src/services/highvcc-snapshot-sync-service.js';
 
 // D-400 / D-401：API 路线（ZZSHU 直充）可用任何卡台的卡 + 点数监控，在真实 MySQL（跑完全部迁移的隔离库）上验。
 // 用法：v1/scripts/mysql-tests.sh test/zzshu-api-route-mysql-integration.test.js
@@ -127,7 +132,8 @@ test('D-401 provider-confirmed failure on API: alert raised; a manual-import (hi
       assert.equal(alert.severity, 'critical');
       assert.equal(alert.order_id, orderId);
       assert.equal(Number(alert.incident_version), 1);
-      assert.equal(alert.message, `订单 ${publicNo}｜直充平台返回失败：该卡交易过于频繁，请稍后再试或换卡。卡的占用已转对账、卡密没有自动退回；核对卡台扣款后到后台收口。`);
+      // 欠账 23：文案指向后台真实存在的按钮（以前写「到后台收口」，而这类单后台没有收口入口）。
+      assert.equal(alert.message, `订单 ${publicNo}｜直充平台返回失败：该卡交易过于频繁，请稍后再试或换卡。卡先锁着、卡密没退。到卡台看这张卡：没被扣钱就在后台订单点「放卡退卡密」，客户可用原卡密重交（卡台有被拒记录的，约 1 小时内也会自动放卡）；被扣了钱先别动，找执行者。`);
     }
   } finally { await pool.end(); }
 });
@@ -216,3 +222,117 @@ test('D-401 points monitor: when Browser is not ready the switch is refused, rou
     await pool.end();
   }
 });
+
+// ---- 欠账 23（2026-09-27 整体排查）：API 失败单卡锁在对账 → 放卡退卡密 / 自动放卡，与「成功扣款」同一口径 ----
+
+async function failedApiOrderWithLockedHighvccCard(pool, workflow) {
+  const cardId = await insertCard(pool, { providerAccountId: BACKUP_A, syncTier: 'MANUAL_IMPORT', inventory: 'ASSIGNED', balance: '16.000000' });
+  const { orderId, publicNo } = await insertProcessingApiOrder(pool, { cardId, frozen: BACKUP_A });
+  // 真实 API 单提交后带直充单号与卡键（手工收口守卫认它们）
+  await pool.query('UPDATE orders SET recharge_order_no = ?, recharge_card_key = ? WHERE id = ?',
+    [`9${orderId.slice(0, 5)}`, `DIRECT-it-${orderId.slice(0, 8)}`, orderId]);
+  const [[attempt]] = await pool.query('SELECT id FROM recharge_attempts WHERE order_id = ?', [orderId]);
+  const connection = await pool.getConnection();
+  try {
+    await connection.beginTransaction();
+    await reserveCardConsumptionInTransaction(connection, {
+      cardId, orderId, rechargeAttemptId: attempt.id, productId: PLUS, amount: '16.000000', currency: 'USD'
+    });
+    await connection.commit();
+  } finally { connection.release(); }
+  await pool.query(
+    `INSERT INTO card_assignment_history (id, card_id, order_id, assignment_kind, status, assigned_by, assignment_reason)
+     VALUES (UUID(), ?, ?, 'NORMAL', 'ACTIVE', 'test:fixture', 'api failure release')`, [cardId, orderId]);
+  await workflow.commitRechargeFailure(orderId, { status: 'failed', failureReason: '该卡交易过于频繁，请稍后再试或换卡' });
+  return { cardId, orderId, publicNo };
+}
+
+// 「需要我处理」分段器点进去的那条筛选（status=REVIEW_REQUIRED）——顶部数字与列表必须同一口径。
+async function inReviewFilter(pool, publicNo) {
+  const list = await createAdminReadService({ pool, sessionEncryptionKey: KEY })
+    .listOrders({ page: 1, pageSize: 100, includeSummary: false, groupByCdk: false, timeField: 'CREATED', status: 'REVIEW_REQUIRED' });
+  return (list.orders || list.items || []).some((row) => row.publicNo === publicNo);
+}
+
+async function listRow(pool, publicNo) {
+  const list = await createAdminReadService({ pool, sessionEncryptionKey: KEY })
+    .listOrders({ page: 1, pageSize: 100, includeSummary: false, groupByCdk: false, timeField: 'CREATED' });
+  return (list.orders || list.items || []).find((row) => row.publicNo === publicNo);
+}
+
+const authorization = (orderId, status) => toCardTransactionRow({
+  cardAuthId: `auth-${status}-${orderId}`, cardId: 'hg-x', amount: 1575, unit: 'USD', status,
+  reason: status === 'COMPLETE' ? 'APPROVE' : 'DECLINE', merchantAmount: 98214, merchantCurrency: 'PHP',
+  desc: 'OPENAI *CHATGPT SUBSCR', merchantCountry: 'US', tradeTimeEpochMs: Date.now()
+});
+
+test('欠账 23 release: a provider-confirmed API failure on a highvcc card needs a person, releases on real SQL, returns the CDK, closes the alert, and cannot run twice', { skip }, async () => {
+  const pool = mysql.createPool({ uri: databaseUrl, connectionLimit: 4, timezone: 'Z' });
+  const workflow = createWorkflowRepository(pool, { sessionEncryptionKey: KEY });
+  try {
+    const f = await failedApiOrderWithLockedHighvccCard(pool, workflow);
+    const [[ledgerBefore]] = await pool.query('SELECT status FROM card_consumption_ledger WHERE order_id = ?', [f.orderId]);
+    assert.equal(ledgerBefore.status, 'RECONCILIATION');
+
+    const before = await listRow(pool, f.publicNo);
+    assert.equal(before.bucket, 'action', 'a locked API failure is in 需要我处理');
+    assert.deepEqual(before.primaryAction, { key: 'release', label: '放卡退卡密' });
+    assert.equal(await inReviewFilter(pool, f.publicNo), true, 'clicking 需要我处理 lists it (the count and the list share one rule)');
+    const detail = await createAdminReadService({ pool, sessionEncryptionKey: KEY }).getOrder(f.publicNo);
+    assert.deepEqual(detail.apiFailureRelease, { eligible: true, locked: true, reasonCode: null });
+    assert.equal(detail.manualFulfillment.blocked, true, 'the manual button the backend would refuse is not offered');
+
+    const release = createApiFailureReleaseService({ pool });
+    await assert.rejects(release(f.publicNo, { confirmation: '确认没扣款' }), { code: 'API_FAILURE_RELEASE_CONFIRMATION_REQUIRED' });
+    const result = await release(f.publicNo, { confirmation: apiFailureReleaseConfirmation(f.publicNo), note: '卡台只有被拒记录', actorId: 'it-admin' });
+    assert.deepEqual(result, { publicNo: f.publicNo, released: 1, cdkReturned: true, cardLast4: '4022' });
+
+    const [[ledger]] = await pool.query('SELECT status, release_reason, JSON_UNQUOTE(JSON_EXTRACT(evidence_json, \'$.source\')) AS source FROM card_consumption_ledger WHERE order_id = ?', [f.orderId]);
+    assert.deepEqual(ledger, { status: 'RELEASED', release_reason: 'operator verified the failed API order did not charge the card', source: 'admin_api_failure_release' });
+    const [[assignment]] = await pool.query('SELECT status, released_by FROM card_assignment_history WHERE order_id = ?', [f.orderId]);
+    assert.deepEqual(assignment, { status: 'RELEASED', released_by: 'admin:it-admin' });
+    const [[cdk]] = await pool.query('SELECT c.status, c.order_id FROM cdks c INNER JOIN orders o ON o.cdk_id = c.id WHERE o.id = ?', [f.orderId]);
+    assert.deepEqual(cdk, { status: 'AVAILABLE', order_id: null });
+    const [[alert]] = await pool.query('SELECT status FROM operator_alerts WHERE dedupe_key = ?', [`api-order-failed:${f.orderId}`]);
+    assert.equal(alert.status, 'RESOLVED');
+    const [[order]] = await pool.query('SELECT status FROM orders WHERE id = ?', [f.orderId]);
+    assert.equal(order.status, 'RECHARGE_FAILED');
+    const [events] = await pool.query(`SELECT actor_type, actor_id FROM order_events WHERE order_id = ? AND actor_type = 'ADMIN'`, [f.orderId]);
+    assert.deepEqual(events.map((e) => [e.actor_type, e.actor_id]), [['ADMIN', 'it-admin']]);
+
+    const after = await listRow(pool, f.publicNo);
+    assert.equal(after.bucket, 'failed', 'released: no longer needs a person');
+    assert.equal(await inReviewFilter(pool, f.publicNo), false);
+    assert.equal(after.primaryAction, null, 'no doomed manual button (the order carries a provider order number)');
+    await assert.rejects(release(f.publicNo, { confirmation: apiFailureReleaseConfirmation(f.publicNo) }), { code: 'API_FAILURE_RELEASE_NOTHING_LOCKED' });
+  } finally { await pool.end(); }
+});
+
+test('欠账 23 release: a COMPLETE (highvcc) purchase after the reservation blocks both the button and the automatic release; a DECLINED one lets the card sync release it and close the alert', { skip }, async () => {
+  const pool = mysql.createPool({ uri: databaseUrl, connectionLimit: 4, timezone: 'Z' });
+  const workflow = createWorkflowRepository(pool, { sessionEncryptionKey: KEY });
+  try {
+    const charged = await failedApiOrderWithLockedHighvccCard(pool, workflow);
+    await commitCardTransactionsForCard(pool, { cardId: charged.cardId, transactions: [authorization(charged.orderId, 'COMPLETE')], cardSnapshot: null });
+    const [[stillLocked]] = await pool.query('SELECT status FROM card_consumption_ledger WHERE order_id = ?', [charged.orderId]);
+    assert.equal(stillLocked.status, 'RECONCILIATION', 'a COMPLETE purchase is a charge: the card sync must not release');
+    const row = await listRow(pool, charged.publicNo);
+    assert.equal(row.bucket, 'action');
+    assert.deepEqual(row.primaryAction, { key: 'verify', label: '去核实' });
+    await assert.rejects(createApiFailureReleaseService({ pool })(charged.publicNo, { confirmation: apiFailureReleaseConfirmation(charged.publicNo) }),
+      { code: 'API_FAILURE_RELEASE_CHARGE_OBSERVED' });
+    const [[openAlert]] = await pool.query('SELECT status FROM operator_alerts WHERE dedupe_key = ?', [`api-order-failed:${charged.orderId}`]);
+    assert.equal(openAlert.status, 'OPEN');
+
+    const declined = await failedApiOrderWithLockedHighvccCard(pool, workflow);
+    await commitCardTransactionsForCard(pool, { cardId: declined.cardId, transactions: [authorization(declined.orderId, 'DECLINED')], cardSnapshot: null });
+    const [[released]] = await pool.query('SELECT status, release_reason FROM card_consumption_ledger WHERE order_id = ?', [declined.orderId]);
+    assert.deepEqual(released, { status: 'RELEASED', release_reason: 'provider failure confirmed; card sync found no successful purchase' });
+    const [[closed]] = await pool.query('SELECT status FROM operator_alerts WHERE dedupe_key = ?', [`api-order-failed:${declined.orderId}`]);
+    assert.equal(closed.status, 'RESOLVED', 'the automatic release closes the 充值失败 alert too');
+    assert.equal((await listRow(pool, declined.publicNo)).bucket, 'failed');
+    const [[untouched]] = await pool.query('SELECT status FROM operator_alerts WHERE dedupe_key = ?', [`api-order-failed:${charged.orderId}`]);
+    assert.equal(untouched.status, 'OPEN', 'only the released order\'s alert is closed');
+  } finally { await pool.end(); }
+});
+

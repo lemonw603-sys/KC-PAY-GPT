@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createAdminReadService } from '../src/services/admin-read-service.js';
+import { manualFulfillmentBlockedSql } from '../src/services/manual-fulfillment-service.js';
+
+// 列表不许把 Session / 直充卡键查出来。「标为已手工充值」摆不摆的守卫（与服务同一份）只判断卡键有没有、
+// 不取值，先把那一段剔掉再查（欠账 23）。
+const withoutManualGuard = (sql) => sql.split(manualFulfillmentBlockedSql('o')).join('');
 import { encryptSecret } from '../src/security/secret-box.js';
 import { sessionFixture } from '../test-support/session-fixture.js';
 
@@ -149,7 +154,7 @@ test('admin overview maps aggregate values without exposing raw records', async 
   });
   // D-401：点数有专门的字段，不混进通用设置清单（设置页不该冒出这两行）。
   assert.equal(result.settings.some((row) => /^zzshu_points/.test(row.key)), false);
-  assert.equal(pool.queries.some(({ sql }) => /session_ciphertext|recharge_card_key/i.test(sql)), false);
+  assert.equal(pool.queries.some(({ sql }) => /session_ciphertext|recharge_card_key/i.test(withoutManualGuard(sql))), false);
   assert.match(pool.queries.find(({ sql }) => /COUNT\(\*\) AS count FROM operator_alerts/.test(sql)).sql,
     /severity IN \('warning','critical'\)/);
 });
@@ -201,7 +206,7 @@ test('admin order list validates filters, maps card summaries, and supports CDK 
   assert.match(pool.queries[0].sql, /o\.status = 'RECHARGE_FAILED' AND \(EXISTS \(/);
   assert.match(pool.queries[0].sql, /funds_risk_state IN \('UNKNOWN','SETTLED'\)/);
   assert.match(pool.queries[0].sql, /payment_state IN \('PAYMENT_CONFIRMED','PAYMENT_UNKNOWN'\)/);
-  assert.equal(pool.queries.some(({ sql }) => /session_ciphertext|recharge_card_key/i.test(sql)), false);
+  assert.equal(pool.queries.some(({ sql }) => /session_ciphertext|recharge_card_key/i.test(withoutManualGuard(sql))), false);
   assert.match(pool.queries[0].sql, /EXISTS \(\s*SELECT 1 FROM cdks cdk/i);
   // 关键词搜索少了「标签」那一个 LIKE（D-367 删 order_tags）：22 → 21
   assert.equal(pool.queries[0].values.length, 21);

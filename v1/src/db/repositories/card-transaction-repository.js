@@ -1,3 +1,5 @@
+import { successfulPurchaseSql } from '../../domain/card-purchase-evidence.js';
+
 async function persistRefundCandidate(connection, { cardId, orderId, transaction }) {
   if (!orderId || transaction.classification !== 'REFUND_CANDIDATE'
     || String(transaction.status).toLowerCase() !== 'success') return;
@@ -196,8 +198,7 @@ export async function persistCardTransactions(connection, {
        AND NOT EXISTS (
          SELECT 1 FROM card_transactions purchase
          WHERE purchase.card_id = l.card_id
-           AND purchase.transaction_type = 'PURCHASE'
-           AND LOWER(purchase.status) = 'success'
+           AND ${successfulPurchaseSql('purchase')}
            AND purchase.first_seen_at >= l.reserved_at
        )`,
     [cardId]
@@ -211,6 +212,16 @@ export async function persistCardTransactions(connection, {
          h.released_at = COALESCE(h.released_at, CURRENT_TIMESTAMP(3))
      WHERE h.card_id = ? AND h.status = 'ACTIVE' AND l.status = 'RELEASED'
        AND l.release_reason = 'provider failure confirmed; card sync found no successful purchase'`,
+    [cardId]
+  );
+  // 卡自动放回了，「充值失败，要你处理」就不用再挂着（客户用原卡密重交即可，下单入口会退码）。
+  await connection.query(
+    `UPDATE operator_alerts oa
+     INNER JOIN card_consumption_ledger l ON l.order_id = oa.order_id
+     SET oa.status = 'RESOLVED', oa.acknowledged_at = COALESCE(oa.acknowledged_at, CURRENT_TIMESTAMP(3))
+     WHERE l.card_id = ? AND l.status = 'RELEASED'
+       AND l.release_reason = 'provider failure confirmed; card sync found no successful purchase'
+       AND oa.dedupe_key = CONCAT('api-order-failed:', l.order_id) AND oa.status = 'OPEN'`,
     [cardId]
   );
 }

@@ -13,7 +13,7 @@ import {
 } from '../src/providers/hnskj-card.js';
 import { assertProviderWritesDisabled, runReadOnlyChecks } from '../scripts/provider-read-check.js';
 import { ProviderError, ProviderSchemaError } from '../src/providers/http-client.js';
-import { ZzshuRechargeProvider } from '../src/providers/zzshu-recharge.js';
+import { ZzshuRechargeProvider, buildDirectOrderRequest } from '../src/providers/zzshu-recharge.js';
 
 const fixturePath = path.join(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -458,6 +458,23 @@ test('Zzshu direct creation uses X-API-Key and strips secrets from the result', 
   assert.deepEqual(JSON.parse(calls[0].init.body).token, {
     user: { id: 'u1' },
     accessToken: 'secret'
+  });
+  // 欠账 24：与 09-27 建单成功那次逐字段一致——地区显式传 PH，不押对方「不传默认 PH」。
+  const body = JSON.parse(calls[0].init.body);
+  assert.deepEqual(Object.keys(body).sort(), ['cardNumber', 'cvv', 'expMonth', 'expYear', 'orderType', 'planType', 'region', 'token']);
+  assert.equal(body.region, 'PH');
+  assert.equal(body.orderType, 'direct');
+});
+
+test('Zzshu direct request: stored card credentials carry cvc and a billing address, neither is sent', () => {
+  // prepareRecharge 把库内凭证整个展开传进来（manual-card-import 存的是 cardNumber/cvv/cvc/expMonth/expYear/billingAddress）。
+  const request = buildDirectOrderRequest({
+    cardNumber: '5139899600001111', cvv: '123', cvc: '123', expMonth: 12, expYear: 2029,
+    billingAddress: { name: 'X', country: 'US' }, token: { accessToken: 'a' }, planType: 'plus'
+  });
+  assert.deepEqual(request.body, {
+    orderType: 'direct', cardNumber: '5139899600001111', expMonth: 12, expYear: 2029, cvv: '123',
+    token: { accessToken: 'a' }, planType: 'plus', region: 'PH'
   });
 });
 

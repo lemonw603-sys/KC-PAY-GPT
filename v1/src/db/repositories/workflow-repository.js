@@ -903,7 +903,7 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
              status = IF(status = 'RESOLVED', 'OPEN', status),
              acknowledged_at = IF(status = 'RESOLVED', NULL, acknowledged_at)`,
           [`api-order-failed:${orderId}`, orderId,
-            `订单 ${order.public_no}｜直充平台返回失败：${failureReason}。卡的占用已转对账、卡密没有自动退回；核对卡台扣款后到后台收口。`.slice(0, 2000)]
+            `订单 ${order.public_no}｜直充平台返回失败：${failureReason}。卡先锁着、卡密没退。到卡台看这张卡：没被扣钱就在后台订单点「放卡退卡密」，客户可用原卡密重交（卡台有被拒记录的，约 1 小时内也会自动放卡）；被扣了钱先别动，找执行者。`.slice(0, 2000)]
         );
       });
     },

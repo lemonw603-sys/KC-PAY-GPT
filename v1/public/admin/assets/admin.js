@@ -821,7 +821,8 @@ const ordersPage = window.createOrdersPage?.({
   actions: {
     cancel: (publicNo, { after }) => cancelOrder(publicNo, null, { confirmed: true, after }),
     renewal: (publicNo, { after }) => confirmManualCancellation(publicNo, { after }),
-    manual: (publicNo, { cardUsed, reason, after }) => markManuallyFulfilled(publicNo, { cardUsed, reason, after })
+    manual: (publicNo, { cardUsed, reason, after }) => markManuallyFulfilled(publicNo, { cardUsed, reason, after }),
+    release: (publicNo, { note, after }) => releaseApiFailure(publicNo, { note, after })
   }
 });
 const refreshOrdersIfVisible = () => (state.view === 'orders' && ordersPage ? ordersPage.load() : Promise.resolve());
@@ -845,6 +846,36 @@ async function markManuallyFulfilled(publicNo, { cardUsed = false, reason = '', 
       order_not_found: '找不到这个订单。'
     };
     showNotice(messages[error?.message] || '没有记录，订单没有改变。');
+    throw error;
+  }
+  if (after) { await after(); return; }
+  await openOrder(publicNo);
+  await refreshOrdersIfVisible();
+}
+
+// 欠账 23（2026-09-27）：API 单对方确认失败、卡锁在对账，核实卡台没扣款后放卡退卡密。
+// 资格与守卫在后端 api-failure-release-service（列表 / 抽屉 / 服务同一份），前端只按后端要求拼确认语。
+async function releaseApiFailure(publicNo, { note = '', after = null } = {}) {
+  try {
+    const result = await sensitiveApi(`/api/v1/admin/orders/${encodeURIComponent(publicNo)}/release-api-failure`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ confirmation: `确认没扣款 ${publicNo}`, note: String(note || '') })
+    });
+    showNotice(result.cdkReturned
+      ? `已放卡${result.cardLast4 ? `（卡尾 ${result.cardLast4}）` : ''}、卡密已退回，客户可以用原卡密重新兑换。`
+      : `已放卡${result.cardLast4 ? `（卡尾 ${result.cardLast4}）` : ''}；卡密没有退回，请到 CDK 页核对这张码。`, 'success');
+  } catch (error) {
+    const messages = {
+      api_failure_release_charge_observed: '系统看到这张卡有成功扣款，不能放。先查清是不是这一单扣的。',
+      api_failure_release_funds_not_cleared: '这一单的付款结果还没定，不能放。按付款不明处理。',
+      api_failure_release_nothing_locked: '这张卡已经放开了，不用再点；客户可以直接用原卡密重交。',
+      api_failure_release_not_failed: '这一单不是失败单，不能这样放。',
+      api_failure_release_wrong_executor: '只有直充（API）失败单能这样放。',
+      api_failure_release_confirmation_required: '确认信息不匹配，没有执行。',
+      order_conflict: '订单刚被改过，请刷新后重试。',
+      admin_order_not_found: '找不到这个订单。'
+    };
+    showNotice(messages[error?.message] || '没有放卡，订单没有改变。');
     throw error;
   }
   if (after) { await after(); return; }
@@ -2627,10 +2658,14 @@ async function openOrder(publicNo, { focus = null } = {}) {
     // 工作台「去核实收口」跳到这里是死路，而系统发的告警还写着「请在后台点「核实付款不明结果」」。
     // 资格由后端 unknownSubmissionEligibility 算好（与收口服务同一份规则），前端不自己拼条件。
     if (data.unknownSubmission?.eligible) actions.push('<button type="button" class="od-act" id="resolve-unknown-submission">确认核实结果</button>');
+    // 欠账 23：资格由后端 api-failure-release-service 算好（与服务同一份规则）。
+    if (data.apiFailureRelease?.eligible) actions.push('<button type="button" class="od-act danger" id="release-api-failure">放卡退卡密</button>');
     if (runLive && manualPaymentEligible(controlRun)) actions.push('<button type="button" class="od-act" data-order-run-control="CONFIRM_MANUAL_PAYMENT">人工付款已完成</button>');
     if (runLive && upgradeConfirmEligible(controlRun)) actions.push('<button type="button" class="od-act" data-order-run-control="COMPLETE_20X">确认 20X 已升级</button>');
     // D-356 ⑤：手工标成功。资格由后端守卫定（无付款痕迹），这里只按状态决定摆不摆按钮。
-    if (['CREATED', 'CARD_READY', 'WAITING_FOR_SESSION', 'RECHARGE_FAILED'].includes(order.status) && !runLive) {
+    // 欠账 23：后台必拒的不摆（manualFulfillment.blocked 与服务同一组守卫；API 失败单一律带直充单号）。
+    if (['CREATED', 'CARD_READY', 'WAITING_FOR_SESSION', 'RECHARGE_FAILED'].includes(order.status) && !runLive
+      && !data.manualFulfillment?.blocked) {
       actions.push('<button type="button" class="od-act out" id="manual-fulfilled">标为已手工充值</button>');
     }
     if (data.card) actions.push('<button type="button" class="od-act ghost" id="sync-transactions">同步卡交易</button>');
@@ -2783,6 +2818,16 @@ async function openOrder(publicNo, { focus = null } = {}) {
     document.querySelector('#sync-transactions')?.addEventListener('click', (event) => requestTransactionSync(publicNo, event.currentTarget));
     document.querySelector('#cancel-order')?.addEventListener('click', (event) => cancelOrder(publicNo, event.currentTarget));
     document.querySelector('#abandon-pre-payment')?.addEventListener('click', (event) => abandonPrePaymentOrder(publicNo, event.currentTarget));
+    document.querySelector('#release-api-failure')?.addEventListener('click', async () => {
+      const answers = await askForm({
+        title: `放卡退卡密 ${publicNo}`,
+        message: '先到卡台看这张卡：这一单失败之后没有被扣钱（「被拒」的记录不算扣钱）才点。点了以后卡放回、卡密退回，客户可以用原卡密重新兑换。服务器会再核对一次，系统看到这张卡有成功扣款的会拒绝。',
+        fields: [{ name: 'note', label: '你在卡台看到的（可选）', type: 'text' }],
+        confirmLabel: '放卡并退卡密', danger: true
+      });
+      if (!answers) return;
+      await releaseApiFailure(publicNo, { note: answers.note || '', after: async () => { await reopen(); await refreshOrdersIfVisible(); } }).catch(() => {});
+    });
     document.querySelector('#confirm-manual-cancellation')?.addEventListener('click', () => confirmManualCancellation(publicNo, { after: reopen })
       .catch((error) => showNotice(error?.message === 'manual_cancellation_not_eligible' ? '该订单当前不能这样收口。' : '没有记录，订单没有改变。')));
     document.querySelector('#resolve-unknown-submission')?.addEventListener('click', () => resolveUnknownSubmission(publicNo, { after: reopen })

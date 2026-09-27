@@ -23,7 +23,10 @@ export function orderBucket({ status, needsPerson }) {
  * 此刻唯一可做的动作。返回 null 表示这一单现在没有需要人做的。
  * 顺序即优先级：付款不明先于一切（钱的事），其次放卡，其次续费确认，最后手工标成功。
  */
-export function primaryOrderAction({ status, needsPerson, cancellationReviewRequired, failedAfterPayment, run }) {
+export function primaryOrderAction({
+  status, needsPerson, cancellationReviewRequired, failedAfterPayment, run,
+  apiFailureLocked = false, apiFailureReleasable = false, manualBlocked = false
+}) {
   const unknownRun = run && ['RECONCILE_ONLY', 'HUMAN_REQUIRED'].includes(run.status)
     && ['PAYMENT_UNKNOWN', 'PAYMENT_CONFIRMED'].includes(run.paymentState);
   if (PAYMENT_UNKNOWN_STATUSES.has(status) || (needsPerson && unknownRun)) {
@@ -33,6 +36,11 @@ export function primaryOrderAction({ status, needsPerson, cancellationReviewRequ
   if (status === 'CANCELLATION_REVIEW_REQUIRED' || (status === 'RECHARGE_SUCCESS' && cancellationReviewRequired)) {
     return { key: 'renewal', label: '已在账号里取消续费' };
   }
-  if (status === 'RECHARGE_FAILED' && !failedAfterPayment) return { key: 'manual', label: '标为已手工充值' };
+  // 欠账 23（2026-09-27）：API 单对方确认失败、卡还锁着 → 核实卡台没扣款后放卡退卡密；
+  // 系统已看到成功扣款的不给放，打开详情先查。三个布尔都由服务端同一份规则算好（api-failure-release-service）。
+  if (status === 'RECHARGE_FAILED' && apiFailureReleasable) return { key: 'release', label: '放卡退卡密' };
+  if (status === 'RECHARGE_FAILED' && apiFailureLocked) return { key: 'verify', label: '去核实' };
+  // 「标为已手工充值」只在后台真会接受时才摆（manualFulfillmentBlockedSql，与服务同一组守卫）。
+  if (status === 'RECHARGE_FAILED' && !failedAfterPayment && !manualBlocked) return { key: 'manual', label: '标为已手工充值' };
   return null;
 }

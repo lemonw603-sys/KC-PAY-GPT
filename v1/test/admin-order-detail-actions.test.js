@@ -69,3 +69,30 @@ test('已解决的 case 一个钮都不出（openCases 过滤在前）', async (
   });
   assert.doesNotMatch(html, /data-resolve-order-case="c-done"/);
 });
+
+// 欠账 23（2026-09-27）：API 失败单卡锁在对账 → 「放卡退卡密」；后端必拒的「标为已手工充值」不再摆。
+const API_FAILED = { order: { ...BASE.order, status: 'RECHARGE_FAILED' } };
+
+test('欠账 23: 资格合格 → 详情页出现「放卡退卡密」，且不摆后端必拒的「标为已手工充值」', async () => {
+  const html = await renderDetail({ ...API_FAILED,
+    apiFailureRelease: { eligible: true, locked: true, reasonCode: null }, manualFulfillment: { blocked: true } });
+  assert.match(html, /id="release-api-failure"/);
+  assert.match(html, /放卡退卡密/);
+  assert.doesNotMatch(html, /id="manual-fulfilled"/, 'API 失败单带直充单号，手工收口必拒，不摆');
+});
+
+test('欠账 23: 卡锁着但系统看到了成功扣款（不合格）→ 不给放卡按钮', async () => {
+  const html = await renderDetail({ ...API_FAILED,
+    apiFailureRelease: { eligible: false, locked: true, reasonCode: 'API_FAILURE_RELEASE_CHARGE_OBSERVED' }, manualFulfillment: { blocked: true } });
+  assert.doesNotMatch(html, /id="release-api-failure"/);
+  assert.doesNotMatch(html, /id="manual-fulfilled"/);
+});
+
+test('欠账 23: Browser 付款前失败（守卫不命中）→ 手工按钮照旧，没有放卡按钮；判断查不出来（blocked=null）时也照旧', async () => {
+  for (const manualFulfillment of [{ blocked: false }, { blocked: null }, undefined]) {
+    const html = await renderDetail({ ...API_FAILED,
+      apiFailureRelease: { eligible: false, locked: false, reasonCode: 'API_FAILURE_RELEASE_WRONG_EXECUTOR' }, manualFulfillment });
+    assert.match(html, /id="manual-fulfilled"/, JSON.stringify(manualFulfillment));
+    assert.doesNotMatch(html, /id="release-api-failure"/);
+  }
+});

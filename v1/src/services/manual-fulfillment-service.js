@@ -26,6 +26,37 @@ export class ManualFulfillmentError extends Error {
 export const MANUAL_FULFILLMENT_CLOSABLE = Object.freeze(['CREATED', 'CARD_READY', 'WAITING_FOR_SESSION', 'RECHARGE_FAILED']);
 export const MANUAL_FULFILLMENT_CONFIRMATION = '我已在系统外手工充值成功';
 
+/**
+ * 守卫的每一项：列名 → 相关子查询（外层订单别名 alias）。服务在事务里逐项读出来报「卡在哪一项」；
+ * 后台列表 / 抽屉用 manualFulfillmentBlockedSql 把同一组拼成一个布尔决定摆不摆按钮——
+ * 2026-09-27 整体排查：API 失败单一律带直充单号，按钮照摆、点了必拒（D-191：判断不许抄规则）。
+ */
+export function manualFulfillmentBlockerExpressions(alias = 'o') {
+  if (!/^[a-z_][a-z0-9_]*$/i.test(String(alias))) throw new TypeError('invalid SQL alias');
+  return {
+    live_or_paid_attempts: `(SELECT COUNT(*) FROM recharge_attempts mf_ra WHERE mf_ra.order_id = ${alias}.id AND mf_ra.funds_risk_state IN ('ACTIVE','UNKNOWN','SETTLED'))`,
+    consumed_ledger: `(SELECT COUNT(*) FROM card_consumption_ledger mf_l WHERE mf_l.order_id = ${alias}.id AND mf_l.status IN ('CONSUMED','RECONCILIATION'))`,
+    runs_past_arming: `(SELECT COUNT(*) FROM browser_runs mf_br INNER JOIN recharge_attempts mf_bra ON mf_bra.id = mf_br.recharge_attempt_id
+              WHERE mf_bra.order_id = ${alias}.id AND mf_br.payment_state NOT IN ('NOT_STARTED','PAYMENT_ARMED'))`,
+    payment_submits: `(SELECT COUNT(*) FROM browser_operations mf_bo INNER JOIN browser_runs mf_br2 ON mf_br2.id = mf_bo.browser_run_id
+              INNER JOIN recharge_attempts mf_bra2 ON mf_bra2.id = mf_br2.recharge_attempt_id
+              WHERE mf_bra2.order_id = ${alias}.id AND mf_bo.operation_type = 'PAYMENT_SUBMIT')`,
+    open_runs: `(SELECT COUNT(*) FROM browser_runs mf_br3 INNER JOIN recharge_attempts mf_bra3 ON mf_bra3.id = mf_br3.recharge_attempt_id
+              WHERE mf_bra3.order_id = ${alias}.id AND mf_br3.active_account_key_hmac IS NOT NULL)`,
+    recharge_order_no: `${alias}.recharge_order_no`,
+    recharge_card_key: `${alias}.recharge_card_key`
+  };
+}
+
+/** 布尔版：状态不在可收口之列，或任一守卫命中 → 后台必拒（与 closeManuallyFulfilled 的判断一致）。 */
+export function manualFulfillmentBlockedSql(alias = 'o') {
+  const e = manualFulfillmentBlockerExpressions(alias);
+  const counts = ['live_or_paid_attempts', 'consumed_ledger', 'runs_past_arming', 'payment_submits', 'open_runs']
+    .map((key) => `${e[key]} > 0`);
+  const texts = ['recharge_order_no', 'recharge_card_key'].map((key) => `COALESCE(${e[key]}, '') <> ''`);
+  return `(${alias}.status NOT IN (${MANUAL_FULFILLMENT_CLOSABLE.map((s) => `'${s}'`).join(', ')}) OR ${[...counts, ...texts].join(' OR ')})`;
+}
+
 export function createManualFulfillmentService({ pool } = {}) {
   if (!pool?.getConnection) throw new TypeError('pool is required');
 
@@ -55,17 +86,7 @@ export function createManualFulfillmentService({ pool } = {}) {
         throw new ManualFulfillmentError('RECHARGE_FAILED orders already released their card and ledger', 'MANUAL_FULFILLMENT_CARD_USED_NOT_ALLOWED', 409);
       }
       const [[evidence]] = await connection.query(
-        `SELECT
-           (SELECT COUNT(*) FROM recharge_attempts ra WHERE ra.order_id = o.id AND ra.funds_risk_state IN ('ACTIVE','UNKNOWN','SETTLED')) AS live_or_paid_attempts,
-           (SELECT COUNT(*) FROM card_consumption_ledger l WHERE l.order_id = o.id AND l.status IN ('CONSUMED','RECONCILIATION')) AS consumed_ledger,
-           (SELECT COUNT(*) FROM browser_runs br INNER JOIN recharge_attempts bra ON bra.id = br.recharge_attempt_id
-              WHERE bra.order_id = o.id AND br.payment_state NOT IN ('NOT_STARTED','PAYMENT_ARMED')) AS runs_past_arming,
-           (SELECT COUNT(*) FROM browser_operations bo INNER JOIN browser_runs br ON br.id = bo.browser_run_id
-              INNER JOIN recharge_attempts bra ON bra.id = br.recharge_attempt_id
-              WHERE bra.order_id = o.id AND bo.operation_type = 'PAYMENT_SUBMIT') AS payment_submits,
-           (SELECT COUNT(*) FROM browser_runs br INNER JOIN recharge_attempts bra ON bra.id = br.recharge_attempt_id
-              WHERE bra.order_id = o.id AND br.active_account_key_hmac IS NOT NULL) AS open_runs,
-           o.recharge_order_no, o.recharge_card_key
+        `SELECT ${Object.entries(manualFulfillmentBlockerExpressions('o')).map(([key, sql]) => `${sql} AS ${key}`).join(',\n           ')}
          FROM orders o WHERE o.id = ?`, [order.id]);
       const blockers = Object.entries(evidence).filter(([, value]) => (typeof value === 'number' ? value > 0 : Boolean(value)));
       if (blockers.length) {

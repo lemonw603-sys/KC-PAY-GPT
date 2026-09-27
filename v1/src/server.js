@@ -32,6 +32,7 @@ import { createAdminOperationsService } from './services/admin-operations-servic
 import { createOrderCancellationService } from './services/order-cancellation-service.js';
 import { createManualCancellationService } from './services/manual-cancellation-service.js';
 import { createUnknownSubmissionResolveService } from './services/unknown-submission-resolve-service.js';
+import { createApiFailureReleaseService } from './services/api-failure-release-service.js';
 import { createManualFulfillmentService } from './services/manual-fulfillment-service.js';
 import { createCardRetirementService } from './services/card-retirement-service.js';
 import { createDailyReconciliationService } from './services/daily-reconciliation-service.js';
@@ -156,6 +157,7 @@ const startBusiness = createAdminStartBusinessService({ adminReadService, cardSt
 const cancelAdminOrder = createOrderCancellationService({ pool });
 const confirmManualCancellation = createManualCancellationService({ pool });
 const resolveUnknownSubmission = createUnknownSubmissionResolveService({ pool });
+const releaseApiFailure = createApiFailureReleaseService({ pool });
 const manualFulfillment = createManualFulfillmentService({ pool });
 const cardRetirement = createCardRetirementService({ pool });
 // 第⑤步（面四③）：日对账的最新一份报告 —— 后台看板与「需要我处理」队列（第⑥块）读它。
@@ -306,6 +308,7 @@ const app = createApp({
   ,cancelAdminOrder
   ,confirmManualCancellation
   ,resolveUnknownSubmission
+  ,releaseApiFailure
   ,listCardRetirementCandidates: cardRetirement.list
   ,runDailyReconciliation: () => dailyReconciliation.run({ persist: false })
   ,confirmCardRetired: cardRetirement.confirmRetired

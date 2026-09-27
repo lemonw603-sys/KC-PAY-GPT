@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { persistCardTransactions } from '../src/db/repositories/card-transaction-repository.js';
+import { successfulPurchaseSql } from '../src/domain/card-purchase-evidence.js';
 
 test('a completed card sync runs the narrow post-failure reconciliation release', async () => {
   const queries = [];
@@ -29,10 +30,18 @@ test('a completed card sync runs the narrow post-failure reconciliation release'
   assert.match(ledgerRelease.sql, /ra\.status = 'FAILED'.*ra\.funds_risk_state = 'CLEARED'/s);
   assert.match(ledgerRelease.sql, /c\.last_transaction_synced_at >= ra\.finished_at/);
   assert.match(ledgerRelease.sql, /c\.current_balance >= l\.amount/);
-  assert.match(ledgerRelease.sql, /transaction_type = 'PURCHASE'/);
-  assert.match(ledgerRelease.sql, /LOWER\(purchase\.status\) = 'success'/);
+  // 「成功扣款」与放卡退卡密 / 每周自检同一份口径；highvcc 的 COMPLETE 也算扣款（2026-09-27 前只认 success）。
+  assert.ok(ledgerRelease.sql.includes(successfulPurchaseSql('purchase')));
+  assert.match(successfulPurchaseSql('purchase'), /'complete', 'success', 'settled'/);
 
   const assignmentRelease = queries.find(({ sql }) => sql.includes('UPDATE card_assignment_history h'));
   assert.ok(assignmentRelease);
   assert.deepEqual(assignmentRelease.parameters, ['card-1']);
+
+  // 卡自动放回后，那条「充值失败，要你处理」一起关掉（只关本次放回的订单）。
+  const alertResolve = queries.find(({ sql }) => sql.includes('UPDATE operator_alerts oa'));
+  assert.ok(alertResolve);
+  assert.deepEqual(alertResolve.parameters, ['card-1']);
+  assert.match(alertResolve.sql, /CONCAT\('api-order-failed:', l\.order_id\)/);
+  assert.match(alertResolve.sql, /l\.release_reason = 'provider failure confirmed; card sync found no successful purchase'/);
 });

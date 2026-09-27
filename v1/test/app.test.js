@@ -1268,3 +1268,49 @@ test('D-394: abandon-pre-payment needs login, the sensitive guards and the typed
     assert.deepEqual(await refused.json(), { error: 'pre_payment_run_lease_active' });
   });
 });
+
+test('欠账 23: release-api-failure needs login and a same-origin request (D-119/D-129 write guards); the admin is the actor; refusals reach the page as codes', async () => {
+  const adminAuth = createAdminSessionAuth({
+    passwordHash: await hashAdminPassword('fixture admin password', { salt: Buffer.alloc(16, 21) }),
+    sessionSecret: Buffer.alloc(32, 22), secureCookies: false
+  });
+  const calls = [];
+  const app = createApp({
+    adminAuth,
+    releaseApiFailure: async (publicNo, input) => {
+      calls.push({ publicNo, input });
+      if (publicNo === 'PJV1-CHARGEDCHARGEDCHARG0') {
+        throw new PublicApiError('charged', { code: 'API_FAILURE_RELEASE_CHARGE_OBSERVED', status: 409 });
+      }
+      return { publicNo, released: 1, cdkReturned: true, cardLast4: '5270' };
+    }
+  });
+  await withServer(app, async (baseUrl) => {
+    const path = (p) => `${baseUrl}/api/v1/admin/orders/${p}/release-api-failure`;
+    assert.equal((await fetch(path('PJV1-AAAAAAAAAAAAAAAAAAAA'), { method: 'POST' })).status, 401, 'not logged in');
+    const login = await fetch(`${baseUrl}/api/v1/admin/session`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: 'fixture admin password' })
+    });
+    const cookie = login.headers.get('set-cookie').split(';')[0];
+    const crossOrigin = await fetch(path('PJV1-AAAAAAAAAAAAAAAAAAAA'), {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cookie },
+      body: JSON.stringify({ confirmation: '确认没扣款 PJV1-AAAAAAAAAAAAAAAAAAAA' })
+    });
+    assert.equal(crossOrigin.status, 403, 'a logged-in request from outside the admin page is refused');
+    assert.deepEqual(await crossOrigin.json(), { error: 'admin_origin_required' });
+    assert.equal(calls.length, 0);
+    const sensitiveCookie = await stepUp(baseUrl, cookie);
+    const post = (p, body) => fetch(path(p), { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: sensitiveCookie, Origin: baseUrl }, body: JSON.stringify(body) });
+
+    const ok = await post('PJV1-AAAAAAAAAAAAAAAAAAAA', { confirmation: '确认没扣款 PJV1-AAAAAAAAAAAAAAAAAAAA', note: '卡台只有被拒记录', actorId: 'spoofed' });
+    assert.equal(ok.status, 200);
+    assert.deepEqual(await ok.json(), { publicNo: 'PJV1-AAAAAAAAAAAAAAAAAAAA', released: 1, cdkReturned: true, cardLast4: '5270' });
+    assert.equal(calls[0].input.confirmation, '确认没扣款 PJV1-AAAAAAAAAAAAAAAAAAAA');
+    assert.equal(calls[0].input.note, '卡台只有被拒记录');
+    assert.notEqual(calls[0].input.actorId, 'spoofed', 'the actor comes from the session, not the body');
+
+    const refused = await post('PJV1-CHARGEDCHARGEDCHARG0', { confirmation: '确认没扣款 PJV1-CHARGEDCHARGEDCHARG0' });
+    assert.equal(refused.status, 409);
+    assert.deepEqual(await refused.json(), { error: 'api_failure_release_charge_observed' });
+  });
+});

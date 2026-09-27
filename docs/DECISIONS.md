@@ -5879,3 +5879,13 @@ Lemon：「1 pro，从 plus 升级的，补的差价；2 晚些充；3 我看情
 1. **事实**：8718 卡台 `PURCHASE COMPLETE` $82.11（PHP 5126.92，2026-09-21T01:44:24Z）＝ Lemon 手动把一个号从 Plus 升到 Pro、用这张卡补差价，不经本系统，账本不知道（已用 0）。
 2. **按 D-361「跑过 Pro 的卡不再分配」停用**：08:49:14 UTC 走后台「停用」同一服务（`card-operational-override-service.set`，RETIRED，理由 `MANUAL_USED: …`，actor `claude:lemon-approved-2026-09-27`；撤回＝卡片页该行「撤销」，删 override 并留 `card_state_events`）。复核：API 行可分配 0 张、下单入口仍 `{"ok":true}`（来单会等卡）。**后果**：第一单本身没卡，要 highvcc 钱包 ≥ $36.50 才开得出（现 $33.80，差 $2.70）；Lemon「晚些充」。4022 删不删 Lemon 看情况。
 3. **漏法进脚本**（CLAUDE.md 收尾第 4 条）：`weekly-check.sh` + `weekly-readonly-probe.mjs` 新增「可分配卡里卡台成功扣款次数 > 账本已用次数」→ [提醒]（系统外用过 / 续费没取消掉）。成功口径按生产实际状态值（highvcc COMPLETE、hnskj success / SETTLED；DECLINED / PENDING / failed 不算）；取不到值报 [失败] 不当通过（四种输入分支已测）。生产上不加可分配过滤时标出 9 张（含 8718、0951 等手动用过的卡），加过滤后 0 张。
+
+## D-404（2026-09-27 UTC+8 晚）API 失败单「放卡退卡密」；请求显式带地区 PH（欠账 23 / 24）
+
+Lemon 看完解释后：「做」。只动 `v1/`（browser-mvp 不动）。
+- **放卡退卡密**（`services/api-failure-release-service.js`，端点 `POST /api/v1/admin/orders/:publicNo/release-api-failure`，确认语 `确认没扣款 <单号>`，同源写守卫）：API 路线 + RECHARGE_FAILED + 账本 RECONCILIATION + 付款尝试 FAILED/CLEARED 且无 ACTIVE/UNKNOWN/SETTLED + 系统在这张卡上没看到占用之后的成功扣款 → 一个事务：账本 RELEASED、占用解除、卡密退回（`returnCdkForOrderInTransaction`）、关 `api-order-failed` 告警、记 ADMIN 订单事件；订单状态与卡库存状态不动。判断只有一份：服务、列表按钮、「需要我处理」、抽屉都用同一组 SQL 表达式。
+- **需要我处理**：卡还锁着的 API 失败单进这一桶（数字与点进去的筛选两处都改；第一次只改了数字那处，本机真页面「需要我处理 1」点进去是空的，补改并加真库测试守）；看到成功扣款的给「去核实」。
+- **不再摆必拒的「标为已手工充值」**：守卫拆成共享表达式（`manualFulfillmentBlockerExpressions` / `manualFulfillmentBlockedSql`），服务、列表、抽屉同一份。
+- **「成功扣款」同一口径**（`domain/card-purchase-evidence.js`）：自动放卡以前只认 `success`，highvcc 的 `COMPLETE` 不算——收严为 complete / success / settled；每周自检的账外扣款也用它。自动放卡时一并关 `api-order-failed` 告警。
+- **推送文案**改为指向真实按钮；**直充请求显式带 `region: PH`**（与 09-27 建单成功那次逐字段一致）。
+验证：v1 单测 1194（1116 / 0 / 78）；真数据库 77 / 0 / 1（新增 2 组：完整放卡流程、COMPLETE 挡住 / DECLINED 自动放）；变异 16 + 1 全被抓（抽查失败信息对得上）；本机演练（假直充平台）真页面 1440×730：需要我处理 → 放卡退卡密 → 确认框 → 放卡、卡密可重兑、告警关、行尾不再摆手工按钮；订单页与营业条视觉比对与原型一致。另记欠账 25（进度文案「付款前关闭」不准、highvcc 抽屉仍摆同步按钮）。

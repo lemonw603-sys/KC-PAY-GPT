@@ -80,6 +80,10 @@ function normalizeBaseUrl(value) {
  * This is intentionally separate from createDirectOrder so pre-payment
  * validation cannot accidentally submit a charge.
  */
+// 地区显式传 PH（欠账 24，2026-09-27）：对方文档说不传默认 PH，但 09-27 建单成功那次是显式传的；
+// 生产请求与验过的那一次逐字段一致，不押对方默认值不变。
+export const ZZSHU_REGION = 'PH';
+
 export function buildDirectOrderRequest({ cardNumber, expMonth, expYear, cvv, token, planType = 'plus' }) {
   return {
     path: '/third-party/orders/direct',
@@ -91,7 +95,8 @@ export function buildDirectOrderRequest({ cardNumber, expMonth, expYear, cvv, to
       expYear: Number(expYear),
       cvv: String(cvv),
       token,
-      planType: String(planType)
+      planType: String(planType),
+      region: ZZSHU_REGION
     }
   };
 }

@@ -331,6 +331,11 @@ test('admin orders page is one table plus one drawer without permits, tags, note
   assert.doesNotMatch(html, /id="order-summary"|id="order-status-filter"|<option value="REVIEW_REQUIRED">|<option value="ACTIVE">|<option value="FINISHED">/);
   assert.match(ordersScript, /groupByCdk: true/);
   assert.match(ordersScript, /取消并放卡/);
+  // 欠账 23：列表行动作「放卡退卡密」先确认再走 actions.release；admin.js 接到正式端点，确认语与后端要求逐字一致。
+  assert.match(ordersScript, /key === 'release'[\s\S]{0,400}askConfirm\([\s\S]{0,600}actions\.release\(no/);
+  assert.match(script, /release: \(publicNo, \{ note, after \}\) => releaseApiFailure\(publicNo, \{ note, after \}\)/);
+  assert.match(script, /\/api\/v1\/admin\/orders\/\$\{encodeURIComponent\(publicNo\)\}\/release-api-failure/);
+  assert.match(script, /confirmation: `确认没扣款 \$\{publicNo\}`/);
   assert.match(script, /id="manual-fulfilled"/);
   assert.match(script, /人工付款已完成/);
   assert.match(script, /确认 20X 已升级/);
