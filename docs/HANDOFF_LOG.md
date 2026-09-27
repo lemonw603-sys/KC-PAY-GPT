@@ -3893,3 +3893,7 @@ Lemon：「1 可以」。先把 7 行 override 原值（含 HEX 原因）存到�
 ## 2026-09-27｜D-405 第二批实现与验证（18:4x～19:1x UTC，未发布）
 
 Lemon：「2 开始做吧」+ 订单页筛选条与表头上下太挤。过程要点：线上 Caddy 对 ops 只挡 `/assets/*`，`/admin/assets/*` 能过 → 字体只需后台自开同源路径，不动 Caddy。删全局 `!important` 后发现各页 input/select/button 合写规则（0,1,1）会把下拉右留白压没，统一规则改用 `:root:root select`（0,2,1），并把「各页不许写更高特异性的下拉规则」写进测试。旧测试守的正是那条全局 `!important`（「箭头不压字」），改为守新写法。量表单时发现导入卡、账单地址表单的按钮被 grid 拉到 53～54（改前约 61），一并压到 34 并对齐字段下沿。小字扫描发现 `<small>` 没写字号时浏览器默认缩到 83%（诊断、设置有 10～10.8px），加下限。视觉契约第一次整跑时订单页 prepare 没点到，单跑与再整跑两次都过，未复现。
+
+## 2026-09-27｜D-405 第二批发布（19:15～19:2x UTC）
+
+Lemon：「1发布 2 可以」。探针全过 → 非终态 0 / ACTIVE 0 → prepare（81/0/1、清单 1414、备份 `pojia-20260927T174514Z` 之后的新备份 `pojia-20260927T191850Z`）→ switch 19:19:09 UTC。核实：三进程 cwd 新 release、err 0、operator-watch 新代码 2 轮；本机直连公网 `ops.vibebridge.top`：`/admin/assets/fonts/*.woff2` 4 个 200 font/woff2、`/assets/fonts/*` 404、`workbench.css?v=25` 等六份资源含新规则（第一次核实命令里我用了变量名 `path`，在 zsh 里覆盖了 PATH，后半截命令全部找不到，换名重跑）。事实表 4 行更新，state-check 20 项一致。
