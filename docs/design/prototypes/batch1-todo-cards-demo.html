@@ -20,10 +20,9 @@
 /* 黄色整行底色改成行首小标签（第二批的做法，这里先用上，方便看清定位） */
 .cardtable tr.is-due td,.cardretire tr.is-due td{background:transparent}
 .due-tag{display:inline-block;margin-right:6px;padding:1px 6px;border-radius:5px;font-size:11px;font-weight:600;color:var(--wb-warn,#9c6a1f);background:var(--wb-warn-soft,#fdf4e6);vertical-align:1px}
-/* 从工作台跳过来：目标行左侧一道色条 + 淡底闪一下，目标按钮描边，几秒后淡掉 */
-@keyframes wbLanding{0%{background:hsla(168,45%,45%,.16)}100%{background:transparent}}
+/* 从工作台跳过来：目标处淡底 + 一圈描边，3 秒内淡掉（不留永久色条） */
+@keyframes wbLanding{0%{background:hsla(168,45%,45%,.14);box-shadow:0 0 0 2px hsla(168,55%,35%,.55)}100%{background:transparent;box-shadow:0 0 0 2px hsla(168,55%,35%,0)}}
 tr.is-landing td{animation:wbLanding 3s ease-out 1}
-tr.is-landing td:first-child{box-shadow:inset 3px 0 0 var(--wb-a,#2a8d77)}
 .cardbtn.is-landing{outline:2px solid var(--wb-a,#2a8d77);outline-offset:2px}
 .landing-banner{display:flex;align-items:center;gap:12px;margin:0 0 10px;padding:8px 12px 8px 8px;border-radius:11px;background:var(--wb-a-soft,#e3f2ee);color:var(--wb-t);font-size:12.5px}
 /* 回工作台 · 方案 A：提示条左侧的胶囊 */
@@ -42,7 +41,7 @@ tr.is-landing td:first-child{box-shadow:inset 3px 0 0 var(--wb-a,#2a8d77)}
 .cardtable table,.cardretire table{table-layout:fixed}
 .token-box{display:flex;align-items:center;gap:10px;margin-top:10px;padding:12px;border:1px solid var(--wb-bd);border-radius:12px;background:var(--wb-s)}
 .token-box input{flex:1;height:34px;border:1px solid var(--wb-bd);border-radius:9px;padding:0 10px;font:inherit;font-size:12.5px}
-.token-box.is-landing{animation:wbLanding 3s ease-out 1;box-shadow:inset 3px 0 0 var(--wb-a,#2a8d77)}
+.token-box.is-landing{animation:wbLanding 3s ease-out 1}
 /* 待销清单「卡台上」 */
 .src-state{display:inline-flex;align-items:center;gap:5px;font-size:12px;white-space:nowrap}
 .src-state i{width:7px;height:7px;border-radius:50%;display:inline-block}
