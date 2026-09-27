@@ -1,0 +1,333 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>第二批演示 · 视觉</title>
+<link rel="icon" href="/admin/assets/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/admin/assets/admin.css?v=30">
+<link rel="stylesheet" href="/admin/assets/workbench.css?v=24">
+<link rel="stylesheet" href="/admin/assets/cards.css?v=7">
+<link rel="stylesheet" href="/admin/assets/cdks.css?v=1">
+<link rel="stylesheet" href="/admin/assets/orders.css?v=3">
+<style>
+/* ---- 演示外壳（不是产品的一部分） ---- */
+.demo-bar{position:sticky;top:0;z-index:40;display:flex;align-items:center;gap:12px;margin:0 0 14px;padding:9px 12px;border:1px dashed var(--wb-bd);border-radius:11px;background:var(--wb-s);font-size:12.5px;color:var(--wb-t2)}
+.demo-bar b{color:var(--wb-t)}
+.demo-bar .opt{display:inline-flex;gap:2px;padding:2px;border-radius:8px;background:var(--wb-s3)}
+.demo-bar .opt button{border:0;background:none;padding:4px 12px;border-radius:6px;font:inherit;font-size:12.5px;color:var(--wb-t2);cursor:pointer}
+.demo-bar .opt button[aria-pressed="true"]{background:var(--wb-s);color:var(--wb-a-ink);font-weight:600;box-shadow:0 1px 2px hsla(176,25%,10%,.12)}
+.demo-bar label{display:inline-flex;align-items:center;gap:5px;cursor:pointer}
+.demo-bar .sep{width:1px;height:18px;background:var(--wb-bd)}
+.demo-note{margin:0 0 12px;padding:9px 13px;border:1px dashed var(--wb-bd);border-radius:10px;background:var(--wb-s);font-size:12px;color:var(--wb-t2);line-height:1.65}
+.demo-note b{color:var(--wb-t)}
+.demo-new{display:inline-block;margin-left:6px;padding:1px 6px;border-radius:5px;font-size:11px;font-weight:700;color:var(--wb-a-ink);background:var(--wb-a-soft);vertical-align:1px;white-space:nowrap}
+[data-when="after"]{display:none}
+body.after [data-when="after"]{display:revert}
+body.after [data-when="before"]{display:none}
+body.after span[data-when="after"],body.after b[data-when="after"],body.after i[data-when="after"]{display:inline}
+
+/* ================= 修改后：卡台下拉与「切换」分开 ================= */
+body.after .workbench .wb-pair{gap:6px}
+body.after .workbench .wb-pair .wb-field{border-radius:7px;border-right:1px solid var(--wb-bd)}
+body.after .workbench .wb-pair .wb-btn{border-radius:7px}
+
+/* ================= 修改后：点数挪进「卡与钱」 ================= */
+.wb-provrow.is-points .wb-provhead{padding-bottom:0}
+.wb-pts{font:600 12.5px var(--wb-fm);color:var(--wb-t)}
+.wb-pts-low{color:var(--wb-warn)}
+
+/* ================= 修改后：下拉收起态统一（一种样子，两种尺寸） ================= */
+/* 实现时删掉 admin.css 里 select{padding-right:40px !important …} 那条全局规则，这里只能用 !important 盖过它 */
+body.after .demo-scope select,.g-new select{appearance:none;-webkit-appearance:none;box-sizing:border-box;height:34px;min-height:34px;
+  padding:0 30px 0 11px !important;border:1px solid var(--wb-bd);border-radius:9px;background-color:var(--wb-s);color:var(--wb-t);
+  font:inherit;font-size:13px;font-weight:500;line-height:32px;cursor:pointer;
+  background-image:linear-gradient(45deg,transparent 50%,var(--wb-t2) 50%),linear-gradient(135deg,var(--wb-t2) 50%,transparent 50%) !important;
+  background-position:calc(100% - 16px) 50%,calc(100% - 11px) 50% !important;background-size:5px 5px !important;background-repeat:no-repeat !important}
+body.after .demo-scope select:hover,.g-new select:hover{border-color:var(--wb-t3)}
+body.after .demo-scope select:focus-visible,.g-new select:focus-visible{outline:none;border-color:var(--wb-a);box-shadow:0 0 0 3px var(--wb-a-soft)}
+body.after .demo-scope select:disabled,.g-new select:disabled{background-color:var(--wb-s3);color:var(--wb-t3);cursor:not-allowed}
+/* 小号：只在营业条（旁边的按钮也是 28） */
+body.after .demo-scope .wb-ops select,.g-new select.is-sm{height:28px;min-height:28px;padding:0 26px 0 9px !important;border-radius:7px;font-size:12.5px;line-height:26px;
+  background-position:calc(100% - 14px) 52%,calc(100% - 9px) 52% !important}
+/* 表单里旁边的输入框一起从 42 降到 34，不然一高一矮 */
+body.after .demo-scope .ask-field input,body.after .demo-scope .ask-field textarea,.g-new input{box-sizing:border-box;min-height:34px;border:1px solid var(--wb-bd);border-radius:9px;padding:6px 11px;font:inherit;font-size:13px;color:var(--wb-t)}
+.g-new input{height:34px}
+
+/* ================= 修改后：弹窗用工作台的颜色（原来是旧版蓝灰） ================= */
+body.after .ask-form h3{color:var(--wb-t)}
+body.after .ask-message{color:var(--wb-t2)}
+body.after .ask-field{color:var(--wb-t2);font-weight:600}
+body.after .ask-field small{font-weight:400;color:var(--wb-t3)}
+
+/* ================= 修改后：订单页 ================= */
+body.after .od-table td.od-plan,body.after .od-table th.th-plan{padding-left:28px}
+body.after .od-table col.c-plan{width:84px}
+.od-table col.c-end{width:112px}
+.od-time.is-none{color:var(--wb-t3)}
+
+/* ================= 下拉一览 ================= */
+.gal{display:grid;grid-template-columns:200px 1fr 1fr;gap:0;border:1px solid var(--wb-bd);border-radius:12px;overflow:hidden;background:var(--wb-s)}
+.gal>div{padding:12px 14px;border-top:1px solid var(--wb-bd);display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12.5px;color:var(--wb-t2)}
+.gal>div.h{border-top:0;background:var(--wb-s2);font-weight:700;color:var(--wb-t)}
+.gal>div.k b{color:var(--wb-t)}
+.gal>div.k small{display:block;width:100%;color:var(--wb-t3)}
+.g-old{--wb-bd:hsl(168,14%,88%)}
+.g-old select{font-size:13px}
+.g-old .is-42{height:42px;border:1px solid rgb(219,228,238);border-radius:9px;font-size:12px}
+.g-old .is-35{height:35px;padding:9px 11px;border:1px solid rgb(219,228,238);border-radius:10px;font-size:12px;font-weight:500;color:rgb(23,40,62)}
+.g-old input{height:42px;border:1px solid rgb(219,228,238);border-radius:9px;padding:0 11px;font:inherit;font-size:12px}
+.g-old .is-sm{height:28px;border:1px solid var(--wb-bd);border-radius:7px;font-size:12.5px}
+.g-old .is-34{height:34px;border:1px solid var(--wb-bd);border-radius:9px}
+.g-meas{font:11px var(--wb-fm);color:var(--wb-t3)}
+</style>
+</head>
+<body class="after">
+<div class="admin-shell">
+  <aside class="sidebar">
+    <a class="admin-brand" href="#" aria-label="首页"><span class="brand-label">OPERATIONS</span><strong>Plus 运营后台 <span aria-hidden="true">✦</span></strong><small>内部管理中心</small></a>
+    <nav aria-label="后台导航">
+      <button class="nav-item is-active" type="button" data-go="overview"><span class="ic" aria-hidden="true">◱</span>工作台</button>
+      <button class="nav-item" type="button" data-go="orders"><span class="ic" aria-hidden="true">≡</span>订单</button>
+      <button class="nav-item" type="button" data-go="stock"><span class="ic" aria-hidden="true">▣</span>卡片</button>
+      <button class="nav-item" type="button" data-go="selects"><span class="ic" aria-hidden="true">▾</span>下拉一览</button>
+    </nav>
+  </aside>
+
+  <main class="main-area">
+    <header class="topbar"><div class="topbar-title"><h1 id="view-title">今天的运行情况</h1></div><span class="sync-time">演示页 · 数字照 09-28 02:20 的生产现状；订单行是示例</span></header>
+
+    <div class="demo-bar">
+      <b>第二批演示</b>
+      <span class="opt" role="group" aria-label="看哪一版"><button type="button" data-ver="before" aria-pressed="false">修改前（线上现在）</button><button type="button" data-ver="after" aria-pressed="true">修改后</button></span>
+      <span class="sep"></span>
+      <span>清晰度三项（只在「修改后」生效）：</span>
+      <label><input type="checkbox" data-clear="font" checked> 字体真的加载</label>
+      <label><input type="checkbox" data-clear="line" checked> 边框、浅灰字加深</label>
+      <label><input type="checkbox" data-clear="size" checked> 小字放大到 12</label>
+    </div>
+
+    <!-- ================= 工作台 ================= -->
+    <section id="v-overview" class="view workbench demo-scope">
+      <p class="demo-note">
+        <b>① 营业条</b>：「API 充值」后面不再挂点数，点数挪进下面「卡与钱」；卡台下拉按实际文字收窄，和「切换」分开。
+        <b>⑥ 清晰度</b>：线上后台的字体其实没加载上（后台域名把字体地址挡了，线上 4 个字体文件都是 404），数字和英文用的是系统替补字体；另外边框很淡（对白底只有 1.29 : 1）、有约 70 处 10～11.5px 的小字。这三样是不是你说的「模糊」，我没法替你判断——切「修改前 / 修改后」对比着看，三项也可以单独关掉。
+      </p>
+
+      <div class="wb-ops">
+        <div class="wb-grp"><button type="button" class="wb-switch is-on"><span class="wb-tg"></span><b>接单</b></button><button type="button" class="wb-switch is-on"><span class="wb-tg"></span><b>派单</b></button><button type="button" class="wb-switch is-on"><span class="wb-tg"></span><b>付款</b></button></div>
+        <div class="wb-grp"><div class="wb-seg2"><button type="button" class="is-on" disabled><span data-when="before">API 充值 · 15 点</span><span data-when="after">API 充值</span></button><button type="button">浏览器自动化</button></div></div>
+        <div class="wb-grp"><span class="wb-k">API</span><span class="wb-pair"><select class="wb-field" aria-label="API 卡台"><option>highvcc</option><option>HNSKJ</option></select><button type="button" class="wb-btn sm out">切换</button></span></div>
+        <form class="wb-grp wb-cdk" onsubmit="return false"><select class="wb-field" aria-label="产品"><option>Plus</option><option>Pro 5X</option><option>Pro 20X</option></select><input class="wb-field wb-num" type="number" value="1" aria-label="数量"><button class="wb-btn pri" type="button">生成并复制</button></form>
+      </div>
+
+      <p class="wb-seclabel">今天生意怎么样</p>
+      <div class="wb-wall">
+        <button type="button" class="wb-kpi"><span class="wb-lb">今日单数</span><span class="wb-v">0</span><span class="wb-sub">处理中 0</span></button>
+        <button type="button" class="wb-kpi"><span class="wb-lb">近7天成功率</span><span class="wb-v">0%</span><span class="wb-sub">成功 0 / 样本 1</span></button>
+        <button type="button" class="wb-kpi is-pending" disabled><span class="wb-lb">自动完成率</span><span class="wb-v">待接入</span><span class="wb-sub"></span></button>
+        <div class="wb-kpi"><span class="wb-lb">今日花费</span><span class="wb-v">0.00</span><span class="wb-sub">HNSKJ 0.00 · highvcc 0.00</span></div>
+        <button type="button" class="wb-kpi is-pending" disabled><span class="wb-lb">异常支出</span><span class="wb-v">待接入</span><span class="wb-sub"></span></button>
+      </div>
+
+      <div class="wb-mid">
+        <section class="wb-card"><div class="wb-ch"><div><p class="wb-kick">卡与钱</p><h2>卡还够不够</h2></div><span class="wb-ro">只读</span></div>
+          <div class="wb-cb">
+            <div class="wb-provrow">
+              <div class="wb-provhead"><b>HNSKJ</b><span class="wb-chip mute"><span class="wb-d"></span><span>钱包 104.79 USD · 查询于 02:18</span></span><button type="button" class="wb-btn out sm">刷新余额</button><span class="wb-spent is-zero">今天没花钱</span></div>
+              <div class="wb-prods"><span class="wb-prod"><b>Plus</b><span class="wb-prod-n">剩 <i>0</i> 张 · 能充 <i>0</i> 单</span><small title="自动补"><span class="wb-how">自动补</span><span class="wb-how-s">自动</span></small></span></div>
+            </div>
+            <div class="wb-provrow">
+              <div class="wb-provhead"><b>highvcc</b><span class="wb-chip mute"><span class="wb-d"></span><span>钱包 20.26 USD · 查询于 02:21</span></span><button type="button" class="wb-btn out sm">刷新余额</button><button type="button" class="wb-btn out sm">更新登录</button><span class="wb-spent is-zero">今天没花钱</span></div>
+              <div class="wb-prods"><span class="wb-prod is-ok"><b>Plus</b><span class="wb-prod-n">剩 <i>1</i> 张 · 能充 <i>1</i> 单</span><small title="自动补"><span class="wb-how">自动补</span><span class="wb-how-s">自动</span></small></span></div>
+            </div>
+            <div class="wb-provrow is-points" data-when="after">
+              <div class="wb-provhead"><b>直充平台</b><span class="wb-chip mute"><span class="wb-d"></span><span>剩 <b class="wb-pts">15</b> 点 · 查询于 02:20</span></span><span class="demo-new">从路线按钮挪来</span></div>
+            </div>
+            <p class="wb-total">合计可分配 <b class="wb-mono">1</b> 张</p>
+          </div>
+        </section>
+        <section class="wb-card"><div class="wb-ch"><div><p class="wb-kick">昨夜日对账</p><h2>对上没有</h2></div><button class="wb-btn link" type="button">看逐张 →</button></div>
+          <div class="wb-cb"><div class="wb-recon">
+            <div class="wb-r is-bad"><span class="wb-v">7</span><span class="wb-lb">差异<small>无主扣款</small></span></div>
+            <div class="wb-r"><span class="wb-v">2</span><span class="wb-lb">待登记<small>手动用卡</small></span></div>
+            <div class="wb-r"><span class="wb-v">32</span><span class="wb-lb">无法核对<small>无期初金额</small></span></div>
+            <div class="wb-r"><span class="wb-v">0</span><span class="wb-lb">连续两次<small>persistent</small></span></div>
+          </div></div>
+        </section>
+      </div>
+
+      <section class="wb-card">
+        <div class="wb-ch"><div><p class="wb-kick">今日订单</p><h2>正在跑与刚完成</h2></div><span class="demo-new">示例行（今天生产 0 单）</span><button class="wb-btn link" type="button">进订单页 →</button></div>
+        <div class="wb-cb"><div class="wb-tblwrap"><table class="wb-tbl">
+          <thead><tr><th>订单</th><th>客户</th><th>产品</th><th>路线</th><th>进度</th><th>提交</th></tr></thead>
+          <tbody>
+            <tr><td class="wb-mono">PJV1-7xQe…</td><td>a.chen@example.com</td><td>Plus</td><td>API</td><td><span class="wb-chip ok"><span class="wb-d"></span>已成功</span></td><td class="wb-mono">01:12</td></tr>
+            <tr><td class="wb-mono">PJV1-Kp2m…</td><td>lin.w@example.com</td><td>Plus</td><td>API</td><td><span class="wb-chip warn"><span class="wb-d"></span>付款确认中</span></td><td class="wb-mono">01:40</td></tr>
+          </tbody></table></div></div>
+      </section>
+    </section>
+
+    <!-- ================= 订单 ================= -->
+    <section id="v-orders" class="view demo-scope" hidden>
+      <p class="demo-note"><b>⑦ 订单页</b>：邮箱和产品之间原来只隔约 4px，拉开到 28px；「提交时间」后面加「结束时间」（成功、失败、关闭都显示；还在处理的显示「—」）。生产 86 张已结束的单里有 2 张老单没记结束时间，也显示「—」。下拉换成统一样子。</p>
+      <section class="od-page">
+        <section class="cdk-block">
+          <form class="cdk-filters" onsubmit="return false">
+            <input type="search" placeholder="邮箱 / 订单号 / 卡密" aria-label="搜索订单">
+            <div class="od-seg" role="group"><button type="button" aria-pressed="true">全部 <i>6</i></button><button type="button" aria-pressed="false">处理中 <i>1</i></button><button type="button" aria-pressed="false">已成功 <i>3</i></button><button type="button" aria-pressed="false">未成功 <i>2</i></button><button type="button" aria-pressed="false">需要我处理 <i>0</i></button></div>
+            <select aria-label="产品"><option>所有产品</option><option>Plus</option><option>5X</option><option>20X</option></select>
+            <select aria-label="路线"><option>所有路线</option><option>Browser</option><option>API</option></select>
+            <span class="od-range"><input type="date" aria-label="起" value="2026-09-22"> 至 <input type="date" aria-label="止" value="2026-09-28"></span>
+            <div class="od-seg" role="group"><button type="button" aria-pressed="true">近 7 天</button><button type="button" aria-pressed="false">全部</button></div>
+            <span class="od-count">共 6 单</span>
+          </form>
+          <div class="cdk-table-wrap">
+            <table class="cdk-table od-table">
+              <colgroup><col class="c-cust"><col class="c-plan"><col class="c-route"><col class="c-time"><col class="c-end" data-when="after"><col class="c-stage"></colgroup>
+              <thead><tr><th>客户</th><th class="th-plan">产品</th><th class="th-route">路线 · 卡台 · 卡尾号</th><th class="th-time">提交时间</th><th class="th-time" data-when="after">结束时间<span class="demo-new">新</span></th><th class="th-stage">进度 / 需要我做什么</th></tr></thead>
+              <tbody id="od-rows"></tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+    </section>
+
+    <!-- ================= 卡片 ================= -->
+    <section id="v-stock" class="view demo-scope" hidden>
+      <p class="demo-note"><b>⑧ 停用这张卡</b>：点任一行的「停用这张卡」看弹窗。原因选项改短；说明改成选填（只有选「其他」时必填）；弹窗的字色、输入框、下拉换成和工作台一套。</p>
+      <section class="card stock-card">
+        <div class="card-heading"><div><p class="section-kicker">运营明细</p><h2>卡片列表</h2></div><span class="write-badge">完整卡号</span></div>
+        <div class="cardtable"><table class="is-fixed">
+          <colgroup><col class="cc-last4"><col class="cc-rig"><col class="cc-bal"><col class="cc-use"><col><col class="cc-order"><col class="cc-open"><col class="cc-sell"><col class="cc-act"></colgroup>
+          <thead><tr><th>尾号</th><th>卡台</th><th>余额</th><th>用量</th><th>状态</th><th>绑定订单</th><th>开卡 / 成本</th><th>可销</th><th></th></tr></thead>
+          <tbody>
+            <tr><td class="cardmono"><span class="cardlink">5270</span></td><td>highvcc</td><td class="cardmono">$16.00<span class="cardsub">资料更新 09/28 01:40</span></td><td class="cardmono">0/3</td><td><span class="cardchip is-ok">可分配</span><span class="cardsub">可直接分配 Plus</span></td><td class="cardmono"><span class="cardmuted">—</span></td><td class="cardmono">09/27 17:33<span class="cardsub">$0.50</span></td><td>—</td><td><button class="cardbtn" type="button" data-stop="5270">停用这张卡</button></td></tr>
+            <tr><td class="cardmono"><span class="cardlink">4022</span></td><td>highvcc</td><td class="cardmono">$1.00<span class="cardsub">资料更新 09/28 01:40</span></td><td class="cardmono">0/3</td><td><span class="cardchip is-bad">暂不可用</span><span class="cardsub">余额 $1.00，不够 $16</span></td><td class="cardmono"><span class="cardmuted">—</span></td><td class="cardmono">09/18 14:27<span class="cardsub">$0.50</span></td><td>—</td><td><button class="cardbtn" type="button" data-stop="4022">停用这张卡</button></td></tr>
+          </tbody></table></div>
+      </section>
+    </section>
+
+    <!-- ================= 下拉一览 ================= -->
+    <section id="v-selects" class="view" hidden>
+      <p class="demo-note"><b>⑫ 下拉</b>：后台一共 22 个下拉，现在有 4 种高度（28 / 34 / 35 / 42）、3 种圆角（7 / 9 / 10）、4 种边框色（两种还是旧版的蓝灰）、4 种字号（12 / 12.5 / 13 / 14）；一条全局规则把所有下拉右边都撑到 40px，所以箭头离字很远、框显得长；键盘选中时看不出选中了哪个。<br>统一后：<b>只有一种样子、两种尺寸</b>——营业条里 28（和旁边按钮一样高），其余一律 34；边框、字色、箭头都用工作台的颜色；鼠标移上去边框加深，键盘选中时有一圈绿色光圈；不能选时变灰。<br><b>展开后的菜单</b>（点开那一下弹出的白色列表）是系统自带的，这一批不动，放到第三批做成和后台一套的样子。</p>
+      <div class="gal">
+        <div class="h">用在哪</div><div class="h">现在（线上）</div><div class="h">统一后</div>
+
+        <div class="k"><b>营业条</b><small>卡台、发码产品</small></div>
+        <div class="g-old"><select class="is-sm"><option>highvcc</option></select><select class="is-sm"><option>Plus</option></select><span class="g-meas">高 28 · 圆角 7 · 右留 40</span></div>
+        <div class="g-new"><select class="is-sm"><option>highvcc</option></select><select class="is-sm"><option>Plus</option></select><span class="g-meas">高 28 · 圆角 7 · 右留 26</span></div>
+
+        <div class="k"><b>筛选条</b><small>订单、CDK、诊断的筛选</small></div>
+        <div class="g-old"><select class="is-34"><option>所有产品</option></select><select class="is-34"><option>全部状态</option></select><span class="g-meas">高 34 · 圆角 9</span></div>
+        <div class="g-new"><select><option>所有产品</option></select><select><option>全部状态</option></select><span class="g-meas">高 34 · 圆角 9</span></div>
+
+        <div class="k"><b>表单</b><small>开卡、导入卡、浏览器运行筛选、账单地址</small></div>
+        <div class="g-old"><select class="is-42"><option>请选择卡段</option></select><input value="16" aria-label="金额" style="width:80px"><span class="g-meas">高 42 · 圆角 9/10 · 旧蓝灰边 · 字 12/14</span></div>
+        <div class="g-new"><select><option>请选择卡段</option></select><input value="16" aria-label="金额" style="width:80px"><span class="g-meas">高 34 · 旁边输入框一起降到 34</span></div>
+
+        <div class="k"><b>弹窗</b><small>停用、核实结果、接管原因等</small></div>
+        <div class="g-old"><select class="is-35"><option>我拿它手动充值了</option></select><span class="g-meas">高 35 · 圆角 10 · 旧蓝灰边 · 蓝色选中框</span></div>
+        <div class="g-new"><select><option>手动用掉了</option></select><span class="g-meas">高 34 · 绿色选中光圈</span></div>
+
+        <div class="k"><b>不能选时</b><small>比如卡台被锁定</small></div>
+        <div class="g-old"><select class="is-34" disabled><option>highvcc</option></select><span class="g-meas">和能选时几乎一样</span></div>
+        <div class="g-new"><select disabled><option>highvcc</option></select><span class="g-meas">底色变灰、字变浅</span></div>
+      </div>
+      <p class="demo-note" style="margin-top:12px">可以在「统一后」那一列用鼠标移上去、或按 Tab 键走一遍，看选中的样子。</p>
+    </section>
+  </main>
+</div>
+
+<dialog class="ask-dialog" id="stop-dialog">
+  <form class="ask-form demo-scope" method="dialog">
+    <h3 id="stop-title">停用这张卡</h3>
+    <p class="ask-message" data-when="before">停用后这张卡不再参与自动分配，并进入待销清单等你在卡台做最后处理。这一步只改系统里的记录，不会去卡台做任何操作。点错了可以在「历史」里撤销。</p>
+    <p class="ask-message" data-when="after">停用后不再分配、进待销清单。只改系统记录，不动卡台；点错可在「历史」里撤销。</p>
+    <label class="ask-field" data-when="before">为什么停用<select><option>我拿它手动充值了</option><option>卡台把它禁用或作废了</option><option>这张卡有问题（付款老失败等）</option><option>我在卡台主动取消了它</option><option>其他（在下面写清楚）</option></select></label>
+    <label class="ask-field" data-when="after">为什么停用<select id="stop-cause"><option value="MANUAL_USED">手动用掉了</option><option value="PROVIDER_VOIDED">卡台已作废</option><option value="CARD_FAULTY">卡有问题</option><option value="OPERATOR_CANCELLED">已在卡台取消</option><option value="OTHER">其他</option></select></label>
+    <label class="ask-field" data-when="before">说明（必填，会进审计）<input required></label>
+    <label class="ask-field" data-when="after"><span id="stop-note-label">备注 <small>选填</small></span><input id="stop-note" placeholder="例如：9-21 给 Pro 补差价"></label>
+    <div class="ask-actions"><button type="button" class="ghost-button" data-close-dialog>取消</button><button type="button" class="danger-small" data-close-dialog>停用</button></div>
+  </form>
+</dialog>
+
+<script>
+const $ = (s, r = document) => r.querySelector(s);
+const orders = [
+  { mail: 'a.chen@example.com', plan: 'Plus', route: 'API', card: 'highvcc · 5270', at: '09/28 01:12', end: '09/28 01:13', chip: ['ok', '已成功'] },
+  { mail: 'lin.w@example.com', plan: 'Plus', route: 'API', card: 'highvcc · 5270', at: '09/28 01:40', end: null, chip: ['info', '付款确认中'] },
+  { mail: 'zhao.jiayi.work@example.com', plan: 'Plus', route: 'Browser', card: 'highvcc · 8718', at: '09/26 22:05', end: '09/26 22:07', chip: ['ok', '已成功'] },
+  { mail: 'k.tan@example.com', plan: 'Plus', route: 'Browser', card: 'highvcc · 8718', at: '09/25 14:31', end: '09/25 14:33', chip: ['danger', '付款前关闭：要人工安全验证'] },
+  { mail: 'wenhao@example.com', plan: '20X', route: 'Browser', card: '未分卡', at: '09/24 10:02', end: '09/24 10:40', chip: ['', '已关闭'] },
+  { mail: 'q.li@example.com', plan: 'Plus', route: 'Browser', card: 'HNSKJ · 1657', at: '09/13 16:01', end: null, old: true, chip: ['ok', '已成功'] }
+];
+function renderOrders() {
+  const after = document.body.classList.contains('after');
+  $('#od-rows').innerHTML = orders.map((o) => {
+    const card = o.card === '未分卡' ? '未分卡' : `<button type="button" class="od-cardlink">${o.card}</button>`;
+    const end = o.end ? `<td class="od-time">${o.end}</td>` : `<td class="od-time is-none"${o.old ? ' title="这张老单当时没记结束时间"' : ''}>—</td>`;
+    return `<tr class="od-mainrow"><td class="od-cust"><button type="button" class="od-email">${o.mail}</button></td><td class="od-plan">${o.plan}</td>
+      <td class="od-route">${o.route}<small>${card}</small></td><td class="od-time">${o.at}</td>${after ? end : ''}
+      <td class="od-stagecell"><div class="od-stage"><span class="od-chip ${o.chip[0]}">${o.chip[1]}</span></div></td></tr>`;
+  }).join('');
+}
+// 「小字放大到 12」：把后台样式表里所有小于 12px 的字号临时改成 12px（实现时直接改 CSS 文件）
+const bumped = [];
+function setSmallText(on) {
+  if (on && !bumped.length) {
+    for (const sheet of document.styleSheets) {
+      if (!/\/admin\/assets\//.test(sheet.href || '')) continue;
+      let rules; try { rules = sheet.cssRules; } catch { continue; }
+      const walk = (list) => { for (const rule of list) {
+        if (rule.cssRules) walk(rule.cssRules);
+        if (rule.style && /px$/.test(rule.style.fontSize) && parseFloat(rule.style.fontSize) < 12) {
+          bumped.push([rule, rule.style.fontSize, rule.style.getPropertyPriority('font-size')]); rule.style.setProperty('font-size', '12px', rule.style.getPropertyPriority('font-size'));
+        } } };
+      walk(rules);
+    }
+  } else if (!on) {
+    while (bumped.length) { const [rule, size, prio] = bumped.pop(); rule.style.setProperty('font-size', size, prio); }
+  }
+}
+function applyClarity() {
+  const after = document.body.classList.contains('after');
+  const on = (k) => after && $(`[data-clear="${k}"]`).checked;
+  const root = document.documentElement.style;
+  // 线上现状：字体 404 → 浏览器落到字体栈里的下一个（与生产一致）
+  if (on('font')) { root.removeProperty('--wb-fd'); root.removeProperty('--wb-fm'); }
+  else { root.setProperty('--wb-fd', '"PingFang SC","Hiragino Sans GB",system-ui,sans-serif'); root.setProperty('--wb-fm', 'ui-monospace,SFMono-Regular,Menlo,monospace'); }
+  if (on('line')) { root.setProperty('--wb-bd', 'hsl(168,12%,83%)'); root.setProperty('--wb-t3', 'hsl(168,10%,35%)'); }
+  else { root.removeProperty('--wb-bd'); root.removeProperty('--wb-t3'); }
+  setSmallText(on('size'));
+}
+function setVersion(v) {
+  document.body.classList.toggle('after', v === 'after');
+  document.querySelectorAll('[data-ver]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.ver === v)));
+  renderOrders(); applyClarity();
+}
+function go(view) {
+  document.querySelectorAll('.view').forEach((el) => { el.hidden = el.id !== `v-${view}`; });
+  document.querySelectorAll('[data-go]').forEach((b) => b.classList.toggle('is-active', b.dataset.go === view));
+  $('#view-title').textContent = { overview: '今天的运行情况', orders: '订单', stock: '卡片', selects: '下拉一览' }[view];
+  window.scrollTo(0, 0);
+}
+document.addEventListener('click', (e) => {
+  const t = e.target.closest('button'); if (!t) return;
+  if (t.dataset.go) return go(t.dataset.go);
+  if (t.dataset.ver) return setVersion(t.dataset.ver);
+  if (t.dataset.stop) { $('#stop-title').textContent = `停用这张卡 · ${t.dataset.stop}`; $('#stop-dialog').showModal(); return; }
+  if (t.hasAttribute('data-close-dialog')) { $('#stop-dialog').close(); }
+});
+document.addEventListener('change', (e) => {
+  if (e.target.dataset.clear) applyClarity();
+  if (e.target.id === 'stop-cause') {
+    const other = e.target.value === 'OTHER';
+    $('#stop-note-label').innerHTML = other ? '备注 <small>选「其他」时必填</small>' : '备注 <small>选填</small>';
+    $('#stop-note').required = other;
+  }
+});
+setVersion('after');
+</script>
+</body>
+</html>
