@@ -118,7 +118,7 @@ tr.is-done td{opacity:.5}
 
       <section class="wb-card">
         <div class="wb-ch"><div><p class="wb-kick">今天要处理的</p><h2>需要我处理</h2></div><span class="wb-chip danger" id="q-count"><span class="wb-d"></span>—</span></div>
-        <p class="demo-note" style="margin:10px 16px 0">现在生产上没有急着要你动手的事，所以默认是空的。<label style="cursor:pointer"><input type="checkbox" id="show-example"> 显示一条示例待办</label>（点它的「去处理」看跳转和「回工作台」）· 回工作台样式：<span class="opt-switch" role="group"><button type="button" data-back="A" aria-pressed="true">A 提示条里的胶囊</button><button type="button" data-back="B" aria-pressed="false">B 页面下方悬浮</button></span></p>
+        <p class="demo-note" style="margin:10px 16px 0">现在生产上没有急着要你动手的事，所以默认是空的。<label style="cursor:pointer"><input type="checkbox" id="show-example"> 显示一条示例待办</label>（点它的「去处理」看跳转和「回工作台」）· 回工作台样式：<span class="opt-switch" role="group"><button type="button" data-back="A" aria-pressed="false">A 提示条里的胶囊</button><button type="button" data-back="B" aria-pressed="true">B 页面下方悬浮</button></span></p>
         <div class="wb-cb">
           <div class="wb-q" id="q-list"></div>
           <details class="wb-alerts" id="alerts" style="margin-top:12px">
@@ -140,7 +140,7 @@ tr.is-done td{opacity:.5}
       <section class="card stock-card">
         <div class="card-heading"><div><p class="section-kicker">运营明细</p><h2>卡片列表</h2></div><span class="write-badge">完整卡号</span></div>
         <div class="cardtable"><table>
-          <colgroup><col style="width:76px"><col style="width:86px"><col style="width:150px"><col style="width:64px"><col><col style="width:130px"><col style="width:118px"><col style="width:84px"><col style="width:108px"></colgroup>
+          <colgroup><col style="width:76px"><col style="width:86px"><col style="width:150px"><col style="width:100px"><col><col style="width:130px"><col style="width:118px"><col style="width:84px"><col style="width:108px"></colgroup>
           <thead><tr><th>尾号</th><th>卡台</th><th>余额</th><th>用量</th><th>状态</th><th>绑定订单</th><th>开卡 / 成本</th><th>可销</th><th></th></tr></thead>
           <tbody>
             <tr><td class="cardmono"><span class="cardlink">5270</span></td><td>highvcc</td><td class="cardmono">$16.00<span class="cardsub">资料更新 09-27 18:20</span></td><td class="cardmono">0/3</td><td><span class="cardchip is-ok">可分配</span><span class="cardsub">可直接分配 Plus</span></td><td class="cardmono"><span class="cardmuted">—</span></td><td class="cardmono">09-27 17:33<span class="cardsub">$0.50</span></td><td>—</td><td><button class="cardbtn" type="button">停用这张卡</button></td></tr>
@@ -155,7 +155,7 @@ tr.is-done td{opacity:.5}
       <section class="card stock-card" id="retire-card">
         <div class="card-heading"><div><p class="section-kicker">收尾</p><h2>待销清单</h2></div><span class="write-badge">你删卡后登记</span></div>
         <div class="cardretire"><table>
-          <colgroup><col style="width:76px"><col style="width:86px"><col style="width:280px"><col style="width:84px"><col style="width:170px"><col></colgroup>
+          <colgroup><col style="width:76px"><col style="width:86px"><col style="width:280px"><col style="width:150px"><col style="width:170px"><col></colgroup>
           <thead><tr><th>尾号</th><th>卡台</th><th>为什么待销</th><th>余额</th><th>卡台上<span class="demo-new">新</span></th><th></th></tr></thead>
           <tbody id="retire-rows"></tbody>
         </table>
@@ -191,7 +191,7 @@ const SRC = {
   there: ['is-there', '还在', '今天 18:20 同步'], void: ['is-void', '卡台已作废', '今天 18:15 同步'],
   gone: ['is-gone', '已不见（多半已删）', ''], unknown: ['is-unknown', '查不了', '卡台登录失效']
 };
-let backStyle = 'A';
+let backStyle = 'B';
 function renderRetire() {
   $('#retire-rows').innerHTML = retire.map((r) => {
     const [cls, text, when] = SRC[r.src];
