@@ -5927,3 +5927,7 @@ Lemon 看了演示（`docs/design/prototypes/batch1-todo-cards-demo.html`）：
 - 列宽照演示 v3（`table-layout:fixed` + colgroup）。
 
 验证：单测 1209（0 失败）；真数据库 81/0/1（19 个文件，新增 `card-reasons-mysql-integration`、`finished-order-alerts-mysql-integration`）；变异 10/10 被抓；生产只读探针全过（含新「订单结束收掉失败 / 要人工提醒」）；本机真页面 1440×730 走通：待办落点 + 回工作台、分组关提醒（库里独立核实）、卡表原因、待销四种状态 + 登录失效转「查不了」、诊断新块、悬停明细、`operator-watch` 本机实跑关掉终态单提醒；与演示 v3 量几何：两张表每列起点和宽度逐列一致、小标签 45×17 一致、回工作台条 245 vs 246 / 按钮 90 vs 91（文字亚像素）；视觉契约 5 份全部一致（卡片页起初卡台块 +4px：本机造数没设 highvcc `last_full_snapshot_at`，头部多一个「未导入完整快照」标签；改动前代码同数据同样 +4；按生产现值补上后一致）。发布只重启 web / worker（worker 只用到分卡资格拆分），常驻池不引用改动文件、不用重启；`operator-watch` 由 timer 下一轮自动用新代码。
+
+### D-405 第一批发布（2026-09-27 17:45 UTC ＝ 09-28 01:45 UTC+8）
+
+Lemon：「发布，本机的东西可以删」。探针全过、非终态订单 / ACTIVE 付款 / 运行中任务均 0（17:42 UTC）、无新迁移 → prepare（真数据库 81/0/1、清单 1413、备份 `pojia-20260927T174514Z`）→ switch 17:45:38 UTC → release `20260928-d405-f7dbd4f`，回滚点 `20260927-d404-9542900`。独立核实见 CURRENT_STATE。生产现状与演示的出入：工作台「需要我处理」并非为空，常驻一条「对账差异 · 无主扣款 7 张卡」（发布前 8 张，8718 因认 `MANUAL_USED:` 移入待登记），是自用期旧扣款，记欠账 29 待 Lemon 认领。本机验收库、临时 worktree、本机预览服务已清。
