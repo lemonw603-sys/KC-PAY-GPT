@@ -1031,6 +1031,13 @@ export function createApp({
     if (!adminAuth || !await adminAuth.authenticateRequest(req)) return res.redirect(302, '/admin/login');
     return res.sendFile(path.join(publicDirectory, 'admin', 'index.html'));
   });
+  // 后台域名（ops）上 /assets/* 被 Caddy 和上面的主机分流挡掉（那是客户页资源），后台引用的 4 个字体因此
+  // 一直 404、线上后台用的是系统替补字体（欠账 26，D-405 第二批）。给后台单开一个同源字体路径，文件与客户页同一份。
+  app.use('/admin/assets/fonts', express.static(path.join(publicDirectory, 'assets', 'fonts'), {
+    etag: true,
+    maxAge: 0,
+    fallthrough: true
+  }));
   app.use('/admin/assets', express.static(path.join(publicDirectory, 'admin', 'assets'), {
     etag: true,
     maxAge: 0,

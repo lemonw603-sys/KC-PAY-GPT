@@ -368,7 +368,7 @@ const API_CARD_SOURCES = {
   ]
 };
 
-test('D-401 走 API 时：标签是 API，只列能做 API 直充的卡台，选中 API 行的卡台，按钮带点数', () => {
+test('D-401 走 API 时：标签是 API，只列能做 API 直充的卡台，选中 API 行的卡台；按钮不再带点数（D-405 第二批挪进「卡与钱」）', () => {
   const { sandbox, html } = loadAdminJs();
   sandbox.renderDecisions(API_OVERVIEW, API_CARD_SOURCES, { count: 0 });
   const out = html('wb-routes');
@@ -376,7 +376,8 @@ test('D-401 走 API 时：标签是 API，只列能做 API 直充的卡台，选
   assert.match(out, /aria-label="API 卡台"/);
   assert.match(out, /<option value="pa-3" selected>highvcc<\/option>/);
   assert.doesNotMatch(out, /value="pa-1"/, '不支持 API 直充的卡台不该出现在 API 行的候选里');
-  assert.match(out, /class="is-on" disabled>API 充值 · 12 点</);
+  assert.match(out, /class="is-on" disabled>API 充值</);
+  assert.doesNotMatch(out, /点</, 'Lemon 2026-09-27：点数挂在按钮上太丑');
 });
 
 test('D-401 走 Browser 时照旧：标签是浏览器，候选按 Browser 能力；没读到点数就不显示', () => {
@@ -388,12 +389,19 @@ test('D-401 走 Browser 时照旧：标签是浏览器，候选按 Browser 能�
   assert.match(out, /data-method="API">API 充值</);
 });
 
-test('D-401 点数超过 999 显示 999+（1440 宽下按钮只放得下三位数）', () => {
-  for (const [points, text] of [[999, 'API 充值 · 999 点'], [1000, 'API 充值 · 999+ 点'], [99990, 'API 充值 · 999+ 点'], [0, 'API 充值 · 0 点']]) {
-    const { sandbox, html } = loadAdminJs();
-    sandbox.renderDecisions({ decisions: {}, providerHealth: { rechargeMethod: 'API', zzshuPoints: { points } } }, API_CARD_SOURCES, { count: 0 });
-    assert.match(html('wb-routes'), new RegExp(`>${text.replace('+', '\\+')}<`), `points=${points}`);
-  }
+test('D-405 第二批：点数在「卡与钱」单独一行；≤5 标黄、0 标红，同推送门槛；超过 999 写 999+；没读到不显示', () => {
+  const { sandbox } = loadAdminJs();
+  const row = (points, observedAt = null) => sandbox.zzshuPointsRow({ points, observedAt });
+  assert.match(row(15), /<div class="wb-provrow is-points"><div class="wb-provhead"><b>直充平台<\/b><span class="wb-chip mute">[\s\S]*剩 15 点</);
+  assert.match(row(5), /wb-chip warn[\s\S]*剩 5 点/);
+  assert.match(row(0), /wb-chip danger[\s\S]*剩 0 点/);
+  assert.match(row(1000), /剩 999\+ 点/);
+  assert.match(row(99990), /剩 999\+ 点/);
+  assert.match(row(12, '2026-09-27T03:00:00.000Z'), /剩 12 点 · (查询于|上次查询) /);
+  assert.equal(row(null), '', '没读到不显示，不写 0');
+  assert.equal(sandbox.zzshuPointsRow(undefined), '');
+  const src = fs.readFileSync(path.join(here, '..', 'public', 'admin', 'assets', 'admin.js'), 'utf8');
+  assert.match(src, /\+ zzshuPointsRow\(overview\.providerHealth\?\.zzshuPoints\)\n\s+\+ `<p class="wb-total">/, '挂在「卡与钱」两台之后、合计之前');
 });
 
 test('D-401 API 行仍被固定（locked）时，下拉框与切换按钮都不可点', () => {
@@ -650,10 +658,19 @@ test('「停用这张卡」的理由是选项，且原因码写进 reason 的最
   for (const code of ['MANUAL_USED', 'PROVIDER_VOIDED', 'CARD_FAULTY', 'OPERATOR_CANCELLED', 'OTHER']) {
     assert.ok(handler.includes(code), `少了停用原因 ${code}`);
   }
-  // 说明仍然必填——原因码回答「接下来做什么」，说明回答「当时发生了什么」
-  assert.match(handler, /name: 'note'[\s\S]{0,80}required: true/);
-  // 原因码必须在 reason 最前面，待销清单靠它认
-  assert.match(handler, /reason: `\$\{answer\.cause\}: \$\{answer\.note\}`/);
+  // D-405 第二批（Lemon：原因啰嗦，尽量简单）：选项改短；说明改选填，只有选「其他」时必填 ——
+  // 其余四个原因码本身已说清接下来做什么，「其他」没有，得写。
+  for (const label of ['手动用掉了', '卡台已作废', '卡有问题', '已在卡台取消', "'其他'"]) assert.ok(handler.includes(label), label);
+  assert.doesNotMatch(handler, /我拿它手动充值了|（在下面写清楚）|必填，会进审计/);
+  assert.match(handler, /name: 'note'[^}]*hint: '选填'[\s\S]{0,120}requiredWhen: \{ field: 'cause', value: 'OTHER'/);
+  assert.doesNotMatch(handler, /name: 'note'[^\n]*required: true/);
+  // 原因码必须在 reason 最前面（冒号结尾），待销清单靠它认；没写备注时也保留冒号
+  assert.match(handler, /reason: answer\.note \? `\$\{answer\.cause\}: \$\{answer\.note\}` : `\$\{answer\.cause\}:`/);
+  // 通用弹窗认 requiredWhen：提交时按当前选择判断必填，切换选择时同步 required 与提示字
+  const ask = src.slice(src.indexOf('function askForm'), src.indexOf('async function controlBrowserRun'));
+  assert.match(ask, /const isRequired = \(field, form\) => Boolean\(field\.required \|\| \(field\.requiredWhen && form/);
+  assert.match(ask, /if \(isRequired\(field, form\) && !value\)/);
+  assert.match(ask, /form\.addEventListener\('change', syncConditional\)/);
 });
 
 test('原因决定「接下来去卡台做什么」，认不出的不猜', () => {
@@ -662,6 +679,7 @@ test('原因决定「接下来去卡台做什么」，认不出的不猜', () =>
   assert.match(evalIn("stopCauseOf('PROVIDER_VOIDED: 后台显示已作废').next"), /已经没了/);
   assert.match(evalIn("stopCauseOf('MANUAL_USED: 给客户手动充了 20X').next"), /去卡台把它删掉/);
   assert.equal(evalIn("stopCauseOf('MANUAL_USED: x').label"), '手动充值用掉了');
+  assert.equal(evalIn("stopCauseOf('MANUAL_USED:').label"), '手动充值用掉了', '没写备注时只有原因码加冒号，也要认得出');
   // 旧数据（本轮之前写的 override）没有原因码前缀 —— 返回 null，按普通停用显示，不猜
   assert.equal(evalIn("stopCauseOf('Lemon paid a customer 20X manually with this card')"), null);
   assert.equal(evalIn("stopCauseOf(null)"), null);
@@ -722,3 +740,28 @@ test('D-405 卡片列表：列宽照演示（用量贴近余额）；可销「�
   assert.match(css, /col\.rc-bal\{width:150px\}/);
 });
 
+
+// D-405 第二批：订单页「提交时间」后加「结束时间」
+test('D-405 订单页「结束时间」：结束的单写北京时间，处理中写「—」，已结束但没记时间的老单写「—」并说明', async () => {
+  const { sandbox, evalIn, html } = loadAdminJs();
+  sandbox.__ordersApi = async () => ({ total: 3, summary: { buckets: {} }, orders: [
+    { publicNo: 'PJV1-done', status: 'RECHARGE_SUCCESS', planType: 'plus', customerEmail: 'a@example.com',
+      createdAt: '2026-09-27T17:12:00.000Z', finishedAt: '2026-09-27T17:13:30.000Z', stage: { label: '已成功', tone: 'green' } },
+    { publicNo: 'PJV1-run', status: 'RECHARGE_PROCESSING', planType: 'plus', customerEmail: 'b@example.com',
+      createdAt: '2026-09-27T17:40:00.000Z', finishedAt: null, stage: { label: '处理中', tone: 'blue' } },
+    { publicNo: 'PJV1-old', status: 'RECHARGE_FAILED', planType: 'plus', customerEmail: 'c@example.com',
+      createdAt: '2026-09-13T08:01:00.000Z', finishedAt: null, stage: { label: '失败', tone: 'red' } }
+  ] });
+  const page = evalIn('window.createOrdersPage({ api: globalThis.__ordersApi, escapeHtml, showNotice: () => {}, openOrder: () => {}, actions: {} })');
+  await page.load();
+  const rows = html('od-rows').split('<tr class="od-mainrow"').slice(1);
+  assert.equal(rows.length, 3);
+  const cells = (row) => [...row.matchAll(/<td class="([^"]*)"[^>]*>([\s\S]*?)<\/td>/g)].map((m) => [m[1], m[2]]);
+  const done = cells(rows[0]);
+  assert.deepEqual(done.map(([cls]) => cls), ['od-cust', 'od-plan', 'od-route', 'od-time', 'od-time', 'od-stagecell'], '六格，结束时间紧跟提交时间');
+  assert.equal(done[3][1], '09-28 01:12');
+  assert.equal(done[4][1], '09-28 01:13', '北京时间');
+  assert.deepEqual(cells(rows[1])[4], ['od-time is-none', '—']);
+  assert.doesNotMatch(rows[1], /没记结束时间/, '处理中的单不是「没记」');
+  assert.match(rows[2], /<td class="od-time is-none" title="这张老单当时没记结束时间">—<\/td>/);
+});

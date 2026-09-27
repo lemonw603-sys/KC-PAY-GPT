@@ -414,6 +414,24 @@ test('isolates admin and customer routes by hostname', async () => {
   });
 });
 
+test('D-405 第二批：后台域名能拿到后台字体（/admin/assets/fonts），客户页资源路径 /assets 在后台域名仍然 404', async () => {
+  const app = createApp({ adminHost: 'ops.vibebridge.top' });
+  await withServer(app, async (baseUrl) => {
+    for (const file of ['familjen-grotesk.woff2', 'ibm-plex-mono-400.woff2', 'ibm-plex-mono-500.woff2', 'ibm-plex-mono-600.woff2']) {
+      const font = await requestWithHost(baseUrl, `/admin/assets/fonts/${file}`, 'ops.vibebridge.top');
+      assert.equal(font.statusCode, 200, file);
+      assert.match(String(font.headers['content-type']), /font\/woff2/, file);
+    }
+    const customerAsset = await requestWithHost(baseUrl, '/assets/fonts/familjen-grotesk.woff2', 'ops.vibebridge.top');
+    assert.equal(customerAsset.statusCode, 404, '客户页资源在后台域名照旧挡掉');
+    const missing = await requestWithHost(baseUrl, '/admin/assets/fonts/../../index.html', 'ops.vibebridge.top');
+    assert.notEqual(missing.statusCode, 200);
+  });
+  const css = await readFile(new URL('../public/admin/assets/workbench.css', import.meta.url), 'utf8');
+  assert.equal((css.match(/url\(\/admin\/assets\/fonts\//g) || []).length, 4, '四个 @font-face 都指向后台字体路径');
+  assert.doesNotMatch(css, /url\(\/assets\/fonts\//, '不许再指回会 404 的客户页路径');
+});
+
 test('generates CDKs only for an authenticated administrator', async () => {
   const adminAuth = createAdminSessionAuth({
     passwordHash: await hashAdminPassword('fixture admin password', { salt: Buffer.alloc(16, 7) }),

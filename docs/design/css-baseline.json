@@ -3,12 +3,12 @@
   "updatedAt": "2026-09-27",
   "files": {
     "admin.css": {
-      "literalColors": 133,
-      "offScaleHeights": 16,
+      "literalColors": 124,
+      "offScaleHeights": 15,
       "duplicatedSelectors": 2
     },
     "workbench.css": {
-      "literalColors": 5,
+      "literalColors": 4,
       "offScaleHeights": 6,
       "duplicatedSelectors": 0
     },

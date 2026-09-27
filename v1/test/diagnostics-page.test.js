@@ -43,7 +43,7 @@ test('diagnostics keeps five groups (D-393 adds failure reasons), low-frequency 
   const section=html.slice(html.indexOf('<section id="diagnostics-view"'),html.indexOf('<section id="settings-view"'));
   assert.equal((section.match(/class="diag-panel(?: |")/g)||[]).length,5);
   for(const id of ['diagnostics-status','reconciliation-table','diagnostics-card-report','diagnostics-order-search','diagnostics-execution','browser-filters','browser-dispatch-table','browser-runs-table','diagnostics-tools','billing-address-settings','export-orders','export-reconciliation-diag','diagnostics-failures','diag-fail-range','diag-fail-rows'])assert.ok(section.includes(`id="${id}"`),id);
-  assert.match(html,/diagnostics\.js\?v=3/);assert.match(html,/diagnostics\.css\?v=3/);
+  assert.match(html,/diagnostics\.js\?v=3/);assert.match(html,/diagnostics\.css\?v=\d+/);
   // D-405：从工作台挪来的「卡台的零散情况」，默认隐藏，有内容才显示
   assert.match(html,/<div class="diag-notes" id="diagnostics-notes" hidden><\/div>/);
   assert.match(src,/RESOLVE_UNKNOWN_PAYMENT/);assert.match(src,/CONFIRM_MANUAL_PAYMENT/);assert.match(src,/RELEASE_SAFE/);

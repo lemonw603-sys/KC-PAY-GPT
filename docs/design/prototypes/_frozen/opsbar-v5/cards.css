@@ -14,10 +14,18 @@
 .cardrig.is-alarm{border-color:hsl(4,66%,74%);background:var(--wb-danger-soft,#fdf1f0)}
 .cardrig-h{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:11px}
 .cardrig-h b{font-size:14.5px;color:var(--wb-t,#16201e)}
-.cardrig-h .cardrig-acct{font-family:var(--wb-fm,monospace);font-size:11px;color:var(--wb-t3,#7b8a86)}
+.cardrig-h .cardrig-acct{font-family:var(--wb-fm,monospace);font-size:12px;color:var(--wb-t3,#7b8a86)}
 .cardrig-quad{display:grid;grid-template-columns:1fr 1fr;gap:9px}
 .cardrig-q{background:var(--wb-s2,#f5f9f8);border:1px solid var(--wb-bd,#dde5e3);border-radius:10px;padding:8px 10px}
-.cardrig-q label{display:block;font-size:11px;color:var(--wb-t3,#7b8a86);margin-bottom:3px}
+.cardrig-q label{display:block;font-size:12px;color:var(--wb-t3,#7b8a86);margin-bottom:3px}
+/* 标题行右侧的「查询于 10:13 · 刷新」（highvcc 钱包格）：一行放下，数值行与 hnskj 那格同形 */
+.cardrig-lh{display:flex;align-items:baseline;justify-content:space-between;gap:6px;margin-bottom:3px;min-width:0}
+.cardrig-lh label{margin-bottom:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.cardrig-aside{display:inline-flex;align-items:baseline;gap:6px;flex:none;white-space:nowrap;font-size:12px;color:var(--wb-t3)}
+.cardrig-aside .is-fail{color:var(--wb-warn)}
+.cardlink{border:0;background:none;padding:0;font:inherit;font-weight:600;color:var(--wb-a);cursor:pointer}
+.cardlink:hover:not(:disabled){text-decoration:underline}
+.cardlink:disabled{opacity:.45;cursor:not-allowed}
 .cardrig-q .cardrig-v{font-family:var(--wb-fm,monospace);font-size:16px;font-weight:600;letter-spacing:-.01em;color:var(--wb-t,#16201e)}
 .cardrig-q .cardrig-v small{font-size:12px;font-weight:400;color:var(--wb-t3,#7b8a86)}
 /* 待接入 / 未设置：灰、细体——一眼看出「这不是一个数」，不要伪装成 0 */
@@ -27,26 +35,25 @@
 .cardrig-q.is-warn{background:var(--wb-warn-soft,#fdf4e6);border-color:hsl(38,60%,82%)}
 .cardrig-q.is-warn .cardrig-v{color:var(--wb-warn,#b06f15)}
 .cardrig-foot{margin-top:10px;display:flex;gap:7px;flex-wrap:wrap;align-items:center;
-  font-size:11.5px;color:var(--wb-t3,#7b8a86)}
+  font-size:12px;color:var(--wb-t3,#7b8a86)}
 .cardrig-foot input{flex:1;min-width:110px;padding:5px 9px;border:1px solid var(--wb-bd,#dde5e3);
-  border-radius:8px;font-family:var(--wb-fm,monospace);font-size:11.5px;background:var(--wb-s,#fff);color:var(--wb-t,#16201e)}
+  border-radius:8px;font-family:var(--wb-fm,monospace);font-size:12px;background:var(--wb-s,#fff);color:var(--wb-t,#16201e)}
 
 /* ---------- ③⑤ 表格 ---------- */
 .cardtable,.cardretire{margin-top:10px;border:1px solid var(--wb-bd,#dde5e3);border-radius:12px;overflow:hidden;background:var(--wb-s,#fff)}
 .cardtable table,.cardretire table{width:100%;border-collapse:collapse;font-size:12.5px}
 .cardtable th,.cardretire th{text-align:left;padding:8px 12px;color:var(--wb-t3,#7b8a86);font-weight:600;
-  font-size:11.5px;border-bottom:1px solid var(--wb-bd,#dde5e3);background:var(--wb-s2,#f5f9f8);white-space:nowrap}
+  font-size:12px;border-bottom:1px solid var(--wb-bd,#dde5e3);background:var(--wb-s2,#f5f9f8);white-space:nowrap}
 .cardtable td,.cardretire td{padding:9px 12px;border-bottom:1px solid var(--wb-s3,#eef4f2);vertical-align:middle;color:var(--wb-t,#16201e)}
 .cardtable tbody tr:last-child td,.cardretire tbody tr:last-child td{border-bottom:0}
-.cardtable tr.is-due td,.cardretire tr.is-due td{background:var(--wb-warn-soft,#fdf4e6)}
 .cardretire tr.is-notyet td{opacity:.62}
 .cardtable .cardmono,.cardretire .cardmono{font-family:var(--wb-fm,monospace)}
-.cardtable .cardsub,.cardretire .cardsub{display:block;font-size:11px;color:var(--wb-t3,#7b8a86)}
+.cardtable .cardsub,.cardretire .cardsub{display:block;font-size:12px;color:var(--wb-t3,#7b8a86)}
 .cardtable .cardmuted,.cardretire .cardmuted{color:var(--wb-t3,#7b8a86)}
 
 /* 状态徽标：人话，来自 classifyStockCardOperationalState（不在页面里重算） */
 .cardchip{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:999px;
-  font-size:11px;font-weight:600;border:1px solid transparent;white-space:nowrap}
+  font-size:12px;font-weight:600;border:1px solid transparent;white-space:nowrap}
 .cardchip.is-ok{background:var(--wb-ok-soft,#e8f6ee);color:var(--wb-ok,#2f8a54);border-color:hsl(150,40%,82%)}
 .cardchip.is-use{background:var(--wb-info-soft,#eaf2fc);color:var(--wb-info,#2b6cb8);border-color:hsl(212,50%,84%)}
 .cardchip.is-due{background:var(--wb-warn-soft,#fdf4e6);color:var(--wb-warn,#b06f15);border-color:hsl(38,60%,80%)}
@@ -55,7 +62,7 @@
 
 /* 行内按钮 */
 .cardbtn{border:1px solid var(--wb-bd,#dde5e3);background:var(--wb-s,#fff);color:var(--wb-t,#16201e);
-  border-radius:8px;padding:4px 10px;font-size:11.5px;font-weight:600;cursor:pointer;font-family:inherit}
+  border-radius:8px;padding:4px 10px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit}
 .cardbtn:hover:not(:disabled){background:var(--wb-s2,#f5f9f8)}
 .cardbtn:disabled{opacity:.45;cursor:not-allowed}
 .cardbtn.is-primary{background:var(--wb-a,#12795a);border-color:var(--wb-a,#12795a);color:var(--wb-a-on,#fff)}
@@ -78,3 +85,66 @@
   font-family:var(--wb-fm,monospace);font-weight:600;cursor:pointer;text-decoration:underline;
   text-underline-offset:2px;text-decoration-color:color-mix(in srgb,var(--wb-a,#12795a) 35%,transparent)}
 .cardtable .cardlink:hover{color:var(--wb-a-ink,#0e6045);text-decoration-color:currentColor}
+
+/* ---------- B4 高级区：五条 57px 折叠条收成一个入口 ----------
+   原来「导入 / HNSKJ 开卡 / highvcc 开卡 / 补卡记录 / 新卡接管」各占一整块，
+   加上卡台管理共六件低频事把三块台账切得七零八落（Lemon：「没有任何整体设计」）。
+   A 版原型只有三块，低频的全收进这一个入口。
+   这一节一律用裸 var(--wb-*)，不写字面色回退 —— 令牌定义在 workbench.css 的 :root，
+   全局可用；cards.css 的 65 处字面色是欠账 7，新写的不许再添。 */
+.cardadv{padding:14px 17px}
+.cardadv > summary{cursor:pointer;font-size:13px;font-weight:800;color:var(--wb-t2);
+  list-style:none;display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+.cardadv > summary::-webkit-details-marker{display:none}
+.cardadv > summary::before{content:"▸";color:var(--wb-t3);font-weight:400}
+.cardadv[open] > summary::before{content:"▾"}
+.cardadv > summary:hover{color:var(--wb-t)}
+.cardadv-hint{font-size:12px;font-weight:400;color:var(--wb-t3)}
+.cardadv-body{display:grid;gap:8px;margin-top:13px}
+.cardadv-item{border:1px solid var(--wb-bd);border-radius:10px;background:var(--wb-s2);padding:10px 13px}
+.cardadv-item[open]{background:var(--wb-s)}
+.cardadv-item > summary{cursor:pointer;font-size:12.5px;font-weight:600;color:var(--wb-t2);
+  list-style:none;display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+.cardadv-item > summary::-webkit-details-marker{display:none}
+.cardadv-item > summary::before{content:"▸";color:var(--wb-t3);font-weight:400}
+.cardadv-item[open] > summary::before{content:"▾"}
+.cardadv-item > summary:hover{color:var(--wb-t)}
+.cardadv-item[open] > summary{margin-bottom:12px}
+.cardadv-item > .filters{margin-top:4px}
+
+/* ---------- B1 搬迁：开卡为什么被禁 + 剩余开卡额度 ----------
+   这两样原在块 2 的「卡片概况」里。块 2 删掉后，updateStockEstimate() 只会把提交按钮
+   置灰、把费用框变黄，**一个字都不说为什么** —— 和 F-65「生产开着而界面上关不掉」
+   同型。所以搬到开卡表单里，紧挨着那个灰按钮解释它。 */
+.cardgate{padding:9px 12px;border:1px solid var(--wb-bd);border-radius:10px;
+  background:var(--wb-s2);font-size:12px;color:var(--wb-t2);display:grid;gap:3px}
+.cardgate b{font-weight:600}
+.cardgate small{font-size:12px;color:var(--wb-t3)}
+.cardgate.is-blocked{background:var(--wb-warn-soft);border-color:var(--wb-warn);color:var(--wb-warn)}
+.cardgate.is-blocked small{color:inherit}
+.stock-open-form .cardgate{grid-column:1 / -1}
+/* token 深链在手机上也必须能直接操作；不覆盖其他高级表单。 */
+@media (max-width:620px){#highvcc-token-form{grid-template-columns:minmax(0,1fr)}}
+/* D-405 第一批：整行黄底换成「已到期」小标签；待销清单「卡台上」；两张表列宽照演示 v3 */
+.due-tag{display:inline-block;margin-right:6px;padding:1px 6px;border-radius:5px;font-size:12px;font-weight:600;color:var(--wb-warn);background:var(--wb-warn-soft);vertical-align:1px;white-space:nowrap}
+.due-tag.is-wait{color:var(--wb-t3);background:var(--wb-s3)}
+.src-state{display:inline-flex;align-items:center;gap:5px;font-size:12px;white-space:nowrap}
+.src-state i{width:7px;height:7px;border-radius:50%;display:inline-block}
+.src-state.is-there i{background:var(--wb-warn)}
+.src-state.is-void i{background:var(--wb-t3)}
+.src-state.is-gone i{background:var(--wb-ok)}
+.src-state.is-unknown i{border:1.5px solid var(--wb-t3)}
+.src-when{display:block;font-size:12px;color:var(--wb-t3)}
+.cardtable table.is-fixed,.cardretire table.is-fixed{table-layout:fixed}
+.cardtable col.cc-last4,.cardretire col.rc-last4{width:76px}
+.cardtable col.cc-rig,.cardretire col.rc-rig{width:86px}
+.cardtable col.cc-bal{width:150px}
+.cardtable col.cc-use{width:100px}
+.cardtable col.cc-order{width:130px}
+.cardtable col.cc-open{width:118px}
+.cardtable col.cc-sell{width:84px}
+.cardtable col.cc-act{width:108px}
+.cardretire col.rc-why{width:280px}
+.cardretire col.rc-bal{width:150px}
+.cardretire col.rc-src{width:170px}
+

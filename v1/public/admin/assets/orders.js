@@ -59,6 +59,14 @@ window.createOrdersPage = function ({ api, escapeHtml: esc, showNotice, openOrde
     const card = o.card ? `<button type="button" class="od-cardlink" data-card="${esc(o.publicNo)}">${esc(o.card.providerLabel || '卡')} · ${esc(o.card.last4 || '')}</button>` : '未分卡';
     return `${kind}<small>${card}</small>`;
   }
+  // 「结束时间」列（D-405 第二批）：成功、失败、关闭都显示；还在处理的写「—」。
+  // 已结束却没有结束时间的是 finished_at 上线前的老单（生产 2026-09-28 查到 86 单里有 2 单），也写「—」并说明。
+  const FINISHED = new Set(['RECHARGE_SUCCESS', 'RECHARGE_FAILED', 'CLOSED', 'CARD_FAILED']);
+  function endCell(o) {
+    if (o.finishedAt) return `<td class="od-time">${esc(cst(o.finishedAt))}</td>`;
+    const title = FINISHED.has(o.status) ? ' title="这张老单当时没记结束时间"' : '';
+    return `<td class="od-time is-none"${title}>—</td>`;
+  }
   function mainRow(o) {
     const n = Number(o.historyCount || 0);
     const open = state.expanded.has(o.publicNo);
@@ -68,6 +76,7 @@ window.createOrdersPage = function ({ api, escapeHtml: esc, showNotice, openOrde
       <td class="od-plan">${esc(PLAN[o.planType] || o.productName || o.planType || '—')}</td>
       <td class="od-route">${routeCell(o)}</td>
       <td class="od-time">${esc(cst(o.createdAt))}</td>
+      ${endCell(o)}
       <td class="od-stagecell"><div class="od-stage">${chip(o)}${rowAction(o)}</div></td>
     </tr>`;
   }
@@ -77,6 +86,7 @@ window.createOrdersPage = function ({ api, escapeHtml: esc, showNotice, openOrde
       <td class="od-plan">${esc(PLAN[o.planType] || o.planType || '—')}</td>
       <td class="od-route">${routeCell(o)}</td>
       <td class="od-time">${esc(cst(o.createdAt))}</td>
+      ${endCell(o)}
       <td class="od-stagecell"><div class="od-stage">${chip(o)}</div></td>
     </tr>`;
   }
@@ -118,7 +128,7 @@ window.createOrdersPage = function ({ api, escapeHtml: esc, showNotice, openOrde
       payload = await api('/api/v1/admin/orders/search', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(query) });
     } catch (error) {
       if (my !== seq) return;
-      tb.innerHTML = `<tr><td colspan="5" class="od-empty">订单读取失败。<button type="button" class="od-rowact" data-retry>重试</button></td></tr>`;
+      tb.innerHTML = `<tr><td colspan="6" class="od-empty">订单读取失败。<button type="button" class="od-rowact" data-retry>重试</button></td></tr>`;
       el('od-count').textContent = '';
       renderCounts({});
       if (error?.message !== 'admin_auth_required') showNotice('订单读取失败，请稍后重试。');
@@ -136,7 +146,7 @@ window.createOrdersPage = function ({ api, escapeHtml: esc, showNotice, openOrde
     const tries = orders.reduce((n, o) => n + 1 + Number(o.historyCount || 0), 0);
     tb.innerHTML = orders.length
       ? orders.map((o) => mainRow(o) + (state.expanded.has(o.publicNo) ? renderHist(o.publicNo) : '')).join('')
-      : `<tr><td colspan="5" class="od-empty">${state.q || state.extra || state.bucket !== 'all' || state.planType || state.executorKind ? '这个范围内没有订单' : '还没有订单'}</td></tr>`;
+      : `<tr><td colspan="6" class="od-empty">${state.q || state.extra || state.bucket !== 'all' || state.planType || state.executorKind ? '这个范围内没有订单' : '还没有订单'}</td></tr>`;
     el('od-count').textContent = orders.length ? `${state.total} 个客户充值 · 本页 ${tries} 次尝试` : '';
     const pages = Math.max(1, Math.ceil(state.total / state.pageSize));
     el('od-page-label').textContent = `第 ${state.page} / ${pages} 页`;
@@ -145,7 +155,7 @@ window.createOrdersPage = function ({ api, escapeHtml: esc, showNotice, openOrde
   }
   function renderHist(no) {
     const rows = state.loaded.get(no);
-    if (!rows) return `<tr class="od-hist" data-hist-loading="${esc(no)}"><td colspan="5" class="od-no">正在读取历史尝试…</td></tr>`;
+    if (!rows) return `<tr class="od-hist" data-hist-loading="${esc(no)}"><td colspan="6" class="od-no">正在读取历史尝试…</td></tr>`;
     return rows.map(histRow).join('');
   }
   async function loadHist(no) {

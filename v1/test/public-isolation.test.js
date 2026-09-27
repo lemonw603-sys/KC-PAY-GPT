@@ -180,10 +180,25 @@ test('admin refresh feedback and inset dropdown arrows remain visible', () => {
   assert.match(html, /执行记录/);
   assert.match(html, /新卡接管/);
   assert.doesNotMatch(html, /待验证新卡（隔离区）/);
-  assert.match(styles, /select\s*\{[\s\S]*appearance:\s*none/);
-  assert.match(styles, /padding-right:\s*40px\s*!important/);
-  assert.match(styles, /background-image:[^;]+!important/);
-  assert.match(styles, /background-position:\s*calc\(100% - 19px\) 50%, calc\(100% - 14px\) 50%\s*!important/);
+  // 下拉箭头留在框内、不压字（D-405 第二批改法）：原先靠 admin.css 一条全局 !important 把右留白撑到 40px；
+  // 现在是 workbench.css 一条统一规则，用特异性 0,2,1 压过各页 input/select 合写的规则（0,1,1），
+  // 各页自己的 padding 因此改不动右留白。守三件事：旧的全局规则不许回来、统一规则在、各页不许写更高特异性的下拉规则。
+  const workbench = fs.readFileSync(path.join(directory, 'admin', 'assets', 'workbench.css'), 'utf8');
+  assert.doesNotMatch(styles, /(^|\n)select\s*\{/, 'admin.css 不再有全局 select 规则');
+  assert.doesNotMatch(styles, /padding-right:\s*40px\s*!important/);
+  assert.match(workbench, /:root:root select\{appearance:none;[^}]*padding:0 30px 0 11px;[^}]*background-image:linear-gradient\(45deg,transparent 50%,var\(--wb-t2\) 50%\)/);
+  assert.match(workbench, /:root:root \.wb-ops select\{height:28px;[^}]*padding:0 26px 0 9px/);
+  for (const file of ['admin.css', 'workbench.css', 'cards.css', 'cdks.css', 'orders.css', 'diagnostics.css']) {
+    const css = fs.readFileSync(path.join(directory, 'admin', 'assets', file), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+    for (const rule of css.matchAll(/([^{}]+)\{([^}]*)\}/g)) {
+      if (!/padding/.test(rule[2])) continue;
+      for (const selector of rule[1].split(',').map((item) => item.trim()).filter((item) => /(^|\s|>)select\b/.test(item))) {
+        if (selector.startsWith(':root:root')) continue;
+        const classes = (selector.match(/[.:#\[]/g) || []).length;
+        assert.ok(classes < 2, `${file}: 「${selector}」特异性不低于统一规则，会把下拉右留白改掉`);
+      }
+    }
+  }
 });
 
 test('admin Browser view exposes operational metadata but no authority recovery field', () => {
@@ -326,7 +341,10 @@ test('admin orders page is one table plus one drawer without permits, tags, note
   const script = fs.readFileSync(path.join(directory, 'admin', 'assets', 'admin.js'), 'utf8');
   const ordersScript = fs.readFileSync(path.join(directory, 'admin', 'assets', 'orders.js'), 'utf8');
   // D-356/D-357 订单页 v3：五列、状态四桶做成分段器（不再是下拉与摘要卡）、时间快选近 7 天/全部
-  assert.match(html, /<th>客户<\/th><th class="th-plan">产品<\/th><th class="th-route">路线 · 卡台 · 卡尾号<\/th><th class="th-time">提交时间<\/th><th class="th-stage">进度 \/ 需要我做什么<\/th>/);
+  // D-405 第二批：「提交时间」后加「结束时间」（六列）
+  assert.match(html, /<th>客户<\/th><th class="th-plan">产品<\/th><th class="th-route">路线 · 卡台 · 卡尾号<\/th><th class="th-time">提交时间<\/th><th class="th-time">结束时间<\/th><th class="th-stage">进度 \/ 需要我做什么<\/th>/);
+  assert.equal((html.match(/<col class="c-[a-z]+">/g) || []).length, 6, 'colgroup 与表头同为六列');
+  assert.doesNotMatch(ordersScript, /colspan="5"/, '空表 / 读取失败 / 历史行的跨列要跟着改成 6');
   for (const bucket of ['all', 'processing', 'success', 'failed', 'action']) assert.match(html, new RegExp(`data-status="${bucket}"`), bucket);
   assert.doesNotMatch(html, /id="order-summary"|id="order-status-filter"|<option value="REVIEW_REQUIRED">|<option value="ACTIVE">|<option value="FINISHED">/);
   assert.match(ordersScript, /groupByCdk: true/);

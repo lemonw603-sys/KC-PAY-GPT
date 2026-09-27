@@ -397,12 +397,25 @@ function renderWbCards(overview) {
       <div class="wb-prods">${(p.byProduct || []).map(prodChip).join('')}</div>
     </div>`;
   }).join('')
+    + zzshuPointsRow(overview.providerHealth?.zzshuPoints)
     + `<p class="wb-total">合计可分配 <b class="wb-mono">${totalStock}</b> 张`
     // 「没有单在等卡」不显示（Lemon 2026-09-28）：有人等卡时才说。
     + (waiting > 0 ? ` · <b class="wb-waiting">${waiting} 单正在等卡</b>` : '')
     + '</p>';
   updateHnskjWalletSummary();
   updateHighvccWalletSummary();
+}
+
+/**
+ * 直充平台（ZZSHU）剩余点数（D-401 起 worker 每 5 分钟只读一次）。D-405 第二批从「API 充值」按钮挪到这里。
+ * 没读到就不显示（不写 0）；≤5 与 0 用和推送同样的门槛标色。超过 999 显示 999+：平台对未登记 Key 会回占位数 99990。
+ */
+function zzshuPointsRow(zzshuPoints) {
+  const points = zzshuPoints?.points;
+  if (!Number.isInteger(points)) return '';
+  const tone = points === 0 ? 'danger' : points <= 5 ? 'warn' : 'mute';
+  const when = zzshuPoints.observedAt ? ` · ${walletWhenText({ at: zzshuPoints.observedAt })}` : '';
+  return `<div class="wb-provrow is-points"><div class="wb-provhead"><b>直充平台</b>${wbChip(tone, `剩 ${points > 999 ? '999+' : points} 点${when}`)}</div></div>`;
 }
 
 /** 「今天花了」的悬停明细（D-405）：写法不变，鼠标停上去看是哪几类钱。数来自后端 spentBreakdown。 */
@@ -705,11 +718,8 @@ function renderDecisions(overview, cardSources, takeoverEstimate = null) {
     const methodBtn = (target, text) => (method === target
       ? `<button type="button" class="is-on" disabled>${escapeHtml(text)}</button>`
       : `<button type="button" class="default-recharge-method" data-method="${target}">${escapeHtml(text)}</button>`);
-    // D-401：API 路线按点计费，点数挂在按钮上（worker 每 5 分钟读一次；没读到就不显示）。
-    // 超过 999 显示 999+：1440 宽下按钮放得下三位数（实测 99990 会比按钮宽 3px 被截）；平台对未登记 Key
-    // 还会回占位数 99990，那时这个数本来就不可信。
-    const zzshuPoints = overview.providerHealth?.zzshuPoints?.points;
-    const apiText = Number.isInteger(zzshuPoints) ? `API 充值 · ${zzshuPoints > 999 ? '999+' : zzshuPoints} 点` : 'API 充值';
+    // 点数原先挂在「API 充值」按钮上（D-401），Lemon 2026-09-27 嫌丑，挪进「卡与钱」（D-405 第二批，见 zzshuPointsRow）。
+    const apiText = 'API 充值';
     // 营业条是一条工具栏（乙-3）：路线与卡台是**两组**独立的项，各自参与间距均分。
     // #wb-routes 本身 display:contents，所以这两个 .wb-grp 直接成为工具栏的项。
     routeBox.innerHTML =
@@ -1147,19 +1157,23 @@ function askForm({ title, message = '', fields = [], confirmLabel = '确认', da
       document.body.appendChild(askDialogElement);
     }
     const dialog = askDialogElement;
+    // hint：标签后的灰色小字；requiredWhen：另一个字段选到某个值时才必填（D-405 第二批，停用原因「其他」要写备注）。
+    const isRequired = (field, form) => Boolean(field.required || (field.requiredWhen && form
+      && String(form.elements[field.requiredWhen.field]?.value ?? '') === field.requiredWhen.value));
+    const labelOf = (field) => `${escapeHtml(field.label)}${field.hint ? ` <small data-ask-hint="${escapeHtml(field.name)}">${escapeHtml(field.hint)}</small>` : ''}`;
     const control = (field) => {
       const id = `ask-${field.name}`;
       const required = field.required ? ' required' : '';
       if (field.type === 'select') {
-        return `<label class="ask-field" for="${id}">${escapeHtml(field.label)}<select id="${id}" name="${escapeHtml(field.name)}"${required}>${
+        return `<label class="ask-field" for="${id}">${labelOf(field)}<select id="${id}" name="${escapeHtml(field.name)}"${required}>${
           (field.options || []).map((option) => `<option value="${escapeHtml(option.value)}"${option.value === field.value ? ' selected' : ''}>${escapeHtml(option.label)}</option>`).join('')
         }</select></label>`;
       }
       if (field.type === 'textarea') {
-        return `<label class="ask-field" for="${id}">${escapeHtml(field.label)}<textarea id="${id}" name="${escapeHtml(field.name)}" rows="3" placeholder="${escapeHtml(field.placeholder || '')}"${required}>${escapeHtml(field.value || '')}</textarea></label>`;
+        return `<label class="ask-field" for="${id}">${labelOf(field)}<textarea id="${id}" name="${escapeHtml(field.name)}" rows="3" placeholder="${escapeHtml(field.placeholder || '')}"${required}>${escapeHtml(field.value || '')}</textarea></label>`;
       }
       const inputType = field.type === 'datetime-local' ? 'datetime-local' : 'text';
-      return `<label class="ask-field" for="${id}">${escapeHtml(field.label)}<input id="${id}" name="${escapeHtml(field.name)}" type="${inputType}" value="${escapeHtml(field.value || '')}" placeholder="${escapeHtml(field.placeholder || '')}"${required}></label>`;
+      return `<label class="ask-field" for="${id}">${labelOf(field)}<input id="${id}" name="${escapeHtml(field.name)}" type="${inputType}" value="${escapeHtml(field.value || '')}" placeholder="${escapeHtml(field.placeholder || '')}"${required}></label>`;
     };
     dialog.innerHTML = `<form class="ask-form">
       <h3>${escapeHtml(title)}</h3>
@@ -1168,6 +1182,16 @@ function askForm({ title, message = '', fields = [], confirmLabel = '确认', da
       <div class="ask-actions"><button type="button" class="ghost-button" data-ask-cancel>取消</button><button type="submit" class="${danger ? 'danger-small' : 'primary-small'}">${escapeHtml(confirmLabel)}</button></div>
     </form>`;
     const form = dialog.querySelector('form');
+    const syncConditional = () => {
+      for (const field of fields.filter((item) => item.requiredWhen)) {
+        const on = isRequired(field, form);
+        form.elements[field.name]?.toggleAttribute('required', on);
+        const hint = form.querySelector(`[data-ask-hint="${CSS.escape(field.name)}"]`);
+        if (hint) hint.textContent = on ? (field.requiredWhen.hint || '必填') : (field.hint || '');
+      }
+    };
+    form.addEventListener('change', syncConditional);
+    syncConditional();
     const finish = (value) => { dialog.removeEventListener('cancel', onCancel); if (dialog.open) dialog.close(); resolve(value); };
     const onCancel = (event) => { event.preventDefault(); finish(null); };
     dialog.addEventListener('cancel', onCancel);
@@ -1177,7 +1201,7 @@ function askForm({ title, message = '', fields = [], confirmLabel = '确认', da
       const answers = {};
       for (const field of fields) {
         const value = String(form.elements[field.name]?.value ?? '').trim();
-        if (field.required && !value) { form.elements[field.name].focus(); return; }
+        if (isRequired(field, form) && !value) { form.elements[field.name].focus(); return; }
         answers[field.name] = value;
       }
       finish(answers);
@@ -1804,20 +1828,22 @@ elements.stockCards?.addEventListener('click', async (event) => {
   // 自己挪用或有问题的要去删）。生产现有的 override 正好就是这三类，只是当初全塞在
   // 自由文本里（`highvcc-manual-used` / `highvcc-cancelled` / `hnskj-voided`），
   // 事后只能靠读字符串区分。
+  // 选项和说明按 Lemon 2026-09-27「原因有些啰嗦，尽量简单一目了然」改短（D-405 第二批）；
+  // 说明改选填，只有选「其他」时必填 —— 其余四个原因码本身已说清接下来做什么。
   const answer = await askForm({
     title: `停用这张卡 · ${last4 || ext}`,
-    message: '停用后这张卡不再参与自动分配，并进入待销清单等你在卡台做最后处理。'
-      + '这一步只改系统里的记录，不会去卡台做任何操作。点错了可以在「历史」里撤销。',
+    message: '停用后不再分配、进待销清单。只改系统记录，不动卡台；点错可在「历史」里撤销。',
     fields: [
       { name: 'cause', label: '为什么停用', type: 'select', value: 'MANUAL_USED',
         options: [
-          { value: 'MANUAL_USED', label: '我拿它手动充值了' },
-          { value: 'PROVIDER_VOIDED', label: '卡台把它禁用或作废了' },
-          { value: 'CARD_FAULTY', label: '这张卡有问题（付款老失败等）' },
-          { value: 'OPERATOR_CANCELLED', label: '我在卡台主动取消了它' },
-          { value: 'OTHER', label: '其他（在下面写清楚）' }
+          { value: 'MANUAL_USED', label: '手动用掉了' },
+          { value: 'PROVIDER_VOIDED', label: '卡台已作废' },
+          { value: 'CARD_FAULTY', label: '卡有问题' },
+          { value: 'OPERATOR_CANCELLED', label: '已在卡台取消' },
+          { value: 'OTHER', label: '其他' }
         ] },
-      { name: 'note', label: '说明（必填，会进审计）', required: true }
+      { name: 'note', label: '备注', hint: '选填', placeholder: '例如：9-21 给 Pro 补差价',
+        requiredWhen: { field: 'cause', value: 'OTHER', hint: '选「其他」时必填' } }
     ],
     confirmLabel: '停用', danger: true
   });
@@ -1828,7 +1854,7 @@ elements.stockCards?.addEventListener('click', async (event) => {
       body: JSON.stringify({ providerAccountId: account, externalCardId: ext,
         allocationPolicy: 'RETIRED',
         // 原因码写在最前面，待销清单据它显示「接下来该做什么」；说明原样跟在后面。
-        reason: `${answer.cause}: ${answer.note}` })
+        reason: answer.note ? `${answer.cause}: ${answer.note}` : `${answer.cause}:` })
     });
     showNotice(STOP_CAUSE_NOTICE[answer.cause] || '已停用，这张卡不再参与分配。', 'success');
     await loadStock();
