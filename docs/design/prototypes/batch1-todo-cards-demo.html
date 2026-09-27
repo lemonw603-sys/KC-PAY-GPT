@@ -25,8 +25,24 @@
 tr.is-landing td{animation:wbLanding 3s ease-out 1}
 tr.is-landing td:first-child{box-shadow:inset 3px 0 0 var(--wb-a,#2a8d77)}
 .cardbtn.is-landing{outline:2px solid var(--wb-a,#2a8d77);outline-offset:2px}
-.landing-banner{display:flex;align-items:center;gap:10px;margin:0 0 10px;padding:9px 12px;border-radius:10px;background:var(--wb-a-soft,#e3f2ee);color:var(--wb-t);font-size:12.5px}
-.landing-banner button{margin-left:auto}
+.landing-banner{display:flex;align-items:center;gap:12px;margin:0 0 10px;padding:8px 12px 8px 8px;border-radius:11px;background:var(--wb-a-soft,#e3f2ee);color:var(--wb-t);font-size:12.5px}
+/* 回工作台 · 方案 A：提示条左侧的胶囊 */
+.back-pill{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 12px 0 9px;border:0;border-radius:999px;background:var(--wb-s,#fff);color:var(--wb-a-ink,#1f6f5c);font:inherit;font-size:12.5px;font-weight:600;cursor:pointer;box-shadow:0 1px 2px hsla(176,25%,10%,.12),inset 0 0 0 1px hsla(168,30%,40%,.18);white-space:nowrap}
+.back-pill:hover{background:var(--wb-a,#2a8d77);color:#fff}
+.back-pill .arr{font-size:14px;line-height:1;transform:translateY(-.5px)}
+/* 回工作台 · 方案 B：悬浮在页面下方，滚动时一直在 */
+.back-float{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);z-index:50;display:inline-flex;align-items:center;gap:10px;padding:6px 6px 6px 14px;border-radius:999px;background:var(--wb-t,#172120);color:#fff;font-size:12.5px;box-shadow:0 10px 28px -10px hsla(176,25%,10%,.45)}
+.back-float span{opacity:.82}
+.back-float .back-pill{background:#fff;box-shadow:none}
+.back-float .back-pill:hover{background:var(--wb-a,#2a8d77);color:#fff}
+.opt-switch{display:inline-flex;gap:2px;padding:2px;border-radius:8px;background:var(--wb-s3);margin-left:8px;vertical-align:middle}
+.opt-switch button{border:0;background:none;padding:3px 10px;border-radius:6px;font:inherit;font-size:12px;color:var(--wb-t2);cursor:pointer}
+.opt-switch button[aria-pressed="true"]{background:var(--wb-s,#fff);color:var(--wb-a-ink,#1f6f5c);font-weight:600;box-shadow:0 1px 2px hsla(176,25%,10%,.12)}
+/* 列宽：用量贴近余额（卡片列表）；余额、卡台上往左收（待销清单） */
+.cardtable table,.cardretire table{table-layout:fixed}
+.token-box{display:flex;align-items:center;gap:10px;margin-top:10px;padding:12px;border:1px solid var(--wb-bd);border-radius:12px;background:var(--wb-s)}
+.token-box input{flex:1;height:34px;border:1px solid var(--wb-bd);border-radius:9px;padding:0 10px;font:inherit;font-size:12.5px}
+.token-box.is-landing{animation:wbLanding 3s ease-out 1;box-shadow:inset 3px 0 0 var(--wb-a,#2a8d77)}
 /* 待销清单「卡台上」 */
 .src-state{display:inline-flex;align-items:center;gap:5px;font-size:12px;white-space:nowrap}
 .src-state i{width:7px;height:7px;border-radius:50%;display:inline-block}
@@ -83,26 +99,27 @@ tr.is-done td{opacity:.5}
             </div>
             <div class="wb-provrow">
               <div class="wb-provhead"><b>highvcc</b><span class="wb-chip mute"><span class="wb-d"></span><span>钱包 20.26 USD · 查询于 21:45</span></span><button type="button" class="wb-btn out sm">刷新余额</button><button type="button" class="wb-btn out sm">更新登录</button>
-                <span class="wb-spent" title="今天 17:33 自动开卡 1 张（尾号 5270）：$16 转入卡内，另扣手续费 $0.50。「今天花了」只算手续费、拒付和成功订单的消费，不算转进卡里的钱。">今天花了 <b class="wb-mono">0.50 USD</b><i class="why">开卡手续费 1 张</i><span class="demo-new">改</span></span></div>
+                <span class="wb-spent" title="明细：开卡手续费 0.50 USD（17:33 自动开卡 1 张，尾号 5270；另有 16 USD 转进卡里，不算花掉）">今天花了 <b class="wb-mono">0.50 USD</b><span class="demo-new">悬停看明细</span></span></div>
               <div class="wb-prods"><span class="wb-prod is-ok"><b>Plus</b><span class="wb-prod-n">剩 <i>1</i> 张 · 能充 <i>1</i> 单</span><small title="自动补"><span class="wb-how">自动补</span><span class="wb-how-s">自动</span></small></span></div>
             </div>
             <div class="wb-points"><b>直充平台</b><span>剩 15 点 · 查询于 21:45</span><span class="demo-new">第二批：点数从路线按钮挪到这里</span></div>
-            <p class="wb-total">合计可分配 <b class="wb-mono">1</b> 张 · 没有单在等卡</p>
+            <p class="wb-total">合计可分配 <b class="wb-mono">1</b> 张<span class="demo-new">「没有单在等卡」不再显示；有人等卡时才出「N 单正在等卡」</span></p>
           </div>
         </section>
         <section class="wb-card"><div class="wb-ch"><div><p class="wb-kick">说明</p><h2>这一批改了什么</h2></div></div>
           <div class="wb-cb" style="font-size:12.5px;color:var(--wb-t2);line-height:1.75">
-            ① 「今天要处理」只放<b>你现在能动手、点了就能办完</b>的事；「新卡待接管 13 张」「待登记手动用卡」挪到诊断页（点左边「诊断」看）。<br>
-            ② 「去处理」直接落到那个按钮上，并闪一下。<br>
+            ① 「今天要处理」只放<b>急着要你动手</b>的事；删卡、登记这类不急的只在卡片页；「新卡待接管 13 张」「待登记手动用卡」挪到诊断页。<br>
+            ② 「去处理」直接落到那个按钮上，并闪一下；落地后有「回工作台」（两种样式可切换比较）。<br>
             ③ 提醒按类分组，可整组关；关一条不再收起，每 10 秒的自动刷新也不会收起。<br>
-            ④ 「今天花了」写清是什么（鼠标停在上面看明细）。<br>
-            ⑤ 卡片页：卡状态写具体原因；待销清单多一列「卡台上」。
+            ④ 「今天花了」写法不变，鼠标停上去看明细。<br>
+            ⑤ 卡片页：卡状态写具体原因；待销清单多一列「卡台上」；列宽调整。
           </div>
         </section>
       </div>
 
       <section class="wb-card">
-        <div class="wb-ch"><div><p class="wb-kick">今天要处理的</p><h2>需要我处理</h2></div><span class="wb-chip danger" id="q-count"><span class="wb-d"></span>2 件待办</span></div>
+        <div class="wb-ch"><div><p class="wb-kick">今天要处理的</p><h2>需要我处理</h2></div><span class="wb-chip danger" id="q-count"><span class="wb-d"></span>—</span></div>
+        <p class="demo-note" style="margin:10px 16px 0">现在生产上没有急着要你动手的事，所以默认是空的。<label style="cursor:pointer"><input type="checkbox" id="show-example"> 显示一条示例待办</label>（点它的「去处理」看跳转和「回工作台」）· 回工作台样式：<span class="opt-switch" role="group"><button type="button" data-back="A" aria-pressed="true">A 提示条里的胶囊</button><button type="button" data-back="B" aria-pressed="false">B 页面下方悬浮</button></span></p>
         <div class="wb-cb">
           <div class="wb-q" id="q-list"></div>
           <details class="wb-alerts" id="alerts" style="margin-top:12px">
@@ -115,25 +132,31 @@ tr.is-done td{opacity:.5}
 
     <!-- ================= 卡片 ================= -->
     <section id="v-stock" class="view" hidden>
-      <p class="demo-note"><b>卡片页</b>：卡片列表的「状态」写具体原因（原来 4 张都写「当前不满足 Plus 安全分配条件」）；待销清单多一列「卡台上」。整行黄底这里先换成了行首「已到期」小标签（第二批的做法，一起看看合不合适）。</p>
+      <p class="demo-note"><b>卡片页</b>：卡片列表的「状态」写具体原因（原来 4 张都写「当前不满足 Plus 安全分配条件」）；待销清单多一列「卡台上」。整行黄底换成「已到期」小标签。列宽：卡片列表「用量」挪近「余额」；待销清单「余额」「卡台上」往左收。</p>
+      <div id="landing-top"></div>
+      <section class="card stock-card" id="token-card" hidden>
+        <div class="card-heading"><div><p class="section-kicker">highvcc</p><h2>更新登录（token）</h2></div></div>
+        <div class="token-box" id="token-box"><input type="password" placeholder="从已登录的 highvcc 页面复制 token 后粘贴" aria-label="token"><button class="cardbtn is-primary" type="button">保存</button></div>
+      </section>
       <section class="card stock-card">
         <div class="card-heading"><div><p class="section-kicker">运营明细</p><h2>卡片列表</h2></div><span class="write-badge">完整卡号</span></div>
         <div class="cardtable"><table>
-          <thead><tr><th>尾号</th><th>卡台</th><th>余额</th><th>用量</th><th>状态</th><th>绑定订单</th><th>可销</th></tr></thead>
+          <colgroup><col style="width:76px"><col style="width:86px"><col style="width:150px"><col style="width:64px"><col><col style="width:130px"><col style="width:118px"><col style="width:84px"><col style="width:108px"></colgroup>
+          <thead><tr><th>尾号</th><th>卡台</th><th>余额</th><th>用量</th><th>状态</th><th>绑定订单</th><th>开卡 / 成本</th><th>可销</th><th></th></tr></thead>
           <tbody>
-            <tr><td class="cardmono"><span class="cardlink">5270</span></td><td>highvcc</td><td class="cardmono">$16.00<span class="cardsub">资料更新 09-27 18:20</span></td><td class="cardmono">0/3</td><td><span class="cardchip is-ok">可分配</span><span class="cardsub">可直接分配 Plus</span></td><td class="cardmono"><span class="cardmuted">—</span></td><td>—</td></tr>
-            <tr><td class="cardmono"><span class="cardlink">4022</span></td><td>highvcc</td><td class="cardmono">$1.00<span class="cardsub">资料更新 09-27 18:20</span></td><td class="cardmono">0/3</td><td><span class="cardchip is-bad">暂不可用</span><span class="cardsub">余额 $1.00，不够 $16<span class="demo-new">改</span></span></td><td class="cardmono"><span class="cardmuted">—</span></td><td>—</td></tr>
-            <tr><td class="cardmono"><span class="cardlink">7402</span></td><td>highvcc</td><td class="cardmono">$1.08<span class="cardsub">资料更新 09-27 18:20</span></td><td class="cardmono">1/3</td><td><span class="cardchip is-bad">暂不可用</span><span class="cardsub">余额 $1.08，不够 $16<span class="demo-new">改</span></span></td><td class="cardmono"><span class="cardmuted">—</span></td><td>—</td></tr>
-            <tr class="is-due"><td class="cardmono"><span class="cardlink">1657</span></td><td>highvcc</td><td class="cardmono">$1.00<span class="cardsub">资料更新 09-27 18:20</span></td><td class="cardmono">3/3</td><td><span class="cardchip is-due">次数用满</span><span class="cardsub">3 次已用满<span class="demo-new">改</span></span></td><td class="cardmono"><span class="cardmuted">—</span></td><td><span class="due-tag">已到期</span></td></tr>
-            <tr class="is-due"><td class="cardmono"><span class="cardlink">3159</span></td><td>highvcc</td><td class="cardmono">$1.05<span class="cardsub">资料更新 09-27 18:20</span></td><td class="cardmono">3/3</td><td><span class="cardchip is-due">次数用满</span><span class="cardsub">3 次已用满<span class="demo-new">改</span></span></td><td class="cardmono"><span class="cardmuted">—</span></td><td><span class="due-tag">已到期</span></td></tr>
+            <tr><td class="cardmono"><span class="cardlink">5270</span></td><td>highvcc</td><td class="cardmono">$16.00<span class="cardsub">资料更新 09-27 18:20</span></td><td class="cardmono">0/3</td><td><span class="cardchip is-ok">可分配</span><span class="cardsub">可直接分配 Plus</span></td><td class="cardmono"><span class="cardmuted">—</span></td><td class="cardmono">09-27 17:33<span class="cardsub">$0.50</span></td><td>—</td><td><button class="cardbtn" type="button">停用这张卡</button></td></tr>
+            <tr><td class="cardmono"><span class="cardlink">4022</span></td><td>highvcc</td><td class="cardmono">$1.00<span class="cardsub">资料更新 09-27 18:20</span></td><td class="cardmono">0/3</td><td><span class="cardchip is-bad">暂不可用</span><span class="cardsub">余额 $1.00，不够 $16<span class="demo-new">改</span></span></td><td class="cardmono"><span class="cardmuted">—</span></td><td class="cardmono">09-18 14:27<span class="cardsub">$0.50</span></td><td>—</td><td><button class="cardbtn" type="button">停用这张卡</button></td></tr>
+            <tr><td class="cardmono"><span class="cardlink">7402</span></td><td>highvcc</td><td class="cardmono">$1.08<span class="cardsub">资料更新 09-27 18:20</span></td><td class="cardmono">1/3</td><td><span class="cardchip is-bad">暂不可用</span><span class="cardsub">余额 $1.08，不够 $16<span class="demo-new">改</span></span></td><td class="cardmono"><span class="cardmuted">—</span></td><td class="cardmono">09-08 22:20<span class="cardsub">成本未记</span></td><td>—</td><td><button class="cardbtn" type="button">停用这张卡</button></td></tr>
+            <tr class="is-due"><td class="cardmono"><span class="cardlink">1657</span></td><td>highvcc</td><td class="cardmono">$1.00<span class="cardsub">资料更新 09-27 18:20</span></td><td class="cardmono">3/3</td><td><span class="cardchip is-due">次数用满</span><span class="cardsub">3 次已用满<span class="demo-new">改</span></span></td><td class="cardmono"><span class="cardmuted">—</span></td><td class="cardmono">09-14 00:56<span class="cardsub">成本未记</span></td><td><span class="due-tag">已到期</span></td><td><button class="cardbtn" type="button">停用这张卡</button></td></tr>
+            <tr class="is-due"><td class="cardmono"><span class="cardlink">3159</span></td><td>highvcc</td><td class="cardmono">$1.05<span class="cardsub">资料更新 09-27 18:20</span></td><td class="cardmono">3/3</td><td><span class="cardchip is-due">次数用满</span><span class="cardsub">3 次已用满<span class="demo-new">改</span></span></td><td class="cardmono"><span class="cardmuted">—</span></td><td class="cardmono">09-13 13:18<span class="cardsub">成本未记</span></td><td><span class="due-tag">已到期</span></td><td><button class="cardbtn" type="button">停用这张卡</button></td></tr>
           </tbody></table></div>
         <div class="cardfold"><button class="cardfoldtoggle" type="button">▸ 历史（退役 / 卡台作废）40 张</button></div>
       </section>
 
       <section class="card stock-card" id="retire-card">
         <div class="card-heading"><div><p class="section-kicker">收尾</p><h2>待销清单</h2></div><span class="write-badge">你删卡后登记</span></div>
-        <div id="landing"></div>
         <div class="cardretire"><table>
+          <colgroup><col style="width:76px"><col style="width:86px"><col style="width:280px"><col style="width:84px"><col style="width:170px"><col></colgroup>
           <thead><tr><th>尾号</th><th>卡台</th><th>为什么待销</th><th>余额</th><th>卡台上<span class="demo-new">新</span></th><th></th></tr></thead>
           <tbody id="retire-rows"></tbody>
         </table>
@@ -169,25 +192,21 @@ const SRC = {
   there: ['is-there', '还在', '今天 18:20 同步'], void: ['is-void', '卡台已作废', '今天 18:15 同步'],
   gone: ['is-gone', '已不见（多半已删）', ''], unknown: ['is-unknown', '查不了', '卡台登录失效']
 };
-function renderRetire(highlight = null) {
+let backStyle = 'A';
+function renderRetire() {
   $('#retire-rows').innerHTML = retire.map((r) => {
     const [cls, text, when] = SRC[r.src];
     const btn = r.done ? '<span class="cardmuted">已登记 ✓</span>'
       : `<button class="cardbtn is-primary" type="button" data-done="${r.last4}">${r.src === 'void' ? '登记已销' : '我已在卡台删掉'}</button>`;
-    const landing = highlight && highlight(r) ? ' is-landing' : '';
-    return `<tr class="is-due${r.done ? ' is-done' : ''}${landing}" data-row="${r.last4}"><td class="cardmono">${r.last4}</td><td>${r.rig}</td><td><span class="due-tag">已到期</span>${r.why}</td><td class="cardmono">$${r.bal}</td>
+    return `<tr class="is-due${r.done ? ' is-done' : ''}" data-row="${r.last4}"><td class="cardmono">${r.last4}</td><td>${r.rig}</td><td><span class="due-tag">已到期</span>${r.why}</td><td class="cardmono">$${r.bal}</td>
       <td><span class="src-state ${cls}"><i></i>${text}</span>${when ? `<span class="src-when">${when}</span>` : ''}</td><td>${btn}</td></tr>`;
   }).join('');
-  if (highlight) document.querySelectorAll('tr.is-landing .cardbtn').forEach((b) => { b.classList.add('is-landing'); setTimeout(() => b.classList.remove('is-landing'), 3200); });
 }
 function renderQueue() {
-  const toDelete = retire.filter((r) => !r.done && r.src === 'there');
-  const toRegister = retire.filter((r) => !r.done && r.src === 'void');
   const items = [];
-  if (toDelete.length) items.push(`<div class="wb-qi warn"><div class="wb-qic">⌫</div><div class="wb-qt"><b>去 highvcc 删 ${toDelete.length} 张待销卡</b><span class="wb-ev">都已过存活期，卡台上还在（今天 18:20 同步）；删完回来点「我已在卡台删掉」</span></div><div class="wb-qa"><button type="button" class="wb-btn out sm" data-land="there">去删卡清单</button></div></div>`);
-  if (toRegister.length) items.push(`<div class="wb-qi info"><div class="wb-qic">✓</div><div class="wb-qt"><b>${toRegister.length} 张 HNSKJ 卡卡台已作废，登记一下</b><span class="wb-ev">${toRegister.map((r) => r.last4).join('、')} 卡台显示已作废，不用再去删</span></div><div class="wb-qa"><button type="button" class="wb-btn out sm" data-land="void">去登记</button></div></div>`);
-  $('#q-list').innerHTML = items.join('') || '<p class="wb-qempty is-calm">没有要你动手的事 ✓</p>';
-  $('#q-count').innerHTML = `<span class="wb-d"></span>${items.length} 件待办`;
+  if ($('#show-example').checked) items.push(`<div class="wb-qi danger"><div class="wb-qic">⚿</div><div class="wb-qt"><b>highvcc 登录失效，开卡会失败</b><span class="wb-ev">示例 · 重新贴一次 token 就好 · 09-28 09:12</span></div><div class="wb-qa"><button type="button" class="wb-btn out sm" data-land="token">去处理</button></div></div>`);
+  $('#q-list').innerHTML = items.join('') || '<p class="wb-qempty is-calm">没有急着要你动手的事 ✓</p>';
+  $('#q-count').innerHTML = items.length ? `<span class="wb-d"></span>${items.length} 件待办` : '<span class="wb-d"></span>没有待办';
   $('#q-count').className = `wb-chip ${items.length ? 'danger' : 'ok'}`;
 }
 const alerts = [
@@ -202,28 +221,48 @@ function renderAlerts() {
     + left.map((a) => `<div class="wb-alert-row" data-alert="${a.id}"><div class="wb-at"><b>${a.title}</b><small>${a.msg}</small></div><button type="button" class="wb-btn out sm" data-close="${a.id}">关闭</button></div>`).join('') + '</div>'
     : '<p class="wb-qempty">都关完了</p>';
 }
+function clearLanding() {
+  $('#landing-top').innerHTML = '';
+  document.querySelector('.back-float')?.remove();
+  $('#token-card').hidden = true;
+}
 function go(view) {
+  if (view !== 'stock') clearLanding();
   document.querySelectorAll('.view').forEach((v) => { v.hidden = v.id !== `v-${view}`; });
   document.querySelectorAll('[data-go]').forEach((b) => b.classList.toggle('is-active', b.dataset.go === view));
   $('#view-title').textContent = { overview: '今天的运行情况', stock: '卡片', diagnostics: '诊断' }[view];
   window.scrollTo(0, 0);
 }
+const BACK = '<button type="button" class="back-pill" data-back-home><span class="arr">←</span>回工作台</button>';
+function land() {
+  go('stock');
+  $('#token-card').hidden = false;
+  const box = $('#token-box'); box.classList.remove('is-landing'); void box.offsetWidth; box.classList.add('is-landing');
+  if (backStyle === 'A') {
+    $('#landing-top').innerHTML = `<div class="landing-banner">${BACK}<span>从「需要我处理」过来：highvcc 登录失效，把新 token 贴到下面保存就行</span></div>`;
+  } else {
+    const f = document.createElement('div'); f.className = 'back-float';
+    f.innerHTML = `<span>从「需要我处理」过来</span>${BACK}`; document.body.appendChild(f);
+  }
+  requestAnimationFrame(() => $(backStyle === 'A' ? '#landing-top' : '#token-card').scrollIntoView({ block: 'start' }));
+  setTimeout(() => box.querySelector('input').focus({ preventScroll: true }), 50);
+}
+document.addEventListener('change', (e) => { if (e.target.id === 'show-example') renderQueue(); });
 document.addEventListener('click', (e) => {
   const t = e.target.closest('button'); if (!t) return;
   if (t.dataset.go) return go(t.dataset.go);
-  if (t.dataset.land) {
-    const kind = t.dataset.land;
-    go('stock');
-    const n = retire.filter((r) => !r.done && r.src === kind).length;
-    $('#landing').innerHTML = `<div class="landing-banner">从工作台来：${kind === 'there' ? `这 ${n} 张要去 highvcc 删，删完点右边「我已在卡台删掉」` : `这 ${n} 张卡台已作废，点「登记已销」就行`}<button type="button" class="wb-btn out sm" data-go="overview">回工作台</button></div>`;
-    renderRetire((r) => !r.done && r.src === kind);
-    requestAnimationFrame(() => $('#retire-card').scrollIntoView({ block: 'start' }));
+  if (t.dataset.back) {
+    backStyle = t.dataset.back;
+    document.querySelectorAll('[data-back]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.back === backStyle)));
     return;
   }
-  if (t.dataset.done) {
-    const r = retire.find((x) => x.last4 === t.dataset.done); r.done = true;
-    renderRetire(); renderQueue(); return;
+  if (t.dataset.land) return land();
+  if (t.hasAttribute('data-back-home')) {
+    go('overview');
+    requestAnimationFrame(() => $('#q-list').closest('.wb-card').scrollIntoView({ block: 'start' }));
+    return;
   }
+  if (t.dataset.done) { retire.find((x) => x.last4 === t.dataset.done).done = true; renderRetire(); return; }
   if (t.dataset.close) {
     const row = t.closest('.wb-alert-row'); row.classList.add('is-gone');
     setTimeout(() => { alerts.find((a) => a.id === t.dataset.close).closed = true; renderAlerts(); }, 250);
