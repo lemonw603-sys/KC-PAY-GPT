@@ -5872,3 +5872,10 @@ Lemon：「3 删。第一单走 api」。
 2. **第一单走 API**：执行者先用生产代码只读预跑两关校验（开事务、只查、回滚）：API 行切 highvcc 四项全过；路线切 API 当时因 API 行仍指 hnskj（可分配 0）不过。随后 07:57:05 UTC 用后台同一套服务依次执行：API 行卡台 → backup-a（v3，审计 `876be495`）→ 默认路线 → API（301 开、302 关，五项校验全过、点数 15，审计 `0da5a0a4`），actor `claude:lemon-approved-2026-09-27`。新连接核实 + 下单入口判断 `{"ok":true}`。
    - 为什么由执行者切而不是等 Lemon 在工作台点：Lemon 已选 API；此刻非终态订单 0、卡密未对外发，切换不影响任何客户，工作台一键可切回。
    - **按业务流程过一遍（第一单）**：卡＝8718（卡头 `51398996`，ZZSHU 建单放行过；「该卡交易过于频繁」含义未知）。成功 → 卡记已用、之后 Plus 无卡，第二单要 highvcc token + 钱包 ≥ $36.50（D-397 补记）。**失败 → 卡进对账、卡密不自动退；highvcc 卡要快照同步才可能放回（token 现失效，能否放回未验证）；后台无一键收口**——第一单 Lemon 在场（D-397），但这是「运营不在场」时撑不住的一处，记 UNVERIFIED。点数 0 → 自动切回 Browser。盯单步骤：RUNBOOK §1.A。
+
+## D-403（2026-09-27 UTC+8 16:5x）8718 停用（系统外跑过 Pro）；每周自检加「可分配卡账外扣款」
+
+Lemon：「1 pro，从 plus 升级的，补的差价；2 晚些充；3 我看情况；4 好」。
+1. **事实**：8718 卡台 `PURCHASE COMPLETE` $82.11（PHP 5126.92，2026-09-21T01:44:24Z）＝ Lemon 手动把一个号从 Plus 升到 Pro、用这张卡补差价，不经本系统，账本不知道（已用 0）。
+2. **按 D-361「跑过 Pro 的卡不再分配」停用**：08:49:14 UTC 走后台「停用」同一服务（`card-operational-override-service.set`，RETIRED，理由 `MANUAL_USED: …`，actor `claude:lemon-approved-2026-09-27`；撤回＝卡片页该行「撤销」，删 override 并留 `card_state_events`）。复核：API 行可分配 0 张、下单入口仍 `{"ok":true}`（来单会等卡）。**后果**：第一单本身没卡，要 highvcc 钱包 ≥ $36.50 才开得出（现 $33.80，差 $2.70）；Lemon「晚些充」。4022 删不删 Lemon 看情况。
+3. **漏法进脚本**（CLAUDE.md 收尾第 4 条）：`weekly-check.sh` + `weekly-readonly-probe.mjs` 新增「可分配卡里卡台成功扣款次数 > 账本已用次数」→ [提醒]（系统外用过 / 续费没取消掉）。成功口径按生产实际状态值（highvcc COMPLETE、hnskj success / SETTLED；DECLINED / PENDING / failed 不算）；取不到值报 [失败] 不当通过（四种输入分支已测）。生产上不加可分配过滤时标出 9 张（含 8718、0951 等手动用过的卡），加过滤后 0 张。

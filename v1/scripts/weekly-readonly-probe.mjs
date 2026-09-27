@@ -52,6 +52,17 @@ try {
   out.cards = { plusMinBalance: minBal, eligible: null };
   if (minBal && /^[0-9.]+$/.test(minBal)) {
     out.cards.eligible = Number((await one(`SELECT COUNT(*) AS n FROM cards c WHERE ${eligibleInventoryCardSql('c', minBal)}`)).n);
+    // 2026-09-27（D-403）：可分配的卡里，卡台成功扣款次数多于本系统账本已用次数 → 系统外用过
+    // （8718 被手动补过 Pro 差价，账本不知道，照样会分给下一单），或续费没取消掉又扣了一次。
+    // 成功口径按生产里实际出现过的状态：highvcc COMPLETE、hnskj success / SETTLED（DECLINED / PENDING / failed 不算）。
+    const [offLedger] = await pool.query(
+      `SELECT c.last4 FROM cards c
+        WHERE ${eligibleInventoryCardSql('c', minBal)}
+          AND (SELECT COUNT(*) FROM card_transactions t WHERE t.card_id = c.id
+                 AND LOWER(t.transaction_type) = 'purchase' AND LOWER(t.status) IN ('complete','success','settled'))
+            > (SELECT COUNT(*) FROM card_consumption_ledger l WHERE l.card_id = c.id
+                 AND l.status IN ('CONSUMED','RESERVED','RECONCILIATION'))`);
+    out.cards.offLedgerPurchase = offLedger.map((r) => String(r.last4 || '?'));
   }
   const [snaps] = await pool.query(`SELECT pa.provider_code, MAX(s.created_at) AS last_at FROM provider_balance_snapshots s INNER JOIN provider_accounts pa ON pa.id = s.provider_account_id WHERE pa.purpose = 'CARD' GROUP BY pa.provider_code`);
   out.walletSnapshotAgeMin = Object.fromEntries(snaps.map((r) => [r.provider_code, ageMin(r.last_at)]));

@@ -67,6 +67,11 @@ if ! printf '%s' "$probe" | grep -q '"ok":true'; then bad "生产只读探针没
   bw=$(j "['heartbeats']['browserWorkerAgeMin']"); if num "$bw" && [ "$bw" -le 5 ]; then ok "常驻池心跳 ${bw} 分钟前"; else note "常驻池心跳 ${bw:-无} 分钟前" "本机 supervisor/worker 是否在跑；停着时客户会被拒单"; fi
   dr=$(j "['heartbeats']['dailyReconciliationAgeMin']"); if num "$dr" && [ "$dr" -le $((26*60)) ]; then ok "日对账心跳 ${dr} 分钟前"; else bad "日对账心跳 ${dr:-无} 分钟前" "超过 26 小时"; fi
   el=$(j "['cards']['eligible']"); mb=$(j "['cards']['plusMinBalance']"); if num "$el" && [ "$el" -ge 1 ]; then ok "可分配卡 ${el} 张（Plus 门槛 ${mb}，正式资格 SQL）"; elif num "$el"; then note "可分配卡 0 张" "新单会卡在等卡；看供卡调度器与钱包"; else bad "可分配卡取不到" "资格 SQL 未生成"; fi
+  # 只有明确读到列表才算数：python 报错 / 字段缺失时输出不以 LIST: 开头 → 报失败，不当「没有」。
+  ol=$(printf '%s' "$probe" | python3 -c "import json,sys; v=json.load(sys.stdin)['cards']['offLedgerPurchase']; assert isinstance(v, list); print('LIST:' + ' '.join(v))" 2>/dev/null)
+  if [ "${ol#LIST:}" = "$ol" ]; then bad "可分配卡的账外扣款取不到" "探针 cards.offLedgerPurchase 缺失或格式不对"
+  elif [ -z "${ol#LIST:}" ]; then ok "可分配卡没有账外扣款（卡台成功扣款 ≤ 系统账本已用）"
+  else note "可分配卡有账外扣款：尾号 ${ol#LIST:}" "卡台成功扣款多于系统账本：系统外手动用过（跑过 Pro 的按 D-361 停用：卡片页「停用」→「我拿它手动充值了」）或续费没取消掉；核实后再让它接单"; fi
   ws=$(printf '%s' "$probe" | python3 -c "import json,sys; d=json.load(sys.stdin)['walletSnapshotAgeMin']; print(' '.join(f'{k}={v}min' for k,v in d.items()))" 2>/dev/null)
   old=$(printf '%s' "$probe" | python3 -c "import json,sys; d=json.load(sys.stdin)['walletSnapshotAgeMin']; print(' '.join(k for k,v in d.items() if v is None or v>26*60))" 2>/dev/null)
   [ -z "$old" ] && ok "卡台钱包快照都在 26 小时内（$ws）" || note "卡台钱包快照过旧：$old（$ws）" "同步定时器或 token 有问题（highvcc token 过期会先在这里露头）"
