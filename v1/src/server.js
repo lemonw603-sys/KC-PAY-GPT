@@ -291,8 +291,10 @@ const app = createApp({
   ,setAdminDefaultRechargeMethod: providerRouteAdminService.setDefaultRechargeMethod
   ,listAdminCardSources: cardSourceAdminService.list
   ,createAdminManualCardSource: cardSourceAdminService.createManualSource
-  ,estimateAdminBrowserCardSourceTakeover: cardSourceAdminService.estimateWaitingTakeover
+  ,estimateAdminBrowserCardSourceTakeover: () => cardSourceAdminService.estimateWaitingTakeover({ executorKind: 'BROWSER' })
   ,switchAdminBrowserCardSource: cardSourceAdminService.switchBrowserSource
+  ,estimateAdminApiCardSourceTakeover: () => cardSourceAdminService.estimateWaitingTakeover({ executorKind: 'API' })
+  ,switchAdminApiCardSource: cardSourceAdminService.switchApiSource
   ,listCardOperationalOverrides: cardOperationalOverrideService.list
   ,setCardOperationalOverride: cardOperationalOverrideService.set
   ,clearCardOperationalOverride: cardOperationalOverrideService.clear

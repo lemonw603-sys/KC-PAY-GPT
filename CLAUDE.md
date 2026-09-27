@@ -43,7 +43,7 @@
 - “提链”当前是候选而非已验收结论：必须区分 hosted 长链与依赖账号 Session 的内部短链；与原诺汇盛上号器先做同账号、同菲律宾 sticky 出口的只读配对，会创建 Checkout 的比较使用隔离账号 cohort。
 - Browser PoC 采用隔离赛道，不把所有兼容逻辑堆入一个执行器；赛道表示架构，Runtime/Cookie/网络表示公共实验轴。失败赛道留证后归档，最终只接入 champion 和最多一个可在 Checkout 创建前路由的预验证 fallback。
 - 没有菲律宾出口可以继续 OFFLINE/NON_PH 筛选；普通菲律宾 VPN 只作预筛，最终结论需要接近未来生产的菲律宾 sticky 出口。
-- 旧直充系统：ZZSHU 只保留历史兼容，不参与 Browser 新链路设计和实施。
+- 直充平台 ZZSHU（`card.zzshu.pro`）＝ API 路线 301 的执行方：本方自带卡、`orderType=direct`，卡可来自任何有 API 直充能力的卡台（D-401，取代 D-253「只走 hnskj」）；按其发放的 API Key 计点、成功才扣，点数由 Lemon 去平台充，系统只读监控（≤5 / 0 推手机，0 点时自动切回 Browser、不自动切回 API）。不参与 Browser 链路。
 - 开源基线：`https://github.com/KC-CatK/KC-PAY-GPT`
 
 业务层不得直接拼接外部 URL 或解析供应商/页面私有字段。HNSKJ 调用经过 `HnskjCardProvider`；ChatGPT 页面行为经过版本化 Browser Executor 和页面适配层。

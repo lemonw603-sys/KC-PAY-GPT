@@ -213,7 +213,7 @@ test('故障转台不适用于 API 需求：hnskj 故障、Browser 行指向 hig
   assert.equal(pool.jobs.length, 0);
   const blocked = pool.alerts.find((a) => a.type === 'CARD_SUPPLY_BLOCKED');
   assert.equal(blocked.severity, 'critical');
-  assert.match(blocked.message, /API 路线不转台/);
+  assert.match(blocked.message, /这台是固定卡台的路线在用，不转台/);
 });
 
 test('故障超过重试窗口后允许再试一次', async () => {
@@ -447,7 +447,7 @@ test('D-397：客户在等卡、highvcc 钱包低于底线 → 这一单响一�
   assert.equal(alerts[0].message,
     '订单 PJV1-plus-1｜客户在等卡，备用卡台 A 钱包 34.00，开一张要 16.00 + 手续费约 0.50，扣完剩 17.50，低于底线 20.00，请给钱包充值。条件恢复后系统会自动开卡、接着跑，客户不用重新提交。');
   assert.match(stockLow(pool, BACKUP_ID).message, /可分配 0 张，水位 1，开不出来：备用卡台 A 钱包 34\.00/);
-  assert.match(stockLow(pool, HNSKJ_ID).message, /开不出来：该台此刻不能开（FAULT:CARD_STOCK_PURCHASE_DISABLED），API 路线不转台/);
+  assert.match(stockLow(pool, HNSKJ_ID).message, /开不出来：该台此刻不能开（FAULT:CARD_STOCK_PURCHASE_DISABLED），这台是固定卡台的路线在用，不转台/);
   assert.equal(pool.alerts.some((a) => /正在补/.test(a.message)), false, '补不了时不许说正在补（09-26 00:01 UTC 实推过）');
   assert.equal(pool.finishedSweeps.length, 1, '每轮收一次已离开等卡的单的告警');
 });
@@ -516,3 +516,41 @@ test('D-397：建 job 的事务里才发现别处刚建了 job（并发）→ �
   assert.equal(waitingAlerts(pool).length, 0);
   assert.match(stockLow(pool, BACKUP_ID).message, /，开卡任务在跑。$/);
 });
+
+// ---- D-401：API 路线也能用任何卡台；Plus 的 API 行解锁后，缺卡台故障时同样替等卡的单转台 ----
+function unlockedApiSelections() {
+  return selectionRows().map((row) => (row.executor_kind === 'API' && row.product_id === PLUS ? { ...row, locked: 0 } : row));
+}
+
+test('D-401：Plus 的 API 行（解锁）指向故障的 hnskj、有 API 单在等 → 转到支持 API 直充的卡台开卡', async () => {
+  const pool = fakePool({
+    accounts: [
+      accountRow(HNSKJ_ID, { supply_fault_state: 'FAULT', supply_fault_reason: 'CARD_STOCK_PURCHASE_DISABLED', supply_fault_at: new Date(Date.now() - 60_000) }),
+      accountRow(BACKUP_ID, { supports_api_recharge: 1 })
+    ],
+    selections: unlockedApiSelections(),
+    available: { [`${HNSKJ_ID}:plus`]: 0, [`${BACKUP_ID}:plus`]: 2 },
+    waiting: { [`${HNSKJ_ID}:plus`]: 1 }
+  });
+  const result = await createCardSupplyScheduler({ pool, adapters: fakeAdapters({ highvccBalance: '190.00' }) }).run();
+  assert.equal(result.reason, 'SCHEDULED');
+  assert.equal(pool.jobs[0].opener, BACKUP_ID);
+  assert.equal(pool.jobs[0].fallbackFor, HNSKJ_ID);
+});
+
+test('D-401：接手的卡台不支持 API 直充就不转（等待单是 API 路线的，转过去也用不了）', async () => {
+  const pool = fakePool({
+    accounts: [
+      accountRow(HNSKJ_ID, { supply_fault_state: 'FAULT', supply_fault_reason: 'CARD_STOCK_PURCHASE_DISABLED', supply_fault_at: new Date(Date.now() - 60_000) }),
+      accountRow(BACKUP_ID, { supports_api_recharge: 0 })
+    ],
+    selections: unlockedApiSelections(),
+    available: { [`${HNSKJ_ID}:plus`]: 0, [`${BACKUP_ID}:plus`]: 2 },
+    waiting: { [`${HNSKJ_ID}:plus`]: 1 }
+  });
+  const result = await createCardSupplyScheduler({ pool, adapters: fakeAdapters({ highvccBalance: '190.00' }) }).run();
+  assert.equal(result.reason, 'BLOCKED');
+  assert.equal(result.outcome.fallback, 'NO_FALLBACK_ACCOUNT');
+  assert.equal(pool.jobs.length, 0);
+});
+

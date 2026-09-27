@@ -203,9 +203,11 @@ test('admin separates recharge method from audited Browser card-source switching
   // D-309：「卡台管理」那张表整个删了，有用的两列并进台账栏
   assert.doesNotMatch(html, /id="provider-routes-table"/);
   assert.match(html, /接入新卡台/);
-  assert.match(html, /API 充值固定用 HNSKJ/);
-  assert.match(script, /\/api\/v1\/admin\/card-sources\/browser\/current/);
-  assert.match(script, /Browser 卡台已切换/);
+  // D-401：API 行也能切卡台（ZZSHU 认其他卡台的卡），切哪一行跟着当前路线。
+  assert.doesNotMatch(html, /API 充值固定用 HNSKJ/);
+  assert.match(html, /当前路线（API 充值或浏览器自动化）用哪台/);
+  assert.match(script, /\/api\/v1\/admin\/card-sources\/\$\{kind === 'API' \? 'api' : 'browser'\}\/current/);
+  assert.match(script, /\$\{kindLabel\} 卡台已切换/);
   // D-280 ⑦ / B1：切换卡台只在工作台（那里带「同时接管排队单」和四项校验），
   // 卡片页这张表是只读的。所以这里要的是「指向工作台」，不是「人工指定」徽标。
   assert.match(html, /在工作台的工具栏里切/);

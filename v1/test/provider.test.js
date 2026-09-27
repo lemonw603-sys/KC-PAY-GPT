@@ -495,11 +495,92 @@ test('Zzshu status query never returns full token or PAN', async () => {
     paymentCurrency: 'PHP',
     paymentDetailsStatus: 'valid',
     isSubscriptionCancelled: 0,
+    verificationRequired: false,
     finishedAt: null,
     updatedAt: null
   });
   assert.equal('token' in status, false);
   assert.equal('bankCardNo' in status, false);
+});
+
+// D-401：真实响应形状取自 2026-09-26/27 的只读调用（新 Key → points 15；旧自定 Key → 401 40107）。
+test('Zzshu readPoints returns the integer points of the issued key', async () => {
+  const calls = [];
+  const provider = new ZzshuRechargeProvider({
+    baseUrl: 'https://card.example/api/v1', apiKey: 'issued-key',
+    fetchImpl: fetchQueue([response({ code: 0, message: 'success', data: {
+      id: '0', username: 'api-user', email: '', points: 15, role: 'normal', status: 'active', is_active: true
+    } })], calls)
+  });
+  assert.deepEqual(await provider.readPoints(), { points: 15 });
+  assert.equal(calls[0].url, 'https://card.example/api/v1/third-party/user');
+  assert.equal(calls[0].init.headers['X-API-Key'], 'issued-key');
+});
+
+test('Zzshu readPoints surfaces a rejected key as a definite, non-retryable error', async () => {
+  const provider = new ZzshuRechargeProvider({
+    baseUrl: 'https://card.example/api/v1', apiKey: 'self-made-key',
+    fetchImpl: async () => response({ code: 40107, message: '卡密无效或不存在' }, 401)
+  });
+  await assert.rejects(provider.readPoints(), (error) => error instanceof ProviderError
+    && error.status === 401 && error.businessCode === '40107' && error.retryable === false && error.uncertain === false);
+});
+
+test('Zzshu readPoints refuses a points field that is not a non-negative integer', async () => {
+  for (const points of ['15', -1, 1.5, null]) {
+    const provider = new ZzshuRechargeProvider({
+      baseUrl: 'https://card.example/api/v1', apiKey: 'issued-key',
+      fetchImpl: async () => response({ code: 0, message: 'success', data: { points } })
+    });
+    await assert.rejects(provider.readPoints(), ProviderSchemaError, `points=${JSON.stringify(points)}`);
+  }
+});
+
+test('Zzshu status flags a pending Stripe security verification without passing its secret on', async () => {
+  const provider = new ZzshuRechargeProvider({
+    baseUrl: 'https://card.example/api/v1', apiKey: 'issued-key',
+    fetchImpl: async () => response({ code: 0, message: 'success', data: {
+      order_no: '35', card_key: 'DIRECT-v', plan_type: 'plus', status: 'processing',
+      verification: { mode: 'stripe', client_secret: 'pi_secret_x', publishable_key: 'pk_live_x', expires_at: '2026-09-27T02:30:00Z' }
+    } })
+  });
+  const status = await provider.queryStatusWithSession('DIRECT-v');
+  assert.equal(status.verificationRequired, true);
+  assert.equal(JSON.stringify(status).includes('pi_secret_x'), false);
+  const none = new ZzshuRechargeProvider({
+    baseUrl: 'https://card.example/api/v1', apiKey: 'issued-key',
+    fetchImpl: async () => response({ code: 0, message: 'success', data: { order_no: '35', status: 'processing', verification: null } })
+  });
+  assert.equal((await none.queryStatus('DIRECT-v')).verificationRequired, false);
+});
+
+test('Zzshu success envelopes without data are still refused (the relaxed envelope only admits error bodies)', async () => {
+  const create = new ZzshuRechargeProvider({
+    baseUrl: 'https://card.example/api/v1', apiKey: 'issued-key',
+    fetchImpl: async () => response({ code: 0, message: 'success' }, 201)
+  });
+  await assert.rejects(create.createDirectOrder({
+    cardNumber: '4242424242424242', expMonth: 12, expYear: 2032, cvv: '123', token: { accessToken: 'a' }
+  }), (error) => error instanceof ProviderSchemaError && error.uncertain === true, 'a 2xx create without order data may still have created an order');
+  const user = new ZzshuRechargeProvider({
+    baseUrl: 'https://card.example/api/v1', apiKey: 'issued-key',
+    fetchImpl: async () => response({ code: 0, message: 'success' })
+  });
+  await assert.rejects(user.readPoints(), ProviderSchemaError);
+});
+
+test('Zzshu create rejected for the key (40107) or for points (40306) is definite: no order exists', async () => {
+  for (const [status, code] of [[401, 40107], [403, 40306]]) {
+    const provider = new ZzshuRechargeProvider({
+      baseUrl: 'https://card.example/api/v1', apiKey: 'issued-key',
+      fetchImpl: async () => response({ code, message: 'rejected' }, status)
+    });
+    await assert.rejects(provider.createDirectOrder({
+      cardNumber: '4242424242424242', expMonth: 12, expYear: 2032, cvv: '123',
+      token: { accessToken: 'a' }, planType: 'plus'
+    }), (error) => error instanceof ProviderError && error.businessCode === String(code)
+      && error.uncertain === false && error.retryable === false);
+  }
 });
 
 test('Zzshu keeps a confirmed status while refusing malformed settlement fields', async () => {

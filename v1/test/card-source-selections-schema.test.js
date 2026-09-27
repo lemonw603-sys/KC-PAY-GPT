@@ -8,13 +8,15 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const migrationsDir = path.resolve(here, '../migrations');
 const sql = fs.readFileSync(path.join(migrationsDir, '053_card_source_selections_and_supply.sql'), 'utf8');
 
-test('061 is the newest migration; 053 through 059 are additive', () => {
+test('062 is the newest migration; 053 through 059 are additive', () => {
   const names = fs.readdirSync(migrationsDir).filter((name) => /^\d+_[a-z0-9_-]+\.sql$/i.test(name)).sort();
   // 055＝D-286（CDK 发出登记 + 有效期），Lemon 2026-09-19 批准新增；只加列、不动存量。
   // 060＝块 7 删表第一批（D-367），下面单独一条钉住它只删那 5 张。
-  assert.equal(names.at(-1), '061_drop_card_funding_line.sql');
-  assert.equal(names.at(-2), '060_drop_superseded_and_unused_tables.sql');
-  assert.equal(names.at(-3), '059_card_max_payments_per_product.sql');
+  // 062＝D-401 API 路线可用任何卡台：只改两处数据，下面单独一条钉住。
+  assert.equal(names.at(-1), '062_api_route_any_card_source.sql');
+  assert.equal(names.at(-2), '061_drop_card_funding_line.sql');
+  assert.equal(names.at(-3), '060_drop_superseded_and_unused_tables.sql');
+  assert.equal(names.at(-4), '059_card_max_payments_per_product.sql');
   // 059＝D-221 每卡单数按产品：只补两把 Pro 键（=1），已有值不覆盖；不改结构、不动 Plus 的全局键。
   const perProduct = fs.readFileSync(path.join(migrationsDir, '059_card_max_payments_per_product.sql'), 'utf8');
   assert.doesNotMatch(perProduct, /ALTER TABLE|CREATE TABLE|DELETE|UPDATE\s+app_settings/i);
@@ -102,3 +104,16 @@ test('061 只动补余额整条线：拆 provider_calls 外键（列保留）、
     assert.doesNotMatch(sql, new RegExp(`DROP TABLE IF EXISTS ${kept}`));
   }
 });
+
+test('062 只改两处数据：103 可做 API 直充、Plus 的 API 行解锁（Pro 的 API 行不动）；不改结构、不删数据（D-401）', () => {
+  const body = fs.readFileSync(path.join(migrationsDir, '062_api_route_any_card_source.sql'), 'utf8')
+    .split('\n').filter((line) => !line.trim().startsWith('--')).join('\n');
+  assert.doesNotMatch(body, /ALTER TABLE|CREATE TABLE|DROP |DELETE|INSERT/i);
+  const updates = body.match(/UPDATE\s+\w+/gi) || [];
+  assert.deepEqual(updates.map((u) => u.replace(/\s+/g, ' ').toLowerCase()), ['update provider_accounts', 'update card_source_selections']);
+  assert.match(body, /SET supports_api_recharge = 1\s+WHERE id = '00000000-0000-4000-8000-000000000103' AND purpose = 'CARD'/);
+  assert.match(body, /WHERE p\.product_code = 'chatgpt_plus' AND s\.executor_kind = 'API' AND s\.locked = 1/);
+  assert.doesNotMatch(body, /pro_5x|pro_20x/);
+  assert.match(body, /s\.version = s\.version \+ 1/, '解锁同时升版本，旧页面的切换请求因版本不符被拒');
+});
+

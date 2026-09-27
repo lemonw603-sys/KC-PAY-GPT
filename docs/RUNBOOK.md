@@ -213,6 +213,24 @@ curl -s -b <admin-cookie> -X POST https://<admin>/api/v1/admin/card-operational-
 英文标识——判据只认它、不认中文「手动」（2026-09-18 只读实查：全部 RETIRED override 里只命中 3336）。
 第⑥块把这个入口搬进工作台「卡片」区（不新建表、不收客户/套餐/金额字段）。
 
+## 2.75 直充平台（ZZSHU）点数与 Key（D-400 / D-401，2026-09-27 起）
+
+API 路线 301 = ZZSHU 直充 + 本方自带卡（任何有 API 直充能力的卡台）。ZZSHU 按其发放的 API Key 计点：**开通成功才扣（默认每单 1 点），失败不扣**。
+
+- **看点数**：工作台路线按钮「API 充值 · N 点」（worker 每 5 分钟只读一次；> 999 显示 999+；从没读到就不显示）。现场只读核对（不打印 Key）：
+  ```bash
+  ssh root@144.34.180.184 'set -a; . /etc/pojia/runtime.env; . /etc/pojia/provider.env; set +a; curl -s -m 20 -H "X-API-Key: $ZZSHU_API_KEY" "$ZZSHU_API_BASE_URL/third-party/user"'
+  ```
+- **充点（Lemon 手动）**：在 ZZSHU 网站 `/query` 页把买来的点卡充进**同一把** API Key（不要换 Key：换了以后旧 Key 名下的订单查不到）。充完 5 分钟内后台点数更新。
+- **推送怎么处理**：
+  - `直充平台点数快用完了`（≤5）：去充点。
+  - `直充平台点数用完了`（0）：若 Plus 正走 API，系统已用正式切路线服务切到 Browser（审计 `system:zzshu-points`）；切不过去（Browser 不在线 / 没卡）时 API 新单被拒（客户看到暂停接单）——充点，或把 Browser 拉起来。
+  - `直充平台点数已恢复`：只在「自动切过 Browser」之后出现；系统**不自动切回**，要切回在工作台点「API 充值」（切换会校验点数不为 0）。
+  - `直充平台不认这把 Key`：Key 被拒（401 / 40107 / 40306），API 路线下不了单；到平台核对，或换 Key（下一条）。
+  - `充值失败，要你处理`（API 路线提交后失败）：卡的占用转对账、卡密不自动退；按订单抽屉核对卡台扣款后收口。
+- **换 Key**：Lemon 把新 Key 存本机（不进聊天）：先 `mkdir -p ~/.config/zzshu && chmod 700 ~/.config/zzshu`，复制 Key 后 `printf 'ZZSHU_API_KEY=%s\n' "$(pbpaste)" > ~/.config/zzshu/api.env && chmod 600 ~/.config/zzshu/api.env`。执行者（**先问**）改服务器 `/etc/pojia/provider.env` 的 `ZZSHU_API_KEY` 行、重启 `pojia-worker`（**先问**），再用上面的只读命令核对。
+- **API 路线用哪个卡台**：工作台营业条的卡台下拉框跟着当前路线走（走 API 时切的是 API 那一行），与 Browser 行各自独立；候选只列有 API 直充能力的卡台。
+
 ## 2.8 本地界面验收环境（第⑥步起，2026-09-19）
 
 后台每块 UI 的**界面层验收**（真实页面 + 与原型同尺寸比对）都要用它。不碰生产、不碰 13306 只读隧道。

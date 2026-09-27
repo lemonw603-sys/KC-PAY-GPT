@@ -3875,6 +3875,8 @@ Lemon：highvcc 网站登录 = 账号密码 + 随机位置滑动块。→ **系�
 
 ## D-253（2026-09-17 13:55 UTC）C2 结果：ZZSHU 拒绝 highvcc 卡（40020「该卡头暂不支持提交，请联系客服添加支持」）——ZZSHU 认 BIN，解耦的技术前提不成立
 
+> **【后续·2026-09-27】结论被 D-401 取代**：ZZSHU 已改为发放 Key 计点，highvcc 卡头 `51398996` 建单成功（D-400 结果）；API 路线卡源放开到任何有 API 直充能力的卡台（迁移 062）。
+
 **执行**：Lemon 提供 free 测试号 Session（shichuan003@gmail.com，free，accessToken 有效至 09-21）；卡用 highvcc 尾号 0601（BIN 53211304，Lemon 充至 $15.99，手动触发快照核实）；planType `plus`；13:54:45 UTC 隔离直调 `POST /third-party/orders/direct` 一次。
 **结果**：HTTP 400、业务码 **40020**「该卡头暂不支持提交，请联系客服添加支持」。`uncertain=false`（ZZSHU 语义：创建前校验拒绝，未创建订单）。**未扣款**（卡台余额下次快照/时段同步核）。Session 文件已删。
 **含义**：①「ZZSHU 不认卡台」（D-246 时的技术判断）**错**——ZZSHU 按卡 BIN 白名单放行，highvcc 的 BIN 53211304 不在名单；3336 那张（BIN 54317796）未试、大概率同样。②**面一选择表 API 行白名单初值 = 只有 101（hnskj）**；解耦到 API 路线的路只剩「找 ZZSHU 客服把 highvcc 的 BIN 加进支持名单」（商务动作，Lemon 定）。③面二⑦故障转台：API 路线不转，维持。④D-252 打架 2「时段外 Browser 缺卡自动用 hnskj」不受影响（Browser 不认 BIN）。
@@ -5843,3 +5845,14 @@ Lemon 确认 / 同意：
 4. **点数用完**：新单自动改走 Browser（客户无感）；Browser 也不可用时停收新单。
 5. **充点**：先不开发，Lemon 自己去 ZZSHU 网站 `/query` 页把点卡充进 API Key；以后嫌麻烦再加后台入口。
 6. **任务书**：本窗口写，交 Lemon 批后再改代码（`docs/tasks/2026-09-27-restore-api-route-zzshu.md`）。
+
+## D-401 补记（2026-09-27 UTC+8 上午）实现完成，待装 Key 与发布
+
+按任务书 `docs/tasks/2026-09-27-restore-api-route-zzshu.md`（Lemon 批、选 a）实现，只动 `v1/`：
+- **卡源**：迁移 062（103 可做 API 直充；Plus 的 API 行解锁、版本 +1；Pro 的 API 行仍锁）；工作台卡台下拉框跟当前路线走（API / Browser 各切各的行，同一套四项校验与审计）；开卡调度转台按「该卡台被哪些未锁行选着」判断，接手卡台须支持每一行的执行器。
+- **ZZSHU 对接**：真实报错体不带 `data`（401 `40107` 实测），信封校验改为允许缺 `data`（成功体仍逐项校验）——此前被当「格式错」、业务码丢失；状态带出 `verificationRequired`；新增只读 `readPoints`。
+- **点数**：worker 心跳里每 5 分钟只读一次，写 `zzshu_points_remaining / _observed_at`；≤5 推 `ZZSHU_POINTS_LOW`、0 推 `ZZSHU_POINTS_EMPTY`、Key 被拒推 `ZZSHU_KEY_REJECTED`；0 点且 Plus 走 API → 调正式切路线服务切 Browser（actor `system:zzshu-points`），切不过去则下单入口拒 API 新单（`EXECUTOR_UNAVAILABLE`，客户看到暂停接单）；充回后推 `ZZSHU_POINTS_RESTORED`、不自动切回。切到 API 时新增第五项校验「点数不为 0」。工作台 API 按钮显示点数（>999 显示 999+，1440 宽实测放得下三位数）。
+- **失败**：API 路线提交后失败推 `API_ORDER_FAILED`（此前不推）；没有只读流水接口的卡（MANUAL_IMPORT）不再被排进必失败的 hnskj 同步任务（成功后 / 失败后 / 流水过期三处 + 后台两处入口）。
+- **范围略宽于任务书、需 Lemon 知悉**：失败推送覆盖所有 API 提交后失败（任务书原写「遇安全验证推手机」）；后台手动同步两处入口的同类拦截。
+- **未改（已有行为，另记欠账 22）**：建单时 `42902` 排队满 / `40305` 维护被判确定失败（不重试），客户重提即可。
+验证：v1 1183（1107 / 0 / 76）；真数据库 75 / 0 / 1（新文件 5 项：迁移效果、下单选路线与点数拦截、失败告警与同步过滤、自动切路线审计与充回提醒、Browser 不就绪不切）；16 处变异全被抓；界面 1440×730 本地验收（营业条一行、按钮不溢出、API 行真切换两次库内核对）；文案与 CSS 闸门通过。

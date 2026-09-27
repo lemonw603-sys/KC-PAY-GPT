@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import { providerLabelOf } from '../domain/provider-labels.js';
 import { PublicApiError } from '../domain/public-api-error.js';
 import {
-  createCardSourceSelectionService, listCardSourceSelections, safeWaitingPredicate
+  createCardSourceSelectionService, listCardSourceSelections, normalizeExecutorKind, safeWaitingPredicate
 } from './card-source-selection-service.js';
 
 function required(value, code, max = 128) {
@@ -49,6 +49,7 @@ export function createCardSourceAdminService({ pool } = {}) {
       // Plus 两行的快捷字段：后台首页与卡片页现在读的就是这两个。
       apiProviderAccountId: plusApi?.providerAccountId || null,
       apiSelectionLocked: plusApi ? plusApi.locked : true,
+      apiSelectionVersion: Number(plusApi?.version || 0),
       browserProviderAccountId: plusBrowser?.providerAccountId || null,
       browserSelectionVersion: Number(plusBrowser?.version || 0),
       browserSelectionUpdatedBy: plusBrowser?.updatedBy || null,
@@ -74,20 +75,21 @@ export function createCardSourceAdminService({ pool } = {}) {
     return { id, accountCode: code, displayName: name, adapter: adapterCode, createdBy: String(actorId || 'admin') };
   }
 
-  async function estimateWaitingTakeover() {
+  async function estimateWaitingTakeover({ executorKind = 'BROWSER' } = {}) {
+    const kind = normalizeExecutorKind(executorKind);
     const [[row]] = await pool.query(`SELECT COUNT(*) AS count FROM orders o
       INNER JOIN fulfillment_routes fr ON fr.id=o.fulfillment_route_id
-      WHERE fr.executor_kind='BROWSER' AND ${safeWaitingPredicate('o')}`);
+      WHERE fr.executor_kind=? AND ${safeWaitingPredicate('o')}`, [kind]);
     return { count: Number(row?.count || 0) };
   }
 
   /**
-   * 切 Plus 的 Browser 卡台。四项校验在选择表服务里跑，不过即拒（409 + checks）。
-   * 之前这里只查 supports_browser_recharge，其他一律 warning 放行——现在不再放行。
+   * 切 Plus 某一执行器（API / Browser）的卡台。四项校验在选择表服务里跑，不过即拒（409 + checks）；
+   * 固定卡台的行（locked）由选择表服务拒绝。D-401 起 API 行也可切（ZZSHU 认其他卡台的卡）。
    */
-  async function switchBrowserSource({ providerAccountId, expectedVersion, takeoverWaiting = false, actorId = 'admin' } = {}) {
+  async function switchPlusSource({ executorKind, providerAccountId, expectedVersion, takeoverWaiting = false, actorId = 'admin' } = {}) {
     const result = await selections.switchSelection({
-      productCode: 'chatgpt_plus', executorKind: 'BROWSER', providerAccountId, expectedVersion,
+      productCode: 'chatgpt_plus', executorKind: normalizeExecutorKind(executorKind), providerAccountId, expectedVersion,
       takeoverWaiting, actorId
     });
     return { eventId: result.eventId, previousProviderAccountId: result.previousProviderAccountId,
@@ -95,5 +97,8 @@ export function createCardSourceAdminService({ pool } = {}) {
       actualTakeoverCount: result.actualTakeoverCount, checks: result.checks };
   }
 
-  return { list, createManualSource, estimateWaitingTakeover, switchBrowserSource };
+  const switchBrowserSource = (input = {}) => switchPlusSource({ ...input, executorKind: 'BROWSER' });
+  const switchApiSource = (input = {}) => switchPlusSource({ ...input, executorKind: 'API' });
+
+  return { list, createManualSource, estimateWaitingTakeover, switchPlusSource, switchBrowserSource, switchApiSource };
 }

@@ -25,6 +25,20 @@ test('缝 g: ORDER_CANCELLATION_UNCONFIRMED counts as 资金类 and pushes', () 
   assert.equal(pushCategoryOf('ORDER_CANCELLATION_UNCONFIRMED'), PushCategory.MONEY);
 });
 
+test('D-401: API-route failure and ZZSHU points / key signals push, in their categories', () => {
+  const expected = {
+    API_ORDER_FAILED: PushCategory.HUMAN,
+    ZZSHU_POINTS_EMPTY: PushCategory.HUMAN,
+    ZZSHU_KEY_REJECTED: PushCategory.HUMAN,
+    ZZSHU_POINTS_LOW: PushCategory.SUPPLY,
+    ZZSHU_POINTS_RESTORED: PushCategory.SUPPLY
+  };
+  for (const [type, category] of Object.entries(expected)) {
+    assert.equal(shouldPushToPhone(type), true, `${type} should push`);
+    assert.equal(pushCategoryOf(type), category, `${type} category`);
+  }
+});
+
 test('everything outside the whitelist stays off the phone', () => {
   for (const type of Object.keys(NON_PUSH_REASONS)) {
     assert.equal(shouldPushToPhone(type), false, `${type} must not push`);

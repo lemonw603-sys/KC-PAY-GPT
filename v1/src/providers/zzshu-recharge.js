@@ -9,7 +9,10 @@ import {
 const envelopeSchema = z.object({
   code: z.number().int(),
   message: z.string(),
-  data: z.unknown().nullable()
+  // 真实的业务报错不带 data（2026-09-26 实测 401：`{"code":40107,"message":"卡密无效或不存在"}`）。
+  // 以前要求 data 必须在，这类报错就被当成「信封格式错」，业务码丢了。成功响应仍由各自的
+  // data schema（create / status / user）单独校验，缺 data 照样过不去。
+  data: z.unknown().nullable().optional()
 }).passthrough();
 
 const createDataSchema = z.object({
@@ -31,8 +34,17 @@ const statusDataSchema = z.object({
   payment_currency: z.string().nullable().optional(),
   token: z.record(z.string(), z.unknown()).nullable().optional(),
   is_subscription_cancelled: z.union([z.literal(0), z.literal(1)]).optional(),
+  // 2026-09 起：`cs_live_` 结账要人工安全验证时是一个对象（含 Stripe client_secret），否则 null。
+  // 本系统没有能替它完成验证的页面，只记「出现过」，对象本身不往下传。
+  verification: z.unknown().nullable().optional(),
   finished_at: z.string().nullable().optional(),
   updated_at: z.string().optional()
+}).passthrough();
+
+// GET /third-party/user。2026-09-26 起按发放的 API Key 计点：真实响应
+// `{"code":0,"data":{"points":15,...}}`；未登记的 Key 为 HTTP 401 `40107`。
+const userDataSchema = z.object({
+  points: z.number().int().nonnegative()
 }).passthrough();
 
 function normalizePaymentAmount(value) {
@@ -143,6 +155,7 @@ function normalizeStatus(value) {
     paymentResult: safePaymentResult(data.payment_result),
     ...payment,
     isSubscriptionCancelled: data.is_subscription_cancelled ?? null,
+    verificationRequired: data.verification != null && typeof data.verification === 'object',
     finishedAt: data.finished_at ?? null,
     updatedAt: data.updated_at ?? null
   };
@@ -199,6 +212,22 @@ export class ZzshuRechargeProvider {
       throwApiError(response, envelope, { operation: 'connection check', readOnly: true });
     }
     return { ok: true };
+  }
+
+  /** 只读：这把 Key 剩余点数（开通成功才扣，失败不扣）。不建单、不扣点。 */
+  async readPoints() {
+    const response = await this.request('/third-party/user', { readOnly: true });
+    const envelope = parseEnvelope(response);
+    if (!response.ok || envelope.code !== 0) {
+      throwApiError(response, envelope, { operation: 'points read', readOnly: true });
+    }
+    const data = userDataSchema.safeParse(envelope.data);
+    if (!data.success) {
+      throw new ProviderSchemaError('Zzshu user response lacks an integer points field', {
+        provider: 'zzshu', status: response.status, uncertain: false
+      });
+    }
+    return { points: data.data.points };
   }
 
   async createDirectOrder({ cardNumber, expMonth, expYear, cvv, token, planType = 'plus' }) {

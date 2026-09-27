@@ -25,7 +25,7 @@ function accountRow(id) {
  */
 function defaultMethodPool({
   currentMethod = 'API', browserGate = true, browserHeartbeat = new Date().toISOString(),
-  eligible = { [HNSKJ_ID]: 1, [BACKUP_ID]: 1 }, routesPerKind = { API: 1, BROWSER: 1 }
+  eligible = { [HNSKJ_ID]: 1, [BACKUP_ID]: 1 }, routesPerKind = { API: 1, BROWSER: 1 }, zzshuPoints = null
 } = {}) {
   const queries = [];
   const transaction = { commits: 0, rollbacks: 0 };
@@ -50,6 +50,9 @@ function defaultMethodPool({
       ]];
     }
     if (/FROM executor_profiles/.test(text)) return [[{ id: 'profile-browser' }]];
+    if (/SELECT setting_value FROM app_settings WHERE setting_key = \? LIMIT 1/.test(text) && params[0] === 'zzshu_points_remaining') {
+      return [zzshuPoints == null ? [] : [{ setting_value: zzshuPoints }]];
+    }
     if (/FROM fulfillment_routes fr/.test(text) && /card_source_selections css/.test(text)) return [[]];
     return [{ affectedRows: 1 }];
   }
@@ -103,6 +106,32 @@ test('switching to API used to check nothing; now it refuses when the hnskj pool
   assert.equal(pool.transaction.commits, 0);
   assert.equal(pool.transaction.rollbacks, 1);
   assert.equal(pool.queries.some(({ sql }) => /SET accepts_new_orders = 0/.test(sql)), false);
+});
+
+test('D-401: switching to API is refused while ZZSHU points are known to be zero, and says to top up first', async () => {
+  const pool = defaultMethodPool({ currentMethod: 'BROWSER', zzshuPoints: '0' });
+  await assert.rejects(
+    createProviderRouteAdminService({ pool }).setDefaultRechargeMethod({ method: 'API', confirmation: confirm('API'), expectedCurrentMethod: 'BROWSER' }),
+    (error) => {
+      assert.equal(error.code, 'DEFAULT_RECHARGE_METHOD_REJECTED');
+      assert.deepEqual(error.checks.filter((c) => !c.ok).map((c) => [c.code, c.detail]), [['ZZSHU_POINTS_AVAILABLE', '直充平台点数为 0，先充点再切']]);
+      return true;
+    }
+  );
+  assert.equal(pool.queries.some(({ sql }) => /SET accepts_new_orders = 0/.test(sql)), false);
+});
+
+test('D-401: with points known (or not yet read) the API switch passes its fifth check; Browser switches never ask for points', async () => {
+  const known = await createProviderRouteAdminService({ pool: defaultMethodPool({ currentMethod: 'BROWSER', zzshuPoints: '12' }) })
+    .setDefaultRechargeMethod({ method: 'API', confirmation: confirm('API'), expectedCurrentMethod: 'BROWSER' });
+  assert.deepEqual(known.checks.at(-1), { code: 'ZZSHU_POINTS_AVAILABLE', ok: true, detail: '直充平台剩 12 点' });
+  const unknown = await createProviderRouteAdminService({ pool: defaultMethodPool({ currentMethod: 'BROWSER' }) })
+    .setDefaultRechargeMethod({ method: 'API', confirmation: confirm('API'), expectedCurrentMethod: 'BROWSER' });
+  assert.equal(unknown.checks.at(-1).ok, true);
+  const browserPool = defaultMethodPool({ currentMethod: 'API', zzshuPoints: '0' });
+  const browser = await createProviderRouteAdminService({ pool: browserPool })
+    .setDefaultRechargeMethod({ method: 'BROWSER', confirmation: confirm('BROWSER'), expectedCurrentMethod: 'API' });
+  assert.equal(browser.checks.some((c) => c.code === 'ZZSHU_POINTS_AVAILABLE'), false);
 });
 
 test('a caller that saw a different current method is refused (version check) and nothing moves', async () => {

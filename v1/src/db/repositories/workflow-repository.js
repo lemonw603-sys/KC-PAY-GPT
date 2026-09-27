@@ -576,8 +576,9 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
            WHERE NOT EXISTS (
              SELECT 1 FROM card_sync_jobs
              WHERE card_id = ? AND status IN ('PENDING','RUNNING')
-           )`,
-          [rows[0].card_id, `order-demand-transaction-sync:${orderId}`, rows[0].card_id]
+           )
+             AND EXISTS (SELECT 1 FROM cards sc WHERE sc.id = ? AND sc.sync_tier <> 'MANUAL_IMPORT')`,
+          [rows[0].card_id, `order-demand-transaction-sync:${orderId}`, rows[0].card_id, rows[0].card_id]
         );
         return { queued: Number(result.affectedRows) === 1, cardId: rows[0].card_id };
       });
@@ -801,6 +802,10 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
            SELECT UUID(), c.id, 'PENDING', 'workflow', 10, CONCAT('post-recharge:', ?)
            FROM orders assigned_order INNER JOIN cards c ON c.id = assigned_order.assigned_card_id
            WHERE assigned_order.id = ?
+             -- 只排有只读流水接口的卡（与 card-sync-job-service 定时排队同一口径）：MANUAL_IMPORT
+             -- （highvcc 等）的卡被排进来，runner 会拿它的 id 去问 hnskj，必然失败进 REVIEW_REQUIRED
+             -- （09-05～09-17 生产 114 条）。API 路线自 D-401 起也会用这类卡。
+             AND c.sync_tier <> 'MANUAL_IMPORT'
              AND EXISTS (
                SELECT 1 FROM app_settings s
                WHERE s.setting_key = 'sync_card_transactions' AND s.setting_value = 'true'
@@ -828,7 +833,7 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
       return inTransaction(pool, async (connection) => {
         const failureReason = providerFailureReason(status);
         const [rows] = await connection.query(
-          'SELECT status, version FROM orders WHERE id = ? FOR UPDATE', [orderId]
+          'SELECT status, version, public_no FROM orders WHERE id = ? FOR UPDATE', [orderId]
         );
         if (rows.length !== 1) throw new Error(`Order not found: ${orderId}`);
         const order = rows[0];
@@ -864,6 +869,7 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
            SELECT UUID(), o.assigned_card_id, 'PENDING', 'workflow', 10, CONCAT('failed-recharge-reconcile:', ?)
            FROM orders o
            WHERE o.id = ? AND o.assigned_card_id IS NOT NULL
+             AND EXISTS (SELECT 1 FROM cards sc WHERE sc.id = o.assigned_card_id AND sc.sync_tier <> 'MANUAL_IMPORT')
              AND NOT EXISTS (
                SELECT 1 FROM card_sync_jobs j
                WHERE j.card_id = o.assigned_card_id AND j.status IN ('PENDING','RUNNING')
@@ -886,6 +892,19 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
           orderId, fromStatus: order.status, toStatus: OrderStatus.RECHARGE_FAILED,
           reason: 'provider confirmed failure', metadata: status
         });
+        // D-401：提交后失败，卡的占用转对账、卡密不自动退（CLAUDE.md：失败时保留占用），这一单
+        // 只能等人收口——以前不推手机，客户只能干等。与 Browser 的 BROWSER_ORDER_FAILED 同一类。
+        await connection.query(
+          `INSERT INTO operator_alerts
+           (id, alert_type, dedupe_key, order_id, severity, title, message, status)
+           VALUES (UUID(), 'API_ORDER_FAILED', ?, ?, 'critical', '充值失败，要你处理', ?, 'OPEN')
+           ON DUPLICATE KEY UPDATE severity = VALUES(severity), title = VALUES(title),
+             order_id = VALUES(order_id), message = VALUES(message),
+             status = IF(status = 'RESOLVED', 'OPEN', status),
+             acknowledged_at = IF(status = 'RESOLVED', NULL, acknowledged_at)`,
+          [`api-order-failed:${orderId}`, orderId,
+            `订单 ${order.public_no}｜直充平台返回失败：${failureReason}。卡的占用已转对账、卡密没有自动退回；核对卡台扣款后到后台收口。`.slice(0, 2000)]
+        );
       });
     },
 

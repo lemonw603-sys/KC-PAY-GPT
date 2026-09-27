@@ -6,7 +6,7 @@ const HNSKJ_ID = '00000000-0000-4000-8000-000000000101';
 const BACKUP_ID = '00000000-0000-4000-8000-000000000103';
 const PLUS = '00000000-0000-4000-8000-000000000201';
 
-function sourceRows() {
+function sourceRows({ backupApi = 0 } = {}) {
   return [
     { id: HNSKJ_ID, provider_code: 'hnskj', account_code: 'legacy-primary', display_name: 'HNSKJ', source_adapter: 'hnskj_api_v1',
       open_adapter: 'hnskj_api_v1', supports_api_recharge: 1, supports_browser_recharge: 1, supports_api_sync: 1,
@@ -14,34 +14,34 @@ function sourceRows() {
       supply_fault_state: 'OK', wallet_floor: '30.000000', wallet_alert_threshold: '50.000000',
       card_count: 13, present_count: 13, usable_fact_count: 1 },
     { id: BACKUP_ID, provider_code: 'manual_excel', account_code: 'backup-a', display_name: '备用卡台 A', source_adapter: 'backup_card_export_v1',
-      open_adapter: 'highvcc_api_v1', supports_api_recharge: 0, supports_browser_recharge: 1, supports_api_sync: 0,
+      open_adapter: 'highvcc_api_v1', supports_api_recharge: backupApi, supports_browser_recharge: 1, supports_api_sync: 0,
       supports_auto_open: 1, supports_auto_funding: 0, operational_enabled: 1, read_enabled: 0, circuit_state: 'CLOSED',
       supply_fault_state: 'OK', wallet_floor: '20.000000', wallet_alert_threshold: '50.000000',
       card_count: 14, present_count: 6, usable_fact_count: 6 }
   ];
 }
-function selectionRows() {
+function selectionRows({ apiLocked = 1 } = {}) {
   return [
-    { product_id: PLUS, product_code: 'chatgpt_plus', legacy_plan_type: 'plus', executor_kind: 'API', provider_account_id: HNSKJ_ID, locked: 1, version: 1, updated_by: 'migration-053', updated_at: null },
+    { product_id: PLUS, product_code: 'chatgpt_plus', legacy_plan_type: 'plus', executor_kind: 'API', provider_account_id: HNSKJ_ID, locked: apiLocked, version: 1, updated_by: 'migration-053', updated_at: null },
     { product_id: PLUS, product_code: 'chatgpt_plus', legacy_plan_type: 'plus', executor_kind: 'BROWSER', provider_account_id: BACKUP_ID, locked: 0, version: 8, updated_by: 'admin', updated_at: new Date('2026-09-16T09:19:08.428Z') }
   ];
 }
 
-function poolFor() {
+function poolFor(options = {}) {
   const queries = [];
   const tx = { begin: 0, commit: 0, rollback: 0 };
   async function query(sql, params = []) {
     const text = String(sql);
     queries.push({ sql: text.replace(/\s+/g, ' ').trim(), params });
-    if (text.includes('FROM provider_accounts pa LEFT JOIN cards c')) return [sourceRows()];
+    if (text.includes('FROM provider_accounts pa LEFT JOIN cards c')) return [sourceRows(options)];
     if (text.includes('FROM card_source_selections s') && text.includes('WHERE s.product_id = ?')) {
-      return [selectionRows().filter((r) => r.product_id === params[0] && r.executor_kind === params[1])];
+      return [selectionRows(options).filter((r) => r.product_id === params[0] && r.executor_kind === params[1])];
     }
-    if (text.includes('FROM card_source_selections s')) return [selectionRows()];
+    if (text.includes('FROM card_source_selections s')) return [selectionRows(options)];
     if (text.includes('FROM products')) return [[{ id: PLUS, product_code: 'chatgpt_plus', legacy_plan_type: 'plus' }]];
     if (text.includes('FROM fulfillment_routes')) return [[{ id: 'route-302' }]];
     if (text.includes('FROM provider_accounts pa')) {
-      const row = sourceRows().find((r) => r.id === params[0]);
+      const row = sourceRows(options).find((r) => r.id === params[0]);
       return [row ? [{ ...row, environment: 'PRODUCTION', purpose: 'CARD', retry_after_until: null, last_full_snapshot_at: null, default_card_segment: null, supply_fault_reason: null, supply_fault_at: null, write_enabled: 0 }] : []];
     }
     if (text.includes('SELECT COUNT(*) AS count FROM cards')) return [[{ count: 1 }]];
@@ -113,10 +113,39 @@ test('creating a manual source still inserts a Browser-only account row', async 
   assert.match(insert.sql, /'manual_excel'/);
 });
 
-test('waiting takeover estimate counts only safe Browser orders', async () => {
+test('waiting takeover estimate counts only safe orders of the asked executor (Browser by default)', async () => {
   const pool = poolFor();
   const result = await createCardSourceAdminService({ pool }).estimateWaitingTakeover();
   assert.equal(result.count, 4);
-  assert.match(pool.queries[0].sql, /fr\.executor_kind='BROWSER'/);
+  assert.match(pool.queries[0].sql, /fr\.executor_kind=\?/);
+  assert.deepEqual(pool.queries[0].params, ['BROWSER']);
   assert.match(pool.queries[0].sql, /assigned_card_id IS NULL/);
+  await createCardSourceAdminService({ pool }).estimateWaitingTakeover({ executorKind: 'API' });
+  assert.deepEqual(pool.queries[1].params, ['API']);
+});
+
+// ---- D-401：API 行也能切卡台（ZZSHU 认其他卡台的卡）；固定的行照旧拒 ----
+test('D-401: a locked API row is still refused, and the list exposes the API row version', async () => {
+  const pool = poolFor({ apiLocked: 1 });
+  const service = createCardSourceAdminService({ pool });
+  await assert.rejects(service.switchApiSource({ providerAccountId: BACKUP_ID, expectedVersion: 1 }),
+    (error) => error.code === 'CARD_SOURCE_SELECTION_LOCKED');
+  assert.equal(pool.queries.some((q) => q.sql.startsWith('UPDATE card_source_selections')), false);
+  const list = await service.list();
+  assert.equal(list.apiSelectionVersion, 1);
+  assert.equal(list.apiSelectionLocked, true);
+});
+
+test('D-401: an unlocked API row switches only to a source that supports API recharge', async () => {
+  const refused = poolFor({ apiLocked: 0, backupApi: 0 });
+  await assert.rejects(createCardSourceAdminService({ pool: refused }).switchApiSource({ providerAccountId: BACKUP_ID, expectedVersion: 1 }),
+    (error) => error.code === 'CARD_SOURCE_SWITCH_REJECTED'
+      && error.checks.some((c) => c.code === 'SOURCE_HEALTHY' && !c.ok && /不支持 API 充值/.test(c.detail)));
+  const pool = poolFor({ apiLocked: 0, backupApi: 1 });
+  const result = await createCardSourceAdminService({ pool }).switchApiSource({ providerAccountId: BACKUP_ID, expectedVersion: 1, actorId: 'lemon' });
+  assert.equal(result.providerAccountId, BACKUP_ID);
+  assert.equal(result.previousProviderAccountId, HNSKJ_ID);
+  assert.equal(result.version, 2);
+  const update = pool.queries.find((q) => q.sql.startsWith('UPDATE card_source_selections'));
+  assert.deepEqual(update.params.slice(3, 5), [PLUS, 'API']);
 });

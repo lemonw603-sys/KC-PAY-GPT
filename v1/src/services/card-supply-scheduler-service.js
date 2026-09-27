@@ -12,9 +12,9 @@ import { countTodayOpenings, unresolvedPaidJobsSql } from './card-stock-job-serv
  *   需求 = max(水位, 该台该产品正在等卡的单数)；缺口 = 需求 − 可分配 − 在途 job。
  *   缺口 > 0 且 总闸开 且 没有别的 job 在跑 且 没有花过钱没人核对的 job
  *     → 该台此刻能开：日限内、钱包预检过（余额 − 金额 − 手续费 ≥ 硬底线）→ 建一张卡的 job；
- *     → 该台此刻不能开（故障 / 无 token / 卡台禁开）：**只替正在等卡的 Browser 订单**转另一台开卡顶上，
+ *     → 该台此刻不能开（故障 / 无 token / 卡台禁开）：**只替正在等卡的订单**转另一台开卡顶上（D-401 起 API 路线同样可转，固定卡台的行不转），
  *       水位缺口不转（D-365，欠账 17：转台开出的卡记在开卡那台名下，缺卡那台的水位永远补不满，
- *       按水位转台会每分钟再开一张，直到开卡台钱包碰底线或日限）；API 需求不转（ZZSHU 只认 hnskj 的 BIN，D-253）。
+ *       按水位转台会每分钟再开一张，直到开卡台钱包碰底线或日限）。
  *   一轮里按优先级逐个看缺口，一台开不了就接着看下一台（D-365，欠账 16：此前只看第一个，
  *   它被挡住整轮就结束，排第二的那台缺卡、钱也够，也永远不会自动补）。
  *   `CARD_STOCK_LOW` 按台 × 产品由这里唯一产生（阈值 = 水位），不再散在分卡/入库两处。
@@ -314,11 +314,8 @@ export function createCardSupplyScheduler({ pool, adapters, now = () => new Date
         return `${label} 钱包 ${preflight.balance}，开一张要 ${preflight.amount} + 手续费约 ${preflight.fee}，扣完剩 ${preflight.projected}，低于底线 ${preflight.floor}，请给钱包充值`;
       case 'DAILY_LIMIT':
         return `${label} 今天已开 ${outcome.usedToday} 张，到了每日上限 ${outcome.dailyLimit}`;
-      case 'BLOCKED': {
-        const why = outcome.fallback === 'NOT_BROWSER_DEMAND' ? 'API 路线不转台'
-          : outcome.fallback === 'NO_WAITING_ORDERS' ? '只缺水位不转台' : '没有别的卡台能顶上';
-        return `该台此刻不能开（${outcome.cause}），${why}`;
-      }
+      case 'BLOCKED':
+        return `该台此刻不能开（${outcome.cause}），${fallbackReasonText(outcome.fallback)}`;
       case 'ADAPTER_CANNOT_OPEN':
         return `${label} 不让开卡（${outcome.cause}）`;
       case 'WALLET_READ_FAILED':
@@ -364,19 +361,31 @@ export function createCardSupplyScheduler({ pool, adapters, now = () => new Date
   }
 
   function pickFallback({ demandAccountId, productId, accountsById, selections, waitingGap }) {
-    // 只有 Browser 需求才转台：选择表 BROWSER 行指向缺卡那台，说明这批需求由 Browser 消费；
-    // API 行冻结 hnskj，不转（D-253）。
-    const browserRow = selections.find((row) => row.productId === productId && row.executorKind === 'BROWSER');
-    if (!browserRow || browserRow.providerAccountId !== demandAccountId) return { account: null, reason: 'NOT_BROWSER_DEMAND' };
+    // 缺卡那台被哪几行（产品 × 执行器）选着，这批需求就由这几行消费。D-401 起 API 路线也能用
+    // 任何卡台（此前 D-253 以为 ZZSHU 只认 hnskj，API 行一律不转）；仍固定卡台的行（locked=1，
+    // 如 Pro 的 API 行）照旧不转。takeoverWaitingOrders 会把该产品冻结在缺卡台的等待单全部改冻，
+    // 所以接手的卡台必须支持每一行的执行器。
+    const rows = selections.filter((row) => row.productId === productId && row.providerAccountId === demandAccountId);
+    if (!rows.length) return { account: null, reason: 'NOT_SELECTED' };
+    if (rows.some((row) => row.locked)) return { account: null, reason: 'LOCKED_SELECTION' };
     // 只替等卡的单转台（D-365）：开出的卡随 takeoverWaitingOrders 把等待单改冻到开卡台，等待单数随之下降，
     // 转台自然停；水位缺口转过去补不满，会一张接一张开。
     if (!(waitingGap > 0)) return { account: null, reason: 'NO_WAITING_ORDERS' };
     const current = now();
+    const supportsEvery = (account) => rows.every((row) => (row.executorKind === 'API'
+      ? account.supportsApiRecharge : account.supportsBrowserRecharge));
     for (const account of accountsById.values()) {
-      if (account.id === demandAccountId || !account.supportsBrowserRecharge) continue;
+      if (account.id === demandAccountId || !supportsEvery(account)) continue;
       if (accountCanOpen(account, adapters, { now: current }).ok) return { account, reason: null };
     }
     return { account: null, reason: 'NO_FALLBACK_ACCOUNT' };
+  }
+
+  function fallbackReasonText(reason) {
+    return reason === 'LOCKED_SELECTION' ? '这台是固定卡台的路线在用，不转台'
+      : reason === 'NOT_SELECTED' ? '没有路线在用这台，不替它转台'
+        : reason === 'NO_WAITING_ORDERS' ? '没有客户在等卡，只缺水位，不替它转台开卡'
+          : '没有别的卡台能顶上';
   }
 
   async function scheduleFor(candidate, state) {
@@ -390,9 +399,7 @@ export function createCardSupplyScheduler({ pool, adapters, now = () => new Date
         accountsById: state.accountsById, selections: state.selections,
         waitingGap: candidate.waiting - candidate.available - candidate.inflight });
       if (!fallback.account) {
-        const why = fallback.reason === 'NOT_BROWSER_DEMAND' ? 'API 路线不转台'
-          : fallback.reason === 'NO_WAITING_ORDERS' ? '没有客户在等卡，只缺水位，不替它转台开卡'
-            : '没有别的卡台能顶上';
+        const why = fallbackReasonText(fallback.reason);
         await upsertSupplyAlert(pool, {
           type: ALERT_TYPES.BLOCKED, key: supplyBlockedAlertKey(demandAccount.id, candidate.productCode), severity: 'critical',
           title: '缺卡但开不出来',

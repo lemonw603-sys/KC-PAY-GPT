@@ -27,12 +27,14 @@ export function createCardSyncJobService({ pool }) {
       await connection.beginTransaction();
       const [cards] = providerCardId
         ? await connection.query(
-          `SELECT id, provider_card_id FROM cards
+          `SELECT id, provider_card_id, sync_tier FROM cards
            WHERE BINARY provider_card_id = BINARY ? LIMIT 1 FOR UPDATE`,
           [providerCardId]
         )
         : await connection.query(
-          `SELECT id, provider_card_id FROM cards
+          // 批量只排有只读 API 的卡（与下方定时排队同一口径）：MANUAL_IMPORT 的卡排了只会拿去问 hnskj、必失败（D-401）。
+          `SELECT id, provider_card_id, sync_tier FROM cards
+           WHERE sync_tier <> 'MANUAL_IMPORT'
            ORDER BY CASE inventory_status
              WHEN 'PROVISIONING' THEN 0 WHEN 'ASSIGNED' THEN 1
              WHEN 'AVAILABLE' THEN 2 ELSE 3 END, updated_at DESC
@@ -42,6 +44,9 @@ export function createCardSyncJobService({ pool }) {
         throw new PublicApiError('Card not found', {
           code: 'ADMIN_CARD_NOT_FOUND', status: 404
         });
+      }
+      if (providerCardId && cards[0].sync_tier === 'MANUAL_IMPORT') {
+        throw new PublicApiError('Card source has no read API', { code: 'ADMIN_CARD_NO_READ_API', status: 409 });
       }
       let queued = 0;
       let alreadyActive = 0;

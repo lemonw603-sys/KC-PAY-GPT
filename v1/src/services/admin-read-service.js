@@ -578,11 +578,15 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
         throw new PublicApiError('Transaction sync is disabled', { code: 'ADMIN_SYNC_DISABLED', status: 409 });
       }
       const [rows] = await connection.query(
-        `SELECT o.id, c.id AS card_id FROM orders o LEFT JOIN cards c ON (c.id = o.assigned_card_id OR (o.assigned_card_id IS NULL AND c.order_id = o.id))
+        `SELECT o.id, c.id AS card_id, c.sync_tier FROM orders o LEFT JOIN cards c ON (c.id = o.assigned_card_id OR (o.assigned_card_id IS NULL AND c.order_id = o.id))
          WHERE BINARY o.public_no = ? LIMIT 1 FOR UPDATE`, [publicNo]
       );
       if (rows.length !== 1) throw new PublicApiError('Order not found', { code: 'ADMIN_ORDER_NOT_FOUND', status: 404 });
       if (!rows[0].card_id) throw new PublicApiError('Order has no bound card', { code: 'ADMIN_CARD_NOT_BOUND', status: 409 });
+      // 同步任务只会问 hnskj；MANUAL_IMPORT（highvcc 等）的卡没有只读流水接口，排了必失败（D-401）。
+      if (rows[0].sync_tier === 'MANUAL_IMPORT') {
+        throw new PublicApiError('Card source has no transaction read API', { code: 'ADMIN_CARD_NO_READ_API', status: 409 });
+      }
       const [active] = await connection.query(
         `SELECT status FROM tasks WHERE order_id = ? AND task_type = 'SYNC_CARD_TRANSACTIONS'
          AND status IN ('PENDING', 'RUNNING') ORDER BY id DESC LIMIT 1`, [rows[0].id]
@@ -647,7 +651,7 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
       pool.query('SELECT status, COUNT(*) AS count FROM orders GROUP BY status ORDER BY status'),
       pool.query('SELECT status, COUNT(*) AS count FROM cdks GROUP BY status ORDER BY status'),
       pool.query(`SELECT setting_key, setting_value, updated_at FROM app_settings
-        WHERE setting_key IN ('accept_new_orders','dispatch_new_recharges','recharge_dispatch_mode','poll_existing_orders','sync_card_transactions','worker_heartbeat_at','worker_recharge_writes_enabled','browser_payment_writes_enabled','card_auto_replenishment_enabled')
+        WHERE setting_key IN ('accept_new_orders','dispatch_new_recharges','recharge_dispatch_mode','poll_existing_orders','sync_card_transactions','worker_heartbeat_at','worker_recharge_writes_enabled','browser_payment_writes_enabled','card_auto_replenishment_enabled','zzshu_points_remaining','zzshu_points_observed_at')
         ORDER BY setting_key`),
       pool.query(`SELECT status, COUNT(*) AS count FROM refund_cases
         WHERE status <> 'WITHDRAWN' GROUP BY status ORDER BY status`)
@@ -943,6 +947,13 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
           const heartbeatAt = Date.parse(stockRows[0]?.browser_worker_heartbeat_at || '');
           return Number.isFinite(heartbeatAt) ? new Date(heartbeatAt).toISOString() : null;
         })()
+        // D-401：直充平台（ZZSHU）剩余点数，worker 每 5 分钟只读一次；从没读到时为 null。
+        ,zzshuPoints: (() => {
+          const raw = settingsRows.find((row) => row.setting_key === 'zzshu_points_remaining')?.setting_value;
+          const points = /^\d+$/.test(String(raw ?? '').trim()) ? Number(raw) : null;
+          const observed = Date.parse(settingsRows.find((row) => row.setting_key === 'zzshu_points_observed_at')?.setting_value || '');
+          return { points, observedAt: Number.isFinite(observed) ? new Date(observed).toISOString() : null };
+        })()
         ,browserRechargeReady: (() => {
           const heartbeatAt = Date.parse(stockRows[0]?.browser_worker_heartbeat_at || '');
           return stockRows[0]?.browser_dispatch_enabled === 'true'
@@ -950,7 +961,7 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
             && Number.isFinite(heartbeatAt) && now() - heartbeatAt <= 60_000;
         })()
       },
-      settings: settingsRows.filter((row) => !['worker_heartbeat_at', 'worker_recharge_writes_enabled'].includes(row.setting_key)).map((row) => ({
+      settings: settingsRows.filter((row) => !['worker_heartbeat_at', 'worker_recharge_writes_enabled', 'zzshu_points_remaining', 'zzshu_points_observed_at'].includes(row.setting_key)).map((row) => ({
         key: row.setting_key,
         value: row.setting_value,
         updatedAt: iso(row.updated_at)

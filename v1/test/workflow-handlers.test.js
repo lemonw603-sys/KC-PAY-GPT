@@ -499,6 +499,16 @@ test('uses a local audit key instead of persisting the recharge card key', async
   assert.equal(queryCall.requestKey.includes(state.context.order.recharge_card_key), false);
 });
 
+test('D-401: transaction sync refuses a card without a read API instead of asking hnskj about it', async () => {
+  const state = setup({ status: OrderStatus.RECHARGE_FAILED, cardSupportsApiSync: false });
+  let asked = 0;
+  state.cardProvider.transactions = async () => { asked += 1; return { data: { transactions: [] } }; };
+  await assert.rejects(state.handlers.SYNC_CARD_TRANSACTIONS({ id: 30, order_id: 'order-1', attempts: 1 }),
+    (error) => error.code === 'CARD_SOURCE_HAS_NO_TRANSACTION_API' && error.retryable === false);
+  assert.equal(asked, 0, 'no hnskj call with a highvcc card id');
+  assert.equal(state.providerCalls.length, 0);
+});
+
 test('syncs card transactions without treating a card recharge as a refund', async () => {
   const state = setup({ status: OrderStatus.RECHARGE_SUCCESS });
   state.cardProvider.transactions = async (_cardId, { page = 1, pageSize = 50 } = {}) => ({ data: { cardNo: '4242424242424242', total: 1, page, pageSize, transactions: [{

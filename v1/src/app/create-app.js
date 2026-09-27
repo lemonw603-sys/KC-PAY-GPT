@@ -70,6 +70,8 @@ export function createApp({
   createAdminManualCardSource = null,
   estimateAdminBrowserCardSourceTakeover = null,
   switchAdminBrowserCardSource = null,
+  estimateAdminApiCardSourceTakeover = null,
+  switchAdminApiCardSource = null,
   getAdminBillingAddressSettings = null,
   setAdminBillingAddressSettings = null,
   previewManualCardImport = null,
@@ -564,10 +566,19 @@ export function createApp({
     app.get('/api/v1/admin/card-sources/browser/takeover-estimate', noStore, requireAdminApi,
       async (_req, res) => res.json(await estimateAdminBrowserCardSourceTakeover()));
   }
-  if (typeof switchAdminBrowserCardSource === 'function') {
-    app.post('/api/v1/admin/card-sources/browser/current', ...adminWriteGuards, async (req, res) => {
+  // D-401：API 行与 Browser 行同一套切换（四项校验、固定卡台的行拒绝、可同时接管排队单）。
+  for (const [kind, estimate, switchSource] of [
+    ['browser', estimateAdminBrowserCardSourceTakeover, switchAdminBrowserCardSource],
+    ['api', estimateAdminApiCardSourceTakeover, switchAdminApiCardSource]
+  ]) {
+    if (kind === 'api' && typeof estimate === 'function') {
+      app.get('/api/v1/admin/card-sources/api/takeover-estimate', noStore, requireAdminApi,
+        async (_req, res) => res.json(await estimate()));
+    }
+    if (typeof switchSource !== 'function') continue;
+    app.post(`/api/v1/admin/card-sources/${kind}/current`, ...adminWriteGuards, async (req, res) => {
       try {
-        return res.json(await switchAdminBrowserCardSource({
+        return res.json(await switchSource({
           providerAccountId: req.body?.providerAccountId,
           expectedVersion: req.body?.expectedVersion,
           takeoverWaiting: req.body?.takeoverWaiting === true,

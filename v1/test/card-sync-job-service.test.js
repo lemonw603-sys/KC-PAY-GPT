@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { failCardSyncJob } from '../src/services/card-sync-job-service.js';
+import { createCardSyncJobService, failCardSyncJob } from '../src/services/card-sync-job-service.js';
 
 function recordingPool() {
   const calls = [];
@@ -74,3 +74,33 @@ test('scheduleDueCardSyncJobs excludes MANUAL_IMPORT and RETIRED cards and uses 
   assert.match(select.sql, /c\.inventory_status <> 'RETIRED'/);
   assert.equal(select.params[1].toISOString(), '2026-09-18T09:00:00.000Z', 'AVAILABLE/INVENTORY fallback cutoff = now - 3h');
 });
+
+// D-401：后台手动同步与定时排队同一口径——MANUAL_IMPORT（highvcc 等）的卡没有只读 API，排了只会问 hnskj、必失败。
+function adminJobPool(cards) {
+  const calls = [];
+  const connection = {
+    async beginTransaction() {}, async commit() {}, async rollback() {}, release() {},
+    async query(sql, params = []) {
+      const text = String(sql).replace(/\s+/g, ' ').trim();
+      calls.push({ sql: text, params });
+      if (text.startsWith('SELECT id, provider_card_id, sync_tier FROM cards')) return [cards, []];
+      if (text.startsWith('SELECT id FROM card_sync_jobs')) return [[], []];
+      if (text.startsWith('INSERT INTO card_sync_jobs')) return [{ affectedRows: 1 }, []];
+      throw new Error(`unexpected: ${text.slice(0, 60)}`);
+    }
+  };
+  return { calls, async getConnection() { return connection; } };
+}
+
+test('D-401: admin single-card sync refuses a manual-import card; bulk sync only selects cards with a read API', async () => {
+  const single = adminJobPool([{ id: 'c-hv', provider_card_id: 'HG-1', sync_tier: 'MANUAL_IMPORT' }]);
+  await assert.rejects(createCardSyncJobService({ pool: single }).createJobs({ providerCardId: 'HG-1' }),
+    (error) => error.code === 'ADMIN_CARD_NO_READ_API' && error.status === 409);
+  assert.equal(single.calls.some(({ sql }) => sql.startsWith('INSERT INTO card_sync_jobs')), false);
+
+  const bulk = adminJobPool([{ id: 'c-hn', provider_card_id: 'HN-1', sync_tier: 'AVAILABLE' }]);
+  const result = await createCardSyncJobService({ pool: bulk }).createJobs({});
+  assert.deepEqual(result, { requested: 1, queued: 1, alreadyActive: 0 });
+  assert.match(bulk.calls[0].sql, /WHERE sync_tier <> 'MANUAL_IMPORT'/);
+});
+

@@ -551,6 +551,13 @@ export function createWorkflowHandlers({
     if (!context.card?.provider_card_id) {
       throw new TaskExecutionError('Order has no provider card', { code: 'CARD_NOT_BOUND' });
     }
+    // 下面只会问 hnskj。没有只读流水接口的卡台（highvcc 等，能力位 supports_api_sync=0）的卡
+    // 拿去问只会失败；这类卡的交易由它自己的快照同步进库（D-401：API 路线也会用这类卡）。
+    if (!context.card.supports_api_sync) {
+      throw new TaskExecutionError('Card source has no transaction read API', {
+        code: 'CARD_SOURCE_HAS_NO_TRANSACTION_API', retryable: false
+      });
+    }
     const transactions = await readAllCardTransactions({
       fetchPage: (page, pageSize) => recordCall({
         orderId: task.order_id,

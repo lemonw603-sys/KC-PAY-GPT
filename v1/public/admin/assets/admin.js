@@ -619,8 +619,16 @@ function renderDecisions(overview, cardSources, takeoverEstimate = null) {
     + sw('pay', Boolean(d.browserPaymentWritesEnabled), '付款');
   const routeBox = document.getElementById('wb-routes');
   if (routeBox) {
-    const sources = (cardSources?.sources || []).filter((item) => item.supportsBrowserRecharge && item.operationalEnabled);
-    const currentSource = cardSources?.browserProviderAccountId || '';
+    // D-401：卡台下拉框跟着当前路线走——走 API 就切 API 那一行的卡台（ZZSHU 认其他卡台的卡），
+    // 走 Browser 就切 Browser 那一行。候选卡台按该执行器的能力过滤。
+    const activeKind = String(state.rechargeMethod || '').toUpperCase() === 'API' ? 'API' : 'BROWSER';
+    state.cardSourceKind = activeKind;
+    state.cardSourceVersion = activeKind === 'API'
+      ? Number(cardSources?.apiSelectionVersion || 0) : Number(cardSources?.browserSelectionVersion || 0);
+    const sources = (cardSources?.sources || []).filter((item) => item.operationalEnabled
+      && (activeKind === 'API' ? item.supportsApiRecharge : item.supportsBrowserRecharge));
+    const currentSource = (activeKind === 'API' ? cardSources?.apiProviderAccountId : cardSources?.browserProviderAccountId) || '';
+    const sourceLocked = activeKind === 'API' && cardSources?.apiSelectionLocked === true;
     const sourceOptions = sources.map((item) => `<option value="${escapeHtml(item.id)}" ${item.id === currentSource ? 'selected' : ''}>${escapeHtml(item.label || item.displayName)}</option>`).join('');
     // D-284 ①（方向 A）：路线切换块留在工作台。切换走已有的 setDefaultRechargeMethod ——
     // 后端 setDefaultRechargeMethod 会先跑面一 C1 四项校验（ROUTE_UNIQUE / SOURCE_HEALTHY /
@@ -642,14 +650,19 @@ function renderDecisions(overview, cardSources, takeoverEstimate = null) {
     const methodBtn = (target, text) => (method === target
       ? `<button type="button" class="is-on" disabled>${escapeHtml(text)}</button>`
       : `<button type="button" class="default-recharge-method" data-method="${target}">${escapeHtml(text)}</button>`);
+    // D-401：API 路线按点计费，点数挂在按钮上（worker 每 5 分钟读一次；没读到就不显示）。
+    // 超过 999 显示 999+：1440 宽下按钮放得下三位数（实测 99990 会比按钮宽 3px 被截）；平台对未登记 Key
+    // 还会回占位数 99990，那时这个数本来就不可信。
+    const zzshuPoints = overview.providerHealth?.zzshuPoints?.points;
+    const apiText = Number.isInteger(zzshuPoints) ? `API 充值 · ${zzshuPoints > 999 ? '999+' : zzshuPoints} 点` : 'API 充值';
     // 营业条是一条工具栏（乙-3）：路线与卡台是**两组**独立的项，各自参与间距均分。
     // #wb-routes 本身 display:contents，所以这两个 .wb-grp 直接成为工具栏的项。
     routeBox.innerHTML =
-      `<div class="wb-grp"><div class="wb-seg2">${methodBtn('API', 'API 充值')}${methodBtn('BROWSER', '浏览器自动化')}</div></div>`
-      + `<div class="wb-grp"><span class="wb-k">浏览器</span>`
+      `<div class="wb-grp"><div class="wb-seg2">${methodBtn('API', apiText)}${methodBtn('BROWSER', '浏览器自动化')}</div></div>`
+      + `<div class="wb-grp"><span class="wb-k">${activeKind === 'API' ? 'API' : '浏览器'}</span>`
       + `<span class="wb-pair">`
-      + `<select class="wb-field" id="decision-card-source" aria-label="Browser 卡台">${sourceOptions || '<option value="">没有可用卡台</option>'}</select>`
-      + `<button type="button" class="wb-btn sm out" id="decision-card-source-apply" ${sources.length ? '' : 'disabled'}>切换</button>`
+      + `<select class="wb-field" id="decision-card-source" aria-label="${activeKind === 'API' ? 'API' : 'Browser'} 卡台" ${sourceLocked ? 'disabled' : ''}>${sourceOptions || '<option value="">没有可用卡台</option>'}</select>`
+      + `<button type="button" class="wb-btn sm out" id="decision-card-source-apply" ${sources.length && !sourceLocked ? '' : 'disabled'}>切换</button>`
       + `</span>${takeoverHint}</div>`;
   }
 }
@@ -669,25 +682,28 @@ async function applyBrowserCardSource(sourceApply) {
   sourceApply.disabled = true;
   try {
     const takeoverWaiting = document.querySelector('#decision-card-source-takeover')?.checked === true;
-    const result = await api('/api/v1/admin/card-sources/browser/current', {
+    // D-401：切的是当前路线那一行（API 或 Browser），版本号也取那一行的。
+    const kind = state.cardSourceKind === 'API' ? 'API' : 'BROWSER';
+    const kindLabel = kind === 'API' ? 'API' : 'Browser';
+    const result = await api(`/api/v1/admin/card-sources/${kind === 'API' ? 'api' : 'browser'}/current`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ providerAccountId, takeoverWaiting, expectedVersion: state.browserSelectionVersion || 0 })
+      body: JSON.stringify({ providerAccountId, takeoverWaiting, expectedVersion: state.cardSourceVersion || 0 })
     });
     // 报「实际接管了几单」而不是「请求了几单」——两者可能不同（期间有单已开始执行）。
     const actual = Number(result?.actualTakeoverCount || 0);
     showNotice(takeoverWaiting
-      ? `Browser 卡台已切换；实际接管 ${actual} 张排队单，其余单不受影响。`
-      : 'Browser 卡台已切换，只影响之后的新订单。', 'success');
+      ? `${kindLabel} 卡台已切换；实际接管 ${actual} 张排队单，其余单不受影响。`
+      : `${kindLabel} 卡台已切换，只影响之后的新订单。`, 'success');
     try {
       await loadOverview();
     } catch {
-      showNotice('Browser 卡台已切换，但列表刷新失败；请刷新查看，不要重复切换。', 'warning');
+      showNotice('卡台已切换，但列表刷新失败；请刷新查看，不要重复切换。', 'warning');
     }
   } catch (error) {
     if (error.message === 'card_source_switch_rejected') {
       showNotice(`切换被拒绝，卡台没有改变：${switchCheckReasons(error)}`, 'warning');
     } else if (error.message === 'card_source_selection_locked') {
-      showNotice('这一行的卡台是固定的（API 只走 hnskj），不能切换。', 'warning');
+      showNotice('这一行的卡台是固定的，不能切换。', 'warning');
     } else {
       showNotice('未能确认卡台切换结果，正在重新读取当前选择；请勿重复点击。', 'warning');
     }
@@ -709,7 +725,7 @@ async function toggleOp(op, enable) {
 }
 
 async function loadOverview() {
-  const [overview, todayOrders, alertData, cardSources, daily, reconCases, takeoverEstimate] = await Promise.all([
+  const [overview, todayOrders, alertData, cardSources, daily, reconCases, browserTakeoverEstimate, apiTakeoverEstimate] = await Promise.all([
     api('/api/v1/admin/overview'),
     // F-63：请求失败必须留下 __error 标记，下游才能把「读取失败」和「查过、确实没有」分开。
     // 少了这一半，renderWbQueue 的 sourceFailed 永远为假，接口挂了照样显示「今天清爽」——
@@ -724,9 +740,12 @@ async function loadOverview() {
     api('/api/v1/admin/reconciliation-cases?page=1&pageSize=20&status=OPEN').catch(() => ({ cases: [], __error: true })),
     // 切卡台时「排队单要不要跟着搬」的待接管单数。读不到就标 __error——
     // 吞成 0 会让「同时接管」这个选项悄悄消失，卡台断供那天正需要它。
-    api('/api/v1/admin/card-sources/browser/takeover-estimate').catch(() => ({ __error: true }))
+    api('/api/v1/admin/card-sources/browser/takeover-estimate').catch(() => ({ __error: true })),
+    // D-401：API 行也能切卡台，接管单数按当前路线取对应那一份。
+    api('/api/v1/admin/card-sources/api/takeover-estimate').catch(() => ({ __error: true }))
   ]);
-  renderDecisions(overview, cardSources, takeoverEstimate);
+  const activeMethod = String(overview?.providerHealth?.rechargeMethod || '').toUpperCase();
+  renderDecisions(overview, cardSources, activeMethod === 'API' ? apiTakeoverEstimate : browserTakeoverEstimate);
   renderWbWall(overview);
   renderWbCards(overview);
   renderWbRecon(daily);
@@ -2320,8 +2339,10 @@ async function requestTransactionSync(publicNo, button) {
     const result = await api(`/api/v1/admin/orders/${encodeURIComponent(publicNo)}/sync-transactions`, { method: 'POST' });
     showNotice(result.queued ? '交易同步任务已加入队列。' : '该订单已有交易同步任务在处理。');
     button.textContent = result.queued ? '已加入队列' : '已有任务';
-  } catch {
-    showNotice('交易同步任务提交失败，请稍后重试。');
+  } catch (error) {
+    showNotice(error?.message === 'admin_card_no_read_api'
+      ? '这张卡所属卡台没有只读流水接口，交易由卡台快照每小时同步，不用手动同步。'
+      : '交易同步任务提交失败，请稍后重试。');
     button.disabled = false;
     button.textContent = original;
   }

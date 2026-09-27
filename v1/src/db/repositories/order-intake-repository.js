@@ -32,6 +32,19 @@ export const EXECUTOR_HEARTBEAT_SETTING = Object.freeze({
 // 改它走 v1/scripts/set-intake-executor-check.mjs（带审计），不要手改库。
 export const EXECUTOR_HEARTBEAT_CHECK_SETTING = 'intake_executor_heartbeat_check';
 
+// D-401：API 路线（ZZSHU 直充）按点计费。点数已知为 0 时不建单——建了也会被平台拒（40306），
+// 客户白走一遍 Session。和执行器停摆同一个答复（暂停接单）。点数未知（从没读到）不拦：平台自己会在
+// 建单前拒，卡密在客户重提时退回。与心跳检查的跳过开关无关（演练走 Browser，不受这条影响）。
+export const ZZSHU_POINTS_SETTING = 'zzshu_points_remaining';
+
+export function assertApiRechargePoints({ executorKind, pointsValue }) {
+  if (String(executorKind || '').toUpperCase() !== 'API') return { checked: false };
+  if (String(pointsValue ?? '').trim() === '0') {
+    throw new OrderIntakeError('Recharge points are exhausted', { code: 'EXECUTOR_UNAVAILABLE', status: 503 });
+  }
+  return { checked: true };
+}
+
 export function assertExecutorHeartbeat({ executorKind, heartbeatAt, checkEnabled = true, now = Date.now(), maxAgeMs = EXECUTOR_HEARTBEAT_MAX_AGE_MS }) {
   if (String(checkEnabled).toLowerCase() === 'false') return { skipped: true };
   const kind = String(executorKind || '').toUpperCase();
@@ -133,8 +146,8 @@ async function resolveOrderRoute(queryable, planType, { lock = false } = {}) {
 async function readExecutorHeartbeatValues(queryable, executorKind) {
   const [heartbeatRows] = await queryable.query(
     `SELECT setting_key, setting_value FROM app_settings
-     WHERE setting_key IN (?, ?)`,
-    [EXECUTOR_HEARTBEAT_SETTING[executorKind] || '', EXECUTOR_HEARTBEAT_CHECK_SETTING]
+     WHERE setting_key IN (?, ?, ?)`,
+    [EXECUTOR_HEARTBEAT_SETTING[executorKind] || '', EXECUTOR_HEARTBEAT_CHECK_SETTING, ZZSHU_POINTS_SETTING]
   );
   return new Map(heartbeatRows.map((row) => [row.setting_key, row.setting_value]));
 }
@@ -163,6 +176,7 @@ export async function checkOrderAvailability(queryable, { planType, now = Date.n
       checkEnabled: heartbeatValues.get(EXECUTOR_HEARTBEAT_CHECK_SETTING) ?? 'true',
       now
     });
+    assertApiRechargePoints({ executorKind: route.executor_kind, pointsValue: heartbeatValues.get(ZZSHU_POINTS_SETTING) });
     return { ok: true };
   } catch (error) {
     if (error instanceof OrderIntakeError) return { ok: false, code: error.code };
@@ -257,8 +271,8 @@ export async function createOrderFromCdk(pool, input) {
     const cdkId = cdkRows[0].id;
 
     // 冻结卡台只从「产品 × 执行器 → 卡台」选择表取（D-246 面一 C1）。路线表那一列和
-    // browser_card_source_selections 不再是真相；API 行固定 hnskj 是选择表里的一行
-    // （locked=1），不再在这里写死 provider_code。
+    // browser_card_source_selections 不再是真相；API 行也是选择表里的一行（D-401 起 Plus 的 API 行可切，
+    // Pro 的仍 locked=1），不在这里写死 provider_code。
     const route = await resolveOrderRoute(connection, cdkRows[0].plan_type, { lock: true });
 
     // D-352 块 3 ②：执行器心跳不新鲜就不建单。普通 SELECT，不加锁——心跳行每 5s 被执行器
@@ -270,6 +284,7 @@ export async function createOrderFromCdk(pool, input) {
       checkEnabled: heartbeatValues.get(EXECUTOR_HEARTBEAT_CHECK_SETTING) ?? 'true',
       now: typeof input.now === 'function' ? input.now() : Date.now()
     });
+    assertApiRechargePoints({ executorKind: route.executor_kind, pointsValue: heartbeatValues.get(ZZSHU_POINTS_SETTING) });
 
     await connection.query(
       `INSERT INTO orders

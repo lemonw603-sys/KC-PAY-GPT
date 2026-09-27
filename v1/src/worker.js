@@ -17,6 +17,8 @@ import { createOnDemandCardSync } from './services/card-on-demand-sync-service.j
 import { runWorkerLoop } from './workers/worker-runtime.js';
 import { createOrderCancellationService } from './services/order-cancellation-service.js';
 import { createSessionRepairExpiryService } from './services/session-repair-expiry-service.js';
+import { createProviderRouteAdminService } from './services/provider-route-admin-service.js';
+import { createZzshuPointsMonitor, ZZSHU_POINTS_CHECK_INTERVAL_MS } from './services/zzshu-points-monitor.js';
 
 const config = loadWorkerConfig();
 const pool = createDatabasePool(config.database);
@@ -60,6 +62,11 @@ const workflow = createWorkflowRepository(pool, {
 });
 const rechargeAttemptRepository = createRechargeAttemptRepository(pool);
 const browserDispatchRepository = createBrowserDispatchRepository(pool);
+// D-401：直充平台点数监控（只读），跟着心跳每 5 分钟一次；只有真实的 ZZSHU 客户端才有 readPoints。
+const zzshuPointsMonitor = typeof rechargeProvider.readPoints === 'function'
+  ? createZzshuPointsMonitor({ pool, provider: rechargeProvider, routeAdmin: createProviderRouteAdminService({ pool }) })
+  : null;
+let nextZzshuPointsCheckAt = 0;
 const closeExpiredSessionRepairOrders = createSessionRepairExpiryService({
   pool,
   cancelOrder: createOrderCancellationService({ pool })
@@ -112,6 +119,14 @@ await runWorkerLoop({
          updated_at=CURRENT_TIMESTAMP(3)`,
       [new Date().toISOString(), String(config.providerRechargeWritesEnabled)]
     );
+    if (zzshuPointsMonitor && Date.now() >= nextZzshuPointsCheckAt) {
+      nextZzshuPointsCheckAt = Date.now() + ZZSHU_POINTS_CHECK_INTERVAL_MS;
+      try {
+        console.log(JSON.stringify({ zzshuPoints: await zzshuPointsMonitor.check() }));
+      } catch (error) {
+        console.error('zzshu points check failed', { name: error?.name || 'Error', code: error?.code || error?.kind || 'ZZSHU_POINTS_CHECK_FAILED' });
+      }
+    }
     const cleanup = await closeExpiredSessionRepairOrders();
     if (cleanup.closed || cleanup.reviewRequired) {
       console.log(JSON.stringify({ sessionRepairExpiry: cleanup }));

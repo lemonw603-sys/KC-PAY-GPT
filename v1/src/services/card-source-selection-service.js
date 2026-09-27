@@ -9,7 +9,8 @@ import { cardProviderAccountIsHealthy, readCardProviderAccount } from './provide
  * 唯一真相在 card_source_selections。intake 建单时从这里取冻结卡台；切路线 / 切卡台
  * 两个端点都先跑同一套四项校验（目标路线唯一 / 目标卡池可分配 > 0 / 卡台健康 / 版本对），
  * 不过即拒并把每一项的结果原样交回，让后台能说清楚「为什么不让切」。
- * API 行 `locked=1`：后台不给控件、端点也拒绝（D-253：ZZSHU 按 BIN 白名单，API 固定 hnskj）。
+ * `locked=1` 的行端点拒绝切换。D-253 曾把三行 API 都锁成 hnskj（以为 ZZSHU 只认 hnskj 的 BIN）；
+ * D-401（迁移 062）起 Plus 的 API 行解锁，可切到任何有 API 直充能力的卡台，Pro 的 API 行仍锁。
  */
 
 export const EXECUTOR_KINDS = Object.freeze(['API', 'BROWSER']);

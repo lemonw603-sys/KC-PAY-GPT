@@ -1,6 +1,6 @@
 # 接班一屏（HANDOFF_NOW）
 
-更新：2026-09-26 16:3x（UTC+8）＝ 08:3x UTC（新窗口接班，D-397 及补记一、二，已发布）。执行顺序以 **D-352** 为准，「可离开」第一条以 **D-366** 为准；上一窗口 D-376～D-396。
+更新：2026-09-27 11:3x（UTC+8）＝ 03:3x UTC（本窗口 D-397～D-401；D-401 实现完成、**未发布**）。执行顺序以 **D-352** 为准，「可离开」第一条以 **D-366** 为准；上一窗口 D-376～D-396。
 
 ## 现在的状态（06:10 UTC 现查；明细见 CURRENT_STATE.md，`state-check.sh` 20 项一致）
 
@@ -25,12 +25,13 @@
 - **D-397**：第一张对外卡密先发给能等的熟人，约 Lemon 在场的时间提交，提前告诉执行者开窗口按 RUNBOOK §1 盯（Lemon 同意）。
 - **highvcc token 07:17:29 UTC 又失效**（已推手机，原因未知）：重贴前 highvcc 读不到钱包、开不出卡，充值也没用；第一单用的 8718 已在库里，分卡不依赖它，付款后卡台侧核对受影响的程度未核实。
 - **新发现，待 Lemon 定**：8718 付完第一单后 Plus 就没卡了；highvcc 按生产规则开不出下一张（$34.00 − 16 − 0.50 = $17.50 < 底线 $20，开 1 张需钱包 ≥ $36.50，每多 1 张再 +$16.50）；hnskj 仍维护。明细见 CURRENT_STATE「第一单之后的供卡」。
-- **ZZSHU / API 路线 301 恢复（D-400 / D-401）**：新 API Key（Lemon 本机 `~/.config/zzshu/api.env`，points 15）；highvcc 卡头 `51398996` 能建单（付款成功未验）。任务书 `docs/tasks/2026-09-27-restore-api-route-zzshu.md` **待 Lemon 批**（含一处设计二选一：点数用完自动切路线 vs 主备路线）。批前不改代码、不装 Key、不切路线。
+- **ZZSHU / API 路线 301 恢复（D-400 / D-401）**：新 API Key（Lemon 本机 `~/.config/zzshu/api.env`，points 15）；highvcc 卡头 `51398996` 能建单（付款成功未验）。Lemon 批任务书、选 (a) 自动切路线。**实现与测试完成、已提交、未发布**（D-401 补记）：迁移 062（API 行卡源放开）、点数监控（worker 每 5 分钟、≤5 / 0 推送、0 点自动切 Browser 不自动切回）、API 失败推送、手动导入卡不排 hnskj 同步。验证：v1 1183（0 失败）、真数据库 75/0/1、变异 16/16、界面 1440×730。运维见 RUNBOOK §2.75。
 - **ZovoCard 改为独立项目 `~/code/ZovoCard直充`**（D-399，取代 D-398）：本项目不接、不改代码；那边的事在那个仓库里做。
 - RUNBOOK §1 五处过时说法按当前代码改正（预检已并入 run、RECHARGE_FAILED 可手工收口、Browser 付款不明走「确认核实结果」、客户页有更换账号表单、9839 已注销）。
 
 ## 下一可执行项
 
+0. **D-401 上线（每步先问 Lemon）**：① 把新 Key 装进服务器 `/etc/pojia/provider.env` 的 `ZZSHU_API_KEY`（先装再发布，免得 worker 读旧 Key 误推「不认这把 Key」）；② `deploy-release.sh prepare` → `migrate`（062）→ `switch`，独立核对服务 / 日志 / 首轮点数读数 / 迁移效果，更新 CURRENT_STATE；③ 发布后 Lemon 在工作台把 API 行卡台切到 highvcc（现指 hnskj，hnskj 维护中）、定首单走哪条路线；highvcc 要先重贴 token、充钱包。清理待批：删本机 `~/.config/zzshu/test-session.json`、服务器 `/root/zzshu-probe/`；highvcc 删卡 4022（完整卡号曾出现在聊天里）。
 1. **等首张真实客户 Plus 单**（可离开第一条，D-366；第一张卡密发给能等的熟人、Lemon 在场，D-397）：Lemon 说「要发了」→ 开窗口先跑 `ready-check.sh pay` + `state-check.sh`，再按 RUNBOOK §1 盯；Bark 来单 → 按 RUNBOOK §1 盯。跑完读 `~/Library/Application Support/pojia-browser-live/pool/post-click-timing.jsonl` 里该 run 的四行（点击后各段耗时、当场确认为什么没成），据此挑欠账 19 的提速。导航失败先看 `evidence/` 目录（`evidenceRef` 在 fail-closed 事件里）。
 2. **第二单起的卡**：Lemon 定「来单时第一时间给 highvcc 充值」（D-397 补记）→ 第一单来时就提醒他充（开 1 张需钱包 ≥ $36.50），充完用生产 `walletPreflight` 复算。**开不出卡时叫人已上线**（release `20260926-d397-a44cb28`，08:24 UTC，D-397 补记二）；常驻池不动。何时对外发新卡密：Lemon 自己定（D-391）。现可用卡密 8 张（06:33 UTC 现查），均为 09-23 起建、30 天有效、未过期的 plus 普通码（Lemon 自用测试码）。
 3. 放着（D-392 / D-393，欠账 20）：付款前页面类失败自动重跑、重新兑换卡密预填、企业邮箱号改走换号。看失败原因统计积累到数据后再议。
@@ -46,6 +47,7 @@
 
 ## 未验证边界
 
+- API 路线 301（D-401）：当前代码成功付款 / 确认 / 取消续费无样本（首张真实客户单验，D-400）；highvcc 失败单的卡能否被快照同步自动放回未验；Pro 每单扣几点、安全验证频率未知（见 UNVERIFIED_LEDGER 09-27 行）。
 - 失败原因统计：生产上 09-16 / 09-25 之后常驻池还没有真实失败单，所以「执行时原话」这一路还没在生产数据上出现过（隔离库已验）。
 - 当前 release 真实付款、取消续费、付款不明恢复、Browser 崩溃补核、点击后计时均无真单样本；5x 专属逻辑无样本（无 5x 卡）。
 - 09-25 两次「付款表单加载失败」原因未知；证据包上线后再现会有现场。

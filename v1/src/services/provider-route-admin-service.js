@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import { PublicApiError } from '../domain/public-api-error.js';
 import { runCardSourceSwitchChecks } from './card-source-selection-service.js';
+import { ZZSHU_POINTS_SETTING } from '../db/repositories/order-intake-repository.js';
 
 function rechargeMethod(value) {
   const method = String(value || '').trim().toUpperCase();
@@ -100,6 +101,20 @@ export function createProviderRouteAdminService({ pool }) {
         code: 'VERSION_MATCH', ok: methodOk,
         detail: methodOk ? `当前默认方式 ${currentMethod || '无'}` : `调用方看到的当前方式 ${expectedMethod ?? '（未提供）'}，实际 ${currentMethod || '无'}；请刷新后再切`
       } : item));
+      // D-401：API 路线按点计费。点数已知为 0 时切过去，新单也会被下单入口拒（暂停接单），先充点再切。
+      // 点数未知（监控还没读到）不拦——平台自己会在建单前拒。
+      if (selectedMethod === 'API') {
+        const [pointRows] = await connection.query(
+          'SELECT setting_value FROM app_settings WHERE setting_key = ? LIMIT 1', [ZZSHU_POINTS_SETTING]
+        );
+        const value = pointRows[0]?.setting_value;
+        const text = String(value ?? '').trim();
+        checks.push({
+          code: 'ZZSHU_POINTS_AVAILABLE', ok: text !== '0',
+          detail: text === '0' ? '直充平台点数为 0，先充点再切'
+            : text ? `直充平台剩 ${text} 点` : '直充平台点数未知（尚未读到），不拦'
+        });
+      }
       if (!checks.every((item) => item.ok)) {
         const error = new PublicApiError('Default recharge method switch rejected', {
           code: 'DEFAULT_RECHARGE_METHOD_REJECTED', status: 409

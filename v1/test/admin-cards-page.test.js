@@ -357,6 +357,64 @@ test('⑦ 待接管单数读取失败时说读取失败，不静默当成 0', ()
   assert.doesNotMatch(out, /decision-card-source-takeover/);
 });
 
+// ---- D-401：API 路线也能切卡台；下拉框跟着当前路线走，API 按钮带点数 ----
+const API_OVERVIEW = { decisions: {}, providerHealth: { rechargeMethod: 'API', zzshuPoints: { points: 12, observedAt: '2026-09-27T03:00:00.000Z' } } };
+const API_CARD_SOURCES = {
+  apiProviderAccountId: 'pa-3', apiSelectionVersion: 2, apiSelectionLocked: false,
+  browserProviderAccountId: 'pa-1', browserSelectionVersion: 3,
+  sources: [
+    { id: 'pa-1', displayName: 'HNSKJ', supportsApiRecharge: false, supportsBrowserRecharge: true, operationalEnabled: true },
+    { id: 'pa-3', displayName: 'highvcc', supportsApiRecharge: true, supportsBrowserRecharge: true, operationalEnabled: true }
+  ]
+};
+
+test('D-401 走 API 时：标签是 API，只列能做 API 直充的卡台，选中 API 行的卡台，按钮带点数', () => {
+  const { sandbox, html } = loadAdminJs();
+  sandbox.renderDecisions(API_OVERVIEW, API_CARD_SOURCES, { count: 0 });
+  const out = html('wb-routes');
+  assert.match(out, /<span class="wb-k">API<\/span>/);
+  assert.match(out, /aria-label="API 卡台"/);
+  assert.match(out, /<option value="pa-3" selected>highvcc<\/option>/);
+  assert.doesNotMatch(out, /value="pa-1"/, '不支持 API 直充的卡台不该出现在 API 行的候选里');
+  assert.match(out, /class="is-on" disabled>API 充值 · 12 点</);
+});
+
+test('D-401 走 Browser 时照旧：标签是浏览器，候选按 Browser 能力；没读到点数就不显示', () => {
+  const { sandbox, html } = loadAdminJs();
+  sandbox.renderDecisions({ decisions: {}, providerHealth: { rechargeMethod: 'BROWSER', zzshuPoints: { points: null } } }, API_CARD_SOURCES, { count: 0 });
+  const out = html('wb-routes');
+  assert.match(out, /<span class="wb-k">浏览器<\/span>/);
+  assert.match(out, /<option value="pa-1" selected>HNSKJ<\/option>/);
+  assert.match(out, /data-method="API">API 充值</);
+});
+
+test('D-401 点数超过 999 显示 999+（1440 宽下按钮只放得下三位数）', () => {
+  for (const [points, text] of [[999, 'API 充值 · 999 点'], [1000, 'API 充值 · 999+ 点'], [99990, 'API 充值 · 999+ 点'], [0, 'API 充值 · 0 点']]) {
+    const { sandbox, html } = loadAdminJs();
+    sandbox.renderDecisions({ decisions: {}, providerHealth: { rechargeMethod: 'API', zzshuPoints: { points } } }, API_CARD_SOURCES, { count: 0 });
+    assert.match(html('wb-routes'), new RegExp(`>${text.replace('+', '\\+')}<`), `points=${points}`);
+  }
+});
+
+test('D-401 API 行仍被固定（locked）时，下拉框与切换按钮都不可点', () => {
+  const { sandbox, html } = loadAdminJs();
+  sandbox.renderDecisions(API_OVERVIEW, { ...API_CARD_SOURCES, apiSelectionLocked: true }, { count: 0 });
+  const out = html('wb-routes');
+  assert.match(out, /<select class="wb-field" id="decision-card-source" aria-label="API 卡台" disabled>/);
+  assert.match(out, /id="decision-card-source-apply" disabled>切换/);
+});
+
+test('D-401 切卡台按当前行走对应端点与版本；加载时按当前路线挑对应的接管单数', () => {
+  const src = fs.readFileSync(path.join(here, '..', 'public', 'admin', 'assets', 'admin.js'), 'utf8');
+  const apply = src.slice(src.indexOf('async function applyBrowserCardSource('), src.indexOf('// 营业条 toggle'));
+  assert.match(apply, /card-sources\/\$\{kind === 'API' \? 'api' : 'browser'\}\/current/);
+  assert.match(apply, /expectedVersion: state\.cardSourceVersion/);
+  assert.doesNotMatch(apply, /state\.browserSelectionVersion/, '版本要取当前行的，不再写死 Browser 行');
+  const load = src.slice(src.indexOf('async function loadOverview('), src.indexOf('renderWbWall(overview);'));
+  assert.match(load, /card-sources\/api\/takeover-estimate/);
+  assert.match(load, /activeMethod === 'API' \? apiTakeoverEstimate : browserTakeoverEstimate/);
+});
+
 test('⑦ 卡台切换只剩工作台一个入口；卡片页那张表已只读', () => {
   const src = fs.readFileSync(path.join(here, '..', 'public', 'admin', 'assets', 'admin.js'), 'utf8');
   const code = src.replace(/^\s*\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');

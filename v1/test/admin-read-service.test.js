@@ -26,7 +26,9 @@ test('admin overview maps aggregate values without exposing raw records', async 
       awaiting_confirmation: 1, reviewing: 1, waiting_for_card: 3 }],
     [{ status: 'RECHARGE_SUCCESS', count: 8 }],
     [{ status: 'AVAILABLE', count: 20 }],
-    [{ setting_key: 'accept_new_orders', setting_value: 'false', updated_at: new Date('2026-08-17T00:00:00Z') }],
+    [{ setting_key: 'accept_new_orders', setting_value: 'false', updated_at: new Date('2026-08-17T00:00:00Z') },
+      { setting_key: 'zzshu_points_remaining', setting_value: '12', updated_at: new Date('2026-09-27T03:00:00Z') },
+      { setting_key: 'zzshu_points_observed_at', setting_value: '2026-09-27T03:00:00.000Z', updated_at: new Date('2026-09-27T03:00:00Z') }],
     [{ status: 'REFUND_DETECTED', count: 1 }],
     [{ count: 1 }],
     [{ available: 7, provisioning: 1, assigned: 2, depleted: 1, held: 1 }],
@@ -142,8 +144,11 @@ test('admin overview maps aggregate values without exposing raw records', async 
   assert.deepEqual(result.providerHealth, {
     provider: 'hnskj', routeLabel: '当前 Plus 卡台路线未配置', accountCode: null,
     syncedAt: null, accountBalance: null, currency: 'USD', purchaseEnabled: null,
-    rechargeMethod: null, browserWorkerHeartbeatAt: null, browserRechargeReady: false
+    rechargeMethod: null, browserWorkerHeartbeatAt: null, browserRechargeReady: false,
+    zzshuPoints: { points: 12, observedAt: '2026-09-27T03:00:00.000Z' }
   });
+  // D-401：点数有专门的字段，不混进通用设置清单（设置页不该冒出这两行）。
+  assert.equal(result.settings.some((row) => /^zzshu_points/.test(row.key)), false);
   assert.equal(pool.queries.some(({ sql }) => /session_ciphertext|recharge_card_key/i.test(sql)), false);
   assert.match(pool.queries.find(({ sql }) => /COUNT\(\*\) AS count FROM operator_alerts/.test(sql)).sql,
     /severity IN \('warning','critical'\)/);
@@ -412,6 +417,22 @@ test('manual transaction sync queues only a read task and deduplicates active wo
   const activeResult = await createAdminReadService({ pool: { async getConnection() { return activeConnection; } } })
     .requestCardTransactionSync('PJV1-DEMO');
   assert.deepEqual(activeResult, { queued: false, taskStatus: 'RUNNING' });
+});
+
+test('D-401: manual transaction sync is refused for a manual-import (highvcc) card before any task is queued', async () => {
+  const queries = [];
+  const connection = {
+    async beginTransaction() {}, async commit() {}, async rollback() {}, release() {},
+    async query(sql, values = []) {
+      queries.push({ sql, values });
+      if (/SELECT setting_value/.test(sql)) return [[{ setting_value: 'true' }], []];
+      if (/SELECT o\.id/.test(sql)) return [[{ id: 'order-1', card_id: 'card-1', sync_tier: 'MANUAL_IMPORT' }], []];
+      throw new Error(`should stop before: ${sql.slice(0, 40)}`);
+    }
+  };
+  await assert.rejects(createAdminReadService({ pool: { async getConnection() { return connection; } } }).requestCardTransactionSync('PJV1-DEMO'),
+    (error) => error.code === 'ADMIN_CARD_NO_READ_API' && error.status === 409);
+  assert.equal(queries.some(({ sql }) => /INSERT INTO tasks/.test(sql)), false);
 });
 
 test('card consumption read view reports reserved, consumed and reconciliation counts without writes', async () => {
