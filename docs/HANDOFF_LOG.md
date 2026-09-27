@@ -3836,3 +3836,7 @@ Lemon：「12 同意，装 key 后发布」。装 Key（07:30:25 UTC，经 SSH �
 ## 2026-09-27｜D-402 清理三项、Plus 切 API（07:50～08:05 UTC）
 
 Lemon：「3 删。第一单走 api」。删前逐个 `ls` 看过三个目标（服务器 `/etc/pojia/` 另有 08-18 旧备份，不在范围未动）；删后新命令核实。第一单走 API：先只读预跑两关校验（第二关因 API 行仍指 hnskj 可分配 0 不过 → 顺序必须先切卡台）；查 8718 卡头 `51398996`、已用 0；07:57:05 UTC 用正式服务切卡台再切路线，新连接核实 + 下单入口 `{"ok":true}`。核对代码时发现 RUNBOOK §1 全是 Browser 池盯法、API 单没有 → 按代码补 §1.A（两条盯单查询先在生产跑通）；并查实 highvcc 卡 API 失败后的放回条件（`card-transaction-repository.js`）与后台无收口按钮（`order-list-bucket.js:36`），写进 D-402。
+
+## 2026-09-27｜highvcc token 重贴后核实（08:10～08:25 UTC）
+
+Lemon：「token 已经贴好了」。现查：`provider-token-expired:…103` 08:09:09 UTC RESOLVED；不手动触发，等 08:19:58 定时快照同步（success：snapshot NO_CHANGE 9、wallet $33.80、流水 28 写入）。入库后两条观察：①4022 卡台 `PURCHASE DECLINED` $15.75 / PHP 982.14 @ 02:28:05Z，与 ZZSHU 测试单失败时刻对得上 → 对方确实发起了扣款、卡台拒付，对方原话「该卡交易过于频繁」（单一样本）；②8718 卡台 `PURCHASE COMPLETE` $82.11 / PHP 5126.92 @ 2026-09-21T01:44:24Z 不在消费账本（账本已用 0），来历查不到，交 Lemon。生产 `walletPreflight` 现算 17.30 < 20（钱包 $33.80，比 09-26 的 $34.00 少 $0.20，原因未知）。事实表 4 行更新；token 行首次写「告警无」没带空格，比对脚本不认，改为「告警 无」。
