@@ -3848,3 +3848,12 @@ Lemon 确认 $82.11 是手动 Plus→Pro 补差价。按 D-361 停用：先查 8
 ## 2026-09-27｜Lemon 充 highvcc，自动开出 5270（09:33～09:40 UTC）
 
 Lemon：「现在余额应该够了」。现查：钱包快照 09:33:29 UTC $36.76 → 调度器 job `0204f8ac` COMPLETED，09:33:46 UTC 开出 5270（卡头 `51398996`、面额 / 余额 $16.00、库内凭证在）→ 钱包 $20.26。生产规则复核：API 行可分配 1 张、下单入口 `{"ok":true}`。告警：CARD_STOCK_EMPTY / LOW、CARD_SUPPLY_WALLET_LOW 均自动 RESOLVED；07:30 UTC 后 `alert_notifications` 无记录。事实表 3 行更新，state-check 一致。
+
+## 2026-09-27｜整体排查：API 路线本机演练 + 生产只读（10:50～11:15 UTC）
+
+Lemon：「要不要整体排查下系统，看是否能给客户充值，核心链路是否是通的，其他能力是否存在巨大问题」。只读 + 本机演练，不碰生产写。
+- **请求对照**：生产适配器发 `orderType / cardNumber / expMonth / expYear / cvv / token / planType`，与 09-27 建单成功那次逐项一致，只少 `region`（欠账 24）；服务器上解密 5270 / 4022 只打格式：年份 4 位数字、月份合法、卡号 16 位、CVV 3 位，两张一致。
+- **生产门槛现值**（10:55 UTC）：派单开、AUTOMATIC、zzshu 可写、熔断 CLOSED、301→102、worker 心跳新鲜、5270 余额 16.00 = 门槛；付款前「流水须新鲜」对 MANUAL_IMPORT 豁免（`recharge-attempt-repository.js:191-201`），不会卡死。
+- **本机演练**（库 `pojia_e2e_api`，已删）：造数第一次漏了 `default_card_type_id` 等下单设置（生产有），补齐后客户入口通。成功单 69 秒走完；失败单 15 秒 RECHARGE_FAILED + `API_ORDER_FAILED`；原卡密重交被拒（绑在失败单上）；真 `syncTransactions` 喂一笔 DECLINED 后账本 RELEASED、重交被接受、新单又分到同一张卡（假平台照设定再失败）。
+- **发现**：欠账 23（对方没碰到卡的失败无放回路径；此类单不进「需要我处理」，只有「标为已手工充值」；推送文案「到后台收口」指向不存在的入口——D-401 我写错）、欠账 24（region）。
+- **其他能力**：客户页公网 200、证书有效、`customer.js?v=43`、假卡密 INVALID、客户域名访问后台接口 404；推送服务在跑、近 3 天无错、最近 SENT 04:08 UTC；唯一 PENDING 是 hnskj 的「缺卡开不出」，按 D-365 被同台已推的「卡台故障」覆盖，非故障。客户页从本机约 1.5 秒（TLS 约 1.1～1.3 秒），服务器本机 5 毫秒。
