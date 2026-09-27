@@ -170,6 +170,25 @@ small{font-size:max(12px,.84em)}
 :root:root select:disabled{background-color:var(--wb-s3);color:var(--wb-t3);cursor:not-allowed}
 :root:root .wb-ops select{height:28px;min-height:28px;padding:0 26px 0 9px;border-radius:7px;font-size:12.5px;
   background-position:calc(100% - 14px) 52%,calc(100% - 9px) 52%}
+/* 菜单打开时下拉保持「选中」样子，箭头朝上 */
+:root:root select.is-menu-open{border-color:var(--wb-a);box-shadow:0 0 0 3px var(--wb-a-soft);
+  background-image:linear-gradient(135deg,transparent 50%,var(--wb-t2) 50%),linear-gradient(45deg,var(--wb-t2) 50%,transparent 50%)}
+
+/* ---------- 下拉展开菜单（D-405 第三批，select-menu.js）----------
+   点开后不再是系统白底菜单：同一套颜色与圆角，鼠标移上去浅灰底，选中项打勾，不可选的变灰。
+   position:fixed —— 在弹窗里时菜单挂在 dialog 下（顶层），fixed 不会被 dialog 的滚动区裁掉。 */
+@keyframes selMenuIn{from{opacity:0;transform:translateY(-3px)}to{opacity:1;transform:none}}
+.sel-menu{position:fixed;z-index:1200;box-sizing:border-box;margin:0;padding:4px;overflow:auto;
+  background:var(--wb-s);border:1px solid var(--wb-bd);border-radius:10px;box-shadow:var(--wb-pop);
+  font-family:var(--wb-fd);animation:selMenuIn .12s ease-out}
+.sel-menu.is-up{animation-name:none}
+.sel-opt{display:flex;align-items:center;justify-content:space-between;gap:14px;height:34px;padding:0 10px;
+  border-radius:7px;font-size:13px;color:var(--wb-t);cursor:pointer;white-space:nowrap;user-select:none}
+.sel-menu.is-sm .sel-opt{height:28px;font-size:12.5px}
+.sel-opt.is-active{background:var(--wb-s3)}
+.sel-opt[aria-selected="true"]{color:var(--wb-a-ink);font-weight:600}
+.sel-opt[aria-selected="true"]::after{content:"✓";font-weight:700}
+.sel-opt[aria-disabled="true"]{color:var(--wb-t3);cursor:not-allowed}
 
 /* ---------- 全局定位搜索 ---------- */
 .workbench .wb-search{display:flex;align-items:center;gap:8px;height:42px;padding:0 12px;
@@ -189,6 +208,7 @@ small{font-size:max(12px,.84em)}
 .workbench .wb-kpi .wb-v{font-family:var(--wb-fm);font-size:28px;font-weight:600;letter-spacing:-.02em;line-height:1.05;color:var(--wb-t)}
 .workbench .wb-kpi .wb-v small{font-size:13px;color:var(--wb-t3);font-weight:500}
 .workbench .wb-kpi .wb-sub{font-size:12px;color:var(--wb-t3)}
+.workbench .wb-kpi .wb-sub.is-warn{color:var(--wb-warn)}
 /* JS 输出的是 is-pending，这里原先写 wb-pending —— 名字对不上，规则从来没生效，
    三格一直占着和真数字一样大的字号。灰底小字不可点，一眼看出它不是一个数。 */
 .workbench .wb-kpi.is-pending{background:var(--wb-s2);box-shadow:none;cursor:default}

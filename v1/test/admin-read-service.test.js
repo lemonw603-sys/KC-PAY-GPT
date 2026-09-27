@@ -27,7 +27,7 @@ function queuedPool(results) {
 test('admin overview maps aggregate values without exposing raw records', async () => {
   const pool = queuedPool([
     [{ total: 10, today: 2, successful: 8, completed_failed: 2,
-      recent_successful: 1, recent_finished: 2, processing: 1,
+      recent_successful: 1, recent_finished: 2, recent_automatic: 1, processing: 1,
       awaiting_confirmation: 1, reviewing: 1, waiting_for_card: 3 }],
     [{ status: 'RECHARGE_SUCCESS', count: 8 }],
     [{ status: 'AVAILABLE', count: 20 }],
@@ -59,9 +59,22 @@ test('admin overview maps aggregate values without exposing raw records', async 
         spent_chargebacks: '0.000000', chargeback_count: 0, opened_funded: '16.000000' }],
     // 两台钱包的上次余额（latestProviderBalancesSql，2026-09-24）：hnskj 有、backup-a 这次没有
     [{ provider_account_id: 'pa-hnskj', available_balance: '104.710000', currency: 'USD', observed_at: new Date('2026-09-24T02:23:36.671Z') }],
+    // 异常支出（D-405 第三批）：近 7 天拒付 + 拒付手续费（真实 SQL 按 LOWER(transaction_type) 分组）
+    [{ kind: 'chargeback', n: 1, amount: '128.750000' }, { kind: 'chargeback_fee', n: 1, amount: '0.400000' }],
     [{ active: 1, writes_on: 0 }]
   ]);
   const result = await createAdminReadService({ pool }).getOverview();
+  // D-405 第三批：自动完成率与近7天成功率同一分母；分子多一条「没人动过」
+  assert.match(pool.queries[0].sql, /AND NOT EXISTS \(SELECT 1 FROM order_events human_oe\s+WHERE human_oe\.order_id = o\.id AND human_oe\.actor_type IN \('ADMIN', 'OPERATOR'\)\)\) AS recent_automatic/);
+  assert.equal(result.metrics.recentAutomaticOrders, 1);
+  assert.equal(result.metrics.recentAutomaticRate, 50);
+  assert.deepEqual(result.metrics.abnormalSpend, {
+    windowDays: 7, currency: 'USD', total: '129.150000',
+    chargebacks: { amount: '128.750000', count: 1 }, chargebackFees: { amount: '0.400000', count: 1 }
+  });
+  const abnormalSql = pool.queries.find(({ sql }) => /IN \('chargeback', 'chargeback_fee'\)/.test(sql)).sql;
+  assert.match(abnormalSql, /first_seen_at/, '与今日花费同一时间列');
+  assert.doesNotMatch(abnormalSql, /purchase/i, '无主扣款不进金额');
   assert.match(pool.queries[0].sql, /o\.status = 'RECHARGE_FAILED' AND \(EXISTS \(/);
   assert.doesNotMatch(pool.queries[0].sql, /'CARD_FAILED','SUBMIT_UNKNOWN','RECHARGE_FAILED'/);
   assert.deepEqual(result.decisions, {
@@ -560,3 +573,21 @@ test('D-396: a failed order whose run stopped at payment-unknown but whose attem
   assert.match(sql, /fap_br\.payment_state IN \('PAYMENT_CONFIRMED','PAYMENT_UNKNOWN'\)[\s\S]*?AND fap_bra\.funds_risk_state <> 'CLEARED'/);
   assert.match(sql, /fap_ra\.funds_risk_state IN \('UNKNOWN','SETTLED'\)/, 'money still unknown or settled keeps it in the queue');
 });
+
+test('D-405 第三批：两个 DECIMAL(18,6) 字符串相加走整数，不走浮点', async () => {
+  const { addDecimal6 } = await import('../src/services/admin-read-service.js');
+  assert.equal(addDecimal6('128.750000', '0.400000'), '129.150000');
+  assert.equal(addDecimal6('0.1', '0.2'), '0.300000', '浮点会得 0.30000000000000004');
+  assert.equal(addDecimal6('462.25', '1.6'), '463.850000');
+  assert.equal(addDecimal6('0', '0'), '0.000000');
+  assert.equal(addDecimal6('-0.01', '0.005'), '-0.005000');
+  assert.throws(() => addDecimal6('1e3', '0'));
+});
+
+test('D-405 第三批：「有人动过」只认人写的订单事件（ADMIN / OPERATOR），别名校验挡注入', async () => {
+  const { humanTouchedOrderSql } = await import('../src/services/admin-read-service.js');
+  assert.match(humanTouchedOrderSql('x'), /human_oe\.order_id = x\.id AND human_oe\.actor_type IN \('ADMIN', 'OPERATOR'\)/);
+  assert.doesNotMatch(humanTouchedOrderSql('x'), /CUSTOMER|WORKER|SYSTEM/, '客户自己换 Session、系统与执行器写的不算');
+  assert.throws(() => humanTouchedOrderSql('x;DROP'));
+});
+

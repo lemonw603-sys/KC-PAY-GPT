@@ -318,6 +318,7 @@ test('无主扣款连续两天也不升 critical（D-275 ②：进报告但先�
   const pool = reconServicePool({ cards, transactions });
   const r0 = await createDailyReconciliationService({ pool, clock: () => new Date('2026-09-18T04:00:00Z') }).run({ persist: true });
   assert.equal(r0.unexplainedChargeCount, 1);
+  assert.equal(r0.unexplainedExtraChargeCount, 1, '工作台「异常支出」旁写的笔数（D-405 第三批）');
   assert.equal(r0.discrepancyCount, 1);
   const r1 = await createDailyReconciliationService({ pool, clock: () => new Date('2026-09-19T04:00:00Z') }).run({ persist: true });
   assert.equal(r1.discrepancyCount, 1);
@@ -333,6 +334,7 @@ test('service 级：已登记手动用卡 → 待登记（不算差异）；没�
   const r = await createDailyReconciliationService({ pool: registered, clock: () => new Date('2026-09-18T04:00:00Z') }).run({ persist: true });
   assert.equal(r.pendingRegistrationCount, 1);
   assert.equal(r.unexplainedChargeCount, 0);
+  assert.equal(r.unexplainedExtraChargeCount, 0, '已登记的手动用卡不算无主扣款笔数');
   assert.equal(r.discrepancyCount, 0);
 });
 
@@ -395,3 +397,16 @@ test('reconciliationAlertPlan：够格差异连续两天 → critical；只有�
   });
   assert.equal(info.severity, 'info');
 });
+
+test('D-405 第三批：无主扣款笔数＝每张卡多出账本的扣款数之和（一张卡 3 笔扣款、账本 1 笔 → 2）', async () => {
+  const cards = [{ id: 'c1', last4: '0601', provider_account_id: 'a', funded_amount: '150', current_balance: '1.00',
+    inventory_status: 'AVAILABLE', ledger_consumed: 1, ledger_reconciliation: 0, manual_use_registered: 0 },
+  { id: 'c2', last4: '0237', provider_account_id: 'a', funded_amount: '120', current_balance: '0.00',
+    inventory_status: 'AVAILABLE', ledger_consumed: 0, ledger_reconciliation: 0, manual_use_registered: 0 }];
+  const charge = (card, amount) => ({ card_id: card, transaction_type: 'PURCHASE', status: 'COMPLETE', amount, currency: 'USD' });
+  const pool = reconServicePool({ cards, transactions: [charge('c1', '15.75'), charge('c1', '127.26'), charge('c1', '15.70'), charge('c2', '100.00')] });
+  const r = await createDailyReconciliationService({ pool, clock: () => new Date('2026-09-28T04:00:00Z') }).run({ persist: false });
+  assert.equal(r.unexplainedChargeCount, 2, '两张卡');
+  assert.equal(r.unexplainedExtraChargeCount, 3, 'c1 多 2 笔 + c2 多 1 笔');
+});
+

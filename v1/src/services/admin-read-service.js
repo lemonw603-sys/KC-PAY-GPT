@@ -100,6 +100,31 @@ const SUCCESSFUL_FINISHED_ORDER_SQL = (alias = 'o') => `(${alias}.status = 'RECH
     SELECT 1 FROM order_events success_oe
     WHERE success_oe.order_id = ${alias}.id AND success_oe.to_status = 'RECHARGE_SUCCESS'
   )))`;
+/**
+ * 「有人动过」（D-405 第三批，自动完成率用）：这单有任何一条人写的订单事件 —— 后台页面上的操作
+ * （标为已手工充值、核实付款结果、浏览器转人工 / 手动付款、确认已取消续费、放卡、取消……）都写 ADMIN。
+ * 续费确认发生在成功之后，所以不按「结束前」划界。事后整理数据的脚本（补账本、清残留）也写 ADMIN，
+ * 一并算「动过」：只会让自动完成率偏低、不会虚高（Lemon 2026-09-28 同意）。
+ */
+/** 两个 DECIMAL(18,6) 字符串相加，按百万分之一整数算，不走浮点（金额规矩）。 */
+export function addDecimal6(a, b) {
+  const micros = (value) => {
+    const match = /^(-?)(\d+)(?:\.(\d{0,6}))?$/.exec(String(value ?? '0').trim());
+    if (!match) throw new TypeError(`not a decimal: ${value}`);
+    const units = BigInt(match[2]) * 1000000n + BigInt((match[3] || '').padEnd(6, '0'));
+    return match[1] ? -units : units;
+  };
+  const sum = micros(a) + micros(b);
+  const sign = sum < 0n ? '-' : '';
+  const abs = sum < 0n ? -sum : sum;
+  return `${sign}${abs / 1000000n}.${String(abs % 1000000n).padStart(6, '0')}`;
+}
+
+export function humanTouchedOrderSql(alias = 'o') {
+  if (!/^[a-z_][a-z0-9_]*$/i.test(String(alias))) throw new TypeError('invalid SQL alias');
+  return `EXISTS (SELECT 1 FROM order_events human_oe
+    WHERE human_oe.order_id = ${alias}.id AND human_oe.actor_type IN ('ADMIN', 'OPERATOR'))`;
+}
 const RECENT_FINISHED_SAMPLE_SQL = (alias = 'o') => `(${alias}.status IN ('RECHARGE_SUCCESS','RECHARGE_FAILED','CLOSED')
   AND ${recentCst8CalendarDaysWindowSql(`${alias}.created_at`, 7)}
   AND NOT ${rehearsalOrderSql(alias)})`;
@@ -640,7 +665,7 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
   async function getOverview() {
     const [[orderCounts], [statusRows], [cdkRows], [settingsRows], [refundRows], [alertRows], [stockRows],
       [stockSettingRows], [backlogRows], [providerStockRows], [stock5xRows], [stock20xRows],
-      [spendRows], [walletRows]] = await Promise.all([
+      [spendRows], [walletRows], [abnormalRows]] = await Promise.all([
       pool.query(`SELECT
         COUNT(*) AS total,
         SUM(${todayCst8WindowSql('o.created_at')}) AS today,
@@ -654,6 +679,7 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
         ))) AS completed_failed,
         SUM(${RECENT_FINISHED_SAMPLE_SQL('o')} AND ${SUCCESSFUL_FINISHED_ORDER_SQL('o')}) AS recent_successful,
         SUM(${RECENT_FINISHED_SAMPLE_SQL('o')}) AS recent_finished,
+        SUM(${RECENT_FINISHED_SAMPLE_SQL('o')} AND ${SUCCESSFUL_FINISHED_ORDER_SQL('o')} AND NOT ${humanTouchedOrderSql('o')}) AS recent_automatic,
         SUM(o.status IN ('CREATED','WAITING_FOR_CARD','CARD_PURCHASING','CARD_PROVISIONING','SUBMITTING','RECHARGE_PROCESSING','CANCELLATION_PENDING')) AS processing,
         (SELECT COUNT(*) FROM tasks rt
           WHERE rt.status = 'RUNNING' AND rt.leased_until < UTC_TIMESTAMP(3)) AS expired_task_leases,
@@ -808,6 +834,14 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
         GROUP BY pa.id`)
       // 两台钱包统一成「上次余额 + 查询时间」（Lemon 2026-09-24），口径与卡片页同一份
       ,pool.query(latestProviderBalancesSql())
+      // 异常支出（D-405 第三批，Lemon 2026-09-28 按建议定）：近 7 天（北京时间自然日，含今天）拒付 + 拒付手续费。
+      // 无主扣款不进金额 —— 消费账本多数行没记对应哪笔扣款，同卡多扣时分不清是哪一笔；它的笔数由日对账给，前端写在旁边。
+      // 时间列与「今日花费」同用 first_seen_at（occurred_at 在生产全为空，见上面 spend 的注释）。
+      ,pool.query(`SELECT LOWER(transaction_type) AS kind, COUNT(*) AS n, COALESCE(SUM(amount), 0) AS amount
+          FROM card_transactions
+         WHERE LOWER(transaction_type) IN ('chargeback', 'chargeback_fee')
+           AND ${recentCst8CalendarDaysWindowSql('first_seen_at', 7)}
+         GROUP BY LOWER(transaction_type)`)
     ]);
     const count = (value) => Number(value || 0);
     const total = count(orderCounts[0]?.total);
@@ -815,6 +849,13 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
     const completed = successful + count(orderCounts[0]?.completed_failed);
     const recentSuccessful = count(orderCounts[0]?.recent_successful);
     const recentFinished = count(orderCounts[0]?.recent_finished);
+    const recentAutomatic = count(orderCounts[0]?.recent_automatic);
+    const abnormalOf = (kind) => {
+      const row = abnormalRows.find((item) => item.kind === kind);
+      return { amount: String(row?.amount ?? '0.000000'), count: count(row?.n) };
+    };
+    const chargebacks = abnormalOf('chargeback');
+    const chargebackFees = abnormalOf('chargeback_fee');
     const heartbeatRow = settingsRows.find((row) => row.setting_key === 'worker_heartbeat_at');
     const heartbeatAt = Date.parse(heartbeatRow?.setting_value || '');
     const workerHealthy = Number.isFinite(heartbeatAt) && now() - heartbeatAt <= 60_000;
@@ -854,7 +895,19 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
         recentFinishedOrders: recentFinished,
         recentSuccessRate: recentFinished === 0
           ? null
-          : Number(((recentSuccessful / recentFinished) * 100).toFixed(1))
+          : Number(((recentSuccessful / recentFinished) * 100).toFixed(1)),
+        // 自动完成率：分母与近7天成功率同一批单；分子是其中成功且没人动过的（humanTouchedOrderSql）
+        recentAutomaticOrders: recentAutomatic,
+        recentAutomaticRate: recentFinished === 0
+          ? null
+          : Number(((recentAutomatic / recentFinished) * 100).toFixed(1)),
+        abnormalSpend: {
+          windowDays: 7,
+          currency: 'USD',
+          total: addDecimal6(chargebacks.amount, chargebackFees.amount),
+          chargebacks,
+          chargebackFees
+        }
       },
       orderStatuses: statusRows.map((row) => ({ status: row.status, count: count(row.count) })),
       cdkStatuses: cdkRows.map((row) => ({ status: row.status, count: count(row.count) })),

@@ -296,23 +296,35 @@ function identityLabel(run) {
 // / #decision-payment），只换候光皮，事件委托零改动。
 function wbChip(cls, text) { return `<span class="wb-chip ${cls}"><span class="wb-d"></span>${escapeHtml(text)}</span>`; }
 
-function renderWbWall(overview) {
+function renderWbWall(overview, daily = null) {
   const box = document.getElementById('wb-wall');
   if (!box) return;
   const m = overview.metrics || {};
   // D-285：五格一律按原型 C —— 今日单数 / 成功率 / 自动完成率 / 今日花费（按台）/ 异常支出。
-  // 撤销在途版擅自换成的「可分配卡 / 待核对 / 昨晚的数量」。后端现只有前两项的聚合，
-  // 后三项一律标「待接入」：D-284 ③ 明令自动完成率口径未定前不许自拟算法，
-  // 今日花费与异常支出同理——宁可空着，也不拿相近字段顶替出一个看着对、实则算错的数。
-  // 副标题只写运营看得懂的话。此前这三格写的是「口径待定（D-284 ③）」「按卡台，聚合待写」，
-  // 那是开发备忘和内部编号，不该出现在运营页面上（Lemon 两次说过：界面不写解释旁白）。
-  // 「待接入」本身已经说清楚了，不必再解释为什么。
+  // 撤销在途版擅自换成的「可分配卡 / 待核对 / 昨晚的数量」。口径没定的格子标「待接入」，
+  // 不拿相近字段顶替出一个看着对、实则算错的数（D-284 ③）。今日花费 D-294 接入；自动完成率与异常支出
+  // D-405 第三批按 Lemon 定的口径接入（2026-09-28）。后端没给字段时仍回退「待接入」。
+  // 副标题只写运营看得懂的话，明细放鼠标悬停（Lemon 两次说过：界面不写解释旁白）。
   const pending = (lb) => ({ lb, v: '待接入', sub: '', pending: true });
   const cells = [
     { lb: '今日单数', v: m.todayOrders ?? 0, sub: `处理中 ${m.processingOrders ?? 0}`, filter: 'TODAY' },
     { lb: '近7天成功率', v: m.recentSuccessRate == null ? '—' : `${m.recentSuccessRate}%`,
       sub: `成功 ${m.recentSuccessfulOrders ?? 0} / 样本 ${m.recentFinishedOrders ?? 0}`, filter: 'RECENT_FINISHED' },
-    pending('自动完成率'),
+    // D-405 第三批（Lemon 2026-09-28 定口径）：分母与「近7天成功率」同一批单；分子是其中成功且没人在后台动过的。
+    // 「动过」＝这单有任何一条人写的订单事件（后端 humanTouchedOrderSql），算法只会偏低、不会虚高。
+    (() => {
+      // 旧后端没这个字段时回退「待接入」，不能写成「自动 0」—— 那是拿缺数冒充 0
+      if (m.recentAutomaticOrders == null) return pending('自动完成率');
+      const sample = Number(m.recentFinishedOrders ?? 0);
+      const auto = Number(m.recentAutomaticOrders ?? 0);
+      const ok = Number(m.recentSuccessfulOrders ?? 0);
+      return {
+        lb: '自动完成率', v: m.recentAutomaticRate == null ? '—' : `${m.recentAutomaticRate}%`,
+        sub: `自动 ${auto} / 样本 ${sample}`, filter: 'RECENT_FINISHED',
+        title: `近 7 天结束的真实订单 ${sample} 单：成功 ${ok} 单。\n成功且没人在后台动过的 ${auto} 单`
+          + (ok > auto ? `；另 ${ok - auto} 单有人在后台动过（手工充值、核实付款、确认续费等）。` : '。')
+      };
+    })(),
     (() => {
       // D-294（Lemon 当日修订口径）：给客户充值消费掉的钱 ＋ 开卡手续费。
       // 不含 card_recharge —— 往卡里充钱是资金转移不是消费，算了会和消费重复。
@@ -326,7 +338,23 @@ function renderWbWall(overview) {
         sub: known.map((r) => `${r.label} ${formatMoney(r.spentToday)}`).join(' · ')
       };
     })(),
-    pending('异常支出')
+    // 异常支出（D-405 第三批）：近 7 天拒付 + 拒付手续费；无主扣款只写笔数（日对账给，金额分不清是哪一笔，不进合计）。
+    (() => {
+      const ab = m.abnormalSpend;
+      if (!ab) return pending('异常支出');
+      const extraRaw = daily && !daily.__error ? Number(daily.unexplainedExtraChargeCount) : NaN;
+      const extra = Number.isFinite(extraRaw) ? extraRaw : null;
+      const cb = ab.chargebacks || { amount: '0', count: 0 };
+      const fee = ab.chargebackFees || { amount: '0', count: 0 };
+      return {
+        lb: '异常支出', v: formatMoney(ab.total), view: 'diagnostics',
+        sub: `拒付 ${cb.count} 笔 · 无主扣款 ${extra == null ? '—' : extra} 笔`,
+        warn: Number(ab.total) > 0 || Boolean(extra),
+        title: `近 7 天：拒付 ${formatMoney(cb.amount)} USD（${cb.count} 笔）+ 拒付手续费 ${formatMoney(fee.amount)} USD（${fee.count} 笔）。\n`
+          + (extra == null ? '无主扣款：日对账没读到，笔数不知道。'
+            : `还没认领的无主扣款 ${extra} 笔${extra ? '（金额见诊断日对账：同一张卡分不清是哪一笔多扣的）' : ''}。`)
+      };
+    })()
   ];
   // 只有真有去处的格子才是 button。此前全渲染成 button，于是「成功率」「今日花费」
   // 长得能点、光标是手型、hover 还变色，点下去却什么都不发生（2026-09-20 实测确认）。
@@ -334,10 +362,11 @@ function renderWbWall(overview) {
   // 「今日花费」不给去处是有意的 —— 它的按台明细就在下面「卡还够不够」那块，不必跳转。
   box.innerHTML = cells.map((c) => {
     const jump = c.filter ? `data-order-filter="${c.filter}"` : c.view ? `data-view-jump="${c.view}"` : '';
-    const inner = `<span class="wb-lb">${escapeHtml(c.lb)}</span><span class="wb-v">${escapeHtml(String(c.v))}</span><span class="wb-sub">${escapeHtml(c.sub)}</span>`;
+    const inner = `<span class="wb-lb">${escapeHtml(c.lb)}</span><span class="wb-v">${escapeHtml(String(c.v))}</span><span class="wb-sub${c.warn ? ' is-warn' : ''}">${escapeHtml(c.sub)}</span>`;
     if (c.pending) return `<button type="button" class="wb-kpi is-pending" disabled>${inner}</button>`;
+    const title = c.title ? ` title="${escapeHtml(c.title)}"` : '';
     return jump
-      ? `<button type="button" class="wb-kpi" ${jump}>${inner}</button>`
+      ? `<button type="button" class="wb-kpi" ${jump}${title}>${inner}</button>`
       : `<div class="wb-kpi">${inner}</div>`;
   }).join('');
 }
@@ -811,7 +840,7 @@ async function loadOverview() {
   ]);
   const activeMethod = String(overview?.providerHealth?.rechargeMethod || '').toUpperCase();
   renderDecisions(overview, cardSources, activeMethod === 'API' ? apiTakeoverEstimate : browserTakeoverEstimate);
-  renderWbWall(overview);
+  renderWbWall(overview, daily);
   renderWbCards(overview);
   renderWbRecon(daily);
   renderWbQueue(overview, daily, alertData, reconCases);

@@ -444,3 +444,35 @@ test('D-405 「今天花了」写法不变，悬停明细按后端 spentBreakdow
     '明细：给客户充值 1 单 82.11 USD；开卡手续费 0.50 USD（开卡 1 张）；另有 16.00 USD 开卡时转进卡里，不算花掉');
   assert.equal(sandbox.spendDetailText({ spentBreakdown: null }), '');
 });
+
+// D-405 第三批：数字墙两格接入（口径 Lemon 2026-09-28 定）
+test('D-405 自动完成率与异常支出：数照后端，明细在悬停里；有拒付或无主扣款时副标题标黄；没字段仍回退「待接入」', () => {
+  const { sandbox, html } = loadAdminJs();
+  const overview = { metrics: { todayOrders: 9, processingOrders: 1, recentSuccessRate: 50, recentSuccessfulOrders: 4, recentFinishedOrders: 8,
+    recentAutomaticOrders: 3, recentAutomaticRate: 37.5,
+    abnormalSpend: { windowDays: 7, currency: 'USD', total: '129.150000',
+      chargebacks: { amount: '128.750000', count: 1 }, chargebackFees: { amount: '0.400000', count: 1 } } },
+  cardStockByProvider: [] };
+  sandbox.renderWbWall(overview, { unexplainedExtraChargeCount: 2 });
+  const out = html('wb-wall');
+  assert.match(out, /data-order-filter="RECENT_FINISHED" title="近 7 天结束的真实订单 8 单：成功 4 单。\n成功且没人在后台动过的 3 单；另 1 单有人在后台动过（手工充值、核实付款、确认续费等）。"><span class="wb-lb">自动完成率<\/span><span class="wb-v">37.5%<\/span><span class="wb-sub">自动 3 \/ 样本 8<\/span>/);
+  assert.match(out, /data-view-jump="diagnostics" title="近 7 天：拒付 128.75 USD（1 笔）\+ 拒付手续费 0.40 USD（1 笔）。\n还没认领的无主扣款 2 笔（金额见诊断日对账：同一张卡分不清是哪一笔多扣的）。"><span class="wb-lb">异常支出<\/span><span class="wb-v">129.15<\/span><span class="wb-sub is-warn">拒付 1 笔 · 无主扣款 2 笔<\/span>/);
+  assert.doesNotMatch(out, /自动完成率<\/span><span class="wb-v">待接入|异常支出<\/span><span class="wb-v">待接入/);
+
+  // 全是 0：不标黄；样本 0 时写「—」（与成功率一致）
+  sandbox.renderWbWall({ metrics: { recentFinishedOrders: 0, recentAutomaticOrders: 0, recentAutomaticRate: null,
+    abnormalSpend: { total: '0.000000', chargebacks: { amount: '0', count: 0 }, chargebackFees: { amount: '0', count: 0 } } } },
+  { unexplainedExtraChargeCount: 0 });
+  const zero = html('wb-wall');
+  assert.match(zero, /自动完成率<\/span><span class="wb-v">—<\/span><span class="wb-sub">自动 0 \/ 样本 0</);
+  assert.match(zero, /异常支出<\/span><span class="wb-v">0.00<\/span><span class="wb-sub">拒付 0 笔 · 无主扣款 0 笔</);
+  // 日对账没读到：笔数写「—」并在悬停里说明，不装成 0
+  sandbox.renderWbWall(overview, { __error: true });
+  assert.match(html('wb-wall'), /无主扣款 — 笔/);
+  assert.match(html('wb-wall'), /无主扣款：日对账没读到，笔数不知道。/);
+  // 旧后端没这两个字段：两格都回退「待接入」，不能把缺的数写成 0
+  sandbox.renderWbWall({ metrics: { recentFinishedOrders: 12, recentSuccessfulOrders: 11 } }, null);
+  assert.match(html('wb-wall'), /自动完成率<\/span><span class="wb-v">待接入/);
+  assert.doesNotMatch(html('wb-wall'), /自动 0 \/ 样本 12/);
+  assert.match(html('wb-wall'), /异常支出<\/span><span class="wb-v">待接入/);
+});

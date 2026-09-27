@@ -352,6 +352,10 @@ export function createDailyReconciliationService({ pool, clock = () => new Date(
       persistentCount: persistentCriticalCount,
       pendingRegistrationCount: pendingRegistration.length,
       unexplainedChargeCount: unexplainedCharges.length,
+      // 无主扣款的笔数（每张卡多出账本的扣款数之和）。工作台「异常支出」旁边写它（D-405 第三批）；
+      // 金额不算 —— 同卡多扣时分不清是哪一笔。
+      unexplainedExtraChargeCount: unexplainedCharges.reduce(
+        (sum, card) => sum + Math.max(0, card.count.providerCharges - card.count.ledgerUsed), 0),
       unverifiableAmountCount: unverifiableAmount.length,
       inputUnverifiedCount,
       retirementDueCount: retirementList.due.length,
