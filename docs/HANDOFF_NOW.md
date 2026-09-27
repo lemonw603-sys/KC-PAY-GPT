@@ -1,6 +1,6 @@
 # 接班一屏（HANDOFF_NOW）
 
-更新：2026-09-27 15:4x（UTC+8）＝ 07:4x UTC（本窗口 D-397～D-401；D-401 **已发布**）。执行顺序以 **D-352** 为准，「可离开」第一条以 **D-366** 为准；上一窗口 D-376～D-396。
+更新：2026-09-27 16:0x（UTC+8）＝ 08:0x UTC（本窗口 D-397～D-402；D-401 已发布；**Plus 已切到 API 路线**）。执行顺序以 **D-352** 为准，「可离开」第一条以 **D-366** 为准；上一窗口 D-376～D-396。
 
 ## 现在的状态（09-27 07:36 UTC 现查；明细见 CURRENT_STATE.md，`state-check.sh` 20 项一致）
 
@@ -31,7 +31,7 @@
 
 ## 下一可执行项
 
-0. **D-401 已上线，剩 Lemon 的后台动作**：highvcc 重贴 token、充钱包；要用 API 路线时先在工作台把 API 行卡台切到 highvcc（现指 hnskj，维护中），再切路线到「API 充值」（会校验点数不为 0）；首单走哪条路线 Lemon 定。清理待批：删本机 `~/.config/zzshu/test-session.json`、服务器 `/root/zzshu-probe/`；highvcc 删卡 4022（完整卡号曾出现在聊天里）。
+0. **第一单走 API（D-402）**：07:57 UTC 已切（API 行卡台 highvcc、路线 301 开 / 302 关，下单入口 ok）。来单按 **RUNBOOK §1.A** 盯（不是 §1，那是 Browser 池）。Lemon 待做：highvcc 重贴 token（第一单失败时卡要靠快照同步才可能放回）、第二单前充钱包（≥ $36.50）、highvcc 删卡 4022。清理三项已删。清理待批：删本机 `~/.config/zzshu/test-session.json`、服务器 `/root/zzshu-probe/`；highvcc 删卡 4022（完整卡号曾出现在聊天里）。
 1. **等首张真实客户 Plus 单**（可离开第一条，D-366；第一张卡密发给能等的熟人、Lemon 在场，D-397）：Lemon 说「要发了」→ 开窗口先跑 `ready-check.sh pay` + `state-check.sh`，再按 RUNBOOK §1 盯；Bark 来单 → 按 RUNBOOK §1 盯。跑完读 `~/Library/Application Support/pojia-browser-live/pool/post-click-timing.jsonl` 里该 run 的四行（点击后各段耗时、当场确认为什么没成），据此挑欠账 19 的提速。导航失败先看 `evidence/` 目录（`evidenceRef` 在 fail-closed 事件里）。
 2. **第二单起的卡**：Lemon 定「来单时第一时间给 highvcc 充值」（D-397 补记）→ 第一单来时就提醒他充（开 1 张需钱包 ≥ $36.50），充完用生产 `walletPreflight` 复算。**开不出卡时叫人已上线**（release `20260926-d397-a44cb28`，08:24 UTC，D-397 补记二）；常驻池不动。何时对外发新卡密：Lemon 自己定（D-391）。现可用卡密 8 张（06:33 UTC 现查），均为 09-23 起建、30 天有效、未过期的 plus 普通码（Lemon 自用测试码）。
 3. 放着（D-392 / D-393，欠账 20）：付款前页面类失败自动重跑、重新兑换卡密预填、企业邮箱号改走换号。看失败原因统计积累到数据后再议。

@@ -3832,3 +3832,7 @@ Lemon：「批，选 a，开始吧」。只动 `v1/`。先发现两处真实缺�
 ## 2026-09-27｜D-401 装 Key 与发布（07:28～07:40 UTC）
 
 Lemon：「12 同意，装 key 后发布」。装 Key（07:30:25 UTC，经 SSH 标准输入替换一行、先备份）→ 新命令核实（字节数差 13 = 64−51、权限不变、服务器只读点数 15）→ 客户链路 SQL 探针全过 → 查在途（非终态订单 0；`browser_runs` 只有 COMPLETED / FAILED_SAFE；第一次查询我把 FAILED_SAFE 漏在终态外，数出 89，改看原始状态分布）→ prepare（75/0/1）→ migrate（输出里「062 already applied」是脚本自带的第二遍，查 `schema_migrations` 07:34:47 UTC 确认本次写入）→ 新连接核实 062 效果 → switch 07:35:17 UTC → 独立核实服务 / cwd / 进程 Key 长度 / 首轮点数 / 告警 0 / err 日志 0 / 新接口 401。switch 输出里 `admin.js?v=23` 是脚本里写死的旧检查（只数 `CONFIRM_MANUAL_PAYMENT`），另查 `v=99` 已服务。事实表 7 行更新，state-check 20 项一致。上一轮回复里我把文档提交写成「`6c…`」，实际是 `c0dbb875`，是我没查就写的。
+
+## 2026-09-27｜D-402 清理三项、Plus 切 API（07:50～08:05 UTC）
+
+Lemon：「3 删。第一单走 api」。删前逐个 `ls` 看过三个目标（服务器 `/etc/pojia/` 另有 08-18 旧备份，不在范围未动）；删后新命令核实。第一单走 API：先只读预跑两关校验（第二关因 API 行仍指 hnskj 可分配 0 不过 → 顺序必须先切卡台）；查 8718 卡头 `51398996`、已用 0；07:57:05 UTC 用正式服务切卡台再切路线，新连接核实 + 下单入口 `{"ok":true}`。核对代码时发现 RUNBOOK §1 全是 Browser 池盯法、API 单没有 → 按代码补 §1.A（两条盯单查询先在生产跑通）；并查实 highvcc 卡 API 失败后的放回条件（`card-transaction-repository.js`）与后台无收口按钮（`order-list-bucket.js:36`），写进 D-402。

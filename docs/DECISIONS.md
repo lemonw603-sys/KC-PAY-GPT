@@ -5864,3 +5864,11 @@ Lemon：「12 同意，装 key 后发布」。
 - **发布** `20260927-d401-c0dbb87`：发布前客户链路 SQL 探针全过；prepare 真数据库测试 75/0/1、清单 1406、备份 `pojia-20260927T073430Z`；迁移 062（07:34:47 UTC，新连接核实 backup-a API 能力 0→1、Plus API 行解锁 v2、Pro 行仍锁）；switch 07:35:17 UTC。本机常驻池引用的 97 个文件里没有本次改动的文件 → 池不重启。
 - **发布后独立核实**：web / worker / bark 均 active、cwd 指向新 release；worker 进程环境 Key 长度 51；首轮点数 07:35:19 UTC `points 15, executor BROWSER, autoSwitched false`；`app_settings` 写入 15；07:35 后告警 0 条、web/worker err 日志 0 行；新接口未登录 401；`admin.js?v=99` 已服务。
 - **仍未验证**：当前代码的 API 成功付款 / 确认 / 取消续费（D-400：首张真实客户单）。路线 301 仍关着（`accepts_new_orders=0`）；API 行卡台仍指 hnskj（维护中），用 API 前要在工作台切到 highvcc。
+
+## D-402（2026-09-27 UTC+8 15:5x）第一单走 API 路线；清理三项
+
+Lemon：「3 删。第一单走 api」。
+1. **清理**（07:5x UTC，删前逐个看过）：本机 `~/.config/zzshu/test-session.json`；服务器 `/root/zzshu-probe/`（只有 `probe.mjs`）；服务器 `provider.env.bak-20260927T073025Z`（旧 64 位自定串）。08-18 的 `provider.env.bak-readonly-20260818` 不在范围、未动。卡 4022 由 Lemon 在 highvcc 删。
+2. **第一单走 API**：执行者先用生产代码只读预跑两关校验（开事务、只查、回滚）：API 行切 highvcc 四项全过；路线切 API 当时因 API 行仍指 hnskj（可分配 0）不过。随后 07:57:05 UTC 用后台同一套服务依次执行：API 行卡台 → backup-a（v3，审计 `876be495`）→ 默认路线 → API（301 开、302 关，五项校验全过、点数 15，审计 `0da5a0a4`），actor `claude:lemon-approved-2026-09-27`。新连接核实 + 下单入口判断 `{"ok":true}`。
+   - 为什么由执行者切而不是等 Lemon 在工作台点：Lemon 已选 API；此刻非终态订单 0、卡密未对外发，切换不影响任何客户，工作台一键可切回。
+   - **按业务流程过一遍（第一单）**：卡＝8718（卡头 `51398996`，ZZSHU 建单放行过；「该卡交易过于频繁」含义未知）。成功 → 卡记已用、之后 Plus 无卡，第二单要 highvcc token + 钱包 ≥ $36.50（D-397 补记）。**失败 → 卡进对账、卡密不自动退；highvcc 卡要快照同步才可能放回（token 现失效，能否放回未验证）；后台无一键收口**——第一单 Lemon 在场（D-397），但这是「运营不在场」时撑不住的一处，记 UNVERIFIED。点数 0 → 自动切回 Browser。盯单步骤：RUNBOOK §1.A。

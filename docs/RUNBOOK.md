@@ -63,6 +63,20 @@ ssh root@144.34.180.184 'set -a; . /etc/pojia/runtime.env; set +a; cd /opt/pojia
 - 换账号 = 新订单：另一个 AVAILABLE CDK + 新账号的 Session；可分配卡数看事实表「可分配卡」行（09-26 为 1 张 8718；9839 已于 09-11 注销，D-163），拒付后若要换卡需补余额 / 开卡（资金动作，先确认）。
 - 跑单期间该账号不得在任何其他窗口登录（含上号器手动登录），否则挤掉注入 Session；Session 提交后尽快跑（accessToken 剩余 <5 分钟即拒）。
 
+## 1.A API 路线来单（301：ZZSHU 直充 + 本方卡，2026-09-27 起 Plus 走这条，D-402）
+
+不经本机常驻池（池不用动）；服务器 `pojia-worker` 按单跑（`v1/src/workers/workflow-handlers.js`）：分卡（API 行卡台，现为 highvcc）→ 提交直充（`orders/direct`，**一单只下一次**；建单结果不明 → `SUBMIT_UNKNOWN`，只查不重下）→ 轮询：`success` → 卡记已用；ZZSHU 回报已取消续费则 `RECHARGE_SUCCESS`，否则 `CANCELLATION_PENDING` 由系统复查；`failed` 隔一会儿再查一次仍 failed → `RECHARGE_FAILED` + 推「充值失败，要你处理」。
+
+执行者（只看，不动手）：
+```bash
+browser-mvp/scripts/prod-query.sh "SELECT public_no, status, failure_code, failure_reason, updated_at FROM orders WHERE public_no='<单号>'"
+browser-mvp/scripts/prod-query.sh "SELECT pc.operation, pc.http_status, pc.business_code, pc.outcome, pc.started_at FROM provider_calls pc JOIN orders o ON o.id=pc.order_id WHERE o.public_no='<单号>' AND pc.provider='zzshu' ORDER BY pc.started_at"
+ssh root@144.34.180.184 'journalctl -u pojia-worker -f -o cat'
+```
+- **失败**（含对方要人工安全验证 `verification`——本方没有这一环，对方 120 秒后记失败）：不重付、不换卡。卡的占用转对账、卡密不自动退。hnskj 卡由失败后流水同步自动放回；**highvcc 卡要等快照同步（token 须有效），能否自动放回未验证**（`card-transaction-repository.js` 放回条件：失败后同步过、余额够、无成功扣款）。付款后失败的单后台没有「标为已手工充值」（`order-list-bucket.js:36`）。先查清卡台有没有扣款，再定怎么收口。
+- **付款不明**（`SUBMIT_UNKNOWN` / `RECONCILIATION_REQUIRED`）：系统先自己查 ZZSHU；查不清转人工 → 后台订单「去核实」选 扣了 / 没扣（`unknown-submission-resolve-service.js`）。
+- **点数**见 §2.75；0 点时系统自动切回 Browser。**切回 Browser**：工作台点「浏览器」（会查池心跳）。
+
 ## 1.5 攒数据：自己跑一单 + 看成功率（2026-09-11 12:39 UTC 起）
 
 **不需要事先向任何人登记**：系统每次运行都会把时间线、点击次数、结果、原因落库。跑过就有，没跑就没有。
