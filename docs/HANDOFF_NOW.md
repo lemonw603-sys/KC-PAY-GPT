@@ -1,10 +1,10 @@
 # 接班一屏（HANDOFF_NOW）
 
-更新：2026-09-27 11:3x（UTC+8）＝ 03:3x UTC（本窗口 D-397～D-401；D-401 实现完成、**未发布**）。执行顺序以 **D-352** 为准，「可离开」第一条以 **D-366** 为准；上一窗口 D-376～D-396。
+更新：2026-09-27 15:4x（UTC+8）＝ 07:4x UTC（本窗口 D-397～D-401；D-401 **已发布**）。执行顺序以 **D-352** 为准，「可离开」第一条以 **D-366** 为准；上一窗口 D-376～D-396。
 
-## 现在的状态（06:10 UTC 现查；明细见 CURRENT_STATE.md，`state-check.sh` 20 项一致）
+## 现在的状态（09-27 07:36 UTC 现查；明细见 CURRENT_STATE.md，`state-check.sh` 20 项一致）
 
-- 生产 release **`20260926-d397-a44cb28`**（v1 同 `862b6bb6`，D-397 开不出卡时叫人；无新迁移）。回滚点 `20260926-d396-7a7998b`（无迁移，直接回滚）。发布准备会先自动跑真数据库测试（`v1/scripts/mysql-tests.sh`，需本机 `pojia-stage1-mysql` 容器）。
+- 生产 release **`20260927-d401-c0dbb87`**（v1 同 `e4093d59`，D-401 恢复 API 路线代码 + ZZSHU 点数监控；迁移 062）。回滚点 `20260926-d397-a44cb28`（062 只改两处标记，回滚不用撤）。ZZSHU 新 Key 已装服务器，点数 15。发布准备会先自动跑真数据库测试（`v1/scripts/mysql-tests.sh`，需本机 `pojia-stage1-mysql` 容器）。
 - **本机常驻池 PID 56510**（supervisor 84622），跑固定目录 `~/pojia-pool/releases/20260926-d389-1ca9a42`（`1ca9a422`；到服务器那版之间池子引用的代码没变，不用重启）；进程环境查新单 1 秒、核实窗口 300000、租约 900。池回滚：`scripts/pool-release.sh switch 20260925-block6-pro5x-f748bb6` 后按 RUNBOOK §5 停 / 开。
 - 付款开关 true、下单查心跳 true、心跳新鲜。可分配 Plus 卡 1 张（8718）；**非终态订单 0、「需要我处理」0**（D-396 清掉自用期旧单）。供卡、水位、路线 305/306 见 CURRENT_STATE（本轮未动）。
 
@@ -25,13 +25,13 @@
 - **D-397**：第一张对外卡密先发给能等的熟人，约 Lemon 在场的时间提交，提前告诉执行者开窗口按 RUNBOOK §1 盯（Lemon 同意）。
 - **highvcc token 07:17:29 UTC 又失效**（已推手机，原因未知）：重贴前 highvcc 读不到钱包、开不出卡，充值也没用；第一单用的 8718 已在库里，分卡不依赖它，付款后卡台侧核对受影响的程度未核实。
 - **新发现，待 Lemon 定**：8718 付完第一单后 Plus 就没卡了；highvcc 按生产规则开不出下一张（$34.00 − 16 − 0.50 = $17.50 < 底线 $20，开 1 张需钱包 ≥ $36.50，每多 1 张再 +$16.50）；hnskj 仍维护。明细见 CURRENT_STATE「第一单之后的供卡」。
-- **ZZSHU / API 路线 301 恢复（D-400 / D-401）**：新 API Key（Lemon 本机 `~/.config/zzshu/api.env`，points 15）；highvcc 卡头 `51398996` 能建单（付款成功未验）。Lemon 批任务书、选 (a) 自动切路线。**实现与测试完成、已提交、未发布**（D-401 补记）：迁移 062（API 行卡源放开）、点数监控（worker 每 5 分钟、≤5 / 0 推送、0 点自动切 Browser 不自动切回）、API 失败推送、手动导入卡不排 hnskj 同步。验证：v1 1183（0 失败）、真数据库 75/0/1、变异 16/16、界面 1440×730。运维见 RUNBOOK §2.75。
+- **ZZSHU / API 路线 301 恢复（D-400 / D-401）**：新 API Key（Lemon 本机 `~/.config/zzshu/api.env`，points 15）；highvcc 卡头 `51398996` 能建单（付款成功未验）。Lemon 批任务书、选 (a) 自动切路线。**实现与测试完成，已发布 07:35 UTC**（D-401 补记、D-401 发布）：迁移 062（API 行卡源放开）、点数监控（worker 每 5 分钟、≤5 / 0 推送、0 点自动切 Browser 不自动切回）、API 失败推送、手动导入卡不排 hnskj 同步。验证：v1 1183（0 失败）、真数据库 75/0/1、变异 16/16、界面 1440×730。运维见 RUNBOOK §2.75。
 - **ZovoCard 改为独立项目 `~/code/ZovoCard直充`**（D-399，取代 D-398）：本项目不接、不改代码；那边的事在那个仓库里做。
 - RUNBOOK §1 五处过时说法按当前代码改正（预检已并入 run、RECHARGE_FAILED 可手工收口、Browser 付款不明走「确认核实结果」、客户页有更换账号表单、9839 已注销）。
 
 ## 下一可执行项
 
-0. **D-401 上线（每步先问 Lemon）**：① 把新 Key 装进服务器 `/etc/pojia/provider.env` 的 `ZZSHU_API_KEY`（先装再发布，免得 worker 读旧 Key 误推「不认这把 Key」）；② `deploy-release.sh prepare` → `migrate`（062）→ `switch`，独立核对服务 / 日志 / 首轮点数读数 / 迁移效果，更新 CURRENT_STATE；③ 发布后 Lemon 在工作台把 API 行卡台切到 highvcc（现指 hnskj，hnskj 维护中）、定首单走哪条路线；highvcc 要先重贴 token、充钱包。清理待批：删本机 `~/.config/zzshu/test-session.json`、服务器 `/root/zzshu-probe/`；highvcc 删卡 4022（完整卡号曾出现在聊天里）。
+0. **D-401 已上线，剩 Lemon 的后台动作**：highvcc 重贴 token、充钱包；要用 API 路线时先在工作台把 API 行卡台切到 highvcc（现指 hnskj，维护中），再切路线到「API 充值」（会校验点数不为 0）；首单走哪条路线 Lemon 定。清理待批：删本机 `~/.config/zzshu/test-session.json`、服务器 `/root/zzshu-probe/`；highvcc 删卡 4022（完整卡号曾出现在聊天里）。
 1. **等首张真实客户 Plus 单**（可离开第一条，D-366；第一张卡密发给能等的熟人、Lemon 在场，D-397）：Lemon 说「要发了」→ 开窗口先跑 `ready-check.sh pay` + `state-check.sh`，再按 RUNBOOK §1 盯；Bark 来单 → 按 RUNBOOK §1 盯。跑完读 `~/Library/Application Support/pojia-browser-live/pool/post-click-timing.jsonl` 里该 run 的四行（点击后各段耗时、当场确认为什么没成），据此挑欠账 19 的提速。导航失败先看 `evidence/` 目录（`evidenceRef` 在 fail-closed 事件里）。
 2. **第二单起的卡**：Lemon 定「来单时第一时间给 highvcc 充值」（D-397 补记）→ 第一单来时就提醒他充（开 1 张需钱包 ≥ $36.50），充完用生产 `walletPreflight` 复算。**开不出卡时叫人已上线**（release `20260926-d397-a44cb28`，08:24 UTC，D-397 补记二）；常驻池不动。何时对外发新卡密：Lemon 自己定（D-391）。现可用卡密 8 张（06:33 UTC 现查），均为 09-23 起建、30 天有效、未过期的 plus 普通码（Lemon 自用测试码）。
 3. 放着（D-392 / D-393，欠账 20）：付款前页面类失败自动重跑、重新兑换卡密预填、企业邮箱号改走换号。看失败原因统计积累到数据后再议。
