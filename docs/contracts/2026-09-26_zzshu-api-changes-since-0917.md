@@ -22,3 +22,9 @@
 - **成功后旧 accessToken 失效**，须用 sessionToken 刷新后再查套餐、取消续费（与本方 D-136 一致）。
 - **时间字段为北京时间字符串**：本方适配器只透传 `finished_at` / `updated_at`（`zzshu-recharge.js:146-147`），流程判断不用它，无时区坑（已查）。
 - **09-17 前 Key 不校验**：当时状态接口会返回完整 Session 与卡号，仅靠 Key 字符串隔离订单；本方 Key 为 64 字符随机串。现改为发放制。
+
+## 2026-09-27 卡头探测（真实响应）
+
+- 方法：`POST /third-party/orders/direct`，`orderType direct`、`planType plus`、免费测试号完整 Session、库内 highvcc 卡（服务器内存解密）、`region "XX"`（未开放地区），期望「卡头被拒 → 卡头消息；卡头通过 → 地区消息」，两者都不建单。脚本 `/root/zzshu-probe/probe.mjs`（服务器，只打印 HTTP / code / message）。
+- 结果：卡 4022（`51398996`）02:22:21 UTC → HTTP 400 `{"code":40020,"message":"region 未对该套餐开放"}`；卡 0601（`53211304`，09-17 曾得「该卡头暂不支持提交」）02:22:34 UTC → 同一响应。均未建单（`orders/history` total 0，points 15 不变）。
+- 解读：校准卡与目标卡响应相同 → **此法区分不了卡头**（地区检查可能先于卡头检查，或卡头白名单已取消）。卡头是否放行仍未知。
