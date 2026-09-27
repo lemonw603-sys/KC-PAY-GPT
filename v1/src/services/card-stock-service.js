@@ -11,12 +11,40 @@ import {
 } from './card-provider-snapshot-service.js';
 import { cardCatalogIsFresh, readCardCatalogSnapshot } from './card-catalog-snapshot-service.js';
 import { providerLabelOf } from '../domain/provider-labels.js';
-import { eligibleInventoryCardSql, providerCardStockSql, todayCst8WindowSql,
+import { eligibilityChecks, eligibleInventoryCardSql, ledgerSpendSql, providerCardStockSql, todayCst8WindowSql,
   REPLENISHMENT_OPENED_COUNT_SQL } from './card-inventory-eligibility.js';
+
+// 卡片页「暂不可用」写具体原因（D-405 第一批）：用分卡资格那一份条件逐条算（eligibilityChecks），
+// 只写最关键的一条、保持一行。顺序即优先级：先说「这张卡不会再用了」的，再说「补了还能用」的。
+const BLOCKED_CHECK_ORDER = ['PRO_USED', 'USED_UP', 'REFUND_CASE', 'BALANCE_LOW', 'PLUS_LARGE_CARD',
+  'SYNC_STALE', 'MISSING_AT_PLATFORM', 'PLATFORM_STATUS', 'NO_CREDENTIALS', 'NOT_ACCEPTED', 'NOT_IN_INVENTORY'];
+const shortMoney = (value) => { const n = Number(value); return Number.isInteger(n) ? String(n) : n.toFixed(2); };
+export function blockedReasonText(row, { maxCapacity } = {}) {
+  const failed = BLOCKED_CHECK_ORDER.filter((code) => Object.hasOwn(row, `chk_${code.toLowerCase()}`)
+    && Number(row[`chk_${code.toLowerCase()}`]) !== 1);
+  const code = failed[0];
+  if (!code) return null;
+  const texts = {
+    PRO_USED: '跑过 Pro，不再分配',
+    USED_UP: `${maxCapacity ?? Number(row.used_capacity || 0)} 次已用满`,
+    REFUND_CASE: '有退款或拒付待处理',
+    BALANCE_LOW: row.effective_balance == null || row.min_balance == null ? '余额不够'
+      : `余额 $${Number(row.effective_balance).toFixed(2)}，不够 $${shortMoney(row.min_balance)}`,
+    PLUS_LARGE_CARD: '面额超过 $75，默认不给 Plus',
+    SYNC_STALE: '流水 15 分钟内没同步（有单时会自动同步）',
+    MISSING_AT_PLATFORM: '卡台上找不到这张卡',
+    PLATFORM_STATUS: `卡台状态：${row.status || '未知'}`,
+    NO_CREDENTIALS: '缺卡号资料',
+    NOT_ACCEPTED: '还没接管',
+    NOT_IN_INVENTORY: `库存状态：${row.inventory_status || '未知'}`
+  };
+  return texts[code];
+}
 import { ALERT_TYPES, tokenExpiredAlertKey } from './card-supply-scheduler-service.js';
+import { PROVIDER_FAILED_CARD_STATUSES } from '../domain/provider-card-status.js';
 
 const ACTIVE = new Set(['active', 'available', 'usable', 'ready']);
-const FAILED = new Set(['failed', 'failure', 'invalid', 'inactive', 'closed', 'cancelled', 'canceled']);
+const FAILED = PROVIDER_FAILED_CARD_STATUSES;
 const LEGACY_HNSKJ_ACCOUNT_ID = '00000000-0000-4000-8000-000000000101';
 
 function cardData(envelope) {
@@ -124,7 +152,7 @@ export function classifyStockCardOperationalState(card) {
   if (card.effectiveInventoryStatus === 'FAILED') {
     return { category: 'BLOCKED', reason: '卡台当前状态不可用' };
   }
-  return { category: 'BLOCKED', reason: '当前不满足 Plus 安全分配条件' };
+  return { category: 'BLOCKED', reason: card.blockedReason || '当前不满足 Plus 安全分配条件' };
 }
 
 export function summarizeStockCardOperationalState(cards = []) {
@@ -342,6 +370,11 @@ export function createCardStockService({ pool, sessionEncryptionKey, panHmacKey 
           co.reason AS allocation_reason,
           (${eligibleInventoryCardSql('c', `COALESCE((SELECT CAST(setting_value AS DECIMAL(18,6))
               FROM app_settings WHERE setting_key = 'default_minimum_required_card_balance' LIMIT 1), 999999999)`)}) AS is_allocatable,
+          ${eligibilityChecks('c', `COALESCE((SELECT CAST(setting_value AS DECIMAL(18,6))
+              FROM app_settings WHERE setting_key = 'default_minimum_required_card_balance' LIMIT 1), 999999999)`).map((check) => `(${check.sql}) AS chk_${check.code.toLowerCase()}`).join(',\n          ')},
+          LEAST(c.current_balance, c.funded_amount - ${ledgerSpendSql('c')}) AS effective_balance,
+          COALESCE((SELECT CAST(setting_value AS DECIMAL(18,6))
+              FROM app_settings WHERE setting_key = 'default_minimum_required_card_balance' LIMIT 1), 999999999) AS min_balance,
           c.created_at, c.external_card_id,
           (SELECT ct.amount FROM card_transactions ct
             WHERE ct.card_id = c.id AND ct.transaction_type = 'CARD_ISSUE_FEE'
@@ -476,7 +509,8 @@ export function createCardStockService({ pool, sessionEncryptionKey, panHmacKey 
           ? row.last_synced_at.toISOString() : row.last_synced_at || null,
         createdAt: row.created_at instanceof Date
           ? row.created_at.toISOString() : row.created_at || null,
-        issueFee: row.issue_fee == null ? null : String(row.issue_fee)
+        issueFee: row.issue_fee == null ? null : String(row.issue_fee),
+        blockedReason: blockedReasonText(row, { maxCapacity: maxSuccessfulPayments })
       };
       return { ...card, ...classifyStockCardOperationalState(card) };
     });

@@ -82,6 +82,9 @@ probe "stalled-order-queries · 付款前挂住" "$STUCK_SQL"
 RESOLVE_SELECT="$(node --input-type=module -e "import { RESOLVE_FINISHED_STALLED_SQL as s } from './src/db/repositories/stalled-order-queries.js'; process.stdout.write('SELECT oa.id FROM operator_alerts oa INNER JOIN orders o ON o.id = oa.order_id ' + s.slice(s.indexOf('WHERE')))")" \
   || { echo "[失败] 读不到 RESOLVE_FINISHED_STALLED_SQL"; exit 1; }
 probe "stalled-order-queries · 订单结束收掉卡住告警（只读形式）" "$RESOLVE_SELECT"
+FINISHED_ALERTS_SELECT="$(node --input-type=module -e "import { resolveFinishedOrderAlertsSql } from './src/db/repositories/stalled-order-queries.js'; const s = resolveFinishedOrderAlertsSql(); process.stdout.write('SELECT oa.id FROM operator_alerts oa INNER JOIN orders o ON o.id = oa.order_id ' + s.slice(s.indexOf('WHERE')))")" \
+  || { echo "[失败] 读不到 resolveFinishedOrderAlertsSql"; exit 1; }
+probe "stalled-order-queries · 订单结束收掉失败 / 要人工提醒（只读形式）" "$FINISHED_ALERTS_SELECT"
 
 echo
 if [ "$fail" -eq 0 ]; then echo "==> 客户链路 SQL 全部可执行 ✓"; else echo "==> 有 SQL 跑不通 ✗"; fi

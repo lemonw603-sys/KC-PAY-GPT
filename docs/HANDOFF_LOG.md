@@ -3873,3 +3873,7 @@ Lemon 发布同时提 13 条。三个只读代码调查 + 本人生产只读核�
 ## 2026-09-27｜D-405 决定 + 33 条陈年提醒关闭（15:1x～15:22 UTC）
 
 Lemon：「一到四同意，五先不改」，另立规矩：页面改动先给可交互演示、看过再做、做完验证再汇报（记忆 `ui-changes-demo-first`）。按 2 执行：服务器上用后台「关闭」同一服务 `admin-operations-service.closeAlert` 逐条关，条件＝OPEN 且类型 BROWSER_ORDER_FAILED / BROWSER_HUMAN_REQUIRED 且订单已终态，先断言 33 条才动 → 15:21 UTC matched 33 / closed 33；新查询核实：打开的 warning/critical 只剩 3 条（hnskj CARD_STOCK_LOW / CARD_SUPPLY_FAULT / CARD_SUPPLY_BLOCKED），本批 RESOLVED 33。
+
+## 2026-09-27｜D-405 第一批：演示 → 实现 → 验证（15:3x～17:1x UTC，未发布）
+
+Lemon 看演示 v1～v3 给意见（D-405 补记），「B；欠账21按你的建议办就行」后开做。实现见 D-405「第一批实现」。过程：分卡资格拆成具名检查后逐字比对原 SQL（三产品 + 库存计数两处）；待销「卡台上」第一版把 highvcc 全判成「查不了」——快照 NO_CHANGE 不刷卡上同步时间，改取钱包快照时间，生产只读核出 7 张还在、0577 / 6754 已作废；测试里 `source_present` 列不许 NULL（夹具改 1），hnskj 判断本就不读它。真页面验收：应用内浏览器截图在 1440 下缩成缩略图不可用，改为页面内量几何 + 与演示 v3 同视口逐列比；造数时 mysql 命令行没指定 utf8mb4 把测试提醒写成乱码（测试数据问题，已改）；本机 highvcc 钱包 409 是本机没 token。卡片页视觉契约 +4px 用改动前代码（临时 worktree、同库）复现同值，定为造数差异、非本批引入。本机 `operator-watch` 实跑关掉 2 条终态单提醒。生产 state-check 20 项一致（17:0x UTC），生产未动。

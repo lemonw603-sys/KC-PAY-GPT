@@ -55,27 +55,66 @@ export function ledgerSpendSql(alias = 'c') {
       ), 0)`;
 }
 
-export function eligibleInventoryCardSql(alias = 'c', minimumSql = '?', { productCode = 'plus' } = {}) {
+/**
+ * 分卡资格拆成**带名字的条件**（2026-09-28 D-405 第一批：卡片页要写「具体差在哪」，不能再只给一句
+ * 「当前不满足 Plus 安全分配条件」）。eligibleInventoryCardSql ＝ 这些条件全部 AND，规则仍只有这一份；
+ * 卡片页逐条算、列出没过的（card-stock-service），不另抄规则（D-191）。
+ * SYNC_STALE 那一句的原文被 stockCountingCardSql 按正则替换，改它要连正则一起改。
+ */
+export function eligibilityChecks(alias = 'c', minimumSql = '?', { productCode = 'plus' } = {}) {
   if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(alias)) throw new TypeError('Invalid card SQL alias');
   const normalizedProduct = String(productCode || 'plus').trim().toLowerCase();
   if (!/^[a-z0-9_-]{1,32}$/.test(normalizedProduct)) throw new TypeError('Invalid product code');
-  // 大额卡不给 Plus 用（Lemon 2026-09-20 定：「金额大于 75 美金，默认不能给 Plus 充」）。
-  //
-  // 为什么需要这条：卡本身不记产品归属（cards 表没有产品字段），开卡任务记了
-  // product_code 但开出的卡不回写，唯一的产品限定是人工标 PRODUCT_ONLY。所以往后台放
-  // 一张 $150 的 20X 卡时，只要忘了手动标，它就满足 Plus 的全部条件（余额 ≥ $16），
-  // 立刻进 Plus 可分配池 —— Plus 单花掉 $16，剩下的继续被 Plus 吃到每卡单数上限，
-  // 一百多美金卡死在那张卡上。这条规则不依赖任何人记得打标记。
-  //
-  // 判定金额取 GREATEST(当前余额, 充值金额)：只看当前余额的话，$150 的卡用掉一半
-  // 降到 $70 就又能给 Plus 充，等于没堵。
-  //
-  // 「默认」＝可被显式覆盖：明确标了 PRODUCT_ONLY=plus 的卡仍然放行（运营知道自己在做什么）。
-  // 阈值可调：往 app_settings 插 plus_max_card_balance；没有这个键时用 75。
-  //
-  // 生产实测（2026-09-20 立规则当天）：在库 9 张，判定金额最大 $50，**零误伤**。
-  const plusLargeCardGuard = normalizedProduct !== 'plus' ? '' : `
-    AND (
+  const checks = [
+    { code: 'NOT_IN_INVENTORY', sql: `${alias}.inventory_status IN ('AVAILABLE','ASSIGNED','DEPLETED')` },
+    { code: 'MISSING_AT_PLATFORM', sql: `COALESCE(${alias}.source_present, 1) = 1` },
+    { code: 'NOT_ACCEPTED', sql: `${alias}.intake_status IN ('ACCEPTED','LEGACY_ACCEPTED')` },
+    { code: 'PLATFORM_STATUS', sql: `LOWER(${alias}.status) IN ('active','available','usable','ready')` },
+    { code: 'NO_CREDENTIALS', sql: `${alias}.card_credentials_ciphertext IS NOT NULL` },
+    { code: 'SYNC_STALE', sql: `(${alias}.sync_tier = 'MANUAL_IMPORT' OR (
+      ${alias}.last_transaction_synced_at IS NOT NULL
+      AND ${alias}.last_transaction_synced_at >= DATE_SUB(CURRENT_TIMESTAMP(3), INTERVAL 15 MINUTE)
+    ))` },
+    // D-217：可用额取「同步余额」与「按账本推算的余额」中的较小者。单看任一个都会放行一张钱不够的卡
+    // （2026-09-14 实测：3118 同步 1.07 / 推算 12.00、5371 同步 2.84 / 推算 18.00——账本漏记时同步兜底；
+    // 付款后那一小时 current_balance 仍是旧值——同步滞后时账本兜底）。RELEASED 只在订单成功时计入（见 ledgerSpendSql）。
+    { code: 'BALANCE_LOW', sql: `LEAST(
+      ${alias}.current_balance,
+      ${alias}.funded_amount - ${ledgerSpendSql(alias)}
+    ) >= ${minimumSql}` },
+    { code: 'USED_UP', sql: `(SELECT COUNT(*) FROM card_consumption_ledger eligible_usage
+      WHERE eligible_usage.card_id = ${alias}.id
+        AND eligible_usage.status IN ('RESERVED','CONSUMED','RECONCILIATION'))
+      < ${maxPaymentsSql(normalizedProduct)}` },
+    // D-221「5X/20X 一卡一单」：跑过 Pro 的卡不再分给任何产品（含 Plus）。
+    { code: 'PRO_USED', sql: `NOT EXISTS (SELECT 1 FROM card_consumption_ledger eligible_pro_usage
+      INNER JOIN products eligible_pro_product ON eligible_pro_product.id = eligible_pro_usage.product_id
+      WHERE eligible_pro_usage.card_id = ${alias}.id
+        AND eligible_pro_usage.status IN ('RESERVED','CONSUMED','RECONCILIATION')
+        AND eligible_pro_product.product_code LIKE 'chatgpt_pro%')` },
+    { code: 'IN_USE', sql: `NOT EXISTS (SELECT 1 FROM card_assignment_history eligible_assignment
+      WHERE eligible_assignment.card_id=${alias}.id AND eligible_assignment.status='ACTIVE')` },
+    { code: 'REFUND_CASE', sql: `NOT EXISTS (
+      SELECT 1 FROM refund_cases eligible_refund
+      WHERE eligible_refund.card_id = ${alias}.id
+        AND eligible_refund.status <> 'WITHDRAWN'
+    )` },
+    { code: 'OVERRIDE', sql: `NOT EXISTS (
+      SELECT 1 FROM card_operational_overrides eligible_override
+      WHERE eligible_override.provider_account_id = ${alias}.provider_account_id
+        AND BINARY eligible_override.external_card_id = BINARY ${alias}.external_card_id
+        AND (
+          eligible_override.allocation_policy = 'RETIRED'
+          OR (eligible_override.allocation_policy = 'PRODUCT_ONLY'
+            AND LOWER(COALESCE(eligible_override.product_code, '')) <> '${normalizedProduct}')
+        )
+    )` }
+  ];
+  // 大额卡不给 Plus 用（Lemon 2026-09-20 定：「金额大于 75 美金，默认不能给 Plus 充」）：卡不记产品归属，
+  // 忘了标 PRODUCT_ONLY 的 $150 卡会被 Plus 吃到上限。判定金额取 GREATEST(当前余额, 充值金额)；
+  // 显式标了 PRODUCT_ONLY=plus 的仍放行；阈值 app_settings.plus_max_card_balance，缺省 75。
+  if (normalizedProduct === 'plus') {
+    checks.push({ code: 'PLUS_LARGE_CARD', sql: `(
       GREATEST(${alias}.current_balance, COALESCE(${alias}.funded_amount, 0)) <= COALESCE(
         (SELECT CAST(setting_value AS DECIMAL(18,6)) FROM app_settings
           WHERE setting_key = 'plus_max_card_balance' LIMIT 1), 75)
@@ -86,64 +125,13 @@ export function eligibleInventoryCardSql(alias = 'c', minimumSql = '?', { produc
           AND plus_large_override.allocation_policy = 'PRODUCT_ONLY'
           AND LOWER(COALESCE(plus_large_override.product_code, '')) = 'plus'
       )
-    )`;
+    )` });
+  }
+  return checks;
+}
 
-  return `${alias}.inventory_status IN ('AVAILABLE','ASSIGNED','DEPLETED')
-    AND COALESCE(${alias}.source_present, 1) = 1
-    AND ${alias}.intake_status IN ('ACCEPTED','LEGACY_ACCEPTED')
-    AND LOWER(${alias}.status) IN ('active','available','usable','ready')
-    AND ${alias}.card_credentials_ciphertext IS NOT NULL
-    AND (${alias}.sync_tier = 'MANUAL_IMPORT' OR (
-      ${alias}.last_transaction_synced_at IS NOT NULL
-      AND ${alias}.last_transaction_synced_at >= DATE_SUB(CURRENT_TIMESTAMP(3), INTERVAL 15 MINUTE)
-    ))
-    -- D-217：可用额取「同步余额」与「按账本推算的余额」中的较小者。
-    -- 单看任一个都会放行一张钱不够的卡，2026-09-14 实测四张卡：
-    --   1657 同步 18.56 / 推算 18.00   两者接近
-    --   3159 同步 2.84  / 推算 2.00    账本更严，对
-    --   3118 同步 1.07  / 推算 12.00   ← 账本漏记了消费，只看账本会放行
-    --   5371 同步 2.84  / 推算 18.00   ← 同上，偏乐观 15 元
-    -- 取较小者让两种偏差互相兜底：同步滞后时账本补上，账本漏记时同步兜底。
-    --
-    -- 为什么必须有账本这一侧：卡台快照每小时才同步一次，付款后那一小时里
-    -- current_balance 仍是旧值，系统会把一张刚用掉大半的卡再分出去，下一单必然
-    -- 因余额不足失败（Lemon 2026-09-14 指出这个可预测的失败）。
-    --
-    -- RELEASED 要看订单：订单失败=卡真没用（不计），订单成功=卡用了但收口脚本
-    -- 记成了 RELEASED（必须计）。把所有 RELEASED 一律当消费会荒谬地保守——
-    -- 5371 有 7 笔失败单的 RELEASED，那样它会被算成用了 8 次。
-    AND LEAST(
-      ${alias}.current_balance,
-      ${alias}.funded_amount - ${ledgerSpendSql(alias)}
-    ) >= ${minimumSql}
-    AND (SELECT COUNT(*) FROM card_consumption_ledger eligible_usage
-      WHERE eligible_usage.card_id = ${alias}.id
-        AND eligible_usage.status IN ('RESERVED','CONSUMED','RECONCILIATION'))
-      < ${maxPaymentsSql(normalizedProduct)}
-    -- D-221「5X/20X 一卡一单」：跑过 Pro 的卡不再分给任何产品（含 Plus）。待销清单的 PRO_USED
-    -- 早按这个口径把卡列为待销，这里把同一条规则前移到分配，免得销卡前又被 Plus 单吃掉余额。
-    AND NOT EXISTS (SELECT 1 FROM card_consumption_ledger eligible_pro_usage
-      INNER JOIN products eligible_pro_product ON eligible_pro_product.id = eligible_pro_usage.product_id
-      WHERE eligible_pro_usage.card_id = ${alias}.id
-        AND eligible_pro_usage.status IN ('RESERVED','CONSUMED','RECONCILIATION')
-        AND eligible_pro_product.product_code LIKE 'chatgpt_pro%')
-    AND NOT EXISTS (SELECT 1 FROM card_assignment_history eligible_assignment
-      WHERE eligible_assignment.card_id=${alias}.id AND eligible_assignment.status='ACTIVE')
-    AND NOT EXISTS (
-      SELECT 1 FROM refund_cases eligible_refund
-      WHERE eligible_refund.card_id = ${alias}.id
-        AND eligible_refund.status <> 'WITHDRAWN'
-    )
-    AND NOT EXISTS (
-      SELECT 1 FROM card_operational_overrides eligible_override
-      WHERE eligible_override.provider_account_id = ${alias}.provider_account_id
-        AND BINARY eligible_override.external_card_id = BINARY ${alias}.external_card_id
-        AND (
-          eligible_override.allocation_policy = 'RETIRED'
-          OR (eligible_override.allocation_policy = 'PRODUCT_ONLY'
-            AND LOWER(COALESCE(eligible_override.product_code, '')) <> '${normalizedProduct}')
-        )
-    )${plusLargeCardGuard}`;
+export function eligibleInventoryCardSql(alias = 'c', minimumSql = '?', { productCode = 'plus' } = {}) {
+  return eligibilityChecks(alias, minimumSql, { productCode }).map((check) => check.sql).join('\n    AND ');
 }
 
 // Candidate cards may be stale, so this predicate must never be used to assign

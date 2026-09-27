@@ -42,3 +42,11 @@ body.diagnostics-active .main-area{padding:26px 28px 42px;max-width:1440px;width
 .diag-fail-orders ul{list-style:none;margin:0;padding:0;display:grid;gap:6px}
 .diag-fail-orders li{display:grid;grid-template-columns:auto 96px minmax(0,1fr) auto;gap:14px;align-items:center;font-size:12.5px}
 .diag-fail-orders li small{margin:0;color:var(--wb-t2)}
+/* D-405：从工作台挪来的「卡台的零散情况」，只供了解 */
+.diag-notes{display:grid;gap:8px;margin-top:12px}
+.diag-notes-title{margin:0;font-size:12.5px;font-weight:600;color:var(--wb-t)}
+.diag-notes-title small{margin-left:8px;font-weight:400;color:var(--wb-t3)}
+.diag-note{display:grid;gap:3px;padding:10px 12px;border:1px solid var(--wb-bd);border-radius:10px;background:var(--wb-s)}
+.diag-note b{font-size:12.5px;color:var(--wb-t)}
+.diag-note span{font-size:11.5px;color:var(--wb-t3)}
+

@@ -685,3 +685,40 @@ test('待销清单把「运营已标永久停用」换成具体原因 + 下一�
   const legacyRow = out.slice(out.indexOf('3333'));
   assert.doesNotMatch(legacyRow.slice(0, legacyRow.indexOf('</tr>')), /去卡台把它删掉|已经没了/);
 });
+
+// ——— D-405 第一批（Lemon 2026-09-28 看过演示 v3）———
+test('D-405 待销清单：「卡台上」一列按后端 platform 显示；卡台已作废 / 已不见给「登记已销」；已到期是小标签不是整行黄底', () => {
+  const { sandbox, html } = loadAdminJs();
+  const due = (cardId, last4, platform) => ({ cardId, last4, providerCode: 'manual_excel', reasonLabels: ['用满 3 次'],
+    currentBalance: '1.00', due: true, dueAt: '2026-09-19T00:00:00.000Z', platform });
+  sandbox.renderCardRetirement({ minAgeHours: 6, recentlyConfirmed: [], notYetDue: [], due: [
+    due('c1', '1657', { state: 'THERE', syncedAt: '2026-09-27T13:45:00.000Z', note: null }),
+    due('c2', '0577', { state: 'VOID', syncedAt: '2026-09-27T10:15:00.000Z', note: null }),
+    due('c3', '1111', { state: 'GONE', syncedAt: '2026-09-27T13:45:00.000Z', note: null }),
+    due('c4', '2222', { state: 'UNKNOWN', syncedAt: null, note: '卡台登录失效，同步不了' })
+  ] });
+  const out = html('sel:#card-retirement-list');
+  assert.match(out, /<th>卡台上<\/th>/);
+  assert.doesNotMatch(out, /<th>可销时间<\/th>/, '可销时间并进小标签');
+  assert.match(out, /<col class="rc-why"><col class="rc-bal"><col class="rc-src">/);
+  assert.match(out, /src-state is-there[\s\S]{0,80}还在[\s\S]{0,120}核对/);
+  assert.match(out, /data-retire-confirm="c1"[^>]*>我已在卡台删掉/);
+  assert.match(out, /data-retire-confirm="c2"[^>]*>登记已销/, '卡台已作废不用去删');
+  assert.match(out, /data-retire-confirm="c3"[^>]*>登记已销/, '已不见多半已删');
+  assert.match(out, /data-retire-confirm="c4"[^>]*>我已在卡台删掉/);
+  assert.match(out, /卡台登录失效，同步不了/);
+  assert.match(out, /<span class="due-tag">已到期<\/span>/);
+});
+
+test('D-405 卡片列表：列宽照演示（用量贴近余额）；可销「已到期」用小标签', () => {
+  const { sandbox, html } = loadAdminJs();
+  sandbox.renderStockCards([CARD_READY], { due: [{ providerAccountId: 'pa-1', providerCardId: 'h-1', due: true, reasonLabels: ['用满 3 次'] }], notYetDue: [] });
+  const out = html('sel:#stock-cards');
+  assert.match(out, /<table class="is-fixed"><colgroup><col class="cc-last4"><col class="cc-rig"><col class="cc-bal"><col class="cc-use"><col>/);
+  assert.match(out, /<span class="due-tag">已到期<\/span>/);
+  const css = fs.readFileSync(path.join(here, '..', 'public', 'admin', 'assets', 'cards.css'), 'utf8');
+  assert.doesNotMatch(css, /tr\.is-due td\{background/, '整行黄底去掉了');
+  assert.match(css, /col\.cc-use\{width:100px\}/);
+  assert.match(css, /col\.rc-bal\{width:150px\}/);
+});
+

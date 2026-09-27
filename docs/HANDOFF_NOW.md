@@ -1,12 +1,12 @@
 # 接班一屏（HANDOFF_NOW）
 
-更新：2026-09-27 20:5x（UTC+8）＝ 12:5x UTC（本窗口 D-397～D-404；生产 release D-404；Plus 走 API 路线；新卡 5270 可分配；**D-404 放卡退卡密 + 请求带 PH 已发布 `20260927-d404-9542900`（14:01 UTC）**）。执行顺序以 **D-352** 为准，「可离开」第一条以 **D-366** 为准；上一窗口 D-376～D-396。
+更新：2026-09-28 01:1x（UTC+8）＝ 09-27 17:1x UTC（本窗口 D-397～D-405；生产 release D-404；Plus 走 API 路线；可分配 5270；**D-405 第一批已实现并验证、未发布**）。执行顺序以 **D-352** 为准，「可离开」第一条以 **D-366** 为准；上一窗口 D-376～D-396。
 
-## 现在的状态（09-27 07:36 UTC 现查；明细见 CURRENT_STATE.md，`state-check.sh` 20 项一致）
+## 现在的状态（09-27 17:0x UTC 现查；明细见 CURRENT_STATE.md，`state-check.sh` 20 项一致）
 
 - 生产 release **`20260927-d404-9542900`**（v1 同 `e898f607`，D-404 放卡退卡密 + 请求带 PH；无新迁移）。回滚点 `20260927-d401-c0dbb87`（直接回滚）。ZZSHU 新 Key 已装服务器，点数 15。发布准备会先自动跑真数据库测试（`v1/scripts/mysql-tests.sh`，需本机 `pojia-stage1-mysql` 容器）。
 - **本机常驻池 PID 56510**（supervisor 84622），跑固定目录 `~/pojia-pool/releases/20260926-d389-1ca9a42`（`1ca9a422`；到服务器那版之间池子引用的代码没变，不用重启）；进程环境查新单 1 秒、核实窗口 300000、租约 900。池回滚：`scripts/pool-release.sh switch 20260925-block6-pro5x-f748bb6` 后按 RUNBOOK §5 停 / 开。
-- 付款开关 true、下单查心跳 true、心跳新鲜。可分配 Plus 卡 1 张（8718）；**非终态订单 0、「需要我处理」0**（D-396 清掉自用期旧单）。供卡、水位、路线 305/306 见 CURRENT_STATE（本轮未动）。
+- 付款开关 true、下单查心跳 true、心跳新鲜。可分配 Plus 卡 1 张（5270；8718 已停用 D-403）；**非终态订单 0、「需要我处理」0**（D-396 清掉自用期旧单）。供卡、水位、路线 305/306 见 CURRENT_STATE（本轮未动）。
 
 ## 这一轮做完的（D-386～D-396）
 
@@ -30,6 +30,8 @@
 - RUNBOOK §1 五处过时说法按当前代码改正（预检已并入 run、RECHARGE_FAILED 可手工收口、Browser 付款不明走「确认核实结果」、客户页有更换账号表单、9839 已注销）。
 
 ## 下一可执行项
+
+- **D-405 第一批（页面 + 后台，无迁移）已实现、验证完、未发布**：等 Lemon 说发布 → `customer-sql-probe.sh` → `deploy-release.sh prepare/switch`（只重启 web / worker，常驻池不用动）→ 独立核实：「需要我处理」只剩急事、提醒分组、卡表原因、待销「卡台上」、诊断新块；`operator-watch` 下一轮会关终态单的「浏览器单失败 / 要人工」提醒（生产 09-27 已手工关过 33 条，发布时预期 0 条可关，发布后现查）。本机验收用的库 `pojia_ui_b1`、临时 worktree（scratchpad `head-wt`）和预览服务待清（清之前问 Lemon）。第二批（字体 404、点数位置、卡台下拉、清晰度、订单页「结束时间」、下拉统一）先出演示；第三批两格口径已定（D-405 第 4 条）。
 
 0. **第一单走 API（D-402）**：07:57 UTC 已切（API 行卡台 highvcc、路线 301 开 / 302 关，下单入口 ok）。来单按 **RUNBOOK §1.A** 盯（不是 §1，那是 Browser 池）。highvcc token 已重贴（08:09 UTC 告警关、08:19 同步成功，钱包 $33.80，生产 `walletPreflight` 17.30 < 20 仍开不出第二张，要 ≥ $36.50）。**8718 已停用（D-403）**：那笔 $82.11 是 Lemon 手动 Plus→Pro 补差价，按 D-361 不再分配 。Lemon 充值后调度器 09:33:46 UTC 自动开出 **5270**（卡头 `51398996`、$16.00，按生产规则可分配 1 张，下单入口 ok）；钱包剩 $20.26，第二单前要再充到 ≥ $36.50。4022 删不删 Lemon 看情况。发卡密前 Lemon 会说（「4 好」）。清理三项已删（D-402）。 **D-404 已发布**（14:01 UTC，无迁移）。本机常驻池（固定 d389）经 `browser-card-transaction-reader` → highvcc 同步 → `card-transaction-repository` 间接用到 D-404 改的自动放卡：池里仍是旧口径（不认 COMPLETE、有余额条件兜底、放卡不关告警），Plus 走 API 时池子不接单不触发；下次池子换代码时带上。
 1. **等首张真实客户 Plus 单**（可离开第一条，D-366；第一张卡密发给能等的熟人、Lemon 在场，D-397）：Lemon 说「要发了」→ 开窗口先跑 `ready-check.sh pay` + `state-check.sh`，再按 RUNBOOK §1 盯；Bark 来单 → 按 RUNBOOK §1 盯。跑完读 `~/Library/Application Support/pojia-browser-live/pool/post-click-timing.jsonl` 里该 run 的四行（点击后各段耗时、当场确认为什么没成），据此挑欠账 19 的提速。导航失败先看 `evidence/` 目录（`evidenceRef` 在 fail-closed 事件里）。

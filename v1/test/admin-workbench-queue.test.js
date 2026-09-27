@@ -16,6 +16,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const adminJsPath = path.join(here, '..', 'public', 'admin', 'assets', 'admin.js');
 
 const OVERVIEW = { operationalBacklog: {} };
+const readAdminSource = () => fs.readFileSync(adminJsPath, 'utf8');
 const openCase = (caseType, publicNo, id) => ({
   id, caseType, severity: 'critical', status: 'OPEN', publicNo,
   lastSeenAt: '2026-09-19T00:00:00.000Z',
@@ -66,13 +67,13 @@ test('F-63: 待办来源接口失败时，空队列必须说「读取失败」�
   sandbox.renderWbQueue(OVERVIEW, { __error: true }, { alerts: [], __error: true }, { cases: [], __error: true });
   const out = html('wb-queue');
   assert.ok(out.includes('接口失败'), '必须明示读取失败');
-  assert.ok(!out.includes('今天清爽'), '读取失败不能显示成没有待办');
+  assert.ok(!out.includes('没有急着要你动手的事'), '读取失败不能显示成没有待办');
 });
 
-test('查过确实没有待办时，才显示「今天清爽」', () => {
+test('查过确实没有待办时，才显示「没有急着要你动手的事」（D-405 改了说法）', () => {
   const { sandbox, html } = loadAdminJs();
   sandbox.renderWbQueue(OVERVIEW, null, { alerts: [] }, { cases: [] });
-  assert.ok(html('wb-queue').includes('今天清爽'));
+  assert.ok(html('wb-queue').includes('没有急着要你动手的事'));
 });
 
 test('F-62: 日对账「无法核对」读 unverifiableAmountCount，显真实值而非 0', () => {
@@ -127,11 +128,11 @@ test('F-63 上游：待办接口 500 时，loadOverview 必须让队列说「接
   await sandbox.loadOverview();
   const q = html('wb-queue');
   assert.ok(q.includes('接口失败'), '接口挂了必须明说，当前渲染=' + q.slice(0, 120));
-  assert.ok(!q.includes('今天清爽'), '读取失败绝不能显示成「没有待办」');
+  assert.ok(!q.includes('没有急着要你动手的事'), '读取失败绝不能显示成「没有待办」');
   assert.ok(html('wb-recon').includes('读取失败'), '日对账失败也要说失败');
 });
 
-test('F-63 上游对照：接口都正常且确实没有待办时，才显示「今天清爽」', async () => {
+test('F-63 上游对照：接口都正常且确实没有待办时，才显示「没有急着要你动手的事」', async () => {
   const { sandbox, html } = loadAdminJs();
   sandbox.fetch = (url) => {
     const u = String(url);
@@ -143,7 +144,7 @@ test('F-63 上游对照：接口都正常且确实没有待办时，才显示「
   };
   await sandbox.loadOverview();
   const q = html('wb-queue');
-  assert.ok(q.includes('今天清爽'), '真的没有待办时才说清爽，当前渲染=' + q.slice(0, 120));
+  assert.ok(q.includes('没有急着要你动手的事'), '真的没有待办时才这么说，当前渲染=' + q.slice(0, 120));
   assert.ok(!q.includes('接口失败'));
 });
 
@@ -171,7 +172,7 @@ test('D-285 数字墙：五格按原型，后端没有的三项必须标「待�
   assert.ok(!out.includes('48') && !out.includes('>5<'), '不得用告警数/案例数顶替未接入的格子');
 });
 
-test('D-285 队列：待销到期与 token 失效按原型放回工作台（F-64 在本块闭合）', () => {
+test('D-405 队列（取代 D-285 的「待销放回工作台」）：待销到期不急、只在卡片页；token 失效仍进队列、提醒里不重复', () => {
   const { sandbox, html } = loadAdminJs();
   sandbox.renderWbQueue(
     { operationalBacklog: {} },
@@ -180,9 +181,11 @@ test('D-285 队列：待销到期与 token 失效按原型放回工作台（F-64
     { cases: [] },
   );
   const out = html('wb-queue');
-  assert.ok(out.includes('待销到期 4 张卡'), '待销到期要出现在工作台队列');
+  assert.ok(!out.includes('待销到期'), 'Lemon 2026-09-28：删卡登记这类不急的只放卡片页');
   assert.ok(out.includes('token 已失效'), 'token 失效要出现在工作台队列');
-  assert.ok(!out.includes('今天清爽'), '有待办就不能说清爽');
+  assert.match(out, /data-wb-land="highvcc-token"/, '去处理要带定位（落到 token 输入框）');
+  assert.ok(!out.includes('个提醒'), 'token 已在队列里，提醒折叠栏不再重复一条');
+  assert.ok(!out.includes('没有急着要你动手的事'), '有待办就不能说没有');
 });
 
 test('D-285 队列：没有 token 失效告警时，不得擅自显示「token 有效」', () => {
@@ -371,8 +374,8 @@ test('待复核续费进工作台队列，且读的是 metrics 不是 backlog（
   const out = html('wb-queue');
   assert.match(out, /待复核续费 7 单/);
   assert.match(out, /不关下个周期会再扣一次/, '要说清后果，否则运营不知道为什么急');
-  // 去处理必须落到订单页的「需要处理」，不是跳卡片页
-  assert.match(out, /data-order-filter="REVIEW_REQUIRED"/);
+  // 去处理必须落到订单页的「需要处理」，不是跳卡片页（D-405：走带「回工作台」的落点）
+  assert.match(out, /data-wb-land="orders-review"/);
   assert.doesNotMatch(out, /待复核续费[\s\S]{0,200}data-view-jump="stock"/);
 
   // 放错位置（backlog）时不该显示 —— 钉住这次踩的坑
@@ -382,4 +385,62 @@ test('待复核续费进工作台队列，且读的是 metrics 不是 backlog（
   // 0 单时不占位置
   sandbox.renderWbQueue({ metrics: { cancellationReview: 0 }, operationalBacklog: {} }, null, null, null);
   assert.doesNotMatch(html('wb-queue'), /待复核续费/);
+});
+
+// ——— D-405 第一批（Lemon 2026-09-28 看过演示）———
+test('D-405: 「新卡待接管」「待登记手动用卡」界面上无事可做，不进工作台队列', () => {
+  const { sandbox, html } = loadAdminJs();
+  sandbox.renderWbQueue({ operationalBacklog: { cardIntakePending: 13 } },
+    { pendingRegistrationCount: 1, retirementDueCount: 9, discrepancyCount: 0, persistentCount: 0 }, { alerts: [] }, { cases: [] });
+  const out = html('wb-queue');
+  assert.doesNotMatch(out, /新卡待接管|待登记手动用卡|待销到期/);
+  assert.ok(out.includes('没有急着要你动手的事'));
+  assert.doesNotMatch(out, /data-view-jump=/, '队列项不再用不带定位的裸跳转');
+});
+
+const ALERTS = [
+  { id: 's1', type: 'CARD_SUPPLY_FAULT', title: 'HNSKJ 供卡故障', message: '维护中', createdAt: '2026-09-24T00:13:52.000Z' },
+  { id: 's2', type: 'CARD_STOCK_LOW', title: '可用卡库存偏低', message: 'Plus 0 张', createdAt: '2026-09-27T14:18:29.000Z' },
+  { id: 'o1', type: 'BROWSER_ORDER_FAILED', title: '浏览器单失败', message: 'x', createdAt: '2026-09-27T14:18:29.000Z' }
+];
+
+test('D-405: 提醒按类分组、可整组关；展开状态在重画（10 秒自动刷新）后保持', () => {
+  const { sandbox, evalIn, html } = loadAdminJs();
+  sandbox.renderWbQueue({ operationalBacklog: {} }, null, { alerts: ALERTS }, { cases: [] });
+  let out = html('wb-queue');
+  assert.match(out, /data-wb-agroup="supply"[\s\S]*供卡与钱包[\s\S]*2 条 · 情况恢复后会自动关[\s\S]*data-close-wb-group="supply"/);
+  assert.match(out, /data-wb-agroup="orders"[\s\S]*订单[\s\S]*1 条/);
+  assert.match(out, /3 个提醒/);
+  assert.doesNotMatch(out, /<details class="wb-alerts" data-wb-alerts open/, '默认收起');
+  evalIn('state.wbAlertsOpen = true'); // 人点开了
+  sandbox.renderWbQueue({ operationalBacklog: {} }, null, { alerts: ALERTS }, { cases: [] });
+  out = html('wb-queue');
+  assert.match(out, /<details class="wb-alerts" data-wb-alerts open/, '重画后仍展开');
+});
+
+test('D-405: 关提醒就地移除，不整块重画（关一条不再收起）；源码层面钉住', () => {
+  const src = readAdminSource();
+  assert.match(src, /async function closeWbAlertsInPlace\(ids\)/);
+  assert.match(src, /closeWbAlert\.dataset\.closeWbAlert\]\)\.finally/, '单条关闭走就地移除');
+  assert.doesNotMatch(src, /close`, \{ method: 'POST' \}\)\.then\(\(\) => loadOverview\(\)\)/, '不能再关完整块重画');
+  assert.match(src, /result\.reason\?\.status !== 404/, '已关过的（404）也当关掉');
+  assert.match(src, /document\.addEventListener\('toggle'[\s\S]{0,160}state\.wbAlertsOpen = event\.target\.open/, '展开状态跟人走');
+});
+
+test('D-405: 从队列跳过去后页面下方出现「回工作台」（选 B），落点闪一下；切走就收掉', () => {
+  const src = readAdminSource();
+  assert.match(src, /bar\.className = 'wb-backfloat'/);
+  assert.match(src, /从「需要我处理」过来<\/span><button type="button" class="wb-backpill" data-back-workbench>/);
+  assert.match(src, /async function switchView\([^)]*\) \{\n  hideBackToWorkbench\(\);/, '任何切页先收掉，落点处再显示');
+  assert.match(src, /kind === 'orders-review'[\s\S]{0,160}switchView\('orders', \{ status: 'REVIEW_REQUIRED'[\s\S]{0,80}showBackToWorkbench\(\)/);
+  assert.match(src, /kind === 'diagnostics-report'[\s\S]{0,260}flashLanding\(target\);\s*showBackToWorkbench\(\)/);
+});
+
+test('D-405 「今天花了」写法不变，悬停明细按后端 spentBreakdown 分类；只开卡转进卡里的钱不算花掉', () => {
+  const { sandbox } = loadAdminJs();
+  const p = { spentCurrency: 'USD', spentBreakdown: { orders: { amount: '82.11', count: 1 }, issueFees: { amount: '0.50', count: 1 },
+    chargebacks: { amount: '0', count: 0 }, openedFunded: '16.00' } };
+  assert.equal(sandbox.spendDetailText(p),
+    '明细：给客户充值 1 单 82.11 USD；开卡手续费 0.50 USD（开卡 1 张）；另有 16.00 USD 开卡时转进卡里，不算花掉');
+  assert.equal(sandbox.spendDetailText({ spentBreakdown: null }), '');
 });

@@ -54,7 +54,9 @@ test('admin overview maps aggregate values without exposing raw records', async 
     [{ provider_account_id: 'pa-hnskj', stock_available: 0, bindable_now: 0, any_used: 6, product_used: 0, plus_target_available: 0 },
       { provider_account_id: 'pa-backup-a', stock_available: 0, bindable_now: 0, any_used: 6, product_used: 1, plus_target_available: 0 }],
     [{ provider_account_id: 'pa-hnskj', spent_today: '16.000000', currency: 'USD' },
-      { provider_account_id: 'pa-backup-a', spent_today: '33.250000', currency: 'USD' }],
+      { provider_account_id: 'pa-backup-a', spent_today: '33.250000', currency: 'USD',
+        spent_orders: '32.750000', spent_orders_count: 2, spent_issue_fees: '0.500000', issue_fee_count: 1,
+        spent_chargebacks: '0.000000', chargeback_count: 0, opened_funded: '16.000000' }],
     // 两台钱包的上次余额（latestProviderBalancesSql，2026-09-24）：hnskj 有、backup-a 这次没有
     [{ provider_account_id: 'pa-hnskj', available_balance: '104.710000', currency: 'USD', observed_at: new Date('2026-09-24T02:23:36.671Z') }],
     [{ active: 1, writes_on: 0 }]
@@ -123,12 +125,22 @@ test('admin overview maps aggregate values without exposing raw records', async 
   // 与标量值，免得整块对象一改就得重抄一遍（但字段集合仍然被钉死）。
   assert.deepEqual(result.cardStockByProvider.map((r) => Object.keys(r).sort()), [
     ['anyUsed', 'bindableNow', 'byProduct', 'inStock', 'inUse', 'label', 'providerAccountId',
-      'providerCode', 'providerKind', 'spentCurrency', 'spentToday', 'stockAvailable',
+      'providerCode', 'providerKind', 'spentBreakdown', 'spentCurrency', 'spentToday', 'stockAvailable',
       'supplyFaultReason', 'supplyFaultState', 'total', 'wallet'],
     ['anyUsed', 'bindableNow', 'byProduct', 'inStock', 'inUse', 'label', 'providerAccountId',
-      'providerCode', 'providerKind', 'spentCurrency', 'spentToday', 'stockAvailable',
+      'providerCode', 'providerKind', 'spentBreakdown', 'spentCurrency', 'spentToday', 'stockAvailable',
       'supplyFaultReason', 'supplyFaultState', 'total', 'wallet']
   ]);
+  // D-405「今天花了」悬停明细：总数不变，按类拆开（订单 / 开卡手续费 / 拒付）+ 转进卡里的钱（不算花掉）。
+  assert.deepEqual(result.cardStockByProvider[1].spentBreakdown, {
+    orders: { amount: '32.750000', count: 2 }, issueFees: { amount: '0.500000', count: 1 },
+    chargebacks: { amount: '0.000000', count: 0 }, openedFunded: '16.000000'
+  });
+  assert.equal(result.cardStockByProvider[1].spentToday, '33.250000');
+  assert.deepEqual(result.cardStockByProvider[0].spentBreakdown, {
+    orders: { amount: '0', count: 0 }, issueFees: { amount: '0', count: 0 },
+    chargebacks: { amount: '0', count: 0 }, openedFunded: '0'
+  }, '旧行没有这些列时各项为 0，不报错');
   assert.deepEqual(result.cardStockByProvider.map((r) => ({
     providerAccountId: r.providerAccountId, providerCode: r.providerCode,
     providerKind: r.providerKind, label: r.label, total: r.total,

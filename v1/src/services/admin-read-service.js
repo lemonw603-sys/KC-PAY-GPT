@@ -59,6 +59,30 @@ const NEEDS_PERSON_SQL = () => `(o.status IN (${REVIEW_STATUSES.map((status) => 
         OR ${FAILED_AFTER_PAYMENT_SQL}
         OR o.cancellation_review_required = 1 OR (${STALE_CREATE_ATTEMPT_SQL})
         OR ${apiFailureLockedSql('o')})`;
+/**
+ * 卡台发现、但还没接进来的卡：每张卡取最新一条 discovery，状态为待接管三态，cards 里还没有。
+ * 概览里的计数与诊断页「卡台的零散情况」明细共用这一段（D-405：这项挪出工作台，只供了解）。
+ */
+const CARD_INTAKE_PENDING_SQL = `SELECT latest.provider_account_id, latest.intake_status, latest.first_seen_at, latest.details_json
+  FROM (
+    SELECT d.provider_account_id, d.external_card_id, d.intake_status, d.first_seen_at, d.details_json,
+      ROW_NUMBER() OVER (
+        PARTITION BY d.provider_account_id, d.external_card_id
+        ORDER BY d.first_seen_at DESC, d.id DESC
+      ) AS rn
+    FROM card_discoveries d
+  ) latest
+  LEFT JOIN cards c
+    ON c.provider_account_id = latest.provider_account_id
+   AND c.external_card_id = latest.external_card_id
+  WHERE latest.rn = 1
+    AND c.id IS NULL
+    AND latest.intake_status IN ('QUARANTINED','VALIDATED','REVIEW_REQUIRED')`;
+
+/** 「需要我处理」谓词（外层订单别名 o）。巡检收提醒时复用它，不另写一份（D-191）。 */
+export function needsPersonOrderSql() {
+  return NEEDS_PERSON_SQL();
+}
 const PROCESSING_STATUSES = ['CREATED', 'WAITING_FOR_CARD', 'CARD_PURCHASING', 'CARD_PROVISIONING', 'SUBMITTING',
   'RECHARGE_PROCESSING', 'CANCELLATION_PENDING'];
 const FINISHED_STATUSES = ['RECHARGE_SUCCESS', 'RECHARGE_FAILED', 'CLOSED'];
@@ -709,20 +733,7 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
       ,pool.query(`SELECT setting_key, setting_value FROM app_settings
         WHERE setting_key IN ('card_stock_low_threshold','card_auto_replenishment_enabled')`)
       ,pool.query(`SELECT
-          (SELECT COUNT(*) FROM (
-            SELECT d.provider_account_id, d.external_card_id, d.intake_status,
-              ROW_NUMBER() OVER (
-                PARTITION BY d.provider_account_id, d.external_card_id
-                ORDER BY d.first_seen_at DESC, d.id DESC
-              ) AS rn
-            FROM card_discoveries d
-          ) latest
-          LEFT JOIN cards c
-            ON c.provider_account_id = latest.provider_account_id
-           AND c.external_card_id = latest.external_card_id
-          WHERE latest.rn = 1
-            AND c.id IS NULL
-            AND latest.intake_status IN ('QUARANTINED','VALIDATED','REVIEW_REQUIRED')) AS card_intake_pending,
+          (SELECT COUNT(*) FROM (${CARD_INTAKE_PENDING_SQL}) intake_pending) AS card_intake_pending,
           (SELECT COUNT(*) FROM recharge_attempts
             WHERE funds_risk_state IN ('ACTIVE','UNKNOWN')) AS funds_risk_pending,
           (SELECT COUNT(*) FROM reconciliation_cases
@@ -751,16 +762,25 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
       // 给客户充值消费掉的钱 ＋ 开卡手续费。**不含 card_recharge**——往卡里充钱是
       // 资金转移不是消费，算了会和 consumption 重复（充 $50、再从卡里给客户充 $16，
       // 两个都算就成了 $66，而当天实际只流出 $50）。
+      // D-405 补记：总数口径不变；按类拆开给「今天花了」的悬停明细用（订单消费 / 开卡手续费 / 拒付），
+      // 另带出开卡时转进卡里的钱（opened_funded，不算花掉）。
       ,pool.query(`SELECT pa.id AS provider_account_id,
           COALESCE(SUM(spend.amount), 0) AS spent_today,
-          MAX(spend.currency) AS currency
+          MAX(spend.currency) AS currency,
+          COALESCE(SUM(CASE WHEN spend.kind = 'ORDER' THEN spend.amount END), 0) AS spent_orders,
+          COALESCE(SUM(spend.kind = 'ORDER'), 0) AS spent_orders_count,
+          COALESCE(SUM(CASE WHEN spend.kind = 'ISSUE_FEE' THEN spend.amount END), 0) AS spent_issue_fees,
+          COALESCE(SUM(spend.kind = 'ISSUE_FEE'), 0) AS issue_fee_count,
+          COALESCE(SUM(CASE WHEN spend.kind = 'CHARGEBACK' THEN spend.amount END), 0) AS spent_chargebacks,
+          COALESCE(SUM(spend.kind = 'CHARGEBACK'), 0) AS chargeback_count,
+          COALESCE(SUM(CASE WHEN spend.kind = 'ISSUE_FEE' THEN spend.funded END), 0) AS opened_funded
         FROM provider_accounts pa
         LEFT JOIN (
           -- 只算**给客户实际充值成功**的那部分（Lemon 2026-09-20 收窄）：账本记了 CONSUMED
           -- 不等于客户拿到了东西 —— 扣了钱而充值没成功的单也会留下 CONSUMED 行。
           -- 生产当前两者恰好一致（19 笔全部对应 RECHARGE_SUCCESS，$304），但口径要写对，
           -- 否则第一次出现「扣了钱没充成功」时这个数就会虚高。
-          SELECT c.provider_account_id AS pa_id, l.amount, l.currency
+          SELECT c.provider_account_id AS pa_id, l.amount, l.currency, 'ORDER' AS kind, NULL AS funded
             FROM card_consumption_ledger l
               JOIN cards c ON c.id = l.card_id
               JOIN orders spend_order ON spend_order.id = l.order_id
@@ -778,7 +798,9 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
           -- 当天开卡当天同步到时与交易时间一致，跨日同步会归到同步那天。
           -- （occurred_at 全 NULL 本身疑似既有 bug —— trade_time_raw 有真实时间却没解析入列，
           --  已在 docs/tasks/2026-09-20-cards-page-rework-and-fixes.md §A3 登记，本轮只报不改。）
-          SELECT c.provider_account_id AS pa_id, t.amount, 'USD' AS currency
+          SELECT c.provider_account_id AS pa_id, t.amount, 'USD' AS currency,
+              CASE WHEN LOWER(t.transaction_type) = 'card_issue_fee' THEN 'ISSUE_FEE' ELSE 'CHARGEBACK' END AS kind,
+              CASE WHEN LOWER(t.transaction_type) = 'card_issue_fee' THEN c.funded_amount END AS funded
             FROM card_transactions t JOIN cards c ON c.id = t.card_id
             WHERE LOWER(t.transaction_type) IN ('card_issue_fee', 'chargeback', 'chargeback_fee')
               AND ${todayCst8WindowSql('t.first_seen_at')}
@@ -925,6 +947,12 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
           byProduct: perProduct,
           spentToday: spend?.spent_today == null ? null : String(spend.spent_today),
           spentCurrency: spend?.currency || 'USD',
+          spentBreakdown: spend ? {
+            orders: { amount: String(spend.spent_orders ?? '0'), count: count(spend.spent_orders_count) },
+            issueFees: { amount: String(spend.spent_issue_fees ?? '0'), count: count(spend.issue_fee_count) },
+            chargebacks: { amount: String(spend.spent_chargebacks ?? '0'), count: count(spend.chargeback_count) },
+            openedFunded: String(spend.opened_funded ?? '0')
+          } : null,
           wallet: (() => {
             const w = byId(walletRows);
             return w ? { balance: String(w.available_balance), currency: w.currency || 'USD', observedAt: iso(w.observed_at) } : null;
@@ -1816,5 +1844,31 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
     return { publicNo: reference, attempts: result.orders };
   }
 
-  return { getCard, getCardConsumption, getOrder, getOrderTimeline, getOverview, listOrders, listOrderAttempts, listAlerts, requestCardTransactionSync };
+  /**
+   * 诊断页「卡台的零散情况」：卡台发现、但接不进来的卡，按卡台 × 状态 × 第一条校验错误汇总。
+   * 只供了解——REVIEW_REQUIRED 是规则没过（多为卡台没给卡类型），系统和运营都处理不了；
+   * QUARANTINED / VALIDATED 系统会自己重试或接管。
+   */
+  async function getCardIntakeStuck() {
+    const [rows] = await pool.query(
+      `SELECT pa.provider_code, pending.intake_status,
+          JSON_UNQUOTE(JSON_EXTRACT(pending.details_json, '$.validation.errors[0]')) AS first_error,
+          COUNT(*) AS card_count, MIN(pending.first_seen_at) AS first_seen_at
+        FROM (${CARD_INTAKE_PENDING_SQL}) pending
+        INNER JOIN provider_accounts pa ON pa.id = pending.provider_account_id
+        GROUP BY pa.provider_code, pending.intake_status, first_error
+        ORDER BY first_seen_at`
+    );
+    const groups = rows.map((row) => ({
+      providerCode: row.provider_code,
+      providerLabel: providerLabelOf(row.provider_code),
+      intakeStatus: row.intake_status,
+      firstError: row.first_error == null || row.first_error === 'null' ? null : String(row.first_error),
+      count: Number(row.card_count || 0),
+      firstSeenAt: iso(row.first_seen_at)
+    }));
+    return { total: groups.reduce((sum, g) => sum + g.count, 0), groups };
+  }
+
+  return { getCard, getCardConsumption, getOrder, getOrderTimeline, getOverview, getCardIntakeStuck, listOrders, listOrderAttempts, listAlerts, requestCardTransactionSync };
 }

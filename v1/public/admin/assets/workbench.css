@@ -327,3 +327,18 @@ body{font-family:var(--wb-fd)}
 .workbench .set-kv label small{display:block;color:var(--wb-t3);font-size:11px}
 .workbench .set-kv span{display:flex;align-items:center;gap:7px;flex-wrap:wrap;justify-content:flex-end}
 .workbench .wb-note{margin:0 0 10px;font-size:12px;color:var(--wb-t2)}
+/* D-405 第一批（Lemon 2026-09-28 看过演示）：提醒分组、落点闪一下、回工作台悬浮胶囊 */
+.workbench .wb-qempty.is-calm{color:var(--wb-ok)}
+.workbench .wb-alerts summary>span:last-child{color:var(--wb-t3)}
+.workbench .wb-agroup+.wb-agroup{border-top:1px solid var(--wb-bd)}
+.workbench .wb-aghead{display:flex;align-items:center;gap:8px;padding:9px 14px;background:var(--wb-s2);font-size:12px;color:var(--wb-t2)}
+.workbench .wb-aghead b{color:var(--wb-t);font-size:12.5px}
+.workbench .wb-aghead .wb-btn{margin-left:auto}
+@keyframes wbLanding{0%{background:var(--wb-a-soft);box-shadow:0 0 0 2px var(--wb-a)}100%{box-shadow:0 0 0 2px transparent}}
+.wb-landing{animation:wbLanding 3s ease-out 1}
+/* 居中不用 translateX(-50%)：奇数宽度会落在半像素上把字弄糊 */
+.wb-backfloat{position:fixed;left:0;right:0;bottom:22px;margin:0 auto;width:max-content;z-index:60;display:flex;align-items:center;gap:10px;padding:6px 6px 6px 14px;border-radius:999px;background:var(--wb-t);color:var(--wb-a-on);font-size:12.5px;box-shadow:var(--wb-pop)}
+.wb-backfloat>span{opacity:.82}
+.wb-backpill{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 12px 0 9px;border:0;border-radius:999px;background:var(--wb-s);color:var(--wb-a-ink);font:inherit;font-size:12.5px;font-weight:600;cursor:pointer}
+.wb-backpill:hover{background:var(--wb-a);color:var(--wb-a-on)}
+

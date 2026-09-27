@@ -43,7 +43,36 @@ test('diagnostics keeps five groups (D-393 adds failure reasons), low-frequency 
   const section=html.slice(html.indexOf('<section id="diagnostics-view"'),html.indexOf('<section id="settings-view"'));
   assert.equal((section.match(/class="diag-panel(?: |")/g)||[]).length,5);
   for(const id of ['diagnostics-status','reconciliation-table','diagnostics-card-report','diagnostics-order-search','diagnostics-execution','browser-filters','browser-dispatch-table','browser-runs-table','diagnostics-tools','billing-address-settings','export-orders','export-reconciliation-diag','diagnostics-failures','diag-fail-range','diag-fail-rows'])assert.ok(section.includes(`id="${id}"`),id);
-  assert.match(html,/diagnostics\.js\?v=2/);assert.match(html,/diagnostics\.css\?v=2/);
+  assert.match(html,/diagnostics\.js\?v=3/);assert.match(html,/diagnostics\.css\?v=3/);
+  // D-405：从工作台挪来的「卡台的零散情况」，默认隐藏，有内容才显示
+  assert.match(html,/<div class="diag-notes" id="diagnostics-notes" hidden><\/div>/);
   assert.match(src,/RESOLVE_UNKNOWN_PAYMENT/);assert.match(src,/CONFIRM_MANUAL_PAYMENT/);assert.match(src,/RELEASE_SAFE/);
   assert.match(src,/diagnostics-tools'\)\.open = true/,'settings link must reveal the folded billing form');
+});
+
+// D-405：从工作台挪来的两项「只供了解」——卡台发现但接不进来的卡、手动用过的卡。
+test('D-405 notes: stuck intake cards and manually used cards show as read-only notes; nothing to show hides the box', async () => {
+  const stuck = { total: 13, groups: [
+    { providerCode: 'hnskj', providerLabel: 'hnskj', intakeStatus: 'REVIEW_REQUIRED', firstError: 'CARD_TYPE_MISSING', count: 13, firstSeenAt: '2026-09-09T02:00:00.000Z' },
+    { providerCode: 'hnskj', providerLabel: '<b>x</b>', intakeStatus: 'PENDING', firstError: null, count: 2, firstSeenAt: null }] };
+  const withPending = { ...report, pendingRegistration: [{ last4: '8718' }] };
+  const h = harness(async (url) => url.includes('card-sources') ? { sources: [] } : url.includes('card-intake/stuck') ? stuck : withPending);
+  await h.page.loadDaily();
+  const notes = () => h.h.evalIn('document.querySelector("#diagnostics-notes")');
+  const out = notes().innerHTML;
+  assert.equal(notes().hidden, false);
+  assert.match(out, /只供了解/);
+  assert.match(out, /卡台发现、但接不进来的卡 13 张[\s\S]*9 月 9 日发现[\s\S]*卡台没给卡类型[\s\S]*系统和你都处理不了，放着即可/);
+  assert.match(out, /接不进来的卡 2 张[\s\S]*系统还在核对，会自己接管或重试/);
+  assert.match(out, /&lt;b&gt;x/, 'provider label escaped');
+  assert.match(out, /手动用过的卡 1 张[\s\S]*8718[\s\S]*明细在「待登记」/);
+  assert.doesNotMatch(out, /<button/, 'read-only: no actions');
+
+  const empty = harness(async (url) => url.includes('card-sources') ? { sources: [] } : url.includes('card-intake/stuck') ? { total: 0, groups: [] } : report);
+  await empty.page.loadDaily();
+  assert.equal(empty.h.evalIn('document.querySelector("#diagnostics-notes").hidden'), true);
+  // 接口读不到 → 不影响逐卡报告
+  const down = harness(async (url) => { if (url.includes('card-intake/stuck')) throw Error('503'); return url.includes('card-sources') ? { sources: [] } : report; });
+  await down.page.loadDaily();
+  assert.doesNotMatch(down.html(), /读取失败/);
 });

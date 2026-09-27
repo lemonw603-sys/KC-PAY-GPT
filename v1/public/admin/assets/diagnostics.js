@@ -26,17 +26,39 @@
           <tr class="diag-evidence" id="${id}" hidden><td colspan="4"><div class="diag-evidence-grid"><div><strong>系统账本</strong><p>已消费 ${esc(count(c.count?.ledgerConsumed))} 笔 · 付款未定 ${esc(count(c.count?.ledgerReconciliation))} 笔</p></div><div><strong>卡台记录</strong><p>已结算 ${esc(count(c.count?.settled))} 笔 · 待结算 ${esc(count(c.count?.pending))} 笔</p><p>消费 ${esc(money(c.amount?.charged))} · 拒付及费用 ${esc(money(c.amount?.chargebacks))}</p></div></div><p>${esc(reasons[c.amount?.unverifiableReason] || (c.amount?.finding === 'AMOUNT_DIFF' ? `金额差额 ${money(c.amount.delta)}` : '金额以已有可验证证据为准。'))}</p><p>余额 ${esc(money(c.amount?.balance))} · 卡片同步 ${esc(formatTime(c.lastSyncedAt))}</p>${c.count?.finding === 'PENDING_MANUAL_REGISTRATION' ? '<p>已有手动用卡登记，不作为无主扣款；这里不自动补账。</p>' : ''}<p>这里只读展示，不自动补账、重付或推测交易归属。</p>${c.providerCardId ? `<button class="diag-btn link" data-diagnostic-card="${esc(c.providerCardId)}" data-provider-account="${esc(c.providerAccountId || '')}">查看卡片流水与已关联订单</button>` : '<p>缺少卡片定位信息，无法打开流水。</p>'}</td></tr>`;
       }).join('')}</tbody></table></div>`;
     }
+    // D-405：从工作台「需要我处理」挪过来的两项，只供了解（界面上没有能做的动作）。
+    const INTAKE_ERRORS = { CARD_TYPE_MISSING: '卡台没给卡类型', CARD_TYPE_MISMATCH: '卡类型对不上', BALANCE_INVALID: '余额读不出来' };
+    const cstDate = iso => { const d = new Date(new Date(iso).getTime() + 8 * 3_600_000); return Number.isFinite(d.getTime()) ? `${d.getUTCMonth() + 1} 月 ${d.getUTCDate()} 日` : ''; };
+    function renderNotes(stuck) {
+      const box = $('#diagnostics-notes');
+      if (!box) return;
+      const rows = (stuck?.groups || []).map(g => {
+        const why = g.intakeStatus === 'REVIEW_REQUIRED'
+          ? `原因：${INTAKE_ERRORS[g.firstError] || g.firstError || '规则没过'} · 系统和你都处理不了，放着即可`
+          : '系统还在核对，会自己接管或重试';
+        return `<div class="diag-note"><b>卡台发现、但接不进来的卡 ${esc(count(g.count))} 张</b><span>${esc(g.providerLabel || g.providerCode || '卡台')}${g.firstSeenAt ? ` · ${esc(cstDate(g.firstSeenAt))}发现` : ''} · ${esc(why)}</span></div>`;
+      });
+      const pending = report?.pendingRegistration || [];
+      if (pending.length) {
+        const tails = pending.map(c => c.last4).filter(Boolean).join('、');
+        rows.push(`<div class="diag-note"><b>手动用过的卡 ${pending.length} 张</b><span>${tails ? `${esc(tails)} · ` : ''}卡台有扣款、系统账本没有，已停用、不会再分配 · 明细在「待登记」</span></div>`);
+      }
+      box.hidden = !rows.length;
+      box.innerHTML = rows.length ? `<p class="diag-notes-title">卡台的零散情况<small>只供了解</small></p>${rows.join('')}` : '';
+    }
     async function loadDaily() {
       const ticket = ++generation;
       $('#diagnostics-report-refresh').disabled = true;
       try {
-        const [data, sourceData] = await Promise.all([api('/api/v1/admin/reconciliation/daily'), api('/api/v1/admin/card-sources').catch(() => null)]);
+        const [data, sourceData, stuck] = await Promise.all([api('/api/v1/admin/reconciliation/daily'), api('/api/v1/admin/card-sources').catch(() => null),
+          api('/api/v1/admin/card-intake/stuck').catch(() => null)]);
         if (ticket !== generation) return;
         if (!Array.isArray(data.discrepancies) || !Array.isArray(data.pendingRegistration) || !Array.isArray(data.cards)) throw Error('invalid report');
         report = data;
         sources = new Map((sourceData?.sources || []).map(s => [s.id, s.label || s.displayName || s.code || '未命名卡台']));
         $('#diagnostics-report-time').textContent = `只读核对 · ${formatTime(data.generatedAt)}`;
         render();
+        renderNotes(stuck);
       } catch {
         if (ticket !== generation) return;
         report = null; render();

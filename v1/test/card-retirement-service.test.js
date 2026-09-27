@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { classifyRetirementRow, createCardRetirementService, retirementCandidateSql } from '../src/services/card-retirement-service.js';
+import { classifyRetirementRow, createCardRetirementService, platformPresence, retirementCandidateSql } from '../src/services/card-retirement-service.js';
 
 const now = new Date('2026-09-18T12:00:00Z');
 const base = { id: 'c1', provider_account_id: 'acct', provider_code: 'hnskj', provider_card_id: '5622', external_card_id: '5622',
@@ -103,3 +103,29 @@ test('confirmRetired refuses a card that still has an active order and replays a
   assert.equal(result.replayed, true);
   assert.equal(done.queries.some((q) => q.sql.startsWith('UPDATE') || q.sql.startsWith('INSERT')), false);
 });
+
+// D-405：待销清单「卡台上」——只用最近一次和卡台核对留下的事实，不猜。
+test('D-405 platform presence: there / gone / void / unknown from the last check, highvcc and hnskj each by their own facts', () => {
+  const now = new Date('2026-09-29T12:00:00Z');
+  const hv = { sync_tier: 'MANUAL_IMPORT', source_present: 1, source_operational_status: 'ACTIVE',
+    last_synced_at: '2026-09-27T10:20:12Z', provider_checked_at: '2026-09-29T11:00:00Z', provider_login_expired: 0,
+    inventory_status: 'AVAILABLE', status: 'active' };
+  // 卡台列表两天没变（快照 NO_CHANGE 不刷卡上时间），但一小时前钱包快照证明核对过 → 还在，时间取较晚的
+  assert.deepEqual(platformPresence(hv, { now }), { state: 'THERE', syncedAt: '2026-09-29T11:00:00.000Z', note: null });
+  assert.equal(platformPresence({ ...hv, provider_checked_at: '2026-09-27T11:00:00Z' }, { now }).state, 'UNKNOWN', '一天多没核对上就说查不了');
+  assert.equal(platformPresence({ ...hv, provider_login_expired: 1 }, { now }).note, '卡台登录失效，同步不了');
+  assert.equal(platformPresence({ ...hv, source_present: 0, source_operational_status: 'MISSING_FROM_SNAPSHOT' }, { now }).state, 'GONE');
+  assert.equal(platformPresence({ ...hv, source_operational_status: 'CARD_NOT_ACTIVE' }, { now }).state, 'VOID');
+  const hn = { sync_tier: 'REFUND_WATCH', status: 'invalid', inventory_status: 'FAILED', last_successful_sync_at: '2026-09-29T10:00:00Z' };
+  assert.equal(platformPresence(hn, { now }).state, 'VOID', 'hnskj 卡台说失效');
+  assert.equal(platformPresence({ ...hn, status: 'active', inventory_status: 'AVAILABLE' }, { now }).state, 'THERE');
+  assert.equal(platformPresence({ ...hn, status: 'active', inventory_status: 'AVAILABLE', last_successful_sync_at: '2026-09-27T10:00:00Z' }, { now }).state, 'UNKNOWN');
+  assert.equal(platformPresence({ ...hn, source_present: 0, status: 'active', inventory_status: 'AVAILABLE' }, { now }).state, 'THERE',
+    'hnskj 卡不写 source_present，默认值不能拿来判「不见了」');
+  // 分类结果带上 platform，前端只显示不另判
+  const row = { ...hv, id: 'c1', used_count: 3, max_payments: 3, created_at: '2026-09-01T00:00:00Z', min_age_hours: 6 };
+  assert.equal(classifyRetirementRow(row, { now }).platform.state, 'THERE');
+  assert.match(retirementCandidateSql(), /provider_checked_at/);
+  assert.match(retirementCandidateSql(), /provider-token-expired:/);
+});
+

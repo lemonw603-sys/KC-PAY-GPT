@@ -29,7 +29,9 @@ export const LAST_REPORT_SETTING = 'daily_reconciliation_last_report';
  * （英文 reason），又会误伤早期「手动测试卡」（0237/0601 乱码 reason）。2026-09-18 只读实查：全部 23 张
  * RETIRED override 里这条 REGEXP 只命中 3336。
  */
-export const MANUAL_USE_REASON_REGEXP = 'manual-used|manual used|manually';
+// 后台「停用 → 我拿它手动充值了」写的是原因码 `MANUAL_USED: …`（下划线），旧脚本写 `highvcc-manual-used`（连字符）。
+// 以前只认连字符，页面登记的手动用卡被当成「无主扣款」（2026-09-27 整体排查欠账 27，8718 即此路径）。
+export const MANUAL_USE_REASON_REGEXP = 'manual[-_ ]used|manually';
 
 export const CountFinding = Object.freeze({
   MATCHED: 'MATCHED',

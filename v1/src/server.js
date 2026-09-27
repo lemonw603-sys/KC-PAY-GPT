@@ -213,6 +213,7 @@ const app = createApp({
   closeAdminManualFulfilled: manualFulfillment.closeManuallyFulfilled,
   completeAdminCustomerPayment: traceabilityOperations.completeCustomerPayment,
   listAdminAlerts: adminReadService.listAlerts,
+  getAdminCardIntakeStuck: adminReadService.getCardIntakeStuck,
   requestCardTransactionSync: adminReadService.requestCardTransactionSync
   ,getAdminCard: adminReadService.getCard
   ,requestAdminCardSync: cardSyncJobService.createJobs

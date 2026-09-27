@@ -1,4 +1,5 @@
 import { PublicApiError } from '../domain/public-api-error.js';
+import { PROVIDER_FAILED_CARD_STATUSES } from '../domain/provider-card-status.js';
 
 /**
  * 第④步（面二⑩，D-228 / D-232 / D-248 打架 4）：待销清单。
@@ -52,6 +53,14 @@ function iso(value) {
 export function retirementCandidateSql() {
   return `SELECT c.id, c.provider_account_id, pa.provider_code, c.provider_card_id, c.external_card_id,
           c.last4, c.inventory_status, c.status, c.sync_tier, c.source_present,
+          c.source_operational_status, c.last_synced_at, c.last_successful_sync_at,
+          EXISTS (SELECT 1 FROM operator_alerts login_alert
+            WHERE login_alert.dedupe_key = CONCAT('provider-token-expired:', c.provider_account_id)
+              AND login_alert.status = 'OPEN') AS provider_login_expired,
+          -- 快照同步在卡台列表没变化时跳过写卡（NO_CHANGE），卡上的 last_synced_at 会停在上次有变化时；
+          -- 钱包快照每轮都写，拿它当「最近一次连上卡台核对过」的时间。
+          (SELECT MAX(check_snapshot.observed_at) FROM provider_balance_snapshots check_snapshot
+            WHERE check_snapshot.provider_account_id = c.provider_account_id) AS provider_checked_at,
           c.funded_amount, c.current_balance, c.currency, c.created_at,
           (SELECT COUNT(*) FROM card_consumption_ledger u
             WHERE u.card_id = c.id AND u.status IN ('RESERVED','CONSUMED','RECONCILIATION')) AS used_count,
@@ -80,6 +89,37 @@ export function retirementCandidateSql() {
      INNER JOIN provider_accounts pa ON pa.id = c.provider_account_id AND pa.purpose = 'CARD'
      WHERE c.intake_status IN ('ACCEPTED','LEGACY_ACCEPTED')
        AND c.inventory_status <> '${RETIRED_INVENTORY_STATUS}'`;
+}
+
+const PLATFORM_STALE_MS = 24 * 60 * 60_000;
+/**
+ * 「卡台上」这张卡现在是什么情况（D-405 第一批：待销清单要能看出哪些已经销了、哪些真没销）。
+ * 只用最近一次和卡台同步留下的事实，不猜：
+ *   THERE   还在（要去卡台删）          GONE    卡台列表里找不到了（多半已删）
+ *   VOID    卡台已作废 / 停用（不用去删）  UNKNOWN 卡台登录失效或太久没同步成功（判断不了）
+ * highvcc（快照导入）：source_present / source_operational_status 由快照同步写；登录失效看 token 告警。
+ * hnskj：卡台状态原样存 cards.status，失效值见 PROVIDER_FAILED_CARD_STATUSES；hnskj 卡不写 source_present。
+ */
+export function platformPresence(row, { now = new Date() } = {}) {
+  const manual = String(row.sync_tier || '') === 'MANUAL_IMPORT';
+  const latest = (...values) => values.map(iso).filter(Boolean).sort().at(-1) || null;
+  const syncedAt = manual ? latest(row.last_synced_at, row.provider_checked_at)
+    : iso(row.last_successful_sync_at || row.last_synced_at);
+  const syncedMs = syncedAt ? Date.parse(syncedAt) : NaN;
+  const stale = !Number.isFinite(syncedMs) || now.getTime() - syncedMs > PLATFORM_STALE_MS;
+  if (manual) {
+    if (Number(row.provider_login_expired) === 1) return { state: 'UNKNOWN', syncedAt, note: '卡台登录失效，同步不了' };
+    if (row.source_present != null && Number(row.source_present) === 0) return { state: 'GONE', syncedAt, note: null };
+    if (/CARD_NOT_ACTIVE/.test(String(row.source_operational_status || ''))) return { state: 'VOID', syncedAt, note: null };
+    if (stale) return { state: 'UNKNOWN', syncedAt, note: '超过 24 小时没同步' };
+    return { state: 'THERE', syncedAt, note: null };
+  }
+  if (String(row.inventory_status) === 'FAILED'
+    || PROVIDER_FAILED_CARD_STATUSES.has(String(row.status || '').toLowerCase())) {
+    return { state: 'VOID', syncedAt, note: null };
+  }
+  if (stale) return { state: 'UNKNOWN', syncedAt, note: '超过 24 小时没同步' };
+  return { state: 'THERE', syncedAt, note: null };
 }
 
 export function classifyRetirementRow(row, { now = new Date() } = {}) {
@@ -112,6 +152,7 @@ export function classifyRetirementRow(row, { now = new Date() } = {}) {
     last4: row.last4,
     inventoryStatus: row.inventory_status,
     sourcePresent: row.source_present == null ? null : Number(row.source_present) === 1,
+    platform: platformPresence(row, { now }),
     fundedAmount: row.funded_amount == null ? null : String(row.funded_amount),
     currentBalance: row.current_balance == null ? null : String(row.current_balance),
     currency: row.currency || null,

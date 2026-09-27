@@ -46,7 +46,6 @@
   font-size:11.5px;border-bottom:1px solid var(--wb-bd,#dde5e3);background:var(--wb-s2,#f5f9f8);white-space:nowrap}
 .cardtable td,.cardretire td{padding:9px 12px;border-bottom:1px solid var(--wb-s3,#eef4f2);vertical-align:middle;color:var(--wb-t,#16201e)}
 .cardtable tbody tr:last-child td,.cardretire tbody tr:last-child td{border-bottom:0}
-.cardtable tr.is-due td,.cardretire tr.is-due td{background:var(--wb-warn-soft,#fdf4e6)}
 .cardretire tr.is-notyet td{opacity:.62}
 .cardtable .cardmono,.cardretire .cardmono{font-family:var(--wb-fm,monospace)}
 .cardtable .cardsub,.cardretire .cardsub{display:block;font-size:11px;color:var(--wb-t3,#7b8a86)}
@@ -126,3 +125,26 @@
 .stock-open-form .cardgate{grid-column:1 / -1}
 /* token 深链在手机上也必须能直接操作；不覆盖其他高级表单。 */
 @media (max-width:620px){#highvcc-token-form{grid-template-columns:minmax(0,1fr)}}
+/* D-405 第一批：整行黄底换成「已到期」小标签；待销清单「卡台上」；两张表列宽照演示 v3 */
+.due-tag{display:inline-block;margin-right:6px;padding:1px 6px;border-radius:5px;font-size:11px;font-weight:600;color:var(--wb-warn);background:var(--wb-warn-soft);vertical-align:1px;white-space:nowrap}
+.due-tag.is-wait{color:var(--wb-t3);background:var(--wb-s3)}
+.src-state{display:inline-flex;align-items:center;gap:5px;font-size:12px;white-space:nowrap}
+.src-state i{width:7px;height:7px;border-radius:50%;display:inline-block}
+.src-state.is-there i{background:var(--wb-warn)}
+.src-state.is-void i{background:var(--wb-t3)}
+.src-state.is-gone i{background:var(--wb-ok)}
+.src-state.is-unknown i{border:1.5px solid var(--wb-t3)}
+.src-when{display:block;font-size:11px;color:var(--wb-t3)}
+.cardtable table.is-fixed,.cardretire table.is-fixed{table-layout:fixed}
+.cardtable col.cc-last4,.cardretire col.rc-last4{width:76px}
+.cardtable col.cc-rig,.cardretire col.rc-rig{width:86px}
+.cardtable col.cc-bal{width:150px}
+.cardtable col.cc-use{width:100px}
+.cardtable col.cc-order{width:130px}
+.cardtable col.cc-open{width:118px}
+.cardtable col.cc-sell{width:84px}
+.cardtable col.cc-act{width:108px}
+.cardretire col.rc-why{width:280px}
+.cardretire col.rc-bal{width:150px}
+.cardretire col.rc-src{width:170px}
+

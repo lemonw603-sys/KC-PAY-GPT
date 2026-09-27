@@ -1,4 +1,5 @@
 // 巡检（scripts/operator-watch.mjs）用的「卡住」判断 SQL（D-390，欠账 17）。
+import { needsPersonOrderSql } from '../../services/admin-read-service.js';
 // 放在这里而不是写死在脚本里：脚本、测试、customer-sql-probe 对生产实跑用的是同一份。
 
 /**
@@ -44,6 +45,25 @@ export const RESOLVE_FINISHED_STALLED_SQL = `UPDATE operator_alerts oa
    SET oa.status = 'RESOLVED', oa.acknowledged_at = COALESCE(oa.acknowledged_at, CURRENT_TIMESTAMP(3))
  WHERE oa.alert_type = 'BROWSER_ORDER_STALLED' AND oa.status = 'OPEN'
    AND o.status IN ('RECHARGE_SUCCESS', 'RECHARGE_FAILED', 'CLOSED', 'CARD_FAILED')`;
+
+/**
+ * 订单结束了、这单也不再需要人（与后台「需要我处理」同一谓词），它的「浏览器单失败 / 要人工」提醒就收掉
+ * （D-405，2026-09-27 Lemon 同意；此前生产 33 条自用期的这类提醒一直 OPEN）。
+ * 失败提醒是订单失败那一刻开的，而提醒一关、未发出的推送会被取消——所以必须等推送发完：
+ * 这条提醒当前事件版本没有 PENDING / RETRY / SENDING 的推送，并且至少挂了 10 分钟。
+ */
+export function resolveFinishedOrderAlertsSql() {
+  return `UPDATE operator_alerts oa
+   INNER JOIN orders o ON o.id = oa.order_id
+   SET oa.status = 'RESOLVED', oa.acknowledged_at = COALESCE(oa.acknowledged_at, CURRENT_TIMESTAMP(3))
+ WHERE oa.alert_type IN ('BROWSER_ORDER_FAILED', 'BROWSER_HUMAN_REQUIRED') AND oa.status = 'OPEN'
+   AND o.status IN ('RECHARGE_SUCCESS', 'RECHARGE_FAILED', 'CLOSED', 'CARD_FAILED')
+   AND NOT ${needsPersonOrderSql()}
+   AND oa.updated_at < CURRENT_TIMESTAMP(3) - INTERVAL 10 MINUTE
+   AND NOT EXISTS (SELECT 1 FROM alert_notifications fin_an
+     WHERE fin_an.alert_id = oa.id AND fin_an.incident_version = oa.incident_version
+       AND fin_an.status IN ('PENDING', 'RETRY', 'SENDING'))`;
+}
 
 export function preStuckAlert(row) {
   return {

@@ -392,18 +392,30 @@ function renderWbCards(overview) {
       + (spentNum == null ? ''
         : spentNum === 0
           ? '<span class="wb-spent is-zero">今天没花钱</span>'
-          : `<span class="wb-spent">今天花了 <b class="wb-mono">${spent}</b></span>`)
+          : `<span class="wb-spent" title="${escapeHtml(spendDetailText(p))}">今天花了 <b class="wb-mono">${spent}</b></span>`)
       + `${fault}</div>
       <div class="wb-prods">${(p.byProduct || []).map(prodChip).join('')}</div>
     </div>`;
   }).join('')
     + `<p class="wb-total">合计可分配 <b class="wb-mono">${totalStock}</b> 张`
-    + (waiting > 0
-      ? ` · <b class="wb-waiting">${waiting} 单正在等卡</b>`
-      : ' · 没有单在等卡')
+    // 「没有单在等卡」不显示（Lemon 2026-09-28）：有人等卡时才说。
+    + (waiting > 0 ? ` · <b class="wb-waiting">${waiting} 单正在等卡</b>` : '')
     + '</p>';
   updateHnskjWalletSummary();
   updateHighvccWalletSummary();
+}
+
+/** 「今天花了」的悬停明细（D-405）：写法不变，鼠标停上去看是哪几类钱。数来自后端 spentBreakdown。 */
+function spendDetailText(p) {
+  const b = p.spentBreakdown;
+  if (!b) return '';
+  const cur = p.spentCurrency || 'USD';
+  const parts = [];
+  if (b.orders?.count > 0) parts.push(`给客户充值 ${b.orders.count} 单 ${formatMoney(b.orders.amount)} ${cur}`);
+  if (b.issueFees?.count > 0) parts.push(`开卡手续费 ${formatMoney(b.issueFees.amount)} ${cur}（开卡 ${b.issueFees.count} 张）`);
+  if (b.chargebacks?.count > 0) parts.push(`拒付 ${formatMoney(b.chargebacks.amount)} ${cur}`);
+  if (Number(b.openedFunded) > 0) parts.push(`另有 ${formatMoney(b.openedFunded)} ${cur} 开卡时转进卡里，不算花掉`);
+  return parts.length ? `明细：${parts.join('；')}` : '';
 }
 
 /** 「钱包 X USD · 查询于 时间」：今天只写时分，跨天带日期。observation = { balance, at, currency }。 */
@@ -505,13 +517,13 @@ function renderWbQueue(overview, daily, alertData, reconCases) {
     });
   });
   // 其余类：摘要 + 跳专页处理（待销/手动用卡在卡片页，无主扣款/连续两次在诊断日对账）。
-  if (daily && (daily.discrepancyCount ?? 0) > 0) items.push({ t: 'danger', ic: '⚠', title: `对账差异 · 无主扣款 ${daily.discrepancyCount} 张卡`, ev: '账本无对应订单，进报告、不隐藏', jump: 'diagnostics' });
-  if (daily && (daily.persistentCount ?? 0) > 0) items.push({ t: 'danger', ic: '‼', title: `连续两次差异 ${daily.persistentCount} 张`, ev: '已升级，需人工核', jump: 'diagnostics' });
+  if (daily && (daily.discrepancyCount ?? 0) > 0) items.push({ t: 'danger', ic: '⚠', title: `对账差异 · 无主扣款 ${daily.discrepancyCount} 张卡`, ev: '账本无对应订单，进报告、不隐藏', land: 'diagnostics-report' });
+  if (daily && (daily.persistentCount ?? 0) > 0) items.push({ t: 'danger', ic: '‼', title: `连续两次差异 ${daily.persistentCount} 张`, ev: '已升级，需人工核', land: 'diagnostics-report' });
   // 「卡补余额待人工」这条待办随卡片页补余额区块一起退休（D-280 ⑦ / D-288）：
   // 补余额已弃（D-218），生产 card_funding_attempts 仅 6 行全 FAILED、最后一次 2026-09-14。
   // 后端计数仍在 operationalBacklog 里，将来要恢复入口时再接。
-  if ((b.cardIntakePending ?? 0) > 0) items.push({ t: 'info', ic: '⇩', title: `新卡待接管 ${b.cardIntakePending} 张`, ev: '同步后确认接管', jump: 'stock' });
-  if (daily && (daily.pendingRegistrationCount ?? 0) > 0) items.push({ t: 'info', ic: '✎', title: `待登记手动用卡 ${daily.pendingRegistrationCount} 张`, ev: '已登记 manual-used，等去卡台销', jump: 'stock' });
+  // D-405（Lemon 2026-09-28）：这里只放**急着要你动手**的事。「新卡待接管」「待登记手动用卡」界面上
+  // 没有能做的动作，挪去诊断页「卡台的零散情况」只供了解；「待销到期」这类删卡登记不急，只在卡片页。
   // 待复核续费：已扣款、充值成功，但续费没确认关掉 —— 不关掉下个周期会再扣一次客户的钱。
   // 后端 backlog.cancellationReview 一直在算（生产 2026-09-20 有 7 单），而前端**一个地方
   // 都没消费**；它此前唯一的露面处是待销清单里一条语义错位的理由（那里说的是「该销卡」，
@@ -522,15 +534,11 @@ function renderWbQueue(overview, daily, alertData, reconCases) {
   if (cancellationReview > 0) {
     items.push({ t: 'warn', ic: '↻', title: `待复核续费 ${cancellationReview} 单`,
       ev: '已扣款且充值成功，但续费没确认关掉——不关下个周期会再扣一次',
-      actions: '<button type="button" class="wb-btn out sm" data-order-filter="REVIEW_REQUIRED">去处理</button>' });
+      land: 'orders-review' });
   }
   // D-285：原型 C 的队列明确画了「待销到期」和「token 状态」两类，放回工作台
   // （此前被我判为卡片页范围、本轮不做，属误判；F-64 据此在本块闭合）。
   // 完整处理动作仍在卡片页，这里只做提醒 + 带落点的跳转。
-  if (daily && (daily.retirementDueCount ?? 0) > 0) {
-    items.push({ t: 'warn', ic: '⌫', title: `待销到期 ${daily.retirementDueCount} 张卡`,
-      ev: '已过存活期，去卡台删掉后回来点「已销卡」', jump: 'stock' });
-  }
   // token：只说能证明的。有 PROVIDER_TOKEN_EXPIRED 告警＝确已失效（权威信号）；
   // 没有告警不等于「有效」——token 两小时不活动就过期，configured=true 推不出有效，
   // 所以无告警时只报「上次更新时间」，不写「有效」（观察与结论分开）。
@@ -538,12 +546,16 @@ function renderWbQueue(overview, daily, alertData, reconCases) {
   if (tokenExpired) {
     items.push({ t: 'danger', ic: '⚿', title: '卡台 token 已失效，开卡会失败',
       ev: `${tokenExpired.message || '重新贴一次 token'} · ${formatTime(tokenExpired.createdAt)}`,
-      actions: '<button type="button" class="wb-btn out sm" data-highvcc-target="token">去处理</button>' });
+      land: 'highvcc-token' });
   }
   // 告警不逐条塞队列（48 个会爆炸）——聚合成一条可展开的折叠栏，逐条关。
-  const alerts = (alertData && alertData.alerts) || [];
+  // token 失效已作为队列项出现，提醒里不再重复一条（整体排查发现 D）。
+  const alerts = ((alertData && alertData.alerts) || []).filter((a) => a && a.type !== 'PROVIDER_TOKEN_EXPIRED');
   const active = items.length;
-  if (countChip) countChip.innerHTML = `<span class="wb-d"></span>${active} 件待办`;
+  if (countChip) {
+    countChip.className = `wb-chip ${active ? 'danger' : 'ok'}`;
+    countChip.innerHTML = active ? `<span class="wb-d"></span>${active} 件待办` : '<span class="wb-d"></span>没有待办';
+  }
   // F-63：待办来源里任一个接口失败时，空列表不能显示成「今天清爽」——那会把「没读到」
   // 冒充成「没有待办」，付款不明单可能就此被漏掉。有失败就明说失败、让人去刷新。
   // F-71：这里只查这三个，是够的，不是漏——能把「读取失败」误显示成「今天清爽」的，
@@ -553,15 +565,58 @@ function renderWbQueue(overview, daily, alertData, reconCases) {
   // 直接抛出、整页不更新，压根走不到这行。todayOrders/cardSources 不产生队列项。
   const sourceFailed = [reconCases, daily, alertData].some((s) => s && s.__error);
   const itemsHtml = active
-    ? items.map((it) => `<div class="wb-qi ${it.t}"><div class="wb-qic">${it.ic}</div><div class="wb-qt"><b>${escapeHtml(it.title)}</b><span class="wb-ev">${escapeHtml(it.ev)}</span></div><div class="wb-qa">${it.actions || (it.jump ? `<button type="button" class="wb-btn out sm" data-view-jump="${it.jump}">去处理</button>` : '')}</div></div>`).join('')
+    ? items.map((it) => `<div class="wb-qi ${it.t}"><div class="wb-qic">${it.ic}</div><div class="wb-qt"><b>${escapeHtml(it.title)}</b><span class="wb-ev">${escapeHtml(it.ev)}</span></div><div class="wb-qa">${it.actions || (it.land ? `<button type="button" class="wb-btn out sm" data-wb-land="${it.land}">去处理</button>` : '')}</div></div>`).join('')
     : sourceFailed
       ? '<p class="wb-qempty wb-qerror">部分待办没读出来（接口失败），点右上角刷新重试——这不是「没有待办」。</p>'
-      : '<p class="wb-qempty">没有要处理的，今天清爽 ✓</p>';
-  const alertsHtml = alerts.length
-    ? `<details class="wb-alerts"><summary><span class="wb-chip warn"><span class="wb-d"></span>${alerts.length} 个内部提醒</span>点开逐条关</summary><div class="wb-alerts-list">${alerts.map((a) => `<div class="wb-alert-row"><div class="wb-at"><b>${escapeHtml(a.title || '提醒')}</b><small>${escapeHtml(a.message || '')} · ${formatTime(a.createdAt)}</small></div><button type="button" class="wb-btn out sm" data-close-wb-alert="${escapeHtml(a.id)}">关闭</button></div>`).join('')}</div></details>`
-    : '';
+      : '<p class="wb-qempty is-calm">没有急着要你动手的事 ✓</p>';
+  const alertsHtml = wbAlertsHtml(alerts);
+  // 10 秒自动刷新会整块重画：展开状态由 state.wbAlertsOpen 保住，列表滚动位置也原样放回（D-405）。
+  const prevScroll = box.querySelector('.wb-alerts-list')?.scrollTop || 0;
   box.innerHTML = itemsHtml + alertsHtml;
+  const list = box.querySelector('.wb-alerts-list');
+  if (list && prevScroll) list.scrollTop = prevScroll;
 }
+
+// 提醒按类分组（D-405）：可整组关；关一条就地消失、列表不收起。
+const WB_ALERT_GROUPS = Object.freeze([
+  { key: 'supply', label: '供卡与钱包', match: (type) => /^(CARD_|PROVIDER_)/.test(type), note: '情况恢复后会自动关' },
+  { key: 'zzshu', label: '直充平台', match: (type) => /^ZZSHU_/.test(type), note: '' },
+  { key: 'orders', label: '订单', match: (type) => /^(BROWSER_|API_|ORDER_)/.test(type), note: '' },
+  { key: 'executor', label: '执行器', match: (type) => /^EXECUTOR_/.test(type), note: '拉起后会自动关' },
+  { key: 'other', label: '其他', match: () => true, note: '' }
+]);
+function wbAlertsHtml(alerts) {
+  if (!alerts.length) return '';
+  const groups = WB_ALERT_GROUPS.map((group) => ({ ...group, items: [] }));
+  for (const alert of alerts) groups.find((group) => group.match(String(alert.type || ''))).items.push(alert);
+  const groupHtml = groups.filter((group) => group.items.length).map((group) => `<div class="wb-agroup" data-wb-agroup="${group.key}" data-note="${escapeHtml(group.note)}">`
+    + `<div class="wb-aghead"><b>${escapeHtml(group.label)}</b><span data-wb-agroup-n>${group.items.length} 条${group.note ? ` · ${escapeHtml(group.note)}` : ''}</span>`
+    + `<button type="button" class="wb-btn out sm" data-close-wb-group="${group.key}">这一组全部关闭</button></div>`
+    + group.items.map((a) => `<div class="wb-alert-row" data-wb-alert-row="${escapeHtml(a.id)}"><div class="wb-at"><b>${escapeHtml(a.title || '提醒')}</b><small>${escapeHtml(a.message || '')} · ${formatTime(a.createdAt)}</small></div><button type="button" class="wb-btn out sm" data-close-wb-alert="${escapeHtml(a.id)}">关闭</button></div>`).join('')
+    + '</div>').join('');
+  return `<details class="wb-alerts" data-wb-alerts${state.wbAlertsOpen ? ' open' : ''}><summary><span class="wb-chip warn"><span class="wb-d"></span><span data-wb-alerts-n>${alerts.length} 个提醒</span></span><span>不急，看完可关</span></summary><div class="wb-alerts-list">${groupHtml}</div></details>`;
+}
+/** 关掉若干条提醒，成功的就地移除（已关过的 404 也算），不重画整块。 */
+async function closeWbAlertsInPlace(ids) {
+  const results = await Promise.allSettled(ids.map((id) => api(`/api/v1/admin/alerts/${encodeURIComponent(id)}/close`, { method: 'POST' })));
+  let failed = 0;
+  results.forEach((result, index) => {
+    if (result.status === 'rejected' && result.reason?.status !== 404) { failed += 1; return; }
+    document.querySelector(`[data-wb-alert-row="${CSS.escape(ids[index])}"]`)?.remove();
+  });
+  document.querySelectorAll('[data-wb-agroup]').forEach((group) => {
+    const n = group.querySelectorAll('[data-wb-alert-row]').length;
+    if (!n) { group.remove(); return; }
+    const note = group.dataset.note;
+    group.querySelector('[data-wb-agroup-n]').textContent = `${n} 条${note ? ` · ${note}` : ''}`;
+  });
+  const left = document.querySelectorAll('[data-wb-alert-row]').length;
+  const details = document.querySelector('[data-wb-alerts]');
+  if (details && !left) details.remove();
+  else if (details) details.querySelector('[data-wb-alerts-n]').textContent = `${left} 个提醒`;
+  if (failed) showNotice(`有 ${failed} 条提醒没关掉，请重试。`);
+}
+
 
 function wbOrderRow(order) {
   const stage = order.stage || {};
@@ -1542,9 +1597,10 @@ function cardRowHtml(card, retireItem, retireFailed = false) {
   //   只有 override = RETIRED     → 「我手动用了」的结果，撤销就是删掉那行 override
   const undoAction = card.inventoryStatus === 'RETIRED' ? 'retire'
     : card.allocationPolicy === 'RETIRED' ? 'manual-use' : null;
+  // 已到期用小标签，不再整行涂黄（D-405，Lemon 2026-09-28）。
   const sellable = retireFailed ? '读取失败'
     : retireItem
-      ? (retireItem.due ? '已到期' : `还差 ${escapeHtml(remainingText(retireItem.dueAt))}`)
+      ? (retireItem.due ? '<span class="due-tag">已到期</span>' : `还差 ${escapeHtml(remainingText(retireItem.dueAt))}`)
       : (card.assigned ? '占用中' : '—');
   return `<tr${due ? ' class="is-due"' : ''}>
     <td class="cardmono">${card.externalOnly
@@ -1560,7 +1616,7 @@ function cardRowHtml(card, retireItem, retireFailed = false) {
     <td class="cardmono">${card.publicNo ? escapeHtml(card.publicNo) : '<span class="cardmuted">—</span>'}</td>
     <td class="cardmono">${card.createdAt ? escapeHtml(formatTime(card.createdAt)) : '—'}
       <span class="cardsub">${card.issueFee == null ? '成本未记' : `$${formatMoney(card.issueFee)}`}</span></td>
-    <td>${escapeHtml(sellable)}</td>
+    <td>${sellable}</td>
     <td>${canRegisterManual
       ? `<button class="cardbtn" type="button" data-manual-use="1"
           data-account="${escapeHtml(card.providerAccountId || '')}"
@@ -1588,7 +1644,10 @@ function remainingText(dueAt) {
   return h > 0 ? `${h} 小时 ${m} 分` : `${m} 分`;
 }
 
-const CARD_TABLE_HEAD = `<thead><tr><th>尾号</th><th>卡台</th><th>余额</th><th>用量</th><th>状态</th>
+// 列宽照第一批演示 v3（Lemon 2026-09-28：「用量」贴近「余额」、「状态」往右一点，其余不动）。
+const CARD_TABLE_HEAD = `<colgroup><col class="cc-last4"><col class="cc-rig"><col class="cc-bal"><col class="cc-use"><col>
+  <col class="cc-order"><col class="cc-open"><col class="cc-sell"><col class="cc-act"></colgroup>
+  <thead><tr><th>尾号</th><th>卡台</th><th>余额</th><th>用量</th><th>状态</th>
   <th>绑定订单</th><th>开卡 / 成本</th><th>可销</th><th></th></tr></thead>`;
 
 /** ③ 默认只显示在役；退役与卡台作废折叠进「历史」。 */
@@ -1601,7 +1660,7 @@ function renderStockCards(cards, retirement) {
   const active = list.filter((card) => !isHistory(card));
   const history = list.filter(isHistory);
   elements.stockCards.innerHTML = active.length
-    ? `<table>${CARD_TABLE_HEAD}<tbody>${active.map(
+    ? `<table class="is-fixed">${CARD_TABLE_HEAD}<tbody>${active.map(
         (card) => cardRowHtml(card, index.get(`${card.providerAccountId}:${card.providerCardId}`), retireFailed)).join('')}</tbody></table>`
     : '<p class="empty-state">没有在役卡片</p>';
   if (!elements.stockCardsHistory) return;
@@ -1609,7 +1668,7 @@ function renderStockCards(cards, retirement) {
   elements.stockCardsHistory.hidden = false;
   elements.stockCardsHistory.innerHTML =
     `<button class="cardfoldtoggle" type="button" data-history-toggle>▸ 历史（退役 / 卡台作废）${history.length} 张</button>
-     <div class="cardtable" data-history-body hidden><table>${CARD_TABLE_HEAD}<tbody>${
+     <div class="cardtable" data-history-body hidden><table class="is-fixed">${CARD_TABLE_HEAD}<tbody>${
        history.map((card) => cardRowHtml(card, index.get(`${card.providerAccountId}:${card.providerCardId}`), retireFailed)).join('')
      }</tbody></table></div>`;
 }
@@ -1628,29 +1687,42 @@ function renderCardRetirement(retirement, labelByKind = new Map()) {
     elements.cardRetirementList.innerHTML = '<p class="empty-state">当前没有待销的卡</p>';
     return;
   }
-  const row = (item, ready) => `<tr class="${ready ? 'is-due' : 'is-notyet'}">
+  // 「卡台上」来自最近一次和卡台的核对（后端 card-retirement-service.platformPresence，页面不另判）。
+  const PLATFORM = {
+    THERE: ['is-there', '还在'], VOID: ['is-void', '卡台已作废'],
+    GONE: ['is-gone', '已不见（多半已删）'], UNKNOWN: ['is-unknown', '查不了']
+  };
+  const platformCell = (platform) => {
+    const [cls, text] = PLATFORM[platform?.state] || PLATFORM.UNKNOWN;
+    const when = platform?.syncedAt ? `${formatTime(platform.syncedAt)} 核对` : '';
+    const sub = platform?.note || when;
+    return `<span class="src-state ${cls}"><i aria-hidden="true"></i>${escapeHtml(text)}</span>${sub ? `<span class="src-when">${escapeHtml(sub)}</span>` : ''}`;
+  };
+  const row = (item, ready) => {
+    const gone = ['VOID', 'GONE'].includes(item.platform?.state);
+    const cause = stopCauseOf(item.retiredOverrideReason);
+    const labels = (item.reasonLabels || []).map((label) =>
+      // 「运营已标永久停用」太笼统——认得出原因码就换成具体那句
+      cause && label === '运营已标永久停用' ? cause.label : label);
+    const tag = ready ? '<span class="due-tag">已到期</span>' : `<span class="due-tag is-wait">还差 ${escapeHtml(remainingText(item.dueAt))}</span>`;
+    return `<tr class="${ready ? 'is-due' : 'is-notyet'}">
     <td class="cardmono">${escapeHtml(item.last4 || item.providerCardId || '—')}</td>
     <td>${escapeHtml(labelByKind.get(item.providerCode) || item.providerCode || '—')}</td>
-    <td>${(() => {
-      const cause = stopCauseOf(item.retiredOverrideReason);
-      const labels = (item.reasonLabels || []).map((label) =>
-        // 「运营已标永久停用」太笼统——认得出原因码就换成具体那句
-        cause && label === '运营已标永久停用' ? cause.label : label);
-      return `${escapeHtml(labels.join('、') || '—')}`
-        + (cause ? `<span class="cardsub">${escapeHtml(cause.next)}</span>` : '');
-    })()}</td>
+    <td>${tag}${escapeHtml(labels.join('、') || '—')}${cause ? `<span class="cardsub">${escapeHtml(cause.next)}</span>` : ''}</td>
     <td class="cardmono">${item.currentBalance == null ? '—' : `$${formatMoney(item.currentBalance)}`}</td>
-    <td>${ready ? '已到期' : `还差 ${escapeHtml(remainingText(item.dueAt))}`}</td>
+    <td>${platformCell(item.platform)}</td>
     <td>${ready
       ? `<button class="cardbtn is-primary" type="button" data-retire-confirm="${escapeHtml(item.cardId)}"
-           data-retire-last4="${escapeHtml(item.last4 || '')}">我已在卡台删掉</button>`
+           data-retire-last4="${escapeHtml(item.last4 || '')}">${gone ? '登记已销' : '我已在卡台删掉'}</button>`
       : '<span class="cardmuted">未到可销时间</span>'}</td>
   </tr>`;
-  elements.cardRetirementList.innerHTML = `<table>
-    <thead><tr><th>尾号</th><th>卡台</th><th>为什么待销</th><th>余额</th><th>可销时间</th><th></th></tr></thead>
+  };
+  elements.cardRetirementList.innerHTML = `<table class="is-fixed">
+    <colgroup><col class="rc-last4"><col class="rc-rig"><col class="rc-why"><col class="rc-bal"><col class="rc-src"><col></colgroup>
+    <thead><tr><th>尾号</th><th>卡台</th><th>为什么待销</th><th>余额</th><th>卡台上</th><th></th></tr></thead>
     <tbody>${due.map((item) => row(item, true)).join('')}${notYet.map((item) => row(item, false)).join('')}</tbody>
     </table>
-    <p class="cardnote">满 ${Number(retirement.minAgeHours ?? 6)} 小时才可销。「我已在卡台删掉」只登记，不会替你去卡台删卡。</p>`;
+    <p class="cardnote">满 ${Number(retirement.minAgeHours ?? 6)} 小时才可销。「卡台上」来自最近一次和卡台的核对：<b>还在</b>＝要你去卡台删；<b>卡台已作废</b>＝不用去删，直接登记；<b>已不见</b>＝卡台列表里找不到了，多半已删；<b>查不了</b>＝卡台登录失效或太久没核对上。登记只记一笔，不会替你去卡台删卡。</p>`;
 }
 
 /* ---- 卡片页交互（D-280 ①⑤⑥）：容器上委托，重渲染不用重绑 ---- */
@@ -2927,7 +2999,43 @@ async function refreshDiagnostics({ daily = false } = {}) {
 }
 document.querySelector('#diagnostics-refresh').addEventListener('click', () => refreshDiagnostics({ daily: true }));
 
+// ---- 从「需要我处理」跳过去：落到要点的地方并闪一下，页面下方悬浮「回工作台」（D-405，Lemon 选 B）----
+function showBackToWorkbench() {
+  hideBackToWorkbench();
+  const bar = document.createElement('div');
+  bar.className = 'wb-backfloat';
+  bar.innerHTML = '<span>从「需要我处理」过来</span><button type="button" class="wb-backpill" data-back-workbench><span aria-hidden="true">←</span>回工作台</button>';
+  document.body.appendChild(bar);
+}
+function hideBackToWorkbench() { document.querySelector('.wb-backfloat')?.remove(); }
+function flashLanding(element) {
+  if (!element) return;
+  element.classList.remove('wb-landing');
+  void element.offsetWidth;
+  element.classList.add('wb-landing');
+  setTimeout(() => element.classList.remove('wb-landing'), 3200);
+}
+async function landFromQueue(kind) {
+  if (kind === 'highvcc-token') {
+    if (await openHighvccTarget('token')) { flashLanding(elements.highvccTokenInput); showBackToWorkbench(); }
+    return;
+  }
+  if (kind === 'orders-review') {
+    await switchView('orders', { status: 'REVIEW_REQUIRED', resetOrderFilters: true });
+    showBackToWorkbench();
+    return;
+  }
+  if (kind === 'diagnostics-report') {
+    await switchView('diagnostics');
+    const target = document.querySelector('#diagnostics-card-report');
+    target?.scrollIntoView({ block: 'center' });
+    flashLanding(target);
+    showBackToWorkbench();
+  }
+}
+
 async function switchView(view, { status = '', resetOrderFilters = false, query = null } = {}) {
+  hideBackToWorkbench();
   setActiveNav(view);
   state.view = view;
   state.status = status;
@@ -3524,6 +3632,11 @@ elements.navItems.forEach((item) => item.addEventListener('click', () => switchV
 
 document.querySelectorAll('[data-open-orders]').forEach((button) => button.addEventListener('click', () => switchView('orders')));
 
+// 提醒折叠栏的展开状态跟人走，不跟着 10 秒刷新收起（D-405）。toggle 不冒泡，用捕获。
+document.addEventListener('toggle', (event) => {
+  if (event.target?.matches?.('[data-wb-alerts]')) state.wbAlertsOpen = event.target.open;
+}, true);
+
 // 工作台数字墙 / 队列跳转（原绑在已删的 #metrics-grid，改 document 级委托）。
 document.addEventListener('click', (event) => {
   const filterButton = event.target.closest('[data-order-filter]');
@@ -3551,7 +3664,21 @@ document.addEventListener('click', (event) => {
   const opSwitch = event.target.closest('[data-op]');
   if (opSwitch) { toggleOp(opSwitch.dataset.op, opSwitch.dataset.on !== 'true'); return; }
   const closeWbAlert = event.target.closest('[data-close-wb-alert]');
-  if (closeWbAlert) { closeWbAlert.disabled = true; api(`/api/v1/admin/alerts/${encodeURIComponent(closeWbAlert.dataset.closeWbAlert)}/close`, { method: 'POST' }).then(() => loadOverview()).catch(() => { showNotice('提醒关闭失败，请重试。'); closeWbAlert.disabled = false; }); return; }
+  if (closeWbAlert) { closeWbAlert.disabled = true; closeWbAlertsInPlace([closeWbAlert.dataset.closeWbAlert]).finally(() => { closeWbAlert.disabled = false; }); return; }
+  const closeWbGroup = event.target.closest('[data-close-wb-group]');
+  if (closeWbGroup) {
+    const ids = [...closeWbGroup.closest('[data-wb-agroup]').querySelectorAll('[data-wb-alert-row]')].map((row) => row.dataset.wbAlertRow);
+    closeWbGroup.disabled = true;
+    closeWbAlertsInPlace(ids).finally(() => { closeWbGroup.disabled = false; });
+    return;
+  }
+  const landButton = event.target.closest('[data-wb-land]');
+  if (landButton) { landFromQueue(landButton.dataset.wbLand).catch(() => showNotice('跳转失败，请重试。')); return; }
+  if (event.target.closest('[data-back-workbench]')) {
+    switchView('overview').then(() => document.querySelector('#wb-queue')?.closest('.wb-card')?.scrollIntoView({ block: 'start' }))
+      .catch(() => showNotice('数据读取失败，请稍后重试。'));
+    return;
+  }
   if (resolveCase) { resolveReconciliationCase(resolveCase.dataset.resolveWbCase, { after: loadOverview }).catch(() => showNotice('案例解决失败，请重试。')); return; }
   if (openCaseOrder) { openOrder(openCaseOrder.dataset.openCaseOrderWb); return; }
   if (filterButton) switchView('orders', {

@@ -18,7 +18,7 @@ const { upsertBrowserAlertInTransaction } = await import(join(HERE, '../src/db/r
 const { EXECUTOR_HEARTBEAT_MAX_AGE_MS, EXECUTOR_HEARTBEAT_SETTING } = await import(join(HERE, '../src/db/repositories/order-intake-repository.js'));
 // 资格口径只有一份权威实现，这里复用它，不另拼 SQL——自拼过一次就报错过一次。
 const { eligibleInventoryCardSql } = await import(join(HERE, '../src/services/card-inventory-eligibility.js'));
-const { PRE_PAYMENT_STUCK_SQL, RESOLVE_FINISHED_STALLED_SQL, preStuckAlert } = await import(join(HERE, '../src/db/repositories/stalled-order-queries.js'));
+const { PRE_PAYMENT_STUCK_SQL, RESOLVE_FINISHED_STALLED_SQL, resolveFinishedOrderAlertsSql, preStuckAlert } = await import(join(HERE, '../src/db/repositories/stalled-order-queries.js'));
 
 const args = process.argv.slice(2);
 const idx = args.indexOf('--minutes');
@@ -76,6 +76,8 @@ try {
     }
     // 订单结束了，它的「客户卡住了」就收掉（D-390）；以前从不自动解除。
     await connection.query(RESOLVE_FINISHED_STALLED_SQL);
+    // 订单结束且不再需要人、推送已发完的「浏览器单失败 / 要人工」也收掉（D-405）。
+    await connection.query(resolveFinishedOrderAlertsSql());
     for (const row of stuckRuns) {
       await upsertBrowserAlertInTransaction(connection, {
         type: 'BROWSER_ORDER_STALLED', orderId: row.id,

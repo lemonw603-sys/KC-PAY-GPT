@@ -31,6 +31,7 @@ export function createApp({
   replaceCustomerSession = null,
   adminAuth = null,
   getAdminOverview = null,
+  getAdminCardIntakeStuck = null,
   listAdminOrders = null,
   getFailureStats = null,
   abandonPrePaymentOrder = null,
@@ -248,6 +249,12 @@ export function createApp({
     return res.status(204).end();
   });
 
+  if (typeof getAdminCardIntakeStuck === 'function') {
+    // D-405：诊断页「卡台的零散情况」——卡台发现、但接不进来的卡（只读，只供了解）。
+    app.get('/api/v1/admin/card-intake/stuck', noStore, requireAdminApi, async (_req, res) => {
+      res.json(await getAdminCardIntakeStuck());
+    });
+  }
   if (typeof getAdminOverview === 'function') {
     app.get('/api/v1/admin/overview', noStore, requireAdminApi, async (_req, res) => {
       res.json(await getAdminOverview());

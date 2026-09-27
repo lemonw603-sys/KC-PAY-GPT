@@ -104,3 +104,36 @@ test('operational summary includes provider-only cards shown in the same list', 
     { category: 'RETIRED', externalOnly: true }
   ]), { ready: 1, inUse: 1, blocked: 1, retired: 2 });
 });
+
+// D-405：卡片页「暂不可用」写具体原因——用分卡资格同一份条件逐条算，只写最关键的一条。
+test('D-405 blocked reason: the most decisive failing check, in plain words, from the shared eligibility checks', async () => {
+  const { blockedReasonText, classifyStockCardOperationalState } = await import('../src/services/card-stock-service.js');
+  const { eligibilityChecks } = await import('../src/services/card-inventory-eligibility.js');
+  const pass = Object.fromEntries(eligibilityChecks('c', '?').map((k) => [`chk_${k.code.toLowerCase()}`, 1]));
+  const row = (patch) => ({ ...pass, effective_balance: '1.000000', min_balance: '16.000000', used_capacity: 3, ...patch });
+  assert.equal(blockedReasonText(row({})), null, '全过就没有原因');
+  assert.equal(blockedReasonText(row({ chk_balance_low: 0 })), '余额 $1.00，不够 $16');
+  assert.equal(blockedReasonText(row({ chk_balance_low: 0, chk_used_up: 0 }), { maxCapacity: 3 }), '3 次已用满', '次数用满比余额更决定性');
+  assert.equal(blockedReasonText(row({ chk_used_up: 0, chk_pro_used: 0 }), { maxCapacity: 3 }), '跑过 Pro，不再分配');
+  assert.equal(blockedReasonText(row({ chk_sync_stale: 0 })), '流水 15 分钟内没同步（有单时会自动同步）');
+  assert.equal(blockedReasonText(row({ chk_balance_low: null })), '余额 $1.00，不够 $16', 'NULL（余额读不到）也算没过');
+  const card = { effectiveInventoryStatus: 'AVAILABLE', isAllocatable: false, blockedReason: '余额 $1.08，不够 $16' };
+  assert.deepEqual(classifyStockCardOperationalState(card), { category: 'BLOCKED', reason: '余额 $1.08，不够 $16' });
+  assert.equal(classifyStockCardOperationalState({ ...card, blockedReason: null }).reason, '当前不满足 Plus 安全分配条件', '算不出时才用兜底');
+});
+
+test('D-405 eligibility is exactly the AND of the named checks (one rule); freshness sentence still findable for the stock basis', async () => {
+  const m = await import('../src/services/card-inventory-eligibility.js');
+  for (const productCode of ['plus', 'pro_5x', 'pro_20x']) {
+    const checks = m.eligibilityChecks('c', '?', { productCode });
+    assert.equal(m.eligibleInventoryCardSql('c', '?', { productCode }), checks.map((k) => k.sql).join('\n    AND '));
+    assert.equal(new Set(checks.map((k) => k.code)).size, checks.length, 'codes unique');
+    assert.deepEqual(checks.map((k) => k.code), ['NOT_IN_INVENTORY', 'MISSING_AT_PLATFORM', 'NOT_ACCEPTED', 'PLATFORM_STATUS',
+      'NO_CREDENTIALS', 'SYNC_STALE', 'BALANCE_LOW', 'USED_UP', 'PRO_USED', 'IN_USE', 'REFUND_CASE', 'OVERRIDE',
+      ...(productCode === 'plus' ? ['PLUS_LARGE_CARD'] : [])], 'the full rule set; dropping one would widen allocation');
+    assert.equal(checks.some((k) => k.code === 'PLUS_LARGE_CARD'), productCode === 'plus');
+    assert.doesNotThrow(() => m.stockCountingCardSql('c', '?', { productCode }));
+    assert.doesNotMatch(m.stockCountingCardSql('c', '?', { productCode }), /INTERVAL 15 MINUTE/);
+  }
+});
+
