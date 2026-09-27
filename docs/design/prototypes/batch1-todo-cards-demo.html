@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'unsafe-inline'; style-src 'self' 'unsafe-inline'; font-src 'self'; connect-src 'none'; form-action 'none'; object-src 'none'; base-uri 'none'">
+<title>第一批演示 · 今天要处理 / 卡片</title>
+<link rel="icon" href="/admin/assets/favicon.svg" type="image/svg+xml">
+<!-- 直接用线上后台的样式文件（proto-server 反代到生产 ops），字体也按线上的方式加载（目前线上 404，第二批修） -->
+<link rel="stylesheet" href="/admin/assets/admin.css?v=30">
+<link rel="stylesheet" href="/admin/assets/workbench.css?v=23">
+<link rel="stylesheet" href="/admin/assets/cards.css?v=6">
+<style>
+/* ---- 演示说明条（不是产品的一部分） ---- */
+.demo-note{margin:0 0 14px;padding:10px 14px;border:1px dashed var(--wb-bd);border-radius:11px;background:var(--wb-s);font-size:12px;color:var(--wb-t2);line-height:1.6}
+.demo-note b{color:var(--wb-t)}
+.demo-new{display:inline-block;margin-left:6px;padding:1px 6px;border-radius:5px;font-size:10.5px;font-weight:700;color:var(--wb-a-ink,#1f6f5c);background:var(--wb-a-soft,#e3f2ee);vertical-align:1px}
+
+/* ---- 第一批新增 ---- */
+/* 黄色整行底色改成行首小标签（第二批的做法，这里先用上，方便看清定位） */
+.cardtable tr.is-due td,.cardretire tr.is-due td{background:transparent}
+.due-tag{display:inline-block;margin-right:6px;padding:1px 6px;border-radius:5px;font-size:11px;font-weight:600;color:var(--wb-warn,#9c6a1f);background:var(--wb-warn-soft,#fdf4e6);vertical-align:1px}
+/* 从工作台跳过来：目标行左侧一道色条 + 淡底闪一下，目标按钮描边，几秒后淡掉 */
+@keyframes wbLanding{0%{background:hsla(168,45%,45%,.16)}100%{background:transparent}}
+tr.is-landing td{animation:wbLanding 3s ease-out 1}
+tr.is-landing td:first-child{box-shadow:inset 3px 0 0 var(--wb-a,#2a8d77)}
+.cardbtn.is-landing{outline:2px solid var(--wb-a,#2a8d77);outline-offset:2px}
+.landing-banner{display:flex;align-items:center;gap:10px;margin:0 0 10px;padding:9px 12px;border-radius:10px;background:var(--wb-a-soft,#e3f2ee);color:var(--wb-t);font-size:12.5px}
+.landing-banner button{margin-left:auto}
+/* 待销清单「卡台上」 */
+.src-state{display:inline-flex;align-items:center;gap:5px;font-size:12px;white-space:nowrap}
+.src-state i{width:7px;height:7px;border-radius:50%;display:inline-block}
+.src-state.is-there i{background:var(--wb-warn,#b7791f)}
+.src-state.is-void i{background:var(--wb-t3)}
+.src-state.is-gone i{background:var(--wb-ok,#2a8d5c)}
+.src-state.is-unknown i{background:transparent;border:1.5px solid var(--wb-t3)}
+.src-when{display:block;font-size:11px;color:var(--wb-t3)}
+tr.is-done td{opacity:.5}
+/* 提醒：分组 + 一组全关 + 保持展开 */
+.wb-agroup{border-top:1px solid var(--wb-bd)}
+.wb-agroup:first-child{border-top:0}
+.wb-aghead{display:flex;align-items:center;gap:8px;padding:9px 14px;background:var(--wb-s2);font-size:12px;color:var(--wb-t2)}
+.wb-aghead b{color:var(--wb-t);font-size:12.5px}
+.wb-aghead .wb-btn{margin-left:auto}
+.wb-alert-row.is-gone{opacity:0;transition:opacity .25s}
+/* 今天花了：说清是什么 */
+.wb-spent .why{font-style:normal;color:var(--wb-t3);margin-left:4px}
+.wb-spent[title]{cursor:help;border-bottom:1px dotted var(--wb-t3)}
+.wb-points{margin-top:7px;display:flex;align-items:center;gap:9px;padding:9px 13px;border:1px solid var(--wb-bd);border-radius:11px;background:var(--wb-s2);font-size:12px;color:var(--wb-t2)}
+.wb-points b{color:var(--wb-t);font-size:13px}
+.wb-qempty.is-calm{color:var(--wb-ok,#2a8d5c)}
+/* 诊断：挪过来的两项 */
+.moved{display:grid;gap:8px}
+.moved .row{display:flex;align-items:baseline;gap:10px;padding:10px 12px;border:1px solid var(--wb-bd);border-radius:10px;background:var(--wb-s)}
+.moved .row b{font-size:12.5px;color:var(--wb-t)}
+.moved .row span{font-size:11.5px;color:var(--wb-t3)}
+</style>
+</head>
+<body>
+<div class="admin-shell">
+  <aside class="sidebar">
+    <a class="admin-brand" href="#" aria-label="首页"><span class="brand-label">OPERATIONS</span><strong>Plus 运营后台 <span aria-hidden="true">✦</span></strong><small>内部管理中心</small></a>
+    <nav aria-label="后台导航">
+      <button class="nav-item is-active" type="button" data-go="overview"><span class="ic" aria-hidden="true">◱</span>工作台</button>
+      <button class="nav-item" type="button" data-go="stock"><span class="ic" aria-hidden="true">▣</span>卡片</button>
+      <button class="nav-item" type="button" data-go="diagnostics"><span class="ic" aria-hidden="true">◎</span>诊断</button>
+    </nav>
+  </aside>
+
+  <main class="main-area">
+    <header class="topbar"><div class="topbar-title"><h1 id="view-title">今天的运行情况</h1></div><span class="sync-time">演示页 · 数据照 09-27 21:45 的生产现状</span></header>
+
+    <!-- ================= 工作台 ================= -->
+    <section id="v-overview" class="view workbench">
+      <p class="demo-note"><b>第一批演示</b>：只放这次要改的几块（营业条、数字墙、日对账、今日订单不变，没画）。可以点：「去处理」会跳到卡片页并定位；提醒可以一条条关或整组关，列表不会收起。第二批（点数位置、下拉、黄色底、字体）另做演示。</p>
+
+      <div class="wb-mid">
+        <section class="wb-card"><div class="wb-ch"><div><p class="wb-kick">卡与钱</p><h2>卡还够不够</h2></div><span class="wb-ro">只读</span></div>
+          <div class="wb-cb">
+            <div class="wb-provrow">
+              <div class="wb-provhead"><b>HNSKJ</b><span class="wb-chip mute"><span class="wb-d"></span><span>钱包 108.79 USD · 查询于 21:45</span></span><button type="button" class="wb-btn out sm">刷新余额</button><span class="wb-spent is-zero">今天没花钱</span></div>
+              <div class="wb-prods"><span class="wb-prod"><b>Plus</b><span class="wb-prod-n">剩 <i>0</i> 张 · 能充 <i>0</i> 单</span><small title="自动补"><span class="wb-how">自动补</span><span class="wb-how-s">自动</span></small></span></div>
+            </div>
+            <div class="wb-provrow">
+              <div class="wb-provhead"><b>highvcc</b><span class="wb-chip mute"><span class="wb-d"></span><span>钱包 20.26 USD · 查询于 21:45</span></span><button type="button" class="wb-btn out sm">刷新余额</button><button type="button" class="wb-btn out sm">更新登录</button>
+                <span class="wb-spent" title="今天 17:33 自动开卡 1 张（尾号 5270）：$16 转入卡内，另扣手续费 $0.50。「今天花了」只算手续费、拒付和成功订单的消费，不算转进卡里的钱。">今天花了 <b class="wb-mono">0.50 USD</b><i class="why">开卡手续费 1 张</i><span class="demo-new">改</span></span></div>
+              <div class="wb-prods"><span class="wb-prod is-ok"><b>Plus</b><span class="wb-prod-n">剩 <i>1</i> 张 · 能充 <i>1</i> 单</span><small title="自动补"><span class="wb-how">自动补</span><span class="wb-how-s">自动</span></small></span></div>
+            </div>
+            <div class="wb-points"><b>直充平台</b><span>剩 15 点 · 查询于 21:45</span><span class="demo-new">第二批：点数从路线按钮挪到这里</span></div>
+            <p class="wb-total">合计可分配 <b class="wb-mono">1</b> 张 · 没有单在等卡</p>
+          </div>
+        </section>
+        <section class="wb-card"><div class="wb-ch"><div><p class="wb-kick">说明</p><h2>这一批改了什么</h2></div></div>
+          <div class="wb-cb" style="font-size:12.5px;color:var(--wb-t2);line-height:1.75">
+            ① 「今天要处理」只放<b>你现在能动手、点了就能办完</b>的事；「新卡待接管 13 张」「待登记手动用卡」挪到诊断页（点左边「诊断」看）。<br>
+            ② 「去处理」直接落到那个按钮上，并闪一下。<br>
+            ③ 提醒按类分组，可整组关；关一条不再收起，每 10 秒的自动刷新也不会收起。<br>
+            ④ 「今天花了」写清是什么（鼠标停在上面看明细）。<br>
+            ⑤ 卡片页：卡状态写具体原因；待销清单多一列「卡台上」。
+          </div>
+        </section>
+      </div>
+
+      <section class="wb-card">
+        <div class="wb-ch"><div><p class="wb-kick">今天要处理的</p><h2>需要我处理</h2></div><span class="wb-chip danger" id="q-count"><span class="wb-d"></span>2 件待办</span></div>
+        <div class="wb-cb">
+          <div class="wb-q" id="q-list"></div>
+          <details class="wb-alerts" id="alerts" style="margin-top:12px">
+            <summary><span class="wb-chip warn"><span class="wb-d"></span><span id="alerts-n">3 个提醒</span></span><span>不急，看完可关</span></summary>
+            <div class="wb-alerts-list" id="alerts-list"></div>
+          </details>
+        </div>
+      </section>
+    </section>
+
+    <!-- ================= 卡片 ================= -->
+    <section id="v-stock" class="view" hidden>
+      <p class="demo-note"><b>卡片页</b>：卡片列表的「状态」写具体原因（原来 4 张都写「当前不满足 Plus 安全分配条件」）；待销清单多一列「卡台上」。整行黄底这里先换成了行首「已到期」小标签（第二批的做法，一起看看合不合适）。</p>
+      <section class="card stock-card">
+        <div class="card-heading"><div><p class="section-kicker">运营明细</p><h2>卡片列表</h2></div><span class="write-badge">完整卡号</span></div>
+        <div class="cardtable"><table>
+          <thead><tr><th>尾号</th><th>卡台</th><th>余额</th><th>用量</th><th>状态</th><th>绑定订单</th><th>可销</th></tr></thead>
+          <tbody>
+            <tr><td class="cardmono"><span class="cardlink">5270</span></td><td>highvcc</td><td class="cardmono">$16.00<span class="cardsub">资料更新 09-27 18:20</span></td><td class="cardmono">0/3</td><td><span class="cardchip is-ok">可分配</span><span class="cardsub">可直接分配 Plus</span></td><td class="cardmono"><span class="cardmuted">—</span></td><td>—</td></tr>
+            <tr><td class="cardmono"><span class="cardlink">4022</span></td><td>highvcc</td><td class="cardmono">$1.00<span class="cardsub">资料更新 09-27 18:20</span></td><td class="cardmono">0/3</td><td><span class="cardchip is-bad">暂不可用</span><span class="cardsub">余额 $1.00，不够 $16<span class="demo-new">改</span></span></td><td class="cardmono"><span class="cardmuted">—</span></td><td>—</td></tr>
+            <tr><td class="cardmono"><span class="cardlink">7402</span></td><td>highvcc</td><td class="cardmono">$1.08<span class="cardsub">资料更新 09-27 18:20</span></td><td class="cardmono">1/3</td><td><span class="cardchip is-bad">暂不可用</span><span class="cardsub">余额 $1.08，不够 $16<span class="demo-new">改</span></span></td><td class="cardmono"><span class="cardmuted">—</span></td><td>—</td></tr>
+            <tr class="is-due"><td class="cardmono"><span class="cardlink">1657</span></td><td>highvcc</td><td class="cardmono">$1.00<span class="cardsub">资料更新 09-27 18:20</span></td><td class="cardmono">3/3</td><td><span class="cardchip is-due">次数用满</span><span class="cardsub">3 次已用满<span class="demo-new">改</span></span></td><td class="cardmono"><span class="cardmuted">—</span></td><td><span class="due-tag">已到期</span></td></tr>
+            <tr class="is-due"><td class="cardmono"><span class="cardlink">3159</span></td><td>highvcc</td><td class="cardmono">$1.05<span class="cardsub">资料更新 09-27 18:20</span></td><td class="cardmono">3/3</td><td><span class="cardchip is-due">次数用满</span><span class="cardsub">3 次已用满<span class="demo-new">改</span></span></td><td class="cardmono"><span class="cardmuted">—</span></td><td><span class="due-tag">已到期</span></td></tr>
+          </tbody></table></div>
+        <div class="cardfold"><button class="cardfoldtoggle" type="button">▸ 历史（退役 / 卡台作废）40 张</button></div>
+      </section>
+
+      <section class="card stock-card" id="retire-card">
+        <div class="card-heading"><div><p class="section-kicker">收尾</p><h2>待销清单</h2></div><span class="write-badge">你删卡后登记</span></div>
+        <div id="landing"></div>
+        <div class="cardretire"><table>
+          <thead><tr><th>尾号</th><th>卡台</th><th>为什么待销</th><th>余额</th><th>卡台上<span class="demo-new">新</span></th><th></th></tr></thead>
+          <tbody id="retire-rows"></tbody>
+        </table>
+        <p class="cardnote">「卡台上」来自最近一次和卡台的同步：<b>还在</b>＝要你去卡台删；<b>卡台已作废</b>＝不用去删，直接登记；<b>已不见</b>＝卡台列表里找不到了，多半已经删了；<b>查不了</b>＝卡台登录失效，同步不了。</p>
+        </div>
+      </section>
+    </section>
+
+    <!-- ================= 诊断 ================= -->
+    <section id="v-diagnostics" class="view" hidden>
+      <p class="demo-note"><b>诊断页</b>：从「今天要处理」挪过来的两项放在这里，只供了解，不需要你做什么。</p>
+      <section class="card stock-card">
+        <div class="card-heading"><div><p class="section-kicker">只供了解</p><h2>卡台的零散情况</h2></div></div>
+        <div class="moved">
+          <div class="row"><b>卡台发现、但接不进来的卡 13 张</b><span>HNSKJ · 8 月 27 日发现 · 原因：卡台没给卡类型 · 系统和你都处理不了，放着即可</span></div>
+          <div class="row"><b>手动用过的卡 2 张</b><span>3336（9 月 18 日）、8718（9 月 21 日补 Pro 差价）· 卡台有扣款、系统账本没有，已停用，不会再分配</span></div>
+        </div>
+      </section>
+    </section>
+  </main>
+</div>
+
+<script>
+const $ = (s, r = document) => r.querySelector(s);
+const retire = [
+  ['0237', 'highvcc', '停用：手动用了', '0.00', 'there'], ['0601', 'highvcc', '停用：卡有问题', '1.00', 'there'],
+  ['0951', 'highvcc', '停用：手动用了', '0.00', 'there'], ['1657', 'highvcc', '3 次已用满', '1.00', 'there'],
+  ['3159', 'highvcc', '3 次已用满', '1.05', 'there'], ['3336', 'highvcc', '停用：手动用了', '1.00', 'there'],
+  ['8718', 'highvcc', '停用：手动用了（跑过 Pro）', '16.89', 'there'],
+  ['0577', 'HNSKJ', '卡台标记失效', '0.00', 'void'], ['6754', 'HNSKJ', '卡台标记失效', '0.00', 'void']
+].map(([last4, rig, why, bal, src]) => ({ last4, rig, why, bal, src, done: false }));
+const SRC = {
+  there: ['is-there', '还在', '今天 18:20 同步'], void: ['is-void', '卡台已作废', '今天 18:15 同步'],
+  gone: ['is-gone', '已不见（多半已删）', ''], unknown: ['is-unknown', '查不了', '卡台登录失效']
+};
+function renderRetire(highlight = null) {
+  $('#retire-rows').innerHTML = retire.map((r) => {
+    const [cls, text, when] = SRC[r.src];
+    const btn = r.done ? '<span class="cardmuted">已登记 ✓</span>'
+      : `<button class="cardbtn is-primary" type="button" data-done="${r.last4}">${r.src === 'void' ? '登记已销' : '我已在卡台删掉'}</button>`;
+    const landing = highlight && highlight(r) ? ' is-landing' : '';
+    return `<tr class="is-due${r.done ? ' is-done' : ''}${landing}" data-row="${r.last4}"><td class="cardmono">${r.last4}</td><td>${r.rig}</td><td><span class="due-tag">已到期</span>${r.why}</td><td class="cardmono">$${r.bal}</td>
+      <td><span class="src-state ${cls}"><i></i>${text}</span>${when ? `<span class="src-when">${when}</span>` : ''}</td><td>${btn}</td></tr>`;
+  }).join('');
+  if (highlight) document.querySelectorAll('tr.is-landing .cardbtn').forEach((b) => { b.classList.add('is-landing'); setTimeout(() => b.classList.remove('is-landing'), 3200); });
+}
+function renderQueue() {
+  const toDelete = retire.filter((r) => !r.done && r.src === 'there');
+  const toRegister = retire.filter((r) => !r.done && r.src === 'void');
+  const items = [];
+  if (toDelete.length) items.push(`<div class="wb-qi warn"><div class="wb-qic">⌫</div><div class="wb-qt"><b>去 highvcc 删 ${toDelete.length} 张待销卡</b><span class="wb-ev">都已过存活期，卡台上还在（今天 18:20 同步）；删完回来点「我已在卡台删掉」</span></div><div class="wb-qa"><button type="button" class="wb-btn out sm" data-land="there">去删卡清单</button></div></div>`);
+  if (toRegister.length) items.push(`<div class="wb-qi info"><div class="wb-qic">✓</div><div class="wb-qt"><b>${toRegister.length} 张 HNSKJ 卡卡台已作废，登记一下</b><span class="wb-ev">${toRegister.map((r) => r.last4).join('、')} 卡台显示已作废，不用再去删</span></div><div class="wb-qa"><button type="button" class="wb-btn out sm" data-land="void">去登记</button></div></div>`);
+  $('#q-list').innerHTML = items.join('') || '<p class="wb-qempty is-calm">没有要你动手的事 ✓</p>';
+  $('#q-count').innerHTML = `<span class="wb-d"></span>${items.length} 件待办`;
+  $('#q-count').className = `wb-chip ${items.length ? 'danger' : 'ok'}`;
+}
+const alerts = [
+  { id: 'a1', title: 'HNSKJ 供卡故障', msg: '卡台暂停开卡（维护中）· 09-24 08:13' },
+  { id: 'a2', title: 'HNSKJ 缺卡但开不出来', msg: 'Plus 水位 1，现有 0 张，卡台维护开不了 · 09-27 21:16' },
+  { id: 'a3', title: 'HNSKJ 可用卡库存偏低', msg: 'Plus 现有 0 张，水位 1 · 09-27 22:18' }
+];
+function renderAlerts() {
+  const left = alerts.filter((a) => !a.closed);
+  $('#alerts-n').textContent = left.length ? `${left.length} 个提醒` : '没有提醒';
+  $('#alerts-list').innerHTML = left.length ? `<div class="wb-agroup"><div class="wb-aghead"><b>HNSKJ 供卡</b><span>${left.length} 条 · 卡台维护中，恢复后会自动关</span><button type="button" class="wb-btn out sm" data-close-group>这一组全部关闭</button></div>`
+    + left.map((a) => `<div class="wb-alert-row" data-alert="${a.id}"><div class="wb-at"><b>${a.title}</b><small>${a.msg}</small></div><button type="button" class="wb-btn out sm" data-close="${a.id}">关闭</button></div>`).join('') + '</div>'
+    : '<p class="wb-qempty">都关完了</p>';
+}
+function go(view) {
+  document.querySelectorAll('.view').forEach((v) => { v.hidden = v.id !== `v-${view}`; });
+  document.querySelectorAll('[data-go]').forEach((b) => b.classList.toggle('is-active', b.dataset.go === view));
+  $('#view-title').textContent = { overview: '今天的运行情况', stock: '卡片', diagnostics: '诊断' }[view];
+  window.scrollTo(0, 0);
+}
+document.addEventListener('click', (e) => {
+  const t = e.target.closest('button'); if (!t) return;
+  if (t.dataset.go) return go(t.dataset.go);
+  if (t.dataset.land) {
+    const kind = t.dataset.land;
+    go('stock');
+    const n = retire.filter((r) => !r.done && r.src === kind).length;
+    $('#landing').innerHTML = `<div class="landing-banner">从工作台来：${kind === 'there' ? `这 ${n} 张要去 highvcc 删，删完点右边「我已在卡台删掉」` : `这 ${n} 张卡台已作废，点「登记已销」就行`}<button type="button" class="wb-btn out sm" data-go="overview">回工作台</button></div>`;
+    renderRetire((r) => !r.done && r.src === kind);
+    requestAnimationFrame(() => $('#retire-card').scrollIntoView({ block: 'start' }));
+    return;
+  }
+  if (t.dataset.done) {
+    const r = retire.find((x) => x.last4 === t.dataset.done); r.done = true;
+    renderRetire(); renderQueue(); return;
+  }
+  if (t.dataset.close) {
+    const row = t.closest('.wb-alert-row'); row.classList.add('is-gone');
+    setTimeout(() => { alerts.find((a) => a.id === t.dataset.close).closed = true; renderAlerts(); }, 250);
+    return;
+  }
+  if (t.hasAttribute('data-close-group')) { alerts.forEach((a) => { a.closed = true; }); renderAlerts(); }
+});
+renderQueue(); renderRetire(); renderAlerts();
+</script>
+</body>
+</html>
