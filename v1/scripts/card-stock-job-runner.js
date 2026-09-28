@@ -15,9 +15,10 @@ import {
 } from '../src/services/card-stock-job-service.js';
 import { createCardOpenAdapters } from '../src/services/card-open-adapters.js';
 import {
-  ALERT_TYPES, clearSupplyFault, createCardSupplyScheduler, markSupplyFault,
+  ALERT_TYPES, clearSupplyFault, createCardSupplyScheduler, markSupplyFault, providerLabelById,
   resolveSupplyAlert, supplyBlockedAlertKey, takeoverWaitingOrders, upsertSupplyAlert
 } from '../src/services/card-supply-scheduler-service.js';
+import { productShortLabel } from '../src/domain/product-labels.js';
 import { listCardProviderAccounts } from '../src/services/provider-route-service.js';
 import { recordIssueFee } from '../src/services/card-issue-fee-service.js';
 
@@ -117,11 +118,12 @@ try {
         await markSupplyFault(pool, { providerAccountId: job.providerAccountId, reason: failure.code });
       }
       // 开卡失败必推手机（D-249 面四①「供给」类）；预检类失败（没花钱）也推，但只推一次（dedupe 按台）。
+      const label = await providerLabelById(pool, job.providerAccountId);
       await upsertSupplyAlert(pool, {
         type: ALERT_TYPES.OPEN_FAILED, key: `card-supply-open-failed:${job.providerAccountId}`,
         severity: failure.status === 'REVIEW_REQUIRED' ? 'critical' : 'warning',
         title: failure.status === 'REVIEW_REQUIRED' ? '开卡失败，需要人核对' : '开卡未成功',
-        message: `job ${job.id}（${job.source}，${job.productCode || '?'}）在卡台 ${job.providerAccountId} 失败：${failure.code}。${failure.status === 'REVIEW_REQUIRED' ? '可能已扣款，人工核对前不会再自动开。' : '没有扣款，条件恢复后会再试。'}`
+        message: `${label} 开 ${productShortLabel(job.productCode) || '?'} 卡失败（${failure.code}，任务 ${String(job.id).slice(0, 8)}）。${failure.status === 'REVIEW_REQUIRED' ? '可能已扣款，人工核对前不会再自动开。' : '没有扣款，条件恢复后会再试。'}`
       });
       console.error(JSON.stringify({ handled: true, jobId: job.id, status: failure.status, code: failure.code }));
       process.exitCode = 1;

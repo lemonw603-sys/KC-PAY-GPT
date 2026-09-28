@@ -66,7 +66,7 @@ try {
     const code = String(error?.code || error?.kind || 'PROVIDER_SNAPSHOT_SYNC_FAILED').slice(0, 80);
     await markProviderSnapshotHealth({
       status: 'OPEN',
-      message: `卡台余额或开卡规则暂时没有更新成功（${code}）。系统已暂停使用旧数据开卡，请稍后刷新。`
+      message: `HNSKJ 余额或开卡规则暂时没有更新成功（${code}）。系统已暂停使用旧数据开卡，请稍后刷新。`
     });
     throw error;
   }

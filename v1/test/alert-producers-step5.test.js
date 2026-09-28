@@ -16,7 +16,7 @@ function fakeQueryable({ updateAffected = 1, accountRow = { display_name: '备�
     async query(sql, params = []) {
       const flat = String(sql).replace(/\s+/g, ' ').trim();
       calls.push({ sql: flat, params });
-      if (/SELECT display_name/.test(flat)) return [[accountRow], []];
+      if (/SELECT provider_code FROM provider_accounts/.test(flat)) return [[accountRow], []];
       if (/^SELECT last4/.test(flat)) return [[{ last4: '1652', provider_card_id: '4458' }], []];
       if (/^SELECT/i.test(flat)) return [[], []];
       return [{ affectedRows: updateAffected }, []];
@@ -138,4 +138,25 @@ test('生产真实钱包数：41.49 开一张 $50 的卡，按硬底线 20 就�
   const p = walletPreflight({ availableBalance: '41.49', amount: '50', feeCents: 50, floor: '20' });
   assert.equal(p.ok, false);
   assert.equal(p.projected, '-9.01');  // 与生产 06:54 那条告警文案里的数字一致
+});
+
+test('D-406：token 失效与卡台故障的推送说 highvcc，不说库里的「备用卡台 A」', async () => {
+  const db = fakeQueryable();
+  await markProviderTokenExpired(db, { providerAccountId: ACCOUNT });
+  await markSupplyFault(db, { providerAccountId: ACCOUNT, reason: 'HIGHVCC_TOKEN_EXPIRED' });
+  const messages = [...alertsOf(db, ALERT_TYPES.TOKEN_EXPIRED), ...alertsOf(db, ALERT_TYPES.FAULT)].map((call) => String(call.params.at(-1)));
+  assert.equal(messages.length, 2);
+  assert.match(messages[0], /^highvcc 的访问 token 已失效/);
+  assert.match(messages[1], /^highvcc 供卡故障/);
+  assert.equal(messages.some((text) => /备用卡台/.test(text)), false);
+});
+
+test('D-406：推送金额写法 $20.26 / $33 / $0.50 / -$1.20；非美元带币种', async () => {
+  const { usd } = await import('../src/services/card-supply-scheduler-service.js');
+  assert.equal(usd('20.26'), '$20.26');
+  assert.equal(usd('33.000000'), '$33');
+  assert.equal(usd('0.50'), '$0.50');
+  assert.equal(usd('-1.20'), '-$1.20');
+  assert.equal(usd('10.00', 'PHP'), '10 PHP');
+  assert.equal(usd('abc'), 'abc');
 });

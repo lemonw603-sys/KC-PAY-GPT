@@ -14,3 +14,10 @@ export const PRODUCT_LABELS = Object.freeze({
 export function productLabel(planType) {
   return PRODUCT_LABELS[String(planType || '').toLowerCase()] || 'ChatGPT Plus';
 }
+
+/** 运营侧（推送、后台）的短名：Plus / 5X / 20X（D-244 的叫法）。 */
+export const PRODUCT_SHORT_LABELS = Object.freeze({ plus: 'Plus', pro_5x: '5X', pro_20x: '20X' });
+
+export function productShortLabel(planType) {
+  return PRODUCT_SHORT_LABELS[String(planType || '').toLowerCase()] || String(planType || '');
+}

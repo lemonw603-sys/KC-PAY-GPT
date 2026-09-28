@@ -4,6 +4,8 @@ import { CARD_ISSUE_FEE_TYPE } from '../domain/card-issue-fee.js';
 import { cardProviderAccountIsHealthy, listCardProviderAccounts } from './provider-route-service.js';
 import { countEligibleCards, listCardSourceSelections, safeWaitingPredicate } from './card-source-selection-service.js';
 import { countTodayOpenings, unresolvedPaidJobsSql } from './card-stock-job-service.js';
+import { providerLabelOf } from '../domain/provider-labels.js';
+import { productShortLabel } from '../domain/product-labels.js';
 
 /**
  * 库存水位驱动的供卡调度（D-247 面二①③⑤⑥⑦，D-252 打架 2）。每分钟跑一次：
@@ -36,6 +38,37 @@ export const ALERT_TYPES = Object.freeze({
   FAULT: 'CARD_SUPPLY_FAULT',
   TOKEN_EXPIRED: 'PROVIDER_TOKEN_EXPIRED'
 });
+
+/**
+ * 推送里卡台一律用简称 HNSKJ / highvcc（domain/provider-labels，2026-09-20 Lemon 定），
+ * 不用库里的 display_name（backup-a 那台存的是「备用卡台 A」，看不出是哪家；D-406）。
+ */
+export function supplyPlatformName(account) {
+  return providerLabelOf(account?.providerCode ?? account?.provider_code);
+}
+
+export async function providerLabelById(queryable, providerAccountId) {
+  const [rows] = await queryable.query('SELECT provider_code FROM provider_accounts WHERE id = ? LIMIT 1', [String(providerAccountId)]);
+  return rows[0] ? providerLabelOf(rows[0].provider_code) : String(providerAccountId);
+}
+
+/** 推送里的金额：$20.26、$33、$0.50（D-406）；读不懂的原样给。 */
+export function usd(value, currency = 'USD') {
+  const cents = toCents(String(value));
+  if (cents === null) return String(value);
+  const text = fromCents(Math.abs(cents)).replace(/\.00$/, '');
+  const sign = cents < 0 ? '-' : '';
+  return currency === 'USD' ? `${sign}$${text}` : `${sign}${text} ${currency}`;
+}
+
+function sumOf(values) {
+  const cents = values.map((value) => toCents(String(value ?? '')));
+  return cents.some((value) => value === null) ? null : fromCents(cents.reduce((a, b) => a + b, 0));
+}
+/** 开一张卡约花多少：开卡金额 + 手续费。 */
+const openCost = (preflight) => sumOf([preflight?.amount, preflight?.fee]);
+/** 钱包至少要有多少才能开这一张：开卡金额 + 手续费 + 底线。 */
+const walletNeeded = (preflight) => sumOf([preflight?.amount, preflight?.fee, preflight?.floor]);
 
 export async function upsertSupplyAlert(queryable, { type, key, severity = 'warning', title, message, orderId = null }) {
   await queryable.query(
@@ -101,11 +134,7 @@ export function tokenExpiredAlertKey(providerAccountId) {
  * 下次失效重新 OPEN 才会再推一次。
  */
 export async function markProviderTokenExpired(queryable, { providerAccountId, code = 'HIGHVCC_TOKEN_EXPIRED' }) {
-  const [rows] = await queryable.query(
-    'SELECT display_name, provider_code FROM provider_accounts WHERE id = ? LIMIT 1',
-    [String(providerAccountId)]
-  );
-  const label = rows[0]?.display_name || rows[0]?.provider_code || providerAccountId;
+  const label = await providerLabelById(queryable, providerAccountId);
   await upsertSupplyAlert(queryable, {
     type: ALERT_TYPES.TOKEN_EXPIRED,
     key: tokenExpiredAlertKey(providerAccountId),
@@ -133,11 +162,7 @@ export async function markSupplyFault(queryable, { providerAccountId, reason, no
     [code, now, String(providerAccountId)]
   );
   if (Number(result?.affectedRows || 0) === 0) return;
-  const [rows] = await queryable.query(
-    'SELECT display_name, provider_code FROM provider_accounts WHERE id = ? LIMIT 1',
-    [String(providerAccountId)]
-  );
-  const label = rows[0]?.display_name || rows[0]?.provider_code || providerAccountId;
+  const label = await providerLabelById(queryable, providerAccountId);
   await upsertSupplyAlert(queryable, {
     type: ALERT_TYPES.FAULT,
     key: supplyFaultAlertKey(providerAccountId),
@@ -289,8 +314,8 @@ export function createCardSupplyScheduler({ pool, adapters, now = () => new Date
     const key = `card-stock-low:${measured.providerAccountId}:${measured.productCode}`;
     if (measured.low) {
       await upsertSupplyAlert(pool, {
-        type: ALERT_TYPES.STOCK_LOW, key, severity: 'warning', title: '可用卡库存偏低',
-        message: `${measured.accountLabel} 的 ${measured.productCode} 可分配 ${measured.available} 张，水位 ${measured.targetAvailable}${note}。`
+        type: ALERT_TYPES.STOCK_LOW, key, severity: 'warning', title: `${measured.accountLabel} ${productShortLabel(measured.productCode)} 卡不够`,
+        message: `${measured.accountLabel} 的 ${productShortLabel(measured.productCode)} 卡可用 ${measured.available} 张，要备 ${measured.targetAvailable} 张${note}。`
       });
       return;
     }
@@ -307,11 +332,14 @@ export function createCardSupplyScheduler({ pool, adapters, now = () => new Date
   }
 
   function describeBlocked(outcome, state) {
-    const label = state.accountsById.get(outcome.opener)?.displayName || '卡台';
+    const label = supplyPlatformName(state.accountsById.get(outcome.opener));
     const preflight = outcome.preflight || {};
     switch (outcome.reason) {
-      case 'WALLET_BELOW_FLOOR':
-        return `${label} 钱包 ${preflight.balance}，开一张要 ${preflight.amount} + 手续费约 ${preflight.fee}，扣完剩 ${preflight.projected}，低于底线 ${preflight.floor}，请给钱包充值`;
+      case 'WALLET_BELOW_FLOOR': {
+        const needed = walletNeeded(preflight);
+        return `${label} 余额 ${usd(preflight.balance)} 不够开新卡（开一张约 ${usd(openCost(preflight))}，要留 ${usd(preflight.floor)}）`
+          + (needed ? `，充到 ${usd(needed)} 以上才能开` : '');
+      }
       case 'DAILY_LIMIT':
         return `${label} 今天已开 ${outcome.usedToday} 张，到了每日上限 ${outcome.dailyLimit}`;
       case 'BLOCKED':
@@ -319,7 +347,7 @@ export function createCardSupplyScheduler({ pool, adapters, now = () => new Date
       case 'ADAPTER_CANNOT_OPEN':
         return `${label} 不让开卡（${outcome.cause}）`;
       case 'WALLET_READ_FAILED':
-        return `读不到 ${label} 的钱包（${outcome.cause}）`;
+        return `读不到 ${label} 的余额（${outcome.cause}）`;
       case 'FUNDS_REVIEW_REQUIRED':
         return '有一张开卡任务花了钱还没核对，自动开卡暂停，核对后恢复';
       default:
@@ -330,7 +358,7 @@ export function createCardSupplyScheduler({ pool, adapters, now = () => new Date
   function stockNote(row, result, byRow, state) {
     if (!state.enabled) return '，自动开卡总闸关闭，不会自动补';
     const outcome = byRow.get(policyKey(row.providerAccountId, row.productCode));
-    if (outcome?.scheduled) return `，已安排 ${state.accountsById.get(outcome.opener)?.displayName || '卡台'} 开一张`;
+    if (outcome?.scheduled) return `，已让 ${supplyPlatformName(state.accountsById.get(outcome.opener))} 开一张`;
     if (result.reason === 'JOB_ACTIVE' || outcome?.reason === 'JOB_ACTIVE' || (!(row.deficit > 0) && row.inflight > 0)) return '，开卡任务在跑';
     const blocked = blockedOutcomeFor(row, result, byRow);
     return blocked ? `，开不出来：${describeBlocked(blocked, state)}` : '';
@@ -354,7 +382,7 @@ export function createCardSupplyScheduler({ pool, adapters, now = () => new Date
       await upsertSupplyAlert(pool, {
         type: 'ORDER_WAITING_FOR_CARD', key: `order-waiting-card:${order.id}`, severity: 'critical',
         title: '客户在等卡，开不出来', orderId: order.id,
-        message: `订单 ${order.public_no}｜客户在等卡，${reason}。条件恢复后系统会自动开卡、接着跑，客户不用重新提交。`
+        message: `订单 ${order.public_no}｜客户在等卡，${reason}。能开后系统自动接着跑，客户不用重新提交。`
       });
     }
     return orders.length;
@@ -381,6 +409,23 @@ export function createCardSupplyScheduler({ pool, adapters, now = () => new Date
     return { account: null, reason: 'NO_FALLBACK_ACCOUNT' };
   }
 
+  /**
+   * 「余额不够开新卡」（D-406，Lemon 2026-09-28：说清是哪个卡台、越短越好）。
+   * 一句话讲清：哪台、余额多少、开一张要多少、要留多少、这次没开；有没有客户在等；充到多少能开。
+   */
+  function walletLowMessage({ opener, candidate, preflight, wallet }) {
+    const label = supplyPlatformName(opener);
+    const product = productShortLabel(candidate.productCode);
+    if (preflight.balance == null) {
+      return `${label} 余额 ${usd(wallet.availableBalance, wallet.currency)}，算不出够不够开一张 ${product} 卡，这次没开。`;
+    }
+    const waiting = candidate.waiting - candidate.available - candidate.inflight > 0;
+    const needed = walletNeeded(preflight);
+    return `${label} 余额 ${usd(preflight.balance)}，开一张 ${product} 卡约 ${usd(openCost(preflight))}，开完剩 ${usd(preflight.projected)}，低于要留的 ${usd(preflight.floor)}，这次没开。`
+      + (waiting ? '有客户在等这张卡。' : '现在没有客户在等卡。')
+      + (needed ? `充到 ${usd(needed)} 以上才能开。` : '');
+  }
+
   function fallbackReasonText(reason) {
     return reason === 'LOCKED_SELECTION' ? '这台是固定卡台的路线在用，不转台'
       : reason === 'NOT_SELECTED' ? '没有路线在用这台，不替它转台'
@@ -403,7 +448,7 @@ export function createCardSupplyScheduler({ pool, adapters, now = () => new Date
         await upsertSupplyAlert(pool, {
           type: ALERT_TYPES.BLOCKED, key: supplyBlockedAlertKey(demandAccount.id, candidate.productCode), severity: 'critical',
           title: '缺卡但开不出来',
-          message: `${demandAccount.displayName} 的 ${candidate.productCode} 缺 ${candidate.deficit} 张：该台此刻不能开（${canOpen.reason}），${why}。`,
+          message: `${supplyPlatformName(demandAccount)} 的 ${productShortLabel(candidate.productCode)} 卡缺 ${candidate.deficit} 张：这台现在不能开（${canOpen.reason}），${why}。`,
           orderId: candidate.demandOrderId
         });
         return { scheduled: false, reason: 'BLOCKED', cause: canOpen.reason, fallback: fallback.reason };
@@ -449,8 +494,8 @@ export function createCardSupplyScheduler({ pool, adapters, now = () => new Date
     if (alertThreshold != null && balanceCents != null && balanceCents < alertThreshold) {
       await upsertSupplyAlert(pool, {
         type: ALERT_TYPES.WALLET_ALERT, key: `provider-wallet-low:${opener.id}`, severity: 'warning',
-        title: '卡台钱包余额低于告警线',
-        message: `${opener.displayName} 钱包 ${wallet.availableBalance} ${wallet.currency}，告警线 ${opener.walletAlertThreshold}。`
+        title: `${supplyPlatformName(opener)} 余额低于提醒线`,
+        message: `${supplyPlatformName(opener)} 余额 ${usd(wallet.availableBalance, wallet.currency)}，低于提醒线 ${usd(opener.walletAlertThreshold, wallet.currency)}。`
       });
     } else {
       await resolveSupplyAlert(pool, `provider-wallet-low:${opener.id}`);
@@ -458,8 +503,8 @@ export function createCardSupplyScheduler({ pool, adapters, now = () => new Date
     if (!preflight.ok) {
       await upsertSupplyAlert(pool, {
         type: ALERT_TYPES.WALLET_LOW, key: `card-supply-wallet-low:${opener.id}`, severity: 'critical',
-        title: '卡台钱包不够开卡',
-        message: `${opener.displayName} 钱包 ${preflight.balance ?? wallet.availableBalance}，开 ${candidate.productCode} 一张要 ${preflight.amount ?? amount} + 手续费约 ${preflight.fee ?? '?'}（${fee.source}），扣完剩 ${preflight.projected ?? '?'}，低于硬底线 ${preflight.floor ?? opener.walletFloor}；未开卡，请充值钱包。`,
+        title: `${supplyPlatformName(opener)} 余额不够开新卡`,
+        message: walletLowMessage({ opener, candidate, preflight, wallet }),
         orderId: candidate.demandOrderId
       });
       return { scheduled: false, reason: 'WALLET_BELOW_FLOOR', opener: opener.id, preflight, fee };
@@ -520,7 +565,7 @@ export function createCardSupplyScheduler({ pool, adapters, now = () => new Date
     for (const policy of state.policies) {
       const account = state.accountsById.get(policy.providerAccountId);
       const row = await measure(policy);
-      row.accountLabel = account.displayName;
+      row.accountLabel = supplyPlatformName(account);
       row.low = row.targetAvailable > 0 && row.available < row.targetAvailable;
       if (row.available >= row.demand) await resolveSupplyAlert(pool, supplyBlockedAlertKey(row.providerAccountId, row.productCode));
       measured.push(row);

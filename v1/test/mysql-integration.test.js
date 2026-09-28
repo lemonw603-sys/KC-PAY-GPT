@@ -1122,7 +1122,7 @@ test('D-397: a customer waiting while the scheduler cannot open rings once; assi
     assert.equal(alert.severity, 'critical');
     assert.equal(alert.order_id, fixture.orderId);
     assert.equal(Number(alert.incident_version), 1);
-    assert.match(alert.message, /^订单 TEST-D397-WAIT｜客户在等卡，HNSKJ 钱包 40\.00，开一张要 16\.00 \+ 手续费约 2\.60，扣完剩 21\.40，低于底线 30\.00/);
+    assert.match(alert.message, /^订单 TEST-D397-WAIT｜客户在等卡，HNSKJ 余额 \$40 不够开新卡（开一张约 \$18\.60，要留 \$30），充到 \$48\.60 以上才能开。/);
 
     // 分卡每 60 秒重试一次：自动开卡开着时不许去关它（否则调度器下一轮再开，就是一次关→开、再推一次）。
     assert.deepEqual(await workflow.assignAvailableCard(fixture.orderId), { waitingForCard: true, replenishmentPending: true });
