@@ -3930,3 +3930,6 @@ Lemon 问为什么提示卡内余额不足 20 美金。只读查 `operator_alert
 Lemon：「1发布 2做 3做，如果比特浏览器或隧道有问题可以重新拉起后试一遍」。
 - ② 推送派发加「卡不够被同台余额不够 / 故障盖住」（提交 `3c06204f`）：真数据库测试新增 1 组（W/F/B 三台、盖的那条关掉、盖的那条 DEAD），去掉规则的变异被抓；v1 1224（1139 / 0 / 85）。**未发布**。
 - ③ 池子：翻池子日志（supervisor.log）确认 09-28 两单是 live 步 `SAFE_ABORTED PAGE_CHECKPOINT_FAILED`，原话 `BitBrowser /health timed out` / `fetch failed`；09-26 隧道断时是一串 `ETIMEDOUT` / `ECONNREFUSED 127.0.0.1:13306` / `DB_QUERY_TIMEOUT` 的车道错误（领不到单、不判失败）。supervisor 在池子没跑时已由 `ready-check.sh` 拉起比特浏览器 / 隧道，缺口只在池子在跑时。实现见 D-407 ③（提交 `50c81484`）；池子版本目录 `20260928-d407-50c8148` 已 prepare，**未切换**（worker 56510 仍跑 `20260926-d389-1ca9a42`）。
+- **D-407 ② 发布**（Lemon「1发布」）：探针全过、非终态 0 → prepare `20260928-d407-0909cb5`（84/0/1、清单 1420、备份 `pojia-20260928T060057Z`）→ switch 06:01:1x UTC。独立核实：三服务 active、cwd 新 release；bark 06:01:14 启动后 err 0；新领取语句去锁后只读在生产跑通（计数 0；错语句对照报 ERROR 1054，排除「空＝没执行」）。`state-check.sh` 20 项一致。
+- 顺带查出事实表「默认路线（Plus）」过时：09-28 03:26:50 UTC 后台已切回 Browser（`provider_route_switch_events` actor `admin`），现 302 接单 / 301 不接。已改正。
+- Lemon：演练「再等等」、重新提交等演练完。
