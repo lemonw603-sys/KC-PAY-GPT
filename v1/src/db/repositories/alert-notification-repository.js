@@ -82,6 +82,27 @@ export function createAlertNotificationRepository(pool) {
                  AND fault_delivery.status IN ('PENDING','SENDING','SENT')
              )
            )` : '';
+    // 同一台已推过（或在推）「余额不够开新卡」或「卡台故障」，这台的「某产品卡不够」就只进后台
+    // （D-407，Lemon 2026-09-28：09-28 03:29 同一件事——highvcc 余额不够——响了两条）。
+    // 写法同上：只认当前事件版本、推送在 PENDING/SENDING/SENT 的那条；它关掉或推送 DEAD 后，卡不够照推。
+    const stockCovers = ['CARD_SUPPLY_WALLET_LOW', 'CARD_SUPPLY_FAULT'].filter((type) => pushTypes.includes(type));
+    const stockCoverage = stockCovers.length ? `
+           AND NOT (
+             a.alert_type = 'CARD_STOCK_LOW'
+             AND a.dedupe_key REGEXP '^card-stock-low:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}:'
+             AND EXISTS (
+               SELECT 1 FROM operator_alerts cover_alert
+               JOIN alert_notifications cover_delivery ON cover_delivery.alert_id = cover_alert.id
+               WHERE cover_alert.status = 'OPEN'
+                 AND cover_alert.alert_type IN (${stockCovers.map((type) => `'${type}'`).join(', ')})
+                 AND cover_alert.dedupe_key IN (
+                   CONCAT('card-supply-wallet-low:', SUBSTRING_INDEX(SUBSTRING(a.dedupe_key, CHAR_LENGTH('card-stock-low:') + 1), ':', 1)),
+                   CONCAT('card-supply-fault:', SUBSTRING_INDEX(SUBSTRING(a.dedupe_key, CHAR_LENGTH('card-stock-low:') + 1), ':', 1)))
+                 AND cover_delivery.channel = 'BARK'
+                 AND cover_delivery.incident_version = cover_alert.incident_version
+                 AND cover_delivery.status IN ('PENDING','SENDING','SENT')
+             )
+           )` : '';
     const connection = await pool.getConnection();
     try {
       await connection.beginTransaction();
@@ -96,6 +117,7 @@ export function createAlertNotificationRepository(pool) {
            AND n.incident_version = a.incident_version
            ${walletCoverage}
            ${faultCoverage}
+           ${stockCoverage}
            AND (
              (n.status IN ('PENDING', 'RETRY') AND (n.next_attempt_at IS NULL OR n.next_attempt_at <= CURRENT_TIMESTAMP(3)))
              OR (n.status = 'SENDING' AND n.locked_at < CURRENT_TIMESTAMP(3) - INTERVAL 5 MINUTE)
