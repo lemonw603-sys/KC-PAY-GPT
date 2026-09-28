@@ -3923,3 +3923,4 @@ Lemon：「我刚刚充值了一单，为什么会失败」。exf6 / O572 同一
 Lemon 问为什么提示卡内余额不足 20 美金。只读查 `operator_alerts`：03:29:34 UTC 同一轮调度出了三条——`PROVIDER_WALLET_LOW`「备用卡台 A 钱包 20.26 USD，告警线 33.000000」、`CARD_SUPPLY_WALLET_LOW`「…扣完剩 3.76，低于硬底线 20.00；未开卡，请充值钱包」、03:30:39 `CARD_STOCK_LOW`（Plus 可分配 0、水位 1）。说的是 highvcc 卡台账户，不是卡；与 exf6 / O572 失败无关。Lemon：不充；文案要说清是哪家、越短越好 → D-406。
 查时另发现：开卡失败推送写的是账户 UUID、HNSKJ 信息拉不动那条只写「卡台」，一并改。推送展示层（`bark-presentation`）只改写 token 与余额变化两类，其余原样推，所以改产生点即可；后台页面没有按旧标题文字识别告警（grep 核过）。
 验证：v1 单测 1223（1139 / 0 / 84）；真数据库 83 / 0 / 1。
+- **发布**（Lemon「1发布」）：探针全过、非终态 0 → prepare `20260928-d406-7676bf9`（83/0/1、清单 1418、备份 `pojia-20260928T053914Z`、无迁移）→ switch 05:39:3x UTC。独立核实：三服务 active、cwd 新 release；05:39:55 调度器把 HNSKJ 库存提醒改写为「HNSKJ Plus 卡不够」；`state-check.sh` 20 项一致。
