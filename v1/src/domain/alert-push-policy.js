@@ -11,8 +11,8 @@
  *   HUMAN    叫人——系统已经停手，不做点什么这一单就一直停着（表三 #3/#4/#5/#6/#9/#10）
  *   SUPPLY   供给——还没卡住客户，但再不动手就会（缺卡预警、开卡失败、钱包低于告警线）
  *   MONEY    资金——钱的去向变了，事后再看就来不及（拒付、余额变化、取消续费未确认=续订会再扣）
- *   ACTIVITY 业务动态——客户刚提交充值，按 D-340 通知运营。
- *   D-336：余额仍逐笔通知；D-340覆盖其“普通来单只进后台”部分。
+ *   ACTIVITY 业务动态——每单结束时一条「充值成功」（D-409，Lemon 2026-09-29 选乙；失败由各路线失败告警推）。
+ *   D-336：余额仍逐笔通知。D-340 的「来单即推」已由 D-409 改掉：来单只进后台。
  *
  * **不在白名单里的都有理由，写在 `NON_PUSH_REASONS` 里**，不是漏掉的：新增告警类型时先去那张
  * 表里给个理由，再决定要不要进白名单。
@@ -57,7 +57,7 @@ export const PHONE_PUSH_TYPES = Object.freeze({
   DAILY_RECONCILIATION_SUMMARY: PushCategory.MONEY, // 每日一条对账汇总（面四③；含待销到期数，D-272）
 
   // —— 业务动态 ——
-  BROWSER_ORDER_SUBMITTED: PushCategory.ACTIVITY // D-340：客户来单即通知，并继续保留后台记录
+  ORDER_RECHARGE_SUCCEEDED: PushCategory.ACTIVITY // D-409：每单结束时推一条「充值成功」，两条路线一样（order-success-push.js）
 });
 
 /** 明确不推的类型与理由。新增类型时在这里或白名单里二选一登记，别留空白。 */
@@ -67,7 +67,8 @@ export const NON_PUSH_REASONS = Object.freeze({
   ORDER_REPLENISH_RETRYING: '补卡仍在自动重试，未卡住客户；要人时由 ORDER_WAITING_FOR_CARD 叫',
   BROWSER_PAYMENT_UNKNOWN: '链路中间态；付款后核实通道常在一分钟内自己确认，真卡住由 BROWSER_HUMAN_REQUIRED 接手（D-176）',
   BROWSER_PAYMENT_CONFIRMED: '与 BROWSER_ORDER_COMPLETED 相隔数秒，重复（D-176）',
-  BROWSER_ORDER_COMPLETED: '成功不需要人做什么；成功数进每日汇总（D-249 把 D-176 的「一尾」收进看板）',
+  BROWSER_ORDER_COMPLETED: 'Browser 内部的完成记录；成功推送统一由 ORDER_RECHARGE_SUCCEEDED 发（D-409），这条再推就重复',
+  BROWSER_ORDER_SUBMITTED: 'D-409：每单只在结束时推一条，来单不推（改掉 D-340 的来单即推）；后台照样记来单',
   BROWSER_UPGRADE_HANDOFF: '两阶段 20X 方案已退休（D-245），整条线第⑦块删',
   REFUND_CANDIDATE: '疑似退款只是线索，真扣款走 CARD_CHARGEBACK；本身只进后台（D-249）',
   CARD_STOCK_EMPTY: '与按台×产品的 CARD_STOCK_LOW 重叠，且门槛写死 Plus 16（第③步发现 1）',

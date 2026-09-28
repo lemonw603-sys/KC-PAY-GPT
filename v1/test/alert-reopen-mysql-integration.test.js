@@ -40,7 +40,8 @@ test('incident-aware outbox: missed close, normal updates, retries, stale callba
     // Re-open without a scan yet: even the previous pending generation must not be claimable.
     await reopen(id);assert.equal(await repo.claimNext(),null);await repo.enqueueOpenAlerts();
     const fifth=await repo.claimNext();assert.equal(fifth.incidentVersion,5);await repo.markSent(fifth.id,{incidentVersion:5});
-    await pool.query("UPDATE operator_alerts SET status='RESOLVED' WHERE id=?",[id]);await repo.enqueueOpenAlerts();assert.equal((await state(id)).status,'CANCELLED');
+    // D-409（欠账 32）：告警关了，已发出（SENT）的推送保持 SENT，不再改成 CANCELLED；重新打开靠版本号 +1 重新排队（下一行）。
+    await pool.query("UPDATE operator_alerts SET status='RESOLVED' WHERE id=?",[id]);await repo.enqueueOpenAlerts();assert.equal((await state(id)).status,'SENT');
     await pool.query("UPDATE operator_alerts SET status='OPEN' WHERE id=?",[id]);await repo.enqueueOpenAlerts();const sixth=await repo.claimNext();assert.equal(sixth.incidentVersion,6);await repo.markSent(sixth.id,{incidentVersion:6});
     // Actual producers use INSERT ON DUPLICATE KEY UPDATE; trigger covers that too.
     await pool.query("UPDATE operator_alerts SET status='RESOLVED' WHERE id=?",[id]);

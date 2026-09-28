@@ -10,7 +10,7 @@ const encryptionKey = Buffer.alloc(32, 7);
 const panHmacKey = Buffer.alloc(32, 9);
 const TOKEN_ALERT_KEY = `provider-token-expired:${BACKUP_A_PROVIDER_ACCOUNT_ID}`; // 生产 operator_alerts.dedupe_key 实值（2026-09-25 查）
 
-function fakePool({ failAlertUpdate = false } = {}) {
+function fakePool({ failAlertUpdate = false, faultState = 'OK' } = {}) {
   const settings = new Map();
   const queries = [];
   return {
@@ -24,6 +24,7 @@ function fakePool({ failAlertUpdate = false } = {}) {
         return [v ? [{ setting_value: v, updated_at: new Date('2026-09-25T07:25:58Z') }] : []];
       }
       if (sql.startsWith('INSERT INTO app_settings')) { settings.set(params[0], params[1]); return [{}]; }
+      if (sql.startsWith('SELECT supply_fault_state FROM provider_accounts')) return [[{ supply_fault_state: faultState }]];
       return [{ affectedRows: 0 }];
     },
   };
@@ -49,6 +50,24 @@ test('platform accepts the new token -> VALID and the token-expired alert is res
   assert.deepEqual([result.verification, result.alertCleared], ['VALID', true]);
   assert.equal(resolves().length, 1);
   assert.ok(pool.settings.get('highvcc_access_token_ciphertext'), 'the token is stored');
+});
+
+// 欠账 34（2026-09-29）：贴 token 后「卡台故障」告警要一起关——setToken 把 token 造成的故障态改回 OK 了，
+// 调度器之后见 OK 不会再去关它（09-28 15:56 那条到 16:52 还开着）。故障态不是 OK（别的原因）就不碰。
+test('accepted token also closes the supply-fault alert when the fault state is back to OK; other faults untouched', async () => {
+  const FAULT_KEY = `card-supply-fault:${BACKUP_A_PROVIDER_ACCOUNT_ID}`;
+  const faultResolves = (pool) => pool.queries.filter((q) => /UPDATE operator_alerts SET status = 'RESOLVED'/.test(q.sql)
+    && JSON.stringify(q.params) === JSON.stringify([FAULT_KEY]));
+  const ok = build({ fetchImpl: wallet(200, { code: 200, data: { usdBalance: 3404 } }) });
+  await ok.save({ token: 'a'.repeat(32) });
+  assert.equal(faultResolves(ok.pool).length, 1);
+  const stillFaulty = build({ pool: fakePool({ faultState: 'FAULT' }), fetchImpl: wallet(200, { code: 200, data: { usdBalance: 3404 } }) });
+  const result = await stillFaulty.save({ token: 'a'.repeat(32) });
+  assert.equal(result.verification, 'VALID');
+  assert.equal(faultResolves(stillFaulty.pool).length, 0, '别的原因的故障不碰');
+  const rejected = build({ fetchImpl: wallet(401, { code: 401, msg: 'token 已过期' }) });
+  await rejected.save({ token: 'a'.repeat(32) });
+  assert.equal(faultResolves(rejected.pool).length, 0, '卡台不认新 token 就不关');
 });
 
 test('platform rejects the token (401 / expired message) -> REJECTED, token still saved, no alert touched', async () => {

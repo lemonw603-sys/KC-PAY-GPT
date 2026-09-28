@@ -23,13 +23,12 @@ export function presentBarkNotification(delivery) {
       return {...base,title:`${balance[1]}余额更新`,message:`${compact(balance[2])} → ${compact(balance[4])} ${balance[3]}`};
     }
   }
-  if(delivery.type==='PROVIDER_TOKEN_EXPIRED'){
-    const provider=message.match(/^(.+?) 的访问 token 已失效（[^）]+）。/);
-    if(provider)return {...base,title:'卡台登录失效',message:`${provider[1]}：同步、开卡及付款核对受影响。\n请在后台更新登录。`};
-  }
-  if(delivery.type==='BROWSER_ORDER_SUBMITTED'){
-    const body='已收到，正在排队处理。';
-    return identity?withOrder('收到客户充值',body):{...base,title:'收到客户充值',message:body};
+  // D-409：token 失效原文已是手机上要看的样子（「highvcc 登录失效 / 16:22 起失效，…贴新 token 就好。」），原样推。
+  if(delivery.type==='PROVIDER_TOKEN_EXPIRED')return base;
+  // D-409「充值成功」：一行写完——邮箱（没有就订单号）· 产品 · 用时。
+  if(delivery.type==='ORDER_RECHARGE_SUCCEEDED'){
+    const who=email||(delivery.publicNo?`订单 ${delivery.publicNo}`:null);
+    return {...base,title:'充值成功',message:who?`${who} · ${message}`:message};
   }
   if(delivery.type==='BROWSER_HUMAN_VERIFICATION'&&order&&!hasMoney)
     return withOrder('需要人机验证','请在浏览器完成验证，勿重复付款。');

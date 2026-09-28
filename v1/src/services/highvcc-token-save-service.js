@@ -1,5 +1,5 @@
 import { HIGHVCC_TOKEN_TROUBLE_CODES } from '../domain/highvcc-token-trouble.js';
-import { clearProviderTokenExpired } from './card-supply-scheduler-service.js';
+import { clearProviderTokenExpired, resolveSupplyAlert, supplyFaultAlertKey } from './card-supply-scheduler-service.js';
 import { BACKUP_A_PROVIDER_ACCOUNT_ID } from './highvcc-card-service.js';
 
 /**
@@ -30,6 +30,11 @@ export function createHighvccTokenSaveService({ pool, setToken, walletStatus, ve
     }
     try {
       await clearProviderTokenExpired(pool, { providerAccountId: BACKUP_A_PROVIDER_ACCOUNT_ID });
+      // 欠账 34：setToken 已把 token 造成的供卡故障改回 OK，但没关「卡台故障」告警；之后调度器见状态已 OK
+      // 不再去关，告警一直挂着（09-28 15:56 那条到 16:52 还开着，16:43 已成功开卡）。卡台认了新 token、
+      // 故障态也已是 OK，就把它一起关掉；别的原因的故障态不是 OK，不碰。
+      const [[account]] = await pool.query('SELECT supply_fault_state FROM provider_accounts WHERE id = ? LIMIT 1', [BACKUP_A_PROVIDER_ACCOUNT_ID]);
+      if (account?.supply_fault_state === 'OK') await resolveSupplyAlert(pool, supplyFaultAlertKey(BACKUP_A_PROVIDER_ACCOUNT_ID));
       return { verification: 'VALID', alertCleared: true };
     } catch {
       return { verification: 'VALID', alertCleared: false };

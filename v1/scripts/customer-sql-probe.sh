@@ -85,6 +85,16 @@ probe "stalled-order-queries · 订单结束收掉卡住告警（只读形式）
 FINISHED_ALERTS_SELECT="$(node --input-type=module -e "import { resolveFinishedOrderAlertsSql } from './src/db/repositories/stalled-order-queries.js'; const s = resolveFinishedOrderAlertsSql(); process.stdout.write('SELECT oa.id FROM operator_alerts oa INNER JOIN orders o ON o.id = oa.order_id ' + s.slice(s.indexOf('WHERE')))")" \
   || { echo "[失败] 读不到 resolveFinishedOrderAlertsSql"; exit 1; }
 probe "stalled-order-queries · 订单结束收掉失败 / 要人工提醒（只读形式）" "$FINISHED_ALERTS_SELECT"
+# D-409：「充值成功」推送（巡检每分钟跑）与调度器两条卡查询。UPDATE 改成同条件的 SELECT；带 ? 的填 highvcc × Plus 实值。
+SUCCESS_SELECT="$(node --input-type=module -e "import { newlySucceededOrdersSql } from './src/db/repositories/order-success-push.js'; process.stdout.write(newlySucceededOrdersSql())")" \
+  || { echo "[失败] 读不到 newlySucceededOrdersSql"; exit 1; }
+probe "order-success-push · 刚成功的单（开「充值成功」推送）" "$SUCCESS_SELECT"
+SUCCESS_RESOLVE_SELECT="$(node --input-type=module -e "import { resolveDeliveredSuccessAlertsSql } from './src/db/repositories/order-success-push.js'; const s = resolveDeliveredSuccessAlertsSql(); process.stdout.write('SELECT succ_oa.id FROM operator_alerts succ_oa ' + s.slice(s.indexOf('WHERE')))")" \
+  || { echo "[失败] 读不到 resolveDeliveredSuccessAlertsSql"; exit 1; }
+probe "order-success-push · 推完的成功提醒收掉（只读形式）" "$SUCCESS_RESOLVE_SELECT"
+CARD_SQL_WITH_IDS() { node --input-type=module -e "import * as m from './src/services/card-supply-scheduler-service.js'; process.stdout.write(m['$1'].replace('?', \"'00000000-0000-4000-8000-000000000103'\").replace('?', \"'00000000-0000-4000-8000-000000000201'\"))"; }
+probe "card-supply-scheduler · 进行中订单占着的卡数" "$(CARD_SQL_WITH_IDS RESERVED_CARDS_SQL)"
+probe "card-supply-scheduler · 刚用掉的卡尾号" "$(CARD_SQL_WITH_IDS JUST_USED_CARD_SQL)"
 
 echo
 if [ "$fail" -eq 0 ]; then echo "==> 客户链路 SQL 全部可执行 ✓"; else echo "==> 有 SQL 跑不通 ✗"; fi

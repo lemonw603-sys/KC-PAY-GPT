@@ -34,5 +34,7 @@ test('Bark outbox sends once per open incident and only requeues after resolutio
   assert.match(calls[1].sql, /n\.incident_version < a\.incident_version/);
   assert.match(calls[1].sql, /n\.incident_version = a\.incident_version/);
   assert.doesNotMatch(calls[1].sql, /a\.acknowledged_at IS NOT NULL/);
-  assert.match(calls[2].sql, /n\.status IN \('PENDING', 'RETRY', 'SENDING', 'SENT', 'DEAD'\)/);
+  // 欠账 32（D-409）：告警关了只取消还没发出去的；已发出 SENT、已放弃 DEAD 保持原样，「推没推过」查得出来
+  assert.match(calls[2].sql, /n\.status IN \('PENDING', 'RETRY', 'SENDING'\)/);
+  assert.doesNotMatch(calls[2].sql, /'SENT'|'DEAD'/);
 });

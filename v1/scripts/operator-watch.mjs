@@ -19,6 +19,7 @@ const { EXECUTOR_HEARTBEAT_MAX_AGE_MS, EXECUTOR_HEARTBEAT_SETTING } = await impo
 // 资格口径只有一份权威实现，这里复用它，不另拼 SQL——自拼过一次就报错过一次。
 const { eligibleInventoryCardSql } = await import(join(HERE, '../src/services/card-inventory-eligibility.js'));
 const { PRE_PAYMENT_STUCK_SQL, RESOLVE_FINISHED_STALLED_SQL, resolveFinishedOrderAlertsSql, preStuckAlert } = await import(join(HERE, '../src/db/repositories/stalled-order-queries.js'));
+const { recordSucceededOrders, resolveDeliveredSuccessAlertsSql } = await import(join(HERE, '../src/db/repositories/order-success-push.js'));
 
 const args = process.argv.slice(2);
 const idx = args.indexOf('--minutes');
@@ -63,6 +64,7 @@ try {
     unresolvedPayment: stuckRuns.map((row) => ({ publicNo: row.public_no, waitedMinutes: Number(row.waited) })),
     prePayment: prePaymentStuck.map((row) => ({ publicNo: row.public_no, waitedMinutes: Number(row.waited) })),
   };
+  let succeededPushed = 0;
   if (!dryRun) {
     for (const row of stalled) {
       await upsertBrowserAlertInTransaction(connection, {
@@ -78,6 +80,9 @@ try {
     await connection.query(RESOLVE_FINISHED_STALLED_SQL);
     // 订单结束且不再需要人、推送已发完的「浏览器单失败 / 要人工」也收掉（D-405）。
     await connection.query(resolveFinishedOrderAlertsSql());
+    // 「充值成功」推送（D-409：每单结束时推一条，两条路线都在这里捡）；推完的收掉。
+    succeededPushed = await recordSucceededOrders(connection);
+    await connection.query(resolveDeliveredSuccessAlertsSql());
     for (const row of stuckRuns) {
       await upsertBrowserAlertInTransaction(connection, {
         type: 'BROWSER_ORDER_STALLED', orderId: row.id,
@@ -165,7 +170,7 @@ try {
 
   await connection.commit();
   console.log(JSON.stringify({ dryRun, thresholdMinutes: minutes, eligibleCards, heldByRunningOrders,
-    cardStockAlert: eligibleCards === 0 && heldByRunningOrders === 0 ? 'OPEN' : 'RESOLVED', stalled: found, executors }));
+    cardStockAlert: eligibleCards === 0 && heldByRunningOrders === 0 ? 'OPEN' : 'RESOLVED', stalled: found, succeededPushed, executors }));
 } catch (error) {
   await connection.rollback().catch(() => undefined);
   console.error(String(error?.message || error));

@@ -6,6 +6,7 @@ import { countEligibleCards, listCardSourceSelections, safeWaitingPredicate } fr
 import { countTodayOpenings, unresolvedPaidJobsSql } from './card-stock-job-service.js';
 import { providerLabelOf } from '../domain/provider-labels.js';
 import { productShortLabel } from '../domain/product-labels.js';
+import { HIGHVCC_TOKEN_TROUBLE_CODES } from '../domain/highvcc-token-trouble.js';
 
 /**
  * 库存水位驱动的供卡调度（D-247 面二①③⑤⑥⑦，D-252 打架 2）。每分钟跑一次：
@@ -104,6 +105,20 @@ export async function resolveSupplyAlertsByPrefix(queryable, prefixLike, exceptK
   );
 }
 
+/** 被进行中订单占着（账本 RESERVED）的卡数，按台 × 产品（D-409：算水位时当它还在）。参数：[provider_account_id, product_id]。 */
+export const RESERVED_CARDS_SQL = `SELECT COUNT(DISTINCT l.card_id) AS count FROM card_consumption_ledger l
+     INNER JOIN cards c ON c.id = l.card_id
+     INNER JOIN orders o ON o.id = l.order_id
+    WHERE l.status = 'RESERVED' AND c.provider_account_id = ? AND o.product_id = ?`;
+
+/** 一小时内这台 × 产品刚用掉的那张卡的尾号（D-409 钱包推送写「5270 刚用掉」）。参数同上。 */
+export const JUST_USED_CARD_SQL = `SELECT c.last4 FROM card_consumption_ledger l
+     INNER JOIN cards c ON c.id = l.card_id
+     INNER JOIN orders o ON o.id = l.order_id
+    WHERE l.status = 'CONSUMED' AND c.provider_account_id = ? AND o.product_id = ?
+      AND l.consumed_at >= CURRENT_TIMESTAMP(3) - INTERVAL 1 HOUR
+    ORDER BY l.consumed_at DESC LIMIT 1`;
+
 /** 卡台故障告警的 dedupe_key。一段故障期只有这一行，所以只推一次（第⑤步，契约表三 #10）。 */
 export function supplyFaultAlertKey(providerAccountId) {
   return `card-supply-fault:${providerAccountId}`;
@@ -133,16 +148,23 @@ export function tokenExpiredAlertKey(providerAccountId) {
  * 失效期间 timer 每小时撞一次，撞的都是同一行，只有第一次进队列。恢复时 RESOLVE，
  * 下次失效重新 OPEN 才会再推一次。
  */
-export async function markProviderTokenExpired(queryable, { providerAccountId, code = 'HIGHVCC_TOKEN_EXPIRED' }) {
+export async function markProviderTokenExpired(queryable, { providerAccountId, now = new Date() }) {
   const label = await providerLabelById(queryable, providerAccountId);
-  await upsertSupplyAlert(queryable, {
-    type: ALERT_TYPES.TOKEN_EXPIRED,
-    key: tokenExpiredAlertKey(providerAccountId),
-    severity: 'critical',
-    title: '卡台登录失效了，要你贴新 token',
-    message: `${label} 的访问 token 已失效（${code}）。同步、开卡、付款后的卡台侧核对都停了。`
-      + '登录含随机滑块，系统换不了（D-249），请重新贴一次 token。'
-  });
+  // D-409（Lemon 2026-09-29 批的原文）：手机上直接看到「highvcc 登录失效 / 16:22 起失效，新卡开不出。到后台「卡片」页贴新
+  // token 就好。」不带内部代码（原因码在调用方日志里）。「几点起」是这段失效开始的时间：告警已开着时每小时再撞一次
+  // 不改原文，否则时间会跟着往后走。登录含随机滑块，系统换不了 token（D-249）。
+  const since = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Shanghai', hour: '2-digit', minute: '2-digit', hour12: false }).format(now);
+  await queryable.query(
+    `INSERT INTO operator_alerts
+     (id, alert_type, dedupe_key, order_id, severity, title, message, status)
+     VALUES (UUID(), ?, ?, ?, ?, ?, ?, 'OPEN')
+     ON DUPLICATE KEY UPDATE severity = VALUES(severity), title = VALUES(title),
+       message = IF(status = 'OPEN', message, VALUES(message)),
+       status = IF(status = 'RESOLVED', 'OPEN', status),
+       acknowledged_at = IF(status = 'RESOLVED', NULL, acknowledged_at)`,
+    [ALERT_TYPES.TOKEN_EXPIRED, tokenExpiredAlertKey(providerAccountId), null, 'critical', `${label} 登录失效`,
+      `${since} 起失效，新卡开不出。到后台「卡片」页贴新 token 就好。`]
+  );
 }
 
 export async function clearProviderTokenExpired(queryable, { providerAccountId }) {
@@ -162,6 +184,12 @@ export async function markSupplyFault(queryable, { providerAccountId, reason, no
     [code, now, String(providerAccountId)]
   );
   if (Number(result?.affectedRows || 0) === 0) return;
+  // D-409：token 失效造成的「开不出」只推一次——token 那条已经说了，这里只确保它开着，不再另开「卡台故障」
+  // （09-28 同一原因推了两次，第二次带内部代码、没说要重贴 token，还正撞在客户提交那一刻，欠账 31）。
+  if (HIGHVCC_TOKEN_TROUBLE_CODES.has(code)) {
+    await markProviderTokenExpired(queryable, { providerAccountId, now });
+    return;
+  }
   const label = await providerLabelById(queryable, providerAccountId);
   await upsertSupplyAlert(queryable, {
     type: ALERT_TYPES.FAULT,
@@ -301,12 +329,19 @@ export function createCardSupplyScheduler({ pool, adapters, now = () => new Date
           AND (provider_account_id = ? OR fallback_for_provider_account_id = ?)`,
       [policy.productCode, policy.providerAccountId, policy.providerAccountId]
     );
+    // D-409（Lemon 2026-09-29「明明有卡还叫我充钱包」）：被进行中的订单占着的卡（账本 RESERVED）
+    // 单子成功才算用掉、失败会放回。算水位时先当它还在，不在订单有结果前就去补卡——09-28 两张开页即
+    // 失败的单先后占了 5270，钱包不够开下一张，于是推了「余额不够开新卡」，随后 5270 又放回来了。
+    // 有客户真在等卡（waiting）照旧立刻补，不受这条影响。
+    const [[reserved]] = await pool.query(RESERVED_CARDS_SQL, [policy.providerAccountId, policy.productId]);
     const waitingCount = Number(waiting?.count || 0);
     const demand = Math.max(policy.targetAvailable, waitingCount);
     const inflightCount = Number(inflight?.count || 0);
+    const reservedCount = Number(reserved?.count || 0);
     return {
       ...policy, available, waiting: waitingCount, demandOrderId: oldestOrder?.id || null,
-      inflight: inflightCount, demand, deficit: demand - available - inflightCount
+      inflight: inflightCount, reserved: reservedCount, demand,
+      deficit: Math.max(policy.targetAvailable - available - reservedCount, waitingCount - available) - inflightCount
     };
   }
 
@@ -410,21 +445,23 @@ export function createCardSupplyScheduler({ pool, adapters, now = () => new Date
   }
 
   /**
-   * 「余额不够开新卡」（D-406，Lemon 2026-09-28：说清是哪个卡台、越短越好）。
-   * 一句话讲清：哪台、余额多少、开一张要多少、要留多少、这次没开；有没有客户在等；充到多少能开。
+   * 「钱包不够开下一张卡」（D-409，Lemon 2026-09-29 批的原文）：
+   *   能用的卡：0 张（5270 刚用掉）。钱包 $20.26，开一张要 $36.50，还差 $16.24。
+   * 先说卡（他看着卡台上有卡，得知道为什么系统说没有），再说钱差多少；有客户在等才补一句。
+   * 替别的台开卡（转台）时，卡数说的是缺卡那台。
    */
-  function walletLowMessage({ opener, candidate, preflight, wallet }) {
+  function walletLowMessage({ opener, demandAccount, candidate, preflight, wallet, justUsedLast4 }) {
     const label = supplyPlatformName(opener);
     const product = productShortLabel(candidate.productCode);
-    if (preflight.balance == null) {
-      return `${label} 余额 ${usd(wallet.availableBalance, wallet.currency)}，算不出够不够开一张 ${product} 卡，这次没开。`;
-    }
-    const waiting = candidate.waiting - candidate.available - candidate.inflight > 0;
+    const waiting = candidate.waiting - candidate.available - candidate.inflight > 0 ? '有客户在等这张卡。' : '';
+    const cards = `${demandAccount && demandAccount.id !== opener.id ? `${supplyPlatformName(demandAccount)} ` : ''}能用的 ${product} 卡：${candidate.available} 张`
+      + `${justUsedLast4 ? `（${justUsedLast4} 刚用掉）` : ''}。`;
+    if (preflight.balance == null) return `${cards}钱包 ${usd(wallet.availableBalance, wallet.currency)}，算不出够不够开一张。${waiting}`;
     const needed = walletNeeded(preflight);
-    return `${label} 余额 ${usd(preflight.balance)}，开一张 ${product} 卡约 ${usd(openCost(preflight))}，开完剩 ${usd(preflight.projected)}，低于要留的 ${usd(preflight.floor)}，这次没开。`
-      + (waiting ? '有客户在等这张卡。' : '现在没有客户在等卡。')
-      + (needed ? `充到 ${usd(needed)} 以上才能开。` : '');
+    const short = needed == null ? null : sumOf([needed, `-${preflight.balance}`]);
+    return `${cards}钱包 ${usd(preflight.balance)}，开一张要 ${usd(needed)}${short ? `，还差 ${usd(short)}` : ''}。${waiting}`;
   }
+
 
   function fallbackReasonText(reason) {
     return reason === 'LOCKED_SELECTION' ? '这台是固定卡台的路线在用，不转台'
@@ -501,10 +538,11 @@ export function createCardSupplyScheduler({ pool, adapters, now = () => new Date
       await resolveSupplyAlert(pool, `provider-wallet-low:${opener.id}`);
     }
     if (!preflight.ok) {
+      const [[justUsed]] = await pool.query(JUST_USED_CARD_SQL, [candidate.providerAccountId, candidate.productId]);
       await upsertSupplyAlert(pool, {
         type: ALERT_TYPES.WALLET_LOW, key: `card-supply-wallet-low:${opener.id}`, severity: 'critical',
-        title: `${supplyPlatformName(opener)} 余额不够开新卡`,
-        message: walletLowMessage({ opener, candidate, preflight, wallet }),
+        title: `${supplyPlatformName(opener)} 钱包不够开下一张卡`,
+        message: walletLowMessage({ opener, demandAccount, candidate, preflight, wallet, justUsedLast4: justUsed?.last4 || null }),
         orderId: candidate.demandOrderId
       });
       return { scheduled: false, reason: 'WALLET_BELOW_FLOOR', opener: opener.id, preflight, fee };
@@ -566,8 +604,10 @@ export function createCardSupplyScheduler({ pool, adapters, now = () => new Date
       const account = state.accountsById.get(policy.providerAccountId);
       const row = await measure(policy);
       row.accountLabel = supplyPlatformName(account);
-      row.low = row.targetAvailable > 0 && row.available < row.targetAvailable;
-      if (row.available >= row.demand) await resolveSupplyAlert(pool, supplyBlockedAlertKey(row.providerAccountId, row.productCode));
+      row.low = row.targetAvailable > 0 && row.available + row.reserved < row.targetAvailable;
+      if (row.available + row.reserved >= row.targetAvailable && row.available >= row.waiting) {
+        await resolveSupplyAlert(pool, supplyBlockedAlertKey(row.providerAccountId, row.productCode));
+      }
       measured.push(row);
     }
     const byRow = new Map();
@@ -601,7 +641,7 @@ export function createCardSupplyScheduler({ pool, adapters, now = () => new Date
   async function decide(state, measured, byRow) {
     const decisions = measured.map((row) => ({
       providerAccountId: row.providerAccountId, productCode: row.productCode, available: row.available,
-      target: row.targetAvailable, waiting: row.waiting, inflight: row.inflight, deficit: row.deficit, low: row.low
+      target: row.targetAvailable, waiting: row.waiting, inflight: row.inflight, reserved: row.reserved, deficit: row.deficit, low: row.low
     }));
     if (!state.enabled) return { enabled: false, reason: 'DISABLED', decisions, scheduled: null };
     const [active] = await pool.query(`SELECT id FROM card_stock_jobs WHERE status IN ('PENDING','RUNNING') LIMIT 1`);

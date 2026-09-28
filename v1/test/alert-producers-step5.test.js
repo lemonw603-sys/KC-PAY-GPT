@@ -143,12 +143,36 @@ test('生产真实钱包数：41.49 开一张 $50 的卡，按硬底线 20 就�
 test('D-406：token 失效与卡台故障的推送说 highvcc，不说库里的「备用卡台 A」', async () => {
   const db = fakeQueryable();
   await markProviderTokenExpired(db, { providerAccountId: ACCOUNT });
-  await markSupplyFault(db, { providerAccountId: ACCOUNT, reason: 'HIGHVCC_TOKEN_EXPIRED' });
-  const messages = [...alertsOf(db, ALERT_TYPES.TOKEN_EXPIRED), ...alertsOf(db, ALERT_TYPES.FAULT)].map((call) => String(call.params.at(-1)));
-  assert.equal(messages.length, 2);
-  assert.match(messages[0], /^highvcc 的访问 token 已失效/);
-  assert.match(messages[1], /^highvcc 供卡故障/);
-  assert.equal(messages.some((text) => /备用卡台/.test(text)), false);
+  await markSupplyFault(db, { providerAccountId: ACCOUNT, reason: 'CARD_STOCK_PURCHASE_DISABLED' });
+  const token = alertsOf(db, ALERT_TYPES.TOKEN_EXPIRED)[0].params;
+  const fault = alertsOf(db, ALERT_TYPES.FAULT)[0].params;
+  assert.equal(token[4], 'highvcc 登录失效');
+  assert.match(String(fault.at(-1)), /^highvcc 供卡故障/);
+  assert.equal([token, fault].flat().some((text) => /备用卡台/.test(String(text))), false);
+});
+
+test('D-409：token 失效推送是批过的原文——几点起失效、新卡开不出、去「卡片」页贴 token，不带内部代码', async () => {
+  const db = fakeQueryable();
+  await markProviderTokenExpired(db, { providerAccountId: ACCOUNT, now: new Date('2026-09-28T08:22:40Z') });
+  const [call] = alertsOf(db, ALERT_TYPES.TOKEN_EXPIRED);
+  assert.deepEqual(call.params.slice(2), [null, 'critical', 'highvcc 登录失效', '16:22 起失效，新卡开不出。到后台「卡片」页贴新 token 就好。'],
+    '北京时间；不带 HIGHVCC_TOKEN_EXPIRED、D-249 这类内部代码');
+  // 告警已开着时每小时再撞一次不改原文，「几点起」才不会跟着往后走
+  assert.match(call.sql, /message = IF\(status = 'OPEN', message, VALUES\(message\)\)/);
+});
+
+test('D-409：开卡撞上 token 失效不另推「卡台故障」，只确保 token 那条开着（欠账 31）；别的原因照旧推故障', async () => {
+  for (const reason of ['HIGHVCC_TOKEN_EXPIRED', 'HIGHVCC_TOKEN_MISSING']) {
+    const db = fakeQueryable();
+    await markSupplyFault(db, { providerAccountId: ACCOUNT, reason, now: new Date('2026-09-28T15:56:11Z') });
+    assert.equal(alertsOf(db, ALERT_TYPES.FAULT).length, 0, `${reason}：不开卡台故障`);
+    assert.equal(alertsOf(db, ALERT_TYPES.TOKEN_EXPIRED).length, 1, `${reason}：token 那条开着`);
+    assert.ok(db.calls.some((call) => /supply_fault_state = 'FAULT'/.test(call.sql)), '故障态照记，调度器照样不用它开卡');
+  }
+  const other = fakeQueryable();
+  await markSupplyFault(other, { providerAccountId: ACCOUNT, reason: 'WALLET_READ_FAILED' });
+  assert.equal(alertsOf(other, ALERT_TYPES.FAULT).length, 1);
+  assert.equal(alertsOf(other, ALERT_TYPES.TOKEN_EXPIRED).length, 0);
 });
 
 test('D-406：推送金额写法 $20.26 / $33 / $0.50 / -$1.20；非美元带币种', async () => {

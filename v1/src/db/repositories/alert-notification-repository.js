@@ -33,12 +33,15 @@ export function createAlertNotificationRepository(pool) {
          AND a.alert_type IN (?)`,
       [pushTypes]
     );
+    // 告警关了：还没发出去的取消。已发出（SENT）和发不出去已放弃（DEAD）保持原样——以前也改成 CANCELLED，
+    // `sent_at` 还在但状态丢了「推过」，查「推没推到」时会误判（欠账 32，2026-09-29 就误判过一次）。
+    // 下次同一告警重新打开时版本号 +1，上面那条按版本重新排队，不靠 CANCELLED。
     await pool.query(
       `UPDATE alert_notifications n
        JOIN operator_alerts a ON a.id = n.alert_id
        SET n.status = 'CANCELLED', n.locked_at = NULL, n.next_attempt_at = NULL
        WHERE n.channel = 'BARK' AND a.status <> 'OPEN'
-         AND n.status IN ('PENDING', 'RETRY', 'SENDING', 'SENT', 'DEAD')`
+         AND n.status IN ('PENDING', 'RETRY', 'SENDING')`
     );
   }
 

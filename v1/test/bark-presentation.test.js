@@ -20,13 +20,13 @@ test('linked non-browser alert without legacy order prefix still shows email',()
   const r=present({type:'ORDER_PAYMENT_UNKNOWN_REVIEW',customerEmail:'bob@example.test',message:'扣款16 USD尚未确认，请核实，勿重付。'});
   assert.match(r.message,/^账号 bob@example.test\n/);assert.match(r.message,/16 USD/);assert.match(r.message,/勿重付/);
 });
-test('customer submission is concise, identifies by email, and falls back to order number',()=>{
-  const byEmail=present({type:'BROWSER_ORDER_SUBMITTED',publicNo:order,customerEmail:'new@example.test',title:'客户提交了充值',message:'已收到 CDK 与账号，正在分卡并排队执行。跑完会再推一条结果。'});
-  assert.equal(byEmail.title,'收到客户充值');
-  assert.equal(byEmail.message,'账号 new@example.test\n已收到，正在排队处理。');
-  assert.doesNotMatch(byEmail.message,/跑完会再推/);
-  const fallback=present({type:'BROWSER_ORDER_SUBMITTED',publicNo:order,customerEmail:null,title:'客户提交了充值',message:'已收到'});
-  assert.equal(fallback.message,`订单 ${order}\n已收到，正在排队处理。`);
+// D-409（Lemon 2026-09-29 批的原文）：「充值成功」一行写完，邮箱完整显示（不隐去中间）；没有邮箱用订单号。
+test('success push reads 充值成功 / full email · product · duration, falling back to order number',()=>{
+  const byEmail=present({type:'ORDER_RECHARGE_SUCCEEDED',publicNo:order,customerEmail:'a.chen@example.com',title:'充值成功',message:'Plus · 用时 1 分 50 秒',severity:'info'});
+  assert.equal(byEmail.title,'充值成功');
+  assert.equal(byEmail.message,'a.chen@example.com · Plus · 用时 1 分 50 秒');
+  const fallback=present({type:'ORDER_RECHARGE_SUCCEEDED',publicNo:order,customerEmail:null,title:'充值成功',message:'Plus · 用时 45 秒'});
+  assert.equal(fallback.message,`订单 ${order} · Plus · 用时 45 秒`);
 });
 test('balance remains exact and readable, including tiny/negative changes; no invented reason',()=>{
   for(const [a,b,expected]of [['89.480000','38.730000','89.48 → 38.73 USD'],['0.000001','-0.000001','0.000001 → -0.000001 USD'],['0.000000','100.000000','0 → 100 USD']]){
@@ -38,9 +38,11 @@ test('unknown balance schema/currency mismatch falls back instead of losing valu
   const input={type:'PROVIDER_BALANCE_CHANGED',title:'余额',message:'钱包由 1 USD 变为 2 EUR。'};
   assert.equal(present(input).message,input.message);
 });
-test('token reminder drops internal code/decision and retains affected work and action',()=>{
-  const r=present({type:'PROVIDER_TOKEN_EXPIRED',title:'长标题',message:'highvcc 的访问 token 已失效（HIGHVCC_TOKEN_EXPIRED）。后面的技术过程（D-249）。'});
-  assert.match(r.message,/highvcc/);assert.match(r.message,/付款核对/);assert.match(r.message,/更新登录/);assert.doesNotMatch(r.message,/D-249|HIGHVCC_TOKEN_EXPIRED/);
+// D-409：token 失效原文已是批过的手机文案（产生点写好、不带内部代码），展示层原样推，不再改写。
+test('token reminder is pushed exactly as the approved producer text',()=>{
+  const r=present({type:'PROVIDER_TOKEN_EXPIRED',severity:'critical',title:'highvcc 登录失效',message:'16:22 起失效，新卡开不出。到后台「卡片」页贴新 token 就好。'});
+  assert.equal(r.title,'highvcc 登录失效');
+  assert.equal(r.message,'16:22 起失效，新卡开不出。到后台「卡片」页贴新 token 就好。');
 });
 test('human verification and uncertain payment keep order and no-repay warning',()=>{
   for(const input of [
