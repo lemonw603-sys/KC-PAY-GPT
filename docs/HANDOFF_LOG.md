@@ -3933,3 +3933,7 @@ Lemon：「1发布 2做 3做，如果比特浏览器或隧道有问题可以重�
 - **D-407 ② 发布**（Lemon「1发布」）：探针全过、非终态 0 → prepare `20260928-d407-0909cb5`（84/0/1、清单 1420、备份 `pojia-20260928T060057Z`）→ switch 06:01:1x UTC。独立核实：三服务 active、cwd 新 release；bark 06:01:14 启动后 err 0；新领取语句去锁后只读在生产跑通（计数 0；错语句对照报 ERROR 1054，排除「空＝没执行」）。`state-check.sh` 20 项一致。
 - 顺带查出事实表「默认路线（Plus）」过时：09-28 03:26:50 UTC 后台已切回 Browser（`provider_route_switch_events` actor `admin`），现 302 接单 / 301 不接。已改正。
 - Lemon：演练「再等等」、重新提交等演练完。
+
+## 2026-09-28｜Lemon 自跑 API 单成功（15:54～16:0x UTC 核实）
+
+Lemon：「我准备充值一单」。下单前只读自检时发现单已跑完：`PJV1-4KDZR6YvdlI0UMFXKLWg`（plus 卡密 REDEEMED），`provider_route_switch_events` 15:54:54 actor admin 切回 API → 15:55:42 CUSTOMER 建单 → 15:55:43 WORKER 分卡 5270、SYSTEM 提交、ZZSHU `create_direct` SUCCESS → 15:56:32 WORKER「provider confirmed payment success」→ 15:57:32 `recheck_cancellation` SUCCESS、RECHARGE_SUCCESS（`subscription_cancelled`=1）。全程无 ADMIN / OPERATOR 事件。ZZSHU 点数 15→14。5270 账本 CONSUMED、库存 DEPLETED，正式资格 SQL 可分配 0；供卡告警（库存空、钱包低、hnskj 故障）均 OPEN。另见前一窗口：09-28 03:27 / 03:29 两张 Browser 单开页失败（BitBrowser 不可达，D-407）。事实表「默认路线」「可分配卡」两行更新，state-check 20 项一致。
