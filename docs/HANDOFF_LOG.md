@@ -3924,3 +3924,9 @@ Lemon 问为什么提示卡内余额不足 20 美金。只读查 `operator_alert
 查时另发现：开卡失败推送写的是账户 UUID、HNSKJ 信息拉不动那条只写「卡台」，一并改。推送展示层（`bark-presentation`）只改写 token 与余额变化两类，其余原样推，所以改产生点即可；后台页面没有按旧标题文字识别告警（grep 核过）。
 验证：v1 单测 1223（1139 / 0 / 84）；真数据库 83 / 0 / 1。
 - **发布**（Lemon「1发布」）：探针全过、非终态 0 → prepare `20260928-d406-7676bf9`（83/0/1、清单 1418、备份 `pojia-20260928T053914Z`、无迁移）→ switch 05:39:3x UTC。独立核实：三服务 active、cwd 新 release；05:39:55 调度器把 HNSKJ 库存提醒改写为「HNSKJ Plus 卡不够」；`state-check.sh` 20 项一致。
+
+## 2026-09-28｜D-407 两项实现（05:4x～06:xx UTC）
+
+Lemon：「1发布 2做 3做，如果比特浏览器或隧道有问题可以重新拉起后试一遍」。
+- ② 推送派发加「卡不够被同台余额不够 / 故障盖住」（提交 `3c06204f`）：真数据库测试新增 1 组（W/F/B 三台、盖的那条关掉、盖的那条 DEAD），去掉规则的变异被抓；v1 1224（1139 / 0 / 85）。**未发布**。
+- ③ 池子：翻池子日志（supervisor.log）确认 09-28 两单是 live 步 `SAFE_ABORTED PAGE_CHECKPOINT_FAILED`，原话 `BitBrowser /health timed out` / `fetch failed`；09-26 隧道断时是一串 `ETIMEDOUT` / `ECONNREFUSED 127.0.0.1:13306` / `DB_QUERY_TIMEOUT` 的车道错误（领不到单、不判失败）。supervisor 在池子没跑时已由 `ready-check.sh` 拉起比特浏览器 / 隧道，缺口只在池子在跑时。实现见 D-407 ③（提交 `50c81484`）；池子版本目录 `20260928-d407-50c8148` 已 prepare，**未切换**（worker 56510 仍跑 `20260926-d389-1ca9a42`）。
