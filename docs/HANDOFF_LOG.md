@@ -3937,3 +3937,7 @@ Lemon：「1发布 2做 3做，如果比特浏览器或隧道有问题可以重�
 ## 2026-09-28｜Lemon 自跑 API 单成功（15:54～16:0x UTC 核实）
 
 Lemon：「我准备充值一单」。下单前只读自检时发现单已跑完：`PJV1-4KDZR6YvdlI0UMFXKLWg`（plus 卡密 REDEEMED），`provider_route_switch_events` 15:54:54 actor admin 切回 API → 15:55:42 CUSTOMER 建单 → 15:55:43 WORKER 分卡 5270、SYSTEM 提交、ZZSHU `create_direct` SUCCESS → 15:56:32 WORKER「provider confirmed payment success」→ 15:57:32 `recheck_cancellation` SUCCESS、RECHARGE_SUCCESS（`subscription_cancelled`=1）。全程无 ADMIN / OPERATOR 事件。ZZSHU 点数 15→14。5270 账本 CONSUMED、库存 DEPLETED，正式资格 SQL 可分配 0；供卡告警（库存空、钱包低、hnskj 故障）均 OPEN。另见前一窗口：09-28 03:27 / 03:29 两张 Browser 单开页失败（BitBrowser 不可达，D-407）。事实表「默认路线」「可分配卡」两行更新，state-check 20 项一致。
+
+## 2026-09-29｜Lemon：提交时收到「卡台故障」、成功反而没通知（16:0x～16:2x UTC 只读查）
+
+时间线（UTC）：09-28 08:22:40 highvcc 定时同步发现 token 失效 → 08:22:45 推「卡台登录失效了，要你贴新 token」（`sent_at` 有值；状态后来被改成 CANCELLED，见欠账 32，我一度误判成「没推到」并告诉了 Lemon，已更正）→ 15:54:54 Lemon 切 API → 15:55:43 客户单占用 5270、可分配变 0 → 供卡调度想在 highvcc 补一张，token 失效开不出 → 15:56:11 开 `CARD_SUPPLY_FAULT`、15:56:14 推「卡台故障，开不出卡 … (HIGHVCC_TOKEN_EXPIRED)」（Lemon 截图这条）→ 15:57:16 Lemon 重贴 token、供卡恢复 OK、15:57:17 token 告警关。订单本身用库里已存的卡信息走 ZZSHU，不需要 token，所以成功。成功没推：推送白名单里 API 路线只有 `API_ORDER_FAILED`；D-340「客户来单通知」只接在 Browser 的 `BROWSER_ORDER_SUBMITTED`。记欠账 30～33。
