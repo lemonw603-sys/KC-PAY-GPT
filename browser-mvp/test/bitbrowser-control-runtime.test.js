@@ -87,3 +87,58 @@ test('BitBrowser adapter rejects write-capable manifests', async () => {
   });
   await assert.rejects(adapter.open({ ...manifest, allowWrites: true }, { profileRef: profileId }), /allowWrites must be false|read-only/);
 });
+
+// D-407：/health 没应答 → 先拉起比特浏览器，再问一次；页面上什么都还没做。
+function flakyHealthFetch(calls, { downTimes = 1, respondedFailure = false } = {}) {
+  const base = fakeFetch(calls);
+  let remaining = downTimes;
+  return async (url, init) => {
+    if (new URL(url).pathname === '/health') {
+      if (respondedFailure) { calls.push({ path: '/health', body: {} }); return new Response(JSON.stringify({ success: false }), { status: 500 }); }
+      if (remaining > 0) { remaining -= 1; calls.push({ path: '/health(down)', body: {} }); throw Object.assign(new TypeError('fetch failed'), { cause: { code: 'ECONNREFUSED' } }); }
+    }
+    return base(url, init);
+  };
+}
+
+test('D-407：比特浏览器没开 → 拉起后再试一次，照常打开窗口', async () => {
+  const calls = []; let recovers = 0;
+  const adapter = new BitBrowserControlRuntimeAdapter({
+    bitbrowserProfileId: profileId, browserType: { connectOverCDP: async () => fakeBrowser() },
+    fetchImpl: flakyHealthFetch(calls), recover: async () => { recovers += 1; return { recovered: true, launched: true }; },
+  });
+  await adapter.open(manifest, { profileRef: 'profile:x' });
+  assert.equal(recovers, 1);
+  assert.deepEqual(calls.map((call) => call.path), ['/health(down)', '/health', '/browser/list', '/browser/open']);
+});
+
+test('D-407：拉起也没救回来 → 照旧抛原来的错，不开窗口', async () => {
+  const calls = [];
+  const adapter = new BitBrowserControlRuntimeAdapter({
+    bitbrowserProfileId: profileId, browserType: { connectOverCDP: async () => fakeBrowser() },
+    fetchImpl: flakyHealthFetch(calls, { downTimes: 5 }), recover: async () => ({ recovered: false, reason: 'STILL_DOWN' }),
+  });
+  await assert.rejects(adapter.open(manifest, { profileRef: 'profile:x' }), /fetch failed/);
+  assert.deepEqual(calls.map((call) => call.path), ['/health(down)']);
+});
+
+test('D-407：只重试一次——拉起说好了、再问还是不应答，就抛错', async () => {
+  const calls = []; let recovers = 0;
+  const adapter = new BitBrowserControlRuntimeAdapter({
+    bitbrowserProfileId: profileId, browserType: { connectOverCDP: async () => fakeBrowser() },
+    fetchImpl: flakyHealthFetch(calls, { downTimes: 5 }), recover: async () => { recovers += 1; return { recovered: true }; },
+  });
+  await assert.rejects(adapter.open(manifest, { profileRef: 'profile:x' }), /fetch failed/);
+  assert.equal(recovers, 1);
+  assert.deepEqual(calls.map((call) => call.path), ['/health(down)', '/health(down)']);
+});
+
+test('D-407：比特浏览器应答了但说失败 → 不拉起（拉起解决不了），照旧抛错', async () => {
+  const calls = []; let recovers = 0;
+  const adapter = new BitBrowserControlRuntimeAdapter({
+    bitbrowserProfileId: profileId, browserType: { connectOverCDP: async () => fakeBrowser() },
+    fetchImpl: flakyHealthFetch(calls, { respondedFailure: true }), recover: async () => { recovers += 1; return { recovered: true }; },
+  });
+  await assert.rejects(adapter.open(manifest, { profileRef: 'profile:x' }), /BitBrowser \/health failed/);
+  assert.equal(recovers, 0);
+});

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
-  LANE_BLOCKING_RUNS_SQL, POOL_CONFIRMATION_PREFIX, loadProductionLivePoolConfig, parsePoolLanes, parseProductionLivePoolArgs, postPlusActionForPlan, runLaneLoop,
+  LANE_BLOCKING_RUNS_SQL, POOL_CONFIRMATION_PREFIX, loadProductionLivePoolConfig, parsePoolLanes, parseProductionLivePoolArgs, postPlusActionForPlan, runLaneLoop, withLocalReadyGate,
   shouldRefreshCardBalances, withLaneGuard,
 } from '../src/production-live-pool-worker.js';
 
@@ -126,4 +126,27 @@ test('D-352 块3①: lane guard blocks on RUNNING/RECONCILE_ONLY payments only; 
 
 test('block 6 (D-245/D-370): every plan, 5x included, finishes like Plus — pay once, confirm, cancel renewal; nothing enters the retired upgrade dialog', () => {
   for (const plan of ['plus', 'pro_5x', 'pro_20x', undefined]) assert.equal(postPlusActionForPlan(plan), 'CANCEL_RENEWAL');
+});
+
+// D-407：比特浏览器此刻不应答（拉起也没救回来）就不领新单；好了照常领。
+test('领单门口：本机没好就返回 IDLE、不去领单；好了才领', async () => {
+  let ready = false; let claims = 0;
+  const gated = withLocalReadyGate(async () => ready)(async () => { claims += 1; return { status: 'PROCESSED' }; });
+  assert.deepEqual(await gated(), { status: 'IDLE' });
+  assert.equal(claims, 0, '09-28 就是没开也领了单，领了只能当场判失败');
+  ready = true;
+  assert.deepEqual(await gated(), { status: 'PROCESSED' });
+  assert.equal(claims, 1);
+});
+
+test('D-407：一轮没出错才报「顺利」（隧道连续失败计数靠它清零），出错那轮不报', async () => {
+  const controller = new AbortController();
+  const oks = []; let tick = 0;
+  await runLaneLoop({
+    laneId: 'lane-1', pollIntervalMs: 10, signal: controller.signal,
+    steps: [{ name: 'live', run: async () => { tick += 1; if (tick === 2) throw Object.assign(new Error('x'), { code: 'ECONNREFUSED' }); return { status: 'IDLE' }; } }],
+    onResult: async () => undefined, onError: async () => undefined, onTickOk: async () => { oks.push(tick); },
+    sleepImpl: async () => { if (tick >= 3) controller.abort(); },
+  });
+  assert.deepEqual(oks, [1, 3]);
 });

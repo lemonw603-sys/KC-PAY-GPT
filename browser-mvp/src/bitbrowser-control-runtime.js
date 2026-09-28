@@ -1,5 +1,6 @@
 import { RuntimeAdapter } from './ports.js';
 import { assertCohortManifest, assertRef, ContractError } from './contracts.js';
+import { isBitBrowserUnreachable } from './local-dependency-recovery.js';
 
 const DEFAULT_API_BASE_URL = 'http://127.0.0.1:54345';
 
@@ -37,6 +38,8 @@ export class BitBrowserControlRuntimeAdapter extends RuntimeAdapter {
     // the CDP transport, exactly like detach(). Non-resident (legacy) mode
     // still calls /browser/close.
     residentProfile = false,
+    // D-407：本机接口没应答时先拉起比特浏览器（local-dependency-recovery），拉起后只再试一次。
+    recover = null,
   } = {}) {
     super();
     if (!browserType || typeof browserType.connectOverCDP !== 'function') throw new TypeError('browserType.connectOverCDP is required');
@@ -48,6 +51,23 @@ export class BitBrowserControlRuntimeAdapter extends RuntimeAdapter {
     this.fetchImpl = fetchImpl;
     this.timeoutMs = timeoutMs;
     this.residentProfile = residentProfile === true;
+    if (recover !== null && typeof recover !== 'function') throw new TypeError('recover must be a function');
+    this.recover = recover;
+  }
+
+  /**
+   * 开窗口前的第一问。没应答就拉起一次再问一次（D-407）：这一步在打开窗口之前，页面上什么都还没发生，
+   * 重试不碰付款。应答了但说失败、或拉起后仍不应答，照旧抛错。
+   */
+  async health() {
+    try {
+      return await this.request('/health', {});
+    } catch (error) {
+      if (!this.recover || !isBitBrowserUnreachable(error)) throw error;
+      const outcome = await this.recover();
+      if (!outcome?.recovered) throw error;
+      return this.request('/health', {});
+    }
   }
 
   async request(path, body = {}) {
@@ -72,7 +92,7 @@ export class BitBrowserControlRuntimeAdapter extends RuntimeAdapter {
     if (manifest.allowWrites !== false) throw new ContractError('BitBrowser adapter is read-only');
     const logicalProfileRef = assertRef(profileRef, 'profileRef');
     const ref = this.bitbrowserProfileId;
-    const health = await this.request('/health', {});
+    const health = await this.health();
     if (typeof health !== 'string' && health !== undefined) throw new Error('BitBrowser health response is invalid');
     const listing = await this.request('/browser/list', { page: 0, pageSize: 100 });
     const profiles = Array.isArray(listing?.list) ? listing.list : [];

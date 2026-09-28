@@ -33,6 +33,7 @@ import { createSharedLivePaymentWorker } from './shared-live-composition.js';
 import { AppendOnlyWal, WalEvidenceSink } from './wal.js';
 import { CompositeEvidenceSink, MysqlEvidenceSink } from './mysql-evidence-sink.js';
 import { createHighvccSnapshotSyncService } from '../../v1/src/services/highvcc-snapshot-sync-service.js';
+import { bitBrowserHealthy, createBitBrowserRecovery, createTunnelRecovery } from './local-dependency-recovery.js';
 
 export const POOL_CONFIRMATION_PREFIX = 'I-CONFIRM-RESIDENT-BROWSER-POOL:';
 export const POOL_MODES = Object.freeze({ PAY: 'PAY', REHEARSAL: 'REHEARSAL' });
@@ -185,7 +186,7 @@ const sleep = (ms, signal) => new Promise((resolve) => {
  * for the lane: the run/resources they left behind are recovered by lease
  * expiry, and the resident window stays open.
  */
-export async function runLaneLoop({ laneId, steps, onResult, onError = async () => undefined, heartbeat = async () => undefined, pollIntervalMs, signal, sleepImpl = sleep }) {
+export async function runLaneLoop({ laneId, steps, onResult, onError = async () => undefined, onTickOk = async () => undefined, heartbeat = async () => undefined, pollIntervalMs, signal, sleepImpl = sleep }) {
   if (!laneId || !Array.isArray(steps) || steps.some((step) => typeof step.run !== 'function')) throw new TypeError('laneId and steps are required');
   const summary = { laneId, ticks: 0, results: 0, errors: 0 };
   while (!signal?.aborted) {
@@ -203,6 +204,7 @@ export async function runLaneLoop({ laneId, steps, onResult, onError = async () 
           break;
         }
       }
+      await onTickOk({ laneId });
     } catch (error) {
       summary.errors += 1;
       await onError({ laneId, error });
@@ -250,6 +252,15 @@ export function withLaneGuard({ query, workerId }) {
   };
 }
 
+/**
+ * 领单门口（D-407）：本机比特浏览器此刻不在应答（且拉起也没救回来）就不领新单——领了也只能当场判失败、
+ * 退卡密（09-28 两单就是这样）。付款后核实不走这道门：它不领新单，开窗口时自己会拉起再试。
+ */
+export function withLocalReadyGate(localReady) {
+  if (typeof localReady !== 'function') throw new TypeError('localReady is required');
+  return (step) => async () => ((await localReady()) ? step() : { status: 'IDLE' });
+}
+
 export async function createLaneWorker({ lane, config, pool, browserType, shared }) {
   const workerId = `${config.workerIdPrefix}:${lane.laneId}`;
   const walPath = `${config.stateDir}/${lane.laneId}.wal`;
@@ -260,6 +271,7 @@ export async function createLaneWorker({ lane, config, pool, browserType, shared
   const evidenceSink = new CompositeEvidenceSink([new WalEvidenceSink(wal), new MysqlEvidenceSink({ pool, workerId })]);
   const runtimeAdapter = new BitBrowserControlRuntimeAdapter({
     browserType, apiBaseUrl: config.bitbrowserApiBaseUrl, bitbrowserProfileId: lane.bitbrowserProfileId, residentProfile: true,
+    recover: shared.recoverBitBrowser || null,
   });
   const manifest = createBitBrowserControlManifest();
   const cardMaterialLeaseProvider = await new DurableCardMaterialLeaseProvider({ source: shared.enrichedCardSource, filePath: cardLeasePath }).init();
@@ -313,12 +325,13 @@ export async function createLaneWorker({ lane, config, pool, browserType, shared
     postPlusAction: postPlusActionForPlan, stopBeforeSubmit: config.stopBeforeSubmit, releaseSessionOnComplete: true, safeAbortOnFailure: true,
   });
   const withCleanupGuard = withLaneGuard({ query: (sql, params) => pool.query(sql, params), workerId });
+  const withReadyGate = shared.localReady ? withLocalReadyGate(shared.localReady) : (step) => step;
   return Object.freeze({
     laneId: lane.laneId, workerId,
     steps: Object.freeze([
       { name: 'post-payment-verification', run: () => verification.runOnce() },
-      { name: 'order-preflight', run: withCleanupGuard(() => preflight.runOnce()) },
-      { name: 'live', run: withCleanupGuard(() => live.runOnce()) },
+      { name: 'order-preflight', run: withCleanupGuard(withReadyGate(() => preflight.runOnce())) },
+      { name: 'live', run: withCleanupGuard(withReadyGate(() => live.runOnce())) },
     ]),
   });
 }
@@ -339,7 +352,27 @@ export async function runProductionLivePoolWorker({ env = process.env, browserTy
     const addressSource = new MockAddressBillingAddressSource({ state: config.billingAddressState, name: config.billingAddressName, assignmentStore: new MysqlBillingAddressAssignmentStore({ pool }) });
     const rawCardSource = new SharedEncryptedCardMaterialSource({ db: pool, encryptionKey: config.materialEncryptionKey });
     const SessionProviderAdapter = config.sessionProviderMode === 'EXTENSION' ? ExtensionSessionBootstrapAdapter : CookieSessionBootstrapAdapter;
+    // D-407：比特浏览器 / 隧道出问题先拉起再试，不直接判失败。
+    const poolLog = (event, data) => console.log(`[pool] ${event}`, data);
+    const healthy = () => bitBrowserHealthy({ apiBaseUrl: config.bitbrowserApiBaseUrl });
+    const recoverBitBrowser = createBitBrowserRecovery({ healthy, log: poolLog });
+    const tunnel = createTunnelRecovery({ log: poolLog });
+    let readyCheckedAt = 0; let readyValue = true; let readyInflight = null;
+    // 五秒看一次：好着就放行；不好就拉起（最多等 90 秒），救回来才放行。结论在五秒内复用，免得每秒都去问。
+    const localReady = async () => {
+      if (Date.now() - readyCheckedAt < 5_000) return readyValue;
+      if (!readyInflight) {
+        readyInflight = recoverBitBrowser().then((outcome) => {
+          const next = outcome.recovered === true;
+          if (next !== readyValue) poolLog(next ? 'local-ready' : 'local-not-ready', { reason: outcome.reason || null });
+          readyValue = next; readyCheckedAt = Date.now();
+          return next;
+        }).finally(() => { readyInflight = null; });
+      }
+      return readyInflight;
+    };
     const shared = {
+      recoverBitBrowser, localReady,
       // D-389：点完付款后各段耗时，写本机池状态目录（与 WAL 同目录，不进仓库、不上传）。
       postClickTiming: createPostClickTiming({ file: join(config.stateDir, 'post-click-timing.jsonl') }),
       enrichedCardSource: new BillingAddressEnrichedCardMaterialSource({
@@ -353,6 +386,9 @@ export async function runProductionLivePoolWorker({ env = process.env, browserTy
     let lastHeartbeat = 0;
     const heartbeat = async () => {
       if (Date.now() - lastHeartbeat < 5_000) return;
+      // D-407：比特浏览器拉不起来就不报「活着」——下单入口 120 秒后按执行器停了拒单（卡密不消耗），
+      // 巡检推「执行器离线」叫人；好了之后下一次心跳照常写，入口自动恢复。
+      if (!(await localReady())) return;
       lastHeartbeat = Date.now();
       await pool.query(`UPDATE app_settings SET setting_value = ?, updated_at = CURRENT_TIMESTAMP(3) WHERE setting_key = 'browser_worker_heartbeat_at'`, [new Date().toISOString()]);
     };
@@ -396,7 +432,11 @@ export async function runProductionLivePoolWorker({ env = process.env, browserTy
         laneLogger(laneId)(step, { status: result.status, reasonCode: result.reasonCode || null, orderId: result.orderId || null, ...(result.diagnosticMessage ? { diagnosticMessage: result.diagnosticMessage } : {}), ...(result.quote ? { quote: result.quote } : {}) });
         if (shouldRefreshCardBalances(result.status)) await refreshAfterPayment(laneId);
       },
-      onError: async ({ laneId, error }) => laneLogger(laneId)('error', { code: error?.code || 'LANE_FAILURE', message: String(error?.message || '').slice(0, 200) }),
+      onError: async ({ laneId, error }) => {
+        laneLogger(laneId)('error', { code: error?.code || 'LANE_FAILURE', message: String(error?.message || '').slice(0, 200) });
+        await tunnel.noteFailure(error);
+      },
+      onTickOk: async () => tunnel.noteSuccess(),
     })));
     return { status: 'STOPPED', mode: config.mode, lanes: summaries };
   });
