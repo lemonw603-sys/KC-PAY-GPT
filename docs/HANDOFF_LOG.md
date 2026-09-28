@@ -3913,3 +3913,7 @@ Lemon：「1发布 2清」。探针 → 非终态 0 / ACTIVE 0 → prepare（83/
 ## 2026-09-28｜highvcc token 重贴核实（01:56～01:59 UTC）
 
 Lemon：「token 已经重贴了」。只读核实：token 行 01:56:13 更新、失效告警 01:56:14 RESOLVED（保存时当场向卡台验证，D-377）、服务器上用生产 release `walletBalance()` 只读查钱包成功 $20.26（01:59:05）。下一次定时快照同步 02:21 UTC。
+
+## 2026-09-28｜两张 Plus 单开页即失败（03:27～03:35 UTC 排查）
+
+Lemon：「我刚刚充值了一单，为什么会失败」。exf6 / O572 同一卡密，第一步 observe-page 即 PAGE_CHECKPOINT_FAILED；supervisor.log 原话 `BitBrowser /health timed out`、`fetch failed`，并有隧道 ECONNREFUSED / 事务超时。03:31 复查全部恢复；比特浏览器进程 03:32:05 UTC 新起。发现缺口：付款池在比特浏览器不可达时仍认领订单并判终态失败；心跳只代表 worker 进程活着，不代表比特浏览器 / 隧道可用，下单入口因此照常收单。待 Lemon 定修不修。
