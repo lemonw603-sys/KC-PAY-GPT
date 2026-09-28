@@ -4,7 +4,7 @@
 
 ## 现在的状态（09-28 06:0x UTC 现查；16:0x UTC 补下面第一条；明细见 CURRENT_STATE.md，`state-check.sh` 20 项一致）
 
-- **09-28 15:55～15:57 UTC Lemon 自跑一张 API 路线 Plus 单成功**：`PJV1-4KDZR6YvdlI0UMFXKLWg`，Lemon 15:54:54 后台切回 API → 15:55:42 建单 → 同秒分卡 5270、ZZSHU `create_direct` → 15:56:32 平台确认付款成功 → 15:57:32 续费已取消、RECHARGE_SUCCESS；订单事件全是 CUSTOMER / WORKER / SYSTEM，无人工；ZZSHU 点数 15→14。5270 用掉，**可分配 0**：hnskj 故障，highvcc 钱包 $20.26 < $36.50，下一单会进等卡。**Lemon 定：这单算「可离开」第一条的首张真实客户单，后面不再自测（D-408）**；「此后连续 10 单无人介入」还计不计待他确认。发卡密前 highvcc 要先充到 ≥ $36.50。卡台侧扣款等 highvcc 下一次同步（每小时）后可查 5270 流水。
+- **09-28 15:55～15:57 UTC Lemon 自跑一张 API 路线 Plus 单成功**：`PJV1-4KDZR6YvdlI0UMFXKLWg`，Lemon 15:54:54 后台切回 API → 15:55:42 建单 → 同秒分卡 5270、ZZSHU `create_direct` → 15:56:32 平台确认付款成功 → 15:57:32 续费已取消、RECHARGE_SUCCESS；订单事件全是 CUSTOMER / WORKER / SYSTEM，无人工；ZZSHU 点数 15→14。5270 用掉，**可分配 0**：hnskj 故障，highvcc 钱包 $20.26 < $36.50，下一单会进等卡。**Lemon 定：这单算「可离开」第一条的首张真实客户单，后面不再自测（D-408）**；「此后连续 10 单无人介入」照数（D-409，现 0/10）。推送改法已定（D-409：结束时一条、token 只推一次），实现前先给 Lemon 看推送原文。发卡密前 highvcc 要先充到 ≥ $36.50。卡台侧扣款等 highvcc 下一次同步（每小时）后可查 5270 流水。
 - 生产 release **`20260928-d407-0909cb5`**：D-406（卡台推送写 HNSKJ / highvcc、`$` 金额、短句）+ D-407 ②（同台已推「余额不够开新卡」/「卡台故障」时「卡不够」不再推）。回滚点 `20260928-d406-7676bf9`（直接回滚）。发布准备会先自动跑真数据库测试（需本机 `pojia-stage1-mysql` 容器）。
 - **本机常驻池 PID 56510**（supervisor 84622），仍跑 `~/pojia-pool/releases/20260926-d389-1ca9a42`。**新版本 `20260928-d407-50c8148` 已 prepare 未切换**（D-407 ③：比特浏览器 / 隧道先拉起再试）。
 - 付款开关 true、下单查心跳 true、心跳新鲜（06:03:50 UTC）。**Plus 默认路线 = Browser（302）**，09-28 03:26:50 UTC 后台切换（actor `admin`）。非终态订单 0。highvcc 钱包 $20.26，**Lemon 定先不充（D-406）**。
