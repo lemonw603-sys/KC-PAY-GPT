@@ -4,7 +4,7 @@
 
 | 项目 | 当前值 | 核对时间（UTC） | 证据方式 |
 |---|---|---|---|
-| 第⑥步057迁移准入 | 055～058已应用；057触发器DEFINER为`pojia_migrator@172.17.0.1`，临时SUPER已撤回。本轮反馈发布无新迁移，未重跑DDL。 | 2026-09-21 07:52 UTC | migration.log，新连接schema/DEFINER/grants复核 |
+| 第⑥步057迁移准入 | 055～058已应用；057触发器DEFINER为`pojia_migrator@172.17.0.1`，临时SUPER已撤回。本轮反馈发布无新迁移，未重跑DDL。**09-29 复查**：`schema_migrations` 055～062 都在；只读账号查 `information_schema.TRIGGERS` 返回 0 行——该视图只显示有 TRIGGER 权限的触发器，**不能据此说触发器不在**，DEFINER 本次未能复核。 | 2026-09-29 05:3x UTC（迁移记录）；DEFINER 仍是 2026-09-21 07:52 UTC | 新连接 schema_migrations SELECT；09-21 为 migration.log，新连接schema/DEFINER/grants复核 |
 | 生产 release | `/opt/pojia/releases/20260929-d409-dad24fb`（提交 `dad24fbf`）＝ **D-409**：订单结束时推一条「充值成功」（新类型 `ORDER_RECHARGE_SUCCEEDED`，巡检每分钟捡，两路线通用），来单不推；token 失效只推一次、原文「HH:MM 起失效…到「卡片」页贴新 token」；开卡撞 token 失效不另推「卡台故障」；钱包不够开卡推送改文案、进行中订单占着的卡算水位时仍算在；关告警不再把已发推送改 CANCELLED；贴 token 顺手关已恢复的「卡台故障」。之前 D-406/407 内容照旧。本机池子不引用这些文件、未换。 | 2026-09-28 17:37 UTC | customer-sql-probe 全过；prepare 真数据库测试 87/0/1、清单 1423 OK；v1 1237：1149/0/88；switch 17:37:03 UTC，live / ready 200；切换后 web/worker/bark/巡检/开卡日志 0 错误；巡检 17:37:43 首轮输出 `succeededPushed:0`、开卡同轮输出带 `reserved` |
 | 回滚点 | **`20260928-d407-0909cb5`**（无迁移，直接回滚）：`ln -sfn /opt/pojia/releases/20260928-d407-0909cb5 /opt/pojia/current && systemctl restart pojia-web.service pojia-worker.service pojia-bark-notifications.service`。再往前 `20260928-d406-7676bf9`。本机常驻池不随服务器发布变。 | 2026-09-28 17:37 UTC | switch 打印的 ROLLBACK |
 | 最新数据库备份 | `/var/backups/pojia/pojia-20260929T031938Z.sql.gz.enc`（每日 `pojia-backup.timer` 09-29 03:19:36 UTC 这一轮；这份的完整性本次未查）。上一份 `pojia-20260928T173649Z.sql.gz.enc` 是 D-409 发布 prepare 时做的（backup_integrity=OK）。 | 2026-09-29 05:18 UTC | ssh `ls -1t /var/backups/pojia/` + list-timers |
