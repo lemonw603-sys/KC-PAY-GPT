@@ -55,12 +55,28 @@ export async function bitBrowserHealthy({ apiBaseUrl, fetchImpl = globalThis.fet
 }
 
 /**
+ * 比特浏览器主进程在不在（只认主程序，不认它的 Helper 子进程）。true 在 / false 不在 / null 查不出来。
+ */
+export function bitBrowserRunning({ exec = execFile } = {}) {
+  return new Promise((resolve) => {
+    exec('/usr/bin/pgrep', ['-f', `^${BITBROWSER_APP_PATH}/Contents/MacOS/`], { timeout: 5_000 }, (error) => {
+      if (!error) resolve(true);
+      else resolve(error.code === 1 ? false : null);
+    });
+  });
+}
+
+/**
  * 拉起比特浏览器并等它的接口应答。同一时刻只跑一次（几条车道同时发现也只拉一次）；
  * 两次「真去拉起」之间至少隔 `relaunchCooldownMs`，冷却期内只看一眼健康、不再拉。
+ *
+ * 拉起命令被吞（2026-09-29 D-407 演练：比特浏览器还没退完时 `open -a` 只把它叫到前台，退完就没了，
+ * 等满 90 秒再冷却 3 分钟才拉第二次）：等待中接口不应答、且离上次拉起已过 `retryAfterMs`、主进程确实不在，
+ * 就在这一轮里再拉一次，最多 `maxRetries` 次。主进程在（停在登录页 / 卡住）或查不出来时照旧不重复拉。
  */
 export function createBitBrowserRecovery({
-  healthy, launch = () => run('/usr/bin/open', ['-a', BITBROWSER_APP_PATH]),
-  waitMs = 90_000, pollMs = 3_000, relaunchCooldownMs = 180_000,
+  healthy, launch = () => run('/usr/bin/open', ['-a', BITBROWSER_APP_PATH]), running = () => bitBrowserRunning(),
+  waitMs = 90_000, pollMs = 3_000, relaunchCooldownMs = 180_000, retryAfterMs = 10_000, maxRetries = 2,
   sleep = defaultSleep, now = () => Date.now(), log = () => undefined,
 } = {}) {
   if (typeof healthy !== 'function') throw new TypeError('healthy is required');
@@ -76,11 +92,20 @@ export function createBitBrowserRecovery({
       return { recovered: false, launched: false, reason: 'LAUNCH_FAILED' };
     }
     const started = now();
+    let retries = 0;
     while (now() - started < waitMs) {
       await sleep(pollMs);
       if (await healthy()) {
-        log('bitbrowser-recovered', { waitedMs: now() - started });
+        log('bitbrowser-recovered', { waitedMs: now() - started, retries });
         return { recovered: true, launched: true, waitedMs: now() - started };
+      }
+      if (retries < maxRetries && now() - lastLaunchAt >= retryAfterMs && await running() === false) {
+        retries += 1;
+        lastLaunchAt = now();
+        log('bitbrowser-relaunch-retry', { reason: 'NOT_RUNNING', retry: retries });
+        try { await launch(); } catch (error) {
+          log('bitbrowser-relaunch-failed', { code: String(error?.code || error?.message || '').slice(0, 120) });
+        }
       }
     }
     log('bitbrowser-still-down', { waitedMs: now() - started });
