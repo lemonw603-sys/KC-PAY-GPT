@@ -248,25 +248,26 @@ API 路线 301 = ZZSHU 直充 + 本方自带卡（任何有 API 直充能力的�
 - **换 Key**：Lemon 把新 Key 存本机（不进聊天）：先 `mkdir -p ~/.config/zzshu && chmod 700 ~/.config/zzshu`，复制 Key 后 `printf 'ZZSHU_API_KEY=%s\n' "$(pbpaste)" > ~/.config/zzshu/api.env && chmod 600 ~/.config/zzshu/api.env`。执行者（**先问**）改服务器 `/etc/pojia/provider.env` 的 `ZZSHU_API_KEY` 行、重启 `pojia-worker`（**先问**），再用上面的只读命令核对。
 - **API 路线用哪个卡台**：工作台营业条的卡台下拉框跟着当前路线走（走 API 时切的是 API 那一行），与 Browser 行各自独立；候选只列有 API 直充能力的卡台。
 
-## 2.8 本地界面验收环境（第⑥步起，2026-09-19）
+## 2.8 本地界面验收环境（「演示精简版」，2026-09-29 起一条命令）
 
-后台每块 UI 的**界面层验收**（真实页面 + 与原型同尺寸比对）都要用它。不碰生产、不碰 13306 只读隧道。
+后台每块 UI 的**界面层验收**（真实页面 + 与原型同尺寸比对）、改后台界面时**先在真后台上给 Lemon 看定稿**（不另写演示网页，免得批的和上线的不一样）、接手的人做界面回归，都用它：**真后台（当前 v1 代码）+ 按线上形状造的假数据**。不碰生产（只有 `refresh-shape` 经 13306 隧道只读取聚合）。
 
-1. **隔离库**（复用既有测试容器，端口每次现查，`docker restart` 会换）：
-   ```
-   PORT=$(docker port pojia-stage1-mysql 3306/tcp | head -1 | sed 's/.*://')
-   mysql -h 127.0.0.1 -P $PORT -u root -proot -e "CREATE DATABASE pojia_ui_verify CHARACTER SET utf8mb4;"
-   cd v1 && MIGRATION_DATABASE_URL="mysql://root:root@127.0.0.1:$PORT/pojia_ui_verify" node scripts/migrate.js
-   ```
-2. **临时凭据**（写 scratchpad，**不进项目、不进 git**）：六个各自独立的 32B base64 密钥
-   （`SESSION_ENCRYPTION_KEY_BASE64` / `CDK_HASH_KEY_V1_BASE64` / `CDK_RECOVERY_KEY_BASE64` /
-   `CDK_DELIVERY_HMAC_KEY_BASE64` / `CARD_INTAKE_PAN_HMAC_KEY_BASE64` / `PAYMENT_REFERENCE_HMAC_KEY_BASE64`，
-   校验要求互不相同）+ `ADMIN_PASSWORD_HASH`（`hashAdminPassword()` 生成）+ `ADMIN_SESSION_SECRET_BASE64`。
-   **坑**：env 文件里值要用单引号包住——hash 形如 `scrypt-v1$…$…`，`source` 时 `$` 会被 shell 展开成空。
-   **不要设** `ADMIN_HOST`（设了会做 Host 校验，localhost 进不去）。
-3. **起服务**：写个 `source env && exec node src/server.js` 的小脚本，用 `preview_start` 起（别用 Bash 起 dev server）。
-4. **造数**：直接往隔离库插。中文务必 `mysql --default-character-set=utf8mb4`，否则页面上是乱码（看着像 bug，其实是造数问题）。
-5. **验完**：停服务 → **只删自己建的库** → 容器和其余历史库不动（V2.0_EXECUTION §635）。
+```
+scripts/local-admin.sh up             # 重建 pojia_local_admin → 迁移 → 首次生成密钥与口令 → 造数 → 打印「形状比对」
+scripts/local-admin.sh serve          # 前台起后台 http://127.0.0.1:8810/admin（或 preview_start local-admin）
+scripts/local-admin.sh status         # 库 / 服务 / 快照日期
+scripts/local-admin.sh down           # 停服务，只删 pojia_local_admin（密钥与口令留着，下次 up 复用）
+scripts/local-admin.sh refresh-shape  # 想看最新的线上形状时：只读取生产聚合，写回快照（要 13306 隧道），再 up
+```
+
+- **口令**在 `~/Library/Application Support/pojia-local-admin/admin-password.txt`（目录 700、文件 600、不进 git；脚本从不打印口令）。同目录的 `local-admin.env` 是七把临时密钥 + 口令哈希（值用单引号包，不设 `ADMIN_HOST`、不设任何卡台 / 直充 Key）。
+- **快照** `v1/scripts/local-admin/shape.json` 进 git，离线也能 up。里面只有聚合：各组个数、UTC+8 日偏移、开关与门槛、钱包取整、生产资格规则算出的「剩几张 · 能充几单」等；一条 SQL、一个一致性读视图抓取（`v1/scripts/local-admin/shape-queries.mjs`）。
+- **造出来的数**：个数与分布逐节等于快照（up 末尾的「形状比对」，也可 `scripts/local-admin.sh verify`）；**每一行都是假的**——邮箱 `@demo.invalid`，订单号、卡号（假卡段 51000099 / 40000099）、尾号、卡密、Session、token、直充单号全部现场生成，原因 / 提醒 / 备注是模板字。时间按「现在」往回推：哪天 up，看到的都是「快照那天的今天」（当天内的具体时刻是随机的）。
+- **不连外网**：serve 挂 `offline-guard`，进程里的请求只放行 127.0.0.1；highvcc 的卡段列表与钱包本机应答（钱包取快照量级），报价 / 开卡 / 同步一律 503，贴了真 token 也发不出去。hnskj「刷新余额」会报错（本机没配 Key），属正常。
+- **心跳**按快照保持（线上抓快照时 worker / 常驻池在线，本机就显示在线）。本机并没有 worker 在跑，开关随便拨也不会有东西执行。
+- 服务开着时重跑 up，几秒内接口会报错，up 完刷新页面即可。复用 `pojia-stage1-mysql` 容器（端口每次现查）；容器停了先 `docker start pojia-stage1-mysql`。在 `.claude/worktrees/` 下的工作树里 serve 会自动经一个不带点的软链接起（express 的 sendFile 拒绝路径里带点目录）。
+- **真库测试**：`v1/scripts/mysql-tests.sh test/local-admin-mysql-integration.test.js`（也在发布前的全量真库测试里）。
+- 快照里没有的状态（例如当天没有待办、没有付款不明），要验就在页面上注入（见下）或临时往本机库补一条，验完 up 重建即可。
 
 **四态必验**：有待办 / 无待办 / 接口失败（前端 `window.fetch` 注入 500）/ 权限拒绝（注入 401）。
 **只测渲染函数不算界面验收** —— F-63 那次就是只喂 `{__error:true}` 给渲染函数，漏掉了「上游根本不产生失败态」，真实页面才抓到。

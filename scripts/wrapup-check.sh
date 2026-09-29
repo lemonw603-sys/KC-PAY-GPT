@@ -75,7 +75,7 @@ fi
 
 # 7) 本机遗留的临时服务：调试起的假数据服务器、静态服务器，跑完该停
 leftover=$(ps -eo pid,command 2>/dev/null \
-  | grep -E '[h]ttp\.server|[m]ock-server\.mjs|scratchpad/[a-z]+\.mjs' \
+  | grep -E '[h]ttp\.server|[m]ock-server\.mjs|scratchpad/[a-z]+\.mjs|local-admin/[o]ffline-guard\.mjs' \
   | grep -v 'live-pool\|supervisor' | head -4)
 if [ -z "$leftover" ]; then
   ok "本机没有遗留的调试服务"
