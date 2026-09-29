@@ -4010,3 +4010,10 @@ Lemon：待销清单不加「余额不够再付一单」；$16 卡复用两次�
 - 未改、交 Lemon：CLAUDE.md「卡台开卡写请求必须用稳定 `X-Idempotency-Key`」与 highvcc 不符（`highvcc-card.js` 无此头；现行保护是开卡失败进 REVIEW_REQUIRED、不自动重试），拟改写措辞待批。
 - Lemon：补钱功能以前去掉过（D-367），现在讨论要不要补回来；不用开关也行，归自动开卡总闸也可以，稍后详谈。
 - 只读核对：待销清单 due 10 张里，0601 / 7402 / 3159 / 1657 / 3336 均 `sourcePresent:false`（服务器上跑生产 release `createCardRetirementService().list()`）；5270 / 8499 账本每单记 16.000000（= `open_card_amount`），资格规则 BALANCE_LOW 为 `LEAST(current_balance, funded_amount − 账本花费) ≥ 16`（`card-inventory-eligibility.js:81-84`）。另一窗口的 HANDOFF_NOW / wrapup-check 改动已由其提交（`8cb0efc3`）。
+
+## 2026-09-29｜Lemon 六条答复；真补 $1 测到账；D-412 落盘（18:1x～18:5x UTC+8）
+
+- Lemon：钱包先不充（问可不可以）；批真补测试；补多少选 A（每次 $16 整）；客户页方向同意；5 张卡是他删的（删卡自动退余额、扣 $0.01）；批 CLAUDE.md 幂等规则改写。记 D-412。
+- 真补测试：先从 highvcc 公开前端 js 核请求格式（`cardRecharge` / `cardReduce`，与 D-410 补记二一致）→ 脚本放服务器 `nohup` 跑（避免本机断线打断动钱步骤；只发一次、不重发、5 分钟不到账即停；输出无卡号 / token）→ 10:32～10:34 UTC 两轮完成 → 用生产 release 的 provider 独立复读：8499 1600 分、钱包 2438 分、净 $0。补钱接口 9～16 秒返回，返回后第一次读详情即到账。原始日志存本窗口 scratchpad `hv-topup-timing.log`；服务器 `/root/hv-topup-timing.{mjs,log}` 留着（无密钥），删不删问 Lemon。
+- 回答「钱包不充行不行」前查了代码：没找到等卡超时自动关单（只搜了等卡相关超时写法），`ORDER_WAITING_FOR_CARD` 在推送白名单「叫人」类。
+- 同步改：CLAUDE.md 幂等规则、CURRENT_STATE（备用卡 / 可分配卡两行）、HANDOFF_NOW（钱包、D-411 第一步与细节、待 Lemon、未验证）、PROJECT_MAP（下一步 7、欠账 21）、UNVERIFIED_LEDGER 顶部。
