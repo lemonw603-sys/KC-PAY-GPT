@@ -1,5 +1,6 @@
 import { TOP_UP_OPEN_STATUSES } from './card-inventory-eligibility.js';
 import { detectTopUp, fundedAmountAfterTopUp } from '../domain/card-top-up.js';
+import { toCents } from '../domain/card-issue-fee.js';
 import crypto from 'node:crypto';
 import { unzipSync, strFromU8 } from 'fflate';
 import { encryptSecret } from '../security/secret-box.js';
@@ -142,6 +143,9 @@ export function createManualCardImportService({ pool, encryptionKey, panHmacKey 
       current_balance, funded_amount,
       EXISTS (SELECT 1 FROM card_top_ups import_top_up WHERE import_top_up.card_id = cards.id
         AND import_top_up.status IN (${TOP_UP_OPEN_STATUSES.map((status) => `'${status}'`).join(',')})) AS top_up_open,
+      EXISTS (SELECT 1 FROM card_top_ups import_confirmed WHERE import_confirmed.card_id = cards.id
+        AND import_confirmed.status = 'CONFIRMED'
+        AND import_confirmed.finished_at >= CURRENT_TIMESTAMP(3) - INTERVAL 10 MINUTE) AS top_up_just_confirmed,
       ${activeRiskSql('cards')} AS has_active_risk FROM cards WHERE provider_account_id=?${lock ? ' FOR UPDATE' : ''}`, [source.id]);
     const byExternal = new Map(existing.map((r) => [String(r.external_card_id), r]));
     const panHmacs = rows.map((r) => hmac(r.pan, panHmacKey)).filter(Boolean);
@@ -209,6 +213,12 @@ export function createManualCardImportService({ pool, encryptionKey, panHmacKey 
           // 这里再按「有人补了钱」记一遍就重复了（付款池付完一单会立刻触发一次同步，撞上的机会不小）。
           const topUp = Number(existing.top_up_open) ? null : detectTopUp(existing.current_balance, item.balance);
           const fundedAfter = topUp ? fundedAmountAfterTopUp(existing.funded_amount, topUp) : null;
+          // D-411 对抗审查（2026-09-30）：补钱刚核对到账的 10 分钟内，快照不把余额往回写低。整批快照要逐张读卡台，
+          // 可能是在钱到账之前读的、核对之后才写库——写回旧的低余额，挂在这张卡上的单付款前检查会一直不过，
+          // 直到下一次同步（最长一小时）。这期间卡真被付了钱也无妨：分卡看的是「余额」与「注资 − 账本」的较小者。
+          const holdBalance = Number(existing.top_up_just_confirmed) === 1 && existing.current_balance != null
+            && toCents(String(item.balance)) < toCents(String(existing.current_balance));
+          const balanceToWrite = holdBalance ? existing.current_balance : item.balance;
           await connection.query(`UPDATE cards SET last4=?, status=?, current_balance=?, currency='USD',
             funded_amount=COALESCE(?, funded_amount),
             inventory_status=IF(${activeRiskSql('cards')}, inventory_status, ?), intake_status='ACCEPTED',
@@ -216,7 +226,7 @@ export function createManualCardImportService({ pool, encryptionKey, panHmacKey 
             last_manual_snapshot_batch_id=?, card_credentials_ciphertext=?, card_number_ciphertext=?,
             pan_hmac=?, pan_hmac_version=1, card_bin=?,
             last_synced_at=CURRENT_TIMESTAMP(3), updated_at=CURRENT_TIMESTAMP(3)
-            WHERE id=?`, [item.pan.slice(-4), isAvailableByFacts ? 'active' : 'unavailable', item.balance, fundedAfter,
+            WHERE id=?`, [item.pan.slice(-4), isAvailableByFacts ? 'active' : 'unavailable', balanceToWrite, fundedAfter,
             isAvailableByFacts ? 'AVAILABLE' : 'HELD_FOR_REVIEW', operationalStatus, batchId, encrypted,
             encryptSecret(item.pan, encryptionKey), hmac(item.pan, panHmacKey), cardBin(item.pan), existing.id]);
           if (topUp) {

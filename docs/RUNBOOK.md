@@ -153,7 +153,8 @@ browser-mvp/scripts/prod-query.sh "SELECT id, open_adapter, default_card_segment
 - **怎么跑**：Plus 新单分卡时先挑现成能付的卡（用过的优先）；没有时，挑一张「用过 1～2 单、卡台能补钱、钱包够补」的旧卡，订单进 `CARD_PROVISIONING`（后台「给卡补钱中」，客户页「正在准备支付卡」），往卡里补 $16（＝设置页「每单记账金额」），**卡详情读到到账才付款**。第 3 单付完进待销清单。
 - **开关**：不另设开关，归「自动开卡」总闸（`card_auto_replenishment_enabled`）。关总闸＝不再补钱、旧卡不算可分配、已排队没发出的补钱也不发（订单换卡）；已发出去的照样核对到底。
 - **钱包**：补钱前实时读 highvcc 钱包：余额 − 待发补钱 − $16 ≥ 押金底线（$20）才发。所以钱包 < $36 时旧卡不会被复用（页面写「钱包不够补」）。
-- **补钱没成**：卡台明确拒绝 / 钱包不够 / token 失效 → 钱没动，订单自动换卡，这张卡 24 小时内不再补。不叫人。
+- **补钱没成**：钱包不够 / 总闸关了 / token 失效 / 读卡台出错 → 钱没动，订单自动换卡，这张卡停 10 分钟再补；卡台拒了这张卡（回了错误码、3 分钟后流水证实钱没出去）/ 卡对不上 / 人工判「钱没到卡上」→ 这张卡停 24 小时。不叫人。token 失效期间（`PROVIDER_TOKEN_EXPIRED` 告警开着）不挑旧卡补钱。
+- **不补的卡**：卡台上这张卡被扣过的次数（成功 + 授权中）比账本记的多＝有人在系统外用过（比如前一位客户），永远不往里补钱；每周只读巡检的「账外扣款」会列出它。每单最多真补一次：一单有过发出去 / 结果不明的补钱，就不再补第二张卡。
 - **结果不明**（推 `CARD_TOP_UP_UNRESOLVED`）：订单已自动换卡，卡锁着。到卡台看这张卡余额、账户流水里有没有「Add Balance To Card」，然后在生产主机：
   ```bash
   cd /opt/pojia/current/v1 && set -a && . /etc/pojia/runtime.env && set +a
@@ -161,8 +162,13 @@ browser-mvp/scripts/prod-query.sh "SELECT id, open_adapter, default_card_segment
   node scripts/resolve-card-top-up.mjs --top-up <补钱 id> --arrived --apply     # 钱到了：注资 +16，卡解锁
   node scripts/resolve-card-top-up.mjs --top-up <补钱 id> --not-arrived --apply # 钱没到卡上：卡解锁，去找卡台
   ```
-  补钱 id 在告警的去重键 `card-top-up:<id>` 里。脚本读到的余额与所选判断不符时拒绝写库。
-- **发布**：迁移 063（新表 `card_top_ups` + highvcc 补钱能力位）要在 customer-sql-probe **之前**跑（探针里有读这张表的 SQL）：prepare → migrate → probe → switch。worker 不需要新环境变量。
+  补钱 id 在告警的去重键 `card-top-up:<id>` 里。脚本读到的余额与所选判断不符时拒绝写库。停在 `PREPARED`（从没发出去、任务死了）的只能 `--not-arrived`；停在 `SENDING` 的脚本先按结果不明落定再了结。
+- **兜底**：每分钟巡检发现一笔补钱 15 分钟还没了结、又没叫过人（核对任务丢了），就推同一条 `CARD_TOP_UP_UNRESOLVED`，文案会写客户是不是还在等。
+- **发布**：迁移 063（新表 `card_top_ups` + highvcc 补钱能力位）要在 customer-sql-probe **之前**跑（探针里有读这张表的 SQL）：prepare → migrate → probe → switch。worker 不需要新环境变量；迁移没跑时新 worker 拒绝启动（服务不 active，发布核对过不去）。
+- **回滚前**（退回没有 D-411 的版本）：旧代码不认补钱任务、旧快照导入会把在途补钱再记一遍注资。先在设置页关「自动开卡」总闸（不再有新补钱），等下面这条查询为 0 再回滚；不为 0 就先用上面的脚本了结：
+  ```bash
+  browser-mvp/scripts/prod-query.sh "SELECT COUNT(*) FROM card_top_ups WHERE status IN ('PREPARED','SENDING','SUBMITTED','UNKNOWN')"
+  ```
 
 ## 2.6 待销清单与付款不明收口（第④步起，2026-09-18）
 

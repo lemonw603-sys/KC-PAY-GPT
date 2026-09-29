@@ -603,7 +603,22 @@ export function createWorkflowHandlers({
         code: 'TOP_UP_DISABLED', retryable: true, delayMs: 60_000, refundAttempt: true
       });
     }
-    return cardTopUp.send(task.order_id);
+    try {
+      return await cardTopUp.send(task.order_id);
+    } catch (error) {
+      // 一次数据库抖动不能让补钱任务直接判死（普通错误默认不可重试）：重跑是安全的——没落 SENDING 就重新预检，
+      // 落了 SENDING 就按结果不明处理、绝不重发（card-top-up-service）。
+      throw new TaskExecutionError(error?.message || 'Top-up send failed', {
+        code: 'TOP_UP_SEND_FAILED', retryable: true, delayMs: 15_000, cause: error
+      });
+    }
+  }
+
+  function topUpIdOf(task) {
+    try {
+      const payload = typeof task.payload_json === 'string' ? JSON.parse(task.payload_json) : task.payload_json;
+      return payload?.topUpId ? String(payload.topUpId) : null;
+    } catch { return null; }
   }
 
   async function checkTopUp(task) {
@@ -613,7 +628,7 @@ export function createWorkflowHandlers({
       });
     }
     try {
-      return await cardTopUp.check(task.order_id);
+      return await cardTopUp.check(task.order_id, { topUpId: topUpIdOf(task) });
     } catch (error) {
       if (error?.name === 'TopUpRetry') {
         throw new TaskExecutionError('Top-up is still in progress', {

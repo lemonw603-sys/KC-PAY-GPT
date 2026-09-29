@@ -56,9 +56,12 @@ try {
     // 2026-09-27（D-403）：可分配的卡里，卡台成功扣款次数多于本系统账本已用次数 → 系统外用过
     // （8718 被手动补过 Pro 差价，账本不知道，照样会分给下一单），或续费没取消掉又扣了一次。
     // 成功口径与自动放卡 / 放卡退卡密同一份（domain/card-purchase-evidence.js）。
+    // D-411：用过、等补钱复用的旧卡正是要往里放钱的卡，一起扫（它们过不了「余额够」，旧写法扫不到）。
     const [offLedger] = await pool.query(
       `SELECT c.last4 FROM cards c
-        WHERE ${eligibleInventoryCardSql('c', minBal)}
+        WHERE c.inventory_status IN ('AVAILABLE','ASSIGNED','DEPLETED')
+          AND NOT EXISTS (SELECT 1 FROM card_operational_overrides o WHERE o.provider_account_id = c.provider_account_id
+            AND BINARY o.external_card_id = BINARY c.external_card_id AND o.allocation_policy = 'RETIRED')
           AND (SELECT COUNT(*) FROM card_transactions t WHERE t.card_id = c.id AND ${successfulPurchaseSql('t')})
             > (SELECT COUNT(*) FROM card_consumption_ledger l WHERE l.card_id = c.id
                  AND l.status IN ('CONSUMED','RESERVED','RECONCILIATION'))`);

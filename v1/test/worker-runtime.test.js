@@ -61,7 +61,7 @@ test('D-411：发补钱跟派单开关、查到账跟轮询开关——停单不
   assert.equal(noDispatch.includes(TaskType.CHECK_TOP_UP), true, '停单后已发出的补钱照样核对到底');
   const noPoll = allowedTaskTypesFor({ ...allSettings, pollExistingOrders: false });
   assert.equal(noPoll.includes(TaskType.CHECK_TOP_UP), false);
-  assert.equal(noPoll.includes(TaskType.TOP_UP_CARD), true);
+  assert.equal(noPoll.includes(TaskType.TOP_UP_CARD), false, '追踪关了就不发补钱：发出去没人查到账');
 });
 
 test('one worker iteration passes only eligible task types to the runner', async () => {

@@ -170,7 +170,7 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
        WHERE dedupe_key = ? AND status = 'OPEN'`, [alertKey]);
     await connection.query(
       `INSERT INTO tasks (order_id, task_type, status, dedupe_key, max_attempts)
-       VALUES (?, 'TOP_UP_CARD', 'PENDING', ?, 5)
+       VALUES (?, 'TOP_UP_CARD', 'PENDING', ?, 20)
        ON DUPLICATE KEY UPDATE updated_at = CURRENT_TIMESTAMP(3)`,
       [orderId, `top-up-card:${topUpId}`]);
     return { topUpQueued: true, topUpId, providerCardId: String(card.provider_card_id),
@@ -496,6 +496,15 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
         await markConfirmedInTransaction(connection, topUpId, { balanceAfter: observed, resolvedBy });
         await resolveTopUpAlert(connection, topUpId);
         if (!attached) return { confirmed: true, orderReady: false };
+        // 钱到了，但卡上仍不够这一单的门槛（例如补之前余额是负的）：别让订单进付款前检查再被反复拒，
+        // 这一单换卡走；卡按余额回池子（对抗审查 2026-09-30）。
+        const minimumCents = toCents(String(order.minimum_required_card_balance ?? '0'));
+        if (Number.isInteger(minimumCents) && observedCents < minimumCents) {
+          const detach = await detachTopUpOrderInTransaction(connection, topUp, {
+            reason: `top-up arrived but card balance ${observed} is below the order minimum; order moves to another card`,
+            code: 'BALANCE_BELOW_MINIMUM' });
+          return { confirmed: true, orderReady: false, ...detach };
+        }
         const [ready] = await connection.query(
           `UPDATE orders SET status = ?, version = version + 1, updated_at = CURRENT_TIMESTAMP(3)
            WHERE id = ? AND version = ?`, [OrderStatus.CARD_READY, order.id, order.version]);
@@ -604,9 +613,14 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
              WHERE ${reusableTopUpCardSql('cards', { productCode })}
                AND ${walletCoversTopUpSql('cards')}
                AND cards.provider_account_id = ?
+               -- 这一单在这张卡上补过（任何结果）就不再挑它：补钱登记按（订单, 卡）唯一，重挑会撞键把分卡卡死；
+               -- 这一单有过没被明确拒绝的补钱（发出去了 / 结果不明 / 到过账）就不再补别的卡——每单最多真补一次，
+               -- 免得卡台一直超时时一单把钱一张张补进好几张卡（对抗审查 2026-09-30）。
+               AND NOT EXISTS (SELECT 1 FROM card_top_ups own_top_up
+                 WHERE own_top_up.order_id = ? AND (own_top_up.card_id = cards.id OR own_top_up.status <> 'REJECTED'))
              ORDER BY used_count DESC, created_at ASC
              LIMIT 1 FOR UPDATE SKIP LOCKED`,
-            [order.card_provider_account_id]
+            [order.card_provider_account_id, orderId]
           );
           if (reusable[0]) {
             return claimReusableCardForTopUp(connection, { order, orderId, card: reusable[0], productCode, alertKey });

@@ -279,3 +279,17 @@ test('accountFlow(): pages until total is reached, passing the window in epoch m
   assert.equal(new URLSearchParams(calls[0].init.body).get('createStart'), '1000');
   assert.equal(new URLSearchParams(calls[0].init.body).get('createEnd'), '2000');
 });
+
+test('defaultTimeoutMs bounds every call, including a response body that never finishes (the worker is serial)', async () => {
+  const hangUntilAbort = (signal) => new Promise((_, reject) => signal.addEventListener('abort',
+    () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' }))));
+  const noHeaders = createHighvccCardProvider({ getAccessToken: async () => 't', defaultTimeoutMs: 20,
+    fetchImpl: (url, init) => hangUntilAbort(init.signal) });
+  await assert.rejects(noHeaders.detail('HG1'), (e) => e.code === 'HIGHVCC_TIMEOUT');
+  const bodyHangs = createHighvccCardProvider({ getAccessToken: async () => 't', defaultTimeoutMs: 20,
+    fetchImpl: async (url, init) => ({ ok: true, status: 200, json: () => hangUntilAbort(init.signal) }) });
+  await assert.rejects(bodyHangs.wallet(), (e) => e.code === 'HIGHVCC_TIMEOUT');
+  const noTimeout = createHighvccCardProvider({ getAccessToken: async () => 't',
+    fetchImpl: async (url, init) => { assert.equal(init.signal, undefined, '不设默认超时时保持原行为'); return { ok: true, status: 200, json: async () => ({ code: 200, data: {} }) }; } });
+  await noTimeout.wallet();
+});

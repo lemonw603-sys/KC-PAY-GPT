@@ -52,12 +52,15 @@ const HOLDER_NAME_RE = /^[A-Za-z][A-Za-z' -]{0,30}$/;
 
 export function createHighvccCardProvider({
   getAccessToken, fetchImpl = fetch, baseUrl = 'https://www.highvcc.com',
+  // 每个请求的默认超时（毫秒）；null＝不设（沿用原行为）。服务器 worker 是串行的，卡台一个请求挂住就会
+  // 堵住所有客户、心跳停掉、下单页显示暂停接单——worker 里用的客户端必须设（对抗审查 2026-09-30）。
+  defaultTimeoutMs = null,
   sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
 } = {}) {
   if (typeof getAccessToken !== 'function') throw new TypeError('getAccessToken is required');
   const BASE = String(baseUrl).replace(/\/$/, '');
 
-  async function api(method, path, { body = null, form = false, timeoutMs = null } = {}) {
+  async function api(method, path, { body = null, form = false, timeoutMs = defaultTimeoutMs } = {}) {
     const token = await getAccessToken();
     if (!token) throw new HighvccProviderError('no highvcc access token is configured', 'HIGHVCC_TOKEN_MISSING');
     const { requestBody, contentType } = buildRequestInit(body, form);
@@ -66,6 +69,7 @@ export function createHighvccCardProvider({
     const controller = timeoutMs ? new AbortController() : null;
     const timer = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
     let response;
+    let json = null;
     try {
       response = await fetchImpl(BASE + path, {
         method,
@@ -78,6 +82,11 @@ export function createHighvccCardProvider({
         body: requestBody,
         ...(controller ? { signal: controller.signal } : {}),
       });
+      // 读响应体也在超时之内：只等到响应头就清计时器，响应体挂住照样会堵 worker。
+      try { json = await response.json(); } catch (error) {
+        if (error?.name === 'AbortError') throw error;
+        json = null;
+      }
     } catch (error) {
       // 连接断 / 超时：请求可能已经到了卡台，也可能没到——只能说「不知道」。
       throw new HighvccProviderError(`${method} ${path} -> no response (${error?.name === 'AbortError' ? 'timeout' : 'network'})`,
@@ -85,8 +94,6 @@ export function createHighvccCardProvider({
     } finally {
       if (timer) clearTimeout(timer);
     }
-    let json = null;
-    try { json = await response.json(); } catch { json = null; }
     if (isAuthTrouble(response.status, json)) {
       throw new HighvccProviderError(
         `highvcc token expired or invalid (HTTP ${response.status}${json?.msg ? ` ${json.msg}` : ''})`,

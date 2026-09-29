@@ -9,9 +9,9 @@
 // 客户那一单早已换卡走了（补钱结果不明时订单不陪这张卡等），这里只了结这张卡。
 //
 // 硬校验（不靠人手敲余额，核实要留痕，D-234）：
-//   ① 补钱行存在，且还没了结（SUBMITTED / UNKNOWN）；
+//   ① 补钱行存在，且还没了结（PREPARED / SENDING / SUBMITTED / UNKNOWN）；PREPARED＝从没发出去（任务死了），只能 --not-arrived；
 //   ② 实时读卡台卡详情：尾号与库里一致；
-//   ③ --arrived 要求实时余额 ≥ 补前余额 + 补钱额（差 1 分以内算到）；--not-arrived 要求实时余额 < 这个数。
+//   ③ --arrived 要求实时余额 ≥ 补前余额 + 补钱额；--not-arrived 要求实时余额 < 这个数。
 //      读到的余额与判断不符就拒绝，不写库——人看到的和卡台说的不一致时先查清楚。
 import mysql from 'mysql2/promise';
 import { createWorkflowRepository } from '../src/db/repositories/workflow-repository.js';
@@ -47,13 +47,13 @@ try {
   const amountCents = toCents(String(topUp.amount));
   const beforeCents = topUp.balance_before == null ? null : toCents(String(topUp.balance_before));
   const targetCents = beforeCents == null ? amountCents : beforeCents + amountCents;
-  const liveArrived = Number.isInteger(liveCents) && liveCents >= targetCents - 1;
+  const liveArrived = Number.isInteger(liveCents) && liveCents >= targetCents;
   const checks = {
-    stillOpen: ['SUBMITTED', 'UNKNOWN'].includes(topUp.status),
+    stillOpen: ['PREPARED', 'SENDING', 'SUBMITTED', 'UNKNOWN'].includes(topUp.status),
     last4Matches: Boolean(liveLast4) && liveLast4 === String(topUp.last4 || ''),
     balanceReadable: Number.isInteger(liveCents),
   };
-  if (arrived) checks.liveBalanceShowsArrived = liveArrived;
+  if (arrived) { checks.liveBalanceShowsArrived = liveArrived; checks.wasSent = topUp.status !== 'PREPARED'; }
   if (notArrived) checks.liveBalanceShowsNotArrived = Number.isInteger(liveCents) && !liveArrived;
   const summary = {
     mode: apply ? 'apply' : 'dry-run',
@@ -70,10 +70,17 @@ try {
   else {
     const workflow = createWorkflowRepository(pool, { sessionEncryptionKey: encryptionKey });
     const resolvedBy = `operator:${actorId}`;
+    // 卡在「发送中」的（进程或任务在发的那一刻死了）：先按结果不明落定、订单换卡，再按人核对的结论了结。
+    if (topUp.status === 'SENDING') {
+      await workflow.markTopUpUnknownAndDetach(topUp.id, { code: 'SEND_INTERRUPTED', message: 'settled by operator script' });
+    }
     const result = arrived
       ? await workflow.confirmTopUp(topUp.id, { observedBalance: fromCents(liveCents), resolvedBy })
-      : await workflow.rejectTopUp(topUp.id, { code: 'OPERATOR_NOT_ARRIVED', allowedFrom: ['SUBMITTED', 'UNKNOWN'], resolvedBy,
-        message: `operator checked the platform; live balance ${fromCents(liveCents)} < ${fromCents(targetCents)}` });
+      : topUp.status === 'PREPARED'
+        ? await workflow.rejectTopUp(topUp.id, { code: 'OPERATOR_CANCELLED', allowedFrom: ['PREPARED'], resolvedBy,
+          message: 'never sent; settled by operator script' })
+        : await workflow.rejectTopUp(topUp.id, { code: 'OPERATOR_NOT_ARRIVED', allowedFrom: ['SENDING', 'SUBMITTED', 'UNKNOWN'], resolvedBy,
+          message: `operator checked the platform; live balance ${fromCents(liveCents)} < ${fromCents(targetCents)}` });
     const after = await loadTopUp(pool, topUp.id);
     console.log(JSON.stringify({ ...summary, result, statusAfter: after?.status }, null, 2));
   }

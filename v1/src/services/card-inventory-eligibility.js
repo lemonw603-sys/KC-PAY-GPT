@@ -1,3 +1,4 @@
+import { successfulPurchaseSql } from '../domain/card-purchase-evidence.js';
 /**
  * 最低卡余额的**唯一**口径：先查按产品的键，缺了才回落全局 default。
  * 与真实建单 order-intake-repository.minimumRequiredCardBalanceForPlan() 同语义。
@@ -54,7 +55,10 @@ export function ledgerSpendSql(alias = 'c') {
               AND eligible_spend_order.status = 'RECHARGE_SUCCESS'
               -- D-411：只有这一单最后就是在这张卡上付的才算。中途换过卡的单（补钱失败换卡、D-355 打回
               -- 等 Session 放卡后重新分卡）在旧卡上留一条 RELEASED；它在新卡上成功后，不能算旧卡花了钱。
-              AND eligible_spend_order.assigned_card_id = eligible_spend.card_id))
+              AND (eligible_spend_order.assigned_card_id = eligible_spend.card_id
+                -- 「标为已手工充值」关单会清空 assigned_card_id（manual-fulfillment-service）；那类单可能就是在这张卡上
+                -- 手工付的（D-249 回填：20 单里 5 单），宁可少分不可多分，照旧算花掉（对抗审查 2026-09-30）。
+                OR eligible_spend_order.assigned_card_id IS NULL)))
       ), 0)`;
 }
 
@@ -144,6 +148,9 @@ export function eligibilityChecks(alias = 'c', minimumSql = '?', { productCode =
 /** 补钱登记里「还没了结」的状态（D-411）。了结 = CONFIRMED（到账）或 REJECTED（钱没动）。 */
 export const TOP_UP_OPEN_STATUSES = Object.freeze(['PREPARED', 'SENDING', 'SUBMITTED', 'UNKNOWN']);
 const TOP_UP_OPEN_STATUSES_SQL = TOP_UP_OPEN_STATUSES.map((status) => `'${status}'`).join(',');
+/** 补钱被拒时「是这张卡的问题」的原因码：卡台拒了（流水证实钱没出去）/ 卡详情对不上 / 人工核对钱没到卡上。 */
+export const TOP_UP_CARD_REJECT_CODES = Object.freeze(['PLATFORM_REFUSED', 'CARD_MISMATCH', 'OPERATOR_NOT_ARRIVED']);
+
 /** 代码里有补钱适配器的卡台（provider_accounts.open_adapter）。能补 = 能力位 supports_auto_funding=1 且在这里。 */
 export const TOP_UP_ADAPTERS = Object.freeze(['highvcc_api_v1']);
 
@@ -359,13 +366,29 @@ export function reusableTopUpCardSql(alias = 'c', { productCode = 'plus' } = {})
     `EXISTS (SELECT 1 FROM provider_accounts reuse_account
       WHERE reuse_account.id = ${alias}.provider_account_id
         AND reuse_account.supports_auto_funding = 1
+        AND reuse_account.operational_enabled = 1
         AND reuse_account.open_adapter IN (${adapters}))`,
     // 补钱归「自动开卡」总闸（D-412 补记三，不新增开关）：总闸关了，旧卡就不算能用，调度器照常按缺口看。
     `(SELECT reuse_switch.setting_value FROM app_settings reuse_switch
       WHERE reuse_switch.setting_key = 'card_auto_replenishment_enabled' LIMIT 1) = 'true'`,
+    // 被拒过的卡暂停补钱：卡台明确拒了这张卡（或核对后钱没到这张卡）停 24 小时；钱包不够 / 总闸关 / 登录失效 /
+    // 读卡台出错这类跟卡无关的，只停 10 分钟防止反复撞（对抗审查 2026-09-30：原先一律 24 小时，token 一失效
+    // 就把所有旧卡闲置一整天）。
     `NOT EXISTS (SELECT 1 FROM card_top_ups reuse_rejected
       WHERE reuse_rejected.card_id = ${alias}.id AND reuse_rejected.status = 'REJECTED'
-        AND reuse_rejected.updated_at >= DATE_SUB(CURRENT_TIMESTAMP(3), INTERVAL 24 HOUR))`
+        AND reuse_rejected.updated_at >= DATE_SUB(CURRENT_TIMESTAMP(3), INTERVAL
+          IF(reuse_rejected.error_code IN (${TOP_UP_CARD_REJECT_CODES.map((c) => `'${c}'`).join(',')}), 1440, 10) MINUTE))`,
+    // 卡台上这张卡被扣过（成功或还在授权中）的次数比账本记的多＝有人在系统外用过它（D-403；欠账 21：卡还挂在前几位
+    // 客户的 ChatGPT 账号里）。往这种卡里补钱等于给外面的人送钱，不补（对抗审查 2026-09-30）。
+    `(SELECT COUNT(*) FROM card_transactions reuse_tx WHERE reuse_tx.card_id = ${alias}.id
+        AND (${successfulPurchaseSql('reuse_tx')}
+          OR (LOWER(reuse_tx.transaction_type) = 'purchase' AND LOWER(reuse_tx.status) = 'pending')))
+      <= (SELECT COUNT(*) FROM card_consumption_ledger reuse_ledger WHERE reuse_ledger.card_id = ${alias}.id
+        AND reuse_ledger.status IN ('RESERVED','CONSUMED','RECONCILIATION'))`,
+    // 卡台登录失效期间不挑旧卡（补钱必然被拒）；卡台被运营停用时也不补。
+    `NOT EXISTS (SELECT 1 FROM operator_alerts reuse_token
+      WHERE reuse_token.dedupe_key = CONCAT('provider-token-expired:', ${alias}.provider_account_id)
+        AND reuse_token.status <> 'RESOLVED')`
   ].join('\n    AND ');
 }
 
@@ -380,10 +403,15 @@ export function walletCoversTopUpSql(alias = 'c') {
   if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(alias)) throw new TypeError('Invalid card SQL alias');
   return `COALESCE((SELECT wallet_snap.available_balance FROM provider_balance_snapshots wallet_snap
         WHERE wallet_snap.provider_account_id = ${alias}.provider_account_id
-        ORDER BY wallet_snap.observed_at DESC LIMIT 1), 0)
+        ORDER BY wallet_snap.observed_at DESC, wallet_snap.id DESC LIMIT 1), 0)
       - COALESCE((SELECT SUM(wallet_pending.amount) FROM card_top_ups wallet_pending
         WHERE wallet_pending.provider_account_id = ${alias}.provider_account_id
           AND wallet_pending.status IN ('PREPARED','SENDING')), 0)
+      - COALESCE((SELECT SUM(COALESCE(wallet_open.estimated_total,
+            wallet_open.amount * GREATEST(wallet_open.requested_count - wallet_open.opened_count, 0)))
+        FROM card_stock_jobs wallet_open
+        WHERE wallet_open.provider_account_id = ${alias}.provider_account_id
+          AND wallet_open.status IN ('PENDING','RUNNING')), 0)
       - COALESCE(${TOP_UP_AMOUNT_SQL}, 999999999)
       >= COALESCE((SELECT wallet_account.wallet_floor FROM provider_accounts wallet_account
         WHERE wallet_account.id = ${alias}.provider_account_id), 999999999)`;

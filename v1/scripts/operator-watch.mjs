@@ -20,6 +20,7 @@ const { EXECUTOR_HEARTBEAT_MAX_AGE_MS, EXECUTOR_HEARTBEAT_SETTING } = await impo
 const { usableCardSql } = await import(join(HERE, '../src/services/card-inventory-eligibility.js'));
 const { PRE_PAYMENT_STUCK_SQL, RESOLVE_FINISHED_STALLED_SQL, resolveFinishedOrderAlertsSql, preStuckAlert } = await import(join(HERE, '../src/db/repositories/stalled-order-queries.js'));
 const { recordSucceededOrders, resolveDeliveredSuccessAlertsSql } = await import(join(HERE, '../src/db/repositories/order-success-push.js'));
+const { stuckTopUpsWithoutAlertSql, upsertTopUpAlert } = await import(join(HERE, '../src/db/repositories/card-top-up-repository.js'));
 
 const args = process.argv.slice(2);
 const idx = args.indexOf('--minutes');
@@ -59,13 +60,22 @@ try {
   );
   // 第三种卡住（D-390，欠账 17）：停在付款前、没有任何程序在处理，客户页却照样显示处理中。
   const [prePaymentStuck] = await connection.query(PRE_PAYMENT_STUCK_SQL, [minutes, minutes, minutes]);
+  // 第三种半（D-411 对抗审查 2026-09-30）：付款前补钱没了结、15 分钟了还没叫过人。正常情况下补钱自己的核对任务
+  // 3 分钟内就会换卡 / 叫人；走到这里说明那个任务丢了（进程死、任务死、追踪开关关着），客户可能还停在「正在准备支付卡」。
+  const [stuckTopUps] = await connection.query(stuckTopUpsWithoutAlertSql(), [minutes + 12]);
   const found = {
+    stuckTopUps: stuckTopUps.map((row) => ({ last4: row.last4, status: row.status, waitedMinutes: Number(row.waited) })),
     queued: stalled.map((row) => ({ publicNo: row.public_no, waitedMinutes: Number(row.waited) })),
     unresolvedPayment: stuckRuns.map((row) => ({ publicNo: row.public_no, waitedMinutes: Number(row.waited) })),
     prePayment: prePaymentStuck.map((row) => ({ publicNo: row.public_no, waitedMinutes: Number(row.waited) })),
   };
   let succeededPushed = 0;
   if (!dryRun) {
+    for (const row of stuckTopUps) {
+      await upsertTopUpAlert(connection, { topUpId: row.id, orderId: row.order_id, last4: row.last4, amount: row.amount,
+        orderWaiting: !Number(row.order_detached),
+        detail: `已经 ${row.waited} 分钟没有了结（停在 ${row.status}），自动核对没在跑` });
+    }
     for (const row of stalled) {
       await upsertBrowserAlertInTransaction(connection, {
         type: 'BROWSER_ORDER_STALLED', orderId: row.id,

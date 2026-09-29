@@ -26,7 +26,8 @@ export function allowedTaskTypesFor(settings, {
   // 停单不能停追踪（CLAUDE.md），已经发出去的补钱在停单时照样要核对完。
   // 不另设进程权限：补钱任务只在分卡选中「可补钱旧卡」时才会产生，而那条规则本身要求「自动开卡」
   // 总闸开着（D-412 补记三，不新增开关）。开卡 runner 同理，常开写权限、由总闸管。
-  if (settings.dispatchNewRecharges) types.push(TaskType.TOP_UP_CARD);
+  // 发补钱还要求追踪开着：追踪关了就没人查到账，发出去的钱会停在「给卡补钱中」没人管。
+  if (settings.dispatchNewRecharges && settings.pollExistingOrders) types.push(TaskType.TOP_UP_CARD);
   if (settings.pollExistingOrders) types.push(TaskType.CHECK_TOP_UP);
   return types;
 }

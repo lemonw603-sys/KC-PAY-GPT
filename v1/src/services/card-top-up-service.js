@@ -11,18 +11,21 @@
 // 结果不明 → 卡锁住（资格规则 TOP_UP_PENDING），订单同样换卡走，这张卡由 CHECK_TOP_UP 继续核对。
 
 import { toCents, fromCents } from '../domain/card-issue-fee.js';
-import { findTopUpForOrder, markSending, markSubmitted, bumpCheckCount, pendingTopUpAmountCents, inflightCardOpenCents,
-  enqueueTopUpCheck } from '../db/repositories/card-top-up-repository.js';
+import { findTopUpForOrder, loadTopUp, markSending, markSubmitted, bumpCheckCount, pendingTopUpAmountCents, inflightCardOpenCents,
+  enqueueTopUpCheck, upsertTopUpAlert } from '../db/repositories/card-top-up-repository.js';
 import { markProviderTokenExpired } from './card-supply-scheduler-service.js';
 import { recordProviderBalanceSnapshot } from './provider-balance-snapshot-service.js';
 
-// 卡台明确说「不」、或请求根本没发出去——钱没动，可以放心换卡。
-const DEFINITE_NO = new Set(['HIGHVCC_API_ERROR', 'HIGHVCC_TOKEN_EXPIRED', 'HIGHVCC_TOKEN_MISSING', 'HIGHVCC_INVALID_AMOUNT']);
+// 请求根本没被卡台受理（登录失效 / 没 token / 金额不合法没发）——钱没动，可以放心换卡。
+// 卡台回了业务错误码（HIGHVCC_API_ERROR）不算在内：我们没见过补钱的失败响应长什么样（惯犯规则 3），
+// 「系统繁忙」之类可能已经扣了钱包。它按结果不明处理：订单当场换卡，3 分钟后翻账户流水再定（对抗审查 2026-09-30）。
+const DEFINITE_NO = new Set(['HIGHVCC_TOKEN_EXPIRED', 'HIGHVCC_TOKEN_MISSING', 'HIGHVCC_INVALID_AMOUNT']);
 
 export const TOP_UP_POLL_MS = 3_000;
 export const TOP_UP_ARRIVAL_WINDOW_MS = 180_000;      // 与客户页「3 分钟没动就说已通知运营」对齐（D-352）
 export const TOP_UP_SLOW_POLL_MS = 60_000;
 export const TOP_UP_GIVE_UP_MS = 24 * 3_600_000;       // 24 小时后停止自动核对，留给人
+export const TOP_UP_SENDING_STALE_MS = 90_000;         // 发送中超过这么久还没落定＝发送那一刻进程断了（补钱请求最多 30 秒）
 
 function cardBalanceCents(detail) {
   const raw = detail?.card?.balance;
@@ -131,13 +134,11 @@ export function createCardTopUpService({ pool, workflow, provider,
         message: String(error?.message || '').slice(0, 250) });
       return { action: 'REJECTED', code: error?.code || 'PRECHECK_FAILED' };
     }
-    const mine = await markSending(pool, topUp.id, { balanceBefore: fromCents(balanceBeforeCents) });
+    const mine = await markSending(pool, topUp.id, { balanceBefore: fromCents(balanceBeforeCents), orderId });
     if (!mine) return { action: 'NONE' };
+    let response;
     try {
-      const response = await provider.recharge({ cardId, amountCents });
-      await markSubmitted(pool, topUp.id, response);
-      await enqueueCheck(orderId, topUp.id, TOP_UP_POLL_MS);
-      return { action: 'SUBMITTED' };
+      response = await provider.recharge({ cardId, amountCents });
     } catch (error) {
       if (DEFINITE_NO.has(error?.code)) {
         if (error.code === 'HIGHVCC_TOKEN_EXPIRED') await markProviderTokenExpired(pool, { providerAccountId: topUp.provider_account_id });
@@ -146,16 +147,31 @@ export function createCardTopUpService({ pool, workflow, provider,
         return { action: 'REJECTED', code: error.code };
       }
       await workflow.markTopUpUnknownAndDetach(topUp.id, { code: error?.code || 'TOP_UP_UNKNOWN',
-        message: String(error?.message || '').slice(0, 250) });
+        message: String(error?.providerMessage || error?.message || '').slice(0, 250) });
       await enqueueCheck(orderId, topUp.id, TOP_UP_POLL_MS);
       return { action: 'UNKNOWN', code: error?.code || 'TOP_UP_UNKNOWN' };
     }
+    await markSubmitted(pool, topUp.id, response);
+    await enqueueCheck(orderId, topUp.id, TOP_UP_POLL_MS);
+    // 钱包当场就扣了（D-412 实测）；发之前那条快照多算了这笔，再读一次记下，免得下一单按旧数以为钱包够补。
+    try { await recordWalletSnapshot(topUp.provider_account_id, await provider.wallet()); } catch { /* 下一次补钱或每小时同步会补上 */ }
+    return { action: 'SUBMITTED' };
   }
 
-  /** CHECK_TOP_UP：卡详情到账 → 了结为 CONFIRMED；否则按时限换卡 / 查流水 / 叫人。返回或抛 TopUpRetry。 */
-  async function check(orderId) {
-    const topUp = await findTopUpForOrder(pool, orderId, ['SUBMITTED', 'UNKNOWN']);
-    if (!topUp) return { action: 'NONE' };
+  /**
+   * CHECK_TOP_UP：卡详情到账 → 了结为 CONFIRMED；否则按时限换卡 / 查流水 / 叫人。返回或抛 TopUpRetry。
+   * 按补钱 id 找（任务 payload 里带着）；老任务没有 id 时退回按订单找。
+   */
+  async function check(orderId, { topUpId = null } = {}) {
+    let topUp = topUpId ? await loadTopUp(pool, topUpId) : await findTopUpForOrder(pool, orderId, ['SENDING', 'SUBMITTED', 'UNKNOWN']);
+    if (!topUp || !['SENDING', 'SUBMITTED', 'UNKNOWN'].includes(topUp.status)) return { action: 'NONE' };
+    if (topUp.status === 'SENDING') {
+      // 发送那一刻进程断了（或补钱任务死了）：绝不重发，按结果不明处理，订单换卡，再往下核对。
+      const sendingMs = Date.parse(String(topUp.sending_at || topUp.created_at)) || now();
+      if (now() - sendingMs < TOP_UP_SENDING_STALE_MS) throw new TopUpRetry(TOP_UP_POLL_MS);
+      await workflow.markTopUpUnknownAndDetach(topUp.id, { code: 'SEND_INTERRUPTED', message: 'still SENDING when checked' });
+      topUp = await loadTopUp(pool, topUp.id);
+    }
     await bumpCheckCount(pool, topUp.id);
     const cardId = String(topUp.provider_card_id || topUp.external_card_id || '');
     const amountCents = toCents(String(topUp.amount));
@@ -164,22 +180,30 @@ export function createCardTopUpService({ pool, workflow, provider,
     const elapsed = now() - startedMs;
     let balance = null;
     try { balance = cardBalanceCents(await provider.detail(cardId)); } catch { balance = null; }
-    // 到账 = 余额 ≥ 补前 + 补钱额（留 1 分误差）；补前没读到时退一步：余额 ≥ 补钱额。
+    // 到账 = 余额 ≥ 补前 + 补钱额（卡台余额是整数分、补钱 0 手续费，不留误差）；补前没读到时退一步：余额 ≥ 补钱额。
     const target = beforeCents == null ? amountCents : beforeCents + amountCents;
-    if (balance != null && balance >= target - 1) {
+    if (balance != null && balance >= target) {
       const result = await workflow.confirmTopUp(topUp.id, { observedBalance: fromCents(balance) });
       return { action: 'CONFIRMED', ...result };
     }
     if (elapsed < TOP_UP_ARRIVAL_WINDOW_MS) throw new TopUpRetry(TOP_UP_POLL_MS);
-    if (elapsed >= TOP_UP_GIVE_UP_MS) return { action: 'GAVE_UP' };
     if (topUp.status === 'SUBMITTED') {
       // 卡台受理了（钱包当场扣）、3 分钟卡上还没到：不正常。订单换卡走，叫人；卡锁住，继续慢慢核对。
       await workflow.markTopUpUnknownAndDetach(topUp.id, { code: 'NOT_ARRIVED', alert: true,
         alertDetail: `卡台已受理，3 分钟卡上仍没到账（最近读到 ${balance == null ? '读不到' : `$${fromCents(balance)}`}）` });
       throw new TopUpRetry(TOP_UP_SLOW_POLL_MS, 'TOP_UP_NOT_ARRIVED');
     }
+    const alerted = await topUpAlertRaised(topUp.id);
+    if (elapsed >= TOP_UP_GIVE_UP_MS) {
+      // 停止自动核对之前，保证有人知道（没叫过就补一条）；卡继续锁着等人了结。
+      if (!alerted) {
+        await upsertTopUpAlert(pool, { topUpId: topUp.id, orderId: topUp.order_id, last4: topUp.last4, amount: topUp.amount,
+          detail: '结果不明，自动核对 24 小时仍判不清' });
+      }
+      return { action: 'GAVE_UP' };
+    }
     // 已经叫过人的，之后只慢慢看余额（上面到账就自动了结并关告警），不再重开告警——同一件事只推一条（D-407）。
-    if (await topUpAlertRaised(topUp.id)) throw new TopUpRetry(TOP_UP_SLOW_POLL_MS, 'TOP_UP_UNRESOLVED');
+    if (alerted) throw new TopUpRetry(TOP_UP_SLOW_POLL_MS, 'TOP_UP_UNRESOLVED');
     // UNKNOWN（没拿到明确回应）：3 分钟没到账，翻账户流水看钱到底出去没有。
     let rows = null;
     try {
@@ -187,9 +211,11 @@ export function createCardTopUpService({ pool, workflow, provider,
         { cardId, sinceMs: startedMs });
     } catch { rows = null; }
     if (rows && rows.length === 0 && balance != null) {
-      await workflow.rejectTopUp(topUp.id, { code: 'NOT_SENT_PER_FLOW', allowedFrom: ['UNKNOWN'],
+      // 卡台回过业务错误码、流水也证实钱没出去＝卡台拒了这张卡补钱，这张卡 24 小时不再补；其余只是没发出去。
+      const code = topUp.error_code === 'HIGHVCC_API_ERROR' ? 'PLATFORM_REFUSED' : 'NOT_SENT_PER_FLOW';
+      await workflow.rejectTopUp(topUp.id, { code, allowedFrom: ['UNKNOWN'],
         message: 'account flow shows no top-up for this card; card balance unchanged' });
-      return { action: 'REJECTED', code: 'NOT_SENT_PER_FLOW' };
+      return { action: 'REJECTED', code };
     }
     await workflow.markTopUpUnknownAndDetach(topUp.id, { code: topUp.error_code || 'TOP_UP_UNKNOWN', alert: true,
       alertDetail: rows == null ? '结果不明，账户流水也查不到' : '账户流水里有这笔补钱，卡上却没到账' });

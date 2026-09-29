@@ -18,7 +18,7 @@
 | 10 | 卡台 token 过期 / 卡台故障 | A | highvcc `HIGHVCC_TOKEN_EXPIRED`；`provider_accounts.supply_fault_state=FAULT` | 转另一台顶（Browser）；API 不转 | 贴 token / 看卡台 | 后台备用卡台 token 入口 | `HIGHVCC_TOKEN_EXPIRED`（第⑤块坐实推送）、`CARD_SUPPLY_OPEN_FAILED` |
 | 11 | ZZSHU 零原因失败 | A（b：停单不退码） | `PROVIDER_CONFIRMED_FAILURE` 且 ZZSHU 无原因 | **现状仍是判失败退码**（`commitRechargeFailure`），「停单等看」**本块未改**（面三④待办，归第⑤/⑥块与队列一起做） | 看原始响应再定 | — | — |
 | 12 | 待销清单到期 | 手动（D-232） | `card-retirement-service.list().due` 非空 | 派生清单 + 存活期 + 事后同步确认（`sourcePresent`） | 去卡台删，回来点「已销卡」 | 上文 #7 入口 | **不单推**；到期张数并进每日对账那一条汇总（`DAILY_RECONCILIATION_SUMMARY`，Lemon 2026-09-18 定，D-272） |
-| 13 | 付款前补钱结果不明（D-411） | C→定不了才叫 | `card_top_ups.status=UNKNOWN`（超时 / 断网 / 发送中进程死了 / 受理后 3 分钟卡上没到） | 绝不重发；订单当场换卡（新卡或等卡）；卡锁住（资格 `TOP_UP_PENDING`）；每分钟看卡详情，到账自动了结并关告警；没受理的看账户流水，流水证实没发出去自动了结；24 小时后停止自动核对 | 到卡台看这张卡余额和账户流水，用脚本了结（脚本读卡台实时余额，不靠手敲） | `v1/scripts/resolve-card-top-up.mjs --top-up <id> [--arrived \| --not-arrived] --apply`（RUNBOOK §2.56） | `CARD_TOP_UP_UNRESOLVED`（critical，HUMAN，同一笔只推一条） |
+| 13 | 付款前补钱结果不明（D-411） | C→定不了才叫 | `card_top_ups.status=UNKNOWN`（超时 / 断网 / 卡台回错误码 / 发送中进程死了 / 受理后 3 分钟卡上没到）；或补钱 15 分钟没了结 | 绝不重发；订单当场换卡（新卡或等卡）；卡锁住（资格 `TOP_UP_PENDING`）；每分钟看卡详情，到账自动了结并关告警；没受理的看账户流水，流水证实没发出去自动了结；24 小时后停止自动核对（停之前保证已叫人）；核对任务丢了时每分钟巡检 15 分钟兜底叫人 | 到卡台看这张卡余额和账户流水，用脚本了结（脚本读卡台实时余额，不靠手敲） | `v1/scripts/resolve-card-top-up.mjs --top-up <id> [--arrived \| --not-arrived] --apply`（RUNBOOK §2.56） | `CARD_TOP_UP_UNRESOLVED`（critical，HUMAN，同一笔只推一条） |
 
 ## 缝 j（人工收口写账本）核对
 

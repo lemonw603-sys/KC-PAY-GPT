@@ -68,7 +68,8 @@ const workflow = createWorkflowRepository(pool, {
 const cardTopUp = createCardTopUpService({
   pool, workflow,
   provider: createHighvccCardProvider({
-    getAccessToken: createHighvccAccessTokenReader({ pool, encryptionKey: config.sessionEncryptionKey })
+    getAccessToken: createHighvccAccessTokenReader({ pool, encryptionKey: config.sessionEncryptionKey }),
+    defaultTimeoutMs: 15_000
   })
 });
 const rechargeAttemptRepository = createRechargeAttemptRepository(pool);
@@ -110,6 +111,16 @@ function requestShutdown(signal) {
 
 process.on('SIGTERM', () => requestShutdown('SIGTERM'));
 process.on('SIGINT', () => requestShutdown('SIGINT'));
+
+// D-411：分卡规则读补钱登记表（迁移 063）。迁移漏跑时每次分卡都会 SQL 报错、任务当场判死、订单停在等卡——
+// 宁可不起（systemd 反复重启、发布核对「服务 active」就过不去），也不带着缺表跑（对抗审查 2026-09-30）。
+try {
+  await pool.query('SELECT 1 FROM card_top_ups LIMIT 0');
+} catch (error) {
+  console.error(`worker refuses to start: card_top_ups is missing (run migration 063 first): ${error?.code || error?.message}`);
+  await pool.end();
+  process.exit(1);
+}
 
 console.log(`pojia-v1 worker ${workerId} started`);
 await runWorkerLoop({
