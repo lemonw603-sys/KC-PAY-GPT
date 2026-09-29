@@ -6076,3 +6076,13 @@ Lemon：「1 可以」。卡 8499，生产 token，参数与 highvcc 网页前�
 
 Lemon：「4做」。后台 agent 在独立 worktree 做（`c0b7b3fd`），我核实后合并进 main（`eca5509d`）。用法：`scripts/local-admin.sh up`（一条命令：建 `pojia_local_admin`、迁移、造数、形状比对）→ `preview_start local-admin`（`.claude/launch.json` 新增，5 个指向已不存在 env / 库的 `admin-ui-*` 旧配置已删）→ http://127.0.0.1:8810/admin；`down` 只删自己的库；口令文件在 `~/Library/Application Support/pojia-local-admin/`（700 / 600，不打印）。
 我的核实：形状快照 231 个不同字符串、0 个邮箱 / 订单号 / 长数字 / UUID / JWT（重抓后再扫一次仍为 0）；删库守卫只认 `pojia_local_admin` 前缀；预加载 `offline-guard.mjs` 只放行回环地址、highvcc 只在本机假答卡段与钱包两个只读接口、开卡等一律 503；主仓库跑 `up` 62 个迁移、形状比对全部一致（订单事件 / 推送记录两项标「参考不计」）；1440×730 工作台 / 订单 / 卡片 / 诊断实看有数、控制台 0 错误；真库测试 2 / 0。**快照第一次是 agent 在 00:07 UTC 抓的，正赶上 D-407 ③ 演练（路线 Browser、付款开关关）**，已在 00:31 UTC 重抓为正常状态（API、付款开）。已知限制见 RUNBOOK §2.8 与 agent 汇报（时刻随机、卡单配对随机、推送记录不造、hnskj 刷新余额报错等）。以后改后台界面：草图挑方向 → 在它上面看定稿。
+
+### D-410 补记四（2026-09-29 UTC+8）冻结方案撤回；highvcc 拒付率已 10%，超过它写的 5% 关停线
+
+Lemon 问：「你怎么冻结？如果客户在后台点那个升级点卡，那说不定我们就扣款了？」
+- **冻结怎么做**：highvcc 网页每张卡有「冻结卡片」按钮（前端 `cardFrozen({cardId, frozenStatus})` → `/api/card/frozen`，确认框只写「是否冻结该卡片?」）。**没真按过，冻结后扣款是否一定被拒未验证。**
+- **Lemon 说中的窗口**：来单解冻 → 付款这一两分钟，前面用过这张卡的客户（最多 2 个）点升级 / 买点数就能扣走卡里的钱；冻结只挡平时。①「来单时才补」同样有这个窗口且更长（补钱 ≤ 约 1.5 分钟才到）。
+- **新事实（只读实查 00:4x UTC）**：highvcc 前端提示原文「拒付率是交易状态为declined/总支付笔数，切记大于5%将会关停您所有卡片的使用权限」，另有「试用/拒付/撸羊毛等行为将会被停用，且不退账户余额」。`/api/user/overview` 返回 `statistic`：`cardPayAllCount 31`、`cardPaySuccessCount 23`、`cardAuthRefuseCount 3`、**`refuseRate 10`**、`declinedAmount 197.7`（`declinedAmountRate 16.36`）、`refundRate 4.35`；`user.declineCount 0 / declineNotice 0 / declineRate null`（这几项含义与是否已执行不明）。
+- 3 笔被拒（本库 `card_transactions`，合计 $197.70 与平台一致），**都不是客户造成的**：3118 $81.95 `OPENAI *CHATGPT SUBSCR`（09-21 01:42 UTC；时间金额对得上 Lemon 手动升 Pro，2 分钟后 8718 付成 $82.11——对应关系是推断）；4022 $15.75（09-27 02:28 UTC，原因未查）；0237 $100 `ANTHROPIC* CLAUDE SUB`（09-28 17:06 UTC，退役 $0 卡）。
+- **结论**：被拒本身有代价。冻结卡、或卡里只剩几毛钱时，前面客户一点升级就产生一笔「被拒」，推高拒付率，可能让 highvcc 关掉我们全部卡。所以**撤回做法②（冻结）的建议**；三种「重复用卡」做法都会增加这种风险，**维持 $16 一卡一单**（Lemon 已定）。现行做法也有同一风险（付完剩 ~$0.25），只是每张卡只挂在一个客户账号里。
+- 待定：①0237 上挂的 Claude 订阅（Lemon 的）换卡或取消，免得续费再撞出被拒；②Lemon 问 highvcc 客服：10% 现在会不会执行关停、已删的卡上被拒算不算；③要不要让系统每小时读这个拒付率、接近 5% 推手机（只读、不花钱）。
