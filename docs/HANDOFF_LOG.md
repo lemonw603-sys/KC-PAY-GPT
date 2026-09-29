@@ -3982,3 +3982,7 @@ Lemon 问冻结怎么做、客户点升级会不会扣到我们。查 highvcc �
 ## 2026-09-29｜演练延后；Lemon 问「自动补余额最后怎么定的」（02:5x UTC）
 
 Lemon：「等我有资格号的时候，我再测吧。另外…我们自动补余额这事儿，最后是怎么定的？」现查：生产 `card_auto_replenishment_enabled=true`（09-18 起；它是**自动开新卡**总闸，`set-supply-scheduler-flag.mjs` 与 `workflow-repository.js:379` 都读它）；`card_balance_recharge_enabled` 生产里已不存在；`rechargeCard(` 在 v1/src、v1/scripts 无调用方（只在 hnskj 适配器定义），highvcc 没接补钱。结论向 Lemon 说明，并请他明确拍板「不做自动补余额」。
+
+## 2026-09-29｜Lemon 提醒「满 3 单即注销」；查 ZOVO 用卡规则；更正我一处错误说法（03:0x UTC）
+
+读 ZovoCard 项目文档（只读，未改那个仓库）：每卡 5 次、失败也算、按单注资多注 12%、删卡退回。更正补记四「重复用卡会增加被拒」——按单补钱时两单之间卡同样几乎空，与一卡一单同量；多出的只有补钱到付完那几分钟。见 D-410 补记六。
