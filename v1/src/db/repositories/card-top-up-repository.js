@@ -154,6 +154,19 @@ export async function pendingTopUpAmountCents(queryable, { providerAccountId, ex
 }
 
 /**
+ * 同一卡台已排队、还没开出来的卡预计要花的钱（开卡任务 PENDING / RUNNING）。开卡任务先落库、runner 稍后才真开卡扣钱包，
+ * 中间可能隔一分钟；补钱发之前不扣掉它，两边各自对着同一个钱包余额判「够」，合起来就可能压破押金底线。
+ */
+export async function inflightCardOpenCents(queryable, { providerAccountId }) {
+  const [[row]] = await queryable.query(
+    `SELECT COALESCE(SUM(COALESCE(estimated_total, amount * GREATEST(requested_count - opened_count, 0))), 0) AS total
+       FROM card_stock_jobs WHERE provider_account_id = ? AND status IN ('PENDING','RUNNING')`, [providerAccountId]);
+  const cents = toCents(String(row?.total ?? '0'));
+  if (!Number.isInteger(cents)) throw new Error('in-flight card open total is not a money amount');
+  return cents;
+}
+
+/**
  * 排（或重排）一次「查到账」任务。去重键按补钱一行，同一笔补钱永远只有一个查询任务；
  * 查询本身靠「可重试、不计次数」往后挪（task-runner 的 refundAttempt），这里只负责第一次排上。
  */

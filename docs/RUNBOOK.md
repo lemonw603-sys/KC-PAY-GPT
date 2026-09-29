@@ -148,6 +148,22 @@ browser-mvp/scripts/prod-query.sh "SELECT id, open_adapter, default_card_segment
   ssh root@144.34.180.184 'set -a; . /etc/pojia/runtime.env; set +a; cd /opt/pojia/current/v1 && node scripts/backfill-card-funded-amount.mjs --apply'   # 真写
   ```
 
+## 2.56 一卡三单、付款前补钱（D-411，2026-09-30 代码完成，未发布）
+
+- **怎么跑**：Plus 新单分卡时先挑现成能付的卡（用过的优先）；没有时，挑一张「用过 1～2 单、卡台能补钱、钱包够补」的旧卡，订单进 `CARD_PROVISIONING`（后台「给卡补钱中」，客户页「正在准备支付卡」），往卡里补 $16（＝设置页「每单记账金额」），**卡详情读到到账才付款**。第 3 单付完进待销清单。
+- **开关**：不另设开关，归「自动开卡」总闸（`card_auto_replenishment_enabled`）。关总闸＝不再补钱、旧卡不算可分配、已排队没发出的补钱也不发（订单换卡）；已发出去的照样核对到底。
+- **钱包**：补钱前实时读 highvcc 钱包：余额 − 待发补钱 − $16 ≥ 押金底线（$20）才发。所以钱包 < $36 时旧卡不会被复用（页面写「钱包不够补」）。
+- **补钱没成**：卡台明确拒绝 / 钱包不够 / token 失效 → 钱没动，订单自动换卡，这张卡 24 小时内不再补。不叫人。
+- **结果不明**（推 `CARD_TOP_UP_UNRESOLVED`）：订单已自动换卡，卡锁着。到卡台看这张卡余额、账户流水里有没有「Add Balance To Card」，然后在生产主机：
+  ```bash
+  cd /opt/pojia/current/v1 && set -a && . /etc/pojia/runtime.env && set +a
+  node scripts/resolve-card-top-up.mjs --top-up <补钱 id>                       # 先看：读卡台实时余额，打印判断
+  node scripts/resolve-card-top-up.mjs --top-up <补钱 id> --arrived --apply     # 钱到了：注资 +16，卡解锁
+  node scripts/resolve-card-top-up.mjs --top-up <补钱 id> --not-arrived --apply # 钱没到卡上：卡解锁，去找卡台
+  ```
+  补钱 id 在告警的去重键 `card-top-up:<id>` 里。脚本读到的余额与所选判断不符时拒绝写库。
+- **发布**：迁移 063（新表 `card_top_ups` + highvcc 补钱能力位）要在 customer-sql-probe **之前**跑（探针里有读这张表的 SQL）：prepare → migrate → probe → switch。worker 不需要新环境变量。
+
 ## 2.6 待销清单与付款不明收口（第④步起，2026-09-18）
 
 **待销清单**（面二⑩，派生查询，不建表）：口径 = 用满 / 服务过 Pro 单 / DEPLETED 或 FAILED / 已标 RETIRED / 取消续费未确认，且开卡时间 + 最短存活期（`card_min_retire_age_hours`，默认 6，可调）已到。V2 只做手动销卡（D-232）：Lemon 去卡台删，回来登记。

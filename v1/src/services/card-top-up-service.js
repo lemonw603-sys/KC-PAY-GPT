@@ -11,7 +11,8 @@
 // 结果不明 → 卡锁住（资格规则 TOP_UP_PENDING），订单同样换卡走，这张卡由 CHECK_TOP_UP 继续核对。
 
 import { toCents, fromCents } from '../domain/card-issue-fee.js';
-import { findTopUpForOrder, markSending, markSubmitted, bumpCheckCount, pendingTopUpAmountCents, enqueueTopUpCheck } from '../db/repositories/card-top-up-repository.js';
+import { findTopUpForOrder, markSending, markSubmitted, bumpCheckCount, pendingTopUpAmountCents, inflightCardOpenCents,
+  enqueueTopUpCheck } from '../db/repositories/card-top-up-repository.js';
 import { markProviderTokenExpired } from './card-supply-scheduler-service.js';
 import { recordProviderBalanceSnapshot } from './provider-balance-snapshot-service.js';
 
@@ -108,7 +109,9 @@ export function createCardTopUpService({ pool, workflow, provider,
       const walletCents = Number(wallet?.usdBalanceCents);
       await recordWalletSnapshot(topUp.provider_account_id, wallet);
       const floorCents = await walletFloorCents(topUp.provider_account_id);
-      const pendingCents = await pendingTopUpAmountCents(pool, { providerAccountId: topUp.provider_account_id, excludeTopUpId: topUp.id });
+      // 还没从钱包扣走的：别的待发补钱 + 已排队没开出来的卡（开卡调度器那一侧同样扣掉待发补钱，两边互相看得见）。
+      const pendingCents = await pendingTopUpAmountCents(pool, { providerAccountId: topUp.provider_account_id, excludeTopUpId: topUp.id })
+        + await inflightCardOpenCents(pool, { providerAccountId: topUp.provider_account_id });
       if (!Number.isInteger(walletCents) || floorCents == null || walletCents - pendingCents - amountCents < floorCents) {
         await workflow.rejectTopUp(topUp.id, { code: 'WALLET_LOW', allowedFrom: ['PREPARED'],
           message: `wallet ${fromCents(walletCents)} - pending ${fromCents(pendingCents)} - ${fromCents(amountCents)} < floor ${fromCents(floorCents)}` });

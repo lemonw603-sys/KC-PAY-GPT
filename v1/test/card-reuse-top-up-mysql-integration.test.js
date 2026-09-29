@@ -324,8 +324,20 @@ test('D-411 wallet too low at send time, or the auto-supply switch turned off af
     const [[{ provider_card_id: pcA }]] = await pool.query('SELECT provider_card_id FROM cards WHERE id = ?', [cardA]);
     const orderA = await insertOrder(pool, { frozen: account });
     assert.equal((await workflow.assignAvailableCard(orderA)).topUpQueued, true);
+    // 钱包 $50 本来够（50 − 16 = 34），但已排队一张没开出来的卡（预计 $16.50）：50 − 16.5 − 16 = 17.5 < 20。
+    const jobId = id();
+    await pool.query(`INSERT INTO card_stock_jobs (id, status, job_source, provider_account_id, product_code, card_type_id, amount, estimated_total, requested_count)
+      VALUES (?, 'PENDING', 'AUTOMATIC', ?, 'plus', '708', '16', '16.5', 1)`, [jobId, account]);
+    const midOpen = fakeHighvcc({ walletCents: 5000, cards: { [pcA]: { balance: 0, lastFour: '3333' } } });
+    assert.deepEqual(await createCardTopUpService({ pool, workflow, provider: midOpen }).send(orderA), { action: 'REJECTED', code: 'WALLET_LOW' });
+    assert.equal(midOpen.calls.recharge.length, 0, '开卡在途时不补');
+    await pool.query(`UPDATE card_stock_jobs SET status = 'SUCCEEDED' WHERE id = ?`, [jobId]);
     // 实时钱包 $30：30 − 16 = 14 < 押金 20。
-    const poor = fakeHighvcc({ walletCents: 3000, cards: { [pcA]: { balance: 0, lastFour: '3333' } } });
+    assert.equal((await orderRow(pool, orderA)).status, 'WAITING_FOR_CARD');
+    const cardA2 = await usedCard(pool, account, { last4: '3335' });
+    const [[{ provider_card_id: pcA2 }]] = await pool.query('SELECT provider_card_id FROM cards WHERE id = ?', [cardA2]);
+    assert.equal((await workflow.assignAvailableCard(orderA)).topUpQueued, true);
+    const poor = fakeHighvcc({ walletCents: 3000, cards: { [pcA2]: { balance: 0, lastFour: '3335' } } });
     assert.deepEqual(await createCardTopUpService({ pool, workflow, provider: poor }).send(orderA), { action: 'REJECTED', code: 'WALLET_LOW' });
     assert.equal(poor.calls.recharge.length, 0);
     assert.equal((await orderRow(pool, orderA)).status, 'WAITING_FOR_CARD');
@@ -352,7 +364,7 @@ test('D-411 wallet too low at send time, or the auto-supply switch turned off af
     assert.equal(waiting.topUpQueued, undefined);
     assert.equal((await orderRow(pool, orderC)).status, 'WAITING_FOR_CARD');
     await setSettings(pool, { card_auto_replenishment_enabled: 'true' });
-    assert.equal(await countEligibleCards(pool, { providerAccountId: account, productCode: 'plus' }), 2, '总闸打开后 3334、5555 又算能用（3333、4444 被拒过，24 小时内不算）');
+    assert.equal(await countEligibleCards(pool, { providerAccountId: account, productCode: 'plus' }), 2, '总闸打开后 3334、5555 又算能用（3333、3335、4444 被拒过，24 小时内不算）');
   } finally { await pool.end(); }
 });
 
