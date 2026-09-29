@@ -129,7 +129,7 @@ test('D-405 eligibility is exactly the AND of the named checks (one rule); fresh
     assert.equal(m.eligibleInventoryCardSql('c', '?', { productCode }), checks.map((k) => k.sql).join('\n    AND '));
     assert.equal(new Set(checks.map((k) => k.code)).size, checks.length, 'codes unique');
     assert.deepEqual(checks.map((k) => k.code), ['NOT_IN_INVENTORY', 'MISSING_AT_PLATFORM', 'NOT_ACCEPTED', 'PLATFORM_STATUS',
-      'NO_CREDENTIALS', 'SYNC_STALE', 'BALANCE_LOW', 'USED_UP', 'PRO_USED', 'IN_USE', 'REFUND_CASE', 'OVERRIDE',
+      'NO_CREDENTIALS', 'SYNC_STALE', 'BALANCE_LOW', 'USED_UP', 'PRO_USED', 'IN_USE', 'TOP_UP_PENDING', 'REFUND_CASE', 'OVERRIDE',
       ...(productCode === 'plus' ? ['PLUS_LARGE_CARD'] : [])], 'the full rule set; dropping one would widen allocation');
     assert.equal(checks.some((k) => k.code === 'PLUS_LARGE_CARD'), productCode === 'plus');
     assert.doesNotThrow(() => m.stockCountingCardSql('c', '?', { productCode }));

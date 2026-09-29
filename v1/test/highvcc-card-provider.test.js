@@ -230,3 +230,52 @@ test('transactions(): 缺失或非法的时间戳归一成 null，不得退化�
   assert.equal(rows[0].tradeTimeEpochMs, null);
   assert.equal(rows[0].approveTimeEpochMs, null);
 });
+
+// D-411 补钱：请求形态与生产真调一致（2026-09-29 四次实测：POST 表单 {cardId, amount 分, payUnit USD}）；
+// 错误码决定「钱动没动」——只有卡台明确回了业务码才算「说不」，超时 / 断网 / 读不出内容一律是「不知道」。
+test('recharge(): posts one form request {cardId, amount in cents, payUnit USD} and returns code/msg/data; never retries', async () => {
+  const { fetch: fetchImpl, calls } = fakeFetch({
+    '/api/card/recharge': () => ({ status: 200, body: { code: 200, msg: '充值提交成功,请稍后查询余额', data: 17 } }),
+  });
+  const provider = createHighvccCardProvider({ getAccessToken: async () => 'fixture-token', fetchImpl });
+  assert.deepEqual(await provider.recharge({ cardId: '17', amountCents: 1600 }),
+    { code: 200, msg: '充值提交成功,请稍后查询余额', data: 17 });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].init.method, 'POST');
+  assert.equal(calls[0].init.body, 'cardId=17&amount=1600&payUnit=USD');
+  assert.ok(calls[0].init.signal, '补钱带超时');
+  await assert.rejects(provider.recharge({ cardId: '17', amountCents: 16.5 }), (e) => e.code === 'HIGHVCC_INVALID_AMOUNT');
+  await assert.rejects(provider.recharge({ cardId: '17', amountCents: 0 }), (e) => e.code === 'HIGHVCC_INVALID_AMOUNT');
+  assert.equal(calls.length, 1, '金额不对根本不发');
+});
+
+test('recharge(): error codes separate "platform said no" from "unknown"', async () => {
+  const run = async (fetchImpl) => {
+    const provider = createHighvccCardProvider({ getAccessToken: async () => 'fixture-token', fetchImpl });
+    try { await provider.recharge({ cardId: '17', amountCents: 1600, timeoutMs: 20 }); return 'resolved'; } catch (e) { return e.code; }
+  };
+  assert.equal(await run(async () => ({ ok: true, status: 200, json: async () => ({ code: 500, msg: '余额不足' }) })), 'HIGHVCC_API_ERROR');
+  assert.equal(await run(async () => ({ ok: true, status: 200, json: async () => { throw new SyntaxError('truncated'); } })), 'HIGHVCC_BAD_RESPONSE');
+  assert.equal(await run(async () => { throw new TypeError('fetch failed'); }), 'HIGHVCC_NETWORK_ERROR');
+  assert.equal(await run((url, init) => new Promise((_, reject) => {
+    init.signal.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' })));
+  })), 'HIGHVCC_TIMEOUT');
+  assert.equal(await run(async () => ({ ok: false, status: 502, json: async () => null })), 'HIGHVCC_HTTP_ERROR');
+  assert.equal(await run(async () => ({ ok: false, status: 401, json: async () => null })), 'HIGHVCC_TOKEN_EXPIRED');
+});
+
+test('accountFlow(): pages until total is reached, passing the window in epoch ms', async () => {
+  const pages = { 1: [{ cardSeqNo: '17' }, { cardSeqNo: '18' }], 2: [{ cardSeqNo: '19' }] };
+  const { fetch: fetchImpl, calls } = fakeFetch({
+    '/api/account/flowPage': (init) => {
+      const pageNo = Number(new URLSearchParams(init.body).get('pageNo'));
+      return { status: 200, body: { code: 200, data: { total: 3, data: pages[pageNo] || [] } } };
+    },
+  });
+  const provider = createHighvccCardProvider({ getAccessToken: async () => 'fixture-token', fetchImpl });
+  const rows = await provider.accountFlow({ createStartMs: 1000, createEndMs: 2000, pageSize: 2 });
+  assert.deepEqual(rows.map((r) => r.cardSeqNo), ['17', '18', '19']);
+  assert.equal(calls.length, 2);
+  assert.equal(new URLSearchParams(calls[0].init.body).get('createStart'), '1000');
+  assert.equal(new URLSearchParams(calls[0].init.body).get('createEnd'), '2000');
+});

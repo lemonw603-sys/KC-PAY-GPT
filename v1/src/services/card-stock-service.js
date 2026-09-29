@@ -16,7 +16,7 @@ import { eligibilityChecks, eligibleInventoryCardSql, ledgerSpendSql, providerCa
 
 // 卡片页「暂不可用」写具体原因（D-405 第一批）：用分卡资格那一份条件逐条算（eligibilityChecks），
 // 只写最关键的一条、保持一行。顺序即优先级：先说「这张卡不会再用了」的，再说「补了还能用」的。
-const BLOCKED_CHECK_ORDER = ['PRO_USED', 'USED_UP', 'REFUND_CASE', 'BALANCE_LOW', 'PLUS_LARGE_CARD',
+const BLOCKED_CHECK_ORDER = ['PRO_USED', 'USED_UP', 'TOP_UP_PENDING', 'REFUND_CASE', 'BALANCE_LOW', 'PLUS_LARGE_CARD',
   'SYNC_STALE', 'MISSING_AT_PLATFORM', 'PLATFORM_STATUS', 'NO_CREDENTIALS', 'NOT_ACCEPTED', 'NOT_IN_INVENTORY'];
 const shortMoney = (value) => { const n = Number(value); return Number.isInteger(n) ? String(n) : n.toFixed(2); };
 export function blockedReasonText(row, { maxCapacity } = {}) {
@@ -27,6 +27,7 @@ export function blockedReasonText(row, { maxCapacity } = {}) {
   const texts = {
     PRO_USED: '跑过 Pro，不再分配',
     USED_UP: `${maxCapacity ?? Number(row.used_capacity || 0)} 次已用满`,
+    TOP_UP_PENDING: '补钱结果待核对',
     REFUND_CASE: '有退款或拒付待处理',
     BALANCE_LOW: row.effective_balance == null || row.min_balance == null ? '余额不够'
       : `余额 $${Number(row.effective_balance).toFixed(2)}，不够 $${shortMoney(row.min_balance)}`,

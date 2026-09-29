@@ -20,6 +20,8 @@ export const OrderStatus = Object.freeze({
 const transitions = new Map([
   [OrderStatus.CREATED, new Set([
     OrderStatus.CARD_PURCHASING,
+    // D-411：分到一张要补钱的旧卡，补钱期间停在 CARD_PROVISIONING（客户页「正在准备支付卡」）
+    OrderStatus.CARD_PROVISIONING,
     OrderStatus.CARD_READY,
     OrderStatus.WAITING_FOR_CARD,
     OrderStatus.RECONCILIATION_REQUIRED
@@ -27,6 +29,8 @@ const transitions = new Map([
   [OrderStatus.CARD_PURCHASING, new Set([OrderStatus.CARD_PROVISIONING, OrderStatus.RECONCILIATION_REQUIRED])],
   [OrderStatus.CARD_PROVISIONING, new Set([
     OrderStatus.CARD_READY,
+    // D-411：补钱被拒 / 结果不明 → 客户这一单换卡，回等卡重新分
+    OrderStatus.WAITING_FOR_CARD,
     OrderStatus.CARD_FAILED,
     OrderStatus.RECONCILIATION_REQUIRED
   ])],
@@ -40,6 +44,7 @@ const transitions = new Map([
   ])],
   [OrderStatus.WAITING_FOR_CARD, new Set([
     OrderStatus.CARD_READY,
+    OrderStatus.CARD_PROVISIONING,
     OrderStatus.WAITING_FOR_SESSION,
     OrderStatus.CLOSED,
     OrderStatus.RECONCILIATION_REQUIRED

@@ -25,6 +25,8 @@ export function createWorkflowHandlers({
   // 第④步：分卡时「当场同步这一张」（card-on-demand-sync-service）。null = 没配 hnskj 只读
   // 凭证，退回「等下一轮」。
   syncCardOnDemand = null,
+  // D-411：按单补钱（card-top-up-service）。worker 总会配上；null 只在测试里出现。
+  cardTopUp = null,
   pollDelayMs = 5_000,
   cancellationDelayMs = 60_000,
   unknownReconcileDelayMs = 60_000,
@@ -595,12 +597,43 @@ export function createWorkflowHandlers({
     await workflow.commitCardTransactions(task.order_id, transactions, cardSnapshot);
   }
 
+  async function topUpCard(task) {
+    if (!cardTopUp) {
+      throw new TaskExecutionError('Card top-up is not configured in this worker', {
+        code: 'TOP_UP_DISABLED', retryable: true, delayMs: 60_000, refundAttempt: true
+      });
+    }
+    return cardTopUp.send(task.order_id);
+  }
+
+  async function checkTopUp(task) {
+    if (!cardTopUp) {
+      throw new TaskExecutionError('Card top-up is not configured in this worker', {
+        code: 'TOP_UP_DISABLED', retryable: true, delayMs: 60_000, refundAttempt: true
+      });
+    }
+    try {
+      return await cardTopUp.check(task.order_id);
+    } catch (error) {
+      if (error?.name === 'TopUpRetry') {
+        throw new TaskExecutionError('Top-up is still in progress', {
+          code: error.code || 'TOP_UP_PENDING', retryable: true, delayMs: error.delayMs, refundAttempt: true
+        });
+      }
+      throw new TaskExecutionError(error?.message || 'Top-up check failed', {
+        code: 'TOP_UP_CHECK_FAILED', retryable: true, delayMs: 30_000, cause: error
+      });
+    }
+  }
+
   return {
     ASSIGN_CARD: assignCard,
     PREPARE_RECHARGE: prepareRecharge,
     SUBMIT_RECHARGE: submitRecharge,
     POLL_RECHARGE: pollRecharge,
     RECHECK_CANCELLATION: recheckCancellation,
-    SYNC_CARD_TRANSACTIONS: syncCardTransactions
+    SYNC_CARD_TRANSACTIONS: syncCardTransactions,
+    TOP_UP_CARD: topUpCard,
+    CHECK_TOP_UP: checkTopUp
   };
 }

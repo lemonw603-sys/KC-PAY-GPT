@@ -1,3 +1,4 @@
+import { TOP_UP_OPEN_STATUSES } from './card-inventory-eligibility.js';
 import { detectTopUp, fundedAmountAfterTopUp } from '../domain/card-top-up.js';
 import crypto from 'node:crypto';
 import { unzipSync, strFromU8 } from 'fflate';
@@ -139,6 +140,8 @@ export function createManualCardImportService({ pool, encryptionKey, panHmacKey 
     if (source.source_adapter !== 'backup_card_export_v1') throw sourceError('unsupported card source adapter', 'UNSUPPORTED_CARD_SOURCE_ADAPTER');
     const [existing] = await queryable.query(`SELECT id, external_card_id, pan_hmac, source_present,
       current_balance, funded_amount,
+      EXISTS (SELECT 1 FROM card_top_ups import_top_up WHERE import_top_up.card_id = cards.id
+        AND import_top_up.status IN (${TOP_UP_OPEN_STATUSES.map((status) => `'${status}'`).join(',')})) AS top_up_open,
       ${activeRiskSql('cards')} AS has_active_risk FROM cards WHERE provider_account_id=?${lock ? ' FOR UPDATE' : ''}`, [source.id]);
     const byExternal = new Map(existing.map((r) => [String(r.external_card_id), r]));
     const panHmacs = rows.map((r) => hmac(r.pan, panHmacKey)).filter(Boolean);
@@ -202,7 +205,9 @@ export function createManualCardImportService({ pool, encryptionKey, panHmacKey 
         if (existing) {
           // D-354：快照余额比库里高 = 有人补了钱。把差额记进 funded_amount，否则分卡资格
           // （D-217 取「同步余额」与「funded − 账本消费」较小值）永远按补钱前的开卡金额算。
-          const topUp = detectTopUp(existing.current_balance, item.balance);
+          // D-411：这张卡有系统自己发起、还没了结的补钱时，余额上涨是那笔补钱，由补钱流程到账时记注资；
+          // 这里再按「有人补了钱」记一遍就重复了（付款池付完一单会立刻触发一次同步，撞上的机会不小）。
+          const topUp = Number(existing.top_up_open) ? null : detectTopUp(existing.current_balance, item.balance);
           const fundedAfter = topUp ? fundedAmountAfterTopUp(existing.funded_amount, topUp) : null;
           await connection.query(`UPDATE cards SET last4=?, status=?, current_balance=?, currency='USD',
             funded_amount=COALESCE(?, funded_amount),

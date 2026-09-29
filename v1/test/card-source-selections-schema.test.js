@@ -8,8 +8,17 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const migrationsDir = path.resolve(here, '../migrations');
 const sql = fs.readFileSync(path.join(migrationsDir, '053_card_source_selections_and_supply.sql'), 'utf8');
 
-test('062 is the newest migration; 053 through 059 are additive', () => {
+test('063 is the newest migration; 053 through 059 are additive', () => {
   const names = fs.readdirSync(migrationsDir).filter((name) => /^\d+_[a-z0-9_-]+\.sql$/i.test(name)).sort();
+  // 063＝D-411 按单补钱：只新建补钱登记表 + 给 highvcc 打「支持补钱」能力位，不动存量结构。
+  assert.equal(names.at(-1), '063_card_top_ups.sql');
+  const topUps = fs.readFileSync(path.join(migrationsDir, '063_card_top_ups.sql'), 'utf8');
+  assert.doesNotMatch(topUps, /ALTER TABLE|DROP |DELETE /i);
+  assert.equal((topUps.match(/CREATE TABLE/gi) || []).length, 1);
+  assert.match(topUps, /CREATE TABLE IF NOT EXISTS card_top_ups/);
+  assert.equal((topUps.match(/^UPDATE /gmi) || []).length, 1);
+  assert.match(topUps, /UPDATE provider_accounts\s+SET supports_auto_funding = 1\s+WHERE id = '00000000-0000-4000-8000-000000000103'/);
+  names.pop();
   // 055＝D-286（CDK 发出登记 + 有效期），Lemon 2026-09-19 批准新增；只加列、不动存量。
   // 060＝块 7 删表第一批（D-367），下面单独一条钉住它只删那 5 张。
   // 062＝D-401 API 路线可用任何卡台：只改两处数据，下面单独一条钉住。

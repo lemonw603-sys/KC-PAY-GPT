@@ -894,6 +894,8 @@ export async function seedLocalAdmin({ pool, shape, keys, now = new Date() }) {
   /**
    * 让 LEAST(当前余额, 入卡额 − 账本已花) 落进快照的 effectiveBucket（资格规则的余额一句就看它）。
    * 先动账本金额（它只是「每单花了多少」的平均），动不了再在入卡额所在分桶内调入卡额。
+   * 「已花」的算法是生产 ledgerSpendSql（card-inventory-eligibility.js）的 JS 抄本，只用来造演示数据、不做判断；
+   * 生产那条多了 D-411 的「这一单最后就是在这张卡上付的」——演示数据里订单不中途换卡，两者结果相同。改规则时两处一起看。
    */
   function fitEffectiveBalance(card) {
     const g = card.group;

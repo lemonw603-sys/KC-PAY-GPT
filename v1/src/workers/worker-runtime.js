@@ -22,6 +22,12 @@ export function allowedTaskTypesFor(settings, {
   if (settings.syncCardTransactions && providerReadsEnabled) {
     types.push(TaskType.SYNC_CARD_TRANSACTIONS);
   }
+  // D-411：发补钱属于新单分卡（跟着派单开关）；查到账属于追踪已有订单（跟着轮询开关）——
+  // 停单不能停追踪（CLAUDE.md），已经发出去的补钱在停单时照样要核对完。
+  // 不另设进程权限：补钱任务只在分卡选中「可补钱旧卡」时才会产生，而那条规则本身要求「自动开卡」
+  // 总闸开着（D-412 补记三，不新增开关）。开卡 runner 同理，常开写权限、由总闸管。
+  if (settings.dispatchNewRecharges) types.push(TaskType.TOP_UP_CARD);
+  if (settings.pollExistingOrders) types.push(TaskType.CHECK_TOP_UP);
   return types;
 }
 

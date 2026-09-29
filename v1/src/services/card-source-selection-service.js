@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import { PublicApiError } from '../domain/public-api-error.js';
-import { eligibleInventoryCardSql, minimumBalanceSql, stockCountingCardSql } from './card-inventory-eligibility.js';
+import { eligibleInventoryCardSql, minimumBalanceSql, stockCountingCardSql, usableCardSql } from './card-inventory-eligibility.js';
 import { cardProviderAccountIsHealthy, readCardProviderAccount } from './provider-route-service.js';
 
 /**
@@ -45,11 +45,15 @@ export { minimumBalanceSql };
 // 免得调用方改 import 路径（与 minimumBalanceSql 同一个处理）。
 export { stockCountingCardSql };
 
-/** 某台 × 某产品此刻按库存口径可服务新单的张数。 */
+/**
+ * 某台 × 某产品此刻能服务下一单的张数：现成可用（库存口径）＋ 能补钱复用且钱包够补的旧卡（D-411）。
+ * 供卡调度器水位与切换路线 / 卡台的「目标卡池有卡」校验都用这一个数——只剩要补钱的旧卡时，
+ * 它们不能说「没卡」（否则调度器照样开新卡、直充点数用完也切不回 Browser）。
+ */
 export async function countEligibleCards(queryable, { providerAccountId, productCode = 'plus' }) {
   const [[row]] = await queryable.query(
     `SELECT COUNT(*) AS count FROM cards
-      WHERE ${stockCountingCardSql('cards', minimumBalanceSql(productCode), { productCode })}
+      WHERE ${usableCardSql('cards', minimumBalanceSql(productCode), { productCode })}
         AND cards.provider_account_id = ?`,
     [String(providerAccountId)]
   );

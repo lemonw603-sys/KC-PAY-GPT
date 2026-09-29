@@ -1,5 +1,6 @@
 import { PublicApiError } from '../domain/public-api-error.js';
 import { PROVIDER_FAILED_CARD_STATUSES } from '../domain/provider-card-status.js';
+import { TOP_UP_ADAPTERS } from './card-inventory-eligibility.js';
 import { reasonKeepingManualUse } from '../domain/manual-use-marker.js';
 
 /**
@@ -85,7 +86,10 @@ export function retirementCandidateSql() {
           COALESCE((SELECT CAST(setting_value AS UNSIGNED) FROM app_settings
             WHERE setting_key = 'card_max_successful_payments' LIMIT 1), 3) AS max_payments,
           COALESCE((SELECT CAST(setting_value AS DECIMAL(10,2)) FROM app_settings
-            WHERE setting_key = '${MIN_RETIRE_AGE_SETTING}' LIMIT 1), 6) AS min_age_hours
+            WHERE setting_key = '${MIN_RETIRE_AGE_SETTING}' LIMIT 1), 6) AS min_age_hours,
+          -- D-411：卡台支持补钱（能力位 + 有补钱适配器）。用过 1～2 单的卡付完一单会被标 DEPLETED，
+          -- 但它下一单补钱还要用，不能因此被列成「该去删」。
+          (pa.supports_auto_funding = 1 AND pa.open_adapter IN (${TOP_UP_ADAPTERS.map((a) => `'${a}'`).join(',')})) AS top_up_capable
      FROM cards c
      INNER JOIN provider_accounts pa ON pa.id = c.provider_account_id AND pa.purpose = 'CARD'
      WHERE c.intake_status IN ('ACCEPTED','LEGACY_ACCEPTED')
@@ -129,7 +133,11 @@ export function classifyRetirementRow(row, { now = new Date() } = {}) {
   const maxPayments = Number(row.max_payments || 3);
   if (used >= maxPayments) reasons.push('USED_UP');
   if (Number(row.pro_used_count || 0) >= 1) reasons.push('PRO_USED');
-  if (String(row.inventory_status) === 'DEPLETED') reasons.push('DEPLETED');
+  // D-411：还能补钱复用的旧卡（卡台能补、用过 1 单以上、没用满、没跑过 Pro、没被停用）付完一单是 DEPLETED，
+  // 那是「等下一单补钱」，不是「该删了」。用满 3 单照旧由 USED_UP 提醒删。
+  const reusableByTopUp = Number(row.top_up_capable) === 1 && used >= 1 && used < maxPayments
+    && Number(row.pro_used_count || 0) === 0 && Number(row.retired_override) !== 1;
+  if (String(row.inventory_status) === 'DEPLETED' && !reusableByTopUp) reasons.push('DEPLETED');
   if (String(row.inventory_status) === 'FAILED') reasons.push('FAILED');
   if (Number(row.retired_override) === 1) reasons.push('RETIRED_OVERRIDE');
   // 「取消续费未确认」不再算待销理由（Lemon 2026-09-20 定）。

@@ -116,7 +116,8 @@ test('大额卡默认不给 Plus 用，且只约束 Plus（Lemon 2026-09-20 定�
   const plus = eligibleInventoryCardSql('c', '16');
 
   // 判定金额取两者较大：只看当前余额的话，$150 的卡用掉一半降到 $70 就又能给 Plus 用
-  assert.match(plus, /GREATEST\(\s*c\.current_balance,\s*COALESCE\(c\.funded_amount, 0\)\s*\)/);
+  assert.match(plus, /GREATEST\(\s*COALESCE\(c\.current_balance, 0\),\s*COALESCE\(c\.funded_amount, 0\)\s*\)/);
+  // D-411：余额未知（付款成功后清成 NULL）时按充值金额判，不能因 GREATEST 遇 NULL 得 NULL 把 $16 旧卡当大额卡挡掉
   // 阈值可调，缺省 75
   assert.ok(plus.includes("setting_key = 'plus_max_card_balance'"), '阈值要能从 app_settings 调');
   assert.match(plus, /LIMIT 1\), 75\)/);

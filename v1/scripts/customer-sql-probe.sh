@@ -95,6 +95,14 @@ probe "order-success-push · 推完的成功提醒收掉（只读形式）" "$SU
 CARD_SQL_WITH_IDS() { node --input-type=module -e "import * as m from './src/services/card-supply-scheduler-service.js'; process.stdout.write(m['$1'].replace('?', \"'00000000-0000-4000-8000-000000000103'\").replace('?', \"'00000000-0000-4000-8000-000000000201'\"))"; }
 probe "card-supply-scheduler · 进行中订单占着的卡数" "$(CARD_SQL_WITH_IDS RESERVED_CARDS_SQL)"
 probe "card-supply-scheduler · 刚用掉的卡尾号" "$(CARD_SQL_WITH_IDS JUST_USED_CARD_SQL)"
+# D-411：分卡 / 水位 / 巡检 / 待销都读 card_top_ups。迁移 063 没跑时这几条会失败——发布顺序是 migrate 在 probe 之前。
+ELIG_SQL() { node --input-type=module -e "import * as m from './src/services/card-inventory-eligibility.js'; process.stdout.write($1)"; }
+probe "card-inventory-eligibility · 分卡资格（含补钱未了结 TOP_UP_PENDING）" \
+  "SELECT COUNT(*) FROM cards WHERE $(ELIG_SQL "m.eligibleInventoryCardSql('cards', '16')")"
+probe "card-inventory-eligibility · 能服务下一单的卡数（含可补钱旧卡，调度器 / 切换 / 巡检同一口径）" \
+  "SELECT COUNT(*) FROM cards WHERE provider_account_id = '00000000-0000-4000-8000-000000000103' AND $(ELIG_SQL "m.usableCardSql('cards', m.minimumBalanceSql('plus'), { productCode: 'plus' })")"
+probe "card-retirement · 待销候选（可补钱旧卡不算 DEPLETED）" \
+  "$(node --input-type=module -e "import { retirementCandidateSql } from './src/services/card-retirement-service.js'; process.stdout.write(retirementCandidateSql())") LIMIT 1"
 
 echo
 if [ "$fail" -eq 0 ]; then echo "==> 客户链路 SQL 全部可执行 ✓"; else echo "==> 有 SQL 跑不通 ✗"; fi

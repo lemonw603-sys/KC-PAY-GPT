@@ -51,7 +51,10 @@ export function ledgerSpendSql(alias = 'c') {
         WHERE eligible_spend.card_id = ${alias}.id
           AND (eligible_spend.status IN ('RESERVED','CONSUMED','RECONCILIATION')
             OR (eligible_spend.status = 'RELEASED'
-              AND eligible_spend_order.status = 'RECHARGE_SUCCESS'))
+              AND eligible_spend_order.status = 'RECHARGE_SUCCESS'
+              -- D-411：只有这一单最后就是在这张卡上付的才算。中途换过卡的单（补钱失败换卡、D-355 打回
+              -- 等 Session 放卡后重新分卡）在旧卡上留一条 RELEASED；它在新卡上成功后，不能算旧卡花了钱。
+              AND eligible_spend_order.assigned_card_id = eligible_spend.card_id))
       ), 0)`;
 }
 
@@ -94,6 +97,11 @@ export function eligibilityChecks(alias = 'c', minimumSql = '?', { productCode =
         AND eligible_pro_product.product_code LIKE 'chatgpt_pro%')` },
     { code: 'IN_USE', sql: `NOT EXISTS (SELECT 1 FROM card_assignment_history eligible_assignment
       WHERE eligible_assignment.card_id=${alias}.id AND eligible_assignment.status='ACTIVE')` },
+    // D-411：补钱还没了结（待发 / 发送中 / 已发等到账 / 结果不明）的卡一律不分。补钱中的卡本来就被本单占着
+    // （IN_USE 已挡）；这一条挡的是「结果不明、订单已换卡走了、卡留着等核对」那一种。
+    { code: 'TOP_UP_PENDING', sql: `NOT EXISTS (SELECT 1 FROM card_top_ups eligible_top_up
+      WHERE eligible_top_up.card_id = ${alias}.id
+        AND eligible_top_up.status IN (${TOP_UP_OPEN_STATUSES_SQL}))` },
     { code: 'REFUND_CASE', sql: `NOT EXISTS (
       SELECT 1 FROM refund_cases eligible_refund
       WHERE eligible_refund.card_id = ${alias}.id
@@ -113,9 +121,12 @@ export function eligibilityChecks(alias = 'c', minimumSql = '?', { productCode =
   // 大额卡不给 Plus 用（Lemon 2026-09-20 定：「金额大于 75 美金，默认不能给 Plus 充」）：卡不记产品归属，
   // 忘了标 PRODUCT_ONLY 的 $150 卡会被 Plus 吃到上限。判定金额取 GREATEST(当前余额, 充值金额)；
   // 显式标了 PRODUCT_ONLY=plus 的仍放行；阈值 app_settings.plus_max_card_balance，缺省 75。
+  // 余额未知（付款成功后清成 NULL、等下次同步回填）时按充值金额判：GREATEST 遇 NULL 得 NULL，会把一张
+  // $16 的旧卡当成大额卡挡掉（D-411：付款后一小时内来的下一单就用不上这张卡）。分卡本身不受影响——
+  // 余额未知的卡 BALANCE_LOW 那一条照样不过。
   if (normalizedProduct === 'plus') {
     checks.push({ code: 'PLUS_LARGE_CARD', sql: `(
-      GREATEST(${alias}.current_balance, COALESCE(${alias}.funded_amount, 0)) <= COALESCE(
+      GREATEST(COALESCE(${alias}.current_balance, 0), COALESCE(${alias}.funded_amount, 0)) <= COALESCE(
         (SELECT CAST(setting_value AS DECIMAL(18,6)) FROM app_settings
           WHERE setting_key = 'plus_max_card_balance' LIMIT 1), 75)
       OR EXISTS (
@@ -129,6 +140,12 @@ export function eligibilityChecks(alias = 'c', minimumSql = '?', { productCode =
   }
   return checks;
 }
+
+/** 补钱登记里「还没了结」的状态（D-411）。了结 = CONFIRMED（到账）或 REJECTED（钱没动）。 */
+export const TOP_UP_OPEN_STATUSES = Object.freeze(['PREPARED', 'SENDING', 'SUBMITTED', 'UNKNOWN']);
+const TOP_UP_OPEN_STATUSES_SQL = TOP_UP_OPEN_STATUSES.map((status) => `'${status}'`).join(',');
+/** 代码里有补钱适配器的卡台（provider_accounts.open_adapter）。能补 = 能力位 supports_auto_funding=1 且在这里。 */
+export const TOP_UP_ADAPTERS = Object.freeze(['highvcc_api_v1']);
 
 export function eligibleInventoryCardSql(alias = 'c', minimumSql = '?', { productCode = 'plus' } = {}) {
   return eligibilityChecks(alias, minimumSql, { productCode }).map((check) => check.sql).join('\n    AND ');
@@ -316,3 +333,66 @@ export function recentCst8CalendarDaysWindowSql(column = 'created_at', days = 7)
 /** 已开/在途张数：PENDING/RUNNING 按请求数占位，其余按实开数。与日限对比用。 */
 export const REPLENISHMENT_OPENED_COUNT_SQL =
   `COALESCE(SUM(CASE WHEN status IN ('PENDING','RUNNING') THEN requested_count ELSE opened_count END), 0)`;
+
+/**
+ * D-411「可补钱复用」：用过 1 次以上、还没用满、卡台能补钱的卡，除了「余额够」「15 分钟内同步过」两条，其余分卡条件
+ * 全部照正式资格规则（从 eligibilityChecks 派生，不另抄一份）。补完钱后仍要再过一遍完整资格规则才分出去。
+ * 另加：该产品每卡上限 > 1（5X / 20X 一卡一单，永远不走这里）；24 小时内补钱被卡台明确拒过的卡先不用
+ * （免得同一张卡反复被拒、订单来回换）。
+ */
+export function reusableTopUpCardSql(alias = 'c', { productCode = 'plus' } = {}) {
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(alias)) throw new TypeError('Invalid card SQL alias');
+  const normalizedProduct = String(productCode || 'plus').trim().toLowerCase();
+  // 去掉「余额够」（补钱就是为了它）与「15 分钟内同步过」（补钱前会实时读卡详情，库里同步时间不作数）。
+  const base = eligibilityChecks(alias, '0', { productCode: normalizedProduct })
+    .filter((check) => check.code !== 'BALANCE_LOW' && check.code !== 'SYNC_STALE')
+    .map((check) => check.sql);
+  const adapters = TOP_UP_ADAPTERS.map((adapter) => `'${adapter}'`).join(',');
+  return [...base,
+    `(SELECT COUNT(*) FROM card_consumption_ledger reuse_usage
+      WHERE reuse_usage.card_id = ${alias}.id
+        AND reuse_usage.status IN ('RESERVED','CONSUMED','RECONCILIATION')) >= 1`,
+    `${maxPaymentsSql(normalizedProduct)} > 1`,
+    `EXISTS (SELECT 1 FROM provider_accounts reuse_account
+      WHERE reuse_account.id = ${alias}.provider_account_id
+        AND reuse_account.supports_auto_funding = 1
+        AND reuse_account.open_adapter IN (${adapters}))`,
+    // 补钱归「自动开卡」总闸（D-412 补记三，不新增开关）：总闸关了，旧卡就不算能用，调度器照常按缺口看。
+    `(SELECT reuse_switch.setting_value FROM app_settings reuse_switch
+      WHERE reuse_switch.setting_key = 'card_auto_replenishment_enabled' LIMIT 1) = 'true'`,
+    `NOT EXISTS (SELECT 1 FROM card_top_ups reuse_rejected
+      WHERE reuse_rejected.card_id = ${alias}.id AND reuse_rejected.status = 'REJECTED'
+        AND reuse_rejected.updated_at >= DATE_SUB(CURRENT_TIMESTAMP(3), INTERVAL 24 HOUR))`
+  ].join('\n    AND ');
+}
+
+/**
+ * 一次补钱要花的钱＝这一单账本要记的金额（全局 default_open_card_amount，D-412：每次补 $16 整）。
+ * 钱包够不够补：卡台最近一次钱包快照 − 还没从钱包扣走的补钱（待发 / 发送中）− 这一次 ≥ 钱包底线（押金，D-273）。
+ */
+export const TOP_UP_AMOUNT_SQL = `(SELECT CAST(setting_value AS DECIMAL(18,6)) FROM app_settings
+    WHERE setting_key = 'default_open_card_amount' LIMIT 1)`;
+
+export function walletCoversTopUpSql(alias = 'c') {
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(alias)) throw new TypeError('Invalid card SQL alias');
+  return `COALESCE((SELECT wallet_snap.available_balance FROM provider_balance_snapshots wallet_snap
+        WHERE wallet_snap.provider_account_id = ${alias}.provider_account_id
+        ORDER BY wallet_snap.observed_at DESC LIMIT 1), 0)
+      - COALESCE((SELECT SUM(wallet_pending.amount) FROM card_top_ups wallet_pending
+        WHERE wallet_pending.provider_account_id = ${alias}.provider_account_id
+          AND wallet_pending.status IN ('PREPARED','SENDING')), 0)
+      - COALESCE(${TOP_UP_AMOUNT_SQL}, 999999999)
+      >= COALESCE((SELECT wallet_account.wallet_floor FROM provider_accounts wallet_account
+        WHERE wallet_account.id = ${alias}.provider_account_id), 999999999)`;
+}
+
+/**
+ * 「能服务下一单的卡」唯一口径（D-411 v2 影响地图）：现成可用（库存口径）或「可补钱复用且钱包够补」。
+ * 供卡调度器水位、切换路线 / 卡台校验、巡检「没卡了」、充前自检共用——只剩要补钱的旧卡时它们不能说「没卡」。
+ * 分卡本身不用它（分卡要逐张判、要锁卡），见 workflow-repository.assignAvailableCard。
+ */
+export function usableCardSql(alias = 'c', minimumSql = '?', { productCode = 'plus' } = {}) {
+  return `((${stockCountingCardSql(alias, minimumSql, { productCode })})
+    OR ((${reusableTopUpCardSql(alias, { productCode })})
+      AND (${walletCoversTopUpSql(alias)})))`;
+}

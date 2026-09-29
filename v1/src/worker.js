@@ -19,6 +19,9 @@ import { createOrderCancellationService } from './services/order-cancellation-se
 import { createSessionRepairExpiryService } from './services/session-repair-expiry-service.js';
 import { createProviderRouteAdminService } from './services/provider-route-admin-service.js';
 import { createZzshuPointsMonitor, ZZSHU_POINTS_CHECK_INTERVAL_MS } from './services/zzshu-points-monitor.js';
+import { createHighvccCardProvider } from './providers/highvcc-card.js';
+import { createHighvccAccessTokenReader } from './services/highvcc-card-service.js';
+import { createCardTopUpService } from './services/card-top-up-service.js';
 
 const config = loadWorkerConfig();
 const pool = createDatabasePool(config.database);
@@ -60,6 +63,14 @@ const workflow = createWorkflowRepository(pool, {
   sessionEncryptionKey: config.sessionEncryptionKey,
   panHmacKey: config.cardIntakePanHmacKey
 });
+// D-411：补钱用 highvcc 网页 token（与每小时快照同步同一个读法）。token 只在真要补时才读；
+// 会不会补由分卡规则决定（「自动开卡」总闸 + 卡台能力位 + 钱包够），这里不另设开关。
+const cardTopUp = createCardTopUpService({
+  pool, workflow,
+  provider: createHighvccCardProvider({
+    getAccessToken: createHighvccAccessTokenReader({ pool, encryptionKey: config.sessionEncryptionKey })
+  })
+});
 const rechargeAttemptRepository = createRechargeAttemptRepository(pool);
 const browserDispatchRepository = createBrowserDispatchRepository(pool);
 // D-401：直充平台点数监控（只读），跟着心跳每 5 分钟一次；只有真实的 ZZSHU 客户端才有 readPoints。
@@ -87,6 +98,7 @@ const handlers = createWorkflowHandlers({
     sessionEncryptionKey: config.sessionEncryptionKey, panHmacKey: config.cardIntakePanHmacKey
   }),
   rechargeWritesEnabled: config.providerRechargeWritesEnabled,
+  cardTopUp,
   holdBeforeProvider: process.env.RECHARGE_SUBMIT_HOLD_BEFORE_PROVIDER === 'true'
 });
 

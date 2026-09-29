@@ -1,12 +1,17 @@
 import crypto from 'node:crypto';
 import { transitionOrder } from './order-repository.js';
-import { releaseCardForSessionReplacementInTransaction } from './card-release-repository.js';
+import { releaseCardForSessionReplacementInTransaction, releaseCardForFailedOrderInTransaction } from './card-release-repository.js';
+import {
+  insertPreparedTopUpInTransaction, loadTopUp, markConfirmedInTransaction, markOrderDetachedInTransaction,
+  markRejectedInTransaction, markUnknown, resolveTopUpAlert, upsertTopUpAlert
+} from './card-top-up-repository.js';
+import { fromCents, toCents } from '../../domain/card-issue-fee.js';
 import { OrderStatus } from '../../domain/order-status.js';
 import { decryptSecret, encryptSecret } from '../../security/secret-box.js';
 import { redactSensitiveText } from '../../security/redaction.js';
 import { persistCardTransactions } from './card-transaction-repository.js';
 import {
-  eligibleInventoryCardSql,
+  eligibleInventoryCardSql, reusableTopUpCardSql, walletCoversTopUpSql,
   refreshableInventoryCardSql, maxPaymentsSql } from '../../services/card-inventory-eligibility.js';
 import {
   reserveCardConsumptionInTransaction,
@@ -59,7 +64,119 @@ async function insertEvent(connection, {
   );
 }
 
+const USED_COUNT_SQL = `(SELECT COUNT(*) FROM card_consumption_ledger pick_usage
+  WHERE pick_usage.card_id = cards.id AND pick_usage.status IN ('RESERVED','CONSUMED','RECONCILIATION'))`;
+
+/**
+ * D-411：订单从「补钱中」退回「等卡」——补钱被拒、结果不明、受理后迟迟不到账时，客户这一单换卡走，
+ * 不陪这张卡等。放卡、账本预留 RELEASED、订单清掉卡、重排分卡任务，与 D-355 打回等 Session 时放卡同一套做法。
+ * 卡本身若补钱结果不明，由资格规则 TOP_UP_PENDING 挡住，不会被下一单分到。
+ */
+async function detachTopUpOrderInTransaction(connection, topUp, { reason, code }) {
+  const [[order]] = await connection.query(
+    'SELECT id, status, version, assigned_card_id FROM orders WHERE id = ? LIMIT 1 FOR UPDATE', [topUp.order_id]);
+  await markOrderDetachedInTransaction(connection, topUp.id);
+  if (!order || order.status !== OrderStatus.CARD_PROVISIONING || order.assigned_card_id !== topUp.card_id) {
+    return { detached: false, orderStatus: order?.status || null };
+  }
+  const [[ledger]] = await connection.query(
+    `SELECT id FROM card_consumption_ledger WHERE card_id = ? AND order_id = ? AND status = 'RESERVED' LIMIT 1 FOR UPDATE`,
+    [topUp.card_id, topUp.order_id]);
+  if (ledger) {
+    await transitionCardConsumptionInTransaction(connection, {
+      id: ledger.id, targetStatus: 'RELEASED', reason: `top-up not completed (${code}); order moves to another card`,
+      evidence: { source: 'card_top_up_detach', topUpId: topUp.id, code }
+    });
+  }
+  await releaseCardForFailedOrderInTransaction(connection, {
+    orderId: topUp.order_id, releasedBy: 'worker:card-top-up', reason: `top-up not completed (${code})`
+  });
+  const [moved] = await connection.query(
+    `UPDATE orders SET status = ?, assigned_card_id = NULL, version = version + 1, updated_at = CURRENT_TIMESTAMP(3)
+     WHERE id = ? AND version = ?`, [OrderStatus.WAITING_FOR_CARD, order.id, order.version]);
+  if (moved.affectedRows !== 1) throw new Error(`Concurrent top-up detach detected: ${order.id}`);
+  await insertEvent(connection, {
+    orderId: order.id, fromStatus: OrderStatus.CARD_PROVISIONING, toStatus: OrderStatus.WAITING_FOR_CARD,
+    reason, metadata: { topUpId: topUp.id, code, cardLast4: topUp.last4 || null }
+  });
+  // 重排分卡：同一个去重键的分卡任务早已完成，改回待跑；万一没有就补一条。
+  const [rearmed] = await connection.query(
+    `UPDATE tasks SET status = 'PENDING', attempts = 0, available_at = CURRENT_TIMESTAMP(3),
+       leased_by = NULL, leased_until = NULL, completed_at = NULL,
+       last_error_code = NULL, last_error_message = NULL, updated_at = CURRENT_TIMESTAMP(3)
+     WHERE order_id = ? AND task_type = 'ASSIGN_CARD' AND dedupe_key = ?`,
+    [order.id, `assign-card:${order.id}`]);
+  if (Number(rearmed.affectedRows) === 0) {
+    await connection.query(
+      `INSERT INTO tasks (order_id, task_type, status, dedupe_key, max_attempts)
+       VALUES (?, 'ASSIGN_CARD', 'PENDING', ?, 10080)
+       ON DUPLICATE KEY UPDATE updated_at = CURRENT_TIMESTAMP(3)`, [order.id, `assign-card:${order.id}`]);
+  }
+  return { detached: true };
+}
+
 export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKey = null }) {
+  /**
+   * D-411：占住一张要补钱的旧卡，订单进 CARD_PROVISIONING（客户页「正在准备支付卡」），排补钱任务。
+   * 与分现成卡同一事务、同一套占卡 / 账本预留；多出来的只有「补钱登记 PREPARED」和补钱任务。
+   * 这里不调卡台：发补钱请求在 TOP_UP_CARD 任务里，只发一次（card-top-up-service）。
+   */
+  async function claimReusableCardForTopUp(connection, { order, orderId, card, productCode, alertKey }) {
+    const [[capacitySetting]] = await connection.query(`SELECT (${maxPaymentsSql(productCode)}) AS max_payments`);
+    const maxPayments = Number(capacitySetting?.max_payments || 3);
+    const [cardUpdate] = await connection.query(
+      `UPDATE cards SET order_id = COALESCE(order_id, ?), inventory_status = 'ASSIGNED',
+         assigned_at = COALESCE(assigned_at, CURRENT_TIMESTAMP(3)), updated_at = CURRENT_TIMESTAMP(3)
+       WHERE id = ? AND inventory_status IN ('AVAILABLE','ASSIGNED','DEPLETED')`,
+      [orderId, card.id]
+    );
+    if (cardUpdate.affectedRows !== 1) throw new Error(`Concurrent card assignment detected: ${card.id}`);
+    await connection.query(
+      `INSERT INTO card_assignment_history
+       (id, card_id, order_id, assignment_kind, status, assigned_by,
+        assignment_reason, assigned_at, evidence_json)
+       VALUES (UUID(), ?, ?, 'NORMAL', 'ACTIVE', 'worker:assign-available-card',
+         'reusable card assigned; top-up before payment (D-411)', CURRENT_TIMESTAMP(3), ?)`,
+      [card.id, orderId, JSON.stringify({
+        providerCardId: String(card.provider_card_id),
+        balanceAtAssignment: card.current_balance == null ? null : String(card.current_balance),
+        usedCount: Number(card.used_count), topUp: true
+      })]
+    );
+    await reserveCardConsumptionInTransaction(connection, {
+      cardId: card.id, orderId, productId: order.product_id, amount: order.open_card_amount, currency: 'USD',
+      maxPayments, evidence: { source: 'card_assignment_top_up', providerCardId: String(card.provider_card_id) }
+    });
+    const topUpId = crypto.randomUUID();
+    // 每次补的钱＝这一单账本要记的钱（D-412：每次补 $16 整，账本每单记 open_card_amount）。
+    await insertPreparedTopUpInTransaction(connection, {
+      id: topUpId, cardId: card.id, orderId, providerAccountId: order.card_provider_account_id,
+      amount: order.open_card_amount, balanceBefore: card.current_balance
+    });
+    const [orderUpdate] = await connection.query(
+      `UPDATE orders SET status = ?, assigned_card_id = ?, version = version + 1,
+         updated_at = CURRENT_TIMESTAMP(3) WHERE id = ? AND version = ?`,
+      [OrderStatus.CARD_PROVISIONING, card.id, orderId, order.version]
+    );
+    if (orderUpdate.affectedRows !== 1) throw new Error(`Concurrent order assignment detected: ${orderId}`);
+    await insertEvent(connection, {
+      orderId, fromStatus: order.status, toStatus: OrderStatus.CARD_PROVISIONING,
+      reason: 'reusable card assigned; topping up before payment',
+      metadata: { providerCardId: String(card.provider_card_id), topUpId, amount: String(order.open_card_amount),
+        usedCount: Number(card.used_count) }
+    });
+    await connection.query(
+      `UPDATE operator_alerts SET status = 'RESOLVED', acknowledged_at = CURRENT_TIMESTAMP(3)
+       WHERE dedupe_key = ? AND status = 'OPEN'`, [alertKey]);
+    await connection.query(
+      `INSERT INTO tasks (order_id, task_type, status, dedupe_key, max_attempts)
+       VALUES (?, 'TOP_UP_CARD', 'PENDING', ?, 5)
+       ON DUPLICATE KEY UPDATE updated_at = CURRENT_TIMESTAMP(3)`,
+      [orderId, `top-up-card:${topUpId}`]);
+    return { topUpQueued: true, topUpId, providerCardId: String(card.provider_card_id),
+      currentBalance: card.current_balance == null ? null : String(card.current_balance) };
+  }
+
   return {
     async loadOrderContext(orderId) {
       const [rows] = await pool.query(
@@ -335,6 +452,111 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
       });
     },
 
+    /**
+     * D-411：卡详情显示补钱已到账。卡：注资 +补钱额、余额写读到的真值（每小时快照随后看到的就是同一个数，
+     * 不会再当成「有人补钱」重复记，D-354）。订单还挂在这张卡上 → 进 CARD_READY，排准备 / 提交任务，
+     * 往下与分到现成卡完全一样；订单已换卡走了（结果不明那一路）→ 只把卡恢复成可用。
+     */
+    async confirmTopUp(topUpId, { observedBalance, resolvedBy = null }) {
+      return inTransaction(pool, async (connection) => {
+        const topUp = await loadTopUp(connection, topUpId, { forUpdate: true });
+        if (!topUp || !['SUBMITTED', 'UNKNOWN'].includes(topUp.status)) {
+          return { confirmed: false, status: topUp?.status || null };
+        }
+        const observedCents = toCents(String(observedBalance));
+        const amountCents = toCents(String(topUp.amount));
+        const [[card]] = await connection.query(
+          `SELECT id, funded_amount, current_balance, inventory_status FROM cards WHERE id = ? FOR UPDATE`, [topUp.card_id]);
+        const fundedCents = toCents(String(card?.funded_amount ?? '0'));
+        if (!card || !Number.isInteger(observedCents) || !Number.isInteger(amountCents) || !Number.isInteger(fundedCents)) {
+          throw new Error(`Top-up confirmation has unreadable amounts: ${topUpId}`);
+        }
+        const [[order]] = await connection.query(
+          `SELECT id, status, version, assigned_card_id, minimum_required_card_balance FROM orders WHERE id = ? FOR UPDATE`,
+          [topUp.order_id]);
+        const attached = !Number(topUp.order_detached) && order
+          && order.status === OrderStatus.CARD_PROVISIONING && order.assigned_card_id === topUp.card_id;
+        const newFunded = fromCents(fundedCents + amountCents);
+        const observed = fromCents(observedCents);
+        await connection.query(
+          `UPDATE cards SET funded_amount = ?, current_balance = ?, last_synced_at = CURRENT_TIMESTAMP(3),
+             inventory_status = CASE WHEN ? THEN inventory_status
+               WHEN inventory_status IN ('AVAILABLE','DEPLETED') THEN 'AVAILABLE' ELSE inventory_status END,
+             updated_at = CURRENT_TIMESTAMP(3)
+           WHERE id = ?`,
+          [newFunded, observed, attached ? 1 : 0, topUp.card_id]);
+        await connection.query(
+          `INSERT INTO card_state_events (card_id, event_type, source, previous_json, current_json)
+           VALUES (?, 'CARD_TOPUP_CONFIRMED', 'card_top_up', ?, ?)`,
+          [topUp.card_id,
+            JSON.stringify({ currentBalance: card.current_balance == null ? null : String(card.current_balance),
+              fundedAmount: card.funded_amount == null ? null : String(card.funded_amount) }),
+            JSON.stringify({ currentBalance: observed, fundedAmount: newFunded, topUpId, amount: String(topUp.amount),
+              orderAttached: Boolean(attached), resolvedBy })]);
+        await markConfirmedInTransaction(connection, topUpId, { balanceAfter: observed, resolvedBy });
+        await resolveTopUpAlert(connection, topUpId);
+        if (!attached) return { confirmed: true, orderReady: false };
+        const [ready] = await connection.query(
+          `UPDATE orders SET status = ?, version = version + 1, updated_at = CURRENT_TIMESTAMP(3)
+           WHERE id = ? AND version = ?`, [OrderStatus.CARD_READY, order.id, order.version]);
+        if (ready.affectedRows !== 1) throw new Error(`Concurrent top-up confirmation detected: ${order.id}`);
+        await insertEvent(connection, {
+          orderId: order.id, fromStatus: OrderStatus.CARD_PROVISIONING, toStatus: OrderStatus.CARD_READY,
+          reason: 'card topped up; ready for recharge', metadata: { topUpId, currentBalance: observed, amount: String(topUp.amount) }
+        });
+        await connection.query(
+          `INSERT INTO tasks (order_id, task_type, status, dedupe_key, max_attempts)
+           VALUES (?, 'PREPARE_RECHARGE', 'PENDING', ?, 5),
+                  (?, 'SUBMIT_RECHARGE', 'PENDING', ?, 5)
+           ON DUPLICATE KEY UPDATE updated_at = CURRENT_TIMESTAMP(3)`,
+          [order.id, `prepare-recharge:${order.id}`, order.id, `submit-recharge:${order.id}`]);
+        // 与分现成卡同一处理：换 Session 时被压住的准备 / 提交任务，等到分卡落定才放出来。
+        await connection.query(
+          `UPDATE tasks SET status = 'PENDING', attempts = 0, available_at = CURRENT_TIMESTAMP(3),
+             leased_by = NULL, leased_until = NULL, completed_at = NULL,
+             last_error_code = NULL, last_error_message = NULL, updated_at = CURRENT_TIMESTAMP(3)
+           WHERE order_id = ? AND task_type IN ('PREPARE_RECHARGE','SUBMIT_RECHARGE')
+             AND status = 'DEAD' AND last_error_code = 'SESSION_REPLACEMENT_WAITING_FOR_CARD'
+             AND dedupe_key IN (?, ?)`,
+          [order.id, `prepare-recharge:${order.id}`, `submit-recharge:${order.id}`]);
+        return { confirmed: true, orderReady: true };
+      });
+    },
+
+    /** D-411：补钱明确没动钱（卡台拒绝 / 钱包不够 / token 失效 / 流水证实没发出）→ 了结为 REJECTED，订单换卡。 */
+    async rejectTopUp(topUpId, { code, message = null, response = null, resolvedBy = null,
+      allowedFrom = ['PREPARED', 'SENDING', 'UNKNOWN'] }) {
+      return inTransaction(pool, async (connection) => {
+        const topUp = await loadTopUp(connection, topUpId, { forUpdate: true });
+        if (!topUp) return { rejected: false };
+        const rejected = await markRejectedInTransaction(connection, topUpId, { code, message, response, allowedFrom, resolvedBy });
+        if (!rejected) return { rejected: false, status: topUp.status };
+        await resolveTopUpAlert(connection, topUpId);
+        const detach = Number(topUp.order_detached) ? { detached: false }
+          : await detachTopUpOrderInTransaction(connection, topUp, { reason: `top-up rejected (${code}); order moves to another card`, code });
+        return { rejected: true, ...detach };
+      });
+    },
+
+    /**
+     * D-411：补钱结果不明（超时 / 断网 / 发送中进程死了 / 受理后 3 分钟不到账）。卡锁住不重补，订单换卡走。
+     * alert=true 时同时叫人（受理后迟迟不到账、或自动核对也判不清时）。
+     */
+    async markTopUpUnknownAndDetach(topUpId, { code, message = null, response = null, alert = false, alertDetail = null }) {
+      return inTransaction(pool, async (connection) => {
+        const topUp = await loadTopUp(connection, topUpId, { forUpdate: true });
+        if (!topUp || !['SENDING', 'SUBMITTED', 'UNKNOWN'].includes(topUp.status)) return { unknown: false, status: topUp?.status || null };
+        await markUnknown(connection, topUpId, { code, message, response });
+        if (alert) {
+          await upsertTopUpAlert(connection, { topUpId, orderId: topUp.order_id, last4: topUp.last4, amount: topUp.amount,
+            detail: alertDetail || `结果不明（${code}）` });
+        }
+        const detach = Number(topUp.order_detached) ? { detached: false }
+          : await detachTopUpOrderInTransaction(connection, topUp, { reason: `top-up result unknown (${code}); order moves to another card`, code });
+        return { unknown: true, ...detach };
+      });
+    },
+
     async assignAvailableCard(orderId) {
       return inTransaction(pool, async (connection) => {
         const [orders] = await connection.query(
@@ -360,16 +582,36 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
         );
         if (sourceRows.length !== 1) throw new Error(`Frozen card source not found: ${orderId}`);
         const source = sourceRows[0];
+        const productCode = order.plan_type || 'plus';
+        // D-411 旧卡优先：现成能付的卡里先挑用过的（早用满早删、少挂在客户账号里）。
         const [cards] = await connection.query(
-          `SELECT id, provider_card_id, current_balance
+          `SELECT id, provider_card_id, current_balance, ${USED_COUNT_SQL} AS used_count
            FROM cards
-           WHERE ${eligibleInventoryCardSql('cards', '?', { productCode: order.plan_type || 'plus' })}
+           WHERE ${eligibleInventoryCardSql('cards', '?', { productCode })}
              AND cards.provider_account_id = ?
-           ORDER BY current_balance ASC, created_at ASC
+           ORDER BY used_count DESC, current_balance ASC, created_at ASC
            LIMIT 1 FOR UPDATE SKIP LOCKED`,
             [String(order.minimum_required_card_balance), order.card_provider_account_id]
         );
         const alertKey = `order-waiting-card:${orderId}`;
+        // 没有用过的现成卡时，先看能补钱复用的旧卡（D-411）。「自动开卡」总闸（D-412 补记三）、卡台能力位、
+        // 钱包按最近一次快照够不够都在 reusableTopUpCardSql / walletCoversTopUpSql 里——与调度器水位、
+        // 切换校验、巡检数的是同一口径。真发之前补钱任务还会实时再查一次钱包和总闸。
+        if (!(cards[0] && Number(cards[0].used_count) >= 1)) {
+          const [reusable] = await connection.query(
+            `SELECT id, provider_card_id, current_balance, ${USED_COUNT_SQL} AS used_count
+             FROM cards
+             WHERE ${reusableTopUpCardSql('cards', { productCode })}
+               AND ${walletCoversTopUpSql('cards')}
+               AND cards.provider_account_id = ?
+             ORDER BY used_count DESC, created_at ASC
+             LIMIT 1 FOR UPDATE SKIP LOCKED`,
+            [order.card_provider_account_id]
+          );
+          if (reusable[0]) {
+            return claimReusableCardForTopUp(connection, { order, orderId, card: reusable[0], productCode, alertKey });
+          }
+        }
         if (cards.length === 0) {
           // 第④步（面二⑨，D-266）：候选卡过期不再「排一条 card_sync_jobs 等 runner 领、
           // 再等下次分卡重试」。分卡 handler 在调本方法之前已用 findStaleInventoryCandidate

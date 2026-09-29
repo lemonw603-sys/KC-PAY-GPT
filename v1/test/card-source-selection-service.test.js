@@ -4,7 +4,7 @@ import {
   countEligibleCards, createCardSourceSelectionService, listCardSourceSelections,
   minimumBalanceSql, runCardSourceSwitchChecks, stockCountingCardSql
 } from '../src/services/card-source-selection-service.js';
-import { eligibleInventoryCardSql } from '../src/services/card-inventory-eligibility.js';
+import { eligibleInventoryCardSql, reusableTopUpCardSql } from '../src/services/card-inventory-eligibility.js';
 
 const HNSKJ_ID = '00000000-0000-4000-8000-000000000101';
 const BACKUP_ID = '00000000-0000-4000-8000-000000000103';
@@ -99,6 +99,17 @@ test('stock count = production eligibility rule minus only the 15-minute freshne
   assert.equal(derived.replace(/\s+/g, ' ').split('AND').length, original.replace(/\s+/g, ' ').split('AND').length - 1, '只少了新鲜度里的一个 AND 条件');
   assert.match(minimumBalanceSql('plus'), /default_minimum_required_card_balance/);
   assert.throws(() => minimumBalanceSql('plus; DROP'), TypeError);
+  // D-411：这个数＝现成可用 OR（可补钱复用 AND 钱包够补）——只剩要补钱的旧卡时调度器 / 切换校验不能说没卡。
+  assert.match(sql, /supports_auto_funding = 1/);
+  assert.match(sql, /open_adapter IN \('highvcc_api_v1'\)/);
+  assert.match(sql, /FROM provider_balance_snapshots wallet_snap/);
+  assert.match(sql, /wallet_account\.wallet_floor/);
+  assert.equal(sql.startsWith('SELECT COUNT(*) AS count FROM cards WHERE ((') || /WHERE \(\(/.test(sql), true);
+  assert.match(reusableTopUpCardSql('c', { productCode: 'plus' }), /card_operational_overrides/, '复用照样受停用 / 产品限定约束');
+  assert.doesNotMatch(reusableTopUpCardSql('c', { productCode: 'plus' }), /c\.current_balance,\s*c\.funded_amount -/, '复用不带余额够那一条');
+  assert.match(reusableTopUpCardSql('c', { productCode: 'plus' }),
+    /setting_key = 'card_auto_replenishment_enabled' LIMIT 1\) = 'true'/, '补钱归「自动开卡」总闸：关了旧卡就不算能用（D-412 补记三）');
+  assert.match(reusableTopUpCardSql('c', { productCode: 'plus' }), /\) > 1/, '一卡一单的产品（5X / 20X）永远不走补钱');
 });
 
 async function checks(pool, overrides = {}) {

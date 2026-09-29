@@ -57,20 +57,34 @@ export function createHighvccCardProvider({
   if (typeof getAccessToken !== 'function') throw new TypeError('getAccessToken is required');
   const BASE = String(baseUrl).replace(/\/$/, '');
 
-  async function api(method, path, { body = null, form = false } = {}) {
+  async function api(method, path, { body = null, form = false, timeoutMs = null } = {}) {
     const token = await getAccessToken();
     if (!token) throw new HighvccProviderError('no highvcc access token is configured', 'HIGHVCC_TOKEN_MISSING');
     const { requestBody, contentType } = buildRequestInit(body, form);
-    const response = await fetchImpl(BASE + path, {
-      method,
-      headers: {
-        Authorization: `Bearer ${token}`,
-        Accept: 'application/json',
-        ...(contentType ? { 'Content-Type': contentType } : {}),
-        'User-Agent': 'Mozilla/5.0',
-      },
-      body: requestBody,
-    });
+    // timeoutMs 只给「发出去就可能动钱」的调用用（补钱）：超时要能被调用方认成「结果不明」，
+    // 而不是一直挂着。其余只读调用保持原样。
+    const controller = timeoutMs ? new AbortController() : null;
+    const timer = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
+    let response;
+    try {
+      response = await fetchImpl(BASE + path, {
+        method,
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: 'application/json',
+          ...(contentType ? { 'Content-Type': contentType } : {}),
+          'User-Agent': 'Mozilla/5.0',
+        },
+        body: requestBody,
+        ...(controller ? { signal: controller.signal } : {}),
+      });
+    } catch (error) {
+      // 连接断 / 超时：请求可能已经到了卡台，也可能没到——只能说「不知道」。
+      throw new HighvccProviderError(`${method} ${path} -> no response (${error?.name === 'AbortError' ? 'timeout' : 'network'})`,
+        error?.name === 'AbortError' ? 'HIGHVCC_TIMEOUT' : 'HIGHVCC_NETWORK_ERROR');
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
     let json = null;
     try { json = await response.json(); } catch { json = null; }
     if (isAuthTrouble(response.status, json)) {
@@ -82,8 +96,12 @@ export function createHighvccCardProvider({
     if (!response.ok) {
       throw new HighvccProviderError(`${method} ${path} -> HTTP ${response.status}${json?.msg ? ` ${json.msg}` : ''}`, 'HIGHVCC_HTTP_ERROR', json?.msg || null);
     }
-    if (json?.code !== 200) {
-      throw new HighvccProviderError(`${method} ${path} -> code ${json?.code} ${json?.msg || ''}`, 'HIGHVCC_API_ERROR', json?.msg || null);
+    // HTTP 成功但内容读不出来（截断 / 不是 JSON）：卡台可能已经办了，不能当成「卡台说不」（D-411 补钱据此判钱动没动）。
+    if (json == null || typeof json !== 'object') {
+      throw new HighvccProviderError(`${method} ${path} -> HTTP ${response.status} with unreadable body`, 'HIGHVCC_BAD_RESPONSE');
+    }
+    if (json.code !== 200) {
+      throw new HighvccProviderError(`${method} ${path} -> code ${json.code} ${json.msg || ''}`, 'HIGHVCC_API_ERROR', json.msg || null);
     }
     return json;
   }
@@ -225,5 +243,34 @@ export function createHighvccCardProvider({
     return out;
   }
 
-  return { cost, autoCardHolderName, detail, list, listAll, open, ranges, wallet, transactions, allTransactions };
+  // 往一张卡里补钱（D-411）。请求格式对照 highvcc 公开前端 `cardRecharge`（POST 表单
+  // {cardId, amount 分, payUnit:'USD'}），2026-09-29 生产真调四次核实：返回
+  // {"code":200,"msg":"充值提交成功,请稍后查询余额","data":17}，钱包当场扣，卡详情随后到账。
+  // 这里**不重试**：这一步会动钱，调用方按错误码区分「明确没动钱」和「不知道」。
+  async function recharge({ cardId, amountCents, timeoutMs = 30_000 }) {
+    const cents = Number(amountCents);
+    if (!Number.isInteger(cents) || cents <= 0) {
+      throw new HighvccProviderError(`recharge amount must be positive integer cents, got ${amountCents}`, 'HIGHVCC_INVALID_AMOUNT');
+    }
+    const r = await api('POST', '/api/card/recharge', { body: { cardId, amount: String(cents), payUnit: 'USD' }, form: true, timeoutMs });
+    return { code: r.code, msg: r.msg ?? null, data: r.data ?? null };
+  }
+
+  // 账户资金流水（只读）。对照前端 `queryFinanceFlow`（POST 表单 {pageNo, pageSize, createStart, createEnd}，毫秒），
+  // 2026-09-29 生产只读实查：补钱一行 typeText「消费记录」、tradeDesc「Add Balance To Card …」、cardSeqNo = 卡台卡 id；
+  // initiated 是 UTC+8 的「YYYY-MM-DD HH:mm:ss」。用来核对「补钱结果不明」时钱到底有没有从钱包出去。
+  async function accountFlow({ createStartMs, createEndMs, pageSize = 50, maxPages = 5 } = {}) {
+    const rows = [];
+    for (let pageNo = 1; pageNo <= maxPages; pageNo += 1) {
+      const r = await api('POST', '/api/account/flowPage', {
+        body: { pageNo, pageSize, createStart: createStartMs, createEnd: createEndMs }, form: true
+      });
+      const page = Array.isArray(r.data?.data) ? r.data.data : [];
+      rows.push(...page);
+      if (!page.length || rows.length >= Number(r.data?.total || 0)) break;
+    }
+    return rows;
+  }
+
+  return { cost, autoCardHolderName, detail, list, listAll, open, ranges, wallet, transactions, allTransactions, recharge, accountFlow };
 }

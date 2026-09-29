@@ -16,28 +16,28 @@ const allSettings = Object.freeze({
 });
 
 test('runtime settings and process gates jointly control task eligibility', () => {
-  assert.deepEqual(allowedTaskTypesFor(allSettings), [TaskType.ASSIGN_CARD, TaskType.PREPARE_RECHARGE]);
+  assert.deepEqual(allowedTaskTypesFor(allSettings), [TaskType.ASSIGN_CARD, TaskType.PREPARE_RECHARGE, TaskType.TOP_UP_CARD, TaskType.CHECK_TOP_UP]);
   assert.deepEqual(
     allowedTaskTypesFor(allSettings, { providerReadsEnabled: true }),
-    [TaskType.ASSIGN_CARD, TaskType.PREPARE_RECHARGE, TaskType.POLL_RECHARGE, TaskType.RECHECK_CANCELLATION, TaskType.SYNC_CARD_TRANSACTIONS]
+    [TaskType.ASSIGN_CARD, TaskType.PREPARE_RECHARGE, TaskType.POLL_RECHARGE, TaskType.RECHECK_CANCELLATION, TaskType.SYNC_CARD_TRANSACTIONS, TaskType.TOP_UP_CARD, TaskType.CHECK_TOP_UP]
   );
   assert.deepEqual(
     allowedTaskTypesFor(allSettings, {
       providerReadsEnabled: true,
       providerWritesEnabled: true
     }),
-    [TaskType.ASSIGN_CARD, TaskType.PREPARE_RECHARGE, TaskType.SUBMIT_RECHARGE, TaskType.POLL_RECHARGE, TaskType.RECHECK_CANCELLATION, TaskType.SYNC_CARD_TRANSACTIONS]
+    [TaskType.ASSIGN_CARD, TaskType.PREPARE_RECHARGE, TaskType.SUBMIT_RECHARGE, TaskType.POLL_RECHARGE, TaskType.RECHECK_CANCELLATION, TaskType.SYNC_CARD_TRANSACTIONS, TaskType.TOP_UP_CARD, TaskType.CHECK_TOP_UP]
   );
   assert.deepEqual(
     allowedTaskTypesFor({ ...allSettings, dispatchNewRecharges: false }, {
       providerReadsEnabled: true,
       providerWritesEnabled: true
     }),
-    [TaskType.POLL_RECHARGE, TaskType.RECHECK_CANCELLATION, TaskType.SYNC_CARD_TRANSACTIONS]
+    [TaskType.POLL_RECHARGE, TaskType.RECHECK_CANCELLATION, TaskType.SYNC_CARD_TRANSACTIONS, TaskType.CHECK_TOP_UP]
   );
   assert.deepEqual(
     allowedTaskTypesFor(allSettings, { providerReadsEnabled: true, providerCardWritesEnabled: true }),
-    [TaskType.ASSIGN_CARD, TaskType.PREPARE_RECHARGE, TaskType.POLL_RECHARGE, TaskType.RECHECK_CANCELLATION, TaskType.SYNC_CARD_TRANSACTIONS]
+    [TaskType.ASSIGN_CARD, TaskType.PREPARE_RECHARGE, TaskType.POLL_RECHARGE, TaskType.RECHECK_CANCELLATION, TaskType.SYNC_CARD_TRANSACTIONS, TaskType.TOP_UP_CARD, TaskType.CHECK_TOP_UP]
   );
   assert.equal(
     allowedTaskTypesFor(allSettings, { providerReadsEnabled: true, providerRechargeWritesEnabled: true }).includes(TaskType.SUBMIT_RECHARGE),
@@ -53,6 +53,15 @@ test('runtime settings and process gates jointly control task eligibility', () =
     }).includes(TaskType.SUBMIT_RECHARGE),
     true
   );
+});
+
+test('D-411：发补钱跟派单开关、查到账跟轮询开关——停单不停核对已发出的补钱', () => {
+  const noDispatch = allowedTaskTypesFor({ ...allSettings, dispatchNewRecharges: false });
+  assert.equal(noDispatch.includes(TaskType.TOP_UP_CARD), false, '停单后不再发新的补钱');
+  assert.equal(noDispatch.includes(TaskType.CHECK_TOP_UP), true, '停单后已发出的补钱照样核对到底');
+  const noPoll = allowedTaskTypesFor({ ...allSettings, pollExistingOrders: false });
+  assert.equal(noPoll.includes(TaskType.CHECK_TOP_UP), false);
+  assert.equal(noPoll.includes(TaskType.TOP_UP_CARD), true);
 });
 
 test('one worker iteration passes only eligible task types to the runner', async () => {
@@ -72,7 +81,7 @@ test('one worker iteration passes only eligible task types to the runner', async
   assert.equal(result.handled, false);
   assert.equal(input.rechargeDispatchMode, 'AUTOMATIC');
   assert.deepEqual(input.allowedRechargeExecutorKinds, []);
-  assert.deepEqual(input.allowedTaskTypes, [TaskType.ASSIGN_CARD, TaskType.PREPARE_RECHARGE, TaskType.POLL_RECHARGE, TaskType.RECHECK_CANCELLATION, TaskType.SYNC_CARD_TRANSACTIONS]);
+  assert.deepEqual(input.allowedTaskTypes, [TaskType.ASSIGN_CARD, TaskType.PREPARE_RECHARGE, TaskType.POLL_RECHARGE, TaskType.RECHECK_CANCELLATION, TaskType.SYNC_CARD_TRANSACTIONS, TaskType.TOP_UP_CARD, TaskType.CHECK_TOP_UP]);
 });
 
 test('worker passes only executable recharge kinds to task claiming', async () => {

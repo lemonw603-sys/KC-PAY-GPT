@@ -46,13 +46,18 @@ function selectionRows({ plusBrowser = BACKUP_ID } = {}) {
 function fakePool({
   enabled = true, accounts = [accountRow(HNSKJ_ID), accountRow(BACKUP_ID)], selections = selectionRows(),
   available = {}, waiting = {}, today = {}, fees = {}, activeJob = false, unresolved = false, policies = policyRows(),
-  inflight = 0, activeJobInTx = false, reserved = {}, justUsed = null
+  inflight = 0, activeJobInTx = false, reserved = {}, justUsed = null, pendingTopUps = {}
 } = {}) {
   const queries = []; const alerts = []; const resolved = []; const jobs = []; const faults = []; const finishedSweeps = [];
   const key = (account, product) => `${account}:${product}`;
   async function query(sql, params = []) {
     const text = String(sql);
     queries.push({ sql: text.replace(/\s+/g, ' ').trim(), params });
+    // 卡数查询里也带着总闸子查询（D-411 可补钱旧卡归总闸管），先认卡数，免得被下面的设置分支截走。
+    if (text.includes('SELECT COUNT(*) AS count FROM cards')) {
+      const product = /minimum_required_card_balance:([a-z0-9_]+)/.exec(text)?.[1] || 'plus';
+      return [[{ count: available[key(params[0], product)] ?? 0 }]];
+    }
     if (text.includes("setting_key = 'card_auto_replenishment_enabled'")) return [[{ setting_key: 'card_auto_replenishment_enabled', setting_value: enabled ? 'true' : 'false' }]];
     if (text.includes('FROM provider_accounts pa')) return [accounts];
     if (text.includes('FROM card_source_selections s')) return [selections];
@@ -61,10 +66,6 @@ function fakePool({
       { id: PLUS, product_code: 'chatgpt_plus', legacy_plan_type: 'plus' },
       { id: PRO20, product_code: 'chatgpt_pro_20x', legacy_plan_type: 'pro_20x' }
     ]];
-    if (text.includes('SELECT COUNT(*) AS count FROM cards')) {
-      const product = /minimum_required_card_balance:([a-z0-9_]+)/.exec(text)?.[1] || 'plus';
-      return [[{ count: available[key(params[0], product)] ?? 0 }]];
-    }
     if (text.includes('SELECT COUNT(*) AS count, MIN(o.created_at)')) {
       const product = params[0] === PLUS ? 'plus' : 'pro_20x';
       return [[{ count: waiting[key(params[1], product)] ?? 0, oldest: null }]];
@@ -80,6 +81,8 @@ function fakePool({
       return [Array.from({ length: count }, (_, i) => ({ id: `order-${product}-${i + 1}`, public_no: `PJV1-${product}-${i + 1}` }))];
     }
     if (text.includes('SUM(requested_count - opened_count)')) return [[{ count: inflight }]];
+    // D-411：同卡台还没从钱包扣走的补钱（待发 / 发送中）
+    if (text.includes('FROM card_top_ups') && text.includes('SUM(amount)')) return [[{ total: pendingTopUps[params[0]] ?? '0' }]];
     // D-409：被进行中订单占着的卡（账本 RESERVED）按台×产品给数；刚用掉的那张卡给尾号
     if (text.includes("WHERE l.status = 'RESERVED'")) {
       const product = params[1] === PLUS ? 'plus' : 'pro_20x';
@@ -168,6 +171,16 @@ test('钱包预检：余额 − 金额 − 手续费低于硬底线就不开，�
   assert.equal(alert.title, 'HNSKJ 钱包不够开下一张卡');
   assert.equal(alert.message, '能用的 Plus 卡：0 张。钱包 $60，开一张要 $86，还差 $26。');
   assert.equal(result.outcome.preflight.ok, false);
+});
+
+test('D-411：开卡前先减掉还没从钱包扣走的补钱——$92 够开 $50 卡（92−50−6=36≥30），有一笔 $16 补钱在途就不够', async () => {
+  const clear = fakePool({ available: { [`${HNSKJ_ID}:plus`]: 0, [`${BACKUP_ID}:plus`]: 2 } });
+  await createCardSupplyScheduler({ pool: clear, adapters: fakeAdapters({ hnskjBalance: '92.00' }) }).run();
+  assert.equal(clear.jobs.length, 1, '没有在途补钱时照常开卡');
+  const busy = fakePool({ available: { [`${HNSKJ_ID}:plus`]: 0, [`${BACKUP_ID}:plus`]: 2 }, pendingTopUps: { [HNSKJ_ID]: '16.000000' } });
+  const result = await createCardSupplyScheduler({ pool: busy, adapters: fakeAdapters({ hnskjBalance: '92.00' }) }).run();
+  assert.equal(result.reason, 'WALLET_BELOW_FLOOR');
+  assert.equal(busy.jobs.length, 0, '减掉在途补钱 92−16−50−6=20 < 30，不开');
 });
 
 test('钱包预检：有真实 CARD_ISSUE_FEE 观察时用它的中位数而不是保守上限', async () => {

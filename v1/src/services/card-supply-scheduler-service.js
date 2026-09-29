@@ -7,6 +7,7 @@ import { countTodayOpenings, unresolvedPaidJobsSql } from './card-stock-job-serv
 import { providerLabelOf } from '../domain/provider-labels.js';
 import { productShortLabel } from '../domain/product-labels.js';
 import { HIGHVCC_TOKEN_TROUBLE_CODES } from '../domain/highvcc-token-trouble.js';
+import { pendingTopUpAmountCents } from '../db/repositories/card-top-up-repository.js';
 
 /**
  * 库存水位驱动的供卡调度（D-247 面二①③⑤⑥⑦，D-252 打架 2）。每分钟跑一次：
@@ -525,7 +526,12 @@ export function createCardSupplyScheduler({ pool, adapters, now = () => new Date
     const fee = estimateIssueFeeCents({
       observedCents: await observedIssueFeeCents(pool, { providerAccountId: opener.id }), amountCents
     });
-    const preflight = walletPreflight({ availableBalance: wallet.availableBalance, amount, feeCents: fee.cents, floor: opener.walletFloor });
+    // D-411：已经许给补钱、还没从钱包扣走的钱（待发 / 发送中）先减掉再判，免得开卡与补钱同时发生把钱包压破押金。
+    // 不改 walletPreflight 的公式（押金只由 wallet_floor 表达，D-273），只把「可用余额」算实。
+    const pendingTopUpCents = await pendingTopUpAmountCents(pool, { providerAccountId: opener.id });
+    const walletCents = toCents(String(wallet.availableBalance));
+    const spendable = Number.isInteger(walletCents) ? fromCents(walletCents - pendingTopUpCents) : wallet.availableBalance;
+    const preflight = walletPreflight({ availableBalance: spendable, amount, feeCents: fee.cents, floor: opener.walletFloor });
     const alertThreshold = opener.walletAlertThreshold == null ? null : toCents(String(opener.walletAlertThreshold));
     const balanceCents = toCents(String(wallet.availableBalance));
     if (alertThreshold != null && balanceCents != null && balanceCents < alertThreshold) {

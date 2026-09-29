@@ -17,7 +17,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const { upsertBrowserAlertInTransaction } = await import(join(HERE, '../src/db/repositories/browser-alert-repository.js'));
 const { EXECUTOR_HEARTBEAT_MAX_AGE_MS, EXECUTOR_HEARTBEAT_SETTING } = await import(join(HERE, '../src/db/repositories/order-intake-repository.js'));
 // 资格口径只有一份权威实现，这里复用它，不另拼 SQL——自拼过一次就报错过一次。
-const { eligibleInventoryCardSql } = await import(join(HERE, '../src/services/card-inventory-eligibility.js'));
+const { usableCardSql } = await import(join(HERE, '../src/services/card-inventory-eligibility.js'));
 const { PRE_PAYMENT_STUCK_SQL, RESOLVE_FINISHED_STALLED_SQL, resolveFinishedOrderAlertsSql, preStuckAlert } = await import(join(HERE, '../src/db/repositories/stalled-order-queries.js'));
 const { recordSucceededOrders, resolveDeliveredSuccessAlertsSql } = await import(join(HERE, '../src/db/repositories/order-success-push.js'));
 
@@ -92,9 +92,11 @@ try {
     }
   }
   // 第三件：可分配卡见底。等客户撞上「订单正在等卡」已经晚了——那时客户在等，
-  // 而开一张卡要人去卡台操作。门槛沿用 Plus 的 16 美元，与分卡时同一口径。
+  // 而开一张卡要人去卡台操作。门槛沿用 Plus 的 16 美元。
+  // D-411：「能服务下一单」与调度器水位同一口径（usableCardSql）——只剩一张要补钱的旧卡、钱包也够补时
+  // 不算没卡；钱包不够补或「自动开卡」总闸关着时它不算数，照常报没卡。
   const [[stock]] = await connection.query(
-    `SELECT COUNT(*) AS n FROM cards WHERE ${eligibleInventoryCardSql('cards', '?')}`, ['16']
+    `SELECT COUNT(*) AS n FROM cards WHERE ${usableCardSql('cards', '?', { productCode: 'plus' })}`, ['16']
   );
   const eligibleCards = Number(stock?.n) || 0;
   // 合格卡为 0，未必等于「该补货了」——卡被正在跑的单占着也是 0，那张卡跑完就回来。

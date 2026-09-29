@@ -38,6 +38,7 @@ export const PHONE_PUSH_TYPES = Object.freeze({
   CARD_SUPPLY_FAULT: PushCategory.HUMAN,            // #10 卡台故障（本块新产生点）
   PROVIDER_SNAPSHOT_STALE: PushCategory.HUMAN,      // #10 卡台信息拉不动，同属卡台故障
   EXECUTOR_OFFLINE: PushCategory.HUMAN,             // D-352 块3③：接单路线的执行器心跳断了，客户会被拒单，只有人能把它拉起来
+  CARD_TOP_UP_UNRESOLVED: PushCategory.HUMAN,       // D-411：补钱结果不明、自动核对也判不清（卡台受理后 3 分钟不到账 / 流水查不到）；卡已锁、客户已换卡，只有人能去卡台看
   API_ORDER_FAILED: PushCategory.HUMAN,             // D-401：API 路线提交后失败，卡占用转对账、卡密不自动退，只能人收口
   ZZSHU_POINTS_EMPTY: PushCategory.HUMAN,           // D-401：直充平台点数为 0，新单已改走 Browser 或暂停，要人买点
   ZZSHU_KEY_REJECTED: PushCategory.HUMAN,           // D-401：直充平台不认这把 Key（40107 等），API 路线下不了单

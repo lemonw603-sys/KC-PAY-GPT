@@ -27,6 +27,18 @@ test('DEPLETED card is a candidate; one that is younger than the minimum age is 
   assert.equal(young.dueAt, '2026-09-18T15:00:00.000Z');
 });
 
+test('D-411：能补钱的卡台上用过 1～2 单的 DEPLETED 卡是在等下一单补钱，不进待销；用满、跑过 Pro、停用、或卡台不能补的照旧进', () => {
+  const reusable = { ...base, inventory_status: 'DEPLETED', top_up_capable: 1 };
+  assert.equal(classifyRetirementRow({ ...reusable, used_count: 1 }, { now }).candidate, false);
+  assert.equal(classifyRetirementRow({ ...reusable, used_count: 2 }, { now }).candidate, false);
+  assert.deepEqual(classifyRetirementRow({ ...reusable, used_count: 3 }, { now }).reasons, ['USED_UP', 'DEPLETED']);
+  assert.deepEqual(classifyRetirementRow({ ...reusable, used_count: 1, pro_used_count: 1 }, { now }).reasons, ['PRO_USED', 'DEPLETED']);
+  assert.ok(classifyRetirementRow({ ...reusable, used_count: 1, retired_override: 1 }, { now }).reasons.includes('DEPLETED'));
+  assert.deepEqual(classifyRetirementRow({ ...reusable, used_count: 1, top_up_capable: 0 }, { now }).reasons, ['DEPLETED']);
+  assert.deepEqual(classifyRetirementRow({ ...reusable, used_count: 0 }, { now }).reasons, ['DEPLETED'], '一单没用过就空了的卡不是补钱复用');
+  assert.match(retirementCandidateSql(), /supports_auto_funding = 1 AND pa\.open_adapter IN \('highvcc_api_v1'\)\) AS top_up_capable/);
+});
+
 test('取消续费未确认**不再**进待销清单（D-309 改写 D-248 打架 4）；有活动分配的卡仍然不进', () => {
   // D-248 打架 4 当初加这条，关切是「取消续费没确认的卡是客户可能续费扣我们钱的卡」。
   // 关切成立，落点错了：待销清单的动作是「去卡台删掉这张卡」，而这件事要做的是
