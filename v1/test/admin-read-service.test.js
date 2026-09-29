@@ -18,6 +18,8 @@ function queuedPool(results) {
     queries,
     async query(sql, values = []) {
       queries.push({ sql, values });
+      // D-411：订单详情最后多查一次「付款前补钱」；各用例的队列不为它排位，没补过钱就是空。
+      if (/FROM card_top_ups t INNER JOIN orders o/.test(sql)) return [[], []];
       if (!results.length) throw new Error('Unexpected query');
       return [results.shift(), []];
     }
@@ -138,10 +140,10 @@ test('admin overview maps aggregate values without exposing raw records', async 
   // 与标量值，免得整块对象一改就得重抄一遍（但字段集合仍然被钉死）。
   assert.deepEqual(result.cardStockByProvider.map((r) => Object.keys(r).sort()), [
     ['anyUsed', 'bindableNow', 'byProduct', 'inStock', 'inUse', 'label', 'providerAccountId',
-      'providerCode', 'providerKind', 'spentBreakdown', 'spentCurrency', 'spentToday', 'stockAvailable',
+      'providerCode', 'providerKind', 'spentBreakdown', 'spentCurrency', 'spentToday', 'stockAvailable', 'stockTopUp',
       'supplyFaultReason', 'supplyFaultState', 'total', 'wallet'],
     ['anyUsed', 'bindableNow', 'byProduct', 'inStock', 'inUse', 'label', 'providerAccountId',
-      'providerCode', 'providerKind', 'spentBreakdown', 'spentCurrency', 'spentToday', 'stockAvailable',
+      'providerCode', 'providerKind', 'spentBreakdown', 'spentCurrency', 'spentToday', 'stockAvailable', 'stockTopUp',
       'supplyFaultReason', 'supplyFaultState', 'total', 'wallet']
   ]);
   // D-405「今天花了」悬停明细：总数不变，按类拆开（订单 / 开卡手续费 / 拒付）+ 转进卡里的钱（不算花掉）。

@@ -765,3 +765,23 @@ test('D-405 订单页「结束时间」：结束的单写北京时间，处理�
   assert.doesNotMatch(rows[1], /没记结束时间/, '处理中的单不是「没记」');
   assert.match(rows[2], /<td class="od-time is-none" title="这张老单当时没记结束时间">—<\/td>/);
 });
+
+test('D-411：台账「可分配」含用过的卡时注明几张付款前要先补钱；没有就不写', () => {
+  const { sandbox, html } = loadAdminJs();
+  sandbox.renderCardRigs([{ ...RIG_HNSKJ, stockAvailable: 1, stockTopUp: 1, bindableNow: 0, stockTarget: 1 }]);
+  assert.match(html('sel:#cards-rigs'), />1 <small>\/ 1 · 含 1 张付前补钱<\/small>/);
+  sandbox.renderCardRigs([{ ...RIG_HNSKJ, stockAvailable: 1, stockTopUp: 0, bindableNow: 1, stockTarget: 1 }]);
+  assert.doesNotMatch(html('sel:#cards-rigs'), /补钱/);
+});
+
+test('D-411：订单抽屉「付款前补钱」按补钱状态说人话，原因码只翻已知的', () => {
+  const { evalIn } = loadAdminJs();
+  const text = (item) => evalIn(`topUpText(${JSON.stringify(item)})`);
+  assert.equal(text({ status: 'CONFIRMED', amount: '16.000000', cardLast4: '8499',
+    submittedAt: '2026-09-30T01:00:00.000Z', finishedAt: '2026-09-30T01:00:12.000Z' }), '往卡 8499 补了 $16.00（12 秒到账）');
+  assert.equal(text({ status: 'SUBMITTED', amount: '16', cardLast4: '8499' }), '正在往卡 8499 补 $16.00，到账后自动付款');
+  assert.equal(text({ status: 'REJECTED', amount: '16', cardLast4: '8499', errorCode: 'WALLET_LOW', orderDetached: true }), '卡 8499 没补成（钱包不够），已换卡');
+  assert.equal(text({ status: 'REJECTED', amount: '16', cardLast4: '8499', errorCode: 'SOMETHING_NEW' }), '卡 8499 没补成（钱没动）');
+  assert.equal(text({ status: 'UNKNOWN', amount: '16', cardLast4: '8499', orderDetached: true }), '卡 8499 补钱结果不明，已换卡；那张卡锁着等核对');
+  assert.equal(evalIn('STATUS_META.CARD_PROVISIONING[0]'), '给卡补钱中');
+});

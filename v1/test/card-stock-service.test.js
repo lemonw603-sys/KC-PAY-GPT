@@ -137,3 +137,17 @@ test('D-405 eligibility is exactly the AND of the named checks (one rule); fresh
   }
 });
 
+
+test('D-411：卡片页把「能补钱复用」的旧卡算可分配并说清要先补；钱包不够补时说清卡在哪；补钱中的占用写明', async () => {
+  const { classifyStockCardOperationalState } = await import('../src/services/card-stock-service.js');
+  const base = { effectiveInventoryStatus: 'DEPLETED', isAllocatable: false, usedCapacity: 1, maxCapacity: 3, topUpAmount: '16.000000' };
+  assert.deepEqual(classifyStockCardOperationalState({ ...base, reusableTopUp: true, walletCoversTopUp: true }),
+    { category: 'READY', reason: '下一单付款前先补 $16（已用 1/3 次）' });
+  assert.deepEqual(classifyStockCardOperationalState({ ...base, reusableTopUp: true, walletCoversTopUp: false }),
+    { category: 'BLOCKED', reason: '钱包不够补 $16（补完要留押金），充钱包后可用' });
+  assert.equal(classifyStockCardOperationalState({ ...base, reusableTopUp: false }).category, 'BLOCKED');
+  assert.deepEqual(classifyStockCardOperationalState({ ...base, effectiveInventoryStatus: 'ASSIGNED', assigned: true,
+    publicNo: 'PJV1-X', openTopUpStatus: 'SUBMITTED' }), { category: 'IN_USE', reason: '正在补 $16，到账后付款' });
+  assert.deepEqual(classifyStockCardOperationalState({ ...base, effectiveInventoryStatus: 'ASSIGNED', assigned: true,
+    publicNo: 'PJV1-X', openTopUpStatus: null }), { category: 'IN_USE', reason: '已绑定订单 PJV1-X' });
+});

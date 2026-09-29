@@ -104,7 +104,9 @@ export function deriveOrderStage(input) {
   } else if (status === 'CREATED') {
     result = stageOf('RECEIVED');
   } else if (['WAITING_FOR_CARD', 'CARD_PURCHASING', 'CARD_PROVISIONING'].includes(status)) {
-    result = stageOf('QUEUED', status === 'WAITING_FOR_CARD' ? '没有合格卡：补卡后自动继续' : '');
+    result = stageOf('QUEUED', status === 'WAITING_FOR_CARD' ? '没有合格卡：补卡后自动继续'
+      // D-411：分到一张用过的卡，付款前先往卡里补钱；到账后自动付款，补不成会自动换卡
+      : status === 'CARD_PROVISIONING' ? '正在往卡里补钱：到账后自动付款，补不成自动换卡' : '');
   } else if (status === 'CARD_READY') {
     if (run && ACTIVE_RUN_STATUSES.has(run.status)) {
       result = stageOf(runStage(run), runAction(run));

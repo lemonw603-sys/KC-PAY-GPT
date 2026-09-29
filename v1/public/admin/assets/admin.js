@@ -1,7 +1,8 @@
 const STATUS_META = Object.freeze({
   CREATED: ['已创建', 'blue'],
   CARD_PURCHASING: ['开卡中', 'blue'],
-  CARD_PROVISIONING: ['等待卡片到账', 'blue'],
+  // D-411：分到用过的卡，付款前往卡里补钱（客户页照旧显示「正在准备支付卡」）
+  CARD_PROVISIONING: ['给卡补钱中', 'blue'],
   CARD_READY: ['卡片就绪', 'blue'],
   CARD_FAILED: ['开卡失败', 'red'],
   WAITING_FOR_SESSION: ['等待客户更换 Session', 'orange'],
@@ -184,6 +185,25 @@ function formatMoney(value) {
   if (value == null || value === '') return '—';
   const number = Number(value);
   return Number.isFinite(number) ? number.toFixed(2) : '—';
+}
+
+// D-411 订单抽屉「付款前补钱」一行。原因码只翻译成运营看得懂的话，不猜没有的原因。
+const TOP_UP_REJECT_TEXT = Object.freeze({
+  WALLET_LOW: '钱包不够', AUTO_SUPPLY_OFF: '自动开卡已关', HIGHVCC_API_ERROR: '卡台拒绝',
+  HIGHVCC_TOKEN_EXPIRED: '卡台登录失效', HIGHVCC_TOKEN_MISSING: '卡台登录失效', CARD_MISMATCH: '卡台读到的卡对不上',
+  NOT_SENT_PER_FLOW: '核对流水没发出去', OPERATOR_NOT_ARRIVED: '人工核对没到账'
+});
+function topUpText(item) {
+  const card = `卡 ${escapeHtml(item.cardLast4 || '?')}`;
+  const amount = `$${formatMoney(item.amount)}`;
+  if (item.status === 'CONFIRMED') {
+    const secs = Math.round((Date.parse(item.finishedAt || '') - Date.parse(item.submittedAt || item.sendingAt || '')) / 1000);
+    return `往${card} 补了 ${amount}${Number.isFinite(secs) && secs >= 0 ? `（${secs} 秒到账）` : ''}`;
+  }
+  if (['PREPARED', 'SENDING', 'SUBMITTED'].includes(item.status)) return `正在往${card} 补 ${amount}，到账后自动付款`;
+  if (item.status === 'REJECTED') return `${card} 没补成（${escapeHtml(TOP_UP_REJECT_TEXT[item.errorCode] || '钱没动')}）${item.orderDetached ? '，已换卡' : ''}`;
+  if (item.status === 'UNKNOWN') return `${card} 补钱结果不明${item.orderDetached ? '，已换卡' : ''}；那张卡锁着等核对`;
+  return escapeHtml(item.status || '—');
 }
 
 function waitingText(value) {
@@ -382,6 +402,8 @@ function renderWbCards(overview) {
   // 此前 hnskj 读 providerHealth 快照显示绿标、highvcc 不读快照只显示「未查询」，两台长得不一样。
   if (!byProvider.length) { box.innerHTML = '<p class="wb-qempty">暂无卡台数据</p>'; return; }
   const totalStock = byProvider.reduce((sum, p) => sum + (p.stockAvailable || 0), 0);
+  // D-411：可分配里有几张是用过的卡（下一单付款前先补钱）。格子放不下，写在合计那一行。
+  const totalTopUp = byProvider.reduce((sum, p) => sum + Number(p.stockTopUp || 0), 0);
   const waiting = Number(overview.ordersWaitingForCard || 0);
 
   // D-283 原规划就是「按台按产品」，原型 C 画的是每台一行、行内按产品「用 N / 剩 N」。
@@ -400,7 +422,7 @@ function renderWbCards(overview) {
     const howShort = x.autoReplenished ? '自动' : '人工';
     return `<span class="wb-prod ${stock > 0 ? 'is-ok' : ''}">`
       + `<b>${escapeHtml(x.label)}</b>`
-      + `<span class="wb-prod-n">剩 <i>${stock}</i> 张 · 能充 <i>${Number(x.remainingOrders || 0)}</i> 单</span>`
+      + `<span class="wb-prod-n"${Number(x.stockTopUp || 0) > 0 ? ` title="其中 ${Number(x.stockTopUp)} 张是用过的卡，下一单付款前先往卡里补钱"` : ''}>剩 <i>${stock}</i> 张 · 能充 <i>${Number(x.remainingOrders || 0)}</i> 单</span>`
       + `<small class="${x.autoReplenished ? '' : 'is-manual'}" title="${how}"><span class="wb-how">${how}</span><span class="wb-how-s">${howShort}</span></small></span>`;
   };
   box.innerHTML = byProvider.map((p) => {
@@ -428,6 +450,7 @@ function renderWbCards(overview) {
   }).join('')
     + zzshuPointsRow(overview.providerHealth?.zzshuPoints)
     + `<p class="wb-total">合计可分配 <b class="wb-mono">${totalStock}</b> 张`
+    + (totalTopUp > 0 ? `（其中 ${totalTopUp} 张是用过的卡，付款前先补钱）` : '')
     // 「没有单在等卡」不显示（Lemon 2026-09-28）：有人等卡时才说。
     + (waiting > 0 ? ` · <b class="wb-waiting">${waiting} 单正在等卡</b>` : '')
     + '</p>';
@@ -1582,7 +1605,8 @@ function renderCardRigs(byProvider, tokenStatus) {
     const limit = Number(rig.dailyLimit || 0);
     const cells = [
       rigCell('可分配 / 水位（Plus）',
-        `${stock} <small>/ ${rig.stockTarget == null ? '未配策略' : target}</small>`,
+        `${stock} <small>/ ${rig.stockTarget == null ? '未配策略' : target}${Number(rig.stockTopUp || 0) > 0
+          ? ` · 含 ${Number(rig.stockTopUp)} 张付前补钱` : ''}</small>`,
         { tone: lowStock ? 'is-warn' : '' }),
       isHighvcc
         ? rigCell('钱包余额 / 底线',
@@ -2834,12 +2858,15 @@ async function openOrder(publicNo, { focus = null } = {}) {
     const charged = paymentUnknown ? '不确定，等你核实'
       : consumed ? `已扣 ${escapeHtml(consumed.amount || '—')} ${escapeHtml(consumed.currency || '')}${reconciliation.status === 'MATCHED' ? '，卡台流水已匹配' : reconciliation.status ? `，${escapeHtml(ORDER_RECONCILIATION_LABELS[reconciliation.status] || reconciliation.status)}` : ''}`
         : reserved ? '已占用，未扣' : '未扣';
+    // D-411：付款前往卡里补的钱。补不成 / 结果不明时这单已换卡，原来那张卡的记录也列出来。
+    const topUpRows = (money.topUps || []).map(topUpText).map((text) => `<div class="row"><span>付款前补钱</span><b>${text}</b></div>`).join('');
     const moneyBlock = card ? `<div class="od-card">
         <div class="row"><span>这单用的卡</span><b class="mono">${escapeHtml(card.providerLabel || '卡台')} · ${escapeHtml(card.last4 || '')}</b></div>
+        ${topUpRows}
         <div class="row"><span>扣了没</span><b>${charged}</b></div>
         <div class="row"><span>这张卡还能再充</span><b>${Math.max(0, Number(card.capacity ?? 3) - Number(card.usedCount || 0))} 单（每卡 ${Number(card.capacity ?? 3)} 单上限，已用 ${Number(card.usedCount || 0)}）</b></div>
         <button type="button" class="od-link" data-goto-card="${escapeHtml(card.providerCardId)}" data-goto-card-account="${escapeHtml(card.providerAccountId || '')}">去卡片页看这张卡 →</button>
-      </div>` : `<div class="od-card"><div class="row"><span>这单用的卡</span><b>还没分到卡</b></div><div class="row"><span>扣了没</span><b>${paymentUnknown ? '不确定，等你核实' : '没有扣款'}</b></div><div class="row"><span>这张卡还能再充</span><b>—</b></div></div>`;
+      </div>` : `<div class="od-card"><div class="row"><span>这单用的卡</span><b>还没分到卡</b></div>${topUpRows}<div class="row"><span>扣了没</span><b>${paymentUnknown ? '不确定，等你核实' : '没有扣款'}</b></div><div class="row"><span>这张卡还能再充</span><b>—</b></div></div>`;
     const cdkRow = (trace.cdks || []).find((item) => item.relationship !== 'REPLACEMENT') || (trace.cdks || [])[0] || null;
     const tries = (siblings.attempts || []).length;
     const newerExists = (siblings.attempts || []).some((item) => String(item.createdAt || '') > String(order.createdAt || ''));

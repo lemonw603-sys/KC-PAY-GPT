@@ -269,8 +269,11 @@ export function providerCardStockSql({ productCode = 'plus' } = {}) {
       sp.daily_open_limit AS plus_daily_open_limit,
       COUNT(*) AS total,
       SUM(c.inventory_status <> 'RETIRED') AS in_stock,
-      -- 库存口径：「卡够不够」的答案，页面主数。
-      SUM((${stockCountingCardSql('c', minimumSql, { productCode })})) AS stock_available,
+      -- 库存口径：「卡够不够」的答案，页面主数。D-411：与供卡调度器同一口径（usableCardSql）——
+      -- 用过、钱包够补的旧卡也算（下一单付款前先补钱）；其中要先补钱的张数单独给出，页面注明。
+      SUM((${usableCardSql('c', minimumSql, { productCode })})) AS stock_available,
+      SUM(NOT (${stockCountingCardSql('c', minimumSql, { productCode })})
+        AND (${usableCardSql('c', minimumSql, { productCode })})) AS stock_top_up,
       -- 分配口径：此刻能立即绑几张。比上面多一条 15 分钟同步时效，是个会自行恢复的瞬时值。
       SUM((${eligibleInventoryCardSql('c', minimumSql, { productCode })})) AS bindable_now,
       SUM(EXISTS(SELECT 1 FROM card_assignment_history ah
@@ -289,7 +292,7 @@ export function providerCardStockSql({ productCode = 'plus' } = {}) {
       -- D-355 ⑦（欠账 15）：工作台按产品显示「剩 N 张 · 还能充 N 单」。
       -- 「还能充」= 库存口径里每张卡（该产品的每卡上限 − 已用次数）之和，
       -- 上限按产品取（maxPaymentsSql，D-361），已用与资格 SQL 同口径。
-      SUM(CASE WHEN (${stockCountingCardSql('c', minimumSql, { productCode: normalizedProduct })})
+      SUM(CASE WHEN (${usableCardSql('c', minimumSql, { productCode: normalizedProduct })})
         THEN GREATEST(0, (${maxPaymentsSql(normalizedProduct)}) - (SELECT COUNT(*) FROM card_consumption_ledger ro
           WHERE ro.card_id = c.id AND ro.status IN ('RESERVED','CONSUMED','RECONCILIATION')))
         ELSE 0 END) AS remaining_orders

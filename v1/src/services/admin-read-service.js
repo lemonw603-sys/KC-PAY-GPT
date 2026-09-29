@@ -971,6 +971,8 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
           // 库存口径是「还剩几张」的答案；分配口径是此刻能立即绑几张（会自行恢复的瞬时值）。
           // 合成一个数会让 hnskj 的好卡在同步窗口外看起来不存在（2026-09-20 查实）。
           stockAvailable: count(productRow?.stock_available),
+          // D-411：上面那个数里要先补钱才能付的旧卡张数（工作台注明，免得以为是满额现成卡）
+          stockTopUp: count(productRow?.stock_top_up),
           bindableNow: count(productRow?.bindable_now),
           // 按产品的用量用 product_used（账本 JOIN 订单取 plan_type）。
           // any_used 不分产品 —— 拿它当按产品用量，三个产品会完全相同（实测都是 6，
@@ -991,6 +993,7 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
           total: count(row.total),
           inStock: count(row.in_stock),
           stockAvailable: count(row.stock_available),
+          stockTopUp: count(row.stock_top_up),
           bindableNow: count(row.bindable_now),
           inUse: count(row.in_use),
           anyUsed: count(row.any_used),
@@ -1367,7 +1370,7 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
     const [[orderRows], [eventRows], [taskRows], [callRows], [refundRows], [transactionRows],
       [authorizationRows], [cdkRows], [deliveryRows], [paymentRows],
       [assignmentRows], [noteRows], [sessionReplacementRows],
-      [attemptRows], [ledgerRows], [operationRows], [caseRows]] = await Promise.all([
+      [attemptRows], [ledgerRows], [operationRows], [caseRows], [topUpRows]] = await Promise.all([
       pool.query(`SELECT o.id, o.public_no, o.status, o.plan_type, o.customer_email,
           o.chatgpt_account_id, o.card_type_id, o.open_card_amount,
           o.minimum_required_card_balance, o.actual_payment_amount, o.actual_payment_currency,
@@ -1504,6 +1507,11 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
             rc.resolution_note, rc.detected_at, rc.last_seen_at, rc.resolved_at
           FROM reconciliation_cases rc INNER JOIN orders o ON o.id = rc.order_id
           WHERE BINARY o.public_no = ? ORDER BY FIELD(rc.status, 'OPEN', 'ASSIGNED', 'RESOLVED'), rc.detected_at DESC LIMIT 20`, [publicNo])
+      // D-411：这一单付款前往卡里补的钱（没有补过就是空）
+      ,pool.query(`SELECT t.status, t.amount, t.currency, t.error_code, t.order_detached,
+            t.created_at, t.sending_at, t.submitted_at, t.finished_at, c.last4
+          FROM card_top_ups t INNER JOIN orders o ON o.id = t.order_id INNER JOIN cards c ON c.id = t.card_id
+          WHERE BINARY o.public_no = ? ORDER BY t.created_at`, [publicNo])
     ]);
     const row = orderRows[0];
     if (!row) throw new PublicApiError('Order not found', { code: 'ADMIN_ORDER_NOT_FOUND', status: 404 });
@@ -1664,6 +1672,12 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
           providerTransactionId: entry.provider_transaction_id, rechargeAttemptId: entry.recharge_attempt_id,
           reservedAt: iso(entry.reserved_at), consumedAt: iso(entry.consumed_at),
           releasedAt: iso(entry.released_at), releaseReason: entry.release_reason
+        })),
+        topUps: topUpRows.map((item) => ({
+          status: item.status, amount: decimal(item.amount), currency: item.currency, errorCode: item.error_code,
+          orderDetached: Boolean(Number(item.order_detached)), cardLast4: item.last4,
+          createdAt: iso(item.created_at), sendingAt: iso(item.sending_at),
+          submittedAt: iso(item.submitted_at), finishedAt: iso(item.finished_at)
         })),
         operations: operationRows.map((operation) => ({
           runId: operation.browser_run_id, type: operation.operation_type, status: operation.status,

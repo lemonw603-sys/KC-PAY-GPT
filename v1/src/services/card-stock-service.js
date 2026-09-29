@@ -12,6 +12,7 @@ import {
 import { cardCatalogIsFresh, readCardCatalogSnapshot } from './card-catalog-snapshot-service.js';
 import { providerLabelOf } from '../domain/provider-labels.js';
 import { eligibilityChecks, eligibleInventoryCardSql, ledgerSpendSql, providerCardStockSql, todayCst8WindowSql,
+  reusableTopUpCardSql, walletCoversTopUpSql, TOP_UP_AMOUNT_SQL, TOP_UP_OPEN_STATUSES,
   REPLENISHMENT_OPENED_COUNT_SQL } from './card-inventory-eligibility.js';
 
 // 卡片页「暂不可用」写具体原因（D-405 第一批）：用分卡资格那一份条件逐条算（eligibilityChecks），
@@ -114,6 +115,11 @@ function decryptCardNumber(row, key) {
   }
 }
 
+function moneyText(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? (Number.isInteger(n) ? String(n) : n.toFixed(2)) : '?';
+}
+
 export function classifyStockCardOperationalState(card) {
   if (card.effectiveInventoryStatus === 'RETIRED') {
     return { category: 'RETIRED', reason: '已永久停用，不参与分配' };
@@ -124,10 +130,21 @@ export function classifyStockCardOperationalState(card) {
       : '可直接分配 Plus' };
   }
   if (card.assigned || card.effectiveInventoryStatus === 'ASSIGNED') {
+    // D-411：分到这张旧卡的单正在往卡里补钱（到账后才付款）。订单号旁边「绑定订单」一栏已有，这里只说在补钱，
+    // 两样都写放不下一行（1440 宽实测）。
+    if (['PREPARED', 'SENDING', 'SUBMITTED'].includes(card.openTopUpStatus)) {
+      return { category: 'IN_USE', reason: `正在补 $${moneyText(card.topUpAmount)}，到账后付款` };
+    }
     return {
       category: 'IN_USE',
       reason: card.publicNo ? `已绑定订单 ${card.publicNo}` : '已绑定订单'
     };
+  }
+  // D-411：用过、没用满、卡台能补钱的旧卡——下一单付款前先补钱（规则同分卡，含「自动开卡」总闸）。
+  if (card.reusableTopUp) {
+    return card.walletCoversTopUp
+      ? { category: 'READY', reason: `下一单付款前先补 $${moneyText(card.topUpAmount)}（已用 ${card.usedCapacity}/${card.maxCapacity} 次）` }
+      : { category: 'BLOCKED', reason: `钱包不够补 $${moneyText(card.topUpAmount)}（补完要留押金），充钱包后可用` };
   }
   if (card.effectiveInventoryStatus === 'PRODUCT_ONLY') {
     return {
@@ -377,6 +394,12 @@ export function createCardStockService({ pool, sessionEncryptionKey, panHmacKey 
           COALESCE((SELECT CAST(setting_value AS DECIMAL(18,6))
               FROM app_settings WHERE setting_key = 'default_minimum_required_card_balance' LIMIT 1), 999999999) AS min_balance,
           c.created_at, c.external_card_id,
+          (${reusableTopUpCardSql('c')}) AS reusable_top_up,
+          (${walletCoversTopUpSql('c')}) AS wallet_covers_top_up,
+          ${TOP_UP_AMOUNT_SQL} AS top_up_amount,
+          (SELECT open_top_up.status FROM card_top_ups open_top_up WHERE open_top_up.card_id = c.id
+            AND open_top_up.status IN (${TOP_UP_OPEN_STATUSES.map((status) => `'${status}'`).join(',')})
+            ORDER BY open_top_up.created_at DESC LIMIT 1) AS open_top_up_status,
           (SELECT ct.amount FROM card_transactions ct
             WHERE ct.card_id = c.id AND ct.transaction_type = 'CARD_ISSUE_FEE'
             ORDER BY ct.first_seen_at ASC LIMIT 1) AS issue_fee,
@@ -487,6 +510,10 @@ export function createCardStockService({ pool, sessionEncryptionKey, panHmacKey 
         allocationProductCode: row.allocation_product_code || null,
         allocationReason: row.allocation_reason || null,
         isAllocatable: Boolean(row.is_allocatable),
+        reusableTopUp: Boolean(Number(row.reusable_top_up)),
+        walletCoversTopUp: Boolean(Number(row.wallet_covers_top_up)),
+        topUpAmount: row.top_up_amount == null ? null : String(row.top_up_amount),
+        openTopUpStatus: row.open_top_up_status || null,
         fundedAmount: row.funded_amount == null ? null : String(row.funded_amount),
         currentBalance: row.current_balance == null ? null : String(row.current_balance),
         currency: row.currency,
@@ -581,6 +608,8 @@ export function createCardStockService({ pool, sessionEncryptionKey, panHmacKey 
         // hnskj 每 3 小时同步一次而窗口只有 15 分钟，所以后者在大部分时间里小于前者，
         // 且会自行恢复。拿它当「卡够不够」会让好卡看起来不存在。
         stockAvailable: Number(row.stock_available || 0),
+        // D-411：stockAvailable 里要先补钱才能付的旧卡张数（与调度器同口径，页面注明）
+        stockTopUp: Number(row.stock_top_up || 0),
         bindableNow: Number(row.bindable_now || 0),
         inUse: Number(row.in_use || 0),
         anyUsed: Number(row.any_used || 0),
