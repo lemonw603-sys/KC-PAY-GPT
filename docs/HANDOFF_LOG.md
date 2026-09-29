@@ -3994,3 +3994,11 @@ Lemon：「等我有资格号的时候，我再测吧。另外…我们自动补
 ## 2026-09-29｜D-411 用卡策略定为一卡三单、按单补钱；窗口收尾（04:4x UTC）
 
 Lemon：待销清单不加「余额不够再付一单」；$16 卡复用两次后按现有「用满」规则提醒他删。记 D-411，PROJECT_MAP 下一步第 7 条，HANDOFF_NOW 覆盖重写为「新窗口从这里开始：D-411」任务书（目标 / 第一步真测补钱到账 / 验收 / 待定细节）。本窗口压缩过、上下文很长，Lemon 问要不要新开窗口——建议新开。
+
+## 2026-09-29｜新窗口接班：入口四份读完、事实表过期行现查改回（13:1x～13:3x UTC+8）
+
+- 读 AGENTS → HANDOFF_NOW → PROJECT_MAP → CURRENT_STATE、D-410 / D-411 全文、UNVERIFIED_LEDGER 头部。`state-check.sh` 20 项一致；`wrapup-check.sh` 通过。
+- 生产只读（05:14～05:2x UTC）：09-28 15:55 UTC 之后无新客户单，连续 10 单仍 0/10；ZZSHU 14 点；highvcc 钱包 $24.38；可分配 1 张 `8499`。
+- 改回事实表 15 行（订单总况、账本、CDK、告警、最近真实单、最近 Browser 运行、已上线、备份、日对账、健康、worker、card-read-sync、HNSKJ 卡台、备用卡、第一单之后的供卡）。新观察三条：①hnskj 钱包 09-26 07:33→07:38 UTC 少 $4（$108.79→$104.79），原因未知；②highvcc `0601/7402/3159/1657/3336` 自 09-28 17:23:25 UTC 起不在卡台快照里 → HELD_FOR_REVIEW，是否 Lemon 删卡待问；③`8499` `funded_amount` 17 / 余额 16——代码 `v1/src/domain/card-top-up.js` `detectTopUp` 只认上涨、不认提回，与补 $1 再提回吻合。
+- D-411 代码地图（只读 agent，关键四条我已抽查）：v1 无 highvcc 补钱 / 提回调用；账本每单按 `open_card_amount` 记（`workflow-repository.js:452-456`）；worker 只有 hnskj 客户端（`worker.js:34-48`）、`PROVIDER_CARD_WRITES_ENABLED=false`；注资只增不减。补钱必须在付款许可签发前到账（Browser 的许可快照含卡余额）。
+- 同时有另一个窗口在改 `docs/HANDOFF_NOW.md`（加「接班范围：整个项目」）与 `scripts/wrapup-check.sh`，未提交；本窗口不动这两个文件。未开工 D-411，未做任何生产写入。
