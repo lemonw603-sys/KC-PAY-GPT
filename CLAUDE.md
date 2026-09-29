@@ -16,7 +16,7 @@
 - 日常运维手册（自检/来单/演练/收口/发布/回滚，每步一条命令）：`docs/RUNBOOK.md`；维护窗口与迁移：`docs/PRODUCTION_PREP_RUNBOOK.md`
 - 改造基线（用户确认）：`docs/PRODUCT_SIMPLIFICATION_DISCUSSION.md` 末尾「接班实施基线」；整改矩阵：`docs/SYSTEM_REMEDIATION_MATRIX_2026-09-06.md`
 - 决策账本：`docs/DECISIONS.md`；过程记录：`docs/HANDOFF_LOG.md`
-- 卡台来源与对账工作线：`docs/CARD_SOURCE_AND_RECONCILIATION_WORKSTREAM.md`（冻结稿 `docs/CARD_SOURCE_AND_RECONCILIATION_FROZEN_SPEC.md`）
+- 卡台来源与对账工作线：`docs/CARD_SOURCE_AND_RECONCILIATION_WORKSTREAM.md`（冻结稿 `docs/CARD_SOURCE_AND_RECONCILIATION_FROZEN_SPEC.md`；2026-09-06 起不再更新，状态已并入地图与未验证清单）
 - 全链路与状态机总册：`docs/PROJECT_OPERATING_MODEL.md`；产品与技术规格：`docs/V1_SPEC.md`；生产运行手册：`docs/PRODUCTION_PREP_RUNBOOK.md`
 - 外部接口合同：`docs/contracts/`；Browser 研究：`docs/browser-research/`
 - 2026-08 与 2026-09 的历史报告、审查、交接：`docs/archive/`（索引 `docs/archive/INDEX.md`），只作追溯，不作为当前事实
@@ -25,7 +25,7 @@
 
 ## 第一版硬约束
 
-- 产品是 Plus、5X、20X 三个（D-244/D-245，2026-09-17 Lemon 定）。Plus 两条路线都在生产跑；5X/20X 目标路线是 Browser（现由 Lemon 人工用比特浏览器充，路线 305/306 在生产开着），自动化按 V2 排期接入；API 路线能否充 Pro 未知。**ChatGPT 已可从 Free 直接升级到 20X，「先 Plus 后升级」两阶段方案退休（D-245）**，Pro 单与 Plus 同型：一次付款、一次确认、一次取消续费，只是 Checkout 选的套餐不同；页面行为仍须先经非付款 PoC 冻结到 `docs/contracts/` 才能进执行器。
+- 产品是 Plus、5X、20X 三个（D-244/D-245，2026-09-17 Lemon 定）。Plus 两条路线都在生产跑；5X/20X 目标路线是 Browser（现由 Lemon 人工用比特浏览器充；路线 305/306 已注册，但自 2026-09-17 起不接新单——块 6 Pro 5x 代码已发布，重开前先定 5x 卡从哪来；20x 官方暂停订阅，D-370。2026-09-29 纠正：原写「在生产开着」与生产 `fulfillment_routes` 不符），自动化按 V2 排期接入；API 路线能否充 Pro 未知。**ChatGPT 已可从 Free 直接升级到 20X，「先 Plus 后升级」两阶段方案退休（D-245）**，Pro 单与 Plus 同型：一次付款、一次确认、一次取消续费，只是 Checkout 选的套餐不同；页面行为仍须先经非付款 PoC 冻结到 `docs/contracts/` 才能进执行器。
 - 一张卡同一时刻最多绑定一个活动订单；完成一单并释放活动分配后，可在**按产品的每卡成功充值上限**内顺序服务后续订单（**Plus 3 单、5X 与 20X 各 1 单，API 与 Browser 两路线一致**；2026-09-14 Lemon 定，D-221。2026-09-24 D-361 已按产品落地：唯一口径 `card-inventory-eligibility.maxPaymentsSql`，Plus 沿用全局键 3、5X/20X 各自的键 = 1，跑过 Pro 的卡不再分配）。容量以消费账本为权威；失败或付款状态不明确时保留占用，绝不释放或换卡重付。
 - 卡台开卡写请求必须使用稳定的 `X-Idempotency-Key`；超时和 502/503 只能用原 Key 重试。
 - **Browser 自动化代码脆弱，改动受限（D-254，2026-09-17 Lemon 定）**：付款前三件 `browser-mvp/src/billing-address-fill.js`、`live-chatgpt-payment-adapter.js`、`payment-executor.js` 的 submit 段**任何任务不许改**，除非 Lemon 当次单独批；其他 browser-mvp 改动只能在任务书列出的文件白名单内，越界即停下来问；browser-mvp 一动就跑全量测试 + 一次 rehearsal 演练都绿才算改完；常驻 worker 重启前问 Lemon。
@@ -37,7 +37,7 @@
 
 ## 外部系统与执行目标
 
-- 卡台：`https://card.hnskj.vip/api/open/v1`
+- 卡台：`https://card.hnskj.vip/api/open/v1`（hnskj）；另有 highvcc（备用卡台 A，与 hnskj 同等重要、经常切换，D-242），网页 token 鉴权（D-249），本方调用经 `v1/src/providers/highvcc-card.js`、不带幂等键
 - Browser 目标：ChatGPT 官方购买和订阅管理页面；实际域名、页面结构和支付/3DS依赖必须先通过非付款 PoC 冻结到 `docs/contracts/`。
 - Browser 主链路跑通优先于保持现有 Provider/路线表/许可命名和后台页面不变；允许最小调整。不得调整掉的只有防重复扣款、付款未知锁定和端到端审计。
 - “提链”当前是候选而非已验收结论：必须区分 hosted 长链与依赖账号 Session 的内部短链；与原诺汇盛上号器先做同账号、同菲律宾 sticky 出口的只读配对，会创建 Checkout 的比较使用隔离账号 cohort。
@@ -46,7 +46,7 @@
 - 直充平台 ZZSHU（`card.zzshu.pro`）＝ API 路线 301 的执行方：本方自带卡、`orderType=direct`，卡可来自任何有 API 直充能力的卡台（D-401，取代 D-253「只走 hnskj」）；按其发放的 API Key 计点、成功才扣，点数由 Lemon 去平台充，系统只读监控（≤5 / 0 推手机，0 点时自动切回 Browser、不自动切回 API）。不参与 Browser 链路。
 - 开源基线：`https://github.com/KC-CatK/KC-PAY-GPT`
 
-业务层不得直接拼接外部 URL 或解析供应商/页面私有字段。HNSKJ 调用经过 `HnskjCardProvider`；ChatGPT 页面行为经过版本化 Browser Executor 和页面适配层。
+业务层不得直接拼接外部 URL 或解析供应商/页面私有字段。HNSKJ 调用经过 `HnskjCardProvider`，highvcc 经过 `highvcc-card.js` / `highvcc-card-service.js`；ChatGPT 页面行为经过版本化 Browser Executor 和页面适配层。
 
 ## Fork 策略
 

@@ -4002,3 +4002,11 @@ Lemon：待销清单不加「余额不够再付一单」；$16 卡复用两次�
 - 改回事实表 15 行（订单总况、账本、CDK、告警、最近真实单、最近 Browser 运行、已上线、备份、日对账、健康、worker、card-read-sync、HNSKJ 卡台、备用卡、第一单之后的供卡）。新观察三条：①hnskj 钱包 09-26 07:33→07:38 UTC 少 $4（$108.79→$104.79），原因未知；②highvcc `0601/7402/3159/1657/3336` 自 09-28 17:23:25 UTC 起不在卡台快照里 → HELD_FOR_REVIEW，是否 Lemon 删卡待问；③`8499` `funded_amount` 17 / 余额 16——代码 `v1/src/domain/card-top-up.js` `detectTopUp` 只认上涨、不认提回，与补 $1 再提回吻合。
 - D-411 代码地图（只读 agent，关键四条我已抽查）：v1 无 highvcc 补钱 / 提回调用；账本每单按 `open_card_amount` 记（`workflow-repository.js:452-456`）；worker 只有 hnskj 客户端（`worker.js:34-48`）、`PROVIDER_CARD_WRITES_ENABLED=false`；注资只增不减。补钱必须在付款许可签发前到账（Browser 的许可快照含卡余额）。
 - 同时有另一个窗口在改 `docs/HANDOFF_NOW.md`（加「接班范围：整个项目」）与 `scripts/wrapup-check.sh`，未提交；本窗口不动这两个文件。未开工 D-411，未做任何生产写入。
+
+## 2026-09-29｜补读规则层；纠正规则文件里的矛盾（17:0x～17:4x UTC+8）
+
+- Lemon 问是否读过 CONTRIBUTING.md（后更正：想说的是 CLAUDE.md）、了解多少、规则读没读。如实答：上一轮没按 AGENTS 顺序读全（跳过第 5、6 份与 RUNBOOK），本轮补读 PROJECT_OPERATING_PROTOCOL、REVIEW_PROTOCOL、DESIGN.md、设计 README / 视觉比对协议、RUNBOOK、接班实施基线、V2 架构、三天计划、核心规格、全链路总册、交付判据与人工兜底两张合同、未验证清单全文、本周日志、24 条记忆。本项目没有 CONTRIBUTING.md（工作区、全部分支历史、上游基线均无）。
+- Lemon：「文件矛盾可以纠正」。已改（只改矛盾处，注明日期与原写法）：AGENTS「ZZSHU 只作旧系统兼容」→ D-401 现状、第 6 份阅读项加「已执行、块序看 PROJECT_MAP」；CLAUDE.md「路线 305/306 在生产开着」→ 自 09-17 不接新单（生产 `fulfillment_routes` 305/306 均 0，本窗口 05:2x UTC 实查）、补 highvcc 一行与工作线文件「不再更新」；PROJECT_OPERATING_PROTOCOL 第一节入口改指 AGENTS、第五节更新对象改为三份事实源；PROJECT_OPERATING_MODEL / CORE_SPEC / V2_ARCHITECTURE 顶部加过时提醒；REVIEW_PROTOCOL 事实源加 DECISIONS、板块 C 改为 ZZSHU 直充 301；`~/code/PROJECTS.md` 本项目两行按现状改（集合仓库 `c76b3f0`，只提交这两行，ZovoCard 窗口 09-28 的未提交改动保留原样）；记忆 prod-server-access「SSH 要密码」改为免密。
+- 未改、交 Lemon：CLAUDE.md「卡台开卡写请求必须用稳定 `X-Idempotency-Key`」与 highvcc 不符（`highvcc-card.js` 无此头；现行保护是开卡失败进 REVIEW_REQUIRED、不自动重试），拟改写措辞待批。
+- Lemon：补钱功能以前去掉过（D-367），现在讨论要不要补回来；不用开关也行，归自动开卡总闸也可以，稍后详谈。
+- 只读核对：待销清单 due 10 张里，0601 / 7402 / 3159 / 1657 / 3336 均 `sourcePresent:false`（服务器上跑生产 release `createCardRetirementService().list()`）；5270 / 8499 账本每单记 16.000000（= `open_card_amount`），资格规则 BALANCE_LOW 为 `LEAST(current_balance, funded_amount − 账本花费) ≥ 16`（`card-inventory-eligibility.js:81-84`）。另一窗口的 HANDOFF_NOW / wrapup-check 改动已由其提交（`8cb0efc3`）。

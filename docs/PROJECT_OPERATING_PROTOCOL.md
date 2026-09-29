@@ -4,13 +4,9 @@
 
 ## 一、唯一入口
 
-每次开始工作先读取：
+每次开始工作按 `AGENTS.md`「开始工作前按顺序读」进入：`CLAUDE.md` → `docs/HANDOFF_NOW.md` → `docs/PROJECT_MAP.md` → `docs/CURRENT_STATE.md` → 其后各项。
 
-1. `docs/archive/2026-08/SINGLE_SOURCE_OF_TRUTH_2026-08-21.md`
-2. `docs/DECISIONS.md`
-3. `docs/archive/2026-08/EVIDENCE_MATRIX_2026-08-23.md`
-4. `progress.md`
-5. 当前阶段对应的路线图/验收文档
+（2026-09-29 纠正：本节原列 `SINGLE_SOURCE_OF_TRUTH_2026-08-21`、`EVIDENCE_MATRIX_2026-08-23`、`progress.md`，三者均已归档、不再更新，与 AGENTS.md 冲突；以 AGENTS.md 为准。）
 
 ## 二、任务卡格式
 
@@ -51,7 +47,7 @@
 3. 本地测试；
 4. 生产只读/运行验证；
 5. 对抗式审查；
-6. 更新单一事实源、证据矩阵、决策账本和 `progress.md`；
+6. 按 `AGENTS.md`「完成节点」更新 `CURRENT_STATE.md` / `DECISIONS.md` / `HANDOFF_LOG.md`（证据矩阵与 `progress.md` 已归档，不再更新）；
 7. 写明未完成项和下一阶段入口条件。
 
 ## 六、固定汇报格式

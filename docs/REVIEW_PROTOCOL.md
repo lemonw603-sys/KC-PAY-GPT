@@ -12,7 +12,7 @@
 
 ## 2. 输入与禁区
 
-- 事实源只认：`CLAUDE.md`、`docs/HANDOFF_NOW.md`（当前状态与已验证/未验证边界）、`docs/PROJECT_MAP.md`、`docs/CURRENT_STATE.md`（唯一生产事实表）、`docs/CORE_SPEC_2026-09-07.md`、`docs/PRODUCT_SIMPLIFICATION_DISCUSSION.md` 末尾基线、当前代码、只读生产证据（release 目录、systemd、只读 SQL、访问日志）。
+- 事实源只认：`CLAUDE.md`、`docs/HANDOFF_NOW.md`（当前状态与已验证/未验证边界）、`docs/PROJECT_MAP.md`、`docs/CURRENT_STATE.md`（唯一生产事实表）、`docs/DECISIONS.md`、`docs/CORE_SPEC_2026-09-07.md`（草稿 v0，与之后决策冲突处以 DECISIONS 为准）、`docs/PRODUCT_SIMPLIFICATION_DISCUSSION.md` 末尾基线、当前代码、只读生产证据（release 目录、systemd、只读 SQL、访问日志）。
 - `docs/archive/` 与聊天摘要不是事实；引用必须注明「历史」。
 - 每条发现必须附可复现证据：文件路径与行号、执行过的只读命令与输出、或生产只读查询结果。没有证据的写进「疑问」而不是「发现」。
 - 不为了找问题而找问题：与硬约束、基线、事实源无冲突且无用户影响的风格差异不列为发现。
@@ -53,7 +53,7 @@
 |---|---|---|
 | A 客户下单链 | 充值后台（客户页）、CDK、订单建单、Session 校验、等待承诺 | CDK 只在交付时消耗、未付款失败自动退回是否成立；Session 密文交付后是否清理；客户页承诺与真实队列/开关是否一致；客户侧是否暴露退款/内部字段 |
 | B 供给链 | 卡台 Provider、开卡幂等、补余额、备用卡快照导入、消费账本、卡资格 | 一卡同时最多一个活动订单；成功次数上限以账本为权威；失败/未知不释放卡；X-Idempotency-Key 稳定；导入原子性与 RETIRED/PRODUCT_ONLY 覆盖项 |
-| C API 路线（历史兼容） | ZZSHU 适配器、API Worker、旧任务 | 是否仍能被自动触发；停用状态与事实源一致；是否与 Browser 路线共享订单/卡/账本而无双写 |
+| C API 路线（ZZSHU 直充 301，D-401 起在生产） | ZZSHU 适配器、API Worker、点数监控与回落 | 一单只下一次、结果不明锁 `SUBMIT_UNKNOWN` 不重下；失败放卡退卡密的条件；点数用尽回落 Browser；是否与 Browser 路线共享订单/卡/账本而无双写（2026-09-29 纠正：原标「历史兼容」） |
 | D Browser 路线 | 身份池、会话注入/替换/清理、结账创建、填表、付款许可、UNKNOWN 锁定、凭证刷新、取消续费 | 付款前所有写开关默认关闭；单次点击唯一 PAYMENT_SUBMIT；崩溃先对账不重点；换账号清登录态留设备；结账由页面点击触发；日志无令牌/卡号 |
 | E 运营后台 | 五个决定、三件日常、告警、开关、密码与确认词 | 开关语义与 app_settings 一致；停单与追踪独立；无零使用入口；密码/手打确认词剩余清单；后台资产不含密文字段 |
 | F 生产与部署 | release 构建/校验/切换、systemd、备份、日志、密钥、迁移 | `/opt/pojia/current` 与文档一致；release 从单一提交构建且 manifest 全量校验；备份可验证；日志脱敏；worker 写权限 drop-in 与事实表一致；迁移可审计 |
