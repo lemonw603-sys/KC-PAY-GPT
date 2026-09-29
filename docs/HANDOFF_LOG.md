@@ -3978,3 +3978,7 @@ Lemon 问冻结怎么做、客户点升级会不会扣到我们。查 highvcc �
 ## 2026-09-29｜Lemon 六条答复；删 agent worktree；修「拉起被吞」并 prepare 池版本（00:5x～01:2x UTC）
 
 见 D-407 补记三 / D-410 补记五。修复提交 `320fd90a`（browser-mvp 白名单内一个文件 + 测试），全量 366 / 0 失败，变异 6 / 6；我第一版新测试靠 0 毫秒定时器偶发失败，改成确定性后连跑 30 次全过。池版本 `20260929-d407r-320fd90` 已 prepare 未切，待 Lemon 在场演练（要没有免费试用资格的测试号）。
+
+## 2026-09-29｜演练延后；Lemon 问「自动补余额最后怎么定的」（02:5x UTC）
+
+Lemon：「等我有资格号的时候，我再测吧。另外…我们自动补余额这事儿，最后是怎么定的？」现查：生产 `card_auto_replenishment_enabled=true`（09-18 起；它是**自动开新卡**总闸，`set-supply-scheduler-flag.mjs` 与 `workflow-repository.js:379` 都读它）；`card_balance_recharge_enabled` 生产里已不存在；`rechargeCard(` 在 v1/src、v1/scripts 无调用方（只在 hnskj 适配器定义），highvcc 没接补钱。结论向 Lemon 说明，并请他明确拍板「不做自动补余额」。
