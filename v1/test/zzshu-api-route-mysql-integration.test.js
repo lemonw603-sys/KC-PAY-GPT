@@ -313,6 +313,10 @@ test('欠账 23 release: a COMPLETE (highvcc) purchase after the reservation blo
   const workflow = createWorkflowRepository(pool, { sessionEncryptionKey: KEY });
   try {
     const charged = await failedApiOrderWithLockedHighvccCard(pool, workflow);
+    // 欠账 38：reserved_at 是程序时钟（new Date()），first_seen_at 是数据库时钟；本机 Docker 里的 MySQL
+    // 比宿主慢 1～3 毫秒（2026-09-29 实测），扣款在占卡后几毫秒内写入时两者比较会翻转、这条偶发失败。
+    // 生产里扣款是每小时同步进来的，比占卡晚几分钟以上；造数按真实间隔拉开 1 秒，不改被测规则。
+    await pool.query('UPDATE card_consumption_ledger SET reserved_at = reserved_at - INTERVAL 1 SECOND WHERE order_id = ?', [charged.orderId]);
     await commitCardTransactionsForCard(pool, { cardId: charged.cardId, transactions: [authorization(charged.orderId, 'COMPLETE')], cardSnapshot: null });
     const [[stillLocked]] = await pool.query('SELECT status FROM card_consumption_ledger WHERE order_id = ?', [charged.orderId]);
     assert.equal(stillLocked.status, 'RECONCILIATION', 'a COMPLETE purchase is a charge: the card sync must not release');
