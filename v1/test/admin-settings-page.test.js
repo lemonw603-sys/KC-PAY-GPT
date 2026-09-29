@@ -110,3 +110,26 @@ test('设置页在 .workbench 作用域内，可以用 wb-* 同族样式（与 C
     assert.match(css, new RegExp(`\\.workbench \\.${cls}\\b`), `workbench.css 必须定义 .${cls}`);
   }
 });
+
+test('D-413: 每单记账金额只读显示（来自全局键，不是上表开卡金额）；读不到就说读不到', () => {
+  const { sandbox, html } = loadAdminJs();
+  sandbox.renderSettingsThresholds({ wallets: [], minimumBalanceByPlan: { plus: '16.00' }, maxSuccessfulPayments: '3', perOrderLedgerAmount: '16' });
+  const out = html('sel:#settings-thresholds');
+  assert.match(out, /每单记账金额[\s\S]*\$16\.00/);
+  const row = out.slice(out.indexOf('data-ledger-amount'));
+  assert.doesNotMatch(row, /<input|data-save|set-save/, '只读：没有输入框，也不挂通用保存处理');
+  assert.match(row, /set-slot[^>]*disabled|disabled[^>]*set-slot/, '右边只是对齐用的隐藏占位');
+  assert.doesNotMatch(out, /\b[DF]-\d+\b/);
+  sandbox.renderSettingsThresholds({ wallets: [], minimumBalanceByPlan: {}, maxSuccessfulPayments: '3' });
+  assert.match(html('sel:#settings-thresholds'), /每单记账金额[\s\S]*读不到/);
+});
+
+test('D-413: 设置接口读出全局 default_open_card_amount 作为每单记账金额', async () => {
+  const query = async (sql) => {
+    if (sql.includes('FROM app_settings')) return [[{ setting_key: 'default_open_card_amount', setting_value: '16' }]];
+    return [[]];
+  };
+  const pool = { ...fakePool(), query };
+  const data = await createCardSupplyPolicyAdminService({ pool }).list();
+  assert.equal(data.perOrderLedgerAmount, '16');
+});

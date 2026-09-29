@@ -71,7 +71,7 @@ export function createCardSupplyPolicyAdminService({ pool }) {
       pool.query(`SELECT setting_key, setting_value FROM app_settings
           WHERE setting_key IN ('card_max_successful_payments','card_max_successful_payments:pro_5x','card_max_successful_payments:pro_20x','default_minimum_required_card_balance',
             'minimum_required_card_balance:pro_5x','minimum_required_card_balance:pro_20x',
-            'session_replacement_window_hours')`)
+            'session_replacement_window_hours','default_open_card_amount')`)
     ]);
     const setting = (key) => settings.find((row) => row.setting_key === key)?.setting_value ?? null;
     const money = (value) => (value == null ? null : String(value));
@@ -111,7 +111,10 @@ export function createCardSupplyPolicyAdminService({ pool }) {
         pro_20x: setting('card_max_successful_payments:pro_20x') ?? setting('card_max_successful_payments')
       },
       maxSuccessfulPaymentsIsPerProduct: true,
-      sessionReplacementWindowHours: setting('session_replacement_window_hours')
+      sessionReplacementWindowHours: setting('session_replacement_window_hours'),
+      // D-413：每单账本记多少来自这个全局键（下单时写进 orders.open_card_amount），不是上表按台×产品的开卡金额；
+      // 页面没有写入口，只读显示，免得两处不一致时看不出来。
+      perOrderLedgerAmount: setting('default_open_card_amount')
     };
   }
 

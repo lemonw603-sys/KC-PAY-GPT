@@ -2054,7 +2054,13 @@ function renderSettingsThresholds(data) {
     <span><input class="wb-field set-f" type="number" step="1" min="1" max="4" data-field="max_successful_payments"
       data-original="${escapeHtml(String(capacities[plan] ?? ''))}" value="${escapeHtml(String(capacities[plan] ?? ''))}">
       <button type="button" class="wb-btn sm out set-save" data-save-capacity disabled>保存</button></span></div>`).join('');
-  elements.settingsThresholds.innerHTML = wallets + mins + capacity;
+  // D-413：两个「开卡金额」——上表那格只决定新卡里放多少；账本每单记多少来自全局键，页面不能改，只读显示。
+  const ledgerAmount = data.perOrderLedgerAmount;
+  const ledger = `<div class="set-kv" data-ledger-amount>
+    <label>每单记账金额 <small>账本每单按它记；新卡放多少看上表开卡金额</small></label>
+    <span><output class="set-ro-val">${ledgerAmount == null ? '读不到' : `$${formatMoney(ledgerAmount)}`}</output>
+      <button type="button" class="wb-btn sm out set-slot" tabindex="-1" aria-hidden="true" disabled>保存</button></span></div>`;
+  elements.settingsThresholds.innerHTML = wallets + mins + capacity + ledger;
 }
 
 function renderSettingsGlobal(data) {

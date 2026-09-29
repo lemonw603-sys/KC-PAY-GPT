@@ -353,6 +353,9 @@ small{font-size:max(12px,.84em)}
 .workbench .set-table tbody tr:last-child td{border-bottom:0}
 .workbench .set-rig td{background:var(--wb-s2);font-weight:600;color:var(--wb-t2);font-size:12px}
 .workbench .set-ro{color:var(--wb-t3);font-family:var(--wb-fm);font-size:12px}
+/* 只读值与上面各行的输入框同列：同宽、文字起点同（1px 边 + 8px 内距），右边放一个看不见的「保存」占位 */
+.workbench .set-ro-val{display:inline-flex;align-items:center;width:92px;height:34px;padding:0 8px;border:1px solid transparent;color:var(--wb-t3);font-family:var(--wb-fm);font-size:12px}
+.workbench .set-slot{visibility:hidden}
 .workbench .set-f{width:92px;padding:4px 8px;font-family:var(--wb-fm);font-size:12px}
 /* 改过还没存的格：一眼看出「这个数还没生效」 */
 .workbench .set-f.is-dirty{border-color:var(--wb-warn);background:var(--wb-warn-soft)}
