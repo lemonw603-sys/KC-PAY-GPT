@@ -94,6 +94,29 @@ test('confirmRetired writes the terminal state, the RETIRED override and an audi
   assert.equal(queries.at(-1).sql, 'COMMIT');
 });
 
+test('欠账 36: confirmRetired 覆盖一张登记过手动用卡的卡，新原因带上标记；原 override 仍完整存进事件', async () => {
+  const queries = [];
+  const connection = {
+    beginTransaction: async () => {}, commit: async () => {}, rollback: async () => {}, release: () => {},
+    query: async (sql, params) => {
+      const flat = String(sql).replace(/\s+/g, ' ').trim();
+      queries.push({ sql: flat, params });
+      if (flat.startsWith('SELECT c.id')) return [[{ id: 'c1', provider_account_id: 'acct', external_card_id: 'HG1', last4: '7402',
+        provider_card_id: 'HG1', inventory_status: 'HELD_FOR_REVIEW', sync_tier: 'MANUAL_IMPORT', source_present: 0,
+        created_at: new Date('2026-09-08T14:20:00Z'), current_balance: '1.08', active_assignment: 0 }]];
+      if (flat.startsWith('SELECT allocation_policy')) return [[{ allocation_policy: 'RETIRED', product_code: null,
+        reason: 'MANUAL_USED: 自用期手动用卡', set_by: 'admin' }]];
+      return [{ affectedRows: 1 }];
+    }
+  };
+  await createCardRetirementService({ pool: { getConnection: async () => connection }, clock: () => new Date('2026-09-29T12:00:00Z') })
+    .confirmRetired({ providerAccountId: 'acct', externalCardId: 'HG1', actorId: 'lemon', note: '已在卡台删', source: 'admin' });
+  const override = queries.find((q) => /INSERT INTO card_operational_overrides/.test(q.sql));
+  assert.equal(override.params[2], 'retired confirmed (admin): 已在卡台删｜manual-used');
+  const event = queries.find((q) => /INSERT INTO card_state_events/.test(q.sql));
+  assert.equal(JSON.parse(event.params[3]).override.reason, 'MANUAL_USED: 自用期手动用卡', '撤销要靠这份原值还原');
+});
+
 test('confirmRetired refuses a card that still has an active order and replays an already-retired card without writing', async () => {
   const busy = poolWith({ id: 'c1', provider_account_id: 'acct', external_card_id: 'X', last4: '0001', inventory_status: 'ASSIGNED', sync_tier: 'AVAILABLE', created_at: new Date(), active_assignment: 1 });
   await assert.rejects(() => createCardRetirementService({ pool: busy.pool }).confirmRetired({ cardId: 'c1' }), (error) => error.code === 'CARD_RETIREMENT_CARD_BUSY');

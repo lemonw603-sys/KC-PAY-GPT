@@ -32,7 +32,24 @@ test('card operational overrides validate policy and upsert operator choice', as
   await assert.rejects(() => service.set({ providerAccountId: 'a', externalCardId: 'b', allocationPolicy: 'PRODUCT_ONLY', reason: 'retire' }), /Product is required/);
   const row = await service.set({ providerAccountId: 'a', externalCardId: 'b', allocationPolicy: 'RETIRED', reason: 'old batch', actorId: 'admin' });
   assert.equal(row.allocation_policy, 'RETIRED');
-  assert.equal(calls.length, 2);
+  // 读原原因（欠账 36，保住手动用卡标记）+ upsert + 读回
+  assert.equal(calls.length, 3);
+});
+
+test('欠账 36: 对手动用过的卡重新停用，新原因末尾带上手动用卡标记；没登记过的原样写', async () => {
+  const written = [];
+  const poolFor = (previousReason) => ({ query: async (sql, params) => {
+    if (sql.startsWith('SELECT reason')) return [previousReason == null ? [] : [{ reason: previousReason }]];
+    if (sql.startsWith('INSERT')) { written.push(params[5]); return [{ affectedRows: 1 }]; }
+    return [[{ id: 'x', allocation_policy: 'RETIRED' }]];
+  } });
+  await createCardOperationalOverrideService({ pool: poolFor('MANUAL_USED: 自用期') })
+    .set({ providerAccountId: 'a', externalCardId: 'b', allocationPolicy: 'RETIRED', reason: 'OTHER: 重新停用' });
+  await createCardOperationalOverrideService({ pool: poolFor('OTHER: 旧原因') })
+    .set({ providerAccountId: 'a', externalCardId: 'c', allocationPolicy: 'RETIRED', reason: 'OTHER: 重新停用' });
+  await createCardOperationalOverrideService({ pool: poolFor(null) })
+    .set({ providerAccountId: 'a', externalCardId: 'd', allocationPolicy: 'RETIRED', reason: 'MANUAL_USED: 新登记' });
+  assert.deepEqual(written, ['OTHER: 重新停用｜manual-used', 'OTHER: 重新停用', 'MANUAL_USED: 新登记']);
 });
 
 test('撤销手动用卡登记：删掉 override 的同时写一条审计，两件事同一个事务', async () => {

@@ -1,5 +1,6 @@
 import { PublicApiError } from '../domain/public-api-error.js';
 import { PROVIDER_FAILED_CARD_STATUSES } from '../domain/provider-card-status.js';
+import { reasonKeepingManualUse } from '../domain/manual-use-marker.js';
 
 /**
  * 第④步（面二⑩，D-228 / D-232 / D-248 打架 4）：待销清单。
@@ -262,7 +263,8 @@ export function createCardRetirementService({ pool, clock = () => new Date() }) 
          ON DUPLICATE KEY UPDATE allocation_policy = 'RETIRED', product_code = NULL,
            reason = VALUES(reason), set_by = VALUES(set_by)`,
         [card.provider_account_id, card.external_card_id,
-          `retired confirmed (${source})${safeNote ? `: ${safeNote}` : ''}`.slice(0, 500), actor]
+          // 欠账 36：这张卡原来登记过「手动用卡」就把标记带过去，否则日对账第二天把它的历史扣款算成无主扣款
+          reasonKeepingManualUse(previousOverride?.reason, `retired confirmed (${source})${safeNote ? `: ${safeNote}` : ''}`), actor]
       );
       const detail = {
         inventoryStatus: RETIRED_INVENTORY_STATUS, retiredConfirmedAt: now.toISOString(),

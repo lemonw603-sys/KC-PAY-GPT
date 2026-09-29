@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import { PublicApiError } from '../domain/public-api-error.js';
+import { reasonKeepingManualUse } from '../domain/manual-use-marker.js';
 
 const POLICIES = new Set(['NORMAL', 'PRODUCT_ONLY', 'RETIRED']);
 
@@ -37,13 +38,18 @@ export function createCardOperationalOverrideService({ pool }) {
     const note = text(reason, 'reason');
     const actor = text(actorId || 'admin', 'actorId', 128);
     const id = crypto.randomUUID();
+    // 欠账 36：原原因带「手动用卡」标记、新原因没带时把标记带过去（日对账靠它，见 domain/manual-use-marker.js）。
+    // 先读后写不在一个事务里：同一张卡被两个人同时改停用原因不是这个单人后台会发生的事。
+    const [previousRows] = await pool.query(
+      'SELECT reason FROM card_operational_overrides WHERE provider_account_id = ? AND external_card_id = ? LIMIT 1', [account, card]);
+    const storedReason = reasonKeepingManualUse(previousRows?.[0]?.reason, note);
     await pool.query(
       `INSERT INTO card_operational_overrides
         (id, provider_account_id, external_card_id, allocation_policy, product_code, reason, set_by)
        VALUES (?, ?, ?, ?, ?, ?, ?)
        ON DUPLICATE KEY UPDATE allocation_policy = VALUES(allocation_policy),
          product_code = VALUES(product_code), reason = VALUES(reason), set_by = VALUES(set_by)`,
-      [id, account, card, policy, product, note, actor]);
+      [id, account, card, policy, product, storedReason, actor]);
     const [rows] = await pool.query(
       `SELECT id, provider_account_id, external_card_id, allocation_policy, product_code, reason, set_by, set_at, updated_at
          FROM card_operational_overrides WHERE provider_account_id = ? AND external_card_id = ? LIMIT 1`, [account, card]);

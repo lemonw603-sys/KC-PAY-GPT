@@ -3,6 +3,7 @@ import {
 } from '../domain/card-transaction-audit.js';
 import { fromCents } from '../domain/card-issue-fee.js';
 import { createCardRetirementService } from './card-retirement-service.js';
+import { MANUAL_USE_REASON_REGEXP } from '../domain/manual-use-marker.js';
 
 /**
  * 第⑤步（面四③，D-249）：**每日一次对账，次数与金额分开**。
@@ -31,7 +32,8 @@ export const LAST_REPORT_SETTING = 'daily_reconciliation_last_report';
  */
 // 后台「停用 → 我拿它手动充值了」写的是原因码 `MANUAL_USED: …`（下划线），旧脚本写 `highvcc-manual-used`（连字符）。
 // 以前只认连字符，页面登记的手动用卡被当成「无主扣款」（2026-09-27 整体排查欠账 27，8718 即此路径）。
-export const MANUAL_USE_REASON_REGEXP = 'manual[-_ ]used|manually';
+// 口径挪到 domain/manual-use-marker.js（欠账 36：改写停用原因的两处要用同一个判据）；这里照旧导出，老引用不用改。
+export { MANUAL_USE_REASON_REGEXP } from '../domain/manual-use-marker.js';
 
 export const CountFinding = Object.freeze({
   MATCHED: 'MATCHED',
