@@ -611,7 +611,7 @@ test('D-307：台账主数用库存口径，分配口径一个字都不上界面
   const gap = html('sel:#cards-rigs');
   // D-414：主数按钱看——卡上现成的钱能付几单（后端按库存口径算，分配口径 0 不影响它）
   assert.match(gap, /现成能付 \/ 钱包够（Plus）/);
-  assert.match(gap, />2 单 <small>\/ —<\/small>/, '主数必须是库存口径算出的 2 单，不是分配口径 0；不能补钱的卡台钱包那格写「—」');
+  assert.match(gap, />2 <small>单 \/ —<\/small>/, '主数必须是库存口径算出的 2 单，不是分配口径 0；不能补钱的卡台钱包那格写「—」');
   assert.doesNotMatch(gap, /is-warn/, '库存 2 已达水位 2，不该报库存偏低');
 
   // 分配口径不上界面（Lemon 2026-09-20 定）：它是个会自己恢复的瞬时值，客户下单
@@ -770,9 +770,9 @@ test('D-405 订单页「结束时间」：结束的单写北京时间，处理�
 test('D-414：台账第一格按钱看——卡上现成能付几单 / 钱包还够几单（能补钱的卡台才有后一个数）', () => {
   const { sandbox, html } = loadAdminJs();
   sandbox.renderCardRigs([{ ...RIG_HNSKJ, stockAvailable: 1, readyOrders: 1, walletOrders: 1, stockTarget: 1 }]);
-  assert.match(html('sel:#cards-rigs'), />1 单 <small>\/ 1 单<\/small>/);
+  assert.match(html('sel:#cards-rigs'), />1 <small>单 \/ 1 单<\/small>/);
   sandbox.renderCardRigs([{ ...RIG_HNSKJ, stockAvailable: 0, readyOrders: 0, walletOrders: 0, stockTarget: 1 }]);
-  assert.match(html('sel:#cards-rigs'), />0 单 <small>\/ 0 单<\/small>/);
+  assert.match(html('sel:#cards-rigs'), />0 <small>单 \/ 0 单<\/small>/);
   assert.match(html('sel:#cards-rigs'), /is-warn/);
 });
 

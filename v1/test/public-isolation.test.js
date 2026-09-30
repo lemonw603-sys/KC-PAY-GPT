@@ -138,9 +138,9 @@ test('admin refresh feedback and inset dropdown arrows remain visible', () => {
   // （Lemon 2026-09-18 指出、2026-09-20 在页面这一侧查实并修，D-307）。
   // D-414（2026-09-30 Lemon：要盯的是钱不是卡）：格子改成「现成 N 单 · 钱包够 M 单」，两个数都由后端按
   // 库存口径算（ready_orders / wallet_orders），前端不自己拼。
-  assert.match(script, /现成 <i>\$\{ready\}<\/i> 单/);
+  assert.match(script, /现成<i>\$\{ready\}<\/i>单/);
   assert.match(script, /const ready = Number\(x\.readyOrders \|\| 0\)/);
-  assert.match(script, /钱包够 <i>\$\{wallet\}<\/i> 单/);
+  assert.match(script, /钱包够<i>\$\{wallet\}<\/i>单/);
   assert.doesNotMatch(script, /剩 \$\{x\.bindableNow\}/, '「还剩几张」不许用分配口径');
   assert.match(script, /byProduct/);
   // 「剩 N」旁边必须标会不会自动补：水位 0 的产品断了只能人工开，

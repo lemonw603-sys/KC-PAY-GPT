@@ -291,7 +291,7 @@ export function providerCardStockSql({ productCode = 'plus' } = {}) {
       COUNT(*) AS total,
       SUM(c.inventory_status <> 'RETIRED') AS in_stock,
       -- 库存口径：「卡够不够」的答案，页面主数。D-411：与供卡调度器同一口径（usableCardSql）——
-      -- 用过、钱包够补的旧卡也算（下一单付款前先补钱）；其中要先补钱的张数单独给出，页面注明。
+      -- 用过、钱包够补的旧卡也算（轮到它时先补钱）；其中要先补钱的张数单独给出（stock_top_up）。
       SUM((${usableCardSql('c', minimumSql, { productCode })})) AS stock_available,
       SUM(NOT (${stockCountingCardSql('c', minimumSql, { productCode })})
         AND (${usableCardSql('c', minimumSql, { productCode })})) AS stock_top_up,
@@ -327,7 +327,9 @@ export function providerCardStockSql({ productCode = 'plus' } = {}) {
         ELSE 0 END) AS ready_orders,
       -- 钱包还够几单（只对能补钱的卡台算）：(最近一次钱包快照 − 待发补钱 − 押金底线) ÷ 每单金额，向下取整。
       -- 下一单不管是补旧卡还是开新卡，花的都是这 $16 左右（开新卡另有约 $0.5 开卡费，这里不扣，略偏多）。
+      -- 只对能一卡多单的产品算（Plus）：5X / 20X 一卡一单、不补钱，每单要的钱也不是这个数，给它们算会误导。
       CASE WHEN pa.supports_auto_funding = 1 AND pa.open_adapter IN (${TOP_UP_ADAPTERS.map((a) => `'${a}'`).join(',')})
+          AND (${maxPaymentsSql(normalizedProduct)}) > 1
         THEN GREATEST(0, FLOOR((
           COALESCE((SELECT ws.available_balance FROM provider_balance_snapshots ws WHERE ws.provider_account_id = pa.id
             ORDER BY ws.observed_at DESC, ws.id DESC LIMIT 1), 0)

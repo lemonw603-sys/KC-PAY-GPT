@@ -13,6 +13,7 @@
 //     --clip=<名字>:<选择器>      多块：可重复传，输出目录下按名字存（一个 Chrome 拍完所有）
 //     --wait=<选择器>             先等这个元素出现（异步渲染的页面用）
 //     --login                     先登录后台（读 PARITY_ADMIN_PASSWORD）
+//     --click=<选择器>            拍之前先点它（例如切到卡片页 --click='[data-view=stock]'），点完等 1.5 秒
 //
 // 复用 visual-parity.mjs 里的 CDP 客户端，不另写一份。
 
@@ -23,7 +24,8 @@ const args = process.argv.slice(2);
 // --clip 可重复传，其余标志取最后一个
 const clips = args.filter((a) => a.startsWith('--clip=')).map((a) => a.slice(7));
 const flags = Object.fromEntries(args.filter((a) => a.startsWith('--') && !a.startsWith('--clip='))
-  .map((a) => { const [k, v] = a.slice(2).split('='); return [k, v ?? true]; }));
+  // 只按第一个「=」切：选择器里常带「=」（[data-view=stock]），全切会把选择器截断
+  .map((a) => { const body = a.slice(2); const i = body.indexOf('='); return i === -1 ? [body, true] : [body.slice(0, i), body.slice(i + 1)]; }));
 const [url, out] = args.filter((a) => !a.startsWith('--'));
 
 if (!url || !out) {
@@ -49,6 +51,24 @@ try {
       awaitPromise: true, returnByValue: true
     }, sessionId);
     if (!ok.result.value) throw new Error(`等不到 ${flags.wait} 出现 —— 拍下来也是半截页面`);
+  }
+
+  if (flags.click) {
+    const { result } = await cdp.send('Runtime.evaluate', {
+      expression: `(() => { const e = document.querySelector(${JSON.stringify(flags.click)}); if (!e) return false; e.click(); return true; })()`,
+      returnByValue: true
+    }, sessionId);
+    if (!result.value) throw new Error(`找不到要点的 ${flags.click}`);
+    // 点完等要拍的那块真的画出来（有宽有高），最多 15 秒；切页后数据是异步读的，定时等不靠谱
+    const first = clips[0] ? (clips[0].match(/^[\w\u4e00-\u9fff-]+:(.+)$/)?.[1] || clips[0]) : null;
+    if (first) {
+      await cdp.send('Runtime.evaluate', {
+        expression: `new Promise((r) => { const d = Date.now() + 15000; const t = () => { const e = document.querySelector(${JSON.stringify(first)});
+          const b = e && e.getBoundingClientRect(); (b && b.width > 0 && b.height > 0 && !/正在读取/.test(e.innerText)) || Date.now() > d ? r(true) : setTimeout(t, 150); }; t(); })`,
+        awaitPromise: true, returnByValue: true
+      }, sessionId);
+    }
+    await new Promise((r) => setTimeout(r, 500));
   }
 
   // 量之前先确认视口真的生效；emulation 被清掉过不止一次

@@ -140,11 +140,12 @@ export function classifyStockCardOperationalState(card) {
       reason: card.publicNo ? `已绑定订单 ${card.publicNo}` : '已绑定订单'
     };
   }
-  // D-411：用过、没用满、卡台能补钱的旧卡——下一单付款前先补钱（规则同分卡，含「自动开卡」总闸）。
+  // D-411：用过、没用满、卡台能补钱的旧卡——轮到它时先补钱再付（规则同分卡，含「自动开卡」总闸）。
   if (card.reusableTopUp) {
     return card.walletCoversTopUp
-      ? { category: 'READY', reason: `下一单付款前先补 $${moneyText(card.topUpAmount)}（已用 ${card.usedCapacity}/${card.maxCapacity} 次）` }
-      : { category: 'BLOCKED', reason: `钱包不够补 $${moneyText(card.topUpAmount)}（补完要留押金），充钱包后可用` };
+      // 「轮到它时」而不是「下一单」：默认「有钱先用」时下一单会先用现成有钱的卡（D-414），说「下一单」就不对了。
+      ? { category: 'READY', reason: `轮到它时先补 $${moneyText(card.topUpAmount)}（已用 ${card.usedCapacity}/${card.maxCapacity} 次）` }
+      : { category: 'BLOCKED', reason: `钱包不够补 $${moneyText(card.topUpAmount)}，充钱包后可用` };
   }
   if (card.effectiveInventoryStatus === 'PRODUCT_ONLY') {
     return {

@@ -357,6 +357,8 @@ small{font-size:max(12px,.84em)}
 .workbench .set-ro-val{display:inline-flex;align-items:center;width:92px;height:34px;padding:0 8px;border:1px solid transparent;color:var(--wb-t3);font-family:var(--wb-fm);font-size:12px}
 .workbench .set-slot{visibility:hidden}
 .workbench .set-f{width:92px;padding:4px 8px;font-family:var(--wb-fm);font-size:12px}
+/* 设置页的下拉（选卡顺序，D-414）与左右输入框同宽 92px：字号跟输入框一样 12px、右边给箭头的留白收一点，四个字才放得下 */
+:root:root .workbench select.set-f{font-size:12px;padding:0 24px 0 9px;background-position:calc(100% - 13px) 50%,calc(100% - 8px) 50%}
 /* 改过还没存的格：一眼看出「这个数还没生效」 */
 .workbench .set-f.is-dirty{border-color:var(--wb-warn);background:var(--wb-warn-soft)}
 .workbench .set-f.is-bad{border-color:var(--wb-danger);background:var(--wb-danger-soft)}
