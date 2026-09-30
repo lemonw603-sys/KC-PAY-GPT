@@ -776,6 +776,25 @@ test('D-414：台账第一格按钱看——卡上现成能付几单 / 钱包还
   assert.match(html('sel:#cards-rigs'), /is-warn/);
 });
 
+test('D-414 自查：「自动开卡」总闸关着时，工作台格子不写「自动补」、不因钱包变绿（后端此时给钱包 null）', () => {
+  const { sandbox, html } = loadAdminJs();
+  const rig = (walletOrders) => ({ providerAccountId: 'pa-3', providerCode: 'backup-a', label: 'highvcc',
+    byProduct: [{ productCode: 'plus', label: 'Plus', readyOrders: 0, walletOrders, autoReplenished: true }] });
+  sandbox.renderWbCards({ cardStockByProvider: [rig(1)], decisions: { cardAutoReplenishmentEnabled: true } });
+  let out = html('wb-cards');
+  assert.match(out, /钱包够<i>1<\/i>单/);
+  assert.match(out, /class="wb-prod is-ok"/, '钱包够补 1 单，格子是绿的');
+  assert.match(out, /<span class="wb-how">自动补<\/span>/);
+  sandbox.renderWbCards({ cardStockByProvider: [rig(null)], decisions: { cardAutoReplenishmentEnabled: false } });
+  out = html('wb-cards');
+  assert.doesNotMatch(out, /钱包够/, '总闸关着，钱包里的钱用不上');
+  assert.doesNotMatch(out, /is-ok/, '卡上 0、钱包用不上，不能是绿的');
+  assert.match(out, /<span class="wb-how">总闸关<\/span><span class="wb-how-s">关闸<\/span>/);
+  assert.match(out, /class="is-manual" title="「自动开卡」总闸关着：不补钱、不开新卡"/);
+  sandbox.renderWbCards({ cardStockByProvider: [rig(1)] });
+  assert.match(html('wb-cards'), /<span class="wb-how">自动补<\/span>/, '读不到总闸状态时不猜，按开着算');
+});
+
 test('D-411：订单抽屉「付款前补钱」按补钱状态说人话，原因码只翻已知的', () => {
   const { evalIn } = loadAdminJs();
   const text = (item) => evalIn(`topUpText(${JSON.stringify(item)})`);

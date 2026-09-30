@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>D-414 演示 · 卡上 / 钱包</title>
+<link rel="icon" href="/admin/assets/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/admin/assets/admin.css?v=31">
+<link rel="stylesheet" href="/admin/assets/workbench.css?v=28">
+<link rel="stylesheet" href="/admin/assets/cards.css?v=8">
+<link rel="stylesheet" href="/admin/assets/cdks.css?v=1">
+<link rel="stylesheet" href="/admin/assets/orders.css?v=4">
+<style>
+/* ---- 演示外壳（不是产品的一部分）：样式照第三批演示 ---- */
+.demo-bar{position:sticky;top:0;z-index:40;display:flex;align-items:center;flex-wrap:wrap;gap:10px 14px;margin:0 0 10px;padding:9px 12px;border:1px dashed var(--wb-bd);border-radius:11px;background:var(--wb-s);font-size:12.5px;color:var(--wb-t2)}
+.demo-bar b{color:var(--wb-t)}
+.demo-bar .opt{display:inline-flex;gap:2px;padding:2px;border-radius:8px;background:var(--wb-s3)}
+.demo-bar .opt button{border:0;background:none;padding:4px 12px;border-radius:6px;font:inherit;font-size:12.5px;color:var(--wb-t2);cursor:pointer}
+.demo-bar .opt button[aria-pressed="true"]{background:var(--wb-s);color:var(--wb-a-ink);font-weight:600;box-shadow:0 1px 2px hsla(176,25%,10%,.12)}
+.demo-note{margin:0 0 12px;padding:9px 13px;border:1px dashed var(--wb-bd);border-radius:10px;background:var(--wb-s);font-size:12.5px;color:var(--wb-t2);line-height:1.7}
+.demo-note b{color:var(--wb-t)}
+.demo-muted{color:var(--wb-t3);font-size:12.5px;margin:0}
+</style>
+</head>
+<body>
+<div class="admin-shell">
+  <aside class="sidebar">
+    <a class="admin-brand" href="#" aria-label="首页"><span class="brand-label">OPERATIONS</span><strong>Plus 运营后台 <span aria-hidden="true">✦</span></strong><small>内部管理中心</small></a>
+    <nav aria-label="演示导航">
+      <button class="nav-item is-active" type="button" data-go="wb"><span class="ic" aria-hidden="true">◱</span>工作台</button>
+      <button class="nav-item" type="button" data-go="stock"><span class="ic" aria-hidden="true">▣</span>卡片</button>
+    </nav>
+  </aside>
+
+  <main class="main-area">
+    <header class="topbar"><div class="topbar-title"><h1 id="view-title">今天的运行情况</h1></div><span class="sync-time" title="今日已开、总张数、token 时间、今天花了多少这些小字是演示库的，不是生产的">演示页 · 两个钱包、三张卡、直充点数照 09-30 16:0x UTC 的生产</span></header>
+
+    <div class="demo-bar" role="group" aria-label="演示开关">
+      <span><b>写法</b></span>
+      <span class="opt" data-group="wording">
+        <button type="button" data-v="now" aria-pressed="false">现在（现成）</button>
+        <button type="button" data-v="new" aria-pressed="true">建议（卡上）</button>
+      </span>
+      <span><b>情况</b></span>
+      <span class="opt" data-group="scene">
+        <button type="button" data-v="1" aria-pressed="true">① 现在</button>
+        <button type="button" data-v="2" aria-pressed="false">② 钱包充到 $40</button>
+        <button type="button" data-v="3" aria-pressed="false">③ 两单同时来</button>
+        <button type="button" data-v="4" aria-pressed="false">④ 总闸关</button>
+      </span>
+    </div>
+    <p class="demo-note" id="demo-note"></p>
+
+    <section id="v-wb" class="view workbench"></section>
+    <section id="v-stock" class="view" hidden></section>
+  </main>
+</div>
+
+<script>
+// 页面片段是真后台代码渲染出来的原样 HTML（本机演示库照生产设数 → 当前 admin.js / 改了措辞的副本各渲染一次），
+// 这里只负责切换，不改一个数。生成方式见 docs/HANDOFF_LOG.md 2026-10-01 D-414 演示一条。
+const NOTES = {
+  1: '<b>① 现在</b>（生产 09-30 16:0x UTC）：8499 卡上 $16，够付 1 单；5270 卡上 $0.25，不够。highvcc 钱包 $24.35，扣掉押金 $20 只剩 $4.35，补一次要 $16，补不了。<b>合起来：还能接 1 单</b>，第 2 单要等充钱包。',
+  2: '<b>② 钱包充到 $40</b>：钱包 (40 − 押金 20) ÷ 16 = 1 单；5270 轮到它时先补 $16 再付。<b>合起来：还能接 2 单</b>（卡上 1 + 钱包 1）。',
+  3: '<b>③ 两单同时来</b>（钱包 $40）：真分卡代码派的——第 1 单用 8499（卡上有钱先用），第 2 单给 5270 补 $16。补钱那 $16 先从钱包扣掉：(40 − 16 − 20) ÷ 16 = 0。<b>两张卡都在用，再来第 3 单要等</b>。',
+  4: '<b>④ 总闸关</b>（钱包 $40，你已批的 B）：「自动开卡」总闸关着就不补钱、不开卡，所以钱包那一项不显示、格子右边写「总闸关」；5270 这时不算能用。页面上没有这个开关，只会是后台手动关的。'
+};
+const TITLES = { wb: '今天的运行情况', stock: '卡片' };
+let data = null;
+const state = { wording: 'new', scene: '1', view: 'wb' };
+
+function render() {
+  const frag = data.scenarios[state.scene][state.wording];
+  const wb = document.getElementById('v-wb');
+  wb.innerHTML = frag.wb;
+  // 「昨夜日对账」那格不在这次改动里，本机渲染也没接它的数据——写明，免得看成「读取失败」。
+  const recon = wb.querySelector('#wb-recon');
+  if (recon) recon.innerHTML = '<p class="demo-muted">（这格这次不改，演示里不接数据）</p>';
+  document.getElementById('v-stock').innerHTML = frag.stock;
+  document.getElementById('demo-note').innerHTML = NOTES[state.scene]
+    + (state.wording === 'new' ? ' <span class="demo-muted">· 现在看的是<b>建议写法</b></span>' : ' <span class="demo-muted">· 现在看的是<b>现在的写法</b></span>')
+    + ' <span class="demo-muted">（今日已开、总张数、token 时间这些小字是演示库的，不用看；按钮在演示里不起作用）</span>';
+  document.getElementById('v-wb').hidden = state.view !== 'wb';
+  document.getElementById('v-stock').hidden = state.view !== 'stock';
+  document.getElementById('view-title').textContent = TITLES[state.view];
+  for (const b of document.querySelectorAll('.nav-item')) b.classList.toggle('is-active', b.dataset.go === state.view);
+  for (const g of document.querySelectorAll('.demo-bar .opt')) {
+    for (const b of g.querySelectorAll('button')) b.setAttribute('aria-pressed', String(b.dataset.v === state[g.dataset.group]));
+  }
+}
+
+document.addEventListener('click', (event) => {
+  const nav = event.target.closest('.nav-item[data-go]');
+  if (nav) { state.view = nav.dataset.go; render(); return; }
+  const opt = event.target.closest('.demo-bar .opt button');
+  if (opt) { state[opt.closest('.opt').dataset.group] = opt.dataset.v; render(); }
+});
+
+// 地址栏 #scene=2&wording=now&view=stock 直接打开某一种（截图用）
+for (const [k, v] of new URLSearchParams(location.hash.slice(1))) if (k in state) state[k] = v;
+fetch('data/d414-wording-demo.json').then((r) => r.json()).then((json) => { data = json; render(); });
+</script>
+</body>
+</html>

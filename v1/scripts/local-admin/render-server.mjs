@@ -26,7 +26,10 @@ http.createServer(async (req, res) => {
     res.writeHead(body === undefined ? 404 : 200, { 'Content-Type': 'application/json; charset=utf-8' });
     return res.end(JSON.stringify(body === undefined ? { error: 'not_in_render_snapshot' } : body));
   }
-  const file = pathname === '/admin' || pathname === '/admin/' ? '/admin/index.html' : pathname;
+  // 字体照真后台的映射（create-app.js：/admin/assets/fonts → public/assets/fonts）。漏了这条字体会静默回退，
+  // 截图和量宽度就不是线上的样子（2026-10-01 查出：此前的演示截图都是替代字体）。
+  const file = pathname === '/admin' || pathname === '/admin/' ? '/admin/index.html'
+    : pathname.startsWith('/admin/assets/fonts/') ? pathname.replace('/admin/assets/fonts/', '/assets/fonts/') : pathname;
   const target = path.join(PUBLIC, path.normalize(file));
   if (!target.startsWith(PUBLIC)) { res.writeHead(403); return res.end(); }
   try {

@@ -328,8 +328,11 @@ export function providerCardStockSql({ productCode = 'plus' } = {}) {
       -- 钱包还够几单（只对能补钱的卡台算）：(最近一次钱包快照 − 待发补钱 − 押金底线) ÷ 每单金额，向下取整。
       -- 下一单不管是补旧卡还是开新卡，花的都是这 $16 左右（开新卡另有约 $0.5 开卡费，这里不扣，略偏多）。
       -- 只对能一卡多单的产品算（Plus）：5X / 20X 一卡一单、不补钱，每单要的钱也不是这个数，给它们算会误导。
+      -- 「自动开卡」总闸关着时不给数（NULL，页面不显示）：那时既不补钱也不开卡，钱包里的钱一单也用不上（D-414 自查，Lemon 批）。
       CASE WHEN pa.supports_auto_funding = 1 AND pa.open_adapter IN (${TOP_UP_ADAPTERS.map((a) => `'${a}'`).join(',')})
           AND (${maxPaymentsSql(normalizedProduct)}) > 1
+          AND 'true' = (SELECT wallet_switch.setting_value FROM app_settings wallet_switch
+            WHERE wallet_switch.setting_key = 'card_auto_replenishment_enabled' LIMIT 1)
         THEN GREATEST(0, FLOOR((
           COALESCE((SELECT ws.available_balance FROM provider_balance_snapshots ws WHERE ws.provider_account_id = pa.id
             ORDER BY ws.observed_at DESC, ws.id DESC LIMIT 1), 0)

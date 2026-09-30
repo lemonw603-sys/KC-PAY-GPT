@@ -407,6 +407,9 @@ function renderWbCards(overview) {
   const totalReady = byProvider.reduce((sum, p) => sum + Number(plusOf(p).readyOrders || 0), 0);
   const totalWallet = byProvider.reduce((sum, p) => sum + Number(plusOf(p).walletOrders || 0), 0);
   const waiting = Number(overview.ordersWaitingForCard || 0);
+  // 「自动开卡」总闸关着：不补钱、不开卡，格子右边不能再写「自动补」（D-414 自查，Lemon 批）。
+  // 页面上没有这个开关（2026-09-20 Lemon 定不做），只可能是后台手动关的；读不到时不猜，按开着算。
+  const supplyOff = overview.decisions?.cardAutoReplenishmentEnabled === false;
 
   // D-283 原规划就是「按台按产品」，原型 C 画的是每台一行、行内按产品「用 N / 剩 N」。
   // D-355 ⑦（2026-09-24 落地）：Lemon 说「用 N」（历史卡张数含已销）不是他要的，改成
@@ -421,13 +424,14 @@ function renderWbCards(overview) {
     const ready = Number(x.readyOrders || 0);
     const wallet = x.walletOrders == null ? null : Number(x.walletOrders);
     // 数字紧贴字（不加空格）：格子只有 128px，两边都到两位数（「现成99单 · 钱包够99单」127px）也放得下；加空格一位数就顶满了（1440 实测）
-    const how = x.autoReplenished ? '自动补' : '需人工开';
+    const how = supplyOff ? '总闸关' : x.autoReplenished ? '自动补' : '需人工开';
     // 格子窄到放不下时 CSS 换成两字短词，保证一行（Lemon 2026-09-24）；两份都在 DOM 里，只显示一份。
-    const howShort = x.autoReplenished ? '自动' : '人工';
+    const howShort = supplyOff ? '关闸' : x.autoReplenished ? '自动' : '人工';
+    const howTitle = supplyOff ? '「自动开卡」总闸关着：不补钱、不开新卡' : how;
     return `<span class="wb-prod ${ready + (wallet || 0) > 0 ? 'is-ok' : ''}">`
       + `<b>${escapeHtml(x.label)}</b>`
       + `<span class="wb-prod-n" title="现成＝卡上已有的钱不补就能付几单${wallet == null ? '' : '；钱包够＝钱包扣掉押金后还够补 / 开几单'}">现成<i>${ready}</i>单${wallet == null ? '' : ` · 钱包够<i>${wallet}</i>单`}</span>`
-      + `<small class="${x.autoReplenished ? '' : 'is-manual'}" title="${how}"><span class="wb-how">${how}</span><span class="wb-how-s">${howShort}</span></small></span>`;
+      + `<small class="${x.autoReplenished && !supplyOff ? '' : 'is-manual'}" title="${howTitle}"><span class="wb-how">${how}</span><span class="wb-how-s">${howShort}</span></small></span>`;
   };
   box.innerHTML = byProvider.map((p) => {
     const spentNum = p.spentToday == null ? null : Number(p.spentToday);

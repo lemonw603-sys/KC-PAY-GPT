@@ -821,6 +821,12 @@ test('D-414 money view: ready orders = what the money already on cards can pay; 
     assert.equal((await workflow.assignAvailableCard(orderId)).topUpQueued, true);
     r = await row();
     assert.equal(Number(r.wallet_orders), 1, '待发的 $16 先扣掉：(60 − 16 − 20) ÷ 16 = 1');
+    const readyBefore = Number(r.ready_orders);
+    await setSettings(pool, { card_auto_replenishment_enabled: 'false' });
+    r = await row();
+    assert.equal(r.wallet_orders, null, '总闸关着：不补钱也不开卡，钱包里的钱一单也用不上，不给数');
+    assert.equal(Number(r.ready_orders), readyBefore, '卡上现成的钱不受总闸影响');
+    await setSettings(pool, { card_auto_replenishment_enabled: 'true' });
     await pool.query(`UPDATE provider_accounts SET supports_auto_funding = 0 WHERE id = ?`, [account]);
     assert.equal((await row()).wallet_orders, null, '不能补钱的卡台没有「钱包够」这个数');
   } finally { await pool.end(); }
