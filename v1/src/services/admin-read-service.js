@@ -973,6 +973,9 @@ export function createAdminReadService({ pool, sessionEncryptionKey = null, cdkH
           stockAvailable: count(productRow?.stock_available),
           // D-411：上面那个数里要先补钱才能付的旧卡张数（工作台注明，免得以为是满额现成卡）
           stockTopUp: count(productRow?.stock_top_up),
+          // D-414 按钱看：卡上现成的钱能付几单；钱包还够几单（只有能补钱的卡台有，其余 null）
+          readyOrders: count(productRow?.ready_orders),
+          walletOrders: productRow?.wallet_orders == null ? null : count(productRow.wallet_orders),
           bindableNow: count(productRow?.bindable_now),
           // 按产品的用量用 product_used（账本 JOIN 订单取 plan_type）。
           // any_used 不分产品 —— 拿它当按产品用量，三个产品会完全相同（实测都是 6，

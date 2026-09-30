@@ -607,10 +607,11 @@ test('D-307：台账主数用库存口径，分配口径一个字都不上界面
   const { sandbox, html } = loadAdminJs();
 
   // 生产那个场景：卡是好的，但在同步窗口外（库存 2 / 可立即绑 0）
-  sandbox.renderCardRigs([{ ...RIG_HNSKJ, stockAvailable: 2, bindableNow: 0, stockTarget: 2 }]);
+  sandbox.renderCardRigs([{ ...RIG_HNSKJ, stockAvailable: 2, bindableNow: 0, stockTarget: 2, readyOrders: 2, walletOrders: null }]);
   const gap = html('sel:#cards-rigs');
-  assert.match(gap, /可分配 \/ 水位（Plus）/);
-  assert.match(gap, />2 <small>\/ 2<\/small>/, '主数必须是库存口径 2，不是分配口径 0');
+  // D-414：主数按钱看——卡上现成的钱能付几单（后端按库存口径算，分配口径 0 不影响它）
+  assert.match(gap, /现成能付 \/ 钱包够（Plus）/);
+  assert.match(gap, />2 单 <small>\/ —<\/small>/, '主数必须是库存口径算出的 2 单，不是分配口径 0；不能补钱的卡台钱包那格写「—」');
   assert.doesNotMatch(gap, /is-warn/, '库存 2 已达水位 2，不该报库存偏低');
 
   // 分配口径不上界面（Lemon 2026-09-20 定）：它是个会自己恢复的瞬时值，客户下单
@@ -636,7 +637,7 @@ test('术语一致：同一个状态在一页上只能有一个叫法', () => {
 
   // 台账栏那格的标题由 admin.js 渲染，不在 index.html 里
   const src = fs.readFileSync(path.join(here, '..', 'public', 'admin', 'assets', 'admin.js'), 'utf8');
-  assert.match(src, /rigCell\('可分配 \/ 水位（Plus）'/);
+  assert.match(src, /rigCell\('现成能付 \/ 钱包够（Plus）'/);
   // 页面上的说明也得用同一个词，否则解释的是另一件事
   assert.match(html, /“可分配”＝/);
 
@@ -766,12 +767,13 @@ test('D-405 订单页「结束时间」：结束的单写北京时间，处理�
   assert.match(rows[2], /<td class="od-time is-none" title="这张老单当时没记结束时间">—<\/td>/);
 });
 
-test('D-411：台账「可分配」含用过的卡时注明几张付款前要先补钱；没有就不写', () => {
+test('D-414：台账第一格按钱看——卡上现成能付几单 / 钱包还够几单（能补钱的卡台才有后一个数）', () => {
   const { sandbox, html } = loadAdminJs();
-  sandbox.renderCardRigs([{ ...RIG_HNSKJ, stockAvailable: 1, stockTopUp: 1, bindableNow: 0, stockTarget: 1 }]);
-  assert.match(html('sel:#cards-rigs'), />1 <small>\/ 1 · 含 1 张付前补钱<\/small>/);
-  sandbox.renderCardRigs([{ ...RIG_HNSKJ, stockAvailable: 1, stockTopUp: 0, bindableNow: 1, stockTarget: 1 }]);
-  assert.doesNotMatch(html('sel:#cards-rigs'), /补钱/);
+  sandbox.renderCardRigs([{ ...RIG_HNSKJ, stockAvailable: 1, readyOrders: 1, walletOrders: 1, stockTarget: 1 }]);
+  assert.match(html('sel:#cards-rigs'), />1 单 <small>\/ 1 单<\/small>/);
+  sandbox.renderCardRigs([{ ...RIG_HNSKJ, stockAvailable: 0, readyOrders: 0, walletOrders: 0, stockTarget: 1 }]);
+  assert.match(html('sel:#cards-rigs'), />0 单 <small>\/ 0 单<\/small>/);
+  assert.match(html('sel:#cards-rigs'), /is-warn/);
 });
 
 test('D-411：订单抽屉「付款前补钱」按补钱状态说人话，原因码只翻已知的', () => {

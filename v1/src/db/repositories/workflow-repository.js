@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { CARD_SELECT_ORDER_SETTING, normalizeCardSelectOrder } from '../../domain/card-select-order.js';
 import { transitionOrder } from './order-repository.js';
 import { releaseCardForSessionReplacementInTransaction, releaseCardForFailedOrderInTransaction } from './card-release-repository.js';
 import {
@@ -595,10 +596,15 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
             [String(order.minimum_required_card_balance), order.card_provider_account_id]
         );
         const alertKey = `order-waiting-card:${orderId}`;
-        // 没有用过的现成卡时，先看能补钱复用的旧卡（D-411）。「自动开卡」总闸（D-412 补记三）、卡台能力位、
+        // D-414 选卡顺序（设置页可改）：默认「卡上有钱的先用」——有现成能付的卡就用它，都没有才补旧卡；
+        // 「旧卡先用满」＝现成卡里没有用过的，就先补可补钱的旧卡（D-411 原定）。两者都不会重复扣钱。
+        const [[selectOrderRow]] = await connection.query(
+          `SELECT setting_value FROM app_settings WHERE setting_key = ? LIMIT 1`, [CARD_SELECT_ORDER_SETTING]);
+        const usedFirst = normalizeCardSelectOrder(selectOrderRow?.setting_value) === 'used_first';
+        // 没有现成卡（或「旧卡先用满」时现成卡都是没用过的），先看能补钱复用的旧卡（D-411）。「自动开卡」总闸（D-412 补记三）、卡台能力位、
         // 钱包按最近一次快照够不够都在 reusableTopUpCardSql / walletCoversTopUpSql 里——与调度器水位、
         // 切换校验、巡检数的是同一口径。真发之前补钱任务还会实时再查一次钱包和总闸。
-        if (!(cards[0] && Number(cards[0].used_count) >= 1)) {
+        if (!cards[0] || (usedFirst && !(Number(cards[0].used_count) >= 1))) {
           const [reusable] = await connection.query(
             `SELECT id, provider_card_id, current_balance, ${usedCountSql('cards')} AS used_count
              FROM cards

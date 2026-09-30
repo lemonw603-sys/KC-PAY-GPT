@@ -59,6 +59,7 @@ export function createApp({
   getAdminSupplySettings = null,
   setAdminSupplyPolicyField = null,
   setAdminProviderWalletField = null,
+  setAdminCardSelectOrder = null,
   createAdminCardStockJob = null,
   getHighvccCardStatus = null,
   setHighvccCardToken = null,
@@ -453,6 +454,20 @@ export function createApp({
           value: req.body?.value,
           reason: req.body?.reason ?? null,
           actorId: req.admin?.id || 'admin'
+        }));
+      } catch (error) {
+        if (error instanceof PublicApiError) {
+          return res.status(error.status || 400).json({ error: error.code.toLowerCase(), detail: error.message });
+        }
+        throw error;
+      }
+    });
+  }
+  if (typeof setAdminCardSelectOrder === 'function') {
+    app.post('/api/v1/admin/settings/card-select-order', ...adminWriteGuards, async (req, res) => {
+      try {
+        return res.json(await setAdminCardSelectOrder({
+          value: req.body?.value, reason: req.body?.reason ?? null, actorId: req.admin?.id || 'admin'
         }));
       } catch (error) {
         if (error instanceof PublicApiError) {

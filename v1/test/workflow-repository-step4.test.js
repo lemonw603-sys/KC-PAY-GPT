@@ -10,6 +10,8 @@ function harness(route) {
     query: async (sql, params) => {
       const flat = String(sql).replace(/\s+/g, ' ').trim();
       queries.push({ sql: flat, params });
+      // D-414：分卡先读选卡顺序（没设过＝默认），各用例不为它排位
+      if (flat.startsWith('SELECT setting_value FROM app_settings WHERE setting_key = ? LIMIT 1')) return [[]];
       return route(flat, params);
     }
   };

@@ -771,3 +771,57 @@ test('review: if the sender died right after recording SUBMITTED (before queuein
     assert.equal(task.status, 'PENDING', '查到账补排上了');
   } finally { await pool.end(); }
 });
+
+test('D-414 card selection order (settings knob): "有钱先用" pays from a ready card; "旧卡先用" tops up the used card first; the change is audited', { skip }, async () => {
+  const pool = mysql.createPool({ uri: databaseUrl, connectionLimit: 4, timezone: 'Z' });
+  try {
+    await setSettings(pool, { card_auto_replenishment_enabled: 'true', default_open_card_amount: '16' });
+    await pool.query(`DELETE FROM app_settings WHERE setting_key = 'card_select_order'`);
+    const { createCardSupplyPolicyAdminService } = await import('../src/services/card-supply-policy-admin-service.js');
+    const settings = createCardSupplyPolicyAdminService({ pool });
+    assert.equal((await settings.list()).cardSelectOrder, 'balance_first', '没设过＝有钱先用');
+    await assert.rejects(settings.setCardSelectOrder({ value: 'random', actorId: 'lemon' }), (e) => e.code === 'INVALID_SETTING_VALUE');
+
+    const account = await topUpAccount(pool);
+    const workflow = createWorkflowRepository(pool, { sessionEncryptionKey: KEY });
+    const fresh = await insertCard(pool, { providerAccountId: account, last4: 'S001' });
+    const used = await usedCard(pool, account, { last4: 'S002' });
+    const first = await insertOrder(pool, { frozen: account });
+    assert.equal((await workflow.assignAvailableCard(first)).topUpQueued, undefined);
+    assert.deepEqual(await orderRow(pool, first), { status: 'CARD_READY', assigned_card_id: fresh }, '有钱先用：现成的卡直接付，客户不等补钱');
+
+    assert.deepEqual(await settings.setCardSelectOrder({ value: 'used_first', actorId: 'lemon' }), { oldValue: 'balance_first', newValue: 'used_first' });
+    const [[audit]] = await pool.query(`SELECT old_value, new_value, actor_id FROM admin_setting_events WHERE setting_key = 'card_select_order' ORDER BY id DESC LIMIT 1`);
+    assert.deepEqual([audit.old_value, audit.new_value, audit.actor_id], ['balance_first', 'used_first', 'lemon']);
+    const fresh2 = await insertCard(pool, { providerAccountId: account, last4: 'S003' });
+    const second = await insertOrder(pool, { frozen: account });
+    assert.equal((await workflow.assignAvailableCard(second)).topUpQueued, true);
+    assert.deepEqual(await orderRow(pool, second), { status: 'CARD_PROVISIONING', assigned_card_id: used }, '旧卡先用：先补旧卡');
+    assert.equal((await cardRow(pool, fresh2)).inventory_status, 'AVAILABLE', '新卡留着');
+    await settings.setCardSelectOrder({ value: 'balance_first', actorId: 'lemon' });
+  } finally { await pool.end(); }
+});
+
+test('D-414 money view: ready orders = what the money already on cards can pay; wallet orders = (wallet − pending top-ups − deposit) ÷ per-order amount, only for top-up capable sources', { skip }, async () => {
+  const pool = mysql.createPool({ uri: databaseUrl, connectionLimit: 4, timezone: 'Z' });
+  try {
+    await setSettings(pool, { card_auto_replenishment_enabled: 'true', default_open_card_amount: '16', default_minimum_required_card_balance: '16' });
+    const { providerCardStockSql } = await import('../src/services/card-inventory-eligibility.js');
+    const account = await topUpAccount(pool, { wallet: '60' });
+    await insertCard(pool, { providerAccountId: account, last4: 'M016' });                                   // $16：1 单
+    await insertCard(pool, { providerAccountId: account, last4: 'M050', balance: '50.000000', funded: '50' }); // $50：3 单
+    await usedCard(pool, account, { last4: 'M000' });                                                          // 用过、没钱：0 单
+    const row = async () => (await pool.query(providerCardStockSql({ productCode: 'plus' })))[0].find((r) => r.provider_account_id === account);
+    let r = await row();
+    assert.equal(Number(r.ready_orders), 4, '$16 卡 1 单 + $50 卡 3 单');
+    assert.equal(Number(r.wallet_orders), 2, '(60 − 20) ÷ 16 = 2');
+    const workflow = createWorkflowRepository(pool, { sessionEncryptionKey: KEY });
+    await pool.query(`UPDATE cards SET inventory_status = 'RETIRED' WHERE provider_account_id = ? AND last4 IN ('M016','M050')`, [account]);
+    const orderId = await insertOrder(pool, { frozen: account });
+    assert.equal((await workflow.assignAvailableCard(orderId)).topUpQueued, true);
+    r = await row();
+    assert.equal(Number(r.wallet_orders), 1, '待发的 $16 先扣掉：(60 − 16 − 20) ÷ 16 = 1');
+    await pool.query(`UPDATE provider_accounts SET supports_auto_funding = 0 WHERE id = ?`, [account]);
+    assert.equal((await row()).wallet_orders, null, '不能补钱的卡台没有「钱包够」这个数');
+  } finally { await pool.end(); }
+});

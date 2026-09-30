@@ -401,9 +401,11 @@ function renderWbCards(overview) {
   // provider_balance_snapshots（getOverview 每台带 wallet）；点刷新后以更新的那次为准。
   // 此前 hnskj 读 providerHealth 快照显示绿标、highvcc 不读快照只显示「未查询」，两台长得不一样。
   if (!byProvider.length) { box.innerHTML = '<p class="wb-qempty">暂无卡台数据</p>'; return; }
-  const totalStock = byProvider.reduce((sum, p) => sum + (p.stockAvailable || 0), 0);
-  // D-411：可分配里有几张是用过的卡（下一单付款前先补钱）。格子放不下，写在合计那一行。
-  const totalTopUp = byProvider.reduce((sum, p) => sum + Number(p.stockTopUp || 0), 0);
+  // D-414 按钱看（Lemon 2026-09-30：要盯的是钱不是卡）：现成＝卡上已有的钱不补就能付几单；
+  // 钱包够＝钱包扣掉押金和待发补钱后还够几单（只有能补钱的卡台有）。按产品的数在格子里，这里是 Plus 合计。
+  const plusOf = (p) => (p.byProduct || []).find((x) => x.productCode === 'plus') || {};
+  const totalReady = byProvider.reduce((sum, p) => sum + Number(plusOf(p).readyOrders || 0), 0);
+  const totalWallet = byProvider.reduce((sum, p) => sum + Number(plusOf(p).walletOrders || 0), 0);
   const waiting = Number(overview.ordersWaitingForCard || 0);
 
   // D-283 原规划就是「按台按产品」，原型 C 画的是每台一行、行内按产品「用 N / 剩 N」。
@@ -416,13 +418,14 @@ function renderWbCards(overview) {
   // 每 3 小时才同步一次 —— 同一批好卡在每 3 小时里只有头 15 分钟算数，其余时间显示 0。
   // Lemon 2026-09-18 就指出过，当时只修了补卡调度器，这里漏了（2026-09-20 查实）。
   const prodChip = (x) => {
-    const stock = Number(x.stockAvailable || 0);
+    const ready = Number(x.readyOrders || 0);
+    const wallet = x.walletOrders == null ? null : Number(x.walletOrders);
     const how = x.autoReplenished ? '自动补' : '需人工开';
     // 格子窄到放不下时 CSS 换成两字短词，保证一行（Lemon 2026-09-24）；两份都在 DOM 里，只显示一份。
     const howShort = x.autoReplenished ? '自动' : '人工';
-    return `<span class="wb-prod ${stock > 0 ? 'is-ok' : ''}">`
+    return `<span class="wb-prod ${ready + (wallet || 0) > 0 ? 'is-ok' : ''}">`
       + `<b>${escapeHtml(x.label)}</b>`
-      + `<span class="wb-prod-n"${Number(x.stockTopUp || 0) > 0 ? ` title="其中 ${Number(x.stockTopUp)} 张是用过的卡，下一单付款前先往卡里补钱"` : ''}>剩 <i>${stock}</i> 张 · 能充 <i>${Number(x.remainingOrders || 0)}</i> 单</span>`
+      + `<span class="wb-prod-n" title="现成＝卡上已有的钱不补就能付几单${wallet == null ? '' : '；钱包够＝钱包扣掉押金后还够补 / 开几单'}">现成 <i>${ready}</i> 单${wallet == null ? '' : ` · 钱包够 <i>${wallet}</i> 单`}</span>`
       + `<small class="${x.autoReplenished ? '' : 'is-manual'}" title="${how}"><span class="wb-how">${how}</span><span class="wb-how-s">${howShort}</span></small></span>`;
   };
   box.innerHTML = byProvider.map((p) => {
@@ -449,8 +452,8 @@ function renderWbCards(overview) {
     </div>`;
   }).join('')
     + zzshuPointsRow(overview.providerHealth?.zzshuPoints)
-    + `<p class="wb-total">合计可分配 <b class="wb-mono">${totalStock}</b> 张`
-    + (totalTopUp > 0 ? `（其中 ${totalTopUp} 张是用过的卡，付款前先补钱）` : '')
+    + `<p class="wb-total">Plus 现成能付 <b class="wb-mono">${totalReady}</b> 单`
+    + (totalWallet > 0 ? ` · 钱包还够 <b class="wb-mono">${totalWallet}</b> 单` : '')
     // 「没有单在等卡」不显示（Lemon 2026-09-28）：有人等卡时才说。
     + (waiting > 0 ? ` · <b class="wb-waiting">${waiting} 单正在等卡</b>` : '')
     + '</p>';
@@ -1604,9 +1607,9 @@ function renderCardRigs(byProvider, tokenStatus) {
     const opened = Number(rig.openedToday || 0);
     const limit = Number(rig.dailyLimit || 0);
     const cells = [
-      rigCell('可分配 / 水位（Plus）',
-        `${stock} <small>/ ${rig.stockTarget == null ? '未配策略' : target}${Number(rig.stockTopUp || 0) > 0
-          ? ` · 含 ${Number(rig.stockTopUp)} 张付前补钱` : ''}</small>`,
+      // D-414 按钱看：卡上现成能付几单 / 钱包还够几单（不能补钱的卡台没有后一个数，写「—」）。
+      rigCell('现成能付 / 钱包够（Plus）',
+        `${Number(rig.readyOrders || 0)} 单 <small>/ ${rig.walletOrders == null ? '—' : `${Number(rig.walletOrders)} 单`}</small>`,
         { tone: lowStock ? 'is-warn' : '' }),
       isHighvcc
         ? rigCell('钱包余额 / 底线',
@@ -2084,7 +2087,16 @@ function renderSettingsThresholds(data) {
     <label>每单记账金额 <small>账本每单按它记；新卡放多少看上表开卡金额</small></label>
     <span><output class="set-ro-val">${ledgerAmount == null ? '读不到' : `$${formatMoney(ledgerAmount)}`}</output>
       <button type="button" class="wb-btn sm out set-slot" tabindex="-1" aria-hidden="true" disabled>保存</button></span></div>`;
-  elements.settingsThresholds.innerHTML = wallets + mins + capacity + ledger;
+  // D-414 选卡顺序（像 ZOVO 一样可改）：两个选项都不会重复扣钱，只决定先用哪张卡；下一单起生效。
+  const selectOrder = data.cardSelectOrder === 'used_first' ? 'used_first' : 'balance_first';
+  const order = `<div class="set-kv" data-card-select-order>
+    <label>选卡顺序 <small>卡上有钱的先用，还是先把旧卡补钱用满</small></label>
+    <span><select class="wb-field set-f" data-field="card_select_order" data-original="${selectOrder}">
+      <option value="balance_first"${selectOrder === 'balance_first' ? ' selected' : ''}>有钱先用</option>
+      <option value="used_first"${selectOrder === 'used_first' ? ' selected' : ''}>旧卡先用</option>
+    </select>
+      <button type="button" class="wb-btn sm out set-save" data-save-card-select-order disabled>保存</button></span></div>`;
+  elements.settingsThresholds.innerHTML = wallets + mins + capacity + order + ledger;
 }
 
 function renderSettingsGlobal(data) {
@@ -3856,6 +3868,11 @@ document.addEventListener('click', async (event) => {
         await api('/api/v1/admin/card-stock/minimum-balance', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ amount: Number(input.value), planType: scope.dataset.plan })
+        });
+      } else if (field === 'card_select_order') {
+        await api('/api/v1/admin/settings/card-select-order', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ value: input.value })
         });
       } else if (field === 'max_successful_payments') {
         await api('/api/v1/admin/card-stock/max-successful-payments', {

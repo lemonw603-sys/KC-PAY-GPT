@@ -316,7 +316,25 @@ export function providerCardStockSql({ productCode = 'plus' } = {}) {
       SUM(CASE WHEN (${usableCardSql('c', minimumSql, { productCode: normalizedProduct })})
         THEN GREATEST(0, (${maxPaymentsSql(normalizedProduct)}) - (SELECT COUNT(*) FROM card_consumption_ledger ro
           WHERE ro.card_id = c.id AND ro.status IN ('RESERVED','CONSUMED','RECONCILIATION')))
-        ELSE 0 END) AS remaining_orders
+        ELSE 0 END) AS remaining_orders,
+      -- D-414 按钱看（Lemon：要盯的是钱不是卡）：卡上现成的钱不补钱就能付几单＝每张现成卡
+      -- min(剩余次数, 可用额 ÷ 这个产品的门槛) 之和。$16 的卡算 1 单，hnskj $50 的卡算 3 单。
+      SUM(CASE WHEN (${stockCountingCardSql('c', minimumSql, { productCode: normalizedProduct })})
+        THEN LEAST(
+          GREATEST(0, (${maxPaymentsSql(normalizedProduct)}) - (SELECT COUNT(*) FROM card_consumption_ledger rr
+            WHERE rr.card_id = c.id AND rr.status IN ('RESERVED','CONSUMED','RECONCILIATION'))),
+          FLOOR(LEAST(c.current_balance, c.funded_amount - ${ledgerSpendSql('c')}) / NULLIF(${minimumSql}, 0)))
+        ELSE 0 END) AS ready_orders,
+      -- 钱包还够几单（只对能补钱的卡台算）：(最近一次钱包快照 − 待发补钱 − 押金底线) ÷ 每单金额，向下取整。
+      -- 下一单不管是补旧卡还是开新卡，花的都是这 $16 左右（开新卡另有约 $0.5 开卡费，这里不扣，略偏多）。
+      CASE WHEN pa.supports_auto_funding = 1 AND pa.open_adapter IN (${TOP_UP_ADAPTERS.map((a) => `'${a}'`).join(',')})
+        THEN GREATEST(0, FLOOR((
+          COALESCE((SELECT ws.available_balance FROM provider_balance_snapshots ws WHERE ws.provider_account_id = pa.id
+            ORDER BY ws.observed_at DESC, ws.id DESC LIMIT 1), 0)
+          - COALESCE((SELECT SUM(wp.amount) FROM card_top_ups wp WHERE wp.provider_account_id = pa.id
+            AND wp.status IN ('PREPARED','SENDING')), 0)
+          - COALESCE(pa.wallet_floor, 0)) / NULLIF(${TOP_UP_AMOUNT_SQL}, 0)))
+        ELSE NULL END AS wallet_orders
     FROM cards c INNER JOIN provider_accounts pa ON pa.id=c.provider_account_id
     LEFT JOIN card_supply_policies sp ON sp.provider_account_id = pa.id AND sp.product_code = '${normalizedProduct}'
     -- 只统计**卡台**。provider_accounts 里还有 purpose='RECHARGE' 的行（zzshu 旧直充系统，
@@ -328,6 +346,7 @@ export function providerCardStockSql({ productCode = 'plus' } = {}) {
     GROUP BY pa.id, pa.account_code, pa.provider_code, pa.supply_fault_state,
       pa.supply_fault_reason, pa.supply_fault_at, pa.wallet_floor, pa.wallet_alert_threshold,
       pa.operational_enabled, pa.circuit_state, pa.last_full_snapshot_at,
+      pa.supports_auto_funding, pa.open_adapter,
       sp.target_available, sp.daily_open_limit
     ORDER BY pa.provider_code`;
 }

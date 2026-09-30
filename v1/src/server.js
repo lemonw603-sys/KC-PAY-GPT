@@ -273,6 +273,7 @@ const app = createApp({
   ,getAdminSupplySettings: () => cardSupplyPolicyAdminService.list()
   ,setAdminSupplyPolicyField: (input) => cardSupplyPolicyAdminService.setPolicyField(input)
   ,setAdminProviderWalletField: (input) => cardSupplyPolicyAdminService.setWalletField(input)
+  ,setAdminCardSelectOrder: (input) => cardSupplyPolicyAdminService.setCardSelectOrder(input)
   ,refreshHighvccSnapshot: async () => {
     const out = {};
     const failures = [];

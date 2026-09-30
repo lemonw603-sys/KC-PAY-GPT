@@ -55,6 +55,8 @@ function requireActor(actorId) {
   return actor;
 }
 
+import { CARD_SELECT_ORDER_SETTING, CARD_SELECT_ORDERS, normalizeCardSelectOrder } from '../domain/card-select-order.js';
+
 export function createCardSupplyPolicyAdminService({ pool }) {
   if (!pool?.getConnection) throw new TypeError('pool is required');
 
@@ -69,7 +71,7 @@ export function createCardSupplyPolicyAdminService({ pool }) {
       pool.query(`SELECT id, account_code, provider_code, wallet_floor, wallet_alert_threshold
           FROM provider_accounts WHERE purpose = 'CARD' ORDER BY provider_code`),
       pool.query(`SELECT setting_key, setting_value FROM app_settings
-          WHERE setting_key IN ('card_max_successful_payments','card_max_successful_payments:pro_5x','card_max_successful_payments:pro_20x','default_minimum_required_card_balance',
+          WHERE setting_key IN ('card_select_order','card_max_successful_payments','card_max_successful_payments:pro_5x','card_max_successful_payments:pro_20x','default_minimum_required_card_balance',
             'minimum_required_card_balance:pro_5x','minimum_required_card_balance:pro_20x',
             'session_replacement_window_hours','default_open_card_amount')`)
     ]);
@@ -114,7 +116,9 @@ export function createCardSupplyPolicyAdminService({ pool }) {
       sessionReplacementWindowHours: setting('session_replacement_window_hours'),
       // D-413：每单账本记多少来自这个全局键（下单时写进 orders.open_card_amount），不是上表按台×产品的开卡金额；
       // 页面没有写入口，只读显示，免得两处不一致时看不出来。
-      perOrderLedgerAmount: setting('default_open_card_amount')
+      perOrderLedgerAmount: setting('default_open_card_amount'),
+      // D-414：选卡顺序（没设过＝默认「卡上有钱的先用」）
+      cardSelectOrder: normalizeCardSelectOrder(setting(CARD_SELECT_ORDER_SETTING))
     };
   }
 
@@ -203,5 +207,37 @@ export function createCardSupplyPolicyAdminService({ pool }) {
     }
   }
 
-  return { list, setPolicyField, setWalletField, POLICY_FIELDS, WALLET_FIELDS };
+  /** D-414：改选卡顺序。只收两个值之一，旧值 → 新值进审计；下一单起生效。 */
+  async function setCardSelectOrder({ value, actorId = 'admin', reason = null } = {}) {
+    const next = String(value ?? '').trim().toLowerCase();
+    if (!CARD_SELECT_ORDERS.includes(next)) {
+      throw new PublicApiError('选卡顺序只能是「卡上有钱的先用」或「旧卡先用满」', { code: 'INVALID_SETTING_VALUE', status: 400 });
+    }
+    const actor = requireActor(actorId);
+    const connection = await pool.getConnection();
+    try {
+      await connection.beginTransaction();
+      const [[row]] = await connection.query(
+        `SELECT setting_value FROM app_settings WHERE setting_key = ? FOR UPDATE`, [CARD_SELECT_ORDER_SETTING]);
+      const oldValue = normalizeCardSelectOrder(row?.setting_value);
+      await connection.query(
+        `INSERT INTO app_settings (setting_key, setting_value) VALUES (?, ?)
+         ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)`, [CARD_SELECT_ORDER_SETTING, next]);
+      if (oldValue !== next) {
+        await connection.query(
+          `INSERT INTO admin_setting_events (setting_key, old_value, new_value, actor_id, reason)
+           VALUES (?, ?, ?, ?, ?)`,
+          [CARD_SELECT_ORDER_SETTING, oldValue, next, actor, reason ? String(reason).slice(0, 500) : null]);
+      }
+      await connection.commit();
+      return { oldValue, newValue: next };
+    } catch (error) {
+      await connection.rollback().catch(() => {});
+      throw error;
+    } finally {
+      connection.release();
+    }
+  }
+
+  return { list, setPolicyField, setWalletField, setCardSelectOrder, POLICY_FIELDS, WALLET_FIELDS };
 }

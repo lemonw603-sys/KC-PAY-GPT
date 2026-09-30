@@ -610,6 +610,9 @@ export function createCardStockService({ pool, sessionEncryptionKey, panHmacKey 
         stockAvailable: Number(row.stock_available || 0),
         // D-411：stockAvailable 里要先补钱才能付的旧卡张数（与调度器同口径，页面注明）
         stockTopUp: Number(row.stock_top_up || 0),
+        // D-414 按钱看：卡上现成的钱能付几单；钱包还够几单（只有能补钱的卡台有，其余 null）
+        readyOrders: Number(row.ready_orders || 0),
+        walletOrders: row.wallet_orders == null ? null : Number(row.wallet_orders),
         bindableNow: Number(row.bindable_now || 0),
         inUse: Number(row.in_use || 0),
         anyUsed: Number(row.any_used || 0),
