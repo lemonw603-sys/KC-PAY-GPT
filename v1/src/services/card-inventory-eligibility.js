@@ -368,8 +368,8 @@ export function reusableTopUpCardSql(alias = 'c', { productCode = 'plus' } = {})
         AND reuse_account.supports_auto_funding = 1
         AND reuse_account.open_adapter IN (${adapters}))`,
     // 补钱归「自动开卡」总闸（D-412 补记三，不新增开关）：总闸关了，旧卡就不算能用，调度器照常按缺口看。
-    `(SELECT reuse_switch.setting_value FROM app_settings reuse_switch
-      WHERE reuse_switch.setting_key = 'card_auto_replenishment_enabled' LIMIT 1) = 'true'`,
+    `'true' = (SELECT reuse_switch.setting_value FROM app_settings reuse_switch
+      WHERE reuse_switch.setting_key = 'card_auto_replenishment_enabled' LIMIT 1)`,
     // 被拒过的卡暂停补钱：卡台明确拒了这张卡（或核对后钱没到这张卡）停 24 小时；钱包不够 / 总闸关 / 登录失效 /
     // 读卡台出错这类跟卡无关的，只停 10 分钟防止反复撞（对抗审查 2026-09-30：原先一律 24 小时，token 一失效
     // 就把所有旧卡闲置一整天）。

@@ -108,7 +108,7 @@ test('stock count = production eligibility rule minus only the 15-minute freshne
   assert.match(reusableTopUpCardSql('c', { productCode: 'plus' }), /card_operational_overrides/, '复用照样受停用 / 产品限定约束');
   assert.doesNotMatch(reusableTopUpCardSql('c', { productCode: 'plus' }), /c\.current_balance,\s*c\.funded_amount -/, '复用不带余额够那一条');
   assert.match(reusableTopUpCardSql('c', { productCode: 'plus' }),
-    /setting_key = 'card_auto_replenishment_enabled' LIMIT 1\) = 'true'/, '补钱归「自动开卡」总闸：关了旧卡就不算能用（D-412 补记三）');
+    /'true' = \(SELECT reuse_switch\.setting_value FROM app_settings reuse_switch\s+WHERE reuse_switch\.setting_key = 'card_auto_replenishment_enabled' LIMIT 1\)/, '补钱归「自动开卡」总闸：关了旧卡就不算能用（D-412 补记三）');
   assert.match(reusableTopUpCardSql('c', { productCode: 'plus' }), /\) > 1/, '一卡一单的产品（5X / 20X）永远不走补钱');
 });
 

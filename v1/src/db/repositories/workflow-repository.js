@@ -64,8 +64,9 @@ async function insertEvent(connection, {
   );
 }
 
-const USED_COUNT_SQL = `(SELECT COUNT(*) FROM card_consumption_ledger pick_usage
-  WHERE pick_usage.card_id = cards.id AND pick_usage.status IN ('RESERVED','CONSUMED','RECONCILIATION'))`;
+// 片段按表别名生成（与资格规则里其他片段同一写法），全量 SQL 探针才认得出它不是独立语句。
+const usedCountSql = (alias) => `(SELECT COUNT(*) FROM card_consumption_ledger pick_usage
+  WHERE pick_usage.card_id = ${alias}.id AND pick_usage.status IN ('RESERVED','CONSUMED','RECONCILIATION'))`;
 
 /**
  * D-411：订单从「补钱中」退回「等卡」——补钱被拒、结果不明、受理后迟迟不到账时，客户这一单换卡走，
@@ -585,7 +586,7 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
         const productCode = order.plan_type || 'plus';
         // D-411 旧卡优先：现成能付的卡里先挑用过的（早用满早删、少挂在客户账号里）。
         const [cards] = await connection.query(
-          `SELECT id, provider_card_id, current_balance, ${USED_COUNT_SQL} AS used_count
+          `SELECT id, provider_card_id, current_balance, ${usedCountSql('cards')} AS used_count
            FROM cards
            WHERE ${eligibleInventoryCardSql('cards', '?', { productCode })}
              AND cards.provider_account_id = ?
@@ -599,7 +600,7 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
         // 切换校验、巡检数的是同一口径。真发之前补钱任务还会实时再查一次钱包和总闸。
         if (!(cards[0] && Number(cards[0].used_count) >= 1)) {
           const [reusable] = await connection.query(
-            `SELECT id, provider_card_id, current_balance, ${USED_COUNT_SQL} AS used_count
+            `SELECT id, provider_card_id, current_balance, ${usedCountSql('cards')} AS used_count
              FROM cards
              WHERE ${reusableTopUpCardSql('cards', { productCode })}
                AND ${walletCoversTopUpSql('cards')}
