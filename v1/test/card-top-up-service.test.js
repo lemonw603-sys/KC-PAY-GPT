@@ -19,21 +19,13 @@ test('topUpFlowRows keeps only this card\'s top-up rows at or after the send tim
   assert.deepEqual(topUpFlowRows(null, { cardId: 17, sinceMs }), []);
 });
 
-test('TOP_UP_CARD: a plain error (DB deadlock) is retried, not killed on the first failure; CHECK_TOP_UP passes the top-up id from its payload', async () => {
+test('TOP_UP_CARD: a plain error (DB deadlock) is retried, not killed on the first failure', async () => {
   const { createWorkflowHandlers } = await import('../src/workers/workflow-handlers.js');
   const { TaskExecutionError } = await import('../src/workers/task-runner.js');
-  const seen = [];
   const handlers = createWorkflowHandlers({
     workflow: {}, rechargeAttemptRepository: {},
-    cardTopUp: {
-      send: async () => { throw Object.assign(new Error('Deadlock found'), { code: 'ER_LOCK_DEADLOCK' }); },
-      check: async (orderId, options) => { seen.push([orderId, options]); return { action: 'NONE' }; }
-    }
+    cardTopUp: { send: async () => { throw Object.assign(new Error('Deadlock found'), { code: 'ER_LOCK_DEADLOCK' }); } }
   });
   await assert.rejects(handlers.TOP_UP_CARD({ order_id: 'o1' }),
     (e) => e instanceof TaskExecutionError && e.retryable === true && e.code === 'TOP_UP_SEND_FAILED');
-  await handlers.CHECK_TOP_UP({ order_id: 'o1', payload_json: JSON.stringify({ topUpId: 't-9' }) });
-  await handlers.CHECK_TOP_UP({ order_id: 'o1', payload_json: { topUpId: 't-10' } });
-  await handlers.CHECK_TOP_UP({ order_id: 'o1', payload_json: null });
-  assert.deepEqual(seen, [['o1', { topUpId: 't-9' }], ['o1', { topUpId: 't-10' }], ['o1', { topUpId: null }]]);
 });

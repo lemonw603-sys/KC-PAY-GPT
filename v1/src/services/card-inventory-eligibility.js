@@ -366,7 +366,6 @@ export function reusableTopUpCardSql(alias = 'c', { productCode = 'plus' } = {})
     `EXISTS (SELECT 1 FROM provider_accounts reuse_account
       WHERE reuse_account.id = ${alias}.provider_account_id
         AND reuse_account.supports_auto_funding = 1
-        AND reuse_account.operational_enabled = 1
         AND reuse_account.open_adapter IN (${adapters}))`,
     // 补钱归「自动开卡」总闸（D-412 补记三，不新增开关）：总闸关了，旧卡就不算能用，调度器照常按缺口看。
     `(SELECT reuse_switch.setting_value FROM app_settings reuse_switch
@@ -385,7 +384,7 @@ export function reusableTopUpCardSql(alias = 'c', { productCode = 'plus' } = {})
           OR (LOWER(reuse_tx.transaction_type) = 'purchase' AND LOWER(reuse_tx.status) = 'pending')))
       <= (SELECT COUNT(*) FROM card_consumption_ledger reuse_ledger WHERE reuse_ledger.card_id = ${alias}.id
         AND reuse_ledger.status IN ('RESERVED','CONSUMED','RECONCILIATION'))`,
-    // 卡台登录失效期间不挑旧卡（补钱必然被拒）；卡台被运营停用时也不补。
+    // 卡台登录失效期间不挑旧卡（补钱必然被拒，否则一单会把旧卡挨个撞一遍）。
     `NOT EXISTS (SELECT 1 FROM operator_alerts reuse_token
       WHERE reuse_token.dedupe_key = CONCAT('provider-token-expired:', ${alias}.provider_account_id)
         AND reuse_token.status <> 'RESOLVED')`
@@ -407,11 +406,6 @@ export function walletCoversTopUpSql(alias = 'c') {
       - COALESCE((SELECT SUM(wallet_pending.amount) FROM card_top_ups wallet_pending
         WHERE wallet_pending.provider_account_id = ${alias}.provider_account_id
           AND wallet_pending.status IN ('PREPARED','SENDING')), 0)
-      - COALESCE((SELECT SUM(COALESCE(wallet_open.estimated_total,
-            wallet_open.amount * GREATEST(wallet_open.requested_count - wallet_open.opened_count, 0)))
-        FROM card_stock_jobs wallet_open
-        WHERE wallet_open.provider_account_id = ${alias}.provider_account_id
-          AND wallet_open.status IN ('PENDING','RUNNING')), 0)
       - COALESCE(${TOP_UP_AMOUNT_SQL}, 999999999)
       >= COALESCE((SELECT wallet_account.wallet_floor FROM provider_accounts wallet_account
         WHERE wallet_account.id = ${alias}.provider_account_id), 999999999)`;

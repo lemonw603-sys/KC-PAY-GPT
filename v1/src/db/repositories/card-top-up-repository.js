@@ -64,30 +64,14 @@ export async function insertPreparedTopUpInTransaction(connection, {
   return id;
 }
 
-/**
- * PREPARED → SENDING。返回 true 才表示「这次由我来发」；false = 已经有人发过或状态变了，不许发。
- * 同一事务里先排好「查到账」任务：一旦落了 SENDING，这笔补钱就一定有人跟到底——哪怕发完之后、
- * 记 SUBMITTED 之前进程死了，或补钱任务本身死了（对抗审查 2026-09-30 发现的「补钱丢了唯一的看守」）。
- */
-export async function markSending(pool, topUpId, { balanceBefore = null, orderId = null } = {}) {
-  const connection = await pool.getConnection();
-  try {
-    await connection.beginTransaction();
-    const [result] = await connection.query(
-      `UPDATE card_top_ups SET status = 'SENDING', sending_at = CURRENT_TIMESTAMP(3),
-         balance_before = COALESCE(?, balance_before)
-       WHERE id = ? AND status = 'PREPARED'`,
-      [balanceBefore == null ? null : String(balanceBefore), topUpId]);
-    const mine = Number(result.affectedRows) === 1;
-    if (mine && orderId) await enqueueTopUpCheck(connection, { orderId, topUpId, delayMs: 5_000 });
-    await connection.commit();
-    return mine;
-  } catch (error) {
-    await connection.rollback();
-    throw error;
-  } finally {
-    connection.release();
-  }
+/** PREPARED → SENDING。返回 true 才表示「这次由我来发」；false = 已经有人发过或状态变了，不许发。 */
+export async function markSending(queryable, topUpId, { balanceBefore = null } = {}) {
+  const [result] = await queryable.query(
+    `UPDATE card_top_ups SET status = 'SENDING', sending_at = CURRENT_TIMESTAMP(3),
+       balance_before = COALESCE(?, balance_before)
+     WHERE id = ? AND status = 'PREPARED'`,
+    [balanceBefore == null ? null : String(balanceBefore), topUpId]);
+  return Number(result.affectedRows) === 1;
 }
 
 export async function markSubmitted(queryable, topUpId, response) {
@@ -188,14 +172,12 @@ export async function inflightCardOpenCents(queryable, { providerAccountId }) {
  * 查询本身靠「可重试、不计次数」往后挪（task-runner 的 refundAttempt），这里只负责第一次排上。
  */
 export async function enqueueTopUpCheck(queryable, { orderId, topUpId, delayMs = 3_000 }) {
-  // payload 带上补钱 id：查到账按补钱这一行找，不按订单找——订单换卡后可能又有了别的补钱。
   await queryable.query(
-    `INSERT INTO tasks (order_id, task_type, status, dedupe_key, max_attempts, available_at, payload_json)
-     VALUES (?, 'CHECK_TOP_UP', 'PENDING', ?, 100, DATE_ADD(CURRENT_TIMESTAMP(3), INTERVAL ? MICROSECOND), JSON_OBJECT('topUpId', ?))
+    `INSERT INTO tasks (order_id, task_type, status, dedupe_key, max_attempts, available_at)
+     VALUES (?, 'CHECK_TOP_UP', 'PENDING', ?, 100, DATE_ADD(CURRENT_TIMESTAMP(3), INTERVAL ? MICROSECOND))
      ON DUPLICATE KEY UPDATE status = 'PENDING', attempts = 0, available_at = VALUES(available_at),
-       payload_json = VALUES(payload_json),
        leased_by = NULL, leased_until = NULL, completed_at = NULL, updated_at = CURRENT_TIMESTAMP(3)`,
-    [orderId, `check-top-up:${topUpId}`, Math.max(0, Math.trunc(delayMs)) * 1000, topUpId]);
+    [orderId, `check-top-up:${topUpId}`, Math.max(0, Math.trunc(delayMs)) * 1000]);
 }
 
 /** 巡检兜底用：还没了结、已经超过 minutes 分钟、却还没有「补钱结果不明」告警行的补钱。 */

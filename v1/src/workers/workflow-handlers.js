@@ -614,12 +614,6 @@ export function createWorkflowHandlers({
     }
   }
 
-  function topUpIdOf(task) {
-    try {
-      const payload = typeof task.payload_json === 'string' ? JSON.parse(task.payload_json) : task.payload_json;
-      return payload?.topUpId ? String(payload.topUpId) : null;
-    } catch { return null; }
-  }
 
   async function checkTopUp(task) {
     if (!cardTopUp) {
@@ -628,7 +622,7 @@ export function createWorkflowHandlers({
       });
     }
     try {
-      return await cardTopUp.check(task.order_id, { topUpId: topUpIdOf(task) });
+      return await cardTopUp.check(task.order_id);
     } catch (error) {
       if (error?.name === 'TopUpRetry') {
         throw new TaskExecutionError('Top-up is still in progress', {

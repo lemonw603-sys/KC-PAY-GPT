@@ -496,15 +496,6 @@ export function createWorkflowRepository(pool, { sessionEncryptionKey, panHmacKe
         await markConfirmedInTransaction(connection, topUpId, { balanceAfter: observed, resolvedBy });
         await resolveTopUpAlert(connection, topUpId);
         if (!attached) return { confirmed: true, orderReady: false };
-        // 钱到了，但卡上仍不够这一单的门槛（例如补之前余额是负的）：别让订单进付款前检查再被反复拒，
-        // 这一单换卡走；卡按余额回池子（对抗审查 2026-09-30）。
-        const minimumCents = toCents(String(order.minimum_required_card_balance ?? '0'));
-        if (Number.isInteger(minimumCents) && observedCents < minimumCents) {
-          const detach = await detachTopUpOrderInTransaction(connection, topUp, {
-            reason: `top-up arrived but card balance ${observed} is below the order minimum; order moves to another card`,
-            code: 'BALANCE_BELOW_MINIMUM' });
-          return { confirmed: true, orderReady: false, ...detach };
-        }
         const [ready] = await connection.query(
           `UPDATE orders SET status = ?, version = version + 1, updated_at = CURRENT_TIMESTAMP(3)
            WHERE id = ? AND version = ?`, [OrderStatus.CARD_READY, order.id, order.version]);

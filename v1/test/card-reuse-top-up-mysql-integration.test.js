@@ -15,7 +15,7 @@ import { runWorkerIteration } from '../src/workers/worker-runtime.js';
 import { createCardTopUpService, TopUpRetry, TOP_UP_ARRIVAL_WINDOW_MS, TOP_UP_GIVE_UP_MS } from '../src/services/card-top-up-service.js';
 import { recordProviderBalanceSnapshot } from '../src/services/provider-balance-snapshot-service.js';
 import { countEligibleCards } from '../src/services/card-source-selection-service.js';
-import { reusableTopUpCardSql, ledgerSpendSql, walletCoversTopUpSql } from '../src/services/card-inventory-eligibility.js';
+import { reusableTopUpCardSql, ledgerSpendSql } from '../src/services/card-inventory-eligibility.js';
 import { sessionFixture } from '../test-support/session-fixture.js';
 import { zipSync, strToU8 } from 'fflate';
 import { createManualCardImportService } from '../src/services/manual-card-import-service.js';
@@ -643,57 +643,7 @@ test('review: an order is never topped up twice on the same card (no duplicate-k
   } finally { await pool.end(); }
 });
 
-test('review: the check task is queued together with SENDING and owns the top-up if the sender dies; it finds the top-up by id', { skip }, async () => {
-  const pool = mysql.createPool({ uri: databaseUrl, connectionLimit: 4, timezone: 'Z' });
-  try {
-    await setSettings(pool, { card_auto_replenishment_enabled: 'true', default_open_card_amount: '16' });
-    const account = await topUpAccount(pool);
-    const workflow = createWorkflowRepository(pool, { sessionEncryptionKey: KEY });
-    const cardId = await usedCard(pool, account, { last4: 'R003' });
-    const [[{ provider_card_id: pc }]] = await pool.query('SELECT provider_card_id FROM cards WHERE id = ?', [cardId]);
-    const orderId = await insertOrder(pool, { frozen: account });
-    await workflow.assignAvailableCard(orderId);
-    const topUp = await topUpRow(pool, orderId);
-    assert.equal(await markSending(pool, topUp.id, { balanceBefore: '0', orderId }), true);
-    const [[task]] = await pool.query(`SELECT status, JSON_UNQUOTE(JSON_EXTRACT(payload_json, '$.topUpId')) AS top_up_id FROM tasks WHERE dedupe_key = ?`, [`check-top-up:${topUp.id}`]);
-    assert.deepEqual([task.status, task.top_up_id], ['PENDING', topUp.id], '落 SENDING 的同一个事务里就排好了查到账');
-    // 发送的进程死了、补钱任务也死了：只剩查到账任务。它不重发，按结果不明处理，订单换卡。
-    let clock = Date.now();
-    const highvcc = fakeHighvcc({ cards: { [pc]: { balance: 0, lastFour: 'R003' } } });
-    const service = createCardTopUpService({ pool, workflow, provider: highvcc, now: () => clock });
-    await assert.rejects(service.check(orderId, { topUpId: topUp.id }), TopUpRetry, '发送中不到 90 秒：先等');
-    clock += 100_000;
-    await assert.rejects(service.check(orderId, { topUpId: topUp.id }), TopUpRetry);
-    assert.equal((await topUpRow(pool, orderId)).status, 'UNKNOWN');
-    assert.deepEqual(await orderRow(pool, orderId), { status: 'WAITING_FOR_CARD', assigned_card_id: null });
-    assert.equal(highvcc.calls.recharge.length, 0);
-  } finally { await pool.end(); }
-});
-
-test('review: money arrived but the card is still below the order minimum → top-up confirmed, order moves to another card (no endless payment-gate retries)', { skip }, async () => {
-  const pool = mysql.createPool({ uri: databaseUrl, connectionLimit: 4, timezone: 'Z' });
-  try {
-    await setSettings(pool, { card_auto_replenishment_enabled: 'true', default_open_card_amount: '16' });
-    const account = await topUpAccount(pool);
-    const workflow = createWorkflowRepository(pool, { sessionEncryptionKey: KEY });
-    const cardId = await usedCard(pool, account, { last4: 'R004' });
-    const [[{ provider_card_id: pc }]] = await pool.query('SELECT provider_card_id FROM cards WHERE id = ?', [cardId]);
-    const orderId = await insertOrder(pool, { frozen: account });
-    await workflow.assignAvailableCard(orderId);
-    const highvcc = fakeHighvcc({ cards: { [pc]: { balance: -100, lastFour: 'R004' } }, arriveAfterReads: 0 });
-    const service = createCardTopUpService({ pool, workflow, provider: highvcc });
-    assert.deepEqual(await service.send(orderId), { action: 'SUBMITTED' });
-    const result = await service.check(orderId);
-    assert.equal(result.action, 'CONFIRMED');
-    assert.equal(result.orderReady, false);
-    assert.equal((await topUpRow(pool, orderId)).status, 'CONFIRMED');
-    assert.deepEqual(await orderRow(pool, orderId), { status: 'WAITING_FOR_CARD', assigned_card_id: null });
-    const card = await cardRow(pool, cardId);
-    assert.deepEqual([String(card.funded_amount), String(card.current_balance)], ['32.000000', '15.000000']);
-  } finally { await pool.end(); }
-});
-
-test('review: a top-up still SUBMITTED after 24h is detached and alerted, not silently given up; an unalerted unknown gets an alert before giving up', { skip }, async () => {
+test('review: a top-up still SUBMITTED after 24h is detached and alerted, not silently given up', { skip }, async () => {
   const pool = mysql.createPool({ uri: databaseUrl, connectionLimit: 4, timezone: 'Z' });
   try {
     await setSettings(pool, { card_auto_replenishment_enabled: 'true', default_open_card_amount: '16' });
@@ -709,27 +659,12 @@ test('review: a top-up still SUBMITTED after 24h is detached and alerted, not si
     await service.send(orderId);
     const topUp = await topUpRow(pool, orderId);
     clock += TOP_UP_GIVE_UP_MS + 60_000;   // worker 停了一天
-    await assert.rejects(service.check(orderId, { topUpId: topUp.id }), (e) => e instanceof TopUpRetry && e.code === 'TOP_UP_NOT_ARRIVED');
+    await assert.rejects(service.check(orderId), (e) => e instanceof TopUpRetry && e.code === 'TOP_UP_NOT_ARRIVED');
     assert.equal((await orderRow(pool, orderId)).status, 'WAITING_FOR_CARD', '订单先放走');
     const [[alert]] = await pool.query(`SELECT status FROM operator_alerts WHERE dedupe_key = ?`, [`card-top-up:${topUp.id}`]);
     assert.equal(alert.status, 'OPEN');
-    assert.deepEqual(await service.check(orderId, { topUpId: topUp.id }), { action: 'GAVE_UP' });
+    assert.deepEqual(await service.check(orderId), { action: 'GAVE_UP' });
 
-    // 另一笔：结果不明、从没叫过人、24 小时后第一次被核对 → 放弃前先叫人。
-    const card2 = await usedCard(pool, account, { last4: 'R006' });
-    const [[{ provider_card_id: pc2 }]] = await pool.query('SELECT provider_card_id FROM cards WHERE id = ?', [card2]);
-    const order2 = await insertOrder(pool, { frozen: account });
-    await workflow.assignAvailableCard(order2);
-    let clock2 = Date.now();
-    const timeout = fakeHighvcc({ cards: { [pc2]: { balance: 0, lastFour: 'R006' } }, flow: () => { throw new Error('flow down'); },
-      recharge: async () => { throw Object.assign(new Error('timeout'), { code: 'HIGHVCC_TIMEOUT' }); } });
-    const service2 = createCardTopUpService({ pool, workflow, provider: timeout, now: () => clock2 });
-    await service2.send(order2);
-    const top2 = await topUpRow(pool, order2);
-    clock2 += TOP_UP_GIVE_UP_MS + 60_000;
-    assert.deepEqual(await service2.check(order2, { topUpId: top2.id }), { action: 'GAVE_UP' });
-    const [[alert2]] = await pool.query(`SELECT status FROM operator_alerts WHERE dedupe_key = ?`, [`card-top-up:${top2.id}`]);
-    assert.equal(alert2.status, 'OPEN', '停止自动核对之前保证有人知道');
   } finally { await pool.end(); }
 });
 
@@ -813,33 +748,26 @@ test('review: right after a top-up is confirmed, a snapshot read before the mone
 });
 
 
-test('review: the reuse rule counts a queued card open against the wallet, and after a top-up is sent the wallet is re-read so the next decision sees the deduction', { skip }, async () => {
+
+
+test('review: if the sender died right after recording SUBMITTED (before queueing the check), the retried send re-queues the check and never resends', { skip }, async () => {
   const pool = mysql.createPool({ uri: databaseUrl, connectionLimit: 4, timezone: 'Z' });
   try {
     await setSettings(pool, { card_auto_replenishment_enabled: 'true', default_open_card_amount: '16' });
-    const account = await topUpAccount(pool, { wallet: '50' });   // 50 − 16 = 34 ≥ 20：够补一次
-    const cardA = await usedCard(pool, account, { last4: 'R0W1' });
-    assert.equal(await reusableCount(pool, cardA), 1);
-    const [[covers]] = await pool.query(`SELECT (${walletCoversTopUpSql('c')}) AS ok FROM cards c WHERE c.id = ?`, [cardA]);
-    assert.equal(Number(covers.ok), 1);
-    const jobId = id();
-    await pool.query(`INSERT INTO card_stock_jobs (id, status, job_source, provider_account_id, product_code, card_type_id, amount, estimated_total, requested_count)
-      VALUES (?, 'PENDING', 'AUTOMATIC', ?, 'plus', '708', '16', '16.5', 1)`, [jobId, account]);
-    const [[covers2]] = await pool.query(`SELECT (${walletCoversTopUpSql('c')}) AS ok FROM cards c WHERE c.id = ?`, [cardA]);
-    assert.equal(Number(covers2.ok), 0, '50 − 16.5（在开的卡）− 16 = 17.5 < 20');
-    await pool.query(`UPDATE card_stock_jobs SET status = 'SUCCEEDED' WHERE id = ?`, [jobId]);
-
+    const account = await topUpAccount(pool);
     const workflow = createWorkflowRepository(pool, { sessionEncryptionKey: KEY });
-    const [[{ provider_card_id: pcA }]] = await pool.query('SELECT provider_card_id FROM cards WHERE id = ?', [cardA]);
+    const cardId = await usedCard(pool, account, { last4: 'R010' });
+    const [[{ provider_card_id: pc }]] = await pool.query('SELECT provider_card_id FROM cards WHERE id = ?', [cardId]);
     const orderId = await insertOrder(pool, { frozen: account });
     await workflow.assignAvailableCard(orderId);
-    const highvcc = fakeHighvcc({ walletCents: 5000, cards: { [pcA]: { balance: 0, lastFour: 'R0W1' } } });
-    assert.deepEqual(await createCardTopUpService({ pool, workflow, provider: highvcc }).send(orderId), { action: 'SUBMITTED' });
-    const [[snap]] = await pool.query(`SELECT available_balance FROM provider_balance_snapshots WHERE provider_account_id = ? ORDER BY observed_at DESC, id DESC LIMIT 1`, [account]);
-    assert.equal(String(snap.available_balance), '34.000000', '发完之后重读的钱包（已扣 16）是最新快照');
-    const cardB = await usedCard(pool, account, { last4: 'R0W2' });
-    assert.equal(await reusableCount(pool, cardB), 1);
-    const [[coversB]] = await pool.query(`SELECT (${walletCoversTopUpSql('c')}) AS ok FROM cards c WHERE c.id = ?`, [cardB]);
-    assert.equal(Number(coversB.ok), 0, '34 − 16 = 18 < 20：下一单不会以为钱包还够');
+    const highvcc = fakeHighvcc({ cards: { [pc]: { balance: 0, lastFour: 'R010' } } });
+    const service = createCardTopUpService({ pool, workflow, provider: highvcc });
+    assert.deepEqual(await service.send(orderId), { action: 'SUBMITTED' });
+    const topUp = await topUpRow(pool, orderId);
+    await pool.query(`DELETE FROM tasks WHERE dedupe_key = ?`, [`check-top-up:${topUp.id}`]);   // 排查到账之前就断了
+    assert.deepEqual(await service.send(orderId), { action: 'NONE' });
+    assert.equal(highvcc.calls.recharge.length, 1, '不重发');
+    const [[task]] = await pool.query(`SELECT status FROM tasks WHERE dedupe_key = ?`, [`check-top-up:${topUp.id}`]);
+    assert.equal(task.status, 'PENDING', '查到账补排上了');
   } finally { await pool.end(); }
 });
