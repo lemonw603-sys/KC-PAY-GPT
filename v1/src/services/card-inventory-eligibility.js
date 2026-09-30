@@ -1,4 +1,3 @@
-import { successfulPurchaseSql } from '../domain/card-purchase-evidence.js';
 /**
  * 最低卡余额的**唯一**口径：先查按产品的键，缺了才回落全局 default。
  * 与真实建单 order-intake-repository.minimumRequiredCardBalanceForPlan() 同语义。
@@ -148,6 +147,21 @@ export function eligibilityChecks(alias = 'c', minimumSql = '?', { productCode =
 /** 补钱登记里「还没了结」的状态（D-411）。了结 = CONFIRMED（到账）或 REJECTED（钱没动）。 */
 export const TOP_UP_OPEN_STATUSES = Object.freeze(['PREPARED', 'SENDING', 'SUBMITTED', 'UNKNOWN']);
 const TOP_UP_OPEN_STATUSES_SQL = TOP_UP_OPEN_STATUSES.map((status) => `'${status}'`).join(',');
+/**
+ * 「这张卡被成功扣过款」的唯一口径（2026-09-27 整体排查后收拢；原在 domain/card-purchase-evidence.js，
+ * 那里现在只转引这里）。状态值按生产 card_transactions 实际出现过的：highvcc 原样存 COMPLETE（成功）/ DECLINED /
+ * PENDING，hnskj 存 success / SUCCESS / SETTLED（成功）/ failed。认不出的状态一律不算「成功」。
+ * 放在本文件是因为本文件必须**不引用任何别的文件**：现场比对脚本 state-check.sh 只把生产上的这一个文件
+ * 拷出来加载（2026-09-30 D-411 发布后因为多了一行引用而取值失败）。
+ */
+export const SUCCESSFUL_PURCHASE_STATUSES = Object.freeze(['complete', 'success', 'settled']);
+
+export function successfulPurchaseSql(alias) {
+  if (!/^[a-z_][a-z0-9_]*$/i.test(String(alias))) throw new TypeError('invalid SQL alias');
+  return `(LOWER(${alias}.transaction_type) = 'purchase' AND LOWER(${alias}.status) IN (${
+    SUCCESSFUL_PURCHASE_STATUSES.map((status) => `'${status}'`).join(', ')}))`;
+}
+
 /** 补钱被拒时「是这张卡的问题」的原因码：卡台拒了（流水证实钱没出去）/ 卡详情对不上 / 人工核对钱没到卡上。 */
 export const TOP_UP_CARD_REJECT_CODES = Object.freeze(['PLATFORM_REFUSED', 'CARD_MISMATCH', 'OPERATOR_NOT_ARRIVED']);
 

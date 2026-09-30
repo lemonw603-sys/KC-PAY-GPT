@@ -9,10 +9,6 @@
  * 用它的地方（改口径一起改）：失败单卡流水同步后的自动放卡（card-transaction-repository）、
  * 后台「放卡退卡密」（api-failure-release-service）、每周自检的账外扣款（weekly-readonly-probe）。
  */
-export const SUCCESSFUL_PURCHASE_STATUSES = Object.freeze(['complete', 'success', 'settled']);
-
-export function successfulPurchaseSql(alias) {
-  if (!/^[a-z_][a-z0-9_]*$/i.test(String(alias))) throw new TypeError('invalid SQL alias');
-  return `(LOWER(${alias}.transaction_type) = 'purchase' AND LOWER(${alias}.status) IN (${
-    SUCCESSFUL_PURCHASE_STATUSES.map((status) => `'${status}'`).join(', ')}))`;
-}
+// 定义已挪到 services/card-inventory-eligibility.js（那个文件必须自成一体，现场比对脚本只拷它一个文件加载）；
+// 这里转引，原有引用路径不变。
+export { SUCCESSFUL_PURCHASE_STATUSES, successfulPurchaseSql } from '../services/card-inventory-eligibility.js';

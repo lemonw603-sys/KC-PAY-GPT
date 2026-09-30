@@ -215,3 +215,12 @@ test('D-355 ⑦: provider stock SQL reports remaining orders per product (per-pr
   assert.match(sql, /ro\.status IN \('RESERVED','CONSUMED','RECONCILIATION'\)/);
 });
 
+
+test('card-inventory-eligibility.js stays self-contained (no imports): state-check.sh loads the production copy as a single file', async () => {
+  const fs = await import('node:fs');
+  const src = fs.readFileSync(new URL('../src/services/card-inventory-eligibility.js', import.meta.url), 'utf8');
+  assert.doesNotMatch(src, /^\s*import\s/m, '加一行 import，现场比对脚本就取不到可分配卡数（2026-09-30 D-411 发布后踩过）');
+  const evidence = await import('../src/domain/card-purchase-evidence.js');
+  const rules = await import('../src/services/card-inventory-eligibility.js');
+  assert.equal(evidence.successfulPurchaseSql, rules.successfulPurchaseSql, '扣款口径仍只有一份');
+});
