@@ -42,7 +42,9 @@ if nc -z 127.0.0.1 13306 2>/dev/null; then
   case "$MINBAL" in ''|*[!0-9.]*) say "[失败] 取不到 Plus 卡余额门槛（default_minimum_required_card_balance='${MINBAL}'），不能判断有没有卡"; warn=1; MINBAL=""; ;; esac
   ELIG=""
   if [ -n "$MINBAL" ]; then
-    ELIG_SQL=$(cd "$ROOT/v1" && node -e 'import("./src/services/card-inventory-eligibility.js").then(m=>process.stdout.write(m.eligibleInventoryCardSql("c",process.argv[1])))' "$MINBAL" 2>/dev/null)
+    # D-411（2026-09-30 Lemon 批）：数「能服务下一单」的卡，与供卡调度器同一口径（usableCardSql）——用过、钱包够补钱的旧卡也算。
+    # 仍用旧口径时，只剩这种旧卡会报「可分配 0 张」→ 看门程序不拉起付款池 → Browser 心跳停 → 下单拒掉所有 Browser 单（对抗审查）。
+    ELIG_SQL=$(cd "$ROOT/v1" && node -e 'import("./src/services/card-inventory-eligibility.js").then(m=>process.stdout.write(m.usableCardSql("c",process.argv[1],{productCode:"plus"})))' "$MINBAL" 2>/dev/null)
     if [ -z "$ELIG_SQL" ]; then say "[失败] 生成资格 SQL 失败（v1/src/services/card-inventory-eligibility.js 是否可加载）"; warn=1; else
       ELIG=$("$DIR/prod-query.sh" "SELECT COUNT(*) FROM cards c WHERE $ELIG_SQL" 2>/dev/null | tr -d '[:space:]')
       # 查询失败会返回空，而 ${ELIG:-0} 会把它变成 0，于是"查不到"被播报成"没有卡"。
@@ -56,7 +58,7 @@ if nc -z 127.0.0.1 13306 2>/dev/null; then
   [ "$HOLD" = "NULL" ] && HOLD=""
   # 卡被"待跑的非终态单"占着是正常态（来单后唯一那张卡就在它手里），不算阻断；只有既无可分配卡又无人占卡才是真没卡。
   if [ -z "$ELIG" ]; then :  # 上面已报 [失败]；取不到就不再假装能判断有没有卡
-  elif [ "$ELIG" -ge 1 ] 2>/dev/null; then say "[OK]  可分配卡 ${ELIG} 张（Plus 门槛 $MINBAL，正式资格 SQL）"
+  elif [ "$ELIG" -ge 1 ] 2>/dev/null; then say "[OK]  可分配卡 ${ELIG} 张（Plus 门槛 $MINBAL，与调度器同口径，含可补钱旧卡）"
   elif [ -n "$HOLD" ]; then say "[信息] 可分配卡 0 张，但卡在待跑单手里: $HOLD（演练残单才需要 v1/scripts/close-rehearsal-order.mjs 收口）"
   else say "[警告] 可分配卡 0 张且无人占卡——新单会卡在等卡"; warn=1; fi
   [ -n "$HOLD" ] && say "[信息] 非终态占卡订单: $HOLD"
