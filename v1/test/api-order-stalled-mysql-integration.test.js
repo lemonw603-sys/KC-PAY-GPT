@@ -38,15 +38,15 @@ async function insertOrder(pool, { route = ROUTE_API, status = 'RECHARGE_PROCESS
 }
 
 async function stuck(pool) {
-  const [rows] = await pool.query(API_PROCESSING_STUCK_SQL, [15]);
+  const [rows] = await pool.query(API_PROCESSING_STUCK_SQL, [2]);
   return rows;
 }
 
-test('API 单停在处理中超过 15 分钟才报；Browser 单、刚开始的单、已有付款不明告警的单不报；结束后自动收掉', { skip }, async () => {
+test('API 单停在处理中超过 2 分钟才报（D-414 补记十二）；Browser 单、刚开始的单、已有付款不明告警的单不报；结束后自动收掉', { skip }, async () => {
   const pool = mysql.createPool({ uri: databaseUrl, connectionLimit: 4, timezone: 'Z' });
   try {
     const old = await insertOrder(pool, { minutesAgo: 20 });
-    const fresh = await insertOrder(pool, { minutesAgo: 2 });
+    const fresh = await insertOrder(pool, { minutesAgo: 1 });
     const submitting = await insertOrder(pool, { status: 'SUBMITTING', minutesAgo: 30, platformNo: null });
     const browser = await insertOrder(pool, { route: ROUTE_BROWSER, minutesAgo: 40 });
     const covered = await insertOrder(pool, { minutesAgo: 25 });
@@ -62,7 +62,7 @@ test('API 单停在处理中超过 15 分钟才报；Browser 单、刚开始的�
     const found = new Map(rows.map((row) => [row.public_no, row]));
     assert.ok(found.has(old.publicNo), '充值处理中 20 分钟：报');
     assert.ok(found.has(submitting.publicNo), '提交中 30 分钟、还没拿到平台单号：也报');
-    assert.equal(found.has(fresh.publicNo), false, '才 2 分钟：不报（正常约 1 分钟付完）');
+    assert.equal(found.has(fresh.publicNo), false, '才 1 分钟：不报（成功的单 34～49 秒付完）');
     assert.equal(found.has(browser.publicNo), false, 'Browser 单另有三种巡检，这里不管');
     assert.equal(found.has(covered.publicNo), false, '已有「付款不明待核实」在管：不重复报');
     assert.equal(Number(found.get(old.publicNo).still_checking), 1, '查询任务还在：说「还在问」');

@@ -27,8 +27,9 @@ const args = process.argv.slice(2);
 const idx = args.indexOf('--minutes');
 // 3 分钟：客户没充成功通常三五分钟内就会来找运营，告警必须比客户快。
 const minutes = idx >= 0 ? Math.max(1, Number(args[idx + 1]) || 3) : 3;
-// API 单正常约 1 分钟付完款（09-28 真单 49 秒）；15 分钟没结果就叫人（D-414 补记十一）。
-const API_STUCK_MINUTES = 15;
+// API 单正常不到 1 分钟付完款（生产成功 5 单 34～49 秒）；2 分钟没结果就叫人（D-414 补记十二，Lemon 2026-10-02 定：
+// 客户等不了 15 分钟）。客户页 3 分钟时说「我们已经收到通知」，这里先于它。
+const API_STUCK_MINUTES = 2;
 const dryRun = args.includes('--dry-run');
 if (!process.env.DATABASE_URL) { console.error('DATABASE_URL is required'); process.exit(2); }
 
@@ -66,7 +67,7 @@ try {
   // 第三种半（D-411 对抗审查 2026-09-30）：付款前补钱没了结、15 分钟了还没叫过人。正常情况下补钱自己的核对任务
   // 3 分钟内就会换卡 / 叫人；走到这里说明那个任务丢了（进程死、任务死、追踪开关关着），客户可能还停在「正在准备支付卡」。
   const [stuckTopUps] = await connection.query(stuckTopUpsWithoutAlertSql(), [minutes + 12]);
-  // 第四种卡住（D-414 补记十一）：API 单停在提交中 / 充值处理中超过 15 分钟（正常约 1 分钟付完款）。
+  // 第四种卡住（D-414 补记十一、十二）：API 单停在提交中 / 充值处理中超过 2 分钟。
   const [apiStuck] = await connection.query(API_PROCESSING_STUCK_SQL, [API_STUCK_MINUTES]);
   const found = {
     stuckTopUps: stuckTopUps.map((row) => ({ last4: row.last4, status: row.status, waitedMinutes: Number(row.waited) })),
