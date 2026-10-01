@@ -80,6 +80,24 @@ test('workbench wallet keeps last observation marked stale on failure and re-ren
  ctx.updateHighvccWalletSummary();assert.equal(value.textContent,'$41.49');
  ctx.updateHighvccWalletSummary();assert.equal(requests,2);assert.equal(button.disabled,false);
 });
+test('D-414 补记七：工作台「刷新」/「更新登录」查钱包成功就重读「卡与钱」和待办（token 提示当场更新）；查失败不重读', async () => {
+ for (const ok of [true, false]) {
+  const calls = { overview: 0, notices: [] };
+  const ctx = { state: {}, loadHighvccWallet: async () => ok, loadOverview: async () => { calls.overview++; },
+   showNotice: (m) => calls.notices.push(m), openHighvccTarget: async () => {} };
+  vm.runInNewContext(snippet('async function refreshHighvccFromWorkbench(', '\n}\n') + snippet('async function checkHighvccLogin(', '\n}\n'), ctx);
+  assert.equal(await ctx.refreshHighvccFromWorkbench(), ok);
+  assert.equal(calls.overview, ok ? 1 : 0, ok ? '查成功要重读整块' : '查失败不重读');
+  const button = { disabled: false, textContent: '更新登录' };
+  await ctx.checkHighvccLogin(button);
+  assert.equal(calls.overview, ok ? 2 : 0);
+  assert.equal(button.disabled, false); assert.equal(button.textContent, '更新登录');
+ }
+ // 重读失败也不能把「刷新成功」说成失败
+ const ctx2 = { state: {}, loadHighvccWallet: async () => true, loadOverview: async () => { throw Error('overview down'); }, showNotice() {} };
+ vm.runInNewContext(snippet('async function refreshHighvccFromWorkbench(', '\n}\n'), ctx2);
+ assert.equal(await ctx2.refreshHighvccFromWorkbench(), true);
+});
 for (const target of ['wallet','token']) test(`highvcc ${target} jump expands ancestors and focuses only the requested control even if page read fails`,async()=>{
  const outer={open:false,parentElement:null},section={open:false,parentElement:{closest:()=>outer}};
  const focused=[],scrolled=[],notices=[];

@@ -2257,6 +2257,18 @@ async function loadHighvccWallet() {
 }
 
 /**
+ * 工作台 highvcc「刷新」：查钱包；查成功＝token 能用，顺带把「卡与钱」和待办重读一遍——
+ * 刚贴完 token 时「token 失效」当场消失，不用等 10 秒轮询（D-414 补记七，Lemon 2026-10-01 批：
+ * 那次贴完 token 后提示晚了约 10 秒才消失，因为「刷新」只查钱包、不重读 token 状态）。查失败不重读。
+ */
+async function refreshHighvccFromWorkbench() {
+  const ok = await loadHighvccWallet();
+  showNotice(ok ? '钱包余额已更新。' : '钱包查询失败，请检查卡台登录状态。', ok ? 'success' : 'error');
+  if (ok) await loadOverview().catch(() => {});
+  return ok;
+}
+
+/**
  * 工作台「更新登录」：先拿钱包接口试一次登录（顺带刷新余额），还有效就原地告诉他，不跳页；
  * 卡台明确说 token 失效/没配（409 highvcc_token_expired / highvcc_token_missing）才带他去贴 token 的框；
  * 别的失败（卡台连不上等 502）说清楚「不是登录问题」，不误导去贴 token（Lemon 2026-09-24）。
@@ -2267,7 +2279,11 @@ async function checkHighvccLogin(button) {
   button.textContent = '检查中…';
   try {
     const ok = await loadHighvccWallet();
-    if (ok) { showNotice('highvcc 登录还有效，不用更新（余额已顺带刷新）。', 'success'); return; }
+    if (ok) {
+      showNotice('highvcc 登录还有效，不用更新（余额已顺带刷新）。', 'success');
+      await loadOverview().catch(() => {});   // 同「刷新」：登录有效就把 token 提示一并更新（D-414 补记七）
+      return;
+    }
     if (/^highvcc_token_(expired|missing)$/.test(state.highvccWalletErrorCode || '')) {
       showNotice('highvcc 登录已失效，请在下面贴新的 token。');
       await openHighvccTarget('token');
@@ -3785,7 +3801,7 @@ document.addEventListener('click', (event) => {
     return;
   }
   if (walletRefresh) {
-    if (!walletRefresh.disabled) loadHighvccWallet().then((ok) => showNotice(ok ? '钱包余额已更新。' : '钱包查询失败，请检查卡台登录状态。', ok ? 'success' : 'error'));
+    if (!walletRefresh.disabled) refreshHighvccFromWorkbench();
     return;
   }
   if (highvccTarget) { openHighvccTarget(highvccTarget.dataset.highvccTarget).catch(() => showNotice('卡台入口打开失败，请重试。')); return; }
