@@ -6334,3 +6334,33 @@ Lemon 问「第一批彻底没问题了吗？什么叫『现成一单』？」�
     - 分卡不受影响：Pro 卡一卡一单，用过即排除。
     - 其他统计会不会受影响未查。
     - 建议记欠账，重开 5X / 20X 前修，待 Lemon 定。
+
+### D-414 补记五（2026-10-01 UTC 01:4x～02:04）Lemon 定：工作台「卡与钱」用丁；token 失效不算钱包够付；卡片页改「卡上 / 钱包」；Pro 记账 $16 记欠账
+
+**Lemon**：「1丁」，随后「2 同意 3 同意 4 同意」。
+- **丁「一台一行」已实现**：
+  - `index.html` 标题行去掉「只读」，加 `#wb-cards-title` / `#wb-cards-flags`。
+  - `admin.js` 的 `renderWbCards(overview, alertData)` 重写。
+  - 钱包写「$24.35 08:43」：`paintWalletInline` 取代 `paintWalletChip` / `walletSummaryText`，刷新失败写「上次 … · 刷新失败」并标黄。
+  - 直充点数进脚注，≤5 黄、0 红、999+ 规矩不变。
+  - `workbench.css` 换成 `.cm-*`，删掉旧格子样式。
+  - 资源版本 `admin.js?v=107` / `workbench.css?v=29`。
+- **定稿与比对**：
+  - 定稿快照 `docs/design/prototypes/_frozen/cards-money-d/`（提交 `4764ac7b` 的三份 CSS），演示页改为引用快照。
+  - 新契约 `docs/design/parity/workbench-cards-money.json`：真页面与定稿一致。把每行内边距改成 12px 后报 5 处差异，契约有效。
+- **2 token 失效不算钱包够付**：`providerCardStockSql` 的 `wallet_orders` 加「这台没有未解决的 token 告警」，和 `reusableTopUpCardSql` 同一个条件。真库测试覆盖告警开 / 关；拿掉条件测试报红。
+- **3 卡片页**：台账第一格「卡上够付 / 钱包够付（Plus）」；那块标题「现在还能付几单」，标记「按分卡规则算」，说明改写为解释「卡上」「钱包」。「术语一致」测试随之换词，规矩不变。
+- **4**：PROJECT_MAP 欠账 39「Pro 单账本只记 $16」，触发条件是重开 5X / 20X 前。
+- **没做**：设置值报错文字（「卡上有钱的先用 / 旧卡先用满」→ 与页面一致）不在本次批的范围，没改。
+- **验证**：
+  - 单元：1285 项，通过 1177、失败 0、跳过 108。
+  - 真库：通过 108、失败 0。
+  - css-drift、ui-copy 通过。
+  - 视觉比对：卡片页、卡与钱都一致。
+  - 新 SQL 在生产只读跑通：HNSKJ 0 / NULL，highvcc 1 / NULL。highvcc 为 NULL 是因为生产 token 告警此刻是打开的，见下一条。
+- **生产观察**（02:00 UTC 只读）：
+  - `PROVIDER_TOKEN_EXPIRED`（backup-a）OPEN，updated 01:28:40 UTC，文案「09:28 起失效」，incident_version 7。
+  - token 保存时间 09-30 15:34:53 UTC，比此前记的 12:26:41 晚，是谁 / 什么写的未查。
+  - 最后一次快照 $24.35 @ 00:28:34 UTC。
+  - 要 Lemon 重贴 token。
+- **未发布**。

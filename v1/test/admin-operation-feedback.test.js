@@ -64,19 +64,20 @@ for(const outcome of ['read-failed','lost-response','rejected','unsaved','succes
  assert(notices.some(x=>x.includes(expected[outcome])));if(outcome==='read-failed')assert.equal(reads,1);
 });
 test('workbench wallet keeps last observation marked stale on failure and re-render does not fetch',async()=>{
- const text={textContent:''},summary={lastElementChild:text,classList:{toggle(){}}},button={};let fail=false,requests=0;
+ const value={textContent:''},when={textContent:''},cls=new Set(),button={};let fail=false,requests=0;
+ const summary={title:'',querySelector:s=>(s==='[data-wal-v]'?value:s==='[data-wal-when]'?when:null),classList:{toggle:(c,on)=>(on?cls.add(c):cls.delete(c))}};
  const ctx={state:{},document:{querySelector:s=>s.includes('summary')?summary:button},highvccWalletRequest:null,highvccWalletVersion:0,
   elements:{highvccWalletStatus:{dataset:{},innerHTML:''}},formatTime:x=>x,formatMoney:x=>Number(x).toFixed(2),
   api:async()=>{requests++;if(fail)throw Error('expired');return{usdBalance:'41.49',usdDeposit:'0',usdConsume:'0'}}};
- // 2026-09-24 起文案走 walletSummaryText / newerWallet / paintWalletChip（两台共用），一并载入。
- vm.runInNewContext(['function updateHighvccWalletSummary(','function walletSummaryText(','function walletWhenText(','function newerWallet(','function paintWalletChip(']
+ // D-414 补记五起工作台钱包写「$41.49 08:43」：paintWalletInline（两台共用）+ walletWhenText / newerWallet，一并载入。
+ vm.runInNewContext(['function updateHighvccWalletSummary(','function walletWhenText(','function newerWallet(','function paintWalletInline(']
   .map((m)=>snippet(m,'\n}\n')).join('\n')+snippet('async function loadHighvccWallet(', '\n}\n'),ctx);
- ctx.updateHighvccWalletSummary();assert.match(text.textContent,/还没查过/);
- await ctx.loadHighvccWallet();assert.match(text.textContent,/钱包 41.49 USD · 查询于/);
- fail=true;await ctx.loadHighvccWallet();assert.match(text.textContent,/41.49 USD.*上次查询.*刷新失败/);
+ ctx.updateHighvccWalletSummary();assert.equal(value.textContent,'—');assert.equal(when.textContent,'还没查过');
+ await ctx.loadHighvccWallet();assert.equal(value.textContent,'$41.49');assert.match(when.textContent,/^\d{2}:\d{2}$/);assert.equal(cls.has('is-failed'),false);
+ fail=true;await ctx.loadHighvccWallet();assert.equal(value.textContent,'$41.49','刷新失败保留上次的数');assert.match(when.textContent,/^上次 \d{2}:\d{2} · 刷新失败$/);assert.equal(cls.has('is-failed'),true);
  // 页面上有更早的快照时，以刚刷新成功的那次为准；刷新失败也不回退到更旧的快照
  ctx.state.highvccWalletSnapshot={balance:'30.00',currency:'USD',observedAt:'2026-01-01T00:00:00.000Z'};
- ctx.updateHighvccWalletSummary();assert.match(text.textContent,/41.49 USD/);
+ ctx.updateHighvccWalletSummary();assert.equal(value.textContent,'$41.49');
  ctx.updateHighvccWalletSummary();assert.equal(requests,2);assert.equal(button.disabled,false);
 });
 for (const target of ['wallet','token']) test(`highvcc ${target} jump expands ancestors and focuses only the requested control even if page read fails`,async()=>{

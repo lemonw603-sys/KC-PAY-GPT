@@ -1,0 +1,29 @@
+{
+  "name": "工作台「卡与钱」↔ 丁「一台一行」（D-414 补记五）",
+  "viewport": [1440, 730],
+  "tolerancePx": 1,
+  "note": "丁是 Lemon 2026-10-01 从四个方案里挑定的。原型 link _frozen/cards-money-d/ 定稿快照（不是实时 /admin/assets/*），丁的 .cm-* 样式在原型自己的 <style> 里。两边要用同一份数据：原型取 data/d414-cards-money-demo.json 的情况 ③（两单·钱包够），实现侧要跑在同一状态的本机演示库（render-server 的快照就是情况 ③ 时生成的）。不比宽度、左右：钱包查询时间跨天会多出日期，文字长度可能不同；结构与节奏靠块数、高度、内边距、间距、字号守。",
+  "prototype": {
+    "url": "${PARITY_PROTO_BASE}/d414-cards-money-demo-v2.html#scene=3&design=d",
+    "root": "#demo-mid"
+  },
+  "impl": {
+    "url": "${PARITY_ADMIN_BASE}/admin/",
+    "root": "#overview-view .wb-mid",
+    "login": { "passwordEnv": "PARITY_ADMIN_PASSWORD" },
+    "prepare": "const t=Date.now();while(Date.now()-t<20000){ if(document.querySelector('#wb-cards .cm-row')) { await new Promise(r=>requestAnimationFrame(r)); return true; } await new Promise(r=>setTimeout(r,200)); } return false;"
+  },
+  "probes": [
+    { "name": "卡与钱这一块", "proto": ".wb-card", "impl": ".wb-card", "metrics": ["height", "padding", "borderRadius"] },
+    { "name": "标题行", "proto": ".cm-ch", "impl": ".cm-ch", "metrics": ["height", "padding", "display", "alignItems", "justifyContent"] },
+    { "name": "标题「Plus 还能接 N 单」", "proto": ".cm-title", "impl": ".cm-title", "metrics": ["height", "fontSize", "display", "alignItems", "gap"] },
+    { "name": "大数字", "proto": ".cm-title .cm-n", "impl": ".cm-title .cm-n", "metrics": ["height", "fontSize", "fontWeight", "letterSpacing"] },
+    { "name": "标题行右侧提示", "proto": ".cm-chr .wb-chip", "impl": ".cm-chr .wb-chip", "all": true, "metrics": ["height", "fontSize", "fontWeight", "padding"] },
+    { "name": "每台一行", "proto": ".cm-row", "impl": ".cm-row", "all": true, "metrics": ["height", "padding", "display", "columnGap", "alignItems"] },
+    { "name": "卡台名", "proto": ".cm-who b", "impl": ".cm-who b", "all": true, "metrics": ["fontSize", "fontWeight", "height"] },
+    { "name": "出问题的红字", "proto": ".cm-st", "impl": ".cm-st", "all": true, "metrics": ["fontSize", "fontWeight", "gap", "height"] },
+    { "name": "卡上够付 / 钱包够付的数", "proto": ".cm-num", "impl": ".cm-num", "all": true, "metrics": ["fontSize", "fontWeight", "height"] },
+    { "name": "钱包按钮", "proto": ".cm-wal .wb-btn", "impl": ".cm-wal .wb-btn", "all": true, "metrics": ["height", "fontSize", "borderRadius", "padding"] },
+    { "name": "脚注", "proto": ".cm-foot", "impl": ".cm-foot", "metrics": ["height", "marginTop", "fontSize", "display", "rowGap", "columnGap"] }
+  ]
+}

@@ -827,6 +827,14 @@ test('D-414 money view: ready orders = what the money already on cards can pay; 
     assert.equal(r.wallet_orders, null, '总闸关着：不补钱也不开卡，钱包里的钱一单也用不上，不给数');
     assert.equal(Number(r.ready_orders), readyBefore, '卡上现成的钱不受总闸影响');
     await setSettings(pool, { card_auto_replenishment_enabled: 'true' });
+    assert.equal(Number((await row()).wallet_orders), 1);
+    await pool.query(`INSERT INTO operator_alerts (id, alert_type, dedupe_key, severity, title, message, status)
+      VALUES (UUID(), 'PROVIDER_TOKEN_EXPIRED', CONCAT('provider-token-expired:', ?), 'critical', 'token expired', 'token expired', 'OPEN')`, [account]);
+    r = await row();
+    assert.equal(r.wallet_orders, null, 'token 失效（告警没解决）：补钱、开卡都会失败，不给数');
+    assert.equal(Number(r.ready_orders), readyBefore, '卡上现成的钱不受 token 影响');
+    await pool.query(`UPDATE operator_alerts SET status = 'RESOLVED' WHERE dedupe_key = CONCAT('provider-token-expired:', ?)`, [account]);
+    assert.equal(Number((await row()).wallet_orders), 1, '告警解决后恢复');
     await pool.query(`UPDATE provider_accounts SET supports_auto_funding = 0 WHERE id = ?`, [account]);
     assert.equal((await row()).wallet_orders, null, '不能补钱的卡台没有「钱包够」这个数');
   } finally { await pool.end(); }

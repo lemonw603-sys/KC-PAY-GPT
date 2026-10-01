@@ -389,19 +389,19 @@ test('D-401 走 Browser 时照旧：标签是浏览器，候选按 Browser 能�
   assert.match(out, /data-method="API">API 充值</);
 });
 
-test('D-405 第二批：点数在「卡与钱」单独一行；≤5 标黄、0 标红，同推送门槛；超过 999 写 999+；没读到不显示', () => {
+test('D-405 第二批 / D-414 补记五：点数在「卡与钱」脚注；≤5 标黄、0 标红，同推送门槛；超过 999 写 999+；没读到不显示', () => {
   const { sandbox } = loadAdminJs();
   const row = (points, observedAt = null) => sandbox.zzshuPointsRow({ points, observedAt });
-  assert.match(row(15), /<div class="wb-provrow is-points"><div class="wb-provhead"><b>直充平台<\/b><span class="wb-chip mute">[\s\S]*剩 15 点</);
-  assert.match(row(5), /wb-chip warn[\s\S]*剩 5 点/);
-  assert.match(row(0), /wb-chip danger[\s\S]*剩 0 点/);
-  assert.match(row(1000), /剩 999\+ 点/);
-  assert.match(row(99990), /剩 999\+ 点/);
-  assert.match(row(12, '2026-09-27T03:00:00.000Z'), /剩 12 点 · (查询于|上次查询) /);
+  assert.equal(row(15), '<span class="cm-zz">直充平台 剩 <b>15</b> 点</span>');
+  assert.match(row(5), /<span class="cm-zz is-warn">直充平台 剩 <b>5<\/b> 点/);
+  assert.match(row(0), /<span class="cm-zz is-danger">直充平台 剩 <b>0<\/b> 点/);
+  assert.match(row(1000), /剩 <b>999\+<\/b> 点/);
+  assert.match(row(99990), /剩 <b>999\+<\/b> 点/);
+  assert.match(row(12, '2026-09-27T03:00:00.000Z'), /剩 <b>12<\/b> 点 · (查询于|上次查询) /);
   assert.equal(row(null), '', '没读到不显示，不写 0');
   assert.equal(sandbox.zzshuPointsRow(undefined), '');
   const src = fs.readFileSync(path.join(here, '..', 'public', 'admin', 'assets', 'admin.js'), 'utf8');
-  assert.match(src, /\+ zzshuPointsRow\(overview\.providerHealth\?\.zzshuPoints\)\n\s+\+ `<p class="wb-total">/, '挂在「卡与钱」两台之后、合计之前');
+  assert.match(src, /<p class="cm-foot">\$\{zzshuPointsRow\(overview\.providerHealth\?\.zzshuPoints\)\}/, '挂在「卡与钱」脚注里');
 });
 
 test('D-401 API 行仍被固定（locked）时，下拉框与切换按钮都不可点', () => {
@@ -609,8 +609,8 @@ test('D-307：台账主数用库存口径，分配口径一个字都不上界面
   // 生产那个场景：卡是好的，但在同步窗口外（库存 2 / 可立即绑 0）
   sandbox.renderCardRigs([{ ...RIG_HNSKJ, stockAvailable: 2, bindableNow: 0, stockTarget: 2, readyOrders: 2, walletOrders: null }]);
   const gap = html('sel:#cards-rigs');
-  // D-414：主数按钱看——卡上现成的钱能付几单（后端按库存口径算，分配口径 0 不影响它）
-  assert.match(gap, /现成能付 \/ 钱包够（Plus）/);
+  // D-414：主数按钱看——卡上的钱够付几单（后端按库存口径算，分配口径 0 不影响它；措辞 D-414 补记五）
+  assert.match(gap, /卡上够付 \/ 钱包够付（Plus）/);
   assert.match(gap, />2 <small>单 \/ —<\/small>/, '主数必须是库存口径算出的 2 单，不是分配口径 0；不能补钱的卡台钱包那格写「—」');
   assert.doesNotMatch(gap, /is-warn/, '库存 2 已达水位 2，不该报库存偏低');
 
@@ -637,9 +637,11 @@ test('术语一致：同一个状态在一页上只能有一个叫法', () => {
 
   // 台账栏那格的标题由 admin.js 渲染，不在 index.html 里
   const src = fs.readFileSync(path.join(here, '..', 'public', 'admin', 'assets', 'admin.js'), 'utf8');
-  assert.match(src, /rigCell\('现成能付 \/ 钱包够（Plus）'/);
-  // 页面上的说明也得用同一个词，否则解释的是另一件事
-  assert.match(html, /“可分配”＝/);
+  assert.match(src, /rigCell\('卡上够付 \/ 钱包够付（Plus）'/);
+  // 页面上的说明也得用同一个词，否则解释的是另一件事（D-414 补记五：格子写「卡上够付 / 钱包够付」，说明就解释「卡上」「钱包」）
+  assert.match(html, /“卡上”＝/);
+  assert.match(html, /“钱包”＝/);
+  assert.match(html, /<h2>现在还能付几单<\/h2>/);
 
   // 已经删掉的孤儿常量不许回来——它定义了第三份同义标签，零引用
   assert.doesNotMatch(src, /STOCK_CATEGORY_LABELS/);
@@ -767,7 +769,7 @@ test('D-405 订单页「结束时间」：结束的单写北京时间，处理�
   assert.match(rows[2], /<td class="od-time is-none" title="这张老单当时没记结束时间">—<\/td>/);
 });
 
-test('D-414：台账第一格按钱看——卡上现成能付几单 / 钱包还够几单（能补钱的卡台才有后一个数）', () => {
+test('D-414：台账第一格按钱看——卡上够付几单 / 钱包够付几单（能补钱的卡台才有后一个数）', () => {
   const { sandbox, html } = loadAdminJs();
   sandbox.renderCardRigs([{ ...RIG_HNSKJ, stockAvailable: 1, readyOrders: 1, walletOrders: 1, stockTarget: 1 }]);
   assert.match(html('sel:#cards-rigs'), />1 <small>单 \/ 1 单<\/small>/);
@@ -776,23 +778,89 @@ test('D-414：台账第一格按钱看——卡上现成能付几单 / 钱包还
   assert.match(html('sel:#cards-rigs'), /is-warn/);
 });
 
-test('D-414 自查：「自动开卡」总闸关着时，工作台格子不写「自动补」、不因钱包变绿（后端此时给钱包 null）', () => {
+// D-414 补记五：卡与钱＝丁「一台一行」（Lemon 2026-10-01 挑定）。
+const WB_HV = (plus = {}, extra = {}) => ({ providerAccountId: 'pa-3', providerCode: 'backup-a', providerKind: 'manual_excel', label: 'highvcc',
+  supplyFaultState: 'OK', spentToday: '0.500000', spentCurrency: 'USD',
+  byProduct: [{ productCode: 'plus', label: 'Plus', readyOrders: 1, walletOrders: 0, autoReplenished: true, ...plus },
+    { productCode: 'pro_5x', label: '5X', readyOrders: 0, walletOrders: null, autoReplenished: false },
+    { productCode: 'pro_20x', label: '20X', readyOrders: 2, walletOrders: null, autoReplenished: false }], ...extra });
+const WB_HN = (extra = {}) => ({ providerAccountId: 'pa-1', providerCode: 'legacy-primary', providerKind: 'hnskj', label: 'HNSKJ',
+  supplyFaultState: 'OK', spentToday: '0',
+  byProduct: [{ productCode: 'plus', label: 'Plus', readyOrders: 2, walletOrders: null, autoReplenished: true },
+    { productCode: 'pro_5x', label: '5X', readyOrders: 1, walletOrders: null }, { productCode: 'pro_20x', label: '20X', readyOrders: 0, walletOrders: null }], ...extra });
+
+test('D-414 补记五：标题行「Plus 还能接 N 单」＝各台卡上够付 + 钱包够付之和；每台一行；5X / 20X 进脚注；不再写「自动补 / 需人工开」', () => {
   const { sandbox, html } = loadAdminJs();
-  const rig = (walletOrders) => ({ providerAccountId: 'pa-3', providerCode: 'backup-a', label: 'highvcc',
-    byProduct: [{ productCode: 'plus', label: 'Plus', readyOrders: 0, walletOrders, autoReplenished: true }] });
-  sandbox.renderWbCards({ cardStockByProvider: [rig(1)], decisions: { cardAutoReplenishmentEnabled: true } });
-  let out = html('wb-cards');
-  assert.match(out, /钱包够<i>1<\/i>单/);
-  assert.match(out, /class="wb-prod is-ok"/, '钱包够补 1 单，格子是绿的');
-  assert.match(out, /<span class="wb-how">自动补<\/span>/);
-  sandbox.renderWbCards({ cardStockByProvider: [rig(null)], decisions: { cardAutoReplenishmentEnabled: false } });
-  out = html('wb-cards');
-  assert.doesNotMatch(out, /钱包够/, '总闸关着，钱包里的钱用不上');
-  assert.doesNotMatch(out, /is-ok/, '卡上 0、钱包用不上，不能是绿的');
-  assert.match(out, /<span class="wb-how">总闸关<\/span><span class="wb-how-s">关闸<\/span>/);
-  assert.match(out, /class="is-manual" title="「自动开卡」总闸关着：不补钱、不开新卡"/);
-  sandbox.renderWbCards({ cardStockByProvider: [rig(1)] });
-  assert.match(html('wb-cards'), /<span class="wb-how">自动补<\/span>/, '读不到总闸状态时不猜，按开着算');
+  sandbox.renderWbCards({ cardStockByProvider: [WB_HN(), WB_HV({ walletOrders: 1 })], decisions: { cardAutoReplenishmentEnabled: true } });
+  assert.equal(html('wb-cards-title'), 'Plus 还能接 <span class="cm-n">4</span> 单', 'HNSKJ 卡上 2 + highvcc 卡上 1 + 钱包 1');
+  const out = html('wb-cards');
+  assert.equal((out.match(/class="cm-row"/g) || []).length, 2, '每台一行');
+  assert.match(out, /<b>highvcc<\/b><\/span>\s*<span class="cm-nums">卡上够付 <span class="cm-num">1<\/span> <span class="cm-unit">单<\/span> · 钱包够付 <span class="cm-num">1<\/span>/);
+  assert.match(out, /<b>HNSKJ<\/b><\/span>\s*<span class="cm-nums">卡上够付 <span class="cm-num">2<\/span> <span class="cm-unit">单<\/span> · 钱包够付 <span class="cm-num is-dim">—<\/span>/, '不能补钱的卡台写「—」，不写 0');
+  assert.match(out, /<span>5X 卡上够付 <b>1<\/b> 单 · 20X 卡上够付 <b>2<\/b> 单<\/span>/, '两台相加');
+  assert.match(out, /data-hnskj-wallet-refresh>刷新<\/button>/);
+  assert.match(out, /data-highvcc-refresh>刷新<\/button><button type="button" class="wb-btn out sm" data-highvcc-login-check>更新登录<\/button>/, '只有 highvcc 有「更新登录」');
+  assert.match(out, /今天 没花钱/);
+  assert.match(out, /今天 <span class="wb-mono" title="[^"]*">\$0\.50<\/span>/);
+  assert.doesNotMatch(out, /自动补|需人工开|现成/);
+  assert.equal(html('wb-cards-flags'), '', '没人等卡、能接单、总闸开着：右边什么都不写');
+});
+
+test('D-414 补记五：一单都接不了写「再来一单要等卡」；有人等卡写「N 单正在等卡」；总闸关写在标题行右边（后端此时钱包给 null）', () => {
+  const { sandbox, html } = loadAdminJs();
+  sandbox.renderWbCards({ cardStockByProvider: [WB_HV({ readyOrders: 0, walletOrders: 0 })], decisions: { cardAutoReplenishmentEnabled: true } });
+  assert.equal(html('wb-cards-title'), 'Plus 还能接 <span class="cm-n">0</span> 单');
+  assert.match(html('wb-cards-flags'), /再来一单要等卡/);
+  sandbox.renderWbCards({ cardStockByProvider: [WB_HV({ readyOrders: 0, walletOrders: 0 })], ordersWaitingForCard: 2 });
+  assert.match(html('wb-cards-flags'), /wb-chip warn[\s\S]*2 单正在等卡/);
+  assert.doesNotMatch(html('wb-cards-flags'), /再来一单要等卡/, '有人在等时只说等卡，不重复');
+  sandbox.renderWbCards({ cardStockByProvider: [WB_HV({ readyOrders: 1, walletOrders: null })], decisions: { cardAutoReplenishmentEnabled: false } });
+  assert.match(html('wb-cards-flags'), /title="不补钱、不开新卡；卡上现成的钱照常能付"><span class="wb-chip warn">[\s\S]*自动开卡总闸关着/);
+  assert.match(html('wb-cards'), /钱包够付 <span class="cm-num is-dim">—<\/span>/);
+  sandbox.renderWbCards({ cardStockByProvider: [WB_HV()] });
+  assert.doesNotMatch(html('wb-cards-flags'), /总闸/, '读不到总闸状态时不猜，按开着算');
+});
+
+test('D-414 补记五：出问题只在名字后跟一小段红字；token 失效只认告警且只标用 token 的那台；认识的原因码才翻译', () => {
+  const { sandbox, html } = loadAdminJs();
+  const fault = (reason) => WB_HN({ supplyFaultState: 'FAULT', supplyFaultReason: reason });
+  sandbox.renderWbCards({ cardStockByProvider: [fault('CARD_STOCK_PURCHASE_DISABLED'), WB_HV()] }, { alerts: [{ type: 'PROVIDER_TOKEN_EXPIRED' }] });
+  const out = html('wb-cards');
+  assert.match(out, /<b>HNSKJ<\/b><span class="cm-st is-danger" title="卡台那边暂停开卡，开不出新卡（CARD_STOCK_PURCHASE_DISABLED）"><span class="wb-d"><\/span>暂停开卡<\/span><\/span>/);
+  assert.match(out, /<b>highvcc<\/b><span class="cm-st is-danger" title="补钱、开卡都会失败；去卡片页重新贴 token"><span class="wb-d"><\/span>token 失效<\/span>/);
+  assert.equal((out.match(/token 失效/g) || []).length, 1, 'HNSKJ 用 API Key，不标 token');
+  sandbox.renderWbCards({ cardStockByProvider: [fault('SOMETHING_NEW')] });
+  assert.match(html('wb-cards'), /title="开不出新卡（SOMETHING_NEW）"><span class="wb-d"><\/span>供卡故障</, '不认识的原因码不编，原码放悬停');
+  for (const alertData of [null, { alerts: [], __error: true }, { alerts: [{ type: 'CARD_STOCK_LOW' }] }]) {
+    sandbox.renderWbCards({ cardStockByProvider: [WB_HV()] }, alertData);
+    assert.doesNotMatch(html('wb-cards'), /token 失效/, '没有 token 告警（或告警没读到）就不说失效');
+  }
+});
+
+test('D-414 补记五：钱包写「$24.35 08:43」；刷新失败写「上次 … · 刷新失败」并标黄；从没查到写清楚，不写 $0', () => {
+  const { sandbox } = loadAdminJs();
+  const part = () => ({ textContent: '' });
+  const make = () => { const v = part(); const w = part(); const cls = new Set();
+    return { v, w, cls, el: { title: '', querySelector: (s) => (s === '[data-wal-v]' ? v : s === '[data-wal-when]' ? w : null),
+      classList: { toggle: (c, on) => (on ? cls.add(c) : cls.delete(c)) } } }; };
+  const at = new Date();
+  at.setHours(8, 43, 0, 0);
+  let x = make();
+  sandbox.paintWalletInline(x.el, { balance: '24.350000', at: at.toISOString(), currency: 'USD' }, false);
+  assert.equal(x.v.textContent, '$24.35');
+  assert.equal(x.w.textContent, '08:43');
+  assert.equal(x.cls.has('is-failed'), false);
+  assert.match(x.el.title, /^钱包余额 24\.35 USD · 查询于 08:43$/);
+  x = make();
+  sandbox.paintWalletInline(x.el, { balance: '24.350000', at: at.toISOString(), currency: 'USD' }, true);
+  assert.equal(x.w.textContent, '上次 08:43 · 刷新失败');
+  assert.equal(x.cls.has('is-failed'), true);
+  x = make();
+  sandbox.paintWalletInline(x.el, null, false);
+  assert.equal(x.v.textContent, '—');
+  assert.equal(x.w.textContent, '还没查过');
+  sandbox.paintWalletInline(x.el, null, true);
+  assert.equal(x.w.textContent, '查询失败，请检查登录');
 });
 
 test('D-411：订单抽屉「付款前补钱」按补钱状态说人话，原因码只翻已知的', () => {

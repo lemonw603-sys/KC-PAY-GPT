@@ -391,91 +391,107 @@ function renderWbWall(overview, daily = null) {
   }).join('');
 }
 
-function renderWbCards(overview) {
+// 卡与钱：卡台出问题时名字后面那一小段红字（短词 + 悬停说明）。只翻认识的原因码，不认识的写「供卡故障」、原码放悬停里。
+const SUPPLY_FAULT_MARKS = Object.freeze({
+  CARD_STOCK_PURCHASE_DISABLED: ['暂停开卡', '卡台那边暂停开卡，开不出新卡']
+});
+function cardsMark(short, detail) {
+  return `<span class="cm-st is-danger" title="${escapeHtml(detail)}"><span class="wb-d"></span>${escapeHtml(short)}</span>`;
+}
+function cardsCount(value) {
+  return value == null ? '<span class="cm-num is-dim">—</span>' : `<span class="cm-num">${Number(value)}</span> <span class="cm-unit">单</span>`;
+}
+
+/**
+ * 卡与钱＝丁「一台一行」（D-414 补记五，Lemon 2026-10-01 挑定；原型 d414-cards-money-demo-v2.html#design=d）。
+ * 标题行「Plus 还能接 N 单」＝各台（卡上够付 + 钱包够付）之和——两个数都由后端按库存口径算（ready_orders /
+ * wallet_orders），页面只做加法，不自己判断哪张卡能用（D-280 硬约束）。
+ * token 失效只认 PROVIDER_TOKEN_EXPIRED 告警（与「需要我处理」同一规则）；告警没读到时不猜，不标。
+ */
+function renderWbCards(overview, alertData = null) {
   const box = document.getElementById('wb-cards');
   if (!box) return;
+  const title = document.getElementById('wb-cards-title');
+  const flags = document.getElementById('wb-cards-flags');
   const byProvider = overview.cardStockByProvider || [];
   // 显示名由后端给（domain/provider-labels 是唯一来源）；旧响应没有 label 时才回退。
   const nameOf = (p) => p.label || p.providerCode || p.providerKind || '卡台';
-  // 两台钱包同一种写法「钱包 X USD · 查询于 时间」+ 刷新（Lemon 2026-09-24）。上次余额来自
-  // provider_balance_snapshots（getOverview 每台带 wallet）；点刷新后以更新的那次为准。
-  // 此前 hnskj 读 providerHealth 快照显示绿标、highvcc 不读快照只显示「未查询」，两台长得不一样。
-  if (!byProvider.length) { box.innerHTML = '<p class="wb-qempty">暂无卡台数据</p>'; return; }
-  // D-414 按钱看（Lemon 2026-09-30：要盯的是钱不是卡）：现成＝卡上已有的钱不补就能付几单；
-  // 钱包够＝钱包扣掉押金和待发补钱后还够几单（只有能补钱的卡台有）。按产品的数在格子里，这里是 Plus 合计。
+  if (!byProvider.length) {
+    box.innerHTML = '<p class="wb-qempty">暂无卡台数据</p>';
+    if (title) { title.textContent = '还能接几单'; title.classList.remove('is-zero'); }
+    if (flags) flags.innerHTML = '';
+    return;
+  }
   const plusOf = (p) => (p.byProduct || []).find((x) => x.productCode === 'plus') || {};
-  const totalReady = byProvider.reduce((sum, p) => sum + Number(plusOf(p).readyOrders || 0), 0);
-  const totalWallet = byProvider.reduce((sum, p) => sum + Number(plusOf(p).walletOrders || 0), 0);
-  const waiting = Number(overview.ordersWaitingForCard || 0);
-  // 「自动开卡」总闸关着：不补钱、不开卡，格子右边不能再写「自动补」（D-414 自查，Lemon 批）。
-  // 页面上没有这个开关（2026-09-20 Lemon 定不做），只可能是后台手动关的；读不到时不猜，按开着算。
+  // 「自动开卡」总闸关着：不补钱、不开卡（后端此时钱包够付给 null）。页面上没有这个开关（2026-09-20 Lemon 定不做），
+  // 只可能是后台手动关的；读不到时不猜，按开着算。
   const supplyOff = overview.decisions?.cardAutoReplenishmentEnabled === false;
-
-  // D-283 原规划就是「按台按产品」，原型 C 画的是每台一行、行内按产品「用 N / 剩 N」。
-  // D-355 ⑦（2026-09-24 落地）：Lemon 说「用 N」（历史卡张数含已销）不是他要的，改成
-  // 「剩 N 张 · 能充 N 单」——能充几单 = 库存卡各自（按产品上限 − 已用）之和，后端算。
-  // 「剩 N」旁边必须标会不会自动补（Lemon 2026-09-20）：水位来自 card_supply_policies，
-  // 调度器读的就是它 —— 水位 0 表示这个产品没做库存卡，断了只能人工开，
-  // 而「20X 剩 0」和「Plus 剩 0」的严重程度完全不同，只显示「剩 0」看不出这个区别。
-  // 「剩 N」用**库存口径**。此前用的是分配口径（多一条「15 分钟内同步过」），而 hnskj
-  // 每 3 小时才同步一次 —— 同一批好卡在每 3 小时里只有头 15 分钟算数，其余时间显示 0。
-  // Lemon 2026-09-18 就指出过，当时只修了补卡调度器，这里漏了（2026-09-20 查实）。
-  const prodChip = (x) => {
-    const ready = Number(x.readyOrders || 0);
-    const wallet = x.walletOrders == null ? null : Number(x.walletOrders);
-    // 数字紧贴字（不加空格）：格子只有 128px，两边都到两位数（「现成99单 · 钱包够99单」127px）也放得下；加空格一位数就顶满了（1440 实测）
-    const how = supplyOff ? '总闸关' : x.autoReplenished ? '自动补' : '需人工开';
-    // 格子窄到放不下时 CSS 换成两字短词，保证一行（Lemon 2026-09-24）；两份都在 DOM 里，只显示一份。
-    const howShort = supplyOff ? '关闸' : x.autoReplenished ? '自动' : '人工';
-    const howTitle = supplyOff ? '「自动开卡」总闸关着：不补钱、不开新卡' : how;
-    return `<span class="wb-prod ${ready + (wallet || 0) > 0 ? 'is-ok' : ''}">`
-      + `<b>${escapeHtml(x.label)}</b>`
-      + `<span class="wb-prod-n" title="现成＝卡上已有的钱不补就能付几单${wallet == null ? '' : '；钱包够＝钱包扣掉押金后还够补 / 开几单'}">现成<i>${ready}</i>单${wallet == null ? '' : ` · 钱包够<i>${wallet}</i>单`}</span>`
-      + `<small class="${x.autoReplenished && !supplyOff ? '' : 'is-manual'}" title="${howTitle}"><span class="wb-how">${how}</span><span class="wb-how-s">${howShort}</span></small></span>`;
-  };
-  box.innerHTML = byProvider.map((p) => {
-    const spentNum = p.spentToday == null ? null : Number(p.spentToday);
-    const spent = spentNum == null ? null
-      : spentNum === 0 ? null
-        : `${formatMoney(p.spentToday)} ${escapeHtml(p.spentCurrency || 'USD')}`;
-    const fault = p.supplyFaultState && p.supplyFaultState !== 'OK'
-      ? wbChip('danger', `供卡故障${p.supplyFaultReason ? '：' + escapeHtml(p.supplyFaultReason) : ''}`)
-      : '';
+  const tokenExpired = (alertData?.alerts || []).some((a) => a && a.type === 'PROVIDER_TOKEN_EXPIRED');
+  const waiting = Number(overview.ordersWaitingForCard || 0);
+  let totalReady = 0;
+  let totalWallet = 0;
+  const pro = new Map();
+  const rows = byProvider.map((p) => {
+    const plus = plusOf(p);
+    const ready = Number(plus.readyOrders || 0);
+    const wallet = plus.walletOrders == null ? null : Number(plus.walletOrders);
+    totalReady += ready;
+    totalWallet += wallet || 0;
+    for (const x of p.byProduct || []) {
+      if (x.productCode !== 'plus') pro.set(x.label, (pro.get(x.label) || 0) + Number(x.readyOrders || 0));
+    }
     const isHnskj = p.providerKind === 'hnskj';
     if (isHnskj) state.hnskjWalletSnapshot = p.wallet || null; else state.highvccWalletSnapshot = p.wallet || null;
-    return `<div class="wb-provrow">
-      <div class="wb-provhead"><b>${escapeHtml(nameOf(p))}</b>`
-      + `<span class="wb-chip mute" ${isHnskj ? 'data-hnskj-wallet-summary' : 'data-highvcc-wallet-summary'}><span class="wb-d"></span><span></span></span>`
-      + `<button type="button" class="wb-btn out sm" ${isHnskj ? 'data-hnskj-wallet-refresh' : 'data-highvcc-refresh'}>刷新余额</button>`
+    const marks = [];
+    if (p.supplyFaultState && p.supplyFaultState !== 'OK') {
+      const [short, detail] = SUPPLY_FAULT_MARKS[p.supplyFaultReason] || ['供卡故障', '开不出新卡'];
+      marks.push(cardsMark(short, `${detail}${p.supplyFaultReason ? `（${p.supplyFaultReason}）` : ''}`));
+    }
+    // 只有 highvcc 用网页 token（与「更新登录」按钮同一判断）
+    if (!isHnskj && tokenExpired) marks.push(cardsMark('token 失效', '补钱、开卡都会失败；去卡片页重新贴 token'));
+    const spentNum = p.spentToday == null ? null : Number(p.spentToday);
+    const spent = spentNum == null ? ''
+      : spentNum === 0 ? '今天 没花钱'
+        : `今天 <span class="wb-mono" title="${escapeHtml(spendDetailText(p))}">$${formatMoney(p.spentToday)}</span>`;
+    return `<div class="cm-row">
+      <span class="cm-who"><b>${escapeHtml(nameOf(p))}</b>${marks.join('')}</span>
+      <span class="cm-nums">卡上够付 ${cardsCount(ready)} · 钱包够付 ${cardsCount(wallet)}</span>
+      <span class="cm-wal"><span class="cm-walv" ${isHnskj ? 'data-hnskj-wallet-summary' : 'data-highvcc-wallet-summary'}><span class="wb-mono" data-wal-v>—</span><span class="cm-when" data-wal-when></span></span>`
+      + `<button type="button" class="wb-btn out sm" ${isHnskj ? 'data-hnskj-wallet-refresh' : 'data-highvcc-refresh'}>刷新</button>`
       + (isHnskj ? '' : '<button type="button" class="wb-btn out sm" data-highvcc-login-check>更新登录</button>')
-      + (spentNum == null ? ''
-        : spentNum === 0
-          ? '<span class="wb-spent is-zero">今天没花钱</span>'
-          : `<span class="wb-spent" title="${escapeHtml(spendDetailText(p))}">今天花了 <b class="wb-mono">${spent}</b></span>`)
-      + `${fault}</div>
-      <div class="wb-prods">${(p.byProduct || []).map(prodChip).join('')}</div>
+      + `</span>
+      <span class="cm-spentr">${spent}</span>
     </div>`;
-  }).join('')
-    + zzshuPointsRow(overview.providerHealth?.zzshuPoints)
-    + `<p class="wb-total">Plus 现成能付 <b class="wb-mono">${totalReady}</b> 单`
-    + (totalWallet > 0 ? ` · 钱包还够 <b class="wb-mono">${totalWallet}</b> 单` : '')
-    // 「没有单在等卡」不显示（Lemon 2026-09-28）：有人等卡时才说。
-    + (waiting > 0 ? ` · <b class="wb-waiting">${waiting} 单正在等卡</b>` : '')
-    + '</p>';
+  });
+  const total = totalReady + totalWallet;
+  if (title) {
+    title.innerHTML = `Plus 还能接 <span class="cm-n">${total}</span> 单`;
+    title.classList.toggle('is-zero', total === 0);
+    title.title = `卡上够付 ${totalReady} 单 · 钱包够付 ${totalWallet} 单`;
+  }
+  if (flags) {
+    // 「没有单在等卡」不显示（Lemon 2026-09-28）：有人等卡时才说；一单都接不了时提醒「再来一单要等卡」。
+    flags.innerHTML = (supplyOff ? `<span title="不补钱、不开新卡；卡上现成的钱照常能付">${wbChip('warn', '自动开卡总闸关着')}</span>` : '')
+      + (waiting > 0 ? wbChip('warn', `${waiting} 单正在等卡`) : total === 0 ? wbChip('mute', '再来一单要等卡') : '');
+  }
+  const proText = [...pro].map(([label, n]) => `${escapeHtml(label)} 卡上够付 <b>${n}</b> 单`).join(' · ');
+  box.innerHTML = `<div class="cm-rows">${rows.join('')}</div>`
+    + `<p class="cm-foot">${zzshuPointsRow(overview.providerHealth?.zzshuPoints)}${proText ? `<span>${proText}</span>` : ''}</p>`;
   updateHnskjWalletSummary();
   updateHighvccWalletSummary();
 }
 
 /**
- * 直充平台（ZZSHU）剩余点数（D-401 起 worker 每 5 分钟只读一次）。D-405 第二批从「API 充值」按钮挪到这里。
+ * 直充平台（ZZSHU）剩余点数（D-401 起 worker 每 5 分钟只读一次）。D-405 第二批从「API 充值」按钮挪到这里；
+ * D-414 补记五起放在「卡与钱」脚注里。
  * 没读到就不显示（不写 0）；≤5 与 0 用和推送同样的门槛标色。超过 999 显示 999+：平台对未登记 Key 会回占位数 99990。
  */
 function zzshuPointsRow(zzshuPoints) {
   const points = zzshuPoints?.points;
   if (!Number.isInteger(points)) return '';
-  const tone = points === 0 ? 'danger' : points <= 5 ? 'warn' : 'mute';
+  const tone = points === 0 ? 'is-danger' : points <= 5 ? 'is-warn' : '';
   const when = zzshuPoints.observedAt ? ` · ${walletWhenText({ at: zzshuPoints.observedAt })}` : '';
-  return `<div class="wb-provrow is-points"><div class="wb-provhead"><b>直充平台</b>${wbChip(tone, `剩 ${points > 999 ? '999+' : points} 点${when}`)}</div></div>`;
+  return `<span class="cm-zz${tone ? ` ${tone}` : ''}">直充平台 剩 <b>${points > 999 ? '999+' : points}</b> 点${when}</span>`;
 }
 
 /** 「今天花了」的悬停明细（D-405）：写法不变，鼠标停上去看是哪几类钱。数来自后端 spentBreakdown。 */
@@ -491,11 +507,6 @@ function spendDetailText(p) {
   return parts.length ? `明细：${parts.join('；')}` : '';
 }
 
-/** 「钱包 X USD · 查询于 时间」：今天只写时分，跨天带日期。observation = { balance, at, currency }。 */
-function walletSummaryText(observation, failed) {
-  if (!observation) return `钱包 — USD · ${failed ? '查询失败，请检查登录' : '还没查过'}`;
-  return `钱包 ${formatMoney(observation.balance)} ${observation.currency || 'USD'} · ${walletWhenText(observation, failed)}`;
-}
 /** 「查询于 10:13」；跨天带日期；刷新失败时写「上次查询 … · 刷新失败」。 */
 function walletWhenText(observation, failed) {
   const at = new Date(observation.at);
@@ -510,14 +521,27 @@ function newerWallet(snapshot, live) {
   if (!s) return live;
   return Date.parse(live.at) >= Date.parse(s.at) ? live : s;
 }
-function paintWalletChip(summary, observation, failed) {
+/**
+ * 工作台「卡与钱」一行里的钱包：「$24.35 08:43」（D-414 补记五）。今天只写时分、跨天带日期；
+ * 刷新失败写「上次 … · 刷新失败」并标黄；从没查到过写「还没查过」/「查询失败，请检查登录」。悬停是完整说法。
+ */
+function paintWalletInline(summary, observation, failed) {
   if (!summary) return;
-  summary.lastElementChild.textContent = walletSummaryText(observation, failed);
-  summary.classList.toggle('warn', Boolean(failed));
-  summary.classList.toggle('mute', !failed);
+  const value = summary.querySelector('[data-wal-v]');
+  const when = summary.querySelector('[data-wal-when]');
+  if (value) value.textContent = observation ? `$${formatMoney(observation.balance)}` : '—';
+  if (when) {
+    when.textContent = observation
+      ? walletWhenText(observation, failed).replace(/^查询于 /, '').replace(/^上次查询 /, '上次 ')
+      : (failed ? '查询失败，请检查登录' : '还没查过');
+  }
+  summary.classList.toggle('is-failed', Boolean(failed));
+  summary.title = observation
+    ? `钱包余额 ${formatMoney(observation.balance)} ${observation.currency || 'USD'} · ${walletWhenText(observation, failed)}`
+    : '钱包余额';
 }
 function updateHnskjWalletSummary() {
-  paintWalletChip(document.querySelector('[data-hnskj-wallet-summary]'), newerWallet(state.hnskjWalletSnapshot, null), state.hnskjWalletError);
+  paintWalletInline(document.querySelector('[data-hnskj-wallet-summary]'), newerWallet(state.hnskjWalletSnapshot, null), state.hnskjWalletError);
 }
 let hnskjWalletRequest = null;
 /** hnskj「刷新余额」：走卡片页同一个 provider-refresh（现在也落余额历史），完了重读工作台。 */
@@ -538,7 +562,7 @@ async function refreshHnskjWallet() {
     } finally {
       hnskjWalletRequest = null;
       const again = document.querySelector('[data-hnskj-wallet-refresh]');
-      if (again) { again.disabled = false; again.textContent = '刷新余额'; }
+      if (again) { again.disabled = false; again.textContent = '刷新'; }
     }
   })();
   return hnskjWalletRequest;
@@ -872,7 +896,7 @@ async function loadOverview() {
   const activeMethod = String(overview?.providerHealth?.rechargeMethod || '').toUpperCase();
   renderDecisions(overview, cardSources, activeMethod === 'API' ? apiTakeoverEstimate : browserTakeoverEstimate);
   renderWbWall(overview, daily);
-  renderWbCards(overview);
+  renderWbCards(overview, alertData);
   renderWbRecon(daily);
   renderWbQueue(overview, daily, alertData, reconCases);
   renderWbOrders(todayOrders?.orders, { failed: todayOrders?.__error || !Array.isArray(todayOrders?.orders) });
@@ -1612,8 +1636,8 @@ function renderCardRigs(byProvider, tokenStatus) {
     const opened = Number(rig.openedToday || 0);
     const limit = Number(rig.dailyLimit || 0);
     const cells = [
-      // D-414 按钱看：卡上现成能付几单 / 钱包还够几单（不能补钱的卡台没有后一个数，写「—」）。
-      rigCell('现成能付 / 钱包够（Plus）',
+      // D-414 按钱看：卡上够付几单 / 钱包够付几单（不能补钱的卡台没有后一个数，写「—」；措辞 D-414 补记五 Lemon 批）。
+      rigCell('卡上够付 / 钱包够付（Plus）',
         // 「单」放进小字：大字里只放数字——16px 等宽字体里混汉字会把行撑高 3px，两台四格就和原型对不齐（visual-parity 2026-09-30）。
         `${Number(rig.readyOrders || 0)} <small>单 / ${rig.walletOrders == null ? '—' : `${Number(rig.walletOrders)} 单`}</small>`,
         { tone: lowStock ? 'is-warn' : '' }),
@@ -2182,8 +2206,8 @@ let highvccWalletVersion = 0;
 function updateHighvccWalletSummary() {
   const summary = document.querySelector('[data-highvcc-wallet-summary]');
   const button = document.querySelector('[data-highvcc-refresh]');
-  paintWalletChip(summary, newerWallet(state.highvccWalletSnapshot, state.highvccWalletObservation), state.highvccWalletError);
-  if (button) { button.disabled = Boolean(highvccWalletRequest); button.textContent = highvccWalletRequest ? '查询中…' : '刷新余额'; }
+  paintWalletInline(summary, newerWallet(state.highvccWalletSnapshot, state.highvccWalletObservation), state.highvccWalletError);
+  if (button) { button.disabled = Boolean(highvccWalletRequest); button.textContent = highvccWalletRequest ? '查询中…' : '刷新'; }
 }
 function invalidateHighvccWallet() {
   highvccWalletVersion += 1;

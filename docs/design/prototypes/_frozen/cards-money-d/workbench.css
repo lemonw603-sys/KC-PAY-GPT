@@ -220,41 +220,49 @@ small{font-size:max(12px,.84em)}
 /* ---------- 二排：卡与钱 | 日对账 ---------- */
 .workbench .wb-mid{display:grid;grid-template-columns:1.35fr .65fr;gap:16px;align-items:start}
 
-/* 卡与钱＝丁「一台一行」（D-414 补记五，Lemon 2026-10-01 从四个方案里挑定；原型 d414-cards-money-demo-v2.html#design=d，
-   契约 parity/workbench-cards-money.json）。取代原先「每台一块 + 三个产品格子 + 自动补/需人工开」：
-   ① 「Plus 还能接 N 单」进标题行，不另占一行；卡与钱这块有刷新 / 更新登录按钮，不再标「只读」
-   ② 每台一行，读起来像一句话：名字 · 卡上够付 / 钱包够付 · 钱包余额与查询时间 + 按钮 · 今天花了
-   ③ 出问题只在名字后跟一小段红字（悬停看详情），不单独占行；总闸关、有单等卡放标题行右侧
-   ④ 每行不换行（沿用 2026-09-24「保证一行」）；5X / 20X 收进脚注（单量少，Lemon 2026-10-01 同意只突出 Plus） */
-.workbench .cm-ch{align-items:flex-end}
-.workbench .cm-title{display:flex;align-items:baseline;gap:7px;white-space:nowrap}
-.workbench .cm-title .cm-n{font-family:var(--wb-fm);font-size:28px;font-weight:600;letter-spacing:-.02em;line-height:1;color:var(--wb-t)}
-.workbench .cm-title.is-zero .cm-n{color:var(--wb-warn)}
-.workbench .cm-chr{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end}
-.workbench .cm-st{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:600;white-space:nowrap;cursor:help}
-.workbench .cm-st .wb-d{width:7px;height:7px;border-radius:1px;flex:none}
-.workbench .cm-st.is-danger{color:var(--wb-danger)}
-.workbench .cm-st.is-danger .wb-d{background:var(--wb-danger)}
-.workbench .cm-rows{display:grid}
-.workbench .cm-row{display:grid;grid-template-columns:150px 170px 1fr auto;align-items:center;gap:10px;padding:10px 2px;border-bottom:1px solid var(--wb-s3);white-space:nowrap}
-.workbench .cm-row:first-child{border-top:1px solid var(--wb-s3)}
-.workbench .cm-who{display:flex;align-items:center;gap:8px}
-.workbench .cm-who b{font-size:13px;color:var(--wb-t)}
-.workbench .cm-nums{font-size:12px;color:var(--wb-t2)}
-.workbench .cm-num{font-family:var(--wb-fm);font-size:13px;font-weight:600;color:var(--wb-t)}
-.workbench .cm-num.is-dim{color:var(--wb-t3);font-weight:400}
-.workbench .cm-unit{font-size:12px;color:var(--wb-t3)}
-.workbench .cm-wal{display:inline-flex;align-items:center;gap:8px;white-space:nowrap}
-.workbench .cm-walv{display:inline-flex;align-items:center;gap:8px}
-.workbench .cm-walv .wb-mono{font-size:13px;font-weight:600;color:var(--wb-t)}
-.workbench .cm-when{font-size:12px;color:var(--wb-t3)}
-.workbench .cm-walv.is-failed .cm-when{color:var(--wb-warn)}
-.workbench .cm-spentr{font-size:12px;color:var(--wb-t3);text-align:right}
-.workbench .cm-spentr .wb-mono{font-size:12px;color:var(--wb-t2)}
-.workbench .cm-foot{display:flex;flex-wrap:wrap;gap:4px 16px;margin:10px 2px 0;font-size:12px;color:var(--wb-t3)}
-.workbench .cm-foot b{font-family:var(--wb-fm);font-weight:600;color:var(--wb-t2)}
-.workbench .cm-foot .is-warn b{color:var(--wb-warn)}
-.workbench .cm-foot .is-danger b{color:var(--wb-danger)}
+/* 卡与钱＝按台按产品（D-283 原规划 / 原型 C）。每台一行：上排卡台名 + 钱包 + 今天花了，
+   下排三个产品各一格「用 N / 剩 N」+ 会不会自动补。
+   此前这里是四个状态标签（可分配/在库/使用中/用过）平铺，维度选错了：
+   「用过 0」这种数运营根本不看，而「20X 还剩几张、断了会不会自动补」才是要的。 */
+.workbench .wb-provrow{padding:11px 13px;border:1px solid var(--wb-bd);border-radius:11px;background:var(--wb-s2)}
+.workbench .wb-provrow+.wb-provrow{margin-top:7px}
+.workbench .wb-provhead{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+.workbench .wb-provhead b{font-size:13px;color:var(--wb-t)}
+.workbench .wb-spent{margin-left:auto;font-size:12px;color:var(--wb-t3)}
+.workbench .wb-spent b{font-size:12.5px;color:var(--wb-t2)}
+.workbench .wb-spent.is-zero,.workbench .wb-spent.is-zero b{color:var(--wb-t3);font-weight:400}
+/* 三个产品各一格，每格压成**一行**：六格里通常五格是 0（5X/20X 还没做库存卡），
+   把零值摊成三行大字等于让最没信息的部分占最大的视觉重量 —— 第一版这么做，
+   整块 381px 比改之前的 291px 还高，与「精简」背道而驰。压扁后回到 ~180px。 */
+.workbench .wb-prods{margin-top:8px;display:grid;grid-template-columns:repeat(3,1fr);gap:7px}
+/* 每格固定一行（Lemon 2026-09-24：换两行不好看，要保证一行）。D-362 曾用 small{width:100%} 把
+   「自动补/需人工开」硬推到第二行，其实空间够：Lemon 的屏幕 1440 宽（Chrome 占满屏），格子内容区
+   204px，一行只要约 172px（两位数时约 187）。所以：不换行，「自动补」靠右同一行；
+   格子变窄到放不下时（窗口缩小、开侧边栏）改显示两字短词「自动/人工」，再窄就截断数字文字而不换行。
+   字体见下方 B「统一」。 */
+.workbench .wb-prod{display:flex;flex-wrap:nowrap;align-items:baseline;gap:7px;padding:6px 9px;border-radius:8px;
+  background:var(--wb-s);border:1px solid var(--wb-s3);container-type:inline-size;overflow:hidden}
+.workbench .wb-prod.is-ok{border-color:var(--wb-bd);background:var(--wb-ok-soft)}
+.workbench .wb-prod b{font-size:12px;font-weight:700;color:var(--wb-t3);letter-spacing:.04em;flex:none}
+/* 有货的才给正常墨色；全 0 的退成弱色 —— 一眼看出哪个产品现在真能接单 */
+/* B「统一」（Lemon 2026-09-24 从三版里挑定，D-366）：整句 12px 中等粗细、数字用正文字体（等宽对齐靠 tnum），
+   与同块「钱包 X USD · 查询于」同一种写法。此前 12.5px/600 + 数字等宽字体：一行混三种字体、比周围说明字重一截，
+   Lemon「总感觉和整体页面不协调」。有货与否仍靠格子绿底 + 墨色区分，不靠加粗。 */
+.workbench .wb-prod .wb-prod-n{font-size:12px;font-weight:500;color:var(--wb-t3);white-space:nowrap;min-width:0;overflow:hidden;text-overflow:ellipsis}
+.workbench .wb-prod .wb-prod-n i{font-style:normal;font-variant-numeric:tabular-nums}
+.workbench .wb-prod.is-ok .wb-prod-n{color:var(--wb-t)}
+.workbench .wb-prod small{margin-left:auto;font-size:12px;color:var(--wb-t3);flex:none;white-space:nowrap;line-height:1.2}
+.workbench .wb-prod small .wb-how-s{display:none}
+@container (max-width:196px){
+  .workbench .wb-prod small .wb-how{display:none}
+  .workbench .wb-prod small .wb-how-s{display:inline}
+}
+/* 「需人工开」保留区分但不强调（Lemon 2026-09-20：「不需要那么明显，我知道」）——
+   5X/20X 没做库存卡是既定安排，不是异常，橙色加粗会天天喊一件他早就清楚的事。 */
+.workbench .wb-prod small.is-manual{color:var(--wb-t3)}
+.workbench .wb-total{margin:11px 2px 0;font-size:12px;color:var(--wb-t3)}
+.workbench .wb-total b{color:var(--wb-t)}
+.workbench .wb-total b.wb-waiting{color:var(--wb-warn)}
 
 .workbench .wb-recon{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .workbench .wb-recon-empty{grid-column:1 / -1}

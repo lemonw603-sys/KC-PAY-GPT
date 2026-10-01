@@ -329,10 +329,15 @@ export function providerCardStockSql({ productCode = 'plus' } = {}) {
       -- 下一单不管是补旧卡还是开新卡，花的都是这 $16 左右（开新卡另有约 $0.5 开卡费，这里不扣，略偏多）。
       -- 只对能一卡多单的产品算（Plus）：5X / 20X 一卡一单、不补钱，每单要的钱也不是这个数，给它们算会误导。
       -- 「自动开卡」总闸关着时不给数（NULL，页面不显示）：那时既不补钱也不开卡，钱包里的钱一单也用不上（D-414 自查，Lemon 批）。
+      -- 卡台登录失效（token 告警没解决）时同样不给数：补钱、开卡都会失败（D-414 补记五，Lemon 2026-10-01 批；
+      -- 与上面 reusableTopUpCardSql「登录失效期间不挑旧卡」同一个条件）。
       CASE WHEN pa.supports_auto_funding = 1 AND pa.open_adapter IN (${TOP_UP_ADAPTERS.map((a) => `'${a}'`).join(',')})
           AND (${maxPaymentsSql(normalizedProduct)}) > 1
           AND 'true' = (SELECT wallet_switch.setting_value FROM app_settings wallet_switch
             WHERE wallet_switch.setting_key = 'card_auto_replenishment_enabled' LIMIT 1)
+          AND NOT EXISTS (SELECT 1 FROM operator_alerts wallet_token
+            WHERE wallet_token.dedupe_key = CONCAT('provider-token-expired:', pa.id)
+              AND wallet_token.status <> 'RESOLVED')
         THEN GREATEST(0, FLOOR((
           COALESCE((SELECT ws.available_balance FROM provider_balance_snapshots ws WHERE ws.provider_account_id = pa.id
             ORDER BY ws.observed_at DESC, ws.id DESC LIMIT 1), 0)

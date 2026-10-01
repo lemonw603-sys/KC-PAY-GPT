@@ -136,16 +136,16 @@ test('admin refresh feedback and inset dropdown arrows remain visible', () => {
   // 「剩 N」用**库存口径**（stockAvailable），不是分配口径。分配口径多一条「15 分钟内
   // 同步过」，而 hnskj 每 3 小时才同步一次 —— 拿它当「还剩几张」会让好卡看起来不存在
   // （Lemon 2026-09-18 指出、2026-09-20 在页面这一侧查实并修，D-307）。
-  // D-414（2026-09-30 Lemon：要盯的是钱不是卡）：格子改成「现成 N 单 · 钱包够 M 单」，两个数都由后端按
-  // 库存口径算（ready_orders / wallet_orders），前端不自己拼。
-  assert.match(script, /现成<i>\$\{ready\}<\/i>单/);
-  assert.match(script, /const ready = Number\(x\.readyOrders \|\| 0\)/);
-  assert.match(script, /钱包够<i>\$\{wallet\}<\/i>单/);
-  assert.doesNotMatch(script, /剩 \$\{x\.bindableNow\}/, '「还剩几张」不许用分配口径');
+  // D-414（2026-09-30 Lemon：要盯的是钱不是卡）：两个数都由后端按库存口径算（ready_orders / wallet_orders），前端不自己拼。
+  // D-414 补记五（2026-10-01 Lemon 挑定丁「一台一行」）：每台一句「卡上够付 N 单 · 钱包够付 M 单」，
+  // 「自动补 / 需人工开」按 Lemon 的话去掉（2026-09-20 那条「要标会不会自动补」由此取代）。
+  assert.match(script, /卡上够付 \$\{cardsCount\(ready\)\} · 钱包够付 \$\{cardsCount\(wallet\)\}/);
+  assert.match(script, /const ready = Number\(plus\.readyOrders \|\| 0\)/);
+  assert.match(script, /const wallet = plus\.walletOrders == null \? null : Number\(plus\.walletOrders\)/);
+  assert.doesNotMatch(script, /bindableNow\)/, '「还能接几单」不许用分配口径');
   assert.match(script, /byProduct/);
-  // 「剩 N」旁边必须标会不会自动补：水位 0 的产品断了只能人工开，
-  // 「20X 剩 0」和「Plus 剩 0」严重程度完全不同（Lemon 2026-09-20）
-  assert.match(script, /autoReplenished \? '自动补' : '需人工开'/);
+  const wbCards = script.slice(script.indexOf('function renderWbCards('), script.indexOf('function zzshuPointsRow('));
+  assert.doesNotMatch(wbCards, /自动补|需人工开/);
   // 有多少人在等卡 —— 库存讲「有多少」，这个讲「有多少人在等」
   assert.match(script, /ordersWaitingForCard/);
   assert.match(script, /wb-decisions/);

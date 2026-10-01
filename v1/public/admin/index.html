@@ -8,7 +8,7 @@
   <title>Plus 运营后台</title>
   <link rel="icon" href="/admin/assets/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/admin/assets/admin.css?v=31">
-  <link rel="stylesheet" href="/admin/assets/workbench.css?v=28">
+  <link rel="stylesheet" href="/admin/assets/workbench.css?v=29">
   <link rel="stylesheet" href="/admin/assets/cards.css?v=8">
   <link rel="stylesheet" href="/admin/assets/cdks.css?v=1">
   <link rel="stylesheet" href="/admin/assets/orders.css?v=4">
@@ -17,7 +17,7 @@
   <script src="/admin/assets/cdks.js?v=2" defer></script>
   <script src="/admin/assets/orders.js?v=7" defer></script>
   <script src="/admin/assets/diagnostics.js?v=3" defer></script>
-  <script src="/admin/assets/admin.js?v=106" defer></script>
+  <script src="/admin/assets/admin.js?v=107" defer></script>
 </head>
 <body>
   <div class="admin-shell">
@@ -78,7 +78,7 @@
         <div class="wb-wall" id="wb-wall"></div>
 
         <div class="wb-mid">
-          <section class="wb-card"><div class="wb-ch"><div><p class="wb-kick">卡与钱</p><h2>卡还够不够</h2></div><span class="wb-ro">只读</span></div><div class="wb-cb" id="wb-cards"><p class="wb-qempty">正在读取…</p></div></section>
+          <section class="wb-card"><div class="wb-ch cm-ch"><div><p class="wb-kick">卡与钱</p><h2 class="cm-title" id="wb-cards-title">还能接几单</h2></div><div class="cm-chr" id="wb-cards-flags"></div></div><div class="wb-cb" id="wb-cards"><p class="wb-qempty">正在读取…</p></div></section>
           <section class="wb-card"><div class="wb-ch"><div><p class="wb-kick">昨夜日对账</p><h2>对上没有</h2></div><button class="wb-btn link" type="button" data-view-jump="diagnostics">看逐张 →</button></div><div class="wb-cb"><div class="wb-recon" id="wb-recon"></div></div></section>
         </div>
 
@@ -188,8 +188,8 @@
 
       <section id="stock-view" class="view" hidden>
         <section class="card stock-card">
-          <div class="card-heading"><div><p class="section-kicker">两台卡台</p><h2>现在能分出去几张</h2></div><span class="readonly-badge">可分配＝资格规则算的</span></div>
-          <p class="card-description stock-definition">“可分配”＝能接新单的卡：余额够或能补钱、次数没满、没被占用或标记，和工作台同一个数。“在库”只是没退役，比它宽。</p>
+          <div class="card-heading"><div><p class="section-kicker">两台卡台</p><h2>现在还能付几单</h2></div><span class="readonly-badge">按分卡规则算</span></div>
+          <p class="card-description stock-definition">“卡上”＝卡里已有的钱，不补钱就能付几单（余额够、次数没满、没被占用或标记）；“钱包”＝钱包扣掉押金和待发补钱后，还够补旧卡或开新卡付几单。和工作台同一组数。“在库”只是没退役的卡。</p>
           <div class="cardrigs" id="cards-rigs"><p class="empty-state">正在读取两台卡台…</p></div>
         </section>
 
