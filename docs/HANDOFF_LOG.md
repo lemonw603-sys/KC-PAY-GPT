@@ -4163,3 +4163,13 @@ Lemon 04:54:51 UTC 重贴 token，告警 1 秒内解除。工作台那一页 04:
 
 05:29 整点同步成功：0237 不在卡台、HELD_FOR_REVIEW，钱包 $24.15。「刷新」改动单独发布 `20261001-d414b-ee6e46c`（05:45:16 UTC），复验与 state-check 一致。
 Lemon 答：每次重新登录后复制 token、只用一台电脑；推断见 D-414 补记八。网页续期函数没有调用点、没有续期地址。拒绝做绕过滑块。
+
+
+## 2026-10-01｜装对照检查；第一批逻辑复核（15:3x～17:4x UTC）
+
+- **对照检查**：Lemon「可以装」→ `~/Library/LaunchAgents/com.pojia.highvcc-token-probe.plist` 已加载。每小时跑 `scripts/highvcc-token-probe.mjs`，17:37:41 UTC 首轮记「HIGHVCC_TOKEN_MISSING」，本机 token 等 Lemon 写入。
+  - 拆除：`launchctl bootout gui/$(id -u)/com.pojia.highvcc-token-probe` + 删 plist 与 `~/Library/Application Support/pojia-highvcc-probe/`。
+  - 服务器 token（04:54:51 UTC 贴）15:30 UTC 仍 OK（10.6 小时）。
+- **第一批逻辑复核**：Lemon 要求第二批先停，把第一批逻辑对一遍。
+  - 生产配置（17:39 UTC 只读）：每单记账 16、门槛 16、每卡 3 单、总闸开、选卡顺序未设＝有钱先用；Plus（API、Browser）卡源都是 backup-a；highvcc 押金底线 20、Plus 水位 1、开卡 16、日限 20。
+  - 发现 **4022**（$1、注资记 50、用 0 次、无停用标记，只有一笔被拒扣款＝09-26 测试卡）：不会被用、不会补钱、也不进待销，一直挂着。待 Lemon 定。
