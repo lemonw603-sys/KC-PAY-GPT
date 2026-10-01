@@ -171,6 +171,28 @@ browser-mvp/scripts/prod-query.sh "SELECT id, open_adapter, default_card_segment
   browser-mvp/scripts/prod-query.sh "SELECT COUNT(*) FROM card_top_ups WHERE status IN ('PREPARED','SENDING','SUBMITTED','UNKNOWN')"
   ```
 
+## 2.57 API 单处理太久、本机 token 对照检查（D-414 补记十～十二）
+
+**API 单处理太久**（推 `API_ORDER_STALLED`，代码在 main、**未发布**；随第 1、2 条一起发）：
+- 巡检每分钟查 API 路线（301）停在「提交中 / 充值处理中」超过 **2 分钟**的单（`operator-watch.mjs` `API_STUCK_MINUTES`；成功单平时 34～49 秒）。已经有「付款不明待核实」或「API 单失败」告警在管的单不重复报。订单离开这两态自动收掉。
+- 推送里有：订单号、直充平台单号（还没拿到就写「还没拿到」）、系统还在不在问平台、「不会重付、不会换卡」。
+- 收到后：到直充平台后台按平台单号看这单结果。**不要在本系统里重提、换卡**；平台给了结果系统会自己收口。
+  ```bash
+  browser-mvp/scripts/prod-query.sh "SELECT public_no, status, recharge_order_no, updated_at FROM orders WHERE public_no='<单号>'"
+  browser-mvp/scripts/prod-query.sh "SELECT status, attempts, max_attempts, available_at FROM tasks WHERE task_type='POLL_RECHARGE' AND order_id=(SELECT id FROM orders WHERE public_no='<单号>')"
+  ```
+- 待做（Lemon 10-02 定，未写）：乙＝快速询问问满还没结果转「付款不明 → 去核实」；甲＝之后每 5 分钟慢问直到有结果；丙＝平台本身出问题时新单切 Browser（条件待定）。
+
+**本机 token 对照检查**（LaunchAgent `com.pojia.highvcc-token-probe`，每小时一次，只查钱包、不写）：
+1. 在 highvcc 网站登录一次（别频繁登录，会被封 IP），按平时给后台贴 token 的方法复制这次登录的 token——**这份只写本机文件，不要贴进后台**（两份要分开才能比）。
+2. 写进本机文件并当场查一次：
+   ```bash
+   pbpaste | tr -d '[:space:]' > "$HOME/Library/Application Support/pojia-highvcc-probe/token" && chmod 600 "$HOME/Library/Application Support/pojia-highvcc-probe/token" && node "/Users/lemon/code/AI充值业务/scripts/highvcc-token-probe.mjs"
+   ```
+   打印 `… OK tokenSavedAt=…` 就对了；之后每小时追加一行到 `probe.log`。
+3. 看结果：服务器那份失效时（推 token 失效），对照 `tail ~/Library/Application\ Support/pojia-highvcc-probe/probe.log`：本机这份也同时失效＝卡台统一作废；本机还 OK＝卡台只作废服务器那份。
+- 卸载（先问 Lemon）：`launchctl bootout gui/$(id -u)/com.pojia.highvcc-token-probe`，再删 `~/Library/LaunchAgents/com.pojia.highvcc-token-probe.plist` 和上面那个目录。
+
 ## 2.6 待销清单与付款不明收口（第④步起，2026-09-18）
 
 **待销清单**（面二⑩，派生查询，不建表）：口径 = 用满 / 服务过 Pro 单 / DEPLETED 或 FAILED / 已标 RETIRED / 取消续费未确认，且开卡时间 + 最短存活期（`card_min_retire_age_hours`，默认 6，可调）已到。V2 只做手动销卡（D-232）：Lemon 去卡台删，回来登记。

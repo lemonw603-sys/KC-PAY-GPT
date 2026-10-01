@@ -35,9 +35,30 @@ else
   bad "接班一屏指向当前 release" "线上是 ${live}，docs/HANDOFF_NOW.md 里没有它"
 fi
 
+# 3b) 事实表「回滚点」行跟上发布（2026-10-01 发现：两次发布后这一行还停在 09-29 的版本，state-check 不查它）
+# 「上一版」取服务器上按建立时间排在当前 release 后面的那个目录；只是近似（prepare 了没切的会排在前面），所以只报提醒。
+prev_rel=$(ssh -o BatchMode=yes -o ConnectTimeout=10 root@144.34.180.184 'cur=$(basename $(readlink /opt/pojia/current)); ls -1t /opt/pojia/releases | sed -n "/^$cur\$/{n;p;q;}"' 2>/dev/null)
+rb_row=$(grep -m1 '^| 回滚点 |' docs/CURRENT_STATE.md)
+if [ -z "$prev_rel" ]; then
+  printf '[提醒] %s — %s\n' "事实表回滚点" "取不到服务器上的上一版 release"
+elif printf '%s' "$rb_row" | grep -q "$prev_rel"; then
+  ok "事实表回滚点是上一版（${prev_rel}）"
+else
+  printf '[提醒] %s — %s\n' "事实表回滚点" "服务器上一版看起来是 ${prev_rel}，CURRENT_STATE「回滚点」行里没有它"
+fi
+
 # 4) 接班一屏的更新时间不早于最后一次提交太久
 hupd=$(grep -m1 '^更新：' docs/HANDOFF_NOW.md | sed 's/^更新：//' | cut -c1-16)
 [ -n "$hupd" ] && ok "接班一屏更新时间：$hupd" || bad "接班一屏更新时间" "读不到「更新：」行"
+# 接班一屏要跟上决策记录（2026-10-02 加：DECISIONS 写了好几轮，接班一屏一天没重写，脚本照样全绿，是 Lemon 自己发现的）。
+# 比的是两份文件最后一次改动的时间：未提交的改动算「现在」。
+last_change() { if ! git diff --quiet -- "$1" 2>/dev/null || ! git diff --cached --quiet -- "$1" 2>/dev/null; then date +%s; else git log -1 --format=%ct -- "$1"; fi; }
+dts=$(last_change docs/DECISIONS.md); hts=$(last_change docs/HANDOFF_NOW.md)
+if [ -n "$dts" ] && [ -n "$hts" ] && [ "$dts" -gt "$hts" ]; then
+  bad "接班一屏跟上决策记录" "DECISIONS.md 的改动比 HANDOFF_NOW.md 新——有决定没进接班一屏，重写它"
+else
+  ok "接班一屏跟上决策记录"
+fi
 
 # 4b) 接班一屏是「接整个项目」，不是「接某一件事」（2026-09-29：上一版顶部写「新窗口从这里开始：D-411」，
 #     Lemon 让新窗口接整个项目，它读完入口就直接去做 D-411）
