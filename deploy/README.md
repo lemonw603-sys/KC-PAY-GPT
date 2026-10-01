@@ -48,7 +48,8 @@ systemctl enable --now pojia-bark-notifications.service
 
 不得直接编辑环境文件绕过 Permit。Permit 消费后任何失败都进入终态或人工核对，不自动再次创建直充订单。
 
-旧的 `pojia-card-stock-runner.timer` 已停用并从部署候选删除。不得通过 systemd 定时器恢复“每分钟创建/领取自动开卡任务”的架构；自动开卡只有在订单事件触发、同一需求唯一任务、明确失败停止及有界恢复全部实现并单独验收后，才能以新的执行机制上线。独立自动补余额 runner 不受此条影响。
+> 2026-10-02 更正：下面这段是旧记录，**已不符合现状**。生产上 `pojia-card-stock-runner.timer` 在跑（`OnUnitActiveSec=60s`，2026-10-01 18:47 UTC 实查 active），自动开卡由水位调度器每 60 秒一轮执行（见 `docs/CURRENT_STATE.md` 对应行与 D-412 补记三）。
+> 旧记录原文：旧的 `pojia-card-stock-runner.timer` 已停用并从部署候选删除。不得通过 systemd 定时器恢复“每分钟创建/领取自动开卡任务”的架构；自动开卡只有在订单事件触发、同一需求唯一任务、明确失败停止及有界恢复全部实现并单独验收后，才能以新的执行机制上线。独立自动补余额 runner 不受此条影响。
 
 若默认 API 路线进入常驻自动运营，必须在一次明确确认后安装仓库内的最小权限 drop-in，不能临时手改 unit：
 
