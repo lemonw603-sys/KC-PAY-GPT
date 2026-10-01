@@ -42,6 +42,7 @@ export const PHONE_PUSH_TYPES = Object.freeze({
   API_ORDER_FAILED: PushCategory.HUMAN,             // D-401：API 路线提交后失败，卡占用转对账、卡密不自动退，只能人收口
   ZZSHU_POINTS_EMPTY: PushCategory.HUMAN,           // D-401：直充平台点数为 0，新单已改走 Browser 或暂停，要人买点
   ZZSHU_KEY_REJECTED: PushCategory.HUMAN,           // D-401：直充平台不认这把 Key（40107 等），API 路线下不了单
+  API_ORDER_STALLED: PushCategory.HUMAN,            // D-414 补记十一：API 单处理太久（平台一直 pending / 查询放弃），客户一直「处理中」，只有人能去平台看
 
   // —— 供给 ——
   CARD_STOCK_LOW: PushCategory.SUPPLY,              // 按台×产品水位不足（第③步起唯一产生点）

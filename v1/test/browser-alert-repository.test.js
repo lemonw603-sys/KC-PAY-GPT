@@ -25,7 +25,8 @@ test('browser alerts are one row per type and order, reopened on repeat, with fi
     // 人机验证：只有人能过，必须响手机。与 BROWSER_PAYMENT_UNKNOWN 分开正是为了绕开
     // PHONE_SILENT_TYPES 的静音（D-176）——2026-09-13 真单卡在验证上全程无通知就是因为
     // 两者混在一起。改这张表时请一并确认该类型没被加进静音名单。
-    BROWSER_HUMAN_VERIFICATION: 'critical'
+    BROWSER_HUMAN_VERIFICATION: 'critical',
+    API_ORDER_STALLED: 'critical'
   });
   // 这一条守住上面那个意图：人机验证告警不能被静音，否则等于没有。
   assert.equal(PHONE_SILENT_TYPES_SNAPSHOT.includes('BROWSER_HUMAN_VERIFICATION'), false,

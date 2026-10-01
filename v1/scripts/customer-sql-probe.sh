@@ -85,6 +85,13 @@ probe "stalled-order-queries · 订单结束收掉卡住告警（只读形式）
 FINISHED_ALERTS_SELECT="$(node --input-type=module -e "import { resolveFinishedOrderAlertsSql } from './src/db/repositories/stalled-order-queries.js'; const s = resolveFinishedOrderAlertsSql(); process.stdout.write('SELECT oa.id FROM operator_alerts oa INNER JOIN orders o ON o.id = oa.order_id ' + s.slice(s.indexOf('WHERE')))")" \
   || { echo "[失败] 读不到 resolveFinishedOrderAlertsSql"; exit 1; }
 probe "stalled-order-queries · 订单结束收掉失败 / 要人工提醒（只读形式）" "$FINISHED_ALERTS_SELECT"
+# D-414 补记十一：API 单停在提交中 / 充值处理中太久（巡检每分钟跑），及订单离开这两态时收掉提醒（只读形式）。
+API_STUCK_SQL="$(node --input-type=module -e "import { API_PROCESSING_STUCK_SQL } from './src/db/repositories/stalled-order-queries.js'; process.stdout.write(API_PROCESSING_STUCK_SQL.replaceAll('?', '15'))")" \
+  || { echo "[失败] 读不到 API_PROCESSING_STUCK_SQL"; exit 1; }
+probe "stalled-order-queries · API 单处理太久" "$API_STUCK_SQL"
+API_RESOLVE_SELECT="$(node --input-type=module -e "import { RESOLVE_API_STALLED_SQL as s } from './src/db/repositories/stalled-order-queries.js'; process.stdout.write('SELECT oa.id FROM operator_alerts oa INNER JOIN orders o ON o.id = oa.order_id ' + s.slice(s.indexOf('WHERE')))")" \
+  || { echo "[失败] 读不到 RESOLVE_API_STALLED_SQL"; exit 1; }
+probe "stalled-order-queries · API 单离开处理中收掉提醒（只读形式）" "$API_RESOLVE_SELECT"
 # D-409：「充值成功」推送（巡检每分钟跑）与调度器两条卡查询。UPDATE 改成同条件的 SELECT；带 ? 的填 highvcc × Plus 实值。
 SUCCESS_SELECT="$(node --input-type=module -e "import { newlySucceededOrdersSql } from './src/db/repositories/order-success-push.js'; process.stdout.write(newlySucceededOrdersSql())")" \
   || { echo "[失败] 读不到 newlySucceededOrdersSql"; exit 1; }

@@ -16,7 +16,10 @@ export const BROWSER_ALERT_TYPES = Object.freeze({
   // 因为后者在 PHONE_SILENT_TYPES 里静音（D-176），这一类必须响手机。
   // 2026-09-13：先前加了用它的调用点却漏了这张表，类型不在表里会直接抛
   // `unknown browser alert type`，等于告警写不进去；补上。
-  BROWSER_HUMAN_VERIFICATION: 'critical'
+  BROWSER_HUMAN_VERIFICATION: 'critical',
+  // D-414 补记十一：API 单停在「提交中 / 充值处理中」太久（巡检 operator-watch 产生）。这里是按订单写告警的
+  // 通用写法（去重键 = 类型 + 订单），不限 Browser；名字沿用历史。
+  API_ORDER_STALLED: 'critical'
 });
 
 export async function upsertBrowserAlertInTransaction(connection, { type, orderId, title, message }) {

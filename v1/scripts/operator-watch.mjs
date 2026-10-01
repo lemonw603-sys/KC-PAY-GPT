@@ -18,7 +18,8 @@ const { upsertBrowserAlertInTransaction } = await import(join(HERE, '../src/db/r
 const { EXECUTOR_HEARTBEAT_MAX_AGE_MS, EXECUTOR_HEARTBEAT_SETTING } = await import(join(HERE, '../src/db/repositories/order-intake-repository.js'));
 // 资格口径只有一份权威实现，这里复用它，不另拼 SQL——自拼过一次就报错过一次。
 const { usableCardSql } = await import(join(HERE, '../src/services/card-inventory-eligibility.js'));
-const { PRE_PAYMENT_STUCK_SQL, RESOLVE_FINISHED_STALLED_SQL, resolveFinishedOrderAlertsSql, preStuckAlert } = await import(join(HERE, '../src/db/repositories/stalled-order-queries.js'));
+const { PRE_PAYMENT_STUCK_SQL, RESOLVE_FINISHED_STALLED_SQL, resolveFinishedOrderAlertsSql, preStuckAlert,
+  API_PROCESSING_STUCK_SQL, RESOLVE_API_STALLED_SQL, apiStuckAlert } = await import(join(HERE, '../src/db/repositories/stalled-order-queries.js'));
 const { recordSucceededOrders, resolveDeliveredSuccessAlertsSql } = await import(join(HERE, '../src/db/repositories/order-success-push.js'));
 const { stuckTopUpsWithoutAlertSql, upsertTopUpAlert } = await import(join(HERE, '../src/db/repositories/card-top-up-repository.js'));
 
@@ -26,6 +27,8 @@ const args = process.argv.slice(2);
 const idx = args.indexOf('--minutes');
 // 3 分钟：客户没充成功通常三五分钟内就会来找运营，告警必须比客户快。
 const minutes = idx >= 0 ? Math.max(1, Number(args[idx + 1]) || 3) : 3;
+// API 单正常约 1 分钟付完款（09-28 真单 49 秒）；15 分钟没结果就叫人（D-414 补记十一）。
+const API_STUCK_MINUTES = 15;
 const dryRun = args.includes('--dry-run');
 if (!process.env.DATABASE_URL) { console.error('DATABASE_URL is required'); process.exit(2); }
 
@@ -63,11 +66,14 @@ try {
   // 第三种半（D-411 对抗审查 2026-09-30）：付款前补钱没了结、15 分钟了还没叫过人。正常情况下补钱自己的核对任务
   // 3 分钟内就会换卡 / 叫人；走到这里说明那个任务丢了（进程死、任务死、追踪开关关着），客户可能还停在「正在准备支付卡」。
   const [stuckTopUps] = await connection.query(stuckTopUpsWithoutAlertSql(), [minutes + 12]);
+  // 第四种卡住（D-414 补记十一）：API 单停在提交中 / 充值处理中超过 15 分钟（正常约 1 分钟付完款）。
+  const [apiStuck] = await connection.query(API_PROCESSING_STUCK_SQL, [API_STUCK_MINUTES]);
   const found = {
     stuckTopUps: stuckTopUps.map((row) => ({ last4: row.last4, status: row.status, waitedMinutes: Number(row.waited) })),
     queued: stalled.map((row) => ({ publicNo: row.public_no, waitedMinutes: Number(row.waited) })),
     unresolvedPayment: stuckRuns.map((row) => ({ publicNo: row.public_no, waitedMinutes: Number(row.waited) })),
     prePayment: prePaymentStuck.map((row) => ({ publicNo: row.public_no, waitedMinutes: Number(row.waited) })),
+    apiProcessing: apiStuck.map((row) => ({ publicNo: row.public_no, waitedMinutes: Number(row.waited), stillChecking: Boolean(Number(row.still_checking)) })),
   };
   let succeededPushed = 0;
   if (!dryRun) {
@@ -86,6 +92,10 @@ try {
     for (const row of prePaymentStuck) {
       await upsertBrowserAlertInTransaction(connection, preStuckAlert(row));
     }
+    for (const row of apiStuck) {
+      await upsertBrowserAlertInTransaction(connection, apiStuckAlert(row));
+    }
+    await connection.query(RESOLVE_API_STALLED_SQL);
     // 订单结束了，它的「客户卡住了」就收掉（D-390）；以前从不自动解除。
     await connection.query(RESOLVE_FINISHED_STALLED_SQL);
     // 订单结束且不再需要人、推送已发完的「浏览器单失败 / 要人工」也收掉（D-405）。

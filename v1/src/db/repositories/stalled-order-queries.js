@@ -47,6 +47,47 @@ export const RESOLVE_FINISHED_STALLED_SQL = `UPDATE operator_alerts oa
    AND o.status IN ('RECHARGE_SUCCESS', 'RECHARGE_FAILED', 'CLOSED', 'CARD_FAILED')`;
 
 /**
+ * 第四种卡住（D-414 补记十一，Lemon 2026-10-02 同意「API 单一直处理中要推手机」）：API 单停在
+ * 「提交中 / 充值处理中」太久。上面三种只看走 Browser 的单（有派发任务）；API 单此前没有任何巡检——
+ * 直充平台一直回 pending 时，查询任务问满 720 次（每 5 秒，约 1 小时）就放弃，订单停在 RECHARGE_PROCESSING，
+ * 客户页一直「处理中」，没人收到推送（2026-10-01 复核第一批时查出）。
+ * 已有「付款不明待核实」「API 充值失败」告警在管的单不重复报。参数：分钟数。
+ */
+export const API_PROCESSING_STUCK_SQL = `SELECT o.id, o.public_no, o.status, o.recharge_order_no,
+       TIMESTAMPDIFF(MINUTE, o.updated_at, CURRENT_TIMESTAMP(3)) AS waited,
+       EXISTS (SELECT 1 FROM tasks t WHERE t.order_id = o.id AND t.task_type = 'POLL_RECHARGE'
+                AND t.status IN ('PENDING', 'RUNNING')) AS still_checking
+  FROM orders o
+  INNER JOIN fulfillment_routes fr ON fr.id = o.fulfillment_route_id
+ WHERE fr.executor_kind = 'API'
+   AND o.status IN ('SUBMITTING', 'RECHARGE_PROCESSING')
+   AND o.updated_at < CURRENT_TIMESTAMP(3) - INTERVAL ? MINUTE
+   AND NOT EXISTS (SELECT 1 FROM operator_alerts covered
+     WHERE covered.order_id = o.id AND covered.status <> 'RESOLVED'
+       AND covered.alert_type IN ('ORDER_PAYMENT_UNKNOWN_REVIEW', 'API_ORDER_FAILED'))`;
+
+/** API 单离开「提交中 / 充值处理中」（结束、或转进付款不明等别的流程），它的「处理太久」就收掉。 */
+export const RESOLVE_API_STALLED_SQL = `UPDATE operator_alerts oa
+   INNER JOIN orders o ON o.id = oa.order_id
+   SET oa.status = 'RESOLVED', oa.acknowledged_at = COALESCE(oa.acknowledged_at, CURRENT_TIMESTAMP(3))
+ WHERE oa.alert_type = 'API_ORDER_STALLED' AND oa.status = 'OPEN'
+   AND o.status NOT IN ('SUBMITTING', 'RECHARGE_PROCESSING')`;
+
+export function apiStuckAlert(row) {
+  const platform = row.recharge_order_no ? `直充平台单号 ${row.recharge_order_no}。` : '还没拿到直充平台单号（可能卡在提交那一步）。';
+  const checking = Number(row.still_checking)
+    ? '系统还在每 5 秒问一次平台。'
+    : '系统已经停止询问平台（查满 1 小时自动放弃）。';
+  return {
+    type: 'API_ORDER_STALLED',
+    orderId: row.id,
+    title: 'API 单处理太久，客户还在等',
+    message: `已 ${row.waited} 分钟没有结果（停在${row.status === 'SUBMITTING' ? '提交中' : '充值处理中'}）。${platform}${checking}`
+      + '系统不会重付、不会换卡。请到直充平台后台看这单的结果。',
+  };
+}
+
+/**
  * 订单结束了、这单也不再需要人（与后台「需要我处理」同一谓词），它的「浏览器单失败 / 要人工」提醒就收掉
  * （D-405，2026-09-27 Lemon 同意；此前生产 33 条自用期的这类提醒一直 OPEN）。
  * 失败提醒是订单失败那一刻开的，而提醒一关、未发出的推送会被取消——所以必须等推送发完：
