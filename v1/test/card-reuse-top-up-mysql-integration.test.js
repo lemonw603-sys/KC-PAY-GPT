@@ -780,7 +780,8 @@ test('D-414 card selection order (settings knob): "有钱先用" pays from a rea
     const { createCardSupplyPolicyAdminService } = await import('../src/services/card-supply-policy-admin-service.js');
     const settings = createCardSupplyPolicyAdminService({ pool });
     assert.equal((await settings.list()).cardSelectOrder, 'balance_first', '没设过＝有钱先用');
-    await assert.rejects(settings.setCardSelectOrder({ value: 'random', actorId: 'lemon' }), (e) => e.code === 'INVALID_SETTING_VALUE');
+    await assert.rejects(settings.setCardSelectOrder({ value: 'random', actorId: 'lemon' }),
+      (e) => e.code === 'INVALID_SETTING_VALUE' && e.message === '选卡顺序只能是「有钱先用」或「旧卡先用」', '报错用页面上的叫法');
 
     const account = await topUpAccount(pool);
     const workflow = createWorkflowRepository(pool, { sessionEncryptionKey: KEY });

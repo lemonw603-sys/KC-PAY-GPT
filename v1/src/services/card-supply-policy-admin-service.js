@@ -211,7 +211,8 @@ export function createCardSupplyPolicyAdminService({ pool }) {
   async function setCardSelectOrder({ value, actorId = 'admin', reason = null } = {}) {
     const next = String(value ?? '').trim().toLowerCase();
     if (!CARD_SELECT_ORDERS.includes(next)) {
-      throw new PublicApiError('选卡顺序只能是「卡上有钱的先用」或「旧卡先用满」', { code: 'INVALID_SETTING_VALUE', status: 400 });
+      // 措辞与设置页下拉一致（D-414 补记六，Lemon 2026-10-01 同意）
+      throw new PublicApiError('选卡顺序只能是「有钱先用」或「旧卡先用」', { code: 'INVALID_SETTING_VALUE', status: 400 });
     }
     const actor = requireActor(actorId);
     const connection = await pool.getConnection();
