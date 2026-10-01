@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>D-414 演示 · 卡与钱重新设计</title>
+<link rel="icon" href="/admin/assets/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/admin/assets/admin.css?v=31">
+<link rel="stylesheet" href="/admin/assets/workbench.css?v=28">
+<link rel="stylesheet" href="/admin/assets/cards.css?v=8">
+<style>
+/* ---- 演示外壳（不是产品的一部分）：照第三批演示 ---- */
+.demo-bar{position:sticky;top:0;z-index:40;display:flex;align-items:center;flex-wrap:wrap;gap:10px 14px;margin:0 0 10px;padding:9px 12px;border:1px dashed var(--wb-bd);border-radius:11px;background:var(--wb-s);font-size:12.5px;color:var(--wb-t2)}
+.demo-bar b{color:var(--wb-t)}
+.demo-bar .opt{display:inline-flex;gap:2px;padding:2px;border-radius:8px;background:var(--wb-s3)}
+.demo-bar .opt button{border:0;background:none;padding:4px 12px;border-radius:6px;font:inherit;font-size:12.5px;color:var(--wb-t2);cursor:pointer}
+.demo-bar .opt button[aria-pressed="true"]{background:var(--wb-s);color:var(--wb-a-ink);font-weight:600;box-shadow:0 1px 2px hsla(176,25%,10%,.12)}
+.demo-note{margin:0 0 12px;padding:9px 13px;border:1px dashed var(--wb-bd);border-radius:10px;background:var(--wb-s);font-size:12.5px;color:var(--wb-t2);line-height:1.7}
+.demo-note b{color:var(--wb-t)}
+.demo-muted{color:var(--wb-t3);font-size:12.5px;margin:0}
+
+/* ================= 提议：卡与钱（甲、乙共用） =================
+   只用 DESIGN_SYSTEM.md 的令牌与阶梯：颜色 var(--wb-*)；间距 4/7/8/10/14/16/22；大数字照 .wb-kpi .wb-v（28px 等宽）。 */
+.workbench .cm-head{display:flex;align-items:center;gap:14px;padding:0 0 14px;border-bottom:1px solid var(--wb-s3)}
+.workbench .cm-what{display:grid;gap:4px;min-width:0}
+.workbench .cm-line{display:flex;align-items:baseline;gap:8px;white-space:nowrap}
+.workbench .cm-line b{font-size:13px;color:var(--wb-t)}
+.workbench .cm-line .cm-n{font-family:var(--wb-fm);font-size:28px;font-weight:600;letter-spacing:-.02em;line-height:1.05;color:var(--wb-t)}
+.workbench .cm-line .cm-u{font-size:13px;font-weight:500;color:var(--wb-t3);margin-left:-4px}
+.workbench .cm-head.is-zero .cm-n{color:var(--wb-warn)}
+.workbench .cm-sub{font-size:12px;color:var(--wb-t3)}
+.workbench .cm-sub i{font-style:normal;font-family:var(--wb-fm);color:var(--wb-t2)}
+.workbench .cm-head .wb-chip{margin-left:auto}
+.workbench .cm-global{margin:10px 0 0}
+.workbench .cm-foot{display:flex;flex-wrap:wrap;gap:4px 16px;margin:14px 2px 0;font-size:12px;color:var(--wb-t3)}
+.workbench .cm-foot b{font-family:var(--wb-fm);font-weight:600;color:var(--wb-t2)}
+.workbench .cm-note{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.workbench .cm-note small{font-size:12px;color:var(--wb-t3)}
+.workbench .cm-wal{display:inline-flex;align-items:center;gap:8px;white-space:nowrap}
+.workbench .cm-wal .wb-mono{font-size:13px;font-weight:600;color:var(--wb-t)}
+.workbench .cm-wal small{font-size:12px;color:var(--wb-t3)}
+
+/* 甲：一张表。列头写一次「卡上够付 / 钱包够付」，格子里只放数字——格子不用再挤单位和「自动补」。 */
+.workbench .cm-tbl{margin-top:4px}
+.workbench .cm-tbl tbody tr{cursor:default}
+.workbench .cm-tbl tbody tr:hover{background:none}
+.workbench .cm-tbl th.r,.workbench .cm-tbl td.r{text-align:right;white-space:nowrap;width:84px}
+.workbench .cm-tbl td.cm-name{width:84px}
+.workbench .cm-tbl td.r .wb-mono{font-size:13px;font-weight:600;color:var(--wb-t)}
+.workbench .cm-tbl td.r .cm-unit{font-size:12px;color:var(--wb-t3)}  /* 不用 <small>：admin.css 有一条 td small{display:block}，单位会掉到下一行 */
+.workbench .cm-tbl td.r.is-dim .wb-mono,.workbench .cm-tbl td.r.is-dim{color:var(--wb-t3);font-weight:400}
+.workbench .cm-tbl td.cm-name b{font-size:13px}
+.workbench .cm-tbl tr.cm-noterow td{padding-top:0;border-bottom:1px solid var(--wb-s3)}
+.workbench .cm-tbl tr.has-note td{border-bottom:0}
+
+/* 乙：每台一块，两个大数字。 */
+.workbench .cm-rigs{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}
+.workbench .cm-rig{display:grid;gap:10px;align-content:start;padding:13px 14px;border:1px solid var(--wb-bd);border-radius:11px;background:var(--wb-s2)}
+.workbench .cm-rig.is-bad{border-color:var(--wb-danger-soft)}
+.workbench .cm-righead{display:flex;align-items:center;gap:8px}
+.workbench .cm-righead b{font-size:13px;color:var(--wb-t)}
+.workbench .cm-righead .wb-spent{margin-left:auto}
+.workbench .cm-pair{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.workbench .cm-pair label{display:block;font-size:12px;font-weight:600;color:var(--wb-t2);margin-bottom:4px}
+.workbench .cm-pair .cm-v{font-family:var(--wb-fm);font-size:28px;font-weight:600;letter-spacing:-.02em;color:var(--wb-t)}
+.workbench .cm-pair .cm-v.is-dim{color:var(--wb-t3);font-weight:400}
+.workbench .cm-pair small{font-size:12px;color:var(--wb-t3);margin-left:4px}
+.workbench .cm-rig .cm-wal{flex-wrap:wrap}
+</style>
+</head>
+<body>
+<div class="admin-shell">
+  <aside class="sidebar">
+    <a class="admin-brand" href="#" aria-label="首页"><span class="brand-label">OPERATIONS</span><strong>Plus 运营后台 <span aria-hidden="true">✦</span></strong><small>内部管理中心</small></a>
+    <nav aria-label="演示导航">
+      <button class="nav-item is-active" type="button"><span class="ic" aria-hidden="true">◱</span>工作台</button>
+    </nav>
+  </aside>
+
+  <main class="main-area">
+    <header class="topbar"><div class="topbar-title"><h1>今天的运行情况</h1></div><span class="sync-time" title="今天花了多少、token 时间这些小字是演示库的">演示页 · 两个钱包、三张卡、直充点数照 09-30 16:0x UTC 的生产</span></header>
+
+    <div class="demo-bar" role="group" aria-label="演示开关">
+      <span><b>方案</b></span>
+      <span class="opt" data-group="design">
+        <button type="button" data-v="now" aria-pressed="false">现在</button>
+        <button type="button" data-v="a" aria-pressed="true">甲 · 一张表（推荐）</button>
+        <button type="button" data-v="b" aria-pressed="false">乙 · 每台一块</button>
+      </span>
+      <span><b>情况</b></span>
+      <span class="opt" data-group="scene">
+        <button type="button" data-v="1" aria-pressed="true">① 现在</button>
+        <button type="button" data-v="2" aria-pressed="false">② 钱包 $40</button>
+        <button type="button" data-v="3" aria-pressed="false">③ 两单·钱包够</button>
+        <button type="button" data-v="4" aria-pressed="false">④ 两单·钱包没充</button>
+        <button type="button" data-v="5" aria-pressed="false">⑤ token 失效</button>
+        <button type="button" data-v="6" aria-pressed="false">⑥ 总闸关</button>
+      </span>
+    </div>
+    <p class="demo-note" id="demo-note"></p>
+
+    <section class="view workbench"><div class="wb-mid" id="demo-mid"></div></section>
+  </main>
+</div>
+
+<script>
+// 「现在」是当前 admin.js 在本机演示库渲染出来的原样 HTML；甲、乙由下面的函数从**同一份后端数据**画出来，
+// 每种情况的数都是真代码跑出来的（本机演示库照生产设数 → 真分卡代码派单 → 后端 overview / alerts 原样存下）。
+// 页面只做加法（卡上 + 钱包），不自己推业务规则。
+const NOTES = {
+  1: '<b>① 现在</b>（生产 09-30 16:0x UTC）：8499 卡上 $16 够付 1 单；5270 只剩 $0.25；highvcc 钱包 $24.35 扣掉押金 $20 不够补 $16。<b>还能接 1 单</b>。',
+  2: '<b>② 钱包充到 $40</b>：(40 − 押金 20) ÷ 16 = 钱包够付 1 单（轮到 5270 时先补 $16）。<b>还能接 2 单</b>。',
+  3: '<b>③ 两单同时来、钱包 $40</b>：第 1 单用 8499，第 2 单给 5270 补 $16（真分卡代码派的）。两张卡都在用，补钱的 $16 已从钱包扣掉 → <b>再来一单要等</b>。',
+  4: '<b>④ 两单同时来、钱包没充</b>（$24.35）：第 1 单用 8499，第 2 单没卡可用、在等卡——这是你现在不充钱包时会遇到的样子。',
+  5: '<b>⑤ token 失效</b>（钱包 $40）：补钱、开卡都会失败。<b>甲、乙里「钱包够付」写成「—」是新提议</b>（和你批的总闸关同一个道理），要后端跟着改一行，现在的后端在这时仍给 1。',
+  6: '<b>⑥ 总闸关</b>（钱包 $40，你已批的 B）：不补钱、不开卡。甲、乙把它写成整块顶上一条提示，不再每个格子写一遍。'
+};
+const FAULTS = { CARD_STOCK_PURCHASE_DISABLED: '卡台那边暂停开卡' };
+let data = null;
+const state = { design: 'a', scene: '1' };
+const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const money = (v) => Number(v).toFixed(2);
+const hhmm = (v) => (v ? new Date(v).toLocaleTimeString('zh-CN', { hour12: false, hour: '2-digit', minute: '2-digit' }) : '—');
+const chip = (tone, text) => `<span class="wb-chip ${tone}"><span class="wb-d"></span>${text}</span>`;
+
+function model(s) {
+  const ov = s.overview;
+  const supplyOff = ov.decisions?.cardAutoReplenishmentEnabled === false;
+  const tokenBad = (s.tokenAlerts || []).length > 0;
+  const rigs = (ov.cardStockByProvider || []).map((p) => {
+    const plus = (p.byProduct || []).find((x) => x.productCode === 'plus') || {};
+    const usesToken = p.providerKind !== 'hnskj';          // 只有 highvcc 用网页 token（同「更新登录」按钮的判断）
+    const notes = [];
+    if (p.supplyFaultState && p.supplyFaultState !== 'OK') {
+      notes.push(`${chip('danger', esc(FAULTS[p.supplyFaultReason] || '供卡故障'))}<small>开不出新卡${p.supplyFaultReason ? `（${esc(p.supplyFaultReason)}）` : ''}</small>`);
+    }
+    if (usesToken && tokenBad) notes.push(`${chip('danger', 'token 失效')}<small>补钱、开卡都会失败，去卡片页重新贴</small>`);
+    // 提议：token 失效时钱包也用不上，「钱包够付」不给数（总闸关时后端已给 null）
+    const wallet = plus.walletOrders == null || (usesToken && tokenBad) ? null : Number(plus.walletOrders);
+    const pro = (p.byProduct || []).filter((x) => x.productCode !== 'plus');
+    return { p, ready: Number(plus.readyOrders || 0), wallet, usesToken, notes, pro };
+  });
+  const ready = rigs.reduce((n, r) => n + r.ready, 0);
+  const wallet = rigs.reduce((n, r) => n + (r.wallet || 0), 0);
+  const pro = {};
+  for (const r of rigs) for (const x of r.pro) pro[x.label] = (pro[x.label] || 0) + Number(x.readyOrders || 0);
+  return { rigs, ready, wallet, total: ready + wallet, waiting: Number(ov.ordersWaitingForCard || 0), supplyOff, zz: ov.zzshuPoints, pro };
+}
+
+function head(m) {
+  const tail = m.waiting > 0 ? chip('warn', `${m.waiting} 单正在等卡`)
+    : m.total === 0 ? chip('mute', '再来一单要等卡') : '';
+  return `<div class="cm-head${m.total === 0 ? ' is-zero' : ''}">
+      <div class="cm-what"><div class="cm-line"><b>Plus 现在还能接</b><span class="cm-n">${m.total}</span><span class="cm-u">单</span></div>
+        <span class="cm-sub">卡上够付 <i>${m.ready}</i> 单 · 钱包够付 <i>${m.wallet}</i> 单</span></div>
+      ${tail}
+    </div>`
+    + (m.supplyOff ? `<div class="cm-note cm-global">${chip('warn', '自动开卡总闸关着')}<small>不补钱、不开新卡；卡上现成的钱照常能付</small></div>` : '');
+}
+
+function walletCell(r) {
+  const w = r.p.wallet;
+  return `<span class="cm-wal"><span class="wb-mono">${w ? '$' + money(w.balance) : '—'}</span><small>查询于 ${hhmm(w?.observedAt)}</small>`
+    + `<button type="button" class="wb-btn out sm">刷新</button>${r.usesToken ? '<button type="button" class="wb-btn out sm">更新登录</button>' : ''}</span>`;
+}
+function spentText(r) {
+  const n = r.p.spentToday == null ? null : Number(r.p.spentToday);
+  return n == null ? '—' : n === 0 ? '<span class="wb-spent is-zero">没花钱</span>' : `<span class="wb-mono">$${money(n)}</span>`;
+}
+function foot(m) {
+  const pro = Object.entries(m.pro).map(([k, v]) => `${esc(k)} 卡上 <b>${v}</b> 单`).join(' · ');
+  return `<p class="cm-foot"><span>直充平台 剩 <b>${m.zz?.points ?? '—'}</b> 点 · 查询于 ${hhmm(m.zz?.observedAt)}</span>${pro ? `<span>${pro}</span>` : ''}</p>`;
+}
+
+function designA(m) {
+  const rows = m.rigs.map((r) => `<tr class="${r.notes.length ? 'has-note' : ''}">
+        <td class="cm-name"><b>${esc(r.p.label)}</b></td>
+        <td>${walletCell(r)}</td>
+        <td class="r"><span class="wb-mono">${r.ready}</span> <span class="cm-unit">单</span></td>
+        <td class="r${r.wallet == null ? ' is-dim' : ''}">${r.wallet == null ? '—' : `<span class="wb-mono">${r.wallet}</span> <span class="cm-unit">单</span>`}</td>
+        <td class="r">${spentText(r)}</td>
+      </tr>${r.notes.length ? `<tr class="cm-noterow"><td colspan="5"><div class="cm-note">${r.notes.join('</div><div class="cm-note">')}</div></td></tr>` : ''}`).join('');
+  return head(m) + `<div class="wb-tblwrap"><table class="wb-tbl cm-tbl">
+      <thead><tr><th>卡台</th><th>钱包</th><th class="r">卡上够付</th><th class="r">钱包够付</th><th class="r">今天花了</th></tr></thead>
+      <tbody>${rows}</tbody></table></div>` + foot(m);
+}
+
+function designB(m) {
+  const tiles = m.rigs.map((r) => `<div class="cm-rig${r.notes.length ? ' is-bad' : ''}">
+      <div class="cm-righead"><b>${esc(r.p.label)}</b><span class="wb-spent">今天 ${spentText(r)}</span></div>
+      <div class="cm-pair">
+        <div><label>卡上够付</label><span class="cm-v">${r.ready}</span><small>单</small></div>
+        <div><label>钱包够付</label>${r.wallet == null ? '<span class="cm-v is-dim">—</span>' : `<span class="cm-v">${r.wallet}</span><small>单</small>`}</div>
+      </div>
+      <div>${walletCell(r)}</div>
+      ${r.notes.map((n) => `<div class="cm-note">${n}</div>`).join('')}
+    </div>`).join('');
+  return head(m) + `<div class="cm-rigs">${tiles}</div>` + foot(m);
+}
+
+function render() {
+  const s = data.scenarios[state.scene];
+  const box = document.getElementById('demo-mid');
+  box.innerHTML = s.nowHtml.replace(/^<div class="wb-mid">|<\/div>$/g, '');
+  const recon = box.querySelector('#wb-recon');
+  if (recon) recon.innerHTML = '<p class="demo-muted">（这格这次不改，演示里不接数据）</p>';
+  if (state.design !== 'now') {
+    const card = box.querySelector('#wb-cards').closest('.wb-card');
+    card.querySelector('.wb-ch h2').textContent = '还能接几单';
+    const m = model(s);
+    card.querySelector('#wb-cards').innerHTML = state.design === 'a' ? designA(m) : designB(m);
+  }
+  document.getElementById('demo-note').innerHTML = NOTES[state.scene]
+    + ` <span class="demo-muted">· 现在看的是<b>${{ now: '现在的页面', a: '甲 · 一张表', b: '乙 · 每台一块' }[state.design]}</b>（按钮在演示里不起作用）</span>`;
+  for (const g of document.querySelectorAll('.demo-bar .opt')) {
+    for (const b of g.querySelectorAll('button')) b.setAttribute('aria-pressed', String(b.dataset.v === state[g.dataset.group]));
+  }
+}
+
+document.addEventListener('click', (event) => {
+  const opt = event.target.closest('.demo-bar .opt button');
+  if (opt) { state[opt.closest('.opt').dataset.group] = opt.dataset.v; render(); }
+});
+// 地址栏 #scene=2&design=b 直接打开某一种（截图用）
+for (const [k, v] of new URLSearchParams(location.hash.slice(1))) if (k in state) state[k] = v;
+fetch('data/d414-cards-money-demo.json').then((r) => r.json()).then((json) => { data = json; render(); });
+</script>
+</body>
+</html>
