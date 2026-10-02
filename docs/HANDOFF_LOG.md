@@ -4201,3 +4201,12 @@ Lemon 答：每次重新登录后复制 token、只用一台电脑；推断见 D
 - 现场（14:41 UTC 起）：highvcc token **又失效**——告警 10-02 05:31:20 UTC 开（incident_version 8）、05:31:22 推送 SENT；10-01 04:54:51 贴的那份最后一次成功同步 04:31:12，活了约 23.6～24.6 小时。本机对照检查一直没 token，这次没比成。非终态订单 0；最近一单仍是 09-29。state-check 漂移 1 行（token）已改，复跑 20 项一致；两行「已删除」的旧项复查仍已删除。
 - 回答甲用到的代码事实：`pollRecharge`（`workflow-handlers.js:473`）只有平台回 success / failed 时才收尾——成功走 `commitRechargeSuccess`（账本记用量、放出卡占用），失败走 `commitRechargeFailure`；任务问满 720 次就停，没有收尾，订单停在处理中、卡一直被占。
 - 回答备卡用到的事实：highvcc 押金底线 $20 + 开卡 $16 + 开卡费 $0.50 → 现开要钱包 ≥ $36.50；卡月费 $0.10 / 张 / 月、当月第一笔交易时才扣（CURRENT_STATE「highvcc 收费」行）。
+
+## 2026-10-02｜贴 token 免输密码（补记十三第 4 条①，15:0x～15:2x UTC）；未发布
+
+- 后台另起工作树做（只动 `v1/public/admin/assets/login.js`、`login.html` 版本号 v3→v4、新测试 `v1/test/admin-login-token-resume.test.js` 11 项），我审过差异后 cherry-pick 进 main：`7175f323`。
+- 做法：登录页只在「手里有待存的 highvcc token」时，同源 `GET /api/v1/admin/session`（`create-app.js:243` 回 `{authenticated:true}`）；有效就 `location.replace('/admin')`，由 admin.js 原有流程保存；无效 / 出错照旧显示登录表单；30 秒内被弹回就不再自动跳（防打转）。服务器门禁、cookie 的 SameSite、token 接口都没改。
+- 我自己核的：新测试 11 / 11 通过；把 login.js 换回旧版跑同一测试 4 项失败（测试真抓得住）；main 上全量单元 1298 项（通过 1189 / 失败 0 / 跳过 109）。
+- 真浏览器：工作树那边在本机用 `localhost` ↔ `127.0.0.1` 模拟跨站，报告 4 种情况（会话有效 + token：/admin/login → 会话 200 → /admin → 存 token 200，提示「token 已保存，卡台验证通过…」；未登录 + token：照旧要密码、登录后存上；有效会话但没 token 的跨站进入：照旧要密码；普通访问：不变）。**我自己在应用内浏览器重走时，填本机演示口令被安全检查拦下，没有绕过**——所以浏览器这一层是工作树的报告，不是我亲眼看的。
+- 未验证：iPhone Safari（WebKit）上这一跳；生产 HTTPS 下的表现。本机演示库已 `local-admin.sh up` 重建（工作树测试时改过演示库的 token 与会话版本）。
+- 第 4 条还剩：token 失效推送带 highvcc 登录页链接；手机走一遍。
