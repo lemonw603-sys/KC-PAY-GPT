@@ -11,6 +11,34 @@
   history.replaceState(null, '', location.pathname + location.search);
 })();
 
+// 会话其实还有效，却被送到了这一页（D-414 补记十三第 4 条）：书签是在 highvcc.com 上发起的跳转，
+// 属于跨站导航；会话 cookie 是 SameSite=Strict，浏览器不随这次请求发出，服务器只能当未登录 302 过来。
+// 本页自己发的同源请求会带上它，所以手里有待存的 token 时先问一次会话：还有效就直接回 /admin，
+// 由 admin.js 既有流程完成保存，不再让人重输密码。会话无效、问不通，照旧显示登录表单。
+// 只读：这次请求不带 token、不改 cookie；服务器的门禁和 SameSite 都不动。
+// 防打转：回 /admin 前记一笔时间；如果 30 秒内又被弹回这一页（说明 /admin 仍不认这个会话），
+// 就不再自动跳，留在登录表单。
+(async function resumeSessionForPendingHighvccToken() {
+  const RESUME_MARK = 'admin-session-resume-at';
+  let pending = false;
+  let bouncedBack = false;
+  try {
+    pending = Boolean(sessionStorage.getItem('highvcc-token-pending'));
+    const mark = Number(sessionStorage.getItem(RESUME_MARK));
+    sessionStorage.removeItem(RESUME_MARK);
+    bouncedBack = mark > 0 && Date.now() - mark < 30 * 1000;
+  } catch { return; }
+  if (!pending || bouncedBack) return;
+  try {
+    const response = await fetch('/api/v1/admin/session', { credentials: 'same-origin', cache: 'no-store' });
+    if (!response.ok) return;
+    const payload = await response.json().catch(() => null);
+    if (payload?.authenticated !== true) return;
+    try { sessionStorage.setItem(RESUME_MARK, String(Date.now())); } catch { return; }
+    window.location.replace('/admin');
+  } catch { /* 问不通就照旧登录 */ }
+})();
+
 const form = document.querySelector('#login-form');
 const password = document.querySelector('#password');
 const button = document.querySelector('#login-button');
