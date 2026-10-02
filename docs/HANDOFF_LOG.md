@@ -4181,3 +4181,16 @@ Lemon 答：每次重新登录后复制 token、只用一台电脑；推断见 D
 - **落盘缺口**（Lemon 指出，属实）：几批决定后没给「我理解的决定」；HANDOFF_NOW 自 05:5x UTC 没重写；PROJECT_MAP、RUNBOOK、第二批规则稿没跟上；CURRENT_STATE「回滚点」行停在 09-29 的版本（两次发布都没改，state-check 不查这一行）。
 - **补救（本轮）**：重写 HANDOFF_NOW；PROJECT_MAP §3 写入新执行顺序、更正「比特浏览器修复未切」；RUNBOOK 新增 §2.57（API 单处理太久、本机 token 对照）；第二批规则稿补「Lemon 已定」一节；CURRENT_STATE 回滚点、token、备用卡（0237 已登记已销卡、0951 / 8718 待删）、本机 token 对照检查四行（19:38～19:40 UTC 现查）。
 - **脚本**：`wrapup-check.sh` 加两项——「接班一屏跟上决策记录」（DECISIONS 比 HANDOFF_NOW 新就失败；加完当场报失败）、「事实表回滚点是上一版」（拿服务器 release 目录比；用旧那行自测报提醒、新那行通过）。
+
+## 2026-10-01｜方案重审：Lemon 对第 1 / 3 / 4 / 7 / 9 条提疑问（20:0x～20:1x UTC，只读）
+
+本轮只查、只答，没改代码和生产。证据（都是现查）：
+- **API 尝试用时**（`recharge_attempts` executor_kind='API'，提交到结束）：成功 34 / 35 / 39 / 48 / 49 秒，以及 09-07 那单 8776 秒（我们这边没在问）；失败 63 / 90 / 103 / 226 / 279 秒；另有 4 次建单时就被拒（没有提交时间）。2 分钟推送放在历史数据上：226 秒、279 秒两次失败会先推「太久」，紧接着再推「失败」。
+- **维护 / 排队满**：`zzshu-recharge.js:123-133` 标「可重试」，注释写「没建单，稍后重试安全且是上游合同要求」；`workflow-handlers.js:308-341` 只看「是否不明」，被拒就 `markAttemptRejected` → 订单失败（欠账 22）。D-401 补记写的是「已有行为未改」，不是 Lemon 定的「不重试」。
+- **查单**：`pollRecharge`（`workflow-handlers.js:473`）不区分「平台说还在处理」和「查询本身出错」，两种都只是再排一次，问满 720 次就停（没有收尾处理）。
+- **贴 token 多一次输密码的原因**：后台登录 cookie 是 `SameSite=Strict`（`admin-session.js:167` 起），`GET /admin` 服务端要 cookie（`create-app.js:1045-1046`）。从 highvcc 网站点书签跳回后台属于跨站跳转，浏览器不带这个 cookie → 302 到登录页 → 要输密码，哪怕后台登录还在 12 小时有效期内（`SESSION_TTL_MS`）。
+- **开卡用时**：highvcc 自动开卡 4 次，任务开始到开完 14 / 21 / 16 / 14 秒（`card_stock_jobs`）。
+- **补钱**：`card_top_ups` 生产 0 条（还没真补过）。
+- **3 分钟的来历**：`card-top-up-service.js:25` `TOP_UP_ARRIVAL_WINDOW_MS = 180_000`，注释「与客户页 3 分钟没动就说已通知运营对齐」，不是实测卡台延迟。第二批规则稿照搬了这个等法。
+- **客户页 3 分钟文案**：`customer.js:441`「排队比平时久，我们已经收到通知在处理……」。
+- 重审方案与建议见当轮回复；HANDOFF_NOW「正在做」已加暂停说明。
