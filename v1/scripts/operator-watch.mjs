@@ -27,9 +27,10 @@ const args = process.argv.slice(2);
 const idx = args.indexOf('--minutes');
 // 3 分钟：客户没充成功通常三五分钟内就会来找运营，告警必须比客户快。
 const minutes = idx >= 0 ? Math.max(1, Number(args[idx + 1]) || 3) : 3;
-// API 单正常不到 1 分钟付完款（生产成功 5 单 34～49 秒）；2 分钟没结果就叫人（D-414 补记十二，Lemon 2026-10-02 定：
-// 客户等不了 15 分钟）。客户页 3 分钟时说「我们已经收到通知」，这里先于它。
-const API_STUCK_MINUTES = 2;
+// API 单的时间兜底（D-414 补记十三第 1 条，Lemon 2026-10-02 定）：推送以「系统自己处理不了的事件」为主，按时间只留
+// 这一条——处理中超过 5 分钟。生产里成功 34～49 秒、失败最慢 279 秒（约 4.7 分钟）出结果，超过 5 分钟就已经不正常；
+// 2 分钟会在正常的慢失败上先推一条「太久」再推一条「失败」（补记十二的 2 分钟作废）。
+const API_STUCK_MINUTES = 5;
 const dryRun = args.includes('--dry-run');
 if (!process.env.DATABASE_URL) { console.error('DATABASE_URL is required'); process.exit(2); }
 
