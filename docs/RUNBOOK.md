@@ -184,13 +184,13 @@ browser-mvp/scripts/prod-query.sh "SELECT id, open_adapter, default_card_segment
 - 待做（Lemon 10-02 定，未写）：乙＝快速询问问满还没结果转「付款不明 → 去核实」；甲＝之后每 5 分钟慢问直到有结果；丙＝平台本身出问题时新单切 Browser（条件待定）。
 
 **本机 token 对照检查**（LaunchAgent `com.pojia.highvcc-token-probe`，每小时一次，只查钱包、不写）：
-1. 在 highvcc 网站登录一次（别频繁登录，会被封 IP），按平时给后台贴 token 的方法复制这次登录的 token——**这份只写本机文件，不要贴进后台**（两份要分开才能比）。
+1. **用同一份 token**（D-414 补记十五，Lemon 定）：在 highvcc 网站登录一次（别频繁登录，会被封 IP），点收藏栏「刷新卡台登录」存进后台；再在同一个 highvcc 页面打开浏览器控制台，执行 `copy(localStorage.getItem('access_token'))` 复制同一份 token。token 不要贴进聊天。
 2. 写进本机文件并当场查一次：
    ```bash
    pbpaste | tr -d '[:space:]' > "$HOME/Library/Application Support/pojia-highvcc-probe/token" && chmod 600 "$HOME/Library/Application Support/pojia-highvcc-probe/token" && node "/Users/lemon/code/AI充值业务/scripts/highvcc-token-probe.mjs"
    ```
    打印 `… OK tokenSavedAt=…` 就对了；之后每小时追加一行到 `probe.log`。
-3. 看结果：服务器那份失效时（推 token 失效），对照 `tail ~/Library/Application\ Support/pojia-highvcc-probe/probe.log`：本机这份也同时失效＝卡台统一作废；本机还 OK＝卡台只作废服务器那份。
+3. 看结果：服务器那边失效时（推 token 失效），对照 `tail ~/Library/Application\ Support/pojia-highvcc-probe/probe.log`：本机用同一份 token 也同时失效＝token 本身被作废；本机还 OK＝卡台只拒服务器发来的请求（按地址 / 风控）。注意：同一份 token 从两个地址用，本身可能被卡台当成异常；如果这份明显比以往死得快（以往 6～24.5 小时），先停掉本机检查再看。
 - 卸载（先问 Lemon）：`launchctl bootout gui/$(id -u)/com.pojia.highvcc-token-probe`，再删 `~/Library/LaunchAgents/com.pojia.highvcc-token-probe.plist` 和上面那个目录。
 
 ## 2.6 待销清单与付款不明收口（第④步起，2026-09-18）
