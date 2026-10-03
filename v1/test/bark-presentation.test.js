@@ -40,9 +40,19 @@ test('unknown balance schema/currency mismatch falls back instead of losing valu
 });
 // D-409：token 失效原文已是批过的手机文案（产生点写好、不带内部代码），展示层原样推，不再改写。
 test('token reminder is pushed exactly as the approved producer text',()=>{
-  const r=present({type:'PROVIDER_TOKEN_EXPIRED',severity:'critical',title:'highvcc 登录失效',message:'16:22 起失效，新卡开不出。到后台「卡片」页贴新 token 就好。'});
+  const text='16:22 起失效，新卡开不出。去 highvcc 登录后点收藏栏「刷新卡台登录」，token 自动存进后台。';
+  const r=present({type:'PROVIDER_TOKEN_EXPIRED',severity:'critical',title:'highvcc 登录失效',message:text});
   assert.equal(r.title,'highvcc 登录失效');
-  assert.equal(r.message,'16:22 起失效，新卡开不出。到后台「卡片」页贴新 token 就好。');
+  assert.equal(r.message,text);
+});
+// D-414 补记十三第 4 条：点推送直接打开 highvcc 登录页；别的卡台（不用网页 token）不带链接。
+test('highvcc token reminder opens the highvcc login page; other providers carry no link',()=>{
+  const highvcc=present({type:'PROVIDER_TOKEN_EXPIRED',severity:'critical',title:'highvcc 登录失效',message:'16:22 起失效。'});
+  assert.equal(highvcc.url,'https://www.highvcc.com');
+  const other=present({type:'PROVIDER_TOKEN_EXPIRED',severity:'critical',title:'HNSKJ 登录失效',message:'16:22 起失效。'});
+  assert.equal(other.url,undefined);
+  const unrelated=present({type:'CARD_STOCK_LOW',severity:'warning',title:'highvcc 卡不够',message:'缺 1 张。'});
+  assert.equal(unrelated.url,undefined);
 });
 test('human verification and uncertain payment keep order and no-repay warning',()=>{
   for(const input of [

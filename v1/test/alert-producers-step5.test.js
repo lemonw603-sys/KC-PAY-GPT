@@ -155,7 +155,7 @@ test('D-409：token 失效推送是批过的原文——几点起失效、新卡
   const db = fakeQueryable();
   await markProviderTokenExpired(db, { providerAccountId: ACCOUNT, now: new Date('2026-09-28T08:22:40Z') });
   const [call] = alertsOf(db, ALERT_TYPES.TOKEN_EXPIRED);
-  assert.deepEqual(call.params.slice(2), [null, 'critical', 'highvcc 登录失效', '16:22 起失效，新卡开不出。到后台「卡片」页贴新 token 就好。'],
+  assert.deepEqual(call.params.slice(2), [null, 'critical', 'highvcc 登录失效', '16:22 起失效，新卡开不出。去 highvcc 登录后点收藏栏「刷新卡台登录」，token 自动存进后台。'],
     '北京时间；不带 HIGHVCC_TOKEN_EXPIRED、D-249 这类内部代码');
   // 告警已开着时每小时再撞一次不改原文，「几点起」才不会跟着往后走
   assert.match(call.sql, /message = IF\(status = 'OPEN', message, VALUES\(message\)\)/);

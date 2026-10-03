@@ -151,8 +151,9 @@ export function tokenExpiredAlertKey(providerAccountId) {
  */
 export async function markProviderTokenExpired(queryable, { providerAccountId, now = new Date() }) {
   const label = await providerLabelById(queryable, providerAccountId);
-  // D-409（Lemon 2026-09-29 批的原文）：手机上直接看到「highvcc 登录失效 / 16:22 起失效，新卡开不出。到后台「卡片」页贴新
-  // token 就好。」不带内部代码（原因码在调用方日志里）。「几点起」是这段失效开始的时间：告警已开着时每小时再撞一次
+  // D-409（Lemon 2026-09-29 批的原文）手机上直接看到「highvcc 登录失效 / 16:22 起失效，新卡开不出。…」，不带内部代码
+  // （原因码在调用方日志里）。D-414 补记十三第 4 条：推送点开直达 highvcc 登录页（链接加在推送展示层），所以后半句改成
+  // 「登录后点收藏栏书签」，不再叫人先进后台；后台待办里显示的也是这句，两处都说得通。「几点起」是这段失效开始的时间：告警已开着时每小时再撞一次
   // 不改原文，否则时间会跟着往后走。登录含随机滑块，系统换不了 token（D-249）。
   const since = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Shanghai', hour: '2-digit', minute: '2-digit', hour12: false }).format(now);
   await queryable.query(
@@ -164,7 +165,7 @@ export async function markProviderTokenExpired(queryable, { providerAccountId, n
        status = IF(status = 'RESOLVED', 'OPEN', status),
        acknowledged_at = IF(status = 'RESOLVED', NULL, acknowledged_at)`,
     [ALERT_TYPES.TOKEN_EXPIRED, tokenExpiredAlertKey(providerAccountId), null, 'critical', `${label} 登录失效`,
-      `${since} 起失效，新卡开不出。到后台「卡片」页贴新 token 就好。`]
+      `${since} 起失效，新卡开不出。去 highvcc 登录后点收藏栏「刷新卡台登录」，token 自动存进后台。`]
   );
 }
 

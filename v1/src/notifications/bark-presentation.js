@@ -1,5 +1,8 @@
 import {redactSensitiveText} from '../security/redaction.js';
 
+// 与后台「去 highvcc.com 登录」按钮同一个地址（admin.js highvccOpenSite）。
+const HIGHVCC_LOGIN_URL='https://www.highvcc.com';
+
 export function usableBarkEmail(value) {
   const email=typeof value==='string'?value.trim():'';
   return email.length<=320&&/^[^\s@<>\p{C}]+@[^\s@<>\p{C}]+\.[^\s@<>\p{C}]+$/u.test(email)?email:null;
@@ -23,8 +26,9 @@ export function presentBarkNotification(delivery) {
       return {...base,title:`${balance[1]}余额更新`,message:`${compact(balance[2])} → ${compact(balance[4])} ${balance[3]}`};
     }
   }
-  // D-409：token 失效原文已是手机上要看的样子（「highvcc 登录失效 / 16:22 起失效，…贴新 token 就好。」），原样推。
-  if(delivery.type==='PROVIDER_TOKEN_EXPIRED')return base;
+  // D-409：token 失效原文已是手机上要看的样子（「highvcc 登录失效 / 16:22 起失效，…」），原样推。
+  // D-414 补记十三第 4 条：点推送直接打开 highvcc 登录页。只有 highvcc 用网页登录 token（D-249），别的卡台不带链接。
+  if(delivery.type==='PROVIDER_TOKEN_EXPIRED')return /^highvcc\b/i.test(title)?{...base,url:HIGHVCC_LOGIN_URL}:base;
   // D-409「充值成功」：一行写完——邮箱（没有就订单号）· 产品 · 用时。
   if(delivery.type==='ORDER_RECHARGE_SUCCEEDED'){
     const who=email||(delivery.publicNo?`订单 ${delivery.publicNo}`:null);
