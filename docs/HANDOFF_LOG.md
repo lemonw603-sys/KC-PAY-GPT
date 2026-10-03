@@ -4230,3 +4230,16 @@ Lemon 答：每次重新登录后复制 token、只用一台电脑；推断见 D
   - `f84b6c48`：API 单太久的兜底 2 → 5 分钟，真库测试改成 4 分钟的单不报。
   - 全量单元 1300 项（通过 1191 / 失败 0 / 跳过 109）；客户链路 SQL 探针全过；文案闸门通过。生产 `operator_alerts.alert_type` 是 varchar(64)，新告警类型不用迁移。
 - main 相对生产多出的代码：`085ef2f2` / `076ee3e9` / `f84b6c48`（API 单 5 分钟兜底提醒）、`7175f323`（免输密码）、`9d13b239`（推送链接）。待批发布。
+
+## 2026-10-03｜发布 `20261003-d414c-e6b8d22`（05:4x～05:5x UTC，Lemon 批）
+
+- Lemon 问「5 分钟兜底那句什么意思」→ 答：main 上原来是 2 分钟版本，按他定的改成 5 分钟，发布带上去的就是 5 分钟。「其他没问题」→ 按批了发布执行。
+- 发布前：在途订单 0、在途补钱 0；客户链路 SQL 探针全过；`prepare` 真库 109 / 0 / 1，备份 `pojia-20261003T054856Z.sql.gz.enc` OK。`switch` 05:49:1x UTC，web / worker / bark 三个进程 cwd 都在新 release。
+- 独立复验（新 SSH）：
+  - 登录页 `login.js?v=4`，新 login.js 含会话续接；
+  - 未登录会话接口 401；
+  - 新 release 里推送链接常量在、`API_STUCK_MINUTES = 5`；
+  - 切换后第一轮巡检输出带 `apiProcessing:[]`（新检查生效、当前无卡住的 API 单）；
+  - 切换后三个服务 err 日志 0 行。
+- state-check：漂移 3 行（release / worker / bark）已改；陈旧 9 行逐条现场复核后更新时间（HNSKJ 卡 14 张已全 RETIRED；最近一次 Browser 运行仍是 09-29 演练单）。复跑 20 项一致、陈旧 0。
+- 回滚：`ln -sfn /opt/pojia/releases/20261001-d414b-ee6e46c /opt/pojia/current && systemctl restart pojia-web.service pojia-worker.service pojia-bark-notifications.service`。
